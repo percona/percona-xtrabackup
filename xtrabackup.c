@@ -1,4 +1,10 @@
-#define XTRABACKUP_VERSION "prototype-0.0"
+/******************************************************
+XtraBackup: The another hot backup tool for InnoDB
+(c) 2009 Percona Inc.
+Created 3/3/2009 Yasufumi Kinoshita
+*******************************************************/
+
+#define XTRABACKUP_VERSION "prototype-0.1"
 
 //#define XTRABACKUP_TARGET_IS_PLUGIN
 
@@ -1130,7 +1136,8 @@ copy_loop:
 	}
 
 	/* TODO: How should we treat double_write_buffer here? */
-	/* (currently, don't care about...) */
+	/* (currently, don't care about. Because,
+	    the blocks is newer than the last checkpoint anyway.) */
 
 	/* close */
 	printf("        ...done\n");
@@ -1149,7 +1156,6 @@ error:
 	return(TRUE); /*ERROR*/
 }
 
-/* TODO: make this function background thread */
 bool
 xtrabackup_copy_logfile(dulint from_lsn)
 {
@@ -1197,9 +1203,7 @@ xtrabackup_copy_logfile(dulint from_lsn)
 
 		old_scanned_lsn = from_lsn;
 
-/*		recv_group_scan_log_recs(group, &contiguous_lsn,
-							&group_scanned_lsn);
-*/
+		/* reference recv_group_scan_log_recs() */
 	finished = FALSE;
 
 	start_lsn = contiguous_lsn;
@@ -1210,15 +1214,10 @@ xtrabackup_copy_logfile(dulint from_lsn)
 		log_group_read_log_seg(LOG_RECOVER, log_sys->buf,
 						group, start_lsn, end_lsn);
 
-		printf("log read from (%lu %lu) to (%lu %lu)\n",
-			start_lsn.high, start_lsn.low, end_lsn.high, end_lsn.low);
+		//printf("log read from (%lu %lu) to (%lu %lu)\n",
+		//	start_lsn.high, start_lsn.low, end_lsn.high, end_lsn.low);
 
-//		finished = recv_scan_log_recs(TRUE,
-//                                (buf_pool->n_frames
-//                                - recv_n_pool_free_frames) * UNIV_PAGE_SIZE,
-//				TRUE, log_sys->buf,
-//				RECV_SCAN_SIZE, start_lsn,
-//				&contiguous_lsn, &group_scanned_lsn);
+		/* reference recv_scan_log_recs() */
 		{
 	byte*	log_block;
 	ulint	no;
@@ -1321,7 +1320,7 @@ xtrabackup_copy_logfile(dulint from_lsn)
 					start_lsn);
 		}
 
-		printf("Wrinting offset= %lld, size= %lu\n", log_copy_offset, write_size);
+		//printf("Wrinting offset= %lld, size= %lu\n", log_copy_offset, write_size);
 
 		success = os_file_write(dst_log_path, dst_log, log_sys->buf,
 				(ulint)(log_copy_offset & 0xFFFFFFFFUL),
@@ -1358,7 +1357,7 @@ xtrabackup_copy_logfile(dulint from_lsn)
 			up_to_date_group = group;
 		}
 
-		printf("scanned_lsn (%lu %lu)\n",group->scanned_lsn.high,group->scanned_lsn.low);
+		printf(">> log scanned up to (%lu %lu)\n",group->scanned_lsn.high,group->scanned_lsn.low);
 
 		group = UT_LIST_GET_NEXT(log_groups, group);
 
@@ -1375,13 +1374,11 @@ xtrabackup_copy_logfile(dulint from_lsn)
 		goto error;
 	}
 
-	/* close it later (end of the thread) */
-	//os_file_close(dst_log);
-
 	return(FALSE);
 
 error:
 	os_file_close(dst_log);
+	fprintf(stderr, "Error: xtrabackup_copy_logfile() failed.");
 	return(TRUE);
 }
 
@@ -1397,6 +1394,8 @@ ulint
 log_copying_thread(
 	void*	arg)
 {
+	ut_a(dst_log != -1);
+
 	log_copying_running = TRUE;
 
 	while(log_copying) {
@@ -1524,6 +1523,7 @@ xtrabackup_backup_func(void)
 	}
 	}
 
+	os_sync_mutex = NULL;
 	srv_general_init();
 
 	{
@@ -1666,9 +1666,9 @@ xtrabackup_backup_func(void)
 	log_hdr_buf = ut_align(log_hdr_buf_, OS_FILE_LOG_BLOCK_SIZE);
 
 	/* log space */
-	space = UT_LIST_GET_NEXT(space_list, UT_LIST_GET_FIRST(system->space_list));
-	printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
-		space->name, space->id, space->purpose, space->size);
+	//space = UT_LIST_GET_NEXT(space_list, UT_LIST_GET_FIRST(system->space_list));
+	//printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
+	//	space->name, space->id, space->purpose, space->size);
 
 	/* get current checkpoint_lsn */
 	/* Look for the latest checkpoint from any of the log groups */
@@ -1725,6 +1725,13 @@ reread_log_header:
                                 dst_log_path);
                         exit(1);
                 }
+
+	/* label it */
+	strcpy((char*) log_hdr_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
+		"xtrabkup ");
+	ut_sprintf_timestamp(
+		(char*) log_hdr_buf + (LOG_FILE_WAS_CREATED_BY_HOT_BACKUP
+				+ (sizeof "xtrabkup ") - 1));
 
 	success = os_file_write(dst_log_path, dst_log, log_hdr_buf,
 			0, 0, LOG_FILE_HDR_SIZE);
@@ -1822,6 +1829,223 @@ reread_log_header:
 
 /* ================= prepare ================= */
 
+bool
+xtrabackup_init_temp_log(void)
+{
+	os_file_t	src_file = -1;
+	os_file_t	dst_file = -1;
+	char	src_path[FN_REFLEN];
+	char	dst_path[FN_REFLEN];
+	ibool	success;
+
+	ulint	field;
+	byte*	log_buf;
+	byte*	log_buf_ = NULL;
+
+	ib_longlong	file_size;
+	ib_longlong	src_offset;
+	ib_longlong	dst_offset;
+
+	dulint	max_no;
+	dulint	max_lsn;
+	ulint	max_field;
+	dulint	checkpoint_no;
+
+
+	max_no = ut_dulint_zero;
+
+	sprintf(dst_path, "%s%s", xtrabackup_target_dir, "/ib_logfile0");
+
+	/* open 'xtrabackup_logfile' */
+	sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+	src_file = os_file_create_simple_no_error_handling(
+					src_path, OS_FILE_OPEN,
+					OS_FILE_READ_WRITE /* OS_FILE_READ_ONLY */, &success);
+	if (!success) {
+		/* The following call prints an error message */
+		os_file_get_last_error(TRUE);
+
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+"  InnoDB: Fatal error: cannot open %s\n.",
+			src_path);
+		goto error;
+	}
+
+	file_size = os_file_get_size_as_iblonglong(src_file);
+
+
+	/* TODO: We should skip the following modifies, if it is not the first time. */
+	log_buf_ = ut_malloc(UNIV_PAGE_SIZE * 2);
+	log_buf = ut_align(log_buf_, UNIV_PAGE_SIZE);
+
+	/* read log file header */
+	success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	if (!success) {
+		goto error;
+	}
+
+	if ( ut_memcmp(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
+			(byte*)"xtrabkup", (sizeof "xtrabkup") - 1) != 0 ) {
+		printf("notice: xtrabackup_logfile was already used to '--prepare'.\n");
+		goto skip_modify;
+	} else {
+		memset(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
+				' ', 4);
+	}
+
+	/* read last checkpoint lsn */
+	for (field = LOG_CHECKPOINT_1; field <= LOG_CHECKPOINT_2;
+			field += LOG_CHECKPOINT_2 - LOG_CHECKPOINT_1) {
+		if (!recv_check_cp_is_consistent(log_buf + field))
+			goto not_consistent;
+
+		checkpoint_no = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_NO);
+
+		if (ut_dulint_cmp(checkpoint_no, max_no) >= 0) {
+			max_no = checkpoint_no;
+			max_lsn = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_LSN);
+			max_field = field;
+/*
+			mach_write_to_4(log_buf + field + LOG_CHECKPOINT_OFFSET,
+					LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
+					ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
+
+			ulint	fold;
+			fold = ut_fold_binary(log_buf + field, LOG_CHECKPOINT_CHECKSUM_1);
+			mach_write_to_4(log_buf + field + LOG_CHECKPOINT_CHECKSUM_1, fold);
+
+			fold = ut_fold_binary(log_buf + field + LOG_CHECKPOINT_LSN,
+				LOG_CHECKPOINT_CHECKSUM_2 - LOG_CHECKPOINT_LSN);
+			mach_write_to_4(log_buf + field + LOG_CHECKPOINT_CHECKSUM_2, fold);
+*/
+		}
+not_consistent:
+		;
+	}
+
+	if (ut_dulint_cmp(max_no, ut_dulint_zero) == 0) {
+		fprintf(stderr, "InnoDB: No valid checkpoint found.\n");
+		goto error;
+	}
+
+
+	/* It seems to be needed to overwrite the both checkpoint area. */
+	ulint	fold;
+	mach_write_to_8(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_LSN, max_lsn);
+	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_OFFSET,
+			LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
+			ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
+	fold = ut_fold_binary(log_buf + LOG_CHECKPOINT_1, LOG_CHECKPOINT_CHECKSUM_1);
+	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_CHECKSUM_1, fold);
+
+	fold = ut_fold_binary(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_LSN,
+		LOG_CHECKPOINT_CHECKSUM_2 - LOG_CHECKPOINT_LSN);
+	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_CHECKSUM_2, fold);
+
+	mach_write_to_8(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_LSN, max_lsn);
+        mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_OFFSET,
+                        LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
+                        ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
+        fold = ut_fold_binary(log_buf + LOG_CHECKPOINT_2, LOG_CHECKPOINT_CHECKSUM_1);
+        mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_CHECKSUM_1, fold);
+
+        fold = ut_fold_binary(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_LSN,
+                LOG_CHECKPOINT_CHECKSUM_2 - LOG_CHECKPOINT_LSN);
+        mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_CHECKSUM_2, fold);
+
+
+	success = os_file_write(src_path, src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	if (!success) {
+		goto error;
+	}
+
+	/* align file size to UNIV_PAGE_SIZE */
+
+	if (file_size % UNIV_PAGE_SIZE) {
+		memset(log_buf, 0, UNIV_PAGE_SIZE);
+		success = os_file_write(src_path, src_file, log_buf,
+				(ulint)(file_size & 0xFFFFFFFFUL),
+				(ulint)(file_size >> 32),
+				UNIV_PAGE_SIZE - (file_size % UNIV_PAGE_SIZE));
+
+		if (!success) {
+			goto error;
+		}
+
+		file_size = os_file_get_size_as_iblonglong(src_file);
+	}
+
+	/* make larger than 2MB */
+	if (file_size < 2*1024*1024L) {
+		memset(log_buf, 0, UNIV_PAGE_SIZE);
+		while (file_size < 2*1024*1024L) {
+			success = os_file_write(src_path, src_file, log_buf,
+				(ulint)(file_size & 0xFFFFFFFFUL),
+				(ulint)(file_size >> 32),
+				UNIV_PAGE_SIZE);
+			if (!success) {
+				goto error;
+			}
+			file_size += UNIV_PAGE_SIZE;
+		}
+		file_size = os_file_get_size_as_iblonglong(src_file);
+	}
+
+	printf("xtrabackup_logfile detected: size=%lld, start_lsn=(%lu %lu)\n",
+		file_size, max_lsn.high, max_lsn.low);
+
+skip_modify:
+	os_file_close(src_file);
+	src_file = -1;
+
+	/* fake InnoDB */
+	innobase_log_group_home_dir = NULL;
+	innobase_log_file_size = file_size;
+	innobase_log_files_in_group = 1;
+	srv_thread_concurrency = 0;
+
+	/* rename 'xtrabackup_logfile' to 'ib_logfile0' */
+	success = os_file_rename(src_path, dst_path);
+	if (!success) {
+		goto error;
+	}
+
+	ut_free(log_buf_);
+
+	return(FALSE);
+
+error:
+	if (src_file != -1)
+		os_file_close(src_file);
+	if (log_buf_)
+		ut_free(log_buf_);
+	fprintf(stderr, "Error: xtrabackup_init_temp_log() failed.");
+	return(TRUE); /*ERROR*/
+}
+
+bool
+xtrabackup_close_temp_log(void)
+{
+	char	src_path[FN_REFLEN];
+	char	dst_path[FN_REFLEN];
+	ibool	success;
+
+	sprintf(dst_path, "%s%s", xtrabackup_target_dir, "/ib_logfile0");
+	sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+
+	/* rename 'ib_logfile0' to 'xtrabackup_logfile' */
+	success = os_file_rename(dst_path, src_path);
+	if (!success) {
+		goto error;
+	}
+
+	return(FALSE);
+error:
+	fprintf(stderr, "Error: xtrabackup_close_temp_log() failed.");
+	return(TRUE); /*ERROR*/
+}
+
 void
 xtrabackup_prepare_func(void)
 {
@@ -1837,28 +2061,38 @@ xtrabackup_prepare_func(void)
 	xtrabackup_target_dir[1]=0;
 
 
-	/* TODO: Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB */
-
+	/* Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB */
+	srv_max_n_threads = 1000;
+	os_sync_mutex = NULL;
+	os_sync_init();
+	sync_init();
+	os_io_init_simple();
+	if(xtrabackup_init_temp_log())
+		goto error;
+	sync_close();
+	sync_initialized = FALSE;
+	os_sync_free();
+	os_sync_mutex = NULL;
 
 	/* check the accessibility of target-dir */
 	/* ############# TODO ##################### */
 
 	if(innodb_init_param())
-		exit(1);
+		goto error;
 
 	if(innodb_init())
-		exit(1);
+		goto error;
 
 	printf("Hello InnoDB world!\n");
 
 	/* TEST: innodb status*/
+/*
 	ulint	trx_list_start = ULINT_UNDEFINED;
 	ulint	trx_list_end = ULINT_UNDEFINED;
 	srv_printf_innodb_monitor(stdout, &trx_list_start, &trx_list_end);
-
+*/
 	/* TEST: list of datafiles and transaction log files and LSN*/
-	/* ############# TODO ##################### */
-
+/*
 	{
 	fil_system_t*   system = fil_system;
 	fil_space_t*	space;
@@ -1869,16 +2103,12 @@ xtrabackup_prepare_func(void)
         space = UT_LIST_GET_FIRST(system->space_list);
 
         while (space != NULL) {
-		/* print info about space */
-
 		printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
 			space->name, space->id, space->purpose, space->size);
 
                 node = UT_LIST_GET_FIRST(space->chain);
 
                 while (node != NULL) {
-			/* print info about nodes */
-
 			printf("node: name=%s, open=%d, size=%d\n",
 				node->name, node->open, node->size);
 
@@ -1889,13 +2119,27 @@ xtrabackup_prepare_func(void)
 
         mutex_exit(&(system->mutex));
 	}
+*/
+
+	/* print binlog position (again?) */
+	printf("\n[notice (again)]\n"
+		"  If you use binary log and don't use any hack of group commit,\n"
+		"  the binary log position seems to be:\n");
+	trx_sys_print_mysql_binlog_offset();
+	printf("\n");
 
 	if(innodb_end())
+		goto error;
+
+	if(xtrabackup_close_temp_log())
 		exit(1);
 
-	printf("################################################\n");
-	printf("Attention: --prepare is not implemented yet!!!!!\n");
-	printf("################################################\n");
+	return;
+
+error:
+	xtrabackup_close_temp_log();
+
+	exit(1);
 }
 
 /* ================= main =================== */

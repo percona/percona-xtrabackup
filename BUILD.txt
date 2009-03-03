@@ -11,6 +11,15 @@ How to build XtraBackup
 	(e.g.)
 	--- mysql-5.0.75/innobase/log/log0recv.c        2008-12-19 02:19:36.000000000 +0900
 	+++ mysql-5.0.75_1/innobase/log/log0recv.c      2009-02-27 19:41:07.000000000 +0900
+	@@ -450,7 +450,7 @@
+
+	 /***************************************************************************
+	 Checks the consistency of the checkpoint info */
+	-static
+	+//static
+	 ibool
+	 recv_check_cp_is_consistent(
+	 /*========================*/
 	@@ -479,7 +479,7 @@
 
 	 /************************************************************
