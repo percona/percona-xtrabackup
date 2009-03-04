@@ -189,9 +189,12 @@ my_bool xtrabackup_backup = FALSE;
 my_bool xtrabackup_prepare = FALSE;
 
 my_bool xtrabackup_suspend_at_end = FALSE;
-longlong xtrabackup_use_memory = 8*1024*1024L;
+longlong xtrabackup_use_memory = 100*1024*1024L;
 
 long xtrabackup_throttle = 0; /* 0:unlimited */
+lint io_ticket;
+os_event_t wait_throttle = NULL;
+
 my_bool xtrabackup_stream = FALSE;
 
 static ulint		n[SRV_MAX_N_IO_THREADS + 5];
@@ -333,14 +336,14 @@ static struct my_option my_long_options[] =
   {"prepare", OPT_XTRA_PREPARE, "prepare a backup for starting mysql server on the backup.",
    (gptr*) &xtrabackup_prepare, (gptr*) &xtrabackup_prepare,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"use-memory", OPT_XTRA_USE_MEMORY, "** nothing for now (planned to use instead of buffer_pool_size) **",
+  {"use-memory", OPT_XTRA_USE_MEMORY, "The value is used instead of buffer_pool_size",
    (gptr*) &xtrabackup_use_memory, (gptr*) &xtrabackup_use_memory,
-   0, GET_LL, REQUIRED_ARG, 8*1024*1024L, 1024*1024L, LONGLONG_MAX, 0,
+   0, GET_LL, REQUIRED_ARG, 100*1024*1024L, 1024*1024L, LONGLONG_MAX, 0,
    1024*1024L, 0},
   {"suspend-at-end", OPT_XTRA_SUSPEND_AT_END, "creates a file 'xtrabackup_suspended' and waits until the user deletes that file at the end of '--backup'",
    (gptr*) &xtrabackup_suspend_at_end, (gptr*) &xtrabackup_suspend_at_end,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"throttle", OPT_XTRA_THROTTLE, "limit count of IO operations per second to IOS values",
+  {"throttle", OPT_XTRA_THROTTLE, "limit count of IO operations (pairs of read&write) per second to IOS values (for '--backup')",
    (gptr*) &xtrabackup_throttle, (gptr*) &xtrabackup_throttle,
    0, GET_LONG, REQUIRED_ARG, 0, 0, LONG_MAX, 0, 1, 0},
   {"stream", OPT_XTRA_STREAM, "** nothing for now **",
@@ -763,6 +766,12 @@ innodb_init_param(void)
 
 	/* Check that values don't overflow on 32-bit systems. */
 	if (sizeof(ulint) == 4) {
+		if (xtrabackup_use_memory > UINT_MAX32) {
+			fprintf(stderr,
+				"use-memory can't be over 4GB"
+				" on 32-bit systems");
+		}
+
 		if (innobase_buffer_pool_size > UINT_MAX32) {
 			fprintf(stderr,
 				"innobase_buffer_pool_size can't be over 4GB"
@@ -891,7 +900,8 @@ innodb_init_param(void)
                 /* Careful here: we first convert the signed long int to ulint
                 and only after that divide */
 
-                srv_pool_size = ((ulint) innobase_buffer_pool_size) / 1024;
+                //srv_pool_size = ((ulint) innobase_buffer_pool_size) / 1024;
+		srv_pool_size = ((ulint) xtrabackup_use_memory) / 1024;
         } else {
                 srv_use_awe = TRUE;
                 srv_pool_size = (ulint)
@@ -1020,6 +1030,15 @@ error:
 
 
 /* ================= backup ================= */
+void
+xtrabackup_io_throttling(void)
+{
+	if (xtrabackup_throttle && (io_ticket--) < 0) {
+		os_event_reset(wait_throttle);
+		os_event_wait(wait_throttle);
+	}
+}
+
 
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
@@ -1104,6 +1123,8 @@ copy_loop:
 		} else {
 			chunk = (ulint)(file_size - offset);
 		}
+
+		xtrabackup_io_throttling();
 
 		success = os_file_read(src_file, page,
 				(ulint)(offset & 0xFFFFFFFFUL),
@@ -1210,6 +1231,8 @@ xtrabackup_copy_logfile(dulint from_lsn)
 		
 	while (!finished) {			
 		end_lsn = ut_dulint_add(start_lsn, RECV_SCAN_SIZE);
+
+		xtrabackup_io_throttling();
 
 		log_group_read_log_seg(LOG_RECOVER, log_sys->buf,
 						group, start_lsn, end_lsn);
@@ -1394,16 +1417,26 @@ ulint
 log_copying_thread(
 	void*	arg)
 {
+	ulint	counter = 0;
+
 	ut_a(dst_log != -1);
 
 	log_copying_running = TRUE;
 
 	while(log_copying) {
-		sleep(SLEEPING_PERIOD);
+		sleep(1);
 
-		if(xtrabackup_copy_logfile(log_copy_scanned_lsn))
-			goto end;
+		counter++;
+		if(counter >= SLEEPING_PERIOD) {
+			if(xtrabackup_copy_logfile(log_copy_scanned_lsn))
+				goto end;
+			counter = 0;
+		}
 	}
+
+	/* last copying */
+	if(xtrabackup_copy_logfile(log_copy_scanned_lsn))
+		goto end;
 
 	log_copying_succeed = TRUE;
 end:
@@ -1411,6 +1444,37 @@ end:
 	os_thread_exit(NULL);
 }
 
+/* io throttle watching (rough) */
+static
+#ifndef __WIN__
+void*
+#else
+ulint
+#endif
+io_watching_thread(
+	void*	arg)
+{
+	/* currently, for --backup only */
+	ut_a(xtrabackup_backup);
+
+	while (log_copying) {
+		sleep(1);
+
+		//for DEBUG
+		if (io_ticket == xtrabackup_throttle) {
+			fprintf(stderr, "There seem to be no IO...?\n");
+		}
+
+		io_ticket = xtrabackup_throttle;
+		os_event_set(wait_throttle);
+	}
+
+	/* stop io throttle */
+	xtrabackup_throttle = 0;
+	os_event_set(wait_throttle);
+
+	os_thread_exit(NULL);
+}
 
 /************************************************************************
 I/o-handler thread function. */
@@ -1742,6 +1806,20 @@ reread_log_header:
 		exit(1);
 	}
 
+	/* start flag */
+	log_copying = TRUE;
+
+	/* start io throttle */
+	if(xtrabackup_throttle) {
+		os_thread_id_t io_watching_thread_id;
+
+		io_ticket = xtrabackup_throttle;
+		wait_throttle = os_event_create(NULL);
+
+		os_thread_create(io_watching_thread, NULL, &io_watching_thread_id);
+	}
+
+
 	/* copy log file by current position */
 	if(xtrabackup_copy_logfile(checkpoint_lsn_start))
 		exit(1);
@@ -1750,7 +1828,6 @@ reread_log_header:
 	/* start back ground thread to copy newer log */
 	os_thread_id_t log_copying_thread_id;
 
-	log_copying = TRUE;
 	os_thread_create(log_copying_thread, NULL, &log_copying_thread_id);
 
 
@@ -1806,6 +1883,35 @@ reread_log_header:
         }
 
 
+	/* suspend-at-end */
+	if (xtrabackup_suspend_at_end) {
+		os_file_t	suspend_file = -1;
+		char	suspend_path[FN_REFLEN];
+		ibool	success, exists;
+		os_file_type_t	type;
+
+		sprintf(suspend_path, "%s%s", xtrabackup_target_dir,
+			"/xtrabackup_suspended");
+
+		suspend_file = os_file_create(suspend_path, OS_FILE_OVERWRITE,
+						OS_FILE_AIO, OS_DATA_FILE, &success);
+
+		if (!success) {
+			fprintf(stderr, "Error: failed to create file 'xtrabackup_suspended'\n");
+		}
+
+		if (!suspend_file == -1)
+			os_file_close(suspend_file);
+
+		exists = TRUE;
+		while (exists) {
+			sleep(1);
+			success = os_file_status(suspend_path, &exists, &type);
+			if (!success)
+				break;
+		}
+	}
+
 
 	/* stop log_copying_thread */
 	log_copying = FALSE;
@@ -1821,6 +1927,9 @@ reread_log_header:
 	}
 
         os_file_close(dst_log);
+
+	if (wait_throttle)
+		os_event_free(wait_throttle);
 
         printf("Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
                 checkpoint_lsn_start.high, checkpoint_lsn_start.low,
