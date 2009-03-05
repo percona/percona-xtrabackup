@@ -1,5 +1,5 @@
 --- innobackup-1.5.1_orig	2009-03-04 21:41:35.000000000 +0900
-+++ innobackup-1.5.1	2009-03-05 11:21:34.000000000 +0900
++++ innobackup-1.5.1	2009-03-05 12:25:14.000000000 +0900
 @@ -8,6 +8,7 @@
  
  use strict;
@@ -149,16 +149,7 @@
  
      # make a list of all ibdata files in the backup directory and all
      # directories in the backup directory under which there are ibdata files
-@@ -628,6 +639,8 @@
-         }
-     }
-     closedir(DIR);
-+    system("rm '$orig_iblog_dir/ib_logfile'*")
-+        and Die "Failed to remove '$orig_iblog_dir/ib_logfile*': $!";
- 
-     print "$prefix Finished copying back files.\n\n";
- }
-@@ -640,17 +653,19 @@
+@@ -640,17 +651,19 @@
  sub apply_log {
      my $rcode;
      my $cmdline = '';
@@ -181,7 +172,7 @@
      $now = current_time();
      print "\n$now  $prefix Starting ibbackup with command: $cmdline\n\n";
      $rcode = system("$cmdline");
-@@ -658,6 +673,14 @@
+@@ -658,6 +671,14 @@
          # failure
          Die "\n$prefix ibbackup failed";
      }
@@ -196,7 +187,7 @@
  }
  
  
-@@ -702,25 +725,29 @@
+@@ -702,25 +723,29 @@
  # program for backing up InnoDB tables and indexes.
  #
  sub start_ibbackup {
@@ -233,7 +224,7 @@
  
      # run ibbackup as a child process
      $now = current_time();
-@@ -1174,8 +1201,8 @@
+@@ -1174,8 +1199,8 @@
              $mysql_server_version = $lines[1];
              print "$prefix Using mysql server version $mysql_server_version\n";
          }
@@ -244,7 +235,7 @@
          print "\n";
          
          if ($option_include 
-@@ -1193,26 +1220,27 @@
+@@ -1193,26 +1218,27 @@
      $SIG{PIPE} = \&catch_sigpipe;
  
      # read MySQL options file
@@ -283,7 +274,7 @@
      }         
  }
  
-@@ -1290,12 +1318,13 @@
+@@ -1290,12 +1316,13 @@
      $rcode = GetOptions('compress:i' => \$option_compress,
                          'help' => \$option_help,
                          'version' => \$option_version,
@@ -298,7 +289,7 @@
                          'uncompress' => \$option_uncompress,
                          'password=s' => \$option_mysql_password,
                          'user=s' => \$option_mysql_user,
-@@ -1331,25 +1360,25 @@
+@@ -1331,25 +1358,25 @@
  	$option_compress = 0;
      }
  
@@ -329,7 +320,7 @@
      }        
  
      print "\n";
-@@ -1576,15 +1605,20 @@
+@@ -1576,15 +1603,20 @@
  #                   options are returned
  #
  sub read_config_file {
@@ -352,7 +343,7 @@
  
      # classify lines and save option values
      $group = 'default';
-@@ -1637,7 +1671,7 @@
+@@ -1637,7 +1669,7 @@
            # unknown
            print("$prefix: Warning: Ignored unrecognized line ",
                  $i + 1,
@@ -361,7 +352,7 @@
                  );
        }
     }
-@@ -1662,14 +1696,14 @@
+@@ -1662,14 +1694,14 @@
  
      if (!exists $config{$group}) {
          # no group
