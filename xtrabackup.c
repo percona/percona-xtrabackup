@@ -4,7 +4,7 @@ XtraBackup: The another hot backup tool for InnoDB
 Created 3/3/2009 Yasufumi Kinoshita
 *******************************************************/
 
-#define XTRABACKUP_VERSION "prototype-0.1"
+#define XTRABACKUP_VERSION "prototype-0.2"
 
 //#define XTRABACKUP_TARGET_IS_PLUGIN
 
@@ -187,9 +187,11 @@ char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
 char *xtrabackup_target_dir= xtrabackup_real_target_dir;
 my_bool xtrabackup_backup = FALSE;
 my_bool xtrabackup_prepare = FALSE;
+my_bool xtrabackup_print_param = FALSE;
 
 my_bool xtrabackup_suspend_at_end = FALSE;
 longlong xtrabackup_use_memory = 100*1024*1024L;
+my_bool xtrabackup_create_ib_logfile = FALSE;
 
 long xtrabackup_throttle = 0; /* 0:unlimited */
 lint io_ticket;
@@ -207,6 +209,8 @@ ib_longlong log_copy_offset = 0;
 ibool log_copying = TRUE;
 ibool log_copying_running = FALSE;
 ibool log_copying_succeed = FALSE;
+
+ibool xtrabackup_logfile_is_renamed = FALSE;
 
 /* === sharing with thread === */
 os_file_t       dst_log = -1;
@@ -237,11 +241,13 @@ long innobase_force_recovery = 0;
 long innobase_lock_wait_timeout = 50;
 long innobase_log_buffer_size = 1024*1024L;
 long innobase_log_files_in_group = 2;
+long innobase_log_files_in_group_backup;
 long innobase_mirrored_log_groups = 1;
 long innobase_open_files = 300L;
 
 longlong innobase_buffer_pool_size = 8*1024*1024L;
 longlong innobase_log_file_size = 5*1024*1024L;
+longlong innobase_log_file_size_backup;
 
 /* The default values for the following char* start-up parameters
 are determined in innobase_init below: */
@@ -249,6 +255,7 @@ are determined in innobase_init below: */
 char*	innobase_data_home_dir			= NULL;
 char*	innobase_data_file_path 		= NULL;
 char*	innobase_log_group_home_dir		= NULL;
+char*	innobase_log_group_home_dir_backup	= NULL;
 char*	innobase_log_arch_dir			= NULL;/* unused */
 /* The following has a misleading name: starting from 4.0.5, this also
 affects Windows: */
@@ -287,10 +294,12 @@ enum options_xtrabackup
   OPT_XTRA_TARGET_DIR=256,
   OPT_XTRA_BACKUP,
   OPT_XTRA_PREPARE,
+  OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_SUSPEND_AT_END,
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_THROTTLE,
   OPT_XTRA_STREAM,
+  OPT_XTRA_CREATE_IB_LOGFILE,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
   OPT_INNODB_DATA_HOME_DIR,
@@ -336,6 +345,9 @@ static struct my_option my_long_options[] =
   {"prepare", OPT_XTRA_PREPARE, "prepare a backup for starting mysql server on the backup.",
    (gptr*) &xtrabackup_prepare, (gptr*) &xtrabackup_prepare,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"print-param", OPT_XTRA_PRINT_PARAM, "print parameter of mysqld needed for copyback.",
+   (gptr*) &xtrabackup_print_param, (gptr*) &xtrabackup_print_param,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"use-memory", OPT_XTRA_USE_MEMORY, "The value is used instead of buffer_pool_size",
    (gptr*) &xtrabackup_use_memory, (gptr*) &xtrabackup_use_memory,
    0, GET_LL, REQUIRED_ARG, 100*1024*1024L, 1024*1024L, LONGLONG_MAX, 0,
@@ -348,6 +360,9 @@ static struct my_option my_long_options[] =
    0, GET_LONG, REQUIRED_ARG, 0, 0, LONG_MAX, 0, 1, 0},
   {"stream", OPT_XTRA_STREAM, "** nothing for now **",
    (gptr*) &xtrabackup_stream, (gptr*) &xtrabackup_stream,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"create-ib-logfile", OPT_XTRA_CREATE_IB_LOGFILE, "** not work for now** creates ib_logfile* also after '--prepare'. ### If you want create ib_logfile*, only re-execute this command in same options. ###",
+   (gptr*) &xtrabackup_create_ib_logfile, (gptr*) &xtrabackup_create_ib_logfile,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
   {"datadir", 'h', "Path to the database root.", (gptr*) &mysql_data_home,
@@ -547,7 +562,6 @@ static void print_version(void)
 
 static void usage(void)
 {
-  print_version();
   puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
 
   printf("Usage: [%s --backup | %s --prepare] [OPTIONS]\n",my_progname,my_progname);
@@ -1056,7 +1070,7 @@ xtrabackup_copy_datafile(fil_node_t* node)
 	ulint		space_id;
 	ib_longlong	file_size;
 	ib_longlong	offset;
-
+	ibool		src_exist = TRUE;
 
 	sprintf(dst_path, "%s%s", xtrabackup_target_dir, strstr(node->name, "/"));
 
@@ -1072,10 +1086,10 @@ xtrabackup_copy_datafile(fil_node_t* node)
 			ut_print_timestamp(stderr);
 
 			fprintf(stderr,
-"  InnoDB: Fatal error: cannot open %s\n."
+"  InnoDB: error: cannot open %s\n."
 "InnoDB: Have you deleted .ibd files under a running mysqld server?\n",
 				node->name);
-			exit(1);
+			src_exist = FALSE;
 		}
 	} else {
 		src_file = node->handle;
@@ -1093,8 +1107,11 @@ xtrabackup_copy_datafile(fil_node_t* node)
                         fprintf(stderr,
 "  InnoDB: error: cannot open %s\n.",
                                 dst_path);
-                        exit(1);
+                        goto error;
                 }
+
+	if(!src_exist)
+		goto error;
 
 	/* copy : TODO: tune later */
 	printf("Copying %s \n     to %s\n", node->name, dst_path);
@@ -1461,9 +1478,9 @@ io_watching_thread(
 		sleep(1);
 
 		//for DEBUG
-		if (io_ticket == xtrabackup_throttle) {
-			fprintf(stderr, "There seem to be no IO...?\n");
-		}
+		//if (io_ticket == xtrabackup_throttle) {
+		//	fprintf(stderr, "There seem to be no IO...?\n");
+		//}
 
 		io_ticket = xtrabackup_throttle;
 		os_event_set(wait_throttle);
@@ -1516,7 +1533,7 @@ io_handler_thread(
 #endif
 }
 
-/* CAUTION: Don't rename file_per_table during backup */
+/* CAUTION(?): Don't rename file_per_table during backup */
 void
 xtrabackup_backup_func(void)
 {
@@ -1867,7 +1884,7 @@ reread_log_header:
 
 			/* copy the datafile */
 			if(xtrabackup_copy_datafile(node))
-				exit(1);
+				printf("continuing anyway.\n");
 
                         node = UT_LIST_GET_NEXT(chain, node);
                 }
@@ -1910,6 +1927,7 @@ reread_log_header:
 			if (!success)
 				break;
 		}
+		xtrabackup_suspend_at_end = FALSE; /* suspend is 1 time */
 	}
 
 
@@ -1999,8 +2017,9 @@ xtrabackup_init_temp_log(void)
 		printf("notice: xtrabackup_logfile was already used to '--prepare'.\n");
 		goto skip_modify;
 	} else {
-		memset(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
-				' ', 4);
+		/* clear it later */
+		//memset(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
+		//		' ', 4);
 	}
 
 	/* read last checkpoint lsn */
@@ -2104,14 +2123,19 @@ not_consistent:
 	printf("xtrabackup_logfile detected: size=%lld, start_lsn=(%lu %lu)\n",
 		file_size, max_lsn.high, max_lsn.low);
 
-skip_modify:
 	os_file_close(src_file);
 	src_file = -1;
 
+	/* Backup log parameters */
+	innobase_log_group_home_dir_backup = innobase_log_group_home_dir;
+	innobase_log_file_size_backup      = innobase_log_file_size;
+	innobase_log_files_in_group_backup = innobase_log_files_in_group;
+
 	/* fake InnoDB */
 	innobase_log_group_home_dir = NULL;
-	innobase_log_file_size = file_size;
+	innobase_log_file_size      = file_size;
 	innobase_log_files_in_group = 1;
+
 	srv_thread_concurrency = 0;
 
 	/* rename 'xtrabackup_logfile' to 'ib_logfile0' */
@@ -2119,9 +2143,16 @@ skip_modify:
 	if (!success) {
 		goto error;
 	}
+	xtrabackup_logfile_is_renamed = TRUE;
 
 	ut_free(log_buf_);
 
+	return(FALSE);
+
+skip_modify:
+	os_file_close(src_file);
+	src_file = -1;
+	ut_free(log_buf_);
 	return(FALSE);
 
 error:
@@ -2134,23 +2165,70 @@ error:
 }
 
 bool
-xtrabackup_close_temp_log(void)
+xtrabackup_close_temp_log(bool clear_flag)
 {
+	os_file_t	src_file = -1;
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
 	ibool	success;
 
+	byte*	log_buf;
+	byte*	log_buf_ = NULL;
+
+
+	if (!xtrabackup_logfile_is_renamed)
+		return(FALSE);
+
+	/* Restore log parameters */
+	innobase_log_group_home_dir = innobase_log_group_home_dir_backup;
+	innobase_log_file_size      = innobase_log_file_size_backup;
+	innobase_log_files_in_group = innobase_log_files_in_group_backup;
+
+	/* rename 'ib_logfile0' to 'xtrabackup_logfile' */
 	sprintf(dst_path, "%s%s", xtrabackup_target_dir, "/ib_logfile0");
 	sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
 
-	/* rename 'ib_logfile0' to 'xtrabackup_logfile' */
 	success = os_file_rename(dst_path, src_path);
 	if (!success) {
 		goto error;
 	}
+	xtrabackup_logfile_is_renamed = FALSE;
+
+	if (!clear_flag)
+		return(FALSE);
+
+	/* clear LOG_FILE_WAS_CREATED_BY_HOT_BACKUP field */
+	src_file = os_file_create_simple_no_error_handling(
+				src_path, OS_FILE_OPEN,
+				OS_FILE_READ_WRITE, &success);
+	if (!success) {
+		goto error;
+	}
+
+	log_buf_ = ut_malloc(LOG_FILE_HDR_SIZE * 2);
+	log_buf = ut_align(log_buf_, LOG_FILE_HDR_SIZE);
+
+	success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	if (!success) {
+		goto error;
+	}
+
+	memset(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP, ' ', 4);
+
+	success = os_file_write(src_path, src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	if (!success) {
+		goto error;
+	}
+
+	os_file_close(src_file);
+	src_file = -1;
 
 	return(FALSE);
 error:
+	if (src_file != -1)
+		os_file_close(src_file);
+	if (log_buf_)
+		ut_free(log_buf_);
 	fprintf(stderr, "Error: xtrabackup_close_temp_log() failed.");
 	return(TRUE); /*ERROR*/
 }
@@ -2192,7 +2270,7 @@ xtrabackup_prepare_func(void)
 	if(innodb_init())
 		goto error;
 
-	printf("Hello InnoDB world!\n");
+	//printf("Hello InnoDB world!\n");
 
 	/* TEST: innodb status*/
 /*
@@ -2240,13 +2318,36 @@ xtrabackup_prepare_func(void)
 	if(innodb_end())
 		goto error;
 
-	if(xtrabackup_close_temp_log())
+	sync_initialized = FALSE;
+	os_sync_mutex = NULL;
+
+	if(xtrabackup_close_temp_log(TRUE))
 		exit(1);
+
+	if(!xtrabackup_create_ib_logfile)
+		return;
+
+	/* TODO: make more smart */
+
+	printf("\n[notice]\nWe cannot call InnoDB second time during the process lifetime.\n");
+	printf("Please re-execte to create ib_logfile*. Sorry.\n");
+/*
+	printf("Restart InnoDB to create ib_logfile*.\n");
+
+	if(innodb_init_param())
+		goto error;
+
+	if(innodb_init())
+		goto error;
+
+	if(innodb_end())
+		goto error;
+*/
 
 	return;
 
 error:
-	xtrabackup_close_temp_log();
+	xtrabackup_close_temp_log(FALSE);
 
 	exit(1);
 }
@@ -2258,6 +2359,8 @@ int main(int argc, char **argv)
 	int ho_error;
 
 	MY_INIT(argv[0]);
+
+	print_version();
 
 	load_defaults("my",load_default_groups,&argc,&argv);
 
@@ -2303,6 +2406,27 @@ next_opt:
 
 	if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
 		exit(ho_error);
+
+	if (strcmp(mysql_data_home, "./") == 0) {
+		if (!xtrabackup_print_param)
+			usage();
+		printf("\nError: Please set parameter 'datadir'\n");
+		exit(-1);
+	}
+
+	/* --print-param */
+	if (xtrabackup_print_param) {
+		printf("# This MySQL options file was generated by XtraBackup.\n");
+		printf("[mysqld]\n");
+		printf("datadir = %s\n", mysql_data_home);
+		printf("innodb_data_home_dir = %s\n",
+			innobase_data_home_dir ? innobase_data_home_dir : mysql_data_home);
+		printf("innodb_data_file_path = %s\n",
+			innobase_data_file_path ? innobase_data_file_path : "ibdata1:10M:autoextend");
+		printf("innodb_log_group_home_dir = %s\n",
+			innobase_log_group_home_dir ? innobase_log_group_home_dir : mysql_data_home);
+		exit(0);
+	}
 
 	/* cannot execute both for now */
 	if (xtrabackup_backup == xtrabackup_prepare) { /* !XOR (for now) */

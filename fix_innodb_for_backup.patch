@@ -1,6 +1,51 @@
+diff -r 908616611518 innobase/fil/fil0fil.c
+--- a/innobase/fil/fil0fil.c	Tue Mar 03 08:02:54 2009 -0800
++++ b/innobase/fil/fil0fil.c	Tue Mar 03 08:06:20 2009 -0800
+@@ -2027,7 +2027,7 @@
+ 	}
+ 
+ 	if (success) {
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 		/* Write a log record about the deletion of the .ibd
+ 		file, so that ibbackup can replay it in the
+ 		--apply-log phase. We use a dummy mtr and the familiar
+@@ -2300,7 +2300,7 @@
+ 
+ 	mutex_exit(&(system->mutex));
+ 
+-#ifndef UNIV_HOTBACKUP	
++#ifdef UNDEFINED	
+ 	if (success) {
+ 		mtr_t		mtr;
+ 
+@@ -2471,7 +2471,7 @@
+ 
+ 	fil_node_create(path, size, *space_id, FALSE);
+ 
+-#ifndef UNIV_HOTBACKUP	
++#ifdef UNDEFINED	
+ 	{
+ 	mtr_t		mtr;
+ 
 diff -r 908616611518 innobase/log/log0recv.c
 --- a/innobase/log/log0recv.c	Tue Mar 03 08:02:54 2009 -0800
 +++ b/innobase/log/log0recv.c	Tue Mar 03 08:06:20 2009 -0800
+@@ -35,12 +35,12 @@
+ #include "fil0fil.h"
+ #include "sync0sync.h"
+ 
+-#ifdef UNIV_HOTBACKUP
++//#ifdef UNIV_HOTBACKUP
+ /* This is set to FALSE if the backup was originally taken with the
+ ibbackup --include regexp option: then we do not want to create tables in
+ directories which were not included */
+ ibool	recv_replay_file_ops	= TRUE;
+-#endif /* UNIV_HOTBACKUP */
++//#endif /* UNIV_HOTBACKUP */
+ 
+ /* Log records are stored in the hash table in chunks at most of this size;
+ this must be less than UNIV_PAGE_SIZE as it is stored in the buffer pool */
 @@ -450,7 +450,7 @@
  
  /***************************************************************************
@@ -28,6 +73,24 @@ diff -r 908616611518 innobase/log/log0recv.c
  ibool
  log_block_checksum_is_ok_or_old_format(
  /*===================================*/
+@@ -2076,7 +2076,7 @@
+ 		} else if (store_to_hash && (type == MLOG_FILE_CREATE
+ 					     || type == MLOG_FILE_RENAME
+ 					     || type == MLOG_FILE_DELETE)) {
+-#ifdef UNIV_HOTBACKUP
++//#ifdef UNIV_HOTBACKUP
+ 			if (recv_replay_file_ops) {
+ 
+ 				/* In ibbackup --apply-log, replay an .ibd file
+@@ -2093,7 +2093,7 @@
+ 					ut_a(0);
+ 				}
+ 			}
+-#endif
++//#endif
+ 			/* In normal mysqld crash recovery we do not try to
+ 			replay file operations */
+ 		} else if (store_to_hash) {
 diff -r 908616611518 innobase/os/os0file.c
 --- a/innobase/os/os0file.c	Tue Mar 03 08:02:54 2009 -0800
 +++ b/innobase/os/os0file.c	Tue Mar 03 08:06:20 2009 -0800

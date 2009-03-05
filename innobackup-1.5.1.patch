@@ -1,0 +1,380 @@
+--- innobackup-1.5.1_orig	2009-03-04 21:41:35.000000000 +0900
++++ innobackup-1.5.1	2009-03-05 11:21:34.000000000 +0900
+@@ -8,6 +8,7 @@
+ 
+ use strict;
+ use Getopt::Long;
++use File::Spec;
+ use POSIX "strftime";
+ use POSIX ":sys_wait_h";
+ use POSIX "tmpnam";
+@@ -15,7 +16,7 @@
+ 
+ 
+ # version of this script
+-my $innobackup_version = '1.5.1';
++my $innobackup_version = '1.5.1-xtrabackup';
+ 
+ # copyright notice
+ my $copyright_notice = 
+@@ -64,6 +65,7 @@
+ my $option_copy_back = '';
+ my $option_include = '';
+ my $option_databases = '';
++my $option_throttle = '';
+ my $option_sleep = '';
+ my $option_compress = 999;
+ my $option_uncompress = '';
+@@ -74,10 +76,10 @@
+ my $option_mysql_socket = '';
+ my $option_no_timestamp = '';
+ my $option_slave_info = '';
+-my $option_ibbackup_binary = 'ibbackup';
++my $option_ibbackup_binary = './xtrabackup'; #TODO: fix it later
+ 
+ # name of the my.cnf configuration file
+-my $config_file = '';
++#my $config_file = '';
+ 
+ # root of the backup directory
+ my $backup_root = '';
+@@ -92,13 +94,13 @@
+ my $innodb_log_group_home_dir = '';
+ 
+ # backup my.cnf file
+-my $backup_config_file = '';
++#my $backup_config_file = '';
+ 
+ # options from the options file
+ my %config;
+ 
+ # options from the backup options file
+-my %backup_config;
++#my %backup_config;
+ 
+ # list of databases to be included in a backup
+ my %databases_list;
+@@ -212,10 +214,10 @@
+ innobackup [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME] 
+            [--password=WORD] [--port=PORT] [--socket=SOCKET] [--no-timestamp] 
+            [--ibbackup=IBBACKUP-BINARY] [--slave-info]
+-           [--databases=LIST] MY.CNF BACKUP-ROOT-DIR
++           [--databases=LIST] BACKUP-ROOT-DIR
+ innobackup --apply-log [--use-memory=MB] [--uncompress] 
+-           [--ibbackup=IBBACKUP-BINARY] MY.CNF BACKUP-DIR
+-innobackup --copy-back MY.CNF BACKUP-DIR
++           [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
++innobackup --copy-back BACKUP-DIR
+ 
+ The first command line above makes a hot backup of a MySQL database.
+ By default it creates a backup directory (named by the current date
+@@ -267,12 +269,18 @@
+                 memory in restoration.
+                 Try 'ibbackup --help' for more details on this option.
+ 
++    --throttle=IOS
++                This option is passed to the xtrabackup child process.
++                It limits count of IO operations (pairs of read&write) per
++                second to IOS values (for '--backup')
++
+     --sleep=MS  This option is passed to the ibbackup child process.
+                 It instructs the ibbackup program to sleep 
+                 MS milliseconds after each 1 MB of copied data.
+                 You can use this parameter to tune the additional 
+                 disk i/o load the ibbackup program causes on the computer.
+                 Try 'ibbackup --help' for more details on this option.
++                ** it is not supported by xtrabackup **
+ 
+     --compress[=LEVEL]
+                 This option is passed to the ibbackup child process.
+@@ -283,6 +291,7 @@
+                 9 gives best compression, and 0 means no compression. 
+                 If compression level is not given, the default level 1 is used.
+                 Try 'ibbackup --help' for more details on this option.
++                ** it is not supported by xtrabackup yet **
+ 
+     --include=REGEXP 
+                 This option is passed to the ibbackup child process.
+@@ -295,6 +304,7 @@
+                 included in the backup. The regular expression should
+                 be of the POSIX 1003.2 "extended" form.  
+                 Try 'ibbackup --help' for more details on this option.
++                ** it is not supported by xtrabackup yet **
+ 
+     --databases=LIST
+                 This option is used to specify the list of databases that
+@@ -312,6 +322,7 @@
+                 This option is passed to the ibbackup child process.
+                 It tells ibbackup to uncompress compressed InnoDB data files.
+                 Try 'ibbackup --help' for more details on this option.
++                ** it is not supported by xtrabackup yet **
+                 
+     --user=NAME This option is passed to the mysql child process.
+                 It defines the user for database login if not current user.
+@@ -504,7 +515,7 @@
+     my $orig_iblog_dir =
+         get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
+     my $excluded_files = 
+-        '^(\.\.?|backup-my\.cnf|ibbackup_logfile|mysql-std(err|out)|.*\.ibz)$';
++        '^(\.\.?|backup-my\.cnf|xtrabackup_logfile|mysql-std(err|out)|.*\.ibz)$';
+     my @ibdata_files;
+     my $iblog_files = '^ib_logfile.*$';
+     my $compressed_data_file = '.*\.ibz$';
+@@ -526,17 +537,17 @@
+ 
+     # check that the original options file and the backup options file have
+     # the same value for "innodb_data_file_path" option
+-    $backup_innodb_data_file_path = 
+-        get_option(\%backup_config, 'mysqld', 'innodb_data_file_path');
+-    if (!are_equal_innodb_data_file_paths($orig_innodb_data_file_path, 
+-                                          $backup_innodb_data_file_path)
+-    ) {
+-        Die "The value of 'innodb_data_file_path' option in the original "
+-          . "my.cnf file '$config_file' is different from the value "
+-          . "in the backup my.cnf file '$backup_config_file'.\n(original: "
+-          . "'$orig_innodb_data_file_path')\n"
+-          . "(backup:   '$backup_innodb_data_file_path')";
+-    }
++    #$backup_innodb_data_file_path = 
++    #    get_option(\%backup_config, 'mysqld', 'innodb_data_file_path');
++    #if (!are_equal_innodb_data_file_paths($orig_innodb_data_file_path, 
++    #                                      $backup_innodb_data_file_path)
++    #) {
++    #    Die "The value of 'innodb_data_file_path' option in the original "
++    #      . "my.cnf file '$config_file' is different from the value "
++    #      . "in the backup my.cnf file '$backup_config_file'.\n(original: "
++    #      . "'$orig_innodb_data_file_path')\n"
++    #      . "(backup:   '$backup_innodb_data_file_path')";
++    #}
+ 
+     # make a list of all ibdata files in the backup directory and all
+     # directories in the backup directory under which there are ibdata files
+@@ -628,6 +639,8 @@
+         }
+     }
+     closedir(DIR);
++    system("rm '$orig_iblog_dir/ib_logfile'*")
++        and Die "Failed to remove '$orig_iblog_dir/ib_logfile*': $!";
+ 
+     print "$prefix Finished copying back files.\n\n";
+ }
+@@ -640,17 +653,19 @@
+ sub apply_log {
+     my $rcode;
+     my $cmdline = '';
+-    my $options = '--restore';
++    my $options = '--prepare';
++
++    $options = $options . " --target-dir=$backup_dir";
+ 
+     if ($option_uncompress) {
+         $options = $options . ' --uncompress';
+     }
+     if ($option_use_memory) {
+-        $options = $options . " --use-memory $option_use_memory";
++        $options = $options . " --use-memory=$option_use_memory";
+     }
+ 
+     # run ibbackup as a child process
+-    $cmdline = "$option_ibbackup_binary $options $backup_dir/backup-my.cnf";
++    $cmdline = "$option_ibbackup_binary $options";
+     $now = current_time();
+     print "\n$now  $prefix Starting ibbackup with command: $cmdline\n\n";
+     $rcode = system("$cmdline");
+@@ -658,6 +673,14 @@
+         # failure
+         Die "\n$prefix ibbackup failed";
+     }
++
++    $now = current_time();
++    print "\n$now  $prefix Restarting xtrabackup with command: $cmdline\nfor creating ib_logfile*\n\n";
++    $rcode = system("$cmdline");
++    if ($rcode) {
++        # failure
++        Die "\n$prefix xtrabackup (2nd execution) failed";
++    }
+ }
+ 
+ 
+@@ -702,25 +725,29 @@
+ # program for backing up InnoDB tables and indexes.
+ #
+ sub start_ibbackup {
+-    my $options = '--suspend-at-end';
++    my $options = '--backup --suspend-at-end';
+     my $cmdline = '';
+     my $pid = undef;
+ 
++    $options = $options . " --target-dir=$backup_dir";
++
+     # prepare command line for running ibbackup
++    if ($option_throttle) {
++        $options = $options . " --throttle=$option_throttle";
++    }
+     if ($option_sleep) {
+-        $options = $options . " --sleep $option_sleep";
++        $options = $options . " --sleep=$option_sleep";
+     }
+     if ($option_compress) {
+-        $options = $options . " --compress $option_compress";
++        $options = $options . " --compress=$option_compress";
+     }
+     if ($option_use_memory) {
+-        $options = $options . " --use-memory $option_use_memory";
++        $options = $options . " --use-memory=$option_use_memory";
+     }
+     if ($option_include) {
+-        $options = $options . " --include '$option_include'";
++        $options = $options . " --include='$option_include'";
+     }
+-    $cmdline = "$option_ibbackup_binary $options $config_file "
+-        ."$backup_config_file";
++    $cmdline = "$option_ibbackup_binary $options";
+ 
+     # run ibbackup as a child process
+     $now = current_time();
+@@ -1174,8 +1201,8 @@
+             $mysql_server_version = $lines[1];
+             print "$prefix Using mysql server version $mysql_server_version\n";
+         }
+-        require_external($option_ibbackup_binary, '--license', 
+-                         'version (\S+)', \$ibbackup_version);
++        #require_external($option_ibbackup_binary, '--license', 
++        #                 'version (\S+)', \$ibbackup_version);
+         print "\n";
+         
+         if ($option_include 
+@@ -1193,26 +1220,27 @@
+     $SIG{PIPE} = \&catch_sigpipe;
+ 
+     # read MySQL options file
+-    read_config_file($config_file, \%config);
++    #read_config_file($config_file, \%config);
++    read_config_file(\%config);
+ 
+     # get innodb log home directory from options file
+-    $innodb_log_group_home_dir = 
+-        get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
++    #$innodb_log_group_home_dir = 
++    #    get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
+ 
+     if (!$option_apply_log && !$option_copy_back) {
+         # we are making a backup, create a new backup directory
+-        $backup_dir = make_backup_dir();
++        $backup_dir = File::Spec->rel2abs(make_backup_dir());
+         print "$prefix Created backup directory $backup_dir\n";
+-        $backup_config_file = $backup_dir . '/backup-my.cnf';
+-        write_backup_config_file($backup_config_file);
+-        $suspend_file = $backup_dir . '/ibbackup_suspended';
++        #$backup_config_file = $backup_dir . '/backup-my.cnf';
++        #write_backup_config_file($backup_config_file);
++        $suspend_file = $backup_dir . '/xtrabackup_suspended';
+         $mysql_stdout = $backup_dir . '/mysql-stdout';
+         $mysql_stderr = $backup_dir . '/mysql-stderr';
+-        $binlog_info = $backup_dir . '/ibbackup_binlog_info';
+-        $slave_info = $backup_dir . '/ibbackup_slave_info';
++        $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
++        $slave_info = $backup_dir . '/xtrabackup_slave_info';
+     } elsif ($option_copy_back) {
+-        $backup_config_file = $backup_dir . '/backup-my.cnf';
+-        read_config_file($backup_config_file, \%backup_config);
++        #$backup_config_file = $backup_dir . '/backup-my.cnf';
++        #read_config_file($backup_config_file, \%backup_config);
+     }         
+ }
+ 
+@@ -1290,12 +1318,13 @@
+     $rcode = GetOptions('compress:i' => \$option_compress,
+                         'help' => \$option_help,
+                         'version' => \$option_version,
++                        'throttle=i' => \$option_throttle,
+                         'sleep=i' => \$option_sleep,
+                         'apply-log' => \$option_apply_log,
+                         'copy-back' => \$option_copy_back,
+                         'include=s' => \$option_include,
+ 			'databases=s' => \$option_databases,
+-                        'use-memory=i' => \$option_use_memory,
++                        'use-memory=s' => \$option_use_memory,
+                         'uncompress' => \$option_uncompress,
+                         'password=s' => \$option_mysql_password,
+                         'user=s' => \$option_mysql_user,
+@@ -1331,25 +1360,25 @@
+ 	$option_compress = 0;
+     }
+ 
+-    if (@ARGV < 2) {
++    if (@ARGV < 1) {
+         print "$prefix Missing command line argument\n";
+         usage();
+         exit(1);
+-    } elsif (@ARGV > 2) {
++    } elsif (@ARGV > 1) {
+         print "$prefix Too many command line arguments\n";
+         usage();
+         exit(1);
+     }
+ 
+     # get options file name
+-    $config_file = $ARGV[0];
++    #$config_file = $ARGV[0];
+ 
+     if (!$option_apply_log && !$option_copy_back) {
+         # we are making a backup, get backup root directory
+-        $backup_root = $ARGV[1];
++        $backup_root = $ARGV[0];
+     } else {
+         # get backup directory
+-        $backup_dir = $ARGV[1];
++        $backup_dir = File::Spec->rel2abs($ARGV[0]);
+     }        
+ 
+     print "\n";
+@@ -1576,15 +1605,20 @@
+ #                   options are returned
+ #
+ sub read_config_file {
+-    my $filename = shift;
++    #my $filename = shift;
+     my $groups_ref = shift;
+     my @lines ;
+     my $i;
+     my $group;
+     my $group_hash_ref;
+ 
++    my $cmdline = '';
++    my $options = '--print-param';
++
+     # read file to an array, one line per element
+-    file_to_array($filename, \@lines);
++    #file_to_array($filename, \@lines);
++    $cmdline = "$option_ibbackup_binary $options";
++    @lines = `$cmdline`;
+ 
+     # classify lines and save option values
+     $group = 'default';
+@@ -1637,7 +1671,7 @@
+           # unknown
+           print("$prefix: Warning: Ignored unrecognized line ",
+                 $i + 1,
+-                " in options file '$filename': '${lines[$i]}'\n"
++                " in options : '${lines[$i]}'\n"
+                 );
+       }
+    }
+@@ -1662,14 +1696,14 @@
+ 
+     if (!exists $config{$group}) {
+         # no group
+-        print "$prefix fatal error: no '$group' group in MySQL options file '$config_file\n";
++        print "$prefix fatal error: no '$group' group in MySQL options\n";
+         exit(1);
+     }
+     
+     $group_hash_ref = ${$config_ref}{$group};
+     if (!exists ${$group_hash_ref}{$option_name}) {
+         # no option
+-        print "$prefix fatal error: no '$option_name' option in group '$group' in MySQL options file '$config_file\n";
++        print "$prefix fatal error: no '$option_name' option in group '$group' in MySQL options\n";
+         exit(1);
+     }
+ 

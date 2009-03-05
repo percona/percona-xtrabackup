@@ -6,72 +6,7 @@ How to build XtraBackup
 1. Put this directory to innobase/ directory.
    (e.g. mysql-5.0.75/innobase/xtrabackup-0.0 )
 
-2. Edit MySQL source and re- make.
-
-	(e.g.)
-	--- mysql-5.0.75/innobase/log/log0recv.c        2008-12-19 02:19:36.000000000 +0900
-	+++ mysql-5.0.75_1/innobase/log/log0recv.c      2009-02-27 19:41:07.000000000 +0900
-	@@ -450,7 +450,7 @@
-
-	 /***************************************************************************
-	 Checks the consistency of the checkpoint info */
-	-static
-	+//static
-	 ibool
-	 recv_check_cp_is_consistent(
-	 /*========================*/
-	@@ -479,7 +479,7 @@
-
-	 /************************************************************
-	 Looks for the maximum consistent checkpoint from the log groups. */
-	-static
-	+//static
-	 ulint
-	 recv_find_max_checkpoint(
-	 /*=====================*/
-	@@ -644,7 +644,7 @@
-	 Checks the 4-byte checksum to the trailer checksum field of a log block.
-	 We also accept a log block in the old format < InnoDB-3.23.52 where the
-	 checksum field contains the log block number. */
-	-static
-	+//static
-	 ibool
-	 log_block_checksum_is_ok_or_old_format(
-	 /*===================================*/
-
-	--- mysql-5.0.75/innobase/os/os0file.c  2008-12-19 02:19:36.000000000 +0900
-	+++ mysql-5.0.75_1/innobase/os/os0file.c        2009-02-26 11:54:47.000000000 +0900
-	@@ -435,7 +435,7 @@
-	 }
-
-	 #undef USE_FILE_LOCK
-	-#define USE_FILE_LOCK
-	+//#define USE_FILE_LOCK
-	 #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
-	 /* InnoDB Hot Backup does not lock the data files.
-	  * On Windows, mandatory locking is used.
-
-	--- mysql-5.0.75/innobase/srv/srv0start.c       2008-12-19 02:19:37.000000000 +0900
-	+++ mysql-5.0.75_1/innobase/srv/srv0start.c     2009-02-26 11:48:30.000000000 +0900
-	@@ -547,7 +547,7 @@
-	 #ifndef UNIV_HOTBACKUP
-	 /*************************************************************************
-	 Creates or opens the log files and closes them. */
-	-static
-	+//static
-	 ulint
-	 open_or_create_log_file(
-	 /*====================*/
-	@@ -693,7 +693,7 @@
-
-	 /*************************************************************************
-	 Creates or opens database data files and closes them. */
-	-static
-	+//static
-	 ulint
-	 open_or_create_data_files(
-	 /*======================*/
-
+2. Edit MySQL source and re- make. (e.g. fix_innodb_for_backup.patch for 5.0.75)
 
 3. make at XtraBackup directory.
 
