@@ -1,0 +1,126 @@
+diff -r 6b1dc961f5a5 innobase/fil/fil0fil.c
+--- a/innobase/fil/fil0fil.c	Thu Mar 05 12:39:16 2009 -0800
++++ b/innobase/fil/fil0fil.c	Thu Mar 05 12:42:22 2009 -0800
+@@ -2067,7 +2067,7 @@
+ 	}
+ 
+ 	if (success) {
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 		/* Write a log record about the deletion of the .ibd
+ 		file, so that ibbackup can replay it in the
+ 		--apply-log phase. We use a dummy mtr and the familiar
+@@ -2343,7 +2343,7 @@
+ 
+ 	mutex_exit(&(system->mutex));
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (success) {
+ 		mtr_t		mtr;
+ 
+@@ -2519,7 +2519,7 @@
+ 
+ 	fil_node_create(path, size, *space_id, FALSE);
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	{
+ 		mtr_t		mtr;
+ 
+diff -r 6b1dc961f5a5 innobase/log/log0recv.c
+--- a/innobase/log/log0recv.c	Thu Mar 05 12:39:16 2009 -0800
++++ b/innobase/log/log0recv.c	Thu Mar 05 12:42:22 2009 -0800
+@@ -35,12 +35,12 @@
+ #include "fil0fil.h"
+ #include "sync0sync.h"
+ 
+-#ifdef UNIV_HOTBACKUP
++//#ifdef UNIV_HOTBACKUP
+ /* This is set to FALSE if the backup was originally taken with the
+ ibbackup --include regexp option: then we do not want to create tables in
+ directories which were not included */
+ ibool	recv_replay_file_ops	= TRUE;
+-#endif /* UNIV_HOTBACKUP */
++//#endif /* UNIV_HOTBACKUP */
+ 
+ /* Log records are stored in the hash table in chunks at most of this size;
+ this must be less than UNIV_PAGE_SIZE as it is stored in the buffer pool */
+@@ -454,7 +454,7 @@
+ 
+ /***************************************************************************
+ Checks the consistency of the checkpoint info */
+-static
++//static
+ ibool
+ recv_check_cp_is_consistent(
+ /*========================*/
+@@ -483,7 +483,7 @@
+ 
+ /************************************************************
+ Looks for the maximum consistent checkpoint from the log groups. */
+-static
++//static
+ ulint
+ recv_find_max_checkpoint(
+ /*=====================*/
+@@ -656,7 +656,7 @@
+ Checks the 4-byte checksum to the trailer checksum field of a log block.
+ We also accept a log block in the old format < InnoDB-3.23.52 where the
+ checksum field contains the log block number. */
+-static
++//static
+ ibool
+ log_block_checksum_is_ok_or_old_format(
+ /*===================================*/
+@@ -1929,7 +1929,7 @@
+ 		} else if (store_to_hash && (type == MLOG_FILE_CREATE
+ 					     || type == MLOG_FILE_RENAME
+ 					     || type == MLOG_FILE_DELETE)) {
+-#ifdef UNIV_HOTBACKUP
++//#ifdef UNIV_HOTBACKUP
+ 			if (recv_replay_file_ops) {
+ 
+ 				/* In ibbackup --apply-log, replay an .ibd file
+@@ -1952,7 +1952,7 @@
+ 					ut_a(0);
+ 				}
+ 			}
+-#endif
++//#endif
+ 			/* In normal mysqld crash recovery we do not try to
+ 			replay file operations */
+ 		} else if (store_to_hash) {
+diff -r 6b1dc961f5a5 innobase/os/os0file.c
+--- a/innobase/os/os0file.c	Thu Mar 05 12:39:16 2009 -0800
++++ b/innobase/os/os0file.c	Thu Mar 05 12:42:22 2009 -0800
+@@ -453,7 +453,7 @@
+ }
+ 
+ #undef USE_FILE_LOCK
+-#define USE_FILE_LOCK
++//#define USE_FILE_LOCK
+ #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
+ /* InnoDB Hot Backup does not lock the data files.
+  * On Windows, mandatory locking is used.
+diff -r 6b1dc961f5a5 innobase/srv/srv0start.c
+--- a/innobase/srv/srv0start.c	Thu Mar 05 12:39:16 2009 -0800
++++ b/innobase/srv/srv0start.c	Thu Mar 05 12:42:22 2009 -0800
+@@ -533,7 +533,7 @@
+ 
+ /*************************************************************************
+ Creates or opens the log files and closes them. */
+-static
++//static
+ ulint
+ open_or_create_log_file(
+ /*====================*/
+@@ -686,7 +686,7 @@
+ 
+ /*************************************************************************
+ Creates or opens database data files and closes them. */
+-static
++//static
+ ulint
+ open_or_create_data_files(
+ /*======================*/
