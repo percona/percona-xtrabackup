@@ -11,6 +11,7 @@ Created 3/3/2009 Yasufumi Kinoshita
 #include <my_base.h>
 #include <my_getopt.h>
 #include <mysql_version.h>
+#include <mysql_com.h>
 
 #include <univ.i>
 #include <os0file.h>
@@ -598,13 +599,13 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 void
 innobase_mysql_prepare_print_arbitrary_thd(void)
 {
-//fprintf(stderr, "innobase_mysql_prepare_print_arbitrary_thd() is called\n");
+	/* do nothing */
 }
 
 void
 innobase_mysql_end_print_arbitrary_thd(void)
 {
-//fprintf(stderr, "innobase_mysql_end_print_arbitrary_thd() is called\n");
+	/* do nothing */
 }
 
 void
@@ -614,7 +615,6 @@ innobase_mysql_print_thd(
 	uint	max_query_len)
 {
 	fprintf(stderr, "innobase_mysql_print_thd() is called\n");
-	exit(1);
 }
 
 void
@@ -650,8 +650,7 @@ void
 innobase_casedn_str(
 	char*	a)
 {
-	fprintf(stderr, "innobase_casedn_str() is called\n");
-	exit(1);
+	my_casedn_str(&my_charset_utf8_general_ci, a);
 }
 
 int
@@ -696,8 +695,7 @@ innobase_invalidate_query_cache(
 	char*	full_name,
 	ulint	full_name_len)
 {
-	fprintf(stderr, "innobase_invalidate_query_cache() is called\n");
-	exit(1);
+	/* do nothing */
 }
 
 int
@@ -706,23 +704,15 @@ mysql_get_identifier_quote_char(
 	const char*	name,
 	ulint		namelen)
 {
-	fprintf(stderr, "mysql_get_identifier_quote_char() is called\n");
-	exit(1);
+	return '"';
 }
 
 ibool
 trx_is_interrupted(
 	trx_t*	trx)
 {
-	fprintf(stderr, "trx_is_interrupted() is called\n");
-	exit(1);
-}
-
-void*
-innobase_current_thd(void)
-{
-	fprintf(stderr, "innobase_current_thd() is called\n");
-	exit(1);
+	/* There are no mysql_thd */
+	return(FALSE);
 }
 
 int
@@ -734,8 +724,66 @@ innobase_mysql_cmp(
 	unsigned char*	b,
 	unsigned int	b_length)
 {
-	fprintf(stderr, "innobase_mysql_cmp() is called\n");
-	exit(1);
+	CHARSET_INFO*		charset;
+	enum enum_field_types	mysql_tp;
+	int                     ret;
+
+	DBUG_ASSERT(a_length != UNIV_SQL_NULL);
+	DBUG_ASSERT(b_length != UNIV_SQL_NULL);
+
+	mysql_tp = (enum enum_field_types) mysql_type;
+
+	switch (mysql_tp) {
+
+        case MYSQL_TYPE_BIT:
+	case MYSQL_TYPE_STRING:
+	case MYSQL_TYPE_VAR_STRING:
+	case FIELD_TYPE_TINY_BLOB:
+	case FIELD_TYPE_MEDIUM_BLOB:
+	case FIELD_TYPE_BLOB:
+	case FIELD_TYPE_LONG_BLOB:
+        case MYSQL_TYPE_VARCHAR:
+		/* Use the charset number to pick the right charset struct for
+		the comparison. Since the MySQL function get_charset may be
+		slow before Bar removes the mutex operation there, we first
+		look at 2 common charsets directly. */
+
+		if (charset_number == default_charset_info->number) {
+			charset = default_charset_info;
+		} else if (charset_number == my_charset_latin1.number) {
+			charset = &my_charset_latin1;
+		} else {
+			charset = get_charset(charset_number, MYF(MY_WME));
+
+			if (charset == NULL) {
+			  fprintf(stderr, "InnoDB needs charset %lu for doing "
+					  "a comparison, but MySQL cannot "
+					  "find that charset.",
+					  (ulong) charset_number);
+				ut_a(0);
+			}
+		}
+
+                /* Starting from 4.1.3, we use strnncollsp() in comparisons of
+                non-latin1_swedish_ci strings. NOTE that the collation order
+                changes then: 'b\0\0...' is ordered BEFORE 'b  ...'. Users
+                having indexes on such data need to rebuild their tables! */
+
+                ret = charset->coll->strnncollsp(charset,
+                                  a, a_length,
+                                                 b, b_length, 0);
+		if (ret < 0) {
+		        return(-1);
+		} else if (ret > 0) {
+		        return(1);
+		} else {
+		        return(0);
+	        }
+	default:
+		assert(0);
+	}
+
+	return(0);
 }
 
 ulint
@@ -745,15 +793,64 @@ innobase_get_at_most_n_mbchars(
 	ulint data_len,
 	const char* str)
 {
-	fprintf(stderr, "innobase_get_at_most_n_mbchars() is called\n");
-	exit(1);
+	ulint char_length;	/* character length in bytes */
+	ulint n_chars;		/* number of characters in prefix */
+	CHARSET_INFO* charset;	/* charset used in the field */
+
+	charset = get_charset((uint) charset_id, MYF(MY_WME));
+
+	ut_ad(charset);
+	ut_ad(charset->mbmaxlen);
+
+	/* Calculate how many characters at most the prefix index contains */
+
+	n_chars = prefix_len / charset->mbmaxlen;
+
+	/* If the charset is multi-byte, then we must find the length of the
+	first at most n chars in the string. If the string contains less
+	characters than n, then we return the length to the end of the last
+	character. */
+
+	if (charset->mbmaxlen > 1) {
+		/* my_charpos() returns the byte length of the first n_chars
+		characters, or a value bigger than the length of str, if
+		there were not enough full characters in str.
+
+		Why does the code below work:
+		Suppose that we are looking for n UTF-8 characters.
+
+		1) If the string is long enough, then the prefix contains at
+		least n complete UTF-8 characters + maybe some extra
+		characters + an incomplete UTF-8 character. No problem in
+		this case. The function returns the pointer to the
+		end of the nth character.
+
+		2) If the string is not long enough, then the string contains
+		the complete value of a column, that is, only complete UTF-8
+		characters, and we can store in the column prefix index the
+		whole string. */
+
+		char_length = my_charpos(charset, str,
+						str + data_len, (int) n_chars);
+		if (char_length > data_len) {
+			char_length = data_len;
+		}
+	} else {
+		if (data_len < prefix_len) {
+			char_length = data_len;
+		} else {
+			char_length = prefix_len;
+		}
+	}
+
+	return(char_length);
 }
 
 ibool
 innobase_query_is_update(void)
 {
 	fprintf(stderr, "innobase_query_is_update() is called\n");
-	exit(1);
+	return(0);
 }
 
 /* control innodb */
@@ -1397,7 +1494,7 @@ xtrabackup_copy_logfile(dulint from_lsn)
 			up_to_date_group = group;
 		}
 
-		printf(">> log scanned up to (%lu %lu)\n",group->scanned_lsn.high,group->scanned_lsn.low);
+		fprintf(stderr, ">> log scanned up to (%lu %lu)\n",group->scanned_lsn.high,group->scanned_lsn.low);
 
 		group = UT_LIST_GET_NEXT(log_groups, group);
 
@@ -1441,10 +1538,10 @@ log_copying_thread(
 	log_copying_running = TRUE;
 
 	while(log_copying) {
-		sleep(1);
+		usleep(200000); /*0.2 sec*/
 
 		counter++;
-		if(counter >= SLEEPING_PERIOD) {
+		if(counter >= SLEEPING_PERIOD * 5) {
 			if(xtrabackup_copy_logfile(log_copy_scanned_lsn))
 				goto end;
 			counter = 0;
@@ -1475,7 +1572,7 @@ io_watching_thread(
 	ut_a(xtrabackup_backup);
 
 	while (log_copying) {
-		sleep(1);
+		usleep(1000000); /*1 sec*/
 
 		//for DEBUG
 		//if (io_ticket == xtrabackup_throttle) {
@@ -1922,7 +2019,7 @@ reread_log_header:
 
 		exists = TRUE;
 		while (exists) {
-			sleep(1);
+			usleep(200000); /*0.2 sec*/
 			success = os_file_status(suspend_path, &exists, &type);
 			if (!success)
 				break;
@@ -1933,12 +2030,14 @@ reread_log_header:
 
 	/* stop log_copying_thread */
 	log_copying = FALSE;
-	printf("Stopping log copying thread");
-	while (log_copying_running) {
-		printf(".");
-		sleep(1);
+	if (!xtrabackup_stream) {
+		printf("Stopping log copying thread");
+		while (log_copying_running) {
+			printf(".");
+			usleep(200000); /*0.2 sec*/
+		}
+		printf("\n");
 	}
-	printf("\n");
 	if (!log_copying_succeed) {
 		fprintf(stderr, "Error: log_copying_thread failed.");
 		exit(1);
@@ -1949,9 +2048,15 @@ reread_log_header:
 	if (wait_throttle)
 		os_event_free(wait_throttle);
 
-        printf("Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
-                checkpoint_lsn_start.high, checkpoint_lsn_start.low,
-                log_copy_scanned_lsn.high, log_copy_scanned_lsn.low);
+	if (!xtrabackup_stream) {
+        	printf("Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
+                	checkpoint_lsn_start.high, checkpoint_lsn_start.low,
+                	log_copy_scanned_lsn.high, log_copy_scanned_lsn.low);
+	} else {
+		fprintf(stderr, "Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
+			checkpoint_lsn_start.high, checkpoint_lsn_start.low,
+			log_copy_scanned_lsn.high, log_copy_scanned_lsn.low);
+	}
 }
 
 /* ================= prepare ================= */
@@ -2360,8 +2465,6 @@ int main(int argc, char **argv)
 
 	MY_INIT(argv[0]);
 
-	print_version();
-
 	load_defaults("my",load_default_groups,&argc,&argv);
 
 	/* ignore unsupported options */
@@ -2427,6 +2530,9 @@ next_opt:
 			innobase_log_group_home_dir ? innobase_log_group_home_dir : mysql_data_home);
 		exit(0);
 	}
+
+	if (!xtrabackup_stream)
+		print_version();
 
 	/* cannot execute both for now */
 	if (xtrabackup_backup == xtrabackup_prepare) { /* !XOR (for now) */
