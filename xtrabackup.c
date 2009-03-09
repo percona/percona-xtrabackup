@@ -682,7 +682,7 @@ innobase_mysql_tmpfile(void)
 		my_close(). */
 		fd2 = dup(fd);
 		if (fd2 < 0) {
-			fprintf(stderr, "Got error %d on dup",fd2);
+			fprintf(stderr, "Got error %d on dup\n",fd2);
                 }
 		my_close(fd, MYF(MY_WME));
 	}
@@ -758,7 +758,7 @@ innobase_mysql_cmp(
 			if (charset == NULL) {
 			  fprintf(stderr, "InnoDB needs charset %lu for doing "
 					  "a comparison, but MySQL cannot "
-					  "find that charset.",
+					  "find that charset.\n",
 					  (ulong) charset_number);
 				ut_a(0);
 			}
@@ -880,13 +880,13 @@ innodb_init_param(void)
 		if (xtrabackup_use_memory > UINT_MAX32) {
 			fprintf(stderr,
 				"use-memory can't be over 4GB"
-				" on 32-bit systems");
+				" on 32-bit systems\n");
 		}
 
 		if (innobase_buffer_pool_size > UINT_MAX32) {
 			fprintf(stderr,
 				"innobase_buffer_pool_size can't be over 4GB"
-				" on 32-bit systems");
+				" on 32-bit systems\n");
 
 			goto error;
 		}
@@ -894,7 +894,7 @@ innodb_init_param(void)
 		if (innobase_log_file_size > UINT_MAX32) {
 			fprintf(stderr,
 				"innobase_log_file_size can't be over 4GB"
-				" on 32-bit systems");
+				" on 32-bit systemsi\n");
 
 			goto error;
 		}
@@ -956,7 +956,7 @@ innodb_init_param(void)
 				&srv_last_file_size_max);
 	if (ret == FALSE) {
 	  	fprintf(stderr,
-			"InnoDB: syntax error in innodb_data_file_path");
+			"InnoDB: syntax error in innodb_data_file_path\n");
 	  	free(internal_innobase_data_file_path);
                 goto error;
 	}
@@ -985,7 +985,7 @@ innodb_init_param(void)
 
 	if (ret == FALSE || innobase_mirrored_log_groups != 1) {
 	  fprintf(stderr, "syntax error in innodb_log_group_home_dir, or a "
-			  "wrong number of mirrored log groups");
+			  "wrong number of mirrored log groups\n");
 
 	  	free(internal_innobase_data_file_path);
                 goto error;
@@ -1287,7 +1287,7 @@ error:
 		os_file_close(dst_file);
 	if (buf2)
 		ut_free(buf2);
-	fprintf(stderr, "Error: xtrabackup_copy_datafile() failed.");
+	fprintf(stderr, "Error: xtrabackup_copy_datafile() failed.\n");
 	return(TRUE); /*ERROR*/
 }
 
@@ -1515,7 +1515,7 @@ xtrabackup_copy_logfile(dulint from_lsn)
 
 error:
 	os_file_close(dst_log);
-	fprintf(stderr, "Error: xtrabackup_copy_logfile() failed.");
+	fprintf(stderr, "Error: xtrabackup_copy_logfile() failed.\n");
 	return(TRUE);
 }
 
@@ -2039,7 +2039,7 @@ reread_log_header:
 		printf("\n");
 	}
 	if (!log_copying_succeed) {
-		fprintf(stderr, "Error: log_copying_thread failed.");
+		fprintf(stderr, "Error: log_copying_thread failed.\n");
 		exit(1);
 	}
 
@@ -2090,6 +2090,7 @@ xtrabackup_init_temp_log(void)
 
 	/* open 'xtrabackup_logfile' */
 	sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+retry:
 	src_file = os_file_create_simple_no_error_handling(
 					src_path, OS_FILE_OPEN,
 					OS_FILE_READ_WRITE /* OS_FILE_READ_ONLY */, &success);
@@ -2099,8 +2100,60 @@ xtrabackup_init_temp_log(void)
 
 		ut_print_timestamp(stderr);
 		fprintf(stderr,
-"  InnoDB: Fatal error: cannot open %s\n.",
+"  InnoDB: Warning: cannot open %s. will try to find.\n",
 			src_path);
+
+		/* check if ib_logfile0 may be xtrabackup_logfile */
+		src_file = os_file_create_simple_no_error_handling(
+				dst_path, OS_FILE_OPEN,
+				OS_FILE_READ_WRITE /* OS_FILE_READ_ONLY */, &success);
+		if (!success) {
+			os_file_get_last_error(TRUE);
+			fprintf(stderr,
+"  InnoDB: Fatal error: cannot find %s.\n",
+			src_path);
+
+			goto error;
+		}
+
+		log_buf_ = ut_malloc(LOG_FILE_HDR_SIZE * 2);
+		log_buf = ut_align(log_buf_, LOG_FILE_HDR_SIZE);
+
+		success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+		if (!success) {
+			goto error;
+		}
+
+		if ( ut_memcmp(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
+				(byte*)"xtrabkup", (sizeof "xtrabkup") - 1) == 0) {
+			fprintf(stderr,
+"  InnoDB: 'ib_logfile0' seems to be 'xtrabackup_logfile'. will retry.\n");
+
+			ut_free(log_buf_);
+			log_buf_ = NULL;
+
+			os_file_close(src_file);
+			src_file = -1;
+
+			/* rename and try again */
+			success = os_file_rename(dst_path, src_path);
+			if (!success) {
+				goto error;
+			}
+
+			goto retry;
+		}
+
+		fprintf(stderr,
+"  InnoDB: Fatal error: cannot find %s.\n",
+		src_path);
+
+		ut_free(log_buf_);
+		log_buf_ = NULL;
+
+		os_file_close(src_file);
+		src_file = -1;
+
 		goto error;
 	}
 
@@ -2265,7 +2318,7 @@ error:
 		os_file_close(src_file);
 	if (log_buf_)
 		ut_free(log_buf_);
-	fprintf(stderr, "Error: xtrabackup_init_temp_log() failed.");
+	fprintf(stderr, "Error: xtrabackup_init_temp_log() failed.\n");
 	return(TRUE); /*ERROR*/
 }
 
@@ -2334,7 +2387,7 @@ error:
 		os_file_close(src_file);
 	if (log_buf_)
 		ut_free(log_buf_);
-	fprintf(stderr, "Error: xtrabackup_close_temp_log() failed.");
+	fprintf(stderr, "Error: xtrabackup_close_temp_log() failed.\n");
 	return(TRUE); /*ERROR*/
 }
 
