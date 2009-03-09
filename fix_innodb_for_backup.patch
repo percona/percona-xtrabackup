@@ -1,3 +1,15 @@
+diff -r 908616611518 innobase/buf/buf0buf.c
+--- a/innobase/buf/buf0buf.c	2008-12-19 02:19:35.000000000 +0900
++++ b/innobase/buf/buf0buf.c	2009-03-09 10:09:43.000000000 +0900
+@@ -314,7 +314,7 @@
+ 		return(TRUE);
+ 	}
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (recv_lsn_checks_on && log_peek_lsn(&current_lsn)) {
+ 		if (ut_dulint_cmp(current_lsn,
+ 				  mach_read_from_8(read_buf + FIL_PAGE_LSN))
 diff -r 908616611518 innobase/fil/fil0fil.c
 --- a/innobase/fil/fil0fil.c	Tue Mar 03 08:02:54 2009 -0800
 +++ b/innobase/fil/fil0fil.c	Tue Mar 03 08:06:20 2009 -0800
@@ -28,6 +40,15 @@ diff -r 908616611518 innobase/fil/fil0fil.c
  	{
  	mtr_t		mtr;
  
+@@ -2890,7 +2890,7 @@
+ 	cannot be ok. */
+ 
+ 	size = (((ib_longlong)size_high) << 32) + (ib_longlong)size_low;
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
+ 	        fprintf(stderr,
+ "InnoDB: Error: the size of single-table tablespace file %s\n"
 diff -r 908616611518 innobase/log/log0recv.c
 --- a/innobase/log/log0recv.c	Tue Mar 03 08:02:54 2009 -0800
 +++ b/innobase/log/log0recv.c	Tue Mar 03 08:06:20 2009 -0800
