@@ -732,7 +732,11 @@ sub start_ibbackup {
     my $cmdline = '';
     my $pid = undef;
 
-    $options = $options . " --target-dir=$backup_dir";
+    if (!$option_remote_host) {
+        $options = $options . " --target-dir=$backup_dir";
+    } else {
+        $options = $options . " --target-dir=./"; #datadir
+    }
 
     # prepare command line for running ibbackup
     if ($option_throttle) {
@@ -773,9 +777,17 @@ sub start_ibbackup {
                 my $subdir;
                 my @list;
 
-                if (-e "$backup_dir/ib_logfile0") {
-                    print "$prefix Remove $backup_dir/ib_logfile*\n";
-                    system("rm $backup_dir/ib_logfile*");
+                if (!$option_remote_host) {
+                    if (-e "$backup_dir/ib_logfile0") {
+                        print "$prefix Remove $backup_dir/ib_logfile*\n";
+                        system("rm $backup_dir/ib_logfile*");
+                    }
+                } else {
+                    if (system("ssh $option_remote_host test -e $backup_root/ib_logfile0")
+                            == 0) {
+                        print "$prefix Remove $option_remote_host:$backup_root/ib_logfile*\n";
+                        system("ssh $option_remote_host rm $backup_root/ib_logfile\*");
+                    }
                 }
 
                 wait_for_ibbackup_suspend();
@@ -786,9 +798,14 @@ sub start_ibbackup {
                 print "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
                 foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
                     my $path = (split(/:/,$a))[0];
-                    print "$prefix Copying file '$orig_ibdata_dir/$path'\n";
-                    system("rsync -a '$orig_ibdata_dir/$path' '$backup_dir/$path'")
-                        and Die "Failed to rsync file '$path': $!";
+                    print "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
+                    if (!$option_remote_host) {
+                        system("rsync -a '$orig_ibdata_dir/$path' '$backup_dir/$path'")
+                            and Die "Failed to rsync file '$path': $!";
+                    } else {
+                        system("rsync -az '$orig_ibdata_dir/$path' '$option_remote_host:$backup_root/$path'")
+                            and Die "Failed to rsync file '$path': $!";
+                    }
                 }
 
                 #copy *.ibd files
@@ -815,16 +832,26 @@ sub start_ibbackup {
                         if ($print_each_file) {
                             print "$prefix Backing up file '$file'\n";
                         }
-                        system("rsync -a '$file' '$backup_dir/$subdir/'")
-                            and Die "Failed to rsync file '$file': $!";
+                        if (!$option_remote_host) {
+                            system("rsync -a '$file' '$backup_dir/$subdir/'")
+                                and Die "Failed to rsync file '$file': $!";
+                        } else {
+                            system("rsync -az '$file' '$option_remote_host:$backup_root/$subdir/'")
+                                and Die "Failed to rsync file '$file': $!";
+                        }
                     }
                 }
                 closedir(DIR);
             }
         } else {
             if($option_incremental) {
-                open(STDOUT, "> $backup_dir/xtrabackup_logfile")
+                if(!$option_remote_host) {
+                    open(STDOUT, "> $backup_dir/xtrabackup_logfile")
                     || Die "Failed to open file '$backup_dir/xtrabackup_logfile': $!"
+                } else {
+                    open(STDOUT, "| ssh $option_remote_host 'cat > $backup_root/xtrabackup_logfile'")
+                    || Die "Failed to open file '$option_remote_host:$backup_root/xtrabackup_logfile': $!"
+                }
             }
 
             # child process
@@ -994,8 +1021,13 @@ sub write_binlog_info {
     if (!defined $info_lines[1]) {
         $info_lines[1] = "";
     }
-    open(FILE, ">$binlog_info") || 
-        Die "Failed to open file '$binlog_info': $!";
+    if (!$option_remote_host) {
+        open(FILE, ">$binlog_info") || 
+            Die "Failed to open file '$binlog_info': $!";
+    } else {
+        open(FILE, "| ssh $option_remote_host 'cat > $binlog_info'") ||
+            Die "Failed to open file '$option_remote_host:$binlog_info': $!";
+    }
     print FILE  "$info_lines[1]\n";
     close(FILE);
 
@@ -1036,8 +1068,13 @@ sub write_slave_info {
     }
 
     # print slave status to a file
-    open(FILE, ">$slave_info") || 
-        Die "Failed to open file '$slave_info': $!";
+    if (!$option_remote_host) {
+        open(FILE, ">$slave_info") || 
+            Die "Failed to open file '$slave_info': $!";
+    } else {
+        open(FILE, "| ssh $option_remote_host 'cat > $slave_info'") ||
+            Die "Failed to open file '$option_remote_host:$slave_info': $!";
+    }
     print FILE  "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n";
     close(FILE);
 
@@ -1319,13 +1356,22 @@ sub init {
             }
         }
         print "$prefix Created backup directory $backup_dir\n";
+        if (!$option_remote_host) {
         $backup_config_file = $backup_dir . '/backup-my.cnf';
-        write_backup_config_file($backup_config_file);
         $suspend_file = $backup_dir . '/xtrabackup_suspended';
         $mysql_stdout = $backup_dir . '/mysql-stdout';
         $mysql_stderr = $backup_dir . '/mysql-stderr';
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
+        } else {
+        $backup_config_file = $backup_root . '/backup-my.cnf';
+        $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
+        $mysql_stdout = '/tmp/mysql-stdout';
+        $mysql_stderr = '/tmp/mysql-stderr';
+        $binlog_info = $backup_root . '/xtrabackup_binlog_info';
+        $slave_info = $backup_root . '/xtrabackup_slave_info';
+        }
+        write_backup_config_file($backup_config_file);
     } elsif ($option_copy_back) {
         #$backup_config_file = $backup_dir . '/backup-my.cnf';
         #read_config_file($backup_config_file, \%backup_config);
@@ -1349,7 +1395,13 @@ sub write_backup_config_file {
     my $innodb_log_file_size =
         get_option(\%config, 'mysqld', 'innodb_log_file_size');
 
-    open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
+    if (!$option_remote_host) {
+        open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
+    } else {
+        open(FILE, "| ssh $option_remote_host 'cat > $filename'")
+            || Die "Failed to open file '$option_remote_host:$filename': $!";
+    }
+
     print FILE "# This MySQL options file was generated by innobackup.\n\n" .
           "# The MySQL server\n" .
           "[mysqld]\n" .
@@ -1586,10 +1638,17 @@ sub backup_files {
         next unless -d "$source_dir/$database";
 	next unless check_if_required($database);
         
-        if (! -e "$backup_dir/$database") {
-            # create database directory for the backup
-            mkdir("$backup_dir/$database", 0777)
-                || Die "Couldn't create directory '$backup_dir/$database': $!";
+        if (!$option_remote_host) {
+            if (! -e "$backup_dir/$database") {
+                # create database directory for the backup
+                mkdir("$backup_dir/$database", 0777)
+                    || Die "Couldn't create directory '$backup_dir/$database': $!";
+            }
+        } else {
+            if (system("ssh $option_remote_host test -e $backup_root/$database")
+                    != 0) {
+                system("ssh $option_remote_host mkdir $backup_root/$database");
+            }
         }
 
         # copy files of this database
@@ -1612,11 +1671,16 @@ sub backup_files {
                 print "$prefix Backing up file '$file'\n";
             }
             if (!$option_incremental) {
-            system("cp -p '$file' '$backup_dir/$database'")
-                and Die "Failed to copy file '$file': $!";
+                system("cp -p '$file' '$backup_dir/$database'")
+                    and Die "Failed to copy file '$file': $!";
             } else {
-            system("rsync -a '$file' '$backup_dir/$database'")
-                and Die "Failed to rsync file '$file': $!";
+                if (!$option_remote_host) {
+                    system("rsync -a '$file' '$backup_dir/$database'")
+                        and Die "Failed to rsync file '$file': $!";
+                } else {
+                    system("rsync -az '$file' '$option_remote_host:$backup_root/$database/'")
+                        and Die "Failed to rsync file '$file': $!";
+                }
             }
         }
     }

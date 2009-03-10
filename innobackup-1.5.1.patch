@@ -1,5 +1,5 @@
 --- innobackup-1.5.1_orig	2009-03-04 21:41:35.000000000 +0900
-+++ innobackup-1.5.1	2009-03-10 16:45:21.000000000 +0900
++++ innobackup-1.5.1	2009-03-10 19:28:00.000000000 +0900
 @@ -8,6 +8,7 @@
  
  use strict;
@@ -194,7 +194,7 @@
  }
  
  
-@@ -702,25 +728,32 @@
+@@ -702,25 +728,36 @@
  # program for backing up InnoDB tables and indexes.
  #
  sub start_ibbackup {
@@ -203,7 +203,11 @@
      my $cmdline = '';
      my $pid = undef;
  
-+    $options = $options . " --target-dir=$backup_dir";
++    if (!$option_remote_host) {
++        $options = $options . " --target-dir=$backup_dir";
++    } else {
++        $options = $options . " --target-dir=./"; #datadir
++    }
 +
      # prepare command line for running ibbackup
 +    if ($option_throttle) {
@@ -224,17 +228,17 @@
      if ($option_include) {
 -        $options = $options . " --include '$option_include'";
 +        $options = $options . " --include='$option_include'";
-+    }
-+    if ($option_incremental) {
-+        $options = $options . " --log-stream";
      }
 -    $cmdline = "$option_ibbackup_binary $options $config_file "
 -        ."$backup_config_file";
++    if ($option_incremental) {
++        $options = $options . " --log-stream";
++    }
 +    $cmdline = "$option_ibbackup_binary $options";
  
      # run ibbackup as a child process
      $now = current_time();
-@@ -729,7 +762,71 @@
+@@ -729,7 +766,94 @@
          if ($pid) {
              # parent process
              $ibbackup_pid = $pid;
@@ -249,9 +253,17 @@
 +                my $subdir;
 +                my @list;
 +
-+                if (-e "$backup_dir/ib_logfile0") {
-+                    print "$prefix Remove $backup_dir/ib_logfile*\n";
-+                    system("rm $backup_dir/ib_logfile*");
++                if (!$option_remote_host) {
++                    if (-e "$backup_dir/ib_logfile0") {
++                        print "$prefix Remove $backup_dir/ib_logfile*\n";
++                        system("rm $backup_dir/ib_logfile*");
++                    }
++                } else {
++                    if (system("ssh $option_remote_host test -e $backup_root/ib_logfile0")
++                            == 0) {
++                        print "$prefix Remove $option_remote_host:$backup_root/ib_logfile*\n";
++                        system("ssh $option_remote_host rm $backup_root/ib_logfile\*");
++                    }
 +                }
 +
 +                wait_for_ibbackup_suspend();
@@ -262,9 +274,14 @@
 +                print "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
 +                foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
 +                    my $path = (split(/:/,$a))[0];
-+                    print "$prefix Copying file '$orig_ibdata_dir/$path'\n";
-+                    system("rsync -a '$orig_ibdata_dir/$path' '$backup_dir/$path'")
-+                        and Die "Failed to rsync file '$path': $!";
++                    print "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
++                    if (!$option_remote_host) {
++                        system("rsync -a '$orig_ibdata_dir/$path' '$backup_dir/$path'")
++                            and Die "Failed to rsync file '$path': $!";
++                    } else {
++                        system("rsync -az '$orig_ibdata_dir/$path' '$option_remote_host:$backup_root/$path'")
++                            and Die "Failed to rsync file '$path': $!";
++                    }
 +                }
 +
 +                #copy *.ibd files
@@ -291,22 +308,64 @@
 +                        if ($print_each_file) {
 +                            print "$prefix Backing up file '$file'\n";
 +                        }
-+                        system("rsync -a '$file' '$backup_dir/$subdir/'")
-+                            and Die "Failed to rsync file '$file': $!";
++                        if (!$option_remote_host) {
++                            system("rsync -a '$file' '$backup_dir/$subdir/'")
++                                and Die "Failed to rsync file '$file': $!";
++                        } else {
++                            system("rsync -az '$file' '$option_remote_host:$backup_root/$subdir/'")
++                                and Die "Failed to rsync file '$file': $!";
++                        }
 +                    }
 +                }
 +                closedir(DIR);
 +            }
          } else {
 +            if($option_incremental) {
-+                open(STDOUT, "> $backup_dir/xtrabackup_logfile")
++                if(!$option_remote_host) {
++                    open(STDOUT, "> $backup_dir/xtrabackup_logfile")
 +                    || Die "Failed to open file '$backup_dir/xtrabackup_logfile': $!"
++                } else {
++                    open(STDOUT, "| ssh $option_remote_host 'cat > $backup_root/xtrabackup_logfile'")
++                    || Die "Failed to open file '$option_remote_host:$backup_root/xtrabackup_logfile': $!"
++                }
 +            }
 +
              # child process
              exec($cmdline) || Die "Failed to exec ibbackup: $!";
          }
-@@ -1174,8 +1271,8 @@
+@@ -897,8 +1021,13 @@
+     if (!defined $info_lines[1]) {
+         $info_lines[1] = "";
+     }
+-    open(FILE, ">$binlog_info") || 
+-        Die "Failed to open file '$binlog_info': $!";
++    if (!$option_remote_host) {
++        open(FILE, ">$binlog_info") || 
++            Die "Failed to open file '$binlog_info': $!";
++    } else {
++        open(FILE, "| ssh $option_remote_host 'cat > $binlog_info'") ||
++            Die "Failed to open file '$option_remote_host:$binlog_info': $!";
++    }
+     print FILE  "$info_lines[1]\n";
+     close(FILE);
+ 
+@@ -939,8 +1068,13 @@
+     }
+ 
+     # print slave status to a file
+-    open(FILE, ">$slave_info") || 
+-        Die "Failed to open file '$slave_info': $!";
++    if (!$option_remote_host) {
++        open(FILE, ">$slave_info") || 
++            Die "Failed to open file '$slave_info': $!";
++    } else {
++        open(FILE, "| ssh $option_remote_host 'cat > $slave_info'") ||
++            Die "Failed to open file '$option_remote_host:$slave_info': $!";
++    }
+     print FILE  "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n";
+     close(FILE);
+ 
+@@ -1174,8 +1308,8 @@
              $mysql_server_version = $lines[1];
              print "$prefix Using mysql server version $mysql_server_version\n";
          }
@@ -317,7 +376,7 @@
          print "\n";
          
          if ($option_include 
-@@ -1193,26 +1290,45 @@
+@@ -1193,26 +1327,54 @@
      $SIG{PIPE} = \&catch_sigpipe;
  
      # read MySQL options file
@@ -354,8 +413,9 @@
 +            }
 +        }
          print "$prefix Created backup directory $backup_dir\n";
++        if (!$option_remote_host) {
          $backup_config_file = $backup_dir . '/backup-my.cnf';
-         write_backup_config_file($backup_config_file);
+-        write_backup_config_file($backup_config_file);
 -        $suspend_file = $backup_dir . '/ibbackup_suspended';
 +        $suspend_file = $backup_dir . '/xtrabackup_suspended';
          $mysql_stdout = $backup_dir . '/mysql-stdout';
@@ -364,6 +424,15 @@
 -        $slave_info = $backup_dir . '/ibbackup_slave_info';
 +        $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
 +        $slave_info = $backup_dir . '/xtrabackup_slave_info';
++        } else {
++        $backup_config_file = $backup_root . '/backup-my.cnf';
++        $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
++        $mysql_stdout = '/tmp/mysql-stdout';
++        $mysql_stderr = '/tmp/mysql-stderr';
++        $binlog_info = $backup_root . '/xtrabackup_binlog_info';
++        $slave_info = $backup_root . '/xtrabackup_slave_info';
++        }
++        write_backup_config_file($backup_config_file);
      } elsif ($option_copy_back) {
 -        $backup_config_file = $backup_dir . '/backup-my.cnf';
 -        read_config_file($backup_config_file, \%backup_config);
@@ -372,7 +441,22 @@
      }         
  }
  
-@@ -1290,12 +1406,13 @@
+@@ -1233,7 +1395,13 @@
+     my $innodb_log_file_size =
+         get_option(\%config, 'mysqld', 'innodb_log_file_size');
+ 
+-    open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
++    if (!$option_remote_host) {
++        open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
++    } else {
++        open(FILE, "| ssh $option_remote_host 'cat > $filename'")
++            || Die "Failed to open file '$option_remote_host:$filename': $!";
++    }
++
+     print FILE "# This MySQL options file was generated by innobackup.\n\n" .
+           "# The MySQL server\n" .
+           "[mysqld]\n" .
+@@ -1290,12 +1458,13 @@
      $rcode = GetOptions('compress:i' => \$option_compress,
                          'help' => \$option_help,
                          'version' => \$option_version,
@@ -387,7 +471,7 @@
                          'uncompress' => \$option_uncompress,
                          'password=s' => \$option_mysql_password,
                          'user=s' => \$option_mysql_user,
-@@ -1303,6 +1420,8 @@
+@@ -1303,6 +1472,8 @@
                          'slave-info' => \$option_slave_info,
                          'socket=s' => \$option_mysql_socket,
                          'no-timestamp' => \$option_no_timestamp,
@@ -396,7 +480,7 @@
                          'ibbackup=s' => \$option_ibbackup_binary);
      if (!$rcode) {
          # failed to read options
-@@ -1331,25 +1450,29 @@
+@@ -1331,25 +1502,29 @@
  	$option_compress = 0;
      }
  
@@ -431,21 +515,50 @@
      }        
  
      print "\n";
-@@ -1488,8 +1611,13 @@
+@@ -1463,10 +1638,17 @@
+         next unless -d "$source_dir/$database";
+ 	next unless check_if_required($database);
+         
+-        if (! -e "$backup_dir/$database") {
+-            # create database directory for the backup
+-            mkdir("$backup_dir/$database", 0777)
+-                || Die "Couldn't create directory '$backup_dir/$database': $!";
++        if (!$option_remote_host) {
++            if (! -e "$backup_dir/$database") {
++                # create database directory for the backup
++                mkdir("$backup_dir/$database", 0777)
++                    || Die "Couldn't create directory '$backup_dir/$database': $!";
++            }
++        } else {
++            if (system("ssh $option_remote_host test -e $backup_root/$database")
++                    != 0) {
++                system("ssh $option_remote_host mkdir $backup_root/$database");
++            }
+         }
+ 
+         # copy files of this database
+@@ -1488,8 +1670,18 @@
              if ($print_each_file) {
                  print "$prefix Backing up file '$file'\n";
              }
+-            system("cp -p '$file' '$backup_dir/$database'")
+-                and Die "Failed to copy file '$file': $!";
 +            if (!$option_incremental) {
-             system("cp -p '$file' '$backup_dir/$database'")
-                 and Die "Failed to copy file '$file': $!";
++                system("cp -p '$file' '$backup_dir/$database'")
++                    and Die "Failed to copy file '$file': $!";
 +            } else {
-+            system("rsync -a '$file' '$backup_dir/$database'")
-+                and Die "Failed to rsync file '$file': $!";
++                if (!$option_remote_host) {
++                    system("rsync -a '$file' '$backup_dir/$database'")
++                        and Die "Failed to rsync file '$file': $!";
++                } else {
++                    system("rsync -az '$file' '$option_remote_host:$backup_root/$database/'")
++                        and Die "Failed to rsync file '$file': $!";
++                }
 +            }
          }
      }
      closedir(DIR);
-@@ -1576,15 +1704,20 @@
+@@ -1576,15 +1768,20 @@
  #                   options are returned
  #
  sub read_config_file {
@@ -468,7 +581,7 @@
  
      # classify lines and save option values
      $group = 'default';
-@@ -1637,7 +1770,7 @@
+@@ -1637,7 +1834,7 @@
            # unknown
            print("$prefix: Warning: Ignored unrecognized line ",
                  $i + 1,
@@ -477,7 +590,7 @@
                  );
        }
     }
-@@ -1662,14 +1795,14 @@
+@@ -1662,14 +1859,14 @@
  
      if (!exists $config{$group}) {
          # no group
