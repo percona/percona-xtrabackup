@@ -37,7 +37,12 @@ Created 3/3/2009 Yasufumi Kinoshita
 #include <trx0xa.h>
 
 /* ==start === definition at fil0fil.c === */
+// ##################################################################
+// NOTE: We should check the following definitions fit to the source.
+// ##################################################################
 
+#ifndef INNODB_VERSION_SHORT
+//5.0 5.1
 /* File node of a tablespace or the log data space */
 struct fil_node_struct {
         fil_space_t*    space;  /* backpointer to the space where this node
@@ -176,6 +181,10 @@ struct fil_system_struct {
         UT_LIST_BASE_NODE_T(fil_space_t) space_list;
                                         /* list of all file spaces */
 };
+#else
+//Plugin ?
+#endif /* INNODB_VERSION_SHORT */
+
 extern fil_system_t*   fil_system;
 
 /* ==end=== definition  at fil0fil.c === */
@@ -359,7 +368,7 @@ static struct my_option my_long_options[] =
   {"throttle", OPT_XTRA_THROTTLE, "limit count of IO operations (pairs of read&write) per second to IOS values (for '--backup')",
    (gptr*) &xtrabackup_throttle, (gptr*) &xtrabackup_throttle,
    0, GET_LONG, REQUIRED_ARG, 0, 0, LONG_MAX, 0, 1, 0},
-  {"stream", OPT_XTRA_STREAM, "** nothing for now **",
+  {"log-stream", OPT_XTRA_STREAM, "outputs the contents of 'xtrabackup_logfile' to stdout only until the file 'xtrabackup_suspended' deleted (for '--backup').",
    (gptr*) &xtrabackup_stream, (gptr*) &xtrabackup_stream,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"create-ib-logfile", OPT_XTRA_CREATE_IB_LOGFILE, "** not work for now** creates ib_logfile* also after '--prepare'. ### If you want create ib_logfile*, only re-execute this command in same options. ###",
@@ -1292,7 +1301,7 @@ error:
 }
 
 bool
-xtrabackup_copy_logfile(dulint from_lsn)
+xtrabackup_copy_logfile(dulint from_lsn, bool is_last)
 {
 	char	path[FN_REFLEN];
 	char	*ptr1, *ptr2;
@@ -1320,7 +1329,8 @@ xtrabackup_copy_logfile(dulint from_lsn)
 
 	ibool		success;
 
-	ut_a(dst_log != -1);
+	if (!xtrabackup_stream)
+		ut_a(dst_log != -1);
 
 	/* read from checkpoint_lsn_start to current */
 	contiguous_lsn = ut_dulint_align_down(from_lsn,
@@ -1459,9 +1469,28 @@ xtrabackup_copy_logfile(dulint from_lsn)
 
 		//printf("Wrinting offset= %lld, size= %lu\n", log_copy_offset, write_size);
 
-		success = os_file_write(dst_log_path, dst_log, log_sys->buf,
-				(ulint)(log_copy_offset & 0xFFFFFFFFUL),
-				(ulint)(log_copy_offset >> 32), write_size);
+		if (!xtrabackup_stream) {
+			success = os_file_write(dst_log_path, dst_log, log_sys->buf,
+					(ulint)(log_copy_offset & 0xFFFFFFFFUL),
+					(ulint)(log_copy_offset >> 32), write_size);
+		} else {
+			ulint ret;
+			ulint stdout_write_size = write_size;
+			if (finished && !is_last)
+				stdout_write_size -= OS_FILE_LOG_BLOCK_SIZE;
+			if (stdout_write_size) {
+				ret = write(fileno(stdout), log_sys->buf, stdout_write_size);
+				if (ret == stdout_write_size) {
+					success = TRUE;
+				} else {
+					fprintf(stderr, "write: %lu > %lu\n", stdout_write_size, ret);
+					success = FALSE;
+				}
+			} else {
+				success = TRUE; /* do nothing */
+			}
+		}
+
 		log_copy_offset += write_size;
 
 		if (finished) {
@@ -1470,7 +1499,11 @@ xtrabackup_copy_logfile(dulint from_lsn)
 		}
 
 		if(!success) {
-			fprintf(stderr, "Error: os_file_write to %s\n", dst_log_path);
+			if (!xtrabackup_stream) {
+				fprintf(stderr, "Error: os_file_write to %s\n", dst_log_path);
+			} else {
+				fprintf(stderr, "Error: write to stdout\n");
+			}
 			goto error;
 		}
 
@@ -1506,7 +1539,13 @@ xtrabackup_copy_logfile(dulint from_lsn)
 	}
 
 
-	success = os_file_flush(dst_log);
+	if (!xtrabackup_stream) {
+		success = os_file_flush(dst_log);
+	} else {
+		fflush(stdout);
+		success = TRUE;
+	}
+
 	if(!success) {
 		goto error;
 	}
@@ -1514,7 +1553,8 @@ xtrabackup_copy_logfile(dulint from_lsn)
 	return(FALSE);
 
 error:
-	os_file_close(dst_log);
+	if (!xtrabackup_stream)
+		os_file_close(dst_log);
 	fprintf(stderr, "Error: xtrabackup_copy_logfile() failed.\n");
 	return(TRUE);
 }
@@ -1533,7 +1573,8 @@ log_copying_thread(
 {
 	ulint	counter = 0;
 
-	ut_a(dst_log != -1);
+	if (!xtrabackup_stream)
+		ut_a(dst_log != -1);
 
 	log_copying_running = TRUE;
 
@@ -1542,14 +1583,14 @@ log_copying_thread(
 
 		counter++;
 		if(counter >= SLEEPING_PERIOD * 5) {
-			if(xtrabackup_copy_logfile(log_copy_scanned_lsn))
+			if(xtrabackup_copy_logfile(log_copy_scanned_lsn, FALSE))
 				goto end;
 			counter = 0;
 		}
 	}
 
 	/* last copying */
-	if(xtrabackup_copy_logfile(log_copy_scanned_lsn))
+	if(xtrabackup_copy_logfile(log_copy_scanned_lsn, TRUE))
 		goto end;
 
 	log_copying_succeed = TRUE;
@@ -1805,6 +1846,8 @@ xtrabackup_backup_func(void)
 
 	}
 
+	if (!xtrabackup_stream) {
+
 	/* create target dir if not exist */
 	if (!my_stat(xtrabackup_target_dir,&stat_info,MYF(0))
 		&& (my_mkdir(xtrabackup_target_dir,0777,MYF(0)) < 0)){
@@ -1812,6 +1855,11 @@ xtrabackup_backup_func(void)
 		exit(1);
 	}
 
+	} else {
+		fprintf(stderr,"Stream mode.\n");
+		/* stdout can treat binary at Linux */
+		//setmode(fileno(stdout), O_BINARY);
+	}
 
         {
 	char	path[FN_REFLEN];
@@ -1887,10 +1935,12 @@ reread_log_header:
 		goto reread_log_header;
 	}
 
-	/* open 'xtrabackup_logfile' */
-	sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
-	dst_log = os_file_create(dst_log_path, OS_FILE_OVERWRITE,
-					OS_FILE_AIO, OS_LOG_FILE, &success);
+	if (!xtrabackup_stream) {
+
+		/* open 'xtrabackup_logfile' */
+		sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+		dst_log = os_file_create(dst_log_path, OS_FILE_OVERWRITE,
+						OS_FILE_AIO, OS_LOG_FILE, &success);
 
                 if (!success) {
                         /* The following call prints an error message */
@@ -1904,6 +1954,8 @@ reread_log_header:
                         exit(1);
                 }
 
+	}
+
 	/* label it */
 	strcpy((char*) log_hdr_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
 		"xtrabkup ");
@@ -1911,8 +1963,19 @@ reread_log_header:
 		(char*) log_hdr_buf + (LOG_FILE_WAS_CREATED_BY_HOT_BACKUP
 				+ (sizeof "xtrabkup ") - 1));
 
-	success = os_file_write(dst_log_path, dst_log, log_hdr_buf,
-			0, 0, LOG_FILE_HDR_SIZE);
+	if (!xtrabackup_stream) {
+		success = os_file_write(dst_log_path, dst_log, log_hdr_buf,
+				0, 0, LOG_FILE_HDR_SIZE);
+	} else {
+		/* Stream */
+		if (write(fileno(stdout), log_hdr_buf, LOG_FILE_HDR_SIZE)
+				== LOG_FILE_HDR_SIZE) {
+			success = TRUE;
+		} else {
+			success = FALSE;
+		}
+	}
+
 	log_copy_offset += LOG_FILE_HDR_SIZE;
 	if (!success) {
 		if (!dst_log == -1)
@@ -1935,7 +1998,7 @@ reread_log_header:
 
 
 	/* copy log file by current position */
-	if(xtrabackup_copy_logfile(checkpoint_lsn_start))
+	if(xtrabackup_copy_logfile(checkpoint_lsn_start, FALSE))
 		exit(1);
 
 
@@ -1946,6 +2009,7 @@ reread_log_header:
 
 
 
+	if (!xtrabackup_stream) { /* stream mode is transaction log only */
         //mutex_enter(&(system->mutex)); /* NOTE: It may not needed at "--backup" for now */
 
         space = UT_LIST_GET_FIRST(system->space_list);
@@ -1993,6 +2057,8 @@ reread_log_header:
                 space = UT_LIST_GET_NEXT(space_list, space);
         }
 
+	} //if (!xtrabackup_stream)
+
         //mutex_exit(&(system->mutex));
         }
 
@@ -2037,13 +2103,18 @@ reread_log_header:
 			usleep(200000); /*0.2 sec*/
 		}
 		printf("\n");
+	} else {
+		while (log_copying_running)
+			usleep(200000); /*0.2 sec*/
 	}
+
 	if (!log_copying_succeed) {
 		fprintf(stderr, "Error: log_copying_thread failed.\n");
 		exit(1);
 	}
 
-        os_file_close(dst_log);
+	if (!xtrabackup_stream)
+	        os_file_close(dst_log);
 
 	if (wait_throttle)
 		os_event_free(wait_throttle);
@@ -2581,11 +2652,19 @@ next_opt:
 			innobase_data_file_path ? innobase_data_file_path : "ibdata1:10M:autoextend");
 		printf("innodb_log_group_home_dir = %s\n",
 			innobase_log_group_home_dir ? innobase_log_group_home_dir : mysql_data_home);
+		printf("innodb_log_files_in_group = %ld\n", innobase_log_files_in_group);
+		printf("innodb_log_file_size = %lld\n", innobase_log_file_size);
 		exit(0);
 	}
 
-	if (!xtrabackup_stream)
+	if (!xtrabackup_stream) {
 		print_version();
+	} else {
+		if (xtrabackup_backup) {
+			xtrabackup_suspend_at_end = TRUE;
+			fprintf(stderr, "suspend-at-end is enabled.\n");
+		}
+	}
 
 	/* cannot execute both for now */
 	if (xtrabackup_backup == xtrabackup_prepare) { /* !XOR (for now) */

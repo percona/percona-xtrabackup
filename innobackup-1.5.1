@@ -78,6 +78,9 @@ my $option_no_timestamp = '';
 my $option_slave_info = '';
 my $option_ibbackup_binary = 'xtrabackup';
 
+my $option_incremental = '';
+my $option_remote_host = '';
+
 # name of the my.cnf configuration file
 #my $config_file = '';
 
@@ -94,7 +97,7 @@ my $suspend_file = '';
 my $innodb_log_group_home_dir = '';
 
 # backup my.cnf file
-#my $backup_config_file = '';
+my $backup_config_file = '';
 
 # options from the options file
 my %config;
@@ -419,7 +422,9 @@ sub backup {
     start_ibbackup();
 
     # wait for ibbackup to suspend itself
-    wait_for_ibbackup_suspend();
+    if (!$option_incremental) {
+        wait_for_ibbackup_suspend();
+    }
 
     # connect to database
     mysql_open();
@@ -745,6 +750,9 @@ sub start_ibbackup {
     if ($option_include) {
         $options = $options . " --include='$option_include'";
     }
+    if ($option_incremental) {
+        $options = $options . " --log-stream";
+    }
     $cmdline = "$option_ibbackup_binary $options";
 
     # run ibbackup as a child process
@@ -754,7 +762,71 @@ sub start_ibbackup {
         if ($pid) {
             # parent process
             $ibbackup_pid = $pid;
+
+            if($option_incremental) {
+                #incremental mode
+                my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
+                my $orig_ibdata_dir =
+                    get_option(\%config, 'mysqld', 'innodb_data_home_dir');
+                my $orig_innodb_data_file_path =
+                    get_option(\%config, 'mysqld', 'innodb_data_file_path');
+                my $subdir;
+                my @list;
+
+                if (-e "$backup_dir/ib_logfile0") {
+                    print "$prefix Remove $backup_dir/ib_logfile*\n";
+                    system("rm $backup_dir/ib_logfile*");
+                }
+
+                wait_for_ibbackup_suspend();
+
+                #InnoDB data files from original InnoDB data directory
+                print "\n$prefix Starting to rsync InnoDB tables and indexes\n";
+                print "$prefix to '$backup_dir'\n";
+                print "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
+                foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
+                    my $path = (split(/:/,$a))[0];
+                    print "$prefix Copying file '$orig_ibdata_dir/$path'\n";
+                    system("rsync -a '$orig_ibdata_dir/$path' '$backup_dir/$path'")
+                        and Die "Failed to rsync file '$path': $!";
+                }
+
+                #copy *.ibd files
+                opendir(DIR, $orig_datadir)
+                    || Die "Can't open directory '$orig_datadir': $!\n";
+                while (defined($subdir = readdir(DIR))) {
+                    my $print_each_file = 0;
+                    my $file_c;
+                    my $file;
+                    if ($subdir eq '.' || $subdir eq '..') { next; }
+                    next unless -d "$orig_datadir/$subdir";
+                    next unless check_if_required($subdir);
+
+                    @list = glob("$orig_datadir/$subdir/" . '*.ibd');
+
+                    $file_c = @list;
+                    if ($file_c <= $backup_file_print_limit) {
+                        $print_each_file = 1;
+                    } else {
+                        print "$prefix Backing up files " .
+                            "'$orig_datadir/$subdir/*.ibd' ($file_c files)\n";
+                    }
+                    foreach $file (@list) {
+                        if ($print_each_file) {
+                            print "$prefix Backing up file '$file'\n";
+                        }
+                        system("rsync -a '$file' '$backup_dir/$subdir/'")
+                            and Die "Failed to rsync file '$file': $!";
+                    }
+                }
+                closedir(DIR);
+            }
         } else {
+            if($option_incremental) {
+                open(STDOUT, "> $backup_dir/xtrabackup_logfile")
+                    || Die "Failed to open file '$backup_dir/xtrabackup_logfile': $!"
+            }
+
             # child process
             exec($cmdline) || Die "Failed to exec ibbackup: $!";
         }
@@ -1227,10 +1299,28 @@ sub init {
 
     if (!$option_apply_log && !$option_copy_back) {
         # we are making a backup, create a new backup directory
-        $backup_dir = File::Spec->rel2abs(make_backup_dir());
+        if (!$option_incremental) {
+            $backup_dir = File::Spec->rel2abs(make_backup_dir());
+        } else {
+            #incremental mode
+            my $innodb_data_file_path =
+                get_option(\%config, 'mysqld', 'innodb_data_file_path');
+
+            $backup_dir = File::Spec->rel2abs($backup_root);
+
+            # create subdirectories for ibdata files if needed
+            foreach my $a (split(/;/, $innodb_data_file_path)) {
+                my $path = (split(/:/,$a))[0];
+                my @relative_path = split(/\/+/, $path);
+                pop @relative_path;
+                if (@relative_path) {
+                    create_path_if_needed($backup_dir, \@relative_path);
+                }
+            }
+        }
         print "$prefix Created backup directory $backup_dir\n";
-        #$backup_config_file = $backup_dir . '/backup-my.cnf';
-        #write_backup_config_file($backup_config_file);
+        $backup_config_file = $backup_dir . '/backup-my.cnf';
+        write_backup_config_file($backup_config_file);
         $suspend_file = $backup_dir . '/xtrabackup_suspended';
         $mysql_stdout = $backup_dir . '/mysql-stdout';
         $mysql_stderr = $backup_dir . '/mysql-stderr';
@@ -1330,6 +1420,8 @@ sub check_args {
                         'slave-info' => \$option_slave_info,
                         'socket=s' => \$option_mysql_socket,
                         'no-timestamp' => \$option_no_timestamp,
+                        'incremental' => \$option_incremental,
+                        'remote-host=s' => \$option_remote_host,
                         'ibbackup=s' => \$option_ibbackup_binary);
     if (!$rcode) {
         # failed to read options
@@ -1374,6 +1466,10 @@ sub check_args {
     if (!$option_apply_log && !$option_copy_back) {
         # we are making a backup, get backup root directory
         $backup_root = $ARGV[0];
+        if ($option_remote_host && !$option_incremental) {
+            print "Remote backup supports incremental(rsync) mode only for now.\n";
+            exit(1);
+        }
     } else {
         # get backup directory
         $backup_dir = File::Spec->rel2abs($ARGV[0]);
@@ -1515,8 +1611,13 @@ sub backup_files {
             if ($print_each_file) {
                 print "$prefix Backing up file '$file'\n";
             }
+            if (!$option_incremental) {
             system("cp -p '$file' '$backup_dir/$database'")
                 and Die "Failed to copy file '$file': $!";
+            } else {
+            system("rsync -a '$file' '$backup_dir/$database'")
+                and Die "Failed to rsync file '$file': $!";
+            }
         }
     }
     closedir(DIR);
