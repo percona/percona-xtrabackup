@@ -13,6 +13,12 @@ Created 3/3/2009 Yasufumi Kinoshita
 #include <mysql_version.h>
 #include <mysql_com.h>
 
+#if (MYSQL_VERSION_ID < 50100)
+#define GPTR gptr
+#else /* MYSQL_VERSION_ID < 51000 */
+#define GPTR uchar*
+#endif
+
 #include <univ.i>
 #include <os0file.h>
 #include <os0thread.h>
@@ -190,7 +196,7 @@ extern fil_system_t*   fil_system;
 /* ==end=== definition  at fil0fil.c === */
 
 
-bool innodb_inited= 0;
+my_bool innodb_inited= 0;
 
 /* === xtrabackup specific options === */
 char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
@@ -347,36 +353,36 @@ enum options_xtrabackup
 
 static struct my_option my_long_options[] =
 {
-  {"target-dir", OPT_XTRA_TARGET_DIR, "destination directory", (gptr*) &xtrabackup_target_dir,
-   (gptr*) &xtrabackup_target_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"target-dir", OPT_XTRA_TARGET_DIR, "destination directory", (GPTR*) &xtrabackup_target_dir,
+   (GPTR*) &xtrabackup_target_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"backup", OPT_XTRA_BACKUP, "take backup to target-dir",
-   (gptr*) &xtrabackup_backup, (gptr*) &xtrabackup_backup,
+   (GPTR*) &xtrabackup_backup, (GPTR*) &xtrabackup_backup,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"prepare", OPT_XTRA_PREPARE, "prepare a backup for starting mysql server on the backup.",
-   (gptr*) &xtrabackup_prepare, (gptr*) &xtrabackup_prepare,
+   (GPTR*) &xtrabackup_prepare, (GPTR*) &xtrabackup_prepare,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"print-param", OPT_XTRA_PRINT_PARAM, "print parameter of mysqld needed for copyback.",
-   (gptr*) &xtrabackup_print_param, (gptr*) &xtrabackup_print_param,
+   (GPTR*) &xtrabackup_print_param, (GPTR*) &xtrabackup_print_param,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"use-memory", OPT_XTRA_USE_MEMORY, "The value is used instead of buffer_pool_size",
-   (gptr*) &xtrabackup_use_memory, (gptr*) &xtrabackup_use_memory,
+   (GPTR*) &xtrabackup_use_memory, (GPTR*) &xtrabackup_use_memory,
    0, GET_LL, REQUIRED_ARG, 100*1024*1024L, 1024*1024L, LONGLONG_MAX, 0,
    1024*1024L, 0},
   {"suspend-at-end", OPT_XTRA_SUSPEND_AT_END, "creates a file 'xtrabackup_suspended' and waits until the user deletes that file at the end of '--backup'",
-   (gptr*) &xtrabackup_suspend_at_end, (gptr*) &xtrabackup_suspend_at_end,
+   (GPTR*) &xtrabackup_suspend_at_end, (GPTR*) &xtrabackup_suspend_at_end,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"throttle", OPT_XTRA_THROTTLE, "limit count of IO operations (pairs of read&write) per second to IOS values (for '--backup')",
-   (gptr*) &xtrabackup_throttle, (gptr*) &xtrabackup_throttle,
+   (GPTR*) &xtrabackup_throttle, (GPTR*) &xtrabackup_throttle,
    0, GET_LONG, REQUIRED_ARG, 0, 0, LONG_MAX, 0, 1, 0},
   {"log-stream", OPT_XTRA_STREAM, "outputs the contents of 'xtrabackup_logfile' to stdout only until the file 'xtrabackup_suspended' deleted (for '--backup').",
-   (gptr*) &xtrabackup_stream, (gptr*) &xtrabackup_stream,
+   (GPTR*) &xtrabackup_stream, (GPTR*) &xtrabackup_stream,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"create-ib-logfile", OPT_XTRA_CREATE_IB_LOGFILE, "** not work for now** creates ib_logfile* also after '--prepare'. ### If you want create ib_logfile*, only re-execute this command in same options. ###",
-   (gptr*) &xtrabackup_create_ib_logfile, (gptr*) &xtrabackup_create_ib_logfile,
+   (GPTR*) &xtrabackup_create_ib_logfile, (GPTR*) &xtrabackup_create_ib_logfile,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
-  {"datadir", 'h', "Path to the database root.", (gptr*) &mysql_data_home,
-   (gptr*) &mysql_data_home, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"datadir", 'h', "Path to the database root.", (GPTR*) &mysql_data_home,
+   (GPTR*) &mysql_data_home, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"tmpdir", 't',
    "Path for temporary files. Several paths may be specified, separated by a "
 #if defined(__WIN__) || defined(OS2) || defined(__NETWARE__)
@@ -385,161 +391,161 @@ static struct my_option my_long_options[] =
    "colon (:)"
 #endif
    ", in this case they are used in a round-robin fashion.",
-   (gptr*) &opt_mysql_tmpdir,
-   (gptr*) &opt_mysql_tmpdir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   (GPTR*) &opt_mysql_tmpdir,
+   (GPTR*) &opt_mysql_tmpdir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
   {"innodb_adaptive_hash_index", OPT_INNODB_ADAPTIVE_HASH_INDEX,
    "Enable InnoDB adaptive hash index (enabled by default).  "
    "Disable with --skip-innodb-adaptive-hash-index.",
-   (gptr*) &innobase_adaptive_hash_index,
-   (gptr*) &innobase_adaptive_hash_index,
+   (GPTR*) &innobase_adaptive_hash_index,
+   (GPTR*) &innobase_adaptive_hash_index,
    0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
   {"innodb_additional_mem_pool_size", OPT_INNODB_ADDITIONAL_MEM_POOL_SIZE,
    "Size of a memory pool InnoDB uses to store data dictionary information and other internal data structures.",
-   (gptr*) &innobase_additional_mem_pool_size,
-   (gptr*) &innobase_additional_mem_pool_size, 0, GET_LONG, REQUIRED_ARG,
+   (GPTR*) &innobase_additional_mem_pool_size,
+   (GPTR*) &innobase_additional_mem_pool_size, 0, GET_LONG, REQUIRED_ARG,
    1*1024*1024L, 512*1024L, LONG_MAX, 0, 1024, 0},
   {"innodb_autoextend_increment", OPT_INNODB_AUTOEXTEND_INCREMENT,
    "Data file autoextend increment in megabytes",
-   (gptr*) &srv_auto_extend_increment,
-   (gptr*) &srv_auto_extend_increment,
+   (GPTR*) &srv_auto_extend_increment,
+   (GPTR*) &srv_auto_extend_increment,
    0, GET_ULONG, REQUIRED_ARG, 8L, 1L, 1000L, 0, 1L, 0},
   {"innodb_buffer_pool_size", OPT_INNODB_BUFFER_POOL_SIZE,
    "The size of the memory buffer InnoDB uses to cache data and indexes of its tables.",
-   (gptr*) &innobase_buffer_pool_size, (gptr*) &innobase_buffer_pool_size, 0,
+   (GPTR*) &innobase_buffer_pool_size, (GPTR*) &innobase_buffer_pool_size, 0,
    GET_LL, REQUIRED_ARG, 8*1024*1024L, 1024*1024L, LONGLONG_MAX, 0,
    1024*1024L, 0},
   {"innodb_checksums", OPT_INNODB_CHECKSUMS, "Enable InnoDB checksums validation (enabled by default). \
-Disable with --skip-innodb-checksums.", (gptr*) &innobase_use_checksums,
-   (gptr*) &innobase_use_checksums, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+Disable with --skip-innodb-checksums.", (GPTR*) &innobase_use_checksums,
+   (GPTR*) &innobase_use_checksums, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
 /*
   {"innodb_commit_concurrency", OPT_INNODB_COMMIT_CONCURRENCY,
    "Helps in performance tuning in heavily concurrent environments.",
-   (gptr*) &srv_commit_concurrency, (gptr*) &srv_commit_concurrency,
+   (GPTR*) &srv_commit_concurrency, (GPTR*) &srv_commit_concurrency,
    0, GET_ULONG, REQUIRED_ARG, 0, 0, 1000, 0, 1, 0},
 */
 /*
   {"innodb_concurrency_tickets", OPT_INNODB_CONCURRENCY_TICKETS,
    "Number of times a thread is allowed to enter InnoDB within the same \
     SQL query after it has once got the ticket",
-   (gptr*) &srv_n_free_tickets_to_enter,
-   (gptr*) &srv_n_free_tickets_to_enter,
+   (GPTR*) &srv_n_free_tickets_to_enter,
+   (GPTR*) &srv_n_free_tickets_to_enter,
    0, GET_ULONG, REQUIRED_ARG, 500L, 1L, ULONG_MAX, 0, 1L, 0},
 */
   {"innodb_data_file_path", OPT_INNODB_DATA_FILE_PATH,
-   "Path to individual files and their sizes.", (gptr*) &innobase_data_file_path,
-   (gptr*) &innobase_data_file_path, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   "Path to individual files and their sizes.", (GPTR*) &innobase_data_file_path,
+   (GPTR*) &innobase_data_file_path, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_data_home_dir", OPT_INNODB_DATA_HOME_DIR,
-   "The common part for InnoDB table spaces.", (gptr*) &innobase_data_home_dir,
-   (gptr*) &innobase_data_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0,
+   "The common part for InnoDB table spaces.", (GPTR*) &innobase_data_home_dir,
+   (GPTR*) &innobase_data_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0,
    0},
   {"innodb_doublewrite", OPT_INNODB_DOUBLEWRITE, "Enable InnoDB doublewrite buffer (enabled by default). \
-Disable with --skip-innodb-doublewrite.", (gptr*) &innobase_use_doublewrite,
-   (gptr*) &innobase_use_doublewrite, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+Disable with --skip-innodb-doublewrite.", (GPTR*) &innobase_use_doublewrite,
+   (GPTR*) &innobase_use_doublewrite, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
 /*
   {"innodb_fast_shutdown", OPT_INNODB_FAST_SHUTDOWN,
    "Speeds up the shutdown process of the InnoDB storage engine. Possible "
    "values are 0, 1 (faster)"
    " or 2 (fastest - crash-like)"
    ".",
-   (gptr*) &innobase_fast_shutdown,
-   (gptr*) &innobase_fast_shutdown, 0, GET_ULONG, OPT_ARG, 1, 0,
+   (GPTR*) &innobase_fast_shutdown,
+   (GPTR*) &innobase_fast_shutdown, 0, GET_ULONG, OPT_ARG, 1, 0,
    2, 0, 0, 0},
 */
   {"innodb_file_io_threads", OPT_INNODB_FILE_IO_THREADS,
-   "Number of file I/O threads in InnoDB.", (gptr*) &innobase_file_io_threads,
-   (gptr*) &innobase_file_io_threads, 0, GET_LONG, REQUIRED_ARG, 4, 4, 64, 0,
+   "Number of file I/O threads in InnoDB.", (GPTR*) &innobase_file_io_threads,
+   (GPTR*) &innobase_file_io_threads, 0, GET_LONG, REQUIRED_ARG, 4, 4, 64, 0,
    1, 0},
   {"innodb_file_per_table", OPT_INNODB_FILE_PER_TABLE,
    "Stores each InnoDB table to an .ibd file in the database dir.",
-   (gptr*) &innobase_file_per_table,
-   (gptr*) &innobase_file_per_table, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+   (GPTR*) &innobase_file_per_table,
+   (GPTR*) &innobase_file_per_table, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_flush_log_at_trx_commit", OPT_INNODB_FLUSH_LOG_AT_TRX_COMMIT,
    "Set to 0 (write and flush once per second), 1 (write and flush at each commit) or 2 (write at commit, flush once per second).",
-   (gptr*) &srv_flush_log_at_trx_commit,
-   (gptr*) &srv_flush_log_at_trx_commit,
+   (GPTR*) &srv_flush_log_at_trx_commit,
+   (GPTR*) &srv_flush_log_at_trx_commit,
    0, GET_ULONG, OPT_ARG,  1, 0, 2, 0, 0, 0},
   {"innodb_flush_method", OPT_INNODB_FLUSH_METHOD,
-   "With which method to flush data.", (gptr*) &innobase_unix_file_flush_method,
-   (gptr*) &innobase_unix_file_flush_method, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
+   "With which method to flush data.", (GPTR*) &innobase_unix_file_flush_method,
+   (GPTR*) &innobase_unix_file_flush_method, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
    0, 0, 0},
 
 /* ####### Should we use this option? ####### */
   {"innodb_force_recovery", OPT_INNODB_FORCE_RECOVERY,
    "Helps to save your data in case the disk image of the database becomes corrupt.",
-   (gptr*) &innobase_force_recovery, (gptr*) &innobase_force_recovery, 0,
+   (GPTR*) &innobase_force_recovery, (GPTR*) &innobase_force_recovery, 0,
    GET_LONG, REQUIRED_ARG, 0, 0, 6, 0, 1, 0},
 
   {"innodb_lock_wait_timeout", OPT_INNODB_LOCK_WAIT_TIMEOUT,
    "Timeout in seconds an InnoDB transaction may wait for a lock before being rolled back.",
-   (gptr*) &innobase_lock_wait_timeout, (gptr*) &innobase_lock_wait_timeout,
+   (GPTR*) &innobase_lock_wait_timeout, (GPTR*) &innobase_lock_wait_timeout,
    0, GET_LONG, REQUIRED_ARG, 50, 1, 1024 * 1024 * 1024, 0, 1, 0},
 /*
   {"innodb_locks_unsafe_for_binlog", OPT_INNODB_LOCKS_UNSAFE_FOR_BINLOG,
    "Force InnoDB not to use next-key locking. Instead use only row-level locking",
-   (gptr*) &innobase_locks_unsafe_for_binlog,
-   (gptr*) &innobase_locks_unsafe_for_binlog, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+   (GPTR*) &innobase_locks_unsafe_for_binlog,
+   (GPTR*) &innobase_locks_unsafe_for_binlog, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 */
 /*
   {"innodb_log_arch_dir", OPT_INNODB_LOG_ARCH_DIR,
-   "Where full logs should be archived.", (gptr*) &innobase_log_arch_dir,
-   (gptr*) &innobase_log_arch_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   "Where full logs should be archived.", (GPTR*) &innobase_log_arch_dir,
+   (GPTR*) &innobase_log_arch_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 */
   {"innodb_log_buffer_size", OPT_INNODB_LOG_BUFFER_SIZE,
    "The size of the buffer which InnoDB uses to write log to the log files on disk.",
-   (gptr*) &innobase_log_buffer_size, (gptr*) &innobase_log_buffer_size, 0,
+   (GPTR*) &innobase_log_buffer_size, (GPTR*) &innobase_log_buffer_size, 0,
    GET_LONG, REQUIRED_ARG, 1024*1024L, 256*1024L, LONG_MAX, 0, 1024, 0},
   {"innodb_log_file_size", OPT_INNODB_LOG_FILE_SIZE,
    "Size of each log file in a log group.",
-   (gptr*) &innobase_log_file_size, (gptr*) &innobase_log_file_size, 0,
+   (GPTR*) &innobase_log_file_size, (GPTR*) &innobase_log_file_size, 0,
    GET_LL, REQUIRED_ARG, 5*1024*1024L, 1*1024*1024L, LONGLONG_MAX, 0,
    1024*1024L, 0},
   {"innodb_log_files_in_group", OPT_INNODB_LOG_FILES_IN_GROUP,
    "Number of log files in the log group. InnoDB writes to the files in a circular fashion. Value 3 is recommended here.",
-   (gptr*) &innobase_log_files_in_group, (gptr*) &innobase_log_files_in_group,
+   (GPTR*) &innobase_log_files_in_group, (GPTR*) &innobase_log_files_in_group,
    0, GET_LONG, REQUIRED_ARG, 2, 2, 100, 0, 1, 0},
   {"innodb_log_group_home_dir", OPT_INNODB_LOG_GROUP_HOME_DIR,
-   "Path to InnoDB log files.", (gptr*) &innobase_log_group_home_dir,
-   (gptr*) &innobase_log_group_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
+   "Path to InnoDB log files.", (GPTR*) &innobase_log_group_home_dir,
+   (GPTR*) &innobase_log_group_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
    0, 0},
   {"innodb_max_dirty_pages_pct", OPT_INNODB_MAX_DIRTY_PAGES_PCT,
-   "Percentage of dirty pages allowed in bufferpool.", (gptr*) &srv_max_buf_pool_modified_pct,
-   (gptr*) &srv_max_buf_pool_modified_pct, 0, GET_ULONG, REQUIRED_ARG, 90, 0, 100, 0, 0, 0},
+   "Percentage of dirty pages allowed in bufferpool.", (GPTR*) &srv_max_buf_pool_modified_pct,
+   (GPTR*) &srv_max_buf_pool_modified_pct, 0, GET_ULONG, REQUIRED_ARG, 90, 0, 100, 0, 0, 0},
 /*
   {"innodb_max_purge_lag", OPT_INNODB_MAX_PURGE_LAG,
    "Desired maximum length of the purge queue (0 = no limit)",
-   (gptr*) &srv_max_purge_lag,
-   (gptr*) &srv_max_purge_lag, 0, GET_ULONG, REQUIRED_ARG, 0, 0, ULONG_MAX,
+   (GPTR*) &srv_max_purge_lag,
+   (GPTR*) &srv_max_purge_lag, 0, GET_ULONG, REQUIRED_ARG, 0, 0, ULONG_MAX,
    0, 1L, 0},
 */
 /*
   {"innodb_mirrored_log_groups", OPT_INNODB_MIRRORED_LOG_GROUPS,
    "Number of identical copies of log groups we keep for the database. Currently this should be set to 1.",
-   (gptr*) &innobase_mirrored_log_groups,
-   (gptr*) &innobase_mirrored_log_groups, 0, GET_LONG, REQUIRED_ARG, 1, 1, 10,
+   (GPTR*) &innobase_mirrored_log_groups,
+   (GPTR*) &innobase_mirrored_log_groups, 0, GET_LONG, REQUIRED_ARG, 1, 1, 10,
    0, 1, 0},
 */
   {"innodb_open_files", OPT_INNODB_OPEN_FILES,
    "How many files at the maximum InnoDB keeps open at the same time.",
-   (gptr*) &innobase_open_files, (gptr*) &innobase_open_files, 0,
+   (GPTR*) &innobase_open_files, (GPTR*) &innobase_open_files, 0,
    GET_LONG, REQUIRED_ARG, 300L, 10L, LONG_MAX, 0, 1L, 0},
 /*
   {"innodb_rollback_on_timeout", OPT_INNODB_ROLLBACK_ON_TIMEOUT,
    "Roll back the complete transaction on lock wait timeout, for 4.x compatibility (disabled by default)",
-   (gptr*) &innobase_rollback_on_timeout, (gptr*) &innobase_rollback_on_timeout,
+   (GPTR*) &innobase_rollback_on_timeout, (GPTR*) &innobase_rollback_on_timeout,
    0, GET_BOOL, OPT_ARG, 0, 0, 0, 0, 0, 0},
 */
 /*
   {"innodb_status_file", OPT_INNODB_STATUS_FILE,
    "Enable SHOW INNODB STATUS output in the innodb_status.<pid> file",
-   (gptr*) &innobase_create_status_file, (gptr*) &innobase_create_status_file,
+   (GPTR*) &innobase_create_status_file, (GPTR*) &innobase_create_status_file,
    0, GET_BOOL, OPT_ARG, 0, 0, 0, 0, 0, 0},
 */
 /*
   {"innodb_sync_spin_loops", OPT_INNODB_SYNC_SPIN_LOOPS,
    "Count of spin-loop rounds in InnoDB mutexes",
-   (gptr*) &srv_n_spin_wait_rounds,
-   (gptr*) &srv_n_spin_wait_rounds,
+   (GPTR*) &srv_n_spin_wait_rounds,
+   (GPTR*) &srv_n_spin_wait_rounds,
    0, GET_ULONG, REQUIRED_ARG, 20L, 0L, ULONG_MAX, 0, 1L, 0},
 */
 /*
@@ -547,15 +553,15 @@ Disable with --skip-innodb-doublewrite.", (gptr*) &innobase_use_doublewrite,
    "Helps in performance tuning in heavily concurrent environments. "
    "Sets the maximum number of threads allowed inside InnoDB. Value 0"
    " will disable the thread throttling.",
-   (gptr*) &srv_thread_concurrency, (gptr*) &srv_thread_concurrency,
+   (GPTR*) &srv_thread_concurrency, (GPTR*) &srv_thread_concurrency,
    0, GET_ULONG, REQUIRED_ARG, 8, 0, 1000, 0, 1, 0},
 */
 /*
   {"innodb_thread_sleep_delay", OPT_INNODB_THREAD_SLEEP_DELAY,
    "Time of innodb thread sleeping before joining InnoDB queue (usec). Value 0"
     " disable a sleep",
-   (gptr*) &srv_thread_sleep_delay,
-   (gptr*) &srv_thread_sleep_delay,
+   (GPTR*) &srv_thread_sleep_delay,
+   (GPTR*) &srv_thread_sleep_delay,
    0, GET_ULONG, REQUIRED_ARG, 10000L, 0L, ULONG_MAX, 0, 1L, 0},
 */
 
@@ -605,6 +611,27 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 
 /* ================ Dummys =================== */
 
+ibool
+thd_is_replication_slave_thread(
+	void*	thd)
+{
+	fprintf(stderr, "thd_is_replication_slave_thread() is called\n");
+}
+
+ibool
+thd_has_edited_nontrans_tables(
+	void*	thd)
+{
+	fprintf(stderr, "thd_has_edited_nontrans_tables() is called\n");
+}
+
+ibool
+thd_is_select(
+	const void*	thd)
+{
+	fprintf(stderr, "thd_is_select() is called\n");
+}
+
 void
 innobase_mysql_prepare_print_arbitrary_thd(void)
 {
@@ -647,6 +674,24 @@ innobase_get_cset_width(
 	}
 }
 
+void
+innobase_convert_from_table_id(
+	char*	to,
+	const char*	from,
+	ulint	len)
+{
+	fprintf(stderr, "innobase_convert_from_table_id() is called\n");
+}
+
+void
+innobase_convert_from_id(
+	char*	to,
+	const char*	from,
+	ulint	len)
+{
+	fprintf(stderr, "innobase_convert_from_id() is called\n");
+}
+
 int
 innobase_strcasecmp(
 	const char*	a,
@@ -660,6 +705,13 @@ innobase_casedn_str(
 	char*	a)
 {
 	my_casedn_str(&my_charset_utf8_general_ci, a);
+}
+
+struct charset_info_st*
+innobase_get_charset(
+	void*   mysql_thd)
+{
+	fprintf(stderr, "innobase_get_charset() is called\n");
 }
 
 int
@@ -714,6 +766,31 @@ mysql_get_identifier_quote_char(
 	ulint		namelen)
 {
 	return '"';
+}
+
+void
+innobase_print_identifier(
+	FILE*	f,
+	trx_t*	trx,
+	ibool	table_id,
+	const char*	name,
+	ulint	namelen)
+{
+        const char*     s       = name;
+        int             q;
+
+        q = '"';
+
+        const char*     e = s + namelen;
+        putc(q, f);
+        while (s < e) {
+                int     c = *s++;
+                if (c == q) {
+                        putc(c, f);
+                }
+                putc(c, f);
+        }
+        putc(q, f);
 }
 
 ibool
@@ -864,11 +941,11 @@ innobase_query_is_update(void)
 
 /* control innodb */
 
-bool
+my_bool
 innodb_init_param(void)
 {
 	/* === some variables from mysqld === */
-	bzero((gptr) &mysql_tmpdir_list, sizeof(mysql_tmpdir_list));
+	bzero((GPTR) &mysql_tmpdir_list, sizeof(mysql_tmpdir_list));
 
 	if (init_tmpdir(&mysql_tmpdir_list, opt_mysql_tmpdir))
 		exit(1);
@@ -881,7 +958,7 @@ innodb_init_param(void)
 
 	static char	current_dir[3];		/* Set if using current lib */
 	int		err;
-	bool		ret;
+	my_bool		ret;
 	char 	        *default_path;
 
 	/* Check that values don't overflow on 32-bit systems. */
@@ -955,7 +1032,7 @@ innodb_init_param(void)
 
 	internal_innobase_data_file_path = strdup(innobase_data_file_path);
 
-	ret = (bool) srv_parse_data_file_paths_and_sizes(
+	ret = (my_bool) srv_parse_data_file_paths_and_sizes(
 				internal_innobase_data_file_path,
 				&srv_data_file_names,
 				&srv_data_file_sizes,
@@ -988,7 +1065,7 @@ innodb_init_param(void)
 	srv_arch_dir = innobase_log_arch_dir;
 #endif /* UNIG_LOG_ARCHIVE */
 
-	ret = (bool)
+	ret = (my_bool)
 		srv_parse_log_group_home_dirs(innobase_log_group_home_dir,
 						&srv_log_group_home_dirs);
 
@@ -1093,7 +1170,7 @@ error:
 	return(TRUE);
 }
 
-bool
+my_bool
 innodb_init(void)
 {
 	int	err;
@@ -1123,7 +1200,7 @@ error:
 	return(TRUE);
 }
 
-bool
+my_bool
 innodb_end(void)
 {
 	srv_fast_shutdown = (ulint) innobase_fast_shutdown;
@@ -1163,7 +1240,7 @@ xtrabackup_io_throttling(void)
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
 
-bool
+my_bool
 xtrabackup_copy_datafile(fil_node_t* node)
 {
 	os_file_t	src_file = -1;
@@ -1300,8 +1377,8 @@ error:
 	return(TRUE); /*ERROR*/
 }
 
-bool
-xtrabackup_copy_logfile(dulint from_lsn, bool is_last)
+my_bool
+xtrabackup_copy_logfile(dulint from_lsn, my_bool is_last)
 {
 	char	path[FN_REFLEN];
 	char	*ptr1, *ptr2;
@@ -2132,7 +2209,7 @@ reread_log_header:
 
 /* ================= prepare ================= */
 
-bool
+my_bool
 xtrabackup_init_temp_log(void)
 {
 	os_file_t	src_file = -1;
@@ -2393,8 +2470,8 @@ error:
 	return(TRUE); /*ERROR*/
 }
 
-bool
-xtrabackup_close_temp_log(bool clear_flag)
+my_bool
+xtrabackup_close_temp_log(my_bool clear_flag)
 {
 	os_file_t	src_file = -1;
 	char	src_path[FN_REFLEN];
