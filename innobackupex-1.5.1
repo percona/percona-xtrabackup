@@ -93,6 +93,9 @@ my $backup_dir = '';
 # name of the ibbackup suspend-at-end file
 my $suspend_file = '';
 
+# name of the temporary transaction log file during the backup
+my $tmp_logfile = '';
+
 # home directory of innoDB log files
 my $innodb_log_group_home_dir = '';
 
@@ -109,7 +112,7 @@ my %config;
 my %databases_list;
 
 # prefix for output lines
-my $prefix = 'innobackup:';
+my $prefix = 'innobackupex:';
 
 # process id of mysql client program (runs as a child process of this script)
 my $mysql_pid = '';
@@ -217,7 +220,7 @@ Usage:
 innobackup [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME] 
            [--password=WORD] [--port=PORT] [--socket=SOCKET] [--no-timestamp] 
            [--ibbackup=IBBACKUP-BINARY] [--slave-info]
-           [--databases=LIST] BACKUP-ROOT-DIR
+           [--databases=LIST] [--remote-host=HOSTNAME] BACKUP-ROOT-DIR
 innobackup --apply-log [--use-memory=MB] [--uncompress] 
            [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
 innobackup --copy-back BACKUP-DIR
@@ -265,6 +268,10 @@ Options:
 
     --copy-back Copy data and index files from backup directory back to 
                 their original locations.
+
+    --remote-host=HOSTNAME
+                If this option is specified, backup files will be created
+                at the remote host by using ssh connection.
 
     --use-memory=MB
                 This option is passed to the ibbackup child process.
@@ -422,7 +429,7 @@ sub backup {
     start_ibbackup();
 
     # wait for ibbackup to suspend itself
-    if (!$option_incremental) {
+    if (!$option_remote_host) {
         wait_for_ibbackup_suspend();
     }
 
@@ -444,6 +451,11 @@ sub backup {
 
     # disconnect from database
     mysql_close();
+
+    if ($option_remote_host) {
+        system("scp -Cp -c arcfour '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
+            and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_logfile': $!";
+    }
 
     print "\n$prefix Backup created in directory '$backup_dir'\n";
     if ($mysql_binlog_position) {
@@ -735,7 +747,8 @@ sub start_ibbackup {
     if (!$option_remote_host) {
         $options = $options . " --target-dir=$backup_dir";
     } else {
-        $options = $options . " --target-dir=./"; #datadir
+        #(datadir) for 'xtrabackup_suspended' only
+        $options = $options . " --log-stream --target-dir=./";
     }
 
     # prepare command line for running ibbackup
@@ -754,9 +767,6 @@ sub start_ibbackup {
     if ($option_include) {
         $options = $options . " --include='$option_include'";
     }
-    if ($option_incremental) {
-        $options = $options . " --log-stream";
-    }
     $cmdline = "$option_ibbackup_binary $options";
 
     # run ibbackup as a child process
@@ -767,8 +777,8 @@ sub start_ibbackup {
             # parent process
             $ibbackup_pid = $pid;
 
-            if($option_incremental) {
-                #incremental mode
+            if($option_remote_host) {
+                #direct copy to remote
                 my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
                 my $orig_ibdata_dir =
                     get_option(\%config, 'mysqld', 'innodb_data_home_dir');
@@ -777,35 +787,24 @@ sub start_ibbackup {
                 my $subdir;
                 my @list;
 
-                if (!$option_remote_host) {
-                    if (-e "$backup_dir/ib_logfile0") {
-                        print "$prefix Remove $backup_dir/ib_logfile*\n";
-                        system("rm $backup_dir/ib_logfile*");
-                    }
-                } else {
-                    if (system("ssh $option_remote_host test -e $backup_root/ib_logfile0")
-                            == 0) {
-                        print "$prefix Remove $option_remote_host:$backup_root/ib_logfile*\n";
-                        system("ssh $option_remote_host rm $backup_root/ib_logfile\*");
-                    }
+                if (system("ssh $option_remote_host test -e $backup_dir/ib_logfile0")
+                        == 0) {
+                    print "$prefix Remove $option_remote_host:$backup_dir/ib_logfile*\n";
+                    system("ssh $option_remote_host rm $backup_dir/ib_logfile\*")
+                        and Die "Failed to rm file '$backup_dir/ib_logfile*': $!";
                 }
 
                 wait_for_ibbackup_suspend();
 
                 #InnoDB data files from original InnoDB data directory
-                print "\n$prefix Starting to rsync InnoDB tables and indexes\n";
+                print "\n$prefix Starting to scp InnoDB tables and indexes\n";
                 print "$prefix to '$backup_dir'\n";
                 print "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
                 foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
                     my $path = (split(/:/,$a))[0];
                     print "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
-                    if (!$option_remote_host) {
-                        system("rsync -a '$orig_ibdata_dir/$path' '$backup_dir/$path'")
-                            and Die "Failed to rsync file '$path': $!";
-                    } else {
-                        system("rsync -az '$orig_ibdata_dir/$path' '$option_remote_host:$backup_root/$path'")
-                            and Die "Failed to rsync file '$path': $!";
-                    }
+                    system("scp -Cp -c arcfour '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
+                        and Die "Failed to scp file '$path': $!";
                 }
 
                 #copy *.ibd files
@@ -832,26 +831,20 @@ sub start_ibbackup {
                         if ($print_each_file) {
                             print "$prefix Backing up file '$file'\n";
                         }
-                        if (!$option_remote_host) {
-                            system("rsync -a '$file' '$backup_dir/$subdir/'")
-                                and Die "Failed to rsync file '$file': $!";
-                        } else {
-                            system("rsync -az '$file' '$option_remote_host:$backup_root/$subdir/'")
-                                and Die "Failed to rsync file '$file': $!";
+                        if (system("ssh $option_remote_host test -e $backup_dir/$subdir")
+                                != 0) {
+                            system("ssh $option_remote_host mkdir $backup_dir/$subdir");
                         }
+                        system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$subdir/'")
+                            and Die "Failed to scp file '$file': $!";
                     }
                 }
                 closedir(DIR);
             }
         } else {
-            if($option_incremental) {
-                if(!$option_remote_host) {
-                    open(STDOUT, "> $backup_dir/xtrabackup_logfile")
-                    || Die "Failed to open file '$backup_dir/xtrabackup_logfile': $!"
-                } else {
-                    open(STDOUT, "| ssh $option_remote_host 'cat > $backup_root/xtrabackup_logfile'")
-                    || Die "Failed to open file '$option_remote_host:$backup_root/xtrabackup_logfile': $!"
-                }
+            if($option_remote_host) {
+                open(STDOUT, "> $tmp_logfile")
+                || Die "Failed to open file '$tmp_logfile': $!"
             }
 
             # child process
@@ -1336,24 +1329,10 @@ sub init {
 
     if (!$option_apply_log && !$option_copy_back) {
         # we are making a backup, create a new backup directory
-        if (!$option_incremental) {
+        if (!$option_remote_host) {
             $backup_dir = File::Spec->rel2abs(make_backup_dir());
         } else {
-            #incremental mode
-            my $innodb_data_file_path =
-                get_option(\%config, 'mysqld', 'innodb_data_file_path');
-
-            $backup_dir = File::Spec->rel2abs($backup_root);
-
-            # create subdirectories for ibdata files if needed
-            foreach my $a (split(/;/, $innodb_data_file_path)) {
-                my $path = (split(/:/,$a))[0];
-                my @relative_path = split(/\/+/, $path);
-                pop @relative_path;
-                if (@relative_path) {
-                    create_path_if_needed($backup_dir, \@relative_path);
-                }
-            }
+            $backup_dir = make_backup_dir();
         }
         print "$prefix Created backup directory $backup_dir\n";
         if (!$option_remote_host) {
@@ -1364,12 +1343,13 @@ sub init {
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
-        $backup_config_file = $backup_root . '/backup-my.cnf';
+        $backup_config_file = $backup_dir . '/backup-my.cnf';
         $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
+        $tmp_logfile = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_logfile';
         $mysql_stdout = '/tmp/mysql-stdout';
         $mysql_stderr = '/tmp/mysql-stderr';
-        $binlog_info = $backup_root . '/xtrabackup_binlog_info';
-        $slave_info = $backup_root . '/xtrabackup_slave_info';
+        $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
+        $slave_info = $backup_dir . '/xtrabackup_slave_info';
         }
         write_backup_config_file($backup_config_file);
     } elsif ($option_copy_back) {
@@ -1400,7 +1380,7 @@ sub write_backup_config_file {
         $root = $backup_dir;
         open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
     } else {
-        $root = `ssh $option_remote_host 'cd $backup_root; pwd'`;
+        $root = `ssh $option_remote_host 'cd $backup_dir; pwd'`;
         open(FILE, "| ssh $option_remote_host 'cat > $filename'")
             || Die "Failed to open file '$option_remote_host:$filename': $!";
     }
@@ -1521,8 +1501,8 @@ sub check_args {
     if (!$option_apply_log && !$option_copy_back) {
         # we are making a backup, get backup root directory
         $backup_root = $ARGV[0];
-        if ($option_remote_host && !$option_incremental) {
-            print "Remote backup supports incremental(rsync) mode only for now.\n";
+        if ($option_incremental) {
+            print "incremental backup is not supported for now.\n";
             exit(1);
         }
     } else {
@@ -1549,7 +1529,11 @@ sub make_backup_dir {
     $dir = $backup_root;
     $dir .= '/' . strftime("%Y-%m-%d_%H-%M-%S", localtime())
        unless $option_no_timestamp;
-    mkdir($dir, 0777) || Die "Failed to create backup directory $dir: $!";
+    if (!$option_remote_host) {
+        mkdir($dir, 0777) || Die "Failed to create backup directory $dir: $!";
+    } else {
+        system("ssh $option_remote_host mkdir $dir");
+    }
 
     # create subdirectories for ibdata files if needed
     foreach my $a (split(/;/, $innodb_data_file_path)) {
@@ -1585,9 +1569,15 @@ sub create_path_if_needed {
     $path = $root;
     foreach $a (@{$relative_path}) {
         $path = $path . "/" . $a;
-        if (! -d $path) {
-            # this directory does not exist, create it !
-            mkdir($path, 0777) || Die "Failed to create backup directory: $!";
+        if (!$option_remote_host) {
+            if (! -d $path) {
+                # this directory does not exist, create it !
+                mkdir($path, 0777) || Die "Failed to create backup directory: $!";
+            }
+        } else {
+            if (system("ssh $option_remote_host test -d $path") != 0) {
+                system("ssh $option_remote_host mkdir $path");
+            }
         }
     }
 }
@@ -1648,9 +1638,9 @@ sub backup_files {
                     || Die "Couldn't create directory '$backup_dir/$database': $!";
             }
         } else {
-            if (system("ssh $option_remote_host test -e $backup_root/$database")
+            if (system("ssh $option_remote_host test -e $backup_dir/$database")
                     != 0) {
-                system("ssh $option_remote_host mkdir $backup_root/$database");
+                system("ssh $option_remote_host mkdir $backup_dir/$database");
             }
         }
 
@@ -1673,17 +1663,12 @@ sub backup_files {
             if ($print_each_file) {
                 print "$prefix Backing up file '$file'\n";
             }
-            if (!$option_incremental) {
+            if (!$option_remote_host) {
                 system("cp -p '$file' '$backup_dir/$database'")
                     and Die "Failed to copy file '$file': $!";
             } else {
-                if (!$option_remote_host) {
-                    system("rsync -a '$file' '$backup_dir/$database'")
-                        and Die "Failed to rsync file '$file': $!";
-                } else {
-                    system("rsync -az '$file' '$option_remote_host:$backup_root/$database/'")
-                        and Die "Failed to rsync file '$file': $!";
-                }
+                system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$database/'")
+                    and Die "Failed to scp file '$file': $!";
             }
         }
     }
