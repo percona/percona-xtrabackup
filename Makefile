@@ -1,8 +1,13 @@
-LIBS=	-lpthread -lrt
+LIBS=	-lpthread
 DEFS=	-DUNIV_LINUX -DMYSQL_SERVER
 
 #x86_32
 CFLAGS=	-O2 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
+
+#Mac OS 64 bit
+#CFLAGS=	-O2 -arch x86_64 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
+
+#LD=ld64
 
 #5.0
 INC=	-I. -I.. -I./../include -I./../../include
@@ -25,7 +30,7 @@ MYSQLOBJS=	../../mysys/libmysys.a ../../strings/libmystrings.a
 all: xtrabackup
 
 xtrabackup : xtrabackup.o $(INNODBOBJS) $(MYSQLOBJS)
-	$(CC) xtrabackup.o $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) -o xtrabackup
+	$(CC)  $(CFLAGS)  xtrabackup.o $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) -o xtrabackup
 
 clean:
 	rm -f *.o xtrabackup
