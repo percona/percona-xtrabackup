@@ -765,7 +765,7 @@ sub start_ibbackup {
         $options = $options . " --use-memory=$option_use_memory";
     }
     if ($option_include) {
-        $options = $options . " --include='$option_include'";
+        $options = $options . " --tables='$option_include'";
     }
     $cmdline = "$option_ibbackup_binary $options";
 

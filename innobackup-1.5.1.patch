@@ -1,5 +1,5 @@
 --- innobackup-1.5.1_orig	2009-03-04 21:41:35.000000000 +0900
-+++ innobackupex-1.5.1	2009-03-11 17:05:06.000000000 +0900
++++ innobackupex-1.5.1	2009-03-12 12:20:15.000000000 +0900
 @@ -8,6 +8,7 @@
  
  use strict;
@@ -267,7 +267,7 @@
      }
      if ($option_include) {
 -        $options = $options . " --include '$option_include'";
-+        $options = $options . " --include='$option_include'";
++        $options = $options . " --tables='$option_include'";
      }
 -    $cmdline = "$option_ibbackup_binary $options $config_file "
 -        ."$backup_config_file";
