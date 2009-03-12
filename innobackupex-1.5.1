@@ -314,7 +314,6 @@ Options:
                 included in the backup. The regular expression should
                 be of the POSIX 1003.2 "extended" form.  
                 Try 'ibbackup --help' for more details on this option.
-                ** it is not supported by xtrabackup yet **
 
     --databases=LIST
                 This option is used to specify the list of databases that
@@ -455,6 +454,7 @@ sub backup {
     if ($option_remote_host) {
         system("scp -Cp -c arcfour '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_logfile': $!";
+        unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
     }
 
     print "\n$prefix Backup created in directory '$backup_dir'\n";
@@ -828,6 +828,18 @@ sub start_ibbackup {
                             "'$orig_datadir/$subdir/*.ibd' ($file_c files)\n";
                     }
                     foreach $file (@list) {
+                        if($option_include) {
+                            my $table_name;
+
+                            $table_name = substr($file, rindex($file, '/'));
+                            $table_name = substr($table_name, 1, rindex($table_name, '.') - 1);
+
+                            if (!($table_name =~ /$option_include/)) {
+                                print "'$file' is skipped.\n";
+                                next;
+                            }
+                        }
+
                         if ($print_each_file) {
                             print "$prefix Backing up file '$file'\n";
                         }

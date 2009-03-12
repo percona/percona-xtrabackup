@@ -1292,8 +1292,6 @@ xtrabackup_copy_datafile(fil_node_t* node)
 		if ( regres == REG_NOMATCH ) {
 			printf("Copying %s is skipped.\n", node->name);
 			return(FALSE);
-		} else {
-			printf("%d,%d\n",tables_regmatch[1].rm_so,tables_regmatch[1].rm_eo);
 		}
 	}
 skip_filter:
