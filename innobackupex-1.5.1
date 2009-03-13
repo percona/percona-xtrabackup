@@ -80,6 +80,8 @@ my $option_ibbackup_binary = 'xtrabackup';
 
 my $option_incremental = '';
 my $option_remote_host = '';
+my $option_stream = '';
+my $option_tmpdir = '';
 
 # name of the my.cnf configuration file
 #my $config_file = '';
@@ -194,7 +196,12 @@ if ($option_copy_back) {
 
 # program has completed successfully
 $now = current_time();
-print "$now  $prefix innobackup completed OK!\n";
+print STDERR "$now  $prefix innobackup completed OK!\n";
+
+if ($option_stream eq 'tar') {
+    print STDERR "$prefix You must use -i (--ignore-zeros) option for extraction of the tar stream.\n";
+}
+
 exit 0;
 
 ######################################################################
@@ -206,7 +213,7 @@ exit 0;
 # print_version subroutine prints program version and copyright.
 #
 sub print_version {
-    printf($copyright_notice);
+    printf(STDERR $copyright_notice);
 }
 
 
@@ -214,7 +221,7 @@ sub print_version {
 # usage subroutine prints instructions of how to use this program to stdout.
 #
 sub usage {
-    print <<EOF;
+    print STDERR <<EOF;
 
 Usage:
 innobackup [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME] 
@@ -272,6 +279,15 @@ Options:
     --remote-host=HOSTNAME
                 If this option is specified, backup files will be created
                 at the remote host by using ssh connection.
+
+    --stream=[tar|cpio]
+                If this option is specified, backup to STDOUT as specified
+                format.
+
+    --tmpdir=DIRECTORY
+                When --remote-host or --stream specified, transaction log
+                should be stored temporary. The default value is same to
+                mysqld setting.
 
     --use-memory=MB
                 This option is passed to the ibbackup child process.
@@ -428,7 +444,7 @@ sub backup {
     start_ibbackup();
 
     # wait for ibbackup to suspend itself
-    if (!$option_remote_host) {
+    if (!$option_remote_host && !$option_stream) {
         wait_for_ibbackup_suspend();
     }
 
@@ -455,14 +471,18 @@ sub backup {
         system("scp -Cp -c arcfour '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_logfile': $!";
         unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
+    } elsif ($option_stream eq 'tar') {
+        system("cd $option_tmpdir; tar cf - xtrabackup_logfile")
+            and Die "Failed to stream 'xtrabackup_logfile': $!";
+        unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
     }
 
-    print "\n$prefix Backup created in directory '$backup_dir'\n";
+    print STDERR "\n$prefix Backup created in directory '$backup_dir'\n";
     if ($mysql_binlog_position) {
-        print "$prefix MySQL binlog position: $mysql_binlog_position\n";
+        print STDERR "$prefix MySQL binlog position: $mysql_binlog_position\n";
     }
     if ($mysql_slave_position && $option_slave_info) {
-        print "$prefix MySQL slave binlog position: $mysql_slave_position\n";
+        print STDERR "$prefix MySQL slave binlog position: $mysql_slave_position\n";
     }
 }
 
@@ -594,10 +614,10 @@ sub copy_back {
     # copy files to original data directory
     opendir(DIR, $backup_dir) 
         || Die "Can't open directory '$backup_dir': $!\n";
-    print "$prefix Starting to copy MyISAM tables, indexes,\n"; 
-    print "$prefix .MRG, .TRG, .TRN, .opt, and .frm files\n";
-    print "$prefix in '$backup_dir'\n";
-    print "$prefix back to original data directory '$orig_datadir'\n";
+    print STDERR "$prefix Starting to copy MyISAM tables, indexes,\n"; 
+    print STDERR "$prefix .MRG, .TRG, .TRN, .opt, and .frm files\n";
+    print STDERR "$prefix in '$backup_dir'\n";
+    print STDERR "$prefix back to original data directory '$orig_datadir'\n";
     while (defined($file = readdir(DIR))) {
         if ($file =~ /$excluded_files/) { next; }
         if (is_in_array($file, \@ibdata_files)) { next; }
@@ -606,7 +626,7 @@ sub copy_back {
             my $subdir = "$backup_dir/$file";
             my $file2;
 
-            print "$prefix Copying directory '$subdir'\n";
+            print STDERR "$prefix Copying directory '$subdir'\n";
             if (! -x "$orig_datadir/$file") {
                 system("mkdir '$orig_datadir/$file'") 
                     and Die "Failed to create directory "
@@ -622,7 +642,7 @@ sub copy_back {
             }
             closedir(SUBDIR);
         } else { 
-            print "$prefix Copying file " . 
+            print STDERR "$prefix Copying file " . 
                 "'$backup_dir/$file'\n";
             system("cp -p '$backup_dir/$file' '$orig_datadir'")
                 and Die "Failed to copy file '$file': $!";
@@ -631,13 +651,13 @@ sub copy_back {
     closedir(DIR);
 
     # copy InnoDB data files to original InnoDB data directory
-    print "\n$prefix Starting to copy InnoDB tables and indexes\n";
-    print "$prefix in '$backup_dir'\n";
-    print "$prefix back to original InnoDB data directory '$orig_ibdata_dir'\n";
+    print STDERR "\n$prefix Starting to copy InnoDB tables and indexes\n";
+    print STDERR "$prefix in '$backup_dir'\n";
+    print STDERR "$prefix back to original InnoDB data directory '$orig_ibdata_dir'\n";
     foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
         # get the relative pathname of a data file
         my $path = (split(/:/,$a))[0];
-        print "$prefix Copying file '$backup_dir/$path'\n";
+        print STDERR "$prefix Copying file '$backup_dir/$path'\n";
         system("cp -p '$backup_dir/$path' '$orig_ibdata_dir/$path'")
             and Die "Failed to copy file '$path': $!";
     }
@@ -645,19 +665,19 @@ sub copy_back {
     # copy InnoDB log files to original InnoDB log directory
     opendir(DIR, $backup_dir) 
         || Die "Can't open directory '$backup_dir': $!\n";
-    print "\n$prefix Starting to copy InnoDB log files\n";
-    print "$prefix in '$backup_dir'\n";
-    print "$prefix back to original InnoDB log directory '$orig_iblog_dir'\n";
+    print STDERR "\n$prefix Starting to copy InnoDB log files\n";
+    print STDERR "$prefix in '$backup_dir'\n";
+    print STDERR "$prefix back to original InnoDB log directory '$orig_iblog_dir'\n";
     while (defined($file = readdir(DIR))) {
         if ($file =~ /$iblog_files/ && -f "$backup_dir/$file") {
-            print "$prefix Copying file '$backup_dir/$file'\n";
+            print STDERR "$prefix Copying file '$backup_dir/$file'\n";
             system("cp -p '$backup_dir/$file' '$orig_iblog_dir'")
                 and Die "Failed to copy file '$file': $!";
         }
     }
     closedir(DIR);
 
-    print "$prefix Finished copying back files.\n\n";
+    print STDERR "$prefix Finished copying back files.\n\n";
 }
 
 
@@ -682,7 +702,7 @@ sub apply_log {
     # run ibbackup as a child process
     $cmdline = "$option_ibbackup_binary $options";
     $now = current_time();
-    print "\n$now  $prefix Starting ibbackup with command: $cmdline\n\n";
+    print STDERR "\n$now  $prefix Starting ibbackup with command: $cmdline\n\n";
     $rcode = system("$cmdline");
     if ($rcode) {
         # failure
@@ -690,7 +710,7 @@ sub apply_log {
     }
 
     $now = current_time();
-    print "\n$now  $prefix Restarting xtrabackup with command: $cmdline\nfor creating ib_logfile*\n\n";
+    print STDERR "\n$now  $prefix Restarting xtrabackup with command: $cmdline\nfor creating ib_logfile*\n\n";
     $rcode = system("$cmdline");
     if ($rcode) {
         # failure
@@ -704,8 +724,8 @@ sub apply_log {
 # itself.
 #
 sub wait_for_ibbackup_suspend {
-    print "$prefix Waiting for ibbackup (pid=$ibbackup_pid) to suspend\n";
-    print "$prefix Suspend file '$suspend_file'\n\n";
+    print STDERR "$prefix Waiting for ibbackup (pid=$ibbackup_pid) to suspend\n";
+    print STDERR "$prefix Suspend file '$suspend_file'\n\n";
     for (;;) {
         sleep 2;
         last if -e $suspend_file;
@@ -717,7 +737,7 @@ sub wait_for_ibbackup_suspend {
         }
     }
     $now = current_time();
-    print "\n$now  $prefix Continuing after ibbackup has suspended\n";
+    print STDERR "\n$now  $prefix Continuing after ibbackup has suspended\n";
 }
 
 
@@ -726,7 +746,7 @@ sub wait_for_ibbackup_suspend {
 # by deleting the 'ibbackup_suspended' file.
 #
 sub resume_ibbackup {
-    print "$prefix Resuming ibbackup\n\n";
+    print STDERR "$prefix Resuming ibbackup\n\n";
     unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
 
     # wait for ibbackup to finish
@@ -744,7 +764,7 @@ sub start_ibbackup {
     my $cmdline = '';
     my $pid = undef;
 
-    if (!$option_remote_host) {
+    if (!$option_remote_host && !$option_stream) {
         $options = $options . " --target-dir=$backup_dir";
     } else {
         #(datadir) for 'xtrabackup_suspended' only
@@ -771,13 +791,13 @@ sub start_ibbackup {
 
     # run ibbackup as a child process
     $now = current_time();
-    print "\n$now  $prefix Starting ibbackup with command: $cmdline\n";
+    print STDERR "\n$now  $prefix Starting ibbackup with command: $cmdline\n";
     if (defined($pid = fork)) {
         if ($pid) {
             # parent process
             $ibbackup_pid = $pid;
 
-            if($option_remote_host) {
+            if($option_remote_host || $option_stream) {
                 #direct copy to remote
                 my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
                 my $orig_ibdata_dir =
@@ -787,24 +807,34 @@ sub start_ibbackup {
                 my $subdir;
                 my @list;
 
-                if (system("ssh $option_remote_host test -e $backup_dir/ib_logfile0")
-                        == 0) {
-                    print "$prefix Remove $option_remote_host:$backup_dir/ib_logfile*\n";
-                    system("ssh $option_remote_host rm $backup_dir/ib_logfile\*")
-                        and Die "Failed to rm file '$backup_dir/ib_logfile*': $!";
+                if($option_remote_host) {
+                    if (system("ssh $option_remote_host test -e $backup_dir/ib_logfile0")
+                            == 0) {
+                        print STDERR "$prefix Remove $option_remote_host:$backup_dir/ib_logfile*\n";
+                        system("ssh $option_remote_host rm $backup_dir/ib_logfile\*")
+                            and Die "Failed to rm file '$backup_dir/ib_logfile*': $!";
+                    }
                 }
 
                 wait_for_ibbackup_suspend();
 
                 #InnoDB data files from original InnoDB data directory
-                print "\n$prefix Starting to scp InnoDB tables and indexes\n";
-                print "$prefix to '$backup_dir'\n";
-                print "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
+                print STDERR "\n$prefix Starting to backup InnoDB tables and indexes\n";
+                if($option_remote_host) {
+                    print STDERR "$prefix to '$backup_dir'\n";
+                }
+                print STDERR "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
                 foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
                     my $path = (split(/:/,$a))[0];
-                    print "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
-                    system("scp -Cp -c arcfour '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
-                        and Die "Failed to scp file '$path': $!";
+                    if($option_remote_host) {
+                        print STDERR "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
+                        system("scp -Cp -c arcfour '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
+                            and Die "Failed to scp file '$path': $!";
+                    } elsif($option_stream eq 'tar') {
+                        print STDERR "$prefix Backing up as tar stream '$path'\n";
+                        system("cd $orig_ibdata_dir; tar cf - $path")
+                            and Die "Failed to stream '$path': $!";
+                    }
                 }
 
                 #copy *.ibd files
@@ -824,7 +854,7 @@ sub start_ibbackup {
                     if ($file_c <= $backup_file_print_limit) {
                         $print_each_file = 1;
                     } else {
-                        print "$prefix Backing up files " .
+                        print STDERR "$prefix Backing up files " .
                             "'$orig_datadir/$subdir/*.ibd' ($file_c files)\n";
                     }
                     foreach $file (@list) {
@@ -835,26 +865,32 @@ sub start_ibbackup {
                             $table_name = substr($table_name, 1, rindex($table_name, '.') - 1);
 
                             if (!($table_name =~ /$option_include/)) {
-                                print "'$file' is skipped.\n";
+                                print STDERR "'$file' is skipped.\n";
                                 next;
                             }
                         }
 
                         if ($print_each_file) {
-                            print "$prefix Backing up file '$file'\n";
+                            print STDERR "$prefix Backing up file '$file'\n";
                         }
-                        if (system("ssh $option_remote_host test -e $backup_dir/$subdir")
-                                != 0) {
-                            system("ssh $option_remote_host mkdir $backup_dir/$subdir");
+                        if($option_remote_host) {
+                            if (system("ssh $option_remote_host test -e $backup_dir/$subdir")
+                                    != 0) {
+                                system("ssh $option_remote_host mkdir $backup_dir/$subdir");
+                            }
+                            system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$subdir/'")
+                                and Die "Failed to scp file '$file': $!";
+                        } elsif($option_stream eq 'tar') {
+                            my $file_name = substr($file, rindex($file, '/') + 1);
+                            system("cd $orig_datadir; tar cf - $subdir/$file_name")
+                                and Die "Failed to stream '$subdir/$file_name': $!";
                         }
-                        system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$subdir/'")
-                            and Die "Failed to scp file '$file': $!";
                     }
                 }
                 closedir(DIR);
             }
         } else {
-            if($option_remote_host) {
+            if($option_remote_host || $option_stream) {
                 open(STDOUT, "> $tmp_logfile")
                 || Die "Failed to open file '$tmp_logfile': $!"
             }
@@ -901,11 +937,11 @@ sub mysql_open {
     my $options = get_mysql_options();
     # run mysql as a child process with a pipe connection
     $now = current_time();
-    print "$now  $prefix Starting mysql with options: $options\n";
+    print STDERR "$now  $prefix Starting mysql with options: $options\n";
     $mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ") or Die "Failed to spawn mysql child process: $!";
     MYSQL_WRITER->autoflush(1);
     $now = current_time();
-    print "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
+    print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
 
     mysql_check();
 }
@@ -993,7 +1029,7 @@ sub mysql_send {
 sub mysql_close {
     print MYSQL_WRITER "quit\n";
     $now = current_time();
-    print "$now  $prefix Connection to database server closed\n";
+    print STDERR "$now  $prefix Connection to database server closed\n";
     $mysql_pid = '';
 }
 
@@ -1035,6 +1071,12 @@ sub write_binlog_info {
     }
     print FILE  "$info_lines[1]\n";
     close(FILE);
+
+    if ($option_stream eq 'tar') {
+        system("cd $option_tmpdir; tar cf - xtrabackup_binlog_info")
+            and Die "Failed to stream 'xtrabackup_binlog_info': $!";
+        unlink $binlog_info || Die "Failed to delete '$binlog_info': $!";
+    }
 
     # get the name of the last binlog file and position in it
     ($filename, $position) = $info_lines[1] =~ /^\s*([^\s]+)\s+(.*)$/;
@@ -1083,6 +1125,12 @@ sub write_slave_info {
     print FILE  "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n";
     close(FILE);
 
+    if ($option_stream eq 'tar') {
+        system("cd $option_tmpdir; tar cf - xtrabackup_slave_info")
+            and Die "Failed to stream 'xtrabackup_slave_info': $!";
+        unlink $slave_info || Die "Failed to delete '$slave_info': $!";
+    }
+
     $mysql_slave_position = "master host '$master', filename '$filename', position $position";
 }
 
@@ -1092,7 +1140,7 @@ sub write_slave_info {
 # 
 sub mysql_lockall {
     $now = current_time();
-    print "$now  $prefix Starting to lock all tables...\n";
+    print STDERR "$now  $prefix Starting to lock all tables...\n";
 
     mysql_send "USE mysql;";
     mysql_send "DROP TABLE IF EXISTS ibbackup_binlog_marker;";
@@ -1119,7 +1167,7 @@ sub mysql_lockall {
     write_slave_info if $option_slave_info;
 	
     $now = current_time();
-    print "$now  $prefix All tables locked and flushed to disk\n";
+    print STDERR "$now  $prefix All tables locked and flushed to disk\n";
 }
 
 
@@ -1132,7 +1180,7 @@ sub mysql_unlockall {
     mysql_send "DROP TABLE IF EXISTS ibbackup_binlog_marker;";
 
     $now = current_time();
-    print "$now  $prefix All tables unlocked\n";
+    print STDERR "$now  $prefix All tables unlocked\n";
 }
 
 
@@ -1145,7 +1193,7 @@ sub catch_sigpipe {
     if ($mysql_pid && (-1 == ($rcode = waitpid($mysql_pid, &WNOHANG))
                        || $rcode == $mysql_pid)) {
         my $reason = `cat $mysql_stderr`;
-        print "Pipe to mysql child process broken: $reason at";
+        print STDERR "Pipe to mysql child process broken: $reason at";
         system("date +'%H:%M:%S'");
         exit(1);
     } else {
@@ -1216,7 +1264,7 @@ sub require_external {
     my $stdout = `cat $tmp_stdout`;
     unlink $tmp_stdout;
     @lines = split(/\n|;/,$stdout);
-    print "$prefix Using $lines[0]\n";
+    print STDERR "$prefix Using $lines[0]\n";
 
     # get version string from the first output line of the program
     ${$version_ref} = '';
@@ -1289,9 +1337,9 @@ sub init {
     } else {
         $run = 'apply-log';
     }
-    print "IMPORTANT: Please check that the $run run completes successfully.\n";
-    print "           At the end of a successful $run run innobackup\n";
-    print "           prints \"innobackup completed OK!\".\n\n";
+    print STDERR "IMPORTANT: Please check that the $run run completes successfully.\n";
+    print STDERR "           At the end of a successful $run run innobackup\n";
+    print STDERR "           prints \"innobackup completed OK!\".\n\n";
 
     # check that MySQL client program and InnoDB Hot Backup program
     # are runnable via shell
@@ -1311,11 +1359,11 @@ sub init {
             @lines = split('\n', 
                            `echo "select \@\@version;" | mysql $options`);
             $mysql_server_version = $lines[1];
-            print "$prefix Using mysql server version $mysql_server_version\n";
+            print STDERR "$prefix Using mysql server version $mysql_server_version\n";
         }
         #require_external($option_ibbackup_binary, '--license', 
         #                 'version (\S+)', \$ibbackup_version);
-        print "\n";
+        print STDERR "\n";
         
         if ($option_include 
             && $ibbackup_version 
@@ -1335,6 +1383,10 @@ sub init {
     #read_config_file($config_file, \%config);
     read_config_file(\%config);
 
+    if(!$option_tmpdir) {
+        $option_tmpdir = get_option(\%config, 'mysqld', 'tmpdir');
+    }
+
     # get innodb log home directory from options file
     #$innodb_log_group_home_dir = 
     #    get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
@@ -1346,8 +1398,8 @@ sub init {
         } else {
             $backup_dir = make_backup_dir();
         }
-        print "$prefix Created backup directory $backup_dir\n";
-        if (!$option_remote_host) {
+        print STDERR "$prefix Created backup directory $backup_dir\n";
+        if (!$option_remote_host && !$option_stream) {
         $backup_config_file = $backup_dir . '/backup-my.cnf';
         $suspend_file = $backup_dir . '/xtrabackup_suspended';
         $mysql_stdout = $backup_dir . '/mysql-stdout';
@@ -1355,13 +1407,19 @@ sub init {
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
-        $backup_config_file = $backup_dir . '/backup-my.cnf';
         $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
-        $tmp_logfile = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_logfile';
-        $mysql_stdout = '/tmp/mysql-stdout';
-        $mysql_stderr = '/tmp/mysql-stderr';
-        $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
-        $slave_info = $backup_dir . '/xtrabackup_slave_info';
+        $tmp_logfile = $option_tmpdir . '/xtrabackup_logfile';
+        $mysql_stdout = $option_tmpdir . '/mysql-stdout';
+        $mysql_stderr = $option_tmpdir . '/mysql-stderr';
+        if ($option_stream) {
+            $backup_config_file = $option_tmpdir . '/backup-my.cnf';
+            $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
+            $slave_info = $option_tmpdir . '/xtrabackup_slave_info';
+        } else {
+            $backup_config_file = $backup_dir . '/backup-my.cnf';
+            $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
+            $slave_info = $backup_dir . '/xtrabackup_slave_info';
+        }
         }
         write_backup_config_file($backup_config_file);
     } elsif ($option_copy_back) {
@@ -1407,6 +1465,16 @@ sub write_backup_config_file {
           "innodb_log_files_in_group=$innodb_log_files_in_group\n" .
           "innodb_log_file_size=$innodb_log_file_size\n";
     close(FILE);
+
+    if ($option_stream) {
+        my $filename_dir = substr($filename, 0, rindex($filename, '/') - 1);
+        my $filename_name = substr($filename, rindex($filename, '/') + 1);
+        if ($option_stream eq 'tar') {
+            system("cd $filename_dir; tar cf - $filename_name")
+                and Die "Failed to stream '$filename_name': $!";
+        }
+        unlink $filename || Die "Failed to delete '$filename': $!";
+    }
 }
 
 
@@ -1425,9 +1493,9 @@ sub check_args {
         # this perl is prior to 5.6.0 and uses old style version string
         my $required_version = $required_perl_version_old_style;
         if ($] lt $required_version) {
-            print "$prefix Warning: " . 
+            print STDERR "$prefix Warning: " . 
                 "Your perl is too old! Innobackup requires\n";
-            print "$prefix Warning: perl $required_version or newer!\n";
+            print STDERR "$prefix Warning: perl $required_version or newer!\n";
         }
     } else {
         $perl_version = chr($required_perl_version[0])
@@ -1437,9 +1505,9 @@ sub check_args {
             my $version = chr(48 + $required_perl_version[0])
                 . "." . chr(48 + $required_perl_version[1])
                 . "." . chr(48 + $required_perl_version[2]);
-            print "$prefix Warning: " . 
+            print STDERR "$prefix Warning: " . 
                 "Your perl is too old! Innobackup requires\n";
-            print "$prefix Warning: perl $version or newer!\n";
+            print STDERR "$prefix Warning: perl $version or newer!\n";
         }
     }
 
@@ -1469,10 +1537,12 @@ sub check_args {
                         'no-timestamp' => \$option_no_timestamp,
                         'incremental' => \$option_incremental,
                         'remote-host=s' => \$option_remote_host,
+                        'stream=s' => \$option_stream,
+                        'tmpdir=s' => \$option_tmpdir,
                         'ibbackup=s' => \$option_ibbackup_binary);
     if (!$rcode) {
         # failed to read options
-        print "$prefix Bad command line arguments\n";
+        print STDERR "$prefix Bad command line arguments\n";
         usage();
         exit(1);
     }
@@ -1498,13 +1568,24 @@ sub check_args {
     }
 
     if (@ARGV < 1) {
-        print "$prefix Missing command line argument\n";
+        print STDERR "$prefix Missing command line argument\n";
         usage();
         exit(1);
     } elsif (@ARGV > 1) {
-        print "$prefix Too many command line arguments\n";
+        print STDERR "$prefix Too many command line arguments\n";
         usage();
         exit(1);
+    }
+
+    if ($option_stream) {
+        if ($option_stream eq 'tar') {
+        } elsif ($option_stream eq 'cpio') {
+            print STDERR "$prefix --stream=cpio is not supported yet\n";
+            exit(1);
+        } else {
+            print STDERR "$prefix Unknown option --stream=$option_stream\n";
+            exit(1);
+        }
     }
 
     # get options file name
@@ -1514,7 +1595,7 @@ sub check_args {
         # we are making a backup, get backup root directory
         $backup_root = $ARGV[0];
         if ($option_incremental) {
-            print "incremental backup is not supported for now.\n";
+            print STDERR "incremental backup is not supported for now.\n";
             exit(1);
         }
     } else {
@@ -1522,7 +1603,7 @@ sub check_args {
         $backup_dir = File::Spec->rel2abs($ARGV[0]);
     }        
 
-    print "\n";
+    print STDERR "\n";
 
     parse_databases_option_value();
 }
@@ -1539,6 +1620,10 @@ sub make_backup_dir {
 
     # create backup directory
     $dir = $backup_root;
+    if ($option_stream) {
+        return $dir;
+    }
+
     $dir .= '/' . strftime("%Y-%m-%d_%H-%M-%S", localtime())
        unless $option_no_timestamp;
     if (!$option_remote_host) {
@@ -1631,9 +1716,9 @@ sub backup_files {
     opendir(DIR, $source_dir) 
         || Die "Can't open directory '$source_dir': $!\n";
     $now = current_time();
-    print "\n$now  $prefix Starting to backup .frm, .MRG, .MYD, .MYI,\n";
-    print "$prefix .TRG, .TRN, and .opt files in\n";
-    print "$prefix subdirectories of '$source_dir'\n";
+    print STDERR "\n$now  $prefix Starting to backup .frm, .MRG, .MYD, .MYI,\n";
+    print STDERR "$prefix .TRG, .TRN, and .opt files in\n";
+    print STDERR "$prefix subdirectories of '$source_dir'\n";
     # loop through all database directories
     while (defined($database = readdir(DIR))) {
         my $print_each_file = 0;
@@ -1643,13 +1728,13 @@ sub backup_files {
         next unless -d "$source_dir/$database";
 	next unless check_if_required($database);
         
-        if (!$option_remote_host) {
+        if (!$option_remote_host && !$option_stream) {
             if (! -e "$backup_dir/$database") {
                 # create database directory for the backup
                 mkdir("$backup_dir/$database", 0777)
                     || Die "Couldn't create directory '$backup_dir/$database': $!";
             }
-        } else {
+        } elsif ($option_remote_host) {
             if (system("ssh $option_remote_host test -e $backup_dir/$database")
                     != 0) {
                 system("ssh $option_remote_host mkdir $backup_dir/$database");
@@ -1663,7 +1748,7 @@ sub backup_files {
         if ($file_c <= $backup_file_print_limit) {
             $print_each_file = 1;
         } else {
-            print "$prefix Backing up files " . 
+            print STDERR "$prefix Backing up files " . 
                 "'$source_dir/$database/$wildcard' ($file_c files)\n";
         }
         foreach $file (@list) {
@@ -1673,21 +1758,25 @@ sub backup_files {
             next unless check_if_required($database, $file);
                
             if ($print_each_file) {
-                print "$prefix Backing up file '$file'\n";
+                print STDERR "$prefix Backing up file '$file'\n";
             }
-            if (!$option_remote_host) {
+            if (!$option_remote_host && !$option_stream) {
                 system("cp -p '$file' '$backup_dir/$database'")
                     and Die "Failed to copy file '$file': $!";
-            } else {
+            } elsif ($option_remote_host) {
                 system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$database/'")
                     and Die "Failed to scp file '$file': $!";
+            } elsif($option_stream eq 'tar') {
+                my $file_name = substr($file, rindex($file, '/') + 1);
+                system("cd $source_dir; tar cf - $database/$file_name")
+                    and Die "Failed to stream '$database/$file_name': $!";
             }
         }
     }
     closedir(DIR);
 
     $now = current_time();
-    print "$now  $prefix Finished backing up .frm, .MRG, .MYD, .MYI, .TRG, .TRN, and .opt files\n\n";
+    print STDERR "$now  $prefix Finished backing up .frm, .MRG, .MYD, .MYI, .TRG, .TRN, and .opt files\n\n";
 }
 
 
@@ -1859,14 +1948,14 @@ sub get_option {
 
     if (!exists $config{$group}) {
         # no group
-        print "$prefix fatal error: no '$group' group in MySQL options\n";
+        print STDERR "$prefix fatal error: no '$group' group in MySQL options\n";
         exit(1);
     }
     
     $group_hash_ref = ${$config_ref}{$group};
     if (!exists ${$group_hash_ref}{$option_name}) {
         # no option
-        print "$prefix fatal error: no '$option_name' option in group '$group' in MySQL options\n";
+        print STDERR "$prefix fatal error: no '$option_name' option in group '$group' in MySQL options\n";
         exit(1);
     }
 
