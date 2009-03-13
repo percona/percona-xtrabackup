@@ -1,5 +1,5 @@
 --- innobackup-1.5.1_orig	2009-03-04 21:41:35.000000000 +0900
-+++ innobackupex-1.5.1	2009-03-13 14:09:02.000000000 +0900
++++ innobackupex-1.5.1	2009-03-13 14:31:12.000000000 +0900
 @@ -8,6 +8,7 @@
  
  use strict;
@@ -386,7 +386,7 @@
      unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
  
      # wait for ibbackup to finish
-@@ -702,34 +760,141 @@
+@@ -702,34 +760,142 @@
  # program for backing up InnoDB tables and indexes.
  #
  sub start_ibbackup {
@@ -501,6 +501,7 @@
 +
 +                            $table_name = substr($file, rindex($file, '/'));
 +                            $table_name = substr($table_name, 1, rindex($table_name, '.') - 1);
++                            $table_name = $subdir . "." . $table_name;
 +
 +                            if (!($table_name =~ /$option_include/)) {
 +                                print STDERR "'$file' is skipped.\n";
@@ -536,7 +537,7 @@
              # child process
              exec($cmdline) || Die "Failed to exec ibbackup: $!";
          }
-@@ -772,11 +937,11 @@
+@@ -772,11 +938,11 @@
      my $options = get_mysql_options();
      # run mysql as a child process with a pipe connection
      $now = current_time();
@@ -550,7 +551,7 @@
  
      mysql_check();
  }
-@@ -864,7 +1029,7 @@
+@@ -864,7 +1030,7 @@
  sub mysql_close {
      print MYSQL_WRITER "quit\n";
      $now = current_time();
@@ -559,7 +560,7 @@
      $mysql_pid = '';
  }
  
-@@ -897,11 +1062,22 @@
+@@ -897,11 +1063,22 @@
      if (!defined $info_lines[1]) {
          $info_lines[1] = "";
      }
@@ -584,7 +585,7 @@
      # get the name of the last binlog file and position in it
      ($filename, $position) = $info_lines[1] =~ /^\s*([^\s]+)\s+(.*)$/;
  
-@@ -939,11 +1115,22 @@
+@@ -939,11 +1116,22 @@
      }
  
      # print slave status to a file
@@ -609,7 +610,7 @@
      $mysql_slave_position = "master host '$master', filename '$filename', position $position";
  }
  
-@@ -953,7 +1140,7 @@
+@@ -953,7 +1141,7 @@
  # 
  sub mysql_lockall {
      $now = current_time();
@@ -618,7 +619,7 @@
  
      mysql_send "USE mysql;";
      mysql_send "DROP TABLE IF EXISTS ibbackup_binlog_marker;";
-@@ -980,7 +1167,7 @@
+@@ -980,7 +1168,7 @@
      write_slave_info if $option_slave_info;
  	
      $now = current_time();
@@ -627,7 +628,7 @@
  }
  
  
-@@ -993,7 +1180,7 @@
+@@ -993,7 +1181,7 @@
      mysql_send "DROP TABLE IF EXISTS ibbackup_binlog_marker;";
  
      $now = current_time();
@@ -636,7 +637,7 @@
  }
  
  
-@@ -1006,7 +1193,7 @@
+@@ -1006,7 +1194,7 @@
      if ($mysql_pid && (-1 == ($rcode = waitpid($mysql_pid, &WNOHANG))
                         || $rcode == $mysql_pid)) {
          my $reason = `cat $mysql_stderr`;
@@ -645,7 +646,7 @@
          system("date +'%H:%M:%S'");
          exit(1);
      } else {
-@@ -1077,7 +1264,7 @@
+@@ -1077,7 +1265,7 @@
      my $stdout = `cat $tmp_stdout`;
      unlink $tmp_stdout;
      @lines = split(/\n|;/,$stdout);
@@ -654,7 +655,7 @@
  
      # get version string from the first output line of the program
      ${$version_ref} = '';
-@@ -1150,9 +1337,9 @@
+@@ -1150,9 +1338,9 @@
      } else {
          $run = 'apply-log';
      }
@@ -667,7 +668,7 @@
  
      # check that MySQL client program and InnoDB Hot Backup program
      # are runnable via shell
-@@ -1172,11 +1359,11 @@
+@@ -1172,11 +1360,11 @@
              @lines = split('\n', 
                             `echo "select \@\@version;" | mysql $options`);
              $mysql_server_version = $lines[1];
@@ -683,7 +684,7 @@
          
          if ($option_include 
              && $ibbackup_version 
-@@ -1193,26 +1380,51 @@
+@@ -1193,26 +1381,51 @@
      $SIG{PIPE} = \&catch_sigpipe;
  
      # read MySQL options file
@@ -746,7 +747,7 @@
      }         
  }
  
-@@ -1232,18 +1444,37 @@
+@@ -1232,18 +1445,37 @@
          get_option(\%config, 'mysqld', 'innodb_log_files_in_group');
      my $innodb_log_file_size =
          get_option(\%config, 'mysqld', 'innodb_log_file_size');
@@ -788,7 +789,7 @@
  }
  
  
-@@ -1262,9 +1493,9 @@
+@@ -1262,9 +1494,9 @@
          # this perl is prior to 5.6.0 and uses old style version string
          my $required_version = $required_perl_version_old_style;
          if ($] lt $required_version) {
@@ -800,7 +801,7 @@
          }
      } else {
          $perl_version = chr($required_perl_version[0])
-@@ -1274,9 +1505,9 @@
+@@ -1274,9 +1506,9 @@
              my $version = chr(48 + $required_perl_version[0])
                  . "." . chr(48 + $required_perl_version[1])
                  . "." . chr(48 + $required_perl_version[2]);
@@ -812,7 +813,7 @@
          }
      }
  
-@@ -1290,12 +1521,13 @@
+@@ -1290,12 +1522,13 @@
      $rcode = GetOptions('compress:i' => \$option_compress,
                          'help' => \$option_help,
                          'version' => \$option_version,
@@ -827,7 +828,7 @@
                          'uncompress' => \$option_uncompress,
                          'password=s' => \$option_mysql_password,
                          'user=s' => \$option_mysql_user,
-@@ -1303,10 +1535,14 @@
+@@ -1303,10 +1536,14 @@
                          'slave-info' => \$option_slave_info,
                          'socket=s' => \$option_mysql_socket,
                          'no-timestamp' => \$option_no_timestamp,
@@ -843,7 +844,7 @@
          usage();
          exit(1);
      }
-@@ -1331,28 +1567,43 @@
+@@ -1331,28 +1568,43 @@
  	$option_compress = 0;
      }
  
@@ -895,7 +896,7 @@
  
      parse_databases_option_value();
  }
-@@ -1369,9 +1620,17 @@
+@@ -1369,9 +1621,17 @@
  
      # create backup directory
      $dir = $backup_root;
@@ -914,7 +915,7 @@
  
      # create subdirectories for ibdata files if needed
      foreach my $a (split(/;/, $innodb_data_file_path)) {
-@@ -1407,9 +1666,15 @@
+@@ -1407,9 +1667,15 @@
      $path = $root;
      foreach $a (@{$relative_path}) {
          $path = $path . "/" . $a;
@@ -933,7 +934,7 @@
          }
      }
  }
-@@ -1451,9 +1716,9 @@
+@@ -1451,9 +1717,9 @@
      opendir(DIR, $source_dir) 
          || Die "Can't open directory '$source_dir': $!\n";
      $now = current_time();
@@ -946,7 +947,7 @@
      # loop through all database directories
      while (defined($database = readdir(DIR))) {
          my $print_each_file = 0;
-@@ -1463,10 +1728,17 @@
+@@ -1463,10 +1729,17 @@
          next unless -d "$source_dir/$database";
  	next unless check_if_required($database);
          
@@ -968,7 +969,7 @@
          }
  
          # copy files of this database
-@@ -1476,7 +1748,7 @@
+@@ -1476,7 +1749,7 @@
          if ($file_c <= $backup_file_print_limit) {
              $print_each_file = 1;
          } else {
@@ -977,7 +978,7 @@
                  "'$source_dir/$database/$wildcard' ($file_c files)\n";
          }
          foreach $file (@list) {
-@@ -1486,16 +1758,25 @@
+@@ -1486,16 +1759,25 @@
              next unless check_if_required($database, $file);
                 
              if ($print_each_file) {
@@ -1007,7 +1008,7 @@
  }
  
  
-@@ -1576,15 +1857,20 @@
+@@ -1576,15 +1858,20 @@
  #                   options are returned
  #
  sub read_config_file {
@@ -1030,7 +1031,7 @@
  
      # classify lines and save option values
      $group = 'default';
-@@ -1637,7 +1923,7 @@
+@@ -1637,7 +1924,7 @@
            # unknown
            print("$prefix: Warning: Ignored unrecognized line ",
                  $i + 1,
@@ -1039,7 +1040,7 @@
                  );
        }
     }
-@@ -1662,14 +1948,14 @@
+@@ -1662,14 +1949,14 @@
  
      if (!exists $config{$group}) {
          # no group

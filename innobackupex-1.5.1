@@ -863,6 +863,7 @@ sub start_ibbackup {
 
                             $table_name = substr($file, rindex($file, '/'));
                             $table_name = substr($table_name, 1, rindex($table_name, '.') - 1);
+                            $table_name = $subdir . "." . $table_name;
 
                             if (!($table_name =~ /$option_include/)) {
                                 print STDERR "'$file' is skipped.\n";

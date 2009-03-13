@@ -1267,11 +1267,13 @@ xtrabackup_copy_datafile(fil_node_t* node)
 	if (xtrabackup_tables && (node->space->id != 0)) { /* must backup id==0 */
 		char *p;
 		int p_len, regres;
-		char *next;
+		char *next, *prev;
 		char tmp;
 
 		p = node->name;
+		prev = NULL;
 		while (next = strstr(p, "/")) {
+			prev = p;
 			p = next + 1;
 		}
 		p_len = strlen(p) - strlen(".ibd");
@@ -1281,13 +1283,15 @@ xtrabackup_copy_datafile(fil_node_t* node)
 			goto skip_filter;
 		}
 
-		/* lazy.. */
+		/* TODO: Fix this lazy implementation... */
 		tmp = p[p_len];
 		p[p_len] = 0;
+		*(p - 1) = '.';
 
-		regres = regexec(&tables_regex, p, 1, tables_regmatch, 0);
+		regres = regexec(&tables_regex, prev, 1, tables_regmatch, 0);
 
 		p[p_len] = tmp;
+		*(p - 1) = '/';
 
 		if ( regres == REG_NOMATCH ) {
 			printf("Copying %s is skipped.\n", node->name);
