@@ -124,6 +124,27 @@ diff -r 6b1dc961f5a5 innobase/os/os0file.c
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
+diff -r a/innobase/os/os0thread.c b/innobase/os/os0thread.c
+--- a/innobase/os/os0thread.c	2009-02-14 09:56:23.000000000 +0900
++++ b/innobase/os/os0thread.c	2009-03-17 16:04:37.000000000 +0900
+@@ -273,12 +273,17 @@
+ #elif defined(__NETWARE__)
+ 	delay(tm / 1000);
+ #else
++	/* select() simetimes hang up from xtrabackup */
++	/* change to use usleep() for now */
++	usleep(tm);
++/*
+ 	struct timeval	t;
+ 
+ 	t.tv_sec = tm / 1000000;
+ 	t.tv_usec = tm % 1000000;
+ 
+ 	select(0, NULL, NULL, NULL, &t);
++*/
+ #endif
+ }
+ 
 diff -r 6b1dc961f5a5 innobase/srv/srv0start.c
 --- a/innobase/srv/srv0start.c	Thu Mar 05 12:39:16 2009 -0800
 +++ b/innobase/srv/srv0start.c	Thu Mar 05 12:42:22 2009 -0800
