@@ -1300,7 +1300,18 @@ xtrabackup_copy_datafile(fil_node_t* node)
 	}
 skip_filter:
 
-	sprintf(dst_path, "%s%s", xtrabackup_target_dir, strstr(node->name, "/"));
+	if (node->space->id == 0) {
+		char *next, *p;
+		/* system datafile "/fullpath/datafilename.ibd" or "./datafilename.ibd" */
+		p = node->name;
+		while (next = strstr(p, "/")) {
+			p = next + 1;
+		}
+		sprintf(dst_path, "%s/%s", xtrabackup_target_dir, p);
+	} else {
+		/* file per table style "./database/table.ibd" */
+		sprintf(dst_path, "%s%s", xtrabackup_target_dir, strstr(node->name, "/"));
+	}
 
 	/* open src_file*/
 	if (!node->open) {
