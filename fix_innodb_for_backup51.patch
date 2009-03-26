@@ -1,6 +1,6 @@
-diff -r 6b1dc961f5a5 innobase/buf/buf0buf.c
+diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
 --- a/innobase/buf/buf0buf.c	2009-02-14 09:56:16.000000000 +0900
-+++ b/innobase/buf/buf0buf.c	2009-03-09 10:15:19.000000000 +0900
++++ b/innobase/buf/buf0buf.c	2009-03-26 09:57:19.000000000 +0900
 @@ -314,7 +314,7 @@
  		return(TRUE);
  	}
@@ -10,9 +10,9 @@ diff -r 6b1dc961f5a5 innobase/buf/buf0buf.c
  	if (recv_lsn_checks_on && log_peek_lsn(&current_lsn)) {
  		if (ut_dulint_cmp(current_lsn,
  				  mach_read_from_8(read_buf + FIL_PAGE_LSN))
-diff -r 6b1dc961f5a5 innobase/fil/fil0fil.c
---- a/innobase/fil/fil0fil.c	Thu Mar 05 12:39:16 2009 -0800
-+++ b/innobase/fil/fil0fil.c	Thu Mar 05 12:42:22 2009 -0800
+diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
+--- a/innobase/fil/fil0fil.c	2009-02-14 09:56:17.000000000 +0900
++++ b/innobase/fil/fil0fil.c	2009-03-26 09:59:04.000000000 +0900
 @@ -2067,7 +2067,7 @@
  	}
  
@@ -49,13 +49,12 @@ diff -r 6b1dc961f5a5 innobase/fil/fil0fil.c
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -4062,6 +4062,18 @@
+@@ -4062,6 +4062,17 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
-+	if (recv_recovery_is_on() && space->size && space->size <= block_offset
-+	    && space->size + 640 > block_offset) {
-+		/* size shortage < 640 pages (10MB@16KB) */
++	if (recv_recovery_is_on() && space->size
++	    && space->size <= block_offset) {
 +		ulint	actual_size;
 +
 +		mutex_exit(&(system->mutex));
@@ -68,9 +67,66 @@ diff -r 6b1dc961f5a5 innobase/fil/fil0fil.c
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-diff -r 6b1dc961f5a5 innobase/log/log0recv.c
---- a/innobase/log/log0recv.c	Thu Mar 05 12:39:16 2009 -0800
-+++ b/innobase/log/log0recv.c	Thu Mar 05 12:42:22 2009 -0800
+diff -ru a/innobase/include/ut0byte.ic b/innobase/include/ut0byte.ic
+--- a/innobase/include/ut0byte.ic	2009-02-14 09:56:22.000000000 +0900
++++ b/innobase/include/ut0byte.ic	2009-03-26 10:02:01.000000000 +0900
+@@ -152,6 +152,14 @@
+ 	dulint	a,	/* in: dulint */
+ 	ulint	b)	/* in: ulint */
+ {
++	if (sizeof(ulint) != 4) {
++		ulint	b_h;
++
++		b_h = b >> 32;
++		b &= 0xFFFFFFFFUL;
++		a.high += b_h;
++	}
++
+ 	if (0xFFFFFFFFUL - b >= a.low) {
+ 		a.low += b;
+ 
+@@ -175,6 +183,14 @@
+ 	dulint	a,	/* in: dulint */
+ 	ulint	b)	/* in: ulint, b <= a */
+ {
++	if (sizeof(ulint) != 4) {
++		ulint	b_h;
++
++		b_h = b >> 32;
++		b &= 0xFFFFFFFFUL;
++		a.high -= b_h;
++	}
++
+ 	if (a.low >= b) {
+ 		a.low -= b;
+ 
+@@ -219,6 +235,10 @@
+ 
+ 	ut_ad(diff > a.low);
+ 
++	if (sizeof(ulint) != 4) {
++		diff += (a.high - b.high - 1) << 32;
++	}
++
+ 	return(diff);
+ }
+ 
+diff -ru a/innobase/log/log0log.c b/innobase/log/log0log.c
+--- a/innobase/log/log0log.c	2009-02-14 09:56:22.000000000 +0900
++++ b/innobase/log/log0log.c	2009-03-26 10:02:36.000000000 +0900
+@@ -538,7 +538,9 @@
+ 
+ 	offset = (gr_lsn_size_offset + difference) % group_size;
+ 
++	if (sizeof(ulint) == 4) {
+ 	ut_a(offset < (((ib_longlong) 1) << 32)); /* offset must be < 4 GB */
++	}
+ 
+ 	/* fprintf(stderr,
+ 	"Offset is %lu gr_lsn_offset is %lu difference is %lu\n",
+diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
+--- a/innobase/log/log0recv.c	2009-02-14 09:56:23.000000000 +0900
++++ b/innobase/log/log0recv.c	2009-03-26 09:57:19.000000000 +0900
 @@ -35,12 +35,12 @@
  #include "fil0fil.h"
  #include "sync0sync.h"
@@ -131,9 +187,9 @@ diff -r 6b1dc961f5a5 innobase/log/log0recv.c
  			/* In normal mysqld crash recovery we do not try to
  			replay file operations */
  		} else if (store_to_hash) {
-diff -r 6b1dc961f5a5 innobase/os/os0file.c
---- a/innobase/os/os0file.c	Thu Mar 05 12:39:16 2009 -0800
-+++ b/innobase/os/os0file.c	Thu Mar 05 12:42:22 2009 -0800
+diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
+--- a/innobase/os/os0file.c	2009-02-14 09:56:23.000000000 +0900
++++ b/innobase/os/os0file.c	2009-03-26 09:57:19.000000000 +0900
 @@ -453,7 +453,7 @@
  }
  
@@ -143,9 +199,9 @@ diff -r 6b1dc961f5a5 innobase/os/os0file.c
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-diff -r a/innobase/os/os0thread.c b/innobase/os/os0thread.c
+diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
 --- a/innobase/os/os0thread.c	2009-02-14 09:56:23.000000000 +0900
-+++ b/innobase/os/os0thread.c	2009-03-17 16:04:37.000000000 +0900
++++ b/innobase/os/os0thread.c	2009-03-26 09:57:19.000000000 +0900
 @@ -273,12 +273,17 @@
  #elif defined(__NETWARE__)
  	delay(tm / 1000);
@@ -164,9 +220,9 @@ diff -r a/innobase/os/os0thread.c b/innobase/os/os0thread.c
  #endif
  }
  
-diff -r 6b1dc961f5a5 innobase/srv/srv0start.c
---- a/innobase/srv/srv0start.c	Thu Mar 05 12:39:16 2009 -0800
-+++ b/innobase/srv/srv0start.c	Thu Mar 05 12:42:22 2009 -0800
+diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
+--- a/innobase/srv/srv0start.c	2009-02-14 09:56:24.000000000 +0900
++++ b/innobase/srv/srv0start.c	2009-03-26 10:03:59.000000000 +0900
 @@ -533,7 +533,7 @@
  
  /*************************************************************************
@@ -185,3 +241,12 @@ diff -r 6b1dc961f5a5 innobase/srv/srv0start.c
  ulint
  open_or_create_data_files(
  /*======================*/
+@@ -1313,7 +1313,7 @@
+ 	}
+ #endif /* UNIV_LOG_ARCHIVE */
+ 
+-	if (srv_n_log_files * srv_log_file_size >= 262144) {
++	if (sizeof(ulint) == 4 && srv_n_log_files * srv_log_file_size >= 262144) {
+ 		fprintf(stderr,
+ 			"InnoDB: Error: combined size of log files"
+ 			" must be < 4 GB\n");

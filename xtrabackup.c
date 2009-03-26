@@ -2629,6 +2629,10 @@ xtrabackup_prepare_func(void)
 	if(innodb_init_param())
 		goto error;
 
+	fprintf(stderr, "xtrabackup: Starting InnoDB instance for recovery.\n"
+		"xtrabackup: Using %lld bytes for buffer pool (set by --use-memory parameter)\n",
+		xtrabackup_use_memory);
+
 	if(innodb_init())
 		goto error;
 
