@@ -1,6 +1,6 @@
 diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
 --- a/innobase/buf/buf0buf.c	2009-02-14 09:56:16.000000000 +0900
-+++ b/innobase/buf/buf0buf.c	2009-03-27 14:26:38.000000000 +0900
++++ b/innobase/buf/buf0buf.c	2009-03-27 17:37:55.000000000 +0900
 @@ -314,7 +314,7 @@
  		return(TRUE);
  	}
@@ -10,9 +10,58 @@ diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
  	if (recv_lsn_checks_on && log_peek_lsn(&current_lsn)) {
  		if (ut_dulint_cmp(current_lsn,
  				  mach_read_from_8(read_buf + FIL_PAGE_LSN))
+diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
+--- a/innobase/buf/buf0rea.c	2009-02-14 09:56:16.000000000 +0900
++++ b/innobase/buf/buf0rea.c	2009-03-27 17:42:44.000000000 +0900
+@@ -114,6 +114,45 @@
+ 	block = buf_page_init_for_read(err, mode, space, tablespace_version,
+ 				       offset);
+ 	if (block == NULL) {
++		if (recv_recovery_is_on() && *err == DB_TABLESPACE_DELETED) {
++			/* hashed log recs must be treated here */
++			recv_addr_t*    recv_addr;
++
++			mutex_enter(&(recv_sys->mutex));
++
++			if (recv_sys->apply_log_recs == FALSE) {
++				mutex_exit(&(recv_sys->mutex));
++				goto not_to_recover;
++			}
++
++			/* recv_get_fil_addr_struct() */
++			recv_addr = HASH_GET_FIRST(recv_sys->addr_hash,
++					hash_calc_hash(ut_fold_ulint_pair(space, offset),
++						recv_sys->addr_hash));
++			while (recv_addr) {
++				if ((recv_addr->space == space)
++					&& (recv_addr->page_no == offset)) {
++					break;
++				}
++				recv_addr = HASH_GET_NEXT(addr_hash, recv_addr);
++			}
++
++			if ((recv_addr == NULL)
++			    || (recv_addr->state == RECV_BEING_PROCESSED)
++			    || (recv_addr->state == RECV_PROCESSED)) {
++				mutex_exit(&(recv_sys->mutex));
++				goto not_to_recover;
++			}
++
++			fprintf(stderr, " (cannot find space: %lu)", space);
++			recv_addr->state = RECV_PROCESSED;
++
++			ut_a(recv_sys->n_addrs);
++			recv_sys->n_addrs--;
++
++			mutex_exit(&(recv_sys->mutex));
++		}
++not_to_recover:
+ 
+ 		return(0);
+ 	}
 diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
 --- a/innobase/fil/fil0fil.c	2009-02-14 09:56:17.000000000 +0900
-+++ b/innobase/fil/fil0fil.c	2009-03-27 14:28:09.000000000 +0900
++++ b/innobase/fil/fil0fil.c	2009-03-27 17:37:55.000000000 +0900
 @@ -2067,7 +2067,7 @@
  	}
  
@@ -69,7 +118,7 @@ diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
  	for (;;) {
 diff -ru a/innobase/include/mem0mem.h b/innobase/include/mem0mem.h
 --- a/innobase/include/mem0mem.h	2009-02-14 09:56:19.000000000 +0900
-+++ b/innobase/include/mem0mem.h	2009-03-27 14:28:58.000000000 +0900
++++ b/innobase/include/mem0mem.h	2009-03-27 17:37:55.000000000 +0900
 @@ -390,6 +390,7 @@
  			allocated buffer frame, which can be appended as a
  			free block to the heap, if we need more space;
@@ -80,7 +129,7 @@ diff -ru a/innobase/include/mem0mem.h b/innobase/include/mem0mem.h
  			/* List of all mem blocks allocated; protected
 diff -ru a/innobase/include/mem0mem.ic b/innobase/include/mem0mem.ic
 --- a/innobase/include/mem0mem.ic	2009-02-14 09:56:19.000000000 +0900
-+++ b/innobase/include/mem0mem.ic	2009-03-27 14:29:49.000000000 +0900
++++ b/innobase/include/mem0mem.ic	2009-03-27 17:37:55.000000000 +0900
 @@ -435,6 +435,7 @@
  
  	/* Add the created block itself as the first block in the list */
@@ -108,7 +157,7 @@ diff -ru a/innobase/include/mem0mem.ic b/innobase/include/mem0mem.ic
  		size += UNIV_PAGE_SIZE;
 diff -ru a/innobase/include/srv0start.h b/innobase/include/srv0start.h
 --- a/innobase/include/srv0start.h	2009-02-14 09:56:21.000000000 +0900
-+++ b/innobase/include/srv0start.h	2009-03-27 14:31:03.000000000 +0900
++++ b/innobase/include/srv0start.h	2009-03-27 17:37:55.000000000 +0900
 @@ -80,6 +80,7 @@
  				/* out: DB_SUCCESS or error code */
  extern	dulint	srv_shutdown_lsn;
@@ -119,7 +168,7 @@ diff -ru a/innobase/include/srv0start.h b/innobase/include/srv0start.h
  void set_panic_flag_for_netware(void);
 diff -ru a/innobase/include/ut0byte.ic b/innobase/include/ut0byte.ic
 --- a/innobase/include/ut0byte.ic	2009-02-14 09:56:22.000000000 +0900
-+++ b/innobase/include/ut0byte.ic	2009-03-27 14:26:38.000000000 +0900
++++ b/innobase/include/ut0byte.ic	2009-03-27 17:37:55.000000000 +0900
 @@ -152,6 +152,14 @@
  	dulint	a,	/* in: dulint */
  	ulint	b)	/* in: ulint */
@@ -163,7 +212,7 @@ diff -ru a/innobase/include/ut0byte.ic b/innobase/include/ut0byte.ic
  
 diff -ru a/innobase/log/log0log.c b/innobase/log/log0log.c
 --- a/innobase/log/log0log.c	2009-02-14 09:56:22.000000000 +0900
-+++ b/innobase/log/log0log.c	2009-03-27 14:26:38.000000000 +0900
++++ b/innobase/log/log0log.c	2009-03-27 17:37:55.000000000 +0900
 @@ -538,7 +538,9 @@
  
  	offset = (gr_lsn_size_offset + difference) % group_size;
@@ -176,7 +225,7 @@ diff -ru a/innobase/log/log0log.c b/innobase/log/log0log.c
  	"Offset is %lu gr_lsn_offset is %lu difference is %lu\n",
 diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
 --- a/innobase/log/log0recv.c	2009-02-14 09:56:23.000000000 +0900
-+++ b/innobase/log/log0recv.c	2009-03-27 14:34:47.000000000 +0900
++++ b/innobase/log/log0recv.c	2009-03-27 17:37:55.000000000 +0900
 @@ -35,12 +35,12 @@
  #include "fil0fil.h"
  #include "sync0sync.h"
@@ -262,7 +311,7 @@ diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
  	contiguous_lsn = ut_dulint_align_down(recv_sys->scanned_lsn,
 diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
 --- a/innobase/mem/mem0mem.c	2009-02-14 09:56:23.000000000 +0900
-+++ b/innobase/mem/mem0mem.c	2009-03-27 14:35:29.000000000 +0900
++++ b/innobase/mem/mem0mem.c	2009-03-27 17:37:55.000000000 +0900
 @@ -472,6 +472,7 @@
  	/* Add the new block as the last block */
  
@@ -281,7 +330,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2009-02-14 09:56:23.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-03-27 14:26:38.000000000 +0900
++++ b/innobase/os/os0file.c	2009-03-27 17:37:55.000000000 +0900
 @@ -453,7 +453,7 @@
  }
  
@@ -293,7 +342,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
   * On Windows, mandatory locking is used.
 diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
 --- a/innobase/os/os0thread.c	2009-02-14 09:56:23.000000000 +0900
-+++ b/innobase/os/os0thread.c	2009-03-27 14:26:38.000000000 +0900
++++ b/innobase/os/os0thread.c	2009-03-27 17:37:55.000000000 +0900
 @@ -273,12 +273,17 @@
  #elif defined(__NETWARE__)
  	delay(tm / 1000);
@@ -314,7 +363,7 @@ diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
  
 diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
 --- a/innobase/srv/srv0start.c	2009-02-14 09:56:24.000000000 +0900
-+++ b/innobase/srv/srv0start.c	2009-03-27 14:36:04.000000000 +0900
++++ b/innobase/srv/srv0start.c	2009-03-27 17:37:55.000000000 +0900
 @@ -61,6 +61,8 @@
  /* Log sequence number at shutdown */
  dulint		srv_shutdown_lsn;
