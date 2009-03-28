@@ -42,3 +42,6 @@ xtrabackup : xtrabackup.o $(INNODBOBJS) $(MYSQLOBJS)
 clean:
 	rm -f *.o xtrabackup
 
+install:
+	cp innobackupex-1.5.1 /usr/bin
+	cp xtrabackup /usr/bin
