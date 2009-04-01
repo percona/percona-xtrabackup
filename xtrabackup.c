@@ -216,6 +216,10 @@ lint io_ticket;
 os_event_t wait_throttle = NULL;
 
 my_bool xtrabackup_stream = FALSE;
+char *xtrabackup_incremental = NULL;
+dulint incremental_lsn;
+byte* incremental_buffer = NULL;
+byte* incremental_buffer_base = NULL;
 char *xtrabackup_tables = NULL;
 regex_t tables_regex;
 regmatch_t tables_regmatch[1];
@@ -320,6 +324,7 @@ enum options_xtrabackup
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_THROTTLE,
   OPT_XTRA_STREAM,
+  OPT_XTRA_INCREMENTAL,
   OPT_XTRA_TABLES,
   OPT_XTRA_CREATE_IB_LOGFILE,
   OPT_INNODB_CHECKSUMS,
@@ -383,7 +388,10 @@ static struct my_option my_long_options[] =
   {"log-stream", OPT_XTRA_STREAM, "outputs the contents of 'xtrabackup_logfile' to stdout only until the file 'xtrabackup_suspended' deleted (for '--backup').",
    (GPTR*) &xtrabackup_stream, (GPTR*) &xtrabackup_stream,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"tables", OPT_XTRA_TABLES, "** experimental **: filtering by regexp for table names.",
+  {"incremental", OPT_XTRA_INCREMENTAL, "**EXPERIMENTAL** copy only .ibd pages newer than specified LSN 'high:low'. Or apply the *.delta files before apllying logfile. ##ATTENTION##: checkpoint lsn must be used. anyone can detect your mistake. be carefully!",
+   (GPTR*) &xtrabackup_incremental, (GPTR*) &xtrabackup_incremental,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"tables", OPT_XTRA_TABLES, "filtering by regexp for table names.",
    (GPTR*) &xtrabackup_tables, (GPTR*) &xtrabackup_tables,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"create-ib-logfile", OPT_XTRA_CREATE_IB_LOGFILE, "** not work for now** creates ib_logfile* also after '--prepare'. ### If you want create ib_logfile*, only re-execute this command in same options. ###",
@@ -1263,6 +1271,8 @@ xtrabackup_copy_datafile(fil_node_t* node)
 	ib_longlong	file_size;
 	ib_longlong	offset;
 	ibool		src_exist = TRUE;
+	ulint		page_in_buffer;
+	ulint		incremental_buffers = 0;
 
 	if (xtrabackup_tables && (node->space->id != 0)) { /* must backup id==0 */
 		char *p;
@@ -1311,6 +1321,16 @@ skip_filter:
 	} else {
 		/* file per table style "./database/table.ibd" */
 		sprintf(dst_path, "%s%s", xtrabackup_target_dir, strstr(node->name, "/"));
+	}
+
+	if (xtrabackup_incremental) {
+		strcat(dst_path, ".delta");
+
+		/* clear buffer */
+		bzero(incremental_buffer, (UNIV_PAGE_SIZE/4) * UNIV_PAGE_SIZE);
+		page_in_buffer = 0;
+		mach_write_to_4(incremental_buffer, 0x78747261UL);/*"xtra"*/
+		page_in_buffer++;
 	}
 
 	/* open src_file*/
@@ -1389,13 +1409,78 @@ copy_loop:
 			goto error;
 		}
 
-		success = os_file_write(dst_path, dst_file, page,
-			(ulint)(offset & 0xFFFFFFFFUL),
-			(ulint)(offset >> 32), chunk);
+		if (xtrabackup_incremental) {
+			ulint chunk_offset;
+
+			for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += UNIV_PAGE_SIZE) {
+				/* newer page */
+				/* This condition may be OK for header, ibuf and fsp */
+				if (ut_dulint_cmp(incremental_lsn,
+					mach_read_from_8(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
+	/* ========================================= */
+	ulint page_offset;
+
+	if (page_in_buffer == UNIV_PAGE_SIZE/4) {
+		/* flush buffer */
+		success = os_file_write(dst_path, dst_file, incremental_buffer,
+			((incremental_buffers * (UNIV_PAGE_SIZE/4))
+				<< UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
+			(incremental_buffers * (UNIV_PAGE_SIZE/4))
+				>> (32 - UNIV_PAGE_SIZE_SHIFT),
+			page_in_buffer * UNIV_PAGE_SIZE);
 		if (!success) {
 			goto error;
 		}
 
+		incremental_buffers++;
+
+		/* clear buffer */
+		bzero(incremental_buffer, (UNIV_PAGE_SIZE/4) * UNIV_PAGE_SIZE);
+		page_in_buffer = 0;
+		mach_write_to_4(incremental_buffer, 0x78747261UL);/*"xtra"*/
+		page_in_buffer++;
+	}
+
+	page_offset = (ulint)((offset + (ib_longlong)chunk_offset) >> UNIV_PAGE_SIZE_SHIFT);
+	ut_a(page_offset >> 32 == 0);
+
+	mach_write_to_4(incremental_buffer + page_in_buffer * 4, page_offset);
+	memcpy(incremental_buffer + page_in_buffer * UNIV_PAGE_SIZE,
+	       page + chunk_offset, UNIV_PAGE_SIZE);
+
+	page_in_buffer++;
+	/* ========================================= */
+				}
+			}
+		} else {
+			success = os_file_write(dst_path, dst_file, page,
+				(ulint)(offset & 0xFFFFFFFFUL),
+				(ulint)(offset >> 32), chunk);
+			if (!success) {
+				goto error;
+			}
+		}
+
+	}
+
+	if (xtrabackup_incremental) {
+		/* termination */
+		if (page_in_buffer != UNIV_PAGE_SIZE/4) {
+			mach_write_to_4(incremental_buffer + page_in_buffer * 4, 0xFFFFFFFFUL);
+		}
+
+		mach_write_to_4(incremental_buffer, 0x58545241UL);/*"XTRA"*/
+
+		/* flush buffer */
+		success = os_file_write(dst_path, dst_file, incremental_buffer,
+			((incremental_buffers * (UNIV_PAGE_SIZE/4))
+				<< UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
+			(incremental_buffers * (UNIV_PAGE_SIZE/4))
+				>> (32 - UNIV_PAGE_SIZE_SHIFT),
+			page_in_buffer * UNIV_PAGE_SIZE);
+		if (!success) {
+			goto error;
+		}
 	}
 
 	success = os_file_flush(dst_file);
@@ -2227,6 +2312,33 @@ reread_log_header:
 		xtrabackup_suspend_at_end = FALSE; /* suspend is 1 time */
 	}
 
+	/* read the latest checkpoint lsn */
+	{
+		log_group_t*	max_cp_group;
+		ulint	max_cp_field;
+		dulint	latest_cp;
+		ulint	err;
+
+		err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
+
+		if (err != DB_SUCCESS) {
+			fprintf(stderr, "Error: recv_find_max_checkpoint() failed.\n");
+			goto skip_last_cp;
+		}
+
+		log_group_read_checkpoint_info(max_cp_group, max_cp_field);
+
+		latest_cp = mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
+
+		if (!xtrabackup_stream) {
+			printf("The latest check point (for incremental): '%lu:%lu'\n",
+				latest_cp.high, latest_cp.low);
+		} else {
+			fprintf(stderr, "The latest check point (for incremental): '%lu:%lu'\n",
+				latest_cp.high, latest_cp.low);
+		}
+	}
+skip_last_cp:
 
 	/* stop log_copying_thread */
 	log_copying = FALSE;
@@ -2527,6 +2639,251 @@ error:
 	return(TRUE); /*ERROR*/
 }
 
+void
+xtrabackup_apply_delta(
+	const char*	dirname,	/* in: dir name */
+	const char*	filename,	/* in: file name (not a path),
+					including the .delta extension */
+	my_bool check_newer)
+{
+	os_file_t	src_file = -1;
+	os_file_t	dst_file = -1;
+	char	src_path[FN_REFLEN];
+	char	dst_path[FN_REFLEN];
+	ibool	success;
+
+	ibool	last_buffer = FALSE;
+	ulint	page_in_buffer;
+	ulint	incremental_buffers = 0;
+
+
+	ut_a(xtrabackup_incremental);
+
+	sprintf(src_path, "%s/%s", dirname, filename);
+	sprintf(dst_path, "%s/%s", dirname, filename);
+	dst_path[strlen(dst_path) - 6] = '\0';
+
+	src_file = os_file_create_simple_no_error_handling(
+		src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
+	if (!success) {
+		os_file_get_last_error(TRUE);
+		fprintf(stderr,
+			"InnoDB: error: cannot open %s .\n",
+			src_path);
+		goto error;
+	}
+
+	dst_file = os_file_create_simple_no_error_handling(
+		dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
+	if (!success) {
+		os_file_get_last_error(TRUE);
+		fprintf(stderr,
+			"InnoDB: error: cannot open %s .\n",
+			dst_path);
+		goto error;
+	}
+
+	printf("Applying %s ...\n", src_path);
+
+	while (!last_buffer) {
+		ulint cluster_header;
+
+		/* read to buffer */
+		/* first block of block cluster */
+		success = os_file_read(src_file, incremental_buffer,
+			((incremental_buffers * (UNIV_PAGE_SIZE/4))
+				<< UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
+			(incremental_buffers * (UNIV_PAGE_SIZE/4))
+				>> (32 - UNIV_PAGE_SIZE_SHIFT),
+			UNIV_PAGE_SIZE);
+		if (!success) {
+			goto error;
+		}
+
+		cluster_header = mach_read_from_4(incremental_buffer);
+		switch(cluster_header) {
+			case 0x78747261UL: /*"xtra"*/
+				break;
+			case 0x58545241UL: /*"XTRA"*/
+				last_buffer = TRUE;
+				break;
+			defeult:
+				fprintf(stderr,
+					"InnoDB: error: %s seems not .delta file.\n",
+					src_path);
+				goto error;
+		}
+
+		for (page_in_buffer = 1; page_in_buffer < UNIV_PAGE_SIZE/4; page_in_buffer++) {
+			if (mach_read_from_4(incremental_buffer + page_in_buffer * 4)
+			    == 0xFFFFFFFFUL)
+				break;
+		}
+
+		ut_a(last_buffer || page_in_buffer == UNIV_PAGE_SIZE/4);
+
+		/* read whole of the cluster */
+		success = os_file_read(src_file, incremental_buffer,
+			((incremental_buffers * (UNIV_PAGE_SIZE/4))
+				<< UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
+			(incremental_buffers * (UNIV_PAGE_SIZE/4))
+				>> (32 - UNIV_PAGE_SIZE_SHIFT),
+			page_in_buffer * UNIV_PAGE_SIZE);
+		if (!success) {
+			goto error;
+		}
+
+		for (page_in_buffer = 1; page_in_buffer < UNIV_PAGE_SIZE/4; page_in_buffer++) {
+			ulint page_offset;
+
+			page_offset = mach_read_from_4(incremental_buffer + page_in_buffer * 4);
+
+			if (page_offset == 0xFFFFFFFFUL)
+				break;
+
+			/* apply blocks in the cluster */
+			if (ut_dulint_cmp(incremental_lsn,
+				mach_read_from_8(incremental_buffer
+						 + page_in_buffer * UNIV_PAGE_SIZE
+						 + FIL_PAGE_LSN)) >= 0)
+				continue;
+
+			success = os_file_write(dst_path, dst_file,
+					incremental_buffer + page_in_buffer * UNIV_PAGE_SIZE,
+					(page_offset << UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
+					page_offset >> (32 - UNIV_PAGE_SIZE_SHIFT),
+					UNIV_PAGE_SIZE);
+			if (!success) {
+				goto error;
+			}
+		}
+
+		incremental_buffers++;
+	}
+
+	if (!src_file == -1)
+		os_file_close(src_file);
+	if (!dst_file == -1)
+		os_file_close(dst_file);
+	return;
+
+error:
+	if (!src_file == -1)
+		os_file_close(src_file);
+	if (!dst_file == -1)
+		os_file_close(dst_file);
+	fprintf(stderr, "Error: xtrabackup_apply_delta() failed.\n");
+	return;
+}
+
+void
+xtrabackup_apply_deltas(my_bool check_newer)
+{
+	int		ret;
+	char		dbpath[FN_REFLEN];
+	os_file_dir_t	dir;
+	os_file_dir_t	dbdir;
+	os_file_stat_t	dbinfo;
+	os_file_stat_t	fileinfo;
+	ulint		err 		= DB_SUCCESS;
+	static char	current_dir[2];
+
+	current_dir[0] = FN_CURLIB;
+	current_dir[1] = 0;
+	srv_data_home = (innobase_data_home_dir ? innobase_data_home_dir :
+			 current_dir);
+
+	/* datafile */
+	dbdir = os_file_opendir(srv_data_home, FALSE);
+
+	if (dbdir != NULL) {
+		ret = fil_file_readdir_next_file(&err, srv_data_home, dbdir,
+							&fileinfo);
+		while (ret == 0) {
+			if (fileinfo.type == OS_FILE_TYPE_DIR) {
+				goto next_file_item_1;
+			}
+
+			if (strlen(fileinfo.name) > 6
+			    && 0 == strcmp(fileinfo.name + 
+					strlen(fileinfo.name) - 6,
+					".delta")) {
+				xtrabackup_apply_delta(
+					srv_data_home, fileinfo.name, check_newer);
+			}
+next_file_item_1:
+			ret = fil_file_readdir_next_file(&err,
+							srv_data_home, dbdir,
+							&fileinfo);
+		}
+
+		os_file_closedir(dbdir);
+	} else {
+		fprintf(stderr, "Cannot open dir %s\n", srv_data_home);
+	}
+
+	/* single table tablespaces */
+	dir = os_file_opendir(fil_path_to_mysql_datadir, FALSE);
+
+	if (dir == NULL) {
+		fprintf(stderr, "Cannot open dir %s\n", fil_path_to_mysql_datadir);
+	}
+
+		ret = fil_file_readdir_next_file(&err, fil_path_to_mysql_datadir, dir,
+								&dbinfo);
+	while (ret == 0) {
+		ulint len;
+
+		if (dbinfo.type == OS_FILE_TYPE_FILE
+		    || dbinfo.type == OS_FILE_TYPE_UNKNOWN) {
+
+		        goto next_datadir_item;
+		}
+
+		sprintf(dbpath, "%s/%s", fil_path_to_mysql_datadir,
+								dbinfo.name);
+		srv_normalize_path_for_win(dbpath);
+
+		dbdir = os_file_opendir(dbpath, FALSE);
+
+		if (dbdir != NULL) {
+
+			ret = fil_file_readdir_next_file(&err, dbpath, dbdir,
+								&fileinfo);
+			while (ret == 0) {
+
+			        if (fileinfo.type == OS_FILE_TYPE_DIR) {
+
+				        goto next_file_item_2;
+				}
+
+				if (strlen(fileinfo.name) > 6
+				    && 0 == strcmp(fileinfo.name + 
+						strlen(fileinfo.name) - 6,
+						".delta")) {
+				        /* The name ends in .ibd; try opening
+					the file */
+					xtrabackup_apply_delta(
+						dbpath, fileinfo.name, check_newer);
+				}
+next_file_item_2:
+				ret = fil_file_readdir_next_file(&err,
+								dbpath, dbdir,
+								&fileinfo);
+			}
+
+			os_file_closedir(dbdir);
+		}
+next_datadir_item:
+		ret = fil_file_readdir_next_file(&err,
+						fil_path_to_mysql_datadir,
+								dir, &dbinfo);
+	}
+
+	os_file_closedir(dir);
+
+}
+
 my_bool
 xtrabackup_close_temp_log(my_bool clear_flag)
 {
@@ -2619,6 +2976,10 @@ xtrabackup_prepare_func(void)
 	os_io_init_simple();
 	if(xtrabackup_init_temp_log())
 		goto error;
+
+	if(xtrabackup_incremental)
+		xtrabackup_apply_deltas(TRUE);
+
 	sync_close();
 	sync_initialized = FALSE;
 	os_sync_free();
@@ -2787,6 +3148,51 @@ next_opt:
 		printf("tables regcomp():%s\n",errbuf);
 	}
 
+	if (xtrabackup_incremental) {
+		char* incremental_low;
+		char* endchar;
+		long long lsn_high, lsn_low;
+		int error = 0;
+
+		incremental_low = strstr(xtrabackup_incremental, ":");
+		if (incremental_low) {
+			*incremental_low = '\0';
+
+			lsn_high = strtoll(xtrabackup_incremental, &endchar, 10);
+			if (*endchar != '\0' || (lsn_high >> 32))
+				error = 1;
+
+			*incremental_low = ':';
+			incremental_low++;
+
+			lsn_low = strtoll(incremental_low, &endchar, 10);
+
+			if (*endchar != '\0' || (lsn_low >> 32))
+				error = 1;
+
+			incremental_lsn = ut_dulint_create((ulint)lsn_high, (ulint)lsn_low);
+		} else {
+			error = 1;
+		}
+
+		if (error) {
+			fprintf(stderr, "value '%s' may be wrong format for incremental option.\n",
+				xtrabackup_incremental);
+			exit(-1);
+		}
+
+		printf("incremental backup from %lu:%lu is enabled.\n",
+		       incremental_lsn.high, incremental_lsn.low);
+
+		/* allocate buffer for incremental backup (4096 pages) */
+		incremental_buffer_base = malloc((UNIV_PAGE_SIZE/4 + 1) * UNIV_PAGE_SIZE);
+		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+	} else {
+		/* allocate buffer for applying incremental (for header page only) */
+		incremental_buffer_base = malloc((1 + 1) * UNIV_PAGE_SIZE);
+		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+	}
+
 	/* --print-param */
 	if (xtrabackup_print_param) {
 		/* === some variables from mysqld === */
@@ -2832,6 +3238,8 @@ next_opt:
 	/* --prepare */
 	if (xtrabackup_prepare)
 		xtrabackup_prepare_func();
+
+	free(incremental_buffer_base);
 
 	if (xtrabackup_tables) {
 		/* free regexp */
