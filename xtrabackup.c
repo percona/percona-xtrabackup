@@ -1609,7 +1609,8 @@ xtrabackup_copy_logfile(dulint from_lsn, my_bool is_last)
 		} else {
 			ulint ret;
 			ulint stdout_write_size = write_size;
-			if (finished && !is_last)
+			if (finished && !is_last
+			    && group_scanned_lsn.low % OS_FILE_LOG_BLOCK_SIZE)
 				stdout_write_size -= OS_FILE_LOG_BLOCK_SIZE;
 			if (stdout_write_size) {
 				ret = write(fileno(stdout), log_sys->buf, stdout_write_size);
@@ -1626,7 +1627,7 @@ xtrabackup_copy_logfile(dulint from_lsn, my_bool is_last)
 
 		log_copy_offset += write_size;
 
-		if (finished) {
+		if (finished && group_scanned_lsn.low % OS_FILE_LOG_BLOCK_SIZE) {
 			/* if continue, it will start from align_down(group_scanned_lsn) */
 			log_copy_offset -= OS_FILE_LOG_BLOCK_SIZE;
 		}
