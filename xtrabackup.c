@@ -218,8 +218,13 @@ os_event_t wait_throttle = NULL;
 my_bool xtrabackup_stream = FALSE;
 char *xtrabackup_incremental = NULL;
 dulint incremental_lsn;
+dulint incremental_to_lsn;
 byte* incremental_buffer = NULL;
 byte* incremental_buffer_base = NULL;
+
+char *xtrabackup_incremental_basedir = NULL; /* for --backup */
+char *xtrabackup_incremental_dir = NULL; /* for --prepare */
+
 char *xtrabackup_tables = NULL;
 regex_t tables_regex;
 regmatch_t tables_regmatch[1];
@@ -236,6 +241,12 @@ ibool log_copying_running = FALSE;
 ibool log_copying_succeed = FALSE;
 
 ibool xtrabackup_logfile_is_renamed = FALSE;
+
+/* === metadata of backup === */
+#define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
+char metadata_type[30] = ""; /*[full-backuped|full-prepared|incremental]*/
+dulint metadata_from_lsn = {0, 0};
+dulint metadata_to_lsn = {0, 0};
 
 /* === sharing with thread === */
 os_file_t       dst_log = -1;
@@ -325,6 +336,8 @@ enum options_xtrabackup
   OPT_XTRA_THROTTLE,
   OPT_XTRA_STREAM,
   OPT_XTRA_INCREMENTAL,
+  OPT_XTRA_INCREMENTAL_BASEDIR,
+  OPT_XTRA_INCREMENTAL_DIR,
   OPT_XTRA_TABLES,
   OPT_XTRA_CREATE_IB_LOGFILE,
   OPT_INNODB_CHECKSUMS,
@@ -388,8 +401,14 @@ static struct my_option my_long_options[] =
   {"log-stream", OPT_XTRA_STREAM, "outputs the contents of 'xtrabackup_logfile' to stdout only until the file 'xtrabackup_suspended' deleted (for '--backup').",
    (GPTR*) &xtrabackup_stream, (GPTR*) &xtrabackup_stream,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"incremental", OPT_XTRA_INCREMENTAL, "**EXPERIMENTAL** copy only .ibd pages newer than specified LSN 'high:low'. Or apply the *.delta files before apllying logfile. ##ATTENTION##: checkpoint lsn must be used. anyone can detect your mistake. be carefully!",
+  {"incremental-lsn", OPT_XTRA_INCREMENTAL, "(for --backup): copy only .ibd pages newer than specified LSN 'high:low'. ##ATTENTION##: checkpoint lsn must be used. anyone can detect your mistake. be carefully!",
    (GPTR*) &xtrabackup_incremental, (GPTR*) &xtrabackup_incremental,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"incremental-basedir", OPT_XTRA_INCREMENTAL_BASEDIR, "(for --backup): copy only .ibd pages newer than backup at specified directory.",
+   (GPTR*) &xtrabackup_incremental_basedir, (GPTR*) &xtrabackup_incremental_basedir,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"incremental-dir", OPT_XTRA_INCREMENTAL_DIR, "(for --prepare): apply .delta files and logfile in the specified directory.",
+   (GPTR*) &xtrabackup_incremental_dir, (GPTR*) &xtrabackup_incremental_dir,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"tables", OPT_XTRA_TABLES, "filtering by regexp for table names.",
    (GPTR*) &xtrabackup_tables, (GPTR*) &xtrabackup_tables,
@@ -1033,8 +1052,8 @@ innodb_init_param(void)
 
 	/* The default dir for data files is the datadir of MySQL */
 
-	srv_data_home = (innobase_data_home_dir ? innobase_data_home_dir :
-			 default_path);
+	srv_data_home = (xtrabackup_backup && innobase_data_home_dir
+			 ? innobase_data_home_dir : default_path);
 
 	/* Set default InnoDB data file size to 10 MB and let it be
   	auto-extending. Thus users can use InnoDB in >= 4.0 without having
@@ -1068,8 +1087,11 @@ innodb_init_param(void)
 
 	/* The default dir for log files is the datadir of MySQL */
 
-	if (!innobase_log_group_home_dir) {
+	if (!(xtrabackup_backup && innobase_log_group_home_dir)) {
 	  	innobase_log_group_home_dir = default_path;
+	}
+	if (xtrabackup_prepare && xtrabackup_incremental_dir) {
+		innobase_log_group_home_dir = xtrabackup_incremental_dir;
 	}
 
 #ifdef UNIV_LOG_ARCHIVE
@@ -1242,6 +1264,58 @@ error:
 	return(TRUE);
 }
 
+/* ================= common ================= */
+my_bool
+xtrabackup_read_metadata(char *filename)
+{
+	FILE *fp;
+
+	fp = fopen(filename,"r");
+	if(!fp) {
+		fprintf(stderr, "Error: cannot open %s .\n", filename);
+		return(TRUE);
+	}
+
+	if (fscanf(fp, "backup_type = %29s\n", metadata_type)
+			!= 1)
+		return(TRUE);
+	if (fscanf(fp, "from_lsn = %lu:%lu\n", &metadata_from_lsn.high, &metadata_from_lsn.low)
+			!= 2)
+		return(TRUE);
+	if (fscanf(fp, "to_lsn = %lu:%lu\n", &metadata_to_lsn.high, &metadata_to_lsn.low)
+			!= 2)
+		return(TRUE);
+
+	fclose(fp);
+
+	return(FALSE);
+}
+
+my_bool
+xtrabackup_write_metadata(char *filename)
+{
+	FILE *fp;
+
+	fp = fopen(filename,"w");
+	if(!fp) {
+		fprintf(stderr, "Error: cannot open %s .\n", filename);
+		return(TRUE);
+	}
+
+	if (fprintf(fp, "backup_type = %s\n", metadata_type)
+			< 0)
+		return(TRUE);
+	if (fprintf(fp, "from_lsn = %lu:%lu\n", metadata_from_lsn.high, metadata_from_lsn.low)
+			< 0)
+		return(TRUE);
+	if (fprintf(fp, "to_lsn = %lu:%lu\n", metadata_to_lsn.high, metadata_to_lsn.low)
+			< 0)
+		return(TRUE);
+
+	fclose(fp);
+
+	return(FALSE);
+}
 
 /* ================= backup ================= */
 void
@@ -2313,10 +2387,10 @@ reread_log_header:
 	}
 
 	/* read the latest checkpoint lsn */
+	dulint latest_cp = ut_dulint_zero;
 	{
 		log_group_t*	max_cp_group;
 		ulint	max_cp_field;
-		dulint	latest_cp;
 		ulint	err;
 
 		err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
@@ -2339,6 +2413,25 @@ reread_log_header:
 		}
 	}
 skip_last_cp:
+
+	/* output to metadata file */
+	{
+		char	filename[FN_REFLEN];
+
+		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
+
+		if(!xtrabackup_incremental) {
+			strcpy(metadata_type, "full-backuped");
+			metadata_from_lsn = ut_dulint_zero;
+		} else {
+			strcpy(metadata_type, "incremental");
+			metadata_from_lsn = incremental_lsn;
+		}
+		metadata_to_lsn = latest_cp;
+
+		if (xtrabackup_write_metadata(filename))
+			fprintf(stderr, "error: xtrabackup_write_metadata()\n");
+	}
 
 	/* stop log_copying_thread */
 	log_copying = FALSE;
@@ -2403,10 +2496,14 @@ xtrabackup_init_temp_log(void)
 
 	max_no = ut_dulint_zero;
 
-	sprintf(dst_path, "%s%s", xtrabackup_target_dir, "/ib_logfile0");
+	if(!xtrabackup_incremental_dir) {
+		sprintf(dst_path, "%s%s", xtrabackup_target_dir, "/ib_logfile0");
+		sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+	} else {
+		sprintf(dst_path, "%s%s", xtrabackup_incremental_dir, "/ib_logfile0");
+		sprintf(src_path, "%s%s", xtrabackup_incremental_dir, "/xtrabackup_logfile");
+	}
 
-	/* open 'xtrabackup_logfile' */
-	sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
 retry:
 	src_file = os_file_create_simple_no_error_handling(
 					src_path, OS_FILE_OPEN,
@@ -2641,7 +2738,8 @@ error:
 
 void
 xtrabackup_apply_delta(
-	const char*	dirname,	/* in: dir name */
+	const char*	dirname,	/* in: dir name of incremental */
+	const char*	dbname,		/* in: database name (ibdata: NULL) */
 	const char*	filename,	/* in: file name (not a path),
 					including the .delta extension */
 	my_bool check_newer)
@@ -2659,8 +2757,13 @@ xtrabackup_apply_delta(
 
 	ut_a(xtrabackup_incremental);
 
-	sprintf(src_path, "%s/%s", dirname, filename);
-	sprintf(dst_path, "%s/%s", dirname, filename);
+	if (dbname) {
+		sprintf(src_path, "%s/%s/%s", dirname, dbname, filename);
+		sprintf(dst_path, "%s/%s/%s", xtrabackup_real_target_dir, dbname, filename);
+	} else {
+		sprintf(src_path, "%s/%s", dirname, filename);
+		sprintf(dst_path, "%s/%s", xtrabackup_real_target_dir, filename);
+	}
 	dst_path[strlen(dst_path) - 6] = '\0';
 
 	src_file = os_file_create_simple_no_error_handling(
@@ -2790,14 +2893,13 @@ xtrabackup_apply_deltas(my_bool check_newer)
 
 	current_dir[0] = FN_CURLIB;
 	current_dir[1] = 0;
-	srv_data_home = (innobase_data_home_dir ? innobase_data_home_dir :
-			 current_dir);
+	srv_data_home = current_dir;
 
 	/* datafile */
-	dbdir = os_file_opendir(srv_data_home, FALSE);
+	dbdir = os_file_opendir(xtrabackup_incremental_dir, FALSE);
 
 	if (dbdir != NULL) {
-		ret = fil_file_readdir_next_file(&err, srv_data_home, dbdir,
+		ret = fil_file_readdir_next_file(&err, xtrabackup_incremental_dir, dbdir,
 							&fileinfo);
 		while (ret == 0) {
 			if (fileinfo.type == OS_FILE_TYPE_DIR) {
@@ -2809,27 +2911,28 @@ xtrabackup_apply_deltas(my_bool check_newer)
 					strlen(fileinfo.name) - 6,
 					".delta")) {
 				xtrabackup_apply_delta(
-					srv_data_home, fileinfo.name, check_newer);
+					xtrabackup_incremental_dir, NULL,
+					fileinfo.name, check_newer);
 			}
 next_file_item_1:
 			ret = fil_file_readdir_next_file(&err,
-							srv_data_home, dbdir,
+							xtrabackup_incremental_dir, dbdir,
 							&fileinfo);
 		}
 
 		os_file_closedir(dbdir);
 	} else {
-		fprintf(stderr, "Cannot open dir %s\n", srv_data_home);
+		fprintf(stderr, "Cannot open dir %s\n", xtrabackup_incremental_dir);
 	}
 
 	/* single table tablespaces */
-	dir = os_file_opendir(fil_path_to_mysql_datadir, FALSE);
+	dir = os_file_opendir(xtrabackup_incremental_dir, FALSE);
 
 	if (dir == NULL) {
-		fprintf(stderr, "Cannot open dir %s\n", fil_path_to_mysql_datadir);
+		fprintf(stderr, "Cannot open dir %s\n", xtrabackup_incremental_dir);
 	}
 
-		ret = fil_file_readdir_next_file(&err, fil_path_to_mysql_datadir, dir,
+		ret = fil_file_readdir_next_file(&err, xtrabackup_incremental_dir, dir,
 								&dbinfo);
 	while (ret == 0) {
 		ulint len;
@@ -2840,7 +2943,7 @@ next_file_item_1:
 		        goto next_datadir_item;
 		}
 
-		sprintf(dbpath, "%s/%s", fil_path_to_mysql_datadir,
+		sprintf(dbpath, "%s/%s", xtrabackup_incremental_dir,
 								dbinfo.name);
 		srv_normalize_path_for_win(dbpath);
 
@@ -2864,7 +2967,8 @@ next_file_item_1:
 				        /* The name ends in .ibd; try opening
 					the file */
 					xtrabackup_apply_delta(
-						dbpath, fileinfo.name, check_newer);
+						xtrabackup_incremental_dir, dbinfo.name,
+						fileinfo.name, check_newer);
 				}
 next_file_item_2:
 				ret = fil_file_readdir_next_file(&err,
@@ -2876,7 +2980,7 @@ next_file_item_2:
 		}
 next_datadir_item:
 		ret = fil_file_readdir_next_file(&err,
-						fil_path_to_mysql_datadir,
+						xtrabackup_incremental_dir,
 								dir, &dbinfo);
 	}
 
@@ -2905,8 +3009,13 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	innobase_log_files_in_group = innobase_log_files_in_group_backup;
 
 	/* rename 'ib_logfile0' to 'xtrabackup_logfile' */
-	sprintf(dst_path, "%s%s", xtrabackup_target_dir, "/ib_logfile0");
-	sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+	if(!xtrabackup_incremental_dir) {
+		sprintf(dst_path, "%s%s", xtrabackup_target_dir, "/ib_logfile0");
+		sprintf(src_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+	} else {
+		sprintf(dst_path, "%s%s", xtrabackup_incremental_dir, "/ib_logfile0");
+		sprintf(src_path, "%s%s", xtrabackup_incremental_dir, "/xtrabackup_logfile");
+	}
 
 	success = os_file_rename(dst_path, src_path);
 	if (!success) {
@@ -2967,6 +3076,37 @@ xtrabackup_prepare_func(void)
 	xtrabackup_target_dir[0]=FN_CURLIB;		// all paths are relative from here
 	xtrabackup_target_dir[1]=0;
 
+	/* read metadata of target */
+	{
+		char	filename[FN_REFLEN];
+
+		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
+
+		if (xtrabackup_read_metadata(filename))
+			fprintf(stderr, "error: xtrabackup_read_metadata()\n");
+
+		if (!strcmp(metadata_type, "full-backuped")) {
+			fprintf(stderr, "xtrabackup: This target seems to be not prepared yet.\n");
+		} else if (!strcmp(metadata_type, "full-prepared")) {
+			fprintf(stderr, "xtrabackup: This target seems to be already prepared.\n");
+			goto skip_check;
+		} else {
+			fprintf(stderr, "xtrabackup: This target seems not to have correct metadata...\n");
+		}
+
+		if (xtrabackup_incremental) {
+			fprintf(stderr,
+			"error: applying incremental backup needs target prepared.\n");
+			exit(1);
+		}
+skip_check:
+		if (xtrabackup_incremental
+		    && ut_dulint_cmp(metadata_to_lsn, incremental_lsn) < 0) {
+			fprintf(stderr,
+			"error: This incremental backup seems to be too new for the target.\n");
+			exit(1);
+		}
+	}
 
 	/* Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB */
 	srv_max_n_threads = 1000;
@@ -2990,6 +3130,8 @@ xtrabackup_prepare_func(void)
 
 	if(innodb_init_param())
 		goto error;
+
+
 
 	fprintf(stderr, "xtrabackup: Starting InnoDB instance for recovery.\n"
 		"xtrabackup: Using %lld bytes for buffer pool (set by --use-memory parameter)\n",
@@ -3051,6 +3193,22 @@ xtrabackup_prepare_func(void)
 
 	if(xtrabackup_close_temp_log(TRUE))
 		exit(1);
+
+	/* output to metadata file */
+	{
+		char	filename[FN_REFLEN];
+
+		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
+
+		strcpy(metadata_type, "full-prepared");
+
+		if(xtrabackup_incremental
+		   && ut_dulint_cmp(metadata_to_lsn, incremental_to_lsn) < 0)
+			metadata_to_lsn = incremental_to_lsn;
+
+		if (xtrabackup_write_metadata(filename))
+			fprintf(stderr, "error: xtrabackup_write_metadata()\n");
+	}
 
 	if(!xtrabackup_create_ib_logfile)
 		return;
@@ -3148,7 +3306,10 @@ next_opt:
 		printf("tables regcomp():%s\n",errbuf);
 	}
 
-	if (xtrabackup_incremental) {
+	if (xtrabackup_backup && xtrabackup_incremental) {
+		/* direct specification is only for --backup */
+		/* and the lsn is prior to the other option */
+
 		char* incremental_low;
 		char* endchar;
 		long long lsn_high, lsn_low;
@@ -3181,8 +3342,42 @@ next_opt:
 			exit(-1);
 		}
 
-		printf("incremental backup from %lu:%lu is enabled.\n",
-		       incremental_lsn.high, incremental_lsn.low);
+		/* allocate buffer for incremental backup (4096 pages) */
+		incremental_buffer_base = malloc((UNIV_PAGE_SIZE/4 + 1) * UNIV_PAGE_SIZE);
+		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+	} else if (xtrabackup_backup && xtrabackup_incremental_basedir) {
+		char	filename[FN_REFLEN];
+
+		sprintf(filename, "%s/%s", xtrabackup_incremental_basedir, XTRABACKUP_METADATA_FILENAME);
+
+		if (xtrabackup_read_metadata(filename)) {
+			fprintf(stderr,
+				"error: failed to read metadata from %s\n",
+				filename);
+			exit(-1);
+		}
+
+		incremental_lsn = metadata_to_lsn;
+		xtrabackup_incremental = xtrabackup_incremental_basedir; //dummy
+
+		/* allocate buffer for incremental backup (4096 pages) */
+		incremental_buffer_base = malloc((UNIV_PAGE_SIZE/4 + 1) * UNIV_PAGE_SIZE);
+		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+	} else if (xtrabackup_prepare && xtrabackup_incremental_dir) {
+		char	filename[FN_REFLEN];
+
+		sprintf(filename, "%s/%s", xtrabackup_incremental_dir, XTRABACKUP_METADATA_FILENAME);
+
+		if (xtrabackup_read_metadata(filename)) {
+			fprintf(stderr,
+				"error: failed to read metadata from %s\n",
+				filename);
+			exit(-1);
+		}
+
+		incremental_lsn = metadata_from_lsn;
+		incremental_to_lsn = metadata_to_lsn;
+		xtrabackup_incremental = xtrabackup_incremental_dir; //dummy
 
 		/* allocate buffer for incremental backup (4096 pages) */
 		incremental_buffer_base = malloc((UNIV_PAGE_SIZE/4 + 1) * UNIV_PAGE_SIZE);
@@ -3191,6 +3386,8 @@ next_opt:
 		/* allocate buffer for applying incremental (for header page only) */
 		incremental_buffer_base = malloc((1 + 1) * UNIV_PAGE_SIZE);
 		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+
+		xtrabackup_incremental = NULL;
 	}
 
 	/* --print-param */
@@ -3218,6 +3415,10 @@ next_opt:
 
 	if (!xtrabackup_stream) {
 		print_version();
+		if (xtrabackup_incremental) {
+			printf("incremental backup from %lu:%lu is enabled.\n",
+				incremental_lsn.high, incremental_lsn.low);
+		}
 	} else {
 		if (xtrabackup_backup) {
 			xtrabackup_suspend_at_end = TRUE;

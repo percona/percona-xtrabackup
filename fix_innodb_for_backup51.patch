@@ -98,6 +98,15 @@ diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
+@@ -3102,7 +3102,7 @@
+ A fault-tolerant function that tries to read the next file name in the
+ directory. We retry 100 times if os_file_readdir_next_file() returns -1. The
+ idea is to read as much good data as we can and jump over bad data. */
+-static
++//static
+ int
+ fil_file_readdir_next_file(
+ /*=======================*/
 @@ -4062,6 +4062,17 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
