@@ -1083,6 +1083,21 @@ innodb_init_param(void)
                 goto error;
 	}
 
+	if (xtrabackup_prepare) {
+		/* "--prepare" needs filenames only */
+		ulint i;
+
+		for (i=0; i < srv_n_data_files; i++) {
+			char *p;
+
+			p = srv_data_file_names[i];
+			while (p = strstr(p, "/")) {
+				p++;
+				srv_data_file_names[i] = p;
+			}
+		}
+	}
+
 	/* -------------- Log files ---------------------------*/
 
 	/* The default dir for log files is the datadir of MySQL */
@@ -2575,7 +2590,7 @@ retry:
 
 
 	/* TODO: We should skip the following modifies, if it is not the first time. */
-	log_buf_ = ut_malloc(UNIV_PAGE_SIZE * 2);
+	log_buf_ = ut_malloc(UNIV_PAGE_SIZE * 129);
 	log_buf = ut_align(log_buf_, UNIV_PAGE_SIZE);
 
 	/* read log file header */
@@ -2660,7 +2675,7 @@ not_consistent:
 		goto error;
 	}
 
-	/* align file size to UNIV_PAGE_SIZE */
+	/* expand file size (9/8) and align to UNIV_PAGE_SIZE */
 
 	if (file_size % UNIV_PAGE_SIZE) {
 		memset(log_buf, 0, UNIV_PAGE_SIZE);
@@ -2668,12 +2683,40 @@ not_consistent:
 				(ulint)(file_size & 0xFFFFFFFFUL),
 				(ulint)(file_size >> 32),
 				UNIV_PAGE_SIZE - (file_size % UNIV_PAGE_SIZE));
-
 		if (!success) {
 			goto error;
 		}
 
 		file_size = os_file_get_size_as_iblonglong(src_file);
+	}
+
+	{
+		ulint	expand;
+
+		memset(log_buf, 0, UNIV_PAGE_SIZE * 128);
+		expand = file_size / UNIV_PAGE_SIZE / 8;
+
+		for (; expand > 128; expand -= 128) {
+			success = os_file_write(src_path, src_file, log_buf,
+					(ulint)(file_size & 0xFFFFFFFFUL),
+					(ulint)(file_size >> 32),
+					UNIV_PAGE_SIZE * 128);
+			if (!success) {
+				goto error;
+			}
+			file_size += UNIV_PAGE_SIZE * 128;
+		}
+
+		if (expand) {
+			success = os_file_write(src_path, src_file, log_buf,
+					(ulint)(file_size & 0xFFFFFFFFUL),
+					(ulint)(file_size >> 32),
+					expand * UNIV_PAGE_SIZE);
+			if (!success) {
+				goto error;
+			}
+			file_size += UNIV_PAGE_SIZE * expand;
+		}
 	}
 
 	/* make larger than 2MB */
