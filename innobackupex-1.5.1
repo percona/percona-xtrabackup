@@ -78,6 +78,7 @@ my $option_no_timestamp = '';
 my $option_slave_info = '';
 my $option_ibbackup_binary = 'xtrabackup';
 
+my $option_defaults_file = '';
 my $option_incremental = '';
 my $option_remote_host = '';
 my $option_stream = '';
@@ -226,11 +227,12 @@ sub usage {
 Usage:
 innobackup [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME] 
            [--password=WORD] [--port=PORT] [--socket=SOCKET] [--no-timestamp] 
-           [--ibbackup=IBBACKUP-BINARY] [--slave-info]
+           [--ibbackup=IBBACKUP-BINARY] [--slave-info] [--stream=tar]
+           [--defaults-file=MY.CNF]
            [--databases=LIST] [--remote-host=HOSTNAME] BACKUP-ROOT-DIR
-innobackup --apply-log [--use-memory=MB] [--uncompress] 
+innobackup --apply-log [--use-memory=MB] [--uncompress] [--defaults-file=MY.CNF]
            [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
-innobackup --copy-back BACKUP-DIR
+innobackup --copy-back [--defaults-file=MY.CNF] BACKUP-DIR
 
 The first command line above makes a hot backup of a MySQL database.
 By default it creates a backup directory (named by the current date
@@ -267,6 +269,10 @@ Options:
 
     --version   Print version information and exit.
 
+    --defaults-file=[MY.CNF]
+                This option is passed to the xtrabackup child process.
+                It specify which file only read default options from.
+
     --apply-log Prepare a backup for starting mysql server on the backup. 
                 Expand InnoDB data files as specified in 
                 backup-dir/backup-my.cnf, using backup-dir/ibbackup_logfile, 
@@ -280,7 +286,7 @@ Options:
                 If this option is specified, backup files will be created
                 at the remote host by using ssh connection.
 
-    --stream=[tar|cpio]
+    --stream=[tar|cpio(not implemented)]
                 If this option is specified, backup to STDOUT as specified
                 format.
 
@@ -434,6 +440,8 @@ sub Die {
 # process.
 #
 sub backup {
+    my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
+
     # check that we can connect to the database. This done by
     # connecting, issuing a query, and closing the connection.
     mysql_open();
@@ -471,10 +479,18 @@ sub backup {
         system("scp -Cp -c arcfour '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_logfile': $!";
         unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
+
+        system("scp -Cp -c arcfour '$orig_datadir/xtrabackup_checkpoints' '$option_remote_host:$backup_dir/xtrabackup_checkpoints'")
+            and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_checkpoints': $!";
+        unlink "$orig_datadir/xtrabackup_checkpoints" || Die "Failed to delete '$orig_datadir/xtrabackup_checkpoints': $!";
     } elsif ($option_stream eq 'tar') {
         system("cd $option_tmpdir; tar cf - xtrabackup_logfile")
             and Die "Failed to stream 'xtrabackup_logfile': $!";
         unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
+
+        system("cd $orig_datadir; tar cf - xtrabackup_checkpoints")
+            and Die "Failed to stream 'xtrabackup_checkpoints': $!";
+        unlink "$orig_datadir/xtrabackup_checkpoints" || Die "Failed to delete '$orig_datadir/xtrabackup_checkpoints': $!";
     }
 
     print STDERR "\n$prefix Backup created in directory '$backup_dir'\n";
@@ -692,6 +708,9 @@ sub apply_log {
 
     $options = $options . " --target-dir=$backup_dir";
 
+    if ($option_defaults_file) {
+        $options = $options . " --defaults-file=$option_defaults_file";
+    }
     if ($option_uncompress) {
         $options = $options . ' --uncompress';
     }
@@ -767,11 +786,14 @@ sub start_ibbackup {
     if (!$option_remote_host && !$option_stream) {
         $options = $options . " --target-dir=$backup_dir";
     } else {
-        #(datadir) for 'xtrabackup_suspended' only
+        #(datadir) for 'xtrabackup_suspended' and 'xtrabackup_checkpoints'
         $options = $options . " --log-stream --target-dir=./";
     }
 
     # prepare command line for running ibbackup
+    if ($option_defaults_file) {
+        $options = $options . " --defaults-file=$option_defaults_file";
+    }
     if ($option_throttle) {
         $options = $options . " --throttle=$option_throttle";
     }
@@ -831,9 +853,14 @@ sub start_ibbackup {
                         system("scp -Cp -c arcfour '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
                             and Die "Failed to scp file '$path': $!";
                     } elsif($option_stream eq 'tar') {
+                        my $ret = 0;
                         print STDERR "$prefix Backing up as tar stream '$path'\n";
-                        system("cd $orig_ibdata_dir; tar cf - $path")
-                            and Die "Failed to stream '$path': $!";
+                        $ret = system("cd $orig_ibdata_dir; tar cf - $path");
+                        if ($ret == 1) {
+                            print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
+                        } elsif ($ret != 0) {
+                            Die "Failed to stream '$path': $!";
+                        }
                     }
                 }
 
@@ -882,9 +909,14 @@ sub start_ibbackup {
                             system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$subdir/'")
                                 and Die "Failed to scp file '$file': $!";
                         } elsif($option_stream eq 'tar') {
+                            my $ret = 0;
                             my $file_name = substr($file, rindex($file, '/') + 1);
-                            system("cd $orig_datadir; tar cf - $subdir/$file_name")
-                                and Die "Failed to stream '$subdir/$file_name': $!";
+                            $ret = system("cd $orig_datadir; tar cf - $subdir/$file_name");
+                            if ($ret == 1) {
+                                print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
+                            } elsif ($ret != 0) {
+                                Die "Failed to stream '$subdir/$file_name': $!";
+                            }
                         }
                     }
                 }
@@ -1536,6 +1568,7 @@ sub check_args {
                         'slave-info' => \$option_slave_info,
                         'socket=s' => \$option_mysql_socket,
                         'no-timestamp' => \$option_no_timestamp,
+                        'defaults-file=s' => \$option_defaults_file,
                         'incremental' => \$option_incremental,
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
@@ -1768,9 +1801,14 @@ sub backup_files {
                 system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$database/'")
                     and Die "Failed to scp file '$file': $!";
             } elsif($option_stream eq 'tar') {
+                my $ret = 0;
                 my $file_name = substr($file, rindex($file, '/') + 1);
-                system("cd $source_dir; tar cf - $database/$file_name")
-                    and Die "Failed to stream '$database/$file_name': $!";
+                $ret = system("cd $source_dir; tar cf - $database/$file_name");
+                if ($ret == 1) {
+                    print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
+                } elsif ($ret != 0) {
+                    Die "Failed to stream '$database/$file_name': $!";
+                }
             }
         }
     }
@@ -1867,6 +1905,10 @@ sub read_config_file {
 
     my $cmdline = '';
     my $options = '--print-param';
+
+    if ($option_defaults_file) {
+        $options = $options . " --defaults-file=$option_defaults_file";
+    }
 
     # read file to an array, one line per element
     #file_to_array($filename, \@lines);
