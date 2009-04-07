@@ -1,0 +1,1 @@
+Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines. It works with MySQL 5.0 and 5.1 versions (InnoDB Plugin is not supported yet as for alpha-0.3) and also can handle MyISAM tables. XtraBackup is distributed under GPL v2 license.
