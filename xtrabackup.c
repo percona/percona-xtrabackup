@@ -300,7 +300,7 @@ char*	innobase_unix_file_flush_method		= NULL;
 /* Below we have boolean-valued start-up parameters, and their default
 values */
 
-ulong	innobase_fast_shutdown			= 0;
+ulong	innobase_fast_shutdown			= 1;
 my_bool innobase_log_archive			= FALSE;/* unused */
 my_bool innobase_use_doublewrite    = TRUE;
 my_bool innobase_use_checksums      = TRUE;
@@ -2690,6 +2690,7 @@ not_consistent:
 		file_size = os_file_get_size_as_iblonglong(src_file);
 	}
 
+	/* TODO: We should judge whether the file is already expanded or not... */
 	{
 		ulint	expand;
 
@@ -3174,7 +3175,10 @@ skip_check:
 	if(innodb_init_param())
 		goto error;
 
-
+	/* increase IO threads */
+	if(srv_n_file_io_threads < 10) {
+		srv_n_file_io_threads = 10;
+	}
 
 	fprintf(stderr, "xtrabackup: Starting InnoDB instance for recovery.\n"
 		"xtrabackup: Using %lld bytes for buffer pool (set by --use-memory parameter)\n",

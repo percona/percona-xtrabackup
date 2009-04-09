@@ -12,7 +12,7 @@ diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
  				  mach_read_from_8(read_buf + FIL_PAGE_LSN))
 diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
 --- a/innobase/buf/buf0rea.c	2009-02-14 09:56:16.000000000 +0900
-+++ b/innobase/buf/buf0rea.c	2009-04-08 10:59:42.000000000 +0900
++++ b/innobase/buf/buf0rea.c	2009-04-09 18:48:28.000000000 +0900
 @@ -114,6 +114,45 @@
  	block = buf_page_init_for_read(err, mode, space, tablespace_version,
  				       offset);
@@ -59,6 +59,20 @@ diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
  
  		return(0);
  	}
+@@ -680,11 +719,11 @@
+ 		while (buf_pool->n_pend_reads >= recv_n_pool_free_frames / 2) {
+ 
+ 			os_aio_simulated_wake_handler_threads();
+-			os_thread_sleep(500000);
++			os_thread_sleep(20000);
+ 
+ 			count++;
+ 
+-			if (count > 100) {
++			if (count > 2500) {
+ 				fprintf(stderr,
+ 					"InnoDB: Error: InnoDB has waited for"
+ 					" 50 seconds for pending\n"
 diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
 --- a/innobase/fil/fil0fil.c	2009-02-14 09:56:17.000000000 +0900
 +++ b/innobase/fil/fil0fil.c	2009-04-08 10:59:42.000000000 +0900
@@ -233,8 +247,8 @@ diff -ru a/innobase/log/log0log.c b/innobase/log/log0log.c
  	"Offset is %lu gr_lsn_offset is %lu difference is %lu\n",
 diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
 --- a/innobase/log/log0recv.c	2009-02-14 09:56:23.000000000 +0900
-+++ b/innobase/log/log0recv.c	2009-04-08 11:00:10.000000000 +0900
-@@ -35,12 +35,12 @@
++++ b/innobase/log/log0recv.c	2009-04-09 18:49:16.000000000 +0900
+@@ -35,19 +35,19 @@
  #include "fil0fil.h"
  #include "sync0sync.h"
  
@@ -249,6 +263,23 @@ diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
  
  /* Log records are stored in the hash table in chunks at most of this size;
  this must be less than UNIV_PAGE_SIZE as it is stored in the buffer pool */
+ #define RECV_DATA_BLOCK_SIZE	(MEM_MAX_ALLOC_IN_BUF - sizeof(recv_data_t))
+ 
+ /* Read-ahead area in applying log records to file pages */
+-#define RECV_READ_AHEAD_AREA	32
++#define RECV_READ_AHEAD_AREA	128
+ 
+ recv_sys_t*	recv_sys = NULL;
+ ibool		recv_recovery_on = FALSE;
+@@ -101,7 +101,7 @@
+ use these free frames to read in pages when we start applying the
+ log records to the database. */
+ 
+-ulint	recv_n_pool_free_frames		= 256;
++ulint	recv_n_pool_free_frames		= 1024;
+ 
+ /* The maximum lsn we see for a page during the recovery process. If this
+ is bigger than the lsn we are able to scan up to, that is an indication that
 @@ -454,7 +454,7 @@
  
  /***************************************************************************
@@ -346,7 +377,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2009-02-14 09:56:23.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-04-08 10:59:42.000000000 +0900
++++ b/innobase/os/os0file.c	2009-04-09 18:51:40.000000000 +0900
 @@ -453,7 +453,7 @@
  }
  
@@ -356,6 +387,45 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
+@@ -3248,6 +3248,13 @@
+ 	struct aiocb*	control;
+ #endif
+ 	ulint		i;
++	ulint		prim_segment;
++	ulint		n;
++
++	n = array->n_slots / array->n_segments;
++	/* 64 blocks' striping ( aligning max(BUF_READ_AHEAD_AREA) ) */
++	prim_segment = ( offset >> (UNIV_PAGE_SIZE_SHIFT + 6) ) % (array->n_segments);
++
+ loop:
+ 	os_mutex_enter(array->mutex);
+ 
+@@ -3266,6 +3273,16 @@
+ 		goto loop;
+ 	}
+ 
++	for (i = prim_segment * n; i < array->n_slots; i++) {
++		slot = os_aio_array_get_nth_slot(array, i);
++
++		if (slot->reserved == FALSE) {
++			break;
++		}
++	}
++
++	if (slot->reserved == TRUE){
++		/* Not found after the intended segment. So we should search before. */
+ 	for (i = 0;; i++) {
+ 		slot = os_aio_array_get_nth_slot(array, i);
+ 
+@@ -3273,6 +3290,7 @@
+ 			break;
+ 		}
+ 	}
++	}
+ 
+ 	array->n_reserved++;
+ 
 diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
 --- a/innobase/os/os0thread.c	2009-02-14 09:56:23.000000000 +0900
 +++ b/innobase/os/os0thread.c	2009-04-08 10:59:42.000000000 +0900
@@ -379,7 +449,7 @@ diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
  
 diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
 --- a/innobase/srv/srv0start.c	2009-02-14 09:56:24.000000000 +0900
-+++ b/innobase/srv/srv0start.c	2009-04-08 10:59:42.000000000 +0900
++++ b/innobase/srv/srv0start.c	2009-04-09 18:52:24.000000000 +0900
 @@ -61,6 +61,8 @@
  /* Log sequence number at shutdown */
  dulint		srv_shutdown_lsn;
@@ -407,6 +477,21 @@ diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
  ulint
  open_or_create_data_files(
  /*======================*/
+@@ -1246,12 +1248,12 @@
+ 
+ 	if (!os_aio_use_native_aio) {
+ 		/* In simulated aio we currently have use only for 4 threads */
+-		srv_n_file_io_threads = 4;
++		/*srv_n_file_io_threads = 4;*/
+ 
+ 		os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD
+ 			    * srv_n_file_io_threads,
+ 			    srv_n_file_io_threads,
+-			    SRV_MAX_N_PENDING_SYNC_IOS);
++			    SRV_MAX_N_PENDING_SYNC_IOS * 8);
+ 	} else {
+ 		os_aio_init(SRV_N_PENDING_IOS_PER_THREAD
+ 			    * srv_n_file_io_threads,
 @@ -1313,7 +1315,7 @@
  	}
  #endif /* UNIV_LOG_ARCHIVE */
