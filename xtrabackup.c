@@ -4,7 +4,7 @@ XtraBackup: The another hot backup tool for InnoDB
 Created 3/3/2009 Yasufumi Kinoshita
 *******************************************************/
 
-#define XTRABACKUP_VERSION "beta-0.4"
+#define XTRABACKUP_VERSION "beta-0.5"
 
 //#define XTRABACKUP_TARGET_IS_PLUGIN
 

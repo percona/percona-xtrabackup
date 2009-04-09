@@ -312,7 +312,7 @@ diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
 -				(ulong) ut_dulint_get_low(*group_scanned_lsn));
 +				(ulong) ut_dulint_get_low(*group_scanned_lsn),
 +				(ulong) ut_dulint_minus(*group_scanned_lsn, srv_oldest_lsn)
-+				/ (log_group_get_capacity(UT_LIST_GET_FIRST(log_sys->log_groups))/100)
++				/ (8 * log_group_get_capacity(UT_LIST_GET_FIRST(log_sys->log_groups))/900)
 +			);
  		}
  	}
