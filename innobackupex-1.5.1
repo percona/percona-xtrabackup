@@ -606,17 +606,17 @@ sub copy_back {
     # directories in the backup directory under which there are ibdata files
     foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
         my $path = (split(/:/,$a))[0];
-        my $filename = (split(/\/+/, $path))[0];
+        my $filename = (split(/\/+/, $path))[-1];
 
         # check that the backup data file exists
-        if (! -e "$backup_dir/$path") {
-            if (-e "$backup_dir/${path}.ibz") {
-                Die "Backup data file '$backup_dir/$path' does not exist, but "
+        if (! -e "$backup_dir/$filename") {
+            if (-e "$backup_dir/${filename}.ibz") {
+                Die "Backup data file '$backup_dir/$filename' does not exist, but "
                   . "its compressed copy '${path}.ibz' exists. Check "
                   . "that you have run 'innobackup --apply-log --uncompress "
                   . "...' before attempting 'innobackup --copy-back ...' !";
             } else {
-                Die "Backup data file '$backup_dir/$path' does not exist.";
+                Die "Backup data file '$backup_dir/$filename' does not exist.";
             }
         }
 
@@ -673,9 +673,10 @@ sub copy_back {
     foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
         # get the relative pathname of a data file
         my $path = (split(/:/,$a))[0];
-        print STDERR "$prefix Copying file '$backup_dir/$path'\n";
-        system("cp -p '$backup_dir/$path' '$orig_ibdata_dir/$path'")
-            and Die "Failed to copy file '$path': $!";
+        my $filename = (split(/\/+/, $path))[-1];
+        print STDERR "$prefix Copying file '$backup_dir/$filename'\n";
+        system("cp -p '$backup_dir/$filename' '$orig_ibdata_dir/$path'")
+            and Die "Failed to copy file '$filename': $!";
     }
 
     # copy InnoDB log files to original InnoDB log directory
@@ -1479,6 +1480,13 @@ sub write_backup_config_file {
         get_option(\%config, 'mysqld', 'innodb_log_file_size');
     my $root;
 
+    my @array = split(/;/, $innodb_data_file_path);
+    for (my $i = 0; $i <= $#array; $i++) {
+        my @tmp = split(/\/+/, $array[$i]);
+        $array[$i] = $tmp[-1];
+    }
+    $innodb_data_file_path = join(";", @array);
+
     if (!$option_remote_host) {
         $root = $backup_dir;
         open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
@@ -1667,17 +1675,17 @@ sub make_backup_dir {
     }
 
     # create subdirectories for ibdata files if needed
-    foreach my $a (split(/;/, $innodb_data_file_path)) {
-        my $path = (split(/:/,$a))[0];
-        my @relative_path = split(/\/+/, $path);
-        pop @relative_path;
-        if (@relative_path) {
-            # there is a non-trivial path from the backup directory
-            # to the directory of this backup ibdata file, check
-            # that all the directories in the path exist.
-            create_path_if_needed($dir, \@relative_path);
-        }
-    }
+#    foreach my $a (split(/;/, $innodb_data_file_path)) {
+#        my $path = (split(/:/,$a))[0];
+#        my @relative_path = split(/\/+/, $path);
+#        pop @relative_path;
+#        if (@relative_path) {
+#            # there is a non-trivial path from the backup directory
+#            # to the directory of this backup ibdata file, check
+#            # that all the directories in the path exist.
+#            create_path_if_needed($dir, \@relative_path);
+#        }
+#    }
 
     return $dir;
 }

@@ -2332,7 +2332,7 @@ reread_log_header:
 		/* mkdir if not exist */
 		ptr1 = strstr(space->name, "/");
 		ptr2 = strstr(ptr1 + 1, "/");
-		if(ptr2) {
+		if(space->id && ptr2) {
 			/* single table space */
 			*ptr2 = 0; /* temporary (it's my lazy..)*/
 			sprintf(path, "%s%s",xtrabackup_target_dir,ptr1);
