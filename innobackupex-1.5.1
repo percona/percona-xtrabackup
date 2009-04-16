@@ -705,13 +705,14 @@ sub copy_back {
 sub apply_log {
     my $rcode;
     my $cmdline = '';
-    my $options = '--prepare';
-
-    $options = $options . " --target-dir=$backup_dir";
+    my $options = '';
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file";
+        $options = $options . " --defaults-file=$option_defaults_file ";
     }
+
+    $options = $options . "--prepare --target-dir=$backup_dir";
+
     if ($option_uncompress) {
         $options = $options . ' --uncompress';
     }
@@ -780,9 +781,15 @@ sub resume_ibbackup {
 # program for backing up InnoDB tables and indexes.
 #
 sub start_ibbackup {
-    my $options = '--backup --suspend-at-end';
+    my $options = '';
     my $cmdline = '';
     my $pid = undef;
+
+    if ($option_defaults_file) {
+        $options = $options . " --defaults-file=$option_defaults_file ";
+    }
+
+    $options = $options . "--backup --suspend-at-end";
 
     if (!$option_remote_host && !$option_stream) {
         $options = $options . " --target-dir=$backup_dir";
@@ -792,9 +799,6 @@ sub start_ibbackup {
     }
 
     # prepare command line for running ibbackup
-    if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file";
-    }
     if ($option_throttle) {
         $options = $options . " --throttle=$option_throttle";
     }
@@ -1912,11 +1916,13 @@ sub read_config_file {
     my $group_hash_ref;
 
     my $cmdline = '';
-    my $options = '--print-param';
+    my $options = '';
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file";
+        $options = $options . " --defaults-file=$option_defaults_file ";
     }
+
+    $options = $options . "--print-param";
 
     # read file to an array, one line per element
     #file_to_array($filename, \@lines);

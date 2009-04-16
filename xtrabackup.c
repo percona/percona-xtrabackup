@@ -616,7 +616,7 @@ static void usage(void)
 {
   puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
 
-  printf("Usage: [%s --backup | %s --prepare] [OPTIONS]\n",my_progname,my_progname);
+  printf("Usage: [%s [--defaults-file=#] --backup | %s [--defaults-file=#] --prepare] [OPTIONS]\n",my_progname,my_progname);
   print_defaults("my",load_default_groups);
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
@@ -3333,6 +3333,7 @@ next_opt:
 		}
 	}
 	argc = argc_new;
+	argv[argc] = NULL;
 	}
 
 	if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
