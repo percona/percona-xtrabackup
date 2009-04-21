@@ -651,21 +651,21 @@ ibool
 thd_is_replication_slave_thread(
 	void*	thd)
 {
-	fprintf(stderr, "thd_is_replication_slave_thread() is called\n");
+	fprintf(stderr, "xtrabackup: thd_is_replication_slave_thread() is called\n");
 }
 
 ibool
 thd_has_edited_nontrans_tables(
 	void*	thd)
 {
-	fprintf(stderr, "thd_has_edited_nontrans_tables() is called\n");
+	fprintf(stderr, "xtrabackup: thd_has_edited_nontrans_tables() is called\n");
 }
 
 ibool
 thd_is_select(
 	const void*	thd)
 {
-	fprintf(stderr, "thd_is_select() is called\n");
+	fprintf(stderr, "xtrabackup: thd_is_select() is called\n");
 }
 
 void
@@ -686,7 +686,7 @@ innobase_mysql_print_thd(
 	void*   input_thd,
 	uint	max_query_len)
 {
-	fprintf(stderr, "innobase_mysql_print_thd() is called\n");
+	fprintf(stderr, "xtrabackup: innobase_mysql_print_thd() is called\n");
 }
 
 void
@@ -716,7 +716,7 @@ innobase_convert_from_table_id(
 	const char*	from,
 	ulint	len)
 {
-	fprintf(stderr, "innobase_convert_from_table_id() is called\n");
+	fprintf(stderr, "xtrabackup: innobase_convert_from_table_id() is called\n");
 }
 
 void
@@ -725,7 +725,7 @@ innobase_convert_from_id(
 	const char*	from,
 	ulint	len)
 {
-	fprintf(stderr, "innobase_convert_from_id() is called\n");
+	fprintf(stderr, "xtrabackup: innobase_convert_from_id() is called\n");
 }
 
 int
@@ -747,7 +747,7 @@ struct charset_info_st*
 innobase_get_charset(
 	void*   mysql_thd)
 {
-	fprintf(stderr, "innobase_get_charset() is called\n");
+	fprintf(stderr, "xtrabackup: innobase_get_charset() is called\n");
 }
 
 int
@@ -779,7 +779,7 @@ innobase_mysql_tmpfile(void)
 		my_close(). */
 		fd2 = dup(fd);
 		if (fd2 < 0) {
-			fprintf(stderr, "Got error %d on dup\n",fd2);
+			fprintf(stderr, "xtrabackup: Got error %d on dup\n",fd2);
                 }
 		my_close(fd, MYF(MY_WME));
 	}
@@ -878,7 +878,7 @@ innobase_mysql_cmp(
 			charset = get_charset(charset_number, MYF(MY_WME));
 
 			if (charset == NULL) {
-			  fprintf(stderr, "InnoDB needs charset %lu for doing "
+			  fprintf(stderr, "xtrabackup: InnoDB needs charset %lu for doing "
 					  "a comparison, but MySQL cannot "
 					  "find that charset.\n",
 					  (ulong) charset_number);
@@ -971,7 +971,7 @@ innobase_get_at_most_n_mbchars(
 ibool
 innobase_query_is_update(void)
 {
-	fprintf(stderr, "innobase_query_is_update() is called\n");
+	fprintf(stderr, "xtrabackup: innobase_query_is_update() is called\n");
 	return(0);
 }
 
@@ -1001,13 +1001,13 @@ innodb_init_param(void)
 	if (sizeof(ulint) == 4) {
 		if (xtrabackup_use_memory > UINT_MAX32) {
 			fprintf(stderr,
-				"use-memory can't be over 4GB"
+				"xtrabackup: use-memory can't be over 4GB"
 				" on 32-bit systems\n");
 		}
 
 		if (innobase_buffer_pool_size > UINT_MAX32) {
 			fprintf(stderr,
-				"innobase_buffer_pool_size can't be over 4GB"
+				"xtrabackup: innobase_buffer_pool_size can't be over 4GB"
 				" on 32-bit systems\n");
 
 			goto error;
@@ -1015,7 +1015,7 @@ innodb_init_param(void)
 
 		if (innobase_log_file_size > UINT_MAX32) {
 			fprintf(stderr,
-				"innobase_log_file_size can't be over 4GB"
+				"xtrabackup: innobase_log_file_size can't be over 4GB"
 				" on 32-bit systemsi\n");
 
 			goto error;
@@ -1048,12 +1048,19 @@ innodb_init_param(void)
 	/* Set InnoDB initialization parameters according to the values
 	read from MySQL .cnf file */
 
+	if (xtrabackup_backup) {
+		fprintf(stderr, "xtrabackup: Target instance is assumed as followings.\n");
+	} else {
+		fprintf(stderr, "xtrabackup: Temporary instance for recovery is set as followings.\n");
+	}
+
 	/*--------------- Data files -------------------------*/
 
 	/* The default dir for data files is the datadir of MySQL */
 
 	srv_data_home = (xtrabackup_backup && innobase_data_home_dir
 			 ? innobase_data_home_dir : default_path);
+	fprintf(stderr, "xtrabackup:   innodb_data_home_dir = %s\n", srv_data_home);
 
 	/* Set default InnoDB data file size to 10 MB and let it be
   	auto-extending. Thus users can use InnoDB in >= 4.0 without having
@@ -1062,6 +1069,8 @@ innodb_init_param(void)
 	if (!innobase_data_file_path) {
   		innobase_data_file_path = (char*) "ibdata1:10M:autoextend";
 	}
+	fprintf(stderr, "xtrabackup:   innodb_data_file_path = %s\n",
+		innobase_data_file_path);
 
 	/* Since InnoDB edits the argument in the next call, we make another
 	copy of it: */
@@ -1078,7 +1087,7 @@ innodb_init_param(void)
 				&srv_last_file_size_max);
 	if (ret == FALSE) {
 	  	fprintf(stderr,
-			"InnoDB: syntax error in innodb_data_file_path\n");
+			"xtrabackup: syntax error in innodb_data_file_path\n");
 	  	free(internal_innobase_data_file_path);
                 goto error;
 	}
@@ -1108,6 +1117,8 @@ innodb_init_param(void)
 	if (xtrabackup_prepare && xtrabackup_incremental_dir) {
 		innobase_log_group_home_dir = xtrabackup_incremental_dir;
 	}
+	fprintf(stderr, "xtrabackup:   innodb_log_group_home_dir = %s\n",
+		innobase_log_group_home_dir);
 
 #ifdef UNIV_LOG_ARCHIVE
 	/* Since innodb_log_arch_dir has no relevance under MySQL,
@@ -1124,7 +1135,7 @@ innodb_init_param(void)
 						&srv_log_group_home_dirs);
 
 	if (ret == FALSE || innobase_mirrored_log_groups != 1) {
-	  fprintf(stderr, "syntax error in innodb_log_group_home_dir, or a "
+	  fprintf(stderr, "xtrabackup: syntax error in innodb_log_group_home_dir, or a "
 			  "wrong number of mirrored log groups\n");
 
 	  	free(internal_innobase_data_file_path);
@@ -1138,6 +1149,10 @@ innodb_init_param(void)
 	srv_n_log_groups = (ulint) innobase_mirrored_log_groups;
 	srv_n_log_files = (ulint) innobase_log_files_in_group;
 	srv_log_file_size = (ulint) innobase_log_file_size;
+	fprintf(stderr, "xtrabackup:   innodb_log_files_in_group = %ld\n",
+		srv_n_log_files);
+	fprintf(stderr, "xtrabackup:   innodb_log_file_size = %ld\n",
+		srv_log_file_size);
 
 #ifdef UNIV_LOG_ARCHIVE
 	srv_log_archive_on = (ulint) innobase_log_archive;
@@ -1220,7 +1235,7 @@ innodb_init_param(void)
 	return(FALSE);
 
 error:
-	fprintf(stderr, "innodb_init_param(): Error occured.\n");
+	fprintf(stderr, "xtrabackup: innodb_init_param(): Error occured.\n");
 	return(TRUE);
 }
 
@@ -1250,7 +1265,7 @@ innodb_init(void)
 	return(FALSE);
 
 error:
-	fprintf(stderr, "innodb_init(): Error occured.\n");
+	fprintf(stderr, "xtrabackup: innodb_init(): Error occured.\n");
 	return(TRUE);
 }
 
@@ -1275,7 +1290,7 @@ innodb_end(void)
 	return(FALSE);
 
 error:
-	fprintf(stderr, "innodb_end(): Error occured.\n");
+	fprintf(stderr, "xtrabackup: innodb_end(): Error occured.\n");
 	return(TRUE);
 }
 
@@ -1287,7 +1302,7 @@ xtrabackup_read_metadata(char *filename)
 
 	fp = fopen(filename,"r");
 	if(!fp) {
-		fprintf(stderr, "Error: cannot open %s .\n", filename);
+		fprintf(stderr, "xtrabackup: Error: cannot open %s .\n", filename);
 		return(TRUE);
 	}
 
@@ -1313,7 +1328,7 @@ xtrabackup_write_metadata(char *filename)
 
 	fp = fopen(filename,"w");
 	if(!fp) {
-		fprintf(stderr, "Error: cannot open %s .\n", filename);
+		fprintf(stderr, "xtrabackup: Error: cannot open %s .\n", filename);
 		return(TRUE);
 	}
 
@@ -1431,11 +1446,9 @@ skip_filter:
 			/* The following call prints an error message */
 			os_file_get_last_error(TRUE);
 
-			ut_print_timestamp(stderr);
-
 			fprintf(stderr,
-"  InnoDB: error: cannot open %s\n."
-"InnoDB: Have you deleted .ibd files under a running mysqld server?\n",
+"xtrabackup: error: cannot open %s\n."
+"xtrabackup: Have you deleted .ibd files under a running mysqld server?\n",
 				node->name);
 			src_exist = FALSE;
 		}
@@ -1450,10 +1463,8 @@ skip_filter:
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
 
-                        ut_print_timestamp(stderr);
-
                         fprintf(stderr,
-"  InnoDB: error: cannot open %s\n.",
+"xtrabackup: error: cannot open %s\n.",
                                 dst_path);
                         goto error;
                 }
@@ -1603,7 +1614,7 @@ error:
 		os_file_close(dst_file);
 	if (buf2)
 		ut_free(buf2);
-	fprintf(stderr, "Error: xtrabackup_copy_datafile() failed.\n");
+	fprintf(stderr, "xtrabackup: Error: xtrabackup_copy_datafile() failed.\n");
 	return(TRUE); /*ERROR*/
 }
 
@@ -1698,8 +1709,8 @@ xtrabackup_copy_logfile(dulint from_lsn, my_bool is_last)
 			    && !log_block_checksum_is_ok_or_old_format(
 								log_block)) {
 				fprintf(stderr,
-"InnoDB: Log block no %lu at lsn %lu %lu has\n"
-"InnoDB: ok header, but checksum field contains %lu, should be %lu\n",
+"xtrabackup: Log block no %lu at lsn %lu %lu has\n"
+"xtrabackup: ok header, but checksum field contains %lu, should be %lu\n",
 				(ulong) no,
 				(ulong) ut_dulint_get_high(scanned_lsn),
 				(ulong) ut_dulint_get_low(scanned_lsn),
@@ -1808,9 +1819,9 @@ xtrabackup_copy_logfile(dulint from_lsn, my_bool is_last)
 
 		if(!success) {
 			if (!xtrabackup_stream) {
-				fprintf(stderr, "Error: os_file_write to %s\n", dst_log_path);
+				fprintf(stderr, "xtrabackup: Error: os_file_write to %s\n", dst_log_path);
 			} else {
-				fprintf(stderr, "Error: write to stdout\n");
+				fprintf(stderr, "xtrabackup: Error: write to stdout\n");
 			}
 			goto error;
 		}
@@ -1863,7 +1874,7 @@ xtrabackup_copy_logfile(dulint from_lsn, my_bool is_last)
 error:
 	if (!xtrabackup_stream)
 		os_file_close(dst_log);
-	fprintf(stderr, "Error: xtrabackup_copy_logfile() failed.\n");
+	fprintf(stderr, "xtrabackup: Error: xtrabackup_copy_logfile() failed.\n");
 	return(TRUE);
 }
 
@@ -1957,10 +1968,6 @@ io_handler_thread(
 	
 	segment = *((ulint*)arg);
 
-#ifdef UNIV_DEBUG_THREAD_CREATION
-	fprintf(stderr, "Io handler thread %lu starts, id %lu\n", segment,
-			os_thread_pf(os_thread_get_curr_id()));
-#endif
 	for (i = 0;; i++) {
 		fil_aio_wait(segment);
 	}
@@ -1989,9 +1996,11 @@ xtrabackup_backup_func(void)
 
 	if (my_setwd(mysql_real_data_home,MYF(MY_WME)))
 	{
-		fprintf(stderr, "cannot my_setwd %s\n", mysql_real_data_home);
+		fprintf(stderr, "xtrabackup: cannot my_setwd %s\n", mysql_real_data_home);
 		exit(1);
 	}
+	fprintf(stderr, "xtrabackup: cd to %s\n", mysql_real_data_home);
+
 	mysql_data_home= mysql_data_home_buff;
 	mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
 	mysql_data_home[1]=0;
@@ -2097,13 +2106,13 @@ xtrabackup_backup_func(void)
 					&sum_of_new_sizes);
 	if (err != DB_SUCCESS) {
 	        fprintf(stderr,
-"InnoDB: Could not open or create data files.\n"
-"InnoDB: If you tried to add new data files, and it failed here,\n"
-"InnoDB: you should now edit innodb_data_file_path in my.cnf back\n"
-"InnoDB: to what it was, and remove the new ibdata files InnoDB created\n"
-"InnoDB: in this failed attempt. InnoDB only wrote those files full of\n"
-"InnoDB: zeros, but did not yet use them in any way. But be careful: do not\n"
-"InnoDB: remove old data files which contain your precious data!\n");
+"xtrabackup: Could not open or create data files.\n"
+"xtrabackup: If you tried to add new data files, and it failed here,\n"
+"xtrabackup: you should now edit innodb_data_file_path in my.cnf back\n"
+"xtrabackup: to what it was, and remove the new ibdata files InnoDB created\n"
+"xtrabackup: in this failed attempt. InnoDB only wrote those files full of\n"
+"xtrabackup: zeros, but did not yet use them in any way. But be careful: do not\n"
+"xtrabackup: remove old data files which contain your precious data!\n");
 
 		//return((int) err);
 		exit(1);
@@ -2111,7 +2120,7 @@ xtrabackup_backup_func(void)
 
 	/* create_new_db must not be TRUE.. */
 	if (create_new_db) {
-		fprintf(stderr, "InnoDB: Something wrong with source files...\n");
+		fprintf(stderr, "xtrabackup: Something wrong with source files...\n");
 		exit(1);
 	}
 
@@ -2132,12 +2141,12 @@ xtrabackup_backup_func(void)
 		if ((log_opened && create_new_db)
 			    		|| (log_opened && log_created)) {
 			fprintf(stderr, 
-	"InnoDB: Error: all log files must be created at the same time.\n"
-	"InnoDB: All log files must be created also in database creation.\n"
-	"InnoDB: If you want bigger or smaller log files, shut down the\n"
-	"InnoDB: database and make sure there were no errors in shutdown.\n"
-	"InnoDB: Then delete the existing log files. Edit the .cnf file\n"
-	"InnoDB: and start the database again.\n");
+	"xtrabackup: Error: all log files must be created at the same time.\n"
+	"xtrabackup: All log files must be created also in database creation.\n"
+	"xtrabackup: If you want bigger or smaller log files, shut down the\n"
+	"xtrabackup: database and make sure there were no errors in shutdown.\n"
+	"xtrabackup: Then delete the existing log files. Edit the .cnf file\n"
+	"xtrabackup: and start the database again.\n");
 
 			//return(DB_ERROR);
 			exit(1);
@@ -2146,7 +2155,7 @@ xtrabackup_backup_func(void)
 
 	/* log_file_created must not be TRUE, if online */
 	if (log_file_created) {
-		fprintf(stderr, "InnoDB: Something wrong with source files...\n");
+		fprintf(stderr, "xtrabackup: Something wrong with source files...\n");
 		exit(1);
 	}
 
@@ -2159,12 +2168,12 @@ xtrabackup_backup_func(void)
 	/* create target dir if not exist */
 	if (!my_stat(xtrabackup_target_dir,&stat_info,MYF(0))
 		&& (my_mkdir(xtrabackup_target_dir,0777,MYF(0)) < 0)){
-		fprintf(stderr,"Error: cannot mkdir %d: %s\n",my_errno,xtrabackup_target_dir);
+		fprintf(stderr,"xtrabackup: Error: cannot mkdir %d: %s\n",my_errno,xtrabackup_target_dir);
 		exit(1);
 	}
 
 	} else {
-		fprintf(stderr,"Stream mode.\n");
+		fprintf(stderr,"xtrabackup: Stream mode.\n");
 		/* stdout can treat binary at Linux */
 		//setmode(fileno(stdout), O_BINARY);
 	}
@@ -2254,10 +2263,8 @@ reread_log_header:
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
 
-                        ut_print_timestamp(stderr);
-
                         fprintf(stderr,
-"  InnoDB: error: cannot open %s\n.",
+"xtrabackup: error: cannot open %s\n.",
                                 dst_log_path);
                         exit(1);
                 }
@@ -2341,7 +2348,7 @@ reread_log_header:
 			if (!my_stat(path,&stat_info,MYF(0))
 				&& (my_mkdir(path,0777,MYF(0)) < 0)){
 
-				fprintf(stderr,"Error: cannot mkdir %d: %s\n",my_errno,path);
+				fprintf(stderr,"xtrabackup: Error: cannot mkdir %d: %s\n",my_errno,path);
 				exit(1);
 			}
 		}
@@ -2353,7 +2360,7 @@ reread_log_header:
 
 			/* copy the datafile */
 			if(xtrabackup_copy_datafile(node))
-				printf("continuing anyway.\n");
+				printf("xtrabackup: continuing anyway.\n");
 
                         node = UT_LIST_GET_NEXT(chain, node);
                 }
@@ -2385,7 +2392,7 @@ reread_log_header:
 						OS_FILE_AIO, OS_DATA_FILE, &success);
 
 		if (!success) {
-			fprintf(stderr, "Error: failed to create file 'xtrabackup_suspended'\n");
+			fprintf(stderr, "xtrabackup: Error: failed to create file 'xtrabackup_suspended'\n");
 		}
 
 		if (!suspend_file == -1)
@@ -2411,7 +2418,7 @@ reread_log_header:
 		err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
 
 		if (err != DB_SUCCESS) {
-			fprintf(stderr, "Error: recv_find_max_checkpoint() failed.\n");
+			fprintf(stderr, "xtrabackup: Error: recv_find_max_checkpoint() failed.\n");
 			goto skip_last_cp;
 		}
 
@@ -2420,10 +2427,10 @@ reread_log_header:
 		latest_cp = mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
 
 		if (!xtrabackup_stream) {
-			printf("The latest check point (for incremental): '%lu:%lu'\n",
+			printf("xtrabackup: The latest check point (for incremental): '%lu:%lu'\n",
 				latest_cp.high, latest_cp.low);
 		} else {
-			fprintf(stderr, "The latest check point (for incremental): '%lu:%lu'\n",
+			fprintf(stderr, "xtrabackup: The latest check point (for incremental): '%lu:%lu'\n",
 				latest_cp.high, latest_cp.low);
 		}
 	}
@@ -2445,13 +2452,13 @@ skip_last_cp:
 		metadata_to_lsn = latest_cp;
 
 		if (xtrabackup_write_metadata(filename))
-			fprintf(stderr, "error: xtrabackup_write_metadata()\n");
+			fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata()\n");
 	}
 
 	/* stop log_copying_thread */
 	log_copying = FALSE;
 	if (!xtrabackup_stream) {
-		printf("Stopping log copying thread");
+		printf("xtrabackup: Stopping log copying thread");
 		while (log_copying_running) {
 			printf(".");
 			usleep(200000); /*0.2 sec*/
@@ -2463,7 +2470,7 @@ skip_last_cp:
 	}
 
 	if (!log_copying_succeed) {
-		fprintf(stderr, "Error: log_copying_thread failed.\n");
+		fprintf(stderr, "xtrabackup: Error: log_copying_thread failed.\n");
 		exit(1);
 	}
 
@@ -2474,11 +2481,11 @@ skip_last_cp:
 		os_event_free(wait_throttle);
 
 	if (!xtrabackup_stream) {
-        	printf("Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
+        	printf("xtrabackup: Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
                 	checkpoint_lsn_start.high, checkpoint_lsn_start.low,
                 	log_copy_scanned_lsn.high, log_copy_scanned_lsn.low);
 	} else {
-		fprintf(stderr, "Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
+		fprintf(stderr, "xtrabackup: Transaction log of lsn (%lu %lu) to (%lu %lu) was copied.\n",
 			checkpoint_lsn_start.high, checkpoint_lsn_start.low,
 			log_copy_scanned_lsn.high, log_copy_scanned_lsn.low);
 	}
@@ -2527,9 +2534,8 @@ retry:
 		/* The following call prints an error message */
 		os_file_get_last_error(TRUE);
 
-		ut_print_timestamp(stderr);
 		fprintf(stderr,
-"  InnoDB: Warning: cannot open %s. will try to find.\n",
+"xtrabackup: Warning: cannot open %s. will try to find.\n",
 			src_path);
 
 		/* check if ib_logfile0 may be xtrabackup_logfile */
@@ -2539,7 +2545,7 @@ retry:
 		if (!success) {
 			os_file_get_last_error(TRUE);
 			fprintf(stderr,
-"  InnoDB: Fatal error: cannot find %s.\n",
+"  xtrabackup: Fatal error: cannot find %s.\n",
 			src_path);
 
 			goto error;
@@ -2556,7 +2562,7 @@ retry:
 		if ( ut_memcmp(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
 				(byte*)"xtrabkup", (sizeof "xtrabkup") - 1) == 0) {
 			fprintf(stderr,
-"  InnoDB: 'ib_logfile0' seems to be 'xtrabackup_logfile'. will retry.\n");
+"  xtrabackup: 'ib_logfile0' seems to be 'xtrabackup_logfile'. will retry.\n");
 
 			ut_free(log_buf_);
 			log_buf_ = NULL;
@@ -2574,7 +2580,7 @@ retry:
 		}
 
 		fprintf(stderr,
-"  InnoDB: Fatal error: cannot find %s.\n",
+"  xtrabackup: Fatal error: cannot find %s.\n",
 		src_path);
 
 		ut_free(log_buf_);
@@ -2601,7 +2607,7 @@ retry:
 
 	if ( ut_memcmp(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP,
 			(byte*)"xtrabkup", (sizeof "xtrabkup") - 1) != 0 ) {
-		printf("notice: xtrabackup_logfile was already used to '--prepare'.\n");
+		printf("xtrabackup: notice: xtrabackup_logfile was already used to '--prepare'.\n");
 		goto skip_modify;
 	} else {
 		/* clear it later */
@@ -2640,7 +2646,7 @@ not_consistent:
 	}
 
 	if (ut_dulint_cmp(max_no, ut_dulint_zero) == 0) {
-		fprintf(stderr, "InnoDB: No valid checkpoint found.\n");
+		fprintf(stderr, "xtrabackup: No valid checkpoint found.\n");
 		goto error;
 	}
 
@@ -2736,7 +2742,7 @@ not_consistent:
 		file_size = os_file_get_size_as_iblonglong(src_file);
 	}
 
-	printf("xtrabackup_logfile detected: size=%lld, start_lsn=(%lu %lu)\n",
+	printf("xtrabackup: xtrabackup_logfile detected: size=%lld, start_lsn=(%lu %lu)\n",
 		file_size, max_lsn.high, max_lsn.low);
 
 	os_file_close(src_file);
@@ -2776,7 +2782,7 @@ error:
 		os_file_close(src_file);
 	if (log_buf_)
 		ut_free(log_buf_);
-	fprintf(stderr, "Error: xtrabackup_init_temp_log() failed.\n");
+	fprintf(stderr, "xtrabackup: Error: xtrabackup_init_temp_log() failed.\n");
 	return(TRUE); /*ERROR*/
 }
 
@@ -2815,7 +2821,7 @@ xtrabackup_apply_delta(
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
-			"InnoDB: error: cannot open %s .\n",
+			"xtrabackup: error: cannot open %s .\n",
 			src_path);
 		goto error;
 	}
@@ -2825,7 +2831,7 @@ xtrabackup_apply_delta(
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
-			"InnoDB: error: cannot open %s .\n",
+			"xtrabackup: error: cannot open %s .\n",
 			dst_path);
 		goto error;
 	}
@@ -2856,7 +2862,7 @@ xtrabackup_apply_delta(
 				break;
 			defeult:
 				fprintf(stderr,
-					"InnoDB: error: %s seems not .delta file.\n",
+					"xtrabackup: error: %s seems not .delta file.\n",
 					src_path);
 				goto error;
 		}
@@ -2919,7 +2925,7 @@ error:
 		os_file_close(src_file);
 	if (!dst_file == -1)
 		os_file_close(dst_file);
-	fprintf(stderr, "Error: xtrabackup_apply_delta() failed.\n");
+	fprintf(stderr, "xtrabackup: Error: xtrabackup_apply_delta() failed.\n");
 	return;
 }
 
@@ -2966,14 +2972,14 @@ next_file_item_1:
 
 		os_file_closedir(dbdir);
 	} else {
-		fprintf(stderr, "Cannot open dir %s\n", xtrabackup_incremental_dir);
+		fprintf(stderr, "xtrabackup: Cannot open dir %s\n", xtrabackup_incremental_dir);
 	}
 
 	/* single table tablespaces */
 	dir = os_file_opendir(xtrabackup_incremental_dir, FALSE);
 
 	if (dir == NULL) {
-		fprintf(stderr, "Cannot open dir %s\n", xtrabackup_incremental_dir);
+		fprintf(stderr, "xtrabackup: Cannot open dir %s\n", xtrabackup_incremental_dir);
 	}
 
 		ret = fil_file_readdir_next_file(&err, xtrabackup_incremental_dir, dir,
@@ -3102,7 +3108,7 @@ error:
 		os_file_close(src_file);
 	if (log_buf_)
 		ut_free(log_buf_);
-	fprintf(stderr, "Error: xtrabackup_close_temp_log() failed.\n");
+	fprintf(stderr, "xtrabackup: Error: xtrabackup_close_temp_log() failed.\n");
 	return(TRUE); /*ERROR*/
 }
 
@@ -3113,9 +3119,11 @@ xtrabackup_prepare_func(void)
 
 	if (my_setwd(xtrabackup_real_target_dir,MYF(MY_WME)))
 	{
-		fprintf(stderr, "cannot my_setwd %s\n", xtrabackup_real_target_dir);
+		fprintf(stderr, "xtrabackup: cannot my_setwd %s\n", xtrabackup_real_target_dir);
 		exit(1);
 	}
+	fprintf(stderr, "xtrabackup: cd to %s\n", xtrabackup_real_target_dir);
+
 	xtrabackup_target_dir= mysql_data_home_buff;
 	xtrabackup_target_dir[0]=FN_CURLIB;		// all paths are relative from here
 	xtrabackup_target_dir[1]=0;
@@ -3127,7 +3135,7 @@ xtrabackup_prepare_func(void)
 		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
 
 		if (xtrabackup_read_metadata(filename))
-			fprintf(stderr, "error: xtrabackup_read_metadata()\n");
+			fprintf(stderr, "xtrabackup: error: xtrabackup_read_metadata()\n");
 
 		if (!strcmp(metadata_type, "full-backuped")) {
 			fprintf(stderr, "xtrabackup: This target seems to be not prepared yet.\n");
@@ -3140,14 +3148,14 @@ xtrabackup_prepare_func(void)
 
 		if (xtrabackup_incremental) {
 			fprintf(stderr,
-			"error: applying incremental backup needs target prepared.\n");
+			"xtrabackup: error: applying incremental backup needs target prepared.\n");
 			exit(1);
 		}
 skip_check:
 		if (xtrabackup_incremental
 		    && ut_dulint_cmp(metadata_to_lsn, incremental_lsn) < 0) {
 			fprintf(stderr,
-			"error: This incremental backup seems to be too new for the target.\n");
+			"xtrabackup: error: This incremental backup seems to be too new for the target.\n");
 			exit(1);
 		}
 	}
@@ -3254,7 +3262,7 @@ skip_check:
 			metadata_to_lsn = incremental_to_lsn;
 
 		if (xtrabackup_write_metadata(filename))
-			fprintf(stderr, "error: xtrabackup_write_metadata()\n");
+			fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata()\n");
 	}
 
 	if(!xtrabackup_create_ib_logfile)
@@ -3342,7 +3350,7 @@ next_opt:
 	if (strcmp(mysql_data_home, "./") == 0) {
 		if (!xtrabackup_print_param)
 			usage();
-		printf("\nError: Please set parameter 'datadir'\n");
+		printf("\nxtrabackup: Error: Please set parameter 'datadir'\n");
 		exit(-1);
 	}
 
@@ -3351,7 +3359,7 @@ next_opt:
 		char errbuf[100];
 		regerror(regcomp(&tables_regex,xtrabackup_tables,REG_EXTENDED),
 				&tables_regex,errbuf,sizeof(errbuf));
-		printf("tables regcomp():%s\n",errbuf);
+		fprintf(stderr, "xtrabackup: tables regcomp(): %s\n",errbuf);
 	}
 
 	if (xtrabackup_backup && xtrabackup_incremental) {
@@ -3385,7 +3393,7 @@ next_opt:
 		}
 
 		if (error) {
-			fprintf(stderr, "value '%s' may be wrong format for incremental option.\n",
+			fprintf(stderr, "xtrabackup: value '%s' may be wrong format for incremental option.\n",
 				xtrabackup_incremental);
 			exit(-1);
 		}
@@ -3400,7 +3408,7 @@ next_opt:
 
 		if (xtrabackup_read_metadata(filename)) {
 			fprintf(stderr,
-				"error: failed to read metadata from %s\n",
+				"xtrabackup: error: failed to read metadata from %s\n",
 				filename);
 			exit(-1);
 		}
@@ -3418,7 +3426,7 @@ next_opt:
 
 		if (xtrabackup_read_metadata(filename)) {
 			fprintf(stderr,
-				"error: failed to read metadata from %s\n",
+				"xtrabackup: error: failed to read metadata from %s\n",
 				filename);
 			exit(-1);
 		}
@@ -3470,7 +3478,7 @@ next_opt:
 	} else {
 		if (xtrabackup_backup) {
 			xtrabackup_suspend_at_end = TRUE;
-			fprintf(stderr, "suspend-at-end is enabled.\n");
+			fprintf(stderr, "xtrabackup: suspend-at-end is enabled.\n");
 		}
 	}
 
