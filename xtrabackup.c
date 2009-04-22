@@ -1302,7 +1302,7 @@ xtrabackup_read_metadata(char *filename)
 
 	fp = fopen(filename,"r");
 	if(!fp) {
-		fprintf(stderr, "xtrabackup: Error: cannot open %s .\n", filename);
+		fprintf(stderr, "xtrabackup: Error: cannot open %s\n", filename);
 		return(TRUE);
 	}
 
@@ -1328,7 +1328,7 @@ xtrabackup_write_metadata(char *filename)
 
 	fp = fopen(filename,"w");
 	if(!fp) {
-		fprintf(stderr, "xtrabackup: Error: cannot open %s .\n", filename);
+		fprintf(stderr, "xtrabackup: Error: cannot open %s\n", filename);
 		return(TRUE);
 	}
 
@@ -1447,7 +1447,7 @@ skip_filter:
 			os_file_get_last_error(TRUE);
 
 			fprintf(stderr,
-"xtrabackup: error: cannot open %s\n."
+"xtrabackup: error: cannot open %s\n"
 "xtrabackup: Have you deleted .ibd files under a running mysqld server?\n",
 				node->name);
 			src_exist = FALSE;
@@ -1457,14 +1457,14 @@ skip_filter:
 	}
 
 	/* open dst_file */
-	dst_file = os_file_create(dst_path, OS_FILE_OVERWRITE,
+	dst_file = os_file_create(dst_path, OS_FILE_CREATE,
 					OS_FILE_AIO, OS_DATA_FILE, &success);
                 if (!success) {
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
 
                         fprintf(stderr,
-"xtrabackup: error: cannot open %s\n.",
+"xtrabackup: error: cannot open %s\n",
                                 dst_path);
                         goto error;
                 }
@@ -2256,7 +2256,7 @@ reread_log_header:
 
 		/* open 'xtrabackup_logfile' */
 		sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
-		dst_log = os_file_create(dst_log_path, OS_FILE_OVERWRITE,
+		dst_log = os_file_create(dst_log_path, OS_FILE_CREATE,
 						OS_FILE_AIO, OS_LOG_FILE, &success);
 
                 if (!success) {
@@ -2264,7 +2264,7 @@ reread_log_header:
                         os_file_get_last_error(TRUE);
 
                         fprintf(stderr,
-"xtrabackup: error: cannot open %s\n.",
+"xtrabackup: error: cannot open %s\n",
                                 dst_log_path);
                         exit(1);
                 }
@@ -2359,8 +2359,14 @@ reread_log_header:
                         //       node->name, node->open, node->size);
 
 			/* copy the datafile */
-			if(xtrabackup_copy_datafile(node))
-				printf("xtrabackup: continuing anyway.\n");
+			if(xtrabackup_copy_datafile(node)) {
+				if(node->space->id == 0) {
+					fprintf(stderr,"xtrabackup: Error: failed to copy system datafile.\n");
+					exit(1);
+				} else {
+					printf("xtrabackup: Warining: failed to copy, but continuing.\n");
+				}
+			}
 
                         node = UT_LIST_GET_NEXT(chain, node);
                 }
@@ -2821,7 +2827,7 @@ xtrabackup_apply_delta(
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
-			"xtrabackup: error: cannot open %s .\n",
+			"xtrabackup: error: cannot open %s\n",
 			src_path);
 		goto error;
 	}
@@ -2831,7 +2837,7 @@ xtrabackup_apply_delta(
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
-			"xtrabackup: error: cannot open %s .\n",
+			"xtrabackup: error: cannot open %s\n",
 			dst_path);
 		goto error;
 	}
