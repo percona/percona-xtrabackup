@@ -1274,6 +1274,10 @@ innodb_end(void)
 {
 	srv_fast_shutdown = (ulint) innobase_fast_shutdown;
 	innodb_inited = 0;
+
+	fprintf(stderr, "xtrabackup: starting shutdown with innodb_fast_shutdown = %lu\n",
+		srv_fast_shutdown);
+
 	if (innobase_shutdown_for_mysql() != DB_SUCCESS) {
 		goto error;
 	}
