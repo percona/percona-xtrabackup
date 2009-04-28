@@ -15,7 +15,7 @@ cp ../* $DIRDST/xtrabackup-build/$DRNAME/innobase/xtrabackup
 pushd $DIRDST/xtrabackup-build/$DRNAME
 patch -p1 < fix_innodb_for_backup.patch
 
-./configure
+./configure --with-extra-charsets=complex
 make -j8
 cd innobase/xtrabackup
 make

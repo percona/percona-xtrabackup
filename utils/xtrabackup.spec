@@ -6,7 +6,7 @@
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
 Name: xtrabackup
-Version: 0.4
+Version: 0.6
 Release: %{release}
 Group: Server/Databases
 License: GPLv2
@@ -30,7 +30,7 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 
 %build
 CC="ccache gcc" CXX="ccache gcc" ./configure \
-  --prefix=%{_prefix} 
+  --prefix=%{_prefix} --with-extra-charsets=complex
 make -j8
 cd innobase/xtrabackup
 make
