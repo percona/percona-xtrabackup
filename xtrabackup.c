@@ -1456,11 +1456,16 @@ skip_filter:
 				node->name);
 			src_exist = FALSE;
 		}
+
+		if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
+			os_file_set_nocache(src_file, node->name, "OPEN");
+		}
 	} else {
 		src_file = node->handle;
 	}
 
 	/* open dst_file */
+	/* os_file_create reads srv_unix_file_flush_method */
 	dst_file = os_file_create(dst_path, OS_FILE_CREATE,
 					OS_FILE_AIO, OS_DATA_FILE, &success);
                 if (!success) {
@@ -2013,6 +2018,47 @@ xtrabackup_backup_func(void)
         if(innodb_init_param())
                 exit(1);
 
+        if (srv_file_flush_method_str == NULL) {
+        	/* These are the default options */
+
+		srv_unix_file_flush_method = SRV_UNIX_FDATASYNC;
+
+		srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;
+#ifndef __WIN__        
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "fdatasync")) {
+	  	srv_unix_file_flush_method = SRV_UNIX_FDATASYNC;
+
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "O_DSYNC")) {
+	  	srv_unix_file_flush_method = SRV_UNIX_O_DSYNC;
+
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "O_DIRECT")) {
+	  	srv_unix_file_flush_method = SRV_UNIX_O_DIRECT;
+		fprintf(stderr,"xtrabackup: use O_DIRECT\n");
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "littlesync")) {
+	  	srv_unix_file_flush_method = SRV_UNIX_LITTLESYNC;
+
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "nosync")) {
+	  	srv_unix_file_flush_method = SRV_UNIX_NOSYNC;
+#else
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "normal")) {
+	  	srv_win_file_flush_method = SRV_WIN_IO_NORMAL;
+	  	os_aio_use_native_aio = FALSE;
+
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "unbuffered")) {
+	  	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;
+	  	os_aio_use_native_aio = FALSE;
+
+	} else if (0 == ut_strcmp(srv_file_flush_method_str,
+							"async_unbuffered")) {
+	  	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;	
+#endif
+	} else {
+	  	fprintf(stderr, 
+          	"xtrabackup: Unrecognized value %s for innodb_flush_method\n",
+          				srv_file_flush_method_str);
+	  	exit(1);
+	}
+
         if (srv_pool_size >= 1000 * 1024) {
                                   /* Here we still have srv_pool_size counted
                                   in kilobytes (in 4.0 this was in bytes)
@@ -2260,8 +2306,9 @@ reread_log_header:
 
 		/* open 'xtrabackup_logfile' */
 		sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+		/* os_file_create reads srv_unix_file_flush_method for OS_DATA_FILE*/
 		dst_log = os_file_create(dst_log_path, OS_FILE_CREATE,
-						OS_FILE_AIO, OS_LOG_FILE, &success);
+						OS_FILE_AIO, OS_DATA_FILE, &success);
 
                 if (!success) {
                         /* The following call prints an error message */
@@ -2398,6 +2445,7 @@ reread_log_header:
 		sprintf(suspend_path, "%s%s", xtrabackup_target_dir,
 			"/xtrabackup_suspended");
 
+		/* os_file_create reads srv_unix_file_flush_method */
 		suspend_file = os_file_create(suspend_path, OS_FILE_OVERWRITE,
 						OS_FILE_AIO, OS_DATA_FILE, &success);
 
@@ -2600,6 +2648,10 @@ retry:
 		src_file = -1;
 
 		goto error;
+	}
+
+	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
+		os_file_set_nocache(src_file, src_path, "OPEN");
 	}
 
 	file_size = os_file_get_size_as_iblonglong(src_file);
@@ -2835,6 +2887,9 @@ xtrabackup_apply_delta(
 			src_path);
 		goto error;
 	}
+	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
+		os_file_set_nocache(src_file, src_path, "OPEN");
+	}
 
 	dst_file = os_file_create_simple_no_error_handling(
 		dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
@@ -2844,6 +2899,9 @@ xtrabackup_apply_delta(
 			"xtrabackup: error: cannot open %s\n",
 			dst_path);
 		goto error;
+	}
+	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
+		os_file_set_nocache(dst_file, dst_path, "OPEN");
 	}
 
 	printf("Applying %s ...\n", src_path);
@@ -3092,6 +3150,9 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 				OS_FILE_READ_WRITE, &success);
 	if (!success) {
 		goto error;
+	}
+	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
+		os_file_set_nocache(src_file, src_path, "OPEN");
 	}
 
 	log_buf_ = ut_malloc(LOG_FILE_HDR_SIZE * 2);
