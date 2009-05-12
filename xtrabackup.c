@@ -42,7 +42,12 @@ Created 3/3/2009 Yasufumi Kinoshita
 #include <fil0fil.h>
 #include <trx0xa.h>
 
+#include <fcntl.h>
 #include <regex.h>
+
+#ifdef POSIX_FADV_NORMAL
+#define USE_POSIX_FADVISE
+#endif
 
 /* ==start === definition at fil0fil.c === */
 // ##################################################################
@@ -1464,6 +1469,11 @@ skip_filter:
 		src_file = node->handle;
 	}
 
+#ifdef USE_POSIX_FADVISE
+	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
+
 	/* open dst_file */
 	/* os_file_create reads srv_unix_file_flush_method */
 	dst_file = os_file_create(dst_path, OS_FILE_CREATE,
@@ -1477,6 +1487,10 @@ skip_filter:
                                 dst_path);
                         goto error;
                 }
+
+#ifdef USE_POSIX_FADVISE
+	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 
 	if(!src_exist)
 		goto error;
@@ -2001,6 +2015,10 @@ xtrabackup_backup_func(void)
 {
 	MY_STAT stat_info;
 
+#ifdef USE_POSIX_FADVISE
+	fprintf(stderr, "xtrabackup: uses posix_fadvise().\n");
+#endif
+
 	/* cd to datadir */
 
 	if (my_setwd(mysql_real_data_home,MYF(MY_WME)))
@@ -2319,6 +2337,10 @@ reread_log_header:
                                 dst_log_path);
                         exit(1);
                 }
+
+#ifdef USE_POSIX_FADVISE
+		posix_fadvise(dst_log, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 
 	}
 
@@ -2650,6 +2672,11 @@ retry:
 		goto error;
 	}
 
+#ifdef USE_POSIX_FADVISE
+	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
+
 	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
 		os_file_set_nocache(src_file, src_path, "OPEN");
 	}
@@ -2887,6 +2914,12 @@ xtrabackup_apply_delta(
 			src_path);
 		goto error;
 	}
+
+#ifdef USE_POSIX_FADVISE
+	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
+
 	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
 		os_file_set_nocache(src_file, src_path, "OPEN");
 	}
@@ -2900,6 +2933,11 @@ xtrabackup_apply_delta(
 			dst_path);
 		goto error;
 	}
+
+#ifdef USE_POSIX_FADVISE
+	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
+
 	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
 		os_file_set_nocache(dst_file, dst_path, "OPEN");
 	}
@@ -3151,6 +3189,11 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	if (!success) {
 		goto error;
 	}
+
+#ifdef USE_POSIX_FADVISE
+	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
+
 	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
 		os_file_set_nocache(src_file, src_path, "OPEN");
 	}
