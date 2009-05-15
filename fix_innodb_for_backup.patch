@@ -348,7 +348,23 @@ diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
  		}
  	}
  
-@@ -2760,6 +2764,7 @@
+@@ -2626,12 +2630,14 @@
+ 
+ 	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
+ 
++#ifdef UNDEFINED
+ 		fprintf(stderr,
+ 			"InnoDB: Restoring possible"
+ 			" half-written data pages from"
+ 			" the doublewrite\n"
+ 			"InnoDB: buffer...\n");
+-		trx_sys_doublewrite_init_or_restore_pages(TRUE);
++#endif
++		trx_sys_doublewrite_init_or_restore_pages(FALSE);
+ 	}
+ 	
+ }
+@@ -2760,6 +2766,7 @@ 
  		recv_sys->recovered_lsn = checkpoint_lsn;
  
  		srv_start_lsn = checkpoint_lsn;
