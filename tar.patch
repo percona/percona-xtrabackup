@@ -1,0 +1,120 @@
+diff -aur tar-1.19/src/common.h tar-1.19-patched/src/common.h
+--- tar-1.19/src/common.h	2007-09-26 17:42:25.000000000 -0400
++++ tar-1.19-patched/src/common.h	2008-04-05 19:21:21.000000000 -0400
+@@ -270,6 +270,8 @@
+ /* Specified maximum byte length of each tape volume (multiple of 1024).  */
+ GLOBAL tarlong tape_length_option;
+ 
++GLOBAL unsigned long long read_rate_option;
++
+ GLOBAL bool to_stdout_option;
+ 
+ GLOBAL bool totals_option;
+diff -aur tar-1.19/src/tar.c tar-1.19-patched/src/tar.c
+--- tar-1.19/src/tar.c	2007-09-26 17:36:58.000000000 -0400
++++ tar-1.19-patched/src/tar.c	2008-04-05 19:23:28.000000000 -0400
+@@ -271,6 +271,7 @@
+   MODE_OPTION,
+   MTIME_OPTION,
+   NEWER_MTIME_OPTION,
++  READ_RATE_OPTION,
+   NO_ANCHORED_OPTION,
+   NO_DELAY_DIRECTORY_RESTORE_OPTION,
+   NO_IGNORE_CASE_OPTION,
+@@ -408,6 +409,10 @@
+       " NUMBER defaults to 1"), GRID+1 },
+   {"seek", 'n', NULL, 0,
+    N_("archive is seekable"), GRID+1 },
++
++  {"read-rate", READ_RATE_OPTION, N_("RATE"), 0,
++    N_("throttle read i/o speed down to RATE bytes/sec"), GRID+1 },
++
+ #undef GRID
+ 
+ #define GRID 30
+@@ -1373,6 +1378,14 @@
+ 			  : "--after-date", arg, &newer_mtime_option);
+       break;
+ 
++    case READ_RATE_OPTION:
++      if (read_rate_option > 0)
++  	  USAGE_ERROR ((0, 0, _("More than one throttling option")));
++      read_rate_option = strtoull(arg, 0, 10);
++      if (read_rate_option < 0)
++  	  USAGE_ERROR ((0, 0, _("Too small read rate value")));
++      break;
++
+     case 'o':
+       args->o_option = true;
+       break;
+diff -aur tar-1.19/src/create.c tar-1.19-patched/src/create.c
+--- tar-1.19/src/create.c	2007-10-05 13:46:49.000000000 -0400
++++ tar-1.19-patched/src/create.c	2008-04-06 02:54:33.000000000 -0400
+@@ -1019,12 +1019,54 @@
+     }
+ }
+ 
++static void
++throttle_io(off_t *transferred_bytes) {
++  static unsigned long long last_usec;
++  unsigned long long usec;
++  long long int delay;
++  struct timezone tz;
++  struct timeval tv;
++  float desired_rate = read_rate_option / 1000000.0; /* 1Mbytes /s = 1 byte/microsecond */
++
++  /* Do not perform throttling if not asked to */
++  if (read_rate_option == 0) return;
++
++  /* Get current time in microseconds */
++  gettimeofday(&tv, &tz);
++  usec = (unsigned long long)tv.tv_sec * 1000000L + tv.tv_usec;
++
++  /* Just init our time counter */
++  if (transferred_bytes == 0) {
++    last_usec = usec;
++    return;
++  }
++  
++  /* Calculate delay for throttling (in microseconds) */
++  delay = ((float)*transferred_bytes / desired_rate) - (usec - last_usec);
++
++  /* Skip throttling if delay is not needed */
++  if (delay < 100000 || delay > 10000000L) return;
++  
++  /* Perform delay for throttling */
++  usleep((useconds_t) delay);
++  *transferred_bytes = 0;
++  
++  /* Save time for next round */
++  gettimeofday(&tv, &tz);
++  last_usec = (unsigned long long)tv.tv_sec * 1000000L + tv.tv_usec;
++}
++
+ static enum dump_status
+ dump_regular_file (int fd, struct tar_stat_info *st)
+ {
+   off_t size_left = st->stat.st_size;
+   off_t block_ordinal;
+   union block *blk;
++  off_t transferred_bytes = 0;
++
++  /* ----Init throttle timer ---*/
++  throttle_io(0);
++  /*---------------------------*/
+ 
+   block_ordinal = current_block_ordinal ();
+   blk = start_header (st);
+@@ -1068,6 +1110,11 @@
+       size_left -= count;
+       set_next_block_after (blk + (bufsize - 1) / BLOCKSIZE);
+ 
++      /* ------ I/O trottling ------*/
++      transferred_bytes += count;
++      throttle_io(&transferred_bytes);
++      /*---------------------------*/
++
+       if (count != bufsize)
+ 	{
+ 	  char buf[UINTMAX_STRSIZE_BOUND];
+
