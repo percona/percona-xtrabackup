@@ -212,6 +212,8 @@ my_bool xtrabackup_backup = FALSE;
 my_bool xtrabackup_prepare = FALSE;
 my_bool xtrabackup_print_param = FALSE;
 
+my_bool xtrabackup_export = FALSE;
+
 my_bool xtrabackup_suspend_at_end = FALSE;
 longlong xtrabackup_use_memory = 100*1024*1024L;
 my_bool xtrabackup_create_ib_logfile = FALSE;
@@ -335,6 +337,7 @@ enum options_xtrabackup
   OPT_XTRA_TARGET_DIR=256,
   OPT_XTRA_BACKUP,
   OPT_XTRA_PREPARE,
+  OPT_XTRA_EXPORT,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_SUSPEND_AT_END,
   OPT_XTRA_USE_MEMORY,
@@ -389,6 +392,9 @@ static struct my_option my_long_options[] =
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"prepare", OPT_XTRA_PREPARE, "prepare a backup for starting mysql server on the backup.",
    (GPTR*) &xtrabackup_prepare, (GPTR*) &xtrabackup_prepare,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"export", OPT_XTRA_EXPORT, "create files to import to another database when prepare.",
+   (GPTR*) &xtrabackup_export, (GPTR*) &xtrabackup_export,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"print-param", OPT_XTRA_PRINT_PARAM, "print parameter of mysqld needed for copyback.",
    (GPTR*) &xtrabackup_print_param, (GPTR*) &xtrabackup_print_param,
@@ -3353,6 +3359,143 @@ skip_check:
         mutex_exit(&(system->mutex));
 	}
 */
+	if (xtrabackup_export) {
+		printf("xtrabackup: export option is specified.\n");
+		if (innobase_file_per_table) {
+			fil_system_t*	system = fil_system;
+			fil_space_t*	space;
+			fil_node_t*	node;
+			os_file_t	info_file = -1;
+			char		info_file_path[FN_REFLEN];
+			ibool		success;
+			char		table_name[FN_REFLEN];
+
+			byte*		page;
+			byte*		buf = NULL;
+
+			buf = ut_malloc(UNIV_PAGE_SIZE * 2);
+			page = ut_align(buf, UNIV_PAGE_SIZE);
+
+			/* flush insert buffer at shutdwon */
+			innobase_fast_shutdown = 0;
+
+			mutex_enter(&(system->mutex));
+
+			space = UT_LIST_GET_FIRST(system->space_list);
+			while (space != NULL) {
+				/* treat file_per_table only */
+				if (space->purpose != FIL_TABLESPACE
+				    || space->id == 0) {
+					space = UT_LIST_GET_NEXT(space_list, space);
+					continue;
+				}
+
+				node = UT_LIST_GET_FIRST(space->chain);
+				while (node != NULL) {
+					int len;
+					char *next, *prev, *p;
+					dict_table_t*	table;
+					dict_index_t*	index;
+					ulint		n_index;
+
+					/* node exist == file exist, here */
+					strncpy(info_file_path, node->name, FN_REFLEN);
+					len = strlen(info_file_path);
+					info_file_path[len - 3] = 'e';
+					info_file_path[len - 2] = 'x';
+					info_file_path[len - 1] = 'p';
+
+					p = info_file_path;
+					prev = NULL;
+					while (next = strstr(p, "/")) {
+						prev = p;
+						p = next + 1;
+					}
+					info_file_path[len - 4] = 0;
+					strncpy(table_name, prev, FN_REFLEN);
+
+					info_file_path[len - 4] = '.';
+
+					mutex_exit(&(system->mutex));
+					mutex_enter(&(dict_sys->mutex));
+
+					table = dict_table_get_low(table_name);
+					if (!table) {
+						fprintf(stderr,
+"xtrabackup: error: cannot find dictionary record of table %s\n", table_name);
+						goto next_node;
+					}
+					index = dict_table_get_first_index(table);
+					n_index = UT_LIST_GET_LEN(table->indexes);
+					if (n_index > 31) {
+						fprintf(stderr,
+"xtrabackup: error: sorry, cannot export over 31 indexes for now.\n");
+						goto next_node;
+					}
+
+					/* init exp file */
+					bzero(page, UNIV_PAGE_SIZE);
+					mach_write_to_4(page    , 0x78706f72UL);
+					mach_write_to_4(page + 4, 0x74696e66UL);/*"xportinf"*/
+					mach_write_to_4(page + 8, n_index);
+					strncpy(page + 12, table_name, 500);
+
+					printf(
+"xtrabackup: export metadata of table '%s' to file `%s` (%d indexes)\n",
+						table_name, info_file_path, n_index);
+
+					n_index = 1;
+					while (index) {
+						mach_write_to_8(page + n_index * 512, index->id);
+						mach_write_to_4(page + n_index * 512 + 8, index->tree->page);
+						strncpy(page + n_index * 512 + 12, index->name, 500);
+
+						printf(
+"xtrabackup:     name=%s, id.low=%d, page=%d\n",
+							index->name,
+							index->id.low, index->tree->page);
+
+						index = dict_table_get_next_index(index);
+						n_index++;
+					}
+
+					info_file = os_file_create(info_file_path, OS_FILE_OVERWRITE,
+								OS_FILE_AIO, OS_DATA_FILE, &success);
+					if (!success) {
+						os_file_get_last_error(TRUE);
+						goto next_node;
+					}
+					success = os_file_write(info_file_path, info_file, page,
+								0, 0, UNIV_PAGE_SIZE);
+					if (!success) {
+						os_file_get_last_error(TRUE);
+						goto next_node;
+					}
+					success = os_file_flush(info_file);
+					if (!success) {
+						os_file_get_last_error(TRUE);
+						goto next_node;
+					}
+next_node:
+					if (!info_file == -1) {
+						os_file_close(info_file);
+						info_file = -1;
+					}
+					mutex_exit(&(dict_sys->mutex));
+					mutex_enter(&(system->mutex));
+
+					node = UT_LIST_GET_NEXT(chain, node);
+				}
+
+				space = UT_LIST_GET_NEXT(space_list, space);
+			}
+			mutex_exit(&(system->mutex));
+
+			ut_free(buf);
+		} else {
+			printf("xtrabackup: export option is for file_per_table only, disabled.\n");
+		}
+	}
 
 	/* print binlog position (again?) */
 	printf("\n[notice (again)]\n"
