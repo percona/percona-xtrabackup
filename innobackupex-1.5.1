@@ -917,7 +917,7 @@ sub start_ibbackup {
                         } elsif($option_stream eq 'tar') {
                             my $ret = 0;
                             my $file_name = substr($file, rindex($file, '/') + 1);
-                            $ret = system("cd $orig_datadir; tar cf - -b 32 $subdir/$file_name");
+                            $ret = system("cd $orig_datadir; tar cf - -b 32 $subdir/$file_name") / 256;
                             if ($ret == 1) {
                                 print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                             } elsif ($ret != 0) {
@@ -1821,6 +1821,7 @@ sub backup_files {
                 if ($ret == 1) {
                     print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                 } elsif ($ret != 0) {
+                    print STDERR "$prefix tar returned with exit code $ret.\n";
                     Die "Failed to stream '$database/$file_name': $!";
                 }
             }
