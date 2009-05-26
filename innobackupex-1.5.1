@@ -860,10 +860,11 @@ sub start_ibbackup {
                     } elsif($option_stream eq 'tar') {
                         my $ret = 0;
                         print STDERR "$prefix Backing up as tar stream '$path'\n";
-                        $ret = system("cd $orig_ibdata_dir; tar cf - -b 32 $path");
+                        $ret = system("cd $orig_ibdata_dir; tar cf - -b 32 $path") / 256;
                         if ($ret == 1) {
                             print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                         } elsif ($ret != 0) {
+                            print STDERR "$prefix tar returned with exit code $ret.\n";
                             Die "Failed to stream '$path': $!";
                         }
                     }
@@ -920,6 +921,7 @@ sub start_ibbackup {
                             if ($ret == 1) {
                                 print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                             } elsif ($ret != 0) {
+                                print STDERR "$prefix tar returned with exit code $ret.\n";
                                 Die "Failed to stream '$subdir/$file_name': $!";
                             }
                         }
@@ -1815,7 +1817,7 @@ sub backup_files {
             } elsif($option_stream eq 'tar') {
                 my $ret = 0;
                 my $file_name = substr($file, rindex($file, '/') + 1);
-                $ret = system("cd $source_dir; tar cf - $database/$file_name");
+                $ret = system("cd $source_dir; tar cf - $database/$file_name") / 256;
                 if ($ret == 1) {
                     print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                 } elsif ($ret != 0) {
