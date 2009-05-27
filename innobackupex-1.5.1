@@ -69,6 +69,7 @@ my $option_throttle = '';
 my $option_sleep = '';
 my $option_compress = 999;
 my $option_uncompress = '';
+my $option_export = '';
 my $option_use_memory = '';
 my $option_mysql_password = '';
 my $option_mysql_user = '';
@@ -231,7 +232,7 @@ innobackup [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME]
            [--defaults-file=MY.CNF]
            [--databases=LIST] [--remote-host=HOSTNAME] BACKUP-ROOT-DIR
 innobackup --apply-log [--use-memory=MB] [--uncompress] [--defaults-file=MY.CNF]
-           [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
+           [--export] [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
 innobackup --copy-back [--defaults-file=MY.CNF] BACKUP-DIR
 
 The first command line above makes a hot backup of a MySQL database.
@@ -355,6 +356,12 @@ Options:
                 Try 'ibbackup --help' for more details on this option.
                 ** it is not supported by xtrabackup yet **
                 
+    --export    This option is passed to the xtrabackup child process.
+                It is effective with '--prepare' option.
+                It tells xtrabackup to output "clean" .ibd files and .exp
+                files for 'ALTER TABLE ... IMPORT TABLESPACE' command
+                at innodb_expand_import option enabled XtraDB.
+
     --user=NAME This option is passed to the mysql child process.
                 It defines the user for database login if not current user.
                 Try 'mysql --help' for more details on this option.
@@ -715,6 +722,9 @@ sub apply_log {
 
     if ($option_uncompress) {
         $options = $options . ' --uncompress';
+    }
+    if ($option_export) {
+        $options = $options . ' --export';
     }
     if ($option_use_memory) {
         $options = $options . " --use-memory=$option_use_memory";
@@ -1576,6 +1586,7 @@ sub check_args {
 			'databases=s' => \$option_databases,
                         'use-memory=s' => \$option_use_memory,
                         'uncompress' => \$option_uncompress,
+                        'export' => \$option_export,
                         'password=s' => \$option_mysql_password,
                         'user=s' => \$option_mysql_user,
                         'port=s' => \$option_mysql_port,
