@@ -1637,9 +1637,9 @@ copy_loop:
 	ut_free(buf2);
 	return(FALSE);
 error:
-	if (!src_file == -1)
+	if (src_file != -1)
 		os_file_close(src_file);
-	if (!dst_file == -1)
+	if (dst_file != -1)
 		os_file_close(dst_file);
 	if (buf2)
 		ut_free(buf2);
@@ -2379,7 +2379,7 @@ reread_log_header:
 
 	log_copy_offset += LOG_FILE_HDR_SIZE;
 	if (!success) {
-		if (!dst_log == -1)
+		if (dst_log != -1)
 			os_file_close(dst_log);
 		exit(1);
 	}
@@ -2488,7 +2488,7 @@ reread_log_header:
 			fprintf(stderr, "xtrabackup: Error: failed to create file 'xtrabackup_suspended'\n");
 		}
 
-		if (!suspend_file == -1)
+		if (suspend_file != -1)
 			os_file_close(suspend_file);
 
 		exists = TRUE;
@@ -3033,16 +3033,16 @@ xtrabackup_apply_delta(
 		incremental_buffers++;
 	}
 
-	if (!src_file == -1)
+	if (src_file != -1)
 		os_file_close(src_file);
-	if (!dst_file == -1)
+	if (dst_file != -1)
 		os_file_close(dst_file);
 	return;
 
 error:
-	if (!src_file == -1)
+	if (src_file != -1)
 		os_file_close(src_file);
-	if (!dst_file == -1)
+	if (dst_file != -1)
 		os_file_close(dst_file);
 	fprintf(stderr, "xtrabackup: Error: xtrabackup_apply_delta() failed.\n");
 	return;
@@ -3477,7 +3477,7 @@ skip_check:
 						goto next_node;
 					}
 next_node:
-					if (!info_file == -1) {
+					if (info_file != -1) {
 						os_file_close(info_file);
 						info_file = -1;
 					}
