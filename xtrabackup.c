@@ -1522,6 +1522,8 @@ skip_filter:
 
 	for (offset = 0; offset < file_size; offset += COPY_CHUNK * UNIV_PAGE_SIZE) {
 		ulint chunk;
+		ulint chunk_offset;
+		ulint retry_count = 10;
 copy_loop:
 		if (file_size - offset > COPY_CHUNK * UNIV_PAGE_SIZE) {
 			chunk = COPY_CHUNK * UNIV_PAGE_SIZE;
@@ -1529,6 +1531,7 @@ copy_loop:
 			chunk = (ulint)(file_size - offset);
 		}
 
+read_retry:
 		xtrabackup_io_throttling();
 
 		success = os_file_read(src_file, page,
@@ -1538,9 +1541,21 @@ copy_loop:
 			goto error;
 		}
 
-		if (xtrabackup_incremental) {
-			ulint chunk_offset;
+		/* check corruption and retry */
+		for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += UNIV_PAGE_SIZE) {
+			if (buf_page_is_corrupted(page + chunk_offset)) {
+				retry_count--;
+				if (retry_count == 0) {
+					fprintf(stderr, "xtrabackup: Error: 10 retries resulted in fail. This file seems to be corrupted.\n");
+					goto error;
+				}
+				fprintf(stderr, "xtrabackup: Database page corruption detected at page %lu. retrying...\n",
+					(ulint)((offset + (ib_longlong)chunk_offset) >> UNIV_PAGE_SIZE_SHIFT));
+				goto read_retry;
+			}
+		}
 
+		if (xtrabackup_incremental) {
 			for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += UNIV_PAGE_SIZE) {
 				/* newer page */
 				/* This condition may be OK for header, ibuf and fsp */
