@@ -517,20 +517,30 @@ diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
  		fprintf(stderr,
  		"InnoDB: Error: combined size of log files must be < 4 GB\n");
  
-@@ -1607,6 +1609,8 @@
- 		}
- 	}
+@@ -1609,7 +1611,18 @@
  
-+/* The file size may change during backup for xtrabackup */
-+#ifdef UNDEFINED
  	if (srv_auto_extend_last_data_file
  		&& sum_of_data_file_sizes < tablespace_size_in_header) {
++		/* extend table space size aligning with header */
++		ulint	actual_size;
++		fil_extend_space_to_desired_size(&actual_size, 0, tablespace_size_in_header);
++		if (actual_size < tablespace_size_in_header) {
++			fprintf(stderr,
++"InnoDB: Warning: To extend tablespace size aligning with header seems to be failed.\n"
++"InnoDB: The acutual size %lu must be larger than %lu.\n",
++				(ulong) actual_size,
++				(ulong) tablespace_size_in_header);
++		}
  
-@@ -1628,6 +1632,7 @@
++#ifdef UNDEFINED
+ 		fprintf(stderr,
+ "InnoDB: Error: tablespace size stored in header is %lu pages, but\n"
+ "InnoDB: the sum of data file sizes is only %lu pages\n",
+@@ -1627,6 +1640,7 @@
+ 
  			return(DB_ERROR);
  		}
- 	}
 +#endif
+ 	}
  
  	/* Check that os_fast_mutexes work as expected */
- 	os_fast_mutex_init(&srv_os_test_mutex);
