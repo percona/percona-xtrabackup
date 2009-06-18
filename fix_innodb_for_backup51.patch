@@ -544,3 +544,29 @@ diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
  	}
  
  	/* Check that os_fast_mutexes work as expected */
+diff -ru a/innobase/trx/trx0trx.c b/innobase/trx/trx0trx.c
+--- a/innobase/trx/trx0trx.c	2009-03-14 06:53:38.000000000 +0900
++++ b/innobase/trx/trx0trx.c	2009-06-18 10:03:03.000000000 +0900
+@@ -478,8 +478,8 @@
+ 						ut_dulint_get_low(trx->id));
+ 
+ 					if (srv_force_recovery == 0) {
+-
+-						trx->conc_state = TRX_PREPARED;
++						/* xtrabackup should rollback it */
++						trx->conc_state = TRX_ACTIVE;
+ 					} else {
+ 						fprintf(stderr,
+ 							"InnoDB: Since"
+@@ -555,9 +555,9 @@
+ 								trx->id));
+ 
+ 						if (srv_force_recovery == 0) {
+-
++							/* xtrabackup should rollback it */
+ 							trx->conc_state
+-								= TRX_PREPARED;
++								= TRX_ACTIVE;
+ 						} else {
+ 							fprintf(stderr,
+ 								"InnoDB: Since"

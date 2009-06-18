@@ -544,3 +544,28 @@ diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
  	}
  
  	/* Check that os_fast_mutexes work as expected */
+diff -ru a/innobase/trx/trx0trx.c b/innobase/trx/trx0trx.c
+--- a/innobase/trx/trx0trx.c	2008-12-19 02:19:37.000000000 +0900
++++ b/innobase/trx/trx0trx.c	2009-06-18 09:56:54.000000000 +0900
+@@ -486,8 +486,8 @@
+ 					ut_dulint_get_low(trx->id));
+ 
+ 					if (srv_force_recovery == 0) {
+-
+-						trx->conc_state = TRX_PREPARED;
++						/* xtrabackup should rollback it */
++						trx->conc_state = TRX_ACTIVE;
+ 					} else {
+  						fprintf(stderr,
+ "InnoDB: Since innodb_force_recovery > 0, we will rollback it anyway.\n");
+@@ -555,8 +555,8 @@
+ 					    ut_dulint_get_low(trx->id));
+ 
+ 					    if (srv_force_recovery == 0) {
+-
+-						trx->conc_state = TRX_PREPARED;
++						/* xtrabackup should rollback it */
++						trx->conc_state = TRX_ACTIVE;
+ 					    } else {
+  						fprintf(stderr,
+ "InnoDB: Since innodb_force_recovery > 0, we will rollback it anyway.\n");
