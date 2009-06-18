@@ -172,6 +172,9 @@ my $kill_signal = 15;
 # current local time
 my $now;
 
+# incremental backup base directory
+my $incremental_basedir = '';
+
 ######################################################################
 # program execution begins here
 ######################################################################
@@ -463,24 +466,28 @@ sub backup {
         wait_for_ibbackup_suspend();
     }
 
-    # connect to database
-    mysql_open();
+    if (!$option_incremental) {
+        # connect to database
+        mysql_open();
 
-    # flush tables with read lock
-    mysql_check();
-    mysql_lockall();
+        # flush tables with read lock
+        mysql_check();
+        mysql_lockall();
 
-    # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, and .opt files
-    backup_files();
+        # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, and .opt files
+        backup_files();
+    }
 
     # resume ibbackup and wait till it has finished
     resume_ibbackup();
 
-    # release read locks on all tables
-    mysql_unlockall();
+    if (!$option_incremental) {
+        # release read locks on all tables
+        mysql_unlockall();
 
-    # disconnect from database
-    mysql_close();
+        # disconnect from database
+        mysql_close();
+    }
 
     if ($option_remote_host) {
         system("scp -Cp -c arcfour '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
@@ -824,6 +831,9 @@ sub start_ibbackup {
     if ($option_include) {
         $options = $options . " --tables='$option_include'";
     }
+    if ($option_incremental) {
+        $options = $options . " --incremental-basedir='$incremental_basedir'";
+    }
     $cmdline = "$option_ibbackup_binary $options";
 
     # run ibbackup as a child process
@@ -965,6 +975,8 @@ sub get_mysql_options {
     # prepare options for mysql
     if ($option_mysql_password) {
         $options = "$options --password=$option_mysql_password";
+    } else {
+        $options = "$options --";
     }
     if ($option_mysql_user) {
         $options = "$options --user=$option_mysql_user";
@@ -1555,9 +1567,10 @@ sub check_args {
             print STDERR "$prefix Warning: perl $required_version or newer!\n";
         }
     } else {
-        $perl_version = chr($required_perl_version[0])
-            . chr($required_perl_version[1])
-            . chr($required_perl_version[2]);
+        #$perl_version = chr($required_perl_version[0])
+            #. chr($required_perl_version[1])
+            #. chr($required_perl_version[2]);
+        $perl_version = "v$required_perl_version[0].$required_perl_version[1].$required_perl_version[2]";
         if ($^V lt $perl_version) {
             my $version = chr(48 + $required_perl_version[0])
                 . "." . chr(48 + $required_perl_version[1])
@@ -1654,8 +1667,13 @@ sub check_args {
         # we are making a backup, get backup root directory
         $backup_root = $ARGV[0];
         if ($option_incremental) {
-            print STDERR "incremental backup is not supported for now.\n";
-            exit(1);
+            my @dirs = `ls -1 -t $backup_root`;
+            my $inc_dir = $dirs[0];
+            chomp($inc_dir);
+            $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
+            #print STDERR "--incremental_basedir=$incremental_basedir\n";
+            #print STDERR "incremental backup is not supported for now.\n";
+            #exit(1);
         }
     } else {
         # get backup directory

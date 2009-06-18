@@ -6,7 +6,7 @@
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
 Name: xtrabackup
-Version: 0.7
+Version: 0.8
 Release: %{release}
 Group: Server/Databases
 License: GPLv2

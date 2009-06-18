@@ -2,7 +2,7 @@
 # tested with mysql-5.0.75 / .77
 # $1 - path to mysql .tar.gz
 
-BV=0.7
+BV=0.8
 
 PATHS=$1
 DIRDST=`dirname $PATHS`
