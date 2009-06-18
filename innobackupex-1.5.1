@@ -246,7 +246,7 @@ the backup in the given directory (which must not exist).  This
 command makes a complete backup of all MyISAM and InnoDB tables and
 indexes in all databases or in all of the databases specified with the
 --databases option.  The created backup contains .frm, .MRG, .MYD,
-.MYI., .TRG, .TRN, .opt, and InnoDB data and log files.  The MY.CNF
+.MYI, .TRG, .TRN, .ARM, .ARZ, .opt, and InnoDB data and log files.  The MY.CNF
 options file defines the location of the database.  This command
 connects to the MySQL server using mysql client program, and runs
 ibbackup (InnoDB Hot Backup program) as a child process.
@@ -474,7 +474,7 @@ sub backup {
         mysql_check();
         mysql_lockall();
 
-        # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, and .opt files
+        # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files
         backup_files();
     }
 
@@ -645,7 +645,7 @@ sub copy_back {
     opendir(DIR, $backup_dir) 
         || Die "Can't open directory '$backup_dir': $!\n";
     print STDERR "$prefix Starting to copy MyISAM tables, indexes,\n"; 
-    print STDERR "$prefix .MRG, .TRG, .TRN, .opt, and .frm files\n";
+    print STDERR "$prefix .MRG, .TRG, .TRN, .ARM, .ARZ, .opt, and .frm files\n";
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original data directory '$orig_datadir'\n";
     while (defined($file = readdir(DIR))) {
@@ -1788,13 +1788,13 @@ sub backup_files {
     my @list;
     my $file;
     my $database;
-    my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,opt}';
+    my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,ARM,ARZ,opt}';
 
     opendir(DIR, $source_dir) 
         || Die "Can't open directory '$source_dir': $!\n";
     $now = current_time();
     print STDERR "\n$now  $prefix Starting to backup .frm, .MRG, .MYD, .MYI,\n";
-    print STDERR "$prefix .TRG, .TRN, and .opt files in\n";
+    print STDERR "$prefix .TRG, .TRN, .ARM, .ARZ and .opt files in\n";
     print STDERR "$prefix subdirectories of '$source_dir'\n";
     # loop through all database directories
     while (defined($database = readdir(DIR))) {
@@ -1859,7 +1859,7 @@ sub backup_files {
     closedir(DIR);
 
     $now = current_time();
-    print STDERR "$now  $prefix Finished backing up .frm, .MRG, .MYD, .MYI, .TRG, .TRN, and .opt files\n\n";
+    print STDERR "$now  $prefix Finished backing up .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files\n\n";
 }
 
 
