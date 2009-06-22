@@ -1,0 +1,358 @@
+diff -ru libtar-1.2.11_orig/lib/append.c libtar-1.2.11/lib/append.c
+--- libtar-1.2.11_orig/lib/append.c	2003-01-07 10:40:59.000000000 +0900
++++ libtar-1.2.11/lib/append.c	2009-06-22 17:43:41.000000000 +0900
+@@ -27,6 +27,166 @@
+ # include <unistd.h>
+ #endif
+ 
++#ifdef POSIX_FADV_NORMAL
++#define USE_POSIX_FADVISE
++#endif
++
++/* all of these ripped from InnoDB code from MySQL 4.0.22 */
++#define UT_HASH_RANDOM_MASK     1463735687
++#define UT_HASH_RANDOM_MASK2    1653893711
++#define FIL_PAGE_LSN          16 
++#define FIL_PAGE_FILE_FLUSH_LSN 26
++#define FIL_PAGE_OFFSET     4
++#define FIL_PAGE_DATA       38
++#define FIL_PAGE_END_LSN_OLD_CHKSUM 8
++#define FIL_PAGE_SPACE_OR_CHKSUM 0
++#define UNIV_PAGE_SIZE          (2 * 8192)
++#define BUF_NO_CHECKSUM_MAGIC 0xDEADBEEFUL
++
++/* command line argument to do page checks (that's it) */
++/* another argument to specify page ranges... seek to right spot and go from there */
++
++typedef unsigned long int ulint;
++typedef unsigned char byte;
++
++/* innodb function in name; modified slightly to not have the ASM version (lots of #ifs that didn't apply) */
++ulint mach_read_from_4(byte *b)
++{
++  return( ((ulint)(b[0]) << 24)
++          + ((ulint)(b[1]) << 16)
++          + ((ulint)(b[2]) << 8)
++          + (ulint)(b[3])
++          );
++}
++
++ulint
++ut_fold_ulint_pair(
++/*===============*/
++            /* out: folded value */
++    ulint   n1, /* in: ulint */
++    ulint   n2) /* in: ulint */
++{
++    return(((((n1 ^ n2 ^ UT_HASH_RANDOM_MASK2) << 8) + n1)
++                        ^ UT_HASH_RANDOM_MASK) + n2);
++}
++
++ulint
++ut_fold_binary(
++/*===========*/
++            /* out: folded value */
++    byte*   str,    /* in: string of bytes */
++    ulint   len)    /* in: length */
++{
++    ulint   i;
++    ulint   fold= 0;
++
++    for (i= 0; i < len; i++)
++    {
++      fold= ut_fold_ulint_pair(fold, (ulint)(*str));
++
++      str++;
++    }
++
++    return(fold);
++}
++
++ulint
++buf_calc_page_new_checksum(
++/*=======================*/
++               /* out: checksum */
++    byte*    page) /* in: buffer page */
++{
++    ulint checksum;
++
++    /* Since the fields FIL_PAGE_FILE_FLUSH_LSN and ..._ARCH_LOG_NO
++    are written outside the buffer pool to the first pages of data
++    files, we have to skip them in the page checksum calculation.
++    We must also skip the field FIL_PAGE_SPACE_OR_CHKSUM where the
++    checksum is stored, and also the last 8 bytes of page because
++    there we store the old formula checksum. */
++
++    checksum= ut_fold_binary(page + FIL_PAGE_OFFSET,
++                             FIL_PAGE_FILE_FLUSH_LSN - FIL_PAGE_OFFSET)
++            + ut_fold_binary(page + FIL_PAGE_DATA,
++                             UNIV_PAGE_SIZE - FIL_PAGE_DATA
++                             - FIL_PAGE_END_LSN_OLD_CHKSUM);
++    checksum= checksum & 0xFFFFFFFF;
++
++    return(checksum);
++}
++
++ulint
++buf_calc_page_old_checksum(
++/*=======================*/
++               /* out: checksum */
++    byte*    page) /* in: buffer page */
++{
++    ulint checksum;
++
++    checksum= ut_fold_binary(page, FIL_PAGE_FILE_FLUSH_LSN);
++
++    checksum= checksum & 0xFFFFFFFF;
++
++    return(checksum);
++}
++
++int
++buf_page_is_corrupted(
++/*==================*/
++				/* out: TRUE if corrupted */
++	byte*	read_buf)	/* in: a database page */
++{
++	ulint	checksum;
++	ulint	old_checksum;
++	ulint	checksum_field;
++	ulint	old_checksum_field;
++
++	if (mach_read_from_4(read_buf + FIL_PAGE_LSN + 4)
++	     != mach_read_from_4(read_buf + UNIV_PAGE_SIZE
++				- FIL_PAGE_END_LSN_OLD_CHKSUM + 4)) {
++
++		/* Stored log sequence numbers at the start and the end
++		of page do not match */
++
++		return(1);
++	}
++
++  /* If we use checksums validation, make additional check before returning
++  TRUE to ensure that the checksum is not equal to BUF_NO_CHECKSUM_MAGIC which
++  might be stored by InnoDB with checksums disabled.
++     Otherwise, skip checksum calculation and return FALSE */
++  
++    old_checksum = buf_calc_page_old_checksum(read_buf); 
++
++    old_checksum_field = mach_read_from_4(read_buf + UNIV_PAGE_SIZE
++					- FIL_PAGE_END_LSN_OLD_CHKSUM);
++
++    /* There are 2 valid formulas for old_checksum_field:
++	  1. Very old versions of InnoDB only stored 8 byte lsn to the start
++	  and the end of the page.
++	  2. Newer InnoDB versions store the old formula checksum there. */
++	
++    if (old_checksum_field != mach_read_from_4(read_buf + FIL_PAGE_LSN)
++        && old_checksum_field != old_checksum
++        && old_checksum_field != BUF_NO_CHECKSUM_MAGIC) {
++
++      return(1);
++    }
++
++    checksum = buf_calc_page_new_checksum(read_buf);
++    checksum_field = mach_read_from_4(read_buf + FIL_PAGE_SPACE_OR_CHKSUM);
++
++    /* InnoDB versions < 4.0.14 and < 4.1.1 stored the space id
++	  (always equal to 0), to FIL_PAGE_SPACE_SPACE_OR_CHKSUM */
++
++    if (checksum_field != 0 && checksum_field != checksum
++        && checksum_field != BUF_NO_CHECKSUM_MAGIC) {
++
++      return(1);
++    }
++  
++	return(0);
++}
+ 
+ struct tar_dev
+ {
+@@ -210,9 +370,9 @@
+ int
+ tar_append_regfile(TAR *t, char *realname)
+ {
+-	char block[T_BLOCKSIZE];
++	unsigned char block[T_BLOCKSIZE * 32];
+ 	int filefd;
+-	int i, j;
++	int i, j, k, n_retry;
+ 	size_t size;
+ 
+ 	filefd = open(realname, O_RDONLY);
+@@ -224,28 +384,53 @@
+ 		return -1;
+ 	}
+ 
++#ifdef USE_POSIX_FADVISE
++	posix_fadvise(filefd, 0, 0, POSIX_FADV_SEQUENTIAL);
++	posix_fadvise(filefd, 0, 0, POSIX_FADV_DONTNEED);
++#endif
++
++	n_retry = 0;
+ 	size = th_get_size(t);
+-	for (i = size; i > T_BLOCKSIZE; i -= T_BLOCKSIZE)
++	for (i = size; i > T_BLOCKSIZE * 32; i -= T_BLOCKSIZE * 32)
+ 	{
+-		j = read(filefd, &block, T_BLOCKSIZE);
+-		if (j != T_BLOCKSIZE)
++		j = read(filefd, &block[0], T_BLOCKSIZE * 32);
++		if (j != T_BLOCKSIZE * 32)
+ 		{
+ 			if (j != -1)
+ 				errno = EINVAL;
+ 			return -1;
+ 		}
+-		if (tar_block_write(t, &block) == -1)
+-			return -1;
++		if (buf_page_is_corrupted(block)) {
++			if (n_retry > 9) {
++				fprintf(stderr,
++"The file '%s' may not be InnoDB datafile or may be corrupted.\n",
++					realname);
++				errno = EIO;
++				return -1;
++			}
++
++			/* retry */
++			n_retry++;
++			if (lseek(filefd, - T_BLOCKSIZE * 32, SEEK_CUR) == -1)
++				return -1;
++			i += T_BLOCKSIZE * 32;
++			continue;
++		}
++		for (k = 0; k < 32; k++)
++			if (tar_block_write(t, &block[T_BLOCKSIZE * k]) == -1)
++				return -1;
++		n_retry = 0;
+ 	}
+ 
+ 	if (i > 0)
+ 	{
+-		j = read(filefd, &block, i);
++		j = read(filefd, &block[0], i);
+ 		if (j == -1)
+ 			return -1;
+-		memset(&(block[i]), 0, T_BLOCKSIZE - i);
+-		if (tar_block_write(t, &block) == -1)
+-			return -1;
++		memset(&(block[i]), 0, T_BLOCKSIZE * 32 - i);
++		for (k = 0; k < ((j - 1) / T_BLOCKSIZE + 1); k++)
++			if (tar_block_write(t, &block[T_BLOCKSIZE * k]) == -1)
++				return -1;
+ 	}
+ 
+ 	close(filefd);
+diff -ru libtar-1.2.11_orig/lib/internal.h libtar-1.2.11/lib/internal.h
+--- libtar-1.2.11_orig/lib/internal.h	2003-01-07 10:40:59.000000000 +0900
++++ libtar-1.2.11/lib/internal.h	2009-06-22 15:37:36.000000000 +0900
+@@ -10,6 +10,9 @@
+ **  University of Illinois at Urbana-Champaign
+ */
+ 
++#define _LARGEFILE_SOURCE
++#define _FILE_OFFSET_BITS 64
++
+ #include <config.h>
+ #include <compat.h>
+ 
+diff -ru libtar-1.2.11_orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
+--- libtar-1.2.11_orig/libtar/Makefile.in	2002-12-16 03:02:30.000000000 +0900
++++ libtar-1.2.11/libtar/Makefile.in	2009-06-22 17:28:41.000000000 +0900
+@@ -46,15 +46,15 @@
+ 		  ${top_srcdir}/lib/libtar.h \
+ 		  ../listhash/libtar_listhash.h
+ LIBTAR_LIBS	= ../lib/libtar.a
+-ALL		= libtar
++ALL		= tar4ibd
+ 
+ 
+ all: ${ALL}
+ 
+ .PHONY: clean distclean install
+ 
+-libtar: ${LIBTAR_OBJS} ${LIBTAR_LIBS} ${LIBTAR_HDRS}
+-	${CC} ${CFLAGS} ${LDFLAGS} -o libtar libtar.o ${LIBTAR_LIBS} ${LIBS}
++tar4ibd: ${LIBTAR_OBJS} ${LIBTAR_LIBS} ${LIBTAR_HDRS}
++	${CC} ${CFLAGS} ${LDFLAGS} -o tar4ibd libtar.o ${LIBTAR_LIBS} ${LIBS}
+ 
+ ${LIBTAR_OBJS}: ${LIBTAR_HDRS}
+ 
+@@ -69,5 +69,5 @@
+ 
+ install: ${ALL}
+ 	${MKDIR} ${DESTDIR}${bindir}
+-	${INSTALL_PROGRAM} libtar ${DESTDIR}${bindir}
++	${INSTALL_PROGRAM} tar4ibd ${DESTDIR}${bindir}
+ 
+diff -ru libtar-1.2.11_orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
+--- libtar-1.2.11_orig/libtar/libtar.c	2003-01-07 10:41:00.000000000 +0900
++++ libtar-1.2.11/libtar/libtar.c	2009-06-22 17:15:32.000000000 +0900
+@@ -109,7 +109,7 @@
+ 	char buf[MAXPATHLEN];
+ 	libtar_listptr_t lp;
+ 
+-	if (tar_open(&t, tarfile,
++	if (tar_fdopen(&t, fileno(stdout), tarfile,
+ #ifdef HAVE_LIBZ
+ 		     (use_zlib ? &gztype : NULL),
+ #else
+@@ -164,7 +164,7 @@
+ 	TAR *t;
+ 	int i;
+ 
+-	if (tar_open(&t, tarfile,
++	if (tar_fdopen(&t, fileno(stdin), tarfile,
+ #ifdef HAVE_LIBZ
+ 		     (use_zlib ? &gztype : NULL),
+ #else
+@@ -225,7 +225,7 @@
+ #ifdef DEBUG
+ 	puts("opening tarfile...");
+ #endif
+-	if (tar_open(&t, tarfile,
++	if (tar_fdopen(&t, fileno(stdin), tarfile,
+ #ifdef HAVE_LIBZ
+ 		     (use_zlib ? &gztype : NULL),
+ #else
+@@ -264,9 +264,9 @@
+ void
+ usage()
+ {
+-	printf("Usage: %s [-C rootdir] [-g] [-z] -x|-t filename.tar\n",
++	printf("Usage: %s [-C rootdir] [-g] [-z] -x|-t < filename.tar\n",
+ 	       progname);
+-	printf("       %s [-C rootdir] [-g] [-z] -c filename.tar ...\n",
++	printf("       %s [-C rootdir] [-g] [-z] -c ... > filename.tar\n",
+ 	       progname);
+ 	exit(-1);
+ }
+@@ -327,7 +327,7 @@
+ 			usage();
+ 		}
+ 
+-	if (!mode || ((argc - optind) < (mode == MODE_CREATE ? 2 : 1)))
++	if (!mode || ((argc - optind) < (mode == MODE_CREATE ? 1 : 0)))
+ 	{
+ #ifdef DEBUG
+ 		printf("argc - optind == %d\tmode == %d\n", argc - optind,
+@@ -343,15 +343,14 @@
+ 	switch (mode)
+ 	{
+ 	case MODE_EXTRACT:
+-		return extract(argv[optind], rootdir);
++		return extract("<stdin>", rootdir);
+ 	case MODE_CREATE:
+-		tarfile = argv[optind];
+ 		l = libtar_list_new(LIST_QUEUE, NULL);
+-		for (c = optind + 1; c < argc; c++)
++		for (c = optind; c < argc; c++)
+ 			libtar_list_add(l, argv[c]);
+-		return create(tarfile, rootdir, l);
++		return create("<stdout>", rootdir, l);
+ 	case MODE_LIST:
+-		return list(argv[optind]);
++		return list("<stdin>");
+ 	default:
+ 		break;
+ 	}
