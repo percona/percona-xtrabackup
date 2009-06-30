@@ -26,6 +26,9 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 
 %prep
 %setup -q
+tar zxf $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz
+cd libtar-1.2.11
+patch -p1 < ../innobase/xtrabackup/tar4ibd_libtar-1.2.11.patch
 
 
 %build
@@ -34,13 +37,17 @@ CC="ccache gcc" CXX="ccache gcc" ./configure \
 make -j8
 cd innobase/xtrabackup
 make
-
+cd ../..
+cd libtar-1.2.11
+./configure --prefix=%{_prefix}
+make
 
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
 install -d %{buildroot}%{_bindir}
 # install binaries and configs
 install -m 755 innobase/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
+install -m 755 libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 
 %clean
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
@@ -49,6 +56,7 @@ install -m 755 innobase/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%
 %defattr(-,root,root)
 %{_bindir}/innobackupex-1.5.1
 %{_bindir}/xtrabackup
+%{_bindir}/tar4ibd
 
 
 ###
