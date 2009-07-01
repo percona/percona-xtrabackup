@@ -87,6 +87,8 @@ my $option_tmpdir = '';
 
 my $option_tar4ibd = '';
 
+my $option_scp_opt = '-Cp -c arcfour';
+
 # name of the my.cnf configuration file
 #my $config_file = '';
 
@@ -234,6 +236,7 @@ Usage:
 innobackup [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME] 
            [--password=WORD] [--port=PORT] [--socket=SOCKET] [--no-timestamp] 
            [--ibbackup=IBBACKUP-BINARY] [--slave-info] [--stream=tar]
+           [--scpopt=OPTIONS-FOR-SCP]
            [--defaults-file=MY.CNF]
            [--databases=LIST] [--remote-host=HOSTNAME] BACKUP-ROOT-DIR
 innobackup --apply-log [--use-memory=MB] [--uncompress] [--defaults-file=MY.CNF]
@@ -413,6 +416,10 @@ Options:
                 working directory.  If this option is not given,
                 ibbackup is run with command "ibbackup".
 
+    --scpopt=SCP-OPTIONS
+                Use this option to specify the command line options
+                to pass to scp.  The default options are '-Cp -c arcfour'.
+
 EOF
 }
 
@@ -492,11 +499,11 @@ sub backup {
     }
 
     if ($option_remote_host) {
-        system("scp -Cp -c arcfour '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
+        system("scp $option_scp_opt '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_logfile': $!";
         unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
 
-        system("scp -Cp -c arcfour '$orig_datadir/xtrabackup_checkpoints' '$option_remote_host:$backup_dir/xtrabackup_checkpoints'")
+        system("scp $option_scp_opt '$orig_datadir/xtrabackup_checkpoints' '$option_remote_host:$backup_dir/xtrabackup_checkpoints'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_checkpoints': $!";
         unlink "$orig_datadir/xtrabackup_checkpoints" || Die "Failed to delete '$orig_datadir/xtrabackup_checkpoints': $!";
     } elsif ($option_stream eq 'tar') {
@@ -877,7 +884,7 @@ sub start_ibbackup {
                     my $path = (split(/:/,$a))[0];
                     if($option_remote_host) {
                         print STDERR "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
-                        system("scp -Cp -c arcfour '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
+                        system("scp $option_scp_opt '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
                             and Die "Failed to scp file '$path': $!";
                     } elsif($option_stream eq 'tar') {
                         my $ret = 0;
@@ -938,7 +945,7 @@ sub start_ibbackup {
                                     != 0) {
                                 system("ssh $option_remote_host mkdir $backup_dir/$subdir");
                             }
-                            system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$subdir/'")
+                            system("scp $option_scp_opt '$file' '$option_remote_host:$backup_dir/$subdir/'")
                                 and Die "Failed to scp file '$file': $!";
                         } elsif($option_stream eq 'tar') {
                             my $ret = 0;
@@ -1621,7 +1628,8 @@ sub check_args {
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
                         'tmpdir=s' => \$option_tmpdir,
-                        'ibbackup=s' => \$option_ibbackup_binary);
+                        'ibbackup=s' => \$option_ibbackup_binary,
+                        'scpopt=s' => \$option_scp_opt);
     if (!$rcode) {
         # failed to read options
         print STDERR "$prefix Bad command line arguments\n";
@@ -1854,7 +1862,7 @@ sub backup_files {
                 system("cp -p '$file' '$backup_dir/$database'")
                     and Die "Failed to copy file '$file': $!";
             } elsif ($option_remote_host) {
-                system("scp -Cp -c arcfour '$file' '$option_remote_host:$backup_dir/$database/'")
+                system("scp $option_scp_opt '$file' '$option_remote_host:$backup_dir/$database/'")
                     and Die "Failed to scp file '$file': $!";
             } elsif($option_stream eq 'tar') {
                 my $ret = 0;
