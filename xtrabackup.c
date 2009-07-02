@@ -1516,7 +1516,6 @@ skip_filter:
 //	if (ut_dulint_cmp(backup_start_checkpoint, flush_lsn) >= 0) {
 //		goto error;
 //	}
-	space_id = fsp_header_get_space_id(page);
 
 	file_size = os_file_get_size_as_iblonglong(src_file);
 
