@@ -2052,6 +2052,9 @@ xtrabackup_backup_func(void)
 	mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
 	mysql_data_home[1]=0;
 
+	/* set read only */
+	srv_read_only = TRUE;
+
 	/* initialize components */
         if(innodb_init_param())
                 exit(1);
@@ -3461,13 +3464,23 @@ skip_check:
 					n_index = 1;
 					while (index) {
 						mach_write_to_8(page + n_index * 512, index->id);
-						mach_write_to_4(page + n_index * 512 + 8, index->tree->page);
+						mach_write_to_4(page + n_index * 512 + 8,
+#if (MYSQL_VERSION_ID < 50100)
+								index->tree->page);
+#else /* MYSQL_VERSION_ID < 51000 */
+								index->page);
+#endif
 						strncpy(page + n_index * 512 + 12, index->name, 500);
 
 						printf(
 "xtrabackup:     name=%s, id.low=%d, page=%d\n",
 							index->name,
-							index->id.low, index->tree->page);
+							index->id.low,
+#if (MYSQL_VERSION_ID < 50100)
+							index->tree->page);
+#else /* MYSQL_VERSION_ID < 51000 */
+							index->page);
+#endif
 
 						index = dict_table_get_next_index(index);
 						n_index++;
