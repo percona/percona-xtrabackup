@@ -2,7 +2,7 @@ LIBS=	-lpthread
 DEFS=	-DUNIV_LINUX -DMYSQL_SERVER
 
 #x86 Linux
-CFLAGS=	-O2 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
+CFLAGS+=	-O2 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
 
 #Mac OS 64 bit
 #CFLAGS=	-O2 -arch x86_64 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
