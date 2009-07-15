@@ -3,10 +3,11 @@
 #
 %define distribution  rhel5
 %define release       1.%{distribution}
+%{!?xtrabackup_version:%define xtrabackup_version undefined}
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
 Name: xtrabackup
-Version: 0.8
+Version: %{xtrabackup_version}
 Release: %{release}
 Group: Server/Databases
 License: GPLv2
