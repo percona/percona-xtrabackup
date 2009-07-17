@@ -1,9 +1,11 @@
 #
 # rpm spec for xtrabackup
 #
-%define distribution  rhel5
+%{!?redhat_version:%define redhat_version 5}
+%define distribution  rhel%{redhat_version}
 %define release       1.%{distribution}
 %{!?xtrabackup_version:%define xtrabackup_version undefined}
+%{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
 Name: xtrabackup
@@ -33,9 +35,9 @@ patch -p1 < ../innobase/xtrabackup/tar4ibd_libtar-1.2.11.patch
 
 
 %build
-CC="ccache gcc" CXX="ccache gcc" ./configure \
+CC=${CC-"ccache gcc"} CXX=$CC CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\"%{xtrabackup_version}\" -DXTRABACKUP_REVISION=\"%{xtrabackup_revision}\"" ./configure \
   --prefix=%{_prefix} --with-extra-charsets=complex
-make -j8
+make -j`if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi`
 cd innobase/xtrabackup
 make
 cd ../..

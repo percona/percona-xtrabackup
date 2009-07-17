@@ -7,6 +7,9 @@ Created 3/3/2009 Yasufumi Kinoshita
 #ifndef XTRABACKUP_VERSION
 #define XTRABACKUP_VERSION "undefined"
 #endif
+#ifndef XTRABACKUP_REVISION
+#define XTRABACKUP_REVISION "undefined"
+#endif
 
 //#define XTRABACKUP_TARGET_IS_PLUGIN
 
@@ -621,8 +624,8 @@ static const char *load_default_groups[]= { "mysqld","xtrabackup",0 };
 
 static void print_version(void)
 {
-  printf("%s  Ver %s for %s %s (%s)\n" ,my_progname,
-	  XTRABACKUP_VERSION, MYSQL_SERVER_VERSION,SYSTEM_TYPE,MACHINE_TYPE);
+  printf("%s  Ver %s Rev %s for %s %s (%s)\n" ,my_progname,
+	  XTRABACKUP_VERSION, XTRABACKUP_REVISION, MYSQL_SERVER_VERSION,SYSTEM_TYPE,MACHINE_TYPE);
 }
 
 static void usage(void)
