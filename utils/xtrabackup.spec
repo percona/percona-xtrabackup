@@ -35,7 +35,7 @@ patch -p1 < ../innobase/xtrabackup/tar4ibd_libtar-1.2.11.patch
 
 
 %build
-CC=${CC-"ccache gcc"} CXX=$CC CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\"%{xtrabackup_version}\" -DXTRABACKUP_REVISION=\"%{xtrabackup_revision}\"" ./configure \
+CC=${CC-"ccache gcc"} CXX=$CC CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" ./configure \
   --prefix=%{_prefix} --with-extra-charsets=complex
 make -j`if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi`
 cd innobase/xtrabackup
