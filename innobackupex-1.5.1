@@ -1584,10 +1584,9 @@ sub check_args {
             print STDERR "$prefix Warning: perl $required_version or newer!\n";
         }
     } else {
-        #$perl_version = chr($required_perl_version[0])
-            #. chr($required_perl_version[1])
-            #. chr($required_perl_version[2]);
-        $perl_version = "v$required_perl_version[0].$required_perl_version[1].$required_perl_version[2]";
+        $perl_version = chr($required_perl_version[0])
+            . chr($required_perl_version[1])
+            . chr($required_perl_version[2]);
         if ($^V lt $perl_version) {
             my $version = chr(48 + $required_perl_version[0])
                 . "." . chr(48 + $required_perl_version[1])
