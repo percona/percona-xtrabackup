@@ -318,6 +318,7 @@ my_bool innobase_locks_unsafe_for_binlog        = FALSE;
 my_bool innobase_rollback_on_timeout		= FALSE;
 my_bool innobase_create_status_file		= FALSE;
 my_bool innobase_adaptive_hash_index		= TRUE;
+my_bool innobase_fast_recovery			= TRUE;
 
 static char *internal_innobase_data_file_path	= NULL;
 
@@ -380,7 +381,8 @@ enum options_xtrabackup
   OPT_INNODB_OPEN_FILES,
   OPT_INNODB_SYNC_SPIN_LOOPS,
   OPT_INNODB_THREAD_CONCURRENCY,
-  OPT_INNODB_THREAD_SLEEP_DELAY
+  OPT_INNODB_THREAD_SLEEP_DELAY,
+  OPT_INNODB_FAST_RECOVERY
 };
 
 static struct my_option my_long_options[] =
@@ -489,6 +491,10 @@ Disable with --skip-innodb-checksums.", (GPTR*) &innobase_use_checksums,
   {"innodb_doublewrite", OPT_INNODB_DOUBLEWRITE, "Enable InnoDB doublewrite buffer (enabled by default). \
 Disable with --skip-innodb-doublewrite.", (GPTR*) &innobase_use_doublewrite,
    (GPTR*) &innobase_use_doublewrite, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+  {"innodb_fast_recovery", OPT_INNODB_FAST_RECOVERY,
+   "Enable to use speed hack of recovery avoiding flush list sorting.",
+   (gptr*) &innobase_fast_recovery, (gptr*) &innobase_fast_recovery,
+   0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
 /*
   {"innodb_fast_shutdown", OPT_INNODB_FAST_SHUTDOWN,
    "Speeds up the shutdown process of the InnoDB storage engine. Possible "
@@ -1197,6 +1203,8 @@ innodb_init_param(void)
 
 	srv_lock_wait_timeout = (ulint) innobase_lock_wait_timeout;
 	srv_force_recovery = (ulint) innobase_force_recovery;
+
+	srv_fast_recovery = (ibool) innobase_fast_recovery;
 
 	srv_use_doublewrite_buf = (ibool) innobase_use_doublewrite;
 	srv_use_checksums = (ibool) innobase_use_checksums;
@@ -3335,6 +3343,11 @@ skip_check:
 	fprintf(stderr, "xtrabackup: Starting InnoDB instance for recovery.\n"
 		"xtrabackup: Using %lld bytes for buffer pool (set by --use-memory parameter)\n",
 		xtrabackup_use_memory);
+
+	if(srv_fast_recovery) {
+		fprintf(stderr,
+"xtrabackup: innodb_fast_recovery option is enabled. (default: false)\n");
+	}
 
 	if(innodb_init())
 		goto error;

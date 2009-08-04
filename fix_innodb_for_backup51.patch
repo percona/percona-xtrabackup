@@ -12,11 +12,13 @@ diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
  				  mach_read_from_8(read_buf + FIL_PAGE_LSN))
 diff -ru a/innobase/buf/buf0flu.c b/innobase/buf/buf0flu.c
 --- a/innobase/buf/buf0flu.c	2009-03-14 06:53:29.000000000 +0900
-+++ b/innobase/buf/buf0flu.c	2009-07-08 10:00:28.000000000 +0900
-@@ -79,6 +79,19 @@
++++ b/innobase/buf/buf0flu.c	2009-08-04 18:58:32.000000000 +0900
+@@ -79,6 +79,22 @@
  	prev_b = NULL;
  	b = UT_LIST_GET_FIRST(buf_pool->flush_list);
  
++	if (srv_fast_recovery) {
++	/* speed hack */
 +	if (b == NULL || (ut_dulint_cmp(b->oldest_modification,
 +					block->oldest_modification) < 0)) {
 +		UT_LIST_ADD_FIRST(flush_list, buf_pool->flush_list, block);
@@ -29,15 +31,16 @@ diff -ru a/innobase/buf/buf0flu.c b/innobase/buf/buf0flu.c
 +		}
 +		UT_LIST_ADD_LAST(flush_list, buf_pool->flush_list, block);
 +	}
-+/*
++	} else {
++	/* normal */
  	while (b && (ut_dulint_cmp(b->oldest_modification,
  				   block->oldest_modification) > 0)) {
  		prev_b = b;
-@@ -91,6 +104,7 @@
+@@ -91,6 +107,7 @@
  		UT_LIST_INSERT_AFTER(flush_list, buf_pool->flush_list, prev_b,
  				     block);
  	}
-+*/
++	}
  
  	ut_ad(buf_flush_validate_low());
  }
@@ -210,8 +213,17 @@ diff -ru a/innobase/include/mem0mem.ic b/innobase/include/mem0mem.ic
  		size += UNIV_PAGE_SIZE;
 diff -ru a/innobase/include/srv0srv.h b/innobase/include/srv0srv.h
 --- a/innobase/include/srv0srv.h	2009-03-14 06:53:34.000000000 +0900
-+++ b/innobase/include/srv0srv.h	2009-07-03 13:50:16.000000000 +0900
-@@ -134,6 +134,8 @@
++++ b/innobase/include/srv0srv.h	2009-08-04 19:02:36.000000000 +0900
+@@ -60,6 +60,8 @@
+ extern ibool	srv_file_per_table;
+ extern ibool	srv_locks_unsafe_for_binlog;
+ 
++extern ibool	srv_fast_recovery;
++
+ extern ulint	srv_n_data_files;
+ extern char**	srv_data_file_names;
+ extern ulint*	srv_data_file_sizes;
+@@ -134,6 +136,8 @@
  extern ulong	srv_max_purge_lag;
  extern ibool	srv_use_awe;
  extern ibool	srv_use_adaptive_hash_indexes;
@@ -521,8 +533,17 @@ diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
  
 diff -ru a/innobase/srv/srv0srv.c b/innobase/srv/srv0srv.c
 --- a/innobase/srv/srv0srv.c	2009-03-14 06:53:38.000000000 +0900
-+++ b/innobase/srv/srv0srv.c	2009-07-03 13:50:53.000000000 +0900
-@@ -342,6 +342,7 @@
++++ b/innobase/srv/srv0srv.c	2009-08-04 19:03:10.000000000 +0900
+@@ -93,6 +93,8 @@
+ 						duplicate key checking
+ 						and foreign key
+ 						checking */
++ibool	srv_fast_recovery = TRUE;
++
+ ulint	srv_n_data_files = 0;
+ char**	srv_data_file_names = NULL;
+ ulint*	srv_data_file_sizes = NULL;	/* size in database pages */
+@@ -342,6 +344,7 @@
  ibool	srv_use_awe			= FALSE;
  ibool	srv_use_adaptive_hash_indexes	= TRUE;
  
