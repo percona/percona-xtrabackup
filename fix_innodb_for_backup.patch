@@ -10,6 +10,40 @@ diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
  	if (recv_lsn_checks_on && log_peek_lsn(&current_lsn)) {
  		if (ut_dulint_cmp(current_lsn,
  				  mach_read_from_8(read_buf + FIL_PAGE_LSN))
+diff -ru a/innobase/buf/buf0flu.c b/innobase/buf/buf0flu.c
+--- a/innobase/buf/buf0flu.c	2008-12-19 02:19:35.000000000 +0900
++++ b/innobase/buf/buf0flu.c	2009-08-04 18:29:14.000000000 +0900
+@@ -85,6 +85,22 @@
+ 	prev_b = NULL;
+ 	b = UT_LIST_GET_FIRST(buf_pool->flush_list);
+ 
++	if (srv_fast_recovery) {
++	/* speed hack */
++	if (b == NULL || (ut_dulint_cmp(b->oldest_modification,
++					block->oldest_modification) < 0)) {
++		UT_LIST_ADD_FIRST(flush_list, buf_pool->flush_list, block);
++	} else {
++		b = UT_LIST_GET_LAST(buf_pool->flush_list);
++		if (ut_dulint_cmp(b->oldest_modification,
++					block->oldest_modification) < 0) {
++			/* align oldest_modification not to sort */
++			block->oldest_modification = b->oldest_modification;
++		}
++		UT_LIST_ADD_LAST(flush_list, buf_pool->flush_list, block);
++	}
++	} else {
++	/* normal */
+ 	while (b && (ut_dulint_cmp(b->oldest_modification,
+ 					block->oldest_modification) > 0)) {
+ 		prev_b = b;
+@@ -97,6 +113,7 @@
+ 		UT_LIST_INSERT_AFTER(flush_list, buf_pool->flush_list, prev_b,
+ 								block);
+ 	}
++	}
+ 
+ 	ut_ad(buf_flush_validate_low());
+ }
 diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
 --- a/innobase/buf/buf0rea.c	2008-12-19 02:19:35.000000000 +0900
 +++ b/innobase/buf/buf0rea.c	2009-07-03 13:25:13.000000000 +0900
@@ -64,12 +98,12 @@ diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
  
  			os_aio_simulated_wake_handler_threads();
 -			os_thread_sleep(500000);
-+			os_thread_sleep(20000);
++			os_thread_sleep(10000);
  
  			count++;
  
 -			if (count > 100) {
-+			if (count > 2500) {
++			if (count > 5000) {
  				fprintf(stderr,
  "InnoDB: Error: InnoDB has waited for 50 seconds for pending\n"
  "InnoDB: reads to the buffer pool to be finished.\n"
@@ -179,8 +213,17 @@ diff -ru a/innobase/include/mem0mem.ic b/innobase/include/mem0mem.ic
  		size += UNIV_PAGE_SIZE;
 diff -ru a/innobase/include/srv0srv.h b/innobase/include/srv0srv.h
 --- a/innobase/include/srv0srv.h	2008-12-19 02:19:36.000000000 +0900
-+++ b/innobase/include/srv0srv.h	2009-07-03 13:26:26.000000000 +0900
-@@ -131,6 +131,8 @@
++++ b/innobase/include/srv0srv.h	2009-08-04 18:30:17.000000000 +0900
+@@ -57,6 +57,8 @@
+ extern ibool	srv_file_per_table;
+ extern ibool    srv_locks_unsafe_for_binlog;
+ 
++extern ibool	srv_fast_recovery;
++
+ extern ulint	srv_n_data_files;
+ extern char**	srv_data_file_names;
+ extern ulint*	srv_data_file_sizes;
+@@ -131,6 +133,8 @@
  extern ulong	srv_max_purge_lag;
  extern ibool	srv_use_awe;
  extern ibool	srv_use_adaptive_hash_indexes;
@@ -490,8 +533,17 @@ diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
  
 diff -ru a/innobase/srv/srv0srv.c b/innobase/srv/srv0srv.c
 --- a/innobase/srv/srv0srv.c	2008-12-19 02:19:37.000000000 +0900
-+++ b/innobase/srv/srv0srv.c	2009-07-03 13:25:52.000000000 +0900
-@@ -322,6 +322,7 @@
++++ b/innobase/srv/srv0srv.c	2009-08-04 18:31:14.000000000 +0900
+@@ -86,6 +86,8 @@
+                                                 i.e. do not use next-key locking
+                                                 except on duplicate key checking and
+                                                 foreign key checking */
++ibool	srv_fast_recovery = TRUE;
++
+ ulint	srv_n_data_files = 0;
+ char**	srv_data_file_names = NULL;
+ ulint*	srv_data_file_sizes = NULL;	/* size in database pages */ 
+@@ -322,6 +324,7 @@
  ibool	srv_use_awe			= FALSE;
  ibool	srv_use_adaptive_hash_indexes 	= TRUE;
  
