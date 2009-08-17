@@ -251,8 +251,8 @@ the backup in the given directory (which must not exist).  This
 command makes a complete backup of all MyISAM and InnoDB tables and
 indexes in all databases or in all of the databases specified with the
 --databases option.  The created backup contains .frm, .MRG, .MYD,
-.MYI, .TRG, .TRN, .ARM, .ARZ, .opt, and InnoDB data and log files.  The MY.CNF
-options file defines the location of the database.  This command
+.MYI, .TRG, .TRN, .ARM, .ARZ, .opt, .par, and InnoDB data and log files.
+The MY.CNF options file defines the location of the database.  This command
 connects to the MySQL server using mysql client program, and runs
 ibbackup (InnoDB Hot Backup program) as a child process.
 
@@ -1820,6 +1820,7 @@ sub backup_files {
     while (defined($database = readdir(DIR))) {
         my $print_each_file = 0;
         my $file_c;
+        my @scp_files;
         # skip files that are not database directories
         if ($database eq '.' || $database eq '..') { next; }
         next unless -d "$source_dir/$database";
@@ -1861,8 +1862,8 @@ sub backup_files {
                 system("cp -p '$file' '$backup_dir/$database'")
                     and Die "Failed to copy file '$file': $!";
             } elsif ($option_remote_host) {
-                system("scp $option_scp_opt '$file' '$option_remote_host:$backup_dir/$database/'")
-                    and Die "Failed to scp file '$file': $!";
+                # Queue up files for one single scp per database.
+                push(@scp_files, "'$file'");
             } elsif($option_stream eq 'tar') {
                 my $ret = 0;
                 my $file_name = substr($file, rindex($file, '/') + 1);
@@ -1874,6 +1875,11 @@ sub backup_files {
                     Die "Failed to stream '$database/$file_name': $!";
                 }
             }
+        }
+        if ($option_remote_host) {
+          my $scp_file_list = join(" ", @scp_files);
+          system("scp $option_scp_opt $scp_file_list '$option_remote_host:$backup_dir/$database/'")
+              and Die "Failed to scp file '$file': $!";
         }
     }
     closedir(DIR);
