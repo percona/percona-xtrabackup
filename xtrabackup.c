@@ -630,22 +630,21 @@ static void print_version(void)
 
 static void usage(void)
 {
-  puts("Open source backup tool for InnoDB and XtraDB
-
-Copyright (C) 2009 Percona Inc.
-
-This program is free software; you can redistribute it and/or
-modify it under the terms of the GNU General Public License
-as published by the Free Software Foundation version 2
-of the License.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You can download full text of the license on http://www.gnu.org/licenses/gpl-2.0.txt
-");
+  puts("Open source backup tool for InnoDB and XtraDB\n\
+\n\
+Copyright (C) 2009 Percona Inc.\n\
+\n\
+This program is free software; you can redistribute it and/or\n\
+modify it under the terms of the GNU General Public License\n\
+as published by the Free Software Foundation version 2\n\
+of the License.\n\
+\n\
+This program is distributed in the hope that it will be useful,\n\
+but WITHOUT ANY WARRANTY; without even the implied warranty of\n\
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n\
+GNU General Public License for more details.\n\
+\n\
+You can download full text of the license on http://www.gnu.org/licenses/gpl-2.0.txt\n");
 
   printf("Usage: [%s [--defaults-file=#] --backup | %s [--defaults-file=#] --prepare] [OPTIONS]\n",my_progname,my_progname);
   print_defaults("my",load_default_groups);
