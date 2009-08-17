@@ -1808,7 +1808,7 @@ sub backup_files {
     my @list;
     my $file;
     my $database;
-    my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,ARM,ARZ,opt}';
+    my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,ARM,ARZ,opt,par}';
 
     opendir(DIR, $source_dir) 
         || Die "Can't open directory '$source_dir': $!\n";
