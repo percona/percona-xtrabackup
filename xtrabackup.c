@@ -1580,7 +1580,7 @@ read_retry:
 				if (ut_dulint_cmp(incremental_lsn,
 					mach_read_from_8(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
 	/* ========================================= */
-	ulint page_offset;
+	ib_longlong page_offset;
 
 	if (page_in_buffer == UNIV_PAGE_SIZE/4) {
 		/* flush buffer */
@@ -1603,10 +1603,10 @@ read_retry:
 		page_in_buffer++;
 	}
 
-	page_offset = (ulint)((offset + (ib_longlong)chunk_offset) >> UNIV_PAGE_SIZE_SHIFT);
+	page_offset = ((offset + (ib_longlong)chunk_offset) >> UNIV_PAGE_SIZE_SHIFT);
 	ut_a(page_offset >> 32 == 0);
 
-	mach_write_to_4(incremental_buffer + page_in_buffer * 4, page_offset);
+	mach_write_to_4(incremental_buffer + page_in_buffer * 4, (ulint)page_offset);
 	memcpy(incremental_buffer + page_in_buffer * UNIV_PAGE_SIZE,
 	       page + chunk_offset, UNIV_PAGE_SIZE);
 
