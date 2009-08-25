@@ -1,3 +1,15 @@
+diff -ru a/innobase/btr/btr0btr.c b/innobase/btr/btr0btr.c
+--- a/innobase/btr/btr0btr.c	2009-03-14 06:53:29.000000000 +0900
++++ b/innobase/btr/btr0btr.c	2009-08-25 21:00:31.000000000 +0900
+@@ -515,7 +515,7 @@
+ 
+ /****************************************************************
+ Returns the child page of a node pointer and x-latches it. */
+-static
++//static
+ page_t*
+ btr_node_ptr_get_child(
+ /*===================*/
 diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
 --- a/innobase/buf/buf0buf.c	2009-03-14 06:53:29.000000000 +0900
 +++ b/innobase/buf/buf0buf.c	2009-06-15 10:35:33.000000000 +0900
@@ -46,7 +58,7 @@ diff -ru a/innobase/buf/buf0flu.c b/innobase/buf/buf0flu.c
  }
 diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
 --- a/innobase/buf/buf0rea.c	2009-03-14 06:53:30.000000000 +0900
-+++ b/innobase/buf/buf0rea.c	2009-06-15 10:35:33.000000000 +0900
++++ b/innobase/buf/buf0rea.c	2009-08-25 21:02:26.000000000 +0900
 @@ -114,6 +114,45 @@
  	block = buf_page_init_for_read(err, mode, space, tablespace_version,
  				       offset);
@@ -448,7 +460,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2009-03-14 06:53:36.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-07-03 13:52:01.000000000 +0900
++++ b/innobase/os/os0file.c	2009-08-25 21:07:14.000000000 +0900
 @@ -453,7 +453,7 @@
  }
  
@@ -471,7 +483,17 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
-@@ -3248,6 +3252,13 @@
+@@ -2564,6 +2568,9 @@
+ #else
+ 	ssize_t	ret;
+ 
++	if (srv_read_only)
++		return(TRUE);
++
+ 	ret = os_file_pwrite(file, buf, n, offset, offset_high);
+ 
+ 	if ((ulint)ret == n) {
+@@ -3248,6 +3255,13 @@
  	struct aiocb*	control;
  #endif
  	ulint		i;
@@ -485,7 +507,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  loop:
  	os_mutex_enter(array->mutex);
  
-@@ -3266,6 +3277,16 @@
+@@ -3266,6 +3280,16 @@
  		goto loop;
  	}
  
@@ -502,7 +524,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	for (i = 0;; i++) {
  		slot = os_aio_array_get_nth_slot(array, i);
  
-@@ -3273,6 +3294,7 @@
+@@ -3273,6 +3297,7 @@
  			break;
  		}
  	}
