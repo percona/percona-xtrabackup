@@ -2860,7 +2860,7 @@ loop:
 	if (level == 0)
 		fprintf(stdout, "recs=%lld, ", n_recs);
 
-	fprintf(stdout, "pages=%lld, data=%lld, data/pages=%lld[%]",
+	fprintf(stdout, "pages=%lld, data=%lld bytes, data/pages=%lld%%",
 		n_pages, sum_data,
 		((sum_data * 100)/ UNIV_PAGE_SIZE)/n_pages);
 
@@ -2868,9 +2868,9 @@ loop:
 	if (level == 0 && n_pages_extern) {
 		putc('\n', stdout);
 		/* also scan blob pages*/
-		fprintf(stdout, "    extrenal pages: ");
+		fprintf(stdout, "    external pages: ");
 
-		fprintf(stdout, "pages=%lld, data=%lld, data/pages=%lld[%]",
+		fprintf(stdout, "pages=%lld, data=%lld bytes, data/pages=%lld%%",
 			n_pages_extern, sum_data_extern,
 			((sum_data_extern * 100)/ UNIV_PAGE_SIZE)/n_pages_extern);
 	}

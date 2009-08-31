@@ -6,9 +6,12 @@ How to build XtraBackup
 1. Put this directory to innobase/ directory.
    (e.g. mysql-5.0.75/innobase/xtrabackup-0.0 )
 
-2. Edit MySQL source and re- make. (e.g. fix_innodb_for_backup.patch for 5.0.75)
+2. From the innodbase directory, apply the xtrabackup patch and then re-make.
+   The patch is fix_innodb_for_backup.patch for MySQL 5.0 and
+   fix_innodb_for_backup51.patch for MySQL 5.1.
+   ('make clean' at innobase/ dir may be needed for 5.0, because of the lack of dependency)
 
-3. make at XtraBackup directory.
+3. Run make in the XtraBackup directory.
 
 4. enjoy... :)
 
