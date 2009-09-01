@@ -882,6 +882,7 @@ sub start_ibbackup {
                 print STDERR "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
                 foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
                     my $path = (split(/:/,$a))[0];
+                    $path=~s/([\$\\\" ])/\\$1/g;
                     if($option_remote_host) {
                         print STDERR "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
                         system("scp $option_scp_opt '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
@@ -950,6 +951,7 @@ sub start_ibbackup {
                         } elsif($option_stream eq 'tar') {
                             my $ret = 0;
                             my $file_name = substr($file, rindex($file, '/') + 1);
+                            $file_name=~s/([\$\\\" ])/\\$1/g;
                             if (!$option_tar4ibd) {
                                 $ret = system("cd $orig_datadir; tar cf - -b 32 $subdir/$file_name") >> 8;
                             } else {
@@ -1867,6 +1869,7 @@ sub backup_files {
             } elsif($option_stream eq 'tar') {
                 my $ret = 0;
                 my $file_name = substr($file, rindex($file, '/') + 1);
+                $file_name=~s/([\$\\\" ])/\\$1/g;
                 $ret = system("cd $source_dir; tar cf - $database/$file_name") >> 8;
                 if ($ret == 1) {
                     print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
