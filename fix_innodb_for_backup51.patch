@@ -225,7 +225,7 @@ diff -ru a/innobase/include/mem0mem.ic b/innobase/include/mem0mem.ic
  		size += UNIV_PAGE_SIZE;
 diff -ru a/innobase/include/srv0srv.h b/innobase/include/srv0srv.h
 --- a/innobase/include/srv0srv.h	2009-03-14 06:53:34.000000000 +0900
-+++ b/innobase/include/srv0srv.h	2009-08-04 19:02:36.000000000 +0900
++++ b/innobase/include/srv0srv.h	2009-09-03 15:18:04.000000000 +0900
 @@ -60,6 +60,8 @@
  extern ibool	srv_file_per_table;
  extern ibool	srv_locks_unsafe_for_binlog;
@@ -235,12 +235,13 @@ diff -ru a/innobase/include/srv0srv.h b/innobase/include/srv0srv.h
  extern ulint	srv_n_data_files;
  extern char**	srv_data_file_names;
  extern ulint*	srv_data_file_sizes;
-@@ -134,6 +136,8 @@
+@@ -134,6 +136,9 @@
  extern ulong	srv_max_purge_lag;
  extern ibool	srv_use_awe;
  extern ibool	srv_use_adaptive_hash_indexes;
 +
 +extern ibool	srv_read_only;
++extern ibool	srv_fake_write;
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
@@ -460,7 +461,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2009-03-14 06:53:36.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-08-25 21:07:14.000000000 +0900
++++ b/innobase/os/os0file.c	2009-09-03 15:18:55.000000000 +0900
 @@ -453,7 +453,7 @@
  }
  
@@ -487,7 +488,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  #else
  	ssize_t	ret;
  
-+	if (srv_read_only)
++	if (srv_fake_write)
 +		return(TRUE);
 +
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
@@ -555,7 +556,7 @@ diff -ru a/innobase/os/os0thread.c b/innobase/os/os0thread.c
  
 diff -ru a/innobase/srv/srv0srv.c b/innobase/srv/srv0srv.c
 --- a/innobase/srv/srv0srv.c	2009-03-14 06:53:38.000000000 +0900
-+++ b/innobase/srv/srv0srv.c	2009-08-04 19:03:10.000000000 +0900
++++ b/innobase/srv/srv0srv.c	2009-09-03 15:18:26.000000000 +0900
 @@ -93,6 +93,8 @@
  						duplicate key checking
  						and foreign key
@@ -565,11 +566,12 @@ diff -ru a/innobase/srv/srv0srv.c b/innobase/srv/srv0srv.c
  ulint	srv_n_data_files = 0;
  char**	srv_data_file_names = NULL;
  ulint*	srv_data_file_sizes = NULL;	/* size in database pages */
-@@ -342,6 +344,7 @@
+@@ -342,6 +344,8 @@
  ibool	srv_use_awe			= FALSE;
  ibool	srv_use_adaptive_hash_indexes	= TRUE;
  
 +ibool	srv_read_only	= FALSE;
++ibool	srv_fake_write	= FALSE;
  /*-------------------------------------------*/
  ulong	srv_n_spin_wait_rounds	= 20;
  ulong	srv_n_free_tickets_to_enter = 500;

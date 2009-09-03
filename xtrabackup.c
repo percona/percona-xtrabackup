@@ -2902,6 +2902,7 @@ xtrabackup_stats_func(void)
 
 	/* set read only */
 	srv_read_only = TRUE;
+	srv_fake_write = TRUE;
 
 	/* initialize components */
 	if(innodb_init_param())
