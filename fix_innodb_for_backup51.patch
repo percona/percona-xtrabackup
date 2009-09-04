@@ -121,7 +121,16 @@ diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
  					" 50 seconds for pending\n"
 diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
 --- a/innobase/fil/fil0fil.c	2009-03-14 06:53:30.000000000 +0900
-+++ b/innobase/fil/fil0fil.c	2009-06-15 10:35:33.000000000 +0900
++++ b/innobase/fil/fil0fil.c	2009-09-04 17:53:59.000000000 +0900
+@@ -1927,7 +1927,7 @@
+ 			if (fil_create_new_single_table_tablespace(
+ 				    &space_id, name, FALSE,
+ 				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
+-				ut_error;
++				//ut_error;
+ 			}
+ 		}
+ 	}
 @@ -2067,7 +2067,7 @@
  	}
  

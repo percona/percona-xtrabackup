@@ -121,7 +121,20 @@ diff -ru a/innobase/buf/buf0rea.c b/innobase/buf/buf0rea.c
  "InnoDB: reads to the buffer pool to be finished.\n"
 diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
 --- a/innobase/fil/fil0fil.c	2008-12-19 02:19:35.000000000 +0900
-+++ b/innobase/fil/fil0fil.c	2009-07-03 13:25:13.000000000 +0900
++++ b/innobase/fil/fil0fil.c	2009-09-04 18:00:34.000000000 +0900
+@@ -1890,10 +1890,10 @@
+ 
+ 			ut_a(space_id != 0);
+ 
+-			ut_a(DB_SUCCESS == 
++
+ 				fil_create_new_single_table_tablespace(
+ 						&space_id, name, FALSE,
+-						FIL_IBD_FILE_INITIAL_SIZE));
++						FIL_IBD_FILE_INITIAL_SIZE);
+ 		}
+ 	}
+ 
 @@ -2027,7 +2027,7 @@
  	}
  
@@ -461,7 +474,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2008-12-19 02:19:36.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-09-03 15:09:36.000000000 +0900
++++ b/innobase/os/os0file.c	2009-09-04 17:59:10.000000000 +0900
 @@ -435,7 +435,7 @@
  }
  
@@ -484,6 +497,15 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
+@@ -1335,7 +1339,7 @@
+ 	if (file == -1) {
+ 		*success = FALSE;
+ 
+-		retry = os_file_handle_error(name,
++		retry = os_file_handle_error_no_exit(name,
+ 				create_mode == OS_FILE_CREATE ?
+ 				"create" : "open");
+ 		if (retry) {
 @@ -2472,6 +2476,9 @@
  	return(FALSE);
  #else

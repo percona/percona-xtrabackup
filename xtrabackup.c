@@ -4029,6 +4029,11 @@ next_node:
 	sync_initialized = FALSE;
 	os_sync_mutex = NULL;
 
+	/* re-init necessary components */
+	os_sync_init();
+	sync_init();
+	os_io_init_simple();
+
 	if(xtrabackup_close_temp_log(TRUE))
 		exit(1);
 
