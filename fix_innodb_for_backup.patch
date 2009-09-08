@@ -208,7 +208,7 @@ diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
  	for (;;) {
 diff -ru a/innobase/ibuf/ibuf0ibuf.c b/innobase/ibuf/ibuf0ibuf.c
 --- a/innobase/ibuf/ibuf0ibuf.c	2008-12-19 02:19:35.000000000 +0900
-+++ b/innobase/ibuf/ibuf0ibuf.c	2009-09-08 14:22:30.000000000 +0900
++++ b/innobase/ibuf/ibuf0ibuf.c	2009-09-08 15:29:50.000000000 +0900
 @@ -971,7 +971,7 @@
  	mtr_t	mtr;
  	ibool	ret;
@@ -218,6 +218,16 @@ diff -ru a/innobase/ibuf/ibuf0ibuf.c b/innobase/ibuf/ibuf0ibuf.c
  		/* Recovery is running: no ibuf operations should be
  		performed */
  
+@@ -2229,6 +2229,9 @@
+ 	ulint	n_bytes;
+ 	ulint	n_pag2;
+ 	
++	if (srv_fake_write)
++		return(0);
++
+ 	while (sum_pages < n_pages) {
+ 		n_bytes = ibuf_contract_ext(&n_pag2, sync);
+ 		
 diff -ru a/innobase/include/mem0mem.h b/innobase/include/mem0mem.h
 --- a/innobase/include/mem0mem.h	2008-12-19 02:19:36.000000000 +0900
 +++ b/innobase/include/mem0mem.h	2009-07-03 13:25:13.000000000 +0900
