@@ -12,7 +12,7 @@ diff -ru a/innobase/btr/btr0btr.c b/innobase/btr/btr0btr.c
  /*===================*/
 diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
 --- a/innobase/buf/buf0buf.c	2009-03-14 06:53:29.000000000 +0900
-+++ b/innobase/buf/buf0buf.c	2009-06-15 10:35:33.000000000 +0900
++++ b/innobase/buf/buf0buf.c	2009-09-08 14:25:14.000000000 +0900
 @@ -314,7 +314,7 @@
  		return(TRUE);
  	}
@@ -22,6 +22,15 @@ diff -ru a/innobase/buf/buf0buf.c b/innobase/buf/buf0buf.c
  	if (recv_lsn_checks_on && log_peek_lsn(&current_lsn)) {
  		if (ut_dulint_cmp(current_lsn,
  				  mach_read_from_8(read_buf + FIL_PAGE_LSN))
+@@ -2033,7 +2033,7 @@
+ 					  block->space, block->offset);
+ 		}
+ 
+-		if (!recv_no_ibuf_operations) {
++		if (!recv_no_ibuf_operations && !srv_fake_write) {
+ 			ibuf_merge_or_delete_for_page(
+ 				block->frame, block->space, block->offset,
+ 				TRUE);
 diff -ru a/innobase/buf/buf0flu.c b/innobase/buf/buf0flu.c
 --- a/innobase/buf/buf0flu.c	2009-03-14 06:53:29.000000000 +0900
 +++ b/innobase/buf/buf0flu.c	2009-08-04 18:58:32.000000000 +0900
@@ -193,6 +202,18 @@ diff -ru a/innobase/fil/fil0fil.c b/innobase/fil/fil0fil.c
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
+diff -ru a/innobase/ibuf/ibuf0ibuf.c b/innobase/ibuf/ibuf0ibuf.c
+--- a/innobase/ibuf/ibuf0ibuf.c	2009-03-14 06:53:30.000000000 +0900
++++ b/innobase/ibuf/ibuf0ibuf.c	2009-09-08 14:25:33.000000000 +0900
+@@ -978,7 +978,7 @@
+ 	mtr_t	mtr;
+ 	ibool	ret;
+ 
+-	if (recv_no_ibuf_operations) {
++	if (recv_no_ibuf_operations || srv_fake_write) {
+ 		/* Recovery is running: no ibuf operations should be
+ 		performed */
+ 
 diff -ru a/innobase/include/mem0mem.h b/innobase/include/mem0mem.h
 --- a/innobase/include/mem0mem.h	2009-03-14 06:53:33.000000000 +0900
 +++ b/innobase/include/mem0mem.h	2009-06-15 10:35:33.000000000 +0900
@@ -311,7 +332,7 @@ diff -ru a/innobase/include/ut0byte.ic b/innobase/include/ut0byte.ic
  
 diff -ru a/innobase/log/log0log.c b/innobase/log/log0log.c
 --- a/innobase/log/log0log.c	2009-03-14 06:53:36.000000000 +0900
-+++ b/innobase/log/log0log.c	2009-06-15 10:35:33.000000000 +0900
++++ b/innobase/log/log0log.c	2009-09-08 14:25:53.000000000 +0900
 @@ -538,7 +538,9 @@
  
  	offset = (gr_lsn_size_offset + difference) % group_size;
@@ -322,6 +343,15 @@ diff -ru a/innobase/log/log0log.c b/innobase/log/log0log.c
  
  	/* fprintf(stderr,
  	"Offset is %lu gr_lsn_offset is %lu difference is %lu\n",
+@@ -1301,7 +1303,7 @@
+ #endif /* UNIV_DEBUG */
+ 	ulint		unlock;
+ 
+-	if (recv_no_ibuf_operations) {
++	if (recv_no_ibuf_operations || srv_fake_write) {
+ 		/* Recovery is running and no operations on the log files are
+ 		allowed yet (the variable name .._no_ibuf_.. is misleading) */
+ 
 diff -ru a/innobase/log/log0recv.c b/innobase/log/log0recv.c
 --- a/innobase/log/log0recv.c	2009-03-14 06:53:36.000000000 +0900
 +++ b/innobase/log/log0recv.c	2009-06-15 10:35:33.000000000 +0900
