@@ -2,8 +2,9 @@
 # rpm spec for xtrabackup
 #
 %{!?redhat_version:%define redhat_version 5}
+%{!?buildnumber:%define buildnumber 1}
 %define distribution  rhel%{redhat_version}
-%define release       1.%{distribution}
+%define release       %{buildnumber}.%{distribution}
 %{!?xtrabackup_version:%define xtrabackup_version undefined}
 %{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 
