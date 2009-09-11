@@ -705,6 +705,19 @@ diff -ru a/innobase/srv/srv0start.c b/innobase/srv/srv0start.c
  	}
  
  	/* Check that os_fast_mutexes work as expected */
+diff -ru a/innobase/trx/trx0purge.c b/innobase/trx/trx0purge.c
+--- a/innobase/trx/trx0purge.c	2009-03-14 06:53:38.000000000 +0900
++++ b/innobase/trx/trx0purge.c	2009-09-10 15:36:21.000000000 +0900
+@@ -1027,6 +1027,9 @@
+ 	/*	que_thr_t*	thr2; */
+ 	ulint		old_pages_handled;
+ 
++	if (srv_fake_write)
++		return(0);
++
+ 	mutex_enter(&(purge_sys->mutex));
+ 
+ 	if (purge_sys->trx->n_active_thrs > 0) {
 diff -ru a/innobase/trx/trx0trx.c b/innobase/trx/trx0trx.c
 --- a/innobase/trx/trx0trx.c	2009-03-14 06:53:38.000000000 +0900
 +++ b/innobase/trx/trx0trx.c	2009-06-18 10:03:03.000000000 +0900
