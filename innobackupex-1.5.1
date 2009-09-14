@@ -2067,6 +2067,7 @@ sub get_option {
     if (!exists $config{$group}) {
         # no group
         print STDERR "$prefix fatal error: no '$group' group in MySQL options\n";
+        print STDERR "$prefix fatal error: OR no 'datadir' option in group '$group' in MySQL options\n";
         exit(1);
     }
     
