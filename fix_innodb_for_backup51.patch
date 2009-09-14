@@ -510,7 +510,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2009-03-14 06:53:36.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-09-03 15:18:55.000000000 +0900
++++ b/innobase/os/os0file.c	2009-09-14 14:59:52.000000000 +0900
 @@ -453,7 +453,7 @@
  }
  
@@ -520,7 +520,15 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1302,7 +1302,11 @@
+@@ -1246,6 +1246,7 @@
+ 	}
+ 
+ 	file = CreateFile((LPCTSTR) name,
++			  srv_read_only ? GENERIC_READ :
+ 			  GENERIC_READ | GENERIC_WRITE, /* read and write
+ 							access */
+ 			  share_mode,	/* File can be read also by other
+@@ -1302,7 +1303,11 @@
  	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
  	    || create_mode == OS_FILE_OPEN_RETRY) {
  		mode_str = "OPEN";
@@ -533,7 +541,17 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
-@@ -2564,6 +2568,9 @@
+@@ -2444,6 +2449,9 @@
+ 
+ 	ut_a((offset & 0xFFFFFFFF) == offset);
+ 
++	if (srv_fake_write)
++		return(TRUE);
++
+ 	os_n_file_writes++;
+ 
+ 	ut_ad(file);
+@@ -2564,6 +2572,9 @@
  #else
  	ssize_t	ret;
  
@@ -543,7 +561,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
  
  	if ((ulint)ret == n) {
-@@ -3248,6 +3255,13 @@
+@@ -3248,6 +3259,13 @@
  	struct aiocb*	control;
  #endif
  	ulint		i;
@@ -557,7 +575,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  loop:
  	os_mutex_enter(array->mutex);
  
-@@ -3266,6 +3280,16 @@
+@@ -3266,6 +3284,16 @@
  		goto loop;
  	}
  
@@ -574,7 +592,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	for (i = 0;; i++) {
  		slot = os_aio_array_get_nth_slot(array, i);
  
-@@ -3273,6 +3297,7 @@
+@@ -3273,6 +3301,7 @@
  			break;
  		}
  	}

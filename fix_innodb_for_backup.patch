@@ -514,7 +514,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2008-12-19 02:19:36.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-09-04 17:59:10.000000000 +0900
++++ b/innobase/os/os0file.c	2009-09-14 14:59:02.000000000 +0900
 @@ -435,7 +435,7 @@
  }
  
@@ -524,7 +524,24 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1287,7 +1287,11 @@
+@@ -1241,6 +1241,7 @@
+ 	}
+ 
+ 	file = CreateFile((LPCTSTR) name,
++			srv_read_only ? GENERIC_READ :
+ 			GENERIC_READ | GENERIC_WRITE, /* read and write
+ 							access */
+ 			share_mode,     /* File can be read also by other
+@@ -1262,7 +1263,7 @@
+ 	if (file == INVALID_HANDLE_VALUE) {
+ 		*success = FALSE;
+ 
+-		retry = os_file_handle_error(name,
++		retry = os_file_handle_error_no_exit(name,
+ 				create_mode == OS_FILE_CREATE ?
+ 				"create" : "open");
+ 		if (retry) {
+@@ -1287,7 +1288,11 @@
  	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
  			|| create_mode == OS_FILE_OPEN_RETRY) {
  		mode_str = "OPEN";
@@ -537,7 +554,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
-@@ -1335,7 +1339,7 @@
+@@ -1335,7 +1340,7 @@
  	if (file == -1) {
  		*success = FALSE;
  
@@ -546,7 +563,17 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  				create_mode == OS_FILE_CREATE ?
  				"create" : "open");
  		if (retry) {
-@@ -2472,6 +2476,9 @@
+@@ -2364,6 +2369,9 @@
+ 
+ 	ut_a((offset & 0xFFFFFFFF) == offset);
+ 
++	if (srv_fake_write)
++		return(TRUE);
++
+ 	os_n_file_writes++;
+ 
+ 	ut_ad(file);
+@@ -2472,6 +2480,9 @@
  	return(FALSE);
  #else
  	ssize_t	ret;
@@ -556,7 +583,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
          
-@@ -3148,6 +3155,13 @@
+@@ -3148,6 +3159,13 @@
  	struct aiocb*	control;
  #endif
  	ulint		i;
@@ -570,7 +597,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  loop:
  	os_mutex_enter(array->mutex);
  
-@@ -3166,6 +3180,16 @@
+@@ -3166,6 +3184,16 @@
  		goto loop;
  	}
  
@@ -587,7 +614,7 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  	for (i = 0;; i++) {
  		slot = os_aio_array_get_nth_slot(array, i);
  
-@@ -3173,6 +3197,7 @@
+@@ -3173,6 +3201,7 @@
  			break;
  		}
  	}
