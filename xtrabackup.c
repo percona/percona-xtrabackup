@@ -47,6 +47,14 @@ Created 3/3/2009 Yasufumi Kinoshita
 #include <fil0fil.h>
 #include <trx0xa.h>
 
+#ifdef __WIN__
+#define SRV_PATH_SEPARATOR	'\\'
+#define SRV_PATH_SEPARATOR_STR	"\\"	
+#else
+#define SRV_PATH_SEPARATOR	'/'
+#define SRV_PATH_SEPARATOR_STR	"/"
+#endif
+
 /* prototypes for static functions in original */
 page_t*
 btr_node_ptr_get_child(
@@ -1220,7 +1228,8 @@ innodb_init_param(void)
 			char *p;
 
 			p = srv_data_file_names[i];
-			while (p = strstr(p, "/")) {
+			while (p = strstr(p, SRV_PATH_SEPARATOR_STR))
+			{
 				p++;
 				srv_data_file_names[i] = p;
 			}
@@ -1509,7 +1518,8 @@ xtrabackup_copy_datafile(fil_node_t* node)
 
 		p = node->name;
 		prev = NULL;
-		while (next = strstr(p, "/")) {
+		while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+		{
 			prev = p;
 			p = next + 1;
 		}
@@ -1528,7 +1538,7 @@ xtrabackup_copy_datafile(fil_node_t* node)
 		regres = regexec(&tables_regex, prev, 1, tables_regmatch, 0);
 
 		p[p_len] = tmp;
-		*(p - 1) = '/';
+		*(p - 1) = SRV_PATH_SEPARATOR;
 
 		if ( regres == REG_NOMATCH ) {
 			printf("Copying %s is skipped.\n", node->name);
@@ -1541,13 +1551,14 @@ skip_filter:
 		char *next, *p;
 		/* system datafile "/fullpath/datafilename.ibd" or "./datafilename.ibd" */
 		p = node->name;
-		while (next = strstr(p, "/")) {
+		while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+		{
 			p = next + 1;
 		}
 		sprintf(dst_path, "%s/%s", xtrabackup_target_dir, p);
 	} else {
 		/* file per table style "./database/table.ibd" */
-		sprintf(dst_path, "%s%s", xtrabackup_target_dir, strstr(node->name, "/"));
+		sprintf(dst_path, "%s%s", xtrabackup_target_dir, strstr(node->name, SRV_PATH_SEPARATOR_STR));
 	}
 
 	if (xtrabackup_incremental) {
@@ -2439,6 +2450,7 @@ reread_log_header:
 
 		/* open 'xtrabackup_logfile' */
 		sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
+		srv_normalize_path_for_win(dst_log_path);
 		/* os_file_create reads srv_unix_file_flush_method for OS_DATA_FILE*/
 		dst_log = os_file_create(dst_log_path, OS_FILE_CREATE,
 						OS_FILE_AIO, OS_DATA_FILE, &success);
@@ -2522,13 +2534,13 @@ reread_log_header:
                 //        space->name, space->id, space->purpose, space->size);
 
 		/* mkdir if not exist */
-		ptr1 = strstr(space->name, "/");
-		ptr2 = strstr(ptr1 + 1, "/");
+		ptr1 = strstr(space->name, SRV_PATH_SEPARATOR_STR);
+		ptr2 = strstr(ptr1 + 1, SRV_PATH_SEPARATOR_STR);
 		if(space->id && ptr2) {
 			/* single table space */
 			*ptr2 = 0; /* temporary (it's my lazy..)*/
 			sprintf(path, "%s%s",xtrabackup_target_dir,ptr1);
-			*ptr2 = '/';
+			*ptr2 = SRV_PATH_SEPARATOR;
 
 			if (!my_stat(path,&stat_info,MYF(0))
 				&& (my_mkdir(path,0777,MYF(0)) < 0)){
@@ -2579,6 +2591,7 @@ reread_log_header:
 		sprintf(suspend_path, "%s%s", xtrabackup_target_dir,
 			"/xtrabackup_suspended");
 
+		srv_normalize_path_for_win(suspend_path);
 		/* os_file_create reads srv_unix_file_flush_method */
 		suspend_file = os_file_create(suspend_path, OS_FILE_OVERWRITE,
 						OS_FILE_AIO, OS_DATA_FILE, &success);
@@ -2993,7 +3006,7 @@ loop:
 			char *p;
 			int regres;
 
-			p = strstr(table->name, "/");
+			p = strstr(table->name, SRV_PATH_SEPARATOR_STR);
 
 			if (p)
 				*p = '.';
@@ -3001,7 +3014,7 @@ loop:
 			regres = regexec(&tables_regex, table->name, 1, tables_regmatch, 0);
 
 			if (p)
-				*p = '/';
+				*p = SRV_PATH_SEPARATOR;
 
 			if ( regres == REG_NOMATCH )
 				goto skip;
@@ -3133,6 +3146,8 @@ xtrabackup_init_temp_log(void)
 		sprintf(src_path, "%s%s", xtrabackup_incremental_dir, "/xtrabackup_logfile");
 	}
 
+	srv_normalize_path_for_win(dst_path);
+	srv_normalize_path_for_win(src_path);
 retry:
 	src_file = os_file_create_simple_no_error_handling(
 					src_path, OS_FILE_OPEN,
@@ -3431,6 +3446,9 @@ xtrabackup_apply_delta(
 	}
 	dst_path[strlen(dst_path) - 6] = '\0';
 
+	srv_normalize_path_for_win(dst_path);
+	srv_normalize_path_for_win(src_path);
+
 	src_file = os_file_create_simple_no_error_handling(
 		src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
 	if (!success) {
@@ -3697,6 +3715,9 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 		sprintf(src_path, "%s%s", xtrabackup_incremental_dir, "/xtrabackup_logfile");
 	}
 
+	srv_normalize_path_for_win(dst_path);
+	srv_normalize_path_for_win(src_path);
+
 	success = os_file_rename(dst_path, src_path);
 	if (!success) {
 		goto error;
@@ -3918,7 +3939,8 @@ skip_check:
 
 					p = info_file_path;
 					prev = NULL;
-					while (next = strstr(p, "/")) {
+					while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+					{
 						prev = p;
 						p = next + 1;
 					}
@@ -3980,6 +4002,7 @@ skip_check:
 						n_index++;
 					}
 
+					srv_normalize_path_for_win(info_file_path);
 					info_file = os_file_create(info_file_path, OS_FILE_OVERWRITE,
 								OS_FILE_AIO, OS_DATA_FILE, &success);
 					if (!success) {

@@ -510,7 +510,7 @@ diff -ru a/innobase/mem/mem0mem.c b/innobase/mem/mem0mem.c
  	mem_pool_mutex_enter();
 diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
 --- a/innobase/os/os0file.c	2009-03-14 06:53:36.000000000 +0900
-+++ b/innobase/os/os0file.c	2009-09-14 14:59:52.000000000 +0900
++++ b/innobase/os/os0file.c	2009-09-18 17:29:43.000000000 +0900
 @@ -453,7 +453,7 @@
  }
  
@@ -520,9 +520,12 @@ diff -ru a/innobase/os/os0file.c b/innobase/os/os0file.c
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1246,6 +1246,7 @@
+@@ -1244,8 +1244,9 @@
+ 		attributes = 0;
+ 		ut_error;
  	}
- 
+-
++	share_mode |= FILE_SHARE_WRITE; /* Why? */
  	file = CreateFile((LPCTSTR) name,
 +			  srv_read_only ? GENERIC_READ :
  			  GENERIC_READ | GENERIC_WRITE, /* read and write
