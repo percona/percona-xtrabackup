@@ -1602,7 +1602,7 @@ skip_filter:
 	/* open dst_file */
 	/* os_file_create reads srv_unix_file_flush_method */
 	dst_file = os_file_create(dst_path, OS_FILE_CREATE,
-					OS_FILE_AIO, OS_DATA_FILE, &success);
+					OS_FILE_NORMAL, OS_DATA_FILE, &success);
                 if (!success) {
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
@@ -2453,7 +2453,7 @@ reread_log_header:
 		srv_normalize_path_for_win(dst_log_path);
 		/* os_file_create reads srv_unix_file_flush_method for OS_DATA_FILE*/
 		dst_log = os_file_create(dst_log_path, OS_FILE_CREATE,
-						OS_FILE_AIO, OS_DATA_FILE, &success);
+						OS_FILE_NORMAL, OS_DATA_FILE, &success);
 
                 if (!success) {
                         /* The following call prints an error message */
@@ -2594,7 +2594,7 @@ reread_log_header:
 		srv_normalize_path_for_win(suspend_path);
 		/* os_file_create reads srv_unix_file_flush_method */
 		suspend_file = os_file_create(suspend_path, OS_FILE_OVERWRITE,
-						OS_FILE_AIO, OS_DATA_FILE, &success);
+						OS_FILE_NORMAL, OS_DATA_FILE, &success);
 
 		if (!success) {
 			fprintf(stderr, "xtrabackup: Error: failed to create file 'xtrabackup_suspended'\n");
@@ -4004,7 +4004,7 @@ skip_check:
 
 					srv_normalize_path_for_win(info_file_path);
 					info_file = os_file_create(info_file_path, OS_FILE_OVERWRITE,
-								OS_FILE_AIO, OS_DATA_FILE, &success);
+								OS_FILE_NORMAL, OS_DATA_FILE, &success);
 					if (!success) {
 						os_file_get_last_error(TRUE);
 						goto next_node;
