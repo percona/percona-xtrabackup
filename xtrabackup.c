@@ -1109,6 +1109,11 @@ innobase_query_is_update(void)
 my_bool
 innodb_init_param(void)
 {
+	/* innobase_init */
+	static char	current_dir[3];		/* Set if using current lib */
+	my_bool		ret;
+	char 	        *default_path;
+
 	/* === some variables from mysqld === */
 	bzero((G_PTR) &mysql_tmpdir_list, sizeof(mysql_tmpdir_list));
 
@@ -1117,13 +1122,6 @@ innodb_init_param(void)
 
 	/* dummy for initialize all_charsets[] */
 	get_charset_name(0);
-
-
-	/* innobase_init */
-
-	static char	current_dir[3];		/* Set if using current lib */
-	my_bool		ret;
-	char 	        *default_path;
 
 	/* Check that values don't overflow on 32-bit systems. */
 	if (sizeof(ulint) == 4) {
@@ -1601,8 +1599,10 @@ skip_filter:
 
 	/* open dst_file */
 	/* os_file_create reads srv_unix_file_flush_method */
+	srv_read_only=FALSE;
 	dst_file = os_file_create(dst_path, OS_FILE_CREATE,
 					OS_FILE_NORMAL, OS_DATA_FILE, &success);
+	srv_read_only=TRUE;
                 if (!success) {
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
@@ -2161,7 +2161,6 @@ xtrabackup_backup_func(void)
 
 	/* set read only */
 	srv_read_only = TRUE;
-
 	/* initialize components */
         if(innodb_init_param())
                 exit(1);
@@ -2452,9 +2451,11 @@ reread_log_header:
 		sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
 		srv_normalize_path_for_win(dst_log_path);
 		/* os_file_create reads srv_unix_file_flush_method for OS_DATA_FILE*/
+		srv_read_only = FALSE;
 		dst_log = os_file_create(dst_log_path, OS_FILE_CREATE,
 						OS_FILE_NORMAL, OS_DATA_FILE, &success);
-
+		srv_read_only = TRUE;
+/* was OS_FILE_NORMAL */
                 if (!success) {
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
@@ -2593,9 +2594,10 @@ reread_log_header:
 
 		srv_normalize_path_for_win(suspend_path);
 		/* os_file_create reads srv_unix_file_flush_method */
+		srv_read_only = FALSE;
 		suspend_file = os_file_create(suspend_path, OS_FILE_OVERWRITE,
 						OS_FILE_NORMAL, OS_DATA_FILE, &success);
-
+		srv_read_only = TRUE;
 		if (!success) {
 			fprintf(stderr, "xtrabackup: Error: failed to create file 'xtrabackup_suspended'\n");
 		}
