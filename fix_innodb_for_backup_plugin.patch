@@ -1,0 +1,786 @@
+diff -ru innodb_plugin-1.0.4_orig/btr/btr0btr.c innodb_plugin-1.0.4/btr/btr0btr.c
+--- innodb_plugin-1.0.4_orig/btr/btr0btr.c	2009-05-26 22:28:49.000000000 +0900
++++ innodb_plugin-1.0.4/btr/btr0btr.c	2009-10-05 18:38:22.000000000 +0900
+@@ -120,7 +120,7 @@
+ /**************************************************************//**
+ Gets the root node of a tree and x-latches it.
+ @return	root page, x-latched */
+-static
++//static
+ buf_block_t*
+ btr_root_block_get(
+ /*===============*/
+@@ -566,7 +566,7 @@
+ /************************************************************//**
+ Returns the child page of a node pointer and x-latches it.
+ @return	child page, x-latched */
+-static
++//static
+ buf_block_t*
+ btr_node_ptr_get_child(
+ /*===================*/
+diff -ru innodb_plugin-1.0.4_orig/buf/buf0buf.c innodb_plugin-1.0.4/buf/buf0buf.c
+--- innodb_plugin-1.0.4_orig/buf/buf0buf.c	2009-06-29 18:54:53.000000000 +0900
++++ innodb_plugin-1.0.4/buf/buf0buf.c	2009-10-05 18:38:22.000000000 +0900
+@@ -356,7 +356,7 @@
+ 		return(TRUE);
+ 	}
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (recv_lsn_checks_on) {
+ 		ib_uint64_t	current_lsn;
+ 
+@@ -3167,7 +3167,7 @@
+ 			recv_recover_page(TRUE, (buf_block_t*) bpage);
+ 		}
+ 
+-		if (uncompressed && !recv_no_ibuf_operations) {
++		if (uncompressed && !recv_no_ibuf_operations && !srv_fake_write) {
+ 			ibuf_merge_or_delete_for_page(
+ 				(buf_block_t*) bpage, bpage->space,
+ 				bpage->offset, buf_page_get_zip_size(bpage),
+diff -ru innodb_plugin-1.0.4_orig/buf/buf0flu.c innodb_plugin-1.0.4/buf/buf0flu.c
+--- innodb_plugin-1.0.4_orig/buf/buf0flu.c	2009-07-14 03:04:57.000000000 +0900
++++ innodb_plugin-1.0.4/buf/buf0flu.c	2009-10-05 18:38:22.000000000 +0900
+@@ -138,6 +138,20 @@
+ 	prev_b = NULL;
+ 	b = UT_LIST_GET_FIRST(buf_pool->flush_list);
+ 
++	if (srv_fast_recovery) {
++	/* speed hack */
++	if (b == NULL || b->oldest_modification < block->page.oldest_modification) {
++		UT_LIST_ADD_FIRST(list, buf_pool->flush_list, &block->page);
++	} else {
++		b = UT_LIST_GET_LAST(buf_pool->flush_list);
++		if (b->oldest_modification < block->page.oldest_modification) {
++			/* align oldest_modification not to sort */
++			block->page.oldest_modification = b->oldest_modification;
++		}
++		UT_LIST_ADD_LAST(list, buf_pool->flush_list, &block->page);
++	}
++	} else {
++	/* normal */
+ 	while (b && b->oldest_modification > block->page.oldest_modification) {
+ 		ut_ad(b->in_flush_list);
+ 		prev_b = b;
+@@ -150,6 +164,7 @@
+ 		UT_LIST_INSERT_AFTER(list, buf_pool->flush_list,
+ 				     prev_b, &block->page);
+ 	}
++	}
+ 
+ #if defined UNIV_DEBUG || defined UNIV_BUF_DEBUG
+ 	ut_a(buf_flush_validate_low());
+diff -ru innodb_plugin-1.0.4_orig/buf/buf0rea.c innodb_plugin-1.0.4/buf/buf0rea.c
+--- innodb_plugin-1.0.4_orig/buf/buf0rea.c	2009-07-21 01:23:15.000000000 +0900
++++ innodb_plugin-1.0.4/buf/buf0rea.c	2009-10-05 18:38:22.000000000 +0900
+@@ -127,6 +127,45 @@
+ 	bpage = buf_page_init_for_read(err, mode, space, zip_size, unzip,
+ 				       tablespace_version, offset);
+ 	if (bpage == NULL) {
++		if (recv_recovery_is_on() && *err == DB_TABLESPACE_DELETED) {
++			/* hashed log recs must be treated here */
++			recv_addr_t*    recv_addr;
++
++			mutex_enter(&(recv_sys->mutex));
++
++			if (recv_sys->apply_log_recs == FALSE) {
++				mutex_exit(&(recv_sys->mutex));
++				goto not_to_recover;
++			}
++
++			/* recv_get_fil_addr_struct() */
++			recv_addr = HASH_GET_FIRST(recv_sys->addr_hash,
++					hash_calc_hash(ut_fold_ulint_pair(space, offset),
++						recv_sys->addr_hash));
++			while (recv_addr) {
++				if ((recv_addr->space == space)
++					&& (recv_addr->page_no == offset)) {
++					break;
++				}
++				recv_addr = HASH_GET_NEXT(addr_hash, recv_addr);
++			}
++
++			if ((recv_addr == NULL)
++			    || (recv_addr->state == RECV_BEING_PROCESSED)
++			    || (recv_addr->state == RECV_PROCESSED)) {
++				mutex_exit(&(recv_sys->mutex));
++				goto not_to_recover;
++			}
++
++			fprintf(stderr, " (cannot find space: %lu)", space);
++			recv_addr->state = RECV_PROCESSED;
++
++			ut_a(recv_sys->n_addrs);
++			recv_sys->n_addrs--;
++
++			mutex_exit(&(recv_sys->mutex));
++		}
++not_to_recover:
+ 
+ 		return(0);
+ 	}
+@@ -771,11 +810,11 @@
+ 		while (buf_pool->n_pend_reads >= recv_n_pool_free_frames / 2) {
+ 
+ 			os_aio_simulated_wake_handler_threads();
+-			os_thread_sleep(500000);
++			os_thread_sleep(10000);
+ 
+ 			count++;
+ 
+-			if (count > 100) {
++			if (count > 5000) {
+ 				fprintf(stderr,
+ 					"InnoDB: Error: InnoDB has waited for"
+ 					" 50 seconds for pending\n"
+diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.c
+--- innodb_plugin-1.0.4_orig/fil/fil0fil.c	2009-07-14 16:16:18.000000000 +0900
++++ innodb_plugin-1.0.4/fil/fil0fil.c	2009-10-05 18:38:22.000000000 +0900
+@@ -282,7 +282,7 @@
+ 
+ /** The tablespace memory cache. This variable is NULL before the module is
+ initialized. */
+-static fil_system_t*	fil_system	= NULL;
++fil_system_t*	fil_system	= NULL;
+ 
+ 
+ /********************************************************************//**
+@@ -2084,7 +2084,7 @@
+ 			if (fil_create_new_single_table_tablespace(
+ 				    &space_id, name, FALSE, flags,
+ 				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
+-				ut_error;
++				//ut_error;
+ 			}
+ 		}
+ 
+@@ -2228,7 +2228,7 @@
+ 	}
+ 
+ 	if (success) {
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 		/* Write a log record about the deletion of the .ibd
+ 		file, so that ibbackup can replay it in the
+ 		--apply-log phase. We use a dummy mtr and the familiar
+@@ -2504,7 +2504,7 @@
+ 
+ 	mutex_exit(&fil_system->mutex);
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (success) {
+ 		mtr_t		mtr;
+ 
+@@ -2705,7 +2705,7 @@
+ 
+ 	fil_node_create(path, size, *space_id, FALSE);
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	{
+ 		mtr_t		mtr;
+ 
+@@ -3188,7 +3188,7 @@
+ 	cannot be ok. */
+ 
+ 	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
+ 		fprintf(stderr,
+ 			"InnoDB: Error: the size of single-table tablespace"
+@@ -3319,7 +3319,7 @@
+ idea is to read as much good data as we can and jump over bad data.
+ @return 0 if ok, -1 if error even after the retries, 1 if at the end
+ of the directory */
+-static
++//static
+ int
+ fil_file_readdir_next_file(
+ /*=======================*/
+@@ -4268,6 +4268,16 @@
+ 
+ 	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
+ 
++	if (space->size <= block_offset) {
++		ulint	actual_size;
++
++		mutex_exit(&fil_system->mutex);
++		fil_extend_space_to_desired_size(&actual_size, space->id,
++						 ((block_offset + 1) / 64 + 1) * 64);
++		mutex_enter(&fil_system->mutex);
++		/* should retry? but it may safe for xtrabackup for now. */
++	}
++
+ 	node = UT_LIST_GET_FIRST(space->chain);
+ 
+ 	for (;;) {
+diff -ru innodb_plugin-1.0.4_orig/ibuf/ibuf0ibuf.c innodb_plugin-1.0.4/ibuf/ibuf0ibuf.c
+--- innodb_plugin-1.0.4_orig/ibuf/ibuf0ibuf.c	2009-06-30 18:10:01.000000000 +0900
++++ innodb_plugin-1.0.4/ibuf/ibuf0ibuf.c	2009-10-05 18:38:22.000000000 +0900
+@@ -1017,6 +1017,9 @@
+ 
+ 	ut_ad(!recv_no_ibuf_operations);
+ 
++	if (srv_fake_write)
++		return(FALSE);
++
+ 	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
+ 
+ 		return(TRUE);
+@@ -2233,6 +2236,9 @@
+ 	ulint	n_bytes;
+ 	ulint	n_pag2;
+ 
++	if (srv_fake_write)
++		return(0);
++
+ 	while (sum_pages < n_pages) {
+ 		n_bytes = ibuf_contract_ext(&n_pag2, sync);
+ 
+diff -ru innodb_plugin-1.0.4_orig/include/mem0mem.h innodb_plugin-1.0.4/include/mem0mem.h
+--- innodb_plugin-1.0.4_orig/include/mem0mem.h	2009-06-30 20:56:36.000000000 +0900
++++ innodb_plugin-1.0.4/include/mem0mem.h	2009-10-05 18:38:22.000000000 +0900
+@@ -370,6 +370,7 @@
+ 			pool, this contains the buf_block_t handle;
+ 			otherwise, this is NULL */
+ #endif /* !UNIV_HOTBACKUP */
++	ulint	sum_len;	/* sum of all blocks' len belong to the base node */
+ #ifdef MEM_PERIODIC_CHECK
+ 	UT_LIST_NODE_T(mem_block_t) mem_block_list;
+ 			/* List of all mem blocks allocated; protected
+diff -ru innodb_plugin-1.0.4_orig/include/mem0mem.ic innodb_plugin-1.0.4/include/mem0mem.ic
+--- innodb_plugin-1.0.4_orig/include/mem0mem.ic	2009-05-25 19:52:29.000000000 +0900
++++ innodb_plugin-1.0.4/include/mem0mem.ic	2009-10-05 18:38:22.000000000 +0900
+@@ -451,6 +451,7 @@
+ 
+ 	/* Add the created block itself as the first block in the list */
+ 	UT_LIST_ADD_FIRST(list, block->base, block);
++	block->sum_len = block->len;
+ 
+ #ifdef UNIV_MEM_DEBUG
+ 
+@@ -584,6 +585,7 @@
+ 
+ 	ut_ad(mem_heap_check(heap));
+ 
++/*
+ 	block = heap;
+ 
+ 	while (block != NULL) {
+@@ -591,6 +593,8 @@
+ 		size += mem_block_get_len(block);
+ 		block = UT_LIST_GET_NEXT(list, block);
+ 	}
++*/
++	size = heap->sum_len;
+ #ifndef UNIV_HOTBACKUP
+ 	if (heap->free_block) {
+ 		size += UNIV_PAGE_SIZE;
+diff -ru innodb_plugin-1.0.4_orig/include/srv0srv.h innodb_plugin-1.0.4/include/srv0srv.h
+--- innodb_plugin-1.0.4_orig/include/srv0srv.h	2009-07-21 01:23:15.000000000 +0900
++++ innodb_plugin-1.0.4/include/srv0srv.h	2009-10-05 18:38:22.000000000 +0900
+@@ -125,6 +125,8 @@
+ extern ibool	srv_locks_unsafe_for_binlog;
+ #endif /* !UNIV_HOTBACKUP */
+ 
++extern ibool	srv_fast_recovery;
++
+ extern ulint	srv_n_data_files;
+ extern char**	srv_data_file_names;
+ extern ulint*	srv_data_file_sizes;
+@@ -214,6 +216,9 @@
+ extern ulong	srv_max_purge_lag;
+ 
+ extern ulong	srv_replication_delay;
++
++extern ibool	srv_read_only;
++extern ibool	srv_fake_write;
+ /*-------------------------------------------*/
+ 
+ extern ulint	srv_n_rows_inserted;
+diff -ru innodb_plugin-1.0.4_orig/include/srv0start.h innodb_plugin-1.0.4/include/srv0start.h
+--- innodb_plugin-1.0.4_orig/include/srv0start.h	2009-05-26 22:28:49.000000000 +0900
++++ innodb_plugin-1.0.4/include/srv0start.h	2009-10-05 18:38:22.000000000 +0900
+@@ -91,6 +91,8 @@
+ /** Log sequence number immediately after startup */
+ extern	ib_uint64_t	srv_start_lsn;
+ 
++extern	ib_uint64_t	srv_oldest_lsn;
++
+ #ifdef __NETWARE__
+ void set_panic_flag_for_netware(void);
+ #endif
+diff -ru innodb_plugin-1.0.4_orig/include/ut0byte.ic innodb_plugin-1.0.4/include/ut0byte.ic
+--- innodb_plugin-1.0.4_orig/include/ut0byte.ic	2009-05-25 19:52:29.000000000 +0900
++++ innodb_plugin-1.0.4/include/ut0byte.ic	2009-10-05 18:38:22.000000000 +0900
+@@ -168,6 +168,14 @@
+ 	dulint	a,	/*!< in: dulint */
+ 	ulint	b)	/*!< in: ulint */
+ {
++	if (sizeof(ulint) != 4) {
++		ulint	b_h;
++
++		b_h = b >> 32;
++		b &= 0xFFFFFFFFUL;
++		a.high += b_h;
++	}
++
+ 	if (0xFFFFFFFFUL - b >= a.low) {
+ 		a.low += b;
+ 
+@@ -191,6 +199,14 @@
+ 	dulint	a,	/*!< in: dulint */
+ 	ulint	b)	/*!< in: ulint, b <= a */
+ {
++	if (sizeof(ulint) != 4) {
++		ulint	b_h;
++
++		b_h = b >> 32;
++		b &= 0xFFFFFFFFUL;
++		a.high -= b_h;
++	}
++
+ 	if (a.low >= b) {
+ 		a.low -= b;
+ 
+@@ -235,6 +251,10 @@
+ 
+ 	ut_ad(diff > a.low);
+ 
++	if (sizeof(ulint) != 4) {
++		diff += (a.high - b.high - 1) << 32;
++	}
++
+ 	return(diff);
+ }
+ 
+diff -ru innodb_plugin-1.0.4_orig/log/log0log.c innodb_plugin-1.0.4/log/log0log.c
+--- innodb_plugin-1.0.4_orig/log/log0log.c	2009-07-08 07:57:14.000000000 +0900
++++ innodb_plugin-1.0.4/log/log0log.c	2009-10-05 18:38:22.000000000 +0900
+@@ -578,7 +578,9 @@
+ 
+ 	offset = (gr_lsn_size_offset + difference) % group_size;
+ 
++	if (sizeof(ulint) == 4) {
+ 	ut_a(offset < (((ib_int64_t) 1) << 32)); /* offset must be < 4 GB */
++	}
+ 
+ 	/* fprintf(stderr,
+ 	"Offset is %lu gr_lsn_offset is %lu difference is %lu\n",
+@@ -1340,7 +1342,7 @@
+ #endif /* UNIV_DEBUG */
+ 	ulint		unlock;
+ 
+-	if (recv_no_ibuf_operations) {
++	if (recv_no_ibuf_operations || srv_fake_write) {
+ 		/* Recovery is running and no operations on the log files are
+ 		allowed yet (the variable name .._no_ibuf_.. is misleading) */
+ 
+diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0recv.c
+--- innodb_plugin-1.0.4_orig/log/log0recv.c	2009-05-25 22:09:24.000000000 +0900
++++ innodb_plugin-1.0.4/log/log0recv.c	2009-10-05 18:38:22.000000000 +0900
+@@ -42,27 +42,27 @@
+ #include "trx0undo.h"
+ #include "trx0rec.h"
+ #include "fil0fil.h"
+-#ifndef UNIV_HOTBACKUP
++//#ifndef UNIV_HOTBACKUP
+ # include "buf0rea.h"
+ # include "srv0srv.h"
+ # include "srv0start.h"
+ # include "trx0roll.h"
+ # include "row0merge.h"
+ # include "sync0sync.h"
+-#else /* !UNIV_HOTBACKUP */
++//#else /* !UNIV_HOTBACKUP */
+ 
+ /** This is set to FALSE if the backup was originally taken with the
+ ibbackup --include regexp option: then we do not want to create tables in
+ directories which were not included */
+ UNIV_INTERN ibool	recv_replay_file_ops	= TRUE;
+-#endif /* !UNIV_HOTBACKUP */
++//#endif /* !UNIV_HOTBACKUP */
+ 
+ /** Log records are stored in the hash table in chunks at most of this size;
+ this must be less than UNIV_PAGE_SIZE as it is stored in the buffer pool */
+ #define RECV_DATA_BLOCK_SIZE	(MEM_MAX_ALLOC_IN_BUF - sizeof(recv_data_t))
+ 
+ /** Read-ahead area in applying log records to file pages */
+-#define RECV_READ_AHEAD_AREA	32
++#define RECV_READ_AHEAD_AREA	128
+ 
+ /** The recovery system */
+ UNIV_INTERN recv_sys_t*	recv_sys = NULL;
+@@ -134,7 +134,7 @@
+ the log and store the scanned log records in the buffer pool: we will
+ use these free frames to read in pages when we start applying the
+ log records to the database. */
+-UNIV_INTERN ulint	recv_n_pool_free_frames		= 256;
++UNIV_INTERN ulint	recv_n_pool_free_frames		= 1024;
+ 
+ /** The maximum lsn we see for a page during the recovery process. If this
+ is bigger than the lsn we are able to scan up to, that is an indication that
+@@ -488,7 +488,7 @@
+ /***********************************************************************//**
+ Checks the consistency of the checkpoint info
+ @return	TRUE if ok */
+-static
++//static
+ ibool
+ recv_check_cp_is_consistent(
+ /*========================*/
+@@ -518,7 +518,7 @@
+ /********************************************************//**
+ Looks for the maximum consistent checkpoint from the log groups.
+ @return	error code or DB_SUCCESS */
+-static
++//static
+ ulint
+ recv_find_max_checkpoint(
+ /*=====================*/
+@@ -693,7 +693,7 @@
+ InnoDB-3.23.52 where the checksum field contains the log block number.
+ @return TRUE if ok, or if the log block may be in the format of InnoDB
+ version predating 3.23.52 */
+-static
++//static
+ ibool
+ log_block_checksum_is_ok_or_old_format(
+ /*===================================*/
+@@ -1355,6 +1355,7 @@
+ 					     buf_block_get_page_no(block));
+ 
+ 	if ((recv_addr == NULL)
++	    || (recv_addr->state == RECV_BEING_READ && !just_read_in)
+ 	    || (recv_addr->state == RECV_BEING_PROCESSED)
+ 	    || (recv_addr->state == RECV_PROCESSED)) {
+ 
+@@ -2141,7 +2142,7 @@
+ 			   || type == MLOG_FILE_RENAME
+ 			   || type == MLOG_FILE_DELETE) {
+ 			ut_a(space);
+-#ifdef UNIV_HOTBACKUP
++//#ifdef UNIV_HOTBACKUP
+ 			if (recv_replay_file_ops) {
+ 
+ 				/* In ibbackup --apply-log, replay an .ibd file
+@@ -2164,7 +2165,7 @@
+ 					ut_error;
+ 				}
+ 			}
+-#endif
++//#endif
+ 			/* In normal mysqld crash recovery we do not try to
+ 			replay file operations */
+ 		} else {
+@@ -2561,8 +2562,11 @@
+ 
+ 			fprintf(stderr,
+ 				"InnoDB: Doing recovery: scanned up to"
+-				" log sequence number %llu\n",
+-				*group_scanned_lsn);
++				" log sequence number %llu (%lu %)\n",
++				*group_scanned_lsn,
++				(ulong) (*group_scanned_lsn - srv_oldest_lsn)
++				/ (8 * log_group_get_capacity(UT_LIST_GET_FIRST(log_sys->log_groups))/900)
++			);
+ 		}
+ 	}
+ 
+@@ -2674,12 +2678,14 @@
+ 
+ 	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
+ 
++#ifdef UNDEFINED
+ 		fprintf(stderr,
+ 			"InnoDB: Restoring possible"
+ 			" half-written data pages from"
+ 			" the doublewrite\n"
+ 			"InnoDB: buffer...\n");
+-		trx_sys_doublewrite_init_or_restore_pages(TRUE);
++#endif
++		trx_sys_doublewrite_init_or_restore_pages(FALSE);
+ 	}
+ }
+ 
+@@ -2825,6 +2831,7 @@
+ 		recv_sys->recovered_lsn = checkpoint_lsn;
+ 
+ 		srv_start_lsn = checkpoint_lsn;
++		srv_oldest_lsn = checkpoint_lsn;
+ 	}
+ 
+ 	contiguous_lsn = ut_uint64_align_down(recv_sys->scanned_lsn,
+diff -ru innodb_plugin-1.0.4_orig/mem/mem0mem.c innodb_plugin-1.0.4/mem/mem0mem.c
+--- innodb_plugin-1.0.4_orig/mem/mem0mem.c	2009-06-30 20:56:36.000000000 +0900
++++ innodb_plugin-1.0.4/mem/mem0mem.c	2009-10-05 18:38:22.000000000 +0900
+@@ -439,6 +439,7 @@
+ 	/* Add the new block as the last block */
+ 
+ 	UT_LIST_INSERT_AFTER(list, heap->base, block, new_block);
++	heap->sum_len += new_block->len;
+ 
+ 	return(new_block);
+ }
+@@ -463,6 +464,7 @@
+ 	}
+ 
+ 	UT_LIST_REMOVE(list, heap->base, block);
++	heap->sum_len -= block->len;
+ 
+ #ifdef MEM_PERIODIC_CHECK
+ 	mem_pool_mutex_enter();
+diff -ru innodb_plugin-1.0.4_orig/os/os0file.c innodb_plugin-1.0.4/os/os0file.c
+--- innodb_plugin-1.0.4_orig/os/os0file.c	2009-07-01 03:21:09.000000000 +0900
++++ innodb_plugin-1.0.4/os/os0file.c	2009-10-05 18:38:22.000000000 +0900
+@@ -503,7 +503,7 @@
+ }
+ 
+ #undef USE_FILE_LOCK
+-#define USE_FILE_LOCK
++//#define USE_FILE_LOCK
+ #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
+ /* InnoDB Hot Backup does not lock the data files.
+  * On Windows, mandatory locking is used.
+@@ -1270,8 +1270,9 @@
+ 		attributes = 0;
+ 		ut_error;
+ 	}
+-
++	share_mode |= FILE_SHARE_WRITE; /* Why? */
+ 	file = CreateFile((LPCTSTR) name,
++			  (srv_read_only && create_flag == OPEN_EXISTING) ? GENERIC_READ :
+ 			  GENERIC_READ | GENERIC_WRITE, /* read and write
+ 							access */
+ 			  share_mode,	/* File can be read also by other
+@@ -1328,7 +1329,11 @@
+ 	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
+ 	    || create_mode == OS_FILE_OPEN_RETRY) {
+ 		mode_str = "OPEN";
+-		create_flag = O_RDWR;
++		if (srv_read_only) {
++			create_flag = O_RDONLY;
++		} else {
++			create_flag = O_RDWR;
++		}
+ 	} else if (create_mode == OS_FILE_CREATE) {
+ 		mode_str = "CREATE";
+ 		create_flag = O_RDWR | O_CREAT | O_EXCL;
+@@ -2469,6 +2474,9 @@
+ 
+ 	ut_a((offset & 0xFFFFFFFF) == offset);
+ 
++	if (srv_fake_write)
++		return(TRUE);
++
+ 	os_n_file_writes++;
+ 
+ 	ut_ad(file);
+@@ -2587,6 +2595,9 @@
+ #else
+ 	ssize_t	ret;
+ 
++	if (srv_fake_write)
++		return(TRUE);
++
+ 	ret = os_file_pwrite(file, buf, n, offset, offset_high);
+ 
+ 	if ((ulint)ret == n) {
+diff -ru innodb_plugin-1.0.4_orig/os/os0thread.c innodb_plugin-1.0.4/os/os0thread.c
+--- innodb_plugin-1.0.4_orig/os/os0thread.c	2009-05-25 19:52:29.000000000 +0900
++++ innodb_plugin-1.0.4/os/os0thread.c	2009-10-05 18:38:22.000000000 +0900
+@@ -286,12 +286,17 @@
+ #elif defined(__NETWARE__)
+ 	delay(tm / 1000);
+ #else
++	/* select() simetimes hang up from xtrabackup */
++	/* change to use usleep() for now */
++	usleep(tm);
++/*
+ 	struct timeval	t;
+ 
+ 	t.tv_sec = tm / 1000000;
+ 	t.tv_usec = tm % 1000000;
+ 
+ 	select(0, NULL, NULL, NULL, &t);
++*/
+ #endif
+ }
+ 
+diff -ru innodb_plugin-1.0.4_orig/row/row0merge.c innodb_plugin-1.0.4/row/row0merge.c
+--- innodb_plugin-1.0.4_orig/row/row0merge.c	2009-06-17 22:03:45.000000000 +0900
++++ innodb_plugin-1.0.4/row/row0merge.c	2009-10-05 18:38:22.000000000 +0900
+@@ -441,7 +441,9 @@
+ 	offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
+ 				  &heap);
+ 
+-	innobase_rec_to_mysql(dup->table, rec, index, offsets);
++	//innobase_rec_to_mysql(dup->table, rec, index, offsets);
++	fprintf(stderr, "InnoDB: Error: row_merge_dup_report() is called.\n");
++	ut_error;
+ 
+ 	if (UNIV_LIKELY_NULL(heap)) {
+ 		mem_heap_free(heap);
+@@ -1398,8 +1400,10 @@
+ 		case 0:
+ 			if (UNIV_UNLIKELY
+ 			    (dict_index_is_unique(index))) {
+-				innobase_rec_to_mysql(table, mrec0,
+-						      index, offsets0);
++				//innobase_rec_to_mysql(table, mrec0,
++				//		      index, offsets0);
++				fprintf(stderr, "InnoDB: Error: row_merge_blocks() is called.\n");
++				ut_error;
+ 				mem_heap_free(heap);
+ 				return(DB_DUPLICATE_KEY);
+ 			}
+@@ -2313,7 +2317,9 @@
+ 
+ 	/* Reset the MySQL row buffer that is used when reporting
+ 	duplicate keys. */
+-	innobase_rec_reset(table);
++	//innobase_rec_reset(table);
++	fprintf(stderr, "InnoDB: Error: row_merge_build_indexes() is called.\n");
++	ut_error;
+ 
+ 	/* Read clustered index of the table and create files for
+ 	secondary index entries for merge sort */
+diff -ru innodb_plugin-1.0.4_orig/srv/srv0srv.c innodb_plugin-1.0.4/srv/srv0srv.c
+--- innodb_plugin-1.0.4_orig/srv/srv0srv.c	2009-07-21 01:23:15.000000000 +0900
++++ innodb_plugin-1.0.4/srv/srv0srv.c	2009-10-05 18:38:22.000000000 +0900
+@@ -153,6 +153,8 @@
+ on duplicate key checking and foreign key checking */
+ UNIV_INTERN ibool	srv_locks_unsafe_for_binlog = FALSE;
+ 
++UNIV_INTERN ibool	srv_fast_recovery = TRUE;
++
+ UNIV_INTERN ulint	srv_n_data_files = 0;
+ UNIV_INTERN char**	srv_data_file_names = NULL;
+ /* size in database pages */
+@@ -379,6 +381,8 @@
+ 
+ UNIV_INTERN ulong	srv_replication_delay		= 0;
+ 
++UNIV_INTERN ibool	srv_read_only   = FALSE;
++UNIV_INTERN ibool	srv_fake_write  = FALSE;
+ /*-------------------------------------------*/
+ UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
+ UNIV_INTERN ulong	srv_n_free_tickets_to_enter = 500;
+@@ -1010,7 +1014,7 @@
+ 	}
+ 
+ 	/* Initialize some INFORMATION SCHEMA internal structures */
+-	trx_i_s_cache_init(trx_i_s_cache);
++	//trx_i_s_cache_init(trx_i_s_cache);
+ }
+ 
+ /*********************************************************************//**
+diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0start.c
+--- innodb_plugin-1.0.4_orig/srv/srv0start.c	2009-07-01 03:21:09.000000000 +0900
++++ innodb_plugin-1.0.4/srv/srv0start.c	2009-10-05 18:38:22.000000000 +0900
+@@ -109,6 +109,8 @@
+ /** Log sequence number at shutdown */
+ UNIV_INTERN ib_uint64_t	srv_shutdown_lsn;
+ 
++UNIV_INTERN ib_uint64_t srv_oldest_lsn;
++
+ #ifdef HAVE_DARWIN_THREADS
+ # include <sys/utsname.h>
+ /** TRUE if the F_FULLFSYNC option is available */
+@@ -586,7 +588,7 @@
+ /*********************************************************************//**
+ Creates or opens the log files and closes them.
+ @return	DB_SUCCESS or error code */
+-static
++//static
+ ulint
+ open_or_create_log_file(
+ /*====================*/
+@@ -739,7 +741,7 @@
+ /*********************************************************************//**
+ Creates or opens database data files and closes them.
+ @return	DB_SUCCESS or error code */
+-static
++//static
+ ulint
+ open_or_create_data_files(
+ /*======================*/
+@@ -1373,7 +1375,7 @@
+ 	}
+ #endif /* UNIV_LOG_ARCHIVE */
+ 
+-	if (srv_n_log_files * srv_log_file_size >= 262144) {
++	if (sizeof(ulint) == 4 && srv_n_log_files * srv_log_file_size >= 262144) {
+ 		fprintf(stderr,
+ 			"InnoDB: Error: combined size of log files"
+ 			" must be < 4 GB\n");
+@@ -1762,7 +1764,18 @@
+ 
+ 	if (srv_auto_extend_last_data_file
+ 	    && sum_of_data_file_sizes < tablespace_size_in_header) {
++		/* extend table space size aligning with header */
++		ulint	actual_size;
++		fil_extend_space_to_desired_size(&actual_size, 0, tablespace_size_in_header);
++		if (actual_size < tablespace_size_in_header) {
++			fprintf(stderr,
++"InnoDB: Warning: To extend tablespace size aligning with header seems to be failed.\n"
++"InnoDB: The acutual size %lu must be larger than %lu.\n",
++				(ulong) actual_size,
++				(ulong) tablespace_size_in_header);
++		}
+ 
++#ifdef UNDEFINED
+ 		fprintf(stderr,
+ 			"InnoDB: Error: tablespace size stored in header"
+ 			" is %lu pages, but\n"
+@@ -1787,6 +1800,7 @@
+ 
+ 			return(DB_ERROR);
+ 		}
++#endif
+ 	}
+ 
+ 	/* Check that os_fast_mutexes work as expected */
+diff -ru innodb_plugin-1.0.4_orig/trx/trx0purge.c innodb_plugin-1.0.4/trx/trx0purge.c
+--- innodb_plugin-1.0.4_orig/trx/trx0purge.c	2009-05-27 20:46:42.000000000 +0900
++++ innodb_plugin-1.0.4/trx/trx0purge.c	2009-10-05 18:38:22.000000000 +0900
+@@ -1053,6 +1053,9 @@
+ 	/*	que_thr_t*	thr2; */
+ 	ulint		old_pages_handled;
+ 
++	if (srv_fake_write)
++		return(0);
++
+ 	mutex_enter(&(purge_sys->mutex));
+ 
+ 	if (purge_sys->trx->n_active_thrs > 0) {
+diff -ru innodb_plugin-1.0.4_orig/trx/trx0trx.c innodb_plugin-1.0.4/trx/trx0trx.c
+--- innodb_plugin-1.0.4_orig/trx/trx0trx.c	2009-06-10 02:46:29.000000000 +0900
++++ innodb_plugin-1.0.4/trx/trx0trx.c	2009-10-05 18:38:22.000000000 +0900
+@@ -461,8 +461,8 @@
+ 						TRX_ID_PREP_PRINTF(trx->id));
+ 
+ 					if (srv_force_recovery == 0) {
+-
+-						trx->conc_state = TRX_PREPARED;
++						/* xtrabackup should rollback it */
++						trx->conc_state = TRX_ACTIVE;
+ 					} else {
+ 						fprintf(stderr,
+ 							"InnoDB: Since"
+@@ -538,9 +538,9 @@
+ 								trx->id));
+ 
+ 						if (srv_force_recovery == 0) {
+-
++							/* xtrabackup should rollback it */
+ 							trx->conc_state
+-								= TRX_PREPARED;
++								= TRX_ACTIVE;
+ 						} else {
+ 							fprintf(stderr,
+ 								"InnoDB: Since"
