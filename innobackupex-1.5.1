@@ -418,8 +418,9 @@ Options:
                 ibbackup is run with command "ibbackup".
     --no-lock
                 Use this option to disable table lock with
-                FLUSH TABLES WITH READ LOCK. use it only while ALL of your
-                tables are InnoDB.
+                FLUSH TABLES WITH READ LOCK. use it only while ALL your 
+                tables are InnoDB and you DO NOT CARE about binary log 
+                position of backup.
 
     --scpopt=SCP-OPTIONS
                 Use this option to specify the command line options
