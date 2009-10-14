@@ -77,6 +77,7 @@ my $option_mysql_port = '';
 my $option_mysql_socket = '';
 my $option_no_timestamp = '';
 my $option_slave_info = '';
+my $option_no_lock = '';
 my $option_ibbackup_binary = 'xtrabackup';
 
 my $option_defaults_file = '';
@@ -238,7 +239,7 @@ innobackup [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME]
            [--ibbackup=IBBACKUP-BINARY] [--slave-info] [--stream=tar]
            [--scpopt=OPTIONS-FOR-SCP]
            [--defaults-file=MY.CNF]
-           [--databases=LIST] [--remote-host=HOSTNAME] BACKUP-ROOT-DIR
+           [--databases=LIST] [--remote-host=HOSTNAME] [--no-lock] BACKUP-ROOT-DIR
 innobackup --apply-log [--use-memory=MB] [--uncompress] [--defaults-file=MY.CNF]
            [--export] [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
 innobackup --copy-back [--defaults-file=MY.CNF] BACKUP-DIR
@@ -415,6 +416,10 @@ Options:
                 be useful if ibbackup is not in your search path or
                 working directory.  If this option is not given,
                 ibbackup is run with command "ibbackup".
+    --no-lock
+                Use this option to disable table lock with
+                FLUSH TABLES WITH READ LOCK. use it only while ALL of your
+                tables are InnoDB.
 
     --scpopt=SCP-OPTIONS
                 Use this option to specify the command line options
@@ -481,7 +486,7 @@ sub backup {
 
         # flush tables with read lock
         mysql_check();
-        mysql_lockall();
+        mysql_lockall() if !$option_no_lock;
 
         # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files
         backup_files();
@@ -492,7 +497,7 @@ sub backup {
 
     if (!$option_incremental) {
         # release read locks on all tables
-        mysql_unlockall();
+        mysql_unlockall() if !$option_no_lock;
 
         # disconnect from database
         mysql_close();
@@ -507,11 +512,11 @@ sub backup {
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_checkpoints': $!";
         unlink "$orig_datadir/xtrabackup_checkpoints" || Die "Failed to delete '$orig_datadir/xtrabackup_checkpoints': $!";
     } elsif ($option_stream eq 'tar') {
-        system("cd $option_tmpdir; tar cf - xtrabackup_logfile")
+        system("cd $option_tmpdir; tar chf - xtrabackup_logfile")
             and Die "Failed to stream 'xtrabackup_logfile': $!";
         unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
 
-        system("cd $orig_datadir; tar cf - xtrabackup_checkpoints")
+        system("cd $orig_datadir; tar chf - xtrabackup_checkpoints")
             and Die "Failed to stream 'xtrabackup_checkpoints': $!";
         unlink "$orig_datadir/xtrabackup_checkpoints" || Die "Failed to delete '$orig_datadir/xtrabackup_checkpoints': $!";
     }
@@ -891,7 +896,7 @@ sub start_ibbackup {
                         my $ret = 0;
                         print STDERR "$prefix Backing up as tar stream '$path'\n";
                         if (!$option_tar4ibd) {
-                            $ret = system("cd $orig_ibdata_dir; tar cf - -b 32 $path") >> 8;
+                            $ret = system("cd $orig_ibdata_dir; tar chf - -b 32 $path") >> 8;
                         } else {
                             $ret = system("cd $orig_ibdata_dir; tar4ibd -c $path") >> 8;
                         }
@@ -953,7 +958,7 @@ sub start_ibbackup {
                             my $file_name = substr($file, rindex($file, '/') + 1);
                             $file_name=~s/([\$\\\" ])/\\$1/g;
                             if (!$option_tar4ibd) {
-                                $ret = system("cd $orig_datadir; tar cf - -b 32 $subdir/$file_name") >> 8;
+                                $ret = system("cd $orig_datadir; tar chf - -b 32 $subdir/$file_name") >> 8;
                             } else {
                                 $ret = system("cd $orig_datadir; tar4ibd -c $subdir/$file_name") >> 8;
                             }
@@ -1154,7 +1159,7 @@ sub write_binlog_info {
     close(FILE);
 
     if ($option_stream eq 'tar') {
-        system("cd $option_tmpdir; tar cf - xtrabackup_binlog_info")
+        system("cd $option_tmpdir; tar chf - xtrabackup_binlog_info")
             and Die "Failed to stream 'xtrabackup_binlog_info': $!";
         unlink $binlog_info || Die "Failed to delete '$binlog_info': $!";
     }
@@ -1207,7 +1212,7 @@ sub write_slave_info {
     close(FILE);
 
     if ($option_stream eq 'tar') {
-        system("cd $option_tmpdir; tar cf - xtrabackup_slave_info")
+        system("cd $option_tmpdir; tar chf - xtrabackup_slave_info")
             and Die "Failed to stream 'xtrabackup_slave_info': $!";
         unlink $slave_info || Die "Failed to delete '$slave_info': $!";
     }
@@ -1558,7 +1563,7 @@ sub write_backup_config_file {
         my $filename_dir = substr($filename, 0, rindex($filename, '/') - 1);
         my $filename_name = substr($filename, rindex($filename, '/') + 1);
         if ($option_stream eq 'tar') {
-            system("cd $filename_dir; tar cf - $filename_name")
+            system("cd $filename_dir; tar chf - $filename_name")
                 and Die "Failed to stream '$filename_name': $!";
         }
         unlink $filename || Die "Failed to delete '$filename': $!";
@@ -1629,6 +1634,7 @@ sub check_args {
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
                         'tmpdir=s' => \$option_tmpdir,
+                        'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
                         'scpopt=s' => \$option_scp_opt);
     if (!$rcode) {
