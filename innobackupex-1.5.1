@@ -1889,7 +1889,7 @@ sub backup_files {
         if ($option_remote_host) {
           my $scp_file_list = join(" ", @scp_files);
           system("scp $option_scp_opt $scp_file_list '$option_remote_host:$backup_dir/$database/'")
-              and Die "Failed to scp file '$file': $!";
+              and Die "Failed to execute \"scp $option_scp_opt $scp_file_list '$option_remote_host:$backup_dir/$database/'\": $!";
         }
     }
     closedir(DIR);
