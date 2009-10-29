@@ -4518,6 +4518,63 @@ skip_check:
         mutex_exit(&(system->mutex));
 	}
 */
+	/* align space sizes along with fsp header */
+	{
+	fil_system_t*	system = fil_system;
+	fil_space_t*	space;
+	fil_node_t*	node;
+
+	mutex_enter(&(system->mutex));
+	space = UT_LIST_GET_FIRST(system->space_list);
+
+	while (space != NULL) {
+		byte*	header;
+		ulint	size;
+		ulint	actual_size;
+		mtr_t	mtr;
+#ifdef INNODB_VERSION_SHORT
+		buf_block_t*	block;
+		ulint	flags;
+#endif
+
+		if (space->purpose == FIL_TABLESPACE) {
+			mutex_exit(&(system->mutex));
+
+			mtr_start(&mtr);
+
+#ifndef INNODB_VERSION_SHORT
+			mtr_s_lock(fil_space_get_latch(space->id), &mtr);
+
+			header = FIL_PAGE_DATA + buf_page_get(space->id, 0, RW_S_LATCH, &mtr);
+#else
+			mtr_s_lock(fil_space_get_latch(space->id, &flags), &mtr);
+
+			block = buf_page_get(space->id,
+					     dict_table_flags_to_zip_size(flags),
+					     0, RW_S_LATCH, &mtr);
+			header = FIL_PAGE_DATA /*FSP_HEADER_OFFSET*/
+				+ buf_block_get_frame(block);
+#endif
+
+			size = mtr_read_ulint(header + 8 /* FSP_SIZE */, MLOG_4BYTES, &mtr);
+
+			mtr_commit(&mtr);
+
+			//printf("%d, %d\n", space->id, size);
+
+			fil_extend_space_to_desired_size(&actual_size, space->id, size);
+
+			mutex_enter(&(system->mutex));
+		}
+
+		space = UT_LIST_GET_NEXT(space_list, space);
+	}
+
+	mutex_exit(&(system->mutex));
+	}
+
+
+
 	if (xtrabackup_export) {
 		printf("xtrabackup: export option is specified.\n");
 		if (innobase_file_per_table) {
