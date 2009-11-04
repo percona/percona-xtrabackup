@@ -4449,6 +4449,9 @@ skip_check:
 	/* Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB */
 	srv_max_n_threads = 1000;
 	os_sync_mutex = NULL;
+#ifdef INNODB_VERSION_SHORT
+	ut_mem_init();
+#endif
 	os_sync_init();
 	sync_init();
 	os_io_init_simple();
@@ -4462,6 +4465,7 @@ skip_check:
 	sync_initialized = FALSE;
 	os_sync_free();
 	os_sync_mutex = NULL;
+	ut_free_all_mem();
 
 	/* check the accessibility of target-dir */
 	/* ############# TODO ##################### */
@@ -4739,6 +4743,9 @@ next_node:
 	os_sync_mutex = NULL;
 
 	/* re-init necessary components */
+#ifdef INNODB_VERSION_SHORT
+	ut_mem_init();
+#endif
 	os_sync_init();
 	sync_init();
 	os_io_init_simple();
