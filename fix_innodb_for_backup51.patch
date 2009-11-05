@@ -765,3 +765,15 @@ diff -ru a/innobase/trx/trx0trx.c b/innobase/trx/trx0trx.c
  						} else {
  							fprintf(stderr,
  								"InnoDB: Since"
+diff -ru a/innobase/ut/ut0mem.c b/innobase/ut/ut0mem.c
+--- a/innobase/ut/ut0mem.c	2009-03-14 06:53:38.000000000 +0900
++++ b/innobase/ut/ut0mem.c	2009-11-05 15:15:03.000000000 +0900
+@@ -338,6 +338,8 @@
+ {
+ 	ut_mem_block_t* block;
+ 
++	ut_mem_block_list_inited = FALSE;
++
+ 	os_fast_mutex_free(&ut_list_mutex);
+ 
+ 	while ((block = UT_LIST_GET_FIRST(ut_mem_block_list))) {
