@@ -1000,8 +1000,6 @@ sub get_mysql_options {
     # prepare options for mysql
     if ($option_mysql_password) {
         $options = "$options --password=$option_mysql_password";
-    } else {
-        $options = "$options --";
     }
     if ($option_mysql_user) {
         $options = "$options --user=$option_mysql_user";
@@ -1012,6 +1010,7 @@ sub get_mysql_options {
     if ($option_mysql_socket) {
         $options = "$options --socket=$option_mysql_socket";
     }
+    $options = "$options --";
     $options;
 }
 
