@@ -3272,11 +3272,11 @@ xtrabackup_stats_level(
 	ulonglong n_pages, n_pages_extern;
 	ulonglong sum_data, sum_data_extern;
 	ulonglong n_recs;
+	ulint	page_size;
 
 	n_pages = sum_data = n_recs = 0;
 	n_pages_extern = sum_data_extern = 0;
 
-	ulint	page_size;
 #ifdef INNODB_VERSION_SHORT
 	buf_block_t*	block;
 	ulint	zip_size;
