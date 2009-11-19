@@ -1443,7 +1443,7 @@ sub init {
             # get mysql server version
             my $options = get_mysql_options();
             @lines = split('\n', 
-                           `echo "select \@\@version;" | mysql $options`);
+                           `mysql $options -e "select \@\@version"`);
             $mysql_server_version = $lines[1];
             print STDERR "$prefix Using mysql server version $mysql_server_version\n";
         }
@@ -1848,8 +1848,9 @@ sub backup_files {
         }
 
         # copy files of this database
-        @list = glob("$source_dir/$database/" . $wildcard);
-
+	opendir(DBDIR, "$source_dir/$database");
+	@list = grep(/\.(frm)|(MYD)|(MYI)|(MRG)|(TRG)|(TRN)|(ARM)|(ARZ)|(opt)|(par)$/, readdir(DBDIR)); 
+	closedir DBDIR;
         $file_c = @list;
         if ($file_c <= $backup_file_print_limit) {
             $print_each_file = 1;
@@ -1864,10 +1865,10 @@ sub backup_files {
             next unless check_if_required($database, $file);
                
             if ($print_each_file) {
-                print STDERR "$prefix Backing up file '$file'\n";
+                print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
             }
             if (!$option_remote_host && !$option_stream) {
-                system("cp -p '$file' '$backup_dir/$database'")
+                system("cp -p '$source_dir/$database/$file' '$backup_dir/$database'")
                     and Die "Failed to copy file '$file': $!";
             } elsif ($option_remote_host) {
                 # Queue up files for one single scp per database.
@@ -2005,7 +2006,7 @@ sub read_config_file {
     # does not work by its own. It assumes that the first
     # opening parenthesis in this string is the second opening
     # parenthesis in the full pattern. 
-    my $value_pattern = q/((["'])([^\\\3]|(\\[^\3]))*\3)|([^\s]+)/;
+    my $value_pattern = q/((["'])([^\\\4]|(\\[^\4]))*\4)|([^\s]+)/;
     for ($i = 0; $i < @lines; $i++) {
       SWITCH: for ($lines[$i]) {
           # comment
