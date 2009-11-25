@@ -738,7 +738,13 @@ sub copy_back {
     while (defined($file = readdir(DIR))) {
         if ($file =~ /$iblog_files/ && -f "$backup_dir/$file") {
             print STDERR "$prefix Copying file '$backup_dir/$file'\n";
-            system("cp -p '$backup_dir/$file' '$orig_iblog_dir'")
+                $src_name = "$backup_dir/$file";
+                $src_name =~ s/\//\\/g;
+                $src_name =~ s/\\\\/\\/g;
+                $dst_name = "$orig_iblog_dir";
+                $dst_name =~ s/\//\\/g;
+                $dst_name =~ s/\\\\/\\/g;
+            system("$CP_CMD \"$src_name\" \"$dst_name\"")
                 and Die "Failed to copy file '$file': $!";
         }
     }
@@ -1889,7 +1895,13 @@ sub backup_files {
                 print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
             }
             if (!$option_remote_host && !$option_stream) {
-                system("cp -p '$source_dir/$database/$file' '$backup_dir/$database'")
+                $src_name = "$source_dir/$database/$file";
+                $src_name =~ s/\//\\/g;
+                $src_name =~ s/\\\\/\\/g;
+                $dst_name = "$backup_dir/$database";
+                $dst_name =~ s/\//\\/g;
+                $dst_name =~ s/\\\\/\\/g;
+            system("$CP_CMD \"$src_name\" \"$dst_name\"")
                     and Die "Failed to copy file '$file': $!";
             } elsif ($option_remote_host) {
                 # Queue up files for one single scp per database.
