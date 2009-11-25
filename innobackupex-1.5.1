@@ -603,7 +603,10 @@ sub copy_back {
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
-
+    my $src_name;
+    my $dst_name;
+    my $win = ($^O eq 'MSWin32' ? 1 : 0);
+    my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
     # check that original data directory exists
     if (! -d $orig_datadir) {
         Die "Original data directory '$orig_datadir' does not exist!";
@@ -682,14 +685,26 @@ sub copy_back {
             while (defined($file2 = readdir(SUBDIR))) {
                 if (-d "$subdir/$file2") { next; }
                 if ($file2 =~ /$compressed_data_file/) { next; }
-                system("cp -p '$subdir/$file2' '$orig_datadir/$file'")
+                $src_name = "$subdir/$file2";
+                $src_name =~ s/\//\\/g;
+                $src_name =~ s/\\\\/\\/g;
+                $dst_name = "$orig_datadir/$file";
+                $dst_name =~ s/\//\\/g;
+                $dst_name =~ s/\\\\/\\/g;
+                system("$CP_CMD \"$src_name\" \"$dst_name\"")
                     and Die "Failed to copy file '$file': $!";
             }
             closedir(SUBDIR);
         } else { 
             print STDERR "$prefix Copying file " . 
                 "'$backup_dir/$file'\n";
-            system("cp -p '$backup_dir/$file' '$orig_datadir'")
+                $src_name = "$backup_dir/$file";
+                $src_name =~ s/\//\\/g;
+                $src_name =~ s/\\\\/\\/g;
+                $dst_name = "$orig_datadir";
+                $dst_name =~ s/\//\\/g;
+                $dst_name =~ s/\\\\/\\/g;
+            system("$CP_CMD \"$src_name\" \"$dst_name\"")
                 and Die "Failed to copy file '$file': $!";
         }
     }
@@ -704,7 +719,13 @@ sub copy_back {
         my $path = (split(/:/,$a))[0];
         my $filename = (split(/\/+/, $path))[-1];
         print STDERR "$prefix Copying file '$backup_dir/$filename'\n";
-        system("cp -p '$backup_dir/$filename' '$orig_ibdata_dir/$path'")
+                $src_name = "$backup_dir/$filename";
+                $src_name =~ s/\//\\/g;
+                $src_name =~ s/\\\\/\\/g;
+                $dst_name = "$orig_ibdata_dir/$path";
+                $dst_name =~ s/\//\\/g;
+                $dst_name =~ s/\\\\/\\/g;
+            system("$CP_CMD \"$src_name\" \"$dst_name\"")
             and Die "Failed to copy file '$filename': $!";
     }
 
