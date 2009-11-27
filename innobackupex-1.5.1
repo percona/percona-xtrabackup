@@ -180,6 +180,10 @@ my $now;
 # incremental backup base directory
 my $incremental_basedir = '';
 
+my $src_name;
+my $dst_name;
+my $win = ($^O eq 'MSWin32' ? 1 : 0);
+my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 ######################################################################
 # program execution begins here
 ######################################################################
@@ -603,10 +607,6 @@ sub copy_back {
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
-    my $src_name;
-    my $dst_name;
-    my $win = ($^O eq 'MSWin32' ? 1 : 0);
-    my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
     # check that original data directory exists
     if (! -d $orig_datadir) {
         Die "Original data directory '$orig_datadir' does not exist!";
@@ -685,12 +685,8 @@ sub copy_back {
             while (defined($file2 = readdir(SUBDIR))) {
                 if (-d "$subdir/$file2") { next; }
                 if ($file2 =~ /$compressed_data_file/) { next; }
-                $src_name = "$subdir/$file2";
-                $src_name =~ s/\//\\/g;
-                $src_name =~ s/\\\\/\\/g;
-                $dst_name = "$orig_datadir/$file";
-                $dst_name =~ s/\//\\/g;
-                $dst_name =~ s/\\\\/\\/g;
+                $src_name = escape_path("$subdir/$file2");
+                $dst_name = escape_path("$orig_datadir/$file");
                 system("$CP_CMD \"$src_name\" \"$dst_name\"")
                     and Die "Failed to copy file '$file': $!";
             }
@@ -698,12 +694,8 @@ sub copy_back {
         } else { 
             print STDERR "$prefix Copying file " . 
                 "'$backup_dir/$file'\n";
-                $src_name = "$backup_dir/$file";
-                $src_name =~ s/\//\\/g;
-                $src_name =~ s/\\\\/\\/g;
-                $dst_name = "$orig_datadir";
-                $dst_name =~ s/\//\\/g;
-                $dst_name =~ s/\\\\/\\/g;
+            $src_name = escape_path("$backup_dir/$file");
+            $dst_name = escape_path("$orig_datadir");
             system("$CP_CMD \"$src_name\" \"$dst_name\"")
                 and Die "Failed to copy file '$file': $!";
         }
@@ -719,13 +711,9 @@ sub copy_back {
         my $path = (split(/:/,$a))[0];
         my $filename = (split(/\/+/, $path))[-1];
         print STDERR "$prefix Copying file '$backup_dir/$filename'\n";
-                $src_name = "$backup_dir/$filename";
-                $src_name =~ s/\//\\/g;
-                $src_name =~ s/\\\\/\\/g;
-                $dst_name = "$orig_ibdata_dir/$path";
-                $dst_name =~ s/\//\\/g;
-                $dst_name =~ s/\\\\/\\/g;
-            system("$CP_CMD \"$src_name\" \"$dst_name\"")
+        $src_name = escape_path("$backup_dir/$filename");
+        $dst_name = escape_path("$orig_ibdata_dir/$path");
+        system("$CP_CMD \"$src_name\" \"$dst_name\"")
             and Die "Failed to copy file '$filename': $!";
     }
 
@@ -738,12 +726,8 @@ sub copy_back {
     while (defined($file = readdir(DIR))) {
         if ($file =~ /$iblog_files/ && -f "$backup_dir/$file") {
             print STDERR "$prefix Copying file '$backup_dir/$file'\n";
-                $src_name = "$backup_dir/$file";
-                $src_name =~ s/\//\\/g;
-                $src_name =~ s/\\\\/\\/g;
-                $dst_name = "$orig_iblog_dir";
-                $dst_name =~ s/\//\\/g;
-                $dst_name =~ s/\\\\/\\/g;
+            $src_name = escape_path("$backup_dir/$file");
+            $dst_name = escape_path("$orig_iblog_dir");
             system("$CP_CMD \"$src_name\" \"$dst_name\"")
                 and Die "Failed to copy file '$file': $!";
         }
@@ -1895,13 +1879,9 @@ sub backup_files {
                 print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
             }
             if (!$option_remote_host && !$option_stream) {
-                $src_name = "$source_dir/$database/$file";
-                $src_name =~ s/\//\\/g;
-                $src_name =~ s/\\\\/\\/g;
-                $dst_name = "$backup_dir/$database";
-                $dst_name =~ s/\//\\/g;
-                $dst_name =~ s/\\\\/\\/g;
-            system("$CP_CMD \"$src_name\" \"$dst_name\"")
+                $src_name = escape_path("$source_dir/$database/$file");
+                $dst_name = escape_path("$backup_dir/$database");
+                system("$CP_CMD \"$src_name\" \"$dst_name\"")
                     and Die "Failed to copy file '$file': $!";
             } elsif ($option_remote_host) {
                 # Queue up files for one single scp per database.
@@ -2223,4 +2203,17 @@ sub parse_databases_option_value {
             $h->{$table} = 1;
         }
     }
+}
+
+sub escape_path {
+  my $str = shift;
+  if ($win eq 1) {
+    $str =~ s/\//\\/g;
+    $str =~ s/\\\\/\\/g;
+    }
+  else{
+    $str =~ s/\/\//\//g;
+    }
+  return $str;
+
 }
