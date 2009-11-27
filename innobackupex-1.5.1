@@ -748,7 +748,7 @@ sub apply_log {
     my $options = '';
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file ";
+        $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
     $options = $options . "--prepare --target-dir=$backup_dir";
@@ -829,7 +829,7 @@ sub start_ibbackup {
     my $pid = undef;
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file ";
+        $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
     $options = $options . "--backup --suspend-at-end";
@@ -2000,10 +2000,11 @@ sub read_config_file {
     my $options = '';
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file ";
+        $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
     $options = $options . "--print-param";
+
 
     # read file to an array, one line per element
     #file_to_array($filename, \@lines);
