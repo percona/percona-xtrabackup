@@ -675,8 +675,8 @@ sub copy_back {
             my $file2;
 
             print STDERR "$prefix Copying directory '$subdir'\n";
-            if (! -x "$orig_datadir/$file") {
-                system("mkdir '$orig_datadir/$file'") 
+            if (! -x "\"".escape_path("$orig_datadir/$file")."\"") {
+                system("mkdir \"".escape_path("$orig_datadir/$file")."\"") 
                     and Die "Failed to create directory "
                             . "'$orig_datadir/$file' : $!";
             }
