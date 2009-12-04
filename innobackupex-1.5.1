@@ -180,6 +180,10 @@ my $now;
 # incremental backup base directory
 my $incremental_basedir = '';
 
+my $src_name;
+my $dst_name;
+my $win = ($^O eq 'MSWin32' ? 1 : 0);
+my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 ######################################################################
 # program execution begins here
 ######################################################################
@@ -603,7 +607,6 @@ sub copy_back {
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
-
     # check that original data directory exists
     if (! -d $orig_datadir) {
         Die "Original data directory '$orig_datadir' does not exist!";
@@ -672,8 +675,8 @@ sub copy_back {
             my $file2;
 
             print STDERR "$prefix Copying directory '$subdir'\n";
-            if (! -x "$orig_datadir/$file") {
-                system("mkdir '$orig_datadir/$file'") 
+            if (! -x "\"".escape_path("$orig_datadir/$file")."\"") {
+                system("mkdir \"".escape_path("$orig_datadir/$file")."\"") 
                     and Die "Failed to create directory "
                             . "'$orig_datadir/$file' : $!";
             }
@@ -682,14 +685,18 @@ sub copy_back {
             while (defined($file2 = readdir(SUBDIR))) {
                 if (-d "$subdir/$file2") { next; }
                 if ($file2 =~ /$compressed_data_file/) { next; }
-                system("cp -p '$subdir/$file2' '$orig_datadir/$file'")
+                $src_name = escape_path("$subdir/$file2");
+                $dst_name = escape_path("$orig_datadir/$file");
+                system("$CP_CMD \"$src_name\" \"$dst_name\"")
                     and Die "Failed to copy file '$file': $!";
             }
             closedir(SUBDIR);
         } else { 
             print STDERR "$prefix Copying file " . 
                 "'$backup_dir/$file'\n";
-            system("cp -p '$backup_dir/$file' '$orig_datadir'")
+            $src_name = escape_path("$backup_dir/$file");
+            $dst_name = escape_path("$orig_datadir");
+            system("$CP_CMD \"$src_name\" \"$dst_name\"")
                 and Die "Failed to copy file '$file': $!";
         }
     }
@@ -704,7 +711,9 @@ sub copy_back {
         my $path = (split(/:/,$a))[0];
         my $filename = (split(/\/+/, $path))[-1];
         print STDERR "$prefix Copying file '$backup_dir/$filename'\n";
-        system("cp -p '$backup_dir/$filename' '$orig_ibdata_dir/$path'")
+        $src_name = escape_path("$backup_dir/$filename");
+        $dst_name = escape_path("$orig_ibdata_dir/$path");
+        system("$CP_CMD \"$src_name\" \"$dst_name\"")
             and Die "Failed to copy file '$filename': $!";
     }
 
@@ -717,7 +726,9 @@ sub copy_back {
     while (defined($file = readdir(DIR))) {
         if ($file =~ /$iblog_files/ && -f "$backup_dir/$file") {
             print STDERR "$prefix Copying file '$backup_dir/$file'\n";
-            system("cp -p '$backup_dir/$file' '$orig_iblog_dir'")
+            $src_name = escape_path("$backup_dir/$file");
+            $dst_name = escape_path("$orig_iblog_dir");
+            system("$CP_CMD \"$src_name\" \"$dst_name\"")
                 and Die "Failed to copy file '$file': $!";
         }
     }
@@ -737,7 +748,7 @@ sub apply_log {
     my $options = '';
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file ";
+        $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
     $options = $options . "--prepare --target-dir=$backup_dir";
@@ -818,7 +829,7 @@ sub start_ibbackup {
     my $pid = undef;
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file ";
+        $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
     $options = $options . "--backup --suspend-at-end";
@@ -1443,7 +1454,7 @@ sub init {
             # get mysql server version
             my $options = get_mysql_options();
             @lines = split('\n', 
-                           `echo "select \@\@version;" | mysql $options`);
+                           `mysql $options -e "select \@\@version"`);
             $mysql_server_version = $lines[1];
             print STDERR "$prefix Using mysql server version $mysql_server_version\n";
         }
@@ -1848,8 +1859,9 @@ sub backup_files {
         }
 
         # copy files of this database
-        @list = glob("$source_dir/$database/" . $wildcard);
-
+	opendir(DBDIR, "$source_dir/$database");
+	@list = grep(/\.(frm)|(MYD)|(MYI)|(MRG)|(TRG)|(TRN)|(ARM)|(ARZ)|(opt)|(par)$/, readdir(DBDIR)); 
+	closedir DBDIR;
         $file_c = @list;
         if ($file_c <= $backup_file_print_limit) {
             $print_each_file = 1;
@@ -1864,10 +1876,12 @@ sub backup_files {
             next unless check_if_required($database, $file);
                
             if ($print_each_file) {
-                print STDERR "$prefix Backing up file '$file'\n";
+                print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
             }
             if (!$option_remote_host && !$option_stream) {
-                system("cp -p '$file' '$backup_dir/$database'")
+                $src_name = escape_path("$source_dir/$database/$file");
+                $dst_name = escape_path("$backup_dir/$database");
+                system("$CP_CMD \"$src_name\" \"$dst_name\"")
                     and Die "Failed to copy file '$file': $!";
             } elsif ($option_remote_host) {
                 # Queue up files for one single scp per database.
@@ -1986,10 +2000,11 @@ sub read_config_file {
     my $options = '';
 
     if ($option_defaults_file) {
-        $options = $options . " --defaults-file=$option_defaults_file ";
+        $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
     $options = $options . "--print-param";
+
 
     # read file to an array, one line per element
     #file_to_array($filename, \@lines);
@@ -2005,7 +2020,7 @@ sub read_config_file {
     # does not work by its own. It assumes that the first
     # opening parenthesis in this string is the second opening
     # parenthesis in the full pattern. 
-    my $value_pattern = q/((["'])([^\\\3]|(\\[^\3]))*\3)|([^\s]+)/;
+    my $value_pattern = q/((["'])([^\\\4]|(\\[^\4]))*\4)|([^\s]+)/;
     for ($i = 0; $i < @lines; $i++) {
       SWITCH: for ($lines[$i]) {
           # comment
@@ -2189,4 +2204,17 @@ sub parse_databases_option_value {
             $h->{$table} = 1;
         }
     }
+}
+
+sub escape_path {
+  my $str = shift;
+  if ($win eq 1) {
+    $str =~ s/\//\\/g;
+    $str =~ s/\\\\/\\/g;
+    }
+  else{
+    $str =~ s/\/\//\//g;
+    }
+  return $str;
+
 }
