@@ -13,6 +13,7 @@ use POSIX "strftime";
 use POSIX ":sys_wait_h";
 use POSIX "tmpnam";
 use FileHandle;
+use File::Basename;
 
 
 # version of this script
@@ -1571,8 +1572,8 @@ sub write_backup_config_file {
     close(FILE);
 
     if ($option_stream) {
-        my $filename_dir = substr($filename, 0, rindex($filename, '/') - 1);
-        my $filename_name = substr($filename, rindex($filename, '/') + 1);
+        my $filename_dir = dirname($filename);
+        my $filename_name = basename($filename);
         if ($option_stream eq 'tar') {
             system("cd $filename_dir; tar chf - $filename_name")
                 and Die "Failed to stream '$filename_name': $!";
