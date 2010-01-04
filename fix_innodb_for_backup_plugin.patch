@@ -1,6 +1,6 @@
-diff -ru innodb_plugin-1.0.4_orig/btr/btr0btr.c innodb_plugin-1.0.4/btr/btr0btr.c
---- innodb_plugin-1.0.4_orig/btr/btr0btr.c	2009-05-26 22:28:49.000000000 +0900
-+++ innodb_plugin-1.0.4/btr/btr0btr.c	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/btr/btr0btr.c innodb_plugin-1.0.6/btr/btr0btr.c
+--- innodb_plugin-1.0.6_orig/btr/btr0btr.c	2009-11-19 22:01:00.000000000 +0900
++++ innodb_plugin-1.0.6/btr/btr0btr.c	2010-01-04 11:24:08.000000000 +0900
 @@ -120,7 +120,7 @@
  /**************************************************************//**
  Gets the root node of a tree and x-latches it.
@@ -19,9 +19,9 @@ diff -ru innodb_plugin-1.0.4_orig/btr/btr0btr.c innodb_plugin-1.0.4/btr/btr0btr.
  buf_block_t*
  btr_node_ptr_get_child(
  /*===================*/
-diff -ru innodb_plugin-1.0.4_orig/buf/buf0buf.c innodb_plugin-1.0.4/buf/buf0buf.c
---- innodb_plugin-1.0.4_orig/buf/buf0buf.c	2009-06-29 18:54:53.000000000 +0900
-+++ innodb_plugin-1.0.4/buf/buf0buf.c	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/buf/buf0buf.c innodb_plugin-1.0.6/buf/buf0buf.c
+--- innodb_plugin-1.0.6_orig/buf/buf0buf.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/buf/buf0buf.c	2010-01-04 11:24:08.000000000 +0900
 @@ -356,7 +356,7 @@
  		return(TRUE);
  	}
@@ -31,7 +31,7 @@ diff -ru innodb_plugin-1.0.4_orig/buf/buf0buf.c innodb_plugin-1.0.4/buf/buf0buf.
  	if (recv_lsn_checks_on) {
  		ib_uint64_t	current_lsn;
  
-@@ -3167,7 +3167,7 @@
+@@ -3212,7 +3212,7 @@
  			recv_recover_page(TRUE, (buf_block_t*) bpage);
  		}
  
@@ -40,9 +40,9 @@ diff -ru innodb_plugin-1.0.4_orig/buf/buf0buf.c innodb_plugin-1.0.4/buf/buf0buf.
  			ibuf_merge_or_delete_for_page(
  				(buf_block_t*) bpage, bpage->space,
  				bpage->offset, buf_page_get_zip_size(bpage),
-diff -ru innodb_plugin-1.0.4_orig/buf/buf0flu.c innodb_plugin-1.0.4/buf/buf0flu.c
---- innodb_plugin-1.0.4_orig/buf/buf0flu.c	2009-07-14 03:04:57.000000000 +0900
-+++ innodb_plugin-1.0.4/buf/buf0flu.c	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/buf/buf0flu.c innodb_plugin-1.0.6/buf/buf0flu.c
+--- innodb_plugin-1.0.6_orig/buf/buf0flu.c	2009-10-14 02:43:13.000000000 +0900
++++ innodb_plugin-1.0.6/buf/buf0flu.c	2010-01-04 11:24:08.000000000 +0900
 @@ -138,6 +138,20 @@
  	prev_b = NULL;
  	b = UT_LIST_GET_FIRST(buf_pool->flush_list);
@@ -72,10 +72,10 @@ diff -ru innodb_plugin-1.0.4_orig/buf/buf0flu.c innodb_plugin-1.0.4/buf/buf0flu.
  
  #if defined UNIV_DEBUG || defined UNIV_BUF_DEBUG
  	ut_a(buf_flush_validate_low());
-diff -ru innodb_plugin-1.0.4_orig/buf/buf0rea.c innodb_plugin-1.0.4/buf/buf0rea.c
---- innodb_plugin-1.0.4_orig/buf/buf0rea.c	2009-07-21 01:23:15.000000000 +0900
-+++ innodb_plugin-1.0.4/buf/buf0rea.c	2009-10-05 18:38:22.000000000 +0900
-@@ -127,6 +127,45 @@
+diff -ru innodb_plugin-1.0.6_orig/buf/buf0rea.c innodb_plugin-1.0.6/buf/buf0rea.c
+--- innodb_plugin-1.0.6_orig/buf/buf0rea.c	2009-08-28 07:43:32.000000000 +0900
++++ innodb_plugin-1.0.6/buf/buf0rea.c	2010-01-04 11:24:08.000000000 +0900
+@@ -120,6 +120,45 @@
  	bpage = buf_page_init_for_read(err, mode, space, zip_size, unzip,
  				       tablespace_version, offset);
  	if (bpage == NULL) {
@@ -121,7 +121,7 @@ diff -ru innodb_plugin-1.0.4_orig/buf/buf0rea.c innodb_plugin-1.0.4/buf/buf0rea.
  
  		return(0);
  	}
-@@ -771,11 +810,11 @@
+@@ -608,11 +647,11 @@
  		while (buf_pool->n_pend_reads >= recv_n_pool_free_frames / 2) {
  
  			os_aio_simulated_wake_handler_threads();
@@ -135,9 +135,9 @@ diff -ru innodb_plugin-1.0.4_orig/buf/buf0rea.c innodb_plugin-1.0.4/buf/buf0rea.
  				fprintf(stderr,
  					"InnoDB: Error: InnoDB has waited for"
  					" 50 seconds for pending\n"
-diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.c
---- innodb_plugin-1.0.4_orig/fil/fil0fil.c	2009-07-14 16:16:18.000000000 +0900
-+++ innodb_plugin-1.0.4/fil/fil0fil.c	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/fil/fil0fil.c innodb_plugin-1.0.6/fil/fil0fil.c
+--- innodb_plugin-1.0.6_orig/fil/fil0fil.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/fil/fil0fil.c	2010-01-04 11:24:08.000000000 +0900
 @@ -282,7 +282,7 @@
  
  /** The tablespace memory cache. This variable is NULL before the module is
@@ -147,7 +147,7 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  
  
  /********************************************************************//**
-@@ -2084,7 +2084,7 @@
+@@ -2113,7 +2113,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    &space_id, name, FALSE, flags,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -156,7 +156,7 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  			}
  		}
  
-@@ -2228,7 +2228,7 @@
+@@ -2257,7 +2257,7 @@
  	}
  
  	if (success) {
@@ -165,7 +165,7 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2504,7 +2504,7 @@
+@@ -2533,7 +2533,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
@@ -174,7 +174,7 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  	if (success) {
  		mtr_t		mtr;
  
-@@ -2705,7 +2705,7 @@
+@@ -2734,7 +2734,7 @@
  
  	fil_node_create(path, size, *space_id, FALSE);
  
@@ -183,7 +183,7 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  	{
  		mtr_t		mtr;
  
-@@ -3188,7 +3188,7 @@
+@@ -3216,7 +3216,7 @@
  	cannot be ok. */
  
  	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
@@ -192,7 +192,7 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3319,7 +3319,7 @@
+@@ -3357,7 +3357,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -201,7 +201,7 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4268,6 +4268,16 @@
+@@ -4306,6 +4306,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -218,10 +218,10 @@ diff -ru innodb_plugin-1.0.4_orig/fil/fil0fil.c innodb_plugin-1.0.4/fil/fil0fil.
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-diff -ru innodb_plugin-1.0.4_orig/ibuf/ibuf0ibuf.c innodb_plugin-1.0.4/ibuf/ibuf0ibuf.c
---- innodb_plugin-1.0.4_orig/ibuf/ibuf0ibuf.c	2009-06-30 18:10:01.000000000 +0900
-+++ innodb_plugin-1.0.4/ibuf/ibuf0ibuf.c	2009-10-05 18:38:22.000000000 +0900
-@@ -1017,6 +1017,9 @@
+diff -ru innodb_plugin-1.0.6_orig/ibuf/ibuf0ibuf.c innodb_plugin-1.0.6/ibuf/ibuf0ibuf.c
+--- innodb_plugin-1.0.6_orig/ibuf/ibuf0ibuf.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/ibuf/ibuf0ibuf.c	2010-01-04 11:24:08.000000000 +0900
+@@ -1038,6 +1038,9 @@
  
  	ut_ad(!recv_no_ibuf_operations);
  
@@ -231,7 +231,7 @@ diff -ru innodb_plugin-1.0.4_orig/ibuf/ibuf0ibuf.c innodb_plugin-1.0.4/ibuf/ibuf
  	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
  
  		return(TRUE);
-@@ -2233,6 +2236,9 @@
+@@ -2254,6 +2257,9 @@
  	ulint	n_bytes;
  	ulint	n_pag2;
  
@@ -241,10 +241,10 @@ diff -ru innodb_plugin-1.0.4_orig/ibuf/ibuf0ibuf.c innodb_plugin-1.0.4/ibuf/ibuf
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
-diff -ru innodb_plugin-1.0.4_orig/include/mem0mem.h innodb_plugin-1.0.4/include/mem0mem.h
---- innodb_plugin-1.0.4_orig/include/mem0mem.h	2009-06-30 20:56:36.000000000 +0900
-+++ innodb_plugin-1.0.4/include/mem0mem.h	2009-10-05 18:38:22.000000000 +0900
-@@ -370,6 +370,7 @@
+diff -ru innodb_plugin-1.0.6_orig/include/mem0mem.h innodb_plugin-1.0.6/include/mem0mem.h
+--- innodb_plugin-1.0.6_orig/include/mem0mem.h	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/include/mem0mem.h	2010-01-04 11:24:08.000000000 +0900
+@@ -377,6 +377,7 @@
  			pool, this contains the buf_block_t handle;
  			otherwise, this is NULL */
  #endif /* !UNIV_HOTBACKUP */
@@ -252,9 +252,9 @@ diff -ru innodb_plugin-1.0.4_orig/include/mem0mem.h innodb_plugin-1.0.4/include/
  #ifdef MEM_PERIODIC_CHECK
  	UT_LIST_NODE_T(mem_block_t) mem_block_list;
  			/* List of all mem blocks allocated; protected
-diff -ru innodb_plugin-1.0.4_orig/include/mem0mem.ic innodb_plugin-1.0.4/include/mem0mem.ic
---- innodb_plugin-1.0.4_orig/include/mem0mem.ic	2009-05-25 19:52:29.000000000 +0900
-+++ innodb_plugin-1.0.4/include/mem0mem.ic	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/include/mem0mem.ic innodb_plugin-1.0.6/include/mem0mem.ic
+--- innodb_plugin-1.0.6_orig/include/mem0mem.ic	2009-05-25 19:52:29.000000000 +0900
++++ innodb_plugin-1.0.6/include/mem0mem.ic	2010-01-04 11:24:08.000000000 +0900
 @@ -451,6 +451,7 @@
  
  	/* Add the created block itself as the first block in the list */
@@ -280,9 +280,9 @@ diff -ru innodb_plugin-1.0.4_orig/include/mem0mem.ic innodb_plugin-1.0.4/include
  #ifndef UNIV_HOTBACKUP
  	if (heap->free_block) {
  		size += UNIV_PAGE_SIZE;
-diff -ru innodb_plugin-1.0.4_orig/include/srv0srv.h innodb_plugin-1.0.4/include/srv0srv.h
---- innodb_plugin-1.0.4_orig/include/srv0srv.h	2009-07-21 01:23:15.000000000 +0900
-+++ innodb_plugin-1.0.4/include/srv0srv.h	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/include/srv0srv.h innodb_plugin-1.0.6/include/srv0srv.h
+--- innodb_plugin-1.0.6_orig/include/srv0srv.h	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/include/srv0srv.h	2010-01-04 11:24:08.000000000 +0900
 @@ -125,6 +125,8 @@
  extern ibool	srv_locks_unsafe_for_binlog;
  #endif /* !UNIV_HOTBACKUP */
@@ -302,9 +302,9 @@ diff -ru innodb_plugin-1.0.4_orig/include/srv0srv.h innodb_plugin-1.0.4/include/
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
-diff -ru innodb_plugin-1.0.4_orig/include/srv0start.h innodb_plugin-1.0.4/include/srv0start.h
---- innodb_plugin-1.0.4_orig/include/srv0start.h	2009-05-26 22:28:49.000000000 +0900
-+++ innodb_plugin-1.0.4/include/srv0start.h	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/include/srv0start.h innodb_plugin-1.0.6/include/srv0start.h
+--- innodb_plugin-1.0.6_orig/include/srv0start.h	2009-05-26 22:28:49.000000000 +0900
++++ innodb_plugin-1.0.6/include/srv0start.h	2010-01-04 11:24:08.000000000 +0900
 @@ -91,6 +91,8 @@
  /** Log sequence number immediately after startup */
  extern	ib_uint64_t	srv_start_lsn;
@@ -314,9 +314,9 @@ diff -ru innodb_plugin-1.0.4_orig/include/srv0start.h innodb_plugin-1.0.4/includ
  #ifdef __NETWARE__
  void set_panic_flag_for_netware(void);
  #endif
-diff -ru innodb_plugin-1.0.4_orig/include/ut0byte.ic innodb_plugin-1.0.4/include/ut0byte.ic
---- innodb_plugin-1.0.4_orig/include/ut0byte.ic	2009-05-25 19:52:29.000000000 +0900
-+++ innodb_plugin-1.0.4/include/ut0byte.ic	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/include/ut0byte.ic innodb_plugin-1.0.6/include/ut0byte.ic
+--- innodb_plugin-1.0.6_orig/include/ut0byte.ic	2009-09-03 17:28:35.000000000 +0900
++++ innodb_plugin-1.0.6/include/ut0byte.ic	2010-01-04 11:24:08.000000000 +0900
 @@ -168,6 +168,14 @@
  	dulint	a,	/*!< in: dulint */
  	ulint	b)	/*!< in: ulint */
@@ -358,10 +358,10 @@ diff -ru innodb_plugin-1.0.4_orig/include/ut0byte.ic innodb_plugin-1.0.4/include
  	return(diff);
  }
  
-diff -ru innodb_plugin-1.0.4_orig/log/log0log.c innodb_plugin-1.0.4/log/log0log.c
---- innodb_plugin-1.0.4_orig/log/log0log.c	2009-07-08 07:57:14.000000000 +0900
-+++ innodb_plugin-1.0.4/log/log0log.c	2009-10-05 18:38:22.000000000 +0900
-@@ -578,7 +578,9 @@
+diff -ru innodb_plugin-1.0.6_orig/log/log0log.c innodb_plugin-1.0.6/log/log0log.c
+--- innodb_plugin-1.0.6_orig/log/log0log.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/log/log0log.c	2010-01-04 11:24:08.000000000 +0900
+@@ -581,7 +581,9 @@
  
  	offset = (gr_lsn_size_offset + difference) % group_size;
  
@@ -371,7 +371,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0log.c innodb_plugin-1.0.4/log/log0log.
  
  	/* fprintf(stderr,
  	"Offset is %lu gr_lsn_offset is %lu difference is %lu\n",
-@@ -1340,7 +1342,7 @@
+@@ -1353,7 +1355,7 @@
  #endif /* UNIV_DEBUG */
  	ulint		unlock;
  
@@ -380,9 +380,9 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0log.c innodb_plugin-1.0.4/log/log0log.
  		/* Recovery is running and no operations on the log files are
  		allowed yet (the variable name .._no_ibuf_.. is misleading) */
  
-diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0recv.c
---- innodb_plugin-1.0.4_orig/log/log0recv.c	2009-05-25 22:09:24.000000000 +0900
-+++ innodb_plugin-1.0.4/log/log0recv.c	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/log/log0recv.c innodb_plugin-1.0.6/log/log0recv.c
+--- innodb_plugin-1.0.6_orig/log/log0recv.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/log/log0recv.c	2010-01-04 11:24:08.000000000 +0900
 @@ -42,27 +42,27 @@
  #include "trx0undo.h"
  #include "trx0rec.h"
@@ -415,16 +415,25 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  
  /** The recovery system */
  UNIV_INTERN recv_sys_t*	recv_sys = NULL;
-@@ -134,7 +134,7 @@
- the log and store the scanned log records in the buffer pool: we will
- use these free frames to read in pages when we start applying the
- log records to the database. */
--UNIV_INTERN ulint	recv_n_pool_free_frames		= 256;
-+UNIV_INTERN ulint	recv_n_pool_free_frames		= 1024;
+@@ -248,7 +248,7 @@
+ {
+ 	recv_lsn_checks_on = FALSE;
  
- /** The maximum lsn we see for a page during the recovery process. If this
- is bigger than the lsn we are able to scan up to, that is an indication that
-@@ -488,7 +488,7 @@
+-	recv_n_pool_free_frames = 256;
++	recv_n_pool_free_frames = 1024;
+ 
+ 	recv_recovery_on = FALSE;
+ 
+@@ -274,7 +274,7 @@
+ 
+ 	recv_max_parsed_page_no	= 0;
+ 
+-	recv_n_pool_free_frames	= 256;
++	recv_n_pool_free_frames	= 1024;
+ 
+ 	recv_max_page_lsn = 0;
+ }
+@@ -596,7 +596,7 @@
  /***********************************************************************//**
  Checks the consistency of the checkpoint info
  @return	TRUE if ok */
@@ -433,7 +442,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  ibool
  recv_check_cp_is_consistent(
  /*========================*/
-@@ -518,7 +518,7 @@
+@@ -626,7 +626,7 @@
  /********************************************************//**
  Looks for the maximum consistent checkpoint from the log groups.
  @return	error code or DB_SUCCESS */
@@ -442,7 +451,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  ulint
  recv_find_max_checkpoint(
  /*=====================*/
-@@ -693,7 +693,7 @@
+@@ -801,7 +801,7 @@
  InnoDB-3.23.52 where the checksum field contains the log block number.
  @return TRUE if ok, or if the log block may be in the format of InnoDB
  version predating 3.23.52 */
@@ -451,7 +460,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  ibool
  log_block_checksum_is_ok_or_old_format(
  /*===================================*/
-@@ -1355,6 +1355,7 @@
+@@ -1469,6 +1469,7 @@
  					     buf_block_get_page_no(block));
  
  	if ((recv_addr == NULL)
@@ -459,7 +468,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  	    || (recv_addr->state == RECV_BEING_PROCESSED)
  	    || (recv_addr->state == RECV_PROCESSED)) {
  
-@@ -2141,7 +2142,7 @@
+@@ -2281,7 +2282,7 @@
  			   || type == MLOG_FILE_RENAME
  			   || type == MLOG_FILE_DELETE) {
  			ut_a(space);
@@ -468,7 +477,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  			if (recv_replay_file_ops) {
  
  				/* In ibbackup --apply-log, replay an .ibd file
-@@ -2164,7 +2165,7 @@
+@@ -2304,7 +2305,7 @@
  					ut_error;
  				}
  			}
@@ -476,8 +485,8 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
 +//#endif
  			/* In normal mysqld crash recovery we do not try to
  			replay file operations */
- 		} else {
-@@ -2561,8 +2562,11 @@
+ #ifdef UNIV_LOG_LSN_DEBUG
+@@ -2711,8 +2712,11 @@
  
  			fprintf(stderr,
  				"InnoDB: Doing recovery: scanned up to"
@@ -491,7 +500,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  		}
  	}
  
-@@ -2674,12 +2678,14 @@
+@@ -2824,12 +2828,14 @@
  
  	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
  
@@ -507,7 +516,7 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  	}
  }
  
-@@ -2825,6 +2831,7 @@
+@@ -2975,6 +2981,7 @@
  		recv_sys->recovered_lsn = checkpoint_lsn;
  
  		srv_start_lsn = checkpoint_lsn;
@@ -515,9 +524,9 @@ diff -ru innodb_plugin-1.0.4_orig/log/log0recv.c innodb_plugin-1.0.4/log/log0rec
  	}
  
  	contiguous_lsn = ut_uint64_align_down(recv_sys->scanned_lsn,
-diff -ru innodb_plugin-1.0.4_orig/mem/mem0mem.c innodb_plugin-1.0.4/mem/mem0mem.c
---- innodb_plugin-1.0.4_orig/mem/mem0mem.c	2009-06-30 20:56:36.000000000 +0900
-+++ innodb_plugin-1.0.4/mem/mem0mem.c	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/mem/mem0mem.c innodb_plugin-1.0.6/mem/mem0mem.c
+--- innodb_plugin-1.0.6_orig/mem/mem0mem.c	2009-08-14 15:16:24.000000000 +0900
++++ innodb_plugin-1.0.6/mem/mem0mem.c	2010-01-04 11:24:08.000000000 +0900
 @@ -439,6 +439,7 @@
  	/* Add the new block as the last block */
  
@@ -534,10 +543,10 @@ diff -ru innodb_plugin-1.0.4_orig/mem/mem0mem.c innodb_plugin-1.0.4/mem/mem0mem.
  
  #ifdef MEM_PERIODIC_CHECK
  	mem_pool_mutex_enter();
-diff -ru innodb_plugin-1.0.4_orig/os/os0file.c innodb_plugin-1.0.4/os/os0file.c
---- innodb_plugin-1.0.4_orig/os/os0file.c	2009-07-01 03:21:09.000000000 +0900
-+++ innodb_plugin-1.0.4/os/os0file.c	2009-10-05 18:38:22.000000000 +0900
-@@ -503,7 +503,7 @@
+diff -ru innodb_plugin-1.0.6_orig/os/os0file.c innodb_plugin-1.0.6/os/os0file.c
+--- innodb_plugin-1.0.6_orig/os/os0file.c	2009-11-11 22:33:49.000000000 +0900
++++ innodb_plugin-1.0.6/os/os0file.c	2010-01-04 11:24:08.000000000 +0900
+@@ -531,7 +531,7 @@
  }
  
  #undef USE_FILE_LOCK
@@ -546,7 +555,7 @@ diff -ru innodb_plugin-1.0.4_orig/os/os0file.c innodb_plugin-1.0.4/os/os0file.c
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1270,8 +1270,9 @@
+@@ -1323,8 +1323,9 @@
  		attributes = 0;
  		ut_error;
  	}
@@ -557,7 +566,7 @@ diff -ru innodb_plugin-1.0.4_orig/os/os0file.c innodb_plugin-1.0.4/os/os0file.c
  			  GENERIC_READ | GENERIC_WRITE, /* read and write
  							access */
  			  share_mode,	/* File can be read also by other
-@@ -1328,7 +1329,11 @@
+@@ -1381,7 +1382,11 @@
  	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
  	    || create_mode == OS_FILE_OPEN_RETRY) {
  		mode_str = "OPEN";
@@ -570,7 +579,7 @@ diff -ru innodb_plugin-1.0.4_orig/os/os0file.c innodb_plugin-1.0.4/os/os0file.c
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
-@@ -2469,6 +2474,9 @@
+@@ -2554,6 +2559,9 @@
  
  	ut_a((offset & 0xFFFFFFFF) == offset);
  
@@ -580,7 +589,7 @@ diff -ru innodb_plugin-1.0.4_orig/os/os0file.c innodb_plugin-1.0.4/os/os0file.c
  	os_n_file_writes++;
  
  	ut_ad(file);
-@@ -2587,6 +2595,9 @@
+@@ -2678,6 +2686,9 @@
  #else
  	ssize_t	ret;
  
@@ -590,10 +599,10 @@ diff -ru innodb_plugin-1.0.4_orig/os/os0file.c innodb_plugin-1.0.4/os/os0file.c
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
  
  	if ((ulint)ret == n) {
-diff -ru innodb_plugin-1.0.4_orig/os/os0thread.c innodb_plugin-1.0.4/os/os0thread.c
---- innodb_plugin-1.0.4_orig/os/os0thread.c	2009-05-25 19:52:29.000000000 +0900
-+++ innodb_plugin-1.0.4/os/os0thread.c	2009-10-05 18:38:22.000000000 +0900
-@@ -286,12 +286,17 @@
+diff -ru innodb_plugin-1.0.6_orig/os/os0thread.c innodb_plugin-1.0.6/os/os0thread.c
+--- innodb_plugin-1.0.6_orig/os/os0thread.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/os/os0thread.c	2010-01-04 11:24:08.000000000 +0900
+@@ -287,12 +287,17 @@
  #elif defined(__NETWARE__)
  	delay(tm / 1000);
  #else
@@ -611,10 +620,10 @@ diff -ru innodb_plugin-1.0.4_orig/os/os0thread.c innodb_plugin-1.0.4/os/os0threa
  #endif
  }
  
-diff -ru innodb_plugin-1.0.4_orig/row/row0merge.c innodb_plugin-1.0.4/row/row0merge.c
---- innodb_plugin-1.0.4_orig/row/row0merge.c	2009-06-17 22:03:45.000000000 +0900
-+++ innodb_plugin-1.0.4/row/row0merge.c	2009-10-05 18:38:22.000000000 +0900
-@@ -441,7 +441,9 @@
+diff -ru innodb_plugin-1.0.6_orig/row/row0merge.c innodb_plugin-1.0.6/row/row0merge.c
+--- innodb_plugin-1.0.6_orig/row/row0merge.c	2009-11-12 22:49:08.000000000 +0900
++++ innodb_plugin-1.0.6/row/row0merge.c	2010-01-04 11:24:08.000000000 +0900
+@@ -452,7 +452,9 @@
  	offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
  				  &heap);
  
@@ -625,7 +634,7 @@ diff -ru innodb_plugin-1.0.4_orig/row/row0merge.c innodb_plugin-1.0.4/row/row0me
  
  	if (UNIV_LIKELY_NULL(heap)) {
  		mem_heap_free(heap);
-@@ -1398,8 +1400,10 @@
+@@ -1446,8 +1448,10 @@
  		case 0:
  			if (UNIV_UNLIKELY
  			    (dict_index_is_unique(index))) {
@@ -638,7 +647,7 @@ diff -ru innodb_plugin-1.0.4_orig/row/row0merge.c innodb_plugin-1.0.4/row/row0me
  				mem_heap_free(heap);
  				return(DB_DUPLICATE_KEY);
  			}
-@@ -2313,7 +2317,9 @@
+@@ -2493,7 +2497,9 @@
  
  	/* Reset the MySQL row buffer that is used when reporting
  	duplicate keys. */
@@ -649,10 +658,10 @@ diff -ru innodb_plugin-1.0.4_orig/row/row0merge.c innodb_plugin-1.0.4/row/row0me
  
  	/* Read clustered index of the table and create files for
  	secondary index entries for merge sort */
-diff -ru innodb_plugin-1.0.4_orig/srv/srv0srv.c innodb_plugin-1.0.4/srv/srv0srv.c
---- innodb_plugin-1.0.4_orig/srv/srv0srv.c	2009-07-21 01:23:15.000000000 +0900
-+++ innodb_plugin-1.0.4/srv/srv0srv.c	2009-10-05 18:38:22.000000000 +0900
-@@ -153,6 +153,8 @@
+diff -ru innodb_plugin-1.0.6_orig/srv/srv0srv.c innodb_plugin-1.0.6/srv/srv0srv.c
+--- innodb_plugin-1.0.6_orig/srv/srv0srv.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/srv/srv0srv.c	2010-01-04 11:24:45.000000000 +0900
+@@ -154,6 +154,8 @@
  on duplicate key checking and foreign key checking */
  UNIV_INTERN ibool	srv_locks_unsafe_for_binlog = FALSE;
  
@@ -661,7 +670,7 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0srv.c innodb_plugin-1.0.4/srv/srv0srv.
  UNIV_INTERN ulint	srv_n_data_files = 0;
  UNIV_INTERN char**	srv_data_file_names = NULL;
  /* size in database pages */
-@@ -379,6 +381,8 @@
+@@ -374,6 +376,8 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -670,7 +679,7 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0srv.c innodb_plugin-1.0.4/srv/srv0srv.
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_n_free_tickets_to_enter = 500;
-@@ -1010,7 +1014,7 @@
+@@ -1002,7 +1006,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -679,10 +688,26 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0srv.c innodb_plugin-1.0.4/srv/srv0srv.
  }
  
  /*********************************************************************//**
-diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0start.c
---- innodb_plugin-1.0.4_orig/srv/srv0start.c	2009-07-01 03:21:09.000000000 +0900
-+++ innodb_plugin-1.0.4/srv/srv0start.c	2009-10-05 18:38:22.000000000 +0900
-@@ -109,6 +109,8 @@
+@@ -1013,6 +1017,7 @@
+ /*==========*/
+ {
+ 	os_fast_mutex_free(&srv_conc_mutex);
++#ifdef UNDEFINED
+ 	mem_free(srv_conc_slots);
+ 	srv_conc_slots = NULL;
+ 
+@@ -1026,6 +1031,7 @@
+ 	srv_mysql_table = NULL;
+ 
+ 	trx_i_s_cache_free(trx_i_s_cache);
++#endif
+ }
+ 
+ /*********************************************************************//**
+diff -ru innodb_plugin-1.0.6_orig/srv/srv0start.c innodb_plugin-1.0.6/srv/srv0start.c
+--- innodb_plugin-1.0.6_orig/srv/srv0start.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/srv/srv0start.c	2010-01-04 11:24:08.000000000 +0900
+@@ -111,6 +111,8 @@
  /** Log sequence number at shutdown */
  UNIV_INTERN ib_uint64_t	srv_shutdown_lsn;
  
@@ -691,7 +716,7 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0st
  #ifdef HAVE_DARWIN_THREADS
  # include <sys/utsname.h>
  /** TRUE if the F_FULLFSYNC option is available */
-@@ -586,7 +588,7 @@
+@@ -564,7 +566,7 @@
  /*********************************************************************//**
  Creates or opens the log files and closes them.
  @return	DB_SUCCESS or error code */
@@ -700,7 +725,7 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0st
  ulint
  open_or_create_log_file(
  /*====================*/
-@@ -739,7 +741,7 @@
+@@ -722,7 +724,7 @@
  /*********************************************************************//**
  Creates or opens database data files and closes them.
  @return	DB_SUCCESS or error code */
@@ -709,7 +734,7 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0st
  ulint
  open_or_create_data_files(
  /*======================*/
-@@ -1373,7 +1375,7 @@
+@@ -1341,7 +1343,7 @@
  	}
  #endif /* UNIV_LOG_ARCHIVE */
  
@@ -718,7 +743,7 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0st
  		fprintf(stderr,
  			"InnoDB: Error: combined size of log files"
  			" must be < 4 GB\n");
-@@ -1762,7 +1764,18 @@
+@@ -1730,7 +1732,18 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
@@ -737,7 +762,7 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0st
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
  			" is %lu pages, but\n"
-@@ -1787,6 +1800,7 @@
+@@ -1755,6 +1768,7 @@
  
  			return(DB_ERROR);
  		}
@@ -745,10 +770,10 @@ diff -ru innodb_plugin-1.0.4_orig/srv/srv0start.c innodb_plugin-1.0.4/srv/srv0st
  	}
  
  	/* Check that os_fast_mutexes work as expected */
-diff -ru innodb_plugin-1.0.4_orig/trx/trx0purge.c innodb_plugin-1.0.4/trx/trx0purge.c
---- innodb_plugin-1.0.4_orig/trx/trx0purge.c	2009-05-27 20:46:42.000000000 +0900
-+++ innodb_plugin-1.0.4/trx/trx0purge.c	2009-10-05 18:38:22.000000000 +0900
-@@ -1053,6 +1053,9 @@
+diff -ru innodb_plugin-1.0.6_orig/trx/trx0purge.c innodb_plugin-1.0.6/trx/trx0purge.c
+--- innodb_plugin-1.0.6_orig/trx/trx0purge.c	2009-11-02 18:42:56.000000000 +0900
++++ innodb_plugin-1.0.6/trx/trx0purge.c	2010-01-04 11:24:08.000000000 +0900
+@@ -1091,6 +1091,9 @@
  	/*	que_thr_t*	thr2; */
  	ulint		old_pages_handled;
  
@@ -758,9 +783,9 @@ diff -ru innodb_plugin-1.0.4_orig/trx/trx0purge.c innodb_plugin-1.0.4/trx/trx0pu
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
-diff -ru innodb_plugin-1.0.4_orig/trx/trx0trx.c innodb_plugin-1.0.4/trx/trx0trx.c
---- innodb_plugin-1.0.4_orig/trx/trx0trx.c	2009-06-10 02:46:29.000000000 +0900
-+++ innodb_plugin-1.0.4/trx/trx0trx.c	2009-10-05 18:38:22.000000000 +0900
+diff -ru innodb_plugin-1.0.6_orig/trx/trx0trx.c innodb_plugin-1.0.6/trx/trx0trx.c
+--- innodb_plugin-1.0.6_orig/trx/trx0trx.c	2009-10-01 05:32:02.000000000 +0900
++++ innodb_plugin-1.0.6/trx/trx0trx.c	2010-01-04 11:24:08.000000000 +0900
 @@ -461,8 +461,8 @@
  						TRX_ID_PREP_PRINTF(trx->id));
  
