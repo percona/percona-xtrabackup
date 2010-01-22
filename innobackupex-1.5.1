@@ -1008,9 +1008,13 @@ sub start_ibbackup {
 # user to innobackup.
 #
 sub get_mysql_options {
-    my $options = '--unbuffered';
-    
-    # prepare options for mysql
+    my $options = '';
+
+    # this option has to be first
+    if ($option_defaults_file) {
+        $options = "$options --defaults-file=\"$option_defaults_file\"";
+    }
+
     if ($option_mysql_password) {
         $options = "$options --password=$option_mysql_password";
     }
@@ -1023,8 +1027,8 @@ sub get_mysql_options {
     if ($option_mysql_socket) {
         $options = "$options --socket=$option_mysql_socket";
     }
-    $options = "$options --";
-    $options;
+    $options = "$options --unbuffered --";
+    return $options;
 }
 
 
