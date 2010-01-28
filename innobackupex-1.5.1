@@ -77,6 +77,7 @@ my $option_mysql_password = '';
 my $option_mysql_user = '';
 my $option_mysql_port = '';
 my $option_mysql_socket = '';
+my $option_mysql_host = '';
 my $option_no_timestamp = '';
 my $option_slave_info = '';
 my $option_no_lock = '';
@@ -385,9 +386,14 @@ Options:
                 This option is passed to the mysql child process.
                 It defines the password to use when connecting to database.
                 Try 'mysql --help' for more details on this option.
-                
+
+    --host=HOST This option is passed to the mysql child process.
+                It defines the host to use when connecting to database
+                server with TCP/IP.
+                Try 'mysql --help' for more details on this option.
+
     --port=PORT This option is passed to the mysql child process.
-                It defines the port to use when connecting to local database
+                It defines the port to use when connecting to database
                 server with TCP/IP.
                 Try 'mysql --help' for more details on this option.
 
@@ -1021,8 +1027,11 @@ sub get_mysql_options {
     if ($option_mysql_user) {
         $options = "$options --user=$option_mysql_user";
     }
+    if ($option_mysql_host) {
+        $options = "$options --host=$option_mysql_host";
+    }
     if ($option_mysql_port) {
-        $options = "$options --host=127.0.0.1 --port=$option_mysql_port";
+        $options = "$options --port=$option_mysql_port";
     }
     if ($option_mysql_socket) {
         $options = "$options --socket=$option_mysql_socket";
@@ -1642,6 +1651,7 @@ sub check_args {
                         'export' => \$option_export,
                         'password=s' => \$option_mysql_password,
                         'user=s' => \$option_mysql_user,
+                        'host=s' => \$option_mysql_host,
                         'port=s' => \$option_mysql_port,
                         'slave-info' => \$option_slave_info,
                         'socket=s' => \$option_mysql_socket,
