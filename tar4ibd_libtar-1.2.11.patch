@@ -276,34 +276,39 @@ diff -ru libtar-1.2.11_orig/lib/extract.c libtar-1.2.11/lib/extract.c
  
 diff -ru libtar-1.2.11_orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
 --- libtar-1.2.11_orig/lib/libtar.h	2003-01-07 10:40:59.000000000 +0900
-+++ libtar-1.2.11/lib/libtar.h	2009-07-09 17:49:26.000000000 +0900
++++ libtar-1.2.11/lib/libtar.h	2010-02-03 17:03:22.000000000 +0900
 @@ -180,7 +180,7 @@
  
  /* decode tar header info */
  #define th_get_crc(t) oct_to_int((t)->th_buf.chksum)
 -#define th_get_size(t) oct_to_int((t)->th_buf.size)
-+#define th_get_size(t) oct_to_long((t)->th_buf.size)
++#define th_get_size(t) oct_to_longlong((t)->th_buf.size)
  #define th_get_mtime(t) oct_to_int((t)->th_buf.mtime)
  #define th_get_devmajor(t) oct_to_int((t)->th_buf.devmajor)
  #define th_get_devminor(t) oct_to_int((t)->th_buf.devminor)
-@@ -206,7 +206,7 @@
+@@ -204,9 +204,9 @@
+ void th_set_group(TAR *t, gid_t gid);
+ void th_set_mode(TAR *t, mode_t fmode);
  #define th_set_mtime(t, fmtime) \
- 	int_to_oct_nonull((fmtime), (t)->th_buf.mtime, 12)
+-	int_to_oct_nonull((fmtime), (t)->th_buf.mtime, 12)
++	int_to_oct((fmtime), (t)->th_buf.mtime, 12)
  #define th_set_size(t, fsize) \
 -	int_to_oct_nonull((fsize), (t)->th_buf.size, 12)
 +	longlong_to_oct_nonull((fsize), (t)->th_buf.size, 12)
  
  /* encode everything at once (except the pathname and linkname) */
  void th_set_from_stat(TAR *t, struct stat *s);
-@@ -268,6 +268,7 @@
+@@ -268,13 +268,16 @@
  
  /* string-octal to integer conversion */
  int oct_to_int(char *oct);
 +long oct_to_long(char *oct);
++long long oct_to_longlong(char *oct);
  
  /* integer to NULL-terminated string-octal conversion */
  #define int_to_oct(num, oct, octlen) \
-@@ -275,6 +276,7 @@
+-	snprintf((oct), (octlen), "%*lo ", (octlen) - 2, (unsigned long)(num))
++	snprintf((oct), (octlen), "%0*lo", (octlen) - 1, (unsigned long)(num))
  
  /* integer to string-octal conversion, no NULL */
  void int_to_oct_nonull(int num, char *oct, size_t octlen);
@@ -329,7 +334,7 @@ diff -ru libtar-1.2.11_orig/lib/util.c libtar-1.2.11/lib/util.c
  
  /* integer to string-octal conversion, no NULL */
  void
-@@ -147,4 +155,16 @@
+@@ -147,4 +155,46 @@
  	oct[octlen - 1] = ' ';
  }
  
@@ -337,14 +342,44 @@ diff -ru libtar-1.2.11_orig/lib/util.c libtar-1.2.11/lib/util.c
 +longlong_to_oct_nonull(long long num, char *oct, size_t octlen)
 +{
 +	char buf[100];
- 
-+	if (num >= (long long)64 * 1024 * 1024 * 1024) {
-+		fprintf(stderr, "Error: tar format cannot treat over 64GB file.\n");
-+		exit(-1);
-+	}
 +
-+	snprintf(buf, octlen + 1, "%0*llo", octlen, num);
-+	strncpy(oct, buf, octlen);
++	if (num >= (long long)64 * 1024 * 1024 * 1024) {
++		oct[0] = 0x80;
++		oct[1] = 0;
++		oct[2] = 0;
++		oct[3] = 0;
++		oct[4] = (char)((num >> 56) & 0xFF);
++		oct[5] = (char)((num >> 48) & 0xFF);
++		oct[6] = (char)((num >> 40) & 0xFF);
++		oct[7] = (char)((num >> 32) & 0xFF);
++		oct[8] = (char)((num >> 24) & 0xFF);
++		oct[9] = (char)((num >> 16) & 0xFF);
++		oct[10] = (char)((num >> 8) & 0xFF);
++		oct[11] = (char)((num) & 0xFF);
++	} else {
++		snprintf(buf, octlen + 1, "%0*llo", octlen, num);
++		strncpy(oct, buf, octlen);
++	}
++}
++
++long long
++oct_to_longlong(char *oct)
++{
++	long long i;
+ 
++	if (oct[0] && 0x80) {
++		i = ((long long)((unsigned char)oct[4]) << 56)
++			| ((long long)((unsigned char)oct[5]) << 48)
++			| ((long long)((unsigned char)oct[6]) << 40)
++			| ((long long)((unsigned char)oct[7]) << 32)
++			| ((long long)((unsigned char)oct[8]) << 24)
++			| ((long long)((unsigned char)oct[9]) << 16)
++			| ((long long)((unsigned char)oct[10]) << 8)
++			| ((long long)((unsigned char)oct[11]));
++	} else {
++		sscanf(oct, "%12llo", &i);
++	}
++	return i;
 +}
 diff -ru libtar-1.2.11_orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
 --- libtar-1.2.11_orig/libtar/Makefile.in	2002-12-16 03:02:30.000000000 +0900
