@@ -367,7 +367,7 @@ diff -ru libtar-1.2.11_orig/lib/util.c libtar-1.2.11/lib/util.c
 +{
 +	long long i;
  
-+	if (oct[0] && 0x80) {
++	if (oct[0] & 0x80) {
 +		i = ((long long)((unsigned char)oct[4]) << 56)
 +			| ((long long)((unsigned char)oct[5]) << 48)
 +			| ((long long)((unsigned char)oct[6]) << 40)
