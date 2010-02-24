@@ -90,7 +90,7 @@ my $option_stream = '';
 my $option_tmpdir = '';
 
 my $option_tar4ibd = '';
-
+my $option_force_tar = '';
 my $option_scp_opt = '-Cp -c arcfour';
 
 # name of the my.cnf configuration file
@@ -305,7 +305,7 @@ Options:
 
     --stream=[tar|cpio(not implemented)]
                 If this option is specified, backup to STDOUT as specified
-                format.
+                format.  Uses tar4ibd (available in XtraBackup binary).
 
     --tmpdir=DIRECTORY
                 When --remote-host or --stream specified, transaction log
@@ -1663,7 +1663,8 @@ sub check_args {
                         'tmpdir=s' => \$option_tmpdir,
                         'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
-                        'scpopt=s' => \$option_scp_opt);
+                        'scpopt=s' => \$option_scp_opt,
+                        'force-tar', => \$option_force_tar);
     if (!$rcode) {
         # failed to read options
         print STDERR "$prefix Bad command line arguments\n";
@@ -1703,6 +1704,12 @@ sub check_args {
 
     if ($option_stream) {
         if ($option_stream eq 'tar') {
+           if ( !$option_force_tar ) {
+              $option_tar4ibd = 'tar4ibd';
+            }
+            else {
+               print STDERR "Forcing tar instead of tar4ibd\n";
+            }
         } elsif ($option_stream eq 'tar4ibd') {
             $option_stream = 'tar';
             $option_tar4ibd = 'tar4ibd';
