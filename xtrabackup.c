@@ -2143,14 +2143,27 @@ read_retry:
 			if (buf_page_is_corrupted(page + chunk_offset, zip_size))
 #endif
 			{
-				retry_count--;
-				if (retry_count == 0) {
-					fprintf(stderr, "xtrabackup: Error: 10 retries resulted in fail. This file seems to be corrupted.\n");
-					goto error;
+				if (node->space->id == 0
+				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
+				       >= FSP_EXTENT_SIZE
+				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
+				       < FSP_EXTENT_SIZE * 3) {
+					/* double write buffer may have old data in the end
+					   or it may contain the other format page like COMPRESSED.
+ 					   So, we can pass the check of double write buffer.*/
+					ut_a(page_size == UNIV_PAGE_SIZE);
+					fprintf(stderr, "xtrabackup: Page %lu seems double write buffer. passing the check.\n",
+						(ulint)((offset + (IB_INT64)chunk_offset) >> page_size_shift));
+				} else {
+					retry_count--;
+					if (retry_count == 0) {
+						fprintf(stderr, "xtrabackup: Error: 10 retries resulted in fail. This file seems to be corrupted.\n");
+						goto error;
+					}
+					fprintf(stderr, "xtrabackup: Database page corruption detected at page %lu. retrying...\n",
+						(ulint)((offset + (IB_INT64)chunk_offset) >> page_size_shift));
+					goto read_retry;
 				}
-				fprintf(stderr, "xtrabackup: Database page corruption detected at page %lu. retrying...\n",
-					(ulint)((offset + (IB_INT64)chunk_offset) >> page_size_shift));
-				goto read_retry;
 			}
 		}
 
