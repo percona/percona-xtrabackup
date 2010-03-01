@@ -14,7 +14,7 @@ use POSIX ":sys_wait_h";
 use POSIX "tmpnam";
 use FileHandle;
 use File::Basename;
-
+use English qw(-no_match_vars);
 
 # version of this script
 my $innobackup_version = '1.5.1-xtrabackup';
@@ -200,6 +200,8 @@ print_version();
 # initialize global variables and perform some checks
 init();
 
+my $ibbackup_exit_code = 0;
+
 if ($option_copy_back) {
     # copy files from backup directory back to their original locations
     copy_back();
@@ -208,18 +210,24 @@ if ($option_copy_back) {
     apply_log();
 } else {
     # make a backup of InnoDB and MyISAM tables, indexes and .frm files.
-    backup();
+    $ibbackup_exit_code = backup();
 }
 
-# program has completed successfully
 $now = current_time();
-print STDERR "$now  $prefix completed OK!\n";
 
 if ($option_stream eq 'tar') {
-    print STDERR "$prefix You must use -i (--ignore-zeros) option for extraction of the tar stream.\n";
+   print STDERR "$prefix You must use -i (--ignore-zeros) option for extraction of the tar stream.\n";
 }
 
-exit 0;
+if ( $ibbackup_exit_code == 0 ) {
+   # program has completed successfully
+   print STDERR "$now  $prefix completed OK!\n";
+}
+else {
+   print STDERR "$now  $prefix $option_ibbackup_binary failed! (exit code $ibbackup_exit_code)  The backup may not be complete.\n";
+}
+
+exit $ibbackup_exit_code;
 
 ######################################################################
 # end of program execution
@@ -506,7 +514,7 @@ sub backup {
     }
 
     # resume ibbackup and wait till it has finished
-    resume_ibbackup();
+    my $ibbackup_exit_code = resume_ibbackup();
 
     if (!$option_incremental) {
         # release read locks on all tables
@@ -541,6 +549,8 @@ sub backup {
     if ($mysql_slave_position && $option_slave_info) {
         print STDERR "$prefix MySQL slave binlog position: $mysql_slave_position\n";
     }
+
+    return $ibbackup_exit_code;
 }
 
 
@@ -824,6 +834,7 @@ sub resume_ibbackup {
     # wait for ibbackup to finish
     waitpid($ibbackup_pid, 0);
     $ibbackup_pid = '';
+    return $CHILD_ERROR >> 8;
 }
     
 
