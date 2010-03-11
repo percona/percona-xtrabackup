@@ -18,6 +18,7 @@ Packager: Vadim Tkachenko <vadim@percona.com>
 URL: http://percona.com/percona-lab.html
 Source: %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
+Requires: mysql-client 
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
