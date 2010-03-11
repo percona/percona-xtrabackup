@@ -24,6 +24,9 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 
 
 %changelog
+* Thu Mar 11 2010 Aleksandr Kuzminsky
+- Ported to MySQL 5.1 with InnoDB plugin
+
 * Fri Mar 13 2009 Vadim Tkachenko
 - initial release
 
@@ -32,19 +35,19 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 %setup -q
 tar zxf $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz
 cd libtar-1.2.11
-patch -p1 < ../innobase/xtrabackup/tar4ibd_libtar-1.2.11.patch
+patch -p1 < ../storage/innobase/xtrabackup/tar4ibd_libtar-1.2.11.patch
 
 
 %build
-export CC=${CC-"ccache gcc"} 
+export CC=${CC-"gcc"} 
 export CXX=$CC 
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 ./configure \
-  --prefix=%{_prefix} --with-extra-charsets=complex
+  --prefix=%{_prefix} --enable-local-infile --enable-thread-safe-client --with-plugins=innobase --with-zlib-dir=bundled
 make -j`if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi`
-cd innobase/xtrabackup
+cd storage/innobase/xtrabackup
 make
-cd ../..
+cd ../../..
 cd libtar-1.2.11
 ./configure --prefix=%{_prefix}
 make
@@ -53,7 +56,7 @@ make
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
 install -d %{buildroot}%{_bindir}
 # install binaries and configs
-install -m 755 innobase/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
+install -m 755 storage/innobase/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
 install -m 755 libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 
 %clean
