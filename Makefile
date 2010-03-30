@@ -35,6 +35,10 @@ INNODBOBJS=	../libinnobase_a-btr0btr.o ../libinnobase_a-btr0cur.o ../libinnobase
 MYSQLOBJS=	../../../mysys/libmysys.a ../../../strings/libmystrings.a ../../../zlib/.libs/libzlt.a
 
 
+#If you build based on XtraDB, use the following line with the above settings for Plugin
+#(after XtraDB-10 (support page_size, >4GB logfile))
+#### Don't use it, if you build based on normal InnoDB Plugin
+DEFS+=	-DXTRADB_BASED
 
 
 .SUFFIXES: .o .c

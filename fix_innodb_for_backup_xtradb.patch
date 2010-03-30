@@ -1,0 +1,663 @@
+diff -ru xtradb-1.0.6_orig/btr/btr0btr.c xtradb-1.0.6/btr/btr0btr.c
+--- xtradb-1.0.6_orig/btr/btr0btr.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/btr/btr0btr.c	2010-03-29 17:23:24.000000000 +0900
+@@ -120,7 +120,7 @@
+ /**************************************************************//**
+ Gets the root node of a tree and x-latches it.
+ @return	root page, x-latched */
+-static
++//static
+ buf_block_t*
+ btr_root_block_get(
+ /*===============*/
+@@ -578,7 +578,7 @@
+ /************************************************************//**
+ Returns the child page of a node pointer and x-latches it.
+ @return	child page, x-latched */
+-static
++//static
+ buf_block_t*
+ btr_node_ptr_get_child(
+ /*===================*/
+diff -ru xtradb-1.0.6_orig/buf/buf0buf.c xtradb-1.0.6/buf/buf0buf.c
+--- xtradb-1.0.6_orig/buf/buf0buf.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/buf/buf0buf.c	2010-03-29 17:23:24.000000000 +0900
+@@ -418,7 +418,7 @@
+ 		return(TRUE);
+ 	}
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (recv_lsn_checks_on) {
+ 		ib_uint64_t	current_lsn;
+ 
+@@ -3531,7 +3531,7 @@
+ 			recv_recover_page(TRUE, (buf_block_t*) bpage);
+ 		}
+ 
+-		if (uncompressed && !recv_no_ibuf_operations) {
++		if (uncompressed && !recv_no_ibuf_operations && !srv_fake_write) {
+ 			ibuf_merge_or_delete_for_page(
+ 				/* Delete possible entries, if bpage is_corrupt */
+ 				(srv_pass_corrupt_table && bpage->is_corrupt) ? NULL :
+diff -ru xtradb-1.0.6_orig/fil/fil0fil.c xtradb-1.0.6/fil/fil0fil.c
+--- xtradb-1.0.6_orig/fil/fil0fil.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/fil/fil0fil.c	2010-03-29 17:23:24.000000000 +0900
+@@ -287,7 +287,7 @@
+ 
+ /** The tablespace memory cache. This variable is NULL before the module is
+ initialized. */
+-static fil_system_t*	fil_system	= NULL;
++fil_system_t*	fil_system	= NULL;
+ 
+ 
+ /********************************************************************//**
+@@ -2120,7 +2120,7 @@
+ 			if (fil_create_new_single_table_tablespace(
+ 				    &space_id, name, FALSE, flags,
+ 				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
+-				ut_error;
++				//ut_error;
+ 			}
+ 		}
+ 
+@@ -2264,7 +2264,7 @@
+ 	}
+ 
+ 	if (success) {
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 		/* Write a log record about the deletion of the .ibd
+ 		file, so that ibbackup can replay it in the
+ 		--apply-log phase. We use a dummy mtr and the familiar
+@@ -2540,7 +2540,7 @@
+ 
+ 	mutex_exit(&fil_system->mutex);
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (success) {
+ 		mtr_t		mtr;
+ 
+@@ -2741,7 +2741,7 @@
+ 
+ 	fil_node_create(path, size, *space_id, FALSE);
+ 
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	{
+ 		mtr_t		mtr;
+ 
+@@ -3562,7 +3562,7 @@
+ 	cannot be ok. */
+ 
+ 	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
+-#ifndef UNIV_HOTBACKUP
++#ifdef UNDEFINED
+ 	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
+ 		fprintf(stderr,
+ 			"InnoDB: Error: the size of single-table tablespace"
+@@ -3703,7 +3703,7 @@
+ idea is to read as much good data as we can and jump over bad data.
+ @return 0 if ok, -1 if error even after the retries, 1 if at the end
+ of the directory */
+-static
++//static
+ int
+ fil_file_readdir_next_file(
+ /*=======================*/
+@@ -4653,6 +4653,16 @@
+ 
+ 	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
+ 
++	if (space->size <= block_offset) {
++		ulint	actual_size;
++
++		mutex_exit(&fil_system->mutex);
++		fil_extend_space_to_desired_size(&actual_size, space->id,
++						 ((block_offset + 1) / 64 + 1) * 64);
++		mutex_enter(&fil_system->mutex);
++		/* should retry? but it may safe for xtrabackup for now. */
++	}
++
+ 	node = UT_LIST_GET_FIRST(space->chain);
+ 
+ 	for (;;) {
+diff -ru xtradb-1.0.6_orig/ibuf/ibuf0ibuf.c xtradb-1.0.6/ibuf/ibuf0ibuf.c
+--- xtradb-1.0.6_orig/ibuf/ibuf0ibuf.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/ibuf/ibuf0ibuf.c	2010-03-29 17:23:24.000000000 +0900
+@@ -1041,6 +1041,9 @@
+ 
+ 	ut_ad(!recv_no_ibuf_operations);
+ 
++	if (srv_fake_write)
++		return(FALSE);
++
+ 	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
+ 
+ 		return(TRUE);
+@@ -2257,6 +2260,9 @@
+ 	ulint	n_bytes;
+ 	ulint	n_pag2;
+ 
++	if (srv_fake_write)
++		return(0);
++
+ 	while (sum_pages < n_pages) {
+ 		n_bytes = ibuf_contract_ext(&n_pag2, sync);
+ 
+diff -ru xtradb-1.0.6_orig/include/mem0mem.h xtradb-1.0.6/include/mem0mem.h
+--- xtradb-1.0.6_orig/include/mem0mem.h	2009-11-02 18:42:56.000000000 +0900
++++ xtradb-1.0.6/include/mem0mem.h	2010-03-29 17:23:24.000000000 +0900
+@@ -377,6 +377,7 @@
+ 			pool, this contains the buf_block_t handle;
+ 			otherwise, this is NULL */
+ #endif /* !UNIV_HOTBACKUP */
++	ulint	sum_len;	/* sum of all blocks' len belong to the base node */
+ #ifdef MEM_PERIODIC_CHECK
+ 	UT_LIST_NODE_T(mem_block_t) mem_block_list;
+ 			/* List of all mem blocks allocated; protected
+diff -ru xtradb-1.0.6_orig/include/mem0mem.ic xtradb-1.0.6/include/mem0mem.ic
+--- xtradb-1.0.6_orig/include/mem0mem.ic	2009-05-25 19:52:29.000000000 +0900
++++ xtradb-1.0.6/include/mem0mem.ic	2010-03-29 17:23:24.000000000 +0900
+@@ -451,6 +451,7 @@
+ 
+ 	/* Add the created block itself as the first block in the list */
+ 	UT_LIST_ADD_FIRST(list, block->base, block);
++	block->sum_len = block->len;
+ 
+ #ifdef UNIV_MEM_DEBUG
+ 
+@@ -584,6 +585,7 @@
+ 
+ 	ut_ad(mem_heap_check(heap));
+ 
++/*
+ 	block = heap;
+ 
+ 	while (block != NULL) {
+@@ -591,6 +593,8 @@
+ 		size += mem_block_get_len(block);
+ 		block = UT_LIST_GET_NEXT(list, block);
+ 	}
++*/
++	size = heap->sum_len;
+ #ifndef UNIV_HOTBACKUP
+ 	if (heap->free_block) {
+ 		size += UNIV_PAGE_SIZE;
+diff -ru xtradb-1.0.6_orig/include/srv0srv.h xtradb-1.0.6/include/srv0srv.h
+--- xtradb-1.0.6_orig/include/srv0srv.h	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/include/srv0srv.h	2010-03-29 17:27:43.000000000 +0900
+@@ -237,6 +237,9 @@
+ 
+ extern ulong	srv_replication_delay;
+ 
++extern ibool	srv_read_only;
++extern ibool	srv_fake_write;
++
+ extern long long	srv_ibuf_max_size;
+ extern ulint	srv_ibuf_active_contract;
+ extern ulint	srv_ibuf_accel_rate;
+diff -ru xtradb-1.0.6_orig/include/srv0start.h xtradb-1.0.6/include/srv0start.h
+--- xtradb-1.0.6_orig/include/srv0start.h	2009-05-26 22:28:49.000000000 +0900
++++ xtradb-1.0.6/include/srv0start.h	2010-03-29 17:23:24.000000000 +0900
+@@ -91,6 +91,8 @@
+ /** Log sequence number immediately after startup */
+ extern	ib_uint64_t	srv_start_lsn;
+ 
++extern	ib_uint64_t	srv_oldest_lsn;
++
+ #ifdef __NETWARE__
+ void set_panic_flag_for_netware(void);
+ #endif
+diff -ru xtradb-1.0.6_orig/include/ut0byte.ic xtradb-1.0.6/include/ut0byte.ic
+--- xtradb-1.0.6_orig/include/ut0byte.ic	2009-09-03 17:28:35.000000000 +0900
++++ xtradb-1.0.6/include/ut0byte.ic	2010-03-29 17:23:24.000000000 +0900
+@@ -168,6 +168,14 @@
+ 	dulint	a,	/*!< in: dulint */
+ 	ulint	b)	/*!< in: ulint */
+ {
++	if (sizeof(ulint) != 4) {
++		ulint	b_h;
++
++		b_h = b >> 32;
++		b &= 0xFFFFFFFFUL;
++		a.high += b_h;
++	}
++
+ 	if (0xFFFFFFFFUL - b >= a.low) {
+ 		a.low += b;
+ 
+@@ -191,6 +199,14 @@
+ 	dulint	a,	/*!< in: dulint */
+ 	ulint	b)	/*!< in: ulint, b <= a */
+ {
++	if (sizeof(ulint) != 4) {
++		ulint	b_h;
++
++		b_h = b >> 32;
++		b &= 0xFFFFFFFFUL;
++		a.high -= b_h;
++	}
++
+ 	if (a.low >= b) {
+ 		a.low -= b;
+ 
+@@ -235,6 +251,10 @@
+ 
+ 	ut_ad(diff > a.low);
+ 
++	if (sizeof(ulint) != 4) {
++		diff += (a.high - b.high - 1) << 32;
++	}
++
+ 	return(diff);
+ }
+ 
+diff -ru xtradb-1.0.6_orig/log/log0log.c xtradb-1.0.6/log/log0log.c
+--- xtradb-1.0.6_orig/log/log0log.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/log/log0log.c	2010-03-29 17:23:24.000000000 +0900
+@@ -1382,7 +1382,7 @@
+ #endif /* UNIV_DEBUG */
+ 	ulint		unlock;
+ 
+-	if (recv_no_ibuf_operations) {
++	if (recv_no_ibuf_operations || srv_fake_write) {
+ 		/* Recovery is running and no operations on the log files are
+ 		allowed yet (the variable name .._no_ibuf_.. is misleading) */
+ 
+diff -ru xtradb-1.0.6_orig/log/log0recv.c xtradb-1.0.6/log/log0recv.c
+--- xtradb-1.0.6_orig/log/log0recv.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/log/log0recv.c	2010-03-29 17:23:24.000000000 +0900
+@@ -42,27 +42,27 @@
+ #include "trx0undo.h"
+ #include "trx0rec.h"
+ #include "fil0fil.h"
+-#ifndef UNIV_HOTBACKUP
++//#ifndef UNIV_HOTBACKUP
+ # include "buf0rea.h"
+ # include "srv0srv.h"
+ # include "srv0start.h"
+ # include "trx0roll.h"
+ # include "row0merge.h"
+ # include "sync0sync.h"
+-#else /* !UNIV_HOTBACKUP */
++//#else /* !UNIV_HOTBACKUP */
+ 
+ /** This is set to FALSE if the backup was originally taken with the
+ ibbackup --include regexp option: then we do not want to create tables in
+ directories which were not included */
+ UNIV_INTERN ibool	recv_replay_file_ops	= TRUE;
+-#endif /* !UNIV_HOTBACKUP */
++//#endif /* !UNIV_HOTBACKUP */
+ 
+ /** Log records are stored in the hash table in chunks at most of this size;
+ this must be less than UNIV_PAGE_SIZE as it is stored in the buffer pool */
+ #define RECV_DATA_BLOCK_SIZE	(MEM_MAX_ALLOC_IN_BUF - sizeof(recv_data_t))
+ 
+ /** Read-ahead area in applying log records to file pages */
+-#define RECV_READ_AHEAD_AREA	32
++#define RECV_READ_AHEAD_AREA	128
+ 
+ /** The recovery system */
+ UNIV_INTERN recv_sys_t*	recv_sys = NULL;
+@@ -599,7 +599,7 @@
+ /***********************************************************************//**
+ Checks the consistency of the checkpoint info
+ @return	TRUE if ok */
+-static
++//static
+ ibool
+ recv_check_cp_is_consistent(
+ /*========================*/
+@@ -629,7 +629,7 @@
+ /********************************************************//**
+ Looks for the maximum consistent checkpoint from the log groups.
+ @return	error code or DB_SUCCESS */
+-static
++//static
+ ulint
+ recv_find_max_checkpoint(
+ /*=====================*/
+@@ -818,7 +818,7 @@
+ InnoDB-3.23.52 where the checksum field contains the log block number.
+ @return TRUE if ok, or if the log block may be in the format of InnoDB
+ version predating 3.23.52 */
+-static
++//static
+ ibool
+ log_block_checksum_is_ok_or_old_format(
+ /*===================================*/
+@@ -2348,7 +2348,7 @@
+ 			   || type == MLOG_FILE_RENAME
+ 			   || type == MLOG_FILE_DELETE) {
+ 			ut_a(space);
+-#ifdef UNIV_HOTBACKUP
++//#ifdef UNIV_HOTBACKUP
+ 			if (recv_replay_file_ops) {
+ 
+ 				/* In ibbackup --apply-log, replay an .ibd file
+@@ -2371,7 +2371,7 @@
+ 					ut_error;
+ 				}
+ 			}
+-#endif
++//#endif
+ 			/* In normal mysqld crash recovery we do not try to
+ 			replay file operations */
+ #ifdef UNIV_LOG_LSN_DEBUG
+@@ -2778,8 +2778,11 @@
+ 
+ 			fprintf(stderr,
+ 				"InnoDB: Doing recovery: scanned up to"
+-				" log sequence number %llu\n",
+-				*group_scanned_lsn);
++				" log sequence number %llu (%lu %)\n",
++				*group_scanned_lsn,
++				(ulong) (*group_scanned_lsn - srv_oldest_lsn)
++				/ (8 * log_group_get_capacity(UT_LIST_GET_FIRST(log_sys->log_groups))/900)
++			);
+ 		}
+ 	}
+ 
+@@ -2891,12 +2894,14 @@
+ 
+ 	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
+ 
++#ifdef UNDEFINED
+ 		fprintf(stderr,
+ 			"InnoDB: Restoring possible"
+ 			" half-written data pages from"
+ 			" the doublewrite\n"
+ 			"InnoDB: buffer...\n");
+-		trx_sys_doublewrite_init_or_restore_pages(TRUE);
++#endif
++		trx_sys_doublewrite_init_or_restore_pages(FALSE);
+ 	}
+ }
+ 
+@@ -3042,6 +3047,7 @@
+ 		recv_sys->recovered_lsn = checkpoint_lsn;
+ 
+ 		srv_start_lsn = checkpoint_lsn;
++		srv_oldest_lsn = checkpoint_lsn;
+ 	}
+ 
+ 	contiguous_lsn = ut_uint64_align_down(recv_sys->scanned_lsn,
+diff -ru xtradb-1.0.6_orig/mem/mem0mem.c xtradb-1.0.6/mem/mem0mem.c
+--- xtradb-1.0.6_orig/mem/mem0mem.c	2009-08-14 15:16:24.000000000 +0900
++++ xtradb-1.0.6/mem/mem0mem.c	2010-03-29 17:23:24.000000000 +0900
+@@ -439,6 +439,7 @@
+ 	/* Add the new block as the last block */
+ 
+ 	UT_LIST_INSERT_AFTER(list, heap->base, block, new_block);
++	heap->sum_len += new_block->len;
+ 
+ 	return(new_block);
+ }
+@@ -463,6 +464,7 @@
+ 	}
+ 
+ 	UT_LIST_REMOVE(list, heap->base, block);
++	heap->sum_len -= block->len;
+ 
+ #ifdef MEM_PERIODIC_CHECK
+ 	mem_pool_mutex_enter();
+diff -ru xtradb-1.0.6_orig/os/os0file.c xtradb-1.0.6/os/os0file.c
+--- xtradb-1.0.6_orig/os/os0file.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/os/os0file.c	2010-03-29 17:23:24.000000000 +0900
+@@ -571,7 +571,7 @@
+ }
+ 
+ #undef USE_FILE_LOCK
+-#define USE_FILE_LOCK
++//#define USE_FILE_LOCK
+ #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
+ /* InnoDB Hot Backup does not lock the data files.
+  * On Windows, mandatory locking is used.
+@@ -1363,8 +1363,9 @@
+ 		attributes = 0;
+ 		ut_error;
+ 	}
+-
++	share_mode |= FILE_SHARE_WRITE; /* Why? */
+ 	file = CreateFile((LPCTSTR) name,
++			  (srv_read_only && create_flag == OPEN_EXISTING) ? GENERIC_READ :
+ 			  GENERIC_READ | GENERIC_WRITE, /* read and write
+ 							access */
+ 			  share_mode,	/* File can be read also by other
+@@ -1421,7 +1422,11 @@
+ 	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
+ 	    || create_mode == OS_FILE_OPEN_RETRY) {
+ 		mode_str = "OPEN";
+-		create_flag = O_RDWR;
++		if (srv_read_only) {
++			create_flag = O_RDONLY;
++		} else {
++			create_flag = O_RDWR;
++		}
+ 	} else if (create_mode == OS_FILE_CREATE) {
+ 		mode_str = "CREATE";
+ 		create_flag = O_RDWR | O_CREAT | O_EXCL;
+@@ -2626,6 +2631,9 @@
+ 
+ 	ut_a((offset & 0xFFFFFFFF) == offset);
+ 
++	if (srv_fake_write)
++		return(TRUE);
++
+ 	os_n_file_writes++;
+ 
+ 	ut_ad(file);
+@@ -2750,6 +2758,9 @@
+ #else
+ 	ssize_t	ret;
+ 
++	if (srv_fake_write)
++		return(TRUE);
++
+ 	ret = os_file_pwrite(file, buf, n, offset, offset_high);
+ 
+ 	if ((ulint)ret == n) {
+diff -ru xtradb-1.0.6_orig/os/os0thread.c xtradb-1.0.6/os/os0thread.c
+--- xtradb-1.0.6_orig/os/os0thread.c	2009-11-02 18:42:56.000000000 +0900
++++ xtradb-1.0.6/os/os0thread.c	2010-03-29 17:23:24.000000000 +0900
+@@ -287,12 +287,17 @@
+ #elif defined(__NETWARE__)
+ 	delay(tm / 1000);
+ #else
++	/* select() simetimes hang up from xtrabackup */
++	/* change to use usleep() for now */
++	usleep(tm);
++/*
+ 	struct timeval	t;
+ 
+ 	t.tv_sec = tm / 1000000;
+ 	t.tv_usec = tm % 1000000;
+ 
+ 	select(0, NULL, NULL, NULL, &t);
++*/
+ #endif
+ }
+ 
+diff -ru xtradb-1.0.6_orig/row/row0merge.c xtradb-1.0.6/row/row0merge.c
+--- xtradb-1.0.6_orig/row/row0merge.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/row/row0merge.c	2010-03-29 17:23:24.000000000 +0900
+@@ -452,7 +452,9 @@
+ 	offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
+ 				  &heap);
+ 
+-	innobase_rec_to_mysql(dup->table, rec, index, offsets);
++	//innobase_rec_to_mysql(dup->table, rec, index, offsets);
++	fprintf(stderr, "InnoDB: Error: row_merge_dup_report() is called.\n");
++	ut_error;
+ 
+ 	if (UNIV_LIKELY_NULL(heap)) {
+ 		mem_heap_free(heap);
+@@ -1453,8 +1455,10 @@
+ 		case 0:
+ 			if (UNIV_UNLIKELY
+ 			    (dict_index_is_unique(index))) {
+-				innobase_rec_to_mysql(table, mrec0,
+-						      index, offsets0);
++				//innobase_rec_to_mysql(table, mrec0,
++				//		      index, offsets0);
++				fprintf(stderr, "InnoDB: Error: row_merge_blocks() is called.\n");
++				ut_error;
+ 				mem_heap_free(heap);
+ 				return(DB_DUPLICATE_KEY);
+ 			}
+@@ -2500,7 +2504,9 @@
+ 
+ 	/* Reset the MySQL row buffer that is used when reporting
+ 	duplicate keys. */
+-	innobase_rec_reset(table);
++	//innobase_rec_reset(table);
++	fprintf(stderr, "InnoDB: Error: row_merge_build_indexes() is called.\n");
++	ut_error;
+ 
+ 	/* Read clustered index of the table and create files for
+ 	secondary index entries for merge sort */
+diff -ru xtradb-1.0.6_orig/srv/srv0srv.c xtradb-1.0.6/srv/srv0srv.c
+--- xtradb-1.0.6_orig/srv/srv0srv.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/srv/srv0srv.c	2010-03-29 17:29:53.000000000 +0900
+@@ -164,7 +164,7 @@
+ 
+ UNIV_INTERN ibool	srv_extra_undoslots = FALSE;
+ 
+-UNIV_INTERN ibool	srv_fast_recovery = FALSE;
++UNIV_INTERN ibool	srv_fast_recovery = TRUE;
+ UNIV_INTERN ibool	srv_recovery_stats = FALSE;
+ 
+ UNIV_INTERN ulint	srv_use_purge_thread = 0;
+@@ -397,6 +397,9 @@
+ 
+ UNIV_INTERN ulong	srv_replication_delay		= 0;
+ 
++UNIV_INTERN ibool	srv_read_only   = FALSE;
++UNIV_INTERN ibool	srv_fake_write  = FALSE;
++
+ UNIV_INTERN long long	srv_ibuf_max_size = 0;
+ UNIV_INTERN ulint	srv_ibuf_active_contract = 0; /* 0:disable 1:enable */
+ UNIV_INTERN ulint	srv_ibuf_accel_rate = 100;
+@@ -1043,7 +1046,7 @@
+ 	}
+ 
+ 	/* Initialize some INFORMATION SCHEMA internal structures */
+-	trx_i_s_cache_init(trx_i_s_cache);
++	//trx_i_s_cache_init(trx_i_s_cache);
+ }
+ 
+ /*********************************************************************//**
+@@ -1054,6 +1057,7 @@
+ /*==========*/
+ {
+ 	os_fast_mutex_free(&srv_conc_mutex);
++#ifdef UNDEFINED
+ 	mem_free(srv_conc_slots);
+ 	srv_conc_slots = NULL;
+ 
+@@ -1067,6 +1071,7 @@
+ 	srv_mysql_table = NULL;
+ 
+ 	trx_i_s_cache_free(trx_i_s_cache);
++#endif
+ }
+ 
+ /*********************************************************************//**
+diff -ru xtradb-1.0.6_orig/srv/srv0start.c xtradb-1.0.6/srv/srv0start.c
+--- xtradb-1.0.6_orig/srv/srv0start.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/srv/srv0start.c	2010-03-29 17:23:24.000000000 +0900
+@@ -111,6 +111,8 @@
+ /** Log sequence number at shutdown */
+ UNIV_INTERN ib_uint64_t	srv_shutdown_lsn;
+ 
++UNIV_INTERN ib_uint64_t srv_oldest_lsn;
++
+ #ifdef HAVE_DARWIN_THREADS
+ # include <sys/utsname.h>
+ /** TRUE if the F_FULLFSYNC option is available */
+@@ -564,7 +566,7 @@
+ /*********************************************************************//**
+ Creates or opens the log files and closes them.
+ @return	DB_SUCCESS or error code */
+-static
++//static
+ ulint
+ open_or_create_log_file(
+ /*====================*/
+@@ -722,7 +724,7 @@
+ /*********************************************************************//**
+ Creates or opens database data files and closes them.
+ @return	DB_SUCCESS or error code */
+-static
++//static
+ ulint
+ open_or_create_data_files(
+ /*======================*/
+@@ -1765,7 +1767,18 @@
+ 
+ 	if (srv_auto_extend_last_data_file
+ 	    && sum_of_data_file_sizes < tablespace_size_in_header) {
++		/* extend table space size aligning with header */
++		ulint	actual_size;
++		fil_extend_space_to_desired_size(&actual_size, 0, tablespace_size_in_header);
++		if (actual_size < tablespace_size_in_header) {
++			fprintf(stderr,
++"InnoDB: Warning: To extend tablespace size aligning with header seems to be failed.\n"
++"InnoDB: The acutual size %lu must be larger than %lu.\n",
++				(ulong) actual_size,
++				(ulong) tablespace_size_in_header);
++		}
+ 
++#ifdef UNDEFINED
+ 		fprintf(stderr,
+ 			"InnoDB: Error: tablespace size stored in header"
+ 			" is %lu pages, but\n"
+@@ -1790,6 +1803,7 @@
+ 
+ 			return(DB_ERROR);
+ 		}
++#endif
+ 	}
+ 
+ 	/* Check that os_fast_mutexes work as expected */
+diff -ru xtradb-1.0.6_orig/trx/trx0purge.c xtradb-1.0.6/trx/trx0purge.c
+--- xtradb-1.0.6_orig/trx/trx0purge.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/trx/trx0purge.c	2010-03-29 17:23:24.000000000 +0900
+@@ -1117,6 +1117,9 @@
+ 	/*	que_thr_t*	thr2; */
+ 	ulint		old_pages_handled;
+ 
++	if (srv_fake_write)
++		return(0);
++
+ 	mutex_enter(&(purge_sys->mutex));
+ 
+ 	if (purge_sys->trx->n_active_thrs > 0) {
+diff -ru xtradb-1.0.6_orig/trx/trx0trx.c xtradb-1.0.6/trx/trx0trx.c
+--- xtradb-1.0.6_orig/trx/trx0trx.c	2010-03-29 16:17:22.000000000 +0900
++++ xtradb-1.0.6/trx/trx0trx.c	2010-03-29 17:23:24.000000000 +0900
+@@ -491,8 +491,8 @@
+ 						TRX_ID_PREP_PRINTF(trx->id));
+ 
+ 					if (srv_force_recovery == 0) {
+-
+-						trx->conc_state = TRX_PREPARED;
++						/* xtrabackup should rollback it */
++						trx->conc_state = TRX_ACTIVE;
+ 					} else {
+ 						fprintf(stderr,
+ 							"InnoDB: Since"
+@@ -568,9 +568,9 @@
+ 								trx->id));
+ 
+ 						if (srv_force_recovery == 0) {
+-
++							/* xtrabackup should rollback it */
+ 							trx->conc_state
+-								= TRX_PREPARED;
++								= TRX_ACTIVE;
+ 						} else {
+ 							fprintf(stderr,
+ 								"InnoDB: Since"

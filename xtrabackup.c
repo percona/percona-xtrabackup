@@ -421,6 +421,9 @@ struct fil_space_struct {
 				file we have written to */
 	ibool		is_in_unflushed_spaces; /*!< TRUE if this space is
 				currently in unflushed_spaces */
+#ifdef XTRADB_BASED
+	ibool		is_corrupt;
+#endif
 	UT_LIST_NODE_T(fil_space_t) space_list;
 				/*!< list of all spaces */
 	ulint		magic_n;/*!< FIL_SPACE_MAGIC_N */
@@ -577,6 +580,9 @@ long innobase_log_files_in_group_backup;
 long innobase_mirrored_log_groups = 1;
 long innobase_open_files = 300L;
 
+long innobase_page_size = (1 << 14); /* 16KB */
+my_bool innobase_fast_checksum = FALSE;
+
 longlong innobase_buffer_pool_size = 8*1024*1024L;
 longlong innobase_log_file_size = 5*1024*1024L;
 longlong innobase_log_file_size_backup;
@@ -665,6 +671,10 @@ enum options_xtrabackup
   OPT_INNODB_IO_CAPACITY,
   OPT_INNODB_READ_IO_THREADS,
   OPT_INNODB_WRITE_IO_THREADS,
+#endif
+#ifdef XTRADB_BASED
+  OPT_INNODB_PAGE_SIZE,
+  OPT_INNODB_FAST_CHECKSUM,
 #endif
   OPT_INNODB_FORCE_RECOVERY,
   OPT_INNODB_LOCK_WAIT_TIMEOUT,
@@ -890,6 +900,16 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "How many files at the maximum InnoDB keeps open at the same time.",
    (G_PTR*) &innobase_open_files, (G_PTR*) &innobase_open_files, 0,
    GET_LONG, REQUIRED_ARG, 300L, 10L, LONG_MAX, 0, 1L, 0},
+#ifdef XTRADB_BASED
+  {"innodb_page_size", OPT_INNODB_PAGE_SIZE,
+   "The universal page size of the database.",
+   (G_PTR*) &innobase_page_size, (G_PTR*) &innobase_page_size, 0,
+   GET_LONG, REQUIRED_ARG, (1 << 14), (1 << 12), (1 << UNIV_PAGE_SIZE_SHIFT_MAX), 0, 1L, 0},
+  {"innodb_fast_checksum", OPT_INNODB_FAST_CHECKSUM,
+   "Change the algorithm of checksum for the whole of datapage to 4-bytes word based.",
+   (G_PTR*) &innobase_fast_checksum,
+   (G_PTR*) &innobase_fast_checksum, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
 /*
   {"innodb_rollback_on_timeout", OPT_INNODB_ROLLBACK_ON_TIMEOUT,
    "Roll back the complete transaction on lock wait timeout, for 4.x compatibility (disabled by default)",
@@ -1481,6 +1501,20 @@ thd_supports_xa(
 {
 	return(FALSE);
 }
+
+#ifdef XTRADB_BASED
+trx_t*
+innobase_get_trx()
+{
+	return(NULL);
+}
+
+ibool
+innobase_get_slow_log()
+{
+	return(FALSE);
+}
+#endif
 #endif
 
 my_bool
@@ -1499,6 +1533,33 @@ innodb_init_param(void)
 
 	/* dummy for initialize all_charsets[] */
 	get_charset_name(0);
+
+#ifdef XTRADB_BASED
+	srv_page_size = 0;
+	srv_page_size_shift = 0;
+
+	if (innobase_page_size != (1 << 14)) {
+		int n_shift;
+
+		fprintf(stderr,
+			"InnoDB: Warning: innodb_page_size has been changed from default value 16384.\n");
+		for (n_shift = 12; n_shift <= UNIV_PAGE_SIZE_SHIFT_MAX; n_shift++) {
+			if (innobase_page_size == (1 << n_shift)) {
+				srv_page_size_shift = n_shift;
+				srv_page_size = (1 << srv_page_size_shift);
+				fprintf(stderr,
+					"InnoDB: The universal page size of the database is set to %lu.\n",
+					srv_page_size);
+				break;
+			}
+		}
+	} else {
+		srv_page_size_shift = 14;
+		srv_page_size = (1 << srv_page_size_shift);
+	}
+
+	srv_fast_checksum = (ibool) innobase_fast_checksum;
+#endif
 
 	/* Check that values don't overflow on 32-bit systems. */
 	if (sizeof(ulint) == 4) {
@@ -1691,7 +1752,8 @@ mem_free_and_error:
                 srv_use_awe = TRUE;
                 srv_pool_size = (ulint)
                                 (1024 * innobase_buffer_pool_awe_mem_mb);
-                srv_awe_window_size = (ulint) innobase_buffer_pool_size;
+                //srv_awe_window_size = (ulint) innobase_buffer_pool_size;
+		srv_awe_window_size = (ulint) xtrabackup_use_memory;
 
                 /* Note that what the user specified as
                 innodb_buffer_pool_size is actually the AWE memory window
@@ -1699,7 +1761,8 @@ mem_free_and_error:
                 determined by .._awe_mem_mb. */
         }
 #else
-	srv_buf_pool_size = (ulint) innobase_buffer_pool_size;
+	//srv_buf_pool_size = (ulint) innobase_buffer_pool_size;
+	srv_buf_pool_size = (ulint) xtrabackup_use_memory;
 #endif
 
 	srv_mem_pool_size = (ulint) innobase_additional_mem_pool_size;
@@ -3921,6 +3984,11 @@ not_consistent:
 	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_OFFSET,
 			LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
 			ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
+#ifdef XTRADB_BASED
+	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_ARCHIVED_LSN,
+			(ib_uint64_t)(LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
+					ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE))));
+#endif
 	fold = ut_fold_binary(log_buf + LOG_CHECKPOINT_1, LOG_CHECKPOINT_CHECKSUM_1);
 	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_CHECKSUM_1, fold);
 
@@ -3932,6 +4000,11 @@ not_consistent:
         mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_OFFSET,
                         LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
                         ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
+#ifdef XTRADB_BASED
+	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_ARCHIVED_LSN,
+			(ib_uint64_t)(LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
+					ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE))));
+#endif
         fold = ut_fold_binary(log_buf + LOG_CHECKPOINT_2, LOG_CHECKPOINT_CHECKSUM_1);
         mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_CHECKSUM_1, fold);
 
@@ -4464,6 +4537,11 @@ skip_check:
 	os_sync_mutex = NULL;
 #ifdef INNODB_VERSION_SHORT
 	ut_mem_init();
+#ifdef XTRADB_BASED
+	/* temporally dummy value to avoid crash */
+	srv_page_size_shift = 14;
+	srv_page_size = (1 << srv_page_size_shift);
+#endif
 #endif
 	os_sync_init();
 	sync_init();
