@@ -85,6 +85,7 @@ my $option_ibbackup_binary = 'xtrabackup';
 
 my $option_defaults_file = '';
 my $option_incremental = '';
+my $option_incremental_basedir = '';
 my $option_remote_host = '';
 my $option_stream = '';
 my $option_tmpdir = '';
@@ -435,7 +436,7 @@ Options:
                 should be the command used to run ibbackup. This can
                 be useful if ibbackup is not in your search path or
                 working directory.  If this option is not given,
-                ibbackup is run with command "ibbackup".
+                ibbackup is run with command "xtrabackup".
     --no-lock
                 Use this option to disable table lock with
                 FLUSH TABLES WITH READ LOCK. use it only while ALL your 
@@ -509,9 +510,10 @@ sub backup {
         mysql_check();
         mysql_lockall() if !$option_no_lock;
 
-        # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files
-        backup_files();
     }
+    
+    # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files
+    backup_files();
 
     # resume ibbackup and wait till it has finished
     my $ibbackup_exit_code = resume_ibbackup();
@@ -1669,6 +1671,7 @@ sub check_args {
                         'no-timestamp' => \$option_no_timestamp,
                         'defaults-file=s' => \$option_defaults_file,
                         'incremental' => \$option_incremental,
+                        'incremental-basedir=s' => \$option_incremental_basedir,
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
                         'tmpdir=s' => \$option_tmpdir,
@@ -1743,7 +1746,12 @@ sub check_args {
             my @dirs = `ls -1 -t $backup_root`;
             my $inc_dir = $dirs[0];
             chomp($inc_dir);
-            $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
+            if ($option_incremental_basedir) {
+                $incremental_basedir = $option_incremental_basedir;
+            } else {
+                $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
+            }
+
             #print STDERR "--incremental_basedir=$incremental_basedir\n";
             #print STDERR "incremental backup is not supported for now.\n";
             #exit(1);
@@ -1933,7 +1941,7 @@ sub backup_files {
                 }
             }
         }
-        if ($option_remote_host) {
+        if ($option_remote_host and @scp_files) {
           my $scp_file_list = join(" ", map { "$source_dir/$database/$_" } @scp_files);
           system("scp $option_scp_opt $scp_file_list '$option_remote_host:$backup_dir/$database/'")
               and Die "Failed to execute \"scp $option_scp_opt $scp_file_list '$option_remote_host:$backup_dir/$database/'\": $!";
