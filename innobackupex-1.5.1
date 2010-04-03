@@ -85,6 +85,7 @@ my $option_ibbackup_binary = 'xtrabackup';
 
 my $option_defaults_file = '';
 my $option_incremental = '';
+my $option_incremental_basedir = '';
 my $option_remote_host = '';
 my $option_stream = '';
 my $option_tmpdir = '';
@@ -1670,6 +1671,7 @@ sub check_args {
                         'no-timestamp' => \$option_no_timestamp,
                         'defaults-file=s' => \$option_defaults_file,
                         'incremental' => \$option_incremental,
+                        'incremental-basedir=s' => \$option_incremental_basedir,
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
                         'tmpdir=s' => \$option_tmpdir,
@@ -1744,7 +1746,12 @@ sub check_args {
             my @dirs = `ls -1 -t $backup_root`;
             my $inc_dir = $dirs[0];
             chomp($inc_dir);
-            $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
+            if ($option_incremental_basedir) {
+                $incremental_basedir = $option_incremental_basedir;
+            } else {
+                $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
+            }
+
             #print STDERR "--incremental_basedir=$incremental_basedir\n";
             #print STDERR "incremental backup is not supported for now.\n";
             #exit(1);
