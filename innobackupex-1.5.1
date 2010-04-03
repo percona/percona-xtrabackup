@@ -1941,7 +1941,7 @@ sub backup_files {
                 }
             }
         }
-        if ($option_remote_host) {
+        if ($option_remote_host and @scp_files) {
           my $scp_file_list = join(" ", map { "$source_dir/$database/$_" } @scp_files);
           system("scp $option_scp_opt $scp_file_list '$option_remote_host:$backup_dir/$database/'")
               and Die "Failed to execute \"scp $option_scp_opt $scp_file_list '$option_remote_host:$backup_dir/$database/'\": $!";
