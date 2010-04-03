@@ -509,9 +509,10 @@ sub backup {
         mysql_check();
         mysql_lockall() if !$option_no_lock;
 
-        # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files
-        backup_files();
     }
+    
+    # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files
+    backup_files();
 
     # resume ibbackup and wait till it has finished
     my $ibbackup_exit_code = resume_ibbackup();
