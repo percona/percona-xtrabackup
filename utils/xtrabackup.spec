@@ -6,7 +6,7 @@
 %define distribution  rhel%{redhat_version}
 %define release       %{buildnumber}.%{distribution}
 %define xtrabackup_version 1.2
-%define xtrabackup_revision undefined
+%{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 %define mysql_version 5.1.45
 %define innodb_plugin_version 1.0.6
 %define xtradb_version 10
