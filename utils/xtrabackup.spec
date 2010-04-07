@@ -5,8 +5,11 @@
 %{!?buildnumber:%define buildnumber 1}
 %define distribution  rhel%{redhat_version}
 %define release       %{buildnumber}.%{distribution}
-%{!?xtrabackup_version:%define xtrabackup_version undefined}
-%{!?xtrabackup_revision:%define xtrabackup_revision undefined}
+%define xtrabackup_version 1.2
+%define xtrabackup_revision undefined
+%define mysql_version 5.1.45
+%define innodb_plugin_version 1.0.6
+%define xtradb_version 10
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
 Name: xtrabackup
@@ -16,7 +19,10 @@ Group: Server/Databases
 License: GPLv2
 Packager: Vadim Tkachenko <vadim@percona.com>
 URL: http://percona.com/percona-lab.html
-Source: %{name}-%{version}.tar.gz
+Source0: mysql-%{mysql_version}.tar.gz
+Source1: http://www.percona.com/percona-builds/Percona-XtraDB/Percona-XtraDB-%{mysql_version}-%{xtradb_version}/source/percona-xtradb-%{innodb_plugin_version}-%{xtradb_version}.tar.gz
+Source2: ftp://ftp.feep.net/pub/software/libtar/libtar-1.2.11.tar.gz
+Source3: xtrabackup-%{xtrabackup_version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Requires: mysql-client 
 
@@ -33,18 +39,28 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 
 
 %prep
-%setup -q
+
+%setup -n mysql-%{mysql_version} -q
 tar zxf $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz
 cd libtar-1.2.11
+cd ../
+cd storage
+rm -rf innobase
+tar zxf $RPM_SOURCE_DIR/percona-xtradb-%{innodb_plugin_version}-%{xtradb_version}.tar.gz
+mv percona-xtradb-%{innodb_plugin_version}-%{xtradb_version} innobase
+cd innobase
+tar zxf $RPM_SOURCE_DIR/xtrabackup-%{xtrabackup_version}.tar.gz
+mv xtrabackup-%{xtrabackup_version} xtrabackup
+patch -p1 < xtrabackup/fix_innodb_for_backup_xtradb.patch
+cd ../../libtar-1.2.11
 patch -p1 < ../storage/innobase/xtrabackup/tar4ibd_libtar-1.2.11.patch
-
 
 %build
 export CC=${CC-"gcc"} 
 export CXX=$CC 
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 ./configure \
-  --prefix=%{_prefix} --enable-local-infile --enable-thread-safe-client --with-plugins=innobase --with-zlib-dir=bundled
+  --prefix=%{_prefix} --enable-local-infile --enable-thread-safe-client --with-plugins=innobase --with-zlib-dir=bundled --with-extra-charsets=complex
 make -j`if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi`
 cd storage/innobase/xtrabackup
 make
