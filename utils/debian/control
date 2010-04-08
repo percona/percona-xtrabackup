@@ -1,0 +1,15 @@
+Source: xtrabackup
+Section: misc
+Priority: extra
+Maintainer: Aleksandr Kuzminsky <aleksandr.kuzminsky@percona.com>
+Build-Depends: debhelper, autotools-dev
+Standards-Version: 3.7.3
+Homepage: https://launchpad.net/percona-xtrabackup
+Vcs-Browser: http://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-1.2/files
+Vcs-Bzr: bzr+ssh://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-1.2/
+
+Package: xtrabackup
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, mysql-client
+Description: Open source backup tool for InnoDB and XtraDB
+ Open source backup tool for InnoDB and XtraDB
