@@ -1,0 +1,16 @@
+xtrabackup (1.2) unstable; urgency=low
+
+  * XtraBackup is based on XtraDB 10
+
+ -- Aleksandr Kuzminsky <aleksandr.kuzminsky@percona.com>  Wed, 07 Mar 2010 23:45:00 +0200
+xtrabackup (1.1) unstable; urgency=low
+
+  * XtraBackup is ported to InnoDB plugin
+
+ -- Aleksandr Kuzminsky <aleksandr.kuzminsky@percona.com>  Mon, 15 Mar 2010 07:00:00 +0200
+xtrabackup (1.0) unstable; urgency=low
+
+  * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+
+ -- Alex <aleksandr.kuzminsky@percona.com>  Sun, 28 Jun 2009 14:20:17 -0700
+
