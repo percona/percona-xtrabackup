@@ -4957,6 +4957,11 @@ next_opt:
 		fprintf(stderr, "xtrabackup: tables regcomp(): %s\n",errbuf);
 	}
 
+#ifdef XTRADB_BASED
+	/* temporary setting of enough size */
+	srv_page_size_shift = UNIV_PAGE_SIZE_SHIFT_MAX;
+	srv_page_size = UNIV_PAGE_SIZE_MAX;
+#endif
 	if (xtrabackup_backup && xtrabackup_incremental) {
 		/* direct specification is only for --backup */
 		/* and the lsn is prior to the other option */
