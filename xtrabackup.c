@@ -2326,12 +2326,14 @@ read_retry:
 
 	/* close */
 	printf("        ...done\n");
-	os_file_close(src_file);
+	if (!node->open) {
+		os_file_close(src_file);
+	}
 	os_file_close(dst_file);
 	ut_free(buf2);
 	return(FALSE);
 error:
-	if (src_file != -1)
+	if (src_file != -1 && !node->open)
 		os_file_close(src_file);
 	if (dst_file != -1)
 		os_file_close(dst_file);
