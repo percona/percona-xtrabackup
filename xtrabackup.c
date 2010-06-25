@@ -521,8 +521,13 @@ char *xtrabackup_tables = NULL;
 regex_t tables_regex;
 regmatch_t tables_regmatch[1];
 
-static ulint		n[SRV_MAX_N_IO_THREADS + 5];
-static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 5];
+#ifdef XTRADB_BASED
+static ulint		n[SRV_MAX_N_IO_THREADS + 6 + 64];
+static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6 + 64];
+#else
+static ulint		n[SRV_MAX_N_IO_THREADS + 6];
+static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6];
+#endif
 
 LSN64 checkpoint_lsn_start;
 LSN64 checkpoint_no_start;
@@ -582,6 +587,8 @@ long innobase_open_files = 300L;
 
 long innobase_page_size = (1 << 14); /* 16KB */
 my_bool innobase_fast_checksum = FALSE;
+my_bool	innobase_extra_undoslots = FALSE;
+char*	innobase_doublewrite_file = NULL;
 
 longlong innobase_buffer_pool_size = 8*1024*1024L;
 longlong innobase_log_file_size = 5*1024*1024L;
@@ -675,6 +682,8 @@ enum options_xtrabackup
 #ifdef XTRADB_BASED
   OPT_INNODB_PAGE_SIZE,
   OPT_INNODB_FAST_CHECKSUM,
+  OPT_INNODB_EXTRA_UNDOSLOTS,
+  OPT_INNODB_DOUBLEWRITE_FILE,
 #endif
   OPT_INNODB_FORCE_RECOVERY,
   OPT_INNODB_LOCK_WAIT_TIMEOUT,
@@ -909,6 +918,15 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "Change the algorithm of checksum for the whole of datapage to 4-bytes word based.",
    (G_PTR*) &innobase_fast_checksum,
    (G_PTR*) &innobase_fast_checksum, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"innodb_extra_undoslots", OPT_INNODB_EXTRA_UNDOSLOTS,
+   "Enable to use about 4000 undo slots instead of default 1024. Not recommended to use, "
+   "Because it is not change back to disable, once it is used.",
+   (G_PTR*) &innobase_extra_undoslots, (G_PTR*) &innobase_extra_undoslots,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"innodb_doublewrite_file", OPT_INNODB_DOUBLEWRITE_FILE,
+   "Path to special datafile for doublewrite buffer. (default is "": not used)",
+   (G_PTR*) &innobase_doublewrite_file, (G_PTR*) &innobase_doublewrite_file,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
 /*
   {"innodb_rollback_on_timeout", OPT_INNODB_ROLLBACK_ON_TIMEOUT,
@@ -1502,6 +1520,14 @@ thd_supports_xa(
 	return(FALSE);
 }
 
+ibool
+trx_is_strict(
+/*==========*/
+	trx_t*	trx)	/*!< in: transaction */
+{
+	return(FALSE);
+}
+
 #ifdef XTRADB_BASED
 trx_t*
 innobase_get_trx()
@@ -1676,6 +1702,12 @@ mem_free_and_error:
 			}
 		}
 	}
+
+#ifdef XTRADB_BASED
+	srv_doublewrite_file = innobase_doublewrite_file;
+
+	srv_extra_undoslots = (ibool) innobase_extra_undoslots;
+#endif
 
 	/* -------------- Log files ---------------------------*/
 
@@ -2009,7 +2041,12 @@ xtrabackup_copy_datafile(fil_node_t* node)
 	ulint		zip_size;
 #endif
 
-	if (xtrabackup_tables && (node->space->id != 0)) { /* must backup id==0 */
+#ifdef XTRADB_BASED
+	if (xtrabackup_tables && (!trx_sys_sys_space(node->space->id)))
+#else
+	if (xtrabackup_tables && (node->space->id != 0))
+#endif
+	{ /* must backup id==0 */
 		char *p;
 		int p_len, regres;
 		char *next, *prev;
@@ -2077,7 +2114,12 @@ skip_filter:
 	}
 #endif
 
-	if (node->space->id == 0) {
+#ifdef XTRADB_BASED
+	if (trx_sys_sys_space(node->space->id))
+#else
+	if (node->space->id == 0)
+#endif
+	{
 		char *next, *p;
 		/* system datafile "/fullpath/datafilename.ibd" or "./datafilename.ibd" */
 		p = node->name;
@@ -2206,7 +2248,12 @@ read_retry:
 			if (buf_page_is_corrupted(page + chunk_offset, zip_size))
 #endif
 			{
-				if (node->space->id == 0
+				if (
+#ifdef XTRADB_BASED
+				    trx_sys_sys_space(node->space->id)
+#else
+				    node->space->id == 0
+#endif
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
 				       >= FSP_EXTENT_SIZE
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
@@ -2889,6 +2936,8 @@ xtrabackup_backup_func(void)
 
 	fil_init(srv_max_n_open_files);
 #else
+	srv_n_file_io_threads = 2 + srv_n_read_io_threads + srv_n_write_io_threads;
+
 	os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD,
 		    srv_n_read_io_threads,
 		    srv_n_write_io_threads,
@@ -2908,6 +2957,8 @@ xtrabackup_backup_func(void)
 
 		os_thread_create(io_handler_thread, n + i, thread_ids + i);
     	}
+
+	os_thread_sleep(200000); /*0.2 sec*/
 
 	err = open_or_create_data_files(&create_new_db,
 					&min_flushed_lsn, &max_flushed_lsn,
@@ -3146,8 +3197,17 @@ reread_log_header:
 
 		/* mkdir if not exist */
 		ptr1 = strstr(space->name, SRV_PATH_SEPARATOR_STR);
-		ptr2 = strstr(ptr1 + 1, SRV_PATH_SEPARATOR_STR);
-		if(space->id && ptr2) {
+		if (ptr1) {
+			ptr2 = strstr(ptr1 + 1, SRV_PATH_SEPARATOR_STR);
+		} else {
+			ptr2 = NULL;
+		}
+#ifdef XTRADB_BASED
+		if(!trx_sys_sys_space(space->id) && ptr2)
+#else
+		if(space->id && ptr2)
+#endif
+		{
 			/* single table space */
 			*ptr2 = 0; /* temporary (it's my lazy..)*/
 			sprintf(path, "%s%s",xtrabackup_target_dir,ptr1);
@@ -4698,7 +4758,13 @@ skip_check:
 			while (space != NULL) {
 				/* treat file_per_table only */
 				if (space->purpose != FIL_TABLESPACE
-				    || space->id == 0) {
+#ifdef XTRADB_BASED
+				    || trx_sys_sys_space(space->id)
+#else
+				    || space->id == 0
+#endif
+				   )
+				{
 					space = UT_LIST_GET_NEXT(space_list, space);
 					continue;
 				}
