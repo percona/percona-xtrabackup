@@ -200,6 +200,7 @@ print_version();
 
 # initialize global variables and perform some checks
 init();
+set_xtrabackup_version();
 
 my $ibbackup_exit_code = 0;
 
@@ -2260,3 +2261,46 @@ sub escape_path {
   return $str;
 
 }
+
+sub set_xtrabackup_version {
+# Based on MySQL version choose correct binary
+#  MySQL 5.0.* - xtrabackup_5.0
+#  MySQL 5.1.* - xtrabackup_5.1
+#  MySQL 5.1.* with InnoDB plugin - xtrabackup_plugin
+#  Percona Server >= 11.0 - xtrabackup_xtradb
+# 
+my @lines;
+my $var_version = '';
+my $var_innodb_version = '';
+mysql_open();
+mysql_check();
+mysql_send "SHOW VARIABLES LIKE 'version'\\G";
+file_to_array($mysql_stdout, \@lines);
+for (@lines) {
+	$var_version = $1 if /Value:\s+(\S+)/;
+	}
+mysql_send "SHOW VARIABLES LIKE 'innodb_version'\\G";
+file_to_array($mysql_stdout, \@lines);
+for (@lines) {
+	$var_innodb_version = $1 if /Value:\s+(\S+)/;
+	}
+print "InnoDB version: $var_innodb_version\n";
+if($var_version =~ m/5\.0\.\d/){
+	print "MySQL 5.0 - using xtrabackup_5.0\n";
+	$option_ibbackup_binary = 'xtrabackup_5.0';
+}
+if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m//){
+	print "MySQL 5.1 - using xtrabackup_5.1\n";
+	$option_ibbackup_binary = 'xtrabackup_5.1';
+}
+if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
+	print "MySQL 5.1 with plugin - using xtrabackup_plugin\n";
+	$option_ibbackup_binary = 'xtrabackup_plugin';
+}
+if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
+	print "Percona Server with XtraDB - using xtrabackup_xtradb\n";
+	$option_ibbackup_binary = 'xtrabackup_xtradb';
+}
+mysql_close();
+}
+          
