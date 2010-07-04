@@ -43,8 +43,8 @@ build-stamp:  config.status
 	# Add here commands to compile the package.
 	wget http://www.percona.com/downloads/community/mysql-5.1.46.tar.gz
 	wget http://www.percona.com/downloads/community/libtar-1.2.11.tar.gz
-	./utils/build.sh plugin
 	./utils/build.sh xtradb
+	./utils/build.sh plugin
 
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
 
