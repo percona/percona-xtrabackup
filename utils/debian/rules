@@ -23,7 +23,7 @@ endif
 MAKE_J = -j$(shell if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi)
 
 
-config.status: configure
+config.status: 
 	dh_testdir
 	# Add here commands to configure the package.
 ifneq "$(wildcard /usr/share/misc/config.sub)" ""
