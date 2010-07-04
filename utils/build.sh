@@ -152,13 +152,11 @@ case "$type" in
 "xtradb")
 	mysql_version=5.1.47
 	xtradb_version=11
-	percona_server_dir=/home/akuzminsky/src/Percona-Server/release-5.1.47-11
 
 	# Get Percona Server
-	cd $percona_server_dir
-	#rm -rf release-$mysql_version-$xtradb_version 
-	#bzr branch  lp:percona-server/release-$mysql_version-$xtradb_version 
-	#cd release-$mysql_version-$xtradb_version 
+	rm -rf release-$mysql_version-$xtradb_version 
+	bzr branch  lp:percona-server/release-$mysql_version-$xtradb_version 
+	cd release-$mysql_version-$xtradb_version 
 	make
 	rm -rf $top_dir/Percona-Server
 	mv Percona-Server $top_dir
