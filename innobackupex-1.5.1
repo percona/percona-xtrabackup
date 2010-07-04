@@ -81,7 +81,7 @@ my $option_mysql_host = '';
 my $option_no_timestamp = '';
 my $option_slave_info = '';
 my $option_no_lock = '';
-my $option_ibbackup_binary = 'xtrabackup';
+my $option_ibbackup_binary = 'xtrabackup_legacy';
 
 my $option_defaults_file = '';
 my $option_incremental = '';
@@ -2287,19 +2287,19 @@ for (@lines) {
 print "InnoDB version: $var_innodb_version\n";
 if($var_version =~ m/5\.0\.\d/){
 	print "MySQL 5.0 - using xtrabackup_5.0\n";
-	$option_ibbackup_binary = 'xtrabackup_5.0';
+	$option_ibbackup_binary = 'xtrabackup_legacy';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m//){
 	print "MySQL 5.1 - using xtrabackup_5.1\n";
-	$option_ibbackup_binary = 'xtrabackup_5.1';
+	$option_ibbackup_binary = 'xtrabackup_legacy';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
 	print "MySQL 5.1 with plugin - using xtrabackup_plugin\n";
-	$option_ibbackup_binary = 'xtrabackup_plugin';
+	$option_ibbackup_binary = 'xtrabackup_legacy';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
 	print "Percona Server with XtraDB - using xtrabackup_xtradb\n";
-	$option_ibbackup_binary = 'xtrabackup_xtradb';
+	$option_ibbackup_binary = 'xtrabackup';
 }
 mysql_close();
 }
