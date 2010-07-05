@@ -61,7 +61,7 @@ clean:
 
 	dh_clean 
 
-install: build
+install: 
 	dh_testdir
 	dh_testroot
 	dh_clean -k 
@@ -74,11 +74,11 @@ install: build
 	install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd $(CURDIR)/debian/xtrabackup/usr/bin
 
 # Build architecture-independent files here.
-binary-indep: build install
+binary-indep: install
 # We have nothing to do by default.
 
 # Build architecture-dependent files here.
-binary-arch: build install
+binary-arch: install
 	dh_testdir
 	dh_testroot
 	dh_installchangelogs ChangeLog
