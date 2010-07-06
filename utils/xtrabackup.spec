@@ -5,7 +5,8 @@
 %{!?buildnumber:%define buildnumber 1}
 %define distribution  rhel%{redhat_version}
 %define release       %{buildnumber}.%{distribution}
-%{!?xtrabackup_version:%define xtrabackup_version undefined}
+%define xtrabackup_version 1.3
+%define xtradb_version 11
 %{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
@@ -15,16 +16,19 @@ Release: %{release}
 Group: Server/Databases
 License: GPLv2
 Packager: Vadim Tkachenko <vadim@percona.com>
-URL: http://percona.com/percona-lab.html
-Source: %{name}-%{version}.tar.gz
+URL: http://www.percona.com/software/percona-xtrabackup/
+Source: xtrabackup-%{xtrabackup_version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
-Requires: mysql-client 
+Requires: mysql
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
 
 
 %changelog
+* Wed Jun 30 2010 Aleksandr Kuzminsky
+- Version 1.3 ported on Percona Server 11
+
 * Thu Mar 11 2010 Aleksandr Kuzminsky
 - Ported to MySQL 5.1 with InnoDB plugin
 
@@ -34,31 +38,24 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 
 %prep
 %setup -q
-tar zxf $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz
-cd libtar-1.2.11
-patch -p1 < ../storage/innobase/xtrabackup/tar4ibd_libtar-1.2.11.patch
 
 
 %build
 export CC=${CC-"gcc"} 
 export CXX=$CC 
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-./configure \
-  --prefix=%{_prefix} --enable-local-infile --enable-thread-safe-client --with-plugins=innobase --with-zlib-dir=bundled
-make -j`if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi`
-cd storage/innobase/xtrabackup
-make
-cd ../../..
-cd libtar-1.2.11
-./configure --prefix=%{_prefix}
-make
+cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.1.46.tar.gz .
+./utils/build.sh plugin
+./utils/build.sh xtradb
 
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
 install -d %{buildroot}%{_bindir}
 # install binaries and configs
-install -m 755 storage/innobase/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
-install -m 755 libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
+
+install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
+install -m 755 mysql-5.1.46/storage/innodb_plugin/xtrabackup/xtrabackup_legacy %{buildroot}%{_bindir}
+install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 
 %clean
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
@@ -67,6 +64,7 @@ install -m 755 libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 %defattr(-,root,root)
 %{_bindir}/innobackupex-1.5.1
 %{_bindir}/xtrabackup
+%{_bindir}/xtrabackup_legacy
 %{_bindir}/tar4ibd
 
 
