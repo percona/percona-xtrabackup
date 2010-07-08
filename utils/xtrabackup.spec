@@ -44,8 +44,8 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 export CC=${CC-"gcc"} 
 export CXX=$CC 
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.1.46.tar.gz .
-./utils/build.sh plugin
+cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.0.91.tar.gz .
+./utils/build.sh 5.0
 ./utils/build.sh xtradb
 
 %install
@@ -54,7 +54,7 @@ install -d %{buildroot}%{_bindir}
 # install binaries and configs
 
 install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
-install -m 755 mysql-5.1.46/storage/innodb_plugin/xtrabackup/xtrabackup_legacy %{buildroot}%{_bindir}
+install -m 755 mysql-5.0.91/innobase/xtrabackup/xtrabackup_50 %{buildroot}%{_bindir}
 install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 
 %clean
@@ -64,7 +64,7 @@ install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir
 %defattr(-,root,root)
 %{_bindir}/innobackupex-1.5.1
 %{_bindir}/xtrabackup
-%{_bindir}/xtrabackup_legacy
+%{_bindir}/xtrabackup_50
 %{_bindir}/tar4ibd
 
 
