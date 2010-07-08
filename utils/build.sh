@@ -4,6 +4,11 @@ AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://www.percona.com/downloads/community/"
 
 set -e
+MAKE_CMD=make
+if [ "`uname -s`" = "FreeBSD" ]
+then
+	MAKE_CMD=gmake
+fi
 
 function usage(){
 	echo "Usage: `basename $0` 5.0|5.1|plugin|xtradb"
@@ -56,16 +61,16 @@ case "$type" in
 	    --enable-thread-safe-client \
 	    --enable-shared \
 	    --with-extra-charsets=complex
-	make all
+	$MAKE_CMD all
 	
 	echo "Compile XtraBackup"
 	cd $top_dir/mysql-$mysql_version/innobase/xtrabackup
-	make 5.0
+	$MAKE_CMD 5.0
 	
 	echo "Compile tar4ibd"
 	cd $top_dir/mysql-$mysql_version/libtar-1.2.11
 	./configure
-	make
+	$MAKE_CMD
 	;;
 "5.1")
 	mysql_version=5.1.42
@@ -106,16 +111,16 @@ case "$type" in
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
 	    --with-extra-charsets=complex
-	make all
+	$MAKE_CMD all
 	
 	echo "Compile XtraBackup"
 	cd $top_dir/mysql-$mysql_version/storage/innobase/xtrabackup
-	make 5.1
+	$MAKE_CMD 5.1
 	
 	echo "Compile tar4ibd"
 	cd $top_dir/mysql-$mysql_version/libtar-1.2.11
 	./configure
-	make
+	$MAKE_CMD
 	;;
 "plugin")
 	mysql_version=5.1.46
@@ -156,16 +161,16 @@ case "$type" in
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
 	    --with-extra-charsets=complex
-	make all
+	$MAKE_CMD all
 	
 	echo "Compile XtraBackup"
 	cd $top_dir/mysql-$mysql_version/storage/innodb_plugin/xtrabackup
-	make plugin
+	$MAKE_CMD plugin
 	
 	echo "Compile tar4ibd"
 	cd $top_dir/mysql-$mysql_version/libtar-1.2.11
 	./configure
-	make
+	$MAKE_CMD
 	;;
 "xtradb")
 	mysql_version=5.1.47
@@ -175,7 +180,7 @@ case "$type" in
 	rm -rf release-$mysql_version-$xtradb_version 
 	bzr branch  lp:percona-server/release-$mysql_version-$xtradb_version 
 	cd release-$mysql_version-$xtradb_version 
-	make
+	$MAKE_CMD
 	rm -rf $top_dir/Percona-Server
 	mv Percona-Server $top_dir
 	cd $top_dir
@@ -209,17 +214,17 @@ case "$type" in
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
 	    --with-extra-charsets=complex
-	make all
+	$MAKE_CMD all
 
 	# Compile XtraBackup
 	cd storage/innodb_plugin/xtrabackup
-	make xtradb
+	$MAKE_CMD xtradb
 
 	# Compile tar4ibd
 	cd $top_dir/Percona-Server
 	cd libtar-1.2.11
 	./configure
-	make all
+	$MAKE_CMD all
 	;;
 *)
 	usage
