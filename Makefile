@@ -31,7 +31,7 @@ default: xtradb
 		../dyn/libdyn.a ../mem/libmem.a ../sync/libsync.a ../ut/libut.a\
 		../os/libos.a ../ut/libut.a
 5.0: MYSQLOBJS = ../../mysys/libmysys.a ../../strings/libmystrings.a
-5.0: TARGET := xtrabackup_5.0
+5.0: TARGET := xtrabackup_50
 5.0: $(TARGET)
 
 # XtraBackup for MySQL 5.1
@@ -64,7 +64,7 @@ default: xtradb
 	../libinnobase_a-ut0dbg.o ../libinnobase_a-ut0list.o ../libinnobase_a-ut0mem.o \
 	../libinnobase_a-ut0rnd.o ../libinnobase_a-ut0ut.o ../libinnobase_a-ut0vec.o \
 	../libinnobase_a-ut0wqueue.o
-5.1: TARGET := xtrabackup_5.1
+5.1: TARGET := xtrabackup_51
 5.1: $(TARGET)
 
 # XtraBackup for MySQL with InnoDB Plugin
