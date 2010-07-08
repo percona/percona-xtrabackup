@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
+MASTER_SITE="http://www.percona.com/downloads/community/"
+
 set -e
 
 function usage(){
@@ -24,8 +27,13 @@ case "$type" in
 	do
 		if ! test -f $i
 		then
-			echo "Put $i in $top_dir"
-			exit -1
+			if [ "$AUTO_DOWNLOAD" = "yes" ]
+			then
+				wget "$MASTER_SITE"/$i
+			else
+				echo "Put $i in $top_dir or set environment variable AUTO_DOWNLOAD to \"yes\""
+				exit -1
+			fi
 		fi
 	done
 	test -d mysql-$mysql_version && rm -r mysql-$mysql_version
@@ -66,8 +74,13 @@ case "$type" in
 	do
 		if ! test -f $i
 		then
-			echo "Put $i in $top_dir"
-			exit -1
+			if [ "$AUTO_DOWNLOAD" = "yes" ]
+			then
+				wget "$MASTER_SITE"/$i
+			else
+				echo "Put $i in $top_dir or set environment variable AUTO_DOWNLOAD to \"yes\""
+				exit -1
+			fi
 		fi
 	done
 	test -d mysql-$mysql_version && rm -r mysql-$mysql_version
@@ -111,8 +124,13 @@ case "$type" in
 	do
 		if ! test -f $i
 		then
-			echo "Put $i in $top_dir"
-			exit -1
+			if [ "$AUTO_DOWNLOAD" = "yes" ]
+			then
+				wget "$MASTER_SITE"/$i
+			else
+				echo "Put $i in $top_dir or set environment variable AUTO_DOWNLOAD to \"yes\""
+				exit -1
+			fi
 		fi
 	done
 	test -d mysql-$mysql_version && rm -r mysql-$mysql_version
