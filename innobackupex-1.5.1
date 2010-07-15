@@ -134,10 +134,10 @@ my $mysql_pid = '';
 my $mysql_server_version = '';
 
 # name of the file where stderr of mysql process is directed
-my $mysql_stderr;
+my $mysql_stderr = 'stderr';
 
 # name of the file where stdout of mysql process is directed
-my $mysql_stdout;
+my $mysql_stdout = 'stdout';
 
 # name of the file where binlog position info is written
 my $binlog_info;
@@ -2284,21 +2284,16 @@ file_to_array($mysql_stdout, \@lines);
 for (@lines) {
 	$var_innodb_version = $1 if /Value:\s+(\S+)/;
 	}
-print "InnoDB version: $var_innodb_version\n";
 if($var_version =~ m/5\.0\.\d/){
-	print "MySQL 5.0 - using xtrabackup_5.0\n";
 	$option_ibbackup_binary = 'xtrabackup_50';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m//){
-	print "MySQL 5.1 - using xtrabackup_5.1\n";
 	$option_ibbackup_binary = 'xtrabackup_50';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
-	print "MySQL 5.1 with plugin - using xtrabackup_plugin\n";
 	$option_ibbackup_binary = 'xtrabackup_50';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
-	print "Percona Server with XtraDB - using xtrabackup_xtradb\n";
 	$option_ibbackup_binary = 'xtrabackup';
 }
 mysql_close();

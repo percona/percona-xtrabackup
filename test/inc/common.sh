@@ -26,7 +26,7 @@ function clean_on_error()
 {
 vlog "Exit on error"
 clean
-exit
+exit -1
 }
 
 
