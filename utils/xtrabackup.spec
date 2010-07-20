@@ -44,6 +44,7 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 export CC=${CC-"gcc"} 
 export CXX=$CC 
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
+export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.0.91.tar.gz .
 ./utils/build.sh 5.0
 ./utils/build.sh xtradb
