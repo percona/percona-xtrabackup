@@ -9,6 +9,8 @@
 %define xtradb_version 11
 %{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 
+%define __os_install_post /usr/lib/rpm/brp-compress
+
 Summary: XtraBackup online backup for MySQL / InnoDB 
 Name: xtrabackup
 Version: %{xtrabackup_version}
