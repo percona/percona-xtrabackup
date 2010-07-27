@@ -518,7 +518,8 @@ char *xtrabackup_incremental_basedir = NULL; /* for --backup */
 char *xtrabackup_incremental_dir = NULL; /* for --prepare */
 
 char *xtrabackup_tables = NULL;
-regex_t tables_regex;
+int tables_regex_num;
+regex_t *tables_regex;
 regmatch_t tables_regmatch[1];
 
 #ifdef XTRADB_BASED
@@ -2051,6 +2052,7 @@ xtrabackup_copy_datafile(fil_node_t* node)
 		int p_len, regres;
 		char *next, *prev;
 		char tmp;
+		int i;
 
 		p = node->name;
 		prev = NULL;
@@ -2071,7 +2073,11 @@ xtrabackup_copy_datafile(fil_node_t* node)
 		p[p_len] = 0;
 		*(p - 1) = '.';
 
-		regres = regexec(&tables_regex, prev, 1, tables_regmatch, 0);
+		for (i = 0; i < tables_regex_num; i++) {
+			regres = regexec(&tables_regex[i], prev, 1, tables_regmatch, 0);
+			if (regres != REG_NOMATCH)
+				break;
+		}
 
 		p[p_len] = tmp;
 		*(p - 1) = SRV_PATH_SEPARATOR;
@@ -3758,13 +3764,18 @@ loop:
 		if (xtrabackup_tables) {
 			char *p;
 			int regres;
+			int i;
 
 			p = strstr(table->name, SRV_PATH_SEPARATOR_STR);
 
 			if (p)
 				*p = '.';
 
-			regres = regexec(&tables_regex, table->name, 1, tables_regmatch, 0);
+			for (i = 0; i < tables_regex_num; i++) {
+				regres = regexec(&tables_regex[i], table->name, 1, tables_regmatch, 0);
+				if (regres != REG_NOMATCH)
+					break;
+			}
 
 			if (p)
 				*p = SRV_PATH_SEPARATOR;
@@ -5019,10 +5030,37 @@ next_opt:
 
 	if (xtrabackup_tables) {
 		/* init regexp */
+		char *p, *next;
+		int i;
 		char errbuf[100];
-		regerror(regcomp(&tables_regex,xtrabackup_tables,REG_EXTENDED),
-				&tables_regex,errbuf,sizeof(errbuf));
-		fprintf(stderr, "xtrabackup: tables regcomp(): %s\n",errbuf);
+
+		tables_regex_num = 1;
+
+		p = xtrabackup_tables;
+		while ((p = strchr(p, ',')) != NULL) {
+			p++;
+			tables_regex_num++;
+		}
+
+		tables_regex = ut_malloc(sizeof(regex_t) * tables_regex_num);
+
+		p = xtrabackup_tables;
+		for (i=0; i < tables_regex_num; i++) {
+			next = strchr(p, ',');
+			ut_a(next || i == tables_regex_num - 1);
+
+			next++;
+			if (i != tables_regex_num - 1)
+				*(next - 1) = '\0';
+
+			regerror(regcomp(&tables_regex[i],p,REG_EXTENDED),
+					&tables_regex[i],errbuf,sizeof(errbuf));
+			fprintf(stderr, "xtrabackup: tables regcomp(%s): %s\n",p,errbuf);
+
+			if (i != tables_regex_num - 1)
+				*(next - 1) = ',';
+			p = next;
+		}
 	}
 
 #ifdef XTRADB_BASED
@@ -5190,7 +5228,12 @@ next_opt:
 
 	if (xtrabackup_tables) {
 		/* free regexp */
-		regfree(&tables_regex);
+		int i;
+
+		for (i = 0; i < tables_regex_num; i++) {
+			regfree(&tables_regex[i]);
+		}
+		ut_free(tables_regex);
 	}
 
 	exit(0);
