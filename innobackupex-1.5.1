@@ -199,8 +199,8 @@ check_args();
 print_version();
 
 # initialize global variables and perform some checks
-init();
 set_xtrabackup_version();
+init();
 
 my $ibbackup_exit_code = 0;
 
@@ -2285,16 +2285,16 @@ for (@lines) {
 	$var_innodb_version = $1 if /Value:\s+(\S+)/;
 	}
 if($var_version =~ m/5\.0\.\d/){
-	$option_ibbackup_binary = 'xtrabackup_50';
+	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_50');
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m//){
-	$option_ibbackup_binary = 'xtrabackup_50';
+	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_50');
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
-	$option_ibbackup_binary = 'xtrabackup';
+	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
-	$option_ibbackup_binary = 'xtrabackup';
+	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 mysql_close();
 }
