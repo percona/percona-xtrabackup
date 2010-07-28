@@ -2291,7 +2291,7 @@ if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m//){
 	$option_ibbackup_binary = 'xtrabackup_50';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
-	$option_ibbackup_binary = 'xtrabackup_50';
+	$option_ibbackup_binary = 'xtrabackup';
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
 	$option_ibbackup_binary = 'xtrabackup';
