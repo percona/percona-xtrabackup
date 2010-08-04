@@ -81,7 +81,7 @@ my $option_mysql_host = '';
 my $option_no_timestamp = '';
 my $option_slave_info = '';
 my $option_no_lock = '';
-my $option_ibbackup_binary = 'xtrabackup_50';
+my $option_ibbackup_binary = 'autodetect';
 
 my $option_defaults_file = '';
 my $option_incremental = '';
@@ -188,6 +188,7 @@ my $src_name;
 my $dst_name;
 my $win = ($^O eq 'MSWin32' ? 1 : 0);
 my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
+my $xtrabackup_binary_file = 'xtrabackup_binary';
 ######################################################################
 # program execution begins here
 ######################################################################
@@ -199,7 +200,42 @@ check_args();
 print_version();
 
 # initialize global variables and perform some checks
-set_xtrabackup_version();
+if ($option_copy_back) {
+    $option_ibbackup_binary = 'xtrabackup_50';
+} elsif ($option_apply_log) {
+	# Read XtraBackup version from backup dir
+	if (-e "$backup_dir/$xtrabackup_binary_file") {
+		# Read XtraBackup version from file
+		open XTRABACKUP_BINARY, "$backup_dir/$xtrabackup_binary_file"
+			or die "Cannot open file $backup_dir/$xtrabackup_binary_file: $!\n";
+		$option_ibbackup_binary = <XTRABACKUP_BINARY>;
+		close XTRABACKUP_BINARY;
+		}
+
+	else {
+		if( $option_ibbackup_binary eq "autodetect" ){
+			# Try to connect MySQL and get the version
+			print "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
+			my $options = get_mysql_options();
+			$mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ");
+			print "Connected to MySQL with pid $mysql_pid\n";
+			sleep 1;
+			if ($mysql_pid && $mysql_pid == waitpid($mysql_pid, &WNOHANG)) {
+				my $reason = `cat $mysql_stderr`;
+				$mysql_pid = '';
+				# Failed to connect to MySQL
+				die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_50 (for MySQL 5.0 and 5.1) or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
+				}
+			else{
+				mysql_close();
+				print "Connected successfully\n";
+				$option_ibbackup_binary = set_xtrabackup_version();
+				}
+			}
+		}
+} else {
+    $option_ibbackup_binary = set_xtrabackup_version();
+}
 init();
 
 my $ibbackup_exit_code = 0;
@@ -213,6 +249,11 @@ if ($option_copy_back) {
 } else {
     # make a backup of InnoDB and MyISAM tables, indexes and .frm files.
     $ibbackup_exit_code = backup();
+    open XTRABACKUP_BINARY, "> $backup_dir/$xtrabackup_binary_file"
+    	or die "Cannot open file $backup_dir/$xtrabackup_binary_file: $!\n";
+    print XTRABACKUP_BINARY $option_ibbackup_binary;
+    print "Using $option_ibbackup_binary, $backup_dir/$xtrabackup_binary_file\n";
+    close XTRABACKUP_BINARY;
 }
 
 $now = current_time();
@@ -2265,15 +2306,15 @@ sub escape_path {
 sub set_xtrabackup_version {
 # Based on MySQL version choose correct binary
 #  MySQL 5.0.* - xtrabackup_5.0
-#  MySQL 5.1.* - xtrabackup_5.1
-#  MySQL 5.1.* with InnoDB plugin - xtrabackup_plugin
-#  Percona Server >= 11.0 - xtrabackup_xtradb
+#  MySQL 5.1.* - xtrabackup_5.0
+#  MySQL 5.1.* with InnoDB plugin - xtrabackup
+#  Percona Server >= 11.0 - xtrabackup
 # 
 my @lines;
 my $var_version = '';
 my $var_innodb_version = '';
+my $ibbackup_binary;
 mysql_open();
-mysql_check();
 mysql_send "SHOW VARIABLES LIKE 'version'\\G";
 file_to_array($mysql_stdout, \@lines);
 for (@lines) {
@@ -2285,17 +2326,18 @@ for (@lines) {
 	$var_innodb_version = $1 if /Value:\s+(\S+)/;
 	}
 if($var_version =~ m/5\.0\.\d/){
-	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_50');
+	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_50');
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m//){
-	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_50');
+	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_50');
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
-	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
-	$option_ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 mysql_close();
+return $ibbackup_binary;
 }
           

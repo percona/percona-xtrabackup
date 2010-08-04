@@ -9,6 +9,10 @@ MYSQL=mysql
 MYSQL_ARGS="--socket=${mysql_socket} --user=root"
 MYSQLD=mysqld_safe
 MYSQLD_ARGS="--socket=${mysql_socket} --datadir=$mysql_datadir"
+if [ "`whoami`" = "root" ]
+then
+	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
+fi
 
 
 function vlog
