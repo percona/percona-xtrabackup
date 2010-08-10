@@ -252,7 +252,6 @@ if ($option_copy_back) {
     open XTRABACKUP_BINARY, "> $backup_dir/$xtrabackup_binary_file"
     	or die "Cannot open file $backup_dir/$xtrabackup_binary_file: $!\n";
     print XTRABACKUP_BINARY $option_ibbackup_binary;
-    print "Using $option_ibbackup_binary, $backup_dir/$xtrabackup_binary_file\n";
     close XTRABACKUP_BINARY;
 }
 

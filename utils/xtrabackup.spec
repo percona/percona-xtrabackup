@@ -54,11 +54,13 @@ cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.0.91.tar.gz .
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
 install -d %{buildroot}%{_bindir}
+install -d %{buildroot}%{_datadir}
 # install binaries and configs
 
 install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
 install -m 755 mysql-5.0.91/innobase/xtrabackup/xtrabackup_50 %{buildroot}%{_bindir}
 install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
+cp -R test %{buildroot}%{_datadir}/xtrabackup-test
 
 %clean
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
@@ -69,6 +71,7 @@ install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir
 %{_bindir}/xtrabackup
 %{_bindir}/xtrabackup_50
 %{_bindir}/tar4ibd
+%{_datadir}/xtrabackup-test
 
 
 ###
