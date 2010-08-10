@@ -4,11 +4,11 @@ set -eu
 topdir="`pwd`/var"
 mysql_datadir="$topdir/mysql"
 mysql_port="3306"
-mysql_socket="$topdir/mysql.sock"
+mysql_socket="/tmp/xtrabackup.mysql.sock"
 MYSQL=mysql
-MYSQL_ARGS="--socket=${mysql_socket} --user=root"
-MYSQLD=mysqld_safe
-MYSQLD_ARGS="--socket=${mysql_socket} --datadir=$mysql_datadir"
+MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+MYSQLD=mysqld
+MYSQLD_ARGS="--no-defaults --socket=${mysql_socket} --datadir=$mysql_datadir"
 if [ "`whoami`" = "root" ]
 then
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
@@ -50,7 +50,7 @@ function initdir()
 function init_mysql_dir()
 {
     vlog "Creating MySQL database"
-    mysql_install_db --datadir="$mysql_datadir"
+    mysql_install_db --no-defaults --datadir="$mysql_datadir"
 }
 function set_mysl_port()
 {
