@@ -154,6 +154,9 @@ open_or_create_data_files(
 				/* out: DB_SUCCESS or error code */
 	ibool*	create_new_db,	/* out: TRUE if new database should be
 								created */
+#ifdef XTRADB_BASED
+	ibool*	create_new_doublewrite_file,
+#endif 
 #ifdef UNIV_LOG_ARCHIVE
 	ulint*	min_arch_log_no,/* out: min of archived log numbers in data
 				files */
@@ -2919,6 +2922,9 @@ xtrabackup_backup_func(void)
 
 	{
 	ibool	create_new_db;
+#ifdef XTRADB_BASED
+	ibool	create_new_doublewrite_file;
+#endif
 	ibool	log_file_created;
 	ibool	log_created	= FALSE;
 	ibool	log_opened	= FALSE;
@@ -2967,6 +2973,9 @@ xtrabackup_backup_func(void)
 	os_thread_sleep(200000); /*0.2 sec*/
 
 	err = open_or_create_data_files(&create_new_db,
+#ifdef XTRADB_BASED
+					&create_new_doublewrite_file,
+#endif
 					&min_flushed_lsn, &max_flushed_lsn,
 					&sum_of_new_sizes);
 	if (err != DB_SUCCESS) {
