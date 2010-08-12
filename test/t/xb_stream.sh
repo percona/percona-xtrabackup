@@ -1,8 +1,6 @@
 . inc/common.sh
 
-initdir
-init_mysql_dir
-set_mysl_port
+init
 run_mysqld
 load_sakila
 

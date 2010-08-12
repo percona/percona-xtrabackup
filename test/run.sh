@@ -3,13 +3,16 @@ rm -rf results
 mkdir results
 function usage()
 {
-	echo "Usage: $0 [-g] [-h]"
-	echo "-g	Output debug information to results/*.out"
-	echo "-h	Print this help megssage"
+	echo "Usage: $0 [-m mysql_version] [-g] [-h]"
+	echo "-m version  MySQL version to use. Possible values: system, 5.0, 5.1, percona. Default is system"
+	echo "-g          Output debug information to results/*.out"
+	echo "-h          Print this help megssage"
 }
 XTRACE_OPTION=""
-while getopts "gh?" options; do
+export MYSQL_VERSION="system"
+while getopts "gh?m:" options; do
 	case $options in
+		m ) export MYSQL_VERSION="$OPTARG";;
 		g ) XTRACE_OPTION="-x";;
 		h ) usage; exit;;
 		\? ) usage; exit -1;;

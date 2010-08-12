@@ -5,10 +5,6 @@ topdir="`pwd`/var"
 mysql_datadir="$topdir/mysql"
 mysql_port="3306"
 mysql_socket="/tmp/xtrabackup.mysql.sock"
-MYSQL=mysql
-MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-MYSQLD=mysqld
-MYSQLD_ARGS="--no-defaults --socket=${mysql_socket} --datadir=$mysql_datadir"
 if [ "`whoami`" = "root" ]
 then
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
@@ -47,10 +43,76 @@ function initdir()
     mkdir -p "$mysql_datadir"
 }
 
+function init_mysql()
+{
+	url="http://www.percona.com/downloads/community/"
+	case "$MYSQL_VERSION" in
+		system)
+			echo "Using MySQL installed in the system"
+			MYSQL=mysql
+			MYSQLADMIN=mysqladmin
+			MYSQL_INSTALL_DB=mysql_install_db
+			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			MYSQLD=mysqld
+			MYSQL_BASEDIR="/usr"
+			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
+			;;
+		5.0)
+			echo "Using MySQL 5.0"
+			version="5.0.91-linux-`uname -m`-glibc23"
+			cd $topdir
+			wget "$url/mysql-$version.tar.gz"
+			tar zxf mysql-$version.tar.gz
+			MYSQL=$topdir/mysql-$version/bin/mysql
+			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
+			MYSQL_INSTALL_DB=$topdir/mysql-$version/scripts/mysql_install_db
+			MYSQLD=$topdir/mysql-$version/bin/mysqld
+			MYSQL_BASEDIR=$topdir/mysql-$version
+			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
+			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			cd -
+			;;
+		5.1)
+			echo "Using MySQL 5.1"
+			version="5.1.49-linux-`uname -m`-glibc23"
+			cd $topdir
+			wget "$url/mysql-$version.tar.gz"
+			tar zxf mysql-$version.tar.gz
+			MYSQL=$topdir/mysql-$version/bin/mysql
+			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
+			MYSQL_INSTALL_DB=$topdir/mysql-$version/scripts/mysql_install_db
+			MYSQLD=$topdir/mysql-$version/bin/mysqld
+			MYSQL_BASEDIR=$topdir/mysql-$version
+			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
+			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			cd -
+			;;
+		percona)
+			echo "Using Percona Server"
+			version="5.1.47-rel11.2-53-Linux-`uname -m`"
+			cd $topdir
+			wget "$url/Percona-Server-$version.tar.gz"
+			tar zxf Percona-Server-$version.tar.gz
+			MYSQL=$topdir/Percona-Server-$version/bin/mysql
+			MYSQLADMIN=$topdir/Percona-Server-$version/bin/mysqladmin
+			MYSQL_INSTALL_DB=$topdir/Percona-Server-$version/bin/mysql_install_db
+			MYSQLD=$topdir/Percona-Server-$version/libexec/mysqld
+			MYSQL_BASEDIR=$topdir/Percona-Server-$version
+			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
+			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			cd -
+			;;
+		*)
+			usage
+			exit -1
+			;;
+	esac
+}
+
 function init_mysql_dir()
 {
     vlog "Creating MySQL database"
-    mysql_install_db --no-defaults --datadir="$mysql_datadir"
+    $MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$mysql_datadir"
 }
 function set_mysl_port()
 {
@@ -107,7 +169,7 @@ function run_mysqld()
 
 function stop_mysqld()
 {
-    mysqladmin ${MYSQL_ARGS} shutdown
+    ${MYSQLADMIN} ${MYSQL_ARGS} shutdown
 
 }
 
@@ -119,4 +181,12 @@ vlog "Loading sakila scheme"
 ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-schema.sql
 vlog "Loading sakila data"
 ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-data.sql
+}
+
+function init()
+{
+initdir
+init_mysql
+init_mysql_dir
+set_mysl_port
 }
