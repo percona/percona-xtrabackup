@@ -5,11 +5,6 @@ topdir="`pwd`/var"
 mysql_datadir="$topdir/mysql"
 mysql_port="3306"
 mysql_socket="/tmp/xtrabackup.mysql.sock"
-if [ "`whoami`" = "root" ]
-then
-	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
-fi
-
 
 function vlog
 {
@@ -107,6 +102,10 @@ function init_mysql()
 			exit -1
 			;;
 	esac
+	if [ "`whoami`" = "root" ]
+	then
+		MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
+	fi
 }
 
 function init_mysql_dir()
