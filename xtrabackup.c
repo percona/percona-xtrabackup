@@ -525,6 +525,15 @@ int tables_regex_num;
 regex_t *tables_regex;
 regmatch_t tables_regmatch[1];
 
+char *xtrabackup_tables_file = NULL;
+hash_table_t* tables_hash;
+
+struct xtrabackup_tables_struct{
+	char*		name;
+	hash_node_t	name_hash;
+};
+typedef struct xtrabackup_tables_struct	xtrabackup_tables_t;
+
 #ifdef XTRADB_BASED
 static ulint		n[SRV_MAX_N_IO_THREADS + 6 + 64];
 static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6 + 64];
@@ -654,6 +663,7 @@ enum options_xtrabackup
   OPT_XTRA_INCREMENTAL_BASEDIR,
   OPT_XTRA_INCREMENTAL_DIR,
   OPT_XTRA_TABLES,
+  OPT_XTRA_TABLES_FILE,
   OPT_XTRA_CREATE_IB_LOGFILE,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
@@ -744,6 +754,9 @@ static struct my_option my_long_options[] =
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"tables", OPT_XTRA_TABLES, "filtering by regexp for table names.",
    (G_PTR*) &xtrabackup_tables, (G_PTR*) &xtrabackup_tables,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"tables_file", OPT_XTRA_TABLES_FILE, "filtering by list of the exact database.table name in the file.",
+   (G_PTR*) &xtrabackup_tables_file, (G_PTR*) &xtrabackup_tables_file,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"create-ib-logfile", OPT_XTRA_CREATE_IB_LOGFILE, "** not work for now** creates ib_logfile* also after '--prepare'. ### If you want create ib_logfile*, only re-execute this command in same options. ###",
    (G_PTR*) &xtrabackup_create_ib_logfile, (G_PTR*) &xtrabackup_create_ib_logfile,
@@ -2090,6 +2103,50 @@ xtrabackup_copy_datafile(fil_node_t* node)
 			return(FALSE);
 		}
 	}
+
+#ifdef XTRADB_BASED
+	if (xtrabackup_tables_file && (!trx_sys_sys_space(node->space->id)))
+#else
+	if (xtrabackup_tables_file && (node->space->id != 0))
+#endif
+	{ /* must backup id==0 */
+		xtrabackup_tables_t* table;
+		char *p;
+		int p_len, regres;
+		char *next, *prev;
+		char tmp;
+		int i;
+
+		p = node->name;
+		prev = NULL;
+		while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+		{
+			prev = p;
+			p = next + 1;
+		}
+		p_len = strlen(p) - strlen(".ibd");
+
+		if (p_len < 1) {
+			/* unknown situation: skip filtering */
+			goto skip_filter;
+		}
+
+		/* TODO: Fix this lazy implementation... */
+		tmp = p[p_len];
+		p[p_len] = 0;
+
+		HASH_SEARCH(name_hash, tables_hash, ut_fold_string(prev),
+			    xtrabackup_tables_t*, table, ut_ad(table->name),
+	    		    !strcmp(table->name, prev));
+
+		p[p_len] = tmp;
+
+		if (!table) {
+			printf("Copying %s is skipped.\n", node->name);
+			return(FALSE);
+		}
+	}
+
 skip_filter:
 #ifndef INNODB_VERSION_SHORT
 	page_size = UNIV_PAGE_SIZE;
@@ -3793,6 +3850,17 @@ loop:
 				goto skip;
 		}
 
+		if (xtrabackup_tables_file) {
+			xtrabackup_tables_t*	xtable;
+
+			HASH_SEARCH(name_hash, tables_hash, ut_fold_string(table->name),
+				    xtrabackup_tables_t*, xtable, ut_ad(xtable->name),
+				    !strcmp(xtable->name, table->name));
+
+			if (!xtable)
+				goto skip;
+		}
+
 
 		if (table == NULL) {
 			fputs("InnoDB: Failed to load table ", stderr);
@@ -5072,6 +5140,53 @@ next_opt:
 		}
 	}
 
+	if (xtrabackup_tables_file) {
+		char name_buf[NAME_LEN*2+2];
+		FILE *fp;
+
+		name_buf[NAME_LEN*2+1] = '\0';
+
+		/* init tables_hash */
+		tables_hash = hash_create(1000);
+
+		/* read and store the filenames */
+		fp = fopen(xtrabackup_tables_file,"r");
+		if (!fp) {
+			fprintf(stderr, "xtrabackup: cannot open %s\n", xtrabackup_tables_file);
+			exit(-1);
+		}
+		for (;;) {
+			xtrabackup_tables_t*	table;
+			char*	p = name_buf;
+
+			if ( fgets(name_buf, NAME_LEN*2+1, fp) == 0 ) {
+				break;
+			}
+
+			while (*p != '\0') {
+				if (*p == '.') {
+					*p = '/';
+				}
+				p++;
+			}
+			p = strchr(name_buf, '\n');
+			if (p)
+			{
+				*p = '\0';
+			}
+
+			table = malloc(sizeof(xtrabackup_tables_t) + strlen(name_buf) + 1);
+			memset(table, '\0', sizeof(xtrabackup_tables_t) + strlen(name_buf) + 1);
+			table->name = ((char*)table) + sizeof(xtrabackup_tables_t);
+			strcpy(table->name, name_buf);
+
+			HASH_INSERT(xtrabackup_tables_t, name_hash, tables_hash,
+					ut_fold_string(table->name), table);
+
+			printf("xtrabackup: table '%s' is registerd to the list.\n", table->name);
+		}
+	}
+
 #ifdef XTRADB_BASED
 	/* temporary setting of enough size */
 	srv_page_size_shift = UNIV_PAGE_SIZE_SHIFT_MAX;
@@ -5243,6 +5358,30 @@ next_opt:
 			regfree(&tables_regex[i]);
 		}
 		ut_free(tables_regex);
+	}
+
+	if (xtrabackup_tables_file) {
+		ulint	i;
+
+		/* free the hash elements */
+		for (i = 0; i < hash_get_n_cells(tables_hash); i++) {
+			xtrabackup_tables_t*	table;
+
+			table = HASH_GET_FIRST(tables_hash, i);
+
+			while (table) {
+				xtrabackup_tables_t*	prev_table = table;
+
+				table = HASH_GET_NEXT(name_hash, prev_table);
+
+				HASH_DELETE(xtrabackup_tables_t, name_hash, tables_hash,
+						ut_fold_string(prev_table->name), prev_table);
+				free(prev_table);
+			}
+		}
+
+		/* free tables_hash */
+		hash_table_free(tables_hash);
 	}
 
 	exit(0);
