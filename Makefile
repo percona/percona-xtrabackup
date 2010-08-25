@@ -64,6 +64,7 @@ default: xtradb
 	../libinnobase_a-ut0dbg.o ../libinnobase_a-ut0list.o ../libinnobase_a-ut0mem.o \
 	../libinnobase_a-ut0rnd.o ../libinnobase_a-ut0ut.o ../libinnobase_a-ut0vec.o \
 	../libinnobase_a-ut0wqueue.o
+5.1: MYSQLOBJS= ../../../mysys/libmysys.a ../../../strings/libmystrings.a
 5.1: TARGET := xtrabackup_51
 5.1: $(TARGET)
 
@@ -112,7 +113,7 @@ xtradb: DEFS += -DXTRADB_BASED
 xtradb: TARGET := xtrabackup 
 xtradb: $(TARGET)
 
-xtrabackup.o:
+xtrabackup.o: xtrabackup.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $*.c
 
 $(TARGET): xtrabackup.o $(INNODBOBJS) $(MYSQLOBJS)

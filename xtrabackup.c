@@ -1237,7 +1237,6 @@ innobase_print_identifier(
         putc(q, f);
 }
 
-#ifdef INNODB_VERSION_SHORT
 /*****************************************************************//**
 Convert an SQL identifier to the MySQL system_charset_info (UTF-8)
 and quote it if needed.
@@ -1335,6 +1334,7 @@ innobase_convert_name(
 							- (slash - id) - 1,
 							thd, TRUE);
 		}
+#ifdef INNODB_VERSION_SHORT
 	} else if (UNIV_UNLIKELY(*id == TEMP_INDEX_PREFIX)) {
 		/* Temporary index name (smart ALTER TABLE) */
 		const char temp_index_suffix[]= "--temporary--";
@@ -1346,6 +1346,7 @@ innobase_convert_name(
 			       sizeof temp_index_suffix - 1);
 			s += sizeof temp_index_suffix - 1;
 		}
+#endif
 	} else {
 no_db_name:
 		s = innobase_convert_identifier(buf, buflen, id, idlen,
@@ -1355,7 +1356,6 @@ no_db_name:
 	return(s);
 
 }
-#endif
 
 ibool
 trx_is_interrupted(
@@ -2136,7 +2136,13 @@ xtrabackup_copy_datafile(fil_node_t* node)
 		p[p_len] = 0;
 
 		HASH_SEARCH(name_hash, tables_hash, ut_fold_string(prev),
-			    xtrabackup_tables_t*, table, ut_ad(table->name),
+#ifdef INNODB_VERSION_SHORT
+			    xtrabackup_tables_t*,
+#endif
+			    table,
+#ifdef INNODB_VERSION_SHORT
+			    ut_ad(table->name),
+#endif
 	    		    !strcmp(table->name, prev));
 
 		p[p_len] = tmp;
@@ -3854,7 +3860,13 @@ loop:
 			xtrabackup_tables_t*	xtable;
 
 			HASH_SEARCH(name_hash, tables_hash, ut_fold_string(table->name),
-				    xtrabackup_tables_t*, xtable, ut_ad(xtable->name),
+#ifdef INNODB_VERSION_SHORT
+				    xtrabackup_tables_t*,
+#endif
+				    xtable,
+#ifdef INNODB_VERSION_SHORT
+				    ut_ad(xtable->name),
+#endif
 				    !strcmp(xtable->name, table->name));
 
 			if (!xtable)
