@@ -1,3 +1,5 @@
+#!/bin/bash
+
 result=0
 rm -rf results
 mkdir results
