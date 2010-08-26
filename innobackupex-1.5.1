@@ -1140,7 +1140,7 @@ sub mysql_check {
                 die "mysql child process has died: $reason";
             }
             $stdout = `cat $mysql_stdout`;
-            $stderr = `cat $mysql_stderr`;
+            $stderr = `cat $mysql_stderr | grep -v ^Warning`;
             if ($stderr) {
                 # mysql has reported an error, do exit
                 die "mysql error: $stderr";
@@ -1414,7 +1414,7 @@ sub require_external {
     if ($rcode) {
         $error = $!;
     }
-    my $stderr = `cat $tmp_stderr`;
+    my $stderr = `cat $tmp_stderr | grep -v ^Warning`;
     unlink $tmp_stderr;
     if ($stderr ne '') {
         # failure
