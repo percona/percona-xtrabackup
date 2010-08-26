@@ -47,8 +47,8 @@ export CC=${CC-"gcc"}
 export CXX=$CC 
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.0.91.tar.gz .
-./utils/build.sh 5.0
+cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.1.42.tar.gz .
+./utils/build.sh 5.1
 ./utils/build.sh xtradb
 
 %install
@@ -58,7 +58,7 @@ install -d %{buildroot}%{_datadir}
 # install binaries and configs
 
 install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
-install -m 755 mysql-5.0.91/innobase/xtrabackup/xtrabackup_50 %{buildroot}%{_bindir}
+install -m 755 mysql-5.1.42/innobase/xtrabackup/xtrabackup_51 %{buildroot}%{_bindir}
 install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 cp -R test %{buildroot}%{_datadir}/xtrabackup-test
 
@@ -69,7 +69,7 @@ cp -R test %{buildroot}%{_datadir}/xtrabackup-test
 %defattr(-,root,root)
 %{_bindir}/innobackupex-1.5.1
 %{_bindir}/xtrabackup
-%{_bindir}/xtrabackup_50
+%{_bindir}/xtrabackup_51
 %{_bindir}/tar4ibd
 %{_datadir}/xtrabackup-test
 

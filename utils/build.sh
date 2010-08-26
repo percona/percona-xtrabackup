@@ -94,7 +94,7 @@ case "$type" in
 	
 	echo "Prepare sources"
 	tar zxf mysql-$mysql_version.tar.gz
-	cd $top_dir/mysql-$mysql_version/storage
+	cd $top_dir/mysql-$mysql_version
 	patch -p1 < $top_dir/fix_innodb_for_backup51.patch
 
 	cd $top_dir/mysql-$mysql_version
