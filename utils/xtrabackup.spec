@@ -58,7 +58,7 @@ install -d %{buildroot}%{_datadir}
 # install binaries and configs
 
 install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
-install -m 755 mysql-5.1.42/innobase/xtrabackup/xtrabackup_51 %{buildroot}%{_bindir}
+install -m 755 mysql-5.1.42/storage/innobase/xtrabackup/xtrabackup_51 %{buildroot}%{_bindir}
 install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 cp -R test %{buildroot}%{_datadir}/xtrabackup-test
 
