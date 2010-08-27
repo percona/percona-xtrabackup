@@ -95,7 +95,10 @@ function init_mysql()
 			MYSQL_BASEDIR=$topdir/Percona-Server-$version
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$topdir/Percona-Server-$version/lib/mysql
+			set +u
+			export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$topdir/Percona-Server-$version/lib/mysql
+			set -u
+
 			cd -
 			;;
 		*)
