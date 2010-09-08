@@ -4995,6 +4995,21 @@ next_node:
 	trx_sys_print_mysql_binlog_offset();
 	printf("\n");
 
+	/* output to xtrabackup_binlog_pos_innodb */
+	if (*trx_sys_mysql_bin_log_name != '\0') {
+		FILE *fp;
+
+		fp = fopen("xtrabackup_binlog_pos_innodb", "w");
+		if (fp) {
+			fprintf(fp, "%s\t%llu\n",
+				trx_sys_mysql_bin_log_name,
+				trx_sys_mysql_bin_log_pos);
+			fclose(fp);
+		} else {
+			printf("xtrabackup: failed to open 'xtrabackup_binlog_pos_innodb'\n");
+		}
+	}
+
 	if(innodb_end())
 		goto error;
 
