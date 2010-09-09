@@ -67,6 +67,7 @@ my $option_apply_log = '';
 my $option_copy_back = '';
 my $option_include = '';
 my $option_databases = '';
+my $option_tables_file = '';
 my $option_throttle = '';
 my $option_sleep = '';
 my $option_compress = 999;
@@ -415,6 +416,11 @@ Options:
                 files are also backed up. In case the list is very long, 
                 this can be specified in a file and the full path of the 
                 file can be specified instead of the list.
+
+    --tables-file=LIST
+                This option is passed to xtrabackup --tables-file.  It
+                filters the tables to backup by a list of exact database.table
+                name in the file.
 
     --uncompress
                 This option is passed to the ibbackup child process.
@@ -921,6 +927,9 @@ sub start_ibbackup {
     }
     if ($option_incremental) {
         $options = $options . " --incremental-basedir='$incremental_basedir'";
+    }
+    if ($option_tables_file) {
+        $options = $options . " --tables_file='$option_tables_file'";
     }
     $cmdline = "$option_ibbackup_binary $options";
 
@@ -1700,6 +1709,7 @@ sub check_args {
                         'copy-back' => \$option_copy_back,
                         'include=s' => \$option_include,
 			'databases=s' => \$option_databases,
+         'tables-file=s', => \$option_tables_file,
                         'use-memory=s' => \$option_use_memory,
                         'uncompress' => \$option_uncompress,
                         'export' => \$option_export,
