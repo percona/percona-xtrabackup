@@ -505,7 +505,15 @@ diff -ru mysql-5.1.50_orig/storage/innobase/include/srv0srv.h mysql-5.1.50/stora
  extern ulint	srv_n_data_files;
  extern char**	srv_data_file_names;
  extern ulint*	srv_data_file_sizes;
-@@ -133,6 +135,9 @@
+@@ -84,6 +86,7 @@
+ 
+ extern byte	srv_latin1_ordering[256];/* The sort order table of the latin1
+ 					character set */
++extern ibool	srv_use_sys_malloc;
+ extern ulint	srv_pool_size;
+ extern ulint	srv_awe_window_size;
+ extern ulint	srv_mem_pool_size;
+@@ -133,6 +136,9 @@
  extern ulong	srv_max_purge_lag;
  extern ibool	srv_use_awe;
  extern ibool	srv_use_adaptive_hash_indexes;
@@ -569,6 +577,23 @@ diff -ru mysql-5.1.50_orig/storage/innobase/include/ut0byte.ic mysql-5.1.50/stor
 +
  	return(diff);
  }
+ 
+diff -ru mysql-5.1.50_orig/storage/innobase/include/ut0mem.h mysql-5.1.50/storage/innobase/include/ut0mem.h
+--- mysql-5.1.50_orig/storage/innobase/include/ut0mem.h	2010-08-04 02:24:20.000000000 +0900
++++ mysql-5.1.50/storage/innobase/include/ut0mem.h	2010-09-17 05:10:09.000000000 +0900
+@@ -30,6 +30,13 @@
+ 
+ 
+ /**************************************************************************
++Initializes the mem block list at database startup. */
++
++void
++ut_mem_block_list_init(void);
++/*========================*/
++
++/**************************************************************************
+ Allocates memory. Sets it also to zero if UNIV_SET_MEM_TO_ZERO is
+ defined and set_to_zero is TRUE. */
  
 diff -ru mysql-5.1.50_orig/storage/innobase/log/log0log.c mysql-5.1.50/storage/innobase/log/log0log.c
 --- mysql-5.1.50_orig/storage/innobase/log/log0log.c	2010-08-04 02:24:20.000000000 +0900
@@ -719,6 +744,24 @@ diff -ru mysql-5.1.50_orig/storage/innobase/log/log0recv.c mysql-5.1.50/storage/
  	}
  
  	contiguous_lsn = ut_dulint_align_down(recv_sys->scanned_lsn,
+diff -ru mysql-5.1.50_orig/storage/innobase/mem/mem0dbg.c mysql-5.1.50/storage/innobase/mem/mem0dbg.c
+--- mysql-5.1.50_orig/storage/innobase/mem/mem0dbg.c	2010-08-04 02:24:20.000000000 +0900
++++ mysql-5.1.50/storage/innobase/mem/mem0dbg.c	2010-09-17 05:10:09.000000000 +0900
+@@ -133,6 +133,14 @@
+ 	mem_hash_initialized = TRUE;
+ #endif
+ 
++	if (UNIV_LIKELY(srv_use_sys_malloc)) {
++		/* When innodb_use_sys_malloc is set, the
++		mem_comm_pool won't be used for any allocations.  We
++		create a dummy mem_comm_pool, because some statistics
++		and debugging code relies on it being initialized. */
++		size = 1;
++	}
++
+ 	mem_comm_pool = mem_pool_create(size);
+ }
+ 
 diff -ru mysql-5.1.50_orig/storage/innobase/mem/mem0mem.c mysql-5.1.50/storage/innobase/mem/mem0mem.c
 --- mysql-5.1.50_orig/storage/innobase/mem/mem0mem.c	2010-08-04 02:24:20.000000000 +0900
 +++ mysql-5.1.50/storage/innobase/mem/mem0mem.c	2010-08-25 19:00:40.223017486 +0900
@@ -738,6 +781,65 @@ diff -ru mysql-5.1.50_orig/storage/innobase/mem/mem0mem.c mysql-5.1.50/storage/i
  
  #ifdef MEM_PERIODIC_CHECK
  	mem_pool_mutex_enter();
+@@ -507,6 +509,7 @@
+ 	init_block = block->init_block;
+ 	block->magic_n = MEM_FREED_BLOCK_MAGIC_N;
+ 
++	if (!srv_use_sys_malloc) {
+ #ifdef UNIV_MEM_DEBUG
+ 	/* In the debug version we set the memory to a random combination
+ 	of hex 0xDE and 0xAD. */
+@@ -515,6 +518,7 @@
+ #else /* UNIV_MEM_DEBUG */
+ 	UNIV_MEM_ASSERT_AND_FREE(block, len);
+ #endif /* UNIV_MEM_DEBUG */
++	}
+ 
+ 	if (init_block) {
+ 		/* Do not have to free: do nothing */
+diff -ru mysql-5.1.50_orig/storage/innobase/mem/mem0pool.c mysql-5.1.50/storage/innobase/mem/mem0pool.c
+--- mysql-5.1.50_orig/storage/innobase/mem/mem0pool.c	2010-08-04 02:24:20.000000000 +0900
++++ mysql-5.1.50/storage/innobase/mem/mem0pool.c	2010-09-17 05:10:09.000000000 +0900
+@@ -11,6 +11,7 @@
+ #include "mem0pool.ic"
+ #endif
+ 
++#include "srv0srv.h"
+ #include "sync0sync.h"
+ #include "ut0mem.h"
+ #include "ut0lst.h"
+@@ -192,8 +193,6 @@
+ 	ulint		i;
+ 	ulint		used;
+ 
+-	ut_a(size > 10000);
+-
+ 	pool = ut_malloc(sizeof(mem_pool_t));
+ 
+ 	/* We do not set the memory to zero (FALSE) in the pool,
+@@ -333,6 +332,10 @@
+ 	ulint		n;
+ 	ibool		ret;
+ 
++	if (UNIV_LIKELY(srv_use_sys_malloc)) {
++		return(malloc(size));
++	}
++
+ 	n = ut_2_log(ut_max(size + MEM_AREA_EXTRA_SIZE, MEM_AREA_MIN_SIZE));
+ 
+ 	mutex_enter(&(pool->mutex));
+@@ -465,6 +468,11 @@
+ 	ulint		size;
+ 	ulint		n;
+ 
++	if (UNIV_LIKELY(srv_use_sys_malloc)) {
++		free(ptr);
++		return;
++	}
++
+ 	/* It may be that the area was really allocated from the OS with
+ 	regular malloc: check if ptr points within our memory pool */
+ 
 diff -ru mysql-5.1.50_orig/storage/innobase/os/os0file.c mysql-5.1.50/storage/innobase/os/os0file.c
 --- mysql-5.1.50_orig/storage/innobase/os/os0file.c	2010-08-04 02:24:20.000000000 +0900
 +++ mysql-5.1.50/storage/innobase/os/os0file.c	2010-08-25 19:00:40.227017648 +0900
@@ -866,7 +968,16 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0srv.c mysql-5.1.50/storage/i
  ulint	srv_n_data_files = 0;
  char**	srv_data_file_names = NULL;
  ulint*	srv_data_file_sizes = NULL;	/* size in database pages */
-@@ -358,6 +360,8 @@
+@@ -171,6 +173,8 @@
+ , 0xD8, 0x55, 0x55, 0x55, 0x59, 0x59, 0xDE, 0xFF
+ };
+ 
++ibool	srv_use_sys_malloc	= TRUE;
++
+ ulint	srv_pool_size		= ULINT_MAX;	/* size in pages; MySQL inits
+ 						this to size in kilobytes but
+ 						we normalize this to pages in
+@@ -358,6 +362,8 @@
  ibool	srv_use_awe			= FALSE;
  ibool	srv_use_adaptive_hash_indexes	= TRUE;
  
@@ -875,6 +986,14 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0srv.c mysql-5.1.50/storage/i
  /*-------------------------------------------*/
  ulong	srv_n_spin_wait_rounds	= 20;
  ulong	srv_n_free_tickets_to_enter = 500;
+@@ -980,6 +986,7 @@
+ srv_general_init(void)
+ /*==================*/
+ {
++	ut_mem_block_list_init();
+ 	os_sync_init();
+ 	sync_init();
+ 	mem_init(srv_mem_pool_size);
 diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage/innobase/srv/srv0start.c
 --- mysql-5.1.50_orig/storage/innobase/srv/srv0start.c	2010-08-04 02:24:20.000000000 +0900
 +++ mysql-5.1.50/storage/innobase/srv/srv0start.c	2010-08-25 19:00:40.235020622 +0900
@@ -905,7 +1024,19 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage
  ulint
  open_or_create_data_files(
  /*======================*/
-@@ -1232,12 +1234,12 @@
+@@ -1037,6 +1039,11 @@
+ 	fprintf(stderr,
+ 		"InnoDB: !!!!!!!! UNIV_SIMULATE_AWE switched on !!!!!!!!!\n");
+ #endif
++	if (UNIV_LIKELY(srv_use_sys_malloc)) {
++		fprintf(stderr,
++			"InnoDB: The InnoDB memory heap is disabled\n");
++	}
++
+ 	if (srv_sizeof_trx_t_in_ha_innodb_cc != (ulint)sizeof(trx_t)) {
+ 		fprintf(stderr,
+ 			"InnoDB: Error: trx_t size is %lu in ha_innodb.cc"
+@@ -1232,12 +1239,12 @@
  
  	if (!os_aio_use_native_aio) {
  		/* In simulated aio we currently have use only for 4 threads */
@@ -920,7 +1051,7 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage
  	} else {
  		os_aio_init(SRV_N_PENDING_IOS_PER_THREAD
  			    * srv_n_file_io_threads,
-@@ -1299,7 +1301,7 @@
+@@ -1299,7 +1306,7 @@
  	}
  #endif /* UNIV_LOG_ARCHIVE */
  
@@ -929,7 +1060,7 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage
  		fprintf(stderr,
  			"InnoDB: Error: combined size of log files"
  			" must be < 4 GB\n");
-@@ -1660,7 +1662,18 @@
+@@ -1660,7 +1667,18 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
@@ -948,7 +1079,7 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
  			" is %lu pages, but\n"
-@@ -1685,6 +1698,7 @@
+@@ -1685,6 +1703,7 @@
  
  			return(DB_ERROR);
  		}
@@ -998,7 +1129,73 @@ diff -ru mysql-5.1.50_orig/storage/innobase/trx/trx0trx.c mysql-5.1.50/storage/i
 diff -ru mysql-5.1.50_orig/storage/innobase/ut/ut0mem.c mysql-5.1.50/storage/innobase/ut/ut0mem.c
 --- mysql-5.1.50_orig/storage/innobase/ut/ut0mem.c	2010-08-04 02:24:20.000000000 +0900
 +++ mysql-5.1.50/storage/innobase/ut/ut0mem.c	2010-08-25 19:00:40.241015716 +0900
-@@ -338,6 +338,8 @@
+@@ -15,6 +15,7 @@
+ #include "mem0mem.h"
+ #include "os0sync.h"
+ #include "os0thread.h"
++#include "srv0srv.h"
+ 
+ /* This struct is placed first in every allocated memory block */
+ typedef struct ut_mem_block_struct ut_mem_block_t;
+@@ -43,7 +44,7 @@
+ 
+ /**************************************************************************
+ Initializes the mem block list at database startup. */
+-static
++
+ void
+ ut_mem_block_list_init(void)
+ /*========================*/
+@@ -71,11 +72,22 @@
+ 	ulint	retry_count	= 0;
+ 	void*	ret;
+ 
+-	ut_ad((sizeof(ut_mem_block_t) % 8) == 0); /* check alignment ok */
++	if (UNIV_LIKELY(srv_use_sys_malloc)) {
++		ret = malloc(n);
++		ut_a(ret || !assert_on_error);
+ 
+-	if (!ut_mem_block_list_inited) {
+-		ut_mem_block_list_init();
++#ifdef UNIV_SET_MEM_TO_ZERO
++		if (set_to_zero) {
++			memset(ret, '\0', n);
++			UNIV_MEM_ALLOC(ret, n);
++		}
++#endif
++		return(ret);
+ 	}
++
++	ut_ad((sizeof(ut_mem_block_t) % 8) == 0); /* check alignment ok */
++	ut_a(ut_mem_block_list_inited);
++
+ retry:
+ 	os_fast_mutex_lock(&ut_list_mutex);
+ 
+@@ -239,6 +251,11 @@
+ {
+ 	ut_mem_block_t* block;
+ 
++	if (UNIV_LIKELY(srv_use_sys_malloc)) {
++		free(ptr);
++		return;
++	}
++
+ 	block = (ut_mem_block_t*)((byte*)ptr - sizeof(ut_mem_block_t));
+ 
+ 	os_fast_mutex_lock(&ut_list_mutex);
+@@ -291,6 +308,10 @@
+ 	ulint		min_size;
+ 	void*		new_ptr;
+ 
++	if (UNIV_LIKELY(srv_use_sys_malloc)) {
++		return(realloc(ptr, size));
++	}
++
+ 	if (ptr == NULL) {
+ 
+ 		return(ut_malloc(size));
+@@ -338,6 +359,8 @@
  {
  	ut_mem_block_t* block;
  
