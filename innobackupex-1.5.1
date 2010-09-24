@@ -125,6 +125,9 @@ my %config;
 # list of databases to be included in a backup
 my %databases_list;
 
+# list of tables to be included in a backup
+my %table_list;
+
 # prefix for output lines
 my $prefix = "$innobackup_script:";
 
@@ -417,10 +420,11 @@ Options:
                 this can be specified in a file and the full path of the 
                 file can be specified instead of the list.
 
-    --tables-file=LIST
+    --tables-file=FILE
                 This option is passed to xtrabackup --tables-file.  It
-                filters the tables to backup by a list of exact database.table
-                name in the file.
+                filters the tables to backup by a list of exact table
+                filenames (with abosulte directory paths) listed in the
+                given file, one per line.
 
     --uncompress
                 This option is passed to the ibbackup child process.
@@ -1815,6 +1819,7 @@ sub check_args {
     print STDERR "\n";
 
     parse_databases_option_value();
+    parse_tables_file_option_value($option_tables_file);
 }
 
 
@@ -1936,7 +1941,7 @@ sub backup_files {
         # skip files that are not database directories
         if ($database eq '.' || $database eq '..') { next; }
         next unless -d "$source_dir/$database";
-	next unless check_if_required($database);
+	     next unless check_if_required($database);
         
         if (!$option_remote_host && !$option_stream) {
             if (! -e "$backup_dir/$database") {
@@ -2205,39 +2210,53 @@ sub get_option {
 #       1 if backup should be done and 0 if not
 #
 sub check_if_required {
-    my $db = $_[0];
-    my $db_count = keys %databases_list;
-    my $table_path;
-    if (defined $_[1]) {
-        $table_path = $_[1];
-    } else {
-        undef $table_path;
-    }
+   my ( $db, $table_path ) = @_;
+   my $db_count  = scalar keys %databases_list;
+   my $tbl_count = scalar keys %table_list;
+   my $filename;
+   my $table;
 
-    if ($db_count == 0) {
-        # no databases defined with --databases option, include all databases
-        return 1;
-    }
-    if (defined $databases_list{$db}) {
-        if (defined $table_path) {
-            # get the last component in the table pathname 
-            my $filename = (reverse(split(/\//, $table_path)))[0];
-            # get name of the table by removing file suffix
-            my $table = (split(/\./, $filename))[0];
+   if ( $db_count == 0 && $tbl_count == 0 ) {
+      # No databases defined with --databases option, include all databases,
+      # and no tables defined with --tables-file option, include all tables.
+      return 1;
+   }
+   else {
+      if ( $table_path ) {
+         # get the last component in the table pathname 
+         $filename = (reverse(split(/\//, $table_path)))[0];
+         # get name of the table by removing file suffix
+         $table = (split(/\./, $filename))[0];
+      }
+   }
 
+   # Filter for --databases.
+   if ( $db_count ) {
+      if (defined $databases_list{$db}) {
+         if (defined $table_path) {
             my $db_hash = $databases_list{$db};
             $db_count = keys %$db_hash;
             if ($db_count > 0 && ! defined $databases_list{$db}->{$table}) {
-                # --databases option specified, but table is not included
-                return 0;
+               # --databases option specified, but table is not included
+               return 0;
             }
-        }
-        # include this database and table
-        return 1;
-    } else {
-        # --databases option given, but database is not included
-        return 0;
-    }
+         }
+         # include this database and table
+         return 1;
+      }
+      else {
+         # --databases option given, but database is not included
+         return 0;
+      }
+   }
+
+   # Filter for --tables-file.
+   if ( $tbl_count ) {
+      return 0 unless exists $table_list{$db};
+      return 0 if $table && !$table_list{$db}->{$table};
+   }
+
+   return 1;  # backup the table
 }
 
 
@@ -2297,6 +2316,34 @@ sub parse_databases_option_value {
             $h->{$table} = 1;
         }
     }
+}
+
+# Parse the --tables-file file to determine which InnoDB tables
+# are backedup up.  Only backedup tables have their .frm, etc.
+# files copied.
+sub parse_tables_file_option_value {
+   my ( $filename ) = @_;
+
+   return unless $filename;
+
+   open my $fh, '<', $filename;
+   if ( $fh ) {
+      while ( my $line = <$fh> ) {
+         my ( $db, $tbl ) = $line =~ m/\/([^\/]+)\/([^\/]+)\.ibd$/;
+         if ( $db && $tbl ) {
+            $table_list{$db}->{$tbl} = 1;
+            print STDERR "$prefix $db.$tbl will be registerd to the list\n";
+         }
+         else {
+            warn "$prefix Invalid line in $filename: $line";
+         }
+      }
+   }
+   else {
+      warn "$prefix Cannot read --tables-file $filename: $OS_ERROR";
+   }
+
+   return;
 }
 
 sub escape_path {
