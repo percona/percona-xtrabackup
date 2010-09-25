@@ -422,9 +422,8 @@ Options:
 
     --tables-file=FILE
                 This option is passed to xtrabackup --tables-file.  It
-                filters the tables to backup by a list of exact table
-                filenames (with abosulte directory paths) listed in the
-                given file, one per line.
+                filters the tables to backup by a list of database.table
+                names listed in the given file, one per line.
 
     --uncompress
                 This option is passed to the ibbackup child process.
@@ -2329,7 +2328,8 @@ sub parse_tables_file_option_value {
    open my $fh, '<', $filename;
    if ( $fh ) {
       while ( my $line = <$fh> ) {
-         my ( $db, $tbl ) = $line =~ m/\/([^\/]+)\/([^\/]+)\.ibd$/;
+         chomp $line;
+         my ( $db, $tbl ) = $line =~ m/\s*([^\.]+)\.([^\.]+)\s*/;
          if ( $db && $tbl ) {
             $table_list{$db}->{$tbl} = 1;
             print STDERR "$prefix $db.$tbl will be registerd to the list\n";
