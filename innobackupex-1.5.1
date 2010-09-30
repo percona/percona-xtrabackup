@@ -1016,6 +1016,7 @@ sub start_ibbackup {
                             "'$orig_datadir/$subdir/*.ibd' ($file_c files)\n";
                     }
                     foreach $file (@list) {
+			next unless check_if_required($subdir, $file);
                         if($option_include) {
                             my $table_name;
 
