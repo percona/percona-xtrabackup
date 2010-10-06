@@ -5185,6 +5185,12 @@ next_opt:
 		char name_buf[NAME_LEN*2+2];
 		FILE *fp;
 
+		if (xtrabackup_stream) {
+			fprintf(stderr, "xtrabackup: Warning: --tables_file option doesn't affect with --stream.\n", xtrabackup_tables_file);
+			xtrabackup_tables_file = NULL;
+			goto skip_tables_file_register;
+		}
+
 		name_buf[NAME_LEN*2+1] = '\0';
 
 		/* init tables_hash */
@@ -5227,6 +5233,7 @@ next_opt:
 			printf("xtrabackup: table '%s' is registerd to the list.\n", table->name);
 		}
 	}
+skip_tables_file_register:
 
 #ifdef XTRADB_BASED
 	/* temporary setting of enough size */
