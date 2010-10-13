@@ -73,8 +73,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #else
 #define IB_INT64 ib_int64_t
 #define LSN64 ib_uint64_t
+#if (MYSQL_VERSION_ID < 50500)
 #define MACH_READ_64 mach_read_ull
 #define MACH_WRITE_64 mach_write_ull
+#else
+#define MACH_READ_64 mach_read_from_8
+#define MACH_WRITE_64 mach_write_to_8
+#endif
 #define ut_dulint_zero 0
 #define ut_dulint_cmp(A, B) (A > B ? 1 : (A == B ? 0 : -1))
 #define ut_dulint_add(A, B) (A + B)
@@ -870,7 +875,13 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   {"innodb_file_per_table", OPT_INNODB_FILE_PER_TABLE,
    "Stores each InnoDB table to an .ibd file in the database dir.",
    (G_PTR*) &innobase_file_per_table,
-   (G_PTR*) &innobase_file_per_table, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+   (G_PTR*) &innobase_file_per_table, 0, GET_BOOL, NO_ARG,
+#if (MYSQL_VERSION_ID < 50500)
+   0,
+#else
+   1,
+#endif
+   0, 0, 0, 0, 0},
   {"innodb_flush_log_at_trx_commit", OPT_INNODB_FLUSH_LOG_AT_TRX_COMMIT,
    "Set to 0 (write and flush once per second), 1 (write and flush at each commit) or 2 (write at commit, flush once per second).",
    (G_PTR*) &srv_flush_log_at_trx_commit,
@@ -1166,6 +1177,15 @@ innobase_get_charset(
 {
 	fprintf(stderr, "xtrabackup: innobase_get_charset() is called\n");
 	return(NULL);
+}
+
+const char*
+innobase_get_stmt(
+	void*	mysql_thd,
+	size_t*	length)
+{
+	fprintf(stderr, "xtrabackup: innobase_get_stmt() is called\n");
+	return("nothing");
 }
 
 int
@@ -1659,12 +1679,14 @@ innodb_init_param(void)
 
 	ut_a(default_path);
 
+#if (MYSQL_VERSION_ID < 50500)
 //	if (specialflag & SPECIAL_NO_PRIOR) {
 	        srv_set_thread_priorities = FALSE;
 //	} else {
 //	        srv_set_thread_priorities = TRUE;
 //	        srv_query_thread_priority = QUERY_PRIOR;
 //	}
+#endif
 
 	/* Set InnoDB initialization parameters according to the values
 	read from MySQL .cnf file */
@@ -1726,7 +1748,7 @@ mem_free_and_error:
 			char *p;
 
 			p = srv_data_file_names[i];
-			while (p = strstr(p, SRV_PATH_SEPARATOR_STR))
+			while ((p = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
 			{
 				p++;
 				srv_data_file_names[i] = p;
@@ -1782,7 +1804,11 @@ mem_free_and_error:
 	srv_adaptive_flushing = FALSE;
 	srv_use_sys_malloc = TRUE;
 	srv_file_format = 1; /* Barracuda */
+#if (MYSQL_VERSION_ID < 50500)
 	srv_check_file_format_at_startup = DICT_TF_FORMAT_51; /* on */
+#else
+	srv_max_file_format_at_startup = DICT_TF_FORMAT_51; /* on */
+#endif
 #endif
 	/* --------------------------------------------------*/
 
@@ -2086,7 +2112,7 @@ xtrabackup_copy_datafile(fil_node_t* node)
 
 		p = node->name;
 		prev = NULL;
-		while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+		while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
 		{
 			prev = p;
 			p = next + 1;
@@ -2133,7 +2159,7 @@ xtrabackup_copy_datafile(fil_node_t* node)
 
 		p = node->name;
 		prev = NULL;
-		while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+		while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
 		{
 			prev = p;
 			p = next + 1;
@@ -2209,7 +2235,7 @@ skip_filter:
 		char *next, *p;
 		/* system datafile "/fullpath/datafilename.ibd" or "./datafilename.ibd" */
 		p = node->name;
-		while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+		while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
 		{
 			p = next + 1;
 		}
@@ -2241,6 +2267,9 @@ skip_filter:
 	/* open src_file*/
 	if (!node->open) {
 		src_file = os_file_create_simple_no_error_handling(
+#if (MYSQL_VERSION_ID > 50500)
+						0 /* dummy of innodb_file_data_key */,
+#endif
 						node->name, OS_FILE_OPEN,
 						OS_FILE_READ_ONLY, &success);
 		if (!success) {
@@ -2268,8 +2297,12 @@ skip_filter:
 
 	/* open dst_file */
 	/* os_file_create reads srv_unix_file_flush_method */
-	dst_file = os_file_create(dst_path, OS_FILE_CREATE,
-					OS_FILE_NORMAL, OS_DATA_FILE, &success);
+	dst_file = os_file_create(
+#if (MYSQL_VERSION_ID > 50500)
+			0 /* dummy of innodb_file_data_key */,
+#endif
+			dst_path, OS_FILE_CREATE,
+			OS_FILE_NORMAL, OS_DATA_FILE, &success);
                 if (!success) {
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
@@ -3206,8 +3239,12 @@ reread_log_header:
 		sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
 		srv_normalize_path_for_win(dst_log_path);
 		/* os_file_create reads srv_unix_file_flush_method for OS_DATA_FILE*/
-		dst_log = os_file_create(dst_log_path, OS_FILE_CREATE,
-						OS_FILE_NORMAL, OS_DATA_FILE, &success);
+		dst_log = os_file_create(
+#if (MYSQL_VERSION_ID > 50500)
+				0 /* dummy of innodb_file_data_key */,
+#endif
+				dst_log_path, OS_FILE_CREATE,
+				OS_FILE_NORMAL, OS_DATA_FILE, &success);
 
                 if (!success) {
                         /* The following call prints an error message */
@@ -3356,8 +3393,12 @@ reread_log_header:
 
 		srv_normalize_path_for_win(suspend_path);
 		/* os_file_create reads srv_unix_file_flush_method */
-		suspend_file = os_file_create(suspend_path, OS_FILE_OVERWRITE,
-						OS_FILE_NORMAL, OS_DATA_FILE, &success);
+		suspend_file = os_file_create(
+#if (MYSQL_VERSION_ID > 50500)
+					0 /* dummy of innodb_file_data_key */,
+#endif
+					suspend_path, OS_FILE_OVERWRITE,
+					OS_FILE_NORMAL, OS_DATA_FILE, &success);
 
 		if (!success) {
 			fprintf(stderr, "xtrabackup: Error: failed to create file 'xtrabackup_suspended'\n");
@@ -4023,6 +4064,9 @@ xtrabackup_init_temp_log(void)
 	srv_normalize_path_for_win(src_path);
 retry:
 	src_file = os_file_create_simple_no_error_handling(
+#if (MYSQL_VERSION_ID > 50500)
+					0 /* dummy of innodb_file_data_key */,
+#endif
 					src_path, OS_FILE_OPEN,
 					OS_FILE_READ_WRITE /* OS_FILE_READ_ONLY */, &success);
 	if (!success) {
@@ -4035,6 +4079,9 @@ retry:
 
 		/* check if ib_logfile0 may be xtrabackup_logfile */
 		src_file = os_file_create_simple_no_error_handling(
+#if (MYSQL_VERSION_ID > 50500)
+				0 /* dummy of innodb_file_data_key */,
+#endif
 				dst_path, OS_FILE_OPEN,
 				OS_FILE_READ_WRITE /* OS_FILE_READ_ONLY */, &success);
 		if (!success) {
@@ -4066,7 +4113,11 @@ retry:
 			src_file = -1;
 
 			/* rename and try again */
-			success = os_file_rename(dst_path, src_path);
+			success = os_file_rename(
+#if (MYSQL_VERSION_ID > 50500)
+					0 /* dummy of innodb_file_data_key */,
+#endif
+					dst_path, src_path);
 			if (!success) {
 				goto error;
 			}
@@ -4279,7 +4330,11 @@ not_consistent:
 	srv_thread_concurrency = 0;
 
 	/* rename 'xtrabackup_logfile' to 'ib_logfile0' */
-	success = os_file_rename(src_path, dst_path);
+	success = os_file_rename(
+#if (MYSQL_VERSION_ID > 50500)
+			0 /* dummy of innodb_file_data_key */,
+#endif
+			src_path, dst_path);
 	if (!success) {
 		goto error;
 	}
@@ -4339,7 +4394,10 @@ xtrabackup_apply_delta(
 	srv_normalize_path_for_win(src_path);
 
 	src_file = os_file_create_simple_no_error_handling(
-		src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
+#if (MYSQL_VERSION_ID > 50500)
+			0 /* dummy of innodb_file_data_key */,
+#endif
+			src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
@@ -4358,7 +4416,10 @@ xtrabackup_apply_delta(
 	}
 
 	dst_file = os_file_create_simple_no_error_handling(
-		dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
+#if (MYSQL_VERSION_ID > 50500)
+			0 /* dummy of innodb_file_data_key */,
+#endif
+			dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
@@ -4607,7 +4668,11 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	srv_normalize_path_for_win(dst_path);
 	srv_normalize_path_for_win(src_path);
 
-	success = os_file_rename(dst_path, src_path);
+	success = os_file_rename(
+#if (MYSQL_VERSION_ID > 50500)
+			0 /* dummy of innodb_file_data_key */,
+#endif
+			dst_path, src_path);
 	if (!success) {
 		goto error;
 	}
@@ -4618,6 +4683,9 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 
 	/* clear LOG_FILE_WAS_CREATED_BY_HOT_BACKUP field */
 	src_file = os_file_create_simple_no_error_handling(
+#if (MYSQL_VERSION_ID > 50500)
+				0 /* dummy of innodb_file_data_key */,
+#endif
 				src_path, OS_FILE_OPEN,
 				OS_FILE_READ_WRITE, &success);
 	if (!success) {
@@ -4900,7 +4968,7 @@ skip_check:
 
 					p = info_file_path;
 					prev = NULL;
-					while (next = strstr(p, SRV_PATH_SEPARATOR_STR))
+					while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
 					{
 						prev = p;
 						p = next + 1;
@@ -4952,7 +5020,11 @@ skip_check:
 						printf(
 "xtrabackup:     name=%s, id.low=%lu, page=%lu\n",
 							index->name,
+#if (MYSQL_VERSION_ID < 50500)
 							index->id.low,
+#else
+							(ulint)(index->id & 0xFFFFFFFFUL),
+#endif
 #if (MYSQL_VERSION_ID < 50100)
 							index->tree->page);
 #else /* MYSQL_VERSION_ID < 51000 */
@@ -4964,7 +5036,11 @@ skip_check:
 					}
 
 					srv_normalize_path_for_win(info_file_path);
-					info_file = os_file_create(info_file_path, OS_FILE_OVERWRITE,
+					info_file = os_file_create(
+#if (MYSQL_VERSION_ID > 50500)
+								0 /* dummy of innodb_file_data_key */,
+#endif
+								info_file_path, OS_FILE_OVERWRITE,
 								OS_FILE_NORMAL, OS_DATA_FILE, &success);
 					if (!success) {
 						os_file_get_last_error(TRUE);
