@@ -1,7 +1,7 @@
 # Makefile to build XtraBackup for Percona Server and different versions of MySQL
 #
 # Syntax:
-# make [5.0|5.1|plugin|xtradb]
+# make [5.0|5.1|5.5|plugin|xtradb]
 #
 # Default is xtradb - to build XtraBackup for Percona Server
 # 5.0 - XtraBackup for MySQL versions 5.0.*
@@ -82,7 +82,7 @@ plugin: $(TARGET)
 
 5.5: MYSQLOBJS= ../../../mysys/libmysys.a ../../../strings/libmystrings.a ../../../zlib/.libs/libzlt.a
 5.5: LIBS += -laio
-5.5: TARGET := xtrabackup_plugin
+5.5: TARGET := xtrabackup_55
 5.5: $(TARGET)
 
 # XtraBackup for XtraDB 

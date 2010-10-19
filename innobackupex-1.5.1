@@ -2362,11 +2362,12 @@ sub escape_path {
 
 sub set_xtrabackup_version {
 # Based on MySQL version choose correct binary
-#  MySQL 5.0.* - xtrabackup_5.0
-#  MySQL 5.1.* - xtrabackup_5.0
+#  MySQL 5.0.* - xtrabackup_51
+#  MySQL 5.1.* - xtrabackup_51
 #  MySQL 5.1.* with InnoDB plugin - xtrabackup
 #  Percona Server >= 11.0 - xtrabackup
-# 
+#  MySQL 5.5.* - xtrabackup_55 
+
 my @lines;
 my $var_version = '';
 my $var_innodb_version = '';
@@ -2393,6 +2394,9 @@ if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+}
+if($var_version =~ m/5\.5\.\d/){
+	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
 }
 mysql_close();
 return $ibbackup_binary;
