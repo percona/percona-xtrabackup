@@ -4814,14 +4814,7 @@ skip_check:
 	if(innodb_init_param())
 		goto error;
 
-#ifdef HAVE_APPLY_LOG_ONLY
 	srv_apply_log_only = (ibool) xtrabackup_apply_log_only;
-#else
-	if (xtrabackup_apply_log_only) {
-		fprintf(stderr,
-			"xtrabackup: --apply-log-only is not implemented to this version yet.\n");
-	}
-#endif
 
 	/* increase IO threads */
 	if(srv_n_file_io_threads < 10) {

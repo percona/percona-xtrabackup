@@ -513,13 +513,14 @@ diff -ru mysql-5.1.50_orig/storage/innobase/include/srv0srv.h mysql-5.1.50/stora
  extern ulint	srv_pool_size;
  extern ulint	srv_awe_window_size;
  extern ulint	srv_mem_pool_size;
-@@ -133,6 +136,9 @@
+@@ -133,6 +136,10 @@
  extern ulong	srv_max_purge_lag;
  extern ibool	srv_use_awe;
  extern ibool	srv_use_adaptive_hash_indexes;
 +
 +extern ibool	srv_read_only;
 +extern ibool	srv_fake_write;
++extern ibool	srv_apply_log_only;
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
@@ -617,6 +618,22 @@ diff -ru mysql-5.1.50_orig/storage/innobase/log/log0log.c mysql-5.1.50/storage/i
  		/* Recovery is running and no operations on the log files are
  		allowed yet (the variable name .._no_ibuf_.. is misleading) */
  
+@@ -3056,6 +3058,7 @@
+ 	for the 'very fast' shutdown, because the InnoDB layer may have
+ 	committed or prepared transactions and we don't want to lose them. */
+ 
++	if (!srv_apply_log_only) {
+ 	if (trx_n_mysql_transactions > 0
+ 	    || UT_LIST_GET_LEN(trx_sys->trx_list) > 0) {
+ 
+@@ -3063,6 +3066,7 @@
+ 
+ 		goto loop;
+ 	}
++	}
+ 
+ 	if (srv_fast_shutdown == 2) {
+ 		/* In this fastest shutdown we do not flush the buffer pool:
 diff -ru mysql-5.1.50_orig/storage/innobase/log/log0recv.c mysql-5.1.50/storage/innobase/log/log0recv.c
 --- mysql-5.1.50_orig/storage/innobase/log/log0recv.c	2010-08-04 02:24:20.000000000 +0900
 +++ mysql-5.1.50/storage/innobase/log/log0recv.c	2010-08-25 19:00:40.221017756 +0900
@@ -744,6 +761,22 @@ diff -ru mysql-5.1.50_orig/storage/innobase/log/log0recv.c mysql-5.1.50/storage/
  	}
  
  	contiguous_lsn = ut_dulint_align_down(recv_sys->scanned_lsn,
+@@ -2908,6 +2915,7 @@
+ 	/* Switch latching order checks on in sync0sync.c */
+ 	sync_order_checks_on = TRUE;
+ #endif
++	if (!srv_apply_log_only) {
+ 	if (srv_force_recovery < SRV_FORCE_NO_TRX_UNDO) {
+ 		/* Rollback the uncommitted transactions which have no user
+ 		session */
+@@ -2915,6 +2923,7 @@
+ 		os_thread_create(trx_rollback_or_clean_all_without_sess,
+ 				 (void *)&i, NULL);
+ 	}
++	}
+ }
+ 
+ /**********************************************************
 diff -ru mysql-5.1.50_orig/storage/innobase/mem/mem0dbg.c mysql-5.1.50/storage/innobase/mem/mem0dbg.c
 --- mysql-5.1.50_orig/storage/innobase/mem/mem0dbg.c	2010-08-04 02:24:20.000000000 +0900
 +++ mysql-5.1.50/storage/innobase/mem/mem0dbg.c	2010-09-17 05:10:09.000000000 +0900
@@ -977,16 +1010,17 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0srv.c mysql-5.1.50/storage/i
  ulint	srv_pool_size		= ULINT_MAX;	/* size in pages; MySQL inits
  						this to size in kilobytes but
  						we normalize this to pages in
-@@ -358,6 +362,8 @@
+@@ -358,6 +362,9 @@
  ibool	srv_use_awe			= FALSE;
  ibool	srv_use_adaptive_hash_indexes	= TRUE;
  
 +ibool	srv_read_only	= FALSE;
 +ibool	srv_fake_write	= FALSE;
++ibool	srv_apply_log_only = FALSE;
  /*-------------------------------------------*/
  ulong	srv_n_spin_wait_rounds	= 20;
  ulong	srv_n_free_tickets_to_enter = 500;
-@@ -980,6 +986,7 @@
+@@ -980,6 +987,7 @@
  srv_general_init(void)
  /*==================*/
  {
@@ -1060,7 +1094,19 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage
  		fprintf(stderr,
  			"InnoDB: Error: combined size of log files"
  			" must be < 4 GB\n");
-@@ -1660,7 +1667,18 @@
+@@ -1541,6 +1548,11 @@
+ 		are initialized in trx_sys_init_at_db_start(). */
+ 
+ 		recv_recovery_from_checkpoint_finish();
++
++		if (srv_apply_log_only) {
++			srv_was_started = TRUE;
++			goto skip_processes;
++		}
+ 	}
+ 
+ 	if (!create_new_db && sum_of_new_sizes > 0) {
+@@ -1660,7 +1672,18 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
@@ -1079,7 +1125,7 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
  			" is %lu pages, but\n"
-@@ -1685,6 +1703,7 @@
+@@ -1685,6 +1708,7 @@
  
  			return(DB_ERROR);
  		}
@@ -1087,6 +1133,14 @@ diff -ru mysql-5.1.50_orig/storage/innobase/srv/srv0start.c mysql-5.1.50/storage
  	}
  
  	/* Check that os_fast_mutexes work as expected */
+@@ -1781,6 +1805,7 @@
+ 		ibuf_update_max_tablespace_id();
+ 	}
+ 
++skip_processes:
+ 	srv_file_per_table = srv_file_per_table_original_value;
+ 
+ 	return((int) DB_SUCCESS);
 diff -ru mysql-5.1.50_orig/storage/innobase/trx/trx0purge.c mysql-5.1.50/storage/innobase/trx/trx0purge.c
 --- mysql-5.1.50_orig/storage/innobase/trx/trx0purge.c	2010-08-04 02:24:20.000000000 +0900
 +++ mysql-5.1.50/storage/innobase/trx/trx0purge.c	2010-08-25 19:00:40.237017006 +0900

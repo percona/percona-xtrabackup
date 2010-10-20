@@ -363,12 +363,13 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/ibuf/ibuf0ibuf.c mysql-5
 diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0srv.h mysql-5.1.47_xtradb/storage/innodb_plugin/include/srv0srv.h
 --- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0srv.h	2010-06-24 18:36:59.138626471 +0900
 +++ mysql-5.1.47_xtradb/storage/innodb_plugin/include/srv0srv.h	2010-06-24 19:51:35.168664113 +0900
-@@ -220,6 +220,9 @@
+@@ -220,6 +220,10 @@
  
  extern ulong	srv_replication_delay;
  
 +extern ibool	srv_read_only;
 +extern ibool	srv_fake_write;
++extern ibool	srv_apply_log_only;
 +
  extern long long	srv_ibuf_max_size;
  extern ulint	srv_ibuf_active_contract;
@@ -441,6 +442,22 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0log.c mysql-5.1.
  		/* Recovery is running and no operations on the log files are
  		allowed yet (the variable name .._no_ibuf_.. is misleading) */
  
+@@ -3121,6 +3121,7 @@
+ 	for the 'very fast' shutdown, because the InnoDB layer may have
+ 	committed or prepared transactions and we don't want to lose them. */
+ 
++	if (!srv_apply_log_only) {
+ 	if (trx_n_mysql_transactions > 0
+ 	    || UT_LIST_GET_LEN(trx_sys->trx_list) > 0) {
+ 
+@@ -3128,6 +3129,7 @@
+ 
+ 		goto loop;
+ 	}
++	}
+ 
+ 	if (srv_fast_shutdown == 2) {
+ 		/* In this fastest shutdown we do not flush the buffer pool:
 diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1.47_xtradb/storage/innodb_plugin/log/log0recv.c
 --- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c	2010-06-24 18:36:59.009611980 +0900
 +++ mysql-5.1.47_xtradb/storage/innodb_plugin/log/log0recv.c	2010-06-24 19:48:57.929626478 +0900
@@ -559,6 +576,14 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  	}
  
  	contiguous_lsn = ut_uint64_align_down(recv_sys->scanned_lsn,
+@@ -3434,6 +3440,7 @@
+ 	that the data dictionary tables will be free of any locks.
+ 	The data dictionary latch should guarantee that there is at
+ 	most one data dictionary transaction active at a time. */
++	if (!srv_apply_log_only)
+ 	trx_rollback_or_clean_recovered(FALSE);
+ }
+ 
 diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c mysql-5.1.47_xtradb/storage/innodb_plugin/os/os0file.c
 --- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c	2010-06-24 18:36:58.693623233 +0900
 +++ mysql-5.1.47_xtradb/storage/innodb_plugin/os/os0file.c	2010-06-24 19:48:57.937626082 +0900
@@ -677,17 +702,18 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/row/row0merge.c mysql-5.
 diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.47_xtradb/storage/innodb_plugin/srv/srv0srv.c
 --- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c	2010-06-24 18:36:59.146626022 +0900
 +++ mysql-5.1.47_xtradb/storage/innodb_plugin/srv/srv0srv.c	2010-06-24 19:52:55.908709658 +0900
-@@ -390,6 +390,9 @@
+@@ -390,6 +390,10 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
 +UNIV_INTERN ibool	srv_read_only	= FALSE;
 +UNIV_INTERN ibool	srv_fake_write	= FALSE;
++UNIV_INTERN ibool	srv_apply_log_only = FALSE;
 +
  UNIV_INTERN long long	srv_ibuf_max_size = 0;
  UNIV_INTERN ulint	srv_ibuf_active_contract = 0; /* 0:disable 1:enable */
  UNIV_INTERN ulint	srv_ibuf_accel_rate = 100;
-@@ -1035,7 +1038,7 @@
+@@ -1035,7 +1039,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -696,7 +722,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.
  }
  
  /*********************************************************************//**
-@@ -1046,6 +1049,7 @@
+@@ -1046,6 +1050,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -704,7 +730,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1059,6 +1063,7 @@
+@@ -1059,6 +1064,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -742,7 +768,18 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  ulint
  open_or_create_data_files(
  /*======================*/
-@@ -1907,7 +1909,18 @@
+@@ -1747,6 +1749,10 @@
+ 		are initialized in trx_sys_init_at_db_start(). */
+ 
+ 		recv_recovery_from_checkpoint_finish();
++
++		if (srv_apply_log_only)
++			goto skip_processes;
++
+ 		if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
+ 			/* The following call is necessary for the insert
+ 			buffer to work with multiple tablespaces. We must
+@@ -1907,7 +1913,18 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
@@ -761,7 +798,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
  			" is %lu pages, but\n"
-@@ -1932,6 +1945,7 @@
+@@ -1932,6 +1949,7 @@
  
  			return(DB_ERROR);
  		}
@@ -769,6 +806,14 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  	}
  
  	/* Check that os_fast_mutexes work as expected */
+@@ -2034,6 +2052,7 @@
+ 		ibuf_update_max_tablespace_id();
+ 	}
+ 
++skip_processes:
+ 	srv_file_per_table = srv_file_per_table_original_value;
+ 
+ 	srv_was_started = TRUE;
 diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0purge.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0purge.c
 --- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0purge.c	2010-06-24 18:36:58.594626356 +0900
 +++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0purge.c	2010-06-24 19:48:57.967622137 +0900
@@ -782,6 +827,37 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0purge.c mysql-5.
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
+diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0rseg.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0rseg.c
+--- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0rseg.c	2010-06-24 18:36:58.291593158 +0900
++++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0rseg.c	2010-10-20 17:56:59.380188371 +0900
+@@ -143,9 +143,11 @@
+ 
+ 	mutex_free(&rseg->mutex);
+ 
++	if (!srv_apply_log_only) {
+ 	/* There can't be any active transactions. */
+ 	ut_a(UT_LIST_GET_LEN(rseg->update_undo_list) == 0);
+ 	ut_a(UT_LIST_GET_LEN(rseg->insert_undo_list) == 0);
++	}
+ 
+ 	undo = UT_LIST_GET_FIRST(rseg->update_undo_cached);
+ 
+diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0sys.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0sys.c
+--- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0sys.c	2010-06-24 18:36:58.790615570 +0900
++++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0sys.c	2010-10-20 17:57:40.136127409 +0900
+@@ -1929,10 +1929,12 @@
+ 		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
+ 	}
+ 
++	if (!srv_apply_log_only) {
+ 	ut_a(UT_LIST_GET_LEN(trx_sys->trx_list) == 0);
+ 	ut_a(UT_LIST_GET_LEN(trx_sys->rseg_list) == 0);
+ 	ut_a(UT_LIST_GET_LEN(trx_sys->view_list) == 0);
+ 	ut_a(UT_LIST_GET_LEN(trx_sys->mysql_trx_list) == 0);
++	}
+ 
+ 	mem_free(trx_sys);
+ 
 diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0trx.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0trx.c
 --- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0trx.c	2010-06-24 18:36:58.700625905 +0900
 +++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0trx.c	2010-06-24 19:48:57.973626061 +0900
