@@ -64,6 +64,7 @@ my $mysql_keep_alive_timeout = 1800;
 my $option_help = '';
 my $option_version = '';
 my $option_apply_log = '';
+my $option_redo_only = '';
 my $option_copy_back = '';
 my $option_include = '';
 my $option_databases = '';
@@ -302,7 +303,7 @@ $innobackup_script [--sleep=MS] [--compress[=LEVEL]] [--include=REGEXP] [--user=
            [--defaults-file=MY.CNF]
            [--databases=LIST] [--remote-host=HOSTNAME] [--no-lock] BACKUP-ROOT-DIR
 $innobackup_script --apply-log [--use-memory=MB] [--uncompress] [--defaults-file=MY.CNF]
-           [--export] [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
+           [--export] [--redo-only] [--ibbackup=IBBACKUP-BINARY] BACKUP-DIR
 $innobackup_script --copy-back [--defaults-file=MY.CNF] BACKUP-DIR
 
 The first command line above makes a hot backup of a MySQL database.
@@ -349,6 +350,10 @@ Options:
                 backup-dir/backup-my.cnf, using backup-dir/ibbackup_logfile, 
                 and create new log files as specified in 
                 backup-dir/backup-my.cnf.
+
+    --redo-only Options is used with --apply-log. This option forces to skip
+                "rollback" phase and do only "redo". This is necessary to use
+                if backup later will be applied with incremental changes.
 
     --copy-back Copy data and index files from backup directory back to 
                 their original locations.
@@ -828,6 +833,9 @@ sub apply_log {
     }
     if ($option_export) {
         $options = $options . ' --export';
+    }
+    if ($option_redo_only) {
+        $options = $options . ' --apply-log-only';
     }
     if ($option_use_memory) {
         $options = $options . " --use-memory=$option_use_memory";
@@ -1710,6 +1718,7 @@ sub check_args {
                         'throttle=i' => \$option_throttle,
                         'sleep=i' => \$option_sleep,
                         'apply-log' => \$option_apply_log,
+                        'redo-only' => \$option_redo_only,
                         'copy-back' => \$option_copy_back,
                         'include=s' => \$option_include,
 			'databases=s' => \$option_databases,
