@@ -520,6 +520,7 @@ my_bool xtrabackup_prepare = FALSE;
 my_bool xtrabackup_print_param = FALSE;
 
 my_bool xtrabackup_export = FALSE;
+my_bool xtrabackup_apply_log_only = FALSE;
 
 my_bool xtrabackup_suspend_at_end = FALSE;
 longlong xtrabackup_use_memory = 100*1024*1024L;
@@ -673,6 +674,7 @@ enum options_xtrabackup
   OPT_XTRA_STATS,
   OPT_XTRA_PREPARE,
   OPT_XTRA_EXPORT,
+  OPT_XTRA_APPLY_LOG_ONLY,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_SUSPEND_AT_END,
   OPT_XTRA_USE_MEMORY,
@@ -745,6 +747,10 @@ static struct my_option my_long_options[] =
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"export", OPT_XTRA_EXPORT, "create files to import to another database when prepare.",
    (G_PTR*) &xtrabackup_export, (G_PTR*) &xtrabackup_export,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"apply-log-only", OPT_XTRA_APPLY_LOG_ONLY,
+   "stop recovery process not to progress LSN after applying log when prepare.",
+   (G_PTR*) &xtrabackup_apply_log_only, (G_PTR*) &xtrabackup_apply_log_only,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"print-param", OPT_XTRA_PRINT_PARAM, "print parameter of mysqld needed for copyback.",
    (G_PTR*) &xtrabackup_print_param, (G_PTR*) &xtrabackup_print_param,
@@ -4807,6 +4813,15 @@ skip_check:
 
 	if(innodb_init_param())
 		goto error;
+
+#ifdef HAVE_APPLY_LOG_ONLY
+	srv_apply_log_only = (ibool) xtrabackup_apply_log_only;
+#else
+	if (xtrabackup_apply_log_only) {
+		fprintf(stderr,
+			"xtrabackup: --apply-log-only is not implemented to this version yet.\n");
+	}
+#endif
 
 	/* increase IO threads */
 	if(srv_n_file_io_threads < 10) {

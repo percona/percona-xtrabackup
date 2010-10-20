@@ -82,6 +82,7 @@ plugin: $(TARGET)
 
 5.5: MYSQLOBJS= ../../../mysys/libmysys.a ../../../strings/libmystrings.a ../../../zlib/.libs/libzlt.a
 5.5: LIBS += -laio
+5.5: DEFS += -DHAVE_APPLY_LOG_ONLY
 5.5: TARGET := xtrabackup_55
 5.5: $(TARGET)
 
