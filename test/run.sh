@@ -6,7 +6,7 @@ mkdir results
 function usage()
 {
 	echo "Usage: $0 [-m mysql_version] [-g] [-h]"
-	echo "-m version  MySQL version to use. Possible values: system, 5.0, 5.1, percona. Default is system"
+	echo "-m version  MySQL version to use. Possible values: system, 5.0, 5.1, 5.5, percona. Default is system"
 	echo "-g          Output debug information to results/*.out"
 	echo "-h          Print this help megssage"
 }

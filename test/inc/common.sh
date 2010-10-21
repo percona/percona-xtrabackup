@@ -82,6 +82,21 @@ function init_mysql()
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
 			cd -
 			;;
+		5.5)
+			echo "Using MySQL 5.5"
+			version="5.5.6-rc-linux2.6-`uname -m`"
+			cd $topdir
+			wget "$url/mysql-$version.tar.gz"
+			tar zxf mysql-$version.tar.gz
+			MYSQL=$topdir/mysql-$version/bin/mysql
+			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
+			MYSQL_INSTALL_DB=$topdir/mysql-$version/scripts/mysql_install_db
+			MYSQLD=$topdir/mysql-$version/bin/mysqld
+			MYSQL_BASEDIR=$topdir/mysql-$version
+			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
+			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			cd -
+			;;
 		percona)
 			echo "Using Percona Server"
 			version="5.1.47-rel11.2-53-Linux-`uname -m`"
