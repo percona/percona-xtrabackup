@@ -3542,6 +3542,12 @@ skip_last_cp:
 		fprintf(stderr, "xtrabackup: Transaction log of lsn (%llu) to (%llu) was copied.\n",
 			checkpoint_lsn_start, log_copy_scanned_lsn);
 #endif
+		if(xtrabackup_extra_lsndir) {
+			char	filename[FN_REFLEN];
+			sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_METADATA_FILENAME);
+			if (xtrabackup_write_metadata(filename))
+				fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata(xtrabackup_extra_lsndir)\n");
+		}
 	}
 }
 
