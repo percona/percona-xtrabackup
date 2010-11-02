@@ -2410,8 +2410,10 @@ read_retry:
 			for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += page_size) {
 				/* newer page */
 				/* This condition may be OK for header, ibuf and fsp */
-				if (ut_dulint_cmp(incremental_lsn,
-					MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
+				if (ut_dulint_cmp(ut_dulint_zero,
+						MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) == 0
+				    || ut_dulint_cmp(incremental_lsn,
+						MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
 	/* ========================================= */
 	IB_INT64 page_offset;
 
@@ -4501,11 +4503,11 @@ xtrabackup_apply_delta(
 				break;
 
 			/* apply blocks in the cluster */
-			if (ut_dulint_cmp(incremental_lsn,
-				MACH_READ_64(incremental_buffer
-						 + page_in_buffer * UNIV_PAGE_SIZE
-						 + FIL_PAGE_LSN)) >= 0)
-				continue;
+//			if (ut_dulint_cmp(incremental_lsn,
+//				MACH_READ_64(incremental_buffer
+//						 + page_in_buffer * UNIV_PAGE_SIZE
+//						 + FIL_PAGE_LSN)) >= 0)
+//				continue;
 
 			success = os_file_write(dst_path, dst_file,
 					incremental_buffer + page_in_buffer * UNIV_PAGE_SIZE,
