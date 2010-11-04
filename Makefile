@@ -84,7 +84,6 @@ plugin: $(TARGET)
 ifeq ($(shell uname -s),Linux)
 5.5: LIBS += -laio
 endif
-5.5: LIBS += -laio
 5.5: TARGET := xtrabackup_55
 5.5: $(TARGET)
 
