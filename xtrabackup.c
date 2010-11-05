@@ -2410,10 +2410,8 @@ read_retry:
 			for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += page_size) {
 				/* newer page */
 				/* This condition may be OK for header, ibuf and fsp */
-				if (ut_dulint_cmp(ut_dulint_zero,
-						MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) == 0
-				    || ut_dulint_cmp(incremental_lsn,
-						MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
+				if (ut_dulint_cmp(incremental_lsn,
+					MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
 	/* ========================================= */
 	IB_INT64 page_offset;
 
