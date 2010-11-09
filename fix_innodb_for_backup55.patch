@@ -161,6 +161,17 @@ diff -ru mysql-5.5.6-rc_orig/storage/innobase/fil/fil0fil.c mysql-5.5.6-rc/stora
  
  
  /********************************************************************//**
+@@ -757,8 +759,8 @@
+ 		}
+ 
+ 		if (size_bytes >= 1024 * 1024) {
+-			/* Truncate the size to whole megabytes. */
+-			size_bytes = ut_2pow_round(size_bytes, 1024 * 1024);
++			/* The size should be exact for after applying .delta */
++			//size_bytes = ut_2pow_round(size_bytes, 1024 * 1024);
+ 		}
+ 
+ 		if (!(flags & DICT_TF_ZSSIZE_MASK)) {
 @@ -2150,7 +2152,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    space_id, name, FALSE, flags,
