@@ -4526,11 +4526,11 @@ xtrabackup_apply_delta(
 				break;
 
 			/* apply blocks in the cluster */
-			if (ut_dulint_cmp(incremental_lsn,
-				MACH_READ_64(incremental_buffer
-						 + page_in_buffer * UNIV_PAGE_SIZE
-						 + FIL_PAGE_LSN)) >= 0)
-				continue;
+//			if (ut_dulint_cmp(incremental_lsn,
+//				MACH_READ_64(incremental_buffer
+//						 + page_in_buffer * UNIV_PAGE_SIZE
+//						 + FIL_PAGE_LSN)) >= 0)
+//				continue;
 
 			success = os_file_write(dst_path, dst_file,
 					incremental_buffer + page_in_buffer * UNIV_PAGE_SIZE,

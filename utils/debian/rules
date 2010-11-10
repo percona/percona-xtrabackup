@@ -43,6 +43,7 @@ build-stamp:  config.status
 	# Add here commands to compile the package.
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
 	AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
+	AUTO_DOWNLOAD=yes ./utils/build.sh 5.5
 
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
 
@@ -67,6 +68,7 @@ install:
 
 	# Add here commands to install the package into debian/xtrabackup.
 	install -m 755 mysql-5.1.42/storage/innobase/xtrabackup/xtrabackup_51 $(CURDIR)/debian/xtrabackup/usr/bin
+	install -m 755 mysql-5.5.6-rc/storage/innobase/xtrabackup/xtrabackup_55 $(CURDIR)/debian/xtrabackup/usr/bin
 	install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/xtrabackup $(CURDIR)/debian/xtrabackup/usr/bin
 	install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/innobackupex-1.5.1 $(CURDIR)/debian/xtrabackup/usr/bin
 	install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd $(CURDIR)/debian/xtrabackup/usr/bin

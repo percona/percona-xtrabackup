@@ -99,7 +99,7 @@ function init_mysql()
 			;;
 		percona)
 			echo "Using Percona Server"
-			version="5.1.47-rel11.2-53-Linux-`uname -m`"
+			version="5.1.51-rel11.5-132-Linux-`uname -m`"
 			cd $topdir
 			wget "$url/Percona-Server-$version.tar.gz"
 			tar zxf Percona-Server-$version.tar.gz
