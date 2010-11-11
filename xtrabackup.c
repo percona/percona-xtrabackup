@@ -2486,11 +2486,11 @@ read_retry:
 
 	/* check size again */
 	/* TODO: but is it needed ?? */
-	if (file_size < os_file_get_size_as_iblonglong(src_file)) {
-		offset -= COPY_CHUNK * page_size;
-		file_size = os_file_get_size_as_iblonglong(src_file);
-		goto copy_loop;
-	}
+//	if (file_size < os_file_get_size_as_iblonglong(src_file)) {
+//		offset -= COPY_CHUNK * page_size;
+//		file_size = os_file_get_size_as_iblonglong(src_file);
+//		goto copy_loop;
+//	}
 
 	/* TODO: How should we treat double_write_buffer here? */
 	/* (currently, don't care about. Because,
