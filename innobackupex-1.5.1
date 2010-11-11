@@ -2375,7 +2375,7 @@ sub set_xtrabackup_version {
 #  MySQL 5.1.* - xtrabackup_51
 #  MySQL 5.1.* with InnoDB plugin - xtrabackup
 #  Percona Server >= 11.0 - xtrabackup
-#  MySQL 5.5.* - xtrabackup_55 
+#  MySQL 5.5.* - not supported
 
 my @lines;
 my $var_version = '';
@@ -2405,7 +2405,9 @@ if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 if($var_version =~ m/5\.5\.\d/){
-	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
+	print STDERR "$prefix fatal error: MySQL version $var_version is not supported.\n";
+	print STDERR "$prefix fatal error: Upgrade XtraBackup to 1.5 or more recent\n";
+	exit(1);
 }
 mysql_close();
 return $ibbackup_binary;

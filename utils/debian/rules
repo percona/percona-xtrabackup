@@ -43,7 +43,6 @@ build-stamp:  config.status
 	# Add here commands to compile the package.
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
 	AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
-	AUTO_DOWNLOAD=yes ./utils/build.sh 5.5
 
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
 
