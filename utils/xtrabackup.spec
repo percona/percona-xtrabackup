@@ -22,7 +22,6 @@ URL: http://www.percona.com/software/percona-xtrabackup/
 Source: xtrabackup-%{xtrabackup_version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Requires: mysql
-BuildRequires: libaio-devel
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.

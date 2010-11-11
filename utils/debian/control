@@ -2,7 +2,7 @@ Source: xtrabackup
 Section: misc
 Priority: extra
 Maintainer: Aleksandr Kuzminsky <aleksandr.kuzminsky@percona.com>
-Build-Depends: debhelper, autotools-dev, libaio-dev
+Build-Depends: debhelper, autotools-dev
 Standards-Version: 3.7.3
 Homepage: https://launchpad.net/percona-xtrabackup
 Vcs-Browser: http://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-1.4/files
