@@ -538,6 +538,7 @@ byte* incremental_buffer = NULL;
 byte* incremental_buffer_base = NULL;
 
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
+char *xtrabackup_extra_lsndir = NULL; /* for --backup with --extra-lsndir */
 char *xtrabackup_incremental_dir = NULL; /* for --prepare */
 
 char *xtrabackup_tables = NULL;
@@ -682,6 +683,7 @@ enum options_xtrabackup
   OPT_XTRA_STREAM,
   OPT_XTRA_INCREMENTAL,
   OPT_XTRA_INCREMENTAL_BASEDIR,
+  OPT_XTRA_EXTRA_LSNDIR,
   OPT_XTRA_INCREMENTAL_DIR,
   OPT_XTRA_TABLES,
   OPT_XTRA_TABLES_FILE,
@@ -768,6 +770,9 @@ static struct my_option my_long_options[] =
   {"log-stream", OPT_XTRA_STREAM, "outputs the contents of 'xtrabackup_logfile' to stdout only until the file 'xtrabackup_suspended' deleted (for '--backup').",
    (G_PTR*) &xtrabackup_stream, (G_PTR*) &xtrabackup_stream,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"extra-lsndir", OPT_XTRA_EXTRA_LSNDIR, "(for --backup): save an extra copy of the xtrabackup_checkpoints file in this directory.",
+   (G_PTR*) &xtrabackup_extra_lsndir, (G_PTR*) &xtrabackup_extra_lsndir,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"incremental-lsn", OPT_XTRA_INCREMENTAL, "(for --backup): copy only .ibd pages newer than specified LSN 'high:low'. ##ATTENTION##: checkpoint lsn must be used. anyone can detect your mistake. be carefully!",
    (G_PTR*) &xtrabackup_incremental, (G_PTR*) &xtrabackup_incremental,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -3153,6 +3158,15 @@ xtrabackup_backup_func(void)
 
 	}
 
+	/* create extra LSN dir if it does not exist. */
+	if (xtrabackup_extra_lsndir
+		&&!my_stat(xtrabackup_extra_lsndir,&stat_info,MYF(0))
+		&& (my_mkdir(xtrabackup_extra_lsndir,0777,MYF(0)) < 0)){
+		fprintf(stderr,"xtrabackup: Error: cannot mkdir %d: %s\n",my_errno,xtrabackup_extra_lsndir);
+		exit(1);
+	}
+
+
 	if (!xtrabackup_stream) {
 
 	/* create target dir if not exist */
@@ -3465,8 +3479,6 @@ skip_last_cp:
 	{
 		char	filename[FN_REFLEN];
 
-		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
-
 		if(!xtrabackup_incremental) {
 			strcpy(metadata_type, "full-backuped");
 			metadata_from_lsn = ut_dulint_zero;
@@ -3476,8 +3488,15 @@ skip_last_cp:
 		}
 		metadata_to_lsn = latest_cp;
 
+		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
 		if (xtrabackup_write_metadata(filename))
-			fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata()\n");
+			fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata(xtrabackup_target_dir)\n");
+
+		if(xtrabackup_extra_lsndir) {
+			sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_METADATA_FILENAME);
+			if (xtrabackup_write_metadata(filename))
+				fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata(xtrabackup_extra_lsndir)\n");
+		}
 	}
 
 	/* stop log_copying_thread */
@@ -3523,6 +3542,12 @@ skip_last_cp:
 		fprintf(stderr, "xtrabackup: Transaction log of lsn (%llu) to (%llu) was copied.\n",
 			checkpoint_lsn_start, log_copy_scanned_lsn);
 #endif
+		if(xtrabackup_extra_lsndir) {
+			char	filename[FN_REFLEN];
+			sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_METADATA_FILENAME);
+			if (xtrabackup_write_metadata(filename))
+				fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata(xtrabackup_extra_lsndir)\n");
+		}
 	}
 }
 
@@ -5129,16 +5154,21 @@ next_node:
 	{
 		char	filename[FN_REFLEN];
 
-		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
-
 		strcpy(metadata_type, "full-prepared");
 
 		if(xtrabackup_incremental
 		   && ut_dulint_cmp(metadata_to_lsn, incremental_to_lsn) < 0)
 			metadata_to_lsn = incremental_to_lsn;
 
+		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
 		if (xtrabackup_write_metadata(filename))
-			fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata()\n");
+			fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata(xtrabackup_target_dir)\n");
+
+		if(xtrabackup_extra_lsndir) {
+			sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_METADATA_FILENAME);
+			if (xtrabackup_write_metadata(filename))
+				fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata(xtrabackup_extra_lsndir)\n");
+		}
 	}
 
 	if(!xtrabackup_create_ib_logfile)

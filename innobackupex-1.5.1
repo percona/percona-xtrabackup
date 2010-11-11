@@ -998,7 +998,12 @@ sub start_ibbackup {
                             print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                         } elsif ($ret != 0) {
                             print STDERR "$prefix tar returned with exit code $ret.\n";
-                            Die "Failed to stream '$path': $!";
+                            if ( -e "$orig_ibdata_dir/$path" ) {
+                                Die "Failed to stream '$orig_ibdata_dir/$path': $!";
+                            }
+                            else {
+                                print STDERR "$prefix Ignoring nonexistent file '$orig_ibdata_dir/$path'.\n";
+                            }
                         }
                     }
                 }
@@ -1061,7 +1066,12 @@ sub start_ibbackup {
                                 print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                             } elsif ($ret != 0) {
                                 print STDERR "$prefix tar returned with exit code $ret.\n";
-                                Die "Failed to stream '$subdir/$file_name': $!";
+                                if ( -e "$orig_datadir/$subdir/$file_name" ) {
+                                    Die "Failed to stream '$orig_datadir/$subdir/$file_name': $!";
+                                }
+                                else {
+                                    print STDERR "$prefix Ignoring nonexistent file '$orig_datadir/$subdir/$file_name'.\n";
+                                }
                             }
                         }
                     }
