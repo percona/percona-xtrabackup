@@ -2029,8 +2029,9 @@ xtrabackup_read_metadata(char *filename)
 			!= 2)
 		return(TRUE);
 	if (fscanf(fp, "last_lsn = %lu:%lu\n", &metadata_last_lsn.high, &metadata_last_lsn.low)
-			!= 2)
-		return(TRUE);
+			!= 2) {
+		metadata_last_lsn.high = metadata_last_lsn.low = 0;
+	}
 #else
 	if (fscanf(fp, "from_lsn = %llu\n", &metadata_from_lsn)
 			!= 1)
@@ -2039,8 +2040,9 @@ xtrabackup_read_metadata(char *filename)
 			!= 1)
 		return(TRUE);
 	if (fscanf(fp, "last_lsn = %llu\n", &metadata_last_lsn)
-			!= 1)
-		return(TRUE);
+			!= 1) {
+		metadata_last_lsn = 0;
+	}
 #endif
 
 	fclose(fp);
