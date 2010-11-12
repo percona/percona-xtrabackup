@@ -534,6 +534,7 @@ my_bool xtrabackup_stream = FALSE;
 char *xtrabackup_incremental = NULL;
 LSN64 incremental_lsn;
 LSN64 incremental_to_lsn;
+LSN64 incremental_last_lsn;
 byte* incremental_buffer = NULL;
 byte* incremental_buffer_base = NULL;
 
@@ -579,9 +580,11 @@ char metadata_type[30] = ""; /*[full-backuped|full-prepared|incremental]*/
 #ifndef INNODB_VERSION_SHORT
 dulint metadata_from_lsn = {0, 0};
 dulint metadata_to_lsn = {0, 0};
+dulint metadata_last_lsn = {0, 0};
 #else
 ib_uint64_t metadata_from_lsn = 0;
 ib_uint64_t metadata_to_lsn = 0;
+ib_uint64_t metadata_last_lsn = 0;
 #endif
 
 /* === sharing with thread === */
@@ -2025,11 +2028,17 @@ xtrabackup_read_metadata(char *filename)
 	if (fscanf(fp, "to_lsn = %lu:%lu\n", &metadata_to_lsn.high, &metadata_to_lsn.low)
 			!= 2)
 		return(TRUE);
+	if (fscanf(fp, "last_lsn = %lu:%lu\n", &metadata_last_lsn.high, &metadata_last_lsn.low)
+			!= 2)
+		return(TRUE);
 #else
 	if (fscanf(fp, "from_lsn = %llu\n", &metadata_from_lsn)
 			!= 1)
 		return(TRUE);
 	if (fscanf(fp, "to_lsn = %llu\n", &metadata_to_lsn)
+			!= 1)
+		return(TRUE);
+	if (fscanf(fp, "last_lsn = %llu\n", &metadata_last_lsn)
 			!= 1)
 		return(TRUE);
 #endif
@@ -2060,11 +2069,17 @@ xtrabackup_write_metadata(char *filename)
 	if (fprintf(fp, "to_lsn = %lu:%lu\n", metadata_to_lsn.high, metadata_to_lsn.low)
 			< 0)
 		return(TRUE);
+	if (fprintf(fp, "last_lsn = %lu:%lu\n", metadata_last_lsn.high, metadata_last_lsn.low)
+			< 0)
+		return(TRUE);
 #else
 	if (fprintf(fp, "from_lsn = %llu\n", metadata_from_lsn)
 			< 0)
 		return(TRUE);
 	if (fprintf(fp, "to_lsn = %llu\n", metadata_to_lsn)
+			< 0)
+		return(TRUE);
+	if (fprintf(fp, "last_lsn = %llu\n", metadata_last_lsn)
 			< 0)
 		return(TRUE);
 #endif
@@ -3474,6 +3489,19 @@ reread_log_header:
 		}
 	}
 skip_last_cp:
+	/* stop log_copying_thread */
+	log_copying = FALSE;
+	if (!xtrabackup_stream) {
+		printf("xtrabackup: Stopping log copying thread");
+		while (log_copying_running) {
+			printf(".");
+			os_thread_sleep(200000); /*0.2 sec*/
+		}
+		printf("\n");
+	} else {
+		while (log_copying_running)
+			os_thread_sleep(200000); /*0.2 sec*/
+	}
 
 	/* output to metadata file */
 	{
@@ -3487,6 +3515,7 @@ skip_last_cp:
 			metadata_from_lsn = incremental_lsn;
 		}
 		metadata_to_lsn = latest_cp;
+		metadata_last_lsn = log_copy_scanned_lsn;
 
 		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
 		if (xtrabackup_write_metadata(filename))
@@ -3497,20 +3526,6 @@ skip_last_cp:
 			if (xtrabackup_write_metadata(filename))
 				fprintf(stderr, "xtrabackup: error: xtrabackup_write_metadata(xtrabackup_extra_lsndir)\n");
 		}
-	}
-
-	/* stop log_copying_thread */
-	log_copying = FALSE;
-	if (!xtrabackup_stream) {
-		printf("xtrabackup: Stopping log copying thread");
-		while (log_copying_running) {
-			printf(".");
-			os_thread_sleep(200000); /*0.2 sec*/
-		}
-		printf("\n");
-	} else {
-		while (log_copying_running)
-			os_thread_sleep(200000); /*0.2 sec*/
 	}
 
 	if (!log_copying_succeed) {
@@ -4800,9 +4815,10 @@ xtrabackup_prepare_func(void)
 		}
 skip_check:
 		if (xtrabackup_incremental
-		    && ut_dulint_cmp(metadata_to_lsn, incremental_lsn) < 0) {
+		    && ut_dulint_cmp(metadata_to_lsn, incremental_lsn) != 0) {
 			fprintf(stderr,
-			"xtrabackup: error: This incremental backup seems to be too new for the target.\n");
+			"xtrabackup: error: This incremental backup seems not to be proper for the target.\n"
+			"xtrabackup:  Check 'to_lsn' of the target and 'from_lsn' of the incremental.\n");
 			exit(1);
 		}
 	}
@@ -5133,6 +5149,35 @@ next_node:
 		}
 	}
 
+	/* Check whether the log is applied enough or not. */
+	if ((xtrabackup_incremental
+	     && ut_dulint_cmp(srv_start_lsn, incremental_last_lsn) < 0)
+	    ||(!xtrabackup_incremental
+	       && ut_dulint_cmp(srv_start_lsn, metadata_last_lsn) < 0)) {
+		printf( "xtrabackup: ########################################################\n"
+			"xtrabackup: # !!WARNING!!                                          #\n"
+			"xtrabackup: # The transaction log file should be wrong or corrupt. #\n"
+			"xtrabackup: # The log was not applied to the intended LSN!         #\n"
+			"xtrabackup: ########################################################\n");
+		if (xtrabackup_incremental) {
+#ifndef INNODB_VERSION_SHORT
+			printf("xtrabackup: The intended lsn is %lu:%lu\n",
+				incremental_last_lsn.high, incremental_last_lsn.low);
+#else
+			printf("xtrabackup: The intended lsn is %llu\n",
+				incremental_last_lsn);
+#endif
+		} else {
+#ifndef INNODB_VERSION_SHORT
+			printf("xtrabackup: The intended lsn is %lu:%lu\n",
+				metadata_last_lsn.high, metadata_last_lsn.low);
+#else
+			printf("xtrabackup: The intended lsn is %llu\n",
+				metadata_last_lsn);
+#endif
+		}
+	}
+
 	if(innodb_end())
 		goto error;
 
@@ -5158,7 +5203,10 @@ next_node:
 
 		if(xtrabackup_incremental
 		   && ut_dulint_cmp(metadata_to_lsn, incremental_to_lsn) < 0)
+		{
 			metadata_to_lsn = incremental_to_lsn;
+			metadata_last_lsn = incremental_last_lsn;
+		}
 
 		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
 		if (xtrabackup_write_metadata(filename))
@@ -5431,6 +5479,7 @@ skip_tables_file_register:
 
 		incremental_lsn = metadata_from_lsn;
 		incremental_to_lsn = metadata_to_lsn;
+		incremental_last_lsn = metadata_last_lsn;
 		xtrabackup_incremental = xtrabackup_incremental_dir; //dummy
 
 		/* allocate buffer for incremental backup (4096 pages) */
