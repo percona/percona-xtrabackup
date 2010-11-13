@@ -1,10 +1,9 @@
 # Makefile to build XtraBackup for Percona Server and different versions of MySQL
 #
 # Syntax:
-# make [5.0|5.1|5.5|plugin|xtradb]
+# make [5.1|5.5|plugin|xtradb]
 #
 # Default is xtradb - to build XtraBackup for Percona Server
-# 5.0 - XtraBackup for MySQL versions 5.0.*
 # 5.1 - XtraBackup for MySQL versions 5.1.* with plugin innobase
 # plugin - XtraBackup for MySQL versions 5.1.* with plugin innodb_plugin
 
@@ -18,21 +17,6 @@ PREFIX=/usr
 BIN_DIR=$(PREFIX)/bin
 
 default: xtradb
-
-# XtraBackup for MySQL 5.0
-5.0: INC = -I. -I.. -I./../include -I./../../include
-5.0: INNODBOBJS = ../usr/libusr.a ../srv/libsrv.a ../dict/libdict.a ../que/libque.a\
-		../srv/libsrv.a ../ibuf/libibuf.a ../row/librow.a ../pars/libpars.a\
-		../btr/libbtr.a ../trx/libtrx.a ../read/libread.a ../usr/libusr.a\
-		../buf/libbuf.a ../ibuf/libibuf.a ../eval/libeval.a ../log/liblog.a\
-		../fsp/libfsp.a ../fut/libfut.a ../fil/libfil.a ../lock/liblock.a\
-		../mtr/libmtr.a ../page/libpage.a ../rem/librem.a ../thr/libthr.a\
-		../sync/libsync.a ../data/libdata.a ../mach/libmach.a ../ha/libha.a\
-		../dyn/libdyn.a ../mem/libmem.a ../sync/libsync.a ../ut/libut.a\
-		../os/libos.a ../ut/libut.a
-5.0: MYSQLOBJS = ../../mysys/libmysys.a ../../strings/libmystrings.a
-5.0: TARGET := xtrabackup_50
-5.0: $(TARGET)
 
 # XtraBackup for MySQL 5.1
 5.1: INC = -I. -I.. -I./../include -I./../../include -I./../../../include
