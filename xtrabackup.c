@@ -2826,9 +2826,35 @@ log_copying_thread(
 
 		counter++;
 		if(counter >= SLEEPING_PERIOD * 5) {
+			LSN64		latest_cp;
+			log_group_t*	max_cp_group;
+			ulint	max_cp_field;
+			ulint	err;
+
 			if(xtrabackup_copy_logfile(log_copy_scanned_lsn, FALSE))
 				goto end;
 			counter = 0;
+
+			mutex_enter(&(log_sys->mutex));
+			err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
+
+			if (err != DB_SUCCESS) {
+				fprintf(stderr, "xtrabackup: Error: recv_find_max_checkpoint() failed.\n");
+				continue;
+			}
+
+			log_group_read_checkpoint_info(max_cp_group, max_cp_field);
+
+			latest_cp = MACH_READ_64(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
+			mutex_exit(&(log_sys->mutex));
+
+			if (ut_dulint_cmp(latest_cp,
+					ut_dulint_add(log_copy_scanned_lsn,
+						srv_log_file_size * srv_n_log_files)) > 0) {
+				fprintf(stderr,
+					">> ###Warning###: The copying transaction log seems to be overtaken already\n"
+					">>                over 1 rotate of the logfiles. This backup should be fail.\n");
+			}
 		}
 	}
 
@@ -3230,7 +3256,8 @@ xtrabackup_backup_func(void)
 
 	/* get current checkpoint_lsn */
 	/* Look for the latest checkpoint from any of the log groups */
-	
+
+	mutex_enter(&(log_sys->mutex));
 	err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
 
 	if (err != DB_SUCCESS) {
@@ -3243,6 +3270,7 @@ xtrabackup_backup_func(void)
 
 	checkpoint_lsn_start = MACH_READ_64(buf + LOG_CHECKPOINT_LSN);
 	checkpoint_no_start = MACH_READ_64(buf + LOG_CHECKPOINT_NO);
+	mutex_exit(&(log_sys->mutex));
 
 reread_log_header:
 	fil_io(OS_FILE_READ | OS_FILE_LOG, TRUE, max_cp_group->space_id,
@@ -3253,6 +3281,7 @@ reread_log_header:
 				log_hdr_buf, max_cp_group);
 
 	/* check consistency of log file header to copy */
+	mutex_enter(&(log_sys->mutex));
         err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
 
         if (err != DB_SUCCESS) {
@@ -3267,8 +3296,10 @@ reread_log_header:
 			MACH_READ_64(buf + LOG_CHECKPOINT_NO)) != 0) {
 		checkpoint_lsn_start = MACH_READ_64(buf + LOG_CHECKPOINT_LSN);
 		checkpoint_no_start = MACH_READ_64(buf + LOG_CHECKPOINT_NO);
+		mutex_exit(&(log_sys->mutex));
 		goto reread_log_header;
 	}
+	mutex_exit(&(log_sys->mutex));
 
 	if (!xtrabackup_stream) {
 
@@ -3461,6 +3492,7 @@ reread_log_header:
 		ulint	max_cp_field;
 		ulint	err;
 
+		mutex_enter(&(log_sys->mutex));
 		err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
 
 		if (err != DB_SUCCESS) {
@@ -3471,6 +3503,7 @@ reread_log_header:
 		log_group_read_checkpoint_info(max_cp_group, max_cp_field);
 
 		latest_cp = MACH_READ_64(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
+		mutex_exit(&(log_sys->mutex));
 
 		if (!xtrabackup_stream) {
 #ifndef INNODB_VERSION_SHORT
