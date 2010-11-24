@@ -10,7 +10,7 @@
 LIBS = -lpthread
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
 
-CFLAGS += -O2 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
+CFLAGS += -O3 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
 
 TARGET=xtrabackup
 PREFIX=/usr
