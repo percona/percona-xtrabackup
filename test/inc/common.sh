@@ -24,6 +24,11 @@ clean
 exit -1
 }
 
+function die()
+{
+  vlog "$*"
+  exit 1
+}
 
 function initdir()
 {
@@ -170,7 +175,7 @@ function mysql_ping()
 function run_mysqld()
 {
     local c=0
-    ${MYSQLD} ${MYSQLD_ARGS} --port=$mysql_port &
+    ${MYSQLD} ${MYSQLD_ARGS} $* --port=$mysql_port &
     while [ "`mysql_ping`" != "1" ]
     do
         if [ ${c} -eq 100 ]

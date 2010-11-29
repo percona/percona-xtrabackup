@@ -8,20 +8,30 @@ function usage()
 	echo "Usage: $0 [-m mysql_version] [-g] [-h]"
 	echo "-m version  MySQL version to use. Possible values: system, 5.0, 5.1, 5.5, percona. Default is system"
 	echo "-g          Output debug information to results/*.out"
+	echo "-t          Run only a single named test"
 	echo "-h          Print this help megssage"
 }
 XTRACE_OPTION=""
 export MYSQL_VERSION="system"
-while getopts "gh?m:" options; do
+while getopts "gh?m:t:" options; do
 	case $options in
 		m ) export MYSQL_VERSION="$OPTARG";;
+		t ) tname="$OPTARG";;
 		g ) XTRACE_OPTION="-x";;
 		h ) usage; exit;;
 		\? ) usage; exit -1;;
 		* ) usage; exit -1;;
 	esac
 done
-for t in t/*.sh
+
+if [ -n "$tname" ]
+then
+   tests="$tname"
+else
+   tests="t/*.sh"
+fi
+
+for t in $tests
 do
    echo -n "$t      "
    bash $XTRACE_OPTION $t > results/`basename $t`.out 2>&1

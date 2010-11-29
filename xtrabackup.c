@@ -574,6 +574,8 @@ ibool log_copying_succeed = FALSE;
 
 ibool xtrabackup_logfile_is_renamed = FALSE;
 
+uint parallel;
+
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
 char metadata_type[30] = ""; /*[full-backuped|full-prepared|incremental]*/
@@ -668,6 +670,87 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 #define INNOBASE_WAKE_INTERVAL	32
 ulong	innobase_active_counter	= 0;
 
+/* ======== Datafiles iterator ======== */
+typedef struct {
+	fil_system_t *system;
+	fil_space_t  *space;
+	fil_node_t   *node;
+	ibool        started;
+	mutex_t      mutex;
+} datafiles_iter_t;
+
+static
+datafiles_iter_t *
+datafiles_iter_new(fil_system_t *system)
+{
+	datafiles_iter_t *it;
+
+	it = ut_malloc(sizeof(datafiles_iter_t));
+	mutex_create(&it->mutex, SYNC_NO_ORDER_CHECK);
+
+	it->system = system;
+	it->space = NULL;
+	it->node = NULL;
+	it->started = FALSE;
+
+	return it;
+}
+
+static
+fil_node_t *
+datafiles_iter_next(datafiles_iter_t *it, ibool *space_changed)
+{
+	mutex_enter(&it->mutex);
+
+	*space_changed = FALSE;
+
+	if (it->node == NULL) {
+		if (it->started)
+			goto end;
+		it->started = TRUE;
+	} else {
+		it->node = UT_LIST_GET_NEXT(chain, it->node);
+		if (it->node != NULL)
+			goto end;
+	}
+
+	it->space = (it->space == NULL) ?
+		UT_LIST_GET_FIRST(it->system->space_list) :
+		UT_LIST_GET_NEXT(space_list, it->space);
+
+	while (it->space != NULL &&
+	       (it->space->purpose != FIL_TABLESPACE ||
+		UT_LIST_GET_LEN(it->space->chain) == 0))
+		it->space = UT_LIST_GET_NEXT(space_list, it->space);
+	if (it->space == NULL)
+		goto end;
+	*space_changed = TRUE;
+
+	it->node = UT_LIST_GET_FIRST(it->space->chain);
+
+end:
+	mutex_exit(&it->mutex);
+
+	return it->node;
+}
+
+static
+void
+datafiles_iter_free(datafiles_iter_t *it)
+{
+	mutex_free(&it->mutex);
+	ut_free(it);
+}
+
+/* ======== Date copying thread context ======== */
+
+typedef struct {
+	datafiles_iter_t 	*it;
+	uint			num;
+	uint			*count;
+	mutex_t			*count_mutex;
+	os_thread_id_t		id;
+} data_thread_ctxt_t;
 
 /* ======== for option and variables ======== */
 
@@ -691,6 +774,7 @@ enum options_xtrabackup
   OPT_XTRA_TABLES,
   OPT_XTRA_TABLES_FILE,
   OPT_XTRA_CREATE_IB_LOGFILE,
+  OPT_XTRA_PARALLEL,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
   OPT_INNODB_DATA_HOME_DIR,
@@ -807,6 +891,11 @@ static struct my_option my_long_options[] =
    ", in this case they are used in a round-robin fashion.",
    (G_PTR*) &opt_mysql_tmpdir,
    (G_PTR*) &opt_mysql_tmpdir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"parallel", OPT_XTRA_PARALLEL,
+   "Number of threads to use for parallel datafiles transfer. Does not have "
+   "any effect in the stream mode. The default value is 1.",
+   (G_PTR*) &parallel, (G_PTR*) &parallel, 0, GET_UINT, REQUIRED_ARG,
+   1, 1, UINT_MAX, 0, 0, 0},
 
   {"innodb_adaptive_hash_index", OPT_INNODB_ADAPTIVE_HASH_INDEX,
    "Enable InnoDB adaptive hash index (enabled by default).  "
@@ -2106,7 +2195,7 @@ xtrabackup_io_throttling(void)
 #define COPY_CHUNK 64
 
 my_bool
-xtrabackup_copy_datafile(fil_node_t* node)
+xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 {
 	os_file_t	src_file = -1;
 	os_file_t	dst_file = -1;
@@ -2167,7 +2256,8 @@ xtrabackup_copy_datafile(fil_node_t* node)
 		*(p - 1) = SRV_PATH_SEPARATOR;
 
 		if ( regres == REG_NOMATCH ) {
-			printf("Copying %s is skipped.\n", node->name);
+			printf("[%02u] Copying %s is skipped.\n",
+			       thread_n, node->name);
 			return(FALSE);
 		}
 	}
@@ -2216,7 +2306,8 @@ xtrabackup_copy_datafile(fil_node_t* node)
 		p[p_len] = tmp;
 
 		if (!table) {
-			printf("Copying %s is skipped.\n", node->name);
+			printf("[%02u] Copying %s is skipped.\n",
+			       thread_n, node->name);
 			return(FALSE);
 		}
 	}
@@ -2277,9 +2368,9 @@ skip_filter:
 #ifdef INNODB_VERSION_SHORT
 		/* TODO: incremental doesn't treat compressed space for now */
 		if (zip_size) {
-			fprintf(stderr,
-"xtrabackup: error: incremental option doesn't treat compressed space for now.\n"
-			);
+			fprintf(stderr, "[%02u] xtrabackup: error: "
+				"incremental option doesn't treat compressed "
+				"space for now.\n", thread_n);
 			goto error;
 		}
 #endif
@@ -2305,9 +2396,10 @@ skip_filter:
 			os_file_get_last_error(TRUE);
 
 			fprintf(stderr,
-"xtrabackup: error: cannot open %s\n"
-"xtrabackup: Have you deleted .ibd files under a running mysqld server?\n",
-				node->name);
+				"[%02u] xtrabackup: error: cannot open %s\n"
+				"[%02u] xtrabackup: Have you deleted .ibd"
+				"files under a running mysqld server?\n",
+				thread_n, node->name, thread_n);
 			src_exist = FALSE;
 		}
 
@@ -2335,9 +2427,8 @@ skip_filter:
                         /* The following call prints an error message */
                         os_file_get_last_error(TRUE);
 
-                        fprintf(stderr,
-"xtrabackup: error: cannot open %s\n",
-                                dst_path);
+			fprintf(stderr,"[%02u] xtrabackup: error: "
+				"cannot open %s\n", thread_n, dst_path);
                         goto error;
                 }
 
@@ -2349,7 +2440,8 @@ skip_filter:
 		goto error;
 
 	/* copy : TODO: tune later */
-	printf("Copying %s \n     to %s\n", node->name, dst_path);
+	printf("[%02u] Copying %s \n     to %s\n", thread_n,
+	       node->name, dst_path);
 
 	buf2 = ut_malloc(COPY_CHUNK * page_size + UNIV_PAGE_SIZE);
 	page = ut_align(buf2, UNIV_PAGE_SIZE);
@@ -2409,16 +2501,33 @@ read_retry:
 					   or it may contain the other format page like COMPRESSED.
  					   So, we can pass the check of double write buffer.*/
 					ut_a(page_size == UNIV_PAGE_SIZE);
-					fprintf(stderr, "xtrabackup: Page %lu seems double write buffer. passing the check.\n",
-						(ulint)((offset + (IB_INT64)chunk_offset) >> page_size_shift));
+					fprintf(stderr, "[%02u] xtrabackup: "
+						"Page %lu seems double write "
+						"buffer. passing the check.\n",
+						thread_n,
+						(ulint)((offset +
+							 (IB_INT64)chunk_offset) >>
+							page_size_shift));
 				} else {
 					retry_count--;
 					if (retry_count == 0) {
-						fprintf(stderr, "xtrabackup: Error: 10 retries resulted in fail. This file seems to be corrupted.\n");
+						fprintf(stderr,
+							"[%02u] xtrabackup: "
+							"Error: 10 retries "
+							"resulted in fail. This"
+							"file seems to be "
+							"corrupted.\n",
+							thread_n);
 						goto error;
 					}
-					fprintf(stderr, "xtrabackup: Database page corruption detected at page %lu. retrying...\n",
-						(ulint)((offset + (IB_INT64)chunk_offset) >> page_size_shift));
+					fprintf(stderr, "[%02u] xtrabackup: "
+						"Database page corruption "
+						"detected at page %lu. "
+						"retrying...\n",
+						thread_n,
+						(ulint)((offset +
+							 (IB_INT64)chunk_offset)
+							>> page_size_shift));
 					goto read_retry;
 				}
 			}
@@ -2519,7 +2628,7 @@ read_retry:
 	    the blocks is newer than the last checkpoint anyway.) */
 
 	/* close */
-	printf("        ...done\n");
+	printf("[%02u]        ...done\n", thread_n);
 	if (!node->open) {
 		os_file_close(src_file);
 	}
@@ -2533,7 +2642,8 @@ error:
 		os_file_close(dst_file);
 	if (buf2)
 		ut_free(buf2);
-	fprintf(stderr, "xtrabackup: Error: xtrabackup_copy_datafile() failed.\n");
+	fprintf(stderr, "[%02u] xtrabackup: Error: "
+		"xtrabackup_copy_datafile() failed.\n", thread_n);
 	return(TRUE); /*ERROR*/
 }
 
@@ -2940,6 +3050,99 @@ io_handler_thread(
 #endif
 }
 
+/***************************************************************************
+Creates an output directory for a given tablespace, if it does not exist */
+static
+int
+xtrabackup_create_output_dir(
+/*==========================*/
+				/* out: 0 if succes, -1 if failure */
+	fil_space_t *space)	/* in: tablespace */
+{
+	char	path[FN_REFLEN];
+	char	*ptr1, *ptr2;
+	MY_STAT stat_info;
+
+	/* mkdir if not exist */
+	ptr1 = strstr(space->name, SRV_PATH_SEPARATOR_STR);
+	if (ptr1) {
+		ptr2 = strstr(ptr1 + 1, SRV_PATH_SEPARATOR_STR);
+	} else {
+		ptr2 = NULL;
+	}
+#ifdef XTRADB_BASED
+	if(!trx_sys_sys_space(space->id) && ptr2)
+#else
+	if(space->id && ptr2)
+#endif
+	{
+		/* single table space */
+		*ptr2 = 0; /* temporary (it's my lazy..)*/
+		snprintf(path, sizeof(path), "%s%s", xtrabackup_target_dir,
+			 ptr1);
+		*ptr2 = SRV_PATH_SEPARATOR;
+
+		if (!my_stat(path, &stat_info, MYF(0)) &&
+		    my_mkdir(path,0777,MYF(0)) < 0) {
+			fprintf(stderr,
+				"xtrabackup: Error: cannot mkdir %d: %s\n",
+				my_errno, path);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+/**************************************************************************
+Datafiles copying thread.*/
+static
+os_thread_ret_t
+data_copy_thread_func(
+/*==================*/
+	void *arg) /* thread context */
+{
+	data_thread_ctxt_t	*ctxt = (data_thread_ctxt_t *) arg;
+	uint			num = ctxt->num;
+	fil_space_t*		space;
+	ibool			space_changed;
+	fil_node_t*     	node;
+
+	/*
+	  We have to initialize mysys thread-specific memory because
+	  of the my_stat() call in xtrabackup_create_output_dir().
+	*/
+	my_thread_init();
+
+	while ((node = datafiles_iter_next(ctxt->it, &space_changed)) != NULL) {
+		space = node->space;
+
+		if (space_changed && xtrabackup_create_output_dir(space))
+			exit(1);
+
+		/* copy the datafile */
+		if(xtrabackup_copy_datafile(node, num)) {
+			if(node->space->id == 0) {
+				fprintf(stderr, "[%02u] xtrabackup: Error: "
+					"failed to copy system datafile.\n",
+					num);
+				exit(1);
+			} else {
+				fprintf(stderr, "[%02u] xtrabackup: Warning: "
+					"failed to copy, but continuing.\n",
+					num);
+			}
+		}
+	}
+
+	mutex_enter(ctxt->count_mutex);
+	(*ctxt->count)--;
+	mutex_exit(ctxt->count_mutex);
+
+	my_thread_end();
+	os_thread_exit(NULL);
+	OS_THREAD_DUMMY_RETURN;
+}
+
 /* CAUTION(?): Don't rename file_per_table during backup */
 void
 xtrabackup_backup_func(void)
@@ -3226,13 +3429,7 @@ xtrabackup_backup_func(void)
 	}
 
         {
-	char	path[FN_REFLEN];
-	char	*ptr1, *ptr2;
-
         fil_system_t*   system = fil_system;
-        fil_space_t*    space;
-	fil_space_t*	last_src;
-        fil_node_t*     node;
 
 	/* definition from recv_recovery_from_checkpoint_start() */
 	log_group_t*	max_cp_group;
@@ -3246,6 +3443,7 @@ xtrabackup_backup_func(void)
 
 	/* start back ground thread to copy newer log */
 	os_thread_id_t log_copying_thread_id;
+	datafiles_iter_t *it;
 
 	log_hdr_buf = ut_align(log_hdr_buf_, OS_FILE_LOG_BLOCK_SIZE);
 
@@ -3381,67 +3579,58 @@ reread_log_header:
 
 
 	if (!xtrabackup_stream) { /* stream mode is transaction log only */
-        //mutex_enter(&(system->mutex)); /* NOTE: It may not needed at "--backup" for now */
+		uint			i;
+		uint			count;
+		mutex_t			count_mutex;
+		data_thread_ctxt_t 	*data_threads;
 
-        space = UT_LIST_GET_FIRST(system->space_list);
-	last_src = UT_LIST_GET_LAST(system->space_list);
+		ut_a(parallel > 0);
 
-        while (space != NULL) {
-		if (space->purpose == FIL_TABLESPACE) { /* datafile only */
+		if (parallel > 1)
+			printf("xtrabackup: Starting %u threads for parallel "
+			       "data files transfer\n", parallel);
 
-                //printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
-                //        space->name, space->id, space->purpose, space->size);
-
-		/* mkdir if not exist */
-		ptr1 = strstr(space->name, SRV_PATH_SEPARATOR_STR);
-		if (ptr1) {
-			ptr2 = strstr(ptr1 + 1, SRV_PATH_SEPARATOR_STR);
-		} else {
-			ptr2 = NULL;
+		it = datafiles_iter_new(system);
+		if (it == NULL) {
+			fprintf(stderr,
+				"xtrabackup: Error: "
+				"datafiles_iter_new() failed.\n");
+			exit(1);
 		}
-#ifdef XTRADB_BASED
-		if(!trx_sys_sys_space(space->id) && ptr2)
-#else
-		if(space->id && ptr2)
-#endif
-		{
-			/* single table space */
-			*ptr2 = 0; /* temporary (it's my lazy..)*/
-			sprintf(path, "%s%s",xtrabackup_target_dir,ptr1);
-			*ptr2 = SRV_PATH_SEPARATOR;
 
-			if (!my_stat(path,&stat_info,MYF(0))
-				&& (my_mkdir(path,0777,MYF(0)) < 0)){
+		/* Create data copying threads */
+		ut_a(parallel > 0);
 
-				fprintf(stderr,"xtrabackup: Error: cannot mkdir %d: %s\n",my_errno,path);
-				exit(1);
+		data_threads = (data_thread_ctxt_t *)
+			ut_malloc(sizeof(data_thread_ctxt_t) * parallel);
+		count = parallel;
+		mutex_create(&count_mutex, SYNC_NO_ORDER_CHECK);
+
+		for (i = 0; i < parallel; i++) {
+			data_threads[i].it = it;
+			data_threads[i].num = i+1;
+			data_threads[i].count = &count;
+			data_threads[i].count_mutex = &count_mutex;
+			os_thread_create(data_copy_thread_func,
+					 data_threads + i,
+					 &data_threads[i].id);
+		}
+
+		/* Wait for threads to exit */
+		while (1) {
+			os_thread_sleep(1000000);
+			mutex_enter(&count_mutex);
+			if (count == 0) {
+				mutex_exit(&count_mutex);
+				break;
 			}
+			mutex_exit(&count_mutex);
 		}
+		/* NOTE: It may not needed at "--backup" for now */
+		/* mutex_enter(&(system->mutex)); */
 
-		node = UT_LIST_GET_FIRST(space->chain);
-                while (node != NULL) {
-                        //printf("  node: name=%s, open=%d, size=%d\n",
-                        //       node->name, node->open, node->size);
-
-			/* copy the datafile */
-			if(xtrabackup_copy_datafile(node)) {
-				if(node->space->id == 0) {
-					fprintf(stderr,"xtrabackup: Error: failed to copy system datafile.\n");
-					exit(1);
-				} else {
-					printf("xtrabackup: Warining: failed to copy, but continuing.\n");
-				}
-			}
-
-                        node = UT_LIST_GET_NEXT(chain, node);
-                }
-		}
-
-		if (space == last_src)
-			break;
-
-                space = UT_LIST_GET_NEXT(space_list, space);
-        }
+		mutex_free(&count_mutex);
+		datafiles_iter_free(it);
 
 	} //if (!xtrabackup_stream)
 

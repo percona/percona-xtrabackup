@@ -1,5 +1,7 @@
 . inc/common.sh
 
+OUTFILE=results/xb_stream_innobackupex_out
+
 init
 run_mysqld
 load_sakila
@@ -9,7 +11,7 @@ echo "
 [mysqld]
 datadir=$mysql_datadir" > $topdir/my.cnf
 mkdir -p $topdir/backup
-innobackupex-1.5.1 --user=root --socket=$mysql_socket --defaults-file=$topdir/my.cnf --stream=tar $topdir/backup > $topdir/backup/out.tar 2> out.err
+innobackupex-1.5.1 --user=root --socket=$mysql_socket --defaults-file=$topdir/my.cnf --stream=tar $topdir/backup > $topdir/backup/out.tar 2> $OUTFILE || die "innobackupex-1.5.1 died with exit code $?"
 
 stop_mysqld
 # Remove datadir

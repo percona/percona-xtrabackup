@@ -96,6 +96,8 @@ my $option_tar4ibd = '';
 my $option_force_tar = '';
 my $option_scp_opt = '-Cp -c arcfour';
 
+my $option_parallel = '';
+
 # name of the my.cnf configuration file
 #my $config_file = '';
 
@@ -376,6 +378,12 @@ Options:
                 It tells ibbackup that it can use MB megabytes of 
                 memory in restoration.
                 Try 'ibbackup --help' for more details on this option.
+
+    --parallel=NUMBER-OF-THREADS
+                This option is passed to the xtrabackup child process.
+                It specifies the number of threads used by xtrabackup for
+                parallel data transfer. The default value is 1 (i.e. no
+                parallel copying).
 
     --throttle=IOS
                 This option is passed to the xtrabackup child process.
@@ -941,6 +949,9 @@ sub start_ibbackup {
     }
     if ($option_tables_file) {
         $options = $options . " --tables_file='$option_tables_file'";
+    }
+    if ($option_parallel) {
+        $options = $options. " --parallel=$option_parallel";
     }
     $cmdline = "$option_ibbackup_binary $options";
 
@@ -1752,7 +1763,8 @@ sub check_args {
                         'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
                         'scpopt=s' => \$option_scp_opt,
-                        'force-tar', => \$option_force_tar);
+                        'force-tar', => \$option_force_tar,
+                        'parallel=i' => \$option_parallel);
     if (!$rcode) {
         # failed to read options
         print STDERR "$prefix Bad command line arguments\n";
