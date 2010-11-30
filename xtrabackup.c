@@ -2727,7 +2727,12 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 					(ulong) no,
 					(ulong) log_block_convert_lsn_to_no(scanned_lsn),
 					(ulong) (log_block_convert_lsn_to_no(
-							log_group_get_capacity(group)) - 1));
+#ifndef INNODB_VERSION_SHORT
+							 ut_dulint_create(0, log_group_get_capacity(group))
+#else
+							 log_group_get_capacity(group)
+#endif
+									  ) - 1));
 
 			} else if (no == log_block_convert_lsn_to_no(scanned_lsn)
 			    && !log_block_checksum_is_ok_or_old_format(
