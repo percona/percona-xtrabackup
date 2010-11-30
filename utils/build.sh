@@ -4,8 +4,8 @@ AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://www.percona.com/downloads/community/"
 
 set -e
-export CFLAGS="$CFLAGS -g"
-export CXXFLAGS="$CXXFLAGS -g"
+export CFLAGS="$CFLAGS -g -O3"
+export CXXFLAGS="$CXXFLAGS -g -O3"
 MAKE_CMD=make
 if [ "`uname -s`" = "FreeBSD" ]
 then
