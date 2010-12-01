@@ -78,7 +78,7 @@ case "$type" in
 	$MAKE_CMD
 	;;
 "5.5")
-	mysql_version=5.5.6-rc
+	mysql_version=5.5.7-rc
 	reqs="mysql-$mysql_version.tar.gz libtar-1.2.11.tar.gz"
 	for i in $reqs
 	do
@@ -110,9 +110,12 @@ case "$type" in
 
 	echo "Compile MySQL"
 	cd $top_dir/mysql-$mysql_version
+	# We do not support CMake at the moment
+	export HAVE_CMAKE=no
+	# We need to build with partitioning due to MySQL bug #58632
 	./configure --enable-local-infile \
 	    --enable-thread-safe-client \
-	    --with-plugins=innobase \
+	    --with-plugins=innobase,partition \
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
 	    --with-extra-charsets=complex --disable-dtrace
@@ -171,56 +174,6 @@ case "$type" in
 	echo "Compile XtraBackup"
 	cd $top_dir/mysql-$mysql_version/storage/innodb_plugin/xtrabackup
 	$MAKE_CMD plugin
-	
-	echo "Compile tar4ibd"
-	cd $top_dir/mysql-$mysql_version/libtar-1.2.11
-	./configure
-	$MAKE_CMD
-	;;
-"5.5")
-	mysql_version=5.5.6-rc
-	reqs="mysql-$mysql_version.tar.gz libtar-1.2.11.tar.gz"
-	for i in $reqs
-	do
-		if ! test -f $i
-		then
-			if [ "$AUTO_DOWNLOAD" = "yes" ]
-			then
-				wget "$MASTER_SITE"/$i
-			else
-				echo "Put $i in $top_dir or set environment variable AUTO_DOWNLOAD to \"yes\""
-				exit -1
-			fi
-		fi
-	done
-	test -d mysql-$mysql_version && rm -r mysql-$mysql_version
-	
-	echo "Prepare sources"
-	tar zxf mysql-$mysql_version.tar.gz
-	cd $top_dir/mysql-$mysql_version/
-	patch -p1 < $top_dir/fix_innodb_for_backup55.patch
-
-	cd $top_dir/mysql-$mysql_version
-	tar zxf $top_dir/libtar-1.2.11.tar.gz
-	cd $top_dir/mysql-$mysql_version/libtar-1.2.11
-	patch -p1 < $top_dir/tar4ibd_libtar-1.2.11.patch
-
-	mkdir $top_dir/mysql-$mysql_version/storage/innobase/xtrabackup
-	cp $top_dir/Makefile $top_dir/xtrabackup.c $top_dir/innobackupex-1.5.1 $top_dir/mysql-$mysql_version/storage/innobase/xtrabackup
-
-	echo "Compile MySQL"
-	cd $top_dir/mysql-$mysql_version
-	./configure --enable-local-infile \
-	    --enable-thread-safe-client \
-	    --with-plugins=innobase \
-	    --with-zlib-dir=bundled \
-	    --enable-shared \
-	    --with-extra-charsets=complex
-	$MAKE_CMD all
-	
-	echo "Compile XtraBackup"
-	cd $top_dir/mysql-$mysql_version/storage/innobase/xtrabackup
-	$MAKE_CMD 5.5
 	
 	echo "Compile tar4ibd"
 	cd $top_dir/mysql-$mysql_version/libtar-1.2.11

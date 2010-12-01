@@ -96,6 +96,26 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define SRV_PATH_SEPARATOR_STR	"/"
 #endif
 
+#if MYSQL_VERSION_ID >= 50507
+/*
+   As of MySQL 5.5.7, InnoDB uses thd_wait plugin service.
+   We have to provide mock functions to avoid linker errors.
+*/
+#include <mysql/plugin.h>
+#include <mysql/service_thd_wait.h>
+
+void thd_wait_begin(MYSQL_THD thd, thd_wait_type wait_type)
+{
+	return;
+}
+
+void thd_wait_end(MYSQL_THD thd)
+{
+	return;
+}
+
+#endif /* MYSQL_VERSION_ID >= 50507 */
+
 /* prototypes for static functions in original */
 #ifndef INNODB_VERSION_SHORT
 page_t*
@@ -676,7 +696,7 @@ typedef struct {
 	fil_space_t  *space;
 	fil_node_t   *node;
 	ibool        started;
-	mutex_t      mutex;
+	os_mutex_t   mutex;
 } datafiles_iter_t;
 
 static
@@ -686,7 +706,7 @@ datafiles_iter_new(fil_system_t *system)
 	datafiles_iter_t *it;
 
 	it = ut_malloc(sizeof(datafiles_iter_t));
-	mutex_create(&it->mutex, SYNC_NO_ORDER_CHECK);
+	it->mutex = os_mutex_create();
 
 	it->system = system;
 	it->space = NULL;
@@ -700,7 +720,7 @@ static
 fil_node_t *
 datafiles_iter_next(datafiles_iter_t *it, ibool *space_changed)
 {
-	mutex_enter(&it->mutex);
+	os_mutex_enter(it->mutex);
 
 	*space_changed = FALSE;
 
@@ -729,7 +749,7 @@ datafiles_iter_next(datafiles_iter_t *it, ibool *space_changed)
 	it->node = UT_LIST_GET_FIRST(it->space->chain);
 
 end:
-	mutex_exit(&it->mutex);
+	os_mutex_exit(it->mutex);
 
 	return it->node;
 }
@@ -738,7 +758,7 @@ static
 void
 datafiles_iter_free(datafiles_iter_t *it)
 {
-	mutex_free(&it->mutex);
+	os_mutex_free(it->mutex);
 	ut_free(it);
 }
 
@@ -748,7 +768,7 @@ typedef struct {
 	datafiles_iter_t 	*it;
 	uint			num;
 	uint			*count;
-	mutex_t			*count_mutex;
+	os_mutex_t		count_mutex;
 	os_thread_id_t		id;
 } data_thread_ctxt_t;
 
@@ -3125,9 +3145,9 @@ data_copy_thread_func(
 		}
 	}
 
-	mutex_enter(ctxt->count_mutex);
+	os_mutex_enter(ctxt->count_mutex);
 	(*ctxt->count)--;
-	mutex_exit(ctxt->count_mutex);
+	os_mutex_exit(ctxt->count_mutex);
 
 	my_thread_end();
 	os_thread_exit(NULL);
@@ -3567,7 +3587,7 @@ reread_log_header:
 	if (!xtrabackup_stream) { /* stream mode is transaction log only */
 		uint			i;
 		uint			count;
-		mutex_t			count_mutex;
+		os_mutex_t		count_mutex;
 		data_thread_ctxt_t 	*data_threads;
 
 		ut_a(parallel > 0);
@@ -3590,13 +3610,13 @@ reread_log_header:
 		data_threads = (data_thread_ctxt_t *)
 			ut_malloc(sizeof(data_thread_ctxt_t) * parallel);
 		count = parallel;
-		mutex_create(&count_mutex, SYNC_NO_ORDER_CHECK);
+		count_mutex = os_mutex_create();
 
 		for (i = 0; i < parallel; i++) {
 			data_threads[i].it = it;
 			data_threads[i].num = i+1;
 			data_threads[i].count = &count;
-			data_threads[i].count_mutex = &count_mutex;
+			data_threads[i].count_mutex = count_mutex;
 			os_thread_create(data_copy_thread_func,
 					 data_threads + i,
 					 &data_threads[i].id);
@@ -3605,17 +3625,17 @@ reread_log_header:
 		/* Wait for threads to exit */
 		while (1) {
 			os_thread_sleep(1000000);
-			mutex_enter(&count_mutex);
+			os_mutex_enter(count_mutex);
 			if (count == 0) {
-				mutex_exit(&count_mutex);
+				os_mutex_exit(count_mutex);
 				break;
 			}
-			mutex_exit(&count_mutex);
+			os_mutex_exit(count_mutex);
 		}
 		/* NOTE: It may not needed at "--backup" for now */
 		/* mutex_enter(&(system->mutex)); */
 
-		mutex_free(&count_mutex);
+		os_mutex_free(count_mutex);
 		datafiles_iter_free(it);
 
 	} //if (!xtrabackup_stream)
