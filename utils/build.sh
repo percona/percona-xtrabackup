@@ -181,8 +181,8 @@ case "$type" in
 	$MAKE_CMD
 	;;
 "xtradb")
-	mysql_version=5.1.47
-	xtradb_version=11
+	mysql_version=5.1.53
+	xtradb_version=12
 
 	# Get Percona Server
 	rm -rf release-$mysql_version-$xtradb_version 
@@ -195,7 +195,7 @@ case "$type" in
 
 	# Patch Percona Server
 	cd Percona-Server
-	patch -p1 < $top_dir/fix_innodb_for_backup_percona-server-$xtradb_version.patch
+	patch -p1 < $top_dir/fix_innodb_for_backup_percona-server.patch
 	
 	# Copy XtraBackup
 	cd storage/innodb_plugin

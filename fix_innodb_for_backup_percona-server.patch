@@ -1,6 +1,5 @@
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/btr/btr0btr.c mysql-5.1.47_xtradb/storage/innodb_plugin/btr/btr0btr.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/btr/btr0btr.c	2010-06-24 18:36:58.794626487 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/btr/btr0btr.c	2010-06-24 19:48:57.879975098 +0900
+--- a/storage/innodb_plugin/btr/btr0btr.c	2010-12-01 23:44:53.000000000 +0300
++++ b/storage/innodb_plugin/btr/btr0btr.c	2010-12-01 23:48:55.000000000 +0300
 @@ -120,7 +120,7 @@
  /**************************************************************//**
  Gets the root node of a tree and x-latches it.
@@ -19,10 +18,9 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/btr/btr0btr.c mysql-5.1.
  buf_block_t*
  btr_node_ptr_get_child(
  /*===================*/
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/buf/buf0buf.c mysql-5.1.47_xtradb/storage/innodb_plugin/buf/buf0buf.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/buf/buf0buf.c	2010-06-24 18:36:58.903610958 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/buf/buf0buf.c	2010-06-24 19:48:57.883914215 +0900
-@@ -420,7 +420,7 @@
+--- a/storage/innodb_plugin/buf/buf0buf.c	2010-12-01 23:44:55.000000000 +0300
++++ b/storage/innodb_plugin/buf/buf0buf.c	2010-12-01 23:48:55.000000000 +0300
+@@ -440,7 +440,7 @@
  		return(TRUE);
  	}
  
@@ -31,7 +29,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/buf/buf0buf.c mysql-5.1.
  	if (recv_lsn_checks_on) {
  		ib_uint64_t	current_lsn;
  
-@@ -3547,7 +3547,7 @@
+@@ -4030,7 +4030,7 @@
  			recv_recover_page(TRUE, (buf_block_t*) bpage);
  		}
  
@@ -40,10 +38,9 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/buf/buf0buf.c mysql-5.1.
  			ibuf_merge_or_delete_for_page(
  				/* Delete possible entries, if bpage is_corrupt */
  				(srv_pass_corrupt_table && bpage->is_corrupt) ? NULL :
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.47_xtradb/storage/innodb_plugin/fil/fil0fil.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c	2010-06-24 18:36:58.967602002 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/fil/fil0fil.c	2010-06-24 19:48:57.892664033 +0900
-@@ -288,7 +288,7 @@
+--- a/storage/innodb_plugin/fil/fil0fil.c	2010-12-01 23:44:54.000000000 +0300
++++ b/storage/innodb_plugin/fil/fil0fil.c	2010-12-01 23:48:55.000000000 +0300
+@@ -294,7 +294,7 @@
  
  /** The tablespace memory cache. This variable is NULL before the module is
  initialized. */
@@ -52,7 +49,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  
  
  /********************************************************************//**
-@@ -747,8 +747,8 @@
+@@ -753,8 +753,8 @@
  		}
  
  		if (size_bytes >= 1024 * 1024) {
@@ -63,16 +60,16 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  		}
  
  		if (!(flags & DICT_TF_ZSSIZE_MASK)) {
-@@ -2124,7 +2124,7 @@
+@@ -2143,7 +2143,7 @@
  			if (fil_create_new_single_table_tablespace(
- 				    &space_id, name, FALSE, flags,
+ 				    space_id, name, FALSE, flags,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
 -				ut_error;
 +				//ut_error;
  			}
  		}
  
-@@ -2268,7 +2268,7 @@
+@@ -2287,7 +2287,7 @@
  	}
  
  	if (success) {
@@ -81,7 +78,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2544,7 +2544,7 @@
+@@ -2563,7 +2563,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
@@ -90,16 +87,16 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  	if (success) {
  		mtr_t		mtr;
  
-@@ -2748,7 +2748,7 @@
+@@ -2753,7 +2753,7 @@
  
- 	fil_node_create(path, size, *space_id, FALSE);
+ 	fil_node_create(path, size, space_id, FALSE);
  
 -#ifndef UNIV_HOTBACKUP
 +#ifdef UNDEFINED
  	{
  		mtr_t		mtr;
  
-@@ -3001,19 +3001,97 @@
+@@ -3006,19 +3006,97 @@
  		      "InnoDB: open the tablespace file ", stderr);
  		ut_print_filename(stderr, filepath);
  		fputs("!\n"
@@ -207,7 +204,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  		return(FALSE);
  	}
  
-@@ -3584,7 +3662,7 @@
+@@ -3723,7 +3801,7 @@
  	cannot be ok. */
  
  	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
@@ -216,7 +213,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3725,7 +3803,7 @@
+@@ -3864,7 +3942,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -225,7 +222,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4057,15 +4135,97 @@
+@@ -4163,15 +4241,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -331,7 +328,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4675,6 +4835,16 @@
+@@ -4781,6 +4941,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -348,10 +345,50 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/fil/fil0fil.c mysql-5.1.
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/ibuf/ibuf0ibuf.c mysql-5.1.47_xtradb/storage/innodb_plugin/ibuf/ibuf0ibuf.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-06-24 18:36:58.371594917 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-06-24 19:48:57.900663852 +0900
-@@ -1058,6 +1058,9 @@
+--- a/storage/innodb_plugin/handler/ha_innodb.cc	2010-12-01 23:44:55.000000000 +0300
++++ b/storage/innodb_plugin/handler/ha_innodb.cc	2010-12-02 00:44:30.000000000 +0300
+@@ -342,12 +342,6 @@
+   "Timeout in seconds an InnoDB transaction may wait for a lock before being rolled back. Values above 100000000 disable the timeout.",
+   NULL, NULL, 50, 1, 1024 * 1024 * 1024, 0);
+ 
+-static MYSQL_THDVAR_ULONG(flush_log_at_trx_commit_session, PLUGIN_VAR_RQCMDARG,
+-  "Control innodb_flush_log_at_trx_commit for each sessions. "
+-  "The value 0~2 are same meanings to innodb_flush_log_at_trx_commit. "
+-  "The value 3 regards innodb_flush_log_at_trx_commit (default).",
+-  NULL, NULL, 3, 0, 3, 0);
+-
+ 
+ static handler *innobase_create_handler(handlerton *hton,
+                                         TABLE_SHARE *table,
+@@ -728,17 +722,6 @@
+ 	return(THDVAR((THD*) thd, lock_wait_timeout));
+ }
+ 
+-/******************************************************************//**
+-*/
+-extern "C" UNIV_INTERN
+-ulong
+-thd_flush_log_at_trx_commit_session(
+-/*================================*/
+-	void*	thd)
+-{
+-	return(THDVAR((THD*) thd, flush_log_at_trx_commit_session));
+-}
+-
+ /********************************************************************//**
+ Obtain the InnoDB transaction of a MySQL thread.
+ @return	reference to transaction pointer */
+@@ -11727,7 +11710,6 @@
+   MYSQL_SYSVAR(flush_neighbor_pages),
+   MYSQL_SYSVAR(read_ahead),
+   MYSQL_SYSVAR(adaptive_checkpoint),
+-  MYSQL_SYSVAR(flush_log_at_trx_commit_session),
+   MYSQL_SYSVAR(enable_unsafe_group_commit),
+   MYSQL_SYSVAR(expand_import),
+   MYSQL_SYSVAR(extra_rsegments),
+--- a/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-12-01 23:44:52.000000000 +0300
++++ b/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-12-01 23:48:55.000000000 +0300
+@@ -1064,6 +1064,9 @@
  
  	ut_ad(!recv_no_ibuf_operations);
  
@@ -361,7 +398,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/ibuf/ibuf0ibuf.c mysql-5
  	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
  
  		return(TRUE);
-@@ -2274,6 +2277,9 @@
+@@ -2280,6 +2283,9 @@
  	ulint	n_bytes;
  	ulint	n_pag2;
  
@@ -371,10 +408,24 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/ibuf/ibuf0ibuf.c mysql-5
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0srv.h mysql-5.1.47_xtradb/storage/innodb_plugin/include/srv0srv.h
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0srv.h	2010-06-24 18:36:59.138626471 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/include/srv0srv.h	2010-06-24 19:51:35.168664113 +0900
-@@ -220,6 +220,10 @@
+--- a/storage/innodb_plugin/include/ha_prototypes.h	2010-12-01 23:44:52.000000000 +0300
++++ b/storage/innodb_plugin/include/ha_prototypes.h	2010-12-02 00:45:06.000000000 +0300
+@@ -268,12 +268,4 @@
+ 	void*	thd);	/*!< in: thread handle (THD*), or NULL to query
+ 			the global innodb_lock_wait_timeout */
+ 
+-/******************************************************************//**
+-*/
+-
+-ulong
+-thd_flush_log_at_trx_commit_session(
+-/*================================*/
+-	void*	thd);
+-
+ #endif
+--- a/storage/innodb_plugin/include/srv0srv.h	2010-12-01 23:44:55.000000000 +0300
++++ b/storage/innodb_plugin/include/srv0srv.h	2010-12-01 23:48:55.000000000 +0300
+@@ -228,6 +228,10 @@
  
  extern ulong	srv_replication_delay;
  
@@ -385,9 +436,8 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0srv.h mysql-
  extern long long	srv_ibuf_max_size;
  extern ulint	srv_ibuf_active_contract;
  extern ulint	srv_ibuf_accel_rate;
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0start.h mysql-5.1.47_xtradb/storage/innodb_plugin/include/srv0start.h
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0start.h	2010-05-07 00:27:48.000000000 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/include/srv0start.h	2010-06-24 19:48:57.911628601 +0900
+--- a/storage/innodb_plugin/include/srv0start.h	2010-11-03 16:39:54.000000000 +0300
++++ b/storage/innodb_plugin/include/srv0start.h	2010-12-01 23:48:55.000000000 +0300
 @@ -91,6 +91,8 @@
  /** Log sequence number immediately after startup */
  extern	ib_uint64_t	srv_start_lsn;
@@ -397,9 +447,18 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/srv0start.h mysq
  #ifdef __NETWARE__
  void set_panic_flag_for_netware(void);
  #endif
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/ut0byte.ic mysql-5.1.47_xtradb/storage/innodb_plugin/include/ut0byte.ic
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/ut0byte.ic	2010-05-07 00:27:48.000000000 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/include/ut0byte.ic	2010-06-24 19:48:57.912589356 +0900
+--- a/storage/innodb_plugin/include/trx0trx.h	2010-12-01 23:44:53.000000000 +0300
++++ b/storage/innodb_plugin/include/trx0trx.h	2010-12-02 00:45:52.000000000 +0300
+@@ -497,7 +497,6 @@
+ 					FALSE, one can save CPU time and about
+ 					150 bytes in the undo log size as then
+ 					we skip XA steps */
+-	ulint		flush_log_at_trx_commit_session;
+ 	ulint		flush_log_later;/* In 2PC, we hold the
+ 					prepare_commit mutex across
+ 					both phases. In that case, we
+--- a/storage/innodb_plugin/include/ut0byte.ic	2010-11-03 16:39:54.000000000 +0300
++++ b/storage/innodb_plugin/include/ut0byte.ic	2010-12-01 23:48:55.000000000 +0300
 @@ -168,6 +168,14 @@
  	dulint	a,	/*!< in: dulint */
  	ulint	b)	/*!< in: ulint */
@@ -441,10 +500,9 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/include/ut0byte.ic mysql
  	return(diff);
  }
  
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0log.c mysql-5.1.47_xtradb/storage/innodb_plugin/log/log0log.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0log.c	2010-06-24 18:36:59.005626214 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/log/log0log.c	2010-06-24 19:48:57.922628375 +0900
-@@ -1365,7 +1365,7 @@
+--- a/storage/innodb_plugin/log/log0log.c	2010-12-01 23:44:55.000000000 +0300
++++ b/storage/innodb_plugin/log/log0log.c	2010-12-01 23:48:55.000000000 +0300
+@@ -1367,7 +1367,7 @@
  #endif /* UNIV_DEBUG */
  	ulint		unlock;
  
@@ -453,7 +511,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0log.c mysql-5.1.
  		/* Recovery is running and no operations on the log files are
  		allowed yet (the variable name .._no_ibuf_.. is misleading) */
  
-@@ -3121,6 +3121,7 @@
+@@ -3125,6 +3125,7 @@
  	for the 'very fast' shutdown, because the InnoDB layer may have
  	committed or prepared transactions and we don't want to lose them. */
  
@@ -461,7 +519,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0log.c mysql-5.1.
  	if (trx_n_mysql_transactions > 0
  	    || UT_LIST_GET_LEN(trx_sys->trx_list) > 0) {
  
-@@ -3128,6 +3129,7 @@
+@@ -3132,6 +3133,7 @@
  
  		goto loop;
  	}
@@ -469,9 +527,8 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0log.c mysql-5.1.
  
  	if (srv_fast_shutdown == 2) {
  		/* In this fastest shutdown we do not flush the buffer pool:
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1.47_xtradb/storage/innodb_plugin/log/log0recv.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c	2010-06-24 18:36:59.009611980 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/log/log0recv.c	2010-06-24 19:48:57.929626478 +0900
+--- a/storage/innodb_plugin/log/log0recv.c	2010-12-01 23:44:55.000000000 +0300
++++ b/storage/innodb_plugin/log/log0recv.c	2010-12-01 23:48:55.000000000 +0300
 @@ -42,27 +42,27 @@
  #include "trx0undo.h"
  #include "trx0rec.h"
@@ -504,7 +561,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  
  /** The recovery system */
  UNIV_INTERN recv_sys_t*	recv_sys = NULL;
-@@ -623,7 +623,7 @@
+@@ -621,7 +621,7 @@
  /***********************************************************************//**
  Checks the consistency of the checkpoint info
  @return	TRUE if ok */
@@ -513,7 +570,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  ibool
  recv_check_cp_is_consistent(
  /*========================*/
-@@ -653,7 +653,7 @@
+@@ -651,7 +651,7 @@
  /********************************************************//**
  Looks for the maximum consistent checkpoint from the log groups.
  @return	error code or DB_SUCCESS */
@@ -522,7 +579,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  ulint
  recv_find_max_checkpoint(
  /*=====================*/
-@@ -842,7 +842,7 @@
+@@ -840,7 +840,7 @@
  InnoDB-3.23.52 where the checksum field contains the log block number.
  @return TRUE if ok, or if the log block may be in the format of InnoDB
  version predating 3.23.52 */
@@ -531,7 +588,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  ibool
  log_block_checksum_is_ok_or_old_format(
  /*===================================*/
-@@ -2371,7 +2371,7 @@
+@@ -2369,7 +2369,7 @@
  			   || type == MLOG_FILE_RENAME
  			   || type == MLOG_FILE_DELETE) {
  			ut_a(space);
@@ -540,7 +597,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  			if (recv_replay_file_ops) {
  
  				/* In ibbackup --apply-log, replay an .ibd file
-@@ -2394,7 +2394,7 @@
+@@ -2392,7 +2392,7 @@
  					ut_error;
  				}
  			}
@@ -549,7 +606,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  			/* In normal mysqld crash recovery we do not try to
  			replay file operations */
  #ifdef UNIV_LOG_LSN_DEBUG
-@@ -2811,8 +2811,11 @@
+@@ -2809,8 +2809,11 @@
  
  			fprintf(stderr,
  				"InnoDB: Doing recovery: scanned up to"
@@ -563,7 +620,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  		}
  	}
  
-@@ -2924,12 +2927,14 @@
+@@ -2923,12 +2926,14 @@
  
  	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
  
@@ -579,7 +636,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  	}
  }
  
-@@ -3075,6 +3080,7 @@
+@@ -3081,6 +3086,7 @@
  		recv_sys->recovered_lsn = checkpoint_lsn;
  
  		srv_start_lsn = checkpoint_lsn;
@@ -587,7 +644,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  	}
  
  	contiguous_lsn = ut_uint64_align_down(recv_sys->scanned_lsn,
-@@ -3434,6 +3440,7 @@
+@@ -3439,6 +3445,7 @@
  	that the data dictionary tables will be free of any locks.
  	The data dictionary latch should guarantee that there is at
  	most one data dictionary transaction active at a time. */
@@ -595,9 +652,8 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/log/log0recv.c mysql-5.1
  	trx_rollback_or_clean_recovered(FALSE);
  }
  
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c mysql-5.1.47_xtradb/storage/innodb_plugin/os/os0file.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c	2010-06-24 18:36:58.693623233 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/os/os0file.c	2010-06-24 19:48:57.937626082 +0900
+--- a/storage/innodb_plugin/os/os0file.c	2010-12-01 23:44:53.000000000 +0300
++++ b/storage/innodb_plugin/os/os0file.c	2010-12-01 23:48:55.000000000 +0300
 @@ -554,7 +554,7 @@
  }
  
@@ -607,7 +663,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c mysql-5.1.4
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1354,8 +1354,9 @@
+@@ -1356,8 +1356,9 @@
  		attributes = 0;
  		ut_error;
  	}
@@ -618,7 +674,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c mysql-5.1.4
  			  GENERIC_READ | GENERIC_WRITE, /* read and write
  							access */
  			  share_mode,	/* File can be read also by other
-@@ -1412,7 +1413,11 @@
+@@ -1416,7 +1417,11 @@
  	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
  	    || create_mode == OS_FILE_OPEN_RETRY) {
  		mode_str = "OPEN";
@@ -631,9 +687,9 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c mysql-5.1.4
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
-@@ -2617,6 +2622,9 @@
- 
- 	ut_a((offset & 0xFFFFFFFF) == offset);
+@@ -2622,6 +2627,9 @@
+ 	ut_a((offset & 0xFFFFFFFFUL) == offset);
+ 	ut_a((n & 0xFFFFFFFFUL) == n);
  
 +	if (srv_fake_write)
 +		return(TRUE);
@@ -641,7 +697,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c mysql-5.1.4
  	os_n_file_writes++;
  
  	ut_ad(file);
-@@ -2741,6 +2749,9 @@
+@@ -2746,6 +2754,9 @@
  #else
  	ssize_t	ret;
  
@@ -651,9 +707,8 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0file.c mysql-5.1.4
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
  
  	if ((ulint)ret == n) {
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0thread.c mysql-5.1.47_xtradb/storage/innodb_plugin/os/os0thread.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0thread.c	2010-05-07 00:27:49.000000000 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/os/os0thread.c	2010-06-24 19:48:57.941626181 +0900
+--- a/storage/innodb_plugin/os/os0thread.c	2010-11-03 16:39:54.000000000 +0300
++++ b/storage/innodb_plugin/os/os0thread.c	2010-12-01 23:48:55.000000000 +0300
 @@ -287,12 +287,17 @@
  #elif defined(__NETWARE__)
  	delay(tm / 1000);
@@ -672,9 +727,8 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/os/os0thread.c mysql-5.1
  #endif
  }
  
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/row/row0merge.c mysql-5.1.47_xtradb/storage/innodb_plugin/row/row0merge.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/row/row0merge.c	2010-06-24 18:36:59.017626126 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/row/row0merge.c	2010-06-24 19:48:57.946626450 +0900
+--- a/storage/innodb_plugin/row/row0merge.c	2010-12-01 23:44:54.000000000 +0300
++++ b/storage/innodb_plugin/row/row0merge.c	2010-12-01 23:48:55.000000000 +0300
 @@ -453,7 +453,9 @@
  	rec = rec_convert_dtuple_to_rec(*buf, index, tuple, n_ext);
  	offsets = rec_get_offsets(rec, index, NULL, ULINT_UNDEFINED, &heap);
@@ -686,10 +740,10 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/row/row0merge.c mysql-5.
  
  	mem_heap_free(heap);
  }
-@@ -1457,8 +1459,10 @@
+@@ -1464,8 +1466,10 @@
  		case 0:
  			if (UNIV_UNLIKELY
- 			    (dict_index_is_unique(index))) {
+ 			    (dict_index_is_unique(index) && !null_eq)) {
 -				innobase_rec_to_mysql(table, mrec0,
 -						      index, offsets0);
 +				//innobase_rec_to_mysql(table, mrec0,
@@ -699,7 +753,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/row/row0merge.c mysql-5.
  				mem_heap_free(heap);
  				return(DB_DUPLICATE_KEY);
  			}
-@@ -2535,7 +2539,9 @@
+@@ -2593,7 +2597,9 @@
  
  	/* Reset the MySQL row buffer that is used when reporting
  	duplicate keys. */
@@ -710,10 +764,9 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/row/row0merge.c mysql-5.
  
  	/* Read clustered index of the table and create files for
  	secondary index entries for merge sort */
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.47_xtradb/storage/innodb_plugin/srv/srv0srv.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c	2010-06-24 18:36:59.146626022 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/srv/srv0srv.c	2010-06-24 19:52:55.908709658 +0900
-@@ -390,6 +390,10 @@
+--- a/storage/innodb_plugin/srv/srv0srv.c	2010-12-01 23:44:55.000000000 +0300
++++ b/storage/innodb_plugin/srv/srv0srv.c	2010-12-01 23:48:55.000000000 +0300
+@@ -399,6 +399,10 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -724,7 +777,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.
  UNIV_INTERN long long	srv_ibuf_max_size = 0;
  UNIV_INTERN ulint	srv_ibuf_active_contract = 0; /* 0:disable 1:enable */
  UNIV_INTERN ulint	srv_ibuf_accel_rate = 100;
-@@ -1035,7 +1039,7 @@
+@@ -1047,7 +1051,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -733,7 +786,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.
  }
  
  /*********************************************************************//**
-@@ -1046,6 +1050,7 @@
+@@ -1058,6 +1062,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -741,7 +794,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1059,6 +1064,7 @@
+@@ -1071,6 +1076,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -749,9 +802,8 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0srv.c mysql-5.1.
  }
  
  /*********************************************************************//**
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.1.47_xtradb/storage/innodb_plugin/srv/srv0start.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c	2010-06-24 18:36:59.051626362 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/srv/srv0start.c	2010-06-24 19:48:57.961595625 +0900
+--- a/storage/innodb_plugin/srv/srv0start.c	2010-12-01 23:44:55.000000000 +0300
++++ b/storage/innodb_plugin/srv/srv0start.c	2010-12-01 23:48:55.000000000 +0300
 @@ -94,6 +94,8 @@
  /** Log sequence number at shutdown */
  UNIV_INTERN ib_uint64_t	srv_shutdown_lsn;
@@ -761,7 +813,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  #ifdef HAVE_DARWIN_THREADS
  # include <sys/utsname.h>
  /** TRUE if the F_FULLFSYNC option is available */
-@@ -547,7 +549,7 @@
+@@ -544,7 +546,7 @@
  /*********************************************************************//**
  Creates or opens the log files and closes them.
  @return	DB_SUCCESS or error code */
@@ -770,7 +822,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  ulint
  open_or_create_log_file(
  /*====================*/
-@@ -705,7 +707,7 @@
+@@ -702,7 +704,7 @@
  /*********************************************************************//**
  Creates or opens database data files and closes them.
  @return	DB_SUCCESS or error code */
@@ -779,7 +831,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  ulint
  open_or_create_data_files(
  /*======================*/
-@@ -1747,6 +1749,10 @@
+@@ -1749,6 +1751,10 @@
  		are initialized in trx_sys_init_at_db_start(). */
  
  		recv_recovery_from_checkpoint_finish();
@@ -790,7 +842,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  		if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
  			/* The following call is necessary for the insert
  			buffer to work with multiple tablespaces. We must
-@@ -1907,7 +1913,18 @@
+@@ -1913,7 +1919,18 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
@@ -809,7 +861,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
  			" is %lu pages, but\n"
-@@ -1932,6 +1949,7 @@
+@@ -1938,6 +1955,7 @@
  
  			return(DB_ERROR);
  		}
@@ -817,7 +869,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  	}
  
  	/* Check that os_fast_mutexes work as expected */
-@@ -2034,6 +2052,7 @@
+@@ -2040,6 +2058,7 @@
  		ibuf_update_max_tablespace_id();
  	}
  
@@ -825,10 +877,9 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/srv/srv0start.c mysql-5.
  	srv_file_per_table = srv_file_per_table_original_value;
  
  	srv_was_started = TRUE;
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0purge.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0purge.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0purge.c	2010-06-24 18:36:58.594626356 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0purge.c	2010-06-24 19:48:57.967622137 +0900
-@@ -1117,6 +1117,9 @@
+--- a/storage/innodb_plugin/trx/trx0purge.c	2010-12-01 23:44:54.000000000 +0300
++++ b/storage/innodb_plugin/trx/trx0purge.c	2010-12-01 23:48:55.000000000 +0300
+@@ -1113,6 +1113,9 @@
  	/*	que_thr_t*	thr2; */
  	ulint		old_pages_handled;
  
@@ -838,9 +889,8 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0purge.c mysql-5.
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0rseg.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0rseg.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0rseg.c	2010-06-24 18:36:58.291593158 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0rseg.c	2010-10-20 17:56:59.380188371 +0900
+--- a/storage/innodb_plugin/trx/trx0rseg.c	2010-12-01 23:44:52.000000000 +0300
++++ b/storage/innodb_plugin/trx/trx0rseg.c	2010-12-01 23:48:55.000000000 +0300
 @@ -143,9 +143,11 @@
  
  	mutex_free(&rseg->mutex);
@@ -853,10 +903,9 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0rseg.c mysql-5.1
  
  	undo = UT_LIST_GET_FIRST(rseg->update_undo_cached);
  
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0sys.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0sys.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0sys.c	2010-06-24 18:36:58.790615570 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0sys.c	2010-10-20 17:57:40.136127409 +0900
-@@ -1929,10 +1929,12 @@
+--- a/storage/innodb_plugin/trx/trx0sys.c	2010-12-01 23:44:53.000000000 +0300
++++ b/storage/innodb_plugin/trx/trx0sys.c	2010-12-01 23:48:55.000000000 +0300
+@@ -1931,10 +1931,12 @@
  		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
  	}
  
@@ -869,10 +918,18 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0sys.c mysql-5.1.
  
  	mem_free(trx_sys);
  
-diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0trx.c mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0trx.c
---- mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0trx.c	2010-06-24 18:36:58.700625905 +0900
-+++ mysql-5.1.47_xtradb/storage/innodb_plugin/trx/trx0trx.c	2010-06-24 19:48:57.973626061 +0900
-@@ -492,8 +492,8 @@
+--- a/storage/innodb_plugin/trx/trx0trx.c	2010-12-01 23:44:53.000000000 +0300
++++ b/storage/innodb_plugin/trx/trx0trx.c	2010-12-02 00:49:44.000000000 +0300
+@@ -109,8 +109,6 @@
+ 
+ 	trx->support_xa = TRUE;
+ 
+-	trx->flush_log_at_trx_commit_session = 3; /* means to use innodb_flush_log_at_trx_commit value */
+-
+ 	trx->check_foreigns = TRUE;
+ 	trx->check_unique_secondary = TRUE;
+ 
+@@ -493,8 +491,8 @@
  						TRX_ID_PREP_PRINTF(trx->id));
  
  					if (srv_force_recovery == 0) {
@@ -883,7 +940,7 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0trx.c mysql-5.1.
  					} else {
  						fprintf(stderr,
  							"InnoDB: Since"
-@@ -569,9 +569,9 @@
+@@ -570,9 +568,9 @@
  								trx->id));
  
  						if (srv_force_recovery == 0) {
@@ -895,3 +952,126 @@ diff -ru mysql-5.1.47_xtradb_orig/storage/innodb_plugin/trx/trx0trx.c mysql-5.1.
  						} else {
  							fprintf(stderr,
  								"InnoDB: Since"
+@@ -737,9 +735,6 @@
+ 	generated by the same transaction, doesn't. */
+ 	trx->support_xa = thd_supports_xa(trx->mysql_thd);
+ 
+-	trx->flush_log_at_trx_commit_session =
+-		thd_flush_log_at_trx_commit_session(trx->mysql_thd);
+-
+ 	mutex_enter(&kernel_mutex);
+ 
+ 	ret = trx_start_low(trx, rseg_id);
+@@ -921,7 +916,6 @@
+ 	trx->read_view = NULL;
+ 
+ 	if (lsn) {
+-		ulint	flush_log_at_trx_commit;
+ 
+ 		mutex_exit(&kernel_mutex);
+ 
+@@ -930,12 +924,6 @@
+ 			trx_undo_insert_cleanup(trx);
+ 		}
+ 
+-		if (trx->flush_log_at_trx_commit_session == 3) {
+-			flush_log_at_trx_commit = srv_flush_log_at_trx_commit;
+-		} else {
+-			flush_log_at_trx_commit = trx->flush_log_at_trx_commit_session;
+-		}
+-
+ 		/* NOTE that we could possibly make a group commit more
+ 		efficient here: call os_thread_yield here to allow also other
+ 		trxs to come to commit! */
+@@ -967,9 +955,9 @@
+ 		if (trx->flush_log_later) {
+ 			/* Do nothing yet */
+ 			trx->must_flush_log_later = TRUE;
+-		} else if (flush_log_at_trx_commit == 0) {
++		} else if (srv_flush_log_at_trx_commit == 0) {
+ 			/* Do nothing */
+-		} else if (flush_log_at_trx_commit == 1) {
++		} else if (srv_flush_log_at_trx_commit == 1) {
+ 			if (srv_unix_file_flush_method == SRV_UNIX_NOSYNC) {
+ 				/* Write the log but do not flush it to disk */
+ 
+@@ -981,7 +969,7 @@
+ 
+ 				log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, TRUE);
+ 			}
+-		} else if (flush_log_at_trx_commit == 2) {
++		} else if (srv_flush_log_at_trx_commit == 2) {
+ 
+ 			/* Write the log but do not flush it to disk */
+ 
+@@ -1661,23 +1649,16 @@
+ 	trx_t*	trx)	/*!< in: trx handle */
+ {
+ 	ib_uint64_t	lsn	= trx->commit_lsn;
+-	ulint		flush_log_at_trx_commit;
+ 
+ 	ut_a(trx);
+ 
+ 	trx->op_info = "flushing log";
+ 
+-	if (trx->flush_log_at_trx_commit_session == 3) {
+-		flush_log_at_trx_commit = srv_flush_log_at_trx_commit;
+-	} else {
+-		flush_log_at_trx_commit = trx->flush_log_at_trx_commit_session;
+-	}
+-
+ 	if (!trx->must_flush_log_later) {
+ 		/* Do nothing */
+-	} else if (flush_log_at_trx_commit == 0) {
++	} else if (srv_flush_log_at_trx_commit == 0) {
+ 		/* Do nothing */
+-	} else if (flush_log_at_trx_commit == 1) {
++	} else if (srv_flush_log_at_trx_commit == 1) {
+ 		if (srv_unix_file_flush_method == SRV_UNIX_NOSYNC) {
+ 			/* Write the log but do not flush it to disk */
+ 
+@@ -1688,7 +1669,7 @@
+ 
+ 			log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, TRUE);
+ 		}
+-	} else if (flush_log_at_trx_commit == 2) {
++	} else if (srv_flush_log_at_trx_commit == 2) {
+ 
+ 		/* Write the log but do not flush it to disk */
+ 
+@@ -1948,8 +1929,6 @@
+ 	/*--------------------------------------*/
+ 
+ 	if (lsn) {
+-		ulint	flush_log_at_trx_commit;
+-
+ 		/* Depending on the my.cnf options, we may now write the log
+ 		buffer to the log files, making the prepared state of the
+ 		transaction durable if the OS does not crash. We may also
+@@ -1969,15 +1948,9 @@
+ 
+ 		mutex_exit(&kernel_mutex);
+ 
+-		if (trx->flush_log_at_trx_commit_session == 3) {
+-			flush_log_at_trx_commit = srv_flush_log_at_trx_commit;
+-		} else {
+-			flush_log_at_trx_commit = trx->flush_log_at_trx_commit_session;
+-		}
+-
+-		if (flush_log_at_trx_commit == 0) {
++		if (srv_flush_log_at_trx_commit == 0) {
+ 			/* Do nothing */
+-		} else if (flush_log_at_trx_commit == 1) {
++		} else if (srv_flush_log_at_trx_commit == 1) {
+ 			if (srv_unix_file_flush_method == SRV_UNIX_NOSYNC) {
+ 				/* Write the log but do not flush it to disk */
+ 
+@@ -1989,7 +1962,7 @@
+ 
+ 				log_write_up_to(lsn, LOG_WAIT_ONE_GROUP, TRUE);
+ 			}
+-		} else if (flush_log_at_trx_commit == 2) {
++		} else if (srv_flush_log_at_trx_commit == 2) {
+ 
+ 			/* Write the log but do not flush it to disk */
+ 

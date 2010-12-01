@@ -70,15 +70,18 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define LSN64 dulint
 #define MACH_READ_64 mach_read_from_8
 #define MACH_WRITE_64 mach_write_to_8
+#define OS_MUTEX_CREATE() os_mutex_create(NULL)
 #else
 #define IB_INT64 ib_int64_t
 #define LSN64 ib_uint64_t
 #if (MYSQL_VERSION_ID < 50500)
 #define MACH_READ_64 mach_read_ull
 #define MACH_WRITE_64 mach_write_ull
+#define OS_MUTEX_CREATE() os_mutex_create(NULL)
 #else
 #define MACH_READ_64 mach_read_from_8
 #define MACH_WRITE_64 mach_write_to_8
+#define OS_MUTEX_CREATE os_mutex_create()
 #endif
 #define ut_dulint_zero 0
 #define ut_dulint_cmp(A, B) (A > B ? 1 : (A == B ? 0 : -1))
@@ -706,7 +709,7 @@ datafiles_iter_new(fil_system_t *system)
 	datafiles_iter_t *it;
 
 	it = ut_malloc(sizeof(datafiles_iter_t));
-	it->mutex = os_mutex_create();
+	it->mutex = OS_MUTEX_CREATE();
 
 	it->system = system;
 	it->space = NULL;
@@ -3610,7 +3613,7 @@ reread_log_header:
 		data_threads = (data_thread_ctxt_t *)
 			ut_malloc(sizeof(data_thread_ctxt_t) * parallel);
 		count = parallel;
-		count_mutex = os_mutex_create();
+		count_mutex = OS_MUTEX_CREATE();
 
 		for (i = 0; i < parallel; i++) {
 			data_threads[i].it = it;
@@ -4218,7 +4221,11 @@ loop:
 			is no index */
 
 			if (dict_table_get_first_index(table)) {
+#ifdef XTRADB_BASED
+				dict_update_statistics_low(table, TRUE, FALSE);
+#else
 				dict_update_statistics_low(table, TRUE);
+#endif
 			}
 
 			//dict_table_print_low(table);
