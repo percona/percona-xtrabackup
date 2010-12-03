@@ -67,8 +67,8 @@ install:
 	dh_installdirs
 
 	# Add here commands to install the package into debian/xtrabackup.
-	install -m 755 mysql-5.1.42/storage/innobase/xtrabackup/xtrabackup_51 $(CURDIR)/debian/xtrabackup/usr/bin
-	install -m 755 mysql-5.5.6-rc/storage/innobase/xtrabackup/xtrabackup_55 $(CURDIR)/debian/xtrabackup/usr/bin
+	install -m 755 mysql-5.1.52/storage/innobase/xtrabackup/xtrabackup_51 $(CURDIR)/debian/xtrabackup/usr/bin
+	install -m 755 mysql-5.5.7-rc/storage/innobase/xtrabackup/xtrabackup_55 $(CURDIR)/debian/xtrabackup/usr/bin
 	install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/xtrabackup $(CURDIR)/debian/xtrabackup/usr/bin
 	install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/innobackupex-1.5.1 $(CURDIR)/debian/xtrabackup/usr/bin
 	install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd $(CURDIR)/debian/xtrabackup/usr/bin

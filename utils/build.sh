@@ -99,6 +99,7 @@ case "$type" in
 	tar zxf mysql-$mysql_version.tar.gz
 	cd $top_dir/mysql-$mysql_version
 	patch -p1 < $top_dir/fix_innodb_for_backup55.patch
+	patch -p1 < $top_dir/mysql-abi-check.patch
 
 	cd $top_dir/mysql-$mysql_version
 	tar zxf $top_dir/libtar-1.2.11.tar.gz
@@ -216,7 +217,7 @@ case "$type" in
 
 	# Compile MySQL
 	cd $top_dir/Percona-Server
-	./configure --enable-local-infile \
+	LIBS=-lrt ./configure --enable-local-infile \
 	    --enable-thread-safe-client \
 	    --with-plugins=innodb_plugin \
 	    --with-zlib-dir=bundled \
