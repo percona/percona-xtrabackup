@@ -2,6 +2,7 @@
 
 init
 run_mysqld
+mysqld_innodb_file_per_table
 load_sakila2
 
 # Adding 10k rows
@@ -54,6 +55,7 @@ cd $topdir
 vlog "Data restored"
 
 run_mysqld
+mysqld_innodb_file_per_table
 
 vlog "Cheking checksums"
 checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" sakila2 | awk '{print $2}'`
