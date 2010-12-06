@@ -24,11 +24,6 @@ clean
 exit -1
 }
 
-function die()
-{
-  vlog "$*"
-  exit 1
-}
 
 function initdir()
 {
@@ -175,7 +170,7 @@ function mysql_ping()
 function run_mysqld()
 {
     local c=0
-    ${MYSQLD} ${MYSQLD_ARGS} $* --port=$mysql_port &
+    ${MYSQLD} ${MYSQLD_ARGS} --port=$mysql_port &
     while [ "`mysql_ping`" != "1" ]
     do
         if [ ${c} -eq 100 ]
@@ -187,6 +182,8 @@ function run_mysqld()
         sleep 1
     done
     vlog "MySQL started successfully"
+    ${MYSQL} ${MYSQL_ARGS} -e "set global innodb_file_per_table=ON;"
+    vlog "InnoDB file per table is set"
 
 }
 
@@ -205,6 +202,15 @@ ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-schema.sql
 vlog "Loading sakila data"
 ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-data.sql
 }
+
+function load_sakila2()
+{
+vlog "Loading sakila2"
+${MYSQL} ${MYSQL_ARGS} -e "create database sakila2"
+vlog "Loading sakila2 scheme"
+${MYSQL} ${MYSQL_ARGS} sakila2 < inc/sakila2-db/sakila2-schema.sql
+}
+
 
 function init()
 {
