@@ -190,12 +190,6 @@ function run_mysqld()
 
 }
 
-function mysqld_innodb_file_per_table()
-{
-    ${MYSQL} ${MYSQL_ARGS} -e "set global innodb_file_per_table=ON;"
-    vlog "InnoDB file per table is set"
-}
-
 function stop_mysqld()
 {
     ${MYSQLADMIN} ${MYSQL_ARGS} shutdown

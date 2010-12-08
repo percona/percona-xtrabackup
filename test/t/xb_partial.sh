@@ -1,8 +1,7 @@
 . inc/common.sh
 
 init
-run_mysqld
-mysqld_innodb_file_per_table
+run_mysqld --innodb_file_per_table
 load_incremental_sample
 
 # Adding 10k rows
@@ -52,8 +51,7 @@ cd $topdir
 
 vlog "Data restored"
 
-run_mysqld
-mysqld_innodb_file_per_table
+run_mysqld --innodb_file_per_table
 
 vlog "Cheking checksums"
 checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
