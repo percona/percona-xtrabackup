@@ -2,18 +2,18 @@
 
 init
 run_mysqld
-load_sakila2
+load_incremental_sample
 
 # Adding 10k rows
 
 vlog "Adding initial rows to database..."
 
-sakila2_numrow=100
-sakila2_count=0
-while [ "$sakila2_numrow" -gt "$sakila2_count" ]
+numrow=100
+count=0
+while [ "$numrow" -gt "$count" ]
 do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($sakila2_count, $sakila2_numrow);" sakila2
-	let "sakila2_count=sakila2_count+1"
+	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
+	let "count=count+1"
 done
 
 
@@ -36,18 +36,18 @@ vlog "Full backup done"
 
 vlog "Making changes to database"
 
-let "sakila2_count=sakila2_numrow+1"
-let "sakila2_numrow=500"
-while [ "$sakila2_numrow" -gt "sakila2_count" ]
+let "count=numrow+1"
+let "numrow=500"
+while [ "$numrow" -gt "$count" ]
 do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($sakila2_count, $sakila2_numrow);" sakila2
-	let "sakila2_count=sakila2_count+1"
+	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
+	let "count=count+1"
 done
 
 vlog "Changes done"
 
 # Saving the checksum of original table
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" sakila2 | awk '{print $2}'`
+checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
 
 vlog "Table checksum is $checksum_a"
 
@@ -69,7 +69,7 @@ vlog "Data prepared for restore"
 
 # removing rows
 vlog "Table cleared"
-${MYSQL} ${MYSQL_ARGS} -e "delete from test;" sakila2
+${MYSQL} ${MYSQL_ARGS} -e "delete from test;" incremental_sample
 
 # Restore backup
 
@@ -79,8 +79,6 @@ vlog "Copying files"
 
 cd $topdir/data/full/
 cp -r * --target-directory=$mysql_datadir
-cd $mysql_datadir
-chown -R mysql:mysql *
 cd $topdir
 
 vlog "Data restored"
@@ -88,7 +86,7 @@ vlog "Data restored"
 run_mysqld
 
 vlog "Cheking checksums"
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" sakila2 | awk '{print $2}'`
+checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
 
 if [ $checksum_a -ne $checksum_b  ]
 then 

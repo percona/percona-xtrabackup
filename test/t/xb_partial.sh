@@ -3,24 +3,24 @@
 init
 run_mysqld
 mysqld_innodb_file_per_table
-load_sakila2
+load_incremental_sample
 
 # Adding 10k rows
 
 vlog "Adding initial rows to database..."
 
-sakila2_numrow=1000
-sakila2_count=0
-while [ "$sakila2_numrow" -gt "$sakila2_count" ]
+numrow=1000
+count=0
+while [ "$numrow" -gt "$count" ]
 do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($sakila2_count, $sakila2_numrow);" sakila2
-	let "sakila2_count=sakila2_count+1"
+	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
+	let "count=count+1"
 done
 
 
 vlog "Initial rows added"
 
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" sakila2 | awk '{print $2}'`
+checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
 vlog "Table checksum is $checksum_a"
 
 # Partial backup
@@ -29,7 +29,7 @@ vlog "Table checksum is $checksum_a"
 mkdir -p $topdir/data/parted
 
 vlog "Starting backup"
-xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/parted --tables="^sakila2[.]test"
+xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/parted --tables="^incremental_sample[.]test"
 vlog "Partial backup done"
 
 # Prepare backup
@@ -37,7 +37,7 @@ xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/parted
 vlog "Data prepared for restore"
 
 # removing rows
-${MYSQL} ${MYSQL_ARGS} -e "delete from test;" sakila2
+${MYSQL} ${MYSQL_ARGS} -e "delete from test;" incremental_sample
 vlog "Table cleared"
 
 # Restore backup
@@ -48,8 +48,6 @@ vlog "Copying files"
 
 cd $topdir/data/parted/
 cp -r * --target-directory=$mysql_datadir
-cd $mysql_datadir
-chown -R mysql:mysql *
 cd $topdir
 
 vlog "Data restored"
@@ -58,7 +56,7 @@ run_mysqld
 mysqld_innodb_file_per_table
 
 vlog "Cheking checksums"
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" sakila2 | awk '{print $2}'`
+checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
 
 if [ $checksum_a -ne $checksum_b  ]
 then 
