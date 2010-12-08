@@ -78,7 +78,7 @@ stop_mysqld
 vlog "Copying files"
 
 cd $topdir/data/full/
-cp -r * --target-directory=$mysql_datadir
+cp -r * $mysql_datadir
 cd $topdir
 
 vlog "Data restored"
