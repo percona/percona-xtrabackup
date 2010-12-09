@@ -187,7 +187,7 @@ case "$type" in
 
 	# Get Percona Server
 	rm -rf release-$mysql_version-$xtradb_version 
-	bzr branch  lp:percona-server/release-$mysql_version-$xtradb_version 
+	bzr branch lp:~percona-dev/percona-server/release-$mysql_version-$xtradb_version-for_xtrabackup release-$mysql_version-$xtradb_version
 	cd release-$mysql_version-$xtradb_version 
 	$MAKE_CMD
 	rm -rf $top_dir/Percona-Server
