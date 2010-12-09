@@ -206,12 +206,17 @@ vlog "Loading sakila data"
 ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-data.sql
 }
 
-function load_incremental_sample()
+function load_dbase_schema()
 {
-vlog "Loading load_incremental_sample"
-${MYSQL} ${MYSQL_ARGS} -e "create database incremental_sample"
-vlog "Loading load_incremental_sample schema"
-${MYSQL} ${MYSQL_ARGS} incremental_sample < inc/incremental_sample/incremental_sample-schema.sql
+vlog "Loading $1 database schema"
+${MYSQL} ${MYSQL_ARGS} -e "create database $1"
+${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-schema.sql
+}
+
+function load_dbase_data()
+{
+vlog "Loading $1 database data"
+${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-data.sql
 }
 
 

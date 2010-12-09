@@ -2,7 +2,7 @@
 
 init
 run_mysqld --innodb_file_per_table
-load_incremental_sample
+load_dbase_schema incremental_sample
 
 # Adding 10k rows
 
