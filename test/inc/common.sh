@@ -206,6 +206,20 @@ vlog "Loading sakila data"
 ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-data.sql
 }
 
+function load_dbase_schema()
+{
+vlog "Loading $1 database schema"
+${MYSQL} ${MYSQL_ARGS} -e "create database $1"
+${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-schema.sql
+}
+
+function load_dbase_data()
+{
+vlog "Loading $1 database data"
+${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-data.sql
+}
+
+
 function init()
 {
 initdir

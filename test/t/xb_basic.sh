@@ -4,7 +4,8 @@ OUTFILE=results/xb_basic_innobackupex_out
 
 init
 run_mysqld
-load_sakila
+load_dbase_schema sakila
+load_dbase_data sakila
 
 # Take backup
 echo "
