@@ -110,15 +110,14 @@ case "$type" in
 
 	echo "Compile MySQL"
 	cd $top_dir/mysql-$mysql_version
-	# We do not support CMake at the moment
-	export HAVE_CMAKE=no
 	# We need to build with partitioning due to MySQL bug #58632
-	./configure --enable-local-infile \
-	    --enable-thread-safe-client \
-	    --with-plugins=innobase,partition \
-	    --with-zlib-dir=bundled \
-	    --enable-shared \
-	    --with-extra-charsets=complex --disable-dtrace
+	cmake . \
+		-DENABLED_LOCAL_INFILE=ON \
+		-DWITH_INNOBASE_STORAGE_ENGINE=ON \
+		-DWITH_PARTITION_STORAGE_ENGINE=ON \
+		-DWITH_ZLIB=BUNDLED \
+		-DWITH_EXTRA_CHARSETS=complex \
+		-DENABLE_DTRACE=OFF
 	$MAKE_CMD all
 	
 	echo "Compile XtraBackup"

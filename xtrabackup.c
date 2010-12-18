@@ -4223,6 +4223,8 @@ loop:
 			if (dict_table_get_first_index(table)) {
 #ifdef XTRADB_BASED
 				dict_update_statistics_low(table, TRUE, FALSE);
+#elif MYSQL_VERSION_ID >= 50508
+				dict_update_statistics(table, TRUE);
 #else
 				dict_update_statistics_low(table, TRUE);
 #endif
