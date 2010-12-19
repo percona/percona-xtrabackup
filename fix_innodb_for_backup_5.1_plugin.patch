@@ -1,5 +1,5 @@
---- a/storage/innodb_plugin/btr/btr0btr.c	2010-10-12 00:34:15.000000000 +0400
-+++ b/storage/innodb_plugin/btr/btr0btr.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/btr/btr0btr.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/btr/btr0btr.c	2010-12-15 13:05:10.000000000 -0800
 @@ -120,7 +120,7 @@
  /**************************************************************//**
  Gets the root node of a tree and x-latches it.
@@ -18,8 +18,8 @@
  buf_block_t*
  btr_node_ptr_get_child(
  /*===================*/
---- a/storage/innodb_plugin/buf/buf0buf.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/buf/buf0buf.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/buf/buf0buf.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/buf/buf0buf.c	2010-12-15 13:05:10.000000000 -0800
 @@ -358,7 +358,7 @@
  		return(TRUE);
  	}
@@ -29,7 +29,7 @@
  	if (recv_lsn_checks_on) {
  		ib_uint64_t	current_lsn;
  
-@@ -3233,7 +3233,7 @@
+@@ -3257,7 +3257,7 @@
  			recv_recover_page(TRUE, (buf_block_t*) bpage);
  		}
  
@@ -38,8 +38,8 @@
  			ibuf_merge_or_delete_for_page(
  				(buf_block_t*) bpage, bpage->space,
  				bpage->offset, buf_page_get_zip_size(bpage),
---- a/storage/innodb_plugin/buf/buf0rea.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/buf/buf0rea.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/buf/buf0rea.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/buf/buf0rea.c	2010-12-15 13:05:10.000000000 -0800
 @@ -120,6 +120,45 @@
  	bpage = buf_page_init_for_read(err, mode, space, zip_size, unzip,
  				       tablespace_version, offset);
@@ -137,8 +137,8 @@
  		return;
  	}
  
---- a/storage/innodb_plugin/fil/fil0fil.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/fil/fil0fil.c	2010-12-01 12:10:52.000000000 +0300
+--- a/storage/innodb_plugin/fil/fil0fil.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/fil/fil0fil.c	2010-12-15 13:05:10.000000000 -0800
 @@ -48,6 +48,7 @@
  #else /* !UNIV_HOTBACKUP */
  static ulint srv_data_read, srv_data_written;
@@ -452,9 +452,9 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
---- a/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-12-01 12:10:13.000000000 +0300
-@@ -1055,6 +1055,9 @@
+--- a/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/ibuf/ibuf0ibuf.c	2010-12-15 13:05:10.000000000 -0800
+@@ -1061,6 +1061,9 @@
  
  	ut_ad(!recv_no_ibuf_operations);
  
@@ -464,7 +464,7 @@
  	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
  
  		return(TRUE);
-@@ -2271,6 +2274,9 @@
+@@ -2277,6 +2280,9 @@
  	ulint	n_bytes;
  	ulint	n_pag2;
  
@@ -474,8 +474,8 @@
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
---- a/storage/innodb_plugin/include/srv0srv.h	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/include/srv0srv.h	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/include/srv0srv.h	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/include/srv0srv.h	2010-12-15 13:05:10.000000000 -0800
 @@ -196,6 +196,10 @@
  extern ulong	srv_max_purge_lag;
  
@@ -487,8 +487,8 @@
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
---- a/storage/innodb_plugin/include/srv0start.h	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/include/srv0start.h	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/include/srv0start.h	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/include/srv0start.h	2010-12-15 13:05:10.000000000 -0800
 @@ -91,6 +91,8 @@
  /** Log sequence number immediately after startup */
  extern	ib_uint64_t	srv_start_lsn;
@@ -498,8 +498,8 @@
  #ifdef __NETWARE__
  void set_panic_flag_for_netware(void);
  #endif
---- a/storage/innodb_plugin/include/ut0byte.ic	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/include/ut0byte.ic	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/include/ut0byte.ic	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/include/ut0byte.ic	2010-12-15 13:05:10.000000000 -0800
 @@ -168,6 +168,14 @@
  	dulint	a,	/*!< in: dulint */
  	ulint	b)	/*!< in: ulint */
@@ -541,8 +541,8 @@
  	return(diff);
  }
  
---- a/storage/innodb_plugin/log/log0log.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/log/log0log.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/log/log0log.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/log/log0log.c	2010-12-15 13:05:10.000000000 -0800
 @@ -564,7 +564,9 @@
  
  	offset = (gr_lsn_size_offset + difference) % group_size;
@@ -578,8 +578,8 @@
  
  	if (srv_fast_shutdown == 2) {
  		/* In this fastest shutdown we do not flush the buffer pool:
---- a/storage/innodb_plugin/log/log0recv.c	2010-10-12 00:34:15.000000000 +0400
-+++ b/storage/innodb_plugin/log/log0recv.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/log/log0recv.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/log/log0recv.c	2010-12-15 13:05:10.000000000 -0800
 @@ -42,27 +42,27 @@
  #include "trx0undo.h"
  #include "trx0rec.h"
@@ -729,8 +729,8 @@
  	trx_rollback_or_clean_recovered(FALSE);
  }
  
---- a/storage/innodb_plugin/os/os0file.c	2010-10-12 00:34:15.000000000 +0400
-+++ b/storage/innodb_plugin/os/os0file.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/os/os0file.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/os/os0file.c	2010-12-15 13:05:10.000000000 -0800
 @@ -514,7 +514,7 @@
  }
  
@@ -740,7 +740,7 @@
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__NETWARE__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1314,8 +1314,9 @@
+@@ -1316,8 +1316,9 @@
  		attributes = 0;
  		ut_error;
  	}
@@ -751,7 +751,7 @@
  			  GENERIC_READ | GENERIC_WRITE, /* read and write
  							access */
  			  share_mode,	/* File can be read also by other
-@@ -1374,7 +1375,11 @@
+@@ -1376,7 +1377,11 @@
  	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
  	    || create_mode == OS_FILE_OPEN_RETRY) {
  		mode_str = "OPEN";
@@ -764,9 +764,9 @@
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
-@@ -2534,6 +2539,9 @@
- 
- 	ut_a((offset & 0xFFFFFFFF) == offset);
+@@ -2545,6 +2550,9 @@
+ 	ut_a((offset & 0xFFFFFFFFUL) == offset);
+ 	ut_a((n & 0xFFFFFFFFUL) == n);
  
 +	if (srv_fake_write)
 +		return(TRUE);
@@ -774,7 +774,7 @@
  	os_n_file_writes++;
  
  	ut_ad(file);
-@@ -2658,6 +2666,9 @@
+@@ -2669,6 +2677,9 @@
  #else
  	ssize_t	ret;
  
@@ -784,8 +784,8 @@
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
  
  	if ((ulint)ret == n) {
---- a/storage/innodb_plugin/os/os0thread.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/os/os0thread.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/os/os0thread.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/os/os0thread.c	2010-12-15 13:05:10.000000000 -0800
 @@ -287,12 +287,17 @@
  #elif defined(__NETWARE__)
  	delay(tm / 1000);
@@ -804,8 +804,8 @@
  #endif
  }
  
---- a/storage/innodb_plugin/row/row0merge.c	2010-10-12 00:34:16.000000000 +0400
-+++ b/storage/innodb_plugin/row/row0merge.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/row/row0merge.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/row/row0merge.c	2010-12-15 13:05:10.000000000 -0800
 @@ -453,7 +453,9 @@
  	rec = rec_convert_dtuple_to_rec(*buf, index, tuple, n_ext);
  	offsets = rec_get_offsets(rec, index, NULL, ULINT_UNDEFINED, &heap);
@@ -843,8 +843,8 @@
  
  	/* Read clustered index of the table and create files for
  	secondary index entries for merge sort */
---- a/storage/innodb_plugin/srv/srv0srv.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/srv/srv0srv.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/srv/srv0srv.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/srv/srv0srv.c	2010-12-15 13:05:10.000000000 -0800
 @@ -367,6 +367,9 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
@@ -880,8 +880,8 @@
  }
  
  /*********************************************************************//**
---- a/storage/innodb_plugin/srv/srv0start.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/srv/srv0start.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/srv/srv0start.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/srv/srv0start.c	2010-12-15 13:05:10.000000000 -0800
 @@ -94,6 +94,8 @@
  /** Log sequence number at shutdown */
  UNIV_INTERN ib_uint64_t	srv_shutdown_lsn;
@@ -891,7 +891,7 @@
  #ifdef HAVE_DARWIN_THREADS
  # include <sys/utsname.h>
  /** TRUE if the F_FULLFSYNC option is available */
-@@ -547,7 +549,7 @@
+@@ -544,7 +546,7 @@
  /*********************************************************************//**
  Creates or opens the log files and closes them.
  @return	DB_SUCCESS or error code */
@@ -900,7 +900,7 @@
  ulint
  open_or_create_log_file(
  /*====================*/
-@@ -705,7 +707,7 @@
+@@ -702,7 +704,7 @@
  /*********************************************************************//**
  Creates or opens database data files and closes them.
  @return	DB_SUCCESS or error code */
@@ -909,7 +909,7 @@
  ulint
  open_or_create_data_files(
  /*======================*/
-@@ -1336,7 +1338,7 @@
+@@ -1333,7 +1335,7 @@
  	}
  #endif /* UNIV_LOG_ARCHIVE */
  
@@ -918,7 +918,7 @@
  		fprintf(stderr,
  			"InnoDB: Error: combined size of log files"
  			" must be < 4 GB\n");
-@@ -1578,6 +1580,10 @@
+@@ -1575,6 +1577,10 @@
  		are initialized in trx_sys_init_at_db_start(). */
  
  		recv_recovery_from_checkpoint_finish();
@@ -929,7 +929,7 @@
  		if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
  			/* The following call is necessary for the insert
  			buffer to work with multiple tablespaces. We must
-@@ -1724,7 +1730,18 @@
+@@ -1721,7 +1727,18 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
@@ -948,7 +948,7 @@
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
  			" is %lu pages, but\n"
-@@ -1749,6 +1766,7 @@
+@@ -1746,6 +1763,7 @@
  
  			return(DB_ERROR);
  		}
@@ -956,7 +956,7 @@
  	}
  
  	/* Check that os_fast_mutexes work as expected */
-@@ -1844,6 +1862,7 @@
+@@ -1841,6 +1859,7 @@
  		ibuf_update_max_tablespace_id();
  	}
  
@@ -964,8 +964,8 @@
  	srv_file_per_table = srv_file_per_table_original_value;
  
  	srv_was_started = TRUE;
---- a/storage/innodb_plugin/trx/trx0purge.c	2010-10-12 00:34:15.000000000 +0400
-+++ b/storage/innodb_plugin/trx/trx0purge.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/trx/trx0purge.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/trx/trx0purge.c	2010-12-15 13:05:10.000000000 -0800
 @@ -1087,6 +1087,9 @@
  	/*	que_thr_t*	thr2; */
  	ulint		old_pages_handled;
@@ -976,8 +976,8 @@
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
---- a/storage/innodb_plugin/trx/trx0rseg.c	2010-10-12 00:34:17.000000000 +0400
-+++ b/storage/innodb_plugin/trx/trx0rseg.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/trx/trx0rseg.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/trx/trx0rseg.c	2010-12-15 13:05:10.000000000 -0800
 @@ -143,9 +143,11 @@
  
  	mutex_free(&rseg->mutex);
@@ -990,8 +990,8 @@
  
  	undo = UT_LIST_GET_FIRST(rseg->update_undo_cached);
  
---- a/storage/innodb_plugin/trx/trx0sys.c	2010-10-12 00:34:15.000000000 +0400
-+++ b/storage/innodb_plugin/trx/trx0sys.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/trx/trx0sys.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/trx/trx0sys.c	2010-12-15 13:05:10.000000000 -0800
 @@ -1607,10 +1607,12 @@
  		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
  	}
@@ -1005,8 +1005,8 @@
  
  	mem_free(trx_sys);
  
---- a/storage/innodb_plugin/trx/trx0trx.c	2010-10-12 00:34:15.000000000 +0400
-+++ b/storage/innodb_plugin/trx/trx0trx.c	2010-12-01 12:10:13.000000000 +0300
+--- a/storage/innodb_plugin/trx/trx0trx.c	2010-12-15 13:04:37.000000000 -0800
++++ b/storage/innodb_plugin/trx/trx0trx.c	2010-12-15 13:05:10.000000000 -0800
 @@ -461,8 +461,8 @@
  						TRX_ID_PREP_PRINTF(trx->id));
  

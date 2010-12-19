@@ -28,7 +28,7 @@ top_dir=`pwd`
 
 case "$type" in
 "5.1")
-	mysql_version=5.1.52
+	mysql_version=5.1.53
 	reqs="mysql-$mysql_version.tar.gz libtar-1.2.11.tar.gz"
 	for i in $reqs
 	do
@@ -78,7 +78,7 @@ case "$type" in
 	$MAKE_CMD
 	;;
 "5.5")
-	mysql_version=5.5.7-rc
+	mysql_version=5.5.8
 	reqs="mysql-$mysql_version.tar.gz libtar-1.2.11.tar.gz"
 	for i in $reqs
 	do
@@ -99,7 +99,6 @@ case "$type" in
 	tar zxf mysql-$mysql_version.tar.gz
 	cd $top_dir/mysql-$mysql_version
 	patch -p1 < $top_dir/fix_innodb_for_backup55.patch
-	patch -p1 < $top_dir/mysql-abi-check.patch
 
 	cd $top_dir/mysql-$mysql_version
 	tar zxf $top_dir/libtar-1.2.11.tar.gz
@@ -132,7 +131,7 @@ case "$type" in
 	$MAKE_CMD
 	;;
 "plugin")
-	mysql_version=5.1.52
+	mysql_version=5.1.53
 	reqs="mysql-$mysql_version.tar.gz libtar-1.2.11.tar.gz"
 	for i in $reqs
 	do
