@@ -99,6 +99,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define SRV_PATH_SEPARATOR_STR	"/"
 #endif
 
+#ifndef UNIV_PAGE_SIZE_MAX
+#define UNIV_PAGE_SIZE_MAX UNIV_PAGE_SIZE
+#endif
+#ifndef UNIV_PAGE_SIZE_SHIFT_MAX
+#define UNIV_PAGE_SIZE_SHIFT_MAX UNIV_PAGE_SIZE_SHIFT
+#endif
+	
 #if MYSQL_VERSION_ID >= 50507
 /*
    As of MySQL 5.5.7, InnoDB uses thd_wait plugin service.
@@ -527,6 +534,10 @@ struct fil_system_struct {
 
 #endif /* INNODB_VERSION_SHORT */
 
+typedef struct {
+	ulint	page_size;
+} xb_delta_info_t;
+
 extern fil_system_t*   fil_system;
 
 /* ==end=== definition  at fil0fil.c === */
@@ -611,6 +622,8 @@ ib_uint64_t metadata_from_lsn = 0;
 ib_uint64_t metadata_to_lsn = 0;
 ib_uint64_t metadata_last_lsn = 0;
 #endif
+
+#define XB_DELTA_INFO_SUFFIX ".meta"
 
 /* === sharing with thread === */
 os_file_t       dst_log = -1;
@@ -1720,6 +1733,24 @@ innobase_get_slow_log()
 #endif
 #endif
 
+/***********************************************************************
+Computes page shift for a given page size. If the argument is not a power
+of 2, returns 0.*/
+UNIV_INLINE
+ulint
+get_page_size_shift(ulint page_size)
+{
+	ulint shift;
+
+	if (page_size == 0)
+		return 0;
+	
+	for (shift = 0; !(page_size & 1UL); shift++) {
+		page_size >>= 1;
+	}
+	return (page_size >> 1) ? 0 : shift;
+}
+
 my_bool
 innodb_init_param(void)
 {
@@ -1742,19 +1773,22 @@ innodb_init_param(void)
 	srv_page_size_shift = 0;
 
 	if (innobase_page_size != (1 << 14)) {
-		int n_shift;
+		int n_shift = get_page_size_shift(innobase_page_size);
 
-		fprintf(stderr,
-			"InnoDB: Warning: innodb_page_size has been changed from default value 16384.\n");
-		for (n_shift = 12; n_shift <= UNIV_PAGE_SIZE_SHIFT_MAX; n_shift++) {
-			if (innobase_page_size == (1 << n_shift)) {
-				srv_page_size_shift = n_shift;
-				srv_page_size = (1 << srv_page_size_shift);
-				fprintf(stderr,
-					"InnoDB: The universal page size of the database is set to %lu.\n",
-					srv_page_size);
-				break;
-			}
+		if (n_shift >= 12 && n_shift <= UNIV_PAGE_SIZE_SHIFT_MAX) {
+			fprintf(stderr,
+				"InnoDB: Warning: innodb_page_size has been "
+				"changed from default value 16384.\n",
+				innobase_page_size);
+			srv_page_size_shift = n_shift;
+			srv_page_size = 1 << n_shift;
+			fprintf(stderr,
+				"InnoDB: The universal page size of the "
+				"database is set to %lu.\n", srv_page_size);
+		} else {
+			fprintf(stderr, "InnoDB: Error: invalid value of "
+			       "innobase_page_size: %lu", innobase_page_size);
+			exit(EXIT_FAILURE);
 		}
 	} else {
 		srv_page_size_shift = 14;
@@ -2203,6 +2237,52 @@ xtrabackup_write_metadata(char *filename)
 	return(FALSE);
 }
 
+/***********************************************************************
+Read meta info for an incremental delta.
+@return TRUE on success, FALSE on failure. */
+my_bool
+xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
+{
+	FILE *fp;
+
+	memset(info, 0, sizeof(xb_delta_info_t));
+
+	fp = fopen(filepath, "r");
+	if (!fp) {
+		/* Meta files for incremental deltas are optional */
+		return(TRUE);
+	}
+
+	if (fscanf(fp, "page_size = %lu\n", &info->page_size) != 1)
+		return(FALSE);
+
+	fclose(fp);
+
+	return(TRUE);
+}
+
+/***********************************************************************
+Write meta info for an incremental delta.
+@return TRUE on success, FALSE on failure. */
+my_bool
+xb_write_delta_metadata(const char *filepath, const xb_delta_info_t *info)
+{
+	FILE *fp;
+
+	fp = fopen(filepath, "w");
+	if (!fp) {
+		fprintf(stderr, "xtrabackup: Error: cannot open %s\n", filepath);
+		return(FALSE);
+	}
+
+	if (fprintf(fp, "page_size = %lu\n", info->page_size) < 0)
+		return(FALSE);
+
+	fclose(fp);
+
+	return(TRUE);
+}
+
 /* ================= backup ================= */
 void
 xtrabackup_io_throttling(void)
@@ -2222,7 +2302,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 {
 	os_file_t	src_file = -1;
 	os_file_t	dst_file = -1;
-	char    dst_path[FN_REFLEN];
+	char		dst_path[FN_REFLEN];
+	char		meta_path[FN_REFLEN];
 	ibool		success;
 	byte*		page;
 	byte*		buf2 = NULL;
@@ -2237,6 +2318,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 #ifdef INNODB_VERSION_SHORT
 	ulint		zip_size;
 #endif
+	xb_delta_info_t info;
 
 #ifdef XTRADB_BASED
 	if (xtrabackup_tables && (!trx_sys_sys_space(node->space->id)))
@@ -2343,23 +2425,12 @@ skip_filter:
 	zip_size = fil_space_get_zip_size(node->space->id);
 	if (zip_size) {
 		page_size = zip_size;
-		switch (zip_size) {
-		case 1024:
-			page_size_shift = 10;
-			break;
-		case 2048:
-			page_size_shift = 11;
-			break;
-		case 4096:
-			page_size_shift = 12;
-			break;
-		case 8192:
-			page_size_shift = 13;
-			break;
-		case 16384:
-			page_size_shift = 14;
-			break;
-		default:
+		page_size_shift = get_page_size_shift(page_size);
+		fprintf(stderr, "[%02u] %s is compressed with page size = "
+			"%lu bytes\n", thread_n, node->name, page_size);
+		if (page_size_shift < 10 || page_size_shift > 14) {
+			fprintf(stderr, "[%02u] xtrabackup: Error: Invalid "
+				"page size.\n");
 			ut_error;
 		}
 	} else {
@@ -2388,15 +2459,8 @@ skip_filter:
 	}
 
 	if (xtrabackup_incremental) {
-#ifdef INNODB_VERSION_SHORT
-		/* TODO: incremental doesn't treat compressed space for now */
-		if (zip_size) {
-			fprintf(stderr, "[%02u] xtrabackup: error: "
-				"incremental option doesn't treat compressed "
-				"space for now.\n", thread_n);
-			goto error;
-		}
-#endif
+		snprintf(meta_path, sizeof(meta_path),
+			 "%s%s", dst_path, XB_DELTA_INFO_SUFFIX);
 		strcat(dst_path, ".delta");
 
 		/* clear buffer */
@@ -2404,6 +2468,8 @@ skip_filter:
 		page_in_buffer = 0;
 		mach_write_to_4(incremental_buffer, 0x78747261UL);/*"xtra"*/
 		page_in_buffer++;
+
+		info.page_size = page_size;
 	}
 
 	/* open src_file*/
@@ -2557,10 +2623,6 @@ read_retry:
 		}
 
 		if (xtrabackup_incremental) {
-#ifdef INNODB_VERSION_SHORT
-			/* cannot treat for now */
-			ut_a(!zip_size);
-#endif
 			for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += page_size) {
 				/* newer page */
 				/* This condition may be OK for header, ibuf and fsp */
@@ -2628,6 +2690,11 @@ read_retry:
 				>> (32 - page_size_shift),
 			page_in_buffer * page_size);
 		if (!success) {
+			goto error;
+		}
+		if (!xb_write_delta_metadata(meta_path, &info)) {
+			fprintf(stderr, "[%02u] xtrabackup: Error: "
+				"failed to write meta info for %s\n", dst_path);
 			goto error;
 		}
 	}
@@ -3135,16 +3202,10 @@ data_copy_thread_func(
 
 		/* copy the datafile */
 		if(xtrabackup_copy_datafile(node, num)) {
-			if(node->space->id == 0) {
-				fprintf(stderr, "[%02u] xtrabackup: Error: "
-					"failed to copy system datafile.\n",
-					num);
-				exit(EXIT_FAILURE);
-			} else {
-				fprintf(stderr, "[%02u] xtrabackup: Warning: "
-					"failed to copy, but continuing.\n",
-					num);
-			}
+			fprintf(stderr, "[%02u] xtrabackup: Error: "
+				"failed to copy datafile.\n",
+				num);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -4642,6 +4703,29 @@ error:
 	return(TRUE); /*ERROR*/
 }
 
+/***********************************************************************
+Generates path to the meta file path from a given path to an incremental .delta
+by replacing trailing ".delta" with ".meta", or returns error if 'delta_path'
+does not end with the ".delta" character sequence.
+@return TRUE on success, FALSE on error. */
+static
+ibool
+get_meta_path(
+	const char	*delta_path,	/* in: path to a .delta file */
+	char 		*meta_path)	/* out: path to the corresponding .meta
+					file */
+{
+	size_t		len = strlen(delta_path);
+
+	if (len <= 6 || strcmp(delta_path + len - 6, ".delta")) {
+		return FALSE;
+	}
+	memcpy(meta_path, delta_path, len - 6);
+	strcpy(meta_path + len - 6, XB_DELTA_INFO_SUFFIX);
+
+	return TRUE;
+}
+
 void
 xtrabackup_apply_delta(
 	const char*	dirname,	/* in: dir name of incremental */
@@ -4654,28 +4738,56 @@ xtrabackup_apply_delta(
 	os_file_t	dst_file = -1;
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
+	char	meta_path[FN_REFLEN];
 	ibool	success;
 
 	ibool	last_buffer = FALSE;
 	ulint	page_in_buffer;
 	ulint	incremental_buffers = 0;
 
-	/* TODO: How to determine zip_size here... (to support compressed page) */
+	xb_delta_info_t info;
+	ulint		page_size;
+	ulint		page_size_shift;
 
 	ut_a(xtrabackup_incremental);
 
 	if (dbname) {
-		sprintf(src_path, "%s/%s/%s", dirname, dbname, filename);
-		sprintf(dst_path, "%s/%s/%s", xtrabackup_real_target_dir, dbname, filename);
+		snprintf(src_path, sizeof(src_path), "%s/%s/%s",
+			 dirname, dbname, filename);
+		snprintf(dst_path, sizeof(dst_path), "%s/%s/%s",
+			 xtrabackup_real_target_dir, dbname, filename);
 	} else {
-		sprintf(src_path, "%s/%s", dirname, filename);
-		sprintf(dst_path, "%s/%s", xtrabackup_real_target_dir, filename);
+		snprintf(src_path, sizeof(src_path), "%s/%s",
+			 dirname, filename);
+		snprintf(dst_path, sizeof(dst_path), "%s/%s",
+			 xtrabackup_real_target_dir, filename);
 	}
 	dst_path[strlen(dst_path) - 6] = '\0';
 
+	if (!get_meta_path(src_path, meta_path)) {
+		goto error;
+	}
+
 	srv_normalize_path_for_win(dst_path);
 	srv_normalize_path_for_win(src_path);
+	srv_normalize_path_for_win(meta_path);
 
+	if (!xb_read_delta_metadata(meta_path, &info)) {
+		goto error;
+	}
+
+	page_size = info.page_size;
+	page_size_shift = get_page_size_shift(page_size);
+	fprintf(stderr, "xtrabackup: page size for %s is %lu bytes\n",
+		src_path, page_size);
+	if (page_size_shift < 10 ||
+	    page_size_shift > UNIV_PAGE_SIZE_SHIFT_MAX) {
+		fprintf(stderr,
+			"xtrabackup: error: invalid value of page_size "
+			"(%lu bytes) read from %s\n", page_size, meta_path);
+		goto error;
+	}
+	
 	src_file = os_file_create_simple_no_error_handling(
 #if (MYSQL_VERSION_ID > 50500)
 			0 /* dummy of innodb_file_data_key */,
@@ -4727,11 +4839,11 @@ xtrabackup_apply_delta(
 		/* read to buffer */
 		/* first block of block cluster */
 		success = os_file_read(src_file, incremental_buffer,
-			((incremental_buffers * (UNIV_PAGE_SIZE/4))
-				<< UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
-			(incremental_buffers * (UNIV_PAGE_SIZE/4))
-				>> (32 - UNIV_PAGE_SIZE_SHIFT),
-			UNIV_PAGE_SIZE);
+				       ((incremental_buffers * (page_size / 4))
+					<< page_size_shift) & 0xFFFFFFFFUL,
+				       (incremental_buffers * (page_size / 4))
+				       >> (32 - page_size_shift),
+				       page_size);
 		if (!success) {
 			goto error;
 		}
@@ -4750,26 +4862,28 @@ xtrabackup_apply_delta(
 				goto error;
 		}
 
-		for (page_in_buffer = 1; page_in_buffer < UNIV_PAGE_SIZE/4; page_in_buffer++) {
+		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
+		     page_in_buffer++) {
 			if (mach_read_from_4(incremental_buffer + page_in_buffer * 4)
 			    == 0xFFFFFFFFUL)
 				break;
 		}
 
-		ut_a(last_buffer || page_in_buffer == UNIV_PAGE_SIZE/4);
+		ut_a(last_buffer || page_in_buffer == page_size / 4);
 
 		/* read whole of the cluster */
 		success = os_file_read(src_file, incremental_buffer,
-			((incremental_buffers * (UNIV_PAGE_SIZE/4))
-				<< UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
-			(incremental_buffers * (UNIV_PAGE_SIZE/4))
-				>> (32 - UNIV_PAGE_SIZE_SHIFT),
-			page_in_buffer * UNIV_PAGE_SIZE);
+				       ((incremental_buffers * (page_size / 4))
+					<< page_size_shift) & 0xFFFFFFFFUL,
+				       (incremental_buffers * (page_size / 4))
+				       >> (32 - page_size_shift),
+				       page_in_buffer * page_size);
 		if (!success) {
 			goto error;
 		}
 
-		for (page_in_buffer = 1; page_in_buffer < UNIV_PAGE_SIZE/4; page_in_buffer++) {
+		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
+		     page_in_buffer++) {
 			ulint page_offset;
 
 			page_offset = mach_read_from_4(incremental_buffer + page_in_buffer * 4);
@@ -4780,15 +4894,17 @@ xtrabackup_apply_delta(
 			/* apply blocks in the cluster */
 //			if (ut_dulint_cmp(incremental_lsn,
 //				MACH_READ_64(incremental_buffer
-//						 + page_in_buffer * UNIV_PAGE_SIZE
+//						 + page_in_buffer * page_size
 //						 + FIL_PAGE_LSN)) >= 0)
 //				continue;
 
 			success = os_file_write(dst_path, dst_file,
-					incremental_buffer + page_in_buffer * UNIV_PAGE_SIZE,
-					(page_offset << UNIV_PAGE_SIZE_SHIFT) & 0xFFFFFFFFUL,
-					page_offset >> (32 - UNIV_PAGE_SIZE_SHIFT),
-					UNIV_PAGE_SIZE);
+					incremental_buffer +
+						page_in_buffer * page_size,
+					(page_offset << page_size_shift) &
+						0xFFFFFFFFUL,
+					page_offset >> (32 - page_size_shift),
+					page_size);
 			if (!success) {
 				goto error;
 			}
@@ -4895,7 +5011,7 @@ next_file_item_1:
 				    && 0 == strcmp(fileinfo.name + 
 						strlen(fileinfo.name) - 6,
 						".delta")) {
-				        /* The name ends in .ibd; try opening
+					/* The name ends in .delta; try opening
 					the file */
 					xtrabackup_apply_delta(
 						xtrabackup_incremental_dir, dbinfo.name,
@@ -5682,8 +5798,10 @@ skip_tables_file_register:
 		}
 
 		/* allocate buffer for incremental backup (4096 pages) */
-		incremental_buffer_base = malloc((UNIV_PAGE_SIZE/4 + 1) * UNIV_PAGE_SIZE);
-		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+		incremental_buffer_base = malloc((UNIV_PAGE_SIZE_MAX / 4 + 1) *
+						 UNIV_PAGE_SIZE_MAX);
+		incremental_buffer = ut_align(incremental_buffer_base,
+					      UNIV_PAGE_SIZE_MAX);
 	} else if (xtrabackup_backup && xtrabackup_incremental_basedir) {
 		char	filename[FN_REFLEN];
 
@@ -5700,8 +5818,10 @@ skip_tables_file_register:
 		xtrabackup_incremental = xtrabackup_incremental_basedir; //dummy
 
 		/* allocate buffer for incremental backup (4096 pages) */
-		incremental_buffer_base = malloc((UNIV_PAGE_SIZE/4 + 1) * UNIV_PAGE_SIZE);
-		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+		incremental_buffer_base = malloc((UNIV_PAGE_SIZE_MAX / 4 + 1) *
+						 UNIV_PAGE_SIZE_MAX);
+		incremental_buffer = ut_align(incremental_buffer_base,
+					      UNIV_PAGE_SIZE_MAX);
 	} else if (xtrabackup_prepare && xtrabackup_incremental_dir) {
 		char	filename[FN_REFLEN];
 
@@ -5720,12 +5840,15 @@ skip_tables_file_register:
 		xtrabackup_incremental = xtrabackup_incremental_dir; //dummy
 
 		/* allocate buffer for incremental backup (4096 pages) */
-		incremental_buffer_base = malloc((UNIV_PAGE_SIZE/4 + 1) * UNIV_PAGE_SIZE);
-		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+		incremental_buffer_base = malloc((UNIV_PAGE_SIZE / 4 + 1) *
+						 UNIV_PAGE_SIZE);
+		incremental_buffer = ut_align(incremental_buffer_base,
+					      UNIV_PAGE_SIZE);
 	} else {
 		/* allocate buffer for applying incremental (for header page only) */
-		incremental_buffer_base = malloc((1 + 1) * UNIV_PAGE_SIZE);
-		incremental_buffer = ut_align(incremental_buffer_base, UNIV_PAGE_SIZE);
+		incremental_buffer_base = malloc((1 + 1) * UNIV_PAGE_SIZE_MAX);
+		incremental_buffer = ut_align(incremental_buffer_base,
+					      UNIV_PAGE_SIZE_MAX);
 
 		xtrabackup_incremental = NULL;
 	}
