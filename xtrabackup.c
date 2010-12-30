@@ -1195,7 +1195,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case '?':
     usage();
-    exit(0);
+    exit(EXIT_SUCCESS);
     break;
   default:
     break;
@@ -1763,7 +1763,7 @@ innodb_init_param(void)
 	bzero((G_PTR) &mysql_tmpdir_list, sizeof(mysql_tmpdir_list));
 
 	if (init_tmpdir(&mysql_tmpdir_list, opt_mysql_tmpdir))
-		exit(1);
+		exit(EXIT_FAILURE);
 
 	/* dummy for initialize all_charsets[] */
 	get_charset_name(0);
@@ -3198,14 +3198,14 @@ data_copy_thread_func(
 		space = node->space;
 
 		if (space_changed && xtrabackup_create_output_dir(space))
-			exit(1);
+			exit(EXIT_FAILURE);
 
 		/* copy the datafile */
 		if(xtrabackup_copy_datafile(node, num)) {
 			fprintf(stderr, "[%02u] xtrabackup: Error: "
 				"failed to copy datafile.\n",
 				num);
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -3234,7 +3234,7 @@ xtrabackup_backup_func(void)
 	if (my_setwd(mysql_real_data_home,MYF(MY_WME)))
 	{
 		fprintf(stderr, "xtrabackup: cannot my_setwd %s\n", mysql_real_data_home);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 	fprintf(stderr, "xtrabackup: cd to %s\n", mysql_real_data_home);
 
@@ -3247,7 +3247,7 @@ xtrabackup_backup_func(void)
 
 	/* initialize components */
         if(innodb_init_param())
-                exit(1);
+                exit(EXIT_FAILURE);
 
         if (srv_file_flush_method_str == NULL) {
         	/* These are the default options */
@@ -3294,7 +3294,7 @@ xtrabackup_backup_func(void)
 	  	fprintf(stderr, 
           	"xtrabackup: Unrecognized value %s for innodb_flush_method\n",
           				srv_file_flush_method_str);
-	  	exit(1);
+	  	exit(EXIT_FAILURE);
 	}
 
 #ifndef INNODB_VERSION_SHORT
@@ -3431,13 +3431,13 @@ xtrabackup_backup_func(void)
 "xtrabackup: remove old data files which contain your precious data!\n");
 
 		//return((int) err);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	/* create_new_db must not be TRUE.. */
 	if (create_new_db) {
 		fprintf(stderr, "xtrabackup: Something wrong with source files...\n");
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	for (i = 0; i < srv_n_log_files; i++) {
@@ -3446,7 +3446,7 @@ xtrabackup_backup_func(void)
 		if (err != DB_SUCCESS) {
 
 			//return((int) err);
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 
 		if (log_file_created) {
@@ -3465,14 +3465,14 @@ xtrabackup_backup_func(void)
 	"xtrabackup: and start the database again.\n");
 
 			//return(DB_ERROR);
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 	}
 
 	/* log_file_created must not be TRUE, if online */
 	if (log_file_created) {
 		fprintf(stderr, "xtrabackup: Something wrong with source files...\n");
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	fil_load_single_table_tablespaces();
@@ -3484,7 +3484,7 @@ xtrabackup_backup_func(void)
 		&&!my_stat(xtrabackup_extra_lsndir,&stat_info,MYF(0))
 		&& (my_mkdir(xtrabackup_extra_lsndir,0777,MYF(0)) < 0)){
 		fprintf(stderr,"xtrabackup: Error: cannot mkdir %d: %s\n",my_errno,xtrabackup_extra_lsndir);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 
@@ -3494,7 +3494,7 @@ xtrabackup_backup_func(void)
 	if (!my_stat(xtrabackup_target_dir,&stat_info,MYF(0))
 		&& (my_mkdir(xtrabackup_target_dir,0777,MYF(0)) < 0)){
 		fprintf(stderr,"xtrabackup: Error: cannot mkdir %d: %s\n",my_errno,xtrabackup_target_dir);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	} else {
@@ -3534,7 +3534,7 @@ xtrabackup_backup_func(void)
 
 	if (err != DB_SUCCESS) {
 
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 		
 	log_group_read_checkpoint_info(max_cp_group, max_cp_field);
@@ -3556,7 +3556,7 @@ reread_log_header:
 
         if (err != DB_SUCCESS) {
 
-                exit(1);
+                exit(EXIT_FAILURE);
         }
 
         log_group_read_checkpoint_info(max_cp_group, max_cp_field);
@@ -3589,7 +3589,7 @@ reread_log_header:
                         fprintf(stderr,
 "xtrabackup: error: cannot open %s\n",
                                 dst_log_path);
-                        exit(1);
+                        exit(EXIT_FAILURE);
                 }
 
 #ifdef USE_POSIX_FADVISE
@@ -3622,7 +3622,7 @@ reread_log_header:
 	if (!success) {
 		if (dst_log != -1)
 			os_file_close(dst_log);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	/* start flag */
@@ -3641,7 +3641,7 @@ reread_log_header:
 
 	/* copy log file by current position */
 	if(xtrabackup_copy_logfile(checkpoint_lsn_start, FALSE))
-		exit(1);
+		exit(EXIT_FAILURE);
 
 
 	os_thread_create(log_copying_thread, NULL, &log_copying_thread_id);
@@ -3665,7 +3665,7 @@ reread_log_header:
 			fprintf(stderr,
 				"xtrabackup: Error: "
 				"datafiles_iter_new() failed.\n");
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 
 		/* Create data copying threads */
@@ -3822,7 +3822,7 @@ skip_last_cp:
 
 	if (!log_copying_succeed) {
 		fprintf(stderr, "xtrabackup: Error: log_copying_thread failed.\n");
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	if (!xtrabackup_stream)
@@ -4125,7 +4125,7 @@ xtrabackup_stats_func(void)
 	if (my_setwd(mysql_real_data_home,MYF(MY_WME)))
 	{
 		fprintf(stderr, "xtrabackup: cannot my_setwd %s\n", mysql_real_data_home);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 	fprintf(stderr, "xtrabackup: cd to %s\n", mysql_real_data_home);
 
@@ -4139,14 +4139,14 @@ xtrabackup_stats_func(void)
 
 	/* initialize components */
 	if(innodb_init_param())
-		exit(1);
+		exit(EXIT_FAILURE);
 
 	fprintf(stderr, "xtrabackup: Starting 'read-only' InnoDB instance to gather index statistics.\n"
 		"xtrabackup: Using %lld bytes for buffer pool (set by --use-memory parameter)\n",
 		xtrabackup_use_memory);
 
 	if(innodb_init())
-		exit(1);
+		exit(EXIT_FAILURE);
 
 	fprintf(stdout, "\n\n<INDEX STATISTICS>\n");
 
@@ -4284,6 +4284,8 @@ loop:
 			if (dict_table_get_first_index(table)) {
 #ifdef XTRADB_BASED
 				dict_update_statistics_low(table, TRUE, FALSE);
+#elif MYSQL_VERSION_ID >= 50508
+				dict_update_statistics(table, TRUE);
 #else
 				dict_update_statistics_low(table, TRUE);
 #endif
@@ -4366,7 +4368,7 @@ end:
 
 	/* shutdown InnoDB */
 	if(innodb_end())
-		exit(1);
+		exit(EXIT_FAILURE);
 }
 
 /* ================= prepare ================= */
@@ -5133,7 +5135,7 @@ xtrabackup_prepare_func(void)
 	if (my_setwd(xtrabackup_real_target_dir,MYF(MY_WME)))
 	{
 		fprintf(stderr, "xtrabackup: cannot my_setwd %s\n", xtrabackup_real_target_dir);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 	fprintf(stderr, "xtrabackup: cd to %s\n", xtrabackup_real_target_dir);
 
@@ -5162,7 +5164,7 @@ xtrabackup_prepare_func(void)
 		if (xtrabackup_incremental) {
 			fprintf(stderr,
 			"xtrabackup: error: applying incremental backup needs target prepared.\n");
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 skip_check:
 		if (xtrabackup_incremental
@@ -5170,7 +5172,7 @@ skip_check:
 			fprintf(stderr,
 			"xtrabackup: error: This incremental backup seems not to be proper for the target.\n"
 			"xtrabackup:  Check 'to_lsn' of the target and 'from_lsn' of the incremental.\n");
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -5544,7 +5546,7 @@ next_node:
 	os_io_init_simple();
 
 	if(xtrabackup_close_temp_log(TRUE))
-		exit(1);
+		exit(EXIT_FAILURE);
 
 	/* output to metadata file */
 	{
@@ -5595,7 +5597,7 @@ next_node:
 error:
 	xtrabackup_close_temp_log(FALSE);
 
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 /* ================= main =================== */
@@ -5656,7 +5658,7 @@ next_opt:
 		if (!xtrabackup_print_param)
 			usage();
 		printf("\nxtrabackup: Error: Please set parameter 'datadir'\n");
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 
 	if (xtrabackup_tables) {
@@ -5713,7 +5715,7 @@ next_opt:
 		fp = fopen(xtrabackup_tables_file,"r");
 		if (!fp) {
 			fprintf(stderr, "xtrabackup: cannot open %s\n", xtrabackup_tables_file);
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
 		for (;;) {
 			xtrabackup_tables_t*	table;
@@ -5792,7 +5794,7 @@ skip_tables_file_register:
 		if (error) {
 			fprintf(stderr, "xtrabackup: value '%s' may be wrong format for incremental option.\n",
 				xtrabackup_incremental);
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
 
 		/* allocate buffer for incremental backup (4096 pages) */
@@ -5809,7 +5811,7 @@ skip_tables_file_register:
 			fprintf(stderr,
 				"xtrabackup: error: failed to read metadata from %s\n",
 				filename);
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
 
 		incremental_lsn = metadata_to_lsn;
@@ -5829,7 +5831,7 @@ skip_tables_file_register:
 			fprintf(stderr,
 				"xtrabackup: error: failed to read metadata from %s\n",
 				filename);
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
 
 		incremental_lsn = metadata_from_lsn;
@@ -5857,7 +5859,7 @@ skip_tables_file_register:
 		bzero((G_PTR) &mysql_tmpdir_list, sizeof(mysql_tmpdir_list));
 
 		if (init_tmpdir(&mysql_tmpdir_list, opt_mysql_tmpdir))
-			exit(1);
+			exit(EXIT_FAILURE);
 
 		printf("# This MySQL options file was generated by XtraBackup.\n");
 		printf("[mysqld]\n");
@@ -5871,7 +5873,7 @@ skip_tables_file_register:
 			innobase_log_group_home_dir ? innobase_log_group_home_dir : mysql_data_home);
 		printf("innodb_log_files_in_group = %ld\n", innobase_log_files_in_group);
 		printf("innodb_log_file_size = %lld\n", innobase_log_file_size);
-		exit(0);
+		exit(EXIT_SUCCESS);
 	}
 
 	if (!xtrabackup_stream) {
@@ -5901,7 +5903,7 @@ skip_tables_file_register:
 		if (xtrabackup_prepare) num++;
 		if (num != 1) { /* !XOR (for now) */
 			usage();
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -5953,5 +5955,5 @@ skip_tables_file_register:
 		hash_table_free(tables_hash);
 	}
 
-	exit(0);
+	exit(EXIT_SUCCESS);
 }

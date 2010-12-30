@@ -98,6 +98,9 @@ my $option_scp_opt = '-Cp -c arcfour';
 
 my $option_parallel = '';
 
+my $option_safe_slave_backup = '';
+my $option_safe_slave_backup_timeout = 300;
+
 # name of the my.cnf configuration file
 #my $config_file = '';
 
@@ -469,6 +472,20 @@ Options:
                 server with TCP/IP.
                 Try 'mysql --help' for more details on this option.
 
+    --safe-slave-backup
+                Stop slave SQL thread and wait to start backup until
+                Slave_open_temp_tables in SHOW STATUS is zero.  If
+                there are no open temp tables, the backup will take place,
+                else the SQL thread will be started and stopped until there
+                are no open temp tables.  The backup will fail if
+                Slave_open_temp_tables does not become zero after
+                --safe-slave-backup-timeout seconds.  The slave SQL thread
+                will be restarted when the backup finishes.
+
+    --safe-slave-backup-timeout
+                 How many seconds --safe-slave-backup should wait for
+                 Slave_open_temp_tables to become zero.  (default 300)
+
     --slave-info
                 This option is useful when backing up a replication
                 slave server. It prints the binary log position and
@@ -569,12 +586,16 @@ sub backup {
         # connect to database
         mysql_open();
 
+        if ( $option_safe_slave_backup ) {
+          wait_for_safe_slave();
+        }
+
         # flush tables with read lock
         mysql_check();
         mysql_lockall() if !$option_no_lock;
 
     }
-    
+
     # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ and .opt files
     backup_files();
 
@@ -584,6 +605,11 @@ sub backup {
     if (!$option_incremental) {
         # release read locks on all tables
         mysql_unlockall() if !$option_no_lock;
+
+       if ( $option_safe_slave_backup ) {
+         print STDERR "$prefix: Starting slave SQL thread\n";
+         mysql_send('START SLAVE SQL_THREAD;');
+       }
 
         # disconnect from database
         mysql_close();
@@ -1764,7 +1790,11 @@ sub check_args {
                         'ibbackup=s' => \$option_ibbackup_binary,
                         'scpopt=s' => \$option_scp_opt,
                         'force-tar', => \$option_force_tar,
-                        'parallel=i' => \$option_parallel);
+                        'parallel=i' => \$option_parallel,
+                        'safe-slave-backup' => \$option_safe_slave_backup,
+                        'safe-slave-backup-timeout' => $option_safe_slave_backup_timeout,
+    );
+                        
     if (!$rcode) {
         # failed to read options
         print STDERR "$prefix Bad command line arguments\n";
@@ -2432,4 +2462,69 @@ if($var_version =~ m/5\.5\.\d/){
 mysql_close();
 return $ibbackup_binary;
 }
-          
+
+# Wait until it's safe to backup a slave.  Returns immediately if
+# the host isn't a slave.  Currently there's only one check:
+# Slave_open_temp_tables has to be zero.  Dies on timeout.
+sub wait_for_safe_slave {
+   my @lines;
+
+   my $host_is_slave = 0;
+   mysql_send 'SHOW SLAVE STATUS\G;';
+   file_to_array($mysql_stdout, \@lines);
+   foreach my $line ( @lines ) {
+      if ( $line =~ m/Read_Master_Log_Pos/ ) {
+         $host_is_slave = 1;
+         last;
+      }
+   }
+   if ( !$host_is_slave ) {
+      print STDERR "$prefix: Not checking slave open temp tables for --safe-slave-backup because host is not a slave\n";
+      return;
+   }
+
+   mysql_send 'STOP SLAVE SQL_THREAD;';
+
+   my $open_temp_tables = get_slave_open_temp_tables();
+   print STDERR "$prefix: Slave open temp tables: $open_temp_tables\n";
+
+   return if $open_temp_tables == 0;
+
+   my $sleep_time = 3;
+   my $n_attempts = int($option_safe_slave_backup_timeout / $sleep_time) || 1;
+   while ( $n_attempts-- ) {
+      print STDERR "$prefix: Starting slave SQL thread, waiting $sleep_time seconds, then checking Slave_open_temp_tables again ($n_attempts attempts remaining)...\n";
+      
+      mysql_send 'START SLAVE SQL_THREAD;';
+      sleep $sleep_time;
+      mysql_send 'STOP SLAVE SQL_THREAD;';
+
+      $open_temp_tables = get_slave_open_temp_tables();
+      print STDERR "$prefix: Slave open temp tables: $open_temp_tables\n";
+      if ( !$open_temp_tables ) {
+         print STDERR "$prefix: Slave is safe to backup\n";
+         return;
+      }
+   } 
+
+   Die "Slave_open_temp_tables did not become zero after waiting $option_safe_slave_backup_timeout seconds";
+}
+
+sub get_slave_open_temp_tables {
+   my @lines;
+   mysql_send 'SHOW STATUS LIKE "slave_open_temp_tables"\G;';
+   file_to_array($mysql_stdout, \@lines);
+   my $last_value;
+   for my $i ( 0..$#lines ) {
+      $last_value = $i + 1
+         if $lines[$i] =~ m/Variable_name: Slave_open_temp_tables/i;
+   }
+   Die "SHOW STATUS LIKE 'slave_open_temp_tables' did not return anything"
+      unless $last_value;
+
+   Die "Failed to get Slave_open_temp_tables from SHOW STATUS"
+      unless defined $lines[$last_value];
+
+   my ($n) = $lines[$last_value] =~ m/(\d+)/;
+   return $n;
+}
