@@ -8,8 +8,7 @@ mysql_socket="/tmp/xtrabackup.mysql.sock"
 
 function vlog
 {
-    #echo ""
-    echo "`date +"%F %T"`: `basename "$0"`: $1"
+    echo "`date +"%F %T"`: `basename "$0"`: $@"
 }
 
 function clean()
@@ -61,7 +60,7 @@ function init_mysql()
 			echo "Using MySQL 5.0"
 			version="5.0.91-linux-`uname -m`-glibc23"
 			cd $topdir
-			wget "$url/mysql-$version.tar.gz"
+			wget "$url/mysql-$version.tar.gz" >/dev/null 2>&1
 			tar zxf mysql-$version.tar.gz
 			MYSQL=$topdir/mysql-$version/bin/mysql
 			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
@@ -76,7 +75,7 @@ function init_mysql()
 			echo "Using MySQL 5.1"
 			version="5.1.49-linux-`uname -m`-glibc23"
 			cd $topdir
-			wget "$url/mysql-$version.tar.gz"
+			wget "$url/mysql-$version.tar.gz" >/dev/null 2>&1
 			tar zxf mysql-$version.tar.gz
 			MYSQL=$topdir/mysql-$version/bin/mysql
 			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
@@ -91,7 +90,7 @@ function init_mysql()
 			echo "Using MySQL 5.5"
 			version="5.5.6-rc-linux2.6-`uname -m`"
 			cd $topdir
-			wget "$url/mysql-$version.tar.gz"
+			wget "$url/mysql-$version.tar.gz" >/dev/null 2>&1
 			tar zxf mysql-$version.tar.gz
 			MYSQL=$topdir/mysql-$version/bin/mysql
 			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
@@ -106,7 +105,7 @@ function init_mysql()
 			echo "Using Percona Server"
 			version="5.1.51-rel11.5-132-Linux-`uname -m`"
 			cd $topdir
-			wget "$url/Percona-Server-$version.tar.gz"
+			wget "$url/Percona-Server-$version.tar.gz" >/dev/null 2>&1
 			tar zxf Percona-Server-$version.tar.gz
 			MYSQL=$topdir/Percona-Server-$version/bin/mysql
 			MYSQLADMIN=$topdir/Percona-Server-$version/bin/mysqladmin
@@ -190,6 +189,12 @@ function run_mysqld()
 
 }
 
+function run_cmd()
+{
+  vlog "===> $@"
+  "$@" || die "===> `basename $1` failed with exit code $?"
+}
+
 function stop_mysqld()
 {
     ${MYSQLADMIN} ${MYSQL_ARGS} shutdown
@@ -219,6 +224,11 @@ vlog "Loading $1 database data"
 ${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-data.sql
 }
 
+function drop_dbase()
+{
+  vlog "Dropping database $1"
+  run_cmd ${MYSQL} ${MYSQL_ARGS} -e "DROP DATABASE $1"
+}
 
 function init()
 {

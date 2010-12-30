@@ -12,6 +12,7 @@ function usage()
 	echo "-h          Print this help megssage"
 }
 XTRACE_OPTION=""
+export SKIPPED_EXIT_CODE=200
 export MYSQL_VERSION="system"
 while getopts "gh?m:t:" options; do
 	case $options in
@@ -33,12 +34,15 @@ fi
 
 for t in $tests
 do
-   echo -n "$t      "
+   printf "%-40s" $t
    bash $XTRACE_OPTION $t > results/`basename $t`.out 2>&1
-   #$t 
-   if [ $? -eq 0 ]
+   rc=$?
+   if [ $rc -eq 0 ]
    then
        echo "[passed]"
+   elif [ $rc -eq $SKIPPED_EXIT_CODE ]
+   then
+       echo "[skipped]"
    else
        echo "[failed]"
        result=1
