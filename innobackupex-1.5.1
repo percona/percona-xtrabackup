@@ -1140,23 +1140,23 @@ sub get_mysql_options {
 
     # this option has to be first
     if ($option_defaults_file) {
-        $options = "$options --defaults-file=\"$option_defaults_file\"";
+        $options = "$options --defaults-file='$option_defaults_file'";
     }
 
     if ($option_mysql_password) {
-        $options = "$options --password=$option_mysql_password";
+        $options = "$options --password='$option_mysql_password'";
     }
     if ($option_mysql_user) {
-        $options = "$options --user=$option_mysql_user";
+        $options = "$options --user='$option_mysql_user'";
     }
     if ($option_mysql_host) {
-        $options = "$options --host=$option_mysql_host";
+        $options = "$options --host='$option_mysql_host'";
     }
     if ($option_mysql_port) {
-        $options = "$options --port=$option_mysql_port";
+        $options = "$options --port='$option_mysql_port'";
     }
     if ($option_mysql_socket) {
-        $options = "$options --socket=$option_mysql_socket";
+        $options = "$options --socket='$option_mysql_socket'";
     }
     $options = "$options --unbuffered --";
     return $options;
