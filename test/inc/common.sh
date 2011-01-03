@@ -197,8 +197,8 @@ function run_cmd()
 
 function stop_mysqld()
 {
-    ${MYSQLADMIN} ${MYSQL_ARGS} shutdown
-
+    ${MYSQLADMIN} ${MYSQL_ARGS} shutdown 
+    vlog "Database server has been stopped"
 }
 
 function load_sakila()
