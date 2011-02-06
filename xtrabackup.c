@@ -2310,7 +2310,6 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	LSN64		flush_lsn;
 	IB_INT64	file_size;
 	IB_INT64	offset;
-	ibool		src_exist = TRUE;
 	ulint		page_in_buffer;
 	ulint		incremental_buffers = 0;
 	ulint		page_size;
@@ -2423,14 +2422,21 @@ skip_filter:
 	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
 #else
 	zip_size = fil_space_get_zip_size(node->space->id);
-	if (zip_size) {
+	if (zip_size == ULINT_UNDEFINED) {
+		fprintf(stderr, "[%02u] xtrabackup: Warning: "
+			"Failed to determine page size for %s.\n"
+			"[%02u] xtrabackup: Warning: We assume the table was "
+			"dropped during xtrabackup execution and ignore the "
+			"file.\n", thread_n, node->name, thread_n);
+		goto skip;
+	} else if (zip_size) {
 		page_size = zip_size;
 		page_size_shift = get_page_size_shift(page_size);
 		fprintf(stderr, "[%02u] %s is compressed with page size = "
 			"%lu bytes\n", thread_n, node->name, page_size);
 		if (page_size_shift < 10 || page_size_shift > 14) {
 			fprintf(stderr, "[%02u] xtrabackup: Error: Invalid "
-				"page size.\n");
+				"page size.\n", thread_n);
 			ut_error;
 		}
 	} else {
@@ -2485,11 +2491,12 @@ skip_filter:
 			os_file_get_last_error(TRUE);
 
 			fprintf(stderr,
-				"[%02u] xtrabackup: error: cannot open %s\n"
-				"[%02u] xtrabackup: Have you deleted .ibd"
-				"files under a running mysqld server?\n",
+				"[%02u] xtrabackup: Warning: cannot open %s\n"
+				"[%02u] xtrabackup: Warning: We assume the "
+				"table was dropped during xtrabackup execution "
+				"and ignore the file.\n",
 				thread_n, node->name, thread_n);
-			src_exist = FALSE;
+			goto skip;
 		}
 
 		if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
@@ -2524,9 +2531,6 @@ skip_filter:
 #ifdef USE_POSIX_FADVISE
 	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
-
-	if(!src_exist)
-		goto error;
 
 	/* copy : TODO: tune later */
 	printf("[%02u] Copying %s \n     to %s\n", thread_n,
@@ -2735,6 +2739,17 @@ error:
 	fprintf(stderr, "[%02u] xtrabackup: Error: "
 		"xtrabackup_copy_datafile() failed.\n", thread_n);
 	return(TRUE); /*ERROR*/
+
+skip:
+	if (src_file != -1 && !node->open)
+		os_file_close(src_file);
+	if (dst_file != -1)
+		os_file_close(dst_file);
+	if (buf2)
+		ut_free(buf2);
+	fprintf(stderr, "[%02u] xtrabackup: Warning: skipping file %s.\n",
+		thread_n, node->name);
+	return(FALSE);
 }
 
 my_bool

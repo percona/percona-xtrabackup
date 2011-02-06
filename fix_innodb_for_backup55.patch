@@ -157,7 +157,41 @@
  
  
  /********************************************************************//**
-@@ -758,8 +760,8 @@
+@@ -308,7 +310,7 @@
+ off the LRU list if it is in the LRU list. The caller must hold the fil_sys
+ mutex. */
+ static
+-void
++ulint
+ fil_node_prepare_for_io(
+ /*====================*/
+ 	fil_node_t*	node,	/*!< in: file node */
+@@ -633,7 +635,7 @@
+ Opens a the file of a node of a tablespace. The caller must own the fil_system
+ mutex. */
+ static
+-void
++ulint
+ fil_node_open_file(
+ /*===============*/
+ 	fil_node_t*	node,	/*!< in: file node */
+@@ -668,7 +670,14 @@
+ 			OS_FILE_READ_ONLY, &success);
+ 		if (!success) {
+ 			/* The following call prints an error message */
+-			os_file_get_last_error(TRUE);
++			if (os_file_get_last_error(TRUE) == OS_FILE_NOT_FOUND)
++			{
++				ut_print_timestamp(stderr);
++				fprintf(stderr,
++					" InnoDB: Warning: cannot open %s\n",
++					node->name);
++				return(OS_FILE_NOT_FOUND);
++			}
+ 
+ 			ut_print_timestamp(stderr);
+ 
+@@ -758,8 +767,8 @@
  		}
  
  		if (size_bytes >= 1024 * 1024) {
@@ -168,7 +202,44 @@
  		}
  
  		if (!(flags & DICT_TF_ZSSIZE_MASK)) {
-@@ -2152,7 +2154,7 @@
+@@ -810,6 +819,8 @@
+ 		/* Put the node to the LRU list */
+ 		UT_LIST_ADD_FIRST(LRU, system->LRU, node);
+ 	}
++
++	return(0);
+ }
+ 
+ /**********************************************************************//**
+@@ -1435,7 +1446,12 @@
+ 		the file yet; the following calls will open it and update the
+ 		size fields */
+ 
+-		fil_node_prepare_for_io(node, fil_system, space);
++		if (fil_node_prepare_for_io(node, fil_system, space))
++		{
++			mutex_exit(&fil_system->mutex);
++
++			return(0);
++		}
+ 		fil_node_complete_io(node, fil_system, OS_FILE_READ);
+ 	}
+ 
+@@ -1487,7 +1503,12 @@
+ 		the file yet; the following calls will open it and update the
+ 		size fields */
+ 
+-		fil_node_prepare_for_io(node, fil_system, space);
++		if (fil_node_prepare_for_io(node, fil_system, space))
++		{
++			mutex_exit(&fil_system->mutex);
++
++			return(ULINT_UNDEFINED);
++		}
+ 		fil_node_complete_io(node, fil_system, OS_FILE_READ);
+ 	}
+ 
+@@ -2152,7 +2173,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    space_id, name, FALSE, flags,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -177,7 +248,7 @@
  			}
  		}
  
-@@ -2315,7 +2317,7 @@
+@@ -2315,7 +2336,7 @@
  	}
  
  	if (success) {
@@ -186,7 +257,7 @@
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2616,7 +2618,7 @@
+@@ -2616,7 +2637,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
@@ -195,7 +266,7 @@
  	if (success) {
  		mtr_t		mtr;
  
-@@ -2807,7 +2809,7 @@
+@@ -2807,7 +2828,7 @@
  
  	fil_node_create(path, size, space_id, FALSE);
  
@@ -204,7 +275,7 @@
  	{
  		mtr_t		mtr;
  
-@@ -3062,19 +3064,97 @@
+@@ -3062,19 +3083,97 @@
  		      "InnoDB: open the tablespace file ", stderr);
  		ut_print_filename(stderr, filepath);
  		fputs("!\n"
@@ -312,7 +383,7 @@
  		return(FALSE);
  	}
  
-@@ -3306,7 +3386,7 @@
+@@ -3306,7 +3405,7 @@
  	cannot be ok. */
  
  	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
@@ -321,7 +392,7 @@
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3447,7 +3527,7 @@
+@@ -3447,7 +3546,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -330,7 +401,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -3746,15 +3826,97 @@
+@@ -3746,15 +3845,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -436,7 +507,40 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4363,6 +4525,16 @@
+@@ -4143,7 +4324,7 @@
+ off the LRU list if it is in the LRU list. The caller must hold the fil_sys
+ mutex. */
+ static
+-void
++ulint
+ fil_node_prepare_for_io(
+ /*====================*/
+ 	fil_node_t*	node,	/*!< in: file node */
+@@ -4163,10 +4344,13 @@
+ 	}
+ 
+ 	if (node->open == FALSE) {
++		ulint	err;
+ 		/* File is closed: open it */
+ 		ut_a(node->n_pending == 0);
+ 
+-		fil_node_open_file(node, system, space);
++		err = fil_node_open_file(node, system, space);
++		if (err)
++			return(err);
+ 	}
+ 
+ 	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
+@@ -4179,6 +4363,8 @@
+ 	}
+ 
+ 	node->n_pending++;
++
++	return(0);
+ }
+ 
+ /********************************************************************//**
+@@ -4363,6 +4549,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
