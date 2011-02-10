@@ -6,7 +6,7 @@ backup_dir=/tmp/xb_export_backup
 rm -rf $backup_dir
 mkdir $backup_dir
 # Starting database server
-run_mysqld --innodb_file_per_table
+run_mysqld --innodb_file_per_table --innodb_file_format=Barracuda
 
 # Loading table schema
 load_dbase_schema incremental_sample
@@ -17,37 +17,42 @@ numrow=100
 count=0
 while [ "$numrow" -gt "$count" ]
 do
-	run_cmd ${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
+	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
 	let "count=count+1"
 done
 vlog "Initial rows added"
 
-checksum_1=`${MYSQL} ${MYSQL_ARGS} -e "checksum table test" incremental_sample | awk '{print $2}'`
+checksum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test" incremental_sample | awk '{print $2}'`
+rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
+vlog "rowsnum_1 is $rowsnum_1"
 vlog "checksum_1 is $checksum_1"
 
-# Creating a directory for tables
-mkdir -p $topdir/../backup
-
 # Performing table backup
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --backup --tables="^incremental_sample[.]test" --target-dir=$backup_dir
+#run_cmd xtrabackup --datadir=$mysql_datadir --backup --tables="^incremental_sample[.]test" --target-dir=$backup_dir
+run_cmd xtrabackup --datadir=$mysql_datadir --backup --target-dir=$backup_dir
 vlog "Table was backed up"
 
 vlog "Re-initializing database server"
 stop_mysqld
 clean
 init
-run_mysqld --innodb_file_per_table --innodb_expand_import=1
+run_mysqld --innodb_file_per_table --innodb_expand_import=1 --innodb_file_format=Barracuda
 load_dbase_schema incremental_sample
 vlog "Database was re-initialized"
 
-run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test discard tablespace" incremental_sample
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --prepare --export --target-dir=$backup_dir
-cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
+run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test discard tablespace;" incremental_sample
+#run_cmd xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$backup_dir
+run_cmd xtrabackup --datadir=$mysql_datadir --prepare --export --target-dir=$backup_dir
+run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
+run_cmd ls -lah $mysql_datadir/incremental_sample/
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test import tablespace" incremental_sample
 vlog "Table has been imported"
 
 vlog "Cheking checksums"
 checksum_2=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+vlog "checksum_2 is $checksum_2"
+rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
+vlog "rowsnum_1 is $rowsnum_1"
 
 if [ $checksum_1 -ne $checksum_2  ]
 then 
@@ -80,6 +85,7 @@ run_mysqld --innodb_file_per_table
 
 vlog "Cheking checksums"
 checksum_3=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+vlog "checksum_3 is $checksum_3"
 
 if [ $checksum_3 -ne $checksum_2  ]
 then
