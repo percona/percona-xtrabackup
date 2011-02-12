@@ -892,12 +892,16 @@ sub apply_log {
         Die "\n$prefix ibbackup failed";
     }
 
+    # We should not create ib_logfile files if we prepare for following incremental applies
+    # Also we do not prepare ib_logfile if we applied incremental changes
+    if (!( ($option_redo_only) or ($option_incremental_dir))) { 
     $now = current_time();
     print STDERR "\n$now  $prefix Restarting xtrabackup with command: $cmdline\nfor creating ib_logfile*\n\n";
     $rcode = system("$cmdline");
     if ($rcode) {
         # failure
         Die "\n$prefix xtrabackup (2nd execution) failed";
+    }
     }
 }
 
