@@ -88,6 +88,7 @@ my $option_ibbackup_binary = 'autodetect';
 my $option_defaults_file = '';
 my $option_incremental = '';
 my $option_incremental_basedir = '';
+my $option_incremental_dir = '';
 my $option_remote_host = '';
 my $option_stream = '';
 my $option_tmpdir = '';
@@ -873,6 +874,10 @@ sub apply_log {
     }
     if ($option_use_memory) {
         $options = $options . " --use-memory=$option_use_memory";
+    }
+
+    if ($option_incremental_dir) {
+        $options = $options . " --incremental-dir=$option_incremental_dir";
     }
 
     # run ibbackup as a child process
@@ -1783,6 +1788,7 @@ sub check_args {
                         'defaults-file=s' => \$option_defaults_file,
                         'incremental' => \$option_incremental,
                         'incremental-basedir=s' => \$option_incremental_basedir,
+                        'incremental-dir=s' => \$option_incremental_dir,
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
                         'tmpdir=s' => \$option_tmpdir,
