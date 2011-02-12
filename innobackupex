@@ -2033,6 +2033,14 @@ sub backup_files {
             # mysql connection from timing out
             mysql_keep_alive();
             next unless check_if_required($database, $file);
+
+	    if($option_include) {
+	      if (!("$database.$file" =~ /$option_include/)) {
+	        print STDERR "$database.$file is skipped because it does not match $option_include.\n";
+	        next;
+	      }
+	    }
+
                
             if ($print_each_file) {
                 print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
