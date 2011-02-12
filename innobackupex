@@ -89,6 +89,7 @@ my $option_defaults_file = '';
 my $option_incremental = '';
 my $option_incremental_basedir = '';
 my $option_incremental_dir = '';
+my $option_incremental_lsn = '';
 my $option_remote_host = '';
 my $option_stream = '';
 my $option_tmpdir = '';
@@ -976,7 +977,11 @@ sub start_ibbackup {
         $options = $options . " --tables='$option_include'";
     }
     if ($option_incremental) {
-        $options = $options . " --incremental-basedir='$incremental_basedir'";
+        if($option_incremental_lsn) {
+          $options = $options . " --incremental-lsn='$option_incremental_lsn'";
+	} else {
+          $options = $options . " --incremental-basedir='$incremental_basedir'";
+	}
     }
     if ($option_tables_file) {
         $options = $options . " --tables_file='$option_tables_file'";
@@ -1788,6 +1793,7 @@ sub check_args {
                         'defaults-file=s' => \$option_defaults_file,
                         'incremental' => \$option_incremental,
                         'incremental-basedir=s' => \$option_incremental_basedir,
+                        'incremental-lsn=s' => \$option_incremental_lsn,
                         'incremental-dir=s' => \$option_incremental_dir,
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
