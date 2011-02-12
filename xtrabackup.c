@@ -3178,8 +3178,7 @@ xtrabackup_create_output_dir(
 			 ptr1);
 		*ptr2 = SRV_PATH_SEPARATOR;
 
-		if (!my_stat(path, &stat_info, MYF(0)) &&
-		    my_mkdir(path,0777,MYF(0)) < 0) {
+		if (my_mkdir(path, 0777, MYF(0)) < 0 && my_errno != EEXIST) {
 			fprintf(stderr,
 				"xtrabackup: Error: cannot mkdir %d: %s\n",
 				my_errno, path);
