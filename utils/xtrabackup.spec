@@ -47,11 +47,11 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 
 
 %build
-export CC=${CC-"gcc"} 
-export CXX=$CC 
+export CC=${CC-"gcc"}
+export CXX=$CC
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.1.52.tar.gz .
+export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\" -fno-exceptions" 
+cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.1.53.tar.gz .
 ./utils/build.sh 5.1
 ./utils/build.sh 5.5
 ./utils/build.sh xtradb
@@ -63,8 +63,8 @@ install -d %{buildroot}%{_datadir}
 # install binaries and configs
 
 install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/{innobackupex-1.5.1,xtrabackup} %{buildroot}%{_bindir}
-install -m 755 mysql-5.1.52/storage/innobase/xtrabackup/xtrabackup_51 %{buildroot}%{_bindir}
-install -m 755 mysql-5.5.7-rc/storage/innobase/xtrabackup/xtrabackup_55 %{buildroot}%{_bindir}
+install -m 755 mysql-5.1.53/storage/innobase/xtrabackup/xtrabackup_51 %{buildroot}%{_bindir}
+install -m 755 mysql-5.5.8/storage/innobase/xtrabackup/xtrabackup_55 %{buildroot}%{_bindir}
 install -m 755 Percona-Server/libtar-1.2.11/libtar/tar4ibd %{buildroot}%{_bindir}
 cp -R test %{buildroot}%{_datadir}/xtrabackup-test
 
