@@ -1016,6 +1016,11 @@ sub start_ibbackup {
                     get_option(\%config, 'mysqld', 'innodb_data_home_dir');
                 my $orig_innodb_data_file_path =
                     get_option(\%config, 'mysqld', 'innodb_data_file_path');
+                my $innodb_flush_method = 
+                    get_option(\%config, 'mysqld', 'innodb_flush_method');
+                my $innodb_use_odirect;
+                $innodb_use_odirect = 1 if $innodb_flush_method =~ m/O_DIRECT/i;
+
                 my $subdir;
                 my @list;
 
@@ -1045,12 +1050,18 @@ sub start_ibbackup {
                             and Die "Failed to scp file '$path': $!";
                     } elsif($option_stream eq 'tar') {
                         my $ret = 0;
+                        my $tarcmd;
                         print STDERR "$prefix Backing up as tar stream '$path'\n";
                         if (!$option_tar4ibd) {
-                            $ret = system("cd $orig_ibdata_dir; tar chf - -b 32 $path") >> 8;
+                            $tarcmd = "tar chf - -b 32";
                         } else {
-                            $ret = system("cd $orig_ibdata_dir; tar4ibd -c $path") >> 8;
+                            $tarcmd = "tar4ibd";
+                            if ($innodb_use_odirect) {
+                                $tarcmd = "$tarcmd -d";
+                            }
+                            $tarcmd = "$tarcmd -c";
                         }
+                        $ret = system("cd $orig_ibdata_dir; $tarcmd $path") >> 8;
                         if ($ret == 1) {
                             print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                         } elsif ($ret != 0) {
@@ -2291,7 +2302,6 @@ sub get_option {
 
     return ${$group_hash_ref}{$option_name};
 }
-
 
 # check_if_required subroutine returns 1 if the specified database and
 # table needs to be backed up.

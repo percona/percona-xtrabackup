@@ -5887,6 +5887,9 @@ skip_tables_file_register:
 			innobase_log_group_home_dir ? innobase_log_group_home_dir : mysql_data_home);
 		printf("innodb_log_files_in_group = %ld\n", innobase_log_files_in_group);
 		printf("innodb_log_file_size = %lld\n", innobase_log_file_size);
+		printf("innodb_flush_method = %s\n",
+		       (innobase_unix_file_flush_method != NULL) ?
+		       innobase_unix_file_flush_method : "");
 		exit(EXIT_SUCCESS);
 	}
 

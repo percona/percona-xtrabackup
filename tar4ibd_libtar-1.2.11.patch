@@ -1,19 +1,17 @@
-diff -ru libtar-1.2.11_orig/lib/Makefile.in libtar-1.2.11/lib/Makefile.in
---- libtar-1.2.11_orig/lib/Makefile.in	2002-12-16 03:02:30.000000000 +0900
-+++ libtar-1.2.11/lib/Makefile.in	2009-08-21 18:10:44.000000000 +0900
+--- a/lib/Makefile.in	2011-02-21 08:15:39.000000000 -0800
++++ b/lib/Makefile.in	2011-02-23 06:43:36.000000000 -0800
 @@ -29,7 +29,7 @@
  		  -I${top_srcdir}/compat \
  		  -I../listhash \
  		  @CPPFLAGS@
 -CFLAGS		= @CFLAGS@
-+CFLAGS		= @CFLAGS@ -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
++CFLAGS		= @CFLAGS@ -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
  LDFLAGS		= @LDFLAGS@
  LIBS		= @LIBS@
  LIBOBJS		= @LIBOBJS@
-diff -ru libtar-1.2.11_orig/lib/append.c libtar-1.2.11/lib/append.c
---- libtar-1.2.11_orig/lib/append.c	2003-01-07 10:40:59.000000000 +0900
-+++ libtar-1.2.11/lib/append.c	2009-07-09 17:49:26.000000000 +0900
-@@ -27,6 +27,215 @@
+--- a/lib/append.c	2011-02-21 08:15:39.000000000 -0800
++++ b/lib/append.c	2011-02-23 21:31:20.000000000 -0800
+@@ -27,6 +27,218 @@
  # include <unistd.h>
  #endif
  
@@ -33,6 +31,9 @@ diff -ru libtar-1.2.11_orig/lib/append.c libtar-1.2.11/lib/append.c
 +#define FIL_PAGE_SPACE_OR_CHKSUM 0
 +//#define UNIV_PAGE_SIZE          (2 * 8192)
 +#define BUF_NO_CHECKSUM_MAGIC 0xDEADBEEFUL
++
++/* defined in libtar.c. if 1, O_DIRECT will be used for input files */
++extern int use_direct;
 +
 +/* command line argument to do page checks (that's it) */
 +/* another argument to specify page ranges... seek to right spot and go from there */
@@ -229,12 +230,13 @@ diff -ru libtar-1.2.11_orig/lib/append.c libtar-1.2.11/lib/append.c
  
  struct tar_dev
  {
-@@ -210,10 +419,11 @@
+@@ -210,11 +422,14 @@
  int
  tar_append_regfile(TAR *t, char *realname)
  {
 -	char block[T_BLOCKSIZE];
-+	unsigned char block[T_BLOCKSIZE * 32]; /* 16KB is MAX */
++	unsigned char buf[T_BLOCKSIZE * 64]; /* 16KB MAX + alignment */
++	unsigned char *block;
  	int filefd;
 -	int i, j;
 -	size_t size;
@@ -242,15 +244,22 @@ diff -ru libtar-1.2.11_orig/lib/append.c libtar-1.2.11/lib/append.c
 +	size_t i, size;
 +	int page_size = 4 * 1024; /* check 4K, 8K and 16K */
  
++	block = (unsigned char *)(((unsigned long) buf + 16384 - 1) & ~(16384 - 1));
  	filefd = open(realname, O_RDONLY);
  	if (filefd == -1)
-@@ -224,28 +434,61 @@
+ 	{
+@@ -224,28 +439,66 @@
  		return -1;
  	}
  
 +#ifdef USE_POSIX_FADVISE
 +	posix_fadvise(filefd, 0, 0, POSIX_FADV_SEQUENTIAL);
 +	posix_fadvise(filefd, 0, 0, POSIX_FADV_DONTNEED);
++#endif
++#if defined(O_DIRECT)
++	/* Don't check for errors, continue even if it fails */
++	if (use_direct)
++		fcntl(filefd, F_SETFL, O_DIRECT);
 +#endif
 +
 +	n_retry = 0;
@@ -302,7 +311,7 @@ diff -ru libtar-1.2.11_orig/lib/append.c libtar-1.2.11/lib/append.c
  	if (i > 0)
  	{
 -		j = read(filefd, &block, i);
-+		j = read(filefd, &block[0], i);
++		j = read(filefd, &block[0], page_size);
  		if (j == -1)
  			return -1;
 -		memset(&(block[i]), 0, T_BLOCKSIZE - i);
@@ -315,9 +324,8 @@ diff -ru libtar-1.2.11_orig/lib/append.c libtar-1.2.11/lib/append.c
  	}
  
  	close(filefd);
-diff -ru libtar-1.2.11_orig/lib/extract.c libtar-1.2.11/lib/extract.c
---- libtar-1.2.11_orig/lib/extract.c	2003-03-03 08:58:07.000000000 +0900
-+++ libtar-1.2.11/lib/extract.c	2009-07-09 17:49:26.000000000 +0900
+--- a/lib/extract.c	2011-02-21 08:15:39.000000000 -0800
++++ b/lib/extract.c	2011-02-21 08:17:37.000000000 -0800
 @@ -158,11 +158,11 @@
  tar_extract_regfile(TAR *t, char *realname)
  {
@@ -332,9 +340,8 @@ diff -ru libtar-1.2.11_orig/lib/extract.c libtar-1.2.11/lib/extract.c
  	char buf[T_BLOCKSIZE];
  	char *filename;
  
-diff -ru libtar-1.2.11_orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
---- libtar-1.2.11_orig/lib/libtar.h	2003-01-07 10:40:59.000000000 +0900
-+++ libtar-1.2.11/lib/libtar.h	2010-02-03 17:03:22.000000000 +0900
+--- a/lib/libtar.h	2011-02-21 08:15:39.000000000 -0800
++++ b/lib/libtar.h	2011-02-21 08:17:37.000000000 -0800
 @@ -180,7 +180,7 @@
  
  /* decode tar header info */
@@ -374,9 +381,8 @@ diff -ru libtar-1.2.11_orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
  
  
  /***** wrapper.c **********************************************************/
-diff -ru libtar-1.2.11_orig/lib/util.c libtar-1.2.11/lib/util.c
---- libtar-1.2.11_orig/lib/util.c	2003-01-07 10:41:00.000000000 +0900
-+++ libtar-1.2.11/lib/util.c	2009-07-09 17:56:31.000000000 +0900
+--- a/lib/util.c	2011-02-21 08:15:39.000000000 -0800
++++ b/lib/util.c	2011-02-21 08:17:37.000000000 -0800
 @@ -138,6 +138,14 @@
  	return i;
  }
@@ -439,15 +445,14 @@ diff -ru libtar-1.2.11_orig/lib/util.c libtar-1.2.11/lib/util.c
 +	}
 +	return i;
 +}
-diff -ru libtar-1.2.11_orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
---- libtar-1.2.11_orig/libtar/Makefile.in	2002-12-16 03:02:30.000000000 +0900
-+++ libtar-1.2.11/libtar/Makefile.in	2009-08-21 18:14:52.000000000 +0900
+--- a/libtar/Makefile.in	2011-02-21 08:15:39.000000000 -0800
++++ b/libtar/Makefile.in	2011-02-23 06:44:41.000000000 -0800
 @@ -29,7 +29,7 @@
  		  -I${top_srcdir}/lib \
  		  -I${top_srcdir}/compat \
  		  @CPPFLAGS@
 -CFLAGS		= @CFLAGS@
-+CFLAGS		= @CFLAGS@ -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
++CFLAGS		= @CFLAGS@ -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
  LDFLAGS		= @LDFLAGS@
  LIBS		= @LIBS@
  LIBOBJS		= @LIBOBJS@
@@ -477,10 +482,25 @@ diff -ru libtar-1.2.11_orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
 -	${INSTALL_PROGRAM} libtar ${DESTDIR}${bindir}
 +	${INSTALL_PROGRAM} tar4ibd ${DESTDIR}${bindir}
  
-diff -ru libtar-1.2.11_orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
---- libtar-1.2.11_orig/libtar/libtar.c	2003-01-07 10:41:00.000000000 +0900
-+++ libtar-1.2.11/libtar/libtar.c	2009-07-09 17:49:26.000000000 +0900
-@@ -109,7 +109,7 @@
+--- a/libtar/libtar.c	2011-02-21 08:15:39.000000000 -0800
++++ b/libtar/libtar.c	2011-02-23 06:56:56.000000000 -0800
+@@ -14,6 +14,7 @@
+ #include <libtar.h>
+ 
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <fcntl.h>
+ #include <errno.h>
+ #include <sys/param.h>
+@@ -40,6 +41,7 @@
+ char *progname;
+ int verbose = 0;
+ int use_gnu = 0;
++int use_direct = 0;
+ 
+ #ifdef DEBUG
+ void
+@@ -109,7 +111,7 @@
  	char buf[MAXPATHLEN];
  	libtar_listptr_t lp;
  
@@ -489,7 +509,7 @@ diff -ru libtar-1.2.11_orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -164,7 +164,7 @@
+@@ -164,7 +166,7 @@
  	TAR *t;
  	int i;
  
@@ -498,7 +518,7 @@ diff -ru libtar-1.2.11_orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -225,7 +225,7 @@
+@@ -225,7 +227,7 @@
  #ifdef DEBUG
  	puts("opening tarfile...");
  #endif
@@ -507,7 +527,7 @@ diff -ru libtar-1.2.11_orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -264,9 +264,9 @@
+@@ -264,9 +266,9 @@
  void
  usage()
  {
@@ -515,11 +535,34 @@ diff -ru libtar-1.2.11_orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
 +	printf("Usage: %s [-C rootdir] [-g] [-z] -x|-t < filename.tar\n",
  	       progname);
 -	printf("       %s [-C rootdir] [-g] [-z] -c filename.tar ...\n",
-+	printf("       %s [-C rootdir] [-g] [-z] -c ... > filename.tar\n",
++	printf("       %s [-C rootdir] [-g] [-z] [-d] -c ... > filename.tar\n",
  	       progname);
  	exit(-1);
  }
-@@ -327,7 +327,7 @@
+@@ -287,7 +289,7 @@
+ 
+ 	progname = basename(argv[0]);
+ 
+-	while ((c = getopt(argc, argv, "cC:gtvVxz")) != -1)
++	while ((c = getopt(argc, argv, "cC:gtvVxzd")) != -1)
+ 		switch (c)
+ 		{
+ 		case 'V':
+@@ -323,11 +325,21 @@
+ 			use_zlib = 1;
+ 			break;
+ #endif /* HAVE_LIBZ */
++		case 'd':
++#if !defined(O_DIRECT)
++			fprintf(stderr, "tar4ibd: O_DIRECT is not available.\n");
++			exit(-1);
++#else
++                        fprintf(stderr, "tar4ibd: using O_DIRECT for the input file.\n");
++			use_direct = 1;
++			break;
++#endif
++			
+ 		default:
  			usage();
  		}
  
@@ -528,7 +571,7 @@ diff -ru libtar-1.2.11_orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  	{
  #ifdef DEBUG
  		printf("argc - optind == %d\tmode == %d\n", argc - optind,
-@@ -343,15 +343,14 @@
+@@ -343,15 +355,14 @@
  	switch (mode)
  	{
  	case MODE_EXTRACT:
