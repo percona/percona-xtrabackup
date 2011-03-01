@@ -10,16 +10,18 @@ function usage()
 	echo "-g          Output debug information to results/*.out"
 	echo "-t          Run only a single named test"
 	echo "-h          Print this help megssage"
+	echo "-s	  Select a test suite to run. Possible values: experimental, t. Default is t"
 }
 XTRACE_OPTION=""
 export SKIPPED_EXIT_CODE=200
 export MYSQL_VERSION="system"
-while getopts "gh?m:t:" options; do
+while getopts "gh?m:t:s:" options; do
 	case $options in
 		m ) export MYSQL_VERSION="$OPTARG";;
 		t ) tname="$OPTARG";;
 		g ) XTRACE_OPTION="-x";;
 		h ) usage; exit;;
+		s ) tname="$OPTARG/*.sh";;
 		\? ) usage; exit -1;;
 		* ) usage; exit -1;;
 	esac
