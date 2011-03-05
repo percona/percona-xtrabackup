@@ -6,6 +6,8 @@ mysql_datadir="$topdir/mysql"
 mysql_port="3306"
 mysql_socket="/tmp/xtrabackup.mysql.sock"
 
+OUTFILE=results/`basename $0`_innobackupex.out
+
 function vlog
 {
     echo "`date +"%F %T"`: `basename "$0"`: $@"
@@ -55,6 +57,8 @@ function init_mysql()
 			MYSQLD=mysqld
 			MYSQL_BASEDIR="/usr"
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			XB_BIN=xtrabackup
 			;;
 		5.0)
 			echo "Using MySQL 5.0"
@@ -69,6 +73,8 @@ function init_mysql()
 			MYSQL_BASEDIR=$topdir/mysql-$version
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			XB_BIN=xtrabackup_51
 			cd -
 			;;
 		5.1)
@@ -84,6 +90,8 @@ function init_mysql()
 			MYSQL_BASEDIR=$topdir/mysql-$version
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			XB_BIN=xtrabackup
 			cd -
 			;;
 		5.5)
@@ -99,6 +107,8 @@ function init_mysql()
 			MYSQL_BASEDIR=$topdir/mysql-$version
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			XB_BIN=xtrabackup_55
 			cd -
 			;;
 		percona)
@@ -117,6 +127,8 @@ function init_mysql()
 			set +u
 			export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$topdir/Percona-Server-$version/lib/mysql
 			set -u
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			XB_BIN=xtrabackup
 
 			cd -
 			;;
@@ -236,6 +248,9 @@ initdir
 init_mysql
 init_mysql_dir
 set_mysl_port
+echo "
+[mysqld]
+datadir=$mysql_datadir" > $topdir/my.cnf
 }
 
 function race_create_drop()
