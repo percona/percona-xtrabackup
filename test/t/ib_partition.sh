@@ -1,4 +1,4 @@
-nc/common.sh
+. inc/common.sh
 
 OUTFILE=results/ib_partition_innobackupex.out
 
