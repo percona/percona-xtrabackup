@@ -4,11 +4,20 @@ set -eu
 topdir="`pwd`/var"
 mysql_datadir="$topdir/mysql"
 mysql_port="3306"
-mysql_socket="/tmp/xtrabackup.mysql.sock"
+mysql_socket=${mysql_socket:-"/tmp/xtrabackup.mysql.sock"}
 
 function vlog
 {
     echo "`date +"%F %T"`: `basename "$0"`: $@"
+}
+
+function clean_datadir()
+{
+    vlog "Removing MySQL data directory: $mysql_datadir"
+    rm -rf "$mysql_datadir"
+    vlog "Creating MySQL data directory: $mysql_datadir"
+    mkdir -p "$mysql_datadir"
+    init_mysql_dir
 }
 
 function clean()

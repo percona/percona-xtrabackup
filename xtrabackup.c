@@ -661,6 +661,7 @@ long innobase_mirrored_log_groups = 1;
 long innobase_open_files = 300L;
 
 long innobase_page_size = (1 << 14); /* 16KB */
+static ulong innobase_log_block_size = 512;
 my_bool innobase_fast_checksum = FALSE;
 my_bool	innobase_extra_undoslots = FALSE;
 char*	innobase_doublewrite_file = NULL;
@@ -841,6 +842,7 @@ enum options_xtrabackup
 #endif
 #ifdef XTRADB_BASED
   OPT_INNODB_PAGE_SIZE,
+  OPT_INNODB_LOG_BLOCK_SIZE,
   OPT_INNODB_FAST_CHECKSUM,
   OPT_INNODB_EXTRA_UNDOSLOTS,
   OPT_INNODB_DOUBLEWRITE_FILE,
@@ -1095,6 +1097,11 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "The universal page size of the database.",
    (G_PTR*) &innobase_page_size, (G_PTR*) &innobase_page_size, 0,
    GET_LONG, REQUIRED_ARG, (1 << 14), (1 << 12), (1 << UNIV_PAGE_SIZE_SHIFT_MAX), 0, 1L, 0},
+  {"innodb_log_block_size", OPT_INNODB_LOG_BLOCK_SIZE,
+  "###EXPERIMENTAL###: The log block size of the transaction log file. "
+   "Changing for created log file is not supported. Use on your own risk!",
+   (G_PTR*) &innobase_log_block_size, (G_PTR*) &innobase_log_block_size, 0,
+   GET_ULONG, REQUIRED_ARG, 512, 512, 1 << UNIV_PAGE_SIZE_SHIFT_MAX, 0, 1L, 0},
   {"innodb_fast_checksum", OPT_INNODB_FAST_CHECKSUM,
    "Change the algorithm of checksum for the whole of datapage to 4-bytes word based.",
    (G_PTR*) &innobase_fast_checksum,
@@ -1734,21 +1741,21 @@ innobase_get_slow_log()
 #endif
 
 /***********************************************************************
-Computes page shift for a given page size. If the argument is not a power
+Computes bit shift for a given value. If the argument is not a power
 of 2, returns 0.*/
 UNIV_INLINE
 ulint
-get_page_size_shift(ulint page_size)
+get_bit_shift(ulint value)
 {
 	ulint shift;
 
-	if (page_size == 0)
+	if (value == 0)
 		return 0;
-	
-	for (shift = 0; !(page_size & 1UL); shift++) {
-		page_size >>= 1;
+
+	for (shift = 0; !(value & 1UL); shift++) {
+		value >>= 1;
 	}
-	return (page_size >> 1) ? 0 : shift;
+	return (value >> 1) ? 0 : shift;
 }
 
 my_bool
@@ -1773,7 +1780,7 @@ innodb_init_param(void)
 	srv_page_size_shift = 0;
 
 	if (innobase_page_size != (1 << 14)) {
-		int n_shift = get_page_size_shift(innobase_page_size);
+		int n_shift = get_bit_shift(innobase_page_size);
 
 		if (n_shift >= 12 && n_shift <= UNIV_PAGE_SIZE_SHIFT_MAX) {
 			fprintf(stderr,
@@ -1793,6 +1800,31 @@ innodb_init_param(void)
 	} else {
 		srv_page_size_shift = 14;
 		srv_page_size = (1 << srv_page_size_shift);
+	}
+
+	srv_log_block_size = 0;
+	if (innobase_log_block_size != 512) {
+		uint	n_shift = get_bit_shift(innobase_log_block_size);;
+
+		fprintf(stderr,
+			"InnoDB: Warning: innodb_log_block_size has "
+			"been changed from its default value. "
+			"(###EXPERIMENTAL### operation)\n");
+		if (n_shift > 0) {
+			srv_log_block_size = (1 << n_shift);
+			fprintf(stderr,
+				"InnoDB: The log block size is set to %lu.\n",
+				srv_log_block_size);
+		}
+	} else {
+		srv_log_block_size = 512;
+	}
+
+	if (!srv_log_block_size) {
+		fprintf(stderr,
+			"InnoDB: Error: %lu is not valid value for "
+			"innodb_log_block_size.\n", innobase_log_block_size);
+		goto error;
 	}
 
 	srv_fast_checksum = (ibool) innobase_fast_checksum;
@@ -2431,7 +2463,7 @@ skip_filter:
 		goto skip;
 	} else if (zip_size) {
 		page_size = zip_size;
-		page_size_shift = get_page_size_shift(page_size);
+		page_size_shift = get_bit_shift(page_size);
 		fprintf(stderr, "[%02u] %s is compressed with page size = "
 			"%lu bytes\n", thread_n, node->name, page_size);
 		if (page_size_shift < 10 || page_size_shift > 14) {
@@ -4297,8 +4329,8 @@ loop:
 
 			if (dict_table_get_first_index(table)) {
 #ifdef XTRADB_BASED
-				dict_update_statistics_low(table, TRUE, FALSE);
-#elif MYSQL_VERSION_ID >= 50508
+				dict_update_statistics(table, TRUE, FALSE);
+#elif defined(INNODB_VERSION_SHORT)
 				dict_update_statistics(table, TRUE);
 #else
 				dict_update_statistics_low(table, TRUE);
@@ -4791,7 +4823,7 @@ xtrabackup_apply_delta(
 	}
 
 	page_size = info.page_size;
-	page_size_shift = get_page_size_shift(page_size);
+	page_size_shift = get_bit_shift(page_size);
 	fprintf(stderr, "xtrabackup: page size for %s is %lu bytes\n",
 		src_path, page_size);
 	if (page_size_shift < 10 ||
@@ -5768,6 +5800,7 @@ skip_tables_file_register:
 	/* temporary setting of enough size */
 	srv_page_size_shift = UNIV_PAGE_SIZE_SHIFT_MAX;
 	srv_page_size = UNIV_PAGE_SIZE_MAX;
+	srv_log_block_size = 512;
 #endif
 	if (xtrabackup_backup && xtrabackup_incremental) {
 		/* direct specification is only for --backup */

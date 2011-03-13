@@ -70,6 +70,10 @@ ifeq ($(shell uname -s),Linux)
 5.5: LIBS += -laio
 endif
 5.5: TARGET := xtrabackup_55
+# In CMake server builds it is important to build with exactly the same preprocessor flags
+# as were used to build InnoDB
+5.5: DEFS = $(shell grep C_DEFINES ../CMakeFiles/innobase.dir/flags.make | \
+               sed -e 's/C_DEFINES = //')
 5.5: $(TARGET)
 
 # XtraBackup for XtraDB 

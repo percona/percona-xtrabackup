@@ -76,7 +76,7 @@ incremental_sample`
 
   vlog "Starting backup"
 
-  run_cmd xtrabackup --datadir=$mysql_datadir --backup \
+  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --backup \
       --target-dir=$topdir/data/full
 
   vlog "Full backup done"
@@ -115,20 +115,21 @@ incremental_sample | awk '{print $2}'`
   vlog "Making incremental backup"
 
   # Incremental backup
-  run_cmd xtrabackup --datadir=$mysql_datadir --backup \
+  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --backup \
       --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full
 
   vlog "Incremental backup done"
   vlog "Preparing backup"
 
   # Prepare backup
-  run_cmd xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-      --target-dir=$topdir/data/full
+  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
+      --apply-log-only --target-dir=$topdir/data/full
   vlog "Log applied to backup"
-  run_cmd xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-      --target-dir=$topdir/data/full --incremental-dir=$topdir/data/delta
+  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
+      --apply-log-only --target-dir=$topdir/data/full \
+      --incremental-dir=$topdir/data/delta
   vlog "Delta applied to backup"
-  run_cmd xtrabackup --datadir=$mysql_datadir --prepare \
+  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
       --target-dir=$topdir/data/full
   vlog "Data prepared for restore"
 

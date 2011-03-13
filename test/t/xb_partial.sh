@@ -28,11 +28,13 @@ vlog "Table checksum is $checksum_a"
 mkdir -p $topdir/data/parted
 
 vlog "Starting backup"
-xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/parted --tables="^incremental_sample[.]test"
+xtrabackup --no-defaults --datadir=$mysql_datadir --backup \
+    --target-dir=$topdir/data/parted --tables="^incremental_sample[.]test"
 vlog "Partial backup done"
 
 # Prepare backup
-xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/parted
+xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
+    --target-dir=$topdir/data/parted
 vlog "Data prepared for restore"
 
 # removing rows

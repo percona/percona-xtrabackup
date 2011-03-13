@@ -9,7 +9,7 @@ function usage()
 	echo "-m version  MySQL version to use. Possible values: system, 5.0, 5.1, 5.5, percona. Default is system"
 	echo "-g          Output debug information to results/*.out"
 	echo "-t          Run only a single named test"
-	echo "-h          Print this help megssage"
+	echo "-h          Print this help message"
 	echo "-s	  Select a test suite to run. Possible values: experimental, t. Default is t"
 }
 XTRACE_OPTION=""
