@@ -1,17 +1,16 @@
 # Makefile to build XtraBackup for Percona Server and different versions of MySQL
 #
 # Syntax:
-# make [5.1|5.5|plugin|xtradb]
+# make [5.1|xtradb|xtradb55]
 #
-# Default is xtradb - to build XtraBackup for Percona Server
-# 5.1 - XtraBackup for MySQL versions 5.1.* with plugin innobase
-# 5.5 - XtraBackup for MySQL versions 5.5.8 and up with plugin innobase
-# plugin - XtraBackup for MySQL versions 5.1.* with plugin innodb_plugin
+# Default is xtradb - to build XtraBackup for Percona Server 5.1
+# xtradb55 - Xtrabackup for Percona Server 5.5
+# 5.1 - XtraBackup for MySQL versions 5.1.* with builtin InnoDB
 
 LIBS = -lpthread
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
 
-CFLAGS += -O3 -g -fmessage-length=0 -D_FORTIFY_SOURCE=2
+CFLAGS += -O3 -g
 
 TARGET=xtrabackup
 PREFIX=/usr
@@ -53,29 +52,6 @@ default: xtradb
 5.1: TARGET := xtrabackup_51
 5.1: $(TARGET)
 
-# XtraBackup for MySQL with InnoDB Plugin
-plugin: INC = -I. -I.. -I./../include -I./../../include -I./../../../include
-plugin: INNODBOBJS = ../ha_innodb_plugin_la-btr0btr.o ../ha_innodb_plugin_la-btr0cur.o ../ha_innodb_plugin_la-btr0pcur.o ../ha_innodb_plugin_la-btr0sea.o ../ha_innodb_plugin_la-buf0buddy.o ../ha_innodb_plugin_la-buf0buf.o ../ha_innodb_plugin_la-buf0flu.o ../ha_innodb_plugin_la-buf0lru.o ../ha_innodb_plugin_la-buf0rea.o ../ha_innodb_plugin_la-data0data.o ../ha_innodb_plugin_la-data0type.o ../ha_innodb_plugin_la-dict0boot.o ../ha_innodb_plugin_la-dict0crea.o ../ha_innodb_plugin_la-dict0dict.o ../ha_innodb_plugin_la-dict0load.o ../ha_innodb_plugin_la-dict0mem.o ../ha_innodb_plugin_la-dyn0dyn.o ../ha_innodb_plugin_la-eval0eval.o ../ha_innodb_plugin_la-eval0proc.o ../ha_innodb_plugin_la-fil0fil.o ../ha_innodb_plugin_la-fsp0fsp.o ../ha_innodb_plugin_la-fut0fut.o ../ha_innodb_plugin_la-fut0lst.o ../ha_innodb_plugin_la-ha0ha.o ../ha_innodb_plugin_la-ha0storage.o ../ha_innodb_plugin_la-hash0hash.o ../ha_innodb_plugin_la-ibuf0ibuf.o ../ha_innodb_plugin_la-lock0iter.o ../ha_innodb_plugin_la-lock0lock.o ../ha_innodb_plugin_la-log0log.o ../ha_innodb_plugin_la-log0recv.o ../ha_innodb_plugin_la-mach0data.o ../ha_innodb_plugin_la-mem0mem.o ../ha_innodb_plugin_la-mem0pool.o ../ha_innodb_plugin_la-mtr0log.o ../ha_innodb_plugin_la-mtr0mtr.o ../ha_innodb_plugin_la-os0file.o ../ha_innodb_plugin_la-os0proc.o ../ha_innodb_plugin_la-os0sync.o ../ha_innodb_plugin_la-os0thread.o ../ha_innodb_plugin_la-page0cur.o ../ha_innodb_plugin_la-page0page.o ../ha_innodb_plugin_la-page0zip.o ../ha_innodb_plugin_la-lexyy.o ../ha_innodb_plugin_la-pars0grm.o ../ha_innodb_plugin_la-pars0opt.o ../ha_innodb_plugin_la-pars0pars.o ../ha_innodb_plugin_la-pars0sym.o ../ha_innodb_plugin_la-que0que.o ../ha_innodb_plugin_la-read0read.o ../ha_innodb_plugin_la-rem0cmp.o ../ha_innodb_plugin_la-rem0rec.o ../ha_innodb_plugin_la-row0ext.o ../ha_innodb_plugin_la-row0ins.o ../ha_innodb_plugin_la-row0merge.o ../ha_innodb_plugin_la-row0mysql.o ../ha_innodb_plugin_la-row0purge.o ../ha_innodb_plugin_la-row0row.o ../ha_innodb_plugin_la-row0sel.o ../ha_innodb_plugin_la-row0uins.o ../ha_innodb_plugin_la-row0umod.o ../ha_innodb_plugin_la-row0undo.o ../ha_innodb_plugin_la-row0upd.o ../ha_innodb_plugin_la-row0vers.o ../ha_innodb_plugin_la-srv0que.o ../ha_innodb_plugin_la-srv0srv.o ../ha_innodb_plugin_la-srv0start.o ../ha_innodb_plugin_la-sync0arr.o ../ha_innodb_plugin_la-sync0rw.o ../ha_innodb_plugin_la-sync0sync.o ../ha_innodb_plugin_la-thr0loc.o ../ha_innodb_plugin_la-trx0purge.o ../ha_innodb_plugin_la-trx0rec.o ../ha_innodb_plugin_la-trx0roll.o ../ha_innodb_plugin_la-trx0rseg.o ../ha_innodb_plugin_la-trx0sys.o ../ha_innodb_plugin_la-trx0trx.o ../ha_innodb_plugin_la-trx0undo.o ../ha_innodb_plugin_la-usr0sess.o ../ha_innodb_plugin_la-ut0byte.o ../ha_innodb_plugin_la-ut0dbg.o ../ha_innodb_plugin_la-ut0list.o ../ha_innodb_plugin_la-ut0mem.o ../ha_innodb_plugin_la-ut0rnd.o ../ha_innodb_plugin_la-ut0ut.o ../ha_innodb_plugin_la-ut0vec.o ../ha_innodb_plugin_la-ut0wqueue.o ../ha_innodb_plugin_la-ut0rbt.o
-
-plugin: MYSQLOBJS= ../../../mysys/libmysys.a ../../../strings/libmystrings.a ../../../zlib/.libs/libzlt.a
-plugin: TARGET := xtrabackup_plugin
-plugin: $(TARGET)
-
-# XtraBackup for MySQL 5.5
-5.5: INC = -I. -I.. -I./../include -I./../../include -I./../../../include
-5.5: INNODBOBJS= ../libinnobase.a
-
-5.5: MYSQLOBJS= ../../../mysys/libmysys.a ../../../strings/libstrings.a ../../../zlib/libzlib.a
-ifeq ($(shell uname -s),Linux)
-5.5: LIBS += -laio
-endif
-5.5: TARGET := xtrabackup_55
-# In CMake server builds it is important to build with exactly the same preprocessor flags
-# as were used to build InnoDB
-5.5: DEFS = $(shell grep C_DEFINES ../CMakeFiles/innobase.dir/flags.make | \
-               sed -e 's/C_DEFINES = //')
-5.5: $(TARGET)
-
 # XtraBackup for XtraDB 
 xtradb: INC=-I. -I.. -I./../include -I./../../include -I./../../../include
 xtradb: INNODBOBJS = ../libinnobase_a-btr0btr.o ../libinnobase_a-btr0cur.o ../libinnobase_a-btr0pcur.o \
@@ -112,6 +88,22 @@ xtradb: MYSQLOBJS = ../../../mysys/libmysys.a ../../../strings/libmystrings.a ..
 xtradb: DEFS += -DXTRADB_BASED 
 xtradb: TARGET := xtrabackup 
 xtradb: $(TARGET)
+
+# XtraBackup for XtraDB 5.5
+xtradb55: INC=-I. -I.. -I./../include -I./../../include -I./../../../include
+xtradb55: INNODBOBJS = ../libinnobase.a
+ifeq ($(shell uname -s),Linux)
+xtradb55: LIBS += -laio
+endif
+xtradb55: MYSQLOBJS = ../../../mysys/libmysys.a ../../../strings/libstrings.a ../../../zlib/libzlib.a
+# In CMake server builds it is important to build with exactly the same preprocessor flags
+# as were used to build InnoDB
+xtradb55: DEFS = $(shell grep C_DEFINES ../CMakeFiles/innobase.dir/flags.make | \
+               sed -e 's/C_DEFINES = //')
+xtradb55: DEFS += -DXTRADB_BASED -DXTRADB55
+xtradb55: TARGET := xtrabackup_55
+xtradb55: $(TARGET)
+
 
 xtrabackup.o: xtrabackup.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $*.c
