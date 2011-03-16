@@ -52,10 +52,12 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <row0sel.h>
 #include <row0upd.h>
 #include <log0log.h>
+#include <log0recv.h>
 #include <lock0lock.h>
 #include <dict0crea.h>
 #include <btr0cur.h>
 #include <btr0btr.h>
+#include <btr0sea.h>
 #include <fsp0fsp.h>
 #include <sync0sync.h>
 #include <fil0fil.h>
@@ -690,7 +692,6 @@ my_bool innobase_log_archive			= FALSE;/* unused */
 my_bool innobase_use_doublewrite    = TRUE;
 my_bool innobase_use_checksums      = TRUE;
 my_bool innobase_use_large_pages    = FALSE;
-my_bool	innobase_use_native_aio			= FALSE;
 my_bool	innobase_file_per_table			= FALSE;
 my_bool innobase_locks_unsafe_for_binlog        = FALSE;
 my_bool innobase_rollback_on_timeout		= FALSE;
@@ -2118,6 +2119,54 @@ mem_free_and_error:
 	srv_sizeof_trx_t_in_ha_innodb_cc = sizeof(trx_t);
 #endif
 
+#if MYSQL_VERSION_ID >= 50500
+	/* On 5.5 srv_use_native_aio is TRUE by default. It is later reset
+	if it is not supported by the platform in
+	innobase_start_or_create_for_mysql(). As we don't call it in xtrabackup,
+	we have to duplicate checks from that function here. */
+
+#ifdef __WIN__
+	switch (os_get_os_version()) {
+	case OS_WIN95:
+	case OS_WIN31:
+	case OS_WINNT:
+		/* On Win 95, 98, ME, Win32 subsystem for Windows 3.1,
+		and NT use simulated aio. In NT Windows provides async i/o,
+		but when run in conjunction with InnoDB Hot Backup, it seemed
+		to corrupt the data files. */
+
+		srv_use_native_aio = FALSE;
+		break;
+
+	case OS_WIN2000:
+	case OS_WINXP:
+		/* On 2000 and XP, async IO is available. */
+		srv_use_native_aio = TRUE;
+		break;
+
+	default:
+		/* Vista and later have both async IO and condition variables */
+		srv_use_native_aio = TRUE;
+		srv_use_native_conditions = TRUE;
+		break;
+	}
+
+#elif defined(LINUX_NATIVE_AIO)
+
+	if (srv_use_native_aio) {
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+			" InnoDB: Using Linux native AIO\n");
+	}
+#else
+	/* Currently native AIO is supported only on windows and linux
+	and that also when the support is compiled in. In all other
+	cases, we ignore the setting of innodb_use_native_aio. */
+	srv_use_native_aio = FALSE;
+
+#endif
+#endif /* MYSQL_VERSION_ID */
+
 	return(FALSE);
 
 error:
@@ -2730,7 +2779,8 @@ read_retry:
 		}
 		if (!xb_write_delta_metadata(meta_path, &info)) {
 			fprintf(stderr, "[%02u] xtrabackup: Error: "
-				"failed to write meta info for %s\n", dst_path);
+				"failed to write meta info for %s\n",
+				thread_n, dst_path);
 			goto error;
 		}
 	}
@@ -5476,7 +5526,7 @@ skip_check:
 #if (MYSQL_VERSION_ID < 50100)
 							index->tree->page);
 #else /* MYSQL_VERSION_ID < 51000 */
-							index->page);
+							(ulint) index->page);
 #endif
 
 						index = dict_table_get_next_index(index);
