@@ -29,7 +29,7 @@ echo "part_range_sample.test" > $topdir/list
 # partial backup of partitioned table
 mkdir -p $topdir/data/full
 vlog "Starting backup"
-innobackupex-1.5.1 --user=root --socket=$mysql_socket --defaults-file=$topdir/my.cnf --tables-file=/root/list $topdir/data/full > $OUTFILE 2>&1 || die "innobackupex-1.5.1 died with exit code $?"
+innobackupex-1.5.1 --user=root --socket=$mysql_socket --defaults-file=$topdir/my.cnf --tables-file=$topdir/list $topdir/data/full > $OUTFILE 2>&1 || die "innobackupex-1.5.1 died with exit code $?"
 backup_dir=`grep "innobackupex-1.5.1: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 vlog "Partial backup done"
 
