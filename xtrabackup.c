@@ -488,6 +488,9 @@ typedef	struct fil_system_struct	fil_system_t;
 struct fil_system_struct {
 #ifndef UNIV_HOTBACKUP
 	mutex_t		mutex;		/*!< The mutex protecting the cache */
+#ifdef XTRADB55
+	mutex_t		file_extend_mutex;
+#endif
 #endif /* !UNIV_HOTBACKUP */
 	hash_table_t*	spaces;		/*!< The hash table of spaces in the
 					system; they are hashed on the space
@@ -1951,8 +1954,9 @@ mem_free_and_error:
 
 #ifdef XTRADB_BASED
 	srv_doublewrite_file = innobase_doublewrite_file;
-
+#ifndef XTRADB55
 	srv_extra_undoslots = (ibool) innobase_extra_undoslots;
+#endif
 #endif
 
 	/* -------------- Log files ---------------------------*/

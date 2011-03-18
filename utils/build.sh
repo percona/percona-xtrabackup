@@ -17,9 +17,16 @@ then
 fi
 MAKE_CMD="$MAKE_CMD -j6"
 
-function usage(){
-	echo "Usage: `basename $0` 5.1|5.5|plugin|xtradb"
-	exit -1
+function usage()
+{
+    echo "Build an xtrabackup binary against the specified InnoDB flavor."
+    echo
+    echo "Usage: `basename $0` CODEBASE"
+    echo "where CODEBASE can be one of the following values or aliases:"
+    echo "  innodb51_builtin | 5.1	build against built-in InnoDB in MySQL 5.1"
+    echo "  xtradb51         | xtradb   build against Percona Server with XtraDB 5.1"
+    echo "  xtradb55         | xtradb55 build against Percona Server with XtraDB 5.5"
+    exit -1
 }
 
 ################################################################################
@@ -52,7 +59,7 @@ function unpack_and_patch()
 {
     tar xzf $top_dir/$1
     cd `basename "$1" ".tar.gz"`
-    patch -p1 < $top_dir/$2
+    patch -p1 < $top_dir/patches/$2
     cd ..
 }
 
@@ -104,7 +111,7 @@ function build_tar4ibd()
 # Expects the following variables to be set before calling:
 #   mysql_version	version string (e.g. "5.1.53")
 #   server_patch	name of the patch to apply to server source before
-#                       building (e.g. "fix_innodb_for_backup51.patch")
+#                       building (e.g. "xtradb51.patch")
 #   innodb_name		either "innobase" or "innodb_plugin"
 #   configure_cmd	server configure command
 #   xtrabackup_target	'make' target to build in the xtrabackup build directory
@@ -142,9 +149,9 @@ type=$1
 top_dir=`pwd`
 
 case "$type" in
-"5.1")
+"innodb51_builtin" | "5.1")
 	mysql_version=$MYSQL_51_VERSION
-	server_patch=fix_innodb_for_backup51.patch
+	server_patch=innodb51_builtin.patch
 	innodb_name=innobase
 	xtrabackup_target=5.1
 	configure_cmd="./configure --enable-local-infile \
@@ -156,41 +163,12 @@ case "$type" in
 
 	build_all
 	;;
-"5.5")
-	mysql_version=$MYSQL_55_VERSION
-	server_patch=fix_innodb_for_backup55.patch
-	innodb_name=innobase
-	xtrabackup_target=5.5
-	# We need to build with partitioning due to MySQL bug #58632
-	configure_cmd="cmake . \
-		-DENABLED_LOCAL_INFILE=ON \
-		-DWITH_INNOBASE_STORAGE_ENGINE=ON \
-		-DWITH_PARTITION_STORAGE_ENGINE=ON \
-		-DWITH_ZLIB=bundled \
-		-DWITH_EXTRA_CHARSETS=complex \
-		-DENABLE_DTRACE=OFF"
-
-	build_all
-	;;
-"plugin")
-	mysql_version=$MYSQL_51_VERSION
-	server_patch=fix_innodb_for_backup_5.1_plugin.patch
-	innodb_name=innodb_plugin
-	xtrabackup_target=plugin
-	configure_cmd="./configure --enable-local-infile \
-	    --enable-thread-safe-client \
-	    --with-plugins=innodb_plugin \
-	    --with-zlib-dir=bundled \
-	    --enable-shared \
-	    --with-extra-charsets=complex"
-
-	build_all
-	;;
-"xtradb")
+"xtradb51" | "xtradb")
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup
 	innodb_dir=$server_dir/storage/innodb_plugin
 	build_dir=$innodb_dir/xtrabackup
+	xtrabackup_target=xtradb
 	configure_cmd="./configure --enable-local-infile \
 	    --enable-thread-safe-client \
 	    --with-plugins=innodb_plugin \
@@ -223,8 +201,55 @@ case "$type" in
 
 	# Patch Percona Server
 	cd $server_dir
-	patch -p1 < $top_dir/fix_innodb_for_backup_percona-server.patch
+	patch -p1 < $top_dir/patches/xtradb51.patch
 
+	build_server
+
+	build_xtrabackup
+
+	build_tar4ibd
+	;;
+"xtradb55")
+	server_dir=$top_dir/Percona-Server-5.5
+	branch_dir=percona-server-5.5-xtrabackup
+	innodb_dir=$server_dir/storage/innobase
+	build_dir=$innodb_dir/xtrabackup
+	xtrabackup_target=xtradb55
+	# We need to build with partitioning due to MySQL bug #58632
+	configure_cmd="cmake . \
+		-DENABLED_LOCAL_INFILE=ON \
+		-DWITH_INNOBASE_STORAGE_ENGINE=ON \
+		-DWITH_PARTITION_STORAGE_ENGINE=ON \
+		-DWITH_ZLIB=bundled \
+		-DWITH_EXTRA_CHARSETS=complex \
+		-DENABLE_DTRACE=OFF"
+	if [ "`uname -s`" = "Linux" ]
+	then
+		configure_cmd="LIBS=-lrt $configure_cmd"
+	fi
+
+
+	echo "Downloading sources"
+	
+	auto_download libtar-1.2.11.tar.gz
+
+	# Get Percona Server
+	if [ -d $branch_dir ]
+	then
+	    cd $branch_dir
+	    bzr pull
+	else
+	    bzr branch lp:~percona-dev/percona-server/$branch_dir $branch_dir
+	    cd $branch_dir
+	fi
+
+	$MAKE_CMD PERCONA_SERVER=Percona-Server-5.5 main
+	rm -rf $server_dir
+	mv Percona-Server-5.5 $top_dir
+
+	# Patch Percona Server
+	cd $server_dir
+	patch -p1 < $top_dir/patches/xtradb55.patch
 
 	build_server
 
