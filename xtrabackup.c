@@ -2328,7 +2328,7 @@ xtrabackup_read_metadata(char *filename)
 	return(FALSE);
 }
 
-my_bool
+static my_bool
 xtrabackup_write_metadata(char *filename)
 {
 	FILE *fp;
