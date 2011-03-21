@@ -5566,7 +5566,7 @@ skip_check:
 #else /* MYSQL_VERSION_ID < 51000 */
 								index->page);
 #endif
-						strncpy(page + n_index * 512 + 12, index->name, 500);
+						strncpy((char*)page + n_index * 512 + 12, index->name, 500);
 
 						printf(
 "xtrabackup:     name=%s, id.low=%lu, page=%lu\n",
