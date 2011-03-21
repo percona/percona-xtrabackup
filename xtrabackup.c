@@ -2459,7 +2459,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 #endif
 	{ /* must backup id==0 */
 		char *p;
-		int p_len, regres;
+		int p_len, regres= 0;
 		char *next, *prev;
 		char tmp;
 		int i;
