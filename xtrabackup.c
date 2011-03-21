@@ -3179,6 +3179,7 @@ ulint
 log_copying_thread(
 	void*	arg)
 {
+	(void)arg;
 	ulint	counter = 0;
 
 	if (!xtrabackup_stream)
@@ -3219,6 +3220,7 @@ ulint
 io_watching_thread(
 	void*	arg)
 {
+	(void)arg;
 	/* currently, for --backup only */
 	ut_a(xtrabackup_backup);
 
@@ -4881,6 +4883,7 @@ xtrabackup_apply_delta(
 					including the .delta extension */
 	my_bool check_newer)
 {
+	(void)check_newer;
 	os_file_t	src_file = -1;
 	os_file_t	dst_file = -1;
 	char	src_path[FN_REFLEN];
