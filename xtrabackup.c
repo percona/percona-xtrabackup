@@ -118,11 +118,14 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 void thd_wait_begin(MYSQL_THD thd, thd_wait_type wait_type)
 {
+	(void)thd;
+	(void)wait_type;
 	return;
 }
 
 void thd_wait_end(MYSQL_THD thd)
 {
+	(void)thd;
 	return;
 }
 
