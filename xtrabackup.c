@@ -2372,7 +2372,7 @@ xtrabackup_write_metadata(char *filename)
 /***********************************************************************
 Read meta info for an incremental delta.
 @return TRUE on success, FALSE on failure. */
-my_bool
+static my_bool
 xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 {
 	FILE *fp;
@@ -2396,7 +2396,7 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 /***********************************************************************
 Write meta info for an incremental delta.
 @return TRUE on success, FALSE on failure. */
-my_bool
+static my_bool
 xb_write_delta_metadata(const char *filepath, const xb_delta_info_t *info)
 {
 	FILE *fp;
@@ -2416,7 +2416,7 @@ xb_write_delta_metadata(const char *filepath, const xb_delta_info_t *info)
 }
 
 /* ================= backup ================= */
-void
+static void
 xtrabackup_io_throttling(void)
 {
 	if (xtrabackup_throttle && (io_ticket--) < 0) {
@@ -2429,7 +2429,7 @@ xtrabackup_io_throttling(void)
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
 
-my_bool
+static my_bool
 xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 {
 	os_file_t	src_file = -1;
@@ -2885,7 +2885,7 @@ skip:
 	return(FALSE);
 }
 
-my_bool
+static my_bool
 xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 {
 	/* definition from recv_recovery_from_checkpoint_start() */
