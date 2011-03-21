@@ -4374,7 +4374,7 @@ loop:
 
 		if (xtrabackup_tables) {
 			char *p;
-			int regres;
+			int regres= 0;
 			int i;
 
 			p = strstr(table->name, SRV_PATH_SEPARATOR_STR);
