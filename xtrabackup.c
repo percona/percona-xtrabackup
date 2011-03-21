@@ -2765,7 +2765,7 @@ read_retry:
 				if (ut_dulint_cmp(incremental_lsn,
 					MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
 	/* ========================================= */
-	IB_INT64 page_offset;
+	IB_INT64 offset_on_page;
 
 	if (page_in_buffer == page_size/4) {
 		/* flush buffer */
@@ -2788,10 +2788,10 @@ read_retry:
 		page_in_buffer++;
 	}
 
-	page_offset = ((offset + (IB_INT64)chunk_offset) >> page_size_shift);
-	ut_a(page_offset >> 32 == 0);
+	offset_on_page = ((offset + (IB_INT64)chunk_offset) >> page_size_shift);
+	ut_a(offset_on_page >> 32 == 0);
 
-	mach_write_to_4(incremental_buffer + page_in_buffer * 4, (ulint)page_offset);
+	mach_write_to_4(incremental_buffer + page_in_buffer * 4, (ulint)offset_on_page);
 	memcpy(incremental_buffer + page_in_buffer * page_size,
 	       page + chunk_offset, page_size);
 
@@ -5033,11 +5033,11 @@ xtrabackup_apply_delta(
 
 		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
 		     page_in_buffer++) {
-			ulint page_offset;
+			ulint offset_on_page;
 
-			page_offset = mach_read_from_4(incremental_buffer + page_in_buffer * 4);
+			offset_on_page = mach_read_from_4(incremental_buffer + page_in_buffer * 4);
 
-			if (page_offset == 0xFFFFFFFFUL)
+			if (offset_on_page == 0xFFFFFFFFUL)
 				break;
 
 			/* apply blocks in the cluster */
@@ -5050,9 +5050,9 @@ xtrabackup_apply_delta(
 			success = os_file_write(dst_path, dst_file,
 					incremental_buffer +
 						page_in_buffer * page_size,
-					(page_offset << page_size_shift) &
+					(offset_on_page << page_size_shift) &
 						0xFFFFFFFFUL,
-					page_offset >> (32 - page_size_shift),
+					offset_on_page >> (32 - page_size_shift),
 					page_size);
 			if (!success) {
 				goto error;
