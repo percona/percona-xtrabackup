@@ -4266,7 +4266,7 @@ loop:
 	return(TRUE);
 }
 
-void
+static void
 xtrabackup_stats_func(void)
 {
 	/* cd to datadir */
