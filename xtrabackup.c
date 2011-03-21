@@ -3291,7 +3291,6 @@ xtrabackup_create_output_dir(
 {
 	char	path[FN_REFLEN];
 	char	*ptr1, *ptr2;
-	MY_STAT stat_info;
 
 	/* mkdir if not exist */
 	ptr1 = strstr(space->name, SRV_PATH_SEPARATOR_STR);
