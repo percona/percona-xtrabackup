@@ -1809,7 +1809,7 @@ get_bit_shift(ulint value)
 	return (value >> 1) ? 0 : shift;
 }
 
-my_bool
+static my_bool
 innodb_init_param(void)
 {
 	/* innobase_init */
