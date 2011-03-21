@@ -24,6 +24,7 @@ function usage()
     echo "Usage: `basename $0` CODEBASE"
     echo "where CODEBASE can be one of the following values or aliases:"
     echo "  innodb51_builtin | 5.1	build against built-in InnoDB in MySQL 5.1"
+    echo "  innodb55         | 5.5	build against InnoDB in MySQL 5.5"
     echo "  xtradb51         | xtradb   build against Percona Server with XtraDB 5.1"
     echo "  xtradb55         | xtradb55 build against Percona Server with XtraDB 5.5"
     exit -1
@@ -163,6 +164,24 @@ case "$type" in
 
 	build_all
 	;;
+
+"innodb55" | "5.5")
+	mysql_version=$MYSQL_55_VERSION
+	server_patch=innodb55.patch
+	innodb_name=innobase
+	xtrabackup_target=5.5
+	# We need to build with partitioning due to MySQL bug #58632
+	configure_cmd="cmake . \
+		-DENABLED_LOCAL_INFILE=ON \
+		-DWITH_INNOBASE_STORAGE_ENGINE=ON \
+		-DWITH_PARTITION_STORAGE_ENGINE=ON \
+		-DWITH_ZLIB=bundled \
+		-DWITH_EXTRA_CHARSETS=complex \
+		-DENABLE_DTRACE=OFF"
+
+	build_all
+	;;
+
 "xtradb51" | "xtradb")
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup

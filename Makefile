@@ -1,11 +1,12 @@
 # Makefile to build XtraBackup for Percona Server and different versions of MySQL
 #
 # Syntax:
-# make [5.1|xtradb|xtradb55]
+# make [5.1|5.5|xtradb|xtradb55]
 #
 # Default is xtradb - to build XtraBackup for Percona Server 5.1
 # xtradb55 - Xtrabackup for Percona Server 5.5
 # 5.1 - XtraBackup for MySQL versions 5.1.* with builtin InnoDB
+# 5.5 - XtraBackup for MySQL versions 5.5.*	
 
 LIBS = -lpthread
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
@@ -51,6 +52,21 @@ default: xtradb
 5.1: MYSQLOBJS= ../../../mysys/libmysys.a ../../../strings/libmystrings.a
 5.1: TARGET := xtrabackup_51
 5.1: $(TARGET)
+
+# XtraBackup for MySQL 5.5
+5.5: INC = -I. -I.. -I./../include -I./../../include -I./../../../include
+5.5: INNODBOBJS= ../libinnobase.a
+
+5.5: MYSQLOBJS= ../../../mysys/libmysys.a ../../../strings/libstrings.a ../../../zlib/libzlib.a
+ifeq ($(shell uname -s),Linux)
+5.5: LIBS += -laio
+endif
+5.5: TARGET := xtrabackup_innodb55
+# In CMake server builds it is important to build with exactly the same preprocessor flags
+# as were used to build InnoDB
+5.5: DEFS = $(shell grep C_DEFINES ../CMakeFiles/innobase.dir/flags.make | \
+               sed -e 's/C_DEFINES = //')
+5.5: $(TARGET)
 
 # XtraBackup for XtraDB 
 xtradb: INC=-I. -I.. -I./../include -I./../../include -I./../../../include
