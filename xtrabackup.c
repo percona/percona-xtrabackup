@@ -4875,7 +4875,7 @@ get_meta_path(
 	return TRUE;
 }
 
-void
+static void
 xtrabackup_apply_delta(
 	const char*	dirname,	/* in: dir name of incremental */
 	const char*	dbname,		/* in: database name (ibdata: NULL) */
