@@ -725,14 +725,14 @@ typedef struct {
 
 static
 datafiles_iter_t *
-datafiles_iter_new(fil_system_t *system)
+datafiles_iter_new(fil_system_t *f_system)
 {
 	datafiles_iter_t *it;
 
 	it = ut_malloc(sizeof(datafiles_iter_t));
 	it->mutex = OS_MUTEX_CREATE();
 
-	it->system = system;
+	it->system = f_system;
 	it->space = NULL;
 	it->node = NULL;
 	it->started = FALSE;
