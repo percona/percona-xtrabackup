@@ -10,7 +10,7 @@
 LIBS = -lpthread
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
 
-CFLAGS += -O3 -g
+CFLAGS += -O3 -g -pedantic -Wall -Wundef -Wshadow  -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations -Wframe-larger-than=32768 -Wno-redundant-decls --std=gnu99
 
 TARGET=xtrabackup
 PREFIX=/usr
@@ -19,7 +19,7 @@ BIN_DIR=$(PREFIX)/bin
 default: xtradb
 
 # XtraBackup for MySQL 5.1
-5.1: INC = -I. -I.. -I./../include -I./../../include -I./../../../include
+5.1: INC = -I. -isystem.. -isystem./../include -isystem./../../include -isystem./../../../include
 5.1: INNODBOBJS = ../libinnobase_a-btr0btr.o ../libinnobase_a-btr0cur.o ../libinnobase_a-btr0pcur.o \
 	../libinnobase_a-btr0sea.o ../libinnobase_a-buf0buf.o ../libinnobase_a-buf0flu.o \
 	../libinnobase_a-buf0lru.o ../libinnobase_a-buf0rea.o ../libinnobase_a-data0data.o \
@@ -53,7 +53,7 @@ default: xtradb
 5.1: $(TARGET)
 
 # XtraBackup for XtraDB 
-xtradb: INC=-I. -I.. -I./../include -I./../../include -I./../../../include
+xtradb: INC=-I. -isystem.. -isystem./../include -isystem./../../include -isystem./../../../include
 xtradb: INNODBOBJS = ../libinnobase_a-btr0btr.o ../libinnobase_a-btr0cur.o ../libinnobase_a-btr0pcur.o \
 	../libinnobase_a-btr0sea.o ../libinnobase_a-buf0buddy.o ../libinnobase_a-buf0buf.o \
 	../libinnobase_a-buf0flu.o ../libinnobase_a-buf0lru.o ../libinnobase_a-buf0rea.o \
@@ -90,12 +90,19 @@ xtradb: TARGET := xtrabackup
 xtradb: $(TARGET)
 
 # XtraBackup for XtraDB 5.5
-xtradb55: INC=-I. -I.. -I./../include -I./../../include -I./../../../include
+xtradb55dbug: DBUG_LIB = ../../../dbug/libdbug.a
+xtradb55dbug: xtradb55
+xtradb55: INC=-I. -isystem.. -isystem./../include -isystem./../../include -isystem./../../../include
 xtradb55: INNODBOBJS = ../libinnobase.a
 ifeq ($(shell uname -s),Linux)
 xtradb55: LIBS += -laio
 endif
-xtradb55: MYSQLOBJS = ../../../mysys/libmysys.a ../../../strings/libstrings.a ../../../zlib/libzlib.a
+ifeq "$(wildcard ../../../zlib/.libs/libzlt.a)" ""
+xtradb55: LIBZ= -lz
+else
+xtradb55: LIBZ= ../../../zlib/.libs/libzlt.a
+endif
+xtradb55: MYSQLOBJS = ../../../mysys/libmysys.a ../../../strings/libstrings.a $(LIBZ) $(DBUG_LIB)
 # In CMake server builds it is important to build with exactly the same preprocessor flags
 # as were used to build InnoDB
 xtradb55: DEFS = $(shell grep C_DEFINES ../CMakeFiles/innobase.dir/flags.make | \
