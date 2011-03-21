@@ -4474,24 +4474,24 @@ loop:
 		(ulong) index->stat_index_size);
 
 	{
-		mtr_t	mtr;
+		mtr_t	local_mtr;
 		page_t*	root;
 		ulint	n;
 
-		mtr_start(&mtr);
+		mtr_start(&local_mtr);
 
 #if (MYSQL_VERSION_ID < 50100)
-		mtr_x_lock(&(index->tree->lock), &mtr);
-		root = btr_root_get(index->tree, &mtr);
+		mtr_x_lock(&(index->tree->lock), &local_mtr);
+		root = btr_root_get(index->tree, &local_mtr);
 #else /* MYSQL_VERSION_ID < 51000 */
-		mtr_x_lock(&(index->lock), &mtr);
-		root = btr_root_get(index, &mtr);
+		mtr_x_lock(&(index->lock), &local_mtr);
+		root = btr_root_get(index, &local_mtr);
 #endif
-		n = btr_page_get_level(root, &mtr);
+		n = btr_page_get_level(root, &local_mtr);
 
 		xtrabackup_stats_level(index, n);
 
-		mtr_commit(&mtr);
+		mtr_commit(&local_mtr);
 	}
 
 	putc('\n', stdout);
