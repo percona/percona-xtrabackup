@@ -5910,12 +5910,13 @@ skip_tables_file_register:
 		/* direct specification is only for --backup */
 		/* and the lsn is prior to the other option */
 
-		char* incremental_low;
 		char* endchar;
-		long long lsn_high, lsn_low;
 		int error = 0;
 
 #ifndef INNODB_VERSION_SHORT
+		char* incremental_low;
+		long long lsn_high, lsn_low;
+
 		incremental_low = strstr(xtrabackup_incremental, ":");
 		if (incremental_low) {
 			*incremental_low = '\0';
