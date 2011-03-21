@@ -4119,9 +4119,9 @@ loop:
 		page_cur_t	cur;
 		ulint	n_fields;
 		ulint	i;
-		mem_heap_t*	heap	= NULL;
+		mem_heap_t*	local_heap	= NULL;
 		ulint	offsets_[REC_OFFS_NORMAL_SIZE];
-		ulint*	offsets	= offsets_;
+		ulint*	local_offsets	= offsets_;
 
 		*offsets_ = (sizeof offsets_) / sizeof *offsets_;
 
@@ -4137,12 +4137,12 @@ loop:
 				break;
 			}
 
-			offsets = rec_get_offsets(cur.rec, index, offsets,
-						ULINT_UNDEFINED, &heap);
-			n_fields = rec_offs_n_fields(offsets);
+			offsets = rec_get_offsets(cur.rec, index, local_offsets,
+						ULINT_UNDEFINED, &local_heap);
+			n_fields = rec_offs_n_fields(local_offsets);
 
 			for (i = 0; i < n_fields; i++) {
-				if (rec_offs_nth_extern(offsets, i)) {
+				if (rec_offs_nth_extern(local_offsets, i)) {
 					page_t*	local_page;
 					ulint	space_id;
 					ulint	page_no;
@@ -4157,7 +4157,7 @@ loop:
 					buf_block_t*	local_block;
 #endif
 
-					data = rec_get_nth_field(cur.rec, offsets, i, &local_len);
+					data = rec_get_nth_field(cur.rec, local_offsets, i, &local_len);
 
 					ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
 					local_len -= BTR_EXTERN_FIELD_REF_SIZE;
