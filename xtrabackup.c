@@ -2225,7 +2225,7 @@ error:
 	return(TRUE);
 }
 
-my_bool
+static my_bool
 innodb_init(void)
 {
 	int	err;
@@ -2255,7 +2255,7 @@ error:
 	return(TRUE);
 }
 
-my_bool
+static my_bool
 innodb_end(void)
 {
 	srv_fast_shutdown = (ulint) innobase_fast_shutdown;
