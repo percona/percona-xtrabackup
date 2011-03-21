@@ -2285,7 +2285,7 @@ error:
 }
 
 /* ================= common ================= */
-my_bool
+static my_bool
 xtrabackup_read_metadata(char *filename)
 {
 	FILE *fp;
