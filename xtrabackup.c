@@ -5078,7 +5078,7 @@ error:
 	return;
 }
 
-void
+static void
 xtrabackup_apply_deltas(my_bool check_newer)
 {
 	int		ret;
