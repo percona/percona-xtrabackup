@@ -5760,7 +5760,7 @@ int main(int argc, char **argv)
 	/* ignore unsupported options */
 	{
 	int i,j,argc_new,find;
-	char *optend, *prev_found;
+	char *optend, *prev_found= NULL;
 	argc_new = argc;
 
 	j=1;
