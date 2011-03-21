@@ -5382,13 +5382,13 @@ skip_check:
 	/* TEST: list of datafiles and transaction log files and LSN*/
 /*
 	{
-	fil_system_t*   system = fil_system;
+	fil_system_t*   f_system = fil_system;
 	fil_space_t*	space;
 	fil_node_t*	node;
 
-        mutex_enter(&(system->mutex));
+        mutex_enter(&(f_system->mutex));
 
-        space = UT_LIST_GET_FIRST(system->space_list);
+        space = UT_LIST_GET_FIRST(f_system->space_list);
 
         while (space != NULL) {
 		printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
@@ -5405,17 +5405,17 @@ skip_check:
                 space = UT_LIST_GET_NEXT(space_list, space);
         }
 
-        mutex_exit(&(system->mutex));
+        mutex_exit(&(f_system->mutex));
 	}
 */
 	/* align space sizes along with fsp header */
 	{
-	fil_system_t*	system = fil_system;
+	fil_system_t*	f_system = fil_system;
 	fil_space_t*	space;
 	fil_node_t*	node;
 
-	mutex_enter(&(system->mutex));
-	space = UT_LIST_GET_FIRST(system->space_list);
+	mutex_enter(&(f_system->mutex));
+	space = UT_LIST_GET_FIRST(f_system->space_list);
 
 	while (space != NULL) {
 		byte*	header;
@@ -5428,7 +5428,7 @@ skip_check:
 #endif
 
 		if (space->purpose == FIL_TABLESPACE) {
-			mutex_exit(&(system->mutex));
+			mutex_exit(&(f_system->mutex));
 
 			mtr_start(&mtr);
 
@@ -5454,13 +5454,13 @@ skip_check:
 
 			fil_extend_space_to_desired_size(&actual_size, space->id, size);
 
-			mutex_enter(&(system->mutex));
+			mutex_enter(&(f_system->mutex));
 		}
 
 		space = UT_LIST_GET_NEXT(space_list, space);
 	}
 
-	mutex_exit(&(system->mutex));
+	mutex_exit(&(f_system->mutex));
 	}
 
 
