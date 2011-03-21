@@ -4141,18 +4141,18 @@ loop:
 
 			for (i = 0; i < n_fields; i++) {
 				if (rec_offs_nth_extern(offsets, i)) {
-					page_t*	page;
+					page_t*	local_page;
 					ulint	space_id;
 					ulint	page_no;
 					ulint	offset;
 					ulint	extern_len;
 					byte*	blob_header;
 					ulint	part_len;
-					mtr_t	mtr;
+					mtr_t	local_mtr;
 					ulint	local_len;
 					byte*	data;
 #ifdef INNODB_VERSION_SHORT
-					buf_block_t*	block;
+					buf_block_t*	local_block;
 #endif
 
 					data = rec_get_nth_field(cur.rec, offsets, i, &local_len);
@@ -4169,15 +4169,15 @@ loop:
 						fprintf(stderr, "\nWarning: several record may share same external page.\n");
 
 					for (;;) {
-						mtr_start(&mtr);
+						mtr_start(&local_mtr);
 
 #ifndef INNODB_VERSION_SHORT
-						page = buf_page_get(space_id, page_no, RW_S_LATCH, &mtr);
+						local_page = buf_page_get(space_id, page_no, RW_S_LATCH, &local_mtr);
 #else
-						block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, &mtr);
-						page = buf_block_get_frame(block);
+						local_block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, &local_mtr);
+						local_page = buf_block_get_frame(local_block);
 #endif
-						blob_header = page + offset;
+						blob_header = local_page + offset;
 #define BTR_BLOB_HDR_PART_LEN		0
 #define BTR_BLOB_HDR_NEXT_PAGE_NO	4
 						//part_len = btr_blob_get_part_len(blob_header);
@@ -4198,7 +4198,7 @@ loop:
 						sum_data_extern += part_len;
 
 
-						mtr_commit(&mtr);
+						mtr_commit(&local_mtr);
 
 						if (page_no == FIL_NULL)
 							break;
