@@ -1471,6 +1471,9 @@ innobase_convert_identifier(
 	ibool		file_id)/*!< in: TRUE=id is a table or database name;
 				FALSE=id is an UTF-8 string */
 {
+	(void)thd;
+	(void)file_id;
+
 	const char*	s	= id;
 	int		q;
 
@@ -1579,6 +1582,7 @@ ibool
 trx_is_interrupted(
 	trx_t*	trx)
 {
+	(void)trx;
 	/* There are no mysql_thd */
 	return(FALSE);
 }
@@ -1733,6 +1737,12 @@ innobase_raw_format(
 	ulint		buf_size)	/*!< in: output buffer size
 					in bytes */
 {
+	(void)data;
+	(void)data_len;
+	(void)charset_coll;
+	(void)buf;
+	(void)buf_size;
+
 	fprintf(stderr, "xtrabackup: innobase_raw_format() is called\n");
 	return(0);
 }
@@ -1743,6 +1753,7 @@ thd_lock_wait_timeout(
 	void*	thd)	/*!< in: thread handle (THD*), or NULL to query
 			the global innodb_lock_wait_timeout */
 {
+	(void)thd;
 	return(innobase_lock_wait_timeout);
 }
 
@@ -1752,6 +1763,7 @@ thd_supports_xa(
 	void*	thd)	/*!< in: thread handle (THD*), or NULL to query
 			the global innodb_supports_xa */
 {
+	(void)thd;
 	return(FALSE);
 }
 
@@ -1760,6 +1772,7 @@ trx_is_strict(
 /*==========*/
 	trx_t*	trx)	/*!< in: transaction */
 {
+	(void)trx;
 	return(FALSE);
 }
 
