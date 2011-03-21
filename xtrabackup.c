@@ -1347,6 +1347,7 @@ struct charset_info_st*
 innobase_get_charset(
 	void*   mysql_thd)
 {
+	(void)mysql_thd;
 	fprintf(stderr, "xtrabackup: innobase_get_charset() is called\n");
 	return(NULL);
 }
@@ -1356,6 +1357,8 @@ innobase_get_stmt(
 	void*	mysql_thd,
 	size_t*	length)
 {
+	(void)mysql_thd;
+	(void)length;
 	fprintf(stderr, "xtrabackup: innobase_get_stmt() is called\n");
 	return("nothing");
 }
