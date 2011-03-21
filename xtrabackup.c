@@ -3368,7 +3368,7 @@ data_copy_thread_func(
 }
 
 /* CAUTION(?): Don't rename file_per_table during backup */
-void
+static void
 xtrabackup_backup_func(void)
 {
 	MY_STAT stat_info;
