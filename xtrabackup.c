@@ -2506,10 +2506,9 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	{ /* must backup id==0 */
 		xtrabackup_tables_t* table;
 		char *p;
-		int p_len, regres;
+		int p_len;
 		char *next, *prev;
 		char tmp;
-		int i;
 
 		p = node->name;
 		prev = NULL;
