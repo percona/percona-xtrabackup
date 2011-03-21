@@ -2450,6 +2450,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 #endif
 	xb_delta_info_t info;
 
+	info.page_size = 0;
+
 #ifdef XTRADB_BASED
 	if (xtrabackup_tables && (!trx_sys_sys_space(node->space->id)))
 #else
