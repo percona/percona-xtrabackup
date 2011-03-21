@@ -1300,6 +1300,13 @@ innobase_convert_from_table_id(
 	const char*	from,
 	ulint	len)
 {
+#ifdef INNODB_VERSION_SHORT
+	(void)cs;
+#endif
+	(void)to;
+	(void)from;
+	(void)len;
+
 	fprintf(stderr, "xtrabackup: innobase_convert_from_table_id() is called\n");
 }
 
