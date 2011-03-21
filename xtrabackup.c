@@ -3652,7 +3652,7 @@ xtrabackup_backup_func(void)
 	}
 
         {
-        fil_system_t*   system = fil_system;
+        fil_system_t*   f_system = fil_system;
 
 	/* definition from recv_recovery_from_checkpoint_start() */
 	log_group_t*	max_cp_group;
@@ -3671,7 +3671,7 @@ xtrabackup_backup_func(void)
 	log_hdr_buf = ut_align(log_hdr_buf_, OS_FILE_LOG_BLOCK_SIZE);
 
 	/* log space */
-	//space = UT_LIST_GET_NEXT(space_list, UT_LIST_GET_FIRST(system->space_list));
+	//space = UT_LIST_GET_NEXT(space_list, UT_LIST_GET_FIRST(f_system->space_list));
 	//printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
 	//	space->name, space->id, space->purpose, space->size);
 
@@ -3808,7 +3808,7 @@ reread_log_header:
 			printf("xtrabackup: Starting %u threads for parallel "
 			       "data files transfer\n", parallel);
 
-		it = datafiles_iter_new(system);
+		it = datafiles_iter_new(f_system);
 		if (it == NULL) {
 			fprintf(stderr,
 				"xtrabackup: Error: "
@@ -3845,14 +3845,14 @@ reread_log_header:
 			os_mutex_exit(count_mutex);
 		}
 		/* NOTE: It may not needed at "--backup" for now */
-		/* mutex_enter(&(system->mutex)); */
+		/* mutex_enter(&(f_system->mutex)); */
 
 		os_mutex_free(count_mutex);
 		datafiles_iter_free(it);
 
 	} //if (!xtrabackup_stream)
 
-        //mutex_exit(&(system->mutex));
+        //mutex_exit(&(f_system->mutex));
         }
 
 
