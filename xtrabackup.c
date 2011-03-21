@@ -1409,6 +1409,9 @@ innobase_invalidate_query_cache(
 #endif
 	ulint	full_name_len)
 {
+	(void)trx;
+	(void)full_name;
+	(void)full_name_len;
 	/* do nothing */
 }
 
@@ -1418,6 +1421,9 @@ mysql_get_identifier_quote_char(
 	const char*	name,
 	ulint		namelen)
 {
+	(void)trx;
+	(void)name;
+	(void)namelen;
 	return '"';
 }
 
@@ -1429,6 +1435,9 @@ innobase_print_identifier(
 	const char*	name,
 	ulint	namelen)
 {
+	(void)trx;
+	(void)table_id;
+
         const char*     s       = name;
         const char*     e = s + namelen;
         int             q;
