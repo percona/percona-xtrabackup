@@ -599,10 +599,10 @@ struct xtrabackup_tables_struct{
 typedef struct xtrabackup_tables_struct	xtrabackup_tables_t;
 
 #ifdef XTRADB_BASED
-static ulint		n[SRV_MAX_N_IO_THREADS + 6 + 64];
+static ulint		thread_nr[SRV_MAX_N_IO_THREADS + 6 + 64];
 static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6 + 64];
 #else
-static ulint		n[SRV_MAX_N_IO_THREADS + 6];
+static ulint		thread_nr[SRV_MAX_N_IO_THREADS + 6];
 static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6];
 #endif
 
@@ -3469,12 +3469,12 @@ xtrabackup_backup_func(void)
         }
 
 	{
-	ulint	n;
+	ulint	nr;
 	ulint	i;
 
-	n = srv_n_data_files;
+	nr = srv_n_data_files;
 	
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < nr; i++) {
 		srv_data_file_sizes[i] = srv_data_file_sizes[i]
 					* ((1024 * 1024) / UNIV_PAGE_SIZE);
 	}		
@@ -3553,9 +3553,9 @@ xtrabackup_backup_func(void)
 	lock_sys_create(srv_lock_table_size);
 
 	for (i = 0; i < srv_n_file_io_threads; i++) {
-		n[i] = i;
+		thread_nr[i] = i;
 
-		os_thread_create(io_handler_thread, n + i, thread_ids + i);
+		os_thread_create(io_handler_thread, thread_nr + i, thread_ids + i);
     	}
 
 	os_thread_sleep(200000); /*0.2 sec*/
