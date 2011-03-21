@@ -1223,6 +1223,7 @@ ibool
 thd_is_replication_slave_thread(
 	void*	thd)
 {
+	(void)thd;
 	fprintf(stderr, "xtrabackup: thd_is_replication_slave_thread() is called\n");
 	return(FALSE);
 }
@@ -1231,6 +1232,7 @@ ibool
 thd_has_edited_nontrans_tables(
 	void*	thd)
 {
+	(void)thd;
 	fprintf(stderr, "xtrabackup: thd_has_edited_nontrans_tables() is called\n");
 	return(FALSE);
 }
@@ -1239,6 +1241,7 @@ ibool
 thd_is_select(
 	const void*	thd)
 {
+	(void)thd;
 	fprintf(stderr, "xtrabackup: thd_is_select() is called\n");
 	return(FALSE);
 }
@@ -1257,10 +1260,13 @@ innobase_mysql_end_print_arbitrary_thd(void)
 
 void
 innobase_mysql_print_thd(
-	FILE*   f,		
+	FILE*   f,
 	void*   input_thd,
 	uint	max_query_len)
 {
+	(void)f;
+	(void)input_thd;
+	(void)max_query_len;
 	fprintf(stderr, "xtrabackup: innobase_mysql_print_thd() is called\n");
 }
 
