@@ -5468,7 +5468,7 @@ skip_check:
 	if (xtrabackup_export) {
 		printf("xtrabackup: export option is specified.\n");
 		if (innobase_file_per_table) {
-			fil_system_t*	system = fil_system;
+			fil_system_t*	f_system = fil_system;
 			fil_space_t*	space;
 			fil_node_t*	node;
 			os_file_t	info_file = -1;
@@ -5485,9 +5485,9 @@ skip_check:
 			/* flush insert buffer at shutdwon */
 			innobase_fast_shutdown = 0;
 
-			mutex_enter(&(system->mutex));
+			mutex_enter(&(f_system->mutex));
 
-			space = UT_LIST_GET_FIRST(system->space_list);
+			space = UT_LIST_GET_FIRST(f_system->space_list);
 			while (space != NULL) {
 				/* treat file_per_table only */
 				if (space->purpose != FIL_TABLESPACE
@@ -5529,7 +5529,7 @@ skip_check:
 
 					info_file_path[len - 4] = '.';
 
-					mutex_exit(&(system->mutex));
+					mutex_exit(&(f_system->mutex));
 					mutex_enter(&(dict_sys->mutex));
 
 					table = dict_table_get_low(table_name);
@@ -5614,14 +5614,14 @@ next_node:
 						info_file = -1;
 					}
 					mutex_exit(&(dict_sys->mutex));
-					mutex_enter(&(system->mutex));
+					mutex_enter(&(f_system->mutex));
 
 					node = UT_LIST_GET_NEXT(chain, node);
 				}
 
 				space = UT_LIST_GET_NEXT(space_list, space);
 			}
-			mutex_exit(&(system->mutex));
+			mutex_exit(&(f_system->mutex));
 
 			ut_free(buf);
 		} else {
