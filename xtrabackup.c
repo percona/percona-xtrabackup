@@ -118,11 +118,14 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 void thd_wait_begin(MYSQL_THD thd, thd_wait_type wait_type)
 {
+	(void)thd;
+	(void)wait_type;
 	return;
 }
 
 void thd_wait_end(MYSQL_THD thd)
 {
+	(void)thd;
 	return;
 }
 
@@ -722,14 +725,14 @@ typedef struct {
 
 static
 datafiles_iter_t *
-datafiles_iter_new(fil_system_t *system)
+datafiles_iter_new(fil_system_t *f_system)
 {
 	datafiles_iter_t *it;
 
 	it = ut_malloc(sizeof(datafiles_iter_t));
 	it->mutex = OS_MUTEX_CREATE();
 
-	it->system = system;
+	it->system = f_system;
 	it->space = NULL;
 	it->node = NULL;
 	it->started = FALSE;
@@ -1220,6 +1223,7 @@ ibool
 thd_is_replication_slave_thread(
 	void*	thd)
 {
+	(void)thd;
 	fprintf(stderr, "xtrabackup: thd_is_replication_slave_thread() is called\n");
 	return(FALSE);
 }
@@ -1228,6 +1232,7 @@ ibool
 thd_has_edited_nontrans_tables(
 	void*	thd)
 {
+	(void)thd;
 	fprintf(stderr, "xtrabackup: thd_has_edited_nontrans_tables() is called\n");
 	return(FALSE);
 }
@@ -1236,6 +1241,7 @@ ibool
 thd_is_select(
 	const void*	thd)
 {
+	(void)thd;
 	fprintf(stderr, "xtrabackup: thd_is_select() is called\n");
 	return(FALSE);
 }
@@ -1254,10 +1260,13 @@ innobase_mysql_end_print_arbitrary_thd(void)
 
 void
 innobase_mysql_print_thd(
-	FILE*   f,		
+	FILE*   f,
 	void*   input_thd,
 	uint	max_query_len)
 {
+	(void)f;
+	(void)input_thd;
+	(void)max_query_len;
 	fprintf(stderr, "xtrabackup: innobase_mysql_print_thd() is called\n");
 }
 
@@ -1291,6 +1300,13 @@ innobase_convert_from_table_id(
 	const char*	from,
 	ulint	len)
 {
+#ifdef INNODB_VERSION_SHORT
+	(void)cs;
+#endif
+	(void)to;
+	(void)from;
+	(void)len;
+
 	fprintf(stderr, "xtrabackup: innobase_convert_from_table_id() is called\n");
 }
 
@@ -1303,6 +1319,12 @@ innobase_convert_from_id(
 	const char*	from,
 	ulint	len)
 {
+#ifdef INNODB_VERSION_SHORT
+	(void)cs;
+#endif
+	(void)to;
+	(void)from;
+	(void)len;
 	fprintf(stderr, "xtrabackup: innobase_convert_from_id() is called\n");
 }
 
@@ -1325,6 +1347,7 @@ struct charset_info_st*
 innobase_get_charset(
 	void*   mysql_thd)
 {
+	(void)mysql_thd;
 	fprintf(stderr, "xtrabackup: innobase_get_charset() is called\n");
 	return(NULL);
 }
@@ -1334,6 +1357,8 @@ innobase_get_stmt(
 	void*	mysql_thd,
 	size_t*	length)
 {
+	(void)mysql_thd;
+	(void)length;
 	fprintf(stderr, "xtrabackup: innobase_get_stmt() is called\n");
 	return("nothing");
 }
@@ -1384,6 +1409,9 @@ innobase_invalidate_query_cache(
 #endif
 	ulint	full_name_len)
 {
+	(void)trx;
+	(void)full_name;
+	(void)full_name_len;
 	/* do nothing */
 }
 
@@ -1393,6 +1421,9 @@ mysql_get_identifier_quote_char(
 	const char*	name,
 	ulint		namelen)
 {
+	(void)trx;
+	(void)name;
+	(void)namelen;
 	return '"';
 }
 
@@ -1404,6 +1435,9 @@ innobase_print_identifier(
 	const char*	name,
 	ulint	namelen)
 {
+	(void)trx;
+	(void)table_id;
+
         const char*     s       = name;
         const char*     e = s + namelen;
         int             q;
@@ -1437,6 +1471,9 @@ innobase_convert_identifier(
 	ibool		file_id)/*!< in: TRUE=id is a table or database name;
 				FALSE=id is an UTF-8 string */
 {
+	(void)thd;
+	(void)file_id;
+
 	const char*	s	= id;
 	int		q;
 
@@ -1545,6 +1582,7 @@ ibool
 trx_is_interrupted(
 	trx_t*	trx)
 {
+	(void)trx;
 	/* There are no mysql_thd */
 	return(FALSE);
 }
@@ -1699,6 +1737,12 @@ innobase_raw_format(
 	ulint		buf_size)	/*!< in: output buffer size
 					in bytes */
 {
+	(void)data;
+	(void)data_len;
+	(void)charset_coll;
+	(void)buf;
+	(void)buf_size;
+
 	fprintf(stderr, "xtrabackup: innobase_raw_format() is called\n");
 	return(0);
 }
@@ -1709,6 +1753,7 @@ thd_lock_wait_timeout(
 	void*	thd)	/*!< in: thread handle (THD*), or NULL to query
 			the global innodb_lock_wait_timeout */
 {
+	(void)thd;
 	return(innobase_lock_wait_timeout);
 }
 
@@ -1718,6 +1763,7 @@ thd_supports_xa(
 	void*	thd)	/*!< in: thread handle (THD*), or NULL to query
 			the global innodb_supports_xa */
 {
+	(void)thd;
 	return(FALSE);
 }
 
@@ -1726,6 +1772,7 @@ trx_is_strict(
 /*==========*/
 	trx_t*	trx)	/*!< in: transaction */
 {
+	(void)trx;
 	return(FALSE);
 }
 
@@ -1762,7 +1809,7 @@ get_bit_shift(ulint value)
 	return (value >> 1) ? 0 : shift;
 }
 
-my_bool
+static my_bool
 innodb_init_param(void)
 {
 	/* innobase_init */
@@ -2178,7 +2225,7 @@ error:
 	return(TRUE);
 }
 
-my_bool
+static my_bool
 innodb_init(void)
 {
 	int	err;
@@ -2208,7 +2255,7 @@ error:
 	return(TRUE);
 }
 
-my_bool
+static my_bool
 innodb_end(void)
 {
 	srv_fast_shutdown = (ulint) innobase_fast_shutdown;
@@ -2238,7 +2285,7 @@ error:
 }
 
 /* ================= common ================= */
-my_bool
+static my_bool
 xtrabackup_read_metadata(char *filename)
 {
 	FILE *fp;
@@ -2281,7 +2328,7 @@ xtrabackup_read_metadata(char *filename)
 	return(FALSE);
 }
 
-my_bool
+static my_bool
 xtrabackup_write_metadata(char *filename)
 {
 	FILE *fp;
@@ -2325,7 +2372,7 @@ xtrabackup_write_metadata(char *filename)
 /***********************************************************************
 Read meta info for an incremental delta.
 @return TRUE on success, FALSE on failure. */
-my_bool
+static my_bool
 xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 {
 	FILE *fp;
@@ -2349,7 +2396,7 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 /***********************************************************************
 Write meta info for an incremental delta.
 @return TRUE on success, FALSE on failure. */
-my_bool
+static my_bool
 xb_write_delta_metadata(const char *filepath, const xb_delta_info_t *info)
 {
 	FILE *fp;
@@ -2369,7 +2416,7 @@ xb_write_delta_metadata(const char *filepath, const xb_delta_info_t *info)
 }
 
 /* ================= backup ================= */
-void
+static void
 xtrabackup_io_throttling(void)
 {
 	if (xtrabackup_throttle && (io_ticket--) < 0) {
@@ -2382,7 +2429,7 @@ xtrabackup_io_throttling(void)
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
 
-my_bool
+static my_bool
 xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 {
 	os_file_t	src_file = -1;
@@ -2459,10 +2506,9 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	{ /* must backup id==0 */
 		xtrabackup_tables_t* table;
 		char *p;
-		int p_len, regres;
+		int p_len;
 		char *next, *prev;
 		char tmp;
-		int i;
 
 		p = node->name;
 		prev = NULL;
@@ -2838,7 +2884,7 @@ skip:
 	return(FALSE);
 }
 
-my_bool
+static my_bool
 xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 {
 	/* definition from recv_recovery_from_checkpoint_start() */
@@ -3132,6 +3178,7 @@ ulint
 log_copying_thread(
 	void*	arg)
 {
+	(void)arg;
 	ulint	counter = 0;
 
 	if (!xtrabackup_stream)
@@ -3172,6 +3219,7 @@ ulint
 io_watching_thread(
 	void*	arg)
 {
+	(void)arg;
 	/* currently, for --backup only */
 	ut_a(xtrabackup_backup);
 
@@ -3243,7 +3291,6 @@ xtrabackup_create_output_dir(
 {
 	char	path[FN_REFLEN];
 	char	*ptr1, *ptr2;
-	MY_STAT stat_info;
 
 	/* mkdir if not exist */
 	ptr1 = strstr(space->name, SRV_PATH_SEPARATOR_STR);
@@ -3319,7 +3366,7 @@ data_copy_thread_func(
 }
 
 /* CAUTION(?): Don't rename file_per_table during backup */
-void
+static void
 xtrabackup_backup_func(void)
 {
 	MY_STAT stat_info;
@@ -3959,7 +4006,7 @@ skip_last_cp:
 }
 
 /* ================= stats ================= */
-my_bool
+static my_bool
 xtrabackup_stats_level(
 	dict_index_t*	index,
 	ulint		level)
@@ -4217,7 +4264,7 @@ loop:
 	return(TRUE);
 }
 
-void
+static void
 xtrabackup_stats_func(void)
 {
 	/* cd to datadir */
@@ -4473,7 +4520,7 @@ end:
 
 /* ================= prepare ================= */
 
-my_bool
+static my_bool
 xtrabackup_init_temp_log(void)
 {
 	os_file_t	src_file = -1;
@@ -4826,7 +4873,7 @@ get_meta_path(
 	return TRUE;
 }
 
-void
+static void
 xtrabackup_apply_delta(
 	const char*	dirname,	/* in: dir name of incremental */
 	const char*	dbname,		/* in: database name (ibdata: NULL) */
@@ -4834,6 +4881,7 @@ xtrabackup_apply_delta(
 					including the .delta extension */
 	my_bool check_newer)
 {
+	(void)check_newer;
 	os_file_t	src_file = -1;
 	os_file_t	dst_file = -1;
 	char	src_path[FN_REFLEN];
@@ -5028,7 +5076,7 @@ error:
 	return;
 }
 
-void
+static void
 xtrabackup_apply_deltas(my_bool check_newer)
 {
 	int		ret;
@@ -5135,7 +5183,7 @@ next_datadir_item:
 
 }
 
-my_bool
+static my_bool
 xtrabackup_close_temp_log(my_bool clear_flag)
 {
 	os_file_t	src_file = -1;
@@ -5227,7 +5275,7 @@ error:
 	return(TRUE); /*ERROR*/
 }
 
-void
+static void
 xtrabackup_prepare_func(void)
 {
 	/* cd to target-dir */
@@ -5860,12 +5908,13 @@ skip_tables_file_register:
 		/* direct specification is only for --backup */
 		/* and the lsn is prior to the other option */
 
-		char* incremental_low;
 		char* endchar;
-		long long lsn_high, lsn_low;
 		int error = 0;
 
 #ifndef INNODB_VERSION_SHORT
+		char* incremental_low;
+		long long lsn_high, lsn_low;
+
 		incremental_low = strstr(xtrabackup_incremental, ":");
 		if (incremental_low) {
 			*incremental_low = '\0';
