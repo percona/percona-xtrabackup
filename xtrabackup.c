@@ -599,10 +599,10 @@ struct xtrabackup_tables_struct{
 typedef struct xtrabackup_tables_struct	xtrabackup_tables_t;
 
 #ifdef XTRADB_BASED
-static ulint		n[SRV_MAX_N_IO_THREADS + 6 + 64];
+static ulint		thread_nr[SRV_MAX_N_IO_THREADS + 6 + 64];
 static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6 + 64];
 #else
-static ulint		n[SRV_MAX_N_IO_THREADS + 6];
+static ulint		thread_nr[SRV_MAX_N_IO_THREADS + 6];
 static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6];
 #endif
 
@@ -1836,8 +1836,7 @@ innodb_init_param(void)
 		if (n_shift >= 12 && n_shift <= UNIV_PAGE_SIZE_SHIFT_MAX) {
 			fprintf(stderr,
 				"InnoDB: Warning: innodb_page_size has been "
-				"changed from default value 16384.\n",
-				innobase_page_size);
+				"changed from default value 16384.\n");
 			srv_page_size_shift = n_shift;
 			srv_page_size = 1 << n_shift;
 			fprintf(stderr,
@@ -2451,6 +2450,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 #endif
 	xb_delta_info_t info;
 
+	info.page_size = 0;
+
 #ifdef XTRADB_BASED
 	if (xtrabackup_tables && (!trx_sys_sys_space(node->space->id)))
 #else
@@ -2458,7 +2459,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 #endif
 	{ /* must backup id==0 */
 		char *p;
-		int p_len, regres;
+		int p_len, regres= 0;
 		char *next, *prev;
 		char tmp;
 		int i;
@@ -2686,7 +2687,7 @@ skip_filter:
 		ulint chunk;
 		ulint chunk_offset;
 		ulint retry_count = 10;
-copy_loop:
+//copy_loop:
 		if (file_size - offset > COPY_CHUNK * page_size) {
 			chunk = COPY_CHUNK * page_size;
 		} else {
@@ -2764,7 +2765,7 @@ read_retry:
 				if (ut_dulint_cmp(incremental_lsn,
 					MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
 	/* ========================================= */
-	IB_INT64 page_offset;
+	IB_INT64 offset_on_page;
 
 	if (page_in_buffer == page_size/4) {
 		/* flush buffer */
@@ -2787,10 +2788,10 @@ read_retry:
 		page_in_buffer++;
 	}
 
-	page_offset = ((offset + (IB_INT64)chunk_offset) >> page_size_shift);
-	ut_a(page_offset >> 32 == 0);
+	offset_on_page = ((offset + (IB_INT64)chunk_offset) >> page_size_shift);
+	ut_a(offset_on_page >> 32 == 0);
 
-	mach_write_to_4(incremental_buffer + page_in_buffer * 4, (ulint)page_offset);
+	mach_write_to_4(incremental_buffer + page_in_buffer * 4, (ulint)offset_on_page);
 	memcpy(incremental_buffer + page_in_buffer * page_size,
 	       page + chunk_offset, page_size);
 
@@ -3470,12 +3471,12 @@ xtrabackup_backup_func(void)
         }
 
 	{
-	ulint	n;
+	ulint	nr;
 	ulint	i;
 
-	n = srv_n_data_files;
+	nr = srv_n_data_files;
 	
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < nr; i++) {
 		srv_data_file_sizes[i] = srv_data_file_sizes[i]
 					* ((1024 * 1024) / UNIV_PAGE_SIZE);
 	}		
@@ -3554,9 +3555,9 @@ xtrabackup_backup_func(void)
 	lock_sys_create(srv_lock_table_size);
 
 	for (i = 0; i < srv_n_file_io_threads; i++) {
-		n[i] = i;
+		thread_nr[i] = i;
 
-		os_thread_create(io_handler_thread, n + i, thread_ids + i);
+		os_thread_create(io_handler_thread, thread_nr + i, thread_ids + i);
     	}
 
 	os_thread_sleep(200000); /*0.2 sec*/
@@ -3651,7 +3652,7 @@ xtrabackup_backup_func(void)
 	}
 
         {
-        fil_system_t*   system = fil_system;
+        fil_system_t*   f_system = fil_system;
 
 	/* definition from recv_recovery_from_checkpoint_start() */
 	log_group_t*	max_cp_group;
@@ -3670,7 +3671,7 @@ xtrabackup_backup_func(void)
 	log_hdr_buf = ut_align(log_hdr_buf_, OS_FILE_LOG_BLOCK_SIZE);
 
 	/* log space */
-	//space = UT_LIST_GET_NEXT(space_list, UT_LIST_GET_FIRST(system->space_list));
+	//space = UT_LIST_GET_NEXT(space_list, UT_LIST_GET_FIRST(f_system->space_list));
 	//printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
 	//	space->name, space->id, space->purpose, space->size);
 
@@ -3807,7 +3808,7 @@ reread_log_header:
 			printf("xtrabackup: Starting %u threads for parallel "
 			       "data files transfer\n", parallel);
 
-		it = datafiles_iter_new(system);
+		it = datafiles_iter_new(f_system);
 		if (it == NULL) {
 			fprintf(stderr,
 				"xtrabackup: Error: "
@@ -3844,14 +3845,14 @@ reread_log_header:
 			os_mutex_exit(count_mutex);
 		}
 		/* NOTE: It may not needed at "--backup" for now */
-		/* mutex_enter(&(system->mutex)); */
+		/* mutex_enter(&(f_system->mutex)); */
 
 		os_mutex_free(count_mutex);
 		datafiles_iter_free(it);
 
 	} //if (!xtrabackup_stream)
 
-        //mutex_exit(&(system->mutex));
+        //mutex_exit(&(f_system->mutex));
         }
 
 
@@ -4118,9 +4119,9 @@ loop:
 		page_cur_t	cur;
 		ulint	n_fields;
 		ulint	i;
-		mem_heap_t*	heap	= NULL;
+		mem_heap_t*	local_heap	= NULL;
 		ulint	offsets_[REC_OFFS_NORMAL_SIZE];
-		ulint*	offsets	= offsets_;
+		ulint*	local_offsets	= offsets_;
 
 		*offsets_ = (sizeof offsets_) / sizeof *offsets_;
 
@@ -4136,27 +4137,27 @@ loop:
 				break;
 			}
 
-			offsets = rec_get_offsets(cur.rec, index, offsets,
-						ULINT_UNDEFINED, &heap);
-			n_fields = rec_offs_n_fields(offsets);
+			offsets = rec_get_offsets(cur.rec, index, local_offsets,
+						ULINT_UNDEFINED, &local_heap);
+			n_fields = rec_offs_n_fields(local_offsets);
 
 			for (i = 0; i < n_fields; i++) {
-				if (rec_offs_nth_extern(offsets, i)) {
-					page_t*	page;
+				if (rec_offs_nth_extern(local_offsets, i)) {
+					page_t*	local_page;
 					ulint	space_id;
 					ulint	page_no;
 					ulint	offset;
 					ulint	extern_len;
 					byte*	blob_header;
 					ulint	part_len;
-					mtr_t	mtr;
+					mtr_t	local_mtr;
 					ulint	local_len;
 					byte*	data;
 #ifdef INNODB_VERSION_SHORT
-					buf_block_t*	block;
+					buf_block_t*	local_block;
 #endif
 
-					data = rec_get_nth_field(cur.rec, offsets, i, &local_len);
+					data = rec_get_nth_field(cur.rec, local_offsets, i, &local_len);
 
 					ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
 					local_len -= BTR_EXTERN_FIELD_REF_SIZE;
@@ -4170,15 +4171,15 @@ loop:
 						fprintf(stderr, "\nWarning: several record may share same external page.\n");
 
 					for (;;) {
-						mtr_start(&mtr);
+						mtr_start(&local_mtr);
 
 #ifndef INNODB_VERSION_SHORT
-						page = buf_page_get(space_id, page_no, RW_S_LATCH, &mtr);
+						local_page = buf_page_get(space_id, page_no, RW_S_LATCH, &local_mtr);
 #else
-						block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, &mtr);
-						page = buf_block_get_frame(block);
+						local_block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, &local_mtr);
+						local_page = buf_block_get_frame(local_block);
 #endif
-						blob_header = page + offset;
+						blob_header = local_page + offset;
 #define BTR_BLOB_HDR_PART_LEN		0
 #define BTR_BLOB_HDR_NEXT_PAGE_NO	4
 						//part_len = btr_blob_get_part_len(blob_header);
@@ -4199,7 +4200,7 @@ loop:
 						sum_data_extern += part_len;
 
 
-						mtr_commit(&mtr);
+						mtr_commit(&local_mtr);
 
 						if (page_no == FIL_NULL)
 							break;
@@ -4375,7 +4376,7 @@ loop:
 
 		if (xtrabackup_tables) {
 			char *p;
-			int regres;
+			int regres= 0;
 			int i;
 
 			p = strstr(table->name, SRV_PATH_SEPARATOR_STR);
@@ -4475,24 +4476,24 @@ loop:
 		(ulong) index->stat_index_size);
 
 	{
-		mtr_t	mtr;
+		mtr_t	local_mtr;
 		page_t*	root;
 		ulint	n;
 
-		mtr_start(&mtr);
+		mtr_start(&local_mtr);
 
 #if (MYSQL_VERSION_ID < 50100)
-		mtr_x_lock(&(index->tree->lock), &mtr);
-		root = btr_root_get(index->tree, &mtr);
+		mtr_x_lock(&(index->tree->lock), &local_mtr);
+		root = btr_root_get(index->tree, &local_mtr);
 #else /* MYSQL_VERSION_ID < 51000 */
-		mtr_x_lock(&(index->lock), &mtr);
-		root = btr_root_get(index, &mtr);
+		mtr_x_lock(&(index->lock), &local_mtr);
+		root = btr_root_get(index, &local_mtr);
 #endif
-		n = btr_page_get_level(root, &mtr);
+		n = btr_page_get_level(root, &local_mtr);
 
 		xtrabackup_stats_level(index, n);
 
-		mtr_commit(&mtr);
+		mtr_commit(&local_mtr);
 	}
 
 	putc('\n', stdout);
@@ -5032,11 +5033,11 @@ xtrabackup_apply_delta(
 
 		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
 		     page_in_buffer++) {
-			ulint page_offset;
+			ulint offset_on_page;
 
-			page_offset = mach_read_from_4(incremental_buffer + page_in_buffer * 4);
+			offset_on_page = mach_read_from_4(incremental_buffer + page_in_buffer * 4);
 
-			if (page_offset == 0xFFFFFFFFUL)
+			if (offset_on_page == 0xFFFFFFFFUL)
 				break;
 
 			/* apply blocks in the cluster */
@@ -5049,9 +5050,9 @@ xtrabackup_apply_delta(
 			success = os_file_write(dst_path, dst_file,
 					incremental_buffer +
 						page_in_buffer * page_size,
-					(page_offset << page_size_shift) &
+					(offset_on_page << page_size_shift) &
 						0xFFFFFFFFUL,
-					page_offset >> (32 - page_size_shift),
+					offset_on_page >> (32 - page_size_shift),
 					page_size);
 			if (!success) {
 				goto error;
@@ -5381,13 +5382,13 @@ skip_check:
 	/* TEST: list of datafiles and transaction log files and LSN*/
 /*
 	{
-	fil_system_t*   system = fil_system;
+	fil_system_t*   f_system = fil_system;
 	fil_space_t*	space;
 	fil_node_t*	node;
 
-        mutex_enter(&(system->mutex));
+        mutex_enter(&(f_system->mutex));
 
-        space = UT_LIST_GET_FIRST(system->space_list);
+        space = UT_LIST_GET_FIRST(f_system->space_list);
 
         while (space != NULL) {
 		printf("space: name=%s, id=%d, purpose=%d, size=%d\n",
@@ -5404,17 +5405,16 @@ skip_check:
                 space = UT_LIST_GET_NEXT(space_list, space);
         }
 
-        mutex_exit(&(system->mutex));
+        mutex_exit(&(f_system->mutex));
 	}
 */
 	/* align space sizes along with fsp header */
 	{
-	fil_system_t*	system = fil_system;
+	fil_system_t*	f_system = fil_system;
 	fil_space_t*	space;
-	fil_node_t*	node;
 
-	mutex_enter(&(system->mutex));
-	space = UT_LIST_GET_FIRST(system->space_list);
+	mutex_enter(&(f_system->mutex));
+	space = UT_LIST_GET_FIRST(f_system->space_list);
 
 	while (space != NULL) {
 		byte*	header;
@@ -5427,7 +5427,7 @@ skip_check:
 #endif
 
 		if (space->purpose == FIL_TABLESPACE) {
-			mutex_exit(&(system->mutex));
+			mutex_exit(&(f_system->mutex));
 
 			mtr_start(&mtr);
 
@@ -5453,13 +5453,13 @@ skip_check:
 
 			fil_extend_space_to_desired_size(&actual_size, space->id, size);
 
-			mutex_enter(&(system->mutex));
+			mutex_enter(&(f_system->mutex));
 		}
 
 		space = UT_LIST_GET_NEXT(space_list, space);
 	}
 
-	mutex_exit(&(system->mutex));
+	mutex_exit(&(f_system->mutex));
 	}
 
 
@@ -5467,7 +5467,7 @@ skip_check:
 	if (xtrabackup_export) {
 		printf("xtrabackup: export option is specified.\n");
 		if (innobase_file_per_table) {
-			fil_system_t*	system = fil_system;
+			fil_system_t*	f_system = fil_system;
 			fil_space_t*	space;
 			fil_node_t*	node;
 			os_file_t	info_file = -1;
@@ -5484,9 +5484,9 @@ skip_check:
 			/* flush insert buffer at shutdwon */
 			innobase_fast_shutdown = 0;
 
-			mutex_enter(&(system->mutex));
+			mutex_enter(&(f_system->mutex));
 
-			space = UT_LIST_GET_FIRST(system->space_list);
+			space = UT_LIST_GET_FIRST(f_system->space_list);
 			while (space != NULL) {
 				/* treat file_per_table only */
 				if (space->purpose != FIL_TABLESPACE
@@ -5528,7 +5528,7 @@ skip_check:
 
 					info_file_path[len - 4] = '.';
 
-					mutex_exit(&(system->mutex));
+					mutex_exit(&(f_system->mutex));
 					mutex_enter(&(dict_sys->mutex));
 
 					table = dict_table_get_low(table_name);
@@ -5550,7 +5550,7 @@ skip_check:
 					mach_write_to_4(page    , 0x78706f72UL);
 					mach_write_to_4(page + 4, 0x74696e66UL);/*"xportinf"*/
 					mach_write_to_4(page + 8, n_index);
-					strncpy(page + 12, table_name, 500);
+					strncpy((char*)page + 12, table_name, 500);
 
 					printf(
 "xtrabackup: export metadata of table '%s' to file `%s` (%lu indexes)\n",
@@ -5565,7 +5565,7 @@ skip_check:
 #else /* MYSQL_VERSION_ID < 51000 */
 								index->page);
 #endif
-						strncpy(page + n_index * 512 + 12, index->name, 500);
+						strncpy((char*)page + n_index * 512 + 12, index->name, 500);
 
 						printf(
 "xtrabackup:     name=%s, id.low=%lu, page=%lu\n",
@@ -5613,14 +5613,14 @@ next_node:
 						info_file = -1;
 					}
 					mutex_exit(&(dict_sys->mutex));
-					mutex_enter(&(system->mutex));
+					mutex_enter(&(f_system->mutex));
 
 					node = UT_LIST_GET_NEXT(chain, node);
 				}
 
 				space = UT_LIST_GET_NEXT(space_list, space);
 			}
-			mutex_exit(&(system->mutex));
+			mutex_exit(&(f_system->mutex));
 
 			ut_free(buf);
 		} else {
@@ -5761,7 +5761,7 @@ int main(int argc, char **argv)
 	/* ignore unsupported options */
 	{
 	int i,j,argc_new,find;
-	char *optend, *prev_found;
+	char *optend, *prev_found= NULL;
 	argc_new = argc;
 
 	j=1;
@@ -5849,7 +5849,7 @@ next_opt:
 		FILE *fp;
 
 		if (xtrabackup_stream) {
-			fprintf(stderr, "xtrabackup: Warning: --tables_file option doesn't affect with --stream.\n", xtrabackup_tables_file);
+			fprintf(stderr, "xtrabackup: Warning: --tables_file option doesn't affect with --stream.\n");
 			xtrabackup_tables_file = NULL;
 			goto skip_tables_file_register;
 		}
