@@ -10,7 +10,7 @@
 LIBS = -lpthread
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
 
-CFLAGS += -O3 -g -pedantic -Wall -Wundef -Wshadow  -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations -Wframe-larger-than=32768 -Wno-redundant-decls --std=gnu99
+CFLAGS += -O3 -g -pedantic -Wall -Wundef -Wshadow  -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations  -Wno-redundant-decls --std=gnu99
 
 TARGET=xtrabackup
 PREFIX=/usr
