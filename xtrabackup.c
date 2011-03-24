@@ -4137,7 +4137,7 @@ loop:
 				break;
 			}
 
-			offsets = rec_get_offsets(cur.rec, index, local_offsets,
+			local_offsets = rec_get_offsets(cur.rec, index, local_offsets,
 						ULINT_UNDEFINED, &local_heap);
 			n_fields = rec_offs_n_fields(local_offsets);
 
