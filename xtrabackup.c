@@ -4268,6 +4268,8 @@ loop:
 static void
 xtrabackup_stats_func(void)
 {
+	ulint n;
+
 	/* cd to datadir */
 
 	if (my_setwd(mysql_real_data_home,MYF(MY_WME)))
@@ -4288,6 +4290,28 @@ xtrabackup_stats_func(void)
 	/* initialize components */
 	if(innodb_init_param())
 		exit(EXIT_FAILURE);
+
+	/* Check if the log files have been created, otherwise innodb_init()
+	will crash when called with srv_read_only == TRUE */
+	for (n = 0; n < srv_n_log_files; n++) {
+		char		logname[FN_REFLEN];
+		ibool		exists;
+		os_file_type_t	type;
+
+		sprintf(logname, "ib_logfile%lu", (ulong) n);
+		if (!os_file_status(logname, &exists, &type) || !exists ||
+		    type != OS_FILE_TYPE_FILE) {
+			fprintf(stderr, "xtrabackup: Error: "
+				"Cannot find log file %s.\n", logname);
+			fprintf(stderr, "xtrabackup: Error: "
+				"to use the statistics feature, you need a "
+				"clean copy of the database including "
+				"correctly sized log files, so you need to "
+				"execute with --prepare twice to use this "
+				"functionality on a backup.\n");
+			exit(EXIT_FAILURE);
+		}
+	}
 
 	fprintf(stderr, "xtrabackup: Starting 'read-only' InnoDB instance to gather index statistics.\n"
 		"xtrabackup: Using %lld bytes for buffer pool (set by --use-memory parameter)\n",
