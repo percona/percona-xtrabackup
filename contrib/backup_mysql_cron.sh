@@ -35,4 +35,4 @@ fi
 find /var/mysql/backups/xtrabackup -name "*_*_*_xtrabackup\.tar\.bz2" -type f -mtime +${RETENTION_DAYS}
 
 # Create the backup
-/usr/bin/innobackupex-1.5.1 ${INNOBACKUPEX_OPTIONS} --stream=tar /tmp | bzip2 > ${BACKUPDIR}/${timestamp}_xtrabackup.tar.bz2 2> ${BACKUPDIR}/${timestamp}_xtrabackup.log
+/usr/bin/innobackupex-1.5.1 ${INNOBACKUPEX_OPTIONS} --stream=tar /tmp 2> ${BACKUPDIR}/${timestamp}_xtrabackup.log | bzip2 > ${BACKUPDIR}/${timestamp}_xtrabackup.tar.bz2
