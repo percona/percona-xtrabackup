@@ -4502,7 +4502,7 @@ loop:
 	{
 		mtr_t	local_mtr;
 		page_t*	root;
-		ulint	n;
+		ulint	page_level;
 
 		mtr_start(&local_mtr);
 
@@ -4513,9 +4513,9 @@ loop:
 		mtr_x_lock(&(index->lock), &local_mtr);
 		root = btr_root_get(index, &local_mtr);
 #endif
-		n = btr_page_get_level(root, &local_mtr);
+		page_level = btr_page_get_level(root, &local_mtr);
 
-		xtrabackup_stats_level(index, n);
+		xtrabackup_stats_level(index, page_level);
 
 		mtr_commit(&local_mtr);
 	}
