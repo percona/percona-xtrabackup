@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-MYSQL_51_VERSION=5.1.55
-MYSQL_55_VERSION=5.5.9
+MYSQL_51_VERSION=5.1.56
+MYSQL_55_VERSION=5.5.10
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://www.percona.com/downloads/community/"
