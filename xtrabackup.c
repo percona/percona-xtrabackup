@@ -2927,7 +2927,6 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 	ulint	no;
 	LSN64	scanned_lsn;
 	ulint	data_len;
-	ibool	more_data;
 
 	ulint	scanned_checkpoint_no = 0;
 
@@ -2935,7 +2934,6 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 	
 	log_block = log_sys->buf;
 	scanned_lsn = start_lsn;
-	more_data = FALSE;
 
 	while (log_block < log_sys->buf + RECV_SCAN_SIZE && !finished) {
 
