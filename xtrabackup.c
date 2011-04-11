@@ -4128,7 +4128,6 @@ loop:
 					ulint	space_id;
 					ulint	page_no;
 					ulint	offset;
-					ulint	extern_len;
 					byte*	blob_header;
 					ulint	part_len;
 					mtr_t	local_mtr;
@@ -4146,7 +4145,6 @@ loop:
 					space_id = mach_read_from_4(data + local_len + BTR_EXTERN_SPACE_ID);
 					page_no = mach_read_from_4(data + local_len + BTR_EXTERN_PAGE_NO);
 					offset = mach_read_from_4(data + local_len + BTR_EXTERN_OFFSET);
-					extern_len = mach_read_from_4(data + local_len + BTR_EXTERN_LEN + 4);
 
 					if (offset != FIL_PAGE_DATA)
 						fprintf(stderr, "\nWarning: several record may share same external page.\n");
