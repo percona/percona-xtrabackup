@@ -2884,8 +2884,6 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 {
 	/* definition from recv_recovery_from_checkpoint_start() */
 	log_group_t*	group;
-	log_group_t*	up_to_date_group;
-	LSN64		old_scanned_lsn;
 	LSN64		group_scanned_lsn;
 	LSN64		contiguous_lsn;
 
@@ -2906,9 +2904,6 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 		ibool	finished;
 		LSN64	start_lsn;
 		LSN64	end_lsn;
-
-
-		old_scanned_lsn = from_lsn;
 
 		/* reference recv_group_scan_log_recs() */
 	finished = FALSE;
@@ -3118,12 +3113,6 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 
 
 		group->scanned_lsn = group_scanned_lsn;
-		
-		if (ut_dulint_cmp(old_scanned_lsn, group_scanned_lsn) < 0) {
-			/* We found a more up-to-date group */
-
-			up_to_date_group = group;
-		}
 
 #ifndef INNODB_VERSION_SHORT
 		fprintf(stderr, ">> log scanned up to (%lu %lu)\n",group->scanned_lsn.high,group->scanned_lsn.low);
