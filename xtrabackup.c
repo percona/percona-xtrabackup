@@ -2438,7 +2438,6 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	ibool		success;
 	byte*		page;
 	byte*		buf2 = NULL;
-	LSN64		flush_lsn;
 	IB_INT64	file_size;
 	IB_INT64	offset;
 	ulint		page_in_buffer;
@@ -2675,11 +2674,6 @@ skip_filter:
 	if (!success) {
 		goto error;
 	}
-	flush_lsn = MACH_READ_64(page + FIL_PAGE_FILE_FLUSH_LSN);
-		/* check current flush lsn newer than checkpoint@start */
-//	if (ut_dulint_cmp(backup_start_checkpoint, flush_lsn) >= 0) {
-//		goto error;
-//	}
 
 	file_size = os_file_get_size_as_iblonglong(src_file);
 
