@@ -4540,7 +4540,6 @@ xtrabackup_init_temp_log(void)
 
 	LSN64	max_no;
 	LSN64	max_lsn;
-	ulint	max_field;
 	LSN64	checkpoint_no;
 
 	ulint	fold;
@@ -4676,7 +4675,6 @@ retry:
 		if (ut_dulint_cmp(checkpoint_no, max_no) >= 0) {
 			max_no = checkpoint_no;
 			max_lsn = MACH_READ_64(log_buf + field + LOG_CHECKPOINT_LSN);
-			max_field = field;
 /*
 			mach_write_to_4(log_buf + field + LOG_CHECKPOINT_OFFSET,
 					LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
