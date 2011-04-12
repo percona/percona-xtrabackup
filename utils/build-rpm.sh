@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Execute this tool to setup and build RPMs for XtraBackup starting
 # from a fresh tree
@@ -20,6 +20,7 @@ XTRABACKUP_VERSION=1.6
 # Examine parameters
 TARGET=''
 TARGET_CFLAGS=''
+TARGET_ARG=''
 SIGN='--sign'  # We sign by default
 TEST='no'    # We don't test by default
 
@@ -40,6 +41,7 @@ do
         shift
         TARGET="--target i686"
         TARGET_CFLAGS="-m32 -march=i686"
+        TARGET_ARG='i686'
         ;;
     -K | --nosign )
         shift
@@ -93,6 +95,16 @@ test -e "$SOURCEDIR/Makefile" || exit 2
 REDHAT_RELEASE="$(grep -o 'release [0-9][0-9]*' /etc/redhat-release | \
     cut -d ' ' -f 2)"
 REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"
+
+# Fix problems in rpmbuild for rhel4: _libdir and _arch are not correctly set.
+if test "x$REDHAT_RELEASE" == "x4" && test "x$TARGET_ARG" == "xi686"
+then
+    TARGET_LIBDIR='--define=_libdir=/usr/lib'
+    TARGET_ARCH='--define=_arch=i386'
+else
+    TARGET_LIBDIR=''
+    TARGET_ARCH=''
+fi
 
 # Compilation flags
 export CC=${CC:-gcc}
@@ -149,7 +161,8 @@ export MYSQL_RPMBUILD_TEST="$TEST"
     rm -rf "$tmpdir"
 
     # Issue RPM command
-    rpmbuild $SIGN -ba --clean "$SOURCEDIR/utils/xtrabackup.spec" \
+    rpmbuild $SIGN $TARGET $TARGET_LIBDIR $TARGET_ARCH \
+        -ba --clean "$SOURCEDIR/utils/xtrabackup.spec" \
         --define "_topdir $WORKDIR_ABS" \
         --define "xtrabackup_version $XTRABACKUP_VERSION" \
         --define "xtrabackup_revision $REVISION" \
