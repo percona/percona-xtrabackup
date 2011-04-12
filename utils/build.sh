@@ -79,6 +79,7 @@ function build_server()
 {
     echo "Configuring the server"
     cd $server_dir
+    BUILD/autorun.sh
     eval $configure_cmd
 
     echo "Building the server"
