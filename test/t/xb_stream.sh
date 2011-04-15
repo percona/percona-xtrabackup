@@ -7,7 +7,7 @@ load_dbase_data sakila
 
 # Take backup
 mkdir -p $topdir/backup
-run_cmd ${IB_BIN} --socket=$mysql_socket --stream=tar $topdir/backup > $topdir/backup/out.tar 2> $OUTFILE 
+run_cmd ${IB_BIN} --socket=$mysql_socket --stream=tar $topdir/backup > $topdir/backup/out.tar 2> $OUTFILE
 
 stop_mysqld
 # Remove datadir
@@ -27,7 +27,7 @@ mkdir -p $mysql_datadir
 echo "###########" >> $OUTFILE
 echo "# RESTORE #" >> $OUTFILE
 echo "###########" >> $OUTFILE
-run_cmd ${IB_BIN} --copy-back $backup_dir >> $OTFILE 2>&1
+run_cmd ${IB_BIN} --copy-back $backup_dir >> $OUTFILE 2>&1
 
 run_mysqld
 # Check sakila
