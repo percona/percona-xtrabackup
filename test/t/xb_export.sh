@@ -44,7 +44,7 @@ load_dbase_schema incremental_sample
 vlog "Database was re-initialized"
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test discard tablespace;" incremental_sample
-run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --export --target-dir=$backup_dir
+run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --export --target-dir=$backup_dir --innodb_file_per_table
 run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
 run_cmd ls -lah $mysql_datadir/incremental_sample/
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test import tablespace" incremental_sample
