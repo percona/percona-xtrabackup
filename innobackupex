@@ -981,6 +981,7 @@ sub mysql_open {
     MYSQL_WRITER->autoflush(1);
     $now = current_time();
     print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
+    print MYSQL_WRITER "SET SESSION wait_timeout = 2147000;\n" or die "Connection to mysql child process failed: $!";
 
     mysql_check();
 }

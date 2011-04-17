@@ -10,7 +10,7 @@ OUTFILE=results/`basename $0`_innobackupex.out
 
 function vlog
 {
-    echo "`date +"%F %T"`: `basename "$0"`: $@"
+    echo "`date +"%F %T"`: `basename "$0"`: $@" 1>&2
 }
 
 function clean_datadir()
