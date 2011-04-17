@@ -104,7 +104,7 @@ function build_tar4ibd()
     cd libtar-1.2.11
     ./configure
     $MAKE_CMD
-    cd $topdir
+    cd $top_dir
 }
 
 ################################################################################
