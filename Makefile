@@ -128,7 +128,7 @@ xtradb55: TARGET := xtrabackup_55
 xtradb55: $(TARGET)
 
 
-xtrabackup.o: xtrabackup.c
+xtrabackup.o: xtrabackup.c xb_regex.h
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $*.c
 
 $(TARGET): xtrabackup.o $(INNODBOBJS) $(MYSQLOBJS)
@@ -136,6 +136,3 @@ $(TARGET): xtrabackup.o $(INNODBOBJS) $(MYSQLOBJS)
 
 clean:
 	rm -f *.o xtrabackup_* 
-install:
-	install -m 755 innobackupex-1.5.1 $(BIN_DIR)
-	install -m 755 xtrabackup_*  $(BIN_DIR)
