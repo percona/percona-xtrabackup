@@ -62,10 +62,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sync0sync.h>
 #include <fil0fil.h>
 #include <trx0xa.h>
+#include <fcntl.h>
 
 #ifdef INNODB_VERSION_SHORT
 #include <ibuf0ibuf.h>
 #endif
+
+#include "xb_regex.h"
 
 #ifndef INNODB_VERSION_SHORT
 #define IB_INT64 ib_longlong
@@ -232,8 +235,77 @@ os_file_set_nocache(
 					a file, so this is either "open" or
 					"create" */
 
-#include <fcntl.h>
-#include <regex.h>
+/****************************************************************//**
+A simple function to open or create a file.
+@return own: handle to the file, not defined if error, error number
+can be retrieved with os_file_get_last_error */
+UNIV_INLINE
+os_file_t
+xb_file_create_no_error_handling(
+/*=============================*/
+	const char*	name,	/*!< in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/*!< in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error) */
+	ulint		access_type,/*!< in: OS_FILE_READ_ONLY,
+				OS_FILE_READ_WRITE, or
+				OS_FILE_READ_ALLOW_DELETE; the last option is
+				used by a backup program reading the file */
+	ibool*		success);/*!< out: TRUE if succeed, FALSE if error */
+
+/****************************************************************//**
+Opens an existing file or creates a new.
+@return own: handle to the file, not defined if error, error number
+can be retrieved with os_file_get_last_error */
+UNIV_INLINE
+os_file_t
+xb_file_create(
+/*===========*/
+	const char*	name,	/*!< in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/*!< in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error),
+				OS_FILE_OVERWRITE if a new file is created
+				or an old overwritten;
+				OS_FILE_OPEN_RAW, if a raw device or disk
+				partition should be opened */
+	ulint		purpose,/*!< in: OS_FILE_AIO, if asynchronous,
+				non-buffered i/o is desired,
+				OS_FILE_NORMAL, if any normal file;
+				NOTE that it also depends on type, os_aio_..
+				and srv_.. variables whether we really use
+				async i/o or unbuffered i/o: look in the
+				function source code for the exact rules */
+	ulint		type,	/*!< in: OS_DATA_FILE or OS_LOG_FILE */
+	ibool*		success);/*!< out: TRUE if succeed, FALSE if error */
+
+/***********************************************************************//**
+Renames a file (can also move it to another directory). It is safest that the
+file is closed before calling this function.
+@return	TRUE if success */
+UNIV_INLINE
+ibool
+xb_file_rename(
+/*===========*/
+	const char*	oldpath,/*!< in: old file path as a null-terminated
+				string */
+	const char*	newpath);/*!< in: new file path */
+
+UNIV_INLINE
+void
+xb_file_set_nocache(
+/*================*/
+	os_file_t	fd,		/* in: file descriptor to alter */
+	const char*	file_name,	/* in: used in the diagnostic message */
+	const char*	operation_name);/* in: used in the diagnostic message,
+					we call os_file_set_nocache()
+					immediately after opening or creating
+					a file, so this is either "open" or
+					"create" */
 
 #ifdef POSIX_FADV_NORMAL
 #define USE_POSIX_FADVISE
@@ -586,8 +658,8 @@ char *xtrabackup_incremental_dir = NULL; /* for --prepare */
 
 char *xtrabackup_tables = NULL;
 int tables_regex_num;
-regex_t *tables_regex;
-regmatch_t tables_regmatch[1];
+xb_regex_t *tables_regex;
+xb_regmatch_t tables_regmatch[1];
 
 char *xtrabackup_tables_file = NULL;
 hash_table_t* tables_hash;
@@ -633,8 +705,14 @@ ib_uint64_t metadata_last_lsn = 0;
 
 #define XB_DELTA_INFO_SUFFIX ".meta"
 
+#ifdef __WIN__
+#define XB_FILE_UNDEFINED NULL
+#else
+#define XB_FILE_UNDEFINED (-1)
+#endif
+
 /* === sharing with thread === */
-os_file_t       dst_log = -1;
+os_file_t       dst_log = XB_FILE_UNDEFINED;
 char            dst_log_path[FN_REFLEN];
 
 /* === some variables from mysqld === */
@@ -1390,7 +1468,29 @@ innobase_mysql_tmpfile(void)
 		will be passed to fdopen(), it will be closed by invoking
 		fclose(), which in turn will invoke close() instead of
 		my_close(). */
+#ifdef _WIN32
+		/* Note that on Windows, the integer returned by mysql_tmpfile
+		has no relation to C runtime file descriptor. Here, we need
+		to call my_get_osfhandle to get the HANDLE and then convert it
+		to C runtime filedescriptor. */
+		{
+			HANDLE hFile = my_get_osfhandle(fd);
+			HANDLE hDup;
+			BOOL bOK =
+				DuplicateHandle(GetCurrentProcess(), hFile,
+						GetCurrentProcess(), &hDup, 0,
+						FALSE, DUPLICATE_SAME_ACCESS);
+			if(bOK) {
+				fd2 = _open_osfhandle((intptr_t)hDup,0);
+			}
+			else {
+				my_osmaperr(GetLastError());
+				fd2 = -1;
+			}
+		}
+#else
 		fd2 = dup(fd);
+#endif
 		if (fd2 < 0) {
 			fprintf(stderr, "xtrabackup: Got error %d on dup\n",fd2);
                 }
@@ -1430,19 +1530,16 @@ mysql_get_identifier_quote_char(
 void
 innobase_print_identifier(
 	FILE*	f,
-	trx_t*	trx,
-	ibool	table_id,
+	trx_t*	trx __attribute__((unused)),
+	ibool	table_id __attribute__((unused)),
 	const char*	name,
 	ulint	namelen)
 {
-	(void)trx;
-	(void)table_id;
-
         const char*     s       = name;
         const char*     e = s + namelen;
         int             q;
 
-        q = '"';
+	q = '"';
 
         putc(q, f);
         while (s < e) {
@@ -1467,13 +1564,12 @@ innobase_convert_identifier(
 	ulint		buflen,	/*!< in: length of buf, in bytes */
 	const char*	id,	/*!< in: identifier to convert */
 	ulint		idlen,	/*!< in: length of id, in bytes */
-	void*		thd,	/*!< in: MySQL connection thread, or NULL */
-	ibool		file_id)/*!< in: TRUE=id is a table or database name;
-				FALSE=id is an UTF-8 string */
+	void*		thd __attribute__((unused)), 
+						/*!< in: MySQL connection thread, or NULL */
+	ibool		file_id __attribute__((unused)))
+						/*!< in: TRUE=id is a table or database name;
+						FALSE=id is an UTF-8 string */
 {
-	(void)thd;
-	(void)file_id;
-
 	const char*	s	= id;
 	int		q;
 
@@ -2116,7 +2212,7 @@ mem_free_and_error:
 #ifndef INNODB_VERSION_SHORT
 	srv_use_adaptive_hash_indexes = (ibool) innobase_adaptive_hash_index;
 #else
-	btr_search_enabled = (ibool) innobase_adaptive_hash_index;
+	btr_search_enabled = (char) innobase_adaptive_hash_index;
 #endif
 
 	os_use_large_pages = (ibool) innobase_use_large_pages;
@@ -2124,7 +2220,7 @@ mem_free_and_error:
 
 	row_rollback_on_timeout = (ibool) innobase_rollback_on_timeout;
 
-	srv_file_per_table = (ibool) innobase_file_per_table;
+	srv_file_per_table = (my_bool) innobase_file_per_table;
 
         srv_locks_unsafe_for_binlog = (ibool) innobase_locks_unsafe_for_binlog;
 
@@ -2424,6 +2520,119 @@ xtrabackup_io_throttling(void)
 	}
 }
 
+#ifdef INNODB_VERSION_SHORT
+#define XB_HASH_SEARCH(NAME, TABLE, FOLD, DATA, ASSERTION, TEST) \
+	HASH_SEARCH(NAME, TABLE, FOLD, xtrabackup_tables_t*, DATA, ASSERTION, \
+		    TEST)
+#else
+#define XB_HASH_SEARCH(NAME, TABLE, FOLD, DATA, ASSERTION, TEST) \
+	HASH_SEARCH(NAME, TABLE, FOLD, DATA, TEST)
+#endif
+
+/****************************************************************//**
+A simple function to open or create a file.
+@return own: handle to the file, not defined if error, error number
+can be retrieved with os_file_get_last_error */
+UNIV_INLINE
+os_file_t
+xb_file_create_no_error_handling(
+/*=============================*/
+	const char*	name,	/*!< in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/*!< in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error) */
+	ulint		access_type,/*!< in: OS_FILE_READ_ONLY,
+				OS_FILE_READ_WRITE, or
+				OS_FILE_READ_ALLOW_DELETE; the last option is
+				used by a backup program reading the file */
+	ibool*		success)/*!< out: TRUE if succeed, FALSE if error */
+{
+#if MYSQL_VERSION_ID > 50500
+	return os_file_create_simple_no_error_handling(
+		0, /* innodb_file_data_key */
+		name, create_mode, access_type, success);
+#else
+	return os_file_create_simple_no_error_handling(
+		name, create_mode, access_type, success);
+#endif
+}
+
+/****************************************************************//**
+Opens an existing file or creates a new.
+@return own: handle to the file, not defined if error, error number
+can be retrieved with os_file_get_last_error */
+UNIV_INLINE
+os_file_t
+xb_file_create(
+/*===========*/
+	const char*	name,	/*!< in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/*!< in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error),
+				OS_FILE_OVERWRITE if a new file is created
+				or an old overwritten;
+				OS_FILE_OPEN_RAW, if a raw device or disk
+				partition should be opened */
+	ulint		purpose,/*!< in: OS_FILE_AIO, if asynchronous,
+				non-buffered i/o is desired,
+				OS_FILE_NORMAL, if any normal file;
+				NOTE that it also depends on type, os_aio_..
+				and srv_.. variables whether we really use
+				async i/o or unbuffered i/o: look in the
+				function source code for the exact rules */
+	ulint		type,	/*!< in: OS_DATA_FILE or OS_LOG_FILE */
+	ibool*		success)/*!< out: TRUE if succeed, FALSE if error */
+{
+#if MYSQL_VERSION_ID > 50500
+	return os_file_create(0 /* innodb_file_data_key */,
+			      name, create_mode, purpose, type, success);
+#else
+	return os_file_create(name, create_mode, purpose, type, success);
+#endif
+}
+
+/***********************************************************************//**
+Renames a file (can also move it to another directory). It is safest that the
+file is closed before calling this function.
+@return	TRUE if success */
+UNIV_INLINE
+ibool
+xb_file_rename(
+/*===========*/
+	const char*	oldpath,/*!< in: old file path as a null-terminated
+				string */
+	const char*	newpath)/*!< in: new file path */
+{
+#if MYSQL_VERSION_ID > 50500
+	return os_file_rename(
+		0 /* innodb_file_data_key */, oldpath, newpath);
+#else
+	return os_file_rename(oldpath, newpath);
+#endif
+}
+
+UNIV_INLINE
+void
+xb_file_set_nocache(
+/*================*/
+	os_file_t	fd,		/* in: file descriptor to alter */
+	const char*	file_name,	/* in: used in the diagnostic message */
+	const char*	operation_name) /* in: used in the diagnostic message,
+					we call os_file_set_nocache()
+					immediately after opening or creating
+					a file, so this is either "open" or
+					"create" */
+{
+#ifndef __WIN__
+	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
+		os_file_set_nocache(fd, file_name, operation_name);
+	}
+#endif
+}
 
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
@@ -2431,8 +2640,8 @@ xtrabackup_io_throttling(void)
 static my_bool
 xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 {
-	os_file_t	src_file = -1;
-	os_file_t	dst_file = -1;
+	os_file_t	src_file = XB_FILE_UNDEFINED;
+	os_file_t	dst_file = XB_FILE_UNDEFINED;
 	char		dst_path[FN_REFLEN];
 	char		meta_path[FN_REFLEN];
 	ibool		success;
@@ -2483,7 +2692,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 		*(p - 1) = '.';
 
 		for (i = 0; i < tables_regex_num; i++) {
-			regres = regexec(&tables_regex[i], prev, 1, tables_regmatch, 0);
+			regres = xb_regexec(&tables_regex[i], prev, 1,
+					    tables_regmatch, 0);
 			if (regres != REG_NOMATCH)
 				break;
 		}
@@ -2528,15 +2738,10 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 		tmp = p[p_len];
 		p[p_len] = 0;
 
-		HASH_SEARCH(name_hash, tables_hash, ut_fold_string(prev),
-#ifdef INNODB_VERSION_SHORT
-			    xtrabackup_tables_t*,
-#endif
-			    table,
-#ifdef INNODB_VERSION_SHORT
-			    ut_ad(table->name),
-#endif
-	    		    !strcmp(table->name, prev));
+		XB_HASH_SEARCH(name_hash, tables_hash, ut_fold_string(prev),
+			       table,
+			       ut_ad(table->name),
+			       !strcmp(table->name, prev));
 
 		p[p_len] = tmp;
 
@@ -2611,12 +2816,10 @@ skip_filter:
 
 	/* open src_file*/
 	if (!node->open) {
-		src_file = os_file_create_simple_no_error_handling(
-#if (MYSQL_VERSION_ID > 50500)
-						0 /* dummy of innodb_file_data_key */,
-#endif
-						node->name, OS_FILE_OPEN,
-						OS_FILE_READ_ONLY, &success);
+		src_file = xb_file_create_no_error_handling(node->name,
+							    OS_FILE_OPEN,
+							    OS_FILE_READ_ONLY,
+							    &success);
 		if (!success) {
 			/* The following call prints an error message */
 			os_file_get_last_error(TRUE);
@@ -2630,9 +2833,7 @@ skip_filter:
 			goto skip;
 		}
 
-		if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
-			os_file_set_nocache(src_file, node->name, "OPEN");
-		}
+		xb_file_set_nocache(src_file, node->name, "OPEN");
 	} else {
 		src_file = node->handle;
 	}
@@ -2643,21 +2844,17 @@ skip_filter:
 #endif
 
 	/* open dst_file */
-	/* os_file_create reads srv_unix_file_flush_method */
-	dst_file = os_file_create(
-#if (MYSQL_VERSION_ID > 50500)
-			0 /* dummy of innodb_file_data_key */,
-#endif
-			dst_path, OS_FILE_CREATE,
-			OS_FILE_NORMAL, OS_DATA_FILE, &success);
-                if (!success) {
-                        /* The following call prints an error message */
-                        os_file_get_last_error(TRUE);
+	/* xb_file_create reads srv_unix_file_flush_method */
+	dst_file = xb_file_create(dst_path, OS_FILE_CREATE,
+				  OS_FILE_NORMAL, OS_DATA_FILE, &success);
+	if (!success) {
+		/* The following call prints an error message */
+		os_file_get_last_error(TRUE);
 
-			fprintf(stderr,"[%02u] xtrabackup: error: "
-				"cannot open %s\n", thread_n, dst_path);
-                        goto error;
-                }
+		fprintf(stderr,"[%02u] xtrabackup: error: "
+			"cannot open %s\n", thread_n, dst_path);
+		goto error;
+	}
 
 #ifdef USE_POSIX_FADVISE
 	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
@@ -2857,9 +3054,9 @@ read_retry:
 	ut_free(buf2);
 	return(FALSE);
 error:
-	if (src_file != -1 && !node->open)
+	if (src_file != XB_FILE_UNDEFINED && !node->open)
 		os_file_close(src_file);
-	if (dst_file != -1)
+	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
 	if (buf2)
 		ut_free(buf2);
@@ -2868,9 +3065,9 @@ error:
 	return(TRUE); /*ERROR*/
 
 skip:
-	if (src_file != -1 && !node->open)
+	if (src_file != XB_FILE_UNDEFINED && !node->open)
 		os_file_close(src_file);
-	if (dst_file != -1)
+	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
 	if (buf2)
 		ut_free(buf2);
@@ -2890,7 +3087,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 	ibool		success;
 
 	if (!xtrabackup_stream)
-		ut_a(dst_log != -1);
+		ut_a(dst_log != XB_FILE_UNDEFINED);
 
 	/* read from checkpoint_lsn_start to current */
 	contiguous_lsn = ut_dulint_align_down(from_lsn,
@@ -3042,7 +3239,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 		if (!finished) {
 			write_size = RECV_SCAN_SIZE;
 		} else {
-			write_size = ut_dulint_minus(
+			write_size = (ulint) ut_dulint_minus(
 					ut_dulint_align_up(group_scanned_lsn, OS_FILE_LOG_BLOCK_SIZE),
 					start_lsn);
 		}
@@ -3158,13 +3355,12 @@ void*
 ulint
 #endif
 log_copying_thread(
-	void*	arg)
+	void*	arg __attribute__((unused)))
 {
-	(void)arg;
 	ulint	counter = 0;
 
 	if (!xtrabackup_stream)
-		ut_a(dst_log != -1);
+		ut_a(dst_log != XB_FILE_UNDEFINED);
 
 	log_copying_running = TRUE;
 
@@ -3378,6 +3574,7 @@ xtrabackup_backup_func(void)
         if(innodb_init_param())
                 exit(EXIT_FAILURE);
 
+#ifndef __WIN__        
         if (srv_file_flush_method_str == NULL) {
         	/* These are the default options */
 #if (MYSQL_VERSION_ID < 50100)
@@ -3385,8 +3582,6 @@ xtrabackup_backup_func(void)
 #else /* MYSQL_VERSION_ID < 51000 */
 		srv_unix_file_flush_method = SRV_UNIX_FSYNC;
 #endif
-		srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;
-#ifndef __WIN__        
 #if (MYSQL_VERSION_ID < 50100)
 	} else if (0 == ut_strcmp(srv_file_flush_method_str, "fdatasync")) {
 	  	srv_unix_file_flush_method = SRV_UNIX_FDATASYNC;
@@ -3406,25 +3601,23 @@ xtrabackup_backup_func(void)
 
 	} else if (0 == ut_strcmp(srv_file_flush_method_str, "nosync")) {
 	  	srv_unix_file_flush_method = SRV_UNIX_NOSYNC;
-#else
-	} else if (0 == ut_strcmp(srv_file_flush_method_str, "normal")) {
-	  	srv_win_file_flush_method = SRV_WIN_IO_NORMAL;
-	  	os_aio_use_native_aio = FALSE;
-
-	} else if (0 == ut_strcmp(srv_file_flush_method_str, "unbuffered")) {
-	  	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;
-	  	os_aio_use_native_aio = FALSE;
-
-	} else if (0 == ut_strcmp(srv_file_flush_method_str,
-							"async_unbuffered")) {
-	  	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;	
-#endif
 	} else {
 	  	fprintf(stderr, 
           	"xtrabackup: Unrecognized value %s for innodb_flush_method\n",
           				srv_file_flush_method_str);
 	  	exit(EXIT_FAILURE);
 	}
+#else /* __WIN__ */
+	/* We can only use synchronous unbuffered IO on Windows for now */
+	if (srv_file_flush_method_str != NULL) {
+		fprintf(stderr,
+			"xtrabackupp: Warning: "
+			"ignoring innodb_flush_method = %s on Windows.\n");
+	}
+
+	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;
+	srv_use_native_aio = FALSE;
+#endif
 
 #ifndef INNODB_VERSION_SHORT
         if (srv_pool_size >= 1000 * 1024) {
@@ -3703,13 +3896,11 @@ reread_log_header:
 		/* open 'xtrabackup_logfile' */
 		sprintf(dst_log_path, "%s%s", xtrabackup_target_dir, "/xtrabackup_logfile");
 		srv_normalize_path_for_win(dst_log_path);
-		/* os_file_create reads srv_unix_file_flush_method for OS_DATA_FILE*/
-		dst_log = os_file_create(
-#if (MYSQL_VERSION_ID > 50500)
-				0 /* dummy of innodb_file_data_key */,
-#endif
-				dst_log_path, OS_FILE_CREATE,
-				OS_FILE_NORMAL, OS_DATA_FILE, &success);
+		/* xb_file_create reads srv_unix_file_flush_method for
+		OS_DATA_FILE*/
+		dst_log = xb_file_create(dst_log_path, OS_FILE_CREATE,
+					 OS_FILE_NORMAL, OS_DATA_FILE,
+					 &success);
 
                 if (!success) {
                         /* The following call prints an error message */
@@ -3749,7 +3940,7 @@ reread_log_header:
 
 	log_copy_offset += LOG_FILE_HDR_SIZE;
 	if (!success) {
-		if (dst_log != -1)
+		if (dst_log != XB_FILE_UNDEFINED)
 			os_file_close(dst_log);
 		exit(EXIT_FAILURE);
 	}
@@ -3839,7 +4030,7 @@ reread_log_header:
 
 	/* suspend-at-end */
 	if (xtrabackup_suspend_at_end) {
-		os_file_t	suspend_file = -1;
+		os_file_t	suspend_file = XB_FILE_UNDEFINED;
 		char	suspend_path[FN_REFLEN];
 		ibool	success, exists;
 		os_file_type_t	type;
@@ -3848,19 +4039,16 @@ reread_log_header:
 			"/xtrabackup_suspended");
 
 		srv_normalize_path_for_win(suspend_path);
-		/* os_file_create reads srv_unix_file_flush_method */
-		suspend_file = os_file_create(
-#if (MYSQL_VERSION_ID > 50500)
-					0 /* dummy of innodb_file_data_key */,
-#endif
-					suspend_path, OS_FILE_OVERWRITE,
-					OS_FILE_NORMAL, OS_DATA_FILE, &success);
+		/* xb_file_create reads srv_unix_file_flush_method */
+		suspend_file = xb_file_create(suspend_path, OS_FILE_OVERWRITE,
+					      OS_FILE_NORMAL, OS_DATA_FILE,
+					      &success);
 
 		if (!success) {
 			fprintf(stderr, "xtrabackup: Error: failed to create file 'xtrabackup_suspended'\n");
 		}
 
-		if (suspend_file != -1)
+		if (suspend_file != XB_FILE_UNDEFINED)
 			os_file_close(suspend_file);
 
 		exists = TRUE;
@@ -4011,14 +4199,12 @@ xtrabackup_stats_level(
 	ulonglong sum_data, sum_data_extern;
 	ulonglong n_recs;
 	ulint	page_size;
+	buf_block_t*	block;
+	ulint	zip_size;
 
 	n_pages = sum_data = n_recs = 0;
 	n_pages_extern = sum_data_extern = 0;
 
-#ifdef INNODB_VERSION_SHORT
-	buf_block_t*	block;
-	ulint	zip_size;
-#endif
 
 	if (level == 0)
 		fprintf(stdout, "        leaf pages: ");
@@ -4388,7 +4574,9 @@ loop:
 				*p = '.';
 
 			for (i = 0; i < tables_regex_num; i++) {
-				regres = regexec(&tables_regex[i], table->name, 1, tables_regmatch, 0);
+				regres = xb_regexec(&tables_regex[i],
+						    table->name, 1,
+						    tables_regmatch, 0);
 				if (regres != REG_NOMATCH)
 					break;
 			}
@@ -4403,15 +4591,11 @@ loop:
 		if (xtrabackup_tables_file) {
 			xtrabackup_tables_t*	xtable;
 
-			HASH_SEARCH(name_hash, tables_hash, ut_fold_string(table->name),
-#ifdef INNODB_VERSION_SHORT
-				    xtrabackup_tables_t*,
-#endif
-				    xtable,
-#ifdef INNODB_VERSION_SHORT
-				    ut_ad(xtable->name),
-#endif
-				    !strcmp(xtable->name, table->name));
+			XB_HASH_SEARCH(name_hash, tables_hash,
+				       ut_fold_string(table->name),
+				       xtable,
+				       ut_ad(xtable->name),
+				       !strcmp(xtable->name, table->name));
 
 			if (!xtable)
 				goto skip;
@@ -4527,7 +4711,7 @@ end:
 static my_bool
 xtrabackup_init_temp_log(void)
 {
-	os_file_t	src_file = -1;
+	os_file_t	src_file = XB_FILE_UNDEFINED;
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
 	ibool	success;
@@ -4557,12 +4741,9 @@ xtrabackup_init_temp_log(void)
 	srv_normalize_path_for_win(dst_path);
 	srv_normalize_path_for_win(src_path);
 retry:
-	src_file = os_file_create_simple_no_error_handling(
-#if (MYSQL_VERSION_ID > 50500)
-					0 /* dummy of innodb_file_data_key */,
-#endif
-					src_path, OS_FILE_OPEN,
-					OS_FILE_READ_WRITE /* OS_FILE_READ_ONLY */, &success);
+	src_file = xb_file_create_no_error_handling(src_path, OS_FILE_OPEN,
+						    OS_FILE_READ_WRITE,
+						    &success);
 	if (!success) {
 		/* The following call prints an error message */
 		os_file_get_last_error(TRUE);
@@ -4572,12 +4753,10 @@ retry:
 			src_path);
 
 		/* check if ib_logfile0 may be xtrabackup_logfile */
-		src_file = os_file_create_simple_no_error_handling(
-#if (MYSQL_VERSION_ID > 50500)
-				0 /* dummy of innodb_file_data_key */,
-#endif
-				dst_path, OS_FILE_OPEN,
-				OS_FILE_READ_WRITE /* OS_FILE_READ_ONLY */, &success);
+		src_file = xb_file_create_no_error_handling(dst_path,
+							    OS_FILE_OPEN,
+							    OS_FILE_READ_WRITE,
+							    &success);
 		if (!success) {
 			os_file_get_last_error(TRUE);
 			fprintf(stderr,
@@ -4604,14 +4783,10 @@ retry:
 			log_buf_ = NULL;
 
 			os_file_close(src_file);
-			src_file = -1;
+			src_file = XB_FILE_UNDEFINED;
 
 			/* rename and try again */
-			success = os_file_rename(
-#if (MYSQL_VERSION_ID > 50500)
-					0 /* dummy of innodb_file_data_key */,
-#endif
-					dst_path, src_path);
+			success = xb_file_rename(dst_path, src_path);
 			if (!success) {
 				goto error;
 			}
@@ -4627,7 +4802,7 @@ retry:
 		log_buf_ = NULL;
 
 		os_file_close(src_file);
-		src_file = -1;
+		src_file = XB_FILE_UNDEFINED;
 
 		goto error;
 	}
@@ -4637,9 +4812,7 @@ retry:
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
-	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
-		os_file_set_nocache(src_file, src_path, "OPEN");
-	}
+	xb_file_set_nocache(src_file, src_path, "OPEN");
 
 	file_size = os_file_get_size_as_iblonglong(src_file);
 
@@ -4702,7 +4875,7 @@ not_consistent:
 	/* It seems to be needed to overwrite the both checkpoint area. */
 	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_LSN, max_lsn);
 	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_OFFSET,
-			LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
+			LOG_FILE_HDR_SIZE + (ulint) ut_dulint_minus(max_lsn,
 			ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
 #ifdef XTRADB_BASED
 	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_ARCHIVED_LSN,
@@ -4718,7 +4891,7 @@ not_consistent:
 
 	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_LSN, max_lsn);
         mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_OFFSET,
-                        LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
+                        LOG_FILE_HDR_SIZE + (ulint) ut_dulint_minus(max_lsn,
                         ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
 #ifdef XTRADB_BASED
 	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_ARCHIVED_LSN,
@@ -4745,7 +4918,7 @@ not_consistent:
 		success = os_file_write(src_path, src_file, log_buf,
 				(ulint)(file_size & 0xFFFFFFFFUL),
 				(ulint)(file_size >> 32),
-				UNIV_PAGE_SIZE - (file_size % UNIV_PAGE_SIZE));
+				UNIV_PAGE_SIZE - (ulint) (file_size % UNIV_PAGE_SIZE));
 		if (!success) {
 			goto error;
 		}
@@ -4758,7 +4931,7 @@ not_consistent:
 		ulint	expand;
 
 		memset(log_buf, 0, UNIV_PAGE_SIZE * 128);
-		expand = file_size / UNIV_PAGE_SIZE / 8;
+		expand = (ulint) (file_size / UNIV_PAGE_SIZE / 8);
 
 		for (; expand > 128; expand -= 128) {
 			success = os_file_write(src_path, src_file, log_buf,
@@ -4808,7 +4981,7 @@ not_consistent:
 #endif
 
 	os_file_close(src_file);
-	src_file = -1;
+	src_file = XB_FILE_UNDEFINED;
 
 	/* Backup log parameters */
 	innobase_log_group_home_dir_backup = innobase_log_group_home_dir;
@@ -4823,11 +4996,7 @@ not_consistent:
 	srv_thread_concurrency = 0;
 
 	/* rename 'xtrabackup_logfile' to 'ib_logfile0' */
-	success = os_file_rename(
-#if (MYSQL_VERSION_ID > 50500)
-			0 /* dummy of innodb_file_data_key */,
-#endif
-			src_path, dst_path);
+	success = xb_file_rename(src_path, dst_path);
 	if (!success) {
 		goto error;
 	}
@@ -4839,12 +5008,12 @@ not_consistent:
 
 skip_modify:
 	os_file_close(src_file);
-	src_file = -1;
+	src_file = XB_FILE_UNDEFINED;
 	ut_free(log_buf_);
 	return(FALSE);
 
 error:
-	if (src_file != -1)
+	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
 	if (log_buf_)
 		ut_free(log_buf_);
@@ -4881,11 +5050,10 @@ xtrabackup_apply_delta(
 	const char*	dbname,		/* in: database name (ibdata: NULL) */
 	const char*	filename,	/* in: file name (not a path),
 					including the .delta extension */
-	my_bool check_newer)
+	my_bool check_newer __attribute__((unused)))
 {
-	(void)check_newer;
-	os_file_t	src_file = -1;
-	os_file_t	dst_file = -1;
+	os_file_t	src_file = XB_FILE_UNDEFINED;
+	os_file_t	dst_file = XB_FILE_UNDEFINED;
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
 	char	meta_path[FN_REFLEN];
@@ -4938,11 +5106,9 @@ xtrabackup_apply_delta(
 		goto error;
 	}
 	
-	src_file = os_file_create_simple_no_error_handling(
-#if (MYSQL_VERSION_ID > 50500)
-			0 /* dummy of innodb_file_data_key */,
-#endif
-			src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
+	src_file = xb_file_create_no_error_handling(src_path, OS_FILE_OPEN,
+						    OS_FILE_READ_WRITE,
+						    &success);
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
@@ -4956,15 +5122,11 @@ xtrabackup_apply_delta(
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
-	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
-		os_file_set_nocache(src_file, src_path, "OPEN");
-	}
+	xb_file_set_nocache(src_file, src_path, "OPEN");
 
-	dst_file = os_file_create_simple_no_error_handling(
-#if (MYSQL_VERSION_ID > 50500)
-			0 /* dummy of innodb_file_data_key */,
-#endif
-			dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, &success);
+	dst_file = xb_file_create_no_error_handling(dst_path, OS_FILE_OPEN,
+						    OS_FILE_READ_WRITE,
+						    &success);
 	if (!success) {
 		os_file_get_last_error(TRUE);
 		fprintf(stderr,
@@ -4977,9 +5139,7 @@ xtrabackup_apply_delta(
 	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
-	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
-		os_file_set_nocache(dst_file, dst_path, "OPEN");
-	}
+	xb_file_set_nocache(dst_file, dst_path, "OPEN");
 
 	printf("Applying %s ...\n", src_path);
 
@@ -5063,16 +5223,16 @@ xtrabackup_apply_delta(
 		incremental_buffers++;
 	}
 
-	if (src_file != -1)
+	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
-	if (dst_file != -1)
+	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
 	return;
 
 error:
-	if (src_file != -1)
+	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
-	if (dst_file != -1)
+	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
 	fprintf(stderr, "xtrabackup: Error: xtrabackup_apply_delta() failed.\n");
 	return;
@@ -5188,7 +5348,7 @@ next_datadir_item:
 static my_bool
 xtrabackup_close_temp_log(my_bool clear_flag)
 {
-	os_file_t	src_file = -1;
+	os_file_t	src_file = XB_FILE_UNDEFINED;
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
 	ibool	success;
@@ -5217,11 +5377,7 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	srv_normalize_path_for_win(dst_path);
 	srv_normalize_path_for_win(src_path);
 
-	success = os_file_rename(
-#if (MYSQL_VERSION_ID > 50500)
-			0 /* dummy of innodb_file_data_key */,
-#endif
-			dst_path, src_path);
+	success = xb_file_rename(dst_path, src_path);
 	if (!success) {
 		goto error;
 	}
@@ -5231,12 +5387,9 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 		return(FALSE);
 
 	/* clear LOG_FILE_WAS_CREATED_BY_HOT_BACKUP field */
-	src_file = os_file_create_simple_no_error_handling(
-#if (MYSQL_VERSION_ID > 50500)
-				0 /* dummy of innodb_file_data_key */,
-#endif
-				src_path, OS_FILE_OPEN,
-				OS_FILE_READ_WRITE, &success);
+	src_file = xb_file_create_no_error_handling(src_path, OS_FILE_OPEN,
+						    OS_FILE_READ_WRITE,
+						    &success);
 	if (!success) {
 		goto error;
 	}
@@ -5245,9 +5398,7 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
-	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
-		os_file_set_nocache(src_file, src_path, "OPEN");
-	}
+	xb_file_set_nocache(src_file, src_path, "OPEN");
 
 	log_buf_ = ut_malloc(LOG_FILE_HDR_SIZE * 2);
 	log_buf = ut_align(log_buf_, LOG_FILE_HDR_SIZE);
@@ -5265,11 +5416,11 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	}
 
 	os_file_close(src_file);
-	src_file = -1;
+	src_file = XB_FILE_UNDEFINED;
 
 	return(FALSE);
 error:
-	if (src_file != -1)
+	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
 	if (log_buf_)
 		ut_free(log_buf_);
@@ -5471,7 +5622,7 @@ skip_check:
 			fil_system_t*	f_system = fil_system;
 			fil_space_t*	space;
 			fil_node_t*	node;
-			os_file_t	info_file = -1;
+			os_file_t	info_file = XB_FILE_UNDEFINED;
 			char		info_file_path[FN_REFLEN];
 			ibool		success;
 			char		table_name[FN_REFLEN];
@@ -5587,12 +5738,11 @@ skip_check:
 					}
 
 					srv_normalize_path_for_win(info_file_path);
-					info_file = os_file_create(
-#if (MYSQL_VERSION_ID > 50500)
-								0 /* dummy of innodb_file_data_key */,
-#endif
-								info_file_path, OS_FILE_OVERWRITE,
-								OS_FILE_NORMAL, OS_DATA_FILE, &success);
+					info_file = xb_file_create(
+						info_file_path,
+						OS_FILE_OVERWRITE,
+						OS_FILE_NORMAL, OS_DATA_FILE,
+						&success);
 					if (!success) {
 						os_file_get_last_error(TRUE);
 						goto next_node;
@@ -5609,9 +5759,9 @@ skip_check:
 						goto next_node;
 					}
 next_node:
-					if (info_file != -1) {
+					if (info_file != XB_FILE_UNDEFINED) {
 						os_file_close(info_file);
-						info_file = -1;
+						info_file = XB_FILE_UNDEFINED;
 					}
 					mutex_exit(&(dict_sys->mutex));
 					mutex_enter(&(f_system->mutex));
@@ -5756,6 +5906,7 @@ int main(int argc, char **argv)
 	int ho_error;
 
 	MY_INIT(argv[0]);
+	xb_regex_init();
 
 	load_defaults("my",load_default_groups,&argc,&argv);
 
@@ -5824,7 +5975,7 @@ next_opt:
 			tables_regex_num++;
 		}
 
-		tables_regex = ut_malloc(sizeof(regex_t) * tables_regex_num);
+		tables_regex = ut_malloc(sizeof(xb_regex_t) * tables_regex_num);
 
 		p = xtrabackup_tables;
 		for (i=0; i < tables_regex_num; i++) {
@@ -5835,9 +5986,11 @@ next_opt:
 			if (i != tables_regex_num - 1)
 				*(next - 1) = '\0';
 
-			regerror(regcomp(&tables_regex[i],p,REG_EXTENDED),
-					&tables_regex[i],errbuf,sizeof(errbuf));
-			fprintf(stderr, "xtrabackup: tables regcomp(%s): %s\n",p,errbuf);
+			xb_regerror(xb_regcomp(&tables_regex[i], p,
+					       REG_EXTENDED),
+				    &tables_regex[i], errbuf, sizeof(errbuf));
+			fprintf(stderr, "xtrabackup: tables regcomp(%s): %s\n",
+				p, errbuf);
 
 			if (i != tables_regex_num - 1)
 				*(next - 1) = ',';
@@ -6080,7 +6233,7 @@ skip_tables_file_register:
 		int i;
 
 		for (i = 0; i < tables_regex_num; i++) {
-			regfree(&tables_regex[i]);
+			xb_regfree(&tables_regex[i]);
 		}
 		ut_free(tables_regex);
 	}
@@ -6108,6 +6261,8 @@ skip_tables_file_register:
 		/* free tables_hash */
 		hash_table_free(tables_hash);
 	}
+
+	xb_regex_end();
 
 	exit(EXIT_SUCCESS);
 }

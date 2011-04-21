@@ -90,7 +90,7 @@ function build_xtrabackup()
 {
     echo "Building XtraBackup"
     mkdir $build_dir
-    cp $top_dir/Makefile $top_dir/xtrabackup.c $build_dir
+    cp $top_dir/Makefile $top_dir/xtrabackup.c $top_dir/xb_regex.h $build_dir
 
     cd $build_dir
     $MAKE_CMD $xtrabackup_target
