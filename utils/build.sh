@@ -160,7 +160,7 @@ case "$type" in
 	    --with-plugins=innobase \
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
-	    --with-extra-charsets=complex"
+	    --with-extra-charsets=all"
 
 	build_all
 	;;
@@ -176,7 +176,7 @@ case "$type" in
 		-DWITH_INNOBASE_STORAGE_ENGINE=ON \
 		-DWITH_PARTITION_STORAGE_ENGINE=ON \
 		-DWITH_ZLIB=bundled \
-		-DWITH_EXTRA_CHARSETS=complex \
+		-DWITH_EXTRA_CHARSETS=all \
 		-DENABLE_DTRACE=OFF"
 
 	build_all
@@ -193,7 +193,7 @@ case "$type" in
 	    --with-plugins=innodb_plugin \
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
-	    --with-extra-charsets=complex"
+	    --with-extra-charsets=all"
 	if [ "`uname -s`" = "Linux" ]
 	then
 		configure_cmd="LIBS=-lrt $configure_cmd"
@@ -240,7 +240,7 @@ case "$type" in
 		-DWITH_INNOBASE_STORAGE_ENGINE=ON \
 		-DWITH_PARTITION_STORAGE_ENGINE=ON \
 		-DWITH_ZLIB=bundled \
-		-DWITH_EXTRA_CHARSETS=complex \
+		-DWITH_EXTRA_CHARSETS=all \
 		-DENABLE_DTRACE=OFF"
 	if [ "`uname -s`" = "Linux" ]
 	then
