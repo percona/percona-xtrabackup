@@ -726,7 +726,7 @@
  			fprintf(stderr,
  				"InnoDB: Doing recovery: scanned up to"
 -				" log sequence number %lu %lu\n",
-+				" log sequence number %lu %lu (%lu %)\n",
++				" log sequence number %lu %lu (%lu %%)\n",
  				(ulong) ut_dulint_get_high(*group_scanned_lsn),
 -				(ulong) ut_dulint_get_low(*group_scanned_lsn));
 +				(ulong) ut_dulint_get_low(*group_scanned_lsn),

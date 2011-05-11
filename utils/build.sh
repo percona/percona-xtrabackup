@@ -24,6 +24,7 @@ function usage()
     echo "Usage: `basename $0` CODEBASE"
     echo "where CODEBASE can be one of the following values or aliases:"
     echo "  innodb51_builtin | 5.1	build against built-in InnoDB in MySQL 5.1"
+    echo "  innodb51         | plugin	build agsinst InnoDB plugin in MySQL 5.1"
     echo "  innodb55         | 5.5	build against InnoDB in MySQL 5.5"
     echo "  xtradb51         | xtradb   build against Percona Server with XtraDB 5.1"
     echo "  xtradb55         | xtradb55 build against Percona Server with XtraDB 5.5"
@@ -166,6 +167,20 @@ case "$type" in
 	build_all
 	;;
 
+"innodb51" | "plugin")
+       mysql_version=$MYSQL_51_VERSION
+       server_patch=innodb51.patch
+       innodb_name=innodb_plugin
+       xtrabackup_target=plugin
+       configure_cmd="./configure --enable-local-infile \
+           --enable-thread-safe-client \
+           --with-plugins=innodb_plugin \
+           --with-zlib-dir=bundled \
+           --enable-shared \
+           --with-extra-charsets=all"
+
+       build_all
+       ;;
 "innodb55" | "5.5")
 	mysql_version=$MYSQL_55_VERSION
 	server_patch=innodb55.patch
