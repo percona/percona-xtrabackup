@@ -361,19 +361,17 @@ sub backup {
         wait_for_ibbackup_suspend();
     }
 
-    if (!$option_incremental) {
-        # connect to database
-        mysql_open();
+    # connect to database
+    mysql_open();
 
-        if ( $option_safe_slave_backup ) {
-          wait_for_safe_slave();
-        }
-
-        # flush tables with read lock
-        mysql_check();
-        mysql_lockall() if !$option_no_lock;
-
+    if ( $option_safe_slave_backup ) {
+        wait_for_safe_slave();
     }
+
+    # flush tables with read lock
+    mysql_check();
+    mysql_lockall() if !$option_no_lock;
+
 
     # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
     backup_files();
@@ -381,18 +379,16 @@ sub backup {
     # resume ibbackup and wait till it has finished
     my $ibbackup_exit_code = resume_ibbackup();
 
-    if (!$option_incremental) {
-        # release read locks on all tables
-        mysql_unlockall() if !$option_no_lock;
+    # release read locks on all tables
+    mysql_unlockall() if !$option_no_lock;
 
-       if ( $option_safe_slave_backup ) {
-         print STDERR "$prefix: Starting slave SQL thread\n";
-         mysql_send('START SLAVE SQL_THREAD;');
-       }
-
-        # disconnect from database
-        mysql_close();
+    if ( $option_safe_slave_backup ) {
+       print STDERR "$prefix: Starting slave SQL thread\n";
+       mysql_send('START SLAVE SQL_THREAD;');
     }
+
+    # disconnect from database
+    mysql_close();
 
     if ($option_remote_host) {
         system("scp $option_scp_opt '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
