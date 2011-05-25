@@ -12,7 +12,7 @@ run_cmd ${IB_BIN} --socket=$mysql_socket --stream=tar $topdir/backup > $topdir/b
 
 stop_mysqld
 cd $topdir/backup/stream/
-tar -ixvf out.tar
+$TAR -ixvf out.tar
 
 if [ -f $topdir/backup/stream/xtrabackup_binary ]
 then
