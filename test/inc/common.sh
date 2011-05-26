@@ -6,6 +6,13 @@ mysql_datadir="$topdir/mysql"
 mysql_port="3306"
 mysql_socket=${mysql_socket:-"/tmp/xtrabackup.mysql.sock"}
 
+if gnutar --version > /dev/null 2>&1
+then
+    TAR=gnutar
+else
+    TAR=tar
+fi
+
 OUTFILE=results/`basename $0`_innobackupex.out
 
 function vlog
@@ -64,9 +71,9 @@ function init_mysql()
 			MYSQL_INSTALL_DB=mysql_install_db
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
 			MYSQLD=mysqld
-			MYSQL_BASEDIR="/usr"
+			MYSQL_BASEDIR=${MYSQL_BASEDIR:-"/usr"}
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
 			XB_BIN=xtrabackup
 			;;
 		5.0)
@@ -82,7 +89,7 @@ function init_mysql()
 			MYSQL_BASEDIR=$topdir/mysql-$version
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
 			XB_BIN=xtrabackup_51
 			cd -
 			;;
@@ -99,7 +106,7 @@ function init_mysql()
 			MYSQL_BASEDIR=$topdir/mysql-$version
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
 			XB_BIN=xtrabackup
 			cd -
 			;;
@@ -116,7 +123,7 @@ function init_mysql()
 			MYSQL_BASEDIR=$topdir/mysql-$version
 			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
 			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
 			XB_BIN=xtrabackup_55
 			cd -
 			;;
@@ -136,7 +143,7 @@ function init_mysql()
 			set +u
 			export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$topdir/Percona-Server-$version/lib/mysql
 			set -u
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf"
+			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
 			XB_BIN=xtrabackup
 
 			cd -
