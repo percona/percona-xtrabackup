@@ -11,7 +11,7 @@
 # Bail out on errors, be strict
 set -ue
 
-XTRABACKUP_VERSION='1.6'
+XTRABACKUP_VERSION='1.6.1'
 
 # Examine parameters
 go_out="$(getopt --options "k:K" --longoptions key:,nosign \
