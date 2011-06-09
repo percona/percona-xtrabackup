@@ -100,6 +100,3 @@ then
 fi
 
 vlog "Checksums are OK"
-
-stop_mysqld
-clean

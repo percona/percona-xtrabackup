@@ -11,5 +11,3 @@ mkdir -p $topdir/data/full
 vlog "Starting backup"
 xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full
 vlog "Full backup done"
-stop_mysqld
-clean 

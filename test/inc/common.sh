@@ -1,23 +1,20 @@
 #!/bin/env bash
 
 set -eu
-topdir="`pwd`/var"
-mysql_datadir="$topdir/mysql"
-mysql_port="3306"
-mysql_socket=${mysql_socket:-"/tmp/xtrabackup.mysql.sock"}
 
-if gnutar --version > /dev/null 2>&1
-then
-    TAR=gnutar
-else
-    TAR=tar
-fi
+function innobackupex()
+{
+    run_cmd `which innobackupex` $IB_ARGS $*
+}
 
-OUTFILE=results/`basename $0`_innobackupex.out
+function xtrabackup()
+{
+    run_cmd `which $XB_BIN` $XB_ARGS $*
+}
 
 function vlog
 {
-    echo "`date +"%F %T"`: `basename "$0"`: $@" 1>&2
+    echo "`date +"%F %T"`: `basename "$0"`: $@" >> $OUTFILE
 }
 
 function clean_datadir()
@@ -60,105 +57,6 @@ function initdir()
     mkdir -p "$mysql_datadir"
 }
 
-function init_mysql()
-{
-	url="http://www.percona.com/downloads/community/"
-	case "$MYSQL_VERSION" in
-		system)
-			echo "Using MySQL installed in the system"
-			MYSQL=mysql
-			MYSQLADMIN=mysqladmin
-			MYSQL_INSTALL_DB=mysql_install_db
-			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			MYSQLD=mysqld
-			MYSQL_BASEDIR=${MYSQL_BASEDIR:-"/usr"}
-			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
-			XB_BIN=xtrabackup
-			;;
-		5.0)
-			echo "Using MySQL 5.0"
-			version="5.0.91-linux-`uname -m`-glibc23"
-			cd $topdir
-			wget "$url/mysql-$version.tar.gz" >/dev/null 2>&1
-			tar zxf mysql-$version.tar.gz
-			MYSQL=$topdir/mysql-$version/bin/mysql
-			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
-			MYSQL_INSTALL_DB=$topdir/mysql-$version/scripts/mysql_install_db
-			MYSQLD=$topdir/mysql-$version/bin/mysqld
-			MYSQL_BASEDIR=$topdir/mysql-$version
-			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
-			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
-			XB_BIN=xtrabackup_51
-			cd -
-			;;
-		5.1)
-			echo "Using MySQL 5.1"
-			version="5.1.49-linux-`uname -m`-glibc23"
-			cd $topdir
-			wget "$url/mysql-$version.tar.gz" >/dev/null 2>&1
-			tar zxf mysql-$version.tar.gz
-			MYSQL=$topdir/mysql-$version/bin/mysql
-			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
-			MYSQL_INSTALL_DB=$topdir/mysql-$version/scripts/mysql_install_db
-			MYSQLD=$topdir/mysql-$version/bin/mysqld
-			MYSQL_BASEDIR=$topdir/mysql-$version
-			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
-			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
-			XB_BIN=xtrabackup
-			cd -
-			;;
-		5.5)
-			echo "Using MySQL 5.5"
-			version="5.5.6-rc-linux2.6-`uname -m`"
-			cd $topdir
-			wget "$url/mysql-$version.tar.gz" >/dev/null 2>&1
-			tar zxf mysql-$version.tar.gz
-			MYSQL=$topdir/mysql-$version/bin/mysql
-			MYSQLADMIN=$topdir/mysql-$version/bin/mysqladmin
-			MYSQL_INSTALL_DB=$topdir/mysql-$version/scripts/mysql_install_db
-			MYSQLD=$topdir/mysql-$version/bin/mysqld
-			MYSQL_BASEDIR=$topdir/mysql-$version
-			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
-			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
-			XB_BIN=xtrabackup_55
-			cd -
-			;;
-		percona)
-			echo "Using Percona Server"
-			version="5.1.51-rel11.5-132-Linux-`uname -m`"
-			cd $topdir
-			wget "$url/Percona-Server-$version.tar.gz" >/dev/null 2>&1
-			tar zxf Percona-Server-$version.tar.gz
-			MYSQL=$topdir/Percona-Server-$version/bin/mysql
-			MYSQLADMIN=$topdir/Percona-Server-$version/bin/mysqladmin
-			MYSQL_INSTALL_DB=$topdir/Percona-Server-$version/bin/mysql_install_db
-			MYSQLD=$topdir/Percona-Server-$version/libexec/mysqld
-			MYSQL_BASEDIR=$topdir/Percona-Server-$version
-			MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir"
-			MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-			set +u
-			export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$topdir/Percona-Server-$version/lib/mysql
-			set -u
-			IB_BIN="innobackupex --defaults-file=$topdir/my.cnf --user=root"
-			XB_BIN=xtrabackup
-
-			cd -
-			;;
-		*)
-			usage
-			exit -1
-			;;
-	esac
-	if [ "`whoami`" = "root" ]
-	then
-		MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
-	fi
-}
-
 function init_mysql_dir()
 {
     vlog "Creating MySQL database"
@@ -196,13 +94,45 @@ function mysql_ping()
         result="0"
     fi
     echo $result
-    }
+}
 
+function get_xtrabackup_version()
+{
+    if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
+    then
+	if [ -z "$INNODB_VERSION" ]
+	then
+	    XB_BIN="xtrabackup_51" # InnoDB 5.1 builtin
+	else
+	    XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
+	fi
+    elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
+    then
+	XB_BIN="xtrabackup_55"
+    else
+	vlog "Uknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
+	exit -1
+    fi
+    XTRADB_VERSION=`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`
+    vlog "Using '$XB_BIN' as xtrabackup binary"
+    # Set the correct binary for innobackupex
+    IB_ARGS="$IB_ARGS --ibbackup=$XB_BIN"
+}
+
+function kill_leftovers()
+{
+    while test -f "$PWD/mysqld.pid" 
+    do
+	vlog "Found a leftover mysqld processes with PID `cat $PWD/mysqld.pid`, stopping it"
+	stop_mysqld
+    done
+}
 
 function run_mysqld()
 {
     local c=0
-    ${MYSQLD} ${MYSQLD_ARGS} $* --port=$mysql_port &
+    kill_leftovers
+    ${MYSQLD} ${MYSQLD_ARGS} $* --pid-file="$PWD/mysqld.pid" &
     while [ "`mysql_ping`" != "1" ]
     do
         if [ ${c} -eq 100 ]
@@ -213,8 +143,13 @@ function run_mysqld()
         let c=${c}+1
         sleep 1
     done
+    # Get MySQL and InnoDB versions
+    MYSQL_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version'"`
+    MYSQL_VERSION=${MYSQL_VERSION#"version	"}
+    INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
+    INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
+    get_xtrabackup_version
     vlog "MySQL started successfully"
-
 }
 
 function run_cmd()
@@ -225,8 +160,11 @@ function run_cmd()
 
 function stop_mysqld()
 {
-    ${MYSQLADMIN} ${MYSQL_ARGS} shutdown 
-    vlog "Database server has been stopped"
+    if [ -f "$PWD/mysqld.pid" ]
+    then
+	${MYSQLADMIN} ${MYSQL_ARGS} shutdown 
+	vlog "Database server has been stopped"
+    fi
 }
 
 function load_sakila()
@@ -261,9 +199,7 @@ function drop_dbase()
 function init()
 {
 initdir
-init_mysql
 init_mysql_dir
-set_mysl_port
 echo "
 [mysqld]
 datadir=$mysql_datadir" > $topdir/my.cnf

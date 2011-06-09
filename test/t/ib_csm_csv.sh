@@ -20,7 +20,7 @@ vlog "Initial rows added"
 mkdir -p $topdir/backup
 
 vlog "Starting backup"
-run_cmd ${IB_BIN} --user=root --socket=$mysql_socket $topdir/backup > $OUTFILE 2>&1 
+innobackupex $topdir/backup > $OUTFILE 2>&1 
 full_backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{print $2}'`
 vlog "Full backup done to directory $full_backup_dir"
 
@@ -33,7 +33,7 @@ vlog "Preparing backup"
 echo "###########" >> $OUTFILE
 echo "# PREPARE #" >> $OUTFILE
 echo "###########" >> $OUTFILE
-run_cmd ${IB_BIN} --apply-log $full_backup_dir >> $OUTFILE 2>&1 
+innobackupex --apply-log $full_backup_dir >> $OUTFILE 2>&1 
 vlog "Data prepared for restore"
 
 # Destroying mysql data
@@ -46,7 +46,7 @@ vlog "Copying files"
 echo "###########" >> $OUTFILE
 echo "# RESTORE #" >> $OUTFILE
 echo "###########" >> $OUTFILE
-run_cmd ${IB_BIN} --copy-back $full_backup_dir >> $OUTFILE 2>&1
+innobackupex --copy-back $full_backup_dir >> $OUTFILE 2>&1
 vlog "Data restored"
 
 run_mysqld --innodb_file_per_table
@@ -59,5 +59,3 @@ then
 	exit -1
 fi
 vlog "Checksums are OK"
-stop_mysqld
-clean

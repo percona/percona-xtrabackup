@@ -122,7 +122,8 @@ function build_tar4ibd()
 ################################################################################
 function build_all()
 {
-    server_dir=$top_dir/mysql-$mysql_version
+    local mysql_version_short=${mysql_version:0:3}
+    server_dir=$top_dir/mysql-$mysql_version_short
     server_tarball=mysql-$mysql_version.tar.gz
     innodb_dir=$server_dir/storage/$innodb_name
     build_dir=$innodb_dir/xtrabackup
@@ -134,6 +135,7 @@ function build_all()
 
     echo "Preparing sources"
     unpack_and_patch $server_tarball $server_patch
+    mv $top_dir/mysql-$mysql_version $server_dir
 
     build_server
 

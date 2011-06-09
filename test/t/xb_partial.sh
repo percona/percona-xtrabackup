@@ -21,11 +21,12 @@ vlog "Table checksum is $checksum_a"
 mkdir -p $topdir/data/parted
 
 vlog "Starting backup"
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --backup --target-dir=$topdir/data/parted --tables="^incremental_sample[.]test"
+xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/parted \
+    --tables="^incremental_sample[.]test"
 vlog "Partial backup done"
 
 # Prepare backup
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/parted
+xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/parted
 vlog "Data prepared for restore"
 
 # removing rows
@@ -50,5 +51,3 @@ then
 fi
 
 vlog "Checksums are OK"
-stop_mysqld
-clean

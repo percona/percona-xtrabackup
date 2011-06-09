@@ -8,7 +8,7 @@ load_dbase_data sakila
 # Take backup
 mkdir -p $topdir/backup
 mkdir -p $topdir/backup/stream
-run_cmd ${IB_BIN} --socket=$mysql_socket --stream=tar $topdir/backup > $topdir/backup/stream/out.tar 2> $OUTFILE 
+innobackupex --stream=tar $topdir/backup > $topdir/backup/stream/out.tar 2> $OUTFILE 
 
 stop_mysqld
 cd $topdir/backup/stream/
@@ -23,4 +23,3 @@ else
 fi
 
 cd - >/dev/null 2>&1 
-clean

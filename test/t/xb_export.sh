@@ -2,13 +2,19 @@
 
 init
 
-if [ "$MYSQL_VERSION" != "percona" ]; then
-  exit $SKIPPED_EXIT_CODE
-fi
-
 backup_dir=$topdir/xb_export_backup
 rm -rf $backup_dir
 mkdir $backup_dir
+
+# Get version information
+run_mysqld
+stop_mysqld
+
+if [ -z "$XTRADB_VERSION" ]; then
+    echo "Requires XtraDB" > $SKIPPED_REASON
+    exit $SKIPPED_EXIT_CODE
+fi
+
 # Starting database server
 run_mysqld --innodb_file_per_table --innodb_file_format=Barracuda
 
@@ -32,7 +38,7 @@ vlog "rowsnum_1 is $rowsnum_1"
 vlog "checksum_1 is $checksum_1"
 
 # Performing table backup
-run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --backup --target-dir=$backup_dir
+xtrabackup --no-defaults --datadir=$mysql_datadir --backup --target-dir=$backup_dir
 vlog "Table was backed up"
 
 vlog "Re-initializing database server"
@@ -44,7 +50,7 @@ load_dbase_schema incremental_sample
 vlog "Database was re-initialized"
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test discard tablespace;" incremental_sample
-run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --export --target-dir=$backup_dir --innodb_file_per_table
+xtrabackup --datadir=$mysql_datadir --prepare --export --target-dir=$backup_dir --innodb_file_per_table
 run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
 run_cmd ls -lah $mysql_datadir/incremental_sample/
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test import tablespace" incremental_sample
@@ -98,5 +104,3 @@ fi
 vlog "Checksums are OK"
 
 rm -rf $backup_dir
-stop_mysqld
-clean
