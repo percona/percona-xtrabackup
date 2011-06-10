@@ -47,7 +47,7 @@ case "$1" in
 	;;
     xtradb55)
 	url="http://www.percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary/"
-	taball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
+	tarball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
 	;;
     *)
 	if ! test -r "$1"
