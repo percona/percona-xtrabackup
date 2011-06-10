@@ -1,6 +1,10 @@
 . inc/common.sh
 
-OUTFILE=results/bug606981_innobackupex_out
+if test "`uname -s`" != "Linux"
+then
+    echo "Requires Linux" > $SKIPPED_REASON
+    exit $SKIPPED_EXIT_CODE
+fi
 
 init
 run_mysqld
@@ -13,7 +17,7 @@ datadir=$mysql_datadir
 innodb_flush_method=O_DIRECT
 " > $topdir/my.cnf
 mkdir -p $topdir/backup
-innobackupex --user=root --socket=$mysql_socket --defaults-file=$topdir/my.cnf --stream=tar $topdir/backup > $topdir/backup/out.tar 2>$OUTFILE || dir "innobackupex died with exit code $?"
+innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar 2>$OUTFILE
 stop_mysqld
 
 # See if tar4ibd was using O_DIRECT
@@ -31,13 +35,11 @@ backup_dir=$topdir/backup
 cd $backup_dir
 tar -ixvf out.tar
 cd - >/dev/null 2>&1 
-run_cmd innobackupex --apply-log --defaults-file=$topdir/my.cnf $backup_dir
+innobackupex --apply-log --defaults-file=$topdir/my.cnf $backup_dir
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
-run_cmd innobackupex --copy-back --defaults-file=$topdir/my.cnf $backup_dir
+innobackupex --copy-back --defaults-file=$topdir/my.cnf $backup_dir
 
 run_mysqld
 # Check sakila
 ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila
-stop_mysqld
-clean

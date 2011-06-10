@@ -1,7 +1,5 @@
 . inc/common.sh
 
-OUTFILE=results/ib_partition_innobackupex.out
-
 init
 run_mysqld --innodb_file_per_table
 load_dbase_schema part_range_sample
@@ -59,8 +57,6 @@ vlog "checksum_b is $checksum_b"
 if [ $checksum_a -eq $checksum_b ]
 then 
         vlog "Checksums are OK"
-        stop_mysqld
-        clean
         exit 0
 else
         vlog "Checksums are not equal"

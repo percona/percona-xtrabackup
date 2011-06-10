@@ -4,10 +4,6 @@
 
 . inc/common.sh
 
-if [ "$MYSQL_VERSION" = "5.0" ]; then
-  exit $SKIPPED_EXIT_CODE
-fi
-
 #
 # Test incremental backup of a compressed tablespace with a specific page size
 #
@@ -21,7 +17,7 @@ function test_incremental_compressed()
 
   # Use innodb_strict_mode so that failure to use compression results in an 
   # error rather than a warning
-  if [ "$MYSQL_VERSION" = "5.1" ]; then
+  if [ "${MYSQL_VERSION:0:3}" = "5.1" ]; then
     mysqld_additional_args="--ignore_builtin_innodb --innodb_strict_mode \
       --plugin-load=innodb=ha_innodb_plugin.so  --innodb_file_per_table \
       --innodb_file_format=Barracuda"
@@ -76,8 +72,7 @@ incremental_sample`
 
   vlog "Starting backup"
 
-  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --backup \
-      --target-dir=$topdir/data/full
+  xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full
 
   vlog "Full backup done"
 
@@ -115,21 +110,21 @@ incremental_sample | awk '{print $2}'`
   vlog "Making incremental backup"
 
   # Incremental backup
-  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --backup \
+  xtrabackup --datadir=$mysql_datadir --backup \
       --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full
 
   vlog "Incremental backup done"
   vlog "Preparing backup"
 
   # Prepare backup
-  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
+  xtrabackup --datadir=$mysql_datadir --prepare \
       --apply-log-only --target-dir=$topdir/data/full
   vlog "Log applied to backup"
-  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
+  xtrabackup --datadir=$mysql_datadir --prepare \
       --apply-log-only --target-dir=$topdir/data/full \
       --incremental-dir=$topdir/data/delta
   vlog "Delta applied to backup"
-  run_cmd xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
+  xtrabackup --datadir=$mysql_datadir --prepare \
       --target-dir=$topdir/data/full
   vlog "Data prepared for restore"
 
@@ -169,8 +164,15 @@ incremental_sample | awk '{print $2}'`
 
 init
 
+# Just to get version information. We'll start the server with the correct arguments 
+# later
+run_mysqld
+stop_mysqld
+
+if [ -z "${MYSQL_VERSION:0:3}" = "5.0" ]; then
+  exit $SKIPPED_EXIT_CODE
+fi
+
 for page_size in 1 2 4 8 16; do
   test_incremental_compressed ${page_size}
 done
-
-clean

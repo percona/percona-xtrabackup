@@ -28,7 +28,7 @@ mkdir -p $topdir/data/delta
 
 vlog "Starting backup"
 
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full
+xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full
 
 vlog "Full backup done"
 
@@ -53,17 +53,19 @@ vlog "Table checksum is $checksum_a"
 vlog "Making incremental backup"
 
 # Incremental backup
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --backup --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full
+xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full
 
 vlog "Incremental backup done"
 vlog "Preparing backup"
 
 # Prepare backup
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --prepare --apply-log-only --target-dir=$topdir/data/full
+xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
+    --target-dir=$topdir/data/full
 vlog "Log applied to backup"
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --prepare --apply-log-only --target-dir=$topdir/data/full --incremental-dir=$topdir/data/delta
+xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
+    --target-dir=$topdir/data/full --incremental-dir=$topdir/data/delta
 vlog "Delta applied to backup"
-run_cmd ${XB_BIN} --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/full
+xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/full
 vlog "Data prepared for restore"
 
 # removing rows
@@ -90,5 +92,3 @@ then
 fi
 
 vlog "Checksums are OK"
-stop_mysqld
-clean
