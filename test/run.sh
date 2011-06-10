@@ -51,7 +51,7 @@ function set_vars()
     topdir="`pwd`/var"
     mysql_datadir="$topdir/mysql"
     mysql_port="3306"
-    mysql_socket="$PWD/xtrabackup.mysql.sock"
+    mysql_socket=`tempfile -p XBts --suffix .xtrabackup.mysql.sock`
     IB_ARGS="--defaults-file=$topdir/my.cnf --user=root --socket=$mysql_socket"
     XB_ARGS="--no-defaults"
 
@@ -121,9 +121,15 @@ failed_count=0
 failed_tests=
 total_count=0
 
+source subunit.sh
+
+SUBUNIT_OUT=test_results.subunit
+rm -f $SUBUNIT_OUT
+
 for t in $tests
 do
    printf "%-40s" $t
+   subunit_start_test $t >> $SUBUNIT_OUT
    name=`basename $t .sh`
    export OUTFILE="$PWD/results/$name"
    export SKIPPED_REASON="$PWD/results/$name.skipped"
@@ -136,13 +142,21 @@ do
    if [ $rc -eq 0 ]
    then
        echo "[passed]"
+       subunit_pass_test $t >> $SUBUNIT_OUT
    elif [ $rc -eq $SKIPPED_EXIT_CODE ]
    then
        sreason=""
        test -r $SKIPPED_REASON && sreason=`cat $SKIPPED_REASON`
        echo "[skipped]    $sreason"
+       subunit_skip_test $t >> $SUBUNIT_OUT
    else
        echo "[failed]"
+
+       ( subunit_fail_test $t <<EOF
+Something went wrong running $t. exitid with $rc
+EOF
+       ) >> $SUBUNIT_OUT
+
        failed_count=$((failed_count+1))
        failed_tests="$failed_tests $t"
        result=1
