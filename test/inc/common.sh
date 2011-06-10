@@ -14,7 +14,7 @@ function xtrabackup()
 
 function vlog
 {
-    echo "`date +"%F %T"`: `basename "$0"`: $@"
+    echo "`date +"%F %T"`: `basename "$0"`: $@" >> $OUTFILE
 }
 
 function clean_datadir()
@@ -124,7 +124,7 @@ function kill_leftovers()
     while test -f "$PWD/mysqld.pid" 
     do
 	vlog "Found a leftover mysqld processes with PID `cat $PWD/mysqld.pid`, stopping it"
-	stop_mysqld
+	stop_mysqld 2> /dev/null
     done
 }
 

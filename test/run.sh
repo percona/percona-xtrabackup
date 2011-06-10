@@ -78,6 +78,11 @@ function set_vars()
     find_program MYSQL mysql $MYSQL_BASEDIR/bin
     find_program MYSQLADMIN mysqladmin $MYSQL_BASEDIR/bin
 
+    export MYSQL_INSTALL_DB
+    export MYSQL
+    export MYSQLD
+    export MYSQLADMIN
+
     # Check if we are running from a source tree and, if so, set PATH 
     # appropriately
     if test "`basename $PWD`" = "test"
@@ -120,6 +125,9 @@ fi
 failed_count=0
 failed_tests=
 total_count=0
+
+export OUTFILE="$PWD/results/setup"
+kill_leftovers
 
 source subunit.sh
 
