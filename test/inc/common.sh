@@ -164,9 +164,12 @@ function stop_mysqld()
     then
 	${MYSQLADMIN} ${MYSQL_ARGS} shutdown 
 	vlog "Database server has been stopped"
-	sleep 1;
-	kill -9 `cat $PWD/mysqld.pid`
-	rm -f $PWD/mysqld.pid
+	if [ -f "$PWD/mysqld.pid" ]
+	then
+	    sleep 1;
+	    kill -9 `cat $PWD/mysqld.pid`
+	    rm -f $PWD/mysqld.pid
+	fi
     fi
 }
 
