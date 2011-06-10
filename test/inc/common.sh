@@ -124,7 +124,7 @@ function kill_leftovers()
     while test -f "$PWD/mysqld.pid" 
     do
 	vlog "Found a leftover mysqld processes with PID `cat $PWD/mysqld.pid`, stopping it"
-	stop_mysqld
+	stop_mysqld 2> /dev/null
     done
 }
 
