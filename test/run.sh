@@ -128,6 +128,7 @@ total_count=0
 
 export OUTFILE="$PWD/results/setup"
 kill_leftovers
+clean
 
 source subunit.sh
 
