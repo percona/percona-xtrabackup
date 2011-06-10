@@ -165,6 +165,10 @@ function stop_mysqld()
 	${MYSQLADMIN} ${MYSQL_ARGS} shutdown 
 	vlog "Database server has been stopped"
     fi
+
+    sleep 1;
+    kill -9 `cat $PWD/mysqld.pid`
+    rm -f $PWD/mysqld.pid
 }
 
 function load_sakila()
