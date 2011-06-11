@@ -218,6 +218,7 @@ if ($option_copy_back) {
 	if ( $option_ibbackup_binary eq 'autodetect' ) {
 		$option_ibbackup_binary = 'xtrabackup';
         }
+    $option_ibbackup_binary = 'xtrabackup_51' if (! $option_ibbackup_binary);
 } elsif ($option_apply_log) {
 	# Read XtraBackup version from backup dir
 	if (-e "$backup_dir/$xtrabackup_binary_file") {
