@@ -247,7 +247,7 @@ if ($option_copy_back) {
 				}
 			}
 		}
-} else {
+} elsif ($option_ibbackup_binary eq 'autodetect') {
     $option_ibbackup_binary = set_xtrabackup_version();
 }
 init();
