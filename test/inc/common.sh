@@ -108,7 +108,12 @@ function get_xtrabackup_version()
 	fi
     elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
     then
-	XB_BIN="xtrabackup_55"
+	if [ "${MYSQL_VERSION_COMMENT:0:14}" = "Percona Server" ]
+	then
+	    XB_BIN="xtrabackup_55"
+	else
+	    XB_BIN="xtrabackup_innodb55"
+	fi
     else
 	vlog "Uknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
 	exit -1
@@ -146,10 +151,12 @@ function run_mysqld()
     # Get MySQL and InnoDB versions
     MYSQL_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version'"`
     MYSQL_VERSION=${MYSQL_VERSION#"version	"}
+    MYSQL_VERSION_COMMENT=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version_comment'"`
+    MYSQL_VERSION_COMMENT=${MYSQL_VERSION#"version_comment	"}
     INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     get_xtrabackup_version
-    vlog "MySQL started successfully"
+    vlog "MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION) started successfully"
 }
 
 function run_cmd()
