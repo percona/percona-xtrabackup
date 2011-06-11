@@ -161,9 +161,10 @@ do
    else
        echo "[failed]"
 
-       ( subunit_fail_test $t <<EOF
-Something went wrong running $t. exitid with $rc
-EOF
+       (
+	   (echo "Something went wrong running $t. Exited with $rc";
+	       echo; echo; cat $OUTFILE
+	   ) | subunit_fail_test $t
        ) >> $SUBUNIT_OUT
 
        failed_count=$((failed_count+1))
