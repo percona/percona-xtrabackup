@@ -1,5 +1,6 @@
---- a/lib/Makefile.in	2011-02-21 08:15:39.000000000 -0800
-+++ b/lib/Makefile.in	2011-02-23 06:43:36.000000000 -0800
+diff -ruN a/lib/Makefile.in b/lib/Makefile.in
+--- a/lib/Makefile.in	2011-05-25 16:46:41.000000000 +0400
++++ b/lib/Makefile.in	2011-05-25 16:47:54.000000000 +0400
 @@ -29,7 +29,7 @@
  		  -I${top_srcdir}/compat \
  		  -I../listhash \
@@ -9,8 +10,9 @@
  LDFLAGS		= @LDFLAGS@
  LIBS		= @LIBS@
  LIBOBJS		= @LIBOBJS@
---- a/lib/append.c	2011-02-21 08:15:39.000000000 -0800
-+++ b/lib/append.c	2011-02-23 21:31:20.000000000 -0800
+diff -ruN a/lib/append.c b/lib/append.c
+--- a/lib/append.c	2011-05-25 16:46:41.000000000 +0400
++++ b/lib/append.c	2011-05-25 17:42:25.000000000 +0400
 @@ -27,6 +27,218 @@
  # include <unistd.h>
  #endif
@@ -230,6 +232,15 @@
  
  struct tar_dev
  {
+@@ -69,7 +281,7 @@
+ 	       (savename ? savename : "[NULL]"));
+ #endif
+ 
+-	if (lstat(realname, &s) != 0)
++	if (stat(realname, &s) != 0)
+ 	{
+ #ifdef DEBUG
+ 		perror("lstat()");
 @@ -210,11 +422,14 @@
  int
  tar_append_regfile(TAR *t, char *realname)
@@ -324,8 +335,9 @@
  	}
  
  	close(filefd);
---- a/lib/extract.c	2011-02-21 08:15:39.000000000 -0800
-+++ b/lib/extract.c	2011-02-21 08:17:37.000000000 -0800
+diff -ruN a/lib/extract.c b/lib/extract.c
+--- a/lib/extract.c	2011-05-25 16:46:41.000000000 +0400
++++ b/lib/extract.c	2011-05-25 16:47:54.000000000 +0400
 @@ -158,11 +158,11 @@
  tar_extract_regfile(TAR *t, char *realname)
  {
@@ -340,8 +352,9 @@
  	char buf[T_BLOCKSIZE];
  	char *filename;
  
---- a/lib/libtar.h	2011-02-21 08:15:39.000000000 -0800
-+++ b/lib/libtar.h	2011-02-21 08:17:37.000000000 -0800
+diff -ruN a/lib/libtar.h b/lib/libtar.h
+--- a/lib/libtar.h	2011-05-25 16:46:41.000000000 +0400
++++ b/lib/libtar.h	2011-05-25 16:47:54.000000000 +0400
 @@ -180,7 +180,7 @@
  
  /* decode tar header info */
@@ -381,8 +394,9 @@
  
  
  /***** wrapper.c **********************************************************/
---- a/lib/util.c	2011-02-21 08:15:39.000000000 -0800
-+++ b/lib/util.c	2011-02-21 08:17:37.000000000 -0800
+diff -ruN a/lib/util.c b/lib/util.c
+--- a/lib/util.c	2011-05-25 16:46:41.000000000 +0400
++++ b/lib/util.c	2011-05-25 16:47:54.000000000 +0400
 @@ -138,6 +138,14 @@
  	return i;
  }
@@ -445,8 +459,9 @@
 +	}
 +	return i;
 +}
---- a/libtar/Makefile.in	2011-02-21 08:15:39.000000000 -0800
-+++ b/libtar/Makefile.in	2011-02-23 06:44:41.000000000 -0800
+diff -ruN a/libtar/Makefile.in b/libtar/Makefile.in
+--- a/libtar/Makefile.in	2011-05-25 16:46:41.000000000 +0400
++++ b/libtar/Makefile.in	2011-05-25 16:47:54.000000000 +0400
 @@ -29,7 +29,7 @@
  		  -I${top_srcdir}/lib \
  		  -I${top_srcdir}/compat \
@@ -482,8 +497,9 @@
 -	${INSTALL_PROGRAM} libtar ${DESTDIR}${bindir}
 +	${INSTALL_PROGRAM} tar4ibd ${DESTDIR}${bindir}
  
---- a/libtar/libtar.c	2011-02-21 08:15:39.000000000 -0800
-+++ b/libtar/libtar.c	2011-02-23 06:56:56.000000000 -0800
+diff -ruN a/libtar/libtar.c b/libtar/libtar.c
+--- a/libtar/libtar.c	2011-05-25 16:46:41.000000000 +0400
++++ b/libtar/libtar.c	2011-05-25 16:47:54.000000000 +0400
 @@ -14,6 +14,7 @@
  #include <libtar.h>
  
