@@ -252,7 +252,7 @@ diff -ruN a/lib/append.c b/lib/append.c
 -	int i, j;
 -	size_t size;
 +	int j, k, n_retry;
-+	size_t i, size;
++	long long i, size;
 +	int page_size = 4 * 1024; /* check 4K, 8K and 16K */
  
 +	block = (unsigned char *)(((unsigned long) buf + 16384 - 1) & ~(16384 - 1));
