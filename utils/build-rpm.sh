@@ -15,7 +15,7 @@
 # Bail out on errors, be strict
 set -ue
 
-XTRABACKUP_VERSION=1.6.1
+XTRABACKUP_VERSION=1.6.2
 
 # Examine parameters
 TARGET=''
