@@ -20,8 +20,8 @@ xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/full
 vlog "Data prepared fo restore"
 stop_mysqld
 
-cd $topdir/data/full
-cp -r * $mysql_datadir
+cd $topdir/data/full/test
+cp -r * $mysql_datadir/test
 cd -
 run_mysqld --innodb_file_per_table
 checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "CHECKSUM TABLE messages" test | awk {'print $2'}`
