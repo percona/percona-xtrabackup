@@ -5,7 +5,7 @@
 %{!?buildnumber:%define buildnumber 1}
 %define distribution  rhel%{redhat_version}
 %define release       %{buildnumber}.%{distribution}
-%define xtrabackup_version 1.6
+%define xtrabackup_version 1.6.2
 %define xtradb_version 11
 %{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 
