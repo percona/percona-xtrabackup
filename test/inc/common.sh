@@ -152,7 +152,7 @@ function run_mysqld()
     MYSQL_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version'"`
     MYSQL_VERSION=${MYSQL_VERSION#"version	"}
     MYSQL_VERSION_COMMENT=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version_comment'"`
-    MYSQL_VERSION_COMMENT=${MYSQL_VERSION#"version_comment	"}
+    MYSQL_VERSION_COMMENT=${MYSQL_VERSION_COMMENT#"version_comment	"}
     INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     get_xtrabackup_version
