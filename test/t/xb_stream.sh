@@ -16,7 +16,7 @@ rm -r $mysql_datadir
 vlog "Applying log"
 backup_dir=$topdir/backup
 cd $backup_dir
-tar -ixvf out.tar
+$TAR -ixvf out.tar
 cd - >/dev/null 2>&1 
 echo "###########" >> $OUTFILE
 echo "# PREPARE #" >> $OUTFILE
