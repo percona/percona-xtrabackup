@@ -14,7 +14,7 @@ function xtrabackup()
 
 function vlog
 {
-    echo "`date +"%F %T"`: `basename "$0"`: $@" >> $OUTFILE
+    echo "`date +"%F %T"`: `basename "$0"`: $@" 
 }
 
 function clean_datadir()
@@ -96,34 +96,6 @@ function mysql_ping()
     echo $result
 }
 
-function get_xtrabackup_version()
-{
-    if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
-    then
-	if [ -z "$INNODB_VERSION" ]
-	then
-	    XB_BIN="xtrabackup_51" # InnoDB 5.1 builtin
-	else
-	    XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
-	fi
-    elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
-    then
-	if [ "${MYSQL_VERSION_COMMENT:0:14}" = "Percona Server" ]
-	then
-	    XB_BIN="xtrabackup_55"
-	else
-	    XB_BIN="xtrabackup_innodb55"
-	fi
-    else
-	vlog "Uknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
-	exit -1
-    fi
-    XTRADB_VERSION=`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`
-    vlog "Using '$XB_BIN' as xtrabackup binary"
-    # Set the correct binary for innobackupex
-    IB_ARGS="$IB_ARGS --ibbackup=$XB_BIN"
-}
-
 function kill_leftovers()
 {
     while test -f "$PWD/mysqld.pid" 
@@ -148,15 +120,10 @@ function run_mysqld()
         let c=${c}+1
         sleep 1
     done
-    # Get MySQL and InnoDB versions
-    MYSQL_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version'"`
-    MYSQL_VERSION=${MYSQL_VERSION#"version	"}
-    MYSQL_VERSION_COMMENT=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version_comment'"`
-    MYSQL_VERSION_COMMENT=${MYSQL_VERSION_COMMENT#"version_comment	"}
-    INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
-    INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
-    get_xtrabackup_version
-    vlog "MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION) started successfully"
+    if [ -n "$MYSQL_VERSION" -a -n "$INNODB_VERSION" ]
+    then
+	vlog "MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION) started successfully"
+    fi
 }
 
 function run_cmd()
