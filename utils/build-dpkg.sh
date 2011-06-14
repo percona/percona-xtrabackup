@@ -11,8 +11,6 @@
 # Bail out on errors, be strict
 set -ue
 
-XTRABACKUP_VERSION='1.6.2'
-
 # Examine parameters
 go_out="$(getopt --options "k:K" --longoptions key:,nosign \
     --name "$(basename "$0")" -- "$@")"
@@ -62,7 +60,9 @@ fi
 
 SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
 
-# Extract version from the Makefile
+# Read XTRABACKUP_VERSION from the VERSION file
+. $SOURCEDIR/VERSION
+
 DEBIAN_VERSION="$(lsb_release -sc)"
 REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"
 

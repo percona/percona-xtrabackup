@@ -93,8 +93,11 @@ function build_xtrabackup()
     mkdir $build_dir
     cp $top_dir/Makefile $top_dir/xtrabackup.c $build_dir
 
+    # Read XTRABACKUP_VERSION from the VERSION file
+    . $top_dir/VERSION
+
     cd $build_dir
-    $MAKE_CMD $xtrabackup_target
+    $MAKE_CMD $xtrabackup_target XTRABACKUP_VERSION=$XTRABACKUP_VERSION
     cd $top_dir
 }
 
