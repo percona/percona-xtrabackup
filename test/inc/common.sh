@@ -14,7 +14,7 @@ function xtrabackup()
 
 function vlog
 {
-    echo "`date +"%F %T"`: `basename "$0"`: $@" 
+    echo "`date +"%F %T"`: `basename "$0"`: $@" >&2
 }
 
 function clean_datadir()
