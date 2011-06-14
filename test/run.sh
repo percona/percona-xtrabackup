@@ -51,7 +51,7 @@ function set_vars()
     topdir="`pwd`/var"
     mysql_datadir="$topdir/mysql"
     mysql_port="3306"
-    mysql_socket=`mktemp -t xtrabackup.mysql.sock`
+    mysql_socket=`mktemp -t xtrabackup.mysql.sock.XXXXXX`
     IB_ARGS="--defaults-file=$topdir/my.cnf --user=root --socket=$mysql_socket"
     XB_ARGS="--no-defaults"
 
