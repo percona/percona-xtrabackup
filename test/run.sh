@@ -116,7 +116,7 @@ function get_version_info()
 	fi
     elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
     then
-	if [ -n "XTRADB_VERSION" ]
+	if [ -n "$XTRADB_VERSION" ]
 	then
 	    XB_BIN="xtrabackup_55"
 	else
