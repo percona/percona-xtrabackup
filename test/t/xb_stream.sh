@@ -27,7 +27,7 @@ mkdir -p $mysql_datadir
 echo "###########" >> $OUTFILE
 echo "# RESTORE #" >> $OUTFILE
 echo "###########" >> $OUTFILE
-innobackupex ${IB_BIN} --copy-back $backup_dir >> $OTFILE 2>&1
+innobackupex  --copy-back $backup_dir
 
 run_mysqld
 # Check sakila
