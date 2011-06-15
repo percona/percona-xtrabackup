@@ -51,7 +51,7 @@ function set_vars()
     topdir="`pwd`/var"
     mysql_datadir="$topdir/mysql"
     mysql_port="3306"
-    mysql_socket=`tempfile -p XBts --suffix .xtrabackup.mysql.sock`
+    mysql_socket=`mktemp -t xtrabackup.mysql.sock.XXXXXX`
     IB_ARGS="--defaults-file=$topdir/my.cnf --user=root --socket=$mysql_socket"
     XB_ARGS="--no-defaults"
 
@@ -78,11 +78,6 @@ function set_vars()
     find_program MYSQL mysql $MYSQL_BASEDIR/bin
     find_program MYSQLADMIN mysqladmin $MYSQL_BASEDIR/bin
 
-    export MYSQL_INSTALL_DB
-    export MYSQL
-    export MYSQLD
-    export MYSQLADMIN
-
     # Check if we are running from a source tree and, if so, set PATH 
     # appropriately
     if test "`basename $PWD`" = "test"
@@ -95,6 +90,47 @@ function set_vars()
     export topdir mysql_datadir mysql_port mysql_socket OUTFILE IB_ARGS \
 	XB_ARGS TAR MYSQL_BASEDIR MYSQL MYSQLADMIN \
 	MYSQL_ARGS MYSQLD_ARGS MYSQL_INSTALL_DB MYSQLD PATH
+}
+
+function get_version_info()
+{
+    init
+    MYSQL_VERSION=""
+    INNODB_VERSION=""
+    run_mysqld
+    # Get MySQL and InnoDB versions
+    MYSQL_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version'"`
+    MYSQL_VERSION=${MYSQL_VERSION#"version	"}
+    MYSQL_VERSION_COMMENT=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version_comment'"`
+    MYSQL_VERSION_COMMENT=${MYSQL_VERSION_COMMENT#"version_comment	"}
+    INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
+    INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
+    XTRADB_VERSION=`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`
+    if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
+    then
+	if [ -z "$INNODB_VERSION" ]
+	then
+	    XB_BIN="xtrabackup_51" # InnoDB 5.1 builtin
+	else
+	    XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
+	fi
+    elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
+    then
+	if [ -n "$XTRADB_VERSION" ]
+	then
+	    XB_BIN="xtrabackup_55"
+	else
+	    XB_BIN="xtrabackup_innodb55"
+	fi
+    else
+	vlog "Uknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
+	exit -1
+    fi
+    vlog "Using '$XB_BIN' as xtrabackup binary"
+    # Set the correct binary for innobackupex
+    IB_ARGS="$IB_ARGS --ibbackup=$XB_BIN"
+
+    export MYSQL_VERSION/ MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION XB_BIN
 }
 
 tname=""
@@ -127,8 +163,9 @@ failed_tests=
 total_count=0
 
 export OUTFILE="$PWD/results/setup"
-kill_leftovers
-clean
+get_version_info >$OUTFILE 2>&1
+kill_leftovers >$OUTFILE 2>&1
+clean >$OUTFILE 2>&1
 
 source subunit.sh
 

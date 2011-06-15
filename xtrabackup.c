@@ -628,6 +628,7 @@ my_bool innodb_inited= 0;
 /* === xtrabackup specific options === */
 char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
 char *xtrabackup_target_dir= xtrabackup_real_target_dir;
+my_bool xtrabackup_version = FALSE;
 my_bool xtrabackup_backup = FALSE;
 my_bool xtrabackup_stats = FALSE;
 my_bool xtrabackup_prepare = FALSE;
@@ -946,6 +947,9 @@ enum options_xtrabackup
 
 static struct my_option my_long_options[] =
 {
+  {"version", 'v', "print xtrabackup version information",
+   (G_PTR *) &xtrabackup_version, (G_PTR *) &xtrabackup_version, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
   {"target-dir", OPT_XTRA_TARGET_DIR, "destination directory", (G_PTR*) &xtrabackup_target_dir,
    (G_PTR*) &xtrabackup_target_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"backup", OPT_XTRA_BACKUP, "take backup to target-dir",
@@ -1244,8 +1248,14 @@ static const char *load_default_groups[]= { "mysqld","xtrabackup",0 };
 
 static void print_version(void)
 {
-  printf("%s  Ver %s Rev %s for %s %s (%s)\n" ,my_progname,
-	  XTRABACKUP_VERSION, XTRABACKUP_REVISION, MYSQL_SERVER_VERSION,SYSTEM_TYPE,MACHINE_TYPE);
+  printf("%s version %s for %s %s %s (%s) (revision id: %s)\n", my_progname,
+         XTRABACKUP_VERSION,
+#ifdef XTRADB_BASED
+         "Percona Server",
+#else
+         "MySQL server",
+#endif
+         MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XTRABACKUP_REVISION);
 }
 
 static void usage(void)
@@ -1287,6 +1297,10 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case '?':
     usage();
+    exit(EXIT_SUCCESS);
+    break;
+  case 'v':
+    print_version();
     exit(EXIT_SUCCESS);
     break;
   default:

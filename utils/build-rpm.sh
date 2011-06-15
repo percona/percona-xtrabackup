@@ -91,6 +91,9 @@ fi
 SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
 test -e "$SOURCEDIR/Makefile" || exit 2
 
+# Read XTRABACKUP_VERSION from the VERSION file
+. $SOURCEDIR/VERSION
+
 # Build information
 REDHAT_RELEASE="$(grep -o 'release [0-9][0-9]*' /etc/redhat-release | \
     cut -d ' ' -f 2)"

@@ -12,8 +12,6 @@
 # Bail out on errors, be strict
 set -ue
 
-XTRABACKUP_VERSION=1.6.2
-
 # Examine parameters
 TARGET="$(uname -m)"
 TARGET_CFLAGS=''
@@ -79,7 +77,8 @@ fi
 SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
 test -e "$SOURCEDIR/Makefile" || exit 2
 
-# Extract version from the Makefile
+# Read XTRABACKUP_VERSION from the VERSION file
+. $SOURCEDIR/VERSION
 
 # Build information
 REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"

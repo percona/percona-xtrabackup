@@ -6,13 +6,16 @@ backup_dir=$topdir/xb_export_backup
 rm -rf $backup_dir
 mkdir $backup_dir
 
-# Get version information
-run_mysqld
-stop_mysqld
-
 if [ -z "$XTRADB_VERSION" ]; then
     echo "Requires XtraDB" > $SKIPPED_REASON
     exit $SKIPPED_EXIT_CODE
+fi
+
+if [ ${MYSQL_VERSION:0:3} = "5.5" ]
+then
+    import_option="--innodb_import_table_from_xtrabackup=1"
+else
+    import_option="--innodb_expand_import=1"
 fi
 
 # Starting database server
@@ -45,7 +48,7 @@ vlog "Re-initializing database server"
 stop_mysqld
 # Can't use clean/init because that will remove $backup_dir as well
 clean_datadir
-run_mysqld --innodb_file_per_table --innodb_expand_import=1 --innodb_file_format=Barracuda
+run_mysqld --innodb_file_per_table $import_option --innodb_file_format=Barracuda
 load_dbase_schema incremental_sample
 vlog "Database was re-initialized"
 
