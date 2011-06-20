@@ -129,10 +129,13 @@ function run_mysqld()
 function run_cmd()
 {
   vlog "===> $@"
+  set +e
   "$@"
-  if [ $? -ne 0 ]
+  local rc=$?
+  set -e
+  if [ $rc -ne 0 ]
   then
-      die "===> `basename $1` failed with exit code $?"
+      die "===> `basename $1` failed with exit code $rc"
   fi
 }
 

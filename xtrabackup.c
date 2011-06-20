@@ -5058,7 +5058,11 @@ get_meta_path(
 	return TRUE;
 }
 
-static void
+/************************************************************************
+Applies a given .delta file to the corresponding data file.
+@return TRUE on success */
+static
+ibool
 xtrabackup_apply_delta(
 	const char*	dirname,	/* in: dir name of incremental */
 	const char*	dbname,		/* in: database name (ibdata: NULL) */
@@ -5141,8 +5145,33 @@ xtrabackup_apply_delta(
 	dst_file = xb_file_create_no_error_handling(dst_path, OS_FILE_OPEN,
 						    OS_FILE_READ_WRITE,
 						    &success);
+again:
 	if (!success) {
-		os_file_get_last_error(TRUE);
+		ulint errcode = os_file_get_last_error(TRUE);
+
+		if (errcode == OS_FILE_NOT_FOUND) {
+			fprintf(stderr, "xtrabackup: target data file %s "
+				"is not found, creating a new one\n", dst_path);
+			/* Create the database directory if it doesn't exist yet
+			*/
+			if (dbname) {
+				char	dst_dir[FN_REFLEN];
+
+				snprintf(dst_dir, sizeof(dst_dir), "%s/%s",
+					 xtrabackup_real_target_dir, dbname);
+				srv_normalize_path_for_win(dst_dir);
+
+				if (!os_file_create_directory(dst_dir, FALSE))
+					goto error;
+			}
+			dst_file =
+				xb_file_create_no_error_handling(dst_path,
+								 OS_FILE_CREATE,
+								 OS_FILE_READ_WRITE,
+								 &success);
+			goto again;
+		}
+
 		fprintf(stderr,
 			"xtrabackup: error: cannot open %s\n",
 			dst_path);
@@ -5155,7 +5184,7 @@ xtrabackup_apply_delta(
 
 	xb_file_set_nocache(dst_file, dst_path, "OPEN");
 
-	printf("Applying %s ...\n", src_path);
+	fprintf(stderr, "Applying %s ...\n", src_path);
 
 	while (!last_buffer) {
 		ulint cluster_header;
@@ -5241,18 +5270,23 @@ xtrabackup_apply_delta(
 		os_file_close(src_file);
 	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
-	return;
+	return TRUE;
 
 error:
 	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
 	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
-	fprintf(stderr, "xtrabackup: Error: xtrabackup_apply_delta() failed.\n");
-	return;
+	fprintf(stderr, "xtrabackup: Error: xtrabackup_apply_delta(): "
+		"failed to apply %s to %s.\n", src_path, dst_path);
+	return FALSE;
 }
 
-static void
+/************************************************************************
+Applies all .delta files from incremental_dir to the full backup.
+@return TRUE on success. */
+static
+ibool
 xtrabackup_apply_deltas(my_bool check_newer)
 {
 	int		ret;
@@ -5283,9 +5317,12 @@ xtrabackup_apply_deltas(my_bool check_newer)
 			    && 0 == strcmp(fileinfo.name + 
 					strlen(fileinfo.name) - 6,
 					".delta")) {
-				xtrabackup_apply_delta(
-					xtrabackup_incremental_dir, NULL,
-					fileinfo.name, check_newer);
+				if (!xtrabackup_apply_delta(
+					    xtrabackup_incremental_dir, NULL,
+					    fileinfo.name, check_newer))
+				{
+					return FALSE;
+				}
 			}
 next_file_item_1:
 			ret = fil_file_readdir_next_file(&err,
@@ -5337,9 +5374,13 @@ next_file_item_1:
 						".delta")) {
 					/* The name ends in .delta; try opening
 					the file */
-					xtrabackup_apply_delta(
-						xtrabackup_incremental_dir, dbinfo.name,
-						fileinfo.name, check_newer);
+					if (!xtrabackup_apply_delta(
+						    xtrabackup_incremental_dir,
+						    dbinfo.name,
+						    fileinfo.name, check_newer))
+					{
+						return FALSE;
+					}
 				}
 next_file_item_2:
 				ret = fil_file_readdir_next_file(&err,
@@ -5357,6 +5398,7 @@ next_datadir_item:
 
 	os_file_closedir(dir);
 
+	return TRUE;
 }
 
 static my_bool
@@ -5508,8 +5550,8 @@ skip_check:
 	if(xtrabackup_init_temp_log())
 		goto error;
 
-	if(xtrabackup_incremental)
-		xtrabackup_apply_deltas(TRUE);
+	if(xtrabackup_incremental && !xtrabackup_apply_deltas(TRUE))
+		goto error;
 
 	sync_close();
 	sync_initialized = FALSE;
@@ -6207,10 +6249,12 @@ skip_tables_file_register:
 		print_version();
 		if (xtrabackup_incremental) {
 #ifndef INNODB_VERSION_SHORT
-			printf("incremental backup from %lu:%lu is enabled.\n",
+			fprintf(stderr,
+				"incremental backup from %lu:%lu is enabled.\n",
 				incremental_lsn.high, incremental_lsn.low);
 #else
-			printf("incremental backup from %llu is enabled.\n",
+			fprintf(stderr,
+				"incremental backup from %llu is enabled.\n",
 				incremental_lsn);
 #endif
 		}

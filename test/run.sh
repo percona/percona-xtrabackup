@@ -134,7 +134,6 @@ function get_version_info()
 	return 1
     fi
     XB_BIN="$XB_PATH"
-    vlog "Using '$`basename $XB_BIN`' as xtrabackup binary"
 
     IB_BIN="`which innobackupex`"
     if [ -z "$IB_BIN" ]
@@ -187,12 +186,12 @@ fi
 
 if [ -n "$XTRADB_VERSION" ]
 then
-    echo "Running against Percona Server $MYSQL_VERSION (XtraDB $INNODB_VERSION)"
+    echo "Running against Percona Server $MYSQL_VERSION (XtraDB $INNODB_VERSION)" | tee -a $OUTFILE
 else
-    echo "Running against MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION)"
+    echo "Running against MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION)" | tee -a $OUTFILE
 fi
-echo "Using '`basename $XB_BIN`' as xtrabackup binary"
-echo
+echo "Using '`basename $XB_BIN`' as xtrabackup binary" | tee -a $OUTFILE
+echo | tee -a $OUTFILE
 
 kill_leftovers >>$OUTFILE 2>&1
 clean >>$OUTFILE 2>&1
