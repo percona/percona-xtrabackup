@@ -5935,6 +5935,13 @@ int main(int argc, char **argv)
 		uint count;
 		struct my_option *opt= (struct my_option *) my_long_options;
 		optend= strcend((argv)[i], '=');
+		if (!strncmp(argv[i], "--defaults-file", optend - argv[i]))
+		{
+			fprintf(stderr, "xtrabackup: Error: --defaults-file "
+				"must be specified first on the command "
+				"line\n");
+			exit(EXIT_FAILURE);
+		}
 		for (count= 0; opt->name; opt++) {
 			if (!getopt_compare_strings(opt->name, (argv)[i] + 2,
 				(uint)(optend - (argv)[i] - 2))) /* match found */
