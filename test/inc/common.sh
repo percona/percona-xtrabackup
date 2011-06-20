@@ -4,12 +4,12 @@ set -eu
 
 function innobackupex()
 {
-    run_cmd `which innobackupex` $IB_ARGS $*
+    run_cmd $IB_BIN $IB_ARGS $*
 }
 
 function xtrabackup()
 {
-    run_cmd `which $XB_BIN` $XB_ARGS $*
+    run_cmd $XB_BIN $XB_ARGS $*
 }
 
 function vlog
@@ -129,7 +129,24 @@ function run_mysqld()
 function run_cmd()
 {
   vlog "===> $@"
-  "$@" || die "===> `basename $1` failed with exit code $?"
+  "$@"
+  if [ $? -ne 0 ]
+  then
+      die "===> `basename $1` failed with exit code $?"
+  fi
+}
+
+function run_cmd_expect_failure()
+{
+  vlog "===> $@"
+  set +e
+  "$@"
+  local rc=$?
+  set -e
+  if [ $rc -eq 0 ]
+  then
+      die "===> `basename $1` succeeded when it was expected to fail"
+  fi
 }
 
 function stop_mysqld()
