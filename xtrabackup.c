@@ -5980,7 +5980,8 @@ int main(int argc, char **argv)
 		if (!strncmp(argv[i], "--defaults-file", optend - argv[i]))
 		{
 			fprintf(stderr, "xtrabackup: Error: --defaults-file "
-				"be specified first on the command line\n");
+				"must be specified first on the command "
+				"line\n");
 			exit(EXIT_FAILURE);
 		}
 		for (count= 0; opt->name; opt++) {
