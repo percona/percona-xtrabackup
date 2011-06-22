@@ -69,7 +69,7 @@ fi
 if test -n "$url"
 then
     echo "Downloading $tarball"
-    wget -c "$url/$tarball"
+    wget -qc "$url/$tarball"
 fi
 
 if test -d "$destdir"
