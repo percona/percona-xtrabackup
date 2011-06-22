@@ -11,13 +11,16 @@ mkdir results
 function usage()
 {
 cat <<EOF
-Usage: $0 [-g] [-h] [-s suite] [-t test_name] -d mysql_basedir
--d path     Server installation directory
+Usage: $0 [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_conf]
+-d path     Server installation directory. Default is './server'.
 -g          Output debug information to results/*.out
 -t path     Run only a single named test
 -h          Print this help message
 -s suite    Select a test suite to run. Possible values: experimental, t. 
             Default is 't'.
+-c conf     XtraBackup build configuration as specified to build.sh.
+            Default is 'autodetect', i.e. xtrabackup binary is determined based
+            on the MySQL version.
 EOF
 }
 
@@ -94,7 +97,31 @@ function set_vars()
 
 function get_version_info()
 {
+    if [ "$XB_BUILD" != "autodetect" ]
+    then
+	XB_BIN=""
+	case "$XB_BUILD" in
+	    "innodb51_builtin" )
+		XB_BIN="xtrabackup_51";;
+	    "innodb51" )
+		XB_BIN="xtrabackup_plugin"
+		MYSQLD_ARGS="$MYSQLD_ARGS --ignore-builtin-innodb --plugin-load=innodb=ha_innodb_plugin.so";;
+	    "innodb55" )
+		XB_BIN="xtrabackup_innodb55";;
+	    "xtradb51" )
+		XB_BIN="xtrabackup";;
+	    "xtradb55" )
+		XB_BIN="xtrabackup_55";;
+	esac
+	if [ -z "$XB_BIN" ]
+	then
+	    vlog "Unknown configuration: '$XB_BUILD'"
+	    exit -1
+	fi
+    fi
+
     init
+
     MYSQL_VERSION=""
     INNODB_VERSION=""
     run_mysqld
@@ -106,44 +133,53 @@ function get_version_info()
     INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     XTRADB_VERSION=`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`
-    if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
+
+    if [ "$XB_BUILD" = "autodetect" ]
     then
-	if [ -z "$INNODB_VERSION" ]
+        # Determine xtrabackup build automatically
+	if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
 	then
-	    XB_BIN="xtrabackup_51" # InnoDB 5.1 builtin
-	else
-	    XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
-	fi
-    elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
-    then
-	if [ -n "$XTRADB_VERSION" ]
+	    if [ -z "$INNODB_VERSION" ]
+	    then
+		XB_BIN="xtrabackup_51" # InnoDB 5.1 builtin
+	    else
+		XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
+	    fi
+	elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
 	then
-	    XB_BIN="xtrabackup_55"
+	    if [ -n "$XTRADB_VERSION" ]
+	    then
+		XB_BIN="xtrabackup_55"
+	    else
+		XB_BIN="xtrabackup_innodb55"
+	    fi
 	else
-	    XB_BIN="xtrabackup_innodb55"
+	    vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
+	    exit -1
 	fi
-    else
-	vlog "Uknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
-	exit -1
     fi
+
     vlog "Using '$XB_BIN' as xtrabackup binary"
-    # Set the correct binary for innobackupex
+        # Set the correct binary for innobackupex
     IB_ARGS="$IB_ARGS --ibbackup=$XB_BIN"
 
-    export MYSQL_VERSION/ MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION XB_BIN
+    export MYSQL_VERSION MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION XB_BIN
 }
+
+export SKIPPED_EXIT_CODE=200
+
 
 tname=""
 XTRACE_OPTION=""
-export SKIPPED_EXIT_CODE=200
-export MYSQL_VERSION="system"
-while getopts "gh?:t:s:d:" options; do
+XB_BUILD="autodetect"
+while getopts "gh?:t:s:d:c:" options; do
 	case $options in
 		t ) tname="$OPTARG";;
 		g ) XTRACE_OPTION="-x";;
 		h ) usage; exit;;
 		s ) tname="$OPTARG/*.sh";;
 	        d ) export MYSQL_BASEDIR="$OPTARG";;
+	        c ) XB_BUILD="$OPTARG";;
 		? ) echo "Use \`$0 -h' for the list of available options."
                     exit -1;;
 	esac
@@ -163,9 +199,9 @@ failed_tests=
 total_count=0
 
 export OUTFILE="$PWD/results/setup"
-get_version_info >$OUTFILE 2>&1
-kill_leftovers >$OUTFILE 2>&1
-clean >$OUTFILE 2>&1
+get_version_info >>$OUTFILE 2>&1
+kill_leftovers >>$OUTFILE 2>&1
+clean >>$OUTFILE 2>&1
 
 source subunit.sh
 

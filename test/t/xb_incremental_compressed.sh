@@ -4,6 +4,13 @@
 
 . inc/common.sh
 
+init
+
+if [ -z "$INNODB_VERSION" ]; then
+    echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
+    exit $SKIPPED_EXIT_CODE
+fi
+
 #
 # Test incremental backup of a compressed tablespace with a specific page size
 #
@@ -17,14 +24,8 @@ function test_incremental_compressed()
 
   # Use innodb_strict_mode so that failure to use compression results in an 
   # error rather than a warning
-  if [ "${MYSQL_VERSION:0:3}" = "5.1" ]; then
-    mysqld_additional_args="--ignore_builtin_innodb --innodb_strict_mode \
-      --plugin-load=innodb=ha_innodb_plugin.so  --innodb_file_per_table \
+  mysqld_additional_args="--innodb_strict_mode --innodb_file_per_table \
       --innodb_file_format=Barracuda"
-  else
-    mysqld_additional_args="--innodb_strict_mode --innodb_file_per_table \
-      --innodb_file_format=Barracuda"
-  fi
   
   run_mysqld ${mysqld_additional_args}
 
@@ -161,17 +162,6 @@ incremental_sample | awk '{print $2}'`
   drop_dbase incremental_sample
   stop_mysqld
 }
-
-init
-
-# Just to get version information. We'll start the server with the correct arguments 
-# later
-run_mysqld
-stop_mysqld
-
-if [ -z "${MYSQL_VERSION:0:3}" = "5.0" ]; then
-  exit $SKIPPED_EXIT_CODE
-fi
 
 for page_size in 1 2 4 8 16; do
   test_incremental_compressed ${page_size}
