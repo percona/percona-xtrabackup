@@ -15,11 +15,8 @@ xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup
 # when trying to get stats before creating the log files
 
 vlog "===> xtrabackup --stats --datadir=$topdir/backup"
-# Cannot use run_cmd here
-if $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup >$OUTFILE 2>&1
-then
-    die "xtrabackup --stats was expected to fail, but it did not."
-fi
+run_cmd_expect_failure $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup
+
 if ! grep "Cannot find log file ib_logfile0" $OUTFILE
 then
     die "Cannot find the expected error message from xtrabackup --stats"

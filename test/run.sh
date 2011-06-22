@@ -94,10 +94,10 @@ function set_vars()
 
 function get_version_info()
 {
-    init
+    init >>$OUTFILE 2>&1
     MYSQL_VERSION=""
     INNODB_VERSION=""
-    run_mysqld
+    run_mysqld >>$OUTFILE 2>&1
     # Get MySQL and InnoDB versions
     MYSQL_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version'"`
     MYSQL_VERSION=${MYSQL_VERSION#"version	"}
@@ -105,7 +105,7 @@ function get_version_info()
     MYSQL_VERSION_COMMENT=${MYSQL_VERSION_COMMENT#"version_comment	"}
     INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
-    XTRADB_VERSION=`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`
+    XTRADB_VERSION="`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`"
     if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
     then
 	if [ -z "$INNODB_VERSION" ]
@@ -126,11 +126,25 @@ function get_version_info()
 	vlog "Uknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
 	exit -1
     fi
-    vlog "Using '$XB_BIN' as xtrabackup binary"
-    # Set the correct binary for innobackupex
+
+    XB_PATH="`which $XB_BIN`"
+    if [ -z "$XB_PATH" ]
+    then
+	vlog "Cannot find '$XB_BIN' in PATH"
+	return 1
+    fi
+    XB_BIN="$XB_PATH"
+
+    IB_BIN="`which innobackupex`"
+    if [ -z "$IB_BIN" ]
+    then
+	vlog "Cannot find 'innobackupex' in PATH"
+	return 1
+    fi
     IB_ARGS="$IB_ARGS --ibbackup=$XB_BIN"
 
-    export MYSQL_VERSION/ MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION XB_BIN
+    export MYSQL_VERSION MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION \
+	XB_BIN IB_BIN
 }
 
 tname=""
@@ -163,14 +177,31 @@ failed_tests=
 total_count=0
 
 export OUTFILE="$PWD/results/setup"
-get_version_info >$OUTFILE 2>&1
-kill_leftovers >$OUTFILE 2>&1
-clean >$OUTFILE 2>&1
+
+if ! get_version_info
+then
+    echo "get_version_info failed. See $OUTFILE for details."
+    exit -1
+fi
+
+if [ -n "$XTRADB_VERSION" ]
+then
+    echo "Running against Percona Server $MYSQL_VERSION (XtraDB $INNODB_VERSION)" | tee -a $OUTFILE
+else
+    echo "Running against MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION)" | tee -a $OUTFILE
+fi
+echo "Using '`basename $XB_BIN`' as xtrabackup binary" | tee -a $OUTFILE
+echo | tee -a $OUTFILE
+
+kill_leftovers >>$OUTFILE 2>&1
+clean >>$OUTFILE 2>&1
 
 source subunit.sh
 
 SUBUNIT_OUT=test_results.subunit
 rm -f $SUBUNIT_OUT
+
+echo "========================================================================"
 
 for t in $tests
 do
@@ -211,6 +242,9 @@ do
 
    total_count=$((total_count+1))
 done
+
+echo "========================================================================"
+echo
 
 kill_leftovers
 
