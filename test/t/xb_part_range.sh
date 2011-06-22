@@ -2,7 +2,18 @@
 
 init
 run_mysqld
-load_dbase_schema part_range_sample
+
+run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+CREATE TABLE test (
+  a int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+PARTITION BY RANGE (a)
+(PARTITION p0 VALUES LESS THAN (100) ENGINE = InnoDB,
+ PARTITION P1 VALUES LESS THAN (200) ENGINE = InnoDB,
+ PARTITION p2 VALUES LESS THAN (300) ENGINE = InnoDB,
+ PARTITION p3 VALUES LESS THAN (400) ENGINE = InnoDB,
+ PARTITION p4 VALUES LESS THAN MAXVALUE ENGINE = InnoDB);
+EOF
 
 # Adding 10k rows
 
@@ -12,7 +23,7 @@ numrow=500
 count=0
 while [ "$numrow" -gt "$count" ]
 do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count);" part_range_sample
+	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count);" test
 	let "count=count+1"
 done
 
@@ -41,14 +52,14 @@ numrow=500
 count=0
 while [ "$numrow" -gt "$count" ]
 do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count);" part_range_sample
+	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count);" test
 	let "count=count+1"
 done
 
 vlog "Changes done"
 
 # Saving the checksum of original table
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" part_range_sample | awk '{print $2}'`
+checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" test | awk '{print $2}'`
 
 vlog "Table checksum is $checksum_a - before backup"
 
@@ -74,7 +85,7 @@ vlog "Data prepared for restore"
 
 # removing rows
 vlog "Table cleared"
-${MYSQL} ${MYSQL_ARGS} -e "delete from test;" part_range_sample
+${MYSQL} ${MYSQL_ARGS} -e "delete from test" test
 
 # Restore backup
 
@@ -91,7 +102,7 @@ vlog "Data restored"
 run_mysqld
 
 vlog "Cheking checksums"
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" part_range_sample | awk '{print $2}'`
+checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" test | awk '{print $2}'`
 
 if [ $checksum_a -ne $checksum_b  ]
 then 
