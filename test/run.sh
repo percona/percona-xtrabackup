@@ -54,6 +54,7 @@ function set_vars()
 {
     topdir="`pwd`/var"
     mysql_datadir="$topdir/mysql"
+    mysql_tmpdir="$topdir/tmp"
     mysql_port="3306"
     mysql_socket=`mktemp -t xtrabackup.mysql.sock.XXXXXX`
     IB_ARGS="--defaults-file=$topdir/my.cnf --user=root --socket=$mysql_socket"
@@ -70,7 +71,7 @@ function set_vars()
 
     MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
 
-    MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir --skip-networking"
+    MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir --tmpdir=$mysql_tmpdir --skip-networking"
     if [ "`whoami`" = "root" ]
     then
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"

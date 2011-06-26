@@ -52,7 +52,7 @@ function initdir()
         rm -r "$topdir"
     fi
     vlog "Creating temporary directory: $topdir"
-    mkdir -p "$topdir"
+    mkdir -p "$topdir/tmp"
     vlog "Creating MySQL data directory: $mysql_datadir"
     mkdir -p "$mysql_datadir"
 }
