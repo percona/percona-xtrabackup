@@ -3126,6 +3126,8 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 
 		xtrabackup_io_throttling();
 
+		mutex_enter(&log_sys->mutex);
+
 		log_group_read_log_seg(LOG_RECOVER, log_sys->buf,
 						group, start_lsn, end_lsn);
 
@@ -3312,9 +3314,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 
 		}
 
-
-
-
+		mutex_exit(&log_sys->mutex);
 
 		start_lsn = end_lsn;
 	}
@@ -3865,7 +3865,9 @@ xtrabackup_backup_func(void)
 
 	/* get current checkpoint_lsn */
 	/* Look for the latest checkpoint from any of the log groups */
-	
+
+	mutex_enter(&log_sys->mutex);
+
 	err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
 
 	if (err != DB_SUCCESS) {
@@ -3879,6 +3881,8 @@ xtrabackup_backup_func(void)
 	checkpoint_lsn_start = MACH_READ_64(buf + LOG_CHECKPOINT_LSN);
 	checkpoint_no_start = MACH_READ_64(buf + LOG_CHECKPOINT_NO);
 
+	mutex_exit(&log_sys->mutex);
+
 reread_log_header:
 	fil_io(OS_FILE_READ | OS_FILE_LOG, TRUE, max_cp_group->space_id,
 #ifdef INNODB_VERSION_SHORT
@@ -3888,7 +3892,9 @@ reread_log_header:
 				log_hdr_buf, max_cp_group);
 
 	/* check consistency of log file header to copy */
-        err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
+	mutex_enter(&log_sys->mutex);
+
+	err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
 
         if (err != DB_SUCCESS) {
 
@@ -3904,6 +3910,8 @@ reread_log_header:
 		checkpoint_no_start = MACH_READ_64(buf + LOG_CHECKPOINT_NO);
 		goto reread_log_header;
 	}
+
+	mutex_exit(&log_sys->mutex);
 
 	if (!xtrabackup_stream) {
 
@@ -4082,6 +4090,8 @@ reread_log_header:
 		ulint	max_cp_field;
 		ulint	err;
 
+		mutex_enter(&log_sys->mutex);
+
 		err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
 
 		if (err != DB_SUCCESS) {
@@ -4092,6 +4102,8 @@ reread_log_header:
 		log_group_read_checkpoint_info(max_cp_group, max_cp_field);
 
 		latest_cp = MACH_READ_64(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
+
+		mutex_exit(&log_sys->mutex);
 
 		if (!xtrabackup_stream) {
 #ifndef INNODB_VERSION_SHORT
@@ -4354,6 +4366,9 @@ loop:
 
 #ifndef INNODB_VERSION_SHORT
 						local_page = buf_page_get(space_id, page_no, RW_S_LATCH, &local_mtr);
+#ifdef UNIV_SYNC_DEBUG
+						buf_page_dbg_add_level(local_page, SYNC_NO_ORDER_CHECK);
+#endif
 #else
 						local_block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, &local_mtr);
 						local_page = buf_block_get_frame(local_block);
@@ -5543,6 +5558,8 @@ skip_check:
 	srv_page_size_shift = 14;
 	srv_page_size = (1 << srv_page_size_shift);
 #endif
+#else /* INNODB_VERSION_SHORT */
+	ut_mem_block_list_init();
 #endif
 	os_sync_init();
 	sync_init();
@@ -5642,7 +5659,12 @@ skip_check:
 #ifndef INNODB_VERSION_SHORT
 			mtr_s_lock(fil_space_get_latch(space->id), &mtr);
 
-			header = FIL_PAGE_DATA + buf_page_get(space->id, 0, RW_S_LATCH, &mtr);
+			header = buf_page_get(space->id, 0, RW_S_LATCH, &mtr);
+#ifdef UNIV_SYNC_DEBUG
+			buf_page_dbg_add_level(header,
+					       SYNC_NO_ORDER_CHECK);
+#endif
+			header += FIL_PAGE_DATA;
 #else
 			mtr_s_lock(fil_space_get_latch(space->id, &flags), &mtr);
 
@@ -5895,6 +5917,8 @@ next_node:
 	/* re-init necessary components */
 #ifdef INNODB_VERSION_SHORT
 	ut_mem_init();
+#else
+	ut_mem_block_list_init();
 #endif
 	os_sync_init();
 	sync_init();

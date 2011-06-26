@@ -1,5 +1,6 @@
---- a/storage/innobase/btr/btr0btr.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/btr/btr0btr.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/btr/btr0btr.c b/storage/innobase/btr/btr0btr.c
+--- a/storage/innobase/btr/btr0btr.c
++++ b/storage/innobase/btr/btr0btr.c
 @@ -120,7 +120,7 @@
  /**************************************************************//**
  Gets the root node of a tree and x-latches it.
@@ -18,8 +19,9 @@
  buf_block_t*
  btr_node_ptr_get_child(
  /*===================*/
---- a/storage/innobase/buf/buf0buf.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/buf/buf0buf.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/buf/buf0buf.c b/storage/innobase/buf/buf0buf.c
+--- a/storage/innobase/buf/buf0buf.c
++++ b/storage/innobase/buf/buf0buf.c
 @@ -609,7 +609,7 @@
  		return(TRUE);
  	}
@@ -29,7 +31,46 @@
  	if (recv_lsn_checks_on) {
  		ib_uint64_t	current_lsn;
  
-@@ -4901,7 +4901,7 @@
+@@ -3439,7 +3439,9 @@
+ 	ut_ad(zip_size == fil_space_get_zip_size(space));
+ 	ut_ad(ut_is_2pow(zip_size));
+ #ifndef UNIV_LOG_DEBUG
+-	ut_ad(!ibuf_inside() || ibuf_page_low(space, zip_size, offset,
++	/* ibuf_page_low() always returns FALSE with srv_fake_write=1 */
++	ut_ad(srv_fake_write ||
++	      !ibuf_inside() || ibuf_page_low(space, zip_size, offset,
+ 					      FALSE, file, line, NULL));
+ #endif
+ 	if (innobase_get_slow_log()) {
+@@ -3767,7 +3769,7 @@
+ 
+ 		if (buf_LRU_free_block(&block->page, TRUE, NULL, FALSE)
+ 		    == BUF_LRU_FREED) {
+-			mutex_exit(&block->mutex);
++			mutex_exit(block_mutex);
+ 			if (mode == BUF_GET_IF_IN_POOL_OR_WATCH) {
+ 				/* Set the watch, as it would have
+ 				been set if the page were not in the
+@@ -3776,14 +3778,16 @@
+ 					space, offset, fold);
+ 
+ 				if (UNIV_LIKELY_NULL(block)) {
+-
++					block_mutex = buf_page_get_mutex((buf_page_t*)block);
++					ut_a(block_mutex);
++					ut_ad(mutex_own(block_mutex));
+ 					/* The page entered the buffer
+ 					pool for some reason. Try to
+ 					evict it again. */
+ 					goto got_block;
+ 				}
+ 			}
+-			buf_pool_mutex_exit(buf_pool);
++			//buf_pool_mutex_exit(buf_pool);
+ 			fprintf(stderr,
+ 				"innodb_change_buffering_debug evict %u %u\n",
+ 				(unsigned) space, (unsigned) offset);
+@@ -4901,7 +4905,7 @@
  			recv_recover_page(TRUE, (buf_block_t*) bpage);
  		}
  
@@ -38,8 +79,9 @@
  			ibuf_merge_or_delete_for_page(
  				/* Delete possible entries, if bpage is_corrupt */
  				(srv_pass_corrupt_table && bpage->is_corrupt) ? NULL :
---- a/storage/innobase/fil/fil0fil.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/fil/fil0fil.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
+--- a/storage/innobase/fil/fil0fil.c
++++ b/storage/innobase/fil/fil0fil.c
 @@ -305,7 +305,7 @@
  
  /** The tablespace memory cache. This variable is NULL before the module is
@@ -131,6 +173,15 @@
  		fil_node_complete_io(node, fil_system, OS_FILE_READ);
  	}
  
+@@ -1978,7 +1997,7 @@
+ 	mem_free(path);
+ }
+ 
+-#ifndef UNIV_HOTBACKUP
++#if 0
+ /********************************************************//**
+ Writes a log record about an .ibd file create/rename/delete. */
+ static
 @@ -2202,7 +2221,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    space_id, name, FALSE, flags,
@@ -432,7 +483,18 @@
  }
  
  /********************************************************************//**
-@@ -4920,6 +5104,16 @@
+@@ -4855,7 +5039,9 @@
+ 	ut_ad(recv_no_ibuf_operations || (type == OS_FILE_WRITE)
+ 	      || !ibuf_bitmap_page(zip_size, block_offset)
+ 	      || sync || is_log);
+-	ut_ad(!ibuf_inside() || is_log || (type == OS_FILE_WRITE)
++	/* ibuf_page_low() always returns FALSE with srv_fake_write=1 */
++	ut_ad(srv_fake_write ||
++	      !ibuf_inside() || is_log || (type == OS_FILE_WRITE)
+ 	      || ibuf_page(space_id, zip_size, block_offset, NULL));
+ # endif /* UNIV_LOG_DEBUG */
+ 	if (sync) {
+@@ -4920,6 +5106,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -449,8 +511,9 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
---- a/storage/innobase/handler/ha_innodb.cc	2011-03-15 07:53:56.000000000 -0700
-+++ b/storage/innobase/handler/ha_innodb.cc	2011-03-15 07:59:54.000000000 -0700
+diff -ruN a/storage/innobase/handler/ha_innodb.cc b/storage/innobase/handler/ha_innodb.cc
+--- a/storage/innobase/handler/ha_innodb.cc
++++ b/storage/innobase/handler/ha_innodb.cc
 @@ -460,13 +460,6 @@
    "Timeout in seconds an InnoDB transaction may wait for a lock before being rolled back. Values above 100000000 disable the timeout.",
    NULL, NULL, 50, 1, 1024 * 1024 * 1024, 0);
@@ -483,6 +546,24 @@
  /********************************************************************//**
  Obtain the InnoDB transaction of a MySQL thread.
  @return	reference to transaction pointer */
+@@ -6179,7 +6161,7 @@
+ 		table->status = 0;
+ #ifdef EXTENDED_FOR_USERSTAT
+ 		rows_read++;
+-		if (active_index >= 0 && active_index < MAX_KEY)
++		if (active_index < MAX_KEY)
+ 			index_rows_read[active_index]++;
+ #endif
+ 		break;
+@@ -6405,7 +6387,7 @@
+ 		table->status = 0;
+ #ifdef EXTENDED_FOR_USERSTAT
+ 		rows_read++;
+-		if (active_index >= 0 && active_index < MAX_KEY)
++		if (active_index < MAX_KEY)
+ 			index_rows_read[active_index]++;
+ #endif
+ 		break;
 @@ -11595,18 +11577,12 @@
    innodb_file_format_max_validate,
    innodb_file_format_max_update, "Antelope");
@@ -516,8 +597,9 @@
    MYSQL_SYSVAR(flush_method),
    MYSQL_SYSVAR(force_recovery),
    MYSQL_SYSVAR(locks_unsafe_for_binlog),
---- a/storage/innobase/ibuf/ibuf0ibuf.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/ibuf/ibuf0ibuf.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/ibuf/ibuf0ibuf.c b/storage/innobase/ibuf/ibuf0ibuf.c
+--- a/storage/innobase/ibuf/ibuf0ibuf.c
++++ b/storage/innobase/ibuf/ibuf0ibuf.c
 @@ -1202,6 +1202,9 @@
  	ut_ad(!recv_no_ibuf_operations);
  	ut_ad(x_latch || mtr == NULL);
@@ -528,7 +610,22 @@
  	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
  
  		return(TRUE);
-@@ -2733,6 +2736,9 @@
+@@ -1238,12 +1241,14 @@
+ 		be removed once it has been established that our assumptions
+ 		about this condition are correct. The bug was only a one-time
+ 		occurrence, unable to repeat since then. */
++		{
+ 		void* latch = sync_thread_levels_contains(SYNC_IBUF_BITMAP);
+ 		if (latch) {
+ 			fprintf(stderr, "Bug#58212 UNIV_SYNC_DEBUG"
+ 				" levels %p (%u,%u)\n",
+ 				latch, (unsigned) space, (unsigned) page_no);
+ 		}
++		}
+ # endif /* UNIV_SYNC_DEBUG */
+ 		ret = ibuf_bitmap_page_get_bits_low(
+ 			bitmap_page, page_no, zip_size,
+@@ -2733,6 +2738,9 @@
  	ulint	n_bytes;
  	ulint	n_pag2;
  
@@ -538,8 +635,9 @@
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
---- a/storage/innobase/include/ha_prototypes.h	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/include/ha_prototypes.h	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/include/ha_prototypes.h b/storage/innobase/include/ha_prototypes.h
+--- a/storage/innobase/include/ha_prototypes.h
++++ b/storage/innobase/include/ha_prototypes.h
 @@ -275,12 +275,5 @@
  /*===================*/
          void*   thd,	/*!< in: thread handle (THD*) */
@@ -553,8 +651,21 @@
 -	void*	thd);
  
  #endif
---- a/storage/innobase/include/srv0srv.h	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/include/srv0srv.h	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/include/log0recv.h b/storage/innobase/include/log0recv.h
+--- a/storage/innobase/include/log0recv.h
++++ b/storage/innobase/include/log0recv.h
+@@ -444,7 +444,7 @@
+ /* defined in os0file.c */
+ #define OS_AIO_MERGE_N_CONSECUTIVE	64
+ /* defined in log0recv.c */
+-#define RECV_READ_AHEAD_AREA	32
++#define RECV_READ_AHEAD_AREA	128
+ 	time_t		stats_recv_start_time;
+ 	ulint		stats_recv_turns;
+ 
+diff -ruN a/storage/innobase/include/srv0srv.h b/storage/innobase/include/srv0srv.h
+--- a/storage/innobase/include/srv0srv.h
++++ b/storage/innobase/include/srv0srv.h
 @@ -148,8 +148,7 @@
  extern ulint	srv_n_log_files;
  extern ulint	srv_log_file_size;
@@ -576,8 +687,9 @@
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
---- a/storage/innobase/include/srv0start.h	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/include/srv0start.h	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/include/srv0start.h b/storage/innobase/include/srv0start.h
+--- a/storage/innobase/include/srv0start.h
++++ b/storage/innobase/include/srv0start.h
 @@ -91,6 +91,8 @@
  /** Log sequence number immediately after startup */
  extern	ib_uint64_t	srv_start_lsn;
@@ -587,8 +699,9 @@
  #ifdef HAVE_DARWIN_THREADS
  /** TRUE if the F_FULLFSYNC option is available */
  extern	ibool	srv_have_fullfsync;
---- a/storage/innobase/log/log0log.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/log/log0log.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/log/log0log.c b/storage/innobase/log/log0log.c
+--- a/storage/innobase/log/log0log.c
++++ b/storage/innobase/log/log0log.c
 @@ -1154,7 +1154,7 @@
  	if (srv_unix_file_flush_method != SRV_UNIX_O_DSYNC
  	    && srv_unix_file_flush_method != SRV_UNIX_ALL_O_DIRECT
@@ -607,6 +720,15 @@
  		/* Recovery is running and no operations on the log files are
  		allowed yet (the variable name .._no_ibuf_.. is misleading) */
  
+@@ -2051,7 +2051,7 @@
+ 		return(TRUE);
+ 	}
+ 
+-	ut_ad(log_sys->flushed_to_disk_lsn >= oldest_lsn);
++	ut_ad(srv_fake_write || log_sys->flushed_to_disk_lsn >= oldest_lsn);
+ 
+ 	if (log_sys->n_pending_checkpoint_writes > 0) {
+ 		/* A checkpoint write is running */
 @@ -3151,6 +3151,7 @@
  	for the 'very fast' shutdown, because the InnoDB layer may have
  	committed or prepared transactions and we don't want to lose them. */
@@ -623,8 +745,9 @@
  
  	if (srv_fast_shutdown == 2) {
  		/* In this fastest shutdown we do not flush the buffer pool:
---- a/storage/innobase/log/log0recv.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/log/log0recv.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/log/log0recv.c b/storage/innobase/log/log0recv.c
+--- a/storage/innobase/log/log0recv.c
++++ b/storage/innobase/log/log0recv.c
 @@ -42,27 +42,27 @@
  #include "trx0undo.h"
  #include "trx0rec.h"
@@ -748,8 +871,9 @@
  	trx_rollback_or_clean_recovered(FALSE);
  }
  
---- a/storage/innobase/os/os0file.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/os/os0file.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/os/os0file.c b/storage/innobase/os/os0file.c
+--- a/storage/innobase/os/os0file.c
++++ b/storage/innobase/os/os0file.c
 @@ -660,7 +660,7 @@
  }
  
@@ -821,8 +945,9 @@
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
  
  	if ((ulint)ret == n) {
---- a/storage/innobase/os/os0thread.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/os/os0thread.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/os/os0thread.c b/storage/innobase/os/os0thread.c
+--- a/storage/innobase/os/os0thread.c
++++ b/storage/innobase/os/os0thread.c
 @@ -266,12 +266,17 @@
  #ifdef __WIN__
  	Sleep((DWORD) tm / 1000);
@@ -841,8 +966,9 @@
  #endif
  }
  
---- a/storage/innobase/row/row0merge.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/row/row0merge.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/row/row0merge.c b/storage/innobase/row/row0merge.c
+--- a/storage/innobase/row/row0merge.c
++++ b/storage/innobase/row/row0merge.c
 @@ -459,7 +459,9 @@
  	rec = rec_convert_dtuple_to_rec(*buf, index, tuple, n_ext);
  	offsets = rec_get_offsets(rec, index, NULL, ULINT_UNDEFINED, &heap);
@@ -854,7 +980,7 @@
  
  	mem_heap_free(heap);
  }
-@@ -1485,8 +1487,10 @@
+@@ -1485,8 +1487,11 @@
  		case 0:
  			if (UNIV_UNLIKELY
  			    (dict_index_is_unique(index) && !null_eq)) {
@@ -862,12 +988,13 @@
 -						      index, offsets0);
 +				//innobase_rec_to_mysql(table, mrec0,
 +				//		      index, offsets0);
++				(void) table;
 +				fprintf(stderr, "InnoDB: Error: row_merge_blocks() is called.\n");
 +				ut_error;
  				mem_heap_free(heap);
  				return(DB_DUPLICATE_KEY);
  			}
-@@ -2613,7 +2617,9 @@
+@@ -2613,7 +2618,9 @@
  
  	/* Reset the MySQL row buffer that is used when reporting
  	duplicate keys. */
@@ -878,8 +1005,9 @@
  
  	/* Read clustered index of the table and create files for
  	secondary index entries for merge sort */
---- a/storage/innobase/srv/srv0srv.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/srv/srv0srv.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/srv/srv0srv.c b/storage/innobase/srv/srv0srv.c
+--- a/storage/innobase/srv/srv0srv.c
++++ b/storage/innobase/srv/srv0srv.c
 @@ -197,8 +197,7 @@
  UNIV_INTERN ulint	srv_log_file_size	= ULINT_MAX;
  /* size in database pages */
@@ -935,8 +1063,9 @@
  	}
  
  	if (trx->was_chosen_as_deadlock_victim) {
---- a/storage/innobase/srv/srv0start.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/srv/srv0start.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/srv/srv0start.c b/storage/innobase/srv/srv0start.c
+--- a/storage/innobase/srv/srv0start.c
++++ b/storage/innobase/srv/srv0start.c
 @@ -94,6 +94,8 @@
  /** Log sequence number at shutdown */
  UNIV_INTERN ib_uint64_t	srv_shutdown_lsn;
@@ -1009,8 +1138,9 @@
  	srv_file_per_table = srv_file_per_table_original_value;
  
  	srv_was_started = TRUE;
---- a/storage/innobase/trx/trx0purge.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/trx/trx0purge.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/trx/trx0purge.c b/storage/innobase/trx/trx0purge.c
+--- a/storage/innobase/trx/trx0purge.c
++++ b/storage/innobase/trx/trx0purge.c
 @@ -1100,6 +1100,9 @@
  	/*	que_thr_t*	thr2; */
  	ulint		old_pages_handled;
@@ -1021,8 +1151,9 @@
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
---- a/storage/innobase/trx/trx0rseg.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/trx/trx0rseg.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/trx/trx0rseg.c b/storage/innobase/trx/trx0rseg.c
+--- a/storage/innobase/trx/trx0rseg.c
++++ b/storage/innobase/trx/trx0rseg.c
 @@ -140,9 +140,11 @@
  
  	mutex_free(&rseg->mutex);
@@ -1035,8 +1166,9 @@
  
  	undo = UT_LIST_GET_FIRST(rseg->update_undo_cached);
  
---- a/storage/innobase/trx/trx0sys.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/trx/trx0sys.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/trx/trx0sys.c b/storage/innobase/trx/trx0sys.c
+--- a/storage/innobase/trx/trx0sys.c
++++ b/storage/innobase/trx/trx0sys.c
 @@ -1938,10 +1938,12 @@
  		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
  	}
@@ -1050,8 +1182,9 @@
  
  	mem_free(trx_sys);
  
---- a/storage/innobase/trx/trx0trx.c	2011-03-15 07:56:04.000000000 -0700
-+++ b/storage/innobase/trx/trx0trx.c	2011-03-15 07:56:47.000000000 -0700
+diff -ruN a/storage/innobase/trx/trx0trx.c b/storage/innobase/trx/trx0trx.c
+--- a/storage/innobase/trx/trx0trx.c
++++ b/storage/innobase/trx/trx0trx.c
 @@ -505,8 +505,8 @@
  						(ullint) trx->id);
  
@@ -1186,4 +1319,54 @@
 +		} else if (srv_flush_log_at_trx_commit == 2) {
  
  			/* Write the log but do not flush it to disk */
+ 
+diff -ruN a/storage/innobase/buf/buf0lru.c b/storage/innobase/buf/buf0lru.c
+--- a/storage/innobase/buf/buf0lru.c
++++ b/storage/innobase/buf/buf0lru.c
+@@ -598,7 +598,7 @@
+ 
+ 	//ut_ad(buf_pool_mutex_own(buf_pool));
+ 	ut_ad(mutex_own(&buf_pool->LRU_list_mutex));
+-	ut_ad(mutex_own(&buf_pool->flush_list_mutex));
++	ut_ad(mutex_own(&buf_pool->zip_mutex));
+ 	ut_ad(buf_page_get_state(bpage) == BUF_BLOCK_ZIP_PAGE);
+ 
+ 	/* Find the first successor of bpage in the LRU list
+diff -ruN a/storage/innobase/buf/buf0flu.c b/storage/innobase/buf/buf0flu.c
+--- a/storage/innobase/buf/buf0flu.c
++++ b/storage/innobase/buf/buf0flu.c
+@@ -1189,7 +1189,7 @@
+ 	buf_pool_t*	buf_pool,	/*!< in/out: buffer pool instance */
+ 	buf_block_t*	block)		/*!< in/out: buffer control block */
+ {
+-	ut_ad(buf_pool_mutex_own(buf_pool));
++	//ut_ad(buf_pool_mutex_own(buf_pool));
+ 	ut_ad(buf_block_get_state(block) == BUF_BLOCK_FILE_PAGE);
+ 	ut_ad(mutex_own(&block->mutex));
+ 
+@@ -1197,8 +1197,11 @@
+ 		return(FALSE);
+ 	}
+ 
++	buf_pool_mutex_enter(buf_pool);
++
+ 	if (buf_pool->n_flush[BUF_FLUSH_LRU] > 0
+ 	    || buf_pool->init_flush[BUF_FLUSH_LRU]) {
++		buf_pool_mutex_exit(buf_pool);
+ 		/* There is already a flush batch of the same type running */
+ 		return(FALSE);
+ 	}
+diff -ruN a/storage/innobase/include/buf0buf.h b/storage/innobase/include/buf0buf.h
+--- a/storage/innobase/include/buf0buf.h
++++ b/storage/innobase/include/buf0buf.h
+@@ -1816,8 +1816,8 @@
+ /** Test if a buffer pool mutex is owned. */
+ #define buf_pool_mutex_own(b) mutex_own(&b->mutex)
+ /** Acquire a buffer pool mutex. */
+-#define buf_pool_mutex_enter(b) do {		\
+-	ut_ad(!mutex_own(&b->zip_mutex));	\
++/* the buf_pool_mutex is changed the latch order */
++#define buf_pool_mutex_enter(b) do {	\
+ 	mutex_enter(&b->mutex);		\
+ } while (0)
  

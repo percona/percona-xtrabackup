@@ -11,7 +11,8 @@ mkdir results
 function usage()
 {
 cat <<EOF
-Usage: $0 [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_conf]
+Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_conf]
+-f          Continue running tests after failures
 -d path     Server installation directory. Default is './server'.
 -g          Output debug information to results/*.out
 -t path     Run only a single named test
@@ -186,8 +187,10 @@ export SKIPPED_EXIT_CODE=200
 tname=""
 XTRACE_OPTION=""
 XB_BUILD="autodetect"
-while getopts "gh?:t:s:d:c:" options; do
+force=""
+while getopts "fgh?:t:s:d:c:" options; do
 	case $options in
+	        f ) force="yes";;
 		t ) tname="$OPTARG";;
 		g ) XTRACE_OPTION="-x";;
 		h ) usage; exit;;
@@ -241,6 +244,8 @@ echo "========================================================================"
 
 for t in $tests
 do
+   total_count=$((total_count+1))
+
    printf "%-40s" $t
    subunit_start_test $t >> $SUBUNIT_OUT
    name=`basename $t .sh`
@@ -248,9 +253,6 @@ do
    export SKIPPED_REASON="$PWD/results/$name.skipped"
    bash $XTRACE_OPTION $t > $OUTFILE 2>&1
    rc=$?
-
-   stop_mysqld >/dev/null 2>&1
-   clean >/dev/null 2>&1
 
    if [ $rc -eq 0 ]
    then
@@ -274,15 +276,23 @@ do
        failed_count=$((failed_count+1))
        failed_tests="$failed_tests $t"
        result=1
+       if [ -z "$force" ]
+       then
+	   break;
+       fi
    fi
 
-   total_count=$((total_count+1))
+   stop_mysqld >/dev/null 2>&1
+   clean >/dev/null 2>&1
 done
 
 echo "========================================================================"
 echo
 
-kill_leftovers
+if [ -z "$force" -o $failed_count -eq 0 ]
+then
+    kill_leftovers
+fi
 
 if [ $result -eq 1 ]
 then
