@@ -1,14 +1,32 @@
 #!/usr/bin/env bash
 
+set -e
+
 MYSQL_51_VERSION=5.1.56
 MYSQL_55_VERSION=5.5.10
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://www.percona.com/downloads/community/"
 
-set -e
-export CFLAGS="$CFLAGS -g -O3"
-export CXXFLAGS="$CXXFLAGS -g -O3"
+# Percona Server 5.5 does not build with -Werror, so ignore DEBUG for now
+if [ -n "$DEBUG" -a "$1" != "xtradb55" -a "$1" != "xtradb51" -a "$1" != "xtradb" ]
+then
+    # InnoDB extra debug flags
+    innodb_extra_debug="-DUNIV_DEBUG -DUNIV_SYNC_DEBUG -DUNIV_MEM_DEBUG \
+-DUNIV_DEBUG_THREAD_CREATION -DUNIV_DEBUG_LOCK_VALIDATE -DUNIV_DEBUG_PRINT \
+-DUNIV_DEBUG_FILE_ACCESS -DUNIV_SEARCH_DEBUG -DUNIV_LOG_LSN_DEBUG \
+-DUNIV_ZIP_DEBUG -DUNIV_AHI_DEBUG -DUNIV_SQL_DEBUG -DUNIV_AIO_DEBUG \
+-DUNIV_LRU_DEBUG -DUNIV_BUF_DEBUG -DUNIV_HASH_DEBUG -DUNIV_LIST_DEBUG -DUNIV_IBUF_DEBUG"
+    export CFLAGS="$CFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
+    export CXXFLAGS="$CXXFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
+    extra_config_51="--with-debug=full"
+    extra_config_55="-DWITH_DEBUG=ON"
+else
+    export CFLAGS="$CFLAGS -g -O3"
+    export CXXFLAGS="$CXXFLAGS -g -O3"
+    extra_config_51=
+    extra_config_55=
+fi
 
 MAKE_CMD=make
 if gmake --version > /dev/null 2>&1
@@ -84,7 +102,8 @@ function build_server()
     eval $configure_cmd
 
     echo "Building the server"
-    make_dirs include zlib strings mysys dbug extra $innodb_dir
+    make_dirs include zlib strings mysys dbug extra
+    make_dirs $innodb_dir
     cd $top_dir
 }
 
@@ -167,7 +186,7 @@ case "$type" in
 	    --with-plugins=innobase \
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
-	    --with-extra-charsets=all"
+	    --with-extra-charsets=all $extra_config_51"
 
 	build_all
 	;;
@@ -182,7 +201,7 @@ case "$type" in
            --with-plugins=innodb_plugin \
            --with-zlib-dir=bundled \
            --enable-shared \
-           --with-extra-charsets=all"
+           --with-extra-charsets=all $extra_config_51"
 
        build_all
        ;;
@@ -198,7 +217,7 @@ case "$type" in
 		-DWITH_PARTITION_STORAGE_ENGINE=ON \
 		-DWITH_ZLIB=bundled \
 		-DWITH_EXTRA_CHARSETS=all \
-		-DENABLE_DTRACE=OFF"
+		-DENABLE_DTRACE=OFF $extra_config_55"
 
 	build_all
 	;;
@@ -214,7 +233,7 @@ case "$type" in
 	    --with-plugins=innodb_plugin \
 	    --with-zlib-dir=bundled \
 	    --enable-shared \
-	    --with-extra-charsets=all"
+	    --with-extra-charsets=all $extra_config_51"
 	if [ "`uname -s`" = "Linux" ]
 	then
 		configure_cmd="LIBS=-lrt $configure_cmd"
@@ -262,7 +281,7 @@ case "$type" in
 		-DWITH_PARTITION_STORAGE_ENGINE=ON \
 		-DWITH_ZLIB=bundled \
 		-DWITH_EXTRA_CHARSETS=all \
-		-DENABLE_DTRACE=OFF"
+		-DENABLE_DTRACE=OFF $extra_config_55"
 	if [ "`uname -s`" = "Linux" ]
 	then
 		configure_cmd="LIBS=-lrt $configure_cmd"
