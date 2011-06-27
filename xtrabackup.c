@@ -4300,6 +4300,10 @@ xtrabackup_stats_func(void)
 	/* set read only */
 	srv_read_only = TRUE;
 	srv_fake_write = TRUE;
+#if MYSQL_VERSION_ID >= 50500
+	/* AIO is incompatible with srv_read_only/srv_fake_write */
+	srv_use_native_aio = FALSE;
+#endif
 
 	/* initialize components */
 	if(innodb_init_param())
