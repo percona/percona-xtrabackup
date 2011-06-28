@@ -161,11 +161,27 @@ function get_version_info()
 	fi
     fi
 
-    vlog "Using '$XB_BIN' as xtrabackup binary"
-        # Set the correct binary for innobackupex
+    XB_PATH="`which $XB_BIN`"
+    if [ -z "$XB_PATH" ]
+    then
+	vlog "Cannot find '$XB_BIN' in PATH"
+	return 1
+    fi
+    XB_BIN="$XB_PATH"
+
+    # Set the correct binary for innobackupex
+    IB_BIN="`which innobackupex`"
+    if [ -z "$IB_BIN" ]
+    then
+	vlog "Cannot find 'innobackupex' in PATH"
+	return 1
+    fi
     IB_ARGS="$IB_ARGS --ibbackup=$XB_BIN"
 
-    export MYSQL_VERSION MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION XB_BIN
+    vlog "Using '$XB_BIN' as xtrabackup binary"
+
+    export MYSQL_VERSION MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION \
+	XB_BIN IB_BIN IB_ARGS
 }
 
 export SKIPPED_EXIT_CODE=200
