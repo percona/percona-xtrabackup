@@ -1106,12 +1106,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "Stores each InnoDB table to an .ibd file in the database dir.",
    (G_PTR*) &innobase_file_per_table,
    (G_PTR*) &innobase_file_per_table, 0, GET_BOOL, NO_ARG,
-#if (MYSQL_VERSION_ID < 50500)
-   0,
-#else
-   1,
-#endif
-   0, 0, 0, 0, 0},
+   FALSE, 0, 0, 0, 0, 0},
   {"innodb_flush_log_at_trx_commit", OPT_INNODB_FLUSH_LOG_AT_TRX_COMMIT,
    "Set to 0 (write and flush once per second), 1 (write and flush at each commit) or 2 (write at commit, flush once per second).",
    (G_PTR*) &srv_flush_log_at_trx_commit,
@@ -5856,8 +5851,6 @@ next_node:
 			mutex_exit(&(f_system->mutex));
 
 			ut_free(buf);
-		} else {
-			printf("xtrabackup: export option is for file_per_table only, disabled.\n");
 		}
 	}
 
@@ -6292,6 +6285,12 @@ skip_tables_file_register:
 			xtrabackup_suspend_at_end = TRUE;
 			fprintf(stderr, "xtrabackup: suspend-at-end is enabled.\n");
 		}
+	}
+
+	if (xtrabackup_export && innobase_file_per_table == FALSE) {
+		fprintf(stderr, "xtrabackup: error: --export option can only "
+			"be used with --innodb-file-per-table=ON.\n");
+		exit(EXIT_FAILURE);
 	}
 
 	/* cannot execute both for now */
