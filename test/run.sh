@@ -92,8 +92,8 @@ function set_vars()
 
     PATH="${MYSQL_BASEDIR}/bin:$PATH"
 
-    export topdir mysql_datadir mysql_port mysql_socket OUTFILE IB_ARGS \
-	XB_ARGS TAR MYSQL_BASEDIR MYSQL MYSQLADMIN \
+    export topdir mysql_datadir mysql_tmpdir mysql_port mysql_socket OUTFILE \
+	IB_ARGS XB_ARGS TAR MYSQL_BASEDIR MYSQL MYSQLADMIN \
 	MYSQL_ARGS MYSQLD_ARGS MYSQL_INSTALL_DB MYSQLD PATH
 }
 
@@ -266,11 +266,10 @@ do
        then
  	   break;
        fi
-       
-       stop_mysqld >/dev/null 2>&1
-       clean >/dev/null 2>&1
    fi
-
+       
+   stop_mysqld >/dev/null 2>&1
+   clean >/dev/null 2>&1
 done
 
 if [ -z "$force" -o $failed_count -eq 0 ]
