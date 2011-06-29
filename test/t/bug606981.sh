@@ -11,13 +11,9 @@ run_mysqld
 load_sakila
 
 # Take backup
-echo "
-[mysqld]
-datadir=$mysql_datadir
-innodb_flush_method=O_DIRECT
-" > $topdir/my.cnf
+echo "innodb_flush_method=O_DIRECT" >> $topdir/my.cnf
 mkdir -p $topdir/backup
-innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar 2>$OUTFILE
+innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 stop_mysqld
 
 # See if tar4ibd was using O_DIRECT

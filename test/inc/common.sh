@@ -60,7 +60,7 @@ function initdir()
 function init_mysql_dir()
 {
     vlog "Creating MySQL database"
-    $MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$mysql_datadir"
+    $MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$mysql_datadir" --tmpdir="$mysql_tmpdir"
 }
 function set_mysl_port()
 {
@@ -202,7 +202,8 @@ initdir
 init_mysql_dir
 echo "
 [mysqld]
-datadir=$mysql_datadir" > $topdir/my.cnf
+datadir=$mysql_datadir
+tmpdir=$mysql_tmpdir" > $topdir/my.cnf
 }
 
 function race_create_drop()
