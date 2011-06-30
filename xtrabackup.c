@@ -2297,6 +2297,7 @@ static my_bool
 xtrabackup_read_metadata(char *filename)
 {
 	FILE *fp;
+	my_bool r = FALSE;
 
 	fp = fopen(filename,"r");
 	if(!fp) {
@@ -2305,41 +2306,53 @@ xtrabackup_read_metadata(char *filename)
 	}
 
 	if (fscanf(fp, "backup_type = %29s\n", metadata_type)
-			!= 1)
-		return(TRUE);
+	    != 1) {
+		r = TRUE;
+		goto end;
+	}
 #ifndef INNODB_VERSION_SHORT
 	if (fscanf(fp, "from_lsn = %lu:%lu\n", &metadata_from_lsn.high, &metadata_from_lsn.low)
-			!= 2)
-		return(TRUE);
+	    != 2) {
+		r = TRUE;
+		goto end;
+	}
 	if (fscanf(fp, "to_lsn = %lu:%lu\n", &metadata_to_lsn.high, &metadata_to_lsn.low)
-			!= 2)
-		return(TRUE);
+			!= 2) {
+		r = TRUE;
+		goto end;
+	}
 	if (fscanf(fp, "last_lsn = %lu:%lu\n", &metadata_last_lsn.high, &metadata_last_lsn.low)
 			!= 2) {
 		metadata_last_lsn.high = metadata_last_lsn.low = 0;
 	}
 #else
 	if (fscanf(fp, "from_lsn = %llu\n", &metadata_from_lsn)
-			!= 1)
-		return(TRUE);
+			!= 1) {
+		r = TRUE;
+		goto end;
+	}
 	if (fscanf(fp, "to_lsn = %llu\n", &metadata_to_lsn)
-			!= 1)
-		return(TRUE);
+			!= 1) {
+		r = TRUE;
+		goto end;
+	}
 	if (fscanf(fp, "last_lsn = %llu\n", &metadata_last_lsn)
 			!= 1) {
 		metadata_last_lsn = 0;
 	}
 #endif
 
+end:
 	fclose(fp);
 
-	return(FALSE);
+	return(r);
 }
 
 static my_bool
 xtrabackup_write_metadata(char *filename)
 {
 	FILE *fp;
+	my_bool r = FALSE;
 
 	fp = fopen(filename,"w");
 	if(!fp) {
@@ -2348,33 +2361,47 @@ xtrabackup_write_metadata(char *filename)
 	}
 
 	if (fprintf(fp, "backup_type = %s\n", metadata_type)
-			< 0)
-		return(TRUE);
+	    < 0) {
+		r = TRUE;
+		goto end;
+	}
 #ifndef INNODB_VERSION_SHORT
 	if (fprintf(fp, "from_lsn = %lu:%lu\n", metadata_from_lsn.high, metadata_from_lsn.low)
-			< 0)
-		return(TRUE);
+			< 0) {
+		r = TRUE;
+		goto end;
+	}
 	if (fprintf(fp, "to_lsn = %lu:%lu\n", metadata_to_lsn.high, metadata_to_lsn.low)
-			< 0)
-		return(TRUE);
+			< 0) {
+		r = TRUE;
+		goto end;
+	}
 	if (fprintf(fp, "last_lsn = %lu:%lu\n", metadata_last_lsn.high, metadata_last_lsn.low)
-			< 0)
-		return(TRUE);
+			< 0) {
+		r = TRUE;
+		goto end;
+	}
 #else
 	if (fprintf(fp, "from_lsn = %llu\n", metadata_from_lsn)
-			< 0)
-		return(TRUE);
+			< 0) {
+		r = TRUE;
+		goto end;
+	}
 	if (fprintf(fp, "to_lsn = %llu\n", metadata_to_lsn)
-			< 0)
-		return(TRUE);
+			< 0) {
+		r = TRUE;
+		goto end;
+	}
 	if (fprintf(fp, "last_lsn = %llu\n", metadata_last_lsn)
-			< 0)
-		return(TRUE);
+			< 0) {
+		r = TRUE;
+		goto end;
+	}
 #endif
-
+ end:
 	fclose(fp);
 
-	return(FALSE);
+	return(r);
 }
 
 /***********************************************************************
@@ -2384,6 +2411,7 @@ static my_bool
 xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 {
 	FILE *fp;
+	my_bool r= TRUE;
 
 	memset(info, 0, sizeof(xb_delta_info_t));
 
@@ -2394,11 +2422,11 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 	}
 
 	if (fscanf(fp, "page_size = %lu\n", &info->page_size) != 1)
-		return(FALSE);
+		r= FALSE;
 
 	fclose(fp);
 
-	return(TRUE);
+	return(r);
 }
 
 /***********************************************************************
@@ -2408,6 +2436,7 @@ static my_bool
 xb_write_delta_metadata(const char *filepath, const xb_delta_info_t *info)
 {
 	FILE *fp;
+	my_bool r= TRUE;
 
 	fp = fopen(filepath, "w");
 	if (!fp) {
@@ -2416,11 +2445,11 @@ xb_write_delta_metadata(const char *filepath, const xb_delta_info_t *info)
 	}
 
 	if (fprintf(fp, "page_size = %lu\n", info->page_size) < 0)
-		return(FALSE);
+		r= FALSE;
 
 	fclose(fp);
 
-	return(TRUE);
+	return(r);
 }
 
 /* ================= backup ================= */
