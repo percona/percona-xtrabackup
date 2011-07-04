@@ -3161,7 +3161,6 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 		/* reference recv_scan_log_recs() */
 		{
 	byte*	log_block;
-	ulint	no;
 	LSN64	scanned_lsn;
 	ulint	data_len;
 
@@ -3173,39 +3172,51 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 	scanned_lsn = start_lsn;
 
 	while (log_block < log_sys->buf + RECV_SCAN_SIZE && !finished) {
+		ulint	no = log_block_get_hdr_no(log_block);
+		ulint	scanned_no = log_block_convert_lsn_to_no(scanned_lsn);
+		ibool	checksum_is_ok =
+			log_block_checksum_is_ok_or_old_format(log_block);
 
-		no = log_block_get_hdr_no(log_block);
-
-		if (no != log_block_convert_lsn_to_no(scanned_lsn)
-		    || !log_block_checksum_is_ok_or_old_format(log_block)) {
-
-			if (no > log_block_convert_lsn_to_no(scanned_lsn)
-			    && log_block_checksum_is_ok_or_old_format(log_block)) {
-				fprintf(stderr,
-">> ###Warning###: The copying transaction log migh be overtaken already by the target.\n"
-">>              : Waiting log block no %lu, but the bumber is already %lu.\n"
-">>              : If the number equals %lu + n * %lu, it should be overtaken already.\n",
-					(ulong) log_block_convert_lsn_to_no(scanned_lsn),
-					(ulong) no,
-					(ulong) log_block_convert_lsn_to_no(scanned_lsn),
-					(ulong) (log_block_convert_lsn_to_no(
+		if (no != scanned_no && checksum_is_ok) {
+			ulint blocks_in_group =
+				log_block_convert_lsn_to_no(
 #ifndef INNODB_VERSION_SHORT
-							 ut_dulint_create(0, log_group_get_capacity(group))
+					ut_dulint_create(0, log_group_get_capacity(group))
 #else
-							 log_group_get_capacity(group)
+					log_group_get_capacity(group)
 #endif
-									  ) - 1));
+							    ) - 1;
 
-			} else if (no == log_block_convert_lsn_to_no(scanned_lsn)
-			    && !log_block_checksum_is_ok_or_old_format(
-								log_block)) {
+			fprintf(stderr,
+				"xtrabackup: error:"
+				" log block numbers mismatch:\n"
+				"xtrabackup: error: expected log block no. %lu,"
+				" but got no. %lu from the log file.\n",
+				(ulong) scanned_no, (ulong) no);
+
+			if ((no - scanned_no) % blocks_in_group == 0) {
 				fprintf(stderr,
+					"xtrabackup: error:"
+					" it looks like InnoDB log has wrapped"
+					" around before xtrabackup could"
+					" process all records due to either"
+					" log copying being too slow, or "
+					" log files being too small.\n");
+			}
+
+			goto error;
+		} else if (!checksum_is_ok) {
+			/* Garbage or an incompletely written log block */
+
+			fprintf(stderr,
+				"xtrabackup: error:"
+				" Log block checksum mismatch"
 #ifndef INNODB_VERSION_SHORT
-"xtrabackup: Log block no %lu at lsn %lu %lu has\n"
+				" (block no %lu at lsn %lu %lu): \n"
 #else
-"xtrabackup: Log block no %lu at lsn %llu has\n"
+				" (block no %lu at lsn %llu): \n"
 #endif
-"xtrabackup: ok header, but checksum field contains %lu, should be %lu\n",
+				"expected %lu, calculated checksum %lu\n",
 				(ulong) no,
 #ifndef INNODB_VERSION_SHORT
 				(ulong) ut_dulint_get_high(scanned_lsn),
@@ -3215,13 +3226,8 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 #endif
 				(ulong) log_block_get_checksum(log_block),
 				(ulong) log_block_calc_checksum(log_block));
-			}
 
-			/* Garbage or an incompletely written log block */
-
-			finished = TRUE;
-
-			break;
+			goto error;
 		}
 
 		if (log_block_get_flush_bit(log_block)) {

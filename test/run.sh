@@ -290,7 +290,7 @@ done
 echo "========================================================================"
 echo
 
-if [ -z "$force" -o $failed_count -eq 0 ]
+if [ -n "$force" -o $failed_count -eq 0 ]
 then
     kill_leftovers
 fi
