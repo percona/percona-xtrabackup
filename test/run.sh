@@ -219,7 +219,20 @@ failed_tests=
 total_count=0
 
 export OUTFILE="$PWD/results/setup"
-get_version_info >>$OUTFILE 2>&1
+if ! get_version_info
+then
+    echo "get_version_info failed. See $OUTFILE for details."
+    exit -1
+fi
+
+if [ -n "$XTRADB_VERSION" ]
+then
+    echo "Running against Percona Server $MYSQL_VERSION (XtraDB $INNODB_VERSION)" | tee -a $OUTFILE
+else
+    echo "Running against MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION)" | tee -a $OUTFILE
+fi
+echo "Using '`basename $XB_BIN`' as xtrabackup binary" | tee -a $OUTFILE
+echo | tee -a $OUTFILE
 kill_leftovers >>$OUTFILE 2>&1
 clean >>$OUTFILE 2>&1
 
