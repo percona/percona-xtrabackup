@@ -35,6 +35,7 @@ Proficiency
    :maxdepth: 1
 
    streaming_backups_innobackupex
+   replication_ibk
    parallel_copy_ibk
    throttling_ibk
    remote_backups_ibk

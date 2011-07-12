@@ -23,10 +23,13 @@ The following packages and tools must be installed to compile *Percona XtraBacku
 
 In Debian-based distributions, you need to: ::
 
-  apt-get install build-essential flex bison automake autoconf \
+  $ apt-get install build-essential flex bison automake autoconf bzr \
     libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev
 
-You may need also ``bzr`` if you're getting the source from *Launchpad*.
+In ``RPM``-based distributions, you need to: ::
+
+  $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf bzr \
+    bison libtool ncurses5-devel
 
 Compiling with :command:`build.sh`
 ----------------------------------
@@ -51,4 +54,14 @@ At the base directory of the downloaded source code, if you execute ::
 
   $ AUTO_DOWNLOAD="yes" ./utils/build.sh xtradb
 
-and you go for a coffee, at your return |XtraBackup| will be ready to be used.
+and you go for a coffee, at your return |XtraBackup| will be ready to be used. The |xtrabackup| binary will located in the following subdirectory depending on the building target:
+
+  ================== =====================================================
+  Target             Location
+  ================== =====================================================
+  innodb51_builtin   mysql-5.1/storage/innobase/xtrabackup
+  innodb51           mysql-5.1/storage/innodb_plugin/xtrabackup
+  innodb55           mysql-5.5/storage/innobase/xtrabackup
+  xtradb51           Percona-Server-5.1/storage/innodb_plugin/xtrabackup
+  xtradb55           Percona-Server-5.5/storage/innobase/xtrabackup
+  ================== =====================================================
