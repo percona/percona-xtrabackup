@@ -3383,6 +3383,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 	return(FALSE);
 
 error:
+	mutex_exit(&log_sys->mutex);
 	if (!xtrabackup_stream)
 		os_file_close(dst_log);
 	fprintf(stderr, "xtrabackup: Error: xtrabackup_copy_logfile() failed.\n");
@@ -3938,6 +3939,7 @@ reread_log_header:
 			MACH_READ_64(buf + LOG_CHECKPOINT_NO)) != 0) {
 		checkpoint_lsn_start = MACH_READ_64(buf + LOG_CHECKPOINT_LSN);
 		checkpoint_no_start = MACH_READ_64(buf + LOG_CHECKPOINT_NO);
+		mutex_exit(&log_sys->mutex);
 		goto reread_log_header;
 	}
 
@@ -4126,6 +4128,7 @@ reread_log_header:
 
 		if (err != DB_SUCCESS) {
 			fprintf(stderr, "xtrabackup: Error: recv_find_max_checkpoint() failed.\n");
+			mutex_exit(&log_sys->mutex);
 			goto skip_last_cp;
 		}
 
