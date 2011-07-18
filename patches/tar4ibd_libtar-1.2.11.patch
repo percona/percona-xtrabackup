@@ -1,7 +1,40 @@
-diff -ruN a/lib/Makefile.in b/lib/Makefile.in
---- a/lib/Makefile.in	2011-05-25 16:46:41.000000000 +0400
-+++ b/lib/Makefile.in	2011-05-25 16:47:54.000000000 +0400
-@@ -29,7 +29,7 @@
+# (c) 2009 - 2011 Percona Inc.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+#
+# This patch incorporates code covered by the following copyright and
+# permission notice:
+# 
+# Copyright (c) 1995, 2010, Innobase Oy. All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA 02111-1307 USA
+#
+#
+diff -ruN libtar-1.2.11.orig/lib/Makefile.in libtar-1.2.11/lib/Makefile.in
+--- libtar-1.2.11.orig/lib/Makefile.in	2011-07-14 13:27:10.000000000 +0400
++++ libtar-1.2.11/lib/Makefile.in	2011-07-14 13:27:37.000000000 +0400
+@@ -29,7 +29,7 @@ CPPFLAGS	= -I. \
  		  -I${top_srcdir}/compat \
  		  -I../listhash \
  		  @CPPFLAGS@
@@ -10,13 +43,19 @@ diff -ruN a/lib/Makefile.in b/lib/Makefile.in
  LDFLAGS		= @LDFLAGS@
  LIBS		= @LIBS@
  LIBOBJS		= @LIBOBJS@
-diff -ruN a/lib/append.c b/lib/append.c
---- a/lib/append.c	2011-05-25 16:46:41.000000000 +0400
-+++ b/lib/append.c	2011-05-25 17:42:25.000000000 +0400
-@@ -27,6 +27,218 @@
+diff -ruN libtar-1.2.11.orig/lib/append.c libtar-1.2.11/lib/append.c
+--- libtar-1.2.11.orig/lib/append.c	2011-07-14 13:27:10.000000000 +0400
++++ libtar-1.2.11/lib/append.c	2011-07-14 18:37:57.000000000 +0400
+@@ -27,6 +27,327 @@
  # include <unistd.h>
  #endif
  
++#ifdef HAVE_LIBZ
++#include <zlib.h>
++#else
++#error "zlib not found"
++#endif
++
 +#ifdef POSIX_FADV_NORMAL
 +#define USE_POSIX_FADVISE
 +#endif
@@ -24,15 +63,26 @@ diff -ruN a/lib/append.c b/lib/append.c
 +/* all of these ripped from InnoDB code from MySQL 4.0.22 */
 +#define UT_HASH_RANDOM_MASK     1463735687
 +#define UT_HASH_RANDOM_MASK2    1653893711
-+#define FIL_PAGE_LSN          16 
++#define FIL_PAGE_LSN          16
 +#define FIL_PAGE_FILE_FLUSH_LSN 26
 +#define FIL_PAGE_OFFSET     4
 +#define FIL_PAGE_DATA       38
 +#define FIL_PAGE_DATA_ALIGN_32  40
 +#define FIL_PAGE_END_LSN_OLD_CHKSUM 8
 +#define FIL_PAGE_SPACE_OR_CHKSUM 0
-+//#define UNIV_PAGE_SIZE          (2 * 8192)
 +#define BUF_NO_CHECKSUM_MAGIC 0xDEADBEEFUL
++#define FSP_EXTENT_SIZE 64
++#define FSP_HEADER_OFFSET FIL_PAGE_DATA
++#define	FSP_SPACE_FLAGS		16	/* table->flags & ~DICT_TF_COMPACT */
++#define DICT_TF_ZSSIZE_SHIFT		1
++#define DICT_TF_ZSSIZE_MASK		(15 << DICT_TF_ZSSIZE_SHIFT)
++#define PAGE_ZIP_MIN_SIZE_SHIFT	10
++#define PAGE_ZIP_MIN_SIZE	(1 << PAGE_ZIP_MIN_SIZE_SHIFT)
++#define UNIV_PAGE_SIZE          (2 * 8192)
++#define FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID  34 /* starting from 4.1.x this
++					contains the space id of the page */
++#define	FIL_PAGE_TYPE		24	/* file page type: FIL_PAGE_INDEX,...,
++					2 bytes.
 +
 +/* defined in libtar.c. if 1, O_DIRECT will be used for input files */
 +extern int use_direct;
@@ -136,6 +186,87 @@ diff -ruN a/lib/append.c b/lib/append.c
 +}
 +
 +ulint
++fsp_header_get_flags(
++/*=================*/
++	byte*	page)	/*!< in: first page of a tablespace */
++{
++	return(mach_read_from_4(FSP_HEADER_OFFSET + FSP_SPACE_FLAGS + page));
++}
++
++ulint
++dict_table_flags_to_zip_size(
++/*=========================*/
++	ulint	flags)	/*!< in: flags */
++{
++	ulint	zip_size = flags & DICT_TF_ZSSIZE_MASK;
++
++	if (zip_size) {
++		zip_size = ((PAGE_ZIP_MIN_SIZE >> 1)
++			 << (zip_size >> DICT_TF_ZSSIZE_SHIFT));
++	}
++
++	return(zip_size);
++}
++
++int
++fil_fd_get_zip_size(
++/*===================*/
++	int fd)
++{
++	ulint   flags;
++	byte    buf[UNIV_PAGE_SIZE * 2];
++	byte	*page = (byte *) (((unsigned long) buf + UNIV_PAGE_SIZE - 1) &
++				  ~(UNIV_PAGE_SIZE - 1));
++
++	if(pread(fd, page, UNIV_PAGE_SIZE, 0) != UNIV_PAGE_SIZE)
++		return -1;
++
++	flags = fsp_header_get_flags(page);
++
++	if (flags && flags != (ulint)-1) {
++		return(dict_table_flags_to_zip_size(flags));
++	}
++
++	return(flags);
++}
++
++ulint
++fil_fd_get_space_id(
++/*===================*/
++	int fd)
++{
++	byte    buf[UNIV_PAGE_SIZE * 2];
++	byte	*page = (byte *) (((unsigned long) buf + UNIV_PAGE_SIZE - 1) &
++				  ~(UNIV_PAGE_SIZE - 1));
++
++	if(pread(fd, page, UNIV_PAGE_SIZE, 0) != UNIV_PAGE_SIZE)
++		return -1;
++
++	return(mach_read_from_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID));
++}
++
++ulint
++page_zip_calc_checksum(
++/*===================*/
++	const void*	data,	/*!< in: compressed page */
++	ulint		size)	/*!< in: size of compressed page */
++{
++	/* Exclude FIL_PAGE_SPACE_OR_CHKSUM, FIL_PAGE_LSN,
++	and FIL_PAGE_FILE_FLUSH_LSN from the checksum. */
++
++	const Bytef*	s	= data;
++	uLong		adler;
++
++	adler = adler32(0L, s + FIL_PAGE_OFFSET,
++			FIL_PAGE_LSN - FIL_PAGE_OFFSET);
++	adler = adler32(adler, s + FIL_PAGE_TYPE, 2);
++	adler = adler32(adler, s + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
++			size - FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
++
++	return((ulint) adler);
++}
++
++ulint
 +buf_calc_page_new_checksum_32(
 +/*==========================*/
 +    byte*    page,
@@ -175,15 +306,17 @@ diff -ruN a/lib/append.c b/lib/append.c
 +/*==================*/
 +				/* out: TRUE if corrupted */
 +	byte*	read_buf,	/* in: a database page */
-+	ulint	page_size)
++	ulint	page_size,
++	ulint	zip_size)
 +{
 +	ulint	checksum;
 +	ulint	old_checksum;
 +	ulint	checksum_field;
 +	ulint	old_checksum_field;
 +
-+	if (mach_read_from_4(read_buf + FIL_PAGE_LSN + 4)
-+	     != mach_read_from_4(read_buf + page_size
++	if (!zip_size &&
++	    mach_read_from_4(read_buf + FIL_PAGE_LSN + 4)
++	    != mach_read_from_4(read_buf + page_size
 +				- FIL_PAGE_END_LSN_OLD_CHKSUM + 4)) {
 +
 +		/* Stored log sequence numbers at the start and the end
@@ -195,18 +328,27 @@ diff -ruN a/lib/append.c b/lib/append.c
 +  /* If we use checksums validation, make additional check before returning
 +  TRUE to ensure that the checksum is not equal to BUF_NO_CHECKSUM_MAGIC which
 +  might be stored by InnoDB with checksums disabled.
-+     Otherwise, skip checksum calculation and return FALSE */
-+  
-+    old_checksum = buf_calc_page_old_checksum(read_buf); 
++  Otherwise, skip checksum calculation and return FALSE */
 +
-+    old_checksum_field = mach_read_from_4(read_buf + page_size
-+					- FIL_PAGE_END_LSN_OLD_CHKSUM);
++	checksum_field = mach_read_from_4(read_buf +
++					  FIL_PAGE_SPACE_OR_CHKSUM);
++
++	if (zip_size) {
++		return(checksum_field != BUF_NO_CHECKSUM_MAGIC
++		       && checksum_field
++		       != page_zip_calc_checksum(read_buf, zip_size));
++	}
++
++	old_checksum = buf_calc_page_old_checksum(read_buf);
++
++	old_checksum_field = mach_read_from_4(read_buf + page_size
++					      - FIL_PAGE_END_LSN_OLD_CHKSUM);
 +
 +    /* There are 2 valid formulas for old_checksum_field:
 +	  1. Very old versions of InnoDB only stored 8 byte lsn to the start
 +	  and the end of the page.
 +	  2. Newer InnoDB versions store the old formula checksum there. */
-+	
++
 +    if (old_checksum_field != mach_read_from_4(read_buf + FIL_PAGE_LSN)
 +        && old_checksum_field != old_checksum
 +        && old_checksum_field != BUF_NO_CHECKSUM_MAGIC) {
@@ -226,13 +368,13 @@ diff -ruN a/lib/append.c b/lib/append.c
 +
 +      return(1);
 +    }
-+  
++
 +	return(0);
 +}
  
  struct tar_dev
  {
-@@ -69,7 +281,7 @@
+@@ -69,7 +390,7 @@ tar_append_file(TAR *t, char *realname, 
  	       (savename ? savename : "[NULL]"));
  #endif
  
@@ -241,7 +383,7 @@ diff -ruN a/lib/append.c b/lib/append.c
  	{
  #ifdef DEBUG
  		perror("lstat()");
-@@ -210,11 +422,14 @@
+@@ -210,11 +531,17 @@ tar_append_eof(TAR *t)
  int
  tar_append_regfile(TAR *t, char *realname)
  {
@@ -252,14 +394,17 @@ diff -ruN a/lib/append.c b/lib/append.c
 -	int i, j;
 -	size_t size;
 +	int j, k, n_retry;
-+	long long i, size;
-+	int page_size = 4 * 1024; /* check 4K, 8K and 16K */
++	long long i, size, offset;
++	int page_size = 1 * 1024; /* check 1K, 2K, 4K, 8K and 16K */
++	int page_size_shift = 10;
++	int zip_size;
++	int is_sys_space;
  
 +	block = (unsigned char *)(((unsigned long) buf + 16384 - 1) & ~(16384 - 1));
  	filefd = open(realname, O_RDONLY);
  	if (filefd == -1)
  	{
-@@ -224,28 +439,66 @@
+@@ -224,27 +551,93 @@ tar_append_regfile(TAR *t, char *realnam
  		return -1;
  	}
  
@@ -273,10 +418,23 @@ diff -ruN a/lib/append.c b/lib/append.c
 +		fcntl(filefd, F_SETFL, O_DIRECT);
 +#endif
 +
++	zip_size = fil_fd_get_zip_size(filefd);
++	if (zip_size == -1) {
++		fprintf(stderr,
++			"tar4ibd: file '%s' has invalid zip_size value.\n",
++			realname);
++		return(-1);
++	} else if (zip_size != 0) {
++		page_size = zip_size;
++	}
++
++	is_sys_space = (fil_fd_get_space_id(filefd) == 0);
++
 +	n_retry = 0;
  	size = th_get_size(t);
 -	for (i = size; i > T_BLOCKSIZE; i -= T_BLOCKSIZE)
-+	for (i = size; i >= page_size; i -= page_size)
++	for (i = size, offset = 0; i >= page_size;
++	     i -= page_size, offset += page_size)
  	{
 -		j = read(filefd, &block, T_BLOCKSIZE);
 -		if (j != T_BLOCKSIZE)
@@ -288,8 +446,19 @@ diff -ruN a/lib/append.c b/lib/append.c
  			return -1;
  		}
 -		if (tar_block_write(t, &block) == -1)
--			return -1;
-+		if (buf_page_is_corrupted(block, (ulint)page_size)) {
++		if (buf_page_is_corrupted(block, (ulint)page_size,
++					  (ulint)zip_size)) {
++			ulint page_no = (unsigned long)
++				(offset >> page_size_shift);
++			if (is_sys_space &&
++			    page_no >= FSP_EXTENT_SIZE &&
++			    page_no < FSP_EXTENT_SIZE * 3) {
++				fprintf(stderr, "tar4ibd: page %lu seems to "
++					"be from the doublewrite buffer. "
++					"skipping checksum validation.\n",
++					page_no);
++				goto write_page;
++			}
 +			if (n_retry > 9) {
 +				fprintf(stderr,
 +"The file '%s' may not be InnoDB datafile or may be corrupted.\n",
@@ -302,20 +471,23 @@ diff -ruN a/lib/append.c b/lib/append.c
 +			if (lseek(filefd, - page_size, SEEK_CUR) == -1)
 +				return -1;
 +
-+			if (i == size
++			if (i == size && !zip_size
 +			    && page_size < 16 * 1024) {
 +				page_size *= 2;
++				page_size_shift++;
 +			} else {
 +				n_retry++;
 +			}
 +
 +			i += page_size;
++			offset -= page_size;
 +
 +			continue;
 +		}
++write_page:
 +		for (k = 0; k < page_size / T_BLOCKSIZE; k++)
 +			if (tar_block_write(t, &block[T_BLOCKSIZE * k]) == -1)
-+				return -1;
+ 			return -1;
 +		n_retry = 0;
  	}
  
@@ -327,18 +499,16 @@ diff -ruN a/lib/append.c b/lib/append.c
  			return -1;
 -		memset(&(block[i]), 0, T_BLOCKSIZE - i);
 -		if (tar_block_write(t, &block) == -1)
--			return -1;
 +		memset(&(block[i]), 0, T_BLOCKSIZE * 32 - i);
 +		for (k = 0; k < ((j - 1) / T_BLOCKSIZE + 1); k++)
 +			if (tar_block_write(t, &block[T_BLOCKSIZE * k]) == -1)
-+				return -1;
+ 			return -1;
  	}
  
- 	close(filefd);
-diff -ruN a/lib/extract.c b/lib/extract.c
---- a/lib/extract.c	2011-05-25 16:46:41.000000000 +0400
-+++ b/lib/extract.c	2011-05-25 16:47:54.000000000 +0400
-@@ -158,11 +158,11 @@
+diff -ruN libtar-1.2.11.orig/lib/extract.c libtar-1.2.11/lib/extract.c
+--- libtar-1.2.11.orig/lib/extract.c	2011-07-14 13:27:10.000000000 +0400
++++ libtar-1.2.11/lib/extract.c	2011-07-14 13:27:37.000000000 +0400
+@@ -158,11 +158,11 @@ int
  tar_extract_regfile(TAR *t, char *realname)
  {
  	mode_t mode;
@@ -352,10 +522,10 @@ diff -ruN a/lib/extract.c b/lib/extract.c
  	char buf[T_BLOCKSIZE];
  	char *filename;
  
-diff -ruN a/lib/libtar.h b/lib/libtar.h
---- a/lib/libtar.h	2011-05-25 16:46:41.000000000 +0400
-+++ b/lib/libtar.h	2011-05-25 16:47:54.000000000 +0400
-@@ -180,7 +180,7 @@
+diff -ruN libtar-1.2.11.orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
+--- libtar-1.2.11.orig/lib/libtar.h	2011-07-14 13:27:10.000000000 +0400
++++ libtar-1.2.11/lib/libtar.h	2011-07-14 13:27:37.000000000 +0400
+@@ -180,7 +180,7 @@ int th_write(TAR *t);
  
  /* decode tar header info */
  #define th_get_crc(t) oct_to_int((t)->th_buf.chksum)
@@ -364,7 +534,7 @@ diff -ruN a/lib/libtar.h b/lib/libtar.h
  #define th_get_mtime(t) oct_to_int((t)->th_buf.mtime)
  #define th_get_devmajor(t) oct_to_int((t)->th_buf.devmajor)
  #define th_get_devminor(t) oct_to_int((t)->th_buf.devminor)
-@@ -204,9 +204,9 @@
+@@ -204,9 +204,9 @@ void th_set_user(TAR *t, uid_t uid);
  void th_set_group(TAR *t, gid_t gid);
  void th_set_mode(TAR *t, mode_t fmode);
  #define th_set_mtime(t, fmtime) \
@@ -376,7 +546,7 @@ diff -ruN a/lib/libtar.h b/lib/libtar.h
  
  /* encode everything at once (except the pathname and linkname) */
  void th_set_from_stat(TAR *t, struct stat *s);
-@@ -268,13 +268,16 @@
+@@ -268,13 +268,16 @@ int th_crc_calc(TAR *t);
  
  /* string-octal to integer conversion */
  int oct_to_int(char *oct);
@@ -394,10 +564,10 @@ diff -ruN a/lib/libtar.h b/lib/libtar.h
  
  
  /***** wrapper.c **********************************************************/
-diff -ruN a/lib/util.c b/lib/util.c
---- a/lib/util.c	2011-05-25 16:46:41.000000000 +0400
-+++ b/lib/util.c	2011-05-25 16:47:54.000000000 +0400
-@@ -138,6 +138,14 @@
+diff -ruN libtar-1.2.11.orig/lib/util.c libtar-1.2.11/lib/util.c
+--- libtar-1.2.11.orig/lib/util.c	2011-07-14 13:27:10.000000000 +0400
++++ libtar-1.2.11/lib/util.c	2011-07-14 13:27:37.000000000 +0400
+@@ -138,6 +138,14 @@ oct_to_int(char *oct)
  	return i;
  }
  
@@ -412,7 +582,7 @@ diff -ruN a/lib/util.c b/lib/util.c
  
  /* integer to string-octal conversion, no NULL */
  void
-@@ -147,4 +155,46 @@
+@@ -147,4 +155,46 @@ int_to_oct_nonull(int num, char *oct, si
  	oct[octlen - 1] = ' ';
  }
  
@@ -459,10 +629,10 @@ diff -ruN a/lib/util.c b/lib/util.c
 +	}
 +	return i;
 +}
-diff -ruN a/libtar/Makefile.in b/libtar/Makefile.in
---- a/libtar/Makefile.in	2011-05-25 16:46:41.000000000 +0400
-+++ b/libtar/Makefile.in	2011-05-25 16:47:54.000000000 +0400
-@@ -29,7 +29,7 @@
+diff -ruN libtar-1.2.11.orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
+--- libtar-1.2.11.orig/libtar/Makefile.in	2011-07-14 13:27:10.000000000 +0400
++++ libtar-1.2.11/libtar/Makefile.in	2011-07-14 13:27:37.000000000 +0400
+@@ -29,7 +29,7 @@ CPPFLAGS	= -I.. \
  		  -I${top_srcdir}/lib \
  		  -I${top_srcdir}/compat \
  		  @CPPFLAGS@
@@ -471,7 +641,7 @@ diff -ruN a/libtar/Makefile.in b/libtar/Makefile.in
  LDFLAGS		= @LDFLAGS@
  LIBS		= @LIBS@
  LIBOBJS		= @LIBOBJS@
-@@ -46,15 +46,15 @@
+@@ -46,15 +46,15 @@ LIBTAR_HDRS	= ../config.h \
  		  ${top_srcdir}/lib/libtar.h \
  		  ../listhash/libtar_listhash.h
  LIBTAR_LIBS	= ../lib/libtar.a
@@ -490,16 +660,16 @@ diff -ruN a/libtar/Makefile.in b/libtar/Makefile.in
  
  ${LIBTAR_OBJS}: ${LIBTAR_HDRS}
  
-@@ -69,5 +69,5 @@
+@@ -69,5 +69,5 @@ distclean: clean
  
  install: ${ALL}
  	${MKDIR} ${DESTDIR}${bindir}
 -	${INSTALL_PROGRAM} libtar ${DESTDIR}${bindir}
 +	${INSTALL_PROGRAM} tar4ibd ${DESTDIR}${bindir}
  
-diff -ruN a/libtar/libtar.c b/libtar/libtar.c
---- a/libtar/libtar.c	2011-05-25 16:46:41.000000000 +0400
-+++ b/libtar/libtar.c	2011-05-25 16:47:54.000000000 +0400
+diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
+--- libtar-1.2.11.orig/libtar/libtar.c	2011-07-14 13:27:10.000000000 +0400
++++ libtar-1.2.11/libtar/libtar.c	2011-07-14 17:22:13.000000000 +0400
 @@ -14,6 +14,7 @@
  #include <libtar.h>
  
@@ -516,7 +686,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
  
  #ifdef DEBUG
  void
-@@ -109,7 +111,7 @@
+@@ -109,7 +111,7 @@ create(char *tarfile, char *rootdir, lib
  	char buf[MAXPATHLEN];
  	libtar_listptr_t lp;
  
@@ -525,7 +695,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -164,7 +166,7 @@
+@@ -164,7 +166,7 @@ list(char *tarfile)
  	TAR *t;
  	int i;
  
@@ -534,7 +704,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -225,7 +227,7 @@
+@@ -225,7 +227,7 @@ extract(char *tarfile, char *rootdir)
  #ifdef DEBUG
  	puts("opening tarfile...");
  #endif
@@ -543,7 +713,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -264,9 +266,9 @@
+@@ -264,9 +266,9 @@ extract(char *tarfile, char *rootdir)
  void
  usage()
  {
@@ -555,7 +725,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
  	       progname);
  	exit(-1);
  }
-@@ -287,7 +289,7 @@
+@@ -287,7 +289,7 @@ main(int argc, char *argv[])
  
  	progname = basename(argv[0]);
  
@@ -564,7 +734,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
  		switch (c)
  		{
  		case 'V':
-@@ -323,11 +325,21 @@
+@@ -323,11 +325,21 @@ main(int argc, char *argv[])
  			use_zlib = 1;
  			break;
  #endif /* HAVE_LIBZ */
@@ -577,7 +747,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
 +			use_direct = 1;
 +			break;
 +#endif
-+			
++
  		default:
  			usage();
  		}
@@ -587,7 +757,7 @@ diff -ruN a/libtar/libtar.c b/libtar/libtar.c
  	{
  #ifdef DEBUG
  		printf("argc - optind == %d\tmode == %d\n", argc - optind,
-@@ -343,15 +355,14 @@
+@@ -343,15 +355,14 @@ main(int argc, char *argv[])
  	switch (mode)
  	{
  	case MODE_EXTRACT:
