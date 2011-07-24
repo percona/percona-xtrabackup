@@ -3,6 +3,20 @@
 # Backup script for MySQL 5.5 on RHEL5 using XtraBackup
 #
 # Requires: xtrabackup, bash, awk, coreutils
+#
+# Copyright (C) 2011 Daniel van Eeden
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ## Settings ##
 PATH="/bin:/usr/bin"
