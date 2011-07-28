@@ -8,6 +8,14 @@ We are currently not satisfied with the architecture, code quality and maintaina
 
 This manual section explains how to use |innobackupex| in detail.
 
+Prerequisites
+=============
+
+.. toctree::
+   :maxdepth: 1
+
+   privileges
+
 
 The Backup Cycle - Full Backups
 ===============================

@@ -140,3 +140,7 @@ Options
    This option specifies the number of threads to use to copy multiple data files concurrently when creating a backup. The default value is 1 (i.e., no concurrent transfer).
 
    Currently, the option only works for local backups.
+
+.. option:: --version
+
+   This option prints |xtrabackup| version and exits.
