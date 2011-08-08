@@ -409,6 +409,16 @@ div.viewcode-block:target {
     border-bottom: 1px solid #ac9;
 }
 
+.file-bugs {
+    background: none repeat scroll 0 0 #E8E8E8;
+    border: 1px solid #E0E0E0;
+    clear: both;
+    color: #333333;
+    padding: 10px;
+    text-align: center;
+    font-size: 90%;
+}
+
 div.footer .footer {
    margin: 0 auto;
    overflow: hidden;

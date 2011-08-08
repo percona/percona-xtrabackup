@@ -8,6 +8,14 @@ We are currently not satisfied with the architecture, code quality and maintaina
 
 This manual section explains how to use |innobackupex| in detail.
 
+Prerequisites
+=============
+
+.. toctree::
+   :maxdepth: 1
+
+   privileges
+
 
 The Backup Cycle - Full Backups
 ===============================
@@ -35,6 +43,7 @@ Proficiency
    :maxdepth: 1
 
    streaming_backups_innobackupex
+   replication_ibk
    parallel_copy_ibk
    throttling_ibk
    remote_backups_ibk

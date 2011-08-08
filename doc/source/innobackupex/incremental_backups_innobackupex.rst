@@ -19,7 +19,7 @@ First, a full backup is needed, this will be the BASE for the incremental one: :
 
 This will create a timestamped directory in :file:`/data/backups`. Assuming that the backup is done last day of the year, ``BASEDIR`` would be :file:`/data/backups/2011-12-31_23-01-18`, for example.
 
-.. note:: You can use the :option:`--no-timestamp` option to override this behavior and the backup will be created in the given directory.
+.. note:: You can use the :option:`innobackupex --no-timestamp` option to override this behavior and the backup will be created in the given directory.
 
 If you check at the :file:`xtrabackup-checkpoints` file in ``BASE-DIR``, you should see something like::
 

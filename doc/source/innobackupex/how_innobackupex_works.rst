@@ -1,3 +1,5 @@
+.. _how_ibk_works:
+
 ==========================
  How |innobackupex| Works
 ==========================
@@ -51,9 +53,9 @@ It  will also create the following files in the directory of the backup:
 :file:`mysql-stdout`
   containing the ``STDOUT`` of the server.
 
-If the :option:`--remote-host` was set, |innobackupex| will test the connection to the host via :command:`ssh` and create the backup directories. Then the same process will be applied but all the log files will be written to a temporary file (you can choose the file setting the :option:`--tmp-logfile`) and will be copied via :command:`scp` with the options set by :option:`--options-scp` (``-Cp -c arcfour`` by default).
+If the :option:`--remote-host` was set, |innobackupex| will test the connection to the host via :command:`ssh` and create the backup directories. Then the same process will be applied but the log will be written to a temporary file and will be copied via :command:`scp` with the options set by :option:`--options-scp` (``-Cp -c arcfour`` by default).
 
-After each copy the files will be deleted. The same rationale is for the :option:`--stream`.
+After each copy the files will be deleted. The same rationale is for the :option:`--stream` mode.
 
 Finally, the binary log position will be printed to ``STDERR`` and |innobackupex| will exit returning 0 if all went OK.
 

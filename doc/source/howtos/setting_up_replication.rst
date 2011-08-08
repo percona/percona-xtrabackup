@@ -1,3 +1,5 @@
+.. _replication_howto:
+
 ========================================================================
  How to setup a slave for replication in 5 simple steps with Xtrabackup
 ========================================================================
