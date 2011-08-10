@@ -6,7 +6,7 @@ MYSQL_51_VERSION=5.1.56
 MYSQL_55_VERSION=5.5.10
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
-MASTER_SITE="http://www.percona.com/downloads/community/"
+MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
 
 # Percona Server 5.5 does not build with -Werror, so ignore DEBUG for now
 if [ -n "$DEBUG" -a "$1" != "xtradb55" -a "$1" != "xtradb51" -a "$1" != "xtradb" ]

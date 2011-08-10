@@ -81,8 +81,8 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
 (
     # Make a copy in workdir and copy debian files
     cd "$WORKDIR"
-
-    cp -a "$SOURCEDIR" "xtrabackup-$XTRABACKUP_VERSION"
+    mkdir -p "xtrabackup-$XTRABACKUP_VERSION"
+    (cd "$SOURCEDIR" ; tar c --exclude="xtrabackup-$XTRABACKUP_VERSION" .) |(cd "xtrabackup-$XTRABACKUP_VERSION"; tar xf -)
 
     cd "xtrabackup-$XTRABACKUP_VERSION"
 
