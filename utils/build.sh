@@ -4,7 +4,7 @@ MYSQL_51_VERSION=5.1.56
 MYSQL_55_VERSION=5.5.10
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
-MASTER_SITE="http://www.percona.com/downloads/community/"
+MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
 
 set -e
 export CFLAGS="$CFLAGS -g -O3"

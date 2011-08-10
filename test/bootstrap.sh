@@ -34,19 +34,19 @@ fi
 
 case "$1" in
     innodb51_builtin | innodb51)
-	url="http://www.percona.com/downloads/community/"
+	url="http://s3.amazonaws.com/percona.com/downloads/community"
 	tarball="mysql-5.1.49-linux-$arch-glibc23.tar.gz"
 	;;
     innodb55)
-	url="http://www.percona.com/downloads/community/"
+	url="http://s3.amazonaws.com/percona.com/downloads/community"
 	tarball="mysql-5.5.6-rc-linux2.6-$arch.tar.gz"
 	;;
     xtradb51)
-	url="http://www.percona.com/downloads/Percona-Server-5.1/Percona-Server-5.1.57-12.8/Linux/binary/"
+	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.1/Percona-Server-5.1.57-12.8/Linux/binary"
 	tarball="Percona-Server-5.1.57-rel12.8-232-Linux-$arch.tar.gz"
 	;;
     xtradb55)
-	url="http://www.percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary/"
+	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary"
 	tarball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
 	;;
     *)
