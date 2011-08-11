@@ -43,7 +43,7 @@ case "$1" in
 	;;
     xtradb51)
 	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.1/Percona-Server-5.1.57-12.8/Linux/binary"
-	tarball="Percona-Server-5.1.57-rel12.8-232-Linux-$arch.tar.gz"
+	tarball="Percona-Server-5.1.57-rel12.8-233-Linux-$arch.tar.gz"
 	;;
     xtradb55)
 	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary"
