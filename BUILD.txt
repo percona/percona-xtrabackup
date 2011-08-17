@@ -1,21 +1,62 @@
-How to build XtraBackup
-=======================
+================================
+How to build XtraBackup on Linux
+================================
 
-!!You need to build the MySQL binaries before building XtraBackup!!
+Prerequisites
+-------------
 
-1. Build your version of mysql
+The following packages and tools must be installed to compile 
+Percona XtraBackup from source. These might vary from system to system.
 
-2. copy the xtrabackup  source directory into the mysql.5x/innobase directory
-   (e.g. mysql-5.0.75/innobase/xtrabackup-0.0 )
+In Debian-based distributions, you need to:
 
-3. For 5.1x you need to apply a patch.
-   From the innobase directory, apply the xtrabackup patch. 
-  e.g. #patch -p2 < xtrabackup-0.0/fix_innodb_for_backup51.patch  
-  
-(With 5.0 run 'make clean all' from the innobase directory This is necessary
-for 5.0, because of the lack of dependencies)
+  $ apt-get install build-essential flex bison automake autoconf bzr \
+    libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev
 
-4.Run make [5.0] [5.1] [xtradb] [plugin] in the XtraBackup directory.
+In RPM-based distributions, you need to:
 
-5.  enjoy... :
+  $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf bzr \
+    bison libtool ncurses5-devel
 
+Compiling with build.sh
+-----------------------
+
+Once you have all dependencies met, the compilation is straight-forward with 
+the bundled build.sh script in the utils/ directory of the distribution.
+
+The script needs the codebase for which the building is targeted, you must
+provide it with one of the following values or aliases:
+
+  ================== =========  =============================================
+  Value              Alias      Server
+  ================== =========  =============================================
+  innodb51_builtin   5.1	build against built-in InnoDB in MySQL 5.1
+  innodb51           plugin	build agsinst InnoDB plugin in MySQL 5.1
+  innodb55           5.5	build against InnoDB in MySQL 5.5
+  xtradb51           xtradb     build against Percona Server with XtraDB 5.1
+  xtradb55           xtradb55   build against Percona Server with XtraDB 5.5
+  ================== =========  =============================================
+
+Note that the script must be executed from the base directory of Xtrabackup 
+sources, and that directory must contain the packages with the source code of 
+the codebase selected. This may appear cumbersome, but if the variable
+AUTO_DOWNLOAD="yes" is set, the build.sh script will download all the source 
+code needed for the build.
+
+At the base directory of the downloaded source code, if you execute
+
+  $ AUTO_DOWNLOAD="yes" ./utils/build.sh xtradb
+
+and you go for a coffee, at your return XtraBackup will be ready to be used. 
+The xtrabackup binary will located in the following subdirectory depending 
+on the building target:
+
+  ================== =======================================================
+  Target             Location
+  ================== =======================================================
+  innodb51_builtin   mysql-5.1/storage/innobase/xtrabackup
+  innodb51           mysql-5.1/storage/innodb_plugin/xtrabackup
+  innodb55           mysql-5.5/storage/innobase/xtrabackup
+  xtradb51           Percona-Server-5.1/storage/innodb_plugin/xtrabackup
+  xtradb55           Percona-Server-5.5/storage/innobase/xtrabackup
+  ================== =======================================================
