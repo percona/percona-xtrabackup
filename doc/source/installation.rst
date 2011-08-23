@@ -17,7 +17,7 @@ Ready-to-use binaries are available from the |XtraBackup| `download page <http:/
 
  * *FreeBSD* ``.tbz`` packages
 
- * *Microsoft Windows* binaries
+.. * *Microsoft Windows* binaries
 
  * Generic ``.tar.gz`` packages
 
@@ -36,9 +36,9 @@ Using Percona Software Repositories
 
 This is the recommend way of installing where possible.
 
-Installing on Windows
-=====================
+.. Installing on Windows
+.. =====================
 
-Currently the *Microsoft Windows* version is on **ALPHA** stage, binaries provided in the `download page <http://www.percona.com/downloads/XtraBackup/>`_ are for previewing and testing purposes, you should expect no stability in its functioning.
+.. Currently the *Microsoft Windows* version is on **ALPHA** stage, binaries provided in the `download page <http://www.percona.com/downloads/XtraBackup/>`_ are for previewing and testing purposes, you should expect no stability in its functioning.
 
-Having this in mind, make sure that you have a *Perl* interpreter installed and the |MySQL| client is accessible via the *Windows* ``PATH`` variable. Unzip the |Xtrabackup| package and they are ready to be used.
+.. Having this in mind, make sure that you have a *Perl* interpreter installed and the |MySQL| client is accessible via the *Windows* ``PATH`` variable. Unzip the |Xtrabackup| package and they are ready to be used.
