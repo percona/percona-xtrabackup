@@ -359,19 +359,24 @@ sub backup {
         wait_for_ibbackup_suspend();
     }
 
+    if ($option_safe_slave_backup) {
+      mysql_open();
+      mysql_check();
+      wait_for_safe_slave();
+      mysql_close();
+    }
+
     if (!$option_incremental) {
         # connect to database
         mysql_open();
-
-        if ( $option_safe_slave_backup ) {
-          wait_for_safe_slave();
-        }
 
         # flush tables with read lock
         mysql_check();
         mysql_lockall() if !$option_no_lock;
 
     }
+
+    write_slave_info() if $option_slave_info;
 
     # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
     backup_files();
@@ -383,13 +388,16 @@ sub backup {
         # release read locks on all tables
         mysql_unlockall() if !$option_no_lock;
 
-       if ( $option_safe_slave_backup ) {
-         print STDERR "$prefix: Starting slave SQL thread\n";
-         mysql_send('START SLAVE SQL_THREAD;');
-       }
-
         # disconnect from database
         mysql_close();
+    }
+
+    if ( $option_safe_slave_backup ) {
+      mysql_open();
+      mysql_check();
+      print STDERR "$prefix: Starting slave SQL thread\n";
+      mysql_send('START SLAVE SQL_THREAD;');
+      mysql_close();
     }
 
     if ($option_remote_host) {
@@ -1203,7 +1211,6 @@ sub mysql_lockall {
         mysql_send "COMMIT;";
     }
     write_binlog_info;
-    write_slave_info if $option_slave_info;
 	
     $now = current_time();
     print STDERR "$now  $prefix All tables locked and flushed to disk\n";
@@ -1669,6 +1676,14 @@ sub check_args {
         # get backup directory
         $backup_dir = File::Spec->rel2abs($ARGV[0]);
     }        
+
+    if ($option_slave_info) {
+        if (($option_no_lock or $option_incremental) and
+	    !$option_safe_slave_backup) {
+	  print STDERR "--slave-info is used with either --no-lock or --incremental but without --safe-slave-backup. The binlog position cannot be consistent with the backup data.\n";
+	    exit(1);
+	}
+    }
 
     print STDERR "\n";
 
