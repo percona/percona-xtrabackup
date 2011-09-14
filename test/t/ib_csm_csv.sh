@@ -25,7 +25,7 @@ full_backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk
 vlog "Full backup done to directory $full_backup_dir"
 
 # Saving the checksum of original table
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table csm;" csv | awk '{print $2}'`
+checksum_a=`checksum_table csv csm`
 vlog "Table checksum is $checksum_a"
 
 vlog "Preparing backup"
@@ -50,10 +50,10 @@ innobackupex --copy-back $full_backup_dir >> $OUTFILE 2>&1
 vlog "Data restored"
 
 run_mysqld --innodb_file_per_table
-vlog "Checking checksums"
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table csm" incremental_sample | awk '{print $2}'`
+checksum_b=`checksum_table csv csm`
+vlog "Checking checksums: $checksum_a/$checksum_b"
 
-if [ $checksum_a -ne $checksum_b  ]
+if [ "$checksum_a" != "$checksum_b"  ]
 then 
 	vlog "Checksums are not equal"
 	exit -1

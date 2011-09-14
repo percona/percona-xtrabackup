@@ -230,3 +230,12 @@ function race_create_drop()
 	let "race_cycle_cnt=race_cycle_cnt+1"
   done
 }
+
+########################################################################
+# Prints checksum for a given table.
+# Expects 2 arguments: $1 is the DB name and $2 is the table to checksum
+########################################################################
+function checksum_table()
+{
+    $MYSQL $MYSQL_ARGS -Ns -e "CHECKSUM TABLE $2" $1 | awk {'print $2'}
+}
