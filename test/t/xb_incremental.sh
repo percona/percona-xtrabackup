@@ -47,7 +47,7 @@ done
 vlog "Changes done"
 
 # Saving the checksum of original table
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+checksum_a=`checksum_table incremental_sample test`
 
 vlog "Table checksum is $checksum_a"
 vlog "Making incremental backup"
@@ -83,7 +83,7 @@ vlog "Data restored"
 run_mysqld --innodb_file_per_table
 
 vlog "Checking checksums"
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+checksum_b=`checksum_table incremental_sample test`
 
 if [ $checksum_a -ne $checksum_b  ]
 then 

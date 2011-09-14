@@ -1,4 +1,3 @@
-diff -ruN a/storage/innobase/btr/btr0btr.c b/storage/innobase/btr/btr0btr.c
 --- a/storage/innobase/btr/btr0btr.c
 +++ b/storage/innobase/btr/btr0btr.c
 @@ -515,7 +515,7 @@
@@ -10,7 +9,6 @@ diff -ruN a/storage/innobase/btr/btr0btr.c b/storage/innobase/btr/btr0btr.c
  page_t*
  btr_node_ptr_get_child(
  /*===================*/
-diff -ruN a/storage/innobase/buf/buf0buf.c b/storage/innobase/buf/buf0buf.c
 --- a/storage/innobase/buf/buf0buf.c
 +++ b/storage/innobase/buf/buf0buf.c
 @@ -304,7 +304,7 @@
@@ -50,7 +48,6 @@ diff -ruN a/storage/innobase/buf/buf0buf.c b/storage/innobase/buf/buf0buf.c
  			ibuf_merge_or_delete_for_page(
  				block->frame, block->space, block->offset,
  				TRUE);
-diff -ruN a/storage/innobase/buf/buf0flu.c b/storage/innobase/buf/buf0flu.c
 --- a/storage/innobase/buf/buf0flu.c
 +++ b/storage/innobase/buf/buf0flu.c
 @@ -81,6 +81,22 @@
@@ -84,7 +81,6 @@ diff -ruN a/storage/innobase/buf/buf0flu.c b/storage/innobase/buf/buf0flu.c
  
  	ut_ad(buf_flush_validate_low());
  }
-diff -ruN a/storage/innobase/buf/buf0rea.c b/storage/innobase/buf/buf0rea.c
 --- a/storage/innobase/buf/buf0rea.c
 +++ b/storage/innobase/buf/buf0rea.c
 @@ -114,6 +114,45 @@
@@ -147,7 +143,6 @@ diff -ruN a/storage/innobase/buf/buf0rea.c b/storage/innobase/buf/buf0rea.c
  				fprintf(stderr,
  					"InnoDB: Error: InnoDB has waited for"
  					" 50 seconds for pending\n"
-diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
 --- a/storage/innobase/fil/fil0fil.c
 +++ b/storage/innobase/fil/fil0fil.c
 @@ -26,6 +26,10 @@
@@ -161,7 +156,60 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  
  
  /*
-@@ -604,9 +608,9 @@
+@@ -260,7 +264,7 @@
+ off the LRU list if it is in the LRU list. The caller must hold the fil_sys
+ mutex. */
+ static
+-void
++ulint
+ fil_node_prepare_for_io(
+ /*====================*/
+ 	fil_node_t*	node,	/* in: file node */
+@@ -494,7 +498,7 @@
+ Opens a the file of a node of a tablespace. The caller must own the fil_system
+ mutex. */
+ static
+-void
++ulint
+ fil_node_open_file(
+ /*===============*/
+ 	fil_node_t*	node,	/* in: file node */
+@@ -529,7 +533,18 @@
+ 			node->name, OS_FILE_OPEN, OS_FILE_READ_ONLY, &success);
+ 		if (!success) {
+ 			/* The following call prints an error message */
+-			os_file_get_last_error(TRUE);
++			if (os_file_get_last_error(TRUE) == OS_FILE_NOT_FOUND)
++			{
++				ut_print_timestamp(stderr);
++				fprintf(stderr,
++					" InnoDB: Warning: cannot open %s\n"
++					"InnoDB: this can happen if the table "
++					"was removed or renamed during an \n"
++					"InnoDB: xtrabackup run and is not dangerous.\n",
++					node->name);
++				return(OS_FILE_NOT_FOUND);
++			}
++
+ 
+ 			ut_print_timestamp(stderr);
+ 
+@@ -595,18 +610,21 @@
+ 
+ 		if (space_id != space->id) {
+ 			fprintf(stderr,
+-				"InnoDB: Error: tablespace id is %lu"
++				"InnoDB: Warning: tablespace id is %lu"
+ 				" in the data dictionary\n"
+-				"InnoDB: but in file %s it is %lu!\n",
++				"InnoDB: but in file %s it is %lu!\n"
++				"InnoDB: this can happen if the table metadata "
++				"was modified during an xtrabackup run\n"
++				"InnoDB: and is not dangerous.\n",
+ 				space->id, node->name, space_id);
+ 
+-			ut_a(0);
++			return(OS_FILE_NOT_FOUND);
  		}
  
  		if (size_bytes >= FSP_EXTENT_SIZE * UNIV_PAGE_SIZE) {
@@ -174,7 +222,30 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  		} else {
  			node->size = (ulint) (size_bytes / UNIV_PAGE_SIZE);
  		}
-@@ -1755,7 +1759,7 @@
+@@ -642,6 +660,8 @@
+ 		/* Put the node to the LRU list */
+ 		UT_LIST_ADD_FIRST(LRU, system->LRU, node);
+ 	}
++
++	return(0);
+ }
+ 
+ /**************************************************************************
+@@ -1288,7 +1308,12 @@
+ 		the file yet; the following calls will open it and update the
+ 		size fields */
+ 
+-		fil_node_prepare_for_io(node, system, space);
++		if (fil_node_prepare_for_io(node, system, space))
++		{
++			mutex_exit(&(system->mutex));
++
++			return(0);
++		}
+ 		fil_node_complete_io(node, system, OS_FILE_READ);
+ 	}
+ 
+@@ -1755,7 +1780,7 @@
  	mem_free(path);
  }
  
@@ -183,7 +254,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  /************************************************************
  Writes a log record about an .ibd file create/rename/delete. */
  static
-@@ -1957,7 +1961,7 @@
+@@ -1957,7 +1982,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    &space_id, name, FALSE,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -192,7 +263,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  			}
  		}
  	}
-@@ -2116,7 +2120,7 @@
+@@ -2116,7 +2141,7 @@
  	}
  
  	if (success) {
@@ -201,7 +272,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2392,7 +2396,7 @@
+@@ -2392,7 +2417,7 @@
  
  	mutex_exit(&(system->mutex));
  
@@ -210,7 +281,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  	if (success) {
  		mtr_t		mtr;
  
-@@ -2568,7 +2572,7 @@
+@@ -2568,7 +2593,7 @@
  
  	fil_node_create(path, size, *space_id, FALSE);
  
@@ -219,7 +290,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  	{
  		mtr_t		mtr;
  
-@@ -2786,20 +2790,99 @@
+@@ -2786,20 +2811,99 @@
  		      "InnoDB: open the tablespace file ", stderr);
  		ut_print_filename(stderr, filepath);
  		fputs("!\n"
@@ -330,7 +401,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  		return(FALSE);
  	}
  
-@@ -3025,7 +3108,7 @@
+@@ -3025,7 +3129,7 @@
  	cannot be ok. */
  
  	size = (((ib_longlong)size_high) << 32) + (ib_longlong)size_low;
@@ -339,7 +410,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3152,7 +3235,7 @@
+@@ -3152,7 +3256,7 @@
  A fault-tolerant function that tries to read the next file name in the
  directory. We retry 100 times if os_file_readdir_next_file() returns -1. The
  idea is to read as much good data as we can and jump over bad data. */
@@ -348,7 +419,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -3500,15 +3583,100 @@
+@@ -3500,15 +3604,100 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -457,7 +528,32 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4067,7 +4235,9 @@
+@@ -3901,7 +4090,7 @@
+ off the LRU list if it is in the LRU list. The caller must hold the fil_sys
+ mutex. */
+ static
+-void
++ulint
+ fil_node_prepare_for_io(
+ /*====================*/
+ 	fil_node_t*	node,	/* in: file node */
+@@ -3921,10 +4110,14 @@
+ 	}
+ 
+ 	if (node->open == FALSE) {
++		ulint	err;
+ 		/* File is closed: open it */
+ 		ut_a(node->n_pending == 0);
+ 
+-		fil_node_open_file(node, system, space);
++		err = fil_node_open_file(node, system, space);
++		if (err) {
++			return(err);
++		}
+ 	}
+ 
+ 	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
+@@ -4067,7 +4259,9 @@
  	ut_ad(recv_no_ibuf_operations || (type == OS_FILE_WRITE)
  	      || !ibuf_bitmap_page(block_offset) || sync || is_log);
  #ifdef UNIV_SYNC_DEBUG
@@ -468,7 +564,7 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  	      || ibuf_page(space_id, block_offset));
  #endif
  #endif
-@@ -4112,6 +4282,16 @@
+@@ -4112,6 +4306,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -485,7 +581,6 @@ diff -ruN a/storage/innobase/fil/fil0fil.c b/storage/innobase/fil/fil0fil.c
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-diff -ruN a/storage/innobase/ibuf/ibuf0ibuf.c b/storage/innobase/ibuf/ibuf0ibuf.c
 --- a/storage/innobase/ibuf/ibuf0ibuf.c
 +++ b/storage/innobase/ibuf/ibuf0ibuf.c
 @@ -984,7 +984,7 @@
@@ -507,7 +602,6 @@ diff -ruN a/storage/innobase/ibuf/ibuf0ibuf.c b/storage/innobase/ibuf/ibuf0ibuf.
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
-diff -ruN a/storage/innobase/include/mem0mem.h b/storage/innobase/include/mem0mem.h
 --- a/storage/innobase/include/mem0mem.h
 +++ b/storage/innobase/include/mem0mem.h
 @@ -401,6 +401,7 @@
@@ -518,7 +612,6 @@ diff -ruN a/storage/innobase/include/mem0mem.h b/storage/innobase/include/mem0me
  #ifdef MEM_PERIODIC_CHECK
  	UT_LIST_NODE_T(mem_block_t) mem_block_list;
  			/* List of all mem blocks allocated; protected
-diff -ruN a/storage/innobase/include/mem0mem.ic b/storage/innobase/include/mem0mem.ic
 --- a/storage/innobase/include/mem0mem.ic
 +++ b/storage/innobase/include/mem0mem.ic
 @@ -452,6 +452,7 @@
@@ -552,7 +645,6 @@ diff -ruN a/storage/innobase/include/mem0mem.ic b/storage/innobase/include/mem0m
  
  	if (heap->free_block) {
  		size += UNIV_PAGE_SIZE;
-diff -ruN a/storage/innobase/include/srv0srv.h b/storage/innobase/include/srv0srv.h
 --- a/storage/innobase/include/srv0srv.h
 +++ b/storage/innobase/include/srv0srv.h
 @@ -60,6 +60,8 @@
@@ -583,7 +675,6 @@ diff -ruN a/storage/innobase/include/srv0srv.h b/storage/innobase/include/srv0sr
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
-diff -ruN a/storage/innobase/include/srv0start.h b/storage/innobase/include/srv0start.h
 --- a/storage/innobase/include/srv0start.h
 +++ b/storage/innobase/include/srv0start.h
 @@ -80,6 +80,7 @@
@@ -594,7 +685,6 @@ diff -ruN a/storage/innobase/include/srv0start.h b/storage/innobase/include/srv0
  
  #ifdef __NETWARE__
  void set_panic_flag_for_netware(void);
-diff -ruN a/storage/innobase/include/ut0byte.ic b/storage/innobase/include/ut0byte.ic
 --- a/storage/innobase/include/ut0byte.ic
 +++ b/storage/innobase/include/ut0byte.ic
 @@ -152,6 +152,16 @@
@@ -642,7 +732,6 @@ diff -ruN a/storage/innobase/include/ut0byte.ic b/storage/innobase/include/ut0by
  	return(diff);
  }
  
-diff -ruN a/storage/innobase/include/ut0mem.h b/storage/innobase/include/ut0mem.h
 --- a/storage/innobase/include/ut0mem.h
 +++ b/storage/innobase/include/ut0mem.h
 @@ -30,6 +30,13 @@
@@ -659,7 +748,6 @@ diff -ruN a/storage/innobase/include/ut0mem.h b/storage/innobase/include/ut0mem.
  Allocates memory. Sets it also to zero if UNIV_SET_MEM_TO_ZERO is
  defined and set_to_zero is TRUE. */
  
-diff -ruN a/storage/innobase/include/ut0rnd.ic b/storage/innobase/include/ut0rnd.ic
 --- a/storage/innobase/include/ut0rnd.ic
 +++ b/storage/innobase/include/ut0rnd.ic
 @@ -172,7 +172,7 @@
@@ -680,7 +768,6 @@ diff -ruN a/storage/innobase/include/ut0rnd.ic b/storage/innobase/include/ut0rnd
  		i++;
  		ut_a(i < 100);
  #endif
-diff -ruN a/storage/innobase/log/log0log.c b/storage/innobase/log/log0log.c
 --- a/storage/innobase/log/log0log.c
 +++ b/storage/innobase/log/log0log.c
 @@ -538,7 +538,9 @@
@@ -718,7 +805,6 @@ diff -ruN a/storage/innobase/log/log0log.c b/storage/innobase/log/log0log.c
  
  	if (srv_fast_shutdown == 2) {
  		/* In this fastest shutdown we do not flush the buffer pool:
-diff -ruN a/storage/innobase/log/log0recv.c b/storage/innobase/log/log0recv.c
 --- a/storage/innobase/log/log0recv.c
 +++ b/storage/innobase/log/log0recv.c
 @@ -35,19 +35,19 @@
@@ -861,7 +947,6 @@ diff -ruN a/storage/innobase/log/log0recv.c b/storage/innobase/log/log0recv.c
  }
  
  /**********************************************************
-diff -ruN a/storage/innobase/mem/mem0dbg.c b/storage/innobase/mem/mem0dbg.c
 --- a/storage/innobase/mem/mem0dbg.c
 +++ b/storage/innobase/mem/mem0dbg.c
 @@ -133,6 +133,14 @@
@@ -879,7 +964,6 @@ diff -ruN a/storage/innobase/mem/mem0dbg.c b/storage/innobase/mem/mem0dbg.c
  	mem_comm_pool = mem_pool_create(size);
  }
  
-diff -ruN a/storage/innobase/mem/mem0mem.c b/storage/innobase/mem/mem0mem.c
 --- a/storage/innobase/mem/mem0mem.c
 +++ b/storage/innobase/mem/mem0mem.c
 @@ -472,6 +472,7 @@
@@ -914,7 +998,6 @@ diff -ruN a/storage/innobase/mem/mem0mem.c b/storage/innobase/mem/mem0mem.c
  
  	if (init_block) {
  		/* Do not have to free: do nothing */
-diff -ruN a/storage/innobase/mem/mem0pool.c b/storage/innobase/mem/mem0pool.c
 --- a/storage/innobase/mem/mem0pool.c
 +++ b/storage/innobase/mem/mem0pool.c
 @@ -11,6 +11,7 @@
@@ -957,7 +1040,6 @@ diff -ruN a/storage/innobase/mem/mem0pool.c b/storage/innobase/mem/mem0pool.c
  	/* It may be that the area was really allocated from the OS with
  	regular malloc: check if ptr points within our memory pool */
  
-diff -ruN a/storage/innobase/os/os0file.c b/storage/innobase/os/os0file.c
 --- a/storage/innobase/os/os0file.c
 +++ b/storage/innobase/os/os0file.c
 @@ -466,7 +466,7 @@
@@ -1058,7 +1140,6 @@ diff -ruN a/storage/innobase/os/os0file.c b/storage/innobase/os/os0file.c
  
  	array->n_reserved++;
  
-diff -ruN a/storage/innobase/os/os0thread.c b/storage/innobase/os/os0thread.c
 --- a/storage/innobase/os/os0thread.c
 +++ b/storage/innobase/os/os0thread.c
 @@ -273,12 +273,17 @@
@@ -1079,7 +1160,6 @@ diff -ruN a/storage/innobase/os/os0thread.c b/storage/innobase/os/os0thread.c
  #endif
  }
  
-diff -ruN a/storage/innobase/srv/srv0srv.c b/storage/innobase/srv/srv0srv.c
 --- a/storage/innobase/srv/srv0srv.c
 +++ b/storage/innobase/srv/srv0srv.c
 @@ -94,6 +94,8 @@
@@ -1118,7 +1198,6 @@ diff -ruN a/storage/innobase/srv/srv0srv.c b/storage/innobase/srv/srv0srv.c
  	os_sync_init();
  	sync_init();
  	mem_init(srv_mem_pool_size);
-diff -ruN a/storage/innobase/srv/srv0start.c b/storage/innobase/srv/srv0start.c
 --- a/storage/innobase/srv/srv0start.c
 +++ b/storage/innobase/srv/srv0start.c
 @@ -61,6 +61,8 @@
@@ -1231,7 +1310,6 @@ diff -ruN a/storage/innobase/srv/srv0start.c b/storage/innobase/srv/srv0start.c
  	srv_file_per_table = srv_file_per_table_original_value;
  
  	return((int) DB_SUCCESS);
-diff -ruN a/storage/innobase/trx/trx0purge.c b/storage/innobase/trx/trx0purge.c
 --- a/storage/innobase/trx/trx0purge.c
 +++ b/storage/innobase/trx/trx0purge.c
 @@ -1024,6 +1024,9 @@
@@ -1244,7 +1322,6 @@ diff -ruN a/storage/innobase/trx/trx0purge.c b/storage/innobase/trx/trx0purge.c
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
-diff -ruN a/storage/innobase/trx/trx0trx.c b/storage/innobase/trx/trx0trx.c
 --- a/storage/innobase/trx/trx0trx.c
 +++ b/storage/innobase/trx/trx0trx.c
 @@ -478,8 +478,8 @@
@@ -1270,7 +1347,6 @@ diff -ruN a/storage/innobase/trx/trx0trx.c b/storage/innobase/trx/trx0trx.c
  						} else {
  							fprintf(stderr,
  								"InnoDB: Since"
-diff -ruN a/storage/innobase/ut/ut0mem.c b/storage/innobase/ut/ut0mem.c
 --- a/storage/innobase/ut/ut0mem.c
 +++ b/storage/innobase/ut/ut0mem.c
 @@ -15,6 +15,7 @@

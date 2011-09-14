@@ -103,8 +103,7 @@ incremental_sample`
   vlog "Changes done"
 
   # Saving the checksum of original table
-  checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" \
-incremental_sample | awk '{print $2}'`
+  checksum_a=`checksum_table incremental_sample test`
 
   vlog "Table checksum is $checksum_a"
 
@@ -148,8 +147,7 @@ incremental_sample | awk '{print $2}'`
   run_mysqld ${mysqld_additional_args}
 
   vlog "Cheking checksums"
-  checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" \
-incremental_sample | awk '{print $2}'`
+  checksum_b=`checksum_table incremental_sample test`
 
   if [ $checksum_a -ne $checksum_b  ]
       then 
