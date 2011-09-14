@@ -7,7 +7,7 @@ vlog "Loading data from sql file"
 run_cmd ${MYSQL} ${MYSQL_ARGS} test < t/bug723097.sql
 
 vlog "Saving checksum"
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "CHECKSUM TABLE messages" test | awk {'print $2'}`
+checksum_a=`checksum_table test messages`
 vlog "Checksum before is $checksum_a"
 
 vlog "Creating backup directory"
@@ -23,7 +23,7 @@ cd $topdir/data/full
 cp -r * $mysql_datadir
 cd -
 run_mysqld --innodb_file_per_table
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "CHECKSUM TABLE messages" test | awk {'print $2'}`
+checksum_b=`checksum_table test messages`
 vlog "Checksum after is $checksum_b"
 stop_mysqld
 

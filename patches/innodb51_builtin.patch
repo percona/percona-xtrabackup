@@ -1,5 +1,5 @@
---- a/storage/innobase/btr/btr0btr.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/btr/btr0btr.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/btr/btr0btr.c
++++ b/storage/innobase/btr/btr0btr.c
 @@ -515,7 +515,7 @@
  
  /****************************************************************
@@ -9,8 +9,8 @@
  page_t*
  btr_node_ptr_get_child(
  /*===================*/
---- a/storage/innobase/buf/buf0buf.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/buf/buf0buf.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/buf/buf0buf.c
++++ b/storage/innobase/buf/buf0buf.c
 @@ -317,7 +317,7 @@
  		return(TRUE);
  	}
@@ -29,8 +29,8 @@
  			ibuf_merge_or_delete_for_page(
  				block->frame, block->space, block->offset,
  				TRUE);
---- a/storage/innobase/buf/buf0flu.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/buf/buf0flu.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/buf/buf0flu.c
++++ b/storage/innobase/buf/buf0flu.c
 @@ -81,6 +81,22 @@
  	prev_b = NULL;
  	b = UT_LIST_GET_FIRST(buf_pool->flush_list);
@@ -62,8 +62,8 @@
  
  	ut_ad(buf_flush_validate_low());
  }
---- a/storage/innobase/buf/buf0rea.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/buf/buf0rea.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/buf/buf0rea.c
++++ b/storage/innobase/buf/buf0rea.c
 @@ -114,6 +114,45 @@
  	block = buf_page_init_for_read(err, mode, space, tablespace_version,
  				       offset);
@@ -124,8 +124,8 @@
  				fprintf(stderr,
  					"InnoDB: Error: InnoDB has waited for"
  					" 50 seconds for pending\n"
---- a/storage/innobase/fil/fil0fil.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/fil/fil0fil.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/fil/fil0fil.c
++++ b/storage/innobase/fil/fil0fil.c
 @@ -26,6 +26,9 @@
  #include "mtr0mtr.h"
  #include "mtr0log.h"
@@ -136,7 +136,59 @@
  
  
  /*
-@@ -604,9 +607,9 @@
+@@ -260,7 +263,7 @@
+ off the LRU list if it is in the LRU list. The caller must hold the fil_sys
+ mutex. */
+ static
+-void
++ulint
+ fil_node_prepare_for_io(
+ /*====================*/
+ 	fil_node_t*	node,	/* in: file node */
+@@ -494,7 +497,7 @@
+ Opens a the file of a node of a tablespace. The caller must own the fil_system
+ mutex. */
+ static
+-void
++ulint
+ fil_node_open_file(
+ /*===============*/
+ 	fil_node_t*	node,	/* in: file node */
+@@ -529,6 +532,18 @@
+ 			node->name, OS_FILE_OPEN, OS_FILE_READ_ONLY, &success);
+ 		if (!success) {
+ 			/* The following call prints an error message */
++			if (os_file_get_last_error(TRUE) == OS_FILE_NOT_FOUND)
++			{
++				ut_print_timestamp(stderr);
++				fprintf(stderr,
++					" InnoDB: Warning: cannot open %s\n"
++					"InnoDB: this can happen if the table "
++					"was removed or renamed during an \n"
++					"InnoDB: xtrabackup run and is not dangerous.\n",
++					node->name);
++				return(OS_FILE_NOT_FOUND);
++			}
++
+ 			os_file_get_last_error(TRUE);
+ 
+ 			ut_print_timestamp(stderr);
+@@ -595,18 +610,21 @@
+ 
+ 		if (space_id != space->id) {
+ 			fprintf(stderr,
+-				"InnoDB: Error: tablespace id is %lu"
++				"InnoDB: Warning: tablespace id is %lu"
+ 				" in the data dictionary\n"
+-				"InnoDB: but in file %s it is %lu!\n",
++				"InnoDB: but in file %s it is %lu!\n"
++				"InnoDB: this can happen if the table metadata "
++				"was modified during an xtrabackup run\n"
++				"InnoDB: and is not dangerous.\n",
+ 				space->id, node->name, space_id);
+ 
+-			ut_a(0);
++			return(OS_FILE_NOT_FOUND);
  		}
  
  		if (size_bytes >= FSP_EXTENT_SIZE * UNIV_PAGE_SIZE) {
@@ -149,7 +201,30 @@
  		} else {
  			node->size = (ulint) (size_bytes / UNIV_PAGE_SIZE);
  		}
-@@ -1957,7 +1960,7 @@
+@@ -642,6 +660,8 @@
+ 		/* Put the node to the LRU list */
+ 		UT_LIST_ADD_FIRST(LRU, system->LRU, node);
+ 	}
++
++	return(0);
+ }
+ 
+ /**************************************************************************
+@@ -1288,7 +1308,12 @@
+ 		the file yet; the following calls will open it and update the
+ 		size fields */
+ 
+-		fil_node_prepare_for_io(node, system, space);
++		if (fil_node_prepare_for_io(node, system, space))
++		{
++			mutex_exit(&(system->mutex));
++
++			return(0);
++		}
+ 		fil_node_complete_io(node, system, OS_FILE_READ);
+ 	}
+ 
+@@ -1957,7 +1982,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    &space_id, name, FALSE,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -158,7 +233,7 @@
  			}
  		}
  	}
-@@ -2116,7 +2119,7 @@
+@@ -2116,7 +2141,7 @@
  	}
  
  	if (success) {
@@ -167,7 +242,7 @@
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2392,7 +2395,7 @@
+@@ -2392,7 +2417,7 @@
  
  	mutex_exit(&(system->mutex));
  
@@ -176,7 +251,7 @@
  	if (success) {
  		mtr_t		mtr;
  
-@@ -2568,7 +2571,7 @@
+@@ -2568,7 +2593,7 @@
  
  	fil_node_create(path, size, *space_id, FALSE);
  
@@ -185,7 +260,7 @@
  	{
  		mtr_t		mtr;
  
-@@ -2786,20 +2789,99 @@
+@@ -2786,20 +2811,99 @@
  		      "InnoDB: open the tablespace file ", stderr);
  		ut_print_filename(stderr, filepath);
  		fputs("!\n"
@@ -296,7 +371,7 @@
  		return(FALSE);
  	}
  
-@@ -3025,7 +3107,7 @@
+@@ -3025,7 +3129,7 @@
  	cannot be ok. */
  
  	size = (((ib_longlong)size_high) << 32) + (ib_longlong)size_low;
@@ -305,7 +380,7 @@
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3152,7 +3234,7 @@
+@@ -3152,7 +3256,7 @@
  A fault-tolerant function that tries to read the next file name in the
  directory. We retry 100 times if os_file_readdir_next_file() returns -1. The
  idea is to read as much good data as we can and jump over bad data. */
@@ -314,7 +389,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -3500,15 +3582,100 @@
+@@ -3500,15 +3604,100 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -423,7 +498,41 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4112,6 +4279,16 @@
+@@ -3901,7 +4090,7 @@
+ off the LRU list if it is in the LRU list. The caller must hold the fil_sys
+ mutex. */
+ static
+-void
++ulint
+ fil_node_prepare_for_io(
+ /*====================*/
+ 	fil_node_t*	node,	/* in: file node */
+@@ -3921,10 +4110,14 @@
+ 	}
+ 
+ 	if (node->open == FALSE) {
++		ulint	err;
+ 		/* File is closed: open it */
+ 		ut_a(node->n_pending == 0);
+ 
+-		fil_node_open_file(node, system, space);
++		err = fil_node_open_file(node, system, space);
++		if (err) {
++			return(err);
++		}
+ 	}
+ 
+ 	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
+@@ -3937,6 +4130,8 @@
+ 	}
+ 
+ 	node->n_pending++;
++
++	return(0);
+ }
+ 
+ /************************************************************************
+@@ -4112,6 +4307,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -440,8 +549,8 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
---- a/storage/innobase/ibuf/ibuf0ibuf.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/ibuf/ibuf0ibuf.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/ibuf/ibuf0ibuf.c
++++ b/storage/innobase/ibuf/ibuf0ibuf.c
 @@ -984,7 +984,7 @@
  	mtr_t	mtr;
  	ibool	ret;
@@ -461,8 +570,8 @@
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
---- a/storage/innobase/include/mem0mem.h	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/include/mem0mem.h	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/include/mem0mem.h
++++ b/storage/innobase/include/mem0mem.h
 @@ -401,6 +401,7 @@
  			allocated buffer frame, which can be appended as a
  			free block to the heap, if we need more space;
@@ -471,8 +580,8 @@
  #ifdef MEM_PERIODIC_CHECK
  	UT_LIST_NODE_T(mem_block_t) mem_block_list;
  			/* List of all mem blocks allocated; protected
---- a/storage/innobase/include/mem0mem.ic	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/include/mem0mem.ic	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/include/mem0mem.ic
++++ b/storage/innobase/include/mem0mem.ic
 @@ -452,6 +452,7 @@
  
  	/* Add the created block itself as the first block in the list */
@@ -498,8 +607,8 @@
  
  	if (heap->free_block) {
  		size += UNIV_PAGE_SIZE;
---- a/storage/innobase/include/srv0srv.h	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/include/srv0srv.h	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/include/srv0srv.h
++++ b/storage/innobase/include/srv0srv.h
 @@ -60,6 +60,8 @@
  extern ibool	srv_file_per_table;
  extern ibool	srv_locks_unsafe_for_binlog;
@@ -517,7 +626,7 @@
  extern ulint	srv_pool_size;
  extern ulint	srv_awe_window_size;
  extern ulint	srv_mem_pool_size;
-@@ -133,6 +136,10 @@
+@@ -138,6 +141,10 @@
  extern ulong	srv_max_purge_lag;
  extern ibool	srv_use_awe;
  extern ibool	srv_use_adaptive_hash_indexes;
@@ -528,8 +637,8 @@
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
---- a/storage/innobase/include/srv0start.h	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/include/srv0start.h	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/include/srv0start.h
++++ b/storage/innobase/include/srv0start.h
 @@ -80,6 +80,7 @@
  				/* out: DB_SUCCESS or error code */
  extern	dulint	srv_shutdown_lsn;
@@ -538,8 +647,8 @@
  
  #ifdef __NETWARE__
  void set_panic_flag_for_netware(void);
---- a/storage/innobase/include/ut0byte.ic	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/include/ut0byte.ic	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/include/ut0byte.ic
++++ b/storage/innobase/include/ut0byte.ic
 @@ -152,6 +152,14 @@
  	dulint	a,	/* in: dulint */
  	ulint	b)	/* in: ulint */
@@ -581,8 +690,8 @@
  	return(diff);
  }
  
---- a/storage/innobase/include/ut0mem.h	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/include/ut0mem.h	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/include/ut0mem.h
++++ b/storage/innobase/include/ut0mem.h
 @@ -30,6 +30,13 @@
  
  
@@ -597,8 +706,8 @@
  Allocates memory. Sets it also to zero if UNIV_SET_MEM_TO_ZERO is
  defined and set_to_zero is TRUE. */
  
---- a/storage/innobase/log/log0log.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/log/log0log.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/log/log0log.c
++++ b/storage/innobase/log/log0log.c
 @@ -538,7 +538,9 @@
  
  	offset = (gr_lsn_size_offset + difference) % group_size;
@@ -634,8 +743,8 @@
  
  	if (srv_fast_shutdown == 2) {
  		/* In this fastest shutdown we do not flush the buffer pool:
---- a/storage/innobase/log/log0recv.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/log/log0recv.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/log/log0recv.c
++++ b/storage/innobase/log/log0recv.c
 @@ -35,19 +35,19 @@
  #include "fil0fil.h"
  #include "sync0sync.h"
@@ -776,8 +885,8 @@
  }
  
  /**********************************************************
---- a/storage/innobase/mem/mem0dbg.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/mem/mem0dbg.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/mem/mem0dbg.c
++++ b/storage/innobase/mem/mem0dbg.c
 @@ -133,6 +133,14 @@
  	mem_hash_initialized = TRUE;
  #endif
@@ -793,8 +902,8 @@
  	mem_comm_pool = mem_pool_create(size);
  }
  
---- a/storage/innobase/mem/mem0mem.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/mem/mem0mem.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/mem/mem0mem.c
++++ b/storage/innobase/mem/mem0mem.c
 @@ -472,6 +472,7 @@
  	/* Add the new block as the last block */
  
@@ -827,8 +936,8 @@
  
  	if (init_block) {
  		/* Do not have to free: do nothing */
---- a/storage/innobase/mem/mem0pool.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/mem/mem0pool.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/mem/mem0pool.c
++++ b/storage/innobase/mem/mem0pool.c
 @@ -11,6 +11,7 @@
  #include "mem0pool.ic"
  #endif
@@ -869,8 +978,8 @@
  	/* It may be that the area was really allocated from the OS with
  	regular malloc: check if ptr points within our memory pool */
  
---- a/storage/innobase/os/os0file.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/os/os0file.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/os/os0file.c
++++ b/storage/innobase/os/os0file.c
 @@ -466,7 +466,7 @@
  }
  
@@ -969,8 +1078,8 @@
  
  	array->n_reserved++;
  
---- a/storage/innobase/os/os0thread.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/os/os0thread.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/os/os0thread.c
++++ b/storage/innobase/os/os0thread.c
 @@ -273,12 +273,17 @@
  #elif defined(__NETWARE__)
  	delay(tm / 1000);
@@ -989,8 +1098,8 @@
  #endif
  }
  
---- a/storage/innobase/srv/srv0srv.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/srv/srv0srv.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/srv/srv0srv.c
++++ b/storage/innobase/srv/srv0srv.c
 @@ -94,6 +94,8 @@
  						duplicate key checking
  						and foreign key
@@ -1009,7 +1118,7 @@
  ulint	srv_pool_size		= ULINT_MAX;	/* size in pages; MySQL inits
  						this to size in kilobytes but
  						we normalize this to pages in
-@@ -358,6 +362,9 @@
+@@ -363,6 +367,9 @@
  ibool	srv_use_awe			= FALSE;
  ibool	srv_use_adaptive_hash_indexes	= TRUE;
  
@@ -1019,7 +1128,7 @@
  /*-------------------------------------------*/
  ulong	srv_n_spin_wait_rounds	= 20;
  ulong	srv_n_free_tickets_to_enter = 500;
-@@ -980,6 +987,7 @@
+@@ -985,6 +992,7 @@
  srv_general_init(void)
  /*==================*/
  {
@@ -1027,8 +1136,8 @@
  	os_sync_init();
  	sync_init();
  	mem_init(srv_mem_pool_size);
---- a/storage/innobase/srv/srv0start.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/srv/srv0start.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/srv/srv0start.c
++++ b/storage/innobase/srv/srv0start.c
 @@ -61,6 +61,8 @@
  /* Log sequence number at shutdown */
  dulint		srv_shutdown_lsn;
@@ -1139,8 +1248,8 @@
  	srv_file_per_table = srv_file_per_table_original_value;
  
  	return((int) DB_SUCCESS);
---- a/storage/innobase/trx/trx0purge.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/trx/trx0purge.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/trx/trx0purge.c
++++ b/storage/innobase/trx/trx0purge.c
 @@ -1024,6 +1024,9 @@
  	/*	que_thr_t*	thr2; */
  	ulint		old_pages_handled;
@@ -1151,8 +1260,8 @@
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
---- a/storage/innobase/trx/trx0trx.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/trx/trx0trx.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/trx/trx0trx.c
++++ b/storage/innobase/trx/trx0trx.c
 @@ -478,8 +478,8 @@
  						ut_dulint_get_low(trx->id));
  
@@ -1176,8 +1285,8 @@
  						} else {
  							fprintf(stderr,
  								"InnoDB: Since"
---- a/storage/innobase/ut/ut0mem.c	2011-03-11 06:29:45.000000000 -0800
-+++ b/storage/innobase/ut/ut0mem.c	2011-03-11 06:30:17.000000000 -0800
+--- a/storage/innobase/ut/ut0mem.c
++++ b/storage/innobase/ut/ut0mem.c
 @@ -15,6 +15,7 @@
  #include "mem0mem.h"
  #include "os0sync.h"
