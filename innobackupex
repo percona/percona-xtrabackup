@@ -388,6 +388,7 @@ sub backup {
     mysql_check();
     mysql_lockall() if !$option_no_lock;
 
+    write_slave_info() if $option_slave_info;
 
     # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
     backup_files();
@@ -1219,7 +1220,6 @@ sub mysql_lockall {
         mysql_send "COMMIT;";
     }
     write_binlog_info;
-    write_slave_info if $option_slave_info;
 	
     $now = current_time();
     print STDERR "$now  $prefix All tables locked and flushed to disk\n";
@@ -1685,6 +1685,13 @@ sub check_args {
         # get backup directory
         $backup_dir = File::Spec->rel2abs($ARGV[0]);
     }        
+
+    if ($option_slave_info) {
+        if ($option_no_lock and !$option_safe_slave_backup) {
+	  print STDERR "--slave-info is used with --no-lock but without --safe-slave-backup. The binlog position cannot be consistent with the backup data.\n";
+	    exit(1);
+	}
+    }
 
     print STDERR "\n";
 
