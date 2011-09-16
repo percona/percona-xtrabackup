@@ -812,6 +812,8 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 #define INNOBASE_WAKE_INTERVAL	32
 ulong	innobase_active_counter	= 0;
 
+static char *xtrabackup_debug_sync = NULL;
+
 /* ======== Datafiles iterator ======== */
 typedef struct {
 	fil_system_t *system;
@@ -961,7 +963,8 @@ enum options_xtrabackup
   OPT_INNODB_OPEN_FILES,
   OPT_INNODB_SYNC_SPIN_LOOPS,
   OPT_INNODB_THREAD_CONCURRENCY,
-  OPT_INNODB_THREAD_SLEEP_DELAY
+  OPT_INNODB_THREAD_SLEEP_DELAY,
+  OPT_XTRA_DEBUG_SYNC
 };
 
 static struct my_option my_long_options[] =
@@ -1219,44 +1222,58 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*) &innobase_doublewrite_file, (G_PTR*) &innobase_doublewrite_file,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
-/*
-  {"innodb_rollback_on_timeout", OPT_INNODB_ROLLBACK_ON_TIMEOUT,
-   "Roll back the complete transaction on lock wait timeout, for 4.x compatibility (disabled by default)",
-   (G_PTR*) &innobase_rollback_on_timeout, (G_PTR*) &innobase_rollback_on_timeout,
-   0, GET_BOOL, OPT_ARG, 0, 0, 0, 0, 0, 0},
-*/
-/*
-  {"innodb_status_file", OPT_INNODB_STATUS_FILE,
-   "Enable SHOW INNODB STATUS output in the innodb_status.<pid> file",
-   (G_PTR*) &innobase_create_status_file, (G_PTR*) &innobase_create_status_file,
-   0, GET_BOOL, OPT_ARG, 0, 0, 0, 0, 0, 0},
-*/
-/*
-  {"innodb_sync_spin_loops", OPT_INNODB_SYNC_SPIN_LOOPS,
-   "Count of spin-loop rounds in InnoDB mutexes",
-   (G_PTR*) &srv_n_spin_wait_rounds,
-   (G_PTR*) &srv_n_spin_wait_rounds,
-   0, GET_ULONG, REQUIRED_ARG, 20L, 0L, ULONG_MAX, 0, 1L, 0},
-*/
-/*
-  {"innodb_thread_concurrency", OPT_INNODB_THREAD_CONCURRENCY,
-   "Helps in performance tuning in heavily concurrent environments. "
-   "Sets the maximum number of threads allowed inside InnoDB. Value 0"
-   " will disable the thread throttling.",
-   (G_PTR*) &srv_thread_concurrency, (G_PTR*) &srv_thread_concurrency,
-   0, GET_ULONG, REQUIRED_ARG, 8, 0, 1000, 0, 1, 0},
-*/
-/*
-  {"innodb_thread_sleep_delay", OPT_INNODB_THREAD_SLEEP_DELAY,
-   "Time of innodb thread sleeping before joining InnoDB queue (usec). Value 0"
-    " disable a sleep",
-   (G_PTR*) &srv_thread_sleep_delay,
-   (G_PTR*) &srv_thread_sleep_delay,
-   0, GET_ULONG, REQUIRED_ARG, 10000L, 0L, ULONG_MAX, 0, 1L, 0},
-*/
+
+#ifndef __WIN__
+  {"debug-sync", OPT_XTRA_DEBUG_SYNC,
+   "Debug sync point. This is only used by the xtrabackup test suite",
+   (G_PTR*) &xtrabackup_debug_sync,
+   (G_PTR*) &xtrabackup_debug_sync,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#endif
 
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
+
+UNIV_INLINE
+void
+debug_sync_point(const char *name)
+{
+#ifndef __WIN__
+	FILE	*fp;
+	pid_t	pid;
+	char	pid_path[FN_REFLEN];
+
+	if (xtrabackup_debug_sync == NULL) {
+		return;
+	}
+
+	if (strcmp(xtrabackup_debug_sync, name)) {
+		return;
+	}
+
+	pid = getpid();
+
+	snprintf(pid_path, sizeof(pid_path), "%s/xtrabackup_debug_sync",
+		 xtrabackup_target_dir);
+	fp = fopen(pid_path, "w");
+	if (fp == NULL) {
+		fprintf(stderr, "xtrabackup: Error: cannot open %s\n",
+			pid_path);
+		exit(EXIT_FAILURE);
+	}
+	fprintf(fp, "%u\n", (uint) pid);
+	fclose(fp);
+
+	fprintf(stderr, "xtrabackup: DEBUG: "
+		"Suspending at debug sync point '%s'. "
+		"Resume with 'kill -SIGCONT %u'.\n", name, (uint) pid);
+
+	kill(pid, SIGSTOP);
+
+	/* On resume */
+	my_delete(pid_path, MYF(MY_WME));
+#endif
+}
 
 static const char *load_default_groups[]= { "mysqld","xtrabackup",0 };
 
@@ -2816,11 +2833,6 @@ skip_filter:
 #else
 	zip_size = fil_space_get_zip_size(node->space->id);
 	if (zip_size == ULINT_UNDEFINED) {
-		fprintf(stderr, "[%02u] xtrabackup: Warning: "
-			"Failed to determine page size for %s.\n"
-			"[%02u] xtrabackup: Warning: We assume the table was "
-			"dropped during xtrabackup execution and ignore the "
-			"file.\n", thread_n, node->name, thread_n);
 		goto skip;
 	} else if (zip_size) {
 		page_size = zip_size;
@@ -2884,8 +2896,8 @@ skip_filter:
 			fprintf(stderr,
 				"[%02u] xtrabackup: Warning: cannot open %s\n"
 				"[%02u] xtrabackup: Warning: We assume the "
-				"table was dropped during xtrabackup execution "
-				"and ignore the file.\n",
+				"table was dropped or renamed during "
+				"xtrabackup execution and ignore the file.\n",
 				thread_n, node->name, thread_n);
 			goto skip;
 		}
@@ -3583,6 +3595,8 @@ data_copy_thread_func(
 	*/
 	my_thread_init();
 
+	debug_sync_point("data_copy_thread_func");
+
 	while ((node = datafiles_iter_next(ctxt->it, &space_changed)) != NULL) {
 		space = node->space;
 
@@ -3607,7 +3621,6 @@ data_copy_thread_func(
 	OS_THREAD_DUMMY_RETURN;
 }
 
-/* CAUTION(?): Don't rename file_per_table during backup */
 static void
 xtrabackup_backup_func(void)
 {

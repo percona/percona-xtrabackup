@@ -14,7 +14,7 @@ do
 	let "count=count+1"
 done
 vlog "Initial rows added"
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+checksum_a=`checksum_table incremental_sample test`
 vlog "Table checksum is $checksum_a"
 
 # Backup directory
@@ -42,7 +42,7 @@ cd $topdir
 vlog "Data restored"
 run_mysqld --innodb_file_per_table
 vlog "Checking checksums"
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+checksum_b=`checksum_table incremental_sample test`
 
 if [ $checksum_a -ne $checksum_b  ]
 then 

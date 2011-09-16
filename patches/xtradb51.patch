@@ -1,4 +1,3 @@
-diff -ruN a/storage/innodb_plugin/btr/btr0btr.c b/storage/innodb_plugin/btr/btr0btr.c
 --- a/storage/innodb_plugin/btr/btr0btr.c
 +++ b/storage/innodb_plugin/btr/btr0btr.c
 @@ -120,7 +120,7 @@
@@ -19,7 +18,6 @@ diff -ruN a/storage/innodb_plugin/btr/btr0btr.c b/storage/innodb_plugin/btr/btr0
  buf_block_t*
  btr_node_ptr_get_child(
  /*===================*/
-diff -ruN a/storage/innodb_plugin/buf/buf0buf.c b/storage/innodb_plugin/buf/buf0buf.c
 --- a/storage/innodb_plugin/buf/buf0buf.c
 +++ b/storage/innodb_plugin/buf/buf0buf.c
 @@ -440,7 +440,7 @@
@@ -51,7 +49,6 @@ diff -ruN a/storage/innodb_plugin/buf/buf0buf.c b/storage/innodb_plugin/buf/buf0
  			ibuf_merge_or_delete_for_page(
  				/* Delete possible entries, if bpage is_corrupt */
  				(srv_pass_corrupt_table && bpage->is_corrupt) ? NULL :
-diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0fil.c
 --- a/storage/innodb_plugin/fil/fil0fil.c
 +++ b/storage/innodb_plugin/fil/fil0fil.c
 @@ -294,7 +294,7 @@
@@ -81,7 +78,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  fil_node_open_file(
  /*===============*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -664,7 +664,14 @@
+@@ -664,7 +664,17 @@
  			node->name, OS_FILE_OPEN, OS_FILE_READ_ONLY, &success);
  		if (!success) {
  			/* The following call prints an error message */
@@ -90,14 +87,36 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
 +			{
 +				ut_print_timestamp(stderr);
 +				fprintf(stderr,
-+					" InnoDB: Warning: cannot open %s\n",
++					" InnoDB: Warning: cannot open %s\n"
++					"InnoDB: this can happen if the table "
++					"was removed or renamed during an \n"
++					"InnoDB: xtrabackup run and is not dangerous.\n",
 +					node->name);
 +				return(OS_FILE_NOT_FOUND);
 +			}
  
  			ut_print_timestamp(stderr);
  
-@@ -754,8 +761,8 @@
+@@ -725,12 +735,14 @@
+ 
+ 		if (UNIV_UNLIKELY(space_id != space->id)) {
+ 			fprintf(stderr,
+-				"InnoDB: Error: tablespace id is %lu"
++				"InnoDB: Warning: tablespace id is %lu"
+ 				" in the data dictionary\n"
+-				"InnoDB: but in file %s it is %lu!\n",
++				"InnoDB: but in file %s it is %lu!\n"
++				"InnoDB: this can happen if the table metadata "
++				"was modified during an xtrabackup run\n"
++				"InnoDB: and is not dangerous.\n",
+ 				space->id, node->name, space_id);
+-
+-			ut_error;
++			return(OS_FILE_NOT_FOUND);
+ 		}
+ 
+ 		if (UNIV_UNLIKELY(space_id == ULINT_UNDEFINED
+@@ -754,8 +766,8 @@
  		}
  
  		if (size_bytes >= 1024 * 1024) {
@@ -108,7 +127,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  		}
  
  		if (!(flags & DICT_TF_ZSSIZE_MASK)) {
-@@ -800,6 +807,8 @@
+@@ -800,6 +812,8 @@
  		/* Put the node to the LRU list */
  		UT_LIST_ADD_FIRST(LRU, system->LRU, node);
  	}
@@ -117,7 +136,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  }
  
  /**********************************************************************//**
-@@ -1428,7 +1437,12 @@
+@@ -1428,7 +1442,12 @@
  		the file yet; the following calls will open it and update the
  		size fields */
  
@@ -131,7 +150,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  		fil_node_complete_io(node, fil_system, OS_FILE_READ);
  	}
  
-@@ -1480,7 +1494,12 @@
+@@ -1480,7 +1499,12 @@
  		the file yet; the following calls will open it and update the
  		size fields */
  
@@ -163,7 +182,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  			}
  		}
  
-@@ -2316,7 +2335,7 @@
+@@ -2316,7 +2340,7 @@
  	}
  
  	if (success) {
@@ -172,7 +191,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2617,7 +2636,7 @@
+@@ -2617,7 +2641,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
@@ -181,7 +200,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  	if (success) {
  		mtr_t		mtr;
  
-@@ -2807,7 +2826,7 @@
+@@ -2807,7 +2831,7 @@
  
  	fil_node_create(path, size, space_id, FALSE);
  
@@ -190,7 +209,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  	{
  		mtr_t		mtr;
  
-@@ -3060,19 +3079,97 @@
+@@ -3060,19 +3084,97 @@
  		      "InnoDB: open the tablespace file ", stderr);
  		ut_print_filename(stderr, filepath);
  		fputs("!\n"
@@ -298,7 +317,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  		return(FALSE);
  	}
  
-@@ -3777,7 +3874,7 @@
+@@ -3777,7 +3879,7 @@
  	cannot be ok. */
  
  	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
@@ -307,7 +326,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * (lint)UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3918,7 +4015,7 @@
+@@ -3918,7 +4020,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -316,7 +335,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4217,15 +4314,97 @@
+@@ -4217,15 +4319,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -422,7 +441,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4614,7 +4793,7 @@
+@@ -4614,7 +4798,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -431,7 +450,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -4634,10 +4813,13 @@
+@@ -4634,10 +4818,13 @@
  	}
  
  	if (node->open == FALSE) {
@@ -446,7 +465,7 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  	}
  
  	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
-@@ -4650,6 +4832,8 @@
+@@ -4650,6 +4837,8 @@
  	}
  
  	node->n_pending++;
@@ -483,7 +502,6 @@ diff -ruN a/storage/innodb_plugin/fil/fil0fil.c b/storage/innodb_plugin/fil/fil0
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-diff -ruN a/storage/innodb_plugin/handler/ha_innodb.cc b/storage/innodb_plugin/handler/ha_innodb.cc
 --- a/storage/innodb_plugin/handler/ha_innodb.cc
 +++ b/storage/innodb_plugin/handler/ha_innodb.cc
 @@ -343,12 +343,6 @@
@@ -525,7 +543,6 @@ diff -ruN a/storage/innodb_plugin/handler/ha_innodb.cc b/storage/innodb_plugin/h
    MYSQL_SYSVAR(enable_unsafe_group_commit),
    MYSQL_SYSVAR(expand_import),
    MYSQL_SYSVAR(extra_rsegments),
-diff -ruN a/storage/innodb_plugin/ibuf/ibuf0ibuf.c b/storage/innodb_plugin/ibuf/ibuf0ibuf.c
 --- a/storage/innodb_plugin/ibuf/ibuf0ibuf.c
 +++ b/storage/innodb_plugin/ibuf/ibuf0ibuf.c
 @@ -1064,6 +1064,9 @@
@@ -548,7 +565,6 @@ diff -ruN a/storage/innodb_plugin/ibuf/ibuf0ibuf.c b/storage/innodb_plugin/ibuf/
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
-diff -ruN a/storage/innodb_plugin/include/ha_prototypes.h b/storage/innodb_plugin/include/ha_prototypes.h
 --- a/storage/innodb_plugin/include/ha_prototypes.h
 +++ b/storage/innodb_plugin/include/ha_prototypes.h
 @@ -268,12 +268,4 @@
@@ -602,7 +618,6 @@ diff -ruN a/storage/innodb_plugin/include/srv0srv.h b/storage/innodb_plugin/incl
  extern long long	srv_ibuf_max_size;
  extern ulint	srv_ibuf_active_contract;
  extern ulint	srv_ibuf_accel_rate;
-diff -ruN a/storage/innodb_plugin/include/srv0start.h b/storage/innodb_plugin/include/srv0start.h
 --- a/storage/innodb_plugin/include/srv0start.h
 +++ b/storage/innodb_plugin/include/srv0start.h
 @@ -91,6 +91,8 @@
@@ -614,7 +629,6 @@ diff -ruN a/storage/innodb_plugin/include/srv0start.h b/storage/innodb_plugin/in
  #ifdef __NETWARE__
  void set_panic_flag_for_netware(void);
  #endif
-diff -ruN a/storage/innodb_plugin/include/trx0trx.h b/storage/innodb_plugin/include/trx0trx.h
 --- a/storage/innodb_plugin/include/trx0trx.h
 +++ b/storage/innodb_plugin/include/trx0trx.h
 @@ -497,7 +497,6 @@
@@ -625,7 +639,6 @@ diff -ruN a/storage/innodb_plugin/include/trx0trx.h b/storage/innodb_plugin/incl
  	ulint		flush_log_later;/* In 2PC, we hold the
  					prepare_commit mutex across
  					both phases. In that case, we
-diff -ruN a/storage/innodb_plugin/include/ut0byte.ic b/storage/innodb_plugin/include/ut0byte.ic
 --- a/storage/innodb_plugin/include/ut0byte.ic
 +++ b/storage/innodb_plugin/include/ut0byte.ic
 @@ -168,6 +168,16 @@
@@ -673,7 +686,6 @@ diff -ruN a/storage/innodb_plugin/include/ut0byte.ic b/storage/innodb_plugin/inc
  	return(diff);
  }
  
-diff -ruN a/storage/innodb_plugin/log/log0log.c b/storage/innodb_plugin/log/log0log.c
 --- a/storage/innodb_plugin/log/log0log.c
 +++ b/storage/innodb_plugin/log/log0log.c
 @@ -1370,7 +1370,7 @@
@@ -710,7 +722,6 @@ diff -ruN a/storage/innodb_plugin/log/log0log.c b/storage/innodb_plugin/log/log0
  
  	if (srv_fast_shutdown == 2) {
  		/* In this fastest shutdown we do not flush the buffer pool:
-diff -ruN a/storage/innodb_plugin/log/log0recv.c b/storage/innodb_plugin/log/log0recv.c
 --- a/storage/innodb_plugin/log/log0recv.c
 +++ b/storage/innodb_plugin/log/log0recv.c
 @@ -42,27 +42,27 @@
@@ -836,7 +847,6 @@ diff -ruN a/storage/innodb_plugin/log/log0recv.c b/storage/innodb_plugin/log/log
  	trx_rollback_or_clean_recovered(FALSE);
  }
  
-diff -ruN a/storage/innodb_plugin/os/os0file.c b/storage/innodb_plugin/os/os0file.c
 --- a/storage/innodb_plugin/os/os0file.c
 +++ b/storage/innodb_plugin/os/os0file.c
 @@ -554,7 +554,7 @@
@@ -892,7 +902,6 @@ diff -ruN a/storage/innodb_plugin/os/os0file.c b/storage/innodb_plugin/os/os0fil
  	ret = os_file_pwrite(file, buf, n, offset, offset_high);
  
  	if ((ulint)ret == n) {
-diff -ruN a/storage/innodb_plugin/os/os0thread.c b/storage/innodb_plugin/os/os0thread.c
 --- a/storage/innodb_plugin/os/os0thread.c
 +++ b/storage/innodb_plugin/os/os0thread.c
 @@ -287,12 +287,17 @@
@@ -913,7 +922,6 @@ diff -ruN a/storage/innodb_plugin/os/os0thread.c b/storage/innodb_plugin/os/os0t
  #endif
  }
  
-diff -ruN a/storage/innodb_plugin/row/row0merge.c b/storage/innodb_plugin/row/row0merge.c
 --- a/storage/innodb_plugin/row/row0merge.c
 +++ b/storage/innodb_plugin/row/row0merge.c
 @@ -453,7 +453,9 @@
@@ -952,7 +960,6 @@ diff -ruN a/storage/innodb_plugin/row/row0merge.c b/storage/innodb_plugin/row/ro
  
  	/* Read clustered index of the table and create files for
  	secondary index entries for merge sort */
-diff -ruN a/storage/innodb_plugin/srv/srv0srv.c b/storage/innodb_plugin/srv/srv0srv.c
 --- a/storage/innodb_plugin/srv/srv0srv.c
 +++ b/storage/innodb_plugin/srv/srv0srv.c
 @@ -402,6 +402,10 @@
@@ -991,7 +998,6 @@ diff -ruN a/storage/innodb_plugin/srv/srv0srv.c b/storage/innodb_plugin/srv/srv0
  }
  
  /*********************************************************************//**
-diff -ruN a/storage/innodb_plugin/srv/srv0start.c b/storage/innodb_plugin/srv/srv0start.c
 --- a/storage/innodb_plugin/srv/srv0start.c
 +++ b/storage/innodb_plugin/srv/srv0start.c
 @@ -94,6 +94,8 @@
@@ -1067,7 +1073,6 @@ diff -ruN a/storage/innodb_plugin/srv/srv0start.c b/storage/innodb_plugin/srv/sr
  	srv_file_per_table = srv_file_per_table_original_value;
  
  	srv_was_started = TRUE;
-diff -ruN a/storage/innodb_plugin/trx/trx0purge.c b/storage/innodb_plugin/trx/trx0purge.c
 --- a/storage/innodb_plugin/trx/trx0purge.c
 +++ b/storage/innodb_plugin/trx/trx0purge.c
 @@ -1113,6 +1113,9 @@
@@ -1080,7 +1085,6 @@ diff -ruN a/storage/innodb_plugin/trx/trx0purge.c b/storage/innodb_plugin/trx/tr
  	mutex_enter(&(purge_sys->mutex));
  
  	if (purge_sys->trx->n_active_thrs > 0) {
-diff -ruN a/storage/innodb_plugin/trx/trx0rseg.c b/storage/innodb_plugin/trx/trx0rseg.c
 --- a/storage/innodb_plugin/trx/trx0rseg.c
 +++ b/storage/innodb_plugin/trx/trx0rseg.c
 @@ -143,9 +143,11 @@
@@ -1095,7 +1099,6 @@ diff -ruN a/storage/innodb_plugin/trx/trx0rseg.c b/storage/innodb_plugin/trx/trx
  
  	undo = UT_LIST_GET_FIRST(rseg->update_undo_cached);
  
-diff -ruN a/storage/innodb_plugin/trx/trx0sys.c b/storage/innodb_plugin/trx/trx0sys.c
 --- a/storage/innodb_plugin/trx/trx0sys.c
 +++ b/storage/innodb_plugin/trx/trx0sys.c
 @@ -1931,10 +1931,12 @@
@@ -1111,7 +1114,6 @@ diff -ruN a/storage/innodb_plugin/trx/trx0sys.c b/storage/innodb_plugin/trx/trx0
  
  	mem_free(trx_sys);
  
-diff -ruN a/storage/innodb_plugin/trx/trx0trx.c b/storage/innodb_plugin/trx/trx0trx.c
 --- a/storage/innodb_plugin/trx/trx0trx.c
 +++ b/storage/innodb_plugin/trx/trx0trx.c
 @@ -109,8 +109,6 @@
