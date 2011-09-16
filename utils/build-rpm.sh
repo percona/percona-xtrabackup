@@ -147,21 +147,8 @@ export MYSQL_RPMBUILD_TEST="$TEST"
     # Copy source to SOURCE dir -- create a suitable tar
     rm -f "SOURCE/xtrabackup-$XTRABACKUP_VERSION.tar.gz"
 
-    tmpdir="$(mktemp -d)"
-    (
-        cd "$tmpdir"
-
-        cp -a "$SOURCEDIR" "xtrabackup-$XTRABACKUP_VERSION"
-        cp "$WORKDIR_ABS/SOURCES/libtar-1.2.11.tar.gz" \
-            "$WORKDIR_ABS/SOURCES/mysql-5.1.56.tar.gz" \
-            "$WORKDIR_ABS/SOURCES/mysql-5.5.10.tar.gz" \
-            "xtrabackup-$XTRABACKUP_VERSION"
-        tar czf "$WORKDIR_ABS/SOURCES/xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
-            "xtrabackup-$XTRABACKUP_VERSION"
-
-    )
-
-    rm -rf "$tmpdir"
+    bzr export "$WORKDIR_ABS/SOURCES/xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
+            "$SOURCEDIR"
 
     # Issue RPM command
     rpmbuild $SIGN $TARGET $TARGET_LIBDIR $TARGET_ARCH \
