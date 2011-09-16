@@ -46,8 +46,7 @@ fi
 
 vlog "Initial rows added"
 
-checksum_a=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" \
-incremental_sample | awk '{print $2}'`
+checksum_a=`checksum_table incremental_sample test`
 
 vlog "Starting streaming backup"
 
@@ -71,8 +70,7 @@ innobackupex --copy-back $topdir/backup
 
 run_mysqld
 
-checksum_b=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" \
-incremental_sample | awk '{print $2}'`
+checksum_b=`checksum_table incremental_sample test`
 
 if [ "$checksum_a" != "$checksum_b" ]; then
     vlog "Checksums do not match"

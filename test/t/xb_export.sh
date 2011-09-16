@@ -38,7 +38,7 @@ do
 done
 vlog "Initial rows added"
 
-checksum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test" incremental_sample | awk '{print $2}'`
+checksum_1=`checksum_table incremental_sample test`
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
 vlog "rowsnum_1 is $rowsnum_1"
 vlog "checksum_1 is $checksum_1"
@@ -74,7 +74,7 @@ run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test import tablespace" increment
 vlog "Table has been imported"
 
 vlog "Cheking checksums"
-checksum_2=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+checksum_2=`checksum_table incremental_sample test`
 vlog "checksum_2 is $checksum_2"
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
 vlog "rowsnum_1 is $rowsnum_1"
@@ -120,7 +120,7 @@ cd -
 run_mysqld
 
 vlog "Cheking checksums"
-checksum_3=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table test;" incremental_sample | awk '{print $2}'`
+checksum_3=`checksum_table incremental_sample test`
 vlog "checksum_3 is $checksum_3"
 
 if [ "$checksum_3" != $checksum_2  ]
