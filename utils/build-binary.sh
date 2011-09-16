@@ -92,7 +92,9 @@ export MAKE_JFLAG=-j4
 
 # Create a temporary working directory
 INSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
-INSTALLDIR="$WORKDIR_ABS/$INSTALLDIR"   # Make it absolute
+INSTALLDIR="$WORKDIR_ABS/$INSTALLDIR/xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
+
+mkdir "$INSTALLDIR"
 
 export AUTO_DOWNLOAD=yes
 
@@ -122,7 +124,7 @@ export AUTO_DOWNLOAD=yes
             "$INSTALLDIR/bin"
         install -m 755 innobackupex "$INSTALLDIR/bin"
         ln -s innobackupex "$INSTALLDIR/bin/innobackupex-1.5.1"
-        install -m 755 mysql-5.1.56/storage/innobase/xtrabackup/xtrabackup_51 \
+        install -m 755 mysql-5.1/storage/innobase/xtrabackup/xtrabackup_51 \
             "$INSTALLDIR/bin"
         install -m 755 libtar-1.2.11/libtar/tar4ibd "$INSTALLDIR/bin"
         cp -R test "$INSTALLDIR/share/xtrabackup-test"
@@ -130,7 +132,7 @@ export AUTO_DOWNLOAD=yes
     )
 
     $TAR czf "xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
-        --owner=0 --group=0 -C "$INSTALLDIR" .
+        --owner=0 --group=0 -C "$INSTALLDIR/../" "xtrabackup-$XTRABACKUP_VERSION"
 
     # Clean up build dir
     rm -rf "xtrabackup-$XTRABACKUP_VERSION"
