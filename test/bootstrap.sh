@@ -39,7 +39,7 @@ case "$1" in
 	;;
     innodb55)
 	url="http://s3.amazonaws.com/percona.com/downloads/community"
-	tarball="mysql-5.5.6-rc-linux2.6-$arch.tar.gz"
+	tarball="mysql-5.5.16-linux2.6-$arch.tar.gz"
 	;;
     xtradb51)
 	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.1/Percona-Server-5.1.57-12.8/Linux/binary"
