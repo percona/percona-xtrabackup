@@ -801,7 +801,7 @@ sub start_ibbackup {
                 my $innodb_flush_method = 
                     get_option(\%config, 'mysqld', 'innodb_flush_method');
                 my $innodb_use_odirect;
-                $innodb_use_odirect = 1 if $innodb_flush_method =~ m/O_DIRECT/i;
+                $innodb_use_odirect = 1 if $innodb_flush_method =~ m/^(ALL_)?O_DIRECT$/i;
 
                 my $subdir;
                 my @list;
