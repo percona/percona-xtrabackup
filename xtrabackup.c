@@ -1156,6 +1156,17 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
+#ifndef __WIN__
+static int debug_sync_resumed;
+
+static void sigcont_handler(int sig);
+
+static void sigcont_handler(int sig __attribute__((unused)))
+{
+	debug_sync_resumed= 1;
+}
+#endif
+
 UNIV_INLINE
 void
 debug_sync_point(const char *name)
@@ -1191,12 +1202,17 @@ debug_sync_point(const char *name)
 		"Suspending at debug sync point '%s'. "
 		"Resume with 'kill -SIGCONT %u'.\n", name, (uint) pid);
 
+	debug_sync_resumed= 0;
 	kill(pid, SIGSTOP);
+	while (!debug_sync_resumed) {
+		sleep(1);
+	}
 
 	/* So we don't delete the file before suspending */
 	waitpid(pid, &stat_loc, 0);
 
 	/* On resume */
+	fprintf(stderr, "xtrabackup: DEBUG: removing the pid file.\n");
 	my_delete(pid_path, MYF(MY_WME));
 #endif
 }
@@ -6218,6 +6234,12 @@ skip_tables_file_register:
 			exit(EXIT_FAILURE);
 		}
 	}
+
+#ifndef __WIN__
+	if (xtrabackup_debug_sync) {
+		signal(SIGCONT, sigcont_handler);
+	}
+#endif
 
 	/* --backup */
 	if (xtrabackup_backup)
