@@ -3508,6 +3508,10 @@ xtrabackup_backup_func(void)
 							"async_unbuffered")) {
 	  	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;	
 #endif
+#ifdef XTRADB_BASED
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "ALL_O_DIRECT")) {
+		srv_unix_file_flush_method = SRV_UNIX_ALL_O_DIRECT;
+#endif
 	} else {
 	  	fprintf(stderr, 
           	"xtrabackup: Unrecognized value %s for innodb_flush_method\n",
