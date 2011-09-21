@@ -31,10 +31,9 @@
 # Place, Suite 330, Boston, MA 02111-1307 USA
 #
 #
-diff -ruN libtar-1.2.11.orig/lib/Makefile.in libtar-1.2.11/lib/Makefile.in
---- libtar-1.2.11.orig/lib/Makefile.in	2011-07-14 13:27:10.000000000 +0400
-+++ libtar-1.2.11/lib/Makefile.in	2011-07-14 13:27:37.000000000 +0400
-@@ -29,7 +29,7 @@ CPPFLAGS	= -I. \
+--- a/lib/Makefile.in
++++ b/lib/Makefile.in
+@@ -29,7 +29,7 @@
  		  -I${top_srcdir}/compat \
  		  -I../listhash \
  		  @CPPFLAGS@
@@ -43,9 +42,8 @@ diff -ruN libtar-1.2.11.orig/lib/Makefile.in libtar-1.2.11/lib/Makefile.in
  LDFLAGS		= @LDFLAGS@
  LIBS		= @LIBS@
  LIBOBJS		= @LIBOBJS@
-diff -ruN libtar-1.2.11.orig/lib/append.c libtar-1.2.11/lib/append.c
---- libtar-1.2.11.orig/lib/append.c	2011-07-14 13:27:10.000000000 +0400
-+++ libtar-1.2.11/lib/append.c	2011-07-14 18:37:57.000000000 +0400
+--- a/lib/append.c
++++ b/lib/append.c
 @@ -27,6 +27,327 @@
  # include <unistd.h>
  #endif
@@ -374,7 +372,7 @@ diff -ruN libtar-1.2.11.orig/lib/append.c libtar-1.2.11/lib/append.c
  
  struct tar_dev
  {
-@@ -69,7 +390,7 @@ tar_append_file(TAR *t, char *realname, 
+@@ -69,7 +390,7 @@
  	       (savename ? savename : "[NULL]"));
  #endif
  
@@ -383,7 +381,7 @@ diff -ruN libtar-1.2.11.orig/lib/append.c libtar-1.2.11/lib/append.c
  	{
  #ifdef DEBUG
  		perror("lstat()");
-@@ -210,11 +531,17 @@ tar_append_eof(TAR *t)
+@@ -210,11 +531,17 @@
  int
  tar_append_regfile(TAR *t, char *realname)
  {
@@ -404,7 +402,7 @@ diff -ruN libtar-1.2.11.orig/lib/append.c libtar-1.2.11/lib/append.c
  	filefd = open(realname, O_RDONLY);
  	if (filefd == -1)
  	{
-@@ -224,27 +551,93 @@ tar_append_regfile(TAR *t, char *realnam
+@@ -224,27 +551,93 @@
  		return -1;
  	}
  
@@ -505,10 +503,9 @@ diff -ruN libtar-1.2.11.orig/lib/append.c libtar-1.2.11/lib/append.c
  			return -1;
  	}
  
-diff -ruN libtar-1.2.11.orig/lib/extract.c libtar-1.2.11/lib/extract.c
---- libtar-1.2.11.orig/lib/extract.c	2011-07-14 13:27:10.000000000 +0400
-+++ libtar-1.2.11/lib/extract.c	2011-07-14 13:27:37.000000000 +0400
-@@ -158,11 +158,11 @@ int
+--- a/lib/extract.c
++++ b/lib/extract.c
+@@ -158,11 +158,11 @@
  tar_extract_regfile(TAR *t, char *realname)
  {
  	mode_t mode;
@@ -522,10 +519,9 @@ diff -ruN libtar-1.2.11.orig/lib/extract.c libtar-1.2.11/lib/extract.c
  	char buf[T_BLOCKSIZE];
  	char *filename;
  
-diff -ruN libtar-1.2.11.orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
---- libtar-1.2.11.orig/lib/libtar.h	2011-07-14 13:27:10.000000000 +0400
-+++ libtar-1.2.11/lib/libtar.h	2011-07-14 13:27:37.000000000 +0400
-@@ -180,7 +180,7 @@ int th_write(TAR *t);
+--- a/lib/libtar.h
++++ b/lib/libtar.h
+@@ -180,7 +180,7 @@
  
  /* decode tar header info */
  #define th_get_crc(t) oct_to_int((t)->th_buf.chksum)
@@ -534,7 +530,7 @@ diff -ruN libtar-1.2.11.orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
  #define th_get_mtime(t) oct_to_int((t)->th_buf.mtime)
  #define th_get_devmajor(t) oct_to_int((t)->th_buf.devmajor)
  #define th_get_devminor(t) oct_to_int((t)->th_buf.devminor)
-@@ -204,9 +204,9 @@ void th_set_user(TAR *t, uid_t uid);
+@@ -204,9 +204,9 @@
  void th_set_group(TAR *t, gid_t gid);
  void th_set_mode(TAR *t, mode_t fmode);
  #define th_set_mtime(t, fmtime) \
@@ -546,7 +542,7 @@ diff -ruN libtar-1.2.11.orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
  
  /* encode everything at once (except the pathname and linkname) */
  void th_set_from_stat(TAR *t, struct stat *s);
-@@ -268,13 +268,16 @@ int th_crc_calc(TAR *t);
+@@ -268,13 +268,16 @@
  
  /* string-octal to integer conversion */
  int oct_to_int(char *oct);
@@ -564,10 +560,9 @@ diff -ruN libtar-1.2.11.orig/lib/libtar.h libtar-1.2.11/lib/libtar.h
  
  
  /***** wrapper.c **********************************************************/
-diff -ruN libtar-1.2.11.orig/lib/util.c libtar-1.2.11/lib/util.c
---- libtar-1.2.11.orig/lib/util.c	2011-07-14 13:27:10.000000000 +0400
-+++ libtar-1.2.11/lib/util.c	2011-07-14 13:27:37.000000000 +0400
-@@ -138,6 +138,14 @@ oct_to_int(char *oct)
+--- a/lib/util.c
++++ b/lib/util.c
+@@ -138,6 +138,14 @@
  	return i;
  }
  
@@ -582,7 +577,7 @@ diff -ruN libtar-1.2.11.orig/lib/util.c libtar-1.2.11/lib/util.c
  
  /* integer to string-octal conversion, no NULL */
  void
-@@ -147,4 +155,46 @@ int_to_oct_nonull(int num, char *oct, si
+@@ -147,4 +155,46 @@
  	oct[octlen - 1] = ' ';
  }
  
@@ -629,10 +624,9 @@ diff -ruN libtar-1.2.11.orig/lib/util.c libtar-1.2.11/lib/util.c
 +	}
 +	return i;
 +}
-diff -ruN libtar-1.2.11.orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
---- libtar-1.2.11.orig/libtar/Makefile.in	2011-07-14 13:27:10.000000000 +0400
-+++ libtar-1.2.11/libtar/Makefile.in	2011-07-14 13:27:37.000000000 +0400
-@@ -29,7 +29,7 @@ CPPFLAGS	= -I.. \
+--- a/libtar/Makefile.in
++++ b/libtar/Makefile.in
+@@ -29,7 +29,7 @@
  		  -I${top_srcdir}/lib \
  		  -I${top_srcdir}/compat \
  		  @CPPFLAGS@
@@ -641,7 +635,7 @@ diff -ruN libtar-1.2.11.orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
  LDFLAGS		= @LDFLAGS@
  LIBS		= @LIBS@
  LIBOBJS		= @LIBOBJS@
-@@ -46,15 +46,15 @@ LIBTAR_HDRS	= ../config.h \
+@@ -46,15 +46,15 @@
  		  ${top_srcdir}/lib/libtar.h \
  		  ../listhash/libtar_listhash.h
  LIBTAR_LIBS	= ../lib/libtar.a
@@ -660,16 +654,15 @@ diff -ruN libtar-1.2.11.orig/libtar/Makefile.in libtar-1.2.11/libtar/Makefile.in
  
  ${LIBTAR_OBJS}: ${LIBTAR_HDRS}
  
-@@ -69,5 +69,5 @@ distclean: clean
+@@ -69,5 +69,5 @@
  
  install: ${ALL}
  	${MKDIR} ${DESTDIR}${bindir}
 -	${INSTALL_PROGRAM} libtar ${DESTDIR}${bindir}
 +	${INSTALL_PROGRAM} tar4ibd ${DESTDIR}${bindir}
  
-diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
---- libtar-1.2.11.orig/libtar/libtar.c	2011-07-14 13:27:10.000000000 +0400
-+++ libtar-1.2.11/libtar/libtar.c	2011-07-14 17:22:13.000000000 +0400
+--- a/libtar/libtar.c
++++ b/libtar/libtar.c
 @@ -14,6 +14,7 @@
  #include <libtar.h>
  
@@ -686,7 +679,7 @@ diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  
  #ifdef DEBUG
  void
-@@ -109,7 +111,7 @@ create(char *tarfile, char *rootdir, lib
+@@ -109,7 +111,7 @@
  	char buf[MAXPATHLEN];
  	libtar_listptr_t lp;
  
@@ -695,7 +688,7 @@ diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -164,7 +166,7 @@ list(char *tarfile)
+@@ -164,7 +166,7 @@
  	TAR *t;
  	int i;
  
@@ -704,7 +697,7 @@ diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -225,7 +227,7 @@ extract(char *tarfile, char *rootdir)
+@@ -225,7 +227,7 @@
  #ifdef DEBUG
  	puts("opening tarfile...");
  #endif
@@ -713,19 +706,18 @@ diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  #ifdef HAVE_LIBZ
  		     (use_zlib ? &gztype : NULL),
  #else
-@@ -264,9 +266,9 @@ extract(char *tarfile, char *rootdir)
+@@ -264,9 +266,7 @@
  void
  usage()
  {
 -	printf("Usage: %s [-C rootdir] [-g] [-z] -x|-t filename.tar\n",
-+	printf("Usage: %s [-C rootdir] [-g] [-z] -x|-t < filename.tar\n",
- 	       progname);
+-	       progname);
 -	printf("       %s [-C rootdir] [-g] [-z] -c filename.tar ...\n",
-+	printf("       %s [-C rootdir] [-g] [-z] [-d] -c ... > filename.tar\n",
++	printf("Usage: %s [-C rootdir] [-d] -c ... > filename.tar\n",
  	       progname);
  	exit(-1);
  }
-@@ -287,7 +289,7 @@ main(int argc, char *argv[])
+@@ -287,7 +287,7 @@
  
  	progname = basename(argv[0]);
  
@@ -734,10 +726,31 @@ diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  		switch (c)
  		{
  		case 'V':
-@@ -323,11 +325,21 @@ main(int argc, char *argv[])
- 			use_zlib = 1;
+@@ -300,34 +300,26 @@
+ 		case 'v':
+ 			verbose = 1;
  			break;
- #endif /* HAVE_LIBZ */
+-		case 'g':
+-			use_gnu = 1;
+-			break;
+ 		case 'c':
+ 			if (mode)
+ 				usage();
+ 			mode = MODE_CREATE;
+ 			break;
+-		case 'x':
+-			if (mode)
+-				usage();
+-			mode = MODE_EXTRACT;
+-			break;
+-		case 't':
+-			if (mode)
+-				usage();
+-			mode = MODE_LIST;
+-			break;
+-#ifdef HAVE_LIBZ
+-		case 'z':
+-			use_zlib = 1;
 +		case 'd':
 +#if !defined(O_DIRECT)
 +			fprintf(stderr, "tar4ibd: O_DIRECT is not available.\n");
@@ -745,7 +758,8 @@ diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
 +#else
 +                        fprintf(stderr, "tar4ibd: using O_DIRECT for the input file.\n");
 +			use_direct = 1;
-+			break;
+ 			break;
+-#endif /* HAVE_LIBZ */
 +#endif
 +
  		default:
@@ -757,7 +771,7 @@ diff -ruN libtar-1.2.11.orig/libtar/libtar.c libtar-1.2.11/libtar/libtar.c
  	{
  #ifdef DEBUG
  		printf("argc - optind == %d\tmode == %d\n", argc - optind,
-@@ -343,15 +355,14 @@ main(int argc, char *argv[])
+@@ -343,15 +335,14 @@
  	switch (mode)
  	{
  	case MODE_EXTRACT:
