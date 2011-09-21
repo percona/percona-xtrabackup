@@ -1164,6 +1164,7 @@ debug_sync_point(const char *name)
 	FILE	*fp;
 	pid_t	pid;
 	char	pid_path[FN_REFLEN];
+	int	stat_loc;
 
 	if (xtrabackup_debug_sync == NULL) {
 		return;
@@ -1191,6 +1192,9 @@ debug_sync_point(const char *name)
 		"Resume with 'kill -SIGCONT %u'.\n", name, (uint) pid);
 
 	kill(pid, SIGSTOP);
+
+	/* So we don't delete the file before suspending */
+	waitpid(pid, &stat_loc, 0);
 
 	/* On resume */
 	my_delete(pid_path, MYF(MY_WME));
