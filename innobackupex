@@ -770,9 +770,9 @@ sub start_ibbackup {
     if ($option_incremental) {
         if($option_incremental_lsn) {
           $options = $options . " --incremental-lsn='$option_incremental_lsn'";
-	} else {
+	    } else {
           $options = $options . " --incremental-basedir='$incremental_basedir'";
-	}
+	    }
     }
 
     if ($option_tables_file) {
@@ -1658,7 +1658,7 @@ sub check_args {
     if (!$option_apply_log && !$option_copy_back) {
         # we are making a backup, get backup root directory
         $backup_root = $ARGV[0];
-        if ($option_incremental) {
+        if ($option_incremental && !$option_incremental_lsn) {
             my @dirs = `ls -1 -t $backup_root`;
             my $inc_dir = $dirs[0];
             chomp($inc_dir);
