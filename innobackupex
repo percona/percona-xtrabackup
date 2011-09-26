@@ -1868,7 +1868,8 @@ sub backup_files {
                 $ret = system("cd $source_dir; tar cf - $database/$file_name") >> 8;
                 if ($ret == 1) {
                     print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
-                } elsif ($ret != 0) {
+                # Handle non-zero exit codes other then file not found (2) as fatal
+                } elsif ($ret != 0 && $ret != 2) {
                     print STDERR "$prefix tar returned with exit code $ret.\n";
                     Die "Failed to stream '$database/$file_name': $!";
                 }
