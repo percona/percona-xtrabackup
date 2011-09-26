@@ -918,7 +918,8 @@ sub start_ibbackup {
                             }
                             if ($ret == 1) {
                                 print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
-                            } elsif ($ret != 0) {
+                            # Treat non-zero exit code other than file not found (2) as fatal
+                            } elsif ($ret != 0 && $ret != 2) {
                                 print STDERR "$prefix tar returned with exit code $ret.\n";
                                 if ( -e "$orig_datadir/$subdir/$file_name" ) {
                                     Die "Failed to stream '$orig_datadir/$subdir/$file_name': $!";
