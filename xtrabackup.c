@@ -1253,6 +1253,7 @@ debug_sync_point(const char *name)
 	FILE	*fp;
 	pid_t	pid;
 	char	pid_path[FN_REFLEN];
+	int	stat_loc;
 
 	if (xtrabackup_debug_sync == NULL) {
 		return;
@@ -3694,18 +3695,9 @@ xtrabackup_backup_func(void)
 
 	} else if (0 == ut_strcmp(srv_file_flush_method_str, "nosync")) {
 	  	srv_unix_file_flush_method = SRV_UNIX_NOSYNC;
-#else
-	} else if (0 == ut_strcmp(srv_file_flush_method_str, "normal")) {
-	  	srv_win_file_flush_method = SRV_WIN_IO_NORMAL;
-	  	os_aio_use_native_aio = FALSE;
-
-	} else if (0 == ut_strcmp(srv_file_flush_method_str, "unbuffered")) {
-	  	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;
-	  	os_aio_use_native_aio = FALSE;
-
-	} else if (0 == ut_strcmp(srv_file_flush_method_str,
-							"async_unbuffered")) {
-	  	srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;	
+#ifdef XTRADB_BASED
+	} else if (0 == ut_strcmp(srv_file_flush_method_str, "ALL_O_DIRECT")) {
+		srv_unix_file_flush_method = SRV_UNIX_ALL_O_DIRECT;
 #endif
 #ifdef XTRADB_BASED
 	} else if (0 == ut_strcmp(srv_file_flush_method_str, "ALL_O_DIRECT")) {
