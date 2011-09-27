@@ -126,6 +126,9 @@ my $innodb_log_group_home_dir = '';
 # backup my.cnf file
 my $backup_config_file = '';
 
+# whether host is detected as slave in safe slave backup mode
+my $host_is_slave = 0;
+
 # options from the options file
 my %config;
 
@@ -392,7 +395,7 @@ sub backup {
         mysql_close();
     }
 
-    if ( $option_safe_slave_backup ) {
+    if ( $option_safe_slave_backup && $host_is_slave ) {
       mysql_open();
       mysql_check();
       print STDERR "$prefix: Starting slave SQL thread\n";
@@ -2284,7 +2287,7 @@ return $ibbackup_binary;
 sub wait_for_safe_slave {
    my @lines;
 
-   my $host_is_slave = 0;
+   $host_is_slave = 0;
    mysql_send 'SHOW SLAVE STATUS\G;';
    file_to_array($mysql_stdout, \@lines);
    foreach my $line ( @lines ) {
