@@ -10,6 +10,6 @@ Vcs-Bzr: bzr+ssh://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-
 
 Package: xtrabackup
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, mysql-client
 Description: Open source backup tool for InnoDB and XtraDB
  Open source backup tool for InnoDB and XtraDB
