@@ -2,11 +2,13 @@
  Make a Streaming Backup
 =========================
 
-Stream mode sends the backup to STDOUT in tar format instead of copying it to the directory named by the first argument. You can pipe the output to gzip, or across the network to another server.
+Stream mode sends the backup to ``STDOUT`` in tar format instead of copying it to the directory named by the first argument. You can pipe the output to :command:`gzip`, or across the network to another server.
 
-To extract the resulting tar file, you must use the -i option, such as tar -ixvf backup.tar.
+To extract the resulting tar file, you **must** use the ``-i`` option, such as ``tar -ixvf backup.tar``.
 
-Here are some examples.
+.. warning:: Remember to use the ``-i`` option for extracting a tarred backup. For more information, see :doc:`../innobackupex/streaming_backups_innobackupex`.
+
+Here are some examples:
 
 .. code-block:: console
 
