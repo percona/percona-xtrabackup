@@ -20,7 +20,7 @@ For sending it directly to another host by ::
 
  $ innobackupex --stream=tar ./ | ssh user@destination \ "cat - > /data/backups/backup.tar"
 
-.. warning::  To extract |XtraBackup| 's archive you **must** use |tar| with '-i' option::
+.. warning::  To extract |XtraBackup| 's archive you **must** use |tar| with ``-i`` option::
 
   $ tar -xizf backup.tar.gz
 
