@@ -918,8 +918,7 @@ sub start_ibbackup {
                             }
                             if ($ret == 1) {
                                 print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
-                            # Treat non-zero exit code other than file not found (2) as fatal
-                            } elsif ($ret != 0 && $ret != 2) {
+                            } elsif ($ret != 0) {
                                 print STDERR "$prefix tar returned with exit code $ret.\n";
                                 if ( -e "$orig_datadir/$subdir/$file_name" ) {
                                     Die "Failed to stream '$orig_datadir/$subdir/$file_name': $!";
@@ -1874,9 +1873,16 @@ sub backup_files {
                 $ret = system("cd $source_dir; tar cf - $database/$file_name") >> 8;
                 if ($ret == 1) {
                     print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
+                # Check for non-zero exit code
                 } elsif ($ret != 0) {
                     print STDERR "$prefix tar returned with exit code $ret.\n";
-                    Die "Failed to stream '$database/$file_name': $!";
+                    # Only treat as fatal cases where the file exists
+                    if ( -e "$database/$file_name" ) {
+                        Die "Failed to stream '$database/$file_name': $!";
+                    } else {
+                        print STDERR "$prefix Ignoring nonexistent file '$database/$file_name'.\n";
+                    }
+
                 }
             }
         }
