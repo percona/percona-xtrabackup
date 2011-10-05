@@ -1,0 +1,8 @@
+[test_info]
+comment = single threaded test
+
+[test_command]
+command = ./gentest.pl --gendata=conf/drizzle/translog_drizzle.zz --grammar=conf/drizzle/translog_concurrent1.yy --Reporter=DrizzleSlavePlugin  --queries=50 --threads=3 --seed=time
+
+[test_servers]
+servers = [[--innodb.replication-log],[--plugin-add=slave --slave.config-file=$MASTER_SERVER_SLAVE_CONFIG]]

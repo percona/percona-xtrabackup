@@ -1,0 +1,18 @@
+CREATE TABLE decimal_table(description TEXT,
+col_decimal_unsigned decimal unsigned,
+col_decimal1 decimal(1),
+col_decimal decimal,
+col_decimal_5_2 decimal(5,2),
+col_decimal_65 decimal(65,1),
+col_decimal_not_null decimal NOT NULL,
+col_decimal_default_null decimal DEFAULT NULL,
+col_decimal_default decimal(5,2) DEFAULT 999.99
+) ENGINE=MyISAM;
+
+INSERT INTO decimal_table VALUES('MIN',0,-9,-9999999999,-999.99,-9999999999999999999999999999999999999999999999999999999999999999.9,-9999999999,DEFAULT,DEFAULT);
+INSERT INTO decimal_table VALUES('MAX',999999999,9,9999999999,999.99,9999999999999999999999999999999999999999999999999999999999999999.9,9999999999,DEFAULT,DEFAULT);
+INSERT INTO decimal_table VALUES('NULL',NULL,NULL,NULL,NULL,NULL,1000,DEFAULT,DEFAULT);
+
+
+
+

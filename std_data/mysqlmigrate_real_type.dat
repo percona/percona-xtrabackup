@@ -1,0 +1,18 @@
+CREATE TABLE real_table(description TEXT,
+col_real_unsigned real unsigned,
+col_real2 real(2,0),
+col_real real,
+col_real_5_2 real(5,2),
+col_real_23 real(23,1),
+col_real_not_null real NOT NULL,
+col_real_default_null real DEFAULT NULL,
+col_real_default real(5,2) DEFAULT 999.99
+) ENGINE=MyISAM;
+
+INSERT INTO real_table VALUES('MIN',0,-99,-9999999999,-999.99,-9999999999999999999999.9,-9999999999,DEFAULT,DEFAULT);
+INSERT INTO real_table VALUES('MAX',999999999,99,9999999999,999.99,9999999999999999999999.9,9999999999,DEFAULT,DEFAULT);
+INSERT INTO real_table VALUES('NULL',NULL,NULL,NULL,NULL,NULL,1000,DEFAULT,DEFAULT);
+
+
+
+

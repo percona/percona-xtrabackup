@@ -1,0 +1,12 @@
+CREATE TABLE timestamp_table(description TEXT,
+col_timestamp timestamp,
+col_timestamp_not_null timestamp NOT NULL,
+col_timestamp_default_zero timestamp DEFAULT '0000-00-00 00:00:00',
+col_timestamp_default_cur_time timestamp DEFAULT '1970-12-12 00:00:00'
+) ENGINE=MyISAM;
+
+INSERT INTO timestamp_table VALUES('MIN','1970-01-01 00:00:01','1970-01-01 00:00:01',DEFAULT,'2015-12-19 11:11:11' );
+INSERT INTO timestamp_table VALUES('MAX','2038-01-19 23:59:59','2038-01-19 23:59:59',DEFAULT,'2015-12-19 11:11:11');
+INSERT INTO timestamp_table VALUES('ZERO','0000-00-00 00:00:00','0000-00-00 00:00:00','0000-00-00 00:00:00','0000-00-00 00:00:00');
+
+

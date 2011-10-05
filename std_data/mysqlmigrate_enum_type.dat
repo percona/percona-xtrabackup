@@ -1,0 +1,15 @@
+CREATE TABLE enum_table(description TEXT,
+col_2 enum('Roy','Moss','Jen'),
+col_2_not_null enum('Roy','Moss','Jen') NOT NULL,
+col_2_default_null enum('Roy','Moss','Jen') DEFAULT NULL,
+col_2_default enum('Roy','Moss','Jen') DEFAULT 'Moss',
+col_64 enum('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6','7','8','9','10','11'),
+col_64_default_null enum('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6','7','8','9','10','11') DEFAULT NULL,
+col_64_default enum('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6','7','8','9','10','11') DEFAULT 'A' 
+) ENGINE=MyISAM;
+
+INSERT INTO enum_table VALUES('MIN','Roy','Roy',DEFAULT,DEFAULT,'a',DEFAULT,DEFAULT);
+INSERT INTO enum_table VALUES('MAX','Moss','Jen',DEFAULT,DEFAULT,'Z',DEFAULT,DEFAULT);
+INSERT INTO enum_table VALUES('NULL_ROW',NULL,'Moss',DEFAULT,DEFAULT,NULL,DEFAULT,DEFAULT);
+
+

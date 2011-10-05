@@ -1,0 +1,8 @@
+[test_info]
+comment = collations test
+
+[test_command]
+command = ./gentest.pl --gendata=conf/drizzle/drizzle.zz --grammar=conf/runtime/create_drop.yy --queries=1000 --threads=3
+
+[test_servers]
+servers = [[]]

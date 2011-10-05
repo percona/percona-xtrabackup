@@ -1,0 +1,8 @@
+[test_info]
+comment = database recovery test.  currently disabled while we examine the validity / usefulness of the reporter
+
+[test_command]
+command = ./gentest.pl --gendata=conf/drizzle/drizzle.zz --grammar=conf/drizzle/drizzle.yy --reporters=DrizzleRecoveryConsistency --queries=1000 --threads=3
+
+[test_servers]
+servers = [[]]

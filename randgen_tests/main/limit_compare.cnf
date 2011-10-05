@@ -1,0 +1,8 @@
+[test_info]
+comment = database recovery test
+
+[test_command]
+command = ./gentest.pl --gendata=conf/drizzle/drizzle.zz --grammar=conf/drizzle/limit_compare_drizzle.yy --queries=1000 --threads=3
+
+[test_servers]
+servers = [[]]

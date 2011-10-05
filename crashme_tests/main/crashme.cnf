@@ -1,0 +1,8 @@
+[test_info]
+comment = Run all sql-bench tests!
+
+[test_command]
+command = $DRIZZLE_TEST_DIR/sql-bench/crash-me --server=drizzled --force --dir=$DRIZZLE_TEST_WORKDIR  --connect-options=port=$MASTER_MYPORT --verbose --debug --user=root
+
+[test_servers]
+servers = [[]]

@@ -1,0 +1,15 @@
+CREATE TABLE set_table(description TEXT,
+col_2 set('Roy','Moss','Jen'),
+col_2_not_null set('Roy','Moss','Jen') NOT NULL,
+col_2_default_null set('Roy','Moss','Jen') DEFAULT NULL,
+col_2_default set('Roy','Moss','Jen') DEFAULT 'Roy,Moss,Jen',
+col_64 set('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6','7','8','9','10','11'),
+col_64_default_null set('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6','7','8','9','10','11') DEFAULT NULL,
+col_64_default set('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6','7','8','9','10','11') DEFAULT '0,1,2,A' 
+) ENGINE=MyISAM;
+
+INSERT INTO set_table VALUES('MIN','Roy','Roy',DEFAULT,DEFAULT,'a',DEFAULT,DEFAULT);
+INSERT INTO set_table VALUES('MAX','Roy,Moss,Jen','Roy,Moss,Jen',DEFAULT,DEFAULT,'Z',DEFAULT,DEFAULT);
+INSERT INTO set_table VALUES('NULL_ROW',NULL,'Moss',DEFAULT,DEFAULT,NULL,DEFAULT,DEFAULT);
+
+

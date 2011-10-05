@@ -1,0 +1,8 @@
+[test_info]
+comment = repeatable read test
+
+[test_command]
+command = ./gentest.pl --gendata=conf/drizzle/drizzle.zz --grammar=conf/drizzle/drizzledump.yy --Validator=Drizzledump --queries=25 --seed=time --threads=1
+
+[test_servers]
+servers = [[]]

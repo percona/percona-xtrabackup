@@ -1,0 +1,18 @@
+CREATE TABLE year_table(description TEXT,
+col_year year,
+col_year_not_null year NOT NULL,
+col_year_default_null year DEFAULT NULL,
+col_year_default_min year DEFAULT '0000',
+col_year_default_max year DEFAULT '2155',
+col_year2 year(2),
+col_year2_not_null year(2) NOT NULL, 
+col_year2_default_null year(2) DEFAULT NULL, 
+col_year2_default_min year(2) DEFAULT '00',
+col_year2_default_max year(2) DEFAULT 99) ENGINE=MyISAM;
+
+INSERT INTO year_table VALUES('MIN',0000,'0000',DEFAULT,DEFAULT,DEFAULT,00,00,DEFAULT,DEFAULT,DEFAULT);
+INSERT INTO year_table VALUES('MAX',2155,'2155',DEFAULT,DEFAULT,DEFAULT,99,99,DEFAULT,DEFAULT,DEFAULT);
+INSERT INTO year_table VALUES('NULL_ROW',NULL,2099,DEFAULT,DEFAULT,DEFAULT,NULL,'22',DEFAULT,DEFAULT,DEFAULT);
+INSERT INTO year_table VALUES('ZERO',00,00,00,00,00,00,00,00,00,00);
+
+

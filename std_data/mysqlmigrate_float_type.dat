@@ -1,0 +1,21 @@
+CREATE TABLE float_table(description TEXT,
+col_float_unsigned float unsigned,
+col_float0 float(0),
+col_float1 float(1),
+col_float2 float(2,0),
+col_float2_1 float(2),
+col_float float,
+col_float_5_2 float(5,2),
+col_float_23 float(23,1),
+col_float_not_null float NOT NULL,
+col_float_default_null float DEFAULT NULL,
+col_float_default float(5,2) DEFAULT 999.99
+) ENGINE=MyISAM;
+
+INSERT INTO float_table VALUES('MIN',0,NULL,-9,-99,-99,-9999999999,-999.99,-9999999999999999999999.9,-9999999999,DEFAULT,DEFAULT);
+INSERT INTO float_table VALUES('MAX',999999999,NULL,9,99,99,9999999999,999.99,9999999999999999999999.9,9999999999,DEFAULT,DEFAULT);
+INSERT INTO float_table VALUES('NULL',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,1000,DEFAULT,DEFAULT);
+
+
+
+

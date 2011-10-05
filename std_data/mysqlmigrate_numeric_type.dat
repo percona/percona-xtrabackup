@@ -1,0 +1,18 @@
+CREATE TABLE numeric_table(description TEXT,
+col_numeric_unsigned numeric unsigned,
+col_numeric1 numeric(1),
+col_numeric numeric,
+col_numeric_5_2 numeric(5,2),
+col_numeric_65 numeric(65,1),
+col_numeric_not_null numeric NOT NULL,
+col_numeric_default_null numeric DEFAULT NULL,
+col_numeric_default numeric(5,2) DEFAULT 999.99
+) ENGINE=MyISAM;
+
+INSERT INTO numeric_table VALUES('MIN',0,-9,-9999999999,-999.99,-9999999999999999999999999999999999999999999999999999999999999999.9,-9999999999,DEFAULT,DEFAULT);
+INSERT INTO numeric_table VALUES('MAX',999999999,9,9999999999,999.99,9999999999999999999999999999999999999999999999999999999999999999.9,9999999999,DEFAULT,DEFAULT);
+INSERT INTO numeric_table VALUES('NULL',NULL,NULL,NULL,NULL,NULL,1000,DEFAULT,DEFAULT);
+
+
+
+

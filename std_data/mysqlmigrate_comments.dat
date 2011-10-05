@@ -1,0 +1,10 @@
+CREATE TABLE t1 (a INT COMMENT '.') ENGINE=MyISAM;
+
+CREATE TABLE t2 (a INT COMMENT 'This is a pretty long comment so we can see how drizzledump will handle this') ENGINE=MyISAM;
+
+CREATE TABLE t3 (a INT) ENGINE=MyISAM COMMENT '.';
+
+CREATE TABLE t4 (a INT) ENGINE=MyISAM COMMENT 'This is a longish table comment so we can test drizzledumps ability to handle this';
+
+CREATE TABLE t5 (a INT  COMMENT 'Now we test column + table comments') ENGINE=MyISAM COMMENT 'Now we test table + column comments';
+

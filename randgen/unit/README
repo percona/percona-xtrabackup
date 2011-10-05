@@ -1,0 +1,11 @@
+Unit tests for RQG.
+
+Required perl modules: Test::Unit
+
+Run like this:
+
+unit/unit.pl unit/<testcase>.pm
+
+or, to run all tests:
+
+unit/unit.pl unit/Suite.pm

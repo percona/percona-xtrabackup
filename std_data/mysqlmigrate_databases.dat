@@ -1,0 +1,10 @@
+CREATE TABLE t1 (a int, b char(10)) ENGINE=MyISAM;
+CREATE TABLE t2 (a int, b char(10)) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (1,'Jen'),(2,'Roy'),(3,'Moss');
+INSERT INTO t2 VALUES (1,'Vince'),(2,'Howard'),(3,'Naboo'),(4,'Bollo'),(5,'Bob Fossil');
+CREATE TABLE drizzledump_migrate_test2.t1 (a int, b char(10)) ENGINE=MyISAM;
+CREATE TABLE drizzledump_migrate_test2.t2 (a int, b char(10)) ENGINE=MyISAM;
+INSERT INTO drizzledump_migrate_test2.t1 VALUES (1,'Jen'),(2,'Moss');
+INSERT INTO drizzledump_migrate_test2.t2 VALUES (1,'Naboo'),(2,'Bollo');
+CREATE TABLE drizzledump_migrate_test3.not_on_drizzle(a char(50)) ENGINE=MyISAM; 
+INSERT INTO drizzledump_migrate_test3.not_on_drizzle VALUES ('You shouldnt see this on Drizzle');

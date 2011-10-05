@@ -1,0 +1,16 @@
+CREATE TABLE time_table(description TEXT,
+col_time time,
+col_time_not_null time NOT NULL,
+col_time_default_null time DEFAULT NULL,
+col_time_default_min time DEFAULT '00:00:00',
+col_time_default_max time DEFAULT '23:59:59',
+col_time_default_large_min time DEFAULT '-838:59:59',
+col_time_default_large_max time DEFAULT '838:59:59'
+) ENGINE=MyISAM;
+
+INSERT INTO time_table VALUES('MIN','00:00:00','00:00:00',DEFAULT,DEFAULT,DEFAULT,DEFAULT,DEFAULT);
+INSERT INTO time_table VALUES('MAX','23:59:59','23:59:59',DEFAULT,DEFAULT,DEFAULT,DEFAULT,DEFAULT);
+INSERT INTO time_table VALUES('NULL_ROW',NULL,'20:20:20',DEFAULT,DEFAULT,DEFAULT,DEFAULT,DEFAULT);
+INSERT INTO time_table VALUES('ZERO','00:00:00','00:00:00','00:00:00','00:00:00','00:00:00','00:00:00','00:00:00');
+
+

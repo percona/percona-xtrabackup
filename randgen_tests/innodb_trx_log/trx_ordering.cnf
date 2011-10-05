@@ -1,0 +1,8 @@
+[test_info]
+comment = simple trx ordering test
+
+[test_command]
+command = ./gentest.pl --gendata=conf/drizzle/translog_ordering.zz --grammar=conf/drizzle/translog_ordering.yy --Reporter=DrizzleInnoTrxLog --threads=5  --queries=75
+
+[test_servers]
+servers = [[--innodb.replication-log],[]]

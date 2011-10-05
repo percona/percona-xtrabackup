@@ -1,0 +1,8 @@
+[test_info]
+comment = 16 threads
+
+[test_command]
+command = sysbench --max-time=240 --max-requests=0 --test=oltp --db-ps-mode=disable --drizzle-table-engine=innodb --oltp-read-only=on --oltp-table-size=1000000 --drizzle-mysql=on --drizzle-user=root --drizzle-db=test --drizzle-port=$MASTER_MYPORT --drizzle-host=localhost --db-driver=drizzle --num-threads=32
+
+[test_servers]
+servers = [[innodb.buffer-pool-size=256M innodb.log-file-size=64M innodb.log-buffer-size=8M innodb.thread-concurrency=0 innodb.additional-mem-pool-size=16M table-open-cache=4096 table-definition-cache=4096 mysql-protocol.max-connections=2048]]

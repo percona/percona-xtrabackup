@@ -1,0 +1,67 @@
+CREATE TABLE tinyint_table(description TEXT,
+col_tinyint tinyint,
+col_tinyint_not_null tinyint NOT NULL,
+col_tinyint_unsigned tinyint UNSIGNED,
+col_tinyint_unsigned_not_null tinyint UNSIGNED NOT NULL,
+col_tinyint_default_null tinyint DEFAULT NULL,
+col_tinyint_default_zero tinyint DEFAULT 0) ENGINE=MyISAM;
+
+INSERT INTO tinyint_table VALUES('MIN',-128,-128,0,0,DEFAULT,DEFAULT);
+INSERT INTO tinyint_table VALUES('MAX',127,127,255,255,DEFAULT,DEFAULT);
+INSERT INTO tinyint_table VALUES('NULL_ROW',NULL,42,NULL,42,DEFAULT,NULL);
+INSERT INTO tinyint_table VALUES('ZERO',0,0,0,0,0,0);
+
+CREATE TABLE smallint_table(description TEXT,
+col_smallint smallint,
+col_smallint_not_null smallint NOT NULL,
+col_smallint_unsigned smallint UNSIGNED,
+col_smallint_unsigned_not_null smallint UNSIGNED NOT NULL,
+col_smallint_default_null smallint DEFAULT NULL,
+col_smallint_default_zero smallint DEFAULT 0) ENGINE=MyISAM;
+
+INSERT INTO smallint_table VALUES('MIN',-32768,-32768,0,0,DEFAULT,DEFAULT);
+INSERT INTO smallint_table VALUES('MAX',32767,32767,65535,65535,DEFAULT,DEFAULT);
+INSERT INTO smallint_table VALUES('NULL_ROW',NULL,42,NULL,42,DEFAULT,NULL);
+INSERT INTO smallint_table VALUES('ZERO',0,0,0,0,0,0);
+
+CREATE TABLE mediumint_table(description TEXT,
+col_mediumint mediumint,
+col_mediumint_not_null mediumint NOT NULL,
+col_mediumint_unsigned mediumint UNSIGNED,
+col_mediumint_unsigned_not_null mediumint UNSIGNED NOT NULL,
+col_mediumint_default_null mediumint DEFAULT NULL,
+col_mediumint_default_zero mediumint DEFAULT 0) ENGINE=MyISAM;
+
+INSERT INTO mediumint_table VALUES('MIN',-8388608,-8388608,0,0,DEFAULT,DEFAULT);
+INSERT INTO mediumint_table VALUES('MAX',8388607,8388607,16777215,16777215,DEFAULT,DEFAULT);
+INSERT INTO mediumint_table VALUES('NULL_ROW',NULL,42,NULL,42,DEFAULT,NULL);
+INSERT INTO mediumint_table VALUES('ZERO',0,0,0,0,0,0);
+
+CREATE TABLE int_ext(colint int(4)) ENGINE=MyISAM;
+
+CREATE TABLE int_table(description TEXT,
+col_int int,
+col_int_not_null int NOT NULL,
+col_int_unsigned int UNSIGNED,
+col_int_unsigned_not_null int UNSIGNED NOT NULL,
+col_int_default_null int DEFAULT NULL,
+col_int_default_zero int DEFAULT 0) ENGINE=MyISAM;
+
+INSERT INTO int_table VALUES('MIN',-2147483648,-2147483648,0,0,DEFAULT,DEFAULT);
+INSERT INTO int_table VALUES('MAX',2147483647,2147483647,4294967295,4294967295,DEFAULT,DEFAULT);
+INSERT INTO int_table VALUES('NULL_ROW',NULL,42,NULL,42,DEFAULT,NULL);
+INSERT INTO int_table VALUES('ZERO',0,0,0,0,0,0);
+
+CREATE TABLE bigint_table(description TEXT,
+col_bigint bigint,
+col_bigint_not_null bigint NOT NULL,
+col_bigint_unsigned bigint UNSIGNED,
+col_bigint_unsigned_not_null bigint UNSIGNED NOT NULL,
+col_bigint_default_null bigint DEFAULT NULL,
+col_bigint_default_zero bigint DEFAULT 0) ENGINE=MyISAM;
+
+INSERT INTO bigint_table VALUES('MIN',-9223372036854775807,-9223372036854775807,0,0,DEFAULT,DEFAULT);
+#INSERT INTO bigint_table VALUES('MAX',9223372036854775807,9223372036854775807,18446744073709551615,18446744073709551615,DEFAULT,DEFAULT);
+INSERT INTO bigint_table VALUES('NULL_ROW',NULL,42,NULL,42,DEFAULT,NULL);
+INSERT INTO bigint_table VALUES('ZERO',0,0,0,0,0,0);
+
