@@ -157,3 +157,11 @@ class Server(object):
     def reset(self):
         """ Voodoo to reset ourselves """
         self.failed_test = 0
+
+    def get_numeric_server_id(self):
+        """ Return the integer value of server-id
+            Mainly for mysql / percona, but may be useful elsewhere
+ 
+        """
+
+        return int(self.name.split(self.server_manager.server_base_name)[1])

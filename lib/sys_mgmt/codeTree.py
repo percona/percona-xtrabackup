@@ -30,6 +30,7 @@
 # imports
 import os
 import sys
+from ConfigParser import RawConfigParser
 
 
 class codeTree:
@@ -165,6 +166,17 @@ class drizzleTree(codeTree):
             ld_lib_paths = [ os.path.join(self.basedir,"lib")]
         return ld_lib_paths
 
+class perconaTree(mysqlTree):
+    """ What a Percona code tree should look like to the test-runner
+        This should essentially be the same as a MySQL tree, but with a 
+        distinct server.type + any other goodies that differentiate
+     
+    """
+    
+    def __init__(self,variables,system_manager):
+        super(mysqlTree, self).__init__( variables, system_manager)
+        self.type='percona'
+
 class mysqlTree(codeTree):
     """ What a MySQL code tree should look like to the test-runner
     
@@ -248,8 +260,12 @@ class mysqlTree(codeTree):
         self.ld_lib_paths = self.get_ld_lib_paths()
         self.bootstrap_path = os.path.join( self.system_manager.workdir
                                           , 'mysql_bootstrap.sql' )
+        # we produce the bootstrap file that is used to set up a 'fresh'
+        # mysql server
         self.generate_bootstrap()
-         
+        # we produce the baseline config that will be used / added
+        # to when we allocate servers for tests
+        # self.generate_config_template()
         self.report()
 
         self.logging.debug_class(self)
@@ -353,6 +369,45 @@ class mysqlTree(codeTree):
         bootstrap_file.close()
         return
 
+    def generate_config_template(self):
+        """ Generate the baseline template that will be added to / modified
+            as we allocate servers for tests
+
+            Currently deciding if we want/need to use this or not...
+
+        """
+
+        base_config_data = { 'mysqld':{ 'open-files-limit':'1024'
+                                      , 'local-infile':None
+                                      , 'character-set-server':'latin1'
+                                      , 'connect-timeout':'60'
+                                      , 'log-bin-trust-function-creators':'1'
+                                      , 'key_buffer_size':'1M'
+                                      , 'sort_buffer':'256K'
+                                      , 'max_heap_table_size':'1M'
+                                      , 'loose-innodb_data_file_path':'ibdata1:10M:autoextend'
+                                      , 'loose-innodb_buffer_pool_size':'8M'
+                                      , 'loose-innodb_write_io_threads':'2'
+                                      , 'loose-innodb_read_io_threads':'2'
+                                      , 'loose-innodb_log_buffer_size':'1M'
+                                      , 'loose-innodb_log_file_size':'5M'
+                                      , 'loose-innodb_additional_mem_pool_size':'1M'
+                                      , 'loose-innodb_log_files_in_group':'2'
+                                      , 'slave-net-timeout':'120'
+                                      , 'log-bin':'mysqld-bin'
+                                      , 'loose-enable-performance-schema':None
+                                      , 'loose-performance-schema-max-mutex-instances':'10000'
+                                      , 'loose-performance-schema-max-rwlock-instances':'10000'
+                                      , 'loose-performance-schema-max-table-instances':'500'
+                                      , 'loose-performance-schema-max-table-handles':'1000'
+                                      , 'binlog-direct-non-transactional-updates'
+                                      }
+                           , 'mysqlbinlog':{}
+                           , 'mysql_upgrade':{}
+                           , 'client':{}
+                           , 'mysqltest':{}
+                           }
+        config_reader = RawConfigParser(allow_no_value=True)
 
         
 

@@ -248,7 +248,7 @@ class serverManager:
  
         ping_cmd = server.get_ping_cmd()
         if not quiet:
-            self.logging.info("Pinging Drizzled server on port %d" % server.master_port)
+            self.logging.info("Pinging %s server on port %d" % (server.type.upper(), server.master_port))
         (retcode, output)= self.system_manager.execute_cmd(ping_cmd, must_pass = 0)
         return retcode == 0
              

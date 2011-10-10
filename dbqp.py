@@ -53,9 +53,6 @@ test_executor = None
 execution_manager = None
 
 try:
-    # We do this nested try to accomodate red hat
-    # running python 2.4...seriously?  2.4?
-    try:
         # Some system-level work is constant regardless
         # of the test to be run
         system_manager = systemManager(variables)
@@ -77,10 +74,10 @@ try:
         # Execute our tests!
         execution_manager.execute_tests()
     
-    except Exception, e:
+except Exception, e:
        print Exception, e
 
-    except KeyboardInterrupt:
+except KeyboardInterrupt:
       print "\n\nDetected <Ctrl>+c, shutting down and cleaning up..."
 
 finally:
