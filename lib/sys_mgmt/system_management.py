@@ -83,6 +83,18 @@ class systemManager:
 
         # we use this to preface commands in order to run valgrind and such
         self.cmd_prefix = '' 
+
+        # We find or generate our id file
+        # We use a uuid to identify the symlinked
+        # workdirs.  That way, each installation
+        # Will have a uuid/tmpfs workingdir
+        # We store in a file so we know what
+        # is ours
+        self.uuid = self.get_uuid()
+        self.symlink_name = 'dbqp_workdir_%s_%s' %(self.cur_user, self.uuid)
+
+        # initialize our workdir
+        self.process_workdir()
         
         self.port_manager = portManager(self,variables['debug'])
         self.time_manager = timeManager(self)
@@ -111,18 +123,6 @@ class systemManager:
         # set the env vars we need
         # self.process_environment_reqs(self.environment_reqs)
         self.env_manager.update_environment_vars(self.environment_reqs)
-
-        # We find or generate our id file
-        # We use a uuid to identify the symlinked
-        # workdirs.  That way, each installation
-        # Will have a uuid/tmpfs workingdir
-        # We store in a file so we know what
-        # is ours
-        self.uuid = self.get_uuid()
-        self.symlink_name = 'dbqp_workdir_%s_%s' %(self.cur_user, self.uuid)
-
-        # initialize our workdir
-        self.process_workdir()
 
         # check for libtool
         self.libtool = self.libtool_check()

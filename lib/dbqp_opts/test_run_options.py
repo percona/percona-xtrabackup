@@ -104,7 +104,7 @@ def handle_user_opts(variables, basedir_default, testdir_default, suitepaths_def
         be applicable when searching for tests
 
     """
-    master_basedir = os.path.abspath(variables['basedir'][0])
+    master_basedir = os.path.abspath(variables['basedir'][0].split(':type:')[0])
     if master_basedir != basedir_default:
         new_path = os.path.join(master_basedir, 'plugin')
         search_path = os.path.join(basedir_default,'plugin')

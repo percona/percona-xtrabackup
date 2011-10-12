@@ -39,10 +39,11 @@ class codeTree:
 
     """
   
-    def __init__(self, variables, system_manager):
+    def __init__(self, basedir, variables, system_manager):
         self.debug = variables['debug']
         self.system_manager = system_manager
         self.logging = system_manager.logging
+        self.basedir = self.system_manager.find_path(os.path.abspath(basedir))
 
     def debug_status(self):
             self.logging.debug(self)
@@ -54,13 +55,13 @@ class drizzleTree(codeTree):
     
     """
 
-    def __init__(self, variables,system_manager):
+    def __init__(self, basedir, variables,system_manager):
         self.system_manager = system_manager
         self.logging = self.system_manager.logging
         self.skip_keys = ['ld_lib_paths']
         self.debug = variables['debug']
         self.verbose = variables['verbose']
-        self.basedir = self.system_manager.find_path([os.path.abspath(variables['basedir'][0])])
+        self.basedir = self.system_manager.find_path([os.path.abspath(basedir)])
         self.source_dist = os.path.isdir(os.path.join(self.basedir, 'drizzled'))
         self.builddir = self.system_manager.find_path([os.path.abspath(self.basedir)])
         self.top_builddir = variables['topbuilddir']
@@ -166,29 +167,19 @@ class drizzleTree(codeTree):
             ld_lib_paths = [ os.path.join(self.basedir,"lib")]
         return ld_lib_paths
 
-class perconaTree(mysqlTree):
-    """ What a Percona code tree should look like to the test-runner
-        This should essentially be the same as a MySQL tree, but with a 
-        distinct server.type + any other goodies that differentiate
-     
-    """
-    
-    def __init__(self,variables,system_manager):
-        super(mysqlTree, self).__init__( variables, system_manager)
-        self.type='percona'
 
 class mysqlTree(codeTree):
     """ What a MySQL code tree should look like to the test-runner
     
     """
 
-    def __init__(self, variables,system_manager):
+    def __init__(self, basedir, variables,system_manager):
         self.system_manager = system_manager
         self.logging = self.system_manager.logging
         self.skip_keys = ['ld_lib_paths']
         self.debug = variables['debug']
         self.verbose = variables['verbose']
-        self.basedir = self.system_manager.find_path([os.path.abspath(variables['basedir'][0])])
+        self.basedir = self.system_manager.find_path([os.path.abspath(basedir)])
         self.source_dist = os.path.isdir(os.path.join(self.basedir, 'mysqld'))
         self.builddir = self.system_manager.find_path([os.path.abspath(self.basedir)])
         self.top_builddir = variables['topbuilddir']
@@ -208,38 +199,37 @@ class mysqlTree(codeTree):
         self.srcdir = self.system_manager.find_path([self.basedir])
         self.suite_paths = variables['suitepaths']
 
-        self.mysql_client = self.system_manager.find_path([os.path.join(self.clientbindir,
-                                                           'mysql')])
+        self.mysql_client = self.system_manager.find_path([os.path.join( self.clientbindir
+                                                                       , 'mysql')])
 
-        self.mysqldump = self.system_manager.find_path([os.path.join(self.clientbindir,
-                                                        'mysqldump')])
+        self.mysqldump = self.system_manager.find_path([os.path.join( self.clientbindir
+                                                                    , 'mysqldump')])
 
-        self.mysqlimport = self.system_manager.find_path([os.path.join(self.clientbindir,
-                                                          'mysqlimport')])
+        self.mysqlimport = self.system_manager.find_path([os.path.join( self.clientbindir
+                                                                      , 'mysqlimport')])
 
-        self.mysqladmin = self.system_manager.find_path([os.path.join(self.clientbindir,
-                                                         'mysqladmin')])
-
-        self.mysql_server = self.system_manager.find_path([ os.path.join(self.basedir, '/sql/mysqld-debug')
-                                                          , os.path.join(self.basedir, '/libexec/mysqld-debug')
-                                                          , os.path.join(self.basedir, '/sbin/mysqld-debug')
-                                                          , os.path.join(self.basedir, '/bin/mysqld-debug')
-                                                          , os.path.join(self.basedir, '/sql/mysqld')
-                                                          , os.path.join(self.basedir, '/libexec/mysqld')
-                                                          , os.path.join(self.basedir, '/sbin/mysqld')
-                                                          , os.path.join(self.basedir, '/bin/mysqld')
-                                                          , os.path.join(self.basedir, '/sql/mysqld-max-nt')
-                                                          , os.path.join(self.basedir, '/libexec/mysqld-max-nt')
-                                                          , os.path.join(self.basedir, '/sbin/mysqld-max-nt')
-                                                          , os.path.join(self.basedir, '/bin/mysqld-max-nt')
-                                                          , os.path.join(self.basedir, '/sql/mysqld-max')
-                                                          , os.path.join(self.basedir, '/libexec/mysqld-max')
-                                                          , os.path.join(self.basedir, '/sbin/mysqld-max')
-                                                          , os.path.join(self.basedir, '/bin/mysqld-max')
-                                                          , os.path.join(self.basedir, '/sql/mysqld-nt')
-                                                          , os.path.join(self.basedir, '/libexec/mysqld-nt')
-                                                          , os.path.join(self.basedir, '/sbin/mysqld-nt')
-                                                          , os.path.join(self.basedir, '/bin/mysqld-nt')
+        self.mysqladmin = self.system_manager.find_path([os.path.join( self.clientbindir
+                                                                     , 'mysqladmin')])
+        self.mysql_server = self.system_manager.find_path([ os.path.join(self.basedir, 'sql/mysqld-debug')
+                                                          , os.path.join(self.basedir, 'libexec/mysqld-debug')
+                                                          , os.path.join(self.basedir, 'sbin/mysqld-debug')
+                                                          , os.path.join(self.basedir, 'bin/mysqld-debug')
+                                                          , os.path.join(self.basedir, 'sql/mysqld')
+                                                          , os.path.join(self.basedir, 'libexec/mysqld')
+                                                          , os.path.join(self.basedir, 'sbin/mysqld')
+                                                          , os.path.join(self.basedir, 'bin/mysqld')
+                                                          , os.path.join(self.basedir, 'sql/mysqld-max-nt')
+                                                          , os.path.join(self.basedir, 'libexec/mysqld-max-nt')
+                                                          , os.path.join(self.basedir, 'sbin/mysqld-max-nt')
+                                                          , os.path.join(self.basedir, 'bin/mysqld-max-nt')
+                                                          , os.path.join(self.basedir, 'sql/mysqld-max')
+                                                          , os.path.join(self.basedir, 'libexec/mysqld-max')
+                                                          , os.path.join(self.basedir, 'sbin/mysqld-max')
+                                                          , os.path.join(self.basedir, 'bin/mysqld-max')
+                                                          , os.path.join(self.basedir, 'sql/mysqld-nt')
+                                                          , os.path.join(self.basedir, 'libexec/mysqld-nt')
+                                                          , os.path.join(self.basedir, 'sbin/mysqld-nt')
+                                                          , os.path.join(self.basedir, 'bin/mysqld-nt')
                                                           ])
 
 
@@ -337,7 +327,8 @@ class mysqlTree(codeTree):
                                 ]:
                     sql_file_path = os.path.join(self.basedir,candidate_dir,sql_file)
                     sql_file_handle = open(sql_file_path,'r')
-                    bootstrap_file.write(sql_file_handle.readlines())
+                    for line in sql_file_handle.readlines():
+                        bootstrap_file.write(line)
                     sql_file_handle.close()
                 found_new_sql = True
                 break
@@ -349,7 +340,8 @@ class mysqlTree(codeTree):
             try:
                 in_file = open(sql_file_path,'r')
                 bootstrap_file = open(self.bootstrap_path,'w')
-                bootstrap_file.write(in_file.readlines())
+                for line in in_file.readlines():
+                    bootstrap_file.write(line)
                 in_file.close()
             except IOError:
                 self.logging.error("Cannot find data for generating bootstrap file")
@@ -358,14 +350,17 @@ class mysqlTree(codeTree):
         # Remove anonymous users
         bootstrap_file.write("DELETE FROM mysql.user where user= '';\n")
         # Create mtr database
+        """
         bootstrap_file.write("CREATE DATABASE mtr;\n")
         for sql_file in [ 'mtr_warnings.sql' # help tables + data for warning detection / suppression
                         , 'mtr_check.sql' # Procs for checking proper restore post-testcase
                         ]:
             sql_file_path = os.path.join(self.basedir,'mysql-test/include',sql_file)
             sql_file_handle = open(sql_file_path,'r')
-            bootstrap_file.write(sql_file_handle.readlines())
+            for line in sql_file_handle.readlines():
+                bootstrap_file.write(line)
             sql_file_handle.close()
+        """
         bootstrap_file.close()
         return
 
@@ -400,7 +395,7 @@ class mysqlTree(codeTree):
                                       , 'loose-performance-schema-max-rwlock-instances':'10000'
                                       , 'loose-performance-schema-max-table-instances':'500'
                                       , 'loose-performance-schema-max-table-handles':'1000'
-                                      , 'binlog-direct-non-transactional-updates'
+                                      , 'binlog-direct-non-transactional-updates':None
                                       }
                            , 'mysqlbinlog':{}
                            , 'mysql_upgrade':{}
@@ -409,6 +404,17 @@ class mysqlTree(codeTree):
                            }
         config_reader = RawConfigParser(allow_no_value=True)
 
+
+class perconaTree(mysqlTree):
+    """ What a Percona code tree should look like to the test-runner
+        This should essentially be the same as a MySQL tree, but with a 
+        distinct server.type + any other goodies that differentiate
+     
+    """
+    
+    def __init__(self, basedir, variables,system_manager):
+        super(mysqlTree, self).__init__( variables, system_manager)
+        self.type='percona'
         
 
 

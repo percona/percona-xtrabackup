@@ -28,7 +28,7 @@
 # imports
 import os
 import sys
-import subproc
+import subprocess
 
 
 from lib.server_mgmt.server import Server
@@ -82,9 +82,8 @@ class mysqlServer(Server):
                                              ,'log':None
                                              ,'run':None
                                              ,'tmp':None
-                                             ,'master-data': {'local': { 'test':None
-                                                                       , 'mysql':None
-                                                                       }
+                                             ,'master-data': { 'test':None
+                                                             , 'mysql':None
                                                              }
                                              }  
                                     } 
@@ -141,7 +140,7 @@ class mysqlServer(Server):
             all MySQL servers that are spawned from a single codeTree
 
         """
-
+  
         # generate the bootstrap startup command
         if not self.bootstrap_cmd:
             mysqld_args = [ "--no-defaults"
@@ -157,15 +156,21 @@ class mysqlServer(Server):
                           ]
             # We add server_path into the mix this way as we
             # may alter how we store / handle server args later
-            mysqld_args = [self.server_path].append(mysqld_args)
+            mysqld_args.insert(0,self.server_path)
             self.bootstrap_cmd = " ".join(mysqld_args)
         # execute our command
+        bootstrap_log = open(self.bootstrap_log,'w')
+        # open our bootstrap file
+        bootstrap_in = open(self.bootstrap_file,'r')
         bootstrap_subproc = subprocess.Popen( self.bootstrap_cmd
                                             , shell=True
-                                            , stdout=self.bootstrap_log
-                                            , stderr=self.bootstrap_log
+                                            , stdin=bootstrap_in
+                                            , stdout=bootstrap_log
+                                            , stderr=bootstrap_log
                                             )
         bootstrap_subproc.wait()
+        bootstrap_in.close()
+        bootstrap_log.close()
         bootstrap_retcode = bootstrap_subproc.returncode
         if bootstrap_retcode:
             self.logging.error("Received retcode: %s executing command: %s"
