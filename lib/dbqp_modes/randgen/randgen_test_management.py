@@ -79,7 +79,9 @@ class testManager(test_management.testManager):
 
     def __init__( self, variables, system_manager):
         super(testManager, self).__init__( variables, system_manager)
-        self.suitepaths = [os.path.join(self.testdir,'randgen_tests')]
+        server_type = variables['defaultservertype']
+        if server_type == 'mysql':  server_type = 'percona'
+        self.suitepaths = [os.path.join(self.testdir,'%s_randgen_tests' %(server_type))]
         if variables['suitelist'] is None:
             self.suitelist = ['main']
         else:

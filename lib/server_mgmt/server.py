@@ -65,6 +65,7 @@ class Server(object):
 
         self.system_manager = self.server_manager.system_manager
         self.code_tree = code_tree
+        self.type = self.code_tree.type
         self.valgrind = self.system_manager.valgrind
         self.gdb = self.system_manager.gdb
         if self.valgrind:

@@ -1,0 +1,8 @@
+[test_info]
+comment = blob test
+
+[test_command]
+command = ./gentest.pl --gendata=conf/percona/percona.zz --grammar=conf/engines/blobs.yy --Validators=None --queries=1000 --threads=3
+
+[test_servers]
+servers = [[]]

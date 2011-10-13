@@ -28,8 +28,8 @@
 # imports
 import os
 import sys
+import time
 import subprocess
-
 
 from lib.server_mgmt.server import Server
 
@@ -62,6 +62,7 @@ class mysqlServer(Server):
         self.mysql_client = self.code_tree.mysql_client
         self.mysqlimport = self.code_tree.mysqlimport
         self.mysqlslap = self.code_tree.mysqlslap
+        self.mysql_upgrade = self.code_tree.mysql_upgrade
         self.server_path = self.code_tree.mysql_server
         self.mysql_client_path = self.code_tree.mysql_client
       
@@ -118,6 +119,17 @@ class mysqlServer(Server):
         self.take_db_snapshot()
 
         self.logging.debug_class(self)
+
+    def restore_snapshot(self):
+        """ Restore from a stored snapshot """
+        
+        self.logging.verbose("Restoring from db snapshot")
+        if not os.path.exists(self.snapshot_path):
+            self.logging.error("Could not find snapshot: %s" %(self.snapshot_path))
+        self.system_manager.remove_dir(self.datadir)
+        self.system_manager.copy_dir(self.snapshot_path, self.datadir)
+        time.sleep(2)
+
 
     def report(self):
         """ We print out some general useful info """
@@ -203,7 +215,7 @@ class mysqlServer(Server):
                       , "--loose-innodb_additional_mem_pool_size=1M"
                       , "--loose-innodb_log_files_in_group=2"
                       , "--slave-net-timeout=120"
-                      , "--log-bin=mysqld-bin"
+                      , "--log-bin=%s" %(os.path.join(self.logdir,"mysqld-bin"))
                       , "--loose-enable-performance-schema"
                       , "--loose-performance-schema-max-mutex-instances=10000"
                       , "--loose-performance-schema-max-rwlock-instances=10000"
@@ -211,12 +223,11 @@ class mysqlServer(Server):
                       , "--loose-performance-schema-max-table-handles=1000"
                       , "--binlog-direct-non-transactional-updates"
                       , "--loose-enable-performance-schema"
-                      , "--log-bin=master-bin"
                       , "--general_log=1"
                       , "--general_log_file=%s" %(self.general_log_file)
                       , "--slow_query_log=1"
                       , "--slow_query_log_file=%s" %(self.slow_query_log_file)
-                      , "--basedir=%s" %(self.codetree.basedir)
+                      , "--basedir=%s" %(self.code_tree.basedir)
                       , "--datadir=%s" %(self.datadir)
                       , "--tmpdir=%s"  %(self.tmpdir)
                       , "--character-sets-dir=%s" %(self.charsetdir)
@@ -225,14 +236,10 @@ class mysqlServer(Server):
                       , "--ssl-cert=%s" %(os.path.join(self.std_data,'server-cert.pem'))
                       , "--ssl-key=%s" %(os.path.join(self.std_data,'server-key.pem'))
                       , "--port=%d" %(self.master_port)
-                      , "--mysql-protocol.connect-timeout=60"
-                      , "--innodb.data-file-path=ibdata1:20M:autoextend"
-                      , "--sort-buffer-size=256K"
-                      , "--max-heap-table-size=1M"
                       , "--socket=%s" %(self.socket_file)
                       , "--pid-file=%s" %(self.pid_file)
                       , "--default-storage-engine=%s" %(self.default_storage_engine)
-                      , "--server-id=%d" %(self.get_numeric_server_id)
+                      , "--server-id=%d" %(self.get_numeric_server_id())
                       , self.secure_file_string
                       , self.user_string
                       ]
@@ -250,7 +257,7 @@ class mysqlServer(Server):
     def get_stop_cmd(self):
         """ Return the command that will shut us down """
         
-        return "%s --user=root --port=%d --connect-timeout=5 --silent --password= --shutdown " %(self.mysql_admin, self.master_port)
+        return "%s --no-defaults --user=root --port=%d --protocol=tcp shutdown " %(self.mysqladmin, self.master_port)
            
 
     def get_ping_cmd(self):

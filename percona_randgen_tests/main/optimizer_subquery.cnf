@@ -1,0 +1,8 @@
+[test_info]
+comment = optimizer subquery test 
+
+[test_command]
+command = ./gentest.pl --gendata=conf/percona/percona.zz --grammar=conf/percona/optimizer_subquery_percona.yy --queries=250 --threads=3
+
+[test_servers]
+servers = [[]]

@@ -210,6 +210,8 @@ class mysqlTree(codeTree):
 
         self.mysqladmin = self.system_manager.find_path([os.path.join( self.clientbindir
                                                                      , 'mysqladmin')])
+        self.mysql_upgrade = self.system_manager.find_path([os.path.join( self.clientbindir
+                                                                       , 'mysql_upgrade')])
         self.mysql_server = self.system_manager.find_path([ os.path.join(self.basedir, 'sql/mysqld-debug')
                                                           , os.path.join(self.basedir, 'libexec/mysqld-debug')
                                                           , os.path.join(self.basedir, 'sbin/mysqld-debug')

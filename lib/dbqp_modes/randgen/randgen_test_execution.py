@@ -70,7 +70,12 @@ class testExecutor(test_execution.testExecutor):
         self.time_manager.start(testcase_name,'test')
         randgen_outfile = os.path.join(self.logdir,'randgen.out')
         randgen_output = open(randgen_outfile,'w')
-        dsn = "--dsn=dbi:drizzle:host=localhost:port=%d:user=root:password="":database=test" %(self.master_server.master_port)
+        server_type = self.master_server.type
+        if server_type == 'percona':
+            # it is mysql for dbd::perl purposes
+            server_type = 'mysql'
+        dsn = "--dsn=dbi:%s:host=127.0.0.1:port=%d:user=root:password="":database=test" %( server_type
+                                                                                         , self.master_server.master_port)
         randgen_cmd = " ".join([self.current_testcase.test_command, dsn])
         randgen_subproc = subprocess.Popen( randgen_cmd
                                          , shell=True

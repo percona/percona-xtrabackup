@@ -171,7 +171,7 @@ class serverManager:
         # to catch the case where a server is just 
         # starting up and the user ctrl-c's
         # we don't know the server is running (still starting up)
-        # so we give it a few minutes
+        # so we give it a few
         self.tried_start = 1
         error_log = open(server.error_log,'w')
         if start_cmd: # It will be none if --manual-gdb used
@@ -286,7 +286,8 @@ class serverManager:
                     self.system_manager.kill_pid(server.pid)
             if shutdown_retcode:
                 self.logging.error("Problem shutting down server:")
-                self.logging.error("%s : %s" %(shutdown_retcode))
+                self.logging.error("%s" %(shutdown_retcode))
+                server.status = 0
             else:
                 server.status = 0 # indicate we are shutdown
         else:

@@ -51,7 +51,7 @@ class drizzleServer(Server):
                                            , requester
                                            , workdir_root)
         self.preferred_base_port = 9306
-        
+                
         # client files
         self.drizzledump = self.code_tree.drizzledump
         self.drizzle_client = self.code_tree.drizzle_client
