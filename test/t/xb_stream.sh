@@ -7,7 +7,7 @@ load_dbase_data sakila
 
 # Take backup
 mkdir -p $topdir/backup
-innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar 2> $OUTFILE
+innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 
 stop_mysqld
 # Remove datadir
@@ -18,16 +18,16 @@ backup_dir=$topdir/backup
 cd $backup_dir
 $TAR -ixvf out.tar
 cd - >/dev/null 2>&1 
-echo "###########" >> $OUTFILE
-echo "# PREPARE #" >> $OUTFILE
-echo "###########" >> $OUTFILE
-innobackupex --apply-log $backup_dir >> $OUTFILE 2>&1
+vlog "###########"
+vlog "# PREPARE #"
+vlog "###########"
+innobackupex --apply-log $backup_dir
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
-echo "###########" >> $OUTFILE
-echo "# RESTORE #" >> $OUTFILE
-echo "###########" >> $OUTFILE
-innobackupex --copy-back $backup_dir >> $OUTFILE 2>&1
+vlog "###########"
+vlog "# RESTORE #"
+vlog "###########"
+innobackupex --copy-back $backup_dir
 
 run_mysqld
 # Check sakila
