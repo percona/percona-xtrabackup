@@ -33,7 +33,7 @@ import re
 import imp
 import sys
 import subprocess
-import commands
+import unittest
 
 import lib.test_mgmt.test_execution as test_execution
     
@@ -48,10 +48,9 @@ class testExecutor(test_execution.testExecutor):
         self.status = 0
 
         # execute test module
-        self.execute_test_module()
+        self.current_test_status = self.execute_test_module()
 
         # analyze results
-        self.current_test_status = self.process_crashme_output()
         self.set_server_status(self.current_test_status)
         self.server_manager.reset_servers(self.name)
 
@@ -61,18 +60,23 @@ class testExecutor(test_execution.testExecutor):
             We use subprocess as we can pass os.environ dicts and whatnot 
 
         """
-
+        output_file_path = os.path.join(self.logdir,'native.out')
+        output_file = open(output_file_path,'w')
         testcase_name = self.current_testcase.fullname
         test_name = self.current_testcase.name
         self.time_manager.start(testcase_name,'test')
         # import our module and pass it some goodies to play with 
         test_module = imp.load_source(test_name, self.current_testcase.test_path)
-        self.current_test_retcode = test_module.run_test()
-        print self.current_test_retcode, '%'*80
+        test_result = test_module.run_test(output_file)
+        self.current_test_retcode = test_result.wasSuccessful()
         execution_time = int(self.time_manager.stop(testcase_name)*1000) # millisec
-        self.current_test_output = output
+        output_file.close()
+        output_file = open(output_file_path,'r')
+        output_data = ''.join(output_file.readlines())
+        output_file.close()
+        self.current_test_output = output_data
         self.current_test_exec_time = execution_time
-        if not self.current_test_retcode:
+        if self.current_test_retcode:
             return 'pass'
         return 'fail'
 

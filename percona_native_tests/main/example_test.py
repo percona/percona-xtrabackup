@@ -27,5 +27,7 @@ class TestSequenceFunctions(unittest.TestCase):
         for element in random.sample(self.seq, 5):
             self.assertTrue(element in self.seq)
 
-def run_test():
-    unittest.main()
+def run_test(output_file):
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestSequenceFunctions)
+    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
+
