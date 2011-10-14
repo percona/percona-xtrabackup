@@ -217,6 +217,7 @@ failed_tests=
 total_count=0
 
 export OUTFILE="$PWD/results/setup"
+export PIDDIR="$PWD"
 
 if ! get_version_info
 then
