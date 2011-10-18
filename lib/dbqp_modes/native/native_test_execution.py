@@ -67,6 +67,9 @@ class testExecutor(test_execution.testExecutor):
         self.time_manager.start(testcase_name,'test')
         # import our module and pass it some goodies to play with 
         test_module = imp.load_source(test_name, self.current_testcase.test_path)
+        test_module.servers = self.current_servers
+        test_module.test_executor = self
+        test_module.server_manager = self.server_manager
         test_result = test_module.run_test(output_file)
         self.current_test_retcode = test_result.wasSuccessful()
         execution_time = int(self.time_manager.stop(testcase_name)*1000) # millisec

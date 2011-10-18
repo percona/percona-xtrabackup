@@ -93,7 +93,7 @@ class testManager(test_management.testManager):
 
     def process_suite(self,suite_dir):
         """Process a test suite.
-           Look for crashme tests, which are nice clean conf files
+           Look for tests, which are nice clean python unittest files
         
         """
 
@@ -125,7 +125,7 @@ class testManager(test_management.testManager):
         test_name = os.path.basename(testfile).replace('.py','')
         test_comment = None
         test_module = imp.load_source(test_name, testfile)
-        server_requirements = test_module.servers
+        server_requirements = test_module.server_requirements
         return testCase( self.system_manager
                        , name = test_name
                        , fullname = "%s.%s" %(suite_name, test_name)
