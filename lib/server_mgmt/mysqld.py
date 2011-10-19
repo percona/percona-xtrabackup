@@ -120,16 +120,6 @@ class mysqlServer(Server):
 
         self.logging.debug_class(self)
 
-    def restore_snapshot(self):
-        """ Restore from a stored snapshot """
-        
-        self.logging.verbose("Restoring from db snapshot")
-        if not os.path.exists(self.snapshot_path):
-            self.logging.error("Could not find snapshot: %s" %(self.snapshot_path))
-        self.system_manager.remove_dir(self.datadir)
-        self.system_manager.copy_dir(self.snapshot_path, self.datadir)
-        time.sleep(2)
-
 
     def report(self):
         """ We print out some general useful info """

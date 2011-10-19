@@ -1,8 +1,0 @@
-[test_info]
-comment = repeatable read test
-
-[test_command]
-command = ./gentest.pl --gendata=conf/drizzle/varchar_drizzle.zz --grammar=conf/engines/varchar.yy --queries=1000 --threads=3
-
-[test_servers]
-servers = [[]]

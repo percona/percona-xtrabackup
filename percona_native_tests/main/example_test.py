@@ -6,7 +6,7 @@ servers = []
 server_manager = None
 test_executor = None
 
-class TestSequenceFunctions(unittest.TestCase):
+class TestServerUsage(unittest.TestCase):
 
     def setUp(self):
         self.seq = range(10)

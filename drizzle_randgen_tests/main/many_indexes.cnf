@@ -1,8 +1,0 @@
-[test_info]
-comment = database recovery test
-
-[test_command]
-command = ./gentest.pl --gendata=conf/drizzle/many_indexes_drizzle.zz --grammar=conf/drizzle/many_indexes_drizzle.yy --threads=1 --queries=10 --Validators=None
-
-[test_servers]
-servers = [[]]

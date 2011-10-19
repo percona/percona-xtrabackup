@@ -114,11 +114,18 @@ class Server(object):
     def restore_snapshot(self):
         """ Restore from a stored snapshot """
         
-        self.logging.verbose("Restoring from db snapshot")
+        #self.logging.verbose("Restoring from db snapshot")
+        #self.logging.warning('mysqldir pre-restore:')
+        #if os.path.exists(os.path.join(self.datadir,'mysql')):
+        #    self.logging.warning(os.listdir(os.path.join(self.datadir,'mysql')))
         if not os.path.exists(self.snapshot_path):
             self.logging.error("Could not find snapshot: %s" %(self.snapshot_path))
         self.system_manager.remove_dir(self.datadir)
+        #self.logging.warning('snapshot contents:')
+        #self.logging.warning(os.listdir(os.path.join(self.snapshot_path,'mysql')))
         self.system_manager.copy_dir(self.snapshot_path, self.datadir)
+        #self.logging.warning('mysqldir post-restore:')
+        #self.logging.warning(os.listdir(os.path.join(self.datadir,'mysql')))
 
     def is_started(self):
         """ Is the server running?  Particulars are server-dependent """

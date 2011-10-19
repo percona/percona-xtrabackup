@@ -1,8 +1,0 @@
-[test_info]
-comment = collations test
-
-[test_command]
-command = ./gentest.pl --gendata=conf/drizzle/drizzle.zz --grammar=conf/drizzle/collations_drizzle.yy --queries=1000 --threads=3
-
-[test_servers]
-servers = [[]]

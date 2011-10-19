@@ -1,8 +1,0 @@
-[test_info]
-comment = repeatable read test
-
-[test_command]
-command = ./gentest.pl --gendata=conf/drizzle/outer_join_drizzle.zz --grammar=conf/drizzle/outer_join_portable_drizzle.yy --queries=1000 --threads=3
-
-[test_servers]
-servers = [[]]

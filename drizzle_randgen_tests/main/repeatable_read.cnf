@@ -1,8 +1,0 @@
-[test_info]
-comment = repeatable read test
-
-[test_command]
-command = ./gentest.pl --gendata=conf/transactions/transactions.zz --grammar=conf/transactions/repeatable_read.yy --validators=RepeatableRead --queries=1000 --threads=3
-
-[test_servers]
-servers = [[]]
