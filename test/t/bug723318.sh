@@ -8,7 +8,7 @@ load_dbase_data sakila
 # Take backup
 mkdir -p $topdir/backup
 mkdir -p $topdir/backup/stream
-innobackupex --stream=tar $topdir/backup > $topdir/backup/stream/out.tar 2> $OUTFILE 
+innobackupex --stream=tar $topdir/backup > $topdir/backup/stream/out.tar 
 
 stop_mysqld
 cd $topdir/backup/stream/

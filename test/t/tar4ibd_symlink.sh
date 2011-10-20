@@ -20,7 +20,7 @@ ln -s $topdir/customer_link.ibd $topdir/mysql/sakila/customer.ibd
 
 # Take backup
 mkdir -p $topdir/backup
-innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar 2> $OUTFILE
+innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 
 stop_mysqld
 
@@ -39,12 +39,12 @@ cd $backup_dir
 $TAR -ixvf out.tar
 cd - >/dev/null 2>&1 
 
-innobackupex --apply-log $backup_dir >> $OUTFILE 2>&1
+innobackupex --apply-log $backup_dir
 
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 
-innobackupex --copy-back $backup_dir >> $OUTFILE 2>&1
+innobackupex --copy-back $backup_dir
 
 run_mysqld
 

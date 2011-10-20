@@ -14,7 +14,7 @@ run_cmd ${MYSQLADMIN} ${MYSQL_ARGS} password '$PASSWD'
 vlog "mysql password has been changed to contain special char"
 
 vlog "Starting innobackupex wrapper"
-innobackupex --password='$PASSWD' $topdir/backup > $OUTFILE 2>&1 
+innobackupex --password='$PASSWD' $topdir/backup
 backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 
 run_cmd ${MYSQLADMIN} ${MYSQL_ARGS} -p'$PASSWD' password ''
@@ -26,17 +26,17 @@ vlog "Removing data folder"
 rm -r $mysql_datadir
 # Restore sakila
 vlog "Applying log"
-echo "###########" >> $OUTFILE
-echo "# PREPARE #" >> $OUTFILE
-echo "###########" >> $OUTFILE
-innobackupex --apply-log $backup_dir >> $OUTFILE 2>&1
+vlog "###########"
+vlog "# PREPARE #"
+vlog "###########"
+innobackupex --apply-log $backup_dir
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 vlog "Performing copyback"
-echo "###########" >> $OUTFILE
-echo "# PREPARE #" >> $OUTFILE
-echo "###########" >> $OUTFILE
-innobackupex --copy-back $backup_dir >> $OUTFILE 2>&1
+vlog "###########"
+vlog "# PREPARE #"
+vlog "###########"
+innobackupex --copy-back $backup_dir
 
 vlog "Starting database server"
 # using --skip-grant-tables to override root password restored from backup

@@ -6,7 +6,7 @@ load_dbase_schema sakila
 load_dbase_data sakila
 
 mkdir -p $topdir/backup
-innobackupex  $topdir/backup > $OUTFILE 2>&1 
+innobackupex  $topdir/backup
 backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 vlog "Backup created in directory $backup_dir"
 
@@ -16,16 +16,16 @@ rm -r $mysql_datadir
 #init_mysql_dir
 # Restore sakila
 vlog "Applying log"
-echo "###########" >> $OUTFILE
-echo "# PREPARE #" >> $OUTFILE
-echo "###########" >> $OUTFILE
-innobackupex --apply-log $backup_dir >> $OUTFILE 2>&1
+vlog "###########"
+vlog "# PREPARE #"
+vlog "###########"
+innobackupex --apply-log $backup_dir
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
-echo "###########" >> $OUTFILE
-echo "# RESTORE #" >> $OUTFILE
-echo "###########" >> $OUTFILE
-innobackupex --copy-back $backup_dir >> $OUTFILE 2>&1
+vlog "###########"
+vlog "# RESTORE #"
+vlog "###########"
+innobackupex --copy-back $backup_dir
 
 run_mysqld
 # Check sakila
