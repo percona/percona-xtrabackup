@@ -46,6 +46,9 @@ def execute_randgen(test_cmd, test_executor, servers):
     randgen_file = open(randgen_outfile,'r')
     output = ''.join(randgen_file.readlines())
     randgen_file.close()
+    if retcode == 0:
+        if not test_executor.verbose:
+            output = None
     return retcode, output
 
 
