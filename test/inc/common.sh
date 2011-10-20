@@ -98,9 +98,9 @@ function mysql_ping()
 
 function kill_leftovers()
 {
-    while test -f "$PWD/mysqld.pid" 
+    while test -f "$PIDDIR/mysqld.pid" 
     do
-	vlog "Found a leftover mysqld processes with PID `cat $PWD/mysqld.pid`, stopping it"
+	vlog "Found a leftover mysqld processes with PID `cat $PIDDIR/mysqld.pid`, stopping it"
 	stop_mysqld 2> /dev/null
     done
 }
@@ -109,7 +109,7 @@ function run_mysqld()
 {
     local c=0
     kill_leftovers
-    ${MYSQLD} ${MYSQLD_ARGS} $* --pid-file="$PWD/mysqld.pid" &
+    ${MYSQLD} ${MYSQLD_ARGS} $* --pid-file="$PIDDIR/mysqld.pid" &
     while [ "`mysql_ping`" != "1" ]
     do
         if [ ${c} -eq 100 ]
@@ -154,15 +154,15 @@ function run_cmd_expect_failure()
 
 function stop_mysqld()
 {
-    if [ -f "$PWD/mysqld.pid" ]
+    if [ -f "$PIDDIR/mysqld.pid" ]
     then
 	${MYSQLADMIN} ${MYSQL_ARGS} shutdown 
 	vlog "Database server has been stopped"
-	if [ -f "$PWD/mysqld.pid" ]
+	if [ -f "$PIDDIR/mysqld.pid" ]
 	then
 	    sleep 1;
-	    kill -9 `cat $PWD/mysqld.pid`
-	    rm -f $PWD/mysqld.pid
+	    kill -9 `cat $PIDDIR/mysqld.pid`
+	    rm -f $PIDDIR/mysqld.pid
 	fi
     fi
 }
