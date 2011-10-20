@@ -25,7 +25,7 @@ import os
 
 from lib.util.randgen_methods import execute_randgen
 
-server_requirements = [[]]
+server_requirements =  [[--innodb.replication-log],[]]
 servers = []
 server_manager = None
 test_executor = None

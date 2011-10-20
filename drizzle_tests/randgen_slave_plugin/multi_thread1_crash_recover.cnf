@@ -1,8 +1,0 @@
-[test_info]
-comment = single threaded test
-
-[test_command]
-command = ./gentest.pl --gendata=conf/drizzle/translog_drizzle.zz --grammar=conf/drizzle/translog_concurrent1.yy --Reporter=DrizzleSlavePluginCrashRecover  --queries=1000 --threads=3
-
-[test_servers]
-servers = [[--innodb.replication-log --plugin-add=shutdown_function ],[--plugin-add=slave --slave.config-file=$MASTER_SERVER_SLAVE_CONFIG]]

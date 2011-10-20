@@ -25,12 +25,12 @@ import os
 
 from lib.util.randgen_methods import execute_randgen
 
-server_requirements = [[]]
+server_requirements =  [[--innodb.replication-log],[--plugin-add=slave --slave.config-file=$MASTER_SERVER_SLAVE_CONFIG]]
 servers = []
 server_manager = None
 test_executor = None
 
-class subquerySemijoinTest(unittest.TestCase):
+class trxOrderingTest(unittest.TestCase):
 
     #def setUp(self):
     #    """ If we need to do anything pre-test, we do it here.
@@ -42,8 +42,8 @@ class subquerySemijoinTest(unittest.TestCase):
     #    return
 
 
-    def test_subquerySemijoin1(self):
-        test_cmd = "./gentest.pl --gendata=conf/drizzle/drizzle.zz --grammar=conf/drizzle/subquery_semijoin_drizzle.yy --queries=1000 --threads=3"
+    def test_trxOrdering(self):
+        test_cmd = "./gentest.pl --gendata=conf/drizzle/translog_ordering.zz --grammar=conf/drizzle/translog_ordering.yy --Reporter=DrizzleSlavePlugin --threads=5  --queries=75"
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
 
@@ -52,6 +52,6 @@ class subquerySemijoinTest(unittest.TestCase):
 
 
 def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(subquerySemijoinTest)
+    suite = unittest.TestLoader().loadTestsFromTestCase(trxOrderingTest)
     return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

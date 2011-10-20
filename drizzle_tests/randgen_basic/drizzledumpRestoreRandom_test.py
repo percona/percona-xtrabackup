@@ -52,6 +52,6 @@ class drizzledumpRandTest(unittest.TestCase):
 
 
 def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(drizzledumpTest)
+    suite = unittest.TestLoader().loadTestsFromTestCase(drizzledumpRandTest)
     return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

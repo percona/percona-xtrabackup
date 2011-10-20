@@ -25,12 +25,12 @@ import os
 
 from lib.util.randgen_methods import execute_randgen
 
-server_requirements = [[]]
+server_requirements = [[--transaction-log.enable],[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class multithread1Test(unittest.TestCase):
+class multiThread2Test(unittest.TestCase):
 
     #def setUp(self):
     #    """ If we need to do anything pre-test, we do it here.
@@ -42,8 +42,8 @@ class multithread1Test(unittest.TestCase):
     #    return
 
 
-    def test_multithread1(self):
-        test_cmd = "./gentest.pl --gendata=conf/drizzle/translog_drizzle.zz --grammar=conf/drizzle/translog_concurrent1.yy --Reporter=DrizzleInnoTrxLog  --queries=100 --threads=3"
+    def test_multiThread2(self):
+        test_cmd = "./gentest.pl --gendata=conf/drizzle/translog_drizzle.zz --grammar=conf/drizzle/translog_concurrent2.yy --Reporter=DrizzleTransactionLog  --queries=75 --threads=3"
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
 
@@ -52,6 +52,6 @@ class multithread1Test(unittest.TestCase):
 
 
 def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(multithread1Test)
+    suite = unittest.TestLoader().loadTestsFromTestCase(multiThread2Test)
     return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 
