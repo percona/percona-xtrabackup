@@ -25,7 +25,7 @@ import os
 
 from lib.util.randgen_methods import execute_randgen
 
-server_requirements = [[--innodb.replication-log --plugin-add=shutdown_function ],[--plugin-add=slave --slave.config-file=$MASTER_SERVER_SLAVE_CONFIG]]
+server_requirements = [['--innodb.replication-log --plugin-add=shutdown_function' ],['--plugin-add=slave --slave.config-file=$MASTER_SERVER_SLAVE_CONFIG']]
 servers = []
 server_manager = None
 test_executor = None

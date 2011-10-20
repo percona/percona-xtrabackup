@@ -25,7 +25,7 @@ import os
 
 from lib.util.randgen_methods import execute_randgen
 
-server_requirements =  [[--transaction-log.enable],[]]
+server_requirements =  [['--transaction-log.enable'],[]]
 servers = []
 server_manager = None
 test_executor = None
