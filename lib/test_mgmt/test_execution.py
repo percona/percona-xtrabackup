@@ -272,6 +272,8 @@ class testExecutor():
                        ,  'DRIZZLE_BASEDIR' : self.system_manager.code_manager.code_trees['drizzle'][0].basedir
                        ,  'DRIZZLE_TRX_READER' : self.master_server.trx_reader
                        ,  'DRIZZLE_TEST_WORKDIR' : self.system_manager.workdir
+                       ,  'SQLBENCH_DIR' : os.path.join( self.system_manager.testdir
+                                                       , 'sql-bench')
                        }
         elif self.master_server.type in ['mysql','percona']:
             env_reqs = {  'MYSQLTEST_VARDIR': self.master_server.vardir
@@ -291,6 +293,8 @@ class testExecutor():
                                                      , self.master_server.master_port)
                        ,  'MYSQL_BASEDIR' : self.system_manager.code_manager.code_trees['mysql'][0].basedir
                        ,  'MYSQL_TEST_WORKDIR' : self.system_manager.workdir
+                       ,  'SQLBENCH_DIR' : os.path.join( self.system_manager.testdir
+                                                       , 'sql-bench')
                        }         
 
         self.working_environment = self.system_manager.env_manager.create_working_environment(env_reqs)

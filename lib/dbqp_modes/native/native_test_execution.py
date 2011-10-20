@@ -80,8 +80,8 @@ class testExecutor(test_execution.testExecutor):
         self.current_test_output = output_data
         self.current_test_exec_time = execution_time
         if self.current_test_retcode:
-            if not self.verbose:
-                self.current_test_output = None
+            #if not self.verbose:
+            #    self.current_test_output = None
             return 'pass'           
         return 'fail'
 

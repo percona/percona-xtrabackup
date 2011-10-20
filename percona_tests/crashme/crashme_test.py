@@ -21,16 +21,15 @@
 
 import unittest
 import subprocess
-import os
 
-from lib.util.randgen_methods import execute_randgen
+from lib.util.crashme_methods import execute_crashme
 
 server_requirements = [[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class BlobTest(unittest.TestCase):
+class crashmeTest(unittest.TestCase):
 
     #def setUp(self):
     #    """ If we need to do anything pre-test, we do it here.
@@ -42,16 +41,17 @@ class BlobTest(unittest.TestCase):
     #    return
 
 
-    def test_blob1(self):
-        test_cmd = "$DRIZZLE_TEST_DIR/sql-bench/crash-me --server=mysqld --force --dir=$DRIZZLE_TEST_WORKDIR  --connect-options=port=$MASTER_MYPORT --verbose --debug --user=root"
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
+    def test_runCrashme(self):
+        test_cmd = "$SQLBENCH_DIR/crash-me --server=mysqld --host=127.0.0.1 --force --dir=$MYSQL_TEST_WORKDIR  --connect-options=port=$MASTER_MYPORT --verbose --debug --user=root"
+        test_status, retcode, output = execute_crashme(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
+        self.assertTrue(test_status=='pass', output)
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
 
 
 def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(BlobTest)
+    suite = unittest.TestLoader().loadTestsFromTestCase(crashmeTest)
     return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

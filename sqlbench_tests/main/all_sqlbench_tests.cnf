@@ -1,8 +1,0 @@
-[test_info]
-comment = Run all sql-bench tests!
-
-[test_command]
-command = $DRIZZLE_TEST_DIR/sql-bench/run-all-tests --server=drizzle --dir=$DRIZZLE_TEST_WORKDIR --log --connect-options=port=$MASTER_MYPORT --create-options=ENGINE=innodb --user=root 
-
-[test_servers]
-servers = [[]]
