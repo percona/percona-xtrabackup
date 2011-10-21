@@ -376,16 +376,22 @@ sub backup {
 
     # connect to database
     mysql_open();
+    mysql_check();
 
-    if ( $option_safe_slave_backup ) {
-        wait_for_safe_slave();
+    if ($option_safe_slave_backup) {
+      mysql_check();
+      wait_for_safe_slave();
     }
 
     # flush tables with read lock
     mysql_check();
     mysql_lockall() if !$option_no_lock;
 
-    write_slave_info() if $option_slave_info;
+    if ($option_slave_info) {
+        mysql_check();
+        write_slave_info();
+    }
+
 
     # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
     backup_files();
@@ -397,11 +403,12 @@ sub backup {
     mysql_unlockall() if !$option_no_lock;
 
     if ( $option_safe_slave_backup ) {
-       print STDERR "$prefix: Starting slave SQL thread\n";
-       mysql_send('START SLAVE SQL_THREAD;');
+      mysql_check();
+      print STDERR "$prefix: Starting slave SQL thread\n";
+      mysql_send('START SLAVE SQL_THREAD;');
     }
 
-    # disconnect from database
+    # Close the DB connection
     mysql_close();
 
     if ($option_remote_host) {
