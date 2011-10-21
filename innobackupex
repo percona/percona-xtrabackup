@@ -2367,7 +2367,7 @@ innobackupex - Non-blocking backup tool for InnoDB, XtraDB and HailDB databases
 
 innobackupex [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME] 
              [--password=WORD] [--port=PORT] [--socket=SOCKET]
-             [--no-timestamp] [--ibbackup-binary=IBBACKUP-BINARY]
+             [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
              [--slave-info] [--stream=tar] [--force-tar]
              [--scpopt=OPTIONS-FOR-SCP] [--defaults-file=MY.CNF]
              [--databases=LIST] [--remote-host=HOSTNAME] [--no-lock] 
@@ -2455,7 +2455,7 @@ This option displays a help screen and exits.
 
 This option specifies the host to use when connecting to the database server with TCP/IP.  The option accepts a string argument. It is passed to the mysql child process without alteration. See mysql --help for details.
 
-=item --ibbackup-binary=IBBACKUP-BINARY
+=item --ibbackup=IBBACKUP-BINARY
 
 This option specifies which xtrabackup binary should be used.  The option accepts a string argument. IBBACKUP-BINARY should be the command used to run XtraBackup. The option can be useful if the xtrabackup binary is not in your search path or working directory. If this option is not specified, innobackupex attempts to determine the binary to use automatically. By default, "xtrabackup" is the command used. However, when option --copy-back is specified, "xtrabackup_51" is the command used. And when option --apply-log is specified, the binary is used whose name is in the file "xtrabackup_binary" in the backup directory, if that file exists.
 
