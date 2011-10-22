@@ -491,9 +491,11 @@ class systemManager:
 
     def kill_pid(self, pid):
         """ We kill the specified pid """
-        
-        os.kill(int(pid),9)
-
+        try:
+            os.kill(int(pid),9)
+        except OSError:
+            self.logging.verbose("PID: %s was not running despite the existence of a pid file.  This may be of note...")
+        return
    
     
 
