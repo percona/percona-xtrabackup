@@ -186,7 +186,7 @@ system_control_group.add_option(
 system_control_group.add_option(
        "--mode"
      , dest="mode"
-     , default="dtr"
+     , default="native"
      , help="Testing mode.  We currently support dtr, randgen, sysbench, sqlbench, crashme and cleanup modes.  See docs for further details about individual modes [%default]"
      )
 
@@ -412,6 +412,14 @@ environment_control_group.add_option(
      , action='store'
      , default=randgen_path_default
      , help = "The path to a randgen installation that can be used to execute randgen-based tests"
+     )
+
+environment_control_group.add_option(
+       "--innobackupex-path"
+     , dest="innobackupexpath"
+     , action='store'
+     , default=None
+     , help = "The path to the innobackupex script that facilitates the use of Xtrabackup"
      )
 
 parser.add_option_group(environment_control_group)

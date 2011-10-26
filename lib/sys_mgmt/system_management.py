@@ -80,6 +80,8 @@ class systemManager:
         self.gdb = variables['gdb']
         self.manual_gdb = variables['manualgdb']
         self.randgen_path = variables['randgenpath']
+        # there may be a better place to put this...
+        self.innobackupex_path = variables['innobackupexpath']
 
         # we use this to preface commands in order to run valgrind and such
         self.cmd_prefix = '' 

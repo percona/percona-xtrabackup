@@ -247,7 +247,7 @@ class mysqlServer(Server):
     def get_stop_cmd(self):
         """ Return the command that will shut us down """
         
-        return "%s --no-defaults --user=root --port=%d --protocol=tcp shutdown " %(self.mysqladmin, self.master_port)
+        return "%s --no-defaults --user=root --port=%d --host=127.0.0.1 --protocol=tcp shutdown " %(self.mysqladmin, self.master_port)
            
 
     def get_ping_cmd(self):
@@ -256,7 +256,7 @@ class mysqlServer(Server):
 
         """
 
-        return '%s --port=%d --user=root -hlocalhost --protocol=tcp -e ""' % (self.mysql_client_path, self.master_port)
+        return '%s --no-defaults --user=root --port=%d --host=127.0.0.1 --protocol=tcp ping' % (self.mysqladmin, self.master_port)
 
     def is_started(self):
         """ Determine if the server is up and running - 
@@ -270,5 +270,6 @@ class mysqlServer(Server):
 
         return self.system_manager.find_path( [self.pid_file]
                                             , required=0)
+
 
 
