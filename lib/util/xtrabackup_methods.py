@@ -22,15 +22,23 @@
 import os
 import subprocess
 
-def execute_command(cmd):
+def execute_cmd(cmd):
+    print cmd, '&'*80
+    outfile_path = 'innobackupex.out'
+    outfile = open(outfile_path,'w')
     cmd_subproc = subprocess.Popen( cmd
                                   , shell=True
-                                  , stdout = subprocess.STDOUT
-                                  , stderr = subprocess.STDOUT
+                                  , stdout = outfile 
+                                  , stderr = subprocess.STDOUT 
                                   )
     cmd_subproc.wait()
-    retcode = cmd_subproc.returncode     
-    return retcode
+    retcode = cmd_subproc.returncode 
+    outfile.close
+    in_file = open(outfile_path,'r')
+    output = ''.join(in_file.readlines())
+    print output
+    print '^'*80
+    return retcode,output
 
 
 def innobackupex_backup( innobackupex_path
@@ -43,7 +51,7 @@ def innobackupex_backup( innobackupex_path
 
     """
 
-    cmd = "%s --user=root --password='' --port=%d %s" %( innobackupex_path
+    cmd = "%s --user=root --port=%d --host=127.0.0.1 %s" %( innobackupex_path
                                                        , server.master_port
                                                        , backup_path)
     if extra_opts:

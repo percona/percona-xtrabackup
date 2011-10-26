@@ -179,7 +179,8 @@ class testExecutor():
         # We call gendata against the server(s) with the
         # specified file
         if self.execution_manager.gendata_file:
-            dsn = "--dsn=dbi:drizzle:host=localhost:port=%d:user=root:password="":database=test" %(self.master_server.master_port)
+            dsn = "--dsn=dbi:%s:host=127.0.0.1:port=%d:user=root:password="":database=test" %( self.master_server.type
+                                                                                             , self.master_server.master_port)
             gendata_cmd = "./gendata.pl %s --spec=%s" %( dsn 
                                                        , self.execution_manager.gendata_file
                                                        )

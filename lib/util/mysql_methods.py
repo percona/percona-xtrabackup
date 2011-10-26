@@ -28,7 +28,7 @@
 import os
 import subprocess
 
-def execute_command(cmd, stdout_path):
+def execute_cmd(cmd, stdout_path):
     stdout_file = open(stdout_path,'w')
     cmd_subproc = subprocess.Popen( cmd
                                   , shell=True
@@ -37,12 +37,11 @@ def execute_command(cmd, stdout_path):
                                   )
     cmd_subproc.wait()
     retcode = cmd_subproc.returncode
-    close(stdout_file)
+    stdout_file.close()
     return retcode
 
 
 def take_mysqldump( server
-                  , dump_path = None
                   , databases=[]
                   , tables=[]
                   , dump_path = None

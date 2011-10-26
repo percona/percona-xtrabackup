@@ -60,13 +60,17 @@ class basicTest(unittest.TestCase):
         """
         innobackupex = test_executor.system_manager.innobackupex_path
         master_server = servers[0] # assumption that this is 'master'
+        backup_path = os.path.join(master_server.vardir, '_xtrabackup')
 
         # populate our server with a test bed
         test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         
         # take a backup
-        innobackupex_backup(innobackupex, master_server, extra_opts=extra_options)
+        innobackupex_backup( innobackupex
+                           , master_server
+                           , backup_path
+                           , extra_opts=extra_options)
 
         # take mysqldump of our current server state
         orig_dumpfile = os.path.join(master_server.vardir,'orig_dumpfile')
@@ -86,18 +90,29 @@ class basicTest(unittest.TestCase):
                             , extra_opts=extra_options)
 
         # restart server (and ensure it doesn't crash)
-        server_manager.start_server(master_server)
+        server_manager.start_server( master_server
+                                   , test_executor
+                                   , test_executor.working_environment
+                                   , 0)
 
         # take mysqldump of current server state
         restored_dumpfile = os.path.join(master_server.vardir, 'restored_dumpfile')
         take_mysqldump(master_server, databases=['test'],dump_path=restored_dumpfile)
 
         # diff original vs. current server dump files
-       server_diff = difflib.unified_diff(orig_dumpfile, restored_dumpfile)
-       diff_output = []
-       for line in server_diff:
-           diff_output.append(line)
-       self.assertFalse(diff_output, '\n'.join(diff_output))
+        orig_file = open(orig_dumpfile,'r')
+        restored_file = open(restored_dumpfile,'r')
+        orig_file_data = [ i for i in orig_file.readlines() if not i.strip().startswith('Dump Completed') ]
+        rest_file_data = [ i for i in restored_file.readlines() if not i.strip().startswith('Dump Completed') ]
+        server_diff = difflib.unified_diff( orig_file.readlines()
+                                          , restored_file.readlines()
+                                          , fromfile=orig_dumpfile
+                                          , tofile=restored_dumpfile
+                                          )
+        diff_output = []
+        for line in server_diff:
+            diff_output.append(line)
+        self.assertFalse(diff_output, '\n'.join(diff_output))
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
