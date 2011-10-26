@@ -23,7 +23,6 @@ import os
 import subprocess
 
 def execute_cmd(cmd, exec_path, outfile_path):
-    print cmd, '&'*80
     outfile = open(outfile_path,'w')
     cmd_subproc = subprocess.Popen( cmd
                                   , cwd = exec_path
@@ -36,12 +35,11 @@ def execute_cmd(cmd, exec_path, outfile_path):
     outfile.close
     in_file = open(outfile_path,'r')
     output = ''.join(in_file.readlines())
-    print output
-    print '^'*80
     return retcode,output
 
 
 def innobackupex_backup( innobackupex_path
+                       , xtrabackup_path
                        , output_path
                        , server
                        , backup_path
@@ -52,17 +50,19 @@ def innobackupex_backup( innobackupex_path
 
     """
 
-    cmd = "%s --defaults-file=%s--user=root --port=%d --host=127.0.0.1 %s" %( innobackupex_path
-                                                                            , server.cnf_file
-                                                                            , server.master_port
-                                                                            , backup_path)
+    cmd = "%s --defaults-file=%s --user=root --port=%d --host=127.0.0.1 --ibbackup=%s %s" %( innobackupex_path
+                                                                                           , server.cnf_file
+                                                                                           , server.master_port
+                                                                                           , xtrabackup_path
+                                                                                           , backup_path)
     if extra_opts:
         cmd = ' '.join([cmd, extra_opts])
     exec_path = os.path.dirname(innobackupex_path)
-    retcode = execute_cmd(cmd, exec_path, output_path)
-    return retcode
+    retcode, output = execute_cmd(cmd, exec_path, output_path)
+    return retcode, output
 
 def innobackupex_prepare( innobackupex_path
+                        , xtrabackup_path
                         , output_path
                         , backup_path
                         , use_mem='500M'
@@ -71,18 +71,21 @@ def innobackupex_prepare( innobackupex_path
         backup file
 
     """
-    cmd = "%s --apply-log --use-memory=%s %s" %( innobackupex_path
-                                               , use_mem
-                                               , backup_path)
+    cmd = "%s --apply-log --use-memory=%s --ibbackup=%s %s" %( innobackupex_path
+                                                             , use_mem
+                                                             , xtrabackup_path
+                                                             , backup_path)
     if extra_opts:
         cmd = ' '.join([cmd, extra_opts])
     exec_path = os.path.dirname(innobackupex_path)
-    retcode = execute_cmd(cmd, exec_path, output_path)
-    return retcode
+    retcode, output = execute_cmd(cmd, exec_path, output_path)
+    return retcode, output
 
 def innobackupex_restore( innobackupex_path
+                        , xtrabackup_path
                         , output_path
                         , backup_path
+                        , cnf_file
                         , use_mem='500M'
                         , extra_opts=None):
     """ Use innobackupex to restore a server from
@@ -90,14 +93,16 @@ def innobackupex_restore( innobackupex_path
 
     """
 
-    cmd = "%s --copy-back %s" %( innobackupex_path
-                               , backup_path
-                               )
+    cmd = "%s --defaults-file=%s --copy-back --ibbackup=%s %s" %( innobackupex_path
+                                                                , cnf_file
+                                                                , xtrabackup_path
+                                                                , backup_path
+                                                                )
     if extra_opts:
         cmd = ' '.join([cmd, extra_opts])
     exec_path = os.path.dirname(innobackupex_path)
-    retcode = execute_cmd(cmd, exec_path, output_path)
-    return retcode
+    retcode, output = execute_cmd(cmd, exec_path, output_path)
+    return retcode, output
 
 
 

@@ -422,6 +422,14 @@ environment_control_group.add_option(
      , help = "The path to the innobackupex script that facilitates the use of Xtrabackup"
      )
 
+environment_control_group.add_option(
+      "--xtrabackup-path"
+    , dest="xtrabackuppath"
+    , action='store'
+    , default=None
+    , help = "The path the xtrabackup binary to be tested"
+    )
+
 parser.add_option_group(environment_control_group)
 # end environment control group
 

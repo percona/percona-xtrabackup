@@ -283,22 +283,12 @@ class mysqlServer(Server):
             helpful for testing / etc
 
         """
-        sect_name = 'mysqld'
-        config = RawConfigParser(allow_no_value=True)
-        config.add_section(sect_name)
+
+        config_file = open(self.cnf_file,'w')
+        config_file.write('[mysqld]') 
         for server_arg in server_args:
             # We currently have a list of string values
-            # We need to remove any '--' stuff and split
-            # name:value (if applicable)
-            print server_arg, '&&'
-            server_arg = server_arg.replace('--','')
-            config.set(sect_name, server_arg, None)
-
-        with open(self.cnf_file, 'wb') as configfile:
-            config.write(configfile)
-        configfile.close()
-            
-
-
-
-
+            # We need to remove any '--' stuff 
+            server_arg = server_arg.replace('--','')+'\n'
+            config_file.write(server_arg)
+        config_file.close() 

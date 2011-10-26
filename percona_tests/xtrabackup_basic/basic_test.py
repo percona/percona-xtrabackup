@@ -48,17 +48,12 @@ class basicTest(unittest.TestCase):
         backup_path = os.path.join(master_server.vardir, '_xtrabackup')
         # remove backup path
         if os.path.exists(backup_path):
-            shutil.rm_tree(backup_path)
+            shutil.rmtree(backup_path)
 
 
     def test_basic1(self):
-        """ Very basic 'training-wheels' test to ensure
-            that a backup taken (under no load) is accurate
-            We use a test bed that covers min / max / etc
-            of all available data types
-
-        """
         innobackupex = test_executor.system_manager.innobackupex_path
+        xtrabackup = test_executor.system_manager.xtrabackup_path
         master_server = servers[0] # assumption that this is 'master'
         backup_path = os.path.join(master_server.vardir, '_xtrabackup')
         output_path = os.path.join(master_server.vardir, 'innobackupex.out')
@@ -68,11 +63,13 @@ class basicTest(unittest.TestCase):
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         
         # take a backup
-        innobackupex_backup( innobackupex
-                           , output_path
-                           , master_server
-                           , backup_path
-                           , extra_opts=extra_options)
+        retcode, output = innobackupex_backup( innobackupex
+                                             , xtrabackup
+                                             , output_path
+                                             , master_server
+                                             , backup_path
+                                             , extra_opts=extra_options)
+        self.assertTrue(retcode==0,output)
 
         # take mysqldump of our current server state
         orig_dumpfile = os.path.join(master_server.vardir,'orig_dumpfile')
@@ -82,22 +79,32 @@ class basicTest(unittest.TestCase):
         server_manager.stop_server(master_server)
 
         # prepare our backup
-        innobackupex_prepare( innobackupex
-                            , output_path
-                            , backup_path
-                            , extra_opts=extra_options)
+        retcode, output = innobackupex_prepare( innobackupex
+                                              , xtrabackup
+                                              , output_path
+                                              , backup_path
+                                              , extra_opts=extra_options)
+        self.assertTrue(retcode==0,output)
+
+        # remove old datadir
+        shutil.rmtree(master_server.datadir)
+        os.mkdir(master_server.datadir)
         
         # restore from backup
-        innobackupex_restore( innobackupex
-                            , output_path
-                            , backup_path
-                            , extra_opts=extra_options)
+        retcode, output = innobackupex_restore( innobackupex
+                                              , xtrabackup
+                                              , output_path
+                                              , backup_path
+                                              , master_server.cnf_file
+                                              , extra_opts=extra_options)
+        self.assertTrue(retcode==0, output)
 
         # restart server (and ensure it doesn't crash)
         server_manager.start_server( master_server
                                    , test_executor
                                    , test_executor.working_environment
                                    , 0)
+        self.assertTrue(master_server.status==1)
 
         # take mysqldump of current server state
         restored_dumpfile = os.path.join(master_server.vardir, 'restored_dumpfile')

@@ -82,6 +82,7 @@ class systemManager:
         self.randgen_path = variables['randgenpath']
         # there may be a better place to put this...
         self.innobackupex_path = variables['innobackupexpath']
+        self.xtrabackup_path = variables['xtrabackuppath']
 
         # we use this to preface commands in order to run valgrind and such
         self.cmd_prefix = '' 
