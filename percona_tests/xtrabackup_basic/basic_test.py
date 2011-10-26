@@ -61,6 +61,7 @@ class basicTest(unittest.TestCase):
         innobackupex = test_executor.system_manager.innobackupex_path
         master_server = servers[0] # assumption that this is 'master'
         backup_path = os.path.join(master_server.vardir, '_xtrabackup')
+        output_path = os.path.join(master_server.vardir, 'innobackupex.out')
 
         # populate our server with a test bed
         test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
@@ -68,6 +69,7 @@ class basicTest(unittest.TestCase):
         
         # take a backup
         innobackupex_backup( innobackupex
+                           , output_path
                            , master_server
                            , backup_path
                            , extra_opts=extra_options)
@@ -81,11 +83,13 @@ class basicTest(unittest.TestCase):
 
         # prepare our backup
         innobackupex_prepare( innobackupex
+                            , output_path
                             , backup_path
                             , extra_opts=extra_options)
         
         # restore from backup
         innobackupex_restore( innobackupex
+                            , output_path
                             , backup_path
                             , extra_opts=extra_options)
 

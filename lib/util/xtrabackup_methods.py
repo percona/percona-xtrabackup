@@ -22,11 +22,11 @@
 import os
 import subprocess
 
-def execute_cmd(cmd):
+def execute_cmd(cmd, exec_path, outfile_path):
     print cmd, '&'*80
-    outfile_path = 'innobackupex.out'
     outfile = open(outfile_path,'w')
     cmd_subproc = subprocess.Popen( cmd
+                                  , cwd = exec_path
                                   , shell=True
                                   , stdout = outfile 
                                   , stderr = subprocess.STDOUT 
@@ -42,6 +42,7 @@ def execute_cmd(cmd):
 
 
 def innobackupex_backup( innobackupex_path
+                       , output_path
                        , server
                        , backup_path
                        , extra_opts=None):
@@ -51,15 +52,18 @@ def innobackupex_backup( innobackupex_path
 
     """
 
-    cmd = "%s --user=root --port=%d --host=127.0.0.1 %s" %( innobackupex_path
-                                                       , server.master_port
-                                                       , backup_path)
+    cmd = "%s --defaults-file=%s--user=root --port=%d --host=127.0.0.1 %s" %( innobackupex_path
+                                                                            , server.cnf_file
+                                                                            , server.master_port
+                                                                            , backup_path)
     if extra_opts:
         cmd = ' '.join([cmd, extra_opts])
-    retcode = execute_cmd(cmd)
+    exec_path = os.path.dirname(innobackupex_path)
+    retcode = execute_cmd(cmd, exec_path, output_path)
     return retcode
 
 def innobackupex_prepare( innobackupex_path
+                        , output_path
                         , backup_path
                         , use_mem='500M'
                         , extra_opts=None):
@@ -72,10 +76,12 @@ def innobackupex_prepare( innobackupex_path
                                                , backup_path)
     if extra_opts:
         cmd = ' '.join([cmd, extra_opts])
-    retcode = execute_cmd(cmd)
+    exec_path = os.path.dirname(innobackupex_path)
+    retcode = execute_cmd(cmd, exec_path, output_path)
     return retcode
 
 def innobackupex_restore( innobackupex_path
+                        , output_path
                         , backup_path
                         , use_mem='500M'
                         , extra_opts=None):
@@ -89,7 +95,8 @@ def innobackupex_restore( innobackupex_path
                                )
     if extra_opts:
         cmd = ' '.join([cmd, extra_opts])
-    retcode = execute_cmd(cmd)
+    exec_path = os.path.dirname(innobackupex_path)
+    retcode = execute_cmd(cmd, exec_path, output_path)
     return retcode
 
 

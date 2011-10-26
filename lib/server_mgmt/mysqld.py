@@ -31,6 +31,8 @@ import sys
 import time
 import subprocess
 
+from ConfigParser import RawConfigParser
+
 from lib.server_mgmt.server import Server
 
 class mysqlServer(Server):
@@ -105,6 +107,7 @@ class mysqlServer(Server):
         self.timer_file = os.path.join(self.logdir,('timer'))
         self.general_log_file = os.path.join(self.logdir,'mysqld.log')
         self.slow_query_log_file = os.path.join(self.logdir,'mysqld-slow.log')
+        self.cnf_file = os.path.join(self.vardir,'my.cnf')
 
         self.snapshot_path = os.path.join(self.tmpdir,('snapshot_%s' %(self.master_port)))
         # We want to use --secure-file-priv = $vardir by default
@@ -233,6 +236,7 @@ class mysqlServer(Server):
                       , self.secure_file_string
                       , self.user_string
                       ]
+        self.gen_cnf_file(server_args)
 
         if self.gdb:
             server_args.append('--gdb')
@@ -270,6 +274,31 @@ class mysqlServer(Server):
 
         return self.system_manager.find_path( [self.pid_file]
                                             , required=0)
+
+    def gen_cnf_file(self, server_args):
+        """ We generate a .cnf file for the server based
+            on the arguments.  We currently don't use
+            this for much, but xtrabackup uses it, so 
+            we must produce one.  This could also be
+            helpful for testing / etc
+
+        """
+        sect_name = 'mysqld'
+        config = RawConfigParser(allow_no_value=True)
+        config.add_section(sect_name)
+        for server_arg in server_args:
+            # We currently have a list of string values
+            # We need to remove any '--' stuff and split
+            # name:value (if applicable)
+            print server_arg, '&&'
+            server_arg = server_arg.replace('--','')
+            config.set(sect_name, server_arg, None)
+
+        with open(self.cnf_file, 'wb') as configfile:
+            config.write(configfile)
+        configfile.close()
+            
+
 
 
 
