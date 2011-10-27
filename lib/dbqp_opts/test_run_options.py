@@ -287,7 +287,7 @@ test_subject_control_group.add_option(
   )
 
 test_subject_control_group.add_option(
-    "--default_server_type"
+    "--default-server-type"
   , dest="defaultservertype"
   , type='string'
   , default = server_type_default
@@ -429,6 +429,15 @@ environment_control_group.add_option(
     , default=None
     , help = "The path the xtrabackup binary to be tested"
     )
+
+environment_control_group.add_option(
+      "--cluster-cnf"
+    , dest="clustercnf"
+    , action='store'
+    , default=None
+    , help = "The path to a config file defining a running cluster (node info)"
+    )
+
 
 parser.add_option_group(environment_control_group)
 # end environment control group
