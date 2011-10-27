@@ -22,11 +22,10 @@
 import os
 import shutil
 import unittest
-import difflib
 
 from lib.util.mysql_methods import execute_cmd
 from lib.util.mysql_methods import take_mysqldump
-from lib.util.mysql_methods import diff_files
+from lib.util.mysql_methods import diff_dumpfiles
 from lib.util.randgen_methods import execute_randgen
 
 
@@ -64,8 +63,8 @@ class basicTest(unittest.TestCase):
         
         # take a backup
         cmd = ("%s --defaults-file=%s --user=root --port=%d"
-               "--host=127.0.0.1 --no-timestamp" 
-               "--ibbackup=%s %s" %( innobackupex
+               " --host=127.0.0.1 --no-timestamp" 
+               " --ibbackup=%s %s" %( innobackupex
                                    , master_server.cnf_file
                                    , master_server.master_port
                                    , xtrabackup
@@ -83,7 +82,6 @@ class basicTest(unittest.TestCase):
         # prepare our backup
         cmd = ("%s --apply-log --no-timestamp --use-memory=500M "
                "--ibbackup=%s %s" %( innobackupex
-                                   , use_mem
                                    , xtrabackup
                                    , backup_path))
         retcode, output = execute_cmd(cmd, output_path, exec_path, True)
@@ -94,10 +92,10 @@ class basicTest(unittest.TestCase):
         os.mkdir(master_server.datadir)
         
         # restore from backup
-       cmd = ("%s --defaults-file=%s --copy-back"
-              " --ibbackup=%s %s" %( innobackupex_path
-                                   , cnf_file
-                                   , xtrabackup_path
+        cmd = ("%s --defaults-file=%s --copy-back"
+              " --ibbackup=%s %s" %( innobackupex
+                                   , master_server.cnf_file
+                                   , xtrabackup
                                    , backup_path))
         retcode, output = execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0, output)
@@ -113,7 +111,7 @@ class basicTest(unittest.TestCase):
         take_mysqldump(master_server, databases=['test'],dump_path=restored_dumpfile)
 
         # diff original vs. current server dump files
-        retcode, output = diff_files(orig_dumpfile, restored_dumpfile)
+        retcode, output = diff_dumpfiles(orig_dumpfile, restored_dumpfile)
         self.assertTrue(retcode, output)
  
 

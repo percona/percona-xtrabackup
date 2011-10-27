@@ -26,6 +26,7 @@
 """
 
 import os
+import difflib
 import subprocess
 
 def execute_cmd(cmd, stdout_path, exec_path=None, get_output=False):
@@ -75,19 +76,33 @@ def take_mysqldump( server
     execute_cmd(dump_cmd, dump_path)
 
 
-diff_files(orig_file_path, new_file_path):
-    """ diff two files useful for comparing dumpfiles """ 
-        orig_file = open(orig_file_path,'r')
-        restored_file = open(new_file_path,'r')
-        orig_file_data = [ i for i in orig_file.readlines() if not i.strip().startswith('Dump Completed') ]
-        rest_file_data = [ i for i in restored_file.readlines() if not i.strip().startswith('Dump Completed') ]
-        server_diff = difflib.unified_diff( orig_file_data
-                                          , rest_file_data
-                                          , fromfile=orig_file_path
-                                          , tofile=new_file_path
-                                          )
-        diff_output = []
-        for line in server_diff:
-            diff_output.append(line)
-        output = '\n'.join(diff_output)
-        return (diff_output==[]), output
+def diff_dumpfiles(orig_file_path, new_file_path):
+    """ diff two dumpfiles useful for comparing servers """ 
+    orig_file = open(orig_file_path,'r')
+    restored_file = open(new_file_path,'r')
+    orig_file_data = []
+    rest_file_data = []
+    orig_file_data= filter_data(orig_file.readlines(),'Dump completed')
+    rest_file_data= filter_data(restored_file.readlines(),'Dump completed') 
+    
+    server_diff = difflib.unified_diff( orig_file_data
+                                      , rest_file_data
+                                      , fromfile=orig_file_path
+                                      , tofile=new_file_path
+                                      )
+    diff_output = []
+    for line in server_diff:
+        diff_output.append(line)
+    output = '\n'.join(diff_output)
+    orig_file.close()
+    restored_file.close()
+    return (diff_output==[]), output
+
+def filter_data(input_data, filter_text ):
+    return_data = []
+    for line in input_data:
+        if filter_text in line.strip():
+            pass
+        else:
+            return_data.append(line)
+    return return_data
