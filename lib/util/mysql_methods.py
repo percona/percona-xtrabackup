@@ -28,17 +28,23 @@
 import os
 import subprocess
 
-def execute_cmd(cmd, stdout_path):
+def execute_cmd(cmd, stdout_path, exec_path=None, get_output=False):
     stdout_file = open(stdout_path,'w')
     cmd_subproc = subprocess.Popen( cmd
                                   , shell=True
+                                  , cwd=exec_path
                                   , stdout = stdout_file
                                   , stderr = subprocess.STDOUT
                                   )
     cmd_subproc.wait()
     retcode = cmd_subproc.returncode
     stdout_file.close()
-    return retcode
+    if get_output:
+        data_file = open(stdout_path,'r')
+        output = ''.join(data_file.readlines())
+    else:
+        output = None
+    return retcode, output
 
 
 def take_mysqldump( server
@@ -68,3 +74,20 @@ def take_mysqldump( server
 
     execute_cmd(dump_cmd, dump_path)
 
+
+diff_files(orig_file_path, new_file_path):
+    """ diff two files useful for comparing dumpfiles """ 
+        orig_file = open(orig_file_path,'r')
+        restored_file = open(new_file_path,'r')
+        orig_file_data = [ i for i in orig_file.readlines() if not i.strip().startswith('Dump Completed') ]
+        rest_file_data = [ i for i in restored_file.readlines() if not i.strip().startswith('Dump Completed') ]
+        server_diff = difflib.unified_diff( orig_file_data
+                                          , rest_file_data
+                                          , fromfile=orig_file_path
+                                          , tofile=new_file_path
+                                          )
+        diff_output = []
+        for line in server_diff:
+            diff_output.append(line)
+        output = '\n'.join(diff_output)
+        return (diff_output==[]), output

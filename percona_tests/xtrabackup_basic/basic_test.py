@@ -24,13 +24,11 @@ import shutil
 import unittest
 import difflib
 
-from lib.util.xtrabackup_methods import innobackupex_backup
-from lib.util.xtrabackup_methods import innobackupex_restore
-from lib.util.xtrabackup_methods import innobackupex_prepare
-
+from lib.util.mysql_methods import execute_cmd
+from lib.util.mysql_methods import take_mysqldump
+from lib.util.mysql_methods import diff_files
 from lib.util.randgen_methods import execute_randgen
 
-from lib.util.mysql_methods import take_mysqldump
 
 server_requirements = [[]]
 servers = []
@@ -38,7 +36,6 @@ server_manager = None
 test_executor = None
 # we explicitly use the --no-timestamp option
 # here.  We will be using a generic / vanilla backup dir
-extra_options = '--no-timestamp'
 backup_path = None
 
 class basicTest(unittest.TestCase):
@@ -57,33 +54,39 @@ class basicTest(unittest.TestCase):
         master_server = servers[0] # assumption that this is 'master'
         backup_path = os.path.join(master_server.vardir, '_xtrabackup')
         output_path = os.path.join(master_server.vardir, 'innobackupex.out')
+        exec_path = os.path.dirname(innobackupex)
+        orig_dumpfile = os.path.join(master_server.vardir,'orig_dumpfile')
+        restored_dumpfile = os.path.join(master_server.vardir, 'restored_dumpfile')
 
         # populate our server with a test bed
         test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         
         # take a backup
-        retcode, output = innobackupex_backup( innobackupex
-                                             , xtrabackup
-                                             , output_path
-                                             , master_server
-                                             , backup_path
-                                             , extra_opts=extra_options)
+        cmd = ("%s --defaults-file=%s --user=root --port=%d"
+               "--host=127.0.0.1 --no-timestamp" 
+               "--ibbackup=%s %s" %( innobackupex
+                                   , master_server.cnf_file
+                                   , master_server.master_port
+                                   , xtrabackup
+                                   , backup_path))
+        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0,output)
 
         # take mysqldump of our current server state
-        orig_dumpfile = os.path.join(master_server.vardir,'orig_dumpfile')
+
         take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
         
         # shutdown our server
         server_manager.stop_server(master_server)
 
         # prepare our backup
-        retcode, output = innobackupex_prepare( innobackupex
-                                              , xtrabackup
-                                              , output_path
-                                              , backup_path
-                                              , extra_opts=extra_options)
+        cmd = ("%s --apply-log --no-timestamp --use-memory=500M "
+               "--ibbackup=%s %s" %( innobackupex
+                                   , use_mem
+                                   , xtrabackup
+                                   , backup_path))
+        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0,output)
 
         # remove old datadir
@@ -91,12 +94,12 @@ class basicTest(unittest.TestCase):
         os.mkdir(master_server.datadir)
         
         # restore from backup
-        retcode, output = innobackupex_restore( innobackupex
-                                              , xtrabackup
-                                              , output_path
-                                              , backup_path
-                                              , master_server.cnf_file
-                                              , extra_opts=extra_options)
+       cmd = ("%s --defaults-file=%s --copy-back"
+              " --ibbackup=%s %s" %( innobackupex_path
+                                   , cnf_file
+                                   , xtrabackup_path
+                                   , backup_path))
+        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0, output)
 
         # restart server (and ensure it doesn't crash)
@@ -104,26 +107,15 @@ class basicTest(unittest.TestCase):
                                    , test_executor
                                    , test_executor.working_environment
                                    , 0)
-        self.assertTrue(master_server.status==1)
+        self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
 
         # take mysqldump of current server state
-        restored_dumpfile = os.path.join(master_server.vardir, 'restored_dumpfile')
         take_mysqldump(master_server, databases=['test'],dump_path=restored_dumpfile)
 
         # diff original vs. current server dump files
-        orig_file = open(orig_dumpfile,'r')
-        restored_file = open(restored_dumpfile,'r')
-        orig_file_data = [ i for i in orig_file.readlines() if not i.strip().startswith('Dump Completed') ]
-        rest_file_data = [ i for i in restored_file.readlines() if not i.strip().startswith('Dump Completed') ]
-        server_diff = difflib.unified_diff( orig_file.readlines()
-                                          , restored_file.readlines()
-                                          , fromfile=orig_dumpfile
-                                          , tofile=restored_dumpfile
-                                          )
-        diff_output = []
-        for line in server_diff:
-            diff_output.append(line)
-        self.assertFalse(diff_output, '\n'.join(diff_output))
+        retcode, output = diff_files(orig_dumpfile, restored_dumpfile)
+        self.assertTrue(retcode, output)
+ 
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
