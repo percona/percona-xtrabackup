@@ -113,7 +113,7 @@ class slaveTest(unittest.TestCase):
                                    , test_executor
                                    , test_executor.working_environment
                                    , 0)
-        self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
+        self.assertTrue(slave_server.status==1, 'Server failed restart from restored datadir...')
 
         # update our slave's master info
         query = ("CHANGE MASTER TO "
