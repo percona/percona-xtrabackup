@@ -26,6 +26,7 @@ import unittest
 from lib.util.mysql_methods import execute_cmd
 from lib.util.mysql_methods import take_mysqldump
 from lib.util.mysql_methods import diff_dumpfiles
+from lib.util.mysql_methods import execute_query
 from lib.util.randgen_methods import execute_randgen
 
 
@@ -115,17 +116,35 @@ class slaveTest(unittest.TestCase):
         self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
 
         # update our slave's master info
-        query = ("CHANGE MASTER TO"
+        query = ("CHANGE MASTER TO "
+                 "MASTER_HOST='127.0.0.1',"
                  "MASTER_USER='root',"
                  "MASTER_PASSWORD='',"
-                 "MASTER_LOG_FILE=%s,"
-                 "MASTER_LOG_POS=%d" % (binlog_file, int(binlog_pos)))
+                 "MASTER_PORT=%d,"
+                 "MASTER_LOG_FILE='%s',"
+                 "MASTER_LOG_POS=%d" % ( master_server.master_port
+                                       , binlog_file
+                                       , int(binlog_pos)))
+        retcode, result_set = execute_query(query, slave_server)
+        self.assertTrue(retcode==0, result_set)
 
         # start the slave
         query = "START SLAVE"
+        retcode, result_set = execute_query(query, slave_server)
+        self.assertTrue(retcode==0, result_set)
 
         # check the slave status
         query = "SHOW SLAVE STATUS"
+        retcode, result_set = execute_query(query, slave_server)
+        result_set = result_set[0]
+        slave_master_port = result_set[3]
+        slave_binlog_file = result_set[5]
+        slave_io_running = result_set[10]
+        slave_sql_running = result_set[11]
+        self.assertEqual(slave_master_port, master_server.master_port)
+        self.assertEqual(slave_binlog_file, binlog_file)
+        self.assertEqual(slave_io_running, 'Yes')
+        self.assertEqual(slave_sql_running, 'Yes')
 
         # take mysqldump of current server state
         take_mysqldump(slave_server, databases=['test'],dump_path=slave_dumpfile)

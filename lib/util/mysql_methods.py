@@ -29,6 +29,8 @@ import os
 import difflib
 import subprocess
 
+import MySQLdb
+
 def execute_cmd(cmd, stdout_path, exec_path=None, get_output=False):
     stdout_file = open(stdout_path,'w')
     cmd_subproc = subprocess.Popen( cmd
@@ -106,3 +108,23 @@ def filter_data(input_data, filter_text ):
         else:
             return_data.append(line)
     return return_data
+
+def execute_query( query
+                 , server
+                 , server_host = '127.0.0.1'
+                 , database_name='test'):
+    result_list = []
+    try:
+        conn = MySQLdb.connect( host = server_host
+                              , port = server.master_port
+                              , user = 'root'
+                              , db = database_name)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        result_set =  cursor.fetchall()
+        cursor.close()
+    except MySQLdb.Error, e:
+        return 1, ("Error %d: %s" %(e.args[0], e.args[1]))
+    conn.commit()
+    conn.close()
+    return 0, result_set
