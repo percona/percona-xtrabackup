@@ -64,7 +64,7 @@ class slaveTest(unittest.TestCase):
         
         # take a backup
         cmd = ("%s --defaults-file=%s --user=root --port=%d"
-               " --host=127.0.0.1 --no-timestamp" 
+               " --host=127.0.0.1 --no-timestamp --slave-info" 
                " --ibbackup=%s %s" %( innobackupex
                                    , master_server.cnf_file
                                    , master_server.master_port
@@ -100,12 +100,32 @@ class slaveTest(unittest.TestCase):
         retcode, output = execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0, output)
 
+        # get binlog info for slave 
+        slave_file_path = os.path.join(slave_server.datadir,'xtrabackup_binlog_info')
+        slave_file = open(slave_file_path,'r')
+        binlog_file, binlog_pos = slave_file.readline().strip().split('\t')
+        slave_file.close()
+
+
         # restart server (and ensure it doesn't crash)
         server_manager.start_server( slave_server
                                    , test_executor
                                    , test_executor.working_environment
                                    , 0)
         self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
+
+        # update our slave's master info
+        query = ("CHANGE MASTER TO"
+                 "MASTER_USER='root',"
+                 "MASTER_PASSWORD='',"
+                 "MASTER_LOG_FILE=%s,"
+                 "MASTER_LOG_POS=%d" % (binlog_file, int(binlog_pos)))
+
+        # start the slave
+        query = "START SLAVE"
+
+        # check the slave status
+        query = "SHOW SLAVE STATUS"
 
         # take mysqldump of current server state
         take_mysqldump(slave_server, databases=['test'],dump_path=slave_dumpfile)
@@ -115,8 +135,8 @@ class slaveTest(unittest.TestCase):
         self.assertTrue(retcode, output)
  
 
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
+#    def tearDown(self):
+#            server_manager.reset_servers(test_executor.name)
 
 
 def run_test(output_file):

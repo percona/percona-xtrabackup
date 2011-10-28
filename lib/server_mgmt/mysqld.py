@@ -232,7 +232,9 @@ class mysqlServer(Server):
                       , "--socket=%s" %(self.socket_file)
                       , "--pid-file=%s" %(self.pid_file)
                       , "--default-storage-engine=%s" %(self.default_storage_engine)
-                      , "--server-id=%d" %(self.get_numeric_server_id())
+                      # server-id maybe needs fixing, but we want to avoid
+                      # the server-id=0 and no replication thing...
+                      , "--server-id=%d" %(self.get_numeric_server_id()+1)
                       , self.secure_file_string
                       , self.user_string
                       ]
