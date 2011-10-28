@@ -21,6 +21,7 @@
 
 import os
 import shutil
+import time
 import unittest
 
 from lib.util.mysql_methods import execute_cmd
@@ -145,6 +146,7 @@ class slaveTest(unittest.TestCase):
         self.assertEqual(slave_binlog_file, binlog_file)
         self.assertEqual(slave_io_running, 'Yes')
         self.assertEqual(slave_sql_running, 'Yes')
+        self.assertTrue(retcode==0, result_set)
 
         # take mysqldump of current server state
         take_mysqldump(slave_server, databases=['test'],dump_path=slave_dumpfile)
@@ -152,10 +154,28 @@ class slaveTest(unittest.TestCase):
         # diff original vs. current server dump files
         retcode, output = diff_dumpfiles(orig_dumpfile, slave_dumpfile)
         self.assertTrue(retcode, output)
+
+        # create a new table on the master
+        query = ("CREATE TABLE t1 "
+                 "(col1 int NOT NULL AUTO_INCREMENT PRIMARY KEY )"
+                )
+        retcode, result_set = execute_query(query, master_server)
+        # insert some rows
+        query = "INSERT INTO t1 VALUES (),(),(),(),()"
+        retcode, result_set = execute_query(query, master_server)
+
+        # wait a bit for the slave
+        # TODO: proper poll routine
+        time.sleep(5)
+        for query in ["SHOW CREATE TABLE t1",
+                      "SELECT * FROM t1"]:
+            master_retcode, master_result = execute_query(query, master_server)
+            slave_retcode, slave_result = execute_query(query, slave_server)
+            self.assertEqual(master_result, slave_result)
  
 
-#    def tearDown(self):
-#            server_manager.reset_servers(test_executor.name)
+    def tearDown(self):
+            server_manager.reset_servers(test_executor.name)
 
 
 def run_test(output_file):
