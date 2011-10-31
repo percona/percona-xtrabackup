@@ -23,13 +23,14 @@
 # we have found a number of bugs with this grammar as it currently exists.
 
 query:
-	transaction | transaction | update_innodb_dict_size
+	transaction | transaction | 
+# update_innodb_dict_size
         transaction | transaction | transaction | normal_query ;
 
-update_innodb_dict_size:
-     SET innodb_dict_size_limit = innodb_dict_value ;
+#update_innodb_dict_size:
+#     SET innodb_dict_size_limit = innodb_dict_value ;
 
-innodb_dict_value:
+#innodb_dict_value:
 
 
 normal_query:
