@@ -25,12 +25,12 @@ import os
 
 from lib.util.randgen_methods import execute_randgen
 
-server_requirements = [[]]
+server_requirements = [["--innodb-dict-size-limit=200k --table-open-cache=10"]]
 servers = []
 server_manager = None
 test_executor = None
 
-class OptimizerSubqueryTest(unittest.TestCase):
+class InnoDBDictSizeTest(unittest.TestCase):
 
     #def setUp(self):
     #    """ If we need to do anything pre-test, we do it here.
@@ -43,7 +43,7 @@ class OptimizerSubqueryTest(unittest.TestCase):
 
 
     def test_OptimizerSubquery1(self):
-        test_cmd = "./gentest.pl --gendata=conf/percona/innodb_dict_size_limit.zz --grammar=conf/percona/innodb_dict_size_limit.yy --queries=5000 --threads=20"
+        test_cmd = "./gentest.pl --gendata=conf/percona/innodb_dict_size_limit.zz --grammar=conf/percona/innodb_dict_size_limit.yy --queries=1000 --threads=1"
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
 
@@ -52,6 +52,6 @@ class OptimizerSubqueryTest(unittest.TestCase):
 
 
 def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(OptimizerSubqueryTest)
+    suite = unittest.TestLoader().loadTestsFromTestCase(InnoDBDictSizeTest)
     return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 
