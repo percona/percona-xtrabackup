@@ -485,6 +485,14 @@ analysis_control_group.add_option(
   , help = "Point at a valgrind suppression file [%default]"
   )
 
+analysis_control_group.add_option(
+    "--helgrind"
+  , dest="helgrind"
+  , action='store_true'
+  , default=False
+  , help="Use the helgrind tool for valgrind.  Implies / will auto-use --valgrind"
+  )
+
 parser.add_option_group(analysis_control_group)
 
 debugger_control_group = optparse.OptionGroup(parser,

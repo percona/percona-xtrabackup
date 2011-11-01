@@ -77,6 +77,10 @@ class systemManager:
         self.start_dirty = variables['startdirty']
         self.valgrind = variables['valgrind']
         self.valgrind_suppress_file = variables['valgrindsuppressions']
+        self.helgrind = variables['helgrind']
+        # helgrind implies --valgrind
+        if self.helgrind:
+            self.valgrind=self.helgrind
         self.gdb = variables['gdb']
         self.manual_gdb = variables['manualgdb']
         self.randgen_path = variables['randgenpath']
@@ -346,7 +350,11 @@ class systemManager:
 
         # do we need to setup for valgrind?
         if self.valgrind:
-            self.handle_valgrind_reqs(variables['valgrindarglist'])
+            if self.helgrind:
+               valgrind_mode='helgrind'
+            else:
+                valgrind_mode='valgrind'
+            self.handle_valgrind_reqs(variables['valgrindarglist'], mode=valgrind_mode)
 
     def handle_gdb_reqs(self, server, server_args):
         """ We generate the gdb init file and whatnot so we
@@ -435,10 +443,13 @@ class systemManager:
             cmd_prefix = "%s --mode=execute valgrind " %(self.libtool)
         if mode == 'valgrind':
             # default mode
-
             args = [ "--tool=memcheck"
                    , "--leak-check=yes"
                    , "--num-callers=16" 
+                   ]
+        elif mode == 'helgrind':
+            args = [ "--tool=helgrind"
+                   , "--num-callers=16"
                    ]
             # look for our suppressions file and add it to the mix if found
             if os.path.exists(self.valgrind_suppress_file):
