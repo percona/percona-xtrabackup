@@ -708,7 +708,7 @@ ibool log_copying_succeed = FALSE;
 
 ibool xtrabackup_logfile_is_renamed = FALSE;
 
-uint parallel;
+int parallel;
 
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
@@ -1043,8 +1043,8 @@ static struct my_option my_long_options[] =
   {"parallel", OPT_XTRA_PARALLEL,
    "Number of threads to use for parallel datafiles transfer. Does not have "
    "any effect in the stream mode. The default value is 1.",
-   (G_PTR*) &parallel, (G_PTR*) &parallel, 0, GET_UINT, REQUIRED_ARG,
-   1, 1, UINT_MAX, 0, 0, 0},
+   (G_PTR*) &parallel, (G_PTR*) &parallel, 0, GET_INT, REQUIRED_ARG,
+   1, 1, INT_MAX, 0, 0, 0},
 
   {"innodb_adaptive_hash_index", OPT_INNODB_ADAPTIVE_HASH_INDEX,
    "Enable InnoDB adaptive hash index (enabled by default).  "
@@ -4107,7 +4107,7 @@ reread_log_header:
 		count = parallel;
 		count_mutex = OS_MUTEX_CREATE();
 
-		for (i = 0; i < parallel; i++) {
+		for (i = 0; i < (uint) parallel; i++) {
 			data_threads[i].it = it;
 			data_threads[i].num = i+1;
 			data_threads[i].count = &count;
