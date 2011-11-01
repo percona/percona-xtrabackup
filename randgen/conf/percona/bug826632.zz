@@ -21,7 +21,7 @@
 # file for gendata
 
 $tables = {
-        rows => [100..50],
+        rows => [1..100],
         partitions => [ undef ]
 };
 

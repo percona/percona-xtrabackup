@@ -26,6 +26,7 @@ import unittest
 from lib.util.mysql_methods import execute_cmd
 from lib.util.mysql_methods import take_mysqldump
 from lib.util.mysql_methods import diff_dumpfiles
+from lib.util.mysql_methods import execute_query
 from lib.util.randgen_methods import execute_randgen
 
 
@@ -60,10 +61,20 @@ class basicTest(unittest.TestCase):
         # populate our server with a test bed
         test_cmd = "./gentest.pl --gendata=conf/percona/bug826632.zz "
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
+        # create additional schemas for backup
+        schema_basename='test'
+        for i in range(6):
+            schema = schema_basename+str(i)
+            query = "CREATE SCHEMA %s" %(schema)
+            retcode, result_set = execute_query(query, master_server)
+            self.assertEquals(retcode,0, msg=result_set)
+            retcode, output = execute_randgen(test_cmd, test_executor, servers, schema)
+            #self.assertEquals(retcode, 0, msg=output)
+            
         
         # take a backup
         cmd = ("%s --defaults-file=%s --user=root --port=%d"
-               " --host=127.0.0.1 --no-timestamp --parallel=-1" 
+               " --host=127.0.0.1 --no-timestamp --parallel=50" 
                " --ibbackup=%s %s" %( innobackupex
                                    , master_server.cnf_file
                                    , master_server.master_port

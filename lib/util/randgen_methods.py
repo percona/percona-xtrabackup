@@ -22,15 +22,16 @@
 import os
 import subprocess
 
-def execute_randgen(test_cmd, test_executor, servers):
+def execute_randgen(test_cmd, test_executor, servers, schema='test'):
     randgen_outfile = os.path.join(test_executor.logdir,'randgen.out')
     randgen_output = open(randgen_outfile,'w')
     server_type = test_executor.master_server.type
     if server_type == 'percona':
         # it is mysql for dbd::perl purposes
         server_type = 'mysql'
-    dsn = "--dsn=dbi:%s:host=127.0.0.1:port=%d:user=root:password="":database=test" %( server_type
-                                                                                     , servers[0].master_port)
+    dsn = "--dsn=dbi:%s:host=127.0.0.1:port=%d:user=root:password="":database=%s" %( server_type
+                                                                                     , servers[0].master_port
+                                                                                     , schema)
     randgen_cmd = " ".join([test_cmd, dsn])
     randgen_subproc = subprocess.Popen( randgen_cmd
                                       , shell=True
