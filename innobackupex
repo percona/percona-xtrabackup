@@ -54,7 +54,7 @@ my $default_compression_level = 1;
 
 # time in seconds after which a dummy query is sent to mysql server
 # in order to keep the database connection alive
-my $mysql_keep_alive_timeout = 1800;
+my $mysql_keep_alive = 5;
 
 ######################################################################
 # end of modifiable parameters
@@ -168,9 +168,6 @@ my $mysql_binlog_position = '';
 # mysql master's binlog position as given by "SHOW SLAVE STATUS" command
 # run on a slave server
 my $mysql_slave_position = '';
-
-# time of the most recent mysql_check call. (value returned by time() function)
-my $mysql_last_access_time = 0;
 
 # process id of ibbackup program (runs as a child process of this script)
 my $ibbackup_pid = '';
@@ -351,7 +348,6 @@ sub backup {
     # check that we can connect to the database. This done by
     # connecting, issuing a query, and closing the connection.
     mysql_open();
-    mysql_check();
     mysql_close();
 
     # start ibbackup as a child process
@@ -364,22 +360,18 @@ sub backup {
 
     # connect to database
     mysql_open();
-    mysql_check();
 
     if ($option_safe_slave_backup) {
-      mysql_check();
       wait_for_safe_slave();
     }
 
     if (!$option_incremental) {
         # flush tables with read lock
-        mysql_check();
         mysql_lockall() if !$option_no_lock;
 
     }
 
     if ($option_slave_info) {
-        mysql_check();
         write_slave_info();
     }
 
@@ -391,14 +383,12 @@ sub backup {
     my $ibbackup_exit_code = resume_ibbackup();
 
     if (!$option_incremental) {
-        mysql_check();
         # release read locks on all tables
         mysql_unlockall() if !$option_no_lock;
 
     }
 
     if ( $option_safe_slave_backup && $host_is_slave ) {
-      mysql_check();
       print STDERR "$prefix: Starting slave SQL thread\n";
       mysql_send('START SLAVE SQL_THREAD;');
     }
@@ -983,33 +973,15 @@ sub get_mysql_options {
 
 
 #
-# mysql_open subroutine starts mysql as a child process with
-# a pipe connection.
+# Check that the server is responding to queries
 #
-sub mysql_open {
-    my $options = get_mysql_options();
-    # run mysql as a child process with a pipe connection
-    $now = current_time();
-    print STDERR "$now  $prefix Starting mysql with options: $options\n";
-    $mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ") or Die "Failed to spawn mysql child process: $!";
-    MYSQL_WRITER->autoflush(1);
-    $now = current_time();
-    print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
-
-    mysql_check();
-}
-
-
-#
-# mysql_check subroutine checks that the connection to mysql child process 
-# is ok.
-#
-sub mysql_check {
+sub mysql_ping {
     my $mysql_pid_copy = $mysql_pid;
 
     # send a dummy query to mysql child process
     $hello_id++;
-    my $hello_message = "innobackup hello $hello_id";
+
+    my $hello_message = "xtrabackup ping $hello_id";
     print MYSQL_WRITER "select '$hello_message';\n" 
         or Die "Connection to mysql child process failed: $!";
 
@@ -1041,21 +1013,52 @@ sub mysql_check {
             . " You may adjust time limit by editing the value of parameter"
             . " \"\$mysql_response_timeout\" in this script.)";
     } elsif ($@) { Die $@; }
-    
-    $mysql_last_access_time = time();
 }
 
 
 #
-# mysql_keep_alive subroutine tries to keep connection to the mysqld database
-# server alive by sending a dummy query when the connection has been idle
-# for the specified time.
+# SIGALRM handler which sends a keepalive query to the server
 #
-sub mysql_keep_alive {
-    if ((time() - $mysql_last_access_time) > $mysql_keep_alive_timeout) {
-        # too long idle, send a dummy query
-        mysql_check();
-    }
+sub catch_sigalrm {
+  mysql_ping();
+  # Reschedule SIGALRM
+  alarm $mysql_keep_alive;
+}
+
+
+#
+# Schedule periodic server pings
+#
+sub start_keepalives {
+  $SIG{ALRM} = \&catch_sigalrm;
+  alarm $mysql_keep_alive;
+}
+
+#
+# Cancel periodic server pings
+#
+sub stop_keepalives {
+  alarm 0;
+  $SIG{ALRM} = "DEFAULT";
+}
+
+#
+# mysql_open subroutine starts mysql as a child process with
+# a pipe connection.
+#
+sub mysql_open {
+    my $options = get_mysql_options();
+    # run mysql as a child process with a pipe connection
+    $now = current_time();
+    print STDERR "$now  $prefix Starting mysql with options: $options\n";
+    $mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ") or Die "Failed to spawn mysql child process: $!";
+    MYSQL_WRITER->autoflush(1);
+    $now = current_time();
+    print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
+
+    mysql_ping();
+
+    start_keepalives();
 }
 
 
@@ -1069,10 +1072,14 @@ sub mysql_keep_alive {
 sub mysql_send {
     my $request = shift;
 
+    stop_keepalives();
+
     $current_mysql_request = $request;
     print MYSQL_WRITER "$request\n";
-    mysql_check();
+    mysql_ping();
     $current_mysql_request = '';
+
+    start_keepalives();
 }
     
 
@@ -1080,6 +1087,8 @@ sub mysql_send {
 # mysql_close subroutine terminates mysql child process gracefully.
 # 
 sub mysql_close {
+    stop_keepalives();
+
     print MYSQL_WRITER "quit\n";
     $now = current_time();
     print STDERR "$now  $prefix Connection to database server closed\n";
@@ -1843,9 +1852,6 @@ sub backup_files {
                 "'$source_dir/$database/$wildcard' ($file_c files)\n";
         }
         foreach $file (@list) {
-            # copying may take a long time, so we have to prevent
-            # mysql connection from timing out
-            mysql_keep_alive();
             next unless check_if_required($database, $file);
 
 	    if($option_include) {
