@@ -67,6 +67,9 @@ class mysqlServer(Server):
         self.mysql_upgrade = self.code_tree.mysql_upgrade
         self.server_path = self.code_tree.mysql_server
         self.mysql_client_path = self.code_tree.mysql_client
+
+        # galera-specific info
+        self.wsrep_cluster_addr=''
       
         # important stuff
         self.langdir = self.code_tree.langdir
@@ -77,8 +80,9 @@ class mysqlServer(Server):
         # Get our ports
         self.port_block = self.system_manager.port_manager.get_port_block( self.name
                                                                          , self.preferred_base_port
-                                                                         , 1 )
+                                                                         , 2 )
         self.master_port = self.port_block[0]
+        self.galera_listen_port = self.port_block[1]
 
         # Generate our working directories
         self.dirset = { 'var_%s' %(self.name): {'std_data_ln':( os.path.join(self.code_tree.testdir,'std_data'))
@@ -99,10 +103,10 @@ class mysqlServer(Server):
         self.std_data = os.path.join(self.vardir,'std_data_ln')
         self.datadir = os.path.join(self.vardir,'master-data')
 
-        self.error_log = os.path.join(self.logdir,('%s.err' %(self.name)))
+        self.error_log = os.path.join(self.logdir,('error.log' ))
         self.bootstrap_log = os.path.join(self.logdir,('bootstrap.log'))
-        self.pid_file = os.path.join(self.rundir,('%s.pid' %(self.name)))
-        self.socket_file = os.path.join(self.vardir, ('%s.sock' %(self.name)))
+        self.pid_file = os.path.join(self.rundir,('my.pid'))
+        self.socket_file = os.path.join(self.vardir, ('my.sock'))
         self.timer_file = os.path.join(self.logdir,('timer'))
         self.general_log_file = os.path.join(self.logdir,'mysqld.log')
         self.slow_query_log_file = os.path.join(self.logdir,'mysqld-slow.log')
@@ -127,6 +131,7 @@ class mysqlServer(Server):
         """ We print out some general useful info """
         report_values = [ 'name'
                         , 'master_port'
+                        , 'galera_listen_port'
                         , 'socket_file'
                         , 'vardir'
                         , 'status'
@@ -189,7 +194,34 @@ class mysqlServer(Server):
  
         """
 
+        # we need to do some wsrep voodoo for galera rpl to work
+        listen_addr_string = "?gmcast.listen_addr=tcp://127.0.0.1:%d" %(self.galera_listen_port)
+        # test for wsrep_provider argument
+        wsrep_provider_string ='' 
+        if self.system_manager.wsrep_provider_path:
+            wsrep_provider_string = "--wsrep_provider=%s" %(self.system_manager.wsrep_provider_path)
+        # handle wsrep_cluster_address argument
+        wsrep_cluster_string ="--wsrep_cluster_address='gcomm://%s%s'" %( self.wsrep_cluster_addr
+                                                                        , listen_addr_string) 
+        for server_opt in self.server_options:
+            if server_opt.startswith("--wsrep_cluster_address="):
+                # we have a user-specified value, so we don't
+                # try to insert something
+                wsrep_cluster_string = '' 
+                # check to see if they have specified a listen port
+                # we want to use our own, so we have a better idea of
+                # what is going on
+                if '?gmcast.listen_addr' in server_opt:
+                    pass
+                else:
+                    server_opt = server_opt.strip()+ listen_addr
         server_args = [ self.process_server_options()
+                      , "%s" %(wsrep_cluster_string)
+                      , "%s" %(wsrep_provider_string)
+                      , "--wsrep_debug=ON"
+                      , "--wsrep_sst_receive_address='127.0.0.1:%d'" %(self.master_port)
+                      , "--wsrep_sst_auth='root'"
+                      , "--wsrep_node_name='node%d'" %(self.galera_listen_port)
                       , "--open-files-limit=1024"
                       , "--local-infile"
                       , "--character-set-server=latin1"
@@ -208,13 +240,12 @@ class mysqlServer(Server):
                       , "--loose-innodb_log_files_in_group=2"
                       , "--slave-net-timeout=120"
                       , "--log-bin=%s" %(os.path.join(self.logdir,"mysqld-bin"))
-                      , "--loose-enable-performance-schema"
-                      , "--loose-performance-schema-max-mutex-instances=10000"
-                      , "--loose-performance-schema-max-rwlock-instances=10000"
-                      , "--loose-performance-schema-max-table-instances=500"
-                      , "--loose-performance-schema-max-table-handles=1000"
+                      #, "--loose-enable-performance-schema"
+                      #, "--loose-performance-schema-max-mutex-instances=10000"
+                      #, "--loose-performance-schema-max-rwlock-instances=10000"
+                      #, "--loose-performance-schema-max-table-instances=500"
+                      #, "--loose-performance-schema-max-table-handles=1000"
                       , "--binlog-direct-non-transactional-updates"
-                      , "--loose-enable-performance-schema"
                       , "--general_log=1"
                       , "--general_log_file=%s" %(self.general_log_file)
                       , "--slow_query_log=1"
@@ -224,9 +255,9 @@ class mysqlServer(Server):
                       , "--tmpdir=%s"  %(self.tmpdir)
                       , "--character-sets-dir=%s" %(self.charsetdir)
                       , "--lc-messages-dir=%s" %(self.langdir)
-                      , "--ssl-ca=%s" %(os.path.join(self.std_data,'cacert.pem'))
-                      , "--ssl-cert=%s" %(os.path.join(self.std_data,'server-cert.pem'))
-                      , "--ssl-key=%s" %(os.path.join(self.std_data,'server-key.pem'))
+                      #, "--ssl-ca=%s" %(os.path.join(self.std_data,'cacert.pem'))
+                      #, "--ssl-cert=%s" %(os.path.join(self.std_data,'server-cert.pem'))
+                      #, "--ssl-key=%s" %(os.path.join(self.std_data,'server-key.pem'))
                       , "--port=%d" %(self.master_port)
                       , "--socket=%s" %(self.socket_file)
                       , "--pid-file=%s" %(self.pid_file)
@@ -293,3 +324,13 @@ class mysqlServer(Server):
             server_arg = server_arg.replace('--','')+'\n'
             config_file.write(server_arg)
         config_file.close() 
+
+    def set_master(self, master_server):
+        """ We update things so that we use the provided master_server
+            as our reference point for a new cluster / etc
+
+        """
+
+        self.wsrep_cluster_addr = '127.0.0.1:%d' %(master_server.galera_listen_port)
+        print self.wsrep_cluster_addr, '*'*80
+        print '*'*80

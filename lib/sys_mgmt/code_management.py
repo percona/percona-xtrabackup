@@ -85,7 +85,7 @@ class codeManager:
             from lib.sys_mgmt.codeTree import drizzleTree
             test_tree = drizzleTree(basedir,variables,self.system_manager)
             return code_type, test_tree
-        elif code_type == 'mysql':
+        elif code_type == 'mysql' or code_type == 'galera':
             from lib.sys_mgmt.codeTree import mysqlTree
             test_tree = mysqlTree(basedir,variables,self.system_manager)
             return code_type, test_tree

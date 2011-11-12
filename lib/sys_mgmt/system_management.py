@@ -87,6 +87,7 @@ class systemManager:
         # there may be a better place to put this...
         self.innobackupex_path = variables['innobackupexpath']
         self.xtrabackup_path = variables['xtrabackuppath']
+        self.wsrep_provider_path = variables['wsrepprovider']
         self.cluster_conf = variables['clustercnf']
 
         # we use this to preface commands in order to run valgrind and such

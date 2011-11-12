@@ -69,7 +69,10 @@ class serverManager:
 
         self.logging.debug_class(self)
 
-    def request_servers( self, requester, workdir, cnf_path, server_requirements
+    def request_servers( self, requester 
+                       , workdir, cnf_path
+                       , server_requests
+                       , server_requirements
                        , working_environ, expect_fail = 0):
         """ We produce the server objects / start the server processes
             as requested.  We report errors and whatnot if we can't
@@ -91,7 +94,10 @@ class serverManager:
                                  , workdir, server_requirements)
 
         # Make sure we are running with the correct options 
-        self.evaluate_existing_servers(requester, cnf_path, server_requirements)
+        self.evaluate_existing_servers( requester
+                                      , cnf_path
+                                      , server_requests
+                                      , server_requirements)
 
         # Fire our servers up
         bad_start = self.start_servers( requester, working_environ
@@ -124,6 +130,8 @@ class serverManager:
             from lib.server_mgmt.drizzled import drizzleServer as server_type
         elif server_type == 'mysql':
             from lib.server_mgmt.mysqld import mysqlServer as server_type
+        elif server_type == 'galera':
+            from lib.server_mgmt.galera import mysqlServer as server_type
 
         new_server = server_type( server_name
                                 , self
@@ -351,7 +359,8 @@ class serverManager:
     def log_server(self, new_server, requester):
         self.servers[requester].append(new_server)
 
-    def evaluate_existing_servers( self, requester, cnf_path, server_requirements):
+    def evaluate_existing_servers( self, requester, cnf_path
+                                 , server_requests, server_requirements):
         """ See if the requester has any servers and if they
             are suitable for the current test
 
@@ -362,6 +371,10 @@ class serverManager:
         # A dictionary that holds various tricks
         # we can do with our test servers
         special_processing_reqs = {}
+        if server_requests:
+            # we have a direct dictionary in the testcase
+            # that asks for what we want and we use it
+            special_processing_reqs = server_requests
 
         current_servers = self.servers[requester]
 
@@ -384,15 +397,14 @@ class serverManager:
 
             if self.compare_options( server.server_options
                                    , desired_server_options):
-                return
+                pass 
             else:
                 # We need to reset what is running and change the server
                 # options
                 desired_server_options = self.filter_server_options(desired_server_options)
                 self.reset_server(server)
                 self.update_server_options(server, desired_server_options)
-            
-            self.handle_special_server_requests(special_processing_reqs)
+        self.handle_special_server_requests(special_processing_reqs, current_servers)
 
     def handle_server_config_file( self
                                  , cnf_path
@@ -420,9 +432,8 @@ class serverManager:
                     request_key = 'datadir_requests'
                 if request_key not in special_processing_reqs:
                     special_processing_reqs[request_key] = []
-                special_processing_reqs[request_key].append((datadir_path,server))
 
-    def handle_special_server_requests(self, request_dictionary):
+    def handle_special_server_requests(self, request_dictionary, current_servers):
         """ We run through our set of special requests and do 
             the appropriate voodoo
 
@@ -430,6 +441,8 @@ class serverManager:
         for key, item in request_dictionary.items():
             if key == 'datadir_requests':
                 self.load_datadirs(item)
+            if key == 'join_cluster':
+                self.join_clusters(item, current_servers)
 
     def filter_server_options(self, server_options):
         """ Remove a list of options we don't want passed to the server
@@ -474,6 +487,29 @@ class serverManager:
             # using a non-standard datadir
             server.need_reset = True
 
+    def join_clusters(self, cluster_requests, current_servers):
+        """ We get a list of master, slave tuples and join
+            them as needed
+
+        """
+        for cluster_set in cluster_requests:
+            self.join_node_to_cluster(cluster_set, current_servers)
+        
+
+    def join_node_to_cluster(self, node_set, current_servers):
+        """ We join node_set[1] to node_set[0].
+            The server object is responsible for 
+            implementing the voodoo required to 
+            make this happen
+
+        """
+            
+        master = current_servers[node_set[0]]
+        slave = current_servers[node_set[1]]
+        slave.set_master(master)
+        # Assuming we'll reset master and slave for now...
+        master.need_reset = True
+        slave.need_reset = True
 
     def process_server_count(self, requester, desired_count, workdir, server_reqs):
         """ We see how many servers we have.  We shrink / grow

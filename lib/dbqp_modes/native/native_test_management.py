@@ -47,6 +47,7 @@ class testCase:
                 , server_requirements=[[]]
                 , comment=None
                 , cnf_path=None
+                , request_dict=None
                 , test_path = None
                 , suitename = 'native_tests'
                 , debug=False ):
@@ -60,6 +61,7 @@ class testCase:
         self.comment = comment
         self.server_requirements = server_requirements
         self.cnf_path = cnf_path
+        self.server_requests = request_dict
         self.test_path = test_path        
         if debug:
             self.system_manager.logging.debug_class(self)
@@ -84,7 +86,8 @@ class testManager(test_management.testManager):
     def __init__( self, variables, system_manager):
         super(testManager, self).__init__( variables, system_manager)
         server_type = variables['defaultservertype']
-        if server_type == 'mysql':  server_type = 'percona'
+        if server_type == 'mysql' or server_type =='galera':  
+            server_type = 'percona'
         self.suitepaths = [os.path.join(self.testdir,'%s_tests' %(server_type))]
         if variables['suitelist'] is None:
             self.suitelist = ['main']
@@ -126,11 +129,16 @@ class testManager(test_management.testManager):
         test_comment = None
         test_module = imp.load_source(test_name, testfile)
         server_requirements = test_module.server_requirements
+        try:
+            server_requests = test_module.server_requests
+        except AttributeError, NameError:
+            server_requests = None
         return testCase( self.system_manager
                        , name = test_name
                        , fullname = "%s.%s" %(suite_name, test_name)
                        , server_requirements = server_requirements
                        , cnf_path = None
+                       , request_dict = server_requests
                        , test_path = testfile
                        , debug = self.debug )
 
@@ -150,31 +158,3 @@ class testManager(test_management.testManager):
                                 , str(exec_time), output
                                 , report_output= True)
 
-class crashmeTestManager(testManager):
-    """Deals with scanning test directories, gathering test cases, and 
-       collecting per-test information (opt files, etc) for use by the
-       test-runner
-
-    """
-
-    def __init__( self, variables, system_manager):
-        super(testManager, self).__init__( variables, system_manager)
-        self.suitepaths = [os.path.join(self.testdir,'crashme_tests')]
-        if variables['suitelist'] is None:
-            self.suitelist = ['main']
-        else:
-            self.suitelist = variables['suitelist']
-
-    def record_test_result(self, test_case, test_status, output, exec_time):
-        """ Accept the results of an executed testCase for further
-            processing.
- 
-        """
-        if test_status not in self.executed_tests:
-            self.executed_tests[test_status] = [test_case]
-        else:
-            self.executed_tests[test_status].append(test_case)
-        # report
-        self.logging.test_report( test_case.fullname, test_status
-                                , str(exec_time), output
-                                , report_output= True)

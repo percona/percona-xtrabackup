@@ -74,20 +74,19 @@ class drizzleServer(Server):
         self.json_server_port = self.port_block[5]
 
         # Generate our working directories
-        self.dirset = { self.name : { 'var': {'std_data_ln':( os.path.join(self.code_tree.testdir,'std_data'))
-                                             ,'log':None
-                                             ,'run':None
-                                             ,'tmp':None
-                                             ,'master-data': {'local': { 'test':None
-                                                                       , 'mysql':None
-                                                                       }
-                                                             }
-                                             }  
-                                    } 
+        self.dirset = {'var_%s' %(self.name): {'std_data_ln':( os.path.join(self.code_tree.testdir,'std_data'))
+                                               ,'log':None
+                                               ,'run':None
+                                               ,'tmp':None
+                                               ,'master-data': {'local': { 'test':None
+                                                                         , 'mysql':None
+                                                                         }
+                                                               }
+                                               }  
                       }
         self.workdir = self.system_manager.create_dirset( workdir_root
                                                         , self.dirset)
-        self.vardir = os.path.join(self.workdir,'var')
+        self.vardir = self.workdir
         self.tmpdir = os.path.join(self.vardir,'tmp')
         self.rundir = os.path.join(self.vardir,'run')
         self.logdir = os.path.join(self.vardir,'log')

@@ -431,6 +431,14 @@ environment_control_group.add_option(
     )
 
 environment_control_group.add_option(
+      "--wsrep-provider-path"
+   , dest="wsrepprovider"
+   , action='store'
+   , default=None
+   , help = "The path to a wsrep provider library for use with mysql"
+   )
+
+environment_control_group.add_option(
       "--cluster-cnf"
     , dest="clustercnf"
     , action='store'
