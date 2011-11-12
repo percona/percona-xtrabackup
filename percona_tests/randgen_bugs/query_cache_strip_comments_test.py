@@ -30,7 +30,7 @@ servers = []
 server_manager = None
 test_executor = None
 
-class InnoDBDictSizeTest(unittest.TestCase):
+class queryCacheTest(unittest.TestCase):
 
     #def setUp(self):
     #    """ If we need to do anything pre-test, we do it here.
@@ -42,8 +42,12 @@ class InnoDBDictSizeTest(unittest.TestCase):
     #    return
 
 
-    def test_OptimizerSubquery1(self):
-        test_cmd = "./gentest.pl --gendata=conf/percona/query_cache_strip_comments.zz --grammar=conf/percona/query_cache_strip_comments.yy --queries=1000 --threads=2"
+    def test_bug856404(self):
+        test_cmd = "./gentest.pl "
+                   "--gendata=conf/percona/query_cache_strip_comments.zz "
+                   "--grammar=conf/percona/query_cache_strip_comments.yy "
+                   "--queries=1000 "
+                   "--threads=2 "
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
 
@@ -52,6 +56,6 @@ class InnoDBDictSizeTest(unittest.TestCase):
 
 
 def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(InnoDBDictSizeTest)
+    suite = unittest.TestLoader().loadTestsFromTestCase(queryCacheTest)
     return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 
