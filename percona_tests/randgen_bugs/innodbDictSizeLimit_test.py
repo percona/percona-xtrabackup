@@ -42,8 +42,12 @@ class InnoDBDictSizeTest(unittest.TestCase):
     #    return
 
 
-    def test_OptimizerSubquery1(self):
-        test_cmd = "./gentest.pl --gendata=conf/percona/innodb_dict_size_limit.zz --grammar=conf/percona/innodb_dict_size_limit.yy --queries=1000 --threads=1"
+    def test_bug758788(self):
+        test_cmd = ("./gentest.pl "
+                    "--gendata=conf/percona/innodb_dict_size_limit.zz "
+                    "--grammar=conf/percona/translog_concurrent1.yy "
+                    "--queries=1000 "
+                    "--threads=1")
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
 
