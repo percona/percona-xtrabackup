@@ -222,6 +222,7 @@ class mysqlServer(Server):
                       , "--wsrep_sst_receive_address='127.0.0.1:%d'" %(self.master_port)
                       , "--wsrep_sst_auth='root'"
                       , "--wsrep_node_name='node%d'" %(self.galera_listen_port)
+                      , "--innodb_locks_unsafe_for_binlog=1"
                       , "--open-files-limit=1024"
                       , "--local-infile"
                       , "--character-set-server=latin1"

@@ -51,7 +51,7 @@ class basicTest(unittest.TestCase):
         # populate a server with some tables
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
-        test_cmd = "./gendata.pl --spec=conf/percona/percona.zz "
+        test_cmd = "./gendata.pl --spec=conf/percona/percona_no_blob.zz "
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
         # check 'master'
