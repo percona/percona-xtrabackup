@@ -149,3 +149,13 @@ Options
 .. option:: --safe-slave-backup-timeout
 
    How many seconds :option:`--safe-slave-backup`` should wait for ``Slave_open_temp_tables`` to become zero. Defaults to 300 seconds.
+
+.. option:: --rsync
+
+   Use the :program:`rsync` utility to optimize local file
+   transfers. When this option is specified, :program:`innobackupex`
+   uses :program:`rsync` to copy all non-InnoDB files instead of
+   spawning a separate :program:`cp` for each file, which can be much
+   faster for servers with a large number of databases or tables.  This
+   option cannot be used together with :option:`--remote-host` or
+   :option:`--stream`.
