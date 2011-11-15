@@ -93,6 +93,7 @@ my $option_incremental_dir = '';
 my $option_incremental_lsn = '';
 my $option_extra_lsndir = '';
 my $option_remote_host = '';
+my $option_rsync = '';
 my $option_stream = '';
 my $option_tmpdir = '';
 
@@ -203,6 +204,8 @@ my $dst_name;
 my $win = ($^O eq 'MSWin32' ? 1 : 0);
 my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 my $xtrabackup_binary_file = 'xtrabackup_binary';
+my %rsync_files_hash;
+
 ######################################################################
 # program execution begins here
 ######################################################################
@@ -381,7 +384,13 @@ sub backup {
     }
 
     # flush tables with read lock
-    mysql_lockall() if !$option_no_lock;
+    if (!$option_no_lock) {
+        # make a prep copy before locking tables, if using rsync
+        backup_files(1);
+
+        # flush tables with read lock
+        mysql_lockall();
+    }
 
     if ($option_slave_info) {
         write_slave_info();
@@ -389,7 +398,8 @@ sub backup {
 
 
     # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
-    backup_files();
+    # (or finalize the backup by syncing changes if using rsync)
+    backup_files(0);
 
     # resume ibbackup and wait till it has finished
     my $ibbackup_exit_code = resume_ibbackup();
@@ -1614,6 +1624,7 @@ sub check_args {
                         'extra-lsndir=s' => \$option_extra_lsndir,
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
+			'rsync' => \$option_rsync,
                         'tmpdir=s' => \$option_tmpdir,
                         'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
@@ -1708,6 +1719,11 @@ sub check_args {
 	  print STDERR "--slave-info is used with --no-lock but without --safe-slave-backup. The binlog position cannot be consistent with the backup data.\n";
 	    exit(1);
 	}
+    }
+
+    if ($option_rsync && ($option_remote_host || $option_stream)) {
+        print STDERR "--rsync doesn't work with --remote-host or --stream\n";
+	exit(1);
     }
 
     print STDERR "\n";
@@ -1815,16 +1831,43 @@ sub remove_from_array {
 # backup directory.
 #
 sub backup_files {
+    my $prep_mode = shift;
     my $source_dir = get_option(\%config, 'mysqld', 'datadir');
     my @list;
     my $file;
     my $database;
     my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
+    my $rsync_file_list;
+    my $operation;
+    my $rsync_tmpfile_pass1 = "$option_tmpdir/xtrabackup_rsyncfiles_pass1";
+    my $rsync_tmpfile_pass2 = "$option_tmpdir/xtrabackup_rsyncfiles_pass2";
+
+    # prep_mode will pre-copy the data, so that rsync is faster the 2nd time
+    # saving time while all tables are locked.
+    # currently only rsync mode is supported for prep.
+    if ($prep_mode and !$option_rsync) {
+        return;
+    }
+
+    if ($option_rsync) {
+	if ($prep_mode) {
+	    $rsync_file_list = $rsync_tmpfile_pass1;
+	} else {
+	    $rsync_file_list = $rsync_tmpfile_pass2;
+	}
+	open(RSYNC, ">$rsync_file_list")
+	    || Die "Can't open $rsync_file_list for writing: $!\n";
+    }
 
     opendir(DIR, $source_dir) 
         || Die "Can't open directory '$source_dir': $!\n";
     $now = current_time();
-    print STDERR "\n$now  $prefix Starting to backup .frm, .MRG, .MYD, .MYI,\n";
+    if ($prep_mode) {
+	$operation = "a prep copy of";
+    } else {
+	$operation = "to backup";
+    }
+    print STDERR "\n$now  $prefix Starting $operation .frm, .MRG, .MYD, .MYI,\n";
     print STDERR "$prefix .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files in\n";
     print STDERR "$prefix subdirectories of '$source_dir'\n";
     # loop through all database directories
@@ -1875,7 +1918,13 @@ sub backup_files {
             if ($print_each_file) {
                 print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
             }
-            if (!$option_remote_host && !$option_stream) {
+
+	    if ($option_rsync) {
+		print RSYNC "$database/$file\n";
+		if (!$prep_mode) {
+		    $rsync_files_hash{"$database/$file"} = 1;
+		}
+            } elsif (!$option_remote_host && !$option_stream) {
                 $src_name = escape_path("$source_dir/$database/$file");
                 $dst_name = escape_path("$backup_dir/$database");
                 system("$CP_CMD \"$src_name\" \"$dst_name\"")
@@ -1911,9 +1960,54 @@ sub backup_files {
     }
     closedir(DIR);
 
+    if ($option_rsync) {
+	close(RSYNC);
+
+	# do the actual rsync now
+	$now = current_time();
+	my $rsync_cmd = "rsync -t \"$source_dir\" --files-from=\"$rsync_file_list\" \"$backup_dir\"";
+	print STDERR "$now Starting rsync as: $rsync_cmd\n";
+
+	# ignore errors in the prep mode, since we are running without lock,
+	# so some files may have disappeared.
+	if (system("$rsync_cmd") && !$prep_mode) {
+	    Die "rsync failed: $!\n";
+	}
+
+	$now = current_time();
+	print STDERR "$now rsync finished successfully.\n";
+
+	# Remove from $backup_dir files that have been removed between first and
+	# second passes. Cannot use "rsync --delete" because it does not work
+	# with --files-from.
+	if (!$prep_mode) {
+	    open(RSYNC, "<$rsync_tmpfile_pass1")
+		|| Die "Can't open $rsync_tmpfile_pass1 for reading: $!\n";
+
+	    while (<RSYNC>) {
+		chomp;
+		if (!exists $rsync_files_hash{$_}) {
+		    print STDERR "Removing '$backup_dir/$_'\n";
+		    unlink "$backup_dir/$_";
+		}
+	    }
+
+	    close(RSYNC);
+	    unlink "$rsync_tmpfile_pass1" || \
+		Die "Failed to delete $rsync_tmpfile_pass1: $!";
+	    unlink "$rsync_tmpfile_pass2" || \
+		Die "Failed to delete $rsync_tmpfile_pass2: $!";
+	}
+    }
+
+    if ($prep_mode) {
+	$operation = "a prep copy of";
+    } else {
+	$operation = "backing up";
+    }
     $now = current_time();
-    print STDERR "$now  $prefix Finished backing up .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSV, .CSM and .opt files\n\n";
-}
+    print STDERR "$now  $prefix Finished $operation .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSV, .CSM and .opt files\n\n";
+ }
 
 
 #
