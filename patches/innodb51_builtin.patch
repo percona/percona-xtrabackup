@@ -727,15 +727,15 @@
  		/* Recovery is running and no operations on the log files are
  		allowed yet (the variable name .._no_ibuf_.. is misleading) */
  
-@@ -3056,6 +3058,7 @@
- 	for the 'very fast' shutdown, because the InnoDB layer may have
- 	committed or prepared transactions and we don't want to lose them. */
+@@ -3057,6 +3059,7 @@
+ 	shutdown, because the InnoDB layer may have committed or
+ 	prepared transactions and we don't want to lose them. */
  
 +	if (!srv_apply_log_only) {
  	if (trx_n_mysql_transactions > 0
- 	    || UT_LIST_GET_LEN(trx_sys->trx_list) > 0) {
+ 	    || UT_LIST_GET_LEN(trx_sys->trx_list) > trx_n_prepared) {
  
-@@ -3063,6 +3066,7 @@
+@@ -3064,6 +3067,7 @@
  
  		goto loop;
  	}
@@ -1262,18 +1262,19 @@
  	if (purge_sys->trx->n_active_thrs > 0) {
 --- a/storage/innobase/trx/trx0trx.c
 +++ b/storage/innobase/trx/trx0trx.c
-@@ -478,8 +478,8 @@
+@@ -481,9 +481,8 @@
  						ut_dulint_get_low(trx->id));
  
  					if (srv_force_recovery == 0) {
 -
 -						trx->conc_state = TRX_PREPARED;
+-						trx_n_prepared++;
 +						/* xtrabackup should rollback it */
 +						trx->conc_state = TRX_ACTIVE;
  					} else {
  						fprintf(stderr,
  							"InnoDB: Since"
-@@ -555,9 +555,9 @@
+@@ -559,10 +558,9 @@
  								trx->id));
  
  						if (srv_force_recovery == 0) {
@@ -1281,6 +1282,7 @@
 +							/* xtrabackup should rollback it */
  							trx->conc_state
 -								= TRX_PREPARED;
+-							trx_n_prepared++;
 +								= TRX_ACTIVE;
  						} else {
  							fprintf(stderr,
