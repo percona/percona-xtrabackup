@@ -113,8 +113,7 @@ insert_column_list:
  `col_char_255` , `col_char_255_key` , `col_char_255_not_null` , `col_char_255_not_null_key` ,
  `col_int` , `col_int_key` , `col_int_not_null` , `col_int_not_null_key` ,
  `col_bigint` , `col_bigint_key` , `col_bigint_not_null` , `col_bigint_not_null_key` ,
- `col_enum` , `col_enum_key` , `col_enum_not_null` , `col_enum_not_null_key` ,
- `col_text` , `col_text_key` , `col_text_not_null` , `col_text_not_null_key` 
+ `col_enum` , `col_enum_key` , `col_enum_not_null` , `col_enum_not_null_key` 
  ;
 
 update:
@@ -205,9 +204,10 @@ no_pk_int_field_name:
 
 
 char_field_name:
-      `col_char_10` | `col_char_10_key` | `col_text_not_null` | `col_text_not_null_key` |
-      `col_text_key` | `col_text` | `col_char_10_not_null_key` | `col_char_10_not_null` |
-      `col_char_255` | `col_char_255_key` | `col_char_255_not_null` | `col_char_255_not_null_key` ;
+      `col_char_10` | `col_char_10_key` | 
+      `col_char_10_not_null_key` | `col_char_10_not_null` |
+      `col_char_255` | `col_char_255_key` |
+      `col_char_255_not_null` | `col_char_255_not_null_key` ;
 
 large_digit:
 	5 | 6 | 7 | 8 ;

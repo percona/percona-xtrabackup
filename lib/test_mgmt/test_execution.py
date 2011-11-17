@@ -277,7 +277,7 @@ class testExecutor():
                        ,  'SQLBENCH_DIR' : os.path.join( self.system_manager.testdir
                                                        , 'sql-bench')
                        }
-        elif self.master_server.type in ['mysql','percona']:
+        elif self.master_server.type in ['mysql','percona','galera']:
             env_reqs = {  'MYSQLTEST_VARDIR': self.master_server.vardir
                        ,  'MYSQL_TMP_DIR': self.master_server.tmpdir
                        ,  'MASTER_MYSOCK': self.master_server.socket_file

@@ -33,7 +33,7 @@ import sys
 from ConfigParser import RawConfigParser
 
 
-class codeTree:
+class codeTree(object):
     """ Defines what files / directories we should find and where
         allows for optional / required.
 
@@ -366,45 +366,91 @@ class mysqlTree(codeTree):
         bootstrap_file.close()
         return
 
-    def generate_config_template(self):
-        """ Generate the baseline template that will be added to / modified
-            as we allocate servers for tests
+class galeraTree(mysqlTree):
+    """ What a Galera-using tree looks like.
+        This is essentially the same as a MySQL tree, but we
+        want to tweak bootstrap generation here to skip PERFORMANCE_SCHEMA
+        Additionally, we may wish to scan a basedir / codeTree for
+        Galera-specific components in the future
 
-            Currently deciding if we want/need to use this or not...
+    """
+
+    def __init__( self, basedir, variables, system_manager):
+        super(galeraTree, self).__init__( basedir, variables, system_manager)
+        self.type= 'galera'
+
+    def generate_bootstrap(self):
+        """ We do the voodoo that we need to in order to create the bootstrap
+            file needed by MySQL
 
         """
+        found_new_sql = False
+        # determine if we have a proper area for our sql or if we
+        # use the rigged method from 5.0 / 5.1
+        # first we search various possible locations
+        test_file = "mysql_system_tables.sql"
+        for candidate_dir in [ "mysql"
+                         , "sql/share"
+                         , "share/mysql"
+			                   , "share"
+                         , "scripts"]:
+            candidate_path = os.path.join(self.basedir, candidate_dir, test_file)
+            if os.path.exists(candidate_path):
+                bootstrap_file = open(self.bootstrap_path,'w')
+                bootstrap_file.write("use mysql\n")
+                for sql_file in [ 'mysql_system_tables.sql' #official mysql system tables
+                                , 'mysql_system_tables_data.sql' #initial data for sys tables
+                                , 'mysql_test_data_timezone.sql' # subset of full tz table data for testing
+                                , 'fill_help_tables.sql' # fill help tables populated only w/ src dist(?)
+                                ]:
+                    sql_file_path = os.path.join(self.basedir,candidate_dir,sql_file)
+                    sql_file_handle = open(sql_file_path,'r')
+                    should_write = True
+                    for line in sql_file_handle.readlines():
+                        if line.startswith("-- PERFORMANCE SCHEMA INSTALLATION"):
+                            # We skip performance schema for now to avoid issues
+                            # with the mysqldump sst method
+                            should_write = False
+                        if 'proxies_priv' in line and not should_write:
+                            should_write = True
+                        if should_write:
+                            bootstrap_file.write(line)
+                    sql_file_handle.close()
+                found_new_sql = True
+                break
+        if not found_new_sql:
+            # Install the system db's from init_db.sql
+            # that is in early 5.1 and 5.0 versions of MySQL
+            sql_file_path = os.path.join(self.basedir,'mysql-test/lib/init_db.sql')
+            self.logging.info("Attempting to use bootstrap file - %s" %(sql_file_path))
+            try:
+                in_file = open(sql_file_path,'r')
+                bootstrap_file = open(self.bootstrap_path,'w')
+                for line in in_file.readlines():
+                    bootstrap_file.write(line)
+                in_file.close()
+            except IOError:
+                self.logging.error("Cannot find data for generating bootstrap file")
+                self.logging.error("Cannot proceed without this, system exiting...")
+                sys.exit(1)
+        # Remove anonymous users
+        bootstrap_file.write("DELETE FROM mysql.user where user= '';\n")
+        # Create mtr database
+        """
+        bootstrap_file.write("CREATE DATABASE mtr;\n")
+        for sql_file in [ 'mtr_warnings.sql' # help tables + data for warning detection / suppression
+                        , 'mtr_check.sql' # Procs for checking proper restore post-testcase
+                        ]:
+            sql_file_path = os.path.join(self.basedir,'mysql-test/include',sql_file)
+            sql_file_handle = open(sql_file_path,'r')
+            for line in sql_file_handle.readlines():
+                bootstrap_file.write(line)
+            sql_file_handle.close()
+        """
+        bootstrap_file.close()
+        return
+        
 
-        base_config_data = { 'mysqld':{ 'open-files-limit':'1024'
-                                      , 'local-infile':None
-                                      , 'character-set-server':'latin1'
-                                      , 'connect-timeout':'60'
-                                      , 'log-bin-trust-function-creators':'1'
-                                      , 'key_buffer_size':'1M'
-                                      , 'sort_buffer':'256K'
-                                      , 'max_heap_table_size':'1M'
-                                      , 'loose-innodb_data_file_path':'ibdata1:10M:autoextend'
-                                      , 'loose-innodb_buffer_pool_size':'8M'
-                                      , 'loose-innodb_write_io_threads':'2'
-                                      , 'loose-innodb_read_io_threads':'2'
-                                      , 'loose-innodb_log_buffer_size':'1M'
-                                      , 'loose-innodb_log_file_size':'5M'
-                                      , 'loose-innodb_additional_mem_pool_size':'1M'
-                                      , 'loose-innodb_log_files_in_group':'2'
-                                      , 'slave-net-timeout':'120'
-                                      , 'log-bin':'mysqld-bin'
-                                      , 'loose-enable-performance-schema':None
-                                      , 'loose-performance-schema-max-mutex-instances':'10000'
-                                      , 'loose-performance-schema-max-rwlock-instances':'10000'
-                                      , 'loose-performance-schema-max-table-instances':'500'
-                                      , 'loose-performance-schema-max-table-handles':'1000'
-                                      , 'binlog-direct-non-transactional-updates':None
-                                      }
-                           , 'mysqlbinlog':{}
-                           , 'mysql_upgrade':{}
-                           , 'client':{}
-                           , 'mysqltest':{}
-                           }
-        config_reader = RawConfigParser(allow_no_value=True)
 
 
 class perconaTree(mysqlTree):
@@ -415,9 +461,5 @@ class perconaTree(mysqlTree):
     """
     
     def __init__(self, basedir, variables,system_manager):
-        super(mysqlTree, self).__init__( variables, system_manager)
+        super(perconaTree, self).__init__( basedir, variables, system_manager)
         self.type='percona'
-        
-
-
-        

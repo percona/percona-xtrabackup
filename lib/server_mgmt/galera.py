@@ -80,9 +80,10 @@ class mysqlServer(Server):
         # Get our ports
         self.port_block = self.system_manager.port_manager.get_port_block( self.name
                                                                          , self.preferred_base_port
-                                                                         , 2 )
+                                                                         , 3 )
         self.master_port = self.port_block[0]
         self.galera_listen_port = self.port_block[1]
+        self.galera_recv_port = self.port_block[2]
 
         # Generate our working directories
         self.dirset = { 'var_%s' %(self.name): {'std_data_ln':( os.path.join(self.code_tree.testdir,'std_data'))
@@ -132,6 +133,7 @@ class mysqlServer(Server):
         report_values = [ 'name'
                         , 'master_port'
                         , 'galera_listen_port'
+                        , 'galera_recv_port'
                         , 'socket_file'
                         , 'vardir'
                         , 'status'
@@ -219,8 +221,9 @@ class mysqlServer(Server):
                       , "%s" %(wsrep_cluster_string)
                       , "%s" %(wsrep_provider_string)
                       , "--wsrep_debug=ON"
+                      , "--wsrep_provider_options='ist.recv_addr=192.168.1.103:%d'" %(self.galera_recv_port)
                       , "--wsrep_sst_receive_address='127.0.0.1:%d'" %(self.master_port)
-                      , "--wsrep_sst_auth='root'"
+                      , "--wsrep_sst_auth='root:'"
                       , "--wsrep_node_name='node%d'" %(self.galera_listen_port)
                       , "--innodb_locks_unsafe_for_binlog=1"
                       , "--open-files-limit=1024"
@@ -256,9 +259,6 @@ class mysqlServer(Server):
                       , "--tmpdir=%s"  %(self.tmpdir)
                       , "--character-sets-dir=%s" %(self.charsetdir)
                       , "--lc-messages-dir=%s" %(self.langdir)
-                      #, "--ssl-ca=%s" %(os.path.join(self.std_data,'cacert.pem'))
-                      #, "--ssl-cert=%s" %(os.path.join(self.std_data,'server-cert.pem'))
-                      #, "--ssl-key=%s" %(os.path.join(self.std_data,'server-key.pem'))
                       , "--port=%d" %(self.master_port)
                       , "--socket=%s" %(self.socket_file)
                       , "--pid-file=%s" %(self.pid_file)
@@ -333,5 +333,3 @@ class mysqlServer(Server):
         """
 
         self.wsrep_cluster_addr = '127.0.0.1:%d' %(master_server.galera_listen_port)
-        print self.wsrep_cluster_addr, '*'*80
-        print '*'*80

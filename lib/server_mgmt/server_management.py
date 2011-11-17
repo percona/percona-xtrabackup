@@ -609,14 +609,3 @@ class serverManager:
                                  })
         self.env_manager.update_environment_vars(environment_reqs)
 
-
-
-        
-
-
-
-
-
-
-
-

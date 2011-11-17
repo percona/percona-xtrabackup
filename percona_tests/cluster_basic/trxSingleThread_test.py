@@ -51,19 +51,24 @@ class basicTest(unittest.TestCase):
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
-        test_cmd = "./gendata.pl --spec=conf/percona/percona_no_blob.zz "
+        test_cmd = ("./gentest.pl "
+                    "--gendata=conf/percona/percona_no_blob.zz "
+                    "--grammar=conf/percona/translog_concurrent1.yy "
+                    "--threads=1 "
+                    "--queries=100 "
+                   )
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
-        self.assertTrue(retcode==0, output)
+        self.assertEqual(retcode, 0, output)
         # check 'master'
         query = "SHOW TABLES IN test"
         retcode, master_result_set = execute_query(query, master_server)
-        self.assertEqual(retcode,0, master_result_set) 
+        self.assertEqual(retcode,0, master_result_set)
         expected_result_set = (('A',), ('AA',), ('B',), ('BB',), ('C',), ('CC',), ('D',), ('DD',))
         self.assertEqual( master_result_set
-                        , expected_result_set 
+                        , expected_result_set
                         , msg = (master_result_set, expected_result_set)
                         )
-        time.sleep(1)
+
         master_slave_diff = check_slaves_by_checksum(master_server, other_nodes) 
         self.assertEqual(master_slave_diff, None, master_slave_diff)
        

@@ -49,6 +49,59 @@ def execute_cmd(cmd, stdout_path, exec_path=None, get_output=False):
         output = None
     return retcode, output
 
+def get_tables(server, schema):
+    """ Return a list of the tables in the
+        schema on the server
+
+    """
+    results = []
+    query = "SHOW TABLES IN %s" %(schema)
+    retcode, table_set = execute_query(query, server)
+    for table_data in table_set:
+        table_name = table_data[0]
+        results.append(table_name)
+    return results
+
+def check_slaves_by_checksum( master_server
+                            , other_servers
+                            , schemas=['test']
+                            , tables=[]
+                            ):
+    """ We compare the specified tables (default = all)
+        from the specified schemas between the 'master'
+        and the other servers provided (via list)
+        via CHECKSUM
+
+        We return a dictionary listing the server
+        and any tables that differed
+
+    """
+    comp_results = {}
+    for server in other_servers:
+        for schema in schemas:
+            for table in get_tables(master_server, schema):
+                query = "CHECKSUM TABLE %s.%s" %(schema, table)
+                retcode, master_checksum = execute_query(query, master_server)
+                retcode, slave_checksum = execute_query(query, server)
+                #print "%s: master_checksum= %s | slave_checksum= %s" % ( table
+                #                                                       , master_checksum
+                #                                                       , slave_checksum
+                #                                                       )
+
+                if not master_checksum == slave_checksum:
+                    comp_data = "%s: master_checksum= %s | slave_checksum= %s" % ( table
+                                                                                 , master_checksum
+                                                                                 , slave_checksum
+                                                                                 )
+                    if comp_results.has_key(server.name):
+                        comp_results[server.name].append(comp_data)
+                    else:
+                        comp_results[server.name]=[comp_data]
+    if comp_results:
+        return comp_results
+    return None 
+
+
 
 def take_mysqldump( server
                   , databases=[]
@@ -112,19 +165,19 @@ def filter_data(input_data, filter_text ):
 def execute_query( query
                  , server
                  , server_host = '127.0.0.1'
-                 , database_name='test'):
+                 , schema='test'):
     result_list = []
     try:
         conn = MySQLdb.connect( host = server_host
                               , port = server.master_port
                               , user = 'root'
-                              , db = database_name)
+                              , db = schema)
         cursor = conn.cursor()
         cursor.execute(query)
         result_set =  cursor.fetchall()
         cursor.close()
     except MySQLdb.Error, e:
         return 1, ("Error %d: %s" %(e.args[0], e.args[1]))
-    conn.commit()
+    #conn.commit()
     conn.close()
     return 0, result_set
