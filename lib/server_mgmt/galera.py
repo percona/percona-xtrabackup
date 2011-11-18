@@ -242,6 +242,7 @@ class mysqlServer(Server):
                       , "--loose-innodb_log_file_size=5M"
                       , "--loose-innodb_additional_mem_pool_size=1M"
                       , "--loose-innodb_log_files_in_group=2"
+                      , "--loose-innodb_lock_wait_timeout=9999999"
                       , "--slave-net-timeout=120"
                       , "--log-bin=%s" %(os.path.join(self.logdir,"mysqld-bin"))
                       #, "--loose-enable-performance-schema"

@@ -62,6 +62,49 @@ def get_tables(server, schema):
         results.append(table_name)
     return results
 
+def check_slaves_by_query( master_server
+                         , other_servers
+                         , query
+                         , expected_result = None
+                         ):
+    """ We execute the query across all servers
+        and return a dict listing any diffs found,
+        None if all is good.
+
+        If a user provides an expected_result, we
+        will skip executing against the master
+        This is done as it is assumed the expected
+        result has been generated / tested against
+        the master
+
+    """
+    comp_results = {}
+    if expected_result:
+        pass # don't bother getting it
+    else:
+        # run against master for 'good' value
+        retcode, expected_result = execute_query(query, master_server)
+    for server in other_servers:
+        retcode, slave_result = execute_query(query, server)
+        #print "%s: expected_result= %s | slave_result= %s" % ( server.name 
+        #                                                     , expected_result 
+        #                                                     , slave_result_
+        #                                                       )
+
+        if not expected_result == slave_result:
+            comp_data = "%s: expected_result= %s | slave_result= %s" % ( server.name 
+                                                                       , expected_result 
+                                                                       , slave_result
+                                                                       )
+            if comp_results.has_key(server.name):
+                comp_results[server.name].append(comp_data)
+            else:
+                comp_results[server.name]=[comp_data]
+    if comp_results:
+        return comp_results
+    return None
+ 
+
 def check_slaves_by_checksum( master_server
                             , other_servers
                             , schemas=['test']
