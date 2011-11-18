@@ -157,6 +157,7 @@ class Server(object):
     def reset(self):
         """ Voodoo to reset ourselves """
         self.failed_test = 0
+        self.need_reset = False
 
     def get_numeric_server_id(self):
         """ Return the integer value of server-id

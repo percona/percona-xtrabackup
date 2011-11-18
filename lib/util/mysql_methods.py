@@ -209,7 +209,6 @@ def execute_query( query
                  , server
                  , server_host = '127.0.0.1'
                  , schema='test'):
-    result_list = []
     try:
         conn = MySQLdb.connect( host = server_host
                               , port = server.master_port
@@ -221,6 +220,38 @@ def execute_query( query
         cursor.close()
     except MySQLdb.Error, e:
         return 1, ("Error %d: %s" %(e.args[0], e.args[1]))
-    #conn.commit()
+    conn.commit()
     conn.close()
     return 0, result_set
+
+def execute_queries( query_list
+                   , server
+                   , server_host= '127.0.0.1'
+                   , schema= 'test'):
+    """ Execute a set of queries as a single transaction """
+
+    results = {} 
+    retcode = 0
+    try:
+        conn = MySQLdb.connect( host = server_host
+                              , port = server.master_port
+                              , user = 'root'
+                              , db = schema)
+        cursor = conn.cursor()
+        for idx, query in enumerate(query_list):
+            try:
+                cursor.execute(query)
+                result_set = cursor.fetchall()
+            except MySQLdb.Error, e:
+                result_set = "Error %d: %s" %(e.args[0], e.args[1])   
+                retcode = 1
+            finally:
+                results[query+str(idx)] = result_set
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception, e:
+        retcode = 1
+        results = (Exception, e)
+    finally:
+        return retcode, results    

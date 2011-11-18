@@ -25,7 +25,7 @@ import time
 
 from lib.util.mysql_methods import execute_cmd
 from lib.util.mysql_methods import execute_query
-from lib.util.mysql_methods import check_slaves_by_checksum
+from lib.util.mysql_methods import execute_queries
 from lib.util.mysql_methods import check_slaves_by_query
 from lib.util.randgen_methods import execute_randgen
 
@@ -35,7 +35,7 @@ servers = []
 server_manager = None
 test_executor = None
 
-class alterTest(unittest.TestCase):
+class rollbackTest(unittest.TestCase):
 
     def setUp(self):
         """ If we need to do anything pre-test, we do it here.
@@ -49,62 +49,45 @@ class alterTest(unittest.TestCase):
                                     , expect_fail=0
                                     ) 
 
-    def test_alterRenameFK(self):
+
+    def test_rollback(self):
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
-        queries = [ ("CREATE TABLE t1(a INT NOT NULL, "
-                     "b INT NOT NULL, PRIMARY KEY(a), "
-                     "KEY b_key1 (b)) Engine=Innodb " )
-                  , ("CREATE TABLE t2(a INT NOT NULL, "
-                     "b INT , PRIMARY KEY(a), KEY b_key (b), " 
-                     "CONSTRAINT fk_constraint_t2 FOREIGN KEY (b) "
-                     "REFERENCES t1(b) ON DELETE SET NULL "
-                     "ON UPDATE CASCADE)")
-                   ,"ALTER TABLE t1 RENAME TO t1_new_name"
+
+        queries = [ ("CREATE TABLE t1(a INT NOT NULL, PRIMARY KEY(a)) "
+                     "Engine=Innodb " )
+                   ,"INSERT INTO t1 VALUES (42)"
+                   ,"START TRANSACTION"
+                   ,"INSERT INTO t1 VALUES (1)"
+                   ,"INSERT INTO t1 VALUES (2)"
+                   ,"ROLLBACK" 
+                   ,"COMMIT"
                   ]
-        for query in queries:
-            retcode, result = execute_query(query, master_server)
-            self.assertEqual( retcode, 0, result)
+        retcode, result = execute_queries(queries, master_server)
+        self.assertEqual( retcode, 0, result)
         # check 'master'
-        query = "SHOW TABLES IN test"
+        query = "SELECT * FROM t1"
         retcode, master_result_set = execute_query(query, master_server)
         self.assertEqual(retcode,0, master_result_set)
-        expected_result_set = (('t1_new_name',), ('t2',)) 
+        expected_result_set = ((42L,),)
         self.assertEqual( master_result_set
                         , expected_result_set
                         , msg = (master_result_set, expected_result_set)
                         )
-        query = "SHOW CREATE TABLE t2"
-        retcode, master_result = execute_query(query, master_server)
-        expected_result = ( ( 't2'
-                            , ( 'CREATE TABLE `t2` '
-                                '(\n  `a` int(11) NOT NULL'
-                                ',\n  `b` int(11) DEFAULT NULL'
-                                ',\n  PRIMARY KEY (`a`)'
-                                ',\n  KEY `b_key` (`b`)'
-                                ',\n  CONSTRAINT `fk_constraint_t2` '
-                                'FOREIGN KEY (`b`) REFERENCES `t1_new_name` (`b`)'
-                                ' ON DELETE SET NULL ON UPDATE CASCADE\n)'
-                                ' ENGINE=InnoDB DEFAULT CHARSET=latin1'
-                               )
-                            ),
-                         )
-        self.assertEqual( master_result
-                        , expected_result
-                        , msg = (master_result, expected_result)
-                        )
         master_slave_diff = check_slaves_by_query( master_server
                                                  , other_nodes
                                                  , query
-                                                 , expected_result= master_result)
+                                                 , expected_result = expected_result_set
+                                                 )
         self.assertEqual(master_slave_diff, None, master_slave_diff)
+        
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
 
 
 def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(alterTest)
+    suite = unittest.TestLoader().loadTestsFromTestCase(rollbackTest)
     return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 
