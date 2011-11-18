@@ -54,8 +54,8 @@ class basicTest(unittest.TestCase):
         test_cmd = ("./gentest.pl "
                     "--gendata=conf/percona/percona_no_blob.zz "
                     "--grammar=conf/percona/translog_concurrent1.yy "
-                    "--threads=10 "
-                    "--queries=100 "
+                    "--threads=5 "
+                    "--queries=2000 "
                    )
         retcode, output = execute_randgen(test_cmd, test_executor, servers)
         self.assertEqual(retcode, 0, output)
