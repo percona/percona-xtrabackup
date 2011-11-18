@@ -197,14 +197,14 @@ class mysqlServer(Server):
         """
 
         # we need to do some wsrep voodoo for galera rpl to work
-        listen_addr_string = "?gmcast.listen_addr=tcp://127.0.0.1:%d" %(self.galera_listen_port)
+        self.listen_addr_string = "?gmcast.listen_addr=tcp://127.0.0.1:%d" %(self.galera_listen_port)
         # test for wsrep_provider argument
         wsrep_provider_string ='' 
         if self.system_manager.wsrep_provider_path:
             wsrep_provider_string = "--wsrep_provider=%s" %(self.system_manager.wsrep_provider_path)
         # handle wsrep_cluster_address argument
         wsrep_cluster_string ="--wsrep_cluster_address='gcomm://%s%s'" %( self.wsrep_cluster_addr
-                                                                        , listen_addr_string) 
+                                                                        , self.listen_addr_string) 
         for server_opt in self.server_options:
             if server_opt.startswith("--wsrep_cluster_address="):
                 # we have a user-specified value, so we don't
