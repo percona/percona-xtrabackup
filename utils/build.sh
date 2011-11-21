@@ -2,8 +2,8 @@
 
 set -e
 
-MYSQL_51_VERSION=5.1.56
-MYSQL_55_VERSION=5.5.10
+MYSQL_51_VERSION=5.1.59
+MYSQL_55_VERSION=5.5.17
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
@@ -255,8 +255,9 @@ case "$type" in
 	fi
 
 	$MAKE_CMD main
+	cd $top_dir
 	rm -rf $server_dir
-	mv Percona-Server $top_dir
+	ln -s $branch_dir/Percona-Server $server_dir
 
 	# Patch Percona Server
 	cd $server_dir
@@ -303,8 +304,9 @@ case "$type" in
 	fi
 
 	$MAKE_CMD PERCONA_SERVER=Percona-Server-5.5 main
+	cd $top_dir
 	rm -rf $server_dir
-	mv Percona-Server-5.5 $top_dir
+	ln -s $branch_dir/Percona-Server $server_dir
 
 	# Patch Percona Server
 	cd $server_dir
