@@ -900,7 +900,19 @@
  	secondary index entries for merge sort */
 --- a/storage/innobase/srv/srv0srv.c
 +++ b/storage/innobase/srv/srv0srv.c
-@@ -198,8 +198,7 @@
+@@ -87,11 +87,6 @@
+ #include "mysql/plugin.h"
+ #include "mysql/service_thd_wait.h"
+ 
+-/* prototypes of new functions added to ha_innodb.cc for kill_idle_transaction */
+-ibool		innobase_thd_is_idle(const void* thd);
+-ib_int64_t	innobase_thd_get_start_time(const void* thd);
+-void		innobase_thd_kill(void* thd);
+-
+ /* prototypes for new functions added to ha_innodb.cc */
+ ibool	innobase_get_slow_log();
+ 
+@@ -198,8 +193,7 @@
  UNIV_INTERN ulint	srv_log_file_size	= ULINT_MAX;
  /* size in database pages */
  UNIV_INTERN ulint	srv_log_buffer_size	= ULINT_MAX;
@@ -910,7 +922,7 @@
  
  /* Try to flush dirty pages so as to avoid IO bursts at
  the checkpoints. */
-@@ -457,6 +456,10 @@
+@@ -457,6 +451,10 @@
  UNIV_INTERN ulint	srv_dict_size_limit = 0;
  
  UNIV_INTERN ulint	srv_lazy_drop_table = 0;
@@ -921,7 +933,7 @@
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_n_free_tickets_to_enter = 500;
-@@ -1137,7 +1140,7 @@
+@@ -1137,7 +1135,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -930,7 +942,7 @@
  }
  
  /*********************************************************************//**
-@@ -1148,6 +1151,7 @@
+@@ -1148,6 +1146,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -938,7 +950,7 @@
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1161,6 +1165,7 @@
+@@ -1161,6 +1160,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -946,7 +958,7 @@
  }
  
  /*********************************************************************//**
-@@ -1886,7 +1891,7 @@
+@@ -1886,7 +1886,7 @@
  		}
  
  		/* Record the lock wait time for this thread */
@@ -955,6 +967,43 @@
  	}
  
  	if (trx->was_chosen_as_deadlock_victim) {
+@@ -2842,36 +2842,6 @@
+ 		old_sema = sema;
+ 	}
+ 
+-	if (srv_kill_idle_transaction && trx_sys) {
+-		trx_t*	trx;
+-		time_t	now;
+-rescan_idle:
+-		now = time(NULL);
+-		mutex_enter(&kernel_mutex);
+-		trx = UT_LIST_GET_FIRST(trx_sys->mysql_trx_list);
+-		while (trx) {
+-			if (trx->conc_state == TRX_ACTIVE
+-			    && trx->mysql_thd
+-			    && innobase_thd_is_idle(trx->mysql_thd)) {
+-				ib_int64_t	start_time; /* as stmt ID */
+-
+-				start_time = innobase_thd_get_start_time(trx->mysql_thd);
+-				if (trx->last_stmt_start != start_time) {
+-					trx->idle_start = now;
+-					trx->last_stmt_start = start_time;
+-				} else if (difftime(now, trx->idle_start)
+-					   > srv_kill_idle_transaction) {
+-					/* kill the session */
+-					mutex_exit(&kernel_mutex);
+-					innobase_thd_kill(trx->mysql_thd);
+-					goto rescan_idle;
+-				}
+-			}
+-			trx = UT_LIST_GET_NEXT(mysql_trx_list, trx);
+-		}
+-		mutex_exit(&kernel_mutex);
+-	}
+-
+ 	/* Flush stderr so that a database user gets the output
+ 	to possible MySQL error file */
+ 
 --- a/storage/innobase/srv/srv0start.c
 +++ b/storage/innobase/srv/srv0start.c
 @@ -94,6 +94,8 @@
