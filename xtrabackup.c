@@ -592,7 +592,7 @@ typedef	struct fil_system_struct	fil_system_t;
 struct fil_system_struct {
 #ifndef UNIV_HOTBACKUP
 	mutex_t		mutex;		/*!< The mutex protecting the cache */
-#ifdef XTRADB55
+#ifdef XTRADB_BASED
 	mutex_t		file_extend_mutex;
 #endif
 #endif /* !UNIV_HOTBACKUP */
@@ -639,6 +639,10 @@ struct fil_system_struct {
 					request */
 	UT_LIST_BASE_NODE_T(fil_space_t) space_list;
 					/*!< list of all file spaces */
+	ibool		space_id_reuse_warned;
+					/* !< TRUE if fil_space_create()
+					has issued a warning about
+					potential space_id reuse */
 };
 
 #endif /* INNODB_VERSION_SHORT */
