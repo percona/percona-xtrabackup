@@ -654,10 +654,13 @@
  	server_busy = trx_n_mysql_transactions > 0
  		|| UT_LIST_GET_LEN(trx_sys->trx_list) > trx_n_prepared;
  	mutex_exit(&kernel_mutex);
-@@ -3121,6 +3124,7 @@
+@@ -3121,6 +3124,10 @@
  	if (server_busy || srv_is_any_background_thread_active()) {
  		goto loop;
  	}
++	}
++	else {
++		mutex_exit(&kernel_mutex);
 +	}
  
  	mutex_enter(&log_sys->mutex);
