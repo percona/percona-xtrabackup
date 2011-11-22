@@ -961,7 +961,19 @@
  	secondary index entries for merge sort */
 --- a/storage/innodb_plugin/srv/srv0srv.c
 +++ b/storage/innodb_plugin/srv/srv0srv.c
-@@ -415,6 +415,10 @@
+@@ -86,11 +86,6 @@
+ #include "trx0i_s.h"
+ #include "os0sync.h" /* for HAVE_ATOMIC_BUILTINS */
+ 
+-/* prototypes of new functions added to ha_innodb.cc for kill_idle_transaction */
+-ibool		innobase_thd_is_idle(const void* thd);
+-ib_int64_t	innobase_thd_get_start_time(const void* thd);
+-void		innobase_thd_kill(void* thd);
+-
+ /* prototypes for new functions added to ha_innodb.cc */
+ ibool	innobase_get_slow_log();
+ 
+@@ -415,6 +410,10 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -972,7 +984,7 @@
  UNIV_INTERN long long	srv_ibuf_max_size = 0;
  UNIV_INTERN ulint	srv_ibuf_active_contract = 0; /* 0:disable 1:enable */
  UNIV_INTERN ulint	srv_ibuf_accel_rate = 100;
-@@ -1065,7 +1069,7 @@
+@@ -1065,7 +1064,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -981,7 +993,7 @@
  }
  
  /*********************************************************************//**
-@@ -1076,6 +1080,7 @@
+@@ -1076,6 +1075,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -989,7 +1001,7 @@
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1089,6 +1094,7 @@
+@@ -1089,6 +1089,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -997,6 +1009,43 @@
  }
  
  /*********************************************************************//**
+@@ -2570,36 +2571,6 @@
+ 		old_sema = sema;
+ 	}
+ 
+-	if (srv_kill_idle_transaction && trx_sys) {
+-		trx_t*	trx;
+-		time_t	now;
+-rescan_idle:
+-		now = time(NULL);
+-		mutex_enter(&kernel_mutex);
+-		trx = UT_LIST_GET_FIRST(trx_sys->mysql_trx_list);
+-		while (trx) {
+-			if (trx->conc_state == TRX_ACTIVE
+-			    && trx->mysql_thd
+-			    && innobase_thd_is_idle(trx->mysql_thd)) {
+-				ib_int64_t	start_time; /* as stmt ID */
+-
+-				start_time = innobase_thd_get_start_time(trx->mysql_thd);
+-				if (trx->last_stmt_start != start_time) {
+-					trx->idle_start = now;
+-					trx->last_stmt_start = start_time;
+-				} else if (difftime(now, trx->idle_start)
+-					   > srv_kill_idle_transaction) {
+-					/* kill the session */
+-					mutex_exit(&kernel_mutex);
+-					innobase_thd_kill(trx->mysql_thd);
+-					goto rescan_idle;
+-				}
+-			}
+-			trx = UT_LIST_GET_NEXT(mysql_trx_list, trx);
+-		}
+-		mutex_exit(&kernel_mutex);
+-	}
+-
+ 	/* Flush stderr so that a database user gets the output
+ 	to possible MySQL error file */
+ 
 --- a/storage/innodb_plugin/srv/srv0start.c
 +++ b/storage/innodb_plugin/srv/srv0start.c
 @@ -95,6 +95,8 @@

@@ -138,7 +138,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql/plugin.h>
 #include <mysql/service_thd_wait.h>
 
-void thd_wait_begin(MYSQL_THD thd, thd_wait_type wait_type)
+void thd_wait_begin(MYSQL_THD thd, int wait_type)
 {
 	(void)thd;
 	(void)wait_type;
@@ -302,6 +302,7 @@ xb_file_create(
 	ulint		type,	/*!< in: OS_DATA_FILE or OS_LOG_FILE */
 	ibool*		success);/*!< out: TRUE if succeed, FALSE if error */
 
+
 /***********************************************************************//**
 Renames a file (can also move it to another directory). It is safest that the
 file is closed before calling this function.
@@ -325,6 +326,15 @@ xb_file_set_nocache(
 					immediately after opening or creating
 					a file, so this is either "open" or
 					"create" */
+
+/***********************************************************************//**
+Compatibility wrapper around os_file_flush().
+@return	TRUE if success */
+static
+ibool
+xb_file_flush(
+/*==========*/
+	os_file_t	file);	/*!< in, own: handle to a file */
 
 #ifdef POSIX_FADV_NORMAL
 #define USE_POSIX_FADVISE
@@ -1614,6 +1624,31 @@ innobase_print_identifier(
         putc(q, f);
 }
 
+/**********************************************************************//**
+It should be safe to use lower_case_table_names=0 for xtrabackup. If it causes
+any problems, we can add the lower_case_table_names option to xtrabackup
+later.
+@return	0 */
+ulint
+innobase_get_lower_case_table_names(void)
+/*=====================================*/
+{
+	return(0);
+}
+
+/******************************************************************//**
+Strip dir name from a full path name and return only the file name
+@return file name or "null" if no file name */
+const char*
+innobase_basename(
+/*==============*/
+	const char*	path_name)	/*!< in: full path name */
+{
+	const char*	name = base_name(path_name);
+
+	return((name) ? name : "null");
+}
+
 /*****************************************************************//**
 Convert an SQL identifier to the MySQL system_charset_info (UTF-8)
 and quote it if needed.
@@ -1948,6 +1983,22 @@ innobase_get_slow_log()
 }
 #endif
 #endif
+
+/***********************************************************************//**
+Compatibility wrapper around os_file_flush().
+@return	TRUE if success */
+static
+ibool
+xb_file_flush(
+/*==========*/
+	os_file_t	file)	/*!< in, own: handle to a file */
+{
+#ifdef XTRADB_BASED
+	return os_file_flush(file, TRUE);
+#else
+	return os_file_flush(file);
+#endif
+}
 
 /***********************************************************************
 Computes bit shift for a given value. If the argument is not a power
@@ -3113,7 +3164,7 @@ read_retry:
 		}
 	}
 
-	success = os_file_flush(dst_file);
+	success = xb_file_flush(dst_file);
 	if (!success) {
 		goto error;
 	}
@@ -3418,7 +3469,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 
 
 	if (!xtrabackup_stream) {
-		success = os_file_flush(dst_log);
+		success = xb_file_flush(dst_log);
 	} else {
 		fflush(stdout);
 		success = TRUE;
@@ -4460,7 +4511,11 @@ loop:
 						buf_page_dbg_add_level(local_page, SYNC_NO_ORDER_CHECK);
 #endif
 #else
+#if (MYSQL_VERSION_ID < 50517)
 						local_block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, &local_mtr);
+#else
+						local_block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, index, &local_mtr);
+#endif
 						local_page = buf_block_get_frame(local_block);
 #endif
 						blob_header = local_page + offset;
@@ -4505,7 +4560,13 @@ loop:
 #ifndef INNODB_VERSION_SHORT
 		page = btr_page_get(space, right_page_no, RW_X_LATCH, &mtr);
 #else
-		block = btr_block_get(space, zip_size, right_page_no, RW_X_LATCH, &mtr);
+#if (MYSQL_VERSION_ID < 50517)
+		block = btr_block_get(space, zip_size, right_page_no,
+				      RW_X_LATCH, &mtr);
+#else
+		block = btr_block_get(space, zip_size, right_page_no,
+				      RW_X_LATCH, index, &mtr);
+#endif
 		page = buf_block_get_frame(block);
 #endif
 		goto loop;
@@ -5925,7 +5986,7 @@ skip_check:
 						os_file_get_last_error(TRUE);
 						goto next_node;
 					}
-					success = os_file_flush(info_file);
+					success = xb_file_flush(info_file);
 					if (!success) {
 						os_file_get_last_error(TRUE);
 						goto next_node;
