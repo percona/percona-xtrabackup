@@ -67,8 +67,6 @@ class basicTest(mysqlBaseTestCase):
                                    , xtrabackup
                                    , backup_path))
         retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-        print output
-        print '&'*80
         self.assertTrue(retcode==0,output)
 
         # take mysqldump of our current server state
@@ -84,8 +82,6 @@ class basicTest(mysqlBaseTestCase):
                                    , xtrabackup
                                    , backup_path))
         retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-        print output
-        print '&'*80
         self.assertTrue(retcode==0,output)
 
         # remove old datadir
@@ -99,8 +95,6 @@ class basicTest(mysqlBaseTestCase):
                                    , xtrabackup
                                    , backup_path))
         retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-        print output
-        print '&'*80
         self.assertTrue(retcode==0, output)
 
         # restart server (and ensure it doesn't crash)
