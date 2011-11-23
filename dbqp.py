@@ -35,8 +35,8 @@ Currently geared towards Drizzle / will expand to MySQL
 import os
 import sys
 
-import lib.dbqp_opts.test_run_options as test_run_options
-from lib.dbqp_modes.test_mode import handle_mode
+import lib.opts.test_run_options as test_run_options
+from lib.modes.test_mode import handle_mode
 from lib.server_mgmt.server_management import serverManager
 from lib.sys_mgmt.system_management import systemManager
 from lib.test_mgmt.execution_management import executionManager

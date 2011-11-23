@@ -24,12 +24,7 @@ import shutil
 import time
 import unittest
 
-from lib.util.mysql_methods import execute_cmd
-from lib.util.mysql_methods import take_mysqldump
-from lib.util.mysql_methods import diff_dumpfiles
-from lib.util.mysql_methods import execute_query
-from lib.util.randgen_methods import execute_randgen
-
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[],[]]
 servers = []
@@ -39,7 +34,7 @@ test_executor = None
 # here.  We will be using a generic / vanilla backup dir
 backup_path = None
 
-class slaveTest(unittest.TestCase):
+class basicTest(mysqlBaseTestCase):
 
     def setUp(self):
         master_server = servers[0] # assumption that this is 'master'
@@ -50,6 +45,7 @@ class slaveTest(unittest.TestCase):
 
 
     def test_basic1(self):
+        self.servers = servers
         innobackupex = test_executor.system_manager.innobackupex_path
         xtrabackup = test_executor.system_manager.xtrabackup_path
         master_server = servers[0] # assumption that this is 'master'
@@ -62,7 +58,7 @@ class slaveTest(unittest.TestCase):
 
         # populate our server with a test bed
         test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
         
         # take a backup
         cmd = ("%s --defaults-file=%s --user=root --port=%d"
@@ -72,11 +68,11 @@ class slaveTest(unittest.TestCase):
                                    , master_server.master_port
                                    , xtrabackup
                                    , backup_path))
-        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
+        retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0,output)
 
         # take mysqldump of our current server state
-        take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
+        self.take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
         
         # shutdown our server
         server_manager.stop_server(slave_server)
@@ -86,7 +82,7 @@ class slaveTest(unittest.TestCase):
                "--ibbackup=%s %s" %( innobackupex
                                    , xtrabackup
                                    , backup_path))
-        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
+        retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0,output)
 
         # remove old datadir
@@ -99,7 +95,7 @@ class slaveTest(unittest.TestCase):
                                    , slave_server.cnf_file
                                    , xtrabackup
                                    , backup_path))
-        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
+        retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0, output)
 
         # get binlog info for slave 
@@ -126,17 +122,17 @@ class slaveTest(unittest.TestCase):
                  "MASTER_LOG_POS=%d" % ( master_server.master_port
                                        , binlog_file
                                        , int(binlog_pos)))
-        retcode, result_set = execute_query(query, slave_server)
+        retcode, result_set = self.execute_query(query, slave_server)
         self.assertTrue(retcode==0, result_set)
 
         # start the slave
         query = "START SLAVE"
-        retcode, result_set = execute_query(query, slave_server)
+        retcode, result_set = self.execute_query(query, slave_server)
         self.assertTrue(retcode==0, result_set)
 
         # check the slave status
         query = "SHOW SLAVE STATUS"
-        retcode, result_set = execute_query(query, slave_server)
+        retcode, result_set = self.execute_query(query, slave_server)
         result_set = result_set[0]
         slave_master_port = result_set[3]
         slave_binlog_file = result_set[5]
@@ -149,36 +145,29 @@ class slaveTest(unittest.TestCase):
         self.assertTrue(retcode==0, result_set)
 
         # take mysqldump of current server state
-        take_mysqldump(slave_server, databases=['test'],dump_path=slave_dumpfile)
+        self.take_mysqldump(slave_server, databases=['test'],dump_path=slave_dumpfile)
 
         # diff original vs. current server dump files
-        retcode, output = diff_dumpfiles(orig_dumpfile, slave_dumpfile)
+        retcode, output = self.diff_dumpfiles(orig_dumpfile, slave_dumpfile)
         self.assertTrue(retcode, output)
 
         # create a new table on the master
         query = ("CREATE TABLE t1 "
                  "(col1 int NOT NULL AUTO_INCREMENT PRIMARY KEY )"
                 )
-        retcode, result_set = execute_query(query, master_server)
+        retcode, result_set = self.execute_query(query, master_server)
         # insert some rows
         query = "INSERT INTO t1 VALUES (),(),(),(),()"
-        retcode, result_set = execute_query(query, master_server)
+        retcode, result_set = self.execute_query(query, master_server)
 
         # wait a bit for the slave
         # TODO: proper poll routine
         time.sleep(5)
         for query in ["SHOW CREATE TABLE t1",
                       "SELECT * FROM t1"]:
-            master_retcode, master_result = execute_query(query, master_server)
-            slave_retcode, slave_result = execute_query(query, slave_server)
-            self.assertEqual(master_result, slave_result)
+            retcode, result = self.check_slaves_by_query(query, master_server, [slave_server])
  
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(slaveTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

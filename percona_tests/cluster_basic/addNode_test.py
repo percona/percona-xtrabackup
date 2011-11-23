@@ -23,10 +23,7 @@ import unittest
 import os
 import time
 
-from lib.util.mysql_methods import execute_cmd
-from lib.util.mysql_methods import execute_query
-from lib.util.mysql_methods import check_slaves_by_checksum
-from lib.util.randgen_methods import execute_randgen
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[],[],[],[]]
 server_requests = {'join_cluster':[(0,1), (0,2)]}
@@ -34,29 +31,20 @@ servers = []
 server_manager = None
 test_executor = None
 
-class basicTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(mysqlBaseTestCase):
 
     def test_basic1(self):
         # populate a server with some tables
+        self.servers = servers
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
         test_cmd = "./gendata.pl --spec=conf/percona/percona_no_blob.zz "
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
         # check 'master'
         query = "SHOW TABLES IN test"
-        retcode, master_result_set = execute_query(query, master_server)
+        retcode, master_result_set = self.execute_query(query, master_server)
         self.assertEqual(retcode,0, master_result_set) 
         expected_result_set = (('A',), ('AA',), ('B',), ('BB',), ('C',), ('CC',), ('D',), ('DD',))
         self.assertEqual( master_result_set
@@ -75,18 +63,5 @@ class basicTest(unittest.TestCase):
                                              , 0 )
         self.assertEqual(retcode,0,msg="New node restart failed!")
         time.sleep(5)
-        master_slave_diff = check_slaves_by_checksum(master_server, other_nodes) 
+        master_slave_diff = self.check_slaves_by_checksum(master_server, other_nodes) 
         self.assertEqual(master_slave_diff, None, master_slave_diff)
-       
-
-
-        
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(basicTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
-

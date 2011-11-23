@@ -23,10 +23,7 @@ import unittest
 import os
 import time
 
-from lib.util.mysql_methods import execute_cmd
-from lib.util.mysql_methods import execute_query
-from lib.util.mysql_methods import check_slaves_by_checksum
-from lib.util.randgen_methods import execute_randgen
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[],[],[]]
 server_requests = {'join_cluster':[(0,1), (0,2)]}
@@ -34,21 +31,10 @@ servers = []
 server_manager = None
 test_executor = None
 
-class alterTest(unittest.TestCase):
-
-    def setUp(self):
-        """ If we need to do anything pre-test, we do it here.
-            Any code here is executed before any test method we
-            may execute
-    
-        """
-        # ensure our servers are started
-        server_manager.start_servers( test_executor.name
-                                    , test_executor.working_environment
-                                    , expect_fail=0
-                                    ) 
+class basicTest(mysqlBaseTestCase):
 
     def test_alterRename_neg(self):
+        self.servers = servers
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
@@ -58,31 +44,23 @@ class alterTest(unittest.TestCase):
                     , "CREATE TABLE t2 LIKE t1"
                   ]
         for query in queries:
-            retcode, result = execute_query(query, master_server)
+            retcode, result = self.execute_query(query, master_server)
             self.assertEqual( retcode, 0, result)
         # check 'master'
         query = "ALTER TABLE t1 RENAME to t2"
-        retcode, result_set = execute_query(query, master_server)
+        retcode, result_set = self.execute_query(query, master_server)
         expected_result = "Error 1050: Table 't2' already exists"
         self.assertEqual( result_set
                         , expected_result
                         , msg = (result_set, expected_result))
         query = "SHOW TABLES IN test"
-        retcode, master_result_set = execute_query(query, master_server)
+        retcode, master_result_set = self.execute_query(query, master_server)
         self.assertEqual(retcode,0, master_result_set)
         expected_result_set = (('t1',),('t2',))
         self.assertEqual( master_result_set
                         , expected_result_set
                         , msg = (master_result_set, expected_result_set)
                         )
-        master_slave_diff = check_slaves_by_checksum(master_server, other_nodes)
+        master_slave_diff = self.check_slaves_by_checksum(master_server, other_nodes)
         self.assertEqual(master_slave_diff, None, master_slave_diff)
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(alterTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

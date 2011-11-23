@@ -23,35 +23,18 @@ import unittest
 import subprocess
 import os
 
-from lib.util.randgen_methods import execute_randgen
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class CreateDropTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(mysqlBaseTestCase):
 
     def test_CreateDrop1(self):
+        self.servers = servers
         test_cmd = "./gentest.pl --gendata=conf/percona/many_indexes_percona.zz --grammar=conf/percona/many_indexes_percona.yy --threads=1 --queries=1000 --Validators=None"
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
         self.assertTrue(retcode==0, output)
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(CreateDropTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

@@ -55,7 +55,7 @@ def handle_mode(variables, system_manager):
             system_manager.logging.error("invalid mode argument: %s" %test_mode)
             sys.exit(1)
         
-        mgmt_module = "lib.dbqp_modes.%s.%s_test_management" %(test_mode, test_mode)
+        mgmt_module = "lib.modes.%s.%s_test_management" %(test_mode, test_mode)
         tmp = __import__(mgmt_module, globals(), locals(), ['testManager'], -1)
         testManager = tmp.testManager
 

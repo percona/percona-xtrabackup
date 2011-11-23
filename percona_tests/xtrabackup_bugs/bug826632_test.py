@@ -23,11 +23,7 @@ import os
 import shutil
 import unittest
 
-from lib.util.mysql_methods import execute_cmd
-from lib.util.mysql_methods import take_mysqldump
-from lib.util.mysql_methods import diff_dumpfiles
-from lib.util.mysql_methods import execute_query
-from lib.util.randgen_methods import execute_randgen
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase 
 
 
 server_requirements = [["--innodb_file_per_table"]]
@@ -38,7 +34,7 @@ test_executor = None
 # here.  We will be using a generic / vanilla backup dir
 backup_path = None
 
-class basicTest(unittest.TestCase):
+class basicTest(mysqlBaseTestCase):
 
     def setUp(self):
         master_server = servers[0] # assumption that this is 'master'
@@ -49,6 +45,7 @@ class basicTest(unittest.TestCase):
 
 
     def test_basic1(self):
+        self.servers = servers
         innobackupex = test_executor.system_manager.innobackupex_path
         xtrabackup = test_executor.system_manager.xtrabackup_path
         master_server = servers[0] # assumption that this is 'master'
@@ -60,15 +57,15 @@ class basicTest(unittest.TestCase):
 
         # populate our server with a test bed
         test_cmd = "./gentest.pl --gendata=conf/percona/bug826632.zz "
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
         # create additional schemas for backup
         schema_basename='test'
         for i in range(6):
             schema = schema_basename+str(i)
             query = "CREATE SCHEMA %s" %(schema)
-            retcode, result_set = execute_query(query, master_server)
+            retcode, result_set = self.execute_query(query, master_server)
             self.assertEquals(retcode,0, msg=result_set)
-            retcode, output = execute_randgen(test_cmd, test_executor, servers, schema)
+            retcode, output = self.execute_randgen(test_cmd, test_executor, servers, schema)
             #self.assertEquals(retcode, 0, msg=output)
             
         
@@ -80,12 +77,12 @@ class basicTest(unittest.TestCase):
                                    , master_server.master_port
                                    , xtrabackup
                                    , backup_path))
-        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
+        retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0,output)
 
         # take mysqldump of our current server state
 
-        take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
+        self.take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
         
         # shutdown our server
         server_manager.stop_server(master_server)
@@ -95,7 +92,7 @@ class basicTest(unittest.TestCase):
                "--ibbackup=%s %s" %( innobackupex
                                    , xtrabackup
                                    , backup_path))
-        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
+        retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0,output)
 
         # remove old datadir
@@ -108,7 +105,7 @@ class basicTest(unittest.TestCase):
                                    , master_server.cnf_file
                                    , xtrabackup
                                    , backup_path))
-        retcode, output = execute_cmd(cmd, output_path, exec_path, True)
+        retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
         self.assertTrue(retcode==0, output)
 
         # restart server (and ensure it doesn't crash)
@@ -119,18 +116,13 @@ class basicTest(unittest.TestCase):
         self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
 
         # take mysqldump of current server state
-        take_mysqldump(master_server, databases=['test'],dump_path=restored_dumpfile)
+        self.take_mysqldump(master_server, databases=['test'],dump_path=restored_dumpfile)
 
         # diff original vs. current server dump files
-        retcode, output = diff_dumpfiles(orig_dumpfile, restored_dumpfile)
+        retcode, output = self.diff_dumpfiles(orig_dumpfile, restored_dumpfile)
         self.assertTrue(retcode, output)
  
 
-    #def tearDown(self):
-            #server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(basicTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
+    def tearDown(self):
+            server_manager.reset_servers(test_executor.name)
 

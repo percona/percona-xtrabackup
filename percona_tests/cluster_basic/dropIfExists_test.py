@@ -23,11 +23,7 @@ import unittest
 import os
 import time
 
-from lib.util.mysql_methods import execute_cmd
-from lib.util.mysql_methods import execute_query
-from lib.util.mysql_methods import execute_queries
-from lib.util.mysql_methods import check_slaves_by_query
-from lib.util.randgen_methods import execute_randgen
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[],[],[]]
 server_requests = {'join_cluster':[(0,1), (0,2)]}
@@ -35,22 +31,10 @@ servers = []
 server_manager = None
 test_executor = None
 
-class dropTest(unittest.TestCase):
-
-    def setUp(self):
-        """ If we need to do anything pre-test, we do it here.
-            Any code here is executed before any test method we
-            may execute
-    
-        """
-        # ensure our servers are started
-        server_manager.start_servers( test_executor.name
-                                    , test_executor.working_environment
-                                    , expect_fail=0
-                                    ) 
-
+class basicTest(mysqlBaseTestCase):
 
     def test_drop(self):
+        self.servers = servers
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
@@ -63,30 +47,21 @@ class dropTest(unittest.TestCase):
                    ,"DROP TABLE IF EXISTS t1" 
                    ,"DROP TABLE IF EXISTS t_nothere"
                   ]
-        retcode, result = execute_queries(queries, master_server)
+        retcode, result = self.execute_queries(queries, master_server)
         self.assertEqual( retcode, 0, result)
         # check 'master'
         query = "SHOW TABLES IN test"
-        retcode, master_result_set = execute_query(query, master_server)
+        retcode, master_result_set = self.execute_query(query, master_server)
         self.assertEqual(retcode,0, master_result_set)
         expected_result_set = ()
         self.assertEqual( master_result_set
                         , expected_result_set
                         , msg = (master_result_set, expected_result_set)
                         )
-        master_slave_diff = check_slaves_by_query( master_server
+        master_slave_diff = self.check_slaves_by_query( master_server
                                                  , other_nodes
                                                  , query
                                                  , expected_result = expected_result_set
                                                  )
         self.assertEqual(master_slave_diff, None, master_slave_diff)
         
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(dropTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
-

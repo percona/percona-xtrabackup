@@ -23,25 +23,17 @@ import unittest
 import subprocess
 
 from lib.util.sqlbench_methods import execute_sqlbench
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class sqlbenchTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(mysqlBaseTestCase):
 
     def test_run_all_sqlbench(self):
+        self.servers = servers
         test_cmd = "$SQLBENCH_DIR/run-all-tests --server=mysqld --host=127.0.0.1 --force --dir=$MYSQL_TEST_WORKDIR  --connect-options=port=$MASTER_MYPORT --verbose --debug --user=root"
 
         test_status, retcode, output = execute_sqlbench(test_cmd, test_executor, servers)
@@ -50,9 +42,4 @@ class sqlbenchTest(unittest.TestCase):
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(sqlbenchTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

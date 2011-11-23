@@ -70,9 +70,11 @@ class testExecutor(test_execution.testExecutor):
         test_module.servers = self.current_servers
         test_module.test_executor = self
         test_module.server_manager = self.server_manager
-        test_result = test_module.run_test(output_file)
-        self.current_test_retcode = test_result.wasSuccessful()
+        #test_result = test_module.run_test(output_file)
+        suite = unittest.TestLoader().loadTestsFromTestCase(test_module.basicTest)
+        test_result =  unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
         execution_time = int(self.time_manager.stop(testcase_name)*1000) # millisec
+        self.current_test_retcode = test_result.wasSuccessful()
         output_file.close()
         output_file = open(output_file_path,'r')
         output_data = ''.join(output_file.readlines())
