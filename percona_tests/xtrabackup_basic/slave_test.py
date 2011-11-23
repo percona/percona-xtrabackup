@@ -165,7 +165,7 @@ class basicTest(mysqlBaseTestCase):
         time.sleep(5)
         for query in ["SHOW CREATE TABLE t1",
                       "SELECT * FROM t1"]:
-            retcode, result = self.check_slaves_by_query(query, master_server, [slave_server])
+            retcode, result = self.check_slaves_by_query(master_server, [slave_server], query)
  
 
     def tearDown(self):
