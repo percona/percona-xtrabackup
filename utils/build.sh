@@ -4,6 +4,8 @@ set -e
 
 MYSQL_51_VERSION=5.1.59
 MYSQL_55_VERSION=5.5.17
+PS_51_VERSION=5.1.59-13.0
+PS_55_VERSION=5.5.16-22.0
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
@@ -250,7 +252,8 @@ case "$type" in
 	    cd $branch_dir
 	    bzr pull
 	else
-	    bzr branch lp:~percona-dev/percona-server/$branch_dir $branch_dir
+	    bzr branch -r tag:Percona-Server-$PS_51_VERSION \
+		lp:percona-server/5.1 $branch_dir
 	    cd $branch_dir
 	fi
 
@@ -299,7 +302,8 @@ case "$type" in
 	    cd $branch_dir
 	    bzr pull
 	else
-	    bzr branch lp:~percona-dev/percona-server/$branch_dir $branch_dir
+	    bzr branch -r tag:Percona-Server-$PS_55_VERSION \
+		lp:percona-server $branch_dir
 	    cd $branch_dir
 	fi
 
