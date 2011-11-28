@@ -1056,7 +1056,8 @@ sub mysql_open {
     my $options = get_mysql_options();
     # run mysql as a child process with a pipe connection
     $now = current_time();
-    print STDERR "$now  $prefix Starting mysql with options: $options\n";
+    (my $prt_options = $options) =~ s/--password=[^ ]+ /--password=xxxxxxxx /g;
+    print STDERR "$now  $prefix Starting mysql with options: $prt_options\n";
     $mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ") or Die "Failed to spawn mysql child process: $!";
     MYSQL_WRITER->autoflush(1);
     $now = current_time();
