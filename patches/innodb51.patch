@@ -1,6 +1,6 @@
 --- a/storage/innodb_plugin/btr/btr0btr.c
 +++ b/storage/innodb_plugin/btr/btr0btr.c
-@@ -120,7 +120,7 @@
+@@ -674,7 +674,7 @@
  /**************************************************************//**
  Gets the root node of a tree and x-latches it.
  @return	root page, x-latched */
@@ -9,7 +9,7 @@
  buf_block_t*
  btr_root_block_get(
  /*===============*/
-@@ -566,7 +566,7 @@
+@@ -1122,7 +1122,7 @@
  /************************************************************//**
  Returns the child page of a node pointer and x-latches it.
  @return	child page, x-latched */
@@ -29,7 +29,7 @@
  	if (recv_lsn_checks_on) {
  		ib_uint64_t	current_lsn;
  
-@@ -2050,7 +2050,9 @@
+@@ -1690,7 +1690,9 @@
  	ut_ad(zip_size == fil_space_get_zip_size(space));
  	ut_ad(ut_is_2pow(zip_size));
  #ifndef UNIV_LOG_DEBUG
@@ -40,7 +40,7 @@
  #endif
  	buf_pool->stat.n_page_gets++;
  loop:
-@@ -3257,7 +3259,7 @@
+@@ -2894,7 +2896,7 @@
  			recv_recover_page(TRUE, (buf_block_t*) bpage);
  		}
  
@@ -51,7 +51,7 @@
  				bpage->offset, buf_page_get_zip_size(bpage),
 --- a/storage/innodb_plugin/buf/buf0rea.c
 +++ b/storage/innodb_plugin/buf/buf0rea.c
-@@ -120,6 +120,45 @@
+@@ -128,6 +128,45 @@
  	bpage = buf_page_init_for_read(err, mode, space, zip_size, unzip,
  				       tablespace_version, offset);
  	if (bpage == NULL) {
@@ -97,7 +97,7 @@
  
  		return(0);
  	}
-@@ -594,6 +633,50 @@
+@@ -764,6 +803,50 @@
  		/* It is a single table tablespace and the .ibd file is
  		missing: do nothing */
  
@@ -656,7 +656,7 @@
  
 --- a/storage/innodb_plugin/include/srv0srv.h
 +++ b/storage/innodb_plugin/include/srv0srv.h
-@@ -201,6 +201,10 @@
+@@ -202,6 +202,10 @@
  extern ulong	srv_max_purge_lag;
  
  extern ulong	srv_replication_delay;
@@ -755,15 +755,15 @@
  
  	if (log_sys->n_pending_checkpoint_writes > 0) {
  		/* A checkpoint write is running */
-@@ -3089,6 +3091,7 @@
- 	for the 'very fast' shutdown, because the InnoDB layer may have
- 	committed or prepared transactions and we don't want to lose them. */
+@@ -3090,6 +3092,7 @@
+ 	shutdown, because the InnoDB layer may have committed or
+ 	prepared transactions and we don't want to lose them. */
  
 +	if (!srv_apply_log_only) {
  	if (trx_n_mysql_transactions > 0
- 	    || UT_LIST_GET_LEN(trx_sys->trx_list) > 0) {
+ 	    || UT_LIST_GET_LEN(trx_sys->trx_list) > trx_n_prepared) {
  
-@@ -3096,6 +3099,7 @@
+@@ -3097,6 +3100,7 @@
  
  		goto loop;
  	}
@@ -1039,7 +1039,7 @@
  	secondary index entries for merge sort */
 --- a/storage/innodb_plugin/srv/srv0srv.c
 +++ b/storage/innodb_plugin/srv/srv0srv.c
-@@ -372,6 +372,9 @@
+@@ -374,6 +374,9 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -1049,7 +1049,7 @@
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_n_free_tickets_to_enter = 500;
-@@ -1000,7 +1003,7 @@
+@@ -1002,7 +1005,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -1058,7 +1058,7 @@
  }
  
  /*********************************************************************//**
-@@ -1011,6 +1014,7 @@
+@@ -1013,6 +1016,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -1066,7 +1066,7 @@
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1024,6 +1028,7 @@
+@@ -1026,6 +1030,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -1103,7 +1103,7 @@
  ulint
  open_or_create_data_files(
  /*======================*/
-@@ -1353,7 +1355,7 @@
+@@ -1359,7 +1361,7 @@
  	}
  #endif /* UNIV_LOG_ARCHIVE */
  
@@ -1112,7 +1112,7 @@
  		fprintf(stderr,
  			"InnoDB: Error: combined size of log files"
  			" must be < 4 GB\n");
-@@ -1595,6 +1597,10 @@
+@@ -1601,6 +1603,10 @@
  		are initialized in trx_sys_init_at_db_start(). */
  
  		recv_recovery_from_checkpoint_finish();
@@ -1123,7 +1123,7 @@
  		if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
  			/* The following call is necessary for the insert
  			buffer to work with multiple tablespaces. We must
-@@ -1741,7 +1747,18 @@
+@@ -1747,7 +1753,18 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
@@ -1142,7 +1142,7 @@
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
  			" is %lu pages, but\n"
-@@ -1766,6 +1783,7 @@
+@@ -1772,6 +1789,7 @@
  
  			return(DB_ERROR);
  		}
@@ -1150,7 +1150,7 @@
  	}
  
  	/* Check that os_fast_mutexes work as expected */
-@@ -1861,6 +1879,7 @@
+@@ -1867,6 +1885,7 @@
  		ibuf_update_max_tablespace_id();
  	}
  
@@ -1186,7 +1186,7 @@
  
 --- a/storage/innodb_plugin/trx/trx0sys.c
 +++ b/storage/innodb_plugin/trx/trx0sys.c
-@@ -1607,10 +1607,12 @@
+@@ -1617,10 +1617,12 @@
  		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
  	}
  
@@ -1201,18 +1201,19 @@
  
 --- a/storage/innodb_plugin/trx/trx0trx.c
 +++ b/storage/innodb_plugin/trx/trx0trx.c
-@@ -461,8 +461,8 @@
+@@ -518,9 +518,8 @@
  						TRX_ID_PREP_PRINTF(trx->id));
  
  					if (srv_force_recovery == 0) {
 -
 -						trx->conc_state = TRX_PREPARED;
+-						trx_n_prepared++;
 +						/* xtrabackup should rollback it */
 +						trx->conc_state = TRX_ACTIVE;
  					} else {
  						fprintf(stderr,
  							"InnoDB: Since"
-@@ -538,9 +538,9 @@
+@@ -596,10 +595,9 @@
  								trx->id));
  
  						if (srv_force_recovery == 0) {
@@ -1220,6 +1221,7 @@
 +							/* xtrabackup should rollback it */
  							trx->conc_state
 -								= TRX_PREPARED;
+-							trx_n_prepared++;
 +								= TRX_ACTIVE;
  						} else {
  							fprintf(stderr,
