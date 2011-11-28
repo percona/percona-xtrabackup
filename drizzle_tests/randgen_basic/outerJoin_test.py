@@ -30,17 +30,7 @@ servers = []
 server_manager = None
 test_executor = None
 
-class outerJoinTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(unittest.TestCase):
 
     def test_outerJoin1(self):
         test_cmd = "./gentest.pl --gendata=conf/drizzle/outer_join_drizzle.zz --grammar=conf/drizzle/outer_join_drizzle.yy --queries=500 --threads=5"
@@ -50,8 +40,4 @@ class outerJoinTest(unittest.TestCase):
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
 
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(outerJoinTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

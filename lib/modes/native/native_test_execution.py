@@ -64,28 +64,37 @@ class testExecutor(test_execution.testExecutor):
         output_file = open(output_file_path,'w')
         testcase_name = self.current_testcase.fullname
         test_name = self.current_testcase.name
-        self.time_manager.start(testcase_name,'test')
+        
         # import our module and pass it some goodies to play with 
         test_module = imp.load_source(test_name, self.current_testcase.test_path)
         test_module.servers = self.current_servers
         test_module.test_executor = self
         test_module.server_manager = self.server_manager
-        #test_result = test_module.run_test(output_file)
+
+        # start our test
+        self.time_manager.start(testcase_name,'test')
+        self.logging.subunit_start(testcase_name)
         suite = unittest.TestLoader().loadTestsFromTestCase(test_module.basicTest)
         test_result =  unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
         execution_time = int(self.time_manager.stop(testcase_name)*1000) # millisec
         self.current_test_retcode = test_result.wasSuccessful()
         output_file.close()
         output_file = open(output_file_path,'r')
-        output_data = ''.join(output_file.readlines())
+        self.current_test_output = ''.join(output_file.readlines())
         output_file.close()
-        self.current_test_output = output_data
+
         self.current_test_exec_time = execution_time
+        retval = None
         if self.current_test_retcode:
             if not self.verbose:
                 self.current_test_output = None
-            return 'pass'           
-        return 'fail'
-
+            retval = 'pass'           
+        else:
+            retval = 'fail'
+        self.logging.subunit_stop( testcase_name
+                                 , retval 
+                                 , self.current_test_output
+                                 )
+        return retval
 
         
