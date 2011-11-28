@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
-MYSQL_51_VERSION=5.1.56
-MYSQL_55_VERSION=5.5.10
+MYSQL_51_VERSION=5.1.59
+MYSQL_55_VERSION=5.5.17
+PS_51_VERSION=5.1.59-13.0
+PS_55_VERSION=5.5.16-22.0
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
@@ -216,13 +218,15 @@ case "$type" in
 	    cd $branch_dir
 	    bzr pull
 	else
-	    bzr branch lp:~percona-dev/percona-server/$branch_dir $branch_dir
+	    bzr branch -r tag:Percona-Server-$PS_51_VERSION \
+		lp:percona-server/5.1 $branch_dir
 	    cd $branch_dir
 	fi
 
 	$MAKE_CMD main
+	cd $top_dir
 	rm -rf $server_dir
-	mv Percona-Server $top_dir
+	ln -s $branch_dir/Percona-Server $server_dir
 
 	# Patch Percona Server
 	cd $server_dir
@@ -264,13 +268,15 @@ case "$type" in
 	    cd $branch_dir
 	    bzr pull
 	else
-	    bzr branch lp:~percona-dev/percona-server/$branch_dir $branch_dir
+	    bzr branch -r tag:Percona-Server-$PS_55_VERSION \
+		lp:percona-server $branch_dir
 	    cd $branch_dir
 	fi
 
 	$MAKE_CMD PERCONA_SERVER=Percona-Server-5.5 main
+	cd $top_dir
 	rm -rf $server_dir
-	mv Percona-Server-5.5 $top_dir
+	ln -s $branch_dir/Percona-Server $server_dir
 
 	# Patch Percona Server
 	cd $server_dir
