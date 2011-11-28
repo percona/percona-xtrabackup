@@ -16,4 +16,4 @@ The :option:`--safe-slave-backup` option
 
 In order to assure a consistent replication state, this option stops the slave SQL thread and wait to start backing up until ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open temporary tables, the backup will take place, otherwise the SQL thread will be started and stopped until there are no open temporary tables. The backup will fail if ``Slave_open_temp_tables`` does not become zero after :option:`--safe-slave-backup-timeout` seconds (defaults to 300 seconds). The slave SQL thread will be restarted when the backup finishes.
 
-Using this option is always recommended when taking backups from a master server.
+Using this option is always recommended when taking backups from a slave server.
