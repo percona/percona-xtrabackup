@@ -483,6 +483,25 @@ sub is_in_array {
     return 0;
 }
 
+#
+# if_directory_exists_and_empty accepts two arguments:
+# variable with directory name and comment.
+# Sub checks that directory exists and is empty
+# usage: is_directory_exists_and_empty($directory,"Comment");
+#
+
+sub if_directory_exists_and_empty {
+    my $empty_dir = shift;
+    my $is_directory_empty_comment = shift;
+    if (! -d $empty_dir) {
+        die "$is_directory_empty_comment directory does not exist!";
+    }
+    opendir (my $dh, $empty_dir) or die "Not a directory";
+    if ( ! scalar( grep { $_ ne "." && $_ ne ".." } readdir($dh)) == 0) {
+        die "$is_directory_empty_comment directory is not empty!";
+    }
+    closedir($dh);
+}
 
 #
 # copy_back subroutine copies data and index files from backup directory 
@@ -503,18 +522,10 @@ sub copy_back {
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
-    # check that original data directory exists
-    if (! -d $orig_datadir) {
-        Die "Original data directory '$orig_datadir' does not exist!";
-    }
-    # check that original InnoDB data directory exists
-    if (! -d $orig_ibdata_dir) {
-        Die "Original InnoDB data directory '$orig_ibdata_dir' does not exist!";
-    }
-    # check that original InnoDB log directory exists
-    if (! -d $orig_iblog_dir) {
-        Die "Original InnoDB log directory '$orig_iblog_dir' does not exist!";
-    }
+    # check that original data directories exist and they are empty
+    if_directory_exists_and_empty($orig_datadir, "Original data");
+    if_directory_exists_and_empty($orig_ibdata_dir, "Original InnoDB data");
+    if_directory_exists_and_empty($orig_iblog_dir, "Original InnoDB log");
 
     # check that the original options file and the backup options file have
     # the same value for "innodb_data_file_path" option
