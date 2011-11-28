@@ -59,7 +59,7 @@ After each copy the files will be deleted. The same rationale is for the :option
 
 Finally, the binary log position will be printed to ``STDERR`` and |innobackupex| will exit returning 0 if all went OK.
 
-Note that the ``STDERR`` of |innobackupex| is not written in any file. You will have to redirect it to a file, e.g., ``innobackupex OPTIONS > backupout.log``.
+Note that the ``STDERR`` of |innobackupex| is not written in any file. You will have to redirect it to a file, e.g., ``innobackupex OPTIONS 2> backupout.log``.
 
 .. _copy-back-ibk:
 
