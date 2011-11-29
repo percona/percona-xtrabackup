@@ -216,8 +216,8 @@ case "$type" in
 	if [ -d $branch_dir ]
 	then
 	    cd $branch_dir
-	    bzr break-lock --force
 	    (bzr upgrade || true)
+	    yes | bzr break-lock
 	    bzr clean-tree --force --ignored
 	    bzr revert
 	    bzr pull --overwrite
@@ -270,7 +270,7 @@ case "$type" in
 	if [ -d $branch_dir ]
 	then
 	    cd $branch_dir
-	    bzr break-lock --force
+	    yes | bzr break-lock
 	    (bzr upgrade || true)
 	    bzr clean-tree --force --ignored
 	    bzr revert
