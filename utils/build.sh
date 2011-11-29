@@ -217,7 +217,8 @@ case "$type" in
 	then
 	    cd $branch_dir
 	    (bzr upgrade || true)
-	    bzr pull
+	    bzr clean-tree --force --ignored
+	    bzr pull --overwrite
 	else
 	    bzr branch -r tag:Percona-Server-$PS_51_VERSION \
 		lp:percona-server/5.1 $branch_dir
@@ -268,7 +269,8 @@ case "$type" in
 	then
 	    cd $branch_dir
 	    (bzr upgrade || true)
-	    bzr pull
+	    bzr clean-tree --force --ignored
+	    bzr pull --overwrite
 	else
 	    bzr branch -r tag:Percona-Server-$PS_55_VERSION \
 		lp:percona-server $branch_dir
