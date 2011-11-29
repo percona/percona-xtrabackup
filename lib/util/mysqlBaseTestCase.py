@@ -313,3 +313,7 @@ class mysqlBaseTestCase(unittest.TestCase):
                 output = None
         return retcode, output
 
+    def skipUnlessGalera(self, server):
+        if server.type != 'galera':
+            return lambda func: func
+        return unittest.skip("Test is only for galera-based servers.  current server is: %s" %(server.type))
