@@ -513,9 +513,21 @@ class systemManager:
             self.logging.verbose("PID: %s was not running despite the existence of a pid file.  This may be of note...")
         return
    
-    
+    def get_ip_address(self):
+        """ We find the ip address of our host.
+            Currently a bit hacky
+       
+        """
 
-
+        ip_address = '127.0.0.1' 
+        retcode, output = self.execute_cmd("ifconfig") 
+        for line in output:
+            line = line.strip()
+            if line.startswith('inet addr'):
+                ip_address = line.split(':')[0].split(' ').strip()
+                if ip_address != '127.0.0.1':
+                    return_ip_address
+        return ip_address
  
         
         
