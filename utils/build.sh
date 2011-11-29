@@ -216,7 +216,7 @@ case "$type" in
 	if [ -d $branch_dir ]
 	then
 	    cd $branch_dir
-	    bzr upgrade --clean
+	    bzr upgrade
 	    bzr pull
 	else
 	    bzr branch -r tag:Percona-Server-$PS_51_VERSION \
@@ -267,7 +267,7 @@ case "$type" in
 	if [ -d $branch_dir ]
 	then
 	    cd $branch_dir
-	    bzr upgrade --clean
+	    bzr upgrade
 	    bzr pull
 	else
 	    bzr branch -r tag:Percona-Server-$PS_55_VERSION \
