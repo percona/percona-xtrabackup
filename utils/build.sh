@@ -218,6 +218,7 @@ case "$type" in
 	    cd $branch_dir
 	    (bzr upgrade || true)
 	    bzr clean-tree --force --ignored
+	    bzr revert
 	    bzr pull --overwrite
 	else
 	    bzr branch -r tag:Percona-Server-$PS_51_VERSION \
@@ -270,6 +271,7 @@ case "$type" in
 	    cd $branch_dir
 	    (bzr upgrade || true)
 	    bzr clean-tree --force --ignored
+	    bzr revert
 	    bzr pull --overwrite
 	else
 	    bzr branch -r tag:Percona-Server-$PS_55_VERSION \
