@@ -221,12 +221,13 @@ class mysqlServer(Server):
                       , "%s" %(wsrep_cluster_string)
                       , "%s" %(wsrep_provider_string)
                       , "--wsrep_debug=ON"
-                      , "--wsrep_provider_options='ist.recv_addr=192.168.1.103:%d'" %(self.galera_recv_port)
+                      , "--wsrep_provider_options='ist.recv_addr=127.0.0.1:%d'" %(self.galera_recv_port)
                       , "--wsrep_sst_receive_address='127.0.0.1:%d'" %(self.master_port)
                       , "--wsrep_sst_auth='root:'"
                       , "--wsrep_node_name='node%d'" %(self.galera_listen_port)
                       , "--innodb_locks_unsafe_for_binlog=1"
                       , "--open-files-limit=1024"
+                      , "--query-cache-size=0"
                       , "--local-infile"
                       , "--character-set-server=latin1"
                       , "--connect-timeout=60"

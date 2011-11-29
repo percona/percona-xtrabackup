@@ -189,6 +189,7 @@ class mysqlServer(Server):
                       , "--key_buffer_size=1M"
                       , "--sort_buffer=256K"
                       , "--max_heap_table_size=1M"
+                      , "--query-cache-size=0"
                       , "--loose-innodb_data_file_path=ibdata1:10M:autoextend"
                       , "--loose-innodb_buffer_pool_size=32M"
                       , "--loose-innodb_write_io_threads=2"

@@ -108,10 +108,6 @@ class systemManager:
         self.port_manager = portManager(self,variables['debug'])
         self.time_manager = timeManager(self)
 
-        # use our code_manager to handle the various basedirs 
-        # we have been passed
-        self.code_manager = codeManager(self, variables)
-
         # environment manager handles updates / whatever to testing environments
         self.env_manager = environmentManager(self, variables)
 
@@ -132,6 +128,10 @@ class systemManager:
         # set the env vars we need
         # self.process_environment_reqs(self.environment_reqs)
         self.env_manager.update_environment_vars(self.environment_reqs)
+
+        # use our code_manager to handle the various basedirs 
+        # we have been passed
+        self.code_manager = codeManager(self, variables)
 
         # check for libtool
         self.libtool = self.libtool_check()

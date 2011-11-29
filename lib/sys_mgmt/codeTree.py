@@ -378,6 +378,17 @@ class galeraTree(mysqlTree):
     def __init__( self, basedir, variables, system_manager):
         super(galeraTree, self).__init__( basedir, variables, system_manager)
         self.type= 'galera'
+        self.wsrep_sst_mysqldump = self.system_manager.find_path([ os.path.join(self.basedir, 'scripts/wsrep_sst_mysqldump')
+                                                          , os.path.join(self.basedir, 'sbin/wsrep_sst_mysqldump')
+                                                          , os.path.join(self.basedir, 'bin/wsrep_sst_mysqldump')
+                                                          ])
+        self.wsrep_sst_script_path = os.path.dirname(self.wsrep_sst_mysqldump)
+        # add wsrep_sst_* scripts to PATH
+        env_manager = self.system_manager.env_manager
+        env_manager.set_env_var( 'PATH', env_manager.append_env_var( 'PATH'
+                                                           , self.wsrep_sst_script_path, suffix=0
+                                                           ))
+ 
 
     def generate_bootstrap(self):
         """ We do the voodoo that we need to in order to create the bootstrap
