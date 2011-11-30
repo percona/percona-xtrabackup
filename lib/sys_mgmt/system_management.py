@@ -521,12 +521,12 @@ class systemManager:
 
         ip_address = '127.0.0.1' 
         retcode, output = self.execute_cmd("ifconfig") 
-        for line in output:
+        for line in output.split('\n'):
             line = line.strip()
             if line.startswith('inet addr'):
-                ip_address = line.split(':')[0].split(' ').strip()
+                ip_address = line.split(':')[1].split(' ')[0].strip()
                 if ip_address != '127.0.0.1':
-                    return_ip_address
+                    return ip_address
         return ip_address
  
         

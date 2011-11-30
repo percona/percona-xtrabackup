@@ -222,10 +222,11 @@ class mysqlServer(Server):
                       , "%s" %(wsrep_cluster_string)
                       , "%s" %(wsrep_provider_string)
                       , "--wsrep_debug=ON"
-                      , "--wsrep_provider_options='ist.recv_addr=%s:%d'" %(self.ip_address,self.galera_recv_port)
-                      , "--wsrep_sst_receive_address='127.0.0.1:%d'" %(self.master_port)
+                      , "--wsrep_provider_options='ist.recv_addr=%s:%d'" %(self.ip_address, self.galera_recv_port)
+                      , "--wsrep_sst_receive_address='127.0.0.1:%d'" %( self.master_port)
                       , "--wsrep_sst_auth='root:'"
                       , "--wsrep_node_name='node%d'" %(self.galera_listen_port)
+                      , "--bind-address=0.0.0.0" 
                       , "--innodb_locks_unsafe_for_binlog=1"
                       , "--open-files-limit=1024"
                       , "--query-cache-size=0"
@@ -247,11 +248,6 @@ class mysqlServer(Server):
                       , "--loose-innodb_lock_wait_timeout=9999999"
                       , "--slave-net-timeout=120"
                       , "--log-bin=%s" %(os.path.join(self.logdir,"mysqld-bin"))
-                      #, "--loose-enable-performance-schema"
-                      #, "--loose-performance-schema-max-mutex-instances=10000"
-                      #, "--loose-performance-schema-max-rwlock-instances=10000"
-                      #, "--loose-performance-schema-max-table-instances=500"
-                      #, "--loose-performance-schema-max-table-handles=1000"
                       , "--binlog-direct-non-transactional-updates"
                       , "--general_log=1"
                       , "--general_log_file=%s" %(self.general_log_file)

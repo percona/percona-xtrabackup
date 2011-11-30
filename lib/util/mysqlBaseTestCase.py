@@ -233,10 +233,9 @@ class mysqlBaseTestCase(unittest.TestCase):
     def execute_query( self
                      , query
                      , server
-                     , server_host = '127.0.0.1'
                      , schema='test'):
         try:
-            conn = MySQLdb.connect( host = server_host
+            conn = MySQLdb.connect( host = '127.0.0.1' 
                                   , port = server.master_port
                                   , user = 'root'
                                   , db = schema)
@@ -253,14 +252,13 @@ class mysqlBaseTestCase(unittest.TestCase):
     def execute_queries( self
                        , query_list
                        , server
-                       , server_host= '127.0.0.1'
                        , schema= 'test'):
         """ Execute a set of queries as a single transaction """
 
         results = {} 
         retcode = 0
         try:
-            conn = MySQLdb.connect( host = server_host
+            conn = MySQLdb.connect( host = '127.0.0.1' 
                                   , port = server.master_port
                                   , user = 'root'
                                   , db = schema)
@@ -291,8 +289,8 @@ class mysqlBaseTestCase(unittest.TestCase):
             # it is mysql for dbd::perl purposes
             server_type = 'mysql'
         dsn = "--dsn=dbi:%s:host=127.0.0.1:port=%d:user=root:password="":database=%s" %( server_type
-                                                                                         , servers[0].master_port
-                                                                                         , schema)
+                                                                                , servers[0].master_port
+                                                                                , schema)
         randgen_cmd = " ".join([test_cmd, dsn])
         randgen_subproc = subprocess.Popen( randgen_cmd
                                           , shell=True
@@ -313,7 +311,3 @@ class mysqlBaseTestCase(unittest.TestCase):
                 output = None
         return retcode, output
 
-    def skipUnlessGalera(self, server):
-        if server.type != 'galera':
-            return lambda func: func
-        return unittest.skip("Test is only for galera-based servers.  current server is: %s" %(server.type))
