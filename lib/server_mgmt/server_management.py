@@ -148,170 +148,22 @@ class serverManager:
 
         for server in self.get_server_list(requester):
             if server.status == 0:
-                bad_start = bad_start + self.start_server( server
-                                                         , requester
-                                                         , working_environ
-                                                         , expect_fail
-                                                         )
+                bad_start = bad_start + server.start()
             else:
                 self.logging.debug("Server %s already running" %(server.name))
         return bad_start
 
-    def start_server(self, server, requester, working_environ, expect_fail):
-        """ Start an individual server and return
-            an error code if it did not start in a timely manner
- 
-            Start the server, using the options in option_list
-            as well as self.standard_options
-            
-            if expect_fail = 1, we know the server shouldn't 
-            start up
 
-        """
-        # take care of any environment updates we need to do
-        self.handle_environment_reqs(server, working_environ)
-
-        self.logging.verbose("Starting server: %s.%s" %(server.owner, server.name))
-        start_cmd = server.get_start_cmd()
-        self.logging.debug("Starting server with:")
-        self.logging.debug("%s" %(start_cmd))
-        # we signal we tried to start as an attempt
-        # to catch the case where a server is just 
-        # starting up and the user ctrl-c's
-        # we don't know the server is running (still starting up)
-        # so we give it a few
-        self.tried_start = 1
-        error_log = open(server.error_log,'w')
-        if start_cmd: # It will be none if --manual-gdb used
-            if not self.gdb:
-                server_subproc = subprocess.Popen( start_cmd
-                                                 , shell=True
-                                                 , env=working_environ
-                                                 , stdout=error_log
-                                                 , stderr=error_log
-                                                 )
-                server_subproc.wait()
-                server_retcode = server_subproc.returncode
-            else: 
-                # This is a bit hackish - need to see if there is a cleaner
-                # way of handling this
-                # It is annoying that we have to say stdout + stderr = None
-                # We might need to further manipulate things so that we 
-                # have a log
-                server_subproc = subprocess.Popen( start_cmd
-                                                 , shell=True
-                                                 , env = working_environ
-                                                 , stdin=None
-                                                 , stdout=None
-                                                 , stderr=None
-                                                 , close_fds=True
-                                                 )
-        
-                server_retcode = 0
-        else:
-            # manual-gdb issue
-            server_retcode = 0
-        
-        timer = float(0)
-        timeout = float(server.server_start_timeout)
-
-        #if server_retcode: # We know we have an error, no need to wait
-        #    timer = timeout
-
-        
-
-        while not server.is_started() and timer != timeout:
-            time.sleep(self.timer_increment)
-            # If manual-gdb, this == None and we want to give the 
-            # user all the time they need
-            if start_cmd:
-                timer= timer + self.timer_increment
-            
-        if timer == timeout and not self.ping_server(server, quiet=True):
-            self.logging.error(( "Server failed to start within %d seconds.  This could be a problem with the test machine or the server itself" %(timeout)))
-            server_retcode = 1
-     
-        if server_retcode == 0:
-            server.status = 1 # we are running
-            if os.path.exists(server.pid_file):
-                pid_file = open(server.pid_file,'r')
-                pid = pid_file.readline().strip()
-                pid_file.close()
-                server.pid = pid
-
-        if server_retcode != 0 and not expect_fail:
-            self.logging.error("Server startup command: %s failed with error code %d" %( start_cmd
-                                                                                  , server_retcode))
-        elif server_retcode == 0 and expect_fail:
-        # catch a startup that should have failed and report
-            self.logging.error("Server startup command :%s expected to fail, but succeeded" %(start_cmd))
-
-        server.tried_start = 0 
-        return server_retcode ^ expect_fail
-
-    def ping_server(self, server, quiet=False):
-        """ Ping / check if the server is alive 
-            Return True if server is up and running, False otherwise
-        """
- 
-        ping_cmd = server.get_ping_cmd()
-        if not quiet:
-            self.logging.info("Pinging %s server on port %d" % (server.type.upper(), server.master_port))
-        (retcode, output)= self.system_manager.execute_cmd(ping_cmd, must_pass = 0)
-        return retcode == 0
-             
-
-    def stop_server(self, server):
-        """ Stop an individual server if it is running """
-        if server.tried_start:
-            # we expect that we issued the command to start
-            # the server but it isn't up and running
-            # we kill a bit of time waiting for it
-            attempts_remain = 10
-            while not self.ping_server(server, quiet=True) and attempts_remain:
-                time.sleep(1)
-                attempts_remain = attempts_remain - 1
-        # Now we try to shut the server down
-        if self.ping_server(server, quiet=True):
-            self.logging.verbose("Stopping server %s.%s" %(server.owner, server.name))
-            stop_cmd = server.get_stop_cmd()
-            self.logging.debug("with shutdown command:\n %s" %(stop_cmd))
-            #retcode, output = self.system_manager.execute_cmd(stop_cmd)
-            shutdown_subproc = subprocess.Popen( stop_cmd
-                                               , shell=True
-                                               )
-            shutdown_subproc.wait()
-            shutdown_retcode = shutdown_subproc.returncode
-            # We do some monitoring for the server PID and kill it
-            # if need be.  This is a bit of a band-aid for the 
-            # zombie-server bug on Natty : (  Need to find the cause.
-            attempts_remain = 100
-            while self.system_manager.find_pid(server.pid) and attempts_remain:
-                time.sleep(1)
-                attempts_remain = attempts_remain - 1
-                if not attempts_remain: # we kill the pid
-                    if self.verbose:
-                        self.logging.warning("Forcing kill of server pid: %s" %(server.pid))
-                    self.system_manager.kill_pid(server.pid)
-            if shutdown_retcode:
-                self.logging.error("Problem shutting down server:")
-                self.logging.error("%s" %(shutdown_retcode))
-                server.status = 0
-            else:
-                server.status = 0 # indicate we are shutdown
-        else:
-            # make sure the server is indicated as stopped
-            server.status = 0
 
     def stop_servers(self, requester):
         """ Stop all servers running for the requester """
         for server in self.get_server_list(requester):
-            self.stop_server(server)
+            server.stop()
 
     def stop_server_list(self, server_list, free_ports=False):
         """ Stop the servers in an arbitrary list of them """
         for server in server_list:
-            self.stop_server(server)
+            server.stop()
         if free_ports:
             server.cleanup()
 
@@ -321,7 +173,7 @@ class serverManager:
         self.logging.info("Stopping all running servers...")
         for server_list in self.servers.values():
             for server in server_list:
-                self.stop_server(server)
+                server.stop()
 
     def cleanup_all_servers(self):
         """Mainly for freeing server ports for now """
