@@ -161,9 +161,10 @@ def take_mysqldump( server
     if cmd_root:
         dump_cmd = cmd_root
     else:
-        dump_cmd = "%s --no-defaults --user=root --port=%d --host=127.0.0.1 --protocol=tcp" % ( server.mysqldump
-                                                                                              , server.master_port
-                                                                                              )
+        dump_cmd = "%s --no-defaults --user=root --port=%d --host=127.0.0.1 --protocol=tcp --result-file=%s" % ( server.mysqldump
+                                                                                                            , server.master_port
+                                                                                                            , dump_path
+                                                                                                            )
         if databases:
             if len(databases) > 1:
                 # We have a list of db's that are to be dumped so we handle things
@@ -171,7 +172,7 @@ def take_mysqldump( server
             else:
                dump_cmd = ' '.join([dump_cmd, databases[0], ' '.join(tables)])
 
-    execute_cmd(dump_cmd, dump_path)
+    execute_cmd(dump_cmd, os.devnul)
 
 
 def diff_dumpfiles(orig_file_path, new_file_path):
