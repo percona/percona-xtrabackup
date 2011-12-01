@@ -61,7 +61,6 @@ class serverManager:
         self.servers = {}
 
         self.mutex = thread.allocate_lock()
-        self.timer_increment = .5
         self.libeatmydata = variables['libeatmydata']
         self.libeatmydata_path = variables['libeatmydatapath']
 
@@ -69,11 +68,14 @@ class serverManager:
 
         self.logging.debug_class(self)
 
-    def request_servers( self, requester 
-                       , workdir, cnf_path
+    def request_servers( self
+                       , requester 
+                       , workdir
+                       , cnf_path
                        , server_requests
                        , server_requirements
-                       , working_environ, expect_fail = 0):
+                       , test_executor
+                       , expect_fail = 0):
         """ We produce the server objects / start the server processes
             as requested.  We report errors and whatnot if we can't
             That is, unless we expect the server to not start, then
@@ -90,8 +92,11 @@ class serverManager:
         self.check_server_status(requester)
         
         # Make sure we have the proper number of servers for this requester
-        self.process_server_count( requester, len(server_requirements)
-                                 , workdir, server_requirements)
+        self.process_server_count( requester
+                                 , test_executor
+                                 , len(server_requirements)
+                                 , workdir
+                                 , server_requirements)
 
         # Make sure we are running with the correct options 
         self.evaluate_existing_servers( requester
@@ -100,7 +105,7 @@ class serverManager:
                                       , server_requirements)
 
         # Fire our servers up
-        bad_start = self.start_servers( requester, working_environ
+        bad_start = self.start_servers( requester
                                       , expect_fail)
  
         # Return them to the requester
@@ -108,8 +113,13 @@ class serverManager:
 
 
     
-    def allocate_server( self, requester, server_options
-                       , workdir, server_type=None, server_version=None):
+    def allocate_server( self
+                       , requester
+                       , test_executor
+                       , server_options
+                       , workdir
+                       , server_type=None
+                       , server_version=None):
         """ Intialize an appropriate server object.
             Start up occurs elsewhere
 
@@ -139,10 +149,11 @@ class serverManager:
                                 , self.default_storage_engine
                                 , server_options
                                 , requester
+                                , test_executor
                                 , workdir )
         return new_server
 
-    def start_servers(self, requester, working_environ, expect_fail):
+    def start_servers(self, requester, expect_fail):
         """ Start all servers for the requester """
         bad_start = 0
 
@@ -152,8 +163,6 @@ class serverManager:
             else:
                 self.logging.debug("Server %s already running" %(server.name))
         return bad_start
-
-
 
     def stop_servers(self, requester):
         """ Stop all servers running for the requester """
@@ -321,7 +330,7 @@ class serverManager:
         return sorted(optlist1) == sorted(optlist2)
 
     def reset_server(self, server):
-        self.stop_server(server)
+        server.stop()
         server.restore_snapshot()
         server.reset()
 
@@ -363,7 +372,12 @@ class serverManager:
         master.need_reset = True
         slave.need_reset = True
 
-    def process_server_count(self, requester, desired_count, workdir, server_reqs):
+    def process_server_count( self
+                            , requester
+                            , test_executor
+                            , desired_count
+                            , workdir
+                            , server_reqs):
         """ We see how many servers we have.  We shrink / grow
             the requesters set of servers as needed.
 
@@ -378,7 +392,7 @@ class serverManager:
             for i in range(desired_count - current_count):
                 # We pass an empty options list when allocating
                 # We'll update the options to what is needed elsewhere
-                self.allocate_server(requester,[] , workdir)
+                self.allocate_server(requester, test_executor, [], workdir)
         elif desired_count < current_count:
             good_servers = self.get_server_list(requester)[:desired_count]
             retired_servers = self.get_server_list(requester)[desired_count - current_count:]

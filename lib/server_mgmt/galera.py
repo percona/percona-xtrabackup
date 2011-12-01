@@ -48,13 +48,14 @@ class mysqlServer(Server):
     """
 
     def __init__( self, name, server_manager, code_tree, default_storage_engine
-                , server_options, requester, workdir_root):
+                , server_options, requester, test_executor, workdir_root):
         super(mysqlServer, self).__init__( name
                                            , server_manager
                                            , code_tree
                                            , default_storage_engine
                                            , server_options
                                            , requester
+                                           , test_executor
                                            , workdir_root)
         self.preferred_base_port = 9306
         

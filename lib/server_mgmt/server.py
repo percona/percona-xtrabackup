@@ -28,6 +28,7 @@
 
 # imports
 import os
+import time
 import subprocess
 
 class Server(object):
@@ -45,7 +46,8 @@ class Server(object):
                 , default_storage_engine
                 , server_options
                 , requester
-                , workdir_root):
+                , test_executor = None
+                , workdir_root = None):
         self.skip_keys = [ 'server_manager'
                          , 'system_manager'
                          , 'dirset'
@@ -57,7 +59,9 @@ class Server(object):
         self.debug = server_manager.debug
         self.verbose = server_manager.verbose
         self.initial_run = 1
+        self.timer_increment = .5
         self.owner = requester
+        self.test_executor = test_executor
         self.server_options = server_options
         self.default_storage_engine = default_storage_engine
         self.server_manager = server_manager
@@ -84,6 +88,8 @@ class Server(object):
         self.pid = None
         self.ip_address = '127.0.0.1'
         self.need_reset = False
+        self.master = None
+        self.need_to_set_master = False
 
     def initialize_databases(self):
         """ Call schemawriter to make db.opt files """
@@ -182,7 +188,7 @@ class Server(object):
         """
         # get our current working environment
         if not working_environ:
-            working_environ = self.owner.working_environment
+            working_environ = self.test_executor.working_environment
         # take care of any environment updates we need to do
         self.server_manager.handle_environment_reqs(self, working_environ)
 
@@ -196,7 +202,7 @@ class Server(object):
         # we don't know the server is running (still starting up)
         # so we give it a few
         #self.tried_start = 1
-        error_log = open(server.error_log,'w')
+        error_log = open(self.error_log,'w')
         if start_cmd: # It will be none if --manual-gdb used
             if not self.server_manager.gdb:
                 server_subproc = subprocess.Popen( start_cmd

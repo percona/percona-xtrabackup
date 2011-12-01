@@ -64,6 +64,7 @@ class testExecutor():
                                                         , self.dirset)
         self.logdir = os.path.join(self.workdir,'log')
         self.master_server = self.server_manager.allocate_server( self.name
+                                                                , self
                                                                 , []
                                                                 , self.workdir
                                                                 )
@@ -122,7 +123,7 @@ class testExecutor():
                                                                   , self.current_testcase.cnf_path
                                                                   , self.current_testcase.server_requests
                                                                   , server_requirements
-                                                                  , self.working_environment)
+                                                                  , self)
             if self.current_servers == 0 or bad_start:
                 # error allocating servers, test is a failure
                 self.logging.warning("Problem starting server(s) for test...failing test case")

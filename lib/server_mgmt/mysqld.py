@@ -33,6 +33,8 @@ import subprocess
 
 from ConfigParser import RawConfigParser
 
+import MySQLdb
+
 from lib.server_mgmt.server import Server
 
 class mysqlServer(Server):
@@ -48,13 +50,14 @@ class mysqlServer(Server):
     """
 
     def __init__( self, name, server_manager, code_tree, default_storage_engine
-                , server_options, requester, workdir_root):
+                , server_options, requester, test_executor, workdir_root):
         super(mysqlServer, self).__init__( name
                                            , server_manager
                                            , code_tree
                                            , default_storage_engine
                                            , server_options
                                            , requester
+                                           , test_executor
                                            , workdir_root)
         self.preferred_base_port = 9306
         
@@ -293,3 +296,59 @@ class mysqlServer(Server):
             server_arg = server_arg.replace('--','')+'\n'
             config_file.write(server_arg)
         config_file.close() 
+
+    def set_master(self, master_server):
+        """ We do what is needed to set the master_server
+            as the replication master
+
+        """
+
+        if self.status:  # we are running and can do things!
+            # Get master binlog info
+            master_binlog_file, master_binlog_pos = master_server.get_binlog_info()
+            # update our slave's master info
+            query = ("CHANGE MASTER TO "
+                     "MASTER_HOST='127.0.0.1',"
+                     "MASTER_USER='root',"
+                     "MASTER_PASSWORD='',"
+                     "MASTER_PORT=%d,"
+                     "MASTER_LOG_FILE='%s',"
+                     "MASTER_LOG_POS=%d" % ( master_server.master_port
+                                           , master_binlog_file
+                                           , int(master_binlog_pos)))
+            retcode, result_set = execute_query(query, slave_server)
+            if retcode:
+                self.logging.error("Could not set slave: %s.%s\n"
+                                   "With query: %s\n."
+                                   "Returned result: %s" %( self.owner
+                                                          , self.name
+                                                          , query
+                                                          , result_set)
+                                  )
+                return 1
+            # start the slave
+            query = "START SLAVE"
+            retcode, result_set = execute_query(query, slave_server)
+            if retcode:
+                self.logging.error("Could not set slave: %s.%s\n" 
+                                   "With query: %s\n."
+                                   "Returned result: %s" %( self.owner
+                                                          , self.name
+                                                          , query
+                                                          , result_set)
+                                  )
+                return 1
+            self.need_to_set_master = False
+        else:
+            self.need_to_set_master = True 
+            self.master = master_server
+        return 0
+
+    def get_binlog_info(self):
+        """ We try to get binlog information for the server """
+        query = "SHOW MASTER STATUS"
+        retcode, result_set = execute_query(query, self)
+        binlog_file = master_result_set[0][0]
+        binlog_pos = master_result_set[0][1]
+        return binlog_file, binlog_pos
+
