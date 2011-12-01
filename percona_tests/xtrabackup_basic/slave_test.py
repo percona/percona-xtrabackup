@@ -79,7 +79,7 @@ class basicTest(mysqlBaseTestCase):
             self.take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
         
             # shutdown our server
-            server_manager.stop_server(slave_server)
+            slave_server.stop()
 
             # prepare our backup
             cmd = ("%s --apply-log --no-timestamp --use-memory=500M "
@@ -110,30 +110,14 @@ class basicTest(mysqlBaseTestCase):
 
 
             # restart server (and ensure it doesn't crash)
-            server_manager.start_server( slave_server
-                                       , test_executor
-                                       , test_executor.working_environment
-                                       , 0)
+            slave_server.start()
             self.assertEqual( slave_server.status, 1
                             , msg = 'Server failed restart from restored datadir...')
 
-            # update our slave's master info
-            query = ("CHANGE MASTER TO "
-                     "MASTER_HOST='127.0.0.1',"
-                     "MASTER_USER='root',"
-                     "MASTER_PASSWORD='',"
-                     "MASTER_PORT=%d,"
-                     "MASTER_LOG_FILE='%s',"
-                     "MASTER_LOG_POS=%d" % ( master_server.master_port
-                                           , binlog_file
-                                           , int(binlog_pos)))
-            retcode, result_set = self.execute_query(query, slave_server)
+            # update our slave's master info/ start replication
+            retcode, result_set = slave_server.set_master(master_server)
             self.assertEqual(retcode, 0, msg=result_set)
 
-            # start the slave
-            query = "START SLAVE"
-            retcode, result_set = self.execute_query(query, slave_server)
-            self.assertEqual(retcode, 0, msg=result_set)
 
             # check the slave status
             query = "SHOW SLAVE STATUS"

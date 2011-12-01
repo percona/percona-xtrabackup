@@ -44,6 +44,7 @@ class basicTest(mysqlBaseTestCase):
 
 
     def test_basic1(self):
+        self.servers = servers
         if servers[0].type != 'galera':
             # we skip.  This is a bit
             # cheap, but until I am certain
@@ -51,7 +52,6 @@ class basicTest(mysqlBaseTestCase):
             # we'll do this...for now : )
             return
         else:
-            self.servers = servers
             innobackupex = test_executor.system_manager.innobackupex_path
             xtrabackup = test_executor.system_manager.xtrabackup_path
             master_server = servers[0] # assumption that this is 'master'

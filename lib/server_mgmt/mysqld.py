@@ -303,7 +303,7 @@ class mysqlServer(Server):
             as the replication master
 
         """
-
+        msg = None
         if self.status:  # we are running and can do things!
             # Get master binlog info
             master_binlog_file, master_binlog_pos = master_server.get_binlog_info()
@@ -322,31 +322,31 @@ class mysqlServer(Server):
                                            , int(master_binlog_pos)))
             retcode, result_set = execute_query(query, self)
             if retcode:
-                self.logging.error("Could not set slave: %s.%s\n"
-                                   "With query: %s\n."
-                                   "Returned result: %s" %( self.owner
-                                                          , self.name
-                                                          , query
-                                                          , result_set)
-                                  )
-                return 1
+                msg = ("Could not set slave: %s.%s\n"
+                       "With query: %s\n."
+                       "Returned result: %s" %( self.owner
+                                              , self.name
+                                              , query
+                                              , result_set)
+                      )
+                return 1, msg
             # start the slave
             query = "START SLAVE"
             retcode, result_set = execute_query(query, self)
             if retcode:
-                self.logging.error("Could not set slave: %s.%s\n" 
-                                   "With query: %s\n."
-                                   "Returned result: %s" %( self.owner
-                                                          , self.name
-                                                          , query
-                                                          , result_set)
-                                  )
-                return 1
+                 msg = ("Could not set slave: %s.%s\n" 
+                        "With query: %s\n."
+                        "Returned result: %s" %( self.owner
+                                               , self.name
+                                               , query
+                                               , result_set)
+                       )
+                 return 1,msg
             self.need_to_set_master = False
         else:
             self.need_to_set_master = True 
             self.master = master_server
-        return 0
+        return 0,msg
 
     def get_binlog_info(self):
         """ We try to get binlog information for the server """

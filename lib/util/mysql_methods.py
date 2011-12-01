@@ -172,7 +172,7 @@ def take_mysqldump( server
             else:
                dump_cmd = ' '.join([dump_cmd, databases[0], ' '.join(tables)])
 
-    execute_cmd(dump_cmd, os.devnul)
+    execute_cmd(dump_cmd, os.devnull)
 
 
 def diff_dumpfiles(orig_file_path, new_file_path):

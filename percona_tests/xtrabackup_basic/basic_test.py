@@ -77,7 +77,7 @@ class basicTest(mysqlBaseTestCase):
             self.take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
         
             # shutdown our server
-            server_manager.stop_server(master_server)
+            master_server.stop()
 
             # prepare our backup
             cmd = ("%s --apply-log --no-timestamp --use-memory=500M "
@@ -101,10 +101,7 @@ class basicTest(mysqlBaseTestCase):
             self.assertTrue(retcode==0, output)
 
             # restart server (and ensure it doesn't crash)
-            server_manager.start_server( master_server
-                                       , test_executor
-                                       , test_executor.working_environment
-                                       , 0)
+            master_server.start()
             self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
 
             # take mysqldump of current server state
