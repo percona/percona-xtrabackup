@@ -43,8 +43,8 @@ class mysqlBaseTestCase(unittest.TestCase):
 
     def tearDown(self):
             #server_manager.reset_servers(test_executor.name)
-            queries = ["DROP SCHEMA test"
-                      ,"CREATE SCHEMA test"
+            queries = ["DROP SCHEMA IF EXISTS test"
+                      ,"CREATE SCHEMA IF NOT EXISTS test"
                       ]
             for server in self.servers:
                 retcode, result = self.execute_queries(queries, server, schema='mysql')

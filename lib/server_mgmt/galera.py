@@ -326,7 +326,7 @@ class mysqlServer(Server):
             config_file.write(server_arg)
         config_file.close() 
 
-    def set_master(self, master_server):
+    def set_master(self, master_server, get_cur_log_pos = True):
         """ We update things so that we use the provided master_server
             as our reference point for a new cluster / etc
 

@@ -56,11 +56,8 @@ class basicTest(mysqlBaseTestCase):
         # on the already started 4th node
         new_node = other_nodes[-1]
         new_node.set_master(master_server)
-        server_manager.stop_server(new_node)
-        retcode = server_manager.start_server( new_node
-                                             , test_executor.name
-                                             , test_executor.working_environment
-                                             , 0 )
+        new_node.stop()
+        retcode = new_node.start() 
         self.assertEqual(retcode,0,msg="New node restart failed!")
         time.sleep(5)
         master_slave_diff = self.check_slaves_by_checksum(master_server, other_nodes) 

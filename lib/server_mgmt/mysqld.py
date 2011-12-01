@@ -36,6 +36,7 @@ from ConfigParser import RawConfigParser
 import MySQLdb
 
 from lib.server_mgmt.server import Server
+from lib.util.mysql_methods import execute_query
 
 class mysqlServer(Server):
     """ represents a mysql server, its possessions
@@ -102,7 +103,7 @@ class mysqlServer(Server):
         self.std_data = os.path.join(self.vardir,'std_data_ln')
         self.datadir = os.path.join(self.vardir,'master-data')
 
-        self.error_log = os.path.join(self.logdir,('%s.err' %(self.name)))
+        self.error_log = os.path.join(self.logdir,('error.log'))
         self.bootstrap_log = os.path.join(self.logdir,('bootstrap.log'))
         self.pid_file = os.path.join(self.rundir,('%s.pid' %(self.name)))
         self.socket_file = os.path.join(self.vardir, ('%s.sock' %(self.name)))
@@ -297,7 +298,7 @@ class mysqlServer(Server):
             config_file.write(server_arg)
         config_file.close() 
 
-    def set_master(self, master_server):
+    def set_master(self, master_server, get_cur_log_pos = True):
         """ We do what is needed to set the master_server
             as the replication master
 
@@ -306,6 +307,9 @@ class mysqlServer(Server):
         if self.status:  # we are running and can do things!
             # Get master binlog info
             master_binlog_file, master_binlog_pos = master_server.get_binlog_info()
+            if not get_cur_log_pos:
+                master_binlog_pos = 0
+            
             # update our slave's master info
             query = ("CHANGE MASTER TO "
                      "MASTER_HOST='127.0.0.1',"
@@ -316,7 +320,7 @@ class mysqlServer(Server):
                      "MASTER_LOG_POS=%d" % ( master_server.master_port
                                            , master_binlog_file
                                            , int(master_binlog_pos)))
-            retcode, result_set = execute_query(query, slave_server)
+            retcode, result_set = execute_query(query, self)
             if retcode:
                 self.logging.error("Could not set slave: %s.%s\n"
                                    "With query: %s\n."
@@ -328,7 +332,7 @@ class mysqlServer(Server):
                 return 1
             # start the slave
             query = "START SLAVE"
-            retcode, result_set = execute_query(query, slave_server)
+            retcode, result_set = execute_query(query, self)
             if retcode:
                 self.logging.error("Could not set slave: %s.%s\n" 
                                    "With query: %s\n."
@@ -348,7 +352,7 @@ class mysqlServer(Server):
         """ We try to get binlog information for the server """
         query = "SHOW MASTER STATUS"
         retcode, result_set = execute_query(query, self)
-        binlog_file = master_result_set[0][0]
-        binlog_pos = master_result_set[0][1]
+        binlog_file = result_set[0][0]
+        binlog_pos = result_set[0][1]
         return binlog_file, binlog_pos
 

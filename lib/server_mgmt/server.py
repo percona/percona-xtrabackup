@@ -154,6 +154,14 @@ class Server(object):
    
         return "You need to implement get_ping_cmd"
 
+    def set_master(self, master_server, get_cur_log_pos = True):
+        """ Do what is needed to set the server to replicate
+            / consider the master_server as its 'master'
+
+        """
+
+        return "You need to implement set_master"
+
     def cleanup(self):
         """ Cleanup - just free ports for now..."""
         self.system_manager.port_manager.free_ports(self.port_block)
@@ -265,6 +273,9 @@ class Server(object):
             self.logging.error("Server startup command :%s expected to fail, but succeeded" %(start_cmd))
 
         self.tried_start = 0 
+        if self.need_to_set_master:
+            # TODO handle a bad slave retcode
+            slave_retcode = self.set_master(self.master)
         return server_retcode ^ expect_fail
 
     def ping(self, quiet=False):
