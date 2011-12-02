@@ -215,8 +215,15 @@ case "$type" in
 	# Get Percona Server
 	if [ -d $branch_dir ]
 	then
+	    rm -rf $branch_dir
+	fi
+        if [ -d $branch_dir ]
+        then
 	    cd $branch_dir
-	    bzr pull
+	    (bzr upgrade || true)
+	    bzr clean-tree --force --ignored
+	    bzr revert
+	    bzr pull --overwrite
 	else
 	    bzr branch -r tag:Percona-Server-$PS_51_VERSION \
 		lp:percona-server/5.1 $branch_dir
@@ -265,8 +272,16 @@ case "$type" in
 	# Get Percona Server
 	if [ -d $branch_dir ]
 	then
+	    rm -rf $branch_dir
+	fi
+        if [ -d $branch_dir ]
+        then
 	    cd $branch_dir
-	    bzr pull
+	    yes | bzr break-lock
+	    (bzr upgrade || true)
+	    bzr clean-tree --force --ignored
+	    bzr revert
+	    bzr pull --overwrite
 	else
 	    bzr branch -r tag:Percona-Server-$PS_55_VERSION \
 		lp:percona-server $branch_dir

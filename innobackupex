@@ -12,9 +12,10 @@ use File::Spec;
 use Pod::Usage qw(pod2usage);
 use POSIX "strftime";
 use POSIX ":sys_wait_h";
-use POSIX "tmpnam";
+# use POSIX "tmpnam";
 use FileHandle;
 use File::Basename;
+use File::Temp;
 use English qw(-no_match_vars);
 
 # version of this script
@@ -152,10 +153,12 @@ my $mysql_pid = '';
 my $mysql_server_version = '';
 
 # name of the file where stderr of mysql process is directed
-my $mysql_stderr = 'stderr';
+my $mysql_stderr_fh = File::Temp->new();
+my $mysql_stderr = $mysql_stderr_fh->filename;
 
 # name of the file where stdout of mysql process is directed
-my $mysql_stdout = 'stdout';
+my $mysql_stdout_fh = File::Temp->new();
+my $mysql_stdout = $mysql_stdout_fh->filename;
 
 # name of the file where binlog position info is written
 my $binlog_info;
@@ -483,6 +486,25 @@ sub is_in_array {
     return 0;
 }
 
+#
+# if_directory_exists_and_empty accepts two arguments:
+# variable with directory name and comment.
+# Sub checks that directory exists and is empty
+# usage: is_directory_exists_and_empty($directory,"Comment");
+#
+
+sub if_directory_exists_and_empty {
+    my $empty_dir = shift;
+    my $is_directory_empty_comment = shift;
+    if (! -d $empty_dir) {
+        die "$is_directory_empty_comment directory does not exist!";
+    }
+    opendir (my $dh, $empty_dir) or die "Not a directory";
+    if ( ! scalar( grep { $_ ne "." && $_ ne ".." } readdir($dh)) == 0) {
+        die "$is_directory_empty_comment directory is not empty!";
+    }
+    closedir($dh);
+}
 
 #
 # copy_back subroutine copies data and index files from backup directory 
@@ -503,18 +525,10 @@ sub copy_back {
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
-    # check that original data directory exists
-    if (! -d $orig_datadir) {
-        Die "Original data directory '$orig_datadir' does not exist!";
-    }
-    # check that original InnoDB data directory exists
-    if (! -d $orig_ibdata_dir) {
-        Die "Original InnoDB data directory '$orig_ibdata_dir' does not exist!";
-    }
-    # check that original InnoDB log directory exists
-    if (! -d $orig_iblog_dir) {
-        Die "Original InnoDB log directory '$orig_iblog_dir' does not exist!";
-    }
+    # check that original data directories exist and they are empty
+    if_directory_exists_and_empty($orig_datadir, "Original data");
+    if_directory_exists_and_empty($orig_ibdata_dir, "Original InnoDB data");
+    if_directory_exists_and_empty($orig_iblog_dir, "Original InnoDB log");
 
     # check that the original options file and the backup options file have
     # the same value for "innodb_data_file_path" option
@@ -1470,15 +1484,11 @@ sub init {
         if (!$option_remote_host && !$option_stream) {
         $backup_config_file = $backup_dir . '/backup-my.cnf';
         $suspend_file = $backup_dir . '/xtrabackup_suspended';
-        $mysql_stdout = $backup_dir . '/mysql-stdout';
-        $mysql_stderr = $backup_dir . '/mysql-stderr';
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
         $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
         $tmp_logfile = $option_tmpdir . '/xtrabackup_logfile';
-        $mysql_stdout = $option_tmpdir . '/mysql-stdout';
-        $mysql_stderr = $option_tmpdir . '/mysql-stderr';
         if ($option_stream) {
             $backup_config_file = $option_tmpdir . '/backup-my.cnf';
             $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
