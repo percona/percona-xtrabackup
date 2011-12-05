@@ -1,12 +1,12 @@
-.. dbqp documentation master file, created by
-   sphinx-quickstart on Fri Aug 27 08:33:41 2010.
+.. kewpie documentation master file, created by
+   sphinx-quickstart on Mon Dec  5 12:35:13 2011.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to dbqp's documentation!
+Welcome to kewpie's documentation!
 ===================================
 
-dbqp (DataBase Quality Platform) is designed to facilitate testing of MySQL-based database systems.  Its aim is to provide a pluggable system that allows one to run a variety of testing tools and to share standard helper code (server allocation and management / test result reporting / etc)
+kewpie ((database) Quality Platform) is designed to facilitate testing of MySQL-based database systems.  Its aim is to provide a pluggable system that can run a variety of testing tools via standard helper code (server allocation and management / test result reporting / etc)
 
 Introduction:
 -------------
@@ -18,9 +18,10 @@ Testing:
 .. toctree::
    :maxdepth: 2
  
-   dbqp.rst
-   test-run.rst
+   kewpie.rst
+   writing_tests.rst
    randgen.rst
+   test-run.rst
    sql-bench.rst
    sysbench.rst
    writing_tests.rst

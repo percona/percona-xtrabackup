@@ -1,3 +1,4 @@
 dbqp
 dbqp_data/uuid
 workdir
+docs/_build/*

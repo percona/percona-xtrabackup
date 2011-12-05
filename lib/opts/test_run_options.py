@@ -138,7 +138,7 @@ subunit_file_default = os.path.join(workdir_default,'test_results.subunit')
 
 
 config_control_group = optparse.OptionGroup(parser, 
-                     "Configuration controls - allows you to specify a file with a number of options already specified")
+                     "Configuration controls - kewpie can read config files with certain options pre-set")
 config_control_group.add_option(
    "--sys_config_file"
     , dest="sysconfigfilepath"
@@ -412,7 +412,7 @@ environment_control_group.add_option(
      , dest="randgenpath"
      , action='store'
      , default=randgen_path_default
-     , help = "The path to a randgen installation that can be used to execute randgen-based tests"
+     , help = "The path to a randgen installation that can be used to execute randgen-based tests [%default]"
      )
 
 environment_control_group.add_option(
@@ -438,14 +438,6 @@ environment_control_group.add_option(
    , default=None
    , help = "The path to a wsrep provider library for use with mysql"
    )
-
-environment_control_group.add_option(
-      "--cluster-cnf"
-    , dest="clustercnf"
-    , action='store'
-    , default=None
-    , help = "The path to a config file defining a running cluster (node info)"
-    )
 
 environment_control_group.add_option(
       "--subunit-outfile"

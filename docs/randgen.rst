@@ -15,7 +15,7 @@ and generates random queries as allowed by the grammar
 The primary documentation is here: http://forge.mysql.com/wiki/RandomQueryGenerator
 
 This document is intended to help the user set up their environment so that the tool
-may be used in conjunction with the dbqp.py test-runner.  The forge documentation
+may be used in conjunction with the kewpie.py test-runner.  The forge documentation
 contains more information on the particulars of the tool itself.
 
 Requirements
@@ -49,33 +49,38 @@ Additional information may be found here: http://forge.mysql.com/wiki/RandomQuer
 Installing the randgen
 =======================
 
-The code may be branched from launchpad: bzr branch lp:randgen
+Kewpie includes a branch of the randgen so it is not necessary to install it directly, but thecode may be branched from:
 
-it also may be downloaded from here http://launchpad.net/randgen/+download
+    launchpad: bzr branch lp:randgen
+
+it also may be downloaded from: 
+
+    http://launchpad.net/randgen/+download
 
 That is all there is : )
 
-Randgen / dbqp tests
-====================
+Randgen / kewpie testcases
+============================
 
-These tests are simple .cnf files that can define a few basic variables
-that are needed to execute tests.  The most interesting section is test_servers.  It is a simple list of python lists
-Each sub-list contains a string of server options that are needed.  Each sub-list represents a server that will be started.
-Using an empty sub-list will create a server with the default options::
+These tests use kewpie's native mode and are essentially unittest modules.  Currently, the suites are designed so that each individual modules executes a single randgen command line and validates results accordingly.  An example::
 
-    [test_info]
-    comment = does NOT actually test the master-slave replication yet, but it will.
+    class basicTest(mysqlBaseTestCase):
 
-    [test_command]
-    command = ./gentest.pl --gendata=conf/drizzle/drizzle.zz --grammar=conf/drizzle/optimizer_subquery_drizzle.yy --queries=10 --threads=1
-
-    [test_servers]
-    servers = [[--innodb.replication-log],[--plugin-add=slave --slave.config-file=$MASTER_SERVER_SLAVE_CONFIG]]
+        def test_OptimizerSubquery1(self):
+            self.servers = servers
+            test_cmd = ("./gentest.pl "
+                        "--gendata=conf/percona/outer_join_percona.zz "
+                        "--grammar=conf/percona/outer_join_percona.yy "
+                        "--queries=500 "
+                        "--threads=5"
+                       )
+      retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+      self.assertEqual(retcode, 0, output) ``
 
 Running tests
 =========================
 
-There are several different ways to run tests using :doc:`dbqp` 's randgen mode.
+There are several different ways to run the provided randgen tests.
 
 It should be noted that unless :option:`--force` is used, the program will
 stop execution upon encountering the first failing test. 
@@ -86,7 +91,7 @@ Running individual tests
 ------------------------
 If one only wants to run a few, specific tests, they may do so this way::
 
-    ./dbqp --mode=randgen --randgen-path=/path/to/randgen [OPTIONS] test1 [test2 ... testN]
+    ./kewpie --suite=randgen_basic [OPTIONS] test1 [test2 ... testN]
 
 Running all tests within a suite
 --------------------------------
@@ -97,13 +102,13 @@ Other suites are also subdirectories of drizzle/tests/randgen_tests.
 
 To run the tests in a specific suite::
 
-    ./dbqp --mode=randgen --randgen-path=/path/to/randgen [OPTIONS] --suite=SUITENAME
+    ./kewpie [OPTIONS] --suite=SUITENAME
 
 Running specific tests within a suite
 --------------------------------------
 To run a specific set of tests within a suite::
 
-    ./dbqp --mode=randgen --randgen-path=/path/to/randgen [OPTIONS] --suite=SUITENAME TEST1 [TEST2..TESTN]
+    ./kewpie --suite=SUITENAME TEST1 [TEST2..TESTN]
 
 Calling tests using <suitename>.<testname> currently does not work.
 One must specify the test suite via the :option:`--suite` option.
@@ -113,10 +118,10 @@ Running all available tests
 ---------------------------
 One would currently have to name all suites, but the majority of the working tests live in the main suite
 Other suites utilize more exotic server combinations and we are currently tweaking them to better integrate with the 
-dbqp system.  The slave-plugin suite does currently have a good config file for setting up simple replication setups for testing.
+kewpie system.  The slave-plugin suite does currently have a good config file for setting up simple replication setups for testing.
 To execute several suites' worth of tests::
 
-    ./dbqp --mode=randgen --randgen-path=/path/to/randgen [OPTIONS] --suite=SUITE1, SUITE2, ...SUITEN
+    ./kewpie --mode=randgen --randgen-path=/path/to/randgen [OPTIONS] --suite=SUITE1, SUITE2, ...SUITEN
 
 Interpreting test results
 =========================
@@ -160,18 +165,18 @@ Additional uses
 Starting a server for manual testing and (optionally) populating it
 --------------------------------------------------------------------
 
-:doc:`dbqp` 's randgen mode allows a user to get a Drizzle server up and running quickly.  This can be useful for fast ad-hoc testing.
+:doc:`kewpie` 's randgen mode allows a user to get a Drizzle server up and running quickly.  This can be useful for fast ad-hoc testing.
 
 To do so call::
 
-    ./dbqp --mode=randgen --randgen-path=/path/to/randgen --start-and-exit [*OPTIONS*]
+    ./kewpie --suite=randgen_basic --start-and-exit [*OPTIONS*]
 
 This will start a Drizzle server that you can connect to and query
 
 With the addition of the --gendata option, a user may utilize the randgen's gendata (table creation and population) tool
 to populate a test server.  In the following example, the test server is now populated by the 8 tables listed below::
 
-    ./dbqp --mode=randgen --randgen-path=/randgen --start-and-exit --gendata=/randgen/conf/drizzle/drizzle.zz
+    ./kewpie --start-and-exit --gendata=conf/drizzle/drizzle.zz
     <snip>
     24 Feb 2011 17:48:48 INFO: NAME: server0
     24 Feb 2011 17:48:48 INFO: MASTER_PORT: 9306
@@ -179,7 +184,7 @@ to populate a test server.  In the following example, the test server is now pop
     24 Feb 2011 17:48:48 INFO: MC_PORT: 9308
     24 Feb 2011 17:48:48 INFO: PBMS_PORT: 9309
     24 Feb 2011 17:48:48 INFO: RABBITMQ_NODE_PORT: 9310
-    24 Feb 2011 17:48:48 INFO: VARDIR: /home/pcrews/bzr/work/dbqp_randgen_updates/tests/workdir/testbot0/server0/var
+    24 Feb 2011 17:48:48 INFO: VARDIR: /kewpie/tests/workdir/testbot0/server0/var
     24 Feb 2011 17:48:48 INFO: STATUS: 1
     # 2011-02-24T17:48:48 Default schema: test
     # 2011-02-24T17:48:48 Executor initialized, id GenTest::Executor::Drizzle 2011.02.2198 ()
@@ -191,7 +196,7 @@ to populate a test server.  In the following example, the test server is now pop
     # 2011-02-24T17:48:48 # Creating Drizzle table: test.BB; engine: ; rows: 10 .
     # 2011-02-24T17:48:48 # Creating Drizzle table: test.CC; engine: ; rows: 100 .
     # 2011-02-24T17:48:49 # Creating Drizzle table: test.DD; engine: ; rows: 100 .
-    24 Feb 2011 17:48:49 INFO: User specified --start-and-exit.  dbqp.py exiting and leaving servers running...
+    24 Feb 2011 17:48:49 INFO: User specified --start-and-exit.  kewpie.py exiting and leaving servers running...
 
 
 

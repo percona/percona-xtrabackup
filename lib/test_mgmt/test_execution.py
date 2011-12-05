@@ -165,7 +165,7 @@ class testExecutor():
                     if server != self.master_server:
                         server.report()
                     server.cleanup() # this only removes any port files
-                self.logging.info("User specified --start-and-exit.  dbqp.py exiting and leaving servers running...") 
+                self.logging.info("User specified --start-and-exit.  kewpie.py exiting and leaving servers running...") 
                 sys.exit(0)
 
     def handle_utility_reqs(self):

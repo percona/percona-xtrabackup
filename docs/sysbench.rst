@@ -6,7 +6,7 @@ sysbench
 
 Description
 ===========
-dbqp's sysbench mode allows a user to run a specific iteration of a sysbench test (eg an oltp readonly run at concurrency = 16)
+kewpie's sysbench mode allows a user to run a specific iteration of a sysbench test (eg an oltp readonly run at concurrency = 16)
 
 
 Requirements
@@ -27,7 +27,7 @@ The SYSBENCH command also requires installation of the drizzle-sysbench program,
 Make sure sysbench is then in your path
 
 
-sysbench / dbqp tests
+sysbench / kewpie tests
 =====================
 
 A sysbench test defines a run for a particular concurrency.  There are suites for readonly and readwrite.
@@ -45,7 +45,7 @@ They are currently broken down this way as an experiment - we are open to other 
 Running tests
 =========================
 
-There are several different ways to run tests using :doc:`dbqp` 's sysbench mode.
+There are several different ways to run tests using :doc:`kewpie` 's sysbench mode.
 
 It should be noted that unless :option:`--force` is used, the program will
 stop execution upon encountering the first failing test. 
@@ -56,7 +56,7 @@ Running individual tests
 ------------------------
 If one only wants to run a few, specific tests, they may do so this way::
 
-    ./dbqp --mode=sysbench [OPTIONS] test1 [test2 ... testN]
+    ./kewpie --mode=sysbench [OPTIONS] test1 [test2 ... testN]
 
 Running all tests within a suite
 --------------------------------
@@ -67,13 +67,13 @@ Other suites are also subdirectories of drizzle/tests/randgen_tests.
 
 To run the tests in a specific suite::
 
-    ./dbqp --mode=sysbench [OPTIONS] --suite=SUITENAME
+    ./kewpie --mode=sysbench [OPTIONS] --suite=SUITENAME
 
 Running specific tests within a suite
 --------------------------------------
 To run a specific set of tests within a suite::
 
-    ./dbqp --mode=sysbench [OPTIONS] --suite=SUITENAME TEST1 [TEST2..TESTN]
+    ./kewpie --mode=sysbench [OPTIONS] --suite=SUITENAME TEST1 [TEST2..TESTN]
 
 Calling tests using <suitename>.<testname> currently does not work.
 One must specify the test suite via the :option:`--suite` option.
@@ -83,10 +83,10 @@ Running all available tests
 ---------------------------
 One would currently have to name all suites, but the majority of the working tests live in the main suite
 Other suites utilize more exotic server combinations and we are currently tweaking them to better integrate with the 
-dbqp system.  The slave-plugin suite does currently have a good config file for setting up simple replication setups for testing.
+kewpie system.  The slave-plugin suite does currently have a good config file for setting up simple replication setups for testing.
 To execute several suites' worth of tests::
 
-    ./dbqp --mode=sysbench [OPTIONS] --suite=SUITE1, SUITE2, ...SUITEN
+    ./kewpie --mode=sysbench [OPTIONS] --suite=SUITE1, SUITE2, ...SUITEN
 
 Interpreting test results
 =========================

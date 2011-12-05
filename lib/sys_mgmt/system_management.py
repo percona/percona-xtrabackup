@@ -71,7 +71,7 @@ class systemManager:
         self.cur_user = getpass.getuser()
         self.workdir = os.path.abspath(variables['workdir'])
         self.testdir = os.path.abspath(variables['testdir'])
-        self.datadir = os.path.abspath(os.path.join(variables['testdir'],'dbqp_data'))
+        self.datadir = os.path.abspath(os.path.join(variables['testdir'],'qp_data'))
         self.top_srcdir = os.path.abspath(variables['topsrcdir'])
         self.top_builddir = os.path.abspath(variables['topbuilddir'])
         self.start_dirty = variables['startdirty']
@@ -100,7 +100,7 @@ class systemManager:
         # We store in a file so we know what
         # is ours
         self.uuid = self.get_uuid()
-        self.symlink_name = 'dbqp_workdir_%s_%s' %(self.cur_user, self.uuid)
+        self.symlink_name = 'qp_workdir_%s_%s' %(self.cur_user, self.uuid)
 
         # initialize our workdir
         self.process_workdir()

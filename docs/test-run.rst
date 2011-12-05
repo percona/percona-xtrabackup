@@ -13,7 +13,7 @@ Description
 ===========
 
 :program:`test-run.pl` (aka test-run, dtr, mtr) is used to execute tests
-from the Drizzle test suite.  These tests are included with Drizzle 
+from the Drizzle/MySQL test suite.  These tests are included with their respective 
 distributions and provide a way for users to verify that the system will
 operate according to expectations.
 
@@ -25,7 +25,7 @@ can be useful for troubleshooting and in bug reports.
 
 While most users are concerned with ensuring general functionality, the 
 program also allows a user to quickly spin up a server for ad-hoc testing
-and to run the test-suite against an already running Drizzle server.
+and to run the test-suite against an already running test server.
 
 Running tests
 =========================
@@ -45,7 +45,7 @@ If one only wants to run a few, specific tests, they may do so this way::
 
 Running all tests within a suite
 --------------------------------
-Many of the tests supplied with Drizzle are organized into suites.  
+Many of the tests supplied with MySQL-based servers are organized into suites.  
 
 The tests within drizzle/tests/t are considered the 'main' suite.  
 Other suites are located in either drizzle/tests/suite or within the various

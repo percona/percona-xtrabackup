@@ -1,46 +1,70 @@
 **********************************
-dbqp
+kewpie
 **********************************
 
 Synopsis
 ========
-Drizzle testing tool
+Database Quality Platform.  Versatile, pluggable test runner for MySQL-based databases
 
-**./dbqp** [ *OPTIONS* ] [ TESTCASE ]
+**./kewpie** [ *OPTIONS* ] [ TESTCASE ]
 
 Description
 ===========
 
-:program:`dbqp.py` is BETA software.  It is intended to provide a standardized
-platform to facilitate Drizzle testing.  
+:program:`kewpie.py` is intended to provide a standardized
+platform to facilitate testing MySQL databases.  Currently a number of MySQL variants are supported and include:
+* Drizzle
+* MySQL
+* Percona Server
+* MySQL using Galera replication  
 
-The default mode is 'dtr' and is used to execute tests from the Drizzle 
-test suite.  These tests are included with Drizzle distributions and 
-provide a way for users to verify that the system will operate according
-to expectations.
+Designed as a response to the sometimes painfully diverse ecosystem of testing tools, the intent is to provide a system that standardizes common testing tasks while providing a variety of ways to analyze the behavior of database systems.
 
-The dtr tests use a diff-based paradigm, meaning that the test runner executes
-a test and then compares the results received with pre-recorded expected 
-results.  In the event of a test failure, the program will provide output
-highlighting the differences found between expected and actual results; this
-can be useful for troubleshooting and in bug reports.
+Long experience with MySQL testing has shown that a number of tasks are common to all tests:
+* Allocation and management of test servers
+* Test collection and management
+* Reporting of test results
 
-The program is also integrated with the random query generator testing tool
-and a 'rangden' mode is available - it will execute randgen tests when
-provided a path to a randgen installation.  Tests are organized similar to dtr
-tests, but are .cnf file based.
+Kewpie combines this with the flexibity of Python's unittest framework.  By allowing users to write tests as Python modules, we have great flexibility in how we start and set up servers, what we do to them, and how we assess their performance of our test tasks.  Some of the tasks kewpie test cases cover:
+* randgen tests
+* running sql-bench comprehensive tests
+* running sql-bench crashme
+* running sysbench
+* running drizzle-test-run test cases
+* more direct tests using python code and helper libraries
 
-A 'cleanup' mode is also available as a convenience - it will simply shutdown
-any servers that may have been started via start-and-exit.
+Provided test suites
+=======================
 
-While most users are concerned with ensuring general functionality, the 
-program also allows a user to quickly spin up a server for ad-hoc testing
-and to run the test-suite against an already running Drizzle server.
+* MySQL / Percona Server / Galera tests:
+
+    * randgen_basic - basic randgen tests of the server (optimizer stress, etc)
+    * randgen_bugs - holder suite for failing tests
+    * crashme - sql-bench's crashme suite (may take some time to run)
+    * sqlbench - sql-bench comprehensive suite.  (may take ~45 min. to execute)
+    * cluster_basic - small, atomic tests of replication functionality.  Tests are written in such a way as to be portable across server types (!)
+    * cluster_bugs - holder suite for failing tests
+    * cluster_randgen - tests of replication functionality using the random query generator and relevant test loads
+    * xtrabackup_basic - tests of the Percona Xtrabackup tool
+    * xtrabackup_bugs - hoder suite for failing tests
+
+* Drizzle tests:
+
+    * randgen_basic - basic tests of the server (optimizer stress, etc)
+    * The following all use the same transaction tests, but validate different functionality:
+
+        * randgen_trxLog - tests the file-based replication log
+        * randgen_innoTrxLog - tests the innodb-table-based replication log
+        * randgen_slavePlugin  - tests the functionality of the replication / slave plugin
+
+    * crashme - sql-bench's crashme suite (may take some time to run)
+    * sqlbench - sql-bench comprehensive suite.  (may take ~45 min. to execute)
+
 
 Running tests
 =========================
 
-There are several different ways to run tests using :program:`dbqp.py`.
+There are several different ways to run tests using :program:`kewpie.py`.
 
 It should be noted that unless :option:`--force` is used, the program will
 stop execution upon encountering the first failing test. 
@@ -51,7 +75,7 @@ Running individual tests
 ------------------------
 If one only wants to run a few, specific tests, they may do so this way::
 
-    ./dbqp.py [OPTIONS] test1 [test2 ... testN]
+    ./kewpie.py [OPTIONS] test1 [test2 ... testN]
 
 Running all tests within a suite
 --------------------------------
@@ -64,13 +88,13 @@ the plugin's directory - drizzle/plugin/example_plugin/tests
 
 To run the tests in a specific suite::
 
-    ./dbqp.py [OPTIONS] --suite=SUITENAME
+    ./kewpie.py [OPTIONS] --suite=SUITENAME
 
 Running specific tests within a suite
 --------------------------------------
 To run a specific set of tests within a suite::
 
-    ./dbqp.py [OPTIONS] --suite=SUITENAME TEST1 [TEST2..TESTN]
+    ./kewpie.py [OPTIONS] --suite=SUITENAME TEST1 [TEST2..TESTN]
 
 Calling tests using <suitename>.<testname> currently does not work.
 One must specify the test suite via the :option:`--suite` option.
@@ -79,11 +103,11 @@ One must specify the test suite via the :option:`--suite` option.
 Running all available tests
 ---------------------------
 Currently, the quickest way to execute all tests in all suites is
-to use 'make test-dbqp' from the drizzle root.
+to use 'make test-kewpie' from the drizzle root.
 
 Otherwise, one should simply name all suites::
 
-    ./dbqp.py [OPTIONS] --suite=SUITE1, SUITE2, ...SUITEN
+    ./kewpie.py [OPTIONS] --suite=SUITE1, SUITE2, ...SUITEN
 
 Interpreting test results
 =========================
@@ -137,66 +161,31 @@ Additional uses
 Starting a server for manual testing
 ------------------------------------
 
-:program:`dbqp.py` allows a user to get a Drizzle server up and running
+:program:`kewpie.py` allows a user to get a Drizzle server up and running
 quickly.  This can be useful for fast ad-hoc testing.
 
 To do so call::
 
-    ./dbqp.py --start-and-exit [*OPTIONS*]
+    ./kewpie.py --start-and-exit [*OPTIONS*]
 
 This will start a Drizzle server that you can connect to and query
 
 Starting a server against a pre-populated DATADIR
 --------------------------------------------------
 
-Using :option:`--start-dirty` prevents :program:`dbqp.py` from attempting
+Using :option:`--start-dirty` prevents :program:`kewpie.py` from attempting
 to initialize (clean) the datadir.  This can be useful if you want to use
 an already-populated datadir for testing.
 
 NOTE: This feature is still being tested, use caution with your data!!!
 
-Randgen mode / Executing randgen tests
----------------------------------------
-
-Using :option:`--mode` =randgen and :option:`--randgen-path` =/path/to/randgen
-will cause the randgen tests to execute.  This are simple .cnf file-based
-tests that define various randgen command lines that are useful in testing
-the server.  Test organization is similar to the dtr tests.  Tests live in 
-suites, the default suite is 'main' and they all live in
-drizzle/tests/randgen_tests::
-
-	./dbqp.py --mode=randgen --randgen-path=/path/to/randgen
-
-A user may specify suites and individual tests to run, just as with dtr-based
-testing.  Test output is the same as well::
-
-    ./dbqp --mode=randgen --randgen-path=/home/username/repos/randgen
-    Setting --no-secure-file-priv=True for randgen mode...
-    <snip>
-    23 Feb 2011 11:42:43 INFO: Using testing mode: randgen
-    <snip>
-    23 Feb 2011 11:44:58 : ================================================================================
-    23 Feb 2011 11:44:58 : TEST NAME                                               [ RESULT ]    TIME (ms)
-    23 Feb 2011 11:44:58 : ================================================================================
-    23 Feb 2011 11:44:58 : main.optimizer_subquery                                 [ pass ]       134153
-    23 Feb 2011 11:45:03 : main.outer_join                                         [ pass ]         5136
-    23 Feb 2011 11:45:06 : main.simple                                             [ pass ]         2246
-    23 Feb 2011 11:45:06 : ================================================================================
-    23 Feb 2011 11:45:06 INFO: Test execution complete in 142 seconds
-    23 Feb 2011 11:45:06 INFO: Summary report:
-    23 Feb 2011 11:45:06 INFO: Executed 3/3 test cases, 100.00 percent
-    23 Feb 2011 11:45:06 INFO: STATUS: PASS, 3/3 test cases, 100.00 percent executed
-    23 Feb 2011 11:45:06 INFO: Spent 141 / 142 seconds on: TEST(s)
-    23 Feb 2011 11:45:06 INFO: Test execution complete
-    23 Feb 2011 11:45:06 INFO: Stopping all running servers...
-
 Cleanup mode
 -------------
 A cleanup mode is provided for user convenience.  This simply shuts down
-any servers whose pid files are detected in the dbqp workdir.  It is mainly
+any servers whose pid files are detected in the kewpie workdir.  It is mainly
 intended as a quick cleanup for post-testing with :option:`--start-and-exit`::
 
-	./dbqp.py --mode=cleanup
+	./kewpie.py --mode=cleanup
 
     Setting --start-dirty=True for cleanup mode...
     23 Feb 2011 11:35:59 INFO: Using Drizzle source tree:
@@ -206,7 +195,7 @@ intended as a quick cleanup for post-testing with :option:`--start-and-exit`::
     23 Feb 2011 11:35:59 INFO: server_version: 2011.02.2188
     23 Feb 2011 11:35:59 INFO: server_compile_os: unknown-linux-gnu
     23 Feb 2011 11:35:59 INFO: server_platform: x86_64
-    23 Feb 2011 11:35:59 INFO: server_comment: (Source distribution (dbqp_randgen))
+    23 Feb 2011 11:35:59 INFO: server_comment: (Source distribution (kewpie_randgen))
     23 Feb 2011 11:35:59 INFO: Using --start-dirty, not attempting to touch directories
     23 Feb 2011 11:35:59 INFO: Using default-storage-engine: innodb
     23 Feb 2011 11:35:59 INFO: Using testing mode: cleanup
@@ -216,7 +205,7 @@ intended as a quick cleanup for post-testing with :option:`--start-and-exit`::
 Program architecture
 ====================
 
-:program:`dbqp.py`'s 'dtr' mode uses a simple diff-based mechanism for testing.
+:program:`kewpie.py`'s 'dtr' mode uses a simple diff-based mechanism for testing.
 This is the default mode and where the majority of Drizzle testing occurs.  
 It will execute the statements contained in a test and compare the results 
 to pre-recorded expected results.  In the event of a test failure, you
@@ -237,27 +226,35 @@ the various statements to be executed for a test.  The .result file lists
 the expected results for a given test file.  These files live in tests/t 
 and tests/r, respectively.  This structure is the same for all test suites.
 
-dbqp.py options
+kewpie.py options
 ===================
 
-The :program:`dbqp.py` tool has several available options:
+The :program:`kewpie.py` tool has several available options:
 
-./dbqp.py [ OPTIONS ] [ TESTCASE ]
+./kewpie.py [ OPTIONS ] [ TESTCASE ]
 
 
 Options
 -------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: -h, --help
  
    show this help message and exit
 
+Configuration controls - kewpie can read config files with certain options pre-set:
+---------------------------------------------------------------------------------------------------
+
+.. option:: --sys_config_file=SYSCONFIGFILEPATH
+    
+   The file that specifies system configuration specs for
+   kewpie to execute tests (not yet implemented)
+
 Options for the test-runner itself
 ----------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --force
 
@@ -281,13 +278,13 @@ Options for the test-runner itself
 .. option:: --mode=MODE
 
    Testing mode.  
-   We only support dtr...for now >;) 
-   [dtr]
+   Currently supporting dtr, sysbench, and native (unittest) modes.  The goal is to remove this and have all tests operate via unittest"
+   [native]
 
 .. option:: --record
 
    Record a testcase result 
-   (if the testing mode supports it) 
+   (if the testing mode supports it - MTR / DTR specific) 
    [False]
 
 .. option:: --fast
@@ -295,16 +292,11 @@ Options for the test-runner itself
    Don't try to cleanup from earlier runs 
    (currently just a placeholder) [False]
 
-.. option:: --randgen-path=RANDGENPATH
-
-    The path to a randgen installation that can be used to
-    execute randgen-based tests
-
 
 Options for controlling which tests are executed
 ------------------------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --suite=SUITELIST
 
@@ -342,7 +334,7 @@ Options for controlling which tests are executed
 Options for defining the code that will be under test
 -----------------------------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --basedir=BASEDIR   
 
@@ -368,7 +360,7 @@ Options for defining the code that will be under test
 Options for defining the testing environment
 --------------------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --testdir=TESTDIR   
 
@@ -379,7 +371,7 @@ Options for defining the testing environment
 
    Path to the directory test-run will use to store
    generated files and directories.
-   [basedir/tests/dbqp_work]
+   [basedir/tests/kewpie_work]
 
 .. option:: --top-srcdir=TOPSRCDIR
 
@@ -394,6 +386,16 @@ Options for defining the testing environment
    By default, we symlink workdir to a location in shm.
    Use this flag to not symlink [False]
 
+.. option:: --libeatmydata      
+
+    We use libeatmydata (if available) to disable fsyncs
+    and speed up test execution.  Implies --no-shm
+    
+.. option:: --libeatmydata-path=LIBEATMYDATAPATH
+            
+   Path to the libeatmydata install you want to use
+   [/usr/local/lib/libeatmydata.so]
+
 .. option:: --start-dirty       
 
    Don't try to clean up working directories before test
@@ -404,10 +406,34 @@ Options for defining the testing environment
    Turn off the use of --secure-file-priv=vardir for
    started servers
 
+.. option:: --randgen-path=RANDGENPATH
+           
+   The path to a randgen installation that can be used to
+   execute randgen-based tests [kewpie/randgen]
+
+.. option:: --innobackupex-path=INNOBACKUPEXPATH
+           
+   The path to the innobackupex script that facilitates
+   the use of Xtrabackup
+
+.. option:: --xtrabackup-path=XTRABACKUPPATH
+            
+   The path the xtrabackup binary to be tested
+
+.. option:: --wsrep-provider-path=WSREPPROVIDER
+           
+   The path to a wsrep provider library for use with
+   mysql
+   
+.. option:: --subunit-outfile=SUBUNITOUTFILE
+
+   File path where subunit output will be logged 
+   [/kewpie/workdir/test_results.subunit]
+
 Options to pass options on to the server
 -----------------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --drizzled=DRIZZLEDOPTIONS
            
@@ -419,7 +445,7 @@ Options to pass options on to the server
 Options for defining the tools we use for code analysis (valgrind, gprof, gcov, etc)
 ------------------------------------------------------------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --valgrind          
 
@@ -431,10 +457,20 @@ Options for defining the tools we use for code analysis (valgrind, gprof, gcov, 
    Pass an option to valgrind (overrides/removes default
    valgrind options)
 
+.. option:: --valgrind-suppressions=VALGRINDSUPPRESSIONS
+            
+   Point at a valgrind suppression file
+   [kewpie/valgrind.supp]
+
+.. option:: --helgrind
+
+   Use the helgrind tool for valgrind.  Implies / will
+   auto-use --valgrind
+
 Options for controlling the use of debuggers with test execution
 ----------------------------------------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --gdb
 
@@ -448,7 +484,7 @@ Options for controlling the use of debuggers with test execution
 Options to call additional utilities such as datagen
 ------------------------------------------------------
 
-.. program:: dbqp.py
+.. program:: kewpie.py
 
 .. option:: --gendata=GENDATAFILE
             

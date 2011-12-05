@@ -6,9 +6,9 @@ sql-bench
 
 Description
 ===========
-dbqp can take advantage of two testing modes offered by the sql-bench tool.
+Kewpie can take advantage of two testing modes offered by the sql-bench tool.
 
-The Drizzle code has a copy of this tool set in the tree and the test-runner offers two modes::
+Kewpie has a copy of this tool set in the tree and the test-runner offers two suites for executing sql-bench tests::
 
     sql-bench modes
     ---------------
@@ -20,7 +20,9 @@ Requirements
 ============
 DBD::drizzle
 -------------
-The DBD::drizzle module is required it can be found here http://launchpad.net/dbd-drizzle/
+The DBD::drizzle module is required it can be found here:
+
+    http://launchpad.net/dbd-drizzle/
 
 Additional information for installing the module::
 
@@ -41,15 +43,21 @@ Additional information for installing the module::
     Depending on where libdrizzle is installed. Also, you'll want to make 
     sure that ldconfig has configured libdrizzle to be in your library path 
 
+DBD::MySQL:
 
-sql-bench / dbqp tests
-=======================
+This is required for using MySQL servers and can be found here:
 
-Currently, there are only two sql-bench test cases for dbqp.  As one might expect, main.all_sqlbench_tests executes::
+    http://search.cpan.org/dist/DBD-mysql/
 
-    run-all-tests --server=drizzle --dir=$DRIZZLE_TEST_WORKDIR --log --connect-options=port=$MASTER_MYPORT --create-options=ENGINE=innodb --user=root 
 
-against a Drizzle server.  The second test case executes the crashme tool against a running server.
+sql-bench / kewpie tests
+==========================
+
+Currently, there are only two sql-bench test cases for kewpie.  As one might expect, main.all_sqlbench_tests executes::
+
+    run-all-tests --server=$SERVER_TYPE --dir=$WORKDIR --log --connect-options=port=$MASTER_MYPORT --create-options=ENGINE=innodb --user=root 
+
+against a test server.  The second test case executes the crashme tool against a running server.
 
 Test cases are defined in python .cnf files and live in tests/sqlbench_tests.
 
@@ -58,7 +66,7 @@ Running tests
 
 NOTE:  all_sqlbench_tests can take a significant amount of time to execute (45 minutes or so on a decently provisioned laptop)
 
-There are several different ways to run tests using :doc:`dbqp` 's sql-bench mode.
+There are several different ways to run tests using :doc:`kewpie` 's sql-bench mode.
 
 It should be noted that unless :option:`--force` is used, the program will
 stop execution upon encountering the first failing test. 
@@ -73,11 +81,11 @@ Running all tests within a suite
 At present, there is only one test case per suite for sqlbench and crashme modes - that is all that is needed for these tools.
 To execute the sql-bench test suite::
 
-    ./dbqp --mode=sqlbench
+    ./kewpie --suite=sqlbench
 
 To execute the crash-me test suite::
 
-    ./dbqp --mode=crashme
+    ./kewpie --suite=crashme
 
 Interpreting test results
 =========================
