@@ -12,7 +12,6 @@ use File::Spec;
 use Pod::Usage qw(pod2usage);
 use POSIX "strftime";
 use POSIX ":sys_wait_h";
-# use POSIX "tmpnam";
 use FileHandle;
 use File::Basename;
 use File::Temp;
@@ -235,10 +234,10 @@ if ($option_copy_back) {
 	else {
 		if( $option_ibbackup_binary eq "autodetect" ){
 			# Try to connect MySQL and get the version
-			print "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
+			print STDERR "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
 			my $options = get_mysql_options();
 			$mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ");
-			print "Connected to MySQL with pid $mysql_pid\n";
+			print STDERR "Connected to MySQL with pid $mysql_pid\n";
 			sleep 1;
 			if ($mysql_pid && $mysql_pid == waitpid($mysql_pid, &WNOHANG)) {
 				my $reason = `cat $mysql_stderr`;
@@ -248,7 +247,7 @@ if ($option_copy_back) {
 				}
 			else{
 				mysql_close();
-				print "Connected successfully\n";
+				print STDERR "Connected successfully\n";
 				$option_ibbackup_binary = set_xtrabackup_version();
 				}
 			}
@@ -1700,10 +1699,6 @@ sub check_args {
             } else {
                 $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
             }
-
-            #print STDERR "--incremental_basedir=$incremental_basedir\n";
-            #print STDERR "incremental backup is not supported for now.\n";
-            #exit(1);
         }
     } else {
         # get backup directory
