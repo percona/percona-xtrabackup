@@ -71,7 +71,7 @@ class systemManager:
         self.cur_user = getpass.getuser()
         self.workdir = os.path.abspath(variables['workdir'])
         self.testdir = os.path.abspath(variables['testdir'])
-        self.datadir = os.path.abspath(self.workdir,'qp_data'))
+        self.datadir = os.path.abspath(self.workdir,'qp_data')
         self.top_srcdir = os.path.abspath(variables['topsrcdir'])
         self.top_builddir = os.path.abspath(variables['topbuilddir'])
         self.start_dirty = variables['startdirty']
