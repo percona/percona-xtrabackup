@@ -23,36 +23,22 @@ import unittest
 import subprocess
 
 from lib.util.sqlbench_methods import execute_sqlbench
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class sqlbenchTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(mysqlBaseTestCase):
 
     def test_run_all_sqlbench(self):
         test_cmd = "$SQLBENCH_DIR/run-all-tests --server=drizzle --dir=$DRIZZLE_TEST_WORKDIR --log --connect-options=port=$MASTER_MYPORT --create-options=ENGINE=innodb --user=root"
 
         test_status, retcode, output = execute_sqlbench(test_cmd, test_executor, servers)
-        self.assertTrue(retcode==0, output)
-        self.assertTrue(test_status=='pass', output)
+        self.assertEqual(retcode, 0, msg = output)
+        self.assertEqual(test_status, 'pass', msg = output)
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(sqlbenchTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

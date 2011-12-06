@@ -19,23 +19,19 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import unittest
-import subprocess
-import os
-
-from lib.util.randgen_methods import execute_randgen
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class basicTest(unittest.TestCase):
+class basicTest(mysqlBaseTestCase):
 
     def test_outerJoin1(self):
-        test_cmd = "./gentest.pl --gendata=conf/drizzle/outer_join_drizzle.zz --grammar=conf/drizzle/outer_join_drizzle.yy --queries=500 --threads=5"
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
-        self.assertTrue(retcode==0, output)
+        test_cmd = "./gentest.pl --gendata=conf/drizzle/outer_join_drizzle.zz --grammar=conf/drizzle/outer_join_drizzle.yy --queries=2500 --threads=5"
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        self.assertEqual(retcode, 0, msg = output)
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
