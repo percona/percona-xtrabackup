@@ -240,7 +240,12 @@ class systemManager:
             else:
                 shutil.rmtree(full_path)
             self.logging.debug("Creating directory: %s" %(dirname))   
-        os.makedirs(full_path)
+        try:
+            os.makedirs(full_path)
+        except IOError, e:
+            self.logging.error("Problem creating directory: %s" %(full_path))
+            self.logging.error(e)
+            sys.exit(1)
         return full_path
 
     def remove_dir(self, dirname, require_empty=0 ):
