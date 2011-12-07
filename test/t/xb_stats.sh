@@ -16,7 +16,7 @@ xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup
 
 vlog "===> xtrabackup --stats --datadir=$topdir/backup"
 # Cannot use run_cmd here
-if $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup >$OUTFILE 2>&1
+if $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup
 then
     die "xtrabackup --stats was expected to fail, but it did not."
 fi
