@@ -293,6 +293,7 @@ class serverManager:
                     request_key = 'datadir_requests'
                 if request_key not in special_processing_reqs:
                     special_processing_reqs[request_key] = []
+                special_processing_reqs[request_key].append((datadir_path,server))
 
     def handle_special_server_requests(self, request_dictionary, current_servers):
         """ We run through our set of special requests and do 
