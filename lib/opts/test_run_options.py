@@ -70,7 +70,9 @@ def organize_options(args, test_cases):
     if variables['repeat'] <= 0:
         print "Setting --repeat=1.  You chose a silly value that I will ignore :P"
         variables['repeat'] = 1
-    if variables['mode'] == 'randgen' or variables['gendatafile']:
+    # we disable the secure-file-priv option if not using dtr / mtr
+    # this might need to be changed in the future...
+    if variables['mode'] not in ['dtr','mtr']:
         print "Setting --no-secure-file-priv=True for randgen usage..."
         variables['nosecurefilepriv']=True
     if variables['mode'] == 'cleanup':

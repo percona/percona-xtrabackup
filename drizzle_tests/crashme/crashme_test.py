@@ -23,35 +23,21 @@ import unittest
 import subprocess
 
 from lib.util.crashme_methods import execute_crashme
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class crashmeTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(mysqlBaseTestCase):
 
     def test_runCrashme(self):
         test_cmd = "$SQLBENCH_DIR/crash-me --server=drizzled --host=127.0.0.1 --force --dir=$DRIZZLE_TEST_WORKDIR  --connect-options=port=$MASTER_MYPORT --verbose --debug --user=root"
         test_status, retcode, output = execute_crashme(test_cmd, test_executor, servers)
-        self.assertTrue(retcode==0, output)
-        self.assertTrue(test_status=='pass', output)
+        self.assertEqual(retcode, 0, msg = output)
+        self.assertEqual(test_status, 'pass', msg = output)
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(crashmeTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

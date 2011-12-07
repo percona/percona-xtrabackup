@@ -19,39 +19,20 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import unittest
-import subprocess
-import os
-
-from lib.util.randgen_methods import execute_randgen
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
 server_requirements = [['--innodb.replication-log'],[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class multiThread3MixTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(mysqlBaseTestCase):
 
     def test_multiThread3Mix(self):
         test_cmd = "./gentest.pl --gendata=conf/drizzle/translog_drizzle.zz --grammar=conf/drizzle/translog_concurrent3.yy --Reporter=DrizzleInnoTrxLog  --queries=50 --threads=3 --seed=time"
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
-        self.assertTrue(retcode==0, output)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        self.assertEqual(retcode, 0, msg = output)
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(multiThread3MixTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 

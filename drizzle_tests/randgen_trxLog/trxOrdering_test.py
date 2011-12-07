@@ -19,39 +19,20 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import unittest
-import subprocess
-import os
+from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
-from lib.util.randgen_methods import execute_randgen
-
-server_requirements =  [['--transaction-log.enable'],[]]
+server_requirements =  [['--innodb.replication-log'],[]]
 servers = []
 server_manager = None
 test_executor = None
 
-class trxOrderingTest(unittest.TestCase):
-
-    #def setUp(self):
-    #    """ If we need to do anything pre-test, we do it here.
-    #        Any code here is executed before any test method we
-    #        may execute
-    #
-    #    """
-
-    #    return
-
+class basicTest(mysqlBaseTestCase):
 
     def test_trxOrdering(self):
-        test_cmd = "./gentest.pl --gendata=conf/drizzle/translog_ordering.zz --grammar=conf/drizzle/translog_ordering.yy --Reporter=DrizzleTransactionLog --threads=5  --queries=75"
-        retcode, output = execute_randgen(test_cmd, test_executor, servers)
-        self.assertTrue(retcode==0, output)
+        test_cmd = "./gentest.pl --gendata=conf/drizzle/translog_ordering.zz --grammar=conf/drizzle/translog_ordering.yy --Reporter=DrizzleTransactionLog --threads=5  --queries=500"
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        self.assertEqual(retcode, 0, msg = output)
 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)
-
-
-def run_test(output_file):
-    suite = unittest.TestLoader().loadTestsFromTestCase(trxOrderingTest)
-    return unittest.TextTestRunner(stream=output_file, verbosity=2).run(suite)
 
