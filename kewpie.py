@@ -19,16 +19,17 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 
-""" dbqp.py
+""" kewpie.py
 
-DataBase Quality Platform - system for executing various
+(DataBase) Quality Platform - system for executing various
 testing systems and the helper code 
 
 Designed to be a modular test-runner.  Different testing tools
 and databases may be plugged into the system via hacking the
 appropriate modules
 
-Currently geared towards Drizzle / will expand to MySQL
+Currently geared towards Drizzle and MySQL systems
+Runs: Drizzle, MySQL, Percona Server, Galera dbms's
 """
 
 # imports

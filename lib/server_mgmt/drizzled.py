@@ -93,7 +93,7 @@ class drizzleServer(Server):
         self.logdir = os.path.join(self.vardir,'log')
         self.datadir = os.path.join(self.vardir,'master-data')
 
-        self.error_log = os.path.join(self.logdir,('%s.err' %(self.name)))
+        self.error_log = os.path.join(self.logdir,'error.log')
         self.pid_file = os.path.join(self.rundir,('%s.pid' %(self.name)))
         self.socket_file = os.path.join(self.vardir, ('%s.sock' %(self.name)))
         self.timer_file = os.path.join(self.logdir,('timer'))
