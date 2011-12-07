@@ -69,9 +69,10 @@ class systemManager:
         self.shm_path = self.find_path(["/dev/shm", "/tmp"], required=0)
         self.cur_os = os.uname()[0]
         self.cur_user = getpass.getuser()
+        self.rootdir = variables['qp_root']
         self.workdir = os.path.abspath(variables['workdir'])
         self.testdir = os.path.abspath(variables['testdir'])
-        self.datadir = os.path.abspath(os.path.join(variables['testdir'],'qp_data'))
+        self.datadir = os.path.join(self.rootdir,'qp_data')
         self.top_srcdir = os.path.abspath(variables['topsrcdir'])
         self.top_builddir = os.path.abspath(variables['topbuilddir'])
         self.start_dirty = variables['startdirty']
