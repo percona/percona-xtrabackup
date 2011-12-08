@@ -995,6 +995,7 @@ sub get_mysql_options {
 # Check that the server is responding to queries
 #
 sub mysql_ping {
+    my $alarm_handler = shift;
     my $mysql_pid_copy = $mysql_pid;
 
     # send a dummy query to mysql child process
@@ -1004,6 +1005,12 @@ sub mysql_ping {
     print MYSQL_WRITER "select '$hello_message';\n" 
         or Die "Connection to mysql child process failed: $!";
 
+    # Don't check server's response if running in a signal handler
+    # because that breaks system() calls
+    if ($alarm_handler)
+    {
+	return 0;
+    }
     # wait for reply
     eval {
         local $SIG{ALRM} = sub { die "alarm clock restart" };
@@ -1039,7 +1046,7 @@ sub mysql_ping {
 # SIGALRM handler which sends a keepalive query to the server
 #
 sub catch_sigalrm {
-  mysql_ping();
+  mysql_ping(1);
   # Reschedule SIGALRM
   alarm $mysql_keep_alive;
 }
@@ -1076,7 +1083,7 @@ sub mysql_open {
     $now = current_time();
     print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
 
-    mysql_ping();
+    mysql_ping(0);
 
     start_keepalives();
 }
@@ -1096,7 +1103,7 @@ sub mysql_send {
 
     $current_mysql_request = $request;
     print MYSQL_WRITER "$request\n";
-    mysql_ping();
+    mysql_ping(0);
     $current_mysql_request = '';
 
     start_keepalives();
