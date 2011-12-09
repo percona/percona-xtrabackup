@@ -56,6 +56,7 @@ class loggingManager():
         self.thin_line = '-'*(80- len("20110420-105402  "))
         self.verbose_flag = variables['verbose']
         self.debug_flag = variables['debug']
+        self.test_debug_flag = variables['test_debug']
 
     def _write_message(self,level, msg):
       self.log_file.write("%s %s %s\n" % (time.strftime("%Y%m%d-%H%M%S"), level, str(msg)))
@@ -83,6 +84,10 @@ class loggingManager():
     def debug(self,msg):
       if self.debug_flag:
           self._write_message("DEBUG", msg)
+
+    def test_debug(self,msg):
+        if self.test_debug_flag:
+            self._write_message("TEST_DEBUG", msg)
  
     def debug_class(self,codeClass):
       if self.debug_flag:

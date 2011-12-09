@@ -194,6 +194,8 @@ class Server(object):
             start up
 
         """
+        # set pid to None for a new start
+        self.pid = None
         # get our current working environment
         if not working_environ:
             working_environ = self.test_executor.working_environment
@@ -334,5 +336,15 @@ class Server(object):
 
     def die(self):
         """ This causes us to kill the server pid """
-        self.system_manager.kill_pid(self.pid)
+        self.system_manager.kill_pid(self.get_pid())
+
+    def get_pid(self):
+        """ We check our pid file and get what is there """
+        if os.path.exists(self.pid_file):
+            with open(self.pid_file,'r') as pid_file:
+                pid = pid_file.readline().strip()
+                pid_file.close()
+            self.pid = pid
+            return self.pid
+
 

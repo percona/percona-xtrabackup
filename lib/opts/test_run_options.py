@@ -199,6 +199,28 @@ def parse_qp_options(defaults):
    
     parser.add_option_group(system_control_group)
 
+    test_exec_control_group = optparse.OptionGroup(parser,
+                                       "Options for controlling how tests are executed")
+
+    test_exec_control_group.add_option(
+        "--test-debug"
+      , dest="testdebug"
+      , action="store_true"
+      , default=False
+      , help="Toggle to control any debugging / helper output with unittest test cases [%default]"
+      )
+
+    test_exec_control_group.add_option(
+        "--randgen_seed"
+      , dest="randgenseed"
+      , type='string'
+      , action="store"
+      , default='1'
+      , help="Alter the seed value provided to the random query generator to vary test runs. (string) [%default]"
+      )
+
+    parser.add_option_group(test_exec_control_group)
+
     test_control_group = optparse.OptionGroup(parser, 
                              "Options for controlling which tests are executed")
 

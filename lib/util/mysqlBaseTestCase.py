@@ -26,6 +26,9 @@ import difflib
 import subprocess
 
 import MySQLdb
+# silence annoying errors
+from warnings import filterwarnings
+filterwarnings('ignore', category = MySQLdb.Warning)
 
 servers = None
 
@@ -150,10 +153,12 @@ class mysqlBaseTestCase(unittest.TestCase):
                     query = "CHECKSUM TABLE %s.%s" %(schema, table)
                     retcode, master_checksum = self.execute_query(query, master_server)
                     retcode, slave_checksum = self.execute_query(query, server)
-                    #print "%s: master_checksum= %s | slave_checksum= %s" % ( table
-                    #                                                       , master_checksum
-                    #                                                       , slave_checksum
-                    #                                                       )
+               
+                    print "%s: master_checksum= %s | slave_checksum= %s" % ( table
+                                                                           , master_checksum
+                                                                           , slave_checksum
+                                                                           )
+                    print '*'*80
 
                     if not master_checksum == slave_checksum:
                         comp_data = "%s: master_checksum= %s | slave_checksum= %s" % ( table
@@ -166,8 +171,7 @@ class mysqlBaseTestCase(unittest.TestCase):
                             comp_results[server.name]=[comp_data]
         if comp_results:
             return comp_results
-        return None 
-
+        return None
 
 
     def take_mysqldump( self
@@ -282,7 +286,7 @@ class mysqlBaseTestCase(unittest.TestCase):
         finally:
             return retcode, results
 
-    def execute_randgen(self, test_cmd, test_executor, servers, schema='test'):
+    def execute_randgen(self, test_cmd, test_executor, server, schema='test'):
         randgen_outfile = os.path.join(test_executor.logdir,'randgen.out')
         randgen_output = open(randgen_outfile,'w')
         server_type = test_executor.master_server.type
@@ -290,8 +294,8 @@ class mysqlBaseTestCase(unittest.TestCase):
             # it is mysql for dbd::perl purposes
             server_type = 'mysql'
         dsn = "--dsn=dbi:%s:host=127.0.0.1:port=%d:user=root:password="":database=%s" %( server_type
-                                                                                , servers[0].master_port
-                                                                                , schema)
+                                                                                       , server.master_port
+                                                                                       , schema)
         randgen_cmd = " ".join([test_cmd, dsn])
         randgen_subproc = subprocess.Popen( randgen_cmd
                                           , shell=True
@@ -312,3 +316,28 @@ class mysqlBaseTestCase(unittest.TestCase):
                 output = None
         return retcode, output
 
+    def get_randgen_process(self, cmd_sequence, test_executor, server, schema='test'):
+        """ There are times when we want finer grained control over our process
+            and perhaps to kill it so it doesn't waste time running to completion
+            for those cases, we have this function
+
+        """
+        randgen_outfile = os.path.join(test_executor.logdir,'randgen.out')
+        randgen_output = open(randgen_outfile,'w')
+        server_type = test_executor.master_server.type
+        if server_type in ['percona','galera']:
+            # it is mysql for dbd::perl purposes
+            server_type = 'mysql'
+        dsn = "--dsn=dbi:%s:host=127.0.0.1:port=%d:user=root:password="":database=%s" %( server_type
+                                                                                       , server.master_port
+                                                                                       , schema)
+        cmd_sequence.append(dsn)
+        cmd_sequence[0] = os.path.join(test_executor.system_manager.randgen_path,cmd_sequence[0])
+        randgen_subproc = subprocess.Popen( cmd_sequence 
+                                          , cwd=test_executor.system_manager.randgen_path
+                                          , env=test_executor.working_environment
+                                          , stdout = randgen_output
+                                          , stderr = subprocess.STDOUT 
+                                          )
+
+        return randgen_subproc

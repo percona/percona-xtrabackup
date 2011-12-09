@@ -306,9 +306,12 @@ class mysqlServer(Server):
         msg = None
         if self.status:  # we are running and can do things!
             # Get master binlog info
-            master_binlog_file, master_binlog_pos = master_server.get_binlog_info()
-            if not get_cur_log_pos:
-                master_binlog_pos = 0
+            retcode, master_binlog_file, master_binlog_pos = master_server.get_binlog_info()
+            if not retcode:
+                if not get_cur_log_pos:
+                    master_binlog_pos = 0
+            else:
+                return retcode, master_binlog_file #contains error msg on failure
             
             # update our slave's master info
             query = ("CHANGE MASTER TO "
@@ -348,11 +351,117 @@ class mysqlServer(Server):
             self.master = master_server
         return 0,msg
 
+    def get_slave_status(self):
+        query = "SHOW SLAVE STATUS"
+        retcode, result_set = execute_query(query, self)
+        result_set = result_set[0]
+        if not retcode:
+            slave_data = { 'slave_io_state':result_set[0]
+                         , 'master_host':result_set[1]
+                         , 'master_user':result_set[2]
+                         , 'master_port':result_set[3]
+                         , 'connect_retry':result_set[4]
+                         , 'master_log_file':result_set[5]
+                         , 'read_master_log_pos':result_set[6]
+                         , 'relay_log_file':result_set[7]
+                         , 'relay_log_pos':result_set[8]
+                         , 'relay_master_log_file':result_set[9]
+                         , 'slave_io_running':result_set[10]
+                         , 'slave_sql_running':result_set[11]
+                         , 'replicate_do_db':result_set[12]
+                         , 'replicate_ignore_db':result_set[13]
+                         , 'replicate_do_table':result_set[14]
+                         , 'replicate_ignore_table':result_set[15]
+                         , 'replicate_wild_do_table':result_set[16]
+                         , 'replicate_wild_ignore_table':result_set[17]
+                         , 'last_errno':result_set[18]
+                         , 'last_error':result_set[19]
+                         , 'skip_counter':result_set[20]
+                         , 'exec_master_log_pos':result_set[21]
+                         , 'relay_log_space':result_set[22]
+                         , 'until_condition':result_set[23]
+                         , 'until_log_file':result_set[24]
+                         , 'until_log_pos':result_set[25]
+                         , 'master_ssl_allowed':result_set[26]
+                         , 'master_ssl_ca_file':result_set[27]
+                         , 'master_ssl_ca_path':result_set[28]
+                         , 'master_ssl_cert':result_set[29]
+                         , 'master_ssl_cipher':result_set[30]
+                         , 'master_ssl_key':result_set[31]
+                         , 'seconds_behind_master':result_set[32]
+                         , 'master_ssl_verify_server_cert':result_set[33]
+                         , 'last_io_errno':result_set[34]
+                         , 'last_io_error':result_set[35]
+                         , 'last_sql_errno':result_set[36]
+                         , 'last_sql_error':result_set[37]
+                         , 'replicate_ignore_server_ids':result_set[38]
+                         }
+            return slave_data
+        else:
+            print result_set
+            return None
+     
+         
     def get_binlog_info(self):
         """ We try to get binlog information for the server """
         query = "SHOW MASTER STATUS"
         retcode, result_set = execute_query(query, self)
-        binlog_file = result_set[0][0]
-        binlog_pos = result_set[0][1]
-        return binlog_file, binlog_pos
+        if not retcode:
+            binlog_file = result_set[0][0]
+            binlog_pos = result_set[0][1]
+        else:
+            binlog_file = result_set
+            binlog_pos = result_set
+        return retcode, binlog_file, binlog_pos
 
+    def slave_stop(self):
+        """ We issue STOP SLAVE and wait for IO and SQL threads to stop """
+        
+        query = "STOP SLAVE"
+        retcode, result = execute_query(query, self)
+        slave_status = self.get_slave_status()
+        while slave_status['slave_io_running'] == 'Yes' or slave_status['slave_sql_running'] == 'Yes': 
+            slave_status = self.get_slave_status()
+
+    def slave_start(self):
+        """ We issue START SLAVE and wait for IO and SQL threads to start """
+        query = "START SLAVE"
+        retcode, result = execute_query(query, self)
+        slave_status = self.get_slave_status()
+        while slave_status['slave_io_running'] == 'No' or slave_status['slave_sql_running'] == 'No':
+            slave_status = self.get_slave_status()
+
+
+    def wait_sync_with_slaves(self, slave_list, timeout=60):
+        """ We scan through our slave list and make sure we are synched up
+            before moving on with the test
+
+        """
+
+        retcode, master_binlog_file, master_binlog_pos = self.get_binlog_info()
+        while slave_list:
+            for idx, slave_server in enumerate(slave_list):
+                slave_status_data = slave_server.get_slave_status()
+                read_master_log_pos = slave_status_data['read_master_log_pos']
+                exec_master_log_pos = slave_status_data['exec_master_log_pos']
+                seconds_behind_master = slave_status_data['seconds_behind_master']
+                slave_io_state = slave_status_data['slave_io_state']
+                # This test subject to change as I learn more ; )
+                #if master_binlog_pos == exec_master_log_pos:
+                if exec_master_log_pos == read_master_log_pos and slave_io_state == 'Waiting for master to send event':
+                    #print 'Server: %s.%s' %(self.owner, self.name)
+                    #print 'Master_binlog_file: %s' %master_binlog_file
+                    #print 'Master_binlog_pos: %s' %master_binlog_pos
+                    #print 'Exec_master_log_pos: %s' %exec_master_log_pos
+                    #print 'Read_master_log_pos: %s' %read_master_log_pos
+                    #if read_master_log_pos > master_binlog_pos:
+                    #for key, item in slave_status_data.items():
+                    #        print "%s:%s" %(key, item)
+                    #print '#'*80
+                    # It is normally a no-no to remove items from a list
+                    # mid-iteration, but this is a chance to break that rule
+                    # >: )
+                    slave_list.pop(idx)
+                            
+
+ 
