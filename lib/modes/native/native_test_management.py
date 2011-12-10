@@ -105,6 +105,13 @@ class testManager(test_management.testManager):
         self.system_manager.logging.verbose("Processing suite: %s" %(suite_name))
         testlist = [os.path.join(suite_dir,test_file) for test_file in sorted(os.listdir(suite_dir)) if test_file.endswith('_test.py')]
 
+        # Look for a suite_conf.py file.  If present, we use that
+        # as a source of server_requirements + server_requests barring
+        # the presence of test_case level specifications for those values
+        suite_conf = os.path.join(suite_dir,'suite_conf.py')
+        if not os.path.exists(suite_conf):
+            suite_conf = None
+
         # Search for specific test names
         if self.desired_tests: # We have specific, named tests we want from the suite(s)
            tests_to_use = []
@@ -118,21 +125,44 @@ class testManager(test_management.testManager):
                    tests_to_use.append(test)
            testlist = tests_to_use
         for test_case in testlist:
-            self.add_test(self.process_test_file(suite_name, test_case))
+            self.add_test(self.process_test_file( suite_name
+                                                , test_case
+                                                , suite_conf 
+                                                ))
+
+    def get_server_reqs(self, module_file):
+        """ Code to handle extraction of server_requests & requirements
+            from unittest test modules
+
+        """
+
+        module_name = os.path.basename(module_file).replace('.py','')
+        my_module = imp.load_source(module_name, module_file)
+        server_requirements, server_requests = None
+        try:
+            server_requirements = my_module.server_requirements
+        except AttributeError, NameError: pass
+        try:
+            server_requests = test_module.server_requests
+        except AttributeError, NameError: pass
+         return server_requirements, server_requests
 
 
-    def process_test_file(self, suite_name, testfile):
+    def process_test_file(self, suite_name, testfile, suite_conf):
         """ We convert the info in a testfile into a testCase object """
 
         # test_name = filename - .py...simpler
         test_name = os.path.basename(testfile).replace('.py','')
         test_comment = None
-        test_module = imp.load_source(test_name, testfile)
-        server_requirements = test_module.server_requirements
-        try:
-            server_requests = test_module.server_requests
-        except AttributeError, NameError:
-            server_requests = None
+        if suite_conf:
+            server_requirements, server_requests = self.get_server_reqs(suite_conf)
+        # We want to trump any suite-wide configs with test-level ones
+        test_server_requirements, test_server_requests = self.get_server_reqs(testfile)
+        if test_server_requirements:
+            server_requirements = test_server_requirements
+        if test_server_requests:
+            server_requests = test_server_requests
+        
         return testCase( self.system_manager
                        , name = test_name
                        , fullname = "%s.%s" %(suite_name, test_name)
