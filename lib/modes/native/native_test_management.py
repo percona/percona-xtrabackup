@@ -138,14 +138,15 @@ class testManager(test_management.testManager):
 
         module_name = os.path.basename(module_file).replace('.py','')
         my_module = imp.load_source(module_name, module_file)
-        server_requirements, server_requests = None
+        server_requirements = None
+        server_requests = None
         try:
             server_requirements = my_module.server_requirements
         except AttributeError, NameError: pass
         try:
-            server_requests = test_module.server_requests
+            server_requests = my_module.server_requests
         except AttributeError, NameError: pass
-         return server_requirements, server_requests
+        return server_requirements, server_requests
 
 
     def process_test_file(self, suite_name, testfile, suite_conf):

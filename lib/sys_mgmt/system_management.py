@@ -54,11 +54,13 @@ class systemManager:
     """
     def __init__(self, variables, tree_type='drizzle'):
         self.logging = loggingManager(variables)
+        global logging
+        logging = self.logging 
         if variables['verbose']:
             self.logging.verbose("Initializing system manager...")
 
         self.skip_keys = [ 'port_manager'
-                         , 'logging_manager'
+                         , 'logging'
                          , 'code_manager'
                          , 'env_manager'
                          , 'environment_reqs'

@@ -147,6 +147,7 @@ class mysqlBaseTestCase(unittest.TestCase):
 
         """
         comp_results = {}
+        logging = master_server.logging
         for server in other_servers:
             for schema in schemas:
                 for table in self.get_tables(master_server, schema):
@@ -154,11 +155,11 @@ class mysqlBaseTestCase(unittest.TestCase):
                     retcode, master_checksum = self.execute_query(query, master_server)
                     retcode, slave_checksum = self.execute_query(query, server)
                
-                    print "%s: master_checksum= %s | slave_checksum= %s" % ( table
+                    logging.test_debug ("%s: master_checksum= %s | slave_checksum= %s" % ( table
                                                                            , master_checksum
                                                                            , slave_checksum
-                                                                           )
-                    print '*'*80
+                                                                           ))
+                    logging.test_debug( '#'*80)
 
                     if not master_checksum == slave_checksum:
                         comp_data = "%s: master_checksum= %s | slave_checksum= %s" % ( table
