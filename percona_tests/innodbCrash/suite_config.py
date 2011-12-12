@@ -21,9 +21,9 @@ server_manager = None
 test_executor = None
 randgen_threads = 5
 randgen_queries_per_thread = 10000
-crashes = 3
+crashes = 10 
 # This only applies to innodbCrash2 test
 # as a time delay for when the kill thread
 # will stop the master-server
-kill_db_after = 10 
+kill_db_after = 20 
 

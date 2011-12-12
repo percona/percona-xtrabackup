@@ -88,11 +88,20 @@ class basicTest(innodbCrashTestCase):
     def test_crash(self):
         self.initialize(test_executor, servers, suite_config)
         workers = []
-        server_pid = master_server.pid 
 
         # create our table
         self.test_bed_cmd = "./gendata.pl --spec=conf/percona/percona_no_blob.zz "
         self.create_test_bed()
+
+        # generate our workload via randgen
+        test_seq = [  "./gentest.pl"
+                    , "--grammar=conf/percona/translog_concurrent1.yy"
+                    , "--queries=%d" %(self.randgen_queries_per_thread)
+                    , "--threads=%d" %(self.randgen_threads)
+                    , "--sqltrace"
+                    , "--debug"
+                    , "--seed=%s" %(self.randgen_seed)
+                   ]
 
         while self.crashes:
             self.logging.test_debug( "Crashes remaining: %d" %(self.crashes))
@@ -106,17 +115,8 @@ class basicTest(innodbCrashTestCase):
                            )
             workers.append(worker)
  
-            # generate our workload via randgen
-            test_seq = [  "./gentest.pl"
-                        , "--grammar=conf/percona/translog_concurrent1.yy"
-                        , "--queries=%d" %(self.randgen_queries_per_thread)
-                        , "--threads=%d" %(self.randgen_threads)
-                        , "--sqltrace"
-                        , "--debug"
-                        , "--seed=%s" %(self.randgen_seed)
-                        ]
             randgen_process = self.get_randgen_process(test_seq, self.test_executor, self.master_server)
-            if not master_server.ping(quiet=True) and (randgen_process.poll() is None):
+            if not self.master_server.ping(quiet=True) and (randgen_process.poll() is None):
                 # Our server is dead, but randgen is running, we kill it to speed up testing
                 randgen_process.send_signal(signal.SIGINT)
 
@@ -125,7 +125,7 @@ class basicTest(innodbCrashTestCase):
             while randgen_process.poll():
                 randgen_process.send_signal(signal.SIGINT)
 
-            retcode = master_server.start()
+            retcode = self.master_server.start()
             timeout = 300
             decrement = 1 
             while timeout and not self.master_server.ping(quiet=True):

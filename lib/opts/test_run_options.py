@@ -211,7 +211,7 @@ def parse_qp_options(defaults):
       )
 
     test_exec_control_group.add_option(
-        "--randgen_seed"
+        "--randgen-seed"
       , dest="randgenseed"
       , type='string'
       , action="store"
