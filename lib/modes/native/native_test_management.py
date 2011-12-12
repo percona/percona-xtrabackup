@@ -105,13 +105,6 @@ class testManager(test_management.testManager):
         self.system_manager.logging.verbose("Processing suite: %s" %(suite_name))
         testlist = [os.path.join(suite_dir,test_file) for test_file in sorted(os.listdir(suite_dir)) if test_file.endswith('_test.py')]
 
-        # Look for a suite_conf.py file.  If present, we use that
-        # as a source of server_requirements + server_requests barring
-        # the presence of test_case level specifications for those values
-        suite_conf = os.path.join(suite_dir,'suite_conf.py')
-        if not os.path.exists(suite_conf):
-            suite_conf = None
-
         # Search for specific test names
         if self.desired_tests: # We have specific, named tests we want from the suite(s)
            tests_to_use = []
@@ -127,7 +120,6 @@ class testManager(test_management.testManager):
         for test_case in testlist:
             self.add_test(self.process_test_file( suite_name
                                                 , test_case
-                                                , suite_conf 
                                                 ))
 
     def get_server_reqs(self, module_file):
@@ -149,15 +141,12 @@ class testManager(test_management.testManager):
         return server_requirements, server_requests
 
 
-    def process_test_file(self, suite_name, testfile, suite_conf):
+    def process_test_file(self, suite_name, testfile):
         """ We convert the info in a testfile into a testCase object """
 
         # test_name = filename - .py...simpler
         test_name = os.path.basename(testfile).replace('.py','')
         test_comment = None
-        if suite_conf:
-            server_requirements, server_requests = self.get_server_reqs(suite_conf)
-        # We want to trump any suite-wide configs with test-level ones
         test_server_requirements, test_server_requests = self.get_server_reqs(testfile)
         if test_server_requirements:
             server_requirements = test_server_requirements
@@ -172,7 +161,6 @@ class testManager(test_management.testManager):
                        , request_dict = server_requests
                        , test_path = testfile
                        , debug = self.debug )
-
 
 
     def record_test_result(self, test_case, test_status, output, exec_time):

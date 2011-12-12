@@ -19,7 +19,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-
 from percona_tests.innodbCrash.innodbCrashTestCase import innodbCrashTestCase
 from percona_tests.innodbCrash import suite_config
 
@@ -53,6 +52,7 @@ class basicTest(innodbCrashTestCase):
                         , "--threads=%d" %(self.randgen_threads)
                         , "--sqltrace"
                         , "--debug"
+                        , "--seed=%s" %(self.randgen_seed)
                         ]
         self.test_seq = " ".join(self.test_seq)
         self.execute_crash_test()

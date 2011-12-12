@@ -54,8 +54,6 @@ class systemManager:
     """
     def __init__(self, variables, tree_type='drizzle'):
         self.logging = loggingManager(variables)
-        global logging
-        logging = self.logging 
         if variables['verbose']:
             self.logging.verbose("Initializing system manager...")
 
@@ -87,6 +85,7 @@ class systemManager:
         self.gdb = variables['gdb']
         self.manual_gdb = variables['manualgdb']
         self.randgen_path = variables['randgenpath']
+        self.randgen_seed = variables['randgenseed']
         # there may be a better place to put this...
         self.innobackupex_path = variables['innobackupexpath']
         self.xtrabackup_path = variables['xtrabackuppath']

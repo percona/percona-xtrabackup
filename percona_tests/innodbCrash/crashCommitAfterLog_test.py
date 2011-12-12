@@ -19,85 +19,42 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import os
-import sys
-import random
-import signal
-import unittest
-import subprocess
-import cStringIO
-import hashlib
-import threading
-import commands
-import time
+from percona_tests.innodbCrash.innodbCrashTestCase import innodbCrashTestCase
+from percona_tests.innodbCrash import suite_config
 
-import MySQLdb 
+server_requirements = suite_config.server_requirements
+server_requests = suite_config.server_requests
+servers = suite_config.servers 
+test_executor = suite_config.test_executor 
 
-from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
-
-server_requirements = [ [ ("--binlog-do-db=test "
-                           "--innodb-file-per-table "
-                           "--innodb_file_format='Barracuda' "
-                           #"--innodb_log_compressed_pages=0 "
-                           #"--innodb_background_checkpoint=0 "
-                           "--sync_binlog=100 "
-                           "--innodb_flush_log_at_trx_commit=2 "
-                           )]
-                       ,[ ("--innodb_file_format='Barracuda' "
-                           #"--innodb_log_compressed_pages=1 "
-                           "--innodb_flush_log_at_trx_commit=2"
-                          )]
-                      ]
-server_requests = {'join_cluster':[(0,1)]}
-servers = []
-server_manager = None
-test_executor = None
-
-class basicTest(mysqlBaseTestCase):
+class basicTest(innodbCrashTestCase):
 
     def test_crash(self):
+        """
+        self.logging = test_executor.logging
         self.servers = servers
-        master_server = servers[0]
-        slave_server = servers[1]
-        randgen_threads = 5  
-        randgen_queries_per_thread = 1000 
-        crashes = 10 
-        workers = []
+        self.master_server = servers[0]
+        self.slave_server = servers[1]
+        self.randgen_threads = suite_config.randgen_threads  
+        self.randgen_queries_per_thread = suite_config.randgen_queries_per_thread 
+        self.crashes = suite_config.crashes 
+        """
+        self.initialize(test_executor, servers, suite_config)
 
         # create our table
-        test_cmd = "./gendata.pl --spec=conf/percona/percona_no_blob.zz "
-        retcode, output = self.execute_randgen(test_cmd, test_executor, servers[0])
-        self.assertEqual(retcode,0, output)
+        self.test_bed_cmd = "./gendata.pl --spec=conf/percona/percona_no_blob.zz "
+        self.create_test_bed()
 
-        while crashes:
-            print "Crashes remaining: %d" %(crashes)
-            crashes -= 1
- 
-            # generate our workload via randgen
-            test_seq = [  "./gentest.pl"
+        # Our randgen load-generation command (transactional grammar)
+        self.test_seq = [ "./gentest.pl"
                         , "--grammar=conf/percona/trx_crash_commit_after_log.yy"
-                        , "--queries=%d" %(randgen_queries_per_thread)
-                        , "--threads=%d" %(randgen_threads)
+                        , "--queries=%d" %(self.randgen_queries_per_thread)
+                        , "--threads=%d" %(self.randgen_threads)
                         , "--sqltrace"
                         , "--debug"
-                       ]
-            test_seq = " ".join(test_seq) 
-            randgen_process = self.execute_randgen(test_seq, test_executor, master_server)
+                        , "--seed=%s" %(self.randgen_seed)
+                        ]
+        self.test_seq = " ".join(self.test_seq)
+        self.execute_crash_test()
 
-            if master_server.ping(quiet=True):
-                # randgen didn't kill the master : (
-                print "Killing master manually..."           
-                master_server.die()
-
-            retcode = master_server.start()
-            timeout = 300
-            decrement = 1 
-            while timeout and not master_server.ping(quiet=True):
-                time.sleep(decrement)
-                timeout -= decrement
-            slave_server.slave_stop()
-            slave_server.slave_start()
-            master_server.wait_sync_with_slaves([slave_server],timeout=60)
-            result = self.check_slaves_by_checksum(master_server,[slave_server])
-            self.assertEqual(result,None,msg=result)
 

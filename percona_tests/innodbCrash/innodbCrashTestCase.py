@@ -33,7 +33,9 @@ class innodbCrashTestCase(mysqlBaseTestCase):
         self.slave_server = servers[1]
         self.randgen_threads = suite_config.randgen_threads
         self.randgen_queries_per_thread = suite_config.randgen_queries_per_thread
+        self.randgen_seed = test_executor.system_manager.randgen_seed
         self.crashes = suite_config.crashes
+        self.kill_db_after = suite_config.kill_db_after
 
     def create_test_bed(self):
         retcode, output = self.execute_randgen(self.test_bed_cmd, self.test_executor, self.master_server)
