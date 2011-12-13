@@ -57,7 +57,7 @@ class Worker(threading.Thread):
             self.logging.test_debug( "Will crash after:%d seconds" %(self.time_delay))
             time.sleep(self.time_delay)
             pid = None 
-            timeout = self.time_delay
+            timeout = self.time_delay*6
             decrement = .25
             while not pid and timeout:
                 pid = self.server.get_pid()
@@ -66,9 +66,9 @@ class Worker(threading.Thread):
             self.logging.test_debug( "Crashing server: port: %s, pid: %s" %(self.server.master_port, pid))
             try:
                 os.kill(int(self.server.pid), signal.SIGKILL)
-                self.logging.test_debug( "Killed server pid: %d" %(int(self.server.pid)))
+                self.logging.test_debug( "Killed server pid: %s" %pid)
             except OSError, e:
-                  self.logging.test_debug( "Didn't kill server pid: %s" %self.server.pid)
+                  self.logging.test_debug( "Didn't kill server pid: %s" %pid)
                   self.logging.test_debug( e)
         except Exception, e:
             print "caught (%s)" % e
@@ -116,12 +116,13 @@ class basicTest(innodbCrashTestCase):
             workers.append(worker)
  
             randgen_process = self.get_randgen_process(test_seq, self.test_executor, self.master_server)
-            if not self.master_server.ping(quiet=True) and (randgen_process.poll() is None):
+            #if not self.master_server.ping(quiet=True) and (randgen_process.poll() is None):
                 # Our server is dead, but randgen is running, we kill it to speed up testing
-                randgen_process.send_signal(signal.SIGINT)
+                #randgen_process.send_signal(signal.SIGINT)
 
             for w in workers:
               w.join()
+            time.sleep(2)
             while randgen_process.poll():
                 randgen_process.send_signal(signal.SIGINT)
 
