@@ -33,7 +33,7 @@ test_executor = None
 class basicTest(mysqlBaseTestCase):
 
     def test_runCrashme(self):
-        test_cmd = "$SQLBENCH_DIR/crash-me --server=drizzled --host=127.0.0.1 --force --dir=$DRIZZLE_TEST_WORKDIR  --connect-options=port=$MASTER_MYPORT --verbose --debug --user=root"
+        test_cmd = "$SQLBENCH_DIR/crash-me --server=drizzled --host=127.0.0.1 --force --dir=$DRIZZLE_TEST_WORKDIR  --connect-options=port=$MASTER_MYPORT --verbose --debug --user=root --batch-mode"
         test_status, retcode, output = execute_crashme(test_cmd, test_executor, servers)
         self.assertEqual(retcode, 0, msg = output)
         self.assertEqual(test_status, 'pass', msg = output)

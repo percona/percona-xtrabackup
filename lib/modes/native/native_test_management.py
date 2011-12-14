@@ -147,11 +147,7 @@ class testManager(test_management.testManager):
         # test_name = filename - .py...simpler
         test_name = os.path.basename(testfile).replace('.py','')
         test_comment = None
-        test_server_requirements, test_server_requests = self.get_server_reqs(testfile)
-        if test_server_requirements:
-            server_requirements = test_server_requirements
-        if test_server_requests:
-            server_requests = test_server_requests
+        server_requirements, server_requests = self.get_server_reqs(testfile)
         
         return testCase( self.system_manager
                        , name = test_name
