@@ -12,9 +12,9 @@ use File::Spec;
 use Pod::Usage qw(pod2usage);
 use POSIX "strftime";
 use POSIX ":sys_wait_h";
-use POSIX "tmpnam";
 use FileHandle;
 use File::Basename;
+use File::Temp;
 use English qw(-no_match_vars);
 
 # version of this script
@@ -54,7 +54,7 @@ my $default_compression_level = 1;
 
 # time in seconds after which a dummy query is sent to mysql server
 # in order to keep the database connection alive
-my $mysql_keep_alive_timeout = 1800;
+my $mysql_keep_alive = 5;
 
 ######################################################################
 # end of modifiable parameters
@@ -93,6 +93,7 @@ my $option_incremental_dir = '';
 my $option_incremental_lsn = '';
 my $option_extra_lsndir = '';
 my $option_remote_host = '';
+my $option_rsync = '';
 my $option_stream = '';
 my $option_tmpdir = '';
 
@@ -151,10 +152,12 @@ my $mysql_pid = '';
 my $mysql_server_version = '';
 
 # name of the file where stderr of mysql process is directed
-my $mysql_stderr = 'stderr';
+my $mysql_stderr_fh = File::Temp->new();
+my $mysql_stderr = $mysql_stderr_fh->filename;
 
 # name of the file where stdout of mysql process is directed
-my $mysql_stdout = 'stdout';
+my $mysql_stdout_fh = File::Temp->new();
+my $mysql_stdout = $mysql_stdout_fh->filename;
 
 # name of the file where binlog position info is written
 my $binlog_info;
@@ -168,9 +171,6 @@ my $mysql_binlog_position = '';
 # mysql master's binlog position as given by "SHOW SLAVE STATUS" command
 # run on a slave server
 my $mysql_slave_position = '';
-
-# time of the most recent mysql_check call. (value returned by time() function)
-my $mysql_last_access_time = 0;
 
 # process id of ibbackup program (runs as a child process of this script)
 my $ibbackup_pid = '';
@@ -206,6 +206,8 @@ my $dst_name;
 my $win = ($^O eq 'MSWin32' ? 1 : 0);
 my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 my $xtrabackup_binary_file = 'xtrabackup_binary';
+my %rsync_files_hash;
+
 ######################################################################
 # program execution begins here
 ######################################################################
@@ -232,10 +234,10 @@ if ($option_copy_back) {
 	else {
 		if( $option_ibbackup_binary eq "autodetect" ){
 			# Try to connect MySQL and get the version
-			print "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
+			print STDERR "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
 			my $options = get_mysql_options();
 			$mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ");
-			print "Connected to MySQL with pid $mysql_pid\n";
+			print STDERR "Connected to MySQL with pid $mysql_pid\n";
 			sleep 1;
 			if ($mysql_pid && $mysql_pid == waitpid($mysql_pid, &WNOHANG)) {
 				my $reason = `cat $mysql_stderr`;
@@ -245,7 +247,7 @@ if ($option_copy_back) {
 				}
 			else{
 				mysql_close();
-				print "Connected successfully\n";
+				print STDERR "Connected successfully\n";
 				$option_ibbackup_binary = set_xtrabackup_version();
 				}
 			}
@@ -351,7 +353,6 @@ sub backup {
     # check that we can connect to the database. This done by
     # connecting, issuing a query, and closing the connection.
     mysql_open();
-    mysql_check();
     mysql_close();
 
     # start ibbackup as a child process
@@ -364,41 +365,38 @@ sub backup {
 
     # connect to database
     mysql_open();
-    mysql_check();
 
     if ($option_safe_slave_backup) {
-      mysql_check();
       wait_for_safe_slave();
     }
 
-    if (!$option_incremental) {
-        # flush tables with read lock
-        mysql_check();
-        mysql_lockall() if !$option_no_lock;
+    if (!$option_incremental && !$option_no_lock) {
+        # make a prep copy before locking tables, if using rsync
+        backup_files(1);
 
+        # flush tables with read lock
+        mysql_lockall();
     }
 
     if ($option_slave_info) {
-        mysql_check();
         write_slave_info();
     }
 
 
     # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
-    backup_files();
+    # (or finalize the backup by syncing changes if using rsync)
+    backup_files(0);
 
     # resume ibbackup and wait till it has finished
     my $ibbackup_exit_code = resume_ibbackup();
 
     if (!$option_incremental) {
-        mysql_check();
         # release read locks on all tables
         mysql_unlockall() if !$option_no_lock;
 
     }
 
     if ( $option_safe_slave_backup && $host_is_slave ) {
-      mysql_check();
       print STDERR "$prefix: Starting slave SQL thread\n";
       mysql_send('START SLAVE SQL_THREAD;');
     }
@@ -487,6 +485,25 @@ sub is_in_array {
     return 0;
 }
 
+#
+# if_directory_exists_and_empty accepts two arguments:
+# variable with directory name and comment.
+# Sub checks that directory exists and is empty
+# usage: is_directory_exists_and_empty($directory,"Comment");
+#
+
+sub if_directory_exists_and_empty {
+    my $empty_dir = shift;
+    my $is_directory_empty_comment = shift;
+    if (! -d $empty_dir) {
+        die "$is_directory_empty_comment directory does not exist!";
+    }
+    opendir (my $dh, $empty_dir) or die "Not a directory";
+    if ( ! scalar( grep { $_ ne "." && $_ ne ".." } readdir($dh)) == 0) {
+        die "$is_directory_empty_comment directory is not empty!";
+    }
+    closedir($dh);
+}
 
 #
 # copy_back subroutine copies data and index files from backup directory 
@@ -507,18 +524,10 @@ sub copy_back {
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
-    # check that original data directory exists
-    if (! -d $orig_datadir) {
-        Die "Original data directory '$orig_datadir' does not exist!";
-    }
-    # check that original InnoDB data directory exists
-    if (! -d $orig_ibdata_dir) {
-        Die "Original InnoDB data directory '$orig_ibdata_dir' does not exist!";
-    }
-    # check that original InnoDB log directory exists
-    if (! -d $orig_iblog_dir) {
-        Die "Original InnoDB log directory '$orig_iblog_dir' does not exist!";
-    }
+    # check that original data directories exist and they are empty
+    if_directory_exists_and_empty($orig_datadir, "Original data");
+    if_directory_exists_and_empty($orig_ibdata_dir, "Original InnoDB data");
+    if_directory_exists_and_empty($orig_iblog_dir, "Original InnoDB log");
 
     # check that the original options file and the backup options file have
     # the same value for "innodb_data_file_path" option
@@ -983,36 +992,25 @@ sub get_mysql_options {
 
 
 #
-# mysql_open subroutine starts mysql as a child process with
-# a pipe connection.
+# Check that the server is responding to queries
 #
-sub mysql_open {
-    my $options = get_mysql_options();
-    # run mysql as a child process with a pipe connection
-    $now = current_time();
-    print STDERR "$now  $prefix Starting mysql with options: $options\n";
-    $mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ") or Die "Failed to spawn mysql child process: $!";
-    MYSQL_WRITER->autoflush(1);
-    $now = current_time();
-    print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
-
-    mysql_check();
-}
-
-
-#
-# mysql_check subroutine checks that the connection to mysql child process 
-# is ok.
-#
-sub mysql_check {
+sub mysql_ping {
+    my $alarm_handler = shift;
     my $mysql_pid_copy = $mysql_pid;
 
     # send a dummy query to mysql child process
     $hello_id++;
-    my $hello_message = "innobackup hello $hello_id";
+
+    my $hello_message = "xtrabackup ping $hello_id";
     print MYSQL_WRITER "select '$hello_message';\n" 
         or Die "Connection to mysql child process failed: $!";
 
+    # Don't check server's response if running in a signal handler
+    # because that breaks system() calls
+    if ($alarm_handler)
+    {
+	return 0;
+    }
     # wait for reply
     eval {
         local $SIG{ALRM} = sub { die "alarm clock restart" };
@@ -1041,21 +1039,53 @@ sub mysql_check {
             . " You may adjust time limit by editing the value of parameter"
             . " \"\$mysql_response_timeout\" in this script.)";
     } elsif ($@) { Die $@; }
-    
-    $mysql_last_access_time = time();
 }
 
 
 #
-# mysql_keep_alive subroutine tries to keep connection to the mysqld database
-# server alive by sending a dummy query when the connection has been idle
-# for the specified time.
+# SIGALRM handler which sends a keepalive query to the server
 #
-sub mysql_keep_alive {
-    if ((time() - $mysql_last_access_time) > $mysql_keep_alive_timeout) {
-        # too long idle, send a dummy query
-        mysql_check();
-    }
+sub catch_sigalrm {
+  mysql_ping(1);
+  # Reschedule SIGALRM
+  alarm $mysql_keep_alive;
+}
+
+
+#
+# Schedule periodic server pings
+#
+sub start_keepalives {
+  $SIG{ALRM} = \&catch_sigalrm;
+  alarm $mysql_keep_alive;
+}
+
+#
+# Cancel periodic server pings
+#
+sub stop_keepalives {
+  alarm 0;
+  $SIG{ALRM} = "DEFAULT";
+}
+
+#
+# mysql_open subroutine starts mysql as a child process with
+# a pipe connection.
+#
+sub mysql_open {
+    my $options = get_mysql_options();
+    # run mysql as a child process with a pipe connection
+    $now = current_time();
+    (my $prt_options = $options) =~ s/--password=[^ ]+ /--password=xxxxxxxx /g;
+    print STDERR "$now  $prefix Starting mysql with options: $prt_options\n";
+    $mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ") or Die "Failed to spawn mysql child process: $!";
+    MYSQL_WRITER->autoflush(1);
+    $now = current_time();
+    print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
+
+    mysql_ping(0);
+
+    start_keepalives();
 }
 
 
@@ -1069,10 +1099,14 @@ sub mysql_keep_alive {
 sub mysql_send {
     my $request = shift;
 
+    stop_keepalives();
+
     $current_mysql_request = $request;
     print MYSQL_WRITER "$request\n";
-    mysql_check();
+    mysql_ping(0);
     $current_mysql_request = '';
+
+    start_keepalives();
 }
     
 
@@ -1080,6 +1114,8 @@ sub mysql_send {
 # mysql_close subroutine terminates mysql child process gracefully.
 # 
 sub mysql_close {
+    stop_keepalives();
+
     print MYSQL_WRITER "quit\n";
     $now = current_time();
     print STDERR "$now  $prefix Connection to database server closed\n";
@@ -1454,15 +1490,11 @@ sub init {
         if (!$option_remote_host && !$option_stream) {
         $backup_config_file = $backup_dir . '/backup-my.cnf';
         $suspend_file = $backup_dir . '/xtrabackup_suspended';
-        $mysql_stdout = $backup_dir . '/mysql-stdout';
-        $mysql_stderr = $backup_dir . '/mysql-stderr';
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
         $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
         $tmp_logfile = $option_tmpdir . '/xtrabackup_logfile';
-        $mysql_stdout = $option_tmpdir . '/mysql-stdout';
-        $mysql_stderr = $option_tmpdir . '/mysql-stderr';
         if ($option_stream) {
             $backup_config_file = $option_tmpdir . '/backup-my.cnf';
             $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
@@ -1594,6 +1626,7 @@ sub check_args {
                         'extra-lsndir=s' => \$option_extra_lsndir,
                         'remote-host=s' => \$option_remote_host,
                         'stream=s' => \$option_stream,
+			'rsync' => \$option_rsync,
                         'tmpdir=s' => \$option_tmpdir,
                         'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
@@ -1673,10 +1706,6 @@ sub check_args {
             } else {
                 $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
             }
-
-            #print STDERR "--incremental_basedir=$incremental_basedir\n";
-            #print STDERR "incremental backup is not supported for now.\n";
-            #exit(1);
         }
     } else {
         # get backup directory
@@ -1689,6 +1718,11 @@ sub check_args {
 	  print STDERR "--slave-info is used with either --no-lock or --incremental but without --safe-slave-backup. The binlog position cannot be consistent with the backup data.\n";
 	    exit(1);
 	}
+    }
+
+    if ($option_rsync && ($option_remote_host || $option_stream)) {
+        print STDERR "--rsync doesn't work with --remote-host or --stream\n";
+	exit(1);
     }
 
     print STDERR "\n";
@@ -1796,16 +1830,43 @@ sub remove_from_array {
 # backup directory.
 #
 sub backup_files {
+    my $prep_mode = shift;
     my $source_dir = get_option(\%config, 'mysqld', 'datadir');
     my @list;
     my $file;
     my $database;
     my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
+    my $rsync_file_list;
+    my $operation;
+    my $rsync_tmpfile_pass1 = "$option_tmpdir/xtrabackup_rsyncfiles_pass1";
+    my $rsync_tmpfile_pass2 = "$option_tmpdir/xtrabackup_rsyncfiles_pass2";
+
+    # prep_mode will pre-copy the data, so that rsync is faster the 2nd time
+    # saving time while all tables are locked.
+    # currently only rsync mode is supported for prep.
+    if ($prep_mode and !$option_rsync) {
+        return;
+    }
+
+    if ($option_rsync) {
+	if ($prep_mode) {
+	    $rsync_file_list = $rsync_tmpfile_pass1;
+	} else {
+	    $rsync_file_list = $rsync_tmpfile_pass2;
+	}
+	open(RSYNC, ">$rsync_file_list")
+	    || Die "Can't open $rsync_file_list for writing: $!\n";
+    }
 
     opendir(DIR, $source_dir) 
         || Die "Can't open directory '$source_dir': $!\n";
     $now = current_time();
-    print STDERR "\n$now  $prefix Starting to backup .frm, .MRG, .MYD, .MYI,\n";
+    if ($prep_mode) {
+	$operation = "a prep copy of";
+    } else {
+	$operation = "to backup";
+    }
+    print STDERR "\n$now  $prefix Starting $operation .frm, .MRG, .MYD, .MYI,\n";
     print STDERR "$prefix .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files in\n";
     print STDERR "$prefix subdirectories of '$source_dir'\n";
     # loop through all database directories
@@ -1843,9 +1904,6 @@ sub backup_files {
                 "'$source_dir/$database/$wildcard' ($file_c files)\n";
         }
         foreach $file (@list) {
-            # copying may take a long time, so we have to prevent
-            # mysql connection from timing out
-            mysql_keep_alive();
             next unless check_if_required($database, $file);
 
 	    if($option_include) {
@@ -1859,7 +1917,13 @@ sub backup_files {
             if ($print_each_file) {
                 print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
             }
-            if (!$option_remote_host && !$option_stream) {
+
+	    if ($option_rsync) {
+		print RSYNC "$database/$file\n";
+		if (!$prep_mode) {
+		    $rsync_files_hash{"$database/$file"} = 1;
+		}
+            } elsif (!$option_remote_host && !$option_stream) {
                 $src_name = escape_path("$source_dir/$database/$file");
                 $dst_name = escape_path("$backup_dir/$database");
                 system("$CP_CMD \"$src_name\" \"$dst_name\"")
@@ -1895,9 +1959,54 @@ sub backup_files {
     }
     closedir(DIR);
 
+    if ($option_rsync) {
+	close(RSYNC);
+
+	# do the actual rsync now
+	$now = current_time();
+	my $rsync_cmd = "rsync -t \"$source_dir\" --files-from=\"$rsync_file_list\" \"$backup_dir\"";
+	print STDERR "$now Starting rsync as: $rsync_cmd\n";
+
+	# ignore errors in the prep mode, since we are running without lock,
+	# so some files may have disappeared.
+	if (system("$rsync_cmd") && !$prep_mode) {
+	    Die "rsync failed: $!\n";
+	}
+
+	$now = current_time();
+	print STDERR "$now rsync finished successfully.\n";
+
+	# Remove from $backup_dir files that have been removed between first and
+	# second passes. Cannot use "rsync --delete" because it does not work
+	# with --files-from.
+	if (!$prep_mode) {
+	    open(RSYNC, "<$rsync_tmpfile_pass1")
+		|| Die "Can't open $rsync_tmpfile_pass1 for reading: $!\n";
+
+	    while (<RSYNC>) {
+		chomp;
+		if (!exists $rsync_files_hash{$_}) {
+		    print STDERR "Removing '$backup_dir/$_'\n";
+		    unlink "$backup_dir/$_";
+		}
+	    }
+
+	    close(RSYNC);
+	    unlink "$rsync_tmpfile_pass1" || \
+		Die "Failed to delete $rsync_tmpfile_pass1: $!";
+	    unlink "$rsync_tmpfile_pass2" || \
+		Die "Failed to delete $rsync_tmpfile_pass2: $!";
+	}
+    }
+
+    if ($prep_mode) {
+	$operation = "a prep copy of";
+    } else {
+	$operation = "backing up";
+    }
     $now = current_time();
-    print STDERR "$now  $prefix Finished backing up .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSV, .CSM and .opt files\n\n";
-}
+    print STDERR "$now  $prefix Finished $operation .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSV, .CSM and .opt files\n\n";
+ }
 
 
 #
