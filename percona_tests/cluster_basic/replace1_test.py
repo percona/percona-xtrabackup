@@ -19,8 +19,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import time
-
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 from percona_tests.innodbCrash import suite_config
 
@@ -29,52 +27,35 @@ server_requests = suite_config.server_requests
 servers = suite_config.servers 
 test_executor = suite_config.test_executor 
 
-
 class basicTest(mysqlBaseTestCase):
 
-    def test_alterAddColAfter(self):
+    def test_replace(self):
         self.servers = servers
+        logging = test_executor.logging
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
 
         queries = [ ("CREATE TABLE t1(a INT NOT NULL, "
-                     "b INT NOT NULL, "
-                     "c DATE, PRIMARY KEY(a)) "
+                     "b INT NOT NULL, PRIMARY KEY(a), KEY b_key1 (b))) "
                      "Engine=Innodb " )
-                   ,("ALTER TABLE t1 "
-                     "MODIFY COLUMN b "
-                     "CHAR(200) "
-                     "DEFAULT 'TNETENNBA' AFTER C" 
-                    )
+                   , "INSERT INTO t1 (b) VALUES (10),(20),(30),(40),(50),(60)"
+                   , "REPLACE INTO t1 VALUES (1,100),(3,300); "
                   ]
         for query in queries:
             retcode, result = self.execute_query(query, master_server)
             self.assertEqual( retcode, 0, result)
         # check 'master'
-        query = "SHOW CREATE TABLE t1"
+        query = "SELECT * FROM t1"
         retcode, master_result_set = self.execute_query(query, master_server)
         self.assertEqual(retcode,0, master_result_set)
-        expected_result_set = ( ('t1'
-                                , ("CREATE TABLE `t1` "
-                                   "(\n  `a` int(11) NOT NULL,"
-                                   "\n  `c` date DEFAULT NULL,"
-                                   "\n  `b` char(200) "
-                                   "DEFAULT 'TNETENNBA'," 
-                                   "\n  PRIMARY KEY (`a`)\n) " 
-                                   "ENGINE=InnoDB " 
-                                   'DEFAULT CHARSET=latin1'
-                                  )
-                                ),
-                              ) 
+        expected_result_set = ""
         self.assertEqual( master_result_set
                         , expected_result_set
                         , msg = (master_result_set, expected_result_set)
                         )
-        master_slave_diff = self.check_slaves_by_query( master_server
-                                                 , other_nodes
-                                                 , query
-                                                 , expected_result = expected_result_set
-                                                 )
+        master_slave_diff = self.check_slaves_by_checksum( master_server
+                                                         , other_nodes
+                                                         )
         self.assertEqual(master_slave_diff, None, master_slave_diff)
         

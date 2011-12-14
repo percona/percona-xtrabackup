@@ -19,17 +19,15 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import unittest
-import os
 import time
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
+from percona_tests.innodbCrash import suite_config
 
-server_requirements = [[],[],[],[]]
-server_requests = {'join_cluster':[(0,1), (0,2)]}
-servers = []
-server_manager = None
-test_executor = None
+server_requirements = suite_config.server_requirements
+server_requests = suite_config.server_requests
+servers = suite_config.servers 
+test_executor = suite_config.test_executor 
 
 class basicTest(mysqlBaseTestCase):
 
