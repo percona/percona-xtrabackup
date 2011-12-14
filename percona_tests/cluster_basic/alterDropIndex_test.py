@@ -22,7 +22,7 @@
 import time
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
-from percona_tests.innodbCrash import suite_config
+from percona_tests.cluster_basic import suite_config
 
 server_requirements = suite_config.server_requirements
 server_requests = suite_config.server_requests
