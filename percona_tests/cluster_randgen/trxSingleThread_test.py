@@ -19,17 +19,15 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import unittest
-import os
 import time
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
+from percona_tests.cluster_basic import suite_config
 
-server_requirements = [[],[],[]]
-server_requests = {'join_cluster':[(0,1), (0,2)]}
-servers = []
-server_manager = None
-test_executor = None
+server_requirements = suite_config.server_requirements
+server_requests = suite_config.server_requests
+servers = suite_config.servers
+test_executor = suite_config.test_executor
 
 class basicTest(mysqlBaseTestCase):
 
@@ -39,13 +37,15 @@ class basicTest(mysqlBaseTestCase):
         master_server = servers[0]
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
-        test_cmd = ("./gentest.pl "
-                    "--gendata=conf/percona/percona_no_blob.zz "
-                    "--grammar=conf/percona/translog_concurrent1.yy "
-                    "--threads=1 "
-                    "--queries=5000 "
-                   )
-        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        test_seq = [ "./gentest.pl "
+                   , "--gendata=conf/percona/percona_no_blob.zz "
+                   , "--grammar=conf/percona/translog_concurrent1.yy "
+                   , "--threads=1 "
+                   , "--queries=%d " %suite_config.randgen_queries
+                   , "--seed=%s" %test_executor.system_manager.randgen_seed
+                   ] 
+        test_seq = " ".join(test_seq)
+        retcode, output = self.execute_randgen(test_seq, test_executor, servers)
         self.assertEqual(retcode, 0, output)
         # check 'master'
         query = "SHOW TABLES IN test"
