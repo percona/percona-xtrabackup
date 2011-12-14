@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 #
 # A script for making backups of InnoDB and MyISAM tables, indexes and .frm
 # files.
