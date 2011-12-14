@@ -693,14 +693,26 @@ sub apply_log {
     # We should not create ib_logfile files if we prepare for following incremental applies
     # Also we do not prepare ib_logfile if we applied incremental changes
     if (!( ($option_redo_only) or ($option_incremental_dir))) { 
-    $now = current_time();
-    print STDERR "\n$now  $prefix Restarting xtrabackup with command: $cmdline\nfor creating ib_logfile*\n\n";
-    $rcode = system("$cmdline");
-    if ($rcode) {
-        # failure
-        Die "\n$prefix xtrabackup (2nd execution) failed";
+        $now = current_time();
+        print STDERR "\n$now  $prefix Restarting xtrabackup with command: $cmdline\nfor creating ib_logfile*\n\n";
+        $rcode = system("$cmdline");
+        if ($rcode) {
+            # failure
+            Die "\n$prefix xtrabackup (2nd execution) failed";
+        }
     }
+
+    # If we were applying an incremental change set, and xtrabackup_slave_info exists in the incremental set
+    # Update the xtrabackup_slave_info into the target dir  
+    if ( $option_incremental_dir && ( -e "$option_incremental_dir/xtrabackup_slave_info" ) ) {
+        $cmdline = "cp $option_incremental_dir/xtrabackup_slave_info $backup_dir/xtrabackup_slave_info";
+        $rcode = system("$cmdline");
+        if ($rcode) {
+            # failure
+            Die "\n$prefix Failed to update xtrabackup_slave_info in $backup_dir";
+        }
     }
+
 }
 
 
