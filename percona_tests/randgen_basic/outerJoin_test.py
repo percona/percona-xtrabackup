@@ -35,6 +35,6 @@ class basicTest(mysqlBaseTestCase):
     def test_OuterJoin1(self):
         self.servers = servers
         test_cmd = "./gentest.pl --gendata=conf/percona/outer_join_percona.zz --grammar=conf/percona/outer_join_percona.yy --queries=500 --threads=5"
-        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers[0])
         self.assertTrue(retcode==0, output)
 
