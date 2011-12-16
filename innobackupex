@@ -702,14 +702,28 @@ sub apply_log {
         }
     }
 
-    # If we were applying an incremental change set, and xtrabackup_slave_info exists in the incremental set
-    # Update the xtrabackup_slave_info into the target dir  
-    if ( $option_incremental_dir && ( -e "$option_incremental_dir/xtrabackup_slave_info" ) ) {
-        $cmdline = "cp $option_incremental_dir/xtrabackup_slave_info $backup_dir/xtrabackup_slave_info";
-        $rcode = system("$cmdline");
-        if ($rcode) {
-            # failure
-            Die "\n$prefix Failed to update xtrabackup_slave_info in $backup_dir";
+    # If we were applying an incremental change set, we need to make sure the xtrabackup_slave_info is still correct
+    if ( $option_incremental_dir ) {
+
+        # If the latest backup has this file, then update the target dir with the new file
+        if ( -e "$option_incremental_dir/xtrabackup_slave_info" ) {
+            print STDERR "\n$now  $prefix Updating xtrabackup_slave_info with new slave position info...";
+            $cmdline = "cp $option_incremental_dir/xtrabackup_slave_info $backup_dir/xtrabackup_slave_info";
+            $rcode = system("$cmdline");
+            if ($rcode) {
+                # failure
+                Die "\n$prefix Failed to update xtrabackup_slave_info in $backup_dir";
+            }
+        # If the latest backup has no file, we need to remove the old xtrabackup_slave_info file, because it is out of date
+        } elsif ( -e "$backup_dir/xtrabackup_slave_info" ) {
+            print STDERR "\n$now  $prefix No updated xtrabackup_slave_info found in incremental dir, removing stale xtrabackup_slave_info file from target dir.";
+            $cmdline = "rm $backup_dir/xtrabackup_slave_info";
+            $rcode = system("$cmdline");
+            if ($rcode) {
+                # failure
+                Die "\n$prefix Failed to remove stale xtrabackup_slave_info in $backup_dir";
+            }
+            
         }
     }
 
