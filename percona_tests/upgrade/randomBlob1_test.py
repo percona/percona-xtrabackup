@@ -26,12 +26,26 @@ server_requests = None
 servers = None 
 test_executor = None 
 
+show_tables_expected_result = (('A',), ('AA',), ('B',), ('BB',), ('C',), ('CC',), ('D',), ('DD',))
+expected_rowcounts = {0: ((0L,),)
+                     ,1:((10L,),)
+                     ,2: ((0L,),)
+                     ,3: ((10L,),)
+                     ,4: ((1L,),)
+                     ,5: ((100L,),)
+                     ,6: ((1L,),)
+                     ,7: ((100L,),)
+                     }
+
+
 class basicTest(upgradeBaseTestCase):
 
-    def test_upgrade(self):
+    def test_upgradePrevVersion(self):
         self.servers = servers
         self.master_server = servers[0]
         self.logging = test_executor.logging
+        self.expected_rowcounts = expected_rowcounts
+        self.show_tables_expected_result = show_tables_expected_result
 
         # Determine our to-be-upgraded datadir
         # based on the server version
@@ -43,19 +57,20 @@ class basicTest(upgradeBaseTestCase):
             version_string = '5.1'
             
         self.upgrade_datadir = 'upgrade_data/mysql_%s_blobs' %version_string
-        self.show_tables_expected_result = (('A',), ('AA',), ('B',), ('BB',), ('C',), ('CC',), ('D',), ('DD',))
-        self.expected_rowcounts = {0: ((0L,),)
-                                  ,1:((10L,),)
-                                  ,2: ((0L,),)
-                                  ,3: ((10L,),)
-                                  ,4: ((1L,),)
-                                  ,5: ((100L,),)
-                                  ,6: ((1L,),)
-                                  ,7: ((100L,),)
-                                  }
 
         self.execute_upgrade_test()
  
  
-            
-        
+    def test_upgradeCurVersion(self):            
+        self.servers = servers
+        self.master_server = servers[0]
+        self.logging = test_executor.logging
+        self.expected_rowcounts = expected_rowcounts
+        self.show_tables_expected_result = show_tables_expected_result
+
+        # Determine our to-be-upgraded datadir
+        # based on the server version
+        version_string = self.master_server.version[:3]
+        self.upgrade_datadir = 'upgrade_data/mysql_%s_blobs' %version_string
+        self.execute_upgrade_test()
+ 
