@@ -1186,7 +1186,7 @@ sub write_binlog_info {
     # get "show master status" output lines (2) from mysql output
     file_to_array($mysql_stdout, \@lines);
     foreach my $line (@lines) {
-        if ($line =~ m/innobackup hello/) {
+        if ($line =~ m/xtrabackup ping/) {
             # this is a hello message, ignore it
         } else {
             # this is output line from "show master status"
