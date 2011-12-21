@@ -38,7 +38,7 @@ class basicTest(mysqlBaseTestCase):
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
         test_cmd = "./gendata.pl --spec=conf/percona/percona_no_blob.zz "
-        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, master_server)
         self.assertTrue(retcode==0, output)
         # check 'master'
         query = "SHOW TABLES IN test"

@@ -22,7 +22,7 @@
 import time
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
-from percona_tests.cluster_basic import suite_config
+from percona_tests.cluster_randgen import suite_config
 
 server_requirements = suite_config.server_requirements
 server_requests = suite_config.server_requests
@@ -45,7 +45,7 @@ class basicTest(mysqlBaseTestCase):
                    , "--seed=%s" %test_executor.system_manager.randgen_seed
                    ] 
         test_seq = " ".join(test_seq)
-        retcode, output = self.execute_randgen(test_seq, test_executor, servers)
+        retcode, output = self.execute_randgen(test_seq, test_executor, master_server)
         self.assertEqual(retcode, 0, output)
         # check 'master'
         query = "SHOW TABLES IN test"

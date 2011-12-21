@@ -28,6 +28,7 @@ server_requirements = suite_config.server_requirements
 server_requests = suite_config.server_requests
 servers = suite_config.servers 
 test_executor = suite_config.test_executor 
+
 class basicTest(mysqlBaseTestCase):
 
     def test_alterAddColAfter(self):

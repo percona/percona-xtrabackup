@@ -19,6 +19,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import time
+
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 from percona_tests.cluster_basic import suite_config
 
@@ -47,7 +49,7 @@ class basicTest(mysqlBaseTestCase):
         query = "SELECT * FROM t1"
         retcode, master_result_set = self.execute_query(query, master_server)
         self.assertEqual(retcode,0, master_result_set)
-        expected_result_set = ""
+        expected_result_set = ((1L, 42L, 'I have been replaced'), (4L, 20L, 'b'), (7L, 30L, 'c'), (10L, 40L, 'd'), (13L, 50L, 'e'), (16L, 60L, 'f')) 
         self.assertEqual( master_result_set
                         , expected_result_set
                         , msg = (master_result_set, expected_result_set)

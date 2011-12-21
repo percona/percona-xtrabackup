@@ -19,6 +19,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import time
+
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 from percona_tests.cluster_basic import suite_config
 
@@ -36,8 +38,8 @@ class basicTest(mysqlBaseTestCase):
         other_nodes = servers[1:] # this can be empty in theory: 1 node
         time.sleep(5)
 
-        queries = [ ("CREATE TABLE t1(a INT NOT NULL, "
-                     "b INT NOT NULL, PRIMARY KEY(a), KEY b_key1 (b))) "
+        queries = [ ("CREATE TABLE t1(a INT NOT NULL AUTO_INCREMENT, "
+                     "b INT NOT NULL, PRIMARY KEY(a), KEY b_key1 (b)) "
                      "Engine=Innodb " )
                    , "INSERT INTO t1 (b) VALUES (10),(20),(30),(40),(50),(60)"
                    , "REPLACE INTO t1 VALUES (1,100),(3,300); "
@@ -49,7 +51,7 @@ class basicTest(mysqlBaseTestCase):
         query = "SELECT * FROM t1"
         retcode, master_result_set = self.execute_query(query, master_server)
         self.assertEqual(retcode,0, master_result_set)
-        expected_result_set = ""
+        expected_result_set = ((4L, 20L), (7L, 30L), (10L, 40L), (13L, 50L), (16L, 60L), (1L, 100L), (3L, 300L)) 
         self.assertEqual( master_result_set
                         , expected_result_set
                         , msg = (master_result_set, expected_result_set)
