@@ -28,17 +28,19 @@ use GenTest::Constants;
 use GenTest::Executor;
 use GenTest::Comparator;
 
+use Data::Dumper;
+
 1;
 
 my %option_defaults = (
-        'optimizer_use_mrr'             => 'disable',
-        'mrr_buffer_size'               => 262144,
-        'join_cache_level'              => 0,
-        'join_buffer_size'              => 131072,
-        'join_buffer_space_limit'       => 1048576,
-        'rowid_merge_buff_size'         => 8388608,
-	'storage_engine'		=> 'MyISAM',
-        'optimizer_switch'              => 'index_merge=off,index_merge_union=off,index_merge_sort_union=off,index_merge_intersection=off,index_merge_sort_intersection=off,table_elimination=off'
+	'optimizer_use_mrr'             => 'disable',
+	'mrr_buffer_size'               => 262144,
+	'join_cache_level'              => 0,
+	'join_buffer_size'              => 131072,
+	'join_buffer_space_limit'       => 1048576,
+	'rowid_merge_buff_size'         => 8388608,
+	'storage_engine'                => 'MyISAM',
+	'optimizer_switch'              => 'index_merge=off,index_merge_union=off,index_merge_sort_union=off,index_merge_intersection=off,index_merge_sort_intersection=off,table_elimination=off,in_to_exists=off'
 );
 
 
@@ -66,19 +68,22 @@ sub oracle {
 		$testcase->dbObjectsToString()
         ));
 
+	if ($#{$testcase->queries()} > 0) {
+		$testcase_string .= "\n".join(";\n", @{$testcase->queries()}[0..$#{$testcase->queries()}-1]).";\n";
+	}
+
 	open (LD, '>/tmp/last_dump.test');
 	print LD $testcase_string;
 	close LD;
 
 	$dbh->do($testcase_string, { RaiseError => 1 , mysql_multi_statements => 1 });
 
-	my $original_query = $testcase->queries()->[0];
+	my $original_query = $testcase->queries()->[$#{$testcase->queries()}];
 	my $original_result = $executor->execute($original_query);
 
-	use Data::Dumper;
-	print Dumper $original_result;
+#	print Dumper $original_result;
 	my $original_explain = $executor->execute("EXPLAIN ".$original_query);
-	print Dumper $original_explain;
+#	print Dumper $original_explain;
 
         $testcase_string .= "\n$original_query;\n";
 
@@ -91,19 +96,28 @@ sub oracle {
 	$dbh->do("SET SESSION optimizer_use_mrr = 'disable'");
 	$dbh->do("SET SESSION optimizer_switch='".$option_defaults{'optimizer_switch'}."'");
 
-	my $fullscan_result = $executor->execute($original_query);
+	my $no_hints_query = $original_query;
+	$no_hints_query =~ s{(FORCE|IGNORE|USE)\s+KEY\s*\(.*?\)}{}sio;
+
+	my $fullscan_result = $executor->execute($no_hints_query);
 
 #	$dbh->do("DROP DATABASE fullscan$$");
 
         my $compare_outcome = GenTest::Comparator::compare($original_result, $fullscan_result);
+	print "Compare outcome is: ".$compare_outcome."\n";
 
 	if (
 		($original_result->status() != STATUS_OK) ||
 		($fullscan_result->status() != STATUS_OK) ||
 		($compare_outcome == STATUS_OK)
 	) {
+		open (LR, '>/tmp/last_not_repeatable.test');
+		print LR $testcase_string;
+		close LR;
 		return ORACLE_ISSUE_NO_LONGER_REPEATABLE;
 	} else {
+#		print Dumper $original_result;
+#		print Dumper $fullscan_result;
 		open (LR, '>/tmp/last_repeatable.test');
 		print LR $testcase_string;
 		close LR;

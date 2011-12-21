@@ -95,13 +95,19 @@ sub participatingRules {
 sub next {
 	my ($generator, $executors) = @_;
     
-	my $grammar = $generator->grammar();
-	my $prng = $generator->prng();
-	my $mask = $generator->mask();
-	my $mask_level = $generator->maskLevel();
+	my $grammar = $generator->[GENERATOR_GRAMMAR];
+	my $grammar_rules = $grammar->rules();
 
-    my $stack = GenTest::Stack::Stack->new();
-    my $global = $generator->globalFrame();
+	my $prng = $generator->[GENERATOR_PRNG];
+
+	my $stack = GenTest::Stack::Stack->new();
+	my $global = $generator->globalFrame();
+
+	my %rule_counters;
+	my %invariants;
+
+	my $last_table;
+	my $last_database;
     
 	#
 	# If a temporary file has been left from a previous statement, unlink it.
@@ -113,119 +119,119 @@ sub next {
 	my $starting_rule;
 
 	# If this is our first query, we look for a rule named "threadN_init" or "query_init"
-	if ($generator->seqId() == 0) {
-		$starting_rule = 
-            $grammar->firstMatchingRule("thread".$generator->threadId()."_init",
-                                        "query_init");
-		$mask = 0 if defined $starting_rule;
-        # Do not apply mask on _init rules.
+	if ($generator->[GENERATOR_SEQ_ID] == 0) {
+		if (exists $grammar_rules->{"thread".$generator->threadId()."_init"}) {
+			$starting_rule = "thread".$generator->threadId()."_init";
+		} elsif (exists $grammar_rules->{"query_init"}) {
+			$starting_rule = "query_init";
+		}
 	}
 
-    ## Apply mask if any
-	if (defined $generator->maskedGrammar()) {
-        $grammar = $generator->maskedGrammar();
-	}
+	## Apply mask if any
+	$grammar = $generator->[GENERATOR_MASKED_GRAMMAR] if defined $generator->[GENERATOR_MASKED_GRAMMAR];
+	$grammar_rules = $grammar->rules();
 
 	# If no init starting rule, we look for rules named "threadN" or "query"
-	$starting_rule = 
-        $grammar->firstMatchingRule("thread".$generator->threadId(),
-                                    "query") 
-        if not defined $starting_rule;
+
+	if (not defined $starting_rule) {
+		if (exists $grammar_rules->{"thread".$generator->threadId()}) {
+			$starting_rule = $grammar_rules->{"thread".$generator->threadId()}->name();
+		} else {
+			$starting_rule = "query";
+		}
+	}
     
 	my @sentence = ($starting_rule);
+        for (my $pos = 0; $pos <= $#sentence; $pos++) {
+		$_ = $sentence[$pos];
+		next if $_ eq ' ';
+		next if $_ eq uc($_);
+		next if not exists $grammar_rules->{$_};
 
-	my $grammar_rules = $grammar->rules();
+		if (++$rule_counters{$_} > GENERATOR_MAX_OCCURRENCES) {
+			say("Rule $_ occured more than ".GENERATOR_MAX_OCCURRENCES()." times. Possible endless loop in grammar. Aborting.");
+			return undef;
+		}
 
-	# And we do multiple iterations, continuously expanding grammar rules and replacing the original rule with its expansion.
-	
-	my %rule_counters;
-	my %invariants;
+		# Expand grammar rule into one of its productions
 
-	my $last_table;
-	my $last_database;
+		splice(@sentence, $pos, 1, @{$grammar_rules->{$_}->[GenTest::Grammar::Rule::RULE_COMPONENTS]->[
+			$prng->uint16(0, $#{$grammar_rules->{$_}->[GenTest::Grammar::Rule::RULE_COMPONENTS]})
+		]});
 
-	my $pos = 0;
-	while ($pos <= $#sentence) {
 		if ($#sentence > GENERATOR_MAX_LENGTH) {
 			say("Sentence is now longer than ".GENERATOR_MAX_LENGTH()." symbols. Possible endless loop in grammar. Aborting.");
 			return undef;
 		}
-		if (ref($sentence[$pos]) eq 'GenTest::Grammar::Rule') {
-			splice (@sentence, $pos, 1 , map {
-
-				$rule_counters{$_}++ if $_ ne uc($_);
-
-				if ($rule_counters{$_} > GENERATOR_MAX_OCCURRENCES) {
-					say("Rule $_ occured more than ".GENERATOR_MAX_OCCURRENCES()." times. Possible endless loop in grammar. Aborting.");
-					return undef;
-				}
-
-				# Check if we just picked a grammar rule. If yes, then return its Rule object.	
-				# If not, use the original literal, stored in $_
-
-				if (exists $grammar_rules->{$_}) {
-					$grammar_rules->{$_};
-				} else {
-					$_;
-				}
-			} @{$prng->arrayElement($sentence[$pos]->[GenTest::Grammar::Rule::RULE_COMPONENTS])});
-			if ($@ ne '') {
-				say("Internal grammar problem: $@");
-				return undef;
-			}
-		} else {
-			$pos++;
-		}
+		
+		# Process the current element of @sentence once more, as it was just expanded
+		redo;
 	}
 
 	# Once the SQL sentence has been constructed, iterate over it to replace variable items with their final values
-	
+
 	my $item_nodash;
 	my $orig_item;
+
 	foreach (@sentence) {
-		$orig_item = $_;
 		next if $_ eq ' ';
+		next if $_ eq uc($_);				# Short-cut for UPPERCASE literals
+		next if $_ eq 'executor1' || $_ eq 'executor2' || $_ eq 'executor3' ;
+
+		$orig_item = $_;
 
 		if (
-			($_ =~ m{^\{}so) &&
-			($_ =~ m{\}$}so)
+			(substr($_, 0, 1) eq '{') &&
+			(substr($_, -1, 1) eq '}')
 		) {
 			$_ = eval("no strict;\n".$_);		# Code
 
-			if ($@ =~ m{at \(.*?\) line}o) {
-				say("Internal grammar error: $@");
-				return undef;			# Code called die()
-			} elsif ($@ ne '') {
-				warn("Syntax error in Perl snippet $orig_item : $@");
-				return undef;
+			if ($@ ne '') {
+				if ($@ =~ m{at .*? line}o) {
+					say("Internal grammar error: $@");
+					return undef;			# Code called die()
+				} else {
+					warn("Syntax error in Perl snippet $orig_item : $@");
+					return undef;
+				}
 			}
 			next;
-		} elsif ($_ =~ m{^\$}so) {
+		} elsif (substr($_, 0, 1) eq '$') {
 			$_ = eval("no strict;\n".$_.";\n");	# Variable
 			next;
 		}
 
-		my $modifier;
+		# Check for expressions such as _tinyint[invariant]
 
-		my $invariant_substitution=0;
-		if ($_ =~ m{^(_[a-z_]*?)\[(.*?)\]}sio) {
-			$modifier = $2;
-			if ($modifier eq 'invariant') {
-				$invariant_substitution=1;
-				$_ = exists $invariants{$orig_item} ? $invariants{$orig_item} : $1 ;
-			} else {
-				$_ = $1;
+		my $modifier;
+		if (index($_, '[') > -1) {
+			my $invariant_substitution = 0;
+			if ($_ =~ m{^(_[a-z_]*?)\[(.*?)\]}sio) {
+				$modifier = $2;
+				if ($modifier eq 'invariant') {
+					$invariant_substitution = 1;
+					$_ = exists $invariants{$orig_item} ? $invariants{$orig_item} : $1 ;
+				} else {
+					$_ = $1;
+				}
 			}
 		}
 
-		next if $_ eq uc($_);				# Short-cut for UPPERCASE literals
+		my $field_type = $prng->isFieldType($_);
 
 		if ( ($_ eq 'letter') || ($_ eq '_letter') ) {
 			$_ = $prng->letter();
-		} elsif ($_ eq '_hex') {
-			$_ = $prng->hex();
 		} elsif ( ($_ eq 'digit')  || ($_ eq '_digit') ) {
 			$_ = $prng->digit();
+		} elsif ($_ eq '_table') {
+			my $tables = $executors->[0]->metaTables($last_database);
+			$last_table = $prng->arrayElement($tables);
+			$_ = '`'.$last_table.'`';
+		} elsif ($_ eq '_field') {
+			my $fields = $executors->[0]->metaColumns($last_table, $last_database);
+			$_ = '`'.$prng->arrayElement($fields).'`';
+		} elsif ($_ eq '_hex') {
+			$_ = $prng->hex();
 		} elsif ($_ eq '_cwd') {
 			$_ = "'".$cwd."'";
 		} elsif (
@@ -280,30 +286,40 @@ sub next {
 		} elsif ($_ eq '_collation') {
 			my $collations = $executors->[0]->metaCollations();
 			$_ = '_'.$prng->arrayElement($collations);
+		} elsif ($_ eq '_collation_name') {
+			my $collations = $executors->[0]->metaCollations();
+			$_ = $prng->arrayElement($collations);
 		} elsif ($_ eq '_charset') {
 			my $charsets = $executors->[0]->metaCharactersets();
 			$_ = '_'.$prng->arrayElement($charsets);
+		} elsif ($_ eq '_charset_name') {
+			my $charsets = $executors->[0]->metaCharactersets();
+			$_ = $prng->arrayElement($charsets);
 		} elsif ($_ eq '_data') {
 			$_ = $prng->file($cwd."/data");
 		} elsif (
-			($prng->isFieldType($_) == FIELD_TYPE_NUMERIC) ||
-			($prng->isFieldType($_) == FIELD_TYPE_BLOB) 
+			($field_type == FIELD_TYPE_NUMERIC) ||
+			($field_type == FIELD_TYPE_BLOB) 
 		) {
 			$_ = $prng->fieldType($_);
-		} elsif ($prng->isFieldType($_)) {
+		} elsif ($field_type) {
 			$_ = $prng->fieldType($_);
-			if (($orig_item =~ m{`$}so) || ($_ =~ m{^(b'|0x)}so)) {
+			if (
+				(substr($orig_item, -1) eq '`') ||
+				(substr($orig_item, 0, 2) eq "b'") ||
+				(substr($orig_item, 0, 2) eq '0x')
+			) {
 				# Do not quote, quotes are already present
-			} elsif ($_ =~ m{'}so) {
+			} elsif (index($_, "'") > -1) {
 				$_ = '"'.$_.'"';
 			} else {
 				$_ = "'".$_."'";
 			}
-		} elsif ($_ =~ m{^_(.*)}sio) {
-			$item_nodash = $1;
+		} elsif (substr($_, 0, 1) eq '_') {
+			$item_nodash = substr($_, 1);
 			if ($prng->isFieldType($item_nodash)) {
 				$_ = "'".$prng->fieldType($item_nodash)."'";
-				if ($_ =~ m{'}so) {
+				if (index($_, "'") > -1) {
 					$_ = '"'.$_.'"';
 				} else {
 					$_ = "'".$_."'";
@@ -315,8 +331,8 @@ sub next {
 		# The generation of constructs such as `table _digit` => `table 5`
 
 		if (
-			($orig_item =~ m{`$}so) && 
-			($_ !~ m{`}so)
+			(substr($orig_item, -1) eq '`') && 
+			(index($_, '`') == -1)
 		) {
 			$_ = $_.'`';
 		}
@@ -335,11 +351,11 @@ sub next {
 	# can be examined
 
 	if (
-		($sentence =~ m{CREATE}sio) && 
-		($sentence =~ m{BEGIN|END}sio)
+		(index($sentence, 'CREATE') > -1 ) &&
+		(index($sentence, 'BEGIN') > -1 || index($sentence, 'END') > -1)
 	) {
 		return [ $sentence ];
-	} elsif ($sentence =~ m{;}) {
+	} elsif (index($sentence, ';') > -1) {
 		my @sentences = split (';', $sentence);
 		return \@sentences;
 	} else {

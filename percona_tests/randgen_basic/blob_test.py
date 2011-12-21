@@ -35,6 +35,6 @@ class basicTest(mysqlBaseTestCase):
     def test_blob1(self):
         self.servers = servers
         test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz --grammar=conf/engines/blobs.yy --Validators=None --queries=1000 --threads=3"
-        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers[0])
         self.assertTrue(retcode==0, output)
 

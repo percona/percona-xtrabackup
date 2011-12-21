@@ -88,7 +88,7 @@ value:
 	column_get | _digit | _varchar(1) | _varchar(512) | _tinyint_unsigned | NULL ;
 
 type:
-	BINARY | BINARY( width ) |
+#	BINARY | BINARY( width ) |
 	CHAR |
 #	CHAR( width ) |
 	DATE |	# bug 778905

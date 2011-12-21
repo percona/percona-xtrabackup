@@ -37,6 +37,7 @@ sub validate {
 	my $compare_outcome = GenTest::Comparator::compare($results->[0], $results->[1]);
 
 	return STATUS_WONT_HANDLE if $results->[0]->status() == STATUS_SEMANTIC_ERROR || $results->[1]->status() == STATUS_SEMANTIC_ERROR;
+	return STATUS_WONT_HANDLE if $results->[0]->status() == STATUS_SYNTAX_ERROR || $results->[1]->status() == STATUS_SYNTAX_ERROR;
 	return STATUS_WONT_HANDLE if $results->[0]->query() =~ m{EXPLAIN}sio;
 
 	if ( ($compare_outcome == STATUS_LENGTH_MISMATCH) ||

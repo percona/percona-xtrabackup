@@ -28,6 +28,14 @@ use GenTest::Simplifier::Tables;
 use GenTest::Comparator;
 use GenTest::Constants;
 
+# Check if SQL::Beautify module is present for pretty printing.
+my $pretty_sql;
+eval
+{
+    require SQL::Beautify;
+    $pretty_sql = SQL::Beautify->new;
+};
+
 use constant SIMPLIFIER_EXECUTORS	=> 0;
 use constant SIMPLIFIER_QUERIES		=> 1;
 use constant SIMPLIFIER_RESULTS		=> 2;
@@ -73,7 +81,7 @@ sub _comment {
     }
 }
 sub simplify {
-	my $simplifier = shift;
+	my ($simplifier,$show_index) = @_;
 
 	my $test;
 
@@ -140,6 +148,11 @@ sub simplify {
 	}
 
 	my $query_count = defined $queries ? $#$queries : $#$results;
+	
+	# Message to indicate pretty printing module is not present for use.
+	if (!defined $pretty_sql) {
+		say("INFO :: Could not find the module SQL::Beautify to pretty print the query.");
+	}	
 
 	foreach my $query_id (0..$query_count) {
 
@@ -170,7 +183,7 @@ sub simplify {
 			$test .= "--enable_warnings\n\n"
 		}
 			
-		my $mysqldump_cmd = "mysqldump -uroot --net_buffer_length=4096 --max_allowed_packet=4096 --no-set-names --compact --force --protocol=tcp --port=$tcp_port $simplified_database ";
+		my $mysqldump_cmd = "mysqldump -uroot --net_buffer_length=4096 --max_allowed_packet=4096 --no-set-names --compact --skip_extended_insert --force --protocol=tcp --port=$tcp_port $simplified_database ";
 		$mysqldump_cmd .= join(' ', @$participating_tables) if $#$participating_tables > -1;
 		open (MYSQLDUMP, "$mysqldump_cmd|") or say("Unable to run $mysqldump_cmd: $!");
 		while (<MYSQLDUMP>) {
@@ -181,21 +194,53 @@ sub simplify {
 			next if $_ =~ m{SET \@saved_cs_client}sio;
 			next if $_ =~ m{SET character_set_client}sio;
 			$test .= $_;
+			
 		}
 		close (MYSQLDUMP);
-
+		
 		$test .= "\n\n";
-
-		$rewritten_query =~ s{\s+}{ }sgio;
-		$rewritten_query =~ s{`}{}sgio;
-		$rewritten_query =~ s{\s+\.}{.}sgio;
-		$rewritten_query =~ s{\.\s+}{.}sgio;
-		$rewritten_query =~ s{(SELECT|LEFT|RIGHT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)}{\n$1}sgio;
-		$rewritten_query =~ s{\(}{\n(}sgio;	# Put each set of parenthesis on its own line 
-		$rewritten_query =~ s{\)}{)\n}sgio;	# 
-		$rewritten_query =~ s{[\r\n]+}{\n}sgio;
-		$test .= $rewritten_query.";\n\n";
-
+		
+		# If show_index variable is defined then SHOW INDEX statement is executed on the list of 
+		# participating tables and the output is printed within comments.
+		# This was a request from optimizer team, for them to understand under which circumstances a 
+		# query result difference or transformation has taken place.
+		if (defined $show_index) {
+	        	if ($#$participating_tables > -1) {
+	        		foreach my $tab (@$participating_tables) {
+	        			$test .= "# /* Output of `SHOW INDEX from $tab` for query $query_id:\n";
+	        			my $stmt = $executors->[0]->execute("SHOW INDEX from $simplified_database.$tab");
+	        			$test .= "# |".join("|",@{$stmt->columnNames()})."|\n";
+	        			foreach my $row (@{$stmt->data()}) {
+	        				$test .= "# |".join("|", @$row)."|\n";
+	        			}
+	        			$test .= "# */\n\n";
+	        		}
+	        	}
+	        }
+		
+		
+		# If pretty printing module is available then use it to format the query
+		# otherwise use the existing regex pattern to format the query. 
+		if ( defined $pretty_sql) {
+			$rewritten_query =~ s{\s+}{ }sgio; # Remove extra spaces.
+			$rewritten_query =~ s{`}{}sgio; # Remove backquotes.
+			$pretty_sql->query($rewritten_query);
+			$test .= $pretty_sql->beautify;
+			$test .= $test.";\n\n"; # Include the query terminator.
+		} else {
+			$rewritten_query =~ s{\s+}{ }sgio;
+			$rewritten_query =~ s{`}{}sgio;
+			$rewritten_query =~ s{\s+\.}{.}sgio;
+			$rewritten_query =~ s{\.\s+}{.}sgio;
+			$rewritten_query =~ s{(SELECT|LEFT|RIGHT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)}{\n$1}sgio;
+			$rewritten_query =~ s{\(}{\n(}sgio;	# Put each set of parenthesis on its own line 
+			$rewritten_query =~ s{\)}{)\n}sgio;	# 
+			$rewritten_query =~ s{[\r\n]+}{\n}sgio;
+			$test .= $rewritten_query.";\n\n"; 		
+		}
+		
+		$test .= "\n\n";
+		
 		if ($rewritten_query =~ m/^\s*SELECT/) {
 			foreach my $ex (0..1) {
 				if (defined $executors->[$ex]) {

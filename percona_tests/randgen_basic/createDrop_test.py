@@ -35,6 +35,6 @@ class basicTest(mysqlBaseTestCase):
     def test_CreateDrop1(self):
         self.servers = servers
         test_cmd = "./gentest.pl --gendata=conf/percona/many_indexes_percona.zz --grammar=conf/percona/many_indexes_percona.yy --threads=1 --queries=1000 --Validators=None"
-        retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+        retcode, output = self.execute_randgen(test_cmd, test_executor, servers[0])
         self.assertTrue(retcode==0, output)
 

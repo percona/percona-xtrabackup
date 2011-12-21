@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# Copyright (C) 2008-2010 Sun Microsystems, Inc. All rights reserved.
-# Use is subject to license terms.
+# Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights
+# reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,6 +28,14 @@ use GenTest::Properties;
 use GenTest::Constants;
 use GenTest::App::GenTest;
 
+my $logger;
+eval
+{
+    require Log::Log4perl;
+    Log::Log4perl->import();
+    $logger = Log::Log4perl->get_logger('randgen.gentest');
+};
+
 my $DEFAULT_THREADS = 10;
 my $DEFAULT_QUERIES = 1000;
 my $DEFAULT_DURATION = 3600;
@@ -46,6 +54,7 @@ my $opt_result = GetOptions($options,
                             'generator=s',
                             'gendata:s',
                             'grammar=s',
+                            'skip-recursive-rules',
                             'redefine=s',
                             'testname=s',
                             'threads=i',
@@ -63,18 +72,24 @@ my $opt_result = GetOptions($options,
                             'seed=s',
                             'mask=i',
                             'mask-level=i',
-                            'rows=i',
+                            'rows=s',
                             'varchar-length=i',
                             'xml-output=s',
-                            'sqltrace',
+                            'sqltrace:s',
                             'no-err-filter',
-                            'views',
+                            'views:s',
                             'start-dirty',
                             'filter=s',
                             'valgrind',
                             'valgrind-xml',
                             'notnull',
+                            'short_column_names',
+                            'strict_fields',
+                            'freeze_time',
                             'debug',
+                            'logfile=s',
+                            'logconf=s',
+                            'report-tt-logdir=s',
                             'querytimeout=i');
 backwardCompatability($options);
 my $config = GenTest::Properties->new(
@@ -89,6 +104,7 @@ my $config = GenTest::Properties->new(
               'gendata',
               'generator',
               'grammar',
+              'skip-recursive-rules',
               'redefine',
               'testname',
               'threads',
@@ -118,10 +134,24 @@ my $config = GenTest::Properties->new(
               'valgrind-xml',
               'sqltrace',
               'notnull',
+              'short_column_names',
+              'freeze_time',
+              'strict_fields',
+              'logfile',
+              'logconf',
+              'report-tt-logdir',
               'querytimeout'],
     help => \&help);
 
 help() if !$opt_result || $config->help;
+
+if (defined $config->logfile && defined $logger) {
+    setLoggingToFile($config->logfile);
+} else {
+    if (defined $config->logconf && defined $logger) {
+        setLogConf($config->logconf);
+    }
+}
 
 say("Starting: $0 ".join(" ", @ARGV_saved));
 
@@ -160,9 +190,10 @@ $0 - Testing via random query generation. Options:
         --mask-level: How many levels deep the mask is applied (default 1)
         --rows      : Number of rows to generate for each table in gendata.pl, unless specified in the ZZ file
         --varchar-length: maximum length of strings (deault 1) in gendata.pl
-        --views     : Pass --views to gendata-old.pl or gendata.pl
+        --views     : Pass --views to gendata-old.pl or gendata.pl. Optionally specify view type (algorithm) as option value. 
         --filter    : ......
-        --sqltrace  : Print all generated SQL statements.
+        --sqltrace  : Print all generated SQL statements. 
+                      Optional: Specify --sqltrace=MarkErrors to mark invalid statements.
         --no-err-filter:  Do not suppress error messages.  Output all error messages encountered.
         --start-dirty: Do not generate data (use existing database(s))
         --xml-output: Name of a file to which an XML report will be written if this option is set.
@@ -172,6 +203,9 @@ $0 - Testing via random query generation. Options:
         --testname  : Name of test, used for reporting purposes.
         --valgrind  : ......
         --filter    : ......
+        --freeze_time: Freeze time for each query so that CURRENT_TIMESTAMP gives the same result for all transformers/validators
+        --strict_fields: Disable all AI applied to columns defined in \$fields in the gendata file. Allows for very specific column definitions
+        --short_column_names: use short column names in gendata (c<number>)
         --help      : This help message
         --debug     : Provide debug output
 EOF
@@ -219,5 +253,30 @@ sub backwardCompatability {
     if (not defined $options->{generator}) {
         $options->{generator} = 'FromGrammar';
     }
+    
+    if (defined $options->{sqltrace}) {
+        my $sqltrace = $options->{sqltrace};
+        # --sqltrace may have a string value (optional).
+        # To retain backwards compatibility we set value 1 when no value is given.
+        # Allowed values for --sqltrace:
+        my %sqltrace_legal_values = (
+            'MarkErrors'    => 1  # Prefixes invalid SQL statements for easier post-processing
+        );
+        if (length($sqltrace) > 0) {
+            # A value is given, check if it is legal.
+            if (not exists $sqltrace_legal_values{$sqltrace}) {
+                say("Invalid value for --sqltrace option: '".$sqltrace."'");
+                say("Valid values are: ".join(', ', keys(%sqltrace_legal_values)));
+                say("No value means that default/plain sqltrace will be used.\n");
+                help();
+            }
+        } else {
+            # If no value is given, GetOpt will assign the value '' (empty string).
+            # We interpret this as plain tracing (no marking of errors, prefixing etc.).
+            # Better to use 1 instead of empty string for comparisons later.
+            $options->{sqltrace} = 1;
+        }
+    }
+
 }
 

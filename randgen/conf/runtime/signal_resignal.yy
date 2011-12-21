@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2009 Sun Microsystems, Inc. All rights reserved.
+# Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
 # Use is subject to license terms.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -19,6 +19,12 @@
 # - DECLARE ... CONDITION must be before any DECLARE ... HANDLER
 # - DECLARE ... HANDLER   must be before any statements like INSERT/CALL etc.
 # - If a handler refers to a condition than this condition must be already defined.
+#
+# We avoid using _digit for possible signal values because that may conflict 
+# with some error codes defined in the MySQL executor. Specifically, signal 5 
+# would be interpreted as an Out Of Memory error by the RQG framework. 
+# Instead we use a set of discrete values with no apparent conflicts, i.e. 
+# outside the range of MySQL error codes, see rule "number".
 
 query_init:
 	{ $width = 100 ; return undef };
@@ -152,11 +158,13 @@ set_variable:
 	SET at_variable_name = value ;
 
 value:
+	# We avoid using _digit here due to conflicts with other error codes, 
+	# see comment in top of this file for details.
 	CONVERT( _varchar(512) USING some_charset )            |
 	_varchar(512)						|	
-	_digit                                                 |
+	number |
 	at_variable_name                                       |
-	function_name ( _english , _digit , at_variable_name ) |
+	function_name ( _english , number , at_variable_name ) |
 	RPAD( _letter , some_size , 'A123456789' )             ;
 
 some_size:
@@ -182,8 +190,10 @@ variable_type:
 
 default_value:
 	# If the default is NULL than we assign in some situation NULL to
-	# condition_information_item --> error
-	 | DEFAULT _english | DEFAULT _digit ;
+	# condition_information_item --> error.
+	# We avoid using _digit here due to conflicts with other error codes, 
+	# see comment in top of this file for details.
+	 | DEFAULT _english | DEFAULT number ;
 
 declare_condition:
 	DECLARE condition_name CONDITION FOR condition_value ;
@@ -257,9 +267,11 @@ condition_information_item:
 ;
 
 simple_value_specification:
+	# We avoid using _digit here due to conflicts with other error codes, 
+	# see comment in top of this file for details.
 	_varchar(512)	|
 	_english         |
-	_digit           |
+	number |
 	variable_name    |
 	at_variable_name ;
 	
@@ -281,6 +293,10 @@ sqlstate_value:
 	'HY000'	| # generic
 	'23000'  | # duplicate value (ER_DUP_KEY,ER_DUP_ENTRY)
 	{ $state_number = 46000 + $prng->int(1,20) ; return "'".$state_number."'" } ;
+
+number:
+	# We try to avoid numbers/digits that may be interpreted as actual error codes.
+	9000 | 9001 | 9002 | 9003 | 9004 | 9005 | 9006 | 9007 | 9008 | 9009 ;
 
 _table:
 	B | C ;

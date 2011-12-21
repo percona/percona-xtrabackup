@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2010 Sun Microsystems, Inc. All rights reserved.
+# Copyright (c) 2008, 2011 Oracle and/or its affiliates. All rights reserved.
 # Use is subject to license terms.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@ grandparent_select_items:
 	grandparent_select_item;
 
 grandparent_select_item:
-	GRANDPARENT1 . field_name AS G1;
+	GRANDPARENT1 . field_name AS g1;
 
 grandparent_from:
 	table_name AS GRANDPARENT1 |
@@ -48,10 +48,10 @@ grandparent_where:
 	WHERE grandparent_subquery_expr AND grandparent_condition ;
 
 grandparent_subquery_expr:
-	GRANDPARENT1 . int_field_name IN ( SELECT select_option PARENT1 . int_field_name AS P1 parent_select_body ) |
-	GRANDPARENT1 . char_field_name IN ( SELECT select_option PARENT1 . char_field_name AS P1 parent_select_body ) |
-	( GRANDPARENT1 . int_field_name , GRANDPARENT1 . int_field_name ) IN ( SELECT select_option PARENT1 . int_field_name AS P1 , PARENT1 . int_field_name AS P2 parent_select_body ) |
-	( GRANDPARENT1 . char_field_name , GRANDPARENT1 . char_field_name ) IN ( SELECT select_option PARENT1 . char_field_name AS P1 , PARENT1 . char_field_name AS P2 parent_select_body ) ;
+	GRANDPARENT1 . int_field_name IN ( SELECT select_option PARENT1 . int_field_name AS p1 parent_select_body ) |
+	GRANDPARENT1 . char_field_name IN ( SELECT select_option PARENT1 . char_field_name AS p1 parent_select_body ) |
+	( GRANDPARENT1 . int_field_name , GRANDPARENT1 . int_field_name ) IN ( SELECT select_option PARENT1 . int_field_name AS p1 , PARENT1 . int_field_name AS p2 parent_select_body ) |
+	( GRANDPARENT1 . char_field_name , GRANDPARENT1 . char_field_name ) IN ( SELECT select_option PARENT1 . char_field_name AS p1 , PARENT1 . char_field_name AS p2 parent_select_body ) ;
 
 grandparent_group_having_order_limit:
 	grandparent_group_by grandparent_having grandparent_order_by grandparent_limit |
@@ -66,7 +66,7 @@ grandparent_order_by:
 	ORDER BY GRANDPARENT1 . field_name ;
 
 grandparent_having:
-	| HAVING G1 arithmetic_operator value;
+	| HAVING g1 arithmetic_operator value;
 
 grandparent_limit:
 	| LIMIT digit ;

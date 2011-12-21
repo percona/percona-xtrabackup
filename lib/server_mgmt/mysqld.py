@@ -78,6 +78,14 @@ class mysqlServer(Server):
         self.bootstrap_file = self.code_tree.bootstrap_path
         self.bootstrap_cmd = None
 
+        # MySQL 5.0 and 5.1 servers use --language argument vs. lc-message-dir
+        # We check and set things appropriately for such cases
+        self.langstring = "--lc-messages-dir=%s" %(self.langdir)
+        if self.version.startswith('5.1') or self.version.startswith('5.0'):
+            self.langstring = "--language=%s" %(os.path.join(self.langdir
+                                                            ,'english')
+                                               )
+
         # Get our ports
         self.port_block = self.system_manager.port_manager.get_port_block( self.name
                                                                          , self.preferred_base_port
@@ -159,7 +167,7 @@ class mysqlServer(Server):
                           , "--loose-skip-ndbcluster"
                           , "--tmpdir=%s" %(self.tmpdir)
                           , "--core-file"
-                          , "--lc-messages-dir=%s" %(self.langdir)
+                          , self.langstring
                           , "--character-sets-dir=%s" %(self.charsetdir)
                           ]
             # We add server_path into the mix this way as we
@@ -217,17 +225,12 @@ class mysqlServer(Server):
                       , "--loose-performance-schema-max-rwlock-instances=10000"
                       , "--loose-performance-schema-max-table-instances=500"
                       , "--loose-performance-schema-max-table-handles=1000"
-                      , "--binlog-direct-non-transactional-updates"
                       , "--loose-enable-performance-schema"
-                      , "--general_log=1"
-                      , "--general_log_file=%s" %(self.general_log_file)
-                      , "--slow_query_log=1"
-                      , "--slow_query_log_file=%s" %(self.slow_query_log_file)
                       , "--basedir=%s" %(self.code_tree.basedir)
                       , "--datadir=%s" %(self.datadir)
                       , "--tmpdir=%s"  %(self.tmpdir)
                       , "--character-sets-dir=%s" %(self.charsetdir)
-                      , "--lc-messages-dir=%s" %(self.langdir)
+                      , self.langstring
                       , "--ssl-ca=%s" %(os.path.join(self.std_data,'cacert.pem'))
                       , "--ssl-cert=%s" %(os.path.join(self.std_data,'server-cert.pem'))
                       , "--ssl-key=%s" %(os.path.join(self.std_data,'server-key.pem'))
@@ -241,6 +244,14 @@ class mysqlServer(Server):
                       , self.secure_file_string
                       , self.user_string
                       ]
+
+        if not self.version.startswith('5.0'):
+            server_args += [ "--binlog-direct-non-transactional-updates"
+                           , "--general_log=1"
+                           , "--general_log_file=%s" %(self.general_log_file)
+                           , "--slow_query_log=1"
+                           , "--slow_query_log_file=%s" %(self.slow_query_log_file)
+                           ]
         self.gen_cnf_file(server_args)
 
         if self.gdb:

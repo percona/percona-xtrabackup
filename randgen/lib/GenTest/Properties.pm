@@ -1,5 +1,5 @@
-# Copyright (C) 2009-2010 Sun Microsystems, Inc. All rights reserved.
-# Use is subject to license terms.
+# Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights
+# reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -165,10 +165,10 @@ sub new {
     
     my $message;
     $message .= "The following properties are not legal: ".
-        join(", ", map {"'--".$_."'"} sort @illegal). ". " if defined @illegal;
+        join(", ", map {"'--".$_."'"} sort @illegal). ". " if $#illegal >= 0;
 
     $message .= "The following required properties  are missing: ".
-        join(", ", map {"'--".$_."'"} sort @missing). ". " if defined @missing;
+        join(", ", map {"'--".$_."'"} sort @missing). ". " if $#missing >= 0;
 
     if (defined $message) {
         $props->_help();
@@ -199,7 +199,7 @@ sub property {
 ## Read properties from a given file
 sub _readProps {
     my ($file) = @_;
-    open(PFILE, $file) or die "Unable read properties file '$file': $!";
+    open(PFILE, $file) or croak "Unable read properties file '$file': $!";
     read(PFILE, my $propfile, -s $file);
     close PFILE;
     my $props = eval($propfile);

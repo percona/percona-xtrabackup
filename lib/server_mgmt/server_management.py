@@ -302,7 +302,7 @@ class serverManager:
         """
         for key, item in request_dictionary.items():
             if key == 'datadir_requests':
-                self.load_datadirs(item)
+                self.load_datadirs(item, current_servers)
             if key == 'join_cluster':
                 self.join_clusters(item, current_servers)
 
@@ -339,15 +339,24 @@ class serverManager:
         for server in self.servers[requester]:
             self.reset_server(server)
 
-    def load_datadirs(self, datadir_requests):
+    def load_datadirs(self, datadir_requests, current_servers):
         """ We load source_dir to the server's datadir """
         for source_dir, server in datadir_requests:
-            source_dir_path = os.path.join(server.vardir,'std_data_ln',source_dir)
-            self.system_manager.remove_dir(server.datadir)
-            self.system_manager.copy_dir(source_dir_path, server.datadir)
-            # We need to signal that the server will need to be reset as we're
-            # using a non-standard datadir
-            server.need_reset = True
+            self.load_datadir(source_dir, server, current_servers)
+
+    def load_datadir(self, source_dir, server, current_servers):
+        """ We load source_dir to the server's datadir """
+
+        if type(server) == int:
+            # we have just an index (as we use in unittest files)
+            # and we get the server from current_servers[idx]
+            server = current_servers[server]
+        source_dir_path = os.path.join(server.vardir,'std_data_ln',source_dir)
+        self.system_manager.remove_dir(server.datadir)
+        self.system_manager.copy_dir(source_dir_path, server.datadir)
+        # We need to signal that the server will need to be reset as we're
+        # using a non-standard datadir
+        server.need_reset = True
 
     def join_clusters(self, cluster_requests, current_servers):
         """ We get a list of master, slave tuples and join

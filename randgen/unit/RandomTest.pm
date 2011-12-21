@@ -18,6 +18,7 @@
 package RandomTest;
 use base qw(Test::Unit::TestCase);
 use lib 'lib';
+use Data::Dumper;
 use GenTest::Random;
 
 sub new {
@@ -40,7 +41,18 @@ sub test_create_prng {
     my $obj = GenTest::Random->new(seed => 1);
     
     $self->assert_not_null($obj);
+    
+}
 
+sub test_shuffle_array {
+    my $self = shift;
+    
+    my $obj = GenTest::Random->new(seed => 2);
+    $self->assert_not_null($obj);
+    my $input = [1,2,3,4,5,6,7,8,9,10];
+    my $output = [7,9,4,1,2,3,6,10,5,8];
+    $obj->shuffleArray($input);
+    $self->assert_deep_equals($input,$output);
 }
 
 1;

@@ -36,7 +36,7 @@ sub transform {
 	return [
 		"( $original_query ) UNION ALL ( $original_query_no_limit LIMIT 0 ) /* TRANSFORM_OUTCOME_UNORDERED_MATCH */",
 		"( $original_query_no_limit LIMIT 0 ) UNION ALL ( $original_query ) /* TRANSFORM_OUTCOME_UNORDERED_MATCH */",
-		"( $original_query ) UNION ( $original_query ) /* TRANSFORM_OUTCOME_DISTINCT */",
+		"( $original_query ) UNION DISTINCT ( $original_query ) /* TRANSFORM_OUTCOME_DISTINCT */",
 		"( $original_query ) UNION ALL ( $original_query ) /* TRANSFORM_OUTCOME_SUPERSET */"
 	];
 }

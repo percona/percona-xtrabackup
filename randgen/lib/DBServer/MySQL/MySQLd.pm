@@ -28,7 +28,7 @@ use strict;
 
 use Carp;
 use Data::Dumper;
-use File::Path qw(mkpath);
+use File::Path qw(mkpath rmtree);
 
 use constant MYSQLD_BASEDIR => 0;
 use constant MYSQLD_VARDIR => 1;
@@ -50,9 +50,12 @@ use constant MYSQLD_VALGRIND => 16;
 use constant MYSQLD_VALGRIND_OPTIONS => 17;
 use constant MYSQLD_VERSION => 18;
 use constant MYSQLD_DUMPER => 19;
+use constant MYSQLD_SOURCEDIR => 20;
+use constant MYSQLD_GENERAL_LOG => 21;
 
 use constant MYSQLD_PID_FILE => "mysql.pid";
-use constant MYSQLD_LOG_FILE => "mysql.err";
+use constant MYSQLD_ERRORLOG_FILE => "mysql.err";
+use constant MYSQLD_LOG_FILE => "mysql.log";
 use constant MYSQLD_DEFAULT_PORT =>  19300;
 use constant MYSQLD_DEFAULT_DATABASE => "test";
 
@@ -62,10 +65,12 @@ sub new {
     my $class = shift;
     
     my $self = $class->SUPER::new({'basedir' => MYSQLD_BASEDIR,
+                                   'sourcedir' => MYSQLD_SOURCEDIR,
                                    'vardir' => MYSQLD_VARDIR,
                                    'port' => MYSQLD_PORT,
                                    'server_options' => MYSQLD_SERVER_OPTIONS,
                                    'start_dirty' => MYSQLD_START_DIRTY,
+                                   'general_log' => MYSQLD_GENERAL_LOG,
                                    'valgrind' => MYSQLD_VALGRIND,
                                    'valgrind_options' => MYSQLD_VALGRIND_OPTIONS},@_);
     
@@ -100,14 +105,15 @@ sub new {
 
     ## Check for CMakestuff to get hold of source dir:
 
-    my $source;
-    if (-e $self->basedir."/CMakeCache.txt") {
-        open CACHE, $self->basedir."/CMakeCache.txt";
-        while (<CACHE>){
-            if (m/^MySQL_SOURCE_DIR:STATIC=(.*)$/) {
-                $source = $1;
-                say("Found source directory at $source");
-                last;
+    if (not defined $self->sourcedir) {
+        if (-e $self->basedir."/CMakeCache.txt") {
+            open CACHE, $self->basedir."/CMakeCache.txt";
+            while (<CACHE>){
+                if (m/^MySQL_SOURCE_DIR:STATIC=(.*)$/) {
+                    $self->[MYSQLD_SOURCEDIR] = $1;
+                    say("Found source directory at ".$self->[MYSQLD_SOURCEDIR]);
+                    last;
+                }
             }
         }
     }
@@ -117,23 +123,23 @@ sub new {
                       "mysql_test_data_timezone.sql",
                       "fill_help_tables.sql") {
         push(@{$self->[MYSQLD_BOOT_SQL]}, 
-             $self->_find(defined $source?[$self->basedir,$source]:[$self->basedir],
+             $self->_find(defined $self->sourcedir?[$self->basedir,$self->sourcedir]:[$self->basedir],
                           ["scripts","share/mysql","share"], $file));
     }
     
     $self->[MYSQLD_MESSAGES] = 
-       $self->_findDir(defined $source?[$self->basedir,$source]:[$self->basedir], 
+       $self->_findDir(defined $self->sourcedir?[$self->basedir,$self->sourcedir]:[$self->basedir], 
                        ["sql/share","share/mysql","share"], "english/errmsg.sys");
 
     $self->[MYSQLD_CHARSETS] =
-        $self->_findDir(defined $source?[$self->basedir,$source]:[$self->basedir], 
+        $self->_findDir(defined $self->sourcedir?[$self->basedir,$self->sourcedir]:[$self->basedir], 
                         ["sql/share/charsets","share/mysql/charsets","share/charsets"], "Index.xml");
                          
     
-    $self->[MYSQLD_LIBMYSQL] = 
-       $self->_findDir([$self->basedir], 
-                       osWindows()?["libmysql/Debug","libmysql/RelWithDebInfo","libmysql/Release","lib","lib/debug","lib/opt","bin"]:["libmysql","libmysql/.libs","lib/mysql","lib"], 
-                       osWindows()?"libmysql.dll":osMac()?"libmysqlclient.dylib":"libmysqlclient.so");
+    #$self->[MYSQLD_LIBMYSQL] = 
+    #   $self->_findDir([$self->basedir], 
+    #                   osWindows()?["libmysql/Debug","libmysql/RelWithDebInfo","libmysql/Release","lib","lib/debug","lib/opt","bin"]:["libmysql","libmysql/.libs","lib/mysql","lib"], 
+    #                   osWindows()?"libmysql.dll":osMac()?"libmysqlclient.dylib":"libmysqlclient.so");
     
     $self->[MYSQLD_STDOPTS] = ["--basedir=".$self->basedir,
                                "--datadir=".$self->datadir,
@@ -154,6 +160,10 @@ sub new {
 
 sub basedir {
     return $_[0]->[MYSQLD_BASEDIR];
+}
+
+sub sourcedir {
+    return $_[0]->[MYSQLD_SOURCEDIR];
 }
 
 sub datadir {
@@ -196,9 +206,13 @@ sub logfile {
     return $_[0]->vardir."/".MYSQLD_LOG_FILE;
 }
 
-sub libmysqldir {
-    return $_[0]->[MYSQLD_LIBMYSQL];
+sub errorlog {
+    return $_[0]->vardir."/".MYSQLD_ERRORLOG_FILE;
 }
+
+#sub libmysqldir {
+#    return $_[0]->[MYSQLD_LIBMYSQL];
+#}
 
 
 sub generateCommand {
@@ -223,13 +237,7 @@ sub createMysqlBase  {
     
     ## 1. Clean old db if any
     if (-d $self->vardir) {
-        if (osWindows()) {
-            my $vardir = $self->vardir;
-            $vardir =~ s/\//\\/g;
-            system('rmdir /s /q "'.$vardir.'"');
-        } else {
-            system('rm -rf "'.$self->vardir.'"');
-        }
+        rmtree($self->vardir);
     }
 
     ## 2. Create database directory structure
@@ -261,7 +269,9 @@ sub createMysqlBase  {
         my $bootlog = $self->vardir."/boot.log";
         system("$command < \"$boot\" > \"$bootlog\"");
     } else {
-        my $command = $self->generateCommand(["--no-defaults","--bootstrap","--loose-skip-innodb"],
+        my $boot_options = ["--no-defaults","--bootstrap"];
+        push(@$boot_options,"--loose-skip-innodb") if $self->_olderThan(5,6,3);
+        my $command = $self->generateCommand($boot_options,
                                              $self->[MYSQLD_STDOPTS]);
         my $bootlog = $self->vardir."/boot.log";
         system("cat \"$boot\" | $command > \"$bootlog\"  2>&1 ");
@@ -290,13 +300,13 @@ sub startServer {
                                           "--master-retry-count=65535",
                                           "--port=".$self->port,
                                           "--socket=".$self->socketfile,
-                                          "--pid-file=".$self->pidfile,
-                                          $self->_logOption]);
+                                          "--pid-file=".$self->pidfile],
+                                         $self->_logOptions);
     if (defined $self->[MYSQLD_SERVER_OPTIONS]) {
         $command = $command." ".join(' ',@{$self->[MYSQLD_SERVER_OPTIONS]});
     }
     
-    my $serverlog = $self->vardir."/".MYSQLD_LOG_FILE;
+    my $errorlog = $self->vardir."/".MYSQLD_ERRORLOG_FILE;
     
     if (osWindows) {
         my $proc;
@@ -310,7 +320,7 @@ sub startServer {
                                $command,
                                0,
                                NORMAL_PRIORITY_CLASS(),
-                               ".") || die _reportError();	
+                               ".") || croak _reportError();	
         $self->[MYSQLD_WINDOWS_PROCESS]=$proc;
         $self->[MYSQLD_SERVERPID]=$proc->GetProcessID();
     } else {
@@ -332,7 +342,7 @@ sub startServer {
                 $waits++;
             }
             if (!-f $self->pidfile) {
-                sayFile($self->logfile);
+                sayFile($self->errorlog);
                 croak("Could not start mysql server, waited ".($waits*$wait_time)." seconds for pid file");
             }
             my $pidfile = $self->pidfile;
@@ -340,7 +350,7 @@ sub startServer {
             $pid =~ m/([0-9]+)/;
             $self->[MYSQLD_SERVERPID] = int($1);
         } else {
-            exec("$command > \"$serverlog\"  2>&1") || croak("Could not start mysql server");
+            exec("$command > \"$errorlog\"  2>&1") || croak("Could not start mysql server");
         }
     }
     
@@ -358,7 +368,16 @@ sub kill {
     } else {
         if (defined $self->serverpid) {
             kill KILL => $self->serverpid;
-            say("Killed process ".$self->serverpid);
+            my $waits = 0;
+            while ($self->running && $waits < 100) {
+                Time::HiRes::sleep(0.2);
+                $waits++;
+            }
+            if ($waits >= 100) {
+                croak("Unable to kill process ".$self->serverpid);
+            } else {
+                say("Killed process ".$self->serverpid);
+            }
         }
     }
     if (-e $self->socketfile) {
@@ -422,7 +441,7 @@ sub stopServer {
         my $r = $self->[MYSQLD_DBH]->func('shutdown','127.0.0.1','root','admin');
         my $waits = 0;
         if ($r) {
-            while (-f $self->pidfile && $waits < 100) {
+            while ($self->running && $waits < 100) {
                 Time::HiRes::sleep(0.2);
                 $waits++;
             }
@@ -435,6 +454,17 @@ sub stopServer {
         }
     } else {
         $self->kill;
+    }
+}
+
+sub running {
+    my($self) = @_;
+    if (osWindows()) {
+        ## Need better solution fir windows. This is actually the old
+        ## non-working solution for unix....
+        return -f $self->pidfile;
+    } else {
+        return kill 0, $self->serverpid;
     }
 }
 
@@ -569,13 +599,17 @@ sub _messages {
     }
 }
 
-sub _logOption {
+sub _logOptions {
     my ($self) = @_;
 
     if ($self->_olderThan(5,1,29)) {
-        return "--log=".$self->logfile; 
+        return ["--log=".$self->logfile]; 
     } else {
-        return "--general-log-file=".$self->logfile;
+        if ($self->[MYSQLD_GENERAL_LOG]) {
+            return ["--general-log", "--general-log-file=".$self->logfile]; 
+        } else {
+            return ["--general-log-file=".$self->logfile];
+        }
     }
 }
 

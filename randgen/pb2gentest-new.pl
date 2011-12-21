@@ -1,4 +1,4 @@
-# Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved. 
+# Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved. 
 # Use is subject to license terms.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -298,7 +298,7 @@ sub get_pb2_branch_id {
 		$branch_name=$1;
 	}
 
-	my $dsn_pb2 = 'dbi:mysql:host=trollheim.norway.sun.com:port=3306:user=readonly:database=pushbuild2';
+	my $dsn_pb2 = 'dbi:mysql:host=trollheim.no.oracle.com:port=3306:user=readonly:database=pushbuild2';
 	my $SQL_getBranchId = "SELECT branch_id FROM branches WHERE branch_name = '$branch_name'";
 
 	say("Using branch name $branch_name\n");
@@ -1100,7 +1100,7 @@ if (exists $report_xml_from_hosts{$hostname}) {
     # We assume SSH keys have been properly set up to enable seamless scp use.
     $command = $command.' --report-xml-tt-type=scp';
     # Specify destination for XML reports (not relying on defaults):
-    $command = $command.' --report-xml-tt-dest=regin.norway.sun.com:/raid/xml_results/TestTool/xml/';
+    $command = $command.' --report-xml-tt-dest=regin.no.oracle.com:/raid/xml_results/TestTool/xml/';
 }
 ### XML reporting setup END
 

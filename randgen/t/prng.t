@@ -19,7 +19,7 @@ use strict;
 use lib 'lib';
 use lib '../lib';
 
-use Test::More tests => 2;
+use Test::More tests => 8;
 
 use GenTest::Random;
 
@@ -30,3 +30,10 @@ my $prng = GenTest::Random->new(
 my $numbers = join(' ', map { $prng->digit() } (0..9));
 ok($numbers eq '7 4 9 8 4 1 2 1 5 2', 'prng_stability');
 ok($prng->date() eq '2000-07-14', 'prng_date');
+
+ok($prng->string() eq 'w', 'prng_string_empty');
+ok($prng->string(0) eq '', 'prng_string_empty');
+ok($prng->string(1) eq 'a', 'prng_string_one');
+ok($prng->string(20) eq 'qccmdluyolx', 'prng_string_twenty1');
+ok($prng->string(20) eq 'ccmdluyolx', 'prng_string_twenty2');
+ok(length($prng->string(65535)) > 1024, 'prng_string_huge');

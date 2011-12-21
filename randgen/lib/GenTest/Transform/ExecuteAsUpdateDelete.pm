@@ -31,7 +31,9 @@ use GenTest::Constants;
 sub transform {
 	my ($class, $original_query, $executor, $original_result) = @_;
 
-	return STATUS_WONT_HANDLE if $original_query !~ m{^\s*SELECT}sio || $original_query =~ m{LIMIT}sio;
+	return STATUS_WONT_HANDLE if $original_query !~ m{^\s*SELECT}sio 
+	        || $original_query =~ m{LIMIT}sio
+	        || $original_query =~ m{(AVG|STD|STDDEV_POP|STDDEV_SAMP|STDDEV|SUM|VAR_POP|VAR_SAMP|VARIANCE)\s*\(}sio;
 	return STATUS_WONT_HANDLE if $original_result->rows() == 0;
 	return STATUS_WONT_HANDLE if $#{$original_result->data()->[0]} != 0;	# Only single-column resultsets
 

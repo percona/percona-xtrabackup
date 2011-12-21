@@ -24,12 +24,21 @@ use lib "$ENV{RQG_HOME}/lib";
 use Carp;
 use strict;
 use GenTest;
+use GenTest::BzrInfo;
 use GenTest::Constants;
 use GenTest::Properties;
 use GenTest::App::GenTest;
 use DBServer::DBServer;
 use DBServer::MySQL::MySQLd;
 use DBServer::MySQL::ReplMySQLd;
+
+my $logger;
+eval
+{
+    require Log::Log4perl;
+    Log::Log4perl->import();
+    $logger = Log::Log4perl->get_logger('randgen.gentest');
+};
 
 $| = 1;
 if (osWindows()) {
@@ -54,12 +63,13 @@ my @dsns;
 
 my ($gendata, @basedirs, @mysqld_options, @vardirs, $rpl_mode,
     $engine, $help, $debug, @validators, @reporters, @transformers, 
-    $grammar_file,
+    $grammar_file, $skip_recursive_rules,
     $redefine_file, $seed, $mask, $mask_level, $mem, $rows,
     $varchar_len, $xml_output, $valgrind, @valgrind_options, $views,
     $start_dirty, $filter, $build_thread, $sqltrace, $testname,
     $report_xml_tt, $report_xml_tt_type, $report_xml_tt_dest,
-    $notnull, $querytimeout);
+    $notnull, $logfile, $logconf, $report_tt_logdir, $querytimeout, $no_mask,
+    $short_column_names, $strict_fields, $freeze_time);
 
 my $gendata=''; ## default simple gendata
 
@@ -84,6 +94,7 @@ my $opt_result = GetOptions(
 	'rpl_mode=s' => \$rpl_mode,
 	'engine=s' => \$engine,
 	'grammar=s' => \$grammar_file,
+	'skip-recursive-rules' > \$skip_recursive_rules,
 	'redefine=s' => \$redefine_file,
 	'threads=i' => \$threads,
 	'queries=s' => \$queries,
@@ -95,6 +106,9 @@ my $opt_result = GetOptions(
 	'transformers=s@' => \@transformers,
 	'gendata:s' => \$gendata,
 	'notnull' => \$notnull,
+	'short_column_names' => \$short_column_names,
+    'freeze_time' => \$freeze_time,
+	'strict_fields' => \$strict_fields,
 	'seed=s' => \$seed,
 	'mask=i' => \$mask,
     'mask-level=i' => \$mask_level,
@@ -108,17 +122,52 @@ my $opt_result = GetOptions(
 	'testname=s'		=> \$testname,
 	'valgrind!'	=> \$valgrind,
 	'valgrind_options=s@'	=> \@valgrind_options,
-	'views'		=> \$views,
+	'views:s'		=> \$views,
 	'start-dirty'	=> \$start_dirty,
 	'filter=s'	=> \$filter,
     'mtr-build-thread=i' => \$build_thread,
-    'sqltrace' => \$sqltrace,
-    'querytimeout=i' => \$querytimeout
+    'sqltrace:s' => \$sqltrace,
+    'logfile=s' => \$logfile,
+    'logconf=s' => \$logconf,
+    'report-tt-logdir=s' => \$report_tt_logdir,
+    'querytimeout=i' => \$querytimeout,
+    'no-mask' => \$no_mask
     );
+
+if (defined $logfile && defined $logger) {
+    setLoggingToFile($logfile);
+} else {
+    if (defined $logconf && defined $logger) {
+        setLogConf($logconf);
+    }
+}
 
 if (!$opt_result || $help || $basedirs[0] eq '' || not defined $grammar_file) {
 	help();
 	exit($help ? 0 : 1);
+}
+
+if (defined $sqltrace) {
+    # --sqltrace may have a string value (optional). 
+    # Allowed values for --sqltrace:
+    my %sqltrace_legal_values = (
+        'MarkErrors'    => 1  # Prefixes invalid SQL statements for easier post-processing
+    );
+    
+    if (length($sqltrace) > 0) {
+        # A value is given, check if it is legal.
+        if (not exists $sqltrace_legal_values{$sqltrace}) {
+            say("Invalid value for --sqltrace option: '$sqltrace'");
+            say("Valid values are: ".join(', ', keys(%sqltrace_legal_values)));
+            say("No value means that default/plain sqltrace will be used.");
+            exit(STATUS_ENVIRONMENT_FAILURE);
+        }
+    } else {
+        # If no value is given, GetOpt will assign the value '' (empty string).
+        # We interpret this as plain tracing (no marking of errors, prefixing etc.).
+        # Better to use 1 instead of empty string for comparisons later.
+        $sqltrace = 1;
+    }
 }
 
 say("Copyright (c) 2010,2011 Oracle and/or its affiliates. All rights reserved. Use is subject to license terms.");
@@ -157,6 +206,25 @@ if (
 	($basedirs[1] eq '')
     ) {
 	$basedirs[1] = $basedirs[0];	
+}
+
+
+foreach my $dir (cwd(), @basedirs) {
+# calling bzr usually takes a few seconds...
+    if (defined $dir) {
+        my $bzrinfo = GenTest::BzrInfo->new(
+            dir => $dir
+            ); 
+        my $revno = $bzrinfo->bzrRevno();
+        my $revid = $bzrinfo->bzrRevisionId();
+        
+        if ((defined $revno) && (defined $revid)) {
+            say("$dir Revno: $revno");
+            say("$dir Revision-Id: $revid");
+        } else {
+            say($dir.' does not look like a bzr branch, cannot get revision info.');
+        } 
+    }
 }
 
 
@@ -205,7 +273,6 @@ if ($rpl_mode ne '') {
     if (defined $mysqld_options[0]) {
         push @options, @{$mysqld_options[0]};
     }
-    
     $rplsrv = DBServer::MySQL::ReplMySQLd->new(basedir => $basedirs[0],
                                                master_vardir => $vardirs[0],
                                                master_port => $ports[0],
@@ -215,6 +282,7 @@ if ($rpl_mode ne '') {
                                                server_options => \@options,
                                                valgrind => $valgrind,
                                                valgrind_options => \@valgrind_options,
+                                               general_log => 1,
                                                start_dirty => $start_dirty);
     
     my $status = $rplsrv->startServer();
@@ -251,14 +319,14 @@ if ($rpl_mode ne '') {
         if (defined $mysqld_options[$server_id]) {
             push @options, @{$mysqld_options[$server_id]};
         }
-        
         $server[$server_id] = DBServer::MySQL::MySQLd->new(basedir => $basedirs[$server_id],
                                                            vardir => $vardirs[$server_id],
                                                            port => $ports[$server_id],
                                                            start_dirty => $start_dirty,
                                                            valgrind => $valgrind,
                                                            valgrind_options => \@valgrind_options,
-                                                           server_options => \@options);
+                                                           server_options => \@options,
+                                                           general_log => 1);
         
         my $status = $server[$server_id]->startServer;
         
@@ -292,6 +360,7 @@ if ($rpl_mode ne '') {
 
 my $gentestProps = GenTest::Properties->new(
     legal => ['grammar',
+              'skip-recursive-rules',
               'dsn',
               'engine',
               'gendata',
@@ -317,6 +386,9 @@ my $gentestProps = GenTest::Properties->new(
               'start-dirty',
               'filter',
               'notnull',
+              'short_column_names',
+              'strict_fields',
+              'freeze_time',
               'valgrind',
               'valgrind-xml',
               'testname',
@@ -324,7 +396,10 @@ my $gentestProps = GenTest::Properties->new(
               'querytimeout',
               'report-xml-tt',
               'report-xml-tt-type',
-              'report-xml-tt-dest']
+              'report-xml-tt-dest',
+              'logfile',
+              'logconf',
+              'report-tt-logdir']
     );
 
 my @gentest_options;
@@ -350,29 +425,42 @@ $gentestProps->property('start-dirty',1) if defined $start_dirty;
 $gentestProps->gendata($gendata);
 $gentestProps->engine($engine) if defined $engine;
 $gentestProps->rpl_mode($rpl_mode) if defined $rpl_mode;
-$gentestProps->validators(\@validators) if defined @validators;
-$gentestProps->reporters(\@reporters) if defined @reporters;
-$gentestProps->transformers(\@transformers) if defined @transformers;
+$gentestProps->validators(\@validators) if @validators;
+$gentestProps->reporters(\@reporters) if @reporters;
+$gentestProps->transformers(\@transformers) if @transformers;
 $gentestProps->threads($threads) if defined $threads;
 $gentestProps->queries($queries) if defined $queries;
 $gentestProps->duration($duration) if defined $duration;
-$gentestProps->dsn(\@dsns) if defined @dsns;
+$gentestProps->dsn(\@dsns) if @dsns;
 $gentestProps->grammar($grammar_file);
+$gentestProps->property('skip-recursive-rules', $skip_recursive_rules);
 $gentestProps->redefine($redefine_file) if defined $redefine_file;
 $gentestProps->seed($seed) if defined $seed;
-$gentestProps->mask($mask) if defined $mask;
+$gentestProps->mask($mask) if (defined $mask) && (not defined $no_mask);
 $gentestProps->property('mask-level',$mask_level) if defined $mask_level;
 $gentestProps->rows($rows) if defined $rows;
-$gentestProps->views(1) if defined $views;
+if (defined $views) {
+	if ($views eq '1') {
+		$gentestProps->property('views', 'UNDEFINED');
+	} else {
+		$gentestProps->property('views', $views);
+	}
+}
 $gentestProps->property('varchar-length',$varchar_len) if defined $varchar_len;
 $gentestProps->property('xml-output',$xml_output) if defined $xml_output;
 $gentestProps->debug(1) if defined $debug;
 $gentestProps->filter($filter) if defined $filter;
 $gentestProps->notnull($notnull) if defined $notnull;
+$gentestProps->short_coulmn_names($short_column_names) if defined $short_column_names;
+$gentestProps->strict_fields($strict_fields) if defined $strict_fields;
+$gentestProps->freeze_time($freeze_time) if defined $freeze_time;
 $gentestProps->valgrind(1) if $valgrind;
-$gentestProps->sqltrace(1) if $sqltrace;
+$gentestProps->sqltrace($sqltrace) if $sqltrace;
 $gentestProps->querytimeout($querytimeout) if defined $querytimeout;
 $gentestProps->testname($testname) if $testname;
+$gentestProps->logfile($logfile) if defined $logfile;
+$gentestProps->logconf($logconf) if defined $logconf;
+$gentestProps->property('report-tt-logdir',$report_tt_logdir) if defined $report_tt_logdir;
 $gentestProps->property('report-xml-tt', 1) if defined $report_xml_tt;
 $gentestProps->property('report-xml-tt-type', $report_xml_tt_type) if defined $report_xml_tt_type;
 $gentestProps->property('report-xml-tt-dest', $report_xml_tt_dest) if defined $report_xml_tt_dest;
@@ -478,15 +566,19 @@ $0 - Run a complete random query generation test, including server start with re
     --mask-level: Grammar mask level. Passed to gentest.pl
     --notnull   : Generate all fields with NOT NULL
     --rows      : No of rows. Passed to gentest.pl
-    --sqltrace  : Print all generated SQL statements
+    --sqltrace  : Print all generated SQL statements. 
+                  Optional: Specify --sqltrace=MarkErrors to mark invalid statements.
     --varchar-length: length of strings. passed to gentest.pl
     --xml-outputs: Passed to gentest.pl
-    --views     : Generate views. Passed to gentest.pl
+    --views     : Generate views. Optionally specify view type (algorithm) as option value. Passed to gentest.pl
     --valgrind  : Passed to gentest.pl
     --filter    : Passed to gentest.pl
     --mem       : Passed to mtr
     --mtr-build-thread:  Value used for MTR_BUILD_THREAD when servers are started and accessed
     --debug     : Debug mode
+    --short_column_names: use short column names in gendata (c<number>)
+    --strict_fields: Disable all AI applied to columns defined in \$fields in the gendata file. Allows for very specific column definitions
+    --freeze_time: Freeze time for each query so that CURRENT_TIMESTAMP gives the same result for all transformers/validators
     --help      : This help message
 
     If you specify --basedir1 and --basedir2 or --vardir1 and --vardir2, two servers will be started and the results from the queries

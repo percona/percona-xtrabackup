@@ -41,7 +41,9 @@ sub report {
 	my $pid = $reporter->serverInfo('pid');
 	my $core = <$datadir/core*>;
 	$core = </cores/core.$pid> if $^O eq 'darwin';
-	say("core is $core");
+	$core = <$datadir/vgcore*> if defined $reporter->properties->valgrind;
+	$core = File::Spec->rel2abs($core);
+	(-f $core) ? say("core is $core") : say("WARNING: Core file not found!");
 
 	my @commands;
 

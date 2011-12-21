@@ -78,7 +78,7 @@ sub execute {
     }
 
     if ($ENV{RQG_DEBUG} or $self->dsn() =~ m/print/) {
-        print "Executing $query\n";
+        print "Executing $query;\n";
     }
 
 	return new GenTest::Result(query => $query,
@@ -99,7 +99,13 @@ sub currentSchema {
 sub getSchemaMetaData {
     return [['schema','tab','table','col1','ordinary'],
             ['schema','tab','table','col2','primary'],
-            ['schema','tab','table','col3','indexed']];
+            ['schema','tab','table','col3','indexed'],
+            ['test','tab','table','col1','ordinary'],
+            ['test','tab','table','col2','primary'],
+            ['test','tab','table','col3','indexed'],
+            ['mysql','tab','table','col','indexed'],
+            ['performance_schema','tab','table','col','indexed'],
+            ['INFORMATION_SCHEMA','tab','table','col','indexed']];
             
 }
 

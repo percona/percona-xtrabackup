@@ -35,7 +35,7 @@ sub transform {
 
        if ($original_query =~ m{GROUP\s+BY}io) {
 		return STATUS_WONT_HANDLE;
-	} elsif ($original_query =~ m{ORDER\s+BY[^()]*CONCAT\s\(}sio) {
+	} elsif ($original_query =~ m{ORDER\s+BY[^()]*CONCAT\s*\(}sio) {
 		# CONCAT() in ORDER BY requires more complex regexes below
 		# for correct behavior, so we skip this query.
 		return STATUS_WONT_HANDLE;

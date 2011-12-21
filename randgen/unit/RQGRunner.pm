@@ -9,6 +9,7 @@ use strict;
 
 use base qw(Test::Unit::Runner); 
 
+use Carp;
 use Test::Unit; # for copyright & version number
 use Test::Unit::TestSuite;
 use Test::Unit::Loader;
@@ -193,7 +194,7 @@ sub start {
         }
     }
     if ($test eq "") {
-        die "Usage: TestRunner.pl [-wait] name, where name is the name of the Test class\n";
+        croak "Usage: TestRunner.pl [-wait] name, where name is the name of the Test class\n";
     }
     
     my $suite = Test::Unit::Loader::load($test);

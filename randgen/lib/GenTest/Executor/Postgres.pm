@@ -74,6 +74,11 @@ sub execute {
         query => $query, 
         status => STATUS_UNKNOWN_ERROR ) 
         if not defined $dbh;
+
+    # Filter out any /*executor */ comments that do not pertain to this particular Executor/DBI
+    my $executor_id = $self->id();
+    $query =~ s{/\*executor$executor_id (.*?) \*/}{$1}sg;
+    $query =~ s{/\*executor.*?\*/}{}sgo;
     
     $query = $self->preprocess($query);
     
@@ -100,7 +105,7 @@ sub execute {
 
     if (defined $dbh->err()) {
         my $errstr = $db.":".$dbh->state().":".$dbh->errstr();
-        say($errstr . "($query)") if !$silent;
+        say("Query: $query failed: $errstr.") if !$silent;
         $self->[EXECUTOR_ERROR_COUNTS]->{$errstr}++ if rqg_debug() && !$silent;
         return GenTest::Result->new(
             query       => $query,
@@ -126,7 +131,7 @@ sub execute {
         if (not defined $acceptedErrors{$dbh->state()}) {
             ## Error on EXECUTE
             my $errstr = $db.":".$dbh->state().":".$dbh->errstr();
-            say($errstr . "($query)") if !$silent;
+	    say("Query: $query failed: $errstr.") if !$silent;
             $self->[EXECUTOR_ERROR_COUNTS]->{$errstr}++ if rqg_debug() && !$silent;
             return GenTest::Result->new(
                 query       => $query,
@@ -192,6 +197,8 @@ sub findStatus {
 
     if ($state eq "22000") {
 	return STATUS_SERVER_CRASHED;
+    } elsif (($state eq '42000') || ($state eq '42601')) {
+	return STATUS_SYNTAX_ERROR;
     } else {
 	return $self->SUPER::findStatus(@_);
     }

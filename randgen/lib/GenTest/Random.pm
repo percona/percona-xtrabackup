@@ -43,6 +43,7 @@ require Exporter;
 
 use strict;
 
+use Carp;
 use GenTest;
 use Cwd;
 
@@ -72,7 +73,7 @@ efficiency, math is done in integer mode
 use constant RANDOM_SEED		=> 0;
 use constant RANDOM_GENERATOR		=> 1;
 use constant RANDOM_VARCHAR_LENGTH	=> 2;
-use constant RANDOM_STRBUF          => 3;
+use constant RANDOM_STRBUF          	=> 3;
 
 use constant FIELD_TYPE_NUMERIC		=> 2;
 use constant FIELD_TYPE_STRING		=> 3;
@@ -97,6 +98,11 @@ use constant FIELD_TYPE_HEX		=> 18;
 use constant FIELD_TYPE_QUID		=> 19;
 
 use constant FIELD_TYPE_BIT		=> 20;
+
+use constant ASCII_RANGE_START		=> 97;
+use constant ASCII_RANGE_END		=> 122;
+
+use constant RANDOM_STRBUF_SIZE		=> 1024;
 
 my %dict_exists;
 my %dict_data;
@@ -318,59 +324,43 @@ sub set {
 }
 
 sub string {
-    use constant RANDOM_STRBUF_SIZE => 1024;
-    use integer;
-	my ($prng, $len, $range) = @_;
+	use integer;
 
-	$len = 1 if not defined $len;
-	$range = [97, 122] if not defined $range;
-	$len = $prng->[RANDOM_VARCHAR_LENGTH] if defined $prng->[RANDOM_VARCHAR_LENGTH];
-    # If the length is 0 or negative, return a zero-length string
-    return '' if $len <= 0;
+	my ($prng, $len) = @_;
+
+	$len = defined $len ? $len : ($prng->[RANDOM_VARCHAR_LENGTH] || 1);
+
+	# If the length is 0 or negative, return a zero-length string
+	return '' if $len <= 0;
  
-    # If the length is 1, just return one random character
-	if ($len == 1) {
-        return chr($prng->uint16($range->[0],$range->[1]));
+	# If the length is 1, just return one random character
+        return chr($prng->uint16(ASCII_RANGE_START, ASCII_RANGE_END)) if $len == 1;
+
+	# We store a random string of length RANDOM_STRBUF_SIZE which we fill with
+	# random bytes. Each time a new string is requested, we shift the
+	# string one byte right and generate a new string at the beginning
+	# of the string.
+
+	if (not defined $prng->[RANDOM_STRBUF]) {
+		$prng->[RANDOM_STRBUF] = join('', map{ chr($prng->uint16(ASCII_RANGE_START, ASCII_RANGE_END)) } (1..RANDOM_STRBUF_SIZE) );
+	} else {
+		$prng->[RANDOM_STRBUF] = substr($prng->[RANDOM_STRBUF], 1).chr($prng->uint16(ASCII_RANGE_START, ASCII_RANGE_END));
 	}
 
-    # We store a random string of length RANDOM_STRBUF_SIZE which we fill with
-    # random bytes. Each time a new string is requested, we shift the
-    # string one byte right and generate a new string at the beginning
-    # of the string.
+	my $actual_length = $prng->uint16(1,$len);
 
-	my $rnd;
-	my ($min, $max) = ($range->[0], $range->[1]);
-	my $modulus = $max - $min + 1;
-    my $actual_length = $prng->uint16(1,$len);
-
-    if (not defined $prng->[RANDOM_STRBUF]) {
-        # Fill the buffer with random bytes.
-        @{$prng->[RANDOM_STRBUF]} = 
-            map {$prng->uint16(0,255)} (1..RANDOM_STRBUF_SIZE);
-    } else {
-        # Shift right and put a new byte at the front
-        pop(@{$prng->[RANDOM_STRBUF]});
-        unshift(@{$prng->[RANDOM_STRBUF]},$prng->uint16(0,255));
-    }
-
-    if ($actual_length <= RANDOM_STRBUF_SIZE) {
-        ## If the wanted length fit in the buffer, just return a slice of it.
-        return pack("c*", 
-                    map {($min + ($_ % $modulus))} 
-                    @{$prng->[RANDOM_STRBUF]}[1..$actual_length]);
-    } else {
-        ## Otherwise wil fill repeatedly from the buffer
-        my $res = "";
-        while ($actual_length > RANDOM_STRBUF_SIZE){
-            $res .= pack("c*", 
-                         map {($min + ($_ % $modulus))} 
-                         @{$prng->[RANDOM_STRBUF]});
-            $actual_length -= RANDOM_STRBUF_SIZE;
-        }
-        return $res . pack("c*", 
-                           map {($min + ($_ % $modulus))} 
-                           @{$prng->[RANDOM_STRBUF]}[1..$actual_length]);
-    }
+	if ($actual_length <= RANDOM_STRBUF_SIZE) {
+		## If the wanted length fit in the buffer, just return a slice of it.
+		return substr($prng->[RANDOM_STRBUF], 0, $actual_length);
+	} else {
+		## Otherwise wil fill repeatedly from the buffer
+		my $res;
+		while ($actual_length > RANDOM_STRBUF_SIZE){
+			$res .= $prng->[RANDOM_STRBUF];
+			$actual_length -= RANDOM_STRBUF_SIZE;
+		}
+		return $res.substr($prng->[RANDOM_STRBUF], $actual_length);
+	}
 }
 
 sub quid {
@@ -451,7 +441,7 @@ sub fieldType {
 	} elsif ($field_type == FIELD_TYPE_BIT) {
 		return $rand->bit($field_length);
 	} else {
-		die ("unknown field type $field_def");
+		croak ("unknown field type $field_def");
 	}
 }
 
@@ -470,31 +460,21 @@ sub isFieldType {
 	my ($rand, $field_def) = @_;
 	return undef if not defined $field_def;
 
-	$field_def =~ s{^_}{}o;
-	my ($field_name) = $field_def =~ m{^([A-Za-z]*)}o;
+	my ($field_name) = $field_def =~ m{^(?:_|)([A-Za-z]*)}o;
 
 	if (exists $name2type{$field_name}) {
 		return $name2type{$field_name};
-	} elsif ($rand->isDictionary($field_name)) {
-		$name2type{$field_name} = FIELD_TYPE_DICT;
-		return FIELD_TYPE_DICT;
+	} elsif (exists $dict_exists{$field_name}) {
+		return $dict_exists{$field_name};
 	} else {
-		return undef;
-	}
-}
-
-sub isDictionary {
-	my ($rand, $dict_name) = @_;
-
-	if ($dict_exists{$dict_name}) {
-		return 1;
-	} else {
-                my $dict_file = $ENV{RQG_HOME} ne '' ? $ENV{RQG_HOME}."/dict/$dict_name.txt" : "dict/$dict_name.txt";
+                my $dict_file = $ENV{RQG_HOME} ne '' ? $ENV{RQG_HOME}."/dict/$field_name.txt" : "dict/$field_name.txt";
 
                 if (-e $dict_file) {
-			$dict_exists{$dict_name} = 1;
-			return 1;
+			$dict_exists{$field_name} = FIELD_TYPE_DICT;
+			$name2type{$field_name} = FIELD_TYPE_DICT;
+			return FIELD_TYPE_DICT;
 		} else {
+			$dict_exists{$field_name} = undef;
 			return undef;
 		}
 	}

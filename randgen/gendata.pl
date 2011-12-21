@@ -28,7 +28,7 @@ use GenTest::App::Gendata;
 use Getopt::Long;
 
 my ($spec_file, $config_file, $debug, $engine, $help, $dsn, $rows, $varchar_len,
-    $views, $server_id, $seed);
+    $views, $server_id, $seed, $short_column_names, $notnull, $strict_fields);
 
 my $opt_result = GetOptions(
 	'help'	=> \$help,
@@ -41,7 +41,10 @@ my $opt_result = GetOptions(
 	'rows=i' => \$rows,
 	'views' => \$views,
 	'varchar-length=i' => \$varchar_len,
-	'server-id=i' > \$server_id
+	'server-id=i' > \$server_id,
+    'notnull' => \$notnull,
+    'short_column_names' => \$short_column_names,
+    'strict_fields' => \$strict_fields
 );
 
 if (defined $config_file) {
@@ -62,7 +65,10 @@ my $app = GenTest::App::Gendata->new(spec_file => $spec_file,
                                      rows => $rows,
                                      views => $views,
                                      varchar_length => $varchar_len,
-                                     server_id => $server_id);
+                                     server_id => $server_id,
+                                     notnull => $notnull,
+                                     strict_fields => $strict_fields,
+                                     short_column_names => $short_column_names);
 
 
 my $status = $app->run();

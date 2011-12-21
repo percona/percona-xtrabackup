@@ -17,6 +17,8 @@
 
 package GenTest::Constants;
 
+use Carp;
+
 require Exporter;
 
 @ISA = qw(Exporter);
@@ -127,9 +129,9 @@ use constant STATUS_BACKUP_FAILURE		=> 107;
 use constant STATUS_VALGRIND_FAILURE		=> 108;
 use constant STATUS_ALARM			=> 109; # A module, e.g. a Reporter, raises an alarm with critical severity
 
-use constant ORACLE_ISSUE_STILL_REPEATABLE	=> 1;
-use constant ORACLE_ISSUE_NO_LONGER_REPEATABLE	=> 0;
-use constant ORACLE_ISSUE_STATUS_UNKNOWN	=> 2;
+use constant ORACLE_ISSUE_STILL_REPEATABLE	=> 2;
+use constant ORACLE_ISSUE_NO_LONGER_REPEATABLE	=> 3;
+use constant ORACLE_ISSUE_STATUS_UNKNOWN	=> 4;
 
 use constant DB_UNKNOWN		=> 0;
 use constant DB_DUMMY        => 1;
@@ -152,7 +154,7 @@ sub BEGIN {
 	# What we do here is open the Constants.pm file and parse the 'use constant' lines from it
 	# The regexp is faily hairy in order to be more permissive.
 
-	open (CONSTFILE, __FILE__) or die "Unable to read constants from ".__FILE__;
+	open (CONSTFILE, __FILE__) or croak "Unable to read constants from ".__FILE__;
 	read(CONSTFILE, my $constants_text, -s __FILE__);
 	%text2value = $constants_text =~ m{^\s*use\s+constant\s+([A-Z_0-9]*?)\s*=>\s*(\d+)\s*;}mgio;
 }
@@ -163,7 +165,7 @@ sub constant2text {
 	foreach my $constant_text (keys %text2value) {
 		return $constant_text if $text2value{$constant_text} == $constant_value && $constant_text =~ m{^$prefix}si;
 	}
-	warn "Unable to obtain constant text for constant_value = $constant_value; prefix = $prefix";
+	carp "Unable to obtain constant text for constant_value = $constant_value; prefix = $prefix";
 	return undef;
 }
 
