@@ -123,7 +123,7 @@ vlog "Cheking checksums"
 checksum_3=`checksum_table incremental_sample test`
 vlog "checksum_3 is $checksum_3"
 
-if [ "$checksum_3" != $checksum_2  ]
+if [ "$checksum_3" != "$checksum_2"  ]
 then
         vlog "Checksums are not equal"
         exit -1
