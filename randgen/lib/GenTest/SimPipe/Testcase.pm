@@ -67,10 +67,12 @@ sub newFromDBH {
 		SELECT TABLE_NAME
 		FROM INFORMATION_SCHEMA.TABLES
 		WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_TYPE = 'BASE TABLE'
 		ORDER BY TABLE_ROWS DESC
 	");
 
 	foreach my $table_name (@$table_names) {
+		print "Loading $table_name\n";
 		push @table_objs, GenTest::SimPipe::DBObject->newFromDBH($dbh, $table_name);
 	}
 
@@ -166,6 +168,7 @@ sub simplify {
 	my $col_id = 1;
 
 	foreach my $dbobject (@{$testcase->dbObjects()}) {
+		next if not defined $dbobject;
 		foreach my $column (@{$dbobject->columns()}) {
 			if (exists $col_map{$column->[COLUMN_NAME]}) {		
 				$column->[COLUMN_NAME] = $col_map{$column->[COLUMN_NAME]};
@@ -176,13 +179,15 @@ sub simplify {
 		}
 
 		foreach my $key (@{$dbobject->keys()}) {
-			$key->[KEY_COLUMN] = $col_map{$key->[KEY_COLUMN]} if exists $col_map{$key->[KEY_COLUMN]};
+			foreach my $i (0..$#{$key->[KEY_COLUMNS]}) {
+				$key->[KEY_COLUMNS]->[$i] = $col_map{$key->[KEY_COLUMNS]->[$i]} if exists $col_map{$key->[KEY_COLUMNS]->[$i]};
+			}
 		}
 	}
 
 	foreach my $query (@{$testcase->queries()}) {
 		while (my ($old, $new) = each %col_map) {
-			$query =~ s{$old([^A-Za-z_0-9])}{$new$1}sgi;
+			$query =~ s{$old([^A-Za-z_0-9]|$)}{$new$1}sgi;
 		}
 		print "Rewritten: $query\n";
 	}
@@ -193,14 +198,13 @@ sub simplify {
 	}
 
 	foreach my $db_object (@{$testcase->dbObjects()}) {
-		print "T";
+
+		print "Attempting to remove table ".$db_object->name()."\n";
 		my $saved_db_object = $db_object;
 		$db_object = undef;
 		next if $oracle->oracle($testcase) == ORACLE_ISSUE_STILL_REPEATABLE;
 		$db_object = $saved_db_object;
-	}
 
-	foreach my $db_object (@{$testcase->dbObjects()}) {
 		next if not defined $db_object;
 
 		my $rows = $db_object->data();
@@ -273,11 +277,12 @@ sub simplify {
 			next if not defined $row;
 			foreach my $cell (values %$row) {
 				print "Cell";
-				next if not defined $cell || length($cell) == 1;
+				next if not defined $cell || length($cell) == 1 || $cell =~ m{^\d+$}sgio;
 				my $saved_cell = $cell;
-				foreach my $new_length (16,32,128) {
+				foreach my $new_length (16,32,128,512) {
 					last if length($saved_cell) <= $new_length;
 					$cell = substr($saved_cell, 0, $new_length);
+					print "Replacing $saved_cell with $cell\n";
 					if ($oracle->oracle($testcase) !=ORACLE_ISSUE_STILL_REPEATABLE) {
 						$cell = $saved_cell;
 					} else {

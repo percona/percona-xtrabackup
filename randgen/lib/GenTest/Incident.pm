@@ -63,7 +63,7 @@ sub new {
         debugs      => INCIDENT_DEBUGS
     }, @_);
 
-    $incident->[INCIDENT_TIMESTAMP] = isoTimestamp() if not defined $incident->[INCIDENT_TIMESTAMP];
+    $incident->[INCIDENT_TIMESTAMP] = isoUTCTimestamp() if not defined $incident->[INCIDENT_TIMESTAMP];
     $incident->[INCIDENT_ID] = $id++ if not defined $incident->[INCIDENT_ID];
 
     return $incident;

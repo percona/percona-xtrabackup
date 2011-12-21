@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2010 Sun Microsystems, Inc. All rights reserved.
+# Copyright (c) 2008, 2011 Oracle and/or its affiliates. All rights reserved.
 # Use is subject to license terms.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -29,8 +29,8 @@ query:
 	outer_having outer_order_by ;
 
 outer_select_item:
-	OUTR . field_name AS X |
-	aggregate_function OUTR . field_name ) AS X;
+	OUTR . field_name AS x |
+	aggregate_function OUTR . field_name ) AS x;
 
 aggregate_function:
 	AVG( |
@@ -62,10 +62,10 @@ outer_group_by:
 	| GROUP BY OUTR . field_name ;
 
 outer_having:
-	| HAVING X arithmetic_operator value;
+	| HAVING x arithmetic_operator value;
 
 outer_having_disabled_bug38072:
-	| HAVING X arithmetic_operator value ;
+	| HAVING x arithmetic_operator value ;
 
 limit:
 	| LIMIT digit ;
@@ -83,7 +83,7 @@ inner_order_by:
 	| ORDER BY INNR . field_name ;
 
 inner_select_item:
-	INNR . int_field_name AS Y ;
+	INNR . int_field_name AS y ;
 
 inner_from:
 	inner_table_name AS INNR |
@@ -138,10 +138,10 @@ arithmetic_operator:
 	= | > | < | <> | >= | <= ;
 
 subquery_expression:
-	OUTR . int_field_name IN ( SELECT select_option INNR . int_field_name AS Y select_inner_body ) |
-	OUTR . char_field_name IN ( SELECT select_option INNR . char_field_name AS Y select_inner_body ) |
-	( OUTR . int_field_name , OUTR . int_field_name ) IN ( SELECT select_option INNR . int_field_name AS X , INNR . int_field_name AS Y select_inner_body ) |
-	( OUTR . char_field_name , OUTR . char_field_name ) IN ( SELECT select_option INNR . char_field_name AS X , INNR . char_field_name AS Y select_inner_body ) ;
+	OUTR . int_field_name IN ( SELECT select_option INNR . int_field_name AS y select_inner_body ) |
+	OUTR . char_field_name IN ( SELECT select_option INNR . char_field_name AS y select_inner_body ) |
+	( OUTR . int_field_name , OUTR . int_field_name ) IN ( SELECT select_option INNR . int_field_name AS x , INNR . int_field_name AS y select_inner_body ) |
+	( OUTR . char_field_name , OUTR . char_field_name ) IN ( SELECT select_option INNR . char_field_name AS x , INNR . char_field_name AS y select_inner_body ) ;
 
 field_name:
 	int_field_name | char_field_name | date_field_name;

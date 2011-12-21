@@ -33,7 +33,6 @@ use strict;
 use GenTest;
 use GenTest::Result;
 use GenTest::Random;
-use Cwd 'abs_path';
 use DBI;
 
 use constant REPORTER_PRNG		=> 0;
@@ -79,10 +78,15 @@ sub new {
 
 	$sth->finish();
 
+	# SHOW SLAVE HOSTS may fail if user does not have the REPLICATION SLAVE privilege
+	$dbh->{PrintError} = 0;
 	my $slave_info = $dbh->selectrow_arrayref("SHOW SLAVE HOSTS");
-	$reporter->[REPORTER_SERVER_INFO]->{slave_host} = $slave_info->[1];
-	$reporter->[REPORTER_SERVER_INFO]->{slave_port} = $slave_info->[2];
-        
+	$dbh->{PrintError} = 1;
+	if (defined $slave_info) {
+		$reporter->[REPORTER_SERVER_INFO]->{slave_host} = $slave_info->[1];
+		$reporter->[REPORTER_SERVER_INFO]->{slave_port} = $slave_info->[2];
+	}
+
 	if ($reporter->serverVariable('version') !~ m{^5\.0}sgio) {
 		$reporter->[REPORTER_SERVER_PLUGINS] = $dbh->selectall_arrayref("
 	                SELECT PLUGIN_NAME, PLUGIN_LIBRARY
@@ -137,9 +141,10 @@ sub new {
 		"../log/mysqld1.err", # MTRv2 regular layout
 		"../mysql.err"        # DBServer::MySQL layout
 	) {
-		my $possible_path = abs_path($reporter->serverVariable('datadir').'/'.$errorlog_path);
+		my $possible_path = File::Spec->catfile($reporter->serverVariable('datadir'),$errorlog_path);
 		if (-e $possible_path) {
 			$reporter->[REPORTER_SERVER_INFO]->{'errorlog'} = $possible_path;
+			last;
 		}
 	}
 
@@ -183,6 +188,10 @@ sub testEnd {
 
 sub prng {
 	return $_[0]->[REPORTER_PRNG];
+}
+
+sub testDuration {
+	return $_[0]->[REPORTER_TEST_DURATION];
 }
 
 sub properties {

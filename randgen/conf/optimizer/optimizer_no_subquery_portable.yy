@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2010 Sun Microsystems, Inc. All rights reserved.
+# Copyright (c) 2008, 2011 Oracle and/or its affiliates. All rights reserved.
 # Use is subject to license terms.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -271,7 +271,7 @@ order_by_item:
         table1 . _field_indexed , existing_table_item .`pk` desc  |
         table1 . _field_indexed desc |
 	existing_select_item desc |
-        CONCAT ( existing_table_item . char_field_name, existing_table_item . char_field_name );
+        CONCAT( existing_table_item . char_field_name, existing_table_item . char_field_name );
 desc:
         ASC | | DESC ; 
 
@@ -310,7 +310,7 @@ aggregate_select_item:
 
 combo_select_item:
     ( ( table_one_two . int_field_name ) math_operator ( table_one_two . int_field_name ) ) AS { my $f = "field".++$fields ; push @nonaggregates , $f ; $f } |
-    CONCAT ( table_one_two . char_field_name , table_one_two . char_field_name ) AS { my $f = "field".++$fields ; push @nonaggregates , $f ; $f } ;
+    CONCAT( table_one_two . char_field_name , table_one_two . char_field_name ) AS { my $f = "field".++$fields ; push @nonaggregates , $f ; $f } ;
 
 table_one_two:
 	table1 | table2 ;

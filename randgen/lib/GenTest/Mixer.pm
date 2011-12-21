@@ -21,6 +21,7 @@ require Exporter;
 @ISA = qw(GenTest);
 
 use strict;
+use Carp;
 use Data::Dumper;
 use GenTest;
 use GenTest::Constants;
@@ -104,6 +105,17 @@ sub next {
 	my $executors = $mixer->executors();
 	my $filters = $mixer->filters();
 
+    if ($mixer->properties->freeze_time) {
+        foreach my $ex (@$executors) {
+            if ($ex->type == DB_MYSQL) {
+                $ex->execute("SET TIMESTAMP=0");
+                $ex->execute("SET TIMESTAMP=UNIX_TIMESTAMP(NOW())");
+            } else {
+                carp "Don't know how to freeze time for ".$ex->getName;
+            }
+        }
+    }
+
 	my $queries = $mixer->generator()->next($executors);
 	if (not defined $queries) {
 		say("Internal grammar problem. Terminating.");
@@ -137,6 +149,8 @@ sub next {
 				say("Server crash reported at dsn ".$executor->dsn());
 				last;
 			}
+			
+			next query if $execution_result->status() == STATUS_SKIP;
 		}
 		
 		foreach my $validator (@{$mixer->validators()}) {

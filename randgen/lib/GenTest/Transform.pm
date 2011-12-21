@@ -25,6 +25,7 @@ use strict;
 use lib 'lib';
 use GenTest;
 use GenTest::Constants;
+use GenTest::Executor::MySQL;
 use Data::Dumper;
 
 use constant TRANSFORMER_QUERIES_PROCESSED	=> 0;
@@ -63,7 +64,11 @@ my %mysql_grouping_errors = (
 	1317 => 'ER_QUERY_INTERRUPTED',
 	2013 => 'CR_SERVER_LOST',
 	2006 => 'CR_SERVER_GONE_ERROR',
-	1028 => 'ER_FILSORT_ABORT'
+	1028 => 'ER_FILSORT_ABORT',
+	1111 => 'ER_INVALID_GROUP_FUNC_USE',
+	1615 => 'ER_NEED_REPREPARE',
+	1060 => 'DUPLICATE_COLUMN_NAME',
+	1104 => 'ER_TOO_BIG_SELECT'
 );
 
 # List of encountered errors that we want to suppress later in the test run.
@@ -78,13 +83,12 @@ sub transformExecuteValidate {
 
 	my $transform_blocks;
 
-	if (
-		($transformer_output == STATUS_OK) ||
-		($transformer_output == STATUS_WONT_HANDLE)
-	) {
-		return STATUS_OK;
-	} elsif ($transformer_output =~ m{^\d+$}sgio) {
-		return $transformer_output;	# Error was returned and no queries
+	if ($transformer_output =~ m{^\d+$}sgio) {
+		if ($transformer_output == STATUS_WONT_HANDLE) {
+			return STATUS_OK;
+		} else {
+			return $transformer_output;     # Error was returned and no queries
+		}
 	} elsif (ref($transformer_output) eq 'ARRAY') {
 		if (ref($transformer_output->[0]) eq 'ARRAY') {
 			# Transformation produced more than one block of queries
@@ -107,9 +111,14 @@ sub transformExecuteValidate {
 
 		foreach my $transformed_query_part (@transformed_queries) {
 			my $part_result = $executor->execute($transformed_query_part);
-			if (
+
+			if ($part_result->status() == STATUS_SKIP) {
+				$transform_outcome = STATUS_OK;
+				next;
+			} elsif (
 				($part_result->status() == STATUS_SYNTAX_ERROR) || 
-				($part_result->status() == STATUS_SEMANTIC_ERROR)
+				($part_result->status() == STATUS_SEMANTIC_ERROR) ||
+				($part_result->status() == STATUS_SERVER_CRASHED) 
 			) {
 				# We normally return a critical error when a transformer returns
 				# a semantic or syntactic error, because we want to detect any

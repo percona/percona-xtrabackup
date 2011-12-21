@@ -1,19 +1,21 @@
-# Copyright (C) 2008-2009 Sun Microsystems, Inc. All rights reserved.
-# Use is subject to license terms.
+# Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; version 2 of the License.
 #
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-# General Public License for more details.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301
-# USA
+# along with this program; if not, write to the Free Software Foundation,
+# 51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+
+# Last Modification to Grammar : Sandeep D (Bug #11766276)
+#  The joins on information schema tables resulted in high usage of temp space (> 350G) . The space consumtion is basically due to sorting temp table created during order by on 
+# joins involving tables like INNODB_BUFFER_PAGE . The current modification eliminates the order by on Joins and preserves sorting on projection queries with single table 
 
 query_init:
 	SELECT _field FROM _table ;	# Populate the RQG metadata caches from the start of the start of the test
@@ -25,6 +27,9 @@ query:
 	{ @nonaggregates = () ; @table_names = () ; @database_names = () ; $tables = 0 ; $fields = 0 ; "" } select |
 	{ @nonaggregates = () ; @table_names = () ; @database_names = () ; $tables = 0 ; $fields = 0 ; "" } select |
 	{ @nonaggregates = () ; @table_names = () ; @database_names = () ; $tables = 0 ; $fields = 0 ; "" } select |
+	{ @nonaggregates = () ; @table_names = () ; @database_names = () ; $tables = 0 ; $fields = 0 ; "" } select_join |
+	{ @nonaggregates = () ; @table_names = () ; @database_names = () ; $tables = 0 ; $fields = 0 ; "" } select_join |
+	{ @nonaggregates = () ; @table_names = () ; @database_names = () ; $tables = 0 ; $fields = 0 ; "" } select_join |
 	show ;
 
 show:
@@ -203,12 +208,22 @@ field_list:
 
 select:
 	SELECT *
-	FROM join_list
+	FROM new_table_item
 	where
 	group_by
 	having
 	order_by_limit
 ;
+
+select_join :
+	SELECT *
+	FROM join_list
+	where
+	group_by
+	having
+	LIMIT _digit
+;
+
 
 select_list:
 	new_select_item |

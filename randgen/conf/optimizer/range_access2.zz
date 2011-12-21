@@ -1,6 +1,6 @@
 $tables = {
         rows => [10000],
-        engines => ['MyISAM', 'PBXT', 'Aria', 'InnoDB' ]
+        engines => [undef, 'MyISAM', 'InnoDB' ]
 };
 
 $fields = {

@@ -55,7 +55,7 @@ sub simplify {
 
 	my @tables_named = $initial_query =~ m{(table[a-z0-9_]+)}sgio;
 	my @tables_quoted = $initial_query =~ m{`(.*?)`}sgio;
-	my @tables_letters = $initial_query =~ m{[ `]([A-Z]|AA|BB|CC|DD|EE|FF|AAA|BBB|CCC|DDD|EEE|FFF)[ `]}sgo;
+	my @tables_letters = $initial_query =~ m{[ `]([A-Z]|AA|BB|CC|DD|EE|FF|GG|HH|II|JJ|KK|LL|MM|NN|OO|PP|QQ|RR|SS|TT|UU|VV|WW|XX|YY|ZZ|AAA|BBB|CCC|DDD|EEE|FFF|GGG|HHH|III|JJJ|KKK|LLL|MMM|NNN|OOO|PPP|QQQ|RRR|SSS|TTT|UUU|VVV|WWW|XXX|YYY|ZZZ)[ `]}sgo;
 	
 	my @participating_tables = (@tables_named, @tables_quoted, @tables_letters);
 

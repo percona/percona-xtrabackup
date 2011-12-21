@@ -24,6 +24,7 @@ use strict;
 use lib 'lib';
 
 use GenTest;
+use GenTest::Constants;
 use GenTest::Grammar;
 use GenTest::Grammar::Rule;
 
@@ -49,7 +50,7 @@ sub new {
 sub simplify {
 	my ($simplifier, $initial_grammar_string) = @_;
 
-	if (!$simplifier->oracle($initial_grammar_string)) {
+	if ($simplifier->oracle($initial_grammar_string) == ORACLE_ISSUE_NO_LONGER_REPEATABLE) {
 		warn("Initial grammar failed oracle check.");
 		warn("Are duration and/or trials too small or is a different value for seed required?");
 		return undef;
@@ -85,7 +86,7 @@ sub simplify {
 		$grammar_string = $simplifier->[SIMPLIFIER_GRAMMAR_OBJ]->toString();
 	}
 	
-	if (!$simplifier->oracle($grammar_string)) {
+	if ($simplifier->oracle($grammar_string) == ORACLE_ISSUE_NO_LONGER_REPEATABLE) {
 		warn("Final grammar failed oracle check.");
 		return undef;
 	} else {
@@ -114,8 +115,8 @@ sub descend {
 	 	say("Attempting to remove component ".join(' ', @$orig_component)." ...");
 
 		splice (@$orig_components, $component_id, 1);
-
-		if ($simplifier->oracle($grammar_obj->toString())) {
+		
+		if ($simplifier->oracle($grammar_obj->toString()) != ORACLE_ISSUE_NO_LONGER_REPEATABLE) {
 		 	say("Outcome still repeatable after removing ".join(' ', @$orig_component).". Deleting component.");
 			next;
 		} else {

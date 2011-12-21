@@ -31,7 +31,9 @@ use GenTest::Constants;
 sub transform {
 	my ($class, $original_query, $executor, $original_result) = @_;
 
-	return STATUS_WONT_HANDLE if $original_query !~ m{^\s*SELECT}sio || $original_query =~ m{LIMIT}sio;
+	return STATUS_WONT_HANDLE if $original_query !~ m{^\s*SELECT}sio 
+	        || $original_query =~ m{LIMIT}sio
+	        || $original_query =~ m{(AVG|STD|STDDEV_POP|STDDEV_SAMP|STDDEV|SUM|VAR_POP|VAR_SAMP|VARIANCE)\s*\(}sio;
 	return STATUS_WONT_HANDLE if $original_result->rows() == 0;
 
 	# This transformation can not work if the result set contains NULLs
@@ -46,8 +48,8 @@ sub transform {
 	return [
 		"DROP TABLE IF EXISTS $table_name",
 		"CREATE TABLE $table_name $original_query",
-		"SELECT * FROM $table_name WHERE (".join(', ', @{$original_result->columnNames()}).") IN ( $original_query ) /* TRANSFORM_OUTCOME_UNORDERED_MATCH */",
-		"SELECT * FROM $table_name WHERE (".join(', ', @{$original_result->columnNames()}).") NOT IN ( $original_query ) /* TRANSFORM_OUTCOME_EMPTY_RESULT */",
+		"SELECT * FROM $table_name WHERE (".join(', ', map { "`$_`" } @{$original_result->columnNames()}).") IN ( $original_query ) /* TRANSFORM_OUTCOME_UNORDERED_MATCH */",
+		"SELECT * FROM $table_name WHERE (".join(', ', map { "`$_`" } @{$original_result->columnNames()}).") NOT IN ( $original_query ) /* TRANSFORM_OUTCOME_EMPTY_RESULT */",
 		"DROP TABLE $table_name",
 	];
 }

@@ -1,5 +1,5 @@
-# Copyright (c) 2010 Oracle and/or its affiliates. All rights reserved.
-# Use is subject to license terms.
+# Copyright (c) 2010,2011 Oracle and/or its affiliates. All rights
+# reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,9 +29,10 @@ use GenTest::Properties;
 
 
 use constant XMLTRANSPORT_TYPE              => 0;  # which transport type to use
-use constant XMLTRANSPORT_TYPE_MYSQL        => 1;  # db connections
-use constant XMLTRANSPORT_TYPE_SCP          => 2;  # secure copy
-use constant XMLTRANSPORT_TYPES             => 3;  # collection of types
+use constant XMLTRANSPORT_TYPE_NONE         => 1;  # Noop. Does nothing
+use constant XMLTRANSPORT_TYPE_MYSQL        => 2;  # db connections
+use constant XMLTRANSPORT_TYPE_SCP          => 3;  # secure copy
+use constant XMLTRANSPORT_TYPES             => 4;  # collection of types
 
 # Defaults:
 use constant XML_DEFAULT_TRANSPORT_TYPE     => XMLTRANSPORT_TYPE_SCP;
@@ -76,6 +77,8 @@ sub new {
     } elsif ($self->[XMLTRANSPORT_TYPE] =~ m{mysql}io) {
         # string match for "mysql" (case insensitive)
         $self->[XMLTRANSPORT_TYPE] = XMLTRANSPORT_TYPE_MYSQL;
+    } elsif ($self->[XMLTRANSPORT_TYPE] =~ m{none}io) {
+        $self->[XMLTRANSPORT_TYPE] = XMLTRANSPORT_TYPE_NONE;
     }
 
     #${$self}[XMLTRANSPORT_TYPES] = ();
@@ -123,7 +126,10 @@ sub defaultScpDestination {
 sub sendXML {
     my ($self, $xml, $dest) = @_;
 
-    if ($self->type == XMLTRANSPORT_TYPE_MYSQL) {
+    if ($self->type == XMLTRANSPORT_TYPE_NONE) {
+        say("XML Transport type: NONE");
+        return STATUS_OK;
+    } elsif ($self->type == XMLTRANSPORT_TYPE_MYSQL) {
         say("XML Transport type: MySQL database connection");
         $dest = XML_MYSQL_DEFAULT_DSN if not defined $dest;
         return $self->mysql($xml, $dest);
@@ -187,7 +193,7 @@ sub scp {
     # TODO: The scp command is interactive if keys and hosts are not set up.
     #       This may cause hangs in automated environments. Find a way to
     #       always run non-interactively, or kill the command after a timeout.
-    my $result == system($cmd);
+    my $result = system($cmd);
     if ($result != STATUS_OK) {
         warn('XML Transport: scp failed. Command was: '.$cmd);
     }

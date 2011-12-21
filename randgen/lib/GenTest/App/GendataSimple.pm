@@ -35,6 +35,11 @@ use constant GDS_ENGINE => 1;
 use constant GDS_VIEWS => 2;
 use constant GDS_SQLTRACE => 3;
 use constant GDS_NOTNULL => 4;
+use constant GDS_ROWS => 5;
+use constant GDS_VARCHAR_LENGTH => 6;
+
+use constant GDS_DEFAULT_ROWS => [0, 1, 20, 100, 1000, 0, 1, 20, 100];
+use constant GDS_DEFAULT_NAMES => ['A', 'B', 'C', 'D', 'E', 'AA', 'BB', 'CC', 'DD'];
 
 sub new {
     my $class = shift;
@@ -44,7 +49,9 @@ sub new {
         'engine' => GDS_ENGINE,
         'views' => GDS_VIEWS,
         'sqltrace' => GDS_SQLTRACE,
-	'notnull' => GDS_NOTNULL },@_);
+	'notnull' => GDS_NOTNULL,
+	'rows' => GDS_ROWS
+    },@_);
 
     if (not defined $self->[GDS_DSN]) {
         $self->[GDS_DSN] = GDS_DEFAULT_DSN;
@@ -73,6 +80,14 @@ sub sqltrace {
     return $_[0]->[GDS_SQLTRACE];
 }
 
+sub rows {
+    return $_[0]->[GDS_ROWS];
+}
+
+sub varcharLength {
+    return $_[0]->[GDS_VARCHAR_LENGTH] || 1;
+}
+
 sub run {
     my ($self) = @_;
 
@@ -82,10 +97,17 @@ sub run {
     $executor->sqltrace($self->sqltrace);
     $executor->init();
     
-    my @names = ('A', 'B', 'C', 'D', 'E', 'AA', 'BB', 'CC', 'DD');
-    my @sizes = (0, 1, 20, 100, 1000, 0, 1, 20, 100);
-    foreach my $i (0..$#names) {
-        my $gen_table_result = $self->gen_table ($executor, $names[$i], $sizes[$i], $prng);
+    my $names = GDS_DEFAULT_NAMES;
+    my $rows;
+
+    if (defined $self->rows()) {
+        $rows = [split(',', $self->rows())];
+    } else {
+        $rows = GDS_DEFAULT_ROWS;
+    }
+
+    foreach my $i (0..$#$names) {
+        my $gen_table_result = $self->gen_table($executor, $names->[$i], $rows->[$i], $prng);
         return $gen_table_result if $gen_table_result != STATUS_OK;
     }
     
@@ -102,10 +124,11 @@ sub run {
 sub gen_table {
 	my ($self, $executor, $name, $size, $prng) = @_;
 
-    my $varchar_length = 1;
     my $nullability = defined $self->[GDS_NOTNULL] ? 'NOT NULL' : '/*! NULL */';  
     ### NULL is not a valid ANSI constraint, (but NOT NULL of course,
     ### is)
+
+    my $varchar_length = $self->varcharLength();
 
     my $engine = $self->engine();
     my $views = $self->views();
@@ -219,7 +242,11 @@ sub gen_table {
 	};
 
 	if (defined $views) {
-		$executor->execute('CREATE VIEW view_'.$name.' AS SELECT * FROM '.$name);
+		if ($views ne '') {
+			$executor->execute("CREATE ALGORITHM=$views VIEW view_".$name.' AS SELECT * FROM '.$name);
+		} else {
+			$executor->execute('CREATE VIEW view_'.$name.' AS SELECT * FROM '.$name);
+		}
 	}
 
 	my @values;

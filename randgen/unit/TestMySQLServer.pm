@@ -21,12 +21,15 @@ use base qw(Test::Unit::TestCase);
 use lib 'lib','lib/DBServer';
 use Cwd;
 use GenTest;
+use DBServer::DBServer;
 use DBServer::MySQL::MySQLd;
 use GenTest::Executor;
+use GenTest::Properties;
 use GenTest::Reporter;
 use GenTest::Reporter::Backtrace;
 
 use Data::Dumper;
+use File::Path qw(mkpath rmtree);
 
 sub new {
     my $self = shift()->SUPER::new(@_);
@@ -45,12 +48,11 @@ sub tear_down {
         foreach my $p (@pids) {
             Win32::Process::KillProcess($p,-1);
         }
-        system("rmdir /s /q unit\\tmp");
     } else {
         ## Need to ,kill leftover processes if there are some
         kill 9 => @pids;
-        # system("rm -rf unit/tmp");
     }
+    rmtree("unit/tmp");
 }
 
 sub test_create_server {
@@ -94,7 +96,7 @@ sub test_create_server {
 
     $server->stopServer;
 
-    sayFile($server->logfile);
+    sayFile($server->errorlog);
 
     $server = DBServer::MySQL::MySQLd->new(basedir => $ENV{RQG_MYSQL_BASE},
                                            vardir => $vardir,
@@ -107,7 +109,7 @@ sub test_create_server {
     push @pids,$server->serverpid;
     $server->stopServer;
 
-    sayFile($server->logfile);
+    sayFile($server->errorlog);
 }
 
 sub test_crash_and_core {
@@ -146,7 +148,10 @@ sub test_crash_and_core {
         $self->assert(-f $vardir."/mysql.pid") if not osWindows();
         $self->assert(-f $vardir."/mysql.err");
         
-        my $backtrace = GenTest::Reporter::Backtrace->new(dsn => $server->dsn);
+        my $backtrace = GenTest::Reporter::Backtrace->new(
+            dsn => $server->dsn,
+            properties => GenTest::Properties->new()
+        );
         
         sleep(1);
         
@@ -154,7 +159,7 @@ sub test_crash_and_core {
         
         sleep(1);
 
-        sayFile($server->logfile);
+        sayFile($server->errorlog);
 
         say("Core: ". $server->corefile);
 

@@ -46,7 +46,7 @@ sub validate {
 		if ($compare_outcome > STATUS_OK) {
 			say("Query: $orig_query; returns different result when executed after a delay of $delay seconds.");
 			say(GenTest::Comparator::dumpDiff($orig_result, $new_result));
-			return $compare_outcome;
+			return STATUS_DATABASE_CORRUPTION;
 		}
 	}
 

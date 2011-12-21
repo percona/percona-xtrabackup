@@ -1,4 +1,4 @@
-# Copyright (c) 2008,2010 Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2011 Oracle and/or its affiliates. All rights reserved.
 # Use is subject to license terms.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -15,10 +15,6 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301
 # USA
 
-SET GLOBAL OPTIMIZER_SWITCH = 'materialization=off,semijoin=off,loosescan=off,firstmatch=off';
-
-SET GLOBAL optimizer_use_mrr = 'disable';
-
-SET GLOBAL engine_condition_pushdown = 'off';
+SET GLOBAL OPTIMIZER_SWITCH = 'mrr=off,mrr_cost_based=off,materialization=off,semijoin=off,loosescan=off,firstmatch=off,engine_condition_pushdown=off,index_condition_pushdown=off,index_merge=off,index_merge_union=off,index_merge_sort_union=off,index_merge_intersection=off';
 
 SET GLOBAL optimizer_join_cache_level = 0;

@@ -34,6 +34,7 @@ use GenTest::App::GendataSimple;
 use GenTest::IPC::Channel;
 use GenTest::IPC::Process;
 use GenTest::ErrorFilter;
+use GenTest::Grammar;
 
 use POSIX;
 use Time::HiRes;
@@ -90,7 +91,13 @@ sub run {
     my $seed = $self->config->seed;
     if ($seed eq 'time') {
         $seed = time();
-        say("Converting --seed=time to --seed=$seed");
+        say("Converting --seed=time to --seed=$seed"); }
+    elsif ($seed eq 'epoch5') {
+        $seed = time() % 100000;
+        say("Converting --seed=epoch5 to --seed=$seed"); 
+    } elsif ($seed eq 'random') {
+        $seed = int(rand(32767));
+        say("Converting --seed=random to --seed=$seed"); 
     }
     
     $ENV{RQG_DEBUG} = 1 if $self->config->debug;
@@ -113,7 +120,9 @@ sub run {
                                                             views => $self->config->views,
                                                             engine => $self->config->engine,
                                                             sqltrace=> $self->config->sqltrace,
-                                                            notnull => $self->config->notnull);
+                                                            notnull => $self->config->notnull,
+                                                            rows => $self->config->rows,
+                                                            varchar_length => $self->config->property('varchar-length'));
             } else {
                 $datagen = GenTest::App::Gendata->new(spec_file => $self->config->gendata,
                                                       dsn => $dsn,
@@ -124,6 +133,8 @@ sub run {
                                                       views => $self->config->views,
                                                       varchar_length => $self->config->property('varchar-length'),
                                                       sqltrace => $self->config->sqltrace,
+                                                      short_column_names => $self->config->short_column_names,
+                                                      strict_fields => $self->config->strict_fields,
                                                       notnull => $self->config->notnull);
             }
             $gendata_result = $datagen->run();
@@ -144,7 +155,8 @@ sub run {
 
     if ($generator_name eq 'GenTest::Generator::FromGrammar') {
 	$grammar = GenTest::Grammar->new(
-	    grammar_file => $self->config->grammar
+ 	    grammar_file => $self->config->grammar,
+            grammar_flags => (defined $self->config->property('skip-recursive-rules') ? GRAMMAR_FLAG_SKIP_RECURSIVE_RULES : undef )
         ) if defined $self->config->grammar;
 
 	return STATUS_ENVIRONMENT_FAILURE if not defined $grammar;
@@ -163,15 +175,15 @@ sub run {
     my @executors;
     foreach my $i (0..2) {
         next if $self->config->dsn->[$i] eq '';
-	my $executor = GenTest::Executor->newFromDSN($self->config->dsn->[$i], osWindows() ? undef : $channel);
+        my $executor = GenTest::Executor->newFromDSN($self->config->dsn->[$i], osWindows() ? undef : $channel);
         $executor->sqltrace($self->config->sqltrace);
-	$executor->setId($i+1);
+        $executor->setId($i+1);
         push @executors, $executor;
-	if ($executor->type() == DB_MYSQL) {
-	    my $metadata_executor = GenTest::Executor->newFromDSN($self->config->dsn->[$i], osWindows() ? undef : $channel);
-	    $metadata_executor->init();
-	    $metadata_executor->cacheMetaData() if defined $metadata_executor->dbh();
-	}
+        if ($executor->type() == DB_MYSQL) {
+            my $metadata_executor = GenTest::Executor->newFromDSN($self->config->dsn->[$i], osWindows() ? undef : $channel);
+            $metadata_executor->init();
+            $metadata_executor->cacheMetaData() if defined $metadata_executor->dbh();
+        }
     }
     
     my $drizzle_only = $executors[0]->type == DB_DRIZZLE;
@@ -241,12 +253,19 @@ sub run {
                 or $self->config->validators->[$i] eq '';
         }
     }
-    ## Add the transformer validator if --transformers is
-    ## specified
+    ## Add the transformer validator if --transformers is specified
+    ## and transformer validator not allready specified.
     if (defined $self->config->transformers and 
-        $#{$self->config->transformers} >= 0) {
-        
-        push @{$self->config->validators}, 'Transformer';
+        $#{$self->config->transformers} >= 0) 
+    {
+        my $hasTransformer = 0;
+        foreach my $t (@{$self->config->validators}) {
+            if ($t eq 'Transformer') {
+                $hasTransformer = 1;
+                last;
+            }
+        }
+        push @{$self->config->validators}, 'Transformer' if !$hasTransformer;
     }
 
     say("Validators: ".($self->config->validators and $#{$self->config->validators} > -1 ? join(', ', @{$self->config->validators}) : "(none)"));
@@ -284,10 +303,13 @@ sub run {
             $test_suite_name = "rqg_no_name";
         }
     }
-    
+
+    my $logdir = $test_suite_name.isoUTCSimpleTimestamp;
+
     my $test = GenTest::XML::Test->new(
         id => time(),
         name => $test_suite_name,  # NOTE: Consider changing to test (or test case) name when suites are supported.
+        logdir => $self->config->property('report-tt-logdir').'/'.$logdir,
         attributes => {
             engine => $self->config->engine,
             gendata => $self->config->gendata,
@@ -482,6 +504,10 @@ sub run {
             if ($result != STATUS_OK) {
                 croak("Error from XML Transporter: $result");
             }
+            if (defined $self->config->logfile && defined 
+                $self->config->property('report-tt-logdir')) {
+                $self->copyLogFiles($logdir, \@executors);
+            }
         }
         
         if ($total_status == STATUS_OK) {
@@ -494,9 +520,9 @@ sub run {
     } elsif ($process_type == PROCESS_TYPE_PERIODIC) {
         ## Periodic does not use channel
         $channel->close();
-	my $killed = 0;
-	local $SIG{TERM} = sub { $killed = 1 };
-
+        my $killed = 0;
+        local $SIG{TERM} = sub { $killed = 1 };
+        
         while (1) {
             my $reporter_status = $reporter_manager->monitor(REPORTER_TYPE_PERIODIC);
             $self->stop_child($reporter_status) if $reporter_status > STATUS_CRITICAL_FAILURE;
@@ -569,7 +595,7 @@ sub run {
 sub stop_child {
     my ($self, $status) = @_;
 
-    die "calling stop_child() without a \$status" if not defined $status;
+    croak "calling stop_child() without a \$status" if not defined $status;
 
     if (osWindows()) {
         exit $status;
@@ -578,4 +604,39 @@ sub stop_child {
     }
 }
 
+sub copyLogFiles {
+    my ($self,$ld, $executors) = @_;
+    ## Won't copy log files on windows (yet)
+    ## And do this only when tt-logging is enabled
+    if (!osWindows() && -e $self->config->property('report-tt-logdir')) {
+        ## Only for unices
+        my $logdir =  $self->config->property('report-tt-logdir')."/".$ld;
+        mkdir $logdir if ! -e $logdir;
+    
+        foreach my $exe (@$executors) {
+            my $dbh = DBI->connect($exe->dsn(), undef, undef, {
+                PrintError => 1,
+                RaiseError => 0,
+                AutoCommit => 1,
+                mysql_multi_statements => 1
+                                   } );
+            my $sth = $dbh->prepare("show variables like '%log_file'");
+            $sth->execute();
+            while (my $row = $sth->fetchrow_arrayref()) {
+                copyFileToDir(@{$row}[1], $logdir) if -e @{$row}[1];
+            }
+        }
+        copyFileToDir($self->config->logfile,$logdir);
+    }
+}
+
+sub copyFileToDir {
+    ## Not ported to windows. But then again TT-reporing with scp does
+    ## not work on Windows either...
+    my ($from, $todir) = @_;
+    say("Copying '$from' to '$todir'");
+    system("cp ".$from." ".$todir);
+}
+
 1;
+

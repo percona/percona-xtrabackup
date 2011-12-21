@@ -49,9 +49,9 @@ my $database = 'test';
 my @dsns;
 
 my ($gendata, @basedirs, @mysqld_options, @vardirs, $rpl_mode,
-    $engine, $help, $debug, 
+    $engine, $help, $debug, $sourcedir,
     $valgrind, @valgrind_options, 
-    $start_dirty, $build_thread);
+    $start_dirty, $build_thread,$just_install);
 
 my @ARGV_saved = @ARGV;
 
@@ -62,6 +62,7 @@ my $opt_result = GetOptions(
     'basedir=s' => \$basedirs[0],
     'basedir1=s' => \$basedirs[0],
     'basedir2=s' => \$basedirs[1],
+    'sourcedir=s' => \$sourcedir,
 	#'basedir=s@' => \@basedirs,
 	'vardir=s' => \$vardirs[0],
 	'vardir1=s' => \$vardirs[0],
@@ -74,7 +75,8 @@ my $opt_result = GetOptions(
 	'valgrind!'	=> \$valgrind,
 	'valgrind_options=s@'	=> \@valgrind_options,
 	'start-dirty'	=> \$start_dirty,
-    'mtr-build-thread=i' => \$build_thread
+    'mtr-build-thread=i' => \$build_thread,
+    'just-install' => \$just_install
     );
 
 if (!$opt_result || $help || $basedirs[0] eq '') {
@@ -107,7 +109,7 @@ if ( $build_thread eq 'auto' ) {
 
 my @ports = (10000 + 10 * $build_thread, 10000 + 10 * $build_thread + 2);
 
-say("master_port : $ports[0] slave_port : $ports[1] ports : @ports MTR_BUILD_THREAD : $build_thread ");
+say("master_port : $ports[0] slave_port : $ports[1] ports : @ports MTR_BUILD_THREAD : $build_thread ") if !$just_install;
 
 #
 # If the user has provided two vardirs and one basedir, start second
@@ -142,15 +144,6 @@ if (
 	croak("Please specify either different --basedir[12] or different --vardir[12] in order to start two MySQL servers");
 }
 
-my $client_basedir;
-
-foreach my $path ("$basedirs[0]/client/RelWithDebInfo", "$basedirs[0]/client/Debug", "$basedirs[0]/client", "$basedirs[0]/bin") {
-	if (-e $path) {
-		$client_basedir = $path;
-		last;
-	}
-}
-
 #
 # Start servers. Use rpl_alter if replication is needed.
 #
@@ -178,21 +171,23 @@ if ($rpl_mode ne '') {
                                                valgrind => $valgrind,
                                                valgrind_options => \@valgrind_options,
                                                start_dirty => $start_dirty);
+
+    if (!$just_install) {
+        my $status = $rplsrv->startServer();
+        
+        if ($status > STATUS_OK) {
+            stopServers();
+            say(system("ls -l ".$rplsrv->master->datadir));
+            say(system("ls -l ".$rplsrv->slave->datadir));
+            croak("Could not start replicating server pair");
+        }
     
-    my $status = $rplsrv->startServer();
-    
-    if ($status > STATUS_OK) {
-        stopServers();
-        say(system("ls -l ".$rplsrv->master->datadir));
-        say(system("ls -l ".$rplsrv->slave->datadir));
-        croak("Could not start replicating server pair");
+        $dsns[0] = $rplsrv->master->dsn($database);
+        $dsns[1] = undef; ## passed to gentest. No dsn for slave!
+        $server[0] = $rplsrv->master;
+        $server[1] = $rplsrv->slave;
     }
-    
-    $dsns[0] = $rplsrv->master->dsn($database);
-    $dsns[1] = undef; ## passed to gentest. No dsn for slave!
-    $server[0] = $rplsrv->master;
-    $server[1] = $rplsrv->slave;
-    
+        
 } else {
     if ($#basedirs != $#vardirs) {
         croak ("The number of basedirs and vardirs must match $#basedirs != $#vardirs")
@@ -210,53 +205,58 @@ if ($rpl_mode ne '') {
         }
         
         $server[$server_id] = DBServer::MySQL::MySQLd->new(basedir => $basedirs[$server_id],
+                                                           sourcedir => $sourcedir,
                                                            vardir => $vardirs[$server_id],
                                                            port => $ports[$server_id],
                                                            start_dirty => $start_dirty,
                                                            valgrind => $valgrind,
                                                            valgrind_options => \@valgrind_options,
                                                            server_options => \@options);
-        
-        my $status = $server[$server_id]->startServer;
-        
-        if ($status > STATUS_OK) {
-            stopServers();
-            say(system("ls -l ".$server[$server_id]->datadir));
-            croak("Could not start all servers");
-        }
-        
-        if (
-            ($server_id == 0) ||
-            ($rpl_mode eq '') 
-            ) {
-            $dsns[$server_id] = $server[$server_id]->dsn($database);
-        }
-    
-        if ((defined $dsns[$server_id]) && (defined $engine)) {
-            my $dbh = DBI->connect($dsns[$server_id], undef, undef, { RaiseError => 1 } );
-            $dbh->do("SET GLOBAL storage_engine = '$engine'");
-        }
-    }
-}
 
-say("\n\nHit return to stop server(s)");
-
-my $something = <STDIN>;
-
-stopServers();
-
-sub stopServers {
-    if ($rpl_mode ne '') {
-        $rplsrv->stopServer();
-    } else {
-        foreach my $srv (@server) {
-            if ($srv) {
-                $srv->stopServer;
+        if (!$just_install) {
+            my $status = $server[$server_id]->startServer;
+            
+            if ($status > STATUS_OK) {
+                stopServers();
+                say(system("ls -l ".$server[$server_id]->datadir));
+                croak("Could not start all servers");
+            }
+            
+            if (
+                ($server_id == 0) ||
+                ($rpl_mode eq '') 
+                ) {
+                $dsns[$server_id] = $server[$server_id]->dsn($database);
+            }
+            
+            if ((defined $dsns[$server_id]) && (defined $engine)) {
+                my $dbh = DBI->connect($dsns[$server_id], undef, undef, { RaiseError => 1 } );
+                $dbh->do("SET GLOBAL storage_engine = '$engine'");
             }
         }
     }
 }
 
+if (!$just_install) {
+    say("\n\nHit return to stop server(s)");
+    
+    my $something = <STDIN>;
+    
+    stopServers();
+    
+    sub stopServers {
+        if ($rpl_mode ne '') {
+            $rplsrv->stopServer();
+        } else {
+            foreach my $srv (@server) {
+                if ($srv) {
+                    $srv->stopServer;
+                }
+            }
+        }
+    }
+    
+}
 
 sub help {
     
@@ -282,6 +282,7 @@ $0 - Run a complete random query generation test, including server start with re
 
     General options
 
+    --just-install: Just create the database(s) (mysql_install_db), don't start the server
     --grammar   : Grammar file to use when generating queries (REQUIRED);
     --redefine  : Grammar file to redefine and/or add rules to the given grammar
     --rpl_mode  : Replication type to use (statement|row|mixed) (default: no replication);

@@ -3,15 +3,17 @@
 $combinations = [
 	['
 		--queries=1M
-		--engine=Maria
-		--mysqld=--default-storage-engine=Maria
+		--engine=Aria
+		--mysqld=--default-storage-engine=Aria
 		--mysqld=--safe-mode
 		--mysqld=--loose-debug-assert-if-crashed-table
+		--mysqld=--loose-debug-assert-on-error
 		--mysqld=--sync-sys=0
 		--mysqld=--log-output=file
-		--mysqld=--maria_log_purge_type=at_flush
-		--reporters=ErrorLog,Backtrace,Recovery,Shutdown
-	'
+		--mysqld=--aria_log_purge_type=at_flush
+	'],[
+		'--reporters=ErrorLog,Backtrace,AriaDoubleRecovery,Shutdown',
+		'--reporters=ErrorLog,Backtrace,Recovery,Shutdown'
 	],[
 		'--duration=30',
 		'--duration=120',
@@ -34,39 +36,39 @@ $combinations = [
 		'--mask-level=2'
 	],[
 		'',
-		'--mysqld=--maria-repair-threads=2'
+		'--mysqld=--aria-repair-threads=2'
 	],[
-		'--mysqld=--loose-maria-group-commit=soft',
-		'--mysqld=--loose-maria-group-commit=hard'
+		'--mysqld=--loose-aria-group-commit=soft',
+		'--mysqld=--loose-aria-group-commit=hard'
 	],[
-		'--mysqld=--loose-maria_group_commit_interval=0',
-		'--mysqld=--loose-maria_group_commit_interval=1',
-		'--mysqld=--loose-maria_group_commit_interval=10',
-		'--mysqld=--loose-maria_group_commit_interval=100'
+		'--mysqld=--loose-aria_group_commit_interval=0',
+		'--mysqld=--loose-aria_group_commit_interval=1',
+		'--mysqld=--loose-aria_group_commit_interval=10',
+		'--mysqld=--loose-aria_group_commit_interval=100'
 	],[
-		'--mysqld=--maria-checkpoint-interval=0',
-		'--mysqld=--maria-checkpoint-interval=1',
-		'--mysqld=--maria-checkpoint-interval=120',
-		'--mysqld=--maria-checkpoint-interval=32K'
+		'--mysqld=--aria-checkpoint-interval=0',
+		'--mysqld=--aria-checkpoint-interval=1',
+		'--mysqld=--aria-checkpoint-interval=120',
+		'--mysqld=--aria-checkpoint-interval=32K'
 	],[
-		'--mysqld=--maria-block-size=1K',
-		'--mysqld=--maria-block-size=2K',
-		'--mysqld=--maria-block-size=4K',
-		'--mysqld=--maria-block-size=8K',
-		'--mysqld=--maria-block-size=16K',
-		'--mysqld=--maria-block-size=32K'
+		'--mysqld=--aria-block-size=1K',
+		'--mysqld=--aria-block-size=2K',
+		'--mysqld=--aria-block-size=4K',
+		'--mysqld=--aria-block-size=8K',
+		'--mysqld=--aria-block-size=16K',
+		'--mysqld=--aria-block-size=32K'
 	],[
 		'', '',
 		'--mysqld=--table_cache=32K', '--mysqld=--table_cache=10'
 	],[
 		'', '',
-		'--mysqld=--maria-pagecache-buffer-size=16K'
+		'--mysqld=--aria-pagecache-buffer-size=512K'
 	],[
 		'',
-		'--mysqld=--maria-pagecache-division-limit=75'
+		'--mysqld=--aria-pagecache-division-limit=75'
 	],[
 		'',
-		'--mysqld=--maria_pagecache_age_threshold=10'
+		'--mysqld=--aria_pagecache_age_threshold=10'
 	],[
 		'--grammar=conf/engines/engine_stress.yy --gendata=conf/engines/engine_stress.zz',
 		'--grammar=conf/engines/many_indexes.yy --gendata=conf/engines/many_indexes.zz',

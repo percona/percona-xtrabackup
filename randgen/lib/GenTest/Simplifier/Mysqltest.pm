@@ -66,7 +66,7 @@ sub simplify {
 
         say(($#queries_filtered + 1)." queries remain after filtering.");
 
-	if (!$simplifier->oracle(join("\n", @queries_filtered)."\n")) {
+	if ($simplifier->oracle(join("\n", @queries_filtered)."\n") == ORACLE_ISSUE_NO_LONGER_REPEATABLE) {
 		warn("Initial mysqltest (after filtering) failed oracle check.");
 		return undef;
         }
@@ -74,7 +74,7 @@ sub simplify {
 	my $ddmin_outcome = $simplifier->ddmin(\@queries_filtered);
 	my $final_mysqltest = join("\n", @$ddmin_outcome)."\n";
 
-	if (!$simplifier->oracle($final_mysqltest)) {
+	if ($simplifier->oracle($final_mysqltest) == ORACLE_ISSUE_NO_LONGER_REPEATABLE) {
 		warn("Final mysqltest failed oracle check.");
 		return undef;
 	} else {

@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2010 Sun Microsystems, Inc. All rights reserved.
+# Copyright (c) 2008, 2011 Oracle and/or its affiliates. All rights reserved.
 # Use is subject to license terms.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -139,7 +139,9 @@ join_list:
 # too many mega-join conditions which take too long to run                     #
 ################################################################################
 	( new_table_item join_type new_table_item ON (join_condition_list ) ) |
-        ( new_table_item join_type ( ( new_table_item join_type new_table_item ON (join_condition_list ) ) ) ON (join_condition_list ) ) ;
+        ( new_table_item join_type ( ( new_table_item join_type new_table_item ON (join_condition_list ) ) ) ON (join_condition_list ) ) |
+	( new_table_item , new_table_item ) |
+	( new_table_item , ( new_table_item , new_table_item ) ) ;
 
 join_list_disabled:
 ################################################################################
@@ -244,7 +246,7 @@ range_predicate2_list:
 range_predicate2_item:
         alias1 . `pk` = _tinyint_unsigned |
         alias1 . `col_int_key` = _tinyint_unsigned |
-        alias1 . `col_varchar_key` = _char |
+        alias1 . `col_varchar_key` LIKE CONCAT( _char , '%' ) |
         alias1 . int_indexed = _tinyint_unsigned |
         alias1 . `col_varchar_key` = _char |
         alias1 . int_indexed = existing_table_item . int_indexed |
@@ -258,7 +260,7 @@ number_list:
         _tinyint_unsigned | number_list, _tinyint_unsigned ;
 
 char_list: 
-        _char | char_list, _char ;
+	_char | 'USA' | char_list , _char | char_list , 'USA' ;
 
 ################################################################################
 # We ensure that a GROUP BY statement includes all nonaggregates.              #
@@ -348,7 +350,7 @@ aggregate_select_item:
 
 combo_select_item:
     ( ( table_one_two . int_field_name ) math_operator ( table_one_two . int_field_name ) ) AS { my $f = "field".++$fields ; push @nonaggregates , $f ; $f } |
-    CONCAT ( table_one_two . char_field_name , table_one_two . char_field_name ) AS { my $f = "field".++$fields ; push @nonaggregates , $f ; $f } ;
+    CONCAT( table_one_two . char_field_name , table_one_two . char_field_name ) AS { my $f = "field".++$fields ; push @nonaggregates , $f ; $f } ;
 
 table_one_two:
 	alias1 | alias2 ;
@@ -407,14 +409,14 @@ and_or:
 
 	
 value:
-	_digit | _digit | _digit | _digit | _tinyint_unsigned|
-        _char(2) | _char(2) | _char(2) | _char(2) | _char(2) ;
+	_digit | _digit | _digit | _digit | _tinyint_unsigned |
+        _char(2) | _char(2) | _char(2) | _char(2) | _char(2) | 'USA' ;
 
 _table:
      A | B | C | BB | CC | B | C | BB | CC | 
      C | C | C | C  | C  | C | C | C  | C  |
      CC | CC | CC | CC | CC | CC | CC | CC |
-     D ;
+     D | view ;
 
 ################################################################################
 # Add a possibility for 'view' to occur at the end of the previous '_table' rule
@@ -422,7 +424,7 @@ _table:
 ################################################################################
 
 view:
-    view_A | view_B | view_C | view_BB | view_CC ;
+    view_A | view_AA | view_B | view_BB | view_C | view_CC | view_C | view_CC | view_D ;
 
 _field:
     int_field_name | char_field_name ;

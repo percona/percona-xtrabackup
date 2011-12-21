@@ -1,5 +1,5 @@
-# Copyright (C) 2008-2010 Sun Microsystems, Inc. All rights reserved.
-# Use is subject to license terms.
+# Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights
+# reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,13 +20,23 @@ use base 'Exporter';
 
 @EXPORT = ('say', 'sayFile', 'tmpdir', 'safe_exit', 
            'osWindows', 'osLinux', 'osSolaris', 'osMac',
-           'isoTimestamp', 'isoUTCTimestamp', 'rqg_debug', 'unix2winPath');
+           'isoTimestamp', 'isoUTCTimestamp', 'isoUTCSimpleTimestamp', 
+           'rqg_debug', 'unix2winPath',
+           'setLoggingToFile','setLogConf');
 
 use strict;
 
 use Cwd;
 use POSIX;
 use Carp;
+
+my $logger;
+eval
+{
+    require Log::Log4perl;
+    Log::Log4perl->import();
+    $logger = Log::Log4perl->get_logger('randgen.gentest');
+};
 
 my $tmpdir;
 
@@ -84,14 +94,22 @@ sub new {
 
 sub say {
 	my $text = shift;
-
-	if ($text =~ m{[\r\n]}sio) {
-	        foreach my $line (split (m{[\r\n]}, $text)) {
-			print "# ".isoTimestamp()." $line\n";
-		}
-	} else {
-		print "# ".isoTimestamp()." $text\n";
-	}
+    defaultLogging();
+    if ($text =~ m{[\r\n]}sio) {
+        foreach my $line (split (m{[\r\n]}, $text)) {
+            if (defined $logger) {
+                $logger->info($line);
+            } else {
+                print "# ".isoTimestamp()." $line\n";
+            }
+        }
+    } else {
+        if (defined $logger) {
+            $logger->info($text);
+        } else {
+            print "# ".isoTimestamp()." $text\n";
+        }
+    }
 }
 
 sub sayFile {
@@ -155,16 +173,22 @@ sub isoTimestamp {
 
 	my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = defined $datetime ? localtime($datetime) : localtime();
 	return sprintf("%04d-%02d-%02dT%02d:%02d:%02d", $year+1900, $mon+1 ,$mday ,$hour, $min, $sec);
-
 }
 
 sub isoUTCTimestamp {
 	my $datetime = shift;
 
 	my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = defined $datetime ? gmtime($datetime) : gmtime();
-	return sprintf("%04d-%02d-%02dT%02d:%02d:%02dZ", $year+1900, $mon+1 ,$mday ,$hour, $min, $sec);
-	
+	return sprintf("%04d-%02d-%02dT%02d:%02d:%02d", $year+1900, $mon+1 ,$mday ,$hour, $min, $sec);
 }
+
+sub isoUTCSimpleTimestamp {
+	my $datetime = shift;
+
+	my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = defined $datetime ? gmtime($datetime) : gmtime();
+	return sprintf("%04d%02d%02dT%02d%02d%02d", $year+1900, $mon+1 ,$mday ,$hour, $min, $sec);
+}
+	
 
 # unix2winPath:
 #   Converts the given file path from unix style to windows native style
@@ -181,6 +205,47 @@ sub rqg_debug {
 	} else {
 		return 0;
 	}
+}
+
+sub defaultLogging {
+    if (defined $logger) {
+        if (not Log::Log4perl::initialized()) {
+            my $logconf = q(
+log4perl.rootLogger = INFO, STDOUT
+log4perl.appender.STDOUT=Log::Log4perl::Appender::Screen
+log4perl.appender.STDOUT.layout=PatternLayout
+log4perl.appender.STDOUT.layout.ConversionPattern=# %d{yyyy-MM-dd'T'HH:mm:ss} %m%n
+);
+            Log::Log4perl::init( \$logconf );
+            say("Using Log::Log4perl");
+        }
+    }
+}
+
+
+sub setLoggingToFile {
+    my $logfile = shift;
+    my $logconf = {
+        'log4perl.logger.randgen' => 'INFO, STDOUT, FILE',
+        
+        'log4perl.appender.STDOUT' => 'Log::Log4perl::Appender::Screen',
+        'log4perl.appender.STDOUT.layout'=>'PatternLayout',
+        'log4perl.appender.STDOUT.layout.ConversionPattern'=>"# %d{yyyy-MM-dd'T'HH:mm:ss} %m%n",
+        
+        'log4perl.appender.FILE'=>'Log::Log4perl::Appender::File',
+        'log4perl.appender.FILE.filename'=>$logfile,
+        'log4perl.appender.FILE.mode'=>'append',
+        'log4perl.appender.FILE.layout'=>'PatternLayout',
+        'log4perl.appender.FILE.layout.ConversionPattern'=>"# %d{yyyy-MM-dd'T'HH:mm:ss} %m%n"
+    };
+    Log::Log4perl::init($logconf);
+    say("Logging to stdout and $logfile");
+}
+
+sub setLogConf {
+    my $logfile = shift;
+    Log::Log4perl::init($logfile);
+    say("Logging defined by $logfile");
 }
 
 1;

@@ -15,7 +15,8 @@ query:
 select:
 	SELECT select_list FROM table_name any_where |
 	SELECT select_list FROM table_name restrictive_where order_by |
-	SELECT select_list FROM table_name restrictive_where full_order_by LIMIT _digit ;
+	SELECT select_list FROM table_name restrictive_where full_order_by LIMIT _digit |
+	SELECT field_name FROM table_name any_where ORDER BY field_name DESC ;
 
 select_list:
 	field_name |
@@ -26,7 +27,8 @@ delete:
 	DELETE FROM table_name restrictive_where |
 	DELETE FROM table_name restrictive_where |
 	DELETE FROM table_name restrictive_where |
-	DELETE FROM table_name any_where full_order_by LIMIT _digit ;
+	DELETE FROM table_name any_where full_order_by LIMIT _digit |
+	TRUNCATE TABLE table_name ;
 
 update:
 	UPDATE table_name SET update_list restrictive_where |
@@ -41,10 +43,12 @@ any_where:
 restrictive_where:
 	WHERE field_name LIKE(CONCAT( _varchar(2), '%')) |
 	WHERE field_name = _varchar(2) |
+	WHERE field_name LIKE(CONCAT( _varchar(1), '%')) AND field_name LIKE(CONCAT( _varchar(1), '%')) |
 	WHERE field_name BETWEEN _varchar(2) AND _varchar(2) ;
 
 permissive_where:
-	WHERE field_name comp_op value ;
+	WHERE field_name comp_op value |
+	WHERE field_name comp_op value OR field_name comp_op value ;
 
 comp_op:
 	> | < | >= | <= | <> | != | <=> ;
@@ -93,10 +97,14 @@ field_name:
 
 table_name:
 	heap_complex_indexes |
+	heap_complex_indexes_hash |
 	heap_large_block |
 	heap_noindexes_large |
 	heap_noindexes_small |
 	heap_oversize_pk |
 	heap_small_block |
-	heap_standard
-;
+	heap_standard |
+	heap_blobs |
+	heap_char |
+	heap_other_types |
+	heap_fixed ;

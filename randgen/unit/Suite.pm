@@ -1,5 +1,5 @@
-# Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved. 
-# Use is subject to license terms.
+# Copyright (c) 2010,2011 Oracle and/or its affiliates. All rights
+# reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -34,6 +34,8 @@ Metadata
 IPC
 TestMySQLServer
 TestReplServer
+TestTT
+TestSqltrace
 ) }
 
 1;

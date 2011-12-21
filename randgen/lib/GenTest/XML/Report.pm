@@ -35,7 +35,6 @@ use constant XMLREPORT_BUILDINFO        => 1;
 use constant XMLREPORT_TESTS            => 2;
 use constant XMLREPORT_ENVIRONMENT      => 3;
 use constant XMLREPORT_NAME             => 4;
-
 1;
 
 sub new {
@@ -49,7 +48,7 @@ sub new {
         name        => XMLREPORT_NAME
 	}, @_);
 
-	$report->[XMLREPORT_DATE] = isoTimestamp() if not defined $report->[XMLREPORT_DATE];
+	$report->[XMLREPORT_DATE] = isoUTCTimestamp() if not defined $report->[XMLREPORT_DATE];
 	$report->[XMLREPORT_ENVIRONMENT] = GenTest::XML::Environment->new() if not defined  $report->[XMLREPORT_ENVIRONMENT];
 
 	return $report;
@@ -71,19 +70,16 @@ sub xml {
 
     $writer->xmlDecl('ISO-8859-1');
     $writer->startTag('report',
-        'xmlns'                 => "http://clustra.norway.sun.com/intraweb/organization/qa/cassiopeia",
+        'xmlns'                 => "http://regin.no.oracle.com/report/schema",
         'xmlns:xsi'             => "http://www.w3.org/2001/XMLSchema-instance",
-        'xsi:schemaLocation'    => "http://clustra.norway.sun.com/intraweb/organization/qa/cassiopeia http://clustra.norway.sun.com/intraweb/organization/qa/cassiopeia/testresult-schema-1-2.xsd",
+        'xsi:schemaLocation'    => "http://regin.no.oracle.com/report/schema/testresult-schema-1-2.xsd",
         'version'               => "1.2"
     );
 
     $writer->dataElement('date', $report->[XMLREPORT_DATE]);
-    if (osLinux() || osSolaris())
-    {
+    if (osLinux() || osSolaris()) {
         $writer->dataElement('operator', $ENV{'LOGNAME'});
-    }
-    else
-    {
+    } else {
         $writer->dataElement('operator', $ENV{'USERNAME'});
     }
 
@@ -95,7 +91,7 @@ sub xml {
     $writer->dataElement('name', $report->[XMLREPORT_NAME]);
     $writer->dataElement('environment_id', 0);
     $writer->dataElement('starttime', $report->[XMLREPORT_DATE]);
-    $writer->dataElement('endtime', isoTimestamp());
+    $writer->dataElement('endtime', isoUTCTimestamp());
     $writer->dataElement('description', 'http://forge.mysql.com/wiki/RQG');
     # TODO (if applicable):
     # test-suite specific descriptions (once we have defined testsuites)?

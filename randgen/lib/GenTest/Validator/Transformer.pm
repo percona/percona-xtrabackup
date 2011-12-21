@@ -22,6 +22,7 @@ require Exporter;
 
 use strict;
 
+use Carp;
 use GenTest;
 use GenTest::Constants;
 use GenTest::Comparator;
@@ -31,7 +32,6 @@ use GenTest::Translator;
 use GenTest::Translator::Mysqldump2ANSI;
 use GenTest::Translator::Mysqldump2javadb;
 use GenTest::Translator::MysqlDML2ANSI;
-use Data::Dumper;
 
 my @transformer_names;
 my @transformers;
@@ -48,6 +48,9 @@ sub configure {
         @transformer_names = (
             'DisableChosenPlan',
             'ConvertSubqueriesToViews',
+	    'ConvertLiteralsToSubqueries',
+	    'ConvertLiteralsToVariables',
+            'ConvertTablesToDerived',
             'Count',
             'DisableIndexes',
             'Distinct',
@@ -61,7 +64,7 @@ sub configure {
             'ExecuteAsUpdateDelete',
             'ExecuteAsWhereSubquery',
             'ExecuteAsTrigger',
-            'FromSubquery',
+            'ExecuteAsDerived',
             'Having',
             'InlineSubqueries',
             'InlineVirtualColumns',
@@ -77,7 +80,7 @@ sub configure {
 	say("Transformer Validator will use the following Transformers: ".join(', ', @transformer_names));
 
 	foreach my $transformer_name (@transformer_names) {
-		eval ("require GenTest::Transform::'".$transformer_name) or die $@;
+		eval ("require GenTest::Transform::'".$transformer_name) or croak $@;
 		my $transformer = ('GenTest::Transform::'.$transformer_name)->new();
 		push @transformers, $transformer;
 	}
@@ -102,7 +105,13 @@ sub validate {
 	my $max_transformer_status; 
 	foreach my $transformer (@transformers) {
 		my $transformer_status = $validator->transform($transformer, $executor, $results);
-		$transformer_status = STATUS_OK if ($transformer_status == STATUS_CONTENT_MISMATCH) && ($original_query =~ m{LIMIT}sio);
+		if (($transformer_status == STATUS_CONTENT_MISMATCH) && ($original_query =~ m{LIMIT}sio)) {
+			# We avoid reporting bugs on content mismatch with LIMIT queries
+			say('WARNING: Got STATUS_CONTENT_MISMATCH from transformer. This is likely'.
+				' a FALSE POSITIVE given that there is a LIMIT clause but possibly'.
+				' no complete ORDER BY. Hence we return STATUS_OK. The previous transform issue can likely be ignored.');
+			$transformer_status = STATUS_OK     
+		}
 		return $transformer_status if $transformer_status > STATUS_CRITICAL_FAILURE;
 		$max_transformer_status = $transformer_status if $transformer_status > $max_transformer_status;
 	}
@@ -117,7 +126,15 @@ sub transform {
 	my $original_query = $original_result->query();
 
 	my ($transform_outcome, $transformed_queries, $transformed_results) = $transformer->transformExecuteValidate($original_query, $original_result, $executor);
-	return $transform_outcome if ($transform_outcome > STATUS_CRITICAL_FAILURE) || ($transform_outcome == STATUS_OK);
+
+	if (
+		($transform_outcome > STATUS_CRITICAL_FAILURE) ||
+		($transform_outcome == STATUS_OK) ||
+		($transform_outcome == STATUS_SKIP) || 
+		($transform_outcome == STATUS_WONT_HANDLE)
+	) {
+		return $transform_outcome;
+	}
 
 	say("---------- TRANSFORM ISSUE ----------") if defined $transformed_results;
 	say("Original query: $original_query failed transformation with Transformer ".$transformer->name().
@@ -235,8 +252,11 @@ sub transform {
 			queries => [ $simplified_query, $simplified_transformed_queries_str ]
 		);
 	}
-
-	my $test = $simplifier_test->simplify();
+	
+	# show_index is enabled for transformed queries as its good to see the index details,
+	# the value 1 is used to define if show_index is enabled, to disable dont assign a value.
+	my $show_index = 1;
+	my $test = $simplifier_test->simplify($show_index);
 
 	my $testfile = tmpdir()."/".time().".test";
 	open (TESTFILE , ">$testfile");

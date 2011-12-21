@@ -25,6 +25,7 @@ use DBServer::MySQL::ReplMySQLd;
 use GenTest::Executor;
 
 use Data::Dumper;
+use File::Path qw(mkpath rmtree);
 
 sub new {
     my $self = shift()->SUPER::new(@_);
@@ -43,15 +44,14 @@ sub tear_down {
         foreach my $p (@pids) {
             Win32::Process::KillProcess($p,-1);
         }
-        system("rmdir /s /q unit\\tmp1");
-        system("rmdir /s /q unit\\tmp2");
     } else {
         ## Need to ,kill leftover processes if there are some
         kill 9 => @pids;
-        system("rm -rf unit/tmp1");
-        system("rm -rf unit/tmp2");
     }
+    rmtree("unit/tmp1");
+    rmtree("unit/tmp1_slave");
 }
+
 
 sub test_create_server {
     my $self = shift;
@@ -88,8 +88,8 @@ sub test_create_server {
     
     $server->stopServer;
     
-    sayFile($server->master->logfile);
-    sayFile($server->slave->logfile);
+    sayFile($server->master->errorlog);
+    sayFile($server->slave->errorlog);
 }
 
 sub test_create_repl {
@@ -134,8 +134,8 @@ sub test_create_repl {
     
     $server->stopServer;
     
-    sayFile($server->master->logfile);
-    sayFile($server->slave->logfile);
+    sayFile($server->master->errorlog);
+    sayFile($server->slave->errorlog);
 }
 
 1;

@@ -95,7 +95,7 @@ sub report {
 
         foreach my $table (@$tables) {
                 my $average = $dbh->selectrow_array("
-                        SELECT (SUM(`int_key`)  + SUM(`int`)) / COUNT(*)
+                        SELECT (SUM(`col_int_key`)  + SUM(`col_int`)) / COUNT(*)
                         FROM `$table`
                 ");
 
@@ -106,16 +106,6 @@ sub report {
                         say("Average is $average");
 		}
         }
-
-	say("Shutting down the recovered server...");
-
-	if (not defined $dbh) {
-		$recovery_status = STATUS_DATABASE_CORRUPTION;
-	} else {
-		$dbh->func('shutdown', 'admin');
-	}
-
-	close(MYSQLD);
 
 	if ($recovery_status > STATUS_OK) {
 		say("Recovery has failed.");

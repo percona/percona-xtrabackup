@@ -40,6 +40,9 @@ sub compare {
 
 	return STATUS_OK if $#resultsets == 0;
 
+	return STATUS_WONT_HANDLE if $resultsets[0]->status() == STATUS_WONT_HANDLE || $resultsets[1]->status() == STATUS_WONT_HANDLE;
+	return STATUS_SKIP if $resultsets[0]->status() == STATUS_SKIP || $resultsets[1]->status() == STATUS_SKIP;
+
 	foreach my $i (0..($#resultsets-1)) {
 
 		my $resultset1 = $resultsets[$i];
@@ -56,7 +59,7 @@ sub compare {
 			my $data2 = $resultset2->data();
 			return STATUS_LENGTH_MISMATCH if $#$data1 != $#$data2;
 			my $data1_sorted = join('<row>', sort map { join('<col>', map { defined $_ ? ($_ != 0 ? sprintf("%.4f", $_) : $_) : 'NULL' } @$_) } @$data1);
-			my $data2_sorted = join('<row>', sort map { join('<col>', map { defined $_ ? ($_ != 0 ? sprintf("%.4f", $_) : $_): 'NULL'} @$_) } @$data2);
+			my $data2_sorted = join('<row>', sort map { join('<col>', map { defined $_ ? ($_ != 0 ? sprintf("%.4f", $_) : $_) : 'NULL' } @$_) } @$data2);
 			return STATUS_CONTENT_MISMATCH if $data1_sorted ne $data2_sorted;
 		}
 	}
