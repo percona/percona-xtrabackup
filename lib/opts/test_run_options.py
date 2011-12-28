@@ -437,6 +437,14 @@ def parse_qp_options(defaults):
         )
 
     environment_control_group.add_option(
+        "--tar4ibd-path"
+      , dest="tar4ibdpath"
+      , action='store'
+      , default=None
+      , help="The path to the tar4ibd binary that will be used for any applicable tests"
+      )
+
+    environment_control_group.add_option(
           "--wsrep-provider-path"
        , dest="wsrepprovider"
        , action='store'
