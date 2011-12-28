@@ -23,12 +23,14 @@ table_list=`$MYSQL $MYSQL_ARGS -Ns -e \
 "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='sakila' \
 AND TABLE_TYPE='BASE TABLE'"`
 
-run_cmd $MYSQL $MYSQL_ARGS -s -e "SET GLOBAL foreign_key_checks=0"
 for t in $table_list
 do
-    run_cmd $MYSQL $MYSQL_ARGS -s -e "DELETE FROM $t" sakila
+    run_cmd $MYSQL $MYSQL_ARGS -s sakila <<EOF
+SET foreign_key_checks=0;
+DELETE FROM $t;
+SET foreign_key_checks=1;
+EOF
 done
-run_cmd $MYSQL $MYSQL_ARGS -s -e "SET GLOBAL foreign_key_checks=1"
 
 load_dbase_data sakila
 
