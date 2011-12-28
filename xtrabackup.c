@@ -3018,9 +3018,6 @@ error:
 		os_file_close(src_file);
 	if (dst_file != -1)
 		os_file_close(dst_file);
-	if (incremental_buffer_base) {
-		ut_free(incremental_buffer_base);
-	}
 	if (incremental_buffer_base)
 		ut_free(incremental_buffer_base);
 	if (buf2)
