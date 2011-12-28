@@ -65,6 +65,12 @@ class systemManager:
                          ]
         self.debug = variables['debug']
         self.verbose = variables['verbose']
+        self.port_manager = portManager(self,variables['debug'])
+        self.time_manager = timeManager(self)
+
+        # environment manager handles updates / whatever to testing environments
+        self.env_manager = environmentManager(self, variables)
+
         self.no_shm = variables['noshm']
         self.shm_path = self.find_path(["/dev/shm", "/tmp"], required=0)
         self.cur_os = os.uname()[0]
@@ -89,6 +95,13 @@ class systemManager:
         # there may be a better place to put this...
         self.innobackupex_path = variables['innobackupexpath']
         self.xtrabackup_path = variables['xtrabackuppath']
+        self.tar4ibd_path = variables['tar4ibdpath']
+        # We add tar4ibd to PATH if defined
+        if self.tar4ibd_path:
+            self.env_manager.set_env_var( 'PATH', self.env_manager.append_env_var( 'PATH'
+                                                           , self.tar4ibd_path, suffix=0
+                                                           ))
+
         self.wsrep_provider_path = variables['wsrepprovider']
 
         # we use this to preface commands in order to run valgrind and such
@@ -106,12 +119,6 @@ class systemManager:
         # initialize our workdir
         self.process_workdir()
         
-        self.port_manager = portManager(self,variables['debug'])
-        self.time_manager = timeManager(self)
-
-        # environment manager handles updates / whatever to testing environments
-        self.env_manager = environmentManager(self, variables)
-
         # Some ENV vars are system-standard
         # We describe and set them here and now
         # The format is name: (value, append, suffix)

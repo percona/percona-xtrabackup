@@ -420,6 +420,10 @@ Options for defining the testing environment
             
    The path the xtrabackup binary to be tested
 
+.. option:: --tar4ibd-path=TAR4IBDPATH
+
+   The path to the tar4ibd binary that will be used for any applicable tests
+
 .. option:: --wsrep-provider-path=WSREPPROVIDER
            
    The path to a wsrep provider library for use with
