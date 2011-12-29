@@ -122,7 +122,6 @@ class mysqlServer(Server):
             self.secure_file_string = ''
         else:
             self.secure_file_string = "--secure-file-priv='%s'" %(self.vardir)
-        self.user_string = '--user=root'
 
         self.initialize_databases()
         self.take_db_snapshot()
@@ -239,7 +238,6 @@ class mysqlServer(Server):
                       , "--default-storage-engine=%s" %(self.default_storage_engine)
                       , "--server-id=%d" %(self.get_numeric_server_id)
                       , self.secure_file_string
-                      , self.user_string
                       ]
 
         if self.gdb:

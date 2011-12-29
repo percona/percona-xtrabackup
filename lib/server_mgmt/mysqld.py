@@ -135,7 +135,6 @@ class mysqlServer(Server):
             self.secure_file_string = ''
         else:
             self.secure_file_string = "--secure-file-priv='%s'" %(self.vardir)
-        self.user_string = '--user=root'
 
         self.initialize_databases()
         self.take_db_snapshot()
@@ -250,7 +249,6 @@ class mysqlServer(Server):
                       # the server-id=0 and no replication thing...
                       , "--server-id=%d" %(self.get_numeric_server_id()+1)
                       , self.secure_file_string
-                      , self.user_string
                       ]
 
         if not self.version.startswith('5.0'):
