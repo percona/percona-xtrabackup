@@ -45,11 +45,7 @@ class basicTest(mysqlBaseTestCase):
 
     def test_basic1(self):
         self.servers = servers
-        if servers[0].type != 'galera':
-            # we skip.  This is a bit
-            # cheap, but until I am certain
-            # we want to use 2.7 for unittest.skip methods,
-            # we'll do this...for now : )
+        if servers[0].type not in ['mysql','percona']:
             return
         else:
             innobackupex = test_executor.system_manager.innobackupex_path
@@ -58,13 +54,15 @@ class basicTest(mysqlBaseTestCase):
             backup_path = os.path.join(master_server.vardir, '_xtrabackup')
             output_path = os.path.join(master_server.vardir, 'innobackupex.out')
             exec_path = os.path.dirname(innobackupex)
+            orig_dumpfile = os.path.join(master_server.vardir,'orig_dumpfile')
+            restored_dumpfile = os.path.join(master_server.vardir, 'restored_dumpfile')
 
             # populate our server with a test bed
             test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
-            retcode, output = self.execute_randgen(test_cmd, test_executor, servers)
+            retcode, output = self.execute_randgen(test_cmd, test_executor, master_server)
         
             # take a backup
-            cmd = ("%s --defaults-file=%s --galera-info --user=root --port=%d"
+            cmd = ("%s --defaults-file=%s --user=root --port=%d"
                    " --host=127.0.0.1 --no-timestamp" 
                    " --ibbackup=%s %s" %( innobackupex
                                        , master_server.cnf_file
@@ -74,36 +72,46 @@ class basicTest(mysqlBaseTestCase):
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
             self.assertTrue(retcode==0,output)
 
+            # take mysqldump of our current server state
+
+            self.take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
+        
+            # shutdown our server
+            master_server.stop()
+
             # prepare our backup
-            cmd = ("%s --apply-log --galera-info --no-timestamp --use-memory=500M "
+            cmd = ("%s --apply-log --no-timestamp --use-memory=500M "
                    "--ibbackup=%s %s" %( innobackupex
                                        , xtrabackup
                                        , backup_path))
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-            self.assertEqual(retcode, 0, msg= output)
+            self.assertTrue(retcode==0,output)
 
-            # Get a test value:
-            query = "SHOW STATUS LIKE 'wsrep_local_state_uuid'"
-            retcode, result = self.execute_query(query, master_server)
-            wsrep_local_state_uuid =  result[0][1]
-  
-            # Get our other galera-info value
-            query = "SHOW STATUS LIKE 'wsrep_last_committed'"
-            retcode, result = self.execute_query(query, master_server)
-            wsrep_last_committed = result[0][1] 
+            # remove old datadir
+            shutil.rmtree(master_server.datadir)
+            os.mkdir(master_server.datadir)
+        
+            # restore from backup
+            cmd = ("%s --defaults-file=%s --copy-back"
+                  " --ibbackup=%s %s" %( innobackupex
+                                       , master_server.cnf_file
+                                       , xtrabackup
+                                       , backup_path))
+            retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
+            self.assertTrue(retcode==0, output)
 
-            # check our log
-            with open(os.path.join(backup_path,'xtrabackup_galera_info'),'r') as galera_info_file:
-                galera_info = galera_info_file.readline().strip()
-                logged_wsrep_local_state_uuid, logged_wsrep_last_committed = galera_info.split(':')
-  
-            self.assertEqual( wsrep_local_state_uuid
-                            , logged_wsrep_local_state_uuid
-                            , msg = (wsrep_local_state_uuid, logged_wsrep_local_state_uuid)
-                            )
+            # restart server (and ensure it doesn't crash)
+            master_server.start()
+            self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
 
-            self.assertEqual( wsrep_last_committed
-                            , logged_wsrep_last_committed
-                            , msg = (wsrep_last_committed, logged_wsrep_last_committed)
-                            )
+            # take mysqldump of current server state
+            self.take_mysqldump(master_server, databases=['test'],dump_path=restored_dumpfile)
+
+            # diff original vs. current server dump files
+            retcode, output = self.diff_dumpfiles(orig_dumpfile, restored_dumpfile)
+            self.assertTrue(retcode, output)
+ 
+
+    def tearDown(self):
+            server_manager.reset_servers(test_executor.name)
 
