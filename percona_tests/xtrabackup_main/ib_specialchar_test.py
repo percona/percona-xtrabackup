@@ -137,6 +137,7 @@ class basicTest(mysqlBaseTestCase):
             master_server.server_options.append('--skip-grant-tables')
             master_server.start()
             self.assertEqual(master_server.status,1, 'Server failed restart from restored datadir...')
+            master_server.server_options.remove('--skip-grant-tables')
 
             # Reset the password to ''
             #self.mysqladmin_set_pw(master_server, new_pass, '')
