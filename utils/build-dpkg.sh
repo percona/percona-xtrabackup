@@ -84,21 +84,26 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
     mkdir -p "xtrabackup-$XTRABACKUP_VERSION"
     (cd "$SOURCEDIR" ; tar c --exclude="xtrabackup-$XTRABACKUP_VERSION" .) |(cd "xtrabackup-$XTRABACKUP_VERSION"; tar xf -)
 
-    cd "xtrabackup-$XTRABACKUP_VERSION"
+    (
+        cd "xtrabackup-$XTRABACKUP_VERSION"
 
-    # Download required sources
-    if ! test -r libtar-1.2.11.tar.gz
-    then
-        wget http://www.percona.com/downloads/community/libtar-1.2.11.tar.gz
-    fi
+        # Download required sources
+        if ! test -r libtar-1.2.11.tar.gz
+        then
+            wget http://www.percona.com/downloads/community/libtar-1.2.11.tar.gz
+        fi
 
-    # Move debian directory
-    mv utils/debian .
+        # Move debian directory
+        mv utils/debian .
 
-    # Update distribution
-    dch -m -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
+        # Update distribution
+        dch -m -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
 
-    # Issue dpkg-buildpackage command
-    dpkg-buildpackage $BUILDPKG_KEY
+        # Issue dpkg-buildpackage command
+        dpkg-buildpackage $BUILDPKG_KEY
+
+    )
  
+    rm -rf "xtrabackup-$XTRABACKUP_VERSION"
+
 )
