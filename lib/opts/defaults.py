@@ -39,10 +39,12 @@ def get_defaults(qp_rootdir):
                , 'basedir': branch_root
                , 'clientbindir': os.path.join(branch_root,'test/server/client')
                , 'server_type':'mysql'
-               , 'noshm':True
+               , 'noshm': False
                , 'valgrind_suppression':os.path.join(qp_rootdir,'valgrind.supp')
-               , 'suitepaths': [ os.path.join(qp_rootdir,'percona_tests/randgen_main') ]
-               , 'suitelist' : ['randgen_main']
+               , 'suitepaths': [ os.path.join(branch_root,'plugin')
+                           , os.path.join(qp_rootdir,'suite')
+                           ]
+               , 'suitelist' : [] 
                , 'randgen_path': os.path.join(qp_rootdir,'randgen')
                , 'subunit_file': os.path.join(qp_rootdir,'workdir/test_results.subunit')
                , 'xtrabackuppath': None 
@@ -69,10 +71,9 @@ def get_defaults(qp_rootdir):
                , 'innobackupexpath': os.path.join(branch_root,'innobackupex')
                , 'tar4ibdpath': find_tar4ibd_path(branch_root)
                }
-    #print defaults
-    return defaults
 
     """
+    return defaults
 
 def find_tar4ibd_path(branch_root):
     """ We scan branch root to locate tar4ibd"""

@@ -121,8 +121,6 @@ def handle_user_opts(variables, defaults):
         variables['suitepaths'] = tmp
     return variables
 
-
-
 def parse_qp_options(defaults):
     """ We parse our options and do our magic based on some default values """
     # Create the CLI option parser
