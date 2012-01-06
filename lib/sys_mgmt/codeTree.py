@@ -190,7 +190,8 @@ class mysqlTree(codeTree):
                                                          , os.path.join(self.basedir, 'bin')])
         self.charsetdir = self.system_manager.find_path([os.path.join(self.basedir, 'mysql/charsets')
                                                        , os.path.join(self.basedir, 'sql/share/charsets')
-                                                       , os.path.join(self.basedir, 'share/charsets')])
+                                                       , os.path.join(self.basedir, 'share/charsets')
+                                                       , os.path.join(self.basedir, 'share/mysql/charsets'])
         self.langdir = self.system_manager.find_path([os.path.join(self.basedir, 'share/mysql')
                                                     , os.path.join(self.basedir, 'sql/share')
                                                     , os.path.join(self.basedir, 'share')])
@@ -204,6 +205,10 @@ class mysqlTree(codeTree):
 
         self.mysqldump = self.system_manager.find_path([os.path.join( self.clientbindir
                                                                     , 'mysqldump')])
+
+        self.mysqlcheck = self.system_manager.find_path([os.path.join( self.clientbindir
+                                                                    , 'mysqlcheck')])
+
 
         self.mysqlimport = self.system_manager.find_path([os.path.join( self.clientbindir
                                                                       , 'mysqlimport')])

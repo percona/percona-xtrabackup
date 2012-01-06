@@ -230,6 +230,7 @@ def parse_qp_options(defaults):
       , type='string'
       , action="callback"
       , callback=comma_list_split
+      , default = defaults['suitelist']
       , help="The name of the suite containing tests we want. Can accept comma-separated list (with no spaces).  Additional --suite args are appended to existing list     [autosearch]"
       )
 
@@ -376,7 +377,7 @@ def parse_qp_options(defaults):
         "--no-shm"
       , dest="noshm"
       , action='store_true'
-      , default=False
+      , default=defaults['noshm']
       , help = "By default, we symlink workdir to a location in shm.  Use this flag to not symlink [%default]"
       )
 
@@ -424,7 +425,7 @@ def parse_qp_options(defaults):
            "--innobackupex-path"
          , dest="innobackupexpath"
          , action='store'
-         , default=None
+         , default=defaults['innobackupexpath']
          , help = "The path to the innobackupex script that facilitates the use of Xtrabackup"
          )
 
@@ -432,7 +433,7 @@ def parse_qp_options(defaults):
           "--xtrabackup-path"
         , dest="xtrabackuppath"
         , action='store'
-        , default=None
+        , default=defaults['xtrabackuppath']
         , help = "The path the xtrabackup binary to be tested"
         )
 
@@ -440,7 +441,7 @@ def parse_qp_options(defaults):
         "--tar4ibd-path"
       , dest="tar4ibdpath"
       , action='store'
-      , default=None
+      , default=defaults['tar4ibdpath']
       , help="The path to the tar4ibd binary that will be used for any applicable tests"
       )
 

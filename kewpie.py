@@ -37,6 +37,7 @@ import os
 import sys
 
 import lib.opts.test_run_options as test_run_options
+from lib.opts.defaults import get_defaults
 from lib.modes.test_mode import handle_mode
 from lib.server_mgmt.server_management import serverManager
 from lib.sys_mgmt.system_management import systemManager
@@ -48,21 +49,7 @@ from lib.test_mgmt.execution_management import executionManager
 # We base / look for a lot of things based on the location of
 # the kewpie.py file
 qp_rootdir = os.path.dirname(os.path.abspath(sys.argv[0]))
-basedir_default = os.path.dirname(qp_rootdir)
-testdir_default = qp_rootdir
-defaults = { 'qp_root':qp_rootdir
-           , 'testdir': qp_rootdir
-           , 'workdir': os.path.join(qp_rootdir,'workdir')
-           , 'clientbindir': os.path.join(os.path.dirname(qp_rootdir),'client')
-           , 'basedir':os.path.dirname(qp_rootdir)
-           , 'server_type':'mysql'
-           , 'valgrind_suppression':os.path.join(qp_rootdir,'valgrind.supp')
-           , 'suitepaths': [ os.path.join(basedir_default,'plugin')
-                           , os.path.join(testdir_default,'suite')
-                           ]
-           , 'randgen_path': os.path.join(qp_rootdir,'randgen')
-           , 'subunit_file': os.path.join(qp_rootdir,'workdir/test_results.subunit')
-           }
+defaults = get_defaults(qp_rootdir)
 variables = test_run_options.parse_qp_options(defaults)
 variables['qp_root'] = qp_rootdir
 system_manager = None

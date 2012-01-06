@@ -69,8 +69,11 @@ class basicTest(mysqlBaseTestCase):
         if os.path.exists(backup_path):
             shutil.rmtree(backup_path)
 
-    def test_ib_specialchar(self):
-        """ Test of use of special characters within the server password """
+    def test_bug514068(self):
+        """ Bug #514068: Output to STDOUT and STDERR is not conventional
+            Bug #741021: xtrabackup --prepare prints a few lines to stdout
+        """
+
         self.servers = servers
         logging = test_executor.logging
         if servers[0].type not in ['mysql','percona']:

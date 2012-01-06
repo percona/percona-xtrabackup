@@ -44,6 +44,11 @@ class basicTest(mysqlBaseTestCase):
                 shutil.rmtree(del_path)
 
     def test_ib_stream(self):
+        server_comment = servers[0].code_tree.server_compile_comment
+        if server_comment and "with XtraDB" not in server_comment:
+            logging.warning("Test requires XtraDB, skipping test...")
+            return
+        else:
             innobackupex = test_executor.system_manager.innobackupex_path
             xtrabackup = test_executor.system_manager.xtrabackup_path
             master_server = servers[0] # assumption that this is 'master'

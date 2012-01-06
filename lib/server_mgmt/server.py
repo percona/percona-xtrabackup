@@ -28,8 +28,10 @@
 
 # imports
 import os
+import getpass
 import time
 import subprocess
+import platform
 
 class Server(object):
     """ the server class from which other servers
@@ -63,6 +65,10 @@ class Server(object):
         self.owner = requester
         self.test_executor = test_executor
         self.server_options = server_options
+        # We make ourselves bug-compatible with MTR / xtrabackup 
+        # test runners
+        if getpass.getuser() == 'root' and platform.system != 'Windows':
+            self.server_options.append("--user=root") 
         self.default_storage_engine = default_storage_engine
         self.server_manager = server_manager
         # We register with server_manager asap
@@ -91,6 +97,8 @@ class Server(object):
         self.need_reset = False
         self.master = None
         self.need_to_set_master = False
+
+        self.error_log = None
 
     def initialize_databases(self):
         """ Call schemawriter to make db.opt files """
@@ -271,6 +279,10 @@ class Server(object):
         if server_retcode != 0 and not expect_fail:
             self.logging.error("Server startup command: %s failed with error code %d" %( start_cmd
                                                                                   , server_retcode))
+            self.logging.error("Dumping error log: %s" %(self.error_log)
+            with open(self.error_log,'r') as errlog:
+                for line in errlog:
+                    self.logging.error(line)
         elif server_retcode == 0 and expect_fail:
         # catch a startup that should have failed and report
             self.logging.error("Server startup command :%s expected to fail, but succeeded" %(start_cmd))
