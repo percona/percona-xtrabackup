@@ -279,7 +279,7 @@ class Server(object):
         if server_retcode != 0 and not expect_fail:
             self.logging.error("Server startup command: %s failed with error code %d" %( start_cmd
                                                                                   , server_retcode))
-            self.logging.error("Dumping error log: %s" %(self.error_log)
+            self.logging.error("Dumping error log: %s" %(self.error_log))
             with open(self.error_log,'r') as errlog:
                 for line in errlog:
                     self.logging.error(line)
