@@ -227,6 +227,7 @@ class mysqlServer(Server):
                       , "--loose-innodb_log_files_in_group=2"
                       , "--slave-net-timeout=120"
                       , "--log-bin=%s" %(os.path.join(self.logdir,"mysqld-bin"))
+                      , "--binlog-format=ROW"
                       , "--loose-enable-performance-schema"
                       , "--loose-performance-schema-max-mutex-instances=10000"
                       , "--loose-performance-schema-max-rwlock-instances=10000"

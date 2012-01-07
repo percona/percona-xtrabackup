@@ -258,6 +258,7 @@ class mysqlServer(Server):
                       , "--slave-net-timeout=120"
                       , "--log-bin=%s" %(os.path.join(self.logdir,"mysqld-bin"))
                       , "--binlog-direct-non-transactional-updates"
+                      , "--binlog-format=ROW"
                       , "--general_log=1"
                       , "--general_log_file=%s" %(self.general_log_file)
                       , "--slow_query_log=1"
