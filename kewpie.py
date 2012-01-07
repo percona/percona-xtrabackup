@@ -50,7 +50,6 @@ from lib.test_mgmt.execution_management import executionManager
 # the kewpie.py file
 qp_rootdir = os.path.dirname(os.path.abspath(sys.argv[0]))
 defaults = get_defaults(qp_rootdir)
-print defaults
 variables = test_run_options.parse_qp_options(defaults)
 variables['qp_root'] = qp_rootdir
 system_manager = None
