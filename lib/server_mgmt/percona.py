@@ -188,8 +188,8 @@ class mysqlServer(Server):
  
         """
 
-        server_args = [ self.process_server_options()
-                      , "--no-defaults"
+        server_args = [ "--no-defaults" 
+                      , self.process_server_options()
                       , "--open-files-limit=1024"
                       , "--local-infile"
                       , "--character-set-server=latin1"
