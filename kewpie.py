@@ -49,7 +49,10 @@ from lib.test_mgmt.execution_management import executionManager
 # We base / look for a lot of things based on the location of
 # the kewpie.py file
 qp_rootdir = os.path.dirname(os.path.abspath(sys.argv[0]))
-defaults = get_defaults(qp_rootdir)
+project_name = 'percona-xtradb-cluster'
+#project_name = 'xtrabackup'
+#project_name = None
+defaults = get_defaults(qp_rootdir,project_name)
 variables = test_run_options.parse_qp_options(defaults)
 variables['qp_root'] = qp_rootdir
 system_manager = None

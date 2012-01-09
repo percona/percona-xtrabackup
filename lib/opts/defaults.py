@@ -25,7 +25,8 @@
 import os
 import sys
 
-def get_defaults(qp_rootdir):
+
+def get_defaults(qp_rootdir, project_name):
     """ We store project-variable defaults here
         and return them to seed the runner
 
@@ -50,29 +51,33 @@ def get_defaults(qp_rootdir):
                , 'xtrabackuppath': None 
                , 'innobackupexpath': None 
                , 'tar4ibdpath': None 
+               , 'wsrep_provider_path':'/usr/lib/galera/libgalera_smm.so'
                }
 
-    """
-    # Xtrabackup tree default values
-    branch_root = os.path.dirname(qp_rootdir)
-    defaults = { 'qp_root':qp_rootdir
-               , 'testdir': qp_rootdir
-               , 'workdir': os.path.join(qp_rootdir,'workdir')
-               , 'basedir': os.path.join(branch_root,'test/server')
-               , 'clientbindir': os.path.join(branch_root,'test/server/client')
-               , 'server_type':'mysql'
-               , 'noshm':True
-               , 'valgrind_suppression':os.path.join(qp_rootdir,'valgrind.supp')
-               , 'suitepaths': [ os.path.join(qp_rootdir,'percona_tests/xtrabackup_main') ] 
-               , 'suitelist' : ['xtrabackup_main']
-               , 'randgen_path': os.path.join(qp_rootdir,'randgen')
-               , 'subunit_file': os.path.join(qp_rootdir,'workdir/test_results.subunit')
-               , 'xtrabackuppath': find_xtrabackup_path(branch_root) 
-               , 'innobackupexpath': os.path.join(branch_root,'innobackupex')
-               , 'tar4ibdpath': find_tar4ibd_path(branch_root)
-               }
+    if project_name == 'percona-xtradb-cluster':
+        defaults.update( { 'basedir': branch_root
+                         , 'clientbindir': os.path.join(branch_root,'/client')
+                         , 'server_type':'galera'
+                         , 'noshm':True
+                         , 'suitepaths': [ os.path.join(qp_rootdir,'percona_tests/') ]
+                         , 'suitelist' : ['cluster_basic','cluster_randgen']
+                         })
 
-    """
+
+    if project_name == 'xtrabackup':
+        # Xtrabackup tree default values
+        defaults.update( { 'basedir': os.path.join(branch_root,'test/server')
+                         , 'clientbindir': os.path.join(branch_root,'test/server/client')
+                         , 'server_type':'mysql'
+                         , 'noshm':True
+                         , 'valgrind_suppression':os.path.join(qp_rootdir,'valgrind.supp')
+                         , 'suitepaths': [ os.path.join(qp_rootdir,'percona_tests/xtrabackup_main') ] 
+                         , 'suitelist' : ['xtrabackup_main']
+                         , 'xtrabackuppath': find_xtrabackup_path(branch_root) 
+                         , 'innobackupexpath': os.path.join(branch_root,'innobackupex')
+                         , 'tar4ibdpath': find_tar4ibd_path(branch_root)
+                         })
+
     return defaults
 
 def find_tar4ibd_path(branch_root):

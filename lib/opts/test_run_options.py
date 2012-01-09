@@ -447,7 +447,7 @@ def parse_qp_options(defaults):
           "--wsrep-provider-path"
        , dest="wsrepprovider"
        , action='store'
-       , default=None
+       , default=defaults['wsrep_provider_path']
        , help = "The path to a wsrep provider library for use with mysql"
        )
 
