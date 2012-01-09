@@ -209,6 +209,7 @@ class mysqlServer(Server):
         """
 
         server_args = [ self.process_server_options()
+                      , "--no-defaults"
                       , "--open-files-limit=1024"
                       , "--local-infile"
                       , "--character-set-server=latin1"
