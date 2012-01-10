@@ -30,7 +30,6 @@
 import os
 import time
 import subprocess
-import platform
 
 class Server(object):
     """ the server class from which other servers
@@ -64,10 +63,6 @@ class Server(object):
         self.owner = requester
         self.test_executor = test_executor
         self.server_options = server_options
-        # We make ourselves bug-compatible with MTR / xtrabackup 
-        # test runners
-        if platform.system() != 'Windows' and os.geteuid() == 0:
-            self.server_options.append("--user=root") 
         self.default_storage_engine = default_storage_engine
         self.server_manager = server_manager
         # We register with server_manager asap

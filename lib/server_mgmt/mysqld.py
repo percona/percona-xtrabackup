@@ -30,6 +30,7 @@ import os
 import sys
 import time
 import subprocess
+import platform
 
 from ConfigParser import RawConfigParser
 
@@ -208,6 +209,10 @@ class mysqlServer(Server):
  
         """
 
+        # We make ourselves bug-compatible with MTR / xtrabackup
+        # test runners
+        if platform.system() != 'Windows' and os.geteuid() == 0:
+            self.server_options.append("--user=root")
         server_args = [ "--no-defaults" 
                       , self.process_server_options()
                       , "--open-files-limit=1024"

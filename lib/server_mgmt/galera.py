@@ -29,6 +29,7 @@
 import os
 import sys
 import time
+import platform
 import subprocess
 
 from ConfigParser import RawConfigParser
@@ -204,6 +205,11 @@ class mysqlServer(Server):
             as desired / intended
  
         """
+
+       # We make ourselves bug-compatible with MTR / xtrabackup
+        # test runners
+        if platform.system() != 'Windows' and os.geteuid() == 0:
+            self.server_options.append("--user=root")
 
         # we need to do some wsrep voodoo for galera rpl to work
         self.ip_address = self.system_manager.get_ip_address() 
