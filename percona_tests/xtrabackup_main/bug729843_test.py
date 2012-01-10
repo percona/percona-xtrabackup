@@ -74,7 +74,9 @@ class basicTest(mysqlBaseTestCase):
                   ]
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-            self.assertEqual(retcode,255,msg = "Retcode: %d || %s" %(retcode,output))
+            # It seems the retcode varies between 9 and 255 : /
+            accepted_values = [9,255]
+            self.assertTrue(retcode in accepted_values ,msg = "Retcode: %d || %s" %(retcode,output))
             self.assertTrue("--password=secret" not in output, msg = output)
             self.assertTrue("--password=xxxxxxxx" in output, msg = output)
               
