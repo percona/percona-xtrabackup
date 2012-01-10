@@ -74,7 +74,7 @@ class basicTest(mysqlBaseTestCase):
                   ]
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-            self.assertEqual(retcode,9,msg = "Retcode: %d || %s" %(retcode,output))
+            self.assertEqual(retcode,255,msg = "Retcode: %d || %s" %(retcode,output))
             self.assertTrue("--password=secret" not in output, msg = output)
             self.assertTrue("--password=xxxxxxxx" in output, msg = output)
               

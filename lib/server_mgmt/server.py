@@ -66,7 +66,7 @@ class Server(object):
         self.server_options = server_options
         # We make ourselves bug-compatible with MTR / xtrabackup 
         # test runners
-        if platform.system != 'Windows' and os.geteuid() == 0:
+        if platform.system() != 'Windows' and os.geteuid() == 0:
             self.server_options.append("--user=root") 
         self.default_storage_engine = default_storage_engine
         self.server_manager = server_manager
