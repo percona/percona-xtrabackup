@@ -483,4 +483,24 @@ class mysqlServer(Server):
                     slave_list.pop(idx)
                             
 
- 
+    def get_innodb_version(self):
+        """ SHOW VARIABLES LIKE innodb_version 
+            mostly used as a check to ensure if a 
+            test should/shouldn't be executed
+
+        """ 
+
+        query = "SHOW VARIABLES LIKE 'innodb_version'"
+        retcode, result = execute_query(query, self)
+        return retcode, result 
+
+    def get_xtradb_version(self):
+        """ Return the xtradb version or None """
+
+        retcode, result = self.get_innodb_version()
+        # result format = (('innodb_version', '1.1.6-20.1'),)
+        innodb_version = result[0][1]
+        split_data = innodb_version.split('-')
+        if len(split_data) > 1:
+            return split_data[-1]
+        return None

@@ -43,7 +43,7 @@ class basicTest(mysqlBaseTestCase):
             shutil.rmtree(backup_path)
 
 
-    def test_ib_csm_csv(self):
+    def test_ib_nonempty_dir(self):
         self.servers = servers
         logging = test_executor.logging
         if servers[0].type not in ['mysql','percona']:
@@ -92,8 +92,9 @@ class basicTest(mysqlBaseTestCase):
             logging.test_debug("Restored retcode: %d" %retcode)
             self.assertEqual(retcode, 255, output)
             # Check our output for the expected error message
-            expected_msg = "Original data directory is not empty! at %s line 516." %(innobackupex)
-            self.assertTrue(output.strip().endswith(expected_msg), msg="Output: %s || expected message: %s" %(output, expected_msg))
+            expected_msg = "Original data directory is not empty! at %s line" %(innobackupex)
+            last_line = output.strip().split('\n')[-1]
+            self.assertTrue(expected_msg in last_line, msg="Output: %s || expected message: %s" %(output, expected_msg))
                 
     def tearDown(self):
             server_manager.reset_servers(test_executor.name)

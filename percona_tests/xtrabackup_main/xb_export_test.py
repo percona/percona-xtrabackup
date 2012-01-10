@@ -64,9 +64,10 @@ class basicTest(mysqlBaseTestCase):
 
     def test_xb_export(self):
         self.servers = servers
+        master_server = servers[0]
         logging = test_executor.logging
-        server_comment = servers[0].code_tree.server_compile_comment
-        if server_comment and "with XtraDB" not in server_comment:
+        xtradb_version = master_server.get_xtradb_version()
+        if not xtradb_version:
             logging.warning("Test requires XtraDB, skipping test...")
             return
         else:
