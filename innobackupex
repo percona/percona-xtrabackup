@@ -100,6 +100,7 @@ my $option_tmpdir = '';
 my $option_tar4ibd = '';
 my $option_force_tar = '';
 my $option_scp_opt = '-Cp -c arcfour';
+my $option_ssh_opt = '';
 
 my $option_parallel = '';
 
@@ -848,10 +849,10 @@ sub start_ibbackup {
                 my @list;
 
                 if($option_remote_host) {
-                    if (system("ssh $option_remote_host test -e $backup_dir/ib_logfile0")
+                    if (system("ssh $option_ssh_opt $option_remote_host test -e $backup_dir/ib_logfile0")
                             == 0) {
                         print STDERR "$prefix Remove $option_remote_host:$backup_dir/ib_logfile*\n";
-                        system("ssh $option_remote_host rm $backup_dir/ib_logfile\*")
+                        system("ssh $option_ssh_opt $option_remote_host rm $backup_dir/ib_logfile\*")
                             and Die "Failed to rm file '$backup_dir/ib_logfile*': $!";
                     }
                 }
@@ -938,9 +939,9 @@ sub start_ibbackup {
                             print STDERR "$prefix Backing up file '$file'\n";
                         }
                         if($option_remote_host) {
-                            if (system("ssh $option_remote_host test -e $backup_dir/$subdir")
+                            if (system("ssh $option_ssh_opt $option_remote_host test -e $backup_dir/$subdir")
                                     != 0) {
-                                system("ssh $option_remote_host mkdir $backup_dir/$subdir");
+                                system("ssh $option_ssh_opt $option_remote_host mkdir $backup_dir/$subdir");
                             }
                             system("scp $option_scp_opt '$file' '$option_remote_host:$backup_dir/$subdir/'")
                                 and Die "Failed to scp file '$file': $!";
@@ -1181,7 +1182,7 @@ sub write_binlog_info {
         open(FILE, ">$binlog_info") || 
             Die "Failed to open file '$binlog_info': $!";
     } else {
-        open(FILE, "| ssh $option_remote_host 'cat > $binlog_info'") ||
+        open(FILE, "| ssh $option_ssh_opt $option_remote_host 'cat > $binlog_info'") ||
             Die "Failed to open file '$option_remote_host:$binlog_info': $!";
     }
     print FILE  "$info_lines[1]\n";
@@ -1234,7 +1235,7 @@ sub write_slave_info {
         open(FILE, ">$slave_info") || 
             Die "Failed to open file '$slave_info': $!";
     } else {
-        open(FILE, "| ssh $option_remote_host 'cat > $slave_info'") ||
+        open(FILE, "| ssh $option_ssh_opt $option_remote_host 'cat > $slave_info'") ||
             Die "Failed to open file '$option_remote_host:$slave_info': $!";
     }
     print FILE  "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n";
@@ -1567,8 +1568,8 @@ sub write_backup_config_file {
         $root = $backup_dir;
         open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
     } else {
-        $root = `ssh $option_remote_host 'cd $backup_dir; pwd'`;
-        open(FILE, "| ssh $option_remote_host 'cat > $filename'")
+        $root = `ssh $option_ssh_opt $option_remote_host 'cd $backup_dir; pwd'`;
+        open(FILE, "| ssh $option_ssh_opt $option_remote_host 'cat > $filename'")
             || Die "Failed to open file '$option_remote_host:$filename': $!";
     }
 
@@ -1657,6 +1658,7 @@ sub check_args {
                         'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
                         'scpopt=s' => \$option_scp_opt,
+                        'sshopt=s' => \$option_ssh_opt,
                         'force-tar', => \$option_force_tar,
                         'parallel=i' => \$option_parallel,
                         'safe-slave-backup' => \$option_safe_slave_backup,
@@ -1778,7 +1780,7 @@ sub make_backup_dir {
     if (!$option_remote_host) {
         mkdir($dir, 0777) || Die "Failed to create backup directory $dir: $!";
     } else {
-        system("ssh $option_remote_host mkdir $dir");
+        system("ssh $option_ssh_opt $option_remote_host mkdir $dir");
     }
 
     # create subdirectories for ibdata files if needed
@@ -1821,8 +1823,8 @@ sub create_path_if_needed {
                 mkdir($path, 0777) || Die "Failed to create backup directory: $!";
             }
         } else {
-            if (system("ssh $option_remote_host test -d $path") != 0) {
-                system("ssh $option_remote_host mkdir $path");
+            if (system("ssh $option_ssh_opt $option_remote_host test -d $path") != 0) {
+                system("ssh $option_ssh_opt $option_remote_host mkdir $path");
             }
         }
     }
@@ -1912,9 +1914,9 @@ sub backup_files {
                     || Die "Couldn't create directory '$backup_dir/$database': $!";
             }
         } elsif ($option_remote_host) {
-            if (system("ssh $option_remote_host test -e $backup_dir/$database")
+            if (system("ssh $option_ssh_opt $option_remote_host test -e $backup_dir/$database")
                     != 0) {
-                system("ssh $option_remote_host mkdir $backup_dir/$database");
+                system("ssh $option_ssh_opt $option_remote_host mkdir $backup_dir/$database");
             }
         }
 
@@ -2504,7 +2506,8 @@ innobackupex [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME]
              [--password=WORD] [--port=PORT] [--socket=SOCKET]
              [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
              [--slave-info] [--stream=tar] [--force-tar]
-             [--scpopt=OPTIONS-FOR-SCP] [--defaults-file=MY.CNF]
+             [--scpopt=OPTIONS-FOR-SCP] [--sshopt=OPTIONS-FOR-SSH]
+             [--defaults-file=MY.CNF]
              [--databases=LIST] [--remote-host=HOSTNAME] [--no-lock] 
              [--tmpdir=DIRECTORY] [--tables-file=FILE]
              [--incremental] [--incremental-basedir]
@@ -2654,6 +2657,10 @@ How many seconds --safe-slave-backup should wait for Slave_open_temp_tables to b
 =item --scpopt=SCP-OPTIONS
 
 This option specifies the command line options to pass to scp when the option --remost-host is specified.  The option accepts a string argument. If the option is not specified, the default options are "-Cp -c arcfour".
+
+=item --sshopt=SSH-OPTIONS
+
+This option specifies the command line options to pass to ssh when the option --remost-host is specified.  The option accepts a string argument.
 
 =item --slave-info
 
