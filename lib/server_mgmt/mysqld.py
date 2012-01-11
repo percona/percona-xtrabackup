@@ -504,8 +504,9 @@ class mysqlServer(Server):
 
         retcode, result = self.get_innodb_version()
         # result format = (('innodb_version', '1.1.6-20.1'),)
-        innodb_version = result[0][1]
-        split_data = innodb_version.split('-')
-        if len(split_data) > 1:
-            return split_data[-1]
+        if result:
+            innodb_version = result[0][1]
+            split_data = innodb_version.split('-')
+            if len(split_data) > 1:
+                return split_data[-1]
         return None
