@@ -34,7 +34,7 @@ class basicTest(mysqlBaseTestCase):
 
     def test_OptimizerSubquery1(self):
         self.servers = servers
-        test_cmd = "./gentest.pl --gendata=conf/percona/outer_join_percona.zz --grammar=conf/percona/outer_join_percona.yy --queries=500 --threads=5"
+        test_cmd = "./gentest.pl --gendata=conf/percona/percona_no_blob.zz --grammar=conf/percona/optimizer_subquery_percona.yy --queries=500 --threads=5"
         retcode, output = self.execute_randgen(test_cmd, test_executor, servers[0])
         self.assertEqual(retcode, 0, output)
 
