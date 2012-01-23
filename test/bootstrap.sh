@@ -42,8 +42,8 @@ case "$1" in
 	tarball="mysql-5.5.16-linux2.6-$arch.tar.gz"
 	;;
     xtradb51)
-	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.1/Percona-Server-5.1.57-12.8/Linux/binary"
-	tarball="Percona-Server-5.1.57-rel12.8-233-Linux-$arch.tar.gz"
+	url="http://www.percona.com/redir/downloads/Percona-Server-5.1/Percona-Server-5.1.60-13.1/binary/linux/$arch"
+	tarball="Percona-Server-5.1.60-rel13.1-413.Linux.$arch.tar.gz"
 	;;
     xtradb55)
 	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary"
