@@ -56,8 +56,6 @@ class basicTest(mysqlBaseTestCase):
             backup_path = os.path.join(master_server.vardir, '_xtrabackup')
             output_path = os.path.join(master_server.vardir, 'innobackupex.out')
             exec_path = os.path.dirname(innobackupex)
-            orig_dumpfile = os.path.join(master_server.vardir,'orig_dumpfile')
-            slave_dumpfile = os.path.join(master_server.vardir, 'slave_dumpfile')
 
             # populate our server with a test bed
             test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
@@ -75,10 +73,7 @@ class basicTest(mysqlBaseTestCase):
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
             self.assertEqual(retcode, 0, msg = output)
 
-            # take mysqldump of our current server state
-            self.take_mysqldump(master_server,databases=['test'],dump_path=orig_dumpfile)
-        
-            # shutdown our server
+            # shutdown our slave server
             slave_server.stop()
 
             # prepare our backup
@@ -109,7 +104,6 @@ class basicTest(mysqlBaseTestCase):
             binlog_file = os.path.basename(binlog_file)
             slave_file.close()
 
-
             # restart server (and ensure it doesn't crash)
             slave_server.start()
             self.assertEqual( slave_server.status, 1
@@ -118,7 +112,6 @@ class basicTest(mysqlBaseTestCase):
             # update our slave's master info/ start replication
             retcode, result_set = slave_server.set_master(master_server)
             self.assertEqual(retcode, 0, msg=result_set)
-
 
             # check the slave status
             query = "SHOW SLAVE STATUS"
@@ -134,12 +127,9 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(slave_sql_running, 'Yes', msg=slave_server.dump_errlog())
             self.assertEqual(retcode,0, msg=result_set)
 
-            # take mysqldump of current server state
-            self.take_mysqldump(slave_server, databases=['test'],dump_path=slave_dumpfile)
-
-            # diff original vs. current server dump files
-            retcode, output = self.diff_dumpfiles(orig_dumpfile, slave_dumpfile)
-            self.assertTrue(retcode, output)
+            # compare master/slave states
+            result = self.check_slaves_by_checksum(master_server,[slave_server])
+            self.assertEqual(result,None,msg=result)
 
             # create a new table on the master
             query = ("CREATE TABLE t1 "
