@@ -132,7 +132,7 @@ def parse_qp_options(defaults):
         , dest="sysconfigfilepath"
         , action='store'
         , default=None # We want to have a file that will be our default defaults file...
-        , help="The file that specifies system configuration specs for dbqp to execute tests (not yet implemented)"
+        , help="The file that specifies system configuration specs for kewpie to execute tests (not yet implemented)"
         )
     parser.add_option_group(config_control_group)
 
@@ -176,7 +176,7 @@ def parse_qp_options(defaults):
            "--mode"
          , dest="mode"
          , default="native"
-         , help="Testing mode.  We currently support dtr, randgen, sysbench, sqlbench, crashme and cleanup modes.  See docs for further details about individual modes [%default]"
+         , help="Testing mode.  We currently support dtr, sysbench, native and cleanup modes.  See docs for further details about individual modes [%default]"
          )
 
     system_control_group.add_option(
@@ -318,14 +318,12 @@ def parse_qp_options(defaults):
       , help = "Path to the directory containing client program binaries for use in testing [%default]"
       )
 
-
     test_subject_control_group.add_option(
         "--default-storage-engine"
        , dest="defaultengine"
        , default = 'innodb'
        , help="Start drizzled using the specified engine [%default]"
        )
-
 
     parser.add_option_group(test_subject_control_group)
     # end test subject control group
@@ -452,20 +450,31 @@ def parse_qp_options(defaults):
        )
 
     environment_control_group.add_option(
-          "--cluster-cnf"
-        , dest="clustercnf"
-        , action='store'
-        , default=None
-        , help = "The path to a config file defining a running cluster (node info)"
-        )
-
-    environment_control_group.add_option(
           "--subunit-outfile"
         , dest="subunitoutfile"
         , action='store'
         , default=defaults['subunit_file']
         , help = "File path where subunit output will be logged [%default]"
         )
+
+    environment_control_group.add_option(
+        "--validator-basedir"
+      , dest="validatorbasedir"
+      , type='string'
+      , default = []
+      , action="append"
+      , help = "Pass this argument to signal to the test-runner that this is an in-tree test.  We automatically set a number of variables relative to the argument (client-bindir, serverdir, testdir) [%defaults['basedir']]"
+      )
+
+    environment_control_group.add_option(
+        "--validator-server-type"
+      , dest="validatorservertype"
+      , type='string'
+      , default = defaults['server_type']
+      , action='store'
+      , help = "Defines what we consider to be the default server type.  We assume a server is default type unless specified otherwise. [%default]"
+      )
+
 
     parser.add_option_group(environment_control_group)
     # end environment control group
