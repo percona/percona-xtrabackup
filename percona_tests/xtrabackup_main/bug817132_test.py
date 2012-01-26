@@ -26,6 +26,17 @@ import shutil
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
+def skip_checks(system_manager):
+    """ We do some pre-test checks to see if we need to skip a test or not """
+    
+    # innobackupex --copy-back without explicit --ibbackup specification
+    # defaults to 'xtrabackup'. So any build configurations other than xtradb51
+    # would fail in Jenkins.
+    if os.path.basename(system_manager.xtrabackup_path) != "xtrabackup":
+        return True, "Test only works with xtradb51. --ibbackup spec defaults to xtrabackup"
+    else:
+        return False, ''
+
 server_requirements = [[]]
 servers = []
 server_manager = None
@@ -124,7 +135,3 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(output, expected_output, msg = "%s || %s" %(output, expected_output))
 
               
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-

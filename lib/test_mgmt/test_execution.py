@@ -87,17 +87,26 @@ class testExecutor():
             self.get_testCase()
             for i in range(self.testcase_repeat_count):
                 if keep_running:
-                    self.handle_system_reqs()
-                    self.handle_server_reqs()
-                    self.handle_utility_reqs()
-                    self.handle_start_and_exit(start_and_exit)
-                    if self.current_test_status != 'fail':
-                        self.execute_testCase()
+                    if self.current_testcase.should_run():
+                        self.handle_system_reqs()
+                        self.handle_server_reqs()
+                        self.handle_utility_reqs()
+                        self.handle_start_and_exit(start_and_exit)
+                        if self.current_test_status != 'fail':
+                            self.execute_testCase()
+                    else:
+                        # the test's skip_flag is set or it is disabled
+                        self.current_test_status = 'skipped'
+                        self.current_test_output = self.current_testcase.skip_reason
+                    # Warn the user if the test suddenly starts passing
+                    if self.current_testcase.expect_fail and self.current_test_status != fail:
+                        self.logging.warning("Test: %s was expected to fail but has passed!" %self.current_testcase.fullname)
                     self.record_test_result()
-                    if self.current_test_status == 'fail' and not self.execution_manager.force:
+                    if self.current_test_status == 'fail' and not self.execution_manager.force and not self.current_testcase.expect_fail:
                         self.logging.error("Failed test.  Use --force to execute beyond the first test failure")
                         keep_running = 0
                     self.current_test_status = None # reset ourselves
+                    
         self.status = 0
 
     def get_testCase(self):

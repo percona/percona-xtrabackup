@@ -24,9 +24,9 @@
 
 """
 # imports
-import thread
 import time
 import os
+import shutil
 import subprocess
 from ConfigParser import RawConfigParser
 
@@ -60,11 +60,20 @@ class serverManager:
         self.user_server_opts = variables['drizzledoptions']
         self.servers = {}
 
-        self.mutex = thread.allocate_lock()
         self.libeatmydata = variables['libeatmydata']
         self.libeatmydata_path = variables['libeatmydatapath']
 
         self.logging.info("Using default-storage-engine: %s" %(self.default_storage_engine))
+        test_server = self.allocate_server( 'test_bot' 
+                                          , None 
+                                          , []
+                                          , self.system_manager.workdir
+                                          )
+        test_server.start(working_environ=os.environ)
+        test_server.get_engine_info()
+        test_server.stop()
+        shutil.rmtree(test_server.workdir)
+        del(test_server)
 
         self.logging.debug_class(self)
 

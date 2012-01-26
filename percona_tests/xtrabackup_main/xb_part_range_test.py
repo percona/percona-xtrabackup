@@ -203,8 +203,3 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(orig_checksum, restored_checksum, msg = "Orig: %s | Restored: %s" %(orig_checksum, restored_checksum))
  
 
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-
-

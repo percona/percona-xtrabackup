@@ -26,6 +26,20 @@ import signal
 import subprocess
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
+from lib.util.mysql_methods import execute_cmd
+
+def skip_checks(system_manager):
+    # test to ensure we have a debug build
+    cmd = "%s --help" %system_manager.xtrabackup_path 
+    output_path = os.path.join(system_manager.workdir, 'innobackupex.out')
+    exec_path = system_manager.workdir
+
+    retcode, output = execute_cmd(cmd, output_path, exec_path, True)
+    for line in output:
+        if 'debug-sync' in line and 'TRUE' in line:
+            return False, ''
+        else: 
+            return True, "Requires --debug-sync support."
 
 server_requirements = [['--innodb-file-per-table']]
 servers = []
@@ -46,23 +60,16 @@ class basicTest(mysqlBaseTestCase):
                 shutil.rmtree(del_path)
 
     def test_bug722638(self):
-        self.servers = servers
-        logging = test_executor.logging
-        innobackupex = test_executor.system_manager.innobackupex_path
-        xtrabackup = test_executor.system_manager.xtrabackup_path
-        master_server = servers[0] # assumption that this is 'master'
-        backup_path = os.path.join(master_server.vardir, 'full_backup')
-        output_path = os.path.join(master_server.vardir, 'innobackupex.out')
-        suspended_file = os.path.join(backup_path, 'xtrabackup_debug_sync')
-        exec_path = os.path.dirname(innobackupex)
+            self.servers = servers
+            logging = test_executor.logging
+            innobackupex = test_executor.system_manager.innobackupex_path
+            xtrabackup = test_executor.system_manager.xtrabackup_path
+            master_server = servers[0] # assumption that this is 'master'
+            backup_path = os.path.join(master_server.vardir, 'full_backup')
+            output_path = os.path.join(master_server.vardir, 'innobackupex.out')
+            suspended_file = os.path.join(backup_path, 'xtrabackup_debug_sync')
+            exec_path = os.path.dirname(innobackupex)
         
-        # test to ensure we have a debug build
-        cmd = "%s --help"
-        retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-        if 'debug-sync' not in output:
-            logging.warning("Requires --debug-sync support. Skipping test...")
-            return
-        else:
             # populate our server with a test bed
             queries = [ "CREATE TABLE t1(a INT) ENGINE=InnoDB"
                       , "INSERT INTO t1 VALUES (1), (2), (3)"
@@ -215,8 +222,4 @@ class basicTest(mysqlBaseTestCase):
                 retcode, result = self.execute_query(query, master_server)
                 self.assertEqual(retcode, 0, msg=result)
                 self.assertEqual(result, orig_checksums[i], msg = "%s:  %s || %s" %(query, orig_checksums[i], result))
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
 

@@ -147,11 +147,11 @@ class loggingManager():
         with open(self.subunit_file,'a') as subunit_outfile:
             subunit_outfile.write(time.strftime("time: %Y-%m-%d-%H:%M:%SZ\n"))
             if output:
-                output_string = "[\n%s]\n" %(output)
+                output_string = " [\n%s]\n" %(output)
             else:
                 output_string = "\n" # we just want a newline if nothing here 
-            subunit_outfile.write("%s: %s %s" %( result
-                                               , test_name
-                                               , output_string))
+            subunit_outfile.write("%s: %s%s" %( result
+                                              , test_name
+                                              , output_string))
             
         

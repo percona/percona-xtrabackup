@@ -35,6 +35,12 @@ test_executor = None
 # here.  We will be using a generic / vanilla backup dir
 backup_path = None
 
+def skip_checks(system_manager):
+    if not system_manager.code_manager.test_tree.innodb_version or not system_manager.code_manager.test_tree.xtradb_version:
+            return True, "Test requires XtraDB or Innodb plugin."
+    return False, ''
+
+
 class basicTest(mysqlBaseTestCase):
 
     def setUp(self):
@@ -56,9 +62,13 @@ class basicTest(mysqlBaseTestCase):
 
     def test_ib_incremental(self):
         self.servers = servers
+        master_server = servers[0]
         logging = test_executor.logging
-        if servers[0].type not in ['mysql','percona']:
+        retcode, innodb_version = master_server.get_innodb_version()
+        if not innodb_version:
+            logging.warning("Test requires XtraDB or Innodb plugin, skipping test...")
             return
+
         else:
             innobackupex = test_executor.system_manager.innobackupex_path
             xtrabackup = test_executor.system_manager.xtrabackup_path
@@ -205,9 +215,5 @@ class basicTest(mysqlBaseTestCase):
 
                 self.assertEqual(orig_checksum, restored_checksum, msg = "Orig: %s | Restored: %s" %(orig_checksum, restored_checksum))
      
-
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
 
 

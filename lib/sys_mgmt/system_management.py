@@ -99,7 +99,8 @@ class systemManager:
         # We add tar4ibd to PATH if defined
         if self.tar4ibd_path:
             self.env_manager.set_env_var( 'PATH', self.env_manager.append_env_var( 'PATH'
-                                                           , os.path.dirname(self.tar4ibd_path), suffix=0
+                                                           , os.path.dirname(self.tar4ibd_path)
+                                                           , suffix=0
                                                            ))
 
         self.wsrep_provider_path = variables['wsrepprovider']

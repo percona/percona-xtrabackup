@@ -33,6 +33,12 @@ test_executor = None
 # here.  We will be using a generic / vanilla backup dir
 backup_path = None
 
+def skip_checks(system_manager):
+    if not system_manager.code_manager.test_tree.innodb_version:
+            return True, "Test requires XtraDB or Innodb plugin."
+    return False, ''
+
+
 class basicTest(mysqlBaseTestCase):
 
     def setUp(self):
@@ -50,14 +56,16 @@ class basicTest(mysqlBaseTestCase):
         retcode, result = self.execute_queries(queries, server)
         self.assertEqual(retcode, 0, msg=result)
 
-    def test_ib_stream(self):
+    def test_bug810269(self):
             """ Bug #665210: tar4ibd does not support innodb row_format=compressed
                 Bug #810269: tar4ibd does not check for doublewrite buffer pages
             """
 
+            self.servers = servers       
+            master_server = servers[0]
+            logging = test_executor.logging
             innobackupex = test_executor.system_manager.innobackupex_path
             xtrabackup = test_executor.system_manager.xtrabackup_path
-            master_server = servers[0] # assumption that this is 'master'
             backup_path = os.path.join(master_server.vardir, '_xtrabackup')
             tar_file_path = os.path.join(backup_path,'out.tar')
             output_path = os.path.join(master_server.vardir, 'innobackupex.out')
@@ -157,6 +165,3 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(orig_checksum, restored_checksum, "%s || %s" %(orig_checksum, restored_checksum))
 
               
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-

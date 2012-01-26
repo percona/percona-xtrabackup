@@ -95,7 +95,7 @@ class basicTest(mysqlBaseTestCase):
             expected_msg = "Original data directory is not empty! at %s line" %(innobackupex)
             last_line = output.strip().split('\n')[-1]
             self.assertTrue(expected_msg in last_line, msg="Output: %s || expected message: %s" %(output, expected_msg))
-                
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
+            # restart the server to clean up
+            master_server.start()
 
+                    

@@ -31,6 +31,8 @@ import os
 import time
 import subprocess
 
+from lib.util.mysql_methods import execute_query
+
 class Server(object):
     """ the server class from which other servers
         will inherit - contains generic methods
@@ -276,7 +278,7 @@ class Server(object):
             self.logging.error("Dumping error log: %s" %(self.error_log))
             with open(self.error_log,'r') as errlog:
                 for line in errlog:
-                    self.logging.error(line)
+                    self.logging.error(line.strip())
         elif server_retcode == 0 and expect_fail:
         # catch a startup that should have failed and report
             self.logging.error("Server startup command :%s expected to fail, but succeeded" %(start_cmd))
@@ -354,4 +356,26 @@ class Server(object):
             self.pid = pid
             return self.pid
 
+    def get_engine_info(self):
+            """ Check innodb / xtradb version """
 
+            innodb_version = None
+            xtradb_version = None
+        #if not self.code_tree.version_checked:
+            query = "SHOW VARIABLES LIKE 'innodb_version'"
+            retcode, result = execute_query(query, self)
+            # result format = (('innodb_version', '1.1.6-20.1'),)
+            if result:
+                innodb_version = result[0][1]
+                split_data = innodb_version.split('-')
+                if len(split_data) > 1:
+                    xtradb_version = split_data[-1]
+            self.code_tree.version_checked = True
+            self.code_tree.innodb_version = innodb_version
+            self.code_tree.xtradb_version = xtradb_version 
+
+    def dump_errlog(self):
+        with open(self.error_log,'r') as errlog:
+            data = errlog.readlines()
+        return ''.join(data) 
+ 

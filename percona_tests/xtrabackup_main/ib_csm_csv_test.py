@@ -56,9 +56,7 @@ class basicTest(mysqlBaseTestCase):
             exec_path = os.path.dirname(innobackupex)
 
             # populate our server with a test bed
-            queries = ["CREATE SCHEMA CSV"
-                      ,"USE CSV"
-                      ,"CREATE TABLE csm (a INT NOT NULL ) ENGINE=CSV"
+            queries = ["CREATE TABLE csm (a INT NOT NULL ) ENGINE=CSV"
                       ]
             row_count = 100
             for i in range(row_count):
@@ -67,7 +65,7 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(retcode, 0, msg=result)
  
             # Get a checksum for our table
-            query = "CHECKSUM TABLE CSV.csm"
+            query = "CHECKSUM TABLE csm"
             retcode, orig_checksum = self.execute_query(query, master_server)
             self.assertEqual(retcode, 0, msg=result)
             logging.test_debug("Original checksum: %s" %orig_checksum)
@@ -112,14 +110,11 @@ class basicTest(mysqlBaseTestCase):
             self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
 
             # Get a checksum for our table
-            query = "CHECKSUM TABLE CSV.csm"
+            query = "CHECKSUM TABLE csm"
             retcode, restored_checksum = self.execute_query(query, master_server)
             self.assertEqual(retcode, 0, msg=result)
             logging.test_debug("Restored checksum: %s" %restored_checksum)
 
             self.assertEqual(orig_checksum, restored_checksum, msg = "Orig: %s | Restored: %s" %(orig_checksum, restored_checksum))
  
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
 

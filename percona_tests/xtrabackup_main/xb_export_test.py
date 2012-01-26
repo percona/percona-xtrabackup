@@ -32,6 +32,14 @@ test_executor = None
 # here.  We will be using a generic / vanilla backup dir
 backup_path = None
 
+def skip_checks(system_manager):
+    print system_manager.code_manager.test_tree
+    print system_manager.code_manager.test_type
+    if not system_manager.code_manager.test_tree.xtradb_version:
+            return True, "Test requires XtraDB."
+    return False, ''
+
+
 class basicTest(mysqlBaseTestCase):
 
     def setUp(self):
@@ -290,5 +298,3 @@ class basicTest(mysqlBaseTestCase):
 
  
 
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
