@@ -409,17 +409,17 @@ sub backup {
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_logfile': $!";
         unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
 
-        system("scp $option_scp_opt '$orig_datadir/xtrabackup_checkpoints' '$option_remote_host:$backup_dir/xtrabackup_checkpoints'")
+        system("scp $option_scp_opt '$option_tmpdir/xtrabackup_checkpoints' '$option_remote_host:$backup_dir/xtrabackup_checkpoints'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_checkpoints': $!";
-        unlink "$orig_datadir/xtrabackup_checkpoints" || Die "Failed to delete '$orig_datadir/xtrabackup_checkpoints': $!";
+        unlink "$option_tmpdir/xtrabackup_checkpoints" || Die "Failed to delete '$option_tmpdir/xtrabackup_checkpoints': $!";
     } elsif ($option_stream eq 'tar') {
         system("cd $option_tmpdir; tar chf - xtrabackup_logfile")
             and Die "Failed to stream 'xtrabackup_logfile': $!";
         unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
 
-        system("cd $orig_datadir; tar chf - xtrabackup_checkpoints")
+        system("cd $option_tmpdir; tar chf - xtrabackup_checkpoints")
             and Die "Failed to stream 'xtrabackup_checkpoints': $!";
-        unlink "$orig_datadir/xtrabackup_checkpoints" || Die "Failed to delete '$orig_datadir/xtrabackup_checkpoints': $!";
+        unlink "$option_tmpdir/xtrabackup_checkpoints" || Die "Failed to delete '$option_tmpdir/xtrabackup_checkpoints': $!";
     }
 
     print STDERR "\n$prefix Backup created in directory '$backup_dir'\n";
@@ -785,7 +785,7 @@ sub start_ibbackup {
         $options = $options . " --target-dir=$backup_dir";
     } else {
         #(datadir) for 'xtrabackup_suspended' and 'xtrabackup_checkpoints'
-        $options = $options . " --log-stream --target-dir=./";
+        $options = $options . " --log-stream --target-dir=" . $option_tmpdir;
     }
 
     # prepare command line for running ibbackup
@@ -1519,7 +1519,7 @@ sub init {
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
-        $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
+        $suspend_file = $option_tmpdir . '/xtrabackup_suspended';
         $tmp_logfile = $option_tmpdir . '/xtrabackup_logfile';
         if ($option_stream) {
             $backup_config_file = $option_tmpdir . '/backup-my.cnf';
