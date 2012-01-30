@@ -3224,7 +3224,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 			   )
 				stdout_write_size -= OS_FILE_LOG_BLOCK_SIZE;
 			if (stdout_write_size) {
-				ret = write(fileno(stdout), log_sys->buf, stdout_write_size);
+				ret = fwrite(log_sys->buf, 1, stdout_write_size, stdout);
 				if (ret == stdout_write_size) {
 					success = TRUE;
 				} else {
@@ -3909,7 +3909,7 @@ reread_log_header:
 				0, 0, LOG_FILE_HDR_SIZE);
 	} else {
 		/* Stream */
-		if (write(fileno(stdout), log_hdr_buf, LOG_FILE_HDR_SIZE)
+		if (fwrite(log_hdr_buf, 1, LOG_FILE_HDR_SIZE, stdout)
 				== LOG_FILE_HDR_SIZE) {
 			success = TRUE;
 		} else {
