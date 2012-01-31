@@ -89,7 +89,7 @@ run_mysqld --innodb_file_per_table
 vlog "Checking checksums"
 checksum_b=`checksum_table incremental_sample test`
 
-if [ $checksum_a -ne $checksum_b  ]
+if [ "$checksum_a" != "$checksum_b"  ]
 then 
 	vlog "Checksums are not equal"
 	exit -1

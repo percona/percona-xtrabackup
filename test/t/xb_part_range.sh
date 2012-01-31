@@ -104,7 +104,7 @@ run_mysqld
 vlog "Cheking checksums"
 checksum_b=`checksum_table test test`
 
-if [ $checksum_a -ne $checksum_b  ]
+if [ "$checksum_a" != "$checksum_b"  ]
 then 
 	vlog "Checksums are not equal"
 	exit -1
