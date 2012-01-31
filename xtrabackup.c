@@ -6267,6 +6267,11 @@ skip_tables_file_register:
 		printf("innodb_flush_method = \"%s\"\n",
 		       (innobase_unix_file_flush_method != NULL) ?
 		       innobase_unix_file_flush_method : "");
+#ifdef XTRADB_BASED
+		printf("innodb_fast_checksum = %d\n", innobase_fast_checksum);
+		printf("innodb_page_size = %ld\n", innobase_page_size);
+		printf("innodb_log_block_size = %lu\n", innobase_log_block_size);
+#endif
 		exit(EXIT_SUCCESS);
 	}
 
