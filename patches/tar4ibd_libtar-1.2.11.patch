@@ -416,7 +416,9 @@
 +		fcntl(filefd, F_SETFL, O_DIRECT);
 +#endif
 +
-+	zip_size = fil_fd_get_zip_size(filefd);
++	is_sys_space = (fil_fd_get_space_id(filefd) == 0);
++
++	zip_size = is_sys_space ? 0 : fil_fd_get_zip_size(filefd);
 +	if (zip_size == -1) {
 +		fprintf(stderr,
 +			"tar4ibd: file '%s' has invalid zip_size value.\n",
@@ -425,8 +427,6 @@
 +	} else if (zip_size != 0) {
 +		page_size = zip_size;
 +	}
-+
-+	is_sys_space = (fil_fd_get_space_id(filefd) == 0);
 +
 +	n_retry = 0;
  	size = th_get_size(t);
