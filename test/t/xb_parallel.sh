@@ -1,7 +1,7 @@
 . inc/common.sh
 
 init
-run_mysqld 
+run_mysqld --innodb_file_per_table
 load_dbase_schema sakila
 load_dbase_data sakila
 

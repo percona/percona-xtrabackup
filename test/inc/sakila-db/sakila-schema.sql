@@ -636,6 +636,28 @@ END $$
 
 DELIMITER ;
 
+--
+-- Trigger to enforce payment_date during INSERT
+--
+
+CREATE TRIGGER payment_date BEFORE INSERT ON payment
+	FOR EACH ROW SET NEW.payment_date = NOW();
+
+--
+-- Trigger to enforce create dates on INSERT
+--
+
+CREATE TRIGGER customer_create_date BEFORE INSERT ON customer
+	FOR EACH ROW SET NEW.create_date = NOW();
+
+--
+-- Trigger to enforce rental_date on INSERT
+--
+
+CREATE TRIGGER rental_date BEFORE INSERT ON rental
+	FOR EACH ROW SET NEW.rental_date = NOW();
+
+
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
