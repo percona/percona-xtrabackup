@@ -80,7 +80,3 @@ class basicTest(mysqlBaseTestCase):
             self.assertTrue("--password=secret" not in output, msg = output)
             self.assertTrue("--password=xxxxxxxx" in output, msg = output)
               
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-

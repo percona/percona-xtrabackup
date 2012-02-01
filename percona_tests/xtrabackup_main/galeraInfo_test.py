@@ -25,6 +25,12 @@ import unittest
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
+def skip_checks(system_manager):
+    if system_manager.code_manager.test_type != 'galera':
+        return True, "Requires galera / wsrep server"
+    return False, ''
+
+
 server_requirements = [[]]
 servers = []
 server_manager = None
@@ -44,14 +50,7 @@ class basicTest(mysqlBaseTestCase):
 
 
     def test_basic1(self):
-        self.servers = servers
-        if servers[0].type != 'galera':
-            # we skip.  This is a bit
-            # cheap, but until I am certain
-            # we want to use 2.7 for unittest.skip methods,
-            # we'll do this...for now : )
-            return
-        else:
+            self.servers = servers
             innobackupex = test_executor.system_manager.innobackupex_path
             xtrabackup = test_executor.system_manager.xtrabackup_path
             master_server = servers[0] # assumption that this is 'master'

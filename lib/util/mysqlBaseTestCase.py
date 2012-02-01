@@ -239,12 +239,21 @@ class mysqlBaseTestCase(unittest.TestCase):
     def execute_query( self
                      , query
                      , server
+                     , password=None
                      , schema='test'):
         try:
-            conn = MySQLdb.connect( host = '127.0.0.1' 
+            if password:
+                conn = MySQLdb.connect( host = '127.0.0.1' 
+                                  , port = server.master_port
+                                  , user = 'root'
+                                  , passwd=password 
+                                  , db = schema)
+            else:
+                conn = MySQLdb.connect( host = '127.0.0.1'
                                   , port = server.master_port
                                   , user = 'root'
                                   , db = schema)
+
             cursor = conn.cursor()
             cursor.execute(query)
             result_set =  cursor.fetchall()

@@ -122,7 +122,3 @@ class basicTest(mysqlBaseTestCase):
             retcode, output = self.execute_query(query, master_server)
             self.assertEqual(retcode, 0, msg = output)
               
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-

@@ -128,10 +128,10 @@ class basicTest(mysqlBaseTestCase):
             slave_binlog_file = result_set[5]
             slave_io_running = result_set[10]
             slave_sql_running = result_set[11]
-            self.assertEqual(slave_master_port, master_server.master_port)
-            self.assertEqual(slave_binlog_file, binlog_file)
-            self.assertEqual(slave_io_running, 'Yes')
-            self.assertEqual(slave_sql_running, 'Yes')
+            self.assertEqual(slave_master_port, master_server.master_port, msg=slave_server.dump_errlog())
+            self.assertEqual(slave_binlog_file, binlog_file, msg=slave_server.dump_errlog())
+            self.assertEqual(slave_io_running, 'Yes', msg=slave_server.dump_errlog())
+            self.assertEqual(slave_sql_running, 'Yes', msg=slave_server.dump_errlog())
             self.assertEqual(retcode,0, msg=result_set)
 
             # take mysqldump of current server state
@@ -159,7 +159,4 @@ class basicTest(mysqlBaseTestCase):
                 diff = self.check_slaves_by_query(master_server, [slave_server], query)
                 self.assertEqual(diff,None,msg=diff)
  
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
 

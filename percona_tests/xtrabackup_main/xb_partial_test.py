@@ -110,21 +110,16 @@ class basicTest(mysqlBaseTestCase):
                 query = "DELETE FROM %s" %del_table
                 retcode, result = self.execute_query(query,master_server)
                 self.assertEqual(retcode, 0, result) 
+
+            # Remove old tables
+            for table in ['A','AA','B','BB','C','CC','D']:
+                query = "DROP TABLE %s" %table
+                retcode, result = self.execute_query(query,master_server)
+                self.assertEqual(retcode,0,result)
+       
         
             # shutdown our server
             master_server.stop()
-
-            # prepare our main backup
-            cmd = [ xtrabackup
-                  , "--prepare"
-                  , "--apply-log-only"
-                  , "--datadir=%s" %master_server.datadir
-                  , "--use-memory=500M"
-                  , "--target-dir=%s" %backup_path
-                  ]
-            cmd = " ".join(cmd)
-            retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-            self.assertTrue(retcode==0,output)
 
             # do final prepare on main backup
             cmd = [ xtrabackup
@@ -180,10 +175,4 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(retcode, 0, msg=result)
             logging.test_debug("Restored checksum1: %s" %restored_checksum2)
             self.assertEqual(orig_checksum2, restored_checksum2, msg = "Orig: %s | Restored: %s" %(orig_checksum2, restored_checksum2))
- 
-
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-
 

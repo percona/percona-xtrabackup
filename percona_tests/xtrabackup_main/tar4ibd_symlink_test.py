@@ -45,6 +45,7 @@ class basicTest(mysqlBaseTestCase):
 
     def test_ib_stream(self):
             """Tests for tar4ibd + symlinks (bug #387587)"""
+            self.servers = servers
             innobackupex = test_executor.system_manager.innobackupex_path
             xtrabackup = test_executor.system_manager.xtrabackup_path
             master_server = servers[0] # assumption that this is 'master'
@@ -148,6 +149,3 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(output, expected_output, msg = "%s || %s" %(output, expected_output))
 
               
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-

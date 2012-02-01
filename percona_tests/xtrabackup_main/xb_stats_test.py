@@ -120,6 +120,3 @@ class basicTest(mysqlBaseTestCase):
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True) 
             self.assertEqual(retcode,0,output)
 
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-

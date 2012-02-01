@@ -61,6 +61,9 @@ class drizzleTree(codeTree):
         self.skip_keys = ['ld_lib_paths']
         self.debug = variables['debug']
         self.verbose = variables['verbose']
+        self.version_checked = False
+        self.innodb_version = None
+        self.xtradb_version = None
         self.basedir = self.system_manager.find_path([os.path.abspath(basedir)])
         self.source_dist = os.path.isdir(os.path.join(self.basedir, 'drizzled'))
         self.builddir = self.system_manager.find_path([os.path.abspath(self.basedir)])
@@ -179,6 +182,9 @@ class mysqlTree(codeTree):
         self.skip_keys = ['ld_lib_paths']
         self.debug = variables['debug']
         self.verbose = variables['verbose']
+        self.version_checked = False
+        self.innodb_version = None
+        self.xtradb_version = None
         self.basedir = self.system_manager.find_path([os.path.abspath(basedir)])
         self.source_dist = os.path.isdir(os.path.join(self.basedir, 'mysqld'))
         self.builddir = self.system_manager.find_path([os.path.abspath(self.basedir)])

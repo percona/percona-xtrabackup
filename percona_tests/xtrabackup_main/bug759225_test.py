@@ -33,6 +33,12 @@ test_executor = None
 # here.  We will be using a generic / vanilla backup dir
 backup_path = None
 
+def skip_checks(system_manager):
+    if not system_manager.code_manager.test_tree.xtradb_version:
+            return True, "Test requires XtraDB."
+    return False, ''
+
+
 class basicTest(mysqlBaseTestCase):
 
     def setUp(self):
@@ -44,13 +50,9 @@ class basicTest(mysqlBaseTestCase):
                 shutil.rmtree(del_path)
 
     def test_bug759225(self):
-        master_server = servers[0]
-        logging = test_executor.logging
-        xtradb_version = master_server.get_xtradb_version()
-        if not xtradb_version:
-            logging.warning("Test requires XtraDB, skipping test...")
-            return 
-        else:
+            self.servers = servers
+            master_server = servers[0]
+            logging = test_executor.logging
             innobackupex = test_executor.system_manager.innobackupex_path
             xtrabackup = test_executor.system_manager.xtrabackup_path
             master_server = servers[0] # assumption that this is 'master'
@@ -138,6 +140,3 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(output, expected_output, msg = "%s || %s" %(output, expected_output))
 
               
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-

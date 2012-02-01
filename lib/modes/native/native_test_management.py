@@ -48,21 +48,26 @@ class testCase:
                 , comment=None
                 , cnf_path=None
                 , request_dict=None
+                , skip_flag=False
+                , skip_reason=''
+                , expect_fail=False
                 , test_path = None
-                , suitename = 'native_tests'
                 , debug=False ):
         self.system_manager = system_manager
         self.logging = self.system_manager.logging
         self.skip_keys = ['system_manager','logging']
         self.name = name
         self.fullname = fullname
-        self.suitename = suitename
         self.master_sh = None
         self.comment = comment
         self.server_requirements = server_requirements
         self.cnf_path = cnf_path
         self.server_requests = request_dict
+        self.skip_flag = skip_flag
+        self.skip_reason = skip_reason
+        self.expect_fail = expect_fail
         self.test_path = test_path        
+        self.disable = False
         if debug:
             self.system_manager.logging.debug_class(self)
 
@@ -72,10 +77,6 @@ class testCase:
         else:
             return 1
 
- 
-        
-        
-          
 class testManager(test_management.testManager):
     """Deals with scanning test directories, gathering test cases, and 
        collecting per-test information (opt files, etc) for use by the
@@ -140,6 +141,24 @@ class testManager(test_management.testManager):
         except AttributeError, NameError: pass
         return server_requirements, server_requests
 
+    def pretest_check(self, module_file):
+        """ Code to determine if there are any pre-test functions
+            / status hints and use them for the testCase
+
+        """
+        module_name = os.path.basename(module_file).replace('.py','')
+        my_module = imp.load_source(module_name, module_file)
+        skip_flag = False
+        skip_reason = ''
+        expect_fail = False
+        try:
+            skip_flag, skip_reason = my_module.skip_checks(self.system_manager)
+        except AttributeError, NameError: 
+            pass
+        try:
+            expect_fail = my_module.expect_fail
+        except AttributeError, NameError: pass
+        return skip_flag, skip_reason, expect_fail
 
     def process_test_file(self, suite_name, testfile):
         """ We convert the info in a testfile into a testCase object """
@@ -147,6 +166,7 @@ class testManager(test_management.testManager):
         # test_name = filename - .py...simpler
         test_name = os.path.basename(testfile).replace('.py','')
         test_comment = None
+        skip_flag, skip_reason, expect_fail = self.pretest_check(testfile)
         server_requirements, server_requests = self.get_server_reqs(testfile)
         
         return testCase( self.system_manager
@@ -155,6 +175,9 @@ class testManager(test_management.testManager):
                        , server_requirements = server_requirements
                        , cnf_path = None
                        , request_dict = server_requests
+                       , skip_flag = skip_flag 
+                       , skip_reason = skip_reason
+                       , expect_fail = expect_fail
                        , test_path = testfile
                        , debug = self.debug )
 

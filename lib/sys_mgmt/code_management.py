@@ -46,10 +46,16 @@ class codeManager:
 
         # We go through the various --basedir values provided
         provided_basedirs = variables['basedir']
+        first = True
         for basedir in provided_basedirs:
             # We initialize a codeTree object
             # and store some information about it
             code_type, code_tree = self.process_codeTree(basedir, variables)
+            if first:
+                self.test_tree = code_tree #first basedir = type under test
+                self.test_type = code_type
+                first = False
+            
             self.add_codeTree(code_type, code_tree)
 
 

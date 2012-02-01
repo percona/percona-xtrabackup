@@ -192,7 +192,3 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(result, expected_result, msg = "%s || %s" %(expected_result, result))
  
 
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
-

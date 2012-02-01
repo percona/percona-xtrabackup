@@ -124,6 +124,3 @@ class basicTest(mysqlBaseTestCase):
             
  
 
-    def tearDown(self):
-            server_manager.reset_servers(test_executor.name)
-
