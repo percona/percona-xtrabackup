@@ -373,6 +373,7 @@ class Server(object):
             self.code_tree.version_checked = True
             self.code_tree.innodb_version = innodb_version
             self.code_tree.xtradb_version = xtradb_version 
+            return innodb_version, xtradb_version
 
     def dump_errlog(self):
         with open(self.error_log,'r') as errlog:
