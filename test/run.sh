@@ -114,6 +114,8 @@ function get_version_info()
 		XB_BIN="xtrabackup";;
 	    "xtradb55" )
 		XB_BIN="xtrabackup_55";;
+	    "galera55" )
+		XB_BIN="xtrabackup_55";;
 	esac
 	if [ -z "$XB_BIN" ]
 	then

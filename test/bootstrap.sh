@@ -49,6 +49,9 @@ case "$1" in
 	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary"
 	tarball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
 	;;
+    galera55)
+	galera=1
+	;;
     *)
 	if ! test -r "$1"
 	then
@@ -66,23 +69,54 @@ else
     destdir="./server"
 fi
 
-if test -n "$url"
-then
-    echo "Downloading $tarball"
-    wget -qc "$url/$tarball"
-fi
-
 if test -d "$destdir"
 then
     rm -rf "$destdir"
 fi
 mkdir "$destdir"
 
-echo "Unpacking $tarball into $destdir"
-tar zxf $tarball -C $destdir 
-sourcedir="$destdir/`ls $destdir`"
-if test -n "$sourcedir"
+if test ! $galera
 then
-    mv $sourcedir/* $destdir
-    rm -rf $sourcedir
+    if test -n "$url"
+    then
+	echo "Downloading $tarball"
+	wget -qc "$url/$tarball"
+    fi
+
+    echo "Unpacking $tarball into $destdir"
+    tar zxf $tarball -C $destdir 
+    sourcedir="$destdir/`ls $destdir`"
+    if test -n "$sourcedir"
+    then
+	mv $sourcedir/* $destdir
+	rm -rf $sourcedir
+    fi
+else
+    if test ! -d galerabuild
+    then
+	bzr init-repo galerabuild
+    fi
+    cd galerabuild
+
+    rm -rf percona-xtradb-cluster
+    bzr branch lp:percona-xtradb-cluster percona-xtradb-cluster
+    rm -rf galera2x
+    bzr branch lp:galera/2.x galera2x
+    cd percona-xtradb-cluster
+    cmake -DENABLE_DTRACE=0 -DWITH_WSREP:BOOL="1" -DCMAKE_INSTALL_PREFIX="../../server"
+
+    if test -f /proc/cpuinfo
+    then
+	MAKE_J=`grep '^processor' /proc/cpuinfo | wc -l`
+    else
+	MAKE_J=4
+    fi
+
+    make -j$MAKE_J
+    make install
+
+    cd ../galera2x
+    ./scripts/build.sh
+    cp libgalera_smm.so ../../server/
+    cd ..
 fi

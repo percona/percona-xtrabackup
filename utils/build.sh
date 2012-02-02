@@ -11,7 +11,7 @@ AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
 
 # Percona Server 5.5 does not build with -Werror, so ignore DEBUG for now
-if [ -n "$DEBUG" -a "$1" != "xtradb55" -a "$1" != "xtradb51" -a "$1" != "xtradb" ]
+if [ -n "$DEBUG" -a "$1" != "galera55" -a "$1" != "xtradb55" -a "$1" != "xtradb51" -a "$1" != "xtradb" ]
 then
     # InnoDB extra debug flags
     innodb_extra_debug="-DUNIV_DEBUG -DUNIV_SYNC_DEBUG -DUNIV_MEM_DEBUG \
@@ -279,7 +279,7 @@ case "$type" in
 
 	build_tar4ibd
 	;;
-"xtradb55")
+"xtradb55"|"galera55")
 	server_dir=$top_dir/Percona-Server-5.5
 	branch_dir=percona-server-5.5-xtrabackup
 	innodb_dir=$server_dir/storage/innobase

@@ -83,6 +83,7 @@ my $option_mysql_socket = '';
 my $option_mysql_host = '';
 my $option_no_timestamp = '';
 my $option_slave_info = '';
+my $option_galera_info = '';
 my $option_no_lock = '';
 my $option_ibbackup_binary = 'autodetect';
 
@@ -162,6 +163,9 @@ my $mysql_stdout = $mysql_stdout_fh->filename;
 # name of the file where binlog position info is written
 my $binlog_info;
 
+# name of the file where galera position info is written
+my $galera_info;
+
 # name of the file where slave info is written
 my $slave_info;
 
@@ -206,6 +210,7 @@ my $dst_name;
 my $win = ($^O eq 'MSWin32' ? 1 : 0);
 my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 my $xtrabackup_binary_file = 'xtrabackup_binary';
+my $xtrabackup_pid_file = 'xtrabackup_pid';
 my %rsync_files_hash;
 
 ######################################################################
@@ -760,6 +765,9 @@ sub wait_for_ibbackup_suspend {
         }
     }
     $now = current_time();
+    open XTRABACKUP_PID, "> $option_tmpdir/$xtrabackup_pid_file";
+    print XTRABACKUP_PID $ibbackup_pid;
+    close XTRABACKUP_PID;
     print STDERR "\n$now  $prefix Continuing after ibbackup has suspended\n";
 }
 
@@ -774,6 +782,7 @@ sub resume_ibbackup {
 
     # wait for ibbackup to finish
     waitpid($ibbackup_pid, 0);
+    unlink "$option_tmpdir/$xtrabackup_pid_file";
     $ibbackup_pid = '';
     return $CHILD_ERROR >> 8;
 }
@@ -1217,6 +1226,50 @@ sub write_binlog_info {
     }        
 }
 
+#
+# write_galera_info subroutine retrieves MySQL Galera and
+# saves it in a file. It also prints it to stdout.
+#
+sub write_galera_info {
+    my @lines;
+    my @info_lines = ();
+    my $position = '';
+    my $filename = '';
+
+    # get binlog position
+    mysql_send "SHOW STATUS LIKE 'wsrep_local_state_uuid';";
+    mysql_send "SHOW STATUS LIKE 'wsrep_last_committed';";
+
+    # get "show master status" output lines (2) from mysql output
+    file_to_array($mysql_stdout, \@lines);
+
+    open(FILE, ">$galera_info") || 
+         Die "Failed to open file '$galera_info': $!";
+
+    foreach my $line (@lines) {
+        if ($line =~ m/wsrep_local_state_uuid/) {
+	    $line =~ s/wsrep_local_state_uuid\s*//g;
+            print FILE  "$line:";
+        }
+    }
+
+    foreach my $line (@lines) {
+        if ($line =~ m/wsrep_last_committed/) {
+	    $line =~ s/wsrep_last_committed\s*//g;
+            print FILE  "$line\n";
+        }
+    }
+
+    close(FILE);
+
+    if ($option_stream eq 'tar') {
+        system("cd $option_tmpdir; tar chf - xtrabackup_galera_info")
+            and Die "Failed to stream 'xtrabackup_galera_info': $!";
+        unlink $galera_info || Die "Failed to delete '$galera_info': $!";
+    }
+
+}
+
 
 # 
 # write_slave_info subroutine retrieves MySQL binlog position of the
@@ -1293,6 +1346,7 @@ sub mysql_lockall {
         mysql_send "COMMIT;";
     }
     write_binlog_info;
+    write_galera_info if $option_galera_info;
 	
     $now = current_time();
     print STDERR "$now  $prefix All tables locked and flushed to disk\n";
@@ -1531,6 +1585,7 @@ sub init {
         $backup_config_file = $backup_dir . '/backup-my.cnf';
         $suspend_file = $backup_dir . '/xtrabackup_suspended';
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
+        $galera_info = $backup_dir . '/xtrabackup_galera_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
         $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
@@ -1538,10 +1593,12 @@ sub init {
         if ($option_stream) {
             $backup_config_file = $option_tmpdir . '/backup-my.cnf';
             $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
+            $galera_info = $option_tmpdir . '/xtrabackup_galera_info';
             $slave_info = $option_tmpdir . '/xtrabackup_slave_info';
         } else {
             $backup_config_file = $backup_dir . '/backup-my.cnf';
             $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
+            $galera_info = $backup_dir . '/xtrabackup_galera_info';
             $slave_info = $backup_dir . '/xtrabackup_slave_info';
         }
         }
@@ -1656,6 +1713,7 @@ sub check_args {
                         'host=s' => \$option_mysql_host,
                         'port=s' => \$option_mysql_port,
                         'slave-info' => \$option_slave_info,
+                        'galera-info' => \$option_galera_info,
                         'socket=s' => \$option_mysql_socket,
                         'no-timestamp' => \$option_no_timestamp,
                         'defaults-file=s' => \$option_defaults_file,
