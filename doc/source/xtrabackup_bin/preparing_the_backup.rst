@@ -36,6 +36,7 @@ Your backup is now clean and consistent, and ready to restore. However, you migh
 All following prepares (third and following) will not change the already prepared data files, you can only see that output says
 
 .. code-block:: console
+
   xtrabackup: This target seems to be already prepared.
   xtrabackup: notice: xtrabackup_logfile was already used to '--prepare'.
 
