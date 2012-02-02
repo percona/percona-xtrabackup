@@ -89,6 +89,7 @@ Options
 .. option:: --no-lock
 
    Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use it only if ALL your tables are InnoDB and you **DO NOT CARE** about the binary log position of the backup.
+   If you are considering to use --no-lock because your backups are failing to acquire the lock, this could be because of incoming replication events preventing the lock from succeeding. Please try using --safe-slave-backup to momentarily stop the replication slave thread, this may help the backup to succeed and you then don't need to resort to using --no-lock.
 
 .. option:: --ibbackup = 'autodetect'
 
