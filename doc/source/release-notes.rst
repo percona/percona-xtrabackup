@@ -5,7 +5,7 @@
 |Percona| |XtraBackup| 1.6.3
 ============================
 
-Percona is glad to announce the release of Percona XtraBackup 1.6.3 on 22 September, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6/>`_ and from the :doc:`Percona Software Repositories <installation>`).
+Percona is glad to announce the release of Percona XtraBackup 1.6.3 on 22 September, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6.3/>`_ and from the :doc:`Percona Software Repositories <installation>`).
 
 This release is purely composed of bug fixes and is the current stable release of |Percona| |Xtrabackup|.
 
@@ -46,7 +46,7 @@ Other Changes
 |Percona| |XtraBackup| 1.6.2
 ============================
 
-Percona is glad to announce the release of Percona XtraBackup 1.6.2 on 25 July, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6/>`_ and from the `Percona Software Repositories <http://www.percona.com/docs/wiki/repositories:start>`_).
+Percona is glad to announce the release of Percona XtraBackup 1.6.2 on 25 July, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6.2/>`_ and from the `Percona Software Repositories <http://www.percona.com/docs/wiki/repositories:start>`_).
 
 This release is purely composed of bug fixes and is the current stable release of |Percona| |Xtrabackup|.
 
