@@ -52,7 +52,6 @@ You should see output similar to the following: ::
   Percona-Server-shared-51.x86_64            5.1.47-rel11.1.51.rhel5     percona  
   Percona-Server-test-51.x86_64              5.1.47-rel11.1.51.rhel5     percona  
   ...
-  maatkit.noarch                             5240-1                      percona  
   xtrabackup.x86_64                          1.2-22.rhel5                percona  
 
 Supported Platforms
