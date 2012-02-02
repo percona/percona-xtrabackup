@@ -94,6 +94,11 @@ and move the snapshot from TheMaster in its place:
 
    TheSlave$ mv /path/to/mysql/$TIMESTAMP /path/to/mysql/datadir
 
+After you copy data over, make sure |MySQL| has proper permissions to access them.
+
+.. code-block:: console
+
+   TheSlave$ chown mysql:mysql /path/to/mysql/datadir
 
 STEP 3: Configure The Master's MySQL server
 ===========================================
