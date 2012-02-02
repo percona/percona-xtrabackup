@@ -685,8 +685,6 @@ char *xtrabackup_incremental = NULL;
 LSN64 incremental_lsn;
 LSN64 incremental_to_lsn;
 LSN64 incremental_last_lsn;
-byte* incremental_buffer = NULL;
-byte* incremental_buffer_base = NULL;
 
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
 char *xtrabackup_extra_lsndir = NULL; /* for --backup with --extra-lsndir */
@@ -2800,6 +2798,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	IB_INT64	offset;
 	ulint		page_in_buffer;
 	ulint		incremental_buffers = 0;
+	byte*		incremental_buffer;
+	byte*		incremental_buffer_base = NULL;
 	ulint		page_size;
 	ulint		page_size_shift;
 #ifdef INNODB_VERSION_SHORT
@@ -2945,6 +2945,12 @@ skip_filter:
 	}
 
 	if (xtrabackup_incremental) {
+		/* allocate buffer for incremental backup (4096 pages) */
+		incremental_buffer_base = ut_malloc((UNIV_PAGE_SIZE_MAX / 4 + 1)
+						    * UNIV_PAGE_SIZE_MAX);
+		incremental_buffer = ut_align(incremental_buffer_base,
+				      UNIV_PAGE_SIZE_MAX);
+
 		snprintf(meta_path, sizeof(meta_path),
 			 "%s%s", dst_path, XB_DELTA_INFO_SUFFIX);
 		strcat(dst_path, ".delta");
@@ -3195,6 +3201,8 @@ read_retry:
 		os_file_close(src_file);
 	}
 	os_file_close(dst_file);
+	if (incremental_buffer_base)
+		ut_free(incremental_buffer_base);
 	ut_free(buf2);
 	return(FALSE);
 error:
@@ -3202,6 +3210,8 @@ error:
 		os_file_close(src_file);
 	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
+	if (incremental_buffer_base)
+		ut_free(incremental_buffer_base);
 	if (buf2)
 		ut_free(buf2);
 	fprintf(stderr, "[%02u] xtrabackup: Error: "
@@ -3213,6 +3223,8 @@ skip:
 		os_file_close(src_file);
 	if (dst_file != XB_FILE_UNDEFINED)
 		os_file_close(dst_file);
+	if (incremental_buffer_base)
+		ut_free(incremental_buffer_base);
 	if (buf2)
 		ut_free(buf2);
 	fprintf(stderr, "[%02u] xtrabackup: Warning: skipping file %s.\n",
@@ -5261,6 +5273,8 @@ xtrabackup_apply_delta(
 	xb_delta_info_t info;
 	ulint		page_size;
 	ulint		page_size_shift;
+	byte*		incremental_buffer_base = NULL;
+	byte*		incremental_buffer;
 
 	ut_a(xtrabackup_incremental);
 
@@ -5361,6 +5375,12 @@ again:
 
 	xb_file_set_nocache(dst_file, dst_path, "OPEN");
 
+	/* allocate buffer for incremental backup (4096 pages) */
+	incremental_buffer_base = ut_malloc((UNIV_PAGE_SIZE_MAX / 4 + 1) *
+					 UNIV_PAGE_SIZE_MAX);
+	incremental_buffer = ut_align(incremental_buffer_base,
+				      UNIV_PAGE_SIZE_MAX);
+
 	fprintf(stderr, "Applying %s ...\n", src_path);
 
 	while (!last_buffer) {
@@ -5443,6 +5463,8 @@ again:
 		incremental_buffers++;
 	}
 
+	if (incremental_buffer_base)
+		ut_free(incremental_buffer_base);
 	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
 	if (dst_file != XB_FILE_UNDEFINED)
@@ -5450,6 +5472,8 @@ again:
 	return TRUE;
 
 error:
+	if (incremental_buffer_base)
+		ut_free(incremental_buffer_base);
 	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
 	if (dst_file != XB_FILE_UNDEFINED)
@@ -6354,12 +6378,6 @@ skip_tables_file_register:
 				xtrabackup_incremental);
 			exit(EXIT_FAILURE);
 		}
-
-		/* allocate buffer for incremental backup (4096 pages) */
-		incremental_buffer_base = malloc((UNIV_PAGE_SIZE_MAX / 4 + 1) *
-						 UNIV_PAGE_SIZE_MAX);
-		incremental_buffer = ut_align(incremental_buffer_base,
-					      UNIV_PAGE_SIZE_MAX);
 	} else if (xtrabackup_backup && xtrabackup_incremental_basedir) {
 		char	filename[FN_REFLEN];
 
@@ -6374,12 +6392,6 @@ skip_tables_file_register:
 
 		incremental_lsn = metadata_to_lsn;
 		xtrabackup_incremental = xtrabackup_incremental_basedir; //dummy
-
-		/* allocate buffer for incremental backup (4096 pages) */
-		incremental_buffer_base = malloc((UNIV_PAGE_SIZE_MAX / 4 + 1) *
-						 UNIV_PAGE_SIZE_MAX);
-		incremental_buffer = ut_align(incremental_buffer_base,
-					      UNIV_PAGE_SIZE_MAX);
 	} else if (xtrabackup_prepare && xtrabackup_incremental_dir) {
 		char	filename[FN_REFLEN];
 
@@ -6397,17 +6409,7 @@ skip_tables_file_register:
 		incremental_last_lsn = metadata_last_lsn;
 		xtrabackup_incremental = xtrabackup_incremental_dir; //dummy
 
-		/* allocate buffer for incremental backup (4096 pages) */
-		incremental_buffer_base = malloc((UNIV_PAGE_SIZE / 4 + 1) *
-						 UNIV_PAGE_SIZE);
-		incremental_buffer = ut_align(incremental_buffer_base,
-					      UNIV_PAGE_SIZE);
 	} else {
-		/* allocate buffer for applying incremental (for header page only) */
-		incremental_buffer_base = malloc((1 + 1) * UNIV_PAGE_SIZE_MAX);
-		incremental_buffer = ut_align(incremental_buffer_base,
-					      UNIV_PAGE_SIZE_MAX);
-
 		xtrabackup_incremental = NULL;
 	}
 
@@ -6493,8 +6495,6 @@ skip_tables_file_register:
 	/* --prepare */
 	if (xtrabackup_prepare)
 		xtrabackup_prepare_func();
-
-	free(incremental_buffer_base);
 
 	if (xtrabackup_tables) {
 		/* free regexp */
