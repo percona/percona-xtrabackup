@@ -69,7 +69,8 @@ Miscellaneous
 
    faq
    release-notes
-   glossary 
+   glossary
+   trademark-policy
 
 Indices and tables
 ==================
