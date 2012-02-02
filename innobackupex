@@ -12,9 +12,10 @@ use File::Spec;
 use Pod::Usage qw(pod2usage);
 use POSIX "strftime";
 use POSIX ":sys_wait_h";
-use POSIX "tmpnam";
+# use POSIX "tmpnam";
 use FileHandle;
 use File::Basename;
+use File::Temp;
 use English qw(-no_match_vars);
 
 # version of this script
@@ -152,10 +153,12 @@ my $mysql_pid = '';
 my $mysql_server_version = '';
 
 # name of the file where stderr of mysql process is directed
-my $mysql_stderr = 'stderr';
+my $mysql_stderr_fh = File::Temp->new();
+my $mysql_stderr = $mysql_stderr_fh->filename;
 
 # name of the file where stdout of mysql process is directed
-my $mysql_stdout = 'stdout';
+my $mysql_stdout_fh = File::Temp->new();
+my $mysql_stdout = $mysql_stdout_fh->filename;
 
 # name of the file where binlog position info is written
 my $binlog_info;
@@ -1495,15 +1498,11 @@ sub init {
         if (!$option_remote_host && !$option_stream) {
         $backup_config_file = $backup_dir . '/backup-my.cnf';
         $suspend_file = $backup_dir . '/xtrabackup_suspended';
-        $mysql_stdout = $backup_dir . '/mysql-stdout';
-        $mysql_stderr = $backup_dir . '/mysql-stderr';
         $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
         $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
         $suspend_file = get_option(\%config, 'mysqld', 'datadir') . '/xtrabackup_suspended';
         $tmp_logfile = $option_tmpdir . '/xtrabackup_logfile';
-        $mysql_stdout = $option_tmpdir . '/mysql-stdout';
-        $mysql_stderr = $option_tmpdir . '/mysql-stderr';
         if ($option_stream) {
             $backup_config_file = $option_tmpdir . '/backup-my.cnf';
             $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
