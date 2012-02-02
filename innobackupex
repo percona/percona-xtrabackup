@@ -12,7 +12,6 @@ use File::Spec;
 use Pod::Usage qw(pod2usage);
 use POSIX "strftime";
 use POSIX ":sys_wait_h";
-# use POSIX "tmpnam";
 use FileHandle;
 use File::Basename;
 use File::Temp;
@@ -235,10 +234,10 @@ if ($option_copy_back) {
 	else {
 		if( $option_ibbackup_binary eq "autodetect" ){
 			# Try to connect MySQL and get the version
-			print "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
+			print STDERR "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
 			my $options = get_mysql_options();
 			$mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ");
-			print "Connected to MySQL with pid $mysql_pid\n";
+			print STDERR "Connected to MySQL with pid $mysql_pid\n";
 			sleep 1;
 			if ($mysql_pid && $mysql_pid == waitpid($mysql_pid, &WNOHANG)) {
 				my $reason = `cat $mysql_stderr`;
@@ -248,7 +247,7 @@ if ($option_copy_back) {
 				}
 			else{
 				mysql_close();
-				print "Connected successfully\n";
+				print STDERR "Connected successfully\n";
 				$option_ibbackup_binary = set_xtrabackup_version();
 				}
 			}
@@ -1009,6 +1008,7 @@ sub get_mysql_options {
 # Check that the server is responding to queries
 #
 sub mysql_ping {
+    my $alarm_handler = shift;
     my $mysql_pid_copy = $mysql_pid;
 
     # send a dummy query to mysql child process
@@ -1018,6 +1018,12 @@ sub mysql_ping {
     print MYSQL_WRITER "select '$hello_message';\n" 
         or Die "Connection to mysql child process failed: $!";
 
+    # Don't check server's response if running in a signal handler
+    # because that breaks system() calls
+    if ($alarm_handler)
+    {
+	return 0;
+    }
     # wait for reply
     eval {
         local $SIG{ALRM} = sub { die "alarm clock restart" };
@@ -1053,7 +1059,7 @@ sub mysql_ping {
 # SIGALRM handler which sends a keepalive query to the server
 #
 sub catch_sigalrm {
-  mysql_ping();
+  mysql_ping(1);
   # Reschedule SIGALRM
   alarm $mysql_keep_alive;
 }
@@ -1091,7 +1097,7 @@ sub mysql_open {
     print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
     print MYSQL_WRITER "SET SESSION wait_timeout = 2147000;\n" or die "Connection to mysql child process failed: $!";
 
-    mysql_ping();
+    mysql_ping(0);
 
     start_keepalives();
 }
@@ -1111,7 +1117,7 @@ sub mysql_send {
 
     $current_mysql_request = $request;
     print MYSQL_WRITER "$request\n";
-    mysql_ping();
+    mysql_ping(0);
     $current_mysql_request = '';
 
     start_keepalives();
@@ -1714,10 +1720,6 @@ sub check_args {
             } else {
                 $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
             }
-
-            #print STDERR "--incremental_basedir=$incremental_basedir\n";
-            #print STDERR "incremental backup is not supported for now.\n";
-            #exit(1);
         }
     } else {
         # get backup directory

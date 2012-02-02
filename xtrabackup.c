@@ -6201,8 +6201,15 @@ next_opt:
 	if ((!xtrabackup_prepare) && (strcmp(mysql_data_home, "./") == 0)) {
 		if (!xtrabackup_print_param)
 			usage();
-		printf("\nxtrabackup: Error: Please set parameter 'datadir'\n");
+		fprintf(stderr, "\n"
+		       "xtrabackup: Error: Please set parameter 'datadir'\n");
 		exit(EXIT_FAILURE);
+	}
+
+	/* Redirect stdout to stderr for not doing a streaming backup or dumping
+	configuration for --print-param. */
+	if (!xtrabackup_stream && !xtrabackup_print_param && dup2(2, 1) < 0) {
+		fprintf(stderr, "Failed to redirect standard output.\n");
 	}
 
 	if (xtrabackup_tables) {
