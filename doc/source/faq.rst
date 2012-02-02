@@ -48,3 +48,8 @@ Unfortunately there isn't anything that interfaces with |XtraBackup| at the mome
 =========================================================
 
 In most of the cases this is due to not having install the required libraries (and version) by |xtrabackup|. Installing the *GCC* suite with the supporting libraries and recompiling |xtrabackup| will solve the issue. See :doc:`installation/compiling_xtrabackup` for instructions on the procedure.
+
+How innobackupex handles the ibdata/ib_log files on restore if they aren't in mysql datadir?
+===========================================================================================
+
+In case the ibdata and ib_log files are located in different directories outside of the datadir, you will have to put them in their proper place after the logs have been applied.
