@@ -8,14 +8,14 @@ Make a backup:
 ==============
 ::
 
-  xtrabackup --backup --taget-dir=/data/backups/mysql/
+  xtrabackup --backup --target-dir=/data/backups/mysql/
 
 Prepare the backup twice:
 =========================
 ::
 
-  xtrabackup --prepare --taget-dir=/data/backups/mysql/
-  xtrabackup --prepare --taget-dir=/data/backups/mysql/
+  xtrabackup --prepare --target-dir=/data/backups/mysql/
+  xtrabackup --prepare --target-dir=/data/backups/mysql/
 
 Success Criterion
 =================

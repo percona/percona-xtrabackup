@@ -3,13 +3,13 @@
 ==============================
 
 Backup all the InnoDB data and log files - located in ``/var/lib/mysql/`` - **once**, then make two daily incremental backups in ``/data/backups/mysql/`` (destination). Finally, prepare the backup files to be ready to restore or use.
-  
+
 Create one full backup
 ======================
 
 Making an incremental backup requires a full backup as a base::
 
-  xtrabackup --backup --taget-dir=/data/backups/mysql/
+  xtrabackup --backup --target-dir=/data/backups/mysql/
 
 It is important that you **do not run** the :option:`--prepare` command yet.
 
@@ -54,7 +54,7 @@ Prepare the whole backup to be ready to use
 
 Create the new logs by preparing it::
 
-  xtrabackup --prepare --taget-dir=/data/backups/mysql/
+  xtrabackup --prepare --target-dir=/data/backups/mysql/
 
 Notes
 =====
