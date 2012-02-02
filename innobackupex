@@ -2483,13 +2483,13 @@ for (@lines) {
 if($var_version =~ m/5\.0\.\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_51');
 }
-if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m//){
+if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/.*/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_51');
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
-if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-\d/){
+if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 if($var_version =~ m/5\.5\.\d/){
