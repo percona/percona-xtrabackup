@@ -15,6 +15,8 @@ use POSIX ":sys_wait_h";
 use FileHandle;
 use File::Basename;
 use File::Temp;
+use File::Find;
+use File::Copy;
 use English qw(-no_match_vars);
 
 # version of this script
@@ -213,6 +215,11 @@ my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 my $xtrabackup_binary_file = 'xtrabackup_binary';
 my $xtrabackup_pid_file = 'xtrabackup_pid';
 my %rsync_files_hash;
+
+my $copy_dir_src;
+my $copy_dir_dst;
+my $copy_dir_exclude_regexp;
+my $copy_dir_overwrite;
 
 ######################################################################
 # program execution begins here
@@ -525,6 +532,58 @@ sub if_directory_exists_and_empty {
 }
 
 #
+# Callback function for copy_dir_recursively that actually does all
+# the copying work
+#
+sub copy_file() {
+    if (/$copy_dir_exclude_regexp/) {
+	return;
+    }
+    (my $dst_path = $File::Find::name) =~ s/^$copy_dir_src/$copy_dir_dst/;
+    if (-d "$File::Find::name") {
+	# Create the directory in the destination if necessary
+	if (! -e "$dst_path") {
+	    print STDERR "$prefix Creating directory '$dst_path'\n";
+	    mkdir "$dst_path" or Die "mkdir failed: $!";
+	} elsif (! -d "$dst_path") {
+	    Die "$dst_path exists, but is not a directory";
+	}
+    } else {
+	# Don't overwrite files unless $copy_dir_overwrite is 1
+	if (!$copy_dir_overwrite && -e "$copy_dir_dst/$_") {
+	    Die "Failed to copy file $File::Find::name: " .
+		"file $copy_dir_dst/$_ exists";
+	}
+
+	print STDERR "$prefix Copying file '$copy_dir_dst/$_'\n";
+	copy($File::Find::name, $dst_path) or Die "copy failed: $!";
+    }
+}
+
+#
+# copy_dir_recursively subroutine does a recursive copy of a specified
+# directory excluding files matching a specifies regexp. If $overwrite
+# is 1, it overwrites the existing files.
+#
+# SYNOPSIS 
+#
+#     copy_dir_recursively($src_dir, $dst_dir, $exclude_regexp,
+#                          $overwrite);
+#
+# TODO
+#
+#     use rsync when --rsync is specified
+#
+sub copy_dir_recursively {
+    $copy_dir_src = shift;
+    $copy_dir_dst = shift;
+    $copy_dir_exclude_regexp = shift;
+    $copy_dir_overwrite = shift;
+
+    find(\&copy_file, $copy_dir_src);
+}
+
+#
 # copy_back subroutine copies data and index files from backup directory 
 # back to their original locations.
 #
@@ -536,10 +595,11 @@ sub copy_back {
         get_option(\%config, 'mysqld', 'innodb_data_file_path');
     my $orig_iblog_dir =
         get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
+    my $iblog_files = 'ib_logfile.*';
     my $excluded_files = 
-        '^(\.\.?|backup-my\.cnf|xtrabackup_logfile|mysql-std(err|out)|.*\.ibz)$';
-    my @ibdata_files;
-    my $iblog_files = '^ib_logfile.*$';
+        '\.\.?|backup-my\.cnf|xtrabackup_logfile|' .
+	'xtrabackup_binary|xtrabackup_binlog_info|xtrabackup_checkpoints' .
+	$iblog_files;
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
@@ -579,59 +639,20 @@ sub copy_back {
                 Die "Backup data file '$backup_dir/$filename' does not exist.";
             }
         }
-
-        if (!is_in_array($filename, \@ibdata_files)) {
-            push(@ibdata_files, $filename);
-        }
+	
+        $excluded_files .= "|\Q$filename\E";
     }
 
     # copy files from backup dir to their original locations
 
     # copy files to original data directory
-    opendir(DIR, $backup_dir) 
-        || Die "Can't open directory '$backup_dir': $!\n";
-    print STDERR "$prefix Starting to copy MyISAM tables, indexes,\n"; 
-    print STDERR "$prefix .MRG, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV, .opt, and .frm files\n";
-    print STDERR "$prefix in '$backup_dir'\n";
+    my $excluded_regexp = '^(' . $excluded_files . ')$';
+    print STDERR "$prefix Starting to copy files in '$backup_dir'\n"; 
     print STDERR "$prefix back to original data directory '$orig_datadir'\n";
-    while (defined($file = readdir(DIR))) {
-        if ($file =~ /$excluded_files/) { next; }
-        if (is_in_array($file, \@ibdata_files)) { next; }
-        if ($file =~ /$iblog_files/) { next; }
-        if (-d "$backup_dir/$file") {
-            my $subdir = "$backup_dir/$file";
-            my $file2;
-
-            print STDERR "$prefix Copying directory '$subdir'\n";
-            if (! -x "\"".escape_path("$orig_datadir/$file")."\"") {
-                system("mkdir \"".escape_path("$orig_datadir/$file")."\"") 
-                    and Die "Failed to create directory "
-                            . "'$orig_datadir/$file' : $!";
-            }
-            opendir(SUBDIR, "$subdir") 
-                || Die "Can't open directory '$subdir': $!\n";
-            while (defined($file2 = readdir(SUBDIR))) {
-                if (-d "$subdir/$file2") { next; }
-                if ($file2 =~ /$compressed_data_file/) { next; }
-                $src_name = escape_path("$subdir/$file2");
-                $dst_name = escape_path("$orig_datadir/$file");
-                system("$CP_CMD \"$src_name\" \"$dst_name\"")
-                    and Die "Failed to copy file '$file': $!";
-            }
-            closedir(SUBDIR);
-        } else { 
-            print STDERR "$prefix Copying file " . 
-                "'$backup_dir/$file'\n";
-            $src_name = escape_path("$backup_dir/$file");
-            $dst_name = escape_path("$orig_datadir");
-            system("$CP_CMD \"$src_name\" \"$dst_name\"")
-                and Die "Failed to copy file '$file': $!";
-        }
-    }
-    closedir(DIR);
+    copy_dir_recursively($backup_dir, $orig_datadir, $excluded_regexp, 0);
 
     # copy InnoDB data files to original InnoDB data directory
-    print STDERR "\n$prefix Starting to copy InnoDB tables and indexes\n";
+    print STDERR "\n$prefix Starting to copy InnoDB system tablespace\n";
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original InnoDB data directory '$orig_ibdata_dir'\n";
     foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
@@ -652,7 +673,7 @@ sub copy_back {
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original InnoDB log directory '$orig_iblog_dir'\n";
     while (defined($file = readdir(DIR))) {
-        if ($file =~ /$iblog_files/ && -f "$backup_dir/$file") {
+        if ($file =~ /'^' . $iblog_files . '$'/ && -f "$backup_dir/$file") {
             print STDERR "$prefix Copying file '$backup_dir/$file'\n";
             $src_name = escape_path("$backup_dir/$file");
             $dst_name = escape_path("$orig_iblog_dir");
@@ -720,20 +741,20 @@ sub apply_log {
         }
     }
 
-    # If we were applying an incremental change set, we need to make sure the xtrabackup_slave_info is still correct
+    # If we were applying an incremental change set, we need to make
+    # sure non-InnoDB files and xtrabackup_* metainfo files are copied
+    # to the full backup directory.
     if ( $option_incremental_dir ) {
-
-        # If the latest backup has this file, then update the target dir with the new file
-        if ( -e "$option_incremental_dir/xtrabackup_slave_info" ) {
-            print STDERR "\n$now  $prefix Updating xtrabackup_slave_info with new slave position info...";
-            $cmdline = "cp $option_incremental_dir/xtrabackup_slave_info $backup_dir/xtrabackup_slave_info";
-            $rcode = system("$cmdline");
-            if ($rcode) {
-                # failure
-                Die "\n$prefix Failed to update xtrabackup_slave_info in $backup_dir";
-            }
-        # If the latest backup has no file, we need to remove the old xtrabackup_slave_info file, because it is out of date
-        } elsif ( -e "$backup_dir/xtrabackup_slave_info" ) {
+	print STDERR "$prefix Starting to copy non-InnoDB files in '$option_incremental_dir'\n"; 
+	print STDERR "$prefix to the full backup directory '$backup_dir'\n";
+	copy_dir_recursively($option_incremental_dir, $backup_dir,
+			     '^(\.\.?|backup-my\.cnf|xtrabackup_logfile|' .
+			     'xtrabackup_binary|xtrabackup_checkpoints|' .
+			     '.*\.delta|.*\.meta|ib_logfile.*)$', 1);
+        # If the latest backup has no file, we need to remove the old
+        # xtrabackup_slave_info file, because it is out of date
+        # TODO: this will not be needed when bug #856400 is fixed.
+        if ( -e "$backup_dir/xtrabackup_slave_info" ) {
             print STDERR "\n$now  $prefix No updated xtrabackup_slave_info found in incremental dir, removing stale xtrabackup_slave_info file from target dir.";
             $cmdline = "rm $backup_dir/xtrabackup_slave_info";
             $rcode = system("$cmdline");

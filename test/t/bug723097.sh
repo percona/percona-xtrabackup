@@ -27,7 +27,7 @@ run_mysqld --innodb_file_per_table
 checksum_b=`checksum_table test messages`
 vlog "Checksum after is $checksum_b"
 
-if [ $checksum_a -eq $checksum_b ]
+if [ "$checksum_a" -eq "$checksum_b" ]
 then
 	vlog "Checksums are Ok"
 else
