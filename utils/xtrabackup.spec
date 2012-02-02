@@ -52,9 +52,9 @@ export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRA
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\" -fno-exceptions" 
 cp $RPM_SOURCE_DIR/libtar-1.2.11.tar.gz $RPM_SOURCE_DIR/mysql-5.1.56.tar.gz \
     $RPM_SOURCE_DIR/mysql-5.5.10.tar.gz .
-./utils/build.sh 5.1
-./utils/build.sh xtradb
-./utils/build.sh xtradb55
+AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
+AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
+AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
 
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
