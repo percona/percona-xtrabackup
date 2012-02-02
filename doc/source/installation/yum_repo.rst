@@ -65,10 +65,8 @@ Supported Releases
 
 The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too, provided that :program:`yum` is installed on the server.
 
-* *CentOS* 4 and *RHEL* 4
-
 * *CentOS* 5 and *RHEL* 5
-
+* *CentOS* 6 and *RHEL* 6
 * *Amazon Linux AMI* (works the same as *CentOS* 5)
 
 Release Candidate Repository

@@ -2,26 +2,15 @@
  Installing |XtraBackup| from Binaries
 =======================================
 
-.. toctree::
-   :hidden:
-
-   installation/bin_distro_specific
-
 Before installing, you might want to read the :doc:`release-notes`.
 
 Ready-to-use binaries are available from the |XtraBackup| `download page <http://www.percona.com/downloads/XtraBackup/>`_, including:
 
- * ``RPM`` packages for *RHEL* 4 and *RHEL* 5
+ * ``RPM`` packages for *RHEL* 5 and *RHEL* 6 (including compatible distributions such as CentOS and Oracle Enterprise Linux)
 
- * *Debian* packages
+ * *Debian* packages for *Debian* and *Ubuntu*
 
- * *FreeBSD* ``.tbz`` packages
-
-.. * *Microsoft Windows* binaries
-
- * Generic ``.tar.gz`` packages
-
-For installing binaries on other *Linux* distributions, see :doc:`installation/bin_distro_specific`.
+ * Generic ``.tar.gz`` binary packages
 
 Using Percona Software Repositories
 ===================================
@@ -32,7 +21,7 @@ Using Percona Software Repositories
    installation/apt_repo
    installation/yum_repo
 
-|Percona| provides repositories for :program:`yum` (``RPM`` packages for *Red Hat*, *CentOS*, *Amazon Linux AMI*, and *Fedora*) and :program:`apt` (:file:`.deb` packages for *Ubuntu* and *Debian*) for software such as |Percona Server|, |XtraDB|, |XtraBackup|, and |Percona Toolkit|. This makes it easy to install and update your software and its dependencies through your operating system's package manager.
+|Percona| provides repositories for :program:`yum` (``RPM`` packages for *Red Hat Enterprise Linux* and compatible distrubutions such as *CentOS*, *Oracle Enterprise Linux*, *Amazon Linux AMI*, and *Fedora*) and :program:`apt` (:file:`.deb` packages for *Ubuntu* and *Debian*) for software such as |Percona Server|, |XtraDB|, |XtraBackup|, and |Percona Toolkit|. This makes it easy to install and update your software and its dependencies through your operating system's package manager.
 
 This is the recommend way of installing where possible.
 
