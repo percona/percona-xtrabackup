@@ -42,7 +42,13 @@ However, for some specific tasks, you must use :program:`xtrabackup` directly. S
 Are you aware of any web-based backup management tools (commercial or not) built around |Xtrabackup|?
 =====================================================================================================
 
-Unfortunately there isn't anything that interfaces with |XtraBackup| at the moment.
+`Zmanda Recovery Manager <http://www.zmanda.com/zrm-mysql-enterprise.html>`_ is a commercial tool that uses XtraBackup for Non-Blocking Backups: *"ZRM provides support for
+non-blocking backups of MySQL using XtraBackup. ZRM with XtraBackup
+provides resource utilization management by providing throttling based
+on the number of IO operations per second. XtraBackup based backups also
+allow for table level recovery even though the backup was done at the
+database level (needs the recovery database server to be Percona Server
+with XtraDB)."*
 
 |xtrabackup| binary fails with a floating point exception
 =========================================================
