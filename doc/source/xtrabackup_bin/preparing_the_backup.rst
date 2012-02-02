@@ -33,4 +33,12 @@ Your backup is now clean and consistent, and ready to restore. However, you migh
   InnoDB: Database physically writes the file full: wait...
   101107 16:54:15  InnoDB: Shutdown completed; log sequence number 1284108
 
+All following prepares (third and following) will not change the already prepared data files, you can only see that output says
+
+.. code-block:: console
+  xtrabackup: This target seems to be already prepared.
+  xtrabackup: notice: xtrabackup_logfile was already used to '--prepare'.
+
+It is not recommended to interrupt xtrabackup process while preparing backup - it may cause data files corruption and backup will become not usable. Backup validity is not guaranteed if prepare process was interrupted.
+
 If you intend the backup to be the basis for further incremental backups, you should use the :option:`--apply-log-only` option when preparing the backup, or you will not be able to apply incremental backups to it. See the documentation on preparing :doc:`incremental backups <incremental_backups>` for more details.
