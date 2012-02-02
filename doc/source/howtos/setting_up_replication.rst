@@ -63,7 +63,7 @@ You need to select path where your snapshot has been taken, for example /home/ba
 
 |XtraBackup| knows where your data is by reading your :term:`my.cnf`. If you have your configuration file in a non-standard place, you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
 
-In case you want to skip writing the username/password every time you want to access the MySQL, you can set it up in your $HOME folder. Just edit .my.cnf and add:
+If you want to skip writing the username/password every time you want to access the MySQL, you can set it up in your $HOME folder. Just edit .my.cnf and add:
 
 .. code-block:: console
    
@@ -99,6 +99,8 @@ After you copy data over, make sure |MySQL| has proper permissions to access the
 .. code-block:: console
 
    TheSlave$ chown mysql:mysql /path/to/mysql/datadir
+
+In case the ibdata and iblog files are located in different directories outside of the datadir, you will have to put them in their proper place after the logs have been applied.
 
 STEP 3: Configure The Master's MySQL server
 ===========================================
