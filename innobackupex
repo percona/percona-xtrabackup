@@ -864,7 +864,18 @@ sub start_ibbackup {
                 my $innodb_flush_method = 
                     get_option(\%config, 'mysqld', 'innodb_flush_method');
                 my $innodb_use_odirect;
+                my $tarcmd;
+
                 $innodb_use_odirect = 1 if $innodb_flush_method =~ m/^(ALL_)?O_DIRECT$/i;
+                if (!$option_tar4ibd) {
+                    $tarcmd = "tar chf - -b 32";
+                } else {
+                    $tarcmd = "tar4ibd";
+                    if ($innodb_use_odirect) {
+                        $tarcmd = "$tarcmd -d";
+                    }
+                    $tarcmd = "$tarcmd -c";
+                }
 
                 my $subdir;
                 my @list;
@@ -895,17 +906,7 @@ sub start_ibbackup {
                             and Die "Failed to scp file '$path': $!";
                     } elsif($option_stream eq 'tar') {
                         my $ret = 0;
-                        my $tarcmd;
                         print STDERR "$prefix Backing up as tar stream '$path'\n";
-                        if (!$option_tar4ibd) {
-                            $tarcmd = "tar chf - -b 32";
-                        } else {
-                            $tarcmd = "tar4ibd";
-                            if ($innodb_use_odirect) {
-                                $tarcmd = "$tarcmd -d";
-                            }
-                            $tarcmd = "$tarcmd -c";
-                        }
                         $ret = system("cd $orig_ibdata_dir; $tarcmd $path") >> 8;
                         if ($ret == 1) {
                             print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
@@ -970,11 +971,7 @@ sub start_ibbackup {
                             my $ret = 0;
                             my $file_name = substr($file, rindex($file, '/') + 1);
                             $file_name=~s/([\$\\\" ])/\\$1/g;
-                            if (!$option_tar4ibd) {
-                                $ret = system("cd $orig_datadir; tar chf - -b 32 $subdir/$file_name") >> 8;
-                            } else {
-                                $ret = system("cd $orig_datadir; tar4ibd -c $subdir/$file_name") >> 8;
-                            }
+                            $ret = system("cd $orig_datadir; $tarcmd $subdir/$file_name") >> 8;
                             if ($ret == 1) {
                                 print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                             } elsif ($ret != 0) {

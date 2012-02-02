@@ -1,3 +1,8 @@
+###############################################################################
+# Bug #606981: linux + o_direct + stream backup = broken?
+# Bug #925354: tar4ibd does not use O_DIRECT for per-table *.ibd when it should
+###############################################################################
+
 . inc/common.sh
 
 if test "`uname -s`" != "Linux"
@@ -7,7 +12,7 @@ then
 fi
 
 init
-run_mysqld
+run_mysqld --innodb_file_per_table
 load_sakila
 
 # Take backup
@@ -16,10 +21,11 @@ mkdir -p $topdir/backup
 innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 stop_mysqld
 
-# See if tar4ibd was using O_DIRECT
-if ! grep "tar4ibd: using O_DIRECT for the input file" $OUTFILE ;
+# See if tar4ibd was using O_DIRECT for all InnoDB files
+cnt=`grep "tar4ibd: using O_DIRECT for the input file" $OUTFILE | wc -l`
+if [ "$cnt" -ne 16 ]
 then
-  vlog "tar4ibd was not using O_DIRECT for the input file."
+  vlog "tar4ibd was not using O_DIRECT for all input files."
   exit -1
 fi
 
