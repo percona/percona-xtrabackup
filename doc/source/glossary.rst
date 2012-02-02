@@ -20,7 +20,7 @@
    innodb_expand_import
      This feature of |Percona Server| implements the ability to import arbitrary :term:`.ibd` files exported using the |XtraBackup| :option:`--export` option.
      
-     See the `the full documentation <http://www.percona.com/docs/wiki/percona-server:features:innodb_import_table_from_xtrabackup?redirect=2>`_ for more information.
+     See the `the full documentation <http://www.percona.com/doc/percona-server/5.5/management/innodb_expand_import.html>`_ for more information.
 
    innodb_data_home_dir
      The directory (relative to :term:` datadir`) where the database server stores the files in a shared tablespace setup. This option does not affect the location of :term:`innodb_file_per_table`. For example, 

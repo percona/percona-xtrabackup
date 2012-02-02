@@ -122,7 +122,7 @@ rst_prolog = '''
 
 '''
 
-extlinks = {'bug': ('https://bugs.launchpad.net/percona-server/+bug/%s',
+extlinks = {'bug': ('https://bugs.launchpad.net/percona-xtrabackup/+bug/%s',
                       '#')}
 
 # A list of ignored prefixes for module index sorting.
