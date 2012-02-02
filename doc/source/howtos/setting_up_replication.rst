@@ -22,9 +22,9 @@ Setting up a slave for replication with |XtraBackup| is really a very straightfo
 
   * the *SSH* server is installed and configured;
 
-  * you have an user account in the system with the appropiate permissions;
+  * you have an user account in the system with the appropriate permissions;
 
-  * you have a MySQL's user account with appropiate privileges.
+  * you have a MySQL's user account with appropriate privileges.
 
   * server has binlogs enabled and server-id set up to 1.
 
@@ -63,7 +63,7 @@ You need to select path where your snapshot has been taken, for example /home/ba
 
 |XtraBackup| knows where your data is by reading your :term:`my.cnf`. If you have your configuration file in a non-standard place, you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
 
-In case you want to skip writing the username/password everytime you want to access the mysql, you can set it up in your $HOME folder. Just edit .my.cnf and add:
+In case you want to skip writing the username/password every time you want to access the MySQL, you can set it up in your $HOME folder. Just edit .my.cnf and add:
 
 .. code-block:: console
    
@@ -71,12 +71,12 @@ In case you want to skip writing the username/password everytime you want to acc
    user=root
    pass=MaGiCdB1
 
-This is will give you root access to mysql. 
+This is will give you root access to MySQL. 
 
 STEP 2:  Copy backed up data to TheSlave
 ========================================
 
-Use rsync or scp to copy the data from Master to Slave. If you're syncing the data directly to slave's datadir it's advised to stop the mysqld there. 
+Use rsync or scp to copy the data from Master to Slave. If you're syncing the data directly to slave's data directory it's advised to stop the mysqld there. 
 
 .. code-block:: console
 
@@ -88,7 +88,7 @@ After data has been copied you can back up the original or previously installed 
 
    TheSlave$ mv /path/to/mysql/datadir /path/to/mysql/datadir_bak
 
-and move the snapshot from TheMaster in its place:
+and move the snapshot from ``TheMaster`` in its place:
 
 .. code-block:: console
 
@@ -142,7 +142,7 @@ Look at the content of the file :file:`xtrabackup_binlog_info`, it will be somet
    TheSlave$ cat /var/lib/mysql/xtrabackup_binlog_info
    TheMaster-bin.000001     481
 
-Execute the ``CHANGE MASTER`` statement on a mysql console and use the username and password you've set up in STEP 3: 
+Execute the ``CHANGE MASTER`` statement on a MySQL console and use the username and password you've set up in STEP 3: 
 
 .. code-block:: mysql
 
@@ -174,7 +174,7 @@ You should check that everything went OK with:
             Seconds_Behind_Master: 13
             ...
 
-Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`` means the ``SQL`` currently being executed has a ``current_timestamp`` of 13 seconds ago. It is an estimation of the lag between ``TheMaster`` and ``TheSlave``. Note that at the begining, a high value could be shown because ``TheSlave`` has to "catch up" with ``TheMaster``.
+Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`` means the ``SQL`` currently being executed has a ``current_timestamp`` of 13 seconds ago. It is an estimation of the lag between ``TheMaster`` and ``TheSlave``. Note that at the beginning, a high value could be shown because ``TheSlave`` has to "catch up" with ``TheMaster``.
 
 Adding more slaves to The Master
 ================================
@@ -202,7 +202,7 @@ Copy the directory from the ``TheSlave`` to ``TheNewSlave``:
 
    rsync -avprP -e ssh /path/to/backupdir/$TIMESTAMP TheNewSlave:/path/to/mysql/datadir
 
-Add addtional grant on the master:
+Add additional grant on the master:
 
 .. code-block:: mysql
 
