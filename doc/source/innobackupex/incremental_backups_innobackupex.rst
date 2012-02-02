@@ -82,7 +82,7 @@ You should see an output similar to: ::
 
 Then, the first incremental backup can be applied to the base backup, by issuing: ::
 
-  innobackupex --apply-log BASE-DIR --incremental-dir=INCREMENTAL-DIR-1
+  innobackupex --apply-log --redo-only BASE-DIR --incremental-dir=INCREMENTAL-DIR-1
 
 You should see an output similar to the previous one but with corresponding |LSN|: ::
 
