@@ -3,7 +3,7 @@
 # A script for making backups of InnoDB and MyISAM tables, indexes and .frm
 # files.
 #
-# Copyright 2003, 2009 Innobase Oy and Percona Inc 2009-2011. All Rights Reserved.
+# Copyright 2003, 2009 Innobase Oy and Percona Inc 2009-2012. All Rights Reserved.
 #
 
 use strict;
@@ -22,9 +22,9 @@ my $innobackup_version = '1.5.1-xtrabackup';
 my $innobackup_script = basename($0);
 
 # copyright notice
-my $copyright_notice = 
+my $copyright_notice =
 "InnoDB Backup Utility v${innobackup_version}; Copyright 2003, 2009 Innobase Oy
-and Percona Inc 2009-2011.  All Rights Reserved.
+and Percona Inc 2009-2012.  All Rights Reserved.
 
 This software is published under
 the GNU GENERAL PUBLIC LICENSE Version 2, June 1991.
@@ -2770,7 +2770,7 @@ Bugs can be reported on Launchpad: https://bugs.launchpad.net/percona-xtrabackup
 
 =head1 COPYRIGHT
 
-InnoDB Backup Utility Copyright 2003, 2009 Innobase Oy and Percona, Inc 2009-2011. All Rights Reserved.
+InnoDB Backup Utility Copyright 2003, 2009 Innobase Oy and Percona, Inc 2009-2012. All Rights Reserved.
 
 This software is published under the GNU GENERAL PUBLIC LICENSE Version 2, June 1991.
 
