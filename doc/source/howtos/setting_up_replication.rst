@@ -30,7 +30,7 @@ Setting up a slave for replication with |XtraBackup| is really a very straightfo
 
 
 * ``TheSlave`` 
-  Another system, with a |MySQL|-based server installed on it. We will reffer to this machine as ``TheSlave`` and we will assume the same things we did about ``TheMaster``.
+  Another system, with a |MySQL|-based server installed on it. We will refer to this machine as ``TheSlave`` and we will assume the same things we did about ``TheMaster``.
 
 * ``Xtrabackup``
   The backup tool we will use. It should be installed in both computers for convenience.
@@ -42,24 +42,24 @@ At ``TheMaster``, issue the following to a shell:
 
 .. code-block:: console
 
-   TheMaster$ innobackupex-1.5.1 --user=yourDBuser --password=MaGiCdB1 /path/to/backupdir 
+   TheMaster$ innobackupex --user=yourDBuser --password=MaGiCdB1 /path/to/backupdir 
 
 After this is finished you should get:
 
 .. code-block:: console
 
-   innobackupex-1.5.1: completed OK! 
+   innobackupex: completed OK! 
 
-This will make a copy of your |MySQL| data dir to the /path/to/backupdir/TIMESTAMP. You have told |XtraBackup| (through the |innobackupex| script) to connect to the database server using your database user and password, and do a hot backup of all your data in it (all |MyISAM|, |InnoDB| tables and indexes in them).
+This will make a copy of your |MySQL| data dir to the /path/to/backupdir/$TIMESTAMP. You have told |XtraBackup| (through the |innobackupex| script) to connect to the database server using your database user and password, and do a hot backup of all your data in it (all |MyISAM|, |InnoDB| tables and indexes in them).
 
 In order for snapshot to be consistent you need to prepare the data:
 
 .. code-block:: console
 
-   TheMaster$ innobackupex-1.5.1 --user=yourDBuser --password=MaGiCdB1 /
-              --apply-log /path/to/backupdir/TIMESTAMP/
+   TheMaster$ innobackupex --user=yourDBuser --password=MaGiCdB1 /
+              --apply-log /path/to/backupdir/$TIMESTAMP/
 
-If everything is ok you should get the same OK message. Now the transaction logs are applied to the data files, and new ones are created: your data files are ready to be used by the MySQL server.
+You need to select path where your snapshot has been taken, for example /home/backups/2012-01-16_11-14-43. If everything is ok you should get the same OK message. Now the transaction logs are applied to the data files, and new ones are created: your data files are ready to be used by the MySQL server.
 
 |XtraBackup| knows where your data is by reading your :term:`my.cnf`. If you have your configuration file in a non-standard place, you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
 
@@ -80,7 +80,7 @@ Use rsync or scp to copy the data from Master to Slave. If you're syncing the da
 
 .. code-block:: console
 
-   TheMaster$ rsync -avprP -e ssh /path/to/backupdir/TIMESTAMP TheSlave:/path/to/mysql/
+   TheMaster$ rsync -avprP -e ssh /path/to/backupdir/$TIMESTAMP TheSlave:/path/to/mysql/
 
 After data has been copied you can back up the original or previously installed |MySQL| datadir:
 
@@ -92,7 +92,7 @@ and move the snapshot from TheMaster in its place:
 
 .. code-block:: console
 
-   TheSlave$ mv /path/to/mysql/TIMESTAMP /path/to/mysql/datadir
+   TheSlave$ mv /path/to/mysql/$TIMESTAMP /path/to/mysql/datadir
 
 
 STEP 3: Configure The Master's MySQL server
@@ -174,7 +174,7 @@ Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`
 Adding more slaves to The Master
 ================================
 
-You can use this procedure with slights variation to add new slaves to a master. We will use |Xtrabackup| to clone an already configured slave. We will continue using the previuos scenario for convenience but we will add ``TheNewSlave`` to the plot.
+You can use this procedure with slight variation to add new slaves to a master. We will use |Xtrabackup| to clone an already configured slave. We will continue using the previous scenario for convenience but we will add ``TheNewSlave`` to the plot.
 
 At ``TheSlave``, do a full backup:
 
@@ -189,13 +189,13 @@ Apply the logs:
 
 .. code-block:: console
 
-   TheSlave$ innobackupex --apply-log --use-memory=2G /path/to/backupdir/TIMESTAMP/
+   TheSlave$ innobackupex --apply-log --use-memory=2G /path/to/backupdir/$TIMESTAMP/
 
 Copy the directory from the ``TheSlave`` to ``TheNewSlave``:
 
 .. code-block:: console
 
-   rsync -avprP -e ssh /path/to/backupdir/TIMESTAMP TheNewSlave:/path/to/mysql/datadir
+   rsync -avprP -e ssh /path/to/backupdir/$TIMESTAMP TheNewSlave:/path/to/mysql/datadir
 
 Add addtional grant on the master:
 

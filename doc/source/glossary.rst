@@ -69,9 +69,6 @@
    datadir
     The directory in which the database server stores its databases. Most Linux distribution use :file:`/var/lib/mysql` by default.
 
-   Percona Toolkit
-	Percona Toolkit is a collection of advanced command-line tools used by Percona (http://www.percona.com/) support staff to perform a variety of MySQL and system tasks that are too difficult or complex to perform manually.
-	
    ibdata
      Default prefix for tablespace files, e.g. :file:`ibdata1` is a 10MB  autoextensible file that |MySQL| creates for the shared tablespace by default. 
 

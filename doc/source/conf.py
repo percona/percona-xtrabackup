@@ -100,7 +100,7 @@ rst_prolog = '''
 
 .. |MyISAM|  replace:: :term:`MyISAM`
 
-.. |Percona Toolkit|  replace:: :term:`Percona Toolkit`
+.. |Percona Toolkit|  replace:: *Percona Toolkit*
 
 .. |LSN|  replace:: :term:`LSN`
 
