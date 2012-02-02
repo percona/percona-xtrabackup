@@ -7,7 +7,7 @@ Many Linux distributions only install the ssh client by default. If you don't ha
      ubuntu$ sudo apt-get install openssh-server
   archlinux$ sudo pacman -S openssh
 
-You may need to take a look at your distribution's documentation or search for a tutorial in the internet to configure it if you haven't done it before. 
+You may need to take a look at your distribution's documentation or search for a tutorial in the Internet to configure it if you haven't done it before. 
 
 Some links of them are:
 

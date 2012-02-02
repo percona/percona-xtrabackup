@@ -19,7 +19,7 @@ Under the hood
 ==============
 reading the configuration from the files in the backup directory,
 
-|innobackupex| replayed the committed transactions in the logfiles (some transactions could have been done while the backup was being done) and rolled back the uncommitted ones. Once this is done, all the information lay in the tablespace (the InnoDB files), and the logfiles are re-created.
+|innobackupex| replayed the committed transactions in the log files (some transactions could have been done while the backup was being done) and rolled back the uncommitted ones. Once this is done, all the information lay in the tablespace (the InnoDB files), and the log files are re-created.
 
 This implied calling :program:`xtrabackup --prepare` twice with the right binary (determined through the :file:`xtrabackup_binary` or by connecting the server). More details of this process are shown in the :doc:`xtrabackup section <../xtrabackup_bin/preparing_the_backup>`.
 

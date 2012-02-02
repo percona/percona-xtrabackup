@@ -113,7 +113,7 @@ Options
 
 .. option:: --extra-lsndir
 
-   This option accepts a string argument that specifies the directory in which to save an extra copy of the :file:`xtrabackup_checkpoints` file. It is passed directly to |xtrabackup| 's :option:`--extra-lsndir` option. See the :program:`xtrabackup` documentation for details.
+   This option accepts a string argument that specifies the directory in which to save an extra copy of the :file:`xtrabackup_checkpoints` file. It is passed directly to |xtrabackup|'s :option:`--extra-lsndir` option. See the :program:`xtrabackup` documentation for details.
 
 .. option:: --remote-host
 

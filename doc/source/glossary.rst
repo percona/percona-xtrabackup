@@ -18,7 +18,7 @@
       or start the server with ``--innodb_file_per_table``.
 
    innodb_expand_import
-     This feature of |Percona Server| implements the abililty to import arbitrary :term:`.ibd` files exported using the |XtraBackup| :option:`--export` option.
+     This feature of |Percona Server| implements the ability to import arbitrary :term:`.ibd` files exported using the |XtraBackup| :option:`--export` option.
      
      See the `the full documentation <http://www.percona.com/docs/wiki/percona-server:features:innodb_import_table_from_xtrabackup?redirect=2>`_ for more information.
 
@@ -55,7 +55,7 @@
          innodb_buffer_pool_size=8MB
 
    InnoDB
-      Storage engine which provides ACID-compilant transactions and foreing key support, among others improvements over :term:`MyISAM`. It is the default engine for |MySQL| as of the 5.5 series.
+      Storage engine which provides ACID-compliant transactions and foreign key support, among others improvements over :term:`MyISAM`. It is the default engine for |MySQL| as of the 5.5 series.
 
    MyISAM
      Previous default storage engine for |MySQL| for versions prior to 5.5. It doesn't fully support transactions but in some scenarios may be faster than :term:`InnoDB`. Each table is stored on disk in 3 files: :term:`.frm`, :term:`.MYD`, :term:`.MYI`
@@ -91,10 +91,10 @@
      Each table using the :program:`MERGE` storage engine, besides of a :term:`.frm` file, will have :term:`.MRG` file containing the names of the |MyISAM| tables associated with it.
 
    .TRG
-     File containing the TRiGgers associated to a table, e.g. `:file:`mytable.TRG`. With the :term:`.TRN` file, they represent all the Trigger definitions.
+     File containing the Triggers associated to a table, e.g. `:file:`mytable.TRG`. With the :term:`.TRN` file, they represent all the Trigger definitions.
 
    .TRN
-     File containing the TRiggers' Names associated to a table, e.g. `:file:`mytable.TRN`. With the :term:`.TRG` file, they represent all the Trigger definitions.
+     File containing the Triggers' Names associated to a table, e.g. `:file:`mytable.TRN`. With the :term:`.TRG` file, they represent all the Trigger definitions.
 
    .ARM
      Each table with the :program:`Archive Storage Engine` has ``.ARM`` file which contains the metadata of it.
