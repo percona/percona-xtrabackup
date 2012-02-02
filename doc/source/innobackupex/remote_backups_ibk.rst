@@ -6,7 +6,7 @@ Besides of using the :option:`--stream` for sending the backup to another host v
 
   $ innobackupex --remote-host=REMOTEUSER@REMOTEHOST /path/IN/REMOTE/HOST/to/backup/
 
-|innobackupex| will test the connection to ``REMOTEHOST`` via :command:`ssh` and create the backup directories needed as the ``REMOTEUSER`` you specified.
+|innobackupex| will test the connection to ``REMOTEHOST`` via :command:`ssh` and create the backup directories needed as the ``REMOTEUSER`` you specified. The options for :command:`ssh` can be specified with :option:`--sshopt`
 
 .. warning:: The path you provide for storing the backup will be created at ``REMOTEHOST``, not at the local host.
 

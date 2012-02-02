@@ -139,6 +139,10 @@ Options
 
    This option accepts a string argument that specifies the command line options to pass to :command:`scp` when the option :option:`--remost-host` is specified. If the option is not specified, the default options are ``-Cp -c arcfour``.
 
+.. option:: --sshopt
+
+   This option accepts a string argument that specifies the command line options to pass to :command:`ssh` when the option :option:`--remost-host` is specified.
+
 .. option:: --parallel
 
    This option accepts an integer argument that specifies the number of threads the :program:`xtrabackup` child process should use to back up files concurrently.  Note that this option works on file level, that is, if you have several .ibd files, they will be copied in parallel. If you have just single big .ibd file, it will have no effect. It is passed directly to xtrabackup's :option:`xtrabackup --parallel` option. See the :program:`xtrabackup` documentation for details.
