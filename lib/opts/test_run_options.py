@@ -128,11 +128,11 @@ def parse_qp_options(defaults):
     config_control_group = optparse.OptionGroup(parser, 
                          "Configuration controls - allows you to specify a file with a number of options already specified")
     config_control_group.add_option(
-       "--sys_config_file"
+       "--sys-config"
         , dest="sysconfigfilepath"
         , action='store'
         , default=None # We want to have a file that will be our default defaults file...
-        , help="The file that specifies system configuration specs for dbqp to execute tests (not yet implemented)"
+        , help="The file that specifies system configuration specs for kewpie to execute tests"
         )
     parser.add_option_group(config_control_group)
 

@@ -34,6 +34,7 @@ Runs: Drizzle, MySQL, Percona Server, Galera dbms's
 
 # imports
 import os
+import imp
 import sys
 
 import lib.opts.test_run_options as test_run_options
@@ -44,6 +45,28 @@ from lib.sys_mgmt.system_management import systemManager
 from lib.test_mgmt.execution_management import executionManager
 
 # functions
+def handle_sys_config(input_args, defaults):
+    """ Look for / update defaults based on sys_config file
+        if specified
+
+    """
+    key_string = '--sys-config'
+    for input_arg in input_args:
+        if input_arg.startswith(key_string):
+            module_file = input_arg.split(key_string)[1].replace('=','').strip()
+            module_file = os.path.abspath(module_file)
+            break
+    module_parent = os.path.dirname(module_file)
+    sys.path.append(module_parent) 
+    module_name = os.path.basename(module_file).replace('.py','')
+    print module_name
+    print module_file 
+    print '@'*80
+    project = imp.load_source(module_name, module_file)
+    defaults = project.get_project_defaults(module_file, defaults)
+    return defaults
+            
+
 
 # main
 # We base / look for a lot of things based on the location of
@@ -53,6 +76,7 @@ qp_rootdir = os.path.dirname(os.path.abspath(sys.argv[0]))
 #project_name = 'xtrabackup'
 project_name = None
 defaults = get_defaults(qp_rootdir,project_name)
+defaults = handle_sys_config(sys.argv, defaults)
 variables = test_run_options.parse_qp_options(defaults)
 variables['qp_root'] = qp_rootdir
 system_manager = None
