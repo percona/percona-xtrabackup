@@ -69,9 +69,13 @@ class serverManager:
                                           , []
                                           , self.system_manager.workdir
                                           )
+        self.logging.info("Testing for Innodb / Xtradb version...")
         test_server.start(working_environ=os.environ)
-        test_server.get_engine_info()
+        innodb_ver, xtradb_ver = test_server.get_engine_info()
+        self.logging.info("Innodb version: %s" %innodb_ver)
+        self.logging.info("Xtradb version: %s" %xtradb_ver)
         test_server.stop()
+        #test_server.cleanup()
         shutil.rmtree(test_server.workdir)
         del(test_server)
 
