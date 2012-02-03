@@ -89,7 +89,10 @@ class testManager(test_management.testManager):
         server_type = variables['defaultservertype']
         if server_type == 'mysql' or server_type =='galera':  
             server_type = 'percona'
-        self.suitepaths = [os.path.join(self.testdir,'%s_tests' %(server_type))]
+        if variables['suitepaths']:  
+            self.suitepaths = variables['suitepaths']
+        else:
+            self.suitepaths = [os.path.join(self.testdir,'%s_tests' %(server_type))]
         if variables['suitelist'] is None:
             self.suitelist = ['main']
         else:
