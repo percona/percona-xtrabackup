@@ -59,9 +59,6 @@ def handle_sys_config(input_args, defaults):
     module_parent = os.path.dirname(module_file)
     sys.path.append(module_parent) 
     module_name = os.path.basename(module_file).replace('.py','')
-    print module_name
-    print module_file 
-    print '@'*80
     project = imp.load_source(module_name, module_file)
     defaults = project.get_project_defaults(module_file, defaults)
     return defaults
