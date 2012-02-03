@@ -358,17 +358,7 @@ class mysqlServer(Server):
                       )
                 return 1, msg
             # start the slave
-            query = "START SLAVE"
-            retcode, result_set = execute_query(query, self)
-            if retcode:
-                 msg = ("Could not set slave: %s.%s\n" 
-                        "With query: %s\n."
-                        "Returned result: %s" %( self.owner
-                                               , self.name
-                                               , query
-                                               , result_set)
-                       )
-                 return 1,msg
+            self.slave_start()
             self.need_to_set_master = False
         else:
             self.need_to_set_master = True 
@@ -418,11 +408,10 @@ class mysqlServer(Server):
                          , 'last_io_error':result_set[35]
                          , 'last_sql_errno':result_set[36]
                          , 'last_sql_error':result_set[37]
-                         , 'replicate_ignore_server_ids':result_set[38]
+                         #, 'replicate_ignore_server_ids':result_set[38]
                          }
             return slave_data
         else:
-            print result_set
             return None
      
          
@@ -450,9 +439,11 @@ class mysqlServer(Server):
     def slave_start(self):
         """ We issue START SLAVE and wait for IO and SQL threads to start """
         query = "START SLAVE"
+        decrement = .5
         retcode, result = execute_query(query, self)
         slave_status = self.get_slave_status()
         while slave_status['slave_io_running'] == 'No' or slave_status['slave_sql_running'] == 'No':
+            time.sleep(decrement)
             slave_status = self.get_slave_status()
 
 

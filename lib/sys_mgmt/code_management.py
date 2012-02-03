@@ -55,9 +55,7 @@ class codeManager:
                 self.test_tree = code_tree #first basedir = type under test
                 self.test_type = code_type
                 first = False
-            
             self.add_codeTree(code_type, code_tree)
-
 
     def add_codeTree(self, code_type, code_tree):
         # We add the codeTree to a list under 'type'
@@ -68,7 +66,7 @@ class codeManager:
             self.code_trees[code_type] = []
         self.code_trees[code_type].append(code_tree)
 
-    def process_codeTree(self, basedir, variables):
+    def process_codeTree(self, basedir, variables, code_type=None):
         """Import the appropriate module depending on the type of tree
            we are testing. 
 
@@ -84,6 +82,8 @@ class codeManager:
         #code_type = self.get_code_type(basedir)
         if basedir.find(self.type_delimiter) != -1:
             basedir, code_type = basedir.split(self.type_delimiter)
+        elif code_type:
+            code_type = code_type
         else:
             code_type = variables['defaultservertype']
         if code_type == 'drizzle':
