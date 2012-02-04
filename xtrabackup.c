@@ -3296,12 +3296,20 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 			log_block_checksum_is_ok_or_old_format(log_block);
 
 		if (no != scanned_no && checksum_is_ok) {
-			ulint blocks_in_group =
-				log_block_convert_lsn_to_no(
+			ulint blocks_in_group;
+
+			if (no < scanned_no) {
+				/* incompletely written log block, do nothing */
+				finished = TRUE;
+				break;
+			}
+
+			blocks_in_group = log_block_convert_lsn_to_no(
 #ifndef INNODB_VERSION_SHORT
-					ut_dulint_create(0, log_group_get_capacity(group))
+				ut_dulint_create(0,
+						 log_group_get_capacity(group))
 #else
-					log_group_get_capacity(group)
+				log_group_get_capacity(group)
 #endif
 							    ) - 1;
 
