@@ -351,3 +351,15 @@ class mysqlBaseTestCase(unittest.TestCase):
                                           )
 
         return randgen_subproc
+
+    def find_backup_path(self, output):
+        """ Determine xtrabackup directory from output """
+        backup_path = None
+        output = output.split('\n')
+        flag_string = "Backup created in directory"
+        for line in output:
+            if flag_string in line:
+               backup_path = line.split(flag_string)[1].strip().replace("'",'')
+        return backup_path 
+
+        
