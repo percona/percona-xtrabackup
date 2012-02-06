@@ -493,6 +493,33 @@ sub are_equal_innodb_data_file_paths {
 
 
 #
+# copy_if_exists subroutin attempt to copy a file from $src to $dst
+# If the copy fails due to the file not existing, the error is ignored
+#  Parameters:
+#    $src    The source file to copy
+#    $dst    The destination to copy to
+#  Return value:
+#    1  if copy was successful, or unsuccessful but the source file didn't exist
+#    0  otherwise
+#
+sub copy_if_exists {
+    my $src = shift;
+    my $dst = shift;
+
+    # Copy the file
+    if( system("$CP_CMD \"$src\" \"$dst\"") != 0 ) {
+        # if the copy failed, check if the file exists
+        if( -e "$src" ) {
+            # if the file exists, we had a real error
+            return 0;
+        }
+    }
+    # Success otherwise
+    return 1;
+}
+
+
+#
 # is_in_array subroutine checks if the given string is in the array.
 #   Parameters:
 #     str       a string
@@ -2046,8 +2073,9 @@ sub backup_files {
             } elsif (!$option_remote_host && !$option_stream) {
                 $src_name = escape_path("$source_dir/$database/$file");
                 $dst_name = escape_path("$backup_dir/$database");
-                system("$CP_CMD \"$src_name\" \"$dst_name\"")
-                    and Die "Failed to copy file '$file': $!";
+                # Copy the file - If we get an error and the file actually exists, die with error msg
+                copy_if_exists("$src_name", "$dst_name")
+                  or Die "Failed to copy file '$file': $!";
             } elsif ($option_remote_host) {
                 # Queue up files for one single scp per database.
                 push(@scp_files, "'$file'");
