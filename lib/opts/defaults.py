@@ -51,7 +51,7 @@ def get_defaults(qp_rootdir, project_name):
                , 'xtrabackuppath': None 
                , 'innobackupexpath': None 
                , 'tar4ibdpath': None 
-               , 'wsrep_provider_path':'/usr/lib/galera/libgalera_smm.so'
+               , 'wsrep_provider_path':None
                }
 
     if project_name == 'percona-xtradb-cluster':

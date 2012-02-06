@@ -51,19 +51,19 @@ def handle_sys_config(input_args, defaults):
 
     """
     key_string = '--sys-config'
+    module_file = None
     for input_arg in input_args:
         if input_arg.startswith(key_string):
             module_file = input_arg.split(key_string)[1].replace('=','').strip()
             module_file = os.path.abspath(module_file)
             break
-    module_parent = os.path.dirname(module_file)
-    sys.path.append(module_parent) 
-    module_name = os.path.basename(module_file).replace('.py','')
-    project = imp.load_source(module_name, module_file)
-    defaults = project.get_project_defaults(module_file, defaults)
+    if module_file:
+        module_parent = os.path.dirname(module_file)
+        sys.path.append(module_parent) 
+        module_name = os.path.basename(module_file).replace('.py','')
+        project = imp.load_source(module_name, module_file)
+        defaults = project.get_project_defaults(module_file, defaults)
     return defaults
-            
-
 
 # main
 # We base / look for a lot of things based on the location of

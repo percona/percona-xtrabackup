@@ -180,7 +180,10 @@ class portManager:
        """
       
        self.logging.debug("Freeing port %d" %(port))
-       os.remove(self.get_file_name(port))
+       try:
+           os.remove(self.get_file_name(port))
+       except OSError:
+           pass
 
     def get_file_name(self, port):
         """ We generate a file name for the port """

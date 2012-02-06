@@ -71,11 +71,18 @@ class serverManager:
                                           )
         self.logging.info("Testing for Innodb / Xtradb version...")
         test_server.start(working_environ=os.environ)
-        innodb_ver, xtradb_ver = test_server.get_engine_info()
-        self.logging.info("Innodb version: %s" %innodb_ver)
-        self.logging.info("Xtradb version: %s" %xtradb_ver)
+        try:
+            innodb_ver, xtradb_ver = test_server.get_engine_info()
+            self.logging.info("Innodb version: %s" %innodb_ver)
+            self.logging.info("Xtradb version: %s" %xtradb_ver)
+        except Exception, e:
+            self.logging.error("Problem detecting innodb/xtradb version:")
+            self.logging.error(Exception)
+            self.logging.error(e)
+            self.logging.error("Dumping server error.log...")
+            test_server.dump_errlog()
         test_server.stop()
-        #test_server.cleanup()
+        test_server.cleanup()
         shutil.rmtree(test_server.workdir)
         del(test_server)
 
