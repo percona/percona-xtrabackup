@@ -394,11 +394,12 @@ class galeraTree(mysqlTree):
                                                           , os.path.join(self.basedir, 'sbin/wsrep_sst_mysqldump')
                                                           , os.path.join(self.basedir, 'bin/wsrep_sst_mysqldump')
                                                           ])
-        self.wsrep_sst_script_path = os.path.dirname(self.wsrep_sst_mysqldump)
-        # add wsrep_sst_* scripts to PATH
+        # add wsrep_sst_* scripts and mysqldump / mysql clients to PATH
         env_manager = self.system_manager.env_manager
-        env_manager.set_env_var( 'PATH', env_manager.append_env_var( 'PATH'
-                                                           , self.wsrep_sst_script_path, suffix=0
+        for file_name in (self.wsrep_sst_mysqldump, self.mysqldump, self.mysql_client):
+            file_path = os.path.dirname(file_name)
+            env_manager.set_env_var( 'PATH', env_manager.append_env_var( 'PATH'
+                                                           , file_path, suffix=0
                                                            ))
  
 
