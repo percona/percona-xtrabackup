@@ -430,6 +430,24 @@ sub backup {
     # Close the DB connection
     mysql_close();
 
+    # copy ib_lru_dump
+    if (-e "$orig_datadir/ib_lru_dump") {
+        if ($option_remote_host) {
+            print STDERR "$prefix Backing up file 'ib_lru_dump'\n";
+            system("scp $option_scp_opt '$orig_datadir/ib_lru_dump' '$option_remote_host:$backup_dir/ib_lru_dump'")
+                and Die "Failed to scp file 'ib_lru_dump': $!";
+        } elsif ($option_stream) {
+            print STDERR "$prefix Backing up as tar stream 'ib_lru_dump'\n";
+            system("cd $orig_datadir; tar chf - ib_lru_dump")
+                and Die "Failed to stream 'ib_lru_dump': $!";
+        } elsif (!$option_rsync) {
+            my $src_name = escape_path("$orig_datadir/ib_lru_dump");
+            my $dst_name = escape_path("$backup_dir/ib_lru_dump");
+            system("$CP_CMD \"$src_name\" \"$dst_name\"")
+                and Die "Failed to copy file 'ib_lru_dump': $!";
+        }
+    }
+
     if ($option_remote_host) {
         system("scp $option_scp_opt '$tmp_logfile' '$option_remote_host:$backup_dir/xtrabackup_logfile'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_logfile': $!";
@@ -2080,6 +2098,12 @@ sub backup_files {
     closedir(DIR);
 
     if ($option_rsync) {
+        if (-e "$source_dir/ib_lru_dump") {
+            print RSYNC "ib_lru_dump\n";
+            if (!$prep_mode) {
+                $rsync_files_hash{"ib_lru_dump"} = 1;
+            }
+        }
 	close(RSYNC);
 
 	# do the actual rsync now
