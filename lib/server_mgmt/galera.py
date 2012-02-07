@@ -35,6 +35,7 @@ import subprocess
 from ConfigParser import RawConfigParser
 
 from lib.server_mgmt.server import Server
+from lib.util.mysql_methods import execute_query
 
 class mysqlServer(Server):
     """ represents a mysql server, its possessions
@@ -347,3 +348,12 @@ class mysqlServer(Server):
         """
 
         self.wsrep_cluster_addr = '127.0.0.1:%d' %(master_server.galera_listen_port)
+
+    def slave_ready(self):
+        """ Return True / False based on wsrep_ready status variable """
+
+        query = "SHOW STATUS LIKE 'wsrep_ready'"
+        retcode, result = execute_query(query, self)
+        if result == (('wsrep_ready', 'ON'),):
+            return True
+        return False

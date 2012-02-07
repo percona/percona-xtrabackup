@@ -477,6 +477,9 @@ class mysqlServer(Server):
                     # mid-iteration, but this is a chance to break that rule
                     # >: )
                     slave_list.pop(idx)
+
+    def slave_ready(self, master_server):
+       return True 
                             
 
     def get_innodb_version(self):

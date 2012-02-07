@@ -362,4 +362,16 @@ class mysqlBaseTestCase(unittest.TestCase):
                backup_path = line.split(flag_string)[1].strip().replace("'",'')
         return backup_path 
 
-        
+       
+    def wait_slaves_ready(self, master_server, slave_servers, cycles = 30):
+        """ Utility func to pause until the slaves are 'ready'
+            The definition of 'ready' will vary upon server
+            implementation
+
+        """
+    
+        while slave_servers and cycles:
+            for idx, slave_server in enumerate(slave_servers):
+                if slave_server.slave_ready():
+                    slave_servers.pop(idx)  
+            cycles -= 1
