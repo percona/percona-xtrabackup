@@ -8,7 +8,7 @@ This is a *BETA* quality release and is not inteded for production. If you want 
 
 The 1.9.x version numbers will be used to distinguish between pre-release versions of |Percona| |XtraBackup| 2.0 and the Generally Available final release.
 
-This release contains all of the features and bug fixes in :doc:`|Percona| |XtraBackup| 1.6.4 </release-notes/1.6/1.6.4>`, plus the following:
+This release contains all of the features and bug fixes in :doc:`Percona XtraBackup 1.6.4 </release-notes/1.6/1.6.4>`, plus the following:
 
 New features
 ------------
