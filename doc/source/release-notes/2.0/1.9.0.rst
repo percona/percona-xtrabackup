@@ -2,7 +2,7 @@
 |Percona| |XtraBackup| 1.9.0 (2.0 BETA)
 =======================================
 
-.. Percona is glad to announce the release of Percona XtraBackup 1.9.0 on FIXME (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.9.0-beta/>`_ and from the :doc:`Percona Software Repositories <installation>`).
+Percona is glad to announce the release of Percona XtraBackup 1.9.0 on 9th February 2012. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/BETA/1.9.0/>`_. For this BETA release, we will not be making APT and YUM repositories available, just base deb and RPM packages.
 
 This is a *BETA* quality release and is not inteded for production. If you want a high quality, Generally Available release, you should use the current Stable version - currently 1.6.4 in the 1.6 series at the time of writing.
 
