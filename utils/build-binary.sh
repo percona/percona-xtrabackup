@@ -105,7 +105,7 @@ export AUTO_DOWNLOAD=yes
     # Make a copy of the source
     rm -f "xtrabackup-$XTRABACKUP_VERSION"
 
-    cp -a "$SOURCEDIR" "xtrabackup-$XTRABACKUP_VERSION"
+    bzr export "xtrabackup-$XTRABACKUP_VERSION" "$SOURCEDIR"
 
     # Build proper
     (
