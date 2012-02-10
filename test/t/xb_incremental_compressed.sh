@@ -156,11 +156,10 @@ incremental_sample`
   fi
 
   vlog "Checksums are OK"
-
-  drop_dbase incremental_sample
-  stop_mysqld
 }
 
 for page_size in 1 2 4 8 16; do
+  init
   test_incremental_compressed ${page_size}
+  clean
 done

@@ -109,32 +109,40 @@ function build_server()
     cd $top_dir
 }
 
+function build_libarchive()
+{
+	echo "Building libarchive"
+	cd $top_dir/src/libarchive
+	
+	cmake  . \
+	    -DENABLE_CPIO=OFF \
+	    -DENABLE_OPENSSL=OFF \
+	    -DENABLE_TAR=OFF \
+	    -DENABLE_TEST=OFF
+	$MAKE_CMD || exit -1
+}
+
 function build_xtrabackup()
 {
+    build_libarchive
     echo "Building XtraBackup"
-    mkdir $build_dir
-    cp $top_dir/Makefile $top_dir/xtrabackup.c $top_dir/xb_regex.h $build_dir
 
     # Read XTRABACKUP_VERSION from the VERSION file
     . $top_dir/VERSION
 
-    cd $build_dir
-    $MAKE_CMD $xtrabackup_target XTRABACKUP_VERSION=$XTRABACKUP_VERSION
+    cd $top_dir/src
+    if [ "`uname -s`" = "Linux" ]
+    then
+	export LIBS="$LIBS -lrt"
+    fi
+    $MAKE_CMD MYSQL_ROOT_DIR=$server_dir clean
+    $MAKE_CMD MYSQL_ROOT_DIR=$server_dir XTRABACKUP_VERSION=$XTRABACKUP_VERSION $xtrabackup_target
     cd $top_dir
 }
 
-function build_tar4ibd()
-{
-    echo "Building tar4ibd"
-    unpack_and_patch libtar-1.2.11.tar.gz tar4ibd_libtar-1.2.11.patch
-    cd libtar-1.2.11
-    ./configure
-    $MAKE_CMD
-    cd $top_dir
-}
 
 ################################################################################
-# Do all steps to build the server, xtrabackup and tar4ibd
+# Do all steps to build the server, xtrabackup and xbstream
 # Expects the following variables to be set before calling:
 #   mysql_version	version string (e.g. "5.1.53")
 #   server_patch	name of the patch to apply to server source before
@@ -150,10 +158,9 @@ function build_all()
     server_dir=$top_dir/mysql-$mysql_version_short
     server_tarball=mysql-$mysql_version.tar.gz
     innodb_dir=$server_dir/storage/$innodb_name
-    build_dir=$innodb_dir/xtrabackup
 
     echo "Downloading sources"
-    auto_download $server_tarball libtar-1.2.11.tar.gz
+    auto_download $server_tarball
 
     test -d $server_dir && rm -r $server_dir
 
@@ -164,11 +171,9 @@ function build_all()
     build_server
 
     build_xtrabackup
-
-    build_tar4ibd
 }
 
-if ! test -f xtrabackup.c
+if ! test -f src/xtrabackup.c
 then
 	echo "`basename $0` must be run from the directory with XtraBackup sources"
 	usage
@@ -176,6 +181,7 @@ fi
 
 type=$1
 top_dir=`pwd`
+
 
 case "$type" in
 "innodb51_builtin" | "5.1")
@@ -228,7 +234,6 @@ case "$type" in
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup
 	innodb_dir=$server_dir/storage/innodb_plugin
-	build_dir=$innodb_dir/xtrabackup
 	xtrabackup_target=xtradb
 	configure_cmd="./configure --enable-local-infile \
 	    --enable-thread-safe-client \
@@ -244,8 +249,6 @@ case "$type" in
 
 	echo "Downloading sources"
 	
-	auto_download libtar-1.2.11.tar.gz
-
 	# Get Percona Server
 	if [ -d $branch_dir ]
 	then
@@ -277,13 +280,11 @@ case "$type" in
 
 	build_xtrabackup
 
-	build_tar4ibd
 	;;
 "xtradb55"|"galera55")
 	server_dir=$top_dir/Percona-Server-5.5
 	branch_dir=percona-server-5.5-xtrabackup
 	innodb_dir=$server_dir/storage/innobase
-	build_dir=$innodb_dir/xtrabackup
 	xtrabackup_target=xtradb55
 	# We need to build with partitioning due to MySQL bug #58632
 	configure_cmd="cmake . \
@@ -301,8 +302,6 @@ case "$type" in
 
 	echo "Downloading sources"
 	
-	auto_download libtar-1.2.11.tar.gz
-
 	# Get Percona Server
 	if [ -d $branch_dir ]
 	then
@@ -335,7 +334,6 @@ case "$type" in
 
 	build_xtrabackup
 
-	build_tar4ibd
 	;;
 *)
 	usage

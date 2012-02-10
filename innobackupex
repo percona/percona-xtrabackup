@@ -75,6 +75,7 @@ my $option_tables_file = '';
 my $option_throttle = '';
 my $option_sleep = '';
 my $option_compress = 999;
+my $option_compress_threads = 1;
 my $option_uncompress = '';
 my $option_export = '';
 my $option_use_memory = '';
@@ -98,6 +99,7 @@ my $option_extra_lsndir = '';
 my $option_remote_host = '';
 my $option_rsync = '';
 my $option_stream = '';
+my $stream_cmd = '';
 my $option_tmpdir = '';
 
 my $option_tar4ibd = '';
@@ -296,7 +298,7 @@ if ($option_copy_back) {
     close XTRABACKUP_BINARY;
 
     if ($option_stream) {
-      system("cd $option_tmpdir; tar chf - $xtrabackup_binary_file")
+      system("cd $option_tmpdir; $stream_cmd $xtrabackup_binary_file")
 	&& die "Failed to stream $xtrabackup_binary_file: $!";
       unlink "$option_tmpdir/$xtrabackup_binary_file";
     }
@@ -387,7 +389,7 @@ sub backup {
     start_ibbackup();
 
     # wait for ibbackup to suspend itself
-    if (!$option_remote_host && !$option_stream) {
+    if (!$option_remote_host) {
         wait_for_ibbackup_suspend();
     }
 
@@ -437,14 +439,6 @@ sub backup {
 
         system("scp $option_scp_opt '$option_tmpdir/xtrabackup_checkpoints' '$option_remote_host:$backup_dir/xtrabackup_checkpoints'")
             and Die "Failed to scp file '$option_remote_host:$backup_dir/xtrabackup_checkpoints': $!";
-        unlink "$option_tmpdir/xtrabackup_checkpoints" || Die "Failed to delete '$option_tmpdir/xtrabackup_checkpoints': $!";
-    } elsif ($option_stream eq 'tar') {
-        system("cd $option_tmpdir; tar chf - xtrabackup_logfile")
-            and Die "Failed to stream 'xtrabackup_logfile': $!";
-        unlink $tmp_logfile || Die "Failed to delete '$tmp_logfile': $!";
-
-        system("cd $option_tmpdir; tar chf - xtrabackup_checkpoints")
-            and Die "Failed to stream 'xtrabackup_checkpoints': $!";
         unlink "$option_tmpdir/xtrabackup_checkpoints" || Die "Failed to delete '$option_tmpdir/xtrabackup_checkpoints': $!";
     }
 
@@ -856,7 +850,10 @@ sub start_ibbackup {
         $options = $options . " --target-dir=$backup_dir";
     } else {
         #(datadir) for 'xtrabackup_suspended' and 'xtrabackup_checkpoints'
-        $options = $options . " --log-stream --target-dir=" . $option_tmpdir;
+        $options = $options . " --target-dir=" . $option_tmpdir;
+	if ($option_remote_host) {
+	  $options = $options . " --log-stream";
+	}
     }
 
     # prepare command line for running ibbackup
@@ -867,7 +864,8 @@ sub start_ibbackup {
         $options = $options . " --sleep=$option_sleep";
     }
     if ($option_compress) {
-        $options = $options . " --compress=$option_compress";
+        $options = $options . " --compress";
+        $options = $options . " --compress-threads=$option_compress_threads";
     }
     if ($option_use_memory) {
         $options = $options . " --use-memory=$option_use_memory";
@@ -891,7 +889,10 @@ sub start_ibbackup {
         $options = $options . " --tables_file='$option_tables_file'";
     }
     if ($option_parallel) {
-        $options = $options. " --parallel=$option_parallel";
+        $options = $options . " --parallel=$option_parallel";
+    }
+    if ($option_stream) {
+	$options = $options . " --stream=$option_stream";
     }
     $cmdline = "$option_ibbackup_binary $options";
 
@@ -903,7 +904,7 @@ sub start_ibbackup {
             # parent process
             $ibbackup_pid = $pid;
 
-            if($option_remote_host || $option_stream) {
+            if($option_remote_host) {
                 #direct copy to remote
                 my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
                 my $orig_ibdata_dir =
@@ -918,56 +919,25 @@ sub start_ibbackup {
                 my $subdir;
                 my @list;
 
-                if($option_remote_host) {
-                    if (system("ssh $option_ssh_opt $option_remote_host test -e $backup_dir/ib_logfile0")
-                            == 0) {
-                        print STDERR "$prefix Remove $option_remote_host:$backup_dir/ib_logfile*\n";
-                        system("ssh $option_ssh_opt $option_remote_host rm $backup_dir/ib_logfile\*")
-                            and Die "Failed to rm file '$backup_dir/ib_logfile*': $!";
-                    }
+                if (system("ssh $option_ssh_opt $option_remote_host test -e $backup_dir/ib_logfile0")
+                    == 0) {
+                    print STDERR "$prefix Remove $option_remote_host:$backup_dir/ib_logfile*\n";
+                    system("ssh $option_ssh_opt $option_remote_host rm $backup_dir/ib_logfile\*")
+                        and Die "Failed to rm file '$backup_dir/ib_logfile*': $!";
                 }
 
                 wait_for_ibbackup_suspend();
 
                 #InnoDB data files from original InnoDB data directory
                 print STDERR "\n$prefix Starting to backup InnoDB tables and indexes\n";
-                if($option_remote_host) {
-                    print STDERR "$prefix to '$backup_dir'\n";
-                }
+                print STDERR "$prefix to '$backup_dir'\n";
                 print STDERR "$prefix from original InnoDB data directory '$orig_ibdata_dir'\n";
                 foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
                     my $path = (split(/:/,$a))[0];
                     $path=~s/([\$\\\" ])/\\$1/g;
-                    if($option_remote_host) {
-                        print STDERR "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
-                        system("scp $option_scp_opt '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
-                            and Die "Failed to scp file '$path': $!";
-                    } elsif($option_stream eq 'tar') {
-                        my $ret = 0;
-                        my $tarcmd;
-                        print STDERR "$prefix Backing up as tar stream '$path'\n";
-                        if (!$option_tar4ibd) {
-                            $tarcmd = "tar chf - -b 32";
-                        } else {
-                            $tarcmd = "tar4ibd";
-                            if ($innodb_use_odirect) {
-                                $tarcmd = "$tarcmd -d";
-                            }
-                            $tarcmd = "$tarcmd -c";
-                        }
-                        $ret = system("cd $orig_ibdata_dir; $tarcmd $path") >> 8;
-                        if ($ret == 1) {
-                            print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
-                        } elsif ($ret != 0) {
-                            print STDERR "$prefix tar returned with exit code $ret.\n";
-                            if ( -e "$orig_ibdata_dir/$path" ) {
-                                Die "Failed to stream '$orig_ibdata_dir/$path': $!";
-                            }
-                            else {
-                                print STDERR "$prefix Ignoring nonexistent file '$orig_ibdata_dir/$path'.\n";
-                            }
-                        }
-                    }
+                    print STDERR "$prefix Backing up file '$orig_ibdata_dir/$path'\n";
+                    system("scp $option_scp_opt '$orig_ibdata_dir/$path' '$option_remote_host:$backup_dir/$path'")
+                      and Die "Failed to scp file '$path': $!";
                 }
 
                 #copy *.ibd files
@@ -1008,40 +978,18 @@ sub start_ibbackup {
                         if ($print_each_file) {
                             print STDERR "$prefix Backing up file '$file'\n";
                         }
-                        if($option_remote_host) {
-                            if (system("ssh $option_ssh_opt $option_remote_host test -e $backup_dir/$subdir")
-                                    != 0) {
-                                system("ssh $option_ssh_opt $option_remote_host mkdir $backup_dir/$subdir");
-                            }
-                            system("scp $option_scp_opt '$file' '$option_remote_host:$backup_dir/$subdir/'")
-                                and Die "Failed to scp file '$file': $!";
-                        } elsif($option_stream eq 'tar') {
-                            my $ret = 0;
-                            my $file_name = substr($file, rindex($file, '/') + 1);
-                            $file_name=~s/([\$\\\" ])/\\$1/g;
-                            if (!$option_tar4ibd) {
-                                $ret = system("cd $orig_datadir; tar chf - -b 32 $subdir/$file_name") >> 8;
-                            } else {
-                                $ret = system("cd $orig_datadir; tar4ibd -c $subdir/$file_name") >> 8;
-                            }
-                            if ($ret == 1) {
-                                print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
-                            } elsif ($ret != 0) {
-                                print STDERR "$prefix tar returned with exit code $ret.\n";
-                                if ( -e "$orig_datadir/$subdir/$file_name" ) {
-                                    Die "Failed to stream '$orig_datadir/$subdir/$file_name': $!";
-                                }
-                                else {
-                                    print STDERR "$prefix Ignoring nonexistent file '$orig_datadir/$subdir/$file_name'.\n";
-                                }
-                            }
+                        if (system("ssh $option_ssh_opt $option_remote_host test -e $backup_dir/$subdir")
+                            != 0) {
+                          system("ssh $option_ssh_opt $option_remote_host mkdir $backup_dir/$subdir");
                         }
-                    }
+                        system("scp $option_scp_opt '$file' '$option_remote_host:$backup_dir/$subdir/'")
+                          and Die "Failed to scp file '$file': $!";
+		      }
                 }
                 closedir(DIR);
             }
         } else {
-            if($option_remote_host || $option_stream) {
+            if($option_remote_host) {
                 open(STDOUT, "> $tmp_logfile")
                 || Die "Failed to open file '$tmp_logfile': $!"
             }
@@ -1259,8 +1207,8 @@ sub write_binlog_info {
     print FILE  "$info_lines[1]\n";
     close(FILE);
 
-    if ($option_stream eq 'tar') {
-        system("cd $option_tmpdir; tar chf - xtrabackup_binlog_info")
+    if ($option_stream) {
+        system("cd $option_tmpdir; $stream_cmd xtrabackup_binlog_info")
             and Die "Failed to stream 'xtrabackup_binlog_info': $!";
         unlink $binlog_info || Die "Failed to delete '$binlog_info': $!";
     }
@@ -1356,8 +1304,8 @@ sub write_slave_info {
     print FILE  "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n";
     close(FILE);
 
-    if ($option_stream eq 'tar') {
-        system("cd $option_tmpdir; tar chf - xtrabackup_slave_info")
+    if ($option_stream) {
+        system("cd $option_tmpdir; $stream_cmd xtrabackup_slave_info")
             and Die "Failed to stream 'xtrabackup_slave_info': $!";
         unlink $slave_info || Die "Failed to delete '$slave_info': $!";
     }
@@ -1716,10 +1664,9 @@ sub write_backup_config_file {
     if ($option_stream) {
         my $filename_dir = dirname($filename);
         my $filename_name = basename($filename);
-        if ($option_stream eq 'tar') {
-            system("cd $filename_dir; tar chf - $filename_name")
-                and Die "Failed to stream '$filename_name': $!";
-        }
+	system("cd $filename_dir; $stream_cmd $filename_name")
+	  and Die "Failed to stream '$filename_name': $!";
+
         unlink $filename || Die "Failed to delete '$filename': $!";
     }
 }
@@ -1753,7 +1700,8 @@ sub check_args {
     }
 
     # read command line options
-    $rcode = GetOptions('compress:i' => \$option_compress,
+    $rcode = GetOptions('compress' => \$option_compress,
+	    		'compress-threads=i' => \$option_compress_threads,
                         'help' => \$option_help,
                         'version' => \$option_version,
                         'throttle=i' => \$option_throttle,
@@ -1821,32 +1769,18 @@ sub check_args {
 	$option_compress = 0;
     }
 
+    if ($option_stream eq 'tar') {
+      $stream_cmd = 'tar chf -';
+    } elsif ($option_stream eq 'xbstream') {
+      $stream_cmd = 'xbstream -c'
+    }
+
     if (@ARGV < 1) {
         print STDERR "$prefix Missing command line argument\n";
         exit(1);
     } elsif (@ARGV > 1) {
         print STDERR "$prefix Too many command line arguments\n";
         exit(1);
-    }
-
-    if ($option_stream) {
-        if ($option_stream eq 'tar') {
-           if ( !$option_force_tar ) {
-              $option_tar4ibd = 'tar4ibd';
-            }
-            else {
-               print STDERR "Forcing tar instead of tar4ibd\n";
-            }
-        } elsif ($option_stream eq 'tar4ibd') {
-            $option_stream = 'tar';
-            $option_tar4ibd = 'tar4ibd';
-        } elsif ($option_stream eq 'cpio') {
-            print STDERR "$prefix --stream=cpio is not supported yet\n";
-            exit(1);
-        } else {
-            print STDERR "$prefix Unknown option --stream=$option_stream\n";
-            exit(1);
-        }
     }
 
     # get options file name
@@ -2089,16 +2023,16 @@ sub backup_files {
             } elsif ($option_remote_host) {
                 # Queue up files for one single scp per database.
                 push(@scp_files, "'$file'");
-            } elsif($option_stream eq 'tar') {
+            } elsif($option_stream) {
                 my $ret = 0;
                 my $file_name = substr($file, rindex($file, '/') + 1);
                 $file_name=~s/([\$\\\" ])/\\$1/g;
-                $ret = system("cd $source_dir; tar cf - $database/$file_name") >> 8;
-                if ($ret == 1) {
+                $ret = system("cd $source_dir; $stream_cmd $database/$file_name") >> 8;
+                if ($ret == 1 && $option_stream eq 'tar') {
                     print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                 # Check for non-zero exit code
                 } elsif ($ret != 0) {
-                    print STDERR "$prefix tar returned with exit code $ret.\n";
+                    print STDERR "$prefix $stream_cmd returned with exit code $ret.\n";
                     # Only treat as fatal cases where the file exists
                     if ( -e "$database/$file_name" ) {
                         Die "Failed to stream '$database/$file_name': $!";
@@ -2383,6 +2317,7 @@ sub get_option {
     return ${$group_hash_ref}{$option_name};
 }
 
+
 # check_if_required subroutine returns 1 if the specified database and
 # table needs to be backed up.
 #    Parameters:
@@ -2658,11 +2593,12 @@ innobackupex - Non-blocking backup tool for InnoDB, XtraDB and HailDB databases
 
 =head1 SYNOPOSIS
 
-innobackupex [--compress[=LEVEL]] [--include=REGEXP] [--user=NAME] 
+innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS]
+             [--include=REGEXP] [--user=NAME]
              [--password=WORD] [--port=PORT] [--socket=SOCKET]
              [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
-             [--slave-info] [--stream=tar] [--force-tar]
-             [--scpopt=OPTIONS-FOR-SCP] [--sshopt=OPTIONS-FOR-SSH]
+             [--slave-info] [--stream=tar|xbstream] [--force-tar]
+             [--scpopt=OPTIONS-FOR-SCP]  [--sshopt=OPTIONS-FOR-SSH]
              [--defaults-file=MY.CNF]
              [--databases=LIST] [--remote-host=HOSTNAME] [--no-lock] 
              [--tmpdir=DIRECTORY] [--tables-file=FILE]
@@ -2716,6 +2652,18 @@ indicates an error.
 =item --apply-log
 
 Prepare a backup in BACKUP-DIR by applying the transaction log file named "xtrabackup_logfile" located in the same directory. Also, create new transaction logs. The InnoDB configuration is read from the file "backup-my.cnf".
+
+=item --compress
+
+This option instructs xtrabackup to compress backup copies of InnoDB
+data files. It is passed directly to the xtrabackup child process. Try
+'xtrabackup --help' for more details.
+
+=item --compress-threads
+
+This option specifies the number of worker threads that will be used
+for parallel compression. It is passed directly to the xtrabackup
+child process. Try 'xtrabackup --help' for more details.
 
 =item --copy-back
 
@@ -2828,7 +2776,7 @@ This option specifies the socket to use when connecting to the local database se
 
 =item --stream=[tar|. . .]
 
-This option specifies the format in which to do the streamed backup.  The option accepts a string argument. The backup will be done to STDOUT in the specified format. Currently, the only supported format is tar. Uses tar4ibd, which is available in XtraBackup distributions.
+This option specifies the format in which to do the streamed backup.  The option accepts a string argument. The backup will be done to STDOUT in the specified format. Currently, the only supported formats are tar and xbstream. This option is passed directly to xtrabackup's --stream option.
 
 =item --tables-file=FILE
 

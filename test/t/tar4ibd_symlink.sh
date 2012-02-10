@@ -36,7 +36,7 @@ rm -f $topdir/customer_link.ibd
 vlog "Applying log"
 backup_dir=$topdir/backup
 cd $backup_dir
-$TAR -ixvf out.tar
+run_cmd $TAR -ixvf out.tar
 cd - >/dev/null 2>&1 
 
 innobackupex --apply-log $backup_dir

@@ -40,7 +40,7 @@ exit -1
 
 function die()
 {
-  vlog "$*"
+  vlog "$*" >&2
   exit 1
 }
 
@@ -62,14 +62,14 @@ function init_mysql_dir()
     vlog "Creating MySQL database"
     $MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$mysql_datadir" --tmpdir="$mysql_tmpdir"
 }
-function set_mysl_port()
+function set_mysql_port()
 {
     i=$mysql_port
     while [ $i -lt 65536 ]
     do
         # check if port $i is used
         vlog "Checking port $i"
-        port_status=`netstat -an | grep LISTEN | grep tcp | grep ":$i " || true`
+        port_status=`netstat -an | grep LISTEN | grep tcp | grep -w "$i " || true`
         if test -z "$port_status"
         then
             # port is not used
