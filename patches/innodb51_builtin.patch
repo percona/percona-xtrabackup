@@ -1435,3 +1435,16 @@
  	os_fast_mutex_free(&ut_list_mutex);
  
  	while ((block = UT_LIST_GET_FIRST(ut_mem_block_list))) {
+--- a/storage/innobase/btr/btr0cur.c
++++ b/storage/innobase/btr/btr0cur.c
+@@ -2921,9 +2921,8 @@
+ 
+ 	for (i = 0; i < n_unique; i++) {
+ 		ulint	rec_len;
+-		byte*	field;
+ 
+-		field = rec_get_nth_field(rec, offsets, i, &rec_len);
++		rec_get_nth_field(rec, offsets, i, &rec_len);
+ 
+ 		if (rec_len != UNIV_SQL_NULL) {
+ 			n_not_null[i]++;
