@@ -12,12 +12,13 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:K" --longoptions key:,nosign \
+go_out="$(getopt --options "k:Kb" --longoptions key:,nosign,binary \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
 
 BUILDPKG_KEY=''
+BINARY=''
 
 for arg
 do
@@ -25,6 +26,7 @@ do
     -- ) shift; break;;
     -k | --key ) shift; BUILDPKG_KEY="-pgpg -k$1"; shift;;
     -K | --nosign ) shift; BUILDPKG_KEY="-uc -us";;
+    -b | --binary ) shift; BINARY='-b';;
     esac
 done
 
@@ -100,7 +102,7 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
         dch -m -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
 
         # Issue dpkg-buildpackage command
-        dpkg-buildpackage $BUILDPKG_KEY
+        dpkg-buildpackage $BINARY $BUILDPKG_KEY
 
     )
  
