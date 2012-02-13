@@ -6233,6 +6233,10 @@ next_opt:
 		exit(EXIT_FAILURE);
 	}
 
+	/* Ensure target dir is not relative to datadir */
+	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, NULL);
+	xtrabackup_target_dir= xtrabackup_real_target_dir;
+
 	/* Redirect stdout to stderr for not doing a streaming backup or dumping
 	configuration for --print-param. */
 	if (!xtrabackup_stream && !xtrabackup_print_param && dup2(2, 1) < 0) {
