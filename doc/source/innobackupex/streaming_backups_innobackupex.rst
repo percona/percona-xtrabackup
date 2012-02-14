@@ -6,6 +6,8 @@ Streaming mode, supported by |XtraBackup|, sends backup to ``STDOUT`` in special
 
 This allows to pipe the stream to other programs, providing great flexibility to the output of it. For example, compression is achieved by piping the output to a compression utility.
 
+.. warning:: If both --stream and --incremental are passed to innobackupex, the incremental parameters are ignored and a full backup is created.
+
 To use this feature, you must use the :option:`--stream`, providing the format of the stream (only ``tar`` is supported at this moment) and where should the store the temporary files::
 
  $ innobackupex --stream=tar /tmp
