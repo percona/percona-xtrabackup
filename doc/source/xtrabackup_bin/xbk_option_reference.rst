@@ -121,7 +121,7 @@ Options
 
    This option specifies the destination directory for the backup. If the directory does not exist, :program:`xtrabackup` creates it. If the directory does exist and is empty, :program:`xtrabackup` will succeed. :program:`xtrabackup` will not overwrite existing files, however; it will fail with operating system error 17, ``file exists``.
 
-   Note that for :option:`--backup`, if this option is a relative path, it is interpreted as being relative to the :option:`--datadir`, not relative to the current working directory from which :program:`xtrabackup` is executed. For :option:`--prepare`, relative paths are interpreted as being relative to the current working directory.
+   If this option is a relative path, it is interpreted as being relative to the current working directory from which :program:`xtrabackup` is executed.
 
 .. option:: --throttle
 
