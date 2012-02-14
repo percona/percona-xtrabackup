@@ -109,7 +109,7 @@ Options
 
 .. option:: --incremental-lsn
 
-   This option accepts a string argument that specifies the log sequence number (:term:`LSN`) to use for the incremental backup. It is used with the :option:`--incremental` option. It is used instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer.
+   This option accepts a string argument that specifies the log sequence number (:term:`LSN`) to use for the incremental backup. It is used with the :option:`--incremental` option. It is used instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer. 
 
 .. option:: --extra-lsndir
 
@@ -121,7 +121,7 @@ Options
 
 .. option:: --stream
 
-   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the only supported format is :command:`tar`. Uses :doc:`tar4ibd <../tar4ibd/tar4ibd_binary>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.
+   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the only supported format is :command:`tar`. Uses :doc:`tar4ibd <../tar4ibd/tar4ibd_binary>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.  If both :option:`--stream` and :option:`--incremental` are passed to innobackupex, the incremental parameters are ignored and a full backup is created.
 
 .. option:: --tmpdir
 
@@ -135,7 +135,7 @@ Options
 
    This option forces the use of :command:`tar` when creating a streamed backup, rather than :program:`tar4ibd`, which is the default.
 
-.. option:: --scp-opt = '-Cp -c arcfour'
+.. option:: --scpopt = '-Cp -c arcfour'
 
    This option accepts a string argument that specifies the command line options to pass to :command:`scp` when the option :option:`--remost-host` is specified. If the option is not specified, the default options are ``-Cp -c arcfour``.
 
