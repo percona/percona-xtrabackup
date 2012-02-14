@@ -779,6 +779,8 @@ static
 fil_node_t *
 datafiles_iter_next(datafiles_iter_t *it, ibool *space_changed)
 {
+	fil_node_t *new_node;
+
 	os_mutex_enter(it->mutex);
 
 	*space_changed = FALSE;
@@ -808,9 +810,10 @@ datafiles_iter_next(datafiles_iter_t *it, ibool *space_changed)
 	it->node = UT_LIST_GET_FIRST(it->space->chain);
 
 end:
+	new_node = it->node;
 	os_mutex_exit(it->mutex);
 
-	return it->node;
+	return new_node;
 }
 
 static
