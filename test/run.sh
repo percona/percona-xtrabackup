@@ -87,7 +87,7 @@ function set_vars()
     # appropriately
     if test "`basename $PWD`" = "test"
     then
-	PATH="$PWD/..:$PWD/../libtar-1.2.11/libtar:$PWD/../Percona-Server-5.5/storage/innobase/xtrabackup:$PWD/../Percona-Server/storage/innodb_plugin/xtrabackup:$PWD/../mysql-5.1/storage/innobase/xtrabackup:$PWD/../mysql-5.1/storage/innodb_plugin/xtrabackup:$PWD/../mysql-5.5/storage/innobase/xtrabackup:$PATH"
+	PATH="$PWD/..:$PWD/../src:$PATH"
     fi
 
     PATH="${MYSQL_BASEDIR}/bin:$PATH"

@@ -22,7 +22,7 @@ vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 innobackupex --copy-back $topdir/backup >>$topdir/stdout 2>>$topdir/stderr
 
-if [ "`wc -l $topdir/stdout`" -gt 0 ]
+if [ "`cat $topdir/stdout | wc -l`" -gt 0 ]
 then
     vlog "Got the following output on stdout:"
     cat $topdir/stdout

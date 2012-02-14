@@ -16,10 +16,10 @@ mkdir -p $topdir/backup
 innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 stop_mysqld
 
-# See if tar4ibd was using O_DIRECT
-if ! grep "tar4ibd: using O_DIRECT for the input file" $OUTFILE ;
+# See if xtrabackup was using O_DIRECT
+if ! grep "xtrabackup: using O_DIRECT" $OUTFILE ;
 then
-  vlog "tar4ibd was not using O_DIRECT for the input file."
+  vlog "xtrabackup was not using O_DIRECT for the input file."
   exit -1
 fi
 
