@@ -1392,21 +1392,6 @@ to ask it where it will be copying data from.  You can use the output to ensure 
 .B "xtrabackup"
 and your script are working on the same dataset.
 
-.SS " Log Streaming "
-
-
-You can instruct 
-.B "xtrabackup"
-to omit copying data files, and simply stream the log file to its standard output instead with 
-.B "--log-stream"
-.  This automatically adds the 
-.B "--suspend-at-end"
-option.  Your script can then perform tasks such as streaming remote backups by piping the log files into an SSH connection and copying the data files to another server with a tool such as 
-.B "rsync"
-or 
-.B "tar4ibd"
-.
-
 .SH " XtraBackup Exit Codes "
 
 

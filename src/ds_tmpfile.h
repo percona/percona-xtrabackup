@@ -1,7 +1,7 @@
 /******************************************************
-Copyright (c) 2011 Percona Inc.
+Copyright (c) 2012 Percona Inc.
 
-Streaming interface for XtraBackup.
+tmpfile datasink for XtraBackup.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,11 +18,11 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-#ifndef XTRABACKUP_STREAM_H
-#define XTRABACKUP_STREAM_H
+#ifndef DS_TMPFILE_H
+#define DS_TMPFILE_H
 
 #include "datasink.h"
 
-extern datasink_t datasink_stream;
+extern datasink_t datasink_tmpfile;
 
 #endif

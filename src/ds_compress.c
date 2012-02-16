@@ -25,8 +25,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <zlib.h>
 #include "common.h"
 #include "datasink.h"
-#include "stream.h"
-#include "local.h"
+#include "ds_stream.h"
+#include "ds_local.h"
 
 #define COMPRESS_CHUNK_SIZE (64 * 1024UL)
 #define MY_QLZ_COMPRESS_OVERHEAD 400
@@ -50,20 +50,16 @@ typedef struct {
 } comp_thread_ctxt_t;
 
 typedef struct {
-	ds_ctxt_t 		*dest_ctxt;
 	comp_thread_ctxt_t	*threads;
 	uint			nthreads;
 } ds_compress_ctxt_t;
 
 typedef struct {
-	datasink_t 		*dest_ds;
 	ds_file_t		*dest_file;
 	ds_compress_ctxt_t	*comp_ctxt;
 	size_t			bytes_processed;
 } ds_compress_file_t;
 
-extern ibool 	xtrabackup_stream;
-extern uint	xtrabackup_parallel;
 extern ibool	xtrabackup_compress_threads;
 
 static ds_ctxt_t *compress_init(const char *root);
@@ -81,10 +77,8 @@ datasink_t datasink_compress = {
 	&compress_deinit
 };
 
-static inline int write_uint32_le(datasink_t *sink, ds_file_t *file,
-				  ulong n);
-static inline int write_uint64_le(datasink_t *sink, ds_file_t *file,
-				  ulonglong n);
+static inline int write_uint32_le(ds_file_t *file, ulong n);
+static inline int write_uint64_le(ds_file_t *file, ulonglong n);
 
 static comp_thread_ctxt_t *create_worker_threads(uint n);
 static void destroy_worker_threads(comp_thread_ctxt_t *threads, uint n);
@@ -96,25 +90,12 @@ compress_init(const char *root)
 {
 	ds_ctxt_t		*ctxt;
 	ds_compress_ctxt_t	*compress_ctxt;
-	datasink_t		*dest_ds;
-	ds_ctxt_t		*dest_ctxt;
 	comp_thread_ctxt_t	*threads;
-
-	/* Decide whether the compressed data will be stored in local files or
-	streamed to an archive */
-	dest_ds = xtrabackup_stream ? &datasink_stream : &datasink_local;
-
-	dest_ctxt = dest_ds->init(root);
-	if (dest_ctxt == NULL) {
-		msg("compress: failed to initialize the target datasink.\n");
-		return NULL;
-	}
 
 	/* Create and initialize the worker threads */
 	threads = create_worker_threads(xtrabackup_compress_threads);
 	if (threads == NULL) {
 		msg("compress: failed to create worker threads.\n");
-		dest_ds->deinit(dest_ctxt);
 		return NULL;
 	}
 
@@ -123,12 +104,11 @@ compress_init(const char *root)
 				       MYF(MY_FAE));
 
 	compress_ctxt = (ds_compress_ctxt_t *) (ctxt + 1);
-	compress_ctxt->dest_ctxt = dest_ctxt;
 	compress_ctxt->threads = threads;
 	compress_ctxt->nthreads = xtrabackup_compress_threads;
 
-	ctxt->datasink = &datasink_compress;
 	ctxt->ptr = compress_ctxt;
+	ctxt->root = my_strdup(root, MYF(MY_FAE));
 
 	return ctxt;
 }
@@ -138,7 +118,6 @@ ds_file_t *
 compress_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 {
 	ds_compress_ctxt_t	*comp_ctxt;
-	datasink_t		*dest_ds;
 	ds_ctxt_t		*dest_ctxt;
  	ds_file_t		*dest_file;
 	char			new_name[FN_REFLEN];
@@ -146,21 +125,22 @@ compress_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 	ds_file_t		*file;
 	ds_compress_file_t	*comp_file;
 
+	xb_a(ctxt->pipe_ctxt != NULL);
+	dest_ctxt = ctxt->pipe_ctxt;
+
 	comp_ctxt = (ds_compress_ctxt_t *) ctxt->ptr;
-	dest_ctxt = comp_ctxt->dest_ctxt;
-	dest_ds = dest_ctxt->datasink;
 
 	/* Append the .qp extension to the filename */
 	fn_format(new_name, path, "", ".qp", MYF(MY_APPEND_EXT));
 
-	dest_file = dest_ds->open(dest_ctxt, new_name, mystat);
+	dest_file = ds_open(dest_ctxt, new_name, mystat);
 	if (dest_file == NULL) {
 		return NULL;
 	}
 
 	/* Write the qpress archive header */
-	if (dest_ds->write(dest_file, "qpress10", 8) ||
-	    write_uint64_le(dest_ds, dest_file, COMPRESS_CHUNK_SIZE)) {
+	if (ds_write(dest_file, "qpress10", 8) ||
+	    write_uint64_le(dest_file, COMPRESS_CHUNK_SIZE)) {
 		goto err;
 	}
 
@@ -171,10 +151,10 @@ compress_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 
 	/* Write the qpress file header */
 	name_len = strlen(new_name);
-	if (dest_ds->write(dest_file, "F", 1) ||
-	    write_uint32_le(dest_ds, dest_file, name_len) ||
+	if (ds_write(dest_file, "F", 1) ||
+	    write_uint32_le(dest_file, name_len) ||
 	    /* we want to write the terminating \0 as well */
-	    dest_ds->write(dest_file, new_name, name_len + 1)) {
+	    ds_write(dest_file, new_name, name_len + 1)) {
 		goto err;
 	}
 
@@ -183,7 +163,6 @@ compress_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 				       MYF(MY_FAE));
 	comp_file = (ds_compress_file_t *) (file + 1);
 	comp_file->dest_file = dest_file;
-	comp_file->dest_ds = dest_ds;
 	comp_file->comp_ctxt = comp_ctxt;
 	comp_file->bytes_processed = 0;
 
@@ -193,7 +172,7 @@ compress_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 	return file;
 
 err:
-	dest_ds->close(dest_file);
+	ds_close(dest_file);
 	return NULL;
 }
 
@@ -208,12 +187,10 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 	uint			nthreads;
 	uint			i;
 	const char		*ptr;
-	datasink_t		*dest_ds;
 	ds_file_t		*dest_file;
 
 	comp_file = (ds_compress_file_t *) file->ptr;
 	comp_ctxt = comp_file->comp_ctxt;
-	dest_ds = comp_file->dest_ds;
 	dest_file = comp_file->dest_file;
 
 	threads = comp_ctxt->threads;
@@ -262,8 +239,8 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 
 			ut_a(threads[i].to_len > 0);
 
-			if (dest_ds->write(dest_file, "NEWBNEWB", 8) ||
-			    write_uint64_le(dest_ds, dest_file,
+			if (ds_write(dest_file, "NEWBNEWB", 8) ||
+			    write_uint64_le(dest_file,
 					    comp_file->bytes_processed)) {
 				msg("compress: write to the destination stream "
 				    "failed.\n");
@@ -272,9 +249,8 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 
 			comp_file->bytes_processed += threads[i].from_len;
 
-			if (write_uint32_le(dest_ds, dest_file,
-					    threads[i].adler) ||
-			    dest_ds->write(dest_file, threads[i].to,
+			if (write_uint32_le(dest_file, threads[i].adler) ||
+			    ds_write(dest_file, threads[i].to,
 					   threads[i].to_len)) {
 				msg("compress: write to the destination stream "
 				    "failed.\n");
@@ -294,23 +270,21 @@ int
 compress_close(ds_file_t *file)
 {
 	ds_compress_file_t	*comp_file;
-	datasink_t		*dest_ds;
 	ds_file_t		*dest_file;
 
 	comp_file = (ds_compress_file_t *) file->ptr;
-	dest_ds = comp_file->dest_ds;
 	dest_file = comp_file->dest_file;
 
 	/* Write the qpress file trailer */
-	dest_ds->write(dest_file, "ENDSENDS", 8);
+	ds_write(dest_file, "ENDSENDS", 8);
 
 	/* Supposedly the number of written bytes should be written as a
 	"recovery information" in the file trailer, but in reality qpress
 	always writes 8 zeros here. Let's do the same */
 
-	write_uint64_le(dest_ds, dest_file, 0);
+	write_uint64_le(dest_file, 0);
 
-	dest_ds->close(dest_file);
+	ds_close(dest_file);
 
 	MY_FREE(file);
 
@@ -322,39 +296,37 @@ void
 compress_deinit(ds_ctxt_t *ctxt)
 {
 	ds_compress_ctxt_t 	*comp_ctxt;
-	ds_ctxt_t		*dest_ctxt;
-	datasink_t		*dest_ds;
+
+	xb_a(ctxt->pipe_ctxt != NULL);
 
 	comp_ctxt = (ds_compress_ctxt_t *) ctxt->ptr;;
 
 	destroy_worker_threads(comp_ctxt->threads, comp_ctxt->nthreads);
 
-	dest_ctxt = comp_ctxt->dest_ctxt;
-	dest_ds = dest_ctxt->datasink;
+	ds_destroy(ctxt->pipe_ctxt);
 
-	dest_ds->deinit(dest_ctxt);
-
+	MY_FREE(ctxt->root);
 	MY_FREE(ctxt);
 }
 
 static inline
 int
-write_uint32_le(datasink_t *sink, ds_file_t *file, ulong n)
+write_uint32_le(ds_file_t *file, ulong n)
 {
 	char tmp[4];
 
 	int4store(tmp, n);
-	return sink->write(file, tmp, sizeof(tmp));
+	return ds_write(file, tmp, sizeof(tmp));
 }
 
 static inline
 int
-write_uint64_le(datasink_t *sink, ds_file_t *file, ulonglong n)
+write_uint64_le(ds_file_t *file, ulonglong n)
 {
 	char tmp[8];
 
 	int8store(tmp, n);
-	return sink->write(file, tmp, sizeof(tmp));
+	return ds_write(file, tmp, sizeof(tmp));
 }
 
 static

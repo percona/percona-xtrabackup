@@ -46,7 +46,6 @@ Proficiency
    replication_ibk
    parallel_copy_ibk
    throttling_ibk
-   remote_backups_ibk
    importing_exporting_tables_ibk
    pit_recovery_ibk
 

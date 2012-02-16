@@ -18,69 +18,96 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-#ifndef XB_DATASINK_H
-#define XB_DATASINK_H
-
-#include <my_global.h>
-#include <my_dir.h>
-
-struct datasink_struct;
-typedef struct datasink_struct datasink_t;
-
-typedef struct ds_ctxt {
-	datasink_t	*datasink;
-	char 		*root;
-	void		*ptr;
-	struct ds_ctxt	*pipe_ctxt;
-} ds_ctxt_t;
-
-typedef struct {
-	void		*ptr;
-	char		*path;
-	datasink_t	*datasink;
-} ds_file_t;
-
-struct datasink_struct {
-	ds_ctxt_t *(*init)(const char *root);
-	ds_file_t *(*open)(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat);
-	int (*write)(ds_file_t *file, const void *buf, size_t len);
-	int (*close)(ds_file_t *file);
-	void (*deinit)(ds_ctxt_t *ctxt);
-};
-
-/* Supported datasink types */
-typedef enum {
-	DS_TYPE_LOCAL,
-	DS_TYPE_STREAM,
-	DS_TYPE_COMPRESS,
-	DS_TYPE_TMPFILE
-} ds_type_t;
+#include <my_base.h>
+#include "common.h"
+#include "datasink.h"
+#include "ds_compress.h"
+#include "ds_stream.h"
+#include "ds_local.h"
+#include "ds_tmpfile.h"
 
 /************************************************************************
 Create a datasink of the specified type */
-ds_ctxt_t *ds_create(const char *root, ds_type_t type);
+ds_ctxt_t *
+ds_create(const char *root, ds_type_t type)
+{
+	datasink_t	*ds;
+	ds_ctxt_t	*ctxt;
+
+	switch (type) {
+	case DS_TYPE_LOCAL:
+		ds = &datasink_local;
+		break;
+	case DS_TYPE_STREAM:
+		ds = &datasink_stream;
+		break;
+	case DS_TYPE_COMPRESS:
+		ds = &datasink_compress;
+		break;
+	case DS_TYPE_TMPFILE:
+		ds = &datasink_tmpfile;
+		break;
+	default:
+		msg("Unknown datasink type: %d\n", type);
+		return NULL;
+	}
+
+	ctxt = ds->init(root);
+	if (ctxt != NULL) {
+		ctxt->datasink = ds;
+	} else {
+		msg("Error: failed to initialize datasink.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	return ctxt;
+}
 
 /************************************************************************
 Open a datasink file */
-ds_file_t *ds_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat);
+ds_file_t *
+ds_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat)
+{
+	ds_file_t	*file;
+
+	file = ctxt->datasink->open(ctxt, path, stat);
+	if (file != NULL) {
+		file->datasink = ctxt->datasink;
+	}
+
+	return file;
+}
 
 /************************************************************************
 Write to a datasink file.
 @return 0 on success, 1 on error. */
-int ds_write(ds_file_t *file, const void *buf, size_t len);
+int
+ds_write(ds_file_t *file, const void *buf, size_t len)
+{
+	return file->datasink->write(file, buf, len);
+}
 
 /************************************************************************
 Close a datasink file.
 @return 0 on success, 1, on error. */
-int ds_close(ds_file_t *file);
+int
+ds_close(ds_file_t *file)
+{
+	return file->datasink->close(file);
+}
 
 /************************************************************************
 Destroy a datasink handle */
-void ds_destroy(ds_ctxt_t *ctxt);
+void
+ds_destroy(ds_ctxt_t *ctxt)
+{
+	ctxt->datasink->deinit(ctxt);
+}
 
 /************************************************************************
 Set the destination pipe for a datasink (only makes sense for compress and
 tmpfile). */
-void ds_set_pipe(ds_ctxt_t *ctxt, ds_ctxt_t *pipe_ctxt);
-
-#endif /* XB_DATASINK_H */
+void ds_set_pipe(ds_ctxt_t *ctxt, ds_ctxt_t *pipe_ctxt)
+{
+	ctxt->pipe_ctxt = pipe_ctxt;
+}

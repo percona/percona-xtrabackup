@@ -24,12 +24,14 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_global.h>
 #include <mysql_version.h>
 #include <fcntl.h>
+#include <stdarg.h>
+#include "innodb_int.h"
 
 #define xb_a(expr)							\
 	do {								\
 		if (!(expr)) {						\
 			msg("Assertion \"%s\" failed at %s:%lu\n",	\
-			    #expr, __FILE__, (unsigned long) __LINE__); \
+			    #expr, __FILE__, (ulint) __LINE__);		\
 			abort();					\
 		}							\
 	} while (0);
@@ -39,6 +41,18 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #else
 #define xb_ad(expr)
 #endif
+
+#define XB_DELTA_INFO_SUFFIX ".meta"
+
+typedef struct {
+	ulint	page_size;
+} xb_delta_info_t;
+
+typedef enum {
+	XB_STREAM_FMT_NONE,
+	XB_STREAM_FMT_TAR,
+	XB_STREAM_FMT_XBSTREAM
+} xb_stream_fmt_t;
 
 static inline int msg(const char *fmt, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
 static inline int msg(const char *fmt, ...)
@@ -64,10 +78,7 @@ static inline int msg(const char *fmt, ...)
 #define USE_POSIX_FADVISE
 #endif
 
-typedef enum {
-	XB_STREAM_FMT_NONE,
-	XB_STREAM_FMT_TAR,
-	XB_STREAM_FMT_XBSTREAM
-} xb_stream_fmt_t;
-
+void xtrabackup_io_throttling(void);
+my_bool xb_write_delta_metadata(const char *filename,
+				const xb_delta_info_t *info);
 #endif

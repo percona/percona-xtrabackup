@@ -115,17 +115,13 @@ Options
 
    This option accepts a string argument that specifies the directory in which to save an extra copy of the :file:`xtrabackup_checkpoints` file. It is passed directly to |xtrabackup|'s :option:`--extra-lsndir` option. See the :program:`xtrabackup` documentation for details.
 
-.. option:: --remote-host
-
-   This option accepts a string argument that specifies the remote host on which the backup files will be created, by using an ssh connection.
-
 .. option:: --stream
 
    This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the only supported format is :command:`tar`. Uses :doc:`tar4ibd <../tar4ibd/tar4ibd_binary>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.  If both :option:`--stream` and :option:`--incremental` are passed to innobackupex, the incremental parameters are ignored and a full backup is created.
 
 .. option:: --tmpdir
 
-   This option accepts a string argument that specifies the location where a temporary file will be stored. It should be used when :option:`--remote-host` or :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specifed, the default is to use the value of ``tmpdir`` read from the server configuration.
+   This option accepts a string argument that specifies the location where a temporary file will be stored. It should be used when :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming. This option specifies the location where that temporary file will be stored. If the option is not specifed, the default is to use the value of ``tmpdir`` read from the server configuration.
 
 .. option:: --tar4ibd
 
@@ -162,5 +158,4 @@ Options
    uses :program:`rsync` to copy all non-InnoDB files instead of
    spawning a separate :program:`cp` for each file, which can be much
    faster for servers with a large number of databases or tables.  This
-   option cannot be used together with :option:`--remote-host` or
-   :option:`--stream`.
+   option cannot be used together with :option:`--stream`.

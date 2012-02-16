@@ -12,10 +12,10 @@
 LIBS += -lpthread
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
 
-CFLAGS += -DXTRABACKUP_VERSION=\"$(XTRABACKUP_VERSION)\" -pedantic -Wall -Wundef -Wshadow  -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations  -Wno-redundant-decls --std=gnu99
+CFLAGS += -g -DXTRABACKUP_VERSION=\"$(XTRABACKUP_VERSION)\" -pedantic -Wall -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations  -Wno-redundant-decls --std=gnu99 # -Wundef -Wshadow
 
 ifneq ($(DEBUG),)
-CFLAGS += -DXB_DEBUG=1
+CFLAGS += -DXB_DEBUG=1 -DUNIV_DEBUG
 endif
 
 TARGET=xtrabackup
@@ -23,7 +23,16 @@ PREFIX=/usr
 BIN_DIR=$(PREFIX)/bin
 
 COMMON_INC = -I. -I libarchive/libarchive -I quicklz
-XTRABACKUPOBJS = xtrabackup.o stream.o local.o compress.o xbstream_write.o \
+XTRABACKUPOBJS = xtrabackup.o \
+	ds_stream.o \
+	ds_local.o \
+	ds_compress.o \
+	ds_tmpfile.o \
+	datasink.o \
+	page_filt.o \
+	fil_cur.o \
+	innodb_int.o \
+	xbstream_write.o \
 	quicklz/quicklz.o
 XBSTREAMOBJS = xbstream.o xbstream_write.o xbstream_read.o
 
@@ -176,10 +185,10 @@ $(XTRABACKUPOBJS): %.o: %.c
 xbstream.o xbstream_read.o: %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
 
-xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) local.o
+xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o datasink.o
 	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
-xtrabackup.o: xtrabackup.c xb_regex.h
+xtrabackup.o: xtrabackup.c xb_regex.h page_filt.h fil_cur.h
 
 $(TARGET): $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBARCHIVE_A)
 	$(CC) $(CFLAGS) $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \

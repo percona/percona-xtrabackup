@@ -23,7 +23,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <hash.h>
 #include "common.h"
 #include "xbstream.h"
-#include "local.h"
+#include "ds_local.h"
 
 #define XBSTREAM_VERSION "1.0"
 #define XBSTREAM_BUFFER_SIZE (1024 * 1024UL)
@@ -35,6 +35,12 @@ typedef enum {
 	RUN_MODE_CREATE,
 	RUN_MODE_EXTRACT
 } run_mode_t;
+
+/* Need the following definitions to avoid linking with ds_stream.o,
+ds_compress.o, ds_tmpfile.o and their linking dependencies */
+datasink_t datasink_stream;
+datasink_t datasink_compress;
+datasink_t datasink_tmpfile;
 
 static run_mode_t 	opt_mode;
 static char *		opt_directory = NULL;
@@ -61,7 +67,7 @@ static struct my_option my_long_options[] =
 typedef struct {
 	char 		*path;
 	uint		pathlen;
-	off_t		offset;
+	my_off_t	offset;
 	ds_ctxt_t	*ds_ctxt;
 	ds_file_t	*file;
 } file_entry_t;
@@ -291,7 +297,6 @@ file_entry_t *
 file_entry_new(ds_ctxt_t *ds_ctxt, const char *path, uint pathlen)
 {
 	file_entry_t	*entry;
-	datasink_t	*ds = ds_ctxt->datasink;
 	ds_file_t	*file;
 
 	entry = (file_entry_t *) my_malloc(sizeof(file_entry_t),
@@ -306,7 +311,7 @@ file_entry_new(ds_ctxt_t *ds_ctxt, const char *path, uint pathlen)
 	}
 	entry->pathlen = pathlen;
 
-	file = ds->open(ds_ctxt, path, NULL);
+	file = ds_open(ds_ctxt, path, NULL);
 	if (file == NULL) {
 		msg("%s: failed to create file.\n", my_progname);
 		goto err;
@@ -343,10 +348,7 @@ static
 void
 file_entry_free(file_entry_t *entry)
 {
-	ds_ctxt_t	*ds_ctxt = entry->ds_ctxt;
-	datasink_t	*ds = ds_ctxt->datasink;
-
-	ds->close(entry->file);
+	ds_close(entry->file);
 	MY_FREE(entry->path);
 	MY_FREE(entry);
 }
@@ -354,14 +356,13 @@ file_entry_free(file_entry_t *entry)
 static
 int
 mode_extract(int argc __attribute__((unused)),
-	     char **argv __attribute((unused)))
+	     char **argv __attribute__((unused)))
 {
 	xb_rstream_t		*stream;
 	xb_rstream_result_t	res;
 	xb_rstream_chunk_t	chunk;
 	HASH			filehash;
 	file_entry_t		*entry;
-	datasink_t		*ds;
 	ds_ctxt_t		*ds_ctxt;
 
 	stream = xb_stream_read_new();
@@ -371,8 +372,7 @@ mode_extract(int argc __attribute__((unused)),
 	}
 
 	/* If --directory is specified, it is already set as CWD by now. */
-	ds = &datasink_local;
-	ds_ctxt = ds->init(".");
+	ds_ctxt = ds_create(".", DS_TYPE_LOCAL);
 
 	if (my_hash_init(&filehash, &my_charset_bin, START_FILE_HASH_SIZE,
 			  0, 0, (my_hash_get_key) get_file_entry_key,
@@ -420,7 +420,7 @@ mode_extract(int argc __attribute__((unused)),
 			goto err;
 		}
 
-		if (ds->write(entry->file, chunk.data, chunk.length)) {
+		if (ds_write(entry->file, chunk.data, chunk.length)) {
 			msg("%s: my_write() failed.\n", my_progname);
 			goto err;
 		}
@@ -433,13 +433,13 @@ mode_extract(int argc __attribute__((unused)),
 	}
 
 	my_hash_free(&filehash);
-	ds->deinit(ds_ctxt);
+	ds_destroy(ds_ctxt);
 	xb_stream_read_done(stream);
 
 	return 0;
 err:
 	my_hash_free(&filehash);
-	ds->deinit(ds_ctxt);
+	ds_destroy(ds_ctxt);
 	xb_stream_read_done(stream);
 
 	return 1;

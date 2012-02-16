@@ -1,7 +1,7 @@
 /******************************************************
 Copyright (c) 2011 Percona Inc.
 
-Local datasink interface for XtraBackup.
+Compression interface for XtraBackup.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,11 +18,11 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-#ifndef XB_LOCAL_H
-#define XB_LOCAL_H
+#ifndef DS_COMPRESS_H
+#define DS_COMPRESS_H
 
 #include "datasink.h"
 
-extern datasink_t datasink_local;
+extern datasink_t datasink_compress;
 
 #endif

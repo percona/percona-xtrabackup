@@ -57,7 +57,6 @@ local_init(const char *root)
 
 	ctxt = my_malloc(sizeof(ds_ctxt_t), MYF(MY_FAE));
 
-	ctxt->datasink = &datasink_local;
 	ctxt->root = my_strdup(root, MYF(MY_FAE));
 
 	return ctxt;

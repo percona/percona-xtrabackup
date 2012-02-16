@@ -88,7 +88,10 @@ stream_init(const char *root __attribute__((unused)))
 		}
 
 		if (archive_write_set_compression_none(a) != ARCHIVE_OK ||
-		    archive_write_set_format_ustar(a) != ARCHIVE_OK) {
+		    archive_write_set_format_ustar(a) != ARCHIVE_OK ||
+		    /* disable internal buffering so we don't have to flush the
+		    output in xtrabackup */
+		    archive_write_set_bytes_per_block(a, 0) != ARCHIVE_OK) {
 			msg("failed to set libarchive stream options.\n");
 			archive_write_finish(a);
 			goto err;
@@ -102,7 +105,6 @@ stream_init(const char *root __attribute__((unused)))
 	}
 
 
-	ctxt->datasink = &datasink_stream;
 	ctxt->ptr = stream_ctxt;
 
 	return ctxt;
