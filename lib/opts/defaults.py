@@ -61,6 +61,7 @@ def get_defaults(qp_rootdir, project_name):
                          , 'noshm':True
                          , 'suitepaths': [ os.path.join(qp_rootdir,'percona_tests/') ]
                          , 'suitelist' : ['cluster_basic','cluster_randgen']
+                         , 'wsrep_provider_path':'/usr/lib/galera/libgalera_smm.so'
                          })
 
 
