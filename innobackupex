@@ -564,7 +564,7 @@ sub if_directory_exists_and_empty {
         die "$is_directory_empty_comment directory does not exist!";
     }
     opendir (my $dh, $empty_dir) or die "Not a directory";
-    if ( ! scalar( grep { $_ ne "." && $_ ne ".." } readdir($dh)) == 0) {
+    if ( ! scalar( grep { $_ ne "." && $_ ne ".." && $_ ne "my.cnf" && $_ ne "master.info"} readdir($dh)) == 0) {
         die "$is_directory_empty_comment directory is not empty!";
     }
     closedir($dh);
