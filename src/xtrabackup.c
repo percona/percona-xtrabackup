@@ -6329,6 +6329,10 @@ next_opt:
 		exit(EXIT_FAILURE);
 	}
 
+	/* Ensure target dir is not relative to datadir */
+	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, NULL);
+	xtrabackup_target_dir= xtrabackup_real_target_dir;
+
 	if (xtrabackup_tables) {
 		/* init regexp */
 		char *p, *next;
