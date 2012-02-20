@@ -242,19 +242,32 @@ class mysqlBaseTestCase(unittest.TestCase):
                      , password=None
                      , schema='test'):
         try:
-            if password:
-                conn = MySQLdb.connect( host = '127.0.0.1' 
-                                  , port = server.master_port
-                                  , user = 'root'
-                                  , passwd=password 
-                                  , db = schema
-                                  , init_command = server.client_init_command)
+            if server.client_init_command:
+                if password:
+                    conn = MySQLdb.connect( host = '127.0.0.1' 
+                                          , port = server.master_port
+                                          , user = 'root'
+                                          , passwd=password 
+                                          , db = schema
+                                          , init_command = server.client_init_command)
+                else:
+                    conn = MySQLdb.connect( host = '127.0.0.1'
+                                          , port = server.master_port
+                                          , user = 'root'
+                                          , db = schema
+                                          , init_command=server.client_init_command)
             else:
-                conn = MySQLdb.connect( host = '127.0.0.1'
-                                  , port = server.master_port
-                                  , user = 'root'
-                                  , db = schema
-                                  , init_command=server.client_init_command)
+                if password:
+                    conn = MySQLdb.connect( host = '127.0.0.1'
+                                          , port = server.master_port
+                                          , user = 'root'
+                                          , passwd=password
+                                          , db = schema)
+                else:
+                    conn = MySQLdb.connect( host = '127.0.0.1'
+                                          , port = server.master_port
+                                          , user = 'root'
+                                          , db = schema)
 
             cursor = conn.cursor()
             cursor.execute(query)
@@ -275,11 +288,17 @@ class mysqlBaseTestCase(unittest.TestCase):
         results = {} 
         retcode = 0
         try:
-            conn = MySQLdb.connect( host = '127.0.0.1' 
-                                  , port = server.master_port
-                                  , user = 'root'
-                                  , db = schema
-                                  , init_command = server.client_init_command)
+            if server.client_init_command:
+                conn = MySQLdb.connect( host = '127.0.0.1' 
+                                      , port = server.master_port
+                                      , user = 'root'
+                                      , db = schema
+                                      , init_command = server.client_init_command)
+            else:
+                conn = MySQLdb.connect( host = '127.0.0.1'
+                                      , port = server.master_port
+                                      , user = 'root'
+                                      , db = schema)
             cursor = conn.cursor()
             for idx, query in enumerate(query_list):
                 try:

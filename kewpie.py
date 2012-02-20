@@ -43,6 +43,7 @@ from lib.modes.test_mode import handle_mode
 from lib.server_mgmt.server_management import serverManager
 from lib.sys_mgmt.system_management import systemManager
 from lib.test_mgmt.execution_management import executionManager
+from lib.opts.matrix_manager import matrixManager
 
 # functions
 def handle_sys_config(input_args, defaults):
@@ -83,6 +84,8 @@ test_executor = None
 execution_manager = None
 
 try:
+        # Instantinate option matrix
+        matrix_manager = matrixManager(variables)
         # Some system-level work is constant regardless
         # of the test to be run
         system_manager = systemManager(variables)
@@ -99,7 +102,7 @@ try:
         # Initialize test execution manager
         execution_manager = executionManager(server_manager, system_manager
                                         , test_manager, test_executor
-                                        , variables)
+                                        , variables, matrix_manager)
 
         # Execute our tests!
         execution_manager.execute_tests()

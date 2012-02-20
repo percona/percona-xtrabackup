@@ -44,6 +44,7 @@ def get_defaults(qp_rootdir, project_name):
                , 'valgrind_suppression':os.path.join(qp_rootdir,'valgrind.supp')
                , 'suitepaths': [ os.path.join(branch_root,'plugin')
                            , os.path.join(qp_rootdir,'suite')
+                           , os.path.join(qp_rootdir,'percona_tests')
                            ]
                , 'suitelist' : [] 
                , 'randgen_path': os.path.join(qp_rootdir,'randgen')

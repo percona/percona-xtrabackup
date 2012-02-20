@@ -217,6 +217,13 @@ def parse_qp_options(defaults):
       , help="Alter the seed value provided to the random query generator to vary test runs. (string) [%default]"
       )
 
+    test_exec_control_group.add_option(
+        "--opt-matrix"
+      , dest="optmatrix"
+      , default=''
+      , help="Specify custom options for tests in --opt-matrix=\"option1=value1,option2=value2\" format"
+      )
+
     parser.add_option_group(test_exec_control_group)
 
     test_control_group = optparse.OptionGroup(parser, 
