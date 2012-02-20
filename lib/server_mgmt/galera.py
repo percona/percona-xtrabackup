@@ -73,6 +73,7 @@ class mysqlServer(Server):
 
         # galera-specific info
         self.wsrep_cluster_addr=''
+        self.client_init_command = "SET wsrep_causal_reads=1"
       
         # important stuff
         self.langdir = self.code_tree.langdir

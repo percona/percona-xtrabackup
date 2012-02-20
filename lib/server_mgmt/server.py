@@ -95,6 +95,7 @@ class Server(object):
         self.need_to_set_master = False
 
         self.error_log = None
+        self.client_init_command = None
 
     def initialize_databases(self):
         """ Call schemawriter to make db.opt files """
