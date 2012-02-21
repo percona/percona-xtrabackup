@@ -2,7 +2,7 @@
 |Percona| |XtraBackup| 1.9.1 (2.0 BETA)
 =======================================
 
-Percona is glad to announce the release of Percona XtraBackup 1.9.1 on 16th February 2012. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/BETA/1.9.1/>`_. For this BETA release, we will not be making APT and YUM repositories available, just base deb and RPM packages.
+Percona is glad to announce the release of Percona XtraBackup 1.9.1 on 24th February 2012. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/BETA/1.9.1/>`_. For this BETA release, we will not be making APT and YUM repositories available, just base deb and RPM packages.
 
 This is a *BETA* quality release and is not inteded for production. If you want a high quality, Generally Available release, you should use the current Stable version - currently 1.6.5 in the 1.6 series at the time of writing.
 
@@ -15,7 +15,7 @@ New features
 
   * |Percona| |XtraBackup| now supports streaming incremental backups. In previous versions streaming backups were performed by the innobackupex script but incremental backups were done by the xtrabackup binary which calculated deltas by scanning data files. Which meant those two feature were mutually exclusive, i.e. one couldn't do streaming incremental backups (*Alexey Kopytov*).
 
-  * As part of the backup LRU dump is now included as well (*Sergei Glushchenko*).
+  * As part of the backup, the LRU dump is now included as well (*Sergei Glushchenko*).
 
   * Parallel compression has been added. This can now be used together with parallel file copying (*Alexey Kopytov*).
 
@@ -44,3 +44,6 @@ Bugs Fixed
 
   * Fixed bug :bug:`711207` |xtrabackup|: "Error: write to stdout" (*Sergei Glushchenko*).
 
+  * Streaming incremental backups are now supported. Bug fixed: :bug:`929885` (*Alexey Kopytov*)
+
+  * A backup will now include the LRU dump for fast server startup after restore. Bug fixed: :bug:`543134` (*Sergei Glushchenko*)
