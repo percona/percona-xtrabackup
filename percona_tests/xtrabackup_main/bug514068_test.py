@@ -61,6 +61,24 @@ class basicTest(mysqlBaseTestCase):
             output = None
         return retcode, output
 
+    def execute_cmd2(self, cmd, stdout_path, exec_path=None, get_output=False):
+        stdout_file = open(stdout_path,'w')
+        cmd_subproc = subprocess.Popen( cmd
+                                      , shell=True
+                                      , cwd=exec_path
+                                      , stdout = stdout_file
+                                      , stderr = subprocess.STDOUT
+                                      )
+        cmd_subproc.wait()
+        retcode = cmd_subproc.returncode
+        stdout_file.close()
+        if get_output:
+            data_file = open(stdout_path,'r')
+            output = ''.join(data_file.readlines())
+        else:
+            output = None
+        return retcode, output
+
         
     def setUp(self):
         master_server = servers[0] # assumption that this is 'master'
@@ -90,6 +108,21 @@ class basicTest(mysqlBaseTestCase):
             # populate our server with a test bed
             test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
             retcode, output = self.execute_randgen(test_cmd, test_executor, master_server)
+
+            """
+            # populate our server with a test bed
+            #test_cmd = "./gentest.pl --gendata=conf/percona/percona.zz"
+            #retcode, output = self.execute_randgen(test_cmd, test_executor, master_server)
+            xtrabackup_basedir = os.path.dirname(innobackupex)
+            datapath = os.path.join(xtrabackup_basedir,'test/inc/sakila-db')
+            file_names = ['sakila-schema.sql','sakila-data.sql']
+            for file_name in file_names:
+                file_name = os.path.join(datapath,file_name)
+                cmd = "%s -uroot --protocol=tcp --port=%d < %s" %(master_server.mysql_client, master_server.master_port, file_name)
+                retcode, output = self.execute_cmd2(cmd, output_path, exec_path, True)
+                self.assertEqual(retcode,0,output)
+            """
+
      
             # take a backup
             cmd = [ innobackupex
@@ -146,8 +179,10 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(master_server.status,1, 'Server failed restart from restored datadir...')
             
             # Check the server is ok
-            query = "SELECT COUNT(*) FROM test.DD"
+            query = "SELECT COUNT(*) FROM DD"
+            #query = "SELECT COUNT(*) FROM sakila.actor"
             expected_output = ((100L,),) 
+            #expected_output = ((200L,),)
             retcode, output = self.execute_query(query, master_server)
             self.assertEqual(output, expected_output, msg = "%s || %s" %(output, expected_output))
 

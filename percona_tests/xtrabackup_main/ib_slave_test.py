@@ -42,6 +42,7 @@ class basicTest(mysqlBaseTestCase):
         # remove backup path
         if os.path.exists(backup_path):
             shutil.rmtree(backup_path)
+        os.mkdir(backup_path)
 
 
     def test_basic1(self):
@@ -63,24 +64,30 @@ class basicTest(mysqlBaseTestCase):
             #self.assertEqual(retcode, 0, msg=output)
         
             # take a backup
-            cmd = ("%s --defaults-file=%s --user=root --port=%d"
-                   " --host=127.0.0.1 --no-timestamp --slave-info" 
-                   " --ibbackup=%s %s" %( innobackupex
-                                       , master_server.cnf_file
-                                       , master_server.master_port
-                                       , xtrabackup
-                                       , backup_path))
+            cmd = [ innobackupex
+                  ,"--defaults-file=%s" %master_server.cnf_file
+                  ,"--user=root"
+                  ,"--socket=%s" %master_server.socket_file 
+                  ,"--slave-info" 
+                  ," --ibbackup=%s" %xtrabackup
+                  ,backup_path   
+                  ]
+            cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
+            main_backup_path = self.find_backup_path(output)
             self.assertEqual(retcode, 0, msg = output)
 
             # shutdown our slave server
             slave_server.stop()
 
             # prepare our backup
-            cmd = ("%s --apply-log --no-timestamp --use-memory=500M "
-                   "--ibbackup=%s %s" %( innobackupex
-                                       , xtrabackup
-                                       , backup_path))
+            cmd = [ innobackupex
+                  , "--apply-log"
+                  , "--use-memory=500M"
+                  , "--ibbackup=%s" %xtrabackup
+                  , main_backup_path
+                  ]
+            cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
             self.assertEqual(retcode, 0, msg = output)
 
@@ -89,16 +96,28 @@ class basicTest(mysqlBaseTestCase):
             os.mkdir(slave_server.datadir)
         
             # restore from backup
-            cmd = ("%s --defaults-file=%s --copy-back"
-                  " --ibbackup=%s %s" %( innobackupex
-                                       , slave_server.cnf_file
-                                       , xtrabackup
-                                       , backup_path))
+            cmd = [ innobackupex
+                  , "--defaults-file=%s" %slave_server.cnf_file
+                  , "--copy-back"
+                  , "--ibbackup=%s" %xtrabackup
+                  , main_backup_path
+                  ]
+            cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
             self.assertEqual(retcode,0, msg = output)
 
             # get binlog info for slave 
-            slave_file_path = os.path.join(slave_server.datadir,'xtrabackup_binlog_info')
+            slave_file_name = 'xtrabackup_binlog_pos_innodb'
+            """
+            for slave_file in ['xtrabackup_slave_info', 'xtrabackup_binlog_pos_innodb']:
+                slave_file_path = os.path.join(slave_server.datadir,slave_file)
+                with open(slave_file_path,'r') as slave_data:
+                    print "File:  %s" %slave_file 
+                    for line in slave_data:
+                        print line, '<<<<'
+            # end test code
+            """
+            slave_file_path = os.path.join(slave_server.datadir,slave_file_name)
             slave_file = open(slave_file_path,'r')
             binlog_file, binlog_pos = slave_file.readline().strip().split('\t')
             binlog_file = os.path.basename(binlog_file)
@@ -110,22 +129,24 @@ class basicTest(mysqlBaseTestCase):
                             , msg = 'Server failed restart from restored datadir...')
 
             # update our slave's master info/ start replication
-            retcode, result_set = slave_server.set_master(master_server)
+            # we don't use server.set_master() method as we want
+            # to use binlog info produced by xtrabackup
+            # TODO: add these as parameters?
+            query = ("CHANGE MASTER TO "
+                     "MASTER_HOST='127.0.0.1',"
+                     "MASTER_USER='root',"
+                     "MASTER_PASSWORD='',"
+                     "MASTER_PORT=%d,"
+                     "MASTER_LOG_FILE='%s',"
+                     "MASTER_LOG_POS=%d" % ( master_server.master_port
+                                           , binlog_file
+                                           , int(binlog_pos)))
+            retcode, result_set = self.execute_query(query, slave_server)
             self.assertEqual(retcode, 0, msg=result_set)
 
-            # check the slave status
-            query = "SHOW SLAVE STATUS"
-            retcode, result_set = self.execute_query(query, slave_server)
-            result_set = result_set[0]
-            slave_master_port = result_set[3]
-            slave_binlog_file = result_set[5]
-            slave_io_running = result_set[10]
-            slave_sql_running = result_set[11]
-            self.assertEqual(slave_master_port, master_server.master_port, msg=slave_server.dump_errlog())
-            self.assertEqual(slave_binlog_file, binlog_file, msg=slave_server.dump_errlog())
-            self.assertEqual(slave_io_running, 'Yes', msg=slave_server.dump_errlog())
-            self.assertEqual(slave_sql_running, 'Yes', msg=slave_server.dump_errlog())
-            self.assertEqual(retcode,0, msg=result_set)
+            # TODO: check the slave status?
+            # /implement method to handle the check?
+            slave_server.slave_start()
 
             # compare master/slave states
             result = self.check_slaves_by_checksum(master_server,[slave_server])

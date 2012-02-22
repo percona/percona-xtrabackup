@@ -24,7 +24,7 @@ import shutil
 
 from lib.util.mysqlBaseTestCase import mysqlBaseTestCase
 
-server_requirements = [['--innodb-file-per-table']]
+server_requirements = [['--innodb_file_per_table']]
 servers = []
 server_manager = None
 test_executor = None
@@ -40,6 +40,7 @@ class basicTest(mysqlBaseTestCase):
         # remove backup path
         if os.path.exists(backup_path):
             shutil.rmtree(backup_path)
+        os.mkdir(backup_path)
 
     def load_table(self, table_name, row_count, server):
         queries = []
@@ -81,15 +82,17 @@ class basicTest(mysqlBaseTestCase):
             cmd = [ innobackupex
                   , "--defaults-file=%s" %master_server.cnf_file
                   , "--user=root"
-                  , "--port=%d" %master_server.master_port
-                  , "--host=127.0.0.1"
-                  , "--no-timestamp"
+                  , "--socket=%s" %master_server.socket_file
+                  #, "--port=%d" %master_server.master_port
+                  #, "--host=127.0.0.1"
+                  #, "--no-timestamp"
                   , "--ibbackup=%s" %xtrabackup
                   , backup_path
                   ]
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-            self.assertTrue(retcode==0,output)
+            self.assertEqual(retcode,0,output)
+            main_backup_path = self.find_backup_path(output) 
 
             # load more data
             row_count = 500
@@ -106,16 +109,18 @@ class basicTest(mysqlBaseTestCase):
             cmd = [ innobackupex
                   , "--defaults-file=%s" %master_server.cnf_file
                   , "--user=root"
-                  , "--port=%d" %master_server.master_port
-                  , "--host=127.0.0.1" 
-                  , "--no-timestamp"
+                  , "--socket=%s" %master_server.socket_file
+                  #, "--port=%d" %master_server.master_port
+                  #, "--host=127.0.0.1" 
+                  #, "--no-timestamp"
                   , "--incremental"
-                  , "--incremental-basedir=%s" %backup_path
+                  , "--incremental-basedir=%s" %main_backup_path
                   , "--ibbackup=%s" %xtrabackup
-                  , inc_backup_path
+                  , backup_path
                   ]
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
+            inc_backup_path = self.find_backup_path(output) 
             self.assertTrue(retcode==0,output)
         
             # shutdown our server
@@ -123,26 +128,30 @@ class basicTest(mysqlBaseTestCase):
 
             # prepare our main backup
             cmd = [ innobackupex
+                  , "--defaults-file=%s" %master_server.cnf_file
+                  , "--user=root"
+                  , "--socket=%s" %master_server.socket_file
                   , "--apply-log"
                   , "--redo-only"
-                  , "--no-timestamp"
                   , "--use-memory=500M"
                   , "--ibbackup=%s" %xtrabackup
-                  , backup_path
+                  , main_backup_path
                   ]
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-            self.assertTrue(retcode==0,output)
+            self.assertEqual(retcode,0,output)
 
             # prepare our incremental backup
             cmd = [ innobackupex
+                  , "--defaults-file=%s" %master_server.cnf_file
+                  , "--user=root"
+                  , "--socket=%s" %master_server.socket_file
                   , "--apply-log"
                   , "--redo-only"
-                  , "--no-timestamp"
                   , "--use-memory=500M"
                   , "--ibbackup=%s" %xtrabackup
                   , "--incremental-dir=%s" %inc_backup_path
-                  , backup_path
+                  , main_backup_path
                   ]
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
@@ -150,15 +159,17 @@ class basicTest(mysqlBaseTestCase):
 
             # do final prepare on main backup
             cmd = [ innobackupex
+                  , "--defaults-file=%s" %master_server.cnf_file
+                  , "--user=root"
+                  , "--socket=%s" %master_server.socket_file
                   , "--apply-log"
-                  , "--no-timestamp"
                   , "--use-memory=500M"
                   , "--ibbackup=%s" %xtrabackup
-                  , backup_path
+                  , main_backup_path
                   ]
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
-            self.assertTrue(retcode==0,output)
+            self.assertEqual(retcode, 0,msg = "Command: %s failed with output: %s" %(cmd,output))
 
 
             # remove old datadir
@@ -166,17 +177,21 @@ class basicTest(mysqlBaseTestCase):
             os.mkdir(master_server.datadir)
         
             # restore from backup
-            cmd = ("%s --defaults-file=%s --copy-back"
-                  " --ibbackup=%s %s" %( innobackupex
-                                       , master_server.cnf_file
-                                       , xtrabackup
-                                       , backup_path))
+            cmd = [ innobackupex
+                  , "--defaults-file=%s" %master_server.cnf_file
+                  , "--user=root"
+                  , "--socket=%s" %master_server.socket_file
+                  , "--copy-back"
+                  , "--ibbackup=%s" %xtrabackup
+                  , main_backup_path
+                  ]
+            cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
             self.assertTrue(retcode==0, output)
 
             # restart server (and ensure it doesn't crash)
             master_server.start()
-            self.assertTrue(master_server.status==1, 'Server failed restart from restored datadir...')
+            self.assertTrue(master_server.ping(quiet=True), 'Server failed restart from restored datadir...')
 
             # Get a checksum for our table
             query = "CHECKSUM TABLE %s" %table_name

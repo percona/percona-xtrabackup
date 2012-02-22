@@ -70,9 +70,7 @@ def handle_sys_config(input_args, defaults):
 # We base / look for a lot of things based on the location of
 # the kewpie.py file
 qp_rootdir = os.path.dirname(os.path.abspath(sys.argv[0]))
-#project_name = 'percona-xtradb-cluster'
-#project_name = 'xtrabackup'
-project_name = None
+project_name = 'xtrabackup'
 defaults = get_defaults(qp_rootdir,project_name)
 defaults = handle_sys_config(sys.argv, defaults)
 variables = test_run_options.parse_qp_options(defaults)

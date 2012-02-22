@@ -56,7 +56,7 @@ class basicTest(mysqlBaseTestCase):
             backup_path = os.path.join(master_server.vardir, '_xtrabackup')
             output_path = os.path.join(master_server.vardir, 'innobackupex.out')
             exec_path = os.path.dirname(innobackupex)
-            data_file_path = os.path.join(master_server.std_data,'bug723097.sql')
+            data_file_path = os.path.join(os.path.dirname(innobackupex),'test/inc/bug723097.sql')
 
             # populate our server with a test bed
             cmd = [ master_server.mysql_client

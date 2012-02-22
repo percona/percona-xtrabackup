@@ -93,11 +93,11 @@ class basicTest(mysqlBaseTestCase):
             self.assertEqual(retcode,1,output)
             expected_output1 = "xtrabackup: Error: Cannot find log file ib_logfile0."
             expected_output2 = "xtrabackup: Error: to use the statistics feature, you need a clean copy of the database including correctly sized log files, so you need to execute with --prepare twice to use this functionality on a backup."
-            output_split = output.split('\n')
-            line1 = output_split[7].strip()
-            line2 = output_split[8].strip()
-            self.assertEqual(line1, expected_output1, output)
-            self.assertEqual(line2, expected_output2, msg="%s | %s" %(line2, expected_output2)) 
+            output_split = output.strip().split('\n')[-2:] # last 2 lines
+            line1 = output_split[0].strip()
+            line2 = output_split[1].strip()
+            self.assertEqual(line1, expected_output1, msg= "Expected: %s || actual: %s || full: %s" %(expected_output1, line1, output))
+            self.assertEqual(line2, expected_output2, msg= "Expected: %s || actual: %s || full: %s" %(expected_output2, line2, output))
 
             # second prepare
             cmd = [ xtrabackup
