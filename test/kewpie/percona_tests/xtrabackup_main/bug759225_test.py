@@ -88,8 +88,8 @@ class basicTest(mysqlBaseTestCase):
             cmd = " ".join(cmd)
             retcode, output = self.execute_cmd(cmd, output_path, exec_path, True)
             self.assertTrue(retcode==0,output)
-            expected_output = "tar4ibd: using O_DIRECT for the input file"
-            self.assertTrue(expected_output in output, msg=output)
+            expected_output = "xtrabackup: using ALL_O_DIRECT"
+            self.assertTrue(expected_output in output, msg="%s || %s" %(expected_output, output))
 
             # stop the server
             master_server.stop()
