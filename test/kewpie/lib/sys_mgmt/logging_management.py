@@ -32,6 +32,7 @@
 
 """ Simple replacement for python logging module that doesn't suck """
 
+import os
 import time, sys
 
 
@@ -50,6 +51,10 @@ class loggingManager():
 
         self.log_file = sys.stdout
         self.subunit_file = variables['subunitoutfile']
+        # TODO - introduce an option to manually toggle
+        # whether or not to reset or append to pre-existing file
+        if os.path.exists(self.subunit_file):
+            os.remove(self.subunit_file)
         self.report_fmt = '{0:<42} {1} {2:>8}'
         self.report_started = 0
         self.thick_line = '='*(80 - len("20110420-105402  "))
