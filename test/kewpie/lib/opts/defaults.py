@@ -68,7 +68,6 @@ def get_defaults(qp_rootdir, project_name):
 
     if project_name == 'xtrabackup':
         # Xtrabackup tree default values
-        # branch root = xtrabackup/tests/kewpie
         branch_root = os.path.dirname(branch_root)
         defaults.update( { 'basedir': os.path.join(branch_root,'test/server')
                          , 'clientbindir': os.path.join(branch_root,'test/server/client')
@@ -77,6 +76,7 @@ def get_defaults(qp_rootdir, project_name):
                          , 'valgrind_suppression':os.path.join(qp_rootdir,'valgrind.supp')
                          , 'suitepaths': [ os.path.join(qp_rootdir,'percona_tests') ] 
                          , 'suitelist' : ['xtrabackup_main']
+                         , 'subunit_file': os.path.join(branch_root,'test/test_results.subunit')
                          , 'xtrabackuppath': find_xtrabackup_path(branch_root) 
                          , 'innobackupexpath': os.path.join(branch_root,'innobackupex')
                          })
