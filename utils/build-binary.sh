@@ -75,7 +75,7 @@ else
 fi
 
 SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
-test -e "$SOURCEDIR/Makefile" || exit 2
+test -e "$SOURCEDIR/VERSION" || exit 2
 
 # Read XTRABACKUP_VERSION from the VERSION file
 . $SOURCEDIR/VERSION
@@ -111,25 +111,26 @@ export AUTO_DOWNLOAD=yes
     (
         cd "xtrabackup-$XTRABACKUP_VERSION"
 
-        bash utils/build.sh xtradb55
-        bash utils/build.sh xtradb
-        bash utils/build.sh 5.1
-
         # Install the files
         mkdir "$INSTALLDIR/bin" "$INSTALLDIR/share"
 
-        install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/xtrabackup \
-            "$INSTALLDIR/bin"
-        install -m 755 Percona-Server-5.5/storage/innobase/xtrabackup/xtrabackup_55 \
-            "$INSTALLDIR/bin"
+        bash utils/build.sh xtradb55
+        install -m 755 src/xtrabackup_55 "$INSTALLDIR/bin"
+
+        bash utils/build.sh xtradb
+        install -m 755 src/xtrabackup "$INSTALLDIR/bin"
+
+        bash utils/build.sh 5.1
+        install -m 755 src/xtrabackup_51 "$INSTALLDIR/bin"
+
+        install -m 755 src/xbstream "$INSTALLDIR/bin"
+
         install -m 755 innobackupex "$INSTALLDIR/bin"
         ln -s innobackupex "$INSTALLDIR/bin/innobackupex-1.5.1"
-        install -m 755 mysql-5.1/storage/innobase/xtrabackup/xtrabackup_51 \
-            "$INSTALLDIR/bin"
-        install -m 755 libtar-1.2.11/libtar/tar4ibd "$INSTALLDIR/bin"
+
         cp -R test "$INSTALLDIR/share/xtrabackup-test"
 
-    )
+    ) || false
 
     $TAR czf "xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
         --owner=0 --group=0 -C "$INSTALLDIR/../" "xtrabackup-$XTRABACKUP_VERSION"
@@ -137,7 +138,7 @@ export AUTO_DOWNLOAD=yes
     # Clean up build dir
     rm -rf "xtrabackup-$XTRABACKUP_VERSION"
     
-)
+) || false
 
 # Clean up
 rm -rf "$INSTALLDIR"
