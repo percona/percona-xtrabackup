@@ -13,11 +13,11 @@ This release contains all of the features and bug fixes in :doc:`Percona XtraBac
 New features
 ------------
 
+  * |Xtrabackup| now supports compressed backups. These backups can be done in a parallel way, thus utilizing multiple CPU cores if needed. In previous versions, compression was only possible with streaming backups + external (usually single-threaded) compression utilities, which also had a number of other limitations (e.g. could not be used with parallel file copying, it was required to uncompress the entire backup to restore a single table)  (*Alexey Kopytov*).
+
   * |Percona| |XtraBackup| now supports streaming incremental backups. In previous versions streaming backups were performed by the innobackupex script but incremental backups were done by the xtrabackup binary which calculated deltas by scanning data files. Which meant those two feature were mutually exclusive, i.e. one couldn't do streaming incremental backups (*Alexey Kopytov*).
 
   * As part of the backup LRU dump is now included as well (*Sergei Glushchenko*).
-
-  * Parallel compression has been added. This can now be used together with parallel file copying (*Alexey Kopytov*).
 
 Bugs Fixed
 ----------
@@ -26,19 +26,19 @@ Bugs Fixed
 
   * When preparing an incremental backups, |innobackupex| should copy all non-InnoDB files (including .frm files and non-InnoDB tables) to the full backup directory. Otherwise, any changes to .frm and/or non-InnoDB tables made between full and incremental backups lead to unusable backups. Bug fixed: :bug:`759701` (*Alexey Kopytov*).
 
-  * |xtrabackup| was using to MySQL's datadir as it's target-dir. Target directory is now a required option. Bug fixed :bug:`489290` (*Sergei Glushchenko*).
+  * |xtrabackup| was using MySQL's datadir as it's target-dir. Target directory now defaults to the current directory, rather than MySQL's datadir. Bug fixed :bug:`489290` (*Sergei Glushchenko*).
 
-  * When using parallel backup option in |xtrabackup|, backups would fail with "Operating system error number 17". Bug fixed: :bug:`900175` (*Alexey Kopytov*).
+  * When using parallel backup option in |xtrabackup|, backups could fail with "Operating system error number 17". Bug fixed: :bug:`900175` (*Alexey Kopytov*).
 
-  * Regression from 2.0 branch caused "error: log block numbers mismatch". Bug fixed: :bug:`917823`.
+  * Regression in 2.0 branch caused "error: log block numbers mismatch". Bug fixed: :bug:`917823` (*Alexey Kopytov*).
 
-  * |xtrabackup| function used a global buffer to store incremental page deltas. That didn't work with parallel backups. Bug fixed: :bug:`826632` (*Alexey Kopytov*).
+  * |xtrabackup| incremental backups didn't work with --parallel backups option. Bug fixed: :bug:`826632` (*Alexey Kopytov*).
 
-  * Files xtrabackup_checkpoints and xtrabackup_suspended should be kept in tmpdir, since user running innobackupex may not have permissions to write mysql datadir. Bug fixed: :bug:`691090` (*Sergei Glushchenko*).
+  * |innobackupx| when used for streaming backups, stored some of the files in the server's datadir, thus requiring write access to it. The fix is that it now uses tmpdir instead for streaming backups. For local ones, the backup target directory is used as before. Bug fixed: :bug:`691090` (*Sergei Glushchenko*).
 
   * Unintentional change of innodb_version format in 5.1.60. caused fatal error in |xtrabackup|. Regexps used to detect innodb_version were updated. Bug fixed: :bug:`910206` (*Alexey Kopytov*).
 
-  * When using --remote-host to a non-standard SSH port, the |xtrabackup| wasn't passing the correct port to both ssh and scp, which use different options for port number (-p vs -P). Bug fixed: :bug:`733658`  (*Sergei Glushchenko*).
+  * When using --remote-host to a non-standard SSH port, the |xtrabackup| wasn't passing the correct port to both ssh and scp, which use different options for port number (-p vs -P). It's now possible to pass custom SSH options to innobackupex, such as a non-standard port, with the --sshopt option. Bug fixed: :bug:`733658`  (*Sergei Glushchenko*).
 
   * While running an incremental backup through innobackupex, you could get an error when the script was attempting to copy all the MYI/MYD/...etc files if a table was removed during the process of copying each file. Bug fixed: :bug:`924026` (*Lachlan Mulcahy*).
 
