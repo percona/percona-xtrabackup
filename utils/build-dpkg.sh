@@ -89,12 +89,6 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
     (
         cd "xtrabackup-$XTRABACKUP_VERSION"
 
-        # Download required sources
-        if ! test -r libtar-1.2.11.tar.gz
-        then
-            wget http://www.percona.com/downloads/community/libtar-1.2.11.tar.gz
-        fi
-
         # Move debian directory
         mv utils/debian .
 
