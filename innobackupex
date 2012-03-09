@@ -1798,6 +1798,11 @@ sub check_args {
 	exit(1);
     }
 
+    if ($option_remote_host) {
+	print STDERR "\nWARNING: --remote-host is DEPRECATED and will be ",
+	"removed in Percona XtraBackup 2.0 in favor of streaming backups.\n";
+    }
+
     print STDERR "\n";
 
     parse_databases_option_value();
@@ -2690,7 +2695,7 @@ This option is passed directly to xtrabackup's --apply-log-only option. This for
 
 =item --remote-host=HOSTNAME 
 
-This option specifies the remote host on which the backup files will be created, by using an ssh connection.  The option accepts a string argument.
+This option is DEPRECATED and will be removed in Percona XtraBackup 2.0. In Percona XtraBackup 2.0, you should use streaming backups instead. This option specifies the remote host on which the backup files will be created, by using an ssh connection.  The option accepts a string argument.
 
 =item --safe-slave-backup
 
