@@ -93,7 +93,7 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
         mv utils/debian .
 
         # Update distribution
-        dch -m -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
+        dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
 
         # Issue dpkg-buildpackage command
         dpkg-buildpackage $BINARY $BUILDPKG_KEY
