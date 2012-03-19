@@ -10,16 +10,18 @@
 %define __os_install_post /usr/lib/rpm/brp-compress
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
-Name: xtrabackup
+Name: percona-xtrabackup
 Version: %{xtrabackup_version}
 Release: %{release}
 Group: Server/Databases
 License: GPLv2
-Packager: Vadim Tkachenko <vadim@percona.com>
+Packager: Percona Development Team <mysql-dev@percona.com>
 URL: http://www.percona.com/software/percona-xtrabackup/
-Source: xtrabackup-%{xtrabackup_version}.tar.gz
+Source: percona-xtrabackup-%{xtrabackup_version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Requires: mysql
+Provides: xtrabackup
+Obsoletes: xtrabackup
 BuildRequires: libaio-devel
 
 %description

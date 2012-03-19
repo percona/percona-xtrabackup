@@ -122,9 +122,10 @@ export MYSQL_RPMBUILD_TEST="$TEST"
     mkdir -p BUILD SOURCES RPMS SRPMS
 
     # Copy source to SOURCE dir -- create a suitable tar
-    rm -f "SOURCE/xtrabackup-$XTRABACKUP_VERSION.tar.gz"
+    rm -f "SOURCE/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz"
 
-    bzr export "$WORKDIR_ABS/SOURCES/xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
+    bzr export \
+        "$WORKDIR_ABS/SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
             "$SOURCEDIR"
 
     # Issue RPM command
