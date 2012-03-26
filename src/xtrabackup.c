@@ -3125,7 +3125,6 @@ skip_filter:
 
 #ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
 	if (my_stat(node->name, &src_stat, MYF(MY_WME)) == NULL) {
@@ -3187,6 +3186,10 @@ read_retry:
 		if (!success) {
 			goto error;
 		}
+
+#ifdef USE_POSIX_FADVISE
+		posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 
 		/* check corruption and retry */
 		for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += page_size) {
@@ -3538,6 +3541,12 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 		rc = my_write(dst_log_fd, log_sys->buf, write_size,
 			      MYF(MY_WME | MY_NABP));
 
+#ifdef USE_POSIX_FADVISE
+		if (!xtrabackup_log_only) {
+			posix_fadvise(dst_log_fd, 0, 0, POSIX_FADV_DONTNEED);
+		}
+#endif
+
 		if(rc) {
 			msg("xtrabackup: Error: write to logfile failed\n");
 			goto error;
@@ -3792,7 +3801,6 @@ xtrabackup_stream_temp_logfile(File src_file, ds_ctxt_t *ds_ctxt)
 
 #ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
 	if (my_seek(src_file, 0, SEEK_SET, MYF(0)) == MY_FILEPOS_ERROR) {
@@ -3816,6 +3824,9 @@ xtrabackup_stream_temp_logfile(File src_file, ds_ctxt_t *ds_ctxt)
 	buf = (uchar *) ut_malloc(buf_size);
 
 	while ((bytes = my_read(src_file, buf, buf_size, MYF(MY_WME))) > 0) {
+#ifdef USE_POSIX_FADVISE
+		posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 		if (ds->write(dst_file, buf, bytes)) {
 			msg("xtrabackup: error: cannot write to stream "
 			    "for %s.\n", XB_LOG_FILENAME);
@@ -4228,9 +4239,6 @@ reread_log_header:
 				exit(EXIT_FAILURE);
 			}
 		}
-#ifdef USE_POSIX_FADVISE
-		posix_fadvise(dst_log_fd, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 	} else {
 		dst_log_fd = dup(fileno(stdout));
 		if (dst_log_fd < 0) {
