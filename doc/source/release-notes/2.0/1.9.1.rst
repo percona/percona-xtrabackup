@@ -34,7 +34,7 @@ Bugs Fixed
 
   * |xtrabackup| incremental backups didn't work with --parallel backups option. Bug fixed: :bug:`826632` (*Alexey Kopytov*).
 
-  * |innobackupx| when used for streaming backups, stored some of the files in the server's datadir, thus requiring write access to it. The fix is that it now uses tmpdir instead for streaming backups. For local ones, the backup target directory is used as before. Bug fixed: :bug:`691090` (*Sergei Glushchenko*).
+  * |innobackupex| when used for streaming backups, stored some of the files in the server's datadir, thus requiring write access to it. The fix is that it now uses tmpdir instead for streaming backups. For local ones, the backup target directory is used as before. Bug fixed: :bug:`691090` (*Sergei Glushchenko*).
 
   * Unintentional change of innodb_version format in 5.1.60. caused fatal error in |xtrabackup|. Regexps used to detect innodb_version were updated. Bug fixed: :bug:`910206` (*Alexey Kopytov*).
 
