@@ -1,1 +1,4 @@
 build
+test/kewpie/qp_data/uuid
+test/kewpie/workdir
+test/test_results.subunit
