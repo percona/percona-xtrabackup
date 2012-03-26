@@ -3222,10 +3222,10 @@ read_retry:
 					if (retry_count == 0) {
 						msg("[%02u] xtrabackup: "
 						    "Error: 10 retries "
-						    "resulted in fail. This"
-						    "file seems to be "
+						    "resulted in fail. File "
+						    "%s seems to be "
 						    "corrupted.\n",
-						    thread_n);
+						    thread_n, node->name);
 						goto error;
 					}
 					msg("[%02u] xtrabackup: "
