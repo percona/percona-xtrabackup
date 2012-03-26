@@ -92,7 +92,7 @@ export MAKE_JFLAG=-j4
 
 # Create a temporary working directory
 INSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
-INSTALLDIR="$WORKDIR_ABS/$INSTALLDIR/xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
+INSTALLDIR="$WORKDIR_ABS/$INSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
 
 mkdir "$INSTALLDIR"
 
@@ -103,13 +103,13 @@ export AUTO_DOWNLOAD=yes
     cd "$WORKDIR"
 
     # Make a copy of the source
-    rm -f "xtrabackup-$XTRABACKUP_VERSION"
+    rm -f "percona-xtrabackup-$XTRABACKUP_VERSION"
 
-    bzr export "xtrabackup-$XTRABACKUP_VERSION" "$SOURCEDIR"
+    bzr export "percona-xtrabackup-$XTRABACKUP_VERSION" "$SOURCEDIR"
 
     # Build proper
     (
-        cd "xtrabackup-$XTRABACKUP_VERSION"
+        cd "percona-xtrabackup-$XTRABACKUP_VERSION"
 
         # Install the files
         mkdir "$INSTALLDIR/bin" "$INSTALLDIR/share"
@@ -128,15 +128,16 @@ export AUTO_DOWNLOAD=yes
         install -m 755 innobackupex "$INSTALLDIR/bin"
         ln -s innobackupex "$INSTALLDIR/bin/innobackupex-1.5.1"
 
-        cp -R test "$INSTALLDIR/share/xtrabackup-test"
+        cp -R test "$INSTALLDIR/share/percona-xtrabackup-test"
 
     ) || false
 
-    $TAR czf "xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
-        --owner=0 --group=0 -C "$INSTALLDIR/../" "xtrabackup-$XTRABACKUP_VERSION"
+    $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
+        --owner=0 --group=0 -C "$INSTALLDIR/../" \
+        "percona-xtrabackup-$XTRABACKUP_VERSION"
 
     # Clean up build dir
-    rm -rf "xtrabackup-$XTRABACKUP_VERSION"
+    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
     
 ) || false
 

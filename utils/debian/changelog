@@ -1,3 +1,9 @@
+percona-xtrabackup (1.9.1) unstable; urgency=low
+
+  * Change package name to percona-xtrabackup
+
+ -- Ignacio Nin <ignacio.nin@percona.com>  Wed, 14 Mar 2012 16:52:34 -0300
+
 xtrabackup (1.2) unstable; urgency=low
 
   * XtraBackup is based on XtraDB 10
