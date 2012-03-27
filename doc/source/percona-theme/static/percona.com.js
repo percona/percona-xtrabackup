@@ -240,3 +240,30 @@ Percona.getRecentServerVersion = function(selector)
         });
     }
 };
+
+$(document).ready(function(){
+	$(window).bind("resize", resizeWindow);
+	resizeWindow();
+	function resizeWindow() {
+		var win_w = $(window).width();
+		var ribon = $("#support-ribbon");
+		if(win_w < 1265){
+			if(/mobile/i.test(navigator.userAgent)){
+				ribon.hide();
+			}else{
+				if(ribon.hasClass("vertical")){
+					ribon.removeClass("vertical");
+					ribon.addClass("horizontal");
+				}
+				ribon.css({"left":'50%', "margin-left": '-'+(ribon.width() / 2)+'px'});
+			}
+		}else{
+			if(ribon.hasClass("horizontal")){
+				ribon.addClass("vertical");
+				ribon.removeClass("horizontal");
+				ribon.removeAttr("style");
+			}
+
+		}
+	}
+});
