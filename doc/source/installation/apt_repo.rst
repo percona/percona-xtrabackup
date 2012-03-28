@@ -10,10 +10,10 @@
   
   $ gpg -a --export CD2EFD2A | sudo apt-key add -
 
-Add this to :file:`/etc/apt/sources.list`, replacing ``lenny`` with the name of your distribution: ::
+Add this to :file:`/etc/apt/sources.list`, replacing ``squeeze`` with the name of your distribution: ::
 
-  deb http://repo.percona.com/apt lenny main
-  deb-src http://repo.percona.com/apt lenny main
+  deb http://repo.percona.com/apt squeeze main
+  deb-src http://repo.percona.com/apt squeeze main
 
 Remember to update the local cache: ::
 
@@ -31,7 +31,6 @@ Supported Releases
 Debian
 ------
 
- * 5.0 lenny
  * 6.0 squeeze
 
 Ubuntu
@@ -41,10 +40,11 @@ Ubuntu
  * 11.04 natty
  * 11.10 oneiric
 
-Release Candidate Repository
-============================
+Experimental Repository
+=======================
 
-To subscribe to the release candidate repository, add two lines to the :file:`/etc/apt/sources.list` file, again replacing ``lenny`` with your server's release version: ::
+Percona now offers experimental repository for beta releases. To enable it add this to :file:`/etc/apt/sources.list`, replacing ``squeeze`` with the name of your distribution: ::
 
-  deb http://repo.percona.com/apt-rc lenny main
-  deb-src http://repo.percona.com/apt-rc lenny main
+  deb http://repo.percona.com/apt squeeze main experimental
+  deb-src http://repo.percona.com/apt squeeze main experimental
+
