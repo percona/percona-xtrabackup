@@ -86,6 +86,7 @@ cp -R test %{buildroot}%{_datadir}/xtrabackup-test
 %{_bindir}/xbstream
 %{_datadir}/xtrabackup-test
 
+%doc COPYING
 
 ###
 ### eof

@@ -91,8 +91,8 @@ export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURC
 export MAKE_JFLAG=-j4
 
 # Create a temporary working directory
-INSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
-INSTALLDIR="$WORKDIR_ABS/$INSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
+BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
+INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
 
 mkdir "$INSTALLDIR"
 
@@ -113,6 +113,7 @@ export AUTO_DOWNLOAD=yes
 
         # Install the files
         mkdir "$INSTALLDIR/bin" "$INSTALLDIR/share"
+        mkdir -p "$INSTALLDIR/share/doc/percona-xtrabackup"
 
         bash utils/build.sh xtradb55
         install -m 755 src/xtrabackup_55 "$INSTALLDIR/bin"
@@ -128,6 +129,8 @@ export AUTO_DOWNLOAD=yes
         install -m 755 innobackupex "$INSTALLDIR/bin"
         ln -s innobackupex "$INSTALLDIR/bin/innobackupex-1.5.1"
 
+        install -m 644 COPYING "$INSTALLDIR/share/doc/percona-xtrabackup"
+
         cp -R test "$INSTALLDIR/share/percona-xtrabackup-test"
 
     ) || false
@@ -142,5 +145,5 @@ export AUTO_DOWNLOAD=yes
 ) || false
 
 # Clean up
-rm -rf "$INSTALLDIR"
+rm -rf "$WORKDIR_ABS/$BASEINSTALLDIR"
 
