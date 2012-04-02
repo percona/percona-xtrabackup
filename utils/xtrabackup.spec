@@ -71,7 +71,7 @@ install -m 755 innobackupex %{buildroot}%{_bindir}
 ln -s innobackupex %{buildroot}%{_bindir}/innobackupex-1.5.1
 install -m 755 xtrabackup_51 %{buildroot}%{_bindir}
 install -m 755 xbstream %{buildroot}%{_bindir}
-cp -R test %{buildroot}%{_datadir}/xtrabackup-test
+cp -R test %{buildroot}%{_datadir}/percona-xtrabackup-test
 
 %clean
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
@@ -84,7 +84,7 @@ cp -R test %{buildroot}%{_datadir}/xtrabackup-test
 %{_bindir}/xtrabackup_51
 %{_bindir}/xtrabackup_55
 %{_bindir}/xbstream
-%{_datadir}/xtrabackup-test
+%{_datadir}/percona-xtrabackup-test
 
 %doc COPYING
 
