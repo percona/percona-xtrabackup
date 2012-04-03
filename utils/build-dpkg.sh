@@ -12,7 +12,7 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:Kb" --longoptions key:,nosign,binary \
+go_out="$(getopt --options "k:KbB" --longoptions key:,nosign,binary,binarydep \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
@@ -27,6 +27,7 @@ do
     -k | --key ) shift; BUILDPKG_KEY="-pgpg -k$1"; shift;;
     -K | --nosign ) shift; BUILDPKG_KEY="-uc -us";;
     -b | --binary ) shift; BINARY='-b';;
+    -B | --binarydep ) shift; BINARY='-B';;
     esac
 done
 
