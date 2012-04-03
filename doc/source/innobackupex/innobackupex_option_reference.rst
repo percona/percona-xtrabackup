@@ -121,7 +121,7 @@ Options
 
 .. option:: --stream
 
-   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the only supported format is :command:`tar`. Uses :doc:`tar4ibd <../tar4ibd/tar4ibd_binary>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.  If both :option:`--stream` and :option:`--incremental` are passed to innobackupex, the incremental parameters are ignored and a full backup is created.
+   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the only supported format is :command:`tar`. Uses :doc:`tar4ibd <../tar4ibd/tar4ibd_binary>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.
 
 .. option:: --tmpdir
 
