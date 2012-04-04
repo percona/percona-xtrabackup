@@ -49,34 +49,36 @@
       {%- if render_sidebar %}
       <div class="sphinxsidebar">
         <div class="sphinxsidebarwrapper">
-          {%- block sidebarlogo %}
-          {%- if logo %}
-            <p class="logo"><a href="{{ pathto(master_doc) }}">
-              <img class="logo" src="{{ pathto('_static/' + logo, 1) }}" alt="Logo"/>
-            </a></p>
-          {%- endif %}
 
-<div class="noborder" id="sidenavi">
+				<div class="side-column-block"><a href="http://www.percona.com/software/percona-xtrabackup/"><img alt="Percona XtraBackup" src="http://s2.percona.com/logo_percona_xtrabackup_new.png" /></a></div>
 
-      <div class="sidebanner" id="sidebanner">
-                        <div class="header"><a href="/contact/sales">Call Us</a></div>
-        <div class="numbers">
-          <div style="padding-bottom: 4px">
-            +1-888-316-9775 (USA - Sales)<br>
-            +1-208-473-2904 (USA - Sales)
-          </div>
-          <div>
-            +44-208-133-0309 (UK - Sales)
-          </div>
-          <div>
-            +1-877-862-4316 (Emergency)
-          </div>
-        </div>
-              </div>
-       <div id="sidefloater"></div> 
-</div>
+			<div class="side-column-block">
+				<div class="header">Call Us</div>
+					<div class="content">
+						<div class="numbers">
+						          <div style="padding-bottom: 4px">
+						            +1-888-316-9775 (USA - Sales)<br>
+						            +1-208-473-2904 (USA - Sales)
+						          </div>
+						          <div style="padding-bottom: 4px;">
+						            +44-208-133-0309 (UK - Sales)
+						          </div>
+									<div style="padding-bottom: 4px;">
+										+1-877-862-4316 (Emergency)
+									</div>
+									<div>
+						          	+1-855-55TRAIN (Training)<br>
+									+1-925-271-5054 (Training)
+						          </div>
+						</div>					
+					</div>
+				</div>
 
-          {%- endblock %}
+			<div class="side-column-block">
+			    
+			    <div class="a-btn-container"><a title="Download PDF Manual for Percona XtraBackup" href="http://form.percona.com/Percona_XtraBackup_2_0_Operations_Manual.html" class="a-btn-new"><span class="a-btn-text">Download Manual</span><span class="a-btn-fixed-slide-text">PDF for 2.0</span><span class="a-btn-icon-right"><span></span></span></a>
+				</div>
+			</div>				
           {%- if sidebars != None %}
             {#- new style sidebar: explicitly include/exclude templates #}
             {%- for sidebartemplate in sidebars %}
@@ -84,13 +86,15 @@
             {%- endfor %}
           {%- else %}
             {#- old style sidebars: using blocks -- should be deprecated #}
-            {%- block serverseries %}
-<h3>XtraBackup Series</h3>
-     <ul>
-       <li><a href="http://www.percona.com/doc/percona-xtrabackup/">Percona XtraBackup 2.0</a></li>
-       <li><a href="http://www.percona.com/doc/percona-xtrabackup/1.6/">Percona XtraBackup 1.6</a></li>
-     </ul>
-            {%- endblock %}
+			            {%- block serverseries %}
+		<div class="side-column-block">
+			<h3>XtraBackup Series</h3>
+			     <ul>
+			       <li><a href="http://www.percona.com/doc/percona-xtrabackup/">Percona XtraBackup 2.0</a></li>
+			       <li><a href="http://www.percona.com/doc/percona-xtrabackup/1.6/">Percona XtraBackup 1.6</a></li>
+			     </ul>
+			</div>
+			            {%- endblock %}
             {%- block sidebartoc %}
             {%- include "localtoc.html" %}
             {%- endblock %}
@@ -107,6 +111,15 @@
             {%- include "searchbox.html" %}
             {%- endblock %}
           {%- endif %}
+<br /><br />
+			<div class="side-column-block">
+			  	<ul class="side-contact-buttons">
+					<li><a href="http://form.percona.com/ContactMe.html" title="Contact Me" class="contact-me"><span>Contact Me</span></a></li>
+					<li><a href="http://www.percona.com/webinars/" title="Attend a Webinar" class="webinar"><span>Attend a Webinar</span></a></li>
+					<li><a href="http://www.percona.com/downloads/" title="Download Software" class="download-software"><span>Download Software</span></a></li>
+					<li><a href="http://www.percona.com/subscribe/" title="Register For Newsletters" class="newsletters"><span>Register For Newsletters</span></a></li>
+				</ul>
+			</div>
 
         </div>
       </div>
@@ -287,20 +300,7 @@
 	
     </div>
 
-	<div id="support-ribbon" class="vertical" style="z-index: 1;">
-	<div id="support-suboptions">
-	<ul>
-	<li><a title="Contact Me" href="http://form.percona.com/ContactMe.html" style="background: url('http://s2.percona.com/buttons/btn_contact-us.png?1');"><span>Contact Us</span></a></li>
-	<li><a title="Customer Portal Log In" href="https://customers.percona.com/" style="background: url('http://s2.percona.com/buttons/btn_customer.png?1');"><span>Customer Portal Log In</span></a></li>
-	<li><a title="Attend a Webinar" href="http://percona.com/webinars/" style="background: url('http://s2.percona.com/buttons/btn_attend-a-webinar.png?1');"><span>Attend a Webinar</span></a></li>
-	<li><a title="Download Software" href="http://percona.com/downloads/" style="background:url('http://s2.percona.com/buttons/btn_download.png?1');"><span>Download Software</span></a></li>
-	<li><a title="Register for Newsletters" href="http://percona.com/subscribe/" style="background: url('http://s2.percona.com/buttons/btn_register.png?1');"><span>Register for Newsletters</span></a></li>
-
-	</ul>
-	</div>
-	</div>
-
-    <div id="footer">
+   <div id="footer">
 
     <div class="footer">
       <div class="logo"><img width="110" height="25" alt="" src="{{ pathto('_static/ui-footer-logo.png', 1) }}">          
@@ -416,26 +416,25 @@
 	<div class="navi-dropdown-footer"><!-- //--></div>
 	</div>
 	<div class="navi-dropdown" id="navi-dropdown-software">
-	<div class="navi-dropdown-header-l"><!-- //--></div>
-	<div class="navi-dropdown-content">
-	<div class="item"><a href="http://www.percona.com/software/">Percona Software for MySQL</a></div>
-	<div class="item"><a href="http://www.percona.com/software/percona-server/">Percona Server with XtraDB</a></div>
-	<div class="item"><a href="http://www.percona.com/software/percona-xtradb-cluster/">Percona XtraDB Cluster</a></div>
-	<div class="item"><a href="http://www.percona.com/software/percona-xtrabackup/">Percona XtraBackup</a></div>
-	<div class="item"><a href="http://www.percona.com/software/mysql-innodb-data-recovery-tools/">Data Recovery Toolkit</a></div>
-
-	<div class="item"><a href="http://www.percona.com/software/percona-xtradb/">Percona XtraDB</a></div>
-	<div class="item"><a href="http://www.percona.com/software/percona-toolkit/">Percona Toolkit</a></div>
-	<div class="item"><a href="http://www.percona.com/prices/software/">Software Prices</a></div>
-	<div class="item"><a href="http://www.percona.com/downloads/">Downloads</a></div>
-	<div class="item"><a href="http://www.percona.com/software/repositories/">Repositories</a></div>
-	<div class="item"><a href="http://www.percona.com/software/documentation/">Documentation</a></div>
-	<div class="item"><a href="http://forum.percona.com">Forum</a></div>
-	<div class="item"><a href="http://groups.google.com/group/percona-discussion">Google Discussion</a></div>
-	<div class="item"><a href="https://launchpad.net/percona-server">Launchpad</a></div>
-
-	</div>
-	<div class="navi-dropdown-footer"><!-- //--></div>
+		<div class="navi-dropdown-header-l"><!-- //--></div>
+		    <div class="navi-dropdown-content">
+		      <div class="item"><a href="http://www.percona.com/software/">Percona Software for MySQL</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/percona-server/">Percona Server with XtraDB</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/percona-xtradb-cluster/">Percona XtraDB Cluster</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/percona-xtrabackup/">Percona XtraBackup</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/mysql-innodb-data-recovery-tools/">Data Recovery Toolkit</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/percona-xtradb/">Percona XtraDB</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/percona-toolkit/">Percona Toolkit</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/percona-monitoring-plugins/">Percona Monitoring Plugins</a></div>
+		      <div class="item"><a href="http://www.percona.com/prices/software/">Software Prices</a></div>
+		      <div class="item"><a href="http://www.percona.com/downloads/">Downloads</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/repositories/">Repositories</a></div>
+		      <div class="item"><a href="http://www.percona.com/software/documentation/">Documentation</a></div>
+		      <div class="item"><a href="http://forum.percona.com">Forum</a></div>
+		      <div class="item"><a href="http://groups.google.com/group/percona-discussion">Google Discussion</a></div>
+		      <div class="item"><a href="https://launchpad.net/percona-server">Launchpad</a></div>
+		    </div>
+		    <div class="navi-dropdown-footer"><!-- //--></div>
 	</div>
 	<div class="navi-dropdown" id="navi-dropdown-events">
 		<div class="navi-dropdown-header-r"><!-- //--></div>
