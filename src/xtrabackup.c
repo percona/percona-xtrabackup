@@ -6424,7 +6424,7 @@ next_opt:
 			HASH_INSERT(xtrabackup_tables_t, name_hash, tables_hash,
 					ut_fold_string(table->name), table);
 
-			msg("xtrabackup: table '%s' is registerd to the "
+			msg("xtrabackup: table '%s' is registered to the "
 			    "list.\n", table->name);
 		}
 	}
