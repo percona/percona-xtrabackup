@@ -12,7 +12,13 @@ Package: percona-xtrabackup
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, mysql-client
 Provides: xtrabackup
-Conflicts: xtrabackup
-Replaces: xtrabackup
+Breaks: xtrabackup (<< 2.0.0~)
+Replaces: xtrabackup (<< 2.0.0~)
 Description: Open source backup tool for InnoDB and XtraDB
  Open source backup tool for InnoDB and XtraDB
+
+Package: xtrabackup
+Architecture: all
+Section: oldlibs
+Depends: percona-xtrabackup, ${misc:Depends}
+Description: Transitional package for percona-xtrabackup
