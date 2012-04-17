@@ -1615,6 +1615,7 @@ sub write_backup_config_file {
     }
 
     my @option_names = (
+        "innodb_data_file_path",
         "innodb_log_files_in_group",
         "innodb_log_file_size",
         "innodb_fast_checksum",
@@ -1626,7 +1627,8 @@ sub write_backup_config_file {
           "# The MySQL server\n" .
           "[mysqld]\n" .
           "datadir=$root\n" .
-          "innodb_data_home_dir=$root\n";
+          "innodb_data_home_dir=$root\n" .
+          "innodb_log_group_home_dir=$root\n";
 
     my $option_name;
     foreach $option_name (@option_names) {
