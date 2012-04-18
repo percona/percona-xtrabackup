@@ -32,6 +32,7 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 Summary: Test suite for Percona Xtrabackup
 Group: Applications/Databases
 Requires: percona-xtrabackup
+AutoReqProv: no
 
 %description test
 This package contains the test suite for Percona Xtrabackup
