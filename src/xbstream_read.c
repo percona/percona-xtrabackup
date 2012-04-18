@@ -79,6 +79,10 @@ validate_chunk_type(uchar code)
 		}							\
 	} while (0)
 
+/* Magic + flags + type + path len */
+#define CHUNK_HEADER_CONSTANT_LEN ((sizeof(XB_STREAM_CHUNK_MAGIC) - 1) + \
+				   1 + 1 + 4)
+
 xb_rstream_result_t
 xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 {
@@ -86,22 +90,34 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 	uchar		*ptr = tmpbuf;
 	uint		pathlen;
 	size_t		tlen;
+	size_t		tbytes;
 	ulonglong	ullval;
 	ulong		checksum_exp;
 	ulong		checksum;;
 	File		fd = stream->fd;
 
+	xb_ad(sizeof(tmpbuf) >= CHUNK_HEADER_CONSTANT_LEN);
+
 	/* This is the only place where we expect EOF, so read with my_read()
 	rather than F_READ() */
-	tlen = my_read(fd, tmpbuf, sizeof(XB_STREAM_CHUNK_MAGIC) + 5,
-		       MYF(MY_WME));
-	if (tlen == 0) {
+	tlen = CHUNK_HEADER_CONSTANT_LEN;
+	while (tlen > 0) {
+		tbytes = my_read(fd, ptr, tlen, MYF(MY_WME));
+		if (tbytes == 0) {
+			break;
+		}
+		ptr += tbytes;
+		tlen -= tbytes;
+	}
+	if (tlen == CHUNK_HEADER_CONSTANT_LEN) {
 		return XB_STREAM_READ_EOF;
-	} else if (tlen < sizeof(XB_STREAM_CHUNK_MAGIC) + 4) {
+	} else if (tlen > 0) {
 		msg("xb_stream_read_chunk(): unexpected end of stream at "
 		    "offset 0x%llx.\n", stream->offset);
 		goto err;
 	}
+
+	ptr = tmpbuf;
 
 	/* Chunk magic value */
 	if (memcmp(tmpbuf, XB_STREAM_CHUNK_MAGIC, 8)) {
@@ -137,6 +153,8 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 	}
 	chunk->pathlen = pathlen;
 	stream->offset +=4;
+
+	xb_ad((ptr + 4 - tmpbuf) == CHUNK_HEADER_CONSTANT_LEN);
 
 	/* Path */
 	if (chunk->pathlen > 0) {
