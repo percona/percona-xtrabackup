@@ -17,6 +17,11 @@ Replaces: xtrabackup (<< 2.0.0~)
 Description: Open source backup tool for InnoDB and XtraDB
  Open source backup tool for InnoDB and XtraDB
 
+Package: percona-xtrabackup-test
+Architecture: any
+Depends: percona-xtrabackup, ${misc:Depends}
+Description: Test suite for Percona XtraBackup
+
 Package: xtrabackup
 Architecture: all
 Section: oldlibs

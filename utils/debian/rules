@@ -72,13 +72,6 @@ install:
 	dh_installdirs
 
 	# Add here commands to install the package into debian/percona-xtrabackup.
-	install -m 755 xtrabackup_51 $(CURDIR)/debian/percona-xtrabackup/usr/bin
-	install -m 755 xtrabackup $(CURDIR)/debian/percona-xtrabackup/usr/bin
-	install -m 755 xtrabackup_55 $(CURDIR)/debian/percona-xtrabackup/usr/bin
-	install -m 755 xbstream $(CURDIR)/debian/percona-xtrabackup/usr/bin
-	install -m 755 innobackupex $(CURDIR)/debian/percona-xtrabackup/usr/bin
-	ln -s innobackupex $(CURDIR)/debian/percona-xtrabackup/usr/bin/innobackupex-1.5.1
-	cp -R test $(CURDIR)/debian/percona-xtrabackup/usr/share/percona-xtrabackup-test
 
 # Build architecture-independent files here.
 binary-indep: install
@@ -91,7 +84,7 @@ binary-arch: install
 #	dh_installchangelogs ChangeLog
 	dh_installdocs
 #	dh_installexamples
-#	dh_install
+	dh_install
 #	dh_installmenu
 #	dh_installdebconf	
 #	dh_installlogrotate
