@@ -38,4 +38,4 @@ It's possible that the presence of a defaults file or other factors could cause 
 Log Streaming
 -------------
 
-You can instruct :program:`xtrabackup` to omit copying data files, and simply stream the log file to its standard output instead with :option:`--log-stream`. This automatically adds the :option:`--suspend-at-end` option. Your script can then perform tasks such as streaming remote backups by piping the log files into an SSH connection and copying the data files to another server with a tool such as :command:`rsync` or the :doc:`tar4ibd binary <../tar4ibd/tar4ibd_binary>`.
+You can instruct :program:`xtrabackup` to omit copying data files, and simply stream the log file to its standard output instead with :option:`--log-stream`. This automatically adds the :option:`--suspend-at-end` option. Your script can then perform tasks such as streaming remote backups by piping the log files into an SSH connection and copying the data files to another server with a tool such as :command:`rsync` or the :doc:`xbstream binary <../xbstream/xbstream>`.

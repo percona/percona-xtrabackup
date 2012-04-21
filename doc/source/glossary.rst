@@ -69,6 +69,9 @@
    datadir
     The directory in which the database server stores its databases. Most Linux distribution use :file:`/var/lib/mysql` by default.
 
+   xbstream
+     To support simultaneous compression and streaming, a new custom streaming format called xbstream was introduced to XtraBackup in addition to the TAR format. 
+
    ibdata
      Default prefix for tablespace files, e.g. :file:`ibdata1` is a 10MB  autoextensible file that |MySQL| creates for the shared tablespace by default. 
 
