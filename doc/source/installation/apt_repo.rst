@@ -43,8 +43,8 @@ Ubuntu
 Experimental Repository
 =======================
 
-Percona now offers experimental repository for beta releases. To enable it add this to :file:`/etc/apt/sources.list`, replacing ``squeeze`` with the name of your distribution: ::
+Percona now offers experimental repository for beta releases. To enable it add this to :file:`/etc/apt/sources.list`, replacing ``VERSION`` with the name of your distribution: ::
 
-  deb http://repo.percona.com/apt squeeze main experimental
-  deb-src http://repo.percona.com/apt squeeze main experimental
+  deb http://repo.percona.com/apt VERSION main experimental
+  deb-src http://repo.percona.com/apt VERSION main experimental
 

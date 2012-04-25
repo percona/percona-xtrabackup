@@ -10,7 +10,7 @@
 
    innobackupex/innobackupex_script
    xtrabackup_bin/xtrabackup_binary
-   tar4ibd/tar4ibd_binary
+   xbstream/xbstream
    how_xtrabackup_works
 
 |XtraBackup| is really a set of three tools:
@@ -21,7 +21,7 @@
 :doc:`xtrabackup <xtrabackup_bin/xtrabackup_binary>`
     a compiled *C* binary, which copies only :term:`InnoDB` and :term:`XtraDB` data
     
-:doc:`tar4ibd <tar4ibd/tar4ibd_binary>`
-   tars |InnoDB| data safely.
+:doc:`xbstream <xbstream/xbstream>`
+   new utility that allows streaming and extracting files to/from the :term:`xbstream` format.
 
 It is possible to use the |xtrabackup| binary alone, however, the recommend way is using it through the |innobackupex| wrapper script and let it execute |xtrabackup| for you. It might be helpful to first learn :doc:`how to use innobackupex <innobackupex/innobackupex_script>`, and then learn  :doc:`how to use xtrabackup <xtrabackup_bin/xtrabackup_binary>` for having a better low-level understanding or control of the tool if needed.

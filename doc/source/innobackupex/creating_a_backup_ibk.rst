@@ -28,19 +28,22 @@ It will also create the following files for convenience on the created directory
   * Information related to the backup and the server
 
     * :file:`xtrabackup_checkpoints`
-       The type of the backup (e.g. full or incremental), its state (e.g. prepared) and the |LSN| range contained in it.
+       The type of the backup (e.g. full or incremental), its state (e.g. prepared) and the |LSN| range contained in it. This information is used for incremental backups.
 
     * :file:`xtrabackup_binlog_info`
-       The binary log file used by the server and its position at the moment of the backup.
+       The binary log file used by the server and its position at the moment of the backup. Result of the :command:`SHOW MASTER STATUS`.
 
-    * :file:`xtrabackup_binlog_info`
+    * :file:`xtrabackup_binlog_pos_innodb`
        The binary log file and its current position for |InnoDB| or |XtraDB| tables.
 
     * :file:`xtrabackup_binary`
        The |xtrabackup| binary used in the process.
 
     * :file:`backup-my.cnf`
-       The options of the configuration file used in the backup.
+       This file contains information to start the mini instance of InnoDB during the  :option:`--apply-log`. This is NOT a backup of original :file:`my.cnf`.
+    
+    * :file:`xtrabackup_logfile` 
+       Contains data needed for running the: :option:`--apply-log`. The bigger this file is the :option:`--apply-log` process will take longer to finish. 
 
   * Information related to the replication environment (if using the :option:`--slave-info` option):
 

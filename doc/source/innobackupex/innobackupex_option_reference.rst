@@ -30,15 +30,15 @@ Options
 
     Copy all the files in a previously made backup from the backup directory to their original locations.
 
-.. option:: --include
+.. option:: --include=REGEXP
 
    This option is a regular expression to be matched against table names in ``databasename.tablename`` format. It is passed directly to :program:`xtrabackup` 's :option:`xtrabackup --tables` option. See the :program:`xtrabackup` documentation for details.
 
-.. option:: --defaults-file
+.. option:: --defaults-file=[MY.CNF]
 
    This option accepts a string argument that specifies what file to read the default MySQL options from. It is also passed directly to :program:`xtrabackup` 's defaults-file option. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
 
-.. option:: --databases
+.. option:: --databases=LIST
 
    This option accepts a string argument that specifies the list of databases that |innobackupex| should back up. The list is of the form ``databasename1[.table_name1] databasename2[.table_name2] ...``. If this option is not specified, all databases containing MyISAM and InnoDB tables will be backed up. Please make sure that :option:`--databases` contains all of the InnoDB databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option :option:`--tables-file`.)
 
@@ -58,15 +58,15 @@ Options
 
    This option accepts a string argument that specifies the amount of memory in bytes for :program:`xtrabackup` to use for crash recovery while preparing a backup. Multiples are supported providing the unit (e.g. 1MB, 1GB). It is used only with the option :option:`--apply-log`. It is passed directly to |xtrabackup| 's :option:`xtrabackup --use-memory` option. See the |xtrabackup| documentation for details.
 
-.. option:: --password = 'PASSWORD'
+.. option:: --password=PASSWORD
 
    This option accepts a string argument specifying the password to use when connecting to the database. It is passed to the :command:`mysql` child process without alteration. See :command:`mysql --help` for details.
 
-.. option:: --user = 'USER'
+.. option:: --user=USER
 
    This option accepts a string argument that specifies the user (i.e., the *MySQL* username used when connecting to the server) to login as, if that's not the current user. It is passed to the mysql child process without alteration. See :command:`mysql --help` for details.
 
-.. option:: --port
+.. option:: --port=PORT
 
    This option accepts a string argument that specifies the port to use when connecting to the database server with TCP/IP. It is passed to the :command:`mysql` child process. It is passed to the :command:`mysql` child process without alteration. See :command:`mysql --help` for details.
 
@@ -74,7 +74,7 @@ Options
 
    This option accepts a string argument that specifies the socket to use when connecting to the local database server with a UNIX domain socket. It is passed to the mysql child process without alteration. See :command:`mysql --help` for details.
 
-.. option:: --host
+.. option:: --host=HOST
 
    This option accepts a string argument that specifies the host to use when connecting to the database server with TCP/IP. It is passed to the mysql child process without alteration. See :command:`mysql --help` for details.
 
@@ -99,11 +99,11 @@ Options
 
    This option tells :program:`xtrabackup` to create an incremental backup, rather than a full one. It is passed to the :program:`xtrabackup` child process. When this option is specified, either :option:`--incremental-lsn` or :option:`--incremental-basedir` can also be given. If neither option is given, option :option:`--incremental-basedir` is passed to :program:`xtrabackup` by default, set to the first timestamped backup directory in the backup base directory.
 
-.. option:: --incremental-basedir
+.. option:: --incremental-basedir=DIRECTORY
 
    This option accepts a string argument that specifies the directory containing the full backup that is the base dataset for the incremental backup. It is used with the :option:`--incremental` option.
 
-.. option:: --incremental-dir
+.. option:: --incremental-dir=DIRECTORY
 
    This option accepts a string argument that specifies the directory where the incremental backup will be combined with the full backup to make a new full backup. It is used with the :option:`--incremental` option.
 
@@ -111,25 +111,21 @@ Options
 
    This option accepts a string argument that specifies the log sequence number (:term:`LSN`) to use for the incremental backup. It is used with the :option:`--incremental` option. It is used instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer. 
 
-.. option:: --extra-lsndir
+.. option:: --extra-lsndir=DIRECTORY
 
    This option accepts a string argument that specifies the directory in which to save an extra copy of the :file:`xtrabackup_checkpoints` file. It is passed directly to |xtrabackup|'s :option:`--extra-lsndir` option. See the :program:`xtrabackup` documentation for details.
 
-.. option:: --remote-host
+.. option:: --remote-host=HOSTNAME
 
    This option accepts a string argument that specifies the remote host on which the backup files will be created, by using an ssh connection.
 
-.. option:: --stream
+.. option:: --stream=STREAMNAME
 
-   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the only supported format is :command:`tar`. Uses :doc:`tar4ibd <../tar4ibd/tar4ibd_binary>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.
+   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the supported format is `xbstream`. Uses :doc:`xbstream <../xbstream/xbstream>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.
 
-.. option:: --tmpdir
+.. option:: --tmpdir=DIRECTORY
 
    This option accepts a string argument that specifies the location where a temporary file will be stored. It should be used when :option:`--remote-host` or :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specifed, the default is to use the value of ``tmpdir`` read from the server configuration.
-
-.. option:: --tar4ibd
-
-   Uses :program:`tar4ibd` in :option:`--stream` mode. It is enabled by default if no other command is specified (e.g. :option:`--force-tar`). 
 
 .. option:: --force-tar
 
@@ -143,7 +139,7 @@ Options
 
    This option accepts a string argument that specifies the command line options to pass to :command:`ssh` when the option :option:`--remost-host` is specified.
 
-.. option:: --parallel
+.. option:: --parallel=NUMBER-OF-THREADS
 
    This option accepts an integer argument that specifies the number of threads the :program:`xtrabackup` child process should use to back up files concurrently.  Note that this option works on file level, that is, if you have several .ibd files, they will be copied in parallel. If you have just single big .ibd file, it will have no effect. It is passed directly to xtrabackup's :option:`xtrabackup --parallel` option. See the :program:`xtrabackup` documentation for details.
 
@@ -157,10 +153,4 @@ Options
 
 .. option:: --rsync
 
-   Use the :program:`rsync` utility to optimize local file
-   transfers. When this option is specified, :program:`innobackupex`
-   uses :program:`rsync` to copy all non-InnoDB files instead of
-   spawning a separate :program:`cp` for each file, which can be much
-   faster for servers with a large number of databases or tables.  This
-   option cannot be used together with :option:`--remote-host` or
-   :option:`--stream`.
+   Use the :program:`rsync` utility to optimize local file transfers. When this option is specified, :program:`innobackupex` uses :program:`rsync` to copy all non-InnoDB files instead of spawning a separate :program:`cp` for each file, which can be much faster for servers with a large number of databases or tables.  This option cannot be used together with :option:`--remote-host` or :option:`--stream`.
