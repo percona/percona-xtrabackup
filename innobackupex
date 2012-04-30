@@ -440,7 +440,7 @@ sub backup {
                 and Die "Failed to scp file 'ib_lru_dump': $!";
         } elsif ($option_stream) {
             print STDERR "$prefix Backing up as tar stream 'ib_lru_dump'\n";
-            system("cd $orig_datadir; tar chf - ib_lru_dump")
+            system("cd $orig_datadir; $stream_cmd ib_lru_dump")
                 and Die "Failed to stream 'ib_lru_dump': $!";
         } elsif (!$option_rsync) {
             my $src_name = escape_path("$orig_datadir/ib_lru_dump");
@@ -1277,8 +1277,8 @@ sub write_galera_info {
 
     close(FILE);
 
-    if ($option_stream eq 'tar') {
-        system("cd $option_tmpdir; tar chf - xtrabackup_galera_info")
+    if ($option_stream) {
+        system("cd $option_tmpdir; $stream_cmd xtrabackup_galera_info")
             and Die "Failed to stream 'xtrabackup_galera_info': $!";
         unlink $galera_info || Die "Failed to delete '$galera_info': $!";
     }
