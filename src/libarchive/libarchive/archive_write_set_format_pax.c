@@ -816,12 +816,18 @@ archive_write_pax_header(struct archive_write *a,
 		/* Include star-compatible metadata info. */
 		/* Note: "SCHILY.dev{major,minor}" are NOT the
 		 * major/minor portions of "SCHILY.dev". */
+		/* Skip the SCHILY attributes, as they are ignored
+		by GNU tar and cause warnings. Since GNU tar is a requirement
+		for unpacking XtraBackup tar streams anyway, we can safely
+		assume those attributes are never used. */
+#if 0
 		add_pax_attr_int(&(pax->pax_header), "SCHILY.dev",
 		    archive_entry_dev(entry_main));
 		add_pax_attr_int(&(pax->pax_header), "SCHILY.ino",
 		    archive_entry_ino64(entry_main));
 		add_pax_attr_int(&(pax->pax_header), "SCHILY.nlink",
 		    archive_entry_nlink(entry_main));
+#endif
 
 		/* Store extended attributes */
 		archive_write_pax_header_xattrs(pax, entry_original);

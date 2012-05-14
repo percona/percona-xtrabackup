@@ -12,7 +12,7 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:Kb" --longoptions key:,nosign,binary \
+go_out="$(getopt --options "k:KbB" --longoptions key:,nosign,binary,binarydep \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
@@ -27,6 +27,7 @@ do
     -k | --key ) shift; BUILDPKG_KEY="-pgpg -k$1"; shift;;
     -K | --nosign ) shift; BUILDPKG_KEY="-uc -us";;
     -b | --binary ) shift; BINARY='-b';;
+    -B | --binarydep ) shift; BINARY='-B';;
     esac
 done
 
@@ -89,17 +90,11 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
     (
         cd "xtrabackup-$XTRABACKUP_VERSION"
 
-        # Download required sources
-        if ! test -r libtar-1.2.11.tar.gz
-        then
-            wget http://www.percona.com/downloads/community/libtar-1.2.11.tar.gz
-        fi
-
         # Move debian directory
         mv utils/debian .
 
         # Update distribution
-        dch -m -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
+        dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
 
         # Issue dpkg-buildpackage command
         dpkg-buildpackage $BINARY $BUILDPKG_KEY

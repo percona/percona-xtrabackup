@@ -117,3 +117,26 @@ After preparing the incremental backups, the base directory contains the same as
   innobackupex --copy-back BASE-DIR
 
 and you may have to change the ownership as detailed on :doc:`restoring_a_backup_ibk`.
+
+Incremental Streaming Backups using xbstream and tar
+====================================================
+
+Incremental streaming backups can be performed with the |xbstream| streaming option. Currently backups are packed in custom **xbstream** format. With this feature taking a BASE backup is needed as well. 
+
+ Taking a base backup: :: 
+ 
+  innobackupex 
+
+ Taking a local backup: ::
+
+  innobackupex --incremental --incremental-lsn=LSN-number --stream=xbstream ./ > incremental.xbstream
+
+ Unpacking the backup: ::
+
+  xbstream -x < incremental.xbstream 
+
+ Taking a local backup and streaming it to the remote server and unpacking it: :: 
+
+  innobackupex  --incremental --incremental-lsn=LSN-number --stream=xbstream ./ | /
+  ssh user@hostname " cat - | xbstream -x -C > /backup-dir/"
+ 

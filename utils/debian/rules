@@ -42,8 +42,13 @@ build-stamp:  config.status
 
 	# Add here commands to compile the package.
 	AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
+	 cp src/xtrabackup_51 src/xbstream .
+
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
+	cp src/xtrabackup .
+
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
+	cp src/xtrabackup_55 .
 
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
 
@@ -66,14 +71,14 @@ install:
 	dh_clean -k 
 	dh_installdirs
 
-	# Add here commands to install the package into debian/xtrabackup.
-	install -m 755 mysql-5.1/storage/innobase/xtrabackup/xtrabackup_51 $(CURDIR)/debian/xtrabackup/usr/bin
-	install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/xtrabackup $(CURDIR)/debian/xtrabackup/usr/bin
-	install -m 755 Percona-Server-5.5/storage/innobase/xtrabackup/xtrabackup_55 $(CURDIR)/debian/xtrabackup/usr/bin
-	install -m 755 libtar-1.2.11/libtar/tar4ibd $(CURDIR)/debian/xtrabackup/usr/bin
-	install -m 755 innobackupex $(CURDIR)/debian/xtrabackup/usr/bin
-	ln -s innobackupex $(CURDIR)/debian/xtrabackup/usr/bin/innobackupex-1.5.1
-	cp -R test $(CURDIR)/debian/xtrabackup/usr/share/xtrabackup-test
+	# Add here commands to install the package into debian/percona-xtrabackup.
+	install -m 755 xtrabackup_51 $(CURDIR)/debian/percona-xtrabackup/usr/bin
+	install -m 755 xtrabackup $(CURDIR)/debian/percona-xtrabackup/usr/bin
+	install -m 755 xtrabackup_55 $(CURDIR)/debian/percona-xtrabackup/usr/bin
+	install -m 755 xbstream $(CURDIR)/debian/percona-xtrabackup/usr/bin
+	install -m 755 innobackupex $(CURDIR)/debian/percona-xtrabackup/usr/bin
+	ln -s innobackupex $(CURDIR)/debian/percona-xtrabackup/usr/bin/innobackupex-1.5.1
+	cp -R test $(CURDIR)/debian/percona-xtrabackup/usr/share/percona-xtrabackup-test
 
 # Build architecture-independent files here.
 binary-indep: install
@@ -84,7 +89,7 @@ binary-arch: install
 	dh_testdir
 	dh_testroot
 #	dh_installchangelogs ChangeLog
-#	dh_installdocs
+	dh_installdocs
 #	dh_installexamples
 #	dh_install
 #	dh_installmenu

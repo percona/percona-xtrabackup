@@ -18,7 +18,7 @@ An example command to perform a backup follows:
 
   xtrabackup --backup --datadir=/var/lib/mysql/ --target-dir=/data/backups/mysql/
 
-This takes a backup of :file:`/var/lib/mysql` and stores it at :file:`/data/backups/mysql/`. The :option:`--target-dir` option deserves special explanation. Because the backup is performed from the data directory itself, **the target directory is relative to the data directory unless you specify an absolute path**. If you specify a relative path such as ``--target-dir=backups``, for example, don't look for the backup in the directory from which you executed |xtrabackup| - it will be a subdirectory of the :option:`--datadir` directory instead!
+This takes a backup of :file:`/var/lib/mysql` and stores it at :file:`/data/backups/mysql/`. If you specify a relative path, the target directory will be relative to the current directory.
 
 During the backup process, you should see a lot of output showing the data files being copied, as well as the log file thread repeatedly scanning the log files and copying from it. Here is an example that shows the log thread scanning the log in the background, and a file copying thread working on the ``ibdata1`` file: ::
 

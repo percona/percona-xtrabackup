@@ -87,7 +87,7 @@ else
 fi
 
 SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
-test -e "$SOURCEDIR/Makefile" || exit 2
+test -e "$SOURCEDIR/VERSION" || exit 2
 
 # Read XTRABACKUP_VERSION from the VERSION file
 . $SOURCEDIR/VERSION
@@ -121,31 +121,11 @@ export MYSQL_RPMBUILD_TEST="$TEST"
 
     mkdir -p BUILD SOURCES RPMS SRPMS
 
-    # Download required sources
-    (
-        cd SOURCES
-
-        if ! test -r libtar-1.2.11.tar.gz
-        then
-            wget http://www.percona.com/downloads/community/libtar-1.2.11.tar.gz
-        fi
-
-        if ! test -r mysql-5.1.56.tar.gz
-        then
-            wget http://www.percona.com/downloads/community/mysql-5.1.56.tar.gz
-        fi
-
-        if ! test -r mysql-5.5.10.tar.gz
-        then
-            wget http://www.percona.com/downloads/community/mysql-5.5.10.tar.gz
-        fi
-
-    )
-
     # Copy source to SOURCE dir -- create a suitable tar
-    rm -f "SOURCE/xtrabackup-$XTRABACKUP_VERSION.tar.gz"
+    rm -f "SOURCE/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz"
 
-    bzr export "$WORKDIR_ABS/SOURCES/xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
+    bzr export \
+        "$WORKDIR_ABS/SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
             "$SOURCEDIR"
 
     # Issue RPM command

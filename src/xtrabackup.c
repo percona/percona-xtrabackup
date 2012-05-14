@@ -300,6 +300,8 @@ static
 fil_node_t *
 datafiles_iter_next(datafiles_iter_t *it)
 {
+	fil_node_t *new_node;
+
 	os_mutex_enter(it->mutex);
 
 	if (it->node == NULL) {
@@ -326,9 +328,10 @@ datafiles_iter_next(datafiles_iter_t *it)
 	it->node = UT_LIST_GET_FIRST(it->space->chain);
 
 end:
+	new_node = it->node;
 	os_mutex_exit(it->mutex);
 
-	return it->node;
+	return new_node;
 }
 
 static
@@ -2547,12 +2550,16 @@ xtrabackup_backup_func(void)
 	mutex_exit(&log_sys->mutex);
 
 reread_log_header:
-	fil_io(OS_FILE_READ | OS_FILE_LOG, TRUE, max_cp_group->space_id,
 #ifdef INNODB_VERSION_SHORT
+	fil_io(OS_FILE_READ | OS_FILE_LOG, TRUE, max_cp_group->space_id,
 				0,
-#endif
 				0, 0, LOG_FILE_HDR_SIZE,
 				log_hdr_buf, max_cp_group);
+#else
+	fil_io(OS_FILE_READ | OS_FILE_LOG, TRUE, max_cp_group->space_id,
+				0, 0, LOG_FILE_HDR_SIZE,
+				log_hdr_buf, max_cp_group);
+#endif
 
 	/* check consistency of log file header to copy */
 	mutex_enter(&log_sys->mutex);
@@ -4621,6 +4628,10 @@ next_opt:
 		exit(EXIT_FAILURE);
 	}
 
+	/* Ensure target dir is not relative to datadir */
+	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, NULL);
+	xtrabackup_target_dir= xtrabackup_real_target_dir;
+
 	if (xtrabackup_tables) {
 		/* init regexp */
 		char *p, *next;
@@ -4701,7 +4712,7 @@ next_opt:
 			HASH_INSERT(xtrabackup_tables_t, name_hash, tables_hash,
 					ut_fold_string(table->name), table);
 
-			msg("xtrabackup: table '%s' is registerd to the "
+			msg("xtrabackup: table '%s' is registered to the "
 			    "list.\n", table->name);
 		}
 	}

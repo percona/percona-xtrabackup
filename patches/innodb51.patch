@@ -1186,7 +1186,22 @@
  
 --- a/storage/innodb_plugin/trx/trx0sys.c
 +++ b/storage/innodb_plugin/trx/trx0sys.c
-@@ -1617,10 +1617,12 @@
+@@ -1586,12 +1586,14 @@
+ 	mem_free(trx_doublewrite);
+ 	trx_doublewrite = NULL;
+ 
++	if (!srv_apply_log_only) {
+ 	/* Only prepared transactions may be left in the system. Free them. */
+ 	ut_a(UT_LIST_GET_LEN(trx_sys->trx_list) == trx_n_prepared);
+ 
+ 	while ((trx = UT_LIST_GET_FIRST(trx_sys->trx_list)) != NULL) {
+ 		trx_free_prepared(trx);
+ 	}
++	}
+ 
+ 	/* There can't be any active transactions. */
+ 	rseg = UT_LIST_GET_FIRST(trx_sys->rseg_list);
+@@ -1617,10 +1619,12 @@
  		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
  	}
  

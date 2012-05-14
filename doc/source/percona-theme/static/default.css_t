@@ -14,8 +14,10 @@
 /* -- page layout ----------------------------------------------------------- */
 
 body {
-    font-family: Arial,Helvetica,sans-serif;
-    font-size: 14px;
+	font-size: 12px;
+	line-height: 16px;
+	font-family: Arial;
+
     background-color: #fff;
     color: #333333;
     line-height: 20px;
@@ -92,7 +94,7 @@ div.related a {
 div.sphinxsidebar {
     margin-left: 0px;
     margin-right: 30px;
-    color: #eee;
+    color: #333333;
     font-family: Arial,Helvetica,sans-serif;
     width: 260px;
     {%- if theme_stickysidebar|tobool %}
@@ -223,45 +225,7 @@ a.external:visited {
 
 /* -- body styles ----------------------------------------------------------- */
 
-div.body h1,
-div.body h2,
-div.body h3,
-div.body h4,
-div.body h5,
-div.body h6 {
-   font-family: Arial,Helvetica,sans-serif;
-   background-color: #fff;
-   font-weight: 400;
 
-   /* border-bottom: 1px solid #ccc; */
-   /* margin: 20px -20px 10px -20px; */
-   /* padding: 0; */
-  /*  padding: 3px 0 3px 10px; */
-   text-decoration: none !important;
-
-   border-bottom: 1px solid #E0E0E0;
-   font-size: 20px;
-   line-height: 20px;
-   margin: 30px 0 15px;
-   padding: 0 0 3px;
-   color: #000;
-}
-
-div.body h1 {
-   font-size: 32px;
-   color: #D12907;
-   line-height: 40px;
-   margin: 10px 0 20px 0;
-   text-decoration: none !important;
-   border-bottom: none;
-   margin-top: 35px;
-}
-
-div.body h2 { font-size: 150%; }
-div.body h3 { font-size: 140%; }
-div.body h4 { font-size: 120%; }
-div.body h5 { font-size: 110%; }
-div.body h6 { font-size: 100%; }
 
 a.headerlink {
     color: {{ theme_headlinkcolor }};

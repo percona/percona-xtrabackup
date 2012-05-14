@@ -75,7 +75,7 @@ else
 fi
 
 SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
-test -e "$SOURCEDIR/Makefile" || exit 2
+test -e "$SOURCEDIR/VERSION" || exit 2
 
 # Read XTRABACKUP_VERSION from the VERSION file
 . $SOURCEDIR/VERSION
@@ -91,8 +91,8 @@ export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURC
 export MAKE_JFLAG=-j4
 
 # Create a temporary working directory
-INSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
-INSTALLDIR="$WORKDIR_ABS/$INSTALLDIR/xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
+BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
+INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
 
 mkdir "$INSTALLDIR"
 
@@ -103,42 +103,47 @@ export AUTO_DOWNLOAD=yes
     cd "$WORKDIR"
 
     # Make a copy of the source
-    rm -f "xtrabackup-$XTRABACKUP_VERSION"
+    rm -f "percona-xtrabackup-$XTRABACKUP_VERSION"
 
-    bzr export "xtrabackup-$XTRABACKUP_VERSION" "$SOURCEDIR"
+    bzr export "percona-xtrabackup-$XTRABACKUP_VERSION" "$SOURCEDIR"
 
     # Build proper
     (
-        cd "xtrabackup-$XTRABACKUP_VERSION"
-
-        bash utils/build.sh xtradb55
-        bash utils/build.sh xtradb
-        bash utils/build.sh 5.1
+        cd "percona-xtrabackup-$XTRABACKUP_VERSION"
 
         # Install the files
         mkdir "$INSTALLDIR/bin" "$INSTALLDIR/share"
+        mkdir -p "$INSTALLDIR/share/doc/percona-xtrabackup"
 
-        install -m 755 Percona-Server/storage/innodb_plugin/xtrabackup/xtrabackup \
-            "$INSTALLDIR/bin"
-        install -m 755 Percona-Server-5.5/storage/innobase/xtrabackup/xtrabackup_55 \
-            "$INSTALLDIR/bin"
+        bash utils/build.sh xtradb55
+        install -m 755 src/xtrabackup_55 "$INSTALLDIR/bin"
+
+        bash utils/build.sh xtradb
+        install -m 755 src/xtrabackup "$INSTALLDIR/bin"
+
+        bash utils/build.sh 5.1
+        install -m 755 src/xtrabackup_51 "$INSTALLDIR/bin"
+
+        install -m 755 src/xbstream "$INSTALLDIR/bin"
+
         install -m 755 innobackupex "$INSTALLDIR/bin"
         ln -s innobackupex "$INSTALLDIR/bin/innobackupex-1.5.1"
-        install -m 755 mysql-5.1/storage/innobase/xtrabackup/xtrabackup_51 \
-            "$INSTALLDIR/bin"
-        install -m 755 libtar-1.2.11/libtar/tar4ibd "$INSTALLDIR/bin"
-        cp -R test "$INSTALLDIR/share/xtrabackup-test"
 
-    )
+        install -m 644 COPYING "$INSTALLDIR/share/doc/percona-xtrabackup"
 
-    $TAR czf "xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
-        --owner=0 --group=0 -C "$INSTALLDIR/../" "xtrabackup-$XTRABACKUP_VERSION"
+        cp -R test "$INSTALLDIR/share/percona-xtrabackup-test"
+
+    ) || false
+
+    $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
+        --owner=0 --group=0 -C "$INSTALLDIR/../" \
+        "percona-xtrabackup-$XTRABACKUP_VERSION"
 
     # Clean up build dir
-    rm -rf "xtrabackup-$XTRABACKUP_VERSION"
+    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
     
-)
+) || false
 
 # Clean up
-rm -rf "$INSTALLDIR"
+rm -rf "$WORKDIR_ABS/$BASEINSTALLDIR"
 

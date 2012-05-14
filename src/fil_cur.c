@@ -230,8 +230,9 @@ read_retry:
 				if (retry_count == 0) {
 					msg("[%02lu] xtrabackup: "
 					    "Error: failed to read page after "
-					    "10 retries. This file seems to be "
-					    "corrupted.\n", cursor->thread_n);
+					    "10 retries. File %s seems to be "
+					    "corrupted.\n", cursor->thread_n,
+					    cursor->path);
 					ret = XB_FIL_CUR_ERROR;
 					break;
 				}

@@ -33,6 +33,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <btr0sea.h>
 #include <log0log.h>
 #include <log0recv.h>
+#include <trx0sys.h>
 
 #ifndef INNODB_VERSION_SHORT
 #  define IB_INT64 ib_longlong
