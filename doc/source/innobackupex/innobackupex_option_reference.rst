@@ -127,10 +127,6 @@ Options
 
    This option accepts a string argument that specifies the location where a temporary file will be stored. It should be used when :option:`--remote-host` or :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specifed, the default is to use the value of ``tmpdir`` read from the server configuration.
 
-.. option:: --force-tar
-
-   This option forces the use of :command:`tar` when creating a streamed backup, rather than :program:`tar4ibd`, which is the default.
-
 .. option:: --scpopt = '-Cp -c arcfour'
 
    This option accepts a string argument that specifies the command line options to pass to :command:`scp` when the option :option:`--remost-host` is specified. If the option is not specified, the default options are ``-Cp -c arcfour``.
