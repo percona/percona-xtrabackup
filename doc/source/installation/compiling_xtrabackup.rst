@@ -54,14 +54,5 @@ At the base directory of the downloaded source code, if you execute ::
 
   $ AUTO_DOWNLOAD="yes" ./utils/build.sh xtradb
 
-and you go for a coffee, at your return |XtraBackup| will be ready to be used. The |xtrabackup| binary will located in the following subdirectory depending on the building target:
+and you go for a coffee, at your return |XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
 
-  ================== =====================================================
-  Target             Location
-  ================== =====================================================
-  innodb51_builtin   mysql-5.1/storage/innobase/xtrabackup
-  innodb51           mysql-5.1/storage/innodb_plugin/xtrabackup
-  innodb55           mysql-5.5/storage/innobase/xtrabackup
-  xtradb51           Percona-Server-5.1/storage/innodb_plugin/xtrabackup
-  xtradb55           Percona-Server-5.5/storage/innobase/xtrabackup
-  ================== =====================================================
