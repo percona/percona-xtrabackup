@@ -102,7 +102,6 @@ my $stream_cmd = '';
 my $option_tmpdir = '';
 
 my $option_tar4ibd = '';
-my $option_force_tar = '';
 my $option_scp_opt = '-Cp -c arcfour';
 my $option_ssh_opt = '';
 
@@ -1618,7 +1617,6 @@ sub check_args {
                         'ibbackup=s' => \$option_ibbackup_binary,
                         'scpopt=s' => \$option_scp_opt,
                         'sshopt=s' => \$option_ssh_opt,
-                        'force-tar', => \$option_force_tar,
                         'parallel=i' => \$option_parallel,
                         'safe-slave-backup' => \$option_safe_slave_backup,
                         'safe-slave-backup-timeout' => $option_safe_slave_backup_timeout,
@@ -2462,7 +2460,7 @@ innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS]
              [--include=REGEXP] [--user=NAME]
              [--password=WORD] [--port=PORT] [--socket=SOCKET]
              [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
-             [--slave-info] [--stream=tar|xbstream] [--force-tar]
+             [--slave-info] [--stream=tar|xbstream]
              [--defaults-file=MY.CNF]
              [--databases=LIST] [--no-lock] 
              [--tmpdir=DIRECTORY] [--tables-file=FILE]
@@ -2553,10 +2551,6 @@ This option is passed directly to xtrabackup's --export option. It enables expor
 =item --extra-lsndir=DIRECTORY
 
 This option specifies the directory in which to save an extra copy of the "xtrabackup_checkpoints" file.  The option accepts a string argument. It is passed directly to xtrabackup's --extra-lsndir option. See the xtrabackup documentation for details.
-
-=item --force-tar
-
-This option forces the use of tar when creating a streamed backup, rather than tar4ibd, which is the default.
 
 =item --help
 

@@ -4851,6 +4851,22 @@ next_opt:
 		exit(EXIT_FAILURE);
 	}
 
+	if (xtrabackup_incremental && xtrabackup_stream &&
+	    xtrabackup_stream_fmt == XB_STREAM_FMT_TAR) {
+		msg("xtrabackup: error: "
+		    "streaming incremental backups are incompatible with the \n"
+		    "'tar' streaming format. Use --stream=xbstream instead.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (xtrabackup_compress && xtrabackup_stream &&
+	    xtrabackup_stream_fmt == XB_STREAM_FMT_TAR) {
+		msg("xtrabackup: error: "
+		    "compressed backups are incompatible with the \n"
+		    "'tar' streaming format. Use --stream=xbstream instead.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	/* cannot execute both for now */
 	{
 		int num = 0;

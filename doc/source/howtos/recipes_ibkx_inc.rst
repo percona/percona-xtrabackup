@@ -30,7 +30,7 @@ If everything went fine, you should see an output similar to: ::
 
 Now apply the incremental backup to the base backup, by issuing: ::
 
-  innobackupex --apply-log $FULLBACKUP
+  innobackupex --apply-log --redo-only $FULLBACKUP
    --incremental-dir=$INCREMENTALBACKUP
    --use-memory=1G --user=DVADER --password=D4RKS1D3
 

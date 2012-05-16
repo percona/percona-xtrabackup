@@ -102,13 +102,6 @@ function test_streaming_incremental()
     clean
 }
 
-for stream_format in tar xbstream; do
-    case "$stream_format" in
-	"tar")
-	    stream_extract_cmd="$TAR -ixvf";;
-	"xbstream")
-	    stream_extract_cmd="xbstream -xv <";;
-    esac
-
-    test_streaming_incremental
-done
+stream_format="xbstream"
+stream_extract_cmd="xbstream -xv <"
+test_streaming_incremental
