@@ -6333,7 +6333,7 @@ next_opt:
 	if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
 		exit(ho_error);
 
-	if ((!xtrabackup_prepare) && (strcmp(mysql_data_home, "./") == 0)) {
+	if ((!xtrabackup_print_param) && (!xtrabackup_prepare) && (strcmp(mysql_data_home, "./") == 0)) {
 		if (!xtrabackup_print_param)
 			usage();
 		msg("\nxtrabackup: Error: Please set parameter 'datadir'\n");
