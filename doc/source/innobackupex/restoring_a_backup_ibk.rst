@@ -6,7 +6,7 @@ For convenience, |innobackupex| has a :option:`--copy-back` option, which perfor
 
   $ innobackupex --copy-back /path/to/BACKUP-DIR
 
-It will copy all the data-related files back to the server's :term:`datadir`, determined by the :file:`backup-my.cnf` configuration file in the directory. You should check the last line of the output for a success message::
+It will copy all the data-related files back to the server's :term:`datadir`, determined by the server's :file:`my.cnf` configuration file. You should check the last line of the output for a success message::
 
   innobackupex: Finished copying back files.
 
