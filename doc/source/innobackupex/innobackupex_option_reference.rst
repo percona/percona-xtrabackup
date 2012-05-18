@@ -70,6 +70,10 @@ Options
 
    This option accepts a string argument that specifies the port to use when connecting to the database server with TCP/IP. It is passed to the :command:`mysql` child process. It is passed to the :command:`mysql` child process without alteration. See :command:`mysql --help` for details.
 
+.. option:: --defaults-group
+
+   This option accepts a string argument that specifies the group which should be read from the configuration file. This is needed if you use mysqld_multi.
+
 .. option:: --socket
 
    This option accepts a string argument that specifies the socket to use when connecting to the local database server with a UNIX domain socket. It is passed to the mysql child process without alteration. See :command:`mysql --help` for details.
