@@ -84,6 +84,7 @@ my $option_mysql_user = '';
 my $option_mysql_port = '';
 my $option_mysql_socket = '';
 my $option_mysql_host = '';
+my $option_defaults_group = 'mysqld';
 my $option_no_timestamp = '';
 my $option_slave_info = '';
 my $option_galera_info = '';
@@ -377,7 +378,7 @@ sub Die {
 # process.
 #
 sub backup {
-    my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
+    my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
 
     # check that we can connect to the database. This done by
     # connecting, issuing a query, and closing the connection.
@@ -626,13 +627,13 @@ sub copy_dir_recursively {
 # back to their original locations.
 #
 sub copy_back {
-    my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
+    my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
     my $orig_ibdata_dir = 
-        get_option(\%config, 'mysqld', 'innodb_data_home_dir');
+        get_option(\%config, $option_defaults_group, 'innodb_data_home_dir');
     my $orig_innodb_data_file_path = 
-        get_option(\%config, 'mysqld', 'innodb_data_file_path');
+        get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
     my $orig_iblog_dir =
-        get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
+        get_option(\%config, $option_defaults_group, 'innodb_log_group_home_dir');
     my $iblog_files = 'ib_logfile.*';
     my $excluded_files = 
         '\.\.?|backup-my\.cnf|xtrabackup_logfile|' .
@@ -738,6 +739,10 @@ sub apply_log {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     } else {
         $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
+    }
+
+    if ($option_defaults_group) {
+        $options = $options . " --defaults-group=\"$option_defaults_group\" ";
     }
 
     $options = $options . "--prepare --target-dir=$backup_dir";
@@ -863,6 +868,10 @@ sub start_ibbackup {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
+    if ($option_defaults_group) {
+        $options = $options . " --defaults-group=\"$option_defaults_group\" ";
+    }
+
     $options = $options . "--backup --suspend-at-end";
 
     if (!$option_remote_host && !$option_stream) {
@@ -925,13 +934,13 @@ sub start_ibbackup {
 
             if($option_remote_host) {
                 #direct copy to remote
-                my $orig_datadir = get_option(\%config, 'mysqld', 'datadir');
+                my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
                 my $orig_ibdata_dir =
-                    get_option(\%config, 'mysqld', 'innodb_data_home_dir');
+                    get_option(\%config, $option_defaults_group, 'innodb_data_home_dir');
                 my $orig_innodb_data_file_path =
-                    get_option(\%config, 'mysqld', 'innodb_data_file_path');
+                    get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
                 my $innodb_flush_method = 
-                    get_option(\%config, 'mysqld', 'innodb_flush_method');
+                    get_option(\%config, $option_defaults_group, 'innodb_flush_method');
                 my $innodb_use_odirect;
                 $innodb_use_odirect = 1 if $innodb_flush_method =~ m/^(ALL_)?O_DIRECT$/i;
 
@@ -1582,7 +1591,7 @@ sub init {
     read_config_file(\%config);
 
     if(!$option_tmpdir) {
-        $option_tmpdir = get_option(\%config, 'mysqld', 'tmpdir');
+        $option_tmpdir = get_option(\%config, $option_defaults_group, 'tmpdir');
     }
 
     # get innodb log home directory from options file
@@ -1658,8 +1667,8 @@ sub write_backup_config_file {
 
     my $option_name;
     foreach $option_name (@option_names) {
-        if (has_option(\%config, 'mysqld', $option_name)) {
-            my $option_value = get_option(\%config, 'mysqld', $option_name);
+        if (has_option(\%config, $option_defaults_group, $option_name)) {
+            my $option_value = get_option(\%config, $option_defaults_group, $option_name);
             $options_dump .= "$option_name=$option_value\n";
         }
     }
@@ -1725,6 +1734,7 @@ sub check_args {
                         'user=s' => \$option_mysql_user,
                         'host=s' => \$option_mysql_host,
                         'port=s' => \$option_mysql_port,
+                        'defaults-group=s' => \$option_defaults_group,
                         'slave-info' => \$option_slave_info,
                         'galera-info' => \$option_galera_info,
                         'socket=s' => \$option_mysql_socket,
@@ -1840,7 +1850,7 @@ sub check_args {
 sub make_backup_dir {
     my $dir;
     my $innodb_data_file_path = 
-        get_option(\%config, 'mysqld', 'innodb_data_file_path');
+        get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
 
     # create backup directory
     $dir = $backup_root;
@@ -1932,7 +1942,7 @@ sub remove_from_array {
 #
 sub backup_files {
     my $prep_mode = shift;
-    my $source_dir = get_option(\%config, 'mysqld', 'datadir');
+    my $source_dir = get_option(\%config, $option_defaults_group, 'datadir');
     my @list;
     my $file;
     my $database;
@@ -2209,6 +2219,10 @@ sub read_config_file {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     } elsif ($option_apply_log) {
         $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
+    }
+
+    if ($option_defaults_group) {
+        $options = $options . " --defaults-group=\"$option_defaults_group\" ";
     }
 
     $options = $options . "--print-param";
@@ -2616,7 +2630,7 @@ innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS]
              [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
              [--slave-info] [--stream=tar|xbstream]
              [--scpopt=OPTIONS-FOR-SCP]  [--sshopt=OPTIONS-FOR-SSH]
-             [--defaults-file=MY.CNF]
+             [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME]
              [--databases=LIST] [--remote-host=HOSTNAME] [--no-lock] 
              [--tmpdir=DIRECTORY] [--tables-file=FILE]
              [--incremental] [--incremental-basedir]
@@ -2628,7 +2642,7 @@ innobackupex --apply-log [--use-memory=B] [--uncompress]
              [--export] [--redo-only] [--ibbackup=IBBACKUP-BINARY]
              BACKUP-DIR
 
-innobackupex --copy-back [--defaults-file=MY.CNF] BACKUP-DIR
+innobackupex --copy-back [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME] BACKUP-DIR
 
 =head1 DESCRIPTION
 
@@ -2810,6 +2824,10 @@ This option accepts a string argument that specifies the amount of memory in byt
 =item --user=NAME
 
 This option specifies the MySQL username used when connecting to the server, if that's not the current user. The option accepts a string argument.  It is passed to the mysql child process without alteration. See mysql --help for details.
+
+=item --defaults-group=GROUP-NAME
+
+This option specifies the group name in my.cnf which should be used. This is needed for mysqld_multi deployments.
 
 =item --version
 
