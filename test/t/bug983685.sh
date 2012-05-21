@@ -6,7 +6,7 @@
 
 init
 
-options="innodb_data_file_path innodb_log_group_home_dir"
+options="innodb_data_file_path"
 
 run_mysqld
 
