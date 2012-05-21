@@ -2005,7 +2005,7 @@ sub backup_files {
 
         # copy files of this database
 	opendir(DBDIR, "$source_dir/$database");
-	@list = grep(/\.(frm)|(MYD)|(MYI)|(MRG)|(TRG)|(TRN)|(ARM)|(ARZ)|(CSM)|(CSV)|(opt)|(par)$/, readdir(DBDIR)); 
+	@list = grep(/\.(frm|MYD|MYI|MRG|TRG|TRN|ARM|ARZ|CSM|CSV|opt|par)$/, readdir(DBDIR)); 
 	closedir DBDIR;
         $file_c = @list;
         if ($file_c <= $backup_file_print_limit) {
