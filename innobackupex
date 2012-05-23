@@ -575,7 +575,7 @@ sub copy_file() {
 		"file $copy_dir_dst/$_ exists";
 	}
 
-	print STDERR "$prefix Copying file '$copy_dir_dst/$_'\n";
+	print STDERR "$prefix Copying '$File::Find::name' to '$dst_path'\n";
 	copy($File::Find::name, $dst_path) or Die "copy failed: $!";
     }
 }
@@ -595,8 +595,9 @@ sub copy_file() {
 #     use rsync when --rsync is specified
 #
 sub copy_dir_recursively {
-    $copy_dir_src = shift;
-    $copy_dir_dst = shift;
+    # Clean paths and remove trailing slashes if any
+    $copy_dir_src = File::Spec->canonpath(shift);
+    $copy_dir_dst = File::Spec->canonpath(shift);
     $copy_dir_exclude_regexp = shift;
     $copy_dir_overwrite = shift;
 
