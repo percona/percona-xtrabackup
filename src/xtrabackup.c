@@ -187,9 +187,6 @@ char mysql_real_data_home[FN_REFLEN] = "./";
 char *mysql_data_home= mysql_real_data_home;
 static char mysql_data_home_buff[2];
 
-char *opt_mysql_tmpdir = NULL;
-MY_TMPDIR mysql_tmpdir_list;
-
 const char *defaults_group = "mysqld";
 
 /* === static parameters in ha_innodb.cc */
