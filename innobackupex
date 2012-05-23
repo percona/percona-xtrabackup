@@ -1513,7 +1513,6 @@ sub init {
 sub write_backup_config_file {
     my $filename = shift;
 
-    $root = $backup_dir;
     open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
 
     my @option_names = (
