@@ -40,6 +40,9 @@ my $required_perl_version_old_style = 5.005;
 # force flush after every write and print
 $| = 1;
 
+# disable nlink count optimization, see File::Find documentation for details
+$File::Find::dont_use_nlink=1;
+
 ######################################################################
 # modifiable parameters
 ######################################################################
