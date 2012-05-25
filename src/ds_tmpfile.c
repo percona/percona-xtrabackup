@@ -64,6 +64,8 @@ tmpfile_init(const char *root)
 	tmpfile_ctxt = (ds_tmpfile_ctxt_t *) (ctxt + 1);
 	tmpfile_ctxt->file_list = NULL;
 	if (pthread_mutex_init(&tmpfile_ctxt->mutex, NULL)) {
+
+		MY_FREE(ctxt);
 		return NULL;
 	}
 
@@ -145,9 +147,7 @@ tmpfile_write(ds_file_t *file, const void *buf, size_t len)
 	File fd = ((ds_tmp_file_t *) file->ptr)->fd;
 
 	if (!my_write(fd, buf, len, MYF(MY_WME | MY_NABP))) {
-#ifdef USE_POSIX_FADVISE
 		posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 		return 0;
 	}
 
@@ -208,9 +208,7 @@ tmpfile_deinit(ds_ctxt_t *ctxt)
 		}
 
 		/* copy to the destination datasink */
-#ifdef USE_POSIX_FADVISE
 		posix_fadvise(tmp_file->fd, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
 		if (my_seek(tmp_file->fd, 0, SEEK_SET, MYF(0)) ==
 		    MY_FILEPOS_ERROR) {
 			msg("error: my_seek() failed for '%s', errno = %d.\n",
@@ -219,9 +217,7 @@ tmpfile_deinit(ds_ctxt_t *ctxt)
 		}
 		while ((bytes = my_read(tmp_file->fd, buf, buf_size,
 					MYF(MY_WME))) > 0) {
-#ifdef USE_POSIX_FADVISE
 			posix_fadvise(tmp_file->fd, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 			if (ds_write(dst_file, buf, bytes)) {
 				msg("error: cannot write to stream for '%s'.\n",
 				    tmp_file->orig_path);

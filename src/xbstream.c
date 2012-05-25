@@ -205,9 +205,7 @@ stream_one_file(File file, xb_wstream_file_t *xbfile)
 	uchar	buf[XBSTREAM_BUFFER_SIZE];
 	size_t	bytes;
 
-#ifdef USE_POSIX_FADVISE
 	posix_fadvise(file, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
 
 	while ((bytes = my_read(file, buf, XBSTREAM_BUFFER_SIZE,
 				MYF(MY_WME))) > 0) {
@@ -216,9 +214,7 @@ stream_one_file(File file, xb_wstream_file_t *xbfile)
 			    my_progname);
 			return 1;
 		}
-#ifdef USE_POSIX_FADVISE
 		posix_fadvise(file, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 
 	}
 

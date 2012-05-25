@@ -20,81 +20,75 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-/* Page filters implementation */
+/* Page write filters implementation */
 
 #include <my_base.h>
 #include <ut0mem.h>
 #include "common.h"
 #include "innodb_int.h"
-#include "page_filt.h"
+#include "write_filt.h"
 #include "fil_cur.h"
-
-/* value of the --incremental option in xtrabackup.c */
-extern LSN64 incremental_lsn;
-
-/* defined in xtrabackup.c */
-my_bool xb_write_delta_metadata(const char *filename, const xb_delta_info_t *
-				info);
+#include "xtrabackup.h"
 
 /************************************************************************
-Write-through page filter. */
-static my_bool pf_wt_init(xb_page_filt_ctxt_t *ctxt, char *dst_name,
+Write-through page write filter. */
+static my_bool wf_wt_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 			  xb_fil_cur_t *cursor);
-static my_bool pf_wt_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile);
+static my_bool wf_wt_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile);
 
-xb_page_filt_t pf_write_through = {
-	&pf_wt_init,
-	&pf_wt_process,
+xb_write_filt_t wf_write_through = {
+	&wf_wt_init,
+	&wf_wt_process,
 	NULL,
 	NULL
 };
 
 /************************************************************************
-Incremental page filter. */
-static my_bool pf_incremental_init(xb_page_filt_ctxt_t *ctxt, char *dst_name,
+Incremental page write filter. */
+static my_bool wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 				   xb_fil_cur_t *cursor);
-static my_bool pf_incremental_process(xb_page_filt_ctxt_t *ctxt,
+static my_bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
 				      ds_file_t *dstfile);
-static my_bool pf_incremental_finalize(xb_page_filt_ctxt_t *ctxt,
+static my_bool wf_incremental_finalize(xb_write_filt_ctxt_t *ctxt,
 				       ds_file_t *dstfile);
-static void pf_incremental_deinit(xb_page_filt_ctxt_t *ctxt);
+static void wf_incremental_deinit(xb_write_filt_ctxt_t *ctxt);
 
-xb_page_filt_t pf_incremental = {
-	&pf_incremental_init,
-	&pf_incremental_process,
-	&pf_incremental_finalize,
-	&pf_incremental_deinit
+xb_write_filt_t wf_incremental = {
+	&wf_incremental_init,
+	&wf_incremental_process,
+	&wf_incremental_finalize,
+	&wf_incremental_deinit
 };
 
 /************************************************************************
-Compact page filter. */
-static my_bool pf_compact_init(xb_page_filt_ctxt_t *ctxt, char *dst_name,
-				   xb_fil_cur_t *cursor);
-static my_bool pf_compact_process(xb_page_filt_ctxt_t *ctxt,
-				      ds_file_t *dstfile);
-static my_bool pf_compact_finalize(xb_page_filt_ctxt_t *ctxt,
-				       ds_file_t *dstfile);
+Compact page write filter. */
+static my_bool wf_compact_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
+			       xb_fil_cur_t *cursor);
+static my_bool wf_compact_process(xb_write_filt_ctxt_t *ctxt,
+				  ds_file_t *dstfile);
+static my_bool wf_compact_finalize(xb_write_filt_ctxt_t *ctxt,
+				   ds_file_t *dstfile);
 
-xb_page_filt_t pf_compact = {
-	&pf_compact_init,
-	&pf_compact_process,
-	&pf_compact_finalize,
+xb_write_filt_t wf_compact = {
+	&wf_compact_init,
+	&wf_compact_process,
+	&wf_compact_finalize,
 	NULL
 };
 
 /************************************************************************
-Initialize incremental page filter.
+Initialize incremental page write filter.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_incremental_init(xb_page_filt_ctxt_t *ctxt, char *dst_name,
+wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 		    xb_fil_cur_t *cursor)
 {
-	char		 		meta_name[FN_REFLEN];
-	xb_delta_info_t	 		info;
+	char				meta_name[FN_REFLEN];
+	xb_delta_info_t			info;
 	ulint				buf_size;
-	xb_pf_incremental_ctxt_t	*cp =
-		&(ctxt->u.pf_incremental_ctxt);
+	xb_wf_incremental_ctxt_t	*cp =
+		&(ctxt->u.wf_incremental_ctxt);
 
 	ctxt->cursor = cursor;
 
@@ -126,20 +120,18 @@ pf_incremental_init(xb_page_filt_ctxt_t *ctxt, char *dst_name,
 }
 
 /************************************************************************
-Run the next batch of pages through incremental page filter.
+Run the next batch of pages through incremental page write filter.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_incremental_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
+wf_incremental_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 {
-	ulint 				i;
+	ulint				i;
 	xb_fil_cur_t			*cursor = ctxt->cursor;
 	ulint				page_size = cursor->page_size;
 	byte				*page;
-	byte 				*buf_end;
-	xb_pf_incremental_ctxt_t	*cp = &(ctxt->u.pf_incremental_ctxt);
+	xb_wf_incremental_ctxt_t	*cp = &(ctxt->u.wf_incremental_ctxt);
 
-	buf_end = cursor->buf + cursor->buf_read;
 	for (i = 0, page = cursor->buf; i < cursor->buf_npages;
 	     i++, page += page_size) {
 		if (ut_dulint_cmp(incremental_lsn,
@@ -157,13 +149,15 @@ pf_incremental_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 
 			/* clear buffer */
 			bzero(cp->delta_buf, page_size / 4 * page_size);
-			mach_write_to_4(cp->delta_buf, 0x78747261UL); /*"xtra"*/
+			/*"xtra"*/
+			mach_write_to_4(cp->delta_buf, 0x78747261UL);
 			cp->npages = 1;
 		}
 
 		mach_write_to_4(cp->delta_buf + cp->npages * 4,
 				cursor->buf_page_no + i);
-		memcpy(cp->delta_buf + cp->npages * page_size, page, page_size);
+		memcpy(cp->delta_buf + cp->npages * page_size, page,
+		       page_size);
 
 		cp->npages++;
 	}
@@ -172,15 +166,15 @@ pf_incremental_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 }
 
 /************************************************************************
-Flush the incremental page filter's buffer.
+Flush the incremental page write filter's buffer.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_incremental_finalize(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
+wf_incremental_finalize(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 {
 	xb_fil_cur_t			*cursor = ctxt->cursor;
 	ulint				page_size = cursor->page_size;
-	xb_pf_incremental_ctxt_t	*cp = &(ctxt->u.pf_incremental_ctxt);
+	xb_wf_incremental_ctxt_t	*cp = &(ctxt->u.wf_incremental_ctxt);
 
 	if (cp->npages != page_size / 4) {
 		mach_write_to_4(cp->delta_buf + cp->npages * 4, 0xFFFFFFFFUL);
@@ -198,11 +192,11 @@ pf_incremental_finalize(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 }
 
 /************************************************************************
-Free the incremental page filter's buffer. */
+Free the incremental page write filter's buffer. */
 static void
-pf_incremental_deinit(xb_page_filt_ctxt_t *ctxt)
+wf_incremental_deinit(xb_write_filt_ctxt_t *ctxt)
 {
-	xb_pf_incremental_ctxt_t	*cp = &(ctxt->u.pf_incremental_ctxt);
+	xb_wf_incremental_ctxt_t	*cp = &(ctxt->u.wf_incremental_ctxt);
 
 	if (cp->delta_buf_base != NULL) {
 		ut_free(cp->delta_buf_base);
@@ -210,11 +204,11 @@ pf_incremental_deinit(xb_page_filt_ctxt_t *ctxt)
 }
 
 /************************************************************************
-Initialize the write-through page filter.
+Initialize the write-through page write filter.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_wt_init(xb_page_filt_ctxt_t *ctxt, char *dst_name __attribute__((unused)),
+wf_wt_init(xb_write_filt_ctxt_t *ctxt, char *dst_name __attribute__((unused)),
 	   xb_fil_cur_t *cursor)
 {
 	ctxt->cursor = cursor;
@@ -223,11 +217,11 @@ pf_wt_init(xb_page_filt_ctxt_t *ctxt, char *dst_name __attribute__((unused)),
 }
 
 /************************************************************************
-Write the next batch of pages to the destination datasinkr.
+Write the next batch of pages to the destination datasink.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_wt_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
+wf_wt_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 {
 	xb_fil_cur_t			*cursor = ctxt->cursor;
 
@@ -239,14 +233,14 @@ pf_wt_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 }
 
 /************************************************************************
-Initialize the compact page filter.
+Initialize the compact page write filter.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_compact_init(xb_page_filt_ctxt_t *ctxt,
+wf_compact_init(xb_write_filt_ctxt_t *ctxt,
 		char *dst_name __attribute__((unused)), xb_fil_cur_t *cursor)
 {
-	xb_pf_compact_ctxt_t		*cp = &(ctxt->u.pf_compact_ctxt);
+	xb_wf_compact_ctxt_t		*cp = &(ctxt->u.wf_compact_ctxt);
 
 	/* Don't compact the system table space */
 	cp->skip = cursor->is_system;
@@ -261,18 +255,18 @@ check_if_skip_page(byte *page __attribute__((unused)))
 }
 
 /************************************************************************
-Run the next batch of pages through the compact page filter.
+Run the next batch of pages through the compact page write filter.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_compact_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
+wf_compact_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 {
 	xb_fil_cur_t		*cursor = ctxt->cursor;
 	ulint			 page_size = cursor->page_size;
 	byte			*page;
-	byte 			*buf_end;
+	byte			*buf_end;
 	byte			*write_from;
-	xb_pf_compact_ctxt_t	*cp = &(ctxt->u.pf_compact_ctxt);
+	xb_wf_compact_ctxt_t	*cp = &(ctxt->u.wf_compact_ctxt);
 
 	if (cp->skip) {
 		return(!ds_write(dstfile, cursor->buf, cursor->buf_read));
@@ -299,15 +293,15 @@ pf_compact_process(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 }
 
 /************************************************************************
-Close the compact filter's page map stream.
+Close the compact write filter's page map stream.
 
 @return TRUE on success, FALSE on error. */
 static my_bool
-pf_compact_finalize(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile)
+wf_compact_finalize(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 {
 	xb_fil_cur_t			*cursor = ctxt->cursor;
 	ulint				page_size = cursor->page_size;
-	xb_pf_incremental_ctxt_t	*cp = &(ctxt->u.pf_incremental_ctxt);
+	xb_wf_incremental_ctxt_t	*cp = &(ctxt->u.wf_incremental_ctxt);
 
 	if (cp->npages != page_size / 4) {
 		mach_write_to_4(cp->delta_buf + cp->npages * 4, 0xFFFFFFFFUL);

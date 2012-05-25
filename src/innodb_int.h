@@ -70,7 +70,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #ifdef __WIN__
 #define SRV_PATH_SEPARATOR	'\\'
-#define SRV_PATH_SEPARATOR_STR	"\\"	
+#define SRV_PATH_SEPARATOR_STR	"\\"
 #else
 #define SRV_PATH_SEPARATOR	'/'
 #define SRV_PATH_SEPARATOR_STR	"/"
@@ -313,7 +313,8 @@ struct fil_space_struct {
 				tablespace whose size we do not know yet;
 				last incomplete megabytes in data files may be
 				ignored if space == 0 */
-	ulint		flags;	/*!< compressed page size and file format, or 0 */
+	ulint		flags;	/*!< compressed page size and file format, or 0
+				*/
 	ulint		n_reserved_extents;
 				/*!< number of reserved free extents for
 				ongoing operations like B-tree page split */
@@ -490,7 +491,7 @@ open_or_create_data_files(
 								created */
 #ifdef XTRADB_BASED
 	ibool*	create_new_doublewrite_file,
-#endif 
+#endif
 #ifdef UNIV_LOG_ARCHIVE
 	ulint*	min_arch_log_no,/* out: min of archived log numbers in data
 				files */
@@ -499,24 +500,8 @@ open_or_create_data_files(
 	LSN64*	min_flushed_lsn,/* out: min of flushed lsn values in data
 				files */
 	LSN64*	max_flushed_lsn,/* out: */
-	ulint*	sum_of_new_sizes);/* out: sum of sizes of the new files added */
-
-/***********************************************************************
-Computes bit shift for a given value. If the argument is not a power
-of 2, returns 0.*/
-static inline ulint
-get_bit_shift(ulint value)
-{
-	ulint shift;
-
-	if (value == 0)
-		return 0;
-
-	for (shift = 0; !(value & 1UL); shift++) {
-		value >>= 1;
-	}
-	return (value >> 1) ? 0 : shift;
-}
+	ulint*	sum_of_new_sizes);/* out: sum of sizes of the new files added
+				  */
 
 /****************************************************************//**
 A simple function to open or create a file.
@@ -580,7 +565,8 @@ void
 xb_file_set_nocache(
 /*================*/
 	os_file_t	fd,		/* in: file descriptor to alter */
-	const char*	file_name,	/* in: used in the diagnostic message */
+	const char*	file_name,	/* in: used in the diagnostic message
+					*/
 	const char*	operation_name);/* in: used in the diagnostic message,
 					we call os_file_set_nocache()
 					immediately after opening or creating
