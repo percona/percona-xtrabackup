@@ -1626,6 +1626,37 @@ skip:
 	return(TRUE);
 }
 
+#ifdef INNODB_VERSION_SHORT
+/***********************************************************************
+Reads the space flags from a given data file and returns the compressed
+page size, or 0 if the space is not compressed. */
+ulint
+xb_get_zip_size(os_file_t file)
+{
+	byte	*buf;
+	byte	*page;
+	ulint	 zip_size = ULINT_UNDEFINED;
+	ibool	 success;
+	ulint	 space;
+
+	buf = ut_malloc(2 * UNIV_PAGE_SIZE_MAX);
+	page = ut_align(buf, UNIV_PAGE_SIZE_MAX);
+
+	success = os_file_read(file, page, 0, 0, UNIV_PAGE_SIZE_MAX);
+	if (!success) {
+		goto end;
+	}
+
+	space = mach_read_from_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
+	zip_size = (space == 0 ) ? 0 :
+		dict_table_flags_to_zip_size(fsp_header_get_flags(page));
+end:
+	ut_free(buf);
+
+	return(zip_size);
+}
+#endif
+
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 
 static

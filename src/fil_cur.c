@@ -56,34 +56,6 @@ xb_fil_cur_open(
 
 	cursor->is_system = trx_sys_sys_space(node->space->id);
 
-	/* Determine the page size */
-#ifndef INNODB_VERSION_SHORT
-	zip_size = UNIV_PAGE_SIZE;
-	page_size = UNIV_PAGE_SIZE;
-	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
-#else
-	zip_size = fil_space_get_zip_size(node->space->id);
-	if (zip_size == ULINT_UNDEFINED) {
-		return(XB_FIL_CUR_SKIP);
-	} else if (zip_size) {
-		page_size = zip_size;
-		page_size_shift = get_bit_shift(page_size);
-		msg("[%02u] %s is compressed with page size = "
-		    "%lu bytes\n", thread_n, node->name, page_size);
-		if (page_size_shift < 10 || page_size_shift > 14) {
-			msg("[%02u] xtrabackup: Error: Invalid "
-			    "page size: %lu.\n", thread_n, page_size);
-			ut_error;
-		}
-	} else {
-		page_size = UNIV_PAGE_SIZE;
-		page_size_shift = UNIV_PAGE_SIZE_SHIFT;
-	}
-#endif
-	cursor->page_size = page_size;
-	cursor->page_size_shift = page_size_shift;
-	cursor->zip_size = zip_size;
-
 	/* Make the file path relative to the backup root,
 	i.e. "ibdata1" for system tablespace or database/table.ibd for
 	per-table spaces. */
@@ -133,7 +105,35 @@ xb_fil_cur_open(
 		cursor->file = node->handle;
 	}
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
-	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_DONTNEED);
+
+	/* Determine the page size */
+#ifndef INNODB_VERSION_SHORT
+	zip_size = UNIV_PAGE_SIZE;
+	page_size = UNIV_PAGE_SIZE;
+	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
+#else
+	zip_size = xb_get_zip_size(cursor->file);
+	if (zip_size == ULINT_UNDEFINED) {
+		os_file_close(cursor->file);
+		return(XB_FIL_CUR_SKIP);
+	} else if (zip_size) {
+		page_size = zip_size;
+		page_size_shift = get_bit_shift(page_size);
+		msg("[%02u] %s is compressed with page size = "
+		    "%lu bytes\n", thread_n, node->name, page_size);
+		if (page_size_shift < 10 || page_size_shift > 14) {
+			msg("[%02u] xtrabackup: Error: Invalid "
+			    "page size: %lu.\n", thread_n, page_size);
+			ut_error;
+		}
+	} else {
+		page_size = UNIV_PAGE_SIZE;
+		page_size_shift = UNIV_PAGE_SIZE_SHIFT;
+	}
+#endif
+	cursor->page_size = page_size;
+	cursor->page_size_shift = page_size_shift;
+	cursor->zip_size = zip_size;
 
 	/* Allocate read buffer */
 	cursor->buf_size = XB_FIL_CUR_PAGES * page_size;
@@ -245,6 +245,8 @@ read_retry:
 		cursor->buf_read += page_size;
 		cursor->buf_npages++;
 	}
+
+	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_DONTNEED);
 
 	cursor->offset += page_size * i;
 
