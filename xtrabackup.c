@@ -2577,6 +2577,38 @@ xtrabackup_io_throttling(void)
 }
 
 
+#ifdef INNODB_VERSION_SHORT
+/***********************************************************************
+Reads the space flags from a given data file and returns the compressed
+page size, or 0 if the space is not compressed. */
+static
+ulint
+xb_get_zip_size(os_file_t file)
+{
+	byte	*buf;
+	byte	*page;
+	ulint	 zip_size = ULINT_UNDEFINED;
+	ibool	 success;
+	ulint	 space;
+
+	buf = ut_malloc(2 * UNIV_PAGE_SIZE_MAX);
+	page = ut_align(buf, UNIV_PAGE_SIZE_MAX);
+
+	success = os_file_read(file, page, 0, 0, UNIV_PAGE_SIZE_MAX);
+	if (!success) {
+		goto end;
+	}
+
+	space = mach_read_from_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
+	zip_size = (space == 0 ) ? 0 :
+		dict_table_flags_to_zip_size(fsp_header_get_flags(page));
+end:
+	ut_free(buf);
+
+	return(zip_size);
+}
+#endif
+
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
 
@@ -2703,28 +2735,6 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	}
 
 skip_filter:
-#ifndef INNODB_VERSION_SHORT
-	page_size = UNIV_PAGE_SIZE;
-	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
-#else
-	zip_size = fil_space_get_zip_size(node->space->id);
-	if (zip_size == ULINT_UNDEFINED) {
-		goto skip;
-	} else if (zip_size) {
-		page_size = zip_size;
-		page_size_shift = get_bit_shift(page_size);
-		fprintf(stderr, "[%02u] %s is compressed with page size = "
-			"%lu bytes\n", thread_n, node->name, page_size);
-		if (page_size_shift < 10 || page_size_shift > 14) {
-			fprintf(stderr, "[%02u] xtrabackup: Error: Invalid "
-				"page size.\n", thread_n);
-			ut_error;
-		}
-	} else {
-		page_size = UNIV_PAGE_SIZE;
-		page_size_shift = UNIV_PAGE_SIZE_SHIFT;
-	}
-#endif
 
 #ifdef XTRADB_BASED
 	if (trx_sys_sys_space(node->space->id))
@@ -2743,26 +2753,6 @@ skip_filter:
 	} else {
 		/* file per table style "./database/table.ibd" */
 		sprintf(dst_path, "%s%s", xtrabackup_target_dir, strstr(node->name, SRV_PATH_SEPARATOR_STR));
-	}
-
-	if (xtrabackup_incremental) {
-		/* allocate buffer for incremental backup (4096 pages) */
-		incremental_buffer_base = ut_malloc((UNIV_PAGE_SIZE_MAX / 4 + 1)
-						    * UNIV_PAGE_SIZE_MAX);
-		incremental_buffer = ut_align(incremental_buffer_base,
-				      UNIV_PAGE_SIZE_MAX);
-
-		snprintf(meta_path, sizeof(meta_path),
-			 "%s%s", dst_path, XB_DELTA_INFO_SUFFIX);
-		strcat(dst_path, ".delta");
-
-		/* clear buffer */
-		bzero(incremental_buffer, (page_size/4) * page_size);
-		page_in_buffer = 0;
-		mach_write_to_4(incremental_buffer, 0x78747261UL);/*"xtra"*/
-		page_in_buffer++;
-
-		info.page_size = page_size;
 	}
 
 	/* open src_file*/
@@ -2797,6 +2787,49 @@ skip_filter:
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
+
+#ifndef INNODB_VERSION_SHORT
+	page_size = UNIV_PAGE_SIZE;
+	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
+#else
+	zip_size = xb_get_zip_size(src_file);
+	if (zip_size == ULINT_UNDEFINED) {
+		goto skip;
+	} else if (zip_size) {
+		page_size = zip_size;
+		page_size_shift = get_bit_shift(page_size);
+		fprintf(stderr, "[%02u] %s is compressed with page size = "
+			"%lu bytes\n", thread_n, node->name, page_size);
+		if (page_size_shift < 10 || page_size_shift > 14) {
+			fprintf(stderr, "[%02u] xtrabackup: Error: Invalid "
+				"page size.\n", thread_n);
+			ut_error;
+		}
+	} else {
+		page_size = UNIV_PAGE_SIZE;
+		page_size_shift = UNIV_PAGE_SIZE_SHIFT;
+	}
+#endif
+
+	if (xtrabackup_incremental) {
+		/* allocate buffer for incremental backup (4096 pages) */
+		incremental_buffer_base = ut_malloc((UNIV_PAGE_SIZE_MAX / 4 + 1)
+						    * UNIV_PAGE_SIZE_MAX);
+		incremental_buffer = ut_align(incremental_buffer_base,
+				      UNIV_PAGE_SIZE_MAX);
+
+		snprintf(meta_path, sizeof(meta_path),
+			 "%s%s", dst_path, XB_DELTA_INFO_SUFFIX);
+		strcat(dst_path, ".delta");
+
+		/* clear buffer */
+		bzero(incremental_buffer, (page_size/4) * page_size);
+		page_in_buffer = 0;
+		mach_write_to_4(incremental_buffer, 0x78747261UL);/*"xtra"*/
+		page_in_buffer++;
+
+		info.page_size = page_size;
+	}
 
 	/* open dst_file */
 	/* os_file_create reads srv_unix_file_flush_method */
