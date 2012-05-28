@@ -44,16 +44,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #define XB_DELTA_INFO_SUFFIX ".meta"
 
-typedef struct {
-	ulint	page_size;
-} xb_delta_info_t;
-
-typedef enum {
-	XB_STREAM_FMT_NONE,
-	XB_STREAM_FMT_TAR,
-	XB_STREAM_FMT_XBSTREAM
-} xb_stream_fmt_t;
-
 static inline int msg(const char *fmt, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
 static inline int msg(const char *fmt, ...)
 {
@@ -75,10 +65,29 @@ static inline int msg(const char *fmt, ...)
 /* Use POSIX_FADV_NORMAL when available */
 
 #ifdef POSIX_FADV_NORMAL
-#define USE_POSIX_FADVISE
+# define USE_POSIX_FADVISE
+#else
+# define POSIX_FADV_NORMAL
+# define POSIX_FADV_SEQUENTIAL
+# define POSIX_FADV_DONTNEED
+  static inline int posix_fadvise(int, off_t, off_t, int) { }
 #endif
 
-void xtrabackup_io_throttling(void);
-my_bool xb_write_delta_metadata(const char *filename,
-				const xb_delta_info_t *info);
+/***********************************************************************
+Computes bit shift for a given value. If the argument is not a power
+of 2, returns 0.*/
+static inline ulint
+get_bit_shift(ulint value)
+{
+    ulint shift;
+
+    if (value == 0)
+	return 0;
+
+    for (shift = 0; !(value & 1UL); shift++) {
+	value >>= 1;
+    }
+    return (value >> 1) ? 0 : shift;
+}
+
 #endif

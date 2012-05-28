@@ -29,7 +29,7 @@ XTRABACKUPOBJS = xtrabackup.o \
 	ds_compress.o \
 	ds_tmpfile.o \
 	datasink.o \
-	page_filt.o \
+	write_filt.o \
 	fil_cur.o \
 	innodb_int.o \
 	xbstream_write.o \
@@ -188,7 +188,7 @@ xbstream.o xbstream_read.o: %.o: %.c
 xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o datasink.o
 	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
-xtrabackup.o: xtrabackup.c xb_regex.h page_filt.h fil_cur.h
+xtrabackup.o: xtrabackup.c xb_regex.h write_filt.h fil_cur.h xtrabackup.h
 
 $(TARGET): $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBARCHIVE_A)
 	$(CC) $(CFLAGS) $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \

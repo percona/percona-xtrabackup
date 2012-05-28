@@ -28,6 +28,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <fsp0types.h>
 #include "fil_cur.h"
 #include "common.h"
+#include "xtrabackup.h"
 
 /* Size of read buffer in pages */
 #define XB_FIL_CUR_PAGES 64
@@ -131,10 +132,8 @@ xb_fil_cur_open(
 	} else {
 		cursor->file = node->handle;
 	}
-#ifdef USE_POSIX_FADVISE
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 
 	/* Allocate read buffer */
 	cursor->buf_size = XB_FIL_CUR_PAGES * page_size;

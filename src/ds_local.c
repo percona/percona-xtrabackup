@@ -116,9 +116,7 @@ local_write(ds_file_t *file, const void *buf, size_t len)
 	File fd = ((ds_local_file_t *) file->ptr)->fd;
 
 	if (!my_write(fd, buf, len, MYF(MY_WME | MY_NABP))) {
-#ifdef USE_POSIX_FADVISE
 		posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 		return 0;
 	}
 

@@ -20,10 +20,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-/* Page filter interface */
+/* Page write filter interface */
 
-#ifndef XB_PAGE_FILT_H
-#define XB_PAGE_FILT_H
+#ifndef XB_WRITE_FILT_H
+#define XB_WRITE_FILT_H
 
 #include "fil_cur.h"
 #include "datasink.h"
@@ -33,33 +33,33 @@ typedef struct {
 	byte		*delta_buf_base;
 	byte		*delta_buf;
 	ulint		 npages;
-} xb_pf_incremental_ctxt_t;
+} xb_wf_incremental_ctxt_t;
 
 /* Compact page filter context */
 typedef struct {
 	my_bool	skip;
-} xb_pf_compact_ctxt_t;
+} xb_wf_compact_ctxt_t;
 
 /* Page filter context used as an opaque structure by callers */
 typedef struct {
 	xb_fil_cur_t	*cursor;
 	union {
-		xb_pf_incremental_ctxt_t	pf_incremental_ctxt;
-		xb_pf_compact_ctxt_t		pf_compact_ctxt;
+		xb_wf_incremental_ctxt_t	wf_incremental_ctxt;
+		xb_wf_compact_ctxt_t		wf_compact_ctxt;
 	} u;
-} xb_page_filt_ctxt_t;
+} xb_write_filt_ctxt_t;
 
 
 typedef struct {
-	my_bool	(*init)(xb_page_filt_ctxt_t *ctxt, char *dst_name,
+	my_bool	(*init)(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 			xb_fil_cur_t *cursor);
-	my_bool	(*process)(xb_page_filt_ctxt_t *ctxt, ds_file_t *dstfile);
-	my_bool	(*finalize)(xb_page_filt_ctxt_t *, ds_file_t *dstfile);
-	void (*deinit)(xb_page_filt_ctxt_t *);
-} xb_page_filt_t;
+	my_bool	(*process)(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile);
+	my_bool	(*finalize)(xb_write_filt_ctxt_t *, ds_file_t *dstfile);
+	void (*deinit)(xb_write_filt_ctxt_t *);
+} xb_write_filt_t;
 
-extern xb_page_filt_t pf_write_through;
-extern xb_page_filt_t pf_incremental;
-extern xb_page_filt_t pf_compact;
+extern xb_write_filt_t wf_write_through;
+extern xb_write_filt_t wf_incremental;
+extern xb_write_filt_t wf_compact;
 
-#endif /* XB_PAGE_FILT_H */
+#endif /* XB_WRITE_FILT_H */

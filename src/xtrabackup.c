@@ -91,7 +91,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xb_regex.h"
 #include "innodb_int.h"
 #include "fil_cur.h"
-#include "page_filt.h"
+#include "write_filt.h"
+#include "xtrabackup.h"
 
 my_bool innodb_inited= 0;
 
@@ -1635,8 +1636,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	ds_file_t		*dstfile = NULL;
 	xb_fil_cur_t		 cursor;
 	xb_fil_cur_result_t	 res;
-	xb_page_filt_t		*filter = NULL;
-	xb_page_filt_ctxt_t	filt_ctxt;
+	xb_write_filt_t		*write_filter = NULL;
+	xb_write_filt_ctxt_t	 write_filt_ctxt;
 
 	if (!trx_sys_sys_space(node->space->id) && /* don't skip system space */
 	    check_if_skip_table(node->name)) {
@@ -1653,22 +1654,22 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 
 	strncpy(dst_name, cursor.path, sizeof(dst_name));
 
-	/* Setup the page filter */
+	/* Setup the page write filter */
 	if (xtrabackup_incremental) {
-		filter = &pf_incremental;
+		write_filter = &wf_incremental;
 	} else if (xtrabackup_compact) {
-		filter = &pf_compact;
+		write_filter = &wf_compact;
 	} else {
-		filter = &pf_write_through;
+		write_filter = &wf_write_through;
 	}
 
-	memset(&filt_ctxt, 0, sizeof(xb_page_filt_ctxt_t));
-	ut_a(filter->process != NULL);
+	memset(&write_filt_ctxt, 0, sizeof(xb_write_filt_ctxt_t));
+	ut_a(write_filter->process != NULL);
 
-	if (filter->init != NULL &&
-	    !filter->init(&filt_ctxt, dst_name, &cursor)) {
+	if (write_filter->init != NULL &&
+	    !write_filter->init(&write_filt_ctxt, dst_name, &cursor)) {
 		msg("[%02u] xtrabackup: error: "
-		    "failed to initialize page filter.\n", thread_n);
+		    "failed to initialize page write filter.\n", thread_n);
 		goto error;
 	}
 
@@ -1698,7 +1699,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 
 	/* The main copy loop */
 	while ((res = xb_fil_cur_read(&cursor)) == XB_FIL_CUR_SUCCESS) {
-		if (!filter->process(&filt_ctxt, dstfile)) {
+		if (!write_filter->process(&write_filt_ctxt, dstfile)) {
 			goto error;
 		}
 	}
@@ -1707,7 +1708,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 		goto error;
 	}
 
-	if (filter->finalize && !filter->finalize(&filt_ctxt, dstfile)) {
+	if (write_filter->finalize
+	    && !write_filter->finalize(&write_filt_ctxt, dstfile)) {
 		goto error;
 	}
 
@@ -1715,8 +1717,8 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	msg("[%02u]        ...done\n", thread_n);
 	xb_fil_cur_close(&cursor);
 	ds_close(dstfile);
-	if (filter && filter->deinit) {
-		filter->deinit(&filt_ctxt);
+	if (write_filter && write_filter->deinit) {
+		write_filter->deinit(&write_filt_ctxt);
 	}
 	return(FALSE);
 
@@ -1725,8 +1727,8 @@ error:
 	if (dstfile != NULL) {
 		ds_close(dstfile);
 	}
-	if (filter && filter->deinit) {
-		filter->deinit(&filt_ctxt);;
+	if (write_filter && write_filter->deinit) {
+		write_filter->deinit(&write_filt_ctxt);;
 	}
 	msg("[%02u] xtrabackup: Error: "
 	    "xtrabackup_copy_datafile() failed.\n", thread_n);
@@ -1737,8 +1739,8 @@ skip:
 	if (dstfile != NULL) {
 		ds_close(dstfile);
 	}
-	if (filter && filter->deinit) {
-		filter->deinit(&filt_ctxt);
+	if (write_filter && write_filter->deinit) {
+		write_filter->deinit(&write_filt_ctxt);
 	}
 	msg("[%02u] xtrabackup: Warning: We assume the "
 	    "table was dropped during xtrabackup execution "
@@ -2104,8 +2106,7 @@ data_copy_thread_func(
 {
 	data_thread_ctxt_t	*ctxt = (data_thread_ctxt_t *) arg;
 	uint			num = ctxt->num;
-	fil_space_t*		space;
-	fil_node_t*     	node;
+	fil_node_t*		node;
 
 	/*
 	  Initialize mysys thread-specific memory so we can
@@ -2116,7 +2117,6 @@ data_copy_thread_func(
 	debug_sync_point("data_copy_thread_func");
 
 	while ((node = datafiles_iter_next(ctxt->it)) != NULL) {
-		space = node->space;
 
 		/* copy the datafile */
 		if(xtrabackup_copy_datafile(node, num)) {
@@ -3448,10 +3448,8 @@ retry:
 		goto error;
 	}
 
-#ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
@@ -3762,10 +3760,8 @@ xtrabackup_apply_delta(
 		goto error;
 	}
 
-#ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
@@ -3803,9 +3799,7 @@ again:
 		goto error;
 	}
 
-#ifdef USE_POSIX_FADVISE
 	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 
 	xb_file_set_nocache(dst_file, dst_path, "OPEN");
 
@@ -4088,9 +4082,7 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 		goto error;
 	}
 
-#ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 

@@ -39,7 +39,7 @@ typedef struct {
 	ulint		page_size_shift;/*!< bit shift corresponding to
 					page_size */
 	IB_INT64	offset;		/*!< current file offset in bytes */
-	my_bool		is_system; 	/*!< TRUE for system tablespace, FALSE
+	my_bool		is_system;	/*!< TRUE for system tablespace, FALSE
 					otherwise */
 	byte*		orig_buf;	/*!< read buffer */
 	byte*		buf;		/*!< aligned pointer for orig_buf */
