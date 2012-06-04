@@ -1,7 +1,6 @@
 . inc/common.sh
 
-init
-run_mysqld
+start_server
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE test (
@@ -89,7 +88,7 @@ ${MYSQL} ${MYSQL_ARGS} -e "delete from test" test
 
 # Restore backup
 
-stop_mysqld
+stop_server
 
 vlog "Copying files"
 
@@ -99,7 +98,7 @@ cd $topdir
 
 vlog "Data restored"
 
-run_mysqld
+start_server
 
 vlog "Cheking checksums"
 checksum_b=`checksum_table test test`

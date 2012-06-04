@@ -1,14 +1,13 @@
 # Test for bug https://bugs.launchpad.net/percona-xtrabackup/+bug/737569
 . inc/common.sh
 
-init
-run_mysqld
+start_server
 
 innobackupex --no-timestamp $topdir/backup
 backup_dir=$topdir/backup
 vlog "Backup created in directory $backup_dir"
 
-stop_mysqld
+stop_server
 # Remove datadir
 rm -r $mysql_datadir
 # Restore backup

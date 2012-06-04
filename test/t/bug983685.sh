@@ -4,11 +4,9 @@
 
 . inc/common.sh
 
-init
+start_server
 
 options="innodb_data_file_path innodb_log_group_home_dir"
-
-run_mysqld
 
 mkdir -p $topdir/backup
 innobackupex  $topdir/backup

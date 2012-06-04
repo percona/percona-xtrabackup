@@ -4,8 +4,8 @@
 
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
+
 load_dbase_schema sakila
 load_dbase_data sakila
 
@@ -38,7 +38,7 @@ load_dbase_data sakila
 innobackupex --incremental --no-timestamp --parallel=8 \
     --incremental-basedir=$topdir/full_backup $topdir/inc_backup
 
-stop_mysqld
+stop_server
 # Remove datadir
 rm -r $mysql_datadir
 
@@ -52,7 +52,7 @@ vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 innobackupex --copy-back $topdir/full_backup
 
-run_mysqld
+start_server
 
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila

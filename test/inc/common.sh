@@ -17,25 +17,10 @@ function vlog
     echo "`date +"%F %T"`: `basename "$0"`: $@" >&2
 }
 
-function clean_datadir()
-{
-    vlog "Removing MySQL data directory: $mysql_datadir"
-    rm -rf "$mysql_datadir"
-    vlog "Creating MySQL data directory: $mysql_datadir"
-    mkdir -p "$mysql_datadir"
-    init_mysql_dir
-}
 
 function clean()
 {
-    vlog "Removing temporary $topdir"
-    rm -rf "$topdir"
-}
-function clean_on_error()
-{
-vlog "Exit on error"
-clean
-exit -1
+    rm -rf ${TEST_BASEDIR}/var[0-9]
 }
 
 function die()
@@ -44,86 +29,46 @@ function die()
   exit 1
 }
 
-function initdir()
-{
-    if test -d "$topdir"
-    then
-        vlog "Directory $topdir exists. Removing it..."
-        rm -r "$topdir"
-    fi
-    vlog "Creating temporary directory: $topdir"
-    mkdir -p "$topdir/tmp"
-    vlog "Creating MySQL data directory: $mysql_datadir"
-    mkdir -p "$mysql_datadir"
-}
-
 function init_mysql_dir()
 {
-    vlog "Creating MySQL database"
-    $MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$mysql_datadir" --tmpdir="$mysql_tmpdir"
-}
-function set_mysl_port()
-{
-    i=$mysql_port
-    while [ $i -lt 65536 ]
-    do
-        # check if port $i is used
-        vlog "Checking port $i"
-        port_status=`netstat -an | grep LISTEN | grep tcp | grep ":$i " || true`
-        if test -z "$port_status"
-        then
-            # port is not used
-            vlog "Port $i is free"
-            mysql_port=$i
-            break
-        else
-            vlog "Port $i is used"
-            let i=$i+1
-        fi
-    done
+    if [ ! -d "$MYSQLD_VARDIR" ]
+    then
+	vlog "Creating server root directory: $MYSQLD_VARDIR"
+	mkdir "$MYSQLD_VARDIR"
+    fi
+    if [ ! -d "$MYSQLD_TMPDIR" ]
+    then
+	vlog "Creating server temporary directory: $MYSQLD_TMPDIR"
+	mkdir "$MYSQLD_TMPDIR"
+    fi
+    if [ ! -d "$MYSQLD_DATADIR" ]
+    then
+	vlog "Creating server data directory: $MYSQLD_DATADIR"
+	mkdir -p "$MYSQLD_DATADIR"
+	vlog "Calling mysql_install_db"
+	$MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$MYSQLD_DATADIR" --tmpdir="$MYSQLD_TMPDIR"
+    fi
 }
 
+########################################################################
 # Checks whether MySQL is alive
+########################################################################
 function mysql_ping()
 {
-    local result="0"
-    if test -S ${mysql_socket}
-    then
-        result=`${MYSQL} ${MYSQL_ARGS} -e "SELECT IF(COUNT(*)>=0, 1, 1) FROM user;" -s --skip-column-names mysql 2>/dev/null` || result="0"
-    else
-        result="0"
-    fi
-    echo $result
+    $MYSQLADMIN $MYSQL_ARGS --wait=100 ping >/dev/null 2>&1 || return 1
 }
 
 function kill_leftovers()
 {
-    while test -f "$PWD/mysqld.pid" 
+    local file
+    for file in ${TEST_BASEDIR}/mysqld*.pid
     do
-	vlog "Found a leftover mysqld processes with PID `cat $PWD/mysqld.pid`, stopping it"
-	stop_mysqld 2> /dev/null
+	if [ -f $file ]
+	then
+	    vlog "Found a leftover mysqld processes with PID `cat $file`, stopping it"
+	    kill -9 `cat $file` 2>/dev/null || true
+	fi
     done
-}
-
-function run_mysqld()
-{
-    local c=0
-    kill_leftovers
-    ${MYSQLD} ${MYSQLD_ARGS} $* --pid-file="$PWD/mysqld.pid" &
-    while [ "`mysql_ping`" != "1" ]
-    do
-        if [ ${c} -eq 100 ]
-        then
-            vlog "Can't run MySQL!"
-            clean_on_error
-        fi
-        let c=${c}+1
-        sleep 1
-    done
-    if [ -n "$MYSQL_VERSION" -a -n "$INNODB_VERSION" ]
-    then
-	vlog "MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION) started successfully"
-    fi
 }
 
 function run_cmd()
@@ -150,21 +95,6 @@ function run_cmd_expect_failure()
   then
       die "===> `basename $1` succeeded when it was expected to fail"
   fi
-}
-
-function stop_mysqld()
-{
-    if [ -f "$PWD/mysqld.pid" ]
-    then
-	${MYSQLADMIN} ${MYSQL_ARGS} shutdown 
-	vlog "Database server has been stopped"
-	if [ -f "$PWD/mysqld.pid" ]
-	then
-	    sleep 1;
-	    kill -9 `cat $PWD/mysqld.pid`
-	    rm -f $PWD/mysqld.pid
-	fi
-    fi
 }
 
 function load_sakila()
@@ -196,39 +126,216 @@ function drop_dbase()
   run_cmd ${MYSQL} ${MYSQL_ARGS} -e "DROP DATABASE $1"
 }
 
-function init()
+########################################################################
+# Choose a free port for a MySQL server instance
+########################################################################
+function get_free_port()
 {
-initdir
-init_mysql_dir
-echo "
-[mysqld]
-datadir=$mysql_datadir
-tmpdir=$mysql_tmpdir" > $topdir/my.cnf
+    local id=$1
+    local port
+    for (( port=PORT_BASE+id; port < 65535; port++))
+    do
+	if ! nc -z -w1 localhost $port >/dev/null 2>&1
+	then
+	    echo $port
+	    return 0
+	fi
+    done
+
+    die "Could not find a free port for server id $id!"
 }
 
-function race_create_drop()
+########################################################################
+# Initialize server variables such as datadir, tmpdir, etc. and store
+# them with the specified index in SRV_MYSQLD_* arrays to be used by
+# switch_server() later
+########################################################################
+function init_server_variables()
 {
-  vlog "Started create/drop table cycle"
-  race_cycle_num=$1
-  if [ -z $race_cycle_num ]
-  then
-    race_cycle_num=1000
-  fi
-  run_cmd ${MYSQL} ${MYSQL_ARGS} -e "create database race;"
-  race_cycle_cnt=0;
-  while [ "$race_cycle_num" -gt "$race_cycle_cnt"]
-  do
-	t1=tr$RANDOM
-	t2=tr$RANDOM
-	t3=tr$RANDOM
-	${MYSQL} ${MYSQL_ARGS} -e "create table $t1 (a int) ENGINE=InnoDB;" race
-	${MYSQL} ${MYSQL_ARGS} -e "create table $t2 (a int) ENGINE=InnoDB;" race
-	${MYSQL} ${MYSQL_ARGS} -e "create table $t3 (a int) ENGINE=InnoDB;" race
-	${MYSQL} ${MYSQL_ARGS} -e "drop table $t1;" race
-	${MYSQL} ${MYSQL_ARGS} -e "drop table $t2;" race
-	${MYSQL} ${MYSQL_ARGS} -e "drop table $t3;" race
-	let "race_cycle_cnt=race_cycle_cnt+1"
-  done
+    local id=$1
+
+    if [ -n ${SRV_MYSQLD_IDS[$id]:-""} ]
+    then
+	die "Server with id $id has already been started"
+    fi
+
+    SRV_MYSQLD_IDS[$id]="$id"
+    local vardir="${TEST_BASEDIR}/var${id}"
+    SRV_MYSQLD_VARDIR[$id]="$vardir"
+    SRV_MYSQLD_DATADIR[$id]="$vardir/data"
+    SRV_MYSQLD_TMPDIR[$id]="$vardir/tmp"
+    SRV_MYSQLD_PIDFILE[$id]="${TEST_BASEDIR}/mysqld${id}.pid"
+    SRV_MYSQLD_PORT[$id]=`get_free_port $id`
+    SRV_MYSQLD_SOCKET[$id]=`mktemp -t xtrabackup.mysql.sock.XXXXXX`
+}
+
+########################################################################
+# Reset server variables
+########################################################################
+function reset_server_variables()
+{
+    local id=$1
+
+    if [ -z ${SRV_MYSQLD_VARDIR[$id]:-""} ]
+    then
+	# Variables have already been reset
+	return 0;
+    fi
+
+    SRV_MYSQLD_IDS[$id]=
+    SRV_MYSQLD_VARDIR[$id]=
+    SRV_MYSQLD_DATADIR[$id]=
+    SRV_MYSQLD_TMPDIR[$id]=
+    SRV_MYSQLD_PIDFILE[$id]=
+    SRV_MYSQLD_PORT[$id]=
+    SRV_MYSQLD_SOCKET[$id]=
+}
+
+##########################################################################
+# Change the environment to make all utilities access the server with an
+# id specified in the argument.
+##########################################################################
+function switch_server()
+{
+    local id=$1
+
+    MYSQLD_VARDIR="${SRV_MYSQLD_VARDIR[$id]}"
+    MYSQLD_DATADIR="${SRV_MYSQLD_DATADIR[$id]}"
+    MYSQLD_TMPDIR="${SRV_MYSQLD_TMPDIR[$id]}"
+    MYSQLD_PIDFILE="${SRV_MYSQLD_PIDFILE[$id]}"
+    MYSQLD_PORT="${SRV_MYSQLD_PORT[$id]}"
+    MYSQLD_SOCKET="${SRV_MYSQLD_SOCKET[$id]}"
+
+    MYSQL_ARGS="--no-defaults --socket=${MYSQLD_SOCKET} --user=root"
+    MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} \
+--socket=${MYSQLD_SOCKET} --port=${MYSQLD_PORT} --server-id=$id \
+--datadir=${MYSQLD_DATADIR} --tmpdir=${MYSQLD_TMPDIR} --log-bin=mysql-bin \
+--relay-log=mysql-relay-bin --pid-file=${MYSQLD_PIDFILE} ${MYSQLD_EXTRA_ARGS}"
+    if [ "`whoami`" = "root" ]
+    then
+	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
+    fi
+
+    IB_ARGS="--defaults-file=${MYSQLD_VARDIR}/my.cnf --user=root \
+--socket=${MYSQLD_SOCKET} --ibbackup=$XB_BIN"
+    XB_ARGS="--no-defaults"
+
+    # Some aliases for compatibility, as tests use the following names
+    topdir="$MYSQLD_VARDIR"
+    mysql_datadir="$MYSQLD_DATADIR"
+    mysql_tmpdir="$MYSQLD_TMPDIR"
+    mysql_socket="$MYSQLD_SOCKET"
+}
+
+########################################################################
+# Start server with the id specified as the first argument
+########################################################################
+function start_server_with_id()
+{
+    local id=$1
+    shift
+
+    vlog "Starting server with id=$id..."
+
+    init_server_variables $id
+    switch_server $id
+
+    init_mysql_dir
+    cat > ${MYSQLD_VARDIR}/my.cnf <<EOF
+[mysqld]
+datadir=${MYSQLD_DATADIR}
+tmpdir=${MYSQLD_TMPDIR}
+EOF
+
+    # Start the server
+    ${MYSQLD} ${MYSQLD_ARGS} $* &
+    if ! mysql_ping
+    then
+        die "Can't start the server!"
+    fi
+    vlog "Server with id=$id has been started on port $MYSQLD_PORT, \
+socket $MYSQLD_SOCKET"
+}
+
+########################################################################
+# Stop server with the id specified as the first argument and additional
+# command line arguments (if specified)
+########################################################################
+function stop_server_with_id()
+{
+    local id=$1
+    switch_server $id
+
+    vlog "Stopping server with id=$id..."
+
+    if [ -f "${MYSQLD_PIDFILE}" ]
+    then
+	${MYSQLADMIN} ${MYSQL_ARGS} --shutdown-timeout=60 shutdown
+	if [ -f "${MYSQLD_PIDFILE}" ]
+	then
+	    vlog "Could not stop the server with id=$id, using kill -9"
+	    kill -9 `cat ${MYSQLD_PIDFILE}`
+	    rm -f ${MYSQLD_PIDFILE}
+	fi
+	vlog "Server with id=$id has been stopped"
+    else
+	vlog "Server pid file '${MYSQLD_PIDFILE}' doesn't exist!"
+    fi
+
+    reset_server_variables $id
+}
+
+########################################################################
+# Start server with id=1 and additional command line arguments
+# (if specified)
+########################################################################
+function start_server()
+{
+    start_server_with_id 1 $*
+}
+
+########################################################################
+# Stop server with id=1
+########################################################################
+function stop_server()
+{
+    stop_server_with_id 1
+}
+
+########################################################################
+# Stop all running servers
+########################################################################
+function stop_all_servers()
+{
+    local id
+    for id in ${SRV_MYSQLD_IDS[*]}
+    do
+	stop_server_with_id ${SRV_MYSQLD_IDS[$id]}
+    done
+}
+
+########################################################################
+# Configure a specified server as a slave
+# Synopsis:
+#   setup_slave <slave_id> <master_id>
+#########################################################################
+function setup_slave()
+{
+    local slave_id=$1
+    local master_id=$2
+
+    vlog "Setting up server #$slave_id as a slave of server #$master_id"
+
+    switch_server $slave_id
+
+    run_cmd $MYSQL $MYSQL_ARGS <<EOF
+CHANGE MASTER TO
+  MASTER_HOST='localhost',
+  MASTER_USER='root',
+  MASTER_PORT=${SRV_MYSQLD_PORT[$master_id]};
+
+START SLAVE
+EOF
 }
 
 ########################################################################
@@ -239,3 +346,6 @@ function checksum_table()
 {
     $MYSQL $MYSQL_ARGS -Ns -e "CHECKSUM TABLE $2" $1 | awk {'print $2'}
 }
+
+# To avoid unbound variable error when no server have been started
+SRV_MYSQLD_IDS=

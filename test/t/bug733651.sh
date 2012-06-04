@@ -5,14 +5,12 @@
 
 . inc/common.sh
 
-init
-
 options="innodb_log_files_in_group innodb_log_file_size"
 if [ ! -z "$XTRADB_VERSION" ]; then
     options="$options innodb_page_size innodb_fast_checksum innodb_log_block_size"
 fi
 
-run_mysqld
+start_server
 
 mkdir -p $topdir/backup
 innobackupex  $topdir/backup

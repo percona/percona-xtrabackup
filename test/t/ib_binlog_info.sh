@@ -4,8 +4,7 @@
 
 . inc/common.sh
 
-init
-run_mysqld
+start_server
 load_sakila
 
 innobackupex --no-timestamp $topdir/backup

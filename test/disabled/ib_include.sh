@@ -1,7 +1,7 @@
 . inc/common.sh
 
-init
-run_mysqld
+start_server
+
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "create database include;"
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "create table t1 (a int) ENGINE=MyISAM;" include
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "create table t2 (a int) ENGINE=InnoDB;" include
@@ -15,7 +15,7 @@ vlog "checksum_t1 is $checksum_t1"
 vlog "checksum_t2 is $checksum_t2"
 run_cmd ${IB_BIN} --user=root --socket=$mysql_socket --include="^include[.]t" $topdir/backup > $OUTFILE 2>&1 
 backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
-stop_mysqld
+stop_server
 # Remove datadir
 rm -r $mysql_datadir
 # Restore data
@@ -30,7 +30,7 @@ echo "###########" >> $OUTFILE
 echo "# RESTORE #" >> $OUTFILE
 echo "###########" >> $OUTFILE
 run_cmd ${IB_BIN} --copy-back $backup_dir >> $OUTFILE 2>&1
-run_mysqld
+start_server
 checksum_tt1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table t1" include | awk '{print $2}'`
 checksum_tt2=`${MYSQL} ${MYSQL_ARGS} -Ns -e "checksum table t2" include | awk '{print $2}'`
 vlog "checksum_tt1 is $checksum_tt1"
@@ -42,5 +42,3 @@ else
         vlog "Checksums are not equal"
         exit -1
 fi
-stop_mysqld
-clean
