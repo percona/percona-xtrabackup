@@ -125,7 +125,7 @@ Incremental streaming backups can be performed with the |xbstream| streaming opt
 
  Taking a base backup: :: 
  
-  innobackupex 
+  innobackupex /data/backups
 
  Taking a local backup: ::
 

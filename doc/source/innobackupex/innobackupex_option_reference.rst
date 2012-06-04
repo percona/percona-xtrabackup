@@ -125,7 +125,7 @@ Options
 
 .. option:: --stream=STREAMNAME
 
-   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, the supported format is `xbstream`. Uses :doc:`xbstream <../xbstream/xbstream>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.
+   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, supported formats are `tar` and `xbstream`. Uses :doc:`xbstream <../xbstream/xbstream>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`.
 
 .. option:: --tmpdir=DIRECTORY
 

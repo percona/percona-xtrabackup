@@ -23,4 +23,5 @@ To use this feature, simply add the option to a local backup, for example ::
 
  $ innobackupex --stream=xbstream --compress --compress-threads=4 ./ > backup.xbstream 
 
+Before applying logs, compressed files will need to be uncompressed.
 
