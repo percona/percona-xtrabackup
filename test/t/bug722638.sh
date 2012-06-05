@@ -3,15 +3,14 @@
 #              created breaks backup
 ########################################################################
 
-if ! `$XB_BIN --help | grep debug-sync > /dev/null`; then
+. inc/common.sh
+
+if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
     echo "Requires --debug-sync support" > $SKIPPED_REASON
     exit $SKIPPED_EXIT_CODE
 fi
 
-. inc/common.sh
-
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
@@ -88,14 +87,14 @@ run_cmd wait $job_pid
 # Prepare
 xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup
 
-stop_mysqld
+stop_server
 
 # Restore
 rm -rf $mysql_datadir/ibdata1 $mysql_datadir/ib_logfile* \
     $mysql_datadir/test/*.ibd
 cp -r $topdir/backup/* $mysql_datadir
 
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 
 # Verify checksums
 checksum_t1_new=`checksum_table test t1`

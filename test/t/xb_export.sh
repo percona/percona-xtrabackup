@@ -1,11 +1,5 @@
 . inc/common.sh
 
-init
-
-backup_dir=$topdir/xb_export_backup
-rm -rf $backup_dir
-mkdir $backup_dir
-
 if [ -z "$XTRADB_VERSION" ]; then
     echo "Requires XtraDB" > $SKIPPED_REASON
     exit $SKIPPED_EXIT_CODE
@@ -18,11 +12,15 @@ else
     import_option="--innodb_expand_import=1"
 fi
 
-MYSQLD_ARGS="$MYSQLD_ARGS --innodb_file_per_table $import_option \
+mysql_extra_args="--innodb_file_per_table $import_option \
 --innodb_file_format=Barracuda"
 
 # Starting database server
-run_mysqld
+start_server $mysql_extra_args
+
+backup_dir=$topdir/xb_export_backup
+rm -rf $backup_dir
+mkdir $backup_dir
 
 # Loading table schema
 load_dbase_schema incremental_sample
@@ -48,10 +46,9 @@ xtrabackup --datadir=$mysql_datadir --backup --target-dir=$backup_dir
 vlog "Table was backed up"
 
 vlog "Re-initializing database server"
-stop_mysqld
-# Can't use clean/init because that will remove $backup_dir as well
-clean_datadir
-run_mysqld
+stop_server
+rm -rf ${MYSQLD_DATADIR}
+start_server $mysql_extra_args
 load_dbase_schema incremental_sample
 vlog "Database was re-initialized"
 
@@ -91,8 +88,8 @@ vlog "Checksums are OK"
 # consistent backup results. Otherwise we risk ending up with no test.ibd
 # in the backup in case importing has not finished before taking backup
 
-stop_mysqld
-run_mysqld
+stop_server
+start_server $mysql_extra_args
 
 # Some testing queries
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "select count(*) from test;" incremental_sample
@@ -111,13 +108,13 @@ xtrabackup --datadir=$mysql_datadir --prepare \
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "delete from test;" incremental_sample
 
-stop_mysqld
+stop_server
 
 cd $topdir/backup/full
 cp -r * $mysql_datadir
 cd -
 
-run_mysqld
+start_server $mysql_extra_args
 
 vlog "Cheking checksums"
 checksum_3=`checksum_table incremental_sample test`
@@ -131,6 +128,6 @@ fi
 
 vlog "Checksums are OK"
 
-stop_mysqld
+stop_server
 
 rm -rf $backup_dir

@@ -1,7 +1,6 @@
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 load_dbase_schema incremental_sample
 
 # Full backup dir
@@ -18,8 +17,8 @@ INSERT INTO t VALUES (1), (2), (3);
 FLUSH LOGS;
 EOF
 
-stop_mysqld
-run_mysqld --innodb_file_per_table
+stop_server
+start_server --innodb_file_per_table
 
 vlog "Making incremental backup"
 xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full
@@ -37,7 +36,7 @@ vlog "Preparing full backup"
 xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/full
 vlog "Data prepared for restore"
 
-stop_mysqld
+stop_server
 
 vlog "Copying files"
 
@@ -46,6 +45,6 @@ cp -r * $mysql_datadir
 cd $topdir
 
 vlog "Data restored"
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 
 run_cmd $MYSQL $MYSQL_ARGS -e "SELECT * FROM t" test

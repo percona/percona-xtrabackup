@@ -10,12 +10,9 @@ function modify_args()
 
 . inc/common.sh
 
-init
-mv ${mysql_datadir} ${mysql_datadir}1
-run_mysqld --datadir=${mysql_datadir}1
+start_server
 
 backup_dir=$topdir/backup
-rm -rf $backup_dir
 
 # change defaults file from my.cnf to my_multi.cnf
 modify_args
@@ -23,23 +20,23 @@ modify_args
 # make my_multi.cnf
 echo "
 [mysqld1]
-datadir=${mysql_datadir}1
+datadir=${mysql_datadir}
 tmpdir=$mysql_tmpdir" > $topdir/my_multi.cnf
 
 # Backup
 innobackupex --no-timestamp --defaults-group=mysqld1 $backup_dir
 innobackupex --apply-log $backup_dir
 
-stop_mysqld
+stop_server
 
 # clean datadir
-rm -rf ${mysql_datadir}1/*
+rm -rf ${mysql_datadir}/*
 
 # restore backup
 innobackupex --copy-back --defaults-group=mysqld1 $backup_dir
 
 # make sure that data are in correct place
-if [ ! -f ${mysql_datadir}1/ibdata1 ] ; then
-  vlog "Data not found in ${mysql_datadir}1"
+if [ ! -f ${mysql_datadir}/ibdata1 ] ; then
+  vlog "Data not found in ${mysql_datadir}"
   exit -1
 fi

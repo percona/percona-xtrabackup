@@ -1,7 +1,6 @@
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 
 vlog "Loading data from sql file"
 run_cmd ${MYSQL} ${MYSQL_ARGS} test < inc/bug723097.sql
@@ -18,12 +17,12 @@ xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full
 vlog "Backup is done"
 xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/full
 vlog "Data prepared fo restore"
-stop_mysqld
+stop_server
 
 cd $topdir/data/full/test
 cp -r * $mysql_datadir/test
 cd -
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 checksum_b=`checksum_table test messages`
 vlog "Checksum after is $checksum_b"
 

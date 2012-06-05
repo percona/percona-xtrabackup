@@ -1,7 +1,7 @@
 . inc/common.sh
 
-init
-run_mysqld --innodb_log_file_size=1M --innodb_thread_concurrency=1
+start_server --innodb_log_file_size=1M --innodb_thread_concurrency=1
+
 load_dbase_schema sakila
 load_dbase_data sakila
 mkdir $topdir/backup

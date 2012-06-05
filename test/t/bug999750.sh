@@ -4,8 +4,6 @@
 
 . inc/common.sh
 
-init
-
 # Exclude the built-in InnoDB configuration as it requires a different format
 # for --incremental-lsn.
 if [ -z "$INNODB_VERSION" ]; then
@@ -13,7 +11,7 @@ if [ -z "$INNODB_VERSION" ]; then
     exit $SKIPPED_EXIT_CODE
 fi
 
-run_mysqld
+start_server
 
 run_cmd_expect_failure $XB_BIN $XB_ARGS --datadir=$mysql_datadir --backup \
     --incremental-lsn=0 --stream=tar

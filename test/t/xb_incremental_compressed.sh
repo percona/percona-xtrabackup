@@ -4,8 +4,6 @@
 
 . inc/common.sh
 
-init
-
 if [ -z "$INNODB_VERSION" ]; then
     echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
     exit $SKIPPED_EXIT_CODE
@@ -27,7 +25,7 @@ function test_incremental_compressed()
   mysqld_additional_args="--innodb_strict_mode --innodb_file_per_table \
       --innodb_file_format=Barracuda"
   
-  run_mysqld ${mysqld_additional_args}
+  start_server ${mysqld_additional_args}
 
   load_dbase_schema incremental_sample
 
@@ -134,7 +132,7 @@ incremental_sample`
 
   # Restore backup
 
-  stop_mysqld
+  stop_server
 
   vlog "Copying files"
 
@@ -144,7 +142,7 @@ incremental_sample`
 
   vlog "Data restored"
 
-  run_mysqld ${mysqld_additional_args}
+  start_server ${mysqld_additional_args}
 
   vlog "Cheking checksums"
   checksum_b=`checksum_table incremental_sample test`
@@ -156,10 +154,11 @@ incremental_sample`
   fi
 
   vlog "Checksums are OK"
+
+  stop_server
 }
 
 for page_size in 1 2 4 8 16; do
-  init
   test_incremental_compressed ${page_size}
   clean
 done

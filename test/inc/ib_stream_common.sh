@@ -12,8 +12,8 @@
 
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
+
 load_dbase_schema sakila
 load_dbase_data sakila
 
@@ -23,7 +23,7 @@ innobackupex_options=${innobackupex_options:-""}
 mkdir -p $topdir/backup
 innobackupex --stream=$stream_format $innobackupex_options $topdir/backup > $topdir/backup/out
 
-stop_mysqld
+stop_server
 
 # Remove datadir
 rm -r $mysql_datadir
@@ -46,6 +46,6 @@ vlog "# RESTORE #"
 vlog "###########"
 innobackupex --copy-back $backup_dir
 
-run_mysqld
+start_server
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila

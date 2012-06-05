@@ -12,8 +12,7 @@ if [[ "$probe_result" == "0" ]]
 fi
 set -e
 
-init
-run_mysqld --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/libgalera_smm.so --wsrep_cluster_address=gcomm://
+start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/libgalera_smm.so --wsrep_cluster_address=gcomm://
 
 innobackupex --no-timestamp --galera-info $topdir/backup 
 backup_dir=$topdir/backup
@@ -26,4 +25,4 @@ else
 	exit 1
 fi
 
-stop_mysqld
+stop_server

@@ -4,9 +4,7 @@
 
 . inc/common.sh
 
-init
-
-run_mysqld
+start_server
 
 run_cmd_expect_failure $XB_BIN $XB_ARGS --datadir=$mysql_datadir --backup \
     --compress --stream=tar

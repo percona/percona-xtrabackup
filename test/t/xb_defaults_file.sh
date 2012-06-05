@@ -6,8 +6,7 @@
 
 . inc/common.sh
 
-init
-run_mysqld
+start_server
 
 # The following should succeed (can't use xtrabackup directly as it uses
 # --no-defaults)

@@ -18,8 +18,7 @@ function test_streaming_incremental()
     vlog "Testing a streaming incremental backup with the '$stream_format' format"
     vlog "************************************************************************"
 
-    init
-    run_mysqld --innodb_file_per_table
+    start_server
     load_dbase_schema incremental_sample
 
 # Adding initial rows
@@ -79,7 +78,7 @@ function test_streaming_incremental()
     vlog "Data prepared for restore"
 
 # Destroying mysql data
-    stop_mysqld
+    stop_server
     rm -rf $mysql_datadir/*
     vlog "Data destroyed"
 
@@ -88,7 +87,7 @@ function test_streaming_incremental()
     innobackupex --copy-back $full_backup_dir
     vlog "Data restored"
 
-    run_mysqld --innodb_file_per_table
+    start_server --innodb_file_per_table
 
     vlog "Checking checksums"
     checksum_b=`checksum_table incremental_sample test`

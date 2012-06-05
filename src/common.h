@@ -70,7 +70,7 @@ static inline int msg(const char *fmt, ...)
 # define POSIX_FADV_NORMAL
 # define POSIX_FADV_SEQUENTIAL
 # define POSIX_FADV_DONTNEED
-  static inline int posix_fadvise(int, off_t, off_t, int) { }
+# define posix_fadvise(a,b,c,d) do {} while(0)
 #endif
 
 /***********************************************************************

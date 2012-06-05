@@ -1,7 +1,7 @@
 . inc/common.sh
 
-init
-run_mysqld
+start_server
+
 load_dbase_schema sakila
 load_dbase_data sakila
 
@@ -10,7 +10,8 @@ mkdir -p $topdir/backup
 mkdir -p $topdir/backup/stream
 innobackupex --stream=tar $topdir/backup > $topdir/backup/stream/out.tar 
 
-stop_mysqld
+stop_server
+
 cd $topdir/backup/stream/
 $TAR -ixvf out.tar
 

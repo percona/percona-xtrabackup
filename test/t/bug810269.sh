@@ -5,14 +5,12 @@
 
 . inc/common.sh
 
-init
-
 if [ -z "$INNODB_VERSION" ]; then
     echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
     exit $SKIPPED_EXIT_CODE
 fi
 
-run_mysqld "--innodb_strict_mode --innodb_file_per_table \
+start_server "--innodb_strict_mode --innodb_file_per_table \
 --innodb_file_format=Barracuda"
 
 load_dbase_schema incremental_sample
@@ -54,7 +52,7 @@ mkdir -p $topdir/backup
 
 innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 
-stop_mysqld
+stop_server
 rm -rf $mysql_datadir
 
 vlog "Applying log"
@@ -68,7 +66,7 @@ vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 innobackupex --copy-back $topdir/backup
 
-run_mysqld
+start_server
 
 checksum_b=`checksum_table incremental_sample test`
 

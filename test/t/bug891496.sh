@@ -4,17 +4,14 @@
 
 . inc/common.sh
 
-init
-
 innodb_data_file_path="ibdata1:3M;ibdata2:10M:autoextend"
+
+start_server --innodb_data_file_path=$innodb_data_file_path
 
 cat >> $topdir/my.cnf <<EOF
 innodb_data_file_path=$innodb_data_file_path
 EOF
 
-MYSQLD_ARGS="$MYSQLD_ARGS --innodb_data_file_path=$innodb_data_file_path"
-
-run_mysqld
 load_dbase_schema sakila
 load_dbase_data sakila
 
@@ -22,7 +19,7 @@ load_dbase_data sakila
 mkdir -p $topdir/backup
 innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 
-stop_mysqld
+stop_server
 # Remove datadir
 rm -r $mysql_datadir
 # Restore sakila
@@ -42,6 +39,6 @@ vlog "# RESTORE #"
 vlog "###########"
 innobackupex  --copy-back $backup_dir
 
-run_mysqld
+start_server --innodb_data_file_path=$innodb_data_file_path
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila

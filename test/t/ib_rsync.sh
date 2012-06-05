@@ -6,13 +6,12 @@ then
     exit $SKIPPED_EXIT_CODE
 fi
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 load_sakila
 
 innobackupex --rsync --no-timestamp $topdir/backup
 
-stop_mysqld
+stop_server
 
 run_cmd rm -r $mysql_datadir
 
@@ -22,5 +21,5 @@ run_cmd mkdir -p $mysql_datadir
 
 innobackupex --copy-back $topdir/backup
 
-run_mysqld
+start_server
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT COUNT(*) FROM actor" sakila
