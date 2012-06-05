@@ -5,8 +5,7 @@
 
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 
 # create table which name ends with opt
 ${MYSQL} ${MYSQL_ARGS} -e "create table test.topt (a int auto_increment primary key);"

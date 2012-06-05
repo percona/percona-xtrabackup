@@ -5,8 +5,7 @@
 
 . inc/common.sh
 
-init
-run_mysqld 
+start_server
 
 # Check that --parallel=<negative value> doesn't blow up
 vlog "Creating the backup directory: $topdir/backup"

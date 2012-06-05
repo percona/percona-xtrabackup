@@ -1,7 +1,6 @@
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "create database csv"
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "create table csm (a int NOT NULL ) ENGINE=CSV" csv
 # Adding initial rows
@@ -37,7 +36,7 @@ innobackupex --apply-log $full_backup_dir
 vlog "Data prepared for restore"
 
 # Destroying mysql data
-stop_mysqld
+stop_server
 rm -rf $mysql_datadir/*
 vlog "Data destroyed"
 
@@ -49,7 +48,7 @@ vlog "###########"
 innobackupex --copy-back $full_backup_dir
 vlog "Data restored"
 
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 checksum_b=`checksum_table csv csm`
 vlog "Checking checksums: $checksum_a/$checksum_b"
 

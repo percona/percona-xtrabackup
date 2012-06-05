@@ -1,7 +1,7 @@
 . inc/common.sh
 
-init
-run_mysqld
+start_server
+
 load_dbase_schema sakila
 load_dbase_data sakila
 
@@ -20,7 +20,7 @@ backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\'
 run_cmd ${MYSQLADMIN} ${MYSQL_ARGS} -p'$PASSWD' password ''
 
 vlog "Stopping database server"
-stop_mysqld 
+stop_server
 # Remove datadir
 vlog "Removing data folder"
 rm -r $mysql_datadir
@@ -40,7 +40,7 @@ innobackupex --copy-back $backup_dir
 
 vlog "Starting database server"
 # using --skip-grant-tables to override root password restored from backup
-run_mysqld --skip-grant-tables
+start_server --skip-grant-tables
 vlog "Database server started"
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila 

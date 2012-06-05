@@ -1,7 +1,7 @@
 . inc/common.sh
 
-init
-run_mysqld
+start_server
+
 load_dbase_schema sakila
 load_dbase_data sakila
 

@@ -12,8 +12,7 @@ if [ "`basename $XB_BIN`" != "xtrabackup" ]; then
     exit $SKIPPED_EXIT_CODE
 fi
 
-init
-run_mysqld
+start_server
 load_dbase_schema sakila
 load_dbase_data sakila
 
@@ -22,7 +21,7 @@ innobackupex  $topdir/backup
 backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 vlog "Backup created in directory $backup_dir"
 
-stop_mysqld
+stop_server
 # Remove datadir
 rm -r $mysql_datadir
 
@@ -37,6 +36,6 @@ mkdir -p $mysql_datadir
 # --ibbackup explicitly (see $IB_ARGS).
 run_cmd $IB_BIN --defaults-file=$topdir/my.cnf --user=root --socket=$mysql_socket --copy-back $backup_dir
 
-run_mysqld
+start_server
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila

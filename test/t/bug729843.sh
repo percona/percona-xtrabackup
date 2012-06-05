@@ -4,8 +4,7 @@
 
 . inc/common.sh
 
-init
-run_mysqld
+start_server
 
 mkdir $topdir/backup
 logfile=$topdir/backup/innobackupex_log

@@ -9,8 +9,7 @@ if [ -z "$XTRADB_VERSION" ]; then
     exit $SKIPPED_EXIT_CODE
 fi
 
-init
-run_mysqld
+start_server
 
 # produce ib_lru_dump
 ${MYSQL} ${MYSQL_ARGS} -e "select * from information_schema.XTRADB_ADMIN_COMMAND /*!XTRA_LRU_DUMP*/;"

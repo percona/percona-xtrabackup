@@ -16,8 +16,7 @@ if [[ "$probe_result" == "0" ]]
 fi
 set -e
 
-init
-run_mysqld --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/libgalera_smm.so --wsrep_cluster_address=gcomm://
+start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/libgalera_smm.so --wsrep_cluster_address=gcomm://
 
 # take a backup with stream mode
 mkdir -p $topdir/backup

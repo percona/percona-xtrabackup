@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export DEBUG=
+
 . inc/common.sh
 
 set +e
@@ -14,7 +16,7 @@ cat <<EOF
 Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_conf]
 -f          Continue running tests after failures
 -d path     Server installation directory. Default is './server'.
--g          Output debug information to results/*.out
+-g          Debug mode
 -t path     Run only a single named test
 -h          Print this help message
 -s suite    Select a test suite to run. Possible values: experimental, t. 
@@ -52,29 +54,15 @@ function find_program()
 
 function set_vars()
 {
-    topdir="`pwd`/var"
-    mysql_datadir="$topdir/mysql"
-    mysql_tmpdir="$topdir/tmp"
-    mysql_port="3306"
-    mysql_socket=`mktemp -t xtrabackup.mysql.sock.XXXXXX`
-    IB_ARGS="--defaults-file=$topdir/my.cnf --user=root --socket=$mysql_socket"
-    XB_ARGS="--no-defaults"
+    TEST_BASEDIR="$PWD"
+    MYSQL_BASEDIR=${MYSQL_BASEDIR:-"$PWD/server"}
+    PORT_BASE=$((3306 + $RANDOM))
 
     if gnutar --version > /dev/null 2>&1
     then
 	TAR=gnutar
     else
 	TAR=tar
-    fi
-
-    MYSQL_BASEDIR=${MYSQL_BASEDIR:-"$PWD/server"}
-
-    MYSQL_ARGS="--no-defaults --socket=${mysql_socket} --user=root"
-
-    MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} --socket=${mysql_socket} --datadir=$mysql_datadir --tmpdir=$mysql_tmpdir --skip-networking"
-    if [ "`whoami`" = "root" ]
-    then
-	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
     fi
 
     find_program MYSQL_INSTALL_DB mysql_install_db $MYSQL_BASEDIR/bin \
@@ -92,22 +80,26 @@ function set_vars()
 
     PATH="${MYSQL_BASEDIR}/bin:$PATH"
 
-    export topdir mysql_datadir mysql_tmpdir mysql_port mysql_socket OUTFILE \
-	IB_ARGS XB_ARGS TAR MYSQL_BASEDIR MYSQL MYSQLADMIN \
-	MYSQL_ARGS MYSQLD_ARGS MYSQL_INSTALL_DB MYSQLD PATH
+    export TEST_BASEDIR PORT_BASE TAR MYSQL_BASEDIR MYSQL MYSQLD MYSQLADMIN \
+MYSQL_INSTALL_DB PATH
 }
 
 function get_version_info()
 {
+    MYSQLD_EXTRA_ARGS=
+
+    XB_BIN=""
+    IB_ARGS="--user=root --ibbackup=$XB_BIN"
+    XB_ARGS="--no-defaults"
+
     if [ "$XB_BUILD" != "autodetect" ]
     then
-	XB_BIN=""
 	case "$XB_BUILD" in
 	    "innodb51_builtin" )
 		XB_BIN="xtrabackup_51";;
 	    "innodb51" )
 		XB_BIN="xtrabackup_plugin"
-		MYSQLD_ARGS="$MYSQLD_ARGS --ignore-builtin-innodb --plugin-load=innodb=ha_innodb_plugin.so";;
+		MYSQLD_EXTRA_ARGS="--ignore-builtin-innodb --plugin-load=innodb=ha_innodb_plugin.so";;
 	    "innodb55" )
 		XB_BIN="xtrabackup_innodb55";;
 	    "xtradb51" )
@@ -124,11 +116,11 @@ function get_version_info()
 	fi
     fi
 
-    init >>$OUTFILE 2>&1
-
     MYSQL_VERSION=""
     INNODB_VERSION=""
-    run_mysqld >>$OUTFILE 2>&1
+
+    start_server >>$OUTFILE 2>&1
+
     # Get MySQL and InnoDB versions
     MYSQL_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version'"`
     MYSQL_VERSION=${MYSQL_VERSION#"version	"}
@@ -178,14 +170,14 @@ function get_version_info()
 	vlog "Cannot find 'innobackupex' in PATH"
 	return 1
     fi
-    IB_ARGS="$IB_ARGS --ibbackup=$XB_BIN"
+
+    stop_server
 
     export MYSQL_VERSION MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION \
-	XB_BIN IB_BIN IB_ARGS
+	XB_BIN IB_BIN IB_ARGS XB_ARGS MYSQLD_EXTRA_ARGS
 }
 
 export SKIPPED_EXIT_CODE=200
-
 
 tname=""
 XTRACE_OPTION=""
@@ -195,7 +187,7 @@ while getopts "fgh?:t:s:d:c:" options; do
 	case $options in
 	        f ) force="yes";;
 		t ) tname="$OPTARG";;
-		g ) XTRACE_OPTION="-x";;
+		g ) XTRACE_OPTION="-x"; DEBUG=on;;
 		h ) usage; exit;;
 		s ) tname="$OPTARG/*.sh";;
 	        d ) export MYSQL_BASEDIR="$OPTARG";;
@@ -219,7 +211,8 @@ failed_tests=
 total_count=0
 
 export OUTFILE="$PWD/results/setup"
-export PIDDIR="$PWD"
+
+clean >>$OUTFILE 2>&1
 
 if ! get_version_info
 then
@@ -258,6 +251,12 @@ do
    bash $XTRACE_OPTION $t > $OUTFILE 2>&1
    rc=$?
 
+   if [[ -z "$DEBUG" || -n "$force" ]]
+   then
+       kill_leftovers >>$OUTFILE 2>&1
+       clean >>$OUTFILE 2>&1
+   fi
+
    if [ $rc -eq 0 ]
    then
        echo "[passed]"
@@ -284,19 +283,11 @@ do
        then
 	   break;
        fi
-   fi
-
-   stop_mysqld >/dev/null 2>&1
-   clean >/dev/null 2>&1
+   fi       
 done
 
 echo "========================================================================"
 echo
-
-if [ -n "$force" -o $failed_count -eq 0 ]
-then
-    kill_leftovers
-fi
 
 if [ $result -eq 1 ]
 then

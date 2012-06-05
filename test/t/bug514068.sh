@@ -5,12 +5,11 @@
 
 . inc/common.sh
 
-init
-run_mysqld
+start_server
 
 innobackupex  --no-timestamp $topdir/backup >$topdir/stdout 2>$topdir/stderr
 
-stop_mysqld
+stop_server
 # Remove datadir
 rm -r $mysql_datadir
 

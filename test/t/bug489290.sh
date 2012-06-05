@@ -4,8 +4,7 @@
 
 . inc/common.sh
 
-init
-run_mysqld
+start_server
 
 backup_dir=$topdir/backup
 mkdir -p $backup_dir

@@ -14,8 +14,7 @@ if ! which rsync > /dev/null 2>&1 ; then
     exit $SKIPPED_EXIT_CODE
 fi
 
-init
-run_mysqld
+start_server
 
 # produce ib_lru_dump
 ${MYSQL} ${MYSQL_ARGS} -e "select * from information_schema.XTRADB_ADMIN_COMMAND /*!XTRA_LRU_DUMP*/;"

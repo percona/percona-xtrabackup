@@ -16,15 +16,14 @@ if [ -z "$XTRADB_VERSION" ]; then
     exit $SKIPPED_EXIT_CODE
 fi
 
-init
-run_mysqld
+start_server
 load_sakila
 
 # Take backup
 echo "innodb_flush_method=ALL_O_DIRECT" >> $topdir/my.cnf
 mkdir -p $topdir/backup
 innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
-stop_mysqld
+stop_server
 
 # See if xtrabackup was using ALL_O_DIRECT
 if ! grep "xtrabackup: using ALL_O_DIRECT" $OUTFILE ;
@@ -46,6 +45,6 @@ vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 innobackupex --copy-back --defaults-file=$topdir/my.cnf $backup_dir
 
-run_mysqld
+start_server
 # Check sakila
 ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila

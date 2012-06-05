@@ -1,7 +1,7 @@
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
+
 load_dbase_schema incremental_sample
 
 # Adding 10k rows
@@ -73,14 +73,14 @@ vlog "Table cleared"
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "delete from test;" incremental_sample
 
 # Restore backup
-stop_mysqld
+stop_server
 vlog "Copying files"
 cd $topdir/data/full/
 cp -r * $mysql_datadir
 cd $topdir
 
 vlog "Data restored"
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 
 vlog "Checking checksums"
 checksum_b=`checksum_table incremental_sample test`

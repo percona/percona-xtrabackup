@@ -1,16 +1,16 @@
 . inc/common.sh
 
-init
-run_mysqld
+start_server
+
 load_dbase_schema sakila
 load_dbase_data sakila
 
 mkdir -p $topdir/backup
-innobackupex  $topdir/backup
+innobackupex $topdir/backup
 backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 vlog "Backup created in directory $backup_dir"
 
-stop_mysqld
+stop_server
 # Remove datadir
 rm -r $mysql_datadir
 #init_mysql_dir
@@ -27,6 +27,6 @@ vlog "# RESTORE #"
 vlog "###########"
 innobackupex --copy-back $backup_dir
 
-run_mysqld
+start_server
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila

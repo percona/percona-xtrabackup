@@ -3,8 +3,7 @@
 ############################################################################
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 load_sakila
 
 # Full backup
@@ -44,7 +43,7 @@ innobackupex --apply-log $full_backup_dir
 vlog "Data prepared for restore"
 
 # Destroying mysql data
-stop_mysqld
+stop_server
 rm -rf $mysql_datadir/*
 vlog "Data destroyed"
 
@@ -53,7 +52,7 @@ vlog "Copying files to their original locations"
 innobackupex --copy-back $full_backup_dir
 vlog "Data restored"
 
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 
 vlog "Checking checksums"
 checksum_b=`checksum_table newdb actor_copy`

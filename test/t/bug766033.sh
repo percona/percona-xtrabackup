@@ -4,25 +4,20 @@
 
 . inc/common.sh
 
-init
-run_mysqld --innodb_file_per_table
+start_server --innodb_file_per_table
 load_sakila
 
-stop_mysqld
+stop_server
 
 # Full backup
 vlog "Starting backup"
 
 # corrupt database
-dd if=/dev/zero of=$mysql_datadir/sakila/rental.ibd seek=1000 count=16384
+dd if=/dev/zero of=$mysql_datadir/sakila/rental.ibd seek=1000 count=1
 
 # we want xtrabackup to be failed on rental.ibd
-set +e
-COUNT=`xtrabackup --backup --datadir=$mysql_datadir --target-dir=$topdir/backup 2>&1 \
-	| grep "File ./sakila/rental.ibd seems to be corrupted" | wc -l `
-set -e
+run_cmd_expect_failure $XB_BIN $XB_ARGS  --backup --datadir=$mysql_datadir \
+    --target-dir=$topdir/backup 
 
-if [ "$COUNT" != "1" ] ; then
-	vlog "test failed"
-	exit 1
-fi
+grep -q "File ./sakila/rental.ibd seems to be corrupted" $OUTFILE
+
