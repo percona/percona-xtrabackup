@@ -1202,28 +1202,21 @@ sub mysql_close {
 #
 sub write_binlog_info {
     my @lines;
-    my @info_lines = ();
     my $position = '';
     my $filename = '';
 
     # get binlog position
-    mysql_send "SHOW MASTER STATUS;";
+    mysql_send 'SHOW MASTER STATUS\G';
 
-    # get "show master status" output lines (2) from mysql output
+    # get the name of the last binlog file and position in it
+    # from the SHOW MASTER STATUS output
     file_to_array($mysql_stdout, \@lines);
-    foreach my $line (@lines) {
-        if ($line =~ m/xtrabackup ping/) {
-            # this is a hello message, ignore it
-        } else {
-            # this is output line from "show master status"
-            push(@info_lines, $line);
-        }
+    foreach (@lines) {
+        $filename = $1 if /^\s+File:\s(\S+)\s*$/;
+        $position = $1 if /^\s+Position:\s(\d+)\s*$/;
     }
 
     # write binlog info file
-    if (!defined $info_lines[1]) {
-        $info_lines[1] = "";
-    }
     if (!$option_remote_host) {
         open(FILE, ">$binlog_info") || 
             Die "Failed to open file '$binlog_info': $!";
@@ -1231,7 +1224,7 @@ sub write_binlog_info {
         open(FILE, "| ssh $option_ssh_opt $option_remote_host 'cat > $binlog_info'") ||
             Die "Failed to open file '$option_remote_host:$binlog_info': $!";
     }
-    print FILE  "$info_lines[1]\n";
+    print FILE  "$filename\t$position\t\t\n";
     close(FILE);
 
     if ($option_stream eq 'tar') {
@@ -1240,14 +1233,7 @@ sub write_binlog_info {
         unlink $binlog_info || Die "Failed to delete '$binlog_info': $!";
     }
 
-    # get the name of the last binlog file and position in it
-    ($filename, $position) = $info_lines[1] =~ /^\s*([^\s]+)\s+(.*)$/;
-
-    if (defined $filename && defined $position) {
-        $mysql_binlog_position = "filename '$filename', position $position";
-    } else {
-        $mysql_binlog_position = "filename '', position ";
-    }        
+    $mysql_binlog_position = "filename '$filename', position $position";
 }
 
 
@@ -1265,7 +1251,7 @@ sub write_slave_info {
 	
     # get slave status. Use single quotes here, otherwise
     # \G is evaluated as a control character.
-    mysql_send 'SHOW SLAVE STATUS\G;';
+    mysql_send 'SHOW SLAVE STATUS\G';
 
     # get output of the "show slave status" command from mysql output
     # and extract binlog position of the master server
