@@ -133,13 +133,30 @@ function get_free_port()
 {
     local id=$1
     local port
+    local lockfile
+
     for (( port=PORT_BASE+id; port < 65535; port++))
     do
+	lockfile="/tmp/xtrabackup_port_lock.$port"
+	# Try to atomically lock the current port number
+	if ! set -C > $lockfile
+	then
+	    set +C
+	    # check if the process still exists
+	    if kill -0 "`cat $lockfile`"
+	    then
+		continue;
+	    fi
+	    # stale file, overwrite it with the current PID
+	fi
+	set +C
+	echo $$ > $lockfile
 	if ! nc -z -w1 localhost $port >/dev/null 2>&1
 	then
 	    echo $port
 	    return 0
 	fi
+	rm -f $lockfile
     done
 
     die "Could not find a free port for server id $id!"
@@ -281,6 +298,9 @@ function stop_server_with_id()
     else
 	vlog "Server pid file '${MYSQLD_PIDFILE}' doesn't exist!"
     fi
+
+    # unlock the port number
+    rm -f /tmp/xtrabackup_port_lock.$MYSQLD_PORT
 
     reset_server_variables $id
 }
