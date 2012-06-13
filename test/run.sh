@@ -103,6 +103,8 @@ function get_version_info()
     then
 	XB_BIN=""
 	case "$XB_BUILD" in
+	    "innodb50" )
+		XB_BIN="xtrabackup_51";;
 	    "innodb51_builtin" )
 		XB_BIN="xtrabackup_51";;
 	    "innodb51" )
@@ -139,7 +141,10 @@ function get_version_info()
     if [ "$XB_BUILD" = "autodetect" ]
     then
         # Determine xtrabackup build automatically
-	if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
+	if [ "${MYSQL_VERSION:0:3}" = "5.0" ]
+	then
+	    XB_BIN="xtrabackup_51"
+	elif [ "${MYSQL_VERSION:0:3}" = "5.1" ]
 	then
 	    if [ -z "$INNODB_VERSION" ]
 	    then
