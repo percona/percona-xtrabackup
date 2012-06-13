@@ -56,3 +56,4 @@ At the base directory of the downloaded source code, if you execute ::
 
 and you go for a coffee, at your return |XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
 
+After this you'll need to copy innobackupex and the corresponding xtrabackup binary to some directory listed in the PATH environment variable, e.g. /usr/bin.
