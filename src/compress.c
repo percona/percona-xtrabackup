@@ -489,3 +489,14 @@ compress_worker_thread_func(void *arg)
 
 	return NULL;
 }
+
+/* Return a target datasink for the specified compress datasink */
+ds_ctxt_t *
+compress_get_dest_ctxt(ds_ctxt_t *ctxt)
+{
+	ds_compress_ctxt_t *comp_ctxt;
+
+	comp_ctxt = (ds_compress_ctxt_t *) ctxt->ptr;
+
+	return comp_ctxt->dest_ctxt;
+}

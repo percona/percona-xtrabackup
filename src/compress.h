@@ -25,4 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 extern datasink_t datasink_compress;
 
+/* Return a target datasink for the specified compress datasink */
+ds_ctxt_t *compress_get_dest_ctxt(ds_ctxt_t *);
+
 #endif

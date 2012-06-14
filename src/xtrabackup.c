@@ -3903,6 +3903,7 @@ xtrabackup_backup_func(void)
 	char logfile_temp_path[FN_REFLEN];
 	datasink_t		*ds;
 	ds_ctxt_t		*ds_ctxt = NULL;
+	ds_ctxt_t		*meta_ds_ctxt;
 
 #ifdef USE_POSIX_FADVISE
 	msg("xtrabackup: uses posix_fadvise().\n");
@@ -4496,10 +4497,14 @@ skip_last_cp:
 	metadata_to_lsn = latest_cp;
 	metadata_last_lsn = log_copy_scanned_lsn;
 
-	if (!xtrabackup_stream_metadata(ds_ctxt))
-		msg("xtrabackup: error: "
-		    "xtrabackup_stream_metadata() failed.\n"
-		    );
+	/* Write xtrabackup_checkpoint without compression, if it was used for
+	backup. */
+	meta_ds_ctxt = xtrabackup_compress ?
+		compress_get_dest_ctxt(ds_ctxt) : ds_ctxt;
+	if (!xtrabackup_stream_metadata(meta_ds_ctxt))
+		msg("xtrabackup: error:"
+		    "xtrabackup_stream_metadata() failed.\n");
+
 	if (xtrabackup_extra_lsndir) {
 		char	filename[FN_REFLEN];
 
