@@ -2202,36 +2202,35 @@ xtrabackup_init_datasinks(void)
 			if (xtrabackup_stream) {
 				/* Streaming compressed backup */
 				ds_set_pipe(ds_compress, ds_stream);
+				/* Bypass compression for meta files */
+				ds_meta = ds_stream;
 			} else {
 				/* Local compressed backup */
 				ds_local = ds_create(xtrabackup_target_dir,
 						     DS_TYPE_LOCAL);
 				ds_set_pipe(ds_compress, ds_local);
+				/* Bypass compression for meta files */
+				ds_meta = ds_local;
 			}
 		} else {
 			/* Streaming uncompressed backup */
 			ds_data = ds_stream;
+			ds_meta = ds_stream;
 		}
 
-		if (xtrabackup_stream) {
-			if (xtrabackup_stream_fmt == XB_STREAM_FMT_XBSTREAM &&
-			    !xtrabackup_suspend_at_end) {
-				/* 'xbstream' allow parallel streams, but we
-				still can't stream directly to stdout when
-				xtrabackup is invoked from innobackupex
-				(i.e. with --suspend_at_and), because
-				innobackupex and xtrabackup streams would
-				interfere.*/
-				ds_meta = ds_data;
-			} else {
-				/* for other formats, use temporary files */
-				ds_tmpfile = ds_create(xtrabackup_target_dir,
-						       DS_TYPE_TMPFILE);
-				ds_set_pipe(ds_tmpfile, ds_data);
-				ds_meta = ds_tmpfile;
-			}
-		} else {
-			ds_meta = ds_data;
+		if (xtrabackup_stream &&
+		    (xtrabackup_stream_fmt != XB_STREAM_FMT_XBSTREAM ||
+		     xtrabackup_suspend_at_end)) {
+			/* 'xbstream' allow parallel streams, but we
+			still can't stream directly to stdout when
+			xtrabackup is invoked from innobackupex
+			(i.e. with --suspend_at_and), because
+			innobackupex and xtrabackup streams would
+			interfere. Use temporary files instead. */
+			ds_tmpfile = ds_create(xtrabackup_target_dir,
+					       DS_TYPE_TMPFILE);
+			ds_set_pipe(ds_tmpfile, ds_stream);
+			ds_meta = ds_tmpfile;
 		}
 	}
 }
