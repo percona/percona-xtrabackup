@@ -1254,7 +1254,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*) &innobase_page_size, (G_PTR*) &innobase_page_size, 0,
    GET_LONG, REQUIRED_ARG, (1 << 14), (1 << 12), (1 << UNIV_PAGE_SIZE_SHIFT_MAX), 0, 1L, 0},
   {"innodb_log_block_size", OPT_INNODB_LOG_BLOCK_SIZE,
-  "###EXPERIMENTAL###: The log block size of the transaction log file. "
+  "The log block size of the transaction log file. "
    "Changing for created log file is not supported. Use on your own risk!",
    (G_PTR*) &innobase_log_block_size, (G_PTR*) &innobase_log_block_size, 0,
    GET_ULONG, REQUIRED_ARG, 512, 512, 1 << UNIV_PAGE_SIZE_SHIFT_MAX, 0, 1L, 0},
@@ -2112,6 +2112,34 @@ get_bit_shift(ulint value)
 	return (value >> 1) ? 0 : shift;
 }
 
+/***********************************************************************
+Initializes log_block_size*/
+static
+ibool
+xb_init_log_block_size(void)
+{
+#ifdef XTRADB_BASED
+	srv_log_block_size = 0;
+	if (innobase_log_block_size != 512) {
+		uint	n_shift = get_bit_shift(innobase_log_block_size);;
+
+		if (n_shift > 0) {
+			srv_log_block_size = (1 << n_shift);
+			msg("InnoDB: The log block size is set to %lu.\n",
+			    srv_log_block_size);
+		}
+	} else {
+		srv_log_block_size = 512;
+	}
+	if (!srv_log_block_size) {
+		msg("InnoDB: Error: %lu is not valid value for "
+		    "innodb_log_block_size.\n", innobase_log_block_size);
+		return FALSE;
+	}
+#endif
+	return TRUE;
+}
+
 static my_bool
 innodb_init_param(void)
 {
@@ -2153,25 +2181,7 @@ innodb_init_param(void)
 		srv_page_size = (1 << srv_page_size_shift);
 	}
 
-	srv_log_block_size = 0;
-	if (innobase_log_block_size != 512) {
-		uint	n_shift = get_bit_shift(innobase_log_block_size);;
-
-		msg("InnoDB: Warning: innodb_log_block_size has "
-		    "been changed from its default value. "
-		    "(###EXPERIMENTAL### operation)\n");
-		if (n_shift > 0) {
-			srv_log_block_size = (1 << n_shift);
-			msg("InnoDB: The log block size is set to %lu.\n",
-			    srv_log_block_size);
-		}
-	} else {
-		srv_log_block_size = 512;
-	}
-
-	if (!srv_log_block_size) {
-		msg("InnoDB: Error: %lu is not valid value for "
-		    "innodb_log_block_size.\n", innobase_log_block_size);
+	if (!xb_init_log_block_size()) {
 		goto error;
 	}
 
@@ -5116,6 +5126,10 @@ xtrabackup_init_temp_log(void)
 	ulint	fold;
 
 	max_no = ut_dulint_zero;
+
+	if (!xb_init_log_block_size()) {
+		goto error;
+	}
 
 	if(!xtrabackup_incremental_dir) {
 		sprintf(dst_path, "%s/ib_logfile0", xtrabackup_target_dir);
