@@ -13,7 +13,7 @@ Recipes for |innobackupex|
    howtos/recipes_ibkx_local
    howtos/recipes_ibkx_stream
    howtos/recipes_ibkx_inc
-   howtos/recipes_ibkx_multi
+   howtos/recipes_ibkx_compressed
 
 
 .. _recipes-xbk:
