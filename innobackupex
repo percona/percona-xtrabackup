@@ -641,7 +641,8 @@ sub copy_back {
     my $iblog_files = 'ib_logfile.*';
     my $excluded_files = 
         '\.\.?|backup-my\.cnf|xtrabackup_logfile|' .
-	'xtrabackup_binary|xtrabackup_binlog_info|xtrabackup_checkpoints' .
+	'xtrabackup_binary|xtrabackup_binlog_info|xtrabackup_checkpoints|' .
+        '.*\.qp|' .
 	$iblog_files;
     my $compressed_data_file = '.*\.ibz$';
     my $file;
