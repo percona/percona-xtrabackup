@@ -26,7 +26,7 @@ innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 stop_server
 
 # See if xtrabackup was using ALL_O_DIRECT
-if ! grep "xtrabackup: using ALL_O_DIRECT" $OUTFILE ;
+if ! grep -q "xtrabackup: using ALL_O_DIRECT" $OUTFILE ;
 then
   vlog "xtrabackup was not using ALL_O_DIRECT for the input file."
   exit -1
