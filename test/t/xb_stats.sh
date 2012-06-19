@@ -20,7 +20,7 @@ if $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup
 then
     die "xtrabackup --stats was expected to fail, but it did not."
 fi
-if ! grep "Cannot find log file ib_logfile0" $OUTFILE
+if ! grep -q "Cannot find log file ib_logfile0" $OUTFILE
 then
     die "Cannot find the expected error message from xtrabackup --stats"
 fi

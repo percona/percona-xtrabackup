@@ -26,7 +26,7 @@ innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 stop_server
 
 # See if tar4ibd was using O_DIRECT
-if ! grep "tar4ibd: using O_DIRECT for the input file" $OUTFILE ;
+if ! grep -q "tar4ibd: using O_DIRECT for the input file" $OUTFILE ;
 then
   vlog "tar4ibd was not using O_DIRECT for the input file."
   exit -1
