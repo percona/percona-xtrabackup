@@ -1876,7 +1876,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 		} else if (!checksum_is_ok) {
 			/* Garbage or an incompletely written log block */
 
-			msg("xtrabackup: error: Log block checksum mismatch"
+			msg("xtrabackup: warning: Log block checksum mismatch"
 #ifndef INNODB_VERSION_SHORT
 			    " (block no %lu at lsn %lu %lu): \n"
 #else
@@ -1892,8 +1892,11 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 #endif
 				(ulong) log_block_get_checksum(log_block),
 				(ulong) log_block_calc_checksum(log_block));
-
-			goto error;
+			msg("xtrabackup: warning: this is possible when the "
+			    "log block has not been fully written by the "
+			    "server, will retry later.\n");
+			finished = TRUE;
+			break;
 		}
 
 		if (log_block_get_flush_bit(log_block)) {
