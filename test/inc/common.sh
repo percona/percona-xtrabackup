@@ -367,5 +367,21 @@ function checksum_table()
     $MYSQL $MYSQL_ARGS -Ns -e "CHECKSUM TABLE $2" $1 | awk {'print $2'}
 }
 
+########################################################################
+# Workarounds for a bug in grep 2.10 when grep -q file > file would
+# result in a failure.
+########################################################################
+function grep()
+{
+    command grep "$@" | cat
+    return ${PIPESTATUS[0]}
+}
+
+function egrep()
+{
+    command egrep "$@" | cat
+    return ${PIPESTATUS[0]}
+}
+
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
