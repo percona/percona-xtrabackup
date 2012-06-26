@@ -2,3 +2,8 @@ build
 test/kewpie/qp_data/uuid
 test/kewpie/workdir
 test/test_results.subunit
+doc/source/percona-theme/*
+doc/source/percona-theme*
+percona-theme/*
+percona-theme*
+doc/source/percona-theme
