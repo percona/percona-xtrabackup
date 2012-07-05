@@ -255,6 +255,6 @@ latex_logo = 'percona-logo.jpg'
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'perconaxtrabackup', u'Percona XtraBackup Documentation',
+    ('manindex', 'xtrabackup', u'Percona XtraBackup Documentation',
      [u'Percona Inc'], 1)
 ]
