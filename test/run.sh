@@ -4,6 +4,8 @@ export DEBUG=
 
 . inc/common.sh
 
+trap kill_leftovers 1 2 3 15
+
 set +e
 
 result=0
@@ -80,8 +82,14 @@ function set_vars()
 
     PATH="${MYSQL_BASEDIR}/bin:$PATH"
 
+    if [ -z "${LD_LIBRARY_PATH:-}" ]; then
+	LD_LIBRARY_PATH=$MYSQL_BASEDIR/lib/mysql
+    else
+	LD_LIBRARY_PATH=$MYSQL_BASEDIR/lib/mysql:$LD_LIBRARY_PATH
+    fi
+
     export TEST_BASEDIR PORT_BASE TAR MYSQL_BASEDIR MYSQL MYSQLD MYSQLADMIN \
-MYSQL_INSTALL_DB PATH
+MYSQL_INSTALL_DB PATH LD_LIBRARY_PATH
 }
 
 function get_version_info()
