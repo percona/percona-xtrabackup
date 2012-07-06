@@ -4,6 +4,8 @@ export DEBUG=
 
 . inc/common.sh
 
+trap kill_leftovers 1 2 3 15
+
 set +e
 
 result=0
