@@ -102,6 +102,7 @@ wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 	snprintf(meta_name, sizeof(meta_name), "%s%s", dst_name,
 		 XB_DELTA_INFO_SUFFIX);
 	info.page_size = cursor->page_size;
+	info.space_id = cursor->space_id;
 	if (!xb_write_delta_metadata(meta_name, &info)) {
 		msg("[%02lu] xtrabackup: Error: "
 		    "failed to write meta info for %s\n",

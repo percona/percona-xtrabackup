@@ -613,7 +613,21 @@
  
 --- a/storage/innobase/include/mem0mem.h
 +++ b/storage/innobase/include/mem0mem.h
-@@ -401,6 +401,7 @@
+@@ -63,6 +63,13 @@
+ mem_init(
+ /*=====*/
+ 	ulint	size);	/* in: common pool size in bytes */
++
++/******************************************************************//**
++Closes the memory system. */
++void
++mem_close(void);
++/*===========*/
++
+ /******************************************************************
+ Use this macro instead of the corresponding function! Macro for memory
+ heap creation. */
+@@ -401,6 +409,7 @@
  			allocated buffer frame, which can be appended as a
  			free block to the heap, if we need more space;
  			otherwise, this is NULL */
@@ -654,6 +668,21 @@
  
  	if (heap->free_block) {
  		size += UNIV_PAGE_SIZE;
+--- a/storage/innobase/include/mem0pool.h
++++ b/storage/innobase/include/mem0pool.h
+@@ -42,6 +42,12 @@
+ /*============*/
+ 			/* out: memory pool */
+ 	ulint	size);	/* in: pool size in bytes */
++/********************************************************************//**
++Frees a memory pool. */
++void
++mem_pool_free(
++/*==========*/
++	mem_pool_t*	pool);	/*!< in, own: memory pool */
+ /************************************************************************
+ Allocates memory from a pool. NOTE: This low-level function should only be
+ used in mem0mem.*! */
 --- a/storage/innobase/include/srv0srv.h
 +++ b/storage/innobase/include/srv0srv.h
 @@ -60,6 +60,8 @@
@@ -958,7 +987,7 @@
  /**********************************************************
 --- a/storage/innobase/mem/mem0dbg.c
 +++ b/storage/innobase/mem/mem0dbg.c
-@@ -133,6 +133,14 @@
+@@ -133,9 +133,30 @@
  	mem_hash_initialized = TRUE;
  #endif
  
@@ -973,6 +1002,22 @@
  	mem_comm_pool = mem_pool_create(size);
  }
  
++/******************************************************************//**
++Closes the memory system. */
++void
++mem_close(void)
++/*===========*/
++{
++	mem_pool_free(mem_comm_pool);
++	mem_comm_pool = NULL;
++#ifdef UNIV_MEM_DEBUG
++	mem_hash_initialized = FALSE;
++#endif /* UNIV_MEM_DEBUG */
++}
++
+ #ifdef UNIV_MEM_DEBUG
+ /**********************************************************************
+ Initializes an allocated memory field in the debug version. */
 --- a/storage/innobase/mem/mem0mem.c
 +++ b/storage/innobase/mem/mem0mem.c
 @@ -472,6 +472,7 @@
@@ -1026,7 +1071,25 @@
  	pool = ut_malloc(sizeof(mem_pool_t));
  
  	/* We do not set the memory to zero (FALSE) in the pool,
-@@ -333,6 +332,10 @@
+@@ -244,6 +243,17 @@
+ 	return(pool);
+ }
+ 
++/********************************************************************//**
++Frees a memory pool. */
++void
++mem_pool_free(
++/*==========*/
++	mem_pool_t*	pool)	/*!< in, own: memory pool */
++{
++	ut_free(pool->buf);
++	ut_free(pool);
++}
++
+ /************************************************************************
+ Fills the specified free list. */
+ static
+@@ -333,6 +344,10 @@
  	ulint		n;
  	ibool		ret;
  
@@ -1037,7 +1100,7 @@
  	n = ut_2_log(ut_max(size + MEM_AREA_EXTRA_SIZE, MEM_AREA_MIN_SIZE));
  
  	mutex_enter(&(pool->mutex));
-@@ -465,6 +468,11 @@
+@@ -465,6 +480,11 @@
  	ulint		size;
  	ulint		n;
  

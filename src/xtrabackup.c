@@ -1500,7 +1500,8 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 		return(TRUE);
 	}
 
-	if (fscanf(fp, "page_size = %lu\n", &info->page_size) != 1)
+	if (fscanf(fp, "page_size = %lu\nspace_id = %lu\n",
+		&info->page_size, &info->space_id) != 2)
 		r= FALSE;
 
 	fclose(fp);
@@ -1515,14 +1516,16 @@ my_bool
 xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info)
 {
 	ds_file_t	*f;
-	char		buf[32];
+	char		buf[64];
 	my_bool		ret;
 	size_t		len;
 	MY_STAT		mystat;
 
-	snprintf(buf, sizeof(buf), "page_size = %lu\n", info->page_size);
-
+	snprintf(buf, sizeof(buf),
+		 "page_size = %lu\nspace_id = %lu\n",
+		 info->page_size, info->space_id);
 	len = strlen(buf);
+
 	mystat.st_size = len;
 	mystat.st_mtime = my_time(0);
 
@@ -2108,11 +2111,11 @@ io_handler_thread(
 	void*	arg)
 {
 	ulint	segment;
-	ulint	i;
+
 
 	segment = *((ulint*)arg);
 
-	for (i = 0;; i++) {
+ 	while (srv_shutdown_state != SRV_SHUTDOWN_EXIT_THREADS) {
 		fil_aio_wait(segment);
 	}
 
@@ -2263,6 +2266,141 @@ static void xtrabackup_destroy_datasinks(void)
 	}
 	ds_data = NULL;
 	ds_meta = NULL;
+}
+
+#define SRV_N_PENDING_IOS_PER_THREAD 	OS_AIO_N_PENDING_IOS_PER_THREAD
+#define SRV_MAX_N_PENDING_SYNC_IOS	100
+
+/************************************************************************
+Initialize the tablespace memory cache and populate it by scanning for and
+opening data files.
+@returns DB_SUCCESS or error code.*/
+ulint
+xb_data_files_init(void)
+/*====================*/
+{
+	ulint	i;
+	ibool	create_new_db;
+#ifdef XTRADB_BASED
+	ibool	create_new_doublewrite_file;
+#endif
+	ulint	err;
+	LSN64	min_flushed_lsn;
+	LSN64	max_flushed_lsn;
+	ulint   sum_of_new_sizes;
+
+#ifndef INNODB_VERSION_SHORT
+	os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD
+		    * srv_n_file_io_threads,
+		    srv_n_file_io_threads,
+		    SRV_MAX_N_PENDING_SYNC_IOS);
+
+	fil_init(srv_max_n_open_files);
+#else
+	srv_n_file_io_threads = 2 + srv_n_read_io_threads +
+		srv_n_write_io_threads;
+
+	os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD,
+		    srv_n_read_io_threads,
+		    srv_n_write_io_threads,
+		    SRV_MAX_N_PENDING_SYNC_IOS);
+
+	fil_init(srv_file_per_table ? 50000 : 5000,
+		 srv_max_n_open_files);
+#endif
+
+	fsp_init();
+
+	for (i = 0; i < srv_n_file_io_threads; i++) {
+		thread_nr[i] = i;
+
+		os_thread_create(io_handler_thread, thread_nr + i,
+				 thread_ids + i);
+    	}
+
+	os_thread_sleep(200000); /*0.2 sec*/
+
+	err = open_or_create_data_files(&create_new_db,
+#ifdef XTRADB_BASED
+					&create_new_doublewrite_file,
+#endif
+					&min_flushed_lsn, &max_flushed_lsn,
+					&sum_of_new_sizes);
+	if (err != DB_SUCCESS) {
+		msg("xtrabackup: Could not open or create data files.\n"
+		    "xtrabackup: If you tried to add new data files, and it "
+		    "failed here,\n"
+		    "xtrabackup: you should now edit innodb_data_file_path in "
+		    "my.cnf back\n"
+		    "xtrabackup: to what it was, and remove the new ibdata "
+		    "files InnoDB created\n"
+		    "xtrabackup: in this failed attempt. InnoDB only wrote "
+		    "those files full of\n"
+		    "xtrabackup: zeros, but did not yet use them in any way. "
+		    "But be careful: do not\n"
+		    "xtrabackup: remove old data files which contain your "
+		    "precious data!\n");
+		return(err);
+	}
+
+	/* create_new_db must not be TRUE.. */
+	if (create_new_db) {
+		msg("xtrabackup: could not find data files at the "
+		    "specified datadir\n");
+		return(DB_ERROR);
+	}
+
+	return(fil_load_single_table_tablespaces());
+}
+
+/************************************************************************
+Destroy the tablespace memory cache. */
+void
+xb_data_files_close(void)
+/*====================*/
+{
+	ulint	i;
+
+	/* Shutdown the aio threads. This has been copied from
+	innobase_shutdown_for_mysql(). */
+
+	srv_shutdown_state = SRV_SHUTDOWN_EXIT_THREADS;
+
+	for (i = 0; i < 1000; i++) {
+		os_aio_wake_all_threads_at_shutdown();
+
+		os_mutex_enter(os_sync_mutex);
+
+		if (os_thread_count == 0) {
+
+			os_mutex_exit(os_sync_mutex);
+
+			os_thread_sleep(10000);
+
+			break;
+		}
+
+		os_mutex_exit(os_sync_mutex);
+
+		os_thread_sleep(10000);
+	}
+
+	if (i == 1000) {
+		msg("xtrabackup: Warning: %lu threads created by InnoDB"
+		    " had not exited at shutdown!\n",
+		    (ulong) os_thread_count);
+	}
+
+#ifdef INNODB_VERSION_SHORT
+	os_aio_free();
+#endif
+	fil_close_all_files();
+#ifndef INNODB_VERSION_SHORT
+	fil_free_all_spaces();
+#endif
+	fil_system = NULL;
+
+	srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
 
 static void
@@ -2418,85 +2556,25 @@ xtrabackup_backup_func(void)
 	srv_general_init();
 
 	{
-	ibool	create_new_db;
-#ifdef XTRADB_BASED
-	ibool	create_new_doublewrite_file;
-#endif
 	ibool	log_file_created;
 	ibool	log_created	= FALSE;
 	ibool	log_opened	= FALSE;
-	LSN64	min_flushed_lsn;
-	LSN64	max_flushed_lsn;
-	ulint   sum_of_new_sizes;
 	ulint	err;
 	ulint	i;
 
+	err = xb_data_files_init();
+	if (err != DB_SUCCESS) {
+		msg("xtrabackup: error: xb_data_files_init() failed with"
+		    "error code %lu\n", err);
+		exit(EXIT_FAILURE);
+	}
 
-
-
-#define SRV_N_PENDING_IOS_PER_THREAD 	OS_AIO_N_PENDING_IOS_PER_THREAD
-#define SRV_MAX_N_PENDING_SYNC_IOS	100
-
-#ifndef INNODB_VERSION_SHORT
-                os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD
-                            * srv_n_file_io_threads,
-                            srv_n_file_io_threads,
-                            SRV_MAX_N_PENDING_SYNC_IOS);
-
-	fil_init(srv_max_n_open_files);
-#else
-	srv_n_file_io_threads = 2 + srv_n_read_io_threads + srv_n_write_io_threads;
-
-	os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD,
-		    srv_n_read_io_threads,
-		    srv_n_write_io_threads,
-		    SRV_MAX_N_PENDING_SYNC_IOS);
-
-	fil_init(srv_file_per_table ? 50000 : 5000,
-		 srv_max_n_open_files);
-#endif
-
-	fsp_init();
 	log_init();
 
 	lock_sys_create(srv_lock_table_size);
 
-	for (i = 0; i < srv_n_file_io_threads; i++) {
-		thread_nr[i] = i;
-
-		os_thread_create(io_handler_thread, thread_nr + i, thread_ids + i);
-    	}
-
-	os_thread_sleep(200000); /*0.2 sec*/
-
-	err = open_or_create_data_files(&create_new_db,
-#ifdef XTRADB_BASED
-					&create_new_doublewrite_file,
-#endif
-					&min_flushed_lsn, &max_flushed_lsn,
-					&sum_of_new_sizes);
-	if (err != DB_SUCCESS) {
-	        msg(
-"xtrabackup: Could not open or create data files.\n"
-"xtrabackup: If you tried to add new data files, and it failed here,\n"
-"xtrabackup: you should now edit innodb_data_file_path in my.cnf back\n"
-"xtrabackup: to what it was, and remove the new ibdata files InnoDB created\n"
-"xtrabackup: in this failed attempt. InnoDB only wrote those files full of\n"
-"xtrabackup: zeros, but did not yet use them in any way. But be careful: do not\n"
-"xtrabackup: remove old data files which contain your precious data!\n");
-
-		//return((int) err);
-		exit(EXIT_FAILURE);
-	}
-
-	/* create_new_db must not be TRUE.. */
-	if (create_new_db) {
-		msg("xtrabackup: Something wrong with source files...\n");
-		exit(EXIT_FAILURE);
-	}
-
 	for (i = 0; i < srv_n_log_files; i++) {
-		err = open_or_create_log_file(create_new_db, &log_file_created,
+		err = open_or_create_log_file(FALSE, &log_file_created,
 							     log_opened, 0, i);
 		if (err != DB_SUCCESS) {
 
@@ -2509,8 +2587,7 @@ xtrabackup_backup_func(void)
 		} else {
 			log_opened = TRUE;
 		}
-		if ((log_opened && create_new_db)
-			    		|| (log_opened && log_created)) {
+		if ((log_opened && log_created)) {
 			msg(
 	"xtrabackup: Error: all log files must be created at the same time.\n"
 	"xtrabackup: All log files must be created also in database creation.\n"
@@ -2830,6 +2907,8 @@ skip_last_cp:
 	msg("xtrabackup: Transaction log of lsn (%llu) to (%llu) was copied.\n",
 	    checkpoint_lsn_start, log_copy_scanned_lsn);
 #endif
+
+	xb_data_files_close();
 }
 
 /* ================= stats ================= */
@@ -3717,6 +3796,155 @@ get_meta_path(
 	return TRUE;
 }
 
+
+/***********************************************************************
+Searches for matching tablespace file for given .delta file and space_id
+in given directory. When matching tablespace found, renames it to match the
+name of .delta file. If there was a tablespace with matching name and
+mismatching ID, renames it to xtrabackup_tmp_#ID.ibd. If there was no
+matching file, creates the new one.
+@return file handle of matched or created file */
+static
+os_file_t
+xb_delta_open_matching_space(
+	const char*	dbname,		/* in: path to destination database dir */
+	const char*	name,		/* in: name of delta file (without .delta) */
+	ulint		space_id,	/* in: space id of delta file */
+	ulint		zip_size,	/* in: zip_size of tablespace */
+	char*		real_name,	/* out: full path of destination file */
+	size_t		real_name_len,	/* out: buffer size for real_name */
+	ibool* 		success)	/* out: indicates error. TRUE = success */
+{
+	char		dest_dir[FN_REFLEN];
+	char		dest_space_name[FN_REFLEN];
+	ibool		ok;
+	fil_space_t*	fil_space;
+	os_file_t	file	= 0;
+
+	ut_a(dbname || space_id == 0);
+
+	*success = FALSE;
+
+	if (dbname) {
+		snprintf(dest_dir, FN_REFLEN, "%s/%s",
+			xtrabackup_target_dir, dbname);
+		srv_normalize_path_for_win(dest_dir);
+
+		snprintf(dest_space_name, FN_REFLEN, "./%s/%s",
+			dbname, name);
+	} else {
+		snprintf(dest_dir, FN_REFLEN, "%s", xtrabackup_target_dir);
+		srv_normalize_path_for_win(dest_dir);
+
+		snprintf(dest_space_name, FN_REFLEN, "./%s", name);
+	}
+
+	snprintf(real_name, real_name_len,
+		 "%s/%s",
+		 xtrabackup_target_dir, dest_space_name);
+	srv_normalize_path_for_win(real_name);
+
+	/* Create the database directory if it doesn't exist yet */
+	if (!os_file_create_directory(dest_dir, FALSE)) {
+		msg("xtrabackup: error: cannot create dir %s\n", dest_dir);
+		return file;
+	}
+
+	mutex_enter(&fil_system->mutex);
+	fil_space = xb_space_get_by_name(dest_space_name);
+	mutex_exit(&fil_system->mutex);
+
+	if (fil_space != NULL) {
+		if (fil_space->id == space_id) {
+			/* we found matching space */
+			goto found;
+		} else {
+
+			char	tmpname[FN_REFLEN];
+
+			snprintf(tmpname, FN_REFLEN, "./%s/xtrabackup_tmp_#%lu",
+				dbname, fil_space->id);
+
+			msg("xtrabackup: Renaming %s to %s.ibd\n",
+				fil_space->name, tmpname);
+
+			if (!fil_rename_tablespace(NULL,
+					fil_space->id, tmpname))
+			{
+				msg("xtrabackup: Cannot rename %s to %s\n",
+					fil_space->name, tmpname);
+				goto exit;
+			}
+		}
+	}
+
+	mutex_enter(&fil_system->mutex);
+	fil_space = xb_space_get_by_id(space_id);
+	mutex_exit(&fil_system->mutex);
+	if (fil_space != NULL) {
+		char	tmpname[FN_REFLEN];
+
+		strncpy(tmpname, dest_space_name, FN_REFLEN);
+		tmpname[strlen(tmpname) - 4] = 0;
+
+		msg("xtrabackup: Renaming %s to %s\n",
+		    fil_space->name, dest_space_name);
+
+		if (!fil_rename_tablespace(NULL,
+				      fil_space->id, tmpname))
+		{
+			msg("xtrabackup: Cannot rename %s to %s\n",
+				fil_space->name, dest_space_name);
+			goto exit;
+		}
+
+		goto found;
+	}
+
+	/* no matching space found. create the new one */
+
+#ifdef INNODB_VERSION_SHORT
+	if (!fil_space_create(dest_space_name, space_id,
+		zip_size, FIL_TABLESPACE)) {
+#else
+	if (!fil_space_create(dest_space_name, space_id,
+		FIL_TABLESPACE)) {
+#endif
+		msg("xtrabackup: Cannot create tablespace %s\n",
+			dest_space_name);
+		goto exit;
+	}
+
+	file = xb_file_create_no_error_handling(real_name, OS_FILE_CREATE,
+					    OS_FILE_READ_WRITE,
+					    &ok);
+
+	if (ok) {
+		*success = TRUE;
+	} else {
+		msg("xtrabackup: Cannot open file %s\n", real_name);
+	}
+
+	goto exit;
+
+found:
+	/* open the file and return it's handle */
+
+	file = xb_file_create_no_error_handling(real_name, OS_FILE_OPEN,
+					    OS_FILE_READ_WRITE,
+					    &ok);
+
+	if (ok) {
+		*success = TRUE;
+	} else {
+		msg("xtrabackup: Cannot open file %s\n", real_name);
+	}
+
+exit:
+
+	return file;
+}
+
 /************************************************************************
 Applies a given .delta file to the corresponding data file.
 @return TRUE on success */
@@ -3734,6 +3962,7 @@ xtrabackup_apply_delta(
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
 	char	meta_path[FN_REFLEN];
+	char	space_name[FN_REFLEN];
 	ibool	success;
 
 	ibool	last_buffer = FALSE;
@@ -3760,6 +3989,9 @@ xtrabackup_apply_delta(
 			 xtrabackup_real_target_dir, filename);
 	}
 	dst_path[strlen(dst_path) - 6] = '\0';
+
+	strncpy(space_name, filename, FN_REFLEN);
+	space_name[strlen(space_name) -  6] = 0;
 
 	if (!get_meta_path(src_path, meta_path)) {
 		goto error;
@@ -3798,36 +4030,11 @@ xtrabackup_apply_delta(
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
-	dst_file = xb_file_create_no_error_handling(dst_path, OS_FILE_OPEN,
-						    OS_FILE_READ_WRITE,
-						    &success);
-again:
+	dst_file = xb_delta_open_matching_space(
+			dbname, space_name, info.space_id,
+			info.page_size == UNIV_PAGE_SIZE ? 0 : info.page_size,
+			dst_path, sizeof(dst_path), &success);
 	if (!success) {
-		ulint errcode = os_file_get_last_error(TRUE);
-
-		if (errcode == OS_FILE_NOT_FOUND) {
-			msg("xtrabackup: target data file %s "
-			    "is not found, creating a new one\n", dst_path);
-			/* Create the database directory if it doesn't exist yet
-			*/
-			if (dbname) {
-				char	dst_dir[FN_REFLEN];
-
-				snprintf(dst_dir, sizeof(dst_dir), "%s/%s",
-					 xtrabackup_real_target_dir, dbname);
-				srv_normalize_path_for_win(dst_dir);
-
-				if (!os_file_create_directory(dst_dir, FALSE))
-					goto error;
-			}
-			dst_file =
-				xb_file_create_no_error_handling(dst_path,
-								 OS_FILE_CREATE,
-								 OS_FILE_READ_WRITE,
-								 &success);
-			goto again;
-		}
-
 		msg("xtrabackup: error: cannot open %s\n", dst_path);
 		goto error;
 	}
@@ -3842,7 +4049,7 @@ again:
 	incremental_buffer = ut_align(incremental_buffer_base,
 				      UNIV_PAGE_SIZE_MAX);
 
-	msg("Applying %s ...\n", src_path);
+	msg("Applying %s to %s...\n", src_path, dst_path);
 
 	while (!last_buffer) {
 		ulint cluster_header;
@@ -4150,6 +4357,8 @@ error:
 static void
 xtrabackup_prepare_func(void)
 {
+	ulint	err;
+
 	/* cd to target-dir */
 
 	if (my_setwd(xtrabackup_real_target_dir,MYF(MY_WME)))
@@ -4220,12 +4429,29 @@ skip_check:
 	if(xtrabackup_init_temp_log())
 		goto error;
 
-	if(xtrabackup_incremental && !xtrabackup_apply_deltas(TRUE))
+	if(innodb_init_param())
 		goto error;
 
+	mem_init(srv_mem_pool_size);
+	if (xtrabackup_incremental) {
+		err = xb_data_files_init();
+		if (err != DB_SUCCESS) {
+			msg("xtrabackup: error: xb_data_files_init() failed with"
+			    "error code %lu\n", err);
+			goto error;
+		}
+
+		if(!xtrabackup_apply_deltas(TRUE)) {
+			xb_data_files_close();
+			goto error;
+		}
+
+		xb_data_files_close();
+	}
 	sync_close();
 	sync_initialized = FALSE;
 	os_sync_free();
+	mem_close();
 	os_sync_mutex = NULL;
 	ut_free_all_mem();
 

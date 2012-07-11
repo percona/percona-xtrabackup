@@ -151,6 +151,82 @@ xb_file_flush(
 	return os_file_flush(file);
 #endif
 }
+/*******************************************************************//**
+Returns the table space by a given id, NULL if not found. */
+fil_space_t*
+xb_space_get_by_id(
+/*================*/
+	ulint	id)	/*!< in: space id */
+{
+	fil_space_t*	space;
+
+	ut_ad(mutex_own(&fil_system->mutex));
+
+#ifdef INNODB_VERSION_SHORT
+	HASH_SEARCH(hash, fil_system->spaces, id,
+		    fil_space_t*, space,
+		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
+		    space->id == id);
+#else
+	HASH_SEARCH(hash, fil_system->spaces, id, space, space->id == id);
+#endif
+
+	return(space);
+}
+
+/*******************************************************************//**
+Returns the table space by a given name, NULL if not found. */
+fil_space_t*
+xb_space_get_by_name(
+/*==================*/
+	const char*	name)	/*!< in: space name */
+{
+	fil_space_t*	space;
+	ulint		fold;
+
+	ut_ad(mutex_own(&fil_system->mutex));
+
+#ifdef INNODB_VERSION_SHORT
+	fold = ut_fold_string(name);
+	HASH_SEARCH(name_hash, fil_system->name_hash, fold,
+		    fil_space_t*, space,
+		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
+		    !strcmp(name, space->name));
+#else
+	HASH_SEARCH(name_hash, fil_system->name_hash, ut_fold_string(name),
+		    space, 0 == strcmp(name, space->name));
+#endif
+
+	return(space);
+}
+
+#ifndef INNODB_VERSION_SHORT
+
+/*******************************************************************//**
+Free all spaces in space_list. */
+void
+fil_free_all_spaces(void)
+/*=====================*/
+{
+	fil_space_t*	space;
+
+	mutex_enter(&fil_system->mutex);
+
+	space = UT_LIST_GET_FIRST(fil_system->space_list);
+
+	while (space != NULL) {
+		fil_node_t*	node;
+		fil_space_t*	prev_space = space;
+
+		space = UT_LIST_GET_NEXT(space_list, space);
+
+		fil_space_free(prev_space->id, FALSE);
+	}
+
+	mutex_exit(&fil_system->mutex);
+}
+
+#endif
 
 void
 innobase_invalidate_query_cache(
