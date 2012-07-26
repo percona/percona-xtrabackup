@@ -3388,9 +3388,18 @@ read_retry:
 		if (xtrabackup_incremental) {
 			for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += page_size) {
 				/* newer page */
-				/* This condition may be OK for header, ibuf and fsp */
+				/* This condition may be OK for header, ibuf and fsp
+				We always copy the 1st
+				FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE
+				bytes of any tablespace, regardless of the LSNs
+				of the pages there.  These pages are guaranteed
+				to be flushed upon tablespace create and they
+				are required for InnoDB to recognize the
+				tablespace. */
 				if (ut_dulint_cmp(incremental_lsn,
-					MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0) {
+					MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0
+				    || (offset + chunk_offset
+					< FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE)) {
 	/* ========================================= */
 	IB_INT64 offset_on_page;
 
@@ -5614,7 +5623,7 @@ Searches for matching tablespace file for given .delta file and space_id
 in given directory. When matching tablespace found, renames it to match the
 name of .delta file. If there was a tablespace with matching name and
 mismatching ID, renames it to xtrabackup_tmp_#ID.ibd. If there was no
-matching file, creates the new one.
+matching file, creates a placeholder for the new tablespace.
 @return file handle of matched or created file */
 static
 os_file_t
@@ -5713,7 +5722,12 @@ xb_delta_open_matching_space(
 		goto found;
 	}
 
-	/* no matching space found. create the new one */
+	/* No matching space found. create the new one.  Note that this is not
+	a full-fledged tablespace create, as done by
+	fil_create_new_single_table_tablespace(): the minumum tablespace size
+	is not ensured and the 1st page fields are not set.  We rely on backup
+	delta to contain the 1st FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE
+	to ensure the correct tablespace image.  */
 
 #ifdef INNODB_VERSION_SHORT
 	if (!fil_space_create(dest_space_name, space_id,
