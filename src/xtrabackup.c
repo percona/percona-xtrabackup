@@ -5641,6 +5641,7 @@ xb_delta_open_matching_space(
 	ibool		ok;
 	fil_space_t*	fil_space;
 	os_file_t	file	= 0;
+	ulint		tablespace_flags;
 
 	ut_a(dbname || space_id == 0);
 
@@ -5730,8 +5731,24 @@ xb_delta_open_matching_space(
 	to ensure the correct tablespace image.  */
 
 #ifdef INNODB_VERSION_SHORT
-	if (!fil_space_create(dest_space_name, space_id,
-		zip_size, FIL_TABLESPACE)) {
+	/* Calculate correct tablespace flags for compressed tablespaces.  Do
+	not bother to set all flags correctly, just enough for
+	fil_space_create() to work.  The full flags will be restored from the
+	delta later.  */
+	if (!zip_size) {
+		tablespace_flags = 0;
+	}
+	else {
+		tablespace_flags
+			= (get_bit_shift(zip_size >> PAGE_ZIP_MIN_SIZE_SHIFT
+					 << 1)
+			   << DICT_TF_ZSSIZE_SHIFT)
+			| DICT_TF_COMPACT
+			| (DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT);
+	}
+	ut_a(dict_table_flags_to_zip_size(tablespace_flags) == zip_size);
+	if (!fil_space_create(dest_space_name, space_id, tablespace_flags,
+			      FIL_TABLESPACE)) {
 #else
 	if (!fil_space_create(dest_space_name, space_id,
 		FIL_TABLESPACE)) {
