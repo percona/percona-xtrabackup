@@ -26,18 +26,22 @@ vlog "Full backup done to directory $full_backup_dir"
 # Changing data
 
 vlog "Making changes to database"
+${MYSQL} ${MYSQL_ARGS} -e "create table t2 (a int(11) default null, number int(11) default null) engine=innodb" incremental_sample
 let "count=numrow+1"
-let "numrow=500"
+let "numrow=1000"
 while [ "$numrow" -gt "$count" ]
 do
 	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
+	${MYSQL} ${MYSQL_ARGS} -e "insert into t2 values ($count, $numrow);" incremental_sample
 	let "count=count+1"
 done
 vlog "Changes done"
 
 # Saving the checksum of original table
-checksum_a=`checksum_table incremental_sample test`
-vlog "Table checksum is $checksum_a"
+checksum_test_a=`checksum_table incremental_sample test`
+checksum_t2_a=`checksum_table incremental_sample t2`
+vlog "Table 'test' checksum is $checksum_test_a"
+vlog "Table 't2' checksum is $checksum_t2_a"
 
 vlog "Making incremental backup"
 
@@ -86,11 +90,18 @@ vlog "Data restored"
 start_server --innodb_file_per_table
 
 vlog "Checking checksums"
-checksum_b=`checksum_table incremental_sample test`
+checksum_test_b=`checksum_table incremental_sample test`
+checksum_t2_b=`checksum_table incremental_sample t2`
 
-if [ "$checksum_a" != "$checksum_b"  ]
+if [ "$checksum_test_a" != "$checksum_test_b"  ]
 then 
-	vlog "Checksums are not equal"
+	vlog "Checksums for table 'test' are not equal"
+	exit -1
+fi
+
+if [ "$checksum_t2_a" != "$checksum_t2_b"  ]
+then 
+	vlog "Checksums for table 't2' are not equal"
 	exit -1
 fi
 
