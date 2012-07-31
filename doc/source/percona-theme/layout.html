@@ -75,10 +75,16 @@
 				</div>
 
 			<div class="side-column-block">
-			    
-			    <div class="a-btn-container"><a title="Download PDF Manual for Percona XtraBackup" href="http://form.percona.com/PerconaXtraBackup165OpsManual.html" class="a-btn-new"><span class="a-btn-text">Download Manual</span><span class="a-btn-fixed-slide-text">PDF for 1.6</span><span class="a-btn-icon-right"><span></span></span></a>
-				</div>
-			</div>				
+				<div class="a-btn-container">
+					<a title="Download PDF Manual for Percona XtraBackup 1.6" href="http://form.percona.com/PerconaXtraBackup165OpsManual.html" class="a-btn-new">
+						<span class="a-btn-text">Download Manual</span>
+						<span class="a-btn-fixed-slide-text">PDF for version 1.6</span>
+						<span class="a-btn-icon-right"><span></span></span>
+					</a>
+				</div></div>
+			
+			<div class="percona_com_ad" style="width:220px;"><script type="text/javascript" src="http://www.percona.com/ads.php?size=220x120"></script></div>
+							
           {%- if sidebars != None %}
             {#- new style sidebar: explicitly include/exclude templates #}
             {%- for sidebartemplate in sidebars %}
@@ -88,11 +94,8 @@
             {#- old style sidebars: using blocks -- should be deprecated #}
 			            {%- block serverseries %}
 		<div class="side-column-block">
-			<h3>XtraBackup Series</h3>
-			     <ul>
-			       <li><a href="http://www.percona.com/doc/percona-xtrabackup/">Percona XtraBackup 2.0</a></li>
-			       <li><a href="http://www.percona.com/doc/percona-xtrabackup/1.6/">Percona XtraBackup 1.6</a></li>
-			     </ul>
+			<h3>Percona Server Series</h3>
+			     <ul><li><a href="http://www.percona.com/doc/percona-xtrabackup/1.6/">Percona XtraBackup 1.6</a></li><li><a href="http://www.percona.com/doc/percona-xtrabackup/2.0/">Percona XtraBackup 2.0</a></li></ul>
 			</div>
 			            {%- endblock %}
             {%- block sidebartoc %}
@@ -211,7 +214,8 @@
       <div class="searchlink"><a onmouseover="SEARCH.Open()"><img id="searchlink-anchor" src="http://s2.percona.com/ui-search.png" alt="" /></a></div>
       <span class="inv"><![CDATA[<noindex>]]></span>
      	<div class="navicontainer"><div class="navi">
-		<span id="navilink-span-about-us" ><a id="navilink-a-about-us" href="http://www.percona.com/about-us/">About Us</a></span><span id="navilink-span-mysql-consulting" ><a id="navilink-a-mysql-consulting" href="http://www.percona.com/mysql-consulting/">Consulting</a></span><span id="navilink-span-support" ><a id="navilink-a-support" href="http://www.percona.com/mysql-support/">Support</a></span><span id="navilink-span-training" ><a id="navilink-a-training" href="http://www.percona.com/training/">Training</a></span><span id="navilink-span-development" ><a id="navilink-a-development" href="http://www.percona.com/development/">Development</a></span><span id="navilink-span-software" class="selected"><a class="selected" id="navilink-a-software" href="http://www.percona.com/software/">Software</a></span><span id="navilink-span-events" ><a id="navilink-a-events" href="http://www.percona.com/live/">Events</a></span><span id="navilink-span-contact" ><a id="navilink-a-contact" href="http://www.percona.com/contact/">Contact Us</a></span>      </div></div>
+		<span id="navilink-span-about-us" ><a id="navilink-a-about-us" href="/about-us/">About Us</a></span><span id="navilink-span-mysql-consulting" ><a id="navilink-a-mysql-consulting" href="/mysql-consulting/">Consulting</a></span><span id="navilink-span-support" ><a id="navilink-a-support" href="/mysql-support/">Support</a></span><span id="navilink-span-training" ><a id="navilink-a-training" href="/training/">Training</a></span><span id="navilink-span-development" ><a id="navilink-a-development" href="/development/">Development</a></span><span id="navilink-span-software" ><a id="navilink-a-software" href="/software/">Software</a></span><span id="navilink-span-events" ><a id="navilink-a-events" href="/live/">Events</a></span><span id="navilink-span-contact" ><a id="navilink-a-contact" href="/contact/">Contact Us</a></span>      
+		</div></div>
 
 		<span class="inv"><![CDATA[</noindex>]]></span>
       <span class="inv"><![CDATA[</noindex>]]></span>
@@ -248,6 +252,7 @@
           {%- block relbar2 %}{{ relbar() }}
 
       {%- if render_sidebar %}
+      <div class="percona_com_ad" style="margin:auto;width:630px;"><script type="text/javascript" src="http://www.percona.com/ads.php?size=630x80"></script></div>
         </div>
       {%- endif %}
 
@@ -265,6 +270,9 @@
       {% trans last_updated=last_updated|e %}Last updated on {{ last_updated }}.{% endtrans %}
       {%- endif %}
      
+     
+    
+    
     <div class="license">
 
       {%- if show_copyright %}
@@ -322,142 +330,38 @@
 <span class="inv"><!--[CDATA[<noindex-->]]&gt;</span>
 <div id="submenus">
 	<div class="navi-dropdown" id="navi-dropdown-about-us">
-	<div class="navi-dropdown-header-l"><!-- //--></div>
-	<div class="navi-dropdown-content">
-	<div class="item"><a href="http://www.percona.com/about-us/our-mission/">Our Mission</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/why-percona/">Why Percona?</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/procedures/">Coordinating with Percona</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/customers/">Customers</a></div>
-	<div class="item"><a href="http://www.percona.com/webinars/">Webinars</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/mysql-case-studies/">MySQL Case Studies</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/our-team/">Our Team</a></div>
-
-	<div class="item"><a href="http://www.percona.com/about-us/books/">Our Books</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/blogs/">Our Blogs</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/mysql-white-papers/">MySQL White Papers</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/conferences/">Conferences</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/presentations/">Presentations</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/newsletters/">Newsletters</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/pressreleases/">Press Releases</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/percona-in-the-news/">In The News</a></div>
-	<div class="item"><a href="http://www.percona.com/about-us/careers/">Careers</a></div>
-
-	</div>
-	<div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
-	<div class="navi-dropdown" id="navi-dropdown-mysql-consulting">
-	<div class="navi-dropdown-header-l"><!-- //--></div>
-	<div class="navi-dropdown-content">
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/overview/">MySQL Consulting Overview</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/prices/">MySQL Consulting Prices</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/architecture/">MySQL Architecture &amp; Design</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/mysql-backups/">MySQL Backups</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/cloud-computing/">MySQL Cloud Solutions</a></div>
-
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/cluster/">MySQL Cluster Consulting</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/data-warehousing/">MySQL Data Warehousing</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/data-recovery/">MySQL Data Recovery</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/high-availability/">MySQL High Availability</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/mysql-monitoring-graphing/">MySQL Monitoring &amp; Graphing</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/mysql-onsite-consulting/">MySQL Onsite Consulting</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/performance-audit/">MySQL Performance Audit</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/remote-dba/">MySQL Remote DBA</a></div>
-
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/mysql-replication/">MySQL Replication</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/upgrade/">MySQL Version Upgrades</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/24x7-emergency/">Emergency 24&times;7 Consulting</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/migration/">Migration to MySQL</a></div>
-	<div class="item"><a href="http://www.percona.com/drizzle-consulting/">Drizzle Consulting</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/sphinx/">Sphinx Consulting</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/drbd/">DRBD Consulting</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/memcached/">Memcached Consulting</a></div>
-
-	<div class="item"><a href="http://www.percona.com/mysql-consulting/other-services/">Other Consulting Services</a></div>
-	</div>
-	<div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
-	<div class="navi-dropdown" id="navi-dropdown-support">
-	<div class="navi-dropdown-header-l"><!-- //--></div>
-	<div class="navi-dropdown-content">
-	<div class="item"><a href="http://www.percona.com/mysql-support/">MySQL Support Overview</a></div>
-	<div class="item"><a href="http://www.percona.com/prices/mysql-support/">MySQL Support Prices</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-support/policies/">MySQL Support Policies</a></div>
-	<div class="item"><a href="http://www.percona.com/mysql-support/consulting-vs-support/">Consulting vs. Support</a></div>
-	<div class="item"><a href="https://customers.percona.com">Customer Portal Login</a></div>
-
-	</div>
-	<div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
-	<div class="navi-dropdown" id="navi-dropdown-training">
-	<div class="navi-dropdown-header-l"><!-- //--></div>
-	<div class="navi-dropdown-content">
-	<div class="item"><a href="http://www.percona.com/training/">MySQL Training Overview</a></div>
-	<div class="item"><a href="http://www.percona.com/prices/training/">MySQL Training Prices</a></div>
-	<div class="item"><a href="http://www.percona.com/training/classes/dba/">MySQL DBA Training</a></div>
-	<div class="item"><a href="http://www.percona.com/training/classes/developers/">MySQL Developer Training</a></div>
-	<div class="item"><a href="http://www.percona.com/training/classes/operations/">MySQL Operations Training</a></div>
-	<div class="item"><a href="http://www.percona.com/training/classes/innodb/">InnoDB &amp; XtraDB Training</a></div>
-
-	<div class="item"><a href="http://www.percona.com/training/classes/custom-onsite/">Custom Onsite Training</a></div>
-	</div>
-	<div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
-	<div class="navi-dropdown" id="navi-dropdown-development">
-	<div class="navi-dropdown-header-l"><!-- //--></div>
-	<div class="navi-dropdown-content">
-	<div class="item"><a href="http://www.percona.com/development/mysql/">MySQL Development Overview</a></div>
-	<div class="item"><a href="http://www.percona.com/development/prices/">Custom Development Prices</a></div>
-	<div class="item"><a href="http://www.percona.com/development/maintenance/">MySQL Support Overview</a></div>
-	<div class="item"><a href="http://www.percona.com/development/benchmarking/">Custom Product Evaluation</a></div>
-	<div class="item"><a href="http://www.percona.com/development/maatkit/">Custom Maatkit Development</a></div>
-
-	<div class="item"><a href="http://www.percona.com/development/custom-tools/">Custom Tools Development</a></div>
-	</div>
-	<div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
-	<div class="navi-dropdown" id="navi-dropdown-software">
-		<div class="navi-dropdown-header-l"><!-- //--></div>
-		    <div class="navi-dropdown-content">
-		      <div class="item"><a href="http://www.percona.com/software/">Percona Software for MySQL</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/percona-server/">Percona Server with XtraDB</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/percona-xtradb-cluster/">Percona XtraDB Cluster</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/percona-xtrabackup/">Percona XtraBackup</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/mysql-innodb-data-recovery-tools/">Data Recovery Toolkit</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/percona-xtradb/">Percona XtraDB</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/percona-toolkit/">Percona Toolkit</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/percona-monitoring-plugins/">Percona Monitoring Plugins</a></div>
-		      <div class="item"><a href="http://www.percona.com/prices/software/">Software Prices</a></div>
-		      <div class="item"><a href="http://www.percona.com/downloads/">Downloads</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/repositories/">Repositories</a></div>
-		      <div class="item"><a href="http://www.percona.com/software/documentation/">Documentation</a></div>
-		      <div class="item"><a href="http://forum.percona.com">Forum</a></div>
-		      <div class="item"><a href="http://groups.google.com/group/percona-discussion">Google Discussion</a></div>
-		      <div class="item"><a href="https://launchpad.net/percona-server">Launchpad</a></div>
-		    </div>
-		    <div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
-	<div class="navi-dropdown" id="navi-dropdown-events">
-		<div class="navi-dropdown-header-r"><!-- //--></div>
-		<div class="navi-dropdown-content">
-			<div class="item"><a href="http://www.percona.com/live/mysql-conference-2012/">MySQL Conference &amp; Expo 2012</a></div>
-			<div class="item"><a href="http://www.percona.com/live/">Previous Percona Live Events</a></div>
-		</div>
-		<div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
-
-	<div class="navi-dropdown" id="navi-dropdown-contact">
-	<div class="navi-dropdown-header-r"><!-- //--></div>
-	<div class="navi-dropdown-content">
-	<div class="item"><a href="http://www.percona.com/contact/24x7-emergency/">24&times;7 Emergency</a></div>
-	<div class="item"><a href="http://www.percona.com/contact/sales/">Sales &amp; General Inquiries</a></div>
-	<div class="item"><a href="http://www.percona.com/contact/billing/">Billing Inquiries</a></div>
-	<div class="item"><a href="https://customers.percona.com">Customer Portal Login</a></div>
-	<div class="item"><a href="http://www.percona.com/contact/phone-directory/">Phone Directory</a></div>
-	<div class="item"><a href="http://www.percona.com/subscribe/">Subscribe to Newsletter</a></div>
-
-	</div>
-	<div class="navi-dropdown-footer"><!-- //--></div>
-	</div>
+    <div class="navi-dropdown-header-l"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/about-us/our-mission/">Our Mission</a></div><div class="item"><a href="/about-us/why-percona/">Why Percona?</a></div><div class="item"><a href="/about-us/procedures/">Coordinating with Percona</a></div><div class="item"><a href="/about-us/customers/">Customers</a></div><div class="item"><a href="/webinars/">Webinars</a></div><div class="item"><a href="/about-us/mysql-case-studies/">MySQL Case Studies</a></div><div class="item"><a href="/about-us/our-team/">Our Team</a></div><div class="item"><a href="/about-us/books/">Our Books</a></div><div class="item"><a href="/about-us/blogs/">Our Blogs</a></div><div class="item"><a href="/about-us/mysql-white-papers/">MySQL White Papers</a></div><div class="item"><a href="/about-us/conferences/">Conferences</a></div><div class="item"><a href="/about-us/presentations/">Presentations</a></div><div class="item"><a href="/about-us/newsletters/">Newsletters</a></div><div class="item"><a href="/about-us/pressreleases/">Press Releases</a></div><div class="item"><a href="/about-us/careers/">Careers</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div><div class="navi-dropdown" id="navi-dropdown-mysql-consulting">
+    <div class="navi-dropdown-header-l"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/mysql-consulting/overview/">MySQL Consulting Overview</a></div><div class="item"><a href="/mysql-consulting/prices/">MySQL Consulting Prices</a></div><div class="item"><a href="/mysql-consulting/architecture/">MySQL Architecture &amp; Design</a></div><div class="item"><a href="/mysql-consulting/mysql-backups/">MySQL Backups</a></div><div class="item"><a href="/mysql-consulting/cloud-computing/">MySQL Cloud Solutions</a></div><div class="item"><a href="/mysql-consulting/cluster/">MySQL Cluster Consulting</a></div><div class="item"><a href="/mysql-consulting/data-warehousing/">MySQL Data Warehousing</a></div><div class="item"><a href="/mysql-consulting/data-recovery/">MySQL Data Recovery</a></div><div class="item"><a href="/mysql-consulting/high-availability/">MySQL High Availability</a></div><div class="item"><a href="/mysql-consulting/mysql-monitoring-graphing/">MySQL Monitoring &amp; Graphing</a></div><div class="item"><a href="/mysql-consulting/mysql-onsite-consulting/">MySQL Onsite Consulting</a></div><div class="item"><a href="/mysql-consulting/performance-audit/">MySQL Performance Audit</a></div><div class="item"><a href="/mysql-consulting/remote-dba/">MySQL Remote DBA</a></div><div class="item"><a href="/mysql-consulting/mysql-replication/">MySQL Replication</a></div><div class="item"><a href="/mysql-consulting/upgrade/">MySQL Version Upgrades</a></div><div class="item"><a href="/mysql-consulting/24x7-emergency/">Emergency 24&times;7 Consulting</a></div><div class="item"><a href="/mysql-consulting/migration/">Migration to MySQL</a></div><div class="item"><a href="/drizzle-consulting/">Drizzle Consulting</a></div><div class="item"><a href="/mysql-consulting/sphinx/">Sphinx Consulting</a></div><div class="item"><a href="/mysql-consulting/drbd/">DRBD Consulting</a></div><div class="item"><a href="/mysql-consulting/memcached/">Memcached Consulting</a></div><div class="item"><a href="/mysql-consulting/other-services/">Other Consulting Services</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div><div class="navi-dropdown" id="navi-dropdown-support">
+    <div class="navi-dropdown-header-l"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/mysql-support/">MySQL Support Overview</a></div><div class="item"><a href="/prices/mysql-support/">MySQL Support Prices</a></div><div class="item"><a href="/mysql-support/policies/">MySQL Support Policies</a></div><div class="item"><a href="/mysql-support/consulting-vs-support/">Consulting vs. Support</a></div><div class="item"><a href="https://customers.percona.com">Customer Portal Login</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div><div class="navi-dropdown" id="navi-dropdown-training">
+    <div class="navi-dropdown-header-l"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/training/">MySQL Training Overview</a></div><div class="item"><a href="/prices/training/">MySQL Training Prices</a></div><div class="item"><a href="/training/classes/dba/">MySQL DBA Training</a></div><div class="item"><a href="/training/classes/developers/">MySQL Developer Training</a></div><div class="item"><a href="/training/classes/operations/">MySQL Operations Training</a></div><div class="item"><a href="/training/classes/innodb/">InnoDB &amp; XtraDB Training</a></div><div class="item"><a href="/training/classes/custom-onsite/">Custom Onsite Training</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div><div class="navi-dropdown" id="navi-dropdown-development">
+    <div class="navi-dropdown-header-l"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/development/mysql/">MySQL Development Overview</a></div><div class="item"><a href="/development/prices/">Custom Development Prices</a></div><div class="item"><a href="/development/maintenance/">MySQL Support Overview</a></div><div class="item"><a href="/development/benchmarking/">Custom Product Evaluation</a></div><div class="item"><a href="/development/maatkit/">Custom Maatkit Development</a></div><div class="item"><a href="/development/custom-tools/">Custom Tools Development</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div><div class="navi-dropdown" id="navi-dropdown-software">
+    <div class="navi-dropdown-header-l"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/software/">Percona Software for MySQL</a></div><div class="item"><a href="/software/percona-server/">Percona Server with XtraDB</a></div><div class="item"><a href="/software/percona-xtradb-cluster/">Percona XtraDB Cluster</a></div><div class="item"><a href="/software/percona-xtrabackup/">Percona XtraBackup</a></div><div class="item"><a href="/software/mysql-innodb-data-recovery-tools/">Data Recovery Toolkit</a></div><div class="item"><a href="/software/percona-xtradb/">Percona XtraDB</a></div><div class="item"><a href="/software/percona-toolkit/">Percona Toolkit</a></div><div class="item"><a href="/software/percona-monitoring-plugins/">Percona Monitoring Plugins</a></div><div class="item"><a href="/prices/software/">Software Prices</a></div><div class="item"><a href="/downloads/">Downloads</a></div><div class="item"><a href="/software/repositories/">Repositories</a></div><div class="item"><a href="/software/documentation/">Documentation</a></div><div class="item"><a href="http://forum.percona.com">Forum</a></div><div class="item"><a href="http://groups.google.com/group/percona-discussion">Google Discussion</a></div><div class="item"><a href="https://launchpad.net/percona-server">Launchpad</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div><div class="navi-dropdown" id="navi-dropdown-events">
+    <div class="navi-dropdown-header-r"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/live/nyc-2012/">New York 2012</a></div><div class="item"><a href="/live/london-2012/">London 2012</a></div><div class="item"><a href="/live/mysql-conference-2013/">MySQL Conference &amp; Expo 2013</a></div><div class="item"><a href="/live/mysql-conference-2012/">MySQL Conference &amp; Expo 2012</a></div><div class="item"><a href="/live/">Previous Percona Live Events</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div><div class="navi-dropdown" id="navi-dropdown-contact">
+    <div class="navi-dropdown-header-r"><!-- //--></div>
+    <div class="navi-dropdown-content"><div class="item"><a href="/contact/24x7-emergency/">24&times;7 Emergency</a></div><div class="item"><a href="/contact/sales/">Sales &amp; General Inquiries</a></div><div class="item"><a href="/contact/billing/">Billing Inquiries</a></div><div class="item"><a href="https://customers.percona.com">Customer Portal Login</a></div><div class="item"><a href="/contact/phone-directory/">Phone Directory</a></div><div class="item"><a href="/subscribe/">Subscribe to Newsletter</a></div>    </div>
+    <div class="navi-dropdown-footer"><!-- //--></div>
+  </div>
   <div id="search-dropdown" class="search-dropdown">
     <div class="search-dropdown-header"><!-- //--></div>
     <div class="search-dropdown-content">
