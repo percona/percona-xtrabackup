@@ -53,6 +53,7 @@ typedef struct {
 	ulint		buf_page_no;	/*!< number of the first page in
 					buffer */
 	ulint		thread_n;	/*!< thread number for diagnostics */
+	ulint		space_id;	/*!< ID of tablespace */
 } xb_fil_cur_t;
 
 typedef enum {

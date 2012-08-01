@@ -38,9 +38,12 @@ Option           Description
 
 These options are passed to the :command:`mysql` child process without alteration, see :option:`mysql --help` for details.
 
+.. note::
+ In case of multiple server instances the correct connection parameters (port, socket, host) must be specified in order for |innobackupex| to talk to the correct server. 
+
+
 Permissions and Privileges Needed
 =================================
-
 
 Once connected to the server, in order to perform a backup you will need ``READ``, ``WRITE`` and ``EXECUTE`` permissions at a filesystem level in the server's :term:`datadir`.
 

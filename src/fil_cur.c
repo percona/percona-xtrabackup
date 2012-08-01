@@ -54,6 +54,7 @@ xb_fil_cur_open(
 	cursor->orig_buf = NULL;
 	cursor->file = XB_FILE_UNDEFINED;
 
+	cursor->space_id = node->space->id;
 	cursor->is_system = trx_sys_sys_space(node->space->id);
 
 	/* Make the file path relative to the backup root,
