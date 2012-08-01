@@ -81,7 +81,7 @@ test -e "$SOURCEDIR/VERSION" || exit 2
 . $SOURCEDIR/VERSION
 
 # Build information
-REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"
+REVISION="$(cd "$SOURCEDIR"; bzr revno)"
 
 # Compilation flags
 export CC=${CC:-gcc}
@@ -135,7 +135,7 @@ export AUTO_DOWNLOAD=yes
 
     ) || false
 
-    $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
+    $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION.tar.gz" \
         --owner=0 --group=0 -C "$INSTALLDIR/../" \
         "percona-xtrabackup-$XTRABACKUP_VERSION"
 
