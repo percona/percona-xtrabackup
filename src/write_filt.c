@@ -23,12 +23,28 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 /* Page write filters implementation */
 
 #include <my_base.h>
+#include <fil0fil.h>
 #include <ut0mem.h>
 #include "common.h"
 #include "innodb_int.h"
 #include "write_filt.h"
 #include "fil_cur.h"
 #include "xtrabackup.h"
+
+/************************************************************************
+The common tablespace-offset-based page filter.  This is a subroutine for all
+other filters that will select additional pages to be written by their
+tablespace position, regardless of the main filter logic.
+
+@return TRUE if the page with given id should be selected, FALSE otherwise. */
+static my_bool wf_common_filter(ulint offset) {
+	/* We always copy the 1st FIL_IBD_INITIAL_SIZE *
+	UNIV_PAGE_SIZE bytes of any tablespace.  These pages are
+	guaranteed to be flushed upon tablespace create and they are
+	needed so that we have a good minimal tablespace image before
+	doing anything further with it.  */
+	return (offset < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE);
+}
 
 /************************************************************************
 Write-through page write filter. */
@@ -102,6 +118,7 @@ wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 	snprintf(meta_name, sizeof(meta_name), "%s%s", dst_name,
 		 XB_DELTA_INFO_SUFFIX);
 	info.page_size = cursor->page_size;
+	info.space_id = cursor->space_id;
 	if (!xb_write_delta_metadata(meta_name, &info)) {
 		msg("[%02lu] xtrabackup: Error: "
 		    "failed to write meta info for %s\n",
@@ -135,7 +152,8 @@ wf_incremental_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 	for (i = 0, page = cursor->buf; i < cursor->buf_npages;
 	     i++, page += page_size) {
 		if (ut_dulint_cmp(incremental_lsn,
-				  MACH_READ_64(page + FIL_PAGE_LSN)) >= 0) {
+				  MACH_READ_64(page + FIL_PAGE_LSN)) >= 0
+		    && !wf_common_filter(cursor->buf_offset + i * page_size)) {
 			continue;
 		}
 
