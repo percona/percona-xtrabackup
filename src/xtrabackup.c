@@ -3802,7 +3802,7 @@ Searches for matching tablespace file for given .delta file and space_id
 in given directory. When matching tablespace found, renames it to match the
 name of .delta file. If there was a tablespace with matching name and
 mismatching ID, renames it to xtrabackup_tmp_#ID.ibd. If there was no
-matching file, creates the new one.
+matching file, creates a placeholder for the new tablespace.
 @return file handle of matched or created file */
 static
 os_file_t
@@ -3901,7 +3901,12 @@ xb_delta_open_matching_space(
 		goto found;
 	}
 
-	/* no matching space found. create the new one */
+	/* No matching space found. create the new one.  Note that this is not
+	a full-fledged tablespace create, as done by
+	fil_create_new_single_table_tablespace(): the minumum tablespace size
+	is not ensured and the 1st page fields are not set.  We rely on backup
+	delta to contain the 1st FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE
+	to ensure the correct tablespace image.  */
 
 #ifdef INNODB_VERSION_SHORT
 	if (!fil_space_create(dest_space_name, space_id,
