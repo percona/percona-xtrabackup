@@ -43,6 +43,8 @@ Bugs Fixed
 
   * There were no source files in tar.gz archive for Percona XtraBackup 2.0.0. Bug fixed :bug:`1002841` (*Ignacio Nin*).
 
-  * XtraBackup binary could fail with the “log block checksum mismatch” error when reading the partially written log block. Bug fixed :bug:`1015416` (*Alexey Kopytov*).
+  * |XtraBackup| binary could fail with the "log block checksum
+     mismatch" error when reading an partially written log block.  Bug
+     fixed :bug:`1015416` (*Alexey Kopytov*).
 
 Other bugfixes: bug :bug:`970941` (*Stewart Smith*), bug :bug:`999273` (*Alexey Kopytov*), bug :bug:`1002843` (*Ignacio Nin*) and bug :bug:`989488` (*Hrvoje Matijakovic*).
