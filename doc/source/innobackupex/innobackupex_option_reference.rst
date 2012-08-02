@@ -86,6 +86,10 @@ Options
 
    This option prevents creation of a time-stamped subdirectory of the ``BACKUP-ROOT-DIR`` given on the command line. When it is specified, the backup is done in ``BACKUP-ROOT-DIR`` instead.
 
+.. option:: --galera-info
+
+   This options creates the ``xtrabackup_galera_info`` file which contains the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster.
+
 .. option:: --slave-info
 
    This option is useful when backing up a replication slave server. It prints the binary log position and name of the master server. It also writes this information to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER`` command. A new slave for this master can be set up by starting a slave server on this backup and issuing a ``CHANGE MASTER`` command with the binary log position saved in the :file:`xtrabackup_slave_info` file.
