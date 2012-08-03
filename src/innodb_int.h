@@ -410,6 +410,9 @@ extern fil_system_t*   fil_system;
 extern char *opt_mysql_tmpdir;
 extern MY_TMPDIR mysql_tmpdir_list;
 
+/** Value of fil_space_struct::magic_n */
+#define	FIL_SPACE_MAGIC_N	89472
+
 /* ==end=== definition  at fil0fil.c === */
 
 /* prototypes for static functions in original */
@@ -580,6 +583,32 @@ ibool
 xb_file_flush(
 /*==========*/
 	os_file_t	file);	/*!< in, own: handle to a file */
+
+/*******************************************************************//**
+Returns the table space by a given id, NULL if not found. */
+fil_space_t*
+xb_space_get_by_id(
+/*================*/
+	ulint	id);	/*!< in: space id */
+
+/*******************************************************************//**
+Returns the table space by a given name, NULL if not found. */
+fil_space_t*
+xb_space_get_by_name(
+/*==================*/
+	const char*	name);	/*!< in: space name */
+
+#ifndef INNODB_VERSION_SHORT
+
+#define SRV_SHUTDOWN_NONE 0
+
+/*******************************************************************//**
+Free all spaces in space_list. */
+void
+fil_free_all_spaces(void);
+/*=====================*/
+
+#endif
 
 void
 innobase_mysql_prepare_print_arbitrary_thd(void);
