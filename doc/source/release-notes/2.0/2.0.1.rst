@@ -47,4 +47,4 @@ Bugs Fixed
      mismatch" error when reading an partially written log block.  Bug
      fixed :bug:`1015416` (*Alexey Kopytov*).
 
-Other bugfixes: bug :bug:`970941` (*Stewart Smith*), bug :bug:`999273` (*Alexey Kopytov*), bug :bug:`1002843` (*Ignacio Nin*) and bug :bug:`989488` (*Hrvoje Matijakovic*).
+Other bugfixes: bug :bug:`970941` (*Stewart Smith*), bug :bug:`999273` (*Alexey Kopytov*) and bug :bug:`989488` (*Hrvoje Matijakovic*).
