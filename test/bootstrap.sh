@@ -54,8 +54,8 @@ case "$1" in
 	tarball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
 	;;
     galera55)
-	url="http://www.percona.com/downloads/Percona-XtraDB-Cluster/5.5.24-23.6/binary/linux/"
-	tarball="$arch/Percona-XtraDB-Cluster-5.5.24-23.6.342.Linux.$arch.tar.gz"
+	url="http://www.percona.com/downloads/Percona-XtraDB-Cluster/5.5.24-23.6/binary/linux/$arch"
+	tarball="Percona-XtraDB-Cluster-5.5.24-23.6.342.Linux.$arch.tar.gz"
 	#galera=1
 	;;
     *)
