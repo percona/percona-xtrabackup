@@ -2,8 +2,8 @@
  |Percona| |XtraBackup| Release Notes
 ======================================
 
-Percona |XtraBackup| 2.0 (Beta)
-===============================
+Percona |XtraBackup| 2.0 
+=========================
 
 .. toctree::
    :maxdepth: 1
@@ -11,8 +11,8 @@ Percona |XtraBackup| 2.0 (Beta)
 
    release-notes/2.0/*
 
-Percona |XtraBackup| 1.6 (Stable)
-=================================
+Percona |XtraBackup| 1.6 
+=========================
 
 .. toctree::
    :maxdepth: 1
