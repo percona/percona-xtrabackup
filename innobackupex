@@ -1584,7 +1584,7 @@ sub check_args {
                         'use-memory=s' => \$option_use_memory,
                         'uncompress' => \$option_uncompress,
                         'export' => \$option_export,
-                        'password=s' => \$option_mysql_password,
+                        'password:s' => \$option_mysql_password,
                         'user=s' => \$option_mysql_user,
                         'host=s' => \$option_mysql_host,
                         'port=s' => \$option_mysql_port,
