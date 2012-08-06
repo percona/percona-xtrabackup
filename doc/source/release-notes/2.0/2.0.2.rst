@@ -2,7 +2,7 @@
 |Percona| |XtraBackup| 2.0.2
 ============================
 
-Percona is glad to announce the release of Percona XtraBackup 2.0.2 on August 9th, 2012. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.2/>`_ and :doc:`Percona Software Repositories </installation>`.
+Percona is glad to announce the release of Percona XtraBackup 2.0.2 on August 13th, 2012. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.2/>`_ and :doc:`Percona Software Repositories </installation>`.
 
 This release is the current GA (Generally Available) stable release in the 2.0 series. 
 
