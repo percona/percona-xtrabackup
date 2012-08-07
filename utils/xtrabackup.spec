@@ -28,6 +28,15 @@ AutoReqProv: no
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
 
+%package test
+Summary: Test suite for Percona Xtrabackup
+Group: Applications/Databases
+Requires: percona-xtrabackup
+AutoReqProv: no
+
+%description test
+This package contains the test suite for Percona Xtrabackup
+
 
 %changelog
 * Mon Sep 27 2010 Aleksandr Kuzminsky
@@ -85,9 +94,10 @@ cp -R test %{buildroot}%{_datadir}/percona-xtrabackup-test
 %{_bindir}/xtrabackup_51
 %{_bindir}/xtrabackup_55
 %{_bindir}/xbstream
-%{_datadir}/percona-xtrabackup-test
-
 %doc COPYING
+
+%files -n percona-xtrabackup-test
+%{_datadir}/percona-xtrabackup-test
 
 ###
 ### eof
