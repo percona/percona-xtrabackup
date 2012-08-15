@@ -2619,7 +2619,7 @@ innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS]
              [--include=REGEXP] [--user=NAME]
              [--password=WORD] [--port=PORT] [--socket=SOCKET]
              [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
-             [--slave-info] [--stream=tar|xbstream]
+             [--slave-info] [--galera-info] [--stream=tar|xbstream]
              [--scpopt=OPTIONS-FOR-SCP]  [--sshopt=OPTIONS-FOR-SSH]
              [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME]
              [--databases=LIST] [--remote-host=HOSTNAME] [--no-lock] 
@@ -2706,6 +2706,10 @@ This option is passed directly to xtrabackup's --export option. It enables expor
 =item --extra-lsndir=DIRECTORY
 
 This option specifies the directory in which to save an extra copy of the "xtrabackup_checkpoints" file.  The option accepts a string argument. It is passed directly to xtrabackup's --extra-lsndir option. See the xtrabackup documentation for details.
+
+=item --galera-info
+
+This options creates the xtrabackup_galera_info file which contians the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster.
 
 =item --help
 
