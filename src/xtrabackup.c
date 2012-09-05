@@ -2848,10 +2848,14 @@ Read meta info for an incremental delta.
 static my_bool
 xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 {
-	FILE *fp;
-	my_bool r= TRUE;
+	FILE*	fp;
+	char	key[51];
+	char	value[51];
+	my_bool	r			= TRUE;
 
-	memset(info, 0, sizeof(xb_delta_info_t));
+	/* set defaults */
+	info->page_size = ULINT_UNDEFINED;
+	info->space_id = ULINT_UNDEFINED;
 
 	fp = fopen(filepath, "r");
 	if (!fp) {
@@ -2859,11 +2863,27 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 		return(TRUE);
 	}
 
-	if (fscanf(fp, "page_size = %lu\nspace_id = %lu\n",
-		&info->page_size, &info->space_id) != 2)
-		r= FALSE;
+	while (!feof(fp)) {
+		if (fscanf(fp, "%50s = %50s\n", key, value) == 2) {
+			if (strcmp(key, "page_size") == 0) {
+				info->page_size = strtoul(value, NULL, 10);
+			} else if (strcmp(key, "space_id") == 0) {
+				info->space_id = strtoul(value, NULL, 10);
+			}
+		}
+	}
 
 	fclose(fp);
+
+	if (info->page_size == ULINT_UNDEFINED) {
+		msg("xtrabackup: page_size is required in %s\n", filepath);
+		r = FALSE;
+	}
+	if (info->space_id == ULINT_UNDEFINED) {
+		msg("xtrabackup: Warning: This backup was taken with XtraBackup 2.0.1 "
+			"or earlier, some DDL operations between full and incremental "
+			"backups may be handled incorrectly\n");
+	}
 
 	return(r);
 }
@@ -5657,7 +5677,7 @@ xb_delta_open_matching_space(
 	os_file_t	file	= 0;
 	ulint		tablespace_flags;
 
-	ut_a(dbname || space_id == 0);
+	ut_a(dbname != NULL || space_id == 0 || space_id == ULINT_UNDEFINED);
 
 	*success = FALSE;
 
@@ -5691,7 +5711,7 @@ xb_delta_open_matching_space(
 	mutex_exit(&fil_system->mutex);
 
 	if (fil_space != NULL) {
-		if (fil_space->id == space_id) {
+		if (fil_space->id == space_id || space_id == ULINT_UNDEFINED) {
 			/* we found matching space */
 			goto found;
 		} else {
@@ -5715,6 +5735,7 @@ xb_delta_open_matching_space(
 	}
 
 	mutex_enter(&fil_system->mutex);
+	ut_a(space_id != ULINT_UNDEFINED);
 	fil_space = xb_space_get_by_id(space_id);
 	mutex_exit(&fil_system->mutex);
 	if (fil_space != NULL) {
