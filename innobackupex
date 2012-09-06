@@ -72,6 +72,7 @@ my $option_version = '';
 my $option_apply_log = '';
 my $option_redo_only = '';
 my $option_copy_back = '';
+my $option_move_back = '';
 my $option_include = '';
 my $option_databases = '';
 my $option_tables_file = '';
@@ -237,7 +238,7 @@ check_args();
 print_version();
 
 # initialize global variables and perform some checks
-if ($option_copy_back) {
+if ($option_copy_back || $option_move_back) {
     $option_ibbackup_binary = 'xtrabackup' if ($option_ibbackup_binary eq 'autodetect');
 } elsif ($option_apply_log) {
 	# Read XtraBackup version from backup dir
@@ -279,7 +280,10 @@ my $ibbackup_exit_code = 0;
 
 if ($option_copy_back) {
     # copy files from backup directory back to their original locations
-    copy_back();
+    copy_back(0);
+} elsif ($option_move_back) {
+    # move files from backup directory back to their original locations
+    copy_back(1);
 } elsif ($option_apply_log) {
     # expand data files in backup directory by applying log files to them
     apply_log();
@@ -574,10 +578,41 @@ sub if_directory_exists_and_empty {
 }
 
 #
-# Callback function for copy_dir_recursively that actually does all
-# the copying work
+# copy() wrapper with error handling
 #
-sub copy_file() {
+sub copy_file {
+    my $src_path = shift;
+    my $dst_path = shift;
+
+    print STDERR "$prefix Copying '$src_path' to '$dst_path'\n";
+    copy($src_path, $dst_path) or Die "copy failed: $!";
+}
+
+#
+# move() wrapper with error handling
+#
+sub move_file {
+    my $src_path = shift;
+    my $dst_path = shift;
+
+    print STDERR "$prefix Moving '$src_path' to '$dst_path'\n";
+    move($src_path, $dst_path) or Die "move failed: $!";
+}
+
+
+#
+# Auxiliary function called from find() callbacks to copy or move files and create directories
+# when necessary.
+#
+# SYNOPSIS
+#
+#     process_file(\&process_func);
+#
+#       &process_func is a code reference that does the actual file operation
+#
+sub process_file {
+    my $process_func = shift;
+
     if (/$copy_dir_exclude_regexp/) {
 	return;
     }
@@ -593,13 +628,26 @@ sub copy_file() {
     } else {
 	# Don't overwrite files unless $copy_dir_overwrite is 1
 	if (!$copy_dir_overwrite && -e "$copy_dir_dst/$_") {
-	    Die "Failed to copy file $File::Find::name: " .
-		"file $copy_dir_dst/$_ exists";
+	    Die "Failed to process file $File::Find::name: " .
+		"not overwriting file $copy_dir_dst/$_";
 	}
 
-	print STDERR "$prefix Copying '$File::Find::name' to '$dst_path'\n";
-	copy($File::Find::name, $dst_path) or Die "copy failed: $!";
+	&$process_func($File::Find::name, $dst_path);
     }
+}
+
+#
+# find() callback to copy files
+#
+sub copy_file_callback {
+    process_file(\&copy_file);
+}
+
+#
+# find() callback to move files
+#
+sub move_file_callback {
+    process_file(\&move_file);
 }
 
 #
@@ -623,7 +671,29 @@ sub copy_dir_recursively {
     $copy_dir_exclude_regexp = shift;
     $copy_dir_overwrite = shift;
 
-    find(\&copy_file, $copy_dir_src);
+    find(\&copy_file_callback, $copy_dir_src);
+}
+
+#
+# Similar to copy_dir_recursively, but moves files instead.
+#
+# SYNOPSIS
+#
+#     move_dir_recursively($src_dir, $dst_dir, $exclude_regexp,
+#                          $overwrite);
+#
+# TODO
+#
+#     use rsync when --rsync is specified
+#
+sub move_dir_recursively {
+    # Clean paths and remove trailing slashes if any
+    $copy_dir_src = File::Spec->canonpath(shift);
+    $copy_dir_dst = File::Spec->canonpath(shift);
+    $copy_dir_exclude_regexp = shift;
+    $copy_dir_overwrite = shift;
+
+    find(\&move_file_callback, $copy_dir_src);
 }
 
 #
@@ -631,6 +701,7 @@ sub copy_dir_recursively {
 # back to their original locations.
 #
 sub copy_back {
+    my $move_flag = shift;
     my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
     my $orig_ibdata_dir = 
         get_option(\%config, $option_defaults_group, 'innodb_data_home_dir');
@@ -647,6 +718,14 @@ sub copy_back {
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
+
+    # check whether files should be copied or moved to dest directory
+    my $move_or_copy_file = $move_flag ? \&move_file : \&copy_file;
+    my $move_or_copy_dir = $move_flag ?
+        \&move_dir_recursively : \&copy_dir_recursively;
+    my $operation = $move_flag ? "move" : "copy";
+
+
     # check that original data directories exist and they are empty
     if_directory_exists_and_empty($orig_datadir, "Original data");
     if_directory_exists_and_empty($orig_ibdata_dir, "Original InnoDB data");
@@ -678,7 +757,8 @@ sub copy_back {
                 Die "Backup data file '$backup_dir/$filename' does not exist, but "
                   . "its compressed copy '${path}.ibz' exists. Check "
                   . "that you have run '$innobackup_script --apply-log --uncompress "
-                  . "...' before attempting '$innobackup_script --copy-back ...' !";
+                  . "...' before attempting '$innobackup_script --copy-back ...'  "
+                  . "or '$innobackup_script --move-back ...' !";
             } else {
                 Die "Backup data file '$backup_dir/$filename' does not exist.";
             }
@@ -691,38 +771,34 @@ sub copy_back {
 
     # copy files to original data directory
     my $excluded_regexp = '^(' . $excluded_files . ')$';
-    print STDERR "$prefix Starting to copy files in '$backup_dir'\n"; 
+    print STDERR "$prefix Starting to $operation files in '$backup_dir'\n"; 
     print STDERR "$prefix back to original data directory '$orig_datadir'\n";
-    copy_dir_recursively($backup_dir, $orig_datadir, $excluded_regexp, 0);
+    &$move_or_copy_dir($backup_dir, $orig_datadir, $excluded_regexp, 0);
 
     # copy InnoDB data files to original InnoDB data directory
-    print STDERR "\n$prefix Starting to copy InnoDB system tablespace\n";
+    print STDERR "\n$prefix Starting to $operation InnoDB system tablespace\n";
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original InnoDB data directory '$orig_ibdata_dir'\n";
     foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
         # get the relative pathname of a data file
         my $path = (split(/:/,$a))[0];
         my $filename = (split(/\/+/, $path))[-1];
-        print STDERR "$prefix Copying file '$backup_dir/$filename'\n";
         $src_name = escape_path("$backup_dir/$filename");
         $dst_name = escape_path("$orig_ibdata_dir/$path");
-        system("$CP_CMD \"$src_name\" \"$dst_name\"")
-            and Die "Failed to copy file '$filename': $!";
+        &$move_or_copy_file($src_name, $dst_name);
     }
 
     # copy InnoDB log files to original InnoDB log directory
     opendir(DIR, $backup_dir) 
         || Die "Can't open directory '$backup_dir': $!\n";
-    print STDERR "\n$prefix Starting to copy InnoDB log files\n";
+    print STDERR "\n$prefix Starting to $operation InnoDB log files\n";
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original InnoDB log directory '$orig_iblog_dir'\n";
     while (defined($file = readdir(DIR))) {
         if ($file =~ /'^' . $iblog_files . '$'/ && -f "$backup_dir/$file") {
-            print STDERR "$prefix Copying file '$backup_dir/$file'\n";
             $src_name = escape_path("$backup_dir/$file");
             $dst_name = escape_path("$orig_iblog_dir");
-            system("$CP_CMD \"$src_name\" \"$dst_name\"")
-                and Die "Failed to copy file '$file': $!";
+            &$move_or_copy_file($src_name, $dst_name);
         }
     }
     closedir(DIR);
@@ -1528,10 +1604,12 @@ sub init {
     my $run = '';
 
     # print some instructions to the user
-    if (!$option_apply_log && !$option_copy_back) {
+    if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
         $run = 'backup';
     } elsif ($option_copy_back) {
         $run = 'copy-back';
+    } elsif ($option_move_back) {
+        $run = 'move-back';
     } else {
         $run = 'apply-log';
     }
@@ -1541,7 +1619,7 @@ sub init {
 
     # check that MySQL client program and InnoDB Hot Backup program
     # are runnable via shell
-    if (!$option_copy_back) {
+    if (!$option_copy_back && !$option_move_back) {
         # we are making a backup or applying log to backup
         if (!$option_apply_log) {
             # we are making a backup, we need mysql server
@@ -1589,7 +1667,7 @@ sub init {
     #$innodb_log_group_home_dir = 
     #    get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
 
-    if (!$option_apply_log && !$option_copy_back) {
+    if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
         # we are making a backup, create a new backup directory
         if (!$option_remote_host) {
             $backup_dir = File::Spec->rel2abs(make_backup_dir());
@@ -1619,7 +1697,7 @@ sub init {
         }
         }
         write_backup_config_file($backup_config_file);
-    } elsif ($option_copy_back) {
+    } elsif ($option_copy_back || $option_move_back) {
         #$backup_config_file = $backup_dir . '/backup-my.cnf';
         #read_config_file($backup_config_file, \%backup_config);
     }         
@@ -1715,6 +1793,7 @@ sub check_args {
                         'apply-log' => \$option_apply_log,
                         'redo-only' => \$option_redo_only,
                         'copy-back' => \$option_copy_back,
+                        'move-back' => \$option_move_back,
                         'include=s' => \$option_include,
                         'databases=s' => \$option_databases,
                         'tables-file=s', => \$option_tables_file,
@@ -1765,6 +1844,11 @@ sub check_args {
         exit(0);
     }
 
+    if ($option_copy_back && $option_move_back) {
+        print STDERR "$prefix --copy-back and --move-back options are " .
+            "mutually exclusive";
+    }
+
     if ($option_compress == 0) {
         # compression level no specified, use default level
         $option_compress = $default_compression_level;
@@ -1792,7 +1876,7 @@ sub check_args {
     # get options file name
     #$config_file = $ARGV[0];
 
-    if (!$option_apply_log && !$option_copy_back) {
+    if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
         # we are making a backup, get backup root directory
         $backup_root = $ARGV[0];
         if ($option_incremental && !$option_incremental_lsn) {
@@ -2635,6 +2719,8 @@ innobackupex --apply-log [--use-memory=B] [--uncompress]
 
 innobackupex --copy-back [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME] BACKUP-DIR
 
+innobackupex --move-back [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME] BACKUP-DIR
+
 =head1 DESCRIPTION
 
 The first command line above makes a hot backup of a MySQL database.
@@ -2663,6 +2749,11 @@ from the backup directory back to their original locations.
 The MY.CNF options file defines the original location of the database.
 The BACKUP-DIR is the path to a backup directory created by xtrabackup.
 
+The --move-back command is similar to --copy-back with the only difference that
+it moves files to their original locations rather than copies them. As this
+option removes backup files, it must be used with caution. It may be useful in
+cases when there is not enough free disk space to copy files.
+
 On success the exit code innobackupex is 0. A non-zero exit code 
 indicates an error.
 
@@ -2690,6 +2781,10 @@ child process. Try 'xtrabackup --help' for more details.
 =item --copy-back
 
 Copy all the files in a previously made backup from the backup directory to their original locations.
+
+=item --move-back
+
+Move all the files in a previously made backup from the backup directory to the actual datadir location. Use with caution, as it removes backup files.
 
 =item --databases=LIST
 

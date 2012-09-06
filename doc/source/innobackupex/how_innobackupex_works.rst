@@ -71,3 +71,10 @@ To restore a backup with |innobackupex| the :option:`--copy-back` option must be
 |innobackupex| will read the read from the :file:`my.cnf` the variables :term:`datadir`, :term:`innodb_data_home_dir`, :term:`innodb_data_file_path`, :term:`innodb_log_group_home_dir` and check that the directories exist.
 
 It will copy the |MyISAM| tables, indexes, etc. (:term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV` and :term:`.opt` files) first, |InnoDB| tables and indexes next and the log files at last. It will preserve file's attributes when copying them, you may have to change the files' ownership to ``mysql`` before starting the database server, as they will be owned by the user who created the backup.
+
+Alternatively, the :option:`--move-back` option may be used to restore a
+backup. This option is similar to :option:`--copy-back` with the only
+difference that instead of copying files it moves them to their target
+locations. As this option removes backup files, it must be used with
+caution. It is useful in cases when there is not enough free disk space
+to hold both data files and their backup copies.
