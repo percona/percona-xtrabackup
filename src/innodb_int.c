@@ -200,7 +200,123 @@ xb_space_get_by_name(
 	return(space);
 }
 
+/****************************************************************//**
+Create a new tablespace on disk and return the handle to its opened
+file. Code adopted from fil_create_new_single_table_tablespace with
+the main difference that only disk file is created without updating
+the InnoDB in-memory dictionary data structures.
+
+@return TRUE on success, FALSE on error.  */
+ibool
+xb_space_create_file(
+/*==================*/
+	const char*	path,		/*!<in: path to tablespace */
+	ulint		space_id,	/*!<in: space id */
+	ulint		flags __attribute__((unused)),/*!<in: tablespace
+					flags */
+	os_file_t*	file)		/*!<out: file handle */
+{
+	ibool		ret;
+	byte*		buf;
+	byte*		page;
+
+	*file = xb_file_create_no_error_handling(path, OS_FILE_CREATE,
+						 OS_FILE_READ_WRITE, &ret);
+	if (!ret) {
+		msg("xtrabackup: cannot create file %s\n", path);
+		return ret;
+	}
+
+	ret = os_file_set_size(path, *file,
+			       FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE, 0);
+	if (!ret) {
+		msg("xtrabackup: cannot set size for file %s\n", path);
+		os_file_close(*file);
+		os_file_delete(path);
+		return ret;
+	}
+
+	buf = ut_malloc(3 * UNIV_PAGE_SIZE);
+	/* Align the memory for file i/o if we might have O_DIRECT set */
+	page = ut_align(buf, UNIV_PAGE_SIZE);
+
+	memset(page, '\0', UNIV_PAGE_SIZE);
+
+#ifdef INNODB_VERSION_SHORT
+	fsp_header_init_fields(page, space_id, flags);
+	mach_write_to_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, space_id);
+
+	if (!(flags & DICT_TF_ZSSIZE_MASK)) {
+		buf_flush_init_for_writing(page, NULL, 0);
+
+		ret = os_file_write(path, *file, page, 0, 0, UNIV_PAGE_SIZE);
+	}
+	else {
+		page_zip_des_t	page_zip;
+		ulint		zip_size;
+
+		zip_size = (PAGE_ZIP_MIN_SIZE >> 1)
+			<< ((flags & DICT_TF_ZSSIZE_MASK)
+			    >> DICT_TF_ZSSIZE_SHIFT);
+		page_zip_set_size(&page_zip, zip_size);
+		page_zip.data = page + UNIV_PAGE_SIZE;
+		fprintf(stderr, "zip_size = %lu\n", zip_size);
+
+#ifdef UNIV_DEBUG
+		page_zip.m_start =
+#endif /* UNIV_DEBUG */
+			page_zip.m_end = page_zip.m_nonempty =
+			page_zip.n_blobs = 0;
+
+		buf_flush_init_for_writing(page, &page_zip, 0);
+
+		ret = os_file_write(path, *file, page_zip.data, 0, 0,
+				    zip_size);
+	}
+#else
+	fsp_header_write_space_id(page, space_id);
+
+	buf_flush_init_for_writing(page, ut_dulint_zero, space_id, 0);
+
+	ret = os_file_write(path, *file, page, 0, 0, UNIV_PAGE_SIZE);
+#endif
+
+	ut_free(buf);
+
+	if (!ret) {
+		msg("xtrabackup: could not write the first page to %s\n",
+		    path);
+		os_file_close(*file);
+		os_file_delete(path);
+		return ret;
+	}
+
+	return TRUE;
+}
+
+
 #ifndef INNODB_VERSION_SHORT
+
+/********************************************************************//**
+Extract the compressed page size from table flags.
+@return	compressed page size, or 0 if not compressed */
+ulint
+dict_table_flags_to_zip_size(
+/*=========================*/
+	ulint	flags)	/*!< in: flags */
+{
+	ulint	zip_size = flags & DICT_TF_ZSSIZE_MASK;
+
+	if (UNIV_UNLIKELY(zip_size)) {
+		zip_size = ((PAGE_ZIP_MIN_SIZE >> 1)
+			    << (zip_size >> DICT_TF_ZSSIZE_SHIFT));
+
+		ut_ad(zip_size <= UNIV_PAGE_SIZE);
+	}
+
+	return(zip_size);
+}
+
 
 /*******************************************************************//**
 Free all spaces in space_list. */
