@@ -105,6 +105,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #define MACH_READ_64 mach_read_from_8
 #define MACH_WRITE_64 mach_write_to_8
 #define OS_MUTEX_CREATE() os_mutex_create(NULL)
+#define PAGE_ZIP_MIN_SIZE_SHIFT	10
+#define DICT_TF_ZSSIZE_SHIFT	1
+#define DICT_TF_FORMAT_ZIP	1
+#define DICT_TF_FORMAT_SHIFT		5
 #else
 #define IB_INT64 ib_int64_t
 #define LSN64 ib_uint64_t
@@ -655,6 +659,7 @@ struct fil_system_struct {
 
 typedef struct {
 	ulint	page_size;
+	ulint	zip_size;
 	ulint	space_id;
 } xb_delta_info_t;
 
@@ -2855,6 +2860,7 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 
 	/* set defaults */
 	info->page_size = ULINT_UNDEFINED;
+	info->zip_size = ULINT_UNDEFINED;
 	info->space_id = ULINT_UNDEFINED;
 
 	fp = fopen(filepath, "r");
@@ -2867,6 +2873,8 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 		if (fscanf(fp, "%50s = %50s\n", key, value) == 2) {
 			if (strcmp(key, "page_size") == 0) {
 				info->page_size = strtoul(value, NULL, 10);
+			} else if (strcmp(key, "zip_size") == 0) {
+				info->zip_size = strtoul(value, NULL, 10);
 			} else if (strcmp(key, "space_id") == 0) {
 				info->space_id = strtoul(value, NULL, 10);
 			}
@@ -2904,8 +2912,10 @@ xb_write_delta_metadata(ds_ctxt_t *ds_ctxt, const char *filename,
 	MY_STAT		mystat;
 
 	snprintf(buf, sizeof(buf),
-		 "page_size = %lu\nspace_id = %lu\n",
-		 info->page_size, info->space_id);
+		 "page_size = %lu\n"
+		 "zip_size = %lu\n"
+		 "space_id = %lu\n",
+		 info->page_size, info->zip_size, info->space_id);
 	len = strlen(buf);
 
 	mystat.st_size = len;
@@ -3103,14 +3113,12 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	byte*		incremental_buffer_base = NULL;
 	ulint		page_size;
 	ulint		page_size_shift;
-#ifdef INNODB_VERSION_SHORT
-	ulint		zip_size;
-#endif
 	xb_delta_info_t info;
 	datasink_t	*ds = ds_ctxt->datasink;
 	ds_file_t	*dstfile = NULL;
 
 	info.page_size = 0;
+	info.zip_size = 0;
 	info.space_id = 0;
 
 #ifdef XTRADB_BASED
@@ -3257,11 +3265,11 @@ skip_filter:
 	page_size = UNIV_PAGE_SIZE;
 	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
 #else
-	zip_size = xb_get_zip_size(src_file);
-	if (zip_size == ULINT_UNDEFINED) {
+	info.zip_size = xb_get_zip_size(src_file);
+	if (info.zip_size == ULINT_UNDEFINED) {
 		goto skip;
-	} else if (zip_size) {
-		page_size = zip_size;
+	} else if (info.zip_size) {
+		page_size = info.zip_size;
 		page_size_shift = get_bit_shift(page_size);
 		msg("[%02u] %s is compressed with page size = "
 		    "%lu bytes\n", thread_n, node->name, page_size);
@@ -3367,7 +3375,8 @@ read_retry:
 #ifndef INNODB_VERSION_SHORT
 			if (buf_page_is_corrupted(page + chunk_offset))
 #else
-			if (buf_page_is_corrupted(page + chunk_offset, zip_size))
+			if (buf_page_is_corrupted(page + chunk_offset,
+						  info.zip_size))
 #endif
 			{
 				if (
@@ -3418,18 +3427,11 @@ read_retry:
 		if (xtrabackup_incremental) {
 			for (chunk_offset = 0; chunk_offset < chunk; chunk_offset += page_size) {
 				/* newer page */
-				/* This condition may be OK for header, ibuf and fsp
-				We always copy the 1st
-				FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE
-				bytes of any tablespace, regardless of the LSNs
-				of the pages there.  These pages are guaranteed
-				to be flushed upon tablespace create and they
-				are required for InnoDB to recognize the
-				tablespace. */
+				/* This condition may be OK for header, ibuf
+				and fsp. */
 				if (ut_dulint_cmp(incremental_lsn,
-					MACH_READ_64(page + chunk_offset + FIL_PAGE_LSN)) < 0
-				    || (offset + chunk_offset
-					< FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE)) {
+					MACH_READ_64(page + chunk_offset
+						     + FIL_PAGE_LSN)) < 0) {
 	/* ========================================= */
 	IB_INT64 offset_on_page;
 
@@ -5652,12 +5654,107 @@ get_meta_path(
 	return TRUE;
 }
 
+/****************************************************************//**
+Create a new tablespace on disk and return the handle to its opened
+file. Code adopted from fil_create_new_single_table_tablespace with
+the main difference that only disk file is created without updating
+the InnoDB in-memory dictionary data structures.
+
+@return TRUE on success, FALSE on error.  */
+static
+ibool
+xb_delta_create_space_file(
+/*=======================*/
+	const char*	path,		/*!<in: path to tablespace */
+	ulint		space_id,	/*!<in: space id */
+	ulint		flags __attribute__((unused)),/*!<in: tablespace
+					flags */
+	os_file_t*	file)		/*!<out: file handle */
+{
+	ibool		ret;
+	byte*		buf;
+	byte*		page;
+
+	*file = xb_file_create_no_error_handling(path, OS_FILE_CREATE,
+						 OS_FILE_READ_WRITE, &ret);
+	if (!ret) {
+		msg("xtrabackup: cannot create file %s\n", path);
+		return ret;
+	}
+
+	ret = os_file_set_size(path, *file,
+			       FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE, 0);
+	if (!ret) {
+		msg("xtrabackup: cannot set size for file %s\n", path);
+		os_file_close(*file);
+		os_file_delete(path);
+		return ret;
+	}
+
+	buf = ut_malloc(3 * UNIV_PAGE_SIZE);
+	/* Align the memory for file i/o if we might have O_DIRECT set */
+	page = ut_align(buf, UNIV_PAGE_SIZE);
+
+	memset(page, '\0', UNIV_PAGE_SIZE);
+
+#ifdef INNODB_VERSION_SHORT
+	fsp_header_init_fields(page, space_id, flags);
+	mach_write_to_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, space_id);
+
+	if (!(flags & DICT_TF_ZSSIZE_MASK)) {
+		buf_flush_init_for_writing(page, NULL, 0);
+
+		ret = os_file_write(path, *file, page, 0, 0, UNIV_PAGE_SIZE);
+	}
+	else {
+		page_zip_des_t	page_zip;
+		ulint		zip_size;
+
+		zip_size = (PAGE_ZIP_MIN_SIZE >> 1)
+			<< ((flags & DICT_TF_ZSSIZE_MASK)
+			    >> DICT_TF_ZSSIZE_SHIFT);
+		page_zip_set_size(&page_zip, zip_size);
+		page_zip.data = page + UNIV_PAGE_SIZE;
+		fprintf(stderr, "zip_size = %lu\n", zip_size);
+
+#ifdef UNIV_DEBUG
+		page_zip.m_start =
+#endif /* UNIV_DEBUG */
+			page_zip.m_end = page_zip.m_nonempty =
+			page_zip.n_blobs = 0;
+
+		buf_flush_init_for_writing(page, &page_zip, 0);
+
+		ret = os_file_write(path, *file, page_zip.data, 0, 0,
+				    zip_size);
+	}
+#else
+	fsp_header_write_space_id(page, space_id);
+
+	buf_flush_init_for_writing(page, ut_dulint_zero, space_id, 0);
+
+	ret = os_file_write(path, *file, page, 0, 0, UNIV_PAGE_SIZE);
+#endif
+
+	ut_free(buf);
+
+	if (!ret) {
+		msg("xtrabackup: could not write the first page to %s\n",
+		    path);
+		os_file_close(*file);
+		os_file_delete(path);
+		return ret;
+	}
+
+	return TRUE;
+}
+
 /***********************************************************************
 Searches for matching tablespace file for given .delta file and space_id
 in given directory. When matching tablespace found, renames it to match the
 name of .delta file. If there was a tablespace with matching name and
 mismatching ID, renames it to xtrabackup_tmp_#ID.ibd. If there was no
-matching file, creates a placeholder for the new tablespace.
+matching file, creates a new tablespace.
 @return file handle of matched or created file */
 static
 os_file_t
@@ -5758,19 +5855,20 @@ xb_delta_open_matching_space(
 		goto found;
 	}
 
-	/* No matching space found. create the new one.  Note that this is not
-	a full-fledged tablespace create, as done by
-	fil_create_new_single_table_tablespace(): the minumum tablespace size
-	is not ensured and the 1st page fields are not set.  We rely on backup
-	delta to contain the 1st FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE
-	to ensure the correct tablespace image.  */
+	/* No matching space found. create the new one.  */
 
 #ifdef INNODB_VERSION_SHORT
-	/* Calculate correct tablespace flags for compressed tablespaces.  Do
-	not bother to set all flags correctly, just enough for
-	fil_space_create() to work.  The full flags will be restored from the
-	delta later.  */
-	if (!zip_size) {
+	if (!fil_space_create(dest_space_name, space_id, 0, FIL_TABLESPACE)) {
+#else
+	if (!fil_space_create(dest_space_name, space_id, FIL_TABLESPACE)) {
+#endif
+		msg("xtrabackup: Cannot create tablespace %s\n",
+			dest_space_name);
+		goto exit;
+	}
+
+	/* Calculate correct tablespace flags for compressed tablespaces.  */
+	if (!zip_size || zip_size == ULINT_UNDEFINED) {
 		tablespace_flags = 0;
 	}
 	else {
@@ -5780,28 +5878,14 @@ xb_delta_open_matching_space(
 			   << DICT_TF_ZSSIZE_SHIFT)
 			| DICT_TF_COMPACT
 			| (DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT);
-	}
-	ut_a(dict_table_flags_to_zip_size(tablespace_flags) == zip_size);
-	if (!fil_space_create(dest_space_name, space_id, tablespace_flags,
-			      FIL_TABLESPACE)) {
-#else
-	if (!fil_space_create(dest_space_name, space_id,
-		FIL_TABLESPACE)) {
+#ifdef INNODB_VERSION_SHORT
+		ut_a(dict_table_flags_to_zip_size(tablespace_flags)
+		     == zip_size);
 #endif
-		msg("xtrabackup: Cannot create tablespace %s\n",
-			dest_space_name);
-		goto exit;
 	}
 
-	file = xb_file_create_no_error_handling(real_name, OS_FILE_CREATE,
-					    OS_FILE_READ_WRITE,
-					    &ok);
-
-	if (ok) {
-		*success = TRUE;
-	} else {
-		msg("xtrabackup: Cannot open file %s\n", real_name);
-	}
+	*success = xb_delta_create_space_file(real_name, space_id,
+					      tablespace_flags, &file);
 
 	goto exit;
 
@@ -5911,8 +5995,7 @@ xtrabackup_apply_delta(
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
 	dst_file = xb_delta_open_matching_space(
-			dbname, space_name, info.space_id,
-			info.page_size == UNIV_PAGE_SIZE ? 0 : info.page_size,
+			dbname, space_name, info.space_id, info.zip_size,
 			dst_path, sizeof(dst_path), &success);
 	if (!success) {
 		msg("xtrabackup: error: cannot open %s\n", dst_path);
