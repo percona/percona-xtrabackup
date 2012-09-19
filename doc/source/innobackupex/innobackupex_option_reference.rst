@@ -131,7 +131,7 @@ Options
 
 .. option:: --remote-host=HOSTNAME
 
-   This option accepts a string argument that specifies the remote host on which the backup files will be created, by using an ssh connection.
+   This option accepts a string argument that specifies the remote host on which the backup files will be created, by using an ssh connection. This option is DEPRECATED and will be removed in Percona XtraBackup 2.1. In Percona XtraBackup 2.0 and later, you should use streaming backups instead.
 
 .. option:: --stream=STREAMNAME
 
