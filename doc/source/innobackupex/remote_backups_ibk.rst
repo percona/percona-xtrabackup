@@ -13,6 +13,10 @@ Besides of using the :option:`--stream` for sending the backup to another host v
 Then all the log files will be written to a temporary file (you can choose where to store this file with the :option:`--tmpdir` option) and will be copied via :command:`scp`. The options for :command:`scp` can be specified with :option:`--options-scp` (``-Cp -c arcfour`` by default), for example::
 
   $ innobackupex --remote-host=REMOTEUSER@REMOTEHOST /path/IN/REMOTE/HOST/to/backup/ \
-     --tmpdir=/tmp --options-scp="-Cp -c arcfour"
+     --tmpdir=/tmp --scpopt="-Cp -c arcfour"
+
+.. note:: 
+
+ `SSH  public key authentication <http://www.petefreitag.com/item/532.cfm>`_ should be set up to avoid the login prompt when doing the backup to the remote host.
 
 
