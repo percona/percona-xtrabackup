@@ -14,6 +14,7 @@ Recipes for |innobackupex|
    howtos/recipes_ibkx_stream
    howtos/recipes_ibkx_inc
    howtos/recipes_ibkx_compressed
+   howtos/recipes_ibkx_partition
 
 
 .. _recipes-xbk:

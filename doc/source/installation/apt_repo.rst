@@ -31,14 +31,14 @@ Supported Releases
 Debian
 ------
 
- * 6.0 squeeze
+ * 6.0 (squeeze)
 
 Ubuntu
 ------
 
- * 10.04LTS lucid
- * 11.04 natty
- * 11.10 oneiric
+ * 10.04LTS (lucid)
+ * 11.10 (oneiric)
+ * 12.04LTS (precise) 
 
 Experimental Repository
 =======================
