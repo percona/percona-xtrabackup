@@ -46,7 +46,7 @@ Options
 
 .. option:: --databases=LIST
 
-   This option accepts a string argument that specifies the list of databases that |innobackupex| should back up. The list is of the form ``databasename1[.table_name1] databasename2[.table_name2] ...``. If this option is not specified, all databases containing MyISAM and InnoDB tables will be backed up. Please make sure that :option:`--databases` contains all of the InnoDB databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option :option:`--tables-file`.)
+   This option specifies the list of databases that |innobackupex| should back up. The option accepts a string argument or path to file that contains the list of databases to back up. The list is of the form "databasename1[.table_name1] databasename2[.table_name2] . . .". If this option is not specified, all databases containing |MyISAM| and |InnoDB| tables will be backed up. Please make sure that --databases contains all of the |InnoDB| databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option --tables-file.)
 
 .. option:: --tables-file
 
