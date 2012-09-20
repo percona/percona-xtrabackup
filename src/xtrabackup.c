@@ -1506,6 +1506,7 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 
 	/* set defaults */
 	info->page_size = ULINT_UNDEFINED;
+	info->zip_size = ULINT_UNDEFINED;
 	info->space_id = ULINT_UNDEFINED;
 
 	fp = fopen(filepath, "r");
@@ -1518,6 +1519,8 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 		if (fscanf(fp, "%50s = %50s\n", key, value) == 2) {
 			if (strcmp(key, "page_size") == 0) {
 				info->page_size = strtoul(value, NULL, 10);
+			} else if (strcmp(key, "zip_size") == 0) {
+				info->zip_size = strtoul(value, NULL, 10);
 			} else if (strcmp(key, "space_id") == 0) {
 				info->space_id = strtoul(value, NULL, 10);
 			}
@@ -1552,8 +1555,10 @@ xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info)
 	MY_STAT		mystat;
 
 	snprintf(buf, sizeof(buf),
-		 "page_size = %lu\nspace_id = %lu\n",
-		 info->page_size, info->space_id);
+		 "page_size = %lu\n"
+		 "zip_size = %lu\n"
+		 "space_id = %lu\n",
+		 info->page_size, info->zip_size, info->space_id);
 	len = strlen(buf);
 
 	mystat.st_size = len;
@@ -3836,7 +3841,7 @@ Searches for matching tablespace file for given .delta file and space_id
 in given directory. When matching tablespace found, renames it to match the
 name of .delta file. If there was a tablespace with matching name and
 mismatching ID, renames it to xtrabackup_tmp_#ID.ibd. If there was no
-matching file, creates a placeholder for the new tablespace.
+matching file, creates a new tablespace.
 @return file handle of matched or created file */
 static
 os_file_t
@@ -3937,19 +3942,17 @@ xb_delta_open_matching_space(
 		goto found;
 	}
 
-	/* No matching space found. create the new one.  Note that this is not
-	a full-fledged tablespace create, as done by
-	fil_create_new_single_table_tablespace(): the minumum tablespace size
-	is not ensured and the 1st page fields are not set.  We rely on backup
-	delta to contain the 1st FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE
-	to ensure the correct tablespace image.  */
+	/* No matching space found. create the new one.  */
 
-#ifdef INNODB_VERSION_SHORT
-	/* Calculate correct tablespace flags for compressed tablespaces.  Do
-	not bother to set all flags correctly, just enough for
-	fil_space_create() to work.  The full flags will be restored from the
-	delta later.  */
-	if (!zip_size) {
+	if (!xb_fil_space_create(dest_space_name, space_id, 0,
+				 FIL_TABLESPACE)) {
+		msg("xtrabackup: Cannot create tablespace %s\n",
+			dest_space_name);
+		goto exit;
+	}
+
+	/* Calculate correct tablespace flags for compressed tablespaces.  */
+	if (!zip_size || zip_size == ULINT_UNDEFINED) {
 		tablespace_flags = 0;
 	}
 	else {
@@ -3959,29 +3962,11 @@ xb_delta_open_matching_space(
 			   << DICT_TF_ZSSIZE_SHIFT)
 			| DICT_TF_COMPACT
 			| (DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT);
+		ut_a(dict_table_flags_to_zip_size(tablespace_flags)
+		     == zip_size);
 	}
-	ut_a(dict_table_flags_to_zip_size(tablespace_flags) == zip_size);
-	if (!fil_space_create(dest_space_name, space_id, tablespace_flags,
-			      FIL_TABLESPACE)) {
-#else
-	if (!fil_space_create(dest_space_name, space_id,
-		FIL_TABLESPACE)) {
-#endif
-		msg("xtrabackup: Cannot create tablespace %s\n",
-			dest_space_name);
-		goto exit;
-	}
-
-	file = xb_file_create_no_error_handling(real_name, OS_FILE_CREATE,
-					    OS_FILE_READ_WRITE,
-					    &ok);
-
-	if (ok) {
-		*success = TRUE;
-	} else {
-		msg("xtrabackup: Cannot open file %s\n", real_name);
-	}
-
+	*success = xb_space_create_file(real_name, space_id, tablespace_flags,
+					&file);
 	goto exit;
 
 found:
@@ -4088,8 +4073,7 @@ xtrabackup_apply_delta(
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
 	dst_file = xb_delta_open_matching_space(
-			dbname, space_name, info.space_id,
-			info.page_size == UNIV_PAGE_SIZE ? 0 : info.page_size,
+			dbname, space_name, info.space_id, info.zip_size,
 			dst_path, sizeof(dst_path), &success);
 	if (!success) {
 		msg("xtrabackup: error: cannot open %s\n", dst_path);

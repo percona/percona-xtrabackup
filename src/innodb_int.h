@@ -42,6 +42,15 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #  define MACH_WRITE_64 mach_write_to_8
 #  define OS_MUTEX_CREATE() os_mutex_create(NULL)
 #  define xb_buf_page_is_corrupted(page, zip_size) buf_page_is_corrupted(page)
+#  define xb_fil_space_create(name, space_id, zip_size, purpose) \
+	fil_space_create(name, space_id, purpose)
+#  define PAGE_ZIP_MIN_SIZE_SHIFT	10
+#  define PAGE_ZIP_MIN_SIZE	(1 << PAGE_ZIP_MIN_SIZE_SHIFT)
+#  define DICT_TF_ZSSIZE_SHIFT	1
+#  define DICT_TF_ZSSIZE_MASK		(15 << DICT_TF_ZSSIZE_SHIFT)
+#  define DICT_TF_FORMAT_ZIP	1
+#  define DICT_TF_FORMAT_SHIFT		5
+#  define SRV_SHUTDOWN_NONE	0
 #else
 #  define IB_INT64 ib_int64_t
 #  define LSN64 ib_uint64_t
@@ -56,6 +65,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #  endif
 #  define xb_buf_page_is_corrupted(page, zip_size)	\
 	buf_page_is_corrupted(page, zip_size)
+#  define xb_fil_space_create(name, space_id, zip_size, purpose) \
+	fil_space_create(name, space_id, zip_size, purpose)
 #  define ut_dulint_zero 0
 #  define ut_dulint_cmp(A, B) (A > B ? 1 : (A == B ? 0 : -1))
 #  define ut_dulint_add(A, B) (A + B)
@@ -598,9 +609,32 @@ xb_space_get_by_name(
 /*==================*/
 	const char*	name);	/*!< in: space name */
 
+/****************************************************************//**
+Create a new tablespace on disk and return the handle to its opened
+file. Code adopted from fil_create_new_single_table_tablespace with
+the main difference that only disk file is created without updating
+the InnoDB in-memory dictionary data structures.
+
+@return TRUE on success, FALSE on error.  */
+ibool
+xb_space_create_file(
+/*==================*/
+	const char*	path,		/*!<in: path to tablespace */
+	ulint		space_id,	/*!<in: space id */
+	ulint		flags __attribute__((unused)),/*!<in: tablespace
+						      flags */
+	os_file_t*	file);		/*!<out: file handle */
+
 #ifndef INNODB_VERSION_SHORT
 
-#define SRV_SHUTDOWN_NONE 0
+/********************************************************************//**
+Extract the compressed page size from table flags.
+@return	compressed page size, or 0 if not compressed */
+ulint
+dict_table_flags_to_zip_size(
+/*=========================*/
+	ulint	flags);	/*!< in: flags */
+
 
 /*******************************************************************//**
 Free all spaces in space_list. */

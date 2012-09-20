@@ -22,8 +22,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define XB_XTRABACKUP_H
 
 typedef struct {
-    ulint	page_size;
- 	ulint	space_id;
+	ulint	page_size;
+	ulint	zip_size;
+	ulint	space_id;
 } xb_delta_info_t;
 
 typedef enum {
