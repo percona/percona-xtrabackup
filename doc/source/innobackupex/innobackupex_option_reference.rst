@@ -32,9 +32,7 @@ Options
 
 .. option:: --move-back
 
-    Move all the files in a previously made backup from the backup
-    directory to their original locations. As this option removes
-    backup files, it must be used with caution.
+    Move all the files in a previously made backup from the backup directory to their original locations. As this option removes backup files, it must be used with caution.
 
 .. option:: --include=REGEXP
 
