@@ -12,7 +12,7 @@ if [[ "$probe_result" == "0" ]]
 fi
 set -e
 
-start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/libgalera_smm.so --wsrep_cluster_address=gcomm://
+start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm://
 
 innobackupex --no-timestamp --galera-info $topdir/backup 
 backup_dir=$topdir/backup
