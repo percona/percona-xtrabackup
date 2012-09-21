@@ -2621,10 +2621,6 @@ child process. Try 'xtrabackup --help' for more details.
 
 Copy all the files in a previously made backup from the backup directory to their original locations.
 
-=item --move-back
-
-Move all the files in a previously made backup from the backup directory to the actual datadir location. Use with caution, as it removes backup files.
-
 =item --databases=LIST
 
 This option specifies the list of databases that innobackupex should back up. The option accepts a string argument or path to file that contains the list of databases to back up. The list is of the form "databasename1[.table_name1] databasename2[.table_name2] . . .". If this option is not specified, all databases containing MyISAM and InnoDB tables will be backed up.  Please make sure that --databases contains all of the InnoDB databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option --tables-file.)
@@ -2676,6 +2672,10 @@ This option specifies the directory where the incremental backup will be combine
 =item --incremental-lsn
 
 This option specifies the log sequence number (LSN) to use for the incremental backup.  The option accepts a string argument. It is used with the --incremental option. It is used instead of specifying --incremental-basedir. For databases created by MySQL and Percona Server 5.0-series versions, specify the LSN as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer.
+
+=item --move-back
+
+Move all the files in a previously made backup from the backup directory to the actual datadir location. Use with caution, as it removes backup files.
 
 =item --no-lock
 
