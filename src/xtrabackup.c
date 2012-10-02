@@ -228,6 +228,7 @@ longlong innobase_log_file_size_backup;
 /* The default values for the following char* start-up parameters
 are determined in innobase_init below: */
 
+char*	innobase_ignored_opt			= NULL;
 char*	innobase_data_home_dir			= NULL;
 char*	innobase_data_file_path 		= NULL;
 char*	innobase_log_group_home_dir		= NULL;
@@ -380,6 +381,7 @@ enum options_xtrabackup
   OPT_XTRA_STREAM,
   OPT_XTRA_COMPRESS,
   OPT_XTRA_COMPRESS_THREADS,
+  OPT_INNODB,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
   OPT_INNODB_DATA_HOME_DIR,
@@ -522,6 +524,10 @@ static struct my_option my_long_options[] =
    "Number of threads for parallel data compression. The default value is 1.",
    (G_PTR*) &xtrabackup_compress_threads, (G_PTR*) &xtrabackup_compress_threads,
    0, GET_UINT, REQUIRED_ARG, 1, 1, UINT_MAX, 0, 0, 0},
+
+  {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
+   (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,
+   GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
   {"innodb_adaptive_hash_index", OPT_INNODB_ADAPTIVE_HASH_INDEX,
    "Enable InnoDB adaptive hash index (enabled by default).  "
