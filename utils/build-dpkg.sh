@@ -12,13 +12,14 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:KbB" --longoptions key:,nosign,binary,binarydep \
+go_out="$(getopt --options "k:KbBS"\
+    --longoptions key:,nosign,binary,binarydep,source \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
 
 BUILDPKG_KEY=''
-BINARY=''
+DPKG_BINSRC=''
 
 for arg
 do
@@ -26,8 +27,9 @@ do
     -- ) shift; break;;
     -k | --key ) shift; BUILDPKG_KEY="-pgpg -k$1"; shift;;
     -K | --nosign ) shift; BUILDPKG_KEY="-uc -us";;
-    -b | --binary ) shift; BINARY='-b';;
-    -B | --binarydep ) shift; BINARY='-B';;
+    -b | --binary ) shift; DPKG_BINSRC='-b';;
+    -B | --binarydep ) shift; DPKG_BINSRC='-B';;
+    -S | --source ) shift; DPKG_BINSRC='-S';;
     esac
 done
 
@@ -84,23 +86,24 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
 (
     # Make a copy in workdir and copy debian files
     cd "$WORKDIR"
-    mkdir -p "xtrabackup-$XTRABACKUP_VERSION"
-    (cd "$SOURCEDIR" ; tar c --exclude="xtrabackup-$XTRABACKUP_VERSION" .) |(cd "xtrabackup-$XTRABACKUP_VERSION"; tar xf -)
+    bzr export percona-xtrabackup-$XTRABACKUP_VERSION "$SOURCEDIR"
 
+    # Prepare .orig file
+    bzr export --root="percona-xtrabackup-$XTRABACKUP_VERSION" \
+        "percona-xtrabackup_$XTRABACKUP_VERSION.orig.tar.gz" "$SOURCEDIR"
     (
-        cd "xtrabackup-$XTRABACKUP_VERSION"
+        cd "percona-xtrabackup-$XTRABACKUP_VERSION"
 
-        # Move debian directory
-        mv utils/debian .
+        # Move the debian dir to the appropriate place
+        cp -a "$SOURCEDIR/utils/debian/" .
 
         # Update distribution
         dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
-
         # Issue dpkg-buildpackage command
-        dpkg-buildpackage $BINARY $BUILDPKG_KEY
-
-    )
+        dpkg-buildpackage $DPKG_BINSRC $BUILDPKG_KEY
  
-    rm -rf "xtrabackup-$XTRABACKUP_VERSION"
+    )
+
+    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
 
 )
