@@ -12,14 +12,15 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:KbBS"\
-    --longoptions key:,nosign,binary,binarydep,source \
+go_out="$(getopt --options "k:KbBSn"\
+    --longoptions key:,nosign,binary,binarydep,source,dummy \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
 
 BUILDPKG_KEY=''
 DPKG_BINSRC=''
+DUMMY=''
 
 for arg
 do
@@ -30,6 +31,7 @@ do
     -b | --binary ) shift; DPKG_BINSRC='-b';;
     -B | --binarydep ) shift; DPKG_BINSRC='-B';;
     -S | --source ) shift; DPKG_BINSRC='-S';;
+    -n | --dummy ) shift; DUMMY='yes';;
     esac
 done
 
@@ -96,6 +98,12 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
 
         # Move the debian dir to the appropriate place
         cp -a "$SOURCEDIR/utils/debian/" .
+
+        # Apply dummy patch if wanted
+        if test "x$DUMMY" = "xyes"
+        then
+            patch -p1 < 'utils/debian-dummy-rules.patch'
+        fi
 
         # Update distribution
         dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
