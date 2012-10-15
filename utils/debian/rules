@@ -42,7 +42,7 @@ build-stamp:  config.status
 
 	# Add here commands to compile the package.
 	AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
-	 cp src/xtrabackup_51 src/xbstream .
+	cp src/xtrabackup_51 src/xbstream .
 
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
 	cp src/xtrabackup .
@@ -70,8 +70,7 @@ install:
 	dh_testroot
 	dh_clean -k 
 	dh_installdirs
-
-	# Add here commands to install the package into debian/percona-xtrabackup.
+	dh_install
 
 # Build architecture-independent files here.
 binary-indep: install
@@ -81,7 +80,7 @@ binary-indep: install
 binary-arch: install
 	dh_testdir
 	dh_testroot
-#	dh_installchangelogs ChangeLog
+	dh_installchangelogs
 	dh_installdocs
 #	dh_installexamples
 	dh_install
@@ -97,7 +96,8 @@ binary-arch: install
 #	dh_installinfo
 #	dh_installman
 	dh_link
-#	dh_strip
+	dh_strip --dbg-package=percona-xtrabackup-dbg
+	dh_lintian
 	dh_compress
 	dh_fixperms
 #	dh_perl

@@ -78,7 +78,7 @@ export CFLAGS="-fPIC -Wall -O3 -g -static-libgcc -fno-omit-frame-pointer"
 export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fno-exceptions"
 export MAKE_JFLAG=-j4
 
-export DEB_BUILD_OPTIONS='nostrip debug nocheck'
+export DEB_BUILD_OPTIONS='debug nocheck'
 export DEB_CFLAGS_APPEND="$CFLAGS"
 export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
 
