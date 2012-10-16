@@ -359,6 +359,47 @@ EOF
 }
 
 ########################################################################
+# Wait until slave catches up with master.
+# The timeout is hardcoded to 300 seconds
+#
+# Synopsis:
+#   sync_slave_with_master <slave_id> <master_id>
+#########################################################################
+function sync_slave_with_master()
+{
+    local slave_id=$1
+    local master_id=$2
+    local count
+    local master_file
+    local master_pos
+
+    vlog "Syncing slave (id=#$slave_id) with master (id=#$master_id)"
+
+    # Get master log pos
+    switch_server $master_id
+    count=0
+    while read line; do
+      	if [ $count -eq 1 ] # File:
+      	then
+      	    master_file=`echo "$line" | sed s/File://`
+      	elif [ $count -eq 2 ] # Position:
+      	then
+      	    master_pos=`echo "$line" | sed s/Position://`
+      	fi
+      	count=$((count+1))
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+
+    echo "master_file=$master_file, master_pos=$master_pos"
+
+    # Wait for the slave SQL thread to catch up
+    switch_server $slave_id
+
+    run_cmd $MYSQL $MYSQL_ARGS <<EOF
+SELECT MASTER_POS_WAIT('$master_file', $master_pos, 300);
+EOF
+}
+
+########################################################################
 # Prints checksum for a given table.
 # Expects 2 arguments: $1 is the DB name and $2 is the table to checksum
 ########################################################################
