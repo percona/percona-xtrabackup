@@ -4018,6 +4018,10 @@ xb_data_files_close(void)
 #endif
 	fil_system = NULL;
 
+	/* Reset srv_file_io_threads to its default value to avoid confusing
+	warning on --prepare in innobase_start_or_create_for_mysql()*/
+	srv_file_io_threads = 4;
+
 	srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
 
@@ -6432,7 +6436,12 @@ skip_check:
 
 	/* increase IO threads */
 	if(srv_n_file_io_threads < 10) {
+#ifndef INNODB_VERSION_SHORT
 		srv_n_file_io_threads = 10;
+#else
+		srv_n_read_io_threads = 4;
+		srv_n_write_io_threads = 4;
+#endif
 	}
 
 	msg("xtrabackup: Starting InnoDB instance for recovery.\n"
