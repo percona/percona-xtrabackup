@@ -1081,6 +1081,9 @@ enum options_xtrabackup
   OPT_INNODB_READ_IO_THREADS,
   OPT_INNODB_WRITE_IO_THREADS,
 #endif
+#if MYSQL_VERSION_ID >= 50500
+  OPT_INNODB_USE_NATIVE_AIO,
+#endif
 #ifdef XTRADB_BASED
   OPT_INNODB_PAGE_SIZE,
   OPT_INNODB_LOG_BLOCK_SIZE,
@@ -1350,6 +1353,13 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "How many files at the maximum InnoDB keeps open at the same time.",
    (G_PTR*) &innobase_open_files, (G_PTR*) &innobase_open_files, 0,
    GET_LONG, REQUIRED_ARG, 300L, 10L, LONG_MAX, 0, 1L, 0},
+#if MYSQL_VERSION_ID >= 50500
+  {"innodb_use_native_aio", OPT_INNODB_USE_NATIVE_AIO,
+   "Use native AIO if supported on this platform.",
+   (G_PTR*) &srv_use_native_aio,
+   (G_PTR*) &srv_use_native_aio, 0, GET_BOOL, NO_ARG,
+   FALSE, 0, 0, 0, 0, 0},
+#endif
 #ifdef XTRADB_BASED
   {"innodb_page_size", OPT_INNODB_PAGE_SIZE,
    "The universal page size of the database.",
@@ -4020,7 +4030,7 @@ xb_data_files_close(void)
 
 	/* Reset srv_file_io_threads to its default value to avoid confusing
 	warning on --prepare in innobase_start_or_create_for_mysql()*/
-	srv_file_io_threads = 4;
+	srv_n_file_io_threads = 4;
 
 	srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
