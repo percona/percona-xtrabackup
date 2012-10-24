@@ -231,7 +231,7 @@ Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_sla
 .. code-block:: mysql
 
    TheNEWSlave|mysql> CHANGE MASTER TO 
-                      MASTER_HOST='$masterip'
+                      MASTER_HOST='$masterip',
                       MASTER_USER='repl',
                       MASTER_PASSWORD='$slavepass',
                       MASTER_LOG_FILE='TheMaster-bin.000001', 
