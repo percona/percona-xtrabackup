@@ -43,12 +43,14 @@ function usage()
     echo
     echo "Usage: `basename $0` CODEBASE"
     echo "where CODEBASE can be one of the following values or aliases:"
-    echo "  innodb50         | 5.0      build against innodb 5.1 builtin, but should be compatible with MySQL 5.0"
-    echo "  innodb51_builtin | 5.1	build against built-in InnoDB in MySQL 5.1"
-    echo "  innodb51         | plugin	build agsinst InnoDB plugin in MySQL 5.1"
-    echo "  innodb55         | 5.5	build against InnoDB in MySQL 5.5"
-    echo "  xtradb51         | xtradb   build against Percona Server with XtraDB 5.1"
-    echo "  xtradb55         | xtradb55 build against Percona Server with XtraDB 5.5"
+    echo "  innodb50         | 5.0                   build against innodb 5.1 builtin, but should be compatible with MySQL 5.0"
+    echo "  innodb51_builtin | 5.1                   build against built-in InnoDB in MySQL 5.1"
+    echo "  innodb51         | plugin                build agsinst InnoDB plugin in MySQL 5.1"
+    echo "  innodb55         | 5.5                   build against InnoDB in MySQL 5.5"
+    echo "  xtradb51         | xtradb,mariadb51      build against Percona Server with XtraDB 5.1"
+    echo "                   | mariadb52,mariadb53"
+    echo "  xtradb55         | xtradb55,galera55,    build against Percona Server with XtraDB 5.5"
+    echo "                   | mariadb55"
     exit -1
 }
 
@@ -231,7 +233,7 @@ case "$type" in
 	build_all
 	;;
 
-"xtradb51" | "xtradb")
+"xtradb51" | "xtradb" | "mariadb51" | "mariadb52" | "mariadb53")
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup
 	innodb_dir=$server_dir/storage/innodb_plugin
@@ -282,7 +284,7 @@ case "$type" in
 	build_xtrabackup
 
 	;;
-"xtradb55"|"galera55")
+"xtradb55" | "galera55" | "mariadb55")
 	server_dir=$top_dir/Percona-Server-5.5
 	branch_dir=percona-server-5.5-xtrabackup
 	innodb_dir=$server_dir/storage/innobase
