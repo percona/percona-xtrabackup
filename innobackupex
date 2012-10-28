@@ -416,7 +416,7 @@ sub backup {
     }
 
 
-    # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
+    # backup non-InnoDB files and tables
     # (or finalize the backup by syncing changes if using rsync)
     backup_files(0);
 
@@ -1869,7 +1869,7 @@ sub backup_files {
     my @list;
     my $file;
     my $database;
-    my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
+    my $wildcard = '*.{frm,MYD,MYI,MAD,MAI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
     my $rsync_file_list;
     my $operation;
     my $rsync_tmpfile_pass1 = "$option_tmpdir/xtrabackup_rsyncfiles_pass1";
@@ -1900,9 +1900,8 @@ sub backup_files {
     } else {
 	$operation = "to backup";
     }
-    print STDERR "\n$now  $prefix Starting $operation .frm, .MRG, .MYD, .MYI,\n";
-    print STDERR "$prefix .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files in\n";
-    print STDERR "$prefix subdirectories of '$source_dir'\n";
+    print STDERR "\n$now  $prefix Starting $operation non-InnoDB tables and files\n";
+    print STDERR "$prefix in subdirectories of '$source_dir'\n";
     # loop through all database directories
     while (defined($database = readdir(DIR))) {
         my $print_each_file = 0;
@@ -1923,7 +1922,7 @@ sub backup_files {
 
         # copy files of this database
 	opendir(DBDIR, "$source_dir/$database");
-	@list = grep(/\.(frm|MYD|MYI|MRG|TRG|TRN|ARM|ARZ|CSM|CSV|opt|par)$/, readdir(DBDIR)); 
+	@list = grep(/\.(frm|MYD|MYI|MAD|MAI|MRG|TRG|TRN|ARM|ARZ|CSM|CSV|opt|par)$/, readdir(DBDIR));
 	closedir DBDIR;
         $file_c = @list;
         if ($file_c <= $backup_file_print_limit) {
@@ -2033,7 +2032,7 @@ sub backup_files {
 	$operation = "backing up";
     }
     $now = current_time();
-    print STDERR "$now  $prefix Finished $operation .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSV, .CSM and .opt files\n\n";
+    print STDERR "$now  $prefix Finished $operation non-InnoDB tables and files\n\n";
  }
 
 
@@ -2423,8 +2422,12 @@ sub set_xtrabackup_version {
 #  MySQL 5.0.* - xtrabackup_51
 #  MySQL 5.1.* - xtrabackup_51
 #  MySQL 5.1.* with InnoDB plugin - xtrabackup
+#  MariaDB 5.1.* - xtrabackup
+#  MariaDB 5.2.* - xtrabackup
+#  MariaDB 5.3.* - xtrabackup
 #  Percona Server >= 11.0 - xtrabackup
-#  MySQL 5.5.* - xtrabackup_55 
+#  MySQL 5.5.* - xtrabackup_55
+#  MariaDB 5.5.* - xtrabackup_55
 
 my @lines;
 my $var_version = '';
@@ -2452,6 +2455,12 @@ if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+}
+if($var_version =~ m/5\.2\.\d/){
+    $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+}
+if($var_version =~ m/5\.3\.\d/){
+    $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 if($var_version =~ m/5\.5\.\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
@@ -2578,10 +2587,11 @@ the backup in the given directory (which must not exist).  This
 command makes a complete backup of all MyISAM and InnoDB tables and
 indexes in all databases or in all of the databases specified with the
 --databases option.  The created backup contains .frm, .MRG, .MYD,
-.MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, CSV, .opt, .par, and InnoDB data and log files.
-The MY.CNF options file defines the location of the database.  This command
-connects to the MySQL server using the mysql client program, and runs
-xtrabackup as a child process.
+.MYI, .MAD, .MAI, .TRG, .TRN, .ARM, .ARZ, .CSM, CSV, .opt, .par, and
+InnoDB data and log files.  The MY.CNF options file defines the
+location of the database.  This command connects to the MySQL server
+using the mysql client program, and runs xtrabackup as a child
+process.
 
 The --apply-log command prepares a backup for starting a MySQL
 server on the backup. This command recovers InnoDB data files as specified

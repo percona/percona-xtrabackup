@@ -113,9 +113,9 @@ function get_version_info()
 		MYSQLD_EXTRA_ARGS="--ignore-builtin-innodb --plugin-load=innodb=ha_innodb_plugin.so";;
 	    "innodb55" )
 		XB_BIN="xtrabackup_innodb55";;
-	    "xtradb51" )
+	    "xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
 		XB_BIN="xtrabackup";;
-	    "xtradb55" )
+	    "xtradb55" | "mariadb55")
 		XB_BIN="xtrabackup_55";;
 	    "galera55" )
 		XB_BIN="xtrabackup_55";;
@@ -141,6 +141,25 @@ function get_version_info()
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     XTRADB_VERSION="`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`"
 
+    # Determine MySQL flavor
+    if [[ "$MYSQL_VERSION" =~ "MariaDB" ]]
+    then
+	MYSQL_FLAVOR="MariaDB"
+    elif [ -n "$XTRADB_VERSION" ]
+    then
+	MYSQL_FLAVOR="Percona Server"
+    else
+	MYSQL_FLAVOR="MySQL"
+    fi
+
+    # Determine InnoDB flavor
+    if [ -n "$XTRADB_VERSION" ]
+    then
+	INNODB_FLAVOR="XtraDB"
+    else
+	INNODB_FLAVOR="innoDB"
+    fi
+
     if [ "$XB_BUILD" = "autodetect" ]
     then
         # Determine xtrabackup build automatically
@@ -155,6 +174,10 @@ function get_version_info()
 	    else
 		XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
 	    fi
+	elif [ "${MYSQL_VERSION:0:3}" = "5.2" -o
+	       "${MYSQL_VERSION:0:3}" = "5.3"]
+	then
+	    XB_BIN="xtrabackup"
 	elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
 	then
 	    if [ -n "$XTRADB_VERSION" ]
@@ -187,7 +210,8 @@ function get_version_info()
 
     stop_server
 
-    export MYSQL_VERSION MYSQL_VERSION_COMMENT INNODB_VERSION XTRADB_VERSION \
+    export MYSQL_VERSION MYSQL_VERSION_COMMENT MYSQL_FLAVOR \
+	INNODB_VERSION XTRADB_VERSION INNODB_FLAVOR \
 	XB_BIN IB_BIN IB_ARGS XB_ARGS MYSQLD_EXTRA_ARGS
 }
 
@@ -234,12 +258,9 @@ then
     exit -1
 fi
 
-if [ -n "$XTRADB_VERSION" ]
-then
-    echo "Running against Percona Server $MYSQL_VERSION (XtraDB $INNODB_VERSION)" | tee -a $OUTFILE
-else
-    echo "Running against MySQL $MYSQL_VERSION (InnoDB $INNODB_VERSION)" | tee -a $OUTFILE
-fi
+echo "Running against $MYSQL_FLAVOR $MYSQL_VERSION ($INNODB_FLAVOR $INNODB_VERSION)" |
+  tee -a $OUTFILE
+
 echo "Using '`basename $XB_BIN`' as xtrabackup binary" | tee -a $OUTFILE
 echo | tee -a $OUTFILE
 
