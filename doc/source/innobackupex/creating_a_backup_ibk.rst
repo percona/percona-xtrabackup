@@ -23,38 +23,7 @@ Under the hood
 
 |innobackupex| called |xtrabackup| binary to backup all the data of |InnoDB| tables (see :doc:`../xtrabackup_bin/creating_a_backup` for details on this process) and copied all the table definitions in the database (:term:`.frm` files), data and files related to |MyISAM|, :term:`MERGE <.MRG>` (reference to other tables), :term:`CSV <.CSV>` and :term:`ARCHIVE <.ARM>` tables, along with :term:`triggers <.TRG>` and :term:`database configuration information <.opt>` to a time stamped directory created in the provided path. 
 
-It will also create the following files for convenience on the created directory:
-
-  * Information related to the backup and the server
-
-    * :file:`xtrabackup_checkpoints`
-       The type of the backup (e.g. full or incremental), its state (e.g. prepared) and the |LSN| range contained in it. This information is used for incremental backups.
-
-    * :file:`xtrabackup_binlog_info`
-       The binary log file used by the server and its position at the moment of the backup. Result of the :command:`SHOW MASTER STATUS`.
-
-    * :file:`xtrabackup_binlog_pos_innodb`
-       The binary log file and its current position for |InnoDB| or |XtraDB| tables.
-
-    * :file:`xtrabackup_binary`
-       The |xtrabackup| binary used in the process.
-
-    * :file:`backup-my.cnf`
-       This file contains information to start the mini instance of InnoDB during the  :option:`--apply-log`. This is NOT a backup of original :file:`my.cnf`.
-    
-    * :file:`xtrabackup_logfile` 
-       Contains data needed for running the: :option:`--apply-log`. The bigger this file is the :option:`--apply-log` process will take longer to finish. 
-
-  * Information related to the replication environment (if using the :option:`--slave-info` option):
-
-    * :file:`xtrabackup_slave_info`
-       The ``CHANGE MASTER`` statement needed for setting up a slave.
-
-  * The output of :program:`mysqld` during the backup process:
-
-    * :file:`mysql-stderr`
-
-    * :file:`mysql-stdout`
+It will also create the :ref:`following files <xtrabackup_files>` for convenience on the created directory.
 
 Other options to consider
 =========================

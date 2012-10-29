@@ -70,6 +70,7 @@ Miscellaneous
    faq
    release-notes
    glossary
+   xtrabackup-files
    trademark-policy
 
 Indices and tables
