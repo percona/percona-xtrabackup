@@ -2642,8 +2642,6 @@ xtrabackup_backup_func(void)
 		exit(EXIT_FAILURE);
 	}
 
-	fil_load_single_table_tablespaces();
-
 	}
 
 	/* create extra LSN dir if it does not exist. */
