@@ -1,5 +1,3 @@
-#!/bin/env bash
-
 set -eu
 
 function innobackupex()
