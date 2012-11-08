@@ -293,7 +293,8 @@ loop:
 	  nfds= (childfd[i] > nfds)? childfd[i] : nfds;
 	  nchildren++;
 	}
-	printf("\nnrchildren= %d\n",nchildren);
+	printf("\nnrchildren= %d, %d tests remaining\n",
+	       nchildren, nrcases-next_testcase);
 	childexited=1;
 	fflush(stdout);
       }
@@ -379,6 +380,8 @@ int main(int argc, char* argv[])
 	 argv[0], suitedir,njobs, timeout);
 
   nrcases= collect_testcases(suitedir, &testcases);
+
+  printf("Found %d testcases\n", nrcases);
 
   run_testcases(testcases, nrcases, njobs, timeout);
 
