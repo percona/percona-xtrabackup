@@ -181,8 +181,3 @@ incremental_sample`
 
   stop_server
 }
-
-for page_size in 1 2 4 8 16; do
-  test_incremental_compressed ${page_size}
-  clean
-done
