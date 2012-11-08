@@ -219,6 +219,8 @@ static void run_testcases(struct testcase *testcases, int nrcases,
     childfd[i]= run_testcase_in_child(i, &testcases[childtest[i]], &childpid[i]);
   }
 
+  fflush(stdout);
+
 loop:
   FD_ZERO(&efds);
   FD_ZERO(&rfds);
@@ -293,6 +295,7 @@ loop:
 	}
 	printf("\nnrchildren= %d\n",nchildren);
 	childexited=1;
+	fflush(stdout);
       }
     }
     if (childexited)
