@@ -113,7 +113,7 @@ static void free_testcases(struct testcase *cases, int n)
   free(cases);
 }
 
-static int run_testcase_in_child(int nr, struct testcase *t, pid_t *cpid)
+static int run_testcase_in_child(int nr, struct testcase *t, pid_t *cpid, const char* xbtarget)
 {
   int fd[2];
 
@@ -152,10 +152,11 @@ static int run_testcase_in_child(int nr, struct testcase *t, pid_t *cpid)
     char subunitfd[50];
     snprintf(subunitfd, sizeof(subunitfd), "/dev/fd/%d", fd[1]);
 
-    char *newargv[] = {"testrun.sh", "-n",
+    const char *newargv[] = {"testrun.sh", "-n",
 		       "-t", tname,
 		       "-b", basedir,
 		       "-r", subunitfd,
+		       (xbtarget)? "-c" : NULL, (xbtarget)? xbtarget: NULL,
 		       NULL };
     char *newenviron[] = { NULL };
     execve(newargv[0], newargv, newenviron);
@@ -189,7 +190,7 @@ static inline void subunit_progress_sign(int fd, int n, char *sign)
 }
 
 static void run_testcases(struct testcase *testcases, int nrcases,
-			  int njobs, int timeout)
+			  int njobs, int timeout, const char* xbtarget)
 {
   int childfd[njobs];
   int nfds= 0;
@@ -216,7 +217,7 @@ static void run_testcases(struct testcase *testcases, int nrcases,
   for(i=0; i<njobs; i++)
   {
     childtest[i]=next_testcase++;
-    childfd[i]= run_testcase_in_child(i, &testcases[childtest[i]], &childpid[i]);
+    childfd[i]= run_testcase_in_child(i, &testcases[childtest[i]], &childpid[i], xbtarget);
   }
 
   fflush(stdout);
@@ -289,7 +290,7 @@ loop:
 	if (next_testcase < nrcases)
 	{
 	  childtest[i]=next_testcase++;
-	  childfd[i]= run_testcase_in_child(i, &testcases[childtest[i]], &childpid[i]);
+	  childfd[i]= run_testcase_in_child(i, &testcases[childtest[i]], &childpid[i], xbtarget);
 	  nfds= (childfd[i] > nfds)? childfd[i] : nfds;
 	  nchildren++;
 	}
@@ -334,6 +335,7 @@ int main(int argc, char* argv[])
   int nrcases;
   struct testcase *testcases;
   int timeout= 600;
+  const char* xbtarget= NULL;
 
   struct sigaction sa;
 
@@ -357,9 +359,12 @@ int main(int argc, char* argv[])
     njobs= nrpages / pages_per_job;
 #endif
 
-  while ((opt = getopt(argc, argv, "j:s:t:")) != -1)
+  while ((opt = getopt(argc, argv, "j:s:t:c:")) != -1)
   {
     switch (opt) {
+    case 'c':
+      xbtarget= optarg;
+      break;
     case 's':
       suitedir= optarg;
       break;
@@ -383,7 +388,7 @@ int main(int argc, char* argv[])
 
   printf("Found %d testcases\n", nrcases);
 
-  run_testcases(testcases, nrcases, njobs, timeout);
+  run_testcases(testcases, nrcases, njobs, timeout, xbtarget);
 
   free_testcases(testcases, nrcases);
 
