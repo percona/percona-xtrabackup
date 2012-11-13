@@ -1683,8 +1683,6 @@ sub check_args {
                         'tmpdir=s' => \$option_tmpdir,
                         'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
-                        'scpopt=s' => \$option_scp_opt,
-                        'sshopt=s' => \$option_ssh_opt,
                         'parallel=i' => \$option_parallel,
                         'safe-slave-backup' => \$option_safe_slave_backup,
                         'safe-slave-backup-timeout=i' => \$option_safe_slave_backup_timeout,
@@ -2721,14 +2719,6 @@ Stop slave SQL thread and wait to start backup until Slave_open_temp_tables in "
 =item --safe-slave-backup-timeout
 
 How many seconds --safe-slave-backup should wait for Slave_open_temp_tables to become zero. (default 300)
-
-=item --scpopt=SCP-OPTIONS
-
-This option specifies the command line options to pass to scp when the option --remost-host is specified.  The option accepts a string argument. If the option is not specified, the default options are "-Cp -c arcfour".
-
-=item --sshopt=SSH-OPTIONS
-
-This option specifies the command line options to pass to ssh when the option --remost-host is specified.  The option accepts a string argument.
 
 =item --slave-info
 
