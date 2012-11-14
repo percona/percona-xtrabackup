@@ -43,7 +43,6 @@ function usage()
     echo
     echo "Usage: `basename $0` CODEBASE"
     echo "where CODEBASE can be one of the following values or aliases:"
-    echo "  innodb50         | 5.0      build against innodb 5.1 builtin, but should be compatible with MySQL 5.0"
     echo "  innodb51_builtin | 5.1	build against built-in InnoDB in MySQL 5.1"
     echo "  innodb51         | plugin	build agsinst InnoDB plugin in MySQL 5.1"
     echo "  innodb55         | 5.5	build against InnoDB in MySQL 5.5"
@@ -185,7 +184,7 @@ top_dir=`pwd`
 
 
 case "$type" in
-"innodb51_builtin" | "5.1" | "innodb50" | "5.0")
+"innodb51_builtin" | "5.1")
 	mysql_version=$MYSQL_51_VERSION
 	server_patch=innodb51_builtin.patch
 	innodb_name=innobase

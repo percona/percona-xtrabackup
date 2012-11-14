@@ -263,7 +263,7 @@ if ($option_copy_back || $option_move_back) {
 				my $reason = `cat $mysql_stderr`;
 				$mysql_pid = '';
 				# Failed to connect to MySQL
-				die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_51 (for MySQL 5.0 and 5.1), xtrabackup_55 (for MySQL 5.5) or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
+				die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_51 (for MySQL 5.1), xtrabackup_55 (for MySQL 5.5) or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
 				}
 			else{
 				mysql_close();
@@ -2420,7 +2420,6 @@ sub escape_path {
 
 sub set_xtrabackup_version {
 # Based on MySQL version choose correct binary
-#  MySQL 5.0.* - xtrabackup_51
 #  MySQL 5.1.* - xtrabackup_51
 #  MySQL 5.1.* with InnoDB plugin - xtrabackup
 #  Percona Server >= 11.0 - xtrabackup
