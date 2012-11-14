@@ -425,11 +425,13 @@ sub backup {
     # (or finalize the backup by syncing changes if using rsync)
     backup_files(0);
 
-    # resume ibbackup and wait till it has finished
-    my $ibbackup_exit_code = resume_ibbackup();
+    # resume ibbackup and wait till log copying is finished
+    resume_ibbackup();
 
     # release read locks on all tables
     mysql_unlockall() if !$option_no_lock;
+
+    my $ibbackup_exit_code = wait_for_ibbackup_finish();
 
     if ( $option_safe_slave_backup && $sql_thread_started) {
       print STDERR "$prefix: Starting slave SQL thread\n";
@@ -921,12 +923,56 @@ sub wait_for_ibbackup_suspend {
 
 
 #
-# resume_ibbackup subroutine signals ibbackup to complete its execution
-# by deleting the 'ibbackup_suspended' file.
+# resume_ibbackup subroutine signals ibbackup to finish log copying by deleting
+# the 'xtrabackup_suspended' file and waits until log copying is stopped,
+# i.e. until 'xtrabackup_suspended' is created again.
+#
+# If this functions detects that the xtrabackup process has terminated, it also
+# sets ibbackup_exit_code and resets ibbackup_pid to avoid trying to reap a
+# non-existing process later
 #
 sub resume_ibbackup {
-    print STDERR "$prefix Resuming ibbackup\n\n";
+    my $pid = -1;
+
+    $now = current_time();
+    print STDERR "$now  $prefix Waiting for log copying to finish\n\n";
     unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+
+    for (;;) {
+        # check if the xtrabackup process is still alive _before_ checking if
+        # the file exists to avoid a race condition when the file is created and
+        # the process terminates right after we do the file check
+        $pid = waitpid($ibbackup_pid, &WNOHANG);
+
+        last if -e $suspend_file;
+
+        if ($ibbackup_pid == $pid) {
+            # The file doesn't exist, but the process has terminated
+            Die "ibbackup child process has died";
+        }
+
+        sleep 1;
+    }
+
+    if ($pid == $ibbackup_pid) {
+        $ibbackup_exit_code = $CHILD_ERROR >> 8;
+        $ibbackup_pid = '';
+    }
+
+    unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+}
+
+#
+# wait for ibbackup to finish and return its exit code
+#
+sub wait_for_ibbackup_finish {
+    if (!$ibbackup_pid) {
+        # The process has already been reaped.
+        return $ibbackup_exit_code;
+    }
+
+    $now = current_time();
+    print STDERR "$now  $prefix Waiting for ibbackup (pid=$ibbackup_pid) to finish\n";
 
     # wait for ibbackup to finish
     waitpid($ibbackup_pid, 0);
