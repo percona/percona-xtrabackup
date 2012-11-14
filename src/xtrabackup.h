@@ -40,11 +40,9 @@ void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,
 				const xb_delta_info_t *info);
 
-#ifdef INNODB_VERSION_SHORT
 /***********************************************************************
 Reads the space flags from a given data file and returns the compressed
 page size, or 0 if the space is not compressed. */
 ulint xb_get_zip_size(os_file_t file);
-#endif /* INNODB_VERSION_SHORT */
 
 #endif /* XB_XTRABACKUP_H */

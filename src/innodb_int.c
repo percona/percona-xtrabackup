@@ -162,14 +162,10 @@ xb_space_get_by_id(
 
 	ut_ad(mutex_own(&fil_system->mutex));
 
-#ifdef INNODB_VERSION_SHORT
 	HASH_SEARCH(hash, fil_system->spaces, id,
 		    fil_space_t*, space,
 		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
 		    space->id == id);
-#else
-	HASH_SEARCH(hash, fil_system->spaces, id, space, space->id == id);
-#endif
 
 	return(space);
 }
@@ -186,16 +182,11 @@ xb_space_get_by_name(
 
 	ut_ad(mutex_own(&fil_system->mutex));
 
-#ifdef INNODB_VERSION_SHORT
 	fold = ut_fold_string(name);
 	HASH_SEARCH(name_hash, fil_system->name_hash, fold,
 		    fil_space_t*, space,
 		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
 		    !strcmp(name, space->name));
-#else
-	HASH_SEARCH(name_hash, fil_system->name_hash, ut_fold_string(name),
-		    space, 0 == strcmp(name, space->name));
-#endif
 
 	return(space);
 }
@@ -242,7 +233,6 @@ xb_space_create_file(
 
 	memset(page, '\0', UNIV_PAGE_SIZE);
 
-#ifdef INNODB_VERSION_SHORT
 	fsp_header_init_fields(page, space_id, flags);
 	mach_write_to_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, space_id);
 
@@ -273,13 +263,6 @@ xb_space_create_file(
 		ret = os_file_write(path, *file, page_zip.data, 0, 0,
 				    zip_size);
 	}
-#else
-	fsp_header_write_space_id(page, space_id);
-
-	buf_flush_init_for_writing(page, ut_dulint_zero, space_id, 0);
-
-	ret = os_file_write(path, *file, page, 0, 0, UNIV_PAGE_SIZE);
-#endif
 
 	ut_free(buf);
 
@@ -295,63 +278,11 @@ xb_space_create_file(
 }
 
 
-#ifndef INNODB_VERSION_SHORT
-
-/********************************************************************//**
-Extract the compressed page size from table flags.
-@return	compressed page size, or 0 if not compressed */
-ulint
-dict_table_flags_to_zip_size(
-/*=========================*/
-	ulint	flags)	/*!< in: flags */
-{
-	ulint	zip_size = flags & DICT_TF_ZSSIZE_MASK;
-
-	if (UNIV_UNLIKELY(zip_size)) {
-		zip_size = ((PAGE_ZIP_MIN_SIZE >> 1)
-			    << (zip_size >> DICT_TF_ZSSIZE_SHIFT));
-
-		ut_ad(zip_size <= UNIV_PAGE_SIZE);
-	}
-
-	return(zip_size);
-}
-
-
-/*******************************************************************//**
-Free all spaces in space_list. */
-void
-fil_free_all_spaces(void)
-/*=====================*/
-{
-	fil_space_t*	space;
-
-	mutex_enter(&fil_system->mutex);
-
-	space = UT_LIST_GET_FIRST(fil_system->space_list);
-
-	while (space != NULL) {
-		fil_node_t*	node;
-		fil_space_t*	prev_space = space;
-
-		space = UT_LIST_GET_NEXT(space_list, space);
-
-		fil_space_free(prev_space->id, FALSE);
-	}
-
-	mutex_exit(&fil_system->mutex);
-}
-
-#endif
 
 void
 innobase_invalidate_query_cache(
 	trx_t*	trx,
-#ifndef INNODB_VERSION_SHORT
-	char*	full_name,
-#else
 	const char*	full_name,
-#endif
 	ulint	full_name_len)
 {
 	(void)trx;
@@ -521,7 +452,6 @@ innobase_convert_name(
 							- (slash - id) - 1,
 							thd, TRUE);
 		}
-#ifdef INNODB_VERSION_SHORT
 	} else if (UNIV_UNLIKELY(*id == TEMP_INDEX_PREFIX)) {
 		/* Temporary index name (smart ALTER TABLE) */
 		const char temp_index_suffix[]= "--temporary--";
@@ -533,165 +463,6 @@ innobase_convert_name(
 			       sizeof temp_index_suffix - 1);
 			s += sizeof temp_index_suffix - 1;
 		}
-#endif
-	} else {
-no_db_name:
-		s = innobase_convert_identifier(buf, buflen, id, idlen,
-						thd, table_id);
-	}
-
-	return(s);
-
-}
-
-ibool
-trx_is_interrupted(
-	trx_t*	trx)
-{
-	(void)trx;
-	/* There are no mysql_thd */
-	return(FALSE);
-}
-
-int
-innobase_mysql_cmp(
-	int		mysql_type,
-	uint		charset_number,
-	unsigned char*	a,
-	unsigned int	a_length,
-	unsigned char*	b,
-	unsigned int	b_length)
-{
-	CHARSET_INFO*		charset;
-	enum enum_field_types	mysql_tp;
-	int                     ret;
-
-	DBUG_ASSERT(a_length != UNIV_SQL_NULL);
-	DBUG_ASSERT(b_length != UNIV_SQL_NULL);
-
-	mysql_tp = (enum enum_field_types) mysql_type;
-
-	switch (mysql_tp) {
-
-	case MYSQL_TYPE_BIT:
-	case MYSQL_TYPE_STRING:
-	case MYSQL_TYPE_VAR_STRING:
-	case FIELD_TYPE_TINY_BLOB:
-	case FIELD_TYPE_MEDIUM_BLOB:
-	case FIELD_TYPE_BLOB:
-	case FIELD_TYPE_LONG_BLOB:
-	case MYSQL_TYPE_VARCHAR:
-		/* Use the charset number to pick the right charset struct for
-		the comparison. Since the MySQL function get_charset may be
-		slow before Bar removes the mutex operation there, we first
-		look at 2 common charsets directly. */
-
-		if (charset_number == default_charset_info->number) {
-			charset = default_charset_info;
-		} else if (charset_number == my_charset_latin1.number) {
-			charset = &my_charset_latin1;
-		} else {
-			charset = get_charset(charset_number, MYF(MY_WME));
-
-			if (charset == NULL) {
-				msg("xtrabackup: InnoDB needs charset %lu for "
-				    "doing a comparison, but MySQL cannot "
-				    "find that charset.\n",
-				    (ulong) charset_number);
-				ut_a(0);
-			}
-		}
-
-		/* Starting from 4.1.3, we use strnncollsp() in comparisons of
-		non-latin1_swedish_ci strings. NOTE that the collation order
-		changes then: 'b\0\0...' is ordered BEFORE 'b  ...'. Users
-		having indexes on such data need to rebuild their tables! */
-
-		ret = charset->coll->strnncollsp(charset,
-				  a, a_length,
-						 b, b_length, 0);
-		if (ret < 0) {
-			return(-1);
-		} else if (ret > 0) {
-			return(1);
-		} else {
-			return(0);
-		}
-	default:
-		assert(0);
-	}
-
-	return(0);
-}
-
-ulint
-innobase_get_at_most_n_mbchars(
-	ulint charset_id,
-	ulint prefix_len,
-	ulint data_len,
-	const char* str)
-{
-	ulint char_length;	/* character length in bytes */
-	ulint n_chars;		/* number of characters in prefix */
-	CHARSET_INFO* charset;	/* charset used in the field */
-
-	charset = get_charset((uint) charset_id, MYF(MY_WME));
-
-	ut_ad(charset);
-	ut_ad(charset->mbmaxlen);
-
-	/* Calculate how many characters at most the prefix index contains */
-
-	n_chars = prefix_len / charset->mbmaxlen;
-
-	/* If the charset is multi-byte, then we must find the length of the
-	first at most n chars in the string. If the string contains less
-	characters than n, then we return the length to the end of the last
-	character. */
-
-	if (charset->mbmaxlen > 1) {
-		/* my_charpos() returns the byte length of the first n_chars
-		characters, or a value bigger than the length of str, if
-		there were not enough full characters in str.
-
-		Why does the code below work:
-		Suppose that we are looking for n UTF-8 characters.
-
-		1) If the string is long enough, then the prefix contains at
-		least n complete UTF-8 characters + maybe some extra
-		characters + an incomplete UTF-8 character. No problem in
-		this case. The function returns the pointer to the
-		end of the nth character.
-
-		2) If the string is not long enough, then the string contains
-		the complete value of a column, that is, only complete UTF-8
-		characters, and we can store in the column prefix index the
-		whole string. */
-
-		char_length = my_charpos(charset, str,
-						str + data_len, (int) n_chars);
-		if (char_length > data_len) {
-			char_length = data_len;
-		}
-	} else {
-		if (data_len < prefix_len) {
-			char_length = data_len;
-		} else {
-			char_length = prefix_len;
-		}
-	}
-
-	return(char_length);
-}
-
-ibool
-innobase_query_is_update(void)
-{
-	msg("xtrabackup: innobase_query_is_update() is called\n");
-	return(0);
-}
-
-#ifdef INNODB_VERSION_SHORT
 ulint
 innobase_raw_format(
 /*================*/
@@ -754,7 +525,6 @@ innobase_get_slow_log()
 {
 	return(FALSE);
 }
-#endif
 #endif
 
 ibool
@@ -831,16 +601,12 @@ innobase_get_cset_width(
 
 void
 innobase_convert_from_table_id(
-#ifdef INNODB_VERSION_SHORT
 	struct charset_info_st*	cs,
-#endif
 	char*	to,
 	const char*	from,
 	ulint	len)
 {
-#ifdef INNODB_VERSION_SHORT
 	(void)cs;
-#endif
 	(void)to;
 	(void)from;
 	(void)len;
@@ -850,16 +616,12 @@ innobase_convert_from_table_id(
 
 void
 innobase_convert_from_id(
-#ifdef INNODB_VERSION_SHORT
 	struct charset_info_st*	cs,
-#endif
 	char*	to,
 	const char*	from,
 	ulint	len)
 {
-#ifdef INNODB_VERSION_SHORT
 	(void)cs;
-#endif
 	(void)to;
 	(void)from;
 	(void)len;
