@@ -2458,6 +2458,32 @@ xb_data_files_close(void)
 	srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
 
+/***********************************************************************
+Create an empty file with a given path and close it.
+@return TRUE on succees, FALSE on error. */
+static ibool
+xb_create_suspend_file(const char *path)
+{
+	ibool			success;
+	os_file_t		suspend_file = XB_FILE_UNDEFINED;
+
+	/* xb_file_create reads srv_unix_file_flush_method */
+	suspend_file = xb_file_create(path, OS_FILE_CREATE,
+				      OS_FILE_NORMAL, OS_DATA_FILE,
+				      &success);
+
+	if (success && suspend_file != XB_FILE_UNDEFINED) {
+
+		os_file_close(suspend_file);
+
+		return(TRUE);
+	}
+
+	msg("xtrabackup: Error: failed to create file '%s'\n", path);
+
+	return(FALSE);
+}
+
 static void
 xtrabackup_backup_func(void)
 {
@@ -2467,7 +2493,8 @@ xtrabackup_backup_func(void)
 	uint			 count;
 	os_mutex_t		 count_mutex;
 	data_thread_ctxt_t 	*data_threads;
-
+	char			suspend_path[FN_REFLEN];
+	ibool			success;
 
 #ifdef USE_POSIX_FADVISE
 	msg("xtrabackup: uses posix_fadvise().\n");
@@ -2844,36 +2871,25 @@ reread_log_header:
 
 	/* suspend-at-end */
 	if (xtrabackup_suspend_at_end) {
-		os_file_t	suspend_file = XB_FILE_UNDEFINED;
-		char	suspend_path[FN_REFLEN];
-		ibool	success, exists;
+		ibool		exists;
 		os_file_type_t	type;
 
 		sprintf(suspend_path, "%s%s", xtrabackup_target_dir,
 			"/xtrabackup_suspended");
-
 		srv_normalize_path_for_win(suspend_path);
-		/* xb_file_create reads srv_unix_file_flush_method */
-		suspend_file = xb_file_create(suspend_path, OS_FILE_OVERWRITE,
-					      OS_FILE_NORMAL, OS_DATA_FILE,
-					      &success);
 
-		if (!success) {
-			msg("xtrabackup: Error: failed to create file "
-			    "'xtrabackup_suspended'\n");
+		if (!xb_create_suspend_file(suspend_path)) {
+			exit(EXIT_FAILURE);
 		}
-
-		if (suspend_file != XB_FILE_UNDEFINED)
-			os_file_close(suspend_file);
 
 		exists = TRUE;
 		while (exists) {
 			os_thread_sleep(200000); /*0.2 sec*/
 			success = os_file_status(suspend_path, &exists, &type);
-			if (!success)
-				break;
+			/* success == FALSE if file exists, but stat() failed.
+			os_file_status() prints an error message in this case */
+			ut_a(success);
 		}
-		xtrabackup_suspend_at_end = FALSE; /* suspend is 1 time */
 	}
 
 	/* read the latest checkpoint lsn */
@@ -2917,6 +2933,19 @@ skip_last_cp:
 	}
 	msg("\n");
 
+	if (!log_copying_succeed) {
+		msg("xtrabackup: Error: log_copying_thread failed.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Signal innobackupex that log copying has stopped and it may now
+	unlock tables, so we can possibly stream xtrabackup_logfile later
+	without holding the lock. */
+	if (xtrabackup_suspend_at_end &&
+	    !xb_create_suspend_file(suspend_path)) {
+		exit(EXIT_FAILURE);
+	}
+
 	if(!xtrabackup_incremental) {
 		strcpy(metadata_type, "full-backuped");
 		metadata_from_lsn = ut_dulint_zero;
@@ -2940,11 +2969,6 @@ skip_last_cp:
 			msg("xtrabackup: error: "
 			    "xtrabackup_write_metadata() failed.\n");
 
-	}
-
-	if (!log_copying_succeed) {
-		msg("xtrabackup: Error: log_copying_thread failed.\n");
-		exit(EXIT_FAILURE);
 	}
 
 	xtrabackup_destroy_datasinks();
