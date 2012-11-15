@@ -3861,7 +3861,9 @@ xb_delta_open_matching_space(
 	os_file_t	file	= 0;
 	ulint		tablespace_flags;
 
-	ut_a(dbname != NULL || space_id == 0 || space_id == ULINT_UNDEFINED);
+	ut_a(dbname != NULL ||
+		trx_sys_sys_space(space_id) ||
+		space_id == ULINT_UNDEFINED);
 
 	*success = FALSE;
 
@@ -3888,6 +3890,10 @@ xb_delta_open_matching_space(
 	if (!os_file_create_directory(dest_dir, FALSE)) {
 		msg("xtrabackup: error: cannot create dir %s\n", dest_dir);
 		return file;
+	}
+
+	if (trx_sys_sys_space(space_id)) {
+		goto found;
 	}
 
 	mutex_enter(&fil_system->mutex);
@@ -5133,6 +5139,9 @@ next_opt:
 		printf("innodb_fast_checksum = %d\n", innobase_fast_checksum);
 		printf("innodb_page_size = %ld\n", innobase_page_size);
 		printf("innodb_log_block_size = %lu\n", innobase_log_block_size);
+		if (innobase_doublewrite_file != NULL) {
+			printf("innodb_doublewrite_file = %s\n", innobase_doublewrite_file);
+		}
 #endif
 		exit(EXIT_SUCCESS);
 	}
