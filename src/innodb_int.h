@@ -625,6 +625,13 @@ xb_space_create_file(
 						      flags */
 	os_file_t*	file);		/*!<out: file handle */
 
+/*********************************************************************//**
+Normalizes init parameter values to use units we use inside InnoDB.
+@return	DB_SUCCESS or error code */
+void
+xb_normalize_init_values(void);
+/*==========================*/
+
 #ifndef INNODB_VERSION_SHORT
 
 /********************************************************************//**

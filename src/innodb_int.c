@@ -294,6 +294,45 @@ xb_space_create_file(
 	return TRUE;
 }
 
+/*********************************************************************//**
+Normalizes init parameter values to use units we use inside InnoDB.
+@return	DB_SUCCESS or error code */
+void
+xb_normalize_init_values(void)
+/*==========================*/
+{
+	ulint	i;
+
+	for (i = 0; i < srv_n_data_files; i++) {
+		srv_data_file_sizes[i] = srv_data_file_sizes[i]
+					* ((1024 * 1024) / UNIV_PAGE_SIZE);
+	}
+
+	srv_last_file_size_max = srv_last_file_size_max
+					* ((1024 * 1024) / UNIV_PAGE_SIZE);
+
+	srv_log_file_size = srv_log_file_size / UNIV_PAGE_SIZE;
+
+	srv_log_buffer_size = srv_log_buffer_size / UNIV_PAGE_SIZE;
+
+#ifndef INNODB_VERSION_SHORT
+	srv_pool_size = srv_pool_size / (UNIV_PAGE_SIZE / 1024);
+
+	srv_awe_window_size = srv_awe_window_size / UNIV_PAGE_SIZE;
+	
+	if (srv_use_awe) {
+	        /* If we are using AWE we must save memory in the 32-bit
+		address space of the process, and cannot bind the lock
+		table size to the real buffer pool size. */
+
+	        srv_lock_table_size = 20 * srv_awe_window_size;
+	} else {
+	        srv_lock_table_size = 5 * srv_pool_size;
+	}
+#else
+	srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
+#endif
+}
 
 #ifndef INNODB_VERSION_SHORT
 
