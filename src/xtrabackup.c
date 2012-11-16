@@ -3959,6 +3959,46 @@ xb_data_files_init(void)
 	return(fil_load_single_table_tablespaces());
 }
 
+/*********************************************************************//**
+Normalizes init parameter values to use units we use inside InnoDB.
+@return	DB_SUCCESS or error code */
+void
+xb_normalize_init_values(void)
+/*==========================*/
+{
+	ulint	i;
+
+	for (i = 0; i < srv_n_data_files; i++) {
+		srv_data_file_sizes[i] = srv_data_file_sizes[i]
+					* ((1024 * 1024) / UNIV_PAGE_SIZE);
+	}
+
+	srv_last_file_size_max = srv_last_file_size_max
+					* ((1024 * 1024) / UNIV_PAGE_SIZE);
+
+	srv_log_file_size = srv_log_file_size / UNIV_PAGE_SIZE;
+
+	srv_log_buffer_size = srv_log_buffer_size / UNIV_PAGE_SIZE;
+
+#ifndef INNODB_VERSION_SHORT
+	srv_pool_size = srv_pool_size / (UNIV_PAGE_SIZE / 1024);
+
+	srv_awe_window_size = srv_awe_window_size / UNIV_PAGE_SIZE;
+
+	if (srv_use_awe) {
+	        /* If we are using AWE we must save memory in the 32-bit
+		address space of the process, and cannot bind the lock
+		table size to the real buffer pool size. */
+
+	        srv_lock_table_size = 20 * srv_awe_window_size;
+	} else {
+	        srv_lock_table_size = 5 * srv_pool_size;
+	}
+#else
+	srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
+#endif
+}
+
 /************************************************************************
 Destroy the tablespace memory cache. */
 void
@@ -4193,6 +4233,8 @@ xtrabackup_backup_func(void)
         if(innodb_init_param())
                 exit(EXIT_FAILURE);
 
+	xb_normalize_init_values();
+
 #ifndef __WIN__        
         if (srv_file_flush_method_str == NULL) {
         	/* These are the default options */
@@ -4269,43 +4311,6 @@ xtrabackup_backup_func(void)
                                                 especially in 64-bit
                                                 computers */
         }
-
-	{
-	ulint	nr;
-	ulint	i;
-
-	nr = srv_n_data_files;
-	
-	for (i = 0; i < nr; i++) {
-		srv_data_file_sizes[i] = srv_data_file_sizes[i]
-					* ((1024 * 1024) / UNIV_PAGE_SIZE);
-	}		
-
-	srv_last_file_size_max = srv_last_file_size_max
-					* ((1024 * 1024) / UNIV_PAGE_SIZE);
-		
-	srv_log_file_size = srv_log_file_size / UNIV_PAGE_SIZE;
-
-	srv_log_buffer_size = srv_log_buffer_size / UNIV_PAGE_SIZE;
-
-#ifndef INNODB_VERSION_SHORT
-	srv_pool_size = srv_pool_size / (UNIV_PAGE_SIZE / 1024);
-
-	srv_awe_window_size = srv_awe_window_size / UNIV_PAGE_SIZE;
-	
-	if (srv_use_awe) {
-	        /* If we are using AWE we must save memory in the 32-bit
-		address space of the process, and cannot bind the lock
-		table size to the real buffer pool size. */
-
-	        srv_lock_table_size = 20 * srv_awe_window_size;
-	} else {
-	        srv_lock_table_size = 5 * srv_pool_size;
-	}
-#else
-	srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
-#endif
-	}
 
 	os_sync_mutex = NULL;
 	srv_general_init();
@@ -6388,6 +6393,8 @@ skip_check:
 
 	if(innodb_init_param())
 		goto error;
+
+	xb_normalize_init_values();
 
 	mem_init(srv_mem_pool_size);
 	if (xtrabackup_incremental) {
