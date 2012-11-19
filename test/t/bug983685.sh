@@ -6,7 +6,7 @@
 
 start_server
 
-options="innodb_data_file_path innodb_log_group_home_dir"
+options="innodb_data_file_path"
 
 mkdir -p $topdir/backup
 innobackupex  $topdir/backup
