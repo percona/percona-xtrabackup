@@ -2970,6 +2970,10 @@ xtrabackup_io_throttling(void)
 	HASH_SEARCH(NAME, TABLE, FOLD, DATA, TEST)
 #endif
 
+#ifndef XTRADB_BASED
+#define trx_sys_sys_space(id) (id == 0)
+#endif
+
 /****************************************************************//**
 A simple function to open or create a file.
 @return own: handle to the file, not defined if error, error number
@@ -3137,11 +3141,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	info.zip_size = 0;
 	info.space_id = 0;
 
-#ifdef XTRADB_BASED
 	if (xtrabackup_tables && (!trx_sys_sys_space(node->space->id)))
-#else
-	if (xtrabackup_tables && (node->space->id != 0))
-#endif
 	{ /* must backup id==0 */
 		char *p;
 		int p_len, regres = REG_NOMATCH;
@@ -3185,11 +3185,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 		}
 	}
 
-#ifdef XTRADB_BASED
 	if (xtrabackup_tables_file && (!trx_sys_sys_space(node->space->id)))
-#else
-	if (xtrabackup_tables_file && (node->space->id != 0))
-#endif
 	{ /* must backup id==0 */
 		xtrabackup_tables_t* table;
 		char *p;
@@ -3231,11 +3227,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 
 skip_filter:
 
-#ifdef XTRADB_BASED
 	if (trx_sys_sys_space(node->space->id))
-#else
-	if (node->space->id == 0)
-#endif
 	{
 		char *next, *p;
 		/* system datafile "/fullpath/datafilename.ibd" or "./datafilename.ibd" */
@@ -3396,11 +3388,7 @@ read_retry:
 #endif
 			{
 				if (
-#ifdef XTRADB_BASED
 				    trx_sys_sys_space(node->space->id)
-#else
-				    node->space->id == 0
-#endif
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
 				       >= FSP_EXTENT_SIZE
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
@@ -4060,11 +4048,7 @@ xtrabackup_create_output_dir(
 	} else {
 		ptr2 = NULL;
 	}
-#ifdef XTRADB_BASED
 	if(!trx_sys_sys_space(space->id) && ptr2)
-#else
-	if(space->id && ptr2)
-#endif
 	{
 		/* single table space */
 		*ptr2 = 0; /* temporary (it's my lazy..)*/
@@ -5794,7 +5778,9 @@ xb_delta_open_matching_space(
 	os_file_t	file	= 0;
 	ulint		tablespace_flags;
 
-	ut_a(dbname != NULL || space_id == 0 || space_id == ULINT_UNDEFINED);
+	ut_a(dbname != NULL ||
+		trx_sys_sys_space(space_id) ||
+		space_id == ULINT_UNDEFINED);
 
 	*success = FALSE;
 
@@ -5821,6 +5807,10 @@ xb_delta_open_matching_space(
 	if (!os_file_create_directory(dest_dir, FALSE)) {
 		msg("xtrabackup: error: cannot create dir %s\n", dest_dir);
 		return file;
+	}
+
+	if (trx_sys_sys_space(space_id)) {
+		goto found;
 	}
 
 	mutex_enter(&fil_system->mutex);
@@ -6552,11 +6542,7 @@ skip_check:
 			while (space != NULL) {
 				/* treat file_per_table only */
 				if (space->purpose != FIL_TABLESPACE
-#ifdef XTRADB_BASED
 				    || trx_sys_sys_space(space->id)
-#else
-				    || space->id == 0
-#endif
 				   )
 				{
 					space = UT_LIST_GET_NEXT(space_list, space);
@@ -7089,6 +7075,9 @@ next_opt:
 		printf("innodb_fast_checksum = %d\n", innobase_fast_checksum);
 		printf("innodb_page_size = %ld\n", innobase_page_size);
 		printf("innodb_log_block_size = %lu\n", innobase_log_block_size);
+		if (innobase_doublewrite_file != NULL) {
+			printf("innodb_doublewrite_file = %s\n", innobase_doublewrite_file);
+		}
 #endif
 		exit(EXIT_SUCCESS);
 	}
