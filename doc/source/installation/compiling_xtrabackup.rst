@@ -4,11 +4,7 @@
 
 The source code is available from the *Launchpad* project `here <https://launchpad.net/percona-xtrabackup>`_. The easiest way to get the code is with :command:`bzr branch` of the desired release, such as the following: ::
 
-  bzr branch lp:percona-xtrabackup/1.6
-
-or ::
-
-  bzr branch lp:percona-xtrabackup
+  bzr branch lp:percona-xtrabackup/2.0
 
 You should then have a directory named after the release you branched, such as ``percona-xtrabackup``.
 
@@ -23,8 +19,8 @@ The following packages and tools must be installed to compile *Percona XtraBacku
 
 In Debian-based distributions, you need to: ::
 
-  $ apt-get install build-essential flex bison automake autoconf bzr \
-    libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev
+  $ apt-get install debhelper autotools-dev libaio-dev wget automake \
+    libtool bison libncurses-dev libz-dev cmake bzr
 
 In ``RPM``-based distributions, you need to: ::
 
@@ -42,7 +38,7 @@ The script needs the codebase for which the building is targeted, you must provi
   Value              Alias      Server
   ================== =========  ============================================
   innodb51_builtin   5.1	build against built-in InnoDB in MySQL 5.1
-  innodb51           plugin	build agsinst InnoDB plugin in MySQL 5.1
+  innodb51           plugin	build against InnoDB plugin in MySQL 5.1
   innodb55           5.5	build against InnoDB in MySQL 5.5
   xtradb51           xtradb     build against Percona Server with XtraDB 5.1
   xtradb55           xtradb55   build against Percona Server with XtraDB 5.5

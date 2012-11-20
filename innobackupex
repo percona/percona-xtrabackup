@@ -2892,6 +2892,10 @@ This option is passed directly to xtrabackup's --apply-log-only option. This for
 
 This option is DEPRECATED and will be removed in Percona XtraBackup 2.1. In Percona XtraBackup 2.0 and later, you should use streaming backups instead. This option specifies the remote host on which the backup files will be created, by using an ssh connection.  The option accepts a string argument.
 
+=item --rsync
+
+Uses the rsync utility to optimize local file transfers. When this option is specified, innobackupex uses rsync to copy all non-InnoDB files instead of spawning a separate cp for each file, which can be much faster for servers with a large number of databases or tables.  This option cannot be used together with --remote-host or --stream.
+
 =item --safe-slave-backup
 
 Stop slave SQL thread and wait to start backup until Slave_open_temp_tables in "SHOW STATUS" is zero. If there are no open temporary tables, the backup will take place, otherwise the SQL thread will be started and stopped until there are no open temporary tables. The backup will fail if Slave_open_temp_tables does not become zero after --safe-slave-backup-timeout seconds. The slave SQL thread will be restarted when the backup finishes.
@@ -2916,7 +2920,7 @@ This option is useful when backing up a replication slave server. It prints the 
 
 This option specifies the socket to use when connecting to the local database server with a UNIX domain socket.  The option accepts a string argument. It is passed to the mysql child process without alteration. See mysql --help for details.
 
-=item --stream=[tar|. . .]
+=item --stream=STREAMNAME
 
 This option specifies the format in which to do the streamed backup.  The option accepts a string argument. The backup will be done to STDOUT in the specified format. Currently, the only supported formats are tar and xbstream. This option is passed directly to xtrabackup's --stream option.
 

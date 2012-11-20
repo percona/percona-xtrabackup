@@ -3,7 +3,7 @@ Configuring xtrabackup
 
 All of the |xtrabackup| configuration is done through options, which behave exactly like standard |MySQL| program options: they can be specified either at the command-line, or through a file such as :file:`/etc/my.cnf`.
 
-The |xtrabackup| binary reads the ``[myslqd]`` and ``[xtrabackup]`` sections from any configuration files, in that order. That is so that it can read its options from your existing |MySQL| installation, such as the :term:`datadir` or some of the |InnoDB| options. If you want to override these, just specify them in the ``[xtrabackup]`` section, and because it is read later, it will take precedence.
+The |xtrabackup| binary reads the ``[mysqld]`` and ``[xtrabackup]`` sections from any configuration files, in that order. That is so that it can read its options from your existing |MySQL| installation, such as the :term:`datadir` or some of the |InnoDB| options. If you want to override these, just specify them in the ``[xtrabackup]`` section, and because it is read later, it will take precedence.
 
 You don't need to put any configuration in your :file:`my.cnf` if you don't want to. You can simply specify the options on the command-line. Normally, the only thing you might find convenient to place in the ``[xtrabackup]`` section of your :file:`my.cnf` file is the ``target_dir`` option to default the directory in which the backups will be placed, for example,
 

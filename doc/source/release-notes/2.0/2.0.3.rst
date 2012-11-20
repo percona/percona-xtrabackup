@@ -18,7 +18,7 @@ Bugs Fixed
 
   * |XtraBackup| 2.0.2 was not backwards compatible which caused incremental backups created with previous versions to fail on prepare. Bug fixed :bug:`1038127` (*Sergei Glushchenko*).
 
-  * Fix for bug :bug:`1022562` introduced a regression that may potentially lead to a 5x increase in disk space occupied by incremental backups. Bug fixed :bug:`1028949` (*Laurynas Biveinis*).
+  * Fix for bug :bug:`1022562` introduced a regression that may potentially lead to a 5x increase in disk space occupied by incremental backups. Bug fixed :bug:`1043762` (*Laurynas Biveinis*).
 
   * A regression was introduced in fix for bug :bug:`932623` which caused incorrect handling of compressed tablespaces with the page size of 16K, that were created between the last full or incremental and the next incremental backup. Bugs fixed :bug:`1049174` and :bug:`1044398` (*Laurynas Biveinis*).
 
