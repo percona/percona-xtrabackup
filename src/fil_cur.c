@@ -108,11 +108,6 @@ xb_fil_cur_open(
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
 
 	/* Determine the page size */
-#ifndef INNODB_VERSION_SHORT
-	zip_size = UNIV_PAGE_SIZE;
-	page_size = UNIV_PAGE_SIZE;
-	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
-#else
 	zip_size = xb_get_zip_size(cursor->file);
 	if (zip_size == ULINT_UNDEFINED) {
 		os_file_close(cursor->file);
@@ -131,7 +126,6 @@ xb_fil_cur_open(
 		page_size = UNIV_PAGE_SIZE;
 		page_size_shift = UNIV_PAGE_SIZE_SHIFT;
 	}
-#endif
 	cursor->page_size = page_size;
 	cursor->page_size_shift = page_size_shift;
 	cursor->zip_size = zip_size;

@@ -162,14 +162,10 @@ xb_space_get_by_id(
 
 	ut_ad(mutex_own(&fil_system->mutex));
 
-#ifdef INNODB_VERSION_SHORT
 	HASH_SEARCH(hash, fil_system->spaces, id,
 		    fil_space_t*, space,
 		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
 		    space->id == id);
-#else
-	HASH_SEARCH(hash, fil_system->spaces, id, space, space->id == id);
-#endif
 
 	return(space);
 }
@@ -186,16 +182,11 @@ xb_space_get_by_name(
 
 	ut_ad(mutex_own(&fil_system->mutex));
 
-#ifdef INNODB_VERSION_SHORT
 	fold = ut_fold_string(name);
 	HASH_SEARCH(name_hash, fil_system->name_hash, fold,
 		    fil_space_t*, space,
 		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
 		    !strcmp(name, space->name));
-#else
-	HASH_SEARCH(name_hash, fil_system->name_hash, ut_fold_string(name),
-		    space, 0 == strcmp(name, space->name));
-#endif
 
 	return(space);
 }
@@ -242,7 +233,6 @@ xb_space_create_file(
 
 	memset(page, '\0', UNIV_PAGE_SIZE);
 
-#ifdef INNODB_VERSION_SHORT
 	fsp_header_init_fields(page, space_id, flags);
 	mach_write_to_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, space_id);
 
@@ -273,13 +263,6 @@ xb_space_create_file(
 		ret = os_file_write(path, *file, page_zip.data, 0, 0,
 				    zip_size);
 	}
-#else
-	fsp_header_write_space_id(page, space_id);
-
-	buf_flush_init_for_writing(page, ut_dulint_zero, space_id, 0);
-
-	ret = os_file_write(path, *file, page, 0, 0, UNIV_PAGE_SIZE);
-#endif
 
 	ut_free(buf);
 
@@ -315,82 +298,14 @@ xb_normalize_init_values(void)
 
 	srv_log_buffer_size = srv_log_buffer_size / UNIV_PAGE_SIZE;
 
-#ifndef INNODB_VERSION_SHORT
-	srv_pool_size = srv_pool_size / (UNIV_PAGE_SIZE / 1024);
-
-	srv_awe_window_size = srv_awe_window_size / UNIV_PAGE_SIZE;
-	
-	if (srv_use_awe) {
-	        /* If we are using AWE we must save memory in the 32-bit
-		address space of the process, and cannot bind the lock
-		table size to the real buffer pool size. */
-
-	        srv_lock_table_size = 20 * srv_awe_window_size;
-	} else {
-	        srv_lock_table_size = 5 * srv_pool_size;
-	}
-#else
 	srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
-#endif
 }
 
-#ifndef INNODB_VERSION_SHORT
-
-/********************************************************************//**
-Extract the compressed page size from table flags.
-@return	compressed page size, or 0 if not compressed */
-ulint
-dict_table_flags_to_zip_size(
-/*=========================*/
-	ulint	flags)	/*!< in: flags */
-{
-	ulint	zip_size = flags & DICT_TF_ZSSIZE_MASK;
-
-	if (UNIV_UNLIKELY(zip_size)) {
-		zip_size = ((PAGE_ZIP_MIN_SIZE >> 1)
-			    << (zip_size >> DICT_TF_ZSSIZE_SHIFT));
-
-		ut_ad(zip_size <= UNIV_PAGE_SIZE);
-	}
-
-	return(zip_size);
-}
-
-
-/*******************************************************************//**
-Free all spaces in space_list. */
-void
-fil_free_all_spaces(void)
-/*=====================*/
-{
-	fil_space_t*	space;
-
-	mutex_enter(&fil_system->mutex);
-
-	space = UT_LIST_GET_FIRST(fil_system->space_list);
-
-	while (space != NULL) {
-		fil_node_t*	node;
-		fil_space_t*	prev_space = space;
-
-		space = UT_LIST_GET_NEXT(space_list, space);
-
-		fil_space_free(prev_space->id, FALSE);
-	}
-
-	mutex_exit(&fil_system->mutex);
-}
-
-#endif
 
 void
 innobase_invalidate_query_cache(
 	trx_t*	trx,
-#ifndef INNODB_VERSION_SHORT
-	char*	full_name,
-#else
 	const char*	full_name,
-#endif
 	ulint	full_name_len)
 {
 	(void)trx;
@@ -560,7 +475,6 @@ innobase_convert_name(
 							- (slash - id) - 1,
 							thd, TRUE);
 		}
-#ifdef INNODB_VERSION_SHORT
 	} else if (UNIV_UNLIKELY(*id == TEMP_INDEX_PREFIX)) {
 		/* Temporary index name (smart ALTER TABLE) */
 		const char temp_index_suffix[]= "--temporary--";
@@ -572,7 +486,6 @@ innobase_convert_name(
 			       sizeof temp_index_suffix - 1);
 			s += sizeof temp_index_suffix - 1;
 		}
-#endif
 	} else {
 no_db_name:
 		s = innobase_convert_identifier(buf, buflen, id, idlen,
@@ -730,7 +643,6 @@ innobase_query_is_update(void)
 	return(0);
 }
 
-#ifdef INNODB_VERSION_SHORT
 ulint
 innobase_raw_format(
 /*================*/
@@ -793,7 +705,6 @@ innobase_get_slow_log()
 {
 	return(FALSE);
 }
-#endif
 #endif
 
 ibool
@@ -870,16 +781,12 @@ innobase_get_cset_width(
 
 void
 innobase_convert_from_table_id(
-#ifdef INNODB_VERSION_SHORT
 	struct charset_info_st*	cs,
-#endif
 	char*	to,
 	const char*	from,
 	ulint	len)
 {
-#ifdef INNODB_VERSION_SHORT
 	(void)cs;
-#endif
 	(void)to;
 	(void)from;
 	(void)len;
@@ -889,16 +796,12 @@ innobase_convert_from_table_id(
 
 void
 innobase_convert_from_id(
-#ifdef INNODB_VERSION_SHORT
 	struct charset_info_st*	cs,
-#endif
 	char*	to,
 	const char*	from,
 	ulint	len)
 {
-#ifdef INNODB_VERSION_SHORT
 	(void)cs;
-#endif
 	(void)to;
 	(void)from;
 	(void)len;
