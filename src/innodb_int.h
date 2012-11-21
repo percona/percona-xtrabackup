@@ -35,23 +35,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <log0recv.h>
 #include <trx0sys.h>
 
-#ifndef INNODB_VERSION_SHORT
-#  define IB_INT64 ib_longlong
-#  define LSN64 dulint
-#  define MACH_READ_64 mach_read_from_8
-#  define MACH_WRITE_64 mach_write_to_8
-#  define OS_MUTEX_CREATE() os_mutex_create(NULL)
-#  define xb_buf_page_is_corrupted(page, zip_size) buf_page_is_corrupted(page)
-#  define xb_fil_space_create(name, space_id, zip_size, purpose) \
-	fil_space_create(name, space_id, purpose)
-#  define PAGE_ZIP_MIN_SIZE_SHIFT	10
-#  define PAGE_ZIP_MIN_SIZE	(1 << PAGE_ZIP_MIN_SIZE_SHIFT)
-#  define DICT_TF_ZSSIZE_SHIFT	1
-#  define DICT_TF_ZSSIZE_MASK		(15 << DICT_TF_ZSSIZE_SHIFT)
-#  define DICT_TF_FORMAT_ZIP	1
-#  define DICT_TF_FORMAT_SHIFT		5
-#  define SRV_SHUTDOWN_NONE	0
-#else
 #  define IB_INT64 ib_int64_t
 #  define LSN64 ib_uint64_t
 #  if (MYSQL_VERSION_ID < 50500)
@@ -73,7 +56,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #  define ut_dulint_minus(A, B) (A - B)
 #  define ut_dulint_align_down(A, B) (A & ~((ib_int64_t)B - 1))
 #  define ut_dulint_align_up(A, B) ((A + B - 1) & ~((ib_int64_t)B - 1))
-#endif
 
 #ifndef XTRADB_BASED
 #define trx_sys_sys_space(id) (id == 0)
@@ -100,161 +82,15 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define XB_FILE_UNDEFINED (-1)
 #endif
 
-#ifdef INNODB_VERSION_SHORT
 #define XB_HASH_SEARCH(NAME, TABLE, FOLD, DATA, ASSERTION, TEST) \
 	HASH_SEARCH(NAME, TABLE, FOLD, xtrabackup_tables_t*, DATA, ASSERTION, \
 		    TEST)
-#else
-#define XB_HASH_SEARCH(NAME, TABLE, FOLD, DATA, ASSERTION, TEST) \
-	HASH_SEARCH(NAME, TABLE, FOLD, DATA, TEST)
-#endif
 
 /* ==start === definition at fil0fil.c === */
 // ##################################################################
 // NOTE: We should check the following definitions fit to the source.
 // ##################################################################
 
-#ifndef INNODB_VERSION_SHORT
-//5.0 5.1
-/* File node of a tablespace or the log data space */
-struct fil_node_struct {
-	fil_space_t*	space;	/* backpointer to the space where this node
-				belongs */
-	char*		name;	/* path to the file */
-	ibool		open;	/* TRUE if file open */
-	os_file_t	handle; /* OS handle to the file, if file open */
-	ibool		is_raw_disk;/* TRUE if the 'file' is actually a raw
-				device or a raw disk partition */
-	ulint		size;	/* size of the file in database pages, 0 if
-				not known yet; the possible last incomplete
-				megabyte may be ignored if space == 0 */
-	ulint		n_pending;
-				/* count of pending i/o's on this file;
-				closing of the file is not allowed if
-				this is > 0 */
-	ulint		n_pending_flushes;
-				/* count of pending flushes on this file;
-				closing of the file is not allowed if
-				this is > 0 */
-	ib_longlong	modification_counter;/* when we write to the file we
-				increment this by one */
-	ib_longlong	flush_counter;/* up to what modification_counter value
-				we have flushed the modifications to disk */
-	UT_LIST_NODE_T(fil_node_t) chain;
-				/* link field for the file chain */
-	UT_LIST_NODE_T(fil_node_t) LRU;
-				/* link field for the LRU list */
-	ulint		magic_n;
-};
-
-struct fil_space_struct {
-	char*		name;	/* space name = the path to the first file in
-				it */
-	ulint		id;	/* space id */
-	ib_longlong	tablespace_version;
-				/* in DISCARD/IMPORT this timestamp is used to
-				check if we should ignore an insert buffer
-				merge request for a page because it actually
-				was for the previous incarnation of the
-				space */
-	ibool		mark;	/* this is set to TRUE at database startup if
-				the space corresponds to a table in the InnoDB
-				data dictionary; so we can print a warning of
-				orphaned tablespaces */
-	ibool		stop_ios;/* TRUE if we want to rename the .ibd file of
-				tablespace and want to stop temporarily
-				posting of new i/o requests on the file */
-	ibool		stop_ibuf_merges;
-				/* we set this TRUE when we start deleting a
-				single-table tablespace */
-	ibool		is_being_deleted;
-				/* this is set to TRUE when we start
-				deleting a single-table tablespace and its
-				file; when this flag is set no further i/o
-				or flush requests can be placed on this space,
-				though there may be such requests still being
-				processed on this space */
-	ulint		purpose;/* FIL_TABLESPACE, FIL_LOG, or FIL_ARCH_LOG */
-	UT_LIST_BASE_NODE_T(fil_node_t) chain;
-				/* base node for the file chain */
-	ulint		size;	/* space size in pages; 0 if a single-table
-				tablespace whose size we do not know yet;
-				last incomplete megabytes in data files may be
-				ignored if space == 0 */
-	ulint		n_reserved_extents;
-				/* number of reserved free extents for
-				ongoing operations like B-tree page split */
-	ulint		n_pending_flushes; /* this is > 0 when flushing
-				the tablespace to disk; dropping of the
-				tablespace is forbidden if this is > 0 */
-	ulint		n_pending_ibuf_merges;/* this is > 0 when merging
-				insert buffer entries to a page so that we
-				may need to access the ibuf bitmap page in the
-				tablespade: dropping of the tablespace is
-				forbidden if this is > 0 */
-	hash_node_t	hash;	/* hash chain node */
-	hash_node_t	name_hash;/* hash chain the name_hash table */
-	rw_lock_t	latch;	/* latch protecting the file space storage
-				allocation */
-	UT_LIST_NODE_T(fil_space_t) unflushed_spaces;
-				/* list of spaces with at least one unflushed
-				file we have written to */
-	ibool		is_in_unflushed_spaces; /* TRUE if this space is
-				currently in the list above */
-	UT_LIST_NODE_T(fil_space_t) space_list;
-				/* list of all spaces */
-	ibuf_data_t*	ibuf_data;
-				/* insert buffer data */
-	ulint		magic_n;
-};
-typedef struct fil_system_struct	fil_system_t;
-struct fil_system_struct {
-	mutex_t		mutex;		/* The mutex protecting the cache */
-	hash_table_t*	spaces;		/* The hash table of spaces in the
-					system; they are hashed on the space
-					id */
-	hash_table_t*	name_hash;	/* hash table based on the space
-					name */
-	UT_LIST_BASE_NODE_T(fil_node_t) LRU;
-					/* base node for the LRU list of the
-					most recently used open files with no
-					pending i/o's; if we start an i/o on
-					the file, we first remove it from this
-					list, and return it to the start of
-					the list when the i/o ends;
-					log files and the system tablespace are
-					not put to this list: they are opened
-					after the startup, and kept open until
-					shutdown */
-	UT_LIST_BASE_NODE_T(fil_space_t) unflushed_spaces;
-					/* base node for the list of those
-					tablespaces whose files contain
-					unflushed writes; those spaces have
-					at least one file node where
-					modification_counter > flush_counter */
-	ulint		n_open;		/* number of files currently open */
-	ulint		max_n_open;	/* n_open is not allowed to exceed
-					this */
-	ib_longlong	modification_counter;/* when we write to a file we
-					increment this by one */
-	ulint		max_assigned_id;/* maximum space id in the existing
-					tables, or assigned during the time
-					mysqld has been up; at an InnoDB
-					startup we scan the data dictionary
-					and set here the maximum of the
-					space id's of the tables there */
-	ib_longlong	tablespace_version;
-					/* a counter which is incremented for
-					every space object memory creation;
-					every space mem object gets a
-					'timestamp' from this; in DISCARD/
-					IMPORT this is used to check if we
-					should ignore an insert buffer merge
-					request */
-	UT_LIST_BASE_NODE_T(fil_space_t) space_list;
-					/* list of all file spaces */
-};
-#else
 //Plugin ?
 /** File node of a tablespace or the log data space */
 struct fil_node_struct {
@@ -415,8 +251,6 @@ struct fil_system_struct {
 					potential space_id reuse */
 };
 
-#endif /* INNODB_VERSION_SHORT */
-
 extern fil_system_t*   fil_system;
 extern char *opt_mysql_tmpdir;
 extern MY_TMPDIR mysql_tmpdir_list;
@@ -427,15 +261,6 @@ extern MY_TMPDIR mysql_tmpdir_list;
 /* ==end=== definition  at fil0fil.c === */
 
 /* prototypes for static functions in original */
-#ifndef INNODB_VERSION_SHORT
-page_t*
-btr_node_ptr_get_child(
-/*===================*/
-				/* out: child page, x-latched */
-	rec_t*		node_ptr,/* in: node pointer */
-	const ulint*	offsets,/* in: array returned by rec_get_offsets() */
-	mtr_t*		mtr);	/* in: mtr */
-#else
 buf_block_t*
 btr_node_ptr_get_child(
 /*===================*/
@@ -449,7 +274,6 @@ btr_root_block_get(
 /*===============*/
 	dict_index_t*	index,	/*!< in: index tree */
 	mtr_t*		mtr);	/*!< in: mtr */
-#endif
 
 int
 fil_file_readdir_next_file(
@@ -625,24 +449,12 @@ xb_space_create_file(
 						      flags */
 	os_file_t*	file);		/*!<out: file handle */
 
-#ifndef INNODB_VERSION_SHORT
-
-/********************************************************************//**
-Extract the compressed page size from table flags.
-@return	compressed page size, or 0 if not compressed */
-ulint
-dict_table_flags_to_zip_size(
-/*=========================*/
-	ulint	flags);	/*!< in: flags */
-
-
-/*******************************************************************//**
-Free all spaces in space_list. */
+/*********************************************************************//**
+Normalizes init parameter values to use units we use inside InnoDB.
+@return	DB_SUCCESS or error code */
 void
-fil_free_all_spaces(void);
-/*=====================*/
-
-#endif
+xb_normalize_init_values(void);
+/*==========================*/
 
 void
 innobase_mysql_prepare_print_arbitrary_thd(void);
