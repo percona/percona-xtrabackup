@@ -11,7 +11,6 @@ Throughout the documentation, whenever the |xtrabackup| binary is mentioned, it'
 ==============================  ===================
 Server                          |xtrabackup| binary
 ==============================  ===================
-MySQL 5.0.*                     ``xtrabackup_51``
 MySQL 5.1.*                     ``xtrabackup_51``
 MySQL 5.1.* with InnoDB plugin  ``xtrabackup``
 Percona Server 5.1 and 5.5      ``xtrabackup``

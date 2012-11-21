@@ -33,10 +33,6 @@ then
 fi
 
 case "$1" in
-    innodb50)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.0.96-linux-$arch-glibc23.tar.gz"
-	;;
     innodb51_builtin | innodb51)
 	url="http://s3.amazonaws.com/percona.com/downloads/community"
 	tarball="mysql-5.1.49-linux-$arch-glibc23.tar.gz"

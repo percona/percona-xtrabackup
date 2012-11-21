@@ -8,7 +8,7 @@
 
   You can have almost real-time backups in 6 simple steps by setting up a replication environment with |XtraBackup|. 
 
- *Percona* |XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs "hot backups" on unmodified versions of |MySQL| servers (5.0, 5.1 and 5.5), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
+ *Percona* |XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs "hot backups" on unmodified versions of |MySQL| servers (5.1 and 5.5), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
 
 All the things you will need
 ============================
