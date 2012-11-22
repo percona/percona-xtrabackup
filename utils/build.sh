@@ -43,7 +43,7 @@ function usage()
     echo
     echo "Usage: `basename $0` CODEBASE"
     echo "where CODEBASE can be one of the following values or aliases:"
-    echo "  innodb51         | plugin	build agsinst InnoDB plugin in MySQL 5.1"
+    echo "  innodb51         | plugin	build against InnoDB plugin in MySQL 5.1"
     echo "  innodb55         | 5.5	build against InnoDB in MySQL 5.5"
     echo "  xtradb51         | xtradb   build against Percona Server with XtraDB 5.1"
     echo "  xtradb55         | xtradb55 build against Percona Server with XtraDB 5.5"
