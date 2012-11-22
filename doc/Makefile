@@ -38,7 +38,7 @@ clean:
 
 html:
 	@echo "Downloading percona-theme ..."
-	@wget -O percona-theme.tar.gz http://percona.com/docs/theme/percona-xtrabackup/2.0
+	@wget -O percona-theme.tar.gz http://percona.com/docs/theme/percona-xtrabackup/2.1
 	@echo "Extracting theme."
 	@tar -zxf percona-theme.tar.gz
 	@rm -rf source/percona-theme
