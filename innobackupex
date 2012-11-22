@@ -276,10 +276,25 @@ if ($option_copy_back) {
 } else {
     # make a backup of InnoDB and MyISAM tables, indexes and .frm files.
     $ibbackup_exit_code = backup();
-    open XTRABACKUP_BINARY, "> $backup_dir/$xtrabackup_binary_file"
-    	or die "Cannot open file $backup_dir/$xtrabackup_binary_file: $!\n";
+    if ($option_remote_host) {
+      open(XTRABACKUP_BINARY,
+	   "| ssh $option_remote_host 'cat > $backup_dir/$xtrabackup_binary_file'")
+	|| die "Failed to open file '$option_remote_host:$backup_dir/$xtrabackup_binary_file': $!";
+    } elsif ($option_stream) {
+      open XTRABACKUP_BINARY, "> $option_tmpdir/$xtrabackup_binary_file"
+    	|| die "Cannot open file $option_tmpdir/$xtrabackup_binary_file: $!\n";
+    } else {
+      open XTRABACKUP_BINARY, "> $backup_dir/$xtrabackup_binary_file"
+    	|| die "Cannot open file $backup_dir/$xtrabackup_binary_file: $!\n";
+    }
     print XTRABACKUP_BINARY $option_ibbackup_binary;
     close XTRABACKUP_BINARY;
+
+    if ($option_stream) {
+      system("cd $option_tmpdir; tar chf - $xtrabackup_binary_file")
+	&& die "Failed to stream $xtrabackup_binary_file: $!";
+      unlink "$option_tmpdir/$xtrabackup_binary_file";
+    }
 }
 
 $now = current_time();
