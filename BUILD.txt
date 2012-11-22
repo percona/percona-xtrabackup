@@ -31,7 +31,7 @@ provide it with one of the following values or aliases:
   Value              Alias      Server
   ================== =========  =============================================
   innodb51_builtin   5.1	build against built-in InnoDB in MySQL 5.1
-  innodb51           plugin	build agsinst InnoDB plugin in MySQL 5.1
+  innodb51           plugin	build against InnoDB plugin in MySQL 5.1
   innodb55           5.5	build against InnoDB in MySQL 5.5
   xtradb51           xtradb     build against Percona Server with XtraDB 5.1
   xtradb55           xtradb55   build against Percona Server with XtraDB 5.5
