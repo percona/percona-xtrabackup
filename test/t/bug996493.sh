@@ -5,16 +5,14 @@
 
 . inc/common.sh
 
-init
-
-run_mysqld
+start_server
 
 backup_dir=$topdir/backup
 innobackupex --no-timestamp $backup_dir
 vlog "Backup created in directory $backup_dir"
 
 vlog "Stop mysqld"
-stop_mysqld
+stop_server
 
 vlog "Remove datadir"
 rm -r $mysql_datadir/*
