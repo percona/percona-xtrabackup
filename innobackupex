@@ -393,7 +393,7 @@ sub backup {
       wait_for_safe_slave();
     }
 
-    if (!$option_incremental && !$option_no_lock) {
+    if (!$option_no_lock) {
         # make a prep copy before locking tables, if using rsync
         backup_files(1);
 
@@ -413,11 +413,8 @@ sub backup {
     # resume ibbackup and wait till it has finished
     my $ibbackup_exit_code = resume_ibbackup();
 
-    if (!$option_incremental) {
-        # release read locks on all tables
-        mysql_unlockall() if !$option_no_lock;
-
-    }
+    # release read locks on all tables
+    mysql_unlockall() if !$option_no_lock;
 
     if ( $option_safe_slave_backup && $host_is_slave ) {
       print STDERR "$prefix: Starting slave SQL thread\n";
