@@ -152,11 +152,17 @@ static int run_testcase_in_child(int nr, struct testcase *t, pid_t *cpid, const 
     char subunitfd[50];
     snprintf(subunitfd, sizeof(subunitfd), "/dev/fd/%d", fd[1]);
 
-    const char *newargv[] = {"testrun.sh", "-n",
+    char* xbtarget_param;
+    if (xbtarget)
+        xbtarget_param= strdup(xbtarget);
+    else
+        xbtarget_param= NULL; 
+
+    char *const newargv[] = {"testrun.sh", "-n",
 		       "-t", tname,
 		       "-b", basedir,
 		       "-r", subunitfd,
-		       (xbtarget)? "-c" : NULL, (xbtarget)? xbtarget: NULL,
+		       (xbtarget)? "-c" : NULL, xbtarget_param,
 		       NULL };
     char *newenviron[] = { NULL };
     execve(newargv[0], newargv, newenviron);
@@ -347,7 +353,7 @@ int main(int argc, char* argv[])
   sigaction(SIGQUIT, &sa, NULL);
 
 #ifdef  _SC_NPROCESSORS_ONLN
-  njobs= sysconf(_SC_NPROCESSORS_ONLN);
+  njobs= sysconf(_SC_NPROCESSORS_ONLN) /2;
 #endif
 
 #ifdef _SC_PHYS_PAGES
@@ -358,6 +364,9 @@ int main(int argc, char* argv[])
   if ((pages_per_job * njobs) > nrpages)
     njobs= nrpages / pages_per_job;
 #endif
+
+  if (njobs == 0)
+    njobs= 1;
 
   while ((opt = getopt(argc, argv, "j:s:t:c:")) != -1)
   {
