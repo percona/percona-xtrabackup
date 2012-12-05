@@ -72,6 +72,7 @@ SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
 
 DEBIAN_VERSION="$(lsb_release -sc)"
 REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"
+FULL_VERSION="$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION"
 
 # Build information
 export CC=${CC:-gcc}
@@ -88,13 +89,10 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
 (
     # Make a copy in workdir and copy debian files
     cd "$WORKDIR"
-    bzr export percona-xtrabackup-$XTRABACKUP_VERSION "$SOURCEDIR"
+    bzr export "percona-xtrabackup-$FULL_VERSION" "$SOURCEDIR"
 
-    # Prepare .orig file
-    bzr export --root="percona-xtrabackup-$XTRABACKUP_VERSION" \
-        "percona-xtrabackup_$XTRABACKUP_VERSION.orig.tar.gz" "$SOURCEDIR"
     (
-        cd "percona-xtrabackup-$XTRABACKUP_VERSION"
+        cd "percona-xtrabackup-$FULL_VERSION"
 
         # Move the debian dir to the appropriate place
         cp -a "$SOURCEDIR/utils/debian/" .
@@ -112,6 +110,6 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
  
     )
 
-    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
+    rm -rf "percona-xtrabackup-$FULL_VERSION"
 
 )
