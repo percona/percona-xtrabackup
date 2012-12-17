@@ -12,8 +12,8 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:KbBSn"\
-    --longoptions key:,nosign,binary,binarydep,source,dummy \
+go_out="$(getopt --options "k:KbBSnT"\
+    --longoptions key:,nosign,binary,binarydep,source,dummy,notransitional \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
@@ -21,6 +21,7 @@ eval set -- $go_out
 BUILDPKG_KEY=''
 DPKG_BINSRC=''
 DUMMY=''
+NOTRANSITIONAL=''
 
 for arg
 do
@@ -32,6 +33,7 @@ do
     -B | --binarydep ) shift; DPKG_BINSRC='-B';;
     -S | --source ) shift; DPKG_BINSRC='-S';;
     -n | --dummy ) shift; DUMMY='yes';;
+    -T | --notransitional ) shift; NOTRANSITIONAL='yes';;
     esac
 done
 
@@ -72,6 +74,7 @@ SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
 
 DEBIAN_VERSION="$(lsb_release -sc)"
 REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"
+FULL_VERSION="$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION"
 
 # Build information
 export CC=${CC:-gcc}
@@ -88,16 +91,19 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
 (
     # Make a copy in workdir and copy debian files
     cd "$WORKDIR"
-    bzr export percona-xtrabackup-$XTRABACKUP_VERSION "$SOURCEDIR"
+    bzr export "percona-xtrabackup-$FULL_VERSION" "$SOURCEDIR"
 
-    # Prepare .orig file
-    bzr export --root="percona-xtrabackup-$XTRABACKUP_VERSION" \
-        "percona-xtrabackup_$XTRABACKUP_VERSION.orig.tar.gz" "$SOURCEDIR"
     (
-        cd "percona-xtrabackup-$XTRABACKUP_VERSION"
+        cd "percona-xtrabackup-$FULL_VERSION"
 
         # Move the debian dir to the appropriate place
         cp -a "$SOURCEDIR/utils/debian/" .
+
+        # Don't build transitional packages if requested
+        if test "x$NOTRANSITIONAL" = "xyes"
+        then
+            sed -i '/Package: xtrabackup/,/^$/d' debian/control
+        fi
 
         # Apply dummy patch if wanted
         if test "x$DUMMY" = "xyes"
@@ -112,6 +118,6 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
  
     )
 
-    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
+    rm -rf "percona-xtrabackup-$FULL_VERSION"
 
 )
