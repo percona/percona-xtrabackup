@@ -551,11 +551,11 @@ sub if_directory_exists_and_empty {
     my $empty_dir = shift;
     my $is_directory_empty_comment = shift;
     if (! -d $empty_dir) {
-        die "$is_directory_empty_comment directory does not exist!";
+        die "$is_directory_empty_comment directory '$empty_dir' does not exist!";
     }
-    opendir (my $dh, $empty_dir) or die "Not a directory";
+    opendir (my $dh, $empty_dir) or die "$is_directory_empty_comment directory '$empty_dir': Not a directory";
     if ( ! scalar( grep { $_ ne "." && $_ ne ".." && $_ ne "my.cnf" && $_ ne "master.info"} readdir($dh)) == 0) {
-        die "$is_directory_empty_comment directory is not empty!";
+        die "$is_directory_empty_comment directory '$empty_dir' is not empty!";
     }
     closedir($dh);
 }
