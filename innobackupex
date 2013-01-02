@@ -1992,7 +1992,8 @@ sub backup_files {
             next unless check_if_required($database, $file);
 
 	    if($option_include) {
-	      if (!("$database.$file" =~ /$option_include/)) {
+	      my $table_name = get_table_name($file);
+	      if (!("$database.$table_name" =~ /$option_include/)) {
 	        print STDERR "$database.$file is skipped because it does not match $option_include.\n";
 	        next;
 	      }
@@ -2314,6 +2315,26 @@ sub get_option {
     return ${$group_hash_ref}{$option_name};
 }
 
+# get_table_name subroutine returns table name of specified file.
+#    Parameters:
+#       $_[0]        table path
+#    Return value:
+#       1 table name
+#
+sub get_table_name {
+   my $table_path = shift;
+   my $filename;
+   my $table;
+
+   # get the last component in the table pathname 
+   $filename = (reverse(split(/\//, $table_path)))[0];
+   # get name of the table by removing file suffix
+   $table = (split(/\./, $filename))[0];
+   # and partition suffix
+   $table = (split('#P#', $table))[0];
+
+   return $table;
+}
 
 # check_if_required subroutine returns 1 if the specified database and
 # table needs to be backed up.
@@ -2327,7 +2348,6 @@ sub check_if_required {
    my ( $db, $table_path ) = @_;
    my $db_count  = scalar keys %databases_list;
    my $tbl_count = scalar keys %table_list;
-   my $filename;
    my $table;
 
    if ( $db_count == 0 && $tbl_count == 0 ) {
@@ -2337,10 +2357,7 @@ sub check_if_required {
    }
    else {
       if ( $table_path ) {
-         # get the last component in the table pathname 
-         $filename = (reverse(split(/\//, $table_path)))[0];
-         # get name of the table by removing file suffix
-         $table = (split(/\./, $filename))[0];
+         $table = get_table_name($table_path);
       }
    }
 
