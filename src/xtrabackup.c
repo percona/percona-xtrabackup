@@ -87,6 +87,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fil_cur.h"
 #include "write_filt.h"
 #include "xtrabackup.h"
+#include "ds_buffer.h"
 
 my_bool innodb_inited= 0;
 
@@ -261,6 +262,7 @@ static  ds_ctxt_t       *ds_local    = NULL;
 static  ds_ctxt_t       *ds_compress = NULL;
 static  ds_ctxt_t       *ds_tmpfile  = NULL;
 static  ds_ctxt_t       *ds_stream   = NULL;
+static  ds_ctxt_t       *ds_buffer   = NULL;
 
 /* ======== Datafiles iterator ======== */
 typedef struct {
@@ -2124,21 +2126,28 @@ xtrabackup_init_datasinks(void)
 		if (xtrabackup_compress) {
 			ds_compress = ds_create(xtrabackup_target_dir,
 						DS_TYPE_COMPRESS);
+			/* Use a 1 MB buffer for compressed output stream */
+			ds_buffer = ds_create(xtrabackup_target_dir,
+					      DS_TYPE_BUFFER);
+			ds_buffer_set_size(ds_buffer, 1024 * 1024);
+
 			ds_data = ds_compress;
 
 			if (xtrabackup_stream) {
 				/* Streaming compressed backup */
-				ds_set_pipe(ds_compress, ds_stream);
+				ds_set_pipe(ds_buffer, ds_stream);
 				/* Bypass compression for meta files */
 				ds_meta = ds_stream;
 			} else {
 				/* Local compressed backup */
 				ds_local = ds_create(xtrabackup_target_dir,
 						     DS_TYPE_LOCAL);
-				ds_set_pipe(ds_compress, ds_local);
+				ds_set_pipe(ds_buffer, ds_local);
 				/* Bypass compression for meta files */
 				ds_meta = ds_local;
 			}
+
+			ds_set_pipe(ds_compress, ds_buffer);
 		} else {
 			/* Streaming uncompressed backup */
 			ds_data = ds_stream;
@@ -2176,6 +2185,10 @@ static void xtrabackup_destroy_datasinks(void)
 	if (ds_compress != NULL) {
 		ds_destroy(ds_compress);
 		ds_compress = NULL;
+	}
+	if (ds_buffer != NULL) {
+		ds_destroy(ds_buffer);
+		ds_buffer = NULL;
 	}
 	if (ds_stream != NULL) {
 		ds_destroy(ds_stream);

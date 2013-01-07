@@ -25,8 +25,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <zlib.h>
 #include "common.h"
 #include "datasink.h"
-#include "ds_stream.h"
-#include "ds_local.h"
 
 #define COMPRESS_CHUNK_SIZE (64 * 1024UL)
 #define MY_QLZ_COMPRESS_OVERHEAD 400
