@@ -239,8 +239,9 @@ function switch_server()
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
     fi
 
-    IB_ARGS="--defaults-file=${MYSQLD_VARDIR}/my.cnf --user=root \
---socket=${MYSQLD_SOCKET} --ibbackup=$XB_BIN"
+    export MYSQL_HOME=$MYSQLD_VARDIR
+
+    IB_ARGS="--user=root --socket=${MYSQLD_SOCKET} --ibbackup=$XB_BIN"
     XB_ARGS="--no-defaults"
 
     # Some aliases for compatibility, as tests use the following names
