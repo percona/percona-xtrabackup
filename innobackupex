@@ -1621,7 +1621,12 @@ sub init {
     } elsif ($option_copy_back || $option_move_back) {
         #$backup_config_file = $backup_dir . '/backup-my.cnf';
         #read_config_file($backup_config_file, \%backup_config);
-    }         
+    }
+
+    if ( -e "$suspend_file" ) {
+        print STDERR "WARNING : A left over instance of suspend file '$suspend_file' was found.\n";
+        unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+    }
 }
 
 
