@@ -160,6 +160,14 @@ function get_free_port()
     die "Could not find a free port for server id $id!"
 }
 
+function free_reserved_port()
+{
+   local port=$1
+
+   rm -f /tmp/xtrabackup_port_lock.${port}
+}
+
+
 ########################################################################
 # Initialize server variables such as datadir, tmpdir, etc. and store
 # them with the specified index in SRV_MYSQLD_* arrays to be used by
@@ -298,7 +306,7 @@ function stop_server_with_id()
     fi
 
     # unlock the port number
-    rm -f /tmp/xtrabackup_port_lock.$MYSQLD_PORT
+    free_reserved_port $MYSQLD_PORT
 
     reset_server_variables $id
 }

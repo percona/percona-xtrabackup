@@ -909,6 +909,7 @@ longlong innobase_log_file_size_backup;
 /* The default values for the following char* start-up parameters
 are determined in innobase_init below: */
 
+char*	innobase_ignored_opt			= NULL;
 char*	innobase_data_home_dir			= NULL;
 char*	innobase_data_file_path 		= NULL;
 char*	innobase_log_group_home_dir		= NULL;
@@ -1053,6 +1054,7 @@ enum options_xtrabackup
   OPT_XTRA_STREAM,
   OPT_XTRA_COMPRESS,
   OPT_XTRA_COMPRESS_THREADS,
+  OPT_INNODB,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
   OPT_INNODB_DATA_HOME_DIR,
@@ -1080,6 +1082,9 @@ enum options_xtrabackup
   OPT_INNODB_IO_CAPACITY,
   OPT_INNODB_READ_IO_THREADS,
   OPT_INNODB_WRITE_IO_THREADS,
+#endif
+#if MYSQL_VERSION_ID >= 50500
+  OPT_INNODB_USE_NATIVE_AIO,
 #endif
 #ifdef XTRADB_BASED
   OPT_INNODB_PAGE_SIZE,
@@ -1197,6 +1202,10 @@ static struct my_option my_long_options[] =
    "Number of threads for parallel data compression. The default value is 1.",
    (G_PTR*) &xtrabackup_compress_threads, (G_PTR*) &xtrabackup_compress_threads,
    0, GET_UINT, REQUIRED_ARG, 1, 1, UINT_MAX, 0, 0, 0},
+
+  {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
+   (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,
+   GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
   {"innodb_adaptive_hash_index", OPT_INNODB_ADAPTIVE_HASH_INDEX,
    "Enable InnoDB adaptive hash index (enabled by default).  "
@@ -1350,6 +1359,13 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "How many files at the maximum InnoDB keeps open at the same time.",
    (G_PTR*) &innobase_open_files, (G_PTR*) &innobase_open_files, 0,
    GET_LONG, REQUIRED_ARG, 300L, 10L, LONG_MAX, 0, 1L, 0},
+#if MYSQL_VERSION_ID >= 50500
+  {"innodb_use_native_aio", OPT_INNODB_USE_NATIVE_AIO,
+   "Use native AIO if supported on this platform.",
+   (G_PTR*) &srv_use_native_aio,
+   (G_PTR*) &srv_use_native_aio, 0, GET_BOOL, NO_ARG,
+   FALSE, 0, 0, 0, 0, 0},
+#endif
 #ifdef XTRADB_BASED
   {"innodb_page_size", OPT_INNODB_PAGE_SIZE,
    "The universal page size of the database.",
@@ -2954,6 +2970,10 @@ xtrabackup_io_throttling(void)
 	HASH_SEARCH(NAME, TABLE, FOLD, DATA, TEST)
 #endif
 
+#ifndef XTRADB_BASED
+#define trx_sys_sys_space(id) (id == 0)
+#endif
+
 /****************************************************************//**
 A simple function to open or create a file.
 @return own: handle to the file, not defined if error, error number
@@ -3121,11 +3141,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	info.zip_size = 0;
 	info.space_id = 0;
 
-#ifdef XTRADB_BASED
 	if (xtrabackup_tables && (!trx_sys_sys_space(node->space->id)))
-#else
-	if (xtrabackup_tables && (node->space->id != 0))
-#endif
 	{ /* must backup id==0 */
 		char *p;
 		int p_len, regres = REG_NOMATCH;
@@ -3169,11 +3185,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 		}
 	}
 
-#ifdef XTRADB_BASED
 	if (xtrabackup_tables_file && (!trx_sys_sys_space(node->space->id)))
-#else
-	if (xtrabackup_tables_file && (node->space->id != 0))
-#endif
 	{ /* must backup id==0 */
 		xtrabackup_tables_t* table;
 		char *p;
@@ -3215,11 +3227,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 
 skip_filter:
 
-#ifdef XTRADB_BASED
 	if (trx_sys_sys_space(node->space->id))
-#else
-	if (node->space->id == 0)
-#endif
 	{
 		char *next, *p;
 		/* system datafile "/fullpath/datafilename.ibd" or "./datafilename.ibd" */
@@ -3380,11 +3388,7 @@ read_retry:
 #endif
 			{
 				if (
-#ifdef XTRADB_BASED
 				    trx_sys_sys_space(node->space->id)
-#else
-				    node->space->id == 0
-#endif
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
 				       >= FSP_EXTENT_SIZE
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
@@ -3971,6 +3975,46 @@ xb_data_files_init(void)
 	return(fil_load_single_table_tablespaces());
 }
 
+/*********************************************************************//**
+Normalizes init parameter values to use units we use inside InnoDB.
+@return	DB_SUCCESS or error code */
+void
+xb_normalize_init_values(void)
+/*==========================*/
+{
+	ulint	i;
+
+	for (i = 0; i < srv_n_data_files; i++) {
+		srv_data_file_sizes[i] = srv_data_file_sizes[i]
+					* ((1024 * 1024) / UNIV_PAGE_SIZE);
+	}
+
+	srv_last_file_size_max = srv_last_file_size_max
+					* ((1024 * 1024) / UNIV_PAGE_SIZE);
+
+	srv_log_file_size = srv_log_file_size / UNIV_PAGE_SIZE;
+
+	srv_log_buffer_size = srv_log_buffer_size / UNIV_PAGE_SIZE;
+
+#ifndef INNODB_VERSION_SHORT
+	srv_pool_size = srv_pool_size / (UNIV_PAGE_SIZE / 1024);
+
+	srv_awe_window_size = srv_awe_window_size / UNIV_PAGE_SIZE;
+
+	if (srv_use_awe) {
+	        /* If we are using AWE we must save memory in the 32-bit
+		address space of the process, and cannot bind the lock
+		table size to the real buffer pool size. */
+
+	        srv_lock_table_size = 20 * srv_awe_window_size;
+	} else {
+	        srv_lock_table_size = 5 * srv_pool_size;
+	}
+#else
+	srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
+#endif
+}
+
 /************************************************************************
 Destroy the tablespace memory cache. */
 void
@@ -4018,6 +4062,10 @@ xb_data_files_close(void)
 #endif
 	fil_system = NULL;
 
+	/* Reset srv_file_io_threads to its default value to avoid confusing
+	warning on --prepare in innobase_start_or_create_for_mysql()*/
+	srv_n_file_io_threads = 4;
+
 	srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
 
@@ -4040,11 +4088,7 @@ xtrabackup_create_output_dir(
 	} else {
 		ptr2 = NULL;
 	}
-#ifdef XTRADB_BASED
 	if(!trx_sys_sys_space(space->id) && ptr2)
-#else
-	if(space->id && ptr2)
-#endif
 	{
 		/* single table space */
 		*ptr2 = 0; /* temporary (it's my lazy..)*/
@@ -4175,6 +4219,32 @@ err:
 	return(TRUE);
 }
 
+/***********************************************************************
+Create an empty file with a given path and close it.
+@return TRUE on succees, FALSE on error. */
+static ibool
+xb_create_suspend_file(const char *path)
+{
+	ibool			success;
+	os_file_t		suspend_file = XB_FILE_UNDEFINED;
+
+	/* xb_file_create reads srv_unix_file_flush_method */
+	suspend_file = xb_file_create(path, OS_FILE_CREATE,
+				      OS_FILE_NORMAL, OS_DATA_FILE,
+				      &success);
+
+	if (success && suspend_file != XB_FILE_UNDEFINED) {
+
+		os_file_close(suspend_file);
+
+		return(TRUE);
+	}
+
+	msg("xtrabackup: Error: failed to create file '%s'\n", path);
+
+	return(FALSE);
+}
+
 static void
 xtrabackup_backup_func(void)
 {
@@ -4184,6 +4254,8 @@ xtrabackup_backup_func(void)
 	datasink_t		*ds;
 	ds_ctxt_t		*ds_ctxt = NULL;
 	ds_ctxt_t		*meta_ds_ctxt;
+	char			suspend_path[FN_REFLEN];
+	ibool			success;
 
 #ifdef USE_POSIX_FADVISE
 	msg("xtrabackup: uses posix_fadvise().\n");
@@ -4208,6 +4280,8 @@ xtrabackup_backup_func(void)
 	/* initialize components */
         if(innodb_init_param())
                 exit(EXIT_FAILURE);
+
+	xb_normalize_init_values();
 
 #ifndef __WIN__        
         if (srv_file_flush_method_str == NULL) {
@@ -4285,43 +4359,6 @@ xtrabackup_backup_func(void)
                                                 especially in 64-bit
                                                 computers */
         }
-
-	{
-	ulint	nr;
-	ulint	i;
-
-	nr = srv_n_data_files;
-	
-	for (i = 0; i < nr; i++) {
-		srv_data_file_sizes[i] = srv_data_file_sizes[i]
-					* ((1024 * 1024) / UNIV_PAGE_SIZE);
-	}		
-
-	srv_last_file_size_max = srv_last_file_size_max
-					* ((1024 * 1024) / UNIV_PAGE_SIZE);
-		
-	srv_log_file_size = srv_log_file_size / UNIV_PAGE_SIZE;
-
-	srv_log_buffer_size = srv_log_buffer_size / UNIV_PAGE_SIZE;
-
-#ifndef INNODB_VERSION_SHORT
-	srv_pool_size = srv_pool_size / (UNIV_PAGE_SIZE / 1024);
-
-	srv_awe_window_size = srv_awe_window_size / UNIV_PAGE_SIZE;
-	
-	if (srv_use_awe) {
-	        /* If we are using AWE we must save memory in the 32-bit
-		address space of the process, and cannot bind the lock
-		table size to the real buffer pool size. */
-
-	        srv_lock_table_size = 20 * srv_awe_window_size;
-	} else {
-	        srv_lock_table_size = 5 * srv_pool_size;
-	}
-#else
-	srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
-#endif
-	}
 
 	os_sync_mutex = NULL;
 	srv_general_init();
@@ -4628,36 +4665,25 @@ reread_log_header:
 
 	/* suspend-at-end */
 	if (xtrabackup_suspend_at_end) {
-		os_file_t	suspend_file = XB_FILE_UNDEFINED;
-		char	suspend_path[FN_REFLEN];
-		ibool	success, exists;
+		ibool		exists;
 		os_file_type_t	type;
 
 		sprintf(suspend_path, "%s%s", xtrabackup_target_dir,
 			"/xtrabackup_suspended");
-
 		srv_normalize_path_for_win(suspend_path);
-		/* xb_file_create reads srv_unix_file_flush_method */
-		suspend_file = xb_file_create(suspend_path, OS_FILE_OVERWRITE,
-					      OS_FILE_NORMAL, OS_DATA_FILE,
-					      &success);
 
-		if (!success) {
-			msg("xtrabackup: Error: failed to create file "
-			    "'xtrabackup_suspended'\n");
+		if (!xb_create_suspend_file(suspend_path)) {
+			exit(EXIT_FAILURE);
 		}
-
-		if (suspend_file != XB_FILE_UNDEFINED)
-			os_file_close(suspend_file);
 
 		exists = TRUE;
 		while (exists) {
 			os_thread_sleep(200000); /*0.2 sec*/
 			success = os_file_status(suspend_path, &exists, &type);
-			if (!success)
-				break;
+			/* success == FALSE if file exists, but stat() failed.
+			os_file_status() prints an error message in this case */
+			ut_a(success);
 		}
-		xtrabackup_suspend_at_end = FALSE; /* suspend is 1 time */
 	}
 
 	/* Reinit the datasink */
@@ -4704,6 +4730,19 @@ skip_last_cp:
 	}
 	msg("\n");
 
+	if (!log_copying_succeed) {
+		msg("xtrabackup: Error: log_copying_thread failed.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Signal innobackupex that log copying has stopped and it may now
+	unlock tables, so we can possibly stream xtrabackup_logfile later
+	without holding the lock. */
+	if (xtrabackup_suspend_at_end &&
+	    !xb_create_suspend_file(suspend_path)) {
+		exit(EXIT_FAILURE);
+	}
+
 	if(!xtrabackup_incremental) {
 		strcpy(metadata_type, "full-backuped");
 		metadata_from_lsn = ut_dulint_zero;
@@ -4731,11 +4770,6 @@ skip_last_cp:
 			msg("xtrabackup: error: "
 			    "xtrabackup_write_metadata() failed.\n");
 
-	}
-
-	if (!log_copying_succeed) {
-		msg("xtrabackup: Error: log_copying_thread failed.\n");
-		exit(EXIT_FAILURE);
 	}
 
 	/* Stream the transaction log from the temporary file */
@@ -5774,7 +5808,9 @@ xb_delta_open_matching_space(
 	os_file_t	file	= 0;
 	ulint		tablespace_flags;
 
-	ut_a(dbname != NULL || space_id == 0 || space_id == ULINT_UNDEFINED);
+	ut_a(dbname != NULL ||
+		trx_sys_sys_space(space_id) ||
+		space_id == ULINT_UNDEFINED);
 
 	*success = FALSE;
 
@@ -5801,6 +5837,10 @@ xb_delta_open_matching_space(
 	if (!os_file_create_directory(dest_dir, FALSE)) {
 		msg("xtrabackup: error: cannot create dir %s\n", dest_dir);
 		return file;
+	}
+
+	if (trx_sys_sys_space(space_id)) {
+		goto found;
 	}
 
 	mutex_enter(&fil_system->mutex);
@@ -6399,6 +6439,8 @@ skip_check:
 	if(innodb_init_param())
 		goto error;
 
+	xb_normalize_init_values();
+
 	mem_init(srv_mem_pool_size);
 	if (xtrabackup_incremental) {
 		err = xb_data_files_init();
@@ -6432,7 +6474,12 @@ skip_check:
 
 	/* increase IO threads */
 	if(srv_n_file_io_threads < 10) {
+#ifndef INNODB_VERSION_SHORT
 		srv_n_file_io_threads = 10;
+#else
+		srv_n_read_io_threads = 4;
+		srv_n_write_io_threads = 4;
+#endif
 	}
 
 	msg("xtrabackup: Starting InnoDB instance for recovery.\n"
@@ -6527,11 +6574,7 @@ skip_check:
 			while (space != NULL) {
 				/* treat file_per_table only */
 				if (space->purpose != FIL_TABLESPACE
-#ifdef XTRADB_BASED
 				    || trx_sys_sys_space(space->id)
-#else
-				    || space->id == 0
-#endif
 				   )
 				{
 					space = UT_LIST_GET_NEXT(space_list, space);
@@ -7064,6 +7107,9 @@ next_opt:
 		printf("innodb_fast_checksum = %d\n", innobase_fast_checksum);
 		printf("innodb_page_size = %ld\n", innobase_page_size);
 		printf("innodb_log_block_size = %lu\n", innobase_log_block_size);
+		if (innobase_doublewrite_file != NULL) {
+			printf("innodb_doublewrite_file = %s\n", innobase_doublewrite_file);
+		}
 #endif
 		exit(EXIT_SUCCESS);
 	}

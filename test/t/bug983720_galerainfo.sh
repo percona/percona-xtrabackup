@@ -16,7 +16,9 @@ if [[ "$probe_result" == "0" ]]
 fi
 set -e
 
-start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm://
+galera_port=`get_free_port 2`
+
+start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep_provider_options="base_port=${galera_port}"
 
 # take a backup with stream mode
 mkdir -p $topdir/backup
@@ -29,3 +31,6 @@ else
     vlog "galera info has not been backed up"
     exit -1
 fi
+
+stop_server
+free_reserved_port ${galera_port}

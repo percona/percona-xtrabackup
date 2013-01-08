@@ -32,32 +32,65 @@ then
     arch="i686"
 fi
 
+if [ "$arch" = "i686" ]
+then
+    maria_arch_path=x86
+else
+    maria_arch_path=amd64
+fi
+
 case "$1" in
     innodb50)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
         tarball="mysql-5.0.96-linux-$arch-glibc23.tar.gz"
 	;;
+
     innodb51_builtin | innodb51)
 	url="http://s3.amazonaws.com/percona.com/downloads/community"
 	tarball="mysql-5.1.49-linux-$arch-glibc23.tar.gz"
 	;;
+
     innodb55)
 	url="http://s3.amazonaws.com/percona.com/downloads/community"
 	tarball="mysql-5.5.16-linux2.6-$arch.tar.gz"
 	;;
+
     xtradb51)
 	url="http://www.percona.com/redir/downloads/Percona-Server-5.1/Percona-Server-5.1.60-13.1/binary/linux/$arch"
 	tarball="Percona-Server-5.1.60-rel13.1-413.Linux.$arch.tar.gz"
 	;;
+
     xtradb55)
 	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary"
 	tarball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
 	;;
+
     galera55)
 	url="http://www.percona.com/downloads/Percona-XtraDB-Cluster/5.5.24-23.6/binary/linux/$arch"
 	tarball="Percona-XtraDB-Cluster-5.5.24-23.6.342.Linux.$arch.tar.gz"
 	#galera=1
 	;;
+
+    mariadb51)
+	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-5.1.62/kvm-bintar-hardy-$maria_arch_path"
+	tarball="mariadb-5.1.62-Linux-$arch.tar.gz"
+	;;
+
+    mariadb52)
+	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-5.2.12/kvm-bintar-hardy-$maria_arch_path"
+	tarball="mariadb-5.2.12-Linux-$arch.tar.gz"
+	;;
+
+    mariadb53)
+	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-5.3.9/kvm-bintar-hardy-$maria_arch_path"
+	tarball="mariadb-5.3.9-Linux-$arch.tar.gz"
+	;;
+
+    mariadb55)
+	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-5.5.28/kvm-bintar-hardy-$maria_arch_path"
+	tarball="mariadb-5.5.28-linux-$arch.tar.gz"
+	;;
+
     *)
 	if ! test -r "$1"
 	then

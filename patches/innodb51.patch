@@ -18,6 +18,16 @@
  buf_block_t*
  btr_node_ptr_get_child(
  /*===================*/
+--- a/storage/innodb_plugin/btr/btr0cur.c
++++ b/storage/innodb_plugin/btr/btr0cur.c
+@@ -3308,6 +3308,7 @@
+ 		byte*	field;
+ 
+ 		field = rec_get_nth_field(rec, offsets, i, &rec_len);
++		(void)field;
+ 
+ 		if (rec_len != UNIV_SQL_NULL) {
+ 			n_not_null[i]++;
 --- a/storage/innodb_plugin/buf/buf0buf.c
 +++ b/storage/innodb_plugin/buf/buf0buf.c
 @@ -358,7 +358,7 @@

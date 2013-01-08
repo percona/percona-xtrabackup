@@ -10,10 +10,10 @@
   
   $ gpg -a --export CD2EFD2A | sudo apt-key add -
 
-Add this to :file:`/etc/apt/sources.list`, replacing ``squeeze`` with the name of your distribution: ::
+Add this to :file:`/etc/apt/sources.list`, replacing ``VERSION`` with the name of your distribution: ::
 
-  deb http://repo.percona.com/apt squeeze main
-  deb-src http://repo.percona.com/apt squeeze main
+  deb http://repo.percona.com/apt VERSION main
+  deb-src http://repo.percona.com/apt VERSION main
 
 Remember to update the local cache: ::
 
@@ -37,8 +37,8 @@ Ubuntu
 ------
 
  * 10.04LTS (lucid)
- * 11.10 (oneiric)
  * 12.04LTS (precise) 
+ * 12.10 (quantal)
 
 Experimental Repository
 =======================
