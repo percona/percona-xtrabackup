@@ -234,6 +234,9 @@ read_retry:
 				    "Database page corruption detected at page "
 				    "%lu, retrying...\n", cursor->thread_n,
 				    page_no);
+
+				os_thread_sleep(100000);
+
 				goto read_retry;
 			}
 		}
