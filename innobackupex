@@ -1615,6 +1615,7 @@ sub init {
             $tmp_logfile = $option_tmpdir . '/xtrabackup_logfile';
 	    $backup_config_file = $option_tmpdir . '/backup-my.cnf';
 	    $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
+	    $galera_info = $option_tmpdir . '/xtrabackup_galera_info';
 	    $slave_info = $option_tmpdir . '/xtrabackup_slave_info';
         }
         write_backup_config_file($backup_config_file);

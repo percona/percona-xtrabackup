@@ -76,6 +76,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <trx0xa.h>
 #include <log0recv.h>
 #include <fcntl.h>
+#include <buf0lru.h>
 
 #include <ibuf0ibuf.h>
 
@@ -1223,6 +1224,19 @@ static my_bool
 innodb_init(void)
 {
 	int	err;
+
+#if defined(INNODB_VERSION_SHORT) && MYSQL_VERSION_ID < 50500
+	/* InnoDB relies on buf_LRU_old_ratio to be always initialized (see
+	debug assertions in buf_LRU_old_adjust_len(). Normally it is initialized
+	from ha_innodb.cc. That code is not used in XtraBackup, which led to
+	assertion failures in 5.1 debug builds (see LP bug #924492).
+
+	5.5 initializes that variable to a hard-coded value of 37% (and then
+	adjusting it to the actual server variable value). That's why the
+	assertion failures never occurred on 5.5. Let's do the same for 5.1. */
+
+	buf_LRU_old_ratio_update(100 * 3 / 8, FALSE);
+#endif
 
 	err = innobase_start_or_create_for_mysql();
 
