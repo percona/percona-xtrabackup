@@ -3430,6 +3430,9 @@ read_retry:
 					    (ulint)((offset +
 						     (IB_INT64)chunk_offset)
 						    >> page_size_shift));
+
+					os_thread_sleep(100000);
+
 					goto read_retry;
 				}
 			}
