@@ -44,7 +44,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Percona XtraBackup'
-copyright = u'2010-2012, Percona Inc'
+copyright = u'2010-2012, Percona Ireland Ltd'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -221,7 +221,7 @@ htmlhelp_basename = 'PerconaXtraBackupDoc'
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
   ('index', 'PerconaXtraBackup.tex', u'Percona XtraBackup Documentation',
-   u'Percona Inc', 'manual'),
+   u'Percona Ireland Ltd', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -254,7 +254,7 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     ('index', 'perconaxtrabackup', u'Percona XtraBackup Documentation',
-     [u'Percona Inc'], 1)
+     [u'Percona Ireland Ltd'], 1)
 ]
 
 # Example configuration for intersphinx: refer to the Python standard library.

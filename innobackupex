@@ -3,7 +3,8 @@
 # A script for making backups of InnoDB and MyISAM tables, indexes and .frm
 # files.
 #
-# Copyright 2003, 2009 Innobase Oy and Percona Inc 2009-2012. All Rights Reserved.
+# Copyright 2003, 2009 Innobase Oy and Percona Ireland Ltd 2009-2012.
+# All Rights Reserved.
 #
 
 use strict;
@@ -26,7 +27,7 @@ my $innobackup_script = basename($0);
 # copyright notice
 my $copyright_notice =
 "InnoDB Backup Utility v${innobackup_version}; Copyright 2003, 2009 Innobase Oy
-and Percona Inc 2009-2012.  All Rights Reserved.
+and Percona Ireland Ltd 2009-2012.  All Rights Reserved.
 
 This software is published under
 the GNU GENERAL PUBLIC LICENSE Version 2, June 1991.
