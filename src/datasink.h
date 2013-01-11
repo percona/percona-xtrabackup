@@ -53,7 +53,8 @@ typedef enum {
 	DS_TYPE_LOCAL,
 	DS_TYPE_STREAM,
 	DS_TYPE_COMPRESS,
-	DS_TYPE_TMPFILE
+	DS_TYPE_TMPFILE,
+	DS_TYPE_BUFFER
 } ds_type_t;
 
 /************************************************************************

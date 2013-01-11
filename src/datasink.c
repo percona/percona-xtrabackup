@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ds_stream.h"
 #include "ds_local.h"
 #include "ds_tmpfile.h"
+#include "ds_buffer.h"
 
 /************************************************************************
 Create a datasink of the specified type */
@@ -46,6 +47,9 @@ ds_create(const char *root, ds_type_t type)
 		break;
 	case DS_TYPE_TMPFILE:
 		ds = &datasink_tmpfile;
+		break;
+	case DS_TYPE_BUFFER:
+		ds = &datasink_buffer;
 		break;
 	default:
 		msg("Unknown datasink type: %d\n", type);
