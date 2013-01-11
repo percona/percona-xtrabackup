@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011 Percona Inc.
+Copyright (c) 2011 Percona Ireland Ltd.
 
 The xbstream utility: serialize/deserialize files in the XBSTREAM format.
 
@@ -143,7 +143,7 @@ void
 usage(void)
 {
 	print_version();
-	puts("Copyright (C) 2011 Percona Inc.");
+	puts("Copyright (C) 2011 Percona Ireland Ltd.");
 	puts("This software comes with ABSOLUTELY NO WARRANTY. "
 	     "This is free software,\nand you are welcome to modify and "
 	     "redistribute it under the GPL license.\n");

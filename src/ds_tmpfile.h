@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2012 Percona Inc.
+Copyright (c) 2012 Percona Ireland Ltd.
 
 tmpfile datasink for XtraBackup.
 

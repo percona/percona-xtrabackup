@@ -2,7 +2,7 @@
  * testrun.c - a parallel test runner for the XtraBackup test suite
  */
 /* BEGIN LICENSE
- * Copyright (C) 2012 Percona Inc.
+ * Copyright (C) 2012 Percona Ireland Ltd.
  *
  * Written by Stewart Smith
  *
