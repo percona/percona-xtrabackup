@@ -65,6 +65,7 @@ function kill_leftovers()
 	then
 	    vlog "Found a leftover mysqld processes with PID `cat $file`, stopping it"
 	    kill -9 `cat $file` 2>/dev/null || true
+	    rm -f $file
 	fi
     done
 }

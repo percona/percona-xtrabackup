@@ -27,6 +27,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "datasink.h"
 #include "stream.h"
 #include "local.h"
+#include "buffer.h"
 
 #define COMPRESS_CHUNK_SIZE (64 * 1024UL)
 #define MY_QLZ_COMPRESS_OVERHEAD 400
@@ -97,15 +98,26 @@ compress_init(const char *root)
 	ds_ctxt_t		*ctxt;
 	ds_compress_ctxt_t	*compress_ctxt;
 	datasink_t		*dest_ds;
+	datasink_t		*pipe_ds;
 	ds_ctxt_t		*dest_ctxt;
 	comp_thread_ctxt_t	*threads;
 
-	/* Decide whether the compressed data will be stored in local files or
-	streamed to an archive */
-	dest_ds = xtrabackup_stream ? &datasink_stream : &datasink_local;
+	dest_ds = &datasink_buffer;
 
 	dest_ctxt = dest_ds->init(root);
 	if (dest_ctxt == NULL) {
+		msg("compress: failed to initialize the buffer datasink.\n");
+		return NULL;
+	}
+
+	/* Use a 1 MB buffer for compressed output stream */
+	ds_buffer_set_size(dest_ctxt, 1024 * 1024);
+
+	/* Decide whether the compressed data will be stored in local files or
+	streamed to an archive */
+	pipe_ds = xtrabackup_stream ? &datasink_stream : &datasink_local;
+	dest_ctxt->pipe_ctxt = pipe_ds->init(root);
+	if (dest_ctxt->pipe_ctxt == NULL) {
 		msg("compress: failed to initialize the target datasink.\n");
 		return NULL;
 	}
@@ -323,7 +335,9 @@ compress_deinit(ds_ctxt_t *ctxt)
 {
 	ds_compress_ctxt_t 	*comp_ctxt;
 	ds_ctxt_t		*dest_ctxt;
+	ds_ctxt_t		*pipe_ctxt;
 	datasink_t		*dest_ds;
+	datasink_t		*pipe_ds;
 
 	comp_ctxt = (ds_compress_ctxt_t *) ctxt->ptr;;
 
@@ -332,7 +346,11 @@ compress_deinit(ds_ctxt_t *ctxt)
 	dest_ctxt = comp_ctxt->dest_ctxt;
 	dest_ds = dest_ctxt->datasink;
 
+	pipe_ctxt = dest_ctxt->pipe_ctxt;
+	pipe_ds = pipe_ctxt->datasink;
+
 	dest_ds->deinit(dest_ctxt);
+	pipe_ds->deinit(pipe_ctxt);
 
 	MY_FREE(ctxt);
 }

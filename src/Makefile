@@ -23,7 +23,8 @@ PREFIX=/usr
 BIN_DIR=$(PREFIX)/bin
 
 COMMON_INC = -I. -I libarchive/libarchive -I quicklz
-XTRABACKUPOBJS = xtrabackup.o stream.o local.o compress.o xbstream_write.o \
+XTRABACKUPOBJS = xtrabackup.o stream.o local.o compress.o buffer.o \
+	xbstream_write.o \
 	quicklz/quicklz.o
 XBSTREAMOBJS = xbstream.o xbstream_write.o xbstream_read.o
 
