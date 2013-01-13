@@ -28,6 +28,7 @@ XTRABACKUPOBJS = xtrabackup.o \
 	ds_local.o \
 	ds_compress.o \
 	ds_tmpfile.o \
+	ds_buffer.o \
 	datasink.o \
 	write_filt.o \
 	fil_cur.o \
@@ -185,7 +186,7 @@ $(XTRABACKUPOBJS): %.o: %.c
 xbstream.o xbstream_read.o: %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
 
-xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o datasink.o
+xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o ds_buffer.o datasink.o
 	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
 xtrabackup.o: xtrabackup.c xb_regex.h write_filt.h fil_cur.h xtrabackup.h
