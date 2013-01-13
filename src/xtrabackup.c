@@ -1939,6 +1939,9 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 
 		/* innodb_mirrored_log_groups must be 1, no other groups */
 		ut_a(group == NULL);
+
+		debug_sync_point("xtrabackup_copy_logfile_pause");
+
 	}
 
 
