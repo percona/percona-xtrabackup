@@ -98,6 +98,7 @@ my $option_no_lock = '';
 my $option_ibbackup_binary = 'autodetect';
 
 my $option_defaults_file = '';
+my $option_defaults_extra_file = '';
 my $option_incremental = '';
 my $option_incremental_basedir = '';
 my $option_incremental_dir = '';
@@ -814,6 +815,10 @@ sub apply_log {
         $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
     }
 
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
+    }
+
     if ($option_defaults_group) {
         $options = $options . " --defaults-group=\"$option_defaults_group\" ";
     }
@@ -985,6 +990,10 @@ sub start_ibbackup {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     }
 
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
+    }
+
     if ($option_defaults_group) {
         $options = $options . " --defaults-group=\"$option_defaults_group\" ";
     }
@@ -1070,6 +1079,10 @@ sub get_mysql_options {
     # this option has to be first
     if ($option_defaults_file) {
         $options = "$options --defaults-file='$option_defaults_file'";
+    }
+
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
     }
 
     if ($option_mysql_password) {
@@ -1740,6 +1753,7 @@ sub check_args {
                         'socket=s' => \$option_mysql_socket,
                         'no-timestamp' => \$option_no_timestamp,
                         'defaults-file=s' => \$option_defaults_file,
+                        'defaults-extra-file=s' => \$option_defaults_extra_file,
                         'incremental' => \$option_incremental,
                         'incremental-basedir=s' => \$option_incremental_basedir,
                         'incremental-lsn=s' => \$option_incremental_lsn,
@@ -1770,6 +1784,12 @@ sub check_args {
         # print program version and copyright
         print_version();
         exit(0);
+    }
+
+    if ($option_defaults_file && $option_defaults_extra_file) {
+        print STDERR "$prefix --defaults-file and --defaults-extra-file " .
+            "options are mutually exclusive";
+        exit(1);
     }
 
     if ($option_copy_back && $option_move_back) {
@@ -2194,6 +2214,10 @@ sub read_config_file {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     } elsif ($option_apply_log) {
         $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
+    }
+
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
     }
 
     if ($option_defaults_group) {
@@ -2730,6 +2754,10 @@ This option specifies the list of databases that innobackupex should back up. Th
 =item --defaults-file=[MY.CNF]
 
 This option specifies what file to read the default MySQL options from.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-file option. See the xtrabackup documentation for details.
+
+=item --defaults-extra-file=[MY.CNF]
+
+This option specifies what extra file to read the default MySQL options from before the standard defaults-file.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-extra-file option. See the xtrabackup documentation for details.
 
 =item --export
 
