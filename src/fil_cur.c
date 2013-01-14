@@ -142,6 +142,8 @@ xb_fil_cur_open(
 	cursor->buf_page_no = 0;
 	cursor->thread_n = thread_n;
 
+	cursor->space_size = cursor->statinfo.st_size / page_size;
+
 	return(XB_FIL_CUR_SUCCESS);
 }
 
@@ -216,13 +218,13 @@ read_retry:
 			    page_no < FSP_EXTENT_SIZE * 3) {
 				/* skip doublewrite buffer pages */
 				ut_a(page_size == UNIV_PAGE_SIZE);
-				msg("[%02lu] xtrabackup: "
+				msg("[%02u] xtrabackup: "
 				    "Page %lu is a doublewrite buffer page, "
 				    "skipping.\n", cursor->thread_n, page_no);
 			} else {
 				retry_count--;
 				if (retry_count == 0) {
-					msg("[%02lu] xtrabackup: "
+					msg("[%02u] xtrabackup: "
 					    "Error: failed to read page after "
 					    "10 retries. File %s seems to be "
 					    "corrupted.\n", cursor->thread_n,
@@ -230,7 +232,7 @@ read_retry:
 					ret = XB_FIL_CUR_ERROR;
 					break;
 				}
-				msg("[%02lu] xtrabackup: "
+				msg("[%02u] xtrabackup: "
 				    "Database page corruption detected at page "
 				    "%lu, retrying...\n", cursor->thread_n,
 				    page_no);

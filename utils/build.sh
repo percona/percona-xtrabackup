@@ -10,25 +10,33 @@ PS_55_VERSION=5.5.16-22.0
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
 
+top_dir=`pwd`
+
 # Percona Server 5.5 does not build with -Werror, so ignore DEBUG for now
 if [ -n "$DEBUG" -a "$1" != "galera55" -a "$1" != "xtradb55" -a "$1" != "xtradb51" -a "$1" != "xtradb" ]
 then
     # InnoDB extra debug flags
-    innodb_extra_debug="-DUNIV_DEBUG -DUNIV_SYNC_DEBUG -DUNIV_MEM_DEBUG \
+    innodb_extra_debug="-DUNIV_DEBUG -DUNIV_MEM_DEBUG \
 -DUNIV_DEBUG_THREAD_CREATION -DUNIV_DEBUG_LOCK_VALIDATE -DUNIV_DEBUG_PRINT \
 -DUNIV_DEBUG_FILE_ACCESS -DUNIV_SEARCH_DEBUG -DUNIV_LOG_LSN_DEBUG \
 -DUNIV_ZIP_DEBUG -DUNIV_AHI_DEBUG -DUNIV_SQL_DEBUG -DUNIV_AIO_DEBUG \
 -DUNIV_LRU_DEBUG -DUNIV_BUF_DEBUG -DUNIV_HASH_DEBUG -DUNIV_LIST_DEBUG -DUNIV_IBUF_DEBUG"
-    export CFLAGS="$CFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
-    export CXXFLAGS="$CXXFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
+    CFLAGS="$CFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
+    CXXFLAGS="$CXXFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
     extra_config_51="--with-debug=full"
     extra_config_55="-DWITH_DEBUG=ON"
 else
-    export CFLAGS="$CFLAGS -g -O3"
-    export CXXFLAGS="$CXXFLAGS -g -O3"
+    CFLAGS="$CFLAGS -g -O3"
+    CXXFLAGS="$CXXFLAGS -g -O3"
     extra_config_51=
     extra_config_55=
 fi
+
+xtrabackup_include_dir="$top_dir/src"
+CFLAGS="$CFLAGS -I$xtrabackup_include_dir"
+CXXFLAGS="$CXXFLAGS -I$xtrabackup_include_dir"
+
+export CFLAGS CXXFLAGS
 
 MAKE_CMD=make
 if gmake --version > /dev/null 2>&1
@@ -181,8 +189,6 @@ then
 fi
 
 type=$1
-top_dir=`pwd`
-
 
 case "$type" in
 "innodb51" | "plugin")

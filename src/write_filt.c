@@ -62,22 +62,6 @@ xb_write_filt_t wf_incremental = {
 };
 
 /************************************************************************
-Compact page write filter. */
-static my_bool wf_compact_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
-			       xb_fil_cur_t *cursor);
-static my_bool wf_compact_process(xb_write_filt_ctxt_t *ctxt,
-				  ds_file_t *dstfile);
-static my_bool wf_compact_finalize(xb_write_filt_ctxt_t *ctxt,
-				   ds_file_t *dstfile);
-
-xb_write_filt_t wf_compact = {
-	&wf_compact_init,
-	&wf_compact_process,
-	&wf_compact_finalize,
-	NULL
-};
-
-/************************************************************************
 Initialize incremental page write filter.
 
 @return TRUE on success, FALSE on error. */
@@ -106,7 +90,7 @@ wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 	info.zip_size = cursor->zip_size;
 	info.space_id = cursor->space_id;
 	if (!xb_write_delta_metadata(meta_name, &info)) {
-		msg("[%02lu] xtrabackup: Error: "
+		msg("[%02u] xtrabackup: Error: "
 		    "failed to write meta info for %s\n",
 		    cursor->thread_n, cursor->path);
 		return(FALSE);
@@ -229,91 +213,6 @@ wf_wt_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
 	xb_fil_cur_t			*cursor = ctxt->cursor;
 
 	if (ds_write(dstfile, cursor->buf, cursor->buf_read)) {
-		return(FALSE);
-	}
-
-	return(TRUE);
-}
-
-/************************************************************************
-Initialize the compact page write filter.
-
-@return TRUE on success, FALSE on error. */
-static my_bool
-wf_compact_init(xb_write_filt_ctxt_t *ctxt,
-		char *dst_name __attribute__((unused)), xb_fil_cur_t *cursor)
-{
-	xb_wf_compact_ctxt_t		*cp = &(ctxt->u.wf_compact_ctxt);
-
-	/* Don't compact the system table space */
-	cp->skip = cursor->is_system;
-
-	return(TRUE);
-}
-
-static my_bool
-check_if_skip_page(byte *page __attribute__((unused)))
-{
-	return(FALSE);
-}
-
-/************************************************************************
-Run the next batch of pages through the compact page write filter.
-
-@return TRUE on success, FALSE on error. */
-static my_bool
-wf_compact_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
-{
-	xb_fil_cur_t		*cursor = ctxt->cursor;
-	ulint			 page_size = cursor->page_size;
-	byte			*page;
-	byte			*buf_end;
-	byte			*write_from;
-	xb_wf_compact_ctxt_t	*cp = &(ctxt->u.wf_compact_ctxt);
-
-	if (cp->skip) {
-		return(!ds_write(dstfile, cursor->buf, cursor->buf_read));
-	}
-
-	write_from = NULL;
-	buf_end = cursor->buf + cursor->buf_read;
-	for (page = cursor->buf; page < buf_end; page += page_size) {
-		if (!check_if_skip_page(page)) {
-			if (write_from == NULL) {
-				write_from = page;
-			}
-			continue;
-		}
-	}
-
-	/* Write the remaining pages in the buffer, if any */
-	if (write_from != NULL &&
-	    ds_write(dstfile, write_from, buf_end - write_from)) {
-		return(FALSE);
-	}
-
-	return(TRUE);
-}
-
-/************************************************************************
-Close the compact write filter's page map stream.
-
-@return TRUE on success, FALSE on error. */
-static my_bool
-wf_compact_finalize(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile)
-{
-	xb_fil_cur_t			*cursor = ctxt->cursor;
-	ulint				page_size = cursor->page_size;
-	xb_wf_incremental_ctxt_t	*cp = &(ctxt->u.wf_incremental_ctxt);
-
-	if (cp->npages != page_size / 4) {
-		mach_write_to_4(cp->delta_buf + cp->npages * 4, 0xFFFFFFFFUL);
-	}
-
-	mach_write_to_4(cp->delta_buf, 0x58545241UL); /*"XTRA"*/
-
-	/* flush buffer */
-	if (ds_write(dstfile, cp->delta_buf, cp->npages * page_size)) {
 		return(FALSE);
 	}
 

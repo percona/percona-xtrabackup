@@ -20,42 +20,25 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-/* Page write filter interface */
+#ifndef XB_COMPACT_H
+#define XB_COMPACT_H
 
-#ifndef XB_WRITE_FILT_H
-#define XB_WRITE_FILT_H
+#include "write_filt.h"
 
-#include "fil_cur.h"
-#include "datasink.h"
-#include "compact.h"
-
-/* Incremental page filter context */
+/* Compact page filter context */
 typedef struct {
-	byte		*delta_buf_base;
-	byte		*delta_buf;
-	ulint		 npages;
-} xb_wf_incremental_ctxt_t;
+	my_bool		 skip;
+	ds_ctxt_t	*ds_buffer;
+	ds_file_t	*buffer;
+	INDEX_ID_T	 clustered_index;
+	my_bool		 clustered_index_found;
+	my_bool		 inside_skipped_range;
+	ulint		 free_limit;
+} xb_wf_compact_ctxt_t;
 
-/* Page filter context used as an opaque structure by callers */
-typedef struct {
-	xb_fil_cur_t	*cursor;
-	union {
-		xb_wf_incremental_ctxt_t	wf_incremental_ctxt;
-		xb_wf_compact_ctxt_t		wf_compact_ctxt;
-	} u;
-} xb_write_filt_ctxt_t;
+/******************************************************************************
+Expand the data files according to the skipped pages maps created by --compact.
+@return TRUE on success, FALSE on failure. */
+my_bool xb_expand_datafiles(void);
 
-
-typedef struct {
-	my_bool	(*init)(xb_write_filt_ctxt_t *ctxt, char *dst_name,
-			xb_fil_cur_t *cursor);
-	my_bool	(*process)(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile);
-	my_bool	(*finalize)(xb_write_filt_ctxt_t *, ds_file_t *dstfile);
-	void (*deinit)(xb_write_filt_ctxt_t *);
-} xb_write_filt_t;
-
-extern xb_write_filt_t wf_write_through;
-extern xb_write_filt_t wf_incremental;
-extern xb_write_filt_t wf_compact;
-
-#endif /* XB_WRITE_FILT_H */
+#endif

@@ -182,7 +182,7 @@ tmpfile_deinit(ds_ctxt_t *ctxt)
 	xb_a(pipe_ctxt != NULL);
 
 	buf = my_malloc(buf_size, MYF(MY_FAE));
-	
+
 	tmpfile_ctxt = (ds_tmpfile_ctxt_t *) ctxt->ptr;
 	list = tmpfile_ctxt->file_list;
 

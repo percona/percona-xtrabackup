@@ -199,7 +199,6 @@ long innobase_force_recovery = 0;
 long innobase_lock_wait_timeout = 50;
 long innobase_log_buffer_size = 1024*1024L;
 long innobase_log_files_in_group = 2;
-long innobase_log_files_in_group_backup;
 long innobase_mirrored_log_groups = 1;
 long innobase_open_files = 300L;
 
@@ -213,7 +212,6 @@ char*	innobase_doublewrite_file = NULL;
 
 longlong innobase_buffer_pool_size = 8*1024*1024L;
 longlong innobase_log_file_size = 5*1024*1024L;
-longlong innobase_log_file_size_backup;
 
 /* The default values for the following char* start-up parameters
 are determined in innobase_init below: */
@@ -222,7 +220,6 @@ char*	innobase_ignored_opt			= NULL;
 char*	innobase_data_home_dir			= NULL;
 char*	innobase_data_file_path 		= NULL;
 char*	innobase_log_group_home_dir		= NULL;
-char*	innobase_log_group_home_dir_backup	= NULL;
 char*	innobase_log_arch_dir			= NULL;/* unused */
 /* The following has a misleading name: starting from 4.0.5, this also
 affects Windows: */
@@ -252,13 +249,20 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 #define INNOBASE_WAKE_INTERVAL	32
 ulong	innobase_active_counter	= 0;
 
+ibool srv_compact_backup = FALSE;
+ibool srv_rebuild_indexes = FALSE;
+
 static char *xtrabackup_debug_sync = NULL;
 
 static my_bool xtrabackup_compact = FALSE;
+static my_bool xtrabackup_rebuild_indexes = FALSE;
 
-/* Datasinks */
-static  ds_ctxt_t       *ds_data     = NULL;
-static  ds_ctxt_t       *ds_meta     = NULL;
+/* datasink chain used to store datafiles */
+ds_ctxt_t       *ds_data     = NULL;
+/* datasink chain used to store XtraBackup metainfo files */
+ds_ctxt_t       *ds_meta     = NULL;
+
+/* datasinks used to build the above two chains */
 static  ds_ctxt_t       *ds_local    = NULL;
 static  ds_ctxt_t       *ds_compress = NULL;
 static  ds_ctxt_t       *ds_tmpfile  = NULL;
@@ -266,15 +270,6 @@ static  ds_ctxt_t       *ds_stream   = NULL;
 static  ds_ctxt_t       *ds_buffer   = NULL;
 
 /* ======== Datafiles iterator ======== */
-typedef struct {
-	fil_system_t *system;
-	fil_space_t  *space;
-	fil_node_t   *node;
-	ibool        started;
-	os_mutex_t   mutex;
-} datafiles_iter_t;
-
-static
 datafiles_iter_t *
 datafiles_iter_new(fil_system_t *f_system)
 {
@@ -291,7 +286,6 @@ datafiles_iter_new(fil_system_t *f_system)
 	return it;
 }
 
-static
 fil_node_t *
 datafiles_iter_next(datafiles_iter_t *it)
 {
@@ -329,7 +323,6 @@ end:
 	return new_node;
 }
 
-static
 void
 datafiles_iter_free(datafiles_iter_t *it)
 {
@@ -421,6 +414,7 @@ enum options_xtrabackup
   OPT_INNODB_THREAD_SLEEP_DELAY,
   OPT_XTRA_DEBUG_SYNC,
   OPT_XTRA_COMPACT,
+  OPT_XTRA_REBUILD_INDEXES,
   OPT_DEFAULTS_GROUP
 };
 
@@ -712,6 +706,12 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   {"compact", OPT_XTRA_COMPACT,
    "Create a compact backup by skipping secondary index pages.",
    (G_PTR*) &xtrabackup_compact, (G_PTR*) &xtrabackup_compact,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"rebuild_indexes", OPT_XTRA_REBUILD_INDEXES,
+   "Rebuild secondary indexes in InnoDB tables after applying the log. "
+   "Only has effect with --prepare.",
+   (G_PTR*) &xtrabackup_rebuild_indexes, (G_PTR*) &xtrabackup_rebuild_indexes,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
   {"defaults_group", OPT_DEFAULTS_GROUP, "defaults group in config file (default \"mysqld\").",
@@ -1303,8 +1303,9 @@ static
 my_bool
 xtrabackup_read_metadata(char *filename)
 {
-	FILE *fp;
-	my_bool r = TRUE;
+	FILE	*fp;
+	my_bool	 r = TRUE;
+	int	 t;
 
 	fp = fopen(filename,"r");
 	if(!fp) {
@@ -1331,7 +1332,12 @@ xtrabackup_read_metadata(char *filename)
 			!= 1) {
 		metadata_last_lsn = 0;
 	}
-
+	/* Optional field */
+	if (fscanf(fp, "compact = %d\n", &t) == 1) {
+		xtrabackup_compact = (t == 1);
+	} else {
+		xtrabackup_compact = 0;
+	}
 end:
 	fclose(fp);
 
@@ -1348,11 +1354,13 @@ xtrabackup_print_metadata(char *buf, size_t buf_len)
 		 "backup_type = %s\n"
 		 "from_lsn = %llu\n"
 		 "to_lsn = %llu\n"
-		 "last_lsn = %llu\n",
+		 "last_lsn = %llu\n"
+		 "compact = %d\n",
 		 metadata_type,
 		 metadata_from_lsn,
 		 metadata_to_lsn,
-		 metadata_last_lsn);
+		 metadata_last_lsn,
+		 xtrabackup_compact == TRUE);
 }
 
 /***********************************************************************
@@ -3677,11 +3685,6 @@ not_consistent:
 	os_file_close(src_file);
 	src_file = XB_FILE_UNDEFINED;
 
-	/* Backup log parameters */
-	innobase_log_group_home_dir_backup = innobase_log_group_home_dir;
-	innobase_log_file_size_backup      = innobase_log_file_size;
-	innobase_log_files_in_group_backup = innobase_log_files_in_group;
-
 	/* fake InnoDB */
 	innobase_log_group_home_dir = NULL;
 	innobase_log_file_size      = file_size;
@@ -4236,11 +4239,6 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	if (!xtrabackup_logfile_is_renamed)
 		return(FALSE);
 
-	/* Restore log parameters */
-	innobase_log_group_home_dir = innobase_log_group_home_dir_backup;
-	innobase_log_file_size      = innobase_log_file_size_backup;
-	innobase_log_files_in_group = innobase_log_files_in_group_backup;
-
 	/* rename 'ib_logfile0' to 'xtrabackup_logfile' */
 	if(!xtrabackup_incremental_dir) {
 		sprintf(dst_path, "%s/ib_logfile0", xtrabackup_target_dir);
@@ -4308,6 +4306,10 @@ static void
 xtrabackup_prepare_func(void)
 {
 	ulint	err;
+	datafiles_iter_t	*it;
+	fil_node_t		*node;
+	fil_space_t		*space;
+	char			 metadata_path[FN_REFLEN];
 
 	/* cd to target-dir */
 
@@ -4325,11 +4327,10 @@ xtrabackup_prepare_func(void)
 
 	/* read metadata of target */
 	{
-		char	filename[FN_REFLEN];
+		sprintf(metadata_path, "%s/%s", xtrabackup_target_dir,
+			XTRABACKUP_METADATA_FILENAME);
 
-		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
-
-		if (!xtrabackup_read_metadata(filename))
+		if (!xtrabackup_read_metadata(metadata_path))
 			msg("xtrabackup: error: xtrabackup_read_metadata()\n");
 
 		if (!strcmp(metadata_type, "full-backuped")) {
@@ -4372,20 +4373,41 @@ skip_check:
 	os_sync_init();
 	sync_init();
 	os_io_init_simple();
+	mem_init(srv_mem_pool_size);
+
 	if(xtrabackup_init_temp_log())
 		goto error;
 
-	if(innodb_init_param())
+	if(innodb_init_param()) {
 		goto error;
+	}
+
+	/* Expand compacted datafiles */
+
+	if (xtrabackup_compact) {
+		srv_compact_backup = TRUE;
+
+		if (!xb_expand_datafiles()) {
+			goto error;
+		}
+
+		/* Reset the 'compact' flag in xtrabackup_checkpoints so we
+		don't expand on subsequent invocations. */
+		xtrabackup_compact = FALSE;
+		if (!xtrabackup_write_metadata(metadata_path)) {
+			msg("xtrabackup: error: xtrabackup_write_metadata() "
+			    "failed\n");
+			goto error;
+		}
+	}
 
 	xb_normalize_init_values();
 
-	mem_init(srv_mem_pool_size);
 	if (xtrabackup_incremental) {
 		err = xb_data_files_init();
 		if (err != DB_SUCCESS) {
-			msg("xtrabackup: error: xb_data_files_init() failed with"
-			    "error code %lu\n", err);
+			msg("xtrabackup: error: xb_data_files_init() failed "
+			    "with error code %lu\n", err);
 			goto error;
 		}
 
@@ -4403,13 +4425,14 @@ skip_check:
 	os_sync_mutex = NULL;
 	ut_free_all_mem();
 
-	/* check the accessibility of target-dir */
-	/* ############# TODO ##################### */
-
-	if(innodb_init_param())
+	/* Reset the configuration as it might have been changed by
+	xb_data_files_init(). */
+	if(innodb_init_param()) {
 		goto error;
+	}
 
 	srv_apply_log_only = (ibool) xtrabackup_apply_log_only;
+	srv_rebuild_indexes = (ibool) xtrabackup_rebuild_indexes;
 
 	/* increase IO threads */
 	if(srv_n_file_io_threads < 10) {
@@ -4424,214 +4447,199 @@ skip_check:
 	if(innodb_init())
 		goto error;
 
-	/* align space sizes along with fsp header */
-	{
-	fil_system_t*	f_system = fil_system;
-	fil_space_t*	space;
+	it = datafiles_iter_new(fil_system);
+	if (it == NULL) {
+		msg("xtrabackup: Error: datafiles_iter_new() failed.\n");
+		exit(EXIT_FAILURE);
+	}
 
-	mutex_enter(&(f_system->mutex));
-	space = UT_LIST_GET_FIRST(f_system->space_list);
+	while ((node = datafiles_iter_next(it)) != NULL) {
+		byte		*header;
+		ulint		 size;
+		ulint		 actual_size;
+		mtr_t		 mtr;
+		buf_block_t	*block;
+		ulint		 flags;
 
-	while (space != NULL) {
-		byte*	header;
-		ulint	size;
-		ulint	actual_size;
-		mtr_t	mtr;
-		buf_block_t*	block;
-		ulint	flags;
+		space = node->space;
 
-		if (space->purpose == FIL_TABLESPACE) {
-			mutex_exit(&(f_system->mutex));
-
-			mtr_start(&mtr);
-
-			mtr_s_lock(fil_space_get_latch(space->id, &flags), &mtr);
-
-			block = buf_page_get(space->id,
-					     dict_table_flags_to_zip_size(flags),
-					     0, RW_S_LATCH, &mtr);
-			header = FIL_PAGE_DATA /*FSP_HEADER_OFFSET*/
-				+ buf_block_get_frame(block);
-
-			size = mtr_read_ulint(header + 8 /* FSP_SIZE */, MLOG_4BYTES, &mtr);
-
-			mtr_commit(&mtr);
-
-			fil_extend_space_to_desired_size(&actual_size, space->id, size);
-
-			mutex_enter(&(f_system->mutex));
+		/* Align space sizes along with fsp header. We want to process
+		each space once, so skip all nodes except the first one in a
+		multi-node space. */
+		if (UT_LIST_GET_PREV(chain, node) != NULL) {
+			continue;
 		}
 
-		space = UT_LIST_GET_NEXT(space_list, space);
+		mtr_start(&mtr);
+
+		mtr_s_lock(fil_space_get_latch(space->id, &flags), &mtr);
+
+		block = buf_page_get(space->id,
+				     dict_table_flags_to_zip_size(flags),
+				     0, RW_S_LATCH, &mtr);
+		header = FSP_HEADER_OFFSET + buf_block_get_frame(block);
+
+		size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES,
+				      &mtr);
+
+		mtr_commit(&mtr);
+
+		fil_extend_space_to_desired_size(&actual_size, space->id, size);
 	}
 
-	mutex_exit(&(f_system->mutex));
-	}
-
-
+	datafiles_iter_free(it);
 
 	if (xtrabackup_export) {
 		msg("xtrabackup: export option is specified.\n");
-		if (innobase_file_per_table) {
-			fil_system_t*	f_system = fil_system;
-			fil_space_t*	space;
-			fil_node_t*	node;
-			os_file_t	info_file = XB_FILE_UNDEFINED;
-			char		info_file_path[FN_REFLEN];
-			ibool		success;
-			char		table_name[FN_REFLEN];
+		os_file_t	info_file = XB_FILE_UNDEFINED;
+		char		info_file_path[FN_REFLEN];
+		ibool		success;
+		char		table_name[FN_REFLEN];
 
-			byte*		page;
-			byte*		buf = NULL;
+		byte*		page;
+		byte*		buf = NULL;
 
-			buf = ut_malloc(UNIV_PAGE_SIZE * 2);
-			page = ut_align(buf, UNIV_PAGE_SIZE);
+		buf = ut_malloc(UNIV_PAGE_SIZE * 2);
+		page = ut_align(buf, UNIV_PAGE_SIZE);
 
-			/* flush insert buffer at shutdwon */
-			innobase_fast_shutdown = 0;
+		/* flush insert buffer at shutdwon */
+		innobase_fast_shutdown = 0;
 
-			mutex_enter(&(f_system->mutex));
+		it = datafiles_iter_new(fil_system);
+		if (it == NULL) {
+			msg("xtrabackup: Error: datafiles_iter_new() "
+			    "failed.\n");
+			exit(EXIT_FAILURE);
+		}
+		while ((node = datafiles_iter_next(it)) != NULL) {
+			int		 len;
+			char		*next, *prev, *p;
+			dict_table_t*	 table;
+			dict_index_t*	 index;
+			ulint		 n_index;
 
-			space = UT_LIST_GET_FIRST(f_system->space_list);
-			while (space != NULL) {
-				/* treat file_per_table only */
-				if (space->purpose != FIL_TABLESPACE
-				    || trx_sys_sys_space(space->id))
-				{
-					space = UT_LIST_GET_NEXT(space_list, space);
-					continue;
-				}
+			space = node->space;
 
-				node = UT_LIST_GET_FIRST(space->chain);
-				while (node != NULL) {
-					int len;
-					char *next, *prev, *p;
-					dict_table_t*	table;
-					dict_index_t*	index;
-					ulint		n_index;
+			/* treat file_per_table only */
+			if (trx_sys_sys_space(space->id)) {
+				continue;
+			}
 
-					/* node exist == file exist, here */
-					strncpy(info_file_path, node->name, FN_REFLEN);
-					len = strlen(info_file_path);
-					info_file_path[len - 3] = 'e';
-					info_file_path[len - 2] = 'x';
-					info_file_path[len - 1] = 'p';
+			/* node exist == file exist, here */
+			strncpy(info_file_path, node->name, FN_REFLEN);
+			len = strlen(info_file_path);
+			info_file_path[len - 3] = 'e';
+			info_file_path[len - 2] = 'x';
+			info_file_path[len - 1] = 'p';
 
-					p = info_file_path;
-					prev = NULL;
-					while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
-					{
-						prev = p;
-						p = next + 1;
-					}
-					info_file_path[len - 4] = 0;
-					strncpy(table_name, prev, FN_REFLEN);
+			p = info_file_path;
+			prev = NULL;
+			while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
+			{
+				prev = p;
+				p = next + 1;
+			}
+			info_file_path[len - 4] = 0;
+			strncpy(table_name, prev, FN_REFLEN);
 
-					info_file_path[len - 4] = '.';
+			info_file_path[len - 4] = '.';
 
-					mutex_exit(&(f_system->mutex));
-					mutex_enter(&(dict_sys->mutex));
+			mutex_enter(&(dict_sys->mutex));
 
-					table = dict_table_get_low(table_name);
-					if (!table) {
-						msg("xtrabackup: error: "
-						    "cannot find dictionary "
-						    "record of table %s\n",
-						    table_name);
-						goto next_node;
-					}
-					index = dict_table_get_first_index(table);
-					n_index = UT_LIST_GET_LEN(table->indexes);
-					if (n_index > 31) {
-						msg("xtrabackup: error: "
-						    "sorry, cannot export over "
-						    "31 indexes for now.\n");
-						goto next_node;
-					}
+			table = dict_table_get_low(table_name);
+			if (!table) {
+				msg("xtrabackup: error: "
+				    "cannot find dictionary "
+				    "record of table %s\n",
+				    table_name);
+				goto next_node;
+			}
+			index = dict_table_get_first_index(table);
+			n_index = UT_LIST_GET_LEN(table->indexes);
+			if (n_index > 31) {
+				msg("xtrabackup: error: "
+				    "sorry, cannot export over "
+				    "31 indexes for now.\n");
+				goto next_node;
+			}
 
-					/* init exp file */
-					bzero(page, UNIV_PAGE_SIZE);
-					mach_write_to_4(page    , 0x78706f72UL);
-					mach_write_to_4(page + 4, 0x74696e66UL);/*"xportinf"*/
-					mach_write_to_4(page + 8, n_index);
-					strncpy((char *) page + 12,
-						table_name, 500);
+			/* init exp file */
+			bzero(page, UNIV_PAGE_SIZE);
+			mach_write_to_4(page    , 0x78706f72UL);
+			mach_write_to_4(page + 4, 0x74696e66UL);/*"xportinf"*/
+			mach_write_to_4(page + 8, n_index);
+			strncpy((char *) page + 12,
+				table_name, 500);
 
-					msg("xtrabackup: export metadata of "
-					    "table '%s' to file `%s` "
-					    "(%lu indexes)\n",
-					    table_name, info_file_path,
-					    n_index);
+			msg("xtrabackup: export metadata of "
+			    "table '%s' to file `%s` "
+			    "(%lu indexes)\n",
+			    table_name, info_file_path,
+			    n_index);
 
-					n_index = 1;
-					while (index) {
-						mach_write_to_8(page + n_index * 512, index->id);
-						mach_write_to_4(page + n_index * 512 + 8,
+			n_index = 1;
+			while (index) {
+				mach_write_to_8(page + n_index * 512, index->id);
+				mach_write_to_4(page + n_index * 512 + 8,
 #if (MYSQL_VERSION_ID < 50100)
-								index->tree->page);
+						index->tree->page
 #else /* MYSQL_VERSION_ID < 51000 */
-								index->page);
-#endif
-					strncpy((char *) page + n_index * 512 +
-						12, index->name, 500);
-
-						msg("xtrabackup:     name=%s, "
-						    "id.low=%lu, page=%lu\n",
-						    index->name,
-#if (MYSQL_VERSION_ID < 50500)
-						    index->id.low,
-#else
-						    (ulint)(index->id &
-							    0xFFFFFFFFUL),
-#endif
-#if (MYSQL_VERSION_ID < 50100)
-						    index->tree->page
-#else /* MYSQL_VERSION_ID < 51000 */
-						(ulint) index->page
+				index->page
 #endif
 						);
-						index = dict_table_get_next_index(index);
-						n_index++;
-					}
+				strncpy((char *) page + n_index * 512 +
+					12, index->name, 500);
 
-					srv_normalize_path_for_win(info_file_path);
-					info_file = xb_file_create(
-						info_file_path,
-						OS_FILE_OVERWRITE,
-						OS_FILE_NORMAL, OS_DATA_FILE,
-						&success);
-					if (!success) {
-						os_file_get_last_error(TRUE);
-						goto next_node;
-					}
-					success = os_file_write(info_file_path, info_file, page,
-								0, 0, UNIV_PAGE_SIZE);
-					if (!success) {
-						os_file_get_last_error(TRUE);
-						goto next_node;
-					}
-					success = xb_file_flush(info_file);
-					if (!success) {
-						os_file_get_last_error(TRUE);
-						goto next_node;
-					}
-next_node:
-					if (info_file != XB_FILE_UNDEFINED) {
-						os_file_close(info_file);
-						info_file = XB_FILE_UNDEFINED;
-					}
-					mutex_exit(&(dict_sys->mutex));
-					mutex_enter(&(f_system->mutex));
+				msg("xtrabackup:     name=%s, "
+				    "id.low=%lu, page=%lu\n",
+				    index->name,
+#if (MYSQL_VERSION_ID < 50500)
+				    index->id.low,
+#else
+				    (ulint)(index->id &
+					    0xFFFFFFFFUL),
+#endif
+#if (MYSQL_VERSION_ID < 50100)
+				    index->tree->page
+#else /* MYSQL_VERSION_ID < 51000 */
+				    (ulint) index->page
+#endif
+				    );
+				index = dict_table_get_next_index(index);
+				n_index++;
 
-					node = UT_LIST_GET_NEXT(chain, node);
+				srv_normalize_path_for_win(info_file_path);
+				info_file = xb_file_create(
+					info_file_path,
+					OS_FILE_OVERWRITE,
+					OS_FILE_NORMAL, OS_DATA_FILE,
+					&success);
+				if (!success) {
+					os_file_get_last_error(TRUE);
+					goto next_node;
 				}
-
-				space = UT_LIST_GET_NEXT(space_list, space);
+				success = os_file_write(info_file_path,
+							info_file, page,
+							0, 0, UNIV_PAGE_SIZE);
+				if (!success) {
+					os_file_get_last_error(TRUE);
+					goto next_node;
+				}
+				success = xb_file_flush(info_file);
+				if (!success) {
+					os_file_get_last_error(TRUE);
+					goto next_node;
+				}
+next_node:
+				if (info_file != XB_FILE_UNDEFINED) {
+					os_file_close(info_file);
+					info_file = XB_FILE_UNDEFINED;
+				}
+				mutex_exit(&(dict_sys->mutex));
 			}
-			mutex_exit(&(f_system->mutex));
-
-			ut_free(buf);
 		}
+
+		ut_free(buf);
 	}
 
 	/* print binlog position (again?) */
@@ -4918,12 +4926,6 @@ next_opt:
 	if (xtrabackup_export && innobase_file_per_table == FALSE) {
 		msg("xtrabackup: error: --export option can only "
 		    "be used with --innodb-file-per-table=ON.\n");
-		exit(EXIT_FAILURE);
-	}
-
-	if (xtrabackup_incremental && xtrabackup_compact) {
-		msg("xtrabackup: error: --compact cannot be used with "
-		    "incremental backups.\n");
 		exit(EXIT_FAILURE);
 	}
 
