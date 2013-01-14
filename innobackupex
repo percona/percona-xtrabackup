@@ -19,6 +19,7 @@ use File::Temp;
 use File::Find;
 use File::Copy;
 use English qw(-no_match_vars);
+use Time::HiRes qw(usleep);
 
 # version of this script
 my $innobackup_version = '1.5.1-xtrabackup';
@@ -894,7 +895,7 @@ sub wait_for_ibbackup_suspend {
     print STDERR "$prefix Waiting for ibbackup (pid=$ibbackup_pid) to suspend\n";
     print STDERR "$prefix Suspend file '$suspend_file'\n\n";
     for (;;) {
-        sleep 2;
+        usleep(100000);
         last if -e $suspend_file;
 
         # check that ibbackup child process is still alive
