@@ -38,6 +38,10 @@ Options
 
    This option accepts a string argument that specifies what file to read the default MySQL options from. It is also passed directly to :program:`xtrabackup` 's defaults-file option. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
 
+.. option:: --defaults-extra-file=[MY.CNF]
+
+   This option specifies what extra file to read the default |MySQL| options from before the standard defaults-file. The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-extra-file option. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
+
 .. option:: --defaults-group=GROUP-NAME
 
    This option accepts a string argument that specifies the group which should be read from the configuration file. This is needed if you use mysqld_multi.
