@@ -21,8 +21,6 @@ Bugs Fixed
 
   * In case ``safe-slave-backup-timeout`` was reached when using the :option:`safe-slave-backup` option, ``SQL_THREAD`` was left in stopped state causing the slave thread to lag behind. This was fixed by checking the initial ``SQL_THREAD`` state and starting it before terminating with a timeout error and starting the ``SQL_THREAD`` only if it was running initially. Bug fixed :bug:`1037379` (*Alexey Kopytov*).
   
-  * In case of streaming backups, |innobackupex| would resume the Xtrabackup process and then wait for it to finish before running ``UNLOCK TABLES``. This caused database to be unnecessarily locked with ``FLUSH TABLES WITH READ LOCK``. Innobackupex now waits only till log copying is finished to unlock the databases. Bug fixed :bug:`1055989` (*Alexey Kopytov*).
-
   * |Xtrabackup| would fail on ``--apply-log`` when filesystem didn't support Linux AIO. Bug fixed :bug:`1065561` (*Alexey Kopytov*).
 
   * |Xtrabackup| binary would ignore :option:`innodb_use_native_aio` when it's specified either in :file:`my.cnf` or as a command line option. Bug fixed :bug:`1068459` (*Alexey Kopytov*).
