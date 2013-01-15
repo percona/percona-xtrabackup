@@ -3,7 +3,8 @@
 # A script for making backups of InnoDB and MyISAM tables, indexes and .frm
 # files.
 #
-# Copyright 2003, 2009 Innobase Oy and Percona Inc 2009-2012. All Rights Reserved.
+# Copyright 2003, 2009 Innobase Oy and Percona Ireland Ltd 2009-2012.
+# All Rights Reserved.
 #
 
 use strict;
@@ -18,6 +19,7 @@ use File::Temp;
 use File::Find;
 use File::Copy;
 use English qw(-no_match_vars);
+use Time::HiRes qw(usleep);
 
 # version of this script
 my $innobackup_version = '1.5.1-xtrabackup';
@@ -26,7 +28,7 @@ my $innobackup_script = basename($0);
 # copyright notice
 my $copyright_notice =
 "InnoDB Backup Utility v${innobackup_version}; Copyright 2003, 2009 Innobase Oy
-and Percona Inc 2009-2012.  All Rights Reserved.
+and Percona Ireland Ltd 2009-2012.  All Rights Reserved.
 
 This software is published under
 the GNU GENERAL PUBLIC LICENSE Version 2, June 1991.
@@ -96,6 +98,7 @@ my $option_no_lock = '';
 my $option_ibbackup_binary = 'autodetect';
 
 my $option_defaults_file = '';
+my $option_defaults_extra_file = '';
 my $option_incremental = '';
 my $option_incremental_basedir = '';
 my $option_incremental_dir = '';
@@ -421,7 +424,7 @@ sub backup {
     }
 
 
-    # backup .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files
+    # backup non-InnoDB files and tables
     # (or finalize the backup by syncing changes if using rsync)
     backup_files(0);
 
@@ -570,11 +573,11 @@ sub if_directory_exists_and_empty {
     my $empty_dir = shift;
     my $is_directory_empty_comment = shift;
     if (! -d $empty_dir) {
-        die "$is_directory_empty_comment directory does not exist!";
+        die "$is_directory_empty_comment directory '$empty_dir' does not exist!";
     }
-    opendir (my $dh, $empty_dir) or die "Not a directory";
+    opendir (my $dh, $empty_dir) or die "$is_directory_empty_comment directory '$empty_dir': Not a directory";
     if ( ! scalar( grep { $_ ne "." && $_ ne ".." && $_ ne "my.cnf" && $_ ne "master.info"} readdir($dh)) == 0) {
-        die "$is_directory_empty_comment directory is not empty!";
+        die "$is_directory_empty_comment directory '$empty_dir' is not empty!";
     }
     closedir($dh);
 }
@@ -831,6 +834,10 @@ sub apply_log {
         $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
     }
 
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
+    }
+
     if ($option_defaults_group) {
         $options = $options . " --defaults-group=\"$option_defaults_group\" ";
     }
@@ -912,7 +919,7 @@ sub wait_for_ibbackup_suspend {
     print STDERR "$prefix Waiting for ibbackup (pid=$ibbackup_pid) to suspend\n";
     print STDERR "$prefix Suspend file '$suspend_file'\n\n";
     for (;;) {
-        sleep 2;
+        usleep(100000);
         last if -e $suspend_file;
 
         # check that ibbackup child process is still alive
@@ -1000,6 +1007,10 @@ sub start_ibbackup {
 
     if ($option_defaults_file) {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
+    }
+
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
     }
 
     if ($option_defaults_group) {
@@ -1127,11 +1138,9 @@ sub start_ibbackup {
                         if($option_include) {
                             my $table_name;
 
-                            $table_name = substr($file, rindex($file, '/'));
-                            $table_name = substr($table_name, 1, rindex($table_name, '.') - 1);
-                            $table_name = $subdir . "." . $table_name;
+                            $table_name = get_table_name($file);
 
-                            if (!($table_name =~ /$option_include/)) {
+                            if (!("$subdir.$table_name" =~ /$option_include/)) {
                                 print STDERR "'$file' is skipped.\n";
                                 next;
                             }
@@ -1176,6 +1185,10 @@ sub get_mysql_options {
     # this option has to be first
     if ($option_defaults_file) {
         $options = "$options --defaults-file='$option_defaults_file'";
+    }
+
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
     }
 
     if ($option_mysql_password) {
@@ -1753,7 +1766,12 @@ sub init {
     } elsif ($option_copy_back || $option_move_back) {
         #$backup_config_file = $backup_dir . '/backup-my.cnf';
         #read_config_file($backup_config_file, \%backup_config);
-    }         
+    }
+
+    if ( -e "$suspend_file" ) {
+        print STDERR "WARNING : A left over instance of suspend file '$suspend_file' was found.\n";
+        unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+    }
 }
 
 
@@ -1869,6 +1887,7 @@ sub check_args {
                         'socket=s' => \$option_mysql_socket,
                         'no-timestamp' => \$option_no_timestamp,
                         'defaults-file=s' => \$option_defaults_file,
+                        'defaults-extra-file=s' => \$option_defaults_extra_file,
                         'incremental' => \$option_incremental,
                         'incremental-basedir=s' => \$option_incremental_basedir,
                         'incremental-lsn=s' => \$option_incremental_lsn,
@@ -1901,6 +1920,12 @@ sub check_args {
         # print program version and copyright
         print_version();
         exit(0);
+    }
+
+    if ($option_defaults_file && $option_defaults_extra_file) {
+        print STDERR "$prefix --defaults-file and --defaults-extra-file " .
+            "options are mutually exclusive";
+        exit(1);
     }
 
     if ($option_copy_back && $option_move_back) {
@@ -2080,7 +2105,7 @@ sub backup_files {
     my @list;
     my $file;
     my $database;
-    my $wildcard = '*.{frm,MYD,MYI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
+    my $wildcard = '*.{frm,MYD,MYI,MAD,MAI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
     my $rsync_file_list;
     my $operation;
     my $rsync_tmpfile_pass1 = "$option_tmpdir/xtrabackup_rsyncfiles_pass1";
@@ -2111,9 +2136,8 @@ sub backup_files {
     } else {
 	$operation = "to backup";
     }
-    print STDERR "\n$now  $prefix Starting $operation .frm, .MRG, .MYD, .MYI,\n";
-    print STDERR "$prefix .TRG, .TRN, .ARM, .ARZ, .CSM, .CSV and .opt files in\n";
-    print STDERR "$prefix subdirectories of '$source_dir'\n";
+    print STDERR "\n$now  $prefix Starting $operation non-InnoDB tables and files\n";
+    print STDERR "$prefix in subdirectories of '$source_dir'\n";
     # loop through all database directories
     while (defined($database = readdir(DIR))) {
         my $print_each_file = 0;
@@ -2139,7 +2163,7 @@ sub backup_files {
 
         # copy files of this database
 	opendir(DBDIR, "$source_dir/$database");
-	@list = grep(/\.(frm|MYD|MYI|MRG|TRG|TRN|ARM|ARZ|CSM|CSV|opt|par)$/, readdir(DBDIR)); 
+	@list = grep(/\.(frm|MYD|MYI|MAD|MAI|MRG|TRG|TRN|ARM|ARZ|CSM|CSV|opt|par)$/, readdir(DBDIR));
 	closedir DBDIR;
         $file_c = @list;
         if ($file_c <= $backup_file_print_limit) {
@@ -2152,7 +2176,8 @@ sub backup_files {
             next unless check_if_required($database, $file);
 
 	    if($option_include) {
-	      if (!("$database.$file" =~ /$option_include/)) {
+	      my $table_name = get_table_name($file);
+	      if (!("$database.$table_name" =~ /$option_include/)) {
 	        print STDERR "$database.$file is skipped because it does not match $option_include.\n";
 	        next;
 	      }
@@ -2257,7 +2282,7 @@ sub backup_files {
 	$operation = "backing up";
     }
     $now = current_time();
-    print STDERR "$now  $prefix Finished $operation .frm, .MRG, .MYD, .MYI, .TRG, .TRN, .ARM, .ARZ, .CSV, .CSM and .opt files\n\n";
+    print STDERR "$now  $prefix Finished $operation non-InnoDB tables and files\n\n";
  }
 
 
@@ -2353,6 +2378,10 @@ sub read_config_file {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
     } elsif ($option_apply_log) {
         $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
+    }
+
+    if ($option_defaults_extra_file) {
+        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
     }
 
     if ($option_defaults_group) {
@@ -2482,6 +2511,26 @@ sub get_option {
     return ${$group_hash_ref}{$option_name};
 }
 
+# get_table_name subroutine returns table name of specified file.
+#    Parameters:
+#       $_[0]        table path
+#    Return value:
+#       1 table name
+#
+sub get_table_name {
+   my $table_path = shift;
+   my $filename;
+   my $table;
+
+   # get the last component in the table pathname 
+   $filename = (reverse(split(/\//, $table_path)))[0];
+   # get name of the table by removing file suffix
+   $table = (split(/\./, $filename))[0];
+   # and partition suffix
+   $table = (split('#P#', $table))[0];
+
+   return $table;
+}
 
 # check_if_required subroutine returns 1 if the specified database and
 # table needs to be backed up.
@@ -2495,7 +2544,6 @@ sub check_if_required {
    my ( $db, $table_path ) = @_;
    my $db_count  = scalar keys %databases_list;
    my $tbl_count = scalar keys %table_list;
-   my $filename;
    my $table;
 
    if ( $db_count == 0 && $tbl_count == 0 ) {
@@ -2505,10 +2553,7 @@ sub check_if_required {
    }
    else {
       if ( $table_path ) {
-         # get the last component in the table pathname 
-         $filename = (reverse(split(/\//, $table_path)))[0];
-         # get name of the table by removing file suffix
-         $table = (split(/\./, $filename))[0];
+         $table = get_table_name($table_path);
       }
    }
 
@@ -2647,8 +2692,12 @@ sub set_xtrabackup_version {
 #  MySQL 5.0.* - xtrabackup_51
 #  MySQL 5.1.* - xtrabackup_51
 #  MySQL 5.1.* with InnoDB plugin - xtrabackup
+#  MariaDB 5.1.* - xtrabackup
+#  MariaDB 5.2.* - xtrabackup
+#  MariaDB 5.3.* - xtrabackup
 #  Percona Server >= 11.0 - xtrabackup
-#  MySQL 5.5.* - xtrabackup_55 
+#  MySQL 5.5.* - xtrabackup_55
+#  MariaDB 5.5.* - xtrabackup_55
 
 my @lines;
 my $var_version = '';
@@ -2676,6 +2725,12 @@ if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
 }
 if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+}
+if($var_version =~ m/5\.2\.\d/){
+    $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+}
+if($var_version =~ m/5\.3\.\d/){
+    $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
 }
 if($var_version =~ m/5\.5\.\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
@@ -2802,10 +2857,11 @@ the backup in the given directory (which must not exist).  This
 command makes a complete backup of all MyISAM and InnoDB tables and
 indexes in all databases or in all of the databases specified with the
 --databases option.  The created backup contains .frm, .MRG, .MYD,
-.MYI, .TRG, .TRN, .ARM, .ARZ, .CSM, CSV, .opt, .par, and InnoDB data and log files.
-The MY.CNF options file defines the location of the database.  This command
-connects to the MySQL server using the mysql client program, and runs
-xtrabackup as a child process.
+.MYI, .MAD, .MAI, .TRG, .TRN, .ARM, .ARZ, .CSM, CSV, .opt, .par, and
+InnoDB data and log files.  The MY.CNF options file defines the
+location of the database.  This command connects to the MySQL server
+using the mysql client program, and runs xtrabackup as a child
+process.
 
 The --apply-log command prepares a backup for starting a MySQL
 server on the backup. This command recovers InnoDB data files as specified
@@ -2860,6 +2916,10 @@ This option specifies the list of databases that innobackupex should back up. Th
 =item --defaults-file=[MY.CNF]
 
 This option specifies what file to read the default MySQL options from.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-file option. See the xtrabackup documentation for details.
+
+=item --defaults-extra-file=[MY.CNF]
+
+This option specifies what extra file to read the default MySQL options from before the standard defaults-file.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-extra-file option. See the xtrabackup documentation for details.
 
 =item --export
 

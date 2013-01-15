@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011 Percona Inc.
+Copyright (c) 2011 Percona Ireland Ltd.
 
 Data sink interface.
 
@@ -26,15 +26,17 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 struct datasink_struct;
 
-typedef struct {
+typedef struct ds_ctxt {
 	struct datasink_struct	*datasink;
 	char 			*root;
 	void			*ptr;
+	struct ds_ctxt		*pipe_ctxt;
 } ds_ctxt_t;
 
 typedef struct {
-	void *ptr;
-	char *path;
+	void 			*ptr;
+	char 			*path;
+	struct datasink_struct	*datasink;
 } ds_file_t;
 
 typedef struct datasink_struct {
