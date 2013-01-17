@@ -64,6 +64,9 @@ An SQL example of creating a database user with the minimum privileges required 
 .. code-block:: sql
 
   mysql> CREATE USER 'bkpuser'@'localhost' IDENTIFIED BY 's3cret';
-  mysql> REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'bkpuser';
   mysql> GRANT RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'bkpuser'@'localhost';
   mysql> FLUSH PRIVILEGES;
+
+.. note::
+
+ Connection-related parameters are only recognized in the [client] and [mysql] groups in configuration files. Adding custom groups like [xtrabackup] will work only if XtraBackup binary is used, it will not work with the innobackupex.
