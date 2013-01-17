@@ -84,7 +84,11 @@ Again, the |LSN| should match what you saw from your earlier inspection of the f
 
 Preparing the second incremental backup is a similar process: apply the deltas to the (modified) base backup, and you will roll its data forward in time to the point of the second incremental backup: ::
 
-  xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base \
+  xtrabackup --prepare --target-dir=/data/backups/base \
   --incremental-dir=/data/backups/inc2
+
+.. note::
+ 
+ :option:`--apply-log-only` should be used when merging all incrementals except the last one. That's why the previous line doesn't contain the :option:`--apply-log-only` option. Even if the :option:`--apply-log-only` was used on the last step, backup would still be consistent but in that case server would perform the rollback phase.
 
 If you wish to avoid the notice that |InnoDB| was not shut down normally, when you have applied the desired deltas to the base backup, you can run :option:`--prepare` again without disabling the rollback phase.
