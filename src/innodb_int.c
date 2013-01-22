@@ -28,7 +28,19 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <srv0srv.h>
 #include <ha_prototypes.h>
 #include <trx0trx.h>
+#include <buf0flu.h>
+#ifdef INNODB_VERSION_SHORT
+# include <page0zip.h>
+#endif
+#if MYSQL_VERSION_ID < 50500
+# include <row0types.h>
+#endif
 #include "common.h"
+
+/* Required by innobase_rec*() stubs */
+#if MYSQL_VERSION_ID >= 50500
+typedef struct st_table TABLE;
+#endif
 
 extern long innobase_lock_wait_timeout;
 
@@ -901,6 +913,27 @@ innobase_mysql_tmpfile(void)
 	return(fd2);
 }
 
+/* The following is used by row0merge for error reporting. Define a stub so we
+can use fast index creation from XtraBackup. */
+void
+innobase_rec_reset(
+/*===============*/
+	TABLE*			table __attribute__((unused)))
+{
+}
+
+/* The following is used by row0merge for error reporting. Define a stub so we
+can use fast index creation from XtraBackup. */
+void
+innobase_rec_to_mysql(
+/*==================*/
+	TABLE*			table __attribute__((unused)),
+	const rec_t*		rec __attribute__((unused)),
+	const dict_index_t*	index __attribute__((unused)),
+	const ulint*		offsets __attribute__((unused)))
+{
+}
+
 #if MYSQL_VERSION_ID >= 50507
 /*
    As of MySQL 5.5.7, InnoDB uses thd_wait plugin service.
@@ -923,3 +956,15 @@ void thd_wait_end(MYSQL_THD thd)
 }
 
 #endif /* MYSQL_VERSION_ID >= 50507 */
+
+#ifdef XTRADB_BASED
+/******************************************************************//*******
+Stub for an XtraDB-specific function called from row_merge_build_indexes().*/
+ibool
+thd_expand_fast_index_creation(
+/*================================*/
+	void*	thd __attribute__((unused)))
+{
+	return(FALSE);
+}
+#endif /* XTRADB_BASED */

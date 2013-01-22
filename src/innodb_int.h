@@ -40,10 +40,16 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #  if (MYSQL_VERSION_ID < 50500)
 #    define MACH_READ_64 mach_read_ull
 #    define MACH_WRITE_64 mach_write_ull
+#    define INDEX_ID_T dulint
+#    define INDEX_ID_CMP(a,b) ((a).high != (b).high ?  \
+			       ((a).high - (b).high) : \
+			       ((a).low - (b).low))
 #    define OS_MUTEX_CREATE() os_mutex_create(NULL)
 #  else
 #    define MACH_READ_64 mach_read_from_8
 #    define MACH_WRITE_64 mach_write_to_8
+#    define INDEX_ID_T index_id_t
+#    define INDEX_ID_CMP(a,b) ((a) - (b))
 #    define OS_MUTEX_CREATE() os_mutex_create()
 #  endif
 #  define xb_buf_page_is_corrupted(page, zip_size)	\
@@ -85,6 +91,22 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define XB_HASH_SEARCH(NAME, TABLE, FOLD, DATA, ASSERTION, TEST) \
 	HASH_SEARCH(NAME, TABLE, FOLD, xtrabackup_tables_t*, DATA, ASSERTION, \
 		    TEST)
+
+/* The following constants have been copied from fsp0fsp.c */
+#define FSP_HEADER_OFFSET	FIL_PAGE_DATA	/* Offset of the space header
+						within a file page */
+#define	FSP_SIZE		8	/* Current size of the space in
+					pages */
+#define	FSP_FREE_LIMIT		12	/* Minimum page number for which the
+					free list has not been initialized:
+					the pages >= this limit are, by
+					definition, free; note that in a
+					single-table tablespace where size
+					< 64 pages, this number is 64, i.e.,
+					we have initialized the space
+					about the first extent, but have not
+					physically allocted those pages to the
+					file */
 
 /* ==start === definition at fil0fil.c === */
 // ##################################################################

@@ -53,6 +53,7 @@ ds_create(const char *root, ds_type_t type)
 		break;
 	default:
 		msg("Unknown datasink type: %d\n", type);
+		xb_ad(0);
 		return NULL;
 	}
 

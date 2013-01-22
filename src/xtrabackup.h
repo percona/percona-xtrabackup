@@ -21,6 +21,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #ifndef XB_XTRABACKUP_H
 #define XB_XTRABACKUP_H
 
+#include "datasink.h"
+
 typedef struct {
 	ulint	page_size;
 	ulint	zip_size;
@@ -33,12 +35,38 @@ typedef enum {
     XB_STREAM_FMT_XBSTREAM
 } xb_stream_fmt_t;
 
+/* ======== Datafiles iterator ======== */
+typedef struct {
+	fil_system_t *system;
+	fil_space_t  *space;
+	fil_node_t   *node;
+	ibool        started;
+	os_mutex_t   mutex;
+} datafiles_iter_t;
+
 /* value of the --incremental option */
 extern LSN64 incremental_lsn;
+
+extern char		*xtrabackup_target_dir;
+extern ds_ctxt_t	*ds_meta;
+extern ds_ctxt_t	*ds_data;
 
 void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,
 				const xb_delta_info_t *info);
+
+datafiles_iter_t *datafiles_iter_new(fil_system_t *f_system);
+fil_node_t *datafiles_iter_next(datafiles_iter_t *it);
+void datafiles_iter_free(datafiles_iter_t *it);
+
+/************************************************************************
+Initialize the tablespace memory cache and populate it by scanning for and
+opening data files */
+ulint xb_data_files_init(void);
+
+/************************************************************************
+Destroy the tablespace memory cache. */
+void xb_data_files_close(void);
 
 /***********************************************************************
 Reads the space flags from a given data file and returns the compressed

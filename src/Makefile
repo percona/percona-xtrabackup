@@ -31,6 +31,7 @@ XTRABACKUPOBJS = xtrabackup.o \
 	ds_buffer.o \
 	datasink.o \
 	write_filt.o \
+	compact.o \
 	fil_cur.o \
 	innodb_int.o \
 	xbstream_write.o \
@@ -92,7 +93,7 @@ plugin: $(TARGET) xbstream
 
 # XtraBackup for MySQL 5.5
 5.5: INC = $(COMMON_INC) $(addprefix -isystem$(MYSQL_ROOT_DIR)/, \
-	include storage/innobase/include)
+	include storage/innobase/include sql)
 5.5: INNODBOBJS = $(MYSQL_ROOT_DIR)/storage/innobase/libinnobase.a
 
 ifeq "$(wildcard $(MYSQL_ROOT_DIR)/zlib/.libs/libzlt.a)" ""
@@ -157,7 +158,7 @@ xtradb: $(TARGET) xbstream
 
 # XtraBackup for XtraDB 5.5
 xtradb55: INC = $(COMMON_INC) $(addprefix -isystem$(MYSQL_ROOT_DIR)/, \
-	include storage/innobase/include)
+	include storage/innobase/include sql)
 xtradb55: INNODBOBJS = $(MYSQL_ROOT_DIR)/storage/innobase/libinnobase.a
 ifeq ($(shell uname -s),Linux)
 xtradb55: LIBS += -laio
@@ -189,7 +190,7 @@ xbstream.o xbstream_read.o: %.o: %.c
 xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o ds_buffer.o datasink.o
 	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
-xtrabackup.o: xtrabackup.c xb_regex.h write_filt.h fil_cur.h xtrabackup.h
+xtrabackup.o: xtrabackup.c xb_regex.h write_filt.h fil_cur.h xtrabackup.h compact.h
 
 $(TARGET): $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBARCHIVE_A)
 	$(CC) $(CFLAGS) $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \

@@ -119,6 +119,7 @@ my $option_safe_slave_backup = '';
 my $option_safe_slave_backup_timeout = 300;
 
 my $option_compact = '';
+my $option_rebuild_indexes = '';
 
 # name of the my.cnf configuration file
 #my $config_file = '';
@@ -700,6 +701,7 @@ sub copy_back {
         '\.\.?|backup-my\.cnf|xtrabackup_logfile|' .
 	'xtrabackup_binary|xtrabackup_binlog_info|xtrabackup_checkpoints|' .
         '.*\.qp|' .
+        '.*\.pmap|.*\.tmp|' .
 	$iblog_files;
     my $compressed_data_file = '.*\.ibz$';
     my $file;
@@ -807,6 +809,7 @@ sub copy_back {
 sub apply_log {
     my $rcode;
     my $cmdline = '';
+    my $cmdline_copy = '';
     my $options = '';
 
     if ($option_defaults_file) {
@@ -844,6 +847,13 @@ sub apply_log {
 
     # run ibbackup as a child process
     $cmdline = "$option_ibbackup_binary $options";
+
+    # Only use --rebuild-indexes in the first xtrabackup call
+    $cmdline_copy = $cmdline;
+    if ($option_rebuild_indexes) {
+        $cmdline = $cmdline . " --rebuild-indexes"
+    }
+
     $now = current_time();
     print STDERR "\n$now  $prefix Starting ibbackup with command: $cmdline\n\n";
     $rcode = system("$cmdline");
@@ -855,6 +865,7 @@ sub apply_log {
     # We should not create ib_logfile files if we prepare for following incremental applies
     # Also we do not prepare ib_logfile if we applied incremental changes
     if (!( ($option_redo_only) or ($option_incremental_dir))) { 
+        $cmdline = $cmdline_copy;
         $now = current_time();
         print STDERR "\n$now  $prefix Restarting xtrabackup with command: $cmdline\nfor creating ib_logfile*\n\n";
         $rcode = system("$cmdline");
@@ -1045,8 +1056,12 @@ sub start_ibbackup {
     if ($option_stream) {
 	$options = $options . " --stream=$option_stream";
     }
+
     if ($option_compact) {
-	$options = $options. " --compact";
+	$options = $options . " --compact";
+    }
+    if ($option_rebuild_indexes) {
+        $options = $options . " --rebuild-indexes";
     }
 
     $cmdline = "$option_ibbackup_binary $options";
@@ -1767,7 +1782,8 @@ sub check_args {
                         'parallel=i' => \$option_parallel,
                         'safe-slave-backup' => \$option_safe_slave_backup,
                         'safe-slave-backup-timeout=i' => \$option_safe_slave_backup_timeout,
-                        'compact' => \$option_compact
+                        'compact' => \$option_compact,
+                        'rebuild-indexes' => \$option_rebuild_indexes
     );
                         
     if (!$rcode) {
@@ -2829,6 +2845,10 @@ This option specifies the password to use when connecting to the database. It ac
 =item --port=PORT
 
 This option specifies the port to use when connecting to the database server with TCP/IP.  The option accepts a string argument. It is passed to the mysql child process. It is passed to the mysql child process without alteration. See mysql --help for details.
+
+=item --rebuild-indexes
+
+This option only has effect when used together with the --apply-log option and is passed directly to xtrabackup. When used, makes xtrabackup rebuild all secondary indexes after applying the log. This option is normally used to prepare compact backups. See the XtraBackup manual for more information.
 
 =item --redo-only
 
