@@ -13,6 +13,12 @@ Server                          |xtrabackup| binary
 ==============================  ===================
 MySQL 5.1.*                     ``xtrabackup_51``
 MySQL 5.1.* with InnoDB plugin  ``xtrabackup``
-Percona Server 5.1 and 5.5      ``xtrabackup``
 MySQL 5.5.*                     ``xtrabackup_55``
+MariaDB 5.1.* 					``xtrabackup``
+MariaDB 5.2.* 					``xtrabackup``
+MariaDB 5.3.* 					``xtrabackup``
+MariaDB 5.5.* 					``xtrabackup_55``
+Percona Server 5.0		        ``xtrabackup_51``
+Percona Server 5.1		        ``xtrabackup``
+Percona Server 5.5  		    ``xtrabackup_55``
 ==============================  ===================

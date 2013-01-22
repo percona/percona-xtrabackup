@@ -69,7 +69,7 @@ Preparing incremental backups is a bit different than full ones. This is, perhap
 
  * Then, the uncommitted transaction must be rolled back in order to have a ready-to-use backup.
 
-If you replay the commit ed transactions **and** rollback the uncommitted ones on the base backup, you will not be able to add the incremental ones. If you do this on an incremental one, you won't be able to add data from that moment and the remaining increments.
+If you replay the commited transactions **and** rollback the uncommitted ones on the base backup, you will not be able to add the incremental ones. If you do this on an incremental one, you won't be able to add data from that moment and the remaining increments.
 
 Having this in mind, the procedure is very straight-forward using the :option:`--redo-only` option, starting with the base backup: ::
 
@@ -99,6 +99,10 @@ Repeat the procedure with the second one: ::
 
 If the "completed OK!" message was shown, the final data will be in the base backup directory, ``BASE-DIR``.
 
+.. note::
+ 
+ :option:`--redo-only` should be used when merging all incrementals except the last one. That's why the previous line doesn't contain the :option:`--redo-only` option. Even if the :option:`--redo-only` was used on the last step, backup would still be consistent but in that case server would perform the rollback phase.
+
 You can use this procedure to add more increments to the base, as long as you do it in the chronological order that the backups were done. If you omit this order, the backup will be useless. If you have doubts about the order that they must be applied, you can check the file :file:`xtrabackup_checkpoints` at the directory of each one, as shown in the beginning of this section.
 
 Once you put all the parts together, you can prepare again the full backup (base + incrementals) once again to rollback the uncommitted transactions: ::
@@ -123,19 +127,19 @@ Incremental Streaming Backups using xbstream and tar
 
 Incremental streaming backups can be performed with the |xbstream| streaming option. Currently backups are packed in custom **xbstream** format. With this feature taking a BASE backup is needed as well. 
 
- Taking a base backup: :: 
+Taking a base backup: :: 
  
   innobackupex /data/backups
 
- Taking a local backup: ::
+Taking a local backup: ::
 
   innobackupex --incremental --incremental-lsn=LSN-number --stream=xbstream ./ > incremental.xbstream
 
- Unpacking the backup: ::
+Unpacking the backup: ::
 
   xbstream -x < incremental.xbstream 
 
- Taking a local backup and streaming it to the remote server and unpacking it: :: 
+Taking a local backup and streaming it to the remote server and unpacking it: :: 
 
   innobackupex  --incremental --incremental-lsn=LSN-number --stream=xbstream ./ | /
   ssh user@hostname " cat - | xbstream -x -C > /backup-dir/"

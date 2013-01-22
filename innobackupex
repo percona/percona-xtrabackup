@@ -2529,7 +2529,9 @@ sub set_xtrabackup_version {
 #  MariaDB 5.1.* - xtrabackup
 #  MariaDB 5.2.* - xtrabackup
 #  MariaDB 5.3.* - xtrabackup
-#  Percona Server >= 11.0 - xtrabackup
+#  Percona Server 5.0 - xtrabackup_51
+#  Percona Server 5.1 - xtrabackup
+#  Percona Server 5.5 - xtrabackup_55
 #  MySQL 5.5.* - xtrabackup_55
 #  MariaDB 5.5.* - xtrabackup_55
 
@@ -2809,7 +2811,7 @@ Move all the files in a previously made backup from the backup directory to the 
 
 =item --no-lock
 
-Use this option to disable table lock with "FLUSH TABLES WITH READ LOCK". Use it only if ALL your tables are InnoDB and you DO NOT CARE about the binary log position of the backup.
+Use this option to disable table lock with "FLUSH TABLES WITH READ LOCK". Use it only if ALL your tables are InnoDB and you DO NOT CARE about the binary log position of the backup. This option shouldn't be used if there are any DDL statements being executed or if any updates are happening on non-InnoDB tables (this includes the system MyISAM tables in the mysql database), otherwise it could lead to an inconsistent backup. If you are considering to use --no-lock because your backups are failing to acquire the lock, this could be because of incoming replication events preventing the lock from succeeding. Please try using --safe-slave-backup to momentarily stop the replication slave thread, this may help the backup to succeed and you then don't need to resort to using this option.
 
 =item --no-timestamp
 
@@ -2830,7 +2832,7 @@ This option specifies the port to use when connecting to the database server wit
 
 =item --redo-only
 
-This option is passed directly to xtrabackup's --apply-log-only option. This forces xtrabackup to skip the "rollback" phase and do a "redo" only. This is necessary if the backup will have incremental changes applied to it later. See the xtrabackup documentation for details. 
+This option should be used when preparing the base full backup and when merging all incrementals except the last one. This option is passed directly to xtrabackup's --apply-log-only option. This forces xtrabackup to skip the "rollback" phase and do a "redo" only. This is necessary if the backup will have incremental changes applied to it later. See the xtrabackup documentation for details. 
 
 =item --rsync
 

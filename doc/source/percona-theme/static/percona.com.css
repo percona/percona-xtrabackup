@@ -103,7 +103,7 @@ span.subpart
 	float:left;
 	overflow:hidden;
 	padding:20px 0;
-	width:240px;
+	width:220px;
 	zoom:1
 }
 
@@ -112,7 +112,7 @@ span.subpart
         overflow: hidden;
         zoom: 1;
         float: left;
-        width: 240px;
+        width: 220px;
         padding: 20px 0px;
 }
 
@@ -121,7 +121,7 @@ span.subpart
         overflow: hidden;
         zoom: 1;
         float: left;
-        width: 720px;
+        width: 740px;
         height: 35px;
         padding: 30px 0px;
 }

@@ -96,8 +96,8 @@ Options
 
 .. option:: --no-lock
 
-   Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use it only if ALL your tables are InnoDB and you **DO NOT CARE** about the binary log position of the backup.
-   If you are considering to use :option:`--no-lock` because your backups are failing to acquire the lock, this could be because of incoming replication events preventing the lock from succeeding. Please try using :option:`--safe-slave-backup` to momentarily stop the replication slave thread, this may help the backup to succeed and you then don't need to resort to using :option:`--no-lock`
+   Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use it only if ALL your tables are InnoDB and you **DO NOT CARE** about the binary log position of the backup. This option shouldn't be used if there are any ``DDL`` statements being executed or if any updates are happening on non-InnoDB tables (this includes the system MyISAM tables in the *mysql* database), otherwise it could lead to an inconsistent backup. 
+   If you are considering to use :option:`--no-lock` because your backups are failing to acquire the lock, this could be because of incoming replication events preventing the lock from succeeding. Please try using :option:`--safe-slave-backup` to momentarily stop the replication slave thread, this may help the backup to succeed and you then don't need to resort to using this option.
 
 .. option:: --no-timestamp
 
@@ -117,7 +117,7 @@ Options
 
 .. option:: --redo-only
 
-   This option is passed directly to xtrabackup's :option:`xtrabackup --apply-log-only` option. This forces :program:`xtrabackup` to skip the "rollback" phase and do a "redo" only. This is necessary if the backup will have incremental changes applied to it later. See the |xtrabackup| :doc:`documentation <../xtrabackup_bin/incremental_backups>` for details.
+   This option should be used when preparing the base full backup and when merging all incrementals except the last one. It is passed directly to xtrabackup's :option:`xtrabackup --apply-log-only` option. This forces :program:`xtrabackup` to skip the "rollback" phase and do a "redo" only. This is necessary if the backup will have incremental changes applied to it later. See the |xtrabackup| :doc:`documentation <../xtrabackup_bin/incremental_backups>` for details.
 
 .. option:: --rsync
 

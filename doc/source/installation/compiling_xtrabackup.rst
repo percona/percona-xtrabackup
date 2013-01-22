@@ -4,7 +4,7 @@
 
 The source code is available from the *Launchpad* project `here <https://launchpad.net/percona-xtrabackup>`_. The easiest way to get the code is with :command:`bzr branch` of the desired release, such as the following: ::
 
-  bzr branch lp:percona-xtrabackup/2.0
+  bzr branch lp:percona-xtrabackup/2.1
 
 You should then have a directory named after the release you branched, such as ``percona-xtrabackup``.
 
@@ -25,7 +25,7 @@ In Debian-based distributions, you need to: ::
 In ``RPM``-based distributions, you need to: ::
 
   $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf bzr \
-    bison libtool ncurses5-devel
+    bison libtool ncurses-devel zlib-devel
 
 Compiling with :command:`build.sh`
 ----------------------------------
@@ -37,8 +37,8 @@ The script needs the codebase for which the building is targeted, you must provi
   ================== =========  ============================================
   Value              Alias      Server
   ================== =========  ============================================
-  innodb51           plugin	build against InnoDB plugin in MySQL 5.1
-  innodb55           5.5	build against InnoDB in MySQL 5.5
+  innodb51           plugin		build against InnoDB plugin in MySQL 5.1
+  innodb55           5.5		build against InnoDB in MySQL 5.5
   xtradb51           xtradb     build against Percona Server with XtraDB 5.1
   xtradb55           xtradb55   build against Percona Server with XtraDB 5.5
   ================== =========  ============================================
@@ -51,4 +51,4 @@ At the base directory of the downloaded source code, if you execute ::
 
 and you go for a coffee, at your return |XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
 
-After this you'll need to copy innobackupex and the corresponding xtrabackup binary to some directory listed in the PATH environment variable, e.g. /usr/bin.
+After this you’ll need to copy |innobackupex| (in the root folder used to retrieve |XtraBackup|) and the corresponding xtrabackup binary (in the src folder) to some directory listed in the PATH environment variable, e.g. ``/usr/bin``.
