@@ -15,12 +15,12 @@ The first method is with the :option:`--tables` option. The option's value is a 
 
 To back up only tables in the ``test`` database, you can use the following command: ::
 
-  xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
+  $ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
   --tables="^test[.].*"
 
 To back up only the table ``test.t1``, you can use the following command: ::
 
-  xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
+  $ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
   --tables="^test[.]t1"
 
 Using the :option:`--tables-file` Option
@@ -28,7 +28,8 @@ Using the :option:`--tables-file` Option
 
 The ``--tables-file`` option specifies a file that can contain multiple table names, one table name per line in the file. Only the tables named in the file will be backed up. Names are matched exactly, case-sensitive, with no pattern or regular expression matching. The table names must be fully qualified, in ``databasename.tablename`` format. 
 
-|check| errors? outputs?
+  $ echo "mydatabase.mytable" > /tmp/tables.txt
+  $ xtrabackup --backup --tables-file=/tmp/tables.txt 
 
 Preparing the Backup
 ====================
