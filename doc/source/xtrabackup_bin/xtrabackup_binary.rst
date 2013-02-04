@@ -33,6 +33,7 @@ Other Types of Backups
 
    incremental_backups
    partial_backups
+   compact_backups
 
 Proficiency
 ===========

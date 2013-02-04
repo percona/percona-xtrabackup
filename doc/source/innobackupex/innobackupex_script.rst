@@ -35,6 +35,7 @@ Other Types of Backups
 
    incremental_backups_innobackupex
    partial_backups_innobackupex
+   compact_backups_innobackupex
 
 Proficiency
 ===========
