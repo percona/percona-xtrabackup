@@ -974,6 +974,7 @@ sub resume_ibbackup {
 sub wait_for_ibbackup_finish {
     if (!$ibbackup_pid) {
         # The process has already been reaped.
+        unlink "$option_tmpdir/$xtrabackup_pid_file";
         return $ibbackup_exit_code;
     }
 
