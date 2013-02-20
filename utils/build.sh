@@ -182,7 +182,7 @@ function build_all()
     build_xtrabackup
 }
 
-if ! test -f src/xtrabackup.c
+if ! test -f src/xtrabackup.cc
 then
 	echo "`basename $0` must be run from the directory with XtraBackup sources"
 	usage

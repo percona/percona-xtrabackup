@@ -23,9 +23,17 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "datasink.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern datasink_t datasink_buffer;
 
 /* Change the default buffer size */
 void ds_buffer_set_size(ds_ctxt_t *ctxt, size_t size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -21,6 +21,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #ifndef xb0xb_h
 #define xb0xb_h
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern ibool srv_compact_backup;
 extern ibool srv_rebuild_indexes;
 
@@ -37,4 +41,9 @@ Rebuild all secondary indexes in all tables in separate spaces. Called from
 innobase_start_or_create_for_mysql(). */
 void
 xb_compact_rebuild_indexes(void);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

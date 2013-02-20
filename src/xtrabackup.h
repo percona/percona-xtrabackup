@@ -22,18 +22,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define XB_XTRABACKUP_H
 
 #include "datasink.h"
+#include "innodb_int.h"
 
 typedef struct {
 	ulint	page_size;
 	ulint	zip_size;
 	ulint	space_id;
 } xb_delta_info_t;
-
-typedef enum {
-    XB_STREAM_FMT_NONE,
-    XB_STREAM_FMT_TAR,
-    XB_STREAM_FMT_XBSTREAM
-} xb_stream_fmt_t;
 
 /* ======== Datafiles iterator ======== */
 typedef struct {

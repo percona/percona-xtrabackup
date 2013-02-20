@@ -24,6 +24,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_global.h>
 #include <my_dir.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct datasink_struct;
 typedef struct datasink_struct datasink_t;
 
@@ -83,5 +87,9 @@ void ds_destroy(ds_ctxt_t *ctxt);
 Set the destination pipe for a datasink (only makes sense for compress and
 tmpfile). */
 void ds_set_pipe(ds_ctxt_t *ctxt, ds_ctxt_t *pipe_ctxt);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* XB_DATASINK_H */

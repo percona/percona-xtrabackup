@@ -25,28 +25,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_base.h>
 #include <mysql_com.h>
 #include "innodb_int.h"
-#include <srv0srv.h>
-#include <ha_prototypes.h>
-#include <trx0trx.h>
-#include <buf0flu.h>
-#ifdef INNODB_VERSION_SHORT
-# include <page0zip.h>
-#endif
-#if MYSQL_VERSION_ID < 50500
-# include <row0types.h>
-#endif
-#include "common.h"
+#include "ds_tmpfile.h"
 
-/* Required by innobase_rec*() stubs */
-#if MYSQL_VERSION_ID >= 50500
-typedef struct st_table TABLE;
-#endif
+#include "common.h"
 
 extern long innobase_lock_wait_timeout;
 
 char *opt_mysql_tmpdir = NULL;
-MY_TMPDIR mysql_tmpdir_list;
-
 
 /****************************************************************//**
 A simple function to open or create a file.
@@ -239,9 +224,9 @@ xb_space_create_file(
 		return ret;
 	}
 
-	buf = ut_malloc(3 * UNIV_PAGE_SIZE);
+	buf = static_cast<byte *>(ut_malloc(3 * UNIV_PAGE_SIZE));
 	/* Align the memory for file i/o if we might have O_DIRECT set */
-	page = ut_align(buf, UNIV_PAGE_SIZE);
+	page = static_cast<byte *>(ut_align(buf, UNIV_PAGE_SIZE));
 
 	memset(page, '\0', UNIV_PAGE_SIZE);
 
@@ -326,42 +311,7 @@ innobase_invalidate_query_cache(
 	/* do nothing */
 }
 
-int
-mysql_get_identifier_quote_char(
-	trx_t*		trx,
-	const char*	name,
-	ulint		namelen)
-{
-	(void)trx;
-	(void)name;
-	(void)namelen;
-	return '"';
-}
-
-void
-innobase_print_identifier(
-	FILE*	f,
-	trx_t*	trx __attribute__((unused)),
-	ibool	table_id __attribute__((unused)),
-	const char*	name,
-	ulint	namelen)
-{
-	const char*	s	= name;
-	const char*	e = s + namelen;
-	int		q;
-
-	q = '"';
-
-	putc(q, f);
-	while (s < e) {
-		int	c = *s++;
-		if (c == q) {
-			putc(c, f);
-		}
-		putc(c, f);
-	}
-	putc(q, f);
-}
+#if MYSQL_VERSION_ID >= 50500
 
 /**********************************************************************//**
 It should be safe to use lower_case_table_names=0 for xtrabackup. If it causes
@@ -387,6 +337,8 @@ innobase_basename(
 
 	return((name) ? name : "null");
 }
+
+#endif
 
 /*****************************************************************//**
 Convert an SQL identifier to the MySQL system_charset_info (UTF-8)
@@ -648,13 +600,6 @@ innobase_get_at_most_n_mbchars(
 	return(char_length);
 }
 
-ibool
-innobase_query_is_update(void)
-{
-	msg("xtrabackup: innobase_query_is_update() is called\n");
-	return(0);
-}
-
 ulint
 innobase_raw_format(
 /*================*/
@@ -719,6 +664,8 @@ innobase_get_slow_log()
 }
 #endif
 
+extern "C" {
+
 ibool
 thd_is_replication_slave_thread(
 	void*	thd)
@@ -744,18 +691,6 @@ thd_is_select(
 	(void)thd;
 	msg("xtrabackup: thd_is_select() is called\n");
 	return(FALSE);
-}
-
-void
-innobase_mysql_prepare_print_arbitrary_thd(void)
-{
-	/* do nothing */
-}
-
-void
-innobase_mysql_end_print_arbitrary_thd(void)
-{
-	/* do nothing */
 }
 
 void
@@ -912,6 +847,8 @@ innobase_mysql_tmpfile(void)
 	}
 	return(fd2);
 }
+
+} /* extern "C" */
 
 /* The following is used by row0merge for error reporting. Define a stub so we
 can use fast index creation from XtraBackup. */

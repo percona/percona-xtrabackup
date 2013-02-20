@@ -53,32 +53,9 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_getopt.h>
 #include <mysql_com.h>
 
-#define G_PTR uchar*
-
-#include <os0thread.h>
-#include <srv0start.h>
-#include <srv0srv.h>
-#include <trx0roll.h>
-#include <trx0trx.h>
-#include <trx0sys.h>
-#include <mtr0mtr.h>
-#include <row0ins.h>
-#include <row0mysql.h>
-#include <row0sel.h>
-#include <row0upd.h>
-#include <lock0lock.h>
-#include <dict0crea.h>
-#include <btr0cur.h>
-#include <btr0btr.h>
-#include <btr0sea.h>
-#include <fsp0fsp.h>
-#include <sync0sync.h>
-#include <trx0xa.h>
-#include <log0recv.h>
 #include <fcntl.h>
-#include <buf0lru.h>
 
-#include <ibuf0ibuf.h>
+#define G_PTR uchar*
 
 #include "common.h"
 #include "datasink.h"
@@ -89,6 +66,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "write_filt.h"
 #include "xtrabackup.h"
 #include "ds_buffer.h"
+#include "ds_tmpfile.h"
+#include "xbstream.h"
 
 my_bool innodb_inited= 0;
 
@@ -158,7 +137,7 @@ char *xtrabackup_stream_str = NULL;
 xb_stream_fmt_t xtrabackup_stream_fmt;
 ibool xtrabackup_stream = FALSE;
 
-char *xtrabackup_compress_alg = NULL;
+static const char *xtrabackup_compress_alg = NULL;
 ibool xtrabackup_compress = FALSE;
 uint xtrabackup_compress_threads;
 
@@ -275,7 +254,8 @@ datafiles_iter_new(fil_system_t *f_system)
 {
 	datafiles_iter_t *it;
 
-	it = ut_malloc(sizeof(datafiles_iter_t));
+	it = static_cast<datafiles_iter_t *>
+		(ut_malloc(sizeof(datafiles_iter_t)));
 	it->mutex = OS_MUTEX_CREATE();
 
 	it->system = f_system;
@@ -1227,7 +1207,7 @@ innodb_init(void)
 {
 	int	err;
 
-#if defined(INNODB_VERSION_SHORT) && MYSQL_VERSION_ID < 50500
+#if MYSQL_VERSION_ID < 50500
 	/* InnoDB relies on buf_LRU_old_ratio to be always initialized (see
 	debug assertions in buf_LRU_old_adjust_len(). Normally it is initialized
 	from ha_innodb.cc. That code is not used in XtraBackup, which led to
@@ -1533,8 +1513,8 @@ static
 my_bool
 check_if_skip_table(
 /******************/
-	char*	path,	/*!< in: path to the table */
-	char*	suffix)	/*!< in: suffix */
+	const char*	path,	/*!< in: path to the table */
+	const char*	suffix)	/*!< in: suffix */
 {
 	char buf[FN_REFLEN];
 	const char *dbname, *tbname;
@@ -1612,8 +1592,8 @@ xb_get_zip_size(os_file_t file)
 	ibool	 success;
 	ulint	 space;
 
-	buf = ut_malloc(2 * UNIV_PAGE_SIZE_MAX);
-	page = ut_align(buf, UNIV_PAGE_SIZE_MAX);
+	buf = static_cast<byte *>(ut_malloc(2 * UNIV_PAGE_SIZE_MAX));
+	page = static_cast<byte *>(ut_align(buf, UNIV_PAGE_SIZE_MAX));
 
 	success = os_file_read(file, page, 0, 0, UNIV_PAGE_SIZE_MAX);
 	if (!success) {
@@ -2397,7 +2377,8 @@ xb_filters_init()
 			tables_regex_num++;
 		}
 
-		tables_regex = ut_malloc(sizeof(xb_regex_t) * tables_regex_num);
+		tables_regex = static_cast<xb_regex_t *>
+			(ut_malloc(sizeof(xb_regex_t) * tables_regex_num));
 
 		p = xtrabackup_tables;
 		for (i=0; i < tables_regex_num; i++) {
@@ -2449,7 +2430,9 @@ xb_filters_init()
 				*p = '\0';
 			}
 
-			table = malloc(sizeof(xtrabackup_tables_t) + strlen(name_buf) + 1);
+			table = static_cast<xtrabackup_tables_t *>
+				(malloc(sizeof(xtrabackup_tables_t)
+					+ strlen(name_buf) + 1));
 			memset(table, '\0', sizeof(xtrabackup_tables_t) + strlen(name_buf) + 1);
 			table->name = ((char*)table) + sizeof(xtrabackup_tables_t);
 			strcpy(table->name, name_buf);
@@ -2484,12 +2467,14 @@ xb_filters_free()
 		for (i = 0; i < hash_get_n_cells(tables_hash); i++) {
 			xtrabackup_tables_t*	table;
 
-			table = HASH_GET_FIRST(tables_hash, i);
+			table = static_cast<xtrabackup_tables_t *>
+				(HASH_GET_FIRST(tables_hash, i));
 
 			while (table) {
 				xtrabackup_tables_t*	prev_table = table;
 
-				table = HASH_GET_NEXT(name_hash, prev_table);
+				table = static_cast<xtrabackup_tables_t *>
+					(HASH_GET_NEXT(name_hash, prev_table));
 
 				HASH_DELETE(xtrabackup_tables_t, name_hash, tables_hash,
 						ut_fold_string(prev_table->name), prev_table);
@@ -2692,7 +2677,7 @@ xtrabackup_backup_func(void)
 	log_group_t*	max_cp_group;
 	ulint		max_cp_field;
 	byte*		buf;
-	byte		log_hdr_buf_[LOG_FILE_HDR_SIZE + OS_FILE_LOG_BLOCK_SIZE];
+	byte*		log_hdr_buf_;
 	byte*		log_hdr_buf;
 	ulint		err;
 
@@ -2700,7 +2685,10 @@ xtrabackup_backup_func(void)
 	os_thread_id_t log_copying_thread_id;
 	datafiles_iter_t *it;
 
-	log_hdr_buf = ut_align(log_hdr_buf_, OS_FILE_LOG_BLOCK_SIZE);
+	log_hdr_buf_ = static_cast<byte *>
+		(ut_malloc(LOG_FILE_HDR_SIZE + OS_FILE_LOG_BLOCK_SIZE));
+	log_hdr_buf = static_cast<byte *>
+		(ut_align(log_hdr_buf_, OS_FILE_LOG_BLOCK_SIZE));
 
 	/* get current checkpoint_lsn */
 	/* Look for the latest checkpoint from any of the log groups */
@@ -2711,6 +2699,7 @@ xtrabackup_backup_func(void)
 
 	if (err != DB_SUCCESS) {
 
+		ut_free(log_hdr_buf_);
 		exit(EXIT_FAILURE);
 	}
 
@@ -2735,6 +2724,7 @@ reread_log_header:
 
         if (err != DB_SUCCESS) {
 
+		ut_free(log_hdr_buf_);
                 exit(EXIT_FAILURE);
         }
 
@@ -2759,6 +2749,7 @@ reread_log_header:
 	if (dst_log_file == NULL) {
 		msg("xtrabackup: error: failed to open the target stream for "
 		    "'%s'.\n", XB_LOG_FILENAME);
+		ut_free(log_hdr_buf_);
 		exit(EXIT_FAILURE);
 	}
 
@@ -2771,8 +2762,11 @@ reread_log_header:
 
 	if (ds_write(dst_log_file, log_hdr_buf, LOG_FILE_HDR_SIZE)) {
 		msg("xtrabackup: error: write to logfile failed\n");
+		ut_free(log_hdr_buf_);
 		exit(EXIT_FAILURE);
 	}
+
+	ut_free(log_hdr_buf_);
 
 	/* start flag */
 	log_copying = TRUE;
@@ -3475,8 +3469,10 @@ retry:
 			goto error;
 		}
 
-		log_buf_ = ut_malloc(LOG_FILE_HDR_SIZE * 2);
-		log_buf = ut_align(log_buf_, LOG_FILE_HDR_SIZE);
+		log_buf_ = static_cast<byte *>
+			(ut_malloc(LOG_FILE_HDR_SIZE * 2));
+		log_buf = static_cast<byte *>
+			(ut_align(log_buf_, LOG_FILE_HDR_SIZE));
 
 		success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
 		if (!success) {
@@ -3524,8 +3520,8 @@ retry:
 
 
 	/* TODO: We should skip the following modifies, if it is not the first time. */
-	log_buf_ = ut_malloc(UNIV_PAGE_SIZE * 129);
-	log_buf = ut_align(log_buf_, UNIV_PAGE_SIZE);
+	log_buf_ = static_cast<byte *>(ut_malloc(UNIV_PAGE_SIZE * 129));
+	log_buf = static_cast<byte *>(ut_align(log_buf_, UNIV_PAGE_SIZE));
 
 	/* read log file header */
 	success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
@@ -3740,7 +3736,6 @@ get_meta_path(
 
 	return TRUE;
 }
-
 
 /***********************************************************************
 Searches for matching tablespace file for given .delta file and space_id
@@ -3997,10 +3992,12 @@ xtrabackup_apply_delta(
 	xb_file_set_nocache(dst_file, dst_path, "OPEN");
 
 	/* allocate buffer for incremental backup (4096 pages) */
-	incremental_buffer_base = ut_malloc((UNIV_PAGE_SIZE_MAX / 4 + 1) *
-					 UNIV_PAGE_SIZE_MAX);
-	incremental_buffer = ut_align(incremental_buffer_base,
-				      UNIV_PAGE_SIZE_MAX);
+	incremental_buffer_base = static_cast<byte *>
+		(ut_malloc((UNIV_PAGE_SIZE_MAX / 4 + 1) *
+			   UNIV_PAGE_SIZE_MAX));
+	incremental_buffer = static_cast<byte *>
+		(ut_align(incremental_buffer_base,
+			  UNIV_PAGE_SIZE_MAX));
 
 	msg("Applying %s to %s...\n", src_path, dst_path);
 
@@ -4274,8 +4271,8 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
-	log_buf_ = ut_malloc(LOG_FILE_HDR_SIZE * 2);
-	log_buf = ut_align(log_buf_, LOG_FILE_HDR_SIZE);
+	log_buf_ = static_cast<byte *>(ut_malloc(LOG_FILE_HDR_SIZE * 2));
+	log_buf = static_cast<byte *>(ut_align(log_buf_, LOG_FILE_HDR_SIZE));
 
 	success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
 	if (!success) {
@@ -4499,8 +4496,8 @@ skip_check:
 		byte*		page;
 		byte*		buf = NULL;
 
-		buf = ut_malloc(UNIV_PAGE_SIZE * 2);
-		page = ut_align(buf, UNIV_PAGE_SIZE);
+		buf = static_cast<byte *>(ut_malloc(UNIV_PAGE_SIZE * 2));
+		page = static_cast<byte *>(ut_align(buf, UNIV_PAGE_SIZE));
 
 		/* flush insert buffer at shutdwon */
 		innobase_fast_shutdown = 0;

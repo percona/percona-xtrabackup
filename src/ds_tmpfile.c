@@ -53,6 +53,8 @@ datasink_t datasink_tmpfile = {
 	&tmpfile_deinit
 };
 
+MY_TMPDIR mysql_tmpdir_list;
+
 static ds_ctxt_t *
 tmpfile_init(const char *root)
 {

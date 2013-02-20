@@ -34,6 +34,12 @@ typedef struct xb_wstream_struct xb_wstream_t;
 
 typedef struct xb_wstream_file_struct xb_wstream_file_t;
 
+typedef enum {
+	XB_STREAM_FMT_NONE,
+	XB_STREAM_FMT_TAR,
+	XB_STREAM_FMT_XBSTREAM
+} xb_stream_fmt_t;
+
 /************************************************************************
 Write interface. */
 

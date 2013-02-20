@@ -23,8 +23,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 /* Page write filters implementation */
 
 #include <my_base.h>
-#include <fil0fil.h>
-#include <ut0mem.h>
 #include "common.h"
 #include "innodb_int.h"
 #include "write_filt.h"
@@ -79,9 +77,10 @@ wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 
 	/* allocate buffer for incremental backup (4096 pages) */
 	buf_size = (UNIV_PAGE_SIZE_MAX / 4 + 1) * UNIV_PAGE_SIZE_MAX;
-	cp->delta_buf_base = ut_malloc(buf_size);
+	cp->delta_buf_base = static_cast<byte *>(ut_malloc(buf_size));
 	bzero(cp->delta_buf_base, buf_size);
-	cp->delta_buf = ut_align(cp->delta_buf_base, UNIV_PAGE_SIZE_MAX);
+	cp->delta_buf = static_cast<byte *>
+		(ut_align(cp->delta_buf_base, UNIV_PAGE_SIZE_MAX));
 
 	/* write delta meta info */
 	snprintf(meta_name, sizeof(meta_name), "%s%s", dst_name,

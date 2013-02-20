@@ -23,15 +23,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 /* Compact backups implementation */
 
 #include <my_base.h>
-#include <page0page.h>
-#include <dict0dict.h>
-#include <dict0load.h>
-#include <btr0pcur.h>
-#include <ibuf0ibuf.h>
-#include <row0merge.h>
-#include <trx0trx.h>
-#include <srv0srv.h>
 #include "common.h"
+#include "innodb_int.h"
 #include "write_filt.h"
 #include "fil_cur.h"
 #include "xtrabackup.h"
@@ -745,7 +738,8 @@ xb_build_index_def(
 	index_def->name = mem_heap_strdup(heap, index->name);
 	index_def->ind_type = index->type;
 
-	fields = mem_heap_alloc(heap, n_fields * sizeof(*fields));
+	fields = static_cast<merge_index_field_t *>
+		(mem_heap_alloc(heap, n_fields * sizeof(*fields)));
 
 	for (i = 0; i < n_fields; i++) {
 		dict_field_t*	field;

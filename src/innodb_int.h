@@ -26,14 +26,53 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define INNODB_INT_H
 
 #include <my_base.h>
+
+/* Only include InnoDB headers here, please keep the list sorted */
+
+extern "C" {
+
 #include <univ.i>
-#include <fil0fil.h>
-#include <os0file.h>
-#include <hash0hash.h>
+
+#include <btr0btr.h>
+#include <btr0cur.h>
+#include <btr0pcur.h>
 #include <btr0sea.h>
+#include <buf0buf.h>
+#include <buf0flu.h>
+#include <buf0lru.h>
+#include <dict0crea.h>
+#include <dict0dict.h>
+#include <dict0load.h>
+#include <fil0fil.h>
+#include <fsp0fsp.h>
+#include <fsp0types.h>
+#include <ha_prototypes.h>
+#include <hash0hash.h>
+#include <ibuf0ibuf.h>
+#include <lock0lock.h>
 #include <log0log.h>
 #include <log0recv.h>
+#include <mtr0mtr.h>
+#include <os0file.h>
+#include <os0thread.h>
+#include <page0page.h>
+#include <page0zip.h>
+#include <row0ins.h>
+#include <row0merge.h>
+#include <row0mysql.h>
+#include <row0sel.h>
+#include <row0types.h>
+#include <row0upd.h>
+#include <srv0srv.h>
+#include <srv0start.h>
+#include <sync0sync.h>
+#include <trx0roll.h>
 #include <trx0sys.h>
+#include <trx0trx.h>
+#include <trx0xa.h>
+#include <ut0mem.h>
+
+}
 
 #  define IB_INT64 ib_int64_t
 #  define LSN64 ib_uint64_t
@@ -275,14 +314,19 @@ struct fil_system_struct {
 
 extern fil_system_t*   fil_system;
 extern char *opt_mysql_tmpdir;
-extern MY_TMPDIR mysql_tmpdir_list;
 
 /** Value of fil_space_struct::magic_n */
 #define	FIL_SPACE_MAGIC_N	89472
 
 /* ==end=== definition  at fil0fil.c === */
 
-/* prototypes for static functions in original */
+#if MYSQL_VERSION_ID >= 50500
+struct TABLE;
+#endif
+
+extern "C" {
+
+/* prototypes for static and non-prototyped functions in original */
 buf_block_t*
 btr_node_ptr_get_child(
 /*===================*/
@@ -362,6 +406,19 @@ open_or_create_data_files(
 	LSN64*	max_flushed_lsn,/* out: */
 	ulint*	sum_of_new_sizes);/* out: sum of sizes of the new files added
 				  */
+
+void
+os_file_set_nocache(
+/*================*/
+	int		fd,		/* in: file descriptor to alter */
+	const char*	file_name,	/* in: used in the diagnostic message */
+	const char*	operation_name);/* in: used in the diagnostic message,
+					we call os_file_set_nocache()
+					immediately after opening or creating
+					a file, so this is either "open" or
+					"create" */
+
+} /* extern "C" */
 
 /****************************************************************//**
 A simple function to open or create a file.
@@ -478,25 +535,9 @@ void
 xb_normalize_init_values(void);
 /*==========================*/
 
-void
-innobase_mysql_prepare_print_arbitrary_thd(void);
+extern "C" {
 
-void
-innobase_mysql_end_print_arbitrary_thd(void);
-
-int
-mysql_get_identifier_quote_char(
-	trx_t*		trx,
-	const char*	name,
-	ulint		namelen);
-
-void
-innobase_print_identifier(
-	FILE*	f,
-	trx_t*	trx __attribute__((unused)),
-	ibool	table_id __attribute__((unused)),
-	const char*	name,
-	ulint	namelen);
+#if MYSQL_VERSION_ID >= 50500
 
 /**********************************************************************//**
 It should be safe to use lower_case_table_names=0 for xtrabackup. If it causes
@@ -514,6 +555,8 @@ innobase_basename(
 /*==============*/
 	const char*	path_name);	/*!< in: full path name */
 
+#endif
+
 int
 innobase_mysql_cmp(
 	int		mysql_type,
@@ -523,7 +566,95 @@ innobase_mysql_cmp(
 	unsigned char*	b,
 	unsigned int	b_length);
 
+void
+innobase_get_cset_width(
+			ulint	cset,
+			ulint*	mbminlen,
+			ulint*	mbmaxlen);
+
+#ifdef XTRADB_BASED
+
+trx_t*
+innobase_get_trx();
+
 ibool
-innobase_query_is_update(void);
+innobase_get_slow_log();
+
+#endif
+
+void
+innobase_invalidate_query_cache(
+	trx_t*	trx,
+	const char*	full_name,
+	ulint	full_name_len);
+
+/*****************************************************************//**
+Convert a table or index name to the MySQL system_charset_info (UTF-8)
+and quote it if needed.
+@return	pointer to the end of buf */
+char*
+innobase_convert_name(
+/*==================*/
+	char*		buf,	/*!< out: buffer for converted identifier */
+	ulint		buflen,	/*!< in: length of buf, in bytes */
+	const char*	id,	/*!< in: identifier to convert */
+	ulint		idlen,	/*!< in: length of id, in bytes */
+	void*		thd,	/*!< in: MySQL connection thread, or NULL */
+	ibool		table_id);/*!< in: TRUE=id is a table or database name;
+				FALSE=id is an index name */
+
+ibool
+trx_is_interrupted(
+	trx_t*	trx);
+
+ulint
+innobase_get_at_most_n_mbchars(
+	ulint		charset_id,
+	ulint		prefix_len,
+	ulint		data_len,
+	const char*	str);
+
+ulint
+innobase_raw_format(
+/*================*/
+	const char*	data,		/*!< in: raw data */
+	ulint		data_len,	/*!< in: raw data length
+					in bytes */
+	ulint		charset_coll,	/*!< in: charset collation */
+	char*		buf,		/*!< out: output buffer */
+	ulint		buf_size);	/*!< in: output buffer size
+					in bytes */
+
+ulong
+thd_lock_wait_timeout(
+/*==================*/
+	void*	thd);	/*!< in: thread handle (THD*), or NULL to query
+			the global innodb_lock_wait_timeout */
+
+ibool
+thd_supports_xa(
+/*============*/
+	void*	thd);	/*!< in: thread handle (THD*), or NULL to query
+			the global innodb_supports_xa */
+
+ibool
+trx_is_strict(
+/*==========*/
+	trx_t*	trx);	/*!< in: transaction */
+
+void
+innobase_rec_reset(
+/*===============*/
+	TABLE*	table);
+
+void
+innobase_rec_to_mysql(
+/*==================*/
+	TABLE*			table,
+	const rec_t*		rec,
+	const dict_index_t*	index,
+	const ulint*		offsets);
+
+} /* extern "C" */
 
 #endif /* INNODB_INT_H */

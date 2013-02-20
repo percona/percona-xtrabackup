@@ -25,13 +25,12 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql_version.h>
 #include <fcntl.h>
 #include <stdarg.h>
-#include "innodb_int.h"
 
 #define xb_a(expr)							\
 	do {								\
 		if (!(expr)) {						\
 			msg("Assertion \"%s\" failed at %s:%lu\n",	\
-			    #expr, __FILE__, (ulint) __LINE__);		\
+			    #expr, __FILE__, (ulong) __LINE__);		\
 			abort();					\
 		}							\
 	} while (0);
@@ -76,10 +75,10 @@ static inline int msg(const char *fmt, ...)
 /***********************************************************************
 Computes bit shift for a given value. If the argument is not a power
 of 2, returns 0.*/
-static inline ulint
-get_bit_shift(ulint value)
+static inline ulong
+get_bit_shift(ulong value)
 {
-    ulint shift;
+    ulong shift;
 
     if (value == 0)
 	return 0;

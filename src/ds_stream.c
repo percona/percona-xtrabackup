@@ -18,13 +18,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
+#include <mysql_version.h>
 #include <my_base.h>
 #include <archive.h>
 #include <archive_entry.h>
 #include "common.h"
 #include "datasink.h"
 #include "xbstream.h"
-#include "xtrabackup.h"
 
 typedef struct {
 	struct archive	*archive;

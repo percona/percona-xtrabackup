@@ -24,8 +24,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <my_base.h>
 #include "innodb_int.h"
-#include <buf0buf.h>
-#include <fsp0types.h>
 #include "fil_cur.h"
 #include "common.h"
 #include "xtrabackup.h"
@@ -132,8 +130,10 @@ xb_fil_cur_open(
 
 	/* Allocate read buffer */
 	cursor->buf_size = XB_FIL_CUR_PAGES * page_size;
-	cursor->orig_buf = ut_malloc(cursor->buf_size + UNIV_PAGE_SIZE);
-	cursor->buf = ut_align(cursor->orig_buf, UNIV_PAGE_SIZE);
+	cursor->orig_buf = static_cast<byte *>
+		(ut_malloc(cursor->buf_size + UNIV_PAGE_SIZE));
+	cursor->buf = static_cast<byte *>
+		(ut_align(cursor->orig_buf, UNIV_PAGE_SIZE));
 
 	cursor->offset = 0;
 	cursor->buf_read = 0;
