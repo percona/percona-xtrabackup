@@ -18,10 +18,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-
+#include <mysql_version.h>
 #include <my_base.h>
 #include <quicklz.h>
-#include <univ.i>
 #include <zlib.h>
 #include "common.h"
 #include "datasink.h"
@@ -63,9 +62,9 @@ typedef struct {
 	size_t			bytes_processed;
 } ds_compress_file_t;
 
-extern ibool 	xtrabackup_stream;
+extern my_bool	xtrabackup_stream;
 extern uint	xtrabackup_parallel;
-extern ibool	xtrabackup_compress_threads;
+extern uint	xtrabackup_compress_threads;
 
 static ds_ctxt_t *compress_init(const char *root);
 static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
@@ -272,7 +271,7 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 						  &thd->data_mutex);
 			}
 
-			ut_a(threads[i].to_len > 0);
+			xb_a(threads[i].to_len > 0);
 
 			if (dest_ds->write(dest_file, "NEWBNEWB", 8) ||
 			    write_uint64_le(dest_ds, dest_file,
