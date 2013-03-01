@@ -711,7 +711,8 @@ static void sigcont_handler(int sig __attribute__((unused)))
 }
 #endif
 
-static void
+static inline
+void
 debug_sync_point(const char *name)
 {
 #ifndef __WIN__
@@ -1570,7 +1571,7 @@ check_if_skip_table(
 		xtrabackup_tables_t*	table;
 
 		XB_HASH_SEARCH(name_hash, tables_hash, ut_fold_string(buf),
-			       table, ut_ad(table->name),
+			       table, (void) 0,
 			       !strcmp(table->name, buf));
 		if (!table) {
 			return(TRUE);
