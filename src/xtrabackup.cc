@@ -1548,7 +1548,7 @@ static void sigcont_handler(int sig __attribute__((unused)))
 }
 #endif
 
-static
+static inline
 void
 debug_sync_point(const char *name)
 {
@@ -3032,7 +3032,7 @@ check_if_skip_table(const char *path, const char *suffix)
 		xtrabackup_tables_t*	table;
 
 		XB_HASH_SEARCH(name_hash, tables_hash, ut_fold_string(buf),
-			       table, ut_ad(table->name),
+			       table, (void) 0,
 			       !strcmp(table->name, buf));
 		if (!table) {
 			return(TRUE);
@@ -3453,7 +3453,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 		ulint chunk_offset;
 		ulint retry_count = 10;
 
-		if (file_size - offset > COPY_CHUNK * page_size) {
+		if (file_size - offset > (IB_INT64) (COPY_CHUNK * page_size)) {
 			chunk = COPY_CHUNK * page_size;
 		} else {
 			chunk = (ulint)(file_size - offset);
@@ -3485,9 +3485,9 @@ read_retry:
 				if (
 				    trx_sys_sys_space(node->space->id)
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
-				       >= FSP_EXTENT_SIZE
+				    >= (IB_INT64) FSP_EXTENT_SIZE
 				    && ((offset + (IB_INT64)chunk_offset) >> page_size_shift)
-				       < FSP_EXTENT_SIZE * 3) {
+				    < (IB_INT64) FSP_EXTENT_SIZE * 3) {
 					/* double write buffer may have old data in the end
 					   or it may contain the other format page like COMPRESSED.
  					   So, we can pass the check of double write buffer.*/
