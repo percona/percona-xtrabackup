@@ -12,10 +12,13 @@
 LIBS += -lpthread
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
 
-CFLAGS += -DXTRABACKUP_VERSION=\"$(XTRABACKUP_VERSION)\" -pedantic -Wall -Wundef -Wshadow  -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations  -Wno-redundant-decls --std=gnu99
+COMMON_FLAGS = -DXTRABACKUP_VERSION=\"$(XTRABACKUP_VERSION)\" -pedantic -Wall -Wundef -Wshadow  -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations  -Wno-redundant-decls
+CFLAGS += $(COMMON_FLAGS) --std=gnu99
+CXXFLAGS += $(COMMON_FLAGS)
 
 ifneq ($(DEBUG),)
 CFLAGS += -DXB_DEBUG=1
+CXXFLAGS += -DXB_DEBUG=1
 endif
 
 TARGET=xtrabackup
@@ -23,9 +26,10 @@ PREFIX=/usr
 BIN_DIR=$(PREFIX)/bin
 
 COMMON_INC = -I. -I libarchive/libarchive -I quicklz
-XTRABACKUPOBJS = xtrabackup.o stream.o local.o compress.o buffer.o \
+XTRABACKUPCOBJS = stream.o local.o compress.o buffer.o \
 	xbstream_write.o \
 	quicklz/quicklz.o
+XTRABACKUPCCOBJS = xtrabackup.o
 XBSTREAMOBJS = xbstream.o xbstream_write.o xbstream_read.o
 
 LIBARCHIVE_A = libarchive/libarchive/libarchive.a
@@ -171,8 +175,11 @@ xtradb55: DEFS += -DXTRADB_BASED -DXTRADB55
 xtradb55: TARGET := xtrabackup_55
 xtradb55: $(TARGET) xbstream
 
-$(XTRABACKUPOBJS): %.o: %.c
+$(XTRABACKUPCOBJS): %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
+
+$(XTRABACKUPCCOBJS): %.o: %.cc
+	$(CXX) $(CXXFLAGS) $(INC) $(DEFS) -c $< -o $@
 
 xbstream.o xbstream_read.o: %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
@@ -180,11 +187,11 @@ xbstream.o xbstream_read.o: %.o: %.c
 xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) local.o
 	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
-xtrabackup.o: xtrabackup.c xb_regex.h
+xtrabackup.o: xtrabackup.cc xb_regex.h
 
-$(TARGET): $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBARCHIVE_A)
-	$(CC) $(CFLAGS) $(XTRABACKUPOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \
+$(TARGET): $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBARCHIVE_A)
+	$(CXX) $(CFXXLAGS) $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \
 	$(LIBARCHIVE_A) -o $(TARGET)
 
 clean:
-	rm -f $(XTRABACKUPOBJS) $(XBSTREAMOBJS) xtrabackup xtrabackup_* 
+	rm -f $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(XBSTREAMOBJS) xtrabackup xtrabackup_* 

@@ -1315,3 +1315,16 @@
  
  			/* Write the log but do not flush it to disk */
  
+--- a/configure.cmake
++++ b/configure.cmake
+@@ -149,7 +149,9 @@
+   SET(CMAKE_REQUIRED_LIBRARIES 
+     ${LIBM} ${LIBNSL} ${LIBBIND} ${LIBCRYPT} ${LIBSOCKET} ${LIBDL} ${CMAKE_THREAD_LIBS_INIT} ${LIBRT})
+ 
+-  LIST(REMOVE_DUPLICATES CMAKE_REQUIRED_LIBRARIES)
++  IF(CMAKE_REQUIRED_LIBRARIES)
++    LIST(REMOVE_DUPLICATES CMAKE_REQUIRED_LIBRARIES)
++  ENDIF()
+   LINK_LIBRARIES(${CMAKE_THREAD_LIBS_INIT})
+   
+   OPTION(WITH_LIBWRAP "Compile with tcp wrappers support" OFF)
