@@ -12,8 +12,24 @@ MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
 
 top_dir=`pwd`
 
+# Set the build type and resolve synonyms
+case "$1" in
+"plugin" )
+        type="innodb51"
+        ;;
+"5.5" )
+        type="innodb55"
+        ;;
+"xtradb" )
+        type="xtradb51"
+        ;;
+*)
+        type=$1
+        ;;
+esac
+
 # Percona Server 5.5 does not build with -Werror, so ignore DEBUG for now
-if [ -n "$DEBUG" -a "$1" != "galera55" -a "$1" != "xtradb55" -a "$1" != "xtradb51" -a "$1" != "xtradb" ]
+if [ -n "$DEBUG" -a "$type" != "galera55" -a "$type" != "xtradb55" -a "$type" != "xtradb51" ]
 then
     # InnoDB extra debug flags
     innodb_extra_debug="-DUNIV_DEBUG -DUNIV_MEM_DEBUG \
@@ -188,10 +204,8 @@ then
 	usage
 fi
 
-type=$1
-
 case "$type" in
-"innodb51" | "plugin")
+"innodb51")
        mysql_version=$MYSQL_51_VERSION
        server_patch=innodb51.patch
        innodb_name=innodb_plugin
@@ -205,7 +219,7 @@ case "$type" in
 
        build_all
        ;;
-"innodb55" | "5.5")
+"innodb55")
 	mysql_version=$MYSQL_55_VERSION
 	server_patch=innodb55.patch
 	innodb_name=innobase
@@ -222,7 +236,7 @@ case "$type" in
 	build_all
 	;;
 
-"xtradb51" | "xtradb" | "mariadb51" | "mariadb52" | "mariadb53")
+"xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup
 	innodb_dir=$server_dir/storage/innodb_plugin
