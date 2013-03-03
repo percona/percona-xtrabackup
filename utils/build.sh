@@ -10,8 +10,30 @@ PS_55_VERSION=5.5.16-22.0
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
 
+# Set the build type and resolve synonyms
+case "$1" in
+"5.0" )
+        type="innodb50"
+        ;;
+"5.1" )
+        type="innodb51_builtin"
+        ;;
+"plugin" )
+        type="innodb51"
+        ;;
+"5.5" )
+        type="innodb55"
+        ;;
+"xtradb" )
+        type="xtradb51"
+        ;;
+*)
+        type=$1
+        ;;
+esac
+
 # Percona Server 5.5 does not build with -Werror, so ignore DEBUG for now
-if [ -n "$DEBUG" -a "$1" != "galera55" -a "$1" != "xtradb55" -a "$1" != "xtradb51" -a "$1" != "xtradb" ]
+if [ -n "$DEBUG" -a "$type" != "galera55" -a "$type" != "xtradb55" -a "$type" != "xtradb51" ]
 then
     # InnoDB extra debug flags
     innodb_extra_debug="-DUNIV_DEBUG -DUNIV_SYNC_DEBUG -DUNIV_MEM_DEBUG \
@@ -30,7 +52,7 @@ else
     extra_config_55=
 fi
 
-if [ "$1" = "innodb51_builtin" -o "$1" = "innodb50" ]
+if [ "$type" = "innodb51_builtin" -o "$type" = "innodb50" ]
 then
     # include/*.ic in pre-5.1-plugin InnoDB do not compile well in C++.
     export CXXFLAGS="$CXXFLAGS -fpermissive"
@@ -188,12 +210,11 @@ then
 	usage
 fi
 
-type=$1
 top_dir=`pwd`
 
 
 case "$type" in
-"innodb51_builtin" | "5.1" | "innodb50" | "5.0")
+"innodb51_builtin" | "innodb50")
 	mysql_version=$MYSQL_51_VERSION
 	server_patch=innodb51_builtin.patch
 	innodb_name=innobase
@@ -208,7 +229,7 @@ case "$type" in
 	build_all
 	;;
 
-"innodb51" | "plugin")
+"innodb51")
        mysql_version=$MYSQL_51_VERSION
        server_patch=innodb51.patch
        innodb_name=innodb_plugin
@@ -222,7 +243,7 @@ case "$type" in
 
        build_all
        ;;
-"innodb55" | "5.5")
+"innodb55")
 	mysql_version=$MYSQL_55_VERSION
 	server_patch=innodb55.patch
 	innodb_name=innobase
@@ -239,7 +260,7 @@ case "$type" in
 	build_all
 	;;
 
-"xtradb51" | "xtradb" | "mariadb51" | "mariadb52" | "mariadb53")
+"xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup
 	innodb_dir=$server_dir/storage/innodb_plugin
