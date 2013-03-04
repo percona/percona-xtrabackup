@@ -23,7 +23,6 @@ Requires: mysql
 Provides: xtrabackup
 Obsoletes: xtrabackup
 BuildRequires: libaio-devel
-AutoReqProv: no
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
