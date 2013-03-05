@@ -3334,27 +3334,23 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	}
 
 	/* open src_file*/
-	if (!node->open) {
-		src_file = xb_file_create_no_error_handling(node->name,
-							    OS_FILE_OPEN,
-							    OS_FILE_READ_ONLY,
-							    &success);
-		if (!success) {
-			/* The following call prints an error message */
-			os_file_get_last_error(TRUE);
+	src_file = xb_file_create_no_error_handling(node->name,
+						    OS_FILE_OPEN,
+						    OS_FILE_READ_ONLY,
+						    &success);
+	if (!success) {
+		/* The following call prints an error message */
+		os_file_get_last_error(TRUE);
 
-			msg("[%02u] xtrabackup: Warning: cannot open %s\n"
-			    "[%02u] xtrabackup: Warning: We assume the "
-			    "table was dropped or renamed during "
-			    "xtrabackup execution and ignore the file.\n",
-			    thread_n, node->name, thread_n);
-			goto skip;
-		}
-
-		xb_file_set_nocache(src_file, node->name, "OPEN");
-	} else {
-		src_file = node->handle;
+		msg("[%02u] xtrabackup: Warning: cannot open %s\n"
+		    "[%02u] xtrabackup: Warning: We assume the "
+		    "table was dropped or renamed during "
+		    "xtrabackup execution and ignore the file.\n",
+		    thread_n, node->name, thread_n);
+		goto skip;
 	}
+
+	xb_file_set_nocache(src_file, node->name, "OPEN");
 
 #ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
