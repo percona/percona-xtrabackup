@@ -79,30 +79,26 @@ xb_fil_cur_open(
 		return(XB_FIL_CUR_SKIP);
 	}
 
-	if (!node->open) {
-		ibool success;
+	ibool success;
 
-		cursor->file =
-			xb_file_create_no_error_handling(node->name,
-							 OS_FILE_OPEN,
-							 OS_FILE_READ_ONLY,
-							 &success);
-		if (!success) {
-			/* The following call prints an error message */
-			os_file_get_last_error(TRUE);
+	cursor->file =
+		xb_file_create_no_error_handling(node->name,
+						 OS_FILE_OPEN,
+						 OS_FILE_READ_ONLY,
+						 &success);
+	if (!success) {
+		/* The following call prints an error message */
+		os_file_get_last_error(TRUE);
 
-			msg("[%02u] xtrabackup: Warning: cannot open %s\n"
-			    "[%02u] xtrabackup: Warning: We assume the "
-			    "table was dropped or renamed during "
-			    "xtrabackup execution and ignore the file.\n",
-			    thread_n, node->name, thread_n);
-			return(XB_FIL_CUR_SKIP);
-		}
-
-		xb_file_set_nocache(cursor->file, node->name, "OPEN");
-	} else {
-		cursor->file = node->handle;
+		msg("[%02u] xtrabackup: Warning: cannot open %s\n"
+		    "[%02u] xtrabackup: Warning: We assume the "
+		    "table was dropped or renamed during "
+		    "xtrabackup execution and ignore the file.\n",
+		    thread_n, node->name, thread_n);
+		return(XB_FIL_CUR_SKIP);
 	}
+
+	xb_file_set_nocache(cursor->file, node->name, "OPEN");
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
 
 	/* Determine the page size */
