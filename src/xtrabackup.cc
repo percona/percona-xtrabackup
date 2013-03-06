@@ -7208,6 +7208,8 @@ next_opt:
 		if (innobase_doublewrite_file != NULL) {
 			printf("innodb_doublewrite_file = %s\n", innobase_doublewrite_file);
 		}
+		printf("innodb_file_per_table = %d\n",
+		       (int) innobase_file_per_table);
 #endif
 		exit(EXIT_SUCCESS);
 	}
@@ -7231,9 +7233,9 @@ next_opt:
 	}
 
 	if (xtrabackup_export && innobase_file_per_table == FALSE) {
-		msg("xtrabackup: error: --export option can only "
-		    "be used with --innodb-file-per-table=ON.\n");
-		exit(EXIT_FAILURE);
+		msg("xtrabackup: auto-enabling --innodb-file-per-table due to "
+		    "the --export option\n");
+		innobase_file_per_table = TRUE;
 	}
 
 	if (xtrabackup_incremental && xtrabackup_stream &&
