@@ -171,8 +171,7 @@ function get_version_info()
 	    else
 		XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
 	    fi
-	elif [ "${MYSQL_VERSION:0:3}" = "5.2" -o
-	       "${MYSQL_VERSION:0:3}" = "5.3"]
+	elif [ "${MYSQL_VERSION:0:3}" = "5.2" -o "${MYSQL_VERSION:0:3}" = "5.3" ]
 	then
 	    XB_BIN="xtrabackup"
 	elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]

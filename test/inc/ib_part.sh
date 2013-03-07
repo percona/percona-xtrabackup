@@ -56,18 +56,32 @@ function ib_part_init()
 	ib_part_data $topdir $engine | run_cmd $MYSQL $MYSQL_ARGS test
 }
 
+function ib_part_add_mandatory_tables()
+{
+	local mysql_datadir=$1
+	local tables_file=$2
+	for table in $mysql_datadir/mysql/*.frm
+	do
+	        echo mysql.`basename $table` >> $tables_file
+	done
+	for table in $mysql_datadir/performance_schema/*.frm
+	do
+	    echo performance_schema.`basename $table` >> $tables_file
+	done
+}
+
 function ib_part_restore()
 {
 	topdir=$1
 	mysql_datadir=$2
 
 	# Remove database
-	rm -rf $mysql_datadir/test/*
+	rm -rf $mysql_datadir/*
 	rm -rf $topdir/ext/*
 	vlog "Original database removed"
 
 	# Restore database from backup
-	cp -rv $topdir/backup/test/* $mysql_datadir/test
+	cp -rv $topdir/backup/* $mysql_datadir
 	vlog "database restored from backup"
 
 }
