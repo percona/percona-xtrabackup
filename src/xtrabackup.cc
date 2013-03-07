@@ -1506,6 +1506,46 @@ xtrabackup_io_throttling(void)
 }
 
 /************************************************************************
+Checks if a given table name matches any of specifications in the --tables or
+--tables-file options.
+
+@return TRUE on match. */
+static my_bool
+check_if_table_matches_filters(const char *name)
+{
+	int 			regres;
+	int 			i;
+	xtrabackup_tables_t*	table;
+
+	if (xtrabackup_tables) {
+
+		regres = REG_NOMATCH;
+
+		for (i = 0; i < tables_regex_num; i++) {
+			regres = xb_regexec(&tables_regex[i], name, 1,
+					    tables_regmatch, 0);
+			if (regres != REG_NOMATCH) {
+
+				return(TRUE);
+			}
+		}
+	}
+
+	if (xtrabackup_tables_file) {
+
+		XB_HASH_SEARCH(name_hash, tables_hash, ut_fold_string(name),
+			       table, (void) 0,
+			       !strcmp(table->name, name));
+		if (table) {
+
+			return(TRUE);
+		}
+	}
+
+	return(FALSE);
+}
+
+/************************************************************************
 Checks if a table specified as a path should be skipped from backup
 based on the --tables or --tables-file options.
 
@@ -1548,37 +1588,24 @@ check_if_skip_table(
 	}
 	buf[dbname_len - 1] = 0;
 
+	/* For partitioned tables first try to match against the regexp
+	without truncating the #P#... suffix so we can backup individual
+	partitions with regexps like '^test[.]t#P#p5' */
+	if (check_if_table_matches_filters(buf)) {
+
+		return(FALSE);
+	}
 	if ((eptr = strstr(buf, "#P#")) != NULL) {
+
 		*eptr = 0;
-	}
 
-	if (xtrabackup_tables) {
-		int regres = REG_NOMATCH;
-		int i;
-		for (i = 0; i < tables_regex_num; i++) {
-			regres = xb_regexec(&tables_regex[i], buf, 1,
-					    tables_regmatch, 0);
-			if (regres != REG_NOMATCH) {
-				break;
-			}
-		}
-		if (regres == REG_NOMATCH) {
-			return(TRUE);
+		if (check_if_table_matches_filters(buf)) {
+
+			return(FALSE);
 		}
 	}
 
-	if (xtrabackup_tables_file) {
-		xtrabackup_tables_t*	table;
-
-		XB_HASH_SEARCH(name_hash, tables_hash, ut_fold_string(buf),
-			       table, (void) 0,
-			       !strcmp(table->name, buf));
-		if (!table) {
-			return(TRUE);
-		}
-	}
-
-	return(FALSE);
+	return(TRUE);
 }
 
 /***********************************************************************
@@ -2383,6 +2410,8 @@ xb_filters_init()
 
 		p = xtrabackup_tables;
 		for (i=0; i < tables_regex_num; i++) {
+			int	rc;
+
 			next = strchr(p, ',');
 			ut_a(next || i == tables_regex_num - 1);
 
@@ -2390,10 +2419,18 @@ xb_filters_init()
 			if (i != tables_regex_num - 1)
 				*(next - 1) = '\0';
 
-			xb_regerror(xb_regcomp(&tables_regex[i], p,
-					       REG_EXTENDED),
-				    &tables_regex[i], errbuf, sizeof(errbuf));
-			msg("xtrabackup: tables regcomp(%s): %s\n", p, errbuf);
+			rc = xb_regcomp(&tables_regex[i], p,
+					REG_EXTENDED);
+
+			if (rc) {
+
+				xb_regerror(rc, &tables_regex[i], errbuf,
+					    sizeof(errbuf));
+				msg("xtrabackup: regcomp(%s) failed: %s\n",
+				    p, errbuf);
+
+				exit(EXIT_FAILURE);
+			}
 
 			if (i != tables_regex_num - 1)
 				*(next - 1) = ',';
@@ -2440,9 +2477,6 @@ xb_filters_init()
 
 			HASH_INSERT(xtrabackup_tables_t, name_hash, tables_hash,
 					ut_fold_string(table->name), table);
-
-			msg("xtrabackup: table '%s' is registered to the "
-			    "list.\n", table->name);
 		}
 	}
 }
