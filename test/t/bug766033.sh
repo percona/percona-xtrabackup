@@ -13,7 +13,7 @@ stop_server
 vlog "Starting backup"
 
 # corrupt database
-dd if=/dev/zero of=$mysql_datadir/sakila/rental.ibd seek=1000 count=1
+printf '\xAA\xAA\xAA\xAA' | dd of=$mysql_datadir/sakila/rental.ibd seek=16384 count=4
 
 # we want xtrabackup to be failed on rental.ibd
 run_cmd_expect_failure $XB_BIN $XB_ARGS  --backup --datadir=$mysql_datadir \
