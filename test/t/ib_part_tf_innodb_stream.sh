@@ -24,6 +24,7 @@ checksum_a=`checksum_table test test`
 cat >$topdir/tables <<EOF
 test.test
 EOF
+ib_part_add_mandatory_tables $mysql_datadir $topdir/tables
 mkdir -p $topdir/backup
 innobackupex --stream=tar --no-timestamp --tables-file=$topdir/tables $topdir/backup > $topdir/backup/backup.tar
 $TAR ixvf $topdir/backup/backup.tar -C $topdir/backup 

@@ -3,12 +3,10 @@
 start_server --innodb_file_per_table
 load_dbase_schema incremental_sample
 
-# Full backup dir
-mkdir -p $topdir/data/full
-# Incremental backup dir
-mkdir -p $topdir/data/delta
+# Backup dir
+mkdir -p $topdir/backup
 
-xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full
+innobackupex --no-timestamp $topdir/backup/full
 
 vlog "Creating and filling a new table"
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -21,26 +19,25 @@ stop_server
 start_server --innodb_file_per_table
 
 vlog "Making incremental backup"
-xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full
+innobackupex --incremental --no-timestamp --incremental-basedir=$topdir/backup/full $topdir/backup/delta
 
 vlog "Preparing full backup"
-xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-    --target-dir=$topdir/data/full
+innobackupex --apply-log --redo-only $topdir/backup/full
 
 # The following would fail before the bugfix
 vlog "Applying incremental delta"
-xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-    --target-dir=$topdir/data/full --incremental-dir=$topdir/data/delta
+innobackupex --apply-log --redo-only --incremental-dir=$topdir/backup/delta $topdir/backup/full
 
 vlog "Preparing full backup"
-xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/data/full
+innobackupex --apply-log $topdir/backup/full
 vlog "Data prepared for restore"
 
 stop_server
+rm -r $mysql_datadir/*
 
 vlog "Copying files"
 
-cd $topdir/data/full/
+cd $topdir/backup/full/
 cp -r * $mysql_datadir
 cd $topdir
 
