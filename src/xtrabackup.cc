@@ -2687,9 +2687,9 @@ xtrabackup_backup_func(void)
 	datafiles_iter_t *it;
 
 	log_hdr_buf_ = static_cast<byte *>
-		(ut_malloc(LOG_FILE_HDR_SIZE + OS_FILE_LOG_BLOCK_SIZE));
+		(ut_malloc(LOG_FILE_HDR_SIZE + UNIV_PAGE_SIZE_MAX));
 	log_hdr_buf = static_cast<byte *>
-		(ut_align(log_hdr_buf_, OS_FILE_LOG_BLOCK_SIZE));
+		(ut_align(log_hdr_buf_, UNIV_PAGE_SIZE_MAX));
 
 	/* get current checkpoint_lsn */
 	/* Look for the latest checkpoint from any of the log groups */
@@ -3471,9 +3471,9 @@ retry:
 		}
 
 		log_buf_ = static_cast<byte *>
-			(ut_malloc(LOG_FILE_HDR_SIZE * 2));
+			(ut_malloc(LOG_FILE_HDR_SIZE + UNIV_PAGE_SIZE_MAX));
 		log_buf = static_cast<byte *>
-			(ut_align(log_buf_, LOG_FILE_HDR_SIZE));
+			(ut_align(log_buf_, UNIV_PAGE_SIZE_MAX));
 
 		success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
 		if (!success) {
@@ -4272,8 +4272,9 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
-	log_buf_ = static_cast<byte *>(ut_malloc(LOG_FILE_HDR_SIZE * 2));
-	log_buf = static_cast<byte *>(ut_align(log_buf_, LOG_FILE_HDR_SIZE));
+	log_buf_ = static_cast<byte *>(ut_malloc(LOG_FILE_HDR_SIZE +
+						 UNIV_PAGE_SIZE_MAX));
+	log_buf = static_cast<byte *>(ut_align(log_buf_, UNIV_PAGE_SIZE_MAX));
 
 	success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
 	if (!success) {
