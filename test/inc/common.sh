@@ -44,7 +44,7 @@ function init_mysql_dir()
 	vlog "Creating server data directory: $MYSQLD_DATADIR"
 	mkdir -p "$MYSQLD_DATADIR"
 	vlog "Calling mysql_install_db"
-	$MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$MYSQLD_DATADIR" --tmpdir="$MYSQLD_TMPDIR"
+	$MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$MYSQLD_DATADIR" --tmpdir="$MYSQLD_TMPDIR" ${MYSQLD_EXTRA_ARGS}
     fi
 }
 
@@ -417,7 +417,7 @@ EOF
 ########################################################################
 function checksum_table()
 {
-    $MYSQL $MYSQL_ARGS -Ns -e "CHECKSUM TABLE $2" $1 | awk {'print $2'}
+    $MYSQL $MYSQL_ARGS -Ns -e "CHECKSUM TABLE $2 EXTENDED" $1 | awk {'print $2'}
 }
 
 ########################################################################
