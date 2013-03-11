@@ -54,14 +54,6 @@ vlog "Database was re-initialized"
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test discard tablespace;" incremental_sample
 
-# Test the with innodb_file_per_table=0 --export bails out with an error
-# (bug #758888)
-
-run_cmd_expect_failure $XB_BIN $XB_ARGS --datadir=$mysql_datadir --prepare \
-    --export --target-dir=$backup_dir --innodb-file-per-table=0
-
-XB_ARGS="$XB_ARGS --innodb-file-per-table=1"
-
 xtrabackup --datadir=$mysql_datadir --prepare --export \
     --target-dir=$backup_dir
 
