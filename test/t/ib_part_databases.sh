@@ -22,6 +22,8 @@ checksum_a=`checksum_table test test`
 
 # Take a backup
 cat >$topdir/databases_file <<EOF
+mysql
+performance_schema
 test.test
 EOF
 innobackupex --no-timestamp --databases=$topdir/databases_file $topdir/backup

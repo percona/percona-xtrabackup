@@ -283,28 +283,22 @@ socket $MYSQLD_SOCKET"
 }
 
 ########################################################################
-# Stop server with the id specified as the first argument and additional
-# command line arguments (if specified)
+# Stop server with the id specified as the first argument.  The server 
+# is stopped in the fastest possible way.
 ########################################################################
 function stop_server_with_id()
 {
     local id=$1
     switch_server $id
 
-    vlog "Stopping server with id=$id..."
+    vlog "Killing server with id=$id..."
 
     if [ -f "${MYSQLD_PIDFILE}" ]
     then
-	${MYSQLADMIN} ${MYSQL_ARGS} --shutdown-timeout=60 shutdown
-	if [ -f "${MYSQLD_PIDFILE}" ]
-	then
-	    vlog "Could not stop the server with id=$id, using kill -9"
-	    kill -9 `cat ${MYSQLD_PIDFILE}`
-	    rm -f ${MYSQLD_PIDFILE}
-	fi
-	vlog "Server with id=$id has been stopped"
+        kill -9 `cat ${MYSQLD_PIDFILE}`
+        rm -f ${MYSQLD_PIDFILE}
     else
-	vlog "Server pid file '${MYSQLD_PIDFILE}' doesn't exist!"
+        vlog "Server PID file '${MYSQLD_PIDFILE}' doesn't exist!"
     fi
 
     # unlock the port number
@@ -331,15 +325,25 @@ function stop_server()
 }
 
 ########################################################################
-# Stop all running servers
+# Shutdown server with id=1 cleanly
 ########################################################################
-function stop_all_servers()
+function shutdown_server()
 {
-    local id
-    for id in ${SRV_MYSQLD_IDS[*]}
-    do
-	stop_server_with_id ${SRV_MYSQLD_IDS[$id]}
-    done
+    switch_server 1
+
+    vlog "Shutting down server with id=1..."
+
+    if [ -f "${MYSQLD_PIDFILE}" ]
+    then
+        ${MYSQLADMIN} ${MYSQL_ARGS} shutdown
+    else
+        vlog "Server PID file '${MYSQLD_PIDFILE}' doesn't exist!"
+    fi
+
+    # unlock the port number
+    free_reserved_port $MYSQLD_PORT
+
+    reset_server_variables 1
 }
 
 ########################################################################
