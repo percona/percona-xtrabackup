@@ -2568,6 +2568,13 @@ sub set_xtrabackup_version {
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
     }
 
+    if (!$ibbackup_binary) {
+        Die "Unsupported server version: '$var_version' " .
+            "(InnoDB version: '$var_innodb_version'). " .
+            "Please report a bug at ".
+            "https://bugs.launchpad.net/percona-xtrabackup\n";
+    }
+
     return $ibbackup_binary;
 }
 
