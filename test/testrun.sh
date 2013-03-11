@@ -92,6 +92,21 @@ function set_vars()
 MYSQL_INSTALL_DB PATH LD_LIBRARY_PATH DYLD_LIBRARY_PATH MYSQLDUMP
 }
 
+
+# Fix innodb51 test failures on Centos5-32 Jenkins slaves due to SELinux
+# preventing shared symbol relocations in ha_innodb_plugin.so.0.0.0
+function fix_selinux()
+{
+    if which lsb_release &>/dev/null && \
+        lsb_release -d | grep CentOS &>/dev/null && \
+        lsb_release -r | egrep '5.[0-9]' &>/dev/null && \
+        which chcon &>/dev/null
+    then
+        chcon -t textrel_shlib_t $MYSQL_BASEDIR/lib/plugin/ha_innodb_plugin.so.0.0.0
+    fi
+}
+
+
 function get_version_info()
 {
     MYSQLD_EXTRA_ARGS=
@@ -109,7 +124,9 @@ function get_version_info()
 		XB_BIN="xtrabackup_51";;
 	    "innodb51" )
 		XB_BIN="xtrabackup_plugin"
-		MYSQLD_EXTRA_ARGS="--ignore-builtin-innodb --plugin-load=innodb=ha_innodb_plugin.so";;
+		MYSQLD_EXTRA_ARGS="--ignore-builtin-innodb --plugin-load=innodb=ha_innodb_plugin.so"
+	        fix_selinux
+		;;
 	    "innodb55" )
 		XB_BIN="xtrabackup_innodb55";;
 	    "xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
