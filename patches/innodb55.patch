@@ -473,7 +473,18 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -3775,15 +3880,97 @@
+@@ -3576,7 +3681,9 @@
+ 			dbinfo.name);
+ 		srv_normalize_path_for_win(dbpath);
+ 
+-		dbdir = os_file_opendir(dbpath, FALSE);
++		/* We want wrong directory permissions to be a fatal error for
++		XtraBackup. */
++		dbdir = os_file_opendir(dbpath, TRUE);
+ 
+ 		if (dbdir != NULL) {
+ 			/* printf("Opened dir %s\n", dbinfo.name); */
+@@ -3775,15 +3882,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -579,7 +590,7 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4172,7 +4359,7 @@
+@@ -4172,7 +4361,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -588,7 +599,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -4192,10 +4379,13 @@
+@@ -4192,10 +4381,13 @@
  	}
  
  	if (node->open == FALSE) {
@@ -603,7 +614,7 @@
  	}
  
  	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
-@@ -4208,6 +4398,8 @@
+@@ -4208,6 +4400,8 @@
  	}
  
  	node->n_pending++;
@@ -612,7 +623,7 @@
  }
  
  /********************************************************************//**
-@@ -4390,6 +4582,16 @@
+@@ -4390,6 +4584,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
