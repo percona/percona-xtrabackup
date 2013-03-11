@@ -821,6 +821,10 @@ sub apply_log {
         $options = $options . " --incremental-dir=$option_incremental_dir";
     }
 
+    if ($option_tmpdir) {
+        $options .= " --tmpdir=$option_tmpdir";
+    }
+
     # run ibbackup as a child process
     $cmdline = "$option_ibbackup_binary $options";
 
@@ -993,6 +997,10 @@ sub start_ibbackup {
         $options = $options . " --target-dir=" . $option_tmpdir;
     } else {
 	$options = $options . " --target-dir=$backup_dir";
+    }
+
+    if ($option_tmpdir) {
+        $options .= " --tmpdir=$option_tmpdir";
     }
 
     # prepare command line for running ibbackup
