@@ -25,6 +25,7 @@ checksum_a=`checksum_table test test`
 cat >$topdir/tables <<EOF
 test.test
 EOF
+ib_part_add_mandatory_tables $mysql_datadir $topdir/tables
 innobackupex --no-timestamp --tables-file=$topdir/tables $topdir/backup
 innobackupex --apply-log $topdir/backup
 vlog "Backup taken"

@@ -80,7 +80,7 @@ vlog "Checksums are OK"
 # consistent backup results. Otherwise we risk ending up with no test.ibd
 # in the backup in case importing has not finished before taking backup
 
-stop_server
+shutdown_server
 start_server $mysql_extra_args
 
 # Some testing queries
