@@ -39,6 +39,12 @@ the GNU GENERAL PUBLIC LICENSE Version 2, June 1991.
 my @required_perl_version = (5, 0, 5);
 my $required_perl_version_old_style = 5.005;
 
+# check existence of DBD::mysql module
+eval {
+    require DBD::mysql;
+};
+my $dbd_mysql_installed = $EVAL_ERROR ? 0 : 1;
+
 # force flush after every write and print
 $| = 1;
 
@@ -52,9 +58,6 @@ $File::Find::dont_use_nlink=1;
 # maximum number of files in a database directory which are
 # separately printed when a backup is made
 my $backup_file_print_limit = 9;
-
-# timeout in seconds for a reply from mysql
-my $mysql_response_timeout = 900;
 
 # default compression level (this is an argument to ibbackup)
 my $default_compression_level = 1;
@@ -121,6 +124,9 @@ my $option_safe_slave_backup_timeout = 300;
 my $option_compact = '';
 my $option_rebuild_indexes = '';
 
+my %mysql;
+my $option_backup = '';
+
 # name of the my.cnf configuration file
 #my $config_file = '';
 
@@ -160,19 +166,8 @@ my %table_list;
 # prefix for output lines
 my $prefix = "$innobackup_script:";
 
-# process id of mysql client program (runs as a child process of this script)
-my $mysql_pid = '';
-
 # mysql server version string
 my $mysql_server_version = '';
-
-# name of the file where stderr of mysql process is directed
-my $mysql_stderr_fh = File::Temp->new();
-my $mysql_stderr = $mysql_stderr_fh->filename;
-
-# name of the file where stdout of mysql process is directed
-my $mysql_stdout_fh = File::Temp->new();
-my $mysql_stdout = $mysql_stdout_fh->filename;
 
 # name of the file where binlog position info is written
 my $binlog_info;
@@ -195,12 +190,6 @@ my $ibbackup_pid = '';
 
 # a counter for numbering mysql connection checks
 my $hello_id = 0;
-
-# the request which has been sent to mysqld, but to which
-# mysqld has not yet replied. Empty string denotes that no
-# request has been sent to mysqld or that mysqld has replied
-# to all requests.
-my $current_mysql_request = '';
 
 # escape sequences for options files
 my %option_value_escapes = ('b' => "\b",
@@ -255,29 +244,29 @@ if ($option_copy_back || $option_move_back) {
 		close XTRABACKUP_BINARY;
 		}
 
-	else {
+        else {
 		if( $option_ibbackup_binary eq "autodetect" ){
 			# Try to connect MySQL and get the version
-			print STDERR "option_ibbackup_binary is autodetect, trying to connect to MySQL\n";
-			my $options = get_mysql_options();
-			$mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ");
-			print STDERR "Connected to MySQL with pid $mysql_pid\n";
-			sleep 1;
-			if ($mysql_pid && $mysql_pid == waitpid($mysql_pid, &WNOHANG)) {
-				my $reason = `cat $mysql_stderr`;
-				$mysql_pid = '';
-				# Failed to connect to MySQL
-				die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_55 (for MySQL 5.5) or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
-				}
-			else{
-				mysql_close();
-				print STDERR "Connected successfully\n";
-				$option_ibbackup_binary = set_xtrabackup_version();
-				}
-			}
+                        %mysql = mysql_connect(
+                                               abort_on_error => 0,
+                                               keepalives => 0
+                                              );
+                        if ($mysql{dbh}) {
+                            print STDERR "Connected successfully\n";
+                            $option_ibbackup_binary = set_xtrabackup_version();
+                            mysql_close();
+                        } else {
+     		            die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_55 (for MySQL 5.5) or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
+                        }
 		}
-} elsif ($option_ibbackup_binary eq 'autodetect') {
-    $option_ibbackup_binary = set_xtrabackup_version();
+        }
+} elsif ($option_backup) {
+    # backup
+    %mysql = mysql_connect(abort_on_error => 1, keepalives => 1);
+
+    if ($option_ibbackup_binary eq 'autodetect') {
+        $option_ibbackup_binary = set_xtrabackup_version();
+    }
 }
 init();
 
@@ -295,6 +284,9 @@ if ($option_copy_back) {
 } else {
     # make a backup of InnoDB and MyISAM tables, indexes and .frm files.
     $ibbackup_exit_code = backup();
+
+    mysql_close(\%mysql);
+
     if ($option_stream) {
       open XTRABACKUP_BINARY, "> $option_tmpdir/$xtrabackup_binary_file"
     	|| die "Cannot open file $option_tmpdir/$xtrabackup_binary_file: $!\n";
@@ -367,16 +359,11 @@ sub current_time {
 #
 sub Die {
     my $message = shift;
-    my $extra_info = '';
 
     # kill all child processes of this process
     kill_child_processes();
 
-    if ($current_mysql_request) {
-        $extra_info = " while waiting for reply to MySQL request:" .
-            " '$current_mysql_request'";
-    }
-    die "$prefix Error: $message$extra_info";
+    die "$prefix Error: $message";
 }
     
 
@@ -388,22 +375,14 @@ sub Die {
 sub backup {
     my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
 
-    # check that we can connect to the database. This done by
-    # connecting, issuing a query, and closing the connection.
-    mysql_open();
-    mysql_close();
-
     # start ibbackup as a child process
     start_ibbackup();
 
     # wait for ibbackup to suspend itself
     wait_for_ibbackup_suspend();
 
-    # connect to database
-    mysql_open();
-
     if ($option_safe_slave_backup) {
-      wait_for_safe_slave();
+        wait_for_safe_slave(\%mysql);
     }
 
     # flush tables with read lock
@@ -412,11 +391,11 @@ sub backup {
         backup_files(1);
 
         # flush tables with read lock
-        mysql_lockall();
+        mysql_lockall(\%mysql);
     }
 
     if ($option_slave_info) {
-        write_slave_info();
+        write_slave_info(\%mysql);
     }
 
 
@@ -428,17 +407,14 @@ sub backup {
     resume_ibbackup();
 
     # release read locks on all tables
-    mysql_unlockall() if !$option_no_lock;
+    mysql_unlockall(\%mysql) if !$option_no_lock;
 
     my $ibbackup_exit_code = wait_for_ibbackup_finish();
 
     if ( $option_safe_slave_backup && $sql_thread_started) {
       print STDERR "$prefix: Starting slave SQL thread\n";
-      mysql_send('START SLAVE SQL_THREAD;');
+      mysql_query(\%mysql, 'START SLAVE SQL_THREAD;');
     }
-
-    # Close the DB connection
-    mysql_close();
 
     # copy ib_lru_dump
     if (-e "$orig_datadir/ib_lru_dump") {
@@ -1085,194 +1061,249 @@ sub start_ibbackup {
                   
 
 #
-# get_mysql_options subroutine returns the options to mysql client program
-# as a string. The options are determined from the options given by the
-# user to innobackup.
+# parse_connection_options() subroutine parses connection-related command line
+# options
 #
-sub get_mysql_options {
-    my $options = '';
+sub parse_connection_options {
+    my $con = shift;
+
+    $con->{dsn} = 'dbi:mysql:';
 
     # this option has to be first
     if ($option_defaults_file) {
-        $options = "$options --defaults-file='$option_defaults_file'";
+        $con->{dsn} .= ";mysql_read_default_file=$option_defaults_file";
     }
 
     if ($option_defaults_extra_file) {
-        $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
+        $con->{dsn} .= ";mysql_read_default_file=$option_defaults_extra_file";
     }
+
+    $con->{dsn} .= ";mysql_read_default_group=xtrabackup";
 
     if ($option_mysql_password) {
-        $options = "$options --password='$option_mysql_password'";
+        $con->{dsn_password} = "$option_mysql_password";
     }
     if ($option_mysql_user) {
-        $options = "$options --user='$option_mysql_user'";
+        $con->{dsn_user} = "$option_mysql_user";
     }
     if ($option_mysql_host) {
-        $options = "$options --host='$option_mysql_host'";
+        $con->{dsn} .= ";host=$option_mysql_host";
     }
     if ($option_mysql_port) {
-        $options = "$options --port='$option_mysql_port'";
+        $con->{dsn} .= ";port=$option_mysql_port";
     }
     if ($option_mysql_socket) {
-        $options = "$options --socket='$option_mysql_socket'";
+        $con->{dsn} .= ";mysql_socket=$option_mysql_socket";
     }
-    $options = "$options --unbuffered --";
-    return $options;
 }
 
-
 #
-# Check that the server is responding to queries
-#
-sub mysql_ping {
-    my $alarm_handler = shift;
-    my $mysql_pid_copy = $mysql_pid;
-
-    # send a dummy query to mysql child process
-    $hello_id++;
-
-    my $hello_message = "xtrabackup ping $hello_id";
-    print MYSQL_WRITER "select '$hello_message';\n" 
-        or Die "Connection to mysql child process failed: $!";
-
-    # Don't check server's response if running in a signal handler
-    # because that breaks system() calls
-    if ($alarm_handler)
-    {
-	return 0;
-    }
-    # wait for reply
-    eval {
-        local $SIG{ALRM} = sub { die "alarm clock restart" };
-        my $stdout = '';
-        my $stderr = '';
-        alarm $mysql_response_timeout;
-        while (index($stdout, $hello_message) < 0) {
-            sleep 2;
-            if ($mysql_pid && $mysql_pid == waitpid($mysql_pid, &WNOHANG)) {
-                my $reason = `cat $mysql_stderr`;
-                $mysql_pid = '';
-                die "mysql child process has died: $reason";
-            }
-            $stdout = `cat $mysql_stdout`;
-            $stderr = `cat $mysql_stderr | grep -v ^Warning`;
-            if ($stderr) {
-                # mysql has reported an error, do exit
-                die "mysql error: $stderr";
-            }
-        }
-        alarm 0;
-    };
-    if ($@ =~ /alarm clock restart/) {
-        Die "Connection to mysql child process (pid=$mysql_pid_copy) timedout."
-            . " (Time limit of $mysql_response_timeout seconds exceeded."
-            . " You may adjust time limit by editing the value of parameter"
-            . " \"\$mysql_response_timeout\" in this script.)";
-    } elsif ($@) { Die $@; }
-}
-
-
-#
-# SIGALRM handler which sends a keepalive query to the server
-#
-sub catch_sigalrm {
-  mysql_ping(1);
-  # Reschedule SIGALRM
-  alarm $mysql_keep_alive;
-}
-
-
-#
-# Schedule periodic server pings
+# Start a background process that will send keep-alive queries periodically
+# using the connection passed as a 'mysql' hash reference
 #
 sub start_keepalives {
-  $SIG{ALRM} = \&catch_sigalrm;
-  alarm $mysql_keep_alive;
+    my $con = shift;
+
+    if (defined($con->{keep_alive_pid})) {
+        Die "Keep-alive process has already been started for this connection."
+    }
+
+    my $keep_alive_pid = fork();
+
+    if ($keep_alive_pid) {
+        # parent process
+        $con->{keep_alive_pid} = $keep_alive_pid;
+
+        return;
+    }
+
+    # child process
+    $con->{dbh}->{InactiveDestroy} = 1;
+
+    my $rc = 0;
+    my $hello_id = 0;
+
+    # send dummy queries to connection until interrupted with SIGINT or a
+    # connection error
+    while (!$rc) {
+        sleep $mysql_keep_alive;
+
+        my $hello_message = "xtrabackup ping " . $hello_id++;
+
+        eval {
+            $con->{dbh}->selectrow_array("select '$hello_message'");
+        };
+
+        if ($EVAL_ERROR) {
+            $rc = 255;
+        }
+    }
+
+    exit $rc;
 }
 
 #
-# Cancel periodic server pings
+# Stop the background keep-alive process
 #
 sub stop_keepalives {
-  alarm 0;
-  $SIG{ALRM} = "DEFAULT";
+    my $con = shift;
+
+    if (!defined($con->{keep_alive_pid})) {
+        Die "Keep-alive process has never been started for this connection."
+    }
+
+    kill 'INT', $con->{keep_alive_pid};
+    waitpid($con->{keep_alive_pid}, 0);
+    my $rc = $? >> 8;
+
+    if ($rc != 0) {
+        Die "Keep-alive process died with exit code " . $rc;
+    }
+    undef $con->{keep_alive_pid};
 }
 
 #
-# mysql_open subroutine starts mysql as a child process with
-# a pipe connection.
+# mysql_connect subroutine connects to MySQL server
 #
-sub mysql_open {
-    my $options = get_mysql_options();
-    # run mysql as a child process with a pipe connection
-    $now = current_time();
-    (my $prt_options = $options) =~ s/--password=[^ ]+ /--password=xxxxxxxx /g;
-    print STDERR "$now  $prefix Starting mysql with options: $prt_options\n";
-    $mysql_pid = open(*MYSQL_WRITER, "| mysql $options >$mysql_stdout 2>$mysql_stderr ") or Die "Failed to spawn mysql child process: $!";
-    MYSQL_WRITER->autoflush(1);
-    $now = current_time();
-    print STDERR "$now  $prefix Connected to database with mysql child process (pid=$mysql_pid)\n";
-    print MYSQL_WRITER "SET SESSION wait_timeout = 2147000;\n" or die "Connection to mysql child process failed: $!";
+sub mysql_connect {
+    my %con;
+    my %args = (
+                  # Defaults
+                  abort_on_error => 1,
+                  keepalives => 0,
+                  @_
+               );
 
-    mysql_ping(0);
+    $con{abort_on_error} = $args{abort_on_error};
+    $con{keepalives} = $args{keepalives};
 
-    start_keepalives();
+    parse_connection_options(\%con);
+
+    $now = current_time();
+    print STDERR "$now  $prefix Connecting to MySQL server with DSN '" .
+        $con{dsn} . "' as '" . $con{dsn_user} . "' (using password: ";
+    if (defined($con{dsn_password})) {
+        print STDERR "YES).\n";
+    } else {
+        print STDERR "NO).\n";
+    }
+
+    eval {
+        $con{dbh}=DBI->connect($con{dsn}, $con{dsn_user},
+                                 $con{dsn_password}, { RaiseError => 1 });
+    };
+
+    if ($EVAL_ERROR) {
+        $con{connect_error}=$EVAL_ERROR;
+    } else {
+        $now = current_time();
+        print STDERR "$now  $prefix Connected to MySQL server\n";
+    }
+
+    if ($args{abort_on_error}) {
+        if (!$dbd_mysql_installed) {
+            die "ERROR: Failed to connect to MySQL server as " .
+                "DBD::mysql module is not installed";
+        } else {
+            if (!$con{dbh}) {
+                die "ERROR: Failed to connect to MySQL server: " .
+                    $con{connect_error};
+            }
+        }
+    }
+
+    if ($con{dbh} && $con{keepalives}) {
+        start_keepalives(\%con);
+    }
+
+    return %con;
 }
 
-
 #
-# mysql_send subroutine send a request string to mysql child process.
-# This subroutine appends a newline character to the request and checks 
-# that mysqld receives the query.
+# mysql_query subroutine send a query to MySQL server child process.
 # Parameters:
-#    request  request string
+#    query     query to execute
 #
-sub mysql_send {
-    my $request = shift;
+sub mysql_query {
+  my ($con, $query) = @_;
 
-    stop_keepalives();
+  eval {
+      if ($con->{keepalives}) {
+          stop_keepalives($con);
+      }
 
-    $current_mysql_request = $request;
-    print MYSQL_WRITER "$request\n";
-    mysql_ping(0);
-    $current_mysql_request = '';
+      if ($query eq 'SHOW VARIABLES') {
+          $con->{vars} = $con->{dbh}->selectall_hashref('SHOW VARIABLES',
+                                                        'Variable_name');
+      } elsif ($query eq 'SHOW STATUS') {
+          $con->{status} = $con->{dbh}->selectall_hashref('SHOW STATUS',
+                                                        'Variable_name');
+      } elsif ($query eq 'SHOW MASTER STATUS') {
+          $con->{master_status} =
+              $con->{dbh}->selectrow_hashref("SHOW MASTER STATUS");
+      } elsif ($query eq 'SHOW SLAVE STATUS') {
+          $con->{slave_status} =
+              $con->{dbh}->selectrow_hashref("SHOW SLAVE STATUS");
+      } else {
+          $con->{dbh}->do($query);
+      }
 
-    start_keepalives();
+      if ($con->{keepalives}) {
+          start_keepalives($con);
+      }
+  };
+  if ($EVAL_ERROR) {
+      Die "\nError executing '$query': $EVAL_ERROR\n";
+  }
 }
-    
+
+
+sub get_mysql_vars {
+  mysql_query($_[0], 'SHOW VARIABLES')
+}
+
+sub get_mysql_status {
+  mysql_query($_[0], 'SHOW STATUS');
+}
+
+sub get_mysql_master_status {
+  mysql_query($_[0], "SHOW MASTER STATUS");
+}
+
+sub get_mysql_slave_status {
+  mysql_query($_[0], "SHOW SLAVE STATUS");
+}
 
 #
-# mysql_close subroutine terminates mysql child process gracefully.
+# mysql_close subroutine closes connection to MySQL server gracefully.
 # 
 sub mysql_close {
-    stop_keepalives();
+    my $con = shift;
 
-    print MYSQL_WRITER "quit\n";
+    if ($con->{keepalives}) {
+        stop_keepalives($con);
+    };
+
+    $con->{dbh}->disconnect();
+
     $now = current_time();
     print STDERR "$now  $prefix Connection to database server closed\n";
-    $mysql_pid = '';
 }
-
 
 #
 # write_binlog_info subroutine retrieves MySQL binlog position and
 # saves it in a file. It also prints it to stdout.
 #
 sub write_binlog_info {
-    my @lines;
-    my $position = '';
-    my $filename = '';
+    my $con = shift;
 
     # get binlog position
-    mysql_send 'SHOW MASTER STATUS\G';
+    get_mysql_master_status($con);
 
     # get the name of the last binlog file and position in it
     # from the SHOW MASTER STATUS output
-    file_to_array($mysql_stdout, \@lines);
-    foreach (@lines) {
-        $filename = $1 if /^\s+File:\s(\S+)\s*$/;
-        $position = $1 if /^\s+Position:\s(\d+)\s*$/;
-    }
+    my $filename = $con->{master_status}->{File};
+    my $position = $con->{master_status}->{Position};
 
     # write binlog info file
     open(FILE, ">$binlog_info") || Die "Failed to open file '$binlog_info': $!";
@@ -1293,34 +1324,20 @@ sub write_binlog_info {
 # saves it in a file. It also prints it to stdout.
 #
 sub write_galera_info {
+    my $con = shift;
     my @lines;
     my @info_lines = ();
     my $position = '';
     my $filename = '';
 
     # get binlog position
-    mysql_send "SHOW STATUS LIKE 'wsrep_local_state_uuid';";
-    mysql_send "SHOW STATUS LIKE 'wsrep_last_committed';";
-
-    # get "show master status" output lines (2) from mysql output
-    file_to_array($mysql_stdout, \@lines);
+    get_mysql_status($con);
 
     open(FILE, ">$galera_info") || 
          Die "Failed to open file '$galera_info': $!";
 
-    foreach my $line (@lines) {
-        if ($line =~ m/wsrep_local_state_uuid/) {
-	    $line =~ s/wsrep_local_state_uuid\s*//g;
-            print FILE  "$line:";
-        }
-    }
-
-    foreach my $line (@lines) {
-        if ($line =~ m/wsrep_last_committed/) {
-	    $line =~ s/wsrep_last_committed\s*//g;
-            print FILE  "$line\n";
-        }
-    }
+    print FILE $con->{status}->{wsrep_local_state_uuid}->{Value};
+    print FILE $con->{status}->{wsrep_last_committed}->{Value};
 
     close(FILE);
 
@@ -1339,23 +1356,25 @@ sub write_galera_info {
 # also saves it in $msql_slave_position variable.
 #
 sub write_slave_info {
+    my $con = shift;
+
     my @lines;
     my @info_lines;
     my $position = '';
     my $filename = '';
     my $master= '';
-	
-    # get slave status. Use single quotes here, otherwise
-    # \G is evaluated as a control character.
-    mysql_send 'SHOW SLAVE STATUS\G';
+
+    # get slave status
+    get_mysql_slave_status($con);
 
     # get output of the "show slave status" command from mysql output
     # and extract binlog position of the master server
-    file_to_array($mysql_stdout, \@lines);
-    for (@lines) {
-        $master = $1 if /Master_Host:\s*(\S*)\s*$/;
-        $filename = $1 if /Master_Log_File:\s*(\S*)\s*$/;
-        $position = $1 if /Master_Log_Pos:\s*(\S*)\s*$/;
+    $master = $con->{slave_status}->{Master_Host};
+    $filename = $con->{slave_status}->{Relay_Master_Log_File};
+    $position = $con->{slave_status}->{Exec_Master_Log_Pos};
+
+    if (!defined($master) || !defined($filename) || !defined($position)) {
+        Die "Failed to get master binlog coordinates from SHOW SLAVE STATUS";
     }
 
     # print slave status to a file
@@ -1377,31 +1396,22 @@ sub write_slave_info {
 # mysql_lockall subroutine puts a read lock on all tables in all databases.
 # 
 sub mysql_lockall {
+    my $con = shift;
+
     $now = current_time();
     print STDERR "$now  $prefix Starting to lock all tables...\n";
 
-    mysql_send "USE mysql;";
-#    mysql_send "DROP TABLE IF EXISTS ibbackup_binlog_marker;";
-#    if (compare_versions($mysql_server_version, '4.1.0') == -1) {
-#        # MySQL server version is 4.0 or older, ENGINE keyword not supported
-#        mysql_send "CREATE TABLE ibbackup_binlog_marker(a INT) TYPE=INNODB;";
-#    } else {
-#        # MySQL server version is 4.1 or newer, use ENGINE keyword
-#        mysql_send "CREATE TABLE ibbackup_binlog_marker(a INT) ENGINE=INNODB;";
-#    }
-    mysql_send "SET AUTOCOMMIT=0;";
-#    mysql_send "INSERT INTO ibbackup_binlog_marker VALUES (1);";
     if (compare_versions($mysql_server_version, '4.0.22') == 0
         || compare_versions($mysql_server_version, '4.1.7') == 0) {
         # MySQL server version is 4.0.22 or 4.1.7
-        mysql_send "COMMIT;";
-        mysql_send "FLUSH TABLES WITH READ LOCK;";
+        mysql_query($con, "COMMIT");
+        mysql_query($con, "FLUSH TABLES WITH READ LOCK");
     } else {
         # MySQL server version is other than 4.0.22 or 4.1.7
-        mysql_send "FLUSH TABLES WITH READ LOCK;";
-        mysql_send "COMMIT;";
+        mysql_query($con, "FLUSH TABLES WITH READ LOCK");
+        mysql_query($con, "COMMIT");
     }
-    write_binlog_info;
+    write_binlog_info($con);
     write_galera_info if $option_galera_info;
 	
     $now = current_time();
@@ -1414,31 +1424,13 @@ sub mysql_lockall {
 # databases.
 # 
 sub mysql_unlockall {
-    mysql_send "UNLOCK TABLES;";
-#    mysql_send "DROP TABLE IF EXISTS ibbackup_binlog_marker;";
+    my $con = shift;
+
+    mysql_query ($con, "UNLOCK TABLES");
 
     $now = current_time();
     print STDERR "$now  $prefix All tables unlocked\n";
 }
-
-
-#
-# catch_sigpipe subroutine is a signal handler for SIGPIPE.
-#
-sub catch_sigpipe {
-    my $rcode;
-
-    if ($mysql_pid && (-1 == ($rcode = waitpid($mysql_pid, &WNOHANG))
-                       || $rcode == $mysql_pid)) {
-        my $reason = `cat $mysql_stderr`;
-        print STDERR "Pipe to mysql child process broken: $reason at";
-        system("date +'%H:%M:%S'");
-        exit(1);
-    } else {
-        Die "Broken pipe";
-    }
-}
-
 
 #
 # kill_child_processes subroutine kills all child processes of this process.
@@ -1447,11 +1439,6 @@ sub kill_child_processes {
     if ($ibbackup_pid) {
         kill($kill_signal, $ibbackup_pid);
         $ibbackup_pid = '';
-    }
-    
-    if ($mysql_pid) {
-        kill($kill_signal, $mysql_pid);
-        $mysql_pid = '';
     }
 }
 
@@ -1581,24 +1568,12 @@ sub init {
     print STDERR "           At the end of a successful $run run $innobackup_script\n";
     print STDERR "           prints \"completed OK!\".\n\n";
 
-    # check that MySQL client program and InnoDB Hot Backup program
-    # are runnable via shell
     if (!$option_copy_back && !$option_move_back) {
         # we are making a backup or applying log to backup
         if (!$option_apply_log) {
             # we are making a backup, we need mysql server
-            my $output = '';
-            my @lines = ();
-
-            # check that we have mysql client program
-            require_external('mysql', '--version', 'Ver ([^,]+)', 
-                             \$mysql_version);
-            
-            # get mysql server version
-            my $options = get_mysql_options();
-            @lines = split('\n', 
-                           `mysql $options -e "select \@\@version"`);
-            $mysql_server_version = $lines[1];
+            get_mysql_vars(\%mysql);
+            $mysql_server_version = $mysql{vars}->{version}->{Value};
             print STDERR "$prefix Using mysql server version $mysql_server_version\n";
         }
         #require_external($option_ibbackup_binary, '--license', 
@@ -1615,9 +1590,6 @@ sub init {
                 . " v2.0 in order to use --include option.\n";
         }
     }
-    
-    # set signal handlers
-    $SIG{PIPE} = \&catch_sigpipe;
 
     # read MySQL options file
     #read_config_file($config_file, \%config);
@@ -1838,11 +1810,9 @@ sub check_args {
         exit(1);
     }
 
-    # get options file name
-    #$config_file = $ARGV[0];
-
     if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
         # we are making a backup, get backup root directory
+        $option_backup = "1";
         $backup_root = $ARGV[0];
         if ($option_incremental && !$option_incremental_lsn) {
             my @dirs = `ls -1 -t $backup_root`;
@@ -2541,86 +2511,89 @@ sub escape_path {
 }
 
 sub set_xtrabackup_version {
-# Based on MySQL version choose correct binary
-#  MySQL 5.1.* with InnoDB plugin - xtrabackup
-#  MariaDB 5.1.* - xtrabackup
-#  MariaDB 5.2.* - xtrabackup
-#  MariaDB 5.3.* - xtrabackup
-#  Percona Server 5.0 - xtrabackup_51
-#  Percona Server 5.1 - xtrabackup
-#  Percona Server 5.5 - xtrabackup_55
-#  MySQL 5.5.* - xtrabackup_55
-#  MariaDB 5.5.* - xtrabackup_55
+    # Based on MySQL version choose correct binary
+    #  MySQL 5.1.* with InnoDB plugin - xtrabackup
+    #  MariaDB 5.1.* - xtrabackup
+    #  MariaDB 5.2.* - xtrabackup
+    #  MariaDB 5.3.* - xtrabackup
+    #  Percona Server 5.0 - xtrabackup_51
+    #  Percona Server 5.1 - xtrabackup
+    #  Percona Server 5.5 - xtrabackup_55
+    #  MySQL 5.5.* - xtrabackup_55
+    #  MariaDB 5.5.* - xtrabackup_55
 
-my @lines;
-my $var_version = '';
-my $var_innodb_version = '';
-my $ibbackup_binary;
-mysql_open();
-mysql_send "SHOW VARIABLES LIKE 'version'\\G";
-file_to_array($mysql_stdout, \@lines);
-for (@lines) {
-	$var_version = $1 if /Value:\s+(\S+)/;
-	}
-mysql_send "SHOW VARIABLES LIKE 'innodb_version'\\G";
-file_to_array($mysql_stdout, \@lines);
-for (@lines) {
-	$var_innodb_version = $1 if /Value:\s+(\S+)/;
-	}
-if($var_version =~ m/5\.0\.\d/){
+    my $var_version = '';
+    my $var_innodb_version = '';
+    my $ibbackup_binary;
+
+    get_mysql_vars(\%mysql);
+
+    $var_version = $mysql{vars}->{version}->{Value};
+    $var_innodb_version = $mysql{vars}->{innodb_version}->{Value};
+
+
+    if($var_version =~ m/5\.0\.\d/) {
 	Die "MySQL 5.0 support was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.0 was Percona XtraBackup 2.0.";
-}
-if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/.*/){
+    }
+
+    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/.*/) {
 	Die "Support for MySQL 5.1 with builtin InnoDB (not the plugin) was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.1 with builtin InnoDB was Percona XtraBackup 2.0.";
-}
-if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+$/){
+    }
+
+    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/1\.0\.\d+$/) {
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
-}
-if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
+    }
+
+    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
-}
-if($var_version =~ m/5\.2\.\d/){
-    $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
-}
-if($var_version =~ m/5\.3\.\d/){
-    $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
-}
-if($var_version =~ m/5\.5\.\d/){
+    }
+
+    if($var_version =~ m/5\.2\.\d/){
+        $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+    }
+
+    if($var_version =~ m/5\.3\.\d/){
+        $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
+    }
+
+    if($var_version =~ m/5\.5\.\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
-}
-mysql_close();
-return $ibbackup_binary;
+    }
+
+    return $ibbackup_binary;
 }
 
 # Wait until it's safe to backup a slave.  Returns immediately if
 # the host isn't a slave.  Currently there's only one check:
 # Slave_open_temp_tables has to be zero.  Dies on timeout.
 sub wait_for_safe_slave {
+   my $con = shift;
+
    my @lines;
    # whether host is detected as slave in safe slave backup mode
    my $host_is_slave = 0;
 
    $sql_thread_started = 0;
+   get_mysql_slave_status($con);
 
-   mysql_send 'SHOW SLAVE STATUS\G;';
-   file_to_array($mysql_stdout, \@lines);
-   foreach my $line ( @lines ) {
-      if ( $line =~ m/Read_Master_Log_Pos/ ) {
+   if (defined($con->{slave_status}->{Read_Master_Log_Pos})) {
          $host_is_slave = 1;
-     } elsif ( $line =~ m/Slave_SQL_Running:.*Yes/ ) {
-         $sql_thread_started = 1;
-     }
    }
+
+   if ($con->{slave_status}->{Slave_SQL_Running} =~ m/Yes/ ) {
+         $sql_thread_started = 1;
+   }
+
    if ( !$host_is_slave ) {
       print STDERR "$prefix: Not checking slave open temp tables for --safe-slave-backup because host is not a slave\n";
       return;
    }
 
    if ($sql_thread_started) {
-       mysql_send 'STOP SLAVE SQL_THREAD;';
+       mysql_query($con, 'STOP SLAVE SQL_THREAD');
    }
 
-   my $open_temp_tables = get_slave_open_temp_tables();
+   my $open_temp_tables = get_slave_open_temp_tables($con);
    print STDERR "$prefix: Slave open temp tables: $open_temp_tables\n";
 
    return if $open_temp_tables == 0;
@@ -2630,11 +2603,11 @@ sub wait_for_safe_slave {
    while ( $n_attempts-- ) {
       print STDERR "$prefix: Starting slave SQL thread, waiting $sleep_time seconds, then checking Slave_open_temp_tables again ($n_attempts attempts remaining)...\n";
       
-      mysql_send 'START SLAVE SQL_THREAD;';
+      mysql_query($con, 'START SLAVE SQL_THREAD');
       sleep $sleep_time;
-      mysql_send 'STOP SLAVE SQL_THREAD;';
+      mysql_query($con, 'STOP SLAVE SQL_THREAD');
 
-      $open_temp_tables = get_slave_open_temp_tables();
+      $open_temp_tables = get_slave_open_temp_tables($con);
       print STDERR "$prefix: Slave open temp tables: $open_temp_tables\n";
       if ( !$open_temp_tables ) {
          print STDERR "$prefix: Slave is safe to backup\n";
@@ -2645,29 +2618,25 @@ sub wait_for_safe_slave {
    # Restart the slave if it was running at start
    if ($sql_thread_started) {
        print STDERR "Restarting slave SQL thread.\n";
-       mysql_send 'START SLAVE SQL_THREAD;';
+       mysql_query($con, 'START SLAVE SQL_THREAD');
    }
 
    Die "Slave_open_temp_tables did not become zero after waiting $option_safe_slave_backup_timeout seconds";
 }
 
 sub get_slave_open_temp_tables {
-   my @lines;
-   mysql_send 'SHOW STATUS LIKE "slave_open_temp_tables"\G;';
-   file_to_array($mysql_stdout, \@lines);
-   my $last_value;
-   for my $i ( 0..$#lines ) {
-      $last_value = $i + 1
-         if $lines[$i] =~ m/Variable_name: Slave_open_temp_tables/i;
-   }
-   Die "SHOW STATUS LIKE 'slave_open_temp_tables' did not return anything"
-      unless $last_value;
+    my $con = shift;
 
-   Die "Failed to get Slave_open_temp_tables from SHOW STATUS"
-      unless defined $lines[$last_value];
+    get_mysql_status($con);
 
-   my ($n) = $lines[$last_value] =~ m/(\d+)/;
-   return $n;
+    if (!defined($con->{status}->{Slave_open_temp_tables})) {
+        Die "Failed to get Slave_open_temp_tables from SHOW STATUS"
+    }
+    if (!defined($con->{status}->{Slave_open_temp_tables}->{Value})) {
+        Die "SHOW STATUS LIKE 'slave_open_temp_tables' did not return anything"
+    }
+
+   return $con->{status}->{Slave_open_temp_tables}->{Value};
 }
 
 =pod
