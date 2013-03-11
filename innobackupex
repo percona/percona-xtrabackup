@@ -1145,12 +1145,14 @@ sub start_ibbackup {
                     foreach $file (@list) {
 			next unless check_if_required($subdir, $file);
                         if($option_include) {
-                            my $table_name;
+                            my $table = get_table_name($file);
+                            my $table_part = get_table_name_with_part_suffix($file);
 
-                            $table_name = get_table_name($file);
-
-                            if (!("$subdir.$table_name" =~ /$option_include/)) {
-                                print STDERR "'$file' is skipped.\n";
+                            if (!("$subdir.$table_part" =~ /$option_include/ ||
+                                  "$subdir.$table" =~ /$option_include/)) {
+                                if ($print_each_file) {
+                                    print STDERR "'$file' is skipped.\n";
+                                }
                                 next;
                             }
                         }
@@ -2185,13 +2187,18 @@ sub backup_files {
             next unless check_if_required($database, $file);
 
 	    if($option_include) {
-	      my $table_name = get_table_name($file);
-	      if (!("$database.$table_name" =~ /$option_include/)) {
-	        print STDERR "$database.$file is skipped because it does not match $option_include.\n";
-	        next;
-	      }
-	    }
+                my $table = get_table_name($file);
+                my $table_part = get_table_name_with_part_suffix($file);
 
+                if (!("$database.$table_part" =~ /$option_include/ ||
+                      "$database.$table" =~ /$option_include/)) {
+
+                    if ($print_each_file) {
+                        print STDERR "$database.$file is skipped because it does not match '$option_include'.\n";
+                    }
+                    next;
+                }
+	    }
                
             if ($print_each_file) {
                 print STDERR "$prefix Backing up file '$source_dir/$database/$file'\n";
@@ -2527,6 +2534,17 @@ sub get_option {
 #       1 table name
 #
 sub get_table_name {
+   my $table;
+
+   $table = get_table_name_with_part_suffix($_[0]);
+   # trim partition suffix
+   $table = (split('#P#', $table))[0];
+
+   return $table;
+}
+
+# Like get_table_name(), but keeps the partition suffix if present
+sub get_table_name_with_part_suffix {
    my $table_path = shift;
    my $filename;
    my $table;
@@ -2535,8 +2553,6 @@ sub get_table_name {
    $filename = (reverse(split(/\//, $table_path)))[0];
    # get name of the table by removing file suffix
    $table = (split(/\./, $filename))[0];
-   # and partition suffix
-   $table = (split('#P#', $table))[0];
 
    return $table;
 }
@@ -2554,14 +2570,16 @@ sub check_if_required {
    my $db_count  = scalar keys %databases_list;
    my $tbl_count = scalar keys %table_list;
    my $table;
+   my $table_part;
 
    if ( $db_count == 0 && $tbl_count == 0 ) {
       # No databases defined with --databases option, include all databases,
       # and no tables defined with --tables-file option, include all tables.
-      return 1;
+       return 1;
    }
    else {
       if ( $table_path ) {
+         $table_part = get_table_name_with_part_suffix($table_path);
          $table = get_table_name($table_path);
       }
    }
@@ -2572,7 +2590,9 @@ sub check_if_required {
          if (defined $table_path) {
             my $db_hash = $databases_list{$db};
             $db_count = keys %$db_hash;
-            if ($db_count > 0 && ! defined $databases_list{$db}->{$table}) {
+            if ($db_count > 0 &&
+                !defined $databases_list{$db}->{$table_part} &&
+                !defined $databases_list{$db}->{$table}) {
                # --databases option specified, but table is not included
                return 0;
             }
@@ -2589,7 +2609,8 @@ sub check_if_required {
    # Filter for --tables-file.
    if ( $tbl_count ) {
       return 0 unless exists $table_list{$db};
-      return 0 if $table && !$table_list{$db}->{$table};
+      return 0 if $table && !$table_list{$db}->{$table_part} &&
+          !$table_list{$db}->{$table};
    }
 
    return 1;  # backup the table
