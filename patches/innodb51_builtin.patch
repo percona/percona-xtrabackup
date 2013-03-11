@@ -419,7 +419,18 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -3500,15 +3604,100 @@
+@@ -3254,7 +3358,9 @@
+ 			dbinfo.name);
+ 		srv_normalize_path_for_win(dbpath);
+ 
+-		dbdir = os_file_opendir(dbpath, FALSE);
++		/* We want wrong directory permissions to be a fatal error for
++		XtraBackup. */
++		dbdir = os_file_opendir(dbpath, TRUE);
+ 
+ 		if (dbdir != NULL) {
+ 			/* printf("Opened dir %s\n", dbinfo.name); */
+@@ -3500,15 +3606,100 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -528,7 +539,7 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -3901,7 +4090,7 @@
+@@ -3901,7 +4092,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -537,7 +548,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/* in: file node */
-@@ -3921,10 +4110,14 @@
+@@ -3921,10 +4112,14 @@
  	}
  
  	if (node->open == FALSE) {
@@ -553,7 +564,7 @@
  	}
  
  	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
-@@ -3937,6 +4130,8 @@
+@@ -3937,6 +4132,8 @@
  	}
  
  	node->n_pending++;
@@ -562,7 +573,7 @@
  }
  
  /************************************************************************
-@@ -4067,7 +4262,9 @@
+@@ -4067,7 +4264,9 @@
  	ut_ad(recv_no_ibuf_operations || (type == OS_FILE_WRITE)
  	      || !ibuf_bitmap_page(block_offset) || sync || is_log);
  #ifdef UNIV_SYNC_DEBUG
@@ -573,7 +584,7 @@
  	      || ibuf_page(space_id, block_offset));
  #endif
  #endif
-@@ -4112,6 +4309,16 @@
+@@ -4112,6 +4311,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -627,7 +638,7 @@
  /******************************************************************
  Use this macro instead of the corresponding function! Macro for memory
  heap creation. */
-@@ -401,6 +409,7 @@
+@@ -401,6 +408,7 @@
  			allocated buffer frame, which can be appended as a
  			free block to the heap, if we need more space;
  			otherwise, this is NULL */
@@ -1089,7 +1100,7 @@
  /************************************************************************
  Fills the specified free list. */
  static
-@@ -333,6 +344,10 @@
+@@ -333,6 +343,10 @@
  	ulint		n;
  	ibool		ret;
  
@@ -1100,7 +1111,7 @@
  	n = ut_2_log(ut_max(size + MEM_AREA_EXTRA_SIZE, MEM_AREA_MIN_SIZE));
  
  	mutex_enter(&(pool->mutex));
-@@ -465,6 +480,11 @@
+@@ -465,6 +479,11 @@
  	ulint		size;
  	ulint		n;
  
