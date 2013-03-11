@@ -2257,7 +2257,7 @@ sub backup_files {
 	# Remove from $backup_dir files that have been removed between first and
 	# second passes. Cannot use "rsync --delete" because it does not work
 	# with --files-from.
-	if (!$prep_mode) {
+	if (!$prep_mode && !$option_no_lock) {
 	    open(RSYNC, "<$rsync_tmpfile_pass1")
 		|| Die "Can't open $rsync_tmpfile_pass1 for reading: $!\n";
 
