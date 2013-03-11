@@ -126,6 +126,8 @@ export AUTO_DOWNLOAD=yes
 
         install -m 755 src/xbstream "$INSTALLDIR/bin"
 
+	install -m 755 src/xbcrypt "$INSTALLDIR/bin"
+
         install -m 755 innobackupex "$INSTALLDIR/bin"
         ln -s innobackupex "$INSTALLDIR/bin/innobackupex-1.5.1"
 
@@ -141,7 +143,7 @@ export AUTO_DOWNLOAD=yes
 
     # Clean up build dir
     rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
-    
+
 ) || false
 
 # Clean up

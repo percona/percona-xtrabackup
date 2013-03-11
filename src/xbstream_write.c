@@ -29,7 +29,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 struct xb_wstream_struct {
 	pthread_mutex_t	mutex;
-	File		fd;
 };
 
 struct xb_wstream_file_struct {
@@ -40,12 +39,25 @@ struct xb_wstream_file_struct {
 	char		*chunk_ptr;
 	size_t		chunk_free;
 	my_off_t	offset;
+	void		*userdata;
+	xb_stream_write_callback *write;
 };
 
 static int xb_stream_flush(xb_wstream_file_t *file);
 static int xb_stream_write_chunk(xb_wstream_file_t *file,
 				 const void *buf, size_t len);
 static int xb_stream_write_eof(xb_wstream_file_t *file);
+
+static
+ssize_t
+xb_stream_default_write_callback(xb_wstream_file_t *file __attribute__((unused)),
+				 void *userdata __attribute__((unused)),
+				 const void *buf, size_t len)
+{
+	if (my_write(fileno(stdout), buf, len, MYF(MY_WME | MY_NABP)))
+		return -1;
+	return len;
+}
 
 xb_wstream_t *
 xb_stream_write_new(void)
@@ -54,18 +66,15 @@ xb_stream_write_new(void)
 
 	stream = (xb_wstream_t *) my_malloc(sizeof(xb_wstream_t), MYF(MY_FAE));
 	pthread_mutex_init(&stream->mutex, NULL);
-	stream->fd = fileno(stdout);
-
-#ifdef __WIN__
-	setmode(stream->fd, _O_BINARY);
-#endif
 
 	return stream;;
 }
 
 xb_wstream_file_t *
 xb_stream_write_open(xb_wstream_t *stream, const char *path,
-		     MY_STAT *mystat __attribute__((unused)))
+		     MY_STAT *mystat __attribute__((unused)),
+		     void *userdata,
+		     xb_stream_write_callback *onwrite)
 {
 	xb_wstream_file_t	*file;
 	ulong			path_len;
@@ -88,6 +97,16 @@ xb_stream_write_open(xb_wstream_t *stream, const char *path,
 	file->offset = 0;
 	file->chunk_ptr = file->chunk;
 	file->chunk_free = XB_STREAM_MIN_CHUNK_SIZE;
+	if (onwrite) {
+#ifdef __WIN__
+		setmode(fileno(stdout), _O_BINARY);
+#endif
+		file->userdata = userdata;
+		file->write = onwrite;
+	} else {
+		file->userdata = NULL;
+		file->write = xb_stream_default_write_callback;
+	}
 
 	return file;
 }
@@ -152,12 +171,6 @@ xb_stream_flush(xb_wstream_file_t *file)
 	return 0;
 }
 
-#define F_WRITE(ptr,size)                                       	\
-	do {								\
-		if (my_write(fd, ptr, size, MYF(MY_WME | MY_NABP)))	\
-			goto err;					\
-	} while (0)
-
 static
 int
 xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf, size_t len)
@@ -168,7 +181,6 @@ xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf, size_t len)
 			       FN_REFLEN + 8 + 8 + 4];
 	uchar		*ptr;
 	xb_wstream_t	*stream = file->stream;
-	File		fd = stream->fd;
 	ulong		checksum;
 
 	/* Write xbstream header */
@@ -202,9 +214,12 @@ xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf, size_t len)
 
 	xb_ad(ptr <= tmpbuf + sizeof(tmpbuf));
 
-	F_WRITE(tmpbuf, ptr - tmpbuf);
+	if (file->write(file, file->userdata, tmpbuf, ptr-tmpbuf) == -1)
+		goto err;
 
-	F_WRITE(buf, len);                       /* Payload */
+
+	if (file->write(file, file->userdata, buf, len) == -1) /* Payload */
+		goto err;
 
 	file->offset+= len;
 
@@ -228,7 +243,6 @@ xb_stream_write_eof(xb_wstream_file_t *file)
 			       FN_REFLEN];
 	uchar		*ptr;
 	xb_wstream_t	*stream = file->stream;
-	File		fd = stream->fd;
 
 	pthread_mutex_lock(&stream->mutex);
 
@@ -251,7 +265,9 @@ xb_stream_write_eof(xb_wstream_file_t *file)
 
 	xb_ad(ptr <= tmpbuf + sizeof(tmpbuf));
 
-	F_WRITE(tmpbuf, (ulonglong) (ptr - tmpbuf));;
+	if (file->write(file, file->userdata, tmpbuf,
+			(ulonglong) (ptr - tmpbuf)) == -1)
+		goto err;
 
 	pthread_mutex_unlock(&stream->mutex);
 

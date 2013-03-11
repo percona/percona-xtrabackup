@@ -1,5 +1,5 @@
 ############################################################################
-# Test streaming + compression
+# Test basic local backup with compression
 ############################################################################
 
 if ! which qpress > /dev/null 2>&1 ; then
@@ -7,10 +7,8 @@ if ! which qpress > /dev/null 2>&1 ; then
   exit $SKIPPED_EXIT_CODE
 fi
 
-stream_format=xbstream
-stream_extract_cmd="xbstream -xv <"
-stream_uncompress_cmd="for i in *.qp;  do qpress -d \$i ./; done; \
-for i in sakila/*.qp; do qpress -d \$i sakila/; done"
 innobackupex_options="--compress --compress-threads=4 --compress-chunk-size=8K"
+data_decompress_cmd="for i in *.qp;  do qpress -d \$i ./; done; \
+for i in sakila/*.qp; do qpress -d \$i sakila/; done"
 
-. inc/ib_stream_common.sh
+. inc/xb_local.sh

@@ -43,10 +43,15 @@ typedef enum {
 /************************************************************************
 Write interface. */
 
+typedef ssize_t xb_stream_write_callback(xb_wstream_file_t *file,
+					 void *userdata,
+					 const void *buf, size_t len);
+
 xb_wstream_t *xb_stream_write_new(void);
 
 xb_wstream_file_t *xb_stream_write_open(xb_wstream_t *stream, const char *path,
-					MY_STAT *mystat);
+					MY_STAT *mystat, void *userdata,
+					xb_stream_write_callback *onwrite);
 
 int xb_stream_write_data(xb_wstream_file_t *file, const void *buf, size_t len);
 

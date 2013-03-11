@@ -54,9 +54,12 @@ struct datasink_struct {
 
 /* Supported datasink types */
 typedef enum {
+	DS_TYPE_STDOUT,
 	DS_TYPE_LOCAL,
-	DS_TYPE_STREAM,
+	DS_TYPE_ARCHIVE,
+	DS_TYPE_XBSTREAM,
 	DS_TYPE_COMPRESS,
+	DS_TYPE_ENCRYPT,
 	DS_TYPE_TMPFILE,
 	DS_TYPE_BUFFER
 } ds_type_t;

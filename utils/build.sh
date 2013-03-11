@@ -161,6 +161,8 @@ function build_xtrabackup()
 	export LIBS="$LIBS -lrt"
     fi
     $MAKE_CMD MYSQL_ROOT_DIR=$server_dir clean
+    echo "$MAKE_CMD MYSQL_ROOT_DIR=$server_dir XTRABACKUP_VERSION=$XTRABACKUP_VERSION $xtrabackup_target" > build.sh
+    chmod +x build.sh
     $MAKE_CMD MYSQL_ROOT_DIR=$server_dir XTRABACKUP_VERSION=$XTRABACKUP_VERSION $xtrabackup_target
     cd $top_dir
 }

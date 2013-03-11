@@ -140,6 +140,21 @@ ibool xtrabackup_stream = FALSE;
 static const char *xtrabackup_compress_alg = NULL;
 ibool xtrabackup_compress = FALSE;
 uint xtrabackup_compress_threads;
+ulonglong xtrabackup_compress_chunk_size = 0;
+
+const char *xtrabackup_encrypt_algo_names[] =
+{ "NONE", "AES128", "AES192", "AES256", NullS};
+TYPELIB xtrabackup_encrypt_algo_typelib=
+{array_elements(xtrabackup_encrypt_algo_names)-1,"",
+	xtrabackup_encrypt_algo_names, NULL};
+
+
+ibool xtrabackup_encrypt = FALSE;
+ulong xtrabackup_encrypt_algo;
+char *xtrabackup_encrypt_key = NULL;
+char *xtrabackup_encrypt_key_file = NULL;
+uint xtrabackup_encrypt_threads;
+ulonglong xtrabackup_encrypt_chunk_size = 0;
 
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
@@ -236,17 +251,22 @@ static char *xtrabackup_debug_sync = NULL;
 static my_bool xtrabackup_compact = FALSE;
 static my_bool xtrabackup_rebuild_indexes = FALSE;
 
-/* datasink chain used to store datafiles */
+/* Datasinks */
 ds_ctxt_t       *ds_data     = NULL;
-/* datasink chain used to store XtraBackup metainfo files */
 ds_ctxt_t       *ds_meta     = NULL;
 
-/* datasinks used to build the above two chains */
-static  ds_ctxt_t       *ds_local    = NULL;
-static  ds_ctxt_t       *ds_compress = NULL;
-static  ds_ctxt_t       *ds_tmpfile  = NULL;
-static  ds_ctxt_t       *ds_stream   = NULL;
-static  ds_ctxt_t       *ds_buffer   = NULL;
+/* Simple datasink creation tracking...add datasinks in the reverse order you
+want them destroyed. */
+#define XTRABACKUP_MAX_DATASINKS	10
+static	ds_ctxt_t	*datasinks[XTRABACKUP_MAX_DATASINKS];
+static	uint		actual_datasinks = 0;
+static inline
+void
+xtrabackup_add_datasink(ds_ctxt_t *ds)
+{
+	xb_ad(actual_datasinks < XTRABACKUP_MAX_DATASINKS);
+	datasinks[actual_datasinks] = ds; actual_datasinks++;
+}
 
 /* ======== Datafiles iterator ======== */
 datafiles_iter_t *
@@ -345,6 +365,12 @@ enum options_xtrabackup
   OPT_XTRA_STREAM,
   OPT_XTRA_COMPRESS,
   OPT_XTRA_COMPRESS_THREADS,
+  OPT_XTRA_COMPRESS_CHUNK_SIZE,
+  OPT_XTRA_ENCRYPT,
+  OPT_XTRA_ENCRYPT_KEY,
+  OPT_XTRA_ENCRYPT_KEY_FILE,
+  OPT_XTRA_ENCRYPT_THREADS,
+  OPT_XTRA_ENCRYPT_CHUNK_SIZE,
   OPT_INNODB,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
@@ -491,7 +517,35 @@ static struct my_option my_long_options[] =
    (G_PTR*) &xtrabackup_compress_threads, (G_PTR*) &xtrabackup_compress_threads,
    0, GET_UINT, REQUIRED_ARG, 1, 1, UINT_MAX, 0, 0, 0},
 
-  {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
+  {"compress-chunk-size", OPT_XTRA_COMPRESS_CHUNK_SIZE,
+   "Size of working buffer(s) for compression threads in bytes. The default value is 64K.",
+   (G_PTR*) &xtrabackup_compress_chunk_size, (G_PTR*) &xtrabackup_compress_chunk_size,
+   0, GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONGLONG_MAX, 0, 0, 0},
+
+  {"encrypt", OPT_XTRA_ENCRYPT, "Encrypt individual backup files using the "
+   "specified encryption algorithm.",
+   &xtrabackup_encrypt_algo, &xtrabackup_encrypt_algo,
+   &xtrabackup_encrypt_algo_typelib, GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"encrypt-key", OPT_XTRA_ENCRYPT_KEY, "Encryption key to use.",
+   (G_PTR*) &xtrabackup_encrypt_key, (G_PTR*) &xtrabackup_encrypt_key, 0,
+   GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"encrypt-key-file", OPT_XTRA_ENCRYPT_KEY_FILE, "File which contains encryption key to use.",
+   (G_PTR*) &xtrabackup_encrypt_key_file, (G_PTR*) &xtrabackup_encrypt_key_file, 0,
+   GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"encrypt-threads", OPT_XTRA_ENCRYPT_THREADS,
+   "Number of threads for parallel data encryption. The default value is 1.",
+   (G_PTR*) &xtrabackup_encrypt_threads, (G_PTR*) &xtrabackup_encrypt_threads,
+   0, GET_UINT, REQUIRED_ARG, 1, 1, UINT_MAX, 0, 0, 0},
+
+  {"encrypt-chunk-size", OPT_XTRA_ENCRYPT_CHUNK_SIZE,
+   "Size of working buffer(S) for encryption threads in bytes. The default value is 64K.",
+   (G_PTR*) &xtrabackup_encrypt_chunk_size, (G_PTR*) &xtrabackup_encrypt_chunk_size,
+   0, GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONGLONG_MAX, 0, 0, 0},
+
+   {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
    (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -829,6 +883,15 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       return 1;
     }
     xtrabackup_compress = TRUE;
+    break;
+  case OPT_XTRA_ENCRYPT:
+    if (argument == NULL)
+    {
+      msg("Missing --encrypt argument, must specify a valid encryption "
+          " algorithm.\n");
+      return 1;
+    }
+    xtrabackup_encrypt = TRUE;
     break;
   case '?':
     usage();
@@ -1649,6 +1712,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	xb_fil_cur_result_t	 res;
 	xb_write_filt_t		*write_filter = NULL;
 	xb_write_filt_ctxt_t	 write_filt_ctxt;
+	const char		*action;
 
 	if (!trx_sys_sys_space(node->space->id) && /* don't skip system space */
 	    check_if_skip_table(node->name, "ibd")) {
@@ -1693,14 +1757,27 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	}
 
 	if (xtrabackup_stream) {
-		const char *action = xtrabackup_compress ?
-			"Compressing and streaming" : "Streaming";
+		if (xtrabackup_compress) {
+			if (xtrabackup_encrypt) {
+				action = "Compressing, encrypting and streaming";
+			} else {
+				action = "Compressing and streaming";
+			}
+		} else if (xtrabackup_encrypt) {
+			action = "Encrypting and streaming";
+		} else {
+			action = "Streaming";
+		}
 		msg("[%02u] %s %s\n", thread_n, action, node->name);
 	} else {
-		const char *action;
-
 		if (xtrabackup_compress) {
-			action = "Compressing";
+			if (xtrabackup_encrypt) {
+				action = "Compressing and encrypting";
+			} else {
+				action = "Compressing";
+			}
+		} else if (xtrabackup_encrypt) {
+			action = "Encrypting";
 		} else {
 			action = "Copying";
 		}
@@ -2146,61 +2223,80 @@ xtrabackup_init_datasinks(void)
 		    "You can use the 'xbstream' format instead.\n");
 		xtrabackup_parallel = 1;
 	}
-	/* Now setup ds_data and ds_meta appropriately */
-	if (!xtrabackup_compress && !xtrabackup_stream) {
-		/* Local uncompressed backup */
-		ds_data = ds_create(xtrabackup_target_dir, DS_TYPE_LOCAL);
-		ds_meta = ds_data;
+
+	/* Start building out the pipelines from the terminus back */
+	if (xtrabackup_stream) {
+		/* All streaming goes to stdout */
+		ds_data = ds_meta = ds_create(xtrabackup_target_dir,
+					      DS_TYPE_STDOUT);
 	} else {
-		if (xtrabackup_stream) {
-			ds_stream = ds_create(xtrabackup_target_dir,
-					      DS_TYPE_STREAM);
-		}
-		if (xtrabackup_compress) {
-			ds_compress = ds_create(xtrabackup_target_dir,
-						DS_TYPE_COMPRESS);
-			/* Use a 1 MB buffer for compressed output stream */
-			ds_buffer = ds_create(xtrabackup_target_dir,
-					      DS_TYPE_BUFFER);
-			ds_buffer_set_size(ds_buffer, 1024 * 1024);
+		/* Local filesystem */
+		ds_data = ds_meta = ds_create(xtrabackup_target_dir,
+					      DS_TYPE_LOCAL);
+	}
 
-			ds_data = ds_compress;
+	/* Track it for destruction */
+	xtrabackup_add_datasink(ds_data);
 
-			if (xtrabackup_stream) {
-				/* Streaming compressed backup */
-				ds_set_pipe(ds_buffer, ds_stream);
-				/* Bypass compression for meta files */
-				ds_meta = ds_stream;
-			} else {
-				/* Local compressed backup */
-				ds_local = ds_create(xtrabackup_target_dir,
-						     DS_TYPE_LOCAL);
-				ds_set_pipe(ds_buffer, ds_local);
-				/* Bypass compression for meta files */
-				ds_meta = ds_local;
-			}
+	/* Encryption always done just before final output */
+	if (xtrabackup_encrypt) {
+		ds_ctxt_t	*ds;
 
-			ds_set_pipe(ds_compress, ds_buffer);
+		ds = ds_create(xtrabackup_target_dir, DS_TYPE_ENCRYPT);
+		xtrabackup_add_datasink(ds);
+
+		ds_set_pipe(ds, ds_data);
+		ds_data = ds_meta = ds;
+	}
+
+	/* Stream formatting */
+	if (xtrabackup_stream) {
+		ds_ctxt_t	*ds;
+		if (xtrabackup_stream_fmt == XB_STREAM_FMT_TAR) {
+			ds = ds_create(xtrabackup_target_dir, DS_TYPE_ARCHIVE);
+		} else if (xtrabackup_stream_fmt == XB_STREAM_FMT_XBSTREAM) {
+			ds = ds_create(xtrabackup_target_dir, DS_TYPE_XBSTREAM);
 		} else {
-			/* Streaming uncompressed backup */
-			ds_data = ds_stream;
-			ds_meta = ds_stream;
+			/* bad juju... */
+			ds = NULL;
 		}
 
-		if (xtrabackup_stream &&
-		    (xtrabackup_stream_fmt != XB_STREAM_FMT_XBSTREAM ||
-		     xtrabackup_suspend_at_end)) {
+		xtrabackup_add_datasink(ds);
+
+		ds_set_pipe(ds, ds_data);
+		ds_data = ds;
+
+		if (xtrabackup_stream_fmt != XB_STREAM_FMT_XBSTREAM ||
+		     xtrabackup_suspend_at_end) {
 			/* 'xbstream' allow parallel streams, but we
 			still can't stream directly to stdout when
 			xtrabackup is invoked from innobackupex
 			(i.e. with --suspend_at_and), because
 			innobackupex and xtrabackup streams would
 			interfere. Use temporary files instead. */
-			ds_tmpfile = ds_create(xtrabackup_target_dir,
-					       DS_TYPE_TMPFILE);
-			ds_set_pipe(ds_tmpfile, ds_stream);
-			ds_meta = ds_tmpfile;
+			ds_meta = ds_create(xtrabackup_target_dir, DS_TYPE_TMPFILE);
+			xtrabackup_add_datasink(ds_meta);
+			ds_set_pipe(ds_meta, ds);
+		} else {
+			ds_meta = ds_data;
 		}
+	}
+
+	/* Compression for ds_data */
+	if (xtrabackup_compress) {
+		ds_ctxt_t	*ds;
+
+		/* Use a 1 MB buffer for compressed output stream */
+		ds = ds_create(xtrabackup_target_dir, DS_TYPE_BUFFER);
+		ds_buffer_set_size(ds, 1024 * 1024);
+		xtrabackup_add_datasink(ds);
+		ds_set_pipe(ds, ds_data);
+		ds_data = ds;
+
+		ds = ds_create(xtrabackup_target_dir, DS_TYPE_COMPRESS);
+		xtrabackup_add_datasink(ds);
+		ds_set_pipe(ds, ds_data);
+		ds_data = ds;
 	}
 }
 
@@ -2211,25 +2307,9 @@ Destruction is done in the specific order to not violate their order in the
 pipeline so that each datasink is able to flush data down the pipeline. */
 static void xtrabackup_destroy_datasinks(void)
 {
-	if (ds_tmpfile != NULL) {
-		ds_destroy(ds_tmpfile);
-		ds_tmpfile = NULL;
-	}
-	if (ds_compress != NULL) {
-		ds_destroy(ds_compress);
-		ds_compress = NULL;
-	}
-	if (ds_buffer != NULL) {
-		ds_destroy(ds_buffer);
-		ds_buffer = NULL;
-	}
-	if (ds_stream != NULL) {
-		ds_destroy(ds_stream);
-		ds_stream = NULL;
-	}
-	if (ds_local != NULL) {
-		ds_destroy(ds_local);
-		ds_local = NULL;
+	for (uint i = actual_datasinks; i > 0; i--) {
+		ds_destroy(datasinks[i-1]);
+		datasinks[i-1] = NULL;
 	}
 	ds_data = NULL;
 	ds_meta = NULL;
@@ -4972,10 +5052,10 @@ next_opt:
 		exit(EXIT_FAILURE);
 	}
 
-	if (xtrabackup_compress && xtrabackup_stream &&
+	if ((xtrabackup_compress || xtrabackup_encrypt) && xtrabackup_stream &&
 	    xtrabackup_stream_fmt == XB_STREAM_FMT_TAR) {
 		msg("xtrabackup: error: "
-		    "compressed backups are incompatible with the \n"
+		    "compressed and encrypted backups are incompatible with the \n"
 		    "'tar' streaming format. Use --stream=xbstream instead.\n");
 		exit(EXIT_FAILURE);
 	}

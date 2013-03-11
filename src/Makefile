@@ -9,7 +9,7 @@
 # plugin - XtraBackup for MySQL versions 5.1.* with InnoDB plugin
 # 5.5 - XtraBackup for MySQL versions 5.5.*	
 
-LIBS += -lpthread
+LIBS += -lpthread `libgcrypt-config --libs`
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
 
 COMMON_FLAGS = -g -DXTRABACKUP_VERSION=\"$(XTRABACKUP_VERSION)\" -pedantic -Wall -fdiagnostics-show-option  -fno-strict-aliasing -Wno-strict-aliasing -Wextra -Wformat -Wno-format-nonliteral -Wno-format-security -Wno-long-long  -Wmissing-declarations  -Wno-redundant-decls # -Wundef -Wshadow
@@ -25,11 +25,16 @@ TARGET=xtrabackup
 PREFIX=/usr
 BIN_DIR=$(PREFIX)/bin
 
-COMMON_INC = -I. -I libarchive/libarchive -I quicklz
+COMMON_INC = -I. -I libarchive/libarchive -I quicklz `libgcrypt-config --cflags`
 XTRABACKUPCOBJS = \
-	ds_stream.o \
+	ds_archive.o \
+	ds_xbstream.o \
 	ds_local.o \
+	ds_stdout.o \
 	ds_compress.o \
+	ds_encrypt.o \
+	xbcrypt_common.o \
+	xbcrypt_write.o \
 	ds_tmpfile.o \
 	ds_buffer.o \
 	datasink.o \
@@ -37,6 +42,8 @@ XTRABACKUPCOBJS = \
 	quicklz/quicklz.o
 XTRABACKUPCCOBJS = xtrabackup.o innodb_int.o compact.o fil_cur.o write_filt.o
 XBSTREAMOBJS = xbstream.o xbstream_write.o xbstream_read.o
+
+XBCRYPTOBJS = xbcrypt.o xbcrypt_common.o xbcrypt_read.o xbcrypt_write.o
 
 LIBARCHIVE_A = libarchive/libarchive/libarchive.a
 
@@ -63,7 +70,7 @@ default: xtradb
 5.1: MYSQLOBJS= $(addprefix $(MYSQL_ROOT_DIR)/, mysys/libmysys.a  \
 	strings/libmystrings.a zlib/.libs/libzlt.a dbug/libdbug.a)
 5.1: TARGET := xtrabackup_51
-5.1: $(TARGET) xbstream
+5.1: $(TARGET) xbstream xbcrypt
 
 # XtraBackup for MySQL with InnoDB Plugin
 plugin: INC = $(COMMON_INC) $(addprefix -I$(MYSQL_ROOT_DIR)/, \
@@ -89,7 +96,7 @@ plugin: INNODBOBJS = $(addprefix \
 plugin: MYSQLOBJS = $(addprefix $(MYSQL_ROOT_DIR)/, mysys/libmysys.a \
 	strings/libmystrings.a zlib/.libs/libzlt.a dbug/libdbug.a)
 plugin: TARGET := xtrabackup_plugin
-plugin: $(TARGET) xbstream
+plugin: $(TARGET) xbstream xbcrypt
 
 # XtraBackup for MySQL 5.5
 5.5: INC = $(COMMON_INC) $(addprefix -isystem$(MYSQL_ROOT_DIR)/, \
@@ -113,7 +120,7 @@ endif
 5.5: DEFS = $(shell grep C_DEFINES \
 	$(MYSQL_ROOT_DIR)/storage/innobase/CMakeFiles/innobase.dir/flags.make | \
 	sed -e 's/C_DEFINES = //')
-5.5: $(TARGET) xbstream
+5.5: $(TARGET) xbstream xbcrypt
 
 # XtraBackup for XtraDB 
 xtradb: INC = $(COMMON_INC) $(addprefix -isystem$(MYSQL_ROOT_DIR)/, \
@@ -154,7 +161,7 @@ xtradb: MYSQLOBJS = $(addprefix $(MYSQL_ROOT_DIR)/, mysys/libmysys.a \
 	strings/libmystrings.a zlib/.libs/libzlt.a dbug/libdbug.a)
 xtradb: DEFS += -DXTRADB_BASED 
 xtradb: TARGET := xtrabackup 
-xtradb: $(TARGET) xbstream
+xtradb: $(TARGET) xbstream xbcrypt
 
 # XtraBackup for XtraDB 5.5
 xtradb55: INC = $(COMMON_INC) $(addprefix -isystem$(MYSQL_ROOT_DIR)/, \
@@ -179,7 +186,7 @@ xtradb55: DEFS = $(shell grep C_DEFINES \
 	sed -e 's/C_DEFINES = //')
 xtradb55: DEFS += -DXTRADB_BASED -DXTRADB55
 xtradb55: TARGET := xtrabackup_55
-xtradb55: $(TARGET) xbstream
+xtradb55: $(TARGET) xbstream xbcrypt
 
 $(XTRABACKUPCOBJS): %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
@@ -190,7 +197,13 @@ $(XTRABACKUPCCOBJS): %.o: %.cc
 xbstream.o xbstream_read.o: %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
 
-xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o ds_buffer.o datasink.o
+xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o ds_buffer.o ds_stdout.o datasink.o
+	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
+
+xbcrypt.o xbcrypt_read.o: %.o: %.c
+	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
+
+xbcrypt: $(XBCRYPTOBJS) $(MYSQLOBJS)
 	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
 xtrabackup.o: xtrabackup.cc xb_regex.h write_filt.h fil_cur.h xtrabackup.h compact.h

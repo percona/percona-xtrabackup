@@ -22,9 +22,12 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "common.h"
 #include "datasink.h"
 #include "ds_compress.h"
-#include "ds_stream.h"
+#include "ds_archive.h"
+#include "ds_xbstream.h"
 #include "ds_local.h"
+#include "ds_stdout.h"
 #include "ds_tmpfile.h"
+#include "ds_encrypt.h"
 #include "ds_buffer.h"
 
 /************************************************************************
@@ -36,14 +39,23 @@ ds_create(const char *root, ds_type_t type)
 	ds_ctxt_t	*ctxt;
 
 	switch (type) {
+	case DS_TYPE_STDOUT:
+		ds = &datasink_stdout;
+		break;
 	case DS_TYPE_LOCAL:
 		ds = &datasink_local;
 		break;
-	case DS_TYPE_STREAM:
-		ds = &datasink_stream;
+	case DS_TYPE_ARCHIVE:
+		ds = &datasink_archive;
+		break;
+	case DS_TYPE_XBSTREAM:
+		ds = &datasink_xbstream;
 		break;
 	case DS_TYPE_COMPRESS:
 		ds = &datasink_compress;
+		break;
+	case DS_TYPE_ENCRYPT:
+		ds = &datasink_encrypt;
 		break;
 	case DS_TYPE_TMPFILE:
 		ds = &datasink_tmpfile;
