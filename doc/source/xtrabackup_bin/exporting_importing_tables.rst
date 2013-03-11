@@ -18,9 +18,9 @@ This table should have been created in :term:`innodb_file_per_table` mode, so af
   $ find /data/backups/mysql/ -name export_test.*
   /data/backups/mysql/test/export_test.ibd
 
-when you prepare the backup, add the extra parameter :option:`--export` to the command. If you do not have :term:`innodb_file_per_table` in your `my.cnf`, you must add that to the command-line options. Here is an example: ::
+when you prepare the backup, add the extra parameter :option:`--export` to the command. Here is an example: ::
 
-  $ xtrabackup --prepare --export --innodb-file-per-table --target-dir=/data/backups/mysql/
+  $ xtrabackup --prepare --export --target-dir=/data/backups/mysql/
 
 Now you should see a :term:`.exp` file in the target directory: ::
 
