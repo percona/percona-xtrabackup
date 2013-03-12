@@ -19,7 +19,7 @@ Packager: Percona Development Team <mysql-dev@percona.com>
 URL: http://www.percona.com/software/percona-xtrabackup/
 Source: percona-xtrabackup-%{xtrabackup_version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
-Requires: mysql
+Requires: /usr/bin/mysql
 Provides: xtrabackup
 Obsoletes: xtrabackup
 BuildRequires: libaio-devel
