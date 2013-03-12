@@ -50,6 +50,9 @@ build-stamp:  config.status
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
 	cp src/xtrabackup_55 .
 
+	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
+	cp src/xtrabackup_56 .
+
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
 
 	touch $@

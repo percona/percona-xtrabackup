@@ -68,6 +68,8 @@ AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
 cp src/xtrabackup .
 AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
 cp src/xtrabackup_55 .
+AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
+cp src/xtrabackup_56 .
 
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
@@ -77,6 +79,7 @@ install -d %{buildroot}%{_datadir}
 
 install -m 755 xtrabackup %{buildroot}%{_bindir}
 install -m 755 xtrabackup_55 %{buildroot}%{_bindir}
+install -m 755 xtrabackup_56 %{buildroot}%{_bindir}
 install -m 755 innobackupex %{buildroot}%{_bindir}
 ln -s innobackupex %{buildroot}%{_bindir}/innobackupex-1.5.1
 install -m 755 xtrabackup_51 %{buildroot}%{_bindir}
@@ -93,6 +96,7 @@ cp -R test %{buildroot}%{_datadir}/percona-xtrabackup-test
 %{_bindir}/xtrabackup
 %{_bindir}/xtrabackup_51
 %{_bindir}/xtrabackup_55
+%{_bindir}/xtrabackup_56
 %{_bindir}/xbstream
 %doc COPYING
 
