@@ -118,6 +118,9 @@ export AUTO_DOWNLOAD=yes
         bash utils/build.sh xtradb55
         install -m 755 src/xtrabackup_55 "$INSTALLDIR/bin"
 
+        bash utils/build.sh innodb56
+        install -m 755 src/xtrabackup_56 "$INSTALLDIR/bin"
+
         bash utils/build.sh xtradb
         install -m 755 src/xtrabackup "$INSTALLDIR/bin"
 

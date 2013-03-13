@@ -13,7 +13,7 @@ Prepares a server binary directory to be used by run.sh when running XtraBackup
 tests.
 
 If the argument is one of the build targets passed to build.sh 
-(i.e. innodb51_builtin innodb51 innodb55 xtradb51 xtradb55) then the 
+(i.e. innodb51_builtin innodb51 innodb55 innodb56 xtradb51 xtradb55) then the 
 appropriate Linux tarball is downloaded from a pre-defined location and
 unpacked into the specified installation  directory ('./server' by default).
 
@@ -55,6 +55,11 @@ case "$1" in
 	tarball="mysql-5.5.16-linux2.6-$arch.tar.gz"
 	;;
 
+    innodb56)
+        url="http://s3.amazonaws.com/percona.com/downloads/community"
+        tarball="mysql-5.6.10-linux-glibc2.5-$arch.tar.gz"
+        ;;
+
     xtradb51)
 	url="http://www.percona.com/redir/downloads/Percona-Server-5.1/Percona-Server-5.1.60-13.1/binary/linux/$arch"
 	tarball="Percona-Server-5.1.60-rel13.1-413.Linux.$arch.tar.gz"
@@ -63,6 +68,11 @@ case "$1" in
     xtradb55)
 	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary"
 	tarball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
+	;;
+
+    xtradb56)
+	url="http://www.percona.com/downloads/TESTING/Percona-Server-56/Percona-Server-5.6.10-alpha60.2/release-5.6.10-60.2/318/binary/linux/$arch"
+	tarball="Percona-Server-5.6.10-alpha60.2-318.Linux.$arch.tar.gz"
 	;;
 
     galera55)
@@ -89,6 +99,11 @@ case "$1" in
     mariadb55)
 	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-5.5.28/kvm-bintar-hardy-$maria_arch_path"
 	tarball="mariadb-5.5.28-linux-$arch.tar.gz"
+	;;
+
+    mariadb55)
+	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-10.0.1/kvm-bintar-hardy-$maria_arch_path"
+	tarball="mariadb-10.0.1-linux-$arch.tar.gz"
 	;;
 
     *)

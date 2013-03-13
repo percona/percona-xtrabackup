@@ -127,6 +127,8 @@ function get_version_info()
 		;;
 	    "innodb55" )
 		XB_BIN="xtrabackup_innodb55";;
+            "innodb56" | "xtradb56" | "mariadb100")
+                XB_BIN="xtrabackup_56" ;;
 	    "xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
 		XB_BIN="xtrabackup";;
 	    "xtradb55" | "mariadb55")
@@ -154,6 +156,9 @@ function get_version_info()
     INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     XTRADB_VERSION="`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`"
+
+    # Version-specific defaults
+    DEFAULT_IBDATA_SIZE="10M"
 
     # Determine MySQL flavor
     if [[ "$MYSQL_VERSION" =~ "MariaDB" ]]
@@ -199,8 +204,12 @@ function get_version_info()
 	    else
 		XB_BIN="xtrabackup_innodb55"
 	    fi
+        elif [ "${MYSQL_VERSION:0:3}" = "5.6" -o "${MYSQL_VERSION:0:4}" = "10.0" ]
+        then
+            XB_BIN="xtrabackup_56"
+            DEFAULT_IBDATA_SIZE="12M"
 	else
-	    vlog "Uknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
+	    vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
 	    exit -1
 	fi
     fi
@@ -225,7 +234,8 @@ function get_version_info()
 
     export MYSQL_VERSION MYSQL_VERSION_COMMENT MYSQL_FLAVOR \
 	INNODB_VERSION XTRADB_VERSION INNODB_FLAVOR \
-	XB_BIN IB_BIN IB_ARGS XB_ARGS MYSQLD_EXTRA_ARGS
+	XB_BIN IB_BIN IB_ARGS XB_ARGS MYSQLD_EXTRA_ARGS \
+        DEFAULT_IBDATA_SIZE
 }
 
 export SKIPPED_EXIT_CODE=200
