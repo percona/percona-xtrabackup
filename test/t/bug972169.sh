@@ -8,5 +8,5 @@ start_server
 
 run_cmd_expect_failure $XB_BIN $XB_ARGS --datadir=$mysql_datadir --backup \
     --compress --stream=tar
-grep -q "xtrabackup: error: compressed backups are incompatible with the" \
+grep -q "xtrabackup: error: compressed and encrypted backups are incompatible with the" \
     $OUTFILE

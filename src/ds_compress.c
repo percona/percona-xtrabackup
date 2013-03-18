@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "common.h"
 #include "datasink.h"
 
-#define COMPRESS_CHUNK_SIZE (64 * 1024UL)
+#define COMPRESS_CHUNK_SIZE ((size_t) (xtrabackup_compress_chunk_size))
 #define MY_QLZ_COMPRESS_OVERHEAD 400
 
 typedef struct {
@@ -57,7 +57,10 @@ typedef struct {
 	size_t			bytes_processed;
 } ds_compress_file_t;
 
-extern uint	xtrabackup_compress_threads;
+/* Compression options */
+extern char		*xtrabackup_compress_alg;
+extern uint		xtrabackup_compress_threads;
+extern ulonglong	xtrabackup_compress_chunk_size;
 
 static ds_ctxt_t *compress_init(const char *root);
 static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
@@ -122,7 +125,7 @@ compress_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 	ds_file_t		*file;
 	ds_compress_file_t	*comp_file;
 
-	xb_a(ctxt->pipe_ctxt != NULL);
+	xb_ad(ctxt->pipe_ctxt != NULL);
 	dest_ctxt = ctxt->pipe_ctxt;
 
 	comp_ctxt = (ds_compress_ctxt_t *) ctxt->ptr;
@@ -294,13 +297,11 @@ compress_deinit(ds_ctxt_t *ctxt)
 {
 	ds_compress_ctxt_t 	*comp_ctxt;
 
-	xb_a(ctxt->pipe_ctxt != NULL);
+	xb_ad(ctxt->pipe_ctxt != NULL);
 
 	comp_ctxt = (ds_compress_ctxt_t *) ctxt->ptr;;
 
 	destroy_worker_threads(comp_ctxt->threads, comp_ctxt->nthreads);
-
-	ds_destroy(ctxt->pipe_ctxt);
 
 	MY_FREE(ctxt->root);
 	MY_FREE(ctxt);

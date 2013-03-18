@@ -42,7 +42,7 @@ build-stamp:  config.status
 
 	# Add here commands to compile the package.
 	AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
-	cp src/xtrabackup_51 src/xbstream .
+	cp src/xtrabackup_51 src/xbstream src/xbcrypt .
 
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
 	cp src/xtrabackup .

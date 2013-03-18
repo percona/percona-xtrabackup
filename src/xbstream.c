@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "common.h"
 #include "xbstream.h"
 #include "ds_local.h"
+#include "ds_stdout.h"
 
 #define XBSTREAM_VERSION "1.0"
 #define XBSTREAM_BUFFER_SIZE (1024 * 1024UL)
@@ -39,9 +40,11 @@ typedef enum {
 
 /* Need the following definitions to avoid linking with ds_*.o and their link
 dependencies */
-datasink_t datasink_stream;
+datasink_t datasink_archive;
+datasink_t datasink_xbstream;
 datasink_t datasink_compress;
 datasink_t datasink_tmpfile;
+datasink_t datasink_encrypt;
 datasink_t datasink_buffer;
 
 static run_mode_t 	opt_mode;
@@ -265,7 +268,7 @@ mode_create(int argc, char **argv)
 			goto err;
 		}
 
-		file = xb_stream_write_open(stream, filepath, &mystat);
+		file = xb_stream_write_open(stream, filepath, &mystat, NULL, NULL);
 		if (file == NULL) {
 			goto err;
 		}

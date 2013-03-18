@@ -85,6 +85,13 @@ my $option_throttle = '';
 my $option_sleep = '';
 my $option_compress = 999;
 my $option_compress_threads = 1;
+my $option_compress_chunk_size = '';
+my $option_encrypt = '';
+my $option_encrypt_key = '';
+my $option_encrypt_key_file = '';
+my $encrypt_cmd = '';
+my $option_encrypt_threads = 1;
+my $option_encrypt_chunk_size = '';
 my $option_uncompress = '';
 my $option_export = '';
 my $option_use_memory = '';
@@ -298,8 +305,8 @@ if ($option_copy_back) {
     close XTRABACKUP_BINARY;
 
     if ($option_stream) {
-      system("cd $option_tmpdir; $stream_cmd $xtrabackup_binary_file")
-	&& die "Failed to stream $xtrabackup_binary_file: $!";
+      stream_encrypt_file($option_tmpdir, $xtrabackup_binary_file)
+                          && die "Failed to stream $xtrabackup_binary_file: $!";
       unlink "$option_tmpdir/$xtrabackup_binary_file";
     }
 }
@@ -420,8 +427,8 @@ sub backup {
     if (-e "$orig_datadir/ib_lru_dump") {
         if ($option_stream) {
             print STDERR "$prefix Backing up as tar stream 'ib_lru_dump'\n";
-            system("cd $orig_datadir; $stream_cmd ib_lru_dump")
-                and Die "Failed to stream 'ib_lru_dump': $!";
+            stream_encrypt_file($orig_datadir, "ib_lru_dump")
+                                and Die "Failed to stream 'ib_lru_dump': $!";
         } elsif (!$option_rsync) {
             my $src_name = escape_path("$orig_datadir/ib_lru_dump");
             my $dst_name = escape_path("$backup_dir/ib_lru_dump");
@@ -996,7 +1003,7 @@ sub start_ibbackup {
         #(datadir) for 'xtrabackup_suspended' and 'xtrabackup_checkpoints'
         $options = $options . " --target-dir=" . $option_tmpdir;
     } else {
-	$options = $options . " --target-dir=$backup_dir";
+        $options = $options . " --target-dir=$backup_dir";
     }
 
     if ($option_tmpdir) {
@@ -1013,6 +1020,22 @@ sub start_ibbackup {
     if ($option_compress) {
         $options = $options . " --compress";
         $options = $options . " --compress-threads=$option_compress_threads";
+	if ($option_compress_chunk_size) {
+	        $options = $options . " --compress-chunk-size=$option_compress_chunk_size";
+	}
+    }
+    if ($option_encrypt) {
+        $options = $options . " --encrypt=$option_encrypt";
+        if ($option_encrypt_key) {
+            $options = $options . " --encrypt-key=$option_encrypt_key";
+        }
+        if ($option_encrypt_key_file) {
+            $options = $options . " --encrypt-key-file=$option_encrypt_key_file";
+        }
+        $options = $options . " --encrypt-threads=$option_encrypt_threads";
+	if ($option_encrypt_chunk_size) {
+	        $options = $options . " --encrypt-chunk-size=$option_encrypt_chunk_size";
+	}
     }
     if ($option_use_memory) {
         $options = $options . " --use-memory=$option_use_memory";
@@ -1027,9 +1050,9 @@ sub start_ibbackup {
     if ($option_incremental) {
         if($option_incremental_lsn) {
           $options = $options . " --incremental-lsn='$option_incremental_lsn'";
-	    } else {
+        } else {
           $options = $options . " --incremental-basedir='$incremental_basedir'";
-	    }
+        }
     }
 
     if ($option_tables_file) {
@@ -1039,7 +1062,7 @@ sub start_ibbackup {
         $options = $options . " --parallel=$option_parallel";
     }
     if ($option_stream) {
-	$options = $options . " --stream=$option_stream";
+        $options = $options . " --stream=$option_stream";
     }
 
     if ($option_compact) {
@@ -1319,8 +1342,8 @@ sub write_binlog_info {
     close(FILE);
 
     if ($option_stream) {
-        system("cd $option_tmpdir; $stream_cmd xtrabackup_binlog_info")
-            and Die "Failed to stream 'xtrabackup_binlog_info': $!";
+        stream_encrypt_file($option_tmpdir, "xtrabackup_binlog_info")
+                            and Die "Failed to stream 'xtrabackup_binlog_info': $!";
         unlink $binlog_info || Die "Failed to delete '$binlog_info': $!";
     }
 
@@ -1350,8 +1373,8 @@ sub write_galera_info {
     close(FILE);
 
     if ($option_stream) {
-        system("cd $option_tmpdir; $stream_cmd xtrabackup_galera_info")
-            and Die "Failed to stream 'xtrabackup_galera_info': $!";
+        stream_encrypt_file($option_tmpdir, "xtrabackup_galera_info")
+                            and Die "Failed to stream 'xtrabackup_galera_info': $!";
         unlink $galera_info || Die "Failed to delete '$galera_info': $!";
     }
 
@@ -1391,8 +1414,8 @@ sub write_slave_info {
     close(FILE);
 
     if ($option_stream) {
-        system("cd $option_tmpdir; $stream_cmd xtrabackup_slave_info")
-            and Die "Failed to stream 'xtrabackup_slave_info': $!";
+        stream_encrypt_file($option_tmpdir, "xtrabackup_slave_info")
+                            and Die "Failed to stream 'xtrabackup_slave_info': $!";
         unlink $slave_info || Die "Failed to delete '$slave_info': $!";
     }
 
@@ -1687,9 +1710,8 @@ sub write_backup_config_file {
     if ($option_stream) {
         my $filename_dir = dirname($filename);
         my $filename_name = basename($filename);
-	system("cd $filename_dir; $stream_cmd $filename_name")
-	  and Die "Failed to stream '$filename_name': $!";
-
+        stream_encrypt_file($filename_dir, $filename_name)
+                            and Die "Failed to stream '$filename_name': $!";
         unlink $filename || Die "Failed to delete '$filename': $!";
     }
 }
@@ -1724,7 +1746,13 @@ sub check_args {
 
     # read command line options
     $rcode = GetOptions('compress' => \$option_compress,
-	    		'compress-threads=i' => \$option_compress_threads,
+                        'compress-threads=i' => \$option_compress_threads,
+                        'compress-chunk-size=s' => \$option_compress_chunk_size,
+                        'encrypt=s' => \$option_encrypt,
+                        'encrypt-key=s' => \$option_encrypt_key,
+                        'encrypt-key-file=s' => \$option_encrypt_key_file,
+                        'encrypt-threads=i' => \$option_encrypt_threads,
+                        'encrypt-chunk-size=s' => \$option_encrypt_chunk_size,
                         'help' => \$option_help,
                         'version' => \$option_version,
                         'throttle=i' => \$option_throttle,
@@ -1756,7 +1784,7 @@ sub check_args {
                         'incremental-dir=s' => \$option_incremental_dir,
                         'extra-lsndir=s' => \$option_extra_lsndir,
                         'stream=s' => \$option_stream,
-			'rsync' => \$option_rsync,
+                        'rsync' => \$option_rsync,
                         'tmpdir=s' => \$option_tmpdir,
                         'no-lock' => \$option_no_lock,
                         'ibbackup=s' => \$option_ibbackup_binary,
@@ -1801,13 +1829,25 @@ sub check_args {
 
     if ($option_compress == 999) {
         # compress option not given in the command line
-	$option_compress = 0;
+        $option_compress = 0;
     }
 
     if ($option_stream eq 'tar') {
       $stream_cmd = 'tar chf -';
     } elsif ($option_stream eq 'xbstream') {
-      $stream_cmd = 'xbstream -c'
+      $stream_cmd = 'xbstream -c';
+      if ($option_encrypt) {
+        $encrypt_cmd = "xbcrypt --encrypt-algo=$option_encrypt";
+        if ($option_encrypt_key) {
+          $encrypt_cmd = $encrypt_cmd . " --encrypt-key=$option_encrypt_key";
+        }
+        if ($option_encrypt_key_file) {
+          $encrypt_cmd = $encrypt_cmd . " --encrypt-key-file=$option_encrypt_key_file";
+        }
+        if ($option_encrypt_chunk_size) {
+          $encrypt_cmd = $encrypt_cmd . " --encrypt-chunk-size=$option_encrypt_chunk_size";
+        }
+      }
     }
 
     if (@ARGV < 1) {
@@ -2047,7 +2087,7 @@ sub backup_files {
                 my $ret = 0;
                 my $file_name = substr($file, rindex($file, '/') + 1);
                 $file_name=~s/([\$\\\" ])/\\$1/g;
-                $ret = system("cd $source_dir; $stream_cmd $database/$file_name") >> 8;
+                $ret = stream_encrypt_file($source_dir, "$database/$file_name") >> 8;
                 if ($ret == 1 && $option_stream eq 'tar') {
                     print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
                 # Check for non-zero exit code
@@ -2673,6 +2713,20 @@ sub get_slave_open_temp_tables {
    return $con->{status}->{Slave_open_temp_tables}->{Value};
 }
 
+sub stream_encrypt_file {
+  my $basedir = shift;
+  my $relpath = shift;
+  my $rcode;
+
+  if ($encrypt_cmd) {
+    $rcode = system("cd $basedir; $stream_cmd $relpath | $encrypt_cmd");
+  } else {
+    $rcode = system("cd $basedir; $stream_cmd $relpath");
+  }
+  return $rcode;
+}
+
+
 =pod
 
 =head1 NAME
@@ -2681,7 +2735,9 @@ innobackupex - Non-blocking backup tool for InnoDB, XtraDB and HailDB databases
 
 =head1 SYNOPOSIS
 
-innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS]
+innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS] [--compress-chunk-size=CHUNK-SIZE]
+             [--encrypt=encryption_algorithm] [--encrypt-threads=NUMBER-OF-THREADS] [--encrypt-chunk-size=CHUNK-SIZE]
+             [--encrypt-key=literal_encryption_key] | [--encryption-key-file=MY.KEY]
              [--include=REGEXP] [--user=NAME]
              [--password=WORD] [--port=PORT] [--socket=SOCKET]
              [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
@@ -2765,6 +2821,12 @@ This option specifies the number of worker threads that will be used
 for parallel compression. It is passed directly to the xtrabackup
 child process. Try 'xtrabackup --help' for more details.
 
+=item --compress-chunk-size
+
+This option specifies the size of the internal working buffer for each
+compression thread, measured in kilobytes. It is passed directly to the
+xtrabackup child process. Try 'xtrabackup --help' for more details.
+
 =item --copy-back
 
 Copy all the files in a previously made backup from the backup directory to their original locations.
@@ -2780,6 +2842,37 @@ This option specifies what file to read the default MySQL options from.  The opt
 =item --defaults-extra-file=[MY.CNF]
 
 This option specifies what extra file to read the default MySQL options from before the standard defaults-file.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-extra-file option. See the xtrabackup documentation for details.
+
+=item --encrypt=ENCRYPTION_ALGORITHM
+
+This option instructs xtrabackup to encrypt backup copies of InnoDB data
+files using the algorithm specified in the ENCRYPTION_ALGORITHM.
+It is passed directly to the xtrabackup child process.
+Try 'xtrabackup --help' for more details.
+
+=item --encrypt-key=ENCRYPTION_KEY
+
+This option instructs xtrabackup to use the given ENCRYPTION_KEY when using the --encrypt option.
+It is passed directly to the xtrabackup child process.
+Try 'xtrabackup --help' for more details.
+
+=item --encrypt-key-file=ENCRYPTION_KEY_FILE
+
+This option instructs xtrabackup to use the encryption key stored in the given ENCRYPTION_KEY_FILE when using the --encrypt option.
+It is passed directly to the xtrabackup child process.
+Try 'xtrabackup --help' for more details.
+
+=item --encrypt-threads
+
+This option specifies the number of worker threads that will be used
+for parallel encryption. It is passed directly to the xtrabackup
+child process. Try 'xtrabackup --help' for more details.
+
+=item --encrypt-chunk-size
+
+This option specifies the size of the internal working buffer for each
+encryption thread, measured in kilobytes. It is passed directly to the
+xtrabackup child process. Try 'xtrabackup --help' for more details.
 
 =item --export
 
