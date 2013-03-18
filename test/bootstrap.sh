@@ -51,13 +51,13 @@ case "$1" in
 	;;
 
     xtradb51)
-	url="http://www.percona.com/redir/downloads/Percona-Server-5.1/Percona-Server-5.1.60-13.1/binary/linux/$arch"
-	tarball="Percona-Server-5.1.60-rel13.1-413.Linux.$arch.tar.gz"
+	url="http://www.percona.com/redir/downloads/Percona-Server-5.1/Percona-Server-5.1.67-14.4/binary/linux/$arch"
+	tarball="Percona-Server-5.1.67-rel14.4-511.Linux.$arch.tar.gz"
 	;;
 
     xtradb55)
-	url="http://s3.amazonaws.com/percona.com/downloads/Percona-Server-5.5/Percona-Server-5.5.11-20.2/Linux/binary"
-	tarball="Percona-Server-5.5.11-rel20.2-116.Linux.$arch.tar.gz"
+	url="http://www.percona.com/redir/downloads/Percona-Server-5.5/Percona-Server-5.5.30-30.1/binary/linux/$arch"
+	tarball="Percona-Server-5.5.30-rel30.1-465.Linux.$arch.tar.gz"
 	;;
 
     galera55)
