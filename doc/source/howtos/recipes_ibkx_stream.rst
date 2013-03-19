@@ -12,37 +12,51 @@ Here are some examples using ``tar`` option for streaming:
 
   * Stream the backup into a tar archived named 'backup.tar' :: 
 
-      innobackupex --stream=tar ./ > backup.tar
+      $ innobackupex --stream=tar ./ > backup.tar
 
   * The same, but compress it ::
 
-      innobackupex --stream=tar ./ | gzip - > backup.tar.gz
+      $ innobackupex --stream=tar ./ | gzip - > backup.tar.gz
 
   * Encrypt the backup ::
 
-      innobackupex --stream=tar . | gzip - | openssl des3 -salt -k "password" > backup.tar.gz.des3
+      $ innobackupex --stream=tar . | gzip - | openssl des3 -salt -k "password" > backup.tar.gz.des3
 
   * Send it to another server instead of storing it locally ::
 
-      innobackupex --stream=tar ./ | ssh user@desthost "cat - > /data/backups/backup.tar"
+      $ innobackupex --stream=tar ./ | ssh user@desthost "cat - > /data/backups/backup.tar"
 
   * The same thing with can be done with the ''netcat''.  ::
 
       ## On the destination host:
-      nc -l 9999 | cat - > /data/backups/backup.tar
+      $ nc -l 9999 | cat - > /data/backups/backup.tar
       ## On the source host:
-      innobackupex --stream=tar ./ | nc desthost 9999
+      $ innobackupex --stream=tar ./ | nc desthost 9999
 
   * The same thing, but done as a one-liner: ::
 
-      ssh user@desthost "( nc -l 9999 > /data/backups/backup.tar & )" \
+      $ ssh user@desthost "( nc -l 9999 > /data/backups/backup.tar & )" \
       && innobackupex --stream=tar ./  |  nc desthost 9999
 
   * Throttling the throughput to 10MB/sec. This requires the 'pv' tools; you can find them at the `official site <http://www.ivarch.com/programs/quickref/pv.shtml>`_ or install it from the distribution package ("apt-get install pv") :: 
 
-      innobackupex --stream=tar ./ | pv -q -L10m \
+      $ innobackupex --stream=tar ./ | pv -q -L10m \
       | ssh user@desthost "cat - > /data/backups/backup.tar"
 
+  * Checksumming the backup during the streaming ::
+ 
+      ## On the destination host:
+      $ nc -l 9999 | tee >(sha1sum > destination_checksum) > /data/backups/backup.tar
+      ## On the source host:
+      $ innobackupex --stream=tar ./ | tee >(sha1sum > source_checksum) | nc desthost 9999
+      ## compare the checksums
+      ## On the source host:
+      $ cat source_checksum 
+      65e4f916a49c1f216e0887ce54cf59bf3934dbad  -
+      ## On the destination host:
+      $ destination_checksum 
+      65e4f916a49c1f216e0887ce54cf59bf3934dbad  -
+ 
 Examples using |xbstream| option for streaming:
 
   * Stream the backup into a tar archived named 'backup.xbstream :: 

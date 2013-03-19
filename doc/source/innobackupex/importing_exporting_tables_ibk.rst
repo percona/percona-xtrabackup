@@ -27,6 +27,10 @@ This will create for each |InnoDB| with its own tablespace a file with :term:`.e
 
 Each :term:`.exp` file will be used for importing that table.
 
+.. note::
+
+  InnoDB does a slow shutdown (i.e. full purge + change buffer merge) on --export, otherwise the tablespaces wouldn't be consistent and thus couldn't be imported. All the usual performance considerations apply: sufficient buffer pool (i.e. --use-memory, 100MB by default) and fast enough storage, otherwise it can take a prohibitive amount of time for export to complete.
+
 Importing tables
 ================
 
