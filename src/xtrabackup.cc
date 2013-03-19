@@ -6079,8 +6079,13 @@ xb_delta_open_matching_space(
 		}
 	}
 
+	if (space_id == ULINT_UNDEFINED)
+	{
+		msg("xtrabackup: Error: Cannot handle DDL operation on tablespace "
+		    "%s\n", dest_space_name);
+		exit(EXIT_FAILURE);
+	}
 	mutex_enter(&fil_system->mutex);
-	ut_a(space_id != ULINT_UNDEFINED);
 	fil_space = xb_space_get_by_id(space_id);
 	mutex_exit(&fil_system->mutex);
 	if (fil_space != NULL) {
