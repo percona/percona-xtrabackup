@@ -19,7 +19,6 @@ Packager: Percona Development Team <mysql-dev@percona.com>
 URL: http://www.percona.com/software/percona-xtrabackup/
 Source: percona-xtrabackup-%{xtrabackup_version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
-Requires: mysql
 Provides: xtrabackup
 Obsoletes: xtrabackup
 BuildRequires: libaio-devel
@@ -32,6 +31,7 @@ Summary: Test suite for Percona Xtrabackup
 Group: Applications/Databases
 Requires: percona-xtrabackup
 AutoReqProv: no
+Requires: /usr/bin/mysql
 
 %description test
 This package contains the test suite for Percona Xtrabackup
@@ -61,12 +61,10 @@ export CC=${CC-"gcc"}
 export CXX=$CC
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\" -fno-exceptions" 
-AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
-cp src/xtrabackup_51 src/xbstream src/xbcrypt .
 AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
-cp src/xtrabackup .
+cp src/xtrabackup . 
 AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
-cp src/xtrabackup_55 .
+cp src/xtrabackup_55 src/xbstream src/xbcrypt .
 
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
@@ -78,7 +76,6 @@ install -m 755 xtrabackup %{buildroot}%{_bindir}
 install -m 755 xtrabackup_55 %{buildroot}%{_bindir}
 install -m 755 innobackupex %{buildroot}%{_bindir}
 ln -s innobackupex %{buildroot}%{_bindir}/innobackupex-1.5.1
-install -m 755 xtrabackup_51 %{buildroot}%{_bindir}
 install -m 755 xbstream %{buildroot}%{_bindir}
 install -m 755 xbcrypt %{buildroot}%{_bindir}
 cp -R test %{buildroot}%{_datadir}/percona-xtrabackup-test
@@ -91,7 +88,6 @@ cp -R test %{buildroot}%{_datadir}/percona-xtrabackup-test
 %{_bindir}/innobackupex
 %{_bindir}/innobackupex-1.5.1
 %{_bindir}/xtrabackup
-%{_bindir}/xtrabackup_51
 %{_bindir}/xtrabackup_55
 %{_bindir}/xbstream
 %{_bindir}/xbcrypt
