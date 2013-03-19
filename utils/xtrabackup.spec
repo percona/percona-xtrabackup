@@ -58,7 +58,7 @@ This package contains the test suite for Percona Xtrabackup
 %build
 set -ue
 export CC=${CC-"gcc"}
-export CXX=$CC
+export CXX=${CXX-"gcc"}
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\" -fno-exceptions" 
 AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
@@ -67,7 +67,7 @@ AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
 cp src/xtrabackup .
 AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
 cp src/xtrabackup_55 .
-AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
+CXX="${CXX_56-"g++"}" AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
 cp src/xtrabackup_56 .
 
 %install
