@@ -4,7 +4,7 @@
  Accelerating with :option:`--parallel` copy and `--compress-threads`
 =====================================================================
 
-When performing a local backup, multiple files can be copied concurrently by using the :option:`--parallel` option. This option specifies the number of threads created by |xtrabackup| to copy data files.
+When performing a local backup or the streaming backup with |xbstream| option, multiple files can be copied concurrently by using the :option:`--parallel` option. This option specifies the number of threads created by |xtrabackup| to copy data files.
 
 To take advantage of this option whether the multiple tablespaces option must be enabled (:term:`innodb_file_per_table`) or the shared tablespace must be stored in multiple :term:`ibdata` files with the :term:`innodb_data_file_path` option.  Having multiple files for the database (or splitting one into many) doesn't have a measurable impact on performance.
 

@@ -86,7 +86,9 @@ Restoring Partial Backups
 
 Restoring should be done by :doc:`importing the tables <importing_exporting_tables_ibk>` in the partial backup to the server. 
 
-Although it can be done by copying back the prepared backup to a "clean" :term:`datadir` (in that case, make sure of having included the ``mysql`` database)...
+It can also be done by copying back the prepared backup to a "clean" :term:`datadir` (in that case, make sure of having included the ``mysql`` database). System database can be created with: ::
 
+ $ sudo mysql_install_db --user=mysql
 
+Last method can be later used for creating a dump of the specific table that needs to be restored.
 
