@@ -14,9 +14,9 @@ When the data files are finished copying, |xtrabackup| stops the log-copying thr
 
 An example command to perform a backup follows:
 
-.. code-block:: guess
+.. code-block:: bash
 
-  xtrabackup --backup --datadir=/var/lib/mysql/ --target-dir=/data/backups/mysql/
+  $ xtrabackup --backup --datadir=/var/lib/mysql/ --target-dir=/data/backups/mysql/
 
 This takes a backup of :file:`/var/lib/mysql` and stores it at :file:`/data/backups/mysql/`. If you specify a relative path, the target directory will be relative to the current directory.
 
@@ -38,6 +38,10 @@ During the backup process, you should see a lot of output showing the data files
 The last thing you should see is something like the following, where the value of the ``<LSN>`` will be a number that depends on your system: ::
 
   xtrabackup: Transaction log of lsn (<SLN>) to (<LSN>) was copied.
+
+.. note:: 
+
+  Log copying thread checks the transactional log every second to see if there were any new log records written that need to be copied, but there is a chance that the log copying thread might not be able to keep up with the amount of writes that go to the transactional logs, and will hit an error when the log records are overwritten before they could be read.
 
 After the backup is finished, the target directory will contain files such as the following, assuming you have a single InnoDB table :file:`test.tbl1` and you are using MySQL's :term:`innodb_file_per_table` option: ::
 
