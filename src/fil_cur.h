@@ -38,7 +38,7 @@ typedef struct {
 					UNIV_PAGE_SIZE for uncompressed ones */
 	ulint		page_size_shift;/*!< bit shift corresponding to
 					page_size */
-	IB_INT64	offset;		/*!< current file offset in bytes */
+	ib_int64_t	offset;		/*!< current file offset in bytes */
 	my_bool		is_system;	/*!< TRUE for system tablespace, FALSE
 					otherwise */
 	byte*		orig_buf;	/*!< read buffer */
@@ -48,7 +48,7 @@ typedef struct {
 					after the last cursor read */
 	ulint		buf_npages;	/*!< number of pages in buffer after the
 					last cursor read */
-	IB_INT64	buf_offset;	/*!< file offset of the first page in
+	ib_int64_t	buf_offset;	/*!< file offset of the first page in
 					buffer */
 	ulint		buf_page_no;	/*!< number of the first page in
 					buffer */

@@ -1,9 +1,10 @@
+MYSQLD_EXTRA_ARGS=--innodb-data-file-path="ibdata1:${DEFAULT_IBDATA_SIZE};ibdata2:5M:autoextend"
 . inc/common.sh
 
-start_server --innodb-data-file-path="ibdata1:10M;ibdata2:5M:autoextend"
+start_server --innodb-data-file-path="ibdata1:${DEFAULT_IBDATA_SIZE};ibdata2:5M:autoextend"
 load_dbase_schema incremental_sample
 
-echo "innodb-data-file-path=ibdata1:10M;ibdata2:5M:autoextend" >>$topdir/my.cnf
+echo "innodb-data-file-path=ibdata1:${DEFAULT_IBDATA_SIZE};ibdata2:5M:autoextend" >>$topdir/my.cnf
 
 # Adding initial rows
 vlog "Adding initial rows to database..."
@@ -76,7 +77,7 @@ vlog "###########"
 innobackupex --copy-back $full_backup_dir
 vlog "Data restored"
 
-start_server --innodb-data-file-path="ibdata1:10M;ibdata2:5M:autoextend"
+start_server --innodb-data-file-path="ibdata1:${DEFAULT_IBDATA_SIZE};ibdata2:5M:autoextend"
 
 vlog "Checking checksums"
 checksum_test_b=`checksum_table incremental_sample test`

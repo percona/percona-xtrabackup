@@ -1,6 +1,7 @@
 ##########################################################################
 # Bug #891496: tar4ibd fails on datafiles generated on 5.0               #
 ##########################################################################
+MYSQLD_EXTRA_ARGS=--innodb-data-file-path="ibdata1:3M;ibdata2:10M:autoextend"
 
 . inc/common.sh
 

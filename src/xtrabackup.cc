@@ -52,6 +52,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_base.h>
 #include <my_getopt.h>
 #include <mysql_com.h>
+#if MYSQL_VERSION_ID >= 50600
+#include <my_default.h>
+#include <mysqld.h>
+#endif
 
 #include <fcntl.h>
 
@@ -92,9 +96,9 @@ lint io_ticket;
 os_event_t wait_throttle = NULL;
 
 char *xtrabackup_incremental = NULL;
-LSN64 incremental_lsn;
-LSN64 incremental_to_lsn;
-LSN64 incremental_last_lsn;
+lsn_t incremental_lsn;
+lsn_t incremental_to_lsn;
+lsn_t incremental_last_lsn;
 
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
 char *xtrabackup_extra_lsndir = NULL; /* for --backup with --extra-lsndir */
@@ -122,9 +126,9 @@ static ulint		thread_nr[SRV_MAX_N_IO_THREADS + 6];
 static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6];
 #endif
 
-LSN64 checkpoint_lsn_start;
-LSN64 checkpoint_no_start;
-LSN64 log_copy_scanned_lsn;
+lsn_t checkpoint_lsn_start;
+lsn_t checkpoint_no_start;
+lsn_t log_copy_scanned_lsn;
 ibool log_copying = TRUE;
 ibool log_copying_running = FALSE;
 ibool log_copying_succeed = FALSE;
@@ -159,17 +163,20 @@ ulonglong xtrabackup_encrypt_chunk_size = 0;
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
 char metadata_type[30] = ""; /*[full-backuped|full-prepared|incremental]*/
-ib_uint64_t metadata_from_lsn = 0;
-ib_uint64_t metadata_to_lsn = 0;
-ib_uint64_t metadata_last_lsn = 0;
+lsn_t metadata_from_lsn = 0;
+lsn_t metadata_to_lsn = 0;
+lsn_t metadata_last_lsn = 0;
 
 #define XB_LOG_FILENAME "xtrabackup_logfile"
 
 ds_file_t	*dst_log_file = NULL;
 
 /* === some variables from mysqld === */
+#if MYSQL_VERSION_ID < 50600
 char mysql_real_data_home[FN_REFLEN] = "./";
+MY_TMPDIR mysql_tmpdir_list;
 char *mysql_data_home= mysql_real_data_home;
+#endif
 static char mysql_data_home_buff[2];
 
 const char *defaults_group = "mysqld";
@@ -193,7 +200,6 @@ long innobase_force_recovery = 0;
 long innobase_lock_wait_timeout = 50;
 long innobase_log_buffer_size = 1024*1024L;
 long innobase_log_files_in_group = 2;
-long innobase_mirrored_log_groups = 1;
 long innobase_open_files = 300L;
 
 long innobase_page_size = (1 << 14); /* 16KB */
@@ -205,7 +211,7 @@ my_bool	innobase_extra_undoslots = FALSE;
 char*	innobase_doublewrite_file = NULL;
 
 longlong innobase_buffer_pool_size = 8*1024*1024L;
-longlong innobase_log_file_size = 5*1024*1024L;
+longlong innobase_log_file_size = DEFAULT_LOG_FILE_SIZE;
 
 /* The default values for the following char* start-up parameters
 are determined in innobase_init below: */
@@ -213,7 +219,6 @@ are determined in innobase_init below: */
 char*	innobase_ignored_opt			= NULL;
 char*	innobase_data_home_dir			= NULL;
 char*	innobase_data_file_path 		= NULL;
-char*	innobase_log_group_home_dir		= NULL;
 char*	innobase_log_arch_dir			= NULL;/* unused */
 /* The following has a misleading name: starting from 4.0.5, this also
 affects Windows: */
@@ -336,7 +341,7 @@ typedef struct {
 	datafiles_iter_t 	*it;
 	uint			num;
 	uint			*count;
-	os_mutex_t		count_mutex;
+	os_ib_mutex_t		count_mutex;
 	os_thread_id_t		id;
 } data_thread_ctxt_t;
 
@@ -421,10 +426,36 @@ enum options_xtrabackup
   OPT_XTRA_DEBUG_SYNC,
   OPT_XTRA_COMPACT,
   OPT_XTRA_REBUILD_INDEXES,
+#if MYSQL_VERSION_ID >= 50600
+  OPT_INNODB_CHECKSUM_ALGORITHM,
+  OPT_UNDO_TABLESPACES,
+#endif
   OPT_DEFAULTS_GROUP
 };
 
-static struct my_option my_long_options[] =
+#if MYSQL_VERSION_ID >= 50600
+/** Possible values for system variable "innodb_checksum_algorithm". */
+static const char* innodb_checksum_algorithm_names[] = {
+	"crc32",
+	"strict_crc32",
+	"innodb",
+	"strict_innodb",
+	"none",
+	"strict_none",
+	NullS
+};
+
+/** Used to define an enumerate type of the system variable
+    innodb_checksum_algorithm. */
+static TYPELIB innodb_checksum_algorithm_typelib = {
+	array_elements(innodb_checksum_algorithm_names) - 1,
+	"innodb_checksum_algorithm_typelib",
+	innodb_checksum_algorithm_names,
+	NULL
+};
+#endif
+
+static struct my_option xb_long_options[] =
 {
   {"version", 'v', "print xtrabackup version information",
    (G_PTR *) &xtrabackup_version, (G_PTR *) &xtrabackup_version, 0, GET_BOOL,
@@ -600,7 +631,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   {"innodb_io_capacity", OPT_INNODB_IO_CAPACITY,
    "Number of IOPs the server can do. Tunes the background IO rate",
    (G_PTR*) &srv_io_capacity, (G_PTR*) &srv_io_capacity,
-   0, GET_ULONG, OPT_ARG, 200, 100, ~0L, 0, 0, 0},
+   0, GET_ULONG, OPT_ARG, 200, 100, ~0UL, 0, 0, 0},
 /*
   {"innodb_fast_shutdown", OPT_INNODB_FAST_SHUTDOWN,
    "Speeds up the shutdown process of the InnoDB storage engine. Possible "
@@ -666,15 +697,15 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   {"innodb_log_file_size", OPT_INNODB_LOG_FILE_SIZE,
    "Size of each log file in a log group.",
    (G_PTR*) &innobase_log_file_size, (G_PTR*) &innobase_log_file_size, 0,
-   GET_LL, REQUIRED_ARG, 5*1024*1024L, 1*1024*1024L, LONGLONG_MAX, 0,
+   GET_LL, REQUIRED_ARG, DEFAULT_LOG_FILE_SIZE, 1*1024*1024L, LONGLONG_MAX, 0,
    1024*1024L, 0},
   {"innodb_log_files_in_group", OPT_INNODB_LOG_FILES_IN_GROUP,
    "Number of log files in the log group. InnoDB writes to the files in a circular fashion. Value 3 is recommended here.",
    (G_PTR*) &innobase_log_files_in_group, (G_PTR*) &innobase_log_files_in_group,
    0, GET_LONG, REQUIRED_ARG, 2, 2, 100, 0, 1, 0},
   {"innodb_log_group_home_dir", OPT_INNODB_LOG_GROUP_HOME_DIR,
-   "Path to InnoDB log files.", (G_PTR*) &innobase_log_group_home_dir,
-   (G_PTR*) &innobase_log_group_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
+   "Path to InnoDB log files.", (G_PTR*) &INNODB_LOG_DIR,
+   (G_PTR*) &INNODB_LOG_DIR, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
    0, 0},
   {"innodb_max_dirty_pages_pct", OPT_INNODB_MAX_DIRTY_PAGES_PCT,
    "Percentage of dirty pages allowed in bufferpool.", (G_PTR*) &srv_max_buf_pool_modified_pct,
@@ -748,6 +779,19 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*) &xtrabackup_rebuild_indexes, (G_PTR*) &xtrabackup_rebuild_indexes,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+#if MYSQL_VERSION_ID >= 50600
+  {"checksum-algorithm", OPT_INNODB_CHECKSUM_ALGORITHM,
+  "The algorithm InnoDB uses for page checksumming. [CRC32, STRICT_CRC32, "
+   "INNODB, STRICT_INNODB, NONE, STRICT_NONE]", &srv_checksum_algorithm,
+   &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"undo-tablespaces", OPT_UNDO_TABLESPACES,
+   "Number of undo tablespaces to use. NON-ZERO VALUES ARE NOT "
+   "CURRENTLY SUPPORTED",
+   (G_PTR*)&srv_undo_tablespaces, (G_PTR*)&srv_undo_tablespaces,
+   0, GET_ULONG, REQUIRED_ARG, 0, 0, 126, 0, 1, 0},
+#endif
+
   {"defaults_group", OPT_DEFAULTS_GROUP, "defaults group in config file (default \"mysqld\").",
    (G_PTR*) &defaults_group, (G_PTR*) &defaults_group,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -809,7 +853,7 @@ debug_sync_point(const char *name)
 #endif
 }
 
-static const char *load_default_groups[]= { "mysqld","xtrabackup",0,0 };
+static const char *xb_load_default_groups[]= { "mysqld", "xtrabackup", 0, 0 };
 
 static void print_version(void)
 {
@@ -844,9 +888,9 @@ GNU General Public License for more details.\n\
 You can download full text of the license on http://www.gnu.org/licenses/gpl-2.0.txt\n");
 
   printf("Usage: [%s [--defaults-file=#] --backup | %s [--defaults-file=#] --prepare] [OPTIONS]\n",my_progname,my_progname);
-  print_defaults("my",load_default_groups);
-  my_print_help(my_long_options);
-  my_print_variables(my_long_options);
+  print_defaults("my", xb_load_default_groups);
+  my_print_help(xb_long_options);
+  my_print_variables(xb_long_options);
 }
 
 static my_bool
@@ -855,7 +899,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 {
   switch(optid) {
   case 'h':
-    strmake(mysql_real_data_home,argument, sizeof(mysql_real_data_home)-1);
+    strmake(mysql_real_data_home,argument, FN_REFLEN - 1);
     mysql_data_home= mysql_real_data_home;
     break;
   case OPT_XTRA_TARGET_DIR:
@@ -944,7 +988,7 @@ innodb_init_param(void)
 	char		*default_path;
 
 	/* === some variables from mysqld === */
-	bzero((G_PTR) &mysql_tmpdir_list, sizeof(mysql_tmpdir_list));
+	memset((G_PTR) &mysql_tmpdir_list, 0, sizeof(mysql_tmpdir_list));
 
 	if (init_tmpdir(&mysql_tmpdir_list, opt_mysql_tmpdir))
 		exit(EXIT_FAILURE);
@@ -1099,48 +1143,32 @@ mem_free_and_error:
 
 	/* The default dir for log files is the datadir of MySQL */
 
-	if (!((xtrabackup_backup || xtrabackup_stats) && innobase_log_group_home_dir)) {
-	  	innobase_log_group_home_dir = default_path;
+	if (!((xtrabackup_backup || xtrabackup_stats) && INNODB_LOG_DIR)) {
+		INNODB_LOG_DIR = default_path;
 	}
 	if (xtrabackup_prepare && xtrabackup_incremental_dir) {
-		innobase_log_group_home_dir = xtrabackup_incremental_dir;
+		INNODB_LOG_DIR = xtrabackup_incremental_dir;
 	}
-	msg("xtrabackup:   innodb_log_group_home_dir = %s\n",
-	    innobase_log_group_home_dir);
+	msg("xtrabackup:   innodb_log_group_home_dir = %s\n", INNODB_LOG_DIR);
 
-#ifdef UNIV_LOG_ARCHIVE
-	/* Since innodb_log_arch_dir has no relevance under MySQL,
-	starting from 4.0.6 we always set it the same as
-	innodb_log_group_home_dir: */
+	ret = (my_bool) xb_parse_log_group_home_dirs();
+	if (ret == FALSE) {
 
-	innobase_log_arch_dir = innobase_log_group_home_dir;
-
-	srv_arch_dir = innobase_log_arch_dir;
-#endif /* UNIG_LOG_ARCHIVE */
-
-	ret = (my_bool)
-		srv_parse_log_group_home_dirs(innobase_log_group_home_dir);
-
-	if (ret == FALSE || innobase_mirrored_log_groups != 1) {
-		msg("xtrabackup: syntax error in innodb_log_group_home_dir, "
-		    "or a wrong number of mirrored log groups\n");
-
-                goto mem_free_and_error;
+		goto mem_free_and_error;
 	}
 
 	srv_adaptive_flushing = FALSE;
 	srv_use_sys_malloc = TRUE;
 	srv_file_format = 1; /* Barracuda */
 #if (MYSQL_VERSION_ID < 50500)
-	srv_check_file_format_at_startup = DICT_TF_FORMAT_51; /* on */
+	srv_check_file_format_at_startup = UNIV_FORMAT_MAX; /* on */
 #else
-	srv_max_file_format_at_startup = DICT_TF_FORMAT_51; /* on */
+	srv_max_file_format_at_startup = UNIV_FORMAT_MAX; /* on */
 #endif
 	/* --------------------------------------------------*/
 
 	srv_file_flush_method_str = innobase_unix_file_flush_method;
 
-	srv_n_log_groups = (ulint) innobase_mirrored_log_groups;
 	srv_n_log_files = (ulint) innobase_log_files_in_group;
 	srv_log_file_size = (ulint) innobase_log_file_size;
 	msg("xtrabackup:   innodb_log_files_in_group = %ld\n",
@@ -1168,7 +1196,9 @@ mem_free_and_error:
 	srv_force_recovery = (ulint) innobase_force_recovery;
 
 	srv_use_doublewrite_buf = (ibool) innobase_use_doublewrite;
+#if MYSQL_VERSION_ID < 50600
 	srv_use_checksums = (ibool) innobase_use_checksums;
+#endif
 
 	btr_search_enabled = (char) innobase_adaptive_hash_index;
 
@@ -1362,17 +1392,19 @@ xtrabackup_read_metadata(char *filename)
 		r = FALSE;
 		goto end;
 	}
-	if (fscanf(fp, "from_lsn = %llu\n", &metadata_from_lsn)
+	/* Use UINT64PF instead of LSN_PF here, as we have to maintain the file
+	format. */
+	if (fscanf(fp, "from_lsn = " UINT64PF "\n", &metadata_from_lsn)
 			!= 1) {
 		r = FALSE;
 		goto end;
 	}
-	if (fscanf(fp, "to_lsn = %llu\n", &metadata_to_lsn)
+	if (fscanf(fp, "to_lsn = " UINT64PF "\n", &metadata_to_lsn)
 			!= 1) {
 		r = FALSE;
 		goto end;
 	}
-	if (fscanf(fp, "last_lsn = %llu\n", &metadata_last_lsn)
+	if (fscanf(fp, "last_lsn = " UINT64PF "\n", &metadata_last_lsn)
 			!= 1) {
 		metadata_last_lsn = 0;
 	}
@@ -1394,11 +1426,13 @@ static
 void
 xtrabackup_print_metadata(char *buf, size_t buf_len)
 {
+	/* Use UINT64PF instead of LSN_PF here, as we have to maintain the file
+	format. */
 	snprintf(buf, buf_len,
 		 "backup_type = %s\n"
-		 "from_lsn = %llu\n"
-		 "to_lsn = %llu\n"
-		 "last_lsn = %llu\n"
+		 "from_lsn = " UINT64PF "\n"
+		 "to_lsn = " UINT64PF "\n"
+		 "last_lsn = " UINT64PF "\n"
 		 "compact = %d\n",
 		 metadata_type,
 		 metadata_from_lsn,
@@ -1686,14 +1720,14 @@ xb_get_zip_size(os_file_t file)
 	buf = static_cast<byte *>(ut_malloc(2 * UNIV_PAGE_SIZE_MAX));
 	page = static_cast<byte *>(ut_align(buf, UNIV_PAGE_SIZE_MAX));
 
-	success = os_file_read(file, page, 0, 0, UNIV_PAGE_SIZE_MAX);
+	success = xb_os_file_read(file, page, 0, UNIV_PAGE_SIZE_MAX);
 	if (!success) {
 		goto end;
 	}
 
 	space = mach_read_from_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
 	zip_size = (space == 0 ) ? 0 :
-		dict_table_flags_to_zip_size(fsp_header_get_flags(page));
+		dict_tf_get_zip_size(fsp_header_get_flags(page));
 end:
 	ut_free(buf);
 
@@ -1839,12 +1873,12 @@ skip:
 }
 
 static my_bool
-xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
+xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 {
 	/* definition from recv_recovery_from_checkpoint_start() */
 	log_group_t*	group;
-	LSN64		group_scanned_lsn;
-	LSN64		contiguous_lsn;
+	lsn_t		group_scanned_lsn;
+	lsn_t		contiguous_lsn;
 
 	ut_a(dst_log_file != NULL);
 
@@ -1858,8 +1892,8 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 
 	while (group) {
 		ibool	finished;
-		LSN64	start_lsn;
-		LSN64	end_lsn;
+		lsn_t	start_lsn;
+		lsn_t	end_lsn;
 
 		/* reference recv_group_scan_log_recs() */
 	finished = FALSE;
@@ -1880,7 +1914,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 		/* reference recv_scan_log_recs() */
 		{
 	byte*	log_block;
-	LSN64	scanned_lsn;
+	lsn_t	scanned_lsn;
 	ulint	data_len;
 
 	ulint	scanned_checkpoint_no = 0;
@@ -1928,7 +1962,7 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 			/* Garbage or an incompletely written log block */
 
 			msg("xtrabackup: warning: Log block checksum mismatch"
-			    " (block no %lu at lsn %llu): \n"
+			    " (block no %lu at lsn " LSN_PF "): \n"
 			    "expected %lu, calculated checksum %lu\n",
 				(ulong) no,
 				scanned_lsn,
@@ -2023,7 +2057,8 @@ xtrabackup_copy_logfile(LSN64 from_lsn, my_bool is_last)
 
 		group->scanned_lsn = group_scanned_lsn;
 
-		msg(">> log scanned up to (%llu)\n", group->scanned_lsn);
+		msg(">> log scanned up to (" LSN_PF ")\n",
+		    group->scanned_lsn);
 
 		group = UT_LIST_GET_NEXT(log_groups, group);
 
@@ -2332,12 +2367,16 @@ xb_data_files_init(void)
 	ibool	create_new_doublewrite_file;
 #endif
 	ulint	err;
-	LSN64	min_flushed_lsn;
-	LSN64	max_flushed_lsn;
+	lsn_t	min_flushed_lsn;
+	lsn_t	max_flushed_lsn;
 	ulint   sum_of_new_sizes;
 
+#if MYSQL_VERSION_ID >= 50600
+	srv_n_file_io_threads = srv_n_read_io_threads;
+#else
 	srv_n_file_io_threads = 2 + srv_n_read_io_threads +
 		srv_n_write_io_threads;
+#endif
 
 	os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD,
 		    srv_n_read_io_threads,
@@ -2606,10 +2645,10 @@ static void
 xtrabackup_backup_func(void)
 {
 	MY_STAT			 stat_info;
-	LSN64			 latest_cp;
+	lsn_t			 latest_cp;
 	uint			 i;
 	uint			 count;
-	os_mutex_t		 count_mutex;
+	os_ib_mutex_t		 count_mutex;
 	data_thread_ctxt_t 	*data_threads;
 	char			suspend_path[FN_REFLEN];
 	ibool			success;
@@ -2631,8 +2670,7 @@ xtrabackup_backup_func(void)
 	mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
 	mysql_data_home[1]=0;
 
-	/* set read only */
-	srv_read_only = TRUE;
+	xb_set_innodb_read_only();
 
 	/* initialize components */
         if(innodb_init_param())
@@ -2711,6 +2749,7 @@ xtrabackup_backup_func(void)
 
 	os_sync_mutex = NULL;
 	srv_general_init();
+	ut_crc32_init();
 
 	xb_filters_init();
 
@@ -2891,7 +2930,7 @@ reread_log_header:
 		os_thread_id_t io_watching_thread_id;
 
 		io_ticket = xtrabackup_throttle;
-		wait_throttle = os_event_create(NULL);
+		wait_throttle = xb_os_event_create(NULL);
 
 		os_thread_create(io_watching_thread, NULL, &io_watching_thread_id);
 	}
@@ -2996,7 +3035,7 @@ reread_log_header:
 		mutex_exit(&log_sys->mutex);
 
 		msg("xtrabackup: The latest check point (for incremental): "
-		    "'%llu'\n", latest_cp);
+		    "'" LSN_PF "'\n", latest_cp);
 	}
 skip_last_cp:
 	/* stop log_copying_thread */
@@ -3051,9 +3090,8 @@ skip_last_cp:
 	if (wait_throttle)
 		os_event_free(wait_throttle);
 
-	msg("xtrabackup: Transaction log of lsn (%llu) to (%llu) was copied.\n",
-	    checkpoint_lsn_start, log_copy_scanned_lsn);
-
+	msg("xtrabackup: Transaction log of lsn (" LSN_PF ") to (" LSN_PF
+	    ") was copied.\n", checkpoint_lsn_start, log_copy_scanned_lsn);
 	xb_filters_free();
 
 	xb_data_files_close();
@@ -3098,7 +3136,7 @@ xtrabackup_stats_level(
 	mtr_start(&mtr);
 
 	mtr_x_lock(&(index->lock), &mtr);
-	block = btr_root_block_get(index, &mtr);
+	block = xb_btr_root_block_get(index, RW_X_LATCH, &mtr);
 	page = buf_block_get_frame(block);
 
 	space = page_get_space_id(page);
@@ -3254,9 +3292,9 @@ loop:
 	}
 
 	if (level == 0)
-		fprintf(stdout, "recs=%lld, ", n_recs);
+		fprintf(stdout, "recs=%llu, ", n_recs);
 
-	fprintf(stdout, "pages=%lld, data=%lld bytes, data/pages=%lld%%",
+	fprintf(stdout, "pages=%llu, data=%llu bytes, data/pages=%lld%%",
 		n_pages, sum_data,
 		((sum_data * 100)/ page_size)/n_pages);
 
@@ -3266,7 +3304,7 @@ loop:
 		/* also scan blob pages*/
 		fprintf(stdout, "    external pages: ");
 
-		fprintf(stdout, "pages=%lld, data=%lld bytes, data/pages=%lld%%",
+		fprintf(stdout, "pages=%llu, data=%llu bytes, data/pages=%lld%%",
 			n_pages_extern, sum_data_extern,
 			((sum_data_extern * 100)/ page_size)/n_pages_extern);
 	}
@@ -3298,10 +3336,12 @@ xtrabackup_stats_func(void)
 	mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
 	mysql_data_home[1]=0;
 
+	xb_set_innodb_read_only();
 	/* set read only */
-	srv_read_only = TRUE;
+#if MYSQL_VERSION_ID < 50600
 	srv_fake_write = TRUE;
-#if MYSQL_VERSION_ID >= 50500
+#endif
+#if (MYSQL_VERSION_ID >= 50500) && (MYSQL_VERSION_ID < 50600)
 	/* AIO is incompatible with srv_read_only/srv_fake_write */
 	srv_use_native_aio = FALSE;
 #endif
@@ -3359,9 +3399,7 @@ xtrabackup_stats_func(void)
 	/* Enlarge the fatal semaphore wait timeout during the InnoDB table
 	monitor printout */
 
-	mutex_enter(&kernel_mutex);
-	srv_fatal_semaphore_wait_threshold += 72000; /* 20 hours */
-	mutex_exit(&kernel_mutex);
+	xb_adjust_fatal_semaphore_wait_threshold(72000); /* 20 hours */
 
 	mutex_enter(&(dict_sys->mutex));
 
@@ -3370,8 +3408,8 @@ xtrabackup_stats_func(void)
 	sys_tables = dict_table_get_low("SYS_TABLES");
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 
-	btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
-								TRUE, &mtr);
+	xb_btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
+				       TRUE, 0, &mtr);
 loop:
 	btr_pcur_move_to_next_user_rec(&pcur, &mtr);
 
@@ -3387,10 +3425,7 @@ loop:
 		mutex_exit(&(dict_sys->mutex));
 
 		/* Restore the fatal semaphore wait timeout */
-
-		mutex_enter(&kernel_mutex);
-		srv_fatal_semaphore_wait_threshold -= 72000; /* 20 hours */
-		mutex_exit(&kernel_mutex);
+		xb_adjust_fatal_semaphore_wait_threshold(-72000);
 
 		goto end;
 	}
@@ -3435,11 +3470,7 @@ loop:
 			is no index */
 
 			if (dict_table_get_first_index(table)) {
-#ifdef XTRADB_BASED
-				dict_update_statistics(table, TRUE, FALSE);
-#else
-				dict_update_statistics(table, TRUE);
-#endif
+				dict_stats_update_transient(table);
 			}
 
 			//dict_table_print_low(table);
@@ -3447,7 +3478,7 @@ loop:
 			index = UT_LIST_GET_FIRST(table->indexes);
 			while (index != NULL) {
 {
-	IB_INT64	n_vals;
+	ib_int64_t	n_vals;
 
 	if (index->n_user_defined_cols > 0) {
 		n_vals = index->stat_n_diff_key_vals[
@@ -3534,11 +3565,11 @@ xtrabackup_init_temp_log(void)
 	byte*	log_buf;
 	byte*	log_buf_ = NULL;
 
-	IB_INT64	file_size;
+	ib_int64_t	file_size;
 
-	LSN64	max_no;
-	LSN64	max_lsn;
-	LSN64	checkpoint_no;
+	lsn_t	max_no;
+	lsn_t	max_lsn;
+	lsn_t	checkpoint_no;
 
 	ulint	fold;
 
@@ -3589,7 +3620,8 @@ retry:
 		log_buf = static_cast<byte *>
 			(ut_align(log_buf_, UNIV_PAGE_SIZE_MAX));
 
-		success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+		success = xb_os_file_read(src_file, log_buf, 0,
+					  LOG_FILE_HDR_SIZE);
 		if (!success) {
 			goto error;
 		}
@@ -3631,7 +3663,7 @@ retry:
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
 
-	file_size = os_file_get_size_as_iblonglong(src_file);
+	file_size = os_file_get_size(src_file);
 
 
 	/* TODO: We should skip the following modifies, if it is not the first time. */
@@ -3639,7 +3671,7 @@ retry:
 	log_buf = static_cast<byte *>(ut_align(log_buf_, UNIV_PAGE_SIZE));
 
 	/* read log file header */
-	success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	success = xb_os_file_read(src_file, log_buf, 0, LOG_FILE_HDR_SIZE);
 	if (!success) {
 		goto error;
 	}
@@ -3658,7 +3690,8 @@ retry:
 	/* read last checkpoint lsn */
 	for (field = LOG_CHECKPOINT_1; field <= LOG_CHECKPOINT_2;
 			field += LOG_CHECKPOINT_2 - LOG_CHECKPOINT_1) {
-		if (!recv_check_cp_is_consistent(log_buf + field))
+		if (!xb_recv_check_cp_is_consistent(const_cast<const byte *>
+						    (log_buf + field)))
 			goto not_consistent;
 
 		checkpoint_no = MACH_READ_64(log_buf + field + LOG_CHECKPOINT_NO);
@@ -3692,7 +3725,8 @@ not_consistent:
 
 	/* It seems to be needed to overwrite the both checkpoint area. */
 	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_LSN, max_lsn);
-	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_OFFSET,
+	mach_write_to_4(log_buf + LOG_CHECKPOINT_1
+			+ LOG_CHECKPOINT_OFFSET_LOW32,
 			LOG_FILE_HDR_SIZE + (ulint) ut_dulint_minus(max_lsn,
 			ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
 #ifdef XTRADB_BASED
@@ -3708,9 +3742,10 @@ not_consistent:
 	mach_write_to_4(log_buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_CHECKSUM_2, fold);
 
 	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_LSN, max_lsn);
-        mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_OFFSET,
-                        LOG_FILE_HDR_SIZE + (ulint) ut_dulint_minus(max_lsn,
-                        ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
+	mach_write_to_4(log_buf + LOG_CHECKPOINT_2
+			+ LOG_CHECKPOINT_OFFSET_LOW32,
+			LOG_FILE_HDR_SIZE + (ulint) ut_dulint_minus(max_lsn,
+			ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
 #ifdef XTRADB_BASED
 	MACH_WRITE_64(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_ARCHIVED_LSN,
 			(ib_uint64_t)(LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
@@ -3724,7 +3759,8 @@ not_consistent:
         mach_write_to_4(log_buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_CHECKSUM_2, fold);
 
 
-	success = os_file_write(src_path, src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	success = xb_os_file_write(src_path, src_file, log_buf, 0,
+				   LOG_FILE_HDR_SIZE);
 	if (!success) {
 		goto error;
 	}
@@ -3733,15 +3769,16 @@ not_consistent:
 
 	if (file_size % UNIV_PAGE_SIZE) {
 		memset(log_buf, 0, UNIV_PAGE_SIZE);
-		success = os_file_write(src_path, src_file, log_buf,
-				(ulint)(file_size & 0xFFFFFFFFUL),
-				(ulint)(file_size >> 32),
-				UNIV_PAGE_SIZE - (ulint) (file_size % UNIV_PAGE_SIZE));
+		success = xb_os_file_write(src_path, src_file, log_buf,
+					    file_size,
+					    UNIV_PAGE_SIZE
+					    - (ulint) (file_size
+						       % UNIV_PAGE_SIZE));
 		if (!success) {
 			goto error;
 		}
 
-		file_size = os_file_get_size_as_iblonglong(src_file);
+		file_size = os_file_get_size(src_file);
 	}
 
 	/* TODO: We should judge whether the file is already expanded or not... */
@@ -3752,10 +3789,9 @@ not_consistent:
 		expand = (ulint) (file_size / UNIV_PAGE_SIZE / 8);
 
 		for (; expand > 128; expand -= 128) {
-			success = os_file_write(src_path, src_file, log_buf,
-					(ulint)(file_size & 0xFFFFFFFFUL),
-					(ulint)(file_size >> 32),
-					UNIV_PAGE_SIZE * 128);
+			success = xb_os_file_write(src_path, src_file, log_buf,
+						   file_size,
+						   UNIV_PAGE_SIZE * 128);
 			if (!success) {
 				goto error;
 			}
@@ -3763,10 +3799,9 @@ not_consistent:
 		}
 
 		if (expand) {
-			success = os_file_write(src_path, src_file, log_buf,
-					(ulint)(file_size & 0xFFFFFFFFUL),
-					(ulint)(file_size >> 32),
-					expand * UNIV_PAGE_SIZE);
+			success = xb_os_file_write(src_path, src_file, log_buf,
+						   file_size,
+						   expand * UNIV_PAGE_SIZE);
 			if (!success) {
 				goto error;
 			}
@@ -3778,26 +3813,24 @@ not_consistent:
 	if (file_size < 2*1024*1024L) {
 		memset(log_buf, 0, UNIV_PAGE_SIZE);
 		while (file_size < 2*1024*1024L) {
-			success = os_file_write(src_path, src_file, log_buf,
-				(ulint)(file_size & 0xFFFFFFFFUL),
-				(ulint)(file_size >> 32),
-				UNIV_PAGE_SIZE);
+			success = xb_os_file_write(src_path, src_file, log_buf,
+						   file_size, UNIV_PAGE_SIZE);
 			if (!success) {
 				goto error;
 			}
 			file_size += UNIV_PAGE_SIZE;
 		}
-		file_size = os_file_get_size_as_iblonglong(src_file);
+		file_size = os_file_get_size(src_file);
 	}
 
-	msg("xtrabackup: xtrabackup_logfile detected: size=%lld, "
-	    "start_lsn=(%llu)\n", file_size, max_lsn);
+	msg("xtrabackup: xtrabackup_logfile detected: size=" INT64PF ", "
+	    "start_lsn=(" LSN_PF ")\n", file_size, max_lsn);
 
 	os_file_close(src_file);
 	src_file = XB_FILE_UNDEFINED;
 
 	/* fake InnoDB */
-	innobase_log_group_home_dir = NULL;
+	INNODB_LOG_DIR = NULL;
 	innobase_log_file_size      = file_size;
 	innobase_log_files_in_group = 1;
 
@@ -3888,19 +3921,21 @@ xb_delta_open_matching_space(
 			xtrabackup_target_dir, dbname);
 		srv_normalize_path_for_win(dest_dir);
 
-		snprintf(dest_space_name, FN_REFLEN, "./%s/%s",
-			dbname, name);
+		snprintf(dest_space_name, FN_REFLEN, "%s%s/%s",
+			 xb_dict_prefix, dbname, name);
 	} else {
 		snprintf(dest_dir, FN_REFLEN, "%s", xtrabackup_target_dir);
 		srv_normalize_path_for_win(dest_dir);
 
-		snprintf(dest_space_name, FN_REFLEN, "./%s", name);
+		snprintf(dest_space_name, FN_REFLEN, "%s%s", xb_dict_prefix,
+			 name);
 	}
 
 	snprintf(real_name, real_name_len,
 		 "%s/%s",
 		 xtrabackup_target_dir, dest_space_name);
 	srv_normalize_path_for_win(real_name);
+	dest_space_name[strlen(dest_space_name) - XB_DICT_SUFFIX_LEN] = '\0';
 
 	/* Create the database directory if it doesn't exist yet */
 	if (!os_file_create_directory(dest_dir, FALSE)) {
@@ -3924,14 +3959,14 @@ xb_delta_open_matching_space(
 
 			char	tmpname[FN_REFLEN];
 
-			snprintf(tmpname, FN_REFLEN, "./%s/xtrabackup_tmp_#%lu",
-				dbname, fil_space->id);
+			snprintf(tmpname, FN_REFLEN, "%s%s/xtrabackup_tmp_#%lu",
+				 xb_dict_prefix, dbname, fil_space->id);
 
 			msg("xtrabackup: Renaming %s to %s.ibd\n",
 				fil_space->name, tmpname);
 
-			if (!fil_rename_tablespace(NULL,
-					fil_space->id, tmpname))
+			if (!xb_fil_rename_tablespace(NULL, fil_space->id,
+						      tmpname, NULL))
 			{
 				msg("xtrabackup: Cannot rename %s to %s\n",
 					fil_space->name, tmpname);
@@ -3953,13 +3988,17 @@ xb_delta_open_matching_space(
 		char	tmpname[FN_REFLEN];
 
 		strncpy(tmpname, dest_space_name, FN_REFLEN);
+#if MYSQL_VERSION_ID < 50600
+		/* Need to truncate .ibd before renaming.  For MySQL 5.6 it's
+		already truncated.  */
 		tmpname[strlen(tmpname) - 4] = 0;
+#endif
 
 		msg("xtrabackup: Renaming %s to %s\n",
 		    fil_space->name, dest_space_name);
 
-		if (!fil_rename_tablespace(NULL,
-				      fil_space->id, tmpname))
+		if (!xb_fil_rename_tablespace(NULL, fil_space->id, tmpname,
+					      NULL))
 		{
 			msg("xtrabackup: Cannot rename %s to %s\n",
 				fil_space->name, dest_space_name);
@@ -3989,7 +4028,7 @@ xb_delta_open_matching_space(
 			   << DICT_TF_ZSSIZE_SHIFT)
 			| DICT_TF_COMPACT
 			| (DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT);
-		ut_a(dict_table_flags_to_zip_size(tablespace_flags)
+		ut_a(dict_tf_get_zip_size(tablespace_flags)
 		     == zip_size);
 	}
 	*success = xb_space_create_file(real_name, space_id, tablespace_flags,
@@ -4126,12 +4165,11 @@ xtrabackup_apply_delta(
 
 		/* read to buffer */
 		/* first block of block cluster */
-		success = os_file_read(src_file, incremental_buffer,
-				       ((incremental_buffers * (page_size / 4))
-					<< page_size_shift) & 0xFFFFFFFFUL,
-				       (incremental_buffers * (page_size / 4))
-				       >> (32 - page_size_shift),
-				       page_size);
+		success = xb_os_file_read(src_file, incremental_buffer,
+					  ((incremental_buffers
+					    * (page_size / 4))
+					   << page_size_shift),
+					  page_size);
 		if (!success) {
 			goto error;
 		}
@@ -4159,12 +4197,11 @@ xtrabackup_apply_delta(
 		ut_a(last_buffer || page_in_buffer == page_size / 4);
 
 		/* read whole of the cluster */
-		success = os_file_read(src_file, incremental_buffer,
-				       ((incremental_buffers * (page_size / 4))
-					<< page_size_shift) & 0xFFFFFFFFUL,
-				       (incremental_buffers * (page_size / 4))
-				       >> (32 - page_size_shift),
-				       page_in_buffer * page_size);
+		success = xb_os_file_read(src_file, incremental_buffer,
+					  ((incremental_buffers
+					    * (page_size / 4))
+					   << page_size_shift),
+					  page_in_buffer * page_size);
 		if (!success) {
 			goto error;
 		}
@@ -4185,12 +4222,10 @@ xtrabackup_apply_delta(
 //						 + FIL_PAGE_LSN)) >= 0)
 //				continue;
 
-			success = os_file_write(dst_path, dst_file,
+			success = xb_os_file_write(dst_path, dst_file,
 					incremental_buffer +
 						page_in_buffer * page_size,
-					(offset_on_page << page_size_shift) &
-						0xFFFFFFFFUL,
-					offset_on_page >> (32 - page_size_shift),
+					(offset_on_page << page_size_shift),
 					page_size);
 			if (!success) {
 				goto error;
@@ -4227,13 +4262,13 @@ static
 ibool
 xtrabackup_apply_deltas(my_bool check_newer)
 {
-	int		ret;
+	ulint		ret;
 	char		dbpath[FN_REFLEN];
 	os_file_dir_t	dir;
 	os_file_dir_t	dbdir;
 	os_file_stat_t	dbinfo;
 	os_file_stat_t	fileinfo;
-	ulint		err 		= DB_SUCCESS;
+	dberr_t		err		= DB_SUCCESS;
 	static char	current_dir[2];
 
 	current_dir[0] = FN_CURLIB;
@@ -4395,14 +4430,15 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 						 UNIV_PAGE_SIZE_MAX));
 	log_buf = static_cast<byte *>(ut_align(log_buf_, UNIV_PAGE_SIZE_MAX));
 
-	success = os_file_read(src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	success = xb_os_file_read(src_file, log_buf, 0, LOG_FILE_HDR_SIZE);
 	if (!success) {
 		goto error;
 	}
 
 	memset(log_buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP, ' ', 4);
 
-	success = os_file_write(src_path, src_file, log_buf, 0, 0, LOG_FILE_HDR_SIZE);
+	success = xb_os_file_write(src_path, src_file, log_buf, 0,
+				   LOG_FILE_HDR_SIZE);
 	if (!success) {
 		goto error;
 	}
@@ -4492,6 +4528,7 @@ skip_check:
 	sync_init();
 	os_io_init_simple();
 	mem_init(srv_mem_pool_size);
+	ut_crc32_init();
 
 	if(xtrabackup_init_temp_log())
 		goto error;
@@ -4593,7 +4630,7 @@ skip_check:
 		mtr_s_lock(fil_space_get_latch(space->id, &flags), &mtr);
 
 		block = buf_page_get(space->id,
-				     dict_table_flags_to_zip_size(flags),
+				     dict_tf_get_zip_size(flags),
 				     0, RW_S_LATCH, &mtr);
 		header = FSP_HEADER_OFFSET + buf_block_get_frame(block);
 
@@ -4682,7 +4719,7 @@ skip_check:
 			}
 
 			/* init exp file */
-			bzero(page, UNIV_PAGE_SIZE);
+			memset(page, 0, UNIV_PAGE_SIZE);
 			mach_write_to_4(page    , 0x78706f72UL);
 			mach_write_to_4(page + 4, 0x74696e66UL);/*"xportinf"*/
 			mach_write_to_4(page + 8, n_index);
@@ -4699,12 +4736,7 @@ skip_check:
 			while (index) {
 				mach_write_to_8(page + n_index * 512, index->id);
 				mach_write_to_4(page + n_index * 512 + 8,
-#if (MYSQL_VERSION_ID < 50100)
-						index->tree->page
-#else /* MYSQL_VERSION_ID < 51000 */
-				index->page
-#endif
-						);
+						index->page);
 				strncpy((char *) page + n_index * 512 +
 					12, index->name, 500);
 
@@ -4717,12 +4749,7 @@ skip_check:
 				    (ulint)(index->id &
 					    0xFFFFFFFFUL),
 #endif
-#if (MYSQL_VERSION_ID < 50100)
-				    index->tree->page
-#else /* MYSQL_VERSION_ID < 51000 */
-				    (ulint) index->page
-#endif
-				    );
+				    (ulint) index->page);
 				index = dict_table_get_next_index(index);
 				n_index++;
 
@@ -4736,9 +4763,9 @@ skip_check:
 					os_file_get_last_error(TRUE);
 					goto next_node;
 				}
-				success = os_file_write(info_file_path,
-							info_file, page,
-							0, 0, UNIV_PAGE_SIZE);
+				success = xb_os_file_write(info_file_path,
+							   info_file, page,
+							   0, UNIV_PAGE_SIZE);
 				if (!success) {
 					os_file_get_last_error(TRUE);
 					goto next_node;
@@ -4773,7 +4800,9 @@ next_node:
 
 		fp = fopen("xtrabackup_binlog_pos_innodb", "w");
 		if (fp) {
-			fprintf(fp, "%s\t%llu\n",
+			/* Use UINT64PF instead of LSN_PF here, as we have to
+			maintain the file format. */
+			fprintf(fp, "%s\t" UINT64PF "\n",
 				trx_sys_mysql_bin_log_name,
 				trx_sys_mysql_bin_log_pos);
 			fclose(fp);
@@ -4796,10 +4825,10 @@ next_node:
 "xtrabackup: ########################################################\n"
 		    );
 		if (xtrabackup_incremental) {
-			msg("xtrabackup: The intended lsn is %llu\n",
+			msg("xtrabackup: The intended lsn is " LSN_PF "\n",
 			    incremental_last_lsn);
 		} else {
-			msg("xtrabackup: The intended lsn is %llu\n",
+			msg("xtrabackup: The intended lsn is " LSN_PF "\n",
 			    metadata_last_lsn);
 		}
 	}
@@ -4872,6 +4901,11 @@ int main(int argc, char **argv)
 	MY_INIT(argv[0]);
 	xb_regex_init();
 
+#if MYSQL_VERSION_ID >= 50600
+	system_charset_info= &my_charset_utf8_general_ci;
+	key_map_full.set_all();
+#endif
+
 	/* scan options for group to load defaults from */
 	{
 		int	i;
@@ -4879,11 +4913,11 @@ int main(int argc, char **argv)
 		for (i=1; i < argc; i++) {
 			optend = strcend(argv[i], '=');
 			if (strncmp(argv[i], "--defaults-group", optend - argv[i]) == 0) {
-				load_default_groups[2] = defaults_group = optend + 1;
+				xb_load_default_groups[2] = defaults_group = optend + 1;
 			}
 		}
 	}
-	load_defaults("my",load_default_groups,&argc,&argv);
+	load_defaults("my", xb_load_default_groups, &argc, &argv);
 
 	/* ignore unsupported options */
 	{
@@ -4894,7 +4928,7 @@ int main(int argc, char **argv)
 	j=1;
 	for (i=1 ; i < argc ; i++) {
 		uint count;
-		struct my_option *opt= (struct my_option *) my_long_options;
+		struct my_option *opt= (struct my_option *) xb_long_options;
 		optend= strcend((argv)[i], '=');
 		if (!strncmp(argv[i], "--defaults-file", optend - argv[i]))
 		{
@@ -4933,7 +4967,7 @@ next_opt:
 	argv[argc] = NULL;
 	}
 
-	if ((ho_error=handle_options(&argc, &argv, my_long_options, get_one_option)))
+	if ((ho_error=handle_options(&argc, &argv, xb_long_options, get_one_option)))
 		exit(ho_error);
 
 	if ((!xtrabackup_print_param) && (!xtrabackup_prepare) && (strcmp(mysql_data_home, "./") == 0)) {
@@ -5004,7 +5038,8 @@ next_opt:
 	/* --print-param */
 	if (xtrabackup_print_param) {
 		/* === some variables from mysqld === */
-		bzero((G_PTR) &mysql_tmpdir_list, sizeof(mysql_tmpdir_list));
+		memset((G_PTR) &mysql_tmpdir_list, 0,
+		       sizeof(mysql_tmpdir_list));
 
 		if (init_tmpdir(&mysql_tmpdir_list, opt_mysql_tmpdir))
 			exit(EXIT_FAILURE);
@@ -5018,7 +5053,7 @@ next_opt:
 		printf("innodb_data_file_path = \"%s\"\n",
 			innobase_data_file_path ? innobase_data_file_path : "ibdata1:10M:autoextend");
 		printf("innodb_log_group_home_dir = \"%s\"\n",
-			innobase_log_group_home_dir ? innobase_log_group_home_dir : mysql_data_home);
+			INNODB_LOG_DIR ? INNODB_LOG_DIR : mysql_data_home);
 		printf("innodb_log_files_in_group = %ld\n", innobase_log_files_in_group);
 		printf("innodb_log_file_size = %lld\n", innobase_log_file_size);
 		printf("innodb_flush_method = \"%s\"\n",
@@ -5039,7 +5074,7 @@ next_opt:
 
 	print_version();
 	if (xtrabackup_incremental) {
-		msg("incremental backup from %llu is enabled.\n",
+		msg("incremental backup from " LSN_PF " is enabled.\n",
 		    incremental_lsn);
 	}
 

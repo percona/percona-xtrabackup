@@ -24,6 +24,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <my_base.h>
 #include "common.h"
+#if MYSQL_VERSION_ID >= 50600
+#include "table.h"
+#endif
 #include "innodb_int.h"
 #include "write_filt.h"
 #include "fil_cur.h"
@@ -649,65 +652,6 @@ buf_page_is_compacted(
 		       compacted_page_magic, compacted_page_magic_size);
 }
 
-/********************************************************************//**
-Determine the flags of a table described in SYS_TABLES.
-@return compressed page size in kilobytes; or 0 if the tablespace is
-uncompressed, ULINT_UNDEFINED on error */
-static
-ulint
-dict_sys_tables_get_flags(
-/*======================*/
-	const rec_t*	rec)	/*!< in: a record of SYS_TABLES */
-{
-	const byte*	field;
-	ulint		len;
-	ulint		n_cols;
-	ulint		flags;
-
-	field = rec_get_nth_field_old(rec, 5, &len);
-	ut_a(len == 4);
-
-	flags = mach_read_from_4(field);
-
-	if (UNIV_LIKELY(flags == DICT_TABLE_ORDINARY)) {
-		return(0);
-	}
-
-	field = rec_get_nth_field_old(rec, 4/*N_COLS*/, &len);
-	n_cols = mach_read_from_4(field);
-
-	if (UNIV_UNLIKELY(!(n_cols & 0x80000000UL))) {
-		/* New file formats require ROW_FORMAT=COMPACT. */
-		return(ULINT_UNDEFINED);
-	}
-
-	switch (flags & (DICT_TF_FORMAT_MASK | DICT_TF_COMPACT)) {
-	default:
-	case DICT_TF_FORMAT_51 << DICT_TF_FORMAT_SHIFT:
-	case DICT_TF_FORMAT_51 << DICT_TF_FORMAT_SHIFT | DICT_TF_COMPACT:
-		/* flags should be DICT_TABLE_ORDINARY,
-		or DICT_TF_FORMAT_MASK should be nonzero. */
-		return(ULINT_UNDEFINED);
-
-	case DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT | DICT_TF_COMPACT:
-		/* We support this format. */
-		break;
-	}
-
-	if (UNIV_UNLIKELY((flags & DICT_TF_ZSSIZE_MASK)
-			  > (DICT_TF_ZSSIZE_MAX << DICT_TF_ZSSIZE_SHIFT))) {
-		/* Unsupported compressed page size. */
-		return(ULINT_UNDEFINED);
-	}
-
-	if (UNIV_UNLIKELY(flags & (~0 << DICT_TF_BITS))) {
-		/* Some unused bits are set. */
-		return(ULINT_UNDEFINED);
-	}
-
-	return(flags);
-}
-
 /*****************************************************************************
 Builds an index definition corresponding to an index object. It is roughly
 similar to innobase_create_index_def() / innobase_create_index_field_def() and
@@ -718,11 +662,11 @@ xb_build_index_def(
 /*=======================*/
 	mem_heap_t*		heap,		/*!< in: heap */
 	const dict_index_t*	index,		/*!< in: index */
-	merge_index_def_t*	index_def)	/*!< out: index definition */
+	index_def_t*		index_def)	/*!< out: index definition */
 {
-	merge_index_field_t*	fields;
-	ulint			n_fields;
-	ulint			i;
+	index_field_t*	fields;
+	ulint		n_fields;
+	ulint		i;
 
 	ut_a(index->n_fields);
 	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
@@ -738,21 +682,29 @@ xb_build_index_def(
 	index_def->name = mem_heap_strdup(heap, index->name);
 	index_def->ind_type = index->type;
 
-	fields = static_cast<merge_index_field_t *>
+	fields = static_cast<index_field_t *>
 		(mem_heap_alloc(heap, n_fields * sizeof(*fields)));
 
 	for (i = 0; i < n_fields; i++) {
 		dict_field_t*	field;
 
 		field = dict_index_get_nth_field(index, i);
+		xb_dict_index_field_to_index_field(heap, field, &fields[i]);
 
-		fields[i].field_name = mem_heap_strdup(heap, field->name);
-		fields[i].prefix_len = field->prefix_len;
 	}
 
 	index_def->fields = fields;
 	index_def->n_fields = n_fields;
 }
+
+#if MYSQL_VERSION_ID >= 50600
+/* A dummy autoc_inc sequence for row_merge_build_indexes().  */
+static ib_sequence_t null_seq(NULL, 0, 0);
+/* A dummy table share and table for row_merge_build_indexes() error reporting.
+Assumes that no errors are going to be reported. */
+static struct TABLE_SHARE dummy_table_share;
+static struct TABLE dummy_table;
+#endif
 
 /********************************************************************//**
 Rebuild secondary indexes for a given table. */
@@ -763,13 +715,16 @@ xb_rebuild_indexes_for_table(
 	dict_table_t*	table,	/*!< in: table */
 	trx_t*		trx)	/*!< in: transaction handle */
 {
-	dict_index_t*		index;
-	dict_index_t**		indexes;
-	ulint			n_indexes;
-	merge_index_def_t*	index_defs;
-	ulint			i;
-	mem_heap_t*		heap;
-	ulint			error;
+	dict_index_t*	index;
+	dict_index_t**	indexes;
+	ulint		n_indexes;
+	index_def_t*	index_defs;
+	ulint		i;
+	mem_heap_t*	heap;
+	ulint		error;
+#if MYSQL_VERSION_ID >= 50600
+	ulint*		add_key_nums;
+#endif
 
 	ut_ad(mutex_own(&(dict_sys->mutex)));
 	ut_ad(table);
@@ -786,42 +741,98 @@ xb_rebuild_indexes_for_table(
 
 	indexes = (dict_index_t**) mem_heap_alloc(heap,
 						  n_indexes * sizeof(*indexes));
-	index_defs = (merge_index_def_t*) mem_heap_alloc(heap,
-							 n_indexes *
+	index_defs = (index_def_t*) mem_heap_alloc(heap, n_indexes *
 							 sizeof(*index_defs));
+#if MYSQL_VERSION_ID >= 50600
+	add_key_nums = static_cast<ulint *>
+		(mem_heap_alloc(heap, n_indexes * sizeof(*add_key_nums)));
+#endif
 
 	/* Skip the primary key. */
 	index = dict_table_get_first_index(table);
 	ut_a(dict_index_is_clust(index));
 
+	msg("  Dropping %lu index(es).\n", n_indexes);
+
 	for (i = 0; (index = dict_table_get_next_index(index)); i++) {
 
 		msg("  Found index %s\n", index->name);
 
-		indexes[i] = index;
+		/* Pretend that it's the current trx that created this index.
+		Required to avoid 5.6+ debug assertions. */
+		index->trx_id = xb_trx_id_to_index_trx_id(trx->id);
 
 		xb_build_index_def(heap, index, &index_defs[i]);
+
+#if MYSQL_VERSION_ID >= 50600
+		/* In 5.6+, row_merge_drop_indexes() drops all the indexes on
+		the table that have the temp index prefix.  It does not accept
+		an array of indexes to drop as in 5.5-.  */
+		row_merge_rename_index_to_drop(trx, table->id, index->id);
+#else
+		indexes[i] = index;
+#endif
 	}
 
 	ut_ad(i == n_indexes);
 
-	msg("  Dropping %lu index(es).\n", n_indexes);
+#if MYSQL_VERSION_ID >= 50600
+	ut_d(table->n_ref_count++);
+	row_merge_drop_indexes(trx, table, TRUE);
+	ut_d(table->n_ref_count--);
 
+	index = dict_table_get_first_index(table);
+	ut_a(dict_index_is_clust(index));
+	index = dict_table_get_next_index(index);
+	while (index) {
+
+		/* In 5.6+, row_merge_drop_indexes() does not remove the
+		indexes from the dictionary cache nor from any foreign key
+		list.  This may cause invalid dereferences as we try to access
+		the dropped indexes from other tables as FKs.  */
+
+		dict_index_t* next_index = dict_table_get_next_index(index);
+		index->to_be_dropped = 1;
+
+		/* Patch up any FK referencing this index with NULL */
+		dict_foreign_replace_index(table, index, trx);
+
+		dict_index_remove_from_cache(table, index);
+
+		index = next_index;
+	}
+#else
 	row_merge_drop_indexes(trx, table, indexes, n_indexes);
+#endif
 
 	msg("  Rebuilding %lu index(es).\n", n_indexes);
 
-	row_merge_lock_table(trx, table, LOCK_X);
+	error = row_merge_lock_table(trx, table, LOCK_X);
+	xb_a(error == DB_SUCCESS);
 
 	for (i = 0; i < n_indexes; i++) {
-		indexes[i] = row_merge_create_index(trx, table, &index_defs[i]);
+		indexes[i] = row_merge_create_index(trx, table,
+						    &index_defs[i]);
+#if MYSQL_VERSION_ID >= 50600
+		add_key_nums[i] = index_defs[i].key_number;
+#endif
 	}
 
+#if MYSQL_VERSION_ID >= 50600
+	error = row_merge_build_indexes(trx, table, table, FALSE, indexes,
+					add_key_nums, n_indexes, &dummy_table,
+					NULL, NULL, ULINT_UNDEFINED, null_seq);
+#else
 	error = row_merge_build_indexes(trx, table, table, indexes, n_indexes,
 					NULL);
+#endif
 	ut_a(error == DB_SUCCESS);
 
 	mem_heap_free(heap);
+
+	trx_commit_for_mysql(trx);
+
+	trx_start_for_ddl(trx, TRX_DICT_OP_INDEX);
 }
 
 /******************************************************************************
@@ -839,14 +850,20 @@ xb_compact_rebuild_indexes(void)
 	const byte*	field;
 	ulint		len;
 	ulint		space_id;
-	ulint		flags;
 	char*		name;
 	dict_table_t*	table;
 	trx_t*		trx;
 
+#if MYSQL_VERSION_ID >= 50600
+	/* Set up the dummy table for the index rebuild error reporting */
+	dummy_table_share.fields = 0;
+	dummy_table.s = &dummy_table_share;
+#endif
+
 	/* Iterate all tables that are not in the system tablespace. */
 
 	trx = trx_allocate_for_mysql();
+	trx_start_for_ddl(trx, TRX_DICT_OP_INDEX);
 
 	/* Suppress foreign key checks, as we are going to drop and recreate all
 	secondary keys. */
@@ -856,9 +873,7 @@ xb_compact_rebuild_indexes(void)
 
 	/* Enlarge the fatal lock wait timeout during index rebuild
 	operation. */
-	mutex_enter(&kernel_mutex);
-	srv_fatal_semaphore_wait_threshold += 7200; /* 2 hours */
-	mutex_exit(&kernel_mutex);
+	xb_adjust_fatal_semaphore_wait_threshold(7200); /* 2 hours */
 
 	mtr_start(&mtr);
 
@@ -866,8 +881,8 @@ xb_compact_rebuild_indexes(void)
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 	ut_a(!dict_table_is_comp(sys_tables));
 
-	btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
-				    TRUE, &mtr);
+	xb_btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
+				       TRUE, 0, &mtr);
 	for (;;) {
 		btr_pcur_move_to_next_user_rec(&pcur, &mtr);
 
@@ -897,25 +912,6 @@ xb_compact_rebuild_indexes(void)
 		field = rec_get_nth_field_old(rec, 0, &len);
 		name = mem_strdupl((char*) field, len);
 
-		flags = dict_sys_tables_get_flags(rec);
-		if (UNIV_UNLIKELY(flags == ULINT_UNDEFINED)) {
-
-			field = rec_get_nth_field_old(rec, 5, &len);
-			flags = mach_read_from_4(field);
-
-			ut_print_timestamp(stderr);
-			fputs("  InnoDB: Error: table ", stderr);
-			ut_print_filename(stderr, name);
-			fprintf(stderr, "\n"
-				"InnoDB: in InnoDB data dictionary"
-				" has unknown type %lx.\n",
-				(ulong) flags);
-
-			mem_free(name);
-
-			continue;
-		}
-
 		btr_pcur_store_position(&pcur, &mtr);
 
 		mtr_commit(&mtr);
@@ -932,11 +928,6 @@ xb_compact_rebuild_indexes(void)
 		xb_rebuild_indexes_for_table(table, trx);
 
 		mem_free(name);
-
-		/* Temporarily unlock the data dictionary to avoid long
-		semaphore waits. */
-		row_mysql_unlock_data_dictionary(trx);
-		row_mysql_lock_data_dictionary(trx);
 
 		mtr_start(&mtr);
 

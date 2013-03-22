@@ -1,13 +1,14 @@
 # Makefile to build XtraBackup for Percona Server and different versions of MySQL
 #
 # Syntax:
-# make [5.1|5.5|plugin|xtradb|xtradb55]
+# make [5.1|5.5|5.6|plugin|xtradb|xtradb55]
 #
 # Default is xtradb - to build XtraBackup for Percona Server 5.1
 # xtradb55 - Xtrabackup for Percona Server 5.5
 # 5.1 - XtraBackup for MySQL versions 5.1.* with builtin InnoDB
 # plugin - XtraBackup for MySQL versions 5.1.* with InnoDB plugin
 # 5.5 - XtraBackup for MySQL versions 5.5.*	
+# 5.6 - XtraBackup for MySQL version 5.6
 
 LIBS += -lpthread `libgcrypt-config --libs`
 DEFS = -DUNIV_LINUX -DMYSQL_SERVER
@@ -41,6 +42,7 @@ XTRABACKUPCOBJS = \
 	xbstream_write.o \
 	quicklz/quicklz.o
 XTRABACKUPCCOBJS = xtrabackup.o innodb_int.o compact.o fil_cur.o write_filt.o
+
 XBSTREAMOBJS = xbstream.o xbstream_write.o xbstream_read.o
 
 XBCRYPTOBJS = xbcrypt.o xbcrypt_common.o xbcrypt_read.o xbcrypt_write.o
@@ -122,6 +124,29 @@ endif
 	sed -e 's/C_DEFINES = //')
 5.5: $(TARGET) xbstream xbcrypt
 
+# XtraBackup for MySQL 5.6
+5.6: INC = $(COMMON_INC) $(addprefix -isystem$(MYSQL_ROOT_DIR)/, \
+	include sql storage/innobase/include sql)
+5.6: INNODBOBJS =
+
+ifeq "$(wildcard $(MYSQL_ROOT_DIR)/zlib/.libs/libzlt.a)" ""
+5.6: LIBZ= -lz
+else
+5.6: LIBZ= $(MYSQL_ROOT_DIR)/zlib/.libs/libzlt.a
+endif
+
+5.6: MYSQLOBJS = $(MYSQL_ROOT_DIR)/libmysqld/libmysqld.a
+ifeq ($(shell uname -s),Linux)
+5.6: LIBS += -laio -ldl -lcrypt
+endif
+5.6: TARGET := xtrabackup_innodb56
+# In CMake server builds it is important to build with exactly the same preprocessor flags
+# as were used to build InnoDB
+5.6: DEFS = $(shell grep CXX_DEFINES \
+	$(MYSQL_ROOT_DIR)/storage/innobase/CMakeFiles/innobase.dir/flags.make | \
+	sed -e 's/CXX_DEFINES = //')
+5.6: $(TARGET) xbstream xbcrypt
+
 # XtraBackup for XtraDB 
 xtradb: INC = $(COMMON_INC) $(addprefix -isystem$(MYSQL_ROOT_DIR)/, \
 	include storage/innodb_plugin/include)
@@ -198,13 +223,13 @@ xbstream.o xbstream_read.o: %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
 
 xbstream: $(XBSTREAMOBJS) $(MYSQLOBJS) ds_local.o ds_buffer.o ds_stdout.o datasink.o
-	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
 xbcrypt.o xbcrypt_read.o: %.o: %.c
 	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $< -o $@
 
 xbcrypt: $(XBCRYPTOBJS) $(MYSQLOBJS)
-	$(CC) $(CFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
 xtrabackup.o: xtrabackup.cc xb_regex.h write_filt.h fil_cur.h xtrabackup.h compact.h
 

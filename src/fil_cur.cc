@@ -156,28 +156,23 @@ xb_fil_cur_read(
 {
 	ibool			success;
 	ulint			page_size;
-	ulint			offset_high;
-	ulint			offset_low;
 	byte*			page;
 	ulint			i;
 	ulint			npages;
 	ulint			retry_count;
 	xb_fil_cur_result_t	ret;
-	IB_INT64		to_read;
+	ib_int64_t		to_read;
 
 	page_size = cursor->page_size;
 
-	offset_high = (ulint) (cursor->offset >> 32);
-	offset_low = (ulint) (cursor->offset & 0xFFFFFFFFUL);
-
-	to_read = (IB_INT64) cursor->statinfo.st_size - cursor->offset;
+	to_read = (ib_int64_t) cursor->statinfo.st_size - cursor->offset;
 
 	if (to_read == 0LL) {
 		return(XB_FIL_CUR_EOF);
 	}
 
-	if (to_read > (IB_INT64) cursor->buf_size) {
-		to_read = (IB_INT64) cursor->buf_size;
+	if (to_read > (ib_int64_t) cursor->buf_size) {
+		to_read = (ib_int64_t) cursor->buf_size;
 	}
 	ut_a(to_read > 0 && to_read <= 0xFFFFFFFFLL);
 	ut_a(to_read % page_size == 0);
@@ -196,8 +191,8 @@ read_retry:
 	cursor->buf_page_no = (ulint) (cursor->offset >>
 				       cursor->page_size_shift);
 
-	success = os_file_read(cursor->file, cursor->buf,
-			       offset_low, offset_high, to_read);
+	success = xb_os_file_read(cursor->file, cursor->buf, cursor->offset,
+				  to_read);
 	if (!success) {
 		return(XB_FIL_CUR_ERROR);
 	}
