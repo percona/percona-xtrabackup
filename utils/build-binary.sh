@@ -121,9 +121,6 @@ export AUTO_DOWNLOAD=yes
         bash utils/build.sh xtradb
         install -m 755 src/xtrabackup "$INSTALLDIR/bin"
 
-        bash utils/build.sh 5.1
-        install -m 755 src/xtrabackup_51 "$INSTALLDIR/bin"
-
         install -m 755 src/xbstream "$INSTALLDIR/bin"
 
 	install -m 755 src/xbcrypt "$INSTALLDIR/bin"
