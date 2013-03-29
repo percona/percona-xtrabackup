@@ -1,3 +1,5 @@
+.. _xbstream_binary:
+
 ======================
  The xbstream Binary
 ======================
