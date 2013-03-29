@@ -2823,7 +2823,7 @@ child process. Try 'xtrabackup --help' for more details.
 =item --compress-chunk-size
 
 This option specifies the size of the internal working buffer for each
-compression thread, measured in kilobytes. It is passed directly to the
+compression thread, measured in bytes. It is passed directly to the
 xtrabackup child process. Try 'xtrabackup --help' for more details.
 
 =item --copy-back
@@ -2870,7 +2870,7 @@ child process. Try 'xtrabackup --help' for more details.
 =item --encrypt-chunk-size
 
 This option specifies the size of the internal working buffer for each
-encryption thread, measured in kilobytes. It is passed directly to the
+encryption thread, measured in bytes. It is passed directly to the
 xtrabackup child process. Try 'xtrabackup --help' for more details.
 
 =item --export
