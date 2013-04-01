@@ -15,7 +15,7 @@
 -	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
 -	cp src/xtrabackup_55 .
 -
--	CXX=$(CXX_56) AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
+-	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
 -	cp src/xtrabackup_56 .
 +	# Dummy binaries that avoid compilation
 +	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
