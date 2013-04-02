@@ -11,7 +11,7 @@ Vcs-Bzr: bzr+ssh://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-
 
 Package: percona-xtrabackup
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, mysql-client
+Depends: ${shlibs:Depends}, ${misc:Depends}, libdbd-mysql-perl
 Provides: xtrabackup
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
@@ -31,7 +31,7 @@ Description: Debug symbols for Percona XtraBackup
 
 Package: percona-xtrabackup-test
 Architecture: any
-Depends: percona-xtrabackup, python, ${misc:Depends}
+Depends: percona-xtrabackup, python, ${misc:Depends}, mysql-client
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.

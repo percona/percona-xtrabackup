@@ -22,6 +22,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Provides: xtrabackup
 Obsoletes: xtrabackup
 BuildRequires: libaio-devel, libgcrypt-devel
+Requires: perl(DBD::mysql)
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
