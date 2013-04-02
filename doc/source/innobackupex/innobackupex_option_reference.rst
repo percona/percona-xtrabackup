@@ -26,6 +26,10 @@ Options
 
    This option specifies the number of worker threads that will be used for parallel compression. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
 
+.. option:: --compress-chunk-size
+
+   This option specifies the size of the internal working buffer for each compression thread, measured in bytes. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
+
 .. option:: --copy-back
 
     Copy all the files in a previously made backup from the backup directory to their original locations.
@@ -45,6 +49,26 @@ Options
 .. option:: --defaults-group=GROUP-NAME
 
    This option accepts a string argument that specifies the group which should be read from the configuration file. This is needed if you use mysqld_multi.
+
+.. option:: --encrypt=ENCRYPTION_ALGORITHM
+
+   This option instructs xtrabackup to encrypt backup copies of InnoDB data files using the algorithm specified in the ENCRYPTION_ALGORITHM. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-key=ENCRYPTION_KEY
+
+   This option instructs xtrabackup to use the given ENCRYPTION_KEY when using the --encrypt option. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-key-file=ENCRYPTION_KEY_FILE
+
+   This option instructs xtrabackup to use the encryption key stored in the given ENCRYPTION_KEY_FILE when using the --encrypt option. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-threads
+
+   This option specifies the number of worker threads that will be used for parallel encryption. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-chunk-size 
+
+   This option specifies the size of the internal working buffer for each encryption thread, measured in bytes. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
 
 .. option:: --export
 

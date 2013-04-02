@@ -20,7 +20,7 @@ The following packages and tools must be installed to compile *Percona XtraBacku
 In Debian-based distributions, you need to: ::
 
   $ apt-get install debhelper autotools-dev libaio-dev wget automake \
-    libtool bison libncurses-dev libz-dev cmake bzr
+    libtool bison libncurses-dev libz-dev cmake bzr libgcrypt11-dev
 
 In ``RPM``-based distributions, you need to: ::
 
