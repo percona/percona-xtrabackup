@@ -2550,7 +2550,6 @@ sub parse_tables_file_option_value {
          my ( $db, $tbl ) = $line =~ m/\s*([^\.]+)\.([^\.]+)\s*/;
          if ( $db && $tbl ) {
             $table_list{$db}->{$tbl} = 1;
-            print STDERR "$prefix $db.$tbl will be registerd to the list\n";
          }
          else {
             warn "$prefix Invalid line in $filename: $line";
