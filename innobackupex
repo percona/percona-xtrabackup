@@ -2843,7 +2843,7 @@ sub wait_for_safe_slave {
 
 sub get_slave_open_temp_tables {
    my @lines;
-   mysql_send 'SHOW STATUS LIKE "slave_open_temp_tables"\G;';
+   mysql_send "SHOW STATUS LIKE 'slave_open_temp_tables'\\G";
    file_to_array($mysql_stdout, \@lines);
    my $last_value;
    for my $i ( 0..$#lines ) {
