@@ -1029,6 +1029,47 @@
  #ifdef UNIV_MEM_DEBUG
  /**********************************************************************
  Initializes an allocated memory field in the debug version. */
+@@ -221,18 +242,10 @@
+ 	byte*	buf,	/* in: pointer to buffer */
+ 	ulint	 n)	/* in: length of buffer */
+ {
+-	byte*	ptr;
+-
+ 	UNIV_MEM_ASSERT_W(buf, n);
+ 
+-	for (ptr = buf; ptr < buf + n; ptr++) {
+-
+-		if (ut_rnd_gen_ibool()) {
+-			*ptr = 0xBA;
+-		} else {
+-			*ptr = 0xBE;
+-		}
+-	}
++	/* Fix https://bugs.launchpad.net/percona-xtrabackup/+bug/1158154 */
++	memset(buf, 0xBA, n);
+ 
+ 	UNIV_MEM_INVALID(buf, n);
+ }
+@@ -247,17 +260,10 @@
+ 	byte*	buf,	/* in: pointer to buffer */
+ 	ulint	 n)	 /* in: length of buffer */
+ {
+-	byte*	ptr;
+-
+ 	UNIV_MEM_ASSERT_W(buf, n);
+ 
+-	for (ptr = buf; ptr < buf + n; ptr++) {
+-		if (ut_rnd_gen_ibool()) {
+-			*ptr = 0xDE;
+-		} else {
+-			*ptr = 0xAD;
+-		}
+-	}
++	/* Fix https://bugs.launchpad.net/percona-xtrabackup/+bug/1158154 */
++	memset(buf, 0xDE, n);
+ 
+ 	UNIV_MEM_FREE(buf, n);
+ }
 --- a/storage/innobase/mem/mem0mem.c
 +++ b/storage/innobase/mem/mem0mem.c
 @@ -472,6 +472,7 @@
