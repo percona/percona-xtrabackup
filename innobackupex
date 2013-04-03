@@ -7,6 +7,7 @@
 # All Rights Reserved.
 #
 
+use warnings FATAL => 'all';
 use strict;
 use Getopt::Long;
 use File::Spec;
@@ -807,7 +808,7 @@ sub copy_back {
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original InnoDB log directory '$orig_iblog_dir'\n";
     while (defined($file = readdir(DIR))) {
-        if ($file =~ /'^' . $iblog_files . '$'/ && -f "$backup_dir/$file") {
+        if ($file =~ /^$iblog_files$/ && -f "$backup_dir/$file") {
             $src_name = escape_path("$backup_dir/$file");
             $dst_name = escape_path("$orig_iblog_dir");
             &$move_or_copy_file($src_name, $dst_name);
@@ -1968,19 +1969,16 @@ sub check_args {
         exit(1);
     }
 
-    # get options file name
-    #$config_file = $ARGV[0];
-
     if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
         # we are making a backup, get backup root directory
         $backup_root = $ARGV[0];
         if ($option_incremental && !$option_incremental_lsn) {
-            my @dirs = `ls -1 -t $backup_root`;
-            my $inc_dir = $dirs[0];
-            chomp($inc_dir);
             if ($option_incremental_basedir) {
                 $incremental_basedir = $option_incremental_basedir;
             } else {
+                my @dirs = `ls -t $backup_root`;
+                my $inc_dir = $dirs[0];
+                chomp($inc_dir);
                 $incremental_basedir = File::Spec->catfile($backup_root, $inc_dir);
             }
         }
