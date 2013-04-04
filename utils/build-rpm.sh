@@ -21,11 +21,12 @@ TARGET_CFLAGS=''
 TARGET_ARG=''
 SIGN='--sign'  # We sign by default
 TEST='no'    # We don't test by default
+DUMMY=''
 
 # Check if we have got a functional getopt(1)
 if ! getopt --test
 then
-    go_out="$(getopt --options="iKt" --longoptions=i686,nosign,test \
+    go_out="$(getopt --options="iKtn" --longoptions=i686,nosign,test,dummy \
         --name="$(basename "$0")" -- "$@")"
     test $? -eq 0 || exit 1
     eval set -- $go_out
@@ -48,6 +49,10 @@ do
     -t | --test )
         shift
         TEST='yes'
+        ;;
+    -n | --dummy )
+        shift
+        DUMMY='--define=dummy=1'
         ;;
     esac
 done
@@ -129,7 +134,7 @@ export MYSQL_RPMBUILD_TEST="$TEST"
             "$SOURCEDIR"
 
     # Issue RPM command
-    rpmbuild $SIGN $TARGET $TARGET_LIBDIR $TARGET_ARCH \
+    rpmbuild $SIGN $TARGET $TARGET_LIBDIR $TARGET_ARCH $DUMMY \
         -ba --clean "$SOURCEDIR/utils/xtrabackup.spec" \
         --define "_topdir $WORKDIR_ABS" \
         --define "xtrabackup_version $XTRABACKUP_VERSION" \

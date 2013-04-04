@@ -57,6 +57,7 @@ This package contains the test suite for Percona Xtrabackup
 
 %build
 set -ue
+%if %{undefined dummy}
 export CC=${CC-"gcc"}
 export CXX=${CXX-"g++"}
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
@@ -69,6 +70,14 @@ AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
 cp src/xtrabackup_55 .
 AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
 cp src/xtrabackup_56 .
+%else
+# Dummy binaries that avoid compilation
+echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
+echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_51
+echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_55
+echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_56
+echo 'main() { return 300; }' | gcc -x c - -o xbstream
+%endif
 
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
