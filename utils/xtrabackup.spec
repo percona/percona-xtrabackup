@@ -21,7 +21,7 @@ Source: percona-xtrabackup-%{xtrabackup_version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Provides: xtrabackup
 Obsoletes: xtrabackup
-BuildRequires: libaio-devel
+BuildRequires: libaio-devel, libgcrypt-devel
 Requires: perl(DBD::mysql)
 
 %description
