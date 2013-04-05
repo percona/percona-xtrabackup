@@ -13,7 +13,7 @@ Prepares a server binary directory to be used by run.sh when running XtraBackup
 tests.
 
 If the argument is one of the build targets passed to build.sh 
-(i.e. innodb51 innodb55 xtradb51 xtradb55) then the 
+(i.e. innodb51 innodb55 innodb56 xtradb51 xtradb55) then the 
 appropriate Linux tarball is downloaded from a pre-defined location and
 unpacked into the specified installation  directory ('./server' by default).
 
@@ -49,6 +49,11 @@ case "$1" in
 	url="http://s3.amazonaws.com/percona.com/downloads/community"
 	tarball="mysql-5.5.16-linux2.6-$arch.tar.gz"
 	;;
+
+    innodb56)
+        url="http://s3.amazonaws.com/percona.com/downloads/community"
+        tarball="mysql-5.6.10-linux-glibc2.5-$arch.tar.gz"
+        ;;
 
     xtradb51)
 	url="http://www.percona.com/redir/downloads/Percona-Server-5.1/Percona-Server-5.1.67-14.4/binary/linux/$arch"

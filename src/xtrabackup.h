@@ -32,15 +32,15 @@ typedef struct {
 
 /* ======== Datafiles iterator ======== */
 typedef struct {
-	fil_system_t *system;
-	fil_space_t  *space;
-	fil_node_t   *node;
-	ibool        started;
-	os_mutex_t   mutex;
+	fil_system_t	*system;
+	fil_space_t	*space;
+	fil_node_t	*node;
+	ibool		started;
+	os_ib_mutex_t	mutex;
 } datafiles_iter_t;
 
 /* value of the --incremental option */
-extern LSN64 incremental_lsn;
+extern lsn_t incremental_lsn;
 
 extern char		*xtrabackup_target_dir;
 extern ds_ctxt_t	*ds_meta;

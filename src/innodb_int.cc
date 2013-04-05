@@ -31,7 +31,21 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 extern long innobase_lock_wait_timeout;
 
+#if MYSQL_VERSION_ID < 50600
 char *opt_mysql_tmpdir = NULL;
+#endif
+
+#if MYSQL_VERSION_ID >= 50600
+const char*	xb_dict_prefix	= "";
+#else
+const char*	xb_dict_prefix	= "./";
+#endif
+
+#if MYSQL_VERSION_ID < 50600
+char*	innobase_log_group_home_dir		= NULL;
+#endif
+
+long innobase_mirrored_log_groups = 1;
 
 /****************************************************************//**
 A simple function to open or create a file.
@@ -89,12 +103,22 @@ xb_file_create(
 	ulint		type,	/*!< in: OS_DATA_FILE or OS_LOG_FILE */
 	ibool*		success)/*!< out: TRUE if succeed, FALSE if error */
 {
-#if MYSQL_VERSION_ID > 50500
-	return os_file_create(0 /* innodb_file_data_key */,
-			      name, create_mode, purpose, type, success);
-#else
-	return os_file_create(name, create_mode, purpose, type, success);
+	os_file_t	result;
+#if MYSQL_VERSION_ID >= 50600
+	ibool	old_srv_read_only_mode = srv_read_only_mode;
+
+	srv_read_only_mode = FALSE;
 #endif
+#if MYSQL_VERSION_ID > 50500
+	result = os_file_create(0 /* innodb_file_data_key */,
+				name, create_mode, purpose, type, success);
+#else
+	result=  os_file_create(name, create_mode, purpose, type, success);
+#endif
+#if MYSQL_VERSION_ID >= 50600
+	srv_read_only_mode = old_srv_read_only_mode;
+#endif
+	return result;
 }
 
 /***********************************************************************//**
@@ -215,8 +239,8 @@ xb_space_create_file(
 		return ret;
 	}
 
-	ret = os_file_set_size(path, *file,
-			       FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE, 0);
+	ret = xb_os_file_set_size(path, *file,
+				  FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE);
 	if (!ret) {
 		msg("xtrabackup: cannot set size for file %s\n", path);
 		os_file_close(*file);
@@ -233,18 +257,16 @@ xb_space_create_file(
 	fsp_header_init_fields(page, space_id, flags);
 	mach_write_to_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, space_id);
 
-	if (!(flags & DICT_TF_ZSSIZE_MASK)) {
+	if (!fsp_flags_is_compressed(flags)) {
 		buf_flush_init_for_writing(page, NULL, 0);
 
-		ret = os_file_write(path, *file, page, 0, 0, UNIV_PAGE_SIZE);
+		ret = xb_os_file_write(path, *file, page, 0, UNIV_PAGE_SIZE);
 	}
 	else {
 		page_zip_des_t	page_zip;
 		ulint		zip_size;
 
-		zip_size = (PAGE_ZIP_MIN_SIZE >> 1)
-			<< ((flags & DICT_TF_ZSSIZE_MASK)
-			    >> DICT_TF_ZSSIZE_SHIFT);
+		zip_size = fsp_flags_get_zip_size(flags);
 		page_zip_set_size(&page_zip, zip_size);
 		page_zip.data = page + UNIV_PAGE_SIZE;
 		fprintf(stderr, "zip_size = %lu\n", zip_size);
@@ -257,8 +279,8 @@ xb_space_create_file(
 
 		buf_flush_init_for_writing(page, &page_zip, 0);
 
-		ret = os_file_write(path, *file, page_zip.data, 0, 0,
-				    zip_size);
+		ret = xb_os_file_write(path, *file, page_zip.data, 0,
+				       zip_size);
 	}
 
 	ut_free(buf);
@@ -298,6 +320,7 @@ xb_normalize_init_values(void)
 	srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
 }
 
+#if MYSQL_VERSION_ID < 50600
 
 void
 innobase_invalidate_query_cache(
@@ -650,6 +673,8 @@ trx_is_strict(
 	return(FALSE);
 }
 
+#endif /* MYSQL_VERSION_ID < 50600 */
+
 #ifdef XTRADB_BASED
 trx_t*
 innobase_get_trx()
@@ -663,6 +688,8 @@ innobase_get_slow_log()
 	return(FALSE);
 }
 #endif
+
+#if MYSQL_VERSION_ID < 50600
 
 extern "C" {
 
@@ -848,8 +875,6 @@ innobase_mysql_tmpfile(void)
 	return(fd2);
 }
 
-} /* extern "C" */
-
 /* The following is used by row0merge for error reporting. Define a stub so we
 can use fast index creation from XtraBackup. */
 void
@@ -871,7 +896,11 @@ innobase_rec_to_mysql(
 {
 }
 
-#if MYSQL_VERSION_ID >= 50507
+} /* extern "C" */
+
+#endif /* MYSQL_VERSION_ID < 50600 */
+
+#if (MYSQL_VERSION_ID >= 50507) && (MYSQL_VERSION_ID < 50600)
 /*
    As of MySQL 5.5.7, InnoDB uses thd_wait plugin service.
    We have to provide mock functions to avoid linker errors.
@@ -892,7 +921,7 @@ void thd_wait_end(MYSQL_THD thd)
 	return;
 }
 
-#endif /* MYSQL_VERSION_ID >= 50507 */
+#endif /* (MYSQL_VERSION_ID >= 50507) && (MYSQL_VERSION_ID < 50600) */
 
 #ifdef XTRADB_BASED
 /******************************************************************//*******
@@ -905,3 +934,200 @@ thd_expand_fast_index_creation(
 	return(FALSE);
 }
 #endif /* XTRADB_BASED */
+
+#if MYSQL_VERSION_ID >= 50600
+
+/*********************************************************************//**
+Creates or opens the log files and closes them.
+@return	DB_SUCCESS or error code */
+ulint
+open_or_create_log_file(
+/*====================*/
+	ibool	create_new_db,		/*!< in: TRUE if we should create a
+					new database */
+	ibool*	log_file_created,	/*!< out: TRUE if new log file
+					created */
+	ibool	log_file_has_been_opened,/*!< in: TRUE if a log file has been
+					opened before: then it is an error
+					to try to create another log file */
+	ulint	k,			/*!< in: log group number */
+	ulint	i)			/*!< in: log file number in group */
+{
+	ibool	ret;
+	os_offset_t	size;
+	char	name[10000];
+	ulint	dirnamelen;
+
+	UT_NOT_USED(create_new_db);
+	UT_NOT_USED(log_file_has_been_opened);
+	UT_NOT_USED(k);
+	ut_ad(k == 0);
+
+	*log_file_created = FALSE;
+
+	srv_normalize_path_for_win(srv_log_group_home_dir);
+
+	dirnamelen = strlen(srv_log_group_home_dir);
+	ut_a(dirnamelen < (sizeof name) - 10 - sizeof "ib_logfile");
+	memcpy(name, srv_log_group_home_dir, dirnamelen);
+
+	/* Add a path separator if needed. */
+	if (dirnamelen && name[dirnamelen - 1] != SRV_PATH_SEPARATOR) {
+		name[dirnamelen++] = SRV_PATH_SEPARATOR;
+	}
+
+	sprintf(name + dirnamelen, "%s%lu", "ib_logfile", (ulong) i);
+
+	files[i] = os_file_create(innodb_file_log_key, name,
+				  OS_FILE_OPEN, OS_FILE_NORMAL,
+				  OS_LOG_FILE, &ret);
+	if (ret == FALSE) {
+		fprintf(stderr, "InnoDB: Error in opening %s\n", name);
+
+		return(DB_ERROR);
+	}
+
+	size = os_file_get_size(files[i]);
+
+	if (size != srv_log_file_size * UNIV_PAGE_SIZE) {
+
+		fprintf(stderr,
+			"InnoDB: Error: log file %s is"
+			" of different size " UINT64PF " bytes\n"
+			"InnoDB: than specified in the .cnf"
+			" file " UINT64PF " bytes!\n",
+			name, size, srv_log_file_size * UNIV_PAGE_SIZE);
+
+		return(DB_ERROR);
+	}
+
+	ret = os_file_close(files[i]);
+	ut_a(ret);
+
+	if (i == 0) {
+		/* Create in memory the file space object
+		which is for this log group */
+
+		fil_space_create(name,
+				 2 * k + SRV_LOG_SPACE_FIRST_ID, 0, FIL_LOG);
+	}
+
+	ut_a(fil_validate());
+
+	ut_a(fil_node_create(name, srv_log_file_size,
+			     2 * k + SRV_LOG_SPACE_FIRST_ID, FALSE));
+	if (i == 0) {
+		log_group_init(k, srv_n_log_files,
+			       srv_log_file_size * UNIV_PAGE_SIZE,
+			       2 * k + SRV_LOG_SPACE_FIRST_ID,
+			       SRV_LOG_SPACE_FIRST_ID + 1); /* dummy arch
+							    space id */
+	}
+
+	return(DB_SUCCESS);
+}
+
+#endif /* MYSQL_VERSION_ID >= 50600 */
+
+/*****************************************************************//**
+Parse, validate, and set the InnoDB variables from
+innodb_log_group_home_dir and innodb_mirrored_log_group_groups
+options.
+
+@return TRUE if server variables set OK, FALSE otherwise */
+ibool
+xb_parse_log_group_home_dirs(void)
+/*==============================*/
+{
+	ibool	ret = TRUE;
+#if MYSQL_VERSION_ID < 50600
+	ret = srv_parse_log_group_home_dirs(INNODB_LOG_DIR);
+
+	if (ret == FALSE || innobase_mirrored_log_groups != 1) {
+
+		msg("xtrabackup: syntax error in innodb_log_group_home_dir, "
+		    "or a wrong number of mirrored log groups\n");
+		ret = FALSE;
+	}
+	srv_n_log_groups = (ulint) innobase_mirrored_log_groups;
+#else
+	srv_normalize_path_for_win(srv_log_group_home_dir);
+
+	if (strchr(srv_log_group_home_dir, ';')
+	    || innobase_mirrored_log_groups != 1) {
+
+		msg("syntax error in innodb_log_group_home_dir, "
+		    "or a wrong number of mirrored log groups");
+		ret = FALSE;
+	}
+#endif
+	return ret;
+}
+
+/*****************************************************************//**
+Set InnoDB to read-only mode. */
+void
+xb_set_innodb_read_only(void)
+/*=========================*/
+{
+#if MYSQL_VERSION_ID >= 50600
+	srv_read_only_mode = TRUE;
+#else
+	srv_read_only = TRUE;
+#endif
+}
+
+/*****************************************************************//**
+Adjust srv_fatal_semaphore_wait_threshold in a thread-safe manner.  */
+void
+xb_adjust_fatal_semaphore_wait_threshold(
+/*=====================================*/
+	ulint delta)	/*!<in: threshold adjustment delta in seconds */
+{
+#if MYSQL_VERSION_ID >= 50600
+	os_increment_counter_by_amount(server_mutex,
+				       srv_fatal_semaphore_wait_threshold,
+				       delta);
+#else
+	mutex_enter(&kernel_mutex);
+	srv_fatal_semaphore_wait_threshold += delta;
+	mutex_exit(&kernel_mutex);
+#endif
+}
+
+/*****************************************************************//**
+Wrapper around around recv_check_cp_is_consistent() for handling
+version differences.
+
+@return TRUE if checkpoint info in the buffer is OK */
+ibool
+xb_recv_check_cp_is_consistent(
+/*===========================*/
+	const byte*	buf)	/*!<in: buffer containing checkpoint info */
+{
+#if MYSQL_VERSION_ID >= 50600
+	return recv_check_cp_is_consistent(buf);
+#else
+	return recv_check_cp_is_consistent(const_cast<byte *>(buf));
+#endif
+}
+
+/*****************************************************************//**
+Initialize a index_field_t variable from a dict_field_t */
+void
+xb_dict_index_field_to_index_field(
+/*===============================*/
+	mem_heap_t*		heap __attribute__((unused)),/*!< in: heap for
+						field name string allocation on
+						5.5 or earlier version. */
+	const dict_field_t*	dict_index_field,	/*!< in: field */
+	index_field_t*		index_field)		/*!< out: field */
+{
+#if MYSQL_VERSION_ID >= 50600
+	index_field->col_no = dict_col_get_no(dict_index_field->col);
+#else
+	index_field->field_name = mem_heap_strdup(heap,
+						  dict_index_field->name);
+#endif
+	index_field->prefix_len = dict_index_field->prefix_len;
+}

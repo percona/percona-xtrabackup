@@ -20,7 +20,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 
 #include <my_base.h>
-#include <univ.i>
 #include "common.h"
 #include "datasink.h"
 #include <gcrypt.h>
@@ -169,8 +168,8 @@ encrypt_init(const char *root)
 
 	/* Set up the iv length */
 	encrypt_iv_len = gcry_cipher_get_algo_blklen(encrypt_algo);
-	ut_a(encrypt_iv_len > 0);
-	ut_a(encrypt_iv_len <= sizeof(encrypt_iv));
+	xb_a(encrypt_iv_len > 0);
+	xb_a(encrypt_iv_len <= sizeof(encrypt_iv));
 
 	/* Now set up the key */
 	if (xtrabackup_encrypt_key == NULL &&
@@ -330,7 +329,7 @@ encrypt_write(ds_file_t *file, const void *buf, size_t len)
 						  &thd->data_mutex);
 			}
 
-			ut_a(threads[i].to_len > 0);
+			xb_a(threads[i].to_len > 0);
 
 			if (xb_crypt_write_chunk(crypt_file->xbcrypt_file,
 						 threads[i].to,
