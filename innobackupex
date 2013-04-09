@@ -147,9 +147,6 @@ my $backup_dir = '';
 # name of the ibbackup suspend-at-end file
 my $suspend_file = '';
 
-# name of the temporary transaction log file during the backup
-my $tmp_logfile = '';
-
 # home directory of innoDB log files
 my $innodb_log_group_home_dir = '';
 
@@ -1648,7 +1645,6 @@ sub init {
             $slave_info = $backup_dir . '/xtrabackup_slave_info';
         } else {
             $suspend_file = $option_tmpdir . '/xtrabackup_suspended';
-            $tmp_logfile = $option_tmpdir . '/xtrabackup_logfile';
 	    $backup_config_file = $option_tmpdir . '/backup-my.cnf';
 	    $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
 	    $galera_info = $option_tmpdir . '/xtrabackup_galera_info';
