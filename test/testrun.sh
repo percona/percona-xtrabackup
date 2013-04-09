@@ -129,8 +129,8 @@ function get_version_info()
 		;;
 	    "innodb55" )
 		XB_BIN="xtrabackup_innodb55";;
-            "innodb56" )
-                XB_BIN="xtrabackup_innodb56" ;;
+            "innodb56" | "xtradb56" | "mariadb100")
+                XB_BIN="xtrabackup_56" ;;
 	    "xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
 		XB_BIN="xtrabackup";;
 	    "xtradb55" | "mariadb55")
@@ -203,9 +203,9 @@ function get_version_info()
 	    else
 		XB_BIN="xtrabackup_innodb55"
 	    fi
-        elif [ "${MYSQL_VERSION:0:3}" = "5.6" ]
+        elif [ "${MYSQL_VERSION:0:3}" = "5.6" -o "${MYSQL_VERSION:0:4}" = "10.0" ]
         then
-            XB_BIN="xtrabackup_innodb56"
+            XB_BIN="xtrabackup_56"
             DEFAULT_IBDATA_SIZE="12M"
 	else
 	    vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"

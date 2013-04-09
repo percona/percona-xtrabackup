@@ -264,7 +264,7 @@ if ($option_copy_back || $option_move_back) {
                             $option_ibbackup_binary = set_xtrabackup_version();
                             mysql_close();
                         } else {
-     		            die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_55 (for MySQL 5.5) or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
+     		            die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_55 (for MySQL 5.5), xtrabackup_56 (for MySQL or Percona Server 5.6, or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
                         }
 		}
         }
@@ -2587,8 +2587,11 @@ sub set_xtrabackup_version {
     #  Percona Server 5.0 - xtrabackup_51
     #  Percona Server 5.1 - xtrabackup
     #  Percona Server 5.5 - xtrabackup_55
+    #  Percona Server 5.6 - xtrabackup_56
     #  MySQL 5.5.* - xtrabackup_55
+    #  MySQL 5.6.* - xtrabackup_56
     #  MariaDB 5.5.* - xtrabackup_55
+    #  MariaDB 10.0.* - xtrabackup_56
 
     my $var_version = '';
     my $var_innodb_version = '';
@@ -2612,7 +2615,7 @@ sub set_xtrabackup_version {
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
     }
 
-    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
+    if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
     }
 
@@ -2626,6 +2629,10 @@ sub set_xtrabackup_version {
 
     if($var_version =~ m/5\.5\.\d/){
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
+    }
+
+    if($var_version =~ m/5\.6\.\d/ or $var_version =~ m/10\.0\.\d/){
+        $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_56');
     }
 
     if (!$ibbackup_binary) {

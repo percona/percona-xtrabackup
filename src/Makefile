@@ -139,7 +139,7 @@ endif
 ifeq ($(shell uname -s),Linux)
 5.6: LIBS += -laio -ldl -lcrypt
 endif
-5.6: TARGET := xtrabackup_innodb56
+5.6: TARGET := xtrabackup_56
 # In CMake server builds it is important to build with exactly the same preprocessor flags
 # as were used to build InnoDB
 5.6: DEFS = $(shell grep CXX_DEFINES \

@@ -1,5 +1,6 @@
 xtrabackup usr/bin/
 xtrabackup_55 usr/bin/
+xtrabackup_56 usr/bin/
 xbstream usr/bin/
 xbcrypt usr/bin/
 innobackupex usr/bin/

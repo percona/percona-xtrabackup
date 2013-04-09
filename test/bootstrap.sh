@@ -65,6 +65,11 @@ case "$1" in
 	tarball="Percona-Server-5.5.30-rel30.1-465.Linux.$arch.tar.gz"
 	;;
 
+    xtradb56)
+	url="http://www.percona.com/downloads/TESTING/Percona-Server-56/Percona-Server-5.6.10-alpha60.2/release-5.6.10-60.2/318/binary/linux/$arch"
+	tarball="Percona-Server-5.6.10-alpha60.2-318.Linux.$arch.tar.gz"
+	;;
+
     galera55)
 	url="http://www.percona.com/downloads/Percona-XtraDB-Cluster/5.5.24-23.6/binary/linux/$arch"
 	tarball="Percona-XtraDB-Cluster-5.5.24-23.6.342.Linux.$arch.tar.gz"
@@ -89,6 +94,11 @@ case "$1" in
     mariadb55)
 	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-5.5.28/kvm-bintar-hardy-$maria_arch_path"
 	tarball="mariadb-5.5.28-linux-$arch.tar.gz"
+	;;
+
+    mariadb55)
+	url="ftp://ftp.osuosl.org/pub/mariadb/mariadb-10.0.1/kvm-bintar-hardy-$maria_arch_path"
+	tarball="mariadb-10.0.1-linux-$arch.tar.gz"
 	;;
 
     *)

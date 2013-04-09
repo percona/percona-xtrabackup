@@ -21,11 +21,14 @@ case "$1" in
 "5.5" )
         type="innodb55"
         ;;
-"5.6" )
+"5.6" | "xtradb56" | "mariadb100" )
         type="innodb56"
         ;;
-"xtradb" )
+"xtradb" | "mariadb51" | "mariadb52" | "mariadb53" )
         type="xtradb51"
+        ;;
+"galera55" | "mariadb55" )
+        type="xtradb55"
         ;;
 *)
         type=$1
@@ -33,7 +36,7 @@ case "$1" in
 esac
 
 # Percona Server 5.5 does not build with -Werror, so ignore DEBUG for now
-if [ -n "$DEBUG" -a "$type" != "galera55" -a "$type" != "xtradb55" -a "$type" != "xtradb51" ]
+if [ -n "$DEBUG" -a "$type" != "xtradb55" -a "$type" != "xtradb51" ]
 then
     # InnoDB extra debug flags
     innodb_extra_debug="-DUNIV_DEBUG -DUNIV_MEM_DEBUG \
@@ -50,6 +53,12 @@ else
     CXXFLAGS="$CXXFLAGS -g -O3"
     extra_config_51=
     extra_config_55plus=
+fi
+
+if [ "$type" = "innodb51_builtin" ]
+then
+    # include/*.ic in pre-5.1-plugin InnoDB do not compile well in C++.
+    CXXFLAGS="$CXXFLAGS -fpermissive"
 fi
 
 xtrabackup_include_dir="$top_dir/src"
@@ -73,11 +82,11 @@ function usage()
     echo "where CODEBASE can be one of the following values or aliases:"
     echo "  innodb51         | plugin                build agsinst InnoDB plugin in MySQL 5.1"
     echo "  innodb55         | 5.5                   build against InnoDB in MySQL 5.5"
-    echo "  innodb56         | 5.6                   build against InnoDB in MySQL 5.6"
+    echo "  innodb56         | 5.6,xtradb56,         build against InnoDB in MySQL 5.6"
+    echo "                   | mariadb100"
     echo "  xtradb51         | xtradb,mariadb51      build against Percona Server with XtraDB 5.1"
     echo "                   | mariadb52,mariadb53"
-    echo "  xtradb55         | xtradb55,galera55,    build against Percona Server with XtraDB 5.5"
-    echo "                   | mariadb55"
+    echo "  xtradb55         | galera55,mariadb55    build against Percona Server with XtraDB 5.5"
     exit -1
 }
 
@@ -250,7 +259,7 @@ case "$type" in
 	build_all $type
 	;;
 
-"innodb56")
+"innodb56" )
         mysql_version=$MYSQL_56_VERSION
         server_patch=innodb56.patch
         innodb_name=innobase
@@ -263,7 +272,7 @@ case "$type" in
         build_all $type
         ;;
 
-"xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
+"xtradb51" )
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup
 	innodb_dir=$server_dir/storage/innodb_plugin
@@ -314,7 +323,7 @@ case "$type" in
 	build_xtrabackup
 
 	;;
-"xtradb55" | "galera55" | "mariadb55")
+"xtradb55" )
 	server_dir=$top_dir/Percona-Server-5.5
 	branch_dir=percona-server-5.5-xtrabackup
 	innodb_dir=$server_dir/storage/innobase
