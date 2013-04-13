@@ -1335,6 +1335,11 @@ sub write_binlog_info {
     my $filename = $con->{master_status}->{File};
     my $position = $con->{master_status}->{Position};
 
+    # Do not create xtrabackup_binlog_info if binary log is disabled
+    if (!defined($filename) or !defined($position)) {
+        return;
+    }
+
     # write binlog info file
     open(FILE, ">$binlog_info") || Die "Failed to open file '$binlog_info': $!";
     print FILE  "$filename\t$position\t\t\n";
