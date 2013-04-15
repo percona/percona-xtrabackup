@@ -86,6 +86,10 @@ Options
 
    This option accepts a string argument that specifies the log sequence number (:term:`LSN`) to use for the incremental backup. It is used with the :option:`--incremental` option. It is used instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer.
 
+.. option:: --log-copy-interval
+
+   This option specifies time interval between checks done by log copying thread in milliseconds.
+
 .. option:: --move-back
 
     Move all the files in a previously made backup from the backup directory to their original locations. As this option removes backup files, it must be used with caution.
