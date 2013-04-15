@@ -107,6 +107,7 @@ my $option_slave_info = '';
 my $option_galera_info = '';
 my $option_no_lock = '';
 my $option_ibbackup_binary = 'autodetect';
+my $option_log_copy_interval = 0;
 
 my $option_defaults_file = '';
 my $option_defaults_extra_file = '';
@@ -1012,6 +1013,9 @@ sub start_ibbackup {
     if ($option_throttle) {
         $options = $options . " --throttle=$option_throttle";
     }
+    if ($option_log_copy_interval) {
+        $options = $options . " --log-copy-interval=$option_log_copy_interval";
+    }
     if ($option_sleep) {
         $options = $options . " --sleep=$option_sleep";
     }
@@ -1754,6 +1758,7 @@ sub check_args {
                         'help' => \$option_help,
                         'version' => \$option_version,
                         'throttle=i' => \$option_throttle,
+                        'log-copy-interval=i', \$option_log_copy_interval,
                         'sleep=i' => \$option_sleep,
                         'apply-log' => \$option_apply_log,
                         'redo-only' => \$option_redo_only,
@@ -2917,6 +2922,10 @@ This option specifies the directory containing the full backup that is the base 
 =item --incremental-dir=DIRECTORY
 
 This option specifies the directory where the incremental backup will be combined with the full backup to make a new full backup.  The option accepts a string argument. It is used with the --incremental option.
+
+=item --log-copy-interval
+
+This option specifies time interval between checks done by log copying thread in milliseconds.
 
 =item --incremental-lsn
 

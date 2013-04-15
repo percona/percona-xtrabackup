@@ -1089,4 +1089,16 @@ xb_dict_index_field_to_index_field(
 	 const dict_field_t*	dict_index_field,	/*!< in: field */
 	 index_field_t*		index_field);		/*!< out: field */
 
+/**********************************************************//**
+Waits for an event object until it is in the signaled state or
+a timeout is exceeded.
+@return 0 if success, OS_SYNC_TIME_EXCEEDED if timeout was exceeded */
+ulint
+xb_event_wait_time(
+/*===============*/
+	os_event_t	event,			/*!< in: event to wait */
+	ulint		time_in_usec);		/*!< in: timeout in
+						microseconds, or
+						OS_SYNC_INFINITE_TIME */
+
 #endif /* INNODB_INT_H */
