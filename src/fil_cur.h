@@ -27,8 +27,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <my_dir.h>
 #include "innodb_int.h"
+#include "read_filt.h"
 
-typedef struct {
+struct xb_fil_cur_t {
 	os_file_t	file;		/*!< source file handle */
 	char		path[FN_REFLEN];/*!< normalized file path */
 	MY_STAT		statinfo;	/*!< information about the file */
@@ -38,9 +39,11 @@ typedef struct {
 					UNIV_PAGE_SIZE for uncompressed ones */
 	ulint		page_size_shift;/*!< bit shift corresponding to
 					page_size */
-	ib_int64_t	offset;		/*!< current file offset in bytes */
 	my_bool		is_system;	/*!< TRUE for system tablespace, FALSE
 					otherwise */
+	xb_read_filt_t*	read_filter;	/*!< read filter */
+	xb_read_filt_ctxt_t	read_filter_ctxt;
+					/*!< read filter context */
 	byte*		orig_buf;	/*!< read buffer */
 	byte*		buf;		/*!< aligned pointer for orig_buf */
 	ulint		buf_size;	/*!< buffer size in bytes */
@@ -55,7 +58,7 @@ typedef struct {
 	uint		thread_n;	/*!< thread number for diagnostics */
 	ulint		space_id;	/*!< ID of tablespace */
 	ulint		space_size;	/*!< space size in pages */
-} xb_fil_cur_t;
+};
 
 typedef enum {
 	XB_FIL_CUR_SUCCESS,
@@ -65,7 +68,7 @@ typedef enum {
 } xb_fil_cur_result_t;
 
 /************************************************************************
-Open a source file cursor.
+Open a source file cursor and initialize the associated read filter.
 
 @return XB_FIL_CUR_SUCCESS on success, XB_FIL_CUR_SKIP if the source file must
 be skipped and XB_FIL_CUR_ERROR on error. */
@@ -73,6 +76,7 @@ xb_fil_cur_result_t
 xb_fil_cur_open(
 /*============*/
 	xb_fil_cur_t*	cursor,		/*!< out: source file cursor */
+	xb_read_filt_t*	read_filter,	/*!< in/out: the read filter */
 	fil_node_t*	node,		/*!< in: source tablespace node */
 	uint		thread_n);	/*!< thread number for diagnostics */
 
@@ -88,7 +92,8 @@ xb_fil_cur_read(
 	xb_fil_cur_t*	cursor);	/*!< in/out: source file cursor */
 
 /************************************************************************
-Close the source file cursor opened with xb_fil_cur_open(). */
+Close the source file cursor opened with xb_fil_cur_open() and its
+associated read filter. */
 void
 xb_fil_cur_close(
 /*=============*/

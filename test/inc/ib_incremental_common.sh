@@ -1,6 +1,16 @@
+# Expects the following variable to be set before including:
+#    mysqld_extra_args: an extra arg to be passed for all mysqld invocations.  
+#                       Use this to set special options that influence 
+#                       incremental backups, e.g. turns on log archiving or 
+#                       changed page bitmap output.
+#    ib_inc_extra_args: extra args to be passed to innobackup incremental 
+#                       backup invocations.
+
 . inc/common.sh
 
-start_server --innodb_file_per_table
+mysqld_extra_args="$mysqld_extra_args --innodb_file_per_table"
+
+start_server $mysqld_extra_args
 load_dbase_schema incremental_sample
 
 # Adding initial rows
@@ -35,6 +45,18 @@ do
 	${MYSQL} ${MYSQL_ARGS} -e "insert into t2 values ($count, $numrow);" incremental_sample
 	let "count=count+1"
 done
+
+# Rotate bitmap file here and force checkpoint at the same time
+shutdown_server
+start_server $mysqld_extra_args
+
+i=1001
+while [ "$i" -lt "7500" ]
+do
+        ${MYSQL} ${MYSQL_ARGS} -e "insert into t2 values ($i, repeat(\"ab\", 32500));" incremental_sample
+        let "i=i+1"
+done
+
 vlog "Changes done"
 
 # Saving the checksum of original table
@@ -51,7 +73,7 @@ vlog "###############"
 
 # Incremental backup
 innobackupex --incremental --incremental-basedir=$full_backup_dir \
-    $topdir/backup
+    $topdir/backup $ib_inc_extra_args
 inc_backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | tail -n 1 | awk -F\' '{print $2}'`
 vlog "Incremental backup done to directory $inc_backup_dir"
 
@@ -87,7 +109,7 @@ vlog "###########"
 innobackupex --copy-back $full_backup_dir
 vlog "Data restored"
 
-start_server --innodb_file_per_table
+start_server $mysqld_extra_args
 
 vlog "Checking checksums"
 checksum_test_b=`checksum_table incremental_sample test`

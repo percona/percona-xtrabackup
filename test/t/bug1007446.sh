@@ -6,7 +6,7 @@
 
 start_server
 
-echo "" > $MYSQLD_TMPDIR/xtrabackup_suspended
+echo "" > $MYSQLD_TMPDIR/xtrabackup_suspended_1
 
 mkdir -p $topdir/backup
 innobackupex --stream=tar $topdir/backup > /dev/null

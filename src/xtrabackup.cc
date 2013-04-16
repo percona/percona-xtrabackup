@@ -72,6 +72,13 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ds_buffer.h"
 #include "ds_tmpfile.h"
 #include "xbstream.h"
+#include "changed_page_bitmap.h"
+#include "read_filt.h"
+
+/* === File name constants === */
+#define XB_FN_SUSPENDED_AT_START "xtrabackup_suspended_1"
+#define XB_FN_SUSPENDED_AT_END "xtrabackup_suspended_2"
+#define XB_FN_LOG_COPIED "xtrabackup_log_copied"
 
 my_bool innodb_inited= 0;
 
@@ -87,6 +94,7 @@ my_bool xtrabackup_print_param = FALSE;
 my_bool xtrabackup_export = FALSE;
 my_bool xtrabackup_apply_log_only = FALSE;
 
+static my_bool	xtrabackup_suspend_at_start = FALSE;
 my_bool xtrabackup_suspend_at_end = FALSE;
 longlong xtrabackup_use_memory = 100*1024*1024L;
 my_bool xtrabackup_create_ib_logfile = FALSE;
@@ -99,6 +107,7 @@ char *xtrabackup_incremental = NULL;
 lsn_t incremental_lsn;
 lsn_t incremental_to_lsn;
 lsn_t incremental_last_lsn;
+xb_page_bitmap *changed_page_bitmap = NULL;
 
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
 char *xtrabackup_extra_lsndir = NULL; /* for --backup with --extra-lsndir */
@@ -256,6 +265,8 @@ static char *xtrabackup_debug_sync = NULL;
 static my_bool xtrabackup_compact = FALSE;
 static my_bool xtrabackup_rebuild_indexes = FALSE;
 
+static my_bool xtrabackup_incremental_force_scan = FALSE;
+
 /* Datasinks */
 ds_ctxt_t       *ds_data     = NULL;
 ds_ctxt_t       *ds_meta     = NULL;
@@ -356,6 +367,7 @@ enum options_xtrabackup
   OPT_XTRA_EXPORT,
   OPT_XTRA_APPLY_LOG_ONLY,
   OPT_XTRA_PRINT_PARAM,
+  OPT_XTRA_SUSPEND_AT_START,
   OPT_XTRA_SUSPEND_AT_END,
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_THROTTLE,
@@ -430,6 +442,7 @@ enum options_xtrabackup
   OPT_INNODB_CHECKSUM_ALGORITHM,
   OPT_UNDO_TABLESPACES,
 #endif
+  OPT_XTRA_INCREMENTAL_FORCE_SCAN,
   OPT_DEFAULTS_GROUP
 };
 
@@ -485,9 +498,21 @@ static struct my_option xb_long_options[] =
    (G_PTR*) &xtrabackup_use_memory, (G_PTR*) &xtrabackup_use_memory,
    0, GET_LL, REQUIRED_ARG, 100*1024*1024L, 1024*1024L, LONGLONG_MAX, 0,
    1024*1024L, 0},
-  {"suspend-at-end", OPT_XTRA_SUSPEND_AT_END, "creates a file 'xtrabackup_suspended' and waits until the user deletes that file at the end of '--backup'",
+
+  {"suspend-at-start", OPT_XTRA_SUSPEND_AT_START,
+   "creates a file '" XB_FN_SUSPENDED_AT_START "' and waits until the user "
+   "deletes that file after the background log copying thread is started "
+   "during backup",
+   (G_PTR*) &xtrabackup_suspend_at_start,
+   (G_PTR*) &xtrabackup_suspend_at_start, 0, GET_BOOL, NO_ARG,
+   0, 0, 0, 0, 0, 0},
+
+  {"suspend-at-end", OPT_XTRA_SUSPEND_AT_END, "creates a file '"
+   XB_FN_SUSPENDED_AT_END "' and waits until the user deletes that file at "
+   "the end of '--backup'",
    (G_PTR*) &xtrabackup_suspend_at_end, (G_PTR*) &xtrabackup_suspend_at_end,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
   {"throttle", OPT_XTRA_THROTTLE, "limit count of IO operations (pairs of read&write) per second to IOS values (for '--backup')",
    (G_PTR*) &xtrabackup_throttle, (G_PTR*) &xtrabackup_throttle,
    0, GET_LONG, REQUIRED_ARG, 0, 0, LONG_MAX, 0, 1, 0},
@@ -791,6 +816,13 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*)&srv_undo_tablespaces, (G_PTR*)&srv_undo_tablespaces,
    0, GET_ULONG, REQUIRED_ARG, 0, 0, 126, 0, 1, 0},
 #endif
+
+  {"incremental-force-scan", OPT_XTRA_INCREMENTAL_FORCE_SCAN,
+   "Perform a full-scan incremental backup even in the presence of changed "
+   "page bitmap data",
+   (G_PTR*)&xtrabackup_incremental_force_scan,
+   (G_PTR*)&xtrabackup_incremental_force_scan, 0, GET_BOOL, NO_ARG,
+   0, 0, 0, 0, 0, 0},
 
   {"defaults_group", OPT_DEFAULTS_GROUP, "defaults group in config file (default \"mysqld\").",
    (G_PTR*) &defaults_group, (G_PTR*) &defaults_group,
@@ -1747,6 +1779,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	xb_write_filt_t		*write_filter = NULL;
 	xb_write_filt_ctxt_t	 write_filt_ctxt;
 	const char		*action;
+	xb_read_filt_t		*read_filter;
 
 	if (!trx_sys_sys_space(node->space->id) && /* don't skip system space */
 	    check_if_skip_table(node->name, "ibd")) {
@@ -1754,7 +1787,13 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 		return(FALSE);
 	}
 
-	res = xb_fil_cur_open(&cursor, node, thread_n);
+	if (!changed_page_bitmap) {
+		read_filter = &rf_pass_through;
+	}
+	else {
+		read_filter = &rf_bitmap;
+	}
+	res = xb_fil_cur_open(&cursor, read_filter, node, thread_n);
 	if (res == XB_FIL_CUR_SKIP) {
 		goto skip;
 	} else if (res == XB_FIL_CUR_ERROR) {
@@ -2302,7 +2341,9 @@ xtrabackup_init_datasinks(void)
 		ds_data = ds;
 
 		if (xtrabackup_stream_fmt != XB_STREAM_FMT_XBSTREAM ||
-		     xtrabackup_suspend_at_end) {
+		    xtrabackup_suspend_at_end ||
+		    xtrabackup_suspend_at_start) {
+
 			/* 'xbstream' allow parallel streams, but we
 			still can't stream directly to stdout when
 			xtrabackup is invoked from innobackupex
@@ -2481,20 +2522,34 @@ xb_data_files_close(void)
 }
 
 /***********************************************************************
+Prepare a sync file path. */
+static void
+xb_make_sync_file_name(
+/*===================*/
+	const char*	name,	/*!<in: sync file name */
+	char*		path)	/*!<in/out: path to the sync file */
+{
+	snprintf(path, FN_REFLEN, "%s/%s", xtrabackup_target_dir, name);
+	srv_normalize_path_for_win(path);
+}
+
+/***********************************************************************
 Create an empty file with a given path and close it.
 @return TRUE on succees, FALSE on error. */
 static ibool
-xb_create_suspend_file(const char *path)
+xb_create_sync_file(
+/*================*/
+	const char*	path)	/*!<in: path to the sync file */
 {
-	ibool			success;
-	os_file_t		suspend_file = XB_FILE_UNDEFINED;
+	ibool		success;
+	os_file_t	suspend_file = XB_FILE_UNDEFINED;
 
 	/* xb_file_create reads srv_unix_file_flush_method */
 	suspend_file = xb_file_create(path, OS_FILE_CREATE,
 				      OS_FILE_NORMAL, OS_DATA_FILE,
 				      &success);
 
-	if (success && suspend_file != XB_FILE_UNDEFINED) {
+	if (UNIV_LIKELY(success && suspend_file != XB_FILE_UNDEFINED)) {
 
 		os_file_close(suspend_file);
 
@@ -2641,6 +2696,33 @@ xb_filters_free()
 	}
 }
 
+/***********************************************************************
+Create a specified sync file and wait until it's removed.  */
+static void
+xtrabackup_suspend(
+/*===============*/
+	const char*	sync_fn)	/*!<in: sync file name */
+{
+	char		suspend_path[FN_REFLEN];
+	ibool		success = TRUE;
+	ibool		exists = TRUE;
+	os_file_type_t	type;
+
+	xb_make_sync_file_name(sync_fn, suspend_path);
+
+	if (!xb_create_sync_file(suspend_path)) {
+		return;
+	}
+
+	while (exists && success) {
+		os_thread_sleep(200000); /*0.2 sec*/
+		success = os_file_status(suspend_path, &exists, &type);
+		/* success == FALSE if file exists, but stat() failed.
+		os_file_status() prints an error message in this case */
+		ut_a(success);
+	}
+}
+
 static void
 xtrabackup_backup_func(void)
 {
@@ -2650,8 +2732,6 @@ xtrabackup_backup_func(void)
 	uint			 count;
 	os_ib_mutex_t		 count_mutex;
 	data_thread_ctxt_t 	*data_threads;
-	char			suspend_path[FN_REFLEN];
-	ibool			success;
 
 #ifdef USE_POSIX_FADVISE
 	msg("xtrabackup: uses posix_fadvise().\n");
@@ -2939,6 +3019,25 @@ reread_log_header:
 
 	os_thread_create(log_copying_thread, NULL, &log_copying_thread_id);
 
+	/* Suspend at start, for the FLUSH CHANGED_PAGE_BITMAPS call */
+	if (xtrabackup_suspend_at_start) {
+		xtrabackup_suspend(XB_FN_SUSPENDED_AT_START);
+	}
+
+	if (xtrabackup_incremental) {
+		if (!xtrabackup_incremental_force_scan) {
+			changed_page_bitmap = xb_page_bitmap_init();
+		}
+		if (!changed_page_bitmap) {
+			msg("xtrabackup: using the full scan for incremental "
+			    "backup\n");
+		} else if (incremental_lsn != checkpoint_lsn_start) {
+			/* Do not print that bitmaps are used when dummy bitmap
+			is build for an empty LSN range. */
+			msg("xtrabackup: using the changed page bitmap\n");
+		}
+	}
+
 	ut_a(xtrabackup_parallel > 0);
 
 	if (xtrabackup_parallel > 1) {
@@ -2982,29 +3081,14 @@ reread_log_header:
 	ut_free(data_threads);
 	datafiles_iter_free(it);
 
+	if (changed_page_bitmap) {
+		xb_page_bitmap_deinit(changed_page_bitmap);
+	}
 	}
 
 	/* suspend-at-end */
 	if (xtrabackup_suspend_at_end) {
-		ibool		exists;
-		os_file_type_t	type;
-
-		sprintf(suspend_path, "%s%s", xtrabackup_target_dir,
-			"/xtrabackup_suspended");
-		srv_normalize_path_for_win(suspend_path);
-
-		if (!xb_create_suspend_file(suspend_path)) {
-			exit(EXIT_FAILURE);
-		}
-
-		exists = TRUE;
-		while (exists) {
-			os_thread_sleep(200000); /*0.2 sec*/
-			success = os_file_status(suspend_path, &exists, &type);
-			/* success == FALSE if file exists, but stat() failed.
-			os_file_status() prints an error message in this case */
-			ut_a(success);
-		}
+		xtrabackup_suspend(XB_FN_SUSPENDED_AT_END);
 	}
 
 	/* read the latest checkpoint lsn */
@@ -3051,9 +3135,12 @@ skip_last_cp:
 	/* Signal innobackupex that log copying has stopped and it may now
 	unlock tables, so we can possibly stream xtrabackup_logfile later
 	without holding the lock. */
-	if (xtrabackup_suspend_at_end &&
-	    !xb_create_suspend_file(suspend_path)) {
-		exit(EXIT_FAILURE);
+	if (xtrabackup_suspend_at_end) {
+		char	log_copied_sync_file[FN_REFLEN];
+		xb_make_sync_file_name(XB_FN_LOG_COPIED, log_copied_sync_file);
+		if (!xb_create_sync_file(log_copied_sync_file)) {
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	if(!xtrabackup_incremental) {

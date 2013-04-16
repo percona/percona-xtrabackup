@@ -199,7 +199,7 @@ xb_space_get_by_name(
 	const char*	name)	/*!< in: space name */
 {
 	fil_space_t*	space;
-	ulint		fold;
+	ulint		fold __attribute__((unused));
 
 	ut_ad(mutex_own(&fil_system->mutex));
 

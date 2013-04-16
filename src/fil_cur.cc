@@ -26,13 +26,14 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "innodb_int.h"
 #include "fil_cur.h"
 #include "common.h"
+#include "read_filt.h"
 #include "xtrabackup.h"
 
 /* Size of read buffer in pages */
 #define XB_FIL_CUR_PAGES 64
 
 /************************************************************************
-Open a source file cursor.
+Open a source file cursor and initialize the associated read filter.
 
 @return XB_FIL_CUR_SUCCESS on success, XB_FIL_CUR_SKIP if the source file must
 be skipped and XB_FIL_CUR_ERROR on error. */
@@ -40,6 +41,7 @@ xb_fil_cur_result_t
 xb_fil_cur_open(
 /*============*/
 	xb_fil_cur_t*	cursor,		/*!< out: source file cursor */
+	xb_read_filt_t*	read_filter,	/*!< in/out: the read filter */
 	fil_node_t*	node,		/*!< in: source tablespace node */
 	uint		thread_n)	/*!< thread number for diagnostics */
 {
@@ -131,7 +133,6 @@ xb_fil_cur_open(
 	cursor->buf = static_cast<byte *>
 		(ut_align(cursor->orig_buf, UNIV_PAGE_SIZE));
 
-	cursor->offset = 0;
 	cursor->buf_read = 0;
 	cursor->buf_npages = 0;
 	cursor->buf_offset = 0;
@@ -139,6 +140,10 @@ xb_fil_cur_open(
 	cursor->thread_n = thread_n;
 
 	cursor->space_size = cursor->statinfo.st_size / page_size;
+
+	cursor->read_filter = read_filter;
+	cursor->read_filter->init(&cursor->read_filter_ctxt, cursor,
+				  node->space->id);
 
 	return(XB_FIL_CUR_SUCCESS);
 }
@@ -155,17 +160,16 @@ xb_fil_cur_read(
 	xb_fil_cur_t*	cursor)	/*!< in/out: source file cursor */
 {
 	ibool			success;
-	ulint			page_size;
 	byte*			page;
 	ulint			i;
 	ulint			npages;
 	ulint			retry_count;
 	xb_fil_cur_result_t	ret;
+	ib_int64_t		offset;
 	ib_int64_t		to_read;
 
-	page_size = cursor->page_size;
-
-	to_read = (ib_int64_t) cursor->statinfo.st_size - cursor->offset;
+	cursor->read_filter->get_next_batch(&cursor->read_filter_ctxt,
+					    &offset, &to_read);
 
 	if (to_read == 0LL) {
 		return(XB_FIL_CUR_EOF);
@@ -174,8 +178,8 @@ xb_fil_cur_read(
 	if (to_read > (ib_int64_t) cursor->buf_size) {
 		to_read = (ib_int64_t) cursor->buf_size;
 	}
-	ut_a(to_read > 0 && to_read <= 0xFFFFFFFFLL);
-	ut_a(to_read % page_size == 0);
+	xb_a(to_read > 0 && to_read <= 0xFFFFFFFFLL);
+	xb_a(to_read % cursor->page_size == 0);
 
 	npages = (ulint) (to_read >> cursor->page_size_shift);
 
@@ -187,19 +191,18 @@ read_retry:
 
 	cursor->buf_read = 0;
 	cursor->buf_npages = 0;
-	cursor->buf_offset = cursor->offset;
-	cursor->buf_page_no = (ulint) (cursor->offset >>
-				       cursor->page_size_shift);
+	cursor->buf_offset = offset;
+	cursor->buf_page_no = (ulint) (offset >> cursor->page_size_shift);
 
-	success = xb_os_file_read(cursor->file, cursor->buf, cursor->offset,
-				  to_read);
+	success = xb_os_file_read(cursor->file, cursor->buf, offset, to_read);
 	if (!success) {
 		return(XB_FIL_CUR_ERROR);
 	}
 
 	/* check pages for corruption and re-read if necessary. i.e. in case of
 	partially written pages */
-	for (page = cursor->buf, i = 0; i < npages; page += page_size, i++) {
+	for (page = cursor->buf, i = 0; i < npages;
+	     page += cursor->page_size, i++) {
 		if (xb_buf_page_is_corrupted(page, cursor->zip_size))
 		{
 			ulint page_no = cursor->buf_page_no + i;
@@ -208,7 +211,7 @@ read_retry:
 			    page_no >= FSP_EXTENT_SIZE &&
 			    page_no < FSP_EXTENT_SIZE * 3) {
 				/* skip doublewrite buffer pages */
-				ut_a(page_size == UNIV_PAGE_SIZE);
+				xb_a(cursor->page_size == UNIV_PAGE_SIZE);
 				msg("[%02u] xtrabackup: "
 				    "Page %lu is a doublewrite buffer page, "
 				    "skipping.\n", cursor->thread_n, page_no);
@@ -233,24 +236,25 @@ read_retry:
 				goto read_retry;
 			}
 		}
-		cursor->buf_read += page_size;
+		cursor->buf_read += cursor->page_size;
 		cursor->buf_npages++;
 	}
 
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_DONTNEED);
 
-	cursor->offset += page_size * i;
-
 	return(ret);
 }
 
 /************************************************************************
-Close the source file cursor opened with xb_fil_cur_open(). */
+Close the source file cursor opened with xb_fil_cur_open() and its
+associated read filter. */
 void
 xb_fil_cur_close(
 /*=============*/
 	xb_fil_cur_t *cursor)	/*!< in/out: source file cursor */
 {
+	cursor->read_filter->deinit(&cursor->read_filter_ctxt);
+
 	if (cursor->orig_buf != NULL) {
 		ut_free(cursor->orig_buf);
 	}
