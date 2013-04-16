@@ -327,6 +327,15 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
+@@ -4303,7 +4425,7 @@
+ @return	DB_SUCCESS or error number */
+ UNIV_INTERN
+ dberr_t
+-fil_load_single_table_tablespaces(void)
++fil_load_single_table_tablespaces(ibool (*pred)(const char*, const char*))
+ /*===================================*/
+ {
+ 	int		ret;
 @@ -4359,7 +4481,9 @@
  			    "%s/%s", fil_path_to_mysql_datadir, dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
@@ -338,7 +347,20 @@
  
  		if (dbdir != NULL) {
  
-@@ -4538,6 +4662,7 @@
+@@ -4385,8 +4509,11 @@
+ 						   ".isl"))) {
+ 					/* The name ends in .ibd or .isl;
+ 					try opening the file */
+-					fil_load_single_table_tablespace(
++					if (!pred ||
++					    pred(dbinfo.name, fileinfo.name)) {
++						fil_load_single_table_tablespace(
+ 						dbinfo.name, fileinfo.name);
++					}
+ 				}
+ next_file_item:
+ 				ret = fil_file_readdir_next_file(&err,
+@@ -4538,6 +4665,7 @@
  {
  	fil_space_t*	fnamespace;
  	fil_space_t*	space;
@@ -346,7 +368,7 @@
  
  	ut_ad(fil_system);
  
-@@ -4615,6 +4740,10 @@
+@@ -4615,6 +4743,10 @@
  		if (fnamespace == NULL) {
  			if (print_error_if_does_not_exist) {
  				fil_report_missing_tablespace(name, id);
@@ -357,7 +379,7 @@
  			}
  		} else {
  			ut_print_timestamp(stderr);
-@@ -4638,6 +4767,10 @@
+@@ -4638,6 +4770,10 @@
  
  		mutex_exit(&fil_system->mutex);
  
@@ -368,7 +390,7 @@
  		return(FALSE);
  	}
  
-@@ -4728,6 +4861,7 @@
+@@ -4728,6 +4864,7 @@
  	ulint		page_size;
  	ulint		pages_added;
  	ibool		success;
@@ -376,7 +398,7 @@
  
  	ut_ad(!srv_read_only_mode);
  
-@@ -4772,13 +4906,17 @@
+@@ -4772,13 +4909,17 @@
  		goto retry;
  	}
  
@@ -395,7 +417,7 @@
  	start_page_no = space->size;
  	file_start_page_no = space->size - node->size;
  
-@@ -5024,7 +5162,7 @@
+@@ -5024,7 +5165,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -404,7 +426,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -5044,9 +5182,12 @@
+@@ -5044,9 +5185,12 @@
  	}
  
  	if (node->open == FALSE) {
@@ -418,7 +440,7 @@
  	}
  
  	if (node->n_pending == 0 && fil_space_belongs_in_lru(space)) {
-@@ -5058,6 +5199,8 @@
+@@ -5058,6 +5202,8 @@
  	}
  
  	node->n_pending++;
@@ -427,7 +449,7 @@
  }
  
  /********************************************************************//**
-@@ -5259,6 +5402,16 @@
+@@ -5259,6 +5405,16 @@
  
  	ut_ad(mode != OS_AIO_IBUF || space->purpose == FIL_TABLESPACE);
  
@@ -444,7 +466,7 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-@@ -5290,7 +5443,11 @@
+@@ -5290,7 +5446,11 @@
  	}
  
  	/* Open file if closed */
@@ -457,7 +479,7 @@
  
  	/* Check that at least the start offset is within the bounds of a
  	single-table tablespace, including rollback tablespaces. */
-@@ -6164,6 +6321,7 @@
+@@ -6164,6 +6324,7 @@
  	return(err);
  }
  
@@ -465,7 +487,7 @@
  /****************************************************************//**
  Generate redo logs for swapping two .ibd files */
  UNIV_INTERN
-@@ -6187,4 +6345,4 @@
+@@ -6187,4 +6348,4 @@
  			 0, 0, new_name, old_name, &mtr);
  	mtr_commit(&mtr);
  }
@@ -482,6 +504,17 @@
  
  		if (thd && thd_sql_command(thd) == SQLCOM_DROP_TABLE) {
  
+--- a/storage/innobase/include/fil0fil.h
++++ b/storage/innobase/include/fil0fil.h
+@@ -608,7 +608,7 @@
+ @return	DB_SUCCESS or error number */
+ UNIV_INTERN
+ dberr_t
+-fil_load_single_table_tablespaces(void);
++fil_load_single_table_tablespaces(ibool (*pred)(const char*, const char*));
+ /*===================================*/
+ /*******************************************************************//**
+ Returns TRUE if a single-table tablespace does not exist in the memory cache,
 --- a/storage/innobase/include/srv0srv.h
 +++ b/storage/innobase/include/srv0srv.h
 @@ -353,6 +353,9 @@
@@ -600,6 +633,15 @@
  		}
  	}
  
+@@ -2964,7 +2972,7 @@
+ 	ib_logf(IB_LOG_LEVEL_INFO,
+ 		"Reading tablespace information from the .ibd files...");
+ 
+-	fil_load_single_table_tablespaces();
++	fil_load_single_table_tablespaces(NULL);
+ 
+ 	/* If we are using the doublewrite method, we will
+ 	check if there are half-written pages in data files,
 @@ -3456,7 +3464,8 @@
  	that the data dictionary tables will be free of any locks.
  	The data dictionary latch should guarantee that there is at
