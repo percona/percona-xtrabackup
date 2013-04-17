@@ -76,6 +76,7 @@ echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_51
 echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_55
 echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_56
 echo 'main() { return 300; }' | gcc -x c - -o xbstream
+echo 'main() { return 300; }' | gcc -x c - -o xbcrypt
 %endif
 
 %install
