@@ -268,7 +268,8 @@ case "$type" in
                 -DWITH_INNOBASE_STORAGE_ENGINE=ON \
                 -DWITH_ZLIB=bundled \
                 -DWITH_EXTRA_CHARSETS=all \
-                -DWITH_EMBEDDED_SERVER=1 $extra_config_55plus"
+                -DWITH_EMBEDDED_SERVER=1 \
+                -DENABLE_DTRACE=OFF $extra_config_55plus"
         build_all $type
         ;;
 
