@@ -15,7 +15,7 @@ Making a Backup
 
 If no mode is specified, |innobackupex| will assume the backup mode.
 
-By default, it starts :program:`xtrabackup` with the :option:`--suspend-at-end` option, and lets it copy the InnoDB data files. When :program:`xtrabackup` finishes that, :program:`innobackupex` sees it create the :file:`xtrabackup_suspended` file and executes ``FLUSH TABLES WITH READ LOCK``. Then it begins copying the rest of the files.
+By default, it starts :program:`xtrabackup` with the :option:`--suspend-at-end` option, and lets it copy the InnoDB data files. When :program:`xtrabackup` finishes that, :program:`innobackupex` sees it create the :file:`xtrabackup_suspended_2` file and executes ``FLUSH TABLES WITH READ LOCK``. Then it begins copying the rest of the files.
 
 If the :option:`--ibbackup` is not supplied, |innobackupex| will try to detect it: if the :file:`xtrabackup_binary` file exists on the backup directory, it reads from it which binary of |xtrabackup| will be used. Otherwise, it will try to connect to the database server in order to determine it. If the connection can't be established, |xtrabackup| will fail and you must specify it (see :ref:`ibk-right-binary`).
 
@@ -25,7 +25,7 @@ If it is not an incremental backup, it connects to the server. It waits for slav
 
 Once this is done, the backup of the files will begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV` and :term:`.opt` files.
 
-When all the files are backed up, it resumes :program:`ibbackup` and wait until it finishes copying the transactions done while the backup was done. Then, the tables are unlocked, the slave is started (if the option :option:`--safe-slave-backup` was used) and the connection with the server is closed. Then, it removes the :file:`xtrabackup_suspended` file and permits :program:`xtrabackup` to exit.
+When all the files are backed up, it resumes :program:`ibbackup` and wait until it finishes copying the transactions done while the backup was done. Then, the tables are unlocked, the slave is started (if the option :option:`--safe-slave-backup` was used) and the connection with the server is closed. Then, it removes the :file:`xtrabackup_suspended_2` file and permits :program:`xtrabackup` to exit.
 
 It  will also create the following files in the directory of the backup:
 

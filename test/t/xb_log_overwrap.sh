@@ -20,14 +20,7 @@ job_pid=$!
 
 pid_file=$topdir/backup/xtrabackup_debug_sync
 
-# Wait for xtrabackup to suspend
-i=0
-while [ ! -r "$pid_file" ]
-do
-    sleep 1
-    i=$((i+1))
-    echo "Waited $i seconds for $pid_file to be created"
-done
+wait_for_xb_to_suspend $pid_file
 
 xb_pid=`cat $pid_file`
 
@@ -40,6 +33,8 @@ $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE tmp3 ENGINE=InnoDB SELECT * FROM payment
 # Resume the xtrabackup process
 vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
+
+resume_suspended_xb $topdir/backup/xtrabackup_suspended_2
 
 # wait's return code will be the code returned by the background process
 run_cmd wait $job_pid

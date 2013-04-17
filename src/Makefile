@@ -41,7 +41,9 @@ XTRABACKUPCOBJS = \
 	datasink.o \
 	xbstream_write.o \
 	quicklz/quicklz.o
-XTRABACKUPCCOBJS = xtrabackup.o innodb_int.o compact.o fil_cur.o write_filt.o
+XTRABACKUPCCOBJS = xtrabackup.o innodb_int.o compact.o fil_cur.o write_filt.o \
+	changed_page_bitmap.o \
+	read_filt.o
 
 XBSTREAMOBJS = xbstream.o xbstream_write.o xbstream_read.o
 
@@ -231,7 +233,14 @@ xbcrypt.o xbcrypt_read.o: %.o: %.c
 xbcrypt: $(XBCRYPTOBJS) $(MYSQLOBJS)
 	$(CXX) $(CXXFLAGS) $^ $(INC) $(MYSQLOBJS) $(LIBS) -o $@
 
-xtrabackup.o: xtrabackup.cc xb_regex.h write_filt.h fil_cur.h xtrabackup.h compact.h
+changed_page_bitmap.o: changed_page_bitmap.cc changed_page_bitmap.h innodb_int.h \
+	common.h xtrabackup.h
+
+read_filt.o: read_filt.cc read_filt.h fil_cur.h xtrabackup.h innodb_int.h \
+	common.h changed_page_bitmap.h
+
+xtrabackup.o: xtrabackup.cc xb_regex.h write_filt.h fil_cur.h xtrabackup.h compact.h \
+	common.h changed_page_bitmap.h read_filt.h innodb_int.h
 
 $(TARGET): $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBARCHIVE_A)
 	$(CXX) $(CFXXLAGS) $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \

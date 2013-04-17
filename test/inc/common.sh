@@ -189,6 +189,7 @@ function init_server_variables()
     SRV_MYSQLD_DATADIR[$id]="$vardir/data"
     SRV_MYSQLD_TMPDIR[$id]="$vardir/tmp"
     SRV_MYSQLD_PIDFILE[$id]="${TEST_BASEDIR}/mysqld${id}.pid"
+    SRV_MYSQLD_ERRFILE[$id]="$vardir/data/mysqld${id}.err"
     SRV_MYSQLD_PORT[$id]=`get_free_port $id`
     SRV_MYSQLD_SOCKET[$id]=`mktemp -t xtrabackup.mysql.sock.XXXXXX`
 }
@@ -211,6 +212,7 @@ function reset_server_variables()
     SRV_MYSQLD_DATADIR[$id]=
     SRV_MYSQLD_TMPDIR[$id]=
     SRV_MYSQLD_PIDFILE[$id]=
+    SRV_MYSQLD_ERRFILE[$id]=
     SRV_MYSQLD_PORT[$id]=
     SRV_MYSQLD_SOCKET[$id]=
 }
@@ -227,11 +229,13 @@ function switch_server()
     MYSQLD_DATADIR="${SRV_MYSQLD_DATADIR[$id]}"
     MYSQLD_TMPDIR="${SRV_MYSQLD_TMPDIR[$id]}"
     MYSQLD_PIDFILE="${SRV_MYSQLD_PIDFILE[$id]}"
+    MYSQLD_ERRFILE="${SRV_MYSQLD_ERRFILE[$id]}"
     MYSQLD_PORT="${SRV_MYSQLD_PORT[$id]}"
     MYSQLD_SOCKET="${SRV_MYSQLD_SOCKET[$id]}"
 
     MYSQL_ARGS="--no-defaults --socket=${MYSQLD_SOCKET} --user=root"
     MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} \
+--log-error=${MYSQLD_ERRFILE}
 --socket=${MYSQLD_SOCKET} --port=${MYSQLD_PORT} --server-id=$id \
 --datadir=${MYSQLD_DATADIR} --tmpdir=${MYSQLD_TMPDIR} --log-bin=mysql-bin \
 --relay-log=mysql-relay-bin --pid-file=${MYSQLD_PIDFILE} ${MYSQLD_EXTRA_ARGS}"
@@ -453,6 +457,63 @@ function egrep()
 {
     command egrep "$@" | cat
     return ${PIPESTATUS[0]}
+}
+
+readonly xb_performed_bmp_inc_backup="xtrabackup: using the full scan for incremental backup"
+readonly xb_performed_full_scan_inc_backup="xtrabackup: using the changed page bitmap"
+
+####################################################
+# Helper functions for testing incremental backups #
+####################################################
+function check_full_scan_inc_backup()
+{
+    if ! grep -q "$xb_performed_bmp_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup did not perform a full scan for the incremental backup."
+        exit -1
+    fi
+    if grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup appeared to use bitmaps instead of full scan for the incremental backup."
+        exit -1
+    fi
+}
+
+function check_bitmap_inc_backup()
+{
+    if ! grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup did not use bitmaps for the incremental backup."
+        exit -1
+    fi
+    if grep -q "$xb_performed_bmp_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup used a full scan instead of bitmaps for the incremental backup."
+        exit -1
+    fi
+}
+
+##############################################################
+# Helper functions for xtrabackup process suspend and resume #
+##############################################################
+function wait_for_xb_to_suspend()
+{
+    local file=$1
+    local i=0
+    echo "Waiting for $file to be created"
+    while [ ! -r $file ]
+    do
+        sleep 1
+        i=$((i+1))
+        echo "Waited $i seconds for xtrabackup_suspended to be created"
+    done
+}
+
+function resume_suspended_xb()
+{
+    local file=$1
+    echo "Removing $file"
+    rm -f $file
 }
 
 # To avoid unbound variable error when no server have been started

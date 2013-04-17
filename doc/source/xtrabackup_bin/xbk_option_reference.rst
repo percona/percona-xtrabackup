@@ -65,6 +65,10 @@ Options
 
    When preparing an incremental backup, this is the directory where the incremental backup is combined with the full backup to make a new full backup.
 
+.. option:: --incremental-force-scan
+
+   When creating an incremental backup, force a full scan of the data pages in the instance being backuped even if the complete changed page bitmap data is available.
+
 .. option:: --incremental-lsn=name
 
    When creating an incremental backup, you can specify the log sequence number (:term:`LSN`) instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the :term:`LSN` as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the :term:`LSN` as a single 64-bit integer.  ##ATTENTION##: If a wrong LSN value is specified, it is impossible to diagnose this, causing the backup to be unusable. Be careful!

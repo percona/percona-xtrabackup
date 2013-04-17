@@ -71,6 +71,10 @@ my $mysql_keep_alive = 5;
 # end of modifiable parameters
 ######################################################################
 
+#######################
+# Server capabilities #
+#######################
+my $have_changed_page_bitmaps = 0;
 
 # command line options
 my $option_help = '';
@@ -113,6 +117,7 @@ my $option_defaults_extra_file = '';
 my $option_incremental = '';
 my $option_incremental_basedir = '';
 my $option_incremental_dir = '';
+my $option_incremental_force_scan = 0;
 my $option_incremental_lsn = '';
 my $option_extra_lsndir = '';
 my $option_rsync = '';
@@ -144,8 +149,8 @@ my $backup_root = '';
 # backup directory pathname
 my $backup_dir = '';
 
-# name of the ibbackup suspend-at-end file
-my $suspend_file = '';
+# directory where innobackupex aux files are cretead
+my $work_dir;
 
 # home directory of innoDB log files
 my $innodb_log_group_home_dir = '';
@@ -220,6 +225,12 @@ my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 my $xtrabackup_binary_file = 'xtrabackup_binary';
 my $xtrabackup_pid_file = 'xtrabackup_pid';
 my %rsync_files_hash;
+
+my $xb_fn_suspended_at_start = "/xtrabackup_suspended_1";
+my $xb_fn_suspended_at_end = "/xtrabackup_suspended_2";
+my $xb_fn_log_copied = "/xtrabackup_log_copied";
+my @xb_suspend_files = ($xb_fn_suspended_at_start, $xb_fn_suspended_at_end,
+                        $xb_fn_log_copied);
 
 my $copy_dir_src;
 my $copy_dir_dst;
@@ -379,12 +390,26 @@ sub Die {
 #
 sub backup {
     my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
+    my $suspend_file;
+
+    if ($option_incremental) {
+        detect_mysql_capabilities_for_backup(\%mysql);
+    }
 
     # start ibbackup as a child process
     start_ibbackup();
 
+    if ($option_incremental && $have_changed_page_bitmaps
+        && !$option_incremental_force_scan) {
+        $suspend_file = $work_dir . $xb_fn_suspended_at_start;
+        wait_for_ibbackup_suspend($suspend_file);
+        mysql_query(\%mysql, 'FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS');
+        resume_ibbackup($suspend_file);
+    }
+
     # wait for ibbackup to suspend itself
-    wait_for_ibbackup_suspend();
+    $suspend_file = $work_dir . $xb_fn_suspended_at_end;
+    wait_for_ibbackup_suspend($suspend_file);
 
     if ($option_safe_slave_backup) {
         wait_for_safe_slave(\%mysql);
@@ -408,8 +433,10 @@ sub backup {
     # (or finalize the backup by syncing changes if using rsync)
     backup_files(0);
 
-    # resume ibbackup and wait till log copying is finished
-    resume_ibbackup();
+    # resume XtraBackup and wait till it has finished
+    resume_ibbackup($suspend_file);
+    $suspend_file = $work_dir . $xb_fn_log_copied;
+    wait_for_ibbackup_log_copy_finish($suspend_file);
 
     # release read locks on all tables
     mysql_unlockall(\%mysql) if !$option_no_lock;
@@ -887,52 +914,23 @@ sub apply_log {
 
 }
 
-
 #
-# wait_for_ibbackup_suspend subroutine waits until ibbackup has suspended 
-# itself.
+# Loops until the specified file is created or the ibbackup process dies.
 #
-sub wait_for_ibbackup_suspend {
-    print STDERR "$prefix Waiting for ibbackup (pid=$ibbackup_pid) to suspend\n";
-    print STDERR "$prefix Suspend file '$suspend_file'\n\n";
-    for (;;) {
-        usleep(100000);
-        last if -e $suspend_file;
-
-        # check that ibbackup child process is still alive
-        if ($ibbackup_pid == waitpid($ibbackup_pid, &WNOHANG)) {
-            $ibbackup_pid = '';
-            Die "ibbackup child process has died";
-        }
-    }
-    $now = current_time();
-    open XTRABACKUP_PID, "> $option_tmpdir/$xtrabackup_pid_file";
-    print XTRABACKUP_PID $ibbackup_pid;
-    close XTRABACKUP_PID;
-    print STDERR "\n$now  $prefix Continuing after ibbackup has suspended\n";
-}
-
-
 #
-# resume_ibbackup subroutine signals ibbackup to finish log copying by deleting
-# the 'xtrabackup_suspended' file and waits until log copying is stopped,
-# i.e. until 'xtrabackup_suspended' is created again.
-#
-# If this functions detects that the xtrabackup process has terminated, it also
+# If this function detects that the xtrabackup process has terminated, it also
 # sets ibbackup_exit_code and resets ibbackup_pid to avoid trying to reap a
 # non-existing process later
 #
-sub resume_ibbackup {
-    my $pid = -1;
+sub wait_for_ibbackup_file_create {
 
-    $now = current_time();
-    print STDERR "$now  $prefix Waiting for log copying to finish\n\n";
-    unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+    my $suspend_file = shift;
+    my $pid = -1;
 
     for (;;) {
         # check if the xtrabackup process is still alive _before_ checking if
-        # the file exists to avoid a race condition when the file is created and
-        # the process terminates right after we do the file check
+        # the file exists to avoid a race condition when the file is created
+        # and the process terminates right after we do the file check
         $pid = waitpid($ibbackup_pid, &WNOHANG);
 
         last if -e $suspend_file;
@@ -949,6 +947,45 @@ sub resume_ibbackup {
         $ibbackup_exit_code = $CHILD_ERROR >> 8;
         $ibbackup_pid = '';
     }
+}
+
+#
+# wait_for_ibbackup_suspend subroutine waits until ibbackup has suspended
+# itself.
+#
+sub wait_for_ibbackup_suspend {
+    my $suspend_file = shift;
+    print STDERR "$prefix Waiting for ibbackup (pid=$ibbackup_pid) to suspend\n";
+    print STDERR "$prefix Suspend file '$suspend_file'\n\n";
+    wait_for_ibbackup_file_create($suspend_file);
+    $now = current_time();
+    open XTRABACKUP_PID, "> $option_tmpdir/$xtrabackup_pid_file";
+    print XTRABACKUP_PID $ibbackup_pid;
+    close XTRABACKUP_PID;
+    print STDERR "\n$now  $prefix Continuing after ibbackup has suspended\n";
+}
+
+#
+# resume_ibbackup subroutine signals ibbackup to finish log copying by deleting
+# $suspend_file.
+#
+sub resume_ibbackup {
+    my $suspend_file = shift;
+    unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+}
+
+#
+# Wait until xtrabackup finishes copying log or dies.  The log copying is
+# signaled by a sync file creation.  If this function detects that the
+# xtrabackup process has terminated, it also sets ibbackup_exit_code and resets
+# ibbackup_pid to avoid trying to reap a non-existing process later.
+#
+sub wait_for_ibbackup_log_copy_finish {
+    my $suspend_file = shift;
+    my $now = current_time();
+    print STDERR "$now  $prefix Waiting for log copying to finish\n\n";
+
+    wait_for_ibbackup_file_create($suspend_file);
 
     unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
 }
@@ -972,7 +1009,6 @@ sub wait_for_ibbackup_finish {
     $ibbackup_pid = '';
     return $CHILD_ERROR >> 8;
 }
-    
 
 #
 # start_ibbackup subroutine spawns a child process running ibbackup
@@ -1050,6 +1086,11 @@ sub start_ibbackup {
           $options = $options . " --incremental-lsn='$option_incremental_lsn'";
         } else {
           $options = $options . " --incremental-basedir='$incremental_basedir'";
+        }
+        if ($option_incremental_force_scan) {
+          $options = $options . " --incremental-force-scan";
+        } elsif ($have_changed_page_bitmaps) {
+          $options = $options . " --suspend-at-start";
         }
     }
 
@@ -1643,27 +1684,30 @@ sub init {
         $backup_dir = File::Spec->rel2abs(make_backup_dir());
         print STDERR "$prefix Created backup directory $backup_dir\n";
         if (!$option_stream) {
-            $backup_config_file = $backup_dir . '/backup-my.cnf';
-            $suspend_file = $backup_dir . '/xtrabackup_suspended';
-            $binlog_info = $backup_dir . '/xtrabackup_binlog_info';
-            $galera_info = $backup_dir . '/xtrabackup_galera_info';
-            $slave_info = $backup_dir . '/xtrabackup_slave_info';
+            $work_dir = $backup_dir;
         } else {
-            $suspend_file = $option_tmpdir . '/xtrabackup_suspended';
-	    $backup_config_file = $option_tmpdir . '/backup-my.cnf';
-	    $binlog_info = $option_tmpdir . '/xtrabackup_binlog_info';
-	    $galera_info = $option_tmpdir . '/xtrabackup_galera_info';
-	    $slave_info = $option_tmpdir . '/xtrabackup_slave_info';
+            $work_dir = $option_tmpdir;
         }
+        $backup_config_file = $work_dir . '/backup-my.cnf';
+        $binlog_info = $work_dir . '/xtrabackup_binlog_info';
+        $galera_info = $work_dir . '/xtrabackup_galera_info';
+        $slave_info = $work_dir . '/xtrabackup_slave_info';
         write_backup_config_file($backup_config_file);
+
+        foreach (@xb_suspend_files) {
+            my $suspend_file = $work_dir . "$_";
+            if ( -e "$suspend_file" ) {
+                print STDERR
+                    "WARNING : A left over instance of " .
+                    "suspend file '$suspend_file' was found.\n";
+                unlink "$suspend_file"
+                    || Die "Failed to delete '$suspend_file': $!";
+            }
+        }
+
     } elsif ($option_copy_back || $option_move_back) {
         #$backup_config_file = $backup_dir . '/backup-my.cnf';
         #read_config_file($backup_config_file, \%backup_config);
-    }
-
-    if ( -e "$suspend_file" ) {
-        print STDERR "WARNING : A left over instance of suspend file '$suspend_file' was found.\n";
-        unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
     }
 }
 
@@ -1783,6 +1827,7 @@ sub check_args {
                         'defaults-extra-file=s' => \$option_defaults_extra_file,
                         'incremental' => \$option_incremental,
                         'incremental-basedir=s' => \$option_incremental_basedir,
+                        'incremental-force-scan' => \$option_incremental_force_scan,
                         'incremental-lsn=s' => \$option_incremental_lsn,
                         'incremental-dir=s' => \$option_incremental_dir,
                         'extra-lsndir=s' => \$option_extra_lsndir,
@@ -2735,6 +2780,14 @@ sub stream_encrypt_file {
   return $rcode;
 }
 
+#
+# Query the server to find out what backup capabilities it supports.
+#
+sub detect_mysql_capabilities_for_backup {
+    $have_changed_page_bitmaps =
+        mysql_query($_[0], 'SELECT COUNT(*) FROM INFORMATION_SCHEMA.PLUGINS '.
+                    'WHERE PLUGIN_NAME LIKE "INNODB_CHANGED_PAGES"')
+}
 
 =pod
 
@@ -2755,7 +2808,7 @@ innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS] [--compress-chu
              [--databases=LIST] [--no-lock] 
              [--tmpdir=DIRECTORY] [--tables-file=FILE]
              [--incremental] [--incremental-basedir]
-             [--incremental-dir] [--incremental-lsn]
+             [--incremental-dir] [--incremental-force-scan] [--incremental-lsn]
              [--compact]     
              BACKUP-ROOT-DIR
 
@@ -2922,6 +2975,10 @@ This option specifies the directory containing the full backup that is the base 
 =item --incremental-dir=DIRECTORY
 
 This option specifies the directory where the incremental backup will be combined with the full backup to make a new full backup.  The option accepts a string argument. It is used with the --incremental option.
+
+=item --incremental-force-scan
+
+This options tells xtrabackup to perform full scan of data files for taking an incremental backup even if full changed page bitmap data is available to enable the backup without the full scan.
 
 =item --incremental-lsn
 

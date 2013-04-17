@@ -443,7 +443,7 @@ xb_expand_file(fil_node_t *node)
 
 	ds_set_pipe(ds_buffer, ds_local);
 
-	res = xb_fil_cur_open(&cursor, node, 1);
+	res = xb_fil_cur_open(&cursor, &rf_pass_through, node, 1);
 	xb_a(res == XB_FIL_CUR_SUCCESS);
 
 	snprintf(tmpfile_path, sizeof(tmpfile_path), "%s%s",

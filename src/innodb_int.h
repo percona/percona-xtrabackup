@@ -85,6 +85,7 @@ extern "C" {
 #include <ut0crc32.h>
 #endif
 #include <ut0mem.h>
+#include <ut0rbt.h>
 
 #if MYSQL_VERSION_ID < 50600
 }
@@ -166,6 +167,7 @@ extern "C" {
    typedef ib_uint64_t		lsn_t;
    typedef merge_index_def_t	index_def_t;
    typedef merge_index_field_t	index_field_t;
+   typedef struct ib_rbt_struct ib_rbt_t;
 #  define xb_btr_pcur_open_at_index_side(from_left, index, latch_mode, pcur, \
 				       init_pcur, level, mtr)		\
 	btr_pcur_open_at_index_side(from_left, index, latch_mode, pcur,	\

@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "datasink.h"
 #include "innodb_int.h"
+#include "changed_page_bitmap.h"
 
 typedef struct {
 	ulint	page_size;
@@ -45,6 +46,11 @@ extern lsn_t incremental_lsn;
 extern char		*xtrabackup_target_dir;
 extern ds_ctxt_t	*ds_meta;
 extern ds_ctxt_t	*ds_data;
+
+/* The last checkpoint LSN at the backup startup time */
+extern lsn_t checkpoint_lsn_start;
+
+extern xb_page_bitmap *changed_page_bitmap;
 
 void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,

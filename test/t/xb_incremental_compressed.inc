@@ -1,13 +1,33 @@
 ################################################################################
 # Test incremental backup with InnoDB compression
 ################################################################################
+# Expects the following variable to be set before including:
+#    mysqld_extra_args: an extra arg to be passed for all mysqld invocations.  
+#                       Use this to set special options that influence 
+#                       incremental backups, e.g. turns on log archiving or 
+#                       changed page bitmap output.
+#    first_inc_suspend_command: if non-empty string, passes --suspend-at-start 
+#                               to incremental XB invocation and executes the 
+#                               given command while it's suspended
 
 . inc/common.sh
 
-if [ -z "$INNODB_VERSION" ]; then
-    echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+function add_rows()
+{
+  local table=$1
+  local start=$2
+  local limit=$3
+
+  while [ "$limit" -gt "$start" ]; do
+    sql="INSERT INTO $table VALUES ($start, $limit)"
+    let "start=start+1"
+    for ((i=0; $i<99; i++)); do
+      sql="${sql},($start, $limit)"
+      let "start=start+1"
+    done
+    ${MYSQL} ${MYSQL_ARGS} -e "$sql" incremental_sample
+  done
+}
 
 #
 # Test incremental backup of a compressed tablespace with a specific page size
@@ -22,9 +42,9 @@ function test_incremental_compressed()
 
   # Use innodb_strict_mode so that failure to use compression results in an 
   # error rather than a warning
-  mysqld_additional_args="--innodb_strict_mode --innodb_file_per_table \
-      --innodb_file_format=Barracuda --innodb_max_dirty_pages_pct=0 \
-      --innodb_log_file_size=1M"
+  mysqld_additional_args="$mysqld_extra_args --innodb_strict_mode \
+      --innodb_file_per_table --innodb_file_format=Barracuda \
+      --innodb_max_dirty_pages_pct=0 --innodb_log_file_size=1M"
   
   start_server ${mysqld_additional_args}
 
@@ -40,17 +60,7 @@ KEY_BLOCK_SIZE=$page_size" incremental_sample
 
   vlog "Adding initial rows to database..."
 
-  numrow=10000
-  count=0
-  while [ "$numrow" -gt "$count" ]; do
-    sql="INSERT INTO test VALUES ($count, $numrow)"
-    let "count=count+1"
-    for ((i=0; $i<99; i++)); do
-      sql="${sql},($count, $numrow)"
-      let "count=count+1"
-    done
-    ${MYSQL} ${MYSQL_ARGS} -e "$sql" incremental_sample
-  done
+  add_rows test 0 10000
 
   rows=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM test" \
 incremental_sample`
@@ -84,18 +94,15 @@ incremental_sample`
 number INT(11) DEFAULT NULL) ENGINE=INNODB \
 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=$page_size" incremental_sample
 
-  let "count=numrow+1"
-  let "numrow=15000"
-  while [ "$numrow" -gt "$count" ]; do
-    sql="VALUES ($count, $numrow)"
-    let "count=count+1"
-    for ((i=0; $i<99; i++)); do
-      sql="${sql},($count, $numrow)"
-      let "count=count+1"
-    done
-    ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO test $sql" incremental_sample
-    ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t2 $sql" incremental_sample
-  done
+  add_rows test 10001 12500
+  add_rows t2 10001 12500
+
+  # Rotate bitmap file here and force checkpoint at the same time
+  shutdown_server
+  start_server ${mysqld_additional_args}
+
+  add_rows test 12501 15000
+  add_rows t2 12501 15000
 
   rows=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM test" \
 incremental_sample`
@@ -122,10 +129,29 @@ incremental_sample`
 
   vlog "Making incremental backup"
 
+  if [ -n "$first_inc_suspend_command" ]
+  then
+      suspend_arg="--suspend_at_start";
+  else
+      suspend_arg="";
+  fi
+ 
   # Incremental backup
   xtrabackup --datadir=$mysql_datadir --backup \
       --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full \
-      ${mysqld_additional_args}
+      ${mysqld_additional_args} $suspend_arg &
+
+  xb_pid=$!
+
+  if [ -n "$first_inc_suspend_command" ]
+  then
+      wait_for_xb_to_suspend $topdir/data/delta/xtrabackup_suspended_1
+      ${MYSQL} ${MYSQL_ARGS} -e "$first_inc_suspend_command"
+
+      resume_suspended_xb $topdir/data/delta/xtrabackup_suspended_1
+  fi
+
+  wait $xb_pid
 
   vlog "Incremental backup done"
   vlog "Preparing backup"
@@ -149,7 +175,8 @@ incremental_sample`
 
   # Restore backup
 
-  stop_server
+  shutdown_server
+  rm -f $mysql_datadir/ib_modified_log*
 
   vlog "Copying files"
 
