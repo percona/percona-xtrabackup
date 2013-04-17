@@ -4502,6 +4502,12 @@ log_copying_thread(
 
 	ut_a(dst_log_fd != XB_FILE_UNDEFINED);
 
+	/*
+	  Initialize mysys thread-specific memory so we can
+	  use mysys functions in this thread.
+	*/
+	my_thread_init();
+
 	log_copying_running = TRUE;
 
 	while(log_copying) {
@@ -4522,6 +4528,7 @@ log_copying_thread(
 	log_copying_succeed = TRUE;
 end:
 	log_copying_running = FALSE;
+	my_thread_end();
 	os_thread_exit(NULL);
 
 	return(0);
