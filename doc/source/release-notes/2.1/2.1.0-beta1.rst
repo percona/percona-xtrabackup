@@ -1,0 +1,29 @@
+=======================================
+|Percona XtraBackup| 2.1.0-beta1
+=======================================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.0-beta1 on April 22nd 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/2.1.0/>`_. For this BETA release, we will not be making APT and YUM repositories available, just base deb and RPM packages
+
+This is an *BETA* quality release and is not intended for production. If you want a high quality, Generally Available release, the current Stable version should be used (currently 2.0.6 in the 2.0 series at the time of writing).
+
+This release contains all of the features and bug fixes in :doc:`Percona XtraBackup 2.0.6 </release-notes/2.0/2.0.6>`, plus the following:
+
+New features
+------------
+
+ |Percona XtraBackup| has implemented basic support for |MySQL| 5.6, |Percona Server| 5.6 and *MariaDB* 10.0. Basic support means that these versions are are recognized by |XtraBackup|, and that backup/restore works as long as no 5.6-specific features are used (such as ``GTID``, remote/transportable tablespaces, separate undo tablespace, 5.6-style buffer pool dump files).
+
+ |Percona XtraBackup| can use `XtraDB changed page tracking <http://www.percona.com/doc/percona-server/5.5/management/changed_page_tracking.html>`_ feature to perform the :ref:`xb_incremental` now.
+
+Bugs Fixed
+----------
+
+ Fixed couple of warnings found in |innobackupex| when all warnings have been made ``FATAL``. Bug fixed :bug:`1116177`.
+
+ |innobackupex| is using ``SHOW MASTER STATUS`` to obtain binlog file and position. This could trigger a bug if the server being backed up was standalone server (neither master nor slave in replication) and binlog information wasn't available. Fixed by not creating :file:`xtrabackup_binlog_info` file when binlog isn't available. Bug fixed :bug:`1168513`.
+
+ Fixed the typo in the |innobackupex| error output. Bug fixed :bug:`1157225`.
+
+ Redundant code has been removed from ``xtrabackup.cc``. Bug fixed :bug:`1162765`.
+
+Other bugs fixed: bug fixed :bug:`1158154`, bug fixed :bug:`1166713`.
