@@ -485,6 +485,55 @@
  
  		if (thd && thd_sql_command(thd) == SQLCOM_DROP_TABLE) {
  
+@@ -2423,43 +2423,19 @@
+ 	ulint		buflen,	/*!< in: length of buf, in bytes */
+ 	const char*	id,	/*!< in: identifier to convert */
+ 	ulint		idlen,	/*!< in: length of id, in bytes */
+-	THD*		thd,	/*!< in: MySQL connection thread, or NULL */
+-	ibool		file_id)/*!< in: TRUE=id is a table or database name;
++	THD*		thd __attribute__((unused)),
++				/*!< in: MySQL connection thread, or NULL */
++	ibool		file_id __attribute__((unused)))
++				/*!< in: TRUE=id is a table or database name;
+ 				FALSE=id is an UTF-8 string */
+ {
+-	char nz[NAME_LEN + 1];
+-	char nz2[NAME_LEN + 1 + EXPLAIN_FILENAME_MAX_EXTRA_LENGTH];
+-
+ 	const char*	s	= id;
+ 	int		q;
+ 
+-	if (file_id) {
+-		/* Decode the table name.  The MySQL function expects
+-		a NUL-terminated string.  The input and output strings
+-		buffers must not be shared. */
+-
+-		if (UNIV_UNLIKELY(idlen > (sizeof nz) - 1)) {
+-			idlen = (sizeof nz) - 1;
+-		}
+-
+-		memcpy(nz, id, idlen);
+-		nz[idlen] = 0;
+-
+-		s = nz2;
+-		idlen = explain_filename(thd, nz, nz2, sizeof nz2,
+-					 EXPLAIN_PARTITIONS_AS_COMMENT);
+-		goto no_quote;
+-	}
+-
+ 	/* See if the identifier needs to be quoted. */
+-	if (UNIV_UNLIKELY(!thd)) {
+-		q = '"';
+-	} else {
+-		q = get_quote_char_for_identifier(thd, s, (int) idlen);
+-	}
++	q = '"';
+ 
+ 	if (q == EOF) {
+-no_quote:
+ 		if (UNIV_UNLIKELY(idlen > buflen)) {
+ 			idlen = buflen;
+ 		}
 --- a/storage/innobase/include/srv0srv.h
 +++ b/storage/innobase/include/srv0srv.h
 @@ -353,6 +353,9 @@
