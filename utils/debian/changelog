@@ -6,6 +6,7 @@ percona-xtrabackup (2.0.6) unstable; urgency=low
   * Remove the obsolete debian/info file
   * Move the /usr/share/percona-xtrabackup-test directory to
     the percona-xtrabackup-test package.
+  * Update the copyright file to a machine-readable format.
 
  -- Ignacio Nin <ignacio.nin@percona.com>  Mon, 22 Apr 2013 16:14:20 -0300
 
