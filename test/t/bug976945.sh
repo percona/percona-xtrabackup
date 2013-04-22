@@ -8,8 +8,10 @@ if [ -z "$XTRADB_VERSION" ]; then
     exit $SKIPPED_EXIT_CODE
 fi
 
-start_server --innodb_log_block_size=4096
-echo innodb_log_block_size=4096 >> ${MYSQLD_VARDIR}/my.cnf
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_log_block_size=4096
+"
+start_server
 load_sakila
 
 # Full backup

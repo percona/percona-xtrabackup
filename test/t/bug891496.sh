@@ -5,13 +5,11 @@ MYSQLD_EXTRA_ARGS=--innodb-data-file-path="ibdata1:3M;ibdata2:10M:autoextend"
 
 . inc/common.sh
 
-innodb_data_file_path="ibdata1:3M;ibdata2:10M:autoextend"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_data_file_path=ibdata1:3M;ibdata2:10M:autoextend
+"
 
-start_server --innodb_data_file_path=$innodb_data_file_path
-
-cat >> $topdir/my.cnf <<EOF
-innodb_data_file_path=$innodb_data_file_path
-EOF
+start_server
 
 load_dbase_schema sakila
 load_dbase_data sakila
@@ -40,6 +38,6 @@ vlog "# RESTORE #"
 vlog "###########"
 innobackupex  --copy-back $backup_dir
 
-start_server --innodb_data_file_path=$innodb_data_file_path
+start_server
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila
