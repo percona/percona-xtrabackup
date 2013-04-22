@@ -4,10 +4,13 @@
 
 . inc/common.sh
 
-start_server --innodb_file_per_table
-
 # Set the minimum value for innodb_open_files to be used by xtrabackup
-echo "innodb_open_files=10" >>$topdir/my.cnf
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_file_per_table=1
+innodb_open_files=10
+"
+
+start_server
 
 load_dbase_schema sakila
 load_dbase_data sakila

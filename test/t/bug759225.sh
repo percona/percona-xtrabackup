@@ -16,11 +16,13 @@ if [ -z "$XTRADB_VERSION" ]; then
     exit $SKIPPED_EXIT_CODE
 fi
 
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_flush_method=ALL_O_DIRECT
+"
 start_server
 load_sakila
 
 # Take backup
-echo "innodb_flush_method=ALL_O_DIRECT" >> $topdir/my.cnf
 mkdir -p $topdir/backup
 innobackupex --stream=tar $topdir/backup > $topdir/backup/out.tar
 stop_server
@@ -39,11 +41,11 @@ vlog "Applying log"
 backup_dir=$topdir/backup
 cd $backup_dir
 $TAR -ixvf out.tar
-cd - >/dev/null 2>&1 
-innobackupex --apply-log --defaults-file=$topdir/my.cnf $backup_dir
+cd - >/dev/null 2>&1
+innobackupex --apply-log $backup_dir
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
-innobackupex --copy-back --defaults-file=$topdir/my.cnf $backup_dir
+innobackupex --copy-back $backup_dir
 
 start_server
 # Check sakila
