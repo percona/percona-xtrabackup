@@ -1,3 +1,15 @@
+percona-xtrabackup (2.1.0) unstable; urgency=low
+
+  * Update compat level to 7
+  * Update Standards-Version to 3.9.1.
+  * Use dh targets and overrides.
+  * Remove the obsolete debian/info file
+  * Move the /usr/share/percona-xtrabackup-test directory to
+    the percona-xtrabackup-test package.
+  * Update the copyright file to a machine-readable format.
+
+ -- Ignacio Nin <ignacio.nin@percona.com>  Mon, 22 Apr 2013 16:14:20 -0300
+
 percona-xtrabackup (2.0.0) lucid; urgency=low
 
   * General polishing of debian/ directory
