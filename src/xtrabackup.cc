@@ -1160,7 +1160,7 @@ mem_free_and_error:
 			char *p;
 
 			p = srv_data_file_names[i];
-			while ((p = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
+			while ((p = strchr(p, SRV_PATH_SEPARATOR)) != NULL)
 			{
 				p++;
 				srv_data_file_names[i] = p;
@@ -1691,30 +1691,29 @@ check_if_table_matches_filters(const char *name)
 }
 
 /************************************************************************
-Checks if a table specified as a path should be skipped from backup
-based on the --tables or --tables-file options.
+Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
+or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
+the --tables or --tables-file options.
 
 @return TRUE if the table should be skipped. */
 static
 my_bool
 check_if_skip_table(
 /******************/
-	const char*	path,	/*!< in: path to the table */
-	const char*	suffix)	/*!< in: suffix */
+	const char*	name)	/*!< in: path to the table */
 {
 	char buf[FN_REFLEN];
 	const char *dbname, *tbname;
 	const char *ptr;
 	char *eptr;
-	int dbname_len;
 
 	if (xtrabackup_tables == NULL && xtrabackup_tables_file == NULL) {
 		return(FALSE);
 	}
 
 	dbname = NULL;
-	tbname = path;
-	while ((ptr = strstr(tbname, SRV_PATH_SEPARATOR_STR)) != NULL) {
+	tbname = name;
+	while ((ptr = strchr(tbname, SRV_PATH_SEPARATOR)) != NULL) {
 		dbname = tbname;
 		tbname = ptr + 1;
 	}
@@ -1724,14 +1723,16 @@ check_if_skip_table(
 	}
 
 	strncpy(buf, dbname, FN_REFLEN);
-	buf[FN_REFLEN - 1] = 0;
+	buf[FN_REFLEN - 1] = '\0';
 	buf[tbname - 1 - dbname] = '.';
 
-	dbname_len = strlen(dbname) - strlen(suffix);
-	if (dbname_len < 1) {
-		return(FALSE);
+	/* Check if there's a suffix in the table name. If so, truncate it. We
+	rely on the fact that a dot cannot be a part of a table name (it is
+	encoded by the server with the @NNNN syntax). */
+	if ((eptr = strchr(&buf[tbname - dbname], '.')) != NULL) {
+
+		*eptr = '\0';
 	}
-	buf[dbname_len - 1] = 0;
 
 	/* For partitioned tables first try to match against the regexp
 	without truncating the #P#... suffix so we can backup individual
@@ -1796,10 +1797,24 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	xb_write_filt_ctxt_t	 write_filt_ctxt;
 	const char		*action;
 	xb_read_filt_t		*read_filter;
+	ibool			is_system;
 
-	if (!trx_sys_sys_space(node->space->id) && /* don't skip system space */
-	    check_if_skip_table(node->name, "ibd")) {
-		msg("[%02u] Skipping %s\n", thread_n, node->name);
+	/* Get the name and the path for the tablespace. node->name always
+	contains the path (which may be absolute for remote tablespaces in
+	5.6+). space->name contains the tablespace name in the form
+	"./database/table.ibd" (in 5.5-) or "database/table" (in 5.6+). For a
+	multi-node shared tablespace, space->name contains the name of the first
+	node, but that's irrelevant, since we only need node_name to match them
+	against filters, and the shared tablespace is always copied regardless
+	of the filters value. */
+
+	const char* const node_name = node->space->name;
+	const char* const node_path = node->name;
+
+	is_system = trx_sys_sys_space(node->space->id);
+
+	if (!is_system && check_if_skip_table(node_name)) {
+		msg("[%02u] Skipping %s.\n", thread_n, node_name);
 		return(FALSE);
 	}
 
@@ -1816,7 +1831,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 		goto error;
 	}
 
-	strncpy(dst_name, cursor.path, sizeof(dst_name));
+	strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
 
 	/* Setup the page write filter */
 	if (xtrabackup_incremental) {
@@ -1857,7 +1872,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 		} else {
 			action = "Streaming";
 		}
-		msg("[%02u] %s %s\n", thread_n, action, node->name);
+		msg("[%02u] %s %s\n", thread_n, action, node_path);
 	} else {
 		if (xtrabackup_compress) {
 			if (xtrabackup_encrypt) {
@@ -1871,7 +1886,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 			action = "Copying";
 		}
 		msg("[%02u] %s %s to %s\n", thread_n, action,
-		    node->name, dstfile->path);
+		    node_path, dstfile->path);
 	}
 
 	/* The main copy loop */
@@ -1922,8 +1937,8 @@ skip:
 	msg("[%02u] xtrabackup: Warning: We assume the "
 	    "table was dropped during xtrabackup execution "
 	    "and ignore the file.\n", thread_n);
-	msg("[%02u] xtrabackup: Warning: skipping file %s.\n",
-	    thread_n, node->name);
+	msg("[%02u] xtrabackup: Warning: skipping tablespace %s.\n",
+	    thread_n, node_name);
 	return(FALSE);
 }
 
@@ -3566,8 +3581,7 @@ loop:
 		table = dict_table_get_low(table_name);
 		mem_free(table_name);
 
-
-		if (table && check_if_skip_table(table->name, ""))
+		if (table && check_if_skip_table(table->name))
 			goto skip;
 
 
@@ -4813,7 +4827,7 @@ skip_check:
 
 			p = info_file_path;
 			prev = NULL;
-			while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
+			while ((next = strchr(p, SRV_PATH_SEPARATOR)) != NULL)
 			{
 				prev = p;
 				p = next + 1;
