@@ -73,7 +73,7 @@ SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
 . $SOURCEDIR/VERSION
 
 DEBIAN_VERSION="$(lsb_release -sc)"
-REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"
+REVISION="$(cd "$SOURCEDIR"; bzr revno)"
 FULL_VERSION="$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION"
 
 # Build information
@@ -84,8 +84,8 @@ export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURC
 export MAKE_JFLAG=-j4
 
 export DEB_BUILD_OPTIONS='debug nocheck'
-export DEB_CFLAGS_APPEND="$CFLAGS"
-export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
+export DEB_CFLAGS_APPEND="$CFLAGS -DXTRABACKUP_REVISION=\\\"$REVISION\\\""
+export DEB_CXXFLAGS_APPEND="$CXXFLAGS -DXTRABACKUP_REVISION=\\\"$REVISION\\\""
 
 # Build
 (
