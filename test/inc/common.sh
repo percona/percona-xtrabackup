@@ -27,25 +27,12 @@ function die()
   exit 1
 }
 
-function init_mysql_dir()
+function call_mysql_install_db()
 {
-    if [ ! -d "$MYSQLD_VARDIR" ]
-    then
-	vlog "Creating server root directory: $MYSQLD_VARDIR"
-	mkdir "$MYSQLD_VARDIR"
-    fi
-    if [ ! -d "$MYSQLD_TMPDIR" ]
-    then
-	vlog "Creating server temporary directory: $MYSQLD_TMPDIR"
-	mkdir "$MYSQLD_TMPDIR"
-    fi
-    if [ ! -d "$MYSQLD_DATADIR" ]
-    then
-	vlog "Creating server data directory: $MYSQLD_DATADIR"
-	mkdir -p "$MYSQLD_DATADIR"
 	vlog "Calling mysql_install_db"
-	$MYSQL_INSTALL_DB --no-defaults --basedir=$MYSQL_BASEDIR --datadir="$MYSQLD_DATADIR" --tmpdir="$MYSQLD_TMPDIR" ${MYSQLD_EXTRA_ARGS}
-    fi
+	cd $MYSQL_BASEDIR
+	$MYSQL_INSTALL_DB --defaults-file=${MYSQLD_VARDIR}/my.cnf ${MYSQLD_EXTRA_ARGS}
+	cd -
 }
 
 ########################################################################
@@ -233,21 +220,15 @@ function switch_server()
     MYSQLD_PORT="${SRV_MYSQLD_PORT[$id]}"
     MYSQLD_SOCKET="${SRV_MYSQLD_SOCKET[$id]}"
 
-    MYSQL_ARGS="--no-defaults --socket=${MYSQLD_SOCKET} --user=root"
-    MYSQLD_ARGS="--no-defaults --basedir=${MYSQL_BASEDIR} \
---log-error=${MYSQLD_ERRFILE}
---socket=${MYSQLD_SOCKET} --port=${MYSQLD_PORT} --server-id=$id \
---datadir=${MYSQLD_DATADIR} --tmpdir=${MYSQLD_TMPDIR} --log-bin=mysql-bin \
---relay-log=mysql-relay-bin --pid-file=${MYSQLD_PIDFILE} ${MYSQLD_EXTRA_ARGS}"
+    MYSQL_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf "
+    MYSQLD_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf ${MYSQLD_EXTRA_ARGS}"
     if [ "`whoami`" = "root" ]
     then
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
     fi
 
-    export MYSQL_HOME=$MYSQLD_VARDIR
-
-    IB_ARGS="--user=root --socket=${MYSQLD_SOCKET} --ibbackup=$XB_BIN"
-    XB_ARGS="--no-defaults"
+    IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf --ibbackup=$XB_BIN"
+    XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf"
 
     # Some aliases for compatibility, as tests use the following names
     topdir="$MYSQLD_VARDIR"
@@ -269,14 +250,49 @@ function start_server_with_id()
     init_server_variables $id
     switch_server $id
 
-    init_mysql_dir
+    if [ ! -d "$MYSQLD_VARDIR" ]
+    then
+	vlog "Creating server root directory: $MYSQLD_VARDIR"
+	mkdir "$MYSQLD_VARDIR"
+    fi
+    if [ ! -d "$MYSQLD_TMPDIR" ]
+    then
+	vlog "Creating server temporary directory: $MYSQLD_TMPDIR"
+	mkdir "$MYSQLD_TMPDIR"
+    fi
+
+    # Create the configuration file used by mysql_install_db, the server
+    # and the xtrabackup binary
     cat > ${MYSQLD_VARDIR}/my.cnf <<EOF
 [mysqld]
+socket=${MYSQLD_SOCKET}
+port=${MYSQLD_PORT}
+server-id=$id
+basedir=${MYSQL_BASEDIR}
 datadir=${MYSQLD_DATADIR}
 tmpdir=${MYSQLD_TMPDIR}
+log-error=${MYSQLD_ERRFILE}
+log-bin=mysql-bin
+relay-log=mysql-relay-bin
+pid-file=${MYSQLD_PIDFILE}
+replicate-ignore-db=mysql
+${MYSQLD_EXTRA_MY_CNF_OPTS:-}
+
+[client]
+socket=${MYSQLD_SOCKET}
+user=root
 EOF
 
+    # Create datadir and call mysql_install_db if it doesn't exist
+    if [ ! -d "$MYSQLD_DATADIR" ]
+    then
+	vlog "Creating server data directory: $MYSQLD_DATADIR"
+	mkdir -p "$MYSQLD_DATADIR"
+	call_mysql_install_db
+    fi
+
     # Start the server
+    echo "Starting ${MYSQLD} ${MYSQLD_ARGS} $* "
     ${MYSQLD} ${MYSQLD_ARGS} $* &
     if ! mysql_ping
     then
@@ -304,6 +320,10 @@ function stop_server_with_id()
     else
         vlog "Server PID file '${MYSQLD_PIDFILE}' doesn't exist!"
     fi
+
+    # Reset XB_ARGS so we can call xtrabackup in tests even without starting the
+    # server
+    XB_ARGS="--no-defaults"
 
     # unlock the port number
     free_reserved_port $MYSQLD_PORT

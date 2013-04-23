@@ -178,7 +178,7 @@ function get_version_info()
     then
 	INNODB_FLAVOR="XtraDB"
     else
-	INNODB_FLAVOR="innoDB"
+	INNODB_FLAVOR="InnoDB"
     fi
 
     if [ "$XB_BUILD" = "autodetect" ]

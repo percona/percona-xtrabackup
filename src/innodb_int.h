@@ -212,8 +212,11 @@ extern "C" {
 #  define ut_dulint_align_up(A, B) ((A + B - 1) & ~((ib_int64_t)B - 1))
 
 #ifndef XTRADB_BASED
-/* MySQL 5.1 - 5.6 */
-#define trx_sys_sys_space(id) (id == 0)
+# if MYSQL_VERSION_ID >= 50600
+#  define trx_sys_sys_space(id) (!fil_is_user_tablespace_id(id))
+# else
+#  define trx_sys_sys_space(id) (id == 0)
+# endif
 #endif /* XTRADB_BASED */
 
 #if (MYSQL_VERSION_ID >= 50500) && (MYSQL_VERSION_ID < 50600)

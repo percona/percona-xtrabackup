@@ -14,8 +14,13 @@ if [ -z "$XTRADB_VERSION" ]; then
     exit $SKIPPED_EXIT_CODE
 fi
 
-DBLWR=${TEST_BASEDIR}/var1/data/dblwr.ibd
-start_server --innodb_file_per_table --innodb_doublewrite_file=${DBLWR}
+DBLWR=dblwr.ibd
+
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_file_per_table=1
+innodb_doublewrite_file=$DBLWR
+"
+start_server
 load_dbase_schema incremental_sample
 
 # Workaround for bug #1072695
@@ -24,8 +29,6 @@ function innobackupex_no_defaults_file ()
 {
 	run_cmd $IB_BIN $IB_ARGS_NO_DEFAULTS_FILE $*
 }
-
-echo "innodb_doublewrite_file=${DBLWR}" >>$topdir/my.cnf
 
 # Adding initial rows
 vlog "Adding initial rows to database..."
