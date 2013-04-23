@@ -286,10 +286,8 @@ typedef os_mutex_t	os_ib_mutex_t;
 
 #ifdef __WIN__
 #define SRV_PATH_SEPARATOR	'\\'
-#define SRV_PATH_SEPARATOR_STR	"\\"	
 #else
 #define SRV_PATH_SEPARATOR	'/'
-#define SRV_PATH_SEPARATOR_STR	"/"
 #endif
 
 #ifndef UNIV_PAGE_SIZE_MAX
@@ -3070,7 +3068,7 @@ mem_free_and_error:
 			char *p;
 
 			p = srv_data_file_names[i];
-			while ((p = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
+			while ((p = strchr(p, SRV_PATH_SEPARATOR)) != NULL)
 			{
 				p++;
 				srv_data_file_names[i] = p;
@@ -3606,26 +3604,26 @@ check_if_table_matches_filters(const char *name)
 }
 
 /************************************************************************
-Checks if a table specified as a path should be skipped from backup
-based on the --tables or --tables-file options.
+Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
+or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
+the --tables or --tables-file options.
 
 @return TRUE if the table should be skipped. */
 static my_bool
-check_if_skip_table(const char *path, const char *suffix)
+check_if_skip_table(const char *name)
 {
 	char buf[FN_REFLEN];
 	const char *dbname, *tbname;
 	const char *ptr;
 	char *eptr;
-	int dbname_len;
 
 	if (xtrabackup_tables == NULL && xtrabackup_tables_file == NULL) {
 		return(FALSE);
 	}
 
 	dbname = NULL;
-	tbname = path;
-	while ((ptr = strstr(tbname, SRV_PATH_SEPARATOR_STR)) != NULL) {
+	tbname = name;
+	while ((ptr = strchr(tbname, SRV_PATH_SEPARATOR)) != NULL) {
 		dbname = tbname;
 		tbname = ptr + 1;
 	}
@@ -3635,14 +3633,16 @@ check_if_skip_table(const char *path, const char *suffix)
 	}
 
 	strncpy(buf, dbname, FN_REFLEN);
-	buf[FN_REFLEN - 1] = 0;
+	buf[FN_REFLEN - 1] = '\0';
 	buf[tbname - 1 - dbname] = '.';
 
-	dbname_len = strlen(dbname) - strlen(suffix);
-	if (dbname_len < 1) {
-		return(FALSE);
+	/* Check if there's a suffix in the table name. If so, truncate it. We
+	rely on the fact that a dot cannot be a part of a table name (it is
+	encoded by the server with the @NNNN syntax). */
+	if ((eptr = strchr(&buf[tbname - dbname], '.')) != NULL) {
+
+		*eptr = '\0';
 	}
-	buf[dbname_len - 1] = 0;
 
 	/* For partitioned tables first try to match against the regexp
 	without truncating the #P#... suffix so we can backup individual
@@ -3917,6 +3917,48 @@ end:
 }
 #endif
 
+/***********************************************************************
+Extracts the relative path ("database/table.ibd") of a tablespace from a
+specified possibly absolute path.
+
+For user tablespaces both "./database/table.ibd" and
+"/remote/dir/database/table.ibd" result in "database/table.ibd".
+
+For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
+and "./ibdata1" yield "ibdata1" in the output. */
+static
+const char *
+xb_get_relative_path(
+/*=================*/
+	const char*	path,		/*!< in: tablespace path (either
+			  		relative or absolute) */
+	ibool		is_system)	/*!< in: TRUE for system tablespaces,
+					i.e. when only the filename must be
+					returned. */
+{
+	const char *next;
+	const char *cur;
+	const char *prev;
+
+	prev = NULL;
+	cur = path;
+
+	while ((next = strchr(cur, SRV_PATH_SEPARATOR)) != NULL) {
+
+		prev = cur;
+		cur = next + 1;
+	}
+
+	if (is_system) {
+
+		return(cur);
+	} else {
+
+		return((prev == NULL) ? cur : prev);
+	}
+
+}
+
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
 
@@ -3942,34 +3984,41 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	xb_delta_info_t info;
 	datasink_t	*ds = ds_ctxt->datasink;
 	ds_file_t	*dstfile = NULL;
+	ibool		is_system;
+
+	/* Get the name and the path for the tablespace. node->name always
+	contains the path (which may be absolute for remote tablespaces in
+	5.6+). space->name contains the tablespace name in the form
+	"./database/table.ibd" (in 5.5-) or "database/table" (in 5.6+). For a
+	multi-node shared tablespace, space->name contains the name of the first
+	node, but that's irrelevant, since we only need node_name to match them
+	against filters, and the shared tablespace is always copied regardless
+	of the filters value. */
+
+	const char* const node_name = node->space->name;
+	const char* const node_path = node->name;
 
 	info.page_size = 0;
 	info.zip_size = 0;
 	info.space_id = 0;
 
-	if ((!trx_sys_sys_space(node->space->id))
-		&& check_if_skip_table(node->name, "ibd")) {
-		msg("[%02u] Skipping %s.\n", thread_n, node->name);
+	is_system = trx_sys_sys_space(node->space->id);
+
+	if (!is_system && check_if_skip_table(node_name)) {
+		msg("[%02u] Skipping %s.\n", thread_n, node_name);
 		return(FALSE);
 	}
 
-	if (trx_sys_sys_space(node->space->id))
-	{
-		char *next, *p;
-		/* system datafile "/fullpath/datafilename.ibd" or "./datafilename.ibd" */
-		p = node->name;
-		while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
-		{
-			p = next + 1;
-		}
-		strncpy(dst_name, p, sizeof(dst_name));
-	} else {
-		/* file per table style "./database/table.ibd" */
-		strncpy(dst_name, node->name, sizeof(dst_name));
-	}
+	/* Get the relative path for the destination tablespace name. Non-system
+	tablespaces may have absolute paths for remote tablespaces in MySQL
+	5.6+. We want to make "local" copies for the backup. We don't use
+	node_name here, because in MySQL 5.6+ it doesn't contain the .ibd
+	suffix */
+	strncpy(dst_name, xb_get_relative_path(node_path, is_system),
+		sizeof(dst_name));
 
 	/* open src_file*/
-	src_file = xb_file_create_no_error_handling(node->name,
+	src_file = xb_file_create_no_error_handling(node_path,
 						    OS_FILE_OPEN,
 						    OS_FILE_READ_ONLY,
 						    &success);
@@ -3981,11 +4030,11 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 		    "[%02u] xtrabackup: Warning: We assume the "
 		    "table was dropped or renamed during "
 		    "xtrabackup execution and ignore the file.\n",
-		    thread_n, node->name, thread_n);
+		    thread_n, node_path, thread_n);
 		goto skip;
 	}
 
-	xb_file_set_nocache(src_file, node->name, "OPEN");
+	xb_file_set_nocache(src_file, node_path, "OPEN");
 
 #ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
@@ -4002,7 +4051,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 		page_size = info.zip_size;
 		page_size_shift = get_bit_shift(page_size);
 		msg("[%02u] %s is compressed with page size = "
-		    "%lu bytes\n", thread_n, node->name, page_size);
+		    "%lu bytes\n", thread_n, node_name, page_size);
 		if (page_size_shift < 10 || page_size_shift > 14) {
 			msg("[%02u] xtrabackup: Error: Invalid "
 			    "page size: %lu.\n", thread_n, page_size);
@@ -4039,9 +4088,9 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	} else
 		info.page_size = 0;
 
-	if (my_stat(node->name, &src_stat, MYF(MY_WME)) == NULL) {
+	if (my_stat(node_path, &src_stat, MYF(MY_WME)) == NULL) {
 		msg("[%02u] xtrabackup: Warning: cannot stat %s\n",
-		    thread_n, node->name);
+		    thread_n, node_path);
 		goto skip;
 	}
 	dstfile = ds->open(ds_ctxt, dst_name, &src_stat);
@@ -4055,7 +4104,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	if (xtrabackup_stream) {
 		const char *action = xtrabackup_compress ?
 			"Compressing and streaming" : "Streaming";
-		msg("[%02u] %s %s\n", thread_n, action, node->name);
+		msg("[%02u] %s %s\n", thread_n, action, node_path);
 	} else {
 		const char *action;
 
@@ -4065,7 +4114,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 			action = "Copying";
 		}
 		msg("[%02u] %s %s to %s\n", thread_n, action,
-		    node->name, dstfile->path);
+		    node_path, dstfile->path);
 	}
 
 	buf2 = static_cast<byte *>(ut_malloc(COPY_CHUNK
@@ -4132,7 +4181,7 @@ read_retry:
 						    "resulted in fail. File "
 						    "%s seems to be "
 						    "corrupted.\n",
-						    thread_n, node->name);
+						    thread_n, node_path);
 						goto error;
 					}
 					msg("[%02u] xtrabackup: "
@@ -4257,8 +4306,8 @@ skip:
 	msg("[%02u] xtrabackup: Warning: We assume the "
 	    "table was dropped during xtrabackup execution "
 	    "and ignore the file.\n", thread_n);
-	msg("[%02u] xtrabackup: Warning: skipping file %s.\n",
-	    thread_n, node->name);
+	msg("[%02u] xtrabackup: Warning: skipping tablespace %s.\n",
+	    thread_n, node_name);
 	return(FALSE);
 }
 
@@ -6093,7 +6142,7 @@ loop:
 		table = dict_table_get_low(table_name);
 		mem_free(table_name);
 
-		if (table && check_if_skip_table(table->name, ""))
+		if (table && check_if_skip_table(table->name))
 			goto skip;
 
 		if (table == NULL) {
@@ -7491,7 +7540,9 @@ skip_check:
 
 					p = info_file_path;
 					prev = NULL;
-					while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL)
+					while ((next =
+						strchr(p, SRV_PATH_SEPARATOR))
+					       != NULL)
 					{
 						prev = p;
 						p = next + 1;
