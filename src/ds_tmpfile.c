@@ -104,7 +104,7 @@ tmpfile_open(ds_ctxt_t *ctxt, const char *path,
 		/* On Windows, open files cannot be removed, but files can be
 		created with the O_TEMPORARY flag to the same effect
 		("delete on close"). */
-		unlink(path);
+		unlink(tmp_path);
 	}
 #endif /* !__WIN__ */
 
