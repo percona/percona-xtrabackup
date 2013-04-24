@@ -86,6 +86,7 @@ export MAKE_JFLAG=-j4
 export DEB_BUILD_OPTIONS='debug nocheck'
 export DEB_CFLAGS_APPEND="$CFLAGS"
 export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
+export DEB_DUMMY="$DUMMY"
 
 # Build
 (
@@ -103,12 +104,6 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
         if test "x$NOTRANSITIONAL" = "xyes"
         then
             sed -i '/Package: xtrabackup/,/^$/d' debian/control
-        fi
-
-        # Apply dummy patch if wanted
-        if test "x$DUMMY" = "xyes"
-        then
-            patch -p1 < 'utils/debian-dummy-rules.patch'
         fi
 
         # Update distribution

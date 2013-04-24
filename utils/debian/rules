@@ -40,6 +40,7 @@ build: build-stamp
 build-stamp:  config.status 
 	dh_testdir
 
+ifeq "$(DEB_DUMMY)" ""
 	# Add here commands to compile the package.
 	AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
 	cp src/xtrabackup_51 src/xbstream .
@@ -52,6 +53,14 @@ build-stamp:  config.status
 
 	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
 	cp src/xtrabackup_56 .
+else
+	# Dummy binaries that avoid compilation
+	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
+	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_51
+	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_55
+	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_56
+	echo 'main() { return 300; }' | gcc -x c - -o xbstream
+endif
 
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
 
