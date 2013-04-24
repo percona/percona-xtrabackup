@@ -1334,6 +1334,8 @@ xb_regmatch_t tables_regmatch[1];
 char *xtrabackup_tables_file = NULL;
 hash_table_t* tables_hash;
 
+hash_table_t* inc_dir_tables_hash;
+
 struct xtrabackup_tables_struct{
 	char*		name;
 	hash_node_t	name_hash;
@@ -5055,7 +5057,7 @@ xb_filters_init()
 			}
 
 			table = static_cast<xtrabackup_tables_t *>
-				(malloc(sizeof(xtrabackup_tables_t)
+				(ut_malloc(sizeof(xtrabackup_tables_t)
 					+ strlen(name_buf) + 1));
 			memset(table, '\0', sizeof(xtrabackup_tables_t) + strlen(name_buf) + 1);
 			table->name = ((char*)table) + sizeof(xtrabackup_tables_t);
@@ -5067,6 +5069,34 @@ xb_filters_init()
 	}
 }
 
+static
+void
+xb_tables_hash_free(hash_table_t* hash)
+{
+	ulint	i;
+
+	/* free the hash elements */
+	for (i = 0; i < hash_get_n_cells(hash); i++) {
+		xtrabackup_tables_t*	table;
+
+		table = static_cast<xtrabackup_tables_t *>
+			(HASH_GET_FIRST(hash, i));
+
+		while (table) {
+			xtrabackup_tables_t*	prev_table = table;
+
+			table = static_cast<xtrabackup_tables_t *>
+				(HASH_GET_NEXT(name_hash, prev_table));
+
+			HASH_DELETE(xtrabackup_tables_t, name_hash, hash,
+				ut_fold_string(prev_table->name), prev_table);
+			ut_free(prev_table);
+		}
+	}
+
+	/* free hash */
+	hash_table_free(hash);
+}
 
 /************************************************************************
 Destroy table filters for partial backup. */
@@ -5077,29 +5107,7 @@ xb_filters_free()
 {
 
 	if (xtrabackup_tables_file) {
-		ulint	i;
-
-		/* free the hash elements */
-		for (i = 0; i < hash_get_n_cells(tables_hash); i++) {
-			xtrabackup_tables_t*	table;
-
-			table = static_cast<xtrabackup_tables_t *>
-				(HASH_GET_FIRST(tables_hash, i));
-
-			while (table) {
-				xtrabackup_tables_t*	prev_table = table;
-
-				table = static_cast<xtrabackup_tables_t *>
-					(HASH_GET_NEXT(name_hash, prev_table));
-
-				HASH_DELETE(xtrabackup_tables_t, name_hash, tables_hash,
-						ut_fold_string(prev_table->name), prev_table);
-				free(prev_table);
-			}
-		}
-
-		/* free tables_hash */
-		hash_table_free(tables_hash);
+		xb_tables_hash_free(tables_hash);
 	}
 
 }
@@ -6682,12 +6690,13 @@ xb_delta_open_matching_space(
 	size_t		real_name_len,	/* out: buffer size for real_name */
 	ibool* 		success)	/* out: indicates error. TRUE = success */
 {
-	char		dest_dir[FN_REFLEN];
-	char		dest_space_name[FN_REFLEN];
-	ibool		ok;
-	fil_space_t*	fil_space;
-	os_file_t	file	= 0;
-	ulint		tablespace_flags;
+	char			dest_dir[FN_REFLEN];
+	char			dest_space_name[FN_REFLEN];
+	ibool			ok;
+	fil_space_t*		fil_space;
+	os_file_t		file	= 0;
+	ulint			tablespace_flags;
+	xtrabackup_tables_t*	table;
 
 	ut_a(dbname != NULL ||
 		trx_sys_sys_space(space_id) ||
@@ -6725,6 +6734,16 @@ xb_delta_open_matching_space(
 	if (trx_sys_sys_space(space_id)) {
 		goto found;
 	}
+
+	/* remember space name for further reference */
+	table = static_cast<xtrabackup_tables_t *>
+		(ut_malloc(sizeof(xtrabackup_tables_t) +
+			strlen(dest_space_name) + 1));
+
+	table->name = ((char*)table) + sizeof(xtrabackup_tables_t);
+	strcpy(table->name, dest_space_name);
+	HASH_INSERT(xtrabackup_tables_t, name_hash, inc_dir_tables_hash,
+			ut_fold_string(table->name), table);
 
 	mutex_enter(&fil_system->mutex);
 	fil_space = xb_space_get_by_name(dest_space_name);
@@ -6849,7 +6868,7 @@ xtrabackup_apply_delta(
 	const char*	dbname,		/* in: database name (ibdata: NULL) */
 	const char*	filename,	/* in: file name (not a path),
 					including the .delta extension */
-	my_bool check_newer __attribute__((unused)))
+	void*		/*data*/)
 {
 	os_file_t	src_file = XB_FILE_UNDEFINED;
 	os_file_t	dst_file = XB_FILE_UNDEFINED;
@@ -7046,11 +7065,61 @@ error:
 }
 
 /************************************************************************
-Applies all .delta files from incremental_dir to the full backup.
-@return TRUE on success. */
+Callback to handle datadir entry. Function of this type will be called
+for each entry which matches the mask by xb_process_datadir.
+@return should return TRUE on success */
+typedef ibool (*handle_datadir_entry_func_t)(
+/*=========================================*/
+	const char*	data_home_dir,		/*!<in: path to datadir */
+	const char*	db_name,		/*!<in: database name */
+	const char*	file_name,		/*!<in: file name with suffix */
+	void*		arg);			/*!<in: caller-provided data */
+
+/************************************************************************
+Callback to handle datadir entry. Deletes entry if it has no matching
+fil_space in fil_system directory.
+@return FALSE if delete attempt was unsuccessful */
 static
 ibool
-xtrabackup_apply_deltas(my_bool check_newer)
+rm_if_not_found(
+	const char*	data_home_dir,		/*!<in: path to datadir */
+	const char*	db_name,		/*!<in: database name */
+	const char*	file_name,		/*!<in: file name with suffix */
+	void*		arg __attribute__((unused)))
+{
+	char			name[FN_REFLEN];
+	xtrabackup_tables_t*	table;
+
+	snprintf(name, FN_REFLEN, "%s%s/%s",
+				xb_dict_prefix, db_name, file_name);
+	name[strlen(name) - XB_DICT_SUFFIX_LEN] = '\0';
+
+	XB_HASH_SEARCH(name_hash, inc_dir_tables_hash, ut_fold_string(name),
+		       table, (void) 0,
+		       !strcmp(table->name, name));
+
+	if (!table) {
+		snprintf(name, FN_REFLEN, "%s/%s/%s", data_home_dir,
+						      db_name, file_name);
+		return os_file_delete(name);
+	}
+
+	return(TRUE);
+}
+
+/************************************************************************
+Function enumerates files in datadir (provided by path) which are matched
+by provided suffix. For each entry callback is called.
+@return FALSE if callback for some entry returned FALSE */
+static
+ibool
+xb_process_datadir(
+	const char*			path,	/*!<in: datadir path */
+	const char*			suffix,	/*!<in: suffix to match
+						against */
+	handle_datadir_entry_func_t	func,	/*!<in: callback */
+	void*				data)	/*!<in: additional argument for
+						callback */
 {
 	ulint		ret;
 	char		dbpath[FN_REFLEN];
@@ -7058,56 +7127,59 @@ xtrabackup_apply_deltas(my_bool check_newer)
 	os_file_dir_t	dbdir;
 	os_file_stat_t	dbinfo;
 	os_file_stat_t	fileinfo;
-	dberr_t		err		= DB_SUCCESS;
+	ulint		suffix_len;
+	dberr_t		err 		= DB_SUCCESS;
 	static char	current_dir[2];
 
 	current_dir[0] = FN_CURLIB;
 	current_dir[1] = 0;
 	srv_data_home = current_dir;
 
+	suffix_len = strlen(suffix);
+
 	/* datafile */
-	dbdir = os_file_opendir(xtrabackup_incremental_dir, FALSE);
+	dbdir = os_file_opendir(path, FALSE);
 
 	if (dbdir != NULL) {
-		ret = fil_file_readdir_next_file(&err, xtrabackup_incremental_dir, dbdir,
+		ret = fil_file_readdir_next_file(&err, path, dbdir,
 							&fileinfo);
 		while (ret == 0) {
 			if (fileinfo.type == OS_FILE_TYPE_DIR) {
 				goto next_file_item_1;
 			}
 
-			if (strlen(fileinfo.name) > 6
+			if (strlen(fileinfo.name) > suffix_len
 			    && 0 == strcmp(fileinfo.name + 
-					strlen(fileinfo.name) - 6,
-					".delta")) {
-				if (!xtrabackup_apply_delta(
-					    xtrabackup_incremental_dir, NULL,
-					    fileinfo.name, check_newer))
+					strlen(fileinfo.name) - suffix_len,
+					suffix)) {
+				if (!func(
+					    path, NULL,
+					    fileinfo.name, data))
 				{
-					return FALSE;
+					return(FALSE);
 				}
 			}
 next_file_item_1:
 			ret = fil_file_readdir_next_file(&err,
-							xtrabackup_incremental_dir, dbdir,
+							path, dbdir,
 							&fileinfo);
 		}
 
 		os_file_closedir(dbdir);
 	} else {
 		msg("xtrabackup: Cannot open dir %s\n",
-		    xtrabackup_incremental_dir);
+		    path);
 	}
 
 	/* single table tablespaces */
-	dir = os_file_opendir(xtrabackup_incremental_dir, FALSE);
+	dir = os_file_opendir(path, FALSE);
 
 	if (dir == NULL) {
 		msg("xtrabackup: Cannot open dir %s\n",
-		    xtrabackup_incremental_dir);
+		    path);
 	}
 
-		ret = fil_file_readdir_next_file(&err, xtrabackup_incremental_dir, dir,
+		ret = fil_file_readdir_next_file(&err, path, dir,
 								&dbinfo);
 	while (ret == 0) {
 		if (dbinfo.type == OS_FILE_TYPE_FILE
@@ -7116,7 +7188,7 @@ next_file_item_1:
 		        goto next_datadir_item;
 		}
 
-		sprintf(dbpath, "%s/%s", xtrabackup_incremental_dir,
+		sprintf(dbpath, "%s/%s", path,
 								dbinfo.name);
 		srv_normalize_path_for_win(dbpath);
 
@@ -7133,18 +7205,19 @@ next_file_item_1:
 				        goto next_file_item_2;
 				}
 
-				if (strlen(fileinfo.name) > 6
+				if (strlen(fileinfo.name) > suffix_len
 				    && 0 == strcmp(fileinfo.name + 
-						strlen(fileinfo.name) - 6,
-						".delta")) {
-					/* The name ends in .delta; try opening
+						strlen(fileinfo.name) -
+								suffix_len,
+						suffix)) {
+					/* The name ends in suffix; process
 					the file */
-					if (!xtrabackup_apply_delta(
-						    xtrabackup_incremental_dir,
+					if (!func(
+						    path,
 						    dbinfo.name,
-						    fileinfo.name, check_newer))
+						    fileinfo.name, data))
 					{
-						return FALSE;
+						return(FALSE);
 					}
 				}
 next_file_item_2:
@@ -7157,13 +7230,24 @@ next_file_item_2:
 		}
 next_datadir_item:
 		ret = fil_file_readdir_next_file(&err,
-						xtrabackup_incremental_dir,
+						path,
 								dir, &dbinfo);
 	}
 
 	os_file_closedir(dir);
 
-	return TRUE;
+	return(TRUE);
+}
+
+/************************************************************************
+Applies all .delta files from incremental_dir to the full backup.
+@return TRUE on success. */
+static
+ibool
+xtrabackup_apply_deltas()
+{
+	return xb_process_datadir(xtrabackup_incremental_dir, ".delta",
+		xtrabackup_apply_delta, NULL);
 }
 
 static my_bool
@@ -7346,12 +7430,22 @@ skip_check:
 			goto error;
 		}
 
-		if(!xtrabackup_apply_deltas(TRUE)) {
+		inc_dir_tables_hash = hash_create(1000);
+
+		if(!xtrabackup_apply_deltas()) {
 			xb_data_files_close();
+			xb_tables_hash_free(inc_dir_tables_hash);
 			goto error;
 		}
 
 		xb_data_files_close();
+
+		/* Cleanup datadir from tablespaces deleted between full and
+		incremental backups */
+
+		xb_process_datadir("./", ".ibd", rm_if_not_found, NULL);
+
+		xb_tables_hash_free(inc_dir_tables_hash);
 	}
 	sync_close();
 	sync_initialized = FALSE;
