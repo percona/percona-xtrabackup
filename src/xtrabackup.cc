@@ -440,6 +440,7 @@ enum options_xtrabackup
   OPT_XTRA_REBUILD_INDEXES,
 #if MYSQL_VERSION_ID >= 50600
   OPT_INNODB_CHECKSUM_ALGORITHM,
+  OPT_INNODB_UNDO_DIRECTORY,
   OPT_UNDO_TABLESPACES,
 #endif
   OPT_XTRA_INCREMENTAL_FORCE_SCAN,
@@ -805,14 +806,17 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
 #if MYSQL_VERSION_ID >= 50600
-  {"checksum-algorithm", OPT_INNODB_CHECKSUM_ALGORITHM,
+  {"innodb_checksum_algorithm", OPT_INNODB_CHECKSUM_ALGORITHM,
   "The algorithm InnoDB uses for page checksumming. [CRC32, STRICT_CRC32, "
    "INNODB, STRICT_INNODB, NONE, STRICT_NONE]", &srv_checksum_algorithm,
    &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"undo-tablespaces", OPT_UNDO_TABLESPACES,
-   "Number of undo tablespaces to use. NON-ZERO VALUES ARE NOT "
-   "CURRENTLY SUPPORTED",
+  {"innodb_undo_directory", OPT_INNODB_UNDO_DIRECTORY,
+   "Directory where undo tablespace files live, this path can be absolute.",
+   (G_PTR*) &srv_undo_dir, (G_PTR*) &srv_undo_dir,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"innodb_undo_tablespaces", OPT_UNDO_TABLESPACES,
+   "Number of undo tablespaces to use.",
    (G_PTR*)&srv_undo_tablespaces, (G_PTR*)&srv_undo_tablespaces,
    0, GET_ULONG, REQUIRED_ARG, 0, 0, 126, 0, 1, 0},
 #endif
@@ -1205,7 +1209,7 @@ mem_free_and_error:
 	srv_log_file_size = (ulint) innobase_log_file_size;
 	msg("xtrabackup:   innodb_log_files_in_group = %ld\n",
 	    srv_n_log_files);
-	msg("xtrabackup:   innodb_log_file_size = %ld\n",
+	msg("xtrabackup:   innodb_log_file_size = %lld\n",
 	    srv_log_file_size);
 
 #ifdef UNIV_LOG_ARCHIVE
@@ -1320,6 +1324,18 @@ mem_free_and_error:
 
 #endif
 #endif /* MYSQL_VERSION_ID */
+
+#if MYSQL_VERSION_ID >= 50600
+	/* Assign the default value to srv_undo_dir if it's not specified, as
+	my_getopt does not support default values for string options. We also
+	ignore the option and override innodb_undo_directory on --prepare,
+	because separate undo tablespaces are copied to the root backup
+	directory. */
+
+	if (!srv_undo_dir || !xtrabackup_backup) {
+		srv_undo_dir = (char *) ".";
+	}
+#endif
 
 	return(FALSE);
 
@@ -2468,7 +2484,24 @@ xb_data_files_init(void)
 		return(DB_ERROR);
 	}
 
-	return(fil_load_single_table_tablespaces());
+	err = fil_load_single_table_tablespaces();
+	if (err != DB_SUCCESS) {
+		return(err);
+	}
+
+#if MYSQL_VERSION_ID >= 50600
+	/* Add separate undo tablespaces to fil_system */
+
+	err = srv_undo_tablespaces_init(FALSE,
+					TRUE,
+					srv_undo_tablespaces,
+					&srv_undo_tablespaces_open);
+	if (err != DB_SUCCESS) {
+		return(err);
+	}
+#endif
+
+	return(DB_SUCCESS);
 }
 
 /************************************************************************
@@ -5159,6 +5192,14 @@ next_opt:
 		}
 		printf("innodb_file_per_table = %d\n",
 		       (int) innobase_file_per_table);
+#endif
+#if MYSQL_VERSION_ID >= 50600
+		if (srv_undo_dir) {
+
+			printf("innodb_undo_directory = \"%s\"\n",
+			       srv_undo_dir);
+		}
+		printf("innodb_undo_tablespaces = %lu\n", srv_undo_tablespaces);
 #endif
 		exit(EXIT_SUCCESS);
 	}

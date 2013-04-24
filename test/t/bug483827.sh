@@ -18,10 +18,7 @@ backup_dir=$topdir/backup
 modify_args
 
 # make my_multi.cnf
-echo "
-[mysqld1]
-datadir=${mysql_datadir}
-tmpdir=$mysql_tmpdir" > $topdir/my_multi.cnf
+sed -e 's/\[mysqld\]/[mysqld1]/' $topdir/my.cnf > $topdir/my_multi.cnf
 
 # Backup
 innobackupex --no-timestamp --defaults-group=mysqld1 $backup_dir
