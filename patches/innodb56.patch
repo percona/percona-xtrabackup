@@ -524,7 +524,7 @@
  
  		if (thd && thd_sql_command(thd) == SQLCOM_DROP_TABLE) {
  
-@@ -16642,45 +16642,21 @@
+@@ -16642,45 +16642,24 @@
  void
  ib_logf(
  /*====*/
@@ -551,7 +551,8 @@
 -	str = static_cast<char*>(malloc(BUFSIZ));
 -	my_vsnprintf(str, BUFSIZ, format, args);
 -#endif /* __WIN__ */
--
++	/* Don't use server logger for XtraBackup, just print to stderr. */
+ 
 -	switch(level) {
 -	case IB_LOG_LEVEL_INFO:
 -		sql_print_information("InnoDB: %s", str);
@@ -566,7 +567,8 @@
 -		sql_print_error("InnoDB: %s", str);
 -		break;
 -	}
-+	/* Don't use server logger for XtraBackup, just print to stderr. */
++	fprintf(stderr, "InnoDB: ");
++
 +	vfprintf(stderr, format, args);
  
  	va_end(args);
