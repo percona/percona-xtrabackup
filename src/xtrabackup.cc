@@ -211,7 +211,7 @@ long innobase_log_buffer_size = 1024*1024L;
 long innobase_log_files_in_group = 2;
 long innobase_open_files = 300L;
 
-long innobase_page_size = (1 << 14); /* 16KB */
+longlong innobase_page_size = (1LL << 14); /* 16KB */
 #ifdef XTRADB_BASED
 static ulong innobase_log_block_size = 512;
 #endif
@@ -418,8 +418,10 @@ enum options_xtrabackup
 #if MYSQL_VERSION_ID >= 50500
   OPT_INNODB_USE_NATIVE_AIO,
 #endif
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
   OPT_INNODB_PAGE_SIZE,
+#endif
+#ifdef XTRADB_BASED
   OPT_INNODB_LOG_BLOCK_SIZE,
   OPT_INNODB_FAST_CHECKSUM,
   OPT_INNODB_EXTRA_UNDOSLOTS,
@@ -761,11 +763,15 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*) &srv_use_native_aio, 0, GET_BOOL, NO_ARG,
    FALSE, 0, 0, 0, 0, 0},
 #endif
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
   {"innodb_page_size", OPT_INNODB_PAGE_SIZE,
    "The universal page size of the database.",
    (G_PTR*) &innobase_page_size, (G_PTR*) &innobase_page_size, 0,
-   GET_LONG, REQUIRED_ARG, (1 << 14), (1 << 12), (1 << UNIV_PAGE_SIZE_SHIFT_MAX), 0, 1L, 0},
+   /* Use GET_LL to support numeric suffixes in 5.6 */
+   GET_LL, REQUIRED_ARG,
+   (1LL << 14), (1LL << 12), (1LL << UNIV_PAGE_SIZE_SHIFT_MAX), 0, 1L, 0},
+#endif
+#ifdef XTRADB_BASED
   {"innodb_log_block_size", OPT_INNODB_LOG_BLOCK_SIZE,
   "The log block size of the transaction log file. "
    "Changing for created log file is not supported. Use on your own risk!",
@@ -1032,30 +1038,29 @@ innodb_init_param(void)
 	/* dummy for initialize all_charsets[] */
 	get_charset_name(0);
 
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
 	srv_page_size = 0;
 	srv_page_size_shift = 0;
 
-	if (innobase_page_size != (1 << 14)) {
-		int n_shift = get_bit_shift(innobase_page_size);
+	if (innobase_page_size != (1LL << 14)) {
+		int n_shift = get_bit_shift((ulint) innobase_page_size);
 
 		if (n_shift >= 12 && n_shift <= UNIV_PAGE_SIZE_SHIFT_MAX) {
-			msg("InnoDB: Warning: innodb_page_size has been "
-			    "changed from default value 16384.\n");
 			srv_page_size_shift = n_shift;
 			srv_page_size = 1 << n_shift;
 			msg("InnoDB: The universal page size of the "
 			    "database is set to %lu.\n", srv_page_size);
 		} else {
 			msg("InnoDB: Error: invalid value of "
-			    "innobase_page_size: %lu", innobase_page_size);
+			    "innobase_page_size: %lld", innobase_page_size);
 			exit(EXIT_FAILURE);
 		}
 	} else {
 		srv_page_size_shift = 14;
 		srv_page_size = (1 << srv_page_size_shift);
 	}
-
+#endif
+#ifdef XTRADB_BASED
 	if (!xb_init_log_block_size()) {
 		goto error;
 	}
@@ -4643,7 +4648,7 @@ skip_check:
 	srv_max_n_threads = 1000;
 	os_sync_mutex = NULL;
 	ut_mem_init();
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
 	/* temporally dummy value to avoid crash */
 	srv_page_size_shift = 14;
 	srv_page_size = (1 << srv_page_size_shift);
@@ -5105,10 +5110,12 @@ next_opt:
 	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, NULL);
 	xtrabackup_target_dir= xtrabackup_real_target_dir;
 
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
 	/* temporary setting of enough size */
 	srv_page_size_shift = UNIV_PAGE_SIZE_SHIFT_MAX;
 	srv_page_size = UNIV_PAGE_SIZE_MAX;
+#endif
+#ifdef XTRADB_BASED
 	srv_log_block_size = 512;
 #endif
 	if (xtrabackup_backup && xtrabackup_incremental) {
@@ -5183,15 +5190,15 @@ next_opt:
 		printf("innodb_flush_method = \"%s\"\n",
 		       (innobase_unix_file_flush_method != NULL) ?
 		       innobase_unix_file_flush_method : "");
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
+		printf("innodb_page_size = %lld\n", innobase_page_size);
+#endif
 #ifdef XTRADB_BASED
 		printf("innodb_fast_checksum = %d\n", innobase_fast_checksum);
-		printf("innodb_page_size = %ld\n", innobase_page_size);
 		printf("innodb_log_block_size = %lu\n", innobase_log_block_size);
 		if (innobase_doublewrite_file != NULL) {
 			printf("innodb_doublewrite_file = %s\n", innobase_doublewrite_file);
 		}
-		printf("innodb_file_per_table = %d\n",
-		       (int) innobase_file_per_table);
 #endif
 #if MYSQL_VERSION_ID >= 50600
 		if (srv_undo_dir) {
