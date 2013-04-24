@@ -142,7 +142,6 @@ lsn_t checkpoint_no_start;
 lsn_t log_copy_scanned_lsn;
 ibool log_copying = TRUE;
 ibool log_copying_running = FALSE;
-ibool log_copying_succeed = FALSE;
 
 ibool xtrabackup_logfile_is_renamed = FALSE;
 
@@ -2173,17 +2172,22 @@ log_copying_thread(
 
 		counter++;
 		if(counter >= SLEEPING_PERIOD * 5) {
-			if(xtrabackup_copy_logfile(log_copy_scanned_lsn, FALSE))
-				goto end;
+
+			if(xtrabackup_copy_logfile(log_copy_scanned_lsn,
+						   FALSE)) {
+				exit(EXIT_FAILURE);
+			}
+
 			counter = 0;
 		}
 	}
 
 	/* last copying */
-	if(xtrabackup_copy_logfile(log_copy_scanned_lsn, TRUE))
-		goto end;
+	if(xtrabackup_copy_logfile(log_copy_scanned_lsn, TRUE)) {
 
-	log_copying_succeed = TRUE;
+		exit(EXIT_FAILURE);
+	}
+
 end:
 	log_copying_running = FALSE;
 	my_thread_end();
@@ -3175,11 +3179,6 @@ skip_last_cp:
 		os_thread_sleep(200000); /*0.2 sec*/
 	}
 	msg("\n");
-
-	if (!log_copying_succeed) {
-		msg("xtrabackup: Error: log_copying_thread failed.\n");
-		exit(EXIT_FAILURE);
-	}
 
 	/* Signal innobackupex that log copying has stopped and it may now
 	unlock tables, so we can possibly stream xtrabackup_logfile later
