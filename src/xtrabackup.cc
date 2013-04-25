@@ -219,6 +219,7 @@ static ulong innobase_log_block_size = 512;
 my_bool innobase_fast_checksum = FALSE;
 my_bool	innobase_extra_undoslots = FALSE;
 char*	innobase_doublewrite_file = NULL;
+char*	innobase_buffer_pool_filename = NULL;
 
 longlong innobase_buffer_pool_size = 8*1024*1024L;
 longlong innobase_log_file_size = DEFAULT_LOG_FILE_SIZE;
@@ -428,6 +429,7 @@ enum options_xtrabackup
   OPT_INNODB_EXTRA_UNDOSLOTS,
   OPT_INNODB_DOUBLEWRITE_FILE,
 #endif
+  OPT_INNODB_BUFFER_POOL_FILENAME,
   OPT_INNODB_FORCE_RECOVERY,
   OPT_INNODB_LOCK_WAIT_TIMEOUT,
   OPT_INNODB_LOG_BUFFER_SIZE,
@@ -792,6 +794,11 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*) &innobase_doublewrite_file, (G_PTR*) &innobase_doublewrite_file,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
+  {"innodb_buffer_pool_filename", OPT_INNODB_BUFFER_POOL_FILENAME,
+   "Filename to/from which to dump/load the InnoDB buffer pool",
+   (G_PTR*) &innobase_buffer_pool_filename,
+   (G_PTR*) &innobase_buffer_pool_filename,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
 #ifndef __WIN__
   {"debug-sync", OPT_XTRA_DEBUG_SYNC,
@@ -5304,6 +5311,10 @@ next_opt:
 		}
 		printf("innodb_undo_tablespaces = %lu\n", srv_undo_tablespaces);
 #endif
+		printf("innodb_buffer_pool_filename = \"%s\"\n",
+			innobase_buffer_pool_filename ?
+				innobase_buffer_pool_filename :
+				"ib_buffer_pool");
 		exit(EXIT_SUCCESS);
 	}
 
