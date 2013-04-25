@@ -1461,6 +1461,7 @@ sub write_binlog_info {
     # from the SHOW MASTER STATUS output
     my $filename = $con->{master_status}->{File};
     my $position = $con->{master_status}->{Position};
+    my $gtid = $con->{master_status}->{Executed_Gtid_Set} || '';
 
     # Do not create xtrabackup_binlog_info if binary log is disabled
     if (!defined($filename) or !defined($position)) {
@@ -1469,7 +1470,7 @@ sub write_binlog_info {
 
     # write binlog info file
     open(FILE, ">$binlog_info") || Die "Failed to open file '$binlog_info': $!";
-    print FILE  "$filename\t$position\t\t\n";
+    print FILE  "$filename\t$position\t\t$gtid\n";
     close(FILE);
 
     if ($option_stream) {
@@ -1479,6 +1480,9 @@ sub write_binlog_info {
     }
 
     $mysql_binlog_position = "filename '$filename', position $position";
+    if ($gtid) {
+        $mysql_binlog_position .= ", gtid_executed $gtid";
+    }
 }
 
 #
