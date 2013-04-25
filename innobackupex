@@ -392,6 +392,8 @@ sub Die {
 #
 sub backup {
     my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
+    my $buffer_pool_filename = get_option(\%config, $option_defaults_group,
+                                          'innodb_buffer_pool_filename');
 
     # check that we can connect to the database. This done by
     # connecting, issuing a query, and closing the connection.
@@ -447,21 +449,24 @@ sub backup {
     # Close the DB connection
     mysql_close();
 
-    # copy ib_lru_dump
-    if (-e "$orig_datadir/ib_lru_dump") {
-        if ($option_remote_host) {
-            print STDERR "$prefix Backing up file 'ib_lru_dump'\n";
-            system("scp $option_scp_opt '$orig_datadir/ib_lru_dump' '$option_remote_host:$backup_dir/ib_lru_dump'")
-                and Die "Failed to scp file 'ib_lru_dump': $!";
-        } elsif ($option_stream) {
-            print STDERR "$prefix Backing up as tar stream 'ib_lru_dump'\n";
-            system("cd $orig_datadir; $stream_cmd ib_lru_dump")
-                and Die "Failed to stream 'ib_lru_dump': $!";
-        } elsif (!$option_rsync) {
-            my $src_name = escape_path("$orig_datadir/ib_lru_dump");
-            my $dst_name = escape_path("$backup_dir/ib_lru_dump");
-            system("$CP_CMD \"$src_name\" \"$dst_name\"")
-                and Die "Failed to copy file 'ib_lru_dump': $!";
+    # Copy buffer poll dump and/or LRU dump
+    foreach my $dump_name ($buffer_pool_filename, 'ib_lru_dump') {
+        if (-e "$orig_datadir/$dump_name") {
+            if ($option_remote_host) {
+                print STDERR "$prefix Backing up file '$dump_name'\n";
+                system("scp $option_scp_opt '$orig_datadir/$dump_name' " .
+                       "'$option_remote_host:$backup_dir/$dump_name'")
+                    and Die "Failed to scp file '$dump_name': $!";
+            } elsif ($option_stream) {
+                print STDERR "$prefix Backing up as tar stream '$dump_name'\n";
+                system("cd $orig_datadir; $stream_cmd $dump_name")
+                    and Die "Failed to stream '$dump_name': $!";
+            } elsif (!$option_rsync) {
+                my $src_name = escape_path("$orig_datadir/$dump_name");
+                my $dst_name = escape_path("$backup_dir/$dump_name");
+                system("$CP_CMD \"$src_name\" \"$dst_name\"")
+                    and Die "Failed to copy file '$dump_name': $!";
+            }
         }
     }
 
@@ -2204,6 +2209,8 @@ sub remove_from_array {
 sub backup_files {
     my $prep_mode = shift;
     my $source_dir = get_option(\%config, $option_defaults_group, 'datadir');
+    my $buffer_pool_filename = get_option(\%config, $option_defaults_group,
+                                          'innodb_buffer_pool_filename');
     my @list;
     my $file;
     my $database;
@@ -2338,10 +2345,12 @@ sub backup_files {
     closedir(DIR);
 
     if ($option_rsync) {
-        if (-e "$source_dir/ib_lru_dump") {
-            print RSYNC "ib_lru_dump\n";
-            if (!$prep_mode) {
-                $rsync_files_hash{"ib_lru_dump"} = 1;
+        foreach my $dump_name ($buffer_pool_filename, 'ib_lru_dump') {
+            if (-e "$source_dir/$dump_name") {
+                print RSYNC "$dump_name\n";
+                if (!$prep_mode) {
+                    $rsync_files_hash{"$dump_name"} = 1;
+                }
             }
         }
 	close(RSYNC);
