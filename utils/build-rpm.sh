@@ -100,7 +100,7 @@ test -e "$SOURCEDIR/VERSION" || exit 2
 # Build information
 REDHAT_RELEASE="$(grep -o 'release [0-9][0-9]*' /etc/redhat-release | \
     cut -d ' ' -f 2)"
-REVISION="$(cd "$SOURCEDIR"; bzr log -r-1 | grep ^revno: | cut -d ' ' -f 2)"
+REVISION="$(cd "$SOURCEDIR"; bzr revno)"
 
 # Fix problems in rpmbuild for rhel4: _libdir and _arch are not correctly set.
 if test "x$REDHAT_RELEASE" == "x4" && test "x$TARGET_ARG" == "xi686"
