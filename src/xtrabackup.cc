@@ -5141,7 +5141,7 @@ skip_check:
 			       strlen(info_file_path) -
 			       4, ".exp");
 
-      len = strlen(info_file_path);
+			len = strlen(info_file_path);
 
 			p = info_file_path;
 			prev = NULL;
@@ -5213,34 +5213,34 @@ skip_check:
 				    (ulint) index->page);
 				index = dict_table_get_next_index(index);
 				n_index++;
+			}
 
-				srv_normalize_path_for_win(info_file_path);
-				info_file = xb_file_create(
-					info_file_path,
-					OS_FILE_OVERWRITE,
-					OS_FILE_NORMAL, OS_DATA_FILE,
-					&success);
-				if (!success) {
-					os_file_get_last_error(TRUE);
-					goto next_node;
-				}
-				success = xb_os_file_write(info_file_path,
-							   info_file, page,
-							   0, UNIV_PAGE_SIZE);
-				if (!success) {
-					os_file_get_last_error(TRUE);
-					goto next_node;
-				}
-				success = xb_file_flush(info_file);
-				if (!success) {
-					os_file_get_last_error(TRUE);
-					goto next_node;
-				}
+			srv_normalize_path_for_win(info_file_path);
+			info_file = xb_file_create(
+				info_file_path,
+				OS_FILE_OVERWRITE,
+				OS_FILE_NORMAL, OS_DATA_FILE,
+				&success);
+			if (!success) {
+				os_file_get_last_error(TRUE);
+				goto next_node;
+			}
+			success = xb_os_file_write(info_file_path,
+						   info_file, page,
+						   0, UNIV_PAGE_SIZE);
+			if (!success) {
+				os_file_get_last_error(TRUE);
+				goto next_node;
+			}
+			success = xb_file_flush(info_file);
+			if (!success) {
+				os_file_get_last_error(TRUE);
+				goto next_node;
+			}
 next_node:
-				if (info_file != XB_FILE_UNDEFINED) {
-					os_file_close(info_file);
-					info_file = XB_FILE_UNDEFINED;
-				}
+			if (info_file != XB_FILE_UNDEFINED) {
+				os_file_close(info_file);
+				info_file = XB_FILE_UNDEFINED;
 			}
 			mutex_exit(&(dict_sys->mutex));
 		}
