@@ -18,7 +18,7 @@ function vlog
 
 function clean()
 {
-    rm -rf ${TEST_BASEDIR}/var[0-9]
+    echo rm -rf ${TEST_BASEDIR}/var[0-9]
 }
 
 function die()
