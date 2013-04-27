@@ -2178,6 +2178,7 @@ log_copying_thread(
 		if (log_copying) {
 			if(xtrabackup_copy_logfile(log_copy_scanned_lsn,
 						   FALSE)) {
+
 				exit(EXIT_FAILURE);
 			}
 		}
