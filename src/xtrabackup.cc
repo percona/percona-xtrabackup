@@ -5325,6 +5325,14 @@ next_opt:
 		}
 		printf("innodb_undo_tablespaces = %lu\n", srv_undo_tablespaces);
 #endif
+#if MYSQL_VERSION_ID >= 50600
+		if (srv_undo_dir) {
+
+			printf("innodb_undo_directory = \"%s\"\n",
+			       srv_undo_dir);
+		}
+		printf("innodb_undo_tablespaces = %lu\n", srv_undo_tablespaces);
+#endif
 		exit(EXIT_SUCCESS);
 	}
 
