@@ -1131,3 +1131,22 @@ xb_dict_index_field_to_index_field(
 #endif
 	index_field->prefix_len = dict_index_field->prefix_len;
 }
+
+/**********************************************************//**
+Waits for an event object until it is in the signaled state or
+a timeout is exceeded.
+@return 0 if success, OS_SYNC_TIME_EXCEEDED if timeout was exceeded */
+ulint
+xb_event_wait_time(
+/*===============*/
+	os_event_t	event,			/*!< in: event to wait */
+	ulint		time_in_usec)		/*!< in: timeout in
+						microseconds, or
+						OS_SYNC_INFINITE_TIME */
+{
+#if (MYSQL_VERSION_ID > 50500) && (MYSQL_VERSION_ID > 50600)
+	return os_event_wait_time_low(event, time_in_usec, 0);
+#else
+	return os_event_wait_time(event, time_in_usec);
+#endif
+}

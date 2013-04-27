@@ -102,6 +102,7 @@ my_bool xtrabackup_create_ib_logfile = FALSE;
 long xtrabackup_throttle = 0; /* 0:unlimited */
 lint io_ticket;
 os_event_t wait_throttle = NULL;
+os_event_t log_copying_stop = NULL;
 
 char *xtrabackup_incremental = NULL;
 lsn_t incremental_lsn;
@@ -169,6 +170,10 @@ char *xtrabackup_encrypt_key = NULL;
 char *xtrabackup_encrypt_key_file = NULL;
 uint xtrabackup_encrypt_threads;
 ulonglong xtrabackup_encrypt_chunk_size = 0;
+
+/* sleep interval beetween log copy iterations in log copying thread
+in milliseconds (default is 1 second) */
+int xtrabackup_log_copy_interval = 1000;
 
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
@@ -372,6 +377,7 @@ enum options_xtrabackup
   OPT_XTRA_SUSPEND_AT_END,
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_THROTTLE,
+  OPT_XTRA_LOG_COPY_INTERVAL,
   OPT_XTRA_INCREMENTAL,
   OPT_XTRA_INCREMENTAL_BASEDIR,
   OPT_XTRA_EXTRA_LSNDIR,
@@ -520,6 +526,9 @@ static struct my_option xb_long_options[] =
   {"throttle", OPT_XTRA_THROTTLE, "limit count of IO operations (pairs of read&write) per second to IOS values (for '--backup')",
    (G_PTR*) &xtrabackup_throttle, (G_PTR*) &xtrabackup_throttle,
    0, GET_LONG, REQUIRED_ARG, 0, 0, LONG_MAX, 0, 1, 0},
+  {"log-copy-interval", OPT_XTRA_LOG_COPY_INTERVAL, "time interval between checks done by log copying thread in milliseconds (default is 1 second).",
+   (G_PTR*) &xtrabackup_log_copy_interval, (G_PTR*) &xtrabackup_log_copy_interval,
+   0, GET_LONG, REQUIRED_ARG, 1000, 0, LONG_MAX, 0, 1, 0},
   {"extra-lsndir", OPT_XTRA_EXTRA_LSNDIR, "(for --backup): save an extra copy of the xtrabackup_checkpoints file in this directory.",
    (G_PTR*) &xtrabackup_extra_lsndir, (G_PTR*) &xtrabackup_extra_lsndir,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -2143,9 +2152,6 @@ error:
 	return(TRUE);
 }
 
-/* copying logfile in background */
-#define SLEEPING_PERIOD 5
-
 static
 #ifndef __WIN__
 void*
@@ -2155,8 +2161,6 @@ ulint
 log_copying_thread(
 	void*	arg __attribute__((unused)))
 {
-	ulint	counter = 0;
-
 	/*
 	  Initialize mysys thread-specific memory so we can
 	  use mysys functions in this thread.
@@ -2168,17 +2172,14 @@ log_copying_thread(
 	log_copying_running = TRUE;
 
 	while(log_copying) {
-		os_thread_sleep(200000); /*0.2 sec*/
-
-		counter++;
-		if(counter >= SLEEPING_PERIOD * 5) {
-
+		os_event_reset(log_copying_stop);
+		xb_event_wait_time(log_copying_stop,
+				xtrabackup_log_copy_interval * 1000ULL);
+		if (log_copying) {
 			if(xtrabackup_copy_logfile(log_copy_scanned_lsn,
 						   FALSE)) {
 				exit(EXIT_FAILURE);
 			}
-
-			counter = 0;
 		}
 	}
 
@@ -3070,6 +3071,7 @@ reread_log_header:
 		exit(EXIT_FAILURE);
 
 
+	log_copying_stop = xb_os_event_create(NULL);
 	os_thread_create(log_copying_thread, NULL, &log_copying_thread_id);
 
 	/* Suspend at start, for the FLUSH CHANGED_PAGE_BITMAPS call */
@@ -3173,12 +3175,15 @@ reread_log_header:
 skip_last_cp:
 	/* stop log_copying_thread */
 	log_copying = FALSE;
+	os_event_set(log_copying_stop);
 	msg("xtrabackup: Stopping log copying thread.\n");
 	while (log_copying_running) {
 		msg(".");
 		os_thread_sleep(200000); /*0.2 sec*/
 	}
 	msg("\n");
+
+	os_event_free(log_copying_stop);
 
 	/* Signal innobackupex that log copying has stopped and it may now
 	unlock tables, so we can possibly stream xtrabackup_logfile later

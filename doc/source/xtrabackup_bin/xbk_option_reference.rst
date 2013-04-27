@@ -109,6 +109,10 @@ Options
 
    This option is to set the group which should be read from the configuration file. This is used by innobackupex if you use the `--defaults-group` option. It is needed for mysqld_multi deployments.
 
+.. option:: --log-copy-interval
+
+   This option specifies time interval between checks done by log copying thread in milliseconds (default is 1 second).
+
 .. option:: --log-stream
 
    Makes xtrabackup not copy data files, and output the contents of the InnoDB log files to STDOUT until the :option:`--suspend-at-end` file is deleted. This option enables :option:`--suspend-at-end` automatically.
