@@ -4674,6 +4674,21 @@ io_handler_thread(
 #define SRV_MAX_N_PENDING_SYNC_IOS	100
 
 /************************************************************************
+@return TRUE if table should be opened. */
+static
+ibool
+xb_check_if_open_tablespace(
+	const char*	db,
+	const char*	table)
+{
+	char buf[FN_REFLEN];
+
+	snprintf(buf, sizeof(buf), "%s%s/%s", xb_dict_prefix, db, table);
+
+	return !check_if_skip_table(buf, "ibd");
+}
+
+/************************************************************************
 Initialize the tablespace memory cache and populate it by scanning for and
 opening data files.
 @returns DB_SUCCESS or error code.*/
@@ -4757,7 +4772,7 @@ xb_data_files_init(void)
 		return(DB_ERROR);
 	}
 
-	err = fil_load_single_table_tablespaces();
+	err = fil_load_single_table_tablespaces(xb_check_if_open_tablespace);
 	if (err != DB_SUCCESS) {
 		return(err);
 	}

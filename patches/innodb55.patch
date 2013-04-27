@@ -442,6 +442,15 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
+@@ -3520,7 +3625,7 @@
+ @return	DB_SUCCESS or error number */
+ UNIV_INTERN
+ ulint
+-fil_load_single_table_tablespaces(void)
++fil_load_single_table_tablespaces(ibool (*pred)(const char*, const char*))
+ /*===================================*/
+ {
+ 	int		ret;
 @@ -3576,7 +3681,9 @@
  			dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
@@ -453,7 +462,20 @@
  
  		if (dbdir != NULL) {
  			/* printf("Opened dir %s\n", dbinfo.name); */
-@@ -3775,15 +3882,97 @@
+@@ -3602,8 +3709,11 @@
+ 						   ".ibd")) {
+ 					/* The name ends in .ibd; try opening
+ 					the file */
+-					fil_load_single_table_tablespace(
++					if (!pred ||
++					    pred(dbinfo.name, fileinfo.name)) {
++						fil_load_single_table_tablespace(
+ 						dbinfo.name, fileinfo.name);
++					}
+ 				}
+ next_file_item:
+ 				ret = fil_file_readdir_next_file(&err,
+@@ -3775,15 +3885,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -559,7 +581,7 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4172,7 +4361,7 @@
+@@ -4172,7 +4364,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -568,7 +590,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -4192,10 +4381,13 @@
+@@ -4192,10 +4384,13 @@
  	}
  
  	if (node->open == FALSE) {
@@ -583,7 +605,7 @@
  	}
  
  	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
-@@ -4208,6 +4400,8 @@
+@@ -4208,6 +4403,8 @@
  	}
  
  	node->n_pending++;
@@ -592,7 +614,7 @@
  }
  
  /********************************************************************//**
-@@ -4390,6 +4584,16 @@
+@@ -4390,6 +4587,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -631,6 +653,17 @@
  	while (sum_pages < n_pages) {
  		n_bytes = ibuf_contract_ext(&n_pag2, sync);
  
+--- a/storage/innobase/include/fil0fil.h
++++ b/storage/innobase/include/fil0fil.h
+@@ -505,7 +505,7 @@
+ @return	DB_SUCCESS or error number */
+ UNIV_INTERN
+ ulint
+-fil_load_single_table_tablespaces(void);
++fil_load_single_table_tablespaces(ibool (*pred)(const char*, const char*));
+ /*===================================*/
+ /*******************************************************************//**
+ Returns TRUE if a single-table tablespace does not exist in the memory cache,
 --- a/storage/innobase/include/srv0srv.h
 +++ b/storage/innobase/include/srv0srv.h
 @@ -218,6 +218,10 @@
@@ -823,6 +856,15 @@
  		}
  	}
  
+@@ -2854,7 +2858,7 @@
+ 		"InnoDB: Reading tablespace information"
+ 		" from the .ibd files...\n");
+ 
+-	fil_load_single_table_tablespaces();
++	fil_load_single_table_tablespaces(NULL);
+ 
+ 	/* If we are using the doublewrite method, we will
+ 	check if there are half-written pages in data files,
 @@ -2863,12 +2867,14 @@
  
  	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
