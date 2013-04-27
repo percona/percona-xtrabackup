@@ -2,15 +2,15 @@
 
 function check_partitioning()
 {
-   $MYSQL $MYSQL_ARGS -Ns -e "show variables like 'have_partitioning'"
+    $MYSQL $MYSQL_ARGS -Ns -e "SHOW PLUGINS" 2> /dev/null |
+      egrep -q "^partition"
 }
 
 function require_partitioning()
 {
-	PARTITION_CHECK=`check_partitioning`
-
-	if [ -z "$PARTITION_CHECK" ]; then
-	    echo "Requires Partitioning." > $SKIPPED_REASON
+	if ! check_partitioning
+	then
+	    echo "Requires support for partitioning." > $SKIPPED_REASON
 	    exit $SKIPPED_EXIT_CODE
 	fi
 }
