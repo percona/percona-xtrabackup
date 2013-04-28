@@ -31,7 +31,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 struct xb_fil_cur_t {
 	os_file_t	file;		/*!< source file handle */
-	char		path[FN_REFLEN];/*!< normalized file path */
+	char		rel_path[FN_REFLEN];
+					/*!< normalized file path */
+	char		abs_path[FN_REFLEN];
+					/*!< absolute file path */
 	MY_STAT		statinfo;	/*!< information about the file */
 	ulint		zip_size;	/*!< compressed page size in bytes or 0
 					for uncompressed pages */

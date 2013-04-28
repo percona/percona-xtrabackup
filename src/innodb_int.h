@@ -245,10 +245,8 @@ extern "C" {
 
 #ifdef __WIN__
 #define SRV_PATH_SEPARATOR	'\\'
-#define SRV_PATH_SEPARATOR_STR	"\\"
 #else
 #define SRV_PATH_SEPARATOR	'/'
-#define SRV_PATH_SEPARATOR_STR	"/"
 #endif
 
 #ifndef UNIV_PAGE_SIZE_MAX

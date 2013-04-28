@@ -91,7 +91,7 @@ wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
 	if (!xb_write_delta_metadata(meta_name, &info)) {
 		msg("[%02u] xtrabackup: Error: "
 		    "failed to write meta info for %s\n",
-		    cursor->thread_n, cursor->path);
+		    cursor->thread_n, cursor->rel_path);
 		return(FALSE);
 	}
 

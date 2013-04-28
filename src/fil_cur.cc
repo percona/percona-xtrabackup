@@ -32,6 +32,48 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 /* Size of read buffer in pages */
 #define XB_FIL_CUR_PAGES 64
 
+/***********************************************************************
+Extracts the relative path ("database/table.ibd") of a tablespace from a
+specified possibly absolute path.
+
+For user tablespaces both "./database/table.ibd" and
+"/remote/dir/database/table.ibd" result in "database/table.ibd".
+
+For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
+and "./ibdata1" yield "ibdata1" in the output. */
+static
+const char *
+xb_get_relative_path(
+/*=================*/
+	const char*	path,		/*!< in: tablespace path (either
+			  		relative or absolute) */
+	ibool		is_system)	/*!< in: TRUE for system tablespaces,
+					i.e. when only the filename must be
+					returned. */
+{
+	const char *next;
+	const char *cur;
+	const char *prev;
+
+	prev = NULL;
+	cur = path;
+
+	while ((next = strchr(cur, SRV_PATH_SEPARATOR)) != NULL) {
+
+		prev = cur;
+		cur = next + 1;
+	}
+
+	if (is_system) {
+
+		return(cur);
+	} else {
+
+		return((prev == NULL) ? cur : prev);
+	}
+
+}
+
 /************************************************************************
 Open a source file cursor and initialize the associated read filter.
 
@@ -57,21 +99,15 @@ xb_fil_cur_open(
 	cursor->space_id = node->space->id;
 	cursor->is_system = trx_sys_sys_space(node->space->id);
 
-	/* Make the file path relative to the backup root,
-	i.e. "ibdata1" for system tablespace or database/table.ibd for
-	per-table spaces. */
-	if (cursor->is_system) {
-		char *next, *p;
+	strncpy(cursor->abs_path, node->space->name, sizeof(cursor->abs_path));
 
-		p = node->name;
-		while ((next = strstr(p, SRV_PATH_SEPARATOR_STR)) != NULL) {
-			p = next + 1;
-		}
-		strncpy(cursor->path, p, sizeof(cursor->path));
-	} else {
-		/* file per table style "./database/table.ibd" */
-		strncpy(cursor->path, node->name, sizeof(cursor->path));
-	}
+	/* Get the relative path for the destination tablespace name, i.e. the
+	one that can be appended to the backup root directory. Non-system
+	tablespaces may have absolute paths for remote tablespaces in MySQL
+	5.6+. We want to make "local" copies for the backup. */
+	strncpy(cursor->rel_path,
+		xb_get_relative_path(node->name, cursor->is_system),
+		sizeof(cursor->rel_path));
 
 	/* Open the file */
 
@@ -222,7 +258,7 @@ read_retry:
 					    "Error: failed to read page after "
 					    "10 retries. File %s seems to be "
 					    "corrupted.\n", cursor->thread_n,
-					    cursor->path);
+					    cursor->abs_path);
 					ret = XB_FIL_CUR_ERROR;
 					break;
 				}

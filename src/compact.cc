@@ -157,7 +157,7 @@ check_if_skip_page(xb_wf_compact_ctxt_t *cp, xb_fil_cur_t *cursor, ulint offset)
 			    "clustered index root page of tablespace %s. "
 			    "Will not be compacted.\n",
 			    cursor->thread_n,
-			    page_type, cursor->path);
+			    page_type, cursor->rel_path);
 
 			cp->skip = TRUE;
 
