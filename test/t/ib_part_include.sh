@@ -27,9 +27,9 @@ vlog "Backup taken"
 
 # also test xtrabackup --stats work with --tables-file
 COUNT=`xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup \
-       | grep table: | awk '{print $2}' | sort -u | wc -l`
+       | grep table: | grep -v SYS_ | awk '{print $2}' | sort -u | wc -l`
 
-if [ $COUNT != 7 ] ; then
+if [ $COUNT != 5 ] ; then
 	vlog "xtrabackup --stats does not work"
 	exit -1
 fi

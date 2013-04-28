@@ -233,6 +233,7 @@ my $copy_dir_dst;
 my $cleanup_dir_dst;
 my $process_dir_exclude_regexp;
 my $copy_dir_overwrite;
+my $copy_dir_resolve_isl;
 
 ######################################################################
 # program execution begins here
@@ -621,11 +622,31 @@ sub move_file {
 #
 sub process_file {
     my $process_func = shift;
+    my $dst_path;
 
     if (/$process_dir_exclude_regexp/) {
 	return;
     }
-    (my $dst_path = $File::Find::name) =~ s/^$copy_dir_src/$copy_dir_dst/;
+
+    # If requested, check if there is a "link" in the .isl file for an InnoDB
+    # tablespace and use it as a destination path.
+    if ($copy_dir_resolve_isl && $File::Find::name =~ m/\.ibd$/) {
+        my $isl_path;
+
+        ($isl_path = $File::Find::name) =~ s/\.ibd$/.isl/;
+        if (-e "$isl_path") {
+            my @lines;
+            print STDERR "Found an .isl file for $File::Find::name\n";
+            file_to_array($isl_path, \@lines);
+            $dst_path = $lines[0];
+            print STDERR "Using $dst_path as the destination path\n";
+        }
+    }
+
+    if (! defined $dst_path) {
+        ($dst_path = $File::Find::name) =~ s/^$copy_dir_src/$copy_dir_dst/;
+    }
+
     if (-d "$File::Find::name") {
 	# Create the directory in the destination if necessary
 	if (! -e "$dst_path") {
@@ -681,16 +702,16 @@ sub remove_file_callback {
     }
 }
 
-#
-# copy_dir_recursively subroutine does a recursive copy of a specified
-# directory excluding files matching a specifies regexp. If $overwrite
-# is 1, it overwrites the existing files. It also updates processed_files
-# hash with the relative paths of files been copied.
+# copy_dir_recursively subroutine does a recursive copy of a specified directory
+# excluding files matching a specifies regexp. If $overwrite is 1, it overwrites
+# the existing files. If $resolve_isl is 1, it also resolves InnoDB .isl files,
+# i.e. copies to the absolute path specified in the corresponding .isl file
+# rather than the default location
 #
 # SYNOPSIS 
 #
 #     copy_dir_recursively($src_dir, $dst_dir, $exclude_regexp,
-#                          $overwrite);
+#                          $overwrite, $resolve_isl);
 #
 # TODO
 #
@@ -702,6 +723,7 @@ sub copy_dir_recursively {
     $copy_dir_dst = File::Spec->canonpath(shift);
     $process_dir_exclude_regexp = shift;
     $copy_dir_overwrite = shift;
+    $copy_dir_resolve_isl = shift;
 
     undef %processed_files;
     find(\&copy_file_callback, $copy_dir_src);
@@ -713,7 +735,7 @@ sub copy_dir_recursively {
 # SYNOPSIS
 #
 #     move_dir_recursively($src_dir, $dst_dir, $exclude_regexp,
-#                          $overwrite);
+#                          $overwrite, $resolve_isl);
 #
 # TODO
 #
@@ -725,6 +747,7 @@ sub move_dir_recursively {
     $copy_dir_dst = File::Spec->canonpath(shift);
     $process_dir_exclude_regexp = shift;
     $copy_dir_overwrite = shift;
+    $copy_dir_resolve_isl = shift;
 
     undef %processed_files;
     find(\&move_file_callback, $copy_dir_src);
@@ -863,7 +886,7 @@ sub copy_back {
     my $excluded_regexp = '^(' . $excluded_files . ')$';
     print STDERR "$prefix Starting to $operation files in '$backup_dir'\n"; 
     print STDERR "$prefix back to original data directory '$orig_datadir'\n";
-    &$move_or_copy_dir($backup_dir, $orig_datadir, $excluded_regexp, 0);
+    &$move_or_copy_dir($backup_dir, $orig_datadir, $excluded_regexp, 0, 1);
 
     # copy InnoDB data files to original InnoDB data directory
     print STDERR "\n$prefix Starting to $operation InnoDB system tablespace\n";
@@ -992,7 +1015,7 @@ sub apply_log {
                         'xtrabackup_binary','xtrabackup_checkpoints',
                         '.*\.delta','.*\.meta','ib_logfile.*');
         copy_dir_recursively($option_incremental_dir, $backup_dir,
-                             '^(' . join('|', @skip_list) . ')$', 1);
+                             '^(' . join('|', @skip_list) . ')$', 1, 0);
     foreach my $c (parse_innodb_data_file_path($innodb_data_file_path)) {
             push(@skip_list, "\Q$c->{filename}\E");
         }
@@ -2203,7 +2226,7 @@ sub remove_from_array {
 
 
 #
-# backup_files subroutine copies .frm, .MRG, .MYD and .MYI files to 
+# backup_files subroutine copies .frm, .isl, .MRG, .MYD and .MYI files to 
 # backup directory.
 #
 sub backup_files {
@@ -2212,7 +2235,7 @@ sub backup_files {
     my @list;
     my $file;
     my $database;
-    my $wildcard = '*.{frm,MYD,MYI,MAD,MAI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
+    my $wildcard = '*.{frm,isl,MYD,MYI,MAD,MAI,MRG,TRG,TRN,ARM,ARZ,CSM,CSV,opt,par}';
     my $rsync_file_list;
     my $operation;
     my $rsync_tmpfile_pass1 = "$option_tmpdir/xtrabackup_rsyncfiles_pass1";
@@ -2270,7 +2293,7 @@ sub backup_files {
 
         # copy files of this database
 	opendir(DBDIR, "$source_dir/$database");
-	@list = grep(/\.(frm|MYD|MYI|MAD|MAI|MRG|TRG|TRN|ARM|ARZ|CSM|CSV|opt|par)$/, readdir(DBDIR));
+	@list = grep(/\.(frm|isl|MYD|MYI|MAD|MAI|MRG|TRG|TRN|ARM|ARZ|CSM|CSV|opt|par)$/, readdir(DBDIR));
 	closedir DBDIR;
         $file_c = @list;
         if ($file_c <= $backup_file_print_limit) {

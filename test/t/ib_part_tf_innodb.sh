@@ -30,9 +30,9 @@ innobackupex --apply-log $topdir/backup
 vlog "Backup taken"
 
 COUNT=`xtrabackup --stats --tables-file=$topdir/tables --datadir=$topdir/backup \
-       | grep table: | awk '{print $2}' | sort -u | wc -l`
+       | grep table: | grep -v SYS_ | awk '{print $2}' | sort -u | wc -l`
 echo "COUNT = $COUNT"
-if [ $COUNT != 7 ] ; then
+if [ $COUNT != 5 ] ; then
 	vlog "xtrabackup --stats does not work"
 	exit -1
 fi
