@@ -249,6 +249,23 @@ extern "C" {
 #define SRV_PATH_SEPARATOR	'/'
 #endif
 
+/** The version number of the export meta-data text file. */
+#define IB_EXPORT_CFG_VERSION_V1	0x1UL
+
+/* Maximum multi-byte character length in bytes, plus 1 */
+#define DATA_MBMAX	5
+
+/* Pack mbminlen, mbmaxlen to mbminmaxlen. */
+#define DATA_MBMINMAXLEN(mbminlen, mbmaxlen)	\
+	((mbmaxlen) * DATA_MBMAX + (mbminlen))
+/* Get mbminlen from mbminmaxlen. Cast the result of UNIV_EXPECT to ulint
+because in GCC it returns a long. */
+#define DATA_MBMINLEN(mbminmaxlen) ((ulint) \
+                                    UNIV_EXPECT(((mbminmaxlen) % DATA_MBMAX), \
+                                                1))
+/* Get mbmaxlen from mbminmaxlen. */
+#define DATA_MBMAXLEN(mbminmaxlen) ((ulint) ((mbminmaxlen) / DATA_MBMAX))
+
 #ifndef UNIV_PAGE_SIZE_MAX
 #define UNIV_PAGE_SIZE_MAX UNIV_PAGE_SIZE
 #endif
