@@ -99,14 +99,14 @@ xb_fil_cur_open(
 	cursor->space_id = node->space->id;
 	cursor->is_system = trx_sys_sys_space(node->space->id);
 
-	strncpy(cursor->abs_path, node->space->name, sizeof(cursor->abs_path));
+	strncpy(cursor->abs_path, node->name, sizeof(cursor->abs_path));
 
 	/* Get the relative path for the destination tablespace name, i.e. the
 	one that can be appended to the backup root directory. Non-system
 	tablespaces may have absolute paths for remote tablespaces in MySQL
 	5.6+. We want to make "local" copies for the backup. */
 	strncpy(cursor->rel_path,
-		xb_get_relative_path(node->name, cursor->is_system),
+		xb_get_relative_path(cursor->abs_path, cursor->is_system),
 		sizeof(cursor->rel_path));
 
 	/* Open the file */
