@@ -23,6 +23,6 @@ In addition, xtrabackup asks the operating system to perform more aggressive rea
 Copying Data Files
 ==================
 
-When copying the data files to the target directory, |xtrabackup| reads and writes 1MB of data at a time. This is not configurable. When copying the log file, |xtrabackup| reads and writes 512 bytes at a time. This is also not possible to configure, and matches |InnoDB| 's behavior.
+When copying the data files to the target directory, |xtrabackup| reads and writes 1MB of data at a time. This is not configurable. When copying the log file, |xtrabackup| reads and writes 512 bytes at a time. This is also not possible to configure, and matches InnoDB's behavior (workaround exists in |Percona Server| because it has an option to tune :option:`innodb_log_block_size` for |XtraDB|, and in that case |XtraBackup| will match the tuning).
 
 After reading from the files, ``xtrabackup`` iterates over the 1MB buffer a page at a time, and checks for page corruption on each page with InnoDB's ``buf_page_is_corrupted()`` function. If the page is corrupt, it re-reads and retries up to 10 times for each page. It skips this check on the doublewrite buffer.

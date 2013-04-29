@@ -38,7 +38,7 @@ Note the ``$INCREMENTALBACKUP``.
 
 *The final data will be in the base backup directory*, not in the incremental one. In this example, ``/path/to/backup/dir/2011-12-24_23-01-00`` or ``$FULLBACKUP``.
 
-If you want to apply more incremental backups, repeat this step with the next one. It is important that you do this in the chronological order in where the backups were done.
+If you want to apply more incremental backups, repeat this step with the next one. It is important that you do this in the chronological order in which the backups were done.
 
 You can check the file xtrabackup_checkpoints at the directory of each one.
 

@@ -8,7 +8,7 @@
 
   You can have almost real-time backups in 6 simple steps by setting up a replication environment with |XtraBackup|. 
 
- *Percona* |XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs "hot backups" on unmodified versions of |MySQL| servers (5.0, 5.1 and 5.5), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
+ *Percona* |XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs "hot backups" on unmodified versions of |MySQL| servers (5.0, 5.1, 5.5 and 5.6), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
 
 All the things you will need
 ============================
@@ -22,7 +22,7 @@ Setting up a slave for replication with |XtraBackup| is really a very straightfo
 
   * the *SSH* server is installed and configured;
 
-  * you have an user account in the system with the appropriate permissions;
+  * you have a user account in the system with the appropriate permissions;
 
   * you have a MySQL's user account with appropriate privileges.
 
@@ -30,7 +30,7 @@ Setting up a slave for replication with |XtraBackup| is really a very straightfo
 
 
 * ``TheSlave`` 
-  Another system, with a |MySQL|-based server installed on it. We will refer to this machine as ``TheSlave`` and we will assume the same things we did about ``TheMaster``.
+  Another system, with a |MySQL|-based server installed on it. We will refer to this machine as ``TheSlave`` and we will assume the same things we did about ``TheMaster``, except that the server-id on ``TheSlave`` is 2.
 
 * ``Xtrabackup``
   The backup tool we will use. It should be installed in both computers for convenience.
@@ -63,7 +63,7 @@ You need to select path where your snapshot has been taken, for example /home/ba
 
 |XtraBackup| knows where your data is by reading your :term:`my.cnf`. If you have your configuration file in a non-standard place, you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
 
-If you want to skip writing the username/password every time you want to access the MySQL, you can set it up in your $HOME folder. Just edit .my.cnf and add:
+If you want to skip writing the username/password every time you want to access |MySQL|, you can set it up in your $HOME folder. Just edit .my.cnf and add:
 
 .. code-block:: console
    
@@ -82,7 +82,7 @@ Use rsync or scp to copy the data from Master to Slave. If you're syncing the da
 
    TheMaster$ rsync -avprP -e ssh /path/to/backupdir/$TIMESTAMP TheSlave:/path/to/mysql/
 
-After data has been copied you can back up the original or previously installed |MySQL| datadir:
+After data has been copied you can back up the original or previously installed |MySQL| :term:`datadir` (**NOTE**: Make sure mysqld is shut down before you move the contents of its datadir, or move the snapshot into its datadir.):
 
 .. code-block:: console
 
@@ -112,7 +112,13 @@ Add the appropriate grant in order for slave to be able to connect to master:
    TheMaster|mysql> GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$slaveip'
     IDENTIFIED BY '$slavepass';
 
-Also make sure that firewall rules are correct and that ``TheSlave`` can connect to ``TheMaster``.
+Also make sure that firewall rules are correct and that ``TheSlave`` can connect to ``TheMaster``. Test that you can run the mysql client on ``TheSlave``, connect to ``TheMaster``, and authenticate. ::
+
+  TheSlave$ mysql --host=TheMaster --user=repl --password=$slavepass
+
+Verify the privileges. ::  
+
+  mysql> SHOW GRANTS;
 
 STEP 4: Configure The Slave's MySQL server
 ==========================================
@@ -131,7 +137,7 @@ then change the following options in /etc/mysql/my.cnf:
 
 and start/restart :command:`mysqld` on ``TheSlave``.
 
-In case you're using init script to start mysqld, be sure that the password for that user has been updated and it's the same as one on ``TheMaster``. For example, Debian and Ubuntu use debian-sys-maint user to do that. Password can be seen and updated in :file:`/etc/mysql/debian.cnf`.
+In case you're using init script on Debian based system to start mysqld, be sure that the password for ``debian-sys-maint`` user has been updated and it's the same as that user's password on the ``TheMaster``. Password can be seen and updated in :file:`/etc/mysql/debian.cnf`.
 
 
 STEP 5: Start the replication
@@ -198,7 +204,7 @@ Apply the logs:
 
    TheSlave$ innobackupex --apply-log --use-memory=2G /path/to/backupdir/$TIMESTAMP/
 
-Copy the directory from the ``TheSlave`` to ``TheNewSlave``:
+Copy the directory from the ``TheSlave`` to ``TheNewSlave`` (**NOTE**: Make sure mysqld is shut down on ``TheNewSlave`` before you copy the contents the snapshot into its :term:`datadir`.): ::
 
 .. code-block:: console
 
