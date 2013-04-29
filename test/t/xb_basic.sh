@@ -13,7 +13,6 @@ vlog "Backup created in directory $backup_dir"
 stop_server
 # Remove datadir
 rm -r $mysql_datadir
-#init_mysql_dir
 # Restore sakila
 vlog "Applying log"
 vlog "###########"

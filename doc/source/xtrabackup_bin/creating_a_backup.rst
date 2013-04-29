@@ -2,7 +2,7 @@
  Creating a Backup
 ===================
 
-To create a backup, run :program:`xtrabackup` with the :program:`--backup` option. You also need to specify a :option:`--target_dir` option, which is where the backup will be stored, and a :option:`--datadir` option, which is where the |MySQL| data is stored. If the |InnoDB| data or log files aren't stored in the same directory, you might need to specify the location of those, too. If the target directory does not exist, |xtrabackup| creates it. If the directory does exist and is empty, |xtrabackup| will succeed. |xtrabackup| will not overwrite existing files, it will fail with operating system error 17, ' ``file exists`` '.
+To create a backup, run :program:`xtrabackup` with the :program:`--backup` option. You also need to specify a :option:`--target_dir` option, which is where the backup will be stored, and a :option:`--datadir` option, which is where the |MySQL| data is stored. If the |InnoDB| data or log files aren't stored in the same directory, you might need to specify the location of those, too. If the target directory does not exist, |xtrabackup| creates it. If the directory does exist and is empty, |xtrabackup| will succeed. |xtrabackup| will not overwrite existing files, it will fail with operating system error 17,  ``file exists``.
 
 The tool changes its working directory to the data directory and performs two primary tasks to complete the backup:
 

@@ -42,6 +42,7 @@ The script needs the codebase for which the building is targeted, you must provi
   innodb55           5.5		build against InnoDB in MySQL 5.5
   xtradb51           xtradb     build against Percona Server with XtraDB 5.1
   xtradb55           xtradb55   build against Percona Server with XtraDB 5.5
+  innodb56           5.6        build against InnoDB in MySQL 5.6
   ================== =========  ============================================
 
 Note that the script must be executed from the base directory of |Xtrabackup| sources, and that directory must contain the packages with the source code of the codebase selected. This may appear cumbersome, but if the variable ``AUTO_LOAD="yes"`` is set, the :command:`build.sh` script will download all the source code needed for the build.

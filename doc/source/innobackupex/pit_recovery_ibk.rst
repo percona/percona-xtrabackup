@@ -4,7 +4,7 @@
 
 Recovering up to particular moment in database's history can be done  with |innobackupex| and the binary logs of the server.
 
-Note that the binary log contains the operations that modified the database from a point in the past: it's acts as a "redo log". You need a snapshot of the past from which "redo" the operations up to the Point-In-Time you want.
+Note that the binary log contains the operations that modified the database from a point in the past. You need a full :term:`datadir` as a base, and then you can apply a series of operations from the binary log to make the data match what it was at the point in time you want.
 
 For taking the snapshot, we will use |innobackupex| for a full backup::
 
@@ -39,14 +39,14 @@ and ::
   | mysql-bin.000004 |      497 |              |                  |
   +------------------+----------+--------------+------------------+
 
-The first query will tell you which files contain the binary log and the second one which file is been used and its actual position. Those files are stored usually in the :term:`datadir` (unless other location is specified when the server is started with the ``--log-bin=`` option).
+The first query will tell you which files contain the binary log and the second one which file is currently being used to record changes, and the current position within it. Those files are stored usually in the :term:`datadir` (unless other location is specified when the server is started with the ``--log-bin=`` option).
 
 To find out the position of the snapshot taken, see the :file:`xtrabackup_binlog_info` at the backup's directory: ::
 
   $ cat /path/to/backup/xtrabackup_binlog_info
   mysql-bin.000003	57
 
-This will tell you which file was used at moment of the backup for the binary log and it position. That position will be the effective one when you restore the backup: ::
+This will tell you which file was used at moment of the backup for the binary log and its position. That position will be the effective one when you restore the backup: ::
 
   $ innobackupex --copy-back /path/to/backup
 
@@ -55,7 +55,7 @@ As the restoration will not affect the binary log files (you may need to adjust 
   $ mysqlbinlog /path/to/datadir/mysql-bin.000003 /path/to/datadir/mysql-bin.000004 \ 
       --start-position=57 > mybinlog.sql
 
-Note that if you have multiple files for the binary log, as in the example, you have to process all of them with one process, as shown above. 
+Note that if you have multiple files for the binary log, as in the example, you have to extract the queries with one process, as shown above. 
 
 Inspect the file with the queries to determine which position or date corresponds to the point-in-time wanted. Once determined, pipe it to the server. Assuming the point is ``11-12-25 01:00:00``::
 

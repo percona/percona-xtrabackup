@@ -12,8 +12,11 @@ It will copy all the data-related files back to the server's :term:`datadir`, de
 
   111225 01:08:13  innobackupex: completed OK!
 
+.. note:: 
 
-As files’ attributes will be preserved, in most cases you will need to change the files’ ownership to ``mysql`` before starting the database server, as they will be owned by the user who created the backup::
+ The :term:`datadir` must be empty; XtraBackup :option:`--copy-back` option will not copy over existing files. Also it's important to note that MySQL server needs to be shut down before restore is performed. You can't restore to a :term:`datadir` of a running mysqld instance (except when importing a partial backup). 
+
+As files' attributes will be preserved, in most cases you will need to change the files’ ownership to ``mysql`` before starting the database server, as they will be owned by the user who created the backup::
 
   $ chown -R mysql:mysql /var/lib/mysql
 

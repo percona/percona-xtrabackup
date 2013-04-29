@@ -6,26 +6,34 @@
 start_server --innodb_file_per_table
 load_sakila
 
-run_cmd ${MYSQL} ${MYSQL_ARGS} -e "UPDATE mysql.user SET Password=PASSWORD('password') WHERE User='root'; FLUSH PRIVILEGES;"
+run_cmd ${MYSQL} ${MYSQL_ARGS} <<EOF
+SET PASSWORD FOR 'root'@'localhost' = PASSWORD('password');
+EOF
 
-defaults_extra_file=${TEST_BASEDIR}/740489.cnf
+defaults_extra_file=$topdir/740489.cnf
 
-echo "[client]" > $defaults_extra_file
-echo "user=root" >> $defaults_extra_file
-echo "password=password" >> $defaults_extra_file
+cat > $defaults_extra_file <<EOF
+[mysqld]
+datadir=${MYSQLD_DATADIR}
 
-mkdir -p $topdir/backup
-cat ${MYSQLD_VARDIR}/my.cnf
-run_cmd $IB_BIN --defaults-extra-file=$defaults_extra_file --socket=${MYSQLD_SOCKET} --ibbackup=$XB_BIN $topdir/backup
-backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
+[client]
+user=root
+password=password
+EOF
+
+backup_dir=$topdir/backup
+run_cmd $IB_BIN \
+    --defaults-extra-file=$defaults_extra_file --socket=${MYSQLD_SOCKET} \
+    --ibbackup=$XB_BIN --no-timestamp $backup_dir
 vlog "Backup created in directory $backup_dir"
 
-run_cmd ${MYSQL} ${MYSQL_ARGS} --password=password -e "UPDATE mysql.user SET Password=PASSWORD('') WHERE User='root'; FLUSH PRIVILEGES;"
+run_cmd ${MYSQL} ${MYSQL_ARGS} --password=password <<EOF
+SET PASSWORD FOR 'root'@'localhost' = PASSWORD('');
+EOF
 
 stop_server
 # Remove datadir
 rm -r $mysql_datadir
-#init_mysql_dir
 # Restore sakila
 vlog "Applying log"
 vlog "###########"

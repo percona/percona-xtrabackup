@@ -30,7 +30,7 @@ run_cmd_expect_failure $IB_BIN $IB_ARGS --no-timestamp --slave-info --no-lock \
   $topdir/backup
 
 innobackupex --no-timestamp --slave-info $topdir/backup
-egrep -q '^mysql-bin.000001[[:space:]]+[0-9]+[[:space:]]+$' \
+egrep -q '^mysql-bin.[0-9]+[[:space:]]+[0-9]+[[:space:]]+$' \
     $topdir/backup/xtrabackup_binlog_info
-egrep -q '^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.000001'\'', MASTER_LOG_POS=[0-9]+$' \
+egrep -q '^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+$' \
     $topdir/backup/xtrabackup_slave_info

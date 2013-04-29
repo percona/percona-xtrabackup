@@ -225,10 +225,12 @@ my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
 my $xtrabackup_binary_file = 'xtrabackup_binary';
 my $xtrabackup_pid_file = 'xtrabackup_pid';
 my %rsync_files_hash;
+my %processed_files;
 
 my $copy_dir_src;
 my $copy_dir_dst;
-my $copy_dir_exclude_regexp;
+my $cleanup_dir_dst;
+my $process_dir_exclude_regexp;
 my $copy_dir_overwrite;
 
 ######################################################################
@@ -619,7 +621,7 @@ sub move_file {
 sub process_file {
     my $process_func = shift;
 
-    if (/$copy_dir_exclude_regexp/) {
+    if (/$process_dir_exclude_regexp/) {
 	return;
     }
     (my $dst_path = $File::Find::name) =~ s/^$copy_dir_src/$copy_dir_dst/;
@@ -639,6 +641,8 @@ sub process_file {
 	}
 
 	&$process_func($File::Find::name, $dst_path);
+        (my $rel_path = $File::Find::name) =~ s/^$copy_dir_src//;
+        $processed_files{$rel_path} = 1;
     }
 }
 
@@ -657,9 +661,30 @@ sub move_file_callback {
 }
 
 #
+# find() callback to remove files
+#
+sub remove_file_callback {
+    if (/$process_dir_exclude_regexp/) {
+        return;
+    }
+    if (-d "$File::Find::name") {
+        return;
+    }
+    (my $rel_path = $File::Find::name) =~ s/^$cleanup_dir_dst//;
+    if (!($rel_path =~ m/\//)) {
+        return;
+    }
+    if (! exists $processed_files{$rel_path}) {
+        unlink($File::Find::name) or
+            Die("Cannot remove file $File::Find::name");
+    }
+}
+
+#
 # copy_dir_recursively subroutine does a recursive copy of a specified
 # directory excluding files matching a specifies regexp. If $overwrite
-# is 1, it overwrites the existing files.
+# is 1, it overwrites the existing files. It also updates processed_files
+# hash with the relative paths of files been copied.
 #
 # SYNOPSIS 
 #
@@ -674,9 +699,10 @@ sub copy_dir_recursively {
     # Clean paths and remove trailing slashes if any
     $copy_dir_src = File::Spec->canonpath(shift);
     $copy_dir_dst = File::Spec->canonpath(shift);
-    $copy_dir_exclude_regexp = shift;
+    $process_dir_exclude_regexp = shift;
     $copy_dir_overwrite = shift;
 
+    undef %processed_files;
     find(\&copy_file_callback, $copy_dir_src);
 }
 
@@ -696,10 +722,47 @@ sub move_dir_recursively {
     # Clean paths and remove trailing slashes if any
     $copy_dir_src = File::Spec->canonpath(shift);
     $copy_dir_dst = File::Spec->canonpath(shift);
-    $copy_dir_exclude_regexp = shift;
+    $process_dir_exclude_regexp = shift;
     $copy_dir_overwrite = shift;
 
+    undef %processed_files;
     find(\&move_file_callback, $copy_dir_src);
+}
+
+#
+# cleanup_dir_recursively subroutine removes files from directory
+# excluding files matching a specifies regexp and files listed in
+# processed_files.
+#
+# SYNOPSIS 
+#
+#     cleanup_dir_recursively($dir, $exclude_regexp);
+#
+sub cleanup_dir_recursively {
+    # Clean paths and remove trailing slashes if any
+    $cleanup_dir_dst = File::Spec->canonpath(shift);
+    $process_dir_exclude_regexp = shift;
+    find(\&remove_file_callback, $cleanup_dir_dst);
+}
+
+#
+# parse_innodb_data_file_path parse innodb_data_file_path and returns
+# it components as array of hash refs. Each hash ref has two components
+# the one named 'path' is the data file path as specified in the
+# innodb-data-file-path, second one named 'filename' is the data file name
+#
+sub parse_innodb_data_file_path {
+    my $innodb_data_file_path = shift;
+    my @data_file_paths = ();
+
+    foreach my $data_file (split(/;/, $innodb_data_file_path)) {
+        my $data_file_path = (split(/:/,$data_file))[0];
+        my $data_file_name = (split(/\/+/, $data_file_path))[-1];
+        push(@data_file_paths, {path => $data_file_path,
+                                filename => $data_file_name});
+    }
+
+    return @data_file_paths;
 }
 
 #
@@ -715,12 +778,15 @@ sub copy_back {
         get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
     my $orig_iblog_dir =
         get_option(\%config, $option_defaults_group, 'innodb_log_group_home_dir');
+    my $orig_undo_dir = $orig_ibdata_dir;
     my $iblog_files = 'ib_logfile.*';
+    my $ibundo_files = 'undo[0-9]{3}';
     my $excluded_files = 
         '\.\.?|backup-my\.cnf|xtrabackup_logfile|' .
-	'xtrabackup_binary|xtrabackup_binlog_info|xtrabackup_checkpoints|' .
+        'xtrabackup_binary|xtrabackup_binlog_info|xtrabackup_checkpoints|' .
         '.*\.qp|' .
-	$iblog_files;
+        $iblog_files . '|'.
+        $ibundo_files;
     my $compressed_data_file = '.*\.ibz$';
     my $file;
     my $backup_innodb_data_file_path;
@@ -732,6 +798,10 @@ sub copy_back {
         $excluded_files = $excluded_files . '|' . $doublewrite_file;
     }
 
+    if (has_option(\%config, $option_defaults_group, 'innodb_undo_directory')) {
+        $orig_undo_dir = get_option(\%config, $option_defaults_group,
+                                    'innodb_undo_directory');
+    }
     # check whether files should be copied or moved to dest directory
     my $move_or_copy_file = $move_flag ? \&move_file : \&copy_file;
     my $move_or_copy_dir = $move_flag ?
@@ -743,6 +813,10 @@ sub copy_back {
     if_directory_exists_and_empty($orig_datadir, "Original data");
     if_directory_exists_and_empty($orig_ibdata_dir, "Original InnoDB data");
     if_directory_exists_and_empty($orig_iblog_dir, "Original InnoDB log");
+    if ($orig_undo_dir) {
+        if_directory_exists_and_empty($orig_undo_dir,
+                                      "Original undo directory");
+    }
 
     # check that the original options file and the backup options file have
     # the same value for "innodb_data_file_path" option
@@ -760,24 +834,26 @@ sub copy_back {
 
     # make a list of all ibdata files in the backup directory and all
     # directories in the backup directory under which there are ibdata files
-    foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
-        my $path = (split(/:/,$a))[0];
-        my $filename = (split(/\/+/, $path))[-1];
+    foreach my $c (parse_innodb_data_file_path($orig_innodb_data_file_path)) {
 
         # check that the backup data file exists
-        if (! -e "$backup_dir/$filename") {
-            if (-e "$backup_dir/${filename}.ibz") {
-                Die "Backup data file '$backup_dir/$filename' does not exist, but "
-                  . "its compressed copy '${path}.ibz' exists. Check "
-                  . "that you have run '$innobackup_script --apply-log --uncompress "
-                  . "...' before attempting '$innobackup_script --copy-back ...'  "
+        if (! -e "$backup_dir/$c->{filename}") {
+            if (-e "$backup_dir/$c->{filename}.ibz") {
+                Die "Backup data file '$backup_dir/$c->{filename}' "
+                  . "does not exist, but "
+                  . "its compressed copy '$c->{path}.ibz' exists. Check "
+                  . "that you have run "
+                  . "'$innobackup_script --apply-log --uncompress "
+                  . "...' before attempting "
+                  . "'$innobackup_script --copy-back ...'  "
                   . "or '$innobackup_script --move-back ...' !";
             } else {
-                Die "Backup data file '$backup_dir/$filename' does not exist.";
+                Die "Backup data file '$backup_dir/$c->{filename}' "
+                    . "does not exist.";
             }
         }
 	
-        $excluded_files .= "|\Q$filename\E";
+        $excluded_files .= "|\Q$c->{filename}\E";
     }
 
     # copy files from backup dir to their original locations
@@ -792,14 +868,28 @@ sub copy_back {
     print STDERR "\n$prefix Starting to $operation InnoDB system tablespace\n";
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original InnoDB data directory '$orig_ibdata_dir'\n";
-    foreach my $a (split(/;/, $orig_innodb_data_file_path)) {
+    foreach my $c (parse_innodb_data_file_path($orig_innodb_data_file_path)) {
         # get the relative pathname of a data file
-        my $path = (split(/:/,$a))[0];
-        my $filename = (split(/\/+/, $path))[-1];
-        $src_name = escape_path("$backup_dir/$filename");
-        $dst_name = escape_path("$orig_ibdata_dir/$path");
+        $src_name = escape_path("$backup_dir/$c->{filename}");
+        $dst_name = escape_path("$orig_ibdata_dir/$c->{path}");
         &$move_or_copy_file($src_name, $dst_name);
     }
+
+    # copy InnoDB undo tablespaces to innodb_undo_directory (if specified), or
+    # to the InnoDB data directory
+    print STDERR "\n$prefix Starting to $operation InnoDB undo tablespaces\n";
+    print STDERR "$prefix in '$backup_dir'\n";
+    print STDERR "$prefix back to '$orig_undo_dir'\n";
+    opendir(DIR, $backup_dir)
+        || Die "Can't open directory '$backup_dir': $!\n";
+    while (defined($file = readdir(DIR))) {
+        if ($file =~ /^$ibundo_files$/ && -f "$backup_dir/$file") {
+            $src_name = escape_path("$backup_dir/$file");
+            $dst_name = escape_path("$orig_undo_dir");
+            &$move_or_copy_file($src_name, $dst_name);
+        }
+    }
+    closedir(DIR);
 
     # copy InnoDB log files to original InnoDB log directory
     opendir(DIR, $backup_dir) 
@@ -866,6 +956,9 @@ sub apply_log {
         $options .= " --tmpdir=$option_tmpdir";
     }
 
+    my $innodb_data_file_path = 
+        get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
+
     # run ibbackup as a child process
     $cmdline = "$option_ibbackup_binary $options";
     $now = current_time();
@@ -894,23 +987,16 @@ sub apply_log {
     if ( $option_incremental_dir ) {
 	print STDERR "$prefix Starting to copy non-InnoDB files in '$option_incremental_dir'\n"; 
 	print STDERR "$prefix to the full backup directory '$backup_dir'\n";
-	copy_dir_recursively($option_incremental_dir, $backup_dir,
-			     '^(\.\.?|backup-my\.cnf|xtrabackup_logfile|' .
-			     'xtrabackup_binary|xtrabackup_checkpoints|' .
-			     '.*\.delta|.*\.meta|ib_logfile.*)$', 1);
-        # If the latest backup has no file, we need to remove the old
-        # xtrabackup_slave_info file, because it is out of date
-        # TODO: this will not be needed when bug #856400 is fixed.
-        if ( -e "$backup_dir/xtrabackup_slave_info" ) {
-            print STDERR "\n$now  $prefix No updated xtrabackup_slave_info found in incremental dir, removing stale xtrabackup_slave_info file from target dir.";
-            $cmdline = "rm $backup_dir/xtrabackup_slave_info";
-            $rcode = system("$cmdline");
-            if ($rcode) {
-                # failure
-                Die "\n$prefix Failed to remove stale xtrabackup_slave_info in $backup_dir";
-            }
-
+        my @skip_list = ('\.\.?','backup-my\.cnf','xtrabackup_logfile',
+                        'xtrabackup_binary','xtrabackup_checkpoints',
+                        '.*\.delta','.*\.meta','ib_logfile.*');
+        copy_dir_recursively($option_incremental_dir, $backup_dir,
+                             '^(' . join('|', @skip_list) . ')$', 1);
+    foreach my $c (parse_innodb_data_file_path($innodb_data_file_path)) {
+            push(@skip_list, "\Q$c->{filename}\E");
         }
+        cleanup_dir_recursively($backup_dir,
+                             '^(' . join('|', @skip_list, '.*\.ibd') . ')$');
     }
 
 }
@@ -1364,6 +1450,7 @@ sub write_binlog_info {
     my @lines;
     my $position = '';
     my $filename = '';
+    my $gtid = '';
 
     # get binlog position
     mysql_send 'SHOW MASTER STATUS\G';
@@ -1372,8 +1459,9 @@ sub write_binlog_info {
     # from the SHOW MASTER STATUS output
     file_to_array($mysql_stdout, \@lines);
     foreach (@lines) {
-        $filename = $1 if /^\s+File:\s(\S+)\s*$/;
-        $position = $1 if /^\s+Position:\s(\d+)\s*$/;
+        $filename = $1 if /^\s*File:\s(\S+)\s*$/;
+        $position = $1 if /^\s*Position:\s(\d+)\s*$/;
+        $gtid  =    $1 if /^\s*Executed_Gtid_Set:\s(.*)\s*$/;
     }
 
     # write binlog info file
@@ -1384,7 +1472,7 @@ sub write_binlog_info {
         open(FILE, "| ssh $option_ssh_opt $option_remote_host 'cat > $binlog_info'") ||
             Die "Failed to open file '$option_remote_host:$binlog_info': $!";
     }
-    print FILE  "$filename\t$position\t\t\n";
+    print FILE  "$filename\t$position\t\t$gtid\n";
     close(FILE);
 
     if ($option_stream) {
@@ -1394,6 +1482,9 @@ sub write_binlog_info {
     }
 
     $mysql_binlog_position = "filename '$filename', position $position";
+    if ($gtid) {
+        $mysql_binlog_position .= ", gtid_executed $gtid";
+    }
 }
 
 #
@@ -1810,7 +1901,9 @@ sub write_backup_config_file {
         "innodb_log_file_size",
         "innodb_fast_checksum",
         "innodb_page_size",
-        "innodb_log_block_size"
+        "innodb_log_block_size",
+        "innodb_undo_directory",
+        "innodb_undo_tablespaces"
         );
 
     my $options_dump = "# This MySQL options file was generated by $innobackup_script.\n\n" .
