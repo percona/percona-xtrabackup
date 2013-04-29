@@ -8,7 +8,7 @@ Privileges refers to the operations that a system user is permitted to do in the
 
 Permissions are those which permits a user to perform operations on the system, like reading, writing or executing on a certain directory or start/stop a system service. **They are set at a system level and only apply to system users**.
 
-Whether |xtrabackup| or |innobackupex| is used, there are two actors involved: the user invoking the program - *a system user* - and the user performing action in the database server - *a database user*. Note that these are different users on different places, despite they may have the same username.
+Whether |xtrabackup| or |innobackupex| is used, there are two actors involved: the user invoking the program - *a system user* - and the user performing action in the database server - *a database user*. Note that these are different users in different places, even tough they may have the same username.
 
 All the invocations of |innobackupex| and |xtrabackup| in this documentation assumes that the system user has the appropriate permissions and you are providing the relevant options for connecting the database server - besides the options for the action to be performed - and the database user has adequate privileges. 
 
