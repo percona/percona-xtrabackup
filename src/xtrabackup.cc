@@ -4665,7 +4665,6 @@ log_copying_thread(
 		exit(EXIT_FAILURE);
 	}
 
-end:
 	log_copying_running = FALSE;
 	my_thread_end();
 	os_thread_exit(NULL);
@@ -4758,7 +4757,7 @@ xb_check_if_open_tablespace(
 
 	snprintf(buf, sizeof(buf), "%s%s/%s", xb_dict_prefix, db, table);
 
-	return !check_if_skip_table(buf, "ibd");
+	return !check_if_skip_table(buf);
 }
 
 /************************************************************************
