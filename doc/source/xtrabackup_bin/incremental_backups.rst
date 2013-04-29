@@ -44,7 +44,7 @@ The meaning should be self-evident. It's now possible to use this directory as t
 Preparing the Incremental Backups
 =================================
 
-The :option:`--prepare` step for incremental backups is not the same as for normal backups. In normal backups, two types of operations are performed to make the database consistent: committed transactions are replayed from the log file against the data files, and uncommitted transactions are rolled back. For technical reasons, you must skip the rollback of uncommitted transactions when preparing a backup that will be used as the base for an incremental backup. You should use the :option:`--apply-log-only` option to prevent the rollback phase.
+The :option:`--prepare` step for incremental backups is not the same as for normal backups. In normal backups, two types of operations are performed to make the database consistent: committed transactions are replayed from the log file against the data files, and uncommitted transactions are rolled back. You must skip the rollback of uncommitted transactions when preparing a backup, because transactions that were uncommitted at the time of your backup may be in progress, and it's likely that they will be committed in the next incremental backup. You should use the :option:`--apply-log-only` option to prevent the rollback phase.
 
 **If you do not use the** :option:`--apply-log-only` **option to prevent the rollback phase, then your incremental backups will be useless**. After transactions have been rolled back, further incremental backups cannot be applied.
 

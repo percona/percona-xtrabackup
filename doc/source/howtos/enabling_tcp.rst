@@ -1,5 +1,5 @@
-Enabling the server to communicate with through TCP/IP
-======================================================
+Enabling the server to communicate via TCP/IP
+==============================================
 
 Most of the Linux distributions do not enable by default to accept TCP/IP connections from outside in their MySQL or Percona Server packages.
 

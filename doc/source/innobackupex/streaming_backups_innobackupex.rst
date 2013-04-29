@@ -4,9 +4,9 @@
 
 Streaming mode, supported by |XtraBackup|, sends backup to ``STDOUT`` in special ``tar`` or |xbstream| format instead of copying files to the backup directory.
 
-This allows to pipe the stream to other programs, providing great flexibility to the output of it. For example, compression is achieved by piping the output to a compression utility. One of the benefits of streaming backups and using Unix pipes is that the backups can be automatically encrypted. 
+This allows you to use other programs to filter the output of the backup, providing greater flexibility for storage of the backup. For example, compression is achieved by piping the output to a compression utility. One of the benefits of streaming backups and using Unix pipes is that the backups can be automatically encrypted. 
 
-To use the streaming feature, you must use the :option:`--stream`, providing the format of the stream (``tar`` or ``xbstream`` ) and where should the store the temporary files::
+To use the streaming feature, you must use the :option:`--stream`, providing the format of the stream (``tar`` or ``xbstream`` ) and where to store the temporary files::
 
  $ innobackupex --stream=tar /tmp
 
@@ -19,7 +19,7 @@ Using |xbstream| as a stream option, backups can be copied and compressed in par
 Examples using xbstream
 =======================
 
-To store the backup in one archive it directly: :: 
+Store the complete backup directly to a single file: ::
 
  $ innobackupex --stream=xbstream /root/backup/ > /root/backup/backup.xbstream
 
@@ -31,18 +31,18 @@ To unpack the backup to the /root/backup/ directory: ::
 
  $ xbstream -x <  backup.xbstream -C /root/backup/
 
-For sending backup compressed directly to another host and unpacking it: :: 
+To send the compressed backup to another host and unpack it: ::
 
  $ innobackupex --compress --stream=xbstream /root/backup/ | ssh user@otherhost "xbstream -x -C /root/backup/" 
 
 Examples using tar
 ==================
 
-To store the backup in one archive it directly :: 
+Store the complete backup directly to a tar archive: ::
 
  $ innobackupex --stream=tar /root/backup/ > /root/backup/out.tar
 
-For sending it directly to another host by ::
+To send the tar archive to another host: ::
 
  $ innobackupex --stream=tar ./ | ssh user@destination \ "cat - > /data/backups/backup.tar"
 
@@ -50,7 +50,7 @@ For sending it directly to another host by ::
 
   $ tar -xizf backup.tar.gz
 
-Choosing the compression tool that best suits you: :: 
+Compress with your preferred compression tool: ::
 
  $ innobackupex --stream=tar ./ | gzip - > backup.tar.gz
  $ innobackupex --stream=tar ./ | bzip2 - > backup.tar.bz2

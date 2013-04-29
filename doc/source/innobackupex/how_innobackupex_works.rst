@@ -19,11 +19,15 @@ By default, it starts :program:`xtrabackup` with the :option:`--suspend-at-end` 
 
 If the :option:`--ibbackup` is not supplied, |innobackupex| will try to detect it: if the :file:`xtrabackup_binary` file exists on the backup directory, it reads from it which binary of |xtrabackup| will be used. Otherwise, it will try to connect to the database server in order to determine it. If the connection can't be established, |xtrabackup| will fail and you must specify it (see :ref:`ibk-right-binary`).
 
-When the binary is determined, the connection to the database server is checked. This done by connecting, issuing a query, and closing the connection. If everything goes well, the binary is started as a child process.
+When the binary is determined, the connection to the database server is checked. This is done by connecting, issuing a query, and closing the connection. If everything goes well, the binary is started as a child process.
 
-If it is not an incremental backup, it connects to the server. It waits for slaves in a replication setup if the option :option:`--safe-slave-backup` is set and will flush all tables with **READ LOCK**, preventing all |MyISAM| tables from writing (unless option :option:`--no-lock` is specified).
+If it is not an incremental backup, it connects to the server. It waits for slaves in a replication setup if the option :option:`--safe-slave-backup` is set and will flush all tables with **READ LOCK**, preventing all |MyISAM| tables from writing (unless option :option:`--no-lock` is specified). 
 
-Once this is done, the backup of the files will begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV` and :term:`.opt` files.
+.. note:: 
+
+  Locking is done only for MyISAM and other non-InnoDB tables, and only **after** XtraBackup is finished backing up all InnoDB/XtraDB data and logs.
+
+Once this is done, the backup of the files will begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV`, ``.par``,  and :term:`.opt` files.
 
 When all the files are backed up, it resumes :program:`ibbackup` and wait until it finishes copying the transactions done while the backup was done. Then, the tables are unlocked, the slave is started (if the option :option:`--safe-slave-backup` was used) and the connection with the server is closed. Then, it removes the :file:`xtrabackup_suspended_2` file and permits :program:`xtrabackup` to exit.
 
@@ -39,10 +43,10 @@ It  will also create the following files in the directory of the backup:
    containing the position of the binary log at the moment of backing up relative to |InnoDB| transactions;
 
 :file:`xtrabackup_slave_info`
-   containing the MySQL binlog position of the master server in a replication setup via ``'SHOW SLAVE STATUS\G;'`` if the :option:`--slave-info` option is passed;
+   containing the MySQL binlog position of the master server in a replication setup via ``SHOW SLAVE STATUS`` if the :option:`--slave-info` option is passed;
 
 :file:`backup-my.cnf`
-   containing only the :file:`my.cnf` options required for the backup;
+   containing only the :file:`my.cnf` options required for the backup. For example, innodb_data_file_path, innodb_log_files_in_group, innodb_log_file_size, innodb_fast_checksum, innodb_page_size, innodb_log_block_size;
 
 :file:`xtrabackup_binary` 
    containing the binary used for the backup;
@@ -64,9 +68,9 @@ Restoring a backup
 
 To restore a backup with |innobackupex| the :option:`--copy-back` option must be used.
 
-|innobackupex| will read the read from the :file:`my.cnf` the variables :term:`datadir`, :term:`innodb_data_home_dir`, :term:`innodb_data_file_path`, :term:`innodb_log_group_home_dir` and check that the directories exist.
+|innobackupex| will read from the :file:`my.cnf` the variables :term:`datadir`, :term:`innodb_data_home_dir`, :term:`innodb_data_file_path`, :term:`innodb_log_group_home_dir` and check that the directories exist.
 
-It will copy the |MyISAM| tables, indexes, etc. (:term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV` and :term:`.opt` files) first, |InnoDB| tables and indexes next and the log files at last. It will preserve file's attributes when copying them, you may have to change the files' ownership to ``mysql`` before starting the database server, as they will be owned by the user who created the backup.
+It will copy the |MyISAM| tables, indexes, etc. (:term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV`, ``par`` and :term:`.opt` files) first, |InnoDB| tables and indexes next and the log files at last. It will preserve file's attributes when copying them, you may have to change the files' ownership to ``mysql`` before starting the database server, as they will be owned by the user who created the backup.
 
 Alternatively, the :option:`--move-back` option may be used to restore a
 backup. This option is similar to :option:`--copy-back` with the only

@@ -38,8 +38,8 @@ Other Types of Backups
    compact_backups_innobackupex
    encrypted_backups_innobackupex
 
-Proficiency
-===========
+Advanced Features
+=================
 
 .. toctree::
    :maxdepth: 1

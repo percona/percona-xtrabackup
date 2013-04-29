@@ -113,4 +113,6 @@
 
    .opt
      |MySQL| stores options of a database (like charset) in a file with a :option:`.opt` extension in the database directory.
-
+   
+   .par
+     Each partitioned table has .par file which contains metadata about the partitions.
