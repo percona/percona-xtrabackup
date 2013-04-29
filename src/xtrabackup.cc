@@ -2212,7 +2212,6 @@ log_copying_thread(
 		exit(EXIT_FAILURE);
 	}
 
-end:
 	log_copying_running = FALSE;
 	my_thread_end();
 	os_thread_exit(NULL);
