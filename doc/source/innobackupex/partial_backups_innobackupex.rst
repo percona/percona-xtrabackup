@@ -2,7 +2,7 @@
  Partial Backups
 =================
 
-|XtraBackup| features partial backups, which means that you may backup only some specific tables or databases. The only requirement for this feature is having the :term:`innodb_file_per_table` option enabled in the server. 
+|XtraBackup| features partial backups, which means that you may backup only some specific tables or databases. The tables you back up must be in separate tablespaces, as a result of being created or altered after you enabled the :term:`innodb_file_per_table` option on the server.
 
 There is only one caveat about partial backups: do not copy back the prepared backup. Restoring partial backups should be done by importing the tables, not by using the traditional :option:`--copy-back` option. Although there are some scenarios where restoring can be done by copying back the files, this may be lead to database inconsistencies in many cases and it is not the recommended way to do it.
 
@@ -20,7 +20,7 @@ For example, ::
 
   $ innobackupex --include='^mydatabase[.]mytable' /path/to/backup
 
-will create a timestamped directory with the usual files that |innobackupex| creates,  but only the data files related to the tables matched.
+The command above will create a timestamped directory with the usual files that |innobackupex| creates,  but only the data files related to the tables matched.
 
 Note that this option is passed to :option:`xtrabackup --tables` and is matched against each table of each database, the directories of each database will be created even if they are empty.
 
@@ -34,7 +34,7 @@ For example, ::
   $ echo "mydatabase.mytable" > /tmp/tables.txt
   $ innobackupex --tables-file=/tmp/tables.txt /path/to/backup
 
-will create a timestamped directory with the usual files that |innobackupex| creates, but only containing the data-files related to the tables specified in the file.
+The command above will create a timestamped directory with the usual files that |innobackupex| creates, but only containing the data-files related to the tables specified in the file.
 
 This option is passed to :option:`xtrabackup --tables-file` and, unlike the :option:`--tables` option, only directories of databases of the selected tables will be created.
 
@@ -42,13 +42,13 @@ This option is passed to :option:`xtrabackup --tables-file` and, unlike the :opt
 Using the :option:`--databases` option
 --------------------------------------
 
-This option is specific to |innobackupex| and accepts whether a space-separated list of the databases and tables to backup - in the  ``databasename[.tablename]`` form - or a file containing the list at one element per line.
+This option is specific to |innobackupex| and accepts either a space-separated list of the databases and tables to backup - in the  ``databasename[.tablename]`` form - or a file containing the list at one element per line.
 
 For example, ::
 
   $ innobackupex --databases="mydatabase.mytable mysql" /path/to/backup
 
-will create a timestamped directory with the usual files that |innobackupex| creates, but only containing the data-files related to ``mytable`` in the ``mydatabase`` directory and the ``mysql`` directory with the entire ``mysql`` database.
+The command above will create a timestamped directory with the usual files that |innobackupex| creates, but only containing the data-files related to ``mytable`` in the ``mydatabase`` directory and the ``mysql`` directory with the entire ``mysql`` database.
 
 .. note:: 
  
@@ -61,7 +61,7 @@ For preparing partial backups, the procedure is analogous to :doc:`exporting tab
 
   $ innobackupex --apply-log --export /path/to/partial/backup
 
-You may see warnings in the output about tables that don't exists. This is because |InnoDB| -based engines stores its data dictionary inside the tablespace files besides the :term:`.frm` files. |innobackupex| will use |xtrabackup| to remove the missing tables (those who weren't selected in the partial backup) from the data dictionary in order to avoid future warnings or errors::
+You may see warnings in the output about tables that don't exist. This is because |InnoDB| -based engines stores its data dictionary inside the tablespace files besides the :term:`.frm` files. |innobackupex| will use |xtrabackup| to remove the missing tables (those who weren't selected in the partial backup) from the data dictionary in order to avoid future warnings or errors::
 
   111225  0:54:06  InnoDB: Error: table 'mydatabase/mytablenotincludedinpartialb'
   InnoDB: in InnoDB data dictionary has tablespace id 6,
@@ -74,7 +74,7 @@ You should also see the notification of the creation of a file needed for import
   xtrabackup:     name=PRIMARY, id.low=80, page=3
   xtrabackup:     name=dept_name, id.low=81, page=4
 
-Note that if you can use the :option:`--export` option with :option:`--apply-log` to an already-prepared backup in order to create the :term:`.exp` files.
+Note that you can use the :option:`--export` option with :option:`--apply-log` to an already-prepared backup in order to create the :term:`.exp` files.
 
 Finally, check the for the confirmation message in the output::
 
@@ -86,9 +86,7 @@ Restoring Partial Backups
 
 Restoring should be done by :doc:`importing the tables <importing_exporting_tables_ibk>` in the partial backup to the server. 
 
-It can also be done by copying back the prepared backup to a "clean" :term:`datadir` (in that case, make sure of having included the ``mysql`` database). System database can be created with: ::
+It can also be done by copying back the prepared backup to a "clean" :term:`datadir` (in that case, make sure to include the ``mysql`` database). System database can be created with: ::
 
  $ sudo mysql_install_db --user=mysql
-
-Last method can be later used for creating a dump of the specific table that needs to be restored.
 

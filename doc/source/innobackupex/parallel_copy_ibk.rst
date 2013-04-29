@@ -6,7 +6,7 @@
 
 When performing a local backup or the streaming backup with |xbstream| option, multiple files can be copied concurrently by using the :option:`--parallel` option. This option specifies the number of threads created by |xtrabackup| to copy data files.
 
-To take advantage of this option whether the multiple tablespaces option must be enabled (:term:`innodb_file_per_table`) or the shared tablespace must be stored in multiple :term:`ibdata` files with the :term:`innodb_data_file_path` option.  Having multiple files for the database (or splitting one into many) doesn't have a measurable impact on performance.
+To take advantage of this option either the multiple tablespaces option must be enabled (:term:`innodb_file_per_table`) or the shared tablespace must be stored in multiple :term:`ibdata` files with the :term:`innodb_data_file_path` option.  Having multiple files for the database (or splitting one into many) doesn't have a measurable impact on performance.
 
 
 As this feature is implemented **at a file level**, concurrent file transfer can sometimes increase I/O throughput when doing a backup on highly fragmented data files, due to the overlap of a greater number of random read requests. You should consider tuning the filesystem also to obtain the maximum performance (e.g. checking fragmentation). 
