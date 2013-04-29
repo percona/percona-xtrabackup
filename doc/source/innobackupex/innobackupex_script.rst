@@ -36,8 +36,8 @@ Other Types of Backups
    incremental_backups_innobackupex
    partial_backups_innobackupex
 
-Proficiency
-===========
+Advanced Features
+=================
 
 .. toctree::
    :maxdepth: 1

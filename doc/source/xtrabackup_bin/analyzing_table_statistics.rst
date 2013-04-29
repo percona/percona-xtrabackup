@@ -39,7 +39,7 @@ This can be interpreted as follows:
 
 * The ``data/pages`` is calculated as (``data`` / (``pages`` * ``PAGE_SIZE``)) * 100%. It will never reach 100% because of space reserved for page headers and footers.
 
-A more detailed example is posted as a MySQL Performance Blog post.
+A more detailed example is posted as a MySQL Performance Blog `post <http://www.mysqlperformanceblog.com/2009/09/14/statistics-of-innodb-tables-and-indexes-available-in-xtrabackup/>`_.
 
 Script to Format Output
 =======================

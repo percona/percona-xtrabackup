@@ -17,7 +17,7 @@ What's the difference between :program:`innobackupex` and :program:`innobackup`?
 
 Because :program:`innobackupex` is a patched version of *Oracle* ’s :program:`innobackup` script (now renamed to :program:`mysqlbackup`), it is quite similar in some ways, and familiarity with innobackup might be helpful.
 
-Despite the options for specific features of |innobackupex|, the main differences are:
+Aside from the options for specific features of |innobackupex|, the main differences are:
 
   * printing to ``STDERR`` instead of ``STDOUT`` (which enables the :option:`--stream` option), 
 
@@ -30,10 +30,10 @@ Despite the options for specific features of |innobackupex|, the main difference
 See :doc:`innobackupex/innobackupex_option_reference` for more details.
 
 
-Why the :program:`xtrabackup` binary doesn't makes a "full backup" of the database? Should I use :program:`innobackupex` always?
-================================================================================================================================
+Why doesn't the :program:`xtrabackup` binary include MyISAM tables and other files in its backup? Should I use :program:`innobackupex` always?
+===============================================================================================================================================
 
-:program:`xtrabackup` is a C program written to take advantage of the InnoDB or XtraDB features in order to make it as fast, less resource-consuming and unobtrusive (locking the database server) as possible. That is only possible with those engines. In the case of MyISAM a "write lock" is needed.
+:program:`xtrabackup` is a C program written to take advantage of the InnoDB or XtraDB features in order to make it as fast, less resource-consuming and unobtrusive (locking the database server) as possible. That is only possible with those engines. In the case of MyISAM a "read lock" is needed.
 
 :program:`innobackupex` is a script written in Perl which wraps :program:`xtrabackup` and other backup tools (such as :program:`tar4ibd`) and provides you with the functionality of each tool taking care of the details.
 

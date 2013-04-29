@@ -39,7 +39,7 @@ Options
 
 .. option:: --compress-threads 
 
-   This option specifies the number of worker threads used by |xtrabackup| for parallel data compression. This option defaults to 1. Parallel compression ('--compress-threads') can be used together with parallel file copying ('--parallel'). For example, '--parallel=4 --compress --compress-threads=2' will create 4 IO threads that will read the data and pipe it to 2 compression threads. New algorithms (gzip, bzip2, etc.) may be added later with minor efforts.
+   This option specifies the number of worker threads used by |xtrabackup| for parallel data compression. This option defaults to 1. Parallel compression ('--compress-threads') can be used together with parallel file copying ('--parallel'). For example, '--parallel=4 --compress --compress-threads=2' will create 4 IO threads that will read the data and pipe it to 2 compression threads. 
 
 .. option:: --create-ib-logfile
 

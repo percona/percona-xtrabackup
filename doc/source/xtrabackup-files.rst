@@ -49,3 +49,7 @@ Index of files created by XtraBackup
     * :file:`xtrabackup_slave_info`
        The ``CHANGE MASTER`` statement needed for setting up a slave.
 
+* Information related to the *Galera* and *Percona XtraDB Cluster* (if using the :option:`--galera-info` option):
+
+    * :file:`xtrabackup_galera_info`
+       Contains the values of status variables :option:`wsrep_local_state_uuid` and :option:`wsrep_last_committed`.

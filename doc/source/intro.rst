@@ -19,7 +19,7 @@
 
 |Percona| |XtraBackup| works with |MySQL|, |MariaDB|, |Percona Server|, and |Drizzle| databases (support for |Drizzle| is beta). It supports completely non-blocking backups of |InnoDB|, |XtraDB|, and *HailDB* storage engines. In addition, it can back up the following storage engines by briefly pausing writes at the end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and :term:`Archive <.ARM>`, including partitioned tables, triggers, and database options.
 
-|Percona|'s enterprise-grade commercial `MySQL Support <http://www.percona.com/mysql-support/>`_ contracts include support for XtraBackup. We recommend support for critical production deployments.
+Percona's enterprise-grade commercial `MySQL Support <http://www.percona.com/mysql-support/>`_ contracts include support for XtraBackup. We recommend support for critical production deployments.
 
 MySQL Backup Tool Feature Comparison
 ====================================

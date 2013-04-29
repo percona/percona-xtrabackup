@@ -68,7 +68,7 @@ Options
 
 .. option:: --include=REGEXP
 
-   This option is a regular expression to be matched against table names in ``databasename.tablename`` format. It is passed directly to |xtrabackup|'s :option:`xtrabackup --tables` option. See the :program:`xtrabackup` documentation for details.
+   This option is a regular expression to be matched against table names in ``databasename.tablename`` format. It is passed directly to xtrabackup's :option:`xtrabackup --tables` option. See the :program:`xtrabackup` documentation for details.
 
 .. option:: --incremental
 
@@ -105,7 +105,7 @@ Options
 
 .. option:: --parallel=NUMBER-OF-THREADS
 
-   This option accepts an integer argument that specifies the number of threads the :program:`xtrabackup` child process should use to back up files concurrently.  Note that this option works on file level, that is, if you have several .ibd files, they will be copied in parallel. If you have just single big .ibd file, it will have no effect. It is passed directly to xtrabackup's :option:`xtrabackup --parallel` option. See the :program:`xtrabackup` documentation for details
+   This option accepts an integer argument that specifies the number of threads the :program:`xtrabackup` child process should use to back up files concurrently.  Note that this option works on file level, that is, if you have several .ibd files, they will be copied in parallel. If your tables are stored together in a single tablespace file, it will have no effect. It is passed directly to xtrabackup's :option:`xtrabackup --parallel` option. See the :program:`xtrabackup` documentation for details
 
 .. option:: --password=PASSWORD
 
@@ -165,11 +165,11 @@ Options
 
 .. option:: --tmpdir=DIRECTORY
 
-   This option accepts a string argument that specifies the location where a temporary file will be stored. It should be used when :option:`--remote-host` or :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specifed, the default is to use the value of ``tmpdir`` read from the server configuration.
+   This option accepts a string argument that specifies the location where a temporary file will be stored. It may be used when :option:`--remote-host` or :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specifed, the default is to use the value of ``tmpdir`` read from the server configuration.
 
 .. option:: --use-memory
 
-   This option accepts a string argument that specifies the amount of memory in bytes for :program:`xtrabackup` to use for crash recovery while preparing a backup. Multiples are supported providing the unit (e.g. 1MB, 1GB). It is used only with the option :option:`--apply-log`. It is passed directly to |xtrabackup| 's :option:`xtrabackup --use-memory` option. See the |xtrabackup| documentation for details.
+   This option accepts a string argument that specifies the amount of memory in bytes for :program:`xtrabackup` to use for crash recovery while preparing a backup. Multiples are supported providing the unit (e.g. 1MB, 1M, 1GB, 1G). It is used only with the option :option:`--apply-log`. It is passed directly to |xtrabackup| 's :option:`xtrabackup --use-memory` option. See the |xtrabackup| documentation for details.
 
 .. option:: --user=USER
 
