@@ -38,6 +38,7 @@ How-Tos
    :maxdepth: 1
 
    howtos/setting_up_replication
+   howtos/backup_verification
 
 .. _aux-guides:
 
