@@ -4,6 +4,10 @@
 
 After you make a backup with :option:`--backup`, the next step is to prepare it. The data files are not point-in-time consistent until they've been prepared, because they were copied at different times as the program ran, and they might have been changed while this was happening. If you try to start InnoDB with these data files, it will detect corruption and crash itself to prevent you from running on damaged data. The :option:`--prepare` step makes the files perfectly consistent at a single instant in time, so you can run |InnoDB| on them.
 
+.. note:: 
+
+  For prepare "innobackupex --apply-log" should be used which will read |InnoDB| configuration from backup-my.cnf automatically, or --defaults-file=backup-my.cnf should be passed to the xtrabackup binary if it is used for preparing the backup. Otherwise it could lead to incorrect restore because xtrabackup could use wrong configuration options. 
+
 You can run the prepare operation on any machine; it does not need to be on the originating server or the server to which you intend to restore. You can copy the backup to a utility server and prepare it there, for example. It is important, however, that you use the same version of the xtrabackup binary that you used to create the backup to do the prepare.
 
 During the prepare operation, |xtrabackup| boots up a kind of modified InnoDB that's embedded inside it (the libraries it was linked against). The modifications are necessary to disable InnoDB's standard safety checks, such as complaining that the log file isn't the right size, which aren't appropriate for working with backups. These modifications are only for the xtrabackup binary; you don't need a modified |InnoDB| to use |xtrabackup| for your backups.

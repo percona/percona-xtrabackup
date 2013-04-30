@@ -9,22 +9,6 @@ This page documents all of the command-line options for the :program:`xtrabackup
 Options
 =======
 
-.. option:: --print-defaults
-
-   Print the program argument list and exit. Must be given as the first option on the command-line.
-
-.. option:: --no-defaults
-
-   Don't read default options from any option file. Must be given as the first option on the command-line.
-
-.. option:: --defaults-file=#
-
-   Only read default options from the given file. Must be given as the first option on the command-line. Must be a real file; it cannot be a symbolic link.
-
-.. option:: --defaults-extra-file=#
-
-   Read this file after the global files are read. Must be given as the first option on the command-line.
-
 .. option:: --apply-log-only
 
    This option causes only the redo stage to be performed when preparing a backup. It is very important for incremental backups.
@@ -48,6 +32,18 @@ Options
 .. option:: --datadir
 
    The source directory for the backup. This should be the same as the datadir for your MySQL server, so it should be read from :file:`my.cnf` if that exists; otherwise you must specify it on the command line.
+
+.. option:: --defaults-extra-file=#
+
+   Read this file after the global files are read. Must be given as the first option on the command-line.
+
+.. option:: --defaults-file=#
+
+   Only read default options from the given file. Must be given as the first option on the command-line. Must be a real file; it cannot be a symbolic link.
+
+.. option:: --defaults-group
+
+   This option is to set the group which should be read from the configuration file. This is used by innobackupex if you use the `--defaults-group` option. It is needed for mysqld_multi deployments.
 
 .. option:: --export
 
@@ -105,10 +101,6 @@ Options
     --innodb-read-io-threads
     --innodb-write-io-threads
 
-.. option:: --defaults-group
-
-   This option is to set the group which should be read from the configuration file. This is used by innobackupex if you use the `--defaults-group` option. It is needed for mysqld_multi deployments.
-
 .. option:: --log-copy-interval
 
    This option specifies time interval between checks done by log copying thread in milliseconds (default is 1 second).
@@ -117,13 +109,21 @@ Options
 
    Makes xtrabackup not copy data files, and output the contents of the InnoDB log files to STDOUT until the :option:`--suspend-at-end` file is deleted. This option enables :option:`--suspend-at-end` automatically.
 
-.. option:: --stream=name 
+.. option:: --no-defaults
 
-   Stream all backup files to the standard output in the specified format. Currently supported formats are 'xbstream' and 'tar'.
+   Don't read default options from any option file. Must be given as the first option on the command-line.
+
+.. option:: --parallel=#
+
+   This option specifies the number of threads to use to copy multiple data files concurrently when creating a backup. The default value is 1 (i.e., no concurrent transfer).
 
 .. option:: --prepare
 
    Makes :program:`xtrabackup` perform recovery on a backup created with :option:`--backup`, so that it is ready to use. See :doc:`preparing a backup <preparing_the_backup>`.
+
+.. option:: --print-defaults
+
+   Print the program argument list and exit. Must be given as the first option on the command-line.
 
 .. option:: --print-param
 
@@ -133,17 +133,21 @@ Options
 
    Causes :program:`xtrabackup` to scan the specified data files and print out index statistics.
 
+.. option:: --stream=name 
+
+   Stream all backup files to the standard output in the specified format. Currently supported formats are 'xbstream' and 'tar'.
+
 .. option:: --suspend-at-end
 
    Causes :program:`xtrabackup` to create a file called :file:`xtrabackup_suspended` in the :option:`--target-dir`. Instead of exiting after copying data files, :program:`xtrabackup` continues to copy the log file, and waits until the :file:`xtrabackup_suspended` file is deleted. This enables xtrabackup and other programs to coordinate their work. See :ref:`scripting-xtrabackup`.
 
-.. option:: --tables-file=name
-
-   A file containing one table name per line, in databasename.tablename format. The backup will be limited to the specified tables. See :ref:`scripting-xtrabackup`.
-
 .. option:: --tables=name
 
    A regular expression against which the full tablename, in ``databasename.tablename`` format, is matched. If the name matches, the table is backed up. See :doc:`partial backups <partial_backups>`.
+
+.. option:: --tables-file=name
+
+   A file containing one table name per line, in databasename.tablename format. The backup will be limited to the specified tables. See :ref:`scripting-xtrabackup`.
 
 .. option:: --target-dir=name
 
@@ -162,10 +166,6 @@ Options
 .. option:: --use-memory=#
 
    This option affects how much memory is allocated for preparing a backup with :option:`--prepare`, or analyzing statistics with :option:`--stats`. Its purpose is similar to :term:`innodb_buffer_pool_size`. It does not do the same thing as the similarly named option in Oracle's InnoDB Hot Backup tool. The default value is 100MB, and if you have enough available memory, 1GB to 2GB is a good recommended value.
-
-.. option:: --parallel=#
-
-   This option specifies the number of threads to use to copy multiple data files concurrently when creating a backup. The default value is 1 (i.e., no concurrent transfer).
 
 .. option:: --version
 

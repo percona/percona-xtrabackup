@@ -46,10 +46,25 @@ The script needs the codebase for which the building is targeted, you must provi
 
 Note that the script must be executed from the base directory of |Xtrabackup| sources, and that directory must contain the packages with the source code of the codebase selected. This may appear cumbersome, but if the variable ``AUTO_LOAD="yes"`` is set, the :command:`build.sh` script will download all the source code needed for the build.
 
+.. note:: 
+  The exact versions expected by build.sh script should be used. Changing the version info in build.sh to have it build against a different server version is not supported.
+
 At the base directory of the downloaded source code, if you execute ::
 
   $ AUTO_DOWNLOAD="yes" ./utils/build.sh xtradb
 
-and you go for a coffee, at your return |XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
+In case you're not able to use ``AUTO_DOWNLOAD="yes"`` option, sources can be downloaded manually for each release:
+
+  ================== =========  ===========================================================================
+  Value              Alias      Source tarball download link
+  ================== =========  ===========================================================================
+  innodb51           plugin     http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.1.59.tar.gz
+  innodb55           5.5        http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.5.17.tar.gz
+  xtradb51           xtradb     http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.1.59.tar.gz
+  xtradb55           xtradb55   http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.5.16.tar.gz
+  innodb56           5.6        http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.6.10.tar.gz
+  ================== =========  ===========================================================================
+
+After the build has finished |XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
 
 After this you’ll need to copy |innobackupex| (in the root folder used to retrieve |XtraBackup|) and the corresponding xtrabackup binary (in the src folder) to some directory listed in the PATH environment variable, e.g. ``/usr/bin``.

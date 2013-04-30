@@ -80,7 +80,7 @@ function usage()
     echo
     echo "Usage: `basename $0` CODEBASE"
     echo "where CODEBASE can be one of the following values or aliases:"
-    echo "  innodb51         | plugin                build agsinst InnoDB plugin in MySQL 5.1"
+    echo "  innodb51         | plugin                build against InnoDB plugin in MySQL 5.1"
     echo "  innodb55         | 5.5                   build against InnoDB in MySQL 5.5"
     echo "  innodb56         | 5.6,xtradb56,         build against InnoDB in MySQL 5.6"
     echo "                   | mariadb100"
