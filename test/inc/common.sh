@@ -31,7 +31,9 @@ function call_mysql_install_db()
 {
 	vlog "Calling mysql_install_db"
 	cd $MYSQL_BASEDIR
-	$MYSQL_INSTALL_DB --defaults-file=${MYSQLD_VARDIR}/my.cnf ${MYSQLD_EXTRA_ARGS}
+	$MYSQL_INSTALL_DB --defaults-file=${MYSQLD_VARDIR}/my.cnf \
+                    --basedir=${MYSQL_BASEDIR} \
+                    ${MYSQLD_EXTRA_ARGS}
 	cd -
 }
 
