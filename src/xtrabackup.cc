@@ -6118,7 +6118,11 @@ xtrabackup_stats_func(void)
 		ibool		exists;
 		os_file_type_t	type;
 
-		sprintf(logname, "ib_logfile%lu", (ulong) n);
+		snprintf(logname, sizeof(logname), "%s%c%s%lu",
+			INNODB_LOG_DIR, SRV_PATH_SEPARATOR,
+			"ib_logfile", (ulong) n);
+		srv_normalize_path_for_win(logname);
+
 		if (!os_file_status(logname, &exists, &type) || !exists ||
 		    type != OS_FILE_TYPE_FILE) {
 			msg("xtrabackup: Error: "
