@@ -163,13 +163,14 @@ TYPELIB xtrabackup_encrypt_algo_typelib=
 {array_elements(xtrabackup_encrypt_algo_names)-1,"",
 	xtrabackup_encrypt_algo_names, NULL};
 
-
 ibool xtrabackup_encrypt = FALSE;
 ulong xtrabackup_encrypt_algo;
 char *xtrabackup_encrypt_key = NULL;
 char *xtrabackup_encrypt_key_file = NULL;
 uint xtrabackup_encrypt_threads;
 ulonglong xtrabackup_encrypt_chunk_size = 0;
+
+ulint xtrabackup_rebuild_threads = 1;
 
 /* sleep interval beetween log copy iterations in log copying thread
 in milliseconds (default is 1 second) */
@@ -449,6 +450,7 @@ enum options_xtrabackup
   OPT_XTRA_DEBUG_SYNC,
   OPT_XTRA_COMPACT,
   OPT_XTRA_REBUILD_INDEXES,
+  OPT_XTRA_REBUILD_THREADS,
 #if MYSQL_VERSION_ID >= 50600
   OPT_INNODB_CHECKSUM_ALGORITHM,
   OPT_INNODB_UNDO_DIRECTORY,
@@ -827,6 +829,12 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "Only has effect with --prepare.",
    (G_PTR*) &xtrabackup_rebuild_indexes, (G_PTR*) &xtrabackup_rebuild_indexes,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"rebuild_threads", OPT_XTRA_REBUILD_INDEXES,
+   "Use this number of threads to rebuild indexes in a compact backup. "
+   "Only has effect with --prepare and --rebuild-indexes.",
+   (G_PTR*) &xtrabackup_rebuild_threads, (G_PTR*) &xtrabackup_rebuild_threads,
+   0, GET_UINT, REQUIRED_ARG, 1, 1, UINT_MAX, 0, 0, 0},
 
 #if MYSQL_VERSION_ID >= 50600
   {"innodb_checksum_algorithm", OPT_INNODB_CHECKSUM_ALGORITHM,

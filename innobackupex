@@ -137,6 +137,7 @@ my $option_safe_slave_backup_timeout = 300;
 
 my $option_compact = '';
 my $option_rebuild_indexes = '';
+my $option_rebuild_threads = 0;
 
 my %mysql;
 my $option_backup = '';
@@ -987,6 +988,9 @@ sub apply_log {
     if ($option_rebuild_indexes) {
         $cmdline = $cmdline . " --rebuild-indexes"
     }
+    if ($option_rebuild_threads) {
+        $cmdline = $cmdline . " --rebuild-threads=$option_rebuild_threads"
+    }
 
     $now = current_time();
     print STDERR "\n$now  $prefix Starting ibbackup with command: $cmdline\n\n";
@@ -1224,9 +1228,6 @@ sub start_ibbackup {
 
     if ($option_compact) {
 	$options = $options . " --compact";
-    }
-    if ($option_rebuild_indexes) {
-        $options = $options . " --rebuild-indexes";
     }
 
     $cmdline = "$option_ibbackup_binary $options";
@@ -1965,7 +1966,8 @@ sub check_args {
                         'safe-slave-backup' => \$option_safe_slave_backup,
                         'safe-slave-backup-timeout=i' => \$option_safe_slave_backup_timeout,
                         'compact' => \$option_compact,
-                        'rebuild-indexes' => \$option_rebuild_indexes
+                        'rebuild-indexes' => \$option_rebuild_indexes,
+                        'rebuild-threads=i' => \$option_rebuild_threads
     );
                         
     if (!$rcode) {
@@ -3145,6 +3147,10 @@ This option specifies the port to use when connecting to the database server wit
 =item --rebuild-indexes
 
 This option only has effect when used together with the --apply-log option and is passed directly to xtrabackup. When used, makes xtrabackup rebuild all secondary indexes after applying the log. This option is normally used to prepare compact backups. See the XtraBackup manual for more information.
+
+=item --rebuild-threads
+
+This option only has effect when used together with the --apply-log and --rebuild-indexes option and is passed directly to xtrabackup. When used, xtrabackup processes tablespaces in parallel with the specified number of threads when rebuilding indexes. See the XtraBackup manual for more information.
 
 =item --redo-only
 
