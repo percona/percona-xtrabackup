@@ -1907,6 +1907,13 @@ sub init {
         print STDERR "WARNING : A left over instance of suspend file '$suspend_file' was found.\n";
         unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
     }
+
+    if ( -e "$option_tmpdir/$xtrabackup_pid_file" ) {
+        print STDERR "WARNING : A left over instance of xtrabackup pid file ".
+                     "'$option_tmpdir/$xtrabackup_pid_file' was found.\n";
+        unlink $option_tmpdir . "/" . $xtrabackup_pid_file || 
+            Die "Failed to delete '$option_tmpdir/$xtrabackup_pid_file': $!";
+    }
 }
 
 
