@@ -1827,6 +1827,15 @@ sub init {
             }
         }
 
+        if ( -e "$option_tmpdir/$xtrabackup_pid_file" ) {
+            print STDERR "WARNING : A left over instance of xtrabackup pid " .
+                         "file '$option_tmpdir/$xtrabackup_pid_file' " .
+                         "was found.\n";
+            unlink $option_tmpdir . "/" . $xtrabackup_pid_file || 
+                Die "Failed to delete " .
+                    "'$option_tmpdir/$xtrabackup_pid_file': $!";
+        }
+
     } elsif ($option_copy_back || $option_move_back) {
         #$backup_config_file = $backup_dir . '/backup-my.cnf';
         #read_config_file($backup_config_file, \%backup_config);
