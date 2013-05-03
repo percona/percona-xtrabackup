@@ -17,7 +17,7 @@ xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup
 vlog "===> xtrabackup --stats --datadir=$topdir/backup"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup
 
-if ! grep -q "Cannot find log file ib_logfile0" $OUTFILE
+if ! grep -q "Cannot find log file" $OUTFILE
 then
     die "Cannot find the expected error message from xtrabackup --stats"
 fi
