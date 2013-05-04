@@ -2,8 +2,8 @@ Source: percona-xtrabackup
 Section: misc
 Priority: extra
 Maintainer: Percona Development <mysql-dev@percona.com>
-Build-Depends: debhelper (>= 7.3), autotools-dev, libaio-dev, wget, automake,
- libtool, bison, libncurses-dev, libz-dev, cmake, bzr, libgcrypt-dev
+Build-Depends: debhelper (>= 7.3), libaio-dev, wget, automake,
+ libtool, bison, libncurses-dev, libz-dev, libssl-dev, cmake, bzr, ca-certificates
 Standards-Version: 3.9.3
 Homepage: https://launchpad.net/percona-xtrabackup
 Vcs-Browser: http://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-1.4/files
