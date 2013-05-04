@@ -1219,9 +1219,9 @@ mem_free_and_error:
 	srv_use_sys_malloc = TRUE;
 	srv_file_format = 1; /* Barracuda */
 #if (MYSQL_VERSION_ID < 50500)
-	srv_check_file_format_at_startup = UNIV_FORMAT_MAX; /* on */
+	srv_check_file_format_at_startup = UNIV_FORMAT_MIN; /* on */
 #else
-	srv_max_file_format_at_startup = UNIV_FORMAT_MAX; /* on */
+	srv_max_file_format_at_startup = UNIV_FORMAT_MIN; /* on */
 #endif
 	/* --------------------------------------------------*/
 
