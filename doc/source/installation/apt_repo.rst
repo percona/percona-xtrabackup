@@ -28,6 +28,7 @@ Debian
 ------
 
  * 6.0 (squeeze)
+ * 7.0 (wheezy)
 
 Ubuntu
 ------
@@ -35,6 +36,7 @@ Ubuntu
  * 10.04LTS (lucid)
  * 12.04LTS (precise) 
  * 12.10 (quantal)
+ * 13.04 (raring)
 
 Experimental Repository
 =======================
