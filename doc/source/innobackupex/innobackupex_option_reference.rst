@@ -40,7 +40,7 @@ Options
 
 .. option:: --defaults-group=GROUP-NAME
 
-   This option accepts a string argument that specifies the group which should be read from the configuration file. This is needed if you use mysqld_multi.
+   This option accepts a string argument that specifies the group which should be read from the configuration file. This is needed if you use mysqld_multi. This can also be used to indicate groups other than mysqld and xtrabackup.
 
 .. option:: --export
 
@@ -139,10 +139,6 @@ Options
 
    This option accepts a string argument that specifies the command line options to pass to :command:`scp` when the option :option:`--remost-host` is specified. If the option is not specified, the default options are ``-Cp -c arcfour``.
 
-.. option:: --sshopt = SSH-OPTIONS
-
-   This option accepts a string argument that specifies the command line options to pass to :command:`ssh` when the option :option:`--remost-host` is specified.
-
 .. option:: --slave-info
 
    This option is useful when backing up a replication slave server. It prints the binary log position and name of the master server. It also writes this information to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER`` command. A new slave for this master can be set up by starting a slave server on this backup and issuing a ``CHANGE MASTER`` command with the binary log position saved in the :file:`xtrabackup_slave_info` file.
@@ -150,6 +146,10 @@ Options
 .. option:: --socket
 
    This option accepts a string argument that specifies the socket to use when connecting to the local database server with a UNIX domain socket. It is passed to the mysql child process without alteration. See :command:`mysql --help` for details.
+
+.. option:: --sshopt = SSH-OPTIONS
+
+   This option accepts a string argument that specifies the command line options to pass to :command:`ssh` when the option :option:`--remost-host` is specified.
 
 .. option:: --stream=STREAMNAME
 
@@ -165,7 +165,7 @@ Options
 
 .. option:: --tmpdir=DIRECTORY
 
-   This option accepts a string argument that specifies the location where a temporary file will be stored. It may be used when :option:`--remote-host` or :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specifed, the default is to use the value of ``tmpdir`` read from the server configuration.
+   This option accepts a string argument that specifies the location where a temporary file will be stored. It may be used when :option:`--remote-host` or :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specified, the default is to use the value of ``tmpdir`` read from the server configuration. innobackupex is passing the tmpdir value specified in my.cnf as the --target-dir option to the xtrabackup binary. Both [mysqld] and [xtrabackup] groups are read from my.cnf. If there is tmpdir in both, then the value being used depends on the order of those group in my.cnf.
 
 .. option:: --use-memory
 

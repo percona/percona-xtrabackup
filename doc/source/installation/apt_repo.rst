@@ -4,11 +4,7 @@
 
 *Debian* and *Ubuntu* packages from *Percona* are signed with a key. Before using the repository, you should add the key to :program:`apt`. To do that, run the following commands: ::
 
-  $ gpg --keyserver  hkp://keys.gnupg.net --recv-keys 1C4CBDCDCD2EFD2A
-  ... [some output removed] ...
-  gpg:               imported: 1
-  
-  $ gpg -a --export CD2EFD2A | sudo apt-key add -
+  $ apt-key adv --keyserver keys.gnupg.net --recv-keys 1C4CBDCDCD2EFD2A
 
 Add this to :file:`/etc/apt/sources.list`, replacing ``VERSION`` with the name of your distribution: ::
 
@@ -32,6 +28,7 @@ Debian
 ------
 
  * 6.0 (squeeze)
+ * 7.0 (wheezy)
 
 Ubuntu
 ------
@@ -39,6 +36,7 @@ Ubuntu
  * 10.04LTS (lucid)
  * 12.04LTS (precise) 
  * 12.10 (quantal)
+ * 13.04 (raring)
 
 Experimental Repository
 =======================
