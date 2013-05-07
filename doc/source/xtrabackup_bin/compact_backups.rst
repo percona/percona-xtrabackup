@@ -47,18 +47,32 @@ Preparing the compact require rebuilding the indexes as well. In order to prepar
 
 Output, beside the standard |innobackupex| output, should contain the information about indexes being rebuilt, like: ::
 
-  130201 10:40:20  InnoDB: Waiting for the background threads to start
-  Rebuilding indexes for table sbtest/sbtest1 (space id: 10)
-    Found index k_1
-    Dropping 1 index(es).
-    Rebuilding 1 index(es).
-  Rebuilding indexes for table sbtest/sbtest2 (space id: 11)
-    Found index k_1
-    Found index c
-    Found index k
-    Found index c_2
-    Dropping 4 index(es).
-    Rebuilding 4 index(es).
+  [01] Checking if there are indexes to rebuild in table sakila/city (space id: 9)
+  [01]   Found index idx_fk_country_id
+  [01]   Rebuilding 1 index(es).
+  [01] Checking if there are indexes to rebuild in table sakila/country (space id: 10)
+  [01] Checking if there are indexes to rebuild in table sakila/customer (space id: 11)
+  [01]   Found index idx_fk_store_id
+  [01]   Found index idx_fk_address_id
+  [01]   Found index idx_last_name
+  [01]   Rebuilding 3 index(es).
+
+Additionally, you can use the :option:`--rebuild-threads` option to process tables in multiple threads when rebuilding indexes, e.g.: ::
+
+  $ xtrabackup --prepare --rebuild-indexes --rebuild-threads=16 /data/backups/
+
+In this case |XtraBackup| will create 16 worker threads with each thread rebuilding indexes for one table at a time. It will also show thread IDs for each message ::
+
+  Starting 16 threads to rebuild indexes.
+
+  [09] Checking if there are indexes to rebuild in table sakila/city (space id: 9)
+  [09]   Found index idx_fk_country_id
+  [10] Checking if there are indexes to rebuild in table sakila/country (space id: 10)
+  [11] Checking if there are indexes to rebuild in table sakila/customer (space id: 11)
+  [11]   Found index idx_fk_store_id
+  [11]   Found index idx_fk_address_id
+  [11]   Found index idx_last_name
+  [11]   Rebuilding 3 index(es).
 
 Since |XtraBackup| has no information when applying an incremental backup to a compact full one, on whether there will be more incremental backups applied to it later or not, rebuilding indexes needs to be explicitly requested by a user whenever a full backup with some incremental backups merged is ready to be restored. Rebuilding indexes unconditionally on every incremental backup merge is not an option, since it is an expensive operation.
 

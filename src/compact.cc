@@ -42,16 +42,29 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #define XB_TMPFILE_SUFFIX ".tmp"
 
 /* Page range */
-typedef struct {
+struct page_range_t {
 	ulint	from;			/*!< range start */
 	ulint	to;			/*!< range end */
-} page_range_t;
+};
 
 /* Cursor in a page map file */
-typedef struct {
+struct page_map_cursor_t {
 	File		fd;	/*!< file descriptor */
 	IO_CACHE	cache;	/*!< IO_CACHE associated with fd */
-} page_map_cursor_t;
+};
+
+/* Table descriptor for the index rebuild operation */
+struct index_rebuild_table_t {
+	char*	name;					/* table name */
+	ulint	space_id;				/* space ID */
+	UT_LIST_NODE_T(index_rebuild_table_t)	list;	/* list node */
+};
+
+/* Thread descriptor for the index rebuild operation */
+struct index_rebuild_thread_t {
+	ulint		num;    /* thread number */
+	pthread_t	id;	/* thread ID */
+};
 
 /* Empty page use to replace skipped pages in the data files */
 static byte		empty_page[UNIV_PAGE_SIZE_MAX];
@@ -59,6 +72,12 @@ static const char	compacted_page_magic[] = "COMPACTP";
 static const size_t	compacted_page_magic_size =
 	sizeof(compacted_page_magic) - 1;
 static const ulint	compacted_page_magic_offset = FIL_PAGE_DATA;
+
+/* Mutex protecting table_list */
+static pthread_mutex_t					table_list_mutex;
+/* List of tablespaces to process by the index rebuild operation */
+static UT_LIST_BASE_NODE_T(index_rebuild_table_t)	table_list;
+
 
 /************************************************************************
 Compact page filter. */
@@ -711,9 +730,10 @@ Rebuild secondary indexes for a given table. */
 static
 void
 xb_rebuild_indexes_for_table(
-/*=======================*/
-	dict_table_t*	table,	/*!< in: table */
-	trx_t*		trx)	/*!< in: transaction handle */
+/*=========================*/
+	dict_table_t*	table,		/*!< in: table */
+	trx_t*		trx,		/*!< in: transaction handle */
+	ulint		thread_n)	/*!< in: thread number */
 {
 	dict_index_t*	index;
 	dict_index_t**	indexes;
@@ -726,7 +746,7 @@ xb_rebuild_indexes_for_table(
 	ulint*		add_key_nums;
 #endif
 
-	ut_ad(mutex_own(&(dict_sys->mutex)));
+	ut_ad(!mutex_own(&(dict_sys->mutex)));
 	ut_ad(table);
 
 	ut_a(UT_LIST_GET_LEN(table->indexes) > 0);
@@ -752,11 +772,11 @@ xb_rebuild_indexes_for_table(
 	index = dict_table_get_first_index(table);
 	ut_a(dict_index_is_clust(index));
 
-	msg("  Dropping %lu index(es).\n", n_indexes);
+	row_mysql_lock_data_dictionary(trx);
 
 	for (i = 0; (index = dict_table_get_next_index(index)); i++) {
 
-		msg("  Found index %s\n", index->name);
+		msg("[%02lu]   Found index %s\n", thread_n, index->name);
 
 		/* Pretend that it's the current trx that created this index.
 		Required to avoid 5.6+ debug assertions. */
@@ -805,7 +825,7 @@ xb_rebuild_indexes_for_table(
 	row_merge_drop_indexes(trx, table, indexes, n_indexes);
 #endif
 
-	msg("  Rebuilding %lu index(es).\n", n_indexes);
+	msg("[%02lu]   Rebuilding %lu index(es).\n", thread_n, n_indexes);
 
 	error = row_merge_lock_table(trx, table, LOCK_X);
 	xb_a(error == DB_SUCCESS);
@@ -817,6 +837,16 @@ xb_rebuild_indexes_for_table(
 		add_key_nums[i] = index_defs[i].key_number;
 #endif
 	}
+
+	/* Commit trx to release latches on system tables */
+	trx_commit_for_mysql(trx);
+	trx_start_for_ddl(trx, TRX_DICT_OP_INDEX);
+
+	row_mysql_unlock_data_dictionary(trx);
+
+	/* Reacquire table lock for row_merge_build_indexes() */
+	error = row_merge_lock_table(trx, table, LOCK_X);
+	xb_a(error == DB_SUCCESS);
 
 #if MYSQL_VERSION_ID >= 50600
 	error = row_merge_build_indexes(trx, table, table, FALSE, indexes,
@@ -835,6 +865,77 @@ xb_rebuild_indexes_for_table(
 	trx_start_for_ddl(trx, TRX_DICT_OP_INDEX);
 }
 
+/**************************************************************************
+Worker thread function for index rebuild. */
+static
+void *
+xb_rebuild_indexes_thread_func(
+/*===========================*/
+	void*	arg)	/* thread context */
+{
+	dict_table_t*		table;
+	index_rebuild_table_t*	rebuild_table;
+	index_rebuild_thread_t*	thread;
+	trx_t*			trx;
+
+	thread = (index_rebuild_thread_t *) arg;
+
+	trx = trx_allocate_for_mysql();
+
+	/* Suppress foreign key checks, as we are going to drop and recreate all
+	secondary keys. */
+	trx->check_foreigns = FALSE;
+	trx_start_for_ddl(trx, TRX_DICT_OP_INDEX);
+
+	/* Loop until there are no more tables in tables list */
+	for (;;) {
+		pthread_mutex_lock(&table_list_mutex);
+
+		rebuild_table = UT_LIST_GET_FIRST(table_list);
+
+		if (rebuild_table == NULL) {
+
+			pthread_mutex_unlock(&table_list_mutex);
+			break;
+		}
+
+		UT_LIST_REMOVE(list, table_list, rebuild_table);
+
+		pthread_mutex_unlock(&table_list_mutex);
+
+		ut_ad(rebuild_table->name);
+		ut_ad(!trx_sys_sys_space(rebuild_table->space_id));
+
+		row_mysql_lock_data_dictionary(trx);
+
+		table = dict_table_get_low(rebuild_table->name);
+
+		row_mysql_unlock_data_dictionary(trx);
+
+		ut_a(table != NULL);
+		ut_a(table->space == rebuild_table->space_id);
+
+		/* Discard change buffer entries for this space */
+		ibuf_delete_for_discarded_space(rebuild_table->space_id);
+
+		msg("[%02lu] Checking if there are indexes to rebuild in table "
+		    "%s (space id: %lu)\n",
+		    thread->num,
+		    rebuild_table->name, rebuild_table->space_id);
+
+		xb_rebuild_indexes_for_table(table, trx, thread->num);
+
+		mem_free(rebuild_table->name);
+		mem_free(rebuild_table);
+	}
+
+	trx_commit_for_mysql(trx);
+
+	trx_free_for_mysql(trx);
+
+	return(NULL);
+}
+
 /******************************************************************************
 Rebuild all secondary indexes in all tables in separate spaces. Called from
 innobase_start_or_create_for_mysql(). */
@@ -842,17 +943,18 @@ void
 xb_compact_rebuild_indexes(void)
 /*=============================*/
 {
-	dict_table_t*	sys_tables;
-	dict_index_t*	sys_index;
-	btr_pcur_t	pcur;
-	const rec_t*	rec;
-	mtr_t		mtr;
-	const byte*	field;
-	ulint		len;
-	ulint		space_id;
-	char*		name;
-	dict_table_t*	table;
-	trx_t*		trx;
+	dict_table_t*		sys_tables;
+	dict_index_t*		sys_index;
+	btr_pcur_t		pcur;
+	const rec_t*		rec;
+	mtr_t			mtr;
+	const byte*		field;
+	ulint			len;
+	ulint			space_id;
+	trx_t*			trx;
+	index_rebuild_table_t*	rebuild_table;
+	index_rebuild_thread_t*	threads;
+	ulint			i;
 
 #if MYSQL_VERSION_ID >= 50600
 	/* Set up the dummy table for the index rebuild error reporting */
@@ -860,14 +962,11 @@ xb_compact_rebuild_indexes(void)
 	dummy_table.s = &dummy_table_share;
 #endif
 
-	/* Iterate all tables that are not in the system tablespace. */
+	/* Iterate all tables that are not in the system tablespace and add them
+	to the list of tables to be rebuilt later. */
 
 	trx = trx_allocate_for_mysql();
 	trx_start_for_ddl(trx, TRX_DICT_OP_INDEX);
-
-	/* Suppress foreign key checks, as we are going to drop and recreate all
-	secondary keys. */
-	trx->check_foreigns = FALSE;
 
 	row_mysql_lock_data_dictionary(trx);
 
@@ -880,6 +979,9 @@ xb_compact_rebuild_indexes(void)
 	sys_tables = dict_table_get_low("SYS_TABLES");
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 	ut_a(!dict_table_is_comp(sys_tables));
+
+	pthread_mutex_init(&table_list_mutex, NULL);
+	UT_LIST_INIT(table_list);
 
 	xb_btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
 				       TRUE, 0, &mtr);
@@ -910,28 +1012,13 @@ xb_compact_rebuild_indexes(void)
 		}
 
 		field = rec_get_nth_field_old(rec, 0, &len);
-		name = mem_strdupl((char*) field, len);
 
-		btr_pcur_store_position(&pcur, &mtr);
+		rebuild_table = static_cast<index_rebuild_table_t *>
+			(mem_alloc(sizeof(*rebuild_table)));
+		rebuild_table->name = mem_strdupl((char*) field, len);
+		rebuild_table->space_id = space_id;
 
-		mtr_commit(&mtr);
-
-		table = dict_table_get_low(name);
-		ut_a(table != NULL);
-
-		/* Discard change buffer entries for this space */
-		ibuf_delete_for_discarded_space(space_id);
-
-		msg("Rebuilding indexes for table %s (space id: %lu)\n", name,
-		    space_id);
-
-		xb_rebuild_indexes_for_table(table, trx);
-
-		mem_free(name);
-
-		mtr_start(&mtr);
-
-		btr_pcur_restore_position(BTR_SEARCH_LEAF, &pcur, &mtr);
+		UT_LIST_ADD_LAST(list, table_list, rebuild_table);
 	}
 
 	btr_pcur_close(&pcur);
@@ -942,4 +1029,36 @@ xb_compact_rebuild_indexes(void)
 	trx_commit_for_mysql(trx);
 
 	trx_free_for_mysql(trx);
+
+	/* Start worker threads for the index rebuild operation */
+	ut_ad(xtrabackup_rebuild_threads > 0);
+
+	if (xtrabackup_rebuild_threads > 1) {
+		msg("Starting %lu threads to rebuild indexes.\n",
+		    xtrabackup_rebuild_threads);
+	}
+
+	threads = (index_rebuild_thread_t *)
+		mem_alloc(sizeof(*threads) *
+			  xtrabackup_rebuild_threads);
+
+	for (i = 0; i < xtrabackup_rebuild_threads; i++) {
+
+		threads[i].num = i+1;
+		if (pthread_create(&threads[i].id, NULL,
+				   xb_rebuild_indexes_thread_func,
+				   &threads[i])) {
+
+			msg("error: pthread_create() failed: errno = %d\n",
+			    errno);
+			ut_a(0);
+		}
+	}
+
+	/* Wait for worker threads to finish */
+	for (i = 0; i < xtrabackup_rebuild_threads; i++) {
+		pthread_join(threads[i].id, NULL);
+	}
+
+	mem_free(threads);
 }

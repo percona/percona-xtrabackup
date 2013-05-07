@@ -52,6 +52,8 @@ extern lsn_t checkpoint_lsn_start;
 
 extern xb_page_bitmap *changed_page_bitmap;
 
+extern ulint	xtrabackup_rebuild_threads;
+
 void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,
 				const xb_delta_info_t *info);

@@ -43,7 +43,13 @@ then
 -DUNIV_DEBUG_THREAD_CREATION -DUNIV_DEBUG_LOCK_VALIDATE -DUNIV_DEBUG_PRINT \
 -DUNIV_DEBUG_FILE_ACCESS -DUNIV_SEARCH_DEBUG -DUNIV_LOG_LSN_DEBUG \
 -DUNIV_ZIP_DEBUG -DUNIV_AHI_DEBUG -DUNIV_SQL_DEBUG -DUNIV_AIO_DEBUG \
--DUNIV_LRU_DEBUG -DUNIV_BUF_DEBUG -DUNIV_HASH_DEBUG -DUNIV_LIST_DEBUG -DUNIV_IBUF_DEBUG"
+-DUNIV_LRU_DEBUG -DUNIV_BUF_DEBUG -DUNIV_HASH_DEBUG -DUNIV_IBUF_DEBUG"
+
+    if [ "$type" = "innodb56" ]
+    then
+	innodb_extra_debug="$innodb_extra_debug -DUNIV_LIST_DEBUG"
+    fi
+
     CFLAGS="$CFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
     CXXFLAGS="$CXXFLAGS -g -O0 $innodb_extra_debug -DSAFE_MUTEX -DSAFEMALLOC"
     extra_config_51="--with-debug=full"
@@ -181,7 +187,12 @@ function build_xtrabackup()
 	export LIBS="$LIBS -lrt"
     fi
     $MAKE_CMD MYSQL_ROOT_DIR=$server_dir clean
-    echo "$MAKE_CMD MYSQL_ROOT_DIR=$server_dir XTRABACKUP_VERSION=$XTRABACKUP_VERSION $xtrabackup_target" > build.sh
+    cat > build.sh <<EOF
+export CFLAGS="$CFLAGS"
+export CXXFLAGS="$CXXFLAGS"
+$MAKE_CMD MYSQL_ROOT_DIR=$server_dir \
+  XTRABACKUP_VERSION=$XTRABACKUP_VERSION $xtrabackup_target
+EOF
     chmod +x build.sh
     $MAKE_CMD MYSQL_ROOT_DIR=$server_dir XTRABACKUP_VERSION=$XTRABACKUP_VERSION $xtrabackup_target
     cd $top_dir
