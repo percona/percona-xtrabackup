@@ -4031,6 +4031,55 @@ xb_get_relative_path(
 
 }
 
+/**********************************************************************//**
+Closes a file. */
+static
+void
+xb_fil_node_close_file(
+/*===================*/
+	fil_node_t*	node)	/*!< in: file node */
+{
+	ibool	ret;
+
+	mutex_enter(&fil_system->mutex);
+
+	ut_ad(node);
+	ut_a(node->n_pending == 0);
+	ut_a(node->n_pending_flushes == 0);
+#if MYSQL_VERSION_ID >= 50600
+	ut_a(!node->being_extended);
+#endif
+
+	if (!node->open) {
+
+		mutex_exit(&fil_system->mutex);
+
+		return;
+	}
+
+	ret = os_file_close(node->handle);
+	ut_a(ret);
+
+	node->open = FALSE;
+
+	ut_a(fil_system->n_open > 0);
+	fil_system->n_open--;
+#if MYSQL_VERSION_ID >= 50600
+	fil_n_file_opened--;
+#endif
+
+	if (node->space->purpose == FIL_TABLESPACE &&
+	    !trx_sys_sys_space(node->space->id)) {
+
+		ut_a(UT_LIST_GET_LEN(fil_system->LRU) > 0);
+
+		/* The node is in the LRU list, remove it */
+		UT_LIST_REMOVE(LRU, fil_system->LRU, node);
+	}
+
+	mutex_exit(&fil_system->mutex);
+}
+
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 #define COPY_CHUNK 64
 
@@ -4038,7 +4087,6 @@ static
 my_bool
 xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 {
-	os_file_t	src_file = XB_FILE_UNDEFINED;
 	MY_STAT		src_stat;
 	char		dst_name[FN_REFLEN];
 	char		meta_name[FN_REFLEN];
@@ -4089,34 +4137,47 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	strncpy(dst_name, xb_get_relative_path(node_path, is_system),
 		sizeof(dst_name));
 
-	/* open src_file*/
-	src_file = xb_file_create_no_error_handling(node_path,
-						    OS_FILE_OPEN,
-						    OS_FILE_READ_ONLY,
-						    &success);
-	if (!success) {
-		/* The following call prints an error message */
-		os_file_get_last_error(TRUE);
+	/* We should already have a tablespace handle created by
+	fil_load_single_table_tablespace() unless it is a system tablespace. */
+	if (is_system) {
 
-		msg("[%02u] xtrabackup: Warning: cannot open %s\n"
-		    "[%02u] xtrabackup: Warning: We assume the "
-		    "table was dropped or renamed during "
-		    "xtrabackup execution and ignore the file.\n",
-		    thread_n, node_path, thread_n);
-		goto skip;
+		node->handle =
+			xb_file_create_no_error_handling(node_path,
+							 OS_FILE_OPEN,
+							 OS_FILE_READ_ONLY,
+							 &success);
+		if (!success) {
+
+			msg("[%02u] xtrabackup: error: cannot open "
+			    "system tablespace %s\n", thread_n, node_path);
+			goto error;
+		}
+
+		mutex_enter(&fil_system->mutex);
+
+		node->open = TRUE;
+
+		fil_system->n_open++;
+#if MYSQL_VERSION_ID >= 50600
+		fil_n_file_opened++;
+#endif
+
+		mutex_exit(&fil_system->mutex);
 	}
 
-	xb_file_set_nocache(src_file, node_path, "OPEN");
+	ut_ad(node->open);
+
+	xb_file_set_nocache(node->handle, node_path, "OPEN");
 
 #ifdef USE_POSIX_FADVISE
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(node->handle, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
 
 #ifndef INNODB_VERSION_SHORT
 	page_size = UNIV_PAGE_SIZE;
 	page_size_shift = UNIV_PAGE_SIZE_SHIFT;
 #else
-	info.zip_size = xb_get_zip_size(src_file);
+	info.zip_size = xb_get_zip_size(node->handle);
 	if (info.zip_size == ULINT_UNDEFINED) {
 		goto skip;
 	} else if (info.zip_size) {
@@ -4160,10 +4221,10 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 	} else
 		info.page_size = 0;
 
-	if (my_stat(node_path, &src_stat, MYF(MY_WME)) == NULL) {
+	if (my_fstat(node->handle, &src_stat, MYF(MY_WME))) {
 		msg("[%02u] xtrabackup: Warning: cannot stat %s\n",
 		    thread_n, node_path);
-		goto skip;
+		goto error;
 	}
 	dstfile = ds->open(ds_ctxt, dst_name, &src_stat);
 	if (dstfile == NULL) {
@@ -4193,7 +4254,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 					     * page_size + UNIV_PAGE_SIZE));
 	page = static_cast<byte *>(ut_align(buf2, UNIV_PAGE_SIZE));
 
-	success = xb_os_file_read(src_file, page, 0, UNIV_PAGE_SIZE);
+	success = xb_os_file_read(node->handle, page, 0, UNIV_PAGE_SIZE);
 	if (!success) {
 		goto error;
 	}
@@ -4214,13 +4275,13 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n, ds_ctxt_t *ds_ctxt)
 read_retry:
 		xtrabackup_io_throttling();
 
-		success = xb_os_file_read(src_file, page, offset, chunk);
+		success = xb_os_file_read(node->handle, page, offset, chunk);
 		if (!success) {
 			goto error;
 		}
 
 #ifdef USE_POSIX_FADVISE
-		posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+		posix_fadvise(node->handle, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
 		/* check corruption and retry */
@@ -4345,17 +4406,17 @@ read_retry:
 
 	/* close */
 	msg("[%02u]        ...done\n", thread_n);
-	if (!node->open) {
-		os_file_close(src_file);
-	}
+
+	xb_fil_node_close_file(node);
+
 	ds->close(dstfile);
 	if (incremental_buffer_base)
 		ut_free(incremental_buffer_base);
 	ut_free(buf2);
 	return(FALSE);
 error:
-	if (src_file != XB_FILE_UNDEFINED && !node->open)
-		os_file_close(src_file);
+	xb_fil_node_close_file(node);
+
 	if (dstfile != NULL)
 		ds->close(dstfile);
 	if (incremental_buffer_base)
@@ -4367,8 +4428,8 @@ error:
 	return(TRUE); /*ERROR*/
 
 skip:
-	if (src_file != XB_FILE_UNDEFINED && !node->open)
-		os_file_close(src_file);
+	xb_fil_node_close_file(node);
+
 	if (dstfile != NULL)
 		ds->close(dstfile);
 	if (incremental_buffer_base)
@@ -4785,7 +4846,7 @@ xb_data_files_init(void)
 		    srv_n_file_io_threads,
 		    SRV_MAX_N_PENDING_SYNC_IOS);
 
-	fil_init(srv_max_n_open_files);
+	fil_init(LONG_MAX);
 #else
 #if MYSQL_VERSION_ID >= 50600
 	srv_n_file_io_threads = srv_n_read_io_threads;
@@ -4799,8 +4860,7 @@ xb_data_files_init(void)
 		    srv_n_write_io_threads,
 		    SRV_MAX_N_PENDING_SYNC_IOS);
 
-	fil_init(srv_file_per_table ? 50000 : 5000,
-		 srv_max_n_open_files);
+	fil_init(srv_file_per_table ? 50000 : 5000, LONG_MAX);
 #endif
 
 	fsp_init();
@@ -4844,11 +4904,6 @@ xb_data_files_init(void)
 		return(DB_ERROR);
 	}
 
-	err = fil_load_single_table_tablespaces(xb_check_if_open_tablespace);
-	if (err != DB_SUCCESS) {
-		return(err);
-	}
-
 #if MYSQL_VERSION_ID >= 50600
 	/* Add separate undo tablespaces to fil_system */
 
@@ -4860,6 +4915,15 @@ xb_data_files_init(void)
 		return(err);
 	}
 #endif
+
+	/* It is important to call fil_load_single_table_tablespace() after
+	srv_undo_tablespaces_init(), because fil_is_user_tablespace_id() *
+	relies on srv_undo_tablespaces_open to be properly initialized */
+
+	err = fil_load_single_table_tablespaces(xb_check_if_open_tablespace);
+	if (err != DB_SUCCESS) {
+		return(err);
+	}
 
 	return(DB_SUCCESS);
 }
@@ -5273,6 +5337,8 @@ xtrabackup_backup_func(void)
 #else
 	srv_read_only = TRUE;
 #endif
+
+	srv_backup_mode = TRUE;
 
 	/* initialize components */
         if(innodb_init_param())
