@@ -2,7 +2,7 @@
 |Percona XtraBackup| 2.1.0-rc1
 =======================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.0-rc1 on May 7th 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/2.1.0-rc1/>`_. For this *RC* release, we will not be making APT and YUM repositories available, just base deb and RPM packages
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.0-rc1 on May 7th 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/2.1.0-rc1/>`_. For this *RC* release, we will not be making APT and YUM repositories available, just base deb and RPM packages.
 
 This is an *Release Candidate* quality release and is not intended for production. If you want a high quality, Generally Available release, the current Stable version should be used (currently 2.0.7 in the 2.0 series at the time of writing).
 
@@ -15,7 +15,7 @@ New features
 
  Time interval between checks done by log copying thread is now configurable by :option:`innobackupex --log-copy-interval`. Making the interval configurable allows to reduce the time between checks which can prevent |XtraBackup| failures that are caused by the log records in the transactional log being overwritten before they are copied by the log copying thread.
 
- |Percona XtraBackup| now stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona Server| 5.6 with the :option:`innobackupex --slave-info`. Example of how this information can be used to create/restore a slave can be found in `this blogpost <http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
+ |Percona XtraBackup| now stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona Server| 5.6 with the ``GTID`` mode enabled. Example of how this information can be used to create/restore a slave can be found in `this blogpost <http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
 
  |Percona XtraBackup| option :option:`xtrabackup --export` now supports transportable tablespaces introduced in |MySQL| 5.6. This option can be used to produce 5.6-style metadata files, that can be imported by ``ALTER TABLE IMPORT TABLESPACE`` on |MySQL| and |Percona Server| 5.6 as described in :ref:`export_import_tables` guide.
 
@@ -40,4 +40,4 @@ Bugs Fixed
 
  For the *Debian* and the *Linux* binaries, the :option:`--version` message which should include the revision was showing "undefined". Bug fixed :bug:`1171721`.
 
-Other bugs fixed: bug fixed :bug:`1088307`, bug fixed :bug:`1088309`, bug fixed :bug:`1170340`,
+Other bugs fixed: bug fixed :bug:`1088307`, bug fixed :bug:`1088309`, bug fixed :bug:`1170340`.
