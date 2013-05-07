@@ -176,7 +176,11 @@ extern "C" {
 	fil_rename_tablespace(old_name_in, id, new_name)
 #  define xb_btr_root_block_get(index, mode, mtr) \
 	btr_root_block_get(index, mtr)
-#  define UNIV_FORMAT_MAX DICT_TF_FORMAT_51;
+#  if MYSQL_VERSION_ID < 50500
+#   define UNIV_FORMAT_MIN DICT_TF_FORMAT_51
+#  else
+#   define UNIV_FORMAT_MIN DICT_TF_FORMAT_MIN;
+#  endif
 #  define dict_tf_get_zip_size dict_table_flags_to_zip_size
 #  define os_file_get_size(file) os_file_get_size_as_iblonglong(file)
 #  define xb_os_file_set_size(name, file, size)				\
