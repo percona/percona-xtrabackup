@@ -15,7 +15,7 @@ New Features
 
  Time interval between checks done by log copying thread is now configurable by :option:`innobackupex --log-copy-interval`. Making the interval configurable allows to reduce the time between checks which can prevent |XtraBackup| failures that are caused by the log records in the transactional log being overwritten before they are copied by the log copying thread.
  
- |Percona XtraBackup| now stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona Server| 5.6 with the :option:`innobackupex --slave-info`. Example of how this information can be used to create/restore a slave can be found in `this blogpost <http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
+ |Percona XtraBackup| now stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona Server| 5.6 with the ``GTID`` mode enabled. Example of how this information can be used to create/restore a slave can be found in `this blogpost <http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
 
  |Percona XtraBackup| option :option:`xtrabackup --export` now supports transportable tablespaces introduced in |MySQL| 5.6. This option can be used to produce 5.6-style metadata files, that can be imported by ``ALTER TABLE IMPORT TABLESPACE`` on |MySQL| and |Percona Server| 5.6 as described in :ref:`export_import_tables` guide.
 
