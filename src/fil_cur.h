@@ -31,6 +31,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 struct xb_fil_cur_t {
 	os_file_t	file;		/*!< source file handle */
+	fil_node_t*	node;		/*!< source tablespace node */
 	char		rel_path[FN_REFLEN];
 					/*!< normalized file path */
 	char		abs_path[FN_REFLEN];

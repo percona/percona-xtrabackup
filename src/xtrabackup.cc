@@ -1813,6 +1813,55 @@ end:
 	return(zip_size);
 }
 
+/**********************************************************************//**
+Closes a file. */
+static
+void
+xb_fil_node_close_file(
+/*===================*/
+	fil_node_t*	node)	/*!< in: file node */
+{
+	ibool	ret;
+
+	mutex_enter(&fil_system->mutex);
+
+	ut_ad(node);
+	ut_a(node->n_pending == 0);
+	ut_a(node->n_pending_flushes == 0);
+#if MYSQL_VERSION_ID >= 50600
+	ut_a(!node->being_extended);
+#endif
+
+	if (!node->open) {
+
+		mutex_exit(&fil_system->mutex);
+
+		return;
+	}
+
+	ret = os_file_close(node->handle);
+	ut_a(ret);
+
+	node->open = FALSE;
+
+	ut_a(fil_system->n_open > 0);
+	fil_system->n_open--;
+#if MYSQL_VERSION_ID >= 50600
+	fil_n_file_opened--;
+#endif
+
+	if (node->space->purpose == FIL_TABLESPACE &&
+	    !trx_sys_sys_space(node->space->id)) {
+
+		ut_a(UT_LIST_GET_LEN(fil_system->LRU) > 0);
+
+		/* The node is in the LRU list, remove it */
+		UT_LIST_REMOVE(LRU, fil_system->LRU, node);
+	}
+
+	mutex_exit(&fil_system->mutex);
+}
+
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 
 static
@@ -2497,8 +2546,7 @@ xb_data_files_init(void)
 		    srv_n_write_io_threads,
 		    SRV_MAX_N_PENDING_SYNC_IOS);
 
-	fil_init(srv_file_per_table ? 50000 : 5000,
-		 srv_max_n_open_files);
+	fil_init(srv_file_per_table ? 50000 : 5000, LONG_MAX);
 
 	fsp_init();
 
@@ -2541,11 +2589,6 @@ xb_data_files_init(void)
 		return(DB_ERROR);
 	}
 
-	err = fil_load_single_table_tablespaces(xb_check_if_open_tablespace);
-	if (err != DB_SUCCESS) {
-		return(err);
-	}
-
 #if MYSQL_VERSION_ID >= 50600
 	/* Add separate undo tablespaces to fil_system */
 
@@ -2557,6 +2600,15 @@ xb_data_files_init(void)
 		return(err);
 	}
 #endif
+
+	/* It is important to call fil_load_single_table_tablespace() after
+	srv_undo_tablespaces_init(), because fil_is_user_tablespace_id() *
+	relies on srv_undo_tablespaces_open to be properly initialized */
+
+	err = fil_load_single_table_tablespaces(xb_check_if_open_tablespace);
+	if (err != DB_SUCCESS) {
+		return(err);
+	}
 
 	return(DB_SUCCESS);
 }
@@ -2850,6 +2902,8 @@ xtrabackup_backup_func(void)
 	mysql_data_home[1]=0;
 
 	xb_set_innodb_read_only();
+
+	srv_backup_mode = TRUE;
 
 	/* initialize components */
         if(innodb_init_param())

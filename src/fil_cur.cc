@@ -74,6 +74,55 @@ xb_get_relative_path(
 
 }
 
+/**********************************************************************//**
+Closes a file. */
+static
+void
+xb_fil_node_close_file(
+/*===================*/
+	fil_node_t*	node)	/*!< in: file node */
+{
+	ibool	ret;
+
+	mutex_enter(&fil_system->mutex);
+
+	ut_ad(node);
+	ut_a(node->n_pending == 0);
+	ut_a(node->n_pending_flushes == 0);
+#if MYSQL_VERSION_ID >= 50600
+	ut_a(!node->being_extended);
+#endif
+
+	if (!node->open) {
+
+		mutex_exit(&fil_system->mutex);
+
+		return;
+	}
+
+	ret = os_file_close(node->handle);
+	ut_a(ret);
+
+	node->open = FALSE;
+
+	ut_a(fil_system->n_open > 0);
+	fil_system->n_open--;
+#if MYSQL_VERSION_ID >= 50600
+	fil_n_file_opened--;
+#endif
+
+	if (node->space->purpose == FIL_TABLESPACE &&
+	    !trx_sys_sys_space(node->space->id)) {
+
+		ut_a(UT_LIST_GET_LEN(fil_system->LRU) > 0);
+
+		/* The node is in the LRU list, remove it */
+		UT_LIST_REMOVE(LRU, fil_system->LRU, node);
+	}
+
+	mutex_exit(&fil_system->mutex);
+}
+
 /************************************************************************
 Open a source file cursor and initialize the associated read filter.
 
@@ -90,11 +139,12 @@ xb_fil_cur_open(
 	ulint	page_size;
 	ulint	page_size_shift;
 	ulint	zip_size;
+	ibool	success;
 
 	/* Initialize these first so xb_fil_cur_close() handles them correctly
 	in case of error */
 	cursor->orig_buf = NULL;
-	cursor->file = XB_FILE_UNDEFINED;
+	cursor->node = NULL;
 
 	cursor->space_id = node->space->id;
 	cursor->is_system = trx_sys_sys_space(node->space->id);
@@ -109,31 +159,56 @@ xb_fil_cur_open(
 		xb_get_relative_path(cursor->abs_path, cursor->is_system),
 		sizeof(cursor->rel_path));
 
-	/* Open the file */
-
-	if (my_stat(node->name, &cursor->statinfo, MYF(MY_WME)) == NULL) {
-		msg("[%02u] xtrabackup: Warning: cannot stat %s\n",
-		    thread_n, node->name);
-		return(XB_FIL_CUR_SKIP);
-	}
-
-	ibool success;
-
-	cursor->file =
-		xb_file_create_no_error_handling(node->name,
+	/* In the backup mode we should already have a tablespace handle created
+	by fil_load_single_table_tablespace() unless it is a system
+	tablespace. Otherwise we open the file here. */
+	if (cursor->is_system || !srv_backup_mode) {
+		node->handle =
+			xb_file_create_no_error_handling(node->name,
 						 OS_FILE_OPEN,
 						 OS_FILE_READ_ONLY,
 						 &success);
-	if (!success) {
-		/* The following call prints an error message */
-		os_file_get_last_error(TRUE);
+		if (!success) {
+			/* The following call prints an error message */
+			os_file_get_last_error(TRUE);
 
-		msg("[%02u] xtrabackup: Warning: cannot open %s\n"
-		    "[%02u] xtrabackup: Warning: We assume the "
-		    "table was dropped or renamed during "
-		    "xtrabackup execution and ignore the file.\n",
-		    thread_n, node->name, thread_n);
-		return(XB_FIL_CUR_SKIP);
+			msg("[%02u] xtrabackup: error: cannot open "
+			    "tablespace %s\n",
+			    thread_n, cursor->abs_path);
+
+			return(XB_FIL_CUR_ERROR);
+		}
+		mutex_enter(&fil_system->mutex);
+
+		node->open = TRUE;
+
+		fil_system->n_open++;
+#if MYSQL_VERSION_ID >= 50600
+		fil_n_file_opened++;
+#endif
+
+		if (node->space->purpose == FIL_TABLESPACE &&
+		    !trx_sys_sys_space(node->space->id)) {
+
+			/* Put the node to the LRU list */
+			UT_LIST_ADD_FIRST(LRU, fil_system->LRU, node);
+		}
+
+		mutex_exit(&fil_system->mutex);
+	}
+
+	ut_ad(node->open);
+
+	cursor->node = node;
+	cursor->file = node->handle;
+
+	if (my_fstat(cursor->file, &cursor->statinfo, MYF(MY_WME))) {
+		msg("[%02u] xtrabackup: error: cannot stat %s\n",
+		    thread_n, cursor->abs_path);
+
+		xb_fil_cur_close(cursor);
+
+		return(XB_FIL_CUR_ERROR);
 	}
 
 	xb_file_set_nocache(cursor->file, node->name, "OPEN");
@@ -142,7 +217,7 @@ xb_fil_cur_open(
 	/* Determine the page size */
 	zip_size = xb_get_zip_size(cursor->file);
 	if (zip_size == ULINT_UNDEFINED) {
-		os_file_close(cursor->file);
+		xb_fil_cur_close(cursor);
 		return(XB_FIL_CUR_SKIP);
 	} else if (zip_size) {
 		page_size = zip_size;
@@ -230,7 +305,8 @@ read_retry:
 	cursor->buf_offset = offset;
 	cursor->buf_page_no = (ulint) (offset >> cursor->page_size_shift);
 
-	success = xb_os_file_read(cursor->file, cursor->buf, offset, to_read);
+	success = xb_os_file_read(cursor->file, cursor->buf, offset,
+				  to_read);
 	if (!success) {
 		return(XB_FIL_CUR_ERROR);
 	}
@@ -294,7 +370,8 @@ xb_fil_cur_close(
 	if (cursor->orig_buf != NULL) {
 		ut_free(cursor->orig_buf);
 	}
-	if (cursor->file != XB_FILE_UNDEFINED) {
-		os_file_close(cursor->file);
+	if (cursor->node != NULL) {
+		xb_fil_node_close_file(cursor->node);
+		cursor->file = XB_FILE_UNDEFINED;
 	}
 }
