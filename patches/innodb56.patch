@@ -961,7 +961,18 @@
  		if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
  			/* The following call is necessary for the insert
  			buffer to work with multiple tablespaces. We must
-@@ -2647,6 +2660,7 @@
+@@ -2439,7 +2452,9 @@
+ 		value.  Important to note that we can do it ONLY after
+ 		we have finished the recovery process so that the
+ 		image of TRX_SYS_PAGE_NO is not stale. */
+-		trx_sys_file_format_tag_init();
++		if (!srv_read_only_mode) {
++			trx_sys_file_format_tag_init();
++		}
+ 	}
+ 
+ 	if (!create_new_db && sum_of_new_sizes > 0) {
+@@ -2647,6 +2662,7 @@
  	    && srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
  
@@ -969,7 +980,7 @@
  		ut_print_timestamp(stderr);
  		fprintf(stderr,
  			" InnoDB: Error: tablespace size stored in header"
-@@ -2683,6 +2697,7 @@
+@@ -2683,6 +2699,7 @@
  
  			return(DB_ERROR);
  		}
@@ -977,7 +988,7 @@
  	}
  
  	/* Check that os_fast_mutexes work as expected */
-@@ -2739,6 +2754,7 @@
+@@ -2739,6 +2756,7 @@
  		fts_optimize_init();
  	}
  
@@ -985,7 +996,7 @@
  	srv_was_started = TRUE;
  
  	return(DB_SUCCESS);
-@@ -2794,7 +2810,7 @@
+@@ -2794,7 +2812,7 @@
  		return(DB_SUCCESS);
  	}
  
