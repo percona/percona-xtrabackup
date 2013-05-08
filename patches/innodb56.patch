@@ -375,7 +375,7 @@
  
 +	/* Ignore .isl files on XtraBackup recovery. All tablespaces must be
 +	local. */
-+	if (!recv_recovery_on) {
++	if (srv_backup_mode) {
  	/* Check for a link file which locates a remote tablespace. */
  	remote.success = fil_open_linked_file(
  		tablename, &remote.filepath, &remote.file);
@@ -396,7 +396,60 @@
  		ib_logf(IB_LOG_LEVEL_ERROR,
  			"The size of single-table tablespace file %s "
  			"is only " UINT64PF ", should be at least %lu!",
-@@ -4263,7 +4390,7 @@
+@@ -4243,7 +4370,51 @@
+ 	}
+ 
+ func_exit:
+-	os_file_close(fsp->file);
++	/* We reuse file handles on the backup stage in XtraBackup to avoid
++	inconsistencies between the file name and the actual tablespace contents
++	if a DDL occurs between a fil_load_single_table_tablespaces() call and
++	the actual copy operation. */
++	if (srv_backup_mode) {
++
++		fil_node_t*	node;
++		fil_space_t*	space;
++
++		mutex_enter(&fil_system->mutex);
++
++		space = fil_space_get_by_id(fsp->id);
++
++		if (space) {
++			node = UT_LIST_GET_LAST(space->chain);
++
++			/* The handle will be closed by xtrabackup in
++			xtrabackup_copy_datafile(). We set node->open to TRUE to
++			make sure no one calls fil_node_open_file()
++			(i.e. attempts to reopen the tablespace by name) during
++			the backup stage. */
++
++			node->open = TRUE;
++			node->handle = fsp->file;
++
++			/* The following is copied from fil_node_open_file() to
++			pass fil_system validaty checks. We cannot use
++			fil_node_open_file() directly, as that would re-open the
++			file by name and create another file handle. */
++
++			fil_system->n_open++;
++			fil_n_file_opened++;
++
++			if (fil_space_belongs_in_lru(space)) {
++
++				/* Put the node to the LRU list */
++				UT_LIST_ADD_FIRST(LRU, fil_system->LRU, node);
++			}
++		}
++
++		mutex_exit(&fil_system->mutex);
++	} else {
++
++		os_file_close(fsp->file);
++	}
+ 
+ #ifdef UNIV_HOTBACKUP
+ func_exit_after_close:
+@@ -4263,7 +4434,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -405,7 +458,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4303,7 +4430,7 @@
+@@ -4303,7 +4474,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  dberr_t
@@ -414,7 +467,7 @@
  /*===================================*/
  {
  	int		ret;
-@@ -4359,7 +4486,9 @@
+@@ -4359,7 +4530,9 @@
  			    "%s/%s", fil_path_to_mysql_datadir, dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
  
@@ -425,7 +478,7 @@
  
  		if (dbdir != NULL) {
  
-@@ -4380,9 +4509,15 @@
+@@ -4380,9 +4553,15 @@
  				    && (0 == strcmp(fileinfo.name
  						   + strlen(fileinfo.name) - 4,
  						   ".ibd")
@@ -433,7 +486,7 @@
 +					/* Ignore .isl files on XtraBackup
 +					recovery, all tablespaces must be
 +					local. */
-+					|| (!recv_recovery_on &&
++					|| (srv_backup_mode &&
 +					    0 == strcmp(fileinfo.name
  						   + strlen(fileinfo.name) - 4,
 -						   ".isl"))) {
@@ -443,7 +496,7 @@
  					/* The name ends in .ibd or .isl;
  					try opening the file */
  					fil_load_single_table_tablespace(
-@@ -4538,6 +4673,7 @@
+@@ -4538,6 +4717,7 @@
  {
  	fil_space_t*	fnamespace;
  	fil_space_t*	space;
@@ -451,7 +504,7 @@
  
  	ut_ad(fil_system);
  
-@@ -4615,6 +4751,10 @@
+@@ -4615,6 +4795,10 @@
  		if (fnamespace == NULL) {
  			if (print_error_if_does_not_exist) {
  				fil_report_missing_tablespace(name, id);
@@ -462,7 +515,7 @@
  			}
  		} else {
  			ut_print_timestamp(stderr);
-@@ -4638,6 +4778,10 @@
+@@ -4638,6 +4822,10 @@
  
  		mutex_exit(&fil_system->mutex);
  
@@ -473,7 +526,7 @@
  		return(FALSE);
  	}
  
-@@ -4728,6 +4872,7 @@
+@@ -4728,6 +4916,7 @@
  	ulint		page_size;
  	ulint		pages_added;
  	ibool		success;
@@ -481,7 +534,7 @@
  
  	ut_ad(!srv_read_only_mode);
  
-@@ -4772,13 +4917,17 @@
+@@ -4772,13 +4961,17 @@
  		goto retry;
  	}
  
@@ -500,7 +553,7 @@
  	start_page_no = space->size;
  	file_start_page_no = space->size - node->size;
  
-@@ -5024,7 +5173,7 @@
+@@ -5024,7 +5217,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -509,7 +562,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -5044,9 +5193,12 @@
+@@ -5044,9 +5237,12 @@
  	}
  
  	if (node->open == FALSE) {
@@ -523,7 +576,7 @@
  	}
  
  	if (node->n_pending == 0 && fil_space_belongs_in_lru(space)) {
-@@ -5058,6 +5210,8 @@
+@@ -5058,6 +5254,8 @@
  	}
  
  	node->n_pending++;
@@ -532,7 +585,7 @@
  }
  
  /********************************************************************//**
-@@ -5259,6 +5413,16 @@
+@@ -5259,6 +5457,16 @@
  
  	ut_ad(mode != OS_AIO_IBUF || space->purpose == FIL_TABLESPACE);
  
@@ -549,7 +602,7 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-@@ -5290,7 +5454,11 @@
+@@ -5290,7 +5498,11 @@
  	}
  
  	/* Open file if closed */
@@ -562,7 +615,7 @@
  
  	/* Check that at least the start offset is within the bounds of a
  	single-table tablespace, including rollback tablespaces. */
-@@ -6164,6 +6332,7 @@
+@@ -6164,6 +6376,7 @@
  	return(err);
  }
  
@@ -570,7 +623,7 @@
  /****************************************************************//**
  Generate redo logs for swapping two .ibd files */
  UNIV_INTERN
-@@ -6187,4 +6356,4 @@
+@@ -6187,4 +6400,4 @@
  			 0, 0, new_name, old_name, &mtr);
  	mtr_commit(&mtr);
  }
@@ -713,12 +766,14 @@
  Returns TRUE if a single-table tablespace does not exist in the memory cache,
 --- a/storage/innobase/include/srv0srv.h
 +++ b/storage/innobase/include/srv0srv.h
-@@ -353,6 +353,9 @@
+@@ -353,6 +353,11 @@
  extern ulong	srv_max_purge_lag_delay;
  
  extern ulong	srv_replication_delay;
 +
 +extern ibool	srv_apply_log_only;
++
++extern ibool	srv_backup_mode;
 +
  /*-------------------------------------------*/
  
@@ -814,7 +869,26 @@
  
  			lsn_t	end_lsn;
  
-@@ -2413,7 +2424,7 @@
+@@ -1868,6 +1879,18 @@
+ 			ulint	zip_size = fil_space_get_zip_size(space);
+ 			ulint	page_no = recv_addr->page_no;
+ 
++			/* By now we have replayed all DDL log records from the
++			current batch. Check if the space ID is still valid in
++			the entry being processed, and ignore it if it is not.*/
++			if (fil_tablespace_deleted_or_being_deleted_in_mem(space, -1)) {
++
++				ut_a(recv_sys->n_addrs);
++
++				recv_addr->state = RECV_PROCESSED;
++				recv_sys->n_addrs--;
++
++				continue;
++			}
+ 			if (recv_addr->state == RECV_NOT_PROCESSED) {
+ 				if (!has_printed) {
+ 					ib_logf(IB_LOG_LEVEL_INFO,
+@@ -2413,7 +2436,7 @@
  			   || type == MLOG_FILE_RENAME
  			   || type == MLOG_FILE_DELETE) {
  			ut_a(space);
@@ -823,7 +897,7 @@
  			if (recv_replay_file_ops) {
  
  				/* In ibbackup --apply-log, replay an .ibd file
-@@ -2436,7 +2447,7 @@
+@@ -2436,7 +2459,7 @@
  					ut_error;
  				}
  			}
@@ -832,7 +906,7 @@
  			/* In normal mysqld crash recovery we do not try to
  			replay file operations */
  #ifdef UNIV_LOG_LSN_DEBUG
-@@ -2863,8 +2874,14 @@
+@@ -2863,8 +2886,14 @@
  
  			fprintf(stderr,
  				"InnoDB: Doing recovery: scanned up to"
@@ -849,7 +923,7 @@
  		}
  	}
  
-@@ -2964,7 +2981,7 @@
+@@ -2964,7 +2993,7 @@
  	ib_logf(IB_LOG_LEVEL_INFO,
  		"Reading tablespace information from the .ibd files...");
  
@@ -858,7 +932,7 @@
  
  	/* If we are using the doublewrite method, we will
  	check if there are half-written pages in data files,
-@@ -3456,7 +3473,8 @@
+@@ -3456,7 +3485,8 @@
  	that the data dictionary tables will be free of any locks.
  	The data dictionary latch should guarantee that there is at
  	most one data dictionary transaction active at a time. */
@@ -895,16 +969,18 @@
  	tested with following crash point */
 --- a/storage/innobase/srv/srv0srv.cc
 +++ b/storage/innobase/srv/srv0srv.cc
-@@ -349,6 +349,8 @@
+@@ -349,6 +349,10 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
 +UNIV_INTERN ibool	srv_apply_log_only	= FALSE;
 +
++UNIV_INTERN ibool	srv_backup_mode	= FALSE;
++
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_spin_wait_delay	= 6;
-@@ -1808,7 +1810,8 @@
+@@ -1808,7 +1812,8 @@
  	if (ret == SRV_NONE
  	    && srv_shutdown_state != SRV_SHUTDOWN_NONE
  	    && trx_purge_state() != PURGE_STATE_DISABLED
