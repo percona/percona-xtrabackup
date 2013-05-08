@@ -61,7 +61,7 @@ set -ue
 export CC=${CC-"gcc"}
 export CXX=${CXX-"g++"}
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\" -fno-exceptions" 
+export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 AUTO_DOWNLOAD=yes ./utils/build.sh 5.1
 cp src/xtrabackup_51 src/xbstream .
 AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
