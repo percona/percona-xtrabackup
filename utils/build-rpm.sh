@@ -116,7 +116,7 @@ fi
 export CC=${CC:-gcc}
 export CXX=${CXX:-g++}
 export CFLAGS="-fPIC -Wall -O3 -g -static-libgcc -fno-omit-frame-pointer $TARGET_CFLAGS"
-export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fno-exceptions $TARGET_CFLAGS"
+export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 $TARGET_CFLAGS"
 export MAKE_JFLAG=-j4
 
 export MYSQL_RPMBUILD_TEST="$TEST"

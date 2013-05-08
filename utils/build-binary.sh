@@ -87,7 +87,7 @@ REVISION="$(cd "$SOURCEDIR"; bzr revno)"
 export CC=${CC:-gcc}
 export CXX=${CXX:-g++}
 export CFLAGS="-fPIC -Wall -O3 -g -static-libgcc -fno-omit-frame-pointer -DXTRABACKUP_REVISION=\\\"$REVISION\\\" ${CFLAGS:-}"
-export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fno-exceptions -DXTRABACKUP_REVISION=\\\"$REVISION\\\" ${CXXFLAGS:-}"
+export CXXFLAGS="-O2 -fno-omit-frame-pointer -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -DXTRABACKUP_REVISION=\\\"$REVISION\\\" ${CXXFLAGS:-}"
 export MAKE_JFLAG=-j4
 
 # Create a temporary working directory
