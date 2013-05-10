@@ -17,6 +17,10 @@ Options
 
    Make a backup and place it in :option:`--target-dir`. See :doc:`Creating a backup <creating_a_backup>`.
 
+.. option::  --compact     
+
+   Create a compact backup by skipping secondary index pages.
+
 .. option:: --compress 
 
    This option tells |xtrabackup| to compress all output data, including the transaction log file and meta data files, using the specified compression algorithm. The only currently supported algorithm is 'quicklz'. The resulting files have the qpress archive format, i.e. every `*.qp` file produced by xtrabackup is essentially a one-file qpress archive and can be extracted and uncompressed by the `qpress <http://www.quicklz.com/>`_  file archiver.
@@ -128,6 +132,14 @@ Options
 .. option:: --print-param
 
    Makes :program:`xtrabackup` print out parameters that can be used for copying the data files back to their original locations to restore them. See :ref:`scripting-xtrabackup`.
+
+.. option:: --rebuild_indexes
+
+   Rebuild secondary indexes in InnoDB tables after applying the log. Only has effect with --prepare. 
+
+.. option::  --rebuild_threads=# 
+
+   Use this number of threads to rebuild indexes in a compact backup. Only has effect with --prepare and --rebuild-indexes.
 
 .. option:: --stats
 
