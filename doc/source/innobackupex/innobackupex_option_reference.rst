@@ -143,6 +143,14 @@ Options
 
    This option accepts a string argument that specifies the port to use when connecting to the database server with TCP/IP. It is passed to the :command:`mysql` child process. It is passed to the :command:`mysql` child process without alteration. See :command:`mysql --help` for details.
 
+.. option:: --rebuild-indexes
+
+   This option only has effect when used together with the --apply-log option and is passed directly to xtrabackup. When used, makes xtrabackup rebuild all secondary indexes after applying the log. This option is normally used to prepare compact backups. See the :program:`xtrabackup` documentation for more information.
+
+.. option:: --rebuild-threads=NUMBER-OF-THREADS
+
+   This option only has effect when used together with the --apply-log and --rebuild-indexes option and is passed directly to xtrabackup. When used, xtrabackup processes tablespaces in parallel with the specified number of threads when rebuilding indexes. See the :program:`xtrabackup` documentation for more information.
+
 .. option:: --redo-only
 
    This option should be used when preparing the base full backup and when merging all incrementals except the last one. It is passed directly to xtrabackup's :option:`xtrabackup --apply-log-only` option. This forces :program:`xtrabackup` to skip the "rollback" phase and do a "redo" only. This is necessary if the backup will have incremental changes applied to it later. See the |xtrabackup| :doc:`documentation <../xtrabackup_bin/incremental_backups>` for details.
