@@ -39,6 +39,7 @@ How-Tos
 
    howtos/setting_up_replication
    howtos/backup_verification
+   howtos/recipes_ibkx_gtid
 
 .. _aux-guides:
 
