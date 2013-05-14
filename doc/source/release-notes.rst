@@ -38,6 +38,5 @@ Percona |XtraBackup| 2.1
    :maxdepth: 1
    :glob:
 
-   release-notes/2.1/2.1.0-*
    release-notes/2.1/*
 
