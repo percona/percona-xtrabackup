@@ -442,6 +442,25 @@ function checksum_table()
     $MYSQL $MYSQL_ARGS -Ns -e "CHECKSUM TABLE $2 EXTENDED" $1 | awk {'print $2'}
 }
 
+##########################################################################
+# Dumps a given database using mysqldump                                 #
+##########################################################################
+function record_db_state()
+{
+    $MYSQLDUMP $MYSQL_ARGS -t --compact $1 >"$topdir/tmp/$1_old.sql"
+}
+
+
+##########################################################################
+# Compares the current dump of a given database with a state previously  #
+# captured with record_db_state().					 #
+##########################################################################
+function verify_db_state()
+{
+    $MYSQLDUMP $MYSQL_ARGS -t --compact $1 >"$topdir/tmp/$1_new.sql"
+    diff -u "$topdir/tmp/$1_old.sql" "$topdir/tmp/$1_new.sql"
+}
+
 ########################################################################
 # Workarounds for a bug in grep 2.10 when grep -q file > file would
 # result in a failure.

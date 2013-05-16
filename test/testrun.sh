@@ -70,6 +70,7 @@ function set_vars()
     find_program MYSQLD mysqld $MYSQL_BASEDIR/bin/ $MYSQL_BASEDIR/libexec
     find_program MYSQL mysql $MYSQL_BASEDIR/bin
     find_program MYSQLADMIN mysqladmin $MYSQL_BASEDIR/bin
+    find_program MYSQLDUMP mysqldump $MYSQL_BASEDIR/bin
 
     # Check if we are running from a source tree and, if so, set PATH 
     # appropriately
@@ -85,9 +86,10 @@ function set_vars()
     else
 	LD_LIBRARY_PATH=$MYSQL_BASEDIR/lib/mysql:$LD_LIBRARY_PATH
     fi
+    DYLD_LIBRARY_PATH="$LD_LIBRARY_PATH"
 
     export TEST_BASEDIR PORT_BASE TAR MYSQL_BASEDIR MYSQL MYSQLD MYSQLADMIN \
-MYSQL_INSTALL_DB PATH LD_LIBRARY_PATH
+MYSQL_INSTALL_DB PATH LD_LIBRARY_PATH DYLD_LIBRARY_PATH MYSQLDUMP
 }
 
 
