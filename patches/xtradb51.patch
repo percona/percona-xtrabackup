@@ -357,7 +357,60 @@
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * (lint)UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -4247,7 +4349,7 @@
+@@ -4236,7 +4338,51 @@
+ 
+ 	fil_node_create(filepath, 0, space_id, FALSE);
+ func_exit:
+-	os_file_close(file);
++	/* We reuse file handles on the backup stage in XtraBackup to avoid
++	inconsistencies between the file name and the actual tablespace contents
++	if a DDL occurs between a fil_load_single_table_tablespaces() call and
++	the actual copy operation. */
++	if (srv_backup_mode) {
++
++		fil_node_t*	node;
++		fil_space_t*	space;
++
++		mutex_enter(&fil_system->mutex);
++
++		space = fil_space_get_by_id(space_id);
++
++		if (space) {
++			node = UT_LIST_GET_LAST(space->chain);
++
++			/* The handle will be closed by xtrabackup in
++			xtrabackup_copy_datafile(). We set node->open to TRUE to
++			make sure no one calls fil_node_open_file()
++			(i.e. attempts to reopen the tablespace by name) during
++			the backup stage. */
++
++			node->open = TRUE;
++			node->handle = file;
++
++			/* The following is copied from fil_node_open_file() to
++			pass fil_system validity checks. We cannot use
++			fil_node_open_file() directly, as that would re-open the
++			file by name and create another file handle. */
++
++			fil_system->n_open++;
++
++			if (space->purpose == FIL_TABLESPACE &&
++			    space->id != 0) {
++
++				/* Put the node to the LRU list */
++				UT_LIST_ADD_FIRST(LRU, fil_system->LRU, node);
++			}
++		}
++
++		mutex_exit(&fil_system->mutex);
++	} else {
++
++		os_file_close(file);
++	}
+ 	ut_free(buf2);
+ 	mem_free(filepath);
+ }
+@@ -4247,7 +4393,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -366,7 +419,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4291,7 +4393,7 @@
+@@ -4291,7 +4437,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  ulint
@@ -375,7 +428,7 @@
  /*===================================*/
  {
  	int		ret;
-@@ -4347,7 +4449,9 @@
+@@ -4347,7 +4493,9 @@
  			dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
  
@@ -386,7 +439,7 @@
  
  		if (dbdir != NULL) {
  			/* printf("Opened dir %s\n", dbinfo.name); */
-@@ -4373,8 +4477,11 @@
+@@ -4373,8 +4521,11 @@
  						   ".ibd")) {
  					/* The name ends in .ibd; try opening
  					the file */
@@ -399,7 +452,7 @@
  				}
  next_file_item:
  				ret = fil_file_readdir_next_file(&err,
-@@ -4546,15 +4653,97 @@
+@@ -4546,15 +4697,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -505,7 +558,7 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4953,7 +5142,7 @@
+@@ -4953,7 +5186,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -514,7 +567,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -4973,10 +5162,13 @@
+@@ -4973,10 +5206,13 @@
  	}
  
  	if (node->open == FALSE) {
@@ -529,7 +582,7 @@
  	}
  
  	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
-@@ -4989,6 +5181,8 @@
+@@ -4989,6 +5225,8 @@
  	}
  
  	node->n_pending++;
@@ -538,7 +591,7 @@
  }
  
  /********************************************************************//**
-@@ -5125,7 +5319,9 @@
+@@ -5125,7 +5363,9 @@
  	ut_ad(recv_no_ibuf_operations || (type == OS_FILE_WRITE)
  	      || !ibuf_bitmap_page(zip_size, block_offset)
  	      || sync || is_log);
@@ -549,7 +602,7 @@
  	      || ibuf_page(space_id, zip_size, block_offset, NULL));
  # endif /* UNIV_LOG_DEBUG */
  	if (sync) {
-@@ -5190,6 +5386,16 @@
+@@ -5190,6 +5430,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -681,13 +734,14 @@
  	return(buf);
 --- a/storage/innodb_plugin/include/srv0srv.h
 +++ b/storage/innodb_plugin/include/srv0srv.h
-@@ -226,6 +226,10 @@
+@@ -226,6 +226,11 @@
  
  extern ulong	srv_replication_delay;
  
 +extern ibool	srv_read_only;
 +extern ibool	srv_fake_write;
 +extern ibool	srv_apply_log_only;
++extern ibool	srv_backup_mode;
 +
  extern long long	srv_ibuf_max_size;
  extern ulint	srv_ibuf_active_contract;
@@ -876,7 +930,35 @@
  
  			ib_uint64_t	end_lsn;
  
-@@ -2369,7 +2377,7 @@
+@@ -1830,6 +1838,18 @@
+ 			ulint	zip_size = fil_space_get_zip_size(space);
+ 			ulint	page_no = recv_addr->page_no;
+ 
++			/* By now we have replayed all DDL log records from the
++			current batch. Check if the space ID is still valid in
++			the entry being processed, and ignore it if it is not.*/
++			if (fil_tablespace_deleted_or_being_deleted_in_mem(space, -1)) {
++
++				ut_a(recv_sys->n_addrs);
++
++				recv_addr->state = RECV_PROCESSED;
++				recv_sys->n_addrs--;
++
++				goto next;
++			}
+ 			if (recv_addr->state == RECV_NOT_PROCESSED) {
+ 				if (!has_printed) {
+ 					ut_print_timestamp(stderr);
+@@ -1863,7 +1883,7 @@
+ 
+ 				mutex_enter(&(recv_sys->mutex));
+ 			}
+-
++next:
+ 			recv_addr = HASH_GET_NEXT(addr_hash, recv_addr);
+ 		}
+ 
+@@ -2369,7 +2389,7 @@
  			   || type == MLOG_FILE_RENAME
  			   || type == MLOG_FILE_DELETE) {
  			ut_a(space);
@@ -885,7 +967,7 @@
  			if (recv_replay_file_ops) {
  
  				/* In ibbackup --apply-log, replay an .ibd file
-@@ -2392,7 +2400,7 @@
+@@ -2392,7 +2412,7 @@
  					ut_error;
  				}
  			}
@@ -894,7 +976,7 @@
  			/* In normal mysqld crash recovery we do not try to
  			replay file operations */
  #ifdef UNIV_LOG_LSN_DEBUG
-@@ -2809,8 +2817,11 @@
+@@ -2809,8 +2829,11 @@
  
  			fprintf(stderr,
  				"InnoDB: Doing recovery: scanned up to"
@@ -908,7 +990,7 @@
  		}
  	}
  
-@@ -2913,7 +2916,7 @@
+@@ -2913,7 +2936,7 @@
  		"InnoDB: Reading tablespace information"
  		" from the .ibd files...\n");
  
@@ -917,7 +999,7 @@
  
  	/* If we are using the doublewrite method, we will
  	check if there are half-written pages in data files,
-@@ -2922,12 +2933,14 @@
+@@ -2922,12 +2945,14 @@
  
  	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
  
@@ -933,7 +1015,7 @@
  	}
  }
  
-@@ -3095,6 +3108,7 @@
+@@ -3095,6 +3120,7 @@
  		recv_sys->recovered_lsn = checkpoint_lsn;
  
  		srv_start_lsn = checkpoint_lsn;
@@ -941,7 +1023,7 @@
  	}
  
  	contiguous_lsn = ut_uint64_align_down(recv_sys->scanned_lsn,
-@@ -3453,6 +3467,7 @@
+@@ -3453,6 +3479,7 @@
  	that the data dictionary tables will be free of any locks.
  	The data dictionary latch should guarantee that there is at
  	most one data dictionary transaction active at a time. */
@@ -1038,18 +1120,19 @@
  /* prototypes for new functions added to ha_innodb.cc */
  ibool	innobase_get_slow_log();
  
-@@ -415,6 +410,10 @@
+@@ -415,6 +410,11 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
 +UNIV_INTERN ibool	srv_read_only	= FALSE;
 +UNIV_INTERN ibool	srv_fake_write	= FALSE;
 +UNIV_INTERN ibool	srv_apply_log_only = FALSE;
++UNIV_INTERN ibool	srv_backup_mode = FALSE;
 +
  UNIV_INTERN long long	srv_ibuf_max_size = 0;
  UNIV_INTERN ulint	srv_ibuf_active_contract = 0; /* 0:disable 1:enable */
  UNIV_INTERN ulint	srv_ibuf_accel_rate = 100;
-@@ -1065,7 +1064,7 @@
+@@ -1065,7 +1065,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -1058,7 +1141,7 @@
  }
  
  /*********************************************************************//**
-@@ -1076,6 +1075,7 @@
+@@ -1076,6 +1076,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -1066,7 +1149,7 @@
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1089,6 +1089,7 @@
+@@ -1089,6 +1090,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -1074,7 +1157,7 @@
  }
  
  /*********************************************************************//**
-@@ -2570,36 +2571,6 @@
+@@ -2570,36 +2572,6 @@
  		old_sema = sema;
  	}
  
@@ -1163,7 +1246,6 @@
  
  	if (srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes < tablespace_size_in_header) {
--
 +		/* extend table space size aligning with header */
 +		ulint	actual_size;
 +		fil_extend_space_to_desired_size(&actual_size, 0, tablespace_size_in_header);
@@ -1174,7 +1256,7 @@
 +				(ulong) actual_size,
 +				(ulong) tablespace_size_in_header);
 +		}
-+
+ 
 +#ifdef UNDEFINED
  		fprintf(stderr,
  			"InnoDB: Error: tablespace size stored in header"
@@ -1497,3 +1579,14 @@
  
  	UNIV_MEM_FREE(buf, n);
  }
+--- a/configure.in
++++ b/configure.in
+@@ -22,7 +22,7 @@
+ AM_INIT_AUTOMAKE([1.9 tar-ustar])
+ AC_PROG_LIBTOOL
+ 
+-AM_CONFIG_HEADER([include/config.h])
++AC_CONFIG_HEADERS([include/config.h])
+ 
+ # Request support for automake silent-rules if available.
+ # Default to verbose output. One can use the configure-time
