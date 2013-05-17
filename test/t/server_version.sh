@@ -4,6 +4,20 @@
 
 . inc/common.sh
 
+# This test can only work when the xtrabackup binary autodetected by
+# innobackupex matches the binary built for this configuration, i.e. with
+# XB_BUILD=(xtradb51|xtradb55|xtradb56|innodb56)
+
+case "$XB_BUILD" in
+    "xtradb51" | "xtradb55" | "xtradb56" | "innodb56")
+	;;
+    *)
+	echo "Requires (xtradb51|xtradb55|xtradb56|innodb56) \
+build configuration" >> $SKIPPED_REASON
+	exit $SKIPPED_EXIT_CODE
+	;;
+esac
+
 start_server
 
 # Remove the explicit --ibbackup option from IB_ARGS
