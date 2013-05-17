@@ -2793,15 +2793,11 @@ sub set_xtrabackup_version {
 	Die "MySQL 5.0 support was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.0 was Percona XtraBackup 2.0.";
     }
 
-    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/.*/) {
+    if($var_version =~ m/5\.1\.\d/ && !defined($var_innodb_version)) {
 	Die "Support for MySQL 5.1 with builtin InnoDB (not the plugin) was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.1 with builtin InnoDB was Percona XtraBackup 2.0.";
     }
 
-    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/1\.0\.\d+$/) {
-	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
-    }
-
-    if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
+    if($var_version =~ m/5\.1\.\d/) {
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
     }
 
