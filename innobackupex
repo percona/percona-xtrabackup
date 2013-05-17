@@ -1621,7 +1621,7 @@ sub mysql_lockall {
         mysql_query($con, "COMMIT");
     }
     write_binlog_info($con);
-    write_galera_info if $option_galera_info;
+    write_galera_info($con) if $option_galera_info;
 	
     $now = current_time();
     print STDERR "$now  $prefix All tables locked and flushed to disk\n";
