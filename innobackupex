@@ -139,6 +139,8 @@ my $option_compact = '';
 my $option_rebuild_indexes = '';
 my $option_rebuild_threads = 0;
 
+my $option_debug_sleep_before_unlock = '';
+
 my %mysql;
 my $option_backup = '';
 
@@ -1403,6 +1405,7 @@ sub mysql_connect {
     }
 
     if ($con{dbh} && $con{keepalives}) {
+        $con{dbh}->do("SET SESSION wait_timeout=2147483");
         start_keepalives(\%con);
     }
 
@@ -1535,8 +1538,8 @@ sub write_galera_info {
     open(FILE, ">$galera_info") || 
          Die "Failed to open file '$galera_info': $!";
 
-    print FILE $con->{status}->{wsrep_local_state_uuid}->{Value};
-    print FILE $con->{status}->{wsrep_last_committed}->{Value};
+    print FILE $con->{status}->{wsrep_local_state_uuid}->{Value} . ":";
+    print FILE $con->{status}->{wsrep_last_committed}->{Value} . "\n";
 
     close(FILE);
 
@@ -1573,7 +1576,14 @@ sub write_slave_info {
     $position = $con->{slave_status}->{Exec_Master_Log_Pos};
 
     if (!defined($master) || !defined($filename) || !defined($position)) {
-        Die "Failed to get master binlog coordinates from SHOW SLAVE STATUS";
+        my $now = current_time();
+
+        print STDERR "$now  $prefix Failed to get master binlog coordinates " .
+            "from SHOW SLAVE STATUS\n";
+        print STDERR "$now  $prefix This means that the server is not a " .
+            "replication slave. Ignoring the --slave-info option\n";
+
+        return;
     }
 
     # print slave status to a file
@@ -1611,7 +1621,7 @@ sub mysql_lockall {
         mysql_query($con, "COMMIT");
     }
     write_binlog_info($con);
-    write_galera_info if $option_galera_info;
+    write_galera_info($con) if $option_galera_info;
 	
     $now = current_time();
     print STDERR "$now  $prefix All tables locked and flushed to disk\n";
@@ -1625,6 +1635,12 @@ sub mysql_lockall {
 sub mysql_unlockall {
     my $con = shift;
 
+    if ($option_debug_sleep_before_unlock) {
+        my $now = current_time();
+        print STDERR "$now  $prefix Debug sleep for ".
+            "$option_debug_sleep_before_unlock seconds\n";
+        sleep $option_debug_sleep_before_unlock;
+    }
     mysql_query ($con, "UNLOCK TABLES");
 
     $now = current_time();
@@ -1976,7 +1992,9 @@ sub check_args {
                         'safe-slave-backup-timeout=i' => \$option_safe_slave_backup_timeout,
                         'compact' => \$option_compact,
                         'rebuild-indexes' => \$option_rebuild_indexes,
-                        'rebuild-threads=i' => \$option_rebuild_threads
+                        'rebuild-threads=i' => \$option_rebuild_threads,
+                        'debug-sleep-before-unlock=i' =>
+                        \$option_debug_sleep_before_unlock
     );
                         
     if (!$rcode) {
@@ -2793,15 +2811,11 @@ sub set_xtrabackup_version {
 	Die "MySQL 5.0 support was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.0 was Percona XtraBackup 2.0.";
     }
 
-    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/.*/) {
+    if($var_version =~ m/5\.1\.\d/ && !defined($var_innodb_version)) {
 	Die "Support for MySQL 5.1 with builtin InnoDB (not the plugin) was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.1 with builtin InnoDB was Percona XtraBackup 2.0.";
     }
 
-    if($var_version =~ m/5\.1\.\d/ && $var_innodb_version =~ m/1\.0\.\d+$/) {
-	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
-    }
-
-    if($var_version =~ m/5\.1\.\d/ and $var_innodb_version =~ m/1\.0\.\d+-(rel)?\d/){
+    if($var_version =~ m/5\.1\.\d/) {
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup');
     }
 
@@ -3036,6 +3050,10 @@ Copy all the files in a previously made backup from the backup directory to thei
 =item --databases=LIST
 
 This option specifies the list of databases that innobackupex should back up. The option accepts a string argument or path to file that contains the list of databases to back up. The list is of the form "databasename1[.table_name1] databasename2[.table_name2] . . .". If this option is not specified, all databases containing MyISAM and InnoDB tables will be backed up.  Please make sure that --databases contains all of the InnoDB databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option --tables-file.)
+
+=item --debug-sleep-before-unlock=SECONDS
+
+This is a debug-only option used by the XtraBackup test suite.
 
 =item --defaults-file=[MY.CNF]
 
