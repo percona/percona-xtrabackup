@@ -1538,8 +1538,8 @@ sub write_galera_info {
     open(FILE, ">$galera_info") || 
          Die "Failed to open file '$galera_info': $!";
 
-    print FILE $con->{status}->{wsrep_local_state_uuid}->{Value};
-    print FILE $con->{status}->{wsrep_last_committed}->{Value};
+    print FILE $con->{status}->{wsrep_local_state_uuid}->{Value} . ":";
+    print FILE $con->{status}->{wsrep_last_committed}->{Value} . "\n";
 
     close(FILE);
 
