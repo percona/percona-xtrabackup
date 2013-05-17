@@ -139,6 +139,8 @@ my $option_compact = '';
 my $option_rebuild_indexes = '';
 my $option_rebuild_threads = 0;
 
+my $option_debug_sleep_before_unlock = '';
+
 my %mysql;
 my $option_backup = '';
 
@@ -1403,6 +1405,7 @@ sub mysql_connect {
     }
 
     if ($con{dbh} && $con{keepalives}) {
+        $con{dbh}->do("SET SESSION wait_timeout=2147483");
         start_keepalives(\%con);
     }
 
@@ -1632,6 +1635,12 @@ sub mysql_lockall {
 sub mysql_unlockall {
     my $con = shift;
 
+    if ($option_debug_sleep_before_unlock) {
+        my $now = current_time();
+        print STDERR "$now  $prefix Debug sleep for ".
+            "$option_debug_sleep_before_unlock seconds\n";
+        sleep $option_debug_sleep_before_unlock;
+    }
     mysql_query ($con, "UNLOCK TABLES");
 
     $now = current_time();
@@ -1983,7 +1992,9 @@ sub check_args {
                         'safe-slave-backup-timeout=i' => \$option_safe_slave_backup_timeout,
                         'compact' => \$option_compact,
                         'rebuild-indexes' => \$option_rebuild_indexes,
-                        'rebuild-threads=i' => \$option_rebuild_threads
+                        'rebuild-threads=i' => \$option_rebuild_threads,
+                        'debug-sleep-before-unlock=i' =>
+                        \$option_debug_sleep_before_unlock
     );
                         
     if (!$rcode) {
@@ -3039,6 +3050,10 @@ Copy all the files in a previously made backup from the backup directory to thei
 =item --databases=LIST
 
 This option specifies the list of databases that innobackupex should back up. The option accepts a string argument or path to file that contains the list of databases to back up. The list is of the form "databasename1[.table_name1] databasename2[.table_name2] . . .". If this option is not specified, all databases containing MyISAM and InnoDB tables will be backed up.  Please make sure that --databases contains all of the InnoDB databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option --tables-file.)
+
+=item --debug-sleep-before-unlock=SECONDS
+
+This is a debug-only option used by the XtraBackup test suite.
 
 =item --defaults-file=[MY.CNF]
 
