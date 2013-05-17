@@ -1573,7 +1573,14 @@ sub write_slave_info {
     $position = $con->{slave_status}->{Exec_Master_Log_Pos};
 
     if (!defined($master) || !defined($filename) || !defined($position)) {
-        Die "Failed to get master binlog coordinates from SHOW SLAVE STATUS";
+        my $now = current_time();
+
+        print STDERR "$now  $prefix Failed to get master binlog coordinates " .
+            "from SHOW SLAVE STATUS\n";
+        print STDERR "$now  $prefix This means that the server is not a " .
+            "replication slave. Ignoring the --slave-info option\n";
+
+        return;
     }
 
     # print slave status to a file
