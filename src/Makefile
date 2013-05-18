@@ -243,7 +243,7 @@ xtrabackup.o: xtrabackup.cc xb_regex.h write_filt.h fil_cur.h xtrabackup.h compa
 	common.h changed_page_bitmap.h read_filt.h innodb_int.h
 
 $(TARGET): $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBARCHIVE_A)
-	$(CXX) $(CFXXLAGS) $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \
+	$(CXX) $(CXXFLAGS) $(XTRABACKUPCCOBJS) $(XTRABACKUPCOBJS) $(INNODBOBJS) $(MYSQLOBJS) $(LIBS) \
 	$(LIBARCHIVE_A) -o $(TARGET)
 
 clean:
