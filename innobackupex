@@ -285,7 +285,7 @@ if ($option_copy_back || $option_move_back) {
         }
 } elsif ($option_backup) {
     # backup
-    %mysql = mysql_connect(abort_on_error => 1, keepalives => 1);
+    %mysql = mysql_connect(abort_on_error => 1);
 
     if ($option_ibbackup_binary eq 'autodetect') {
         $option_ibbackup_binary = set_xtrabackup_version();
@@ -1404,9 +1404,11 @@ sub mysql_connect {
         }
     }
 
-    if ($con{dbh} && $con{keepalives}) {
+    if ($con{dbh}) {
         $con{dbh}->do("SET SESSION wait_timeout=2147483");
-        start_keepalives(\%con);
+        if ($con{keepalives}) {
+            start_keepalives(\%con);
+        }
     }
 
     return %con;
