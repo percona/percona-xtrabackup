@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 #
 # Execute this tool to setup and build RPMs for XtraBackup starting
 # from a fresh tree
@@ -100,7 +100,7 @@ test -e "$SOURCEDIR/VERSION" || exit 2
 # Build information
 REDHAT_RELEASE="$(grep -o 'release [0-9][0-9]*' /etc/redhat-release | \
     cut -d ' ' -f 2)"
-REVISION="$(cd "$SOURCEDIR"; bzr revno)"
+REVISION="$(cd "$SOURCEDIR"; (bzr revno 2>/dev/null || cat REVNO))"
 
 # Fix problems in rpmbuild for rhel4: _libdir and _arch are not correctly set.
 if test "x$REDHAT_RELEASE" == "x4" && test "x$TARGET_ARG" == "xi686"
@@ -126,12 +126,8 @@ export MYSQL_RPMBUILD_TEST="$TEST"
 
     mkdir -p BUILD SOURCES RPMS SRPMS
 
-    # Copy source to SOURCE dir -- create a suitable tar
-    rm -f "SOURCE/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz"
-
-    bzr export \
-        "$WORKDIR_ABS/SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
-            "$SOURCEDIR"
+    # FIXME: spec file should use the VERSION-REVISION instead.
+    cp $SOURCEDIR/../percona-xtrabackup-$XTRABACKUP_VERSION*.tar.gz SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz
 
     # Issue RPM command
     rpmbuild $SIGN $TARGET $TARGET_LIBDIR $TARGET_ARCH $DUMMY \

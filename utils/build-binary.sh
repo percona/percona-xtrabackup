@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Execute this tool to setup the environment and build binary releases
 # for xtrabackup starting from a fresh tree.
@@ -81,7 +81,7 @@ test -e "$SOURCEDIR/VERSION" || exit 2
 . $SOURCEDIR/VERSION
 
 # Build information
-REVISION="$(cd "$SOURCEDIR"; bzr revno)"
+REVISION="$(cd "$SOURCEDIR"; bzr revno 2>/dev/null || cat REVNO)"
 
 # Compilation flags
 export CC=${CC:-gcc}
@@ -92,7 +92,7 @@ export MAKE_JFLAG=-j4
 
 # Create a temporary working directory
 BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
-INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION"   # Make it absolute
+INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION-`uname -s`-`arch`"   # Make it absolute
 
 mkdir "$INSTALLDIR"
 
@@ -102,14 +102,12 @@ export AUTO_DOWNLOAD=yes
 (
     cd "$WORKDIR"
 
-    # Make a copy of the source
-    rm -f "percona-xtrabackup-$XTRABACKUP_VERSION"
-
-    bzr export "percona-xtrabackup-$XTRABACKUP_VERSION" "$SOURCEDIR"
+    # we don't make a copy of source, we build "in tree"
+    # as we assume you've already done the extract source tarball thing.
 
     # Build proper
     (
-        cd "percona-xtrabackup-$XTRABACKUP_VERSION"
+	cd $SOURCEDIR
 
         # Install the files
         mkdir "$INSTALLDIR/bin" "$INSTALLDIR/share"
@@ -140,13 +138,13 @@ export AUTO_DOWNLOAD=yes
 
     if test "x$exit_value" = "x0"
     then
-        $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION.tar.gz" \
+        $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION-`uname -s`-`arch`.tar.gz" \
             --owner=0 --group=0 -C "$INSTALLDIR/../" \
-            "percona-xtrabackup-$XTRABACKUP_VERSION"
+            "percona-xtrabackup-$XTRABACKUP_VERSION-`uname -s`-`arch`"
     fi
 
     # Clean up build dir
-    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
+    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION-`uname -s`-`arch`"
     
     exit $exit_value
     

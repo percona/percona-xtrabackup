@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Usage: build-dpkg.sh [target dir]
 # The default target directory is the current directory. If it is not
 # supplied and the current directory is not empty, it will issue an error in
@@ -37,43 +37,11 @@ do
     esac
 done
 
-# Working directory
-if test "$#" -eq 0
-then
-    WORKDIR="$(pwd)"
-
-    # Check that the current directory is not empty
-    if test "x$(echo *)" != "x*"
-    then
-        echo >&2 \
-            "Current directory is not empty. Use $0 . to force build in ."
-        exit 1
-    fi
-
-elif test "$#" -eq 1
-then
-    WORKDIR="$1"
-
-    # Check that the provided directory exists and is a directory
-    if ! test -d "$WORKDIR"
-    then
-        echo >&2 "$WORKDIR is not a directory"
-        exit 1
-    fi
-
-else
-    echo >&2 "Usage: $0 [target dir]"
-    exit 1
-
-fi
-
-SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
-
 # Read XTRABACKUP_VERSION from the VERSION file
-. $SOURCEDIR/VERSION
+. VERSION
 
 DEBIAN_VERSION="$(lsb_release -sc)"
-REVISION="$(cd "$SOURCEDIR"; bzr revno)"
+REVISION="$(bzr revno 2>/dev/null || cat REVNO)"
 FULL_VERSION="$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION"
 
 # Build information
@@ -90,15 +58,12 @@ export DEB_DUMMY="$DUMMY"
 
 # Build
 (
-    # Make a copy in workdir and copy debian files
-    cd "$WORKDIR"
-    bzr export "percona-xtrabackup-$FULL_VERSION" "$SOURCEDIR"
+    # we assume we're in the source directory, as we assume
+    # that we've done "make dist" before.
 
     (
-        cd "percona-xtrabackup-$FULL_VERSION"
-
         # Move the debian dir to the appropriate place
-        cp -a "$SOURCEDIR/utils/debian/" .
+        cp -a "utils/debian/" .
 
         # Don't build transitional packages if requested
         if test "x$NOTRANSITIONAL" = "xyes"
@@ -112,7 +77,4 @@ export DEB_DUMMY="$DUMMY"
         dpkg-buildpackage $DPKG_BINSRC $BUILDPKG_KEY
  
     )
-
-    rm -rf "percona-xtrabackup-$FULL_VERSION"
-
 )

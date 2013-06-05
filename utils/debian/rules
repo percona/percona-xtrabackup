@@ -28,13 +28,13 @@ override_dh_auto_configure:
 override_dh_auto_build:
 
 ifeq "$(DEB_DUMMY)" ""
-	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb
+	./utils/build.sh xtradb
 	cp src/xtrabackup src/xbstream src/xbcrypt .
 
-	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb55
+	./utils/build.sh xtradb55
 	cp src/xtrabackup_55 .
 
-	AUTO_DOWNLOAD=yes ./utils/build.sh xtradb56
+	./utils/build.sh xtradb56
 	cp src/xtrabackup_56 .
 else
 	# Dummy binaries that avoid compilation
