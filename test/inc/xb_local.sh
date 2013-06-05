@@ -31,14 +31,18 @@ rm -r $mysql_datadir
 # Restore sakila
 vlog "Applying log"
 cd $backup_dir
-test -n "${data_decrypt_cmd:=""}" && run_cmd bash -c "$data_decrypt_cmd"
-test -n "${data_decompress_cmd:-""}" && run_cmd bash -c "$data_decompress_cmd";
+if [ -n "${data_decrypt_cmd:=""}" ] || [ -n "${data_decompress_cmd:=""}" ]; then 
+  vlog "################################"
+  vlog "# DECRYPTING AND DECOMPRESSING #"
+  vlog "################################"
+  test -n "${data_decrypt_cmd:=""}" && run_cmd bash -c "$data_decrypt_cmd"
+  test -n "${data_decompress_cmd:-""}" && run_cmd bash -c "$data_decompress_cmd";
+fi
 cd - >/dev/null 2>&1
 vlog "###########"
 vlog "# PREPARE #"
 vlog "###########"
 innobackupex --apply-log $backup_dir
-vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 vlog "###########"
 vlog "# RESTORE #"

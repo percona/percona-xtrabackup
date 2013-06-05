@@ -19,8 +19,7 @@ rm -rf ${MYSQLD_DATADIR}/*
 
 cd $topdir/backup
 
-for i in *.qp;  do qpress -d $i ./; done; \
-for i in sakila/*.qp; do qpress -d $i sakila/; done
+innobackupex --decompress $topdir/backup
 
 innobackupex --apply-log $topdir/backup
 
