@@ -62,6 +62,8 @@ export DEB_DUMMY="$DUMMY"
     # that we've done "make dist" before.
 
     (
+        T=`ls -1 ../percona-xtrabackup*tar.gz`; TO=`echo $T|sed -e 's/percona-xtrabackup-/percona-xtrabackup_/; s/\.tar\.gz/.orig.tar.gz/;'`; mv $T $TO
+
         # Move the debian dir to the appropriate place
         cp -a "utils/debian/" .
 
@@ -72,7 +74,7 @@ export DEB_DUMMY="$DUMMY"
         fi
 
         # Update distribution
-        dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION" 'Update distribution'
+        dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION-1" 'Update distribution'
         # Issue dpkg-buildpackage command
         dpkg-buildpackage $DPKG_BINSRC $BUILDPKG_KEY
  
