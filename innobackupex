@@ -2860,17 +2860,18 @@ sub wait_for_safe_slave {
    $sql_thread_started = 0;
    get_mysql_slave_status($con);
 
-   if (defined($con->{slave_status}->{Read_Master_Log_Pos})) {
+   if (defined($con->{slave_status}->{Read_Master_Log_Pos}) and
+       defined($con->{slave_status}->{Slave_SQL_Running})) {
          $host_is_slave = 1;
-   }
-
-   if ($con->{slave_status}->{Slave_SQL_Running} =~ m/Yes/ ) {
-         $sql_thread_started = 1;
    }
 
    if ( !$host_is_slave ) {
       print STDERR "$prefix: Not checking slave open temp tables for --safe-slave-backup because host is not a slave\n";
       return;
+   }
+
+   if ($con->{slave_status}->{Slave_SQL_Running} =~ m/Yes/ ) {
+         $sql_thread_started = 1;
    }
 
    if ($sql_thread_started) {
