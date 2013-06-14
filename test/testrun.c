@@ -353,7 +353,7 @@ int main(int argc, char* argv[])
   sigaction(SIGQUIT, &sa, NULL);
 
 #ifdef  _SC_NPROCESSORS_ONLN
-  njobs= sysconf(_SC_NPROCESSORS_ONLN) /2;
+  njobs= sysconf(_SC_NPROCESSORS_ONLN);
 #endif
 
 #ifdef _SC_PHYS_PAGES
