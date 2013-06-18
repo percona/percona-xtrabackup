@@ -280,10 +280,10 @@ err:
 
 static
 ssize_t
-my_xb_crypt_read_callback(void *userdata, void *buf, size_t len)
+my_xb_crypt_read_callback(void *userdata, void *buf, size_t len, int flags)
 {
 	File* file = (File *) userdata;
-	return my_read(*file, buf, len, MYF(MY_WME));
+	return my_read(*file, buf, len, flags);
 }
 
 static

@@ -56,7 +56,7 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen)
 	ssize_t		bytesread;
 	xb_rcrypt_result_t result = XB_CRYPT_READ_CHUNK;
 
-	if ((bytesread = crypt->read(crypt->userdata, tmpbuf, sizeof(tmpbuf)))
+	if ((bytesread = crypt->read(crypt->userdata, tmpbuf, sizeof(tmpbuf), MYF(MY_WME)))
 	    != sizeof(tmpbuf)) {
 		if (bytesread == 0) {
 			result = XB_CRYPT_READ_EOF;
@@ -138,7 +138,7 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen)
 	}
 
 	if (*elen > 0) {
-		if (crypt->read(crypt->userdata, crypt->buffer, *elen)
+		if (crypt->read(crypt->userdata, crypt->buffer, *elen, MYF(MY_WME|MY_FULL_IO))
 		    != (ssize_t)*elen) {
 			msg("%s:%s: failed to read %lld bytes for chunk payload "
 			    "at offset 0x%llx.\n", my_progname, __FUNCTION__,
