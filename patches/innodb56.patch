@@ -369,7 +369,17 @@
  
  		err = DB_CORRUPTION;
  
-@@ -4018,6 +4141,9 @@
+@@ -3974,6 +4097,9 @@
+ #ifdef UNIV_HOTBACKUP
+ 	fil_space_t*	space;
+ #endif
++	fsp_open_info*	fsp;
++	ulong		minimum_size;
++	ibool		file_space_create_success;
+ 
+ 	memset(&def, 0, sizeof(def));
+ 	memset(&remote, 0, sizeof(remote));
+@@ -4018,6 +4144,9 @@
  # endif /* !UNIV_HOTBACKUP */
  #endif
  
@@ -379,24 +389,76 @@
  	/* Check for a link file which locates a remote tablespace. */
  	remote.success = fil_open_linked_file(
  		tablename, &remote.filepath, &remote.file);
-@@ -4030,6 +4156,7 @@
+@@ -4028,8 +4157,20 @@
+ 		if (!remote.success) {
+ 			os_file_close(remote.file);
  			mem_free(remote.filepath);
++
++			if (srv_backup_mode) {
++
++				/* Ignore files that have uninitialized space
++				IDs on the backup stage. This means that a
++				tablespace has just been created and we will
++				replay the corresponding log records on
++				prepare. */
++
++				goto func_exit_after_close;
++			}
  		}
  	}
 +	}
  
  
  	/* Try to open the tablespace in the datadir. */
-@@ -4135,7 +4262,7 @@
+@@ -4042,6 +4183,17 @@
+ 		fil_validate_single_table_tablespace(tablename, &def);
+ 		if (!def.success) {
+ 			os_file_close(def.file);
++
++			if (srv_backup_mode) {
++
++				/* Ignore files that have uninitialized space
++				IDs on the backup stage. This means that a
++				tablespace has just been created and we will
++				replay the corresponding log records on
++				prepare. */
++
++				goto func_exit_after_close;
++			}
+ 		}
+ 	}
+ 
+@@ -4114,7 +4266,7 @@
+ 	/* At this point, only one tablespace is open */
+ 	ut_a(def.success == !remote.success);
+ 
+-	fsp_open_info*	fsp = def.success ? &def : &remote;
++	fsp = def.success ? &def : &remote;
+ 
+ 	/* Get and test the file size. */
+ 	size = os_file_get_size(fsp->file);
+@@ -4133,9 +4285,9 @@
+ 
+ 	/* Every .ibd file is created >= 4 pages in size. Smaller files
  	cannot be ok. */
- 	ulong minimum_size = FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE;
+-	ulong minimum_size = FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE;
++	minimum_size = FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE;
  	if (size < minimum_size) {
 -#ifndef UNIV_HOTBACKUP
 +#if 0
  		ib_logf(IB_LOG_LEVEL_ERROR,
  			"The size of single-table tablespace file %s "
  			"is only " UINT64PF ", should be at least %lu!",
-@@ -4243,7 +4370,51 @@
+@@ -4216,7 +4368,7 @@
+ 	}
+ 	mutex_exit(&fil_system->mutex);
+ #endif /* UNIV_HOTBACKUP */
+-	ibool file_space_create_success = fil_space_create(
++	file_space_create_success = fil_space_create(
+ 		tablename, fsp->id, fsp->flags, FIL_TABLESPACE);
+ 
+ 	if (!file_space_create_success) {
+@@ -4243,13 +4395,55 @@
  	}
  
  func_exit:
@@ -447,9 +509,16 @@
 +		os_file_close(fsp->file);
 +	}
  
- #ifdef UNIV_HOTBACKUP
+-#ifdef UNIV_HOTBACKUP
  func_exit_after_close:
-@@ -4263,7 +4434,7 @@
+-#else
+ 	ut_ad(!mutex_own(&fil_system->mutex));
+-#endif
++
+ 	mem_free(tablename);
+ 	if (remote.success) {
+ 		mem_free(remote.filepath);
+@@ -4263,7 +4457,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -458,7 +527,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4303,7 +4474,7 @@
+@@ -4303,7 +4497,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  dberr_t
@@ -467,7 +536,7 @@
  /*===================================*/
  {
  	int		ret;
-@@ -4359,7 +4530,9 @@
+@@ -4359,7 +4553,9 @@
  			    "%s/%s", fil_path_to_mysql_datadir, dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
  
@@ -478,7 +547,7 @@
  
  		if (dbdir != NULL) {
  
-@@ -4380,9 +4553,15 @@
+@@ -4380,9 +4576,15 @@
  				    && (0 == strcmp(fileinfo.name
  						   + strlen(fileinfo.name) - 4,
  						   ".ibd")
@@ -496,7 +565,7 @@
  					/* The name ends in .ibd or .isl;
  					try opening the file */
  					fil_load_single_table_tablespace(
-@@ -4538,6 +4717,7 @@
+@@ -4538,6 +4740,7 @@
  {
  	fil_space_t*	fnamespace;
  	fil_space_t*	space;
@@ -504,7 +573,7 @@
  
  	ut_ad(fil_system);
  
-@@ -4615,6 +4795,10 @@
+@@ -4615,6 +4818,10 @@
  		if (fnamespace == NULL) {
  			if (print_error_if_does_not_exist) {
  				fil_report_missing_tablespace(name, id);
@@ -515,7 +584,7 @@
  			}
  		} else {
  			ut_print_timestamp(stderr);
-@@ -4638,6 +4822,10 @@
+@@ -4638,6 +4845,10 @@
  
  		mutex_exit(&fil_system->mutex);
  
@@ -526,7 +595,7 @@
  		return(FALSE);
  	}
  
-@@ -4728,6 +4916,7 @@
+@@ -4728,6 +4939,7 @@
  	ulint		page_size;
  	ulint		pages_added;
  	ibool		success;
@@ -534,7 +603,7 @@
  
  	ut_ad(!srv_read_only_mode);
  
-@@ -4772,13 +4961,17 @@
+@@ -4772,13 +4984,17 @@
  		goto retry;
  	}
  
@@ -553,7 +622,7 @@
  	start_page_no = space->size;
  	file_start_page_no = space->size - node->size;
  
-@@ -5024,7 +5217,7 @@
+@@ -5024,7 +5240,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -562,7 +631,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -5044,9 +5237,12 @@
+@@ -5044,9 +5260,12 @@
  	}
  
  	if (node->open == FALSE) {
@@ -576,7 +645,7 @@
  	}
  
  	if (node->n_pending == 0 && fil_space_belongs_in_lru(space)) {
-@@ -5058,6 +5254,8 @@
+@@ -5058,6 +5277,8 @@
  	}
  
  	node->n_pending++;
@@ -585,7 +654,7 @@
  }
  
  /********************************************************************//**
-@@ -5259,6 +5457,16 @@
+@@ -5259,6 +5480,16 @@
  
  	ut_ad(mode != OS_AIO_IBUF || space->purpose == FIL_TABLESPACE);
  
@@ -602,7 +671,7 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-@@ -5290,7 +5498,11 @@
+@@ -5290,7 +5521,11 @@
  	}
  
  	/* Open file if closed */
@@ -615,7 +684,7 @@
  
  	/* Check that at least the start offset is within the bounds of a
  	single-table tablespace, including rollback tablespaces. */
-@@ -6164,6 +6376,7 @@
+@@ -6164,6 +6399,7 @@
  	return(err);
  }
  
@@ -623,7 +692,7 @@
  /****************************************************************//**
  Generate redo logs for swapping two .ibd files */
  UNIV_INTERN
-@@ -6187,4 +6400,4 @@
+@@ -6187,4 +6423,4 @@
  			 0, 0, new_name, old_name, &mtr);
  	mtr_commit(&mtr);
  }
