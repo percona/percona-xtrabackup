@@ -103,6 +103,6 @@ help:
 	@echo "ps51source - source tarball for PS 5.1 for XB"
 	@echo "ps55source - source tarball for PS 5.5 for XB"
 	@echo "innodb51source - source tarball for MySQL 5.1 needed for XB"
-	@echo "innodb55source - source tarball for MySQL 5.1 needed for XB"
-	@echo "innodb56source - source tarball for MySQL 5.1 needed for XB"
+	@echo "innodb55source - source tarball for MySQL 5.5 needed for XB"
+	@echo "innodb56source - source tarball for MySQL 5.6 needed for XB"
 
