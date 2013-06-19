@@ -11,7 +11,8 @@ Percona XtraBackup from source. These might vary from system to system.
 In Debian-based distributions, you need to:
 
   $ apt-get install build-essential flex bison automake autoconf bzr \
-    libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev
+    libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
+    libgcrypt11-dev
 
 In RPM-based distributions, you need to:
 
