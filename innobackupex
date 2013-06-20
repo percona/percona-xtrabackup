@@ -1531,17 +1531,31 @@ sub write_galera_info {
     my $con = shift;
     my @lines;
     my @info_lines = ();
-    my $position = '';
-    my $filename = '';
+    my $state_uuid = '';
+    my $last_committed = '';
 
     # get binlog position
     get_mysql_status($con);
 
+    $state_uuid = $con->{status}->{wsrep_local_state_uuid}->{Value};
+    $last_committed = $con->{status}->{wsrep_last_committed}->{Value};
+
+    if (!defined($state_uuid) || !defined($last_committed)) {
+        my $now = current_time();
+
+        print STDERR "$now  $prefix Failed to get master wsrep state " .
+            "from SHOW STATUS\n";
+        print STDERR "$now  $prefix This means that the server is not a " .
+            "member of a cluster. Ignoring the --galera-info option\n";
+
+        return;
+    }
+
+
     open(FILE, ">$galera_info") || 
          Die "Failed to open file '$galera_info': $!";
 
-    print FILE $con->{status}->{wsrep_local_state_uuid}->{Value} . ":";
-    print FILE $con->{status}->{wsrep_last_committed}->{Value} . "\n";
+    print FILE "$state_uuid:$last_committed\n";
 
     close(FILE);
 
