@@ -16,7 +16,7 @@ Build-Depends: automake,
 Standards-Version: 3.9.3
 Homepage: http://www.percona.com/software/percona-xtrabackup
 Vcs-Browser: http://bazaar.launchpad.net/~percona-core/percona-xtrabackup/2.1/files
-Vcs-Bzr: lp:percona-xtrabackup
+Vcs-Bzr: lp:percona-xtrabackup/2.1
 
 Package: percona-xtrabackup
 Architecture: any
