@@ -5,7 +5,9 @@
 . inc/common.sh
 . inc/ib_part.sh
 
-start_server --innodb_file_per_table
+MYSQLD_EXTRA_MY_CNF_OPTS="innodb-file-per-table"
+
+start_server
 
 require_partitioning
 
@@ -27,9 +29,7 @@ CREATE TABLE t_myisam (
 PARTITIONS 10 */;
 EOF
 
-# Force a checkpoint
-stop_server
-start_server --innodb_file_per_table
+force_checkpoint
 
 # Test that specifying partitions with --include works
 innobackupex --no-timestamp --include='^test.*#P#p5' $topdir/backup

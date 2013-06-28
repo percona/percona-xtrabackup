@@ -1,6 +1,8 @@
 . inc/common.sh
 
-start_server --innodb_file_per_table
+MYSQLD_EXTRA_MY_CNF_OPTS="innodb-file-per-table"
+
+start_server
 load_dbase_schema incremental_sample
 
 # Backup dir
@@ -15,8 +17,7 @@ INSERT INTO t VALUES (1), (2), (3);
 FLUSH LOGS;
 EOF
 
-stop_server
-start_server --innodb_file_per_table
+force_checkpoint
 
 vlog "Making incremental backup"
 innobackupex --incremental --no-timestamp --incremental-basedir=$topdir/backup/full $topdir/backup/delta
@@ -42,6 +43,6 @@ cp -r * $mysql_datadir
 cd $topdir
 
 vlog "Data restored"
-start_server --innodb_file_per_table
+start_server
 
 run_cmd $MYSQL $MYSQL_ARGS -e "SELECT * FROM t" test
