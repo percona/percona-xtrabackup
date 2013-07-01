@@ -4826,24 +4826,12 @@ xb_check_if_open_tablespace(
 }
 
 /************************************************************************
-Initialize the tablespace memory cache and populate it by scanning for and
-opening data files.
-@returns DB_SUCCESS or error code.*/
+Initializes the I/O and tablespace cache subsystems. */
 static
-ulint
-xb_data_files_init(void)
-/*====================*/
+void
+xb_fil_io_init(void)
+/*================*/
 {
-	ulint	i;
-	ibool	create_new_db;
-#ifdef XTRADB_BASED
-	ibool	create_new_doublewrite_file;
-#endif
-	ulint	err;
-	lsn_t	min_flushed_lsn;
-	lsn_t	max_flushed_lsn;
-	ulint   sum_of_new_sizes;
-
 #ifndef INNODB_VERSION_SHORT
 	os_aio_init(8 * SRV_N_PENDING_IOS_PER_THREAD
 		    * srv_n_file_io_threads,
@@ -4868,6 +4856,25 @@ xb_data_files_init(void)
 #endif
 
 	fsp_init();
+}
+
+/****************************************************************************
+Populates the tablespace memory cache by scanning for and opening data files.
+@returns DB_SUCCESS or error code.*/
+static
+ulint
+xb_load_tablespaces(void)
+/*=====================*/
+{
+	ulint	i;
+	ibool	create_new_db;
+#ifdef XTRADB_BASED
+	ibool	create_new_doublewrite_file;
+#endif
+	ulint	err;
+	lsn_t	min_flushed_lsn;
+	lsn_t	max_flushed_lsn;
+	ulint   sum_of_new_sizes;
 
 	for (i = 0; i < srv_n_file_io_threads; i++) {
 		thread_nr[i] = i;
@@ -4930,6 +4937,20 @@ xb_data_files_init(void)
 	}
 
 	return(DB_SUCCESS);
+}
+
+/************************************************************************
+Initialize the tablespace memory cache and populate it by scanning for and
+opening data files.
+@returns DB_SUCCESS or error code.*/
+static
+ulint
+xb_data_files_init(void)
+/*====================*/
+{
+	xb_fil_io_init();
+
+	return(xb_load_tablespaces());
 }
 
 /*********************************************************************//**
@@ -5438,12 +5459,7 @@ xtrabackup_backup_func(void)
 	ulint	err;
 	ulint	i;
 
-	err = xb_data_files_init();
-	if (err != DB_SUCCESS) {
-		msg("xtrabackup: error: xb_data_files_init() failed with"
-		    "error code %lu\n", err);
-		exit(EXIT_FAILURE);
-	}
+	xb_fil_io_init();
 
 	log_init();
 
@@ -5654,6 +5670,14 @@ reread_log_header:
 
 	log_copying_stop = xb_os_event_create(NULL);
 	os_thread_create(log_copying_thread, NULL, &log_copying_thread_id);
+
+	/* Populate fil_system with tablespaces to copy */
+	err = xb_load_tablespaces();
+	if (err != DB_SUCCESS) {
+		msg("xtrabackup: error: xb_load_tablespaces() failed with"
+		    "error code %lu\n", err);
+		exit(EXIT_FAILURE);
+	}
 
 	if (xtrabackup_parallel > 1 && xtrabackup_stream &&
 	    xtrabackup_stream_fmt == XB_STREAM_FMT_TAR) {
