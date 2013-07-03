@@ -1,19 +1,9 @@
 . inc/common.sh
+. inc/ib_part.sh
 
 start_server
 
-function check_partitioning()
-{
-   $MYSQL $MYSQL_ARGS -Ns -e "show variables like 'have_partitioning'"
-}
-
-PARTITION_CHECK=`check_partitioning`
-
-if [ -z "$PARTITION_CHECK" ]; then
-    echo "Requires Partitioning." > $SKIPPED_REASON
-    stop_server
-    exit $SKIPPED_EXIT_CODE
-fi
+require_partitioning
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE test (

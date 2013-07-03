@@ -23,7 +23,7 @@ SELECT SLEEP(10000);
 EOF
 }
 
-undo_directory=$TEST_BASEDIR/var1/undo_dir
+undo_directory=$TEST_VAR_ROOT/var1/undo_dir
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table=1
