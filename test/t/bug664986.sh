@@ -15,14 +15,6 @@ CREATE TABLE test_bug664986_myisam.t (a INT) ENGINE=MyISAM;
 
 EOF
 
-# Make sure we restore permissions to not leave stale files in Jenkins
-# on a test failure
-trap "vlog restoring directories and files permissions ; \
-  chmod 777 $MYSQLD_DATADIR/test_bug664986_innodb; \
-  chmod 777 $MYSQLD_DATADIR/test_bug664986_myisam; \
-  chmod 644 $MYSQLD_DATADIR/test_bug664986_innodb/*; \
-  chmod 644 $MYSQLD_DATADIR/test_bug664986_myisam/*" INT TERM EXIT
-
 # Test that wrong directory permissions result in a backup failure
 # for both InnoDB and non-InnoDB files
 chmod 000 $MYSQLD_DATADIR/test_bug664986_innodb

@@ -1362,4 +1362,20 @@
      int main()
      {
        extern void __attribute__((weak)) foo(void);
-
+--- a/mysys/my_thr_init.c
++++ b/mysys/my_thr_init.c
+@@ -462,8 +462,12 @@
+ 
+ extern void **my_thread_var_dbug()
+ {
+-  struct st_my_thread_var *tmp=
+-    my_pthread_getspecific(struct st_my_thread_var*,THR_KEY_mysys);
++  struct st_my_thread_var *tmp;
++
++  if (!my_thread_global_init_done)
++    return NULL;
++
++  tmp= my_pthread_getspecific(struct st_my_thread_var*,THR_KEY_mysys);
+   return tmp && tmp->init ? &tmp->dbug : 0;
+ }
+ #endif /* DBUG_OFF */
