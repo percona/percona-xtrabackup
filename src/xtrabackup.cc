@@ -1144,10 +1144,10 @@ innodb_init_param(void)
 	read from MySQL .cnf file */
 
 	if (xtrabackup_backup || xtrabackup_stats) {
-		msg("xtrabackup: Target instance is assumed as followings.\n");
+		msg("xtrabackup: using the following InnoDB configuration:\n");
 	} else {
-		msg("xtrabackup: Temporary instance for recovery is set as "
-		    "followings.\n");
+		msg("xtrabackup: using the following InnoDB configuration "
+		    "for recovery:\n");
 	}
 
 	/*--------------- Data files -------------------------*/
