@@ -440,28 +440,40 @@ sub backup {
     $suspend_file = $work_dir . $xb_fn_suspended_at_end;
     wait_for_ibbackup_suspend($suspend_file);
 
-    if ($option_safe_slave_backup) {
-        wait_for_safe_slave(\%mysql);
-    }
-
-    # flush tables with read lock
     if (!$option_no_lock) {
-        # make a prep copy before locking tables, if using rsync
-        backup_files(1);
+      if ($option_safe_slave_backup) {
+        wait_for_safe_slave(\%mysql);
+      }
 
-        # flush tables with read lock
-        mysql_lockall(\%mysql);
-    }
+      # flush tables with read lock
+      # make a prep copy before locking tables, if using rsync
+      backup_files(1);
 
-    if ($option_slave_info) {
+      # flush tables with read lock
+      mysql_lockall(\%mysql);
+
+      if ($option_slave_info) {
         write_slave_info(\%mysql);
+      }
     }
-
 
     # backup non-InnoDB files and tables
     # (or finalize the backup by syncing changes if using rsync)
     backup_files(0);
 
+    # There is no need to stop slave thread before coping non-Innodb data when
+    # --no-lock option is used because --no-lock option requires that no DDL or
+    # DML to non-transaction tables can occur.
+    if ($option_no_lock)
+    {
+      if ($option_safe_slave_backup)
+      {
+        wait_for_safe_slave(\%mysql);
+      }
+      if ($option_slave_info) {
+        write_slave_info(\%mysql);
+      }
+    }
     # resume XtraBackup and wait till it has finished
     resume_ibbackup($suspend_file);
     $suspend_file = $work_dir . $xb_fn_log_copied;
