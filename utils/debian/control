@@ -1,17 +1,26 @@
 Source: percona-xtrabackup
-Section: misc
+Section: database
 Priority: extra
 Maintainer: Percona Development <mysql-dev@percona.com>
-Build-Depends: debhelper (>= 7.3), libaio-dev, wget, automake,
- libtool, bison, libncurses-dev, libz-dev, libssl-dev, cmake, bzr, ca-certificates
+Build-Depends: automake,
+               bison,
+               ca-certificates,
+               cmake,
+               debhelper (>= 7.3),
+               libaio-dev,
+               libncurses-dev,
+               libssl-dev,
+               libtool,
+               libz-dev,
+               libgcrypt-dev
 Standards-Version: 3.9.3
-Homepage: https://launchpad.net/percona-xtrabackup
-Vcs-Browser: http://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-1.4/files
-Vcs-Bzr: bzr+ssh://bazaar.launchpad.net/~percona-dev/percona-xtrabackup/release-1.4/
+Homepage: http://www.percona.com/software/percona-xtrabackup
+Vcs-Browser: http://bazaar.launchpad.net/~percona-core/percona-xtrabackup/2.1/files
+Vcs-Bzr: lp:percona-xtrabackup/2.1
 
 Package: percona-xtrabackup
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libdbd-mysql-perl
+Depends: libdbd-mysql-perl, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
@@ -31,7 +40,7 @@ Description: Debug symbols for Percona XtraBackup
 
 Package: percona-xtrabackup-test
 Architecture: any
-Depends: percona-xtrabackup, python, ${misc:Depends}, mysql-client
+Depends: mysql-client, percona-xtrabackup, python, ${misc:Depends}
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.
