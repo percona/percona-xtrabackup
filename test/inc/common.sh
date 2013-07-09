@@ -357,13 +357,14 @@ function stop_server()
 }
 
 ########################################################################
-# Shutdown server with id=1 cleanly
+# Shutdown cleanly server specified with the first argument
 ########################################################################
-function shutdown_server()
+function shutdown_server_with_id()
 {
-    switch_server 1
+    local id=$1
+    switch_server $id
 
-    vlog "Shutting down server with id=1..."
+    vlog "Shutting down server with id=$id..."
 
     if [ -f "${MYSQLD_PIDFILE}" ]
     then
@@ -375,7 +376,39 @@ function shutdown_server()
     # unlock the port number
     free_reserved_port $MYSQLD_PORT
 
-    reset_server_variables 1
+    reset_server_variables $id
+}
+
+########################################################################
+# Shutdown server with id=1 cleanly
+########################################################################
+function shutdown_server()
+{
+    shutdown_server_with_id 1
+}
+
+########################################################################
+# Force a checkpoint for a server specified with the first argument
+########################################################################
+function force_checkpoint_with_server_id()
+{
+    local id=$1
+    shift
+
+    switch_server $id
+
+    vlog "Forcing a checkpoint for server #$id"
+
+    shutdown_server_with_id $id
+    start_server_with_id $id $*
+}
+
+########################################################################
+# Force a checkpoint for server id=1
+########################################################################
+function force_checkpoint()
+{
+    force_checkpoint_with_server_id 1 $*
 }
 
 ########################################################################

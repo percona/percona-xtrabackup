@@ -53,7 +53,7 @@ typedef struct xb_rcrypt_struct xb_rcrypt_t;
 
 /* Callback on write for i/o, must return # of bytes read or -1 on error */
 typedef ssize_t xb_crypt_read_callback(void *userdata,
-				       void *buf, size_t len);
+				       void *buf, size_t len, int flags);
 
 xb_rcrypt_t *xb_crypt_read_open(void *userdata,
 				  xb_crypt_read_callback *onread);

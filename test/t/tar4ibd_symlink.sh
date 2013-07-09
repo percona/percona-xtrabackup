@@ -10,8 +10,7 @@ load_dbase_schema sakila
 load_dbase_data sakila
 
 # Force a checkpoint
-stop_server
-start_server
+force_checkpoint
 
 # Copy some .ibd files to a temporary location and replace them with symlinks
 

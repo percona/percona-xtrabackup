@@ -202,6 +202,26 @@ my $mysql_slave_position = '';
 # process id of ibbackup program (runs as a child process of this script)
 my $ibbackup_pid = '';
 
+# process id of long queries killer
+my $query_killer_pid;
+
+# set kill long queries timeout in seconds
+my $option_kill_long_queries_timeout = 0;
+
+# waiting for an appropriate time to start FTWRL timeout
+my $option_lock_wait_timeout = 0;
+
+# how old should be query to be waited for
+my $option_lock_wait_threshold = 60;
+
+# which type of queries we are waiting for during the pre-FTWRL phase
+# possible values are "update" and "all"
+my $option_lock_wait_query_type = "all";
+
+# which type of queries wa are waiting when clearing the way for FTWRL
+# by killing; possible values are "select" and "all"
+my $option_kill_long_query_type = "all";
+
 # a counter for numbering mysql connection checks
 my $hello_id = 0;
 
@@ -277,7 +297,7 @@ if ($option_copy_back || $option_move_back) {
                         if ($mysql{dbh}) {
                             print STDERR "Connected successfully\n";
                             $option_ibbackup_binary = set_xtrabackup_version();
-                            mysql_close();
+                            mysql_close(\%mysql);
                         } else {
      		            die "Failed to connect to MySQL server to detect version.\nYou must set xtrabackup version to use with --ibbackup option.\nPossible values are xtrabackup_55 (for MySQL 5.5), xtrabackup_56 (for MySQL or Percona Server 5.6, or xtrabackup (for MySQL 5.1 with InnoDB plugin or Percona Server)\n";
                         }
@@ -285,7 +305,7 @@ if ($option_copy_back || $option_move_back) {
         }
 } elsif ($option_backup) {
     # backup
-    %mysql = mysql_connect(abort_on_error => 1, keepalives => 1);
+    %mysql = mysql_connect(abort_on_error => 1);
 
     if ($option_ibbackup_binary eq 'autodetect') {
         $option_ibbackup_binary = set_xtrabackup_version();
@@ -420,28 +440,40 @@ sub backup {
     $suspend_file = $work_dir . $xb_fn_suspended_at_end;
     wait_for_ibbackup_suspend($suspend_file);
 
-    if ($option_safe_slave_backup) {
-        wait_for_safe_slave(\%mysql);
-    }
-
-    # flush tables with read lock
     if (!$option_no_lock) {
-        # make a prep copy before locking tables, if using rsync
-        backup_files(1);
+      if ($option_safe_slave_backup) {
+        wait_for_safe_slave(\%mysql);
+      }
 
-        # flush tables with read lock
-        mysql_lockall(\%mysql);
-    }
+      # flush tables with read lock
+      # make a prep copy before locking tables, if using rsync
+      backup_files(1);
 
-    if ($option_slave_info) {
+      # flush tables with read lock
+      mysql_lockall(\%mysql);
+
+      if ($option_slave_info) {
         write_slave_info(\%mysql);
+      }
     }
-
 
     # backup non-InnoDB files and tables
     # (or finalize the backup by syncing changes if using rsync)
     backup_files(0);
 
+    # There is no need to stop slave thread before coping non-Innodb data when
+    # --no-lock option is used because --no-lock option requires that no DDL or
+    # DML to non-transaction tables can occur.
+    if ($option_no_lock)
+    {
+      if ($option_safe_slave_backup)
+      {
+        wait_for_safe_slave(\%mysql);
+      }
+      if ($option_slave_info) {
+        write_slave_info(\%mysql);
+      }
+    }
     # resume XtraBackup and wait till it has finished
     resume_ibbackup($suspend_file);
     $suspend_file = $work_dir . $xb_fn_log_copied;
@@ -1404,9 +1436,11 @@ sub mysql_connect {
         }
     }
 
-    if ($con{dbh} && $con{keepalives}) {
+    if ($con{dbh}) {
         $con{dbh}->do("SET SESSION wait_timeout=2147483");
-        start_keepalives(\%con);
+        if ($con{keepalives}) {
+            start_keepalives(\%con);
+        }
     }
 
     return %con;
@@ -1415,6 +1449,7 @@ sub mysql_connect {
 #
 # mysql_query subroutine send a query to MySQL server child process.
 # Parameters:
+#    con       mysql connection
 #    query     query to execute
 #
 sub mysql_query {
@@ -1437,6 +1472,10 @@ sub mysql_query {
       } elsif ($query eq 'SHOW SLAVE STATUS') {
           $con->{slave_status} =
               $con->{dbh}->selectrow_hashref("SHOW SLAVE STATUS");
+      } elsif ($query eq 'SHOW PROCESSLIST' or
+               $query eq "SHOW FULL PROCESSLIST") {
+          $con->{processlist} =
+              $con->{dbh}->selectall_hashref($query, "Id");
       } else {
           $con->{dbh}->do($query);
       }
@@ -1529,17 +1568,31 @@ sub write_galera_info {
     my $con = shift;
     my @lines;
     my @info_lines = ();
-    my $position = '';
-    my $filename = '';
+    my $state_uuid = '';
+    my $last_committed = '';
 
     # get binlog position
     get_mysql_status($con);
 
+    $state_uuid = $con->{status}->{wsrep_local_state_uuid}->{Value};
+    $last_committed = $con->{status}->{wsrep_last_committed}->{Value};
+
+    if (!defined($state_uuid) || !defined($last_committed)) {
+        my $now = current_time();
+
+        print STDERR "$now  $prefix Failed to get master wsrep state " .
+            "from SHOW STATUS\n";
+        print STDERR "$now  $prefix This means that the server is not a " .
+            "member of a cluster. Ignoring the --galera-info option\n";
+
+        return;
+    }
+
+
     open(FILE, ">$galera_info") || 
          Die "Failed to open file '$galera_info': $!";
 
-    print FILE $con->{status}->{wsrep_local_state_uuid}->{Value} . ":";
-    print FILE $con->{status}->{wsrep_last_committed}->{Value} . "\n";
+    print FILE "$state_uuid:$last_committed\n";
 
     close(FILE);
 
@@ -1600,16 +1653,183 @@ sub write_slave_info {
     $mysql_slave_position = "master host '$master', filename '$filename', position $position";
 }
 
+sub eat_sql_whitespace {
+    my ($query) = @_;
+
+    while (1) {
+        if ($query =~ m/^\/\*/) {
+            $query =~ s/^\/\*.*?\*\///s;
+        } elsif ($query =~ m/^[ \t\n\r]/s) {
+            $query =~ s/^[ \t\n\r]+//s;
+        } elsif ($query =~ m/^\(/) {
+            $query =~ s/^\(//;
+        } else {
+            return $query;
+        }
+    }
+
+}
+
+
+sub is_query {
+    my ($query) = @_;
+
+    $query = eat_sql_whitespace($query);
+    if ($query =~
+        m/^(insert|update|delete|replace|alter|load|select|do|handler|call|execute|begin)/i) {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+sub is_select_query {
+    my ($query) = @_;
+
+    $query = eat_sql_whitespace($query);
+    if ($query =~ m/^select/i) {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+sub is_update_query {
+    my ($query) = @_;
+
+    $query = eat_sql_whitespace($query);
+    if ($query =~ m/^(insert|update|delete|replace|alter|load)/i) {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+sub have_queries_to_wait_for {
+    my ($con, $threshold) = @_;
+
+    $now = current_time();
+
+    mysql_query($con, "SHOW FULL PROCESSLIST");
+
+    my $processlist = $con->{processlist};
+
+    while (my ($id, $process) = each %$processlist) {
+        if (defined($process->{Info}) &&
+            $process->{Time} >= $threshold &&
+            (($option_lock_wait_query_type eq "all" &&
+             is_query($process->{Info})) ||
+             is_update_query($process->{Info}))) {
+            print STDERR "\n$now  $prefix Waiting for query $id (duration " .
+                            "$process->{Time} sec): $process->{Info}\n";
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+
+sub kill_long_queries {
+    my ($con, $timeout) = @_;
+
+    $now = current_time();
+
+    mysql_query($con, "SHOW FULL PROCESSLIST");
+
+    my $processlist = $con->{processlist};
+
+    while (my ($id, $process) = each %$processlist) {
+        if (defined($process->{Info}) &&
+            $process->{Time} >= $timeout &&
+            (($option_kill_long_query_type eq "all" &&
+              is_query($process->{Info})) ||
+             is_select_query($process->{Info}))) {
+            print STDERR "\n$now  $prefix Killing query $id (duration " .
+                           "$process->{Time} sec): $process->{Info}\n";
+            mysql_query($con, "KILL $id");
+        }
+    }
+}
+
+
+sub wait_for_no_updates {
+    my ($con, $timeout, $threshold) = @_;
+    my $start_time = time();
+
+    while (time() <= $start_time + $timeout) {
+        if (!(have_queries_to_wait_for($con, $threshold))) {
+            return;
+        }
+        sleep(1);
+    }
+
+    Die "Unable to obtain lock. Please try again.";
+}
+
+
+sub start_query_killer {
+
+    my ($kill_timeout, $pcon) = @_;
+    my $start_time = time();
+    my $pid = fork();
+
+    if ($pid) {
+        # parent process
+        $query_killer_pid = $pid;
+    } else {
+        # child process
+        my $end = 0;
+        local $SIG{HUP} = sub { $end = 1 };
+
+        $pcon->{dbh}->{InactiveDestroy} = 1;
+
+        sleep($kill_timeout);
+
+        my %con = mysql_connect(abort_on_error => 1, keepalives => 0);
+
+        while (!$end) {
+            kill_long_queries(\%con, time() - $start_time);
+            sleep(1);
+        }
+
+        mysql_close(\%con);
+
+        exit(0);
+    }
+}
+
+sub stop_query_killer {
+    if (defined($query_killer_pid)) {
+        kill 'HUP' => $query_killer_pid;
+        waitpid($query_killer_pid, 0);
+        print STDERR "Query killing process is finished\n";
+    }
+}
+
 
 #
 # mysql_lockall subroutine puts a read lock on all tables in all databases.
 # 
 sub mysql_lockall {
     my $con = shift;
+    my $queries_hash_ref;
+
+    if ($option_lock_wait_timeout) {
+        wait_for_no_updates($con, $option_lock_wait_timeout,
+                            $option_lock_wait_threshold);
+    }
 
     $now = current_time();
     print STDERR "$now  $prefix Starting to lock all tables...\n";
 
+    # start query killer process
+    if ($option_kill_long_queries_timeout) {
+        start_query_killer($option_kill_long_queries_timeout, $con);
+    }
     if (compare_versions($mysql_server_version, '4.0.22') == 0
         || compare_versions($mysql_server_version, '4.1.7') == 0) {
         # MySQL server version is 4.0.22 or 4.1.7
@@ -1620,9 +1840,12 @@ sub mysql_lockall {
         mysql_query($con, "FLUSH TABLES WITH READ LOCK");
         mysql_query($con, "COMMIT");
     }
+    # stop query killer process
+    if ($option_kill_long_queries_timeout) {
+        stop_query_killer();
+    }
     write_binlog_info($con);
     write_galera_info($con) if $option_galera_info;
-	
     $now = current_time();
     print STDERR "$now  $prefix All tables locked and flushed to disk\n";
 }
@@ -1655,6 +1878,7 @@ sub kill_child_processes {
         kill($kill_signal, $ibbackup_pid);
         $ibbackup_pid = '';
     }
+    stop_query_killer();
 }
 
 
@@ -1994,7 +2218,15 @@ sub check_args {
                         'rebuild-indexes' => \$option_rebuild_indexes,
                         'rebuild-threads=i' => \$option_rebuild_threads,
                         'debug-sleep-before-unlock=i' =>
-                        \$option_debug_sleep_before_unlock
+                        \$option_debug_sleep_before_unlock,
+                        'kill-long-queries-timeout=i' =>
+                        \$option_kill_long_queries_timeout,
+                        'kill-long-query-type=s' =>
+                        \$option_kill_long_query_type,
+                        'lock-wait-timeout=i' => \$option_lock_wait_timeout,
+                        'lock-wait-threshold=i' => \$option_lock_wait_threshold,
+                        'lock-wait-query-type=s' =>
+                        \$option_lock_wait_query_type
     );
                         
     if (!$rcode) {
@@ -2032,6 +2264,18 @@ sub check_args {
     if ($option_compress == 999) {
         # compress option not given in the command line
         $option_compress = 0;
+    }
+
+    # validate lock-wait-query-type and kill-long-query-type values
+    if (!(grep {$_ eq $option_lock_wait_query_type} qw/all update/)) {
+        Die "Wrong value of lock-wait-query-type. ".
+            "Possible values are all|update, but $option_lock_wait_query_type ".
+            "is specified.";
+    }
+    if (!(grep {$_ eq $option_kill_long_query_type} qw/all select/)) {
+        Die "Wrong value of kill-long-query-type. ".
+            "Possible values are all|select, but $option_kill_long_query_type ".
+            "is specified.";
     }
 
     if ($option_stream eq 'tar') {
@@ -2858,17 +3102,18 @@ sub wait_for_safe_slave {
    $sql_thread_started = 0;
    get_mysql_slave_status($con);
 
-   if (defined($con->{slave_status}->{Read_Master_Log_Pos})) {
+   if (defined($con->{slave_status}->{Read_Master_Log_Pos}) and
+       defined($con->{slave_status}->{Slave_SQL_Running})) {
          $host_is_slave = 1;
-   }
-
-   if ($con->{slave_status}->{Slave_SQL_Running} =~ m/Yes/ ) {
-         $sql_thread_started = 1;
    }
 
    if ( !$host_is_slave ) {
       print STDERR "$prefix: Not checking slave open temp tables for --safe-slave-backup because host is not a slave\n";
       return;
+   }
+
+   if ($con->{slave_status}->{Slave_SQL_Running} =~ m/Yes/ ) {
+         $sql_thread_started = 1;
    }
 
    if ($sql_thread_started) {
@@ -3145,6 +3390,27 @@ This option specifies time interval between checks done by log copying thread in
 =item --incremental-lsn
 
 This option specifies the log sequence number (LSN) to use for the incremental backup.  The option accepts a string argument. It is used with the --incremental option. It is used instead of specifying --incremental-basedir. For databases created by MySQL and Percona Server 5.0-series versions, specify the LSN as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer.
+
+=item --kill-long-queries-timeout=SECONDS
+
+This option specifies the number of seconds innobackupex waits between starting FLUSH TABLES WITH READ LOCK and killing those queries that block it. Default is 0 seconds, which means innobackupex will not attempt to kill any queries.
+
+=item --kill-long-query-type=all|update
+
+This option specifies which types of queries should be killed to unblock the global lock. Default is "all".
+
+=item --lock-wait-timeout=SECONDS
+
+This option specifies time in seconds that innobackupex should wait for queries that would block FTWRL before running it. If there are still such queries when the timeout expires, innobackupex terminates with an error.
+Default is 0, in which case innobackupex does not wait for queries to complete and starts FTWRL immediately.
+
+=item --lock-wait-threshold=SECONDS
+
+This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of --lock-wait-timeout. FTWRL is not started until such long-running queries exist. This option has no effect if --lock-wait-timeout is 0. Default value is 60 seconds.
+
+=item --lock-wait-query-type=all|update
+
+This option specifies which types of queries are allowed to complete before innobackuped will issue the global lock. Default is all.
 
 =item --move-back
 

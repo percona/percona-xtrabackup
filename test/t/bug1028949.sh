@@ -7,8 +7,6 @@ fi
 
 function test_bug_1028949()
 {
-  page_size=$1
-
   mysqld_additional_args="--innodb_file_per_table --innodb_strict_mode \
 --innodb_file_format=Barracuda"
   
@@ -36,17 +34,23 @@ function test_bug_1028949()
 
   vlog "Making changes to database"
 
-  ${MYSQL} ${MYSQL_ARGS} -e "CREATE TABLE t2 (a INT(11) DEFAULT NULL, \
+  for i in $PAGE_SIZES;
+  do
+      ${MYSQL} ${MYSQL_ARGS} -e "CREATE TABLE t${i} (a INT(11) DEFAULT NULL, \
  number INT(11) DEFAULT NULL) ENGINE=INNODB\
- ROW_FORMAT=compressed KEY_BLOCK_SIZE=$page_size" incremental_sample
-  ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t2 VALUES (1, 1)" incremental_sample
+ ROW_FORMAT=compressed KEY_BLOCK_SIZE=$i" incremental_sample
+      ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t${i} VALUES (1, 1)" incremental_sample
+  done
   
   vlog "Changes done"
 
-  # Saving the checksum of original table
-  checksum_t2_a=`checksum_table incremental_sample t2`
+  for i in $PAGE_SIZES;
+  do
+      # Saving the checksum of original table
+      checksum_a[$i]=`checksum_table incremental_sample t$i`
 
-  vlog "Table 't2' checksum is $checksum_t2_a"
+      vlog "Table 't${i}' checksum is ${checksum_a[$i]}"
+  done
 
   vlog "Making incremental backup"
 
@@ -73,8 +77,12 @@ function test_bug_1028949()
   vlog "Data prepared for restore"
 
   # removing rows
-  ${MYSQL} ${MYSQL_ARGS} -e "delete from t2;" incremental_sample
-  vlog "Table cleared"
+  for i in $PAGE_SIZES;
+  do
+      ${MYSQL} ${MYSQL_ARGS} -e "delete from t$i;" incremental_sample
+  done
+
+  vlog "Tables cleared"
 
   # Restore backup
 
@@ -91,20 +99,21 @@ function test_bug_1028949()
   start_server ${mysqld_additional_args}
 
   vlog "Checking checksums"
-  checksum_t2_b=`checksum_table incremental_sample t2`
+  for i in $PAGE_SIZES
+  do
+      checksum_b[$i]=`checksum_table incremental_sample t$i`
 
-  if [ "$checksum_t2_a" != "$checksum_t2_b"  ]
-  then 
-      vlog "Checksums of table 't2' are not equal"
-      exit -1
-  fi
+      if [ "${checksum_a[$i]}" != "${checksum_b[$i]}"  ]
+      then 
+	  vlog "Checksums of table 't$i' are not equal"
+	  exit -1
+      fi
+  done
 
   vlog "Checksums are OK"
 
   stop_server
 }
 
-for page_size in 1 2 4 8 16; do
-    test_bug_1028949 ${page_size}
-    clean
-done
+PAGE_SIZES="1 2 4 8 16"
+test_bug_1028949

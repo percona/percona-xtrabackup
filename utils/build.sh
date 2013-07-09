@@ -108,7 +108,8 @@ function auto_download()
 	then
 	    if [ "$AUTO_DOWNLOAD" = "yes" ]
 	    then
-		wget "$MASTER_SITE"/$i
+		# Makefile has foo to download using wget
+		make $i
 	    else
 		echo "Put $i in $top_dir or set environment variable \
 AUTO_DOWNLOAD to \"yes\""
@@ -308,19 +309,15 @@ case "$type" in
 	then
 	    rm -rf $branch_dir
 	fi
-        if [ -d $branch_dir ]
+
+        if [ ! -f Percona-Server-XtraBackup-$PS_51_VERSION.tar.gz ]
         then
-	    cd $branch_dir
-	    (bzr upgrade || true)
-	    bzr clean-tree --force --ignored
-	    bzr revert
-	    bzr pull --overwrite
-	else
-	    bzr branch -r tag:Percona-Server-$PS_51_VERSION \
-		lp:percona-server/5.1 $branch_dir
-	    cd $branch_dir
+	    make ps51source
 	fi
 
+	rm -rf $branch_dir
+	tar xfz Percona-Server-XtraBackup-$PS_51_VERSION.tar.gz
+	cd $branch_dir
 	$MAKE_CMD main
 	cd $top_dir
 	rm -rf $server_dir
@@ -361,19 +358,15 @@ case "$type" in
 	then
 	    rm -rf $branch_dir
 	fi
-        if [ -d $branch_dir ]
+
+        if [ ! -f Percona-Server-XtraBackup-$PS_55_VERSION.tar.gz ]
         then
-	    cd $branch_dir
-	    yes | bzr break-lock
-	    (bzr upgrade || true)
-	    bzr clean-tree --force --ignored
-	    bzr revert
-	    bzr pull --overwrite
-	else
-	    bzr branch -r tag:Percona-Server-$PS_55_VERSION \
-		lp:percona-server $branch_dir
-	    cd $branch_dir
+	    make ps55source
 	fi
+
+	rm -rf $branch_dir
+	tar xfz Percona-Server-XtraBackup-$PS_55_VERSION.tar.gz
+	cd $branch_dir
 
 	$MAKE_CMD PERCONA_SERVER=Percona-Server-5.5 main
 	cd $top_dir
