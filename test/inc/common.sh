@@ -299,7 +299,12 @@ EOF
         then
             vlog "Creating server data directory: $MYSQLD_DATADIR"
             mkdir -p "$MYSQLD_DATADIR"
-            call_mysql_install_db
+	    # Reserve 900 series for SST nodes
+            if [[ $id -lt 900 ]];then
+                call_mysql_install_db
+            else 
+                vlog "Skiping mysql_install_db of node $id for SST"
+            fi
         fi
 
         # Start the server
