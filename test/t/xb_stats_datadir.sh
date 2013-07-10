@@ -5,12 +5,11 @@
 
 . inc/common.sh
 
-mkdir ${TEST_BASEDIR}/logs
-
-trap "rm -rf ${TEST_BASEDIR}/logs" INT TERM EXIT
+logdir=${TEST_VAR_ROOT}/logs
+mkdir $logdir
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
-innodb_log_group_home_dir=${TEST_BASEDIR}/logs
+innodb_log_group_home_dir=$logdir
 "
 
 start_server
@@ -28,6 +27,6 @@ shutdown_server
 # we pass all necessary options as an arguments, so if someday this
 # will be changed, test still will work
 xtrabackup --stats --datadir=${MYSQLD_DATADIR} \
-	--innodb_log_group_home_dir=${TEST_BASEDIR}/logs
+        --innodb_log_group_home_dir=$logdir
 
 vlog "stats did not fail"

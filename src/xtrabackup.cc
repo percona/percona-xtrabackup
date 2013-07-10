@@ -3835,6 +3835,8 @@ xtrabackup_init_temp_log(void)
 
 	ulint	fold;
 
+	bool	checkpoint_found;
+
 	max_no = ut_dulint_zero;
 
 	if (!xb_init_log_block_size()) {
@@ -3949,6 +3951,8 @@ retry:
 		//		' ', 4);
 	}
 
+	checkpoint_found = false;
+
 	/* read last checkpoint lsn */
 	for (field = LOG_CHECKPOINT_1; field <= LOG_CHECKPOINT_2;
 			field += LOG_CHECKPOINT_2 - LOG_CHECKPOINT_1) {
@@ -3961,25 +3965,13 @@ retry:
 		if (ut_dulint_cmp(checkpoint_no, max_no) >= 0) {
 			max_no = checkpoint_no;
 			max_lsn = MACH_READ_64(log_buf + field + LOG_CHECKPOINT_LSN);
-/*
-			mach_write_to_4(log_buf + field + LOG_CHECKPOINT_OFFSET,
-					LOG_FILE_HDR_SIZE + ut_dulint_minus(max_lsn,
-					ut_dulint_align_down(max_lsn,OS_FILE_LOG_BLOCK_SIZE)));
-
-			ulint	fold;
-			fold = ut_fold_binary(log_buf + field, LOG_CHECKPOINT_CHECKSUM_1);
-			mach_write_to_4(log_buf + field + LOG_CHECKPOINT_CHECKSUM_1, fold);
-
-			fold = ut_fold_binary(log_buf + field + LOG_CHECKPOINT_LSN,
-				LOG_CHECKPOINT_CHECKSUM_2 - LOG_CHECKPOINT_LSN);
-			mach_write_to_4(log_buf + field + LOG_CHECKPOINT_CHECKSUM_2, fold);
-*/
+			checkpoint_found = true;
 		}
 not_consistent:
 		;
 	}
 
-	if (ut_dulint_cmp(max_no, ut_dulint_zero) == 0) {
+	if (!checkpoint_found) {
 		msg("xtrabackup: No valid checkpoint found.\n");
 		goto error;
 	}

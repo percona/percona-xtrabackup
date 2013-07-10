@@ -98,7 +98,7 @@ function test_streaming_incremental()
 	exit -1
     fi
     
-    clean
+    remove_var_dirs
 }
 
 stream_format="xbstream"

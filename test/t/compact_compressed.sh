@@ -11,8 +11,13 @@ fi
 
 # Use innodb_strict_mode so that failure to use compression results in an 
 # error rather than a warning
-mysqld_additional_args="--innodb_strict_mode --innodb_file_per_table \
---innodb_file_format=Barracuda"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_strict_mode
+innodb_file_per_table
+innodb_file_format=Barracuda
+# Set the minimal log file size to minimize xtrabackup_logfile
+# Recovering compressed pages is extremely slow with UNIV_ZIP_DEBUG
+innodb_log_file_size=1M"
 
 #
 # Test compact backup of a compressed tablespace with a specific page size
@@ -26,7 +31,7 @@ function test_compact_compressed()
   echo "Testing compact backup with compressed page size=${page_size}KB "
   echo "************************************************************************"
 
-  start_server ${mysqld_additional_args}
+  start_server
 
   load_dbase_schema sakila
   load_dbase_data sakila
@@ -52,7 +57,7 @@ AND TABLE_TYPE='BASE TABLE' AND ENGINE='InnoDB'"`
 
   rm -r $mysql_datadir
 
-  innobackupex --apply-log --rebuild-indexes $backup_dir
+  innobackupex --apply-log --rebuild-indexes --rebuild-threads=2 $backup_dir
 
   vlog "Restoring MySQL datadir"
   mkdir -p $mysql_datadir
@@ -63,7 +68,7 @@ AND TABLE_TYPE='BASE TABLE' AND ENGINE='InnoDB'"`
   verify_db_state sakila
 
   stop_server
-  clean
+  remove_var_dirs
 }
 
 
