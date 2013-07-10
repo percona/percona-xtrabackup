@@ -15,8 +15,11 @@
 #
 
 subunit_start_test () {
+  local stime=$2
   # emit the current protocol start-marker for test $1
-  echo "time: `date -u '+%Y-%m-%d %H:%M:%S'`"
+  # adjust time by the number of seconds to execute the test to get the actual
+  # start time
+  echo "time: $stime"
   echo "test: $1"
 }
 

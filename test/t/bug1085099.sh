@@ -13,9 +13,7 @@ EOF
 # Create a new tmpdir
 mkdir $topdir/new_tmpdir
 
-# Make the default tmpdir inaccessible and make sure permissions are restored on
-# failure
-trap "chmod 755 $MYSQLD_TMPDIR" INT TERM EXIT
+# Make the default tmpdir inaccessible
 chmod 000 $MYSQLD_TMPDIR
 
 innobackupex --tmpdir=$topdir/new_tmpdir --no-timestamp $topdir/backup

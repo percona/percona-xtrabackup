@@ -12,7 +12,7 @@ fi
 
 start_server --innodb_file_per_table
 
-remote_dir=$TEST_BASEDIR/var1/remote_dir
+remote_dir=$TEST_VAR_ROOT/var1/remote_dir
 
 $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
