@@ -330,21 +330,7 @@ if ($option_copy_back) {
 
     mysql_close(\%mysql);
 
-    if ($option_stream) {
-      open XTRABACKUP_BINARY, "> $option_tmpdir/$xtrabackup_binary_file"
-    	|| die "Cannot open file $option_tmpdir/$xtrabackup_binary_file: $!\n";
-    } else {
-      open XTRABACKUP_BINARY, "> $backup_dir/$xtrabackup_binary_file"
-    	|| die "Cannot open file $backup_dir/$xtrabackup_binary_file: $!\n";
-    }
-    print XTRABACKUP_BINARY $option_ibbackup_binary;
-    close XTRABACKUP_BINARY;
-
-    if ($option_stream) {
-      stream_encrypt_file($option_tmpdir, $xtrabackup_binary_file)
-                          && die "Failed to stream $xtrabackup_binary_file: $!";
-      unlink "$option_tmpdir/$xtrabackup_binary_file";
-    }
+    write_to_backup_file("$work_dir/$xtrabackup_binary_file", "$option_ibbackup_binary");
 }
 
 $now = current_time();
@@ -492,18 +478,9 @@ sub backup {
     # copy ib_lru_dump
     # Copy buffer poll dump and/or LRU dump
     foreach my $dump_name ($buffer_pool_filename, 'ib_lru_dump') {
-        if (-e "$orig_datadir/$dump_name") {
-            if ($option_stream) {
-                print STDERR "$prefix Backing up as tar stream '$dump_name'\n";
-                stream_encrypt_file($orig_datadir, "$dump_name")
-                                    and Die "Failed to stream '$dump_name': $!";
-            } elsif (!$option_rsync) {
-                my $src_name = escape_path("$orig_datadir/$dump_name");
-                my $dst_name = escape_path("$backup_dir/$dump_name");
-                system("$CP_CMD \"$src_name\" \"$dst_name\"")
-                    and Die "Failed to copy file '$dump_name': $!";
-            }
-        }
+      if (!$option_rsync && -e "$orig_datadir/$dump_name") {
+        backup_file("$orig_datadir", "$dump_name", "$backup_dir/$dump_name")
+      }
     }
 
     print STDERR "\n$prefix Backup created in directory '$backup_dir'\n";
@@ -1544,16 +1521,8 @@ sub write_binlog_info {
     }
 
     # write binlog info file
-    open(FILE, ">$binlog_info") || Die "Failed to open file '$binlog_info': $!";
-    print FILE  "$filename\t$position\t\t$gtid\n";
-    close(FILE);
-
-    if ($option_stream) {
-        stream_encrypt_file($option_tmpdir, "xtrabackup_binlog_info")
-                            and Die "Failed to stream 'xtrabackup_binlog_info': $!";
-        unlink $binlog_info || Die "Failed to delete '$binlog_info': $!";
-    }
-
+    write_to_backup_file("$binlog_info", "$filename\t$position\t\t$gtid\n");
+    
     $mysql_binlog_position = "filename '$filename', position $position";
     if ($gtid) {
         $mysql_binlog_position .= ", gtid_executed $gtid";
@@ -1588,20 +1557,8 @@ sub write_galera_info {
         return;
     }
 
-
-    open(FILE, ">$galera_info") || 
-         Die "Failed to open file '$galera_info': $!";
-
-    print FILE "$state_uuid:$last_committed\n";
-
-    close(FILE);
-
-    if ($option_stream) {
-        stream_encrypt_file($option_tmpdir, "xtrabackup_galera_info")
-                            and Die "Failed to stream 'xtrabackup_galera_info': $!";
-        unlink $galera_info || Die "Failed to delete '$galera_info': $!";
-    }
-
+    write_to_backup_file("$galera_info", "$state_uuid" .
+      ":" . "$last_committed" . "\n");
 }
 
 
@@ -1640,16 +1597,9 @@ sub write_slave_info {
     }
 
     # print slave status to a file
-    open(FILE, ">$slave_info") || Die "Failed to open file '$slave_info': $!";
-    print FILE  "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n";
-    close(FILE);
-
-    if ($option_stream) {
-        stream_encrypt_file($option_tmpdir, "xtrabackup_slave_info")
-                            and Die "Failed to stream 'xtrabackup_slave_info': $!";
-        unlink $slave_info || Die "Failed to delete '$slave_info': $!";
-    }
-
+    write_to_backup_file("$slave_info", 
+      "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n");
+   
     $mysql_slave_position = "master host '$master', filename '$filename', position $position";
 }
 
@@ -2094,8 +2044,6 @@ sub init {
 sub write_backup_config_file {
     my $filename = shift;
 
-    open(FILE, "> $filename") || Die "Failed to open file '$filename': $!";
-
     my @option_names = (
         "innodb_data_file_path",
         "innodb_log_files_in_group",
@@ -2125,16 +2073,7 @@ sub write_backup_config_file {
                             'innodb_doublewrite_file')))[-1] . "\n";
     }
 
-    print FILE $options_dump;
-    close(FILE);
-
-    if ($option_stream) {
-        my $filename_dir = dirname($filename);
-        my $filename_name = basename($filename);
-        stream_encrypt_file($filename_dir, $filename_name)
-                            and Die "Failed to stream '$filename_name': $!";
-        unlink $filename || Die "Failed to delete '$filename': $!";
-    }
+    write_to_backup_file("$filename", "$options_dump");
 }
 
 
@@ -2282,17 +2221,18 @@ sub check_args {
       $stream_cmd = 'tar chf -';
     } elsif ($option_stream eq 'xbstream') {
       $stream_cmd = 'xbstream -c';
-      if ($option_encrypt) {
-        $encrypt_cmd = "xbcrypt --encrypt-algo=$option_encrypt";
-        if ($option_encrypt_key) {
-          $encrypt_cmd = $encrypt_cmd . " --encrypt-key=$option_encrypt_key";
-        }
-        if ($option_encrypt_key_file) {
-          $encrypt_cmd = $encrypt_cmd . " --encrypt-key-file=$option_encrypt_key_file";
-        }
-        if ($option_encrypt_chunk_size) {
-          $encrypt_cmd = $encrypt_cmd . " --encrypt-chunk-size=$option_encrypt_chunk_size";
-        }
+    }
+
+    if ($option_encrypt) {
+      $encrypt_cmd = "xbcrypt --encrypt-algo=$option_encrypt";
+      if ($option_encrypt_key) {
+        $encrypt_cmd = $encrypt_cmd . " --encrypt-key=$option_encrypt_key";
+      }
+      if ($option_encrypt_key_file) {
+        $encrypt_cmd = $encrypt_cmd . " --encrypt-key-file=$option_encrypt_key_file";
+      }
+      if ($option_encrypt_chunk_size) {
+        $encrypt_cmd = $encrypt_cmd . " --encrypt-chunk-size=$option_encrypt_chunk_size";
       }
     }
 
@@ -2525,30 +2465,8 @@ sub backup_files {
 		if (!$prep_mode) {
 		    $rsync_files_hash{"$database/$file"} = 1;
 		}
-            } elsif (!$option_stream) {
-                $src_name = escape_path("$source_dir/$database/$file");
-                $dst_name = escape_path("$backup_dir/$database");
-                # Copy the file - If we get an error and the file actually exists, die with error msg
-                copy_if_exists("$src_name", "$dst_name")
-                  or Die "Failed to copy file '$file': $!";
             } else {
-                my $ret = 0;
-                my $file_name = substr($file, rindex($file, '/') + 1);
-                $file_name=~s/([\$\\\" ])/\\$1/g;
-                $ret = stream_encrypt_file($source_dir, "$database/$file_name") >> 8;
-                if ($ret == 1 && $option_stream eq 'tar') {
-                    print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
-                # Check for non-zero exit code
-                } elsif ($ret != 0) {
-                    print STDERR "$prefix $stream_cmd returned with exit code $ret.\n";
-                    # Only treat as fatal cases where the file exists
-                    if ( -e "$database/$file_name" ) {
-                        Die "Failed to stream '$database/$file_name': $!";
-                    } else {
-                        print STDERR "$prefix Ignoring nonexistent file '$database/$file_name'.\n";
-                    }
-
-                }
+              backup_file("$source_dir", "$database/$file", "$backup_dir/$database/$file")
             }
         }
     }
@@ -3166,17 +3084,117 @@ sub get_slave_open_temp_tables {
    return $con->{status}->{Slave_open_temp_tables}->{Value};
 }
 
-sub stream_encrypt_file {
-  my $basedir = shift;
-  my $relpath = shift;
-  my $rcode;
+#
+# Streams a file into the backup set,
+# handles any encryption.
+# Should not be called directly, only meant to be called from backup_file.
+#
+sub backup_file_via_stream {
+  my $src_path = shift;
+  my $src_file = shift;
+  my $ret = 0;
 
-  if ($encrypt_cmd) {
-    $rcode = system("cd $basedir; $stream_cmd $relpath | $encrypt_cmd");
+  my $filepos = rindex($src_file, '/');
+  my $file_name = '';
+  my $rel_path = '';
+
+  if ($filepos >= 0) {
+    $file_name = substr($src_file, $filepos + 1);
+    $rel_path = substr($src_file, 0, $filepos);
   } else {
-    $rcode = system("cd $basedir; $stream_cmd $relpath");
+    $file_name = $src_file;
+    $rel_path = '.';
   }
-  return $rcode;
+  $file_name=~s/([\$\\\" ])/\\$1/g;
+  if ($encrypt_cmd) {
+    $ret = system("cd $src_path; $stream_cmd $rel_path/$file_name | $encrypt_cmd") >> 8;
+  } else {
+    $ret = system("cd $src_path; $stream_cmd $rel_path/$file_name") >> 8;
+  }
+
+  if ($ret == 1 && $option_stream eq 'tar') {
+    print STDERR "$prefix If you use GNU tar, this warning can be ignored.\n";
+  # Check for non-zero exit code
+  } elsif ($ret != 0) {
+    if ($encrypt_cmd) {
+      print STDERR "$prefix '$stream_cmd | $encrypt_cmd' returned with exit code $ret.\n";
+    } else {
+      print STDERR "$prefix '$stream_cmd' returned with exit code $ret.\n";
+    }
+    # Only treat as fatal cases where the file exists
+    if ( -e "$src_path/$src_file" ) {
+      Die "Failed to stream '$src_path/$src_file': $ret";
+    } else {
+      print STDERR "$prefix Ignoring nonexistent file '$src_path/$src_file'.\n";
+    }
+  }
+}
+
+#
+# Copies a file into the backup set,
+# handles any encryption.
+# Should not be called directly, only meant to be called from backup_file.
+#
+sub backup_file_via_copy {
+  my $src_path = shift;
+  my $src_file = shift;
+  my $dst_file = shift;
+  my $ret = 0;
+
+  # Copy the file - If we get an error and the file actually exists, die with error msg
+  my $src_file_esc = escape_path("$src_path/$src_file");
+  my $dst_file_esc = escape_path("$dst_file");
+  if ($encrypt_cmd) {
+    $dst_file_esc = $dst_file_esc . ".xbcrypt";
+    $ret = system("$encrypt_cmd -i \"$src_file_esc\" -o \"$dst_file_esc\"");
+    if ($ret != 0) {
+      Die "Failed to copy and encrypt file '$src_file': $ret";
+    }
+  } elsif ( -e "$src_file_esc" ) {
+    $ret = system("$CP_CMD \"$src_file_esc\" \"$dst_file_esc\"");
+    if ($ret != 0) {
+       Die "Failed to copy file '$src_file': $ret";
+     }
+  }
+}
+
+#
+# Copies or streams a file into the backup set,
+# handles any streaming and/or encryption.
+# All files to be placed into the backup set should only be put there
+# through this call, write_backup_to_file ot xtrabackup itself. If any
+# other method is used, files may not be properly formatted
+# (stream, encryption, etc).
+#
+sub backup_file {
+  my $src_path = shift;
+  my $src_file = shift;
+  my $dst_file = shift;
+
+  if ($option_stream) {
+    backup_file_via_stream($src_path, $src_file);
+  } else {
+    backup_file_via_copy($src_path, $src_file, $dst_file);
+  }
+}
+
+#
+# Writes data directly into a file within the root of the backup set,
+# handles any streaming and/or encryption.
+#
+sub write_to_backup_file {
+  my $file_name = shift;
+  my $write_data = shift;
+  my $filepos = rindex($file_name, '/');
+  my $dst_file = substr($file_name, $filepos + 1);
+  my $dst_path = substr($file_name, 0, $filepos + 1);
+
+  open XTRABACKUP_FH, "> $option_tmpdir/$dst_file"
+    || die "Cannot open file $option_tmpdir/$dst_file: $!\n";
+  print XTRABACKUP_FH $write_data;
+  close XTRABACKUP_FH;
+  backup_file($option_tmpdir, $dst_file, $file_name);
+  unlink "$option_tmpdir/$dst_file";
 }
 
 #
