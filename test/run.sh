@@ -771,7 +771,7 @@ while getopts "fgh?:t:s:d:c:j:T:" options; do
             c ) XB_BUILD="$OPTARG";;
             j )
 
-                if [[ ! $OPTARG =~ ^[0-9]+$ || $NWORKERS < 1 ]]
+                if [[ ! $OPTARG =~ ^[0-9]+$ || $OPTARG < 1 ]]
                 then
                     echo "Wrong -j argument: $OPTARG"
                     exit -1
