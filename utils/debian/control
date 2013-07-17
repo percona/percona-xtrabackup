@@ -1,7 +1,8 @@
 Source: percona-xtrabackup
 Section: database
 Priority: extra
-Maintainer: Percona Development <mysql-dev@percona.com>
+Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
+Uploaders: Stewart Smith <stewart.smith@percona.com>, Ignacio Nin <ignacio.nin@percona.com>, Clint Byrum <clint@fewbar.com>
 Build-Depends: automake,
                bison,
                ca-certificates,
