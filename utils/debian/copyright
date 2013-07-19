@@ -23,7 +23,9 @@ Copyright:  Copyright (c) 2003-2011 Tim Kientzle
   Portions Copyright (c) 1996-2008 PostgreSQL Global Development Group
   Portions Copyright (c) 1985, 1986, 1992, 1993 The Regents of the University
     of California
-Comment: The license text comes from the Debian libarchive package. Upstream for Percona XtraBackup is aware that the local patches to libarchive need to be merged upstream and that we should link with upstream libarchive.
+Comment: The license text comes from the Debian libarchive package. Upstream
+ for Percona XtraBackup is aware that the local patches to libarchive need to
+ be merged upstream and that we should link with upstream libarchive.
 License: BSD-2-clause and BSD-3-clause
   * Copyright (c) 2003-2011 Tim Kientzle
   * All rights reserved.
@@ -209,7 +211,8 @@ Files: ./test/python/junitxml/*
 Copyright: 2005, Robert Collins <robertc@robertcollins.net>
   2006, Robert Collins <robertc@robertcollins.net>
   2009, Robert Collins <robertc@robertcollins.net>
-Comment: Not installed, just used by test suite. Copyright information from Debian python-junitxml debian/copyright.
+Comment: Not installed, just used by test suite. Copyright information from
+ Debian python-junitxml debian/copyright.
 License: LGPL-3
  This package was originally debianized by Robert Collins
  <robertc@robertcollins.net> on Sep 20 2009.
@@ -234,6 +237,8 @@ License: LGPL-3
 Files: ./test/python/iso8601/*
  ./test/python/subunit/iso8601.py
 Copyright: 2007 Michael Twomey
+Comment: used as part of subunit, which is not used in building the Debian
+ package, only used if running the test suite.
 License: Expat
  Copyright (c) 2007 Michael Twomey
  .
@@ -258,7 +263,9 @@ License: Expat
 
 Files: ./test/python/subunit/*
  ./test/subunit.sh
-Comment: Copyright information from python-subunit debian/copyright. These files are not installed, just used for test suite.
+Comment: Copyright information from python-subunit debian/copyright. These
+ files are not installed, just used for test suite, which is not run during
+ build of the Debian package.
 Copyright:
  2005, 2006, 2008, 2009 Robert Collins <robertc@robertcollins.net>
  2004 Canonical Limited
