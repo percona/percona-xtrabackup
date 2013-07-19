@@ -131,6 +131,10 @@ Copyright: 2010, Patrick Crews
   2011, Patrick Crews
 License: GPL-2+
 
+Files: ./src/quicklz/*
+Copyright: Copyright (C) 2006-2011 Lasse Mikkel Reinhold
+License: GPL-2
+
 Files: ./src/*
  ./test/*
 Copyright: 2009-2012, Percona Ireland Ltd
