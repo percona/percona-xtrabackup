@@ -25,34 +25,6 @@ Copyright:  Copyright (c) 2003-2011 Tim Kientzle
     of California
 Comment: The license text comes from the Debian libarchive package. Upstream for Percona XtraBackup is aware that the local patches to libarchive need to be merged upstream and that we should link with upstream libarchive.
 License: BSD-2-clause and BSD-3-clause
- This package was originally debianized by
- John Goerzen <jgoerzen@complete.org> on Mon, 10 Oct 2005 19:24:56 -0500.
- The debian package maintenance was handed over to
- Andreas Henrikson <andreas@fatal.se> in February 2010.
- .
- It was downloaded from http://code.google.com/p/libarchive/
-   old versions from http://people.freebsd.org/~kientzle/libarchive/
- .
- Copyright Holders:
-  Copyright (c) 2003-2011 Tim Kientzle
-  Copyright (c) 2008-2011 Michihiro NAKAJIMA
-  Copyright (c) 2011 libarchive Project
-  Copyright (c) 2011 Andres Mejia
-  Copyright (c) 2007-2010 Joerg Sonnenberger
-  Copyright (c) 2009 Andreas Henriksson
-  Copyright (c) 2008 Anselm Strauss
-  Copyright (c) 2008 Miklos Vajna
-  Copyright (c) 2008 Jaakko Heinonen
-  Copyright (c) 2003-2007 Kees Zeelenberg
-  Copyright (c) 2007 Kai Wang
-  Copyright (c) 2006 Rudolf Marek SYSGO s.r.o.
-  Copyright (c) 2002 Thomas Moestl <tmm@FreeBSD.org>
-  Portions Copyright (c) 2010 Nokia Corporation and/or its subsidiary(-ies)
-  Portions Copyright (c) 2001 The NetBSD Foundation, Inc
-  Portions Copyright (c) 1996-2008 PostgreSQL Global Development Group
-  Portions Copyright (c) 1985, 1986, 1992, 1993 The Regents of the University
-    of California
- License:
   * Copyright (c) 2003-2011 Tim Kientzle
   * All rights reserved.
   *
