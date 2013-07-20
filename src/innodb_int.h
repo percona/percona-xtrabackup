@@ -144,6 +144,8 @@ extern "C" {
 	fil_rename_tablespace(old_name_in, id, new_name, new_path)
 #  define xb_btr_root_block_get(index, mode, mtr) \
 	btr_root_block_get(index, mode, mtr)
+#  define xb_file_delete(path) \
+	os_file_delete_func(path)
    typedef ib_mutex_t	mutex_t;
 #  define INNODB_LOG_DIR srv_log_group_home_dir
 #  define DEFAULT_LOG_FILE_SIZE 48*1024*1024
@@ -154,6 +156,7 @@ extern "C" {
 #  define xb_os_event_create(name) os_event_create()
 #else /* MYSQL_VERSION_ID >= 50600 */
    /* MySQL and Percona Server 5.1 and 5.5 */
+#  define xb_file_delete(path) os_file_delete(path)
 #  define xb_buf_page_is_corrupted(page, zip_size)	\
 	buf_page_is_corrupted(page, zip_size)
 #  define xb_os_event_create(name) os_event_create(name)
@@ -360,6 +363,7 @@ struct fil_space_struct {
 				.ibd file of tablespace and want to
 				stop temporarily posting of new i/o
 				requests on the file */
+#if MYSQL_VERSION_ID < 50500
 	ibool		stop_ibuf_merges;
 				/*!< we set this TRUE when we start
 				deleting a single-table tablespace */
@@ -370,6 +374,20 @@ struct fil_space_struct {
 				or flush requests can be placed on this space,
 				though there may be such requests still being
 				processed on this space */
+#else
+	ibool		stop_new_ops;
+				/*!< we set this TRUE when we start
+				deleting a single-table tablespace.
+				When this is set following new ops
+				are not allowed:
+				* read IO request
+				* ibuf merge
+				* file flush
+				Note that we can still possibly have
+				new write operations because we don't
+				check this flag when doing flush
+				batches. */
+#endif
 	ulint		purpose;/*!< FIL_TABLESPACE, FIL_LOG, or
 				FIL_ARCH_LOG */
 	UT_LIST_BASE_NODE_T(fil_node_t) chain;
@@ -746,14 +764,14 @@ open_or_create_data_files(
 	lsn_t*	max_flushed_lsn,/* out: */
 	ulint*	sum_of_new_sizes);/* out: sum of sizes of the new files added
 				*/
-
+#ifndef XTRADB_BASED
 ibool
 log_block_checksum_is_ok_or_old_format(
 /*===================================*/
 			/* out: TRUE if ok, or if the log block may be in the
 			format of InnoDB version < 3.23.52 */
 	byte*	block);	/* in: pointer to a log block */
-
+#endif /* XTRADB_BASED */
 #endif /* MYSQL_VERSION_ID >= 50600 */
 
 buf_block_t*
@@ -800,6 +818,18 @@ os_file_set_nocache(
 #if MYSQL_VERSION_ID < 50600
 } /* extern "C" */
 #endif
+
+/******************************************************//**
+Reads a specified log segment to a buffer. */
+UNIV_INTERN
+void
+xb_log_group_read_log_seg(
+/*===================*/
+	ulint		type,		/*!< in: LOG_ARCHIVE or LOG_RECOVER */
+	byte*		buf,		/*!< in: buffer where to read */
+	log_group_t*	group,		/*!< in: log group */
+	ib_uint64_t	start_lsn,	/*!< in: read area start */
+	ib_uint64_t	end_lsn);	/*!< in: read area end */
 
 /****************************************************************//**
 A simple function to open or create a file.
@@ -966,6 +996,26 @@ innobase_get_slow_log();
 #endif
 
 #if MYSQL_VERSION_ID < 50600
+
+my_bool
+innobase_check_identifier_length(
+/*=============================*/
+	const char*	id);
+
+uint
+innobase_convert_to_filename_charset(
+/*=================================*/
+	char*		to,
+	const char*	from,
+	ulint		len);
+
+uint
+innobase_convert_to_system_charset(
+/*=================================*/
+	char*		to,
+	const char*	from,
+	ulint		len,
+	uint*		errors);
 
 void
 innobase_invalidate_query_cache(

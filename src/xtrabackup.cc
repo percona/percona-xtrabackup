@@ -1367,6 +1367,11 @@ mem_free_and_error:
 	}
 #endif
 
+#ifdef XTRADB_BASED
+	/* Workaround for LP #1203308. */
+	srv_track_changed_pages = FALSE;
+#endif
+
 	return(FALSE);
 
 error:
@@ -2056,8 +2061,8 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 
 		mutex_enter(&log_sys->mutex);
 
-		log_group_read_log_seg(LOG_RECOVER, log_sys->buf,
-						group, start_lsn, end_lsn);
+		xb_log_group_read_log_seg(LOG_RECOVER, log_sys->buf,
+					  group, start_lsn, end_lsn);
 
 
 		/* reference recv_scan_log_recs() */
@@ -3487,11 +3492,7 @@ loop:
 					for (;;) {
 						mtr_start(&local_mtr);
 
-#if (MYSQL_VERSION_ID < 50517)
-						local_block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, &local_mtr);
-#else
 						local_block = btr_block_get(space_id, zip_size, page_no, RW_S_LATCH, index, &local_mtr);
-#endif
 						local_page = buf_block_get_frame(local_block);
 						blob_header = local_page + offset;
 #define BTR_BLOB_HDR_PART_LEN		0
@@ -3532,13 +3533,8 @@ loop:
 	mtr_commit(&mtr);
 	if (right_page_no != FIL_NULL) {
 		mtr_start(&mtr);
-#if (MYSQL_VERSION_ID < 50517)
-		block = btr_block_get(space, zip_size, right_page_no,
-				      RW_X_LATCH, &mtr);
-#else
 		block = btr_block_get(space, zip_size, right_page_no,
 				      RW_X_LATCH, index, &mtr);
-#endif
 		page = buf_block_get_frame(block);
 		goto loop;
 	}
@@ -4565,7 +4561,7 @@ rm_if_not_found(
 	if (!table) {
 		snprintf(name, FN_REFLEN, "%s/%s/%s", data_home_dir,
 						      db_name, file_name);
-		return os_file_delete(name);
+		return xb_file_delete(name);
 	}
 
 	return(TRUE);
