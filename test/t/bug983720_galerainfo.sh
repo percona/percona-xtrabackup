@@ -16,9 +16,16 @@ if [[ "$probe_result" == "0" ]]
 fi
 set -e
 
+debug=""
+pdebug=""
+if [[ -n $WSREP_DEBUG ]];then 
+    debug="--wsrep-debug=1"
+    pdebug=",debug=1"
+fi
+
 galera_port=`get_free_port 2`
 
-start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep_provider_options="base_port=${galera_port}"
+start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// $debug --wsrep_provider_options="base_port=${galera_port}${pdebug}"
 
 # take a backup with stream mode
 mkdir -p $topdir/backup
