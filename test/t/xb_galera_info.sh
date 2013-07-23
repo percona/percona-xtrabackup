@@ -12,7 +12,7 @@ if [[ "$probe_result" == "0" ]]
 fi
 set -e
 
-if [[ -n $WSREP_DEBUG ]];then 
+if [[ -n ${WSREP_DEBUG:-} ]];then 
     start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep-debug=1 --wsrep_provider_options="debug=1"
 else 
     start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm://

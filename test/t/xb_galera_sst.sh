@@ -25,7 +25,7 @@ debug=""
 pdebug=""
 if [[ -n ${WSREP_DEBUG:-} ]];then 
     debug="--wsrep-debug=1"
-    pdebug=",debug=1"
+    pdebug=";debug=1"
 fi
 
 recv_addr1="${ADDR}:$(get_free_port 2)"
