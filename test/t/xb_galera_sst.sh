@@ -13,7 +13,10 @@ SUSER="root"
 SMDSUM="9f6f3edb78f9a5957ecaf8f99953b5af"
 
 set +e
-if ${MYSQLD} --help | grep -q wsrep;then
+${MYSQLD} --basedir=$MYSQL_BASEDIR  --help --verbose --wsrep-sst-method=rsync| grep -q wsrep
+probe_result=$?
+if [[ "$probe_result" == "0" ]]
+    then
         vlog "Server supports wsrep"
     else
         echo "Requires WSREP enabled" > $SKIPPED_REASON
