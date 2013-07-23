@@ -47,6 +47,25 @@ char*	innobase_log_group_home_dir		= NULL;
 
 long innobase_mirrored_log_groups = 1;
 
+/******************************************************//**
+Reads a specified log segment to a buffer. */
+UNIV_INTERN
+void
+xb_log_group_read_log_seg(
+/*===================*/
+	ulint		type,		/*!< in: LOG_ARCHIVE or LOG_RECOVER */
+	byte*		buf,		/*!< in: buffer where to read */
+	log_group_t*	group,		/*!< in: log group */
+	ib_uint64_t	start_lsn,	/*!< in: read area start */
+	ib_uint64_t	end_lsn)	/*!< in: read area end */
+{
+#if defined(XTRADB_BASED) && !defined(XTRADB55)
+	log_group_read_log_seg(type, buf, group, start_lsn, end_lsn, FALSE);
+#else
+	log_group_read_log_seg(type, buf, group, start_lsn, end_lsn);
+#endif
+}
+
 /****************************************************************//**
 A simple function to open or create a file.
 @return own: handle to the file, not defined if error, error number
@@ -244,7 +263,7 @@ xb_space_create_file(
 	if (!ret) {
 		msg("xtrabackup: cannot set size for file %s\n", path);
 		os_file_close(*file);
-		os_file_delete(path);
+		xb_file_delete(path);
 		return ret;
 	}
 
@@ -289,7 +308,7 @@ xb_space_create_file(
 		msg("xtrabackup: could not write the first page to %s\n",
 		    path);
 		os_file_close(*file);
-		os_file_delete(path);
+		xb_file_delete(path);
 		return ret;
 	}
 
@@ -332,6 +351,43 @@ innobase_invalidate_query_cache(
 	(void)full_name;
 	(void)full_name_len;
 	/* do nothing */
+}
+
+my_bool
+innobase_check_identifier_length(
+/*=============================*/
+	const char*	id __attribute__((unused)))
+{
+	msg("xtrabackup: innobase_check_identifier_length() called.\n");
+	ut_a(0);
+	return(false);
+}
+
+uint
+innobase_convert_to_filename_charset(
+/*=================================*/
+	char*		to __attribute__((unused)),
+	const char*	from __attribute__((unused)),
+	ulint		len __attribute__((unused)))
+{
+	msg("xtrabackup: innobase_convert_to_filename_charset() called.\n");
+	ut_a(0);
+
+	return(0);
+}
+
+uint
+innobase_convert_to_system_charset(
+/*=================================*/
+	char*		to __attribute__((unused)),
+	const char*	from __attribute__((unused)),
+	ulint		len __attribute__((unused)),
+	uint*		errors __attribute__((unused)))
+{
+	msg("xtrabackup: innobase_convert_to__charset() called.\n");
+	ut_a(0);
+
+	return(0);
 }
 
 #if MYSQL_VERSION_ID >= 50500

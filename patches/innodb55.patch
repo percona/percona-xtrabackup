@@ -1,6 +1,6 @@
 --- a/storage/innobase/btr/btr0btr.c
 +++ b/storage/innobase/btr/btr0btr.c
-@@ -674,7 +674,7 @@
+@@ -698,7 +698,7 @@
  /**************************************************************//**
  Gets the root node of a tree and x-latches it.
  @return	root page, x-latched */
@@ -9,7 +9,7 @@
  buf_block_t*
  btr_root_block_get(
  /*===============*/
-@@ -1123,7 +1123,7 @@
+@@ -1183,7 +1183,7 @@
  /************************************************************//**
  Returns the child page of a node pointer and x-latches it.
  @return	child page, x-latched */
@@ -28,7 +28,7 @@
  
  /*
  		IMPLEMENTATION OF THE BUFFER POOL
-@@ -518,7 +519,7 @@
+@@ -538,7 +539,7 @@
  		return(TRUE);
  	}
  
@@ -37,7 +37,7 @@
  	if (recv_lsn_checks_on) {
  		ib_uint64_t	current_lsn;
  
-@@ -881,6 +882,7 @@
+@@ -918,6 +919,7 @@
  	block->page.in_flush_list = FALSE;
  	block->page.in_free_list = FALSE;
  	block->page.in_LRU_list = FALSE;
@@ -45,7 +45,7 @@
  	block->in_unzip_LRU_list = FALSE;
  #endif /* UNIV_DEBUG */
  #if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
-@@ -2299,7 +2301,8 @@
+@@ -2256,7 +2258,8 @@
  	ut_ad(zip_size == fil_space_get_zip_size(space));
  	ut_ad(ut_is_2pow(zip_size));
  #ifndef UNIV_LOG_DEBUG
@@ -55,7 +55,7 @@
  	      || ibuf_page_low(space, zip_size, offset,
  			       FALSE, file, line, NULL));
  #endif
-@@ -3567,6 +3570,13 @@
+@@ -3535,6 +3538,13 @@
  			frame = ((buf_block_t*) bpage)->frame;
  		}
  
@@ -69,7 +69,7 @@
  		/* If this page is not uninitialized and not in the
  		doublewrite buffer, then the page number and space id
  		should be the same as in block. */
-@@ -3668,7 +3678,8 @@
+@@ -3637,7 +3647,8 @@
  			recv_recover_page(TRUE, (buf_block_t*) bpage);
  		}
  
@@ -81,7 +81,7 @@
  				bpage->offset, buf_page_get_zip_size(bpage),
 --- a/storage/innobase/buf/buf0rea.c
 +++ b/storage/innobase/buf/buf0rea.c
-@@ -124,6 +124,45 @@
+@@ -162,6 +162,45 @@
  	bpage = buf_page_init_for_read(err, mode, space, zip_size, unzip,
  				       tablespace_version, offset);
  	if (bpage == NULL) {
@@ -127,7 +127,7 @@
  
  		return(0);
  	}
-@@ -768,6 +807,50 @@
+@@ -820,6 +859,50 @@
  		/* It is a single table tablespace and the .ibd file is
  		missing: do nothing */
  
@@ -189,7 +189,7 @@
  #ifndef UNIV_HOTBACKUP
  # include "buf0lru.h"
  # include "ibuf0ibuf.h"
-@@ -297,7 +299,7 @@
+@@ -300,7 +302,7 @@
  
  /** The tablespace memory cache. This variable is NULL before the module is
  initialized. */
@@ -198,7 +198,7 @@
  
  #ifdef UNIV_DEBUG
  /** Try fil_validate() every this many times */
-@@ -336,7 +338,7 @@
+@@ -339,7 +341,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -207,7 +207,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -661,7 +663,7 @@
+@@ -664,7 +666,7 @@
  Opens a the file of a node of a tablespace. The caller must own the fil_system
  mutex. */
  static
@@ -216,7 +216,7 @@
  fil_node_open_file(
  /*===============*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -696,7 +698,17 @@
+@@ -699,7 +701,17 @@
  			OS_FILE_READ_ONLY, &success);
  		if (!success) {
  			/* The following call prints an error message */
@@ -235,7 +235,7 @@
  
  			ut_print_timestamp(stderr);
  
-@@ -757,12 +769,15 @@
+@@ -760,12 +772,15 @@
  
  		if (UNIV_UNLIKELY(space_id != space->id)) {
  			fprintf(stderr,
@@ -254,7 +254,7 @@
  		}
  
  		if (UNIV_UNLIKELY(space_id == ULINT_UNDEFINED
-@@ -786,8 +801,8 @@
+@@ -789,8 +804,8 @@
  		}
  
  		if (size_bytes >= 1024 * 1024) {
@@ -265,7 +265,7 @@
  		}
  
  		if (!(flags & DICT_TF_ZSSIZE_MASK)) {
-@@ -838,6 +853,8 @@
+@@ -841,6 +856,8 @@
  		/* Put the node to the LRU list */
  		UT_LIST_ADD_FIRST(LRU, system->LRU, node);
  	}
@@ -274,7 +274,7 @@
  }
  
  /**********************************************************************//**
-@@ -1464,7 +1481,12 @@
+@@ -1504,7 +1521,12 @@
  		the file yet; the following calls will open it and update the
  		size fields */
  
@@ -288,7 +288,7 @@
  		fil_node_complete_io(node, fil_system, OS_FILE_READ);
  	}
  
-@@ -1516,7 +1538,12 @@
+@@ -1573,7 +1595,12 @@
  		the file yet; the following calls will open it and update the
  		size fields */
  
@@ -302,7 +302,7 @@
  		fil_node_complete_io(node, fil_system, OS_FILE_READ);
  	}
  
-@@ -1957,7 +1984,7 @@
+@@ -2021,7 +2048,7 @@
  	mem_free(path);
  }
  
@@ -311,7 +311,7 @@
  /********************************************************//**
  Writes a log record about an .ibd file create/rename/delete. */
  static
-@@ -2181,7 +2208,7 @@
+@@ -2245,7 +2272,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    space_id, name, FALSE, flags,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -320,7 +320,7 @@
  			}
  		}
  
-@@ -2344,7 +2371,7 @@
+@@ -2434,7 +2461,7 @@
  	}
  
  	if (success) {
@@ -329,16 +329,16 @@
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2645,7 +2672,7 @@
+@@ -2735,7 +2762,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
 -#ifndef UNIV_HOTBACKUP
 +#ifdef UNDEFINED
- 	if (success) {
+ 	if (success && !recv_recovery_on) {
  		mtr_t		mtr;
  
-@@ -2836,7 +2863,7 @@
+@@ -2926,7 +2953,7 @@
  
  	fil_node_create(path, size, space_id, FALSE);
  
@@ -347,7 +347,7 @@
  	{
  		mtr_t		mtr;
  
-@@ -3091,19 +3118,97 @@
+@@ -3181,19 +3208,97 @@
  		      "InnoDB: open the tablespace file ", stderr);
  		ut_print_filename(stderr, filepath);
  		fputs("!\n"
@@ -455,7 +455,7 @@
  		return(FALSE);
  	}
  
-@@ -3335,7 +3440,7 @@
+@@ -3425,7 +3530,7 @@
  	cannot be ok. */
  
  	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
@@ -464,7 +464,7 @@
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3465,7 +3570,51 @@
+@@ -3555,7 +3660,51 @@
  
  	fil_node_create(filepath, 0, space_id, FALSE);
  func_exit:
@@ -517,7 +517,7 @@
  	ut_free(buf2);
  	mem_free(filepath);
  }
-@@ -3476,7 +3625,7 @@
+@@ -3566,7 +3715,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -526,7 +526,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -3520,7 +3669,7 @@
+@@ -3610,7 +3759,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  ulint
@@ -535,7 +535,7 @@
  /*===================================*/
  {
  	int		ret;
-@@ -3576,7 +3725,9 @@
+@@ -3666,7 +3815,9 @@
  			dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
  
@@ -546,7 +546,7 @@
  
  		if (dbdir != NULL) {
  			/* printf("Opened dir %s\n", dbinfo.name); */
-@@ -3602,8 +3753,11 @@
+@@ -3692,8 +3843,11 @@
  						   ".ibd")) {
  					/* The name ends in .ibd; try opening
  					the file */
@@ -559,7 +559,7 @@
  				}
  next_file_item:
  				ret = fil_file_readdir_next_file(&err,
-@@ -3775,15 +3929,97 @@
+@@ -3865,15 +4019,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -665,7 +665,7 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4172,7 +4408,7 @@
+@@ -4262,7 +4498,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -674,7 +674,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -4192,10 +4428,13 @@
+@@ -4282,10 +4518,13 @@
  	}
  
  	if (node->open == FALSE) {
@@ -689,7 +689,7 @@
  	}
  
  	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
-@@ -4208,6 +4447,8 @@
+@@ -4298,6 +4537,8 @@
  	}
  
  	node->n_pending++;
@@ -698,7 +698,7 @@
  }
  
  /********************************************************************//**
-@@ -4390,6 +4631,16 @@
+@@ -4482,6 +4723,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -715,9 +715,29 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
+@@ -4997,6 +5248,12 @@
+ 	const char*	tmp_name)	/*!< in: temp table name used while
+ 					swapping */
+ {
++	(void)old_space_id;
++	(void)old_name;
++	(void)new_space_id;
++	(void)new_name;
++	(void)tmp_name;
++#ifdef UNDEFINED
+ 	mtr_t           mtr;
+ 	mtr_start(&mtr);
+ 	fil_op_write_log(MLOG_FILE_RENAME, old_space_id,
+@@ -5004,5 +5261,6 @@
+ 	fil_op_write_log(MLOG_FILE_RENAME, new_space_id,
+ 			 0, 0, new_name, old_name, &mtr);
+ 	mtr_commit(&mtr);
++#endif
+ }
+ 
 --- a/storage/innobase/ibuf/ibuf0ibuf.c
 +++ b/storage/innobase/ibuf/ibuf0ibuf.c
-@@ -1148,6 +1148,9 @@
+@@ -1157,6 +1157,9 @@
  	ut_ad(!recv_no_ibuf_operations);
  	ut_ad(x_latch || mtr == NULL);
  
@@ -727,7 +747,7 @@
  	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
  
  		return(TRUE);
-@@ -2715,6 +2718,9 @@
+@@ -2729,6 +2732,9 @@
  	ulint	n_bytes;
  	ulint	n_pag2;
  
@@ -739,7 +759,7 @@
  
 --- a/storage/innobase/include/fil0fil.h
 +++ b/storage/innobase/include/fil0fil.h
-@@ -505,7 +505,7 @@
+@@ -513,7 +513,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  ulint
@@ -803,16 +823,16 @@
  
  	if (log_sys->n_pending_checkpoint_writes > 0) {
  		/* A checkpoint write is running */
-@@ -3114,6 +3116,7 @@
+@@ -3141,6 +3143,7 @@
  	shutdown, because the InnoDB layer may have committed or
  	prepared transactions and we don't want to lose them. */
  
 +	if (!srv_apply_log_only) {
  	server_busy = trx_n_mysql_transactions > 0
  		|| UT_LIST_GET_LEN(trx_sys->trx_list) > trx_n_prepared;
- 	mutex_exit(&kernel_mutex);
-@@ -3121,6 +3124,10 @@
- 	if (server_busy || srv_is_any_background_thread_active()) {
+ 
+@@ -3193,6 +3196,10 @@
+ 
  		goto loop;
  	}
 +	}
@@ -902,7 +922,7 @@
  ibool
  log_block_checksum_is_ok_or_old_format(
  /*===================================*/
-@@ -1496,6 +1497,7 @@
+@@ -1502,6 +1503,7 @@
  					     buf_block_get_page_no(block));
  
  	if ((recv_addr == NULL)
@@ -910,7 +930,7 @@
  	    || (recv_addr->state == RECV_BEING_PROCESSED)
  	    || (recv_addr->state == RECV_PROCESSED)) {
  
-@@ -1585,9 +1587,16 @@
+@@ -1591,9 +1593,16 @@
  			if (page_zip) {
  				memset(FIL_PAGE_LSN + page_zip->data, 0, 8);
  			}
@@ -928,7 +948,7 @@
  
  			ib_uint64_t	end_lsn;
  
-@@ -1774,6 +1783,18 @@
+@@ -1780,6 +1789,18 @@
  			ulint	zip_size = fil_space_get_zip_size(space);
  			ulint	page_no = recv_addr->page_no;
  
@@ -947,7 +967,7 @@
  			if (recv_addr->state == RECV_NOT_PROCESSED) {
  				if (!has_printed) {
  					ut_print_timestamp(stderr);
-@@ -1807,7 +1828,7 @@
+@@ -1813,7 +1834,7 @@
  
  				mutex_enter(&(recv_sys->mutex));
  			}
@@ -956,7 +976,7 @@
  			recv_addr = HASH_GET_NEXT(addr_hash, recv_addr);
  		}
  
-@@ -2308,7 +2329,7 @@
+@@ -2314,7 +2335,7 @@
  			   || type == MLOG_FILE_RENAME
  			   || type == MLOG_FILE_DELETE) {
  			ut_a(space);
@@ -965,7 +985,7 @@
  			if (recv_replay_file_ops) {
  
  				/* In ibbackup --apply-log, replay an .ibd file
-@@ -2331,7 +2352,7 @@
+@@ -2337,7 +2358,7 @@
  					ut_error;
  				}
  			}
@@ -974,7 +994,7 @@
  			/* In normal mysqld crash recovery we do not try to
  			replay file operations */
  #ifdef UNIV_LOG_LSN_DEBUG
-@@ -2748,8 +2769,11 @@
+@@ -2754,8 +2775,11 @@
  
  			fprintf(stderr,
  				"InnoDB: Doing recovery: scanned up to"
@@ -988,7 +1008,7 @@
  		}
  	}
  
-@@ -2854,7 +2878,7 @@
+@@ -2860,7 +2884,7 @@
  		"InnoDB: Reading tablespace information"
  		" from the .ibd files...\n");
  
@@ -997,7 +1017,7 @@
  
  	/* If we are using the doublewrite method, we will
  	check if there are half-written pages in data files,
-@@ -2863,12 +2887,14 @@
+@@ -2869,12 +2893,14 @@
  
  	if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
  
@@ -1013,7 +1033,7 @@
  	}
  }
  
-@@ -3018,6 +3044,7 @@
+@@ -3024,6 +3050,7 @@
  		recv_sys->recovered_lsn = checkpoint_lsn;
  
  		srv_start_lsn = checkpoint_lsn;
@@ -1021,7 +1041,7 @@
  	}
  
  	contiguous_lsn = ut_uint64_align_down(recv_sys->scanned_lsn,
-@@ -3299,6 +3326,7 @@
+@@ -3305,6 +3332,7 @@
  	that the data dictionary tables will be free of any locks.
  	The data dictionary latch should guarantee that there is at
  	most one data dictionary transaction active at a time. */
@@ -1031,7 +1051,7 @@
  
 --- a/storage/innobase/os/os0file.c
 +++ b/storage/innobase/os/os0file.c
-@@ -656,7 +656,7 @@
+@@ -658,7 +658,7 @@
  }
  
  #undef USE_FILE_LOCK
@@ -1040,7 +1060,7 @@
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1456,8 +1456,9 @@
+@@ -1465,8 +1465,9 @@
  		attributes = 0;
  		ut_error;
  	}
@@ -1051,7 +1071,7 @@
  			  GENERIC_READ | GENERIC_WRITE, /* read and write
  							access */
  			  share_mode,	/* File can be read also by other
-@@ -1516,7 +1517,11 @@
+@@ -1531,7 +1532,11 @@
  	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW
  	    || create_mode == OS_FILE_OPEN_RETRY) {
  		mode_str = "OPEN";
@@ -1064,7 +1084,7 @@
  	} else if (create_mode == OS_FILE_CREATE) {
  		mode_str = "CREATE";
  		create_flag = O_RDWR | O_CREAT | O_EXCL;
-@@ -2694,6 +2699,9 @@
+@@ -2709,6 +2714,9 @@
  	ut_a((offset & 0xFFFFFFFFUL) == offset);
  	ut_a((n & 0xFFFFFFFFUL) == n);
  
@@ -1074,7 +1094,7 @@
  	os_n_file_writes++;
  
  	ut_ad(file);
-@@ -2818,6 +2826,9 @@
+@@ -2833,6 +2841,9 @@
  #else
  	ssize_t	ret;
  
@@ -1105,7 +1125,7 @@
  }
 --- a/storage/innobase/srv/srv0srv.c
 +++ b/storage/innobase/srv/srv0srv.c
-@@ -399,6 +399,10 @@
+@@ -405,6 +405,10 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -1116,7 +1136,7 @@
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_n_free_tickets_to_enter = 500;
-@@ -1078,7 +1082,7 @@
+@@ -1084,7 +1088,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -1125,7 +1145,7 @@
  }
  
  /*********************************************************************//**
-@@ -1089,6 +1093,7 @@
+@@ -1095,6 +1099,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -1133,7 +1153,7 @@
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1102,6 +1107,7 @@
+@@ -1108,6 +1113,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -1141,7 +1161,7 @@
  }
  
  /*********************************************************************//**
-@@ -1717,7 +1723,7 @@
+@@ -1727,7 +1733,7 @@
  		}
  
  		/* Record the lock wait time for this thread */
@@ -1187,7 +1207,7 @@
  ulint
  open_or_create_data_files(
  /*======================*/
-@@ -1419,7 +1422,7 @@
+@@ -1448,7 +1451,7 @@
  	}
  #endif /* UNIV_LOG_ARCHIVE */
  
@@ -1196,7 +1216,7 @@
  		ut_print_timestamp(stderr);
  		fprintf(stderr,
  			" InnoDB: Error: combined size of log files"
-@@ -1714,6 +1717,10 @@
+@@ -1743,6 +1746,10 @@
  		are initialized in trx_sys_init_at_db_start(). */
  
  		recv_recovery_from_checkpoint_finish();
@@ -1207,7 +1227,7 @@
  		if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
  			/* The following call is necessary for the insert
  			buffer to work with multiple tablespaces. We must
-@@ -1873,6 +1880,17 @@
+@@ -1902,6 +1909,17 @@
  	if (!srv_auto_extend_last_data_file
  	    && sum_of_data_file_sizes != tablespace_size_in_header) {
  
@@ -1225,7 +1245,7 @@
  		ut_print_timestamp(stderr);
  		fprintf(stderr,
  			" InnoDB: Error: tablespace size"
-@@ -1952,6 +1970,7 @@
+@@ -1981,6 +1999,7 @@
  
  			return(DB_ERROR);
  		}
@@ -1233,7 +1253,7 @@
  	}
  
  	/* Check that os_fast_mutexes work as expected */
-@@ -1976,6 +1995,10 @@
+@@ -2005,6 +2024,10 @@
  
  	os_fast_mutex_free(&srv_os_test_mutex);
  
@@ -1244,7 +1264,7 @@
  	if (srv_print_verbose_log) {
  		ut_print_timestamp(stderr);
  		fprintf(stderr,
-@@ -2064,6 +2087,7 @@
+@@ -2093,6 +2116,7 @@
  		ibuf_update_max_tablespace_id();
  	}
  
@@ -1268,7 +1288,7 @@
  
 --- a/storage/innobase/trx/trx0sys.c
 +++ b/storage/innobase/trx/trx0sys.c
-@@ -1655,12 +1655,14 @@
+@@ -1656,12 +1656,14 @@
  	mem_free(trx_doublewrite);
  	trx_doublewrite = NULL;
  
@@ -1283,7 +1303,7 @@
  
  	/* There can't be any active transactions. */
  	rseg = UT_LIST_GET_FIRST(trx_sys->rseg_list);
-@@ -1686,10 +1688,12 @@
+@@ -1687,10 +1689,12 @@
  		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
  	}
  
@@ -1325,7 +1345,7 @@
  								"InnoDB: Since"
 --- a/storage/innobase/trx/trx0purge.c
 +++ b/storage/innobase/trx/trx0purge.c
-@@ -1129,6 +1129,9 @@
+@@ -1141,6 +1141,9 @@
  	que_thr_t*	thr;
  	ulint		old_pages_handled;
  
@@ -1335,19 +1355,6 @@
  	ut_a(purge_sys->trx->n_active_thrs == 0);
  
  	rw_lock_x_lock(&purge_sys->latch);
---- a/configure.cmake
-+++ b/configure.cmake
-@@ -149,7 +149,9 @@
-   SET(CMAKE_REQUIRED_LIBRARIES 
-     ${LIBM} ${LIBNSL} ${LIBBIND} ${LIBCRYPT} ${LIBSOCKET} ${LIBDL} ${CMAKE_THREAD_LIBS_INIT} ${LIBRT})
- 
--  LIST(REMOVE_DUPLICATES CMAKE_REQUIRED_LIBRARIES)
-+  IF(CMAKE_REQUIRED_LIBRARIES)
-+    LIST(REMOVE_DUPLICATES CMAKE_REQUIRED_LIBRARIES)
-+  ENDIF()
-   LINK_LIBRARIES(${CMAKE_THREAD_LIBS_INIT})
-   
-   OPTION(WITH_LIBWRAP "Compile with tcp wrappers support" OFF)
 --- a/storage/innobase/sync/sync0arr.c
 +++ b/storage/innobase/sync/sync0arr.c
 @@ -41,6 +41,7 @@
@@ -1358,9 +1365,9 @@
  
  /*
  			WAIT ARRAY
-@@ -928,6 +929,13 @@
- 	ibool		fatal = FALSE;
- 	double		longest_diff = 0;
+@@ -929,6 +930,13 @@
+ 		return(FALSE);
+ 	}
  
 +	if (srv_rebuild_indexes) {
 +
@@ -1374,7 +1381,7 @@
  	extremely slowly. UNIV_DEBUG_VALGRIND does not necessary mean that
 --- a/storage/innobase/include/buf0buf.h
 +++ b/storage/innobase/include/buf0buf.h
-@@ -1441,6 +1441,8 @@
+@@ -1531,6 +1531,8 @@
  					frees a page in buffer pool */
  # endif /* UNIV_DEBUG_FILE_ACCESSES || UNIV_DEBUG */
  #endif /* !UNIV_HOTBACKUP */
@@ -1385,7 +1392,7 @@
  /** The buffer control block structure */
 --- a/storage/innobase/mem/mem0dbg.c
 +++ b/storage/innobase/mem/mem0dbg.c
-@@ -280,18 +280,10 @@
+@@ -282,18 +282,10 @@
  	byte*	buf,	/*!< in: pointer to buffer */
  	ulint	 n)	/*!< in: length of buffer */
  {
@@ -1406,7 +1413,7 @@
  
  	UNIV_MEM_INVALID(buf, n);
  }
-@@ -306,17 +298,10 @@
+@@ -308,17 +300,10 @@
  	byte*	buf,	/*!< in: pointer to buffer */
  	ulint	n)	/*!< in: length of buffer */
  {

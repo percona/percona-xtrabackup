@@ -2,9 +2,9 @@
 
 set -e
 
-MYSQL_51_VERSION=5.1.59
-MYSQL_55_VERSION=5.5.17
-MYSQL_56_VERSION=5.6.10
+MYSQL_51_VERSION=5.1.70
+MYSQL_55_VERSION=5.5.31
+MYSQL_56_VERSION=5.6.11
 PS_51_VERSION=5.1.59-13.0
 PS_55_VERSION=5.5.16-22.0
 
@@ -125,10 +125,11 @@ AUTO_DOWNLOAD to \"yes\""
 ################################################################################
 function unpack_and_patch()
 {
+    local dirname=`basename "$1" ".tar.gz"`
     tar xzf $top_dir/$1
-    cd `basename "$1" ".tar.gz"`
+    cd $dirname
     patch -p1 < $top_dir/patches/$2
-    cd ..
+    cd -
 }
 
 ################################################################################
@@ -215,8 +216,8 @@ function build_all()
 {
     local type=$1
     local mysql_version_short=${mysql_version:0:3}
-    server_dir=$top_dir/mysql-$mysql_version_short
-    server_tarball=mysql-$mysql_version.tar.gz
+    local dirname=`basename "$server_tarball" ".tar.gz"`
+
     innodb_dir=$server_dir/storage/$innodb_name
 
     echo "Downloading sources"
@@ -226,7 +227,7 @@ function build_all()
 
     echo "Preparing sources"
     unpack_and_patch $server_tarball $server_patch
-    mv $top_dir/mysql-$mysql_version $server_dir
+    mv $top_dir/$dirname $server_dir
 
     build_server $type
 
@@ -241,10 +242,12 @@ fi
 
 case "$type" in
 "innodb51")
+       server_dir=$top_dir/mysql-5.1
        mysql_version=$MYSQL_51_VERSION
        server_patch=innodb51.patch
        innodb_name=innodb_plugin
        xtrabackup_target=plugin
+       server_tarball=mysql-5.1.70.tar.gz
        configure_cmd="./configure --enable-local-infile \
            --enable-thread-safe-client \
            --with-plugins=innodb_plugin \
@@ -255,10 +258,12 @@ case "$type" in
        build_all $type
        ;;
 "innodb55")
+        server_dir=$top_dir/mysql-5.5
 	mysql_version=$MYSQL_55_VERSION
 	server_patch=innodb55.patch
 	innodb_name=innobase
 	xtrabackup_target=5.5
+        server_tarball=mysql-5.5.31.tar.gz
 	# We need to build with partitioning due to MySQL bug #58632
 	configure_cmd="cmake . \
 		-DENABLED_LOCAL_INFILE=ON \
@@ -272,10 +277,12 @@ case "$type" in
 	;;
 
 "innodb56" )
+        server_dir=$top_dir/mysql-5.6
         mysql_version=$MYSQL_56_VERSION
         server_patch=innodb56.patch
         innodb_name=innobase
         xtrabackup_target=5.6
+        server_tarball=mysql-5.6.11.tar.gz
         configure_cmd="cmake . \
                 -DWITH_INNOBASE_STORAGE_ENGINE=ON \
                 -DWITH_ZLIB=bundled \
@@ -288,8 +295,10 @@ case "$type" in
 "xtradb51" )
 	server_dir=$top_dir/Percona-Server
 	branch_dir=percona-server-5.1-xtrabackup
-	innodb_dir=$server_dir/storage/innodb_plugin
-	xtrabackup_target=xtradb
+        innodb_name=innodb_plugin
+        xtrabackup_target=xtradb
+        server_patch=xtradb51.patch
+        server_tarball=Percona-Server-5.1.70-rel14.8.tar.gz
 	configure_cmd="./configure --enable-local-infile \
 	    --enable-thread-safe-client \
 	    --with-plugins=innodb_plugin \
@@ -301,42 +310,15 @@ case "$type" in
 		configure_cmd="LIBS=-lrt $configure_cmd"
 	fi
 
-
-	echo "Downloading sources"
-	
-	# Get Percona Server
-	if [ -d $branch_dir ]
-	then
-	    rm -rf $branch_dir
-	fi
-
-        if [ ! -f Percona-Server-XtraBackup-$PS_51_VERSION.tar.gz ]
-        then
-	    make ps51source
-	fi
-
-	rm -rf $branch_dir
-	tar xfz Percona-Server-XtraBackup-$PS_51_VERSION.tar.gz
-	cd $branch_dir
-	$MAKE_CMD main
-	cd $top_dir
-	rm -rf $server_dir
-	ln -s $branch_dir/Percona-Server $server_dir
-
-	# Patch Percona Server
-	cd $server_dir
-	patch -p1 < $top_dir/patches/xtradb51.patch
-
-	build_server $type
-
-	build_xtrabackup
-
+        build_all $type
 	;;
 "xtradb55" )
 	server_dir=$top_dir/Percona-Server-5.5
 	branch_dir=percona-server-5.5-xtrabackup
-	innodb_dir=$server_dir/storage/innobase
-	xtrabackup_target=xtradb55
+        innodb_name=innobase
+        xtrabackup_target=xtradb55
+        server_patch=xtradb55.patch
+        server_tarball=Percona-Server-5.5.31-rel30.3.tar.gz
 	# We need to build with partitioning due to MySQL bug #58632
 	configure_cmd="cmake . \
 		-DENABLED_LOCAL_INFILE=ON \
@@ -350,37 +332,7 @@ case "$type" in
 		configure_cmd="LIBS=-lrt $configure_cmd"
 	fi
 
-
-	echo "Downloading sources"
-	
-	# Get Percona Server
-	if [ -d $branch_dir ]
-	then
-	    rm -rf $branch_dir
-	fi
-
-        if [ ! -f Percona-Server-XtraBackup-$PS_55_VERSION.tar.gz ]
-        then
-	    make ps55source
-	fi
-
-	rm -rf $branch_dir
-	tar xfz Percona-Server-XtraBackup-$PS_55_VERSION.tar.gz
-	cd $branch_dir
-
-	$MAKE_CMD PERCONA_SERVER=Percona-Server-5.5 main
-	cd $top_dir
-	rm -rf $server_dir
-	ln -s $branch_dir/Percona-Server $server_dir
-
-	# Patch Percona Server
-	cd $server_dir
-	patch -p1 < $top_dir/patches/xtradb55.patch
-
-	build_server $type
-
-	build_xtrabackup
-
+        build_all $type
 	;;
 *)
 	usage
