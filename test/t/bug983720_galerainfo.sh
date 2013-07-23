@@ -18,9 +18,9 @@ set -e
 
 debug=""
 pdebug=""
-if [[ -n $WSREP_DEBUG ]];then 
+if [[ -n ${WSREP_DEBUG:-} ]];then 
     debug="--wsrep-debug=1"
-    pdebug=",debug=1"
+    pdebug=";debug=1"
 fi
 
 galera_port=`get_free_port 2`
