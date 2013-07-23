@@ -4,6 +4,7 @@
 
 . inc/common.sh
 
+ADDR=127.0.0.1
 set +e
 ${MYSQLD} --basedir=$MYSQL_BASEDIR --user=$USER --help --verbose --wsrep-sst-method=rsync| grep -q wsrep
 probe_result=$?
@@ -25,7 +26,7 @@ fi
 
 galera_port=`get_free_port 2`
 
-start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// $debug --wsrep_provider_options="base_port=${galera_port}${pdebug}"
+start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// $debug --wsrep_provider_options="base_port=${galera_port}${pdebug}" --wsrep_node_address=$ADDR
 
 # take a backup with stream mode
 mkdir -p $topdir/backup
