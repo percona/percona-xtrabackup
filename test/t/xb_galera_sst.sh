@@ -9,6 +9,7 @@ node1=1
 node2=901
 ADDR=127.0.0.1
 SSTPASS="password"
+SUSER="root"
 
 set +e
 ${MYSQLD} --basedir=$MYSQL_BASEDIR --help --verbose --wsrep-sst-method=rsync| grep -q wsrep
@@ -35,7 +36,7 @@ listen_addr1="${ADDR}:$(get_free_port 4)"
 listen_addr2="${ADDR}:$(get_free_port 5)"
 
 vlog "Starting server $node1"
-start_server_with_id $node1 --innodb_file_per_table  --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep_sst_receive_address=$recv_addr1 --wsrep_node_incoming_address=$ADDR --wsrep_provider_options="gmcast.listen_addr=tcp://$listen_addr1${pdebug}" --wsrep_sst_method=xtrabackup --wsrep_sst_auth=$USER:$SSTPASS  --wsrep_node_address=$ADDR $debug 
+start_server_with_id $node1 --innodb_file_per_table  --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep_sst_receive_address=$recv_addr1 --wsrep_node_incoming_address=$ADDR --wsrep_provider_options="gmcast.listen_addr=tcp://$listen_addr1${pdebug}" --wsrep_sst_method=xtrabackup --wsrep_sst_auth=$SUSER:$SSTPASS  --wsrep_node_address=$ADDR $debug 
 
 load_sakila
 
@@ -45,7 +46,7 @@ run_cmd ${MYSQL} ${MYSQL_ARGS} <<EOF
 EOF
 
 vlog "Starting server $node2"
-start_server_with_id $node2 --innodb_file_per_table --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm://$listen_addr1 --wsrep_sst_receive_address=$recv_addr2 --wsrep_node_incoming_address=$ADDR --wsrep_provider_options="gmcast.listen_addr=tcp://$listen_addr2${pdebug}" --wsrep_sst_method=xtrabackup --wsrep_sst_auth=$USER:$SSTPASS  --wsrep_node_address=$ADDR $debug
+start_server_with_id $node2 --innodb_file_per_table --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm://$listen_addr1 --wsrep_sst_receive_address=$recv_addr2 --wsrep_node_incoming_address=$ADDR --wsrep_provider_options="gmcast.listen_addr=tcp://$listen_addr2${pdebug}" --wsrep_sst_method=xtrabackup --wsrep_sst_auth=$SUSER:$SSTPASS  --wsrep_node_address=$ADDR $debug
 switch_server $node2
 
 # The password propagates through SST
