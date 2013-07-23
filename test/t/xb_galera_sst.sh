@@ -10,6 +10,7 @@ node2=901
 ADDR=127.0.0.1
 SSTPASS="password"
 SUSER="root"
+SMDSUM="9f6f3edb78f9a5957ecaf8f99953b5af"
 
 set +e
 ${MYSQLD} --basedir=$MYSQL_BASEDIR --help --verbose --wsrep-sst-method=rsync| grep -q wsrep
@@ -59,6 +60,14 @@ then
 else
 	vlog "SST failed"
 	exit 1
+fi
+
+# Lightweight verification till lp:1199656 is fixed
+mdsum=$(${MYSQL} ${MYSQL_ARGS} -e 'select * from sakila.actor;' | md5sum | cut -d" " -f1)
+
+if [[ $mdsum != $SMDSUM ]];then 
+    vlog "Integrity verification failed: found: $mdsum expected: $SMDSUM"
+    exit 1
 fi
 
 stop_server_with_id $node2
