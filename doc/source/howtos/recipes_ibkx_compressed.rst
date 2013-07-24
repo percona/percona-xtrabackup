@@ -24,7 +24,7 @@ Output should look like this ::
 Preparing the backup
 --------------------
 
-Before you can prepare the backup you'll need to uncompress all the files with `qpress <http://www.quicklz.com/>`_. You can use following one-liner to uncompress all the files:  :: 
+Before you can prepare the backup you'll need to uncompress all the files with `qpress <http://www.quicklz.com/>`_ (which is available from `Percona Software repositories <http://www.percona.com/doc/percona-xtrabackup/2.1/installation.html#using-percona-software-repositories>`_). You can use following one-liner to uncompress all the files:  :: 
 
   $ for bf in `find . -iname "*\.qp"`; do qpress -d $bf $(dirname $bf) && rm $bf; done
 

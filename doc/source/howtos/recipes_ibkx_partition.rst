@@ -103,3 +103,47 @@ Last step is to import the tablespace: ::
 
   mysql>  ALTER TABLE name_p4 IMPORT TABLESPACE;
 
+Restoring from the backups in version 5.6
+-----------------------------------------
+
+The problem with server versions up to 5.5 is that there is no server support to import either individual partitions or all partitions of a partitioned table, so partitions could only be imported as independent tables. In |MySQL| and |Percona Server| 5.6 it is possible to exchange individual partitions with independent tables through ``ALTER TABLE`` ... ``EXCHANGE PARTITION`` command.
+
+.. note:: 
+
+  In |Percona Server| 5.6 variable :option:`innodb_import_table_from_xtrabackup` has been removed in favor of |MySQL| `Transportable Tablespaces <http://dev.mysql.com/doc/refman/5.6/en/tablespace-copying.html>`_ implementation.
+
+When importing an entire partitioned table, first import all (sub)partitions as independent tables: :: 
+
+   mysql> CREATE TABLE `name_p4` (
+   `id` int(11) NOT NULL AUTO_INCREMENT,
+   `name` text NOT NULL,
+   `imdb_index` varchar(12) DEFAULT NULL,
+   `imdb_id` int(11) DEFAULT NULL,
+   `name_pcode_cf` varchar(5) DEFAULT NULL,
+   `name_pcode_nf` varchar(5) DEFAULT NULL,
+   `surname_pcode` varchar(5) DEFAULT NULL,
+   PRIMARY KEY (`id`)
+   ) ENGINE=InnoDB AUTO_INCREMENT=2812744 DEFAULT CHARSET=utf8
+
+To restore the partition from the backup tablespace needs to be discarded for that table: ::
+
+  mysql>  ALTER TABLE name_p4 DISCARD TABLESPACE;
+
+Next step is to copy the ``.cfg`` and ``.ibd`` files from the backup to |MySQL| data directory: :: 
+
+  $ cp /mnt/backup/2013-07-18_10-29-09/imdb/name#P#p4.cfg /var/lib/mysql/imdb/name_p4.cfg
+  $ cp /mnt/backup/2013-07-18_10-29-09/imdb/name#P#p4.ibd /var/lib/mysql/imdb/name_p4.ibd
+
+Last step is to import the tablespace: ::
+
+  mysql>  ALTER TABLE name_p4 IMPORT TABLESPACE;
+
+We can now create the empty partitioned table with exactly the same schema as the table being imported: ::
+
+  mysql> CREATE TABLE name2 LIKE name;
+
+Then swap empty partitions from the newly created table with individual tables corresponding to partitions that have been exported/imported on the previous steps :: 
+
+  mysql> ALTER TABLE name2 EXCHANGE PARTITION p4 WITH TABLE name_p4;
+
+In order for this operation to be successful `following conditions <http://dev.mysql.com/doc/refman/5.6/en/partitioning-management-exchange.html>`_ have to be met.
