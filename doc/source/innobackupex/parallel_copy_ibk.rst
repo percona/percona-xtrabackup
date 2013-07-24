@@ -1,8 +1,11 @@
 .. _parallel-ibk:
 
-=====================================================================
- Accelerating with :option:`--parallel` copy and `--compress-threads`
-=====================================================================
+=================================
+ Accelerating the backup process 
+=================================
+
+Accelerating with :option:`--parallel` copy and `--compress-threads`
+--------------------------------------------------------------------
 
 When performing a local backup or the streaming backup with |xbstream| option, multiple files can be copied concurrently by using the :option:`--parallel` option. This option specifies the number of threads created by |xtrabackup| to copy data files.
 
@@ -24,4 +27,13 @@ To use this feature, simply add the option to a local backup, for example ::
  $ innobackupex --stream=xbstream --compress --compress-threads=4 ./ > backup.xbstream 
 
 Before applying logs, compressed files will need to be uncompressed.
+
+Accelerating with :option:`--rsync` option
+------------------------------------------
+
+In order to speed up the backup process and to minimize the time ``FLUSH TABLES WITH READ LOCK`` is blocking the writes, option :option:`innobackupex --rsync` should be used. When this option is specified, |innobackupex| uses ``rsync`` to copy all non-InnoDB files instead of spawning a separate ``cp`` for each file, which can be much faster for servers with a large number of databases or tables. |innobackupex| will call the ``rsync`` twice, once before the ``FLUSH TABLES WITH READ LOCK`` and once during to minimize the time the read lock is being held. During the second ``rsync`` call, it will only synchronize the changes to non-transactional data (if any) since the first call performed before the ``FLUSH TABLES WITH READ LOCK``.
+
+.. note::
+ 
+ This option cannot be used together with :option:`innobackupex --remote-host` or :option:`innobackupex --stream` options.
 
