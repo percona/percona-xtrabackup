@@ -906,7 +906,10 @@ do
 
        mkdir $TEST_VAR_ROOT
 
-       . $t
+       # Execute the test in a subshell. This is required to catch syntax
+       # errors, as otherwise $? would be 0 in cleanup_on_test_exit resulting in
+       # passed test
+       (. $t) || exit $?
    ) > ${worker_outfiles[$worker]} 2>&1 &
 
    worker_pids[$worker]=$!
