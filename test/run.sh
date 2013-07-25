@@ -15,7 +15,7 @@ trap terminate SIGHUP SIGINT SIGQUIT SIGTERM
 result=0
 
 # Default test timeout in seconds
-TEST_TIMEOUT=600
+TEST_TIMEOUT=900
 
 # Magic exit code to indicate a skipped test
 export SKIPPED_EXIT_CODE=200
@@ -268,7 +268,14 @@ function set_vars()
     find_program MYSQL_INSTALL_DB mysql_install_db $MYSQL_BASEDIR/bin \
 	$MYSQL_BASEDIR/scripts
     find_program MYSQLD mysqld $MYSQL_BASEDIR/bin/ $MYSQL_BASEDIR/libexec
-    find_program MYSQL mysql $MYSQL_BASEDIR/bin
+    # Use the global mysql client binary, if available. This is a workaround for
+    # PS packageing bug LP 1153950
+    if which mysql >/dev/null 2>&1
+    then
+        MYSQL=`which mysql`
+    else
+        find_program MYSQL mysql $MYSQL_BASEDIR/bin
+    fi
     find_program MYSQLADMIN mysqladmin $MYSQL_BASEDIR/bin
     find_program MYSQLDUMP mysqldump $MYSQL_BASEDIR/bin
 
@@ -355,6 +362,14 @@ function get_version_info()
     MYSQL_VERSION=${MYSQL_VERSION#"version	"}
     MYSQL_VERSION_COMMENT=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'version_comment'"`
     MYSQL_VERSION_COMMENT=${MYSQL_VERSION_COMMENT#"version_comment	"}
+
+    # Split version info into components for easier compatibility checks
+    [[ $MYSQL_VERSION =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] || \
+        die "Cannot parse server version: '$MYSQL_VERSION'"
+    MYSQL_VERSION_MAJOR=${BASH_REMATCH[1]}
+    MYSQL_VERSION_MINOR=${BASH_REMATCH[2]}
+    MYSQL_VERSION_PATCH=${BASH_REMATCH[3]}
+
     INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     XTRADB_VERSION="`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`"
@@ -384,33 +399,34 @@ function get_version_info()
     if [ "$XB_BUILD" = "autodetect" ]
     then
         # Determine xtrabackup build automatically
-	if [ "${MYSQL_VERSION:0:3}" = "5.1" ]
-	then
-	    if [ -z "$INNODB_VERSION" ]
-	    then
-		XB_BIN="xtrabackup_51" # InnoDB 5.1 builtin
-	    else
-		XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
-	    fi
-	elif [ "${MYSQL_VERSION:0:3}" = "5.2" -o "${MYSQL_VERSION:0:3}" = "5.3" ]
-	then
-	    XB_BIN="xtrabackup"
-	elif [ "${MYSQL_VERSION:0:3}" = "5.5" ]
-	then
-	    if [ -n "$XTRADB_VERSION" ]
-	    then
-		XB_BIN="xtrabackup_55"
-	    else
-		XB_BIN="xtrabackup_innodb55"
-	    fi
-        elif [ "${MYSQL_VERSION:0:3}" = "5.6" -o "${MYSQL_VERSION:0:4}" = "10.0" ]
-        then
-            XB_BIN="xtrabackup_56"
-            DEFAULT_IBDATA_SIZE="12M"
-	else
-	    vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
-	    exit -1
-	fi
+        case "$MYSQL_VERSION_MAJOR.$MYSQL_VERSION_MINOR" in
+            5.1 )
+                if [ -z "$INNODB_VERSION" ]
+                then
+                    XB_BIN="xtrabackup_51" # InnoDB 5.1 builtin
+                else
+                    XB_BIN="xtrabackup"    # InnoDB 5.1 plugin or Percona Server 5.1
+                fi
+                ;;
+            5.2 | 5.3 )
+                XB_BIN="xtrabackup";;
+            5.5 )
+                if [ -n "$XTRADB_VERSION" ]
+                then
+                    XB_BIN="xtrabackup_55"
+                else
+                    XB_BIN="xtrabackup_innodb55"
+                fi
+                ;;
+            5.6 | 10.0 )
+                XB_BIN="xtrabackup_56"
+                DEFAULT_IBDATA_SIZE="12M"
+                ;;
+            *)
+                vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
+                exit -1
+                ;;
+        esac
     fi
 
     XB_PATH="`which $XB_BIN`"

@@ -2,8 +2,7 @@
 
 if test "`uname -s`" != "Linux"
 then
-    echo "Requires Linux" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires Linux"
 fi
 
 MYSQLD_EXTRA_MY_CNF_OPTS="

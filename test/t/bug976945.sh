@@ -3,10 +3,11 @@
 ############################################################################
 . inc/common.sh
 
-if [ -z "$XTRADB_VERSION" ]; then
-    echo "Requires XtraDB" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+require_xtradb
+
+# Require XtraDB <= 5.5 until bug #1194828 is fixed
+is_server_version_lower_than 5.6.0 || \
+    skip_test "Doesn't work with XtraDB 5.6, bug #1194828"
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_log_block_size=4096

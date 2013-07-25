@@ -9,9 +9,8 @@ set +e
 ${MYSQLD} --basedir=$MYSQL_BASEDIR --user=$USER --help --verbose --wsrep-sst-method=rsync| grep -q wsrep
 probe_result=$?
 if [[ "$probe_result" == "0" ]]
-    then
-        echo "Server supports wsrep" > $SKIPPED_REASON
-        exit $SKIPPED_EXIT_CODE
+then
+        skip_test "Server supports wsrep"
 fi
 set -e
 

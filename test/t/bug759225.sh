@@ -7,14 +7,13 @@
 
 if test "`uname -s`" != "Linux"
 then
-    echo "Requires Linux" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires Linux"
 fi
 
-if [ -z "$XTRADB_VERSION" ]; then
-    echo "Requires XtraDB" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+require_xtradb
+
+# ALL_O_DIRECT is not supported in XtraDB 5.6 ATM.
+require_server_version_lower_than 5.6.1
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_flush_method=ALL_O_DIRECT

@@ -4,10 +4,9 @@
 
 . inc/common.sh
 
-if [ ${MYSQL_VERSION:0:3} != "5.6" -a -z "$XTRADB_VERSION" ]
+if ! is_server_version_higher_than 5.6.0 && ! is_xtradb
 then
-    echo "Requires either XtraDB or a 5.6 server" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires either XtraDB or a 5.6 server"
 fi
 
 MYSQLD_EXTRA_MY_CNF_OPTS="

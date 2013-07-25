@@ -5,14 +5,10 @@
 . inc/common.sh
 
 if ! which rsync > /dev/null 2>&1 ; then
-    echo "Requires rsync to be installed" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires rsync to be installed"
 fi
 
-if [ "${MYSQL_VERSION:0:3}" != "5.6" ]; then
-    echo "Requires MySQL 5.6" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+require_server_version_higher_than 5.6.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_buffer_pool_filename=pool/dump

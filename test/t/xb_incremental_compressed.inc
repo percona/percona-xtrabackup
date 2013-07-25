@@ -2,7 +2,7 @@
 # Test incremental backup with InnoDB compression
 ################################################################################
 # Expects the following variable to be set before including:
-#    mysqld_extra_args: an extra arg to be passed for all mysqld invocations.  
+#    MYSQLD_EXTRA_MY_CNF_OPTS: an extra arg to be passed for all mysqld invocations.  
 #                       Use this to set special options that influence 
 #                       incremental backups, e.g. turns on log archiving or 
 #                       changed page bitmap output.
@@ -42,11 +42,14 @@ function test_incremental_compressed()
 
   # Use innodb_strict_mode so that failure to use compression results in an 
   # error rather than a warning
-  mysqld_additional_args="$mysqld_extra_args --innodb_strict_mode \
-      --innodb_file_per_table --innodb_file_format=Barracuda \
-      --innodb_max_dirty_pages_pct=0 --innodb_log_file_size=1M"
+  MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
+innodb_strict_mode
+innodb_file_per_table
+innodb_file_format=Barracuda
+innodb_max_dirty_pages_pct=0
+innodb_log_file_size=1M"
   
-  start_server ${mysqld_additional_args}
+  start_server
 
   load_dbase_schema incremental_sample
 
@@ -82,7 +85,7 @@ incremental_sample`
 
   vlog "Starting backup"
 
-  xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full ${mysqld_additional_args}
+  xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/data/full
 
   vlog "Full backup done"
 
@@ -99,7 +102,7 @@ ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=$page_size" incremental_sample
 
   # Rotate bitmap file here and force checkpoint at the same time
   shutdown_server
-  start_server ${mysqld_additional_args}
+  start_server
 
   add_rows test 12501 15000
   add_rows t2 12501 15000
@@ -139,7 +142,7 @@ incremental_sample`
   # Incremental backup
   xtrabackup --datadir=$mysql_datadir --backup \
       --target-dir=$topdir/data/delta --incremental-basedir=$topdir/data/full \
-      ${mysqld_additional_args} $suspend_arg &
+      $suspend_arg &
 
   xb_pid=$!
 
@@ -158,14 +161,14 @@ incremental_sample`
 
   # Prepare backup
   xtrabackup --datadir=$mysql_datadir --prepare \
-      --apply-log-only --target-dir=$topdir/data/full ${mysqld_additional_args}
+      --apply-log-only --target-dir=$topdir/data/full
   vlog "Log applied to backup"
   xtrabackup --datadir=$mysql_datadir --prepare \
       --apply-log-only --target-dir=$topdir/data/full \
-      --incremental-dir=$topdir/data/delta ${mysqld_additional_args}
+      --incremental-dir=$topdir/data/delta
   vlog "Delta applied to backup"
   xtrabackup --datadir=$mysql_datadir --prepare \
-      --target-dir=$topdir/data/full ${mysqld_additional_args}
+      --target-dir=$topdir/data/full
   vlog "Data prepared for restore"
 
   # removing rows
@@ -186,7 +189,7 @@ incremental_sample`
 
   vlog "Data restored"
 
-  start_server ${mysqld_additional_args}
+  start_server
 
   vlog "Checking checksums"
   checksum_test_b=`checksum_table incremental_sample test`

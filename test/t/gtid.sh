@@ -4,11 +4,7 @@
 
 . inc/common.sh
 
-if [ ${MYSQL_VERSION:0:3} != "5.6" ]
-then
-    echo "Requires a 5.6 server" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+require_server_version_higher_than 5.6.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 gtid_mode=on

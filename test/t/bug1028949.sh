@@ -1,9 +1,6 @@
 . inc/common.sh
 
-if [ -z "$INNODB_VERSION" ]; then
-    echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+[ -n "$INNODB_VERSION" ] || skip_test "Requires InnoDB plugin or XtraDB"
 
 function test_bug_1028949()
 {

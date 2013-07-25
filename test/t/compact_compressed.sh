@@ -5,8 +5,7 @@
 . inc/common.sh
 
 if [ -z "$INNODB_VERSION" ]; then
-    echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires InnoDB plugin or XtraDB"
 fi
 
 # Use innodb_strict_mode so that failure to use compression results in an 

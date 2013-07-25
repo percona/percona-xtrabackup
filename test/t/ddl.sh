@@ -8,8 +8,7 @@
 . inc/common.sh
 
 if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
-    echo "Requires --debug-sync support" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires --debug-sync support"
 fi
 
 MYSQLD_EXTRA_MY_CNF_OPTS="

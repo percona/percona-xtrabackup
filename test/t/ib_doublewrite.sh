@@ -9,9 +9,9 @@
 
 . inc/common.sh
 
-if [ -z "$XTRADB_VERSION" ]; then
-    echo "Requires XtraDB" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+if ! is_xtradb || is_server_version_higher_than 5.6.0
+then
+    skip_test "Requires Percona Server <= 5.5"
 fi
 
 DBLWR=dblwr.ibd

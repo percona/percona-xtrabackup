@@ -1,9 +1,6 @@
 # Test for incremental backups that use forced full scan even when bitmaps are present
 
-if [ -z "$XTRADB_VERSION" ]; then
-    echo "Requires XtraDB" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+require_xtradb
 
 # The test is disabled for Percona XtraDB Cluster until a version
 # with bitmap user requests is released (containing PS 5.5.29-30.0 
@@ -13,13 +10,14 @@ ${MYSQLD} --basedir=$MYSQL_BASEDIR --user=$USER --help --verbose --wsrep-sst-met
 probe_result=$?
 if [[ "$probe_result" == "0" ]]
     then
-        vlog "Incompatible test" > $SKIPPED_REASON
-        exit $SKIPPED_EXIT_CODE
+        skip_test "Incompatible test"
 fi
 set -e
 
 
-mysqld_extra_args=--innodb-track-changed-pages=TRUE
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb-track-changed-pages=TRUE
+"
 ib_inc_extra_args=--incremental-force-scan
 
 . inc/ib_incremental_common.sh

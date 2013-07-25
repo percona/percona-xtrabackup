@@ -4,6 +4,12 @@
 
 . inc/common.sh
 
+if is_server_version_higher_than 5.6.0 && \
+   is_server_version_lower_than 5.6.11
+then
+    skip_test "Doesn't work for server 5.6.x if x < 11, bug #1203669"
+fi
+
 start_server --innodb_file_per_table
 
 load_dbase_schema sakila

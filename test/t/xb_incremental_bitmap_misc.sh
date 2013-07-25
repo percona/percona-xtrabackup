@@ -1,9 +1,6 @@
 # Test diagnostics for missing bitmap data and --incremental-force-scan option
 
-if [ -z "$XTRADB_VERSION" ]; then
-    echo "Requires XtraDB" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
+require_xtradb
 
 # The test is disabled for Percona XtraDB Cluster until a version
 # with bitmap user requests is released (containing PS 5.5.29-30.0 
@@ -13,22 +10,23 @@ ${MYSQLD} --basedir=$MYSQL_BASEDIR --user=$USER --help --verbose --wsrep-sst-met
 probe_result=$?
 if [[ "$probe_result" == "0" ]]
     then
-        vlog "Incompatible test" > $SKIPPED_REASON
-        exit $SKIPPED_EXIT_CODE
+        skip_test "Incompatible test"
 fi
 set -e
 
 . inc/common.sh
 
-mysqld_extra_args=--innodb-track-changed-pages=TRUE
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb-track-changed-pages=TRUE
+"
 
-start_server $mysqld_extra_args
+start_server
 ${MYSQL} ${MYSQL_ARGS} -e "CREATE TABLE t1 (a INT) ENGINE=INNODB" test
 ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t1 VALUES (1)" test
 
 # Force checkpoint
 shutdown_server
-start_server $mysqld_extra_args
+start_server
 
 # Full backup
 # mkdir $topdir/data/full
@@ -37,15 +35,15 @@ start_server $mysqld_extra_args
 ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t1 VALUES (2)" test
 # Force checkpoint
 shutdown_server
-start_server $mysqld_extra_args
+start_server
 ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t1 VALUES (3)" test
 # Force checkpoint
 shutdown_server
-start_server $mysqld_extra_args
+start_server
 ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t1 VALUES (4)" test
 # Force checkpoint
 shutdown_server
-start_server $mysqld_extra_args
+start_server
 
 ls -l $mysql_datadir/*.xdb
 

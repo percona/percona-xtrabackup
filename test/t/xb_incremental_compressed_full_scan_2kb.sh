@@ -1,6 +1,5 @@
 # Test incremental backups that do full data scans with 2KB compressed pages
 
-mysqld_extra_args=
 first_inc_suspend_command=
 
 source t/xb_incremental_compressed.inc

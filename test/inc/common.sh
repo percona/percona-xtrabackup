@@ -32,12 +32,22 @@ function die()
 
 function call_mysql_install_db()
 {
-	vlog "Calling mysql_install_db"
-	cd $MYSQL_BASEDIR
-	$MYSQL_INSTALL_DB --defaults-file=${MYSQLD_VARDIR}/my.cnf \
-                    --basedir=${MYSQL_BASEDIR} \
-                    ${MYSQLD_EXTRA_ARGS}
-	cd - >/dev/null 2>&1
+        vlog "Calling mysql_install_db"
+
+        cd $MYSQL_BASEDIR
+
+        if ! $MYSQL_INSTALL_DB --defaults-file=${MYSQLD_VARDIR}/my.cnf \
+            --basedir=${MYSQL_BASEDIR} \
+            ${MYSQLD_EXTRA_ARGS}
+        then
+            vlog "mysql_install_db failed. Server log (if exists):"
+            vlog "----------------"
+            cat ${MYSQLD_ERRFILE} >&2 || true
+            vlog "----------------"
+            exit -1
+        fi
+
+        cd - >/dev/null 2>&1
 }
 
 ########################################################################
@@ -610,6 +620,105 @@ function resume_suspended_xb()
     local file=$1
     echo "Removing $file"
     rm -f $file
+}
+
+########################################################################
+# Skip the current test with a given comment
+########################################################################
+function skip_test()
+{
+    echo $1 > $SKIPPED_REASON
+    exit $SKIPPED_EXIT_CODE
+}
+
+########################################################################
+# Get version string in the XXYYZZ version
+########################################################################
+function get_version_str()
+{
+    printf %02d%02d%02d $1 $2 $3
+}
+
+#########################################################################
+# Return 0 if the server version is higher than the first argument
+#########################################################################
+function is_server_version_higher_than()
+{
+    [[ $1 =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || \
+        die "Cannot parse server version: '$1'"
+
+    local major=${BASH_REMATCH[1]}
+    local minor=${BASH_REMATCH[2]}
+    local patch=${BASH_REMATCH[3]}
+
+    local server_str=`get_version_str $MYSQL_VERSION_MAJOR \
+$MYSQL_VERSION_MINOR $MYSQL_VERSION_PATCH`
+    local version_str=`get_version_str $major $minor $patch`
+
+    [[ $server_str > $version_str ]]
+}
+
+#########################################################################
+# Require a server version higher than the first argument
+########################################################################
+function require_server_version_higher_than()
+{
+    is_server_version_higher_than $1 || \
+        skip_test "Requires server version higher than $1"
+}
+
+########################################################################
+# Return 0 if the server version is lower than the first argument
+#########################################################################
+function is_server_version_lower_than()
+{
+    [[ $1 =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || \
+        die "Cannot parse server version: '$1'"
+
+    local major=${BASH_REMATCH[1]}
+    local minor=${BASH_REMATCH[2]}
+    local patch=${BASH_REMATCH[3]}
+
+    local server_str=`get_version_str $MYSQL_VERSION_MAJOR \
+$MYSQL_VERSION_MINOR $MYSQL_VERSION_PATCH`
+    local version_str=`get_version_str $major $minor $patch`
+
+    [[ $server_str < $version_str ]]
+}
+
+#########################################################################
+# Require a server version lower than the first argument
+########################################################################
+function require_server_version_lower_than()
+{
+    is_server_version_lower_than $1 || \
+        skip_test "Requires server version lower than $1"
+}
+
+########################################################################
+# Return 0 if the server is XtraDB-based
+########################################################################
+function is_xtradb()
+{
+    [ -n "$XTRADB_VERSION" ]
+}
+
+#########################################################################
+# Skip the test if not running against XtraDB
+########################################################################
+function require_xtradb()
+{
+    is_xtradb || skip_test "Requires XtraDB"
+}
+
+########################################################################
+# Skip the test if qpress binary is not available
+########################################################################
+function require_qpress()
+{
+    if ! which qpress > /dev/null 2>&1 ; then
+        skip_test "Requires qpress to be installed"
+    fi
 }
 
 # To avoid unbound variable error when no server have been started

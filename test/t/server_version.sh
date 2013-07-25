@@ -12,9 +12,8 @@ case "$XB_BUILD" in
     "xtradb51" | "xtradb55" | "xtradb56" | "innodb56")
 	;;
     *)
-	echo "Requires (xtradb51|xtradb55|xtradb56|innodb56) \
-build configuration" >> $SKIPPED_REASON
-	exit $SKIPPED_EXIT_CODE
+	skip_test "Requires (xtradb51|xtradb55|xtradb56|innodb56) \
+build configuration"
 	;;
 esac
 

@@ -6,8 +6,7 @@
 . inc/common.sh
 
 if [ -z "$INNODB_VERSION" ]; then
-    echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires InnoDB plugin or XtraDB"
 fi
 
 start_server "--innodb_strict_mode --innodb_file_per_table \
