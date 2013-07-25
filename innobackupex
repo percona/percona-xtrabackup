@@ -2252,6 +2252,12 @@ sub check_args {
         $option_compress = 0;
     }
 
+    if ($option_parallel && $option_parallel < 1) {
+        print STDERR "$prefix --parallel must be a positive numerical value" .
+            "greater than 0";
+        exit(1);
+    }
+
     if ($option_stream eq 'tar') {
       $stream_cmd = 'tar chf -';
     } elsif ($option_stream eq 'xbstream') {
@@ -3410,7 +3416,7 @@ This option prevents creation of a time-stamped subdirectory of the BACKUP-ROOT-
 
 On backup, this option specifies the number of threads the xtrabackup child process should use to back up files concurrently.  The option accepts an integer argument. It is passed directly to xtrabackup's --parallel option. See the xtrabackup documentation for details.
  
-On --decrypt or --decompress it specifies the number of oarallel forks that should be used to process the backup files.
+On --decrypt or --decompress it specifies the number of parallel forks that should be used to process the backup files.
 
 =item --password=WORD
 

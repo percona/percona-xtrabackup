@@ -32,9 +32,9 @@ rm -r $mysql_datadir
 vlog "Applying log"
 cd $backup_dir
 if [ -n "${data_decrypt_cmd:=""}" ] || [ -n "${data_decompress_cmd:=""}" ]; then 
-  vlog "################################"
-  vlog "# DECRYPTING AND DECOMPRESSING #"
-  vlog "################################"
+  vlog "###################################"
+  vlog "# DECRYPTING AND/OR DECOMPRESSING #"
+  vlog "###################################"
   test -n "${data_decrypt_cmd:=""}" && run_cmd bash -c "$data_decrypt_cmd"
   test -n "${data_decompress_cmd:-""}" && run_cmd bash -c "$data_decompress_cmd";
 fi
