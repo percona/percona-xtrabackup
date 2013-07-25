@@ -46,3 +46,21 @@ Percona now offers experimental repository for beta releases. To enable it add t
   deb http://repo.percona.com/apt VERSION main experimental
   deb-src http://repo.percona.com/apt VERSION main experimental
 
+Ubuntu PPA of daily builds
+==========================
+
+Percona offers a Personal Package Archive (PPA) `percona-daily/percona-xtrabackup <https://launchpad.net/~percona-daily/+archive/percona-xtrabackup>`_. Every time code is pushed to our main source code repository, the PPA gets updated.
+
+.. note:: 
+
+  These packages are directly built from lp:percona-xtrabackup/2.1 trunk and should be considered PRE-RELEASE SOFTWARE.
+
+This PPA can be added to your system manually by copying the lines below and adding them to your system's software sources: :: 
+  
+  deb http://ppa.launchpad.net/percona-daily/percona-xtrabackup/ubuntu YOUR_UBUNTU_VERSION_HERE main 
+  deb-src http://ppa.launchpad.net/percona-daily/percona-xtrabackup/ubuntu YOUR_UBUNTU_VERSION_HERE main
+
+or by simply running: :: 
+
+  $ sudo add-apt-repository ppa:percona-daily/percona-xtrabackup
+

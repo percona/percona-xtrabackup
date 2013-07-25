@@ -14,7 +14,7 @@ To use the streaming feature, you must use the :option:`--stream`, providing the
 
 When compression is enabled, |xtrabackup| compresses all output data, including the transaction log file and meta data files, using the specified compression algorithm. The only currently supported algorithm is 'quicklz'. The resulting files have the qpress archive format, i.e. every \*.qp file produced by xtrabackup is essentially a one-file qpress archive and can be extracted and uncompressed by the `qpress file archiver <http://www.quicklz.com/>`_ which is available from `Percona Software repositories <http://www.percona.com/doc/percona-xtrabackup/2.1/installation.html#using-percona-software-repositories>`_. New algorithms (gzip, bzip2, etc.) may be added later with minor efforts.
 
-Using |xbstream| as a stream option, backups can be copied and compressed in parallel which can significantly speed up the backup process.  
+Using |xbstream| as a stream option, backups can be copied and compressed in parallel which can significantly speed up the backup process. In case backups were both compressed and encrypted, they'll need to decrypted first in order to be uncompressed. 
 
 Examples using xbstream
 =======================
