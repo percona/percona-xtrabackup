@@ -3820,8 +3820,7 @@ xtrabackup_init_temp_log(void)
 	ibool	success;
 
 	ulint	field;
-	byte*	log_buf;
-	byte*	log_buf_ = NULL;
+	byte	log_buf[UNIV_PAGE_SIZE_MAX * 128]; /* 2 MB */
 
 	ib_int64_t	file_size;
 
@@ -3875,11 +3874,6 @@ retry:
 			goto error;
 		}
 
-		log_buf_ = static_cast<byte *>
-			(ut_malloc(LOG_FILE_HDR_SIZE + UNIV_PAGE_SIZE_MAX));
-		log_buf = static_cast<byte *>
-			(ut_align(log_buf_, UNIV_PAGE_SIZE_MAX));
-
 		success = xb_os_file_read(src_file, log_buf, 0,
 					  LOG_FILE_HDR_SIZE);
 		if (!success) {
@@ -3890,9 +3884,6 @@ retry:
 				(byte*)"xtrabkup", (sizeof "xtrabkup") - 1) == 0) {
 			msg("  xtrabackup: 'ib_logfile0' seems to be "
 			    "'xtrabackup_logfile'. will retry.\n");
-
-			ut_free(log_buf_);
-			log_buf_ = NULL;
 
 			os_file_close(src_file);
 			src_file = XB_FILE_UNDEFINED;
@@ -3909,26 +3900,16 @@ retry:
 		msg("  xtrabackup: Fatal error: cannot find %s.\n",
 		src_path);
 
-		ut_free(log_buf_);
-		log_buf_ = NULL;
-
 		os_file_close(src_file);
 		src_file = XB_FILE_UNDEFINED;
 
 		goto error;
 	}
 
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
-
-	xb_file_set_nocache(src_file, src_path, "OPEN");
-
 	file_size = os_file_get_size(src_file);
 
 
 	/* TODO: We should skip the following modifies, if it is not the first time. */
-	log_buf_ = static_cast<byte *>(ut_malloc(UNIV_PAGE_SIZE * 129));
-	log_buf = static_cast<byte *>(ut_align(log_buf_, UNIV_PAGE_SIZE));
 
 	/* read log file header */
 	success = xb_os_file_read(src_file, log_buf, 0, LOG_FILE_HDR_SIZE);
@@ -4023,15 +4004,15 @@ not_consistent:
 		goto error;
 	}
 
-	/* expand file size (9/8) and align to UNIV_PAGE_SIZE */
+	/* expand file size (9/8) and align to UNIV_PAGE_SIZE_MAX */
 
-	if (file_size % UNIV_PAGE_SIZE) {
-		memset(log_buf, 0, UNIV_PAGE_SIZE);
+	if (file_size % UNIV_PAGE_SIZE_MAX) {
+		memset(log_buf, 0, UNIV_PAGE_SIZE_MAX);
 		success = xb_os_file_write(src_path, src_file, log_buf,
 					    file_size,
-					    UNIV_PAGE_SIZE
+					    UNIV_PAGE_SIZE_MAX
 					    - (ulint) (file_size
-						       % UNIV_PAGE_SIZE));
+						       % UNIV_PAGE_SIZE_MAX));
 		if (!success) {
 			goto error;
 		}
@@ -4043,40 +4024,41 @@ not_consistent:
 	{
 		ulint	expand;
 
-		memset(log_buf, 0, UNIV_PAGE_SIZE * 128);
-		expand = (ulint) (file_size / UNIV_PAGE_SIZE / 8);
+		memset(log_buf, 0, UNIV_PAGE_SIZE_MAX * 128);
+		expand = (ulint) (file_size / UNIV_PAGE_SIZE_MAX / 8);
 
 		for (; expand > 128; expand -= 128) {
 			success = xb_os_file_write(src_path, src_file, log_buf,
 						   file_size,
-						   UNIV_PAGE_SIZE * 128);
+						   UNIV_PAGE_SIZE_MAX * 128);
 			if (!success) {
 				goto error;
 			}
-			file_size += UNIV_PAGE_SIZE * 128;
+			file_size += UNIV_PAGE_SIZE_MAX * 128;
 		}
 
 		if (expand) {
 			success = xb_os_file_write(src_path, src_file, log_buf,
 						   file_size,
-						   expand * UNIV_PAGE_SIZE);
+						   expand * UNIV_PAGE_SIZE_MAX);
 			if (!success) {
 				goto error;
 			}
-			file_size += UNIV_PAGE_SIZE * expand;
+			file_size += UNIV_PAGE_SIZE_MAX * expand;
 		}
 	}
 
 	/* make larger than 2MB */
 	if (file_size < 2*1024*1024L) {
-		memset(log_buf, 0, UNIV_PAGE_SIZE);
+		memset(log_buf, 0, UNIV_PAGE_SIZE_MAX);
 		while (file_size < 2*1024*1024L) {
 			success = xb_os_file_write(src_path, src_file, log_buf,
-						   file_size, UNIV_PAGE_SIZE);
+						   file_size,
+						   UNIV_PAGE_SIZE_MAX);
 			if (!success) {
 				goto error;
 			}
-			file_size += UNIV_PAGE_SIZE;
+			file_size += UNIV_PAGE_SIZE_MAX;
 		}
 		file_size = os_file_get_size(src_file);
 	}
@@ -4101,21 +4083,16 @@ not_consistent:
 	}
 	xtrabackup_logfile_is_renamed = TRUE;
 
-	ut_free(log_buf_);
-
 	return(FALSE);
 
 skip_modify:
 	os_file_close(src_file);
 	src_file = XB_FILE_UNDEFINED;
-	ut_free(log_buf_);
 	return(FALSE);
 
 error:
 	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
-	if (log_buf_)
-		ut_free(log_buf_);
 	msg("xtrabackup: Error: xtrabackup_init_temp_log() failed.\n");
 	return(TRUE); /*ERROR*/
 }
@@ -4717,10 +4694,7 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
 	ibool	success;
-
-	byte*	log_buf;
-	byte*	log_buf_ = NULL;
-
+	byte	log_buf[UNIV_PAGE_SIZE_MAX];
 
 	if (!xtrabackup_logfile_is_renamed)
 		return(FALSE);
@@ -4756,14 +4730,6 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 		goto error;
 	}
 
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
-
-	xb_file_set_nocache(src_file, src_path, "OPEN");
-
-	log_buf_ = static_cast<byte *>(ut_malloc(LOG_FILE_HDR_SIZE +
-						 UNIV_PAGE_SIZE_MAX));
-	log_buf = static_cast<byte *>(ut_align(log_buf_, UNIV_PAGE_SIZE_MAX));
-
 	success = xb_os_file_read(src_file, log_buf, 0, LOG_FILE_HDR_SIZE);
 	if (!success) {
 		goto error;
@@ -4784,8 +4750,6 @@ xtrabackup_close_temp_log(my_bool clear_flag)
 error:
 	if (src_file != XB_FILE_UNDEFINED)
 		os_file_close(src_file);
-	if (log_buf_)
-		ut_free(log_buf_);
 	msg("xtrabackup: Error: xtrabackup_close_temp_log() failed.\n");
 	return(TRUE); /*ERROR*/
 }
