@@ -129,7 +129,8 @@ rst_prolog = '''
 '''
 
 extlinks = {'bug': ('https://bugs.launchpad.net/percona-xtrabackup/+bug/%s',
-                      '#')}
+                   '#'), 'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s',
+                   '#')}
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []

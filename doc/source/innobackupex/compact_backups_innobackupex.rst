@@ -32,7 +32,7 @@ This will create a timestamped directory in :file:`/data/backups`.
 
   You can use the :option:`innobackupex --no-timestamp` option to override this behavior and the backup will be created in the given directory.
 
-If you check at the :file:`xtrabackup-checkpoints` file in ``BASE-DIR``, you should see something like::
+If you check at the :file:`xtrabackup_checkpoints` file in ``BASE-DIR``, you should see something like::
 
   backup_type = full-backuped
   from_lsn = 0

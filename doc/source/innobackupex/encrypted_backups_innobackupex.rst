@@ -6,6 +6,10 @@
 
 |Percona XtraBackup| has implemented support for encrypted backups. This feature was introduced in |Percona XtraBackup| 2.1. It can be used to encrypt/decrypt local or streaming backup with |xbstream| option (streaming tar backups are not supported) in order to add another layer of protection to the backups. Encryption is done with the ``libgcrypt`` library.
 
+.. note:: 
+
+  Encryption related options are currently ignored by |innobackupex| when specified in :file:`my.cnf`.
+
 Creating Encrypted Backups
 ===========================
 
@@ -17,13 +21,23 @@ To make an encrypted backup following options need to be specified (options :opt
 
  * :option:`--encrypt-key-file=KEYFILE` - the name of a file where the raw key of the appropriate length can be read from. The file must be a simple binary (or text) file that contains exactly the key to be used. 
 
-Both :option:`--encrypt-key` option  and :option:`--encrypt-key-file` option can be used to specify the encryption key.
+Both :option:`--encrypt-key` option  and :option:`--encrypt-key-file` option can be used to specify the encryption key. Encryption key can be generated with command like: ::
+  
+  $ openssl enc -aes-256-cbc -pass pass:Password -P -md sha1
+
+Output of that command should look like this: :: 
+
+  salt=9464A264486EEC69
+  key=DDD3A1B6BC90B9A9B631913CF30E0336A2571BA854E2D65CF92A6D0BDBCBB251
+  iv =A1EDC73815467C083B0869508406637E
+
+In this case we can use ``iv`` value as key.
 
 Using the :option:`--encrypt-key` option
 -----------------------------------------
 Example of the innobackupex command using the :option:`--encrypt-key` should look like this ::
 
-  $ innobackupex --encrypt=AES256 --encrypt-key="secret_key_with_the_length_of_32" /data/backups
+  $ innobackupex --encrypt=AES256 --encrypt-key="A1EDC73815467C083B0869508406637E" /data/backups
 
 
 Using the :option:`--encrypt-key-file` option
@@ -34,7 +48,7 @@ Example of the innobackupex command using the :option:`--encrypt-key-file` shoul
 
 .. note::
 
-  Depending on the text editor used for making the ``KEYFILE``, text file in some cases can contain the CRLF and this will cause the key size to grow and thus making it invalid. Suggested way to do this would be to create the file with: ``echo -n "secret_key_with_the_length_of_32" > /data/backups/keyfile``
+  Depending on the text editor used for making the ``KEYFILE``, text file in some cases can contain the CRLF and this will cause the key size to grow and thus making it invalid. Suggested way to do this would be to create the file with: ``echo -n "A1EDC73815467C083B0869508406637E" > /data/backups/keyfile``
 
 
 Both of these examples will create a timestamped directory in :file:`/data/backups` containing the encrypted backup.
