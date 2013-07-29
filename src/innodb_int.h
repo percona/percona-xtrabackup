@@ -163,6 +163,7 @@ extern "C" {
 #  define XB_DICT_SUFFIX_LEN 0
 #  define INT64PF	"%lld"
 #  define UINT64PF "%llu"
+#  define LSN_MAX IB_ULONGLONG_MAX
 #  define LSN_PF UINT64PF
 #  define DEFAULT_LOG_FILE_SIZE 5*1024*1024
    typedef ulint		dberr_t;
