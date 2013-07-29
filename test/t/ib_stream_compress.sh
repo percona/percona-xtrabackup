@@ -2,10 +2,7 @@
 # Test streaming + compression
 ############################################################################
 
-if ! which qpress > /dev/null 2>&1 ; then
-  echo "Requires qpress to be installed" > $SKIPPED_REASON
-  exit $SKIPPED_EXIT_CODE
-fi
+require_qpress
 
 stream_format=xbstream
 stream_extract_cmd="xbstream -xv <"

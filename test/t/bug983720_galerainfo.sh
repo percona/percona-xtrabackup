@@ -12,8 +12,7 @@ if [[ "$probe_result" == "0" ]]
     then
         vlog "Server supports wsrep"
     else
-        echo "Requires WSREP enabled" > $SKIPPED_REASON
-        exit $SKIPPED_EXIT_CODE
+        skip_test "Requires WSREP enabled"
 fi
 set -e
 

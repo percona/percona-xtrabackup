@@ -3,10 +3,7 @@
 #              full backup in Xtrabackup 2.0.0
 #############################################################################
 
-if ! which qpress > /dev/null 2>&1 ; then
-  echo "Requires qpress to be installed" > $SKIPPED_REASON
-  exit $SKIPPED_EXIT_CODE
-fi
+require_qpress
 
 . inc/common.sh
 

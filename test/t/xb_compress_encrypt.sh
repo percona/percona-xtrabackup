@@ -2,11 +2,7 @@
 # Test basic local backup with compression and encryption
 ############################################################################
 
-if ! which qpress > /dev/null 2>&1 ; then
-  echo "Requires qpress to be installed" > $SKIPPED_REASON
-  exit $SKIPPED_EXIT_CODE
-fi
-
+require_qpress
 
 encrypt_algo="AES256"
 encrypt_key="percona_xtrabackup_is_awesome___"

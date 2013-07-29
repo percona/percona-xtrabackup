@@ -8,8 +8,7 @@
 # defaults to 'xtrabackup'. So any build configurations other than xtradb51
 # would fail in Jenkins.
 if [ "`basename $XB_BIN`" != "xtrabackup" ]; then
-    echo "Requires xtradb51" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires xtradb51"
 fi
 
 start_server

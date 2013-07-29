@@ -1,5 +1,5 @@
 # Expects the following variable to be set before including:
-#    mysqld_extra_args: an extra arg to be passed for all mysqld invocations.  
+#    MYSQLD_EXTRA_MY_CNF_OPTS: an extra arg to be passed for all mysqld invocations.  
 #                       Use this to set special options that influence 
 #                       incremental backups, e.g. turns on log archiving or 
 #                       changed page bitmap output.
@@ -8,9 +8,10 @@
 
 . inc/common.sh
 
-mysqld_extra_args="$mysqld_extra_args --innodb_file_per_table"
+MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
+innodb_file_per_table"
 
-start_server $mysqld_extra_args
+start_server
 load_dbase_schema incremental_sample
 
 # Adding initial rows
@@ -48,7 +49,7 @@ done
 
 # Rotate bitmap file here and force checkpoint at the same time
 shutdown_server
-start_server $mysqld_extra_args
+start_server
 
 i=1001
 while [ "$i" -lt "7500" ]
@@ -109,7 +110,7 @@ vlog "###########"
 innobackupex --copy-back $full_backup_dir
 vlog "Data restored"
 
-start_server $mysqld_extra_args
+start_server
 
 vlog "Checking checksums"
 checksum_test_b=`checksum_table incremental_sample test`

@@ -5,23 +5,36 @@
 
 . inc/common.sh
 
-if [ -z "$XTRADB_VERSION" ]; then
-    echo "Requires XtraDB" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-fi
-
-if [ ${MYSQL_VERSION:0:3} = "5.5" ]
+MYSQLD_EXTRA_MY_CNF_OPTS="innodb_file_per_table=0"
+if [ "$MYSQL_VERSION_MAJOR" -gt 5 -o \
+     "$MYSQL_VERSION_MINOR" -ge 6 ]
 then
-    import_option="--innodb_import_table_from_xtrabackup=1"
+    # For server versions >= 5.6 we don't need any special server options to
+    # enable table import
+    true
+elif [ -n "$XTRADB_VERSION" ]
+then
+    case "$MYSQL_VERSION_MAJOR.$MYSQL_VERSION_MINOR" in
+        5.5 )
+            import_option="innodb_import_table_from_xtrabackup=1";;
+        5.1 | 5.2 | 5.3 )
+            import_option="innodb_expand_import=1";;
+        *)
+            die "Unknown XtraDB version";;
+    esac
+    MYSQLD_EXTRA_MY_CNF_OPTS="$MYSQLD_EXTRA_MY_CNF_OPTS
+$import_option"
 else
-    import_option="--innodb_expand_import=1"
+    skip_test "Requires XtraDB 5.1+ or InnoDB 5.6+"
 fi
 
-mysql_extra_args="--innodb_file_per_table $import_option"
-
-start_server $mysql_extra_args
+start_server
 
 backup_dir=$topdir/backup
+
+# Enable innodb_file_per_table dynamically, so we get individual tablespaces to
+# export
+run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SET GLOBAL innodb_file_per_table=1"
 
 load_dbase_schema sakila
 load_dbase_data sakila
@@ -42,7 +55,7 @@ fi
 
 innobackupex --apply-log --export $backup_dir
 
-start_server $mysql_extra_args
+start_server
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} sakila <<EOF
 SET foreign_key_checks=0;

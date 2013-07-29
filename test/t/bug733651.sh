@@ -5,26 +5,45 @@
 
 . inc/common.sh
 
+# Require XtraDB <= 5.5 until bug #1194828 is fixed
+if is_xtradb && is_server_version_higher_than 5.6.0
+then
+    skip_test "Doesn't work with XtraDB 5.6, bug #1194828"
+fi
+
 options="innodb_log_files_in_group innodb_log_file_size"
-if [ ! -z "$XTRADB_VERSION" ]; then
-    options="$options innodb_page_size innodb_fast_checksum innodb_log_block_size"
+
+# innodb_page_size is supported in XtraDB 5.1+ and InnoDB 5.6+
+if is_xtradb || is_server_version_higher_than 5.6.0
+then
+    options="$options innodb_page_size"
+fi
+
+# innodb_fast_checksum is supported in XtraDB 5.1/5.5
+if is_xtradb && is_server_version_lower_than 5.6.0
+then
+    options="$options innodb_fast_checksum"
+fi
+
+# innodb_log_block_size is only supported in XtraDB
+if is_xtradb
+then
+    options="$options innodb_log_block_size"
 fi
 
 start_server
 
-mkdir -p $topdir/backup
-innobackupex  $topdir/backup
-backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
-vlog "Backup created in directory $backup_dir"
+innobackupex --no-timestamp $topdir/backup
 
 # test presence of options
 for option in $options ; do
 
-	if [ "`cat $backup_dir/backup-my.cnf | grep $option | wc -l`" == "0" ] ; then
-		vlog "Option $option is absent"
-		exit -1
-	else
-		vlog "Option $option is present"
-	fi
+        if ! cat $topdir/backup/backup-my.cnf | grep $option
+        then
+                vlog "Option $option is absent"
+                exit -1
+        else
+                vlog "Option $option is present"
+        fi
 
 done

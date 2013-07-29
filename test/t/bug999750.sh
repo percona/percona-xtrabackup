@@ -7,8 +7,7 @@
 # Exclude the built-in InnoDB configuration as it requires a different format
 # for --incremental-lsn.
 if [ -z "$INNODB_VERSION" ]; then
-    echo "Requires InnoDB plugin or XtraDB" >$SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires InnoDB plugin or XtraDB"
 fi
 
 start_server

@@ -1,16 +1,19 @@
 . inc/common.sh
 
-if [ -z "$XTRADB_VERSION" -a ${MYSQL_VERSION:0:3} != "5.6" ]; then
-    echo "Requires XtraDB or MySQL 5.6" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+if ! is_xtradb && ! is_server_version_higher_than 5.6.0
+then
+    skip_test "Requires XtraDB or MySQL 5.6+"
 fi
 
 import_option=""
 
-if [ ! -z "$XTRADB_VERSION" ]
+if is_xtradb
 then
-    # additional agrument should be passed to XtraDB
-    if [ ${MYSQL_VERSION:0:3} = "5.5" ]
+    if is_server_version_higher_than 5.6.0
+        # No additional options for XtraDB 5.6+
+    then
+        true
+    elif is_server_version_higher_than 5.5.0
     then
         import_option="--innodb_import_table_from_xtrabackup=1"
     else

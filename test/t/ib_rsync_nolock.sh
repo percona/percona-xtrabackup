@@ -2,8 +2,7 @@
 
 if ! which rsync > /dev/null 2>&1
 then
-    echo "Requires rsync to be installed" > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
+    skip_test "Requires rsync to be installed"
 fi
 
 start_server --innodb_file_per_table
