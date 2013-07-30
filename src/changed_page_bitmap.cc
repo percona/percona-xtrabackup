@@ -270,7 +270,7 @@ log_online_setup_bitmap_file_range(
 	os_file_stat_t	bitmap_dir_file_info;
 	ulong		first_file_seq_num	= ULONG_MAX;
 	ulong		last_file_seq_num	= 0;
-	lsn_t		first_file_start_lsn	= 0;
+	lsn_t		first_file_start_lsn	= LSN_MAX;
 
 	xb_ad(range_end >= range_start);
 
@@ -378,7 +378,14 @@ log_online_setup_bitmap_file_range(
 		}
 
 		array_pos = file_seq_num - first_file_seq_num;
-		xb_a(array_pos < bitmap_files->count);
+		if (UNIV_UNLIKELY(array_pos >= bitmap_files->count)) {
+
+			msg("InnoDB: Error: inconsistent bitmap file "
+			    "directory\n");
+			free(bitmap_files->files);
+			return FALSE;
+		}
+
 		if (file_seq_num > bitmap_files->files[array_pos].seq_num) {
 
 			bitmap_files->files[array_pos].seq_num = file_seq_num;
@@ -401,7 +408,6 @@ log_online_setup_bitmap_file_range(
 
 #ifdef UNIV_DEBUG
 	ut_ad(bitmap_files->files[0].seq_num == first_file_seq_num);
-	ut_ad(bitmap_files->files[0].start_lsn == first_file_start_lsn);
 
 	for (size_t i = 1; i < bitmap_files->count; i++) {
 		if (!bitmap_files->files[i].seq_num) {
