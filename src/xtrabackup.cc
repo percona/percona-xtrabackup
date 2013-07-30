@@ -2969,6 +2969,12 @@ xtrabackup_backup_func(void)
 		srv_unix_file_flush_method = SRV_UNIX_ALL_O_DIRECT;
 		msg("xtrabackup: using ALL_O_DIRECT\n");
 #endif
+#if MYSQL_VERSION_ID > 50600
+	} else if (0 == ut_strcmp(srv_file_flush_method_str,
+				  "O_DIRECT_NO_FSYNC")) {
+		srv_unix_file_flush_method = SRV_UNIX_O_DIRECT_NO_FSYNC;
+		msg("xtrabackup: using O_DIRECT_NO_FSYNC\n");
+#endif
 	} else {
 	  	msg("xtrabackup: Unrecognized value %s for "
 		    "innodb_flush_method\n", srv_file_flush_method_str);
