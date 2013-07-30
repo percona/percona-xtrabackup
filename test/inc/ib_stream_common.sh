@@ -29,17 +29,23 @@ stop_server
 rm -r $mysql_datadir
 
 # Restore sakila
-vlog "Applying log"
+vlog "#####################"
+vlog "# EXTRACTING STREAM #"
+vlog "#####################"
 backup_dir=$topdir/backup
 cd $backup_dir
 run_cmd bash -c "$stream_extract_cmd out"
-test -n "${stream_uncompress_cmd:-""}" && run_cmd bash -c "$stream_uncompress_cmd";
+if [ -n "${stream_uncompress_cmd:=""}" ]; then 
+  vlog "################################"
+  vlog "# DECRYPTING AND DECOMPRESSING #"
+  vlog "################################"
+  run_cmd bash -c "$stream_uncompress_cmd";
+fi
 cd - >/dev/null 2>&1 
 vlog "###########"
 vlog "# PREPARE #"
 vlog "###########"
 innobackupex --apply-log $backup_dir
-vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
 vlog "###########"
 vlog "# RESTORE #"

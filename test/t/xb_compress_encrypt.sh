@@ -9,10 +9,7 @@ encrypt_key="percona_xtrabackup_is_awesome___"
 
 innobackupex_options="--compress --compress-threads=4 --compress-chunk-size=8K --encrypt=$encrypt_algo --encrypt-key=$encrypt_key --encrypt-threads=4 --encrypt-chunk-size=8K"
 
-data_decrypt_cmd="for i in \`find \\\`pwd\\\` -name \*.xbcrypt\`; do \
-xbcrypt -d -a $encrypt_algo -k $encrypt_key -i \$i -o \${i:0:\${#i}-8}; \
-rm -f \$i; done;"
-
-data_decompress_cmd="for i in \`find \\\`pwd\\\` -name \*.qp\`;  do qpress -d \$i \`dirname \$i\`; done;"
+data_decrypt_cmd="innobackupex --decrypt=${encrypt_algo} --encrypt-key=${encrypt_key} ./"
+data_decompress_cmd="innobackupex --decompress ./"
 
 . inc/xb_local.sh

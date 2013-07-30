@@ -10,4 +10,4 @@ start_server
 # Check that --parallel=<negative value> doesn't blow up
 vlog "Creating the backup directory: $topdir/backup"
 mkdir -p $topdir/backup
-innobackupex $topdir/backup --parallel=-1  
+xtrabackup --backup --parallel=-1 $topdir/backup

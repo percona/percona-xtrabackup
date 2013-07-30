@@ -89,15 +89,16 @@ my $option_tables_file = '';
 my $option_throttle = '';
 my $option_sleep = '';
 my $option_compress = 999;
+my $option_decompress = '';
 my $option_compress_threads = 1;
 my $option_compress_chunk_size = '';
 my $option_encrypt = '';
+my $option_decrypt = '';
 my $option_encrypt_key = '';
 my $option_encrypt_key_file = '';
 my $encrypt_cmd = '';
 my $option_encrypt_threads = 1;
 my $option_encrypt_chunk_size = '';
-my $option_uncompress = '';
 my $option_export = '';
 my $option_use_memory = '';
 my $option_mysql_password = '';
@@ -315,7 +316,27 @@ init();
 
 my $ibbackup_exit_code = 0;
 
-if ($option_copy_back) {
+if ($option_decompress || $option_decrypt) {
+    # decrypt/decompress files
+    if ($option_decompress && $option_decrypt) {
+      # Call mode 0 first as it is fastest but may cause stream buffer overruns
+      # requiring user invoke innobackupex twice, once for decrypt and again
+      # for decompress. Mode 0 will take .qb.xbcrypt and run it through
+      # xbcrypt | qpress > result. This should get all InnoDB files but any
+      # metadata or MyISAM, etc. will not be .qp.xbcrypt, only .xbcrypt
+      decrypt_decompress(0);
+      # Now call mode 1 to decrypt any uncompressed files, those with only a
+      # .xbcrypt extension
+      decrypt_decompress(1);
+      # Now, just in case there were any compressed files only, run throuh and
+      # decompress any .qp files
+      decrypt_decompress(2);
+    } elsif ($option_decompress) {
+      decrypt_decompress(2);
+    } else {
+      decrypt_decompress(1);
+    }
+} elsif ($option_copy_back) {
     # copy files from backup directory back to their original locations
     copy_back(0);
 } elsif ($option_move_back) {
@@ -395,7 +416,180 @@ sub Die {
     die "$prefix Error: $message";
 }
     
+#
+# Finds all files that match the given pattern recursively beneath
+# the given directory. Returns a list of files with their paths relative 
+# to the starting search directory.
+#
+sub find_all_matching_files {
+  my $dir = shift;
+  my $pattern = shift;
+  my $child;
+  my @dirlist;
+  my @retlist;
+ 
+  opendir(FINDDIR, $dir)
+        || Die "Can't open directory '$dir': $!\n";
 
+  while (defined($child = readdir(FINDDIR))) {
+    next if $child eq "." || $child eq "..";
+    if ($child =~ m/$pattern/) { push(@retlist, "$dir/$child"); }
+    elsif ( -d "$dir/$child") { push(@dirlist, "$dir/$child"); }
+  }
+  closedir(FINDDIR);
+
+  foreach $child (@dirlist) {
+    push(@retlist, find_all_matching_files("$child", "$pattern"));
+  }
+  return (@retlist);
+}
+
+#
+# decrypts and/or decompresses an individual file amd removes the source
+# on success.
+# mode is same mode as defined for sub decrypt_decompress()
+sub decrypt_decompress_file {
+  my $mode = shift;
+  my $file = shift;
+  my $file_ext = shift;
+  my $decrypt_opts = shift;
+
+  my $file_cmd;
+  my $dest_file=substr($file, 0, length($file) - length($file_ext));
+
+  if ($mode == 0) {
+    $file_cmd = "xbcrypt --decrypt $decrypt_opts --input=" . $file . " | qpress -dio > " . $dest_file;
+  } elsif ($mode == 1) {
+    $file_cmd = "xbcrypt --decrypt $decrypt_opts --input=" . $file . " --output=" . $dest_file;
+  } elsif ($mode == 2) {
+    $file_cmd = "qpress -do " . $file . " > " . $dest_file;
+  } else {
+    Die("Unknown decrypt_decompress mode : $mode\n"); 
+  }
+  print STDERR "$prefix $file_cmd\n";
+  system("$file_cmd") && Die "$file_cmd failed with $!\n";
+  system("rm -f $file");
+}
+
+#
+# Decrypts and decompresses a backup made with --compress and/or --encrypt
+#
+# mode 0 = decrypt and decompress .qp.xbcrypt files
+# mode 1 = decrypt .xbcrypt files
+# mode 2 = decompress .qp files
+#
+sub decrypt_decompress {
+  my $mode = shift;
+  my $file_ext;
+  my $decrypt_opts = '';
+  my @files;
+
+  # first, build out the decryption opts. They will not be used and option
+  # values may not be specified if doing decompress only.
+  if ($mode != 2) {
+    if ($option_decrypt) {
+      $decrypt_opts = "--encrypt-algo=$option_decrypt"
+    }
+    if ($option_encrypt_key) {
+      $decrypt_opts = $decrypt_opts . " --encrypt-key=$option_encrypt_key";
+    } elsif ($option_encrypt_key_file) {
+      $decrypt_opts = $decrypt_opts . " --encrypt-key-file=$option_encrypt_key_file";
+    }
+  }
+
+  # based on the mode, determine which files we are interested in
+  if ($mode == 0) {
+    $file_ext = ".qp.xbcrypt";
+  } elsif ($mode == 1) {
+    $file_ext = ".xbcrypt";
+  } elsif ($mode == 2) {
+    $file_ext = ".qp";
+  } else {
+    Die("Unknown decrypt_decompress mode : $mode\n"); 
+  }
+
+  # recursively find all files of interest in the backup set
+  @files = find_all_matching_files("$backup_dir", "\\$file_ext\$");
+
+  # runing serially
+  if (!$option_parallel) {
+    my $file;
+    foreach $file (@files) {
+      decrypt_decompress_file($mode, $file, $file_ext, $decrypt_opts);
+    }
+  # running parallel, FUN!
+  } else {
+    my @pids;
+    my @workingfiles;
+    my $file;
+    my $freepidindex;
+    
+    # this will maintain the list of forks so we can wait for completion
+    # and check return status as well as stay within the limits of the 
+    # --parallel value
+    $pids[$option_parallel - 1] = undef;
+
+    # this is the file for which each fork is currently working on. just
+    # used for logging/reporting purposed in case of a failure.
+    $workingfiles[$option_parallel - 1] = undef;
+
+    foreach $file (@files) {
+      # this while loop below tries to find an unused child/fork slot, ie, one
+      # that is not currently working/running. it will loop indefinitely,
+      # iterating the number of slots and watching for a child to finish
+      # and use that now vacant slot.
+      $freepidindex=$option_parallel;
+      while ($freepidindex >= $option_parallel) {
+        for ($freepidindex = 0; $freepidindex < $option_parallel; $freepidindex++) {
+          last if not defined $pids[$freepidindex];
+
+          my $status = waitpid($pids[$freepidindex], WNOHANG);
+          if ($status == $pids[$freepidindex]) {
+            my $childretcode = $? >> 8;
+            if ($childretcode != 0) {
+              Die("Child failed on $workingfiles[$freepidindex] : $childretcode");
+            }
+            last;
+          } elsif ($status == -1) {
+            Die("waitpid failed on $workingfiles[$freepidindex] : $status");
+          }
+        }
+        # couldn't find a free slot yet so sleep for 1/10 th of a second or so.
+        # sleeping for a much longer (even a second) can make the whole process
+        # take longer when there are a lot of smaller files to process as they
+        # can be done very quickly. 1/10th doesn't seem to add any real overhead
+        # to this controlling process when compared to letting it spin freely.
+        if ($freepidindex >= $option_parallel) {
+          usleep(100000);
+        }
+      }
+      # so now we have a slot identified by freepidindex, set up the workingfiles,
+      # fork and do the work.
+      $workingfiles[$freepidindex] = $file;
+      $pids[$freepidindex] = fork();
+      if ($pids[$freepidindex] == 0) {
+        decrypt_decompress_file($mode, $file, $file_ext, $decrypt_opts);
+        exit 0;
+      }
+    }
+    # we've started processing of all files that we know about, now just need
+    # to wait for the last bunch to finish up and check for any errors before
+    # returning.
+    for ($freepidindex = 0; $freepidindex < $option_parallel; $freepidindex++) {
+      next if not defined $pids[$freepidindex];
+      my $status = waitpid($pids[$freepidindex], 0);
+      my $childretcode = $? >> 8;
+      if ($status == $pids[$freepidindex]) {
+        if ($childretcode != 0) {
+          Die("Child failed on $workingfiles[$freepidindex] : $childretcode");
+        }
+      } else {
+        Die("waitpid failed on $workingfiles[$freepidindex] : $status");
+      }
+    }
+  }
+}
+ 
 #
 # backup subroutine makes a backup of InnoDB and MyISAM tables, indexes and 
 # .frm files. It connects to the database server and runs ibbackup as a child
@@ -873,8 +1067,25 @@ sub copy_back {
                 Die "Backup data file '$backup_dir/$c->{filename}' "
                   . "does not exist, but "
                   . "its compressed copy '$c->{path}.ibz' exists. Check "
+                  . "that you have decompressed "
+                  . " before attempting "
+                  . "'$innobackup_script --copy-back ...'  "
+                  . "or '$innobackup_script --move-back ...' !";
+            } elsif (-e "$backup_dir/$c->{filename}.qp") {
+                Die "Backup data file '$backup_dir/$c->{filename}' "
+                  . "does not exist, but "
+                  . "its compressed copy '$c->{path}.qp' exists. Check "
                   . "that you have run "
-                  . "'$innobackup_script --apply-log --uncompress "
+                  . "'$innobackup_script --decompress "
+                  . "...' before attempting "
+                  . "'$innobackup_script --copy-back ...'  "
+                  . "or '$innobackup_script --move-back ...' !";
+            } elsif (-e "$backup_dir/$c->{filename}.xbcrypt") {
+                Die "Backup data file '$backup_dir/$c->{filename}' "
+                  . "does not exist, but "
+                  . "its compressed copy '$c->{path}.xbcrypt' exists. Check "
+                  . "that you have run "
+                  . "'$innobackup_script --decrypt "
                   . "...' before attempting "
                   . "'$innobackup_script --copy-back ...'  "
                   . "or '$innobackup_script --move-back ...' !";
@@ -967,9 +1178,6 @@ sub apply_log {
 
     $options = $options . "--prepare --target-dir=$backup_dir";
 
-    if ($option_uncompress) {
-        $options = $options . ' --uncompress';
-    }
     if ($option_export) {
         $options = $options . ' --export';
     }
@@ -1944,8 +2152,11 @@ sub init {
     my $run = '';
 
     # print some instructions to the user
-    if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
+    if (!$option_apply_log && !$option_copy_back && !$option_move_back
+        && !$option_decrypt && !$option_decompress) {
         $run = 'backup';
+    } elsif ($option_decrypt || $option_decompress) {
+        $run = 'decryption and decompression';
     } elsif ($option_copy_back) {
         $run = 'copy-back';
     } elsif ($option_move_back) {
@@ -1957,7 +2168,8 @@ sub init {
     print STDERR "           At the end of a successful $run run $innobackup_script\n";
     print STDERR "           prints \"completed OK!\".\n\n";
 
-    if (!$option_copy_back && !$option_move_back) {
+    if (!$option_copy_back && !$option_move_back
+        && !$option_decrypt && !$option_decompress) {
         # we are making a backup or applying log to backup
         if (!$option_apply_log) {
             # we are making a backup, we need mysql server
@@ -1980,19 +2192,22 @@ sub init {
         }
     }
 
-    # read MySQL options file
-    #read_config_file($config_file, \%config);
-    read_config_file(\%config);
+    if (!$option_decrypt && !$option_decompress) {
+      # read MySQL options file
+      #read_config_file($config_file, \%config);
+      read_config_file(\%config);
 
-    if(!$option_tmpdir) {
-        $option_tmpdir = get_option(\%config, $option_defaults_group, 'tmpdir');
+      if(!$option_tmpdir) {
+          $option_tmpdir = get_option(\%config, $option_defaults_group, 'tmpdir');
+      }
     }
 
     # get innodb log home directory from options file
     #$innodb_log_group_home_dir = 
     #    get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
 
-    if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
+    if (!$option_apply_log && !$option_copy_back && !$option_move_back
+        && !$option_decrypt && !$option_decompress) {
         # we are making a backup, create a new backup directory
         $backup_dir = File::Spec->rel2abs(make_backup_dir());
         print STDERR "$prefix Created backup directory $backup_dir\n";
@@ -2106,9 +2321,11 @@ sub check_args {
 
     # read command line options
     $rcode = GetOptions('compress' => \$option_compress,
+                        'decompress' => \$option_decompress,
                         'compress-threads=i' => \$option_compress_threads,
                         'compress-chunk-size=s' => \$option_compress_chunk_size,
                         'encrypt=s' => \$option_encrypt,
+                        'decrypt=s' => \$option_decrypt,
                         'encrypt-key=s' => \$option_encrypt_key,
                         'encrypt-key-file=s' => \$option_encrypt_key_file,
                         'encrypt-threads=i' => \$option_encrypt_threads,
@@ -2126,7 +2343,6 @@ sub check_args {
                         'databases=s' => \$option_databases,
                         'tables-file=s', => \$option_tables_file,
                         'use-memory=s' => \$option_use_memory,
-                        'uncompress' => \$option_uncompress,
                         'export' => \$option_export,
                         'password:s' => \$option_mysql_password,
                         'user=s' => \$option_mysql_user,
@@ -2217,6 +2433,11 @@ sub check_args {
             "is specified.";
     }
 
+    if ($option_parallel && $option_parallel < 1) {
+        Die "$prefix --parallel must be a positive numerical value" .
+            "greater than 0";
+    }
+
     if ($option_stream eq 'tar') {
       $stream_cmd = 'tar chf -';
     } elsif ($option_stream eq 'xbstream') {
@@ -2244,7 +2465,8 @@ sub check_args {
         exit(1);
     }
 
-    if (!$option_apply_log && !$option_copy_back && !$option_move_back) {
+    if (!$option_apply_log && !$option_copy_back && !$option_move_back
+        && !$option_decrypt && !$option_decompress) {
         # we are making a backup, get backup root directory
         $option_backup = "1";
         $backup_root = $ARGV[0];
@@ -2273,6 +2495,13 @@ sub check_args {
     if ($option_rsync && $option_stream) {
         print STDERR "--rsync doesn't work with --stream\n";
 	exit(1);
+    }
+
+    if ($option_decompress) {
+      if (system("which qpress &>/dev/null") >> 8 != 0) {
+        print STDERR "--decompress requires qpress\n";
+	exit(1);
+      }
     }
 
     print STDERR "\n";
@@ -3215,8 +3444,8 @@ innobackupex - Non-blocking backup tool for InnoDB, XtraDB and HailDB databases
 =head1 SYNOPOSIS
 
 innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS] [--compress-chunk-size=CHUNK-SIZE]
-             [--encrypt=encryption_algorithm] [--encrypt-threads=NUMBER-OF-THREADS] [--encrypt-chunk-size=CHUNK-SIZE]
-             [--encrypt-key=literal_encryption_key] | [--encryption-key-file=MY.KEY]
+             [--encrypt=ENCRYPTION-ALGORITHM] [--encrypt-threads=NUMBER-OF-THREADS] [--encrypt-chunk-size=CHUNK-SIZE]
+             [--encrypt-key=LITERAL-ENCRYPTION-KEY] | [--encryption-key-file=MY.KEY]
              [--include=REGEXP] [--user=NAME]
              [--password=WORD] [--port=PORT] [--socket=SOCKET]
              [--no-timestamp] [--ibbackup=IBBACKUP-BINARY]
@@ -3229,7 +3458,7 @@ innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS] [--compress-chu
              [--compact]     
              BACKUP-ROOT-DIR
 
-innobackupex --apply-log [--use-memory=B] [--uncompress]
+innobackupex --apply-log [--use-memory=B]
              [--defaults-file=MY.CNF]
              [--export] [--redo-only] [--ibbackup=IBBACKUP-BINARY]
              BACKUP-DIR
@@ -3237,6 +3466,10 @@ innobackupex --apply-log [--use-memory=B] [--uncompress]
 innobackupex --copy-back [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME] BACKUP-DIR
 
 innobackupex --move-back [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME] BACKUP-DIR
+
+innobackupex [--decompress] [--decrypt=ENCRYPTION-ALGORITHM]
+             [--encrypt-key=LITERAL-ENCRYPTION-KEY] | [--encryption-key-file=MY.KEY]
+             [--parallel=NUMBER-OF-FORKS] BACKUP-DIR
 
 =head1 DESCRIPTION
 
@@ -3271,6 +3504,16 @@ The --move-back command is similar to --copy-back with the only difference that
 it moves files to their original locations rather than copies them. As this
 option removes backup files, it must be used with caution. It may be useful in
 cases when there is not enough free disk space to copy files.
+
+The --decompress --decrypt command will decrypt and/or decompress a backup made
+with the --compress and/or --encrypt options. When decrypting, the encryption
+algorithm and key used when the backup was taken MUST be provided via the
+specified options. --decrypt and --decompress may be used together at the same
+time to completely normalize a previously compressed and encrypted backup. The
+--parallel option will allow multiple files to be decrypted and/or decompressed
+simultaneously. In order to decompress, the qpress utility MUST be installed
+and accessable within the path. This process will remove the original
+compressed/encrypted files and leave the results in the same location.
 
 On success the exit code innobackupex is 0. A non-zero exit code 
 indicates an error.
@@ -3314,6 +3557,14 @@ Copy all the files in a previously made backup from the backup directory to thei
 
 This option specifies the list of databases that innobackupex should back up. The option accepts a string argument or path to file that contains the list of databases to back up. The list is of the form "databasename1[.table_name1] databasename2[.table_name2] . . .". If this option is not specified, all databases containing MyISAM and InnoDB tables will be backed up.  Please make sure that --databases contains all of the InnoDB databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option --tables-file.)
 
+=item --decompress
+
+Decompresses all files with the .qp extension in a backup previously made with the --compress option.
+
+=item --decrypt=ENCRYPTION-ALGORITHM
+
+Decrypts all files with the .xbcrypt extension in a backup previously made with --encrypt option.
+
 =item --debug-sleep-before-unlock=SECONDS
 
 This is a debug-only option used by the XtraBackup test suite.
@@ -3326,23 +3577,23 @@ This option specifies what file to read the default MySQL options from.  The opt
 
 This option specifies what extra file to read the default MySQL options from before the standard defaults-file.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-extra-file option. See the xtrabackup documentation for details.
 
-=item --encrypt=ENCRYPTION_ALGORITHM
+=item --encrypt=ENCRYPTION-ALGORITHM
 
 This option instructs xtrabackup to encrypt backup copies of InnoDB data
-files using the algorithm specified in the ENCRYPTION_ALGORITHM.
+files using the algorithm specified in the ENCRYPTION-ALGORITHM.
 It is passed directly to the xtrabackup child process.
 Try 'xtrabackup --help' for more details.
 
-=item --encrypt-key=ENCRYPTION_KEY
+=item --encrypt-key=ENCRYPTION-KEY
 
-This option instructs xtrabackup to use the given ENCRYPTION_KEY when using the --encrypt option.
-It is passed directly to the xtrabackup child process.
+This option instructs xtrabackup to use the given ENCRYPTION-KEY when using the --encrypt or --decrypt options.
+During backup it is passed directly to the xtrabackup child process.
 Try 'xtrabackup --help' for more details.
 
-=item --encrypt-key-file=ENCRYPTION_KEY_FILE
+=item --encrypt-key-file=ENCRYPTION-KEY-FILE
 
-This option instructs xtrabackup to use the encryption key stored in the given ENCRYPTION_KEY_FILE when using the --encrypt option.
-It is passed directly to the xtrabackup child process.
+This option instructs xtrabackup to use the encryption key stored in the given ENCRYPTION-KEY-FILE when using the --encrypt or --decrypt options.
+
 Try 'xtrabackup --help' for more details.
 
 =item --encrypt-threads
@@ -3444,8 +3695,9 @@ This option prevents creation of a time-stamped subdirectory of the BACKUP-ROOT-
 
 =item --parallel=NUMBER-OF-THREADS
 
-This option specifies the number of threads the xtrabackup child process should use to back up files concurrently.  The option accepts an integer argument. It is passed directly to xtrabackup's --parallel option. See the xtrabackup documentation for details.
-
+On backup, this option specifies the number of threads the xtrabackup child process should use to back up files concurrently.  The option accepts an integer argument. It is passed directly to xtrabackup's --parallel option. See the xtrabackup documentation for details.
+ 
+On --decrypt or --decompress it specifies the number of parallel forks that should be used to process the backup files.
 
 =item --password=WORD
 
