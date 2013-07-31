@@ -12,8 +12,8 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:KbBSnT"\
-    --longoptions key:,nosign,binary,binarydep,source,dummy,notransitional \
+go_out="$(getopt --options "k:KbBSnTt" --longoptions \
+    key:,nosign,binary,binarydep,source,dummy,notransitional,transitional \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
@@ -21,7 +21,7 @@ eval set -- $go_out
 BUILDPKG_KEY=''
 DPKG_BINSRC=''
 DUMMY=''
-NOTRANSITIONAL=''
+NOTRANSITIONAL='yes'
 
 for arg
 do
@@ -34,6 +34,7 @@ do
     -S | --source ) shift; DPKG_BINSRC='-S';;
     -n | --dummy ) shift; DUMMY='yes';;
     -T | --notransitional ) shift; NOTRANSITIONAL='yes';;
+    -t | --transitional ) shift; NOTRANSITIONAL='';;
     esac
 done
 
