@@ -50,9 +50,8 @@ Advanced Features
    throttling_ibk
    importing_exporting_tables_ibk
    pit_recovery_ibk
+   improved_ftwrl
 
-
-..    performance_tunning_innobackupex
 
 Implementation
 ==============

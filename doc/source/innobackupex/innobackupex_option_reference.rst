@@ -114,6 +114,26 @@ Options
 
    This option accepts a string argument that specifies the log sequence number (:term:`LSN`) to use for the incremental backup. It is used with the :option:`--incremental` option. It is used instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer.
 
+.. option:: --kill-long-queries-timeout=SECONDS
+
+   This option specifies the number of seconds innobackupex waits between starting ``FLUSH TABLES WITH READ LOCK`` and killing those queries that block it. Default is 0 seconds, which means innobackupex will not attempt to kill any queries.
+
+.. option:: --kill-long-query-type=all|update
+
+   This option specifies which types of queries should be killed to unblock the global lock. Default is "all".
+
+.. option:: --lock-wait-timeout=SECONDS
+
+   This option specifies time in seconds that innobackupex should wait for queries that would block ``FLUSH TABLES WITH READ LOCK`` before running it. If there are still such queries when the timeout expires, innobackupex terminates with an error. Default is 0, in which case innobackupex does not wait for queries to complete and starts ``FLUSH TABLES WITH READ LOCK`` immediately.
+
+.. option:: --lock-wait-threshold=SECONDS
+
+   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --lock-wait-timeout`. FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --lock-wait-timeout is 0. Default value is 60 seconds.
+
+.. option:: --lock-wait-query-type=all|update
+
+   This option specifies which types of queries are allowed to complete before innobackupex will issue the global lock. Default is all.
+
 .. option:: --log-copy-interval
 
    This option specifies time interval between checks done by log copying thread in milliseconds.
