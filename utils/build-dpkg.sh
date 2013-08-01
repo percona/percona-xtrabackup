@@ -12,7 +12,7 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:KbBSnTt" --longoptions \
+go_out="$(getopt --options "k:KbBSnTtD" --longoptions \
     key:,nosign,binary,binarydep,source,dummy,notransitional,transitional \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
@@ -22,6 +22,7 @@ BUILDPKG_KEY=''
 DPKG_BINSRC=''
 DUMMY=''
 NOTRANSITIONAL='yes'
+PACKAGE_SUFFIX='-1'
 
 for arg
 do
@@ -35,6 +36,7 @@ do
     -n | --dummy ) shift; DUMMY='yes';;
     -T | --notransitional ) shift; NOTRANSITIONAL='yes';;
     -t | --transitional ) shift; NOTRANSITIONAL='';;
+    -D ) shift; PACKAGE_SUFFIX="$PACKAGE_SUFFIX.$(lsb_release -sc)";;
     esac
 done
 
@@ -96,7 +98,8 @@ export DEB_DUMMY="$DUMMY"
         fi
 
         # Update distribution
-        dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION-1" 'Update distribution'
+        dch -m -D "$DEBIAN_VERSION" --force-distribution \
+            -v "$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX" 'Update distribution'
 
     )
 
@@ -112,7 +115,7 @@ export DEB_DUMMY="$DUMMY"
         dpkg-source -i'.*' -b "$SOURCEDIR"
 
         # Unpack it
-        dpkg-source -x "percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION-1.dsc"
+        dpkg-source -x "percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX.dsc"
 
         (
             cd "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION"
