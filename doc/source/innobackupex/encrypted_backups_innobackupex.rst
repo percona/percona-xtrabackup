@@ -69,6 +69,16 @@ Backups can be decrypted with :ref:`xbcrypt`. Following one-liner can be used to
 
   $ for i in `find . -iname "*\.xbcrypt"`; do xbcrypt -d --encrypt-key-file=/root/secret_key --encrypt-algo=AES256 < $i > $(dirname $i)/$(basename $i .xbcrypt) && rm $i; done
 
+In |Percona XtraBackup| 2.1.4 new :option:`innobackupex --decrypt` option has been implemented that can be used to decrypt the backups: ::
+
+  $ innobackupex --decrypt=AES256 --encrypt-key="A1EDC73815467C083B0869508406637E" /data/backups/2013-08-01_08-31-35/
+
+Use of the :option:`innobackupex --decrypt` will remove the original encrypted files and leave the results in the same location.
+
+.. note::
+ 
+   :option:`innobackupex --parallel` can be used with :option:`innobackupex --decrypt` option to decrypt multiple files simultaneously.
+
 When the files have been decrypted backup can be prepared.
 
 Preparing Encrypted Backups
@@ -76,7 +86,7 @@ Preparing Encrypted Backups
 
 After the backups have been decrypted, they can be prepared the same way as the standard full backups with the :option:`--apply-logs` option: :: 
 
-  $ innobackupex --apply-log /data/backups/2013-03-25_10-34-04
+  $ innobackupex --apply-log /data/backups/2013-08-01_08-31-35/
 
 Restoring Encrypted Backups
 =============================
@@ -88,7 +98,7 @@ Restoring Encrypted Backups
 It will copy all the data-related files back to the server's :term:`datadir`, determined by the server's :file:`my.cnf` configuration file. You should check the last line of the output for a success message::
 
   innobackupex: Finished copying back files.
-  130201 11:08:13  innobackupex: completed OK!
+  130801 11:08:13  innobackupex: completed OK!
 
 Other Reading
 =============
