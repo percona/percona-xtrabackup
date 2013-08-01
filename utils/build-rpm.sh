@@ -129,7 +129,8 @@ export MYSQL_RPMBUILD_TEST="$TEST"
     # Create the source archive
     (cd "$SOURCEDIR"; make dist)
 
-    cp $SOURCEDIR/percona-xtrabackup-$XTRABACKUP_VERSION*.tar.gz SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz
+    cp $SOURCEDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION.tar.gz \
+        SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz
 
     # Issue RPM command
     rpmbuild $SIGN $TARGET $TARGET_LIBDIR $TARGET_ARCH $DUMMY \
