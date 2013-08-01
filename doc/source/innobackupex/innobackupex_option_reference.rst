@@ -38,6 +38,14 @@ Options
 
    This option specifies the list of databases that |innobackupex| should back up. The option accepts a string argument or path to file that contains the list of databases to back up. The list is of the form "databasename1[.table_name1] databasename2[.table_name2] . . .". If this option is not specified, all databases containing |MyISAM| and |InnoDB| tables will be backed up. Please make sure that --databases contains all of the |InnoDB| databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option --tables-file.)
 
+.. option:: --decompress
+
+   Decompresses all files with the .qp extension in a backup previously made with the --compress option.
+
+.. option:: --decrypt=ENCRYPTION-ALGORITHM
+
+   Decrypts all files with the .xbcrypt extension in a backup previously made with --encrypt option.
+
 .. option:: --defaults-file=[MY.CNF]
 
    This option accepts a string argument that specifies what file to read the default MySQL options from. It is also passed directly to :program:`xtrabackup` 's defaults-file option. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
