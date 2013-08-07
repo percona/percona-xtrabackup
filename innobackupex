@@ -3679,7 +3679,7 @@ This option specifies the query run time threshold which is used by innobackupex
 
 =item --lock-wait-query-type=all|update
 
-This option specifies which types of queries are allowed to complete before innobackuped will issue the global lock. Default is all.
+This option specifies which types of queries are allowed to complete before innobackupex will issue the global lock. Default is all.
 
 =item --move-back
 

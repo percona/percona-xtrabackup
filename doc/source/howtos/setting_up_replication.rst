@@ -204,7 +204,7 @@ Apply the logs:
 
    TheSlave$ innobackupex --apply-log --use-memory=2G /path/to/backupdir/$TIMESTAMP/
 
-Copy the directory from the ``TheSlave`` to ``TheNewSlave`` (**NOTE**: Make sure mysqld is shut down on ``TheNewSlave`` before you copy the contents the snapshot into its :term:`datadir`.): ::
+Copy the directory from the ``TheSlave`` to ``TheNewSlave`` (**NOTE**: Make sure mysqld is shut down on ``TheNewSlave`` before you copy the contents the snapshot into its :term:`datadir`.): 
 
 .. code-block:: console
 

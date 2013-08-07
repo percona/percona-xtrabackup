@@ -38,6 +38,14 @@ Options
 
    This option specifies the list of databases that |innobackupex| should back up. The option accepts a string argument or path to file that contains the list of databases to back up. The list is of the form "databasename1[.table_name1] databasename2[.table_name2] . . .". If this option is not specified, all databases containing |MyISAM| and |InnoDB| tables will be backed up. Please make sure that --databases contains all of the |InnoDB| databases and tables, so that all of the innodb.frm files are also backed up. In case the list is very long, this can be specified in a file, and the full path of the file can be specified instead of the list. (See option --tables-file.)
 
+.. option:: --decompress
+
+   Decompresses all files with the .qp extension in a backup previously made with the --compress option.
+
+.. option:: --decrypt=ENCRYPTION-ALGORITHM
+
+   Decrypts all files with the .xbcrypt extension in a backup previously made with --encrypt option.
+
 .. option:: --defaults-file=[MY.CNF]
 
    This option accepts a string argument that specifies what file to read the default MySQL options from. It is also passed directly to :program:`xtrabackup` 's defaults-file option. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
@@ -113,6 +121,26 @@ Options
 .. option:: --incremental-lsn
 
    This option accepts a string argument that specifies the log sequence number (:term:`LSN`) to use for the incremental backup. It is used with the :option:`--incremental` option. It is used instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer.
+
+.. option:: --kill-long-queries-timeout=SECONDS
+
+   This option specifies the number of seconds innobackupex waits between starting ``FLUSH TABLES WITH READ LOCK`` and killing those queries that block it. Default is 0 seconds, which means innobackupex will not attempt to kill any queries.
+
+.. option:: --kill-long-query-type=all|update
+
+   This option specifies which types of queries should be killed to unblock the global lock. Default is "all".
+
+.. option:: --lock-wait-timeout=SECONDS
+
+   This option specifies time in seconds that innobackupex should wait for queries that would block ``FLUSH TABLES WITH READ LOCK`` before running it. If there are still such queries when the timeout expires, innobackupex terminates with an error. Default is 0, in which case innobackupex does not wait for queries to complete and starts ``FLUSH TABLES WITH READ LOCK`` immediately.
+
+.. option:: --lock-wait-threshold=SECONDS
+
+   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --lock-wait-timeout`. FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --lock-wait-timeout is 0. Default value is 60 seconds.
+
+.. option:: --lock-wait-query-type=all|update
+
+   This option specifies which types of queries are allowed to complete before innobackupex will issue the global lock. Default is all.
 
 .. option:: --log-copy-interval
 

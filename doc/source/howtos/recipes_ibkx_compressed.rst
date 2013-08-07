@@ -1,3 +1,5 @@
+.. _recipes_ibkx_compressed:
+
 ============================
  Making a Compressed Backup 
 ============================
@@ -14,12 +16,12 @@ If you want to speed up the compression you can use the parallel compression, wh
 Output should look like this :: 
 
   ...
-  [01] Compressing ./imdb/comp_cast_type.ibd to /data/backup/2012-06-01_11-24-04/./imdb/comp_cast_type.ibd.qp
+  [01] Compressing ./imdb/comp_cast_type.ibd to /data/backup/2013-08-01_11-24-04/./imdb/comp_cast_type.ibd.qp
   [01]        ...done
-  [01] Compressing ./imdb/aka_name.ibd to /data/backup/2012-06-01_11-24-04/./imdb/aka_name.ibd.qp
+  [01] Compressing ./imdb/aka_name.ibd to /data/backup/2013-08-01_11-24-04/./imdb/aka_name.ibd.qp
   [01]        ...done
   ...
-  120601 11:50:24  innobackupex: completed OK
+  130801 11:50:24  innobackupex: completed OK
 
 Preparing the backup
 --------------------
@@ -28,28 +30,39 @@ Before you can prepare the backup you'll need to uncompress all the files with `
 
   $ for bf in `find . -iname "*\.qp"`; do qpress -d $bf $(dirname $bf) && rm $bf; done
 
+In |Percona Xtrabackup| 2.1.4 new :option:`innobackupex --decompress` option has been implemented that can be used to decompress the backup: ::
+
+  $ innobackupex --decompress /data/backup/2013-08-01_11-24-04/
+
+This option will remove the original compressed files and leave the uncompressed ones in the same location.
+
+.. note:: 
+
+  In order to successfully use the :option:`innobackupex --decompress` option, qpress binary needs to installed and within the path.
+  :option:`innobackupex --parallel` can be used with :option:`innobackupex --decompress` option to decompress multiple files simultaneously. 
+
 When the files are uncompressed you can prepare the backup with the :option:`--apply-log` option: :: 
 
-  $ innobackupex --apply-log /data/backup/2012-06-01_11-24-04/
+  $ innobackupex --apply-log /data/backup/2013-08-01_11-24-04/
 
 You should check for a confirmation message: ::
 
-  120604 02:51:02  innobackupex: completed OK!
+  130802 02:51:02  innobackupex: completed OK!
 
-Now the files in :file:`/data/backups/2012-06-01_11-24-04` is ready to be used by the server.
+Now the files in :file:`/data/backups/2013-08-01_11-24-04` is ready to be used by the server.
 
 Restoring the backup
 --------------------
 
 Once the backup has been prepared you can use the :option:`--copy-back` to restore the backup. :: 
 
-  $ innobackupex --copy-back /data/backups/2012-06-01_11-24-04/
+  $ innobackupex --copy-back /data/backups/2013-08-01_11-24-04/
 
 This will copy the prepared data back to its original location as defined by the ``datadir`` in your :term:`my.cnf`.
 
 After the confirmation message::
 
-  120604 02:58:44  innobackupex: completed OK!
+  130802 02:58:44  innobackupex: completed OK!
 
 you should check the file permissions after copying the data back. You may need to adjust them with something like::
 
