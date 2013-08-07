@@ -139,7 +139,7 @@ endif
 
 5.6: MYSQLOBJS = $(MYSQL_ROOT_DIR)/libmysqld/libmysqld.a
 ifeq ($(shell uname -s),Linux)
-5.6: LIBS += -laio -ldl -lcrypt -lssl
+5.6: LIBS += -laio -ldl -lcrypt
 endif
 5.6: TARGET := xtrabackup_56
 # In CMake server builds it is important to build with exactly the same preprocessor flags
