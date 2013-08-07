@@ -2714,22 +2714,27 @@ xb_create_sync_file(
 /*================*/
 	const char*	path)	/*!<in: path to the sync file */
 {
-	ibool		success;
-	os_file_t	suspend_file = XB_FILE_UNDEFINED;
+	ibool			success;
+	os_file_t		suspend_file = XB_FILE_UNDEFINED;
+	pid_t			pid;
+	char			buffer[64];
 
-	/* xb_file_create reads srv_unix_file_flush_method */
-	suspend_file = xb_file_create(path, OS_FILE_CREATE,
-				      OS_FILE_NORMAL, OS_DATA_FILE,
-				      &success);
+	pid = getpid();
+	sprintf(buffer, "%d", pid);
 
+	msg("xtrabackup: Creating suspend file '%s' with pid '%u'\n", path, pid);
+	
+	suspend_file = xb_file_create_no_error_handling(path, OS_FILE_CREATE,
+							OS_FILE_READ_WRITE,
+							&success);
 	if (UNIV_LIKELY(success && suspend_file != XB_FILE_UNDEFINED)) {
-
+		xb_os_file_write(path, suspend_file, buffer, 0, strlen(buffer));
 		os_file_close(suspend_file);
-
 		return(TRUE);
 	}
 
-	msg("xtrabackup: Error: failed to create file '%s'\n", path);
+	msg("xtrabackup: Error: failed to create file '%s' with %d\n", path,
+	    os_file_get_last_error(TRUE));
 
 	return(FALSE);
 }
