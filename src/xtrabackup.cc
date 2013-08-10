@@ -4509,17 +4509,6 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 		if (no != scanned_no && checksum_is_ok) {
 			ulint blocks_in_group;
 
-			if (no < scanned_no ||
-			    /* Log block numbers wrap around at 0x3FFFFFFF */
-			    (scanned_no | 0x4000000UL - no) %
-			    blocks_in_group == 0) {
-
-				/* old log block, do nothing */
-				finished = TRUE;
-
-				break;
-			}
-
 			blocks_in_group = log_block_convert_lsn_to_no(
 #ifndef INNODB_VERSION_SHORT
 				ut_dulint_create(0,
@@ -4528,6 +4517,17 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 				log_group_get_capacity(group)
 #endif
 							    ) - 1;
+
+			if (no < scanned_no ||
+			    /* Log block numbers wrap around at 0x3FFFFFFF */
+			    ((scanned_no | 0x4000000UL) - no) %
+			    blocks_in_group == 0) {
+
+				/* old log block, do nothing */
+				finished = TRUE;
+
+				break;
+			}
 
 			msg("xtrabackup: error:"
 			    " log block numbers mismatch:\n"
