@@ -5,12 +5,6 @@
 
 . inc/common.sh
 
-# Require XtraDB <= 5.5 until bug #1194828 is fixed
-if is_xtradb && is_server_version_higher_than 5.6.0
-then
-    skip_test "Doesn't work with XtraDB 5.6, bug #1194828"
-fi
-
 options="innodb_log_files_in_group innodb_log_file_size"
 
 # innodb_page_size is supported in XtraDB 5.1+ and InnoDB 5.6+

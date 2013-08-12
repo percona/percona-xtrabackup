@@ -1000,7 +1000,37 @@
  
  	/* If we are using the doublewrite method, we will
  	check if there are half-written pages in data files,
-@@ -3456,7 +3485,8 @@
+@@ -3003,6 +3032,7 @@
+ 	log_group_t*	group;
+ 	log_group_t*	max_cp_group;
+ 	ulint		max_cp_field;
++	ulint		log_hdr_log_block_size;
+ 	lsn_t		checkpoint_lsn;
+ 	ib_uint64_t	checkpoint_no;
+ 	lsn_t		group_scanned_lsn = 0;
+@@ -3108,6 +3138,21 @@
+ 		       log_hdr_buf, max_cp_group);
+ 	}
+ 
++	log_hdr_log_block_size
++		= mach_read_from_4(log_hdr_buf + LOG_FILE_OS_FILE_LOG_BLOCK_SIZE);
++	if (log_hdr_log_block_size == 0) {
++		/* 0 means default value */
++		log_hdr_log_block_size = 512;
++	}
++	if (UNIV_UNLIKELY(log_hdr_log_block_size != srv_log_block_size)) {
++		fprintf(stderr,
++			"InnoDB: Error: The block size of ib_logfile (" ULINTPF
++			") is not equal to innodb_log_block_size.\n"
++			"InnoDB: Error: Suggestion - Recreate log files.\n",
++			log_hdr_log_block_size);
++		return(DB_ERROR);
++	}
++
+ #ifdef UNIV_LOG_ARCHIVE
+ 	group = UT_LIST_GET_FIRST(log_sys->log_groups);
+ 
+@@ -3456,7 +3501,8 @@
  	that the data dictionary tables will be free of any locks.
  	The data dictionary latch should guarantee that there is at
  	most one data dictionary transaction active at a time. */
@@ -1023,7 +1053,18 @@
   * On Windows, mandatory locking is used.
 --- a/storage/innobase/srv/srv0srv.cc
 +++ b/storage/innobase/srv/srv0srv.cc
-@@ -349,6 +349,10 @@
+@@ -239,6 +239,10 @@
+ 
+ /* Switch to enable random read ahead. */
+ UNIV_INTERN my_bool	srv_random_read_ahead	= FALSE;
++
++/* The log block size */
++UNIV_INTERN ulint	srv_log_block_size	= 0;
++
+ /* User settable value of the number of pages that must be present
+ in the buffer cache and accessed sequentially for InnoDB to trigger a
+ readahead request. */
+@@ -349,6 +353,10 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -1034,7 +1075,7 @@
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_spin_wait_delay	= 6;
-@@ -1814,7 +1818,8 @@
+@@ -1814,7 +1822,8 @@
  	if (ret == SRV_NONE
  	    && srv_shutdown_state != SRV_SHUTDOWN_NONE
  	    && trx_purge_state() != PURGE_STATE_DISABLED
@@ -1451,3 +1492,62 @@
  			DBUG_INJECT_CRASH("ib_commit_inplace_crash",
  					  crash_inject_count++);
  		}
+--- a/storage/innobase/include/log0log.h
++++ b/storage/innobase/include/log0log.h
+@@ -681,6 +681,9 @@
+ 					when mysqld is first time started
+ 					on the restored database, it can
+ 					print helpful info for the user */
++#define LOG_FILE_OS_FILE_LOG_BLOCK_SIZE 64
++					/* extend to record log_block_size
++					of XtraDB. 0 means default 512 */
+ #define	LOG_FILE_ARCH_COMPLETED	OS_FILE_LOG_BLOCK_SIZE
+ 					/* this 4-byte field is TRUE when
+ 					the writing of an archived log file
+--- a/storage/innobase/include/os0file.h
++++ b/storage/innobase/include/os0file.h
+@@ -99,7 +99,7 @@
+ if this fails for a log block, then it is equivalent to a media failure in the
+ log. */
+ 
+-#define OS_FILE_LOG_BLOCK_SIZE		512
++#define OS_FILE_LOG_BLOCK_SIZE		srv_log_block_size
+ 
+ /** Options for os_file_create_func @{ */
+ enum os_file_create_t {
+@@ -202,6 +202,10 @@
+ extern ulint	os_n_file_writes;
+ extern ulint	os_n_fsyncs;
+ 
++#define OS_MIN_LOG_BLOCK_SIZE 512
++
++extern ulint	srv_log_block_size;
++
+ #ifdef UNIV_PFS_IO
+ /* Keys to register InnoDB I/O with performance schema */
+ extern mysql_pfs_key_t	innodb_file_data_key;
+--- a/storage/innobase/log/log0log.cc
++++ b/storage/innobase/log/log0log.cc
+@@ -1144,6 +1144,11 @@
+ 	/* Wipe over possible label of ibbackup --restore */
+ 	memcpy(buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP, "    ", 4);
+ 
++	if (srv_log_block_size > 512) {
++		mach_write_to_4(buf + LOG_FILE_OS_FILE_LOG_BLOCK_SIZE,
++				srv_log_block_size);
++	}
++
+ 	dest_offset = nth_file * group->file_size;
+ 
+ #ifdef UNIV_DEBUG
+@@ -1759,9 +1764,7 @@
+ 
+ 	ut_ad(!srv_read_only_mode);
+ 	ut_ad(mutex_own(&(log_sys->mutex)));
+-#if LOG_CHECKPOINT_SIZE > OS_FILE_LOG_BLOCK_SIZE
+-# error "LOG_CHECKPOINT_SIZE > OS_FILE_LOG_BLOCK_SIZE"
+-#endif
++	ut_ad(LOG_CHECKPOINT_SIZE <= OS_FILE_LOG_BLOCK_SIZE);
+ 
+ 	buf = group->checkpoint_buf;
+ 

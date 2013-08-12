@@ -219,7 +219,7 @@ long innobase_log_files_in_group = 2;
 long innobase_open_files = 300L;
 
 longlong innobase_page_size = (1LL << 14); /* 16KB */
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
 static ulong innobase_log_block_size = 512;
 #endif
 my_bool innobase_fast_checksum = FALSE;
@@ -430,8 +430,10 @@ enum options_xtrabackup
 #if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
   OPT_INNODB_PAGE_SIZE,
 #endif
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
   OPT_INNODB_LOG_BLOCK_SIZE,
+#endif
+#ifdef XTRADB_BASED
   OPT_INNODB_FAST_CHECKSUM,
   OPT_INNODB_EXTRA_UNDOSLOTS,
   OPT_INNODB_DOUBLEWRITE_FILE,
@@ -785,12 +787,14 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    GET_LL, REQUIRED_ARG,
    (1LL << 14), (1LL << 12), (1LL << UNIV_PAGE_SIZE_SHIFT_MAX), 0, 1L, 0},
 #endif
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
   {"innodb_log_block_size", OPT_INNODB_LOG_BLOCK_SIZE,
   "The log block size of the transaction log file. "
    "Changing for created log file is not supported. Use on your own risk!",
    (G_PTR*) &innobase_log_block_size, (G_PTR*) &innobase_log_block_size, 0,
    GET_ULONG, REQUIRED_ARG, 512, 512, 1 << UNIV_PAGE_SIZE_SHIFT_MAX, 0, 1L, 0},
+#endif
+#ifdef XTRADB_BASED
   {"innodb_fast_checksum", OPT_INNODB_FAST_CHECKSUM,
    "Change the algorithm of checksum for the whole of datapage to 4-bytes word based.",
    (G_PTR*) &innobase_fast_checksum,
@@ -1024,7 +1028,7 @@ static
 ibool
 xb_init_log_block_size(void)
 {
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
 	srv_log_block_size = 0;
 	if (innobase_log_block_size != 512) {
 		uint	n_shift = get_bit_shift(innobase_log_block_size);;
@@ -1084,12 +1088,13 @@ innodb_init_param(void)
 		srv_page_size_shift = 14;
 		srv_page_size = (1 << srv_page_size_shift);
 	}
-#endif
-#ifdef XTRADB_BASED
+
 	if (!xb_init_log_block_size()) {
 		goto error;
 	}
+#endif
 
+#ifdef XTRADB_BASED
 	srv_fast_checksum = (ibool) innobase_fast_checksum;
 #endif
 
@@ -5761,7 +5766,7 @@ next_opt:
 #if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
 		printf("innodb_page_size = %lld\n", innobase_page_size);
 #endif
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID >= 50600
 		printf("innodb_fast_checksum = %d\n", innobase_fast_checksum);
 		printf("innodb_log_block_size = %lu\n", innobase_log_block_size);
 		if (innobase_doublewrite_file != NULL) {
