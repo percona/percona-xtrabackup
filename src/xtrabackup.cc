@@ -2714,28 +2714,31 @@ xb_create_sync_file(
 /*================*/
 	const char*	path)	/*!<in: path to the sync file */
 {
-	ibool			success;
-	os_file_t		suspend_file = XB_FILE_UNDEFINED;
-	pid_t			pid;
-	char			buffer[64];
+	File	suspend_file;
+	pid_t	pid;
+	char	buffer[64];
 
 	pid = getpid();
-	sprintf(buffer, "%d", pid);
+	snprintf(buffer, sizeof(buffer), "%u", (uint) pid);
 
-	msg("xtrabackup: Creating suspend file '%s' with pid '%u'\n", path, pid);
-	
-	suspend_file = xb_file_create_no_error_handling(path, OS_FILE_CREATE,
-							OS_FILE_READ_WRITE,
-							&success);
-	if (UNIV_LIKELY(success && suspend_file != XB_FILE_UNDEFINED)) {
-		xb_os_file_write(path, suspend_file, buffer, 0, strlen(buffer));
-		os_file_close(suspend_file);
-		return(TRUE);
+	msg("xtrabackup: Creating suspend file '%s' with pid '%u'\n",
+	    path, (uint) pid);
+
+	suspend_file = my_create(path, 0, O_WRONLY | O_EXCL | O_NOFOLLOW,
+				 MYF(MY_WME));
+
+	if (suspend_file >= 0) {
+		ibool rc;
+
+		rc = my_write(suspend_file, (uchar *) buffer, strlen(buffer),
+			      MYF(MY_WME | MY_NABP)) == 0;
+
+		my_close(suspend_file, MYF(MY_WME));
+		return(rc);
 	}
 
-	msg("xtrabackup: Error: failed to create file '%s' with %d\n", path,
-	    os_file_get_last_error(TRUE));
-
+	msg("xtrabackup: Error: failed to create file '%s'\n",
+	    path);
 	return(FALSE);
 }
 
