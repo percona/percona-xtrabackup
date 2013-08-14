@@ -3414,16 +3414,24 @@ sub backup_file {
 sub write_to_backup_file {
   my $file_name = shift;
   my $write_data = shift;
-  my $filepos = rindex($file_name, '/');
-  my $dst_file = substr($file_name, $filepos + 1);
-  my $dst_path = substr($file_name, 0, $filepos + 1);
 
-  open XTRABACKUP_FH, "> $option_tmpdir/$dst_file"
-    || die "Cannot open file $option_tmpdir/$dst_file: $!\n";
-  print XTRABACKUP_FH $write_data;
-  close XTRABACKUP_FH;
-  backup_file($option_tmpdir, $dst_file, $file_name);
-  unlink "$option_tmpdir/$dst_file";
+  if ($option_stream) {
+    my $filepos = rindex($file_name, '/');
+    my $dst_file = substr($file_name, $filepos + 1);
+    my $dst_path = substr($file_name, 0, $filepos + 1);
+ 
+    open XTRABACKUP_FH, "> $option_tmpdir/$dst_file"
+      || die "Cannot open file $option_tmpdir/$dst_file: $!\n";
+    print XTRABACKUP_FH $write_data;
+    close XTRABACKUP_FH;
+    backup_file($option_tmpdir, $dst_file, $file_name);
+    unlink "$option_tmpdir/$dst_file";
+  } else {
+    open XTRABACKUP_FH, "> $file_name"
+      || die "Cannot open file $file_name: $!\n";
+    print XTRABACKUP_FH $write_data;
+    close XTRABACKUP_FH;
+  }
 }
 
 #
