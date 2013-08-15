@@ -59,6 +59,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <fcntl.h>
 
+#ifdef __linux__
+# include <sys/prctl.h>
+#endif
+
 #define G_PTR uchar*
 
 #include "common.h"
@@ -5595,6 +5599,15 @@ int main(int argc, char **argv)
 {
 	int ho_error;
 
+#ifdef __linux__
+	/* Ensure xtrabackup process is killed when the parent one
+	(innobackupex) is terminated with an unhandled signal */
+
+	if (prctl(PR_SET_PDEATHSIG, SIGINT)) {
+		msg("prctl() failed with errno = %d\n", errno);
+		exit(EXIT_FAILURE);
+	}
+#endif
 	MY_INIT(argv[0]);
 	xb_regex_init();
 
