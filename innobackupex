@@ -200,6 +200,9 @@ my $mysql_binlog_position = '';
 # run on a slave server
 my $mysql_slave_position = '';
 
+# process id if the script itself
+my $innobackupex_pid = $$;
+
 # process id of ibbackup program (runs as a child process of this script)
 my $ibbackup_pid = '';
 
@@ -400,22 +403,63 @@ sub current_time {
     return strftime("%y%m%d %H:%M:%S", localtime());
 }
 
-
 #
-# Die subroutine kills all child processes and exits this process.
-# This subroutine takes the same argument as the built-in die function.
-#    Parameters:
-#       message   string which is printed to stdout
+# Global initialization:
+# 1. Override the 'die' builtin to customize the format of error messages
 #
-sub Die {
-    my $message = shift;
+# 2. Setup signal handlers to terminate gracefully on fatal signals
+#
+BEGIN {
+    *CORE::GLOBAL::die = sub {
 
-    # kill all child processes of this process
-    kill_child_processes();
+        print STDERR "$prefix Error: @_";
 
-    die "$prefix Error: $message";
+        # Mimic the default 'die' behavior: append information about the caller
+        # and the new line, if the argument does not already end with a newline
+        if ($_[-1] !~ m(\n$)) {
+            my ($pkg, $file, $line) = caller 0;
+
+            print STDERR " at $file line $line.\n";
+        }
+
+        exit(1);
+    };
+
+    foreach ('HUP', 'INT', 'QUIT', 'ABRT', 'PIPE', 'TERM', 'XFSZ') {
+        $SIG{$_} = \&catch_fatal_signal;
+    }
 }
-    
+
+#
+# Make sure all child processes are killed on exit. This doesn't cover cases
+# when innobackupex is terminated with a signal.
+#
+END {
+    # We only want to execute this in the parent script process, and ignore
+    # for all child processes it may spawn
+    if ($$ == $innobackupex_pid) {
+        kill_child_processes();
+    }
+}
+
+#
+# kill child processes spawned by the script
+#
+sub kill_child_processes {
+    if ($ibbackup_pid) {
+        kill($kill_signal, $ibbackup_pid);
+        wait_for_ibbackup_finish();
+    }
+    stop_query_killer();
+}
+
+sub catch_fatal_signal {
+    # Don't print anything if a child process is terminated with a signal
+    if ($$ == $innobackupex_pid) {
+        die "Terminated with SIG$_[0]"
+    }
+}
+
 #
 # Finds all files that match the given pattern recursively beneath
 # the given directory. Returns a list of files with their paths relative 
@@ -429,7 +473,7 @@ sub find_all_matching_files {
   my @retlist;
  
   opendir(FINDDIR, $dir)
-        || Die "Can't open directory '$dir': $!\n";
+        || die "Can't open directory '$dir': $!";
 
   while (defined($child = readdir(FINDDIR))) {
     next if $child eq "." || $child eq "..";
@@ -464,10 +508,10 @@ sub decrypt_decompress_file {
   } elsif ($mode == 2) {
     $file_cmd = "qpress -do " . $file . " > " . $dest_file;
   } else {
-    Die("Unknown decrypt_decompress mode : $mode\n"); 
+    die "Unknown decrypt_decompress mode : $mode";
   }
   print STDERR "$prefix $file_cmd\n";
-  system("$file_cmd") && Die "$file_cmd failed with $!\n";
+  system("$file_cmd") && die "$file_cmd failed with $!";
   system("rm -f $file");
 }
 
@@ -505,7 +549,7 @@ sub decrypt_decompress {
   } elsif ($mode == 2) {
     $file_ext = ".qp";
   } else {
-    Die("Unknown decrypt_decompress mode : $mode\n"); 
+    die "Unknown decrypt_decompress mode : $mode";
   }
 
   # recursively find all files of interest in the backup set
@@ -547,11 +591,11 @@ sub decrypt_decompress {
           if ($status == $pids[$freepidindex]) {
             my $childretcode = $? >> 8;
             if ($childretcode != 0) {
-              Die("Child failed on $workingfiles[$freepidindex] : $childretcode");
+              die "Child failed on $workingfiles[$freepidindex] : $childretcode";
             }
             last;
           } elsif ($status == -1) {
-            Die("waitpid failed on $workingfiles[$freepidindex] : $status");
+            die "waitpid failed on $workingfiles[$freepidindex] : $status";
           }
         }
         # couldn't find a free slot yet so sleep for 1/10 th of a second or so.
@@ -581,10 +625,10 @@ sub decrypt_decompress {
       my $childretcode = $? >> 8;
       if ($status == $pids[$freepidindex]) {
         if ($childretcode != 0) {
-          Die("Child failed on $workingfiles[$freepidindex] : $childretcode");
+          die "Child failed on $workingfiles[$freepidindex] : $childretcode";
         }
       } else {
-        Die("waitpid failed on $workingfiles[$freepidindex] : $status");
+        die "waitpid failed on $workingfiles[$freepidindex] : $status";
       }
     }
   }
@@ -795,7 +839,7 @@ sub copy_file {
     my $dst_path = shift;
 
     print STDERR "$prefix Copying '$src_path' to '$dst_path'\n";
-    copy($src_path, $dst_path) or Die "copy failed: $!";
+    copy($src_path, $dst_path) or die "copy failed: $!";
 }
 
 #
@@ -806,7 +850,7 @@ sub move_file {
     my $dst_path = shift;
 
     print STDERR "$prefix Moving '$src_path' to '$dst_path'\n";
-    move($src_path, $dst_path) or Die "move failed: $!";
+    move($src_path, $dst_path) or die "move failed: $!";
 }
 
 
@@ -851,14 +895,14 @@ sub process_file {
 	# Create the directory in the destination if necessary
 	if (! -e "$dst_path") {
 	    print STDERR "$prefix Creating directory '$dst_path'\n";
-	    mkdir "$dst_path" or Die "mkdir failed: $!";
+	    mkdir "$dst_path" or die "mkdir failed: $!";
 	} elsif (! -d "$dst_path") {
-	    Die "$dst_path exists, but is not a directory";
+	    die "$dst_path exists, but is not a directory";
 	}
     } else {
 	# Don't overwrite files unless $copy_dir_overwrite is 1
 	if (!$copy_dir_overwrite && -e "$copy_dir_dst/$_") {
-	    Die "Failed to process file $File::Find::name: " .
+	    die "Failed to process file $File::Find::name: " .
 		"not overwriting file $copy_dir_dst/$_";
 	}
 
@@ -898,7 +942,7 @@ sub remove_file_callback {
     }
     if (! exists $processed_files{$rel_path}) {
         unlink($File::Find::name) or
-            Die("Cannot remove file $File::Find::name");
+            die "Cannot remove file $File::Find::name";
     }
 }
 
@@ -1043,20 +1087,6 @@ sub copy_back {
                                       "Original undo directory");
     }
 
-    # check that the original options file and the backup options file have
-    # the same value for "innodb_data_file_path" option
-    #$backup_innodb_data_file_path = 
-    #    get_option(\%backup_config, 'mysqld', 'innodb_data_file_path');
-    #if (!are_equal_innodb_data_file_paths($orig_innodb_data_file_path, 
-    #                                      $backup_innodb_data_file_path)
-    #) {
-    #    Die "The value of 'innodb_data_file_path' option in the original "
-    #      . "my.cnf file '$config_file' is different from the value "
-    #      . "in the backup my.cnf file '$backup_config_file'.\n(original: "
-    #      . "'$orig_innodb_data_file_path')\n"
-    #      . "(backup:   '$backup_innodb_data_file_path')";
-    #}
-
     # make a list of all ibdata files in the backup directory and all
     # directories in the backup directory under which there are ibdata files
     foreach my $c (parse_innodb_data_file_path($orig_innodb_data_file_path)) {
@@ -1064,7 +1094,7 @@ sub copy_back {
         # check that the backup data file exists
         if (! -e "$backup_dir/$c->{filename}") {
             if (-e "$backup_dir/$c->{filename}.ibz") {
-                Die "Backup data file '$backup_dir/$c->{filename}' "
+                die "Backup data file '$backup_dir/$c->{filename}' "
                   . "does not exist, but "
                   . "its compressed copy '$c->{path}.ibz' exists. Check "
                   . "that you have decompressed "
@@ -1072,7 +1102,7 @@ sub copy_back {
                   . "'$innobackup_script --copy-back ...'  "
                   . "or '$innobackup_script --move-back ...' !";
             } elsif (-e "$backup_dir/$c->{filename}.qp") {
-                Die "Backup data file '$backup_dir/$c->{filename}' "
+                die "Backup data file '$backup_dir/$c->{filename}' "
                   . "does not exist, but "
                   . "its compressed copy '$c->{path}.qp' exists. Check "
                   . "that you have run "
@@ -1081,7 +1111,7 @@ sub copy_back {
                   . "'$innobackup_script --copy-back ...'  "
                   . "or '$innobackup_script --move-back ...' !";
             } elsif (-e "$backup_dir/$c->{filename}.xbcrypt") {
-                Die "Backup data file '$backup_dir/$c->{filename}' "
+                die "Backup data file '$backup_dir/$c->{filename}' "
                   . "does not exist, but "
                   . "its compressed copy '$c->{path}.xbcrypt' exists. Check "
                   . "that you have run "
@@ -1090,7 +1120,7 @@ sub copy_back {
                   . "'$innobackup_script --copy-back ...'  "
                   . "or '$innobackup_script --move-back ...' !";
             } else {
-                Die "Backup data file '$backup_dir/$c->{filename}' "
+                die "Backup data file '$backup_dir/$c->{filename}' "
                     . "does not exist.";
             }
         }
@@ -1123,7 +1153,7 @@ sub copy_back {
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to '$orig_undo_dir'\n";
     opendir(DIR, $backup_dir)
-        || Die "Can't open directory '$backup_dir': $!\n";
+        || die "Can't open directory '$backup_dir': $!";
     while (defined($file = readdir(DIR))) {
         if ($file =~ /^$ibundo_files$/ && -f "$backup_dir/$file") {
             $src_name = escape_path("$backup_dir/$file");
@@ -1135,7 +1165,7 @@ sub copy_back {
 
     # copy InnoDB log files to original InnoDB log directory
     opendir(DIR, $backup_dir) 
-        || Die "Can't open directory '$backup_dir': $!\n";
+        || die "Can't open directory '$backup_dir': $!";
     print STDERR "\n$prefix Starting to $operation InnoDB log files\n";
     print STDERR "$prefix in '$backup_dir'\n";
     print STDERR "$prefix back to original InnoDB log directory '$orig_iblog_dir'\n";
@@ -1216,7 +1246,7 @@ sub apply_log {
     $rcode = system("$cmdline");
     if ($rcode) {
         # failure
-        Die "\n$prefix ibbackup failed";
+        die "\n$prefix ibbackup failed";
     }
 
     # We should not create ib_logfile files if we prepare for following incremental applies
@@ -1228,7 +1258,7 @@ sub apply_log {
         $rcode = system("$cmdline");
         if ($rcode) {
             # failure
-            Die "\n$prefix xtrabackup (2nd execution) failed";
+            die "\n$prefix xtrabackup (2nd execution) failed";
         }
     }
 
@@ -1275,7 +1305,8 @@ sub wait_for_ibbackup_file_create {
 
         if ($ibbackup_pid == $pid) {
             # The file doesn't exist, but the process has terminated
-            Die "ibbackup child process has died";
+            $ibbackup_pid = '';
+            die "The xtrabackup child process has died";
         }
 
         sleep 1;
@@ -1309,7 +1340,7 @@ sub wait_for_ibbackup_suspend {
 #
 sub resume_ibbackup {
     my $suspend_file = shift;
-    unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+    unlink $suspend_file || die "Failed to delete '$suspend_file': $!";
 }
 
 #
@@ -1325,7 +1356,7 @@ sub wait_for_ibbackup_log_copy_finish {
 
     wait_for_ibbackup_file_create($suspend_file);
 
-    unlink $suspend_file || Die "Failed to delete '$suspend_file': $!";
+    unlink $suspend_file || die "Failed to delete '$suspend_file': $!";
 }
 
 #
@@ -1460,10 +1491,10 @@ sub start_ibbackup {
             $ibbackup_pid = $pid;
         } else {
             # child process
-            exec($cmdline) || Die "Failed to exec ibbackup: $!";
+            exec($cmdline) || die "Failed to exec ibbackup: $!";
         }
     } else {
-        Die "failed to fork ibbackup child process: $!";
+        die "failed to fork ibbackup child process: $!";
     }
 }
                   
@@ -1513,7 +1544,7 @@ sub start_keepalives {
     my $con = shift;
 
     if (defined($con->{keep_alive_pid})) {
-        Die "Keep-alive process has already been started for this connection."
+        die "Keep-alive process has already been started for this connection."
     }
 
     my $keep_alive_pid = fork();
@@ -1557,7 +1588,7 @@ sub stop_keepalives {
     my $con = shift;
 
     if (!defined($con->{keep_alive_pid})) {
-        Die "Keep-alive process has never been started for this connection."
+        die "Keep-alive process has never been started for this connection."
     }
 
     kill 'INT', $con->{keep_alive_pid};
@@ -1565,7 +1596,7 @@ sub stop_keepalives {
     my $rc = $? >> 8;
 
     if ($rc != 0) {
-        Die "Keep-alive process died with exit code " . $rc;
+        die "Keep-alive process died with exit code " . $rc;
     }
     undef $con->{keep_alive_pid};
 }
@@ -1611,11 +1642,11 @@ sub mysql_connect {
 
     if ($args{abort_on_error}) {
         if (!$dbd_mysql_installed) {
-            die "ERROR: Failed to connect to MySQL server as " .
+            die "Failed to connect to MySQL server as " .
                 "DBD::mysql module is not installed";
         } else {
             if (!$con{dbh}) {
-                die "ERROR: Failed to connect to MySQL server: " .
+                die "Failed to connect to MySQL server: " .
                     $con{connect_error};
             }
         }
@@ -1670,7 +1701,7 @@ sub mysql_query {
       }
   };
   if ($EVAL_ERROR) {
-      Die "\nError executing '$query': $EVAL_ERROR\n";
+      die "\nError executing '$query': $EVAL_ERROR";
   }
 }
 
@@ -1925,7 +1956,7 @@ sub wait_for_no_updates {
         sleep(1);
     }
 
-    Die "Unable to obtain lock. Please try again.";
+    die "Unable to obtain lock. Please try again.";
 }
 
 
@@ -1964,6 +1995,7 @@ sub stop_query_killer {
     if (defined($query_killer_pid)) {
         kill 'HUP' => $query_killer_pid;
         waitpid($query_killer_pid, 0);
+        undef $query_killer_pid;
         print STDERR "Query killing process is finished\n";
     }
 }
@@ -2029,18 +2061,6 @@ sub mysql_unlockall {
 }
 
 #
-# kill_child_processes subroutine kills all child processes of this process.
-#
-sub kill_child_processes {
-    if ($ibbackup_pid) {
-        kill($kill_signal, $ibbackup_pid);
-        $ibbackup_pid = '';
-    }
-    stop_query_killer();
-}
-
-
-#
 # require_external subroutine checks that an external program is runnable
 # via the shell. This is tested by calling the program with the
 # given arguments. It is checked that the program returns 0 and does 
@@ -2075,11 +2095,11 @@ sub require_external {
     if ($stderr ne '') {
         # failure
         unlink $tmp_stdout;
-        Die "Couldn't run $program: $stderr";
+        die "Couldn't run $program: $stderr";
     } elsif ($rcode) {
         # failure
         unlink $tmp_stdout;
-        Die "Couldn't run $program: $error";
+        die "Couldn't run $program: $error";
     }
 
     # success
@@ -2186,7 +2206,7 @@ sub init {
             && $ibbackup_version le "2.0") {
             # --include option was given, but ibbackup is too
             # old to support it
-            Die "--include option was given, but ibbackup is too old"
+            die "--include option was given, but ibbackup is too old"
                 . " to support it. You must upgrade to InnoDB Hot Backup"
                 . " v2.0 in order to use --include option.\n";
         }
@@ -2229,7 +2249,7 @@ sub init {
                     "WARNING : A left over instance of " .
                     "suspend file '$suspend_file' was found.\n";
                 unlink "$suspend_file"
-                    || Die "Failed to delete '$suspend_file': $!";
+                    || die "Failed to delete '$suspend_file': $!";
             }
         }
 
@@ -2238,7 +2258,7 @@ sub init {
                          "file '$option_tmpdir/$xtrabackup_pid_file' " .
                          "was found.\n";
             unlink $option_tmpdir . "/" . $xtrabackup_pid_file || 
-                Die "Failed to delete " .
+                die "Failed to delete " .
                     "'$option_tmpdir/$xtrabackup_pid_file': $!";
         }
 
@@ -2313,12 +2333,6 @@ sub check_args {
         }
     }
 
-    if (@ARGV == 0) {
-        # no command line arguments
-        print STDERR "$prefix You must specify the backup directory.\n";
-        exit(1);
-    }
-
     # read command line options
     $rcode = GetOptions('compress' => \$option_compress,
                         'decompress' => \$option_decompress,
@@ -2383,11 +2397,16 @@ sub check_args {
                         'lock-wait-query-type=s' =>
                         \$option_lock_wait_query_type
     );
-                        
+
+    if (@ARGV == 0) {
+        die "You must specify the backup directory.\n";
+    } elsif (@ARGV > 1) {
+        die "Too many command line arguments\n";
+    }
+
     if (!$rcode) {
         # failed to read options
-        print STDERR "$prefix Bad command line arguments\n";
-        exit(1);
+        die "Bad command line arguments\n";
     }
     if ($option_help) {
         # print help text and exit
@@ -2401,9 +2420,8 @@ sub check_args {
     }
 
     if ($option_defaults_file && $option_defaults_extra_file) {
-        print STDERR "$prefix --defaults-file and --defaults-extra-file " .
+        die "--defaults-file and --defaults-extra-file " .
             "options are mutually exclusive";
-        exit(1);
     }
 
     if ($option_copy_back && $option_move_back) {
@@ -2423,19 +2441,18 @@ sub check_args {
 
     # validate lock-wait-query-type and kill-long-query-type values
     if (!(grep {$_ eq $option_lock_wait_query_type} qw/all update/)) {
-        Die "Wrong value of lock-wait-query-type. ".
+        die "Wrong value of lock-wait-query-type. ".
             "Possible values are all|update, but $option_lock_wait_query_type ".
             "is specified.";
     }
     if (!(grep {$_ eq $option_kill_long_query_type} qw/all select/)) {
-        Die "Wrong value of kill-long-query-type. ".
+        die "Wrong value of kill-long-query-type. ".
             "Possible values are all|select, but $option_kill_long_query_type ".
             "is specified.";
     }
 
     if ($option_parallel && $option_parallel < 1) {
-        Die "$prefix --parallel must be a positive numerical value" .
-            "greater than 0";
+        die "--parallel must be a positive value.\n";
     }
 
     if ($option_stream eq 'tar') {
@@ -2455,14 +2472,6 @@ sub check_args {
       if ($option_encrypt_chunk_size) {
         $encrypt_cmd = $encrypt_cmd . " --encrypt-chunk-size=$option_encrypt_chunk_size";
       }
-    }
-
-    if (@ARGV < 1) {
-        print STDERR "$prefix Missing command line argument\n";
-        exit(1);
-    } elsif (@ARGV > 1) {
-        print STDERR "$prefix Too many command line arguments\n";
-        exit(1);
     }
 
     if (!$option_apply_log && !$option_copy_back && !$option_move_back
@@ -2487,20 +2496,17 @@ sub check_args {
 
     if ($option_slave_info) {
         if ($option_no_lock and !$option_safe_slave_backup) {
-	  print STDERR "--slave-info is used with --no-lock but without --safe-slave-backup. The binlog position cannot be consistent with the backup data.\n";
-	    exit(1);
+	  die "--slave-info is used with --no-lock but without --safe-slave-backup. The binlog position cannot be consistent with the backup data.\n";
 	}
     }
 
     if ($option_rsync && $option_stream) {
-        print STDERR "--rsync doesn't work with --stream\n";
-	exit(1);
+        die "--rsync doesn't work with --stream\n";
     }
 
     if ($option_decompress) {
       if (system("which qpress &>/dev/null") >> 8 != 0) {
-        print STDERR "--decompress requires qpress\n";
-	exit(1);
+        die "--decompress requires qpress\n";
       }
     }
 
@@ -2528,7 +2534,7 @@ sub make_backup_dir {
 
     $dir .= '/' . strftime("%Y-%m-%d_%H-%M-%S", localtime())
        unless $option_no_timestamp;
-    mkdir($dir, 0777) || Die "Failed to create backup directory $dir: $!";
+    mkdir($dir, 0777) || die "Failed to create backup directory $dir: $!";
 
     # create subdirectories for ibdata files if needed
 #    foreach my $a (split(/;/, $innodb_data_file_path)) {
@@ -2566,7 +2572,7 @@ sub create_path_if_needed {
         $path = $path . "/" . $a;
         if (! -d $path) {
             # this directory does not exist, create it !
-            mkdir($path, 0777) || Die "Failed to create backup directory: $!";
+            mkdir($path, 0777) || die "Failed to create backup directory: $!";
         }
     }
 }
@@ -2626,11 +2632,11 @@ sub backup_files {
 	    $rsync_file_list = $rsync_tmpfile_pass2;
 	}
 	open(RSYNC, ">$rsync_file_list")
-	    || Die "Can't open $rsync_file_list for writing: $!\n";
+	    || die "Can't open $rsync_file_list for writing: $!";
     }
 
     opendir(DIR, $source_dir) 
-        || Die "Can't open directory '$source_dir': $!\n";
+        || die "Can't open directory '$source_dir': $!";
     $now = current_time();
     if ($prep_mode) {
 	$operation = "a prep copy of";
@@ -2653,7 +2659,7 @@ sub backup_files {
             if (! -e "$backup_dir/$database") {
                 # create database directory for the backup
                 mkdir("$backup_dir/$database", 0777)
-                    || Die "Couldn't create directory '$backup_dir/$database': $!";
+                    || die "Couldn't create directory '$backup_dir/$database': $!";
             }
         }
 
@@ -2720,7 +2726,7 @@ sub backup_files {
 	# ignore errors in the prep mode, since we are running without lock,
 	# so some files may have disappeared.
 	if (system("$rsync_cmd") && !$prep_mode) {
-	    Die "rsync failed: $!\n";
+	    die "rsync failed: $!";
 	}
 
 	$now = current_time();
@@ -2731,7 +2737,7 @@ sub backup_files {
 	# with --files-from.
 	if (!$prep_mode && !$option_no_lock) {
 	    open(RSYNC, "<$rsync_tmpfile_pass1")
-		|| Die "Can't open $rsync_tmpfile_pass1 for reading: $!\n";
+		|| die "Can't open $rsync_tmpfile_pass1 for reading: $!";
 
 	    while (<RSYNC>) {
 		chomp;
@@ -2743,9 +2749,9 @@ sub backup_files {
 
 	    close(RSYNC);
 	    unlink "$rsync_tmpfile_pass1" || \
-		Die "Failed to delete $rsync_tmpfile_pass1: $!";
+		die "Failed to delete $rsync_tmpfile_pass1: $!";
 	    unlink "$rsync_tmpfile_pass2" || \
-		Die "Failed to delete $rsync_tmpfile_pass2: $!";
+		die "Failed to delete $rsync_tmpfile_pass2: $!";
 	}
     }
 
@@ -2771,9 +2777,9 @@ sub file_to_array {
     my $filename = shift;
     my $lines_ref = shift;
     
-    open(FILE, $filename) || Die "can't open file '$filename': $!";
+    open(FILE, $filename) || die "can't open file '$filename': $!";
     @{$lines_ref} = <FILE>;
-    close(FILE) || Die "can't close file '$filename': $!";
+    close(FILE) || die "can't close file '$filename': $!";
 
     foreach my $a (@{$lines_ref}) {
         chomp($a);
@@ -2943,8 +2949,7 @@ sub has_option {
 
     if (!exists ${$config_ref}{$group}) {
         # no group
-        print STDERR "$prefix fatal error: no '$group' group in MySQL options\n";
-        exit(1);
+        die "no '$group' group in MySQL options";
     }
 
     $group_hash_ref = ${$config_ref}{$group};
@@ -2970,15 +2975,13 @@ sub get_option {
 
     if (!exists $config{$group}) {
         # no group
-        print STDERR "$prefix fatal error: no '$group' group in MySQL options\n";
-        exit(1);
+        die "no '$group' group in MySQL options";
     }
     
     $group_hash_ref = ${$config_ref}{$group};
     if (!exists ${$group_hash_ref}{$option_name}) {
         # no option
-        print STDERR "$prefix fatal error: no '$option_name' option in group '$group' in MySQL options\n";
-        exit(1);
+        die "no '$option_name' option in group '$group' in MySQL options";
     }
 
     return ${$group_hash_ref}{$option_name};
@@ -3089,7 +3092,7 @@ sub parse_databases_option_value {
         # the option value is pathname of the file containing
         # list of databases
         if (! -f $option_databases) {
-            Die "can't find file '$option_databases'";
+            die "can't find file '$option_databases'";
         }
 
         # read from file the value of --databases option
@@ -3199,11 +3202,11 @@ sub set_xtrabackup_version {
 
 
     if($var_version =~ m/5\.0\.\d/) {
-	Die "MySQL 5.0 support was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.0 was Percona XtraBackup 2.0.";
+	die "MySQL 5.0 support was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.0 was Percona XtraBackup 2.0.\n";
     }
 
     if($var_version =~ m/5\.1\.\d/ && !defined($var_innodb_version)) {
-	Die "Support for MySQL 5.1 with builtin InnoDB (not the plugin) was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.1 with builtin InnoDB was Percona XtraBackup 2.0.";
+	die "Support for MySQL 5.1 with builtin InnoDB (not the plugin) was removed in Percona XtraBackup 2.1. The last version to support MySQL 5.1 with builtin InnoDB was Percona XtraBackup 2.0.\n";
     }
 
     if($var_version =~ m/5\.1\.\d/) {
@@ -3227,7 +3230,7 @@ sub set_xtrabackup_version {
     }
 
     if (!$ibbackup_binary) {
-        Die "Unsupported server version: '$var_version' " .
+        die "Unsupported server version: '$var_version' " .
             "(InnoDB version: '$var_innodb_version'). " .
             "Please report a bug at ".
             "https://bugs.launchpad.net/percona-xtrabackup\n";
@@ -3295,7 +3298,7 @@ sub wait_for_safe_slave {
        mysql_query($con, 'START SLAVE SQL_THREAD');
    }
 
-   Die "Slave_open_temp_tables did not become zero after waiting $option_safe_slave_backup_timeout seconds";
+   die "Slave_open_temp_tables did not become zero after $option_safe_slave_backup_timeout seconds";
 }
 
 sub get_slave_open_temp_tables {
@@ -3304,10 +3307,10 @@ sub get_slave_open_temp_tables {
     get_mysql_status($con);
 
     if (!defined($con->{status}->{Slave_open_temp_tables})) {
-        Die "Failed to get Slave_open_temp_tables from SHOW STATUS"
+        die "Failed to get Slave_open_temp_tables from SHOW STATUS"
     }
     if (!defined($con->{status}->{Slave_open_temp_tables}->{Value})) {
-        Die "SHOW STATUS LIKE 'slave_open_temp_tables' did not return anything"
+        die "SHOW STATUS LIKE 'slave_open_temp_tables' did not return anything"
     }
 
    return $con->{status}->{Slave_open_temp_tables}->{Value};
@@ -3352,7 +3355,7 @@ sub backup_file_via_stream {
     }
     # Only treat as fatal cases where the file exists
     if ( -e "$src_path/$src_file" ) {
-      Die "Failed to stream '$src_path/$src_file': $ret";
+      die "Failed to stream '$src_path/$src_file': $ret";
     } else {
       print STDERR "$prefix Ignoring nonexistent file '$src_path/$src_file'.\n";
     }
@@ -3377,12 +3380,12 @@ sub backup_file_via_copy {
     $dst_file_esc = $dst_file_esc . ".xbcrypt";
     $ret = system("$encrypt_cmd -i \"$src_file_esc\" -o \"$dst_file_esc\"");
     if ($ret != 0) {
-      Die "Failed to copy and encrypt file '$src_file': $ret";
+      die "Failed to copy and encrypt file '$src_file': $ret";
     }
   } elsif ( -e "$src_file_esc" ) {
     $ret = system("$CP_CMD \"$src_file_esc\" \"$dst_file_esc\"");
     if ($ret != 0) {
-       Die "Failed to copy file '$src_file': $ret";
+       die "Failed to copy file '$src_file': $ret";
      }
   }
 }
