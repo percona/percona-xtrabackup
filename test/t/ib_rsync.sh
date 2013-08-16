@@ -8,7 +8,19 @@ fi
 start_server --innodb_file_per_table
 load_sakila
 
-innobackupex --rsync --no-timestamp $topdir/backup
+# Bug #1211263: innobackupex unnecessarily calls 'cp' for metadata files
+# Create a 'fake' cp command that will be called instead and will always 'fail'
+# If any portion of innobackupex script attempts to use cp instead of rsync,
+# the backup and subsequently the test will fail.
+cat >$topdir/cp <<EOF
+#!/bin/sh
+false
+EOF
+
+chmod +x $topdir/cp
+
+# Calling with $topdir in the path first so the 'fake' cp is used
+PATH=$topdir:$PATH innobackupex --rsync --no-timestamp $topdir/backup
 
 stop_server
 
