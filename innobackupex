@@ -457,6 +457,8 @@ sub catch_fatal_signal {
     # Don't print anything if a child process is terminated with a signal
     if ($$ == $innobackupex_pid) {
         die "Terminated with SIG$_[0]"
+    } else {
+        exit(1);
     }
 }
 
