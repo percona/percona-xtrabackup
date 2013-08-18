@@ -12,15 +12,7 @@ switch_server $master_id
 load_dbase_schema incremental_sample
 
 # Adding initial rows
-vlog "Adding initial rows to database..."
-numrow=100
-count=0
-while [ "$numrow" -gt "$count" ]
-do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
-	let "count=count+1"
-done
-vlog "Initial rows added"
+multi_row_insert incremental_sample.test \({1..100},100\)
 
 # Full backup of the slave server
 switch_server $slave_id

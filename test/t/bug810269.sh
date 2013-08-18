@@ -20,28 +20,7 @@ run_cmd $MYSQL $MYSQL_ARGS -e \
     "ALTER TABLE test ENGINE=InnoDB ROW_FORMAT=compressed \
 KEY_BLOCK_SIZE=4" incremental_sample
 
-vlog "Adding initial rows to table"
-
-numrow=10000
-count=0
-while [ "$numrow" -gt "$count" ]; do
-    sql="INSERT INTO test VALUES ($count, $numrow)"
-    let "count=count+1"
-    for ((i=0; $i<99; i++)); do
-	sql="$sql,($count, $numrow)"
-	let "count=count+1"
-    done
-    ${MYSQL} ${MYSQL_ARGS} -e "$sql" incremental_sample
-done
-
-rows=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM test" \
-    incremental_sample`
-if [ "$rows" != "10000" ]; then
-    vlog "Failed to add initial rows"
-    exit -1
-fi
-
-vlog "Initial rows added"
+multi_row_insert incremental_sample.test \({1..10000},10000\)
 
 checksum_a=`checksum_table incremental_sample test`
 

@@ -22,15 +22,7 @@ function test_streaming_incremental()
     load_dbase_schema incremental_sample
 
 # Adding initial rows
-    vlog "Adding initial rows to database..."
-    numrow=100
-    count=0
-    while [ "$numrow" -gt "$count" ]
-    do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
-	let "count=count+1"
-    done
-    vlog "Initial rows added"
+    multi_row_insert incremental_sample.test \({1..100},100\)
 
     full_backup_dir=$topdir/full_backup
 
@@ -38,16 +30,7 @@ function test_streaming_incremental()
     innobackupex --no-timestamp $full_backup_dir
 
 # Changing data
-
-    vlog "Making changes to database"
-    let "count=numrow+1"
-    let "numrow=500"
-    while [ "$numrow" -gt "$count" ]
-    do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
-	let "count=count+1"
-    done
-    vlog "Changes done"
+    multi_row_insert incremental_sample.test \({101..500},500\)
 
 # Saving the checksum of original table
     checksum_a=`checksum_table incremental_sample test`

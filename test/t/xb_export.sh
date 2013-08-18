@@ -35,15 +35,7 @@ mkdir $backup_dir
 load_dbase_schema incremental_sample
 
 # Adding some data to database
-vlog "Adding initial rows to database..."
-numrow=100
-count=0
-while [ "$numrow" -gt "$count" ]
-do
-	${MYSQL} ${MYSQL_ARGS} -e "insert into test values ($count, $numrow);" incremental_sample
-	let "count=count+1"
-done
-vlog "Initial rows added"
+multi_row_insert incremental_sample.test \({1..100},100\)
 
 checksum_1=`checksum_table incremental_sample test`
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`

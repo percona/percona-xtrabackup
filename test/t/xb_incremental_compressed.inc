@@ -12,23 +12,6 @@
 
 . inc/common.sh
 
-function add_rows()
-{
-  local table=$1
-  local start=$2
-  local limit=$3
-
-  while [ "$limit" -gt "$start" ]; do
-    sql="INSERT INTO $table VALUES ($start, $limit)"
-    let "start=start+1"
-    for ((i=0; $i<99; i++)); do
-      sql="${sql},($start, $limit)"
-      let "start=start+1"
-    done
-    ${MYSQL} ${MYSQL_ARGS} -e "$sql" incremental_sample
-  done
-}
-
 #
 # Test incremental backup of a compressed tablespace with a specific page size
 #
@@ -61,18 +44,7 @@ KEY_BLOCK_SIZE=$page_size" incremental_sample
 
   # Adding 10k rows
 
-  vlog "Adding initial rows to database..."
-
-  add_rows test 0 10000
-
-  rows=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM test" \
-incremental_sample`
-  if [ "$rows" != "10000" ]; then
-    vlog "Failed to add initial rows"
-    exit -1
-  fi
-
-  vlog "Initial rows added"
+  multi_row_insert incremental_sample.test \({1..10000},10000\)
 
   # Full backup
 
@@ -97,15 +69,15 @@ incremental_sample`
 number INT(11) DEFAULT NULL) ENGINE=INNODB \
 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=$page_size" incremental_sample
 
-  add_rows test 10001 12500
-  add_rows t2 10001 12500
+  multi_row_insert incremental_sample.test \({10001..12500},12500\)
+  multi_row_insert incremental_sample.t2 \({10001..12500},12500\)
 
   # Rotate bitmap file here and force checkpoint at the same time
   shutdown_server
   start_server
 
-  add_rows test 12501 15000
-  add_rows t2 12501 15000
+  multi_row_insert incremental_sample.test \({12501..15000},15000\)
+  multi_row_insert incremental_sample.t2 \({12501..15000},15000\)
 
   rows=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM test" \
 incremental_sample`
