@@ -1451,3 +1451,16 @@
  			DBUG_INJECT_CRASH("ib_commit_inplace_crash",
  					  crash_inject_count++);
  		}
+--- a/storage/innobase/page/page0cur.cc
++++ b/storage/innobase/page/page0cur.cc
+@@ -1207,7 +1207,9 @@
+ 	      == index->id || mtr->inside_ibuf || recv_recovery_is_on());
+ 
+ 	ut_ad(!page_cur_is_after_last(cursor));
+-#ifdef UNIV_ZIP_DEBUG
++#if 0
++	/* Disabled to speedup compact_compressed test for debug XtraBackup
++	builds, see LP bug #1213036. */
+ 	ut_a(page_zip_validate(page_zip, page, index));
+ #endif /* UNIV_ZIP_DEBUG */
+ 

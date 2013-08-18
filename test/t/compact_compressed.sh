@@ -33,10 +33,7 @@ function test_compact_compressed()
   start_server
 
   load_dbase_schema sakila
-  load_dbase_data sakila
 
-  backup_dir="$topdir/backup"
-  
   vlog "Compressing tables"
 
   table_list=`${MYSQL} ${MYSQL_ARGS} -Ns -e \
@@ -48,6 +45,10 @@ AND TABLE_TYPE='BASE TABLE' AND ENGINE='InnoDB'"`
 	  "ALTER TABLE $t ENGINE=InnoDB ROW_FORMAT=compressed \
            KEY_BLOCK_SIZE=$page_size" sakila
   done
+
+  load_dbase_data sakila
+
+  backup_dir="$topdir/backup"
 
   innobackupex --no-timestamp --compact $backup_dir
   record_db_state sakila
