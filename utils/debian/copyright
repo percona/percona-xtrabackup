@@ -6,10 +6,11 @@ Comment:
  Sun, 28 Jun 2009 14:20:17 -0700. Its current debian maintainer is
  Ignacio Nin <ignacio.nin@percona.com>.
 Copyright:
-    Copyright (C) 2009-2013 Percona, LLC, except for the
-    innobackupex script (innobackupex-1.5.1), which is
-    Copyright (C) 2003, 2009 Innobase Oy. All rights reserved.,
-    published under the GNU General Public License Version 2.
+    Copyright (C) 2009-2013 Percona LLC and/or its affiliates, except
+    for the innobackupex script (innobackupex-1.5.1), which is
+    Copyright (C) 2003, 2009 Innobase Oy, Copyright (C) 2009-2013
+    Percona LLC and/or its affiliates. All rights reserved., published
+    under the GNU General Public License Version 2.
 License: GPL-2
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -29,13 +30,14 @@ License: GPL-2
     On Debian systems, the complete text of the GNU General Public
     License, version 2, can be found in /usr/share/common-licenses/GPL-2.
     .
-    The Debian packaging is Copyright © 2009-2013 Percona, LLC
-    and is licensed under the GNU General Public License, version 2.
+    The Debian packaging is Copyright © 2009-2013 Percona LLC and/or
+    its affiliates and is licensed under the GNU General Public
+    License, version 2.
 
 Files: innobackupex
 Copyright: Copyright (C) 2003, 2009 Innobase Oy. All rights reserved.
 License: GPL-2
 
 Files: *
-Copyright: Copyright (C) 2009-2013 Percona, LLC
+Copyright: Copyright (C) 2009-2013 Percona LLC and/or its affiliates.
 License: GPL-2

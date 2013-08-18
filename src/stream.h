@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011 Percona Ireland Ltd.
+Copyright (c) 2011-2013 Percona LLC and/or its affiliates.
 
 Streaming interface for XtraBackup.
 
