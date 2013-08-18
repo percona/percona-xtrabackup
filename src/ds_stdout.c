@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011 Percona Ireland Ltd.
+Copyright (c) 2013 Percona LLC and/or its affiliates.
 
 Local datasink implementation for XtraBackup.
 

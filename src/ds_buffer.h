@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2012 Percona Ireland Ltd.
+Copyright (c) 2012-2013 Percona LLC and/or its affiliates.
 
 buffer datasink for XtraBackup.
 

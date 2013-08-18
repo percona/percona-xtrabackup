@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2012 Percona Ireland Ltd
+(c) 2009-2013 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -943,7 +943,7 @@ static void usage(void)
 {
   puts("Open source backup tool for InnoDB and XtraDB\n\
 \n\
-Copyright (C) 2009-2012 Percona Ireland Ltd.\n\
+Copyright (C) 2009-2013 Percona LLC and/or its affiliates.\n\
 Portions Copyright (C) 2000, 2011, MySQL AB & Innobase Oy. All Rights Reserved.\n\
 \n\
 This program is free software; you can redistribute it and/or\n\

@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2012 Percona Ireland Ltd.
+(c) 2009-2013 Percona LLC and/or its affiliates.
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.

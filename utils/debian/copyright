@@ -256,11 +256,11 @@ License: GPL-2
 
 Files: ./src/*
  ./test/*
-Copyright: 2009-2012, Percona Ireland Ltd
-  2009-2013, Percona Ireland Ltd
-  2011, Percona Ireland Ltd
-  2011-2012, Percona Ireland Ltd
-  2012, Percona Ireland Ltd
+Copyright: 2009-2012, Percona LLC and/or its affiliates
+  2009-2013, Percona LLC and/or its affiliates
+  2011, Percona LLC and/or its affiliates
+  2011-2012, Percona LLC and/or its affiliates
+  2012, Percona LLC and/or its affiliates
 License: GPL-2
 
 Files: ./test/python/testtools/*

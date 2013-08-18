@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2012 Percona Ireland Ltd.
+Copyright (c) 2012 Percona LLC and/or its affiliates.
 
 Declarations of XtraBackup functions called by InnoDB code.
 
