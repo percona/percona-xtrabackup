@@ -721,5 +721,34 @@ function require_qpress()
     fi
 }
 
+##############################################################################
+# Execute a multi-row INSERT into a specified table.
+#
+# Arguments:
+#
+#   $1 -- table specification
+#
+#   all subsequent arguments represent tuples to insert in the form:
+#   (value1, ..., valueN)
+#
+# Notes:
+#
+#   1. Bash special characters in the arguments must be quoted to screen them
+#      from interpreting by Bash, i.e. \(1,...,\'a'\)
+#
+#   2. you can use Bash brace expansion to generate multiple tuples, e.g.:
+#      \({1..1000},\'a'\) will generate 1000 tuples (1,'a'), ..., (1000, 'a')
+##############################################################################
+function multi_row_insert()
+{
+    local table=$1
+    shift
+
+    vlog "Inserting $# rows into $table..."
+    (IFS=,; echo "INSERT INTO $table VALUES $*") | \
+        $MYSQL $MYSQL_ARGS
+    vlog "Done."
+}
+
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
