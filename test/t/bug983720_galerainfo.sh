@@ -16,6 +16,11 @@ if [[ "$probe_result" == "0" ]]
 fi
 set -e
 
+if ! uname -m | grep -q x86_64
+then
+    skip_test "Skipped on 32-bit machines due to bug #1204241."
+fi
+
 debug=""
 pdebug=""
 if [[ -n ${WSREP_DEBUG:-} ]];then 
