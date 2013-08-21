@@ -74,12 +74,14 @@ function autocalc_nworkers()
         exit -1
     fi
 
-    if [ "$NWORKERS" -gt 16 ]
+    XB_TEST_MAX_WORKERS=${XB_TEST_MAX_WORKERS:-16}
+    if [ "$NWORKERS" -gt $XB_TEST_MAX_WORKERS ]
     then
-        echo "Autodetected number of cores: $NWORKERS"
-        echo "Limiting to 16 to avoid excessive resource consumption"
-
-        NWORKERS=16
+        cat <<EOF
+Autodetected number of cores: $NWORKERS
+Limiting to $XB_TEST_MAX_WORKERS to avoid excessive resource consumption
+EOF
+        NWORKERS=$XB_TEST_MAX_WORKERS
     fi
 }
 
