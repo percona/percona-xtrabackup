@@ -595,6 +595,8 @@ end:
 	ds_destroy(ds_buffer);
 	ds_destroy(ds_local);
 
+	xb_fil_cur_close(&cursor);
+
 	page_map_file_close(pmap_cur);
 
 	return(success);
