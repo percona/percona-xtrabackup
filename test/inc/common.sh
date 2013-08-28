@@ -552,14 +552,5 @@ function egrep()
     return ${PIPESTATUS[0]}
 }
 
-########################################################################
-# Skip the current test with a given comment
-########################################################################
-function skip_test()
-{
-    echo $1 > $SKIPPED_REASON
-    exit $SKIPPED_EXIT_CODE
-}
-
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
