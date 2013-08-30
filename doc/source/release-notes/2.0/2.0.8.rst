@@ -1,0 +1,39 @@
+============================
+|Percona XtraBackup| 2.0.8
+============================
+
+Percona is glad to announce the release of Percona XtraBackup 2.0.8 on September 4th, 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.8/>`_ and :doc:`Percona Software Repositories </installation>`.
+
+This release is the current GA (Generally Available) stable release in the 2.0 series. 
+
+
+Bugs Fixed
+==========
+
+ |Percona XtraBackup| 2.0 will now be offered in :doc:`Percona Software Repositories </installation>`. Bug fixed :bug:`1190055`.
+
+ |Percona XtraBackup| would assume the table has been dropped if the tablespace was renamed after it was scanned by |XtraBackup| on startup and before |XtraBackup| attempted to copy it. Bug fixed :bug:`1079700`.
+
+ Fixed the ``libssl.so.6`` dependency issues in binary tarballs releases. Bug fixed :bug:`1172916`.
+
+ Orphaned ``xtrabackup_pid`` file left inside tmpdir could cause `SST <http://www.percona.com/doc/percona-xtradb-cluster/manual/state_snapshot_transfer.html>`_ to fail. Fixed by fix checking if ``xtrabackup_pid`` file exists once |innobackupex| starts, and try to remove it or fail if it cannot be removed. Bug fixed :bug:`1175860`.
+
+ During the backup process loading tablespaces was started before the log copying, this could lead to a race between the datafiles state in the resulting backup and xtrabackup_logfile. Tablespace created at a sensitive time would be missing in both the backup itself and as the corresponding log record in :file:`xtrabackup_logfile`, so it would not be created on :option:`innobackupex --apply-log` either. Bug fixed :bug:`1177206`.
+
+ |innobackupex| automatic version detection did not work correctly for latest |Percona Server| and |MySQL| 5.1 releases which could cause innobackupex to fail. Bugs fixed :bug:`1181092` and :bug:`1181099`.
+
+ Difference in behavior between |InnoDB| 5.5 and 5.6 codebases in cases when a newly created tablespace has uninitialized first page at the time when |Percona XtraBackup| opens it while creating a list of tablespaces to backup would cause assertion error. Bug fixed :bug:`1187071`.
+
+ Debug builds would fail due to compiler errors on *Ubuntu* Quantal/Raring builds. Fixed compiler warnings by backporting the corresponding changes from upstream. Bug fixed :bug:`1192454`.
+
+ |Percona XtraBackup| would stop in case log block numbers had to wrap around, which only happens once per 1 GB of log writes, and the wrap-around point was between the last checkpoint and the current log tail at the time the backup starts. Bug fixed :bug:`1206309`.
+
+ ``xtrabackup_56`` binary would fail to create a suspend file, which would result in an error. Bug fixed :bug:`1210266`.
+
+ Under some circumstances |Percona XtraBackup| could fail on a backup prepare with ``innodb_flush_method=O_DIRECT`` when ``XFS`` filesystem was being used. Bug fixed :bug:`1190779`.
+
+ |Percona XtraBackup| didn't recognize checkpoint ``#0`` as a valid checkpoint on :option:`xtrabackup --prepare` which would cause an error. Bug fixed :bug:`1196475`.
+
+ :option:`xtrabackup --stats` option would not work with server :term:`datadir` if the server isn't running and logs were in a separate directory. Bug fixed :bug:`1174314`.
+
+Other bug fixes: bug fixed :bug:`1097434`, bug fixed :bug:`1214272`, bug fixed :bug:`1211173`, bug fixed :bug:`1201599`, bug fixed :bug:`1097444`, bug fixed :bug:`1042796`, bug fixed :bug:`1214730`, bug fixed :bug:`1204463`, bug fixed :bug:`1197249`, bug fixed :bug:`1196894`, bug fixed :bug:`1194813`, bug fixed :bug:`1183500`, bug fixed :bug:`1177182`, bug fixed :bug:`1175309`, bug fixed :bug:`1201686`, bug fixed :bug:`1182995`, bug fixed :bug:`1175566`.

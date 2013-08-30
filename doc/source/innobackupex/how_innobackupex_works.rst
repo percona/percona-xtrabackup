@@ -25,7 +25,7 @@ If it is not an incremental backup, it connects to the server. It waits for slav
 
 .. note:: 
 
-  Locking is done only for MyISAM and other non-InnoDB tables, and only **after** XtraBackup is finished backing up all InnoDB/XtraDB data and logs.
+  Locking is done only for MyISAM and other non-InnoDB tables, and only **after** |Percona XtraBackup| is finished backing up all InnoDB/XtraDB data and logs.
 
 Once this is done, the backup of the files will begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV`, ``.par``,  and :term:`.opt` files.
 

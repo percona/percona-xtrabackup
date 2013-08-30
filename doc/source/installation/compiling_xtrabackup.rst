@@ -15,7 +15,7 @@ Compiling on Linux
 Prerequisites
 -------------
 
-The following packages and tools must be installed to compile *Percona XtraBackup* from source. These might vary from system to system.
+The following packages and tools must be installed to compile |Percona XtraBackup| from source. These might vary from system to system.
 
 In Debian-based distributions, you need to: ::
 
@@ -67,6 +67,6 @@ In case you're not able to use ``AUTO_DOWNLOAD="yes"`` option, sources can be do
   innodb56           5.6        http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.6.10.tar.gz
   ================== =========  ===========================================================================
 
-After the build has finished |XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
+After the build has finished |Percona XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
 
-After this you'll need to copy |innobackupex| (in the root folder used to retrieve |XtraBackup|) and the corresponding xtrabackup binary (in the src folder) to some directory listed in the PATH environment variable, e.g. ``/usr/bin``.
+After this you'll need to copy |innobackupex| (in the root folder used to retrieve |Percona XtraBackup|) and the corresponding xtrabackup binary (in the src folder) to some directory listed in the PATH environment variable, e.g. ``/usr/bin``.

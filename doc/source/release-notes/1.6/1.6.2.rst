@@ -1,10 +1,10 @@
 ============================
-|Percona| |XtraBackup| 1.6.2
+|Percona XtraBackup| 1.6.2
 ============================
 
 Percona is glad to announce the release of Percona XtraBackup 1.6.2 on 25 July, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6.2/>`_ and from the `Percona Software Repositories <http://www.percona.com/docs/wiki/repositories:start>`_).
 
-This release is purely composed of bug fixes and is the current stable release of |Percona| |Xtrabackup|.
+This release is purely composed of bug fixes and is the current stable release of |Percona XtraBackup|.
 
 All of |Percona|'s software is open-source and free, all the details of the release and its development process can be found in the `1.6.2 milestone at Launchpad <https://launchpad.net/percona-xtrabackup/+milestone/1.6.2>`_.
 
@@ -33,8 +33,8 @@ Bugs Fixed
 Other Changes
 -------------
 
-   * Improvements and fixes on the XtraBackup Test Suite: `#744303 <https://bugs.launchpad.net/bugs/744303>`_, `#787966 < <https://bugs.launchpad.net/bugs/787966>`_ (Alexey Kopytov)
+   * Improvements and fixes on the |Percona XtraBackup| Test Suite: `#744303 <https://bugs.launchpad.net/bugs/744303>`_, `#787966 < <https://bugs.launchpad.net/bugs/787966>`_ (Alexey Kopytov)
 
    * Improvements and fixes on platform-specific distribution: `#785556 <https://bugs.launchpad.net/bugs/785556>`_ (Ignacio Nin)
 
-   * Improvements and fixes on the XtraBackup Documentation: `#745185 <https://bugs.launchpad.net/bugs/745185>`_, `#721339 <https://bugs.launchpad.net/bugs/721339>`_ (Rodrigo Gadea)
+   * Improvements and fixes on the |Percona XtraBackup| Documentation: `#745185 <https://bugs.launchpad.net/bugs/745185>`_, `#721339 <https://bugs.launchpad.net/bugs/721339>`_ (Rodrigo Gadea)
