@@ -1,5 +1,5 @@
 ============================
-|Percona| |XtraBackup| 1.6.4
+|Percona XtraBackup| 1.6.4
 ============================
 
 Percona is glad to announce the release of Percona XtraBackup 1.6.4 on 19 December, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6.4/>`_ and from the :doc:`Percona Software Repositories </installation>`).

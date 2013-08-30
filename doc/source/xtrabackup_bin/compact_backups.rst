@@ -61,7 +61,7 @@ Additionally, you can use the :option:`--rebuild-threads` option to process tabl
 
   $ xtrabackup --prepare --rebuild-indexes --rebuild-threads=16 /data/backups/
 
-In this case |XtraBackup| will create 16 worker threads with each thread rebuilding indexes for one table at a time. It will also show thread IDs for each message ::
+In this case |Percona XtraBackup| will create 16 worker threads with each thread rebuilding indexes for one table at a time. It will also show thread IDs for each message ::
 
   Starting 16 threads to rebuild indexes.
 
@@ -74,7 +74,7 @@ In this case |XtraBackup| will create 16 worker threads with each thread rebuild
   [11]   Found index idx_last_name
   [11]   Rebuilding 3 index(es).
 
-Since |XtraBackup| has no information when applying an incremental backup to a compact full one, on whether there will be more incremental backups applied to it later or not, rebuilding indexes needs to be explicitly requested by a user whenever a full backup with some incremental backups merged is ready to be restored. Rebuilding indexes unconditionally on every incremental backup merge is not an option, since it is an expensive operation.
+Since |Percona XtraBackup| has no information when applying an incremental backup to a compact full one, on whether there will be more incremental backups applied to it later or not, rebuilding indexes needs to be explicitly requested by a user whenever a full backup with some incremental backups merged is ready to be restored. Rebuilding indexes unconditionally on every incremental backup merge is not an option, since it is an expensive operation.
 
 Restoring Compact Backups
 =========================

@@ -1,5 +1,5 @@
 ============================
-|Percona| |XtraBackup| 2.0.3
+|Percona XtraBackup| 2.0.3
 ============================
 
 Percona is glad to announce the release of Percona XtraBackup 2.0.3 on October 1st, 2012. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.3/>`_ and :doc:`Percona Software Repositories </installation>`.
@@ -14,9 +14,9 @@ New Features
 Bugs Fixed
 ==========
 
-  * Symlink for ``innobackupex-1.5.1`` binary has been broken in the previous version of |XtraBackup|. Bug fixed :bug:`1038198` (*Ignacio Nin*).
+  * Symlink for ``innobackupex-1.5.1`` binary has been broken in the previous version of |Percona XtraBackup|. Bug fixed :bug:`1038198` (*Ignacio Nin*).
 
-  * |XtraBackup| 2.0.2 was not backwards compatible which caused incremental backups created with previous versions to fail on prepare. Bug fixed :bug:`1038127` (*Sergei Glushchenko*).
+  * |Percona XtraBackup| 2.0.2 was not backwards compatible which caused incremental backups created with previous versions to fail on prepare. Bug fixed :bug:`1038127` (*Sergei Glushchenko*).
 
   * Fix for bug :bug:`1022562` introduced a regression that may potentially lead to a 5x increase in disk space occupied by incremental backups. Bug fixed :bug:`1043762` (*Laurynas Biveinis*).
 

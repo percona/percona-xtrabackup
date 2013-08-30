@@ -28,7 +28,7 @@ Bugs Fixed
 
  |innobackupex| did not encrypt non-InnoDB files when doing local (i.e. non-streaming) backups. Bug fixed :bug:`1160778`.
 
- Difference in behavior between |InnoDB| 5.5 and 5.6 codebases in cases when a newly created tablespace has uninitialized first page at the time when |XtraBackup| opens it while creating a list of tablespaces to backup would cause assertion error. Bug fixed :bug:`1187071`. 
+ Difference in behavior between |InnoDB| 5.5 and 5.6 codebases in cases when a newly created tablespace has uninitialized first page at the time when |Percona XtraBackup| opens it while creating a list of tablespaces to backup would cause assertion error. Bug fixed :bug:`1187071`. 
 
  **xbcrypt** could sometimes fail when reading encrypted stream from a pipe or network. Bug fixed :bug:`1190610`.
 
@@ -38,7 +38,7 @@ Bugs Fixed
 
  |innobackupex| would terminate with an error if :option:`innobackupex --safe-slave-backup` option was used for backing up the master server. Bug fixed :bug:`1190716`.
 
- Under some circumstances |XtraBackup| could fail on a backup prepare with ``innodb_flush_method=O_DIRECT`` when ``XFS`` filesystem was being used. Bug fixed :bug:`1190779`.
+ Under some circumstances |Percona XtraBackup| could fail on a backup prepare with ``innodb_flush_method=O_DIRECT`` when ``XFS`` filesystem was being used. Bug fixed :bug:`1190779`.
 
  |Percona XtraBackup| didn't recognize checkpoint ``#0`` as a valid checkpoint on :option:`xtrabackup --prepare` which would cause an error. Bug fixed :bug:`1196475`.
  

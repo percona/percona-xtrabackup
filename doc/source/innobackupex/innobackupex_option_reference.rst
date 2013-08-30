@@ -100,7 +100,7 @@ Options
 
 .. option:: --ibbackup=IBBACKUP-BINARY
 
-   This option accepts a string argument that specifies which |xtrabackup| binary should be used. The string should be the command used to run *XtraBackup*. The option can be useful if the :program:`xtrabackup` binary is not in your search path or working directory and the database server is not accessible at the moment. If this option is not specified, :program:`innobackupex` attempts to determine the binary to use automatically. By default, :program:`xtrabackup` is the command used. When option :option:`--apply-log` is specified, the binary is used whose name is in the file :file:`xtrabackup_binary` in the backup directory, if that file exists, or will attempt to autodetect it. However, if :option:`--copy-back` or :option:`--move-back` is used, :program:`xtrabackup` is used unless other is specified.
+   This option accepts a string argument that specifies which |xtrabackup| binary should be used. The string should be the command used to run |Percona XtraBackup|. The option can be useful if the :program:`xtrabackup` binary is not in your search path or working directory and the database server is not accessible at the moment. If this option is not specified, :program:`innobackupex` attempts to determine the binary to use automatically. By default, :program:`xtrabackup` is the command used. When option :option:`--apply-log` is specified, the binary is used whose name is in the file :file:`xtrabackup_binary` in the backup directory, if that file exists, or will attempt to autodetect it. However, if :option:`--copy-back` or :option:`--move-back` is used, :program:`xtrabackup` is used unless other is specified.
 
 .. option:: --include=REGEXP
 
@@ -213,7 +213,7 @@ Options
 
 .. option:: --stream=STREAMNAME
 
-   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, supported formats are `tar` and `xbstream`. Uses :doc:`xbstream <../xbstream/xbstream>`, which is available in *XtraBackup* distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`
+   This option accepts a string argument that specifies the format in which to do the streamed backup. The backup will be done to ``STDOUT`` in the specified format. Currently, supported formats are `tar` and `xbstream`. Uses :doc:`xbstream <../xbstream/xbstream>`, which is available in |Percona XtraBackup| distributions. If you specify a path after this option, it will be interpreted as the value of :option:`tmpdir`
 
 .. option:: --tables-file=FILE
 

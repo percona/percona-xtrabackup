@@ -18,7 +18,7 @@
       or start the server with ``--innodb_file_per_table``.
 
    innodb_expand_import
-     This feature of |Percona Server| implements the ability to import arbitrary :term:`.ibd` files exported using the |XtraBackup| :option:`--export` option.
+     This feature of |Percona Server| implements the ability to import arbitrary :term:`.ibd` files exported using the |Percona XtraBackup| :option:`--export` option.
      
      See the `the full documentation <http://www.percona.com/doc/percona-server/5.5/management/innodb_expand_import.html>`_ for more information.
 
@@ -70,7 +70,7 @@
     The directory in which the database server stores its databases. Most Linux distribution use :file:`/var/lib/mysql` by default.
 
    xbstream
-     To support simultaneous compression and streaming, a new custom streaming format called xbstream was introduced to XtraBackup in addition to the TAR format. 
+     To support simultaneous compression and streaming, a new custom streaming format called xbstream was introduced to |Percona XtraBackup| in addition to the TAR format. 
 
    ibdata
      Default prefix for tablespace files, e.g. :file:`ibdata1` is a 10MB  autoextensible file that |MySQL| creates for the shared tablespace by default. 
@@ -88,7 +88,7 @@
      Each |MyISAM| table has ``.MYI`` (MYIndex) file which contains the table's indexes.
 
    .exp
-     When :doc:`exporting a table <xtrabackup_bin/exporting_importing_tables>` with |XtraBackup|, it creates a file with ``.exp`` extension per exported table containing the information for importing it.
+     When :doc:`exporting a table <xtrabackup_bin/exporting_importing_tables>` with |Percona XtraBackup|, it creates a file with ``.exp`` extension per exported table containing the information for importing it.
 
    .MRG
      Each table using the :program:`MERGE` storage engine, besides of a :term:`.frm` file, will have :term:`.MRG` file containing the names of the |MyISAM| tables associated with it.

@@ -1,19 +1,19 @@
 .. _replication_howto:
 
-========================================================================
- How to setup a slave for replication in 6 simple steps with Xtrabackup
-========================================================================
+================================================================================
+ How to setup a slave for replication in 6 simple steps with Percona XtraBackup
+================================================================================
 
-  Data is, by far, the most valuable part of a system. Having a backup done systematically and available for a rapid recovery in case of failure is admittedly essential to a system. However, it is not common practice because of its costs, infrastructure needed or even the boredom associated to the task. Xtrabackup is designed to solve this problem.
+  Data is, by far, the most valuable part of a system. Having a backup done systematically and available for a rapid recovery in case of failure is admittedly essential to a system. However, it is not common practice because of its costs, infrastructure needed or even the boredom associated to the task. |Percona XtraBackup| is designed to solve this problem.
 
-  You can have almost real-time backups in 6 simple steps by setting up a replication environment with |XtraBackup|. 
+  You can have almost real-time backups in 6 simple steps by setting up a replication environment with |Percona XtraBackup|. 
 
- *Percona* |XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs "hot backups" on unmodified versions of |MySQL| servers (5.1, 5.5 and 5.6), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
+ |Percona XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs "hot backups" on unmodified versions of |MySQL| servers (5.1, 5.5 and 5.6), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
 
 All the things you will need
 ============================
 
-Setting up a slave for replication with |XtraBackup| is really a very straightforward procedure. In order to keep it simple, here is a list of the things you need to follow the steps without hassles:
+Setting up a slave for replication with |Percona XtraBackup| is really a very straightforward procedure. In order to keep it simple, here is a list of the things you need to follow the steps without hassles:
 
 * ``TheMaster`` 
   A system with a |MySQL|-based server installed, configured and running. This system will be called ``TheMaster``, as it is where your data is stored and the one to be replicated. We will assume the following about this system:
@@ -32,7 +32,7 @@ Setting up a slave for replication with |XtraBackup| is really a very straightfo
 * ``TheSlave`` 
   Another system, with a |MySQL|-based server installed on it. We will refer to this machine as ``TheSlave`` and we will assume the same things we did about ``TheMaster``, except that the server-id on ``TheSlave`` is 2.
 
-* ``Xtrabackup``
+* ``Percona XtraBackup``
   The backup tool we will use. It should be installed in both computers for convenience.
 
 STEP 1: Make a backup on ``TheMaster`` and prepare it
@@ -50,7 +50,7 @@ After this is finished you should get:
 
    innobackupex: completed OK! 
 
-This will make a copy of your |MySQL| data dir to the /path/to/backupdir/$TIMESTAMP. You have told |XtraBackup| (through the |innobackupex| script) to connect to the database server using your database user and password, and do a hot backup of all your data in it (all |MyISAM|, |InnoDB| tables and indexes in them).
+This will make a copy of your |MySQL| data dir to the /path/to/backupdir/$TIMESTAMP. You have told |Percona XtraBackup| (through the |innobackupex| script) to connect to the database server using your database user and password, and do a hot backup of all your data in it (all |MyISAM|, |InnoDB| tables and indexes in them).
 
 In order for snapshot to be consistent you need to prepare the data:
 
@@ -61,7 +61,7 @@ In order for snapshot to be consistent you need to prepare the data:
 
 You need to select path where your snapshot has been taken, for example /home/backups/2012-01-16_11-14-43. If everything is ok you should get the same OK message. Now the transaction logs are applied to the data files, and new ones are created: your data files are ready to be used by the MySQL server.
 
-|XtraBackup| knows where your data is by reading your :term:`my.cnf`. If you have your configuration file in a non-standard place, you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
+|Percona XtraBackup| knows where your data is by reading your :term:`my.cnf`. If you have your configuration file in a non-standard place, you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
 
 If you want to skip writing the username/password every time you want to access |MySQL|, you can set it up in your $HOME folder. Just edit .my.cnf and add:
 
@@ -187,7 +187,7 @@ Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`
 Adding more slaves to The Master
 ================================
 
-You can use this procedure with slight variation to add new slaves to a master. We will use |Xtrabackup| to clone an already configured slave. We will continue using the previous scenario for convenience but we will add ``TheNewSlave`` to the plot.
+You can use this procedure with slight variation to add new slaves to a master. We will use |Percona XtraBackup| to clone an already configured slave. We will continue using the previous scenario for convenience but we will add ``TheNewSlave`` to the plot.
 
 At ``TheSlave``, do a full backup:
 
@@ -196,7 +196,7 @@ At ``TheSlave``, do a full backup:
    TheSlave$ innobackupex --user=yourDBuser --password=MaGiCiGaM /
              --slave-info /path/to/backupdir 
 
-By using the :option:`--slave-info` Xtrabackup creates additional file called :file:`xtrabackup_slave_info`.
+By using the :option:`--slave-info` |Percona XtraBackup| creates additional file called :file:`xtrabackup_slave_info`.
 
 Apply the logs:
 

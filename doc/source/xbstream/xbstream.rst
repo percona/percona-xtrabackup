@@ -4,7 +4,7 @@
  The xbstream Binary
 ======================
 
-To support simultaneous compression and streaming, a new custom streaming format called xbstream was introduced to XtraBackup in addition to the TAR format. That was required to overcome some limitations of traditional archive formats such as tar, cpio and others which did not allow streaming dynamically generated files, for example dynamically compressed files. Other advantages of xbstream over traditional streaming/archive format include ability to stream multiple files concurrently (so it is possible to use streaming in the xbstream format together with the --parallel option) and more compact data storage. 
+To support simultaneous compression and streaming, a new custom streaming format called xbstream was introduced to |Percona XtraBackup| in addition to the TAR format. That was required to overcome some limitations of traditional archive formats such as tar, cpio and others which did not allow streaming dynamically generated files, for example dynamically compressed files. Other advantages of xbstream over traditional streaming/archive format include ability to stream multiple files concurrently (so it is possible to use streaming in the xbstream format together with the --parallel option) and more compact data storage. 
 
 This utility has a tar-like interface:
 

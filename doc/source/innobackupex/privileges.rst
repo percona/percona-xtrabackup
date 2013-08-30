@@ -2,7 +2,7 @@
  Connection and Privileges Needed
 ==================================
 
-|XtraBackup| needs to be able to connect to the database server and perform operations on the server and the :term:`datadir` when creating a backup, when preparing in some scenarios and when restoring it. In order to do so, there are privileges and permission requirements on its execution that must be fulfilled.
+|Percona XtraBackup| needs to be able to connect to the database server and perform operations on the server and the :term:`datadir` when creating a backup, when preparing in some scenarios and when restoring it. In order to do so, there are privileges and permission requirements on its execution that must be fulfilled.
 
 Privileges refers to the operations that a system user is permitted to do in the database server. **They are set at the database server and only apply to users in the database server**.
 
@@ -21,7 +21,7 @@ The database user used to connect to the server and its password are specified b
   $ innobackupex --user=LUKE  --password=US3TH3F0RC3 --stream=tar ./ | bzip2 - 
   $ xtrabackup --user=DVADER --password=14MY0URF4TH3R --backup --target-dir=/data/bkps/
 
-If you don't use the :option:`--user` option, |XtraBackup| will assume the database user whose name is the system user executing it.
+If you don't use the :option:`--user` option, |Percona XtraBackup| will assume the database user whose name is the system user executing it.
 
 Other Connection Options
 ------------------------

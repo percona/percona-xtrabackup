@@ -2,15 +2,15 @@
  Frequently Asked Questions
 ============================
 
-Do I need an InnoDB Hot Backup license to use XtraBackup?
-=========================================================
+Do I need an InnoDB Hot Backup license to use Percona XtraBackup?
+=================================================================
 
-No. Although ``innobackupex`` is derived from the same GPL and open-source wrapper script that InnoDB Hot Backup uses, it does not execute ``ibbackup``, and the ``xtrabackup`` binary does not execute or link to ``ibbackup``. You can use XtraBackup without any license; it is completely separate from InnoDB Hot Backup.
+No. Although ``innobackupex`` is derived from the same GPL and open-source wrapper script that InnoDB Hot Backup uses, it does not execute ``ibbackup``, and the ``xtrabackup`` binary does not execute or link to ``ibbackup``. You can use |Percona XtraBackup| without any license; it is completely separate from InnoDB Hot Backup.
 
 Why is innobackupex distributed as innobackupex-1.5.1?
 ======================================================
 
-That's the way the source for the tool was distributed from Oracle. Nowadays, it is a symbolic link to |innobackupex| for backward compatibility with |XtraBackup|.
+That's the way the source for the tool was distributed from Oracle. Nowadays, it is a symbolic link to |innobackupex| for backward compatibility with |Percona XtraBackup|.
 
 What's the difference between :program:`innobackupex` and :program:`innobackup`?
 ================================================================================
@@ -39,16 +39,12 @@ Why doesn't the :program:`xtrabackup` binary include MyISAM tables and other fil
 
 However, for some specific tasks, you must use :program:`xtrabackup` directly. See the :ref:`user-manual` for details on each one.
 
-Are you aware of any web-based backup management tools (commercial or not) built around |Xtrabackup|?
-=====================================================================================================
+Are you aware of any web-based backup management tools (commercial or not) built around |Percona XtraBackup|?
+=============================================================================================================
 
-`Zmanda Recovery Manager <http://www.zmanda.com/zrm-mysql-enterprise.html>`_ is a commercial tool that uses XtraBackup for Non-Blocking Backups: *"ZRM provides support for
-non-blocking backups of MySQL using XtraBackup. ZRM with XtraBackup
-provides resource utilization management by providing throttling based
-on the number of IO operations per second. XtraBackup based backups also
-allow for table level recovery even though the backup was done at the
-database level (needs the recovery database server to be Percona Server
-with XtraDB)."*
+`Zmanda Recovery Manager <http://www.zmanda.com/zrm-mysql-enterprise.html>`_ is a commercial tool that uses |Percona XtraBackup| for Non-Blocking Backups: 
+
+ *"ZRM provides support for non-blocking backups of MySQL using |Percona XtraBackup|. ZRM with |Percona XtraBackup| provides resource utilization management by providing throttling based on the number of IO operations per second. |Percona XtraBackup| based backups also allow for table level recovery even though the backup was done at the database level (needs the recovery database server to be |Percona Server| with XtraDB)."*
 
 |xtrabackup| binary fails with a floating point exception
 =========================================================
