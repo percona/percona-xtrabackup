@@ -4,9 +4,9 @@
  The xbcrypt binary
 ======================
 
-To support encryption and decryption of the backups, a new tool ``xbcrypt`` was introduced to XtraBackup. 
+To support encryption and decryption of the backups, a new tool ``xbcrypt`` was introduced to |Percona XtraBackup|. 
 
-This utility has been modeled after :ref:`xbstream_binary` to perform encryption and decryption outside of |XtraBackup|. Xbcrypt has following command line options: 
+This utility has been modeled after :ref:`xbstream_binary` to perform encryption and decryption outside of |Percona XtraBackup|. Xbcrypt has following command line options: 
 
 .. option:: -d, --decrypt
 

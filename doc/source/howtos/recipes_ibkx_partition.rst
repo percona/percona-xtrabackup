@@ -2,7 +2,7 @@
  Backing Up and Restoring Individual Partitions
 ================================================
 
-|XtraBackup| features :doc:`partial backups <../innobackupex/partial_backups_innobackupex>`, which means that you may backup individual partitions as well because from the storage engines perspective partitions are regular tables with specially formatted names. The only requirement for this feature is having the :term:`innodb_file_per_table` option enabled in the server.
+|Percona XtraBackup| features :doc:`partial backups <../innobackupex/partial_backups_innobackupex>`, which means that you may backup individual partitions as well because from the storage engines perspective partitions are regular tables with specially formatted names. The only requirement for this feature is having the :term:`innodb_file_per_table` option enabled in the server.
 
 There is only one caveat about using this kind of backup: you can't copy back the prepared backup. Restoring partial backups should be done by importing the tables, and not by using the traditional :option:`--copy-back` option. Although there are some scenarios where restoring can be done by copying back the files, this may be lead to database inconsistencies in many cases and it is not the recommended way to do it.
 

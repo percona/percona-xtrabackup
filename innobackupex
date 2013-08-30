@@ -3631,7 +3631,7 @@ This option specifies the directory in which to save an extra copy of the "xtrab
 
 =item --galera-info
 
-This options creates the xtrabackup_galera_info file which contians the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster.
+This options creates the xtrabackup_galera_info file which contains the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster.
 
 =item --help
 

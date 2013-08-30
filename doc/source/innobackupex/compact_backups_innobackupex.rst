@@ -64,11 +64,11 @@ Output, beside the standard |innobackupex| output, should contain the informatio
     Dropping 4 index(es).
     Rebuilding 4 index(es).
 
-Since |XtraBackup| has no information when applying an incremental backup to a compact full one, on whether there will be more incremental backups applied to it later or not, rebuilding indexes needs to be explicitly requested by a user whenever a full backup with some incremental backups merged is ready to be restored. Rebuilding indexes unconditionally on every incremental backup merge is not an option, since it is an expensive operation.
+Since |Percona XtraBackup| has no information when applying an incremental backup to a compact full one, on whether there will be more incremental backups applied to it later or not, rebuilding indexes needs to be explicitly requested by a user whenever a full backup with some incremental backups merged is ready to be restored. Rebuilding indexes unconditionally on every incremental backup merge is not an option, since it is an expensive operation.
 
 .. note::
 
-  To process individual tables in parallel when rebuilding indexes, :option:`innobackupex --rebuild-threads` option can be used to specify the number of threads started by XtraBackup when rebuilding secondary indexes on --apply-log --rebuild-indexes. Each thread rebuilds indexes for a single ``.ibd`` tablespace at a time.
+  To process individual tables in parallel when rebuilding indexes, :option:`innobackupex --rebuild-threads` option can be used to specify the number of threads started by |Percona XtraBackup| when rebuilding secondary indexes on --apply-log --rebuild-indexes. Each thread rebuilds indexes for a single ``.ibd`` tablespace at a time.
 
 Restoring Compact Backups
 =========================
