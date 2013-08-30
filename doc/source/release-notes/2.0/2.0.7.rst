@@ -1,5 +1,5 @@
 ============================
-|Percona| |XtraBackup| 2.0.7
+|Percona XtraBackup| 2.0.7
 ============================
 
 Percona is glad to announce the release of Percona XtraBackup 2.0.7 on May 6, 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.7/>`_ and :doc:`Percona Software Repositories </installation>`.
@@ -13,7 +13,7 @@ New Features
 
  |Percona XtraBackup| has implemented support for the `InnoDB Buffer Pool Preloading <http://dev.mysql.com/doc/refman/5.6/en/innodb-performance.html#innodb-preload-buffer-pool>`_ introduced in |MySQL| 5.6. Starting with |MySQL| 5.6 buffer pool dumps can be produced and loaded for faster server warmup after the start. This feature is similar to the `Dump/Restore of the Buffer Pool <http://www.percona.com/doc/percona-server/5.5/management/innodb_lru_dump_restore.html>`_ in |Percona Server|. |MySQL| 5.6 buffer pool dump is copied into backup directory during the backup stage. During the copy back stage (restore) it is copied back to data directory. After the backup is restored buffer pool dump can be loaded by the server either automatically on startup or on demand.
 
- Time interval between checks done by log copying thread is now configurable by :option:`innobackupex --log-copy-interval`. Making the interval configurable allows to reduce the time between checks which can prevent |XtraBackup| failures that are caused by the log records in the transactional log being overwritten before they are copied by the log copying thread.
+ Time interval between checks done by log copying thread is now configurable by :option:`innobackupex --log-copy-interval`. Making the interval configurable allows to reduce the time between checks which can prevent |Percona XtraBackup| failures that are caused by the log records in the transactional log being overwritten before they are copied by the log copying thread.
  
  |Percona XtraBackup| now stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona Server| 5.6 with the ``GTID`` mode enabled. Example of how this information can be used to create/restore a slave can be found in `this blogpost <http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
 
@@ -34,11 +34,11 @@ Bugs Fixed
 
  Fixed couple of warnings found in |innobackupex| when all warnings have been made ``FATAL``. Bug fixed :bug:`1116177`.
 
- If there are thousands of tables and slow IO then |Xtrabackup| can spend a lot of time opening all the tablespaces. Optimization has been implemented and |XtraBackup| now avoids loading non-relevant tablespaces when partial backup is being taken which speeds up the backup process. Bug fixed :bug:`1130145`.
+ If there are thousands of tables and slow IO then |Xtrabackup| can spend a lot of time opening all the tablespaces. Optimization has been implemented and |Percona XtraBackup| now avoids loading non-relevant tablespaces when partial backup is being taken which speeds up the backup process. Bug fixed :bug:`1130145`.
 
- |Percona XtraBackup| didn't initialize per-thread data in the log copying thread which could cause |XtraBackup| to crash. Bug fixed :bug:`1166888`.
+ |Percona XtraBackup| didn't initialize per-thread data in the log copying thread which could cause |Percona XtraBackup| to crash. Bug fixed :bug:`1166888`.
 
- Package dependency has been changed from abstract ``mysql`` to real ``/usr/bin/mysql`` file, because ``rpm`` packages from *Oracle* no longer satisfied ``mysql`` dependency which is required by the |XtraBackup| ``rpms``. Bug fixed :bug:`1095972`.
+ Package dependency has been changed from abstract ``mysql`` to real ``/usr/bin/mysql`` file, because ``rpm`` packages from *Oracle* no longer satisfied ``mysql`` dependency which is required by the |Percona XtraBackup| ``rpms``. Bug fixed :bug:`1095972`.
 
  |Percona XtraBackup| would fail when preparing the |MySQL| 5.6 backup if the log files were bigger than 4G on the source server. Bug fixed :bug:`1164979`.
 

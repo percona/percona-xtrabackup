@@ -1,5 +1,5 @@
 ======================================
- |Percona| |XtraBackup| Release Notes
+ |Percona XtraBackup| Release Notes
 ======================================
 
 Older releases
@@ -13,7 +13,7 @@ Older releases
    release-notes/1.4
    release-notes/1.5
 
-Percona |XtraBackup| 1.6 
+|Percona XtraBackup| 1.6 
 =========================
 
 .. toctree::
@@ -22,7 +22,7 @@ Percona |XtraBackup| 1.6
 
    release-notes/1.6/*
 
-Percona |XtraBackup| 2.0 
+|Percona XtraBackup| 2.0 
 =========================
 
 .. toctree::

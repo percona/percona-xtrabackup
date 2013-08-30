@@ -1,10 +1,10 @@
 ============================
-|Percona| |XtraBackup| 1.6.7
+|Percona XtraBackup| 1.6.7
 ============================
 
 Percona is glad to announce the release of Percona XtraBackup 1.6.7 on December 20th, 2012 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6.7/>`_ and from the :doc:`Percona Software Repositories </installation>`).
 
-This release is purely composed of bug fixes and is the current stable release of |Percona| |Xtrabackup|.
+This release is purely composed of bug fixes and is the current stable release of |Percona XtraBackup|.
 
 Bugs Fixed
 ----------
@@ -15,7 +15,7 @@ Bugs Fixed
 
   Option :option:`--safe-slave-backup` was resulting in incorrect binlog info, because in some cases innobackupex confused the response from SHOW SLAVE STATUS with the one from SHOW MASTER STATUS. Bug fixed :bug:`977101` (*Alexey Kopytov*). 
 
-  `innodb_data_file_path` was not written to :file:`backup-my.cnf`, this was a regression introduced in |XtraBackup| 1.6.5. Bug fixed :bug:`983685` (*Sergei Glushchenko*).
+  `innodb_data_file_path` was not written to :file:`backup-my.cnf`, this was a regression introduced in |Percona XtraBackup| 1.6.5. Bug fixed :bug:`983685` (*Sergei Glushchenko*).
 
   Fixed spurious test suite failures with grep 2.10. Bug fixed :bug:`996483` (*Alexey Kopytov*).
 
@@ -23,7 +23,7 @@ Bugs Fixed
 
   |innobackupex| could copy files to a wrong directory when merging an incremental backup to a full one. Bug fixed :bug:`1002688` (*Alexey Kopytov*).
 
-  |XtraBackup| binary was leaking file descriptors on :option:`--backup`. This was fixed by reusing the existing file descriptor so no leak occurs. Bug fixed :bug:`713267` (*Alexey Kopytov*).
+  |Percona XtraBackup| binary was leaking file descriptors on :option:`--backup`. This was fixed by reusing the existing file descriptor so no leak occurs. Bug fixed :bug:`713267` (*Alexey Kopytov*).
 
 Other bugs fixed: bug :bug:`1021954` (*Hrvoje Matijakovic*).
 

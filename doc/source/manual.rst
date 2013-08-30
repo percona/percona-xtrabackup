@@ -13,7 +13,7 @@
    xbstream/xbstream
    how_xtrabackup_works
 
-|XtraBackup| is really a set of three tools:
+|Percona XtraBackup| is really a set of three tools:
 
 :doc:`innobackupex <innobackupex/innobackupex_script>`
     a wrapper script that provides functionality to backup a whole |MySQL| database instance with :term:`MyISAM`, :term:`InnoDB`, and :term:`XtraDB` tables.

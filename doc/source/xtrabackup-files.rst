@@ -1,8 +1,8 @@
 .. _xtrabackup_files :
 
-=====================================
-Index of files created by XtraBackup
-=====================================
+============================================
+Index of files created by Percona XtraBackup
+============================================
 
 * Information related to the backup and the server
 

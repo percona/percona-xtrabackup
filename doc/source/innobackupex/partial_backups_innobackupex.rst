@@ -2,7 +2,7 @@
  Partial Backups
 =================
 
-|XtraBackup| features partial backups, which means that you may backup only some specific tables or databases. The tables you back up must be in separate tablespaces, as a result of being created or altered after you enabled the :term:`innodb_file_per_table` option on the server.
+|Percona XtraBackup| features partial backups, which means that you may backup only some specific tables or databases. The tables you back up must be in separate tablespaces, as a result of being created or altered after you enabled the :term:`innodb_file_per_table` option on the server.
 
 There is only one caveat about partial backups: do not copy back the prepared backup. Restoring partial backups should be done by importing the tables, not by using the traditional :option:`--copy-back` option. Although there are some scenarios where restoring can be done by copying back the files, this may be lead to database inconsistencies in many cases and it is not the recommended way to do it.
 
@@ -52,7 +52,7 @@ The command above will create a timestamped directory with the usual files that 
 
 .. note:: 
  
- Currently in XtraBackup the --databases option has no effect for InnoDB files for both local and streaming backups, i.e. all InnoDB files are always backed up. Currently, only .frm and non-InnoDB tables are limited by that option.
+ Currently in |Percona XtraBackup| the --databases option has no effect for InnoDB files for both local and streaming backups, i.e. all InnoDB files are always backed up. Currently, only .frm and non-InnoDB tables are limited by that option.
 
 Preparing Partial Backups
 =========================

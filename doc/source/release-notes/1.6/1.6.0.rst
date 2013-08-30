@@ -1,5 +1,5 @@
 ==========================
-|Percona| |XtraBackup| 1.6
+|Percona XtraBackup| 1.6
 ==========================
 
 Released on April 12, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6/>`_ and from the `Percona Software Repositories <http://www.percona.com/docs/wiki/repositories:start>`_.)
@@ -22,17 +22,17 @@ Other Changes
 
 * Eliminated some compiler warnings. (Stewart Smith)
 
-* Ported |XtraBackup| to |MySQL| 5.1.55, |MySQL| 5.5.9, |Percona Server| 5.1.55-12.6, and |Percona Server| 5.5.9-20.1 code bases. The :command:`xtrabackup_55` binary is now based on |Percona Server| 5.5, rather than |MySQL| 5.5. Support for building against |InnoDB| plugin in |MySQL| 5.1 has been removed. (Alexey Kopytov)
+* Ported |Percona XtraBackup| to |MySQL| 5.1.55, |MySQL| 5.5.9, |Percona Server| 5.1.55-12.6, and |Percona Server| 5.5.9-20.1 code bases. The :command:`xtrabackup_55` binary is now based on |Percona Server| 5.5, rather than |MySQL| 5.5. Support for building against |InnoDB| plugin in |MySQL| 5.1 has been removed. (Alexey Kopytov)
 
 * Updates were made to the built-in |innobackupex| usage docs. (Baron Schwartz, Fred Linhoss)
 
-* Added a manual page for |XtraBackup|. (Aleksandr Kuzminsky)
+* Added a manual page for |Percona XtraBackup|. (Aleksandr Kuzminsky)
 
 * Disabled auto-creating :file:`ib_logfile*` when |innobackupex| is called with :option:`--redo-only` or with :option:`--incremental-dir`. If necessary :file:`ib_logfile*` can be created later with :command:`xtrabackup --prepare` call. (Vadim Tkachenko)
 
 * Fixed |xtrabackup| exit code to improve portability: ``EXIT_SUCCESS`` on success and ``EXIT_FAILURE`` on a failure. (Aleksandr Kuzminsky)
 
-* For portability, the |XtraBackup| build script now tries to link with ``libaio`` only on Linux. (Aleksandr Kuzminsky)
+* For portability, the |Percona XtraBackup| build script now tries to link with ``libaio`` only on Linux. (Aleksandr Kuzminsky)
 
 Bugs Fixed
 ----------

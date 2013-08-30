@@ -2,7 +2,7 @@
  Streaming and Compressing Backups
 ===================================
 
-Streaming mode, supported by |XtraBackup|, sends backup to ``STDOUT`` in special ``tar`` or |xbstream| format instead of copying files to the backup directory.
+Streaming mode, supported by |Percona XtraBackup|, sends backup to ``STDOUT`` in special ``tar`` or |xbstream| format instead of copying files to the backup directory.
 
 This allows you to use other programs to filter the output of the backup, providing greater flexibility for storage of the backup. For example, compression is achieved by piping the output to a compression utility. One of the benefits of streaming backups and using Unix pipes is that the backups can be automatically encrypted. 
 
@@ -46,7 +46,7 @@ To send the tar archive to another host: ::
 
  $ innobackupex --stream=tar ./ | ssh user@destination \ "cat - > /data/backups/backup.tar"
 
-.. warning::  To extract |XtraBackup|'s archive you **must** use |tar| with ``-i`` option::
+.. warning::  To extract |Percona XtraBackup|'s archive you **must** use |tar| with ``-i`` option::
 
   $ tar -xizf backup.tar.gz
 
