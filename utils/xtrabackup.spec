@@ -22,7 +22,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Requires: /usr/bin/mysql
 Provides: xtrabackup
 Obsoletes: xtrabackup
-BuildRequires: libaio-devel
+BuildRequires: wget bzr automake autoconf libtool make cmake gcc-c++ bison libaio-devel zlib-devel ncurses-devel
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
