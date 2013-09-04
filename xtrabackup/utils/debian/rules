@@ -1,0 +1,49 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+#export DH_VERBOSE=1
+
+
+# These are used for cross-compiling and for saving the configure script
+# from having to guess our platform (since we know it already)
+DEB_HOST_GNU_TYPE   ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+DEB_BUILD_GNU_TYPE  ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+ifneq ($(DEB_HOST_GNU_TYPE),$(DEB_BUILD_GNU_TYPE))
+CROSS= --build $(DEB_BUILD_GNU_TYPE) --host $(DEB_HOST_GNU_TYPE)
+else
+CROSS= --build $(DEB_BUILD_GNU_TYPE)
+endif
+
+MAKE_J = -j$(shell if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi)
+
+override_dh_auto_configure:
+
+
+override_dh_auto_build:
+
+ifeq "$(DEB_DUMMY)" ""
+	./utils/build.sh xtradb
+	cp src/xtrabackup src/xbstream src/xbcrypt .
+
+	./utils/build.sh xtradb55
+	cp src/xtrabackup_55 .
+
+	./utils/build.sh xtradb56
+	cp src/xtrabackup_56 .
+else
+	# Dummy binaries that avoid compilation
+	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
+	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_55
+	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_56
+	echo 'main() { return 300; }' | gcc -x c - -o xbstream
+	echo 'main() { return 300; }' | gcc -x c - -o xbcrypt
+endif
+
+	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
+
+override_dh_strip:
+	dh_strip --dbg-package=percona-xtrabackup-dbg
+
+%:
+	dh $@
+
