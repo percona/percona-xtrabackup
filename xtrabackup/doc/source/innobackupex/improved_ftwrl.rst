@@ -25,7 +25,7 @@ Killing the blocking queries
 
 Second option is to kill all the queries which prevent global lock from being acquired. In this case all the queries which run longer than ``FLUSH TABLES WITH READ LOCK`` are possible blockers. Although all queries can be killed, additional time can be specified for the short running queries to complete. This can be specified by :option:`innobackupex --kill-long-queries-timeout` option. This option specifies the time for queries to complete, after the value is reached, all the running queries will be killed. Default value is zero, which turns this feature off.
 
-:option:`innobackupex --kill-long-query-type` option can be used to specify all or only ``SELECT`` queries that are preventing global lock from being acquired.
+:option:`innobackupex --kill-long-query-type` option can be used to specify all or only ``SELECT`` queries that are preventing global lock from being acquired. In order to use this option xtrabackup user should have ``PROCESS`` and ``SUPER`` privileges.
 
 Options summary
 ---------------
@@ -38,7 +38,7 @@ Options summary
 
 * :option:`--kill-long-queries-timeout=N` (seconds) - how many time we give for queries to complete after ``FLUSH TABLES WITH READ LOCK`` is issued before start to kill. Default if ``0``, not to kill.
 
-* :option:`--kill-long-query-type={all|update}` - which queries should be killed once :option:`kill-long-queries-timeout` has expired.
+* :option:`--kill-long-query-type={all|select}` - which queries should be killed once :option:`kill-long-queries-timeout` has expired.
 
 Example
 -------

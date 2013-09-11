@@ -28,7 +28,7 @@ Options
 
 .. option:: --compress-chunk-size
 
-   This option specifies the size of the internal working buffer for each compression thread, measured in bytes. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
+   This option specifies the size of the internal working buffer for each compression thread, measured in bytes. It is passed directly to the xtrabackup child process. The default value is 64K. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
 
 .. option:: --copy-back
 
@@ -124,9 +124,9 @@ Options
 
 .. option:: --kill-long-queries-timeout=SECONDS
 
-   This option specifies the number of seconds innobackupex waits between starting ``FLUSH TABLES WITH READ LOCK`` and killing those queries that block it. Default is 0 seconds, which means innobackupex will not attempt to kill any queries.
+   This option specifies the number of seconds innobackupex waits between starting ``FLUSH TABLES WITH READ LOCK`` and killing those queries that block it. Default is 0 seconds, which means innobackupex will not attempt to kill any queries. In order to use this option xtrabackup user should have ``PROCESS`` and ``SUPER`` privileges.
 
-.. option:: --kill-long-query-type=all|update
+.. option:: --kill-long-query-type=all|select
 
    This option specifies which types of queries should be killed to unblock the global lock. Default is "all".
 
