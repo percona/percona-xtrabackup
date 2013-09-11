@@ -25,6 +25,10 @@ Options
 
    This option tells |xtrabackup| to compress all output data, including the transaction log file and meta data files, using the specified compression algorithm. The only currently supported algorithm is 'quicklz'. The resulting files have the qpress archive format, i.e. every `*.qp` file produced by xtrabackup is essentially a one-file qpress archive and can be extracted and uncompressed by the `qpress <http://www.quicklz.com/>`_  file archiver.
 
+.. option:: --compress-chunk-size
+
+   Size of working buffer(s) for compression threads in bytes. The default value is 64K.
+
 .. option:: --compress-threads 
 
    This option specifies the number of worker threads used by |xtrabackup| for parallel data compression. This option defaults to 1. Parallel compression ('--compress-threads') can be used together with parallel file copying ('--parallel'). For example, '--parallel=4 --compress --compress-threads=2' will create 4 IO threads that will read the data and pipe it to 2 compression threads. 
