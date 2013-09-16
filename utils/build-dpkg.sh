@@ -90,7 +90,7 @@ export DEB_DUMMY="$DUMMY"
         # Prepare source directory for dpkg-source
         cd "$SOURCEDIR"
 
-        make dist
+        make DUMMY="$DUMMY" dist
 
         if ! test -d debian
         then

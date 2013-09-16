@@ -28,14 +28,14 @@ ps55source: $(PS_55_SOURCE)
 dist: $(SERVER_SOURCE_TARBALLS)
 	bzr export percona-xtrabackup-$(XTRABACKUP_VERSION).tar.gz
 	tar xfz percona-xtrabackup-$(XTRABACKUP_VERSION).tar.gz
-	cp $(SERVER_SOURCE_TARBALLS) percona-xtrabackup-$(XTRABACKUP_VERSION)/
+	test "x$(DUMMY)" != "x" || cp $(SERVER_SOURCE_TARBALLS) percona-xtrabackup-$(XTRABACKUP_VERSION)/
 	echo $(BZR_REVNO) > percona-xtrabackup-$(XTRABACKUP_VERSION)/REVNO
 	rm percona-xtrabackup-$(XTRABACKUP_VERSION).tar.gz
 	tar cfz percona-xtrabackup-$(XTRABACKUP_VERSION)-$(BZR_REVNO).tar.gz percona-xtrabackup-$(XTRABACKUP_VERSION)
 	rm -rf percona-xtrabackup-$(XTRABACKUP_VERSION)
 
 $(SERVER_SOURCE_TARBALLS):
-	wget $(MASTER_SITE)/$@
+	test "x$(DUMMY)" != "x" || wget $(MASTER_SITE)/$@
 
 # fake clean/distclean targets... we explicitly do *NOT* want to clean
 # away the tarballs as we actually need to ship them
