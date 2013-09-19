@@ -13,6 +13,10 @@ Options
 
    This option causes only the redo stage to be performed when preparing a backup. It is very important for incremental backups.
 
+.. option:: --archived-logs-dir 
+
+   This option is used to specify the directory containing the archived logs. It can only be used with the :option:`xtrabackup --prepare` option.
+
 .. option:: --backup
 
    Make a backup and place it in :option:`--target-dir`. See :doc:`Creating a backup <creating_a_backup>`.
@@ -178,6 +182,10 @@ Options
 .. option:: --tmpdir=name
 
    This option is currently not used for anything except printing out the correct tmpdir parameter when :option:`--print-param` is used.
+
+.. option:: --to-archived-lsn
+
+   This option is used to specify the LSN to which the logs should be applied when backups are being prepared. It can only be used with the :option:`xtrabackup --prepare` option.
 
 .. option:: --use-memory=#
 
