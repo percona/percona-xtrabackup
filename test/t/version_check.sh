@@ -7,9 +7,6 @@
 
 start_server
 
-# Use stage-v.percona.com is VC server
-export PERCONA_VERSION_CHECK_URL=https://stage-v.percona.com
-
 # VersionCheck looks for a directory where percona-version-check file is created
 # in the following order:
 #
@@ -27,7 +24,7 @@ export PERCONA_VERSION_CHECK_URL=https://stage-v.percona.com
 
 rm -f /tmp/percona-version-check
 
-innobackupex --version-check --no-timestamp $topdir/backup
+innobackupex --no-timestamp $topdir/backup
 
 if [ ! -f /tmp/percona-version-check ]
 then

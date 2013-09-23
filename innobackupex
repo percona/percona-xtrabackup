@@ -142,7 +142,7 @@ my $option_rebuild_threads = 0;
 
 my $option_debug_sleep_before_unlock = '';
 
-my $option_version_check = '';
+my $option_version_check = '1';
 
 my %mysql;
 my $option_backup = '';
