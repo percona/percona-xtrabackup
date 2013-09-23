@@ -251,7 +251,7 @@ my $incremental_basedir = '';
 my $src_name;
 my $dst_name;
 my $win = ($^O eq 'MSWin32' ? 1 : 0);
-my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp -p");
+my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp");
 my $xtrabackup_binary_file = 'xtrabackup_binary';
 my $xtrabackup_pid_file = 'xtrabackup_pid';
 my %rsync_files_hash;
