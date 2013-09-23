@@ -299,6 +299,9 @@ function set_vars()
 
     export TAR MYSQL_BASEDIR MYSQL MYSQLD MYSQLADMIN \
 MYSQL_INSTALL_DB PATH LD_LIBRARY_PATH DYLD_LIBRARY_PATH MYSQLDUMP
+
+    # Use stage-v.percona.com as a VersionCheck server
+    export PERCONA_VERSION_CHECK_URL=https://stage-v.percona.com
 }
 
 
