@@ -238,3 +238,7 @@ Options
 .. option:: --version
 
    This option displays the |innobackupex| version and copyright notice and then exits.
+
+.. option:: --version-check
+
+   When this option is specified, innobackupex will perform a version check against the server on the backup stage after creating a server connection.
