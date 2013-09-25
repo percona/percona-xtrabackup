@@ -145,6 +145,10 @@ my $option_debug_sleep_before_unlock = '';
 my %mysql;
 my $option_backup = '';
 
+my $option_history;
+my $option_incremental_history_name = '';
+my $option_incremental_history_uuid = '';
+
 # name of the my.cnf configuration file
 #my $config_file = '';
 
@@ -192,6 +196,9 @@ my $galera_info;
 
 # name of the file where slave info is written
 my $slave_info;
+
+# name of the file where version and backup history is written 
+my $backup_history;
 
 # mysql binlog position as given by "SHOW MASTER STATUS" command
 my $mysql_binlog_position = '';
@@ -267,6 +274,12 @@ my $cleanup_dir_dst;
 my $process_dir_exclude_regexp;
 my $copy_dir_overwrite;
 my $copy_dir_resolve_isl;
+
+# for history on server record
+my $history_tool_command = "@ARGV";
+my $history_start_time = time();
+my $history_lock_time = 0;
+my $history_delete_checkpoints = 0;
 
 ######################################################################
 # program execution begins here
@@ -651,6 +664,43 @@ sub backup {
         detect_mysql_capabilities_for_backup(\%mysql);
     }
 
+    #
+    # if one of the history incrementals is being used, try to grab the
+    # innodb_to_lsn from the history table and set the option_incremental_lsn
+    #
+    if ($option_incremental && !$option_incremental_lsn) {
+        if ($option_incremental_history_name) {
+            my $query = "SELECT innodb_to_lsn ".
+                        "FROM PERCONA_SCHEMA.xtrabackup_history ".
+                        "WHERE name = '$option_incremental_history_name' ".
+                        "AND innodb_to_lsn IS NOT NULL ".
+                        "ORDER BY innodb_to_lsn DESC LIMIT 1";
+
+            eval {
+                $option_incremental_lsn =
+                    $mysql{dbh}->selectrow_hashref($query)->{innodb_to_lsn};
+            } || die("Error while attempting to find history record for name ".
+                     "'$option_incremental_history_name'\n");
+            print STDERR "$prefix --incremental-history-name=".
+                "$option_incremental_history_name specified.".
+                "Found and using lsn: $option_incremental_lsn";
+        } elsif ($option_incremental_history_uuid) {
+            my $query = "SELECT innodb_to_lsn ".
+                        "FROM PERCONA_SCHEMA.xtrabackup_history ".
+                        "WHERE uuid = '$option_incremental_history_uuid' ".
+                        "AND innodb_to_lsn IS NOT NULL";
+
+            eval {
+                $option_incremental_lsn =
+                    $mysql{dbh}->selectrow_hashref($query)->{innodb_to_lsn};
+            } || die("Error while attempting to find history record for uuid ".
+                     "'$option_incremental_history_uuid'\n");
+            print STDERR "$prefix --incremental-history-uuid=".
+                "$option_incremental_history_uuid specified.".
+                "Found and using lsn: $option_incremental_lsn";
+        }
+    }
+
     # start ibbackup as a child process
     start_ibbackup();
 
@@ -674,6 +724,9 @@ sub backup {
       # flush tables with read lock
       # make a prep copy before locking tables, if using rsync
       backup_files(1);
+
+      # start counting how long lock is held for history
+      $history_lock_time = time();
 
       # flush tables with read lock
       mysql_lockall(\%mysql);
@@ -708,6 +761,13 @@ sub backup {
     # release read locks on all tables
     mysql_unlockall(\%mysql) if !$option_no_lock;
 
+    # calculate how long lock was held for history
+    if ($option_no_lock) {
+      $history_lock_time = 0;
+    } else {
+      $history_lock_time = time() - $history_lock_time;
+    }
+
     my $ibbackup_exit_code = wait_for_ibbackup_finish();
 
     if ( $option_safe_slave_backup && $sql_thread_started) {
@@ -730,6 +790,8 @@ sub backup {
     if ($mysql_slave_position && $option_slave_info) {
         print STDERR "$prefix MySQL slave binlog position: $mysql_slave_position\n";
     }
+
+    write_xtrabackup_info(\%mysql);
 
     return $ibbackup_exit_code;
 }
@@ -2242,7 +2304,13 @@ sub init {
         $binlog_info = $work_dir . '/xtrabackup_binlog_info';
         $galera_info = $work_dir . '/xtrabackup_galera_info';
         $slave_info = $work_dir . '/xtrabackup_slave_info';
+        $backup_history = $work_dir . '/xtrabackup_info';
         write_backup_config_file($backup_config_file);
+
+        if (!$option_extra_lsndir) {
+            $option_extra_lsndir = $option_tmpdir;
+            $history_delete_checkpoints = 1;
+        }
 
         foreach (@xb_suspend_files) {
             my $suspend_file = $work_dir . "$_";
@@ -2347,6 +2415,7 @@ sub check_args {
                         'encrypt-threads=i' => \$option_encrypt_threads,
                         'encrypt-chunk-size=s' => \$option_encrypt_chunk_size,
                         'help' => \$option_help,
+                        'history:s' => \$option_history,
                         'version' => \$option_version,
                         'throttle=i' => \$option_throttle,
                         'log-copy-interval=i', \$option_log_copy_interval,
@@ -2374,6 +2443,8 @@ sub check_args {
                         'incremental' => \$option_incremental,
                         'incremental-basedir=s' => \$option_incremental_basedir,
                         'incremental-force-scan' => \$option_incremental_force_scan,
+                        'incremental-history-name=s' => \$option_incremental_history_name,
+                        'incremental-history-uuid=s' => \$option_incremental_history_uuid,
                         'incremental-lsn=s' => \$option_incremental_lsn,
                         'incremental-dir=s' => \$option_incremental_dir,
                         'extra-lsndir=s' => \$option_extra_lsndir,
@@ -2481,7 +2552,9 @@ sub check_args {
         # we are making a backup, get backup root directory
         $option_backup = "1";
         $backup_root = $ARGV[0];
-        if ($option_incremental && !$option_incremental_lsn) {
+        if ($option_incremental && !$option_incremental_lsn &&
+            !$option_incremental_history_name &&
+            !$option_incremental_history_uuid) {
             if ($option_incremental_basedir) {
                 $incremental_basedir = $option_incremental_basedir;
             } else {
@@ -3448,6 +3521,247 @@ sub detect_mysql_capabilities_for_backup {
                     'WHERE PLUGIN_NAME LIKE "INNODB_CHANGED_PAGES"')
 }
 
+#
+# Writes xtrabackup_info file and if backup_history is enable creates
+# PERCONA_SCHEMA.xtrabackup_history and writes a new history record to the
+# table containing all the history info particular to the just completed
+# backup.
+#
+sub write_xtrabackup_info()
+{
+  my $con = shift;
+  my $sth;
+  my $uuid;
+  my $tmp;
+  my $file_content;
+
+  eval {
+    $sth = $con->{dbh}->prepare("insert into PERCONA_SCHEMA.xtrabackup_history(".
+                  "uuid, name, tool_name, tool_command, tool_version, ".
+                  "ibbackup_version, server_version, start_time, end_time, ".
+                  "lock_time, binlog_pos, innodb_from_lsn, innodb_to_lsn, ".
+                  "partial, incremental, format, compact, compressed, ".
+                  "encrypted) ".
+                  "values(?,?,?,?,?,?,?,from_unixtime(?),from_unixtime(?),?,?,".
+                  "?,?,?,?,?,?,?,?)");
+  } || die("Eror while preparing history record\n");
+
+
+  # uuid
+  # we use the mysql UUID() function to avoid platform dependencies with uuidgen
+  # and Data::UUID. We select uuid here individually here so that it can be
+  # reported to stderr after successful history record insertion
+  eval {
+    $uuid = $con->{dbh}->selectrow_hashref("SELECT UUID() AS uuid")->{uuid};
+  } || die("Error while attempting to create UUID for history record.\n");
+  $sth->bind_param(1, $uuid);
+  $file_content = "uuid = $uuid";
+
+  # name
+  if ($option_history) {
+    $sth->bind_param(2, $option_history);
+    $file_content .= "\nname = $option_history";
+  } else {
+    $sth->bind_param(2, undef);
+    $file_content .= "\nname = ";
+  }
+
+  # tool_name
+  $tmp = basename($0);
+  $sth->bind_param(3, $tmp);
+  $file_content .= "\ntool_name = $tmp";
+
+  # tool_command
+  # scrub --password and --encrypt-key from tool_command
+  $tmp = $history_tool_command;
+  $tmp =~ s/--password=[^ ]+/--password=.../g;
+  $tmp =~ s/--encrypt-key=[^ ]+/--encrypt-key=.../g;
+  $sth->bind_param(4, $tmp);
+  $file_content .= "\ntool_command = $tmp";
+
+  # tool_version
+  $sth->bind_param(5, $innobackup_version);
+  $file_content .= "\ntool_version = $innobackup_version";
+
+  # ibbackup_version
+  $tmp = "$option_ibbackup_binary -v 2>&1";
+  $tmp = qx($tmp);
+  chomp($tmp);
+  if (length $tmp) {
+    $sth->bind_param(6, $tmp);
+    $file_content .= "\nibbackup_version = $tmp";
+  } else {
+    $sth->bind_param(6, undef);
+    $file_content .= "\nibbackup_version = ";
+  }
+
+  # server_version
+  $tmp =
+    $con->{dbh}->selectrow_hashref("SELECT VERSION() as version")->{version};
+  $sth->bind_param(7, $tmp);
+  $file_content .= "\nserver_version = $tmp";
+
+  # start_time
+  $sth->bind_param(8, $history_start_time);
+  $file_content .= "\nstart_time = " . strftime("%Y-%m-%d %H:%M:%S", localtime($history_start_time));
+
+  # end_time
+  $tmp = time();
+  $sth->bind_param(9, $tmp);
+  $file_content .= "\nend_time = " . strftime("%Y-%m-%d %H:%M:%S", localtime($tmp));
+
+  # lock_time
+  $sth->bind_param(10, $history_lock_time);
+  $file_content .= "\nlock_time = $history_lock_time";
+
+  # binlog_pos
+  if ($mysql_binlog_position) {
+    $sth->bind_param(11, $mysql_binlog_position);
+    $file_content .= "\nbinlog_pos = $mysql_binlog_position";
+  } else {
+    $sth->bind_param(11, undef);
+    $file_content .= "\nbinlog_pos = ";
+  }
+
+  # innodb_from_lsn
+  # grab the from_lsn from the extra checkpoints file, parse and delete it
+  # if necessary. This could generate an error if the checkpoints file
+  # isn't 100% correct in the format.
+  $tmp = "cat $option_extra_lsndir/xtrabackup_checkpoints | grep from_lsn";
+  $tmp = qx($tmp);
+  chomp($tmp);
+  substr($tmp, 0, 11, ""); # strip "from_lsn = "
+  if (length $tmp) {
+    $sth->bind_param(12, $tmp);
+    $file_content .= "\ninnodb_from_lsn = $tmp";
+  } else {
+    print STDERR "WARNING : Unable to obtain from_lsn from " .
+                 "$option_extra_lsndir/xtrabackup_checkpoints, " .
+                 "writing NULL to history record.\n";
+    $sth->bind_param(12, undef);
+    $file_content .= "\ninnodb_from_lsn = ";
+  }
+
+  # innodb_to_lsn
+  # grab the to_lsn from the extra checkpoints file, parse and delete it
+  # if necessary. This could generate an error if the checkpoints file
+  # isn't 100% correct in the format.
+  $tmp = "cat $option_extra_lsndir/xtrabackup_checkpoints | grep to_lsn";
+  $tmp = qx($tmp);
+  chomp($tmp);
+  substr($tmp, 0, 9, ""); # strip "to_lsn = "
+  if (length $tmp) {
+    $sth->bind_param(13, $tmp);
+    $file_content .= "\ninnodb_to_lsn = $tmp";
+  } else {
+    print STDERR "WARNING : Unable to obtain to_lsn from " .
+                 "$option_extra_lsndir/xtrabackup_checkpoints, " .
+                 "writing NULL to history record.\n";
+    $sth->bind_param(13, undef);
+    $file_content .= "\ninnodb_to_lsn = ";
+  }
+
+  # we're finished with the checkpoints file, delete it if it was a temp
+  # only for the history
+  if ($history_delete_checkpoints > 0) {
+    unlink("$option_extra_lsndir/xtrabackup_checkpoints");
+  }
+
+  # partial (Y | N)
+  if ($option_include || $option_databases || $option_tables_file || $option_export) {
+    $sth->bind_param(14, "Y");
+    $file_content .= "\npartial = Y";
+  } else {
+    $sth->bind_param(14, "N");
+    $file_content .= "\npartial = N";
+  }
+
+  # incremental (Y | N)
+  if ($option_incremental) {
+    $sth->bind_param(15, "Y");
+    $file_content .= "\nincremental = Y";
+  } else {
+    $sth->bind_param(15, "N");
+    $file_content .= "\nincremental = N";
+  }
+
+  # format (file | tar | xbsream)
+  if ($option_stream eq 'tar') {
+    $sth->bind_param(16, "tar");
+    $file_content .= "\nformat = tar";
+  } elsif ($option_stream eq 'xbstream') {
+    $sth->bind_param(16, "xbstream");
+    $file_content .= "\nformat = xbstream";
+  } else {
+    $sth->bind_param(16, "file");
+    $file_content .= "\nformat = file";
+  }
+
+  # compact (Y | N)
+  if ($option_compact) {
+    $sth->bind_param(17, "Y");
+    $file_content .= "\ncompact = Y";
+  } else {
+    $sth->bind_param(17, "N");
+    $file_content .= "\ncompact = N";
+  }
+
+  # compressed (Y | N)
+  if ($option_compress) {
+    $sth->bind_param(18, "Y");
+    $file_content .= "\ncompressed = Y";
+  } else {
+    $sth->bind_param(18, "N");
+    $file_content .= "\ncompressed = N";
+  }
+
+  # encrypted (Y | N)
+  if ($option_encrypt) {
+    $sth->bind_param(19, "Y");
+    $file_content .= "\nencrypted = Y";
+  } else {
+    $sth->bind_param(19, "N");
+    $file_content .= "\nencrypted = N";
+  }
+
+  # create the backup history file
+  write_to_backup_file("$backup_history", "$file_content");
+
+  if (!defined($option_history)) {
+    return;
+  }
+
+  mysql_query($con, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA");
+  mysql_query($con, "CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history(".
+                    "uuid VARCHAR(40) NOT NULL PRIMARY KEY,".
+                    "name VARCHAR(255) DEFAULT NULL,".
+                    "tool_name VARCHAR(255) DEFAULT NULL,".
+                    "tool_command TEXT DEFAULT NULL,".
+                    "tool_version VARCHAR(255) DEFAULT NULL,".
+                    "ibbackup_version VARCHAR(255) DEFAULT NULL,".
+                    "server_version VARCHAR(255) DEFAULT NULL,".
+                    "start_time TIMESTAMP NULL DEFAULT NULL,".
+                    "end_time TIMESTAMP NULL DEFAULT NULL,".
+                    "lock_time BIGINT UNSIGNED DEFAULT NULL,".
+                    "binlog_pos VARCHAR(128) DEFAULT NULL,".
+                    "innodb_from_lsn BIGINT UNSIGNED DEFAULT NULL,".
+                    "innodb_to_lsn BIGINT UNSIGNED DEFAULT NULL,".
+                    "partial ENUM('Y', 'N') DEFAULT NULL,".
+                    "incremental ENUM('Y', 'N') DEFAULT NULL,".
+                    "format ENUM('file', 'tar', 'xbstream') DEFAULT NULL,".
+                    "compact ENUM('Y', 'N') DEFAULT NULL,".
+                    "compressed ENUM('Y', 'N') DEFAULT NULL,".
+                    "encrypted ENUM('Y', 'N') DEFAULT NULL".
+                    ") CHARACTER SET utf8 ENGINE=innodb");
+
+  eval {
+    $sth->execute;
+  } || die("Error while attempting to insert history record.\n");
+
+  print STDERR "$prefix Backup history record uuid $uuid successfully written\n";
+}
+
+
 =pod
 
 =head1 NAME
@@ -3466,8 +3780,10 @@ innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS] [--compress-chu
              [--defaults-file=MY.CNF] [--defaults-group=GROUP-NAME]
              [--databases=LIST] [--no-lock] 
              [--tmpdir=DIRECTORY] [--tables-file=FILE]
+             [--history=NAME]
              [--incremental] [--incremental-basedir]
              [--incremental-dir] [--incremental-force-scan] [--incremental-lsn]
+             [--incremental-history-name=NAME] [--incremental-history-uuid=UUID]
              [--compact]     
              BACKUP-ROOT-DIR
 
@@ -3637,6 +3953,10 @@ This options creates the xtrabackup_galera_info file which contains the local no
 
 This option displays a help screen and exits.
 
+=item --history=NAME
+
+This option enables the tracking of backup history in the PERCONA_SCHEMA.xtrabackup_history table. An optional history series name may be specified that will be placed with the history record for the current backup being taken.
+
 =item --host=HOST
 
 This option specifies the host to use when connecting to the database server with TCP/IP.  The option accepts a string argument. It is passed to the mysql child process without alteration. See mysql --help for details.
@@ -3660,6 +3980,14 @@ This option specifies the directory containing the full backup that is the base 
 =item --incremental-dir=DIRECTORY
 
 This option specifies the directory where the incremental backup will be combined with the full backup to make a new full backup.  The option accepts a string argument. It is used with the --incremental option.
+
+=item --incremental-history-name=NAME
+
+This option specifies the name of the backup series stored in the PERCONA_SCHEMA.xtrabackup_history history record to base an incremental backup on. Xtrabackup will search the history table looking for the most recent (highest innodb_to_lsn), successful backup in the series and take the to_lsn value to use as the starting lsn for the incremental backup. This will be mutually exclusive with --incremental-history-uuid, --incremental-basedir and --incremental-lsn. If no valid lsn can be found (no series by that name, no successful backups by that name) xtrabackup will return with an error. It is used with the --incremental option.
+
+=item --incremental-history-uuid=UUID
+
+This option specifies the UUID of the specific history record stored in the PERCONA_SCHEMA.xtrabackup_history to base an incremental backup on. --incremental-history-name, --incremental-basedir and --incremental-lsn. If no valid lsn can be found (no success record with that uuid) xtrabackup will return with an error. It is used with the --incremental option.
 
 =item --incremental-force-scan
 
