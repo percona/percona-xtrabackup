@@ -55,3 +55,11 @@ innobackupex --copy-back $backup_dir
 start_server
 # Check sakila
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila
+
+########################################################################
+# Bug #1217426: Empty directory is not backed when stream is used
+########################################################################
+
+# Check if the 'test' database is accessible by the server
+run_cmd ${MYSQL} ${MYSQL_ARGS} -e "CREATE TABLE t(a INT)" test
+run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT * FROM t" test
