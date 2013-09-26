@@ -1,3 +1,9 @@
+percona-xtrabackup-20 (2.0.8) unstable; urgency=low
+
+  * Change name of the packages to percona-xtrabackup-20*
+
+ -- Ignacio Nin <ignacio.nin@percona.com>  Fri, 30 Aug 2013 11:00:00 -0300
+
 percona-xtrabackup (2.0.6) unstable; urgency=low
 
   * Update compat level to 7
