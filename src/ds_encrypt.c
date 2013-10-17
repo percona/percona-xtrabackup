@@ -42,6 +42,7 @@ typedef struct {
 	const char 		*from;
 	size_t			from_len;
 	char			*to;
+	char			*iv;
 	size_t			to_len;
 	gcry_cipher_hd_t	cipher_handle;
 } crypt_thread_ctxt_t;
@@ -170,6 +171,8 @@ encrypt_init(const char *root)
 	encrypt_iv_len = gcry_cipher_get_algo_blklen(encrypt_algo);
 	xb_a(encrypt_iv_len > 0);
 	xb_a(encrypt_iv_len <= sizeof(encrypt_iv));
+
+	xb_crypt_init_iv();
 
 	/* Now set up the key */
 	if (xtrabackup_encrypt_key == NULL &&
@@ -334,7 +337,9 @@ encrypt_write(ds_file_t *file, const void *buf, size_t len)
 			if (xb_crypt_write_chunk(crypt_file->xbcrypt_file,
 						 threads[i].to,
 						 threads[i].from_len,
-						 threads[i].to_len)) {
+						 threads[i].to_len,
+						 threads[i].iv,
+						 encrypt_iv_len)) {
 				msg("encrypt: write to the destination file "
 				    "failed.\n");
 				return 1;
@@ -409,6 +414,9 @@ create_worker_threads(uint n)
 		thd->data_avail = FALSE;
 
 		thd->to = (char *) my_malloc(XB_CRYPT_CHUNK_SIZE,
+						   MYF(MY_FAE));
+
+		thd->iv = (char *) my_malloc(encrypt_iv_len,
 						   MYF(MY_FAE));
 
 		/* Initialize the control mutex and condition var */
@@ -501,6 +509,7 @@ destroy_worker_threads(crypt_thread_ctxt_t *threads, uint n)
 			gcry_cipher_close(thd->cipher_handle);
 
 		MY_FREE(thd->to);
+		MY_FREE(thd->iv);
 	}
 
 	MY_FREE(threads);
@@ -520,7 +529,6 @@ encrypt_worker_thread_func(void *arg)
 	pthread_cond_signal(&thd->ctrl_cond);
 
 	pthread_mutex_unlock(&thd->ctrl_mutex);
-
 
 	while (1) {
 		thd->data_avail = FALSE;
@@ -548,8 +556,9 @@ encrypt_worker_thread_func(void *arg)
 				continue;
 			}
 
+			xb_crypt_create_iv(thd->iv, encrypt_iv_len);
 			gcry_error = gcry_cipher_setiv(thd->cipher_handle,
-							encrypt_iv,
+							thd->iv,
 							encrypt_iv_len);
 			if (gcry_error) {
 				msg("encrypt: unable to set cipher ctr - "

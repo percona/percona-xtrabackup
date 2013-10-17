@@ -56,7 +56,7 @@ static uint 		encrypt_algos[] = { GCRY_CIPHER_NONE,
 static int		encrypt_algo = 0;
 static int		encrypt_mode = GCRY_CIPHER_MODE_CTR;
 static uint 		encrypt_key_len = 0;
-static const unsigned char encrypt_iv[] =
+static const unsigned char v1_encrypt_iv[] =
 			    "Percona Xtrabackup is Awesome!!!";
 static size_t 		encrypt_iv_len = 0;
 
@@ -294,6 +294,8 @@ mode_decrypt(File filein, File fileout)
 	void			*chunkbuf = NULL;
 	size_t			chunksize;
 	size_t			originalsize;
+	void			*ivbuf = NULL;
+	size_t			ivsize;
 	void			*decryptbuf = NULL;
 	size_t			decryptbufsize = 0;
 	ulonglong		ttlchunksread = 0;
@@ -335,7 +337,8 @@ mode_decrypt(File filein, File fileout)
 
 	/* Walk the encrypted chunks, decrypting them and writing out */
 	while ((result = xb_crypt_read_chunk(xbcrypt_file, &chunkbuf,
-					     &originalsize, &chunksize))
+					     &originalsize, &chunksize,
+					     &ivbuf, &ivsize))
 		== XB_CRYPT_READ_CHUNK) {
 
 		if (encrypt_algo != GCRY_CIPHER_NONE) {
@@ -348,9 +351,15 @@ mode_decrypt(File filein, File fileout)
 				goto err;
 			}
 
-			gcry_error = gcry_cipher_setiv(cipher_handle,
-							encrypt_iv,
-							encrypt_iv_len);
+			if (ivsize) {
+				gcry_error = gcry_cipher_setiv(cipher_handle,
+							       ivbuf,
+							       ivsize);
+			} else {
+				gcry_error = gcry_cipher_setiv(cipher_handle,
+							       v1_encrypt_iv,
+							       encrypt_iv_len);
+			}
 			if (gcry_error) {
 				msg("%s:decrypt: unable to set cipher iv - "
 				    "%s : %s\n", my_progname,
@@ -448,6 +457,7 @@ mode_encrypt(File filein, File fileout)
 	size_t			bytesread;
 	size_t			chunkbuflen;
 	void			*chunkbuf = NULL;
+	void			*ivbuf = NULL;
 	size_t			encryptbuflen = 0;
 	size_t			encryptedlen = 0;
 	void			*encryptbuf = NULL;
@@ -491,7 +501,11 @@ mode_encrypt(File filein, File fileout)
 		goto err;
 	}
 
-	/* now read in data in chunk size, encryptand write out */
+	ivbuf = my_malloc(encrypt_iv_len, MYF(MY_FAE));
+
+	xb_crypt_init_iv();
+
+	/* now read in data in chunk size, encrypt and write out */
 	chunkbuflen = opt_encrypt_chunk_size;
 	chunkbuf = my_malloc(chunkbuflen, MYF(MY_FAE));
 	while ((bytesread = my_read(filein, chunkbuf, chunkbuflen,
@@ -507,8 +521,10 @@ mode_encrypt(File filein, File fileout)
 				    gcry_strerror(gcry_error));
 				goto err;
 			}
+
+			xb_crypt_create_iv(ivbuf, encrypt_iv_len);
 			gcry_error = gcry_cipher_setiv(cipher_handle,
-							encrypt_iv,
+							ivbuf,
 							encrypt_iv_len);
 
 			if (gcry_error) {
@@ -553,7 +569,8 @@ mode_encrypt(File filein, File fileout)
 			encryptbuf = chunkbuf;
 		}
 
-		if (xb_crypt_write_chunk(xbcrypt_file, encryptbuf, bytesread, encryptedlen)) {
+		if (xb_crypt_write_chunk(xbcrypt_file, encryptbuf, bytesread,
+					 encryptedlen, ivbuf, encrypt_iv_len)) {
 			msg("%s:encrypt: abcrypt_write_chunk() failed.\n",
 			    my_progname);
 			goto err;
@@ -568,6 +585,7 @@ mode_encrypt(File filein, File fileout)
 			    ttlbyteswritten);
 	}
 
+	MY_FREE(ivbuf);
 	MY_FREE(chunkbuf);
 
 	if (encryptbuf && encryptbuflen)

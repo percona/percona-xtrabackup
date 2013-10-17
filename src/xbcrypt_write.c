@@ -41,9 +41,9 @@ xb_crypt_write_open(void *userdata, xb_crypt_write_callback *onwrite)
 }
 
 int xb_crypt_write_chunk(xb_wcrypt_t *crypt, const void *buf, size_t olen,
-			 size_t elen)
+			 size_t elen, const void *iv, size_t ivlen)
 {
-	uchar		tmpbuf[XB_CRYPT_CHUNK_MAGIC_SIZE + 8 + 8 + 8 + 4];
+	uchar		tmpbuf[XB_CRYPT_CHUNK_MAGIC_SIZE + 8 + 8 + 8 + 4 + 8];
 	uchar		*ptr;
 	ulong		checksum;
 
@@ -55,9 +55,13 @@ int xb_crypt_write_chunk(xb_wcrypt_t *crypt, const void *buf, size_t olen,
 	if (elen > INT_MAX)
 		return 0;
 
+	xb_ad(ivlen <= INT_MAX);
+	if (ivlen > INT_MAX)
+		return 0;
+
 	ptr = tmpbuf;
 
-	memcpy(ptr, XB_CRYPT_CHUNK_MAGIC, XB_CRYPT_CHUNK_MAGIC_SIZE);
+	memcpy(ptr, XB_CRYPT_CHUNK_MAGIC2, XB_CRYPT_CHUNK_MAGIC_SIZE);
 	ptr += XB_CRYPT_CHUNK_MAGIC_SIZE;
 
 	int8store(ptr, (ulonglong)0);	/* reserved */
@@ -73,9 +77,15 @@ int xb_crypt_write_chunk(xb_wcrypt_t *crypt, const void *buf, size_t olen,
 	int4store(ptr, checksum);	/* checksum */
 	ptr += 4;
 
+	int8store(ptr, (ulonglong)ivlen); /* iv size */
+	ptr += 8;
+
 	xb_ad(ptr <= tmpbuf + sizeof(tmpbuf));
 
 	if (crypt->write(crypt->userdata, tmpbuf, ptr-tmpbuf) == -1)
+		return 1;
+
+	if (crypt->write(crypt->userdata, iv, ivlen) == -1)
 		return 1;
 
 	if (crypt->write(crypt->userdata, buf, elen) == -1)
