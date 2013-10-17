@@ -25,6 +25,8 @@ struct xb_rcrypt_struct {
 	xb_crypt_read_callback		*read;
 	void				*buffer;
 	size_t				bufsize;
+	void				*ivbuffer;
+	size_t				ivbufsize;
 	ulonglong			offset;
 };
 
@@ -42,17 +44,20 @@ xb_crypt_read_open(void *userdata, xb_crypt_read_callback *onread)
 	crypt->buffer = NULL;
 	crypt->bufsize = 0;
 	crypt->offset = 0;
-
+	crypt->ivbuffer = NULL;
+	crypt->ivbufsize = 0;
 	return crypt;
 }
 
 xb_rcrypt_result_t
-xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen)
+xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
+		    void **iv, size_t *ivlen)
+
 {
 	uchar		tmpbuf[XB_CRYPT_CHUNK_MAGIC_SIZE + 8 + 8 + 8 + 4];
 	uchar		*ptr;
 	ulonglong	tmp;
-	ulong		checksum, checksum_exp;
+	ulong		checksum, checksum_exp, version;
 	ssize_t		bytesread;
 	xb_rcrypt_result_t result = XB_CRYPT_READ_CHUNK;
 
@@ -72,8 +77,11 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen)
 
 	ptr = tmpbuf;
 
-	if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC, XB_CRYPT_CHUNK_MAGIC_SIZE)
-	    != 0) {
+	if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC1, XB_CRYPT_CHUNK_MAGIC_SIZE) == 0) {
+		version = 1;
+	} else if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC2, XB_CRYPT_CHUNK_MAGIC_SIZE) == 0) {
+		version = 2;
+	} else {
 		msg("%s:%s: wrong chunk magic at offset 0x%llx.\n",
 		    my_progname, __FUNCTION__, crypt->offset);
 		result = XB_CRYPT_READ_ERROR;
@@ -112,6 +120,72 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen)
 	checksum_exp = uint4korr(ptr);	/* checksum */
 	ptr += 4;
 	crypt->offset += 4;
+
+	/* iv size */
+	if (version == 1) {
+		*ivlen = 0;
+		*iv = 0;
+	} else {
+		if ((bytesread = crypt->read(crypt->userdata, tmpbuf, 8,
+					     MYF(MY_WME))) != 8) {
+			if (bytesread == 0) {
+				result = XB_CRYPT_READ_EOF;
+				goto err;
+			} else {
+				msg("%s:%s: unable to read chunk iv size at "
+				    "offset 0x%llx.\n",
+				    my_progname, __FUNCTION__, crypt->offset);
+				result =  XB_CRYPT_READ_ERROR;
+				goto err;
+			}
+		}
+
+		tmp = uint8korr(tmpbuf);
+		if (tmp > INT_MAX) {
+			msg("%s:%s: invalid iv size at offset 0x%llx.\n",
+			    my_progname, __FUNCTION__, crypt->offset);
+			result = XB_CRYPT_READ_ERROR;
+			goto err;
+		}
+		crypt->offset += 8;
+		*ivlen = (size_t)tmp;
+	}
+
+	if (*ivlen > crypt->ivbufsize) {
+		if (crypt->ivbuffer) {
+			crypt->ivbuffer = my_realloc(crypt->ivbuffer, *ivlen,
+						   MYF(MY_WME));
+			if (crypt->ivbuffer == NULL) {
+				msg("%s:%s: failed to increase iv buffer to "
+				    "%llu bytes.\n", my_progname, __FUNCTION__,
+				    (ulonglong)*ivlen);
+				result = XB_CRYPT_READ_ERROR;
+				goto err;
+			}
+		} else {
+			crypt->ivbuffer = my_malloc(*ivlen, MYF(MY_WME));
+			if (crypt->ivbuffer == NULL) {
+				msg("%s:%s: failed to allocate iv buffer of "
+				    "%llu bytes.\n", my_progname, __FUNCTION__,
+				    (ulonglong)*ivlen);
+				result = XB_CRYPT_READ_ERROR;
+				goto err;
+			}
+		}
+		crypt->ivbufsize = *ivlen;
+	}
+
+	if (*ivlen > 0) {
+		if (crypt->read(crypt->userdata, crypt->ivbuffer, *ivlen, MYF(MY_WME|MY_FULL_IO))
+		    != (ssize_t)*ivlen) {
+			msg("%s:%s: failed to read %lld bytes for chunk iv "
+			    "at offset 0x%llx.\n", my_progname, __FUNCTION__,
+			    (ulonglong)*ivlen, crypt->offset);
+			result = XB_CRYPT_READ_ERROR;
+			goto err;
+		}
+		*iv = crypt->ivbuffer;
+	}
 
 	if (*olen > crypt->bufsize) {
 		if (crypt->buffer) {
@@ -165,6 +239,8 @@ err:
 	*buf = NULL;
 	*olen = 0;
 	*elen = 0;
+	*ivlen = 0;
+	*iv = 0;
 exit:
 	return result;
 }
