@@ -68,7 +68,10 @@ function bg_wait_fail()
 
 function kill_all_queries()
 {
-  run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+  # we really want to ignore errors
+  # some connections can die by themselves
+  # between SELECT and killall
+  run_cmd $MYSQL $MYSQL_ARGS --force --batch  test <<EOF
   select concat('KILL ',id,';') from information_schema.processlist
   where user='root' and time > 2 into outfile '$MYSQLD_TMPDIR/killall.sql';
   source $MYSQLD_TMPDIR/killall.sql;
@@ -90,7 +93,9 @@ vlog "===================== case 1 ====================="
 bg_run bg_select_pid "mysql_select 3"
 bg_run bg_update_pid "sleep 1" "mysql_update 3"
 
-innobackupex $topdir/full --kill-long-queries-timeout=5 \
+sleep 8
+
+innobackupex $topdir/full --kill-long-queries-timeout=10 \
                           --kill-long-query-type=all
 
 bg_wait_ok $bg_select_pid
@@ -99,6 +104,11 @@ kill_all_queries
 
 
 # ==============================================================
+# this case can succeed for two reasons
+# 1. update was waited for by innobackupex an finished successfully
+#    by the time of kill_all_queries
+# 2. update was stared late and did not block FTWRL but was locked by
+#    it. then it may be still alive by the time of kill_all_queries
 vlog "===================== case 2 ====================="
 bg_run bg_select_pid "mysql_select 200"
 bg_run bg_update_pid "sleep 1" "mysql_update 5"
