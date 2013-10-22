@@ -3307,6 +3307,7 @@ sub start_query_killer {
         local $SIG{HUP} = sub { $end = 1 };
 
         $pcon->{dbh}->{InactiveDestroy} = 1;
+        kill('USR1', $innobackupex_pid);
 
         sleep($kill_timeout);
 
@@ -3348,9 +3349,15 @@ sub mysql_lockall {
     $now = current_time();
     print STDERR "$now  $prefix Starting to lock all tables...\n";
 
+    my $query_killer_init = 0;
+
     # start query killer process
     if ($option_kill_long_queries_timeout) {
+        local $SIG{'USR1'} = sub { $query_killer_init = 1 };
         start_query_killer($option_kill_long_queries_timeout, $con);
+        while (!$query_killer_init) {
+            usleep(1);
+        }
     }
     if (compare_versions($mysql_server_version, '4.0.22') == 0
         || compare_versions($mysql_server_version, '4.1.7') == 0) {
