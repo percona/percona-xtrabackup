@@ -3143,18 +3143,16 @@ sub write_slave_info {
 
     my @lines;
     my @info_lines;
-    my $position = '';
-    my $filename = '';
-    my $master= '';
 
     # get slave status
     get_mysql_slave_status($con);
 
     # get output of the "show slave status" command from mysql output
     # and extract binlog position of the master server
-    $master = $con->{slave_status}->{Master_Host};
-    $filename = $con->{slave_status}->{Relay_Master_Log_File};
-    $position = $con->{slave_status}->{Exec_Master_Log_Pos};
+    my $master = $con->{slave_status}->{Master_Host};
+    my $filename = $con->{slave_status}->{Relay_Master_Log_File};
+    my $position = $con->{slave_status}->{Exec_Master_Log_Pos};
+    my $gtid_executed = $con->{slave_status}->{Executed_Gtid_Set};
 
     if (!defined($master) || !defined($filename) || !defined($position)) {
         my $now = current_time();
@@ -3167,11 +3165,25 @@ sub write_slave_info {
         return;
     }
 
-    # print slave status to a file
-    write_to_backup_file("$slave_info", 
-      "CHANGE MASTER TO MASTER_LOG_FILE='$filename', MASTER_LOG_POS=$position\n");
-   
-    $mysql_slave_position = "master host '$master', filename '$filename', position $position";
+    # Print slave status to a file.
+    # If GTID mode is used, construct a CHANGE MASTER statement with
+    # MASTER_AUTO_POSITION and correct a gtid_purged value.
+    if (defined($gtid_executed) && $gtid_executed) {
+        $gtid_executed =~ s/\n/ /;
+        write_to_backup_file("$slave_info",
+                             "SET GLOBAL gtid_purged='$gtid_executed';\n" .
+                             "CHANGE MASTER TO MASTER_AUTO_POSITION=1\n");
+        $mysql_slave_position = "master host '$master', ".
+            "purge list '$gtid_executed'";
+    } else {
+        write_to_backup_file("$slave_info",
+                             "CHANGE MASTER TO MASTER_LOG_FILE='$filename', " .
+                             "MASTER_LOG_POS=$position\n");
+
+        $mysql_slave_position = "master host '$master', " .
+            "filename '$filename', " .
+            "position $position";
+    }
 }
 
 sub eat_sql_whitespace {
