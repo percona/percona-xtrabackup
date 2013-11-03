@@ -24,8 +24,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_base.h>
 #include "common.h"
 
-#define XB_CRYPT_CHUNK_MAGIC "XBCRYP01"
-#define XB_CRYPT_CHUNK_MAGIC_SIZE (sizeof(XB_CRYPT_CHUNK_MAGIC)-1)
+#define XB_CRYPT_CHUNK_MAGIC1 "XBCRYP01"
+#define XB_CRYPT_CHUNK_MAGIC2 "XBCRYP02" /* must be same size as ^^ */
+#define XB_CRYPT_CHUNK_MAGIC_SIZE (sizeof(XB_CRYPT_CHUNK_MAGIC1)-1)
 
 /******************************************************************************
 Write interface */
@@ -38,11 +39,11 @@ typedef ssize_t xb_crypt_write_callback(void *userdata,
 xb_wcrypt_t *xb_crypt_write_open(void *userdata,
 				 xb_crypt_write_callback *onwrite);
 
-/* Takes buffer, original length and encrypted length, formats output buffer
-   and calls write callback.
+/* Takes buffer, original length, encrypted length iv and iv length, formats
+   output buffer and calls write callback.
    Returns 0 on success, 1 on error */
 int xb_crypt_write_chunk(xb_wcrypt_t *crypt, const void *buf, size_t olen,
-			 size_t elen);
+			 size_t elen, const void *iv, size_t ivlen);
 
 /* Returns 0 on success, 1 on error */
 int xb_crypt_write_close(xb_wcrypt_t *crypt);
@@ -51,7 +52,7 @@ int xb_crypt_write_close(xb_wcrypt_t *crypt);
 Read interface */
 typedef struct xb_rcrypt_struct xb_rcrypt_t;
 
-/* Callback on write for i/o, must return # of bytes read or -1 on error */
+/* Callback on read for i/o, must return # of bytes read or -1 on error */
 typedef ssize_t xb_crypt_read_callback(void *userdata,
 				       void *buf, size_t len, int flags);
 
@@ -65,7 +66,8 @@ typedef enum {
 } xb_rcrypt_result_t;
 
 xb_rcrypt_result_t xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf,
-				       size_t *olen, size_t *elen);
+				       size_t *olen, size_t *elen, void **iv,
+				       size_t *ivlen);
 
 int xb_crypt_read_close(xb_rcrypt_t *crypt);
 
@@ -74,4 +76,7 @@ Utility interface */
 my_bool xb_crypt_read_key_file(const char *filename,
 			       void** key, uint *keylength);
 
+void xb_crypt_init_iv();
+
+void xb_crypt_create_iv(void* ivbuf, size_t ivlen);
 #endif
