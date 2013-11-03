@@ -23,7 +23,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xbcrypt.h"
 #include <gcrypt.h>
 
-
 my_bool
 xb_crypt_read_key_file(const char *filename, void** key, uint *keylength)
 {
@@ -42,4 +41,26 @@ xb_crypt_read_key_file(const char *filename, void** key, uint *keylength)
 	*keylength = fread(*key, 1, *keylength, fp);
 	my_fclose(fp, MYF(0));
 	return TRUE;
+}
+
+
+void 
+xb_crypt_init_iv()
+{
+	uint seed = time(NULL);
+	srandom(seed);
+}
+
+void
+xb_crypt_create_iv(void* ivbuf, size_t ivlen)
+{
+	size_t i;
+	ulong rndval;
+
+	for (i = 0; i < ivlen; i++) {
+		if (i % 4 == 0) {
+			rndval = (ulong) random();
+		}
+		((uchar*)ivbuf)[i] = ((uchar*)&rndval)[i % 4];
+	}
 }
