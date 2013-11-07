@@ -17,7 +17,7 @@ First, you need to make a full backup as the BASE for subsequent incremental bac
 
   $ innobackupex /data/backups
 
-This will create a timestamped directory in :file:`/data/backups`. Assuming that the backup is done last day of the year, ``BASEDIR`` would be :file:`/data/backups/2013-03-31_23-01-18`, for example.
+This will create a timestamped directory in :file:`/data/backups`. Assuming that the backup is done last day of the month, ``BASEDIR`` would be :file:`/data/backups/2013-03-31_23-01-18`, for example.
 
 .. note:: You can use the :option:`innobackupex --no-timestamp` option to override this behavior and the backup will be created in the given directory.
 
