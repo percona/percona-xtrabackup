@@ -3756,7 +3756,7 @@ sub check_args {
                         'lock-wait-threshold=i' => \$option_lock_wait_threshold,
                         'lock-wait-query-type=s' =>
                         \$option_lock_wait_query_type,
-                        'version-check' => \$option_version_check
+                        'version-check!' => \$option_version_check
     );
 
     if (@ARGV == 0) {
@@ -5190,6 +5190,10 @@ This is a debug-only option used by the XtraBackup test suite.
 
 This option specifies what file to read the default MySQL options from.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-file option. See the xtrabackup documentation for details.
 
+=item --defaults-group=GROUP-NAME
+
+This option specifies the group name in my.cnf which should be used. This is needed for mysqld_multi deployments.
+
 =item --defaults-extra-file=[MY.CNF]
 
 This option specifies what extra file to read the default MySQL options from before the standard defaults-file.  The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-extra-file option. See the xtrabackup documentation for details.
@@ -5392,13 +5396,13 @@ This option accepts a string argument that specifies the amount of memory in byt
 
 This option specifies the MySQL username used when connecting to the server, if that's not the current user. The option accepts a string argument.  It is passed to the mysql child process without alteration. See mysql --help for details.
 
-=item --defaults-group=GROUP-NAME
-
-This option specifies the group name in my.cnf which should be used. This is needed for mysqld_multi deployments.
-
 =item --version
 
 This option displays the xtrabackup version and copyright notice and then exits.
+
+=item --version-check
+
+This option controls if the version check should be executed by innobackupex after connecting to the server on the backup stage. This option is enabled by default, disable with --no-version-check.
 
 =back
 

@@ -239,7 +239,8 @@ function switch_server()
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
     fi
 
-    IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf --ibbackup=$XB_BIN"
+    IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf --ibbackup=$XB_BIN \
+--no-version-check"
     XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf"
 
     # Some aliases for compatibility, as tests use the following names

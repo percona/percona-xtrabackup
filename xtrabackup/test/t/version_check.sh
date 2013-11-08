@@ -24,7 +24,20 @@ start_server
 
 rm -f /tmp/percona-version-check
 
-innobackupex --no-timestamp $topdir/backup
+# VersionCheck is enabled by default, but the test suite adds --no-version-check
+# to IB_ARGS so we don't execute it for all tests.
+# First test that --no-version-check (with default IB_ARGS) disables the feature
+
+innobackupex --no-timestamp $topdir/backup1
+
+if [ -f /tmp/percona-version-check ]
+then
+    die "/tmp/percona-version-check has been created with --no-version-check!"
+fi
+
+IB_ARGS=`echo $IB_ARGS | sed -e 's/--no-version-check//g'`
+
+innobackupex --no-timestamp $topdir/backup2
 
 if [ ! -f /tmp/percona-version-check ]
 then

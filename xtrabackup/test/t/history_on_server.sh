@@ -173,9 +173,9 @@ check_for_value "format" "xbstream"
 check_for_value "name" "NULL"
 
 # validate command tool and encrypt key scrubbibng but need to pop off first
-# two arguments in the result added by test framework function innobackupex
+# three arguments in the result added by test framework function innobackupex
 get_one_value "tool_command"
-val=${val:`expr index "$val" " "`}; val=${val:`expr index "$val" " "`}
+val=`set -- $val; shift 3; echo "$@"`
 expected_val="--history --incremental "\
 "--incremental-history-uuid=$third_uuid --stream=xbstream --compress "\
 "--encrypt=AES256 $backup_dir --encrypt-key=..."
