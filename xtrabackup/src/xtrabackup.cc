@@ -869,7 +869,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   "The algorithm InnoDB uses for page checksumming. [CRC32, STRICT_CRC32, "
    "INNODB, STRICT_INNODB, NONE, STRICT_NONE]", &srv_checksum_algorithm,
    &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
-   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
   {"innodb_undo_directory", OPT_INNODB_UNDO_DIRECTORY,
    "Directory where undo tablespace files live, this path can be absolute.",
    (G_PTR*) &srv_undo_dir, (G_PTR*) &srv_undo_dir,
@@ -5940,6 +5940,9 @@ next_opt:
 			       srv_undo_dir);
 		}
 		printf("innodb_undo_tablespaces = %lu\n", srv_undo_tablespaces);
+		printf("innodb_checksum_algorithm = %s\n",
+		       innodb_checksum_algorithm_names[srv_checksum_algorithm]
+		       );
 #endif
 		printf("innodb_buffer_pool_filename = \"%s\"\n",
 			innobase_buffer_pool_filename ?
