@@ -13,10 +13,6 @@ Options
 
    This option causes only the redo stage to be performed when preparing a backup. It is very important for incremental backups.
 
-.. option:: --archived-logs-dir 
-
-   This option is used to specify the directory containing the archived logs. It can only be used with the :option:`xtrabackup --prepare` option.
-
 .. option:: --backup
 
    Make a backup and place it in :option:`--target-dir`. See :doc:`Creating a backup <creating_a_backup>`.
@@ -80,6 +76,10 @@ Options
 .. option:: --incremental-lsn=name
 
    When creating an incremental backup, you can specify the log sequence number (:term:`LSN`) instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the :term:`LSN` as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the :term:`LSN` as a single 64-bit integer.  ##ATTENTION##: If a wrong LSN value is specified, it is impossible to diagnose this, causing the backup to be unusable. Be careful!
+
+.. option:: --innodb-log-arch-dir
+
+   This option is used to specify the directory containing the archived logs. It can only be used with the :option:`xtrabackup --prepare` option.
 
 .. option:: --innodb-miscellaneous
 
