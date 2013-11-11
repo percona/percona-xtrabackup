@@ -1516,3 +1516,14 @@
  	ut_a(page_zip_validate(page_zip, page, index));
  #endif /* UNIV_ZIP_DEBUG */
  
+--- a/mysys/md5.c
++++ b/mysys/md5.c
+@@ -176,7 +176,7 @@
+   putu32(ctx->buf[1], digest + 4);
+   putu32(ctx->buf[2], digest + 8);
+   putu32(ctx->buf[3], digest + 12);
+-  memset(ctx, 0, sizeof(ctx));	/* In case it's sensitive */
++  memset(ctx, 0, sizeof(*ctx));	/* In case it's sensitive */
+ }
+ 
+ #ifndef ASM_MD5
