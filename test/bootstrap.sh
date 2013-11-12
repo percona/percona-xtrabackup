@@ -52,7 +52,7 @@ case "$1" in
 
     innodb56)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.6.11-linux-glibc2.5-$arch.tar.gz"
+        tarball="mysql-5.6.14-linux-glibc2.5-$arch.tar.gz"
         ;;
 
     xtradb51)
@@ -94,16 +94,7 @@ case "$1" in
             tarball="Percona-Server-5.6.10-alpha60.2-318.Linux.$arch.tar.gz"
         else
             url="http://s3.amazonaws.com/percona.com/downloads/community"
-            # PS 5.6.11-rc60.3 tarballs have different revnos for i686 and
-            # x86_64
-            case "$arch" in
-                i686)
-                    tarball="Percona-Server-5.6.11-rc60.3-376.Linux.i686.tar.gz"
-                    ;;
-                *)
-                    tarball="Percona-Server-5.6.11-rc60.3-375.Linux.x86_64.tar.gz"
-                    ;;
-            esac
+            tarball="Percona-Server-5.6.14-rel62.0-483.Linux.$arch.tar.gz"
         fi
         ;;
 

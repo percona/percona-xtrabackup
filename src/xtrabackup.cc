@@ -475,6 +475,7 @@ enum options_xtrabackup
   OPT_INNODB_CHECKSUM_ALGORITHM,
   OPT_INNODB_UNDO_DIRECTORY,
   OPT_UNDO_TABLESPACES,
+  OPT_INNODB_LOG_CHECKSUM_ALGORITHM,
 #endif
   OPT_XTRA_INCREMENTAL_FORCE_SCAN,
   OPT_DEFAULTS_GROUP
@@ -869,6 +870,11 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   "The algorithm InnoDB uses for page checksumming. [CRC32, STRICT_CRC32, "
    "INNODB, STRICT_INNODB, NONE, STRICT_NONE]", &srv_checksum_algorithm,
    &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
+   REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
+  {"innodb_log_checksum_algorithm", OPT_INNODB_LOG_CHECKSUM_ALGORITHM,
+  "The algorithm InnoDB uses for log checksumming. [CRC32, STRICT_CRC32, "
+   "INNODB, STRICT_INNODB, NONE, STRICT_NONE]", &srv_log_checksum_algorithm,
+   &srv_log_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
    REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
   {"innodb_undo_directory", OPT_INNODB_UNDO_DIRECTORY,
    "Directory where undo tablespace files live, this path can be absolute.",
@@ -1401,6 +1407,9 @@ mem_free_and_error:
 	srv_track_changed_pages = FALSE;
 #endif
 
+#if MYSQL_VERSION_ID >= 50600
+	innodb_log_checksum_func_update(srv_log_checksum_algorithm);
+#endif
 	return(FALSE);
 
 error:
@@ -5942,6 +5951,9 @@ next_opt:
 		printf("innodb_undo_tablespaces = %lu\n", srv_undo_tablespaces);
 		printf("innodb_checksum_algorithm = %s\n",
 		       innodb_checksum_algorithm_names[srv_checksum_algorithm]
+		       );
+		printf("innodb_log_checksum_algorithm = %s\n",
+		       innodb_checksum_algorithm_names[srv_log_checksum_algorithm]
 		       );
 #endif
 		printf("innodb_buffer_pool_filename = \"%s\"\n",
