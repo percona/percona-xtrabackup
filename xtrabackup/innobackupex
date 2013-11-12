@@ -3638,6 +3638,7 @@ sub write_backup_config_file {
 
     my @option_names = (
         "innodb_checksum_algorithm",
+        "innodb_log_checksum_algorithm",
         "innodb_data_file_path",
         "innodb_log_files_in_group",
         "innodb_log_file_size",
