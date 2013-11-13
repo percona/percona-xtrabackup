@@ -5,14 +5,7 @@
 
 . inc/common.sh
 
-set +e
-${MYSQLD} --basedir=$MYSQL_BASEDIR --user=$USER --help --verbose --wsrep-sst-method=rsync| grep -q wsrep
-probe_result=$?
-if [[ "$probe_result" == "0" ]]
-then
-        skip_test "Server supports wsrep"
-fi
-set -e
+is_galera && skip_test "Requires a server without Galera support"
 
 start_server
 
