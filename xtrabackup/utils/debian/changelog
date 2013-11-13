@@ -1,3 +1,9 @@
+percona-xtrabackup (2.1.5-1) unstable; urgency=low
+
+  * Update to new upstream release Percona XtraBackup 2.1.5
+
+ -- Stewart Smith <stewart@flamingspork.com>  Tue, 29 Oct 2013 14:56:54 +1100
+
 percona-xtrabackup (2.1.0) unstable; urgency=low
 
   * Update compat level to 7
