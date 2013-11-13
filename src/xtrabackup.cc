@@ -5978,10 +5978,15 @@ next_opt:
 
         if (!xtrabackup_prepare &&
             (innobase_log_arch_dir || xtrabackup_archived_to_lsn)) {
-		msg("xtrabackup: error: "
-		    "--archived-logs-dir and --to-archived-lsn can be used "
-		    "only with --prepare\n");
-		exit(EXIT_FAILURE);
+		/*
+		  Default my.cnf can contain innobase_log_arch_dir option set for server,
+                  reset it to allow backup.
+		*/
+		innobase_log_arch_dir= NULL;
+		xtrabackup_archived_to_lsn= 0;
+		msg("xtrabackup: warning: "
+		    "as --innodb-log-arch-dir and --to-archived-lsn can be used "
+		    "only with --prepare they will be reset\n");
         }
 
 	/* cannot execute both for now */
