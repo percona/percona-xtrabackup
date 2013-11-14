@@ -55,3 +55,8 @@ How innobackupex handles the ibdata/ib_log files on restore if they aren't in my
 ============================================================================================
 
 In case the ibdata and ib_log files are located in different directories outside of the datadir, you will have to put them in their proper place after the logs have been applied.
+
+Backup fails with Error 24: 'Too many open files'
+=================================================
+
+This usually happens when database being backed up contains large amount of files and |Percona XtraBackup| can't open all of them to create a successful backup. In order to avoid this error the operating system should be configured appropriately so that |Percona XtraBackup| can open all its files. On Linux, this can be done with the ``ulimit`` command for specific backup session or by editing the :file:`/etc/security/limits.conf` to change it globally (**NOTE**: the maximum possible value that can be set up is 1048576 which is a hard-coded constant in the Linux kernel). 
