@@ -14,7 +14,7 @@ There are three ways of specifying which part of the whole data will be backed u
 Using the :option:`--include` option
 ------------------------------------
 
-The regular expression provided to this will be matched against the fully qualified tablename, including the database name, in the form ``databasename.tablename``.
+The regular expression provided to this will be matched against the fully qualified table name, including the database name, in the form ``databasename.tablename``.
 
 For example, ::
 
@@ -57,7 +57,7 @@ The command above will create a timestamped directory with the usual files that 
 Preparing Partial Backups
 =========================
 
-For preparing partial backups, the procedure is analogous to :doc:`exporting tables <importing_exporting_tables_ibk>` : apply the logs and use the :option:`--export` option::
+For preparing partial backups, the procedure is analogous to :doc:`restoring individual tables <restoring_individual_tables_ibk>` : apply the logs and use the :option:`--export` option::
 
   $ innobackupex --apply-log --export /path/to/partial/backup
 
@@ -84,7 +84,7 @@ Finally, check the for the confirmation message in the output::
 Restoring Partial Backups
 =========================
 
-Restoring should be done by :doc:`importing the tables <importing_exporting_tables_ibk>` in the partial backup to the server. 
+Restoring should be done by :doc:`restoring individual tables <restoring_individual_tables_ibk>` in the partial backup to the server. 
 
 It can also be done by copying back the prepared backup to a "clean" :term:`datadir` (in that case, make sure to include the ``mysql`` database). System database can be created with: ::
 

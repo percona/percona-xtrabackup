@@ -88,7 +88,7 @@
      Each |MyISAM| table has ``.MYI`` (MYIndex) file which contains the table's indexes.
 
    .exp
-     When :doc:`exporting a table <xtrabackup_bin/exporting_importing_tables>` with |Percona XtraBackup|, it creates a file with ``.exp`` extension per exported table containing the information for importing it.
+     Files with the ``.exp`` extension are created by |Percona XtraBackup| per each |InnoDB| tablespace when the :option:`xtrabckup --export` option is used on prepare. These files can be used to import those tablespaces on |Percona Server| 5.5 or lower versions, see :doc:`restoring individual tables <xtrabackup_bin/restoring_individual_tables>`"
 
    .MRG
      Each table using the :program:`MERGE` storage engine, besides of a :term:`.frm` file, will have :term:`.MRG` file containing the names of the |MyISAM| tables associated with it.

@@ -36,7 +36,7 @@ Note that this option is passed to :option:`xtrabackup --tables` and is matched 
 Preparing the backup
 =====================
 
-For preparing partial backups, the procedure is analogous to :doc:`exporting tables <../innobackupex/importing_exporting_tables_ibk>` : apply the logs and use the :option:`--export` option::
+For preparing partial backups, the procedure is analogous to :doc:`restoring individual tables <../innobackupex/restoring_individual_tables_ibk>` : apply the logs and use the :option:`--export` option::
 
   $ innobackupex --apply-log --export /mnt/backup/2012-08-28_10-29-09
 
@@ -65,10 +65,11 @@ Finally, check the for the confirmation message in the output::
 Restoring from the backups
 ==========================
 
-Restoring should be done by :doc:`importing the tables <../innobackupex/importing_exporting_tables_ibk>` in the partial backup to the server. 
+Restoring should be done by :doc:`importing the tables <../innobackupex/restoring_individual_tables_ibk>` in the partial backup to the server. 
 
 .. note::
- Improved table/partition import is only available in |Percona Server|, this means that partitions which were backed up from different server can be imported as well. For |MySQL| only partitions from that server can be imported with some important limitations. There should be no DROP/CREATE/TRUNCATE/ALTER TABLE commands issued between taking the backup and importing the partition.
+
+  Improved table/partition import is only available in |Percona Server| and |MySQL| 5.6, this means that partitions which were backed up from different server can be imported as well. For versions older than |MySQL| 5.6 only partitions from that server can be imported with some important limitations. There should be no DROP/CREATE/TRUNCATE/ALTER TABLE commands issued between taking the backup and importing the partition.
 
 First step is to create new table in which data will be restored :: 
 

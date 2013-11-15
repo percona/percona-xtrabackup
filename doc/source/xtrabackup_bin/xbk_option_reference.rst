@@ -55,7 +55,7 @@ Options
 
 .. option:: --export
 
-   Create files necessary for exporting tables. See :doc:`Exporting and Importing Tables <exporting_importing_tables>`.
+   Create files necessary for exporting tables. See :doc:`Restoring Individual Tables <restoring_individual_tables>`.
 
 .. option:: --extra-lsndir=name 
 
