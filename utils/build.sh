@@ -68,6 +68,24 @@ then
 fi
 
 xtrabackup_include_dir="$top_dir/src"
+
+# Auto-detect distribution string if not overridden with the XB_DISTRIBUTION
+# environment variable
+XB_DISTRIBUTION=${XB_DISTRIBUTION:-}
+if [ -z "$XB_DISTRIBUTION" ]
+then
+    if which lsb_release >/dev/null 2>&1;
+    then
+        XB_DISTRIBUTION=`lsb_release -i | \
+sed -e 's/Distributor ID:[[:space:]]//' | \
+tr '[:upper:]' '[:lower:]'`
+        case $XB_DISTRIBUTION in
+            centos|redhat)
+                XB_DISTRIBUTION="epel";;
+        esac
+    fi
+fi
+
 CFLAGS="$CFLAGS -I$xtrabackup_include_dir"
 CXXFLAGS="$CXXFLAGS -I$xtrabackup_include_dir"
 
@@ -94,6 +112,26 @@ function usage()
     echo "                   | mariadb52,mariadb53"
     echo "  xtradb55         | galera55,mariadb55    build against Percona Server with XtraDB 5.5"
     exit -1
+}
+
+################################################################################
+# Process a file specified as the first argument, replace some certain variables
+# with their actual values and store the result in the file specified as the
+# second argument. The optional third argument may be used to set a specific
+# access mode on the resulting files (e.g. '+x")
+########################################################################
+function configure_file()
+{
+    local src=$1
+    local dst=$2
+
+    echo "Configuring $src to $dst"
+    sed 's|@XB_DISTRIBUTION@|'$XB_DISTRIBUTION'|g' $src > $dst
+
+    if [ $# -gt 2 ]
+    then
+        chmod $3 $dst
+    fi
 }
 
 ################################################################################
@@ -219,6 +257,8 @@ function build_all()
     local dirname=`basename "$server_tarball" ".tar.gz"`
 
     innodb_dir=$server_dir/storage/$innodb_name
+
+    configure_file innobackupex.pl innobackupex +x
 
     echo "Downloading sources"
     auto_download $server_tarball
