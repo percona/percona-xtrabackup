@@ -46,7 +46,7 @@ Advanced Features
    scripting_backups_xbk
    analyzing_table_statistics
    working_with_binary_logs
-   exporting_importing_tables
+   restoring_individual_tables
    lru_dump
    
 ..    performance_tunning_innobackupex

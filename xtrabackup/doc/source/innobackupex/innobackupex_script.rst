@@ -48,7 +48,7 @@ Advanced Features
    replication_ibk
    parallel_copy_ibk
    throttling_ibk
-   importing_exporting_tables_ibk
+   restoring_individual_tables_ibk
    pit_recovery_ibk
    improved_ftwrl
 
