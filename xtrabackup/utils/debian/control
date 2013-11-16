@@ -2,7 +2,7 @@ Source: percona-xtrabackup
 Section: database
 Priority: extra
 Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
-Uploaders: Stewart Smith <stewart.smith@percona.com>, Ignacio Nin <ignacio.nin@percona.com>, Clint Byrum <clint@fewbar.com>
+Uploaders: Stewart Smith <stewart.smith@percona.com>, Alexey Bychko <alexey.bychko@percona.com>, Clint Byrum <clint@fewbar.com>
 Build-Depends: automake,
                bison,
                ca-certificates,
@@ -14,7 +14,7 @@ Build-Depends: automake,
                libtool,
                libz-dev,
                libgcrypt-dev
-Standards-Version: 3.9.3
+Standards-Version: 3.9.4
 Homepage: http://www.percona.com/software/percona-xtrabackup
 Vcs-Browser: http://bazaar.launchpad.net/~percona-core/percona-xtrabackup/2.1/files
 Vcs-Bzr: lp:percona-xtrabackup/2.1
