@@ -126,8 +126,11 @@ export MYSQL_RPMBUILD_TEST="$TEST"
 
     mkdir -p BUILD SOURCES RPMS SRPMS
 
-    # FIXME: spec file should use the VERSION-REVISION instead.
-    cp $SOURCEDIR/../percona-xtrabackup-$XTRABACKUP_VERSION*.tar.gz SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz
+    # Create the source archive
+    (cd "$SOURCEDIR"; make DUMMY="$DUMMY" dist)
+
+    cp $SOURCEDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION.tar.gz \
+        SOURCES/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz
 
     # Issue RPM command
     rpmbuild $SIGN $TARGET $TARGET_LIBDIR $TARGET_ARCH $DUMMY \
