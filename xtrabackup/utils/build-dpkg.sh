@@ -12,8 +12,8 @@
 set -ue
 
 # Examine parameters
-go_out="$(getopt --options "k:KbBSnT"\
-    --longoptions key:,nosign,binary,binarydep,source,dummy,notransitional \
+go_out="$(getopt --options "k:KbBSnTtD" --longoptions \
+    key:,nosign,binary,binarydep,source,dummy,notransitional,transitional \
     --name "$(basename "$0")" -- "$@")"
 test $? -eq 0 || exit 1
 eval set -- $go_out
@@ -21,7 +21,8 @@ eval set -- $go_out
 BUILDPKG_KEY=''
 DPKG_BINSRC=''
 DUMMY=''
-NOTRANSITIONAL=''
+NOTRANSITIONAL='yes'
+PACKAGE_SUFFIX='-1'
 
 for arg
 do
@@ -34,15 +35,42 @@ do
     -S | --source ) shift; DPKG_BINSRC='-S';;
     -n | --dummy ) shift; DUMMY='yes';;
     -T | --notransitional ) shift; NOTRANSITIONAL='yes';;
+    -t | --transitional ) shift; NOTRANSITIONAL='';;
+    -D ) shift; PACKAGE_SUFFIX="$PACKAGE_SUFFIX.$(lsb_release -sc)";;
     esac
 done
 
+SOURCEDIR="$(cd $(dirname "$0"); cd ..; pwd)"
+
 # Read XTRABACKUP_VERSION from the VERSION file
-. VERSION
+. $SOURCEDIR/VERSION
 
 DEBIAN_VERSION="$(lsb_release -sc)"
-REVISION="$(bzr revno 2>/dev/null || cat REVNO)"
+REVISION="$(cd "$SOURCEDIR"; bzr revno 2>/dev/null || cat REVNO)"
 FULL_VERSION="$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION"
+
+# Working directory
+if test "$#" -eq 0
+then
+    # We build in the sourcedir
+    WORKDIR="$(cd "$SOURCEDIR/.."; pwd)"
+
+elif test "$#" -eq 1
+then
+    WORKDIR="$1"
+
+    # Check that the provided directory exists and is a directory
+    if ! test -d "$WORKDIR"
+    then
+        echo >&2 "$WORKDIR is not a directory"
+        exit 1
+    fi
+
+else
+    echo >&2 "Usage: $0 [target dir]"
+    exit 1
+
+fi
 
 # Build information
 export CC=${CC:-gcc}
@@ -58,25 +86,52 @@ export DEB_DUMMY="$DUMMY"
 
 # Build
 (
-    # we assume we're in the source directory, as we assume
-    # that we've done "make dist" before.
-
     (
-        T=`ls -1 ../percona-xtrabackup*tar.gz`; TO=`echo $T|sed -e 's/percona-xtrabackup-/percona-xtrabackup_/; s/\.tar\.gz/.orig.tar.gz/;'`; mv $T $TO
+        # Prepare source directory for dpkg-source
+        cd "$SOURCEDIR"
 
-        # Move the debian dir to the appropriate place
-        cp -a "utils/debian/" .
+        make DUMMY="$DUMMY" dist
 
-        # Don't build transitional packages if requested
-        if test "x$NOTRANSITIONAL" = "xyes"
+        if ! test -d debian
         then
-            sed -i '/Package: xtrabackup/,/^$/d' debian/control
+            cp -a utils/debian/ .
         fi
 
         # Update distribution
-        dch -m -D "$DEBIAN_VERSION" --force-distribution -v "$XTRABACKUP_VERSION-$REVISION-1" 'Update distribution'
-        # Issue dpkg-buildpackage command
-        dpkg-buildpackage $DPKG_BINSRC $BUILDPKG_KEY
+        dch -m -D "$DEBIAN_VERSION" --force-distribution \
+            -v "$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX" 'Update distribution'
+
+    )
+
+    # Create the original tarball
+    mv "$SOURCEDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION.tar.gz" \
+        "$WORKDIR/percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz"
+
+    (
+        cd "$WORKDIR"
+
+        # Create the rest of the source, ignoring changes since we may be in the
+        # sourcedir.
+        dpkg-source -i'.*' -b "$SOURCEDIR"
+
+        # Unpack it
+        dpkg-source -x "percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX.dsc"
+
+        (
+            cd "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION"
+
+            # Don't build transitional packages if requested
+            if test "x$NOTRANSITIONAL" = "xyes"
+            then
+                sed -i '/Package: xtrabackup/,/^$/d' debian/control
+            fi
+
+            # Issue dpkg-buildpackage command
+            dpkg-buildpackage $DPKG_BINSRC $BUILDPKG_KEY
+ 
+        )
+
+        rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION"
  
     )
 )
