@@ -1654,7 +1654,15 @@ exit $ibbackup_exit_code;
 # print_version subroutine prints program version and copyright.
 #
 sub print_version {
+    my $distribution = "@XB_DISTRIBUTION@";
+
     printf(STDERR $copyright_notice);
+
+    if ($distribution) {
+        printf STDERR "Get the latest version of Percona XtraBackup, ".
+            "documentation, and help resources:\n";
+        printf STDERR "http://www.percona.com/xb/$distribution\n";
+    }
 }
 
 
