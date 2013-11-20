@@ -2152,6 +2152,18 @@ sub is_in_array {
 }
 
 #
+# Check if a given directory exists, or fail with an error otherwise
+#
+
+sub if_directory_exists {
+    my $empty_dir = shift;
+    my $is_directory_empty_comment = shift;
+    if (! -d $empty_dir) {
+        die "$is_directory_empty_comment directory '$empty_dir' does not exist!";
+    }
+}
+
+#
 # if_directory_exists_and_empty accepts two arguments:
 # variable with directory name and comment.
 # Sub checks that directory exists and is empty
@@ -2161,14 +2173,26 @@ sub is_in_array {
 sub if_directory_exists_and_empty {
     my $empty_dir = shift;
     my $is_directory_empty_comment = shift;
-    if (! -d $empty_dir) {
-        die "$is_directory_empty_comment directory '$empty_dir' does not exist!";
-    }
+
+    if_directory_exists($empty_dir, $is_directory_empty_comment);
+
     opendir (my $dh, $empty_dir) or die "$is_directory_empty_comment directory '$empty_dir': Not a directory";
     if ( ! scalar( grep { $_ ne "." && $_ ne ".." && $_ ne "my.cnf" && $_ ne "master.info"} readdir($dh)) == 0) {
         die "$is_directory_empty_comment directory '$empty_dir' is not empty!";
     }
     closedir($dh);
+}
+
+#
+# Fail with an error if file exists
+#
+
+sub die_if_exists {
+    my $path = shift;
+
+    if (-e $path) {
+        die "Cannot overwrite file: $path";
+    }
 }
 
 #
@@ -2420,10 +2444,12 @@ sub copy_back {
 
     # check that original data directories exist and they are empty
     if_directory_exists_and_empty($orig_datadir, "Original data");
-    if_directory_exists_and_empty($orig_ibdata_dir, "Original InnoDB data");
-    if_directory_exists_and_empty($orig_iblog_dir, "Original InnoDB log");
+    if ($orig_ibdata_dir) {
+        if_directory_exists($orig_ibdata_dir, "Original InnoDB data");
+    }
+    if_directory_exists($orig_iblog_dir, "Original InnoDB log");
     if ($orig_undo_dir) {
-        if_directory_exists_and_empty($orig_undo_dir,
+        if_directory_exists($orig_undo_dir,
                                       "Original undo directory");
     }
 
@@ -2483,7 +2509,17 @@ sub copy_back {
     foreach my $c (parse_innodb_data_file_path($orig_innodb_data_file_path)) {
         # get the relative pathname of a data file
         $src_name = escape_path("$backup_dir/$c->{filename}");
-        $dst_name = escape_path("$orig_ibdata_dir/$c->{path}");
+        if ($orig_ibdata_dir) {
+            $dst_name = escape_path("$orig_ibdata_dir/$c->{path}");
+        } else {
+            # If innodb_data_home_dir is empty, but file path(s) in
+            # innodb_data_file_path are relative, InnoDB treats them as if
+            # innodb_data_home_dir was the same as datadir.
+
+            my $dst_root = ($c->{path} =~ /^\//) ? "" : $orig_datadir;
+            $dst_name = escape_path("$dst_root/$c->{path}");
+        }
+        die_if_exists($dst_name);
         &$move_or_copy_file($src_name, $dst_name);
     }
 
@@ -2497,7 +2533,8 @@ sub copy_back {
     while (defined($file = readdir(DIR))) {
         if ($file =~ /^$ibundo_files$/ && -f "$backup_dir/$file") {
             $src_name = escape_path("$backup_dir/$file");
-            $dst_name = escape_path("$orig_undo_dir");
+            $dst_name = escape_path("$orig_undo_dir/$file");
+            die_if_exists($dst_name);
             &$move_or_copy_file($src_name, $dst_name);
         }
     }
@@ -2512,7 +2549,8 @@ sub copy_back {
     while (defined($file = readdir(DIR))) {
         if ($file =~ /^$iblog_files$/ && -f "$backup_dir/$file") {
             $src_name = escape_path("$backup_dir/$file");
-            $dst_name = escape_path("$orig_iblog_dir");
+            $dst_name = escape_path("$orig_iblog_dir/$file");
+            die_if_exists($dst_name);
             &$move_or_copy_file($src_name, $dst_name);
         }
     }
