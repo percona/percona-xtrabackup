@@ -1646,9 +1646,9 @@ sub print_version {
     printf(STDERR $copyright_notice);
 
     if ($distribution) {
-        printf STDERR "Get the latest version of Percona XtraBackup, ".
+        printf STDERR "Get the latest version of Percona XtraBackup, " .
             "documentation, and help resources:\n";
-        printf STDERR "http://www.percona.com/xb/$distribution\n";
+        printf STDERR "http://www.percona.com/xb/$distribution\n\n";
     }
 }
 
