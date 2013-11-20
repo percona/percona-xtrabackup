@@ -144,6 +144,8 @@ my $option_debug_sleep_before_unlock = '';
 
 my $option_version_check = '1';
 
+my $option_force_non_empty_dirs = '';
+
 my %mysql;
 my $option_backup = '';
 
@@ -2114,11 +2116,15 @@ sub if_directory_exists_and_empty {
 
     if_directory_exists($empty_dir, $is_directory_empty_comment);
 
-    opendir (my $dh, $empty_dir) or die "$is_directory_empty_comment directory '$empty_dir': Not a directory";
-    if ( ! scalar( grep { $_ ne "." && $_ ne ".." && $_ ne "my.cnf" && $_ ne "master.info"} readdir($dh)) == 0) {
-        die "$is_directory_empty_comment directory '$empty_dir' is not empty!";
+    if (!$option_force_non_empty_dirs) {
+        opendir (my $dh, $empty_dir) or
+            die "$is_directory_empty_comment directory '$empty_dir': Not a directory";
+        if ( ! scalar( grep { $_ ne "." && $_ ne ".." && $_ ne "my.cnf" &&
+                                  $_ ne "master.info"} readdir($dh)) == 0) {
+            die "$is_directory_empty_comment directory '$empty_dir' is not empty!";
+        }
+        closedir($dh);
     }
-    closedir($dh);
 }
 
 #
@@ -3733,7 +3739,9 @@ sub check_args {
                         'lock-wait-threshold=i' => \$option_lock_wait_threshold,
                         'lock-wait-query-type=s' =>
                         \$option_lock_wait_query_type,
-                        'version-check!' => \$option_version_check
+                        'version-check!' => \$option_version_check,
+                        'force-non-empty-directories' =>
+                        \$option_force_non_empty_dirs
     );
 
     if (@ARGV == 0) {
@@ -4987,6 +4995,10 @@ This option is passed directly to xtrabackup's --export option. It enables expor
 =item --extra-lsndir=DIRECTORY
 
 This option specifies the directory in which to save an extra copy of the "xtrabackup_checkpoints" file.  The option accepts a string argument. It is passed directly to xtrabackup's --extra-lsndir option. See the xtrabackup documentation for details.
+
+==item --force-non-empty-directories
+
+This option, when specified, makes --copy-back or --move-back transfer files to non-empty directories. Note that no existing files will be overwritten. If --copy-back or --nove-back has to copy a file from the backup directory which already exists in the destination directory, it will still fail with an error.
 
 =item --galera-info
 
