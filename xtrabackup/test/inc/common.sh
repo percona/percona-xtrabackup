@@ -713,6 +713,22 @@ function require_xtradb()
 }
 
 ########################################################################
+# Return 0 if the server has Galera support
+########################################################################
+function is_galera()
+{
+    [ -n "$WSREP_READY" ]
+}
+
+########################################################################
+# Skip the test if not running against a Galera-enabled server
+########################################################################
+function require_galera()
+{
+    is_galera || skip_test "Requires Galera support"
+}
+
+########################################################################
 # Skip the test if qpress binary is not available
 ########################################################################
 function require_qpress()

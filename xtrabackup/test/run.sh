@@ -379,6 +379,15 @@ function get_version_info()
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     XTRADB_VERSION="`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`"
 
+    WSREP_READY=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW STATUS LIKE 'wsrep_ready'"`
+    WSREP_READY=${WSREP_READY#"wsrep_ready	"}
+
+    if [ "$XB_BUILD" = "galera55" -a -z "$WSREP_READY" ]
+    then
+        die "Galera configuration is enabled via -c galera55, but the server \
+doesn't have Galera support."
+    fi
+
     # Version-specific defaults
     DEFAULT_IBDATA_SIZE="10M"
 
@@ -455,7 +464,7 @@ function get_version_info()
     export MYSQL_VERSION MYSQL_VERSION_COMMENT MYSQL_FLAVOR \
 	INNODB_VERSION XTRADB_VERSION INNODB_FLAVOR \
 	XB_BIN IB_BIN IB_ARGS XB_ARGS MYSQLD_EXTRA_ARGS \
-        DEFAULT_IBDATA_SIZE XB_BUILD
+        DEFAULT_IBDATA_SIZE XB_BUILD WSREP_READY
 }
 
 ###########################################################################
