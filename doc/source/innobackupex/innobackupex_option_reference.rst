@@ -86,6 +86,10 @@ Options
 
    This option accepts a string argument that specifies the directory in which to save an extra copy of the :file:`xtrabackup_checkpoints` file. It is passed directly to |xtrabackup|'s :option:`--extra-lsndir` option. See the :program:`xtrabackup` documentation for details.
 
+.. option:: --force-non-empty-directories 
+
+   When specified, it makes :option:`innobackupex --copy-back` option or :option:`innobackupex --move-back` option transfer files to non-empty directories. No existing files will be overwritten. If --copy-back or --move-back has to copy a file from the backup directory which already exists in the destination directory, it will still fail with an error.
+
 .. option:: --galera-info
 
    This options creates the ``xtrabackup_galera_info`` file which contains the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster.
@@ -158,6 +162,10 @@ Options
 .. option:: --no-timestamp
 
    This option prevents creation of a time-stamped subdirectory of the ``BACKUP-ROOT-DIR`` given on the command line. When it is specified, the backup is done in ``BACKUP-ROOT-DIR`` instead.
+
+.. option:: --no-version-check
+
+   This option disables the version check which is enabled by the --version-check option.
 
 .. option:: --parallel=NUMBER-OF-THREADS
 

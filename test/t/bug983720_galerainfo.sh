@@ -4,17 +4,9 @@
 
 . inc/common.sh
 
+require_galera
+
 ADDR=127.0.0.1
-set +e
-${MYSQLD} --basedir=$MYSQL_BASEDIR --user=$USER --help --verbose --wsrep-sst-method=rsync| grep -q wsrep
-probe_result=$?
-if [[ "$probe_result" == "0" ]]
-    then
-        vlog "Server supports wsrep"
-    else
-        skip_test "Requires WSREP enabled"
-fi
-set -e
 
 debug=""
 pdebug=""
