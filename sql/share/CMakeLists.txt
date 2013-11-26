@@ -45,25 +45,7 @@ SET(files
  dictionary.txt
 )
 
-FOREACH (dir ${dirs})
-  INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${dir} 
-          DESTINATION ${INSTALL_MYSQLSHAREDIR}
-          COMPONENT Server
-  )
-ENDFOREACH()
-
-INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/charsets
-        DESTINATION ${INSTALL_MYSQLSHAREDIR}
-        COMPONENT Server
-        PATTERN "languages.html" EXCLUDE
-)
-
 # Don't copy if we're building in-source.
 IF (NOT ${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   CONFIGURE_FILE(dictionary.txt ${CMAKE_BINARY_DIR}/sql/share/dictionary.txt)
 ENDIF()
-
-INSTALL(FILES ${files}
-        DESTINATION ${INSTALL_MYSQLSHAREDIR}
-        COMPONENT Server
-)

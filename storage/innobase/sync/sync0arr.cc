@@ -42,6 +42,7 @@ Created 9/5/1995 Heikki Tuuri
 #include "lock0lock.h"
 #include "srv0srv.h"
 #include "ha_prototypes.h"
+#include "xb0xb.h"
 
 /*
 			WAIT ARRAY
@@ -898,6 +899,13 @@ sync_array_print_long_waits_low(
 	ulint		fatal_timeout = srv_fatal_semaphore_wait_threshold;
 	ibool		fatal = FALSE;
 	double		longest_diff = 0;
+
+	if (srv_rebuild_indexes) {
+
+		/* Avoid long semaphore waits when rebuilding indexes */
+
+		return(FALSE);
+	}
 
 	/* For huge tables, skip the check during CHECK TABLE etc... */
 	if (fatal_timeout > SRV_SEMAPHORE_WAIT_EXTENSION) {

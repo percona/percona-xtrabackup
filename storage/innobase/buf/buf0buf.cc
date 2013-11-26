@@ -53,6 +53,7 @@ Created 11/5/1995 Heikki Tuuri
 #include "page0zip.h"
 #include "srv0mon.h"
 #include "buf0checksum.h"
+#include "xb0xb.h"
 
 /*
 		IMPLEMENTATION OF THE BUFFER POOL
@@ -549,9 +550,15 @@ buf_page_is_corrupted(
 	if (checksum_field1 == 0 && checksum_field2 == 0
 	    && mach_read_from_4(read_buf + FIL_PAGE_LSN) == 0) {
 		/* make sure that the page is really empty */
+#if 0
+		/* Do not make sure that the page is really empty as this check
+		is incompatible with 1st newly-created tablespace pages, which
+		have FIL_PAGE_FIL_FLUSH_LSN != 0, FIL_PAGE_OR_CHKSUM == 0,
+		FIL_PAGE_END_LSN_OLD_CHKSUM == 0 */
 		ut_d(for (ulint i = 0; i < UNIV_PAGE_SIZE; i++) {
 		     ut_a(read_buf[i] == 0); });
 
+#endif
 		return(FALSE);
 	}
 
@@ -659,6 +666,18 @@ buf_page_is_corrupted(
 			} else {
 				ut_ad(srv_checksum_algorithm
 				     == SRV_CHECKSUM_ALGORITHM_INNODB);
+
+				/* Check if innodb_fast_checksum is enabled when
+				backing up XtraDB 5.5- tablespaces. If
+				checksum_field1 doesn't match the "fast
+				checksum" algorithm, fall back to verify against
+				the SRV_CHECKSUM_ALGORITHM_INNODB algorithm */
+				if (srv_fast_checksum &&
+				    checksum_field1 ==
+				    buf_calc_page_new_checksum_32(read_buf)) {
+
+						return(FALSE);
+				}
 
 				if (checksum_field1
 				    != buf_calc_page_new_checksum(read_buf)) {
@@ -976,6 +995,7 @@ buf_block_init(
 	block->page.in_flush_list = FALSE;
 	block->page.in_free_list = FALSE;
 	block->page.in_LRU_list = FALSE;
+	block->page.is_compacted = FALSE;
 	block->in_unzip_LRU_list = FALSE;
 #endif /* UNIV_DEBUG */
 #if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
@@ -3963,6 +3983,13 @@ buf_page_io_complete(
 			frame = ((buf_block_t*) bpage)->frame;
 		}
 
+		/* Do not validate, recover and apply change buffer entries to
+		bogus pages which replace skipped pages in compact backups. */
+		if (srv_compact_backup && buf_page_is_compacted(frame)) {
+
+			bpage->is_compacted = TRUE;
+		}
+
 		/* If this page is not uninitialized and not in the
 		doublewrite buffer, then the page number and space id
 		should be the same as in block. */
@@ -4080,7 +4107,8 @@ corrupt:
 			recv_recover_page(TRUE, (buf_block_t*) bpage);
 		}
 
-		if (uncompressed && !recv_no_ibuf_operations) {
+		if (uncompressed && !recv_no_ibuf_operations &&
+		    !bpage->is_compacted) {
 			ibuf_merge_or_delete_for_page(
 				(buf_block_t*) bpage, bpage->space,
 				bpage->offset, buf_page_get_zip_size(bpage),

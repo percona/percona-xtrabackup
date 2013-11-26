@@ -462,8 +462,12 @@ const char *my_thread_name(void)
 
 extern void **my_thread_var_dbug()
 {
-  struct st_my_thread_var *tmp=
-    my_pthread_getspecific(struct st_my_thread_var*,THR_KEY_mysys);
+  /* Fix for http://bugs.mysql.com/69653 */
+  struct st_my_thread_var *tmp;
+
+  if (!my_thread_global_init_done)
+    return NULL;
+  tmp= my_pthread_getspecific(struct st_my_thread_var*,THR_KEY_mysys);
   return tmp && tmp->init ? &tmp->dbug : 0;
 }
 #endif /* DBUG_OFF */

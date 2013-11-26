@@ -3140,3 +3140,15 @@ support-files/plugins.files
 storage/perfschema/pfs_lex_token.h
 storage/perfschema/gen_pfs_lex_token
 sql/share/bulgarian
+./storage/innobase/xtrabackup/src/xbcrypt
+./storage/innobase/xtrabackup/src/xbstream
+./storage/innobase/xtrabackup/src/xtrabackup
+./storage/innobase/xtrabackup/src/libarchive/cmake.tmp
+./storage/innobase/xtrabackup/test/results
+./storage/innobase/xtrabackup/test/test_results.subunit
+./storage/innobase/xtrabackup/test/var
+./storage/innobase/xtrabackup/src/libarchive/DartConfiguration.tcl
+./storage/innobase/xtrabackup/innobackupex
+./storage/innobase/xtrabackup/src/CMakeCache.txt
+./storage/innobase/xtrabackup/src/xtrabackup_version.h
+./storage/innobase/xtrabackup/CMakeCache.txt

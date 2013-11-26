@@ -62,6 +62,15 @@ extern	ibool	log_debug_writes;
 # define log_do_write TRUE
 #endif /* UNIV_DEBUG */
 
+/** Magic value to use instead of log checksums when they are disabled */
+#define LOG_NO_CHECKSUM_MAGIC 0xDEADBEEFUL
+
+typedef ulint (*log_checksum_func_t)(const byte* log_block);
+
+/** Pointer to the log checksum calculation function. Protected with
+log_sys->mutex. */
+extern log_checksum_func_t log_checksum_algorithm_ptr;
+
 /** Wait modes for log_write_up_to @{ */
 #define LOG_NO_WAIT		91
 #define LOG_WAIT_ONE_GROUP	92
@@ -69,6 +78,10 @@ extern	ibool	log_debug_writes;
 /* @} */
 /** Maximum number of log groups in log_group_t::checkpoint_buf */
 #define LOG_MAX_N_GROUPS	32
+
+#define IB_ARCHIVED_LOGS_PREFIX		"ib_log_archive_"
+#define IB_ARCHIVED_LOGS_PREFIX_LEN	(sizeof(IB_ARCHIVED_LOGS_PREFIX) - 1)
+#define IB_ARCHIVED_LOGS_SERIAL_LEN	20
 
 /*******************************************************************//**
 Calculates where in log files we find a specified lsn.
@@ -340,8 +353,18 @@ void
 log_archived_file_name_gen(
 /*=======================*/
 	char*	buf,	/*!< in: buffer where to write */
+	ulint	buf_len,/*!< in: buffer length */
 	ulint	id,	/*!< in: group id */
-	ulint	file_no);/*!< in: file number */
+	lsn_t	file_no);/*!< in: file number */
+
+UNIV_INTERN
+void
+log_archived_get_offset(
+/*====================*/
+	log_group_t*	group,		/*!< in: log group */
+	lsn_t		file_no,	/*!< in: archive log file number */
+	lsn_t		archived_lsn,	/*!< in: last archived LSN */
+	lsn_t*		offset);	/*!< out: offset within archived file */
 #else /* !UNIV_HOTBACKUP */
 /******************************************************//**
 Writes info to a buffer of a log group when log files are created in
@@ -681,6 +704,9 @@ extern log_t*	log_sys;
 					when mysqld is first time started
 					on the restored database, it can
 					print helpful info for the user */
+#define LOG_FILE_OS_FILE_LOG_BLOCK_SIZE 64
+					/* extend to record log_block_size
+					of XtraDB. 0 means default 512 */
 #define	LOG_FILE_ARCH_COMPLETED	OS_FILE_LOG_BLOCK_SIZE
 					/* this 4-byte field is TRUE when
 					the writing of an archived log file
@@ -736,19 +762,19 @@ struct log_group_t{
 	ulint		archive_space_id;/*!< file space which
 					implements the log group
 					archive */
-	ulint		archived_file_no;/*!< file number corresponding to
+	lsn_t		archived_file_no;/*!< file number corresponding to
 					log_sys->archived_lsn */
-	ulint		archived_offset;/*!< file offset corresponding to
+	lsn_t		archived_offset;/*!< file offset corresponding to
 					log_sys->archived_lsn, 0 if we have
 					not yet written to the archive file
 					number archived_file_no */
-	ulint		next_archived_file_no;/*!< during an archive write,
+	lsn_t		next_archived_file_no;/*!< during an archive write,
 					until the write is completed, we
 					store the next value for
 					archived_file_no here: the write
 					completion function then sets the new
 					value to ..._file_no */
-	ulint		next_archived_offset; /*!< like the preceding field */
+	lsn_t		next_archived_offset; /*!< like the preceding field */
 #endif /* UNIV_LOG_ARCHIVE */
 	/*-----------------------------*/
 	lsn_t		scanned_lsn;	/*!< used only in recovery: recovery scan

@@ -5434,6 +5434,7 @@ ha_innobase::commit_inplace_alter_table(
 				= static_cast<ha_innobase_inplace_ctx*>(*pctx);
 
 			DBUG_ASSERT(ctx->need_rebuild());
+#if 0
 			/* Generate the redo log for the file
 			operations that will be performed in
 			commit_cache_rebuild(). */
@@ -5442,6 +5443,7 @@ ha_innobase::commit_inplace_alter_table(
 					   ctx->new_table->space,
 					   ctx->new_table->name,
 					   ctx->tmp_name, &mtr);
+#endif
 			DBUG_INJECT_CRASH("ib_commit_inplace_crash",
 					  crash_inject_count++);
 		}

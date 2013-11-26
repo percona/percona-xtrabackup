@@ -41,6 +41,22 @@ Created 5/11/2006 Osku Salerma
 class Field;
 struct fts_string_t;
 
+/** Possible values for system variable "innodb_checksum_algorithm". */
+extern const char* innodb_checksum_algorithm_names[];
+
+/** Used to define an enumerate type of the system variable
+innodb_checksum_algorithm. */
+extern TYPELIB innodb_checksum_algorithm_typelib;
+
+/****************************************************************//**
+Update log_checksum_algorithm_ptr with a pointer to the function corresponding
+to a given checksum algorithm. */
+UNIV_INTERN
+void
+innodb_log_checksum_func_update(
+/*============================*/
+	ulint	algorithm);	/*!< in: algorithm */
+
 /*********************************************************************//**
 Wrapper around MySQL's copy_and_convert function.
 @return	number of bytes copied to 'to' */

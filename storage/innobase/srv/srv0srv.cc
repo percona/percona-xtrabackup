@@ -239,6 +239,10 @@ UNIV_INTERN ulint	srv_n_write_io_threads	= ULINT_MAX;
 
 /* Switch to enable random read ahead. */
 UNIV_INTERN my_bool	srv_random_read_ahead	= FALSE;
+
+/* The log block size */
+UNIV_INTERN ulint	srv_log_block_size	= 0;
+
 /* User settable value of the number of pages that must be present
 in the buffer cache and accessed sequentially for InnoDB to trigger a
 readahead request. */
@@ -341,6 +345,8 @@ UNIV_INTERN my_bool		srv_stats_auto_recalc = TRUE;
 
 UNIV_INTERN ibool	srv_use_doublewrite_buf	= TRUE;
 
+UNIV_INTERN ibool	srv_fast_checksum	= FALSE;
+
 /** doublewrite buffer is 1MB is size i.e.: it can hold 128 16K pages.
 The following parameter is the size of the buffer that is used for
 batch flushing i.e.: LRU flushing and flush_list flushing. The rest
@@ -348,6 +354,13 @@ of the pages are used for single page flushing. */
 UNIV_INTERN ulong	srv_doublewrite_batch_size	= 120;
 
 UNIV_INTERN ulong	srv_replication_delay		= 0;
+
+UNIV_INTERN ibool	srv_apply_log_only	= FALSE;
+
+UNIV_INTERN ibool	srv_backup_mode	= FALSE;
+
+UNIV_INTERN ulint	srv_log_checksum_algorithm =
+	SRV_CHECKSUM_ALGORITHM_INNODB;
 
 /*-------------------------------------------*/
 UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
@@ -1814,7 +1827,8 @@ srv_get_active_thread_type(void)
 	if (ret == SRV_NONE
 	    && srv_shutdown_state != SRV_SHUTDOWN_NONE
 	    && trx_purge_state() != PURGE_STATE_DISABLED
-	    && trx_purge_state() != PURGE_STATE_EXIT) {
+	    && trx_purge_state() != PURGE_STATE_EXIT
+	    && trx_purge_state() != PURGE_STATE_INIT) {
 
 		ret = SRV_PURGE;
 	}

@@ -1185,17 +1185,22 @@ trx_sys_close(void)
 	trx_purge_sys_close();
 
 	/* Free the double write data structures. */
-	buf_dblwr_free();
+	if (buf_dblwr) {
+
+		buf_dblwr_free();
+	}
 
 	mutex_enter(&trx_sys->mutex);
 
 	ut_a(UT_LIST_GET_LEN(trx_sys->ro_trx_list) == 0);
 
+	if (!srv_apply_log_only) {
 	/* Only prepared transactions may be left in the system. Free them. */
 	ut_a(UT_LIST_GET_LEN(trx_sys->rw_trx_list) == trx_sys->n_prepared_trx);
 
 	while ((trx = UT_LIST_GET_FIRST(trx_sys->rw_trx_list)) != NULL) {
 		trx_free_prepared(trx);
+	}
 	}
 
 	/* There can't be any active transactions. */
@@ -1223,10 +1228,12 @@ trx_sys_close(void)
 		UT_LIST_REMOVE(view_list, trx_sys->view_list, prev_view);
 	}
 
+	if (!srv_apply_log_only) {
 	ut_a(UT_LIST_GET_LEN(trx_sys->view_list) == 0);
 	ut_a(UT_LIST_GET_LEN(trx_sys->ro_trx_list) == 0);
 	ut_a(UT_LIST_GET_LEN(trx_sys->rw_trx_list) == 0);
 	ut_a(UT_LIST_GET_LEN(trx_sys->mysql_trx_list) == 0);
+	}
 
 	mutex_exit(&trx_sys->mutex);
 
@@ -1246,6 +1253,10 @@ trx_sys_any_active_transactions(void)
 /*=================================*/
 {
 	ulint	total_trx = 0;
+
+	if (srv_apply_log_only) {
+		return(0);
+	}
 
 	mutex_enter(&trx_sys->mutex);
 

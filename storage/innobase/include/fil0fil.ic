@@ -1,0 +1,62 @@
+/*****************************************************************************
+
+Copyright (c) 1995, 2012, Oracle and/or its affiliates. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; version 2 of the License.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,
+51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+
+*****************************************************************************/
+
+#include "univ.i"
+
+/*******************************************************************//**
+Returns the table space by a given id, NULL if not found. */
+UNIV_INLINE
+fil_space_t*
+fil_space_get_by_id(
+/*================*/
+	ulint	id)	/*!< in: space id */
+{
+	fil_space_t*	space;
+
+	ut_ad(mutex_own(&fil_system->mutex));
+
+	HASH_SEARCH(hash, fil_system->spaces, id,
+		    fil_space_t*, space,
+		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
+		    space->id == id);
+
+	return(space);
+}
+
+/*******************************************************************//**
+Returns the table space by a given name, NULL if not found. */
+UNIV_INLINE
+fil_space_t*
+fil_space_get_by_name(
+/*==================*/
+	const char*	name)	/*!< in: space name */
+{
+	fil_space_t*	space;
+	ulint		fold;
+
+	ut_ad(mutex_own(&fil_system->mutex));
+
+	fold = ut_fold_string(name);
+
+	HASH_SEARCH(name_hash, fil_system->name_hash, fold,
+		    fil_space_t*, space,
+		    ut_ad(space->magic_n == FIL_SPACE_MAGIC_N),
+		    !strcmp(name, space->name));
+
+	return(space);
+}

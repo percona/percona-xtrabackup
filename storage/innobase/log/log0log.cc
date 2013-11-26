@@ -79,6 +79,10 @@ reduce the size of the log.
 /* Global log system variable */
 UNIV_INTERN log_t*	log_sys	= NULL;
 
+/** Pointer to the log checksum calculation function */
+UNIV_INTERN log_checksum_func_t log_checksum_algorithm_ptr	=
+	log_block_calc_checksum_innodb;
+
 #ifdef UNIV_PFS_RWLOCK
 UNIV_INTERN mysql_pfs_key_t	checkpoint_lock_key;
 # ifdef UNIV_LOG_ARCHIVE
@@ -896,10 +900,10 @@ log_group_init(
 		mem_zalloc(sizeof(byte**) * n_files));
 
 #ifdef UNIV_LOG_ARCHIVE
-	group->archive_file_header_bufs_ptr = static_cast<byte*>(
+	group->archive_file_header_bufs_ptr = static_cast<byte**>(
 		mem_zalloc( sizeof(byte*) * n_files));
 
-	group->archive_file_header_bufs = static_cast<byte*>(
+	group->archive_file_header_bufs = static_cast<byte**>(
 		mem_zalloc(sizeof(byte*) * n_files));
 #endif /* UNIV_LOG_ARCHIVE */
 
@@ -924,7 +928,7 @@ log_group_init(
 #ifdef UNIV_LOG_ARCHIVE
 	group->archive_space_id = archive_space_id;
 
-	group->archived_file_no = 0;
+	group->archived_file_no = LOG_START_LSN;
 	group->archived_offset = 0;
 #endif /* UNIV_LOG_ARCHIVE */
 
@@ -1143,6 +1147,11 @@ log_group_file_header_flush(
 
 	/* Wipe over possible label of ibbackup --restore */
 	memcpy(buf + LOG_FILE_WAS_CREATED_BY_HOT_BACKUP, "    ", 4);
+
+	if (srv_log_block_size > 512) {
+		mach_write_to_4(buf + LOG_FILE_OS_FILE_LOG_BLOCK_SIZE,
+				srv_log_block_size);
+	}
 
 	dest_offset = nth_file * group->file_size;
 
@@ -1749,7 +1758,6 @@ log_group_checkpoint(
 	log_group_t*	group2;
 #ifdef UNIV_LOG_ARCHIVE
 	ib_uint64_t	archived_lsn;
-	ib_uint64_t	next_archived_lsn;
 #endif /* UNIV_LOG_ARCHIVE */
 	lsn_t		lsn_offset;
 	ulint		write_offset;
@@ -1759,9 +1767,7 @@ log_group_checkpoint(
 
 	ut_ad(!srv_read_only_mode);
 	ut_ad(mutex_own(&(log_sys->mutex)));
-#if LOG_CHECKPOINT_SIZE > OS_FILE_LOG_BLOCK_SIZE
-# error "LOG_CHECKPOINT_SIZE > OS_FILE_LOG_BLOCK_SIZE"
-#endif
+	ut_ad(LOG_CHECKPOINT_SIZE <= OS_FILE_LOG_BLOCK_SIZE);
 
 	buf = group->checkpoint_buf;
 
@@ -1782,11 +1788,6 @@ log_group_checkpoint(
 		archived_lsn = IB_ULONGLONG_MAX;
 	} else {
 		archived_lsn = log_sys->archived_lsn;
-
-		if (archived_lsn != log_sys->next_archived_lsn) {
-			next_archived_lsn = log_sys->next_archived_lsn;
-			/* For debugging only */
-		}
 	}
 
 	mach_write_to_8(buf + LOG_CHECKPOINT_ARCHIVED_LSN, archived_lsn);
@@ -2225,7 +2226,7 @@ loop:
 	fil_io(OS_FILE_READ | OS_FILE_LOG, sync, group->space_id, 0,
 	       (ulint) (source_offset / UNIV_PAGE_SIZE),
 	       (ulint) (source_offset % UNIV_PAGE_SIZE),
-	       len, buf, NULL);
+	       len, buf, (type == LOG_ARCHIVE) ? &log_archive_io : NULL);
 
 	start_lsn += len;
 	buf += len;
@@ -2244,12 +2245,68 @@ void
 log_archived_file_name_gen(
 /*=======================*/
 	char*	buf,	/*!< in: buffer where to write */
+	ulint	buf_len,/*!< in: buffer length */
 	ulint	id __attribute__((unused)),
 			/*!< in: group id;
 			currently we only archive the first group */
-	ulint	file_no)/*!< in: file number */
+	lsn_t	file_no)/*!< in: file number */
 {
-	sprintf(buf, "%sib_arch_log_%010lu", srv_arch_dir, (ulong) file_no);
+	ulint	dirnamelen;
+
+	dirnamelen = strlen(srv_arch_dir);
+
+	ut_a(buf_len > dirnamelen +
+		       IB_ARCHIVED_LOGS_SERIAL_LEN +
+		       IB_ARCHIVED_LOGS_PREFIX_LEN + 2);
+
+	strcpy(buf, srv_arch_dir);
+
+	if (buf[dirnamelen-1] != SRV_PATH_SEPARATOR) {
+		buf[dirnamelen++] = SRV_PATH_SEPARATOR;
+	}
+	sprintf(buf + dirnamelen, IB_ARCHIVED_LOGS_PREFIX 
+		"%0" IB_TO_STR(IB_ARCHIVED_LOGS_SERIAL_LEN) "llu",
+		(unsigned long long) file_no);
+}
+
+/******************************************************//**
+Get offset within archived log file to continue to write
+with. */
+UNIV_INTERN
+void
+log_archived_get_offset(
+/*=====================*/
+	log_group_t*	group,		/*!< in: log group */
+	lsn_t		file_no,	/*!< in: archive log file number */
+	lsn_t		archived_lsn,	/*!< in: last archived LSN */
+	lsn_t*		offset)		/*!< out: offset within archived file */
+{
+	char		file_name[OS_FILE_MAX_PATH];
+	ibool		exists;
+	os_file_type_t	type;
+
+	log_archived_file_name_gen(file_name,
+		sizeof(file_name), group->id, file_no);
+
+	ut_a(os_file_status(file_name, &exists,	&type));
+
+	if (!exists) {
+		*offset = 0;
+		return;
+	}
+
+	*offset = archived_lsn - file_no + LOG_FILE_HDR_SIZE;
+
+	if (archived_lsn != IB_ULONGLONG_MAX) {
+		*offset = archived_lsn - file_no + LOG_FILE_HDR_SIZE;
+	} else {
+		/* Archiving was OFF prior startup */
+		*offset = 0;
+	}
+
+	ut_a(group->file_size >= *offset + LOG_FILE_HDR_SIZE);
+
+	return;
 }
 
 /******************************************************//**
@@ -2287,6 +2344,7 @@ log_group_archive_file_header_write(
 	MONITOR_INC(MONITOR_LOG_IO);
 
 	fil_io(OS_FILE_WRITE | OS_FILE_LOG, TRUE, group->archive_space_id,
+	       0,
 	       dest_offset / UNIV_PAGE_SIZE,
 	       dest_offset % UNIV_PAGE_SIZE,
 	       2 * OS_FILE_LOG_BLOCK_SIZE,
@@ -2322,6 +2380,7 @@ log_group_archive_completed_header_write(
 	MONITOR_INC(MONITOR_LOG_IO);
 
 	fil_io(OS_FILE_WRITE | OS_FILE_LOG, TRUE, group->archive_space_id,
+	       0,
 	       dest_offset / UNIV_PAGE_SIZE,
 	       dest_offset % UNIV_PAGE_SIZE,
 	       OS_FILE_LOG_BLOCK_SIZE,
@@ -2376,7 +2435,7 @@ loop:
 			open_mode = OS_FILE_OPEN;
 		}
 
-		log_archived_file_name_gen(name, group->id,
+		log_archived_file_name_gen(name, sizeof(name), group->id,
 					   group->archived_file_no + n_files);
 
 		file_handle = os_file_create(innodb_file_log_key,
@@ -2414,8 +2473,8 @@ loop:
 
 		/* Add the archive file as a node to the space */
 
-		fil_node_create(name, group->file_size / UNIV_PAGE_SIZE,
-				group->archive_space_id, FALSE);
+		ut_a(fil_node_create(name, group->file_size / UNIV_PAGE_SIZE,
+				     group->archive_space_id, FALSE));
 
 		if (next_offset % group->file_size == 0) {
 			log_group_archive_file_header_write(
@@ -2451,6 +2510,7 @@ loop:
 	MONITOR_INC(MONITOR_LOG_IO);
 
 	fil_io(OS_FILE_WRITE | OS_FILE_LOG, FALSE, group->archive_space_id,
+	       0,
 	       (ulint) (next_offset / UNIV_PAGE_SIZE),
 	       (ulint) (next_offset % UNIV_PAGE_SIZE),
 	       ut_calc_align(len, OS_FILE_LOG_BLOCK_SIZE), buf,
@@ -2822,7 +2882,6 @@ log_archive_close_groups(
 					 trunc_len);
 		if (increment_file_count) {
 			group->archived_offset = 0;
-			group->archived_file_no += 2;
 		}
 
 #ifdef UNIV_DEBUG
@@ -3087,7 +3146,6 @@ logs_empty_and_mark_files_at_shutdown(void)
 /*=======================================*/
 {
 	lsn_t			lsn;
-	ulint			arch_log_no;
 	ulint			count = 0;
 	ulint			total_trx;
 	ulint			pending_io;
@@ -3304,15 +3362,7 @@ loop:
 		goto loop;
 	}
 
-	arch_log_no = 0;
-
 #ifdef UNIV_LOG_ARCHIVE
-	UT_LIST_GET_FIRST(log_sys->log_groups)->archived_file_no;
-
-	if (0 == UT_LIST_GET_FIRST(log_sys->log_groups)->archived_offset) {
-
-		arch_log_no--;
-	}
 
 	log_archive_close_groups(TRUE);
 #endif /* UNIV_LOG_ARCHIVE */
@@ -3371,7 +3421,16 @@ loop:
 	srv_shutdown_lsn = lsn;
 
 	if (!srv_read_only_mode) {
-		fil_write_flushed_lsn_to_data_files(lsn, arch_log_no);
+		/*
+		  log_sys->lsn is aligned up to the log block size
+		  in recv_reset_logs(), but if archived logs are applied
+		  data files must contain exactly the same flushed_lsn
+		  on which applying was finished
+		*/
+		fil_write_flushed_lsn_to_data_files(
+			srv_archive_recovery ? recv_sys->recovered_lsn :
+			lsn,
+			0);
 
 		fil_flush_file_spaces(FIL_TABLESPACE);
 	}
@@ -3594,7 +3653,7 @@ log_shutdown(void)
 
 #ifdef UNIV_LOG_ARCHIVE
 	rw_lock_free(&log_sys->archive_lock);
-	os_event_create();
+	os_event_free(log_sys->archiving_on);
 #endif /* UNIV_LOG_ARCHIVE */
 
 #ifdef UNIV_LOG_DEBUG

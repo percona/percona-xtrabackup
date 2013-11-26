@@ -278,18 +278,10 @@ mem_init_buf(
 	byte*	buf,	/*!< in: pointer to buffer */
 	ulint	 n)	/*!< in: length of buffer */
 {
-	byte*	ptr;
-
 	UNIV_MEM_ASSERT_W(buf, n);
 
-	for (ptr = buf; ptr < buf + n; ptr++) {
-
-		if (ut_rnd_gen_ibool()) {
-			*ptr = 0xBA;
-		} else {
-			*ptr = 0xBE;
-		}
-	}
+	/* Fix https://bugs.launchpad.net/percona-xtrabackup/+bug/1158154 */
+	memset(buf, 0xBA, n);
 
 	UNIV_MEM_INVALID(buf, n);
 }
@@ -304,17 +296,10 @@ mem_erase_buf(
 	byte*	buf,	/*!< in: pointer to buffer */
 	ulint	n)	/*!< in: length of buffer */
 {
-	byte*	ptr;
-
 	UNIV_MEM_ASSERT_W(buf, n);
 
-	for (ptr = buf; ptr < buf + n; ptr++) {
-		if (ut_rnd_gen_ibool()) {
-			*ptr = 0xDE;
-		} else {
-			*ptr = 0xAD;
-		}
-	}
+	/* Fix https://bugs.launchpad.net/percona-xtrabackup/+bug/1158154 */
+	memset(buf, 0xDE, n);
 
 	UNIV_MEM_FREE(buf, n);
 }

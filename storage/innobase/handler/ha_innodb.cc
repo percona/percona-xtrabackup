@@ -176,6 +176,7 @@ static char*	innobase_log_arch_dir			= NULL;
 #endif /* UNIV_LOG_ARCHIVE */
 static my_bool	innobase_use_doublewrite		= TRUE;
 static my_bool	innobase_use_checksums			= TRUE;
+static my_bool	innobase_fast_checksum			= FALSE;
 static my_bool	innobase_locks_unsafe_for_binlog	= FALSE;
 static my_bool	innobase_rollback_on_timeout		= FALSE;
 static my_bool	innobase_create_status_file		= FALSE;
@@ -208,8 +209,9 @@ static TYPELIB innodb_stats_method_typelib = {
 	NULL
 };
 
-/** Possible values for system variable "innodb_checksum_algorithm". */
-static const char* innodb_checksum_algorithm_names[] = {
+/** Possible values for system variables "innodb_checksum_algorithm" and
+"innodb_log_checksum_algorithm". */
+const char* innodb_checksum_algorithm_names[] = {
 	"crc32",
 	"strict_crc32",
 	"innodb",
@@ -219,9 +221,9 @@ static const char* innodb_checksum_algorithm_names[] = {
 	NullS
 };
 
-/** Used to define an enumerate type of the system variable
-innodb_checksum_algorithm. */
-static TYPELIB innodb_checksum_algorithm_typelib = {
+/** Used to define an enumerate type of the system variables
+innodb_checksum_algorithm and innodb_log_checksum_algorithm. */
+TYPELIB innodb_checksum_algorithm_typelib = {
 	array_elements(innodb_checksum_algorithm_names) - 1,
 	"innodb_checksum_algorithm_typelib",
 	innodb_checksum_algorithm_names,
@@ -1548,7 +1550,7 @@ innobase_get_cset_width(
 		ut_ad(*mbminlen < DATA_MBMAX);
 		ut_ad(*mbmaxlen < DATA_MBMAX);
 	} else {
-		THD*	thd = current_thd;
+		THD*	thd = NULL;
 
 		if (thd && thd_sql_command(thd) == SQLCOM_DROP_TABLE) {
 
@@ -2099,6 +2101,62 @@ trx_is_started(
 	return(trx->state != TRX_STATE_NOT_STARTED);
 }
 
+/****************************************************************//**
+Update log_checksum_algorithm_ptr with a pointer to the function corresponding
+to a given checksum algorithm. */
+UNIV_INTERN
+void
+innodb_log_checksum_func_update(
+/*============================*/
+	ulint	algorithm)	/*!< in: algorithm */
+{
+	switch (algorithm) {
+	case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
+	case SRV_CHECKSUM_ALGORITHM_INNODB:
+		log_checksum_algorithm_ptr=log_block_calc_checksum_innodb;
+		break;
+	case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
+	case SRV_CHECKSUM_ALGORITHM_CRC32:
+		log_checksum_algorithm_ptr=log_block_calc_checksum_crc32;
+		break;
+	case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
+	case SRV_CHECKSUM_ALGORITHM_NONE:
+		log_checksum_algorithm_ptr=log_block_calc_checksum_none;
+		break;
+	default:
+		ut_a(0);
+	}
+}
+
+/****************************************************************//**
+On update hook for the innodb_log_checksum_algorithm variable. */
+static
+void
+innodb_log_checksum_algorithm_update(
+/*=================================*/
+	THD*				thd,	/*!< in: thread handle */
+	struct st_mysql_sys_var*	var,	/*!< in: pointer to
+						system variable */
+	void*				var_ptr,/*!< out: where the
+						formal string goes */
+	const void*			save)	/*!< in: immediate result
+						from check function */
+{
+	srv_checksum_algorithm_t	algorithm;
+
+	algorithm = (srv_checksum_algorithm_t)
+		(*static_cast<const ulong*>(save));
+
+	/* Make sure we are the only log user */
+	mutex_enter(&log_sys->mutex);
+
+	innodb_log_checksum_func_update(algorithm);
+
+	srv_log_checksum_algorithm = algorithm;
+
+	mutex_exit(&log_sys->mutex);
+}
+
 /*********************************************************************//**
 Copy table flags from MySQL's HA_CREATE_INFO into an InnoDB table object.
 Those flags are stored in .frm file and end up in the MySQL table object,
@@ -2459,43 +2517,19 @@ innobase_convert_identifier(
 	ulint		buflen,	/*!< in: length of buf, in bytes */
 	const char*	id,	/*!< in: identifier to convert */
 	ulint		idlen,	/*!< in: length of id, in bytes */
-	THD*		thd,	/*!< in: MySQL connection thread, or NULL */
-	ibool		file_id)/*!< in: TRUE=id is a table or database name;
+	THD*		thd __attribute__((unused)),
+				/*!< in: MySQL connection thread, or NULL */
+	ibool		file_id __attribute__((unused)))
+				/*!< in: TRUE=id is a table or database name;
 				FALSE=id is an UTF-8 string */
 {
-	char nz[NAME_LEN + 1];
-	char nz2[NAME_LEN + 1 + EXPLAIN_FILENAME_MAX_EXTRA_LENGTH];
-
 	const char*	s	= id;
 	int		q;
 
-	if (file_id) {
-		/* Decode the table name.  The MySQL function expects
-		a NUL-terminated string.  The input and output strings
-		buffers must not be shared. */
-
-		if (UNIV_UNLIKELY(idlen > (sizeof nz) - 1)) {
-			idlen = (sizeof nz) - 1;
-		}
-
-		memcpy(nz, id, idlen);
-		nz[idlen] = 0;
-
-		s = nz2;
-		idlen = explain_filename(thd, nz, nz2, sizeof nz2,
-					 EXPLAIN_PARTITIONS_AS_COMMENT);
-		goto no_quote;
-	}
-
 	/* See if the identifier needs to be quoted. */
-	if (UNIV_UNLIKELY(!thd)) {
-		q = '"';
-	} else {
-		q = get_quote_char_for_identifier(thd, s, (int) idlen);
-	}
+	q = '"';
 
 	if (q == EOF) {
-no_quote:
 		if (UNIV_UNLIKELY(idlen > buflen)) {
 			idlen = buflen;
 		}
@@ -2883,12 +2917,9 @@ mem_free_and_error:
 	}
 
 #ifdef UNIV_LOG_ARCHIVE
-	/* Since innodb_log_arch_dir has no relevance under MySQL,
-	starting from 4.0.6 we always set it the same as
-	innodb_log_group_home_dir: */
-
-	innobase_log_arch_dir = innobase_log_group_home_dir;
-
+	if (!innobase_log_arch_dir) {
+		innobase_log_arch_dir = srv_log_group_home_dir;
+	}
 	srv_arch_dir = innobase_log_arch_dir;
 #endif /* UNIG_LOG_ARCHIVE */
 
@@ -3135,6 +3166,10 @@ innobase_change_buffering_inited_ok:
 			"instead.\n");
 		srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_NONE;
 	}
+
+	srv_fast_checksum = innobase_fast_checksum;
+
+	innodb_log_checksum_func_update(srv_log_checksum_algorithm);
 
 #ifdef HAVE_LARGE_PAGES
 	if ((os_use_large_pages = (ibool) my_use_large_pages)) {
@@ -15432,6 +15467,33 @@ static MYSQL_SYSVAR_ENUM(checksum_algorithm, srv_checksum_algorithm,
   NULL, NULL, SRV_CHECKSUM_ALGORITHM_INNODB,
   &innodb_checksum_algorithm_typelib);
 
+
+static MYSQL_SYSVAR_ENUM(log_checksum_algorithm, srv_log_checksum_algorithm,
+  PLUGIN_VAR_RQCMDARG,
+  "The algorithm InnoDB uses for log block checksums. Possible values are "
+  "CRC32 (hardware accelerated if the CPU supports it) "
+    "write crc32, allow any of the other checksums to match when reading; "
+  "STRICT_CRC32 "
+    "write crc32, do not allow other algorithms to match when reading; "
+  "INNODB "
+    "write a software calculated checksum, allow any other checksums "
+    "to match when reading; "
+  "STRICT_INNODB "
+    "write a software calculated checksum, do not allow other algorithms "
+    "to match when reading; "
+  "NONE "
+    "write a constant magic number, do not do any checksum verification "
+    "when reading (same as innodb_checksums=OFF); "
+  "STRICT_NONE "
+    "write a constant magic number, do not allow values other than that "
+    "magic number when reading; "
+  "Logs created when this option is set to crc32/strict_crc32/none/strict_none "
+  "will not be readable by any MySQL version or Percona Server versions that do"
+  "not support this feature",
+  NULL, innodb_log_checksum_algorithm_update, SRV_CHECKSUM_ALGORITHM_INNODB,
+  &innodb_checksum_algorithm_typelib);
+
+
 static MYSQL_SYSVAR_BOOL(checksums, innobase_use_checksums,
   PLUGIN_VAR_NOCMDARG | PLUGIN_VAR_READONLY,
   "DEPRECATED. Use innodb_checksum_algorithm=NONE instead of setting "
@@ -15439,6 +15501,15 @@ static MYSQL_SYSVAR_BOOL(checksums, innobase_use_checksums,
   "Enable InnoDB checksums validation (enabled by default). "
   "Disable with --skip-innodb-checksums.",
   NULL, NULL, TRUE);
+
+static MYSQL_SYSVAR_BOOL(fast_checksum, innobase_fast_checksum,
+  PLUGIN_VAR_NOCMDARG | PLUGIN_VAR_READONLY,
+  "Change the algorithm of checksum for the whole of datapage to 4-bytes word based. "
+  "The original checksum is checked after the new one. It may be slow for reading page"
+  " which has orginal checksum. Overwrite the page or recreate the InnoDB database, "
+  "if you want the entire benefit for performance at once. "
+  "#### Attention: The checksum is not compatible for normal or disabled version! ####",
+  NULL, NULL, FALSE);
 
 static MYSQL_SYSVAR_STR(data_home_dir, innobase_data_home_dir,
   PLUGIN_VAR_READONLY,
@@ -16199,7 +16270,9 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(lru_scan_depth),
   MYSQL_SYSVAR(flush_neighbors),
   MYSQL_SYSVAR(checksum_algorithm),
+  MYSQL_SYSVAR(log_checksum_algorithm),
   MYSQL_SYSVAR(checksums),
+  MYSQL_SYSVAR(fast_checksum),
   MYSQL_SYSVAR(commit_concurrency),
   MYSQL_SYSVAR(concurrency_tickets),
   MYSQL_SYSVAR(compression_level),
@@ -16774,45 +16847,24 @@ UNIV_INTERN
 void
 ib_logf(
 /*====*/
-	ib_log_level_t	level,		/*!< in: warning level */
+	ib_log_level_t	level __attribute__((unused)),
+					/*!< in: warning level */
 	const char*	format,		/*!< printf format */
 	...)				/*!< Args */
 {
-	char*		str;
 	va_list         args;
 
 	va_start(args, format);
 
-#ifdef __WIN__
-	int		size = _vscprintf(format, args) + 1;
-	str = static_cast<char*>(malloc(size));
-	str[size - 1] = 0x0;
-	vsnprintf(str, size, format, args);
-#elif HAVE_VASPRINTF
-	(void) vasprintf(&str, format, args);
-#else
-	/* Use a fixed length string. */
-	str = static_cast<char*>(malloc(BUFSIZ));
-	my_vsnprintf(str, BUFSIZ, format, args);
-#endif /* __WIN__ */
+	/* Don't use server logger for XtraBackup, just print to stderr. */
 
-	switch(level) {
-	case IB_LOG_LEVEL_INFO:
-		sql_print_information("InnoDB: %s", str);
-		break;
-	case IB_LOG_LEVEL_WARN:
-		sql_print_warning("InnoDB: %s", str);
-		break;
-	case IB_LOG_LEVEL_ERROR:
-		sql_print_error("InnoDB: %s", str);
-		break;
-	case IB_LOG_LEVEL_FATAL:
-		sql_print_error("InnoDB: %s", str);
-		break;
-	}
+	fprintf(stderr, "InnoDB: ");
+
+	vfprintf(stderr, format, args);
 
 	va_end(args);
-	free(str);
+
+	fputc('\n', stderr);
 
 	if (level == IB_LOG_LEVEL_FATAL) {
 		ut_error;

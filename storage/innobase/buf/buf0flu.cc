@@ -790,7 +790,9 @@ buf_flush_init_for_writing(
 		break;
 	case SRV_CHECKSUM_ALGORITHM_INNODB:
 	case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
-		checksum = (ib_uint32_t) buf_calc_page_new_checksum(page);
+		checksum = (srv_fast_checksum) ?
+			(ib_uint32_t) buf_calc_page_new_checksum_32(page) :
+		(ib_uint32_t) buf_calc_page_new_checksum(page);
 		break;
 	case SRV_CHECKSUM_ALGORITHM_NONE:
 	case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:

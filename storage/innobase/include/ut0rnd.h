@@ -106,6 +106,14 @@ ut_fold_string(
 /*===========*/
 	const char*	str)	/*!< in: null-terminated string */
 	__attribute__((pure));
+
+UNIV_INLINE
+ulint
+ut_fold_binary_32(
+/*==============*/
+	const byte*	str,	/*!< in: string of bytes */
+	ulint		len)	/*!< in: length */
+	__attribute__((pure));
 /***********************************************************//**
 Looks for a prime number slightly greater than the given argument.
 The prime is chosen so that it is not near any power of 2.
