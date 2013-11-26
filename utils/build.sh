@@ -142,7 +142,7 @@ function auto_download()
 {
     for i in $*
     do
-	if ! test -f $i
+	if ! test -f $i && ! test -f `echo $i|sed -e 's/tar.gz/tar.xz/'`
 	then
 	    if [ "$AUTO_DOWNLOAD" = "yes" ]
 	    then
@@ -164,7 +164,11 @@ AUTO_DOWNLOAD to \"yes\""
 function unpack_and_patch()
 {
     local dirname=`basename "$1" ".tar.gz"`
-    tar xzf $top_dir/$1
+    if [ -f $top_dir/$1 ]; then
+      tar xzf $top_dir/$1
+    else
+      tar xfJ $top_dir/$dirname.tar.xz
+    fi
     cd $dirname
     patch -p1 < $top_dir/patches/$2
     cd -

@@ -17,6 +17,9 @@ XTRABACKUP_VERSION=$(shell sed -e 's/XTRABACKUP_VERSION=//' < VERSION)
 SERVER_SOURCE_TARBALLS=$(MYSQL_51_SOURCE) $(MYSQL_55_SOURCE) \
   $(MYSQL_56_SOURCE) $(PS_51_SOURCE) $(PS_55_SOURCE)
 
+SERVER_TREES=$(shell echo $(SERVER_SOURCE_TARBALLS) | sed -e 's/.tar.gz//g')
+SERVER_SOURCE_TARXZ=$(shell echo $(SERVER_SOURCE_TARBALLS) | sed -e 's/.tar.gz/.tar.xz/g')
+
 .PHONY: ps51source ps55source
 
 ps51source: $(PS_51_SOURCE)
@@ -36,6 +39,19 @@ dist: $(SERVER_SOURCE_TARBALLS)
 
 $(SERVER_SOURCE_TARBALLS):
 	test "x$(DUMMY)" != "x" || wget $(MASTER_SITE)/$@
+
+$(SERVER_SOURCE_TARXZ): $(SERVER_SOURCE_TARBALLS)
+	tar xfz `echo $@ |sed -e 's/tar.xz/tar.gz/'`
+	tar cfJ $@ `echo $@|sed -e 's/.tar.xz//'`
+	rm -rf `echo $@ |sed -e 's/tar.xz//'`
+
+dist-xz: dist $(SERVER_SOURCE_TARXZ)
+	rm -rf percona-xtrabackup-$(XTRABACKUP_VERSION)
+	tar xfz percona-xtrabackup-$(XTRABACKUP_VERSION)-$(BZR_REVNO).tar.gz
+	rm -f percona-xtrabackup-$(XTRABACKUP_VERSION)/*tar.gz
+	cp $(SERVER_SOURCE_TARXZ) percona-xtrabackup-$(XTRABACKUP_VERSION)/
+	tar cfJ percona-xtrabackup-$(XTRABACKUP_VERSION)-$(BZR_REVNO).tar.xz percona-xtrabackup-$(XTRABACKUP_VERSION)/
+	rm -rf percona-xtrabackup-$(XTRABACKUP_VERSION)
 
 # fake clean/distclean targets... we explicitly do *NOT* want to clean
 # away the tarballs as we actually need to ship them
