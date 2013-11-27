@@ -43,7 +43,14 @@ extern TYPELIB binlog_checksum_typelib;
 
 #define get_object(p, obj, msg) \
 {\
-  uint len = (uint)*p++;  \
+  uint len; \
+  if (p >= p_end) \
+  { \
+    my_error(ER_MALFORMED_PACKET, MYF(0)); \
+    my_free(si); \
+    return 1; \
+  } \
+  len= (uint)*p++;  \
   if (p + len > p_end || len >= sizeof(obj)) \
   {\
     errmsg= msg;\
@@ -125,6 +132,14 @@ int register_slave(THD* thd, uchar* packet, uint packet_length)
     return 1;
   if (!(si = (SLAVE_INFO*)my_malloc(sizeof(SLAVE_INFO), MYF(MY_WME))))
     goto err2;
+
+  /* 4 bytes for the server id */
+  if (p + 4 > p_end)
+  {
+    my_error(ER_MALFORMED_PACKET, MYF(0));
+    my_free(si);
+    return 1;
+  }
 
   thd->server_id= si->server_id= uint4korr(p);
   p+= 4;
@@ -1138,7 +1153,12 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
        file */
     if (reset_transmit_packet(thd, 0/*flags*/, &ev_offset, &errmsg))
       GOTO_ERR;
-
+    DBUG_EXECUTE_IF("semi_sync_3-way_deadlock",
+                    {
+                      const char act[]= "now wait_for signal.rotate_finished";
+                      DBUG_ASSERT(!debug_sync_set_action(current_thd,
+                                                         STRING_WITH_LEN(act)));
+                    };);
     bool is_active_binlog= false;
     while (!(error= Log_event::read_log_event(&log, packet, log_lock,
                                               current_checksum_alg,
@@ -2043,6 +2063,8 @@ bool show_binlogs(THD* thd)
       goto err;
     }
   }
+  if(index_file->error == -1)
+    goto err;
   mysql_bin_log.unlock_index();
   my_eof(thd);
   DBUG_RETURN(FALSE);

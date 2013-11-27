@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, 2012 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,8 +20,17 @@
 #include "debug_sync.h"         // DEBUG_SYNC
 #include "sql_acl.h"            // SUPER_ACL
 
-/* Conditions under which the transaction state must not change. */
-static bool trans_check(THD *thd)
+/**
+  Check if we have a condition where the transaction state must
+  not be changed (committed or rolled back). Currently we check
+  that we are not executing a stored program and that we don't
+  have an active XA transaction.
+
+  @return TRUE if the commit/rollback cannot be executed,
+          FALSE otherwise.
+*/
+
+bool trans_check_state(THD *thd)
 {
   enum xa_states xa_state= thd->transaction.xid_state.xa_state;
   DBUG_ENTER("trans_check");
@@ -120,7 +129,7 @@ bool trans_begin(THD *thd, uint flags)
   int res= FALSE;
   DBUG_ENTER("trans_begin");
 
-  if (trans_check(thd))
+  if (trans_check_state(thd))
     DBUG_RETURN(TRUE);
 
   thd->locked_tables_list.unlock_locked_tables(thd);
@@ -210,7 +219,7 @@ bool trans_commit(THD *thd)
   thd->transaction.all.dbug_unsafe_rollback_flags("all");
 #endif
 
-  if (trans_check(thd))
+  if (trans_check_state(thd))
     DBUG_RETURN(TRUE);
 
   thd->server_status&=
@@ -251,8 +260,14 @@ bool trans_commit_implicit(THD *thd)
   thd->transaction.all.dbug_unsafe_rollback_flags("all");
 #endif
 
-  if (trans_check(thd))
-    DBUG_RETURN(TRUE);
+  /*
+    Ensure that trans_check_state() was called before trans_commit_implicit()
+    by asserting that conditions that are checked in the former function are
+    true.
+  */
+  DBUG_ASSERT(thd->transaction.stmt.is_empty() &&
+              !thd->in_sub_stmt &&
+              thd->transaction.xid_state.xa_state == XA_NOTR);
 
   if (thd->in_multi_stmt_transaction_mode() ||
       (thd->variables.option_bits & OPTION_TABLE_LOCK))
@@ -308,7 +323,7 @@ bool trans_rollback(THD *thd)
   thd->transaction.all.dbug_unsafe_rollback_flags("all");
 #endif
 
-  if (trans_check(thd))
+  if (trans_check_state(thd))
     DBUG_RETURN(TRUE);
 
   thd->server_status&=
@@ -318,6 +333,52 @@ bool trans_rollback(THD *thd)
   thd->variables.option_bits&= ~OPTION_BEGIN;
   thd->transaction.all.reset_unsafe_rollback_flags();
   thd->lex->start_transaction_opt= 0;
+
+  DBUG_RETURN(test(res));
+}
+
+
+/**
+  Implicitly rollback the current transaction, typically
+  after deadlock was discovered.
+
+  @param thd     Current thread
+
+  @retval False Success
+  @retval True  Failure
+
+  @note ha_rollback_low() which is indirectly called by this
+        function will mark XA transaction for rollback by
+        setting appropriate RM error status if there was
+        transaction rollback request.
+*/
+
+bool trans_rollback_implicit(THD *thd)
+{
+  int res;
+  DBUG_ENTER("trans_rollback_implict");
+
+  /*
+    Always commit/rollback statement transaction before manipulating
+    with the normal one.
+    Don't perform rollback in the middle of sub-statement, wait till
+    its end.
+  */
+  DBUG_ASSERT(thd->transaction.stmt.is_empty() && !thd->in_sub_stmt);
+
+  thd->server_status&=
+    ~(SERVER_STATUS_IN_TRANS | SERVER_STATUS_IN_TRANS_READONLY);
+  DBUG_PRINT("info", ("clearing SERVER_STATUS_IN_TRANS"));
+  res= ha_rollback_trans(thd, true);
+  /*
+    We don't reset OPTION_BEGIN flag below to simulate implicit start
+    of new transacton in @@autocommit=1 mode. This is necessary to
+    preserve backward compatibility.
+  */
+  thd->transaction.all.reset_unsafe_rollback_flags();
+
+  /* Rollback should clear transaction_rollback_request flag. */
+  DBUG_ASSERT(! thd->transaction_rollback_request);
 
   DBUG_RETURN(test(res));
 }
@@ -421,8 +482,6 @@ bool trans_rollback_stmt(THD *thd)
   if (thd->transaction.stmt.ha_list)
   {
     ha_rollback_trans(thd, FALSE);
-    if (thd->transaction_rollback_request && !thd->in_sub_stmt)
-      ha_rollback_trans(thd, TRUE);
     if (! thd->in_active_multi_stmt_transaction())
     {
       thd->tx_isolation= (enum_tx_isolation) thd->variables.tx_isolation;

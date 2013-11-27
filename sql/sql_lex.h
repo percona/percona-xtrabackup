@@ -1,4 +1,5 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights
+   reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -631,6 +632,7 @@ public:
   bool exec();
   bool explain();
   bool cleanup();
+  bool cleanup_level();
   inline void unclean() { cleaned= 0; }
   void reinit_exec_mechanism();
 
@@ -650,6 +652,8 @@ public:
 
   List<Item> *get_unit_column_types();
   List<Item> *get_field_list();
+private:
+  void invalidate();
 };
 
 typedef class st_select_lex_unit SELECT_LEX_UNIT;
@@ -752,12 +756,18 @@ public:
   SQL_I_List<ORDER> order_list;
   Group_list_ptrs *order_list_ptrs;
 
-  SQL_I_List<ORDER> *gorder_list;
+  SQL_I_List<ORDER> gorder_list;
   Item *select_limit, *offset_limit;  /* LIMIT clause parameters */
 
   /// Array of pointers to top elements of all_fields list
   Ref_ptr_array ref_pointer_array;
 
+  /// Number of derived tables and views
+  uint derived_table_count;
+  /// Number of materialized derived tables and views
+  uint materialized_table_count;
+  /// Number of partitioned tables
+  uint partitioned_table_count;
   /*
     number of items in select_list and HAVING clause used to get number
     bigger then can be number of entries that will be added to all item
@@ -778,7 +788,11 @@ public:
   ulong table_join_options;
   uint in_sum_expr;
   uint select_number; /* number of select (used for EXPLAIN) */
-  int nest_level;     /* nesting level of select */
+  /**
+    Nesting level of query block, outer-most query block has level 0,
+    its subqueries have level 1, etc. @see also sql/item_sum.h.
+  */
+  int nest_level;
   /* Circularly linked list of sum func in nested selects */
   Item_sum *inner_sum_func_list;
   uint with_wild; /* item list contain '*' */
@@ -888,6 +902,7 @@ public:
   {
     return &link_next;
   }
+  void invalidate();
   void mark_as_dependent(st_select_lex *last);
 
   bool set_braces(bool value);
@@ -898,6 +913,7 @@ public:
   bool add_group_to_list(THD *thd, Item *item, bool asc);
   bool add_ftfunc_to_list(Item_func_match *func);
   bool add_order_to_list(THD *thd, Item *item, bool asc);
+  bool add_gorder_to_list(THD *thd, Item *item, bool asc);
   TABLE_LIST* add_table_to_list(THD *thd, Table_ident *table,
 				LEX_STRING *alias,
 				ulong table_options,
@@ -952,6 +968,7 @@ public:
     SELECT_LEX and all nested SELECT_LEXes and SELECT_LEX_UNITs).
   */
   bool cleanup();
+  bool cleanup_level();
   /*
     Recursively cleanup the join of this select lex and of all nested
     select lexes.
@@ -2275,6 +2292,13 @@ struct LEX: public Query_tables_list
 
   List<Key_part_spec> col_list;
   List<Key_part_spec> ref_list;
+  /*
+    A list of strings is maintained to store the SET clause command user strings
+    which are specified in load data operation.  This list will be used
+    during the reconstruction of "load data" statement at the time of writing
+    to binary log.
+   */
+  List<String>        load_set_str_list;
   List<String>	      interval_list;
   List<LEX_USER>      users_list;
   List<LEX_COLUMN>    columns;

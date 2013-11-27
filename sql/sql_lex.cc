@@ -1,4 +1,5 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/*
+   Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -403,6 +404,7 @@ void lex_start(THD *thd)
   /* 'parent_lex' is used in init_query() so it must be before it. */
   lex->select_lex.parent_lex= lex;
   lex->select_lex.init_query();
+  lex->load_set_str_list.empty();
   lex->value_list.empty();
   lex->update_list.empty();
   lex->set_var_list.empty();
@@ -1787,6 +1789,7 @@ void st_select_lex::init_query()
   ref_pointer_array.reset();
   select_n_where_fields= 0;
   select_n_having_items= 0;
+  n_sum_items= 0;
   n_child_sum_items= 0;
   subquery_in_having= explicit_limit= 0;
   is_item_list_lookup= 0;
@@ -1937,17 +1940,34 @@ void st_select_lex_node::exclude()
 */
 void st_select_lex_unit::exclude_level()
 {
-  SELECT_LEX_UNIT *units= 0, **units_last= &units;
-  for (SELECT_LEX *sl= first_select(); sl; sl= sl->next_select())
+  SELECT_LEX_UNIT *units= NULL;
+  SELECT_LEX_UNIT **units_last= &units;
+  SELECT_LEX *sl= first_select();
+  while (sl)
   {
+    SELECT_LEX *next_select= sl->next_select();
+
     // unlink current level from global SELECTs list
     if (sl->link_prev && (*sl->link_prev= sl->link_next))
       sl->link_next->link_prev= sl->link_prev;
 
     // bring up underlay levels
-    SELECT_LEX_UNIT **last= 0;
+    SELECT_LEX_UNIT **last= NULL;
     for (SELECT_LEX_UNIT *u= sl->first_inner_unit(); u; u= u->next_unit())
     {
+      /*
+        We are excluding a SELECT_LEX from the hierarchy of
+        SELECT_LEX_UNITs and SELECT_LEXes. Since this level is
+        removed, we must also exclude the Name_resolution_context
+        belonging to this level. Do this by looping through inner
+        subqueries and changing their contexts' outer context pointers
+        to point to the outer context of the removed SELECT_LEX.
+      */
+      for (SELECT_LEX *s= u->first_select(); s; s= s->next_select())
+      {
+        if (s->context.outer_context == &sl->context)
+          s->context.outer_context= sl->context.outer_context;
+      }
       u->master= master;
       last= (SELECT_LEX_UNIT**)&(u->next);
     }
@@ -1956,6 +1976,12 @@ void st_select_lex_unit::exclude_level()
       (*units_last)= sl->first_inner_unit();
       units_last= last;
     }
+
+    // clean up and destroy join
+    sl->cleanup_level();
+
+    sl->invalidate();
+    sl= next_select;
   }
   if (units)
   {
@@ -1969,10 +1995,16 @@ void st_select_lex_unit::exclude_level()
   else
   {
     // exclude currect unit from list of nodes
-    (*prev)= next;
+    if (prev)
+      (*prev)= next;
     if (next)
       next->prev= prev;
   }
+
+  // clean up fake_select_lex and global_parameters
+  cleanup_level();
+
+  invalidate();
 }
 
 
@@ -1984,8 +2016,11 @@ void st_select_lex_unit::exclude_level()
 */
 void st_select_lex_unit::exclude_tree()
 {
-  for (SELECT_LEX *sl= first_select(); sl; sl= sl->next_select())
+  SELECT_LEX *sl= first_select();
+  while (sl)
   {
+    SELECT_LEX *next_select= sl->next_select();
+
     // unlink current level from global SELECTs list
     if (sl->link_prev && (*sl->link_prev= sl->link_next))
       sl->link_next->link_prev= sl->link_prev;
@@ -1995,11 +2030,38 @@ void st_select_lex_unit::exclude_tree()
     {
       u->exclude_level();
     }
+
+    // clean up and destroy join
+    sl->cleanup();
+
+    sl->invalidate();
+    sl= next_select;
   }
   // exclude currect unit from list of nodes
-  (*prev)= next;
+  if (prev)
+    (*prev)= next;
   if (next)
     next->prev= prev;
+
+  // clean up fake_select_lex and global_parameters
+  cleanup();
+
+  invalidate();
+}
+
+
+/**
+  Invalidate by nulling out pointers to other st_select_lex_units and
+  st_select_lexes.
+*/
+void st_select_lex_unit::invalidate()
+{
+  next= NULL;
+  prev= NULL;
+  master= NULL;
+  slave= NULL;
+  link_next= NULL;
+  link_prev= NULL;  
 }
 
 
@@ -2097,6 +2159,11 @@ bool st_select_lex::add_order_to_list(THD *thd, Item *item, bool asc)
 }
 
 
+bool st_select_lex::add_gorder_to_list(THD *thd, Item *item, bool asc)
+{
+  return add_to_list(thd, gorder_list, item, asc);
+}
+
 bool st_select_lex::add_item_to_list(THD *thd, Item *item)
 {
   DBUG_ENTER("st_select_lex::add_item_to_list");
@@ -2126,6 +2193,21 @@ st_select_lex_unit* st_select_lex::master_unit()
 st_select_lex* st_select_lex::outer_select()
 {
   return (st_select_lex*) master->get_master();
+}
+
+
+/**
+  Invalidate by nulling out pointers to other st_select_lex_units and
+  st_select_lexes.
+*/
+void st_select_lex::invalidate()
+{
+  next= NULL;
+  prev= NULL;
+  master= NULL;
+  slave= NULL;
+  link_next= NULL;
+  link_prev= NULL;  
 }
 
 
@@ -2167,11 +2249,6 @@ ulong st_select_lex::get_table_join_options()
 
 bool st_select_lex::setup_ref_array(THD *thd, uint order_group_num)
 {
-#ifdef DBUG_OFF
-  if (!ref_pointer_array.is_null())
-    return false;
-#endif
-
   // find_order_in_list() may need some extra space, so multiply by two.
   order_group_num*= 2;
 
@@ -2180,7 +2257,8 @@ bool st_select_lex::setup_ref_array(THD *thd, uint order_group_num)
     prepared statement
   */
   Query_arena *arena= thd->stmt_arena;
-  const uint n_elems= (n_child_sum_items +
+  const uint n_elems= (n_sum_items +
+                       n_child_sum_items +
                        item_list.elements +
                        select_n_having_items +
                        select_n_where_fields +
@@ -2205,11 +2283,19 @@ bool st_select_lex::setup_ref_array(THD *thd, uint order_group_num)
     if (ref_pointer_array.size() > n_elems)
       ref_pointer_array.resize(n_elems);
 
-    DBUG_ASSERT(ref_pointer_array.size() == n_elems);
-    return false;
+    /*
+      We need to take 'n_sum_items' into account when allocating the array,
+      and this may actually increase during the optimization phase due to
+      MIN/MAX rewrite in Item_in_subselect::single_value_transformer.
+      In the usual case we can reuse the array from the prepare phase.
+      If we need a bigger array, we must allocate a new one.
+     */
+    if (ref_pointer_array.size() == n_elems)
+      return false;
   }
   Item **array= static_cast<Item**>(arena->alloc(sizeof(Item*) * n_elems));
-  ref_pointer_array= Ref_ptr_array(array, n_elems);
+  if (array != NULL)
+    ref_pointer_array= Ref_ptr_array(array, n_elems);
 
   return array == NULL;
 }
@@ -3646,6 +3732,14 @@ void st_select_lex::fix_prepare_information(THD *thd, Item **conds,
       /*
         In "WHERE outer_field", *conds may be an Item_outer_ref allocated in
         the execution memroot.
+        @todo change this line in WL#7082. Currently, when we execute a SP,
+        containing "SELECT (SELECT ... WHERE t1.col) FROM t1",
+        resolution may make *conds equal to an Item_outer_ref, then below
+        *conds becomes Item_field, which then goes straight on to execution,
+        undoing the effects of putting Item_outer_ref in the first place...
+        With a PS the problem is not as severe, as after the code below we
+        don't go to execution: a next execution will do a new name resolution
+        which will create Item_outer_ref again.
       */
       prep_where= (*conds)->real_item();
       *conds= where= prep_where->copy_andor_structure(thd);

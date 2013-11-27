@@ -618,14 +618,19 @@ create_tmp_table(THD *thd,TMP_TABLE_PARAM *param,List<Item> &fields,
 
   reclength= string_total_length= 0;
   blob_count= string_count= null_count= hidden_null_count= group_null_items= 0;
-  param->using_indirect_summary_function=0;
+  param->using_outer_summary_function= 0;
 
   List_iterator_fast<Item> li(fields);
   Item *item;
   Field **tmp_from_field=from_field;
   while ((item=li++))
   {
-    Item::Type type=item->type();
+    Item::Type type= item->type();
+    if (type == Item::COPY_STR_ITEM)
+    {
+      item= ((Item_copy *)item)->get_item();
+      type= item->type();
+    }
     if (not_all_columns)
     {
       if (item->with_sum_func && type != Item::SUM_FUNC_ITEM)
@@ -636,16 +641,14 @@ create_tmp_table(THD *thd,TMP_TABLE_PARAM *param,List<Item> &fields,
             (item->used_tables() & ~OUTER_REF_TABLE_BIT))
         {
 	  /*
-	    Mark that the we have ignored an item that refers to a summary
+	    Mark that we have ignored an item that refers to a summary
 	    function. We need to know this if someone is going to use
 	    DISTINCT on the result.
 	  */
-	  param->using_indirect_summary_function=1;
+	  param->using_outer_summary_function= 1;
           goto update_hidden;
         }
       }
-      if (item->const_item() && (int) hidden_field_count <= 0)
-        continue; // We don't have to store this
     }
     if (type == Item::SUM_FUNC_ITEM && !group && !save_sum_fields)
     {						/* Can't calc group yet */

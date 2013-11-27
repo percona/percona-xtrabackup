@@ -646,7 +646,7 @@ sub run_test_server ($$$) {
 			   mtr_report(" - found '$core_name'",
 				      "($num_saved_cores/$opt_max_save_core)");
 
-			   My::CoreDump->show($core_file, $exe_mysqld);
+			   My::CoreDump->show($core_file, $exe_mysqld, $opt_parallel);
 
 			   if ($num_saved_cores >= $opt_max_save_core) {
 			     mtr_report(" - deleting it, already saved",
@@ -2059,7 +2059,17 @@ sub executable_setup () {
   }
   else
   {
-    $exe_mysqltest= mtr_exe_exists("$path_client_bindir/mysqltest");
+    if ( defined $ENV{'MYSQL_TEST'} )
+    {
+      $exe_mysqltest=$ENV{'MYSQL_TEST'};
+      print "===========================================================\n";
+      print "WARNING:The mysqltest binary is fetched from $exe_mysqltest\n";
+      print "===========================================================\n";
+    }
+    else
+    {
+      $exe_mysqltest= mtr_exe_exists("$path_client_bindir/mysqltest");
+    }
   }
 
 }
@@ -2215,7 +2225,7 @@ sub read_plugin_defs($)
     mtr_error("Lines in $defs_file must have 3 or 4 items") unless $plug_var;
 
     # If running debug server, plugins will be in 'debug' subdirectory
-    $plug_file= "debug/$plug_file" if $running_debug;
+    $plug_file= "debug/$plug_file" if $running_debug && !$source_dist;
 
     my ($plugin)= find_plugin($plug_file, $plug_loc);
 

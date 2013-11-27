@@ -219,7 +219,8 @@ row_sel_sec_rec_is_for_clust_rec(
 
 		len = clust_len;
 
-		if (ifield->prefix_len > 0 && len != UNIV_SQL_NULL) {
+		if (ifield->prefix_len > 0 && len != UNIV_SQL_NULL
+		    && sec_len != UNIV_SQL_NULL) {
 
 			if (rec_offs_nth_extern(clust_offs, clust_pos)) {
 				len -= BTR_EXTERN_FIELD_REF_SIZE;
@@ -2958,9 +2959,7 @@ row_sel_store_mysql_rec(
 	    && dict_index_is_clust(index)) {
 
 		prebuilt->fts_doc_id = fts_get_doc_id_from_rec(
-			prebuilt->table,
-			rec,
-			prebuilt->heap);
+			prebuilt->table, rec, NULL);
 	}
 
 	return(TRUE);

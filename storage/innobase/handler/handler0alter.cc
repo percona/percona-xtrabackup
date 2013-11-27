@@ -530,6 +530,8 @@ innobase_init_foreign(
 	ulint		referenced_num_field)	/*!< in: number of referenced
 						columns */
 {
+	ut_ad(mutex_own(&dict_sys->mutex));
+
         if (constraint_name) {
                 ulint   db_len;
 
@@ -546,22 +548,21 @@ innobase_init_foreign(
                 ut_memcpy(foreign->id, table->name, db_len);
                 foreign->id[db_len] = '/';
                 strcpy(foreign->id + db_len + 1, constraint_name);
-        }
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+		/* Check if any existing foreign key has the same id,
+		this is needed only if user supplies the constraint name */
 
-	/* Check if any existing foreign key has the same id */
+		for (const dict_foreign_t* existing_foreign
+			= UT_LIST_GET_FIRST(table->foreign_list);
+		     existing_foreign != 0;
+		     existing_foreign = UT_LIST_GET_NEXT(
+			     foreign_list, existing_foreign)) {
 
-	for (const dict_foreign_t* existing_foreign
-		= UT_LIST_GET_FIRST(table->foreign_list);
-	     existing_foreign != 0;
-	     existing_foreign = UT_LIST_GET_NEXT(
-		     foreign_list, existing_foreign)) {
-
-		if (ut_strcmp(existing_foreign->id, foreign->id) == 0) {
-			return(false);
+			if (ut_strcmp(existing_foreign->id, foreign->id) == 0) {
+				return(false);
+			}
 		}
-	}
+        }
 
         foreign->foreign_table = table;
         foreign->foreign_table_name = mem_heap_strdup(
@@ -2953,7 +2954,9 @@ prepare_inplace_alter_table_dict(
 			error = DB_OUT_OF_MEMORY;
 			goto error_handling;
 		}
+	}
 
+	if (ctx->online) {
 		/* Assign a consistent read view for
 		row_merge_read_clustered_index(). */
 		trx_assign_read_view(ctx->prebuilt->trx);
@@ -3176,8 +3179,6 @@ innobase_check_foreign_key_index(
 						to drop */
 {
 	dict_foreign_t*	foreign;
-
-	ut_ad(!index->to_be_dropped);
 
 	/* Check if the index is referenced. */
 	foreign = dict_table_get_referenced_constraint(indexed_table, index);
@@ -3599,6 +3600,16 @@ check_if_can_drop_indexes:
 		CREATE TABLE adding FOREIGN KEY constraints. */
 		row_mysql_lock_data_dictionary(prebuilt->trx);
 
+		if (!n_drop_index) {
+			drop_index = NULL;
+		} else {
+			/* Flag all indexes that are to be dropped. */
+			for (ulint i = 0; i < n_drop_index; i++) {
+				ut_ad(!drop_index[i]->to_be_dropped);
+				drop_index[i]->to_be_dropped = 1;
+			}
+		}
+
 		if (prebuilt->trx->check_foreigns) {
 			for (uint i = 0; i < n_drop_index; i++) {
 			     dict_index_t*	index = drop_index[i];
@@ -3626,16 +3637,6 @@ check_if_can_drop_indexes:
 				row_mysql_unlock_data_dictionary(prebuilt->trx);
 				print_error(HA_ERR_DROP_INDEX_FK, MYF(0));
 				goto err_exit;
-			}
-		}
-
-		if (!n_drop_index) {
-			drop_index = NULL;
-		} else {
-			/* Flag all indexes that are to be dropped. */
-			for (ulint i = 0; i < n_drop_index; i++) {
-				ut_ad(!drop_index[i]->to_be_dropped);
-				drop_index[i]->to_be_dropped = 1;
 			}
 		}
 
@@ -4677,7 +4678,8 @@ innobase_update_foreign_cache(
 	and prevent the table from being evicted from the data
 	dictionary cache (work around the lack of WL#6049). */
 	DBUG_RETURN(dict_load_foreigns(user_table->name,
-				       ctx->col_names, false, true));
+				       ctx->col_names, false, true,
+				       DICT_ERR_IGNORE_NONE));
 }
 
 /** Commit the changes made during prepare_inplace_alter_table()

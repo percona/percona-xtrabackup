@@ -11,7 +11,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
 /*
   UNION  of select's
@@ -569,8 +569,14 @@ bool st_select_lex_unit::optimize()
         sl->options & ~OPTION_FOUND_ROWS : sl->options | found_rows_for_union;
 
       saved_error= sl->join->optimize();
-      /* Save estimated number of rows. */
-      result->estimated_rowcount+= sl->join->best_rowcount;
+      /*
+        Accumulate estimated number of rows. Notice that an implicitly grouped
+        query has one row (with HAVING it has zero or one rows).
+      */
+      result->estimated_rowcount+=
+        sl->with_sum_func && sl->group_list.elements == 0 ?
+          1 : sl->join->best_rowcount;
+
       thd->lex->current_select= lex_select_save;
     }
     if (saved_error)
@@ -825,6 +831,22 @@ bool st_select_lex_unit::cleanup()
   for (SELECT_LEX *sl= first_select(); sl; sl= sl->next_select())
     error|= sl->cleanup();
 
+  cleanup_level();
+
+  DBUG_RETURN(error);
+}
+
+
+/**
+  Cleanup only this select_lex_unit after preparation or one round of
+  execution.
+
+  @return false if previous execution was successful, and true otherwise
+*/
+bool st_select_lex_unit::cleanup_level()
+{
+  bool error= false;
+
   if (fake_select_lex)
   {
     error|= fake_select_lex->cleanup();
@@ -859,7 +881,7 @@ bool st_select_lex_unit::cleanup()
 
   explain_marker= CTX_NONE;
 
-  DBUG_RETURN(error);
+  return error;
 }
 
 
@@ -947,8 +969,8 @@ List<Item> *st_select_lex_unit::get_unit_column_types()
 /**
   Get field list for this query expression.
 
-  For a UNION of query blocks, return the field list of the created
-  temporary table.
+  For a UNION of query blocks, return the field list generated
+  during prepare.
   For a single query block, return the field list after all possible
   intermediate query processing steps are completed.
 
@@ -957,7 +979,14 @@ List<Item> *st_select_lex_unit::get_unit_column_types()
 
 List<Item> *st_select_lex_unit::get_field_list()
 {
-  return is_union() ? &item_list : first_select()->join->fields;
+  if (is_union())
+  {
+    DBUG_ASSERT(prepared);
+    /* Types are generated during prepare */
+    return &types;
+  }
+
+  return first_select()->join->fields;
 }
 
 
@@ -972,6 +1001,27 @@ bool st_select_lex::cleanup()
   bool error= FALSE;
   DBUG_ENTER("st_select_lex::cleanup()");
 
+  error= cleanup_level();
+  for (SELECT_LEX_UNIT *lex_unit= first_inner_unit(); lex_unit;
+       lex_unit= lex_unit->next_unit())
+  {
+    error|= lex_unit->cleanup();
+  }
+
+  DBUG_RETURN(error);
+}
+
+
+/**
+  Cleanup only this select_lex after preparation or one round of
+  execution.
+
+  @return false if previous execution was successful, and true otherwise
+*/
+bool st_select_lex::cleanup_level()
+{
+  bool error= FALSE;
+
   if (join)
   {
     DBUG_ASSERT((st_select_lex*)join->select_lex == this);
@@ -979,15 +1029,12 @@ bool st_select_lex::cleanup()
     delete join;
     join= 0;
   }
-  for (SELECT_LEX_UNIT *lex_unit= first_inner_unit(); lex_unit ;
-       lex_unit= lex_unit->next_unit())
-  {
-    error|= lex_unit->cleanup();
-  }
+
   cur_pos_in_all_fields= ALL_FIELDS_UNDEF_POS;
   non_agg_fields.empty();
   inner_refs_list.empty();
-  DBUG_RETURN(error);
+
+  return error;
 }
 
 

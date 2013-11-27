@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 2012, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -73,6 +73,8 @@ typedef struct eng_config_info {
 						enabled specifically for
 						this memcached engine */
 } eng_config_info_t;
+
+extern option_t config_option_names[];
 
 /** Check the input key name implies a table mapping switch. The name
 would start with "@@", and in the format of "@@new_table_mapping.key"
@@ -206,6 +208,7 @@ create_instance(
 		return(err_ret);
 	}
 
+	innodb_eng->clean_stale_conn = false;
 	innodb_eng->initialized = true;
 
 	*handle = (ENGINE_HANDLE*) &innodb_eng->engine;
@@ -265,6 +268,12 @@ innodb_bk_thread(
 			continue;
 		}
 
+		/* Set the clean_stale_conn to prevent force clean in
+		innodb_conn_clean. */
+		LOCK_CONN_IF_NOT_LOCKED(false, innodb_eng);
+		innodb_eng->clean_stale_conn = true;
+		UNLOCK_CONN_IF_NOT_LOCKED(false, innodb_eng);
+
 		if (!conn_data) {
 			conn_data = UT_LIST_GET_FIRST(innodb_eng->conn_data);
 		}
@@ -314,7 +323,7 @@ innodb_bk_thread(
 				processed_count++;
 			}
 
-			UNLOCK_CURRENT_CONN_IF_NOT_LOCKED(false, conn_data)
+			UNLOCK_CURRENT_CONN_IF_NOT_LOCKED(false, conn_data);
 
 next_item:
 			conn_data = next_conn_data;
@@ -329,6 +338,10 @@ next_item:
 					conn_list, conn_data);
 			}
 		}
+		/* Set the clean_stale_conn back. */
+		LOCK_CONN_IF_NOT_LOCKED(false, innodb_eng);
+		innodb_eng->clean_stale_conn = false;
+		UNLOCK_CONN_IF_NOT_LOCKED(false, innodb_eng);
 	}
 
 	bk_thd_exited = true;
@@ -524,10 +537,10 @@ innodb_conn_clean(
 	}
 
 	LOCK_CONN_IF_NOT_LOCKED(has_lock, engine);
+
 	conn_data = UT_LIST_GET_FIRST(engine->conn_data);
 
 	while (conn_data) {
-		bool	stale_data = false;
 		void*	cookie = conn_data->conn_cookie;
 
 		next_conn_data = UT_LIST_GET_NEXT(conn_list, conn_data);
@@ -543,18 +556,30 @@ innodb_conn_clean(
 			closed and reopened. So verify and see if our
 			current conn_data is stale */
 			if (!check_data || check_data != conn_data) {
-				stale_data = true;
+				assert(conn_data->is_stale);
 			}
 		}
 
-		/* Either we are clearing all conn_data or this conn_data is
-		not in use */
-		if (clear_all || stale_data) {
-			UT_LIST_REMOVE(conn_list, engine->conn_data, conn_data);
+		/* If current conn is stale or clear_all is true,
+		clean up it.*/
+		if (conn_data->is_stale) {
+			/* If bk thread is doing the same thing, stop
+			the loop to avoid confliction.*/
+			if (engine->clean_stale_conn)
+				break;
 
-			if (!conn_data->is_stale) {
+			UT_LIST_REMOVE(conn_list, engine->conn_data,
+				       conn_data);
+			innodb_conn_clean_data(conn_data, false, true);
+			num_freed++;
+		} else {
+			if (clear_all) {
+				UT_LIST_REMOVE(conn_list, engine->conn_data,
+					       conn_data);
+
 				if (thd) {
-					handler_thd_attach(conn_data->thd, NULL);
+					handler_thd_attach(conn_data->thd,
+							   NULL);
 				}
 
 				innodb_reset_conn(conn_data, false, true,
@@ -564,14 +589,11 @@ innodb_conn_clean(
 						conn_data->thd, NULL);
 				}
 				innodb_conn_clean_data(conn_data, false, true);
-			}
 
-			if (clear_all) {
 				engine->server.cookie->store_engine_specific(
 					cookie, NULL);
+				num_freed++;
 			}
-
-			num_freed++;
 		}
 
 		conn_data = next_conn_data;
@@ -906,9 +928,9 @@ innodb_conn_init(
 					conn_data->crsr,
 					conn_data->crsr_trx);
 			}
-				
+
 			innodb_cb_cursor_lock(
-				engine, conn_data->read_crsr, lock_mode); 
+				engine, conn_data->read_crsr, lock_mode);
 
 			if (meta_index->srch_use_idx == META_USE_SECONDARY) {
 				ib_crsr_t idx_crsr = conn_data->idx_read_crsr;
@@ -1326,6 +1348,20 @@ search_done:
 		time = mci_get_time();
 
 		if (time > result.col_value[MCI_COL_EXP].value_int) {
+			/* Free allocated memory. */
+			if (result.extra_col_value) {
+				for (int i = 0; i < result.n_extra_col; i++) {
+					free(result.extra_col_value[i].value_str);
+				}
+
+				free(result.extra_col_value);
+			}
+			if (result.col_value[MCI_COL_VALUE].allocated) {
+				free(result.col_value[MCI_COL_VALUE].value_str);
+				result.col_value[MCI_COL_VALUE].allocated =
+					false;
+			}
+
 			err_ret = ENGINE_KEY_ENOENT;
 			goto func_exit;
 		}
@@ -1377,13 +1413,15 @@ search_done:
 		assert(option_length > 0 && option_delimiter);
 
 		for (i = 0; i < result.n_extra_col; i++) {
+			mci_column_t*	col_value;
 
-			if (result.extra_col_value[i].value_len != 0) {
+			col_value = &result.extra_col_value[i];
+
+			if (col_value->value_len != 0) {
 				memcpy(c_value,
-				       result.extra_col_value[i].value_str,
-				       result.extra_col_value[i].value_len);
-
-				c_value += result.extra_col_value[i].value_len;
+				       col_value->value_str,
+				       col_value->value_len);
+				c_value += col_value->value_len;
 			}
 
 			if (i < result.n_extra_col - 1 ) {
@@ -1392,13 +1430,17 @@ search_done:
 			}
 
 			assert(c_value <= value_end);
+			free(result.extra_col_value[i].value_str);
 		}
+
+		free(result.extra_col_value);
 	} else {
 		assert(result.col_value[MCI_COL_VALUE].value_len
 		       >= (int) it->nbytes);
 
 		memcpy(hash_item_get_data(it),
-		       result.col_value[MCI_COL_VALUE].value_str, it->nbytes);
+		       result.col_value[MCI_COL_VALUE].value_str,
+		       it->nbytes);
 
 		if (result.col_value[MCI_COL_VALUE].allocated) {
 			free(result.col_value[MCI_COL_VALUE].value_str);

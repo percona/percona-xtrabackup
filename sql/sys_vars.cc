@@ -481,14 +481,15 @@ static Sys_var_long Sys_pfs_events_stages_history_size(
   - 1 for "statement/com/new_packet", for unknown enum_server_command
   - 1 for "statement/com/Error", for invalid enum_server_command
   - SQLCOM_END for all regular "statement/sql/...",
-  - 1 for "statement/sql/error", for invalid enum_sql_command.
+  - 1 for "statement/sql/error", for invalid enum_sql_command
+  - 1 for "statement/rpl/relay_log", for replicated statements.
 */
 static Sys_var_ulong Sys_pfs_max_statement_classes(
        "performance_schema_max_statement_classes",
        "Maximum number of statement instruments.",
        READ_ONLY GLOBAL_VAR(pfs_param.m_statement_class_sizing),
        CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 256),
-       DEFAULT((ulong) SQLCOM_END + (ulong) COM_END + 3),
+       DEFAULT((ulong) SQLCOM_END + (ulong) COM_END + 4),
        BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_events_statements_history_long_size(
@@ -1244,6 +1245,7 @@ static bool event_scheduler_check(sys_var *self, THD *thd, set_var *var)
 }
 static bool event_scheduler_update(sys_var *self, THD *thd, enum_var_type type)
 {
+  int err_no= 0;
   uint opt_event_scheduler_value= Events::opt_event_scheduler;
   mysql_mutex_unlock(&LOCK_global_system_variables);
   /*
@@ -1263,11 +1265,14 @@ static bool event_scheduler_update(sys_var *self, THD *thd, enum_var_type type)
     for deadlocks. See bug#51160.
   */
   bool ret= opt_event_scheduler_value == Events::EVENTS_ON
-            ? Events::start()
+            ? Events::start(&err_no)
             : Events::stop();
   mysql_mutex_lock(&LOCK_global_system_variables);
   if (ret)
-    my_error(ER_EVENT_SET_VAR_ERROR, MYF(0), 0);
+  {
+    Events::opt_event_scheduler= Events::EVENTS_OFF;
+    my_error(ER_EVENT_SET_VAR_ERROR, MYF(0), err_no);
+  }
   return ret;
 }
 
@@ -1491,6 +1496,13 @@ static Sys_var_mybool Sys_locked_in_memory(
 static Sys_var_mybool Sys_log_bin(
        "log_bin", "Whether the binary log is enabled",
        READ_ONLY GLOBAL_VAR(opt_bin_log), NO_CMD_LINE, DEFAULT(FALSE));
+
+static Sys_var_ulong Sys_rpl_stop_slave_timeout(
+       "rpl_stop_slave_timeout",
+       "Timeout in seconds to wait for slave to stop before returning a "
+       "warning.",
+       GLOBAL_VAR(rpl_stop_slave_timeout), CMD_LINE(REQUIRED_ARG),
+       VALID_RANGE(2, LONG_TIMEOUT), DEFAULT(LONG_TIMEOUT), BLOCK_SIZE(1));
 
 static Sys_var_mybool Sys_trust_function_creators(
        "log_bin_trust_function_creators",
@@ -2598,12 +2610,17 @@ static Sys_var_enum Slave_exec_mode(
        "between the master and the slave",
        GLOBAL_VAR(slave_exec_mode_options), CMD_LINE(REQUIRED_ARG),
        slave_exec_mode_names, DEFAULT(SLAVE_EXEC_MODE_STRICT));
-const char *slave_type_conversions_name[]= {"ALL_LOSSY", "ALL_NON_LOSSY", 0};
+const char *slave_type_conversions_name[]=
+       {"ALL_LOSSY", "ALL_NON_LOSSY", "ALL_UNSIGNED", "ALL_SIGNED", 0};
 static Sys_var_set Slave_type_conversions(
        "slave_type_conversions",
        "Set of slave type conversions that are enabled. Legal values are:"
-       " ALL_LOSSY to enable lossy conversions and"
-       " ALL_NON_LOSSY to enable non-lossy conversions."
+       " ALL_LOSSY to enable lossy conversions,"
+       " ALL_NON_LOSSY to enable non-lossy conversions,"
+       " ALL_UNSIGNED to treat all integer column type data to be unsigned values, and"
+       " ALL_SIGNED to treat all integer column type data to be signed values."
+       " Default treatment is ALL_SIGNED. If ALL_SIGNED and ALL_UNSIGNED both are"
+       " specifed, ALL_SIGNED will take high priority than ALL_UNSIGNED."
        " If the variable is assigned the empty set, no conversions are"
        " allowed and it is expected that the types match exactly.",
        GLOBAL_VAR(slave_type_conversions_options), CMD_LINE(REQUIRED_ARG),

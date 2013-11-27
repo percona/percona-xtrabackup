@@ -230,10 +230,10 @@ Source9: mysql-embedded-check.c
 Source999: filter-requires-mysql.sh
 
 # Patch1: mysql-ssl-multilib.patch           Not needed by MySQL (yaSSL), will not work in 5.5 (cmake)
-Patch2: mysql-5.5-errno.patch
+# Patch2: mysql-5.5-errno.patch              Fixed in trunk
 Patch4: mysql-5.5-testing.patch
 Patch5: mysql-install-test.patch
-Patch6: mysql-5.6-stack-guard.patch
+# Patch6: mysql-5.6-stack-guard.patch        Fixed in 5.6
 # Patch7: mysql-disable-test.patch           Already fixed in current 5.1
 # Patch8: mysql-setschedparam.patch          Will not work in 5.5 (cmake)
 # Patch9: mysql-no-docs.patch                Will not work in 5.5 (cmake)
@@ -268,11 +268,12 @@ Requires: bash
 Provides: mysql
 
 # MySQL (with caps) is upstream's spelling of their own RPMs for mysql
-Conflicts: MySQL
+Obsoletes: MySQL
 # mysql-cluster used to be built from this SRPM, but no more
 Obsoletes: mysql-cluster < 5.1.44
 # We need cross-product "Obsoletes:" to allow cross-product upgrades:
-Obsoletes: mysql mysql-advanced
+Obsoletes: mysql < %{version}-%{release} 
+Obsoletes: mysql-advanced < %{version}-%{release}
 
 # Working around perl dependency checking bug in rpm FTTB. Remove later.
 %global __perl_requires %{SOURCE999}
@@ -295,8 +296,9 @@ further info.
 Summary: The shared libraries required for MySQL clients
 Group: Applications/Databases
 Requires: /sbin/ldconfig
+Obsoletes: mysql-libs < %{version}-%{release}  
+Obsoletes: mysql-libs-advanced < %{version}-%{release}
 Provides: mysql-libs
-Obsoletes: mysql-libs mysql-libs-advanced
 
 %description -n mysql-libs%{product_suffix}
 The mysql-libs package provides the essential shared libraries for any 
@@ -318,9 +320,10 @@ Requires(preun): initscripts
 Requires(postun): initscripts
 # mysqlhotcopy needs DBI/DBD support
 Requires: perl-DBI, perl-DBD-MySQL
+Obsoletes: MySQL-server
+Obsoletes: mysql-server < %{version}-%{release}
+Obsoletes: mysql-server-advanced < %{version}-%{release}
 Provides: mysql-server
-Conflicts: MySQL-server
-Obsoletes: mysql-server mysql-server-advanced
 
 %description -n mysql-server%{product_suffix}
 MySQL is a multi-user, multi-threaded SQL database server. MySQL is a
@@ -334,9 +337,10 @@ Summary: Files for development of MySQL applications
 Group: Applications/Databases
 Requires: mysql%{product_suffix} = %{version}-%{release}
 Requires: openssl-devel
+Obsoletes: MySQL-devel
+Obsoletes: mysql-devel < %{version}-%{release}
+Obsoletes: mysql-devel-advanced < %{version}-%{release}
 Provides: mysql-devel
-Conflicts: MySQL-devel
-Obsoletes: mysql-devel mysql-devel-advanced
 
 %description -n mysql-devel%{product_suffix}
 MySQL is a multi-user, multi-threaded SQL database server. This
@@ -347,8 +351,9 @@ developing MySQL client applications.
 
 Summary: MySQL as an embeddable library
 Group: Applications/Databases
+Obsoletes: mysql-embedded < %{version}-%{release}
+Obsoletes: mysql-embedded-advanced < %{version}-%{release}
 Provides: mysql-embedded
-Obsoletes: mysql-embedded mysql-embedded-advanced
 
 %description -n mysql-embedded%{product_suffix}
 MySQL is a multi-user, multi-threaded SQL database server. This
@@ -362,8 +367,9 @@ Summary: Development files for MySQL as an embeddable library
 Group: Applications/Databases
 Requires: mysql-embedded%{product_suffix} = %{version}-%{release}
 Requires: mysql-devel%{product_suffix} = %{version}-%{release}
+Obsoletes: mysql-embedded-devel < %{version}-%{release}
+Obsoletes: mysql-embedded-devel-advanced < %{version}-%{release}
 Provides: mysql-embedded-devel
-Obsoletes: mysql-embedded-devel mysql-embedded-devel-advanced
 
 %description -n mysql-embedded-devel%{product_suffix}
 MySQL is a multi-user, multi-threaded SQL database server. This
@@ -376,9 +382,10 @@ Summary: The test suite distributed with MySQL
 Group: Applications/Databases
 Requires: mysql%{product_suffix} = %{version}-%{release}
 Requires: mysql-server%{product_suffix} = %{version}-%{release}
+Obsoletes: MySQL-test
+Obsoletes: mysql-test < %{version}-%{release}
+Obsoletes: mysql-test-advanced < %{version}-%{release}
 Provides: mysql-test
-Conflicts: MySQL-test
-Obsoletes: mysql-test mysql-test-advanced
 
 %description -n mysql-test%{product_suffix}
 MySQL is a multi-user, multi-threaded SQL database server. This
@@ -390,10 +397,10 @@ the MySQL sources.
 
 cd %{src_dir} # read about "%setup -n"
 # %patch1 -p1
-%patch2 -p1
+# %patch2 -p1
 # %patch4 -p1  TODO / FIXME: if wanted, needs to be adapted to new mysql-test-run setup
 %patch5 -p1
-%patch6 -p1
+# %patch6 -p1
 # %patch8 -p1
 # %patch9 -p1
 # %patch10 -p1
@@ -979,6 +986,11 @@ fi
 %{_mandir}/man1/mysql_client_test.1*
 
 %changelog
+* Mon Jul  8 2013 Tor Didriksen <tor.didriksen@oracle.com>
+- Fix Bug#35019 Use pthread_attr_getguardsize for better robustness
+  of stack thread sizes
+- Remove Patch6: mysql-5.6-stack-guard.patch
+
 * Mon Dec 10 2012 Joerg Bruehe <joerg.bruehe@oracle.com>
 - Replace old my-*.cnf config file examples with template my-default.cnf
 - Handle several files for packaging which are new in 5.6 (compared to 5.5).

@@ -531,6 +531,7 @@ row_log_table_delete(
 		ut_ad(dfield_get_type(dfield)->prtype
 		      == (DATA_NOT_NULL | DATA_TRX_ID));
 		ut_ad(dfield_get_len(dfield) == DATA_TRX_ID_LEN);
+		dfield_dup(dfield, heap);
 		trx_write_trx_id(static_cast<byte*>(dfield->data), trx_id);
 	}
 
@@ -646,7 +647,8 @@ row_log_table_low_redundant(
 
 	ut_ad(!page_is_comp(page_align(rec)));
 	ut_ad(dict_index_get_n_fields(index) == rec_get_n_fields_old(rec));
-	ut_ad(!index->table->flags);
+	ut_ad(dict_tf_is_valid(index->table->flags));
+	ut_ad(!dict_table_is_comp(index->table));  /* redundant row format */
 	ut_ad(dict_index_is_clust(new_index));
 
 	heap = mem_heap_create(DTUPLE_EST_ALLOC(index->n_fields));
@@ -1214,10 +1216,6 @@ row_log_table_apply_convert_mrec(
 {
 	dtuple_t*	row;
 
-#ifdef UNIV_SYNC_DEBUG
-	ut_ad(rw_lock_own(dict_index_get_lock(index), RW_LOCK_EX));
-#endif /* UNIV_SYNC_DEBUG */
-
 	/* This is based on row_build(). */
 	if (log->add_cols) {
 		row = dtuple_copy(log->add_cols, heap);
@@ -1259,10 +1257,12 @@ row_log_table_apply_convert_mrec(
 		dfield_t*		dfield
 			= dtuple_get_nth_field(row, col_no);
 		ulint			len;
-		const byte*		data;
+		const byte*		data= NULL;
 
 		if (rec_offs_nth_extern(offsets, i)) {
 			ut_ad(rec_offs_any_extern(offsets));
+			rw_lock_x_lock(dict_index_get_lock(index));
+
 			if (const page_no_map* blobs = log->blobs) {
 				data = rec_get_nth_field(
 					mrec, offsets, i, &len);
@@ -1278,15 +1278,22 @@ row_log_table_apply_convert_mrec(
 					/* This BLOB has been freed.
 					We must not access the row. */
 					row = NULL;
-					goto func_exit;
 				}
 			}
 
-			data = btr_rec_copy_externally_stored_field(
-				mrec, offsets,
-				dict_table_zip_size(index->table),
-				i, &len, heap);
-			ut_a(data);
+			if (row) {
+				data = btr_rec_copy_externally_stored_field(
+					mrec, offsets,
+					dict_table_zip_size(index->table),
+					i, &len, heap);
+				ut_a(data);
+			}
+
+			rw_lock_x_unlock(dict_index_get_lock(index));
+
+			if (!row) {
+				goto func_exit;
+			}
 		} else {
 			data = rec_get_nth_field(mrec, offsets, i, &len);
 		}
@@ -2353,7 +2360,7 @@ all_done:
 		posix_fadvise(index->online_log->fd,
 			      ofs, srv_sort_buf_size, POSIX_FADV_DONTNEED);
 #endif /* POSIX_FADV_DONTNEED */
-#ifdef FALLOC_FL_PUNCH_HOLE
+#if 0 //def FALLOC_FL_PUNCH_HOLE
 		/* Try to deallocate the space for the file on disk.
 		This should work on ext4 on Linux 2.6.39 and later,
 		and be ignored when the operation is unsupported. */
@@ -2616,6 +2623,7 @@ row_log_allocate(
 	byte*		buf;
 	row_log_t*	log;
 	ulint		size;
+	DBUG_ENTER("row_log_allocate");
 
 	ut_ad(!dict_index_is_online_ddl(index));
 	ut_ad(dict_index_is_clust(index) == !!table);
@@ -2629,7 +2637,7 @@ row_log_allocate(
 	size = 2 * srv_sort_buf_size + sizeof *log;
 	buf = (byte*) os_mem_alloc_large(&size);
 	if (!buf) {
-		return(false);
+		DBUG_RETURN(false);
 	}
 
 	log = (row_log_t*) &buf[2 * srv_sort_buf_size];
@@ -2637,7 +2645,7 @@ row_log_allocate(
 	log->fd = row_merge_file_create_low();
 	if (log->fd < 0) {
 		os_mem_free_large(buf, size);
-		return(false);
+		DBUG_RETURN(false);
 	}
 	mutex_create(index_online_log_key, &log->mutex,
 		     SYNC_INDEX_ONLINE_LOG);
@@ -2662,7 +2670,7 @@ row_log_allocate(
 	atomic operations in both cases. */
 	MONITOR_ATOMIC_INC(MONITOR_ONLINE_CREATE_INDEX);
 
-	return(true);
+	DBUG_RETURN(true);
 }
 
 /******************************************************//**
@@ -3141,7 +3149,7 @@ all_done:
 		posix_fadvise(index->online_log->fd,
 			      ofs, srv_sort_buf_size, POSIX_FADV_DONTNEED);
 #endif /* POSIX_FADV_DONTNEED */
-#ifdef FALLOC_FL_PUNCH_HOLE
+#if 0 //def FALLOC_FL_PUNCH_HOLE
 		/* Try to deallocate the space for the file on disk.
 		This should work on ext4 on Linux 2.6.39 and later,
 		and be ignored when the operation is unsupported. */
@@ -3345,6 +3353,7 @@ row_log_apply(
 	dberr_t		error;
 	row_log_t*	log;
 	row_merge_dup_t	dup = { index, table, NULL, 0 };
+	DBUG_ENTER("row_log_apply");
 
 	ut_ad(dict_index_is_online_ddl(index));
 	ut_ad(!dict_index_is_clust(index));
@@ -3387,5 +3396,5 @@ row_log_apply(
 
 	row_log_free(log);
 
-	return(error);
+	DBUG_RETURN(error);
 }

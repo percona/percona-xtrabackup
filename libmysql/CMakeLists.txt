@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2012, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -131,6 +131,13 @@ mysql_server_end
 mysql_set_character_set
 mysql_get_character_set_info
 mysql_stmt_next_result
+my_init
+mysql_client_find_plugin
+mysql_client_register_plugin
+mysql_load_plugin
+mysql_load_plugin_v
+mysql_options4
+mysql_plugin_options
 
 CACHE INTERNAL "Functions exported by client API"
 
@@ -179,6 +186,12 @@ MERGE_LIBRARIES(mysqlclient STATIC ${LIBS} COMPONENT Development NOINSTALL 1)
 IF(MSVC)
 ENDIF()
 
+MACRO(GET_TARGET_NAME target out_name)
+  GET_TARGET_PROPERTY(location ${target} LOCATION)
+  GET_FILENAME_COMPONENT(name ${location} NAME)
+  SET(${out_name} ${name})
+ENDMACRO()
+
 IF(UNIX)
   MACRO(GET_VERSIONED_LIBNAME LIBNAME EXTENSION VERSION OUTNAME)
     SET(DOT_VERSION ".${VERSION}")
@@ -204,10 +217,9 @@ IF(NOT DISABLE_SHARED)
     # libtool compatability
     IF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR APPLE)
       SET(OS_SHARED_LIB_VERSION "${SHARED_LIB_MAJOR_VERSION}")
-    ELSEIF(CMAKE_SYSTEM_NAME MATCHES "HP-UX")
-      SET(OS_SHARED_LIB_VERSION "${SHARED_LIB_MAJOR_VERSION}.0")
     ELSE()
-      SET(OS_SHARED_LIB_VERSION "${SHARED_LIB_MAJOR_VERSION}.0.0")
+      SET(OS_SHARED_LIB_VERSION
+        "${SHARED_LIB_MAJOR_VERSION}.${SHARED_LIB_MINOR_VERSION}.0")
     ENDIF()
     # Name of shared library is mysqlclient on Unix
     SET_TARGET_PROPERTIES(libmysql PROPERTIES 

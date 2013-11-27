@@ -3959,7 +3959,9 @@ bool Item_param::convert_str_value(THD *thd)
     /* Here str_value is guaranteed to be in final_character_set_of_str_value */
 
     max_length= str_value.numchars() * str_value.charset()->mbmaxlen;
-    decimals= 0;
+
+    /* For the strings converted to numeric form within some functions */
+    decimals= NOT_FIXED_DEC;
     /*
       str_value_ptr is returned from val_str(). It must be not alloced
       to prevent it's modification by val_str() invoker.
@@ -4687,6 +4689,30 @@ void mark_select_range_as_dependent(THD *thd,
 
 
 /**
+ Find a Item reference in a item list
+
+ @param[in]   item            The Item to search for.
+ @param[in]   list            Item list.
+
+ @retval true   found
+ @retval false  otherwise
+*/
+
+static bool find_item_in_item_list (Item *item, List<Item> *list)
+{
+  List_iterator<Item> li(*list);
+  Item *it= NULL;
+  while ((it= li++))    
+  {
+    if (it->walk(&Item::find_item_processor, true,
+                 (uchar*)item))
+      return true;
+  }
+  return false;
+}
+
+
+/**
   Search a GROUP BY clause for a field with a certain name.
 
   Search the GROUP BY list for a column named as find_item. When searching
@@ -5364,7 +5390,7 @@ bool Item_field::fix_fields(THD *thd, Item **reference)
               It's not an Item_field in the select list so we must make a new
               Item_ref to point to the Item in the select list and replace the
               Item_field created by the parser with the new Item_ref.
-
+              Ex: SELECT func1(col) as c ... ORDER BY func2(c);
               NOTE: If we are fixing an alias reference inside ORDER/GROUP BY
               item tree, then we use new Item_ref as an intermediate value
               to resolve referenced item only.
@@ -7375,13 +7401,6 @@ void Item_ref::set_properties()
 }
 
 
-table_map Item_ref::resolved_used_tables() const
-{
-  DBUG_ASSERT((*ref)->real_item()->type() == FIELD_ITEM);
-  return ((Item_field*)(*ref))->resolved_used_tables();
-}
-
-
 void Item_ref::cleanup()
 {
   DBUG_ENTER("Item_ref::cleanup");
@@ -8032,7 +8051,7 @@ Item_default_value::save_in_field(Field *field_arg, bool no_conversions)
       return TYPE_ERR_BAD_VALUE;
     }
     field_arg->set_default();
-    return TYPE_OK;
+    return field_arg->validate_stored_val(current_thd);
   }
   return Item_field::save_in_field(field_arg, no_conversions);
 }
@@ -8102,7 +8121,8 @@ bool Item_insert_value::fix_fields(THD *thd, Item **reference)
 
   Item_field *field_arg= (Item_field *)arg;
 
-  if (field_arg->field->table->insert_values)
+  if (field_arg->field->table->insert_values &&
+      find_item_in_item_list(this, &thd->lex->value_list))
   {
     Field *def_field= field_arg->field->clone();
     if (!def_field)

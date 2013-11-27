@@ -120,7 +120,6 @@
 /* Readline */
 #cmakedefine HAVE_HIST_ENTRY 1
 #cmakedefine USE_LIBEDIT_INTERFACE 1
-#cmakedefine USE_NEW_READLINE_INTERFACE 1
 
 #cmakedefine FIONREAD_IN_SYS_IOCTL 1
 #cmakedefine GWINSZ_IN_SYS_IOCTL 1
@@ -194,7 +193,7 @@
 #cmakedefine HAVE_DECL_MADVISE 1
 #cmakedefine HAVE_DECL_TGOTO 1
 #cmakedefine HAVE_DECL_MHA_MAPSIZE_VA
-#cmakedefine HAVE_MALLINFO 1
+#cmakedefine HAVE_MALLOC_INFO 1
 #cmakedefine HAVE_MEMCPY 1
 #cmakedefine HAVE_MEMMOVE 1
 #cmakedefine HAVE_MKSTEMP 1
@@ -212,6 +211,7 @@
 #cmakedefine HAVE_RDTSCLL 1
 #cmakedefine HAVE_READ_REAL_TIME 1
 #cmakedefine HAVE_PTHREAD_ATTR_CREATE 1
+#cmakedefine HAVE_PTHREAD_ATTR_GETGUARDSIZE 1
 #cmakedefine HAVE_PTHREAD_ATTR_GETSTACKSIZE 1
 #cmakedefine HAVE_PTHREAD_ATTR_SETPRIO 1
 #cmakedefine HAVE_PTHREAD_ATTR_SETSCHEDPARAM 1

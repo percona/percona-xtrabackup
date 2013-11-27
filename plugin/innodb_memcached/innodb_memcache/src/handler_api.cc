@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -226,6 +226,10 @@ handler_binlog_rollback(
 {
 	THD*		thd = static_cast<THD*>(my_thd);
 
+	/*
+	  Memcached plugin doesn't use thd_mark_transaction_to_rollback()
+	  on deadlocks. So no special handling for this flag is needed.
+	*/
 	if (tc_log) {
 		tc_log->rollback(thd, true);
 	}
@@ -316,6 +320,31 @@ handler_rec_setup_int(
 }
 
 /**********************************************************************//**
+Set up an unsigned int64 field in TABLE->record[0] */
+void
+handler_rec_setup_uint64(
+/*=====================*/
+	void*		my_table,	/*!< in/out: TABLE structure */
+	int		field_id,	/*!< in: Field ID for the field */
+	unsigned long long
+			value,		/*!< in: value to set */
+	bool		unsigned_flag,	/*!< in: whether it is unsigned */
+	bool		is_null)	/*!< in: whether it is null value */
+{
+	Field*		fld;
+	TABLE*		table = static_cast<TABLE*>(my_table);
+
+	fld = table->field[field_id];
+
+	if (is_null) {
+		fld->set_null();
+	} else {
+		fld->set_notnull();
+		fld->store(value, unsigned_flag);
+	}
+}
+
+/**********************************************************************//**
 Store a record */
 void
 handler_store_record(
@@ -332,7 +361,13 @@ handler_close_thd(
 /*==============*/
 	void*		my_thd)		/*!< in: THD */
 {
-	delete (static_cast<THD*>(my_thd));
+	THD*	thd = static_cast<THD*>(my_thd);
+
+	/* destructor will not free it, because net.vio is 0. */
+	net_end(&thd->net);
+
+	thd->release_resources();
+	delete (thd);
 
 	/* Don't have a THD anymore */
 	my_pthread_setspecific_ptr(THR_THD,  0);
