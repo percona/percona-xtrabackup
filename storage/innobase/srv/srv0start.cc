@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2012, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -221,9 +221,9 @@ srv_file_check_mode(
 
 				ib_logf(IB_LOG_LEVEL_ERROR,
 					"%s can't be opened in %s mode",
+					name,
 					srv_read_only_mode
-					? "read-write" : "read",
-					name);
+					? "read" : "read-write");
 
 				return(false);
 			}
@@ -523,7 +523,13 @@ create_log_file(
 
 	*file = os_file_create(
 		innodb_file_log_key, name,
-		OS_FILE_CREATE, OS_FILE_NORMAL, OS_LOG_FILE, &ret);
+		OS_FILE_CREATE|OS_FILE_ON_ERROR_NO_EXIT, OS_FILE_NORMAL,
+		OS_LOG_FILE, &ret);
+
+	if (!ret) {
+		ib_logf(IB_LOG_LEVEL_ERROR, "Cannot create %s", name);
+		return(DB_ERROR);
+	}
 
 	ib_logf(IB_LOG_LEVEL_INFO,
 		"Setting log file %s size to %lu MB",
@@ -534,7 +540,9 @@ create_log_file(
 			       (os_offset_t) srv_log_file_size
 			       << UNIV_PAGE_SIZE_SHIFT);
 	if (!ret) {
-		ib_logf(IB_LOG_LEVEL_ERROR, "Error in creating %s", name);
+		ib_logf(IB_LOG_LEVEL_ERROR, "Cannot set log file"
+			" %s to size %lu MB", name, (ulong) srv_log_file_size
+			>> (20 - UNIV_PAGE_SIZE_SHIFT));
 		return(DB_ERROR);
 	}
 
@@ -567,6 +575,8 @@ static
 dberr_t
 create_log_files(
 /*=============*/
+	bool	create_new_db,	/*!< in: TRUE if new database is being
+				created */
 	char*	logfilename,	/*!< in/out: buffer for log file name */
 	size_t	dirnamelen,	/*!< in: length of the directory path */
 	lsn_t	lsn,		/*!< in: FIL_PAGE_FILE_FLUSH_LSN value */
@@ -578,23 +588,28 @@ create_log_files(
 		return(DB_READ_ONLY);
 	}
 
-	/* Remove any old log files. */
-	for (unsigned i = 0; i <= INIT_LOG_FILE0; i++) {
-		sprintf(logfilename + dirnamelen, "ib_logfile%u", i);
+	/* We prevent system tablespace creation with existing files in
+	data directory. So we do not delete log files when creating new system
+	tablespace */
+	if (!create_new_db) {
+		/* Remove any old log files. */
+		for (unsigned i = 0; i <= INIT_LOG_FILE0; i++) {
+			sprintf(logfilename + dirnamelen, "ib_logfile%u", i);
 
-		/* Ignore errors about non-existent files or files
-		that cannot be removed. The create_log_file() will
-		return an error when the file exists. */
+			/* Ignore errors about non-existent files or files
+			that cannot be removed. The create_log_file() will
+			return an error when the file exists. */
 #ifdef __WIN__
-		DeleteFile((LPCTSTR) logfilename);
+			DeleteFile((LPCTSTR) logfilename);
 #else
-		unlink(logfilename);
+			unlink(logfilename);
 #endif
-		/* Crashing after deleting the first
-		file should be recoverable. The buffer
-		pool was clean, and we can simply create
-		all log files from the scratch. */
-		RECOVERY_CRASH(6);
+			/* Crashing after deleting the first
+			file should be recoverable. The buffer
+			pool was clean, and we can simply create
+			all log files from the scratch. */
+			RECOVERY_CRASH(6);
+		}
 	}
 
 	ut_ad(!buf_pool_check_no_pending_io());
@@ -872,6 +887,7 @@ open_or_create_data_files(
 		}
 
 		if (ret == FALSE) {
+			const char* check_msg;
 			/* We open the data file */
 
 			if (one_created) {
@@ -967,9 +983,16 @@ size_check:
 				return(DB_ERROR);
 			}
 skip_size_check:
-			fil_read_first_page(
+			check_msg = fil_read_first_page(
 				files[i], one_opened, &flags, &space,
 				min_flushed_lsn, max_flushed_lsn);
+
+			if (check_msg) {
+				ib_logf(IB_LOG_LEVEL_ERROR,
+					"%s in data file %s",
+					check_msg, name);
+				return(DB_ERROR);
+			}
 
 			/* The first file of the system tablespace must
 			have space ID = TRX_SYS_SPACE.  The FSP_SPACE_ID
@@ -1091,19 +1114,25 @@ srv_undo_tablespace_create(
 	if (srv_read_only_mode && ret) {
 		ib_logf(IB_LOG_LEVEL_INFO,
 			"%s opened in read-only mode", name);
-	} else if (ret == FALSE
-		   && os_file_get_last_error(false) != OS_FILE_ALREADY_EXISTS
+	} else if (ret == FALSE) {
+		if (os_file_get_last_error(false) != OS_FILE_ALREADY_EXISTS
 #ifdef UNIV_AIX
-		/* AIX 5.1 after security patch ML7 may have
-		errno set to 0 here, which causes our function
-		to return 100; work around that AIX problem */
-		   && os_file_get_last_error(false) != 100
+			/* AIX 5.1 after security patch ML7 may have
+			errno set to 0 here, which causes our function
+			to return 100; work around that AIX problem */
+		    && os_file_get_last_error(false) != 100
 #endif /* UNIV_AIX */
 		) {
-
-		ib_logf(IB_LOG_LEVEL_ERROR,
-			"Can't create UNDO tablespace %s", name);
-
+			ib_logf(IB_LOG_LEVEL_ERROR,
+				"Can't create UNDO tablespace %s", name);
+		} else {
+			ib_logf(IB_LOG_LEVEL_ERROR,
+				"Creating system tablespace with"
+				" existing undo tablespaces is not"
+				" supported. Please delete all undo"
+				" tablespaces before creating new"
+				" system tablespace.");
+		}
 		err = DB_ERROR;
 	} else {
 		ut_a(!srv_read_only_mode);
@@ -1465,6 +1494,7 @@ innobase_start_or_create_for_mysql(void)
 	ulint		io_limit;
 	mtr_t		mtr;
 	ib_bh_t*	ib_bh;
+	ulint		n_recovered_trx;
 	char		logfilename[10000];
 	char*		logfile0	= NULL;
 	size_t		dirnamelen;
@@ -2005,7 +2035,7 @@ innobase_start_or_create_for_mysql(void)
 
 		buf_flush_wait_batch_end(NULL, BUF_FLUSH_LIST);
 
-		err = create_log_files(logfilename, dirnamelen,
+		err = create_log_files(create_new_db, logfilename, dirnamelen,
 				       max_flushed_lsn, logfile0);
 
 		if (err != DB_SUCCESS) {
@@ -2050,8 +2080,9 @@ innobase_start_or_create_for_mysql(void)
 					}
 
 					err = create_log_files(
-						logfilename, dirnamelen,
-						max_flushed_lsn, logfile0);
+						create_new_db, logfilename,
+						dirnamelen, max_flushed_lsn,
+						logfile0);
 
 					if (err != DB_SUCCESS) {
 						return(err);
@@ -2211,6 +2242,7 @@ files_checked:
 		trx_sys_create_sys_pages();
 
 		ib_bh = trx_sys_init_at_db_start();
+		n_recovered_trx = UT_LIST_GET_LEN(trx_sys->rw_trx_list);
 
 		/* The purge system needs to create the purge view and
 		therefore requires that the trx_sys is inited. */
@@ -2265,6 +2297,7 @@ files_checked:
 		}
 
 		ib_bh = trx_sys_init_at_db_start();
+		n_recovered_trx = UT_LIST_GET_LEN(trx_sys->rw_trx_list);
 
 		/* The purge system needs to create the purge view and
 		therefore requires that the trx_sys is inited. */
@@ -2312,7 +2345,7 @@ files_checked:
 		been shut down normally: this is the normal startup path */
 
 		err = recv_recovery_from_checkpoint_start(
-			LOG_CHECKPOINT, IB_ULONGLONG_MAX,
+			LOG_CHECKPOINT, LSN_MAX,
 			min_flushed_lsn, max_flushed_lsn);
 
 		if (err != DB_SUCCESS) {
@@ -2333,6 +2366,7 @@ files_checked:
 		}
 
 		ib_bh = trx_sys_init_at_db_start();
+		n_recovered_trx = UT_LIST_GET_LEN(trx_sys->rw_trx_list);
 
 		/* The purge system needs to create the purge view and
 		therefore requires that the trx_sys is inited. */
@@ -2364,9 +2398,17 @@ files_checked:
 			an .ibd file.
 
 			We also determine the maximum tablespace id used. */
+			dict_check_t	dict_check;
 
-			dict_check_tablespaces_and_store_max_id(
-				recv_needed_recovery);
+			if (recv_needed_recovery) {
+				dict_check = DICT_CHECK_ALL_LOADED;
+			} else if (n_recovered_trx) {
+				dict_check = DICT_CHECK_SOME_LOADED;
+			} else {
+				dict_check = DICT_CHECK_NONE_LOADED;
+			}
+
+			dict_check_tablespaces_and_store_max_id(dict_check);
 		}
 
 		if (!srv_force_recovery
@@ -2442,8 +2484,9 @@ files_checked:
 
 			srv_log_file_size = srv_log_file_size_requested;
 
-			err = create_log_files(logfilename, dirnamelen,
-					       max_flushed_lsn, logfile0);
+			err = create_log_files(create_new_db, logfilename,
+					       dirnamelen, max_flushed_lsn,
+					       logfile0);
 
 			if (err != DB_SUCCESS) {
 				return(err);
@@ -2541,6 +2584,13 @@ files_checked:
 		ut_a(srv_force_recovery >= SRV_FORCE_NO_TRX_UNDO
 		     || srv_read_only_mode);
 		srv_undo_logs = ULONG_UNDEFINED;
+	}
+
+	/* Flush the changes made to TRX_SYS_PAGE by trx_sys_create_rsegs()*/
+	if (!srv_force_recovery && !srv_read_only_mode) {
+		bool success = buf_flush_list(ULINT_MAX, LSN_MAX, NULL);
+		ut_a(success);
+		buf_flush_wait_batch_end(NULL, BUF_FLUSH_LIST);
 	}
 
 	if (!srv_read_only_mode) {

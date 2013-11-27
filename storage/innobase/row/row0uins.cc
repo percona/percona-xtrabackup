@@ -316,7 +316,8 @@ row_undo_ins_parse_undo_rec(
 	node->rec_type = type;
 
 	node->update = NULL;
-	node->table = dict_table_open_on_id(table_id, dict_locked, FALSE);
+	node->table = dict_table_open_on_id(
+		table_id, dict_locked, DICT_TABLE_OP_NORMAL);
 
 	/* Skip the UNDO if we can't find the table or the .ibd file. */
 	if (UNIV_UNLIKELY(node->table == NULL)) {
@@ -380,13 +381,14 @@ row_undo_ins_remove_sec_rec(
 			/* The database must have crashed after
 			inserting a clustered index record but before
 			writing all the externally stored columns of
-			that record.  Because secondary index entries
-			are inserted after the clustered index record,
-			we may assume that the secondary index record
-			does not exist.  However, this situation may
-			only occur during the rollback of incomplete
-			transactions. */
-			ut_a(trx_is_recv(node->trx));
+			that record, or a statement is being rolled
+			back because an error occurred while storing
+			off-page columns.
+
+			Because secondary index entries are inserted
+			after the clustered index record, we may
+			assume that the secondary index record does
+			not exist. */
 		} else {
 			err = row_undo_ins_remove_sec(index, entry);
 

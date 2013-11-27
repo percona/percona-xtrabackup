@@ -60,9 +60,14 @@ enum fts_ast_oper_t {
 						word*/
 
 	FTS_DISTANCE,				/*!< Proximity distance */
-	FTS_IGNORE_SKIP				/*!< Transient node operator
+	FTS_IGNORE_SKIP,			/*!< Transient node operator
 						signifies that this is a
 						FTS_IGNORE node, and ignored in
+						the first pass of
+						fts_ast_visit() */
+	FTS_EXIST_SKIP				/*!< Transient node operator
+						signifies that this ia a
+						FTS_EXIST node, and ignored in
 						the first pass of
 						fts_ast_visit() */
 };
@@ -72,7 +77,7 @@ struct fts_lexer_t;
 struct fts_ast_node_t;
 struct fts_ast_state_t;
 
-typedef ulint (*fts_ast_callback)(fts_ast_oper_t, fts_ast_node_t*, void*);
+typedef dberr_t (*fts_ast_callback)(fts_ast_oper_t, fts_ast_node_t*, void*);
 
 /********************************************************************
 Parse the string using the lexer setup within state.*/

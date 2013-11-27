@@ -2780,11 +2780,10 @@ bool partition_info::fix_parser_data(THD *thd)
   {
     part_elem= it++;
     List_iterator<part_elem_value> list_val_it(part_elem->list_val_list);
-    j= 0;
     num_elements= part_elem->list_val_list.elements;
     DBUG_ASSERT(part_type == RANGE_PARTITION ?
                 num_elements == 1U : TRUE);
-    do
+    for (j= 0; j < num_elements; j++)
     {
       part_elem_value *val= list_val_it++;
       if (column_list)
@@ -2819,7 +2818,7 @@ bool partition_info::fix_parser_data(THD *thd)
           list_val_it.remove();
         }
       }
-    } while (++j < num_elements);
+    }
   } while (++i < num_parts);
   DBUG_RETURN(FALSE);
 }
@@ -3025,7 +3024,7 @@ bool partition_info::has_same_partitioning(partition_info *new_part_info)
             partition_element *new_sub_part_elem= new_sub_part_it++;
             /* new_part_elem may not have engine_type set! */
             if (new_sub_part_elem->engine_type &&
-                sub_part_elem->engine_type != new_part_elem->engine_type)
+                sub_part_elem->engine_type != new_sub_part_elem->engine_type)
               DBUG_RETURN(false);
 
             if (strcmp(sub_part_elem->partition_name,

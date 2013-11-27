@@ -2093,6 +2093,16 @@ prepare:
             LEX *lex= thd->lex;
             lex->sql_command= SQLCOM_PREPARE;
             lex->prepared_stmt_name= $2;
+            /*
+              We don't know know at this time whether there's a password
+              in prepare_src, so we err on the side of caution.  Setting
+              the flag will force a rewrite which will obscure all of
+              prepare_src in the "Query" log line.  We'll see the actual
+              query (with just the passwords obscured, if any) immediately
+              afterwards in the "Prepare" log lines anyway, and then again
+              in the "Execute" log line if and when prepare_src is executed.
+            */
+            lex->contains_plaintext_password= true;
           }
         ;
 
@@ -2224,8 +2234,11 @@ master_def:
           {
             if ($3 > MASTER_DELAY_MAX)
             {
+              Lex_input_stream *lip= YYLIP;
+              const char *start= lip->get_tok_start();
+              const char *msg= YYTHD->strmake(start, lip->get_ptr() - start);
               my_error(ER_MASTER_DELAY_VALUE_OUT_OF_RANGE, MYF(0),
-                       static_cast<uint>($3), MASTER_DELAY_MAX);
+                       msg, MASTER_DELAY_MAX);
             }
             else
               Lex->mi.sql_delay = $3;
@@ -2379,14 +2392,15 @@ create:
             lex->sql_command= SQLCOM_CREATE_TABLE;
             if (!lex->select_lex.add_table_to_list(thd, $5, NULL,
                                                    TL_OPTION_UPDATING,
-                                                   TL_WRITE, MDL_EXCLUSIVE))
+                                                   TL_WRITE, MDL_SHARED))
               MYSQL_YYABORT;
             /*
-              For CREATE TABLE, an non-existing table is not an error.
-              Instruct open_tables() to just take an MDL lock if the
-              table does not exist.
+              Instruct open_table() to acquire SHARED lock to check the
+              existance of table. If the table does not exist then
+              it will be upgraded EXCLUSIVE MDL lock. If table exist
+              then open_table() will return with an error or warning.
             */
-            lex->query_tables->open_strategy= TABLE_LIST::OPEN_IF_EXISTS;
+            lex->query_tables->open_strategy= TABLE_LIST::OPEN_FOR_CREATE;
             lex->alter_info.reset();
             lex->col_list.empty();
             lex->change=NullS;
@@ -5066,8 +5080,8 @@ ts_wait:
         ;
 
 size_number:
-          real_ulong_num { $$= $1;}
-        | IDENT
+          real_ulonglong_num { $$= $1;}
+        | IDENT_sys
           {
             ulonglong number;
             uint text_shift_number= 0;
@@ -10356,6 +10370,7 @@ sum_expr:
             if ($$ == NULL)
               MYSQL_YYABORT;
             $5->empty();
+            sel->gorder_list.empty();
           }
         ;
 
@@ -10426,18 +10441,27 @@ opt_gconcat_separator:
 
 opt_gorder_clause:
           /* empty */
+        | ORDER_SYM BY
           {
-            Select->gorder_list = NULL;
-          }
-        | order_clause
-          {
-            SELECT_LEX *select= Select;
-            select->gorder_list= new (YYTHD->mem_root)
-                                   SQL_I_List<ORDER>(select->order_list);
-            if (select->gorder_list == NULL)
+            LEX *lex= Lex;
+            SELECT_LEX *sel= lex->current_select;
+            if (sel->linkage != GLOBAL_OPTIONS_TYPE &&
+                sel->olap != UNSPECIFIED_OLAP_TYPE &&
+                (sel->linkage != UNION_TYPE || sel->braces))
+            {
+              my_error(ER_WRONG_USAGE, MYF(0),
+                       "CUBE/ROLLUP", "ORDER BY");
               MYSQL_YYABORT;
-            select->order_list.empty();
+            }
           }
+         gorder_list;
+        ;
+
+gorder_list:
+          gorder_list ',' order_ident order_dir
+          { if (add_gorder_to_list(YYTHD, $3,(bool) $4)) MYSQL_YYABORT; }
+        | order_ident order_dir
+          { if (add_gorder_to_list(YYTHD, $1,(bool) $2)) MYSQL_YYABORT; }
         ;
 
 in_sum_expr:
@@ -11277,6 +11301,12 @@ olap_opt:
             {
               my_error(ER_WRONG_USAGE, MYF(0), "WITH ROLLUP",
                        "global union parameters");
+              MYSQL_YYABORT;
+            }
+            if (lex->current_select->options & SELECT_DISTINCT)
+            {
+              // DISTINCT+ROLLUP does not work
+              my_error(ER_WRONG_USAGE, MYF(0), "WITH ROLLUP", "DISTINCT");
               MYSQL_YYABORT;
             }
             lex->current_select->olap= ROLLUP_TYPE;
@@ -13199,10 +13229,17 @@ load_data_set_elem:
           simple_ident_nospvar equal remember_name expr_or_default remember_end
           {
             LEX *lex= Lex;
-            if (lex->update_list.push_back($1) || 
-                lex->value_list.push_back($4))
+            uint length= (uint) ($5 - $3);
+            String *val= new (YYTHD->mem_root) String($3,
+                                                      length,
+                                                      YYTHD->charset());
+            if (val == NULL)
+              MYSQL_YYABORT;
+            if (lex->update_list.push_back($1) ||
+                lex->value_list.push_back($4) ||
+                lex->load_set_str_list.push_back(val))
                 MYSQL_YYABORT;
-            $4->item_name.copy($3, (uint) ($5 - $3), YYTHD->charset());
+            $4->item_name.copy($3, length, YYTHD->charset());
           }
         ;
 
@@ -15180,7 +15217,7 @@ handler_rkey_mode:
 /* GRANT / REVOKE */
 
 revoke:
-          REVOKE clear_privileges revoke_command
+          REVOKE clear_privileges { Lex->sql_command= SQLCOM_REVOKE; } revoke_command
           {}
         ;
 
@@ -15188,7 +15225,6 @@ revoke_command:
           grant_privileges ON opt_table grant_ident FROM grant_list
           {
             LEX *lex= Lex;
-            lex->sql_command= SQLCOM_REVOKE;
             lex->type= 0;
           }
         | grant_privileges ON FUNCTION_SYM grant_ident FROM grant_list
@@ -15199,7 +15235,6 @@ revoke_command:
               my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
             }
-            lex->sql_command= SQLCOM_REVOKE;
             lex->type= TYPE_ENUM_FUNCTION;
           }
         | grant_privileges ON PROCEDURE_SYM grant_ident FROM grant_list
@@ -15210,7 +15245,6 @@ revoke_command:
               my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
             }
-            lex->sql_command= SQLCOM_REVOKE;
             lex->type= TYPE_ENUM_PROCEDURE;
           }
         | ALL opt_privileges ',' GRANT OPTION FROM grant_list
@@ -15221,13 +15255,12 @@ revoke_command:
           {
             LEX *lex= Lex;
             lex->users_list.push_front ($3);
-            lex->sql_command= SQLCOM_REVOKE;
             lex->type= TYPE_ENUM_PROXY;
           } 
         ;
 
 grant:
-          GRANT clear_privileges grant_command
+          GRANT clear_privileges { Lex->sql_command= SQLCOM_GRANT; } grant_command
           {}
         ;
 
@@ -15236,7 +15269,6 @@ grant_command:
           require_clause grant_options
           {
             LEX *lex= Lex;
-            lex->sql_command= SQLCOM_GRANT;
             lex->type= 0;
           }
         | grant_privileges ON FUNCTION_SYM grant_ident TO_SYM grant_list
@@ -15248,7 +15280,6 @@ grant_command:
               my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
             }
-            lex->sql_command= SQLCOM_GRANT;
             lex->type= TYPE_ENUM_FUNCTION;
           }
         | grant_privileges ON PROCEDURE_SYM grant_ident TO_SYM grant_list
@@ -15260,14 +15291,12 @@ grant_command:
               my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
             }
-            lex->sql_command= SQLCOM_GRANT;
             lex->type= TYPE_ENUM_PROCEDURE;
           }
         | PROXY_SYM ON user TO_SYM grant_list opt_grant_option
           {
             LEX *lex= Lex;
             lex->users_list.push_front ($3);
-            lex->sql_command= SQLCOM_GRANT;
             lex->type= TYPE_ENUM_PROXY;
           } 
         ;
@@ -15278,7 +15307,13 @@ opt_table:
         ;
 
 grant_privileges:
-          object_privilege_list {}
+          object_privilege_list
+          {
+            LEX *lex= Lex;
+            if (lex->grant == GLOBAL_ACLS &&
+                lex->sql_command == SQLCOM_REVOKE)
+              lex->sql_command= SQLCOM_REVOKE_ALL;
+          }
         | ALL opt_privileges
           { 
             Lex->all_privileges= 1; 
@@ -15464,7 +15499,10 @@ grant_user:
           {
             $$=$1; $1->password=$4;
             if (Lex->sql_command == SQLCOM_REVOKE)
+            {
+              my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
+            }
             String *password = new (YYTHD->mem_root) String((const char*)$4.str,
                                     YYTHD->variables.character_set_client);
             check_password_policy(password);
@@ -15478,9 +15516,18 @@ grant_user:
         | user IDENTIFIED_SYM BY PASSWORD TEXT_STRING
           { 
             if (Lex->sql_command == SQLCOM_REVOKE)
+            {
+              my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
+            }
             $$= $1; 
             $1->password= $5; 
+            if (!strcmp($5.str, ""))
+            {
+              String *password= new (YYTHD->mem_root) String ((const char *)"",
+                                     YYTHD->variables.character_set_client);
+              check_password_policy(password);
+            }
             /*
               1. Plugin must be resolved
             */
@@ -15489,7 +15536,10 @@ grant_user:
         | user IDENTIFIED_SYM WITH ident_or_text
           {
             if (Lex->sql_command == SQLCOM_REVOKE)
+            {
+              my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
+            }
             $$= $1;
             $1->plugin= $4;
             $1->auth= empty_lex_str;
@@ -15498,7 +15548,10 @@ grant_user:
         | user IDENTIFIED_SYM WITH ident_or_text AS TEXT_STRING_sys
           {
             if (Lex->sql_command == SQLCOM_REVOKE)
+            {
+              my_parse_error(ER(ER_SYNTAX_ERROR));
               MYSQL_YYABORT;
+            }
             $$= $1;
             $1->plugin= $4;
             $1->auth= $6;
@@ -15509,6 +15562,7 @@ grant_user:
           {
             $$= $1;
             $1->password= null_lex_str;
+            check_password_policy(NULL);
           }
         ;
 

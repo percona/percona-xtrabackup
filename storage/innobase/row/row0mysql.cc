@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2012, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2013, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -62,6 +62,7 @@ Created 9/17/2000 Heikki Tuuri
 #include "row0import.h"
 #include "m_string.h"
 #include "my_sys.h"
+#include "ha_prototypes.h"
 
 /** Provide optional 4.x backwards compatibility for 5.0 and above */
 UNIV_INTERN ibool	row_rollback_on_timeout	= FALSE;
@@ -2521,7 +2522,8 @@ row_table_add_foreign_constraints(
 
 	if (err == DB_SUCCESS) {
 		/* Check that also referencing constraints are ok */
-		err = dict_load_foreigns(name, NULL, false, true);
+		err = dict_load_foreigns(name, NULL, false, true,
+					 DICT_ERR_IGNORE_NONE);
 	}
 
 	if (err != DB_SUCCESS) {
@@ -2874,13 +2876,13 @@ row_discard_tablespace_end(
 	}
 
 	DBUG_EXECUTE_IF("ib_discard_before_commit_crash",
-			log_make_checkpoint_at(IB_ULONGLONG_MAX, TRUE);
+			log_make_checkpoint_at(LSN_MAX, TRUE);
 			DBUG_SUICIDE(););
 
 	trx_commit_for_mysql(trx);
 
 	DBUG_EXECUTE_IF("ib_discard_after_commit_crash",
-			log_make_checkpoint_at(IB_ULONGLONG_MAX, TRUE);
+			log_make_checkpoint_at(LSN_MAX, TRUE);
 			DBUG_SUICIDE(););
 
 	row_mysql_unlock_data_dictionary(trx);
@@ -4508,13 +4510,30 @@ loop:
 
 		}
 
-		if (row_is_mysql_tmp_table_name(table->name)) {
-			/* There could be an orphan temp table left from
-			interupted alter table rebuild operation */
-			dict_table_close(table, TRUE, FALSE);
-		} else {
-			ut_a(!table->can_be_evicted || table->ibd_file_missing);
+		if (!row_is_mysql_tmp_table_name(table->name)) {
+			/* There could be orphan temp tables left from
+			interrupted alter table. Leave them, and handle
+			the rest.*/
+			if (table->can_be_evicted) {
+				ib_logf(IB_LOG_LEVEL_WARN,
+					"Orphan table encountered during "
+					"DROP DATABASE. This is possible if "
+					"'%s.frm' was lost.", table->name);
+			}
+
+			if (table->ibd_file_missing) {
+				ib_logf(IB_LOG_LEVEL_WARN,
+					"Missing %s.ibd file for table %s.",
+					table->name, table->name);
+			}
 		}
+
+		dict_table_close(table, TRUE, FALSE);
+
+		/* The dict_table_t object must not be accessed before
+		dict_table_open() or after dict_table_close(). But this is OK
+		if we are holding, the dict_sys->mutex. */
+		ut_ad(mutex_own(&dict_sys->mutex));
 
 		/* Wait until MySQL does not have any queries running on
 		the table */
@@ -4825,11 +4844,44 @@ row_rename_table_for_mysql(
 
 	if (!new_is_tmp) {
 		/* Rename all constraints. */
+		char	new_table_name[MAX_TABLE_NAME_LEN] = "";
+		char	old_table_utf8[MAX_TABLE_NAME_LEN] = "";
+		uint	errors = 0;
+
+		strncpy(old_table_utf8, old_name, MAX_TABLE_NAME_LEN);
+		innobase_convert_to_system_charset(
+			strchr(old_table_utf8, '/') + 1,
+			strchr(old_name, '/') +1,
+			MAX_TABLE_NAME_LEN, &errors);
+
+		if (errors) {
+			/* Table name could not be converted from charset
+			my_charset_filename to UTF-8. This means that the
+			table name is already in UTF-8 (#mysql#50). */
+			strncpy(old_table_utf8, old_name, MAX_TABLE_NAME_LEN);
+		}
 
 		info = pars_info_create();
 
 		pars_info_add_str_literal(info, "new_table_name", new_name);
 		pars_info_add_str_literal(info, "old_table_name", old_name);
+		pars_info_add_str_literal(info, "old_table_name_utf8",
+					  old_table_utf8);
+
+		strncpy(new_table_name, new_name, MAX_TABLE_NAME_LEN);
+		innobase_convert_to_system_charset(
+			strchr(new_table_name, '/') + 1,
+			strchr(new_name, '/') +1,
+			MAX_TABLE_NAME_LEN, &errors);
+
+		if (errors) {
+			/* Table name could not be converted from charset
+			my_charset_filename to UTF-8. This means that the
+			table name is already in UTF-8 (#mysql#50). */
+			strncpy(new_table_name, new_name, MAX_TABLE_NAME_LEN);
+		}
+
+		pars_info_add_str_literal(info, "new_table_utf8", new_table_name);
 
 		err = que_eval_sql(
 			info,
@@ -4842,6 +4894,7 @@ row_rename_table_for_mysql(
 			"old_t_name_len INT;\n"
 			"new_db_name_len INT;\n"
 			"id_len INT;\n"
+			"offset INT;\n"
 			"found INT;\n"
 			"BEGIN\n"
 			"found := 1;\n"
@@ -4850,8 +4903,8 @@ row_rename_table_for_mysql(
 			"new_db_name := SUBSTR(:new_table_name, 0,\n"
 			"                      new_db_name_len);\n"
 			"old_t_name_len := LENGTH(:old_table_name);\n"
-			"gen_constr_prefix := CONCAT(:old_table_name,\n"
-			"                            '_ibfk_');\n"
+			"gen_constr_prefix := CONCAT(:old_table_name_utf8,\n"
+			"			     '_ibfk_');\n"
 			"WHILE found = 1 LOOP\n"
 			"       SELECT ID INTO foreign_id\n"
 			"        FROM SYS_FOREIGN\n"
@@ -4870,10 +4923,11 @@ row_rename_table_for_mysql(
 			"               IF (INSTR(foreign_id,\n"
 			"                         gen_constr_prefix) > 0)\n"
 			"               THEN\n"
+                        "                offset := INSTR(foreign_id, '_ibfk_') - 1;\n"
 			"                new_foreign_id :=\n"
-			"                CONCAT(:new_table_name,\n"
-			"                SUBSTR(foreign_id, old_t_name_len,\n"
-			"                       id_len - old_t_name_len));\n"
+			"                CONCAT(:new_table_utf8,\n"
+			"                SUBSTR(foreign_id, offset,\n"
+			"                       id_len - offset));\n"
 			"               ELSE\n"
 			"                new_foreign_id :=\n"
 			"                CONCAT(new_db_name,\n"
@@ -4912,6 +4966,24 @@ row_rename_table_for_mysql(
 			if (err != DB_SUCCESS) {
 				break;
 			}
+		}
+	}
+
+	if (dict_table_has_fts_index(table)
+	    && !dict_tables_have_same_db(old_name, new_name)) {
+		err = fts_rename_aux_tables(table, new_name, trx);
+
+		if (err != DB_SUCCESS && (table->space != 0)) {
+			char*	orig_name = table->name;
+
+			/* If rename fails and table has its own tablespace,
+			we need to call fts_rename_aux_tables again to
+			revert the ibd file rename, which is not under the
+			control of trx. Also notice the parent table name
+			in cache is not changed yet. */
+			table->name = const_cast<char*>(new_name);
+			fts_rename_aux_tables(table, old_name, trx);
+			table->name = orig_name;
 		}
 	}
 
@@ -4974,7 +5046,8 @@ end:
 
 		err = dict_load_foreigns(
 			new_name, NULL,
-			false, !old_is_tmp || trx->check_foreigns);
+			false, !old_is_tmp || trx->check_foreigns,
+			DICT_ERR_IGNORE_NONE);
 
 		if (err != DB_SUCCESS) {
 			ut_print_timestamp(stderr);
@@ -5011,7 +5084,6 @@ end:
 	}
 
 funct_exit:
-
 	if (table != NULL) {
 		dict_table_close(table, dict_locked, FALSE);
 	}
@@ -5141,6 +5213,7 @@ func_exit:
 				    dtuple_get_nth_field(prev_entry, i))) {
 
 				contains_null = TRUE;
+				break;
 			}
 		}
 

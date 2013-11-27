@@ -17,10 +17,8 @@ test_plugin_server	plug_dest
 ERROR 28000: Access denied for user 'plug'@'localhost' (using password: YES)
 GRANT PROXY ON plug_dest TO plug;
 test proxies_priv columns
-SELECT * FROM mysql.proxies_priv;
+SELECT * FROM mysql.proxies_priv WHERE user !='root';
 Host	User	Proxied_host	Proxied_user	With_grant	Grantor	Timestamp
-xx	root			1		xx
-xx	root			1		xx
 xx	plug	%	plug_dest	0	root@localhost	xx
 test mysql.proxies_priv;
 SHOW CREATE TABLE mysql.proxies_priv;
@@ -92,9 +90,9 @@ CREATE TABLE t1 (a INT);
 DROP TABLE t1;
 DROP USER new_grant_user;
 # try re-create existing user via GRANT IDENTIFIED WITH
-GRANTS which don't affect current plugin are allowed!
 GRANT ALL PRIVILEGES ON test_grant_db.* TO plug
 IDENTIFIED WITH 'test_plugin_server' AS 'plug_dest';
+ERROR HY000: GRANT with IDENTIFIED WITH is illegal because the user plug already exists
 GRANT ALL PRIVILEGES ON test_grant_db.* TO plug_dest
 IDENTIFIED WITH 'test_plugin_server' AS 'plug_dest';
 ERROR HY000: GRANT with IDENTIFIED WITH is illegal because the user plug_dest already exists

@@ -225,8 +225,8 @@ JOIN::create_intermediate_table(JOIN_TAB *tab, List<Item> *tmp_table_fields,
                                "");
   if (!table)
     DBUG_RETURN(true);
-  tmp_table_param.using_indirect_summary_function=
-    tab->tmp_table_param->using_indirect_summary_function;
+  tmp_table_param.using_outer_summary_function=
+    tab->tmp_table_param->using_outer_summary_function;
   tab->join= this;
   DBUG_ASSERT(tab > tab->join->join_tab);
   (tab - 1)->next_select= sub_select_op;
@@ -934,9 +934,7 @@ do_select(JOIN *join)
 
   join->thd->limit_found_rows= join->send_records;
   /*
-    Use info provided by filesort for "order by with limit":
-
-    When using a Priority Queue, we cannot rely on send_records, but need
+    For "order by with limit", we cannot rely on send_records, but need
     to use the rowcount read originally into the join_tab applying the
     filesort. There cannot be any post-filtering conditions, nor any
     following join_tabs in this case, so this rowcount properly represents
@@ -958,7 +956,9 @@ do_select(JOIN *join)
       sort_tab= join_tab + const_tables;
     }
     if (sort_tab->filesort &&
-        sort_tab->filesort->using_pq)
+        join->select_options & OPTION_FOUND_ROWS &&
+        sort_tab->filesort->sortorder &&
+        sort_tab->filesort->limit != HA_POS_ERROR)
     {
       join->thd->limit_found_rows= sort_tab->records;
     }
@@ -2813,7 +2813,6 @@ end_send(JOIN *join, JOIN_TAB *join_tab, bool end_of_records)
 	  /* Join over all rows in table;  Return number of found rows */
 	  TABLE *table=jt->table;
 
-	  join->select_options ^= OPTION_FOUND_ROWS;
 	  if (table->sort.record_pointers ||
 	      (table->sort.io_cache && my_b_inited(table->sort.io_cache)))
 	  {
@@ -3321,7 +3320,7 @@ create_sort_index(THD *thd, JOIN *join, JOIN_TAB *tab)
     }
     else
     {
-      DBUG_ASSERT(tab->type == JT_REF);
+      DBUG_ASSERT(tab->type == JT_REF || tab->type == JT_EQ_REF);
       // Update ref value
       if ((cp_buffer_from_ref(thd, table, &tab->ref) && thd->is_fatal_error))
         goto err;                                   // out of memory

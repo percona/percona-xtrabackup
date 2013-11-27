@@ -1187,6 +1187,23 @@ public:
 
   /* bit map of tables used by item */
   virtual table_map used_tables() const { return (table_map) 0L; }
+  /**
+    Return used table information for the level this item is resolved on.
+     - For fields, this returns the table the item is resolved from.
+     - For all other items, this behaves like used_tables().
+
+    @note: Use this function with caution. External calls to this function
+           should only be made for class objects derived from Item_ident.
+           Item::resolved_used_tables is for internal use only, in order to
+           process fields underlying a view column reference.
+  */
+  virtual table_map resolved_used_tables() const
+  {
+    // As this is the level this item was resolved on, it cannot be outer:
+    DBUG_ASSERT(!(used_tables() & OUTER_REF_TABLE_BIT));
+
+    return used_tables();
+  }
   /*
     Return table map of tables that can't be NULL tables (tables that are
     used in a context where if they would contain a NULL row generated
@@ -1321,7 +1338,13 @@ public:
   */
   virtual void no_rows_in_result() {}
   virtual Item *copy_or_same(THD *thd) { return this; }
-  virtual Item *copy_andor_structure(THD *thd) { return this; }
+  /**
+     @param real_items  True <=> in the copy, replace any Item_ref with its
+     real_item()
+     @todo this argument should be always false and removed in WL#7082.
+  */
+  virtual Item *copy_andor_structure(THD *thd, bool real_items= false)
+  { return real_items ? real_item() : this; }
   virtual Item *real_item() { return this; }
   virtual Item *get_tmp_table_item(THD *thd) { return copy_or_same(thd); }
 
@@ -1411,7 +1434,8 @@ public:
   /**
      Clean up after removing the item from the item tree.
 
-     @param arg Not used
+     @param arg Pointer to the st_select_lex from which the walk started, i.e.,
+                the st_select_lex that contained the clause that was removed.
   */
   virtual bool clean_up_after_removal(uchar *arg) { return false; }
 
@@ -2075,10 +2099,6 @@ public:
              const char *db_name_arg, const char *table_name_arg,
              const char *field_name_arg);
   Item_ident(THD *thd, Item_ident *item);
-  /*
-    Return used table information for the level on which this table is resolved.
-  */
-  virtual table_map resolved_used_tables() const= 0;
   const char *full_name() const;
   virtual void fix_after_pullout(st_select_lex *parent_select,
                                  st_select_lex *removed_select);
@@ -3185,7 +3205,10 @@ public:
     if (!depended_from) 
       (*ref)->update_used_tables(); 
   }
-  virtual table_map resolved_used_tables() const;
+
+  virtual table_map resolved_used_tables() const
+  { return (*ref)->resolved_used_tables(); }
+
   table_map not_null_tables() const
   {
     /*
@@ -3951,8 +3974,10 @@ public:
 
   bool walk(Item_processor processor, bool walk_subquery, uchar *args)
   {
-    return arg->walk(processor, walk_subquery, args) ||
-      (this->*processor)(args);
+    if (arg && arg->walk(processor, walk_subquery, args))
+      return true;
+
+    return (this->*processor)(args);
   }
 
   Item *transform(Item_transformer transformer, uchar *args);
@@ -4120,6 +4145,11 @@ public:
   }
 
   void set_used_tables(table_map map) { used_table_map= map; }
+
+  virtual table_map resolved_used_tables() const
+  {
+    return example ? example->resolved_used_tables() : used_table_map;
+  }
 
   virtual bool allocate(uint i) { return 0; }
   virtual bool setup(Item *item)
