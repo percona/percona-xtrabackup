@@ -348,19 +348,18 @@ function get_version_info()
     MYSQL_VERSION_MINOR=${BASH_REMATCH[2]}
     MYSQL_VERSION_PATCH=${BASH_REMATCH[3]}
 
-    $MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES" >>$OUTFILE
-
     INNODB_VERSION=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES LIKE 'innodb_version'"`
     INNODB_VERSION=${INNODB_VERSION#"innodb_version	"}
     XTRADB_VERSION="`echo $INNODB_VERSION  | sed 's/[0-9]\.[0-9]\.[0-9][0-9]*\(-[0-9][0-9]*\.[0-9][0-9]*\)*$/\1/'`"
 
+    WSREP_ENABLED=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW VARIABLES" | grep -i wsrep`
+
     WSREP_READY=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW STATUS LIKE 'wsrep_ready'"`
     WSREP_READY=${WSREP_READY#"wsrep_ready	"}
 
-    if [ "$XB_BUILD" = "galera55" -a -z "$WSREP_READY" ]
+    if [ -n "$WSREP_ENABLED" -a -z "$WSREP_READY" ]
     then
-        die "Galera configuration is enabled via -c galera55, but the server \
-doesn't have Galera support."
+        die "Galera initialization failed!"
     fi
 
     # Version-specific defaults
