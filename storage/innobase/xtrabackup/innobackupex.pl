@@ -5247,7 +5247,7 @@ This option is passed directly to xtrabackup's --export option. It enables expor
 
 This option specifies the directory in which to save an extra copy of the "xtrabackup_checkpoints" file.  The option accepts a string argument. It is passed directly to xtrabackup's --extra-lsndir option. See the xtrabackup documentation for details.
 
-==item --force-non-empty-directories
+==item --force-non-empty-directories 
 
 This option, when specified, makes --copy-back or --move-back transfer files to non-empty directories. Note that no existing files will be overwritten. If --copy-back or --nove-back has to copy a file from the backup directory which already exists in the destination directory, it will still fail with an error.
 
@@ -5339,6 +5339,10 @@ Use this option to disable table lock with "FLUSH TABLES WITH READ LOCK". Use it
 =item --no-timestamp
 
 This option prevents creation of a time-stamped subdirectory of the BACKUP-ROOT-DIR given on the command line. When it is specified, the backup is done in BACKUP-ROOT-DIR instead.
+
+=item --no-version-check
+
+This option disables the version check which is enabled by the --version-check option.
 
 =item --parallel=NUMBER-OF-THREADS
 

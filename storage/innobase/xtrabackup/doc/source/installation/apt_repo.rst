@@ -37,6 +37,7 @@ Ubuntu
  * 12.04LTS (precise) 
  * 12.10 (quantal)
  * 13.04 (raring)
+ * 13.10 (saucy)
 
 Experimental Repository
 =======================
