@@ -297,18 +297,13 @@ recv_apply_log_recs_for_backup(void);
 Recovers from archived log files, and also from log files, if they exist.
 @return	error code or DB_SUCCESS */
 UNIV_INTERN
-ulint
+dberr_t
 recv_recovery_from_archive_start(
 /*=============================*/
 	lsn_t		min_flushed_lsn,/*!< in: min flushed lsn field from the
 					data files */
-	lsn_t		limit_lsn,	/*!< in: recover up to this lsn if
+	lsn_t		limit_lsn);	/*!< in: recover up to this lsn if
 					possible */
-	ulint		first_log_no);	/*!< in: number of the first archived
-					log file to use in the recovery; the
-					file will be searched from
-					INNOBASE_LOG_ARCH_DIR specified in
-					server config file */
 /********************************************************//**
 Completes recovery from archive. */
 UNIV_INTERN
@@ -483,6 +478,37 @@ use these free frames to read in pages when we start applying the
 log records to the database. */
 extern ulint	recv_n_pool_free_frames;
 
+/***********************************************************************//**
+Checks the consistency of the checkpoint info
+@return	TRUE if ok */
+UNIV_INTERN
+ibool
+recv_check_cp_is_consistent(
+/*========================*/
+	const byte*	buf);	/*!< in: buffer containing checkpoint info */
+
+/******************************************************//**
+Checks the 4-byte checksum to the trailer checksum field of a log
+block.  We also accept a log block in the old format before
+InnoDB-3.23.52 where the checksum field contains the log block number.
+@return TRUE if ok, or if the log block may be in the format of InnoDB
+version predating 3.23.52 */
+UNIV_INTERN
+ibool
+log_block_checksum_is_ok_or_old_format(
+/*===================================*/
+	const byte*	block);	/*!< in: pointer to a log block */
+
+/********************************************************//**
+Looks for the maximum consistent checkpoint from the log groups.
+@return	error code or DB_SUCCESS */
+UNIV_INTERN __attribute__((nonnull, warn_unused_result))
+dberr_t
+recv_find_max_checkpoint(
+/*=====================*/
+	log_group_t**	max_group,	/*!< out: max group */
+	ulint*		max_field);	/*!< out: LOG_CHECKPOINT_1 or
+					LOG_CHECKPOINT_2 */
 #ifndef UNIV_NONINL
 #include "log0recv.ic"
 #endif

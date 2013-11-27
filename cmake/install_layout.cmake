@@ -18,7 +18,7 @@
 # The current choices of installation layout are:
 #
 #  STANDALONE
-#    Build with prefix=/usr/local/mysql, create tarball with install prefix="."
+#    Build with prefix=/usr/local/xtrabackup, create tarball with install prefix="."
 #    and relative links.  Windows zip uses the same tarball layout but without
 #    the build prefix.
 #
@@ -27,10 +27,10 @@
 #    Note: The layout for ULN RPMs differs, see the "RPM" section.
 #
 #  DEB
-#    Build as per STANDALONE, prefix=/opt/mysql/server-$major.$minor
+#    Build as per STANDALONE, prefix=/opt/mysql/xtrabackup-$major.$minor
 #
 #  SVR4
-#    Solaris package layout suitable for pkg* tools, prefix=/opt/mysql/mysql
+#    Solaris package layout suitable for pkg* tools, prefix=/opt/mysql/xtrabackup
 #
 # To force a directory layout, use -DINSTALL_LAYOUT=<layout>.
 #
@@ -39,30 +39,16 @@
 # There is the possibility to further fine-tune installation directories.
 # Several variables can be overwritten:
 #
-# - INSTALL_BINDIR          (directory with client executables and scripts)
-# - INSTALL_SBINDIR         (directory with mysqld)
-# - INSTALL_SCRIPTDIR       (several scripts, rarely used)
-#
-# - INSTALL_LIBDIR          (directory with client end embedded libraries)
-# - INSTALL_PLUGINDIR       (directory for plugins)
-#
-# - INSTALL_INCLUDEDIR      (directory for MySQL headers)
+# - INSTALL_BINDIR          (directory with innobackupex and XtraBackup binaries)
 #
 # - INSTALL_DOCDIR          (documentation)
 # - INSTALL_DOCREADMEDIR    (readme and similar)
 # - INSTALL_MANDIR          (man pages)
 # - INSTALL_INFODIR         (info pages)
 #
-# - INSTALL_SHAREDIR        (location of aclocal/mysql.m4)
-# - INSTALL_MYSQLSHAREDIR   (MySQL character sets and localized error messages)
-# - INSTALL_MYSQLTESTDIR    (mysql-test)
-# - INSTALL_SQLBENCHDIR     (sql-bench)
+# - INSTALL_MYSQLTESTDIR       (XtraBackup test suite)
 # - INSTALL_SUPPORTFILESDIR (various extra support files)
 #
-# - INSTALL_MYSQLDATADIR    (data directory)
-#
-# When changing this page,  _please_ do not forget to update public Wiki
-# http://forge.mysql.com/wiki/CMake#Fine-tuning_installation_paths
 
 IF(NOT INSTALL_LAYOUT)
   SET(DEFAULT_INSTALL_LAYOUT "STANDALONE")
@@ -75,13 +61,13 @@ IF(UNIX)
   IF(INSTALL_LAYOUT MATCHES "RPM")
     SET(default_prefix "/usr")
   ELSEIF(INSTALL_LAYOUT MATCHES "DEB")
-    SET(default_prefix "/opt/mysql/server-${MYSQL_BASE_VERSION}")
+    SET(default_prefix "/opt/mysql/xtrabackup-${XB_MAJOR_VERSION}.${XB_MINOR_VERSION")
     # This is required to avoid "cpack -GDEB" default of prefix=/usr
     SET(CPACK_SET_DESTDIR ON)
   ELSEIF(INSTALL_LAYOUT MATCHES "SVR4")
-    SET(default_prefix "/opt/mysql/mysql")
+    SET(default_prefix "/opt/mysql/xtrabackup")
   ELSE()
-    SET(default_prefix "/usr/local/mysql")
+    SET(default_prefix "/usr/local/xtrabackup")
   ENDIF()
   IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     SET(CMAKE_INSTALL_PREFIX ${default_prefix}
@@ -128,7 +114,7 @@ SET(INSTALL_INFODIR_STANDALONE          "docs")
 #
 SET(INSTALL_SHAREDIR_STANDALONE         "share")
 SET(INSTALL_MYSQLSHAREDIR_STANDALONE    "share")
-SET(INSTALL_MYSQLTESTDIR_STANDALONE     "mysql-test")
+SET(INSTALL_MYSQLTESTDIR_STANDALONE     "xtrabackup-test")
 SET(INSTALL_SQLBENCHDIR_STANDALONE      ".")
 SET(INSTALL_SUPPORTFILESDIR_STANDALONE  "support-files")
 #
@@ -163,7 +149,7 @@ SET(INSTALL_MANDIR_RPM                  "share/man")
 #
 SET(INSTALL_SHAREDIR_RPM                "share")
 SET(INSTALL_MYSQLSHAREDIR_RPM           "share/mysql")
-SET(INSTALL_MYSQLTESTDIR_RPM            "share/mysql-test")
+SET(INSTALL_MYSQLTESTDIR_RPM            "share/xtrabackup-test")
 SET(INSTALL_SQLBENCHDIR_RPM             "")
 SET(INSTALL_SUPPORTFILESDIR_RPM         "share/mysql")
 #
@@ -189,7 +175,7 @@ SET(INSTALL_INFODIR_DEB                 "docs")
 #
 SET(INSTALL_SHAREDIR_DEB                "share")
 SET(INSTALL_MYSQLSHAREDIR_DEB           "share")
-SET(INSTALL_MYSQLTESTDIR_DEB            "mysql-test")
+SET(INSTALL_MYSQLTESTDIR_DEB            "xtrabackup-test")
 SET(INSTALL_SQLBENCHDIR_DEB             ".")
 SET(INSTALL_SUPPORTFILESDIR_DEB         "support-files")
 #
@@ -215,7 +201,7 @@ SET(INSTALL_INFODIR_SVR4                "docs")
 #
 SET(INSTALL_SHAREDIR_SVR4               "share")
 SET(INSTALL_MYSQLSHAREDIR_SVR4          "share")
-SET(INSTALL_MYSQLTESTDIR_SVR4           "mysql-test")
+SET(INSTALL_MYSQLTESTDIR_SVR4           "xtrabackup-test")
 SET(INSTALL_SQLBENCHDIR_SVR4            ".")
 SET(INSTALL_SUPPORTFILESDIR_SVR4        "support-files")
 #

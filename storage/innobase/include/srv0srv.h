@@ -348,11 +348,20 @@ extern ibool	srv_use_doublewrite_buf;
 extern ulong	srv_doublewrite_batch_size;
 extern ulong	srv_checksum_algorithm;
 
+extern ibool	srv_fast_checksum;
+
 extern ulong	srv_max_buf_pool_modified_pct;
 extern ulong	srv_max_purge_lag;
 extern ulong	srv_max_purge_lag_delay;
 
 extern ulong	srv_replication_delay;
+
+extern ulint	srv_log_checksum_algorithm;
+
+extern ibool	srv_apply_log_only;
+
+extern ibool	srv_backup_mode;
+
 /*-------------------------------------------*/
 
 extern ibool	srv_print_innodb_monitor;

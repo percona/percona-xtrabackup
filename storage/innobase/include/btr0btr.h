@@ -762,6 +762,30 @@ btr_validate_index(
 	const trx_t*	trx)			/*!< in: transaction or 0 */
 	__attribute__((nonnull(1), warn_unused_result));
 
+/**************************************************************//**
+Gets the root node of a tree and x- or s-latches it.
+@return	root page, x- or s-latched */
+UNIV_INTERN
+buf_block_t*
+btr_root_block_get(
+/*===============*/
+	const dict_index_t*	index,	/*!< in: index tree */
+	ulint			mode,	/*!< in: either RW_S_LATCH
+					or RW_X_LATCH */
+	mtr_t*			mtr);	/*!< in: mtr */
+
+/************************************************************//**
+Returns the child page of a node pointer and x-latches it.
+@return	child page, x-latched */
+UNIV_INTERN
+buf_block_t*
+btr_node_ptr_get_child(
+/*===================*/
+	const rec_t*	node_ptr,/*!< in: node pointer */
+	dict_index_t*	index,	/*!< in: index */
+	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
+	mtr_t*		mtr);	/*!< in: mtr */
+
 #define BTR_N_LEAF_PAGES	1
 #define BTR_TOTAL_SIZE		2
 #endif /* !UNIV_HOTBACKUP */

@@ -463,6 +463,8 @@ trx_sys_validate_trx_list(void);
 
 /* Space id and page no where the trx system file copy resides */
 #define	TRX_SYS_SPACE	0	/* the SYSTEM tablespace */
+#define	TRX_DOUBLEWRITE_SPACE	0xFFFFFFE0UL	/* the doublewrite buffer
+						tablespace if used */
 #include "fsp0fsp.h"
 #define	TRX_SYS_PAGE_NO	FSP_TRX_SYS_PAGE_NO
 

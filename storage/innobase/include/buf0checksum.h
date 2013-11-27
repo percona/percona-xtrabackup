@@ -70,6 +70,15 @@ buf_calc_page_old_checksum(
 /*=======================*/
 	const byte*	page);	/*!< in: buffer page */
 
+/********************************************************************//**
+Calculates a page checksum using the "fast checksum" algorithm in XtraDB <= 5.5
+@return checksum */
+UNIV_INTERN
+ulint
+buf_calc_page_new_checksum_32(
+/*==========================*/
+	const byte*	page);	/*!< in: buffer page */
+
 #ifndef UNIV_INNOCHECKSUM
 
 /********************************************************************//**

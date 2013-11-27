@@ -17,9 +17,9 @@
 # The logic is rather involved with special cases for  different OSes
 
 MACRO(GET_PACKAGE_FILE_NAME Var)
-IF(NOT VERSION)
+IF(NOT XB_VERSION)
     MESSAGE(FATAL_ERROR 
-     "Variable VERSION needs to be set prior to calling GET_PACKAGE_FILE_NAME")
+     "Variable XB_VERSION needs to be set prior to calling GET_PACKAGE_FILE_NAME")
   ENDIF()
   IF(NOT SYSTEM_NAME_AND_PROCESSOR)
     SET(NEED_DASH_BETWEEN_PLATFORM_AND_MACHINE 1)
@@ -115,12 +115,7 @@ IF(NOT VERSION)
     SET(PRODUCT_TAG)
   ENDIF()
 
-  IF("${VERSION}" MATCHES "-ndb-")
-    STRING(REGEX REPLACE "^.*-ndb-" "" NDBVERSION "${VERSION}")
-    SET(package_name "mysql-cluster${PRODUCT_TAG}-${NDBVERSION}-${SYSTEM_NAME_AND_PROCESSOR}")
-  ELSE()
-    SET(package_name "mysql${PRODUCT_TAG}-${VERSION}-${SYSTEM_NAME_AND_PROCESSOR}")
-  ENDIF()
+  SET(package_name "percona-xtrabackup${PRODUCT_TAG}-${XB_VERSION}-${SYSTEM_NAME_AND_PROCESSOR}")
 
   MESSAGE(STATUS "Packaging as: ${package_name}")
 

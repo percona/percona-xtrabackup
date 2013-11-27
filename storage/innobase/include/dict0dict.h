@@ -448,7 +448,7 @@ dict_foreign_replace_index(
 					/*!< in: column names, or NULL
 					to use table->col_names */
 	const dict_index_t*	index)	/*!< in: index to be replaced */
-	__attribute__((nonnull(1,3), warn_unused_result));
+	__attribute__((nonnull(1,3)));
 /**********************************************************************//**
 Determines whether a string starts with the specified keyword.
 @return TRUE if str starts with keyword */

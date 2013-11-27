@@ -125,6 +125,30 @@ buf_calc_page_old_checksum(
 	return(checksum);
 }
 
+/********************************************************************//**
+Calculates a page checksum using the "fast checksum" algorithm in XtraDB <= 5.5
+@return	checksum */
+UNIV_INTERN
+ulint
+buf_calc_page_new_checksum_32(
+/*==========================*/
+	const byte*	page)	/*!< in: buffer page */
+{
+	ulint checksum;
+
+	checksum = ut_fold_binary(page + FIL_PAGE_OFFSET,
+				  FIL_PAGE_FILE_FLUSH_LSN - FIL_PAGE_OFFSET)
+		+ ut_fold_binary(page + FIL_PAGE_DATA,
+				 FIL_PAGE_DATA_ALIGN_32 - FIL_PAGE_DATA)
+		+ ut_fold_binary_32(page + FIL_PAGE_DATA_ALIGN_32,
+				    UNIV_PAGE_SIZE - FIL_PAGE_DATA_ALIGN_32
+				    - FIL_PAGE_END_LSN_OLD_CHKSUM);
+
+	checksum = checksum & 0xFFFFFFFFUL;
+
+	return(checksum);
+}
+
 #ifndef UNIV_INNOCHECKSUM
 
 /********************************************************************//**

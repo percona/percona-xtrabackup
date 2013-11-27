@@ -44,8 +44,9 @@ IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
 #	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
 ENDIF()
 
-# Enable InnoDB's UNIV_DEBUG and UNIV_SYNC_DEBUG in debug builds
-SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DUNIV_DEBUG -DUNIV_SYNC_DEBUG")
+# In XtraBackup do not enable UNIV_SYNC_DEBUG when UNIV_DEBUG is enabled
+# due to extreme overhead on compact backup testcases
+SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DUNIV_DEBUG")
 
 # Add -Wconversion if compiling with GCC
 ## As of Mar 15 2011 this flag causes 3573+ warnings. If you are reading this
@@ -379,3 +380,7 @@ MYSQL_ADD_PLUGIN(innobase ${INNOBASE_SOURCES} STORAGE_ENGINE
   DEFAULT
   MODULE_OUTPUT_NAME ha_innodb
   LINK_LIBRARIES ${ZLIB_LIBRARY})
+
+# Must be after all ADD_DEFINITIONS() to be inherited by the
+# 'xtrabackup' subdirectory
+ADD_SUBDIRECTORY(xtrabackup)

@@ -1580,6 +1580,8 @@ struct buf_page_t{
 					or buf_block_t::mutex. */
 # endif /* UNIV_DEBUG_FILE_ACCESSES || UNIV_DEBUG */
 #endif /* !UNIV_HOTBACKUP */
+	ibool		is_compacted;	/*!< TRUE if page was skipped in
+					compact backups */
 };
 
 /** The buffer control block structure */

@@ -36,6 +36,9 @@ Created 10/10/1995 Heikki Tuuri
 #define SRV_PATH_SEPARATOR	'/'
 #endif
 
+/** Files comprising the system tablespace */
+extern os_file_t	files[1000];
+
 /*********************************************************************//**
 Normalizes a directory path for Windows: converts slashes to backslashes. */
 UNIV_INTERN
@@ -68,6 +71,23 @@ char*
 srv_add_path_separator_if_needed(
 /*=============================*/
 	char*	str);	/*!< in: null-terminated character string */
+/********************************************************************
+Opens the configured number of undo tablespaces.
+@return	DB_SUCCESS or error code */
+UNIV_INTERN
+dberr_t
+srv_undo_tablespaces_init(
+/*======================*/
+	ibool		create_new_db,		/*!< in: TRUE if new db being
+						created */
+	ibool		backup_mode,		/*!< in: TRUE disables reading
+						the system tablespace (used in
+						XtraBackup), FALSE is passed on
+						recovery. */
+	const ulint	n_conf_tablespaces,	/*!< in: configured undo
+						tablespaces */
+	ulint*		n_opened);		/*!< out: number of UNDO
+						tablespaces successfully */
 #ifndef UNIV_HOTBACKUP
 /****************************************************************//**
 Starts Innobase and creates a new database if database files
@@ -117,6 +137,22 @@ srv_get_meta_data_filename(
 	char*			filename,	/*!< out: filename */
 	ulint			max_len)	/*!< in: filename max length */
 	__attribute__((nonnull));
+
+/*********************************************************************//**
+Creates or opens database data files and closes them.
+@return	DB_SUCCESS or error code */
+UNIV_INTERN __attribute__((nonnull, warn_unused_result))
+dberr_t
+open_or_create_data_files(
+/*======================*/
+	ibool*		create_new_db,	/*!< out: TRUE if new database should be
+					created */
+	lsn_t*		min_flushed_lsn,/*!< out: min of flushed lsn
+					values in data files */
+	lsn_t*		max_flushed_lsn,/*!< out: max of flushed lsn
+					values in data files */
+	ulint*		sum_of_new_sizes);/*!< out: sum of sizes of the
+					new files added */
 
 /** Log sequence number at shutdown */
 extern	lsn_t	srv_shutdown_lsn;

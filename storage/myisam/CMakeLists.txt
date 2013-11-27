@@ -34,21 +34,6 @@ MYSQL_ADD_PLUGIN(myisam ${MYISAM_SOURCES}
 
 TARGET_LINK_LIBRARIES(myisam mysys)
 
-MYSQL_ADD_EXECUTABLE(myisam_ftdump myisam_ftdump.c)
-TARGET_LINK_LIBRARIES(myisam_ftdump myisam mysys_ssl)
-SET_TARGET_PROPERTIES(myisam_ftdump PROPERTIES LINKER_LANGUAGE CXX)
-
-MYSQL_ADD_EXECUTABLE(myisamchk myisamchk.c)
-TARGET_LINK_LIBRARIES(myisamchk myisam mysys_ssl)
-SET_TARGET_PROPERTIES(myisamchk PROPERTIES LINKER_LANGUAGE CXX)
-
-MYSQL_ADD_EXECUTABLE(myisamlog myisamlog.c)
-TARGET_LINK_LIBRARIES(myisamlog myisam)
-
-MYSQL_ADD_EXECUTABLE(myisampack myisampack.c)
-TARGET_LINK_LIBRARIES(myisampack myisam mysys_ssl)
-SET_TARGET_PROPERTIES(myisampack PROPERTIES LINKER_LANGUAGE CXX)
-
 IF(WITH_UNIT_TESTS AND FALSE)
   ADD_EXECUTABLE(mi_test1 mi_test1.c)
   TARGET_LINK_LIBRARIES(mi_test1 myisam mysys_ssl)
