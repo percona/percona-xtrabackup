@@ -76,6 +76,10 @@ MYSQL_ADD_EXECUTABLE(xbstream
   xbstream_write.c
   )
 
+SET_TARGET_PROPERTIES(xbstream
+        PROPERTIES LINKER_LANGUAGE CXX
+        )
+
 TARGET_LINK_LIBRARIES(xbstream
   mysys
   mysys_ssl
@@ -90,6 +94,10 @@ MYSQL_ADD_EXECUTABLE(xbcrypt
   xbcrypt_read.c
   xbcrypt_write.c
   )
+
+SET_TARGET_PROPERTIES(xbcrypt
+        PROPERTIES LINKER_LANGUAGE CXX
+        )
 
 TARGET_LINK_LIBRARIES(xbcrypt
   ${GCRYPT_LIBS}
