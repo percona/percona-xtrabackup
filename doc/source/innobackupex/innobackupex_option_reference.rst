@@ -40,11 +40,11 @@ Options
 
 .. option:: --decompress
 
-   Decompresses all files with the .qp extension in a backup previously made with the --compress option.
+   Decompresses all files with the .qp extension in a backup previously made with the --compress option. The :option:`innobackupex --parallel` option will allow multiple files to be decrypted and/or decompressed simultaneously. In order to decompress, the qpress utility MUST be installed and accessable within the path. This process will remove the original compressed/encrypted files and leave the results in the same location.
 
 .. option:: --decrypt=ENCRYPTION-ALGORITHM
 
-   Decrypts all files with the .xbcrypt extension in a backup previously made with --encrypt option.
+   Decrypts all files with the .xbcrypt extension in a backup previously made with --encrypt option. The :option:`innobackupex --parallel` option will allow multiple files to be decrypted and/or decompressed simultaneously. 
 
 .. option:: --defaults-file=[MY.CNF]
 
@@ -169,7 +169,7 @@ Options
 
 .. option:: --parallel=NUMBER-OF-THREADS
 
-   This option accepts an integer argument that specifies the number of threads the :program:`xtrabackup` child process should use to back up files concurrently.  Note that this option works on file level, that is, if you have several .ibd files, they will be copied in parallel. If your tables are stored together in a single tablespace file, it will have no effect. It is passed directly to xtrabackup's :option:`xtrabackup --parallel` option. See the :program:`xtrabackup` documentation for details
+   This option accepts an integer argument that specifies the number of threads the :program:`xtrabackup` child process should use to back up files concurrently.  Note that this option works on file level, that is, if you have several .ibd files, they will be copied in parallel. If your tables are stored together in a single tablespace file, it will have no effect. This option will allow multiple files to be decrypted and/or decompressed simultaneously. In order to decompress, the qpress utility MUST be installed and accessable within the path. This process will remove the original compressed/encrypted files and leave the results in the same location. It is passed directly to xtrabackup's :option:`xtrabackup --parallel` option. See the :program:`xtrabackup` documentation for details
 
 .. option:: --password=PASSWORD
 
