@@ -260,6 +260,12 @@ latex_logo = 'percona-logo.jpg'
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('manindex', 'xtrabackup', u'Percona XtraBackup Documentation',
+    ('xtrabackup_bin/xtrabackup_binary', 'xtrabackup', u'Percona XtraBackup Documentation',
+     [u'Percona LLC and/or its affiliates'], 1),
+    ('innobackupex/innobackupex_script', 'innobackupex', u'innobackupex Documentation',
+     [u'Percona LLC and/or its affiliates'], 1),
+    ('xbcrypt/xbcrypt', 'xbcrypt', u'Percona xbcrypt Documentation',
+     [u'Percona LLC and/or its affiliates'], 1),
+    ('xbstream/xbstream', 'xbstream', u'Percona xbstream Documentation',
      [u'Percona LLC and/or its affiliates'], 1)
 ]
