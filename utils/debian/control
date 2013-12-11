@@ -13,8 +13,9 @@ Build-Depends: automake,
                libssl-dev,
                libtool,
                libz-dev,
-               libgcrypt-dev
-Standards-Version: 3.9.4
+               libgcrypt-dev,
+               lsb-release
+Standards-Version: 3.9.5
 Homepage: http://www.percona.com/software/percona-xtrabackup
 
 Package: percona-xtrabackup
@@ -23,6 +24,7 @@ Depends: libdbd-mysql-perl, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
+Enhances: mysql-server
 Description: Open source backup tool for InnoDB and XtraDB
  Percona XtraBackup is an open-source hot backup utility for MySQL that
  doesn't lock your database during the backup. It can back up data from
