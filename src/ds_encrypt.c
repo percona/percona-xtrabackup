@@ -172,8 +172,6 @@ encrypt_init(const char *root)
 	xb_a(encrypt_iv_len > 0);
 	xb_a(encrypt_iv_len <= sizeof(encrypt_iv));
 
-	xb_crypt_init_iv();
-
 	/* Now set up the key */
 	if (xtrabackup_encrypt_key == NULL &&
 	    xtrabackup_encrypt_key_file == NULL) {

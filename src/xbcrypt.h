@@ -76,7 +76,5 @@ Utility interface */
 my_bool xb_crypt_read_key_file(const char *filename,
 			       void** key, uint *keylength);
 
-void xb_crypt_init_iv();
-
 void xb_crypt_create_iv(void* ivbuf, size_t ivlen);
 #endif
