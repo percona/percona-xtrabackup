@@ -14,8 +14,6 @@ else
 CROSS= --build $(DEB_BUILD_GNU_TYPE)
 endif
 
-MAKE_J = -j$(shell if [ -f /proc/cpuinfo ] ; then grep -c processor.* /proc/cpuinfo ; else echo 1 ; fi)
-
 override_dh_auto_configure:
 
 
