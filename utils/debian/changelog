@@ -1,3 +1,9 @@
+percona-xtrabackup (2.1.6-1) unstable; urgency=low
+
+  * Update to new upstream release Percona XtraBackup 2.1.6
+ 
+ -- Alexey Bychko <alexey.bychko@percona.com> Wed, 20 Nov 2013 20:10:08 +0700
+
 percona-xtrabackup (2.1.5-1) unstable; urgency=low
 
   * Update to new upstream release Percona XtraBackup 2.1.5
