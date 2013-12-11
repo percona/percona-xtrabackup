@@ -16,8 +16,6 @@ Build-Depends: automake,
                libgcrypt-dev
 Standards-Version: 3.9.4
 Homepage: http://www.percona.com/software/percona-xtrabackup
-Vcs-Browser: http://bazaar.launchpad.net/~percona-core/percona-xtrabackup/2.1/files
-Vcs-Bzr: lp:percona-xtrabackup/2.1
 
 Package: percona-xtrabackup
 Architecture: any
