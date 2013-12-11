@@ -1,7 +1,11 @@
 percona-xtrabackup (2.1.6-3) unstable; urgency=low
 
+  [ Stewart Smith ]
   * Add lsb-base as build dependency to fix URL generation in --help
   * Add Enhances: mysql-server
+
+  [ Clint Byrum ]
+  * Bumped standards version to 3.9.5 - No changes necessary.
 
  -- Stewart Smith <stewart.smith@percona.com>  Wed, 11 Dec 2013 12:00:29 +1100
 
