@@ -53,24 +53,8 @@ xb_crypt_read_key_file(const char *filename, void** key, uint *keylength)
 	return TRUE;
 }
 
-
-void 
-xb_crypt_init_iv()
-{
-	uint seed = time(NULL);
-	srandom(seed);
-}
-
 void
 xb_crypt_create_iv(void* ivbuf, size_t ivlen)
 {
-	size_t i;
-	ulong rndval;
-
-	for (i = 0; i < ivlen; i++) {
-		if (i % 4 == 0) {
-			rndval = (ulong) random();
-		}
-		((uchar*)ivbuf)[i] = ((uchar*)&rndval)[i % 4];
-	}
+	gcry_create_nonce(ivbuf, ivlen);
 }

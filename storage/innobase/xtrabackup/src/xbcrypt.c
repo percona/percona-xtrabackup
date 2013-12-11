@@ -503,8 +503,6 @@ mode_encrypt(File filein, File fileout)
 
 	ivbuf = my_malloc(encrypt_iv_len, MYF(MY_FAE));
 
-	xb_crypt_init_iv();
-
 	/* now read in data in chunk size, encrypt and write out */
 	chunkbuflen = opt_encrypt_chunk_size;
 	chunkbuf = my_malloc(chunkbuflen, MYF(MY_FAE));
