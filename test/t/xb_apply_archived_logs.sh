@@ -18,9 +18,9 @@ function repeat_until_new_arch_log_created
 	while [ $max_lsn -le $stop_lsn ];
 	do
 		$command
-		for i in `ls -1 $arch_log_dir`;
+		for i in $arch_log_dir/*;
 		do
-			local lsn=`echo $i | sed -s 's/ib_log_archive_\([0-9]\+\)/\1/'`
+			local lsn=${i#$arch_log_dir/ib_log_archive_}
 			if [ $lsn -gt $max_lsn ];
 			then
 				max_lsn=$lsn
@@ -326,9 +326,10 @@ function test_archived_logs
 	#set.
 	pushd .
 	cd $ARCHIVED_LOGS_DIR
-	for i in `find . -type f -printf "%T+ %p\n" | cut -d' ' -f2`;
+	for i in *;
 	do
-		local n=`echo $i | sed 's/.*ib_log_archive_\([0-9]*\).*/\1/'`;
+		test -f $i || continue
+		local n=${i#ib_log_archive_}
 		if [ $n -le $LSN ];
 		then
 			mv $i 1/;
@@ -376,14 +377,7 @@ function test_archived_logs
 require_xtradb
 require_server_version_higher_than '5.6.10'
 
-
-if [ `basename $XB_BIN` = 'xtrabackup_56' ]
-then
-	test_archived_logs
-	test_archived_logs '' 'ROW_FORMAT=COMPRESSED'
-else
-	echo 'Requires xtrabackup built with XtraDB >= 5.6' > $SKIPPED_REASON
-	exit $SKIPPED_EXIT_CODE   
-fi
+test_archived_logs
+test_archived_logs '' 'ROW_FORMAT=COMPRESSED'
 
 exit $RESULT
