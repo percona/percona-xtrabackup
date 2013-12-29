@@ -1660,7 +1660,7 @@ sub print_version {
 #
 sub usage {
    my $msg = shift || '';
-   pod2usage({ -msg => $msg, -verbose => 1});
+   pod2usage({ -msg => $msg, -verbose => 1, -exitval => "NOEXIT"});
    return 0;
 }
 
@@ -3744,16 +3744,6 @@ sub check_args {
                         \$option_force_non_empty_dirs
     );
 
-    if (@ARGV == 0) {
-        die "You must specify the backup directory.\n";
-    } elsif (@ARGV > 1) {
-        die "Too many command line arguments\n";
-    }
-
-    if (!$rcode) {
-        # failed to read options
-        die "Bad command line arguments\n";
-    }
     if ($option_help) {
         # print help text and exit
         usage();
@@ -3763,6 +3753,17 @@ sub check_args {
         # print program version and copyright
         print_version();
         exit(0);
+    }
+
+    if (@ARGV == 0) {
+        die "You must specify the backup directory.\n";
+    } elsif (@ARGV > 1) {
+        die "Too many command line arguments\n";
+    }
+
+    if (!$rcode) {
+        # failed to read options
+        die "Bad command line arguments\n";
     }
 
     if ($option_defaults_file && $option_defaults_extra_file) {
