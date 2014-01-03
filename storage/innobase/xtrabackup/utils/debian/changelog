@@ -1,8 +1,20 @@
-percona-xtrabackup (2.1.6-1) unstable; urgency=low
+percona-xtrabackup (2.1.6-3) unstable; urgency=low
+
+  [ Stewart Smith ]
+  * Add lsb-base as build dependency to fix URL generation in --help
+  * Add Enhances: mysql-server
+
+  [ Clint Byrum ]
+  * Bumped standards version to 3.9.5 - No changes necessary.
+
+ -- Stewart Smith <stewart.smith@percona.com>  Wed, 11 Dec 2013 12:00:29 +1100
+
+percona-xtrabackup (2.1.6-2) unstable; urgency=low
 
   * Update to new upstream release Percona XtraBackup 2.1.6
- 
- -- Alexey Bychko <alexey.bychko@percona.com> Wed, 20 Nov 2013 20:10:08 +0700
+  * Integrate packaging updates from upstream and Debian.
+
+ -- Stewart Smith <stewart@flamingspork.com>  Wed, 27 Nov 2013 15:15:17 +1100
 
 percona-xtrabackup (2.1.5-1) unstable; urgency=low
 
