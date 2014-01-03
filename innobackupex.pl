@@ -1564,6 +1564,10 @@ if ($option_copy_back || $option_move_back) {
         $now = current_time();
         print STDERR
             "$now  $prefix Executing a version check against the server...\n";
+
+        # Redirect STDOUT to STDERR, as VersionCheck prints alerts to STDOUT
+        select STDERR;
+
         VersionCheck::version_check(
                                     force => 1,
                                     instances => [ {
@@ -1572,6 +1576,9 @@ if ($option_copy_back || $option_move_back) {
                                                    }
                                                  ]
                                     );
+        # Restore STDOUT as the default filehandle
+        select STDOUT;
+
         $now = current_time();
         print STDERR "$now  $prefix Done.\n";
     }

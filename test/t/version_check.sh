@@ -44,9 +44,19 @@ then
     die "/tmp/percona-version-check has not been created!"
 fi
 
-rm -f /tmp/percona-version-check
-
 if ! grep -q "Executing a version check" $OUTFILE
 then
     die "Version check has not been performed."
 fi
+
+################################################################################
+# Bug #1256942: xbstream stream mode issues a warning on standard output messing
+#               up the backup stream
+################################################################################
+
+mkdir $topdir/backup3
+
+rm -f /tmp/percona-version-check
+
+innobackupex --no-timestamp --stream=tar $topdir/backup3 | \
+  $TAR -C $topdir/backup3 -xivf -
