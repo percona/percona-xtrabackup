@@ -4816,8 +4816,8 @@ sub write_to_backup_file {
 #
 sub detect_mysql_capabilities_for_backup {
     $have_changed_page_bitmaps =
-        mysql_query($_[0], 'SELECT COUNT(*) FROM INFORMATION_SCHEMA.PLUGINS '.
-                    'WHERE PLUGIN_NAME LIKE "INNODB_CHANGED_PAGES"')
+        mysql_query($_[0], "SELECT COUNT(*) FROM INFORMATION_SCHEMA.PLUGINS ".
+                    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
 }
 
 #
