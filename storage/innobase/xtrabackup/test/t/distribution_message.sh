@@ -4,8 +4,7 @@
 
 [ -z ${XB_DISTRIBUTION:-} ] && skip_test "Requires XB_DISTRIBUTION to be set"
 
-# Remove the argument when bug #1223716 is fixed
-innobackupex --version $topdir/backup
+innobackupex --version
 
 link="http://www.percona.com/xb/$XB_DISTRIBUTION"
 
