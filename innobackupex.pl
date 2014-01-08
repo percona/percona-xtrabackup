@@ -965,6 +965,10 @@ eval {
       "$home",
    );
 
+   if ($ENV{PTDEBUG_VERSION_CHECK_HOME}) {
+       @vc_dirs = ( $ENV{PTDEBUG_VERSION_CHECK_HOME} );
+   }
+
    sub version_check_file {
       foreach my $dir ( @vc_dirs ) {
          if ( -d $dir && -w $dir ) {
