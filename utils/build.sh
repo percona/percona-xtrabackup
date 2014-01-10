@@ -2,11 +2,11 @@
 
 set -e
 
-MYSQL_51_VERSION=5.1.70
-MYSQL_55_VERSION=5.5.31
-MYSQL_56_VERSION=5.6.11
-PS_51_VERSION=5.1.59-13.0
-PS_55_VERSION=5.5.16-22.0
+MYSQL_51_VERSION=5.1.73
+MYSQL_55_VERSION=5.5.35
+MYSQL_56_VERSION=5.6.15
+PS_51_VERSION=5.1.73-14.11
+PS_55_VERSION=5.5.35-33.0
 
 AUTO_DOWNLOAD=${AUTO_DOWNLOAD:-no}
 MASTER_SITE="http://s3.amazonaws.com/percona.com/downloads/community"
@@ -291,7 +291,7 @@ case "$type" in
        server_patch=innodb51.patch
        innodb_name=innodb_plugin
        xtrabackup_target=plugin
-       server_tarball=mysql-5.1.70.tar.gz
+       server_tarball=mysql-5.1.73.tar.gz
        configure_cmd="./configure --enable-local-infile \
            --enable-thread-safe-client \
            --with-plugins=innodb_plugin \
@@ -307,7 +307,7 @@ case "$type" in
 	server_patch=innodb55.patch
 	innodb_name=innobase
 	xtrabackup_target=5.5
-        server_tarball=mysql-5.5.31.tar.gz
+        server_tarball=mysql-5.5.35.tar.gz
 	# We need to build with partitioning due to MySQL bug #58632
 	configure_cmd="cmake . \
 		-DENABLED_LOCAL_INFILE=ON \
@@ -326,7 +326,7 @@ case "$type" in
         server_patch=innodb56.patch
         innodb_name=innobase
         xtrabackup_target=5.6
-        server_tarball=mysql-5.6.11.tar.gz
+        server_tarball=mysql-5.6.15.tar.gz
         configure_cmd="cmake . \
                 -DWITH_INNOBASE_STORAGE_ENGINE=ON \
                 -DWITH_ZLIB=bundled \
@@ -342,7 +342,7 @@ case "$type" in
         innodb_name=innodb_plugin
         xtrabackup_target=xtradb
         server_patch=xtradb51.patch
-        server_tarball=Percona-Server-5.1.70-rel14.8.tar.gz
+        server_tarball=Percona-Server-5.1.73-rel14.11.tar.gz
 	configure_cmd="./configure --enable-local-infile \
 	    --enable-thread-safe-client \
 	    --with-plugins=innodb_plugin \
@@ -362,7 +362,7 @@ case "$type" in
         innodb_name=innobase
         xtrabackup_target=xtradb55
         server_patch=xtradb55.patch
-        server_tarball=Percona-Server-5.5.31-rel30.3.tar.gz
+        server_tarball=Percona-Server-5.5.35-rel33.0.tar.gz
 	# We need to build with partitioning due to MySQL bug #58632
 	configure_cmd="cmake . \
 		-DENABLED_LOCAL_INFILE=ON \

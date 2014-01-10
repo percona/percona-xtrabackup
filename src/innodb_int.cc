@@ -59,7 +59,7 @@ xb_log_group_read_log_seg(
 	ib_uint64_t	start_lsn,	/*!< in: read area start */
 	ib_uint64_t	end_lsn)	/*!< in: read area end */
 {
-#if defined(XTRADB_BASED) && !defined(XTRADB55)
+#ifdef XTRADB_BASED
 	log_group_read_log_seg(type, buf, group, start_lsn, end_lsn, FALSE);
 #else
 	log_group_read_log_seg(type, buf, group, start_lsn, end_lsn);

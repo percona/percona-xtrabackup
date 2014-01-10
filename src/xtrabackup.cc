@@ -1275,7 +1275,7 @@ mem_free_and_error:
 	msg("xtrabackup:   innodb_log_files_in_group = %ld\n",
 	    srv_n_log_files);
 	msg("xtrabackup:   innodb_log_file_size = %lld\n",
-	    srv_log_file_size);
+	    (long long) srv_log_file_size);
 
 #ifdef UNIV_LOG_ARCHIVE
 	srv_log_archive_on = (ulint) innobase_log_archive;
@@ -3719,7 +3719,7 @@ xtrabackup_stats_func(void)
 
 	mtr_start(&mtr);
 
-	sys_tables = dict_table_get_low("SYS_TABLES");
+	sys_tables = xb_dict_table_get_low("SYS_TABLES");
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 
 	xb_btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
@@ -3761,7 +3761,7 @@ loop:
 
 		mtr_commit(&mtr);
 
-		table = dict_table_get_low(table_name);
+		table = xb_dict_table_get_low(table_name);
 		mem_free(table_name);
 
 		if (table && check_if_skip_table(table->name))
@@ -3783,7 +3783,7 @@ loop:
 			is no index */
 
 			if (dict_table_get_first_index(table)) {
-				dict_stats_update_transient(table);
+				xb_dict_stats_update_transient(table);
 			}
 
 			//dict_table_print_low(table);
@@ -5555,7 +5555,7 @@ skip_check:
 
 			mutex_enter(&(dict_sys->mutex));
 
-			table = dict_table_get_low(table_name);
+			table = xb_dict_table_get_low(table_name);
 			if (!table) {
 				msg("xtrabackup: error: "
 				    "cannot find dictionary "

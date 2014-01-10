@@ -132,8 +132,6 @@ extern "C" {
 #  define xb_os_file_write(name, file, buf, offset, n)	\
 	pfs_os_file_write_func(name, file, buf, offset,	\
 			       n, __FILE__, __LINE__)
-#  define xb_buf_page_is_corrupted(page, zip_size)	\
-	buf_page_is_corrupted(TRUE, page, zip_size)
 #  define xb_btr_pcur_open_at_index_side(from_left, index, latch_mode, pcur, \
 				       init_pcur, level, mtr)		\
 	btr_pcur_open_at_index_side(from_left, index, latch_mode, pcur,	\
@@ -157,8 +155,6 @@ extern "C" {
 #else /* MYSQL_VERSION_ID >= 50600 */
    /* MySQL and Percona Server 5.1 and 5.5 */
 #  define xb_file_delete(path) os_file_delete(path)
-#  define xb_buf_page_is_corrupted(page, zip_size)	\
-	buf_page_is_corrupted(page, zip_size)
 #  define xb_os_event_create(name) os_event_create(name)
 #  define XB_DICT_SUFFIX_LEN 0
 #  define INT64PF	"%lld"
@@ -200,15 +196,6 @@ extern "C" {
 
 #  define LOG_CHECKPOINT_OFFSET_LOW32	LOG_CHECKPOINT_OFFSET
 #  define INNODB_LOG_DIR innobase_log_group_home_dir
-#  ifndef XTRADB_BASED
-     /* MySQL 5.1 and 5.5 */
-#    define dict_stats_update_transient(table)	\
-	dict_update_statistics(table, TRUE)
-#  else /* XTRADB_BASED */
-     /* Percona Server 5.1 and 5.5 */
-#    define dict_stats_update_transient(table)	\
-    dict_update_statistics(table, TRUE, FALSE)
-#  endif /* XTRADB_BASED */
 #endif /* MYSQL_VERSION_ID >= 50600 */
 #  define xb_fil_space_create(name, space_id, zip_size, purpose) \
 	fil_space_create(name, space_id, zip_size, purpose)
@@ -226,6 +213,36 @@ extern "C" {
 #  define trx_sys_sys_space(id) (id == 0)
 # endif
 #endif /* XTRADB_BASED */
+
+#if MYSQL_VERSION_ID < 50500
+#  define xb_dict_table_get_low(n) dict_table_get_low(n)
+#  ifdef XTRADB_BASED
+#    define xb_dict_stats_update_transient(table) \
+	dict_update_statistics(table, TRUE, FALSE)
+#  else
+#    define xb_dict_stats_update_transient(table) \
+       dict_update_statistics(table, TRUE)
+#  endif
+#  define xb_buf_page_is_corrupted(page, zip_size)	\
+	buf_page_is_corrupted(page, zip_size)
+#elif MYSQL_VERSION_ID >= 50500 && MYSQL_VERSION_ID < 50600
+#  ifdef XTRADB_BASED
+#    define xb_dict_stats_update_transient(table) \
+	dict_update_statistics(table, TRUE, FALSE, TRUE)
+#  else
+#    define xb_dict_stats_update_transient(table) \
+       dict_update_statistics(table, TRUE, TRUE)
+#  endif
+#  define xb_dict_table_get_low(n) dict_table_get_low(n, DICT_ERR_IGNORE_NONE)
+#  define xb_buf_page_is_corrupted(page, zip_size)	\
+	buf_page_is_corrupted(TRUE, page, zip_size)
+#else
+#  define xb_dict_table_get_low(n) dict_table_get_low(n)
+#  define xb_dict_stats_update_transient(table) \
+       dict_stats_update_transient(table)
+#  define xb_buf_page_is_corrupted(page, zip_size)	\
+	buf_page_is_corrupted(TRUE, page, zip_size)
+#endif
 
 #if (MYSQL_VERSION_ID >= 50500) && (MYSQL_VERSION_ID < 50600)
 /* MySQL and Percona Server 5.5 */
@@ -625,6 +642,8 @@ struct fil_node_t {
 	char*		name;	/*!< path to the file */
 	ibool		open;	/*!< TRUE if file open */
 	os_file_t	handle;	/*!< OS handle to the file, if file open */
+	os_event_t	sync_event;/*!< Condition event to group and
+				serialize calls to fsync */
 	ibool		is_raw_disk;/*!< TRUE if the 'file' is actually a raw
 				device or a raw disk partition */
 	ulint		size;	/*!< size of the file in database pages, 0 if
