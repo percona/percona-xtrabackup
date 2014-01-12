@@ -261,7 +261,6 @@ my $src_name;
 my $dst_name;
 my $win = ($^O eq 'MSWin32' ? 1 : 0);
 my $CP_CMD = ($win eq 1 ? "copy /Y" : "cp");
-my $xtrabackup_binary_file = 'xtrabackup_binary';
 my $xtrabackup_pid_file = 'xtrabackup_pid';
 my %rsync_files_hash;
 my %processed_files;
@@ -1597,8 +1596,6 @@ if ($option_decompress || $option_decrypt) {
     $ibbackup_exit_code = backup();
 
     mysql_close(\%mysql);
-
-    write_to_backup_file("$work_dir/$xtrabackup_binary_file", "$option_ibbackup_binary");
 }
 
 $now = current_time();
