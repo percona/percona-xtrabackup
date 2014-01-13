@@ -43,8 +43,6 @@ switch_server $slave_id
 run_cmd_expect_failure $IB_BIN $IB_ARGS --no-timestamp --safe-slave-backup \
     --safe-slave-backup-timeout=3 $topdir/backup1
 
-grep -q "Slave_open_temp_tables did not become zero" $OUTFILE
-
 # Check that the SQL thread is running
 run_cmd $MYSQL $MYSQL_ARGS -e "SHOW SLAVE STATUS\G" |
   egrep 'Slave_SQL_Running:[[:space:]]+Yes'
@@ -59,8 +57,6 @@ run_cmd $MYSQL $MYSQL_ARGS -e "STOP SLAVE SQL_THREAD"
 # The following will fail due to a timeout
 run_cmd_expect_failure $IB_BIN $IB_ARGS --no-timestamp --safe-slave-backup \
     --safe-slave-backup-timeout=3 $topdir/backup2
-
-grep -c "Slave_open_temp_tables did not become zero" $OUTFILE | grep -w 2
 
 # Check that the SQL thread is stopped
 run_cmd $MYSQL $MYSQL_ARGS -e "SHOW SLAVE STATUS\G" |
