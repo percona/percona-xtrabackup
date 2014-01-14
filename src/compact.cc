@@ -910,7 +910,7 @@ xb_rebuild_indexes_thread_func(
 
 		row_mysql_lock_data_dictionary(trx);
 
-		table = dict_table_get_low(rebuild_table->name);
+		table = xb_dict_table_get_low(rebuild_table->name);
 
 		row_mysql_unlock_data_dictionary(trx);
 
@@ -978,7 +978,7 @@ xb_compact_rebuild_indexes(void)
 
 	mtr_start(&mtr);
 
-	sys_tables = dict_table_get_low("SYS_TABLES");
+	sys_tables = xb_dict_table_get_low("SYS_TABLES");
 	sys_index = UT_LIST_GET_FIRST(sys_tables->indexes);
 	ut_a(!dict_table_is_comp(sys_tables));
 

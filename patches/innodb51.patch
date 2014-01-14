@@ -56,7 +56,7 @@
  #endif
  	buf_pool->stat.n_page_gets++;
  loop:
-@@ -2704,6 +2708,12 @@
+@@ -2693,6 +2697,12 @@
  			frame = ((buf_block_t*) bpage)->frame;
  		}
  
@@ -69,7 +69,7 @@
  		/* If this page is not uninitialized and not in the
  		doublewrite buffer, then the page number and space id
  		should be the same as in block. */
-@@ -2796,7 +2806,8 @@
+@@ -2785,7 +2795,8 @@
  			recv_recover_page(TRUE, (buf_block_t*) bpage);
  		}
  
@@ -748,7 +748,7 @@
  
 --- a/storage/innodb_plugin/ibuf/ibuf0ibuf.c
 +++ b/storage/innodb_plugin/ibuf/ibuf0ibuf.c
-@@ -1061,6 +1061,9 @@
+@@ -1062,6 +1062,9 @@
  
  	ut_ad(!recv_no_ibuf_operations);
  
@@ -758,7 +758,7 @@
  	if (ibuf_fixed_addr_page(space, zip_size, page_no)) {
  
  		return(TRUE);
-@@ -2275,6 +2278,9 @@
+@@ -2276,6 +2279,9 @@
  	ulint	n_bytes;
  	ulint	n_pag2;
  
