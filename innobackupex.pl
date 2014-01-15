@@ -3120,6 +3120,28 @@ sub write_galera_info {
 
     write_to_backup_file("$galera_info", "$state_uuid" .
       ":" . "$last_committed" . "\n");
+
+    if (!defined($con->{master_status})) {
+        get_mysql_master_status($con);
+    }
+
+    if (defined($con->{master_status}->{Executed_Gtid_Set})) {
+        my $log_bin_dir;
+        my $log_bin_file;
+
+        mysql_query($con, "FLUSH BINARY LOGS");
+        get_mysql_master_status($con);
+
+        $log_bin_file = $con->{master_status}->{File};
+        $log_bin_dir = File::Basename::dirname($mysql{vars}->{log_bin_basename}->{Value});
+
+        if (!defined($log_bin_file) || !defined($log_bin_dir)) {
+            die "Failed to get master binlog coordinates from SHOW MASTER STATUS";
+        }
+
+        backup_file("$log_bin_dir", "$log_bin_file", 
+                    "$backup_dir/$log_bin_dir/$log_bin_file")
+    }
 }
 
 
