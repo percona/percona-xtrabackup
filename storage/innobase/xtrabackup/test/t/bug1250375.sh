@@ -5,13 +5,25 @@ require_server_version_higher_than 5.6.0
 
 ADDR=127.0.0.1
 
-if [[ -n ${WSREP_DEBUG:-} ]];then 
-    start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep-debug=1 --wsrep_provider_options="debug=1" --wsrep_node_address=$ADDR --gtid_mode=ON
-else 
-    start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep_node_address=$ADDR --gtid_mode=ON
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log_bin=`hostname`-bin
+binlog_format=ROW
+log_slave_updates=ON
+enforce_gtid_consistency=ON
+gtid_mode=ON
+wsrep_provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so
+wsrep_cluster_address=gcomm://
+wsrep_node_address=$ADDR
+"
 
+if [ -n ${WSREP_DEBUG:-} ]
+then
+    MYSQLD_EXTRA_MY_CNF_OPTS="$MYSQLD_EXTRA_MY_CNF_OPTS
+wsrep_provider_options=\"debug=1\"
+"
 fi
 
+start_server
 
 innobackupex --no-timestamp --galera-info $topdir/backup 
 backup_dir=$topdir/backup

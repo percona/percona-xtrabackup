@@ -3165,7 +3165,9 @@ sub write_galera_info {
         get_mysql_master_status($con);
     }
 
-    if (defined($con->{master_status}->{Executed_Gtid_Set})) {
+    my $gtid = $con->{master_status}->{Executed_Gtid_Set} || '';
+
+    if ($gtid) {
         my $log_bin_dir;
         my $log_bin_file;
 
