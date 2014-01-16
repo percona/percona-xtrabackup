@@ -98,12 +98,6 @@ case "$1" in
         fi
         ;;
 
-    galera55)
-        url="http://www.percona.com/downloads/Percona-XtraDB-Cluster/5.5.24-23.6/binary/linux/$arch"
-        tarball="Percona-XtraDB-Cluster-5.5.24-23.6.342.Linux.$arch.tar.gz"
-        #galera=1
-        ;;
-
     mariadb51)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
         tarball="mariadb-5.1.67-Linux-$arch.tar.gz"
@@ -152,48 +146,17 @@ then
 fi
 mkdir "$destdir"
 
-if test ! $galera
+if test -n "$url"
 then
-    if test -n "$url"
-    then
-        echo "Downloading $tarball"
-        wget -qc "$url/$tarball"
-    fi
+    echo "Downloading $tarball"
+    wget -qc "$url/$tarball"
+fi
 
-    echo "Unpacking $tarball into $destdir"
-    tar zxf $tarball -C $destdir
-    sourcedir="$destdir/`ls $destdir`"
-    if test -n "$sourcedir"
-    then
-        mv $sourcedir/* $destdir
-        rm -rf $sourcedir
-    fi
-else
-    if test ! -d galerabuild
-    then
-        bzr init-repo galerabuild
-    fi
-    cd galerabuild
-
-    rm -rf percona-xtradb-cluster
-    bzr branch lp:percona-xtradb-cluster percona-xtradb-cluster
-    rm -rf galera2x
-    bzr branch lp:galera/2.x galera2x
-    cd percona-xtradb-cluster
-    cmake -DENABLE_DTRACE=0 -DWITH_WSREP:BOOL="1" -DCMAKE_INSTALL_PREFIX="../../server"
-
-    if test -f /proc/cpuinfo
-    then
-        MAKE_J=`grep '^processor' /proc/cpuinfo | wc -l`
-    else
-        MAKE_J=4
-    fi
-
-    make -j$MAKE_J
-    make install
-
-    cd ../galera2x
-    ./scripts/build.sh
-    cp libgalera_smm.so ../../server/
-    cd ..
+echo "Unpacking $tarball into $destdir"
+tar zxf $tarball -C $destdir
+sourcedir="$destdir/`ls $destdir`"
+if test -n "$sourcedir"
+then
+    mv $sourcedir/* $destdir
+    rm -rf $sourcedir
 fi

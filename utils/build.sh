@@ -21,7 +21,7 @@ case "$1" in
 "5.5" )
         type="innodb55"
         ;;
-"5.6" | "xtradb56" | "mariadb100" )
+"5.6" | "xtradb56" | "mariadb100" | "galera56" )
         type="innodb56"
         ;;
 "xtradb" | "mariadb51" | "mariadb52" | "mariadb53" )
@@ -107,7 +107,7 @@ function usage()
     echo "  innodb51         | plugin                build against InnoDB plugin in MySQL 5.1"
     echo "  innodb55         | 5.5                   build against InnoDB in MySQL 5.5"
     echo "  innodb56         | 5.6,xtradb56,         build against InnoDB in MySQL 5.6"
-    echo "                   | mariadb100"
+    echo "                   | mariadb100,galera56"
     echo "  xtradb51         | xtradb,mariadb51      build against Percona Server with XtraDB 5.1"
     echo "                   | mariadb52,mariadb53"
     echo "  xtradb55         | galera55,mariadb55    build against Percona Server with XtraDB 5.5"

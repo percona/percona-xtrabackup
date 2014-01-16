@@ -341,7 +341,7 @@ function get_version_info()
 		;;
 	    "innodb55" )
 		XB_BIN="xtrabackup_innodb55";;
-            "innodb56" | "xtradb56" | "mariadb100")
+            "innodb56" | "xtradb56" | "mariadb100" | "galera56")
                 XB_BIN="xtrabackup_56" ;;
 	    "xtradb51" | "mariadb51" | "mariadb52" | "mariadb53")
 		XB_BIN="xtrabackup";;
@@ -382,9 +382,9 @@ function get_version_info()
     WSREP_READY=`$MYSQL ${MYSQL_ARGS} -Nsf -e "SHOW STATUS LIKE 'wsrep_ready'"`
     WSREP_READY=${WSREP_READY#"wsrep_ready	"}
 
-    if [ "$XB_BUILD" = "galera55" -a -z "$WSREP_READY" ]
+    if [[ "$XB_BUILD" = galera* && -z "$WSREP_READY" ]]
     then
-        die "Galera configuration is enabled via -c galera55, but the server \
+        die "Galera configuration is enabled via -c $XB_BUILD, but the server \
 doesn't have Galera support."
     fi
 
