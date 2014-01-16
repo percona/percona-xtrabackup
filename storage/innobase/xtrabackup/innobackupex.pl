@@ -977,6 +977,10 @@ eval {
       "$home",
    );
 
+   if ($ENV{PTDEBUG_VERSION_CHECK_HOME}) {
+       @vc_dirs = ( $ENV{PTDEBUG_VERSION_CHECK_HOME} );
+   }
+
    sub version_check_file {
       foreach my $dir ( @vc_dirs ) {
          if ( -d $dir && -w $dir ) {
@@ -1546,6 +1550,10 @@ if ($option_backup) {
         $now = current_time();
         print STDERR
             "$now  $prefix Executing a version check against the server...\n";
+
+        # Redirect STDOUT to STDERR, as VersionCheck prints alerts to STDOUT
+        select STDERR;
+
         VersionCheck::version_check(
                                     force => 1,
                                     instances => [ {
@@ -1554,6 +1562,9 @@ if ($option_backup) {
                                                    }
                                                  ]
                                     );
+        # Restore STDOUT as the default filehandle
+        select STDOUT;
+
         $now = current_time();
         print STDERR "$now  $prefix Done.\n";
     }
