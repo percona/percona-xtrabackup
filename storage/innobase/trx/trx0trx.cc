@@ -531,9 +531,9 @@ trx_resurrect_insert(
 
 			if (srv_force_recovery == 0) {
 
-				trx->state = TRX_STATE_PREPARED;
-				trx_sys->n_prepared_trx++;
-				trx_sys->n_prepared_recovered_trx++;
+				/* XtraBackup should rollback prepared XA
+				transactions */
+				trx->state = TRX_STATE_ACTIVE;
 			} else {
 				fprintf(stderr,
 					"InnoDB: Since innodb_force_recovery"
@@ -599,7 +599,9 @@ trx_resurrect_update_in_prepared_state(
 				ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
 			}
 
-			trx->state = TRX_STATE_PREPARED;
+			/* XtraBackup should rollback prepared XA
+			transactions */
+			trx->state = TRX_STATE_ACTIVE;
 		} else {
 			fprintf(stderr,
 				"InnoDB: Since innodb_force_recovery"
