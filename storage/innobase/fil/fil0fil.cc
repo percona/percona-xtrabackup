@@ -148,10 +148,11 @@ fil_system_t*	fil_system	= NULL;
 
 /** Determine if user has explicitly disabled fsync(). */
 #ifndef __WIN__
-# define fil_buffering_disabled(s)	\
-	((s)->purpose == FIL_TABLESPACE	\
-	 && srv_unix_file_flush_method	\
-	 == SRV_UNIX_O_DIRECT_NO_FSYNC)
+# define fil_buffering_disabled(s)					\
+	(((s)->purpose == FIL_TABLESPACE				\
+	    && srv_unix_file_flush_method == SRV_UNIX_O_DIRECT_NO_FSYNC)\
+	  || ((s)->purpose == FIL_LOG					\
+	    && srv_unix_file_flush_method == SRV_UNIX_ALL_O_DIRECT))
 #else /* __WIN__ */
 # define fil_buffering_disabled(s)	(0)
 #endif /* __WIN__ */

@@ -3103,8 +3103,12 @@ recv_recovery_from_checkpoint_start_func(
 	lsn_t		archived_lsn;
 #endif /* UNIV_LOG_ARCHIVE */
 	byte*		buf;
-	byte		log_hdr_buf[LOG_FILE_HDR_SIZE];
+	byte*		log_hdr_buf;
+	byte		log_hdr_buf_base[LOG_FILE_HDR_SIZE + OS_FILE_LOG_BLOCK_SIZE];
 	dberr_t		err;
+
+	log_hdr_buf = static_cast<byte *>
+		(ut_align(log_hdr_buf_base, OS_FILE_LOG_BLOCK_SIZE));
 
 #ifdef UNIV_LOG_ARCHIVE
 	ut_ad(type != LOG_CHECKPOINT || limit_lsn == LSN_MAX);
