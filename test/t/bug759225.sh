@@ -12,9 +12,6 @@ fi
 
 require_xtradb
 
-# ALL_O_DIRECT is not supported in XtraDB 5.6 ATM.
-require_server_version_lower_than 5.6.1
-
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_flush_method=ALL_O_DIRECT
 "

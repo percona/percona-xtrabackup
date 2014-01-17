@@ -3013,7 +3013,7 @@ xtrabackup_backup_func(void)
 
 	} else if (0 == ut_strcmp(srv_file_flush_method_str, "nosync")) {
 	  	srv_unix_file_flush_method = SRV_UNIX_NOSYNC;
-#ifdef XTRADB_BASED
+#if defined(XTRADB_BASED) || MYSQL_VERSION_ID > 50600
 	} else if (0 == ut_strcmp(srv_file_flush_method_str, "ALL_O_DIRECT")) {
 		srv_unix_file_flush_method = SRV_UNIX_ALL_O_DIRECT;
 		msg("xtrabackup: using ALL_O_DIRECT\n");
