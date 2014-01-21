@@ -25,7 +25,7 @@ In Debian-based distributions, you need to: ::
 In ``RPM``-based distributions, you need to: ::
 
   $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf bzr \
-    bison libtool ncurses-devel zlib-devel
+    bison libtool ncurses-devel zlib-devel libgcrypt-devel
 
 Compiling with :command:`build.sh`
 ----------------------------------
