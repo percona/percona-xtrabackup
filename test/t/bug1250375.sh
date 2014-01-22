@@ -25,6 +25,12 @@ fi
 
 start_server
 
+# Load some data so we have a non-empty Executed_Gtid_Set
+$MYSQL $MYSQL_ARGS test <<EOF
+CREATE TABLE t1(a INT) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (1), (2), (3);
+EOF
+
 innobackupex --no-timestamp --galera-info $topdir/backup 
 backup_dir=$topdir/backup
 vlog "Backup created in directory $backup_dir"
@@ -41,9 +47,7 @@ while read line; do
     count=$((count+1))
 done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
 
-stop_server
-
-if [ -f "$backup_dir/$master_file" ]
+if [ ! -f "$backup_dir/$master_file" ]
 then
     vlog "Could not find bin-log file in backup set, expecting to find $master_file"
     exit 1
