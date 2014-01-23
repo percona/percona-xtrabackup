@@ -3181,8 +3181,8 @@ sub write_galera_info {
             die "Failed to get master binlog coordinates from SHOW MASTER STATUS";
         }
 
-        backup_file("$log_bin_dir", "$log_bin_file", 
-                    "$backup_dir/$log_bin_dir/$log_bin_file")
+        backup_file("$log_bin_dir", "$log_bin_file",
+                    "$backup_dir/$log_bin_file");
     }
 }
 
@@ -3439,8 +3439,8 @@ sub mysql_lockall {
     if ($option_kill_long_queries_timeout) {
         stop_query_killer();
     }
-    write_binlog_info($con);
     write_galera_info($con) if $option_galera_info;
+    write_binlog_info($con);
     $now = current_time();
     print STDERR "$now  $prefix All tables locked and flushed to disk\n";
 }

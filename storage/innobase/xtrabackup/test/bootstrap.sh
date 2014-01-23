@@ -90,8 +90,8 @@ case "$1" in
         then
             # PS 5.6.11-rc60.3 tarballs are affected by LP bug #1172916
             # and thus unusable on anything but CentOS
-            url="http://www.percona.com/downloads/TESTING/Percona-Server-56/Percona-Server-5.6.10-alpha60.2/release-5.6.10-60.2/318/binary/linux/$arch"
-            tarball="Percona-Server-5.6.10-alpha60.2-318.Linux.$arch.tar.gz"
+            url="http://www.percona.com/downloads/TESTING/Percona-Server-56/Percona-Server-5.6.10-alpha60.2/binary/linux/$arch"
+            tarball="Percona-Server-5.6.10-alpha60.2-324.Linux.$arch.tar.gz"
         else
             url="http://s3.amazonaws.com/percona.com/downloads/community"
             tarball="Percona-Server-5.6.14-rel62.0-483.Linux.$arch.tar.gz"

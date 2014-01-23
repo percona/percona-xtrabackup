@@ -4,6 +4,9 @@
 # Bug #887803: innobackupex --safe-slave-backup-timeout option doesn't work
 ################################################################################
 
+# Galera supports only RBR which does not replicated temp. tables
+is_galera && skip_test "Requires a server without Galera support"
+
 . inc/common.sh
 
 ################################################################################
