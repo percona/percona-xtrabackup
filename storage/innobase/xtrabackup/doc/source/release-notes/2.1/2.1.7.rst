@@ -2,7 +2,7 @@
  |Percona XtraBackup| 2.1.7 
 ============================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.7 on January 22nd 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.7/>`_ and :doc:`Percona Software Repositories </installation>`.
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.7 on January 24th 2014. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.7/>`_ and :doc:`Percona Software Repositories </installation>`.
 
 This release is the current GA (Generally Available) stable release in the 2.1 series.
 
@@ -28,4 +28,4 @@ Bugs Fixed
  
  ``xtrabackup_56`` didn't support ``ALL_O_DIRECT`` option for `innodb_flush_method <http://www.percona.com/doc/percona-server/5.6/scalability/innodb_io.html#innodb_flush_method>`_ in |Percona Server| 5.6. Bug fixed :bug:`1261877`. 
 
-Other bugs fixed: :bug:`1255019`, :bug:`1268325`, :bug:`1265759`, :bug:`1269694`.
+Other bugs fixed: :bug:`1255019`, :bug:`1268325`, :bug:`1265759`, :bug:`1269694`, :bug:`1271501`.
