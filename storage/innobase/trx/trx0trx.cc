@@ -592,10 +592,7 @@ trx_resurrect_update_in_prepared_state(
 			" was in the XA prepared state.\n", trx->id);
 
 		if (srv_force_recovery == 0) {
-			if (trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
-				trx_sys->n_prepared_trx++;
-				trx_sys->n_prepared_recovered_trx++;
-			} else {
+			if (!trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
 				ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
 			}
 
