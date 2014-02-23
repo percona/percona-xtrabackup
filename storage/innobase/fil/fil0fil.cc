@@ -1094,12 +1094,6 @@ fil_space_create(
 
 		if (!fil_system->space_id_reuse_warned) {
 			fil_system->space_id_reuse_warned = TRUE;
-
-			ib_logf(IB_LOG_LEVEL_WARN,
-				"Allocated tablespace %lu, old maximum "
-				"was %lu",
-				(ulong) id,
-				(ulong) fil_system->max_assigned_id);
 		}
 
 		fil_system->max_assigned_id = id;
