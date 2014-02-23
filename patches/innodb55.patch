@@ -274,7 +274,21 @@
  }
  
  /**********************************************************************//**
-@@ -1504,7 +1521,12 @@
+@@ -1274,13 +1291,6 @@
+ 	    && UNIV_UNLIKELY(id > fil_system->max_assigned_id)) {
+ 		if (!fil_system->space_id_reuse_warned) {
+ 			fil_system->space_id_reuse_warned = TRUE;
+-
+-			ut_print_timestamp(stderr);
+-			fprintf(stderr,
+-				"  InnoDB: Warning: allocated tablespace %lu,"
+-				" old maximum was %lu\n",
+-				(ulong) id,
+-				(ulong) fil_system->max_assigned_id);
+ 		}
+ 
+ 		fil_system->max_assigned_id = id;
+@@ -1504,7 +1514,12 @@
  		the file yet; the following calls will open it and update the
  		size fields */
  
@@ -288,7 +302,7 @@
  		fil_node_complete_io(node, fil_system, OS_FILE_READ);
  	}
  
-@@ -1573,7 +1595,12 @@
+@@ -1573,7 +1588,12 @@
  		the file yet; the following calls will open it and update the
  		size fields */
  
@@ -302,7 +316,7 @@
  		fil_node_complete_io(node, fil_system, OS_FILE_READ);
  	}
  
-@@ -2080,7 +2107,7 @@
+@@ -2080,7 +2100,7 @@
  	mem_free(path);
  }
  
@@ -311,7 +325,7 @@
  /********************************************************//**
  Writes a log record about an .ibd file create/rename/delete. */
  static
-@@ -2304,7 +2331,7 @@
+@@ -2304,7 +2324,7 @@
  			if (fil_create_new_single_table_tablespace(
  				    space_id, name, FALSE, flags,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -320,7 +334,7 @@
  			}
  		}
  
-@@ -2493,7 +2520,7 @@
+@@ -2493,7 +2513,7 @@
  	}
  
  	if (success) {
@@ -329,7 +343,7 @@
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -2794,7 +2821,7 @@
+@@ -2794,7 +2814,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
@@ -338,7 +352,7 @@
  	if (success && !recv_recovery_on) {
  		mtr_t		mtr;
  
-@@ -2985,7 +3012,7 @@
+@@ -2985,7 +3005,7 @@
  
  	fil_node_create(path, size, space_id, FALSE);
  
@@ -347,7 +361,7 @@
  	{
  		mtr_t		mtr;
  
-@@ -3241,19 +3268,97 @@
+@@ -3241,19 +3261,97 @@
  		      "InnoDB: open the tablespace file ", stderr);
  		ut_print_filename(stderr, filepath);
  		fputs("!\n"
@@ -455,7 +469,7 @@
  		return(FALSE);
  	}
  
-@@ -3499,7 +3604,7 @@
+@@ -3499,7 +3597,7 @@
  	cannot be ok. */
  
  	size = (((ib_int64_t)size_high) << 32) + (ib_int64_t)size_low;
@@ -464,7 +478,7 @@
  	if (size < FIL_IBD_FILE_INITIAL_SIZE * UNIV_PAGE_SIZE) {
  		fprintf(stderr,
  			"InnoDB: Error: the size of single-table tablespace"
-@@ -3640,7 +3745,51 @@
+@@ -3640,7 +3738,51 @@
  
  	fil_node_create(filepath, 0, space_id, FALSE);
  func_exit:
@@ -517,7 +531,7 @@
  	ut_free(buf2);
  	mem_free(filepath);
  }
-@@ -3651,7 +3800,7 @@
+@@ -3651,7 +3793,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -526,7 +540,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -3695,7 +3844,7 @@
+@@ -3695,7 +3837,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  ulint
@@ -535,7 +549,7 @@
  /*===================================*/
  {
  	int		ret;
-@@ -3751,7 +3900,9 @@
+@@ -3751,7 +3893,9 @@
  			dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
  
@@ -546,7 +560,7 @@
  
  		if (dbdir != NULL) {
  			/* printf("Opened dir %s\n", dbinfo.name); */
-@@ -3777,8 +3928,11 @@
+@@ -3777,8 +3921,11 @@
  						   ".ibd")) {
  					/* The name ends in .ibd; try opening
  					the file */
@@ -559,7 +573,7 @@
  				}
  next_file_item:
  				ret = fil_file_readdir_next_file(&err,
-@@ -3950,15 +4104,97 @@
+@@ -3950,15 +4097,97 @@
  				"InnoDB: in InnoDB data dictionary"
  				" has tablespace id %lu,\n"
  				"InnoDB: but tablespace with that id"
@@ -665,7 +679,7 @@
  		} else {
  			ut_print_timestamp(stderr);
  			fputs("  InnoDB: Error: table ", stderr);
-@@ -4347,7 +4583,7 @@
+@@ -4347,7 +4576,7 @@
  off the LRU list if it is in the LRU list. The caller must hold the fil_sys
  mutex. */
  static
@@ -674,7 +688,7 @@
  fil_node_prepare_for_io(
  /*====================*/
  	fil_node_t*	node,	/*!< in: file node */
-@@ -4367,10 +4603,13 @@
+@@ -4367,10 +4596,13 @@
  	}
  
  	if (node->open == FALSE) {
@@ -689,7 +703,7 @@
  	}
  
  	if (node->n_pending == 0 && space->purpose == FIL_TABLESPACE
-@@ -4383,6 +4622,8 @@
+@@ -4383,6 +4615,8 @@
  	}
  
  	node->n_pending++;
@@ -698,7 +712,7 @@
  }
  
  /********************************************************************//**
-@@ -4567,6 +4808,16 @@
+@@ -4567,6 +4801,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -715,7 +729,7 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-@@ -5082,6 +5333,12 @@
+@@ -5082,6 +5326,12 @@
  	const char*	tmp_name)	/*!< in: temp table name used while
  					swapping */
  {
@@ -728,7 +742,7 @@
  	mtr_t           mtr;
  	mtr_start(&mtr);
  	fil_op_write_log(MLOG_FILE_RENAME, old_space_id,
-@@ -5089,5 +5346,6 @@
+@@ -5089,5 +5339,6 @@
  	fil_op_write_log(MLOG_FILE_RENAME, new_space_id,
  			 0, 0, new_name, old_name, &mtr);
  	mtr_commit(&mtr);
