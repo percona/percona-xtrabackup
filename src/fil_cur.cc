@@ -352,7 +352,7 @@ read_retry:
 		cursor->buf_npages++;
 	}
 
-	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_DONTNEED);
+	posix_fadvise(cursor->file, offset, to_read, POSIX_FADV_DONTNEED);
 
 	return(ret);
 }
