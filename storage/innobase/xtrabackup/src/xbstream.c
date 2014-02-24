@@ -209,8 +209,10 @@ stream_one_file(File file, xb_wstream_file_t *xbfile)
 {
 	uchar	buf[XBSTREAM_BUFFER_SIZE];
 	size_t	bytes;
+	size_t	offset;
 
 	posix_fadvise(file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	offset = my_tell(file, MYF(MY_WME));
 
 	while ((bytes = my_read(file, buf, XBSTREAM_BUFFER_SIZE,
 				MYF(MY_WME))) > 0) {
@@ -219,7 +221,9 @@ stream_one_file(File file, xb_wstream_file_t *xbfile)
 			    my_progname);
 			return 1;
 		}
-		posix_fadvise(file, 0, 0, POSIX_FADV_DONTNEED);
+		posix_fadvise(file, offset, XBSTREAM_BUFFER_SIZE,
+			      POSIX_FADV_DONTNEED);
+		offset += XBSTREAM_BUFFER_SIZE;
 
 	}
 
