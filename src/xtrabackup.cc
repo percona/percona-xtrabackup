@@ -4285,7 +4285,7 @@ read_retry:
 		}
 
 #ifdef USE_POSIX_FADVISE
-		posix_fadvise(node->handle, 0, 0, POSIX_FADV_DONTNEED);
+		posix_fadvise(node->handle, offset, chunk, POSIX_FADV_DONTNEED);
 #endif
 
 		/* check corruption and retry */
@@ -5104,6 +5104,9 @@ xtrabackup_stream_temp_logfile(File src_file, ds_ctxt_t *ds_ctxt)
 	uchar		*buf = NULL;
 	const size_t	buf_size = 1024 * 1024;
 	size_t		bytes;
+#ifdef USE_POSIX_FADVISE
+	size_t		offset;
+#endif
 	ds_file_t	*dst_file = NULL;
 	MY_STAT		mystat;
 
@@ -5133,9 +5136,13 @@ xtrabackup_stream_temp_logfile(File src_file, ds_ctxt_t *ds_ctxt)
 
 	buf = (uchar *) ut_malloc(buf_size);
 
+#ifdef USE_POSIX_FADVISE
+	offset = 0;
+#endif
+
 	while ((bytes = my_read(src_file, buf, buf_size, MYF(MY_WME))) > 0) {
 #ifdef USE_POSIX_FADVISE
-		posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
+		posix_fadvise(src_file, offset, buf_size, POSIX_FADV_DONTNEED);
 #endif
 		if (ds->write(dst_file, buf, bytes)) {
 			msg("xtrabackup: error: cannot write to stream "
@@ -7091,6 +7098,8 @@ xtrabackup_apply_delta(
 	byte*		incremental_buffer_base = NULL;
 	byte*		incremental_buffer;
 
+	size_t		offset;
+
 	ut_a(xtrabackup_incremental);
 
 	if (dbname) {
@@ -7143,7 +7152,6 @@ xtrabackup_apply_delta(
 
 #ifdef USE_POSIX_FADVISE
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
 	xb_file_set_nocache(src_file, src_path, "OPEN");
@@ -7155,10 +7163,6 @@ xtrabackup_apply_delta(
 		msg("xtrabackup: error: cannot open %s\n", dst_path);
 		goto error;
 	}
-
-#ifdef USE_POSIX_FADVISE
-	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
-#endif
 
 	xb_file_set_nocache(dst_file, dst_path, "OPEN");
 
@@ -7177,11 +7181,10 @@ xtrabackup_apply_delta(
 
 		/* read to buffer */
 		/* first block of block cluster */
+		offset = ((incremental_buffers * (page_size / 4))
+			 << page_size_shift);
 		success = xb_os_file_read(src_file, incremental_buffer,
-					  ((incremental_buffers
-					    * (page_size / 4))
-					   << page_size_shift),
-					  page_size);
+					  offset, page_size);
 		if (!success) {
 			goto error;
 		}
@@ -7210,13 +7213,15 @@ xtrabackup_apply_delta(
 
 		/* read whole of the cluster */
 		success = xb_os_file_read(src_file, incremental_buffer,
-					  ((incremental_buffers
-					    * (page_size / 4))
-					   << page_size_shift),
-					  page_in_buffer * page_size);
+					  offset, page_in_buffer * page_size);
 		if (!success) {
 			goto error;
 		}
+
+#ifdef USE_POSIX_FADVISE
+		posix_fadvise(src_file, offset, page_in_buffer * page_size,
+			      POSIX_FADV_DONTNEED);
+#endif
 
 		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
 		     page_in_buffer++) {
@@ -7242,6 +7247,9 @@ xtrabackup_apply_delta(
 			if (!success) {
 				goto error;
 			}
+#ifdef USE_POSIX_FADVISE
+			posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 		}
 
 		incremental_buffers++;
