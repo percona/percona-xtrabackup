@@ -49,6 +49,27 @@ xb_crypt_read_open(void *userdata, xb_crypt_read_callback *onread)
 	return crypt;
 }
 
+static
+size_t
+F_READ(xb_rcrypt_t *crypt, void *buf, size_t len)
+{
+	uchar		*ptr;
+	size_t		bytesread;
+	size_t		bytestoread;
+
+	ptr = buf;
+	bytestoread = len;
+	while (bytestoread > 0) {
+		bytesread = crypt->read(crypt->userdata, ptr, bytestoread, MYF(MY_WME));
+		if (bytesread == 0 || bytesread > bytestoread) {
+			break;
+		}
+		ptr += bytesread;
+		bytestoread -= bytesread;
+	}
+	return len - bytestoread;
+}
+
 xb_rcrypt_result_t
 xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 		    void **iv, size_t *ivlen)
@@ -58,21 +79,19 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 	uchar		*ptr;
 	ulonglong	tmp;
 	ulong		checksum, checksum_exp, version;
-	ssize_t		bytesread;
+	size_t		bytesread;
 	xb_rcrypt_result_t result = XB_CRYPT_READ_CHUNK;
 
-	if ((bytesread = crypt->read(crypt->userdata, tmpbuf, sizeof(tmpbuf), MYF(MY_WME)))
-	    != sizeof(tmpbuf)) {
-		if (bytesread == 0) {
-			result = XB_CRYPT_READ_EOF;
-			goto err;
-		} else {
-			msg("%s:%s: unable to read chunk header data at "
-			    "offset 0x%llx.\n",
-			    my_progname, __FUNCTION__, crypt->offset);
-			result =  XB_CRYPT_READ_ERROR;
-			goto err;
-		}
+	bytesread = F_READ(crypt, tmpbuf, sizeof(tmpbuf));
+	if (bytesread == 0) {
+		result = XB_CRYPT_READ_EOF;
+		goto err;
+	} else if (bytesread < sizeof(tmpbuf)) {
+		msg("%s:%s: unable to read chunk header data at "
+		    "offset 0x%llx.\n",
+		    my_progname, __FUNCTION__, crypt->offset);
+		result =  XB_CRYPT_READ_ERROR;
+		goto err;
 	}
 
 	ptr = tmpbuf;
@@ -126,18 +145,16 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 		*ivlen = 0;
 		*iv = 0;
 	} else {
-		if ((bytesread = crypt->read(crypt->userdata, tmpbuf, 8,
-					     MYF(MY_WME))) != 8) {
-			if (bytesread == 0) {
-				result = XB_CRYPT_READ_EOF;
-				goto err;
-			} else {
-				msg("%s:%s: unable to read chunk iv size at "
-				    "offset 0x%llx.\n",
-				    my_progname, __FUNCTION__, crypt->offset);
-				result =  XB_CRYPT_READ_ERROR;
-				goto err;
-			}
+		bytesread = F_READ(crypt, tmpbuf, 8);
+		if (bytesread == 0) {
+			result = XB_CRYPT_READ_EOF;
+			goto err;
+		} else if (bytesread < 8) {
+			msg("%s:%s: unable to read chunk iv size at "
+			    "offset 0x%llx.\n",
+			    my_progname, __FUNCTION__, crypt->offset);
+			result =  XB_CRYPT_READ_ERROR;
+			goto err;
 		}
 
 		tmp = uint8korr(tmpbuf);
@@ -176,8 +193,11 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 	}
 
 	if (*ivlen > 0) {
-		if (crypt->read(crypt->userdata, crypt->ivbuffer, *ivlen, MYF(MY_WME|MY_FULL_IO))
-		    != (ssize_t)*ivlen) {
+		bytesread = F_READ(crypt, crypt->ivbuffer, *ivlen);
+		if (bytesread == 0) {
+			result = XB_CRYPT_READ_EOF;
+			goto err;
+		} else if (bytesread < *ivlen) {
 			msg("%s:%s: failed to read %lld bytes for chunk iv "
 			    "at offset 0x%llx.\n", my_progname, __FUNCTION__,
 			    (ulonglong)*ivlen, crypt->offset);
@@ -212,8 +232,11 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 	}
 
 	if (*elen > 0) {
-		if (crypt->read(crypt->userdata, crypt->buffer, *elen, MYF(MY_WME|MY_FULL_IO))
-		    != (ssize_t)*elen) {
+		bytesread = F_READ(crypt, crypt->buffer, *elen);
+		if (bytesread == 0) {
+			result = XB_CRYPT_READ_EOF;
+			goto err;
+		} else if (bytesread < *elen) {
 			msg("%s:%s: failed to read %lld bytes for chunk payload "
 			    "at offset 0x%llx.\n", my_progname, __FUNCTION__,
 			    (ulonglong)*elen, crypt->offset);
