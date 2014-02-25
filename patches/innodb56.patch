@@ -162,7 +162,20 @@
  		}
  
  		if (!fsp_flags_is_compressed(flags)) {
-@@ -2031,12 +2033,6 @@
+@@ -1302,12 +1304,6 @@
+ 
+ 		if (!fil_system->space_id_reuse_warned) {
+ 			fil_system->space_id_reuse_warned = TRUE;
+-
+-			ib_logf(IB_LOG_LEVEL_WARN,
+-				"Allocated tablespace %lu, old maximum "
+-				"was %lu",
+-				(ulong) id,
+-				(ulong) fil_system->max_assigned_id);
+ 		}
+ 
+ 		fil_system->max_assigned_id = id;
+@@ -2031,12 +2027,6 @@
  						contain sensible data */
  	ulint*		flags,			/*!< out: tablespace flags */
  	ulint*		space_id,		/*!< out: tablespace ID */
@@ -175,7 +188,7 @@
  	lsn_t*		min_flushed_lsn,	/*!< out: min of flushed
  						lsn values in data files */
  	lsn_t*		max_flushed_lsn)	/*!< out: max of flushed
-@@ -2061,7 +2057,7 @@
+@@ -2061,7 +2051,7 @@
  
  	flushed_lsn = mach_read_from_8(page + FIL_PAGE_FILE_FLUSH_LSN);
  
@@ -184,7 +197,7 @@
  		check_msg = fil_check_first_page(page);
  	}
  
-@@ -2074,10 +2070,6 @@
+@@ -2074,10 +2064,6 @@
  	if (!one_read_already) {
  		*min_flushed_lsn = flushed_lsn;
  		*max_flushed_lsn = flushed_lsn;
@@ -195,7 +208,7 @@
  		return(NULL);
  	}
  
-@@ -2087,14 +2079,6 @@
+@@ -2087,14 +2073,6 @@
  	if (*max_flushed_lsn < flushed_lsn) {
  		*max_flushed_lsn = flushed_lsn;
  	}
@@ -210,7 +223,7 @@
  
  	return(NULL);
  }
-@@ -2195,7 +2179,7 @@
+@@ -2195,7 +2173,7 @@
  	mem_free(path);
  }
  
@@ -219,7 +232,7 @@
  /********************************************************//**
  Writes a log record about an .ibd file create/rename/delete. */
  static
-@@ -2429,7 +2413,7 @@
+@@ -2429,7 +2407,7 @@
  				    space_id, name, path, flags,
  				    DICT_TF2_USE_TABLESPACE,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -228,7 +241,7 @@
  			}
  		}
  
-@@ -2788,7 +2772,7 @@
+@@ -2788,7 +2766,7 @@
  	}
  
  	if (err == DB_SUCCESS) {
@@ -237,7 +250,7 @@
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -3143,7 +3127,7 @@
+@@ -3143,7 +3121,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
@@ -246,7 +259,7 @@
  	if (success && !recv_recovery_on) {
  		mtr_t		mtr;
  
-@@ -3527,7 +3511,7 @@
+@@ -3527,7 +3505,7 @@
  		goto error_exit_1;
  	}
  
@@ -255,7 +268,7 @@
  	{
  		mtr_t		mtr;
  		ulint		mlog_file_flag = 0;
-@@ -3614,11 +3598,99 @@
+@@ -3614,11 +3592,99 @@
  	lsn_t		lsn;		/*!< Flushed LSN from header page */
  	ulint		id;		/*!< Space ID */
  	ulint		flags;		/*!< Tablespace flags */
@@ -358,7 +371,7 @@
  /********************************************************************//**
  Tries to open a single-table tablespace and optionally checks that the
  space id in it is correct. If this does not succeed, print an error message
-@@ -3684,6 +3756,9 @@
+@@ -3684,6 +3750,9 @@
  	in the default location. If it is remote, it should not be here. */
  	def.filepath = fil_make_ibd_name(tablename, false);
  
@@ -368,7 +381,7 @@
  	/* The path_in was read from SYS_DATAFILES. */
  	if (path_in) {
  		if (strcmp(def.filepath, path_in)) {
-@@ -3731,6 +3806,7 @@
+@@ -3731,6 +3800,7 @@
  			tablespaces_found++;
  		}
  	}
@@ -376,7 +389,7 @@
  
  	/* Always look for a file at the default location. */
  	ut_a(def.filepath);
-@@ -3752,9 +3828,6 @@
+@@ -3752,9 +3822,6 @@
  	if (def.success) {
  		def.check_msg = fil_read_first_page(
  			def.file, FALSE, &def.flags, &def.id,
@@ -386,7 +399,7 @@
  			&def.lsn, &def.lsn);
  		def.valid = !def.check_msg;
  
-@@ -3777,9 +3850,6 @@
+@@ -3777,9 +3844,6 @@
  	if (remote.success) {
  		remote.check_msg = fil_read_first_page(
  			remote.file, FALSE, &remote.flags, &remote.id,
@@ -396,7 +409,7 @@
  			&remote.lsn, &remote.lsn);
  		remote.valid = !remote.check_msg;
  
-@@ -3803,9 +3873,6 @@
+@@ -3803,9 +3867,6 @@
  	if (dict.success) {
  		dict.check_msg = fil_read_first_page(
  			dict.file, FALSE, &dict.flags, &dict.id,
@@ -406,7 +419,7 @@
  			&dict.lsn, &dict.lsn);
  		dict.valid = !dict.check_msg;
  
-@@ -3830,11 +3897,15 @@
+@@ -3830,11 +3891,15 @@
  		/* The following call prints an error message */
  		os_file_get_last_error(true);
  
@@ -423,7 +436,7 @@
  
  		err = DB_CORRUPTION;
  
-@@ -4034,9 +4105,6 @@
+@@ -4034,9 +4099,6 @@
  {
  	if (const char* check_msg = fil_read_first_page(
  		    fsp->file, FALSE, &fsp->flags, &fsp->id,
@@ -433,7 +446,7 @@
  		    &fsp->lsn, &fsp->lsn)) {
  		ib_logf(IB_LOG_LEVEL_ERROR,
  			"%s in tablespace %s (table %s)",
-@@ -4098,6 +4166,9 @@
+@@ -4098,6 +4160,9 @@
  #ifdef UNIV_HOTBACKUP
  	fil_space_t*	space;
  #endif
@@ -443,7 +456,7 @@
  
  	memset(&def, 0, sizeof(def));
  	memset(&remote, 0, sizeof(remote));
-@@ -4142,6 +4213,9 @@
+@@ -4142,6 +4207,9 @@
  # endif /* !UNIV_HOTBACKUP */
  #endif
  
@@ -453,7 +466,7 @@
  	/* Check for a link file which locates a remote tablespace. */
  	remote.success = fil_open_linked_file(
  		tablename, &remote.filepath, &remote.file);
-@@ -4152,8 +4226,20 @@
+@@ -4152,8 +4220,20 @@
  		if (!remote.success) {
  			os_file_close(remote.file);
  			mem_free(remote.filepath);
@@ -474,7 +487,7 @@
  
  
  	/* Try to open the tablespace in the datadir. */
-@@ -4166,6 +4252,17 @@
+@@ -4166,6 +4246,17 @@
  		fil_validate_single_table_tablespace(tablename, &def);
  		if (!def.success) {
  			os_file_close(def.file);
@@ -492,7 +505,7 @@
  		}
  	}
  
-@@ -4250,7 +4347,7 @@
+@@ -4250,7 +4341,7 @@
  	/* At this point, only one tablespace is open */
  	ut_a(def.success == !remote.success);
  
@@ -501,7 +514,7 @@
  
  	/* Get and test the file size. */
  	size = os_file_get_size(fsp->file);
-@@ -4269,9 +4366,9 @@
+@@ -4269,9 +4360,9 @@
  
  	/* Every .ibd file is created >= 4 pages in size. Smaller files
  	cannot be ok. */
@@ -513,7 +526,7 @@
  		ib_logf(IB_LOG_LEVEL_ERROR,
  			"The size of single-table tablespace file %s "
  			"is only " UINT64PF ", should be at least %lu!",
-@@ -4352,7 +4449,7 @@
+@@ -4352,7 +4443,7 @@
  	}
  	mutex_exit(&fil_system->mutex);
  #endif /* UNIV_HOTBACKUP */
@@ -522,7 +535,7 @@
  		tablename, fsp->id, fsp->flags, FIL_TABLESPACE);
  
  	if (!file_space_create_success) {
-@@ -4379,13 +4476,55 @@
+@@ -4379,13 +4470,55 @@
  	}
  
  func_exit:
@@ -582,7 +595,7 @@
  	mem_free(tablename);
  	if (remote.success) {
  		mem_free(remote.filepath);
-@@ -4399,7 +4538,7 @@
+@@ -4399,7 +4532,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -591,7 +604,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4439,7 +4578,7 @@
+@@ -4439,7 +4572,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  dberr_t
@@ -600,7 +613,7 @@
  /*===================================*/
  {
  	int		ret;
-@@ -4495,7 +4634,9 @@
+@@ -4495,7 +4628,9 @@
  			    "%s/%s", fil_path_to_mysql_datadir, dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
  
@@ -611,7 +624,7 @@
  
  		if (dbdir != NULL) {
  
-@@ -4516,9 +4657,15 @@
+@@ -4516,9 +4651,15 @@
  				    && (0 == strcmp(fileinfo.name
  						   + strlen(fileinfo.name) - 4,
  						   ".ibd")
@@ -629,7 +642,7 @@
  					/* The name ends in .ibd or .isl;
  					try opening the file */
  					fil_load_single_table_tablespace(
-@@ -4674,6 +4821,7 @@
+@@ -4674,6 +4815,7 @@
  {
  	fil_space_t*	fnamespace;
  	fil_space_t*	space;
@@ -637,7 +650,7 @@
  
  	ut_ad(fil_system);
  
-@@ -4751,6 +4899,10 @@
+@@ -4751,6 +4893,10 @@
  		if (fnamespace == NULL) {
  			if (print_error_if_does_not_exist) {
  				fil_report_missing_tablespace(name, id);
@@ -648,7 +661,7 @@
  			}
  		} else {
  			ut_print_timestamp(stderr);
-@@ -4774,6 +4926,10 @@
+@@ -4774,6 +4920,10 @@
  
  		mutex_exit(&fil_system->mutex);
  
@@ -659,7 +672,7 @@
  		return(FALSE);
  	}
  
-@@ -5407,6 +5563,16 @@
+@@ -5407,6 +5557,16 @@
  
  	ut_ad(mode != OS_AIO_IBUF || space->purpose == FIL_TABLESPACE);
  
@@ -676,7 +689,7 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-@@ -6334,6 +6500,7 @@
+@@ -6334,6 +6494,7 @@
  	return(err);
  }
  
@@ -684,7 +697,7 @@
  /****************************************************************//**
  Generate redo logs for swapping two .ibd files */
  UNIV_INTERN
-@@ -6360,3 +6527,4 @@
+@@ -6360,3 +6521,4 @@
  				 0, 0, new_name, old_name, mtr);
  	}
  }
