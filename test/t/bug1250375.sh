@@ -16,13 +16,6 @@ wsrep_cluster_address=gcomm://
 wsrep_node_address=$ADDR
 "
 
-if [ -n ${WSREP_DEBUG:-} ]
-then
-    MYSQLD_EXTRA_MY_CNF_OPTS="$MYSQLD_EXTRA_MY_CNF_OPTS
-wsrep_provider_options=\"debug=1\"
-"
-fi
-
 start_server
 
 # Load some data so we have a non-empty Executed_Gtid_Set
@@ -47,8 +40,12 @@ while read line; do
     count=$((count+1))
 done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
 
-if [ ! -f "$backup_dir/$master_file" ]
+cd $backup_dir
+
+if [ ! -f $master_file ]
 then
     vlog "Could not find bin-log file in backup set, expecting to find $master_file"
+    vlog "Backup directory contents:"
+    ls -l
     exit 1
 fi
