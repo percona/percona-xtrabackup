@@ -279,11 +279,11 @@ err:
 
 
 static
-ssize_t
-my_xb_crypt_read_callback(void *userdata, void *buf, size_t len, int flags)
+size_t
+my_xb_crypt_read_callback(void *userdata, void *buf, size_t len)
 {
 	File* file = (File *) userdata;
-	return my_read(*file, buf, len, flags);
+	return xb_read_full(*file, buf, len);
 }
 
 static
