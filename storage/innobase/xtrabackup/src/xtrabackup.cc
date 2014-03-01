@@ -4347,6 +4347,8 @@ xtrabackup_apply_delta(
 	byte*		incremental_buffer_base = NULL;
 	byte*		incremental_buffer;
 
+	size_t		offset;
+
 	ut_a(xtrabackup_incremental);
 
 	if (dbname) {
@@ -4399,7 +4401,6 @@ xtrabackup_apply_delta(
 	}
 
 	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_DONTNEED);
 
 	os_file_set_nocache(src_file, src_path, "OPEN");
 
@@ -4430,11 +4431,10 @@ xtrabackup_apply_delta(
 
 		/* read to buffer */
 		/* first block of block cluster */
+		offset = ((incremental_buffers * (page_size / 4))
+			 << page_size_shift);
 		success = os_file_read(src_file, incremental_buffer,
-				       ((incremental_buffers
-					 * (page_size / 4))
-					<< page_size_shift),
-				       page_size);
+					  offset, page_size);
 		if (!success) {
 			goto error;
 		}
@@ -4463,13 +4463,13 @@ xtrabackup_apply_delta(
 
 		/* read whole of the cluster */
 		success = os_file_read(src_file, incremental_buffer,
-				       ((incremental_buffers
-					 * (page_size / 4))
-					<< page_size_shift),
-				       page_in_buffer * page_size);
+					  offset, page_in_buffer * page_size);
 		if (!success) {
 			goto error;
 		}
+
+		posix_fadvise(src_file, offset, page_in_buffer * page_size,
+			      POSIX_FADV_DONTNEED);
 
 		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
 		     page_in_buffer++) {
