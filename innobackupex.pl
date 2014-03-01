@@ -1301,7 +1301,6 @@ my %sub_for_type = (
    perl_version        => \&get_perl_version,
    perl_module_version => \&get_perl_module_version,
    mysql_variable      => \&get_mysql_variable,
-   bin_version         => \&get_bin_version,
 );
 
 sub valid_item {
@@ -1482,25 +1481,6 @@ sub get_from_mysql {
    }
 
    return \%version_for;
-}
-
-sub get_bin_version {
-   my (%args) = @_;
-   my $item = $args{item};
-   my $cmd  = $item->{item};
-   return unless $cmd;
-
-   my $sanitized_command = File::Basename::basename($cmd);
-   PTDEBUG && _d('cmd:', $cmd, 'sanitized:', $sanitized_command);
-   return if $sanitized_command !~ /\A[a-zA-Z0-9_-]+\z/;
-
-   my $output = `$sanitized_command --version 2>&1`;
-   PTDEBUG && _d('output:', $output);
-
-   my ($version) = $output =~ /v?([0-9]+\.[0-9]+(?:\.[\w-]+)?)/;
-
-   PTDEBUG && _d('Version for', $sanitized_command, '=', $version);
-   return $version;
 }
 
 sub _d {
