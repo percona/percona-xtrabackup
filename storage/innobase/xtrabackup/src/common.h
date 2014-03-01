@@ -83,4 +83,28 @@ get_bit_shift(ulong value)
     return (value >> 1) ? 0 : shift;
 }
 
+/****************************************************************************
+Read 'len' bytes from 'fd'. It is identical to my_read(..., MYF(MY_FULL_IO)),
+i.e. tries to combine partial reads into a single block of size 'len', except
+that it bails out on EOF or error, and returns the number of successfully read
+bytes instead. */
+static inline size_t
+xb_read_full(File fd, uchar *buf, size_t len)
+{
+	size_t tlen = 0;
+	size_t tbytes;
+
+	while (tlen < len) {
+		tbytes = my_read(fd, buf, len - tlen, MYF(MY_WME));
+		if (tbytes == 0 || tbytes == MY_FILE_ERROR) {
+			break;
+		}
+
+		buf += tbytes;
+		tlen += tbytes;
+	}
+
+	return tlen;
+}
+
 #endif

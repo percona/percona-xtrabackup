@@ -58,10 +58,10 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 	uchar		*ptr;
 	ulonglong	tmp;
 	ulong		checksum, checksum_exp, version;
-	ssize_t		bytesread;
+	size_t		bytesread;
 	xb_rcrypt_result_t result = XB_CRYPT_READ_CHUNK;
 
-	if ((bytesread = crypt->read(crypt->userdata, tmpbuf, sizeof(tmpbuf), MYF(MY_WME)))
+	if ((bytesread = crypt->read(crypt->userdata, tmpbuf, sizeof(tmpbuf)))
 	    != sizeof(tmpbuf)) {
 		if (bytesread == 0) {
 			result = XB_CRYPT_READ_EOF;
@@ -126,8 +126,8 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 		*ivlen = 0;
 		*iv = 0;
 	} else {
-		if ((bytesread = crypt->read(crypt->userdata, tmpbuf, 8,
-					     MYF(MY_WME))) != 8) {
+		if ((bytesread = crypt->read(crypt->userdata, tmpbuf, 8))
+		    != 8) {
 			if (bytesread == 0) {
 				result = XB_CRYPT_READ_EOF;
 				goto err;
@@ -176,8 +176,8 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 	}
 
 	if (*ivlen > 0) {
-		if (crypt->read(crypt->userdata, crypt->ivbuffer, *ivlen, MYF(MY_WME|MY_FULL_IO))
-		    != (ssize_t)*ivlen) {
+		if (crypt->read(crypt->userdata, crypt->ivbuffer, *ivlen)
+		    != *ivlen) {
 			msg("%s:%s: failed to read %lld bytes for chunk iv "
 			    "at offset 0x%llx.\n", my_progname, __FUNCTION__,
 			    (ulonglong)*ivlen, crypt->offset);
@@ -212,8 +212,8 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 	}
 
 	if (*elen > 0) {
-		if (crypt->read(crypt->userdata, crypt->buffer, *elen, MYF(MY_WME|MY_FULL_IO))
-		    != (ssize_t)*elen) {
+		if (crypt->read(crypt->userdata, crypt->buffer, *elen)
+		    != *elen) {
 			msg("%s:%s: failed to read %lld bytes for chunk payload "
 			    "at offset 0x%llx.\n", my_progname, __FUNCTION__,
 			    (ulonglong)*elen, crypt->offset);
