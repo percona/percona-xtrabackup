@@ -179,6 +179,7 @@ tmpfile_deinit(ds_ctxt_t *ctxt)
 	void			*buf = NULL;
 	const size_t		 buf_size = 1024 * 1024;
 	size_t			 bytes;
+	size_t			 offset;
 
 	pipe_ctxt = ctxt->pipe_ctxt;
 	xb_a(pipe_ctxt != NULL);
@@ -217,9 +218,11 @@ tmpfile_deinit(ds_ctxt_t *ctxt)
 			    tmp_file->file->path, my_errno);
 			exit(EXIT_FAILURE);
 		}
+		offset = 0;
 		while ((bytes = my_read(tmp_file->fd, buf, buf_size,
 					MYF(MY_WME))) > 0) {
-			posix_fadvise(tmp_file->fd, 0, 0, POSIX_FADV_DONTNEED);
+			posix_fadvise(tmp_file->fd, offset, buf_size, POSIX_FADV_DONTNEED);
+			offset += buf_size;
 			if (ds_write(dst_file, buf, bytes)) {
 				msg("error: cannot write to stream for '%s'.\n",
 				    tmp_file->orig_path);
