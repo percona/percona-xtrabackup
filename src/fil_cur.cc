@@ -289,7 +289,28 @@ xb_fil_cur_read(
 	if (to_read > (ib_int64_t) cursor->buf_size) {
 		to_read = (ib_int64_t) cursor->buf_size;
 	}
+
 	xb_a(to_read > 0 && to_read <= 0xFFFFFFFFLL);
+
+	if (to_read % cursor->page_size != 0 &&
+	    offset + to_read == cursor->statinfo.st_size) {
+
+		if (to_read < (ib_int64_t) cursor->page_size) {
+			msg("[%02u] xtrabackup: Warning: junk at the end of "
+			    "%s:\n", cursor->thread_n, cursor->abs_path);
+			msg("[%02u] xtrabackup: Warning: offset = %llu, "
+			    "to_read = %llu\n",
+			    cursor->thread_n,
+			    (unsigned long long) offset,
+			    (unsigned long long) to_read);
+
+			return(XB_FIL_CUR_EOF);
+		}
+
+		to_read = (ib_int64_t) (((ulint) to_read) &
+					~(cursor->page_size - 1));
+	}
+
 	xb_a(to_read % cursor->page_size == 0);
 
 	npages = (ulint) (to_read >> cursor->page_size_shift);
