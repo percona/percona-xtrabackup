@@ -2024,12 +2024,12 @@ sub backup {
       $history_lock_time = time() - $history_lock_time;
     }
 
-    my $ibbackup_exit_code = wait_for_ibbackup_finish();
-
     if ( $option_safe_slave_backup && $sql_thread_started) {
       print STDERR "$prefix: Starting slave SQL thread\n";
       mysql_query(\%mysql, 'START SLAVE SQL_THREAD;');
     }
+
+    my $ibbackup_exit_code = wait_for_ibbackup_finish();
 
     # copy ib_lru_dump
     # Copy buffer poll dump and/or LRU dump
