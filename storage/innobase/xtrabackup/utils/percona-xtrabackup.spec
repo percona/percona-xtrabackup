@@ -3,7 +3,7 @@
 #
 %{!?redhat_version:%define redhat_version 5}
 %{!?buildnumber:%define buildnumber 1}
-%define distribution  rhel%{redhat_version}
+%define distribution  el%{redhat_version}
 %define release       %{buildnumber}.%{distribution}
 %{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 
@@ -63,9 +63,12 @@ export CC=${CC-"gcc"}
 export CXX=${CXX-"g++"}
 export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-cp src/xtrabackup_56 .
-cmake -DBUILD_CONFIG=xtrabackup_release . && make -j6
-cp storage/innobase/xtrabackup/src/xtrabackup .
+#
+
+cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test .
+%{__make} %{?_smp_mflags}
+
 %else
 # Dummy binaries that avoid compilation
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xtrabackup
@@ -75,15 +78,10 @@ echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xb
 
 %install
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
-install -d %{buildroot}%{_bindir}
-install -d %{buildroot}%{_datadir}
-# install binaries and configs
 
-install -m 755 storage/innobase/xtrabackup/src/xtrabackup %{buildroot}%{_bindir}
-install -m 755 storage/innobase/xtrabackup/innobackupex %{buildroot}%{_bindir}
-install -m 755 storage/innobase/xtrabackup/src/xbstream %{buildroot}%{_bindir}
-install -m 755 storage/innobase/xtrabackup/src/xbcrypt %{buildroot}%{_bindir}
-cp -R storage/innobase/xtrabackup/test %{buildroot}%{_datadir}/percona-xtrabackup-test
+%makeinstall
+%{__make} install DESTDIR=$RPM_BUILD_ROOT
+
 
 %clean
 [ "%{buildroot}" != '/' ] && rm -rf %{buildroot}

@@ -40,7 +40,7 @@ do
     esac
 done
 
-SOURCEDIR="$(cd $(dirname "$0"); pwd)"
+SOURCEDIR="$(readlink -f $(dirname "$0")/../../../../)"
 
 # Read version info from the XB_VERSION file
 . $SOURCEDIR/XB_VERSION
@@ -87,53 +87,33 @@ export DEB_CXXFLAGS_APPEND="$CXXFLAGS"
 export DEB_DUMMY="$DUMMY"
 
 # Build
-(
-    (
-        # Prepare source directory for dpkg-source
-        cd "$SOURCEDIR"
-
+    # Prepare source directory for dpkg-source
+        TMPDIR=$(mktemp -d)
+        cd ${TMPDIR}
+        cmake "$SOURCEDIR"
         make DUMMY="$DUMMY" dist
+    # Create the original tarball
+        mv "${TMPDIR}/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
+        "$WORKDIR/percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz"
+        rm -fr ${TMPDIR}
+    #
+        cd "$WORKDIR"
+        rm -fr percona-xtrabackup-$XTRABACKUP_VERSION
+        tar xzf percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz
+        cd percona-xtrabackup-$XTRABACKUP_VERSION
+        cp -a storage/innobase/xtrabackup/utils/debian .
 
-        if ! test -d debian
-        then
-            cp -a utils/debian/ .
-        fi
-
-        # Update distribution
+    # Update distribution
         dch -m -D "$DEBIAN_VERSION" --force-distribution \
             -v "$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX" 'Update distribution'
 
-    )
+    #Do not build transitional packages if requested
+        if test "x$NOTRANSITIONAL" = "xyes"
+        then
+          sed -i '/Package: xtrabackup/,/^$/d' debian/control
+        fi
 
-    # Create the original tarball
-    mv "$SOURCEDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION.tar.gz" \
-        "$WORKDIR/percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz"
-
-    (
-        cd "$WORKDIR"
-
-        # Create the rest of the source, ignoring changes since we may be in the
-        # sourcedir.
-        dpkg-source -i'.*' -b "$SOURCEDIR"
-
-        # Unpack it
-        dpkg-source -x "percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX.dsc"
-
-        (
-            cd "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION"
-
-            # Don't build transitional packages if requested
-            if test "x$NOTRANSITIONAL" = "xyes"
-            then
-                sed -i '/Package: xtrabackup/,/^$/d' debian/control
-            fi
-
-            # Issue dpkg-buildpackage command
-            dpkg-buildpackage $DPKG_BINSRC $BUILDPKG_KEY
+    # Issue dpkg-buildpackage command
+       dpkg-buildpackage $DPKG_BINSRC $BUILDPKG_KEY
+       rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION"
  
-        )
-
-        rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION"
- 
-    )
-)
