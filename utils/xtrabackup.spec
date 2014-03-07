@@ -44,17 +44,29 @@ This package contains the test suite for Percona Xtrabackup
 - Update package name to `percona-xtrabackup-20', so it's able to share
   repository with 2.1 packages.
 
-* Mon Sep 27 2010 Aleksandr Kuzminsky
-- Version 1.4
+* Mon May 06 2013 Alexey Bychko
+- Version 2.0.7
 
-* Wed Jun 30 2010 Aleksandr Kuzminsky
-- Version 1.3 ported on Percona Server 11
+* Tue Mar 19 2013 Alexey Bychko
+- Version 2.0.6
 
-* Thu Mar 11 2010 Aleksandr Kuzminsky
-- Ported to MySQL 5.1 with InnoDB plugin
+* Wed Jan 22 2013 Alexey Bychko
+- Version 2.0.5
 
-* Fri Mar 13 2009 Vadim Tkachenko
-- initial release
+* Mon Dec 03 2012 Alexey Bychko
+- Version 2.0.4
+
+* Sun Sep 30 2012 Alexey Bychko
+- Version 2.0.3
+
+* Sun Aug 12 2012 Alexey Bychko
+- Version 2.0.2
+
+* Sun Jun 24 2012 Alexey Bychko
+- Version 2.0.1
+
+* Wed Apr 04 2012 Alexey Bychko
+- Version 2.0.0
 
 
 %prep
