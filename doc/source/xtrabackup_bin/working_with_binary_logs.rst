@@ -1,3 +1,5 @@
+.. _working_with_binlogs:
+
 Working with Binary Logs
 ========================
 
