@@ -7,7 +7,8 @@ Index of files created by Percona XtraBackup
 * Information related to the backup and the server
 
     * :file:`backup-my.cnf`
-       This file contains information to start the mini instance of InnoDB during the :option:`--apply-log`. This is **NOT** a backup of original :file:`my.cnf`.
+       This file contains information to start the mini instance of InnoDB during the :option:`--apply-log`. This is **NOT** a backup of original :file:`my.cnf`.  The InnoDB configuration is read from the file :file:`backup-my.cnf` created by |innobackupex| when the backup was made. :option:`innobackupex --apply-log` uses InnoDB configuration from ``backup-my.cnf`` by default, or from :option:`innobackupex --defaults-file`, if specified. InnoDB configuration in this context means server variables that affect data format, i.e. :option:`innodb_page_size`, :option:`innodb_log_block_size`, etc. Location-related variables, like :option:`innodb_log_group_home_dir` or :option:`innodb_data_file_path` are always ignored by :option:`innobackupex --apply-log`, so preparing a backup always works with data files from the backup directory, rather than any external ones.
+
 
     * :file:`xtrabackup_checkpoints`
        The type of the backup (e.g. full or incremental), its state (e.g. prepared) and the |LSN| range contained in it. This information is used for incremental backups.

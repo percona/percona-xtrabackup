@@ -12,7 +12,7 @@ Options
 
 .. option:: --apply-log
 
-   Prepare a backup in ``BACKUP-DIR`` by applying the transaction log file named :file:`xtrabackup_logfile` located in the same directory. Also, create new transaction logs. The InnoDB configuration is read from the file :file:`backup-my.cnf` created by |innobackupex| when the backup was made.
+   Prepare a backup in ``BACKUP-DIR`` by applying the transaction log file named :file:`xtrabackup_logfile` located in the same directory. Also, create new transaction logs. The InnoDB configuration is read from the file :file:`backup-my.cnf` created by |innobackupex| when the backup was made. innobackupex --apply-log uses InnoDB configuration from ``backup-my.cnf`` by default, or from --defaults-file, if specified. InnoDB configuration in this context means server variables that affect data format, i.e. :option:`innodb_page_size`, :option:`innodb_log_block_size`, etc. Location-related variables, like :option:`innodb_log_group_home_dir` or :option:`innodb_data_file_path` are always ignored by --apply-log, so preparing a backup always works with data files from the backup directory, rather than any external ones.
 
 .. option:: --compact
 
@@ -156,9 +156,9 @@ Options
 
 .. option:: --no-lock
 
-   Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use it only if ALL your tables are InnoDB and you **DO NOT CARE** about the binary log position of the backup. This option shouldn't be used if there are any ``DDL`` statements being executed or if any updates are happening on non-InnoDB tables (this includes the system MyISAM tables in the *mysql* database), otherwise it could lead to an inconsistent backup. 
+   Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use it only if ALL your tables are InnoDB and you **DO NOT CARE** about the binary log position of the backup. This option shouldn't be used if there are any ``DDL`` statements being executed or if any updates are happening on non-InnoDB tables (this includes the system MyISAM tables in the *mysql* database), otherwise it could lead to an inconsistent backup. 
    If you are considering to use :option:`--no-lock` because your backups are failing to acquire the lock, this could be because of incoming replication events preventing the lock from succeeding. Please try using :option:`--safe-slave-backup` to momentarily stop the replication slave thread, this may help the backup to succeed and you then don't need to resort to using this option.
-
+   :file:`xtrabackup_binlog_info` is not created when --no-lock option is used (because ``SHOW MASTER STATUS`` may be inconsistent), but under certain conditions :file:`xtrabackup_binlog_pos_innodb` can be used instead to get consistent binlog coordinates as described in :ref:`working_with_binlogs`.
 .. option:: --no-timestamp
 
    This option prevents creation of a time-stamped subdirectory of the ``BACKUP-ROOT-DIR`` given on the command line. When it is specified, the backup is done in ``BACKUP-ROOT-DIR`` instead.
