@@ -42,17 +42,17 @@ fi
 case "$1" in
     innodb51)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.1.70-linux-$arch-glibc23.tar.gz"
+        tarball="mysql-5.1.73-linux-$arch-glibc23.tar.gz"
         ;;
 
     innodb55)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.5.31-linux2.6-$arch.tar.gz"
+        tarball="mysql-5.5.36-linux2.6-$arch.tar.gz"
         ;;
 
     innodb56)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.6.14-linux-glibc2.5-$arch.tar.gz"
+        tarball="mysql-5.6.16-linux-glibc2.5-$arch.tar.gz"
         ;;
 
     xtradb51)
@@ -66,7 +66,7 @@ case "$1" in
 
         else
             url="http://s3.amazonaws.com/percona.com/downloads/community"
-            tarball="Percona-Server-5.1.69-rel14.7-572.Linux.$arch.tar.gz"
+            tarball="Percona-Server-5.1.73-rel14.11-603.Linux.$arch.tar.gz"
         fi
         ;;
 
@@ -80,7 +80,7 @@ case "$1" in
             tarball="Percona-Server-5.5.30-rel30.1-465.Linux.$arch.tar.gz"
         else
             url="http://s3.amazonaws.com/percona.com/downloads/community"
-            tarball="Percona-Server-5.5.31-rel30.3-520.Linux.$arch.tar.gz"
+            tarball="Percona-Server-5.5.36-rel34.1-642.Linux.$arch.tar.gz"
         fi
         ;;
 
@@ -94,7 +94,7 @@ case "$1" in
             tarball="Percona-Server-5.6.10-alpha60.2-324.Linux.$arch.tar.gz"
         else
             url="http://s3.amazonaws.com/percona.com/downloads/community"
-            tarball="Percona-Server-5.6.14-rel62.0-483.Linux.$arch.tar.gz"
+            tarball="Percona-Server-5.6.16-rel64.1-563.Linux.$arch.tar.gz"
         fi
         ;;
 
