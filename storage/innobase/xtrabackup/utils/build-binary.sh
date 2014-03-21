@@ -43,7 +43,7 @@ done
 # Working directory
 if test "$#" -eq 0
 then
-    WORKDIR="$(pwd)"
+    WORKDIR="$(readlink -f $(dirname $0)/../../../../)"
     
     # Check that the current directory is not empty
     if test "x$(echo *)" != "x*"
@@ -107,28 +107,9 @@ mkdir "$INSTALLDIR"
 	cd $SOURCEDIR
 
         # Install the files
-        mkdir "$INSTALLDIR/bin" "$INSTALLDIR/share"
-        mkdir -p "$INSTALLDIR/share/doc/percona-xtrabackup"
-
-        cmake -DBUILD_CONFIG=xtrabackup_release . && make $MAKE_JFLAG
-
-        install -m 755 storage/innobase/xtrabackup/src/xtrabackup \
-                "$INSTALLDIR/bin"
-
-        install -m 755 storage/innobase/xtrabackup/src/xbstream \
-                "$INSTALLDIR/bin"
-
-        install -m 755 storage/innobase/xtrabackup/src/xbcrypt \
-                "$INSTALLDIR/bin"
-
-        install -m 755 storage/innobase/xtrabackup/innobackupex \
-                "$INSTALLDIR/bin"
-
-        install -m 644 storage/innobase/xtrabackup/COPYING \
-                "$INSTALLDIR/share/doc/percona-xtrabackup"
-
-        cp -R storage/innobase/xtrabackup/test \
-           "$INSTALLDIR/share/percona-xtrabackup-test"
+        mkdir -p "$INSTALLDIR"
+        cmake -DBUILD_CONFIG=xtrabackup_release  -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" . && make $MAKE_JFLAG
+        make install
 
     )
     exit_value=$?
