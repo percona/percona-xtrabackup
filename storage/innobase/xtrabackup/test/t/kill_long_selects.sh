@@ -81,6 +81,12 @@ EOF
 
 start_server --innodb_file_per_table
 
+if $MYSQL $MYSQL_ARGS -Ns -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
+     2> /dev/null | egrep -q "^YES$"
+then
+    skip_test "Requires a server without backup locks support"
+fi
+
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t1(a INT) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (1);

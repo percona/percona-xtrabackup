@@ -75,6 +75,7 @@ my $mysql_keep_alive = 5;
 # Server capabilities #
 #######################
 my $have_changed_page_bitmaps = 0;
+my $have_backup_locks = 0;
 
 # command line options
 my $option_help = '';
@@ -1896,9 +1897,7 @@ sub backup {
     my $buffer_pool_filename = get_option(\%config, $option_defaults_group,
                                           'innodb_buffer_pool_filename');
 
-    if ($option_incremental) {
-        detect_mysql_capabilities_for_backup(\%mysql);
-    }
+    detect_mysql_capabilities_for_backup(\%mysql);
 
     #
     # if one of the history incrementals is being used, try to grab the
@@ -1957,15 +1956,14 @@ sub backup {
         wait_for_safe_slave(\%mysql);
       }
 
-      # flush tables with read lock
       # make a prep copy before locking tables, if using rsync
       backup_files(1);
 
       # start counting how long lock is held for history
       $history_lock_time = time();
 
-      # flush tables with read lock
-      mysql_lockall(\%mysql);
+      # lock tables
+      mysql_lock_tables(\%mysql);
 
       if ($option_slave_info) {
         write_slave_info(\%mysql);
@@ -1979,23 +1977,38 @@ sub backup {
     # There is no need to stop slave thread before coping non-Innodb data when
     # --no-lock option is used because --no-lock option requires that no DDL or
     # DML to non-transaction tables can occur.
-    if ($option_no_lock)
-    {
-      if ($option_safe_slave_backup)
-      {
-        wait_for_safe_slave(\%mysql);
-      }
-      if ($option_slave_info) {
-        write_slave_info(\%mysql);
-      }
+    if ($option_no_lock) {
+        if ($option_safe_slave_backup) {
+            wait_for_safe_slave(\%mysql);
+        }
+        if ($option_slave_info) {
+            write_slave_info(\%mysql);
+        }
+    } else {
+        mysql_lock_binlog(\%mysql);
     }
+
+    # The only reason why Galera/binlog info is written before
+    # wait_for_ibbackup_log_copy_finish() is that after that call the xtrabackup
+    # binary will start streamig a temporary copy of REDO log to stdout and
+    # thus, any streaming from innobackupex would interfere. The only wait to
+    # avoid that is to have a single process, i.e. merge innobackupex and
+    # xtrabackup.
+    if ($option_galera_info) {
+        write_galera_info(\%mysql);
+    }
+
+    write_binlog_info(\%mysql);
+
     # resume XtraBackup and wait till it has finished
     resume_ibbackup($suspend_file);
     $suspend_file = $work_dir . $xb_fn_log_copied;
     wait_for_ibbackup_log_copy_finish($suspend_file);
 
-    # release read locks on all tables
-    mysql_unlockall(\%mysql) if !$option_no_lock;
+    # release all locks
+    if (!$option_no_lock) {
+        mysql_unlock_all(\%mysql);
+    }
 
     # calculate how long lock was held for history
     if ($option_no_lock) {
@@ -3381,11 +3394,25 @@ sub stop_query_killer {
 
 
 #
-# mysql_lockall subroutine puts a read lock on all tables in all databases.
-# 
-sub mysql_lockall {
+# mysql_lock_tables subroutine acquires either a backup tables lock, if
+# supported by the server, or a global read lock (FLUSH TABLES WITH READ LOCK)
+# otherwise.
+#
+sub mysql_lock_tables {
     my $con = shift;
     my $queries_hash_ref;
+
+    if ($have_backup_locks) {
+        $now = current_time();
+        print STDERR "$now  $prefix Executing LOCK TABLES FOR BACKUP...\n";
+
+        mysql_query($con, "LOCK TABLES FOR BACKUP");
+
+        $now = current_time();
+        print STDERR "$now  $prefix Backup tables lock acquired\n";
+
+        return;
+    }
 
     if ($option_lock_wait_timeout) {
         wait_for_no_updates($con, $option_lock_wait_timeout,
@@ -3393,7 +3420,7 @@ sub mysql_lockall {
     }
 
     $now = current_time();
-    print STDERR "$now  $prefix Starting to lock all tables...\n";
+    print STDERR "$now  $prefix Executing FLUSH TABLES WITH READ LOCK...\n";
 
     my $query_killer_init = 0;
 
@@ -3405,32 +3432,35 @@ sub mysql_lockall {
             usleep(1);
         }
     }
-    if (compare_versions($mysql_server_version, '4.0.22') == 0
-        || compare_versions($mysql_server_version, '4.1.7') == 0) {
-        # MySQL server version is 4.0.22 or 4.1.7
-        mysql_query($con, "COMMIT");
-        mysql_query($con, "FLUSH TABLES WITH READ LOCK");
-    } else {
-        # MySQL server version is other than 4.0.22 or 4.1.7
-        mysql_query($con, "FLUSH TABLES WITH READ LOCK");
-        mysql_query($con, "COMMIT");
-    }
+    mysql_query($con, "FLUSH TABLES WITH READ LOCK");
+
+    $now = current_time();
+    print STDERR "$now  $prefix All tables locked and flushed to disk\n";
+
     # stop query killer process
     if ($option_kill_long_queries_timeout) {
         stop_query_killer();
     }
-    write_galera_info($con) if $option_galera_info;
-    write_binlog_info($con);
-    $now = current_time();
-    print STDERR "$now  $prefix All tables locked and flushed to disk\n";
 }
 
+#
+# If backup locks are used, execete LOCK BINLOG FOR BACKUP.
+#
+sub mysql_lock_binlog {
+    if ($have_backup_locks) {
+        $now = current_time();
+        print STDERR "$now  $prefix Executing LOCK BINLOG FOR BACKUP...\n";
+
+        mysql_query($_[0], "LOCK BINLOG FOR BACKUP");
+    }
+}
 
 #
-# mysql_unlockall subroutine releases read locks on all tables in all 
-# databases.
-# 
-sub mysql_unlockall {
+# mysql_unlock_all subroutine releases either global read lock acquired with
+# FTWRL and the binlog lock acquired with LOCK BINLOG FOR BACKUP, depending on
+# the locking strategy being used
+#
+sub mysql_unlock_all {
     my $con = shift;
 
     if ($option_debug_sleep_before_unlock) {
@@ -3439,7 +3469,18 @@ sub mysql_unlockall {
             "$option_debug_sleep_before_unlock seconds\n";
         sleep $option_debug_sleep_before_unlock;
     }
-    mysql_query ($con, "UNLOCK TABLES");
+
+    if ($have_backup_locks) {
+        $now = current_time();
+        print STDERR "$now  $prefix Executing UNLOCK BINLOG\n";
+        mysql_query($con, "UNLOCK BINLOG");
+
+        $now = current_time();
+        print STDERR "$now  $prefix Executing UNLOCK TABLES\n";
+        mysql_query($con, "UNLOCK TABLES");
+    } else {
+        mysql_query ($con, "UNLOCK TABLES");
+    }
 
     $now = current_time();
     print STDERR "$now  $prefix All tables unlocked\n";
@@ -3499,53 +3540,6 @@ sub require_external {
         ${$version_ref} = $1;
     }
 }
-
-
-# compare_versions subroutine compares two GNU-style version strings.
-# A GNU-style version string consists of three decimal numbers delimitted 
-# by dots, and optionally followed by extra attributes.
-# Examples: "4.0.1", "4.1.1-alpha-debug". 
-#    Parameters:
-#       str1   a GNU-style version string
-#       str2   a GNU-style version string
-#    Return value:
-#       -1   if str1 < str2
-#        0   if str1 == str2
-#        1   is str1 > str2
-sub compare_versions {
-    my $str1 = shift;
-    my $str2 = shift;
-    my $extra1 = '';
-    my $extra2 = '';
-    my @array1 = ();
-    my @array2 = ();
-    my $i;
-
-    # remove possible extra attributes
-    ($str1, $extra1) = $str1 =~ /^([0-9.]*)(.*)/;
-    ($str2, $extra2) = $str2 =~ /^([0-9.]*)(.*)/;
-
-    # split "dotted" decimal number string into an array
-    @array1 = split('\.', $str1);
-    @array2 = split('\.', $str2);
-
-    # compare in lexicographic order
-    for ($i = 0; $i <= $#array1 && $i <= $#array2; $i++) {
-        if ($array1[$i] < $array2[$i]) {
-            return -1;
-        } elsif ($array1[$i] > $array2[$i]) {
-            return 1;
-        }
-    }
-    if ($#array1 < $#array2) {
-        return -1;
-    } elsif ($#array1 > $#array2) {
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
 
 #
 # init subroutine initializes global variables and performs some checks on the
@@ -4827,9 +4821,17 @@ sub write_to_backup_file {
 # Query the server to find out what backup capabilities it supports.
 #
 sub detect_mysql_capabilities_for_backup {
-    $have_changed_page_bitmaps =
-        mysql_query($_[0], "SELECT COUNT(*) FROM INFORMATION_SCHEMA.PLUGINS ".
-                    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
+    if ($option_incremental) {
+        $have_changed_page_bitmaps =
+            mysql_query($_[0], "SELECT COUNT(*) FROM " .
+                        "INFORMATION_SCHEMA.PLUGINS " .
+                        "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
+    }
+
+    if (!defined$_[0]->{vars}) {
+        get_mysql_vars($_[0]);
+    }
+    $have_backup_locks = defined($_[0]->{vars}->{have_backup_locks});
 }
 
 #
