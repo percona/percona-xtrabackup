@@ -40,3 +40,11 @@ Percona |XtraBackup| 2.1
 
    release-notes/2.1/*
 
+Percona |XtraBackup| 2.2 
+=========================
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   release-notes/2.2/*

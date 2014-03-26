@@ -1,10 +1,12 @@
+.. _compiling_xtrabackup:
+
 ===========================================
  Compiling and Installing from Source Code
 ===========================================
 
 The source code is available from the *Launchpad* project `here <https://launchpad.net/percona-xtrabackup>`_. The easiest way to get the code is with :command:`bzr branch` of the desired release, such as the following: ::
 
-  bzr branch lp:percona-xtrabackup/2.1
+  bzr branch lp:percona-xtrabackup/2.2
 
 You should then have a directory named after the release you branched, such as ``percona-xtrabackup``.
 
@@ -19,52 +21,37 @@ The following packages and tools must be installed to compile |Percona XtraBacku
 
 In Debian-based distributions, you need to: ::
 
-  $ apt-get install debhelper autotools-dev libaio-dev wget automake \
-    libtool bison libncurses-dev libz-dev cmake bzr libgcrypt11-dev
+ $ apt-get install build-essential flex bison automake autoconf bzr \
+    libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
+    libgcrypt11-dev
+
 
 In ``RPM``-based distributions, you need to: ::
-
+ 
   $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf bzr \
-    bison libtool ncurses-devel zlib-devel libgcrypt-devel
+    bison libtool ncurses5-devel
 
-Compiling with :command:`build.sh`
-----------------------------------
+Compiling with CMake
+--------------------
 
-Once you have all dependencies met, the compilation is straight-forward with the bundled :command:`build.sh` script in the :file:`utils/` directory of the distribution.
+At the base directory of the source code tree, if you execute: ::
 
-The script needs the codebase for which the building is targeted, you must provide it with one of the following values or aliases:
+  $ cmake -DBUILD_CONFIG=xtrabackup_release && make -j4
 
-  ================== =========  ============================================
-  Value              Alias      Server
-  ================== =========  ============================================
-  innodb51           plugin		build against InnoDB plugin in MySQL 5.1
-  innodb55           5.5		build against InnoDB in MySQL 5.5
-  xtradb51           xtradb     build against Percona Server with XtraDB 5.1
-  xtradb55           xtradb55   build against Percona Server with XtraDB 5.5
-  innodb56           5.6        build against InnoDB in MySQL 5.6
-  ================== =========  ============================================
+and you go for a coffee, at your return |Percona XtraBackup| will be ready to be used.
 
-Note that the script must be executed from the base directory of |Percona XtraBackup| sources, and that directory must contain the packages with the source code of the codebase selected. This may appear cumbersome, but if the variable ``AUTO_LOAD="yes"`` is set, the :command:`build.sh` script will download all the source code needed for the build.
+Installation
+------------
 
-.. note:: 
-  The exact versions expected by build.sh script should be used. Changing the version info in build.sh to have it build against a different server version is not supported.
+The following command: ::
 
-At the base directory of the downloaded source code, if you execute ::
+  $ make install
 
-  $ AUTO_DOWNLOAD="yes" ./utils/build.sh xtradb
+will install all |Percona XtraBackup| binaries, the |innobackupex| script and tests to :file:`/usr/local/xtrabackup`. You can override this either with: :: 
+  
+  make DESTDIR=... install
 
-In case you're not able to use ``AUTO_DOWNLOAD="yes"`` option, sources can be downloaded manually for each release:
+or by changing the installation layout with: :: 
 
-  ================== =========  ===========================================================================
-  Value              Alias      Source tarball download link
-  ================== =========  ===========================================================================
-  innodb51           plugin     http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.1.59.tar.gz
-  innodb55           5.5        http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.5.17.tar.gz
-  xtradb51           xtradb     http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.1.59.tar.gz
-  xtradb55           xtradb55   http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.5.16.tar.gz
-  innodb56           5.6        http://s3.amazonaws.com/percona.com/downloads/community/mysql-5.6.10.tar.gz
-  ================== =========  ===========================================================================
+ cmake -DINSTALL_LAYOUT=...
 
-After the build has finished |Percona XtraBackup| will be ready to be used. The |xtrabackup| binary will be located in the ``percona-xtrabackup/src`` subdirectory.
-
-After this you’ll need to copy |innobackupex| (in the root folder used to retrieve |Percona XtraBackup|) and the corresponding xtrabackup binary (in the src folder) to some directory listed in the PATH environment variable, e.g. ``/usr/bin``.
