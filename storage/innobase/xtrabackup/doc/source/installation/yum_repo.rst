@@ -69,9 +69,15 @@ The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too, 
 * *CentOS* 6 and *RHEL* 6
 * *Amazon Linux AMI* (works the same as *CentOS* 5)
 
-Release Candidate Repository
-============================
+.. _yum_testing:
 
-To subscribe to the release candidate repository, install the release candidate (RC) *RPM*: ::
+Percona `yum` testing repository
+=====================================
 
-  rpm -Uhv http://www.percona.com/downloads/percona-release/percona-rc-0.0-2.x86_64.rpm
+Percona offers fresh beta builds from the experimental repository. To subscribe to the experimental repository, install the experimental *RPM*: ::
+
+ yum install http://repo.percona.com/testing/centos/6/os/noarch/percona-testing-0.0-1.noarch.rpm
+
+.. note:: 
+ This repository works for both RHEL/CentOS 5 and RHEL/CentOS 6
+
