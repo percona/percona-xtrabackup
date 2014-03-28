@@ -1,93 +1,84 @@
-#
-# rpm spec for xtrabackup
-#
-%{!?rhel:%define rhel 5}
-%{!?buildnumber:%define buildnumber @@BUILDNUM@@}
-%{!?dist:%define dist el%{rhel}
-%define release       @@REVISION@@.%{buildnumber}.%{dist}
-%{!?xtrabackup_revision:%define xtrabackup_revision undefined}
+%define xb_version_major  @@XB_VERSION_MAJOR@@
+%define xb_version_minor  @@XB_VERSION_MINOR@@
+%define xb_version_patch  @@XB_VERSION_PATCH@@
+%define xb_version_extra  @@XB_VERSION_EXTRA@@
+%define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
+%define xb_revision       @@XB_REVISION@@
 
-%define __os_install_post /usr/lib/rpm/brp-compress
+#####################################
+Name:           percona-xtrabackup-%{xb_version_major}%{xb_version_minor}
+Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
+Release:        %{xb_revision}%{xb_rpm_version_extra}%{?dist}
+Summary:        XtraBackup online backup for MySQL / InnoDB
 
-Summary: XtraBackup online backup for MySQL / InnoDB 
-Name: percona-xtrabackup-@@XB_VERSION_SHORT@@
-Version: @@XB_VERSION@@
-Release: %{release}
-Group: Server/Databases
-License: GPLv2
-Packager: Percona Development Team <mysql-dev@percona.com>
-URL: http://www.percona.com/software/percona-xtrabackup/
-Source: percona-xtrabackup-%{xtrabackup_version}.tar.gz
-BuildRoot: %{_tmppath}/%{name}-%{version}-root
-Provides: xtrabackup
-Obsoletes: xtrabackup
-BuildRequires: libaio-devel, libgcrypt-devel
-Requires: perl(DBD::mysql)
+Group:          Applications/Databases
+License:        GPLv2
+URL:            http://www.percona.com/software/percona-xtrabackup
+Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
+
+BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel
+Requires:       perl(DBD::mysql)
+BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 
 %description
-Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
+Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines
 
-%package test
-Summary: Test suite for Percona Xtrabackup
-Group: Applications/Databases
-Requires: percona-xtrabackup
-AutoReqProv: no
-Requires: /usr/bin/mysql
+%package -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+Summary:        Test suite for Percona XtraBackup
+Group:          Applications/Databases
+Requires:       percona-xtrabackup-%{xb_version_major}%{xb_version_minor} = %{version}-%{release}
+Requires:       /usr/bin/mysql
+AutoReqProv:    no
 
-%description test
-This package contains the test suite for Percona Xtrabackup
-
-
-%changelog
-
+%description -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+This package contains the test suite for Percona XtraBackup %{version}
 
 %prep
-%setup -q
+%setup -q -n percona-xtrabackup-%{version}%{xb_version_extra}
 
+%bcond_with dummy
 
 %build
-set -ue
-%if %{undefined dummy}
-export CC=${CC-"gcc"}
-export CXX=${CXX-"g++"}
-export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
-export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\"" 
 #
-
-cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test .
-%{__make} %{?_smp_mflags}
-
-%else
+%if %{with dummy}
 # Dummy binaries that avoid compilation
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xtrabackup
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbstream
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcrypt
+#
+%else
+#
+export CC=${CC-"gcc"}
+export CXX=${CXX-"g++"}
+export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\""
+export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\""
+#
+cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} .
+#
+make %{?_smp_mflags}
+#
 %endif
-
+#
 %install
-[ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
-
-%makeinstall
-%{__make} install DESTDIR=$RPM_BUILD_ROOT
-
+rm -rf $RPM_BUILD_ROOT
+make install DESTDIR=$RPM_BUILD_ROOT
 
 %clean
-[ "%{buildroot}" != '/' ] && rm -rf %{buildroot}
+rm -rf $RPM_BUILD_ROOT
 
 %files
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %{_bindir}/innobackupex
 %{_bindir}/xtrabackup
 %{_bindir}/xbstream
 %{_bindir}/xbcrypt
 %doc COPYING
 
-%files -n percona-xtrabackup-test
-%{_datadir}/percona-xtrabackup-test
+%files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+%defattr(-,root,root,-)
+%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
-###
-### eof
-###
-
-
+%changelog
+* Wed Mar 26 2014 Alexey Bychko <alexey.bychko@percona.com>
+- initial alpha release for 2.2 (2.2.1-alpha1)

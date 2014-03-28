@@ -83,8 +83,9 @@ test -e "$SOURCEDIR/XB_VERSION" || exit 2
 XTRABACKUP_VERSION="${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}.${XB_VERSION_PATCH}${XB_VERSION_EXTRA}"
 
 # Build information
-REVISION="$(cd "$SOURCEDIR"; bzr revno 2>/dev/null || cat REVNO)"
-
+if [ -z "${REVISION:-}" ]; then
+  REVISION="$(cd "$SOURCEDIR"; bzr revno 2>/dev/null || cat REVNO)"
+fi
 # Compilation flags
 export CC=${CC:-gcc}
 export CXX=${CXX:-g++}
@@ -94,7 +95,7 @@ export MAKE_JFLAG=-j4
 
 # Create a temporary working directory
 BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
-INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION-`uname -s`-`arch`"   # Make it absolute
+INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)"   # Make it absolute
 
 mkdir "$INSTALLDIR"
 
@@ -108,7 +109,9 @@ mkdir "$INSTALLDIR"
 
         # Install the files
         mkdir -p "$INSTALLDIR"
-        cmake -DBUILD_CONFIG=xtrabackup_release  -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" . && make $MAKE_JFLAG
+        cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
+          -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test . 
+        make $MAKE_JFLAG
         make install
 
     )
@@ -116,13 +119,13 @@ mkdir "$INSTALLDIR"
 
     if test "x$exit_value" = "x0"
     then
-        $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION-`uname -s`-`arch`.tar.gz" \
+      $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION-$(uname -s)-$(uname -m).tar.gz" \
             --owner=0 --group=0 -C "$INSTALLDIR/../" \
-            "percona-xtrabackup-$XTRABACKUP_VERSION-`uname -s`-`arch`"
+            "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)"
     fi
 
     # Clean up build dir
-    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION-`uname -s`-`arch`"
+    rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)"
     
     exit $exit_value
     
