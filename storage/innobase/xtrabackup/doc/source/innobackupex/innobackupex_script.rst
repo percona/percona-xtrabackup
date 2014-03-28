@@ -51,6 +51,7 @@ Advanced Features
    restoring_individual_tables_ibk
    pit_recovery_ibk
    improved_ftwrl
+   storing_history
 
 
 Implementation

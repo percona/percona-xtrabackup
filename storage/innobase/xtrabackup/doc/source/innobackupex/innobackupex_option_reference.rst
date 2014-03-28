@@ -98,6 +98,10 @@ Options
 
    This option displays a help screen and exits.
 
+.. option:: --history=NAME
+
+   This option enables the tracking of backup history in the ``PERCONA_SCHEMA.xtrabackup_history`` table. An optional history series name may be specified that will be placed with the history record for the current backup being taken.
+
 .. option:: --host=HOST
 
    This option accepts a string argument that specifies the host to use when connecting to the database server with TCP/IP. It is passed to the mysql child process without alteration. See :command:`mysql --help` for details.
@@ -121,6 +125,14 @@ Options
 .. option:: --incremental-dir=DIRECTORY
 
    This option accepts a string argument that specifies the directory where the incremental backup will be combined with the full backup to make a new full backup. It is used with the :option:`--incremental` option.
+
+.. option:: --incremental-history-name=NAME
+
+   This option specifies the name of the backup series stored in the :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` history record to base an incremental backup on. Percona Xtrabackup will search the history table looking for the most recent (highest innodb_to_lsn), successful backup in the series and take the to_lsn value to use as the starting lsn for the incremental backup. This will be mutually exclusive with :option:`innobackupex --incremental-history-uuid`,:option:`innobackupex --incremental-basedir` and :option:`innobackupex --incremental-lsn`. If no valid lsn can be found (no series by that name, no successful backups by that name) xtrabackup will return with an error. It is used with the :option:`innobackupex --incremental` option.
+
+.. option:: --incremental-history-uuid=UUID
+
+   This option specifies the UUID of the specific history record stored in the :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` to base an incremental backup on. :option:`innobackupex --incremental-history-name`,:optionL`innobackupex --incremental-basedir` and :option:`innobackupex --incremental-lsn`. If no valid lsn can be found (no success record with that uuid) xtrabackup will return with an error. It is used with the :option:`innobackupex --incremental` option.
 
 .. option:: --incremental-lsn
 

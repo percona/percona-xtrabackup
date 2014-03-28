@@ -17,7 +17,7 @@ New features
 
  |Percona XtraBackup| implemented support for `Backup Locks <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_.
 
- |Percona XtraBackup| can now store backup history on the server itself in a special table created for that purpose. 
+ |Percona XtraBackup| can now store :ref:`backup history <storing_history>` on the server itself in a special table created for that purpose. 
 
  ``innobackupex-1.5.1`` symlink has been removed, instead |innobackupex| binary should be used.
 
@@ -25,5 +25,11 @@ New features
 
  |Percona XtraBackup| has been rebased on |MySQL| 5.6.16.
 
- 
+Bugs Fixed
+----------
 
+ Information about tool version used to take the backup was added by implementing :ref:`backup history <storing_history>` feature. Bug fixed :bug:`1133017`.
+ 
+ If an XtraDB-based binary was used to a backup an |InnoDB| database, it will convert it to |XtraDB| by adding the ``XTRADB_1`` marker in the dictionary header page and by adding the ``SYS_STATS`` table. Bug fixed :bug:`988310`.
+ 
+Other bugs fixed: :bug:`721690`, :bug:`1255899`, :bug:`1255901`, :bug:`1268300`, and :bug:`788316`.
