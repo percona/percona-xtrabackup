@@ -4,7 +4,7 @@ set -e
 
 MYSQL_51_VERSION=5.1.73
 MYSQL_55_VERSION=5.5.35
-MYSQL_56_VERSION=5.6.15
+MYSQL_56_VERSION=5.6.17
 PS_51_VERSION=5.1.73-14.11
 PS_55_VERSION=5.5.35-33.0
 
@@ -326,7 +326,7 @@ case "$type" in
         server_patch=innodb56.patch
         innodb_name=innobase
         xtrabackup_target=5.6
-        server_tarball=mysql-5.6.15.tar.gz
+        server_tarball=mysql-5.6.17.tar.gz
         configure_cmd="cmake . \
                 -DWITH_INNOBASE_STORAGE_ENGINE=ON \
                 -DWITH_ZLIB=bundled \
