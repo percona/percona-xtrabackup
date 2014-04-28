@@ -6,7 +6,7 @@ MASTER_SITE=http://s3.amazonaws.com/percona.com/downloads/community
 
 MYSQL_51_SOURCE=mysql-5.1.73.tar.gz
 MYSQL_55_SOURCE=mysql-5.5.35.tar.gz
-MYSQL_56_SOURCE=mysql-5.6.15.tar.gz
+MYSQL_56_SOURCE=mysql-5.6.17.tar.gz
 PS_51_SOURCE=Percona-Server-5.1.73-rel14.11.tar.gz
 PS_55_SOURCE=Percona-Server-5.5.35-rel33.0.tar.gz
 BZR_REVNO=$(shell bzr revno 2>/dev/null || cat REVNO)
