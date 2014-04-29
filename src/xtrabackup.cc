@@ -63,6 +63,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 # include <sys/prctl.h>
 #endif
 
+#include <sys/resource.h>
+
 #define G_PTR uchar*
 
 #include "common.h"
@@ -292,6 +294,8 @@ lsn_t xtrabackup_arch_first_file_lsn = 0ULL;
 /* The maximum LSN of found archived log files */
 lsn_t xtrabackup_arch_last_file_lsn = 0ULL;
 
+ulong xb_open_files_limit= 0;
+
 /* Datasinks */
 ds_ctxt_t       *ds_data     = NULL;
 ds_ctxt_t       *ds_meta     = NULL;
@@ -478,7 +482,8 @@ enum options_xtrabackup
   OPT_INNODB_LOG_CHECKSUM_ALGORITHM,
 #endif
   OPT_XTRA_INCREMENTAL_FORCE_SCAN,
-  OPT_DEFAULTS_GROUP
+  OPT_DEFAULTS_GROUP,
+  OPT_OPEN_FILES_LIMIT
 };
 
 #if MYSQL_VERSION_ID >= 50600
@@ -896,6 +901,12 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   {"defaults_group", OPT_DEFAULTS_GROUP, "defaults group in config file (default \"mysqld\").",
    (G_PTR*) &defaults_group, (G_PTR*) &defaults_group,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"open_files_limit", OPT_OPEN_FILES_LIMIT, "the maximum number of file "
+   "descriptors to reserve with setrlimit().",
+   (G_PTR*) &xb_open_files_limit, (G_PTR*) &xb_open_files_limit, 0, GET_ULONG,
+   REQUIRED_ARG, 0, 0, UINT_MAX, 0, 1, 0},
+
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -2949,6 +2960,63 @@ xtrabackup_suspend(
 	}
 }
 
+/***********************************************************************
+Set the open files limit. Based on set_max_open_files().
+
+@return the resulting open files limit. May be less or more than the requested
+value.  */
+static uint
+xb_set_max_open_files(
+/*==================*/
+	uint max_file_limit)	/*!<in: open files limit */
+{
+#if defined(RLIMIT_NOFILE)
+	struct rlimit rlimit;
+	uint old_cur;
+
+	if (getrlimit(RLIMIT_NOFILE, &rlimit)) {
+
+		goto end;
+	}
+
+	old_cur = (uint) rlimit.rlim_cur;
+
+	if (rlimit.rlim_cur == RLIM_INFINITY) {
+
+		rlimit.rlim_cur = max_file_limit;
+	}
+
+	if (rlimit.rlim_cur >= max_file_limit) {
+
+		max_file_limit = rlimit.rlim_cur;
+		goto end;
+	}
+
+	rlimit.rlim_cur = rlimit.rlim_max = max_file_limit;
+
+	if (setrlimit(RLIMIT_NOFILE, &rlimit)) {
+
+		max_file_limit = old_cur;	/* Use original value */
+	} else {
+
+		rlimit.rlim_cur = 0;	/* Safety if next call fails */
+
+		(void) getrlimit(RLIMIT_NOFILE, &rlimit);
+
+		if (rlimit.rlim_cur) {
+
+			/* If call didn't fail */
+			max_file_limit = (uint) rlimit.rlim_cur;
+		}
+	}
+
+end:
+	return(max_file_limit);
+#else
+	return(0);
+#endif
+}
+
 static void
 xtrabackup_backup_func(void)
 {
@@ -2971,6 +3039,10 @@ xtrabackup_backup_func(void)
 		exit(EXIT_FAILURE);
 	}
 	msg("xtrabackup: cd to %s\n", mysql_real_data_home);
+
+	msg("xtrabackup: open files limit requested %u, set to %u\n",
+	    (uint) xb_open_files_limit,
+	    xb_set_max_open_files(xb_open_files_limit));
 
 	mysql_data_home= mysql_data_home_buff;
 	mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
