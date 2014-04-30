@@ -2176,7 +2176,18 @@
  #if defined(UNIV_HOTBACKUP) || defined(__WIN__)
  /* InnoDB Hot Backup does not lock the data files.
   * On Windows, mandatory locking is used.
-@@ -1755,8 +1755,6 @@
+@@ -839,6 +839,10 @@
+ 
+ 	if (dir == NULL && error_is_fatal) {
+ 		os_file_handle_error(dirname, "opendir");
++
++		/* Exit even if error is a "known" error, in which case
++		os_file_handle_error() will not abort. */
++		exit(1);
+ 	}
+ 
+ 	return(dir);
+@@ -1755,8 +1759,6 @@
  
  	} while (retry);
  
@@ -2185,7 +2196,7 @@
  	if (!srv_read_only_mode
  	    && *success
  	    && type != OS_LOG_FILE
-@@ -1764,6 +1762,11 @@
+@@ -1764,6 +1766,11 @@
  		|| srv_unix_file_flush_method == SRV_UNIX_O_DIRECT_NO_FSYNC)) {
  
  		os_file_set_nocache(file, name, mode_str);
