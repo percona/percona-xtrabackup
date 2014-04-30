@@ -5,9 +5,15 @@ require_galera
 ADDR=127.0.0.1
 
 if [[ -n ${WSREP_DEBUG:-} ]];then 
-    start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep-debug=1 --wsrep_provider_options="debug=1" --wsrep_node_address=$ADDR
-else 
-    start_server --log-bin=`hostname`-bin --binlog-format=ROW --wsrep-provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so --wsrep_cluster_address=gcomm:// --wsrep_node_address=$ADDR
+    start_server --log-bin=`hostname`-bin --binlog-format=ROW \
+                 --wsrep-provider=$LIBGALERA_PATH \
+                 --wsrep_cluster_address=gcomm:// \
+                 --wsrep-debug=1 --wsrep_provider_options="debug=1" \
+                 --wsrep_node_address=$ADDR
+else
+    start_server --log-bin=`hostname`-bin --binlog-format=ROW \
+                 --wsrep-provider=$LIBGALERA_PATH \
+                 --wsrep_cluster_address=gcomm:// --wsrep_node_address=$ADDR
 fi
 
 
