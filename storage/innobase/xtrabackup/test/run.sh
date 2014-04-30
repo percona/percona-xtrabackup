@@ -362,6 +362,19 @@ function get_version_info()
         die "Galera initialization failed!"
     fi
 
+    if [ -n "$WSREP_READY" ]
+    then
+       if [ -f ${MYSQL_BASEDIR}/lib/libgalera_smm.so ]
+       then
+           LIBGALERA_PATH=${MYSQL_BASEDIR}/lib/libgalera_smm.so
+       elif [ -f ${MYSQL_BASEDIR}/lib/galera2/libgalera_smm.so ]
+       then
+           LIBGALERA_PATH=${MYSQL_BASEDIR}/lib/galera2/libgalera_smm.so
+       else
+           die "Cannot find libgalera_smm.so"
+       fi
+    fi
+
     # Version-specific defaults
     DEFAULT_IBDATA_SIZE="10M"
 
@@ -429,7 +442,7 @@ function get_version_info()
     export MYSQL_VERSION MYSQL_VERSION_COMMENT MYSQL_FLAVOR \
 	INNODB_VERSION XTRADB_VERSION INNODB_FLAVOR \
 	XB_BIN IB_BIN IB_ARGS XB_ARGS MYSQLD_EXTRA_ARGS \
-        DEFAULT_IBDATA_SIZE WSREP_READY
+        DEFAULT_IBDATA_SIZE WSREP_READY LIBGALERA_PATH
 }
 
 ###########################################################################

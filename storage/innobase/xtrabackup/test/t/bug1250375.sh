@@ -11,7 +11,7 @@ binlog_format=ROW
 log_slave_updates=ON
 enforce_gtid_consistency=ON
 gtid_mode=ON
-wsrep_provider=${MYSQL_BASEDIR}/lib/libgalera_smm.so
+wsrep_provider=$LIBGALERA_PATH
 wsrep_cluster_address=gcomm://
 wsrep_node_address=$ADDR
 "
