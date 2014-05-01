@@ -242,7 +242,7 @@ my %option_value_escapes = ('b' => "\b",
                             's' => ' ');
 
 # signal that is sent to child processes when they are killed
-my $kill_signal = 15;
+my $kill_signal = 9;
 
 # current local time
 my $now;
@@ -3376,16 +3376,9 @@ sub mysql_lockall {
             usleep(1);
         }
     }
-    if (compare_versions($mysql_server_version, '4.0.22') == 0
-        || compare_versions($mysql_server_version, '4.1.7') == 0) {
-        # MySQL server version is 4.0.22 or 4.1.7
-        mysql_query($con, "COMMIT");
-        mysql_query($con, "FLUSH TABLES WITH READ LOCK");
-    } else {
-        # MySQL server version is other than 4.0.22 or 4.1.7
-        mysql_query($con, "FLUSH TABLES WITH READ LOCK");
-        mysql_query($con, "COMMIT");
-    }
+
+    mysql_query($con, "FLUSH TABLES WITH READ LOCK");
+
     # stop query killer process
     if ($option_kill_long_queries_timeout) {
         stop_query_killer();
