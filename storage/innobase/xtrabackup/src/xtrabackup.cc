@@ -5767,7 +5767,7 @@ int main(int argc, char **argv)
 	/* Ensure xtrabackup process is killed when the parent one
 	(innobackupex) is terminated with an unhandled signal */
 
-	if (prctl(PR_SET_PDEATHSIG, SIGINT)) {
+	if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
 		msg("prctl() failed with errno = %d\n", errno);
 		exit(EXIT_FAILURE);
 	}

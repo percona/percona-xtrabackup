@@ -250,7 +250,7 @@ my %option_value_escapes = ('b' => "\b",
                             's' => ' ');
 
 # signal that is sent to child processes when they are killed
-my $kill_signal = 15;
+my $kill_signal = 9;
 
 # current local time
 my $now;
@@ -3432,6 +3432,7 @@ sub mysql_lock_tables {
             usleep(1);
         }
     }
+
     mysql_query($con, "FLUSH TABLES WITH READ LOCK");
 
     $now = current_time();
