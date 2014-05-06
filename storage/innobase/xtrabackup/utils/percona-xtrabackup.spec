@@ -1,17 +1,17 @@
 #
 # rpm spec for xtrabackup
 #
-%{!?redhat_version:%define redhat_version 5}
-%{!?buildnumber:%define buildnumber 1}
-%define distribution  el%{redhat_version}
-%define release       %{buildnumber}.%{distribution}
+%{!?rhel:%define rhel 5}
+%{!?buildnumber:%define buildnumber @@BUILDNUM@@}
+%{!?dist:%define dist el%{rhel}
+%define release       @@REVISION@@.%{buildnumber}.%{dist}
 %{!?xtrabackup_revision:%define xtrabackup_revision undefined}
 
 %define __os_install_post /usr/lib/rpm/brp-compress
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
-Name: percona-xtrabackup
-Version: %{xtrabackup_version}
+Name: percona-xtrabackup-@@XB_VERSION_SHORT@@
+Version: @@XB_VERSION@@
 Release: %{release}
 Group: Server/Databases
 License: GPLv2
