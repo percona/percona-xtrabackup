@@ -94,12 +94,12 @@ export DEB_DUMMY="$DUMMY"
         make DUMMY="$DUMMY" dist
     # Create the original tarball
         mv "${TMPDIR}/percona-xtrabackup-$XTRABACKUP_VERSION.tar.gz" \
-        "$WORKDIR/percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz"
+        "$WORKDIR/percona-xtrabackup-${XB_VERSION_MAJOR}${XB_VERSION_MINOR}_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz"
         rm -fr ${TMPDIR}
     #
         cd "$WORKDIR"
         rm -fr percona-xtrabackup-$XTRABACKUP_VERSION
-        tar xzf percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz
+        tar xzf percona-xtrabackup-${XB_VERSION_MAJOR}${XB_VERSION_MINOR}_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz
         cd percona-xtrabackup-$XTRABACKUP_VERSION
         cp -a storage/innobase/xtrabackup/utils/debian .
 
