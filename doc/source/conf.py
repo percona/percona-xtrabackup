@@ -116,8 +116,6 @@ rst_prolog = '''
 
 .. |MySQL|  replace:: *MySQL*
 
-.. |Drizzle|  replace:: *Drizzle*
-
 .. |MariaDB|  replace:: *MariaDB*
 
 .. |tar4ibd|  replace:: :program:`tar4ibd`
