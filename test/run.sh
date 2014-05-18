@@ -393,9 +393,9 @@ doesn't have Galera support."
        if [ -f ${MYSQL_BASEDIR}/lib/libgalera_smm.so ]
        then
            LIBGALERA_PATH=${MYSQL_BASEDIR}/lib/libgalera_smm.so
-       elif [ -f ${MYSQL_BASEDIR}/lib/galera2/libgalera_smm.so ]
+       elif [ -f ${MYSQL_BASEDIR}/lib/galera3/libgalera_smm.so ]
        then
-           LIBGALERA_PATH=${MYSQL_BASEDIR}/lib/galera2/libgalera_smm.so
+           LIBGALERA_PATH=${MYSQL_BASEDIR}/lib/galera3/libgalera_smm.so
        else
            die "Cannot find libgalera_smm.so"
        fi
