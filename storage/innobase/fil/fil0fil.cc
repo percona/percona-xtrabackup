@@ -3141,7 +3141,21 @@ fil_create_new_single_table_tablespace(
 	ibool		success;
 	/* TRUE if a table is created with CREATE TEMPORARY TABLE */
 	bool		is_temp = !!(flags2 & DICT_TF2_TEMPORARY);
+
+	/* For XtraBackup recovery we force remote tablespaces to be local,
+	i.e. never execute the code path corresponding to has_data_dir == true.
+	We don't create .isl files either, because we rely on innobackupex to
+	copy them under a global lock, and use them to copy remote tablespaces
+	to their proper locations on --copy-back.
+
+	See also MySQL bug #72022: dir_path is always NULL for remote
+	tablespaces when a MLOG_FILE_CREATE* log record is replayed (the remote
+	directory is not available from MLOG_FILE_CREATE*). */
+#if 0
 	bool		has_data_dir = FSP_FLAGS_HAS_DATA_DIR(flags);
+#else
+	bool		has_data_dir = false;
+#endif
 
 	ut_a(space_id > 0);
 	ut_ad(!srv_read_only_mode);
