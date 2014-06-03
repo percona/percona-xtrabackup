@@ -1235,7 +1235,10 @@ page_cur_insert_rec_zip(
 	}
 #endif /* UNIV_DEBUG_VALGRIND */
 
-	const bool reorg_before_insert = page_has_garbage(page)
+	/* For recovery do not attempt to reorganize pages before insert.
+	Otherwise we break compatibility with 5.1/5.5 and early 5.6. */
+	const bool reorg_before_insert = !recv_recovery_is_on()
+		&& page_has_garbage(page)
 		&& rec_size > page_get_max_insert_size(page, 1)
 		&& rec_size <= page_get_max_insert_size_after_reorganize(
 			page, 1);
