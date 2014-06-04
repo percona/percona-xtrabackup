@@ -22,11 +22,11 @@ Options
 
    This option instructs xtrabackup to compress backup copies of InnoDB data files. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
 
-.. option::  --compress-threads
+.. option::  --compress-threads=#
 
    This option specifies the number of worker threads that will be used for parallel compression. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
 
-.. option:: --compress-chunk-size
+.. option:: --compress-chunk-size=#
 
    This option specifies the size of the internal working buffer for each compression thread, measured in bytes. It is passed directly to the xtrabackup child process. The default value is 64K. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
 
@@ -70,11 +70,11 @@ Options
 
    This option instructs xtrabackup to use the encryption key stored in the given ENCRYPTION_KEY_FILE when using the --encrypt option. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
 
-.. option:: --encrypt-threads
+.. option:: --encrypt-threads=#
 
    This option specifies the number of worker threads that will be used for parallel encryption. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
 
-.. option:: --encrypt-chunk-size 
+.. option:: --encrypt-chunk-size=# 
 
    This option specifies the size of the internal working buffer for each encryption thread, measured in bytes. It is passed directly to the xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
 
@@ -122,7 +122,7 @@ Options
 
    This option accepts a string argument that specifies the directory where the incremental backup will be combined with the full backup to make a new full backup. It is used with the :option:`--incremental` option.
 
-.. option:: --incremental-lsn
+.. option:: --incremental-lsn=LSN
 
    This option accepts a string argument that specifies the log sequence number (:term:`LSN`) to use for the incremental backup. It is used with the :option:`--incremental` option. It is used instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the LSN as a single 64-bit integer.
 
@@ -146,7 +146,7 @@ Options
 
    This option specifies which types of queries are allowed to complete before innobackupex will issue the global lock. Default is all.
 
-.. option:: --log-copy-interval
+.. option:: --log-copy-interval=#
 
    This option specifies time interval between checks done by log copying thread in milliseconds.
 
@@ -159,6 +159,7 @@ Options
    Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use it only if ALL your tables are InnoDB and you **DO NOT CARE** about the binary log position of the backup. This option shouldn't be used if there are any ``DDL`` statements being executed or if any updates are happening on non-InnoDB tables (this includes the system MyISAM tables in the *mysql* database), otherwise it could lead to an inconsistent backup. 
    If you are considering to use :option:`--no-lock` because your backups are failing to acquire the lock, this could be because of incoming replication events preventing the lock from succeeding. Please try using :option:`--safe-slave-backup` to momentarily stop the replication slave thread, this may help the backup to succeed and you then don't need to resort to using this option.
    :file:`xtrabackup_binlog_info` is not created when --no-lock option is used (because ``SHOW MASTER STATUS`` may be inconsistent), but under certain conditions :file:`xtrabackup_binlog_pos_innodb` can be used instead to get consistent binlog coordinates as described in :ref:`working_with_binlogs`.
+
 .. option:: --no-timestamp
 
    This option prevents creation of a time-stamped subdirectory of the ``BACKUP-ROOT-DIR`` given on the command line. When it is specified, the backup is done in ``BACKUP-ROOT-DIR`` instead.
@@ -199,7 +200,7 @@ Options
 
    Stop slave SQL thread and wait to start backup until ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open temporary tables, the backup will take place, otherwise the SQL thread will be started and stopped until there are no open temporary tables. The backup will fail if ``Slave_open_temp_tables`` does not become zero after :option:`--safe-slave-backup-timeout` seconds. The slave SQL thread will be restarted when the backup finishes.
 
-.. option:: --safe-slave-backup-timeout
+.. option:: --safe-slave-backup-timeout=SECONDS
 
    How many seconds :option:`--safe-slave-backup`` should wait for ``Slave_open_temp_tables`` to become zero. Defaults to 300 seconds.
 
@@ -211,11 +212,11 @@ Options
 
    This option is useful when backing up a replication slave server. It prints the binary log position and name of the master server. It also writes this information to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER`` command. A new slave for this master can be set up by starting a slave server on this backup and issuing a ``CHANGE MASTER`` command with the binary log position saved in the :file:`xtrabackup_slave_info` file.
 
-.. option:: --socket
+.. option:: --socket=SOCKET
 
    This option accepts a string argument that specifies the socket to use when connecting to the local database server with a UNIX domain socket. It is passed to the mysql child process without alteration. See :command:`mysql --help` for details.
 
-.. option:: --sshopt = SSH-OPTIONS
+.. option:: --sshopt=SSH-OPTIONS
 
    This option accepts a string argument that specifies the command line options to pass to :command:`ssh` when the option :option:`--remost-host` is specified.
 
@@ -235,7 +236,7 @@ Options
 
    This option accepts a string argument that specifies the location where a temporary file will be stored. It may be used when :option:`--stream` is specified. For these options, the transaction log will first be stored to a temporary file, before streaming or copying to a remote host. This option specifies the location where that temporary file will be stored. If the option is not specified, the default is to use the value of ``tmpdir`` read from the server configuration. innobackupex is passing the tmpdir value specified in my.cnf as the --target-dir option to the xtrabackup binary. Both [mysqld] and [xtrabackup] groups are read from my.cnf. If there is tmpdir in both, then the value being used depends on the order of those group in my.cnf.
 
-.. option:: --use-memory
+.. option:: --use-memory=#
 
    This option accepts a string argument that specifies the amount of memory in bytes for :program:`xtrabackup` to use for crash recovery while preparing a backup. Multiples are supported providing the unit (e.g. 1MB, 1M, 1GB, 1G). It is used only with the option :option:`--apply-log`. It is passed directly to xtrabackup's :option:`xtrabackup --use-memory` option. See the |xtrabackup| documentation for details.
 
