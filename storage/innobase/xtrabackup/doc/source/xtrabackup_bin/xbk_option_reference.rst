@@ -25,11 +25,11 @@ Options
 
    This option tells |xtrabackup| to compress all output data, including the transaction log file and meta data files, using the specified compression algorithm. The only currently supported algorithm is 'quicklz'. The resulting files have the qpress archive format, i.e. every `*.qp` file produced by xtrabackup is essentially a one-file qpress archive and can be extracted and uncompressed by the `qpress <http://www.quicklz.com/>`_  file archiver.
 
-.. option:: --compress-chunk-size
+.. option:: --compress-chunk-size=#
 
    Size of working buffer(s) for compression threads in bytes. The default value is 64K.
 
-.. option:: --compress-threads 
+.. option:: --compress-threads=# 
 
    This option specifies the number of worker threads used by |xtrabackup| for parallel data compression. This option defaults to 1. Parallel compression ('--compress-threads') can be used together with parallel file copying ('--parallel'). For example, '--parallel=4 --compress --compress-threads=2' will create 4 IO threads that will read the data and pipe it to 2 compression threads. 
 
@@ -37,19 +37,19 @@ Options
 
    This option is not currently implemented. To create the InnoDB log files, you must prepare the backup twice at present.
 
-.. option:: --datadir
+.. option:: --datadir=DIRECTORY
 
    The source directory for the backup. This should be the same as the datadir for your MySQL server, so it should be read from :file:`my.cnf` if that exists; otherwise you must specify it on the command line.
 
-.. option:: --defaults-extra-file=#
+.. option:: --defaults-extra-file=[MY.CNF]
 
    Read this file after the global files are read. Must be given as the first option on the command-line.
 
-.. option:: --defaults-file=#
+.. option:: --defaults-file=[MY.CNF]
 
    Only read default options from the given file. Must be given as the first option on the command-line. Must be a real file; it cannot be a symbolic link.
 
-.. option:: --defaults-group
+.. option:: --defaults-group=GROUP-NAME
 
    This option is to set the group which should be read from the configuration file. This is used by innobackupex if you use the `--defaults-group` option. It is needed for mysqld_multi deployments.
 
@@ -57,15 +57,15 @@ Options
 
    Create files necessary for exporting tables. See :doc:`Restoring Individual Tables <restoring_individual_tables>`.
 
-.. option:: --extra-lsndir=name 
+.. option:: --extra-lsndir=DIRECTORY
 
    (for --backup): save an extra copy of the xtrabackup_checkpoints file in this directory.
 
-.. option:: --incremental-basedir
+.. option:: --incremental-basedir=DIRECTORY
 
    When creating an incremental backup, this is the directory containing the full backup that is the base dataset for the incremental backups.
 
-.. option:: --incremental-dir
+.. option:: --incremental-dir=DIRECTORY
 
    When preparing an incremental backup, this is the directory where the incremental backup is combined with the full backup to make a new full backup.
 
@@ -73,11 +73,11 @@ Options
 
    When creating an incremental backup, force a full scan of the data pages in the instance being backuped even if the complete changed page bitmap data is available.
 
-.. option:: --incremental-lsn=name
+.. option:: --incremental-lsn=LSN
 
-   When creating an incremental backup, you can specify the log sequence number (:term:`LSN`) instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the :term:`LSN` as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the :term:`LSN` as a single 64-bit integer.  ##ATTENTION##: If a wrong LSN value is specified, it is impossible to diagnose this, causing the backup to be unusable. Be careful!
+   When creating an incremental backup, you can specify the log sequence number (:term:`LSN`) instead of specifying :option:`--incremental-basedir`. For databases created by *MySQL* and *Percona Server* 5.0-series versions, specify the :term:`LSN` as two 32-bit integers in high:low format. For databases created in 5.1 and later, specify the :term:`LSN` as a single 64-bit integer.  ##ATTENTION##: If a wrong LSN value is specified (a user error which XtraBackup is unable to detect), the backup will be unusable. Be careful!
 
-.. option:: --innodb-log-arch-dir
+.. option:: --innodb-log-arch-dir=DIRECTORY
 
    This option is used to specify the directory containing the archived logs. It can only be used with the :option:`xtrabackup --prepare` option.
 
@@ -113,7 +113,7 @@ Options
     --innodb-read-io-threads
     --innodb-write-io-threads
 
-.. option:: --log-copy-interval
+.. option:: --log-copy-interval=#
 
    This option specifies time interval between checks done by log copying thread in milliseconds (default is 1 second).
 
@@ -169,7 +169,7 @@ Options
 
    A file containing one table name per line, in databasename.tablename format. The backup will be limited to the specified tables. See :ref:`scripting-xtrabackup`.
 
-.. option:: --target-dir=name
+.. option:: --target-dir=DIRECTORY
 
    This option specifies the destination directory for the backup. If the directory does not exist, :program:`xtrabackup` creates it. If the directory does exist and is empty, :program:`xtrabackup` will succeed. :program:`xtrabackup` will not overwrite existing files, however; it will fail with operating system error 17, ``file exists``.
 
@@ -183,13 +183,13 @@ Options
 
    This option is currently not used for anything except printing out the correct tmpdir parameter when :option:`--print-param` is used.
 
-.. option:: --to-archived-lsn
+.. option:: --to-archived-lsn=LSN
 
    This option is used to specify the LSN to which the logs should be applied when backups are being prepared. It can only be used with the :option:`xtrabackup --prepare` option.
 
 .. option:: --use-memory=#
 
-   This option affects how much memory is allocated for preparing a backup with :option:`--prepare`, or analyzing statistics with :option:`--stats`. Its purpose is similar to :term:`innodb_buffer_pool_size`. It does not do the same thing as the similarly named option in Oracle's InnoDB Hot Backup tool. The default value is 100MB, and if you have enough available memory, 1GB to 2GB is a good recommended value.
+   This option affects how much memory is allocated for preparing a backup with :option:`--prepare`, or analyzing statistics with :option:`--stats`. Its purpose is similar to :term:`innodb_buffer_pool_size`. It does not do the same thing as the similarly named option in Oracle's InnoDB Hot Backup tool. The default value is 100MB, and if you have enough available memory, 1GB to 2GB is a good recommended value. Multiples are supported providing the unit (e.g. 1MB, 1M, 1GB, 1G).
 
 .. option:: --version
 
