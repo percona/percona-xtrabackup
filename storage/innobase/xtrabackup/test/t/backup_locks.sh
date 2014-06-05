@@ -32,7 +32,7 @@ Com_lock_binlog_for_backup	1
 Com_show_slave_status_nolock	0
 Com_unlock_binlog	1
 Com_unlock_tables	1
-Com_flush	0
+Com_flush	1
 EOF
 
 innobackupex --no-timestamp --incremental \
@@ -51,5 +51,5 @@ Com_lock_binlog_for_backup	2
 Com_show_slave_status_nolock	0
 Com_unlock_binlog	2
 Com_unlock_tables	2
-Com_flush	0
+Com_flush	2
 EOF
