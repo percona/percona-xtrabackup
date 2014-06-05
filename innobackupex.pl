@@ -75,6 +75,7 @@ my $mysql_keep_alive = 5;
 # Server capabilities #
 #######################
 my $have_changed_page_bitmaps = 0;
+my $have_galera_enabled = 0;
 
 # command line options
 my $option_help = '';
@@ -1916,9 +1917,7 @@ sub backup {
     my $buffer_pool_filename = get_option(\%config, $option_defaults_group,
                                           'innodb_buffer_pool_filename');
 
-    if ($option_incremental) {
-        detect_mysql_capabilities_for_backup(\%mysql);
-    }
+    detect_mysql_capabilities_for_backup(\%mysql);
 
     # start ibbackup as a child process
     start_ibbackup();
@@ -3101,12 +3100,7 @@ sub write_galera_info {
     if (!defined($state_uuid) || !defined($last_committed)) {
         my $now = current_time();
 
-        print STDERR "$now  $prefix Failed to get master wsrep state " .
-            "from SHOW STATUS\n";
-        print STDERR "$now  $prefix This means that the server is not a " .
-            "member of a cluster. Ignoring the --galera-info option\n";
-
-        return;
+        die "Failed to get master wsrep state from SHOW STATUS.";
     }
 
     write_to_backup_file("$galera_info", "$state_uuid" .
@@ -3375,6 +3369,10 @@ sub mysql_lockall {
         while (!$query_killer_init) {
             usleep(1);
         }
+    }
+
+    if ($have_galera_enabled) {
+        mysql_query($con, "SET SESSION wsrep_causal_reads=0");
     }
 
     mysql_query($con, "FLUSH TABLES WITH READ LOCK");
@@ -4815,9 +4813,27 @@ sub write_to_backup_file {
 # Query the server to find out what backup capabilities it supports.
 #
 sub detect_mysql_capabilities_for_backup {
-    $have_changed_page_bitmaps =
-        mysql_query($_[0], "SELECT COUNT(*) FROM INFORMATION_SCHEMA.PLUGINS ".
-                    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
+    if ($option_incremental) {
+        $have_changed_page_bitmaps =
+            mysql_query($_[0], "SELECT COUNT(*) FROM " .
+                        "INFORMATION_SCHEMA.PLUGINS " .
+                        "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
+    }
+
+    if (!defined($_[0]->{vars})) {
+        get_mysql_vars($_[0]);
+    }
+    $have_galera_enabled = defined($_[0]->{vars}->{wsrep_on});
+
+    if ($option_galera_info && !$have_galera_enabled) {
+        my $now = current_time();
+
+        print STDERR "$now  $prefix --galera-info is specified on the command " .
+            "line, but the server does not support Galera replication. " .
+            "Ignoring the option.";
+
+            $option_galera_info = 0;
+    }
 }
 
 =pod
