@@ -76,6 +76,7 @@ my $mysql_keep_alive = 5;
 #######################
 my $have_changed_page_bitmaps = 0;
 my $have_galera_enabled = 0;
+my $have_flush_engine_logs = 0;
 
 # command line options
 my $option_help = '';
@@ -1968,6 +1969,13 @@ sub backup {
         write_slave_info(\%mysql);
       }
     }
+
+    if ($have_flush_engine_logs) {
+        my $now = current_time();
+        print STDERR "$now  $prefix Executing FLUSH ENGINE LOGS...\n";
+        mysql_query(\%mysql, "FLUSH ENGINE LOGS");
+    }
+
     # resume XtraBackup and wait till it has finished
     resume_ibbackup($suspend_file);
     $suspend_file = $work_dir . $xb_fn_log_copied;
@@ -4823,6 +4831,7 @@ sub detect_mysql_capabilities_for_backup {
     if (!defined($_[0]->{vars})) {
         get_mysql_vars($_[0]);
     }
+
     $have_galera_enabled = defined($_[0]->{vars}->{wsrep_on});
 
     if ($option_galera_info && !$have_galera_enabled) {
@@ -4832,7 +4841,20 @@ sub detect_mysql_capabilities_for_backup {
             "line, but the server does not support Galera replication. " .
             "Ignoring the option.";
 
-            $option_galera_info = 0;
+        $option_galera_info = 0;
+    }
+
+    if ($mysql{vars}->{version}->{Value} =~ m/5.[123]\.\d/) {
+        my $now = current_time();
+
+        print STDERR "\n$now  $prefix Warning: FLUSH ENGINE LOGS " .
+            "is not supported " .
+            "by the server. Data may be inconsistent with " .
+            "binary log coordinates!\n";
+
+        $have_flush_engine_logs = 0;
+    } else {
+        $have_flush_engine_logs = 1;
     }
 }
 
