@@ -76,6 +76,8 @@ my $mysql_keep_alive = 5;
 #######################
 my $have_changed_page_bitmaps = 0;
 my $have_backup_locks = 0;
+my $have_galera_enabled = 0;
+my $have_flush_engine_logs = 0;
 
 # command line options
 my $option_help = '';
@@ -1964,10 +1966,6 @@ sub backup {
 
       # lock tables
       mysql_lock_tables(\%mysql);
-
-      if ($option_slave_info) {
-        write_slave_info(\%mysql);
-      }
     }
 
     # backup non-InnoDB files and tables
@@ -1986,12 +1984,16 @@ sub backup {
         }
     } else {
         mysql_lock_binlog(\%mysql);
+
+        if ($option_slave_info) {
+            write_slave_info(\%mysql);
+        }
     }
 
     # The only reason why Galera/binlog info is written before
     # wait_for_ibbackup_log_copy_finish() is that after that call the xtrabackup
     # binary will start streamig a temporary copy of REDO log to stdout and
-    # thus, any streaming from innobackupex would interfere. The only wait to
+    # thus, any streaming from innobackupex would interfere. The only way to
     # avoid that is to have a single process, i.e. merge innobackupex and
     # xtrabackup.
     if ($option_galera_info) {
@@ -1999,6 +2001,12 @@ sub backup {
     }
 
     write_binlog_info(\%mysql);
+
+    if ($have_flush_engine_logs) {
+        my $now = current_time();
+        print STDERR "$now  $prefix Executing FLUSH ENGINE LOGS...\n";
+        mysql_query(\%mysql, "FLUSH ENGINE LOGS");
+    }
 
     # resume XtraBackup and wait till it has finished
     resume_ibbackup($suspend_file);
@@ -3143,12 +3151,7 @@ sub write_galera_info {
     if (!defined($state_uuid) || !defined($last_committed)) {
         my $now = current_time();
 
-        print STDERR "$now  $prefix Failed to get master wsrep state " .
-            "from SHOW STATUS\n";
-        print STDERR "$now  $prefix This means that the server is not a " .
-            "member of a cluster. Ignoring the --galera-info option\n";
-
-        return;
+        die "Failed to get master wsrep state from SHOW STATUS.";
     }
 
     write_to_backup_file("$galera_info", "$state_uuid" .
@@ -3431,6 +3434,10 @@ sub mysql_lock_tables {
         while (!$query_killer_init) {
             usleep(1);
         }
+    }
+
+    if ($have_galera_enabled) {
+        mysql_query($con, "SET SESSION wsrep_causal_reads=0");
     }
 
     mysql_query($con, "FLUSH TABLES WITH READ LOCK");
@@ -4829,10 +4836,36 @@ sub detect_mysql_capabilities_for_backup {
                         "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
     }
 
-    if (!defined$_[0]->{vars}) {
+    if (!defined($_[0]->{vars})) {
         get_mysql_vars($_[0]);
     }
+
     $have_backup_locks = defined($_[0]->{vars}->{have_backup_locks});
+
+    $have_galera_enabled = defined($_[0]->{vars}->{wsrep_on});
+
+    if ($option_galera_info && !$have_galera_enabled) {
+        my $now = current_time();
+
+        print STDERR "$now  $prefix --galera-info is specified on the command " .
+            "line, but the server does not support Galera replication. " .
+            "Ignoring the option.";
+
+        $option_galera_info = 0;
+    }
+
+    if ($mysql{vars}->{version}->{Value} =~ m/5.[123]\.\d/) {
+        my $now = current_time();
+
+        print STDERR "\n$now  $prefix Warning: FLUSH ENGINE LOGS " .
+            "is not supported " .
+            "by the server. Data may be inconsistent with " .
+            "binary log coordinates!\n";
+
+        $have_flush_engine_logs = 0;
+    } else {
+        $have_flush_engine_logs = 1;
+    }
 }
 
 #
