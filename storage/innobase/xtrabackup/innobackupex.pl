@@ -1966,10 +1966,6 @@ sub backup {
 
       # lock tables
       mysql_lock_tables(\%mysql);
-
-      if ($option_slave_info) {
-        write_slave_info(\%mysql);
-      }
     }
 
     # backup non-InnoDB files and tables
@@ -1988,12 +1984,16 @@ sub backup {
         }
     } else {
         mysql_lock_binlog(\%mysql);
+
+        if ($option_slave_info) {
+            write_slave_info(\%mysql);
+        }
     }
 
     # The only reason why Galera/binlog info is written before
     # wait_for_ibbackup_log_copy_finish() is that after that call the xtrabackup
     # binary will start streamig a temporary copy of REDO log to stdout and
-    # thus, any streaming from innobackupex would interfere. The only wait to
+    # thus, any streaming from innobackupex would interfere. The only way to
     # avoid that is to have a single process, i.e. merge innobackupex and
     # xtrabackup.
     if ($option_galera_info) {
