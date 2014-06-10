@@ -6,7 +6,7 @@
 %define xb_revision       @@XB_REVISION@@
 
 #####################################
-Name:           percona-xtrabackup-%{xb_version_major}%{xb_version_minor}
+Name:           percona-xtrabackup
 Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
 Release:        %{xb_revision}%{xb_rpm_version_extra}%{?dist}
 Summary:        XtraBackup online backup for MySQL / InnoDB
@@ -23,14 +23,14 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines
 
-%package -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+%package -n percona-xtrabackup-test
 Summary:        Test suite for Percona XtraBackup
 Group:          Applications/Databases
-Requires:       percona-xtrabackup-%{xb_version_major}%{xb_version_minor} = %{version}-%{release}
+Requires:       percona-xtrabackup = %{version}-%{release}
 Requires:       /usr/bin/mysql
 AutoReqProv:    no
 
-%description -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+%description -n percona-xtrabackup-test
 This package contains the test suite for Percona XtraBackup %{version}
 
 %prep
@@ -54,7 +54,7 @@ export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRA
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\""
 #
 cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} .
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test .
 #
 make %{?_smp_mflags}
 #
@@ -75,10 +75,13 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbcrypt
 %doc COPYING
 
-%files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+%files -n percona-xtrabackup-test
 %defattr(-,root,root,-)
-%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+%{_datadir}/percona-xtrabackup-test
 
 %changelog
+* Mon Jun 10 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- renamed package from percona-xtrabackup-22 to percona-xtrabackup
+
 * Wed Mar 26 2014 Alexey Bychko <alexey.bychko@percona.com>
 - initial alpha release for 2.2 (2.2.1-alpha1)
