@@ -10,7 +10,7 @@
 %define __os_install_post /usr/lib/rpm/brp-compress
 
 Summary: XtraBackup online backup for MySQL / InnoDB 
-Name: percona-xtrabackup
+Name: percona-xtrabackup-21
 Version: %{xtrabackup_version}
 Release: %{release}
 Group: Server/Databases
@@ -27,18 +27,21 @@ Requires: perl(DBD::mysql)
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines.
 
-%package test
+%package -n percona-xtrabackup-test-21
 Summary: Test suite for Percona Xtrabackup
 Group: Applications/Databases
-Requires: percona-xtrabackup
+Requires: percona-xtrabackup-21
 AutoReqProv: no
 Requires: /usr/bin/mysql
 
-%description test
+%description -n percona-xtrabackup-test-21
 This package contains the test suite for Percona Xtrabackup
 
 
 %changelog
+* Tue Jun 10 2014 Tomislav Plavcic
+- Changed package name to percona-xtrabackup-21
+
 * Thu Mar 06 2014 Alexey Bychko
 - Version 2.1.8
 
@@ -68,7 +71,7 @@ This package contains the test suite for Percona Xtrabackup
 
 
 %prep
-%setup -q
+%setup -q -n percona-xtrabackup-%{version}
 
 
 %build
@@ -123,7 +126,8 @@ cp -R test %{buildroot}%{_datadir}/percona-xtrabackup-test
 %{_bindir}/xbcrypt
 %doc COPYING
 
-%files -n percona-xtrabackup-test
+%files -n percona-xtrabackup-test-21
+%defattr(-,root,root)
 %{_datadir}/percona-xtrabackup-test
 
 ###

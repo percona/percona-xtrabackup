@@ -40,7 +40,7 @@ endif
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
 
 override_dh_strip:
-	dh_strip --dbg-package=percona-xtrabackup-dbg
+	dh_strip --dbg-package=percona-xtrabackup-dbg-21
 
 %:
 	dh $@
