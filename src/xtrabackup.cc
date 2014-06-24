@@ -182,7 +182,7 @@ ulint xtrabackup_rebuild_threads = 1;
 
 /* sleep interval beetween log copy iterations in log copying thread
 in milliseconds (default is 1 second) */
-int xtrabackup_log_copy_interval = 1000;
+ulint xtrabackup_log_copy_interval = 1000;
 
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
