@@ -79,6 +79,16 @@ EOF
   rm -f $MYSQLD_TMPDIR/killall.sql
 }
 
+function wait_for_connection_count()
+{
+  n=$(($1 + 1))
+  for i in {1..200} ; do
+    count=`${MYSQL} ${MYSQL_ARGS} -N -e "SHOW PROCESSLIST" test | wc -l`
+    [ $count != $n ] || break
+    sleep 0.3
+  done
+}
+
 start_server --innodb_file_per_table
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -91,11 +101,9 @@ mkdir $topdir/full
 # ==============================================================
 vlog "===================== case 1 ====================="
 bg_run bg_select_pid "mysql_select 3"
-bg_run bg_update_pid "sleep 1" "mysql_update 3"
+bg_run bg_update_pid "mysql_update 3"
 
-sleep 8
-
-innobackupex $topdir/full --kill-long-queries-timeout=10 \
+innobackupex $topdir/full --kill-long-queries-timeout=50 \
                           --kill-long-query-type=all
 
 bg_wait_ok $bg_select_pid
@@ -111,7 +119,8 @@ kill_all_queries
 #    it. then it may be still alive by the time of kill_all_queries
 vlog "===================== case 2 ====================="
 bg_run bg_select_pid "mysql_select 200"
-bg_run bg_update_pid "sleep 1" "mysql_update 5"
+bg_run bg_update_pid "mysql_update 5"
+wait_for_connection_count 2
 
 innobackupex $topdir/full --kill-long-queries-timeout=3 \
                           --kill-long-query-type=select
@@ -125,6 +134,7 @@ kill_all_queries
 vlog "===================== case 3 ====================="
 bg_run bg_select_pid "mysql_select 200"
 bg_run bg_update_pid "mysql_update 200"
+wait_for_connection_count 2
 
 innobackupex $topdir/full --kill-long-queries-timeout=3 \
                           --kill-long-query-type=all
@@ -138,8 +148,7 @@ kill_all_queries
 vlog "===================== case 4 ====================="
 bg_run bg_select_pid "mysql_select 200"
 bg_run bg_update_pid "mysql_update 200"
-
-sleep 1
+wait_for_connection_count 2
 
 run_cmd_expect_failure ${IB_BIN} ${IB_ARGS} $topdir/full \
                           --lock-wait-timeout=3 \
@@ -157,8 +166,7 @@ kill_all_queries
 vlog "===================== case 5 ====================="
 bg_run bg_select_pid "mysql_select 200"
 bg_run bg_update_pid "mysql_update 200"
-
-sleep 2
+wait_for_connection_count 2
 
 run_cmd_expect_failure ${IB_BIN} ${IB_ARGS} $topdir/full \
                           --lock-wait-timeout=3 \
@@ -175,9 +183,9 @@ kill_all_queries
 # ==============================================================
 vlog "===================== case 6 ====================="
 bg_run bg_update_pid "mysql_update 5"
-bg_run bg_select_pid "sleep 1" "mysql_select 200"
-
-sleep 2
+wait_for_connection_count 1
+bg_run bg_select_pid "mysql_select 200"
+wait_for_connection_count 2
 
 innobackupex $topdir/full \
                           --lock-wait-timeout=6 \
