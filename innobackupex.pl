@@ -19,6 +19,7 @@ use File::Basename;
 use File::Temp;
 use File::Find;
 use File::Copy;
+use File::Path;
 use English qw(-no_match_vars);
 use Time::HiRes qw(usleep);
 
@@ -2190,6 +2191,16 @@ sub process_file {
             file_to_array($isl_path, \@lines);
             $dst_path = $lines[0];
             print STDERR "Using $dst_path as the destination path\n";
+
+            my $dst_dir = File::Basename::dirname($dst_path);
+            if (! -d $dst_dir) {
+                print STDERR "Recursively creating directory $dst_dir\n";
+
+                eval { mkpath($dst_dir) };
+                if ($@) {
+                    die "Could not create directory $dst_dir: $@";
+                }
+            }
         }
     }
 

@@ -8,7 +8,7 @@ require_server_version_higher_than 5.6.0
 
 start_server --innodb_file_per_table
 
-remote_dir=$TEST_VAR_ROOT/var1/remote_dir
+remote_dir=$TEST_VAR_ROOT/var1/remote_dir/subdir
 
 $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
@@ -31,6 +31,7 @@ innobackupex --no-timestamp $topdir/backup
 stop_server
 
 rm -rf $mysql_datadir/*
+rm -rf $remote_dir
 
 innobackupex --apply-log $topdir/backup
 innobackupex --copy-back $topdir/backup
