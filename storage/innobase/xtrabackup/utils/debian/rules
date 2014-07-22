@@ -19,7 +19,7 @@ override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
 	cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
-	  -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-22-test .
+	  -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test .
 else
 	# Dummy binaries that avoid compilation
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
@@ -34,7 +34,7 @@ override_dh_auto_build:
 	make -j$(NCPU)
 
 override_dh_strip:
-	dh_strip --dbg-package=percona-xtrabackup-22-dbg
+	dh_strip --dbg-package=percona-xtrabackup-dbg
 
 %:
 	dh $@

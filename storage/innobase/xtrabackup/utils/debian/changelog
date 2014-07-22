@@ -1,4 +1,10 @@
-percona-xtrabackup-22 (2.2.1) unstable; urgency=low
+percona-xtrabackup (2.2.3) unstable; urgency=low
+
+  * renamed package from percona-xtrabackup-22 to percona-xtrabackup
+
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Mon, 09 Jun 2014 00:16:53 +0200
+
+percona-xtrabackup (2.2.1) unstable; urgency=low
 
   * Update to new upstream alpha Percona XtraBackup 2.2.1
 
