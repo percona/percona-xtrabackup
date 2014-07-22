@@ -105,7 +105,7 @@ export DEB_DUMMY="$DUMMY"
 
     # Create the original tarball
     mv "$SOURCEDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION.tar.gz" \
-        "$WORKDIR/percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz"
+        "$WORKDIR/percona-xtrabackup-21_$XTRABACKUP_VERSION-$REVISION.orig.tar.gz"
 
     (
         cd "$WORKDIR"
@@ -115,10 +115,10 @@ export DEB_DUMMY="$DUMMY"
         dpkg-source -i'.*' -b "$SOURCEDIR"
 
         # Unpack it
-        dpkg-source -x "percona-xtrabackup_$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX.dsc"
+        dpkg-source -x "percona-xtrabackup-21_$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX.dsc"
 
         (
-            cd "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION"
+            cd "percona-xtrabackup-21-$XTRABACKUP_VERSION-$REVISION"
 
             # Don't build transitional packages if requested
             if test "x$NOTRANSITIONAL" = "xyes"
@@ -131,7 +131,7 @@ export DEB_DUMMY="$DUMMY"
  
         )
 
-        rm -rf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION"
+        rm -rf "percona-xtrabackup-21-$XTRABACKUP_VERSION-$REVISION"
  
     )
 )
