@@ -71,31 +71,13 @@ case "$1" in
         ;;
 
     xtradb55)
-        if which lsb_release >/dev/null 2>&1 && \
-           ! lsb_release -i | grep -qi centos
-        then
-            # PS 5.5.31-rel30.3 tarballs are affected by LP bug #1172916
-            # and thus unusable on anything but CentOS
-            url="http://www.percona.com/redir/downloads/Percona-Server-5.5/Percona-Server-5.5.30-30.1/binary/linux/$arch"
-            tarball="Percona-Server-5.5.30-rel30.1-465.Linux.$arch.tar.gz"
-        else
-            url="http://s3.amazonaws.com/percona.com/downloads/community"
-            tarball="Percona-Server-5.5.31-rel30.3-520.Linux.$arch.tar.gz"
-        fi
+        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
+        tarball="Percona-Server-5.5.38-rel35.2-691.Linux.$arch.tar.gz"
         ;;
 
     xtradb56)
-        if which lsb_release >/dev/null 2>&1 && \
-           ! lsb_release -i | grep -qi centos
-        then
-            # PS 5.6.11-rc60.3 tarballs are affected by LP bug #1172916
-            # and thus unusable on anything but CentOS
-            url="http://www.percona.com/downloads/TESTING/Percona-Server-56/Percona-Server-5.6.10-alpha60.2/binary/linux/$arch"
-            tarball="Percona-Server-5.6.10-alpha60.2-324.Linux.$arch.tar.gz"
-        else
-            url="http://s3.amazonaws.com/percona.com/downloads/community"
-            tarball="Percona-Server-5.6.14-rel62.0-483.Linux.$arch.tar.gz"
-        fi
+        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
+        tarball="Percona-Server-5.6.19-rel67.0-648.Linux.$arch.tar.gz"
         ;;
 
     mariadb51)
