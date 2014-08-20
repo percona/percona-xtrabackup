@@ -56,18 +56,8 @@ case "$1" in
         ;;
 
     xtradb51)
-        if which lsb_release >/dev/null 2>&1 && \
-           ! lsb_release -i | grep -qi centos 
-        then
-            # PS 5.1.69-rel14.7 tarballs are affected by LP bug #1172916
-            # and thus unusable on anything but CentOS
-            url="http://www.percona.com/redir/downloads/Percona-Server-5.1/Percona-Server-5.1.67-14.4/binary/linux/$arch"
-            tarball="Percona-Server-5.1.67-rel14.4-511.Linux.$arch.tar.gz"
-
-        else
-            url="http://s3.amazonaws.com/percona.com/downloads/community"
-            tarball="Percona-Server-5.1.73-rel14.11-603.Linux.$arch.tar.gz"
-        fi
+        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
+        tarball="Percona-Server-5.1.73-rel14.12-625.Linux.$arch.tar.gz"
         ;;
 
     xtradb55)
