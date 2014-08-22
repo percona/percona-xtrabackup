@@ -20,7 +20,7 @@ Homepage: http://www.percona.com/software/percona-xtrabackup
 
 Package: percona-xtrabackup
 Architecture: any
-Depends: libdbd-mysql-perl, ${misc:Depends}, ${shlibs:Depends}
+Depends: libdbd-mysql-perl, rsync, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)

@@ -17,7 +17,7 @@ URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
 BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel
-Requires:       perl(DBD::mysql)
+Requires:       perl(DBD::mysql), rsync
 BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 
 %description
