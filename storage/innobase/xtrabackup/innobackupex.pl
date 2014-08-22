@@ -64,10 +64,6 @@ my $backup_file_print_limit = 9;
 # default compression level (this is an argument to ibbackup)
 my $default_compression_level = 1;
 
-# time in seconds after which a dummy query is sent to mysql server
-# in order to keep the database connection alive
-my $mysql_keep_alive = 5;
-
 ######################################################################
 # end of modifiable parameters
 ######################################################################
@@ -2911,71 +2907,6 @@ sub parse_connection_options {
 }
 
 #
-# Start a background process that will send keep-alive queries periodically
-# using the connection passed as a 'mysql' hash reference
-#
-sub start_keepalives {
-    my $con = shift;
-
-    if (defined($con->{keep_alive_pid})) {
-        die "Keep-alive process has already been started for this connection."
-    }
-
-    my $keep_alive_pid = fork();
-
-    if ($keep_alive_pid) {
-        # parent process
-        $con->{keep_alive_pid} = $keep_alive_pid;
-
-        return;
-    }
-
-    # child process
-    $con->{dbh}->{InactiveDestroy} = 1;
-
-    my $rc = 0;
-    my $hello_id = 0;
-
-    # send dummy queries to connection until interrupted with SIGINT or a
-    # connection error
-    while (!$rc) {
-        sleep $mysql_keep_alive;
-
-        my $hello_message = "xtrabackup ping " . $hello_id++;
-
-        eval {
-            $con->{dbh}->selectrow_array("select '$hello_message'");
-        };
-
-        if ($EVAL_ERROR) {
-            $rc = 255;
-        }
-    }
-
-    exit $rc;
-}
-
-#
-# Stop the background keep-alive process
-#
-sub stop_keepalives {
-    my $con = shift;
-
-    if (!defined($con->{keep_alive_pid})) {
-        die "Keep-alive process has never been started for this connection."
-    }
-
-    kill 'INT', $con->{keep_alive_pid};
-    waitpid($con->{keep_alive_pid}, 0);
-    my $rc = $? >> 8;
-
-    if ($rc != 0) {
-        die "Keep-alive process died with exit code " . $rc;
-    }
-    undef $con->{keep_alive_pid};
-}
-
-#
 # mysql_connect subroutine connects to MySQL server
 #
 sub mysql_connect {
@@ -2983,12 +2914,10 @@ sub mysql_connect {
     my %args = (
                   # Defaults
                   abort_on_error => 1,
-                  keepalives => 0,
                   @_
                );
 
     $con{abort_on_error} = $args{abort_on_error};
-    $con{keepalives} = $args{keepalives};
 
     parse_connection_options(\%con);
 
@@ -3028,9 +2957,6 @@ sub mysql_connect {
 
     if ($con{dbh}) {
         $con{dbh}->do("SET SESSION wait_timeout=2147483");
-        if ($con{keepalives}) {
-            start_keepalives(\%con);
-        }
     }
 
     return %con;
@@ -3046,10 +2972,6 @@ sub mysql_query {
   my ($con, $query) = @_;
 
   eval {
-      if ($con->{keepalives}) {
-          stop_keepalives($con);
-      }
-
       if ($query eq 'SHOW VARIABLES') {
           $con->{vars} = $con->{dbh}->selectall_hashref('SHOW VARIABLES',
                                                         'Variable_name');
@@ -3068,10 +2990,6 @@ sub mysql_query {
               $con->{dbh}->selectall_hashref($query, "Id");
       } else {
           $con->{dbh}->do($query);
-      }
-
-      if ($con->{keepalives}) {
-          start_keepalives($con);
       }
   };
   if ($EVAL_ERROR) {
@@ -3101,10 +3019,6 @@ sub get_mysql_slave_status {
 # 
 sub mysql_close {
     my $con = shift;
-
-    if ($con->{keepalives}) {
-        stop_keepalives($con);
-    };
 
     $con->{dbh}->disconnect();
 
@@ -3384,7 +3298,7 @@ sub start_query_killer {
 
         sleep($kill_timeout);
 
-        my %con = mysql_connect(abort_on_error => 1, keepalives => 0);
+        my %con = mysql_connect(abort_on_error => 1);
 
         while (!$end) {
             kill_long_queries(\%con, time() - $start_time);
