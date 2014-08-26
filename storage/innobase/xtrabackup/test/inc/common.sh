@@ -2,12 +2,12 @@ set -eu
 
 function innobackupex()
 {
-    run_cmd $IB_BIN $IB_ARGS $*
+    run_cmd $IB_BIN $IB_ARGS "$@"
 }
 
 function xtrabackup()
 {
-    run_cmd $XB_BIN $XB_ARGS $*
+    run_cmd $XB_BIN $XB_ARGS "$@"
 }
 
 function vlog

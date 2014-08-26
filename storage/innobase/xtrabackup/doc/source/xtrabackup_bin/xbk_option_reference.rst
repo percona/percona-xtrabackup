@@ -125,6 +125,14 @@ Options
 
    Don't read default options from any option file. Must be given as the first option on the command-line.
 
+.. option:: --databases=#
+
+   This option specifies the list of databases and tables that should be backed up. The option accepts the list of the form ``"databasename1[.table_name1] databasename2[.table_name2] . . ."``.
+
+.. option:: --databases-file=#
+
+   This option specifies the path to the file containing the list of databases and tables that should be backed up. The file can contain the list elements of the form ``databasename1[.table_name1]``, one element per line.
+
 .. option:: --parallel=#
 
    This option specifies the number of threads to use to copy multiple data files concurrently when creating a backup. The default value is 1 (i.e., no concurrent transfer).

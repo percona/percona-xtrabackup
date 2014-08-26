@@ -2,7 +2,7 @@
  Partial Backups
 =================
 
-|xtrabackup| supports taking partial backups when the :term:`innodb_file_per_table` option is enabled. There are two ways to create partial backups: matching the tables' names with a regular expression or providing a list of them in a file.
+|xtrabackup| supports taking partial backups when the :term:`innodb_file_per_table` option is enabled. There are three ways to create partial backups: matching the tables' names with a regular expression, providing a list of them in a file or providing a list of databases.
 
 .. warning:: If any of the matched or listed tables is deleted during the backup, |xtrabackup| will fail.
 
@@ -30,6 +30,11 @@ The ``--tables-file`` option specifies a file that can contain multiple table na
 
   $ echo "mydatabase.mytable" > /tmp/tables.txt
   $ xtrabackup --backup --tables-file=/tmp/tables.txt 
+
+Using the :option:`--databases` and :option:`--databases-file` options
+======================================================================
+
+The ``--databases`` option accepts a space-separated list of the databases and tables to backup - in the ``databasename[.tablename]`` form. The ``--databases-file`` option specifies a file that can contain multiple databases and tables in the ``databasename[.tablename]`` form, one element name per line in the file. Only named databases and tables will be backed up. Names are matched exactly, case-sensitive, with no pattern or regular expression matching.
 
 Preparing the Backup
 ====================

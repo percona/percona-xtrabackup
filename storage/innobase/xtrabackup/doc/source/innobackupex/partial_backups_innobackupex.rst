@@ -42,17 +42,13 @@ This option is passed to :option:`xtrabackup --tables-file` and, unlike the :opt
 Using the :option:`--databases` option
 --------------------------------------
 
-This option is specific to |innobackupex| and accepts either a space-separated list of the databases and tables to backup - in the  ``databasename[.tablename]`` form - or a file containing the list at one element per line.
+This option accepts either a space-separated list of the databases and tables to backup - in the  ``databasename[.tablename]`` form - or a file containing the list at one element per line.
 
 For example, ::
 
   $ innobackupex --databases="mydatabase.mytable mysql" /path/to/backup
 
 The command above will create a timestamped directory with the usual files that |innobackupex| creates, but only containing the data-files related to ``mytable`` in the ``mydatabase`` directory and the ``mysql`` directory with the entire ``mysql`` database.
-
-.. note:: 
- 
- Currently in |Percona XtraBackup| the --databases option has no effect for InnoDB files for both local and streaming backups, i.e. all InnoDB files are always backed up. Currently, only .frm and non-InnoDB tables are limited by that option.
 
 Preparing Partial Backups
 =========================
