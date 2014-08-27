@@ -2850,6 +2850,14 @@ sub start_ibbackup {
 	$options = $options . " --compact";
     }
 
+    if ($option_databases) {
+        if ($option_databases =~ /^\//) {
+                $options = $options . " --databases_file='$option_databases'";
+        } else {
+                $options = $options . " --databases='$option_databases'";
+        }
+    }
+
     $cmdline = "$option_ibbackup_binary $options";
 
     # run ibbackup as a child process

@@ -49,6 +49,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysqld.h>
 
 #include <fcntl.h>
+#include <string.h>
 
 #ifdef __linux__
 # include <sys/prctl.h>
@@ -128,21 +129,33 @@ char *xtrabackup_incremental_dir = NULL; /* for --prepare */
 
 lsn_t xtrabackup_archived_to_lsn = 0; /* for --archived-to-lsn */
 
-char *xtrabackup_tables = NULL;
-int tables_regex_num;
-xb_regex_t *tables_regex;
-xb_regmatch_t tables_regmatch[1];
+static char *xtrabackup_tables = NULL;
 
-char *xtrabackup_tables_file = NULL;
-hash_table_t* tables_hash;
+/* List of regular expressions for filtering */
+typedef struct xb_regex_list_node_struct xb_regex_list_node_t;
+struct xb_regex_list_node_struct {
+	UT_LIST_NODE_T(xb_regex_list_node_t)	regex_list;
+	xb_regex_t				regex;
+};
+static UT_LIST_BASE_NODE_T(xb_regex_list_node_t) regex_list;
 
-hash_table_t* inc_dir_tables_hash;
+static xb_regmatch_t tables_regmatch[1];
 
-struct xtrabackup_tables_struct{
+static char *xtrabackup_tables_file = NULL;
+static hash_table_t* tables_hash = NULL;
+
+static char *xtrabackup_databases = NULL;
+static char *xtrabackup_databases_file = NULL;
+static hash_table_t* databases_hash = NULL;
+
+static hash_table_t* inc_dir_tables_hash;
+
+struct xb_filter_entry_struct{
 	char*		name;
+	ibool		has_tables;
 	hash_node_t	name_hash;
 };
-typedef struct xtrabackup_tables_struct	xtrabackup_tables_t;
+typedef struct xb_filter_entry_struct	xb_filter_entry_t;
 
 static ulint		thread_nr[SRV_MAX_N_IO_THREADS + 6];
 static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6];
@@ -399,6 +412,8 @@ enum options_xtrabackup
   OPT_XTRA_ARCHIVED_TO_LSN,
   OPT_XTRA_TABLES,
   OPT_XTRA_TABLES_FILE,
+  OPT_XTRA_DATABASES,
+  OPT_XTRA_DATABASES_FILE,
   OPT_XTRA_CREATE_IB_LOGFILE,
   OPT_XTRA_PARALLEL,
   OPT_XTRA_STREAM,
@@ -539,6 +554,13 @@ static struct my_option xb_long_options[] =
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"tables_file", OPT_XTRA_TABLES_FILE, "filtering by list of the exact database.table name in the file.",
    (G_PTR*) &xtrabackup_tables_file, (G_PTR*) &xtrabackup_tables_file,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"databases", OPT_XTRA_DATABASES, "filtering by list of databases.",
+   (G_PTR*) &xtrabackup_databases, (G_PTR*) &xtrabackup_databases,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"databases_file", OPT_XTRA_TABLES_FILE,
+   "filtering by list of databases in the file.",
+   (G_PTR*) &xtrabackup_databases_file, (G_PTR*) &xtrabackup_databases_file,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"create-ib-logfile", OPT_XTRA_CREATE_IB_LOGFILE, "** not work for now** creates ib_logfile* also after '--prepare'. ### If you want create ib_logfile*, only re-execute this command in same options. ###",
    (G_PTR*) &xtrabackup_create_ib_logfile, (G_PTR*) &xtrabackup_create_ib_logfile,
@@ -1611,15 +1633,14 @@ static my_bool
 check_if_table_matches_filters(const char *name)
 {
 	int 			regres;
-	int 			i;
-	xtrabackup_tables_t*	table;
+	xb_filter_entry_t*	table;
+	xb_regex_list_node_t*	node;
 
-	if (xtrabackup_tables) {
-
-		regres = REG_NOMATCH;
-
-		for (i = 0; i < tables_regex_num; i++) {
-			regres = xb_regexec(&tables_regex[i], name, 1,
+	if (UT_LIST_GET_LEN(regex_list)) {
+		/* Check against regular expressions list */
+		for (node = UT_LIST_GET_FIRST(regex_list); node;
+		     node = UT_LIST_GET_NEXT(regex_list, node)) {
+			regres = xb_regexec(&node->regex, name, 1,
 					    tables_regmatch, 0);
 			if (regres != REG_NOMATCH) {
 
@@ -1628,10 +1649,9 @@ check_if_table_matches_filters(const char *name)
 		}
 	}
 
-	if (xtrabackup_tables_file) {
-
+	if (tables_hash) {
 		HASH_SEARCH(name_hash, tables_hash, ut_fold_string(name),
-			    xtrabackup_tables_t*,
+			    xb_filter_entry_t*,
 			    table, (void) 0,
 			    !strcmp(table->name, name));
 		if (table) {
@@ -1660,7 +1680,9 @@ check_if_skip_table(
 	const char *ptr;
 	char *eptr;
 
-	if (xtrabackup_tables == NULL && xtrabackup_tables_file == NULL) {
+	if (UT_LIST_GET_LEN(regex_list) == 0 &&
+	    tables_hash == NULL &&
+	    databases_hash == NULL) {
 		return(FALSE);
 	}
 
@@ -1676,6 +1698,27 @@ check_if_skip_table(
 	}
 
 	strncpy(buf, dbname, FN_REFLEN);
+	buf[tbname - 1 - dbname] = 0;
+
+	if (databases_hash) {
+		/* There are some filters for databases, check them */
+		xb_filter_entry_t*	database;
+
+		HASH_SEARCH(name_hash, databases_hash, ut_fold_string(buf),
+			    xb_filter_entry_t*,
+			    database, (void) 0,
+			    !strcmp(database->name, buf));
+		/* Table's database isn't found, skip the table */
+		if (!database) {
+			return(TRUE);
+		}
+		/* There aren't tables specified for the database,
+		it should be backed up entirely */
+		if (!database->has_tables) {
+			return(FALSE);
+		}
+	}
+
 	buf[FN_REFLEN - 1] = '\0';
 	buf[tbname - 1 - dbname] = '.';
 
@@ -2597,120 +2640,270 @@ xb_create_sync_file(
 	return(FALSE);
 }
 
+/***********************************************************************
+Allocate and initialize the entry for databases and tables filtering
+hash tables. If memory allocation is not successful, terminate program.
+@return pointer to the created entry.  */
+static
+xb_filter_entry_t *
+xb_new_filter_entry(
+/*================*/
+	const char*	name)	/*!< in: name of table/database */
+{
+	xb_filter_entry_t	*entry;
+	ulint namelen = strlen(name);
+
+	ut_a(namelen <= NAME_LEN * 2 + 1);
+
+	entry = static_cast<xb_filter_entry_t *>
+		(ut_malloc(sizeof(xb_filter_entry_t) + namelen + 1));
+	memset(entry, '\0', sizeof(xb_filter_entry_t) + namelen + 1);
+	entry->name = ((char*)entry) + sizeof(xb_filter_entry_t);
+	strcpy(entry->name, name);
+	entry->has_tables = FALSE;
+
+	return entry;
+}
+
+/***********************************************************************
+Add entry to hash table. If hash table is NULL, allocate and initialize
+new hash table */
+static
+xb_filter_entry_t*
+xb_add_filter(
+/*========================*/
+	const char*	name,	/*!< in: name of table/database */
+	hash_table_t**	hash)	/*!< in/out: hash to insert into */
+{
+	xb_filter_entry_t*	entry;
+
+	entry = xb_new_filter_entry(name);
+
+	if (UNIV_UNLIKELY(*hash == NULL)) {
+		*hash = hash_create(1000);
+	}
+	HASH_INSERT(xb_filter_entry_t,
+		name_hash, *hash,
+		ut_fold_string(entry->name),
+		entry);
+
+	return entry;
+}
+
+/***********************************************************************
+Validate name of table or database. If name is invalid, program will
+be finished with error code */
+static
+void
+xb_validate_name(
+/*=============*/
+	const char*	name,	/*!< in: name */
+	size_t		len)	/*!< in: length of name */
+{
+	const char*	p;
+
+	/* perform only basic validation. validate length and
+	path symbols */
+	if (len > NAME_LEN) {
+		msg("xtrabackup: name `%s` is too long.\n", name);
+		exit(EXIT_FAILURE);
+	}
+	p = strpbrk(name, "/\\~");
+	if (p && p - name < NAME_LEN) {
+		msg("xtrabackup: name `%s` is not valid.\n", name);
+		exit(EXIT_FAILURE);
+	}
+}
+
+/***********************************************************************
+Register new filter entry which can be either database
+or table name.  */
+static
+void
+xb_register_filter_entry(
+/*=====================*/
+	const char*	name)	/*!< in: name */
+{
+	const char*		p;
+	size_t			namelen;
+	xb_filter_entry_t*	db_entry = NULL;
+
+	namelen = strlen(name);
+	if ((p = strchr(name, '.')) != NULL) {
+		char dbname[NAME_LEN + 1];
+
+		xb_validate_name(name, p - name);
+		xb_validate_name(p + 1, namelen - (p - name));
+
+		strncpy(dbname, name, p - name);
+		dbname[p - name] = 0;
+
+		if (databases_hash) {
+			HASH_SEARCH(name_hash, databases_hash,
+					ut_fold_string(dbname),
+					xb_filter_entry_t*,
+					db_entry, (void) 0,
+					!strcmp(db_entry->name, dbname));
+		}
+		if (!db_entry) {
+			db_entry = xb_add_filter(dbname, &databases_hash);
+		}
+		db_entry->has_tables = TRUE;
+		xb_add_filter(name, &tables_hash);
+	} else {
+		xb_validate_name(name, namelen);
+
+		xb_add_filter(name, &databases_hash);
+	}
+}
+
+/***********************************************************************
+Register new table for the filter.  */
+static
+void
+xb_register_table(
+/*==============*/
+	const char* name)	/*!< in: name of table */
+{
+	if (strchr(name, '.') == NULL) {
+		msg("xtrabackup: `%s` is not fully qualified name.\n", name);
+		exit(EXIT_FAILURE);
+	}
+
+	xb_register_filter_entry(name);
+}
+
+/***********************************************************************
+Register new regex for the filter.  */
+static
+void
+xb_register_regex(
+/*==============*/
+	const char* regex)	/*!< in: regex */
+{
+	xb_regex_list_node_t*	node;
+	char			errbuf[100];
+	int			ret;
+
+	node = static_cast<xb_regex_list_node_t *>
+		(ut_malloc(sizeof(xb_regex_list_node_t)));
+
+	ret = xb_regcomp(&node->regex, regex, REG_EXTENDED);
+	if (ret != 0) {
+		xb_regerror(ret, &node->regex, errbuf, sizeof(errbuf));
+		msg("xtrabackup: error: tables regcomp(%s): %s\n",
+			regex, errbuf);
+		exit(EXIT_FAILURE);
+	}
+
+	UT_LIST_ADD_LAST(regex_list, regex_list, node);
+}
+
+typedef void (*insert_entry_func_t)(const char*);
+
+/***********************************************************************
+Scan string and load filter entries from it.  */
+static
+void
+xb_load_list_string(
+/*================*/
+	char* list,			/*!< in: string representing a list */
+	const char* delimiters,		/*!< in: delimiters of entries */
+	insert_entry_func_t ins)	/*!< in: callback to add entry */
+{
+	char*	p;
+	char*	saveptr;
+
+	p = strtok_r(list, delimiters, &saveptr);
+	while (p) {
+
+		ins(p);
+
+		p = strtok_r(NULL, delimiters, &saveptr);
+	}
+}
+
+/***********************************************************************
+Scan file and load filter entries from it.  */
+static
+void
+xb_load_list_file(
+/*==============*/
+	const char* filename,		/*!< in: name of file */
+	insert_entry_func_t ins)	/*!< in: callback to add entry */
+{
+	char	name_buf[NAME_LEN*2+2];
+	FILE*	fp;
+
+	/* read and store the filenames */
+	fp = fopen(filename, "r");
+	if (!fp) {
+		msg("xtrabackup: cannot open %s\n",
+		    filename);
+		exit(EXIT_FAILURE);
+	}
+	while (fgets(name_buf, sizeof(name_buf), fp) != NULL) {
+		char*	p = strchr(name_buf, '\n');
+		if (p) {
+			*p = '\0';
+		} else {
+			msg("xtrabackup: `%s...` name is too long", name_buf);
+			exit(EXIT_FAILURE);
+		}
+
+		ins(name_buf);
+	}
+
+	fclose(fp);
+}
+
+
 static
 void
 xb_filters_init()
 {
+	UT_LIST_INIT(regex_list);
+
+	if (xtrabackup_databases) {
+		xb_load_list_string(xtrabackup_databases, " \t",
+					xb_register_filter_entry);
+	}
+
+	if (xtrabackup_databases_file) {
+		xb_load_list_file(xtrabackup_databases_file,
+					xb_register_filter_entry);
+	}
+
 	if (xtrabackup_tables) {
-		/* init regexp */
-		char *p, *next;
-		int i;
-		char errbuf[100];
-
-		tables_regex_num = 1;
-
-		p = xtrabackup_tables;
-		while ((p = strchr(p, ',')) != NULL) {
-			p++;
-			tables_regex_num++;
-		}
-
-		tables_regex = static_cast<xb_regex_t *>
-			(ut_malloc(sizeof(xb_regex_t) * tables_regex_num));
-
-		p = xtrabackup_tables;
-		for (i=0; i < tables_regex_num; i++) {
-			int	rc;
-
-			next = strchr(p, ',');
-			ut_a(next || i == tables_regex_num - 1);
-
-			next++;
-			if (i != tables_regex_num - 1)
-				*(next - 1) = '\0';
-
-			rc = xb_regcomp(&tables_regex[i], p,
-					REG_EXTENDED);
-
-			if (rc) {
-
-				xb_regerror(rc, &tables_regex[i], errbuf,
-					    sizeof(errbuf));
-				msg("xtrabackup: regcomp(%s) failed: %s\n",
-				    p, errbuf);
-
-				exit(EXIT_FAILURE);
-			}
-
-			if (i != tables_regex_num - 1)
-				*(next - 1) = ',';
-			p = next;
-		}
+		xb_load_list_string(xtrabackup_tables, ",",
+					xb_register_regex);
 	}
 
 	if (xtrabackup_tables_file) {
-		char name_buf[NAME_LEN*2+2];
-		FILE *fp;
-
-		name_buf[NAME_LEN*2+1] = '\0';
-
-		/* init tables_hash */
-		tables_hash = hash_create(1000);
-
-		/* read and store the filenames */
-		fp = fopen(xtrabackup_tables_file,"r");
-		if (!fp) {
-			msg("xtrabackup: cannot open %s\n",
-			    xtrabackup_tables_file);
-			exit(EXIT_FAILURE);
-		}
-		for (;;) {
-			xtrabackup_tables_t*	table;
-			char*	p = name_buf;
-
-			if ( fgets(name_buf, NAME_LEN*2+1, fp) == 0 ) {
-				break;
-			}
-
-			p = strchr(name_buf, '\n');
-			if (p)
-			{
-				*p = '\0';
-			}
-
-			table = static_cast<xtrabackup_tables_t *>
-				(ut_malloc(sizeof(xtrabackup_tables_t)
-					+ strlen(name_buf) + 1));
-			memset(table, '\0', sizeof(xtrabackup_tables_t) + strlen(name_buf) + 1);
-			table->name = ((char*)table) + sizeof(xtrabackup_tables_t);
-			strcpy(table->name, name_buf);
-
-			HASH_INSERT(xtrabackup_tables_t, name_hash, tables_hash,
-					ut_fold_string(table->name), table);
-		}
+		xb_load_list_file(xtrabackup_tables_file, xb_register_table);
 	}
 }
 
 static
 void
-xb_tables_hash_free(hash_table_t* hash)
+xb_filter_hash_free(hash_table_t* hash)
 {
 	ulint	i;
 
 	/* free the hash elements */
 	for (i = 0; i < hash_get_n_cells(hash); i++) {
-		xtrabackup_tables_t*	table;
+		xb_filter_entry_t*	table;
 
-		table = static_cast<xtrabackup_tables_t *>
+		table = static_cast<xb_filter_entry_t *>
 			(HASH_GET_FIRST(hash, i));
 
 		while (table) {
-			xtrabackup_tables_t*	prev_table = table;
+			xb_filter_entry_t*	prev_table = table;
 
-			table = static_cast<xtrabackup_tables_t *>
+			table = static_cast<xb_filter_entry_t *>
 				(HASH_GET_NEXT(name_hash, prev_table));
 
-			HASH_DELETE(xtrabackup_tables_t, name_hash, hash,
+			HASH_DELETE(xb_filter_entry_t, name_hash, hash,
 				ut_fold_string(prev_table->name), prev_table);
 			ut_free(prev_table);
 		}
@@ -2726,18 +2919,19 @@ static
 void
 xb_filters_free()
 {
-	if (xtrabackup_tables) {
-		/* free regexp */
-		int i;
-
-		for (i = 0; i < tables_regex_num; i++) {
-			xb_regfree(&tables_regex[i]);
-		}
-		ut_free(tables_regex);
+	while (UT_LIST_GET_LEN(regex_list) > 0) {
+		xb_regex_list_node_t*	node = UT_LIST_GET_FIRST(regex_list);
+		UT_LIST_REMOVE(regex_list, regex_list, node);
+		xb_regfree(&node->regex);
+		ut_free(node);
 	}
 
-	if (xtrabackup_tables_file) {
-		xb_tables_hash_free(tables_hash);
+	if (tables_hash) {
+		xb_filter_hash_free(tables_hash);
+	}
+
+	if (databases_hash) {
+		xb_filter_hash_free(databases_hash);
 	}
 }
 
@@ -4239,7 +4433,7 @@ xb_delta_open_matching_space(
 	fil_space_t*		fil_space;
 	os_file_t		file	= 0;
 	ulint			tablespace_flags;
-	xtrabackup_tables_t*	table;
+	xb_filter_entry_t*	table;
 
 	ut_a(dbname != NULL ||
 	     !fil_is_user_tablespace_id(space_id) ||
@@ -4278,13 +4472,13 @@ xb_delta_open_matching_space(
 	}
 
 	/* remember space name for further reference */
-	table = static_cast<xtrabackup_tables_t *>
-		(ut_malloc(sizeof(xtrabackup_tables_t) +
+	table = static_cast<xb_filter_entry_t *>
+		(ut_malloc(sizeof(xb_filter_entry_t) +
 			strlen(dest_space_name) + 1));
 
-	table->name = ((char*)table) + sizeof(xtrabackup_tables_t);
+	table->name = ((char*)table) + sizeof(xb_filter_entry_t);
 	strcpy(table->name, dest_space_name);
-	HASH_INSERT(xtrabackup_tables_t, name_hash, inc_dir_tables_hash,
+	HASH_INSERT(xb_filter_entry_t, name_hash, inc_dir_tables_hash,
 			ut_fold_string(table->name), table);
 
 	mutex_enter(&fil_system->mutex);
@@ -4610,14 +4804,14 @@ rm_if_not_found(
 	void*		arg __attribute__((unused)))
 {
 	char			name[FN_REFLEN];
-	xtrabackup_tables_t*	table;
+	xb_filter_entry_t*	table;
 
 	snprintf(name, FN_REFLEN, "%s/%s", db_name, file_name);
 	/* Truncate ".ibd" */
 	name[strlen(name) - 4] = '\0';
 
 	HASH_SEARCH(name_hash, inc_dir_tables_hash, ut_fold_string(name),
-		    xtrabackup_tables_t*,
+		    xb_filter_entry_t*,
 		    table, (void) 0,
 		    !strcmp(table->name, name));
 
@@ -5370,7 +5564,7 @@ skip_check:
 
 		if(!xtrabackup_apply_deltas()) {
 			xb_data_files_close();
-			xb_tables_hash_free(inc_dir_tables_hash);
+			xb_filter_hash_free(inc_dir_tables_hash);
 			goto error;
 		}
 	}
@@ -5383,7 +5577,7 @@ skip_check:
 
 		xb_process_datadir("./", ".ibd", rm_if_not_found, NULL);
 
-		xb_tables_hash_free(inc_dir_tables_hash);
+		xb_filter_hash_free(inc_dir_tables_hash);
 	}
 	sync_close();
 	sync_initialized = FALSE;
