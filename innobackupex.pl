@@ -4529,7 +4529,7 @@ sub set_xtrabackup_version {
 	$ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_55');
     }
 
-    if($var_version =~ m/5\.6\.\d/ or $var_version =~ m/10\.0\.\d/){
+    if($var_version =~ m/5\.6\.\d/ or $var_version =~ m/10\.[01]]\.\d/){
         $ibbackup_binary = ($win eq 1 ? 'xtrabackup.exe' : 'xtrabackup_56');
     }
 
@@ -4768,7 +4768,7 @@ sub detect_mysql_capabilities_for_backup {
         $option_galera_info = 0;
     }
 
-    if ($mysql{vars}->{version}->{Value} =~ m/5.[123]\.\d/) {
+    if ($mysql{vars}->{version}->{Value} =~ m/5\.[123]\.\d/) {
         my $now = current_time();
 
         print STDERR "\n$now  $prefix Warning: FLUSH ENGINE LOGS " .
