@@ -4550,8 +4550,8 @@ sub check_server_version {
          $var_version =~ m/5\.5\.\d/ ||
          # MySQL/Percona Server 5.6
          $var_version =~ m/5\.6\.\d/ ||
-         # MariaDB 10.0
-         $var_version =~ m/10\.0\.\d/
+         # MariaDB 10.0 / 10.1
+         $var_version =~ m/10\.[01]\.\d/
         )) {
 
         die "Unsupported server version: '$var_version' " .
@@ -4787,7 +4787,7 @@ sub detect_mysql_capabilities_for_backup {
         $option_galera_info = 0;
     }
 
-    if ($mysql{vars}->{version}->{Value} =~ m/5.[123]\.\d/) {
+    if ($mysql{vars}->{version}->{Value} =~ m/5\.[123]\.\d/) {
         my $now = current_time();
 
         print STDERR "\n$now  $prefix Warning: FLUSH ENGINE LOGS " .
