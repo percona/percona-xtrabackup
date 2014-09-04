@@ -6,6 +6,8 @@
 
 require_galera
 
+has_backup_locks && skip_test "Requires server without backup locks support"
+
 ADDR=127.0.0.1
 
 debug=""

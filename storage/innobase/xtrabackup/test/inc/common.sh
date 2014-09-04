@@ -768,5 +768,14 @@ function multi_row_insert()
     vlog "Done."
 }
 
+########################################################################
+# Return 0 if the server has backup locks support
+########################################################################
+function has_backup_locks()
+{
+    $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
+           2> /dev/null | egrep -q "Value: YES$"
+}
+
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=

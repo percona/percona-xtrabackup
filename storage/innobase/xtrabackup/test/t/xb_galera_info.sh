@@ -16,11 +16,24 @@ else
                  --wsrep_cluster_address=gcomm:// --wsrep_node_address=$ADDR
 fi
 
-
-innobackupex --no-timestamp --galera-info $topdir/backup 
 backup_dir=$topdir/backup
+
+innobackupex --no-timestamp --galera-info $backup_dir 
+
 vlog "Backup created in directory $backup_dir"
-if [[ "`${MYSQL} ${MYSQL_ARGS} -Ns -e 'SHOW STATUS LIKE "wsrep_local_state_uuid"'|awk {'print $2'}`" == "`sed  -re 's/:.+$//' $topdir/backup/xtrabackup_galera_info`" && "`${MYSQL} ${MYSQL_ARGS} -Ns -e 'SHOW STATUS LIKE "wsrep_last_committed"'|awk {'print $2'}`" == "`sed  -re 's/^.+://' $topdir/backup/xtrabackup_galera_info`" ]]
+
+# Test if backup locks are supported by the server and thus, whether
+# xtrabackup_galera_info should be created on the backup or prepare stage
+if has_backup_locks
+then
+    vlog "Preparing the backup to create xtrabackup_galera_info"
+    innobackupex --apply-log $backup_dir
+fi
+
+test -f $backup_dir/xtrabackup_galera_info ||
+  die "xtrabackup_galera_info was not created"
+
+if [[ "`${MYSQL} ${MYSQL_ARGS} -Ns -e 'SHOW STATUS LIKE "wsrep_local_state_uuid"'|awk {'print $2'}`" == "`sed  -re 's/:.+$//' $backup_dir/xtrabackup_galera_info`" && "`${MYSQL} ${MYSQL_ARGS} -Ns -e 'SHOW STATUS LIKE "wsrep_last_committed"'|awk {'print $2'}`" == "`sed  -re 's/^.+://' $backup_dir/xtrabackup_galera_info`" ]]
 then
 	vlog "File is written correctly"
 else

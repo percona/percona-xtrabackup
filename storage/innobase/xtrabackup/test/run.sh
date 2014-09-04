@@ -267,14 +267,7 @@ function set_vars()
     find_program MYSQL_INSTALL_DB mysql_install_db $MYSQL_BASEDIR/bin \
 	$MYSQL_BASEDIR/scripts
     find_program MYSQLD mysqld $MYSQL_BASEDIR/bin/ $MYSQL_BASEDIR/libexec
-    # Use the global mysql client binary, if available. This is a workaround for
-    # PS packageing bug LP 1153950
-    if which mysql >/dev/null 2>&1
-    then
-        MYSQL=`which mysql`
-    else
-        find_program MYSQL mysql $MYSQL_BASEDIR/bin
-    fi
+    find_program MYSQL mysql $MYSQL_BASEDIR/bin
     find_program MYSQLADMIN mysqladmin $MYSQL_BASEDIR/bin
     find_program MYSQLDUMP mysqldump $MYSQL_BASEDIR/bin
 

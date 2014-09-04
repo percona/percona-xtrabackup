@@ -10,13 +10,9 @@ innodb_file_per_table"
 
 start_server
 
-load_sakila
+has_backup_locks || skip_test "Requires backup locks support"
 
-if ! $MYSQL $MYSQL_ARGS -Ns -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
-     2> /dev/null | egrep -q "^YES$"
-then
-    skip_test "Requires backup locks support"
-fi
+load_sakila
 
 innobackupex --no-timestamp $topdir/full_backup
 

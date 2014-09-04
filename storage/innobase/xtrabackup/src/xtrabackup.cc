@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2013 Percona LLC and/or its affiliates
+(c) 2009-2014 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -81,6 +81,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xbstream.h"
 #include "changed_page_bitmap.h"
 #include "read_filt.h"
+#include "wsrep.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT	10
@@ -5891,6 +5892,8 @@ next_node:
 			    metadata_last_lsn);
 		}
 	}
+
+	xb_write_galera_info();
 
 	if(innodb_end())
 		goto error;

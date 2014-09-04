@@ -301,6 +301,52 @@ trx_sys_print_mysql_binlog_offset(void)
 }
 
 /*****************************************************************//**
+Read WSREP XID information from the trx system header if the magic value
+shows it is valid. This code has been copied from MySQL patches by Codership
+with some modifications.
+@return true if the magic value is valid. Otherwise
+return false and leave 'xid' unchanged. */
+bool
+trx_sys_read_wsrep_checkpoint(XID* xid)
+/*===================================*/
+{
+	trx_sysf_t* sys_header;
+	mtr_t	    mtr;
+	ulint	    magic;
+
+	ut_ad(xid);
+
+	mtr_start(&mtr);
+
+	sys_header = trx_sysf_get(&mtr);
+	magic = mach_read_from_4(sys_header + TRX_SYS_WSREP_XID_INFO +
+				 TRX_SYS_WSREP_XID_MAGIC_N_FLD);
+
+	if (magic != TRX_SYS_WSREP_XID_MAGIC_N) {
+
+		mtr_commit(&mtr);
+		return(false);
+	}
+
+	xid->formatID	  = (int)mach_read_from_4(
+		sys_header
+		+ TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_FORMAT);
+	xid->gtrid_length = (int)mach_read_from_4(
+		sys_header
+		+ TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_GTRID_LEN);
+	xid->bqual_length = (int)mach_read_from_4(
+		sys_header
+		+ TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_BQUAL_LEN);
+	ut_memcpy(xid->data,
+		  sys_header + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_DATA,
+		  XIDDATASIZE);
+
+	mtr_commit(&mtr);
+
+	return(true);
+}
+
+/*****************************************************************//**
 Prints to stderr the MySQL master log offset info in the trx system header if
 the magic number shows it valid. */
 UNIV_INTERN

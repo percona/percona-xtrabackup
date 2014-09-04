@@ -42,6 +42,7 @@ Created 3/26/1996 Heikki Tuuri
 #include "read0types.h"
 #include "page0types.h"
 #include "ut0bh.h"
+#include "trx0xa.h"
 
 typedef UT_LIST_BASE_NODE_T(trx_t) trx_list_t;
 
@@ -302,6 +303,15 @@ void
 trx_sys_print_mysql_binlog_offset(void);
 /*===================================*/
 /*****************************************************************//**
+Read WSREP XID information from the trx system header if the magic value
+shows it is valid. This code has been copied from MySQL patches by Codership
+with some modifications.
+@return true if the magic value is valid. Otherwise
+return false and leave 'xid' unchanged. */
+bool
+trx_sys_read_wsrep_checkpoint(XID* xid);
+/*===================================*/
+/*****************************************************************//**
 Prints to stderr the MySQL master log offset info in the trx system header if
 the magic number shows it valid. */
 UNIV_INTERN
@@ -530,6 +540,18 @@ this contains the same fields as TRX_SYS_MYSQL_LOG_INFO below */
 #define TRX_SYS_MYSQL_LOG_OFFSET_LOW	8	/*!< low 4 bytes of the offset
 						within that file */
 #define TRX_SYS_MYSQL_LOG_NAME		12	/*!< MySQL log file name */
+
+/* The offset to WSREP XID headers */
+#define TRX_SYS_WSREP_XID_INFO (UNIV_PAGE_SIZE - 3500)
+#define TRX_SYS_WSREP_XID_MAGIC_N_FLD 0
+#define TRX_SYS_WSREP_XID_MAGIC_N 0x77737265
+
+/* XID field: formatID, gtrid_len, bqual_len, xid_data */
+#define TRX_SYS_WSREP_XID_LEN        (4 + 4 + 4 + XIDDATASIZE)
+#define TRX_SYS_WSREP_XID_FORMAT     4
+#define TRX_SYS_WSREP_XID_GTRID_LEN  8
+#define TRX_SYS_WSREP_XID_BQUAL_LEN 12
+#define TRX_SYS_WSREP_XID_DATA      16
 
 /** Doublewrite buffer */
 /* @{ */

@@ -91,11 +91,7 @@ function wait_for_connection_count()
 
 start_server --innodb_file_per_table
 
-if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
-     2> /dev/null | egrep -q "Value: YES"
-then
-    skip_test "Requires a server without backup locks support"
-fi
+has_backup_locks && skip_test "Requires a server without backup locks support"
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t1(a INT) ENGINE=InnoDB;

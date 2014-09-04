@@ -4,7 +4,7 @@
 # files.
 #
 # Copyright 2003, 2009 Innobase Oy. All Rights Reserved.
-# Copyright Percona LLC and/or its affiliates, 2009-2013.  All Rights Reserved.
+# Copyright Percona LLC and/or its affiliates, 2009-2014.  All Rights Reserved.
 #
 
 use warnings FATAL => 'all';
@@ -3075,6 +3075,15 @@ sub write_galera_info {
     my $state_uuid = '';
     my $last_committed = '';
 
+    # When backup locks are supported by the server, we should skip creating
+    # xtrabackup_galera_info file on the backup stage, because
+    # wsrep_local_state_uuid and wsrep_last_committed will be inconsistent
+    # without blocking commits. The state file will be created on the prepare
+    # stage using the WSREP recovery procedure.
+    if ($have_backup_locks) {
+        return;
+    }
+
     # get binlog position
     get_mysql_status($con);
 
@@ -5235,7 +5244,7 @@ This option, when specified, makes --copy-back or --move-back transfer files to 
 
 =item --galera-info
 
-This options creates the xtrabackup_galera_info file which contains the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster.
+This options creates the xtrabackup_galera_info file which contains the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster. Has no effect when backup locks are used to create the backup.
 
 =item --help
 

@@ -52,6 +52,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   quicklz/quicklz.c
   read_filt.cc
   write_filt.cc
+  wsrep.cc
   xbcrypt_common.c
   xbcrypt_write.c
   xbstream_write.c

@@ -92,7 +92,7 @@ Options
 
 .. option:: --galera-info
 
-   This options creates the ``xtrabackup_galera_info`` file which contains the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster.
+   This options creates the ``xtrabackup_galera_info`` file which contains the local node state at the time of the backup. Option should be used when performing the backup of Percona-XtraDB-Cluster. Has no effect when backup locks are used to create the backup.
 
 .. option:: --help
 
