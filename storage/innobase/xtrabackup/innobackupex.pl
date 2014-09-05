@@ -3072,8 +3072,8 @@ sub write_galera_info {
     my $con = shift;
     my @lines;
     my @info_lines = ();
-    my $state_uuid = '';
-    my $last_committed = '';
+    my $state_uuid = undef;
+    my $last_committed = undef;
 
     # When backup locks are supported by the server, we should skip creating
     # xtrabackup_galera_info file on the backup stage, because
@@ -3087,12 +3087,20 @@ sub write_galera_info {
     # get binlog position
     get_mysql_status($con);
 
-    $state_uuid = $con->{status}->{wsrep_local_state_uuid}->{Value};
-    $last_committed = $con->{status}->{wsrep_last_committed}->{Value};
+    # MariaDB Galera Cluster uses capitalized wsrep_* status variables
+    if (defined($con->{status}->{Wsrep_local_state_uuid})) {
+        $state_uuid = $con->{status}->{Wsrep_local_state_uuid}->{Value};
+    } elsif (defined($con->{status}->{wsrep_local_state_uuid})) {
+        $state_uuid = $con->{status}->{wsrep_local_state_uuid}->{Value};
+    }
+
+    if (defined($con->{status}->{Wsrep_last_committed})) {
+        $last_committed = $con->{status}->{Wsrep_last_committed}->{Value};
+    } elsif (defined($con->{status}->{wsrep_last_committed})) {
+        $last_committed = $con->{status}->{wsrep_last_committed}->{Value};
+    }
 
     if (!defined($state_uuid) || !defined($last_committed)) {
-        my $now = current_time();
-
         die "Failed to get master wsrep state from SHOW STATUS.";
     }
 
