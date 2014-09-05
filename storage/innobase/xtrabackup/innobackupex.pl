@@ -3074,6 +3074,7 @@ sub write_galera_info {
     my @info_lines = ();
     my $state_uuid = undef;
     my $last_committed = undef;
+    my $gtid_exists= 0;
 
     # When backup locks are supported by the server, we should skip creating
     # xtrabackup_galera_info file on the backup stage, because
@@ -3111,9 +3112,19 @@ sub write_galera_info {
         get_mysql_master_status($con);
     }
 
-    my $gtid = $con->{master_status}->{Executed_Gtid_Set} || '';
+    if (defined($con->{master_status}->{Executed_Gtid_Set})) {
+        # MySQL >= 5.6
+        if ($con->{master_status}->{Executed_Gtid_Set} ne '') {
+            $gtid_exists = 1;
+        }
+    } elsif (defined($con->{vars}->{gtid_binlog_state})) {
+         # MariaDB >= 10.0
+        if ($con->{vars}->{gtid_binlog_state}->{Value}) {
+            $gtid_exists = 1;
+        }
+    }
 
-    if ($gtid) {
+    if ($gtid_exists) {
         my $log_bin_dir;
         my $log_bin_file;
 
@@ -3121,7 +3132,15 @@ sub write_galera_info {
         get_mysql_master_status($con);
 
         $log_bin_file = $con->{master_status}->{File};
-        $log_bin_dir = File::Basename::dirname($mysql{vars}->{log_bin_basename}->{Value});
+        if (defined($con->{vars}->{log_bin_basename})) {
+            # MySQL >= 5.6
+            $log_bin_dir =
+                File::Basename::dirname($con->{vars}->{log_bin_basename}->{Value});
+        } else {
+            # MariaDB >= 10.0
+            # log_bin_basename does not exist in MariaDB, fallback to datadir
+             $log_bin_dir = $con->{vars}->{datadir}->{Value};
+        }
 
         if (!defined($log_bin_file) || !defined($log_bin_dir)) {
             die "Failed to get master binlog coordinates from SHOW MASTER STATUS";
