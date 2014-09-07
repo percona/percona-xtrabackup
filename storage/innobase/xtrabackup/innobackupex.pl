@@ -3040,6 +3040,7 @@ sub mysql_close {
 #
 sub write_binlog_info {
     my $con = shift;
+    my $gtid;
 
     # get binlog position
     get_mysql_master_status($con);
@@ -3048,20 +3049,29 @@ sub write_binlog_info {
     # from the SHOW MASTER STATUS output
     my $filename = $con->{master_status}->{File};
     my $position = $con->{master_status}->{Position};
-    my $gtid = $con->{master_status}->{Executed_Gtid_Set} || '';
 
     # Do not create xtrabackup_binlog_info if binary log is disabled
     if (!defined($filename) or !defined($position)) {
         return;
     }
 
+    $mysql_binlog_position = "filename '$filename', position $position";
+
+    $gtid = $con->{master_status}->{Executed_Gtid_Set};
+    if (!defined($gtid)) {
+        # Try to get MariaDB-style GTID
+        get_mysql_vars($con);
+        $gtid = $con->{vars}->{gtid_current_pos}->{Value};
+    }
+
+    if (defined($gtid)) {
+        $mysql_binlog_position .= ", GTID of the last change '$gtid'";
+    } else {
+        $gtid = '';
+    }
+
     # write binlog info file
     write_to_backup_file("$binlog_info", "$filename\t$position\t\t$gtid\n");
-    
-    $mysql_binlog_position = "filename '$filename', position $position";
-    if ($gtid) {
-        $mysql_binlog_position .= ", gtid_executed $gtid";
-    }
 }
 
 #
@@ -3119,7 +3129,7 @@ sub write_galera_info {
         }
     } elsif (defined($con->{vars}->{gtid_binlog_state})) {
          # MariaDB >= 10.0
-        if ($con->{vars}->{gtid_binlog_state}->{Value}) {
+        if ($con->{vars}->{gtid_binlog_state}->{Value} ne '') {
             $gtid_exists = 1;
         }
     }
@@ -3165,13 +3175,11 @@ sub write_slave_info {
 
     # get slave status
     get_mysql_slave_status($con);
+    get_mysql_vars($con);
 
-    # get output of the "show slave status" command from mysql output
-    # and extract binlog position of the master server
     my $master = $con->{slave_status}->{Master_Host};
     my $filename = $con->{slave_status}->{Relay_Master_Log_File};
     my $position = $con->{slave_status}->{Exec_Master_Log_Pos};
-    my $gtid_executed = $con->{slave_status}->{Executed_Gtid_Set};
 
     if (!defined($master) || !defined($filename) || !defined($position)) {
         my $now = current_time();
@@ -3184,16 +3192,27 @@ sub write_slave_info {
         return;
     }
 
+    my $gtid_executed = $con->{slave_status}->{Executed_Gtid_Set};
+
     # Print slave status to a file.
     # If GTID mode is used, construct a CHANGE MASTER statement with
     # MASTER_AUTO_POSITION and correct a gtid_purged value.
-    if (defined($gtid_executed) && $gtid_executed) {
+    if (defined($gtid_executed) && $gtid_executed ne '') {
+        # MySQL >= 5.6 with GTID enabled
         $gtid_executed =~ s/\n/ /;
         write_to_backup_file("$slave_info",
                              "SET GLOBAL gtid_purged='$gtid_executed';\n" .
                              "CHANGE MASTER TO MASTER_AUTO_POSITION=1\n");
         $mysql_slave_position = "master host '$master', ".
             "purge list '$gtid_executed'";
+    } elsif (defined($con->{vars}->{gtid_slave_pos}) &&
+             $con->{vars}->{gtid_slave_pos}->{Value} ne '') {
+        # MariaDB >= 10.0 with GTID enabled
+        write_to_backup_file("$slave_info",
+                             "CHANGE MASTER TO master_use_gtid = " .
+                             "slave_pos\n"); # or current_pos ??
+        $mysql_slave_position = "master host '$master', " .
+            "gtid_slave_pos " . $con->{vars}->{gtid_slave_pos}->{Value};
     } else {
         write_to_backup_file("$slave_info",
                              "CHANGE MASTER TO MASTER_LOG_FILE='$filename', " .
