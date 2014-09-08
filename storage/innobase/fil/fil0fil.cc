@@ -45,6 +45,7 @@ Created 10/25/1995 Heikki Tuuri
 #include "page0zip.h"
 #include "pars0pars.h"
 #include "que0que.h"
+#include "trx0purge.h"
 #include "trx0sys.h"
 #include "row0mysql.h"
 #ifndef UNIV_HOTBACKUP
@@ -3691,7 +3692,9 @@ fil_open_single_table_tablespace(
 		ib_logf(IB_LOG_LEVEL_WARN,
 			"It will be removed from the data dictionary.");
 
-		fil_remove_invalid_table_from_data_dict(tablename);
+		if (purge_sys) {
+			fil_remove_invalid_table_from_data_dict(tablename);
+		}
 
 		err = DB_CORRUPTION;
 
@@ -4900,7 +4903,7 @@ error_exit:
 
 		mutex_exit(&fil_system->mutex);
 
-		if (remove_from_data_dict) {
+		if (remove_from_data_dict && purge_sys) {
 			fil_remove_invalid_table_from_data_dict(name);
 		}
 
