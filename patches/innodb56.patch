@@ -112,16 +112,17 @@
  				bpage->offset, buf_page_get_zip_size(bpage),
 --- a/storage/innobase/fil/fil0fil.cc
 +++ b/storage/innobase/fil/fil0fil.cc
-@@ -43,6 +43,8 @@
+@@ -43,6 +43,9 @@
  #include "dict0dict.h"
  #include "page0page.h"
  #include "page0zip.h"
 +#include "pars0pars.h"
 +#include "que0que.h"
++#include "trx0purge.h"
  #include "trx0sys.h"
  #include "row0mysql.h"
  #ifndef UNIV_HOTBACKUP
-@@ -313,17 +315,15 @@
+@@ -313,17 +316,15 @@
  
  /** The tablespace memory cache. This variable is NULL before the module is
  initialized. */
@@ -145,7 +146,7 @@
  #else /* __WIN__ */
  # define fil_buffering_disabled(s)	(0)
  #endif /* __WIN__ */
-@@ -791,6 +791,7 @@
+@@ -791,6 +792,7 @@
  				"InnoDB: Error: tablespace id is %lu"
  				" in the data dictionary\n"
  				"InnoDB: but in file %s it is %lu!\n",
@@ -153,7 +154,7 @@
  				space->id, node->name, space_id);
  
  			ut_error;
-@@ -830,8 +831,9 @@
+@@ -830,8 +832,9 @@
  		}
  
  		if (size_bytes >= 1024 * 1024) {
@@ -165,7 +166,7 @@
  		}
  
  		if (!fsp_flags_is_compressed(flags)) {
-@@ -1302,12 +1304,6 @@
+@@ -1302,12 +1305,6 @@
  
  		if (!fil_system->space_id_reuse_warned) {
  			fil_system->space_id_reuse_warned = TRUE;
@@ -178,7 +179,7 @@
  		}
  
  		fil_system->max_assigned_id = id;
-@@ -2031,12 +2027,6 @@
+@@ -2031,12 +2028,6 @@
  						contain sensible data */
  	ulint*		flags,			/*!< out: tablespace flags */
  	ulint*		space_id,		/*!< out: tablespace ID */
@@ -191,7 +192,7 @@
  	lsn_t*		min_flushed_lsn,	/*!< out: min of flushed
  						lsn values in data files */
  	lsn_t*		max_flushed_lsn)	/*!< out: max of flushed
-@@ -2061,7 +2051,7 @@
+@@ -2061,7 +2052,7 @@
  
  	flushed_lsn = mach_read_from_8(page + FIL_PAGE_FILE_FLUSH_LSN);
  
@@ -200,7 +201,7 @@
  		check_msg = fil_check_first_page(page);
  	}
  
-@@ -2074,10 +2064,6 @@
+@@ -2074,10 +2065,6 @@
  	if (!one_read_already) {
  		*min_flushed_lsn = flushed_lsn;
  		*max_flushed_lsn = flushed_lsn;
@@ -211,7 +212,7 @@
  		return(NULL);
  	}
  
-@@ -2087,14 +2073,6 @@
+@@ -2087,14 +2074,6 @@
  	if (*max_flushed_lsn < flushed_lsn) {
  		*max_flushed_lsn = flushed_lsn;
  	}
@@ -226,7 +227,7 @@
  
  	return(NULL);
  }
-@@ -2195,7 +2173,7 @@
+@@ -2195,7 +2174,7 @@
  	mem_free(path);
  }
  
@@ -235,7 +236,7 @@
  /********************************************************//**
  Writes a log record about an .ibd file create/rename/delete. */
  static
-@@ -2423,7 +2401,7 @@
+@@ -2423,7 +2402,7 @@
  				    space_id, name, path, flags,
  				    DICT_TF2_USE_TABLESPACE,
  				    FIL_IBD_FILE_INITIAL_SIZE) != DB_SUCCESS) {
@@ -244,7 +245,7 @@
  			}
  		}
  
-@@ -2782,7 +2760,7 @@
+@@ -2782,7 +2761,7 @@
  	}
  
  	if (err == DB_SUCCESS) {
@@ -253,7 +254,7 @@
  		/* Write a log record about the deletion of the .ibd
  		file, so that ibbackup can replay it in the
  		--apply-log phase. We use a dummy mtr and the familiar
-@@ -3137,7 +3115,7 @@
+@@ -3137,7 +3116,7 @@
  
  	mutex_exit(&fil_system->mutex);
  
@@ -262,7 +263,7 @@
  	if (success && !recv_recovery_on) {
  		mtr_t		mtr;
  
-@@ -3368,7 +3346,21 @@
+@@ -3368,7 +3347,21 @@
  	ibool		success;
  	/* TRUE if a table is created with CREATE TEMPORARY TABLE */
  	bool		is_temp = !!(flags2 & DICT_TF2_TEMPORARY);
@@ -284,7 +285,7 @@
  
  	ut_a(space_id > 0);
  	ut_ad(!srv_read_only_mode);
-@@ -3521,7 +3513,7 @@
+@@ -3521,7 +3514,7 @@
  		goto error_exit_1;
  	}
  
@@ -293,7 +294,7 @@
  	{
  		mtr_t		mtr;
  		ulint		mlog_file_flag = 0;
-@@ -3599,6 +3591,97 @@
+@@ -3599,6 +3592,97 @@
  		(ulong) expected_id, (ulong) expected_flags);
  }
  
@@ -391,7 +392,7 @@
  /********************************************************************//**
  Tries to open a single-table tablespace and optionally checks that the
  space id in it is correct. If this does not succeed, print an error message
-@@ -3664,6 +3747,9 @@
+@@ -3664,6 +3748,9 @@
  	in the default location. If it is remote, it should not be here. */
  	def.filepath = fil_make_ibd_name(tablename, false);
  
@@ -401,7 +402,7 @@
  	/* The path_in was read from SYS_DATAFILES. */
  	if (path_in) {
  		if (strcmp(def.filepath, path_in)) {
-@@ -3711,6 +3797,7 @@
+@@ -3711,6 +3798,7 @@
  			tablespaces_found++;
  		}
  	}
@@ -409,7 +410,7 @@
  
  	/* Always look for a file at the default location. */
  	ut_a(def.filepath);
-@@ -3732,9 +3819,6 @@
+@@ -3732,9 +3820,6 @@
  	if (def.success) {
  		def.check_msg = fil_read_first_page(
  			def.file, FALSE, &def.flags, &def.id,
@@ -419,7 +420,7 @@
  			&def.lsn, &def.lsn);
  		def.valid = !def.check_msg;
  
-@@ -3757,9 +3841,6 @@
+@@ -3757,9 +3842,6 @@
  	if (remote.success) {
  		remote.check_msg = fil_read_first_page(
  			remote.file, FALSE, &remote.flags, &remote.id,
@@ -429,7 +430,7 @@
  			&remote.lsn, &remote.lsn);
  		remote.valid = !remote.check_msg;
  
-@@ -3783,9 +3864,6 @@
+@@ -3783,9 +3865,6 @@
  	if (dict.success) {
  		dict.check_msg = fil_read_first_page(
  			dict.file, FALSE, &dict.flags, &dict.id,
@@ -439,7 +440,7 @@
  			&dict.lsn, &dict.lsn);
  		dict.valid = !dict.check_msg;
  
-@@ -3810,11 +3888,15 @@
+@@ -3810,11 +3889,17 @@
  		/* The following call prints an error message */
  		os_file_get_last_error(true);
  
@@ -452,11 +453,13 @@
 +		ib_logf(IB_LOG_LEVEL_WARN,
 +			"It will be removed from the data dictionary.");
 +
-+		fil_remove_invalid_table_from_data_dict(tablename);
++		if (purge_sys) {
++			fil_remove_invalid_table_from_data_dict(tablename);
++		}
  
  		err = DB_CORRUPTION;
  
-@@ -4187,9 +4269,6 @@
+@@ -4187,9 +4272,6 @@
  	fsp->success = TRUE;
  	if (const char* check_msg = fil_read_first_page(
  		    fsp->file, FALSE, &fsp->flags, &fsp->id,
@@ -466,7 +469,7 @@
  		    &fsp->lsn, &fsp->lsn)) {
  		ib_logf(IB_LOG_LEVEL_ERROR,
  			"%s in tablespace %s (table %s)",
-@@ -4266,6 +4345,9 @@
+@@ -4266,6 +4348,9 @@
  #ifdef UNIV_HOTBACKUP
  	fil_space_t*	space;
  #endif
@@ -476,7 +479,7 @@
  
  	memset(&def, 0, sizeof(def));
  	memset(&remote, 0, sizeof(remote));
-@@ -4310,6 +4392,9 @@
+@@ -4310,6 +4395,9 @@
  # endif /* !UNIV_HOTBACKUP */
  #endif
  
@@ -486,7 +489,7 @@
  	/* Check for a link file which locates a remote tablespace. */
  	remote.success = fil_open_linked_file(
  		tablename, &remote.filepath, &remote.file);
-@@ -4320,8 +4405,20 @@
+@@ -4320,8 +4408,20 @@
  		if (!remote.success) {
  			os_file_close(remote.file);
  			mem_free(remote.filepath);
@@ -507,7 +510,7 @@
  
  
  	/* Try to open the tablespace in the datadir. */
-@@ -4334,6 +4431,17 @@
+@@ -4334,6 +4434,17 @@
  		fil_validate_single_table_tablespace(tablename, &def);
  		if (!def.success) {
  			os_file_close(def.file);
@@ -525,7 +528,7 @@
  		}
  	}
  
-@@ -4418,7 +4526,7 @@
+@@ -4418,7 +4529,7 @@
  	/* At this point, only one tablespace is open */
  	ut_a(def.success == !remote.success);
  
@@ -534,7 +537,7 @@
  
  	/* Get and test the file size. */
  	size = os_file_get_size(fsp->file);
-@@ -4437,9 +4545,9 @@
+@@ -4437,9 +4548,9 @@
  
  	/* Every .ibd file is created >= 4 pages in size. Smaller files
  	cannot be ok. */
@@ -546,7 +549,7 @@
  		ib_logf(IB_LOG_LEVEL_ERROR,
  			"The size of single-table tablespace file %s "
  			"is only " UINT64PF ", should be at least %lu!",
-@@ -4520,7 +4628,7 @@
+@@ -4520,7 +4631,7 @@
  	}
  	mutex_exit(&fil_system->mutex);
  #endif /* UNIV_HOTBACKUP */
@@ -555,7 +558,7 @@
  		tablename, fsp->id, fsp->flags, FIL_TABLESPACE);
  
  	if (!file_space_create_success) {
-@@ -4547,13 +4655,55 @@
+@@ -4547,13 +4658,55 @@
  	}
  
  func_exit:
@@ -615,7 +618,7 @@
  	mem_free(tablename);
  	if (remote.success) {
  		mem_free(remote.filepath);
-@@ -4567,7 +4717,7 @@
+@@ -4567,7 +4720,7 @@
  idea is to read as much good data as we can and jump over bad data.
  @return 0 if ok, -1 if error even after the retries, 1 if at the end
  of the directory */
@@ -624,7 +627,7 @@
  int
  fil_file_readdir_next_file(
  /*=======================*/
-@@ -4607,7 +4757,7 @@
+@@ -4607,7 +4760,7 @@
  @return	DB_SUCCESS or error number */
  UNIV_INTERN
  dberr_t
@@ -633,7 +636,7 @@
  /*===================================*/
  {
  	int		ret;
-@@ -4663,7 +4813,9 @@
+@@ -4663,7 +4816,9 @@
  			    "%s/%s", fil_path_to_mysql_datadir, dbinfo.name);
  		srv_normalize_path_for_win(dbpath);
  
@@ -644,7 +647,7 @@
  
  		if (dbdir != NULL) {
  
-@@ -4684,9 +4836,15 @@
+@@ -4684,9 +4839,15 @@
  				    && (0 == strcmp(fileinfo.name
  						   + strlen(fileinfo.name) - 4,
  						   ".ibd")
@@ -662,7 +665,7 @@
  					/* The name ends in .ibd or .isl;
  					try opening the file */
  					fil_load_single_table_tablespace(
-@@ -4842,6 +5000,7 @@
+@@ -4842,6 +5003,7 @@
  {
  	fil_space_t*	fnamespace;
  	fil_space_t*	space;
@@ -670,7 +673,7 @@
  
  	ut_ad(fil_system);
  
-@@ -4919,6 +5078,10 @@
+@@ -4919,6 +5081,10 @@
  		if (fnamespace == NULL) {
  			if (print_error_if_does_not_exist) {
  				fil_report_missing_tablespace(name, id);
@@ -681,18 +684,18 @@
  			}
  		} else {
  			ut_print_timestamp(stderr);
-@@ -4942,6 +5105,10 @@
+@@ -4942,6 +5108,10 @@
  
  		mutex_exit(&fil_system->mutex);
  
-+		if (remove_from_data_dict) {
++		if (remove_from_data_dict && purge_sys) {
 +			fil_remove_invalid_table_from_data_dict(name);
 +		}
 +
  		return(FALSE);
  	}
  
-@@ -5575,6 +5742,16 @@
+@@ -5575,6 +5745,16 @@
  
  	ut_ad(mode != OS_AIO_IBUF || space->purpose == FIL_TABLESPACE);
  
@@ -709,7 +712,7 @@
  	node = UT_LIST_GET_FIRST(space->chain);
  
  	for (;;) {
-@@ -6502,6 +6679,7 @@
+@@ -6502,6 +6682,7 @@
  	return(err);
  }
  
@@ -717,7 +720,7 @@
  /****************************************************************//**
  Generate redo logs for swapping two .ibd files */
  UNIV_INTERN
-@@ -6528,3 +6706,4 @@
+@@ -6528,3 +6709,4 @@
  				 0, 0, new_name, old_name, mtr);
  	}
  }
