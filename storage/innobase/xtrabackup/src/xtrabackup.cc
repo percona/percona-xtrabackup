@@ -198,6 +198,9 @@ ulint xtrabackup_rebuild_threads = 1;
 in milliseconds (default is 1 second) */
 ulint xtrabackup_log_copy_interval = 1000;
 
+/* Ignored option (--log) for MySQL option compatibility */
+char*	log_ignored_opt				= NULL;
+
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
 char metadata_type[30] = ""; /*[full-backuped|full-prepared|incremental]*/
@@ -425,6 +428,7 @@ enum options_xtrabackup
   OPT_XTRA_ENCRYPT_KEY_FILE,
   OPT_XTRA_ENCRYPT_THREADS,
   OPT_XTRA_ENCRYPT_CHUNK_SIZE,
+  OPT_LOG,
   OPT_INNODB,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
@@ -628,6 +632,10 @@ static struct my_option xb_long_options[] =
    "Size of working buffer(S) for encryption threads in bytes. The default value is 64K.",
    (G_PTR*) &xtrabackup_encrypt_chunk_size, (G_PTR*) &xtrabackup_encrypt_chunk_size,
    0, GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONGLONG_MAX, 0, 0, 0},
+
+   {"log", OPT_LOG, "Ignored option for MySQL option compatibility",
+   (G_PTR*) &log_ignored_opt, (G_PTR*) &log_ignored_opt, 0,
+   GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
    {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
    (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,
