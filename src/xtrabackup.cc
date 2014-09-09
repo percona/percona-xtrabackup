@@ -5921,6 +5921,12 @@ next_opt:
 	if ((ho_error=handle_options(&argc, &argv, xb_long_options, get_one_option)))
 		exit(ho_error);
 
+	if (argc != 0) {
+		msg("xtrabackup: Error: unknown argument: '%s'\n",
+		    argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
 	if ((!xtrabackup_print_param) && (!xtrabackup_prepare) && (strcmp(mysql_data_home, "./") == 0)) {
 		if (!xtrabackup_print_param)
 			usage();
