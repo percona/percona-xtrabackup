@@ -382,7 +382,7 @@ index 2ab74b1..3f6e058 100644
 +	inconsistencies between the file name and the actual tablespace contents
 +	if a DDL occurs between a fil_load_single_table_tablespaces() call and
 +	the actual copy operation. */
-+	if (srv_backup_mode) {
++	if (srv_backup_mode && !srv_close_files) {
 +
 +		fil_node_t*	node;
 +		fil_space_t*	space;
@@ -791,7 +791,7 @@ index 2ab74b1..3f6e058 100644
  extern char	srv_adaptive_flushing;
  
  /* If this flag is TRUE, then we will load the indexes' (and tables') metadata
-@@ -271,6 +270,11 @@
+@@ -271,6 +270,12 @@
  extern ulint	srv_expand_import;
  extern ulint	srv_pass_corrupt_table;
  
@@ -799,6 +799,7 @@ index 2ab74b1..3f6e058 100644
 +extern ibool	srv_fake_write;
 +extern ibool	srv_apply_log_only;
 +extern ibool	srv_backup_mode;
++extern ibool	srv_close_files;
 +
  /* Helper macro to support srv_pass_corrupt_table checks. If 'cond' is FALSE,
  execute 'code' if srv_pass_corrupt_table is non-zero, or trigger a fatal error
@@ -1193,7 +1194,7 @@ index 2ab74b1..3f6e058 100644
  
  /* Try to flush dirty pages so as to avoid IO bursts at
  the checkpoints. */
-@@ -435,6 +428,11 @@
+@@ -435,6 +428,12 @@
  UNIV_INTERN ulint	srv_pass_corrupt_table = 0; /* 0:disable 1:enable */
  
  UNIV_INTERN ulint	srv_dict_size_limit = 0;
@@ -1202,10 +1203,11 @@ index 2ab74b1..3f6e058 100644
 +UNIV_INTERN ibool	srv_fake_write  = FALSE;
 +UNIV_INTERN ibool	srv_apply_log_only = FALSE;
 +UNIV_INTERN ibool	srv_backup_mode = FALSE;
++UNIV_INTERN ibool	srv_close_files = FALSE;
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_n_free_tickets_to_enter = 500;
-@@ -1185,7 +1183,7 @@
+@@ -1185,7 +1184,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -1214,7 +1216,7 @@ index 2ab74b1..3f6e058 100644
  }
  
  /*********************************************************************//**
-@@ -1196,6 +1194,7 @@
+@@ -1196,6 +1195,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -1222,7 +1224,7 @@ index 2ab74b1..3f6e058 100644
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1209,6 +1208,7 @@
+@@ -1209,6 +1209,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -1230,7 +1232,7 @@ index 2ab74b1..3f6e058 100644
  }
  
  /*********************************************************************//**
-@@ -1952,7 +1952,7 @@
+@@ -1952,7 +1953,7 @@
  		}
  
  		/* Record the lock wait time for this thread */
@@ -1239,7 +1241,7 @@ index 2ab74b1..3f6e058 100644
  	}
  
  	if (trx->was_chosen_as_deadlock_victim) {
-@@ -2975,36 +2975,6 @@
+@@ -2975,36 +2976,6 @@
  		old_sema = sema;
  	}
  

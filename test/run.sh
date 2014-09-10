@@ -51,6 +51,8 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
             on the MySQL version.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
+-x options  Extra options to pass to xtrabackup
+-i options  Extra options to pass to innobackupex
 EOF
 }
 
@@ -263,6 +265,9 @@ function set_vars()
     if gnutar --version > /dev/null 2>&1
     then
 	TAR=gnutar
+    elif gtar --version > /dev/null 2>&1
+    then
+	TAR=gtar
     else
 	TAR=tar
     fi
@@ -324,7 +329,7 @@ function get_version_info()
     MYSQLD_EXTRA_ARGS=
 
     XB_BIN=""
-    IB_ARGS="--user=root --ibbackup=$XB_BIN"
+    IB_ARGS="--user=root --ibbackup=$XB_BIN ${IB_EXTRA_OPTS:-}"
     XB_ARGS="--no-defaults"
 
     if [ "$XB_BUILD" != "autodetect" ]
@@ -794,7 +799,7 @@ SUBUNIT_OUT=test_results.subunit
 NWORKERS=
 DEBUG_WORKER=""
 
-while getopts "fgh?:t:s:d:c:j:T:" options; do
+while getopts "fgh?:t:s:d:c:j:T:x:i:" options; do
         case $options in
             f ) force="yes";;
             t )
@@ -829,6 +834,14 @@ while getopts "fgh?:t:s:d:c:j:T:" options; do
                     exit -1
                 fi
                 TEST_TIMEOUT="$OPTARG"
+                ;;
+
+            x )
+                XB_EXTRA_MY_CNF_OPTS="$OPTARG"
+                ;;
+
+            i )
+                IB_EXTRA_OPTS="$OPTARG"
                 ;;
 
             ? ) echo "Use \`$0 -h' for the list of available options."

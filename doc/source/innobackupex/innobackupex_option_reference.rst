@@ -14,6 +14,10 @@ Options
 
    Prepare a backup in ``BACKUP-DIR`` by applying the transaction log file named :file:`xtrabackup_logfile` located in the same directory. Also, create new transaction logs. The InnoDB configuration is read from the file :file:`backup-my.cnf` created by |innobackupex| when the backup was made. innobackupex --apply-log uses InnoDB configuration from ``backup-my.cnf`` by default, or from --defaults-file, if specified. InnoDB configuration in this context means server variables that affect data format, i.e. :option:`innodb_page_size`, :option:`innodb_log_block_size`, etc. Location-related variables, like :option:`innodb_log_group_home_dir` or :option:`innodb_data_file_path` are always ignored by --apply-log, so preparing a backup always works with data files from the backup directory, rather than any external ones.
 
+.. option:: --close-files
+
+   Do not keep files opened. This option is passed directly to xtrabackup. When xtrabackup opens tablespace it normally doesn't close its file handle in order to handle the DDL operations correctly. However, if the number of tablespaces is really huge and can not fit into any limit, there is an option to close file handles once they are no longer accessed. Xtrabackup can produce inconsistent backups with this option enabled. Use at your own risk.
+
 .. option:: --compact
 
    Create a compact backup with all secondary index pages omitted. This option is passed directly to xtrabackup.  See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.

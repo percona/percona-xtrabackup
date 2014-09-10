@@ -17,6 +17,10 @@ Options
 
    Make a backup and place it in :option:`--target-dir`. See :doc:`Creating a backup <creating_a_backup>`.
 
+.. option:: --close-files
+
+   Do not keep files opened. When xtrabackup opens tablespace it normally doesn't close its file handle in order to handle the DDL operations correctly. However, if the number of tablespaces is really huge and can not fit into any limit, there is an option to close file handles once they are no longer accessed. Xtrabackup can produce inconsistent backups with this option enabled. Use at your own risk.
+
 .. option::  --compact     
 
    Create a compact backup by skipping secondary index pages.

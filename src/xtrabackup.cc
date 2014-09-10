@@ -295,6 +295,7 @@ lsn_t xtrabackup_arch_first_file_lsn = 0ULL;
 lsn_t xtrabackup_arch_last_file_lsn = 0ULL;
 
 ulong xb_open_files_limit= 0;
+my_bool xb_close_files= FALSE;
 
 /* Datasinks */
 ds_ctxt_t       *ds_data     = NULL;
@@ -483,7 +484,8 @@ enum options_xtrabackup
 #endif
   OPT_XTRA_INCREMENTAL_FORCE_SCAN,
   OPT_DEFAULTS_GROUP,
-  OPT_OPEN_FILES_LIMIT
+  OPT_OPEN_FILES_LIMIT,
+  OPT_CLOSE_FILES
 };
 
 #if MYSQL_VERSION_ID >= 50600
@@ -906,6 +908,10 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "descriptors to reserve with setrlimit().",
    (G_PTR*) &xb_open_files_limit, (G_PTR*) &xb_open_files_limit, 0, GET_ULONG,
    REQUIRED_ARG, 0, 0, UINT_MAX, 0, 1, 0},
+
+  {"close_files", OPT_CLOSE_FILES, "do not keep files opened. Use at your own "
+   "risk.", (G_PTR*) &xb_close_files, (G_PTR*) &xb_close_files, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
 
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -3051,6 +3057,13 @@ xtrabackup_backup_func(void)
 	xb_set_innodb_read_only();
 
 	srv_backup_mode = TRUE;
+	srv_close_files = xb_close_files;
+
+	if (srv_close_files)
+		msg("xtrabackup: warning: close-files specified. Use it "
+		    "at your own risk. If there are DDL operations like table DROP TABLE "
+		    "or RENAME TABLE during the backup, inconsistent backup will be "
+		    "produced.\n");
 
 	/* initialize components */
         if(innodb_init_param())
