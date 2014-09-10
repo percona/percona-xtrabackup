@@ -136,6 +136,7 @@ my $option_parallel = '';
 my $option_safe_slave_backup = '';
 my $option_safe_slave_backup_timeout = 300;
 
+my $option_close_files = '';
 my $option_compact = '';
 my $option_rebuild_indexes = '';
 my $option_rebuild_threads = 0;
@@ -2846,6 +2847,10 @@ sub start_ibbackup {
         $options = $options . " --stream=$option_stream";
     }
 
+    if ($option_close_files) {
+        $options = $options . " --close-files";
+    }
+
     if ($option_compact) {
 	$options = $options . " --compact";
     }
@@ -3767,6 +3772,7 @@ sub check_args {
                         'parallel=i' => \$option_parallel,
                         'safe-slave-backup' => \$option_safe_slave_backup,
                         'safe-slave-backup-timeout=i' => \$option_safe_slave_backup_timeout,
+                        'close-files' => \$option_close_files,
                         'compact' => \$option_compact,
                         'rebuild-indexes' => \$option_rebuild_indexes,
                         'rebuild-threads=i' => \$option_rebuild_threads,
@@ -5119,7 +5125,7 @@ innobackupex [--compress] [--compress-threads=NUMBER-OF-THREADS] [--compress-chu
              [--incremental] [--incremental-basedir]
              [--incremental-dir] [--incremental-force-scan] [--incremental-lsn]
              [--incremental-history-name=NAME] [--incremental-history-uuid=UUID]
-             [--compact]     
+             [--close-files] [--compact]     
              BACKUP-ROOT-DIR
 
 innobackupex --apply-log [--use-memory=B]
@@ -5190,6 +5196,10 @@ indicates an error.
 =item --apply-log
 
 Prepare a backup in BACKUP-DIR by applying the transaction log file named "xtrabackup_logfile" located in the same directory. Also, create new transaction logs. The InnoDB configuration is read from the file "backup-my.cnf".
+
+=item --close-files
+
+Do not keep files opened. This option is passed directly to xtrabackup. Use at your own risk.
 
 =item --compact
 

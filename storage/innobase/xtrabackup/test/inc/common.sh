@@ -240,7 +240,7 @@ function switch_server()
     fi
 
     IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf --ibbackup=$XB_BIN \
---no-version-check"
+--no-version-check ${IB_EXTRA_OPTS:-}"
     XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf"
 
     # Some aliases for compatibility, as tests use the following names
@@ -304,6 +304,9 @@ ${MYSQLD_EXTRA_MY_CNF_OPTS:-}
 [client]
 socket=${MYSQLD_SOCKET}
 user=root
+
+[xtrabackup]
+${XB_EXTRA_MY_CNF_OPTS:-}
 EOF
 
         # Create datadir and call mysql_install_db if it doesn't exist

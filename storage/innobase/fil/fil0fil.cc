@@ -4457,7 +4457,7 @@ func_exit:
 	inconsistencies between the file name and the actual tablespace contents
 	if a DDL occurs between a fil_load_single_table_tablespaces() call and
 	the actual copy operation. */
-	if (srv_backup_mode) {
+	if (srv_backup_mode && !srv_close_files) {
 
 		fil_node_t*	node;
 		fil_space_t*	space;
