@@ -361,6 +361,7 @@ extern ulint	srv_log_checksum_algorithm;
 extern ibool	srv_apply_log_only;
 
 extern ibool	srv_backup_mode;
+extern ibool	srv_close_files;
 
 /*-------------------------------------------*/
 

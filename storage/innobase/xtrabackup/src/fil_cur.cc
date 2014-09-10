@@ -163,7 +163,7 @@ xb_fil_cur_open(
 	/* In the backup mode we should already have a tablespace handle created
 	by fil_load_single_table_tablespace() unless it is a system
 	tablespace. Otherwise we open the file here. */
-	if (cursor->is_system || !srv_backup_mode) {
+	if (cursor->is_system || !srv_backup_mode || srv_close_files) {
 		node->handle =
 			os_file_create_simple_no_error_handling(0, node->name,
 								OS_FILE_OPEN,
