@@ -767,5 +767,13 @@ function multi_row_insert()
     vlog "Done."
 }
 
+########################################################################
+# Return 0 if the platform is 64-bit
+########################################################################
+function is_64bit()
+{
+    uname -m 2>&1 | grep 'x86_64'
+}
+
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
