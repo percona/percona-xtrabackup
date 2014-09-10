@@ -288,7 +288,7 @@
  		}
  
  		fil_system->max_assigned_id = id;
-@@ -1438,7 +1488,12 @@
+@@ -1438,7 +1448,12 @@
  		the file yet; the following calls will open it and update the
  		size fields */
  
@@ -487,7 +487,7 @@
 +	inconsistencies between the file name and the actual tablespace contents
 +	if a DDL occurs between a fil_load_single_table_tablespaces() call and
 +	the actual copy operation. */
-+	if (srv_backup_mode) {
++	if (srv_backup_mode && !srv_close_files) {
 +
 +		fil_node_t*	node;
 +		fil_space_t*	space;
@@ -723,7 +723,7 @@
  	      || ibuf_page(space_id, zip_size, block_offset, NULL));
  # endif /* UNIV_LOG_DEBUG */
  	if (sync) {
-@@ -4361,6 +4697,16 @@
+@@ -4361,6 +4597,16 @@
  
  	ut_ad((mode != OS_AIO_IBUF) || (space->purpose == FIL_TABLESPACE));
  
@@ -817,7 +817,7 @@
  
 --- a/storage/innodb_plugin/include/srv0srv.h
 +++ b/storage/innodb_plugin/include/srv0srv.h
-@@ -202,6 +202,11 @@
+@@ -202,6 +202,12 @@
  extern ulong	srv_max_purge_lag;
  
  extern ulong	srv_replication_delay;
@@ -826,6 +826,7 @@
 +extern ibool	srv_fake_write;
 +extern ibool	srv_apply_log_only;
 +extern ibool	srv_backup_mode;
++extern ibool	srv_close_files;
  /*-------------------------------------------*/
  
  extern ulint	srv_n_rows_inserted;
@@ -1217,7 +1218,7 @@
  
 --- a/storage/innodb_plugin/srv/srv0srv.c
 +++ b/storage/innodb_plugin/srv/srv0srv.c
-@@ -383,6 +383,10 @@
+@@ -383,6 +383,11 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -1225,10 +1226,11 @@
 +UNIV_INTERN ibool	srv_fake_write  = FALSE;
 +UNIV_INTERN ibool	srv_apply_log_only = FALSE;
 +UNIV_INTERN ibool	srv_backup_mode = FALSE;
++UNIV_INTERN ibool	srv_close_files = FALSE;
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_n_free_tickets_to_enter = 500;
-@@ -1011,7 +1015,7 @@
+@@ -1011,7 +1016,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -1237,7 +1239,7 @@
  }
  
  /*********************************************************************//**
-@@ -1022,6 +1026,7 @@
+@@ -1022,6 +1027,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -1245,7 +1247,7 @@
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1035,6 +1040,7 @@
+@@ -1035,6 +1041,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);

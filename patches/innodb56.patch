@@ -567,7 +567,7 @@
 +	inconsistencies between the file name and the actual tablespace contents
 +	if a DDL occurs between a fil_load_single_table_tablespaces() call and
 +	the actual copy operation. */
-+	if (srv_backup_mode) {
++	if (srv_backup_mode && !srv_close_files) {
 +
 +		fil_node_t*	node;
 +		fil_space_t*	space;
@@ -1261,7 +1261,7 @@
  extern mysql_pfs_key_t	innodb_file_data_key;
 --- a/storage/innobase/include/srv0srv.h
 +++ b/storage/innobase/include/srv0srv.h
-@@ -353,6 +353,13 @@
+@@ -353,6 +353,14 @@
  extern ulong	srv_max_purge_lag_delay;
  
  extern ulong	srv_replication_delay;
@@ -1271,11 +1271,12 @@
 +extern ibool	srv_apply_log_only;
 +
 +extern ibool	srv_backup_mode;
++extern ibool	srv_close_files;
 +
  /*-------------------------------------------*/
  
  extern my_bool	srv_print_innodb_monitor;
-@@ -496,13 +503,17 @@
+@@ -496,13 +504,17 @@
  				the reason for which is that some FS
  				do not flush meta-data when
  				unbuffered IO happens */
@@ -2259,13 +2260,14 @@
  /* User settable value of the number of pages that must be present
  in the buffer cache and accessed sequentially for InnoDB to trigger a
  readahead request. */
-@@ -349,6 +353,13 @@
+@@ -349,6 +353,14 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
 +UNIV_INTERN ibool	srv_apply_log_only	= FALSE;
 +
 +UNIV_INTERN ibool	srv_backup_mode	= FALSE;
++UNIV_INTERN ibool	srv_close_files = TRUE;
 +
 +UNIV_INTERN ulint	srv_log_checksum_algorithm =
 +	SRV_CHECKSUM_ALGORITHM_INNODB;
@@ -2273,7 +2275,7 @@
  /*-------------------------------------------*/
  UNIV_INTERN ulong	srv_n_spin_wait_rounds	= 30;
  UNIV_INTERN ulong	srv_spin_wait_delay	= 6;
-@@ -1818,7 +1829,8 @@
+@@ -1818,7 +1830,8 @@
  	if (ret == SRV_NONE
  	    && srv_shutdown_state != SRV_SHUTDOWN_NONE
  	    && trx_purge_state() != PURGE_STATE_DISABLED

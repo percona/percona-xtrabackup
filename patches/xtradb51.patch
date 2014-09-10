@@ -380,7 +380,7 @@
 +	inconsistencies between the file name and the actual tablespace contents
 +	if a DDL occurs between a fil_load_single_table_tablespaces() call and
 +	the actual copy operation. */
-+	if (srv_backup_mode) {
++	if (srv_backup_mode && !srv_close_files) {
 +
 +		fil_node_t*	node;
 +		fil_space_t*	space;
@@ -763,7 +763,7 @@
  	return(buf);
 --- a/storage/innodb_plugin/include/srv0srv.h
 +++ b/storage/innodb_plugin/include/srv0srv.h
-@@ -243,6 +243,11 @@
+@@ -243,6 +243,12 @@
  
  extern ulong	srv_replication_delay;
  
@@ -771,6 +771,7 @@
 +extern ibool	srv_fake_write;
 +extern ibool	srv_apply_log_only;
 +extern ibool	srv_backup_mode;
++extern ibool	srv_close_files;
 +
  extern long long	srv_ibuf_max_size;
  extern ulint	srv_ibuf_active_contract;
@@ -1140,7 +1141,7 @@
  /* prototypes for new functions added to ha_innodb.cc */
  ibool	innobase_get_slow_log();
  
-@@ -438,6 +433,11 @@
+@@ -438,6 +433,12 @@
  
  UNIV_INTERN ulong	srv_replication_delay		= 0;
  
@@ -1148,11 +1149,12 @@
 +UNIV_INTERN ibool	srv_fake_write	= FALSE;
 +UNIV_INTERN ibool	srv_apply_log_only = FALSE;
 +UNIV_INTERN ibool	srv_backup_mode = FALSE;
++UNIV_INTERN ibool	srv_close_files = FALSE;
 +
  UNIV_INTERN long long	srv_ibuf_max_size = 0;
  UNIV_INTERN ulint	srv_ibuf_active_contract = 0; /* 0:disable 1:enable */
  UNIV_INTERN ulint	srv_ibuf_accel_rate = 100;
-@@ -1095,7 +1095,7 @@
+@@ -1095,7 +1096,7 @@
  	}
  
  	/* Initialize some INFORMATION SCHEMA internal structures */
@@ -1161,7 +1163,7 @@
  }
  
  /*********************************************************************//**
-@@ -1106,6 +1106,7 @@
+@@ -1106,6 +1107,7 @@
  /*==========*/
  {
  	os_fast_mutex_free(&srv_conc_mutex);
@@ -1169,7 +1171,7 @@
  	mem_free(srv_conc_slots);
  	srv_conc_slots = NULL;
  
-@@ -1119,6 +1120,7 @@
+@@ -1119,6 +1121,7 @@
  	srv_mysql_table = NULL;
  
  	trx_i_s_cache_free(trx_i_s_cache);
@@ -1177,7 +1179,7 @@
  }
  
  /*********************************************************************//**
-@@ -2634,36 +2636,6 @@
+@@ -2634,36 +2637,6 @@
  		old_sema = sema;
  	}
  
