@@ -69,6 +69,7 @@ The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too, 
 
 * *CentOS* 5 and *RHEL* 5
 * *CentOS* 6 and *RHEL* 6
+* *CentOS* 7 and *RHEL* 7
 * *Amazon Linux AMI* (works the same as *CentOS* 5)
 
 .. _yum_testing:
@@ -81,5 +82,5 @@ Percona offers fresh beta builds from the experimental repository. To subscribe 
  yum install http://repo.percona.com/testing/centos/6/os/noarch/percona-testing-0.0-1.noarch.rpm
 
 .. note:: 
- This repository works for both RHEL/CentOS 5 and RHEL/CentOS 6
+ This repository works for RHEL/CentOS 5, RHEL/CentOS 6 and RHEL/CentOS 7
 
