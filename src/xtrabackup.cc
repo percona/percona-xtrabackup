@@ -2141,7 +2141,7 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 
 			if (no < scanned_no ||
 			    /* Log block numbers wrap around at 0x3FFFFFFF */
-			    ((scanned_no | 0x4000000UL) - no) %
+			    ((scanned_no | 0x40000000UL) - no) %
 			    blocks_in_group == 0) {
 
 				/* old log block, do nothing */
