@@ -776,8 +776,19 @@ function multi_row_insert()
 ########################################################################
 function has_backup_locks()
 {
-    $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
-           2> /dev/null | egrep -q "Value: YES$"
+    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
+              2> /dev/null | egrep -q "Value: YES$"
+    then
+        return 0
+    fi
+
+    # Was the server available?
+    if [[ ${PIPESTATUS[0]} != 0 ]]
+    then
+        die "Server is unavailable"
+    fi
+
+    return 1
 }
 
 ########################################################################

@@ -6,8 +6,6 @@
 
 require_galera
 
-has_backup_locks && skip_test "Requires server without backup locks support"
-
 ADDR=127.0.0.1
 
 debug=""
@@ -24,6 +22,8 @@ start_server --log-bin=`hostname`-bin --binlog-format=ROW \
              --wsrep_cluster_address=gcomm:// $debug \
              --wsrep_provider_options="base_port=${galera_port}${pdebug}" \
              --wsrep_node_address=$ADDR
+
+has_backup_locks && skip_test "Requires server without backup locks support"
 
 # take a backup with stream mode
 mkdir -p $topdir/backup
