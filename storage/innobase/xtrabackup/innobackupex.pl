@@ -1996,6 +1996,7 @@ sub backup {
     # xtrabackup.
     if ($option_galera_info) {
         write_galera_info(\%mysql);
+        write_current_binlog_file(\%mysql);
     }
 
     write_binlog_info(\%mysql);
@@ -3085,11 +3086,8 @@ sub write_binlog_info {
 #
 sub write_galera_info {
     my $con = shift;
-    my @lines;
-    my @info_lines = ();
     my $state_uuid = undef;
     my $last_committed = undef;
-    my $gtid_exists= 0;
 
     # When backup locks are supported by the server, we should skip creating
     # xtrabackup_galera_info file on the backup stage, because
@@ -3122,6 +3120,14 @@ sub write_galera_info {
 
     write_to_backup_file("$galera_info", "$state_uuid" .
       ":" . "$last_committed" . "\n");
+}
+
+#
+# Flush and copy the current binary log file into the backup, if GTID is enabled
+#
+sub write_current_binlog_file {
+    my $con = shift;
+    my $gtid_exists= 0;
 
     if (!defined($con->{master_status})) {
         get_mysql_master_status($con);
