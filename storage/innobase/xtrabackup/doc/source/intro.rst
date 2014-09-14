@@ -24,91 +24,140 @@ Percona's enterprise-grade commercial `MySQL Support <http://www.percona.com/mys
 MySQL Backup Tool Feature Comparison
 ====================================
 
-+---------------------------------------------+----------------------+-----------------------+
-|Features                                     |Percona XtraBackup    |MySQL Enterprise Backup|
-|                                             |                      |(InnoDB Hot Backup)    |
-+=============================================+======================+=======================+
-|License                                      | GPL                  | Proprietary           |      
-+---------------------------------------------+----------------------+-----------------------+
-|Price                                        | Free                 | $5000 per server      |      
-+---------------------------------------------+----------------------+-----------------------+
-|Open source                                  | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Streaming and encryption formats             | Open source          | Proprietary           |
-+---------------------------------------------+----------------------+-----------------------+
-|Supported MySQL flavors                      | |Percona Server|,    | |MySQL|               |
-|                                             | |MySQL|,             |                       |
-|                                             | |MariaDB|            |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Non-blocking InnoDB backups [#n-1]_          | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Blocking MyISAM backups                      | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Incremental backups                          | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Full compressed backups                      | Yes                  | Yes                   |
-+---------------------------------------------+----------------------+-----------------------+
-|Incremental compressed backups               | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Fast incremental backups [#n-2]_             | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Incremental backups with archived logs       | Yes                  |                       |      
-+---------------------------------------------+----------------------+-----------------------+
-|Backup locks [#n-8]_                         | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Encrypted backups                            | Yes                  | Yes [#n-3]_           |      
-+---------------------------------------------+----------------------+-----------------------+
-|Streaming backups                            | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Parallel local backups                       | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Parallel streaming backups                   | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Parallel compression                         | Yes                  | Yes                   |
-+---------------------------------------------+----------------------+-----------------------+
-|Parallel encryption                          | Yes                  | Yes                   |
-+---------------------------------------------+----------------------+-----------------------+
-|Parallel apply-log                           | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Parallel copy-back                           |                      | Yes                   |
-+---------------------------------------------+----------------------+-----------------------+
-|Partial backups                              | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Throttling [#n-4]_                           | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Point-in-time recovery support               | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Safe slave backups                           | Yes                  |                       |      
-+---------------------------------------------+----------------------+-----------------------+
-|Compact backups [#n-5]_                      | Yes                  | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Buffer pool state backups                    | Yes                  |                       |      
-+---------------------------------------------+----------------------+-----------------------+
-|Individual tables export                     | Yes                  | Yes [#n-6]_           |      
-+---------------------------------------------+----------------------+-----------------------+
-|Individual partitions export                 | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Restoring tables to a different server       | Yes                  | Yes                   |      
-|[#n-7]_                                      |                      |                       |   
-+---------------------------------------------+----------------------+-----------------------+
-|Data & index file statistics                 | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|InnoDB secondary indexes defragmentation     | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|``rsync`` support to minimize lock time      | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Improved ``FTWRL`` handling                  | Yes                  |                       |
-+---------------------------------------------+----------------------+-----------------------+
-|Backup history table                         | Yes                  | Yes                   |
-+---------------------------------------------+----------------------+-----------------------+
-|Backup progress table                        |                      | Yes                   |
-+---------------------------------------------+----------------------+-----------------------+
-|Offline backups                              |                      | Yes                   |      
-+---------------------------------------------+----------------------+-----------------------+
-|Tape backups with Oracle Secure Backup       |                      | Yes                   |
-+---------------------------------------------+----------------------+-----------------------+
+.. list-table::
+   :widths: 30 15 15
+   :header-rows: 1
 
-
+   * - Features
+     - Percona XtraBackup
+     - MySQL Enterprise backup
+   * - License
+     - GPL
+     - Proprietary
+   * - Price
+     - Free
+     - Included in subscription at $5000 per Serve
+   * - Streaming and encryption formats
+     - Open source
+     - Proprietary
+   * - Supported MySQL flavors
+     - |MySQL|, |Percona Server|, |MariaDB|, |Percona XtraDB Cluster|,
+       *MariaDB Galera Cluster*
+     - |MySQL|
+   * - Supported operating systems
+     - Linux
+     - Linux, Solaris, Windows, OSX, FreeBSD.
+   * - Non-blocking InnoDB backups [#n-1]_
+     - Yes
+     - Yes
+   * - Blocking MyISAM backups
+     - Yes
+     - Yes
+   * - Incremental backups
+     - Yes
+     - Yes
+   * - Full compressed backups
+     - Yes
+     - Yes
+   * - Incremental compressed backups
+     - Yes
+     -
+   * - Fast incremental backups [#n-2]_
+     - Yes
+     -
+   * - Incremental backups with archived logs feature in Percona Server
+     - Yes
+     -
+   * - Incremental backups with REDO log only
+     -
+     - Yes
+   * - Backup locks [#n-8]_
+     - Yes
+     -
+   * - Encrypted backups
+     - Yes
+     - Yes [#n-3]_
+   * - Streaming backups
+     - Yes
+     - Yes
+   * - Parallel local backups
+     - Yes
+     - Yes
+   * - Parallel compression
+     - Yes
+     - Yes
+   * - Parallel encryption
+     - Yes
+     - Yes
+   * - Parallel apply-log
+     - Yes
+     -
+   * - Parallel copy-back
+     -
+     - Yes
+   * - Partial backups
+     - Yes
+     - Yes
+   * - Partial backups of individual partitions
+     - Yes
+     -
+   * - Throttling [#n-4]_
+     - Yes
+     - Yes
+   * - Backup image validation
+     -
+     - Yes
+   * - Point-in-time recovery support
+     - Yes
+     - Yes
+   * - Safe slave backups
+     - Yes
+     -
+   * - Compact backups [#n-5]_
+     - Yes
+     -
+   * - Buffer pool state backups
+     - Yes
+     -
+   * - Individual tables export
+     - Yes
+     - Yes [#n-6]_
+   * - Individual partitions export
+     - Yes
+     -
+   * - Restoring tables to a different server [#n-7]_
+     - Yes
+     - Yes
+   * - Data & index file statistics
+     - Yes
+     -
+   * - InnoDB secondary indexes defragmentation
+     - Yes
+     -
+   * - ``rsync`` support to minimize lock time
+     - Yes
+     -
+   * - Improved ``FTWRL`` handling
+     - Yes
+     -
+   * - Backup history table
+     - Yes
+     - Yes
+   * - Backup progress table
+     -
+     - Yes
+   * - Offline backups
+     -
+     - Yes
+   * - Backup to tape media managers
+     -
+     - Yes
+   * - Cloud backups support
+     -
+     - Amazon S3
+   * - External graphical user interfaces to backup/recovery
+     - Zmanda Recovery Manager for MySQL
+     - MySQL Workbench, MySQL Enterprise Monitor
 
 What are the features of Percona XtraBackup?
 ============================================
