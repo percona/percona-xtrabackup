@@ -4621,9 +4621,16 @@ sub check_server_version {
          $var_version =~ m/10\.[01]\.\d/
         )) {
 
-        die "Unsupported server version: '$var_version' " .
-            "Please report a bug at " .
-            "https://bugs.launchpad.net/percona-xtrabackup\n";
+        if ($var_version =~ m/5\.1\./ &&
+            !defined($var_innodb_version)) {
+            die "Built-in InnoDB in MySQL 5.1 is not supported in this " .
+                "release. You can either use Percona XtraBackup 2.0, " .
+                "or upgrade to InnoDB plugin.\n";
+        } else {
+            die "Unsupported server version: '$var_version' " .
+                "Please report a bug at " .
+                "https://bugs.launchpad.net/percona-xtrabackup\n";
+        }
     }
 }
 
