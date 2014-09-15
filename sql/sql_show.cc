@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2063,10 +2063,22 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
 
   if (!thd->killed)
   {
-    mysql_mutex_lock(&LOCK_thread_count);
+    /* take copy of global_thread_list */
+    std::set<THD*> global_thread_list_copy;
+    DEBUG_SYNC(thd,"before_copying_threads");
+    /*
+      Allow inserts to global_thread_list. Newly added thd
+      will not be accounted for `show processlist` and
+      removal from global_thread_list is blocked as LOCK_thd_remove
+      mutex is not released yet
+     */
+    mysql_mutex_lock(&LOCK_thd_remove);
+    copy_global_thread_list(&global_thread_list_copy);
+
+    DEBUG_SYNC(thd,"after_copying_threads");
     thread_infos.reserve(get_thread_count());
-    Thread_iterator it= global_thread_list_begin();
-    Thread_iterator end= global_thread_list_end();
+    Thread_iterator it= global_thread_list_copy.begin();
+    Thread_iterator end= global_thread_list_copy.end();
     for (; it != end; ++it)
     {
       THD *tmp= *it;
@@ -2094,6 +2106,12 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
                                       tmp_sctx->get_host()->length() ?
                                       tmp_sctx->get_host()->ptr() : "");
         thd_info->command=(int) tmp->get_command();
+        DBUG_EXECUTE_IF("processlist_acquiring_dump_threads_LOCK_thd_data",
+                        {
+                         if (thd_info->command == COM_BINLOG_DUMP ||
+                             thd_info->command == COM_BINLOG_DUMP_GTID)
+                           DEBUG_SYNC(thd, "processlist_after_LOCK_thd_count_before_LOCK_thd_data");
+                        });
         mysql_mutex_lock(&tmp->LOCK_thd_data);
         if ((thd_info->db= tmp->db))             // Safe test
           thd_info->db= thd->strdup(thd_info->db);
@@ -2118,7 +2136,7 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
         thread_infos.push_back(thd_info);
       }
     }
-    mysql_mutex_unlock(&LOCK_thread_count);
+    mysql_mutex_unlock(&LOCK_thd_remove);
   }
 
   // Return list sorted by thread_id.
@@ -2164,9 +2182,19 @@ int fill_schema_processlist(THD* thd, TABLE_LIST* tables, Item* cond)
 
   if (!thd->killed)
   {
-    mysql_mutex_lock(&LOCK_thread_count);
-    Thread_iterator it= global_thread_list_begin();
-    Thread_iterator end= global_thread_list_end();
+    /* take copy of global_thread_list */
+    std::set<THD*> global_thread_list_copy;
+    /*
+      Allow inserts to global_thread_list. Newly added thd
+      will not be accounted for `fill schema processlist` and
+      removal from global_thread_list is blocked as LOCK_thd_remove
+      mutex is not released yet
+     */
+    mysql_mutex_lock(&LOCK_thd_remove);
+    copy_global_thread_list(&global_thread_list_copy);
+
+    Thread_iterator it= global_thread_list_copy.begin();
+    Thread_iterator end= global_thread_list_copy.end();
     for (; it != end; ++it)
     {
       THD* tmp= *it;
@@ -2198,6 +2226,12 @@ int fill_schema_processlist(THD* thd, TABLE_LIST* tables, Item* cond)
       else
         table->field[2]->store(tmp_sctx->host_or_ip,
                                strlen(tmp_sctx->host_or_ip), cs);
+      DBUG_EXECUTE_IF("processlist_acquiring_dump_threads_LOCK_thd_data",
+                      {
+                      if (tmp->get_command() == COM_BINLOG_DUMP ||
+                          tmp->get_command() == COM_BINLOG_DUMP_GTID)
+                      DEBUG_SYNC(thd, "processlist_after_LOCK_thd_count_before_LOCK_thd_data");
+                      });
       /* DB */
       mysql_mutex_lock(&tmp->LOCK_thd_data);
       if ((db= tmp->db))
@@ -2226,11 +2260,7 @@ int fill_schema_processlist(THD* thd, TABLE_LIST* tables, Item* cond)
 
       if (mysys_var)
         mysql_mutex_unlock(&mysys_var->mutex);
-      mysql_mutex_unlock(&tmp->LOCK_thd_data);
-
       /* INFO */
-      /* Lock THD mutex that protects its data when looking at it. */
-      mysql_mutex_lock(&tmp->LOCK_thd_data);
       if (tmp->query())
       {
         size_t const width=
@@ -2242,11 +2272,11 @@ int fill_schema_processlist(THD* thd, TABLE_LIST* tables, Item* cond)
 
       if (schema_table_store_record(thd, table))
       {
-        mysql_mutex_unlock(&LOCK_thread_count);
+        mysql_mutex_unlock(&LOCK_thd_remove);
         DBUG_RETURN(1);
       }
     }
-    mysql_mutex_unlock(&LOCK_thread_count);
+    mysql_mutex_unlock(&LOCK_thd_remove);
   }
 
   DBUG_RETURN(0);
@@ -2367,6 +2397,59 @@ void reset_status_vars()
 void free_status_vars()
 {
   delete_dynamic(&all_status_vars);
+}
+
+/**
+  @brief           Get the value of given status variable
+
+  @param[in]       thd        thread handler
+  @param[in]       list       list of SHOW_VAR objects in which function should
+                              search
+  @param[in]       name       name of the status variable
+  @param[in/out]   value      buffer in which value of the status variable
+                              needs to be filled in
+
+  @return          status
+    @retval        FALSE      if variable is not found in the list
+    @retval        TRUE       if variable is found in the list
+  NOTE: Currently this function is implemented just to support 'bool' status
+  variables and 'long' status variables *only*. It can be extended very easily
+  for further show_types in future if required.
+  TODO: Currently show_status_arary switch case is tightly coupled with
+  pos, end, buff, value variables and also it stores the values in a 'table'.
+  Decouple the switch case to fill the buffer value so that it can be used
+  in show_status_array() and get_status_var() to avoid duplicate code.
+ */
+
+bool get_status_var(THD* thd, SHOW_VAR *list, const char * name, char * const value)
+{
+  for (; list->name; list++)
+  {
+    int res= strcmp(list->name, name);
+    if (res == 0)
+    {
+      /*
+        if var->type is SHOW_FUNC, call the function.
+        Repeat as necessary, if new var is again SHOW_FUNC
+      */
+      SHOW_VAR tmp;
+      for (; list->type == SHOW_FUNC; list= &tmp)
+        ((mysql_show_var_func)(list->value))(thd, &tmp, value);
+      switch (list->type) {
+      case SHOW_BOOL:
+        strmov(value, *(bool*) list->value ? "ON" : "OFF");
+        break;
+      case SHOW_LONG:
+        int10_to_str(*(long*) list->value, value, 10);
+        break;
+      default:
+        /* not supported type */
+        DBUG_ASSERT(0);
+      }
+      return TRUE;
+    }
+  }
+  return FALSE;
 }
 
 /*
@@ -2647,10 +2730,38 @@ void calc_sum_of_all_status(STATUS_VAR *to)
 /* This is only used internally, but we need it here as a forward reference */
 extern ST_SCHEMA_TABLE schema_tables[];
 
+/**
+  Condition pushdown used for INFORMATION_SCHEMA / SHOW queries.
+  This structure is to implement an optimization when
+  accessing data dictionary data in the INFORMATION_SCHEMA
+  or SHOW commands.
+  When the query contain a TABLE_SCHEMA or TABLE_NAME clause,
+  narrow the search for data based on the constraints given.
+*/
 typedef struct st_lookup_field_values
 {
-  LEX_STRING db_value, table_value;
-  bool wild_db_value, wild_table_value;
+  /**
+    Value of a TABLE_SCHEMA clause.
+    Note that this value length may exceed @c NAME_LEN.
+    @sa wild_db_value
+  */
+  LEX_STRING db_value;
+  /**
+    Value of a TABLE_NAME clause.
+    Note that this value length may exceed @c NAME_LEN.
+    @sa wild_table_value
+  */
+  LEX_STRING table_value;
+  /**
+    True when @c db_value is a LIKE clause,
+    false when @c db_value is an '=' clause.
+  */
+  bool wild_db_value;
+  /**
+    True when @c table_value is a LIKE clause,
+    false when @c table_value is an '=' clause.
+  */
+  bool wild_table_value;
 } LOOKUP_FIELD_VALUES;
 
 
@@ -3055,14 +3166,22 @@ int make_db_list(THD *thd, List<LEX_STRING> *files,
 
 
   /*
-    If we have db lookup vaule we just add it to list and
+    If we have db lookup value we just add it to list and
     exit from the function.
     We don't do this for database names longer than the maximum
-    path length.
+    name length.
   */
-  if (lookup_field_vals->db_value.str && 
-      lookup_field_vals->db_value.length < FN_REFLEN)
+  if (lookup_field_vals->db_value.str)
   {
+    if (lookup_field_vals->db_value.length > NAME_LEN)
+    {
+      /*
+        Impossible value for a database name,
+        found in a WHERE DATABASE_NAME = 'xxx' clause.
+      */
+      return 0;
+    }
+
     if (is_infoschema_db(lookup_field_vals->db_value.str,
                          lookup_field_vals->db_value.length))
     {
@@ -3199,6 +3318,15 @@ make_table_name_list(THD *thd, List<LEX_STRING> *table_names, LEX *lex,
   if (!lookup_field_vals->wild_table_value &&
       lookup_field_vals->table_value.str)
   {
+    if (lookup_field_vals->table_value.length > NAME_LEN)
+    {
+      /*
+        Impossible value for a table name,
+        found in a WHERE TABLE_NAME = 'xxx' clause.
+      */
+      return 0;
+    }
+
     if (with_i_schema)
     {
       LEX_STRING *name;
@@ -3672,6 +3800,9 @@ static int fill_schema_table_from_frm(THD *thd, TABLE_LIST *tables,
   memset(&table_list, 0, sizeof(TABLE_LIST));
   memset(&tbl, 0, sizeof(TABLE));
 
+  DBUG_ASSERT(db_name->length <= NAME_LEN);
+  DBUG_ASSERT(table_name->length <= NAME_LEN);
+
   if (lower_case_table_names)
   {
     /*
@@ -3998,6 +4129,7 @@ int get_all_tables(THD *thd, TABLE_LIST *tables, Item *cond)
   it.rewind(); /* To get access to new elements in basis list */
   while ((db_name= it++))
   {
+    DBUG_ASSERT(db_name->length <= NAME_LEN);
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
     if (!(check_access(thd, SELECT_ACL, db_name->str,
                        &thd->col_access, NULL, 0, 1) ||
@@ -4019,6 +4151,7 @@ int get_all_tables(THD *thd, TABLE_LIST *tables, Item *cond)
       List_iterator_fast<LEX_STRING> it_files(table_names);
       while ((table_name= it_files++))
       {
+        DBUG_ASSERT(table_name->length <= NAME_LEN);
 	restore_record(table, s->default_values);
         table->field[schema_table->idx_field1]->
           store(db_name->str, db_name->length, system_charset_info);
@@ -4165,6 +4298,7 @@ int fill_schema_schemata(THD *thd, TABLE_LIST *tables, Item *cond)
   List_iterator_fast<LEX_STRING> it(db_names);
   while ((db_name=it++))
   {
+    DBUG_ASSERT(db_name->length <= NAME_LEN);
     if (with_i_schema)       // information schema name is always first in list
     {
       if (store_schema_shemata(thd, table, db_name,
@@ -6453,6 +6587,7 @@ int fill_open_tables(THD *thd, TABLE_LIST *tables, Item *cond)
 int fill_variables(THD *thd, TABLE_LIST *tables, Item *cond)
 {
   DBUG_ENTER("fill_variables");
+  SHOW_VAR *sys_var_array;
   int res= 0;
   LEX *lex= thd->lex;
   const char *wild= lex->wild ? lex->wild->ptr() : NullS;
@@ -6466,10 +6601,21 @@ int fill_variables(THD *thd, TABLE_LIST *tables, Item *cond)
       schema_table_idx == SCH_GLOBAL_VARIABLES)
     option_type= OPT_GLOBAL;
 
+  /*
+    Lock LOCK_plugin_delete to avoid deletion of any plugins while creating
+    SHOW_VAR array and hold it until all variables are stored in the table.
+  */
+  mysql_mutex_lock(&LOCK_plugin_delete);
+  // Lock LOCK_system_variables_hash to prepare SHOW_VARs array.
   mysql_rwlock_rdlock(&LOCK_system_variables_hash);
-  res= show_status_array(thd, wild, enumerate_sys_vars(thd, sorted_vars, option_type),
-                         option_type, NULL, "", tables->table, upper_case_names, cond);
+  DEBUG_SYNC(thd, "acquired_LOCK_system_variables_hash");
+  sys_var_array= enumerate_sys_vars(thd, sorted_vars, option_type);
   mysql_rwlock_unlock(&LOCK_system_variables_hash);
+
+  res= show_status_array(thd, wild, sys_var_array, option_type, NULL, "",
+                         tables->table, upper_case_names, cond);
+
+  mysql_mutex_unlock(&LOCK_plugin_delete);
   DBUG_RETURN(res);
 }
 

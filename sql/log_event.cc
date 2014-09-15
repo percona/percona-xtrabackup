@@ -1259,15 +1259,22 @@ int Log_event::read_log_event(IO_CACHE* file, String* packet,
     }
     else
     {
-      /* Corrupt the event for Dump thread*/
+      /*
+        Corrupt the event for Dump thread.
+        We also need to exclude Previous_gtids_log_event and Gtid_log_event
+        events from injected corruption to allow dump thread to move forward
+        on binary log until the missing transactions from slave when
+        MASTER_AUTO_POSITION= 1.
+      */
       DBUG_EXECUTE_IF("corrupt_read_log_event",
 	uchar *debug_event_buf_c = (uchar*) packet->ptr() + ev_offset;
-        if (debug_event_buf_c[EVENT_TYPE_OFFSET] != FORMAT_DESCRIPTION_EVENT)
+        if (debug_event_buf_c[EVENT_TYPE_OFFSET] != FORMAT_DESCRIPTION_EVENT &&
+            debug_event_buf_c[EVENT_TYPE_OFFSET] != PREVIOUS_GTIDS_LOG_EVENT &&
+            debug_event_buf_c[EVENT_TYPE_OFFSET] != GTID_LOG_EVENT)
         {
           int debug_cor_pos = rand() % (data_len + sizeof(buf) - BINLOG_CHECKSUM_LEN);
           debug_event_buf_c[debug_cor_pos] =~ debug_event_buf_c[debug_cor_pos];
           DBUG_PRINT("info", ("Corrupt the event at Log_event::read_log_event: byte on position %d", debug_cor_pos));
-          DBUG_SET("-d,corrupt_read_log_event");
 	}
       );                                                                                           
       /*
@@ -4573,6 +4580,7 @@ static bool is_silent_error(THD* thd)
 int Query_log_event::do_apply_event(Relay_log_info const *rli,
                                       const char *query_arg, uint32 q_len_arg)
 {
+  DBUG_ENTER("Query_log_event::do_apply_event");
   int expected_error,actual_error= 0;
   HA_CREATE_INFO db_options;
 
@@ -4655,7 +4663,6 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
             ::do_apply_event(), then the companion SET also have so
             we don't need to reset_one_shot_variables().
   */
-  if (is_trans_keyword() || rpl_filter->db_ok(thd->db))
   {
     thd->set_time(&when);
     thd->set_query_and_id((char*)query_arg, q_len_arg,
@@ -5013,7 +5020,7 @@ end:
   thd->first_successful_insert_id_in_prev_stmt= 0;
   thd->stmt_depends_on_first_successful_insert_id_in_prev_stmt= 0;
   free_root(thd->mem_root,MYF(MY_KEEP_PREALLOC));
-  return thd->is_slave_error;
+  DBUG_RETURN(thd->is_slave_error);
 }
 
 int Query_log_event::do_update_pos(Relay_log_info *rli)
@@ -5845,7 +5852,7 @@ uint Load_log_event::get_query_buffer_length()
   return
     //the DB name may double if we escape the quote character
     5 + 2*db_len + 3 +
-    18 + fname_len + 2 +                    // "LOAD DATA INFILE 'file''"
+    18 + fname_len*4 + 2 +                    // "LOAD DATA INFILE 'file''"
     11 +                                    // "CONCURRENT "
     7 +					    // LOCAL
     9 +                                     // " REPLACE or IGNORE "
@@ -5891,9 +5898,9 @@ void Load_log_event::print_query(bool need_db, const char *cs, char *buf,
 
   if (check_fname_outside_temp_buf())
     pos= strmov(pos, "LOCAL ");
-  pos= strmov(pos, "INFILE '");
-  memcpy(pos, fname, fname_len);
-  pos= strmov(pos+fname_len, "' ");
+  pos= strmov(pos, "INFILE ");
+  pos= pretty_print_str(pos, fname, fname_len);
+  pos= strmov(pos, " ");
 
   if (sql_ex.opt_flags & REPLACE_FLAG)
     pos= strmov(pos, "REPLACE ");
@@ -6829,10 +6836,18 @@ int Rotate_log_event::do_update_pos(Relay_log_info *rli)
     5.0.0, there also are some rotates from the slave itself, in the
     relay log, which shall not change the group positions.
   */
+
+  /*
+    The way we check if SQL thread is currently in a group is different
+    for STS and MTS.
+  */
+  bool in_group = rli->is_parallel_exec() ?
+    (rli->mts_group_status == Relay_log_info::MTS_IN_GROUP) :
+    rli->is_in_group();
+
   if ((server_id != ::server_id || rli->replicate_same_server_id) &&
       !is_relay_log_event() &&
-      ((!rli->is_parallel_exec() && !rli->is_in_group()) ||
-       rli->mts_group_status != Relay_log_info::MTS_IN_GROUP))
+      !in_group)
   {
     if (rli->is_parallel_exec())
     {
@@ -8902,9 +8917,9 @@ void Execute_load_query_log_event::print(FILE* file,
   if (local_fname)
   {
     my_b_write(head, (uchar*) query, fn_pos_start);
-    my_b_printf(head, " LOCAL INFILE \'");
-    my_b_printf(head, "%s", local_fname);
-    my_b_printf(head, "\'");
+    my_b_printf(head, " LOCAL INFILE ");
+    pretty_print_str(head, local_fname, strlen(local_fname));
+
     if (dup_handling == LOAD_DUP_REPLACE)
       my_b_printf(head, " REPLACE");
     my_b_printf(head, " INTO");
@@ -10864,6 +10879,7 @@ int Rows_log_event::do_table_scan_and_update(Relay_log_info const *rli)
     /* Continue until we find the right record or have made a full loop */
     do
     {
+  restart_ha_rnd_next:
       error= m_table->file->ha_rnd_next(m_table->record[0]);
       if (error)
         DBUG_PRINT("info", ("error: %s", HA_ERR(error)));
@@ -10871,11 +10887,16 @@ int Rows_log_event::do_table_scan_and_update(Relay_log_info const *rli)
       case HA_ERR_END_OF_FILE:
         // restart scan from top
         if (++restart_count < 2)
-          error= m_table->file->ha_rnd_init(1);
+        {
+          if ((error= m_table->file->ha_rnd_init(1)))
+            goto end;
+          goto restart_ha_rnd_next;
+        }
         break;
 
       case HA_ERR_RECORD_DELETED:
         // fetch next
+        goto restart_ha_rnd_next;
       case 0:
         // we're good, check if record matches
         break;
@@ -10885,9 +10906,7 @@ int Rows_log_event::do_table_scan_and_update(Relay_log_info const *rli)
         goto end;
       }
     }
-    while ((error == HA_ERR_END_OF_FILE && restart_count < 2) ||
-           (error == HA_ERR_RECORD_DELETED) ||
-           (!error && record_compare(m_table, &m_cols)));
+    while (restart_count < 2 && record_compare(m_table, &m_cols));
   }
 
 end:

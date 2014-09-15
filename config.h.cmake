@@ -19,6 +19,7 @@
 /* Headers we may want to use. */
 #cmakedefine STDC_HEADERS 1
 #cmakedefine _GNU_SOURCE 1
+#cmakedefine HAVE_LLVM_LIBCPP 1
 #cmakedefine HAVE_ALLOCA_H 1
 #cmakedefine HAVE_AIO_H 1
 #cmakedefine HAVE_ARPA_INET_H 1
@@ -187,7 +188,6 @@
 #cmakedefine HAVE_LSTAT 1
 #cmakedefine HAVE_MEMALIGN 1
 /* #cmakedefine HAVE_MLOCK 1 see Bug#54662 */
-#cmakedefine HAVE_NPTL 1
 #cmakedefine HAVE_NL_LANGINFO 1
 #cmakedefine HAVE_MADVISE 1
 #cmakedefine HAVE_DECL_MADVISE 1

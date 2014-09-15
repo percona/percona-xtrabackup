@@ -40,6 +40,7 @@
 #include "opt_trace.h"           // opt_trace_disable_if_no_security_...
 #include "table_cache.h"         // table_cache_manager
 #include "sql_view.h"
+#include "debug_sync.h"
 
 /* INFORMATION_SCHEMA name */
 LEX_STRING INFORMATION_SCHEMA_NAME= {C_STRING_WITH_LEN("information_schema")};
@@ -1824,6 +1825,17 @@ static int open_binary_frm(THD *thd, TABLE_SHARE *share, uchar *head,
               table_field->type() == MYSQL_TYPE_BLOB &&
               table_field->field_length == key_part[i].length)
             continue;
+          /*
+            If the key column is of NOT NULL GEOMETRY type, specifically POINT
+            type whose length is known internally (which is 25). And key part
+            prefix size is equal to the POINT column max size, then we can
+            promote it to primary key.
+          */
+          if (!table_field->real_maybe_null() &&
+              table_field->type() == MYSQL_TYPE_GEOMETRY &&
+              table_field->get_geometry_type() == Field::GEOM_POINT &&
+              key_part[i].length == MAX_LEN_GEOM_POINT_FIELD)
+            continue;
 
 	  if (table_field->real_maybe_null() ||
 	      table_field->key_length() != key_part[i].length)
@@ -3590,6 +3602,8 @@ bool TABLE_SHARE::wait_for_old_version(THD *thd, struct timespec *abstime,
 
   mdl_context->find_deadlock();
 
+  DEBUG_SYNC(thd, "flush_complete");
+
   wait_status= mdl_context->m_wait.timed_wait(thd, abstime, TRUE,
                                               &stage_waiting_for_table_flush);
 
@@ -3607,6 +3621,8 @@ bool TABLE_SHARE::wait_for_old_version(THD *thd, struct timespec *abstime,
     */
     destroy();
   }
+
+  DEBUG_SYNC(thd, "share_destroyed");
 
   /*
     In cases when our wait was aborted by KILL statement,

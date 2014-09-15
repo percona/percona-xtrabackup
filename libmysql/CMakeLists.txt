@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -183,7 +183,6 @@ ENDIF()
 MERGE_LIBRARIES(mysqlclient STATIC ${LIBS} COMPONENT Development NOINSTALL 1)
 
 # Visual Studio users need debug  static library for debug projects
-INSTALL_DEBUG_SYMBOLS(clientlib)
 IF(MSVC)
 ENDIF()
 

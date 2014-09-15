@@ -380,7 +380,7 @@ static PSI_rwlock_info all_innodb_rwlocks[] = {
 	{&trx_purge_latch_key, "trx_purge_latch", 0},
 	{&index_tree_rw_lock_key, "index_tree_rw_lock", 0},
 	{&index_online_log_key, "index_online_log", 0},
-	{&dict_table_stats_latch_key, "dict_table_stats", 0},
+	{&dict_table_stats_key, "dict_table_stats", 0},
 	{&hash_table_rw_lock_key, "hash_table_locks", 0}
 };
 # endif /* UNIV_PFS_RWLOCK */
@@ -3535,7 +3535,7 @@ innobase_commit(
 		/* We were instructed to commit the whole transaction, or
 		this is an SQL statement end and autocommit is on */
 
-		/* We need current binlog position for ibbackup to work. */
+		/* We need current binlog position for mysqlbackup to work. */
 retry:
 		if (innobase_commit_concurrency > 0) {
 			mysql_mutex_lock(&commit_cond_m);
@@ -3860,7 +3860,7 @@ innobase_savepoint(
 	error = trx_savepoint_for_mysql(trx, name, (ib_int64_t)0);
 
 	if (error == DB_SUCCESS && trx->fts_trx != NULL) {
-		fts_savepoint_take(trx, name);
+		fts_savepoint_take(trx, trx->fts_trx, name);
 	}
 
 	DBUG_RETURN(convert_error_code_to_mysql(error, 0, NULL));
@@ -3895,7 +3895,7 @@ innobase_close_connection(
 
 		sql_print_warning(
 			"MySQL is closing a connection that has an active "
-			"InnoDB transaction.  "TRX_ID_FMT" row modifications "
+			"InnoDB transaction.  " TRX_ID_FMT " row modifications "
 			"will roll back.",
 			trx->undo_no);
 	}
@@ -6993,7 +6993,7 @@ calc_row_difference(
 			if (doc_id < prebuilt->table->fts->cache->next_doc_id) {
 				fprintf(stderr,
 					"InnoDB: FTS Doc ID must be larger than"
-					" "IB_ID_FMT" for table",
+					" " IB_ID_FMT " for table",
 					innodb_table->fts->cache->next_doc_id
 					- 1);
 				ut_print_name(stderr, trx,
@@ -7005,9 +7005,9 @@ calc_row_difference(
 				    - prebuilt->table->fts->cache->next_doc_id)
 				   >= FTS_DOC_ID_MAX_STEP) {
 				fprintf(stderr,
-					"InnoDB: Doc ID "UINT64PF" is too"
+					"InnoDB: Doc ID " UINT64PF " is too"
 					" big. Its difference with largest"
-					" Doc ID used "UINT64PF" cannot"
+					" Doc ID used " UINT64PF " cannot"
 					" exceed or equal to %d\n",
 					doc_id,
 					prebuilt->table->fts->cache->next_doc_id - 1,
@@ -11784,9 +11784,13 @@ ha_innobase::get_foreign_key_list(
 
 	mutex_enter(&(dict_sys->mutex));
 
-	for (foreign = UT_LIST_GET_FIRST(prebuilt->table->foreign_list);
-	     foreign != NULL;
-	     foreign = UT_LIST_GET_NEXT(foreign_list, foreign)) {
+	for (dict_foreign_set::iterator it
+		= prebuilt->table->foreign_set.begin();
+	     it != prebuilt->table->foreign_set.end();
+	     ++it) {
+
+		foreign = *it;
+
 		pf_key_info = get_foreign_key_info(thd, foreign);
 		if (pf_key_info) {
 			f_key_list->push_back(pf_key_info);
@@ -11822,9 +11826,13 @@ ha_innobase::get_parent_foreign_key_list(
 
 	mutex_enter(&(dict_sys->mutex));
 
-	for (foreign = UT_LIST_GET_FIRST(prebuilt->table->referenced_list);
-	     foreign != NULL;
-	     foreign = UT_LIST_GET_NEXT(referenced_list, foreign)) {
+	for (dict_foreign_set::iterator it
+		= prebuilt->table->referenced_set.begin();
+	     it != prebuilt->table->referenced_set.end();
+	     ++it) {
+
+		foreign = *it;
+
 		pf_key_info = get_foreign_key_info(thd, foreign);
 		if (pf_key_info) {
 			f_key_list->push_back(pf_key_info);
@@ -11857,8 +11865,8 @@ ha_innobase::can_switch_engines(void)
 			"determining if there are foreign key constraints";
 	row_mysql_freeze_data_dictionary(prebuilt->trx);
 
-	can_switch = !UT_LIST_GET_FIRST(prebuilt->table->referenced_list)
-			&& !UT_LIST_GET_FIRST(prebuilt->table->foreign_list);
+	can_switch = prebuilt->table->referenced_set.empty()
+		&& prebuilt->table->foreign_set.empty();
 
 	row_mysql_unfreeze_data_dictionary(prebuilt->trx);
 	prebuilt->trx->op_info = "";
@@ -13636,7 +13644,7 @@ innobase_xa_prepare(
 		|| !thd_test_options(
 			thd, OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN))) {
 
-		/* For ibbackup to work the order of transactions in binlog
+		/* For mysqlbackup to work the order of transactions in binlog
 		and InnoDB must be the same. Consider the situation
 
 		  thread1> prepare; write to binlog; ...

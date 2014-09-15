@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2014, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@ INCLUDE (CheckLibraryExists)
 INCLUDE (CheckFunctionExists)
 INCLUDE (CheckCCompilerFlag)
 INCLUDE (CheckCSourceRuns)
+INCLUDE (CheckCXXSourceRuns)
 INCLUDE (CheckSymbolExists)
 
 
@@ -77,20 +78,38 @@ IF(CMAKE_C_COMPILER_ID MATCHES "Clang")
 ENDIF()
 
 # The default C++ library for SunPro is really old, and not standards compliant.
-# http://developers.sun.com/solaris/articles/cmp_stlport_libCstd.html
+# http://www.oracle.com/technetwork/server-storage/solaris10/cmp-stlport-libcstd-142559.html
 # Use stlport rather than Rogue Wave.
 IF(CMAKE_SYSTEM_NAME MATCHES "SunOS")
   IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
-    SET(CMAKE_CXX_FLAGS
-      "${CMAKE_CXX_FLAGS} -library=stlport4")
+    IF(SUNPRO_CXX_LIBRARY)
+      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=${SUNPRO_CXX_LIBRARY}")
+    ELSE()
+      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=stlport4")
+    ENDIF()
   ENDIF()
 ENDIF()
+
+# Check to see if we are using LLVM's libc++ rather than e.g. libstd++
+# Can then check HAVE_LLBM_LIBCPP later without including e.g. ciso646.
+CHECK_CXX_SOURCE_RUNS("
+#include <ciso646>
+int main()
+{
+#ifdef _LIBCPP_VERSION
+  return 0;
+#else
+  return 1;
+#endif
+}" HAVE_LLVM_LIBCPP)
 
 MACRO(DIRNAME IN OUT)
   GET_FILENAME_COMPONENT(${OUT} ${IN} PATH)
 ENDMACRO()
 
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_C_COMPILER_ID MATCHES "SunPro")
+IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
+   CMAKE_C_COMPILER_ID MATCHES "SunPro" AND
+   CMAKE_CXX_FLAGS MATCHES "stlport4")
   DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
   SET(STLPORT_SUFFIX "lib/stlport4")
   IF(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")

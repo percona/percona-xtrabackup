@@ -724,6 +724,20 @@ cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
   */
   net_clear(&mysql->net, (command != COM_QUIT));
 
+#if !defined(EMBEDDED_LIBRARY)
+  /*
+    If auto-reconnect mode is enabled check if connection is still alive before
+    sending new command. Otherwise, send() might not notice that connection was
+    closed by the server (for example, due to KILL statement), and the fact that
+    connection is gone will be noticed only on attempt to read command's result,
+    when it is too late to reconnect. Note that such scenario can still occur if
+    connection gets killed after this check but before command is sent to
+    server. But this should be rare.
+  */
+  if ((command != COM_QUIT) && mysql->reconnect && !vio_is_connected(net->vio))
+    net->error= 2;
+#endif
+
   if (net_write_command(net,(uchar) command, header, header_length,
 			arg, arg_length))
   {
@@ -4637,17 +4651,27 @@ const char * STDCALL mysql_error(MYSQL *mysql)
 
   RETURN
    Signed number > 323000
+   Zero if there is no connection
 */
 
 ulong STDCALL
 mysql_get_server_version(MYSQL *mysql)
 {
-  uint major, minor, version;
-  char *pos= mysql->server_version, *end_pos;
-  major=   (uint) strtoul(pos, &end_pos, 10);	pos=end_pos+1;
-  minor=   (uint) strtoul(pos, &end_pos, 10);	pos=end_pos+1;
-  version= (uint) strtoul(pos, &end_pos, 10);
-  return (ulong) major*10000L+(ulong) (minor*100+version);
+  ulong major= 0, minor= 0, version= 0;
+
+  if (mysql->server_version)
+  {
+    char *pos= mysql->server_version, *end_pos;
+    major=   strtoul(pos, &end_pos, 10);	pos=end_pos+1;
+    minor=   strtoul(pos, &end_pos, 10);	pos=end_pos+1;
+    version= strtoul(pos, &end_pos, 10);
+  }
+  else
+  {
+    set_mysql_error(mysql, CR_COMMANDS_OUT_OF_SYNC, unknown_sqlstate);
+  }
+
+  return major*10000 + minor*100 + version;
 }
 
 

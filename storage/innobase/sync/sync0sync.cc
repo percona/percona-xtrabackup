@@ -458,6 +458,7 @@ mutex_set_waiters(
 
 	*ptr = n;		/* Here we assume that the write of a single
 				word in memory is atomic */
+	os_wmb;
 }
 
 /******************************************************************//**
@@ -499,7 +500,7 @@ mutex_loop:
 	a memory word. */
 
 spin_loop:
-
+	os_rmb;
 	while (mutex_get_lock_word(mutex) != 0 && i < SYNC_SPIN_ROUNDS) {
 		if (srv_spin_wait_delay) {
 			ut_delay(ut_rnd_interval(0, srv_spin_wait_delay));
@@ -508,7 +509,7 @@ spin_loop:
 		i++;
 	}
 
-	if (i == SYNC_SPIN_ROUNDS) {
+	if (i >= SYNC_SPIN_ROUNDS) {
 		os_thread_yield();
 	}
 
@@ -1558,12 +1559,12 @@ sync_print_wait_info(
 	FILE*	file)		/*!< in: file where to print */
 {
 	fprintf(file,
-		"Mutex spin waits "UINT64PF", rounds "UINT64PF", "
-		"OS waits "UINT64PF"\n"
-		"RW-shared spins "UINT64PF", rounds "UINT64PF", "
-		"OS waits "UINT64PF"\n"
-		"RW-excl spins "UINT64PF", rounds "UINT64PF", "
-		"OS waits "UINT64PF"\n",
+		"Mutex spin waits " UINT64PF ", rounds " UINT64PF ", "
+		"OS waits " UINT64PF "\n"
+		"RW-shared spins " UINT64PF ", rounds " UINT64PF ", "
+		"OS waits " UINT64PF "\n"
+		"RW-excl spins " UINT64PF ", rounds " UINT64PF ", "
+		"OS waits " UINT64PF "\n",
 		(ib_uint64_t) mutex_spin_wait_count,
 		(ib_uint64_t) mutex_spin_round_count,
 		(ib_uint64_t) mutex_os_wait_count,

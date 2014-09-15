@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,7 +25,6 @@ SET(MYSYS_SOURCES  array.c charset-def.c charset.c checksum.c
 				my_compress.c my_copy.c  my_create.c my_delete.c
 				my_div.c my_error.c my_file.c my_fopen.c my_fstream.c 
 				my_gethwaddr.c my_getsystime.c my_getwd.c my_compare.c my_init.c
-				my_isnan.c
 				my_lib.c my_lock.c my_malloc.c my_mess.c
 				my_mkdir.c my_mmap.c my_once.c my_open.c my_pread.c my_pthread.c
 				my_quick.c my_read.c my_redel.c my_rename.c my_seek.c my_sleep.c
@@ -77,7 +76,6 @@ TARGET_LINK_LIBRARIES(queues mysys)
 SET_TARGET_PROPERTIES(queues PROPERTIES COMPILE_FLAGS "-DMAIN")
 ADD_TEST(queues_test queues)
 
-INSTALL_DEBUG_SYMBOLS(mysys)
 IF(MSVC)
    INSTALL_DEBUG_TARGET(mysys DESTINATION ${INSTALL_LIBDIR}/debug)
 ENDIF()

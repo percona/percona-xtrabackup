@@ -4462,6 +4462,10 @@ log space");
         if (event_buf[EVENT_TYPE_OFFSET] == XID_EVENT)
            thd->killed= THD::KILLED_NO_VALUE;
       );
+      DBUG_EXECUTE_IF("stop_io_after_reading_write_rows_log_event",
+        if (event_buf[EVENT_TYPE_OFFSET] == WRITE_ROWS_EVENT)
+           thd->killed= THD::KILLED_NO_VALUE;
+      );
     }
   }
 
@@ -4508,11 +4512,9 @@ err:
   net_end(&thd->net); // destructor will not free it, because net.vio is 0
 
   thd->release_resources();
-  mysql_mutex_lock(&LOCK_thread_count);
   THD_CHECK_SENTRY(thd);
   if (thd_added)
     remove_global_thread(thd);
-  mysql_mutex_unlock(&LOCK_thread_count);
   delete thd;
 
   mi->abort_slave= 0;
@@ -4712,12 +4714,9 @@ err:
     */
     thd->system_thread= NON_SYSTEM_THREAD;
     thd->release_resources();
-
-    mysql_mutex_lock(&LOCK_thread_count);
     THD_CHECK_SENTRY(thd);
     if (thd_added)
       remove_global_thread(thd);
-    mysql_mutex_unlock(&LOCK_thread_count);
     delete thd;
   }
 
@@ -5840,11 +5839,9 @@ llstr(rli->get_group_master_log_pos(), llbuff));
   set_thd_in_use_temporary_tables(rli);  // (re)set info_thd in use for saved temp tables
 
   thd->release_resources();
-  mysql_mutex_lock(&LOCK_thread_count);
   THD_CHECK_SENTRY(thd);
   if (thd_added)
     remove_global_thread(thd);
-  mysql_mutex_unlock(&LOCK_thread_count);
   delete thd;
  /*
   Note: the order of the broadcast and unlock calls below (first broadcast, then unlock)
@@ -6806,7 +6803,7 @@ static int connect_to_master(THD* thd, MYSQL* mysql, Master_info* mi,
 #endif
   ulong client_flag= CLIENT_REMEMBER_OPTIONS;
   if (opt_slave_compressed_protocol)
-    client_flag=CLIENT_COMPRESS;                /* We will use compression */
+    client_flag|= CLIENT_COMPRESS;              /* We will use compression */
 
   mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, (char *) &slave_net_timeout);
   mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, (char *) &slave_net_timeout);

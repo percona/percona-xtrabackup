@@ -1824,7 +1824,7 @@ os_file_delete_if_exists_func(
 	bool	ret;
 	ulint	count	= 0;
 loop:
-	/* In Windows, deleting an .ibd file may fail if ibbackup is copying
+	/* In Windows, deleting an .ibd file may fail if mysqlbackup is copying
 	it */
 
 	ret = DeleteFile((LPCTSTR) name);
@@ -1849,7 +1849,7 @@ loop:
 		ib_logf(IB_LOG_LEVEL_WARN, "Delete of file %s failed.", name);
 	}
 
-	os_thread_sleep(1000000);	/* sleep for a second */
+	os_thread_sleep(500000);	/* sleep for 0.5 second */
 
 	if (count > 2000) {
 
@@ -1886,7 +1886,7 @@ os_file_delete_func(
 	BOOL	ret;
 	ulint	count	= 0;
 loop:
-	/* In Windows, deleting an .ibd file may fail if ibbackup is copying
+	/* In Windows, deleting an .ibd file may fail if mysqlbackup is copying
 	it */
 
 	ret = DeleteFile((LPCTSTR) name);
@@ -1909,7 +1909,7 @@ loop:
 
 		fprintf(stderr,
 			"InnoDB: Warning: cannot delete file %s\n"
-			"InnoDB: Are you running ibbackup"
+			"InnoDB: Are you running mysqlbackup"
 			" to back up the file?\n", name);
 	}
 
@@ -2650,7 +2650,7 @@ try_again:
 	}
 
 	ib_logf(IB_LOG_LEVEL_ERROR,
-		"Tried to read "ULINTPF" bytes at offset " UINT64PF". "
+		"Tried to read " ULINTPF " bytes at offset " UINT64PF ". "
 		"Was only able to read %ld.", n, offset, (lint) ret);
 #endif /* __WIN__ */
 #ifdef __WIN__
@@ -2976,7 +2976,7 @@ retry:
 
 		fprintf(stderr,
 			" InnoDB: Error: Write to file %s failed"
-			" at offset "UINT64PF".\n"
+			" at offset " UINT64PF ".\n"
 			"InnoDB: %lu bytes should have been written,"
 			" only %ld were written.\n"
 			"InnoDB: Operating system error number %lu.\n"

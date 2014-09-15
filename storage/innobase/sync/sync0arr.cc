@@ -741,6 +741,7 @@ sync_arr_cell_can_wake_up(
 
 		mutex = static_cast<ib_mutex_t*>(cell->wait_object);
 
+		os_rmb;
 		if (mutex_get_lock_word(mutex) == 0) {
 
 			return(TRUE);
@@ -750,6 +751,7 @@ sync_arr_cell_can_wake_up(
 
 		lock = static_cast<rw_lock_t*>(cell->wait_object);
 
+		os_rmb;
 		if (lock->lock_word > 0) {
 		/* Either unlocked or only read locked. */
 
@@ -761,6 +763,7 @@ sync_arr_cell_can_wake_up(
 		lock = static_cast<rw_lock_t*>(cell->wait_object);
 
                 /* lock_word == 0 means all readers have left */
+		os_rmb;
 		if (lock->lock_word == 0) {
 
 			return(TRUE);
@@ -769,6 +772,7 @@ sync_arr_cell_can_wake_up(
 		lock = static_cast<rw_lock_t*>(cell->wait_object);
 
                 /* lock_word > 0 means no writer or reserved writer */
+		os_rmb;
 		if (lock->lock_word > 0) {
 
 			return(TRUE);
