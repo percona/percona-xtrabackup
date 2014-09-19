@@ -3874,15 +3874,25 @@ sub check_args {
       }
     }
 
+    if (!$option_incremental &&
+        ($option_incremental_lsn ne '' ||
+         $option_incremental_basedir ne '' ||
+         $option_incremental_history_name ne '' ||
+         $option_incremental_history_uuid ne '' )) {
+        die "--incremental-lsn, --incremental-basedir, " .
+            "--incremental-history-name and --incremental-history-uuid " .
+            "require the --incremental option.\n"
+    }
+
     if (!$option_apply_log && !$option_copy_back && !$option_move_back
         && !$option_decrypt && !$option_decompress) {
         # we are making a backup, get backup root directory
         $option_backup = "1";
         $backup_root = $ARGV[0];
-        if ($option_incremental && !$option_incremental_lsn &&
-            !$option_incremental_history_name &&
-            !$option_incremental_history_uuid) {
-            if ($option_incremental_basedir) {
+        if ($option_incremental && $option_incremental_lsn eq '' &&
+            $option_incremental_history_name eq '' &&
+            $option_incremental_history_uuid eq '') {
+            if ($option_incremental_basedir ne '') {
                 $incremental_basedir = $option_incremental_basedir;
             } else {
                 my @dirs = `ls -t $backup_root`;
