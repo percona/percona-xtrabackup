@@ -5,11 +5,15 @@
 #                       changed page bitmap output.
 #    ib_inc_extra_args: extra args to be passed to innobackup incremental 
 #                       backup invocations.
+#    ib_inc_use_lsn:    if 1, use --incremental-lsn instead of
+#                       --incremental-basedir
 
 . inc/common.sh
 
 MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
 innodb_file_per_table"
+
+ib_inc_use_lsn=${ib_inc_use_lsn:-""}
 
 start_server
 load_dbase_schema incremental_sample
@@ -49,8 +53,19 @@ vlog "###############"
 
 # Incremental backup
 inc_backup_dir=$topdir/backup_incremental
-innobackupex --no-timestamp --incremental --incremental-basedir=$full_backup_dir \
-    $inc_backup_dir $ib_inc_extra_args
+if [ $ib_inc_use_lsn = "1" ]
+then
+    inc_lsn=`grep to_lsn $full_backup_dir/xtrabackup_checkpoints | \
+             sed 's/to_lsn = //'`
+
+    [ -z "$inc_lsn" ] && die "Couldn't read to_lsn from xtrabackup_checkpoints"
+
+    ib_inc_extra_args="${ib_inc_extra_args:-""} --incremental-lsn=$inc_lsn"
+else
+    ib_inc_extra_args="${ib_inc_extra_args:-""} --incremental-basedir=$full_backup_dir"
+fi
+
+innobackupex --no-timestamp --incremental $ib_inc_extra_args $inc_backup_dir
 
 vlog "Preparing backup"
 # Prepare backup
