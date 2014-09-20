@@ -309,6 +309,8 @@ my_bool xb_close_files= FALSE;
 ds_ctxt_t       *ds_data     = NULL;
 ds_ctxt_t       *ds_meta     = NULL;
 
+extern "C" sig_handler handle_fatal_signal(int sig);
+
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
 #define XTRABACKUP_MAX_DATASINKS	10
@@ -5979,7 +5981,22 @@ error:
 
 int main(int argc, char **argv)
 {
+	struct sigaction sa;
 	int ho_error;
+
+	/* Print a stacktrace on some signals */
+	sa.sa_flags = SA_RESETHAND | SA_NODEFER;
+	sigemptyset(&sa.sa_mask);
+	sigprocmask(SIG_SETMASK,&sa.sa_mask,NULL);
+#ifdef HAVE_STACKTRACE
+	my_init_stacktrace();
+#endif
+	sa.sa_handler = handle_fatal_signal;
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
+	sigaction(SIGBUS, &sa, NULL);
+	sigaction(SIGILL, &sa, NULL);
+	sigaction(SIGFPE, &sa, NULL);
 
 #ifdef __linux__
 	/* Ensure xtrabackup process is killed when the parent one

@@ -86,64 +86,17 @@ extern "C" sig_handler handle_fatal_signal(int sig)
   my_safe_itoa(10, mins, &mins_buf[2]);
   my_safe_itoa(10, secs, &secs_buf[2]);
 
-  my_safe_printf_stderr("%s:%s:%s UTC - mysqld got " SIGNAL_FMT " ;\n",
+  my_safe_printf_stderr("%s:%s:%s UTC - xtrabackup got " SIGNAL_FMT " ;\n",
                         hrs_buf, mins_buf, secs_buf, sig);
 
   my_safe_printf_stderr("%s",
-    "This could be because you hit a bug. It is also possible that this binary\n"
-    "or one of the libraries it was linked against is corrupt, improperly built,\n"
-    "or misconfigured. This error can also be caused by malfunctioning hardware.\n");
+    "This could be because you hit a bug or data is corrupted.\n"
+    "This error can also be caused by malfunctioning hardware.\n");
 
   my_safe_printf_stderr("%s",
     "We will try our best to scrape up some info that will hopefully help\n"
     "diagnose the problem, but since we have already crashed, \n"
     "something is definitely wrong and this may fail.\n\n");
-
-  my_safe_printf_stderr("key_buffer_size=%lu\n",
-                        (ulong) dflt_key_cache->key_cache_mem_size);
-
-  my_safe_printf_stderr("read_buffer_size=%ld\n",
-                        (long) global_system_variables.read_buff_size);
-
-  my_safe_printf_stderr("max_used_connections=%lu\n",
-                        (ulong) max_used_connections);
-
-  my_safe_printf_stderr("max_threads=%u\n",
-                        (uint) thread_scheduler->max_threads);
-
-  my_safe_printf_stderr("thread_count=%u\n", get_thread_count());
-
-  my_safe_printf_stderr("connection_count=%u\n", (uint) connection_count);
-
-  my_safe_printf_stderr("It is possible that mysqld could use up to \n"
-                        "key_buffer_size + "
-                        "(read_buffer_size + sort_buffer_size)*max_threads = "
-                        "%lu K  bytes of memory\n",
-                        ((ulong) dflt_key_cache->key_cache_mem_size +
-                         (global_system_variables.read_buff_size +
-                          global_system_variables.sortbuff_size) *
-                         thread_scheduler->max_threads +
-                         max_connections * sizeof(THD)) / 1024);
-
-  my_safe_printf_stderr("%s",
-    "Hope that's ok; if not, decrease some variables in the equation.\n\n");
-
-#if defined(HAVE_LINUXTHREADS)
-#define UNSAFE_DEFAULT_LINUX_THREADS 200
-  if (sizeof(char*) == 4 && thread_count > UNSAFE_DEFAULT_LINUX_THREADS)
-  {
-    my_safe_printf_stderr(
-      "You seem to be running 32-bit Linux and have "
-      "%d concurrent connections.\n"
-      "If you have not changed STACK_SIZE in LinuxThreads "
-      "and built the binary \n"
-      "yourself, LinuxThreads is quite likely to steal "
-      "a part of the global heap for\n"
-      "the thread stack. Please read "
-      "http://dev.mysql.com/doc/mysql/en/linux-installation.html\n\n"
-      thread_count);
-  }
-#endif /* HAVE_LINUXTHREADS */
 
 #ifdef HAVE_STACKTRACE
   THD *thd=current_thd;
@@ -159,40 +112,8 @@ extern "C" sig_handler handle_fatal_signal(int sig)
     my_print_stacktrace(thd ? (uchar*) thd->thread_stack : NULL,
                         my_thread_stack_size);
   }
-  if (thd)
-  {
-    const char *kreason= "UNKNOWN";
-    switch (thd->killed) {
-    case THD::NOT_KILLED:
-      kreason= "NOT_KILLED";
-      break;
-    case THD::KILL_BAD_DATA:
-      kreason= "KILL_BAD_DATA";
-      break;
-    case THD::KILL_CONNECTION:
-      kreason= "KILL_CONNECTION";
-      break;
-    case THD::KILL_QUERY:
-      kreason= "KILL_QUERY";
-      break;
-    case THD::KILLED_NO_VALUE:
-      kreason= "KILLED_NO_VALUE";
-      break;
-    }
-    my_safe_printf_stderr("%s", "\n"
-      "Trying to get some variables.\n"
-      "Some pointers may be invalid and cause the dump to abort.\n");
-
-    my_safe_printf_stderr("Query (%p): ", thd->query());
-    my_safe_print_str(thd->query(), MY_MIN(1024U, thd->query_length()));
-    my_safe_printf_stderr("Connection ID (thread ID): %lu\n",
-                          (ulong) thd->thread_id);
-    my_safe_printf_stderr("Status: %s\n\n", kreason);
-  }
-  my_safe_printf_stderr("%s",
-    "The manual page at "
-    "http://dev.mysql.com/doc/mysql/en/crashing.html contains\n"
-    "information that should help you find out what is causing the crash.\n");
+  my_safe_printf_stderr("%s", "\n"
+    "Please report a bug at https://bugs.launchpad.net/percona-xtrabackup\n");
 
 #endif /* HAVE_STACKTRACE */
 

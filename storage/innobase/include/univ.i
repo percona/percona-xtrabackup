@@ -247,15 +247,9 @@ operations (very slow); also UNIV_DEBUG must be defined */
 			at a buffer page write: it should be tested with this
 			option off; also some ibuf tests are suppressed */
 
-/* Linkage specifier for non-static InnoDB symbols (variables and functions)
-that are only referenced from within InnoDB, not from MySQL. We disable the
-GCC visibility directive on all Sun operating systems because there is no
-easy way to get it to work. See http://bugs.mysql.com/bug.php?id=52263. */
-#if defined(__GNUC__) && (__GNUC__ >= 4) && !defined(sun) || defined(__INTEL_COMPILER)
-# define UNIV_INTERN __attribute__((visibility ("hidden")))
-#else
-# define UNIV_INTERN
-#endif
+/* For XtraBackup, we disable the GCC visibility directive for InnoDB internal
+symbols as that allows XtraBackup print fully resolved stacktraces on Linux. */
+#define UNIV_INTERN
 #if defined(INNODB_COMPILER_HINTS)      \
     && defined __GNUC__                 \
     && (__GNUC__ > 4 || __GNUC__ == 4 && __GNUC_MINOR__ >= 3)

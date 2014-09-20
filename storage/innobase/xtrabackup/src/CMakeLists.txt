@@ -58,6 +58,8 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbstream_write.c
   )
 
+SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)
+
 TARGET_LINK_LIBRARIES(xtrabackup 
   mysqlserver 
   ${GCRYPT_LIBS} 
