@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2013 Percona LLC and/or its affiliates.
+(c) 2009-2014 Percona LLC and/or its affiliates.
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -795,9 +795,7 @@ xb_rebuild_indexes_for_table(
 
 	ut_ad(i == n_indexes);
 
-	ut_d(table->n_ref_count++);
 	row_merge_drop_indexes(trx, table, TRUE);
-	ut_d(table->n_ref_count--);
 
 	index = dict_table_get_first_index(table);
 	ut_a(dict_index_is_clust(index));
@@ -898,6 +896,8 @@ xb_rebuild_indexes_thread_func(
 
 		table = dict_table_get_low(rebuild_table->name);
 
+		ut_d(table->n_ref_count++);
+
 		row_mysql_unlock_data_dictionary(trx);
 
 		ut_a(table != NULL);
@@ -912,6 +912,8 @@ xb_rebuild_indexes_thread_func(
 		    rebuild_table->name, rebuild_table->space_id);
 
 		xb_rebuild_indexes_for_table(table, trx, thread->num);
+
+		ut_d(table->n_ref_count--);
 
 		mem_free(rebuild_table->name);
 		mem_free(rebuild_table);
