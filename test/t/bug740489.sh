@@ -12,19 +12,17 @@ EOF
 
 defaults_extra_file=$topdir/740489.cnf
 
-cat > $defaults_extra_file <<EOF
-[mysqld]
-datadir=${MYSQLD_DATADIR}
+cp $MYSQLD_VARDIR/my.cnf $defaults_extra_file
 
+cat >> $defaults_extra_file <<EOF
 [client]
-user=root
 password=password
 EOF
 
 backup_dir=$topdir/backup
 run_cmd $IB_BIN \
     --defaults-extra-file=$defaults_extra_file --socket=${MYSQLD_SOCKET} \
-    --ibbackup=$XB_BIN --no-timestamp $backup_dir
+    --ibbackup=$XB_BIN --no-version-check --no-timestamp $backup_dir
 vlog "Backup created in directory $backup_dir"
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} --password=password <<EOF
