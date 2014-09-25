@@ -4,7 +4,7 @@
  How |innobackupex| Works
 ==========================
 
-:program:`innobackupex` is a script written in Perl that wraps the :program:`xtrabackup` and :program:`tar4ibd` binaries and performs the tasks where the performance and efficiency of *C* program isn't needed. In this way, it provides a convinient and integrated approach to backing up in many common scenarios. 
+:program:`innobackupex` is a script written in Perl that wraps the :program:`xtrabackup` and performs the tasks where the performance and efficiency of *C* program isn't needed. In this way, it provides a convenient and integrated approach to backing up in many common scenarios. 
 
 The following describes the rationale behind :program:`innobackupex` actions.
 

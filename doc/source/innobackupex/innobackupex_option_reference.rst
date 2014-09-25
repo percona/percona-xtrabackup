@@ -234,7 +234,7 @@ Options
 
 .. option:: --throttle=IOS
 
-   This option accepts an integer argument that specifies the number of I/O operations (i.e., pairs of read+write) per second. It is passed directly to xtrabackup's :option:`xtrabackup --throttle` option.
+   This option accepts an integer argument that specifies the number of I/O operations (i.e., pairs of read+write) per second. It is passed directly to xtrabackup's :option:`xtrabackup --throttle` option. **NOTE:** This option works only during the backup phase, ie. it will not work with :option:`innobackupex --apply-log` and :option:`innobackupex --copy-back` options.
 
 .. option:: --tmpdir=DIRECTORY
 

@@ -67,6 +67,7 @@ Miscellaneous
    :maxdepth: 1
    :glob:
 
+   known_issues
    faq
    release-notes
    glossary

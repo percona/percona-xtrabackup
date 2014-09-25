@@ -9,31 +9,16 @@ The easiest way to install the *Percona Yum* repository is to install an *RPM* t
 Automatic Installation
 ======================
 
-Execute the following command as a ``root`` user, replacing ``x86_64`` with ``i386`` if you are not running a 64-bit operating system: ::
+Execute the following command as a ``root`` user: ::
 
-  $ rpm -Uhv http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm
+  $ yum install http://www.percona.com/downloads/percona-release/redhat/0.1-3/percona-release-0.1-3.noarch.rpm 
 
 You should see some output such as the following: ::
 
-  Retrieving http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm
+  Retrieving yum install http://www.percona.com/downloads/percona-release/redhat/0.1-3/percona-release-0.1-3.noarch.rpm
   Preparing...                ########################################### [100%]
      1:percona-release        ########################################### [100%]
 
-The RPMs for the automatic installation are available at http://www.percona.com/downloads/percona-release/ and include source code.
-
-Manual Installation
-===================
-
-To install the repository manually, place the following into a new file named :file:`/etc/yum.repos.d/Percona.repo`: ::
-
-  [percona]
-  name = CentOS $releasever - Percona
-  baseurl=http://repo.percona.com/centos/$releasever/os/$basearch/
-  enabled = 1
-  gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-percona
-  gpgcheck = 1
-
-Also, copy the `Percona GPG key <http://www.percona.com/downloads/RPM-GPG-KEY-percona>`_  into a file named :file:`/etc/pki/rpm-gpg/RPM-GPG-KEY-percona`.
 
 Testing The Repository
 ======================
@@ -69,9 +54,7 @@ The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too, 
 * *CentOS* 6 and *RHEL* 6
 * *Amazon Linux AMI* (works the same as *CentOS* 5)
 
-Release Candidate Repository
-============================
+Percona `yum` Testing Repository
+=================================
 
-To subscribe to the release candidate repository, install the release candidate (RC) *RPM*: ::
-
-  rpm -Uhv http://www.percona.com/downloads/percona-release/percona-rc-0.0-2.x86_64.rpm
+Percona offers pre-release builds from the testing repository. To subscribe to the testing repository, you'll need to enable the testing repository in :file:`/etc/yum.repos.d/percona-release.repo`. **NOTE:** You'll need to install the Percona repository first if this hasn't been done already.
