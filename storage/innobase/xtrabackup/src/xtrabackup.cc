@@ -488,7 +488,8 @@ enum options_xtrabackup
   OPT_XTRA_INCREMENTAL_FORCE_SCAN,
   OPT_DEFAULTS_GROUP,
   OPT_OPEN_FILES_LIMIT,
-  OPT_CLOSE_FILES
+  OPT_CLOSE_FILES,
+  OPT_CORE_FILE
 };
 
 static struct my_option xb_long_options[] =
@@ -863,6 +864,9 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "risk.", (G_PTR*) &xb_close_files, (G_PTR*) &xb_close_files, 0, GET_BOOL,
    NO_ARG, 0, 0, 0, 0, 0, 0},
 
+  {"core-file", OPT_CORE_FILE, "Write core on fatal signals", 0, 0, 0,
+   GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -998,6 +1002,9 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       return 1;
     }
     xtrabackup_encrypt = TRUE;
+    break;
+  case (int) OPT_CORE_FILE:
+    test_flags |= TEST_CORE_ON_SIGNAL;
     break;
   case '?':
     usage();
@@ -5977,12 +5984,14 @@ error:
 	exit(EXIT_FAILURE);
 }
 
-/* ================= main =================== */
-
-int main(int argc, char **argv)
+/**************************************************************************
+Signals-related setup. */
+static
+void
+setup_signals()
+/*===========*/
 {
 	struct sigaction sa;
-	int ho_error;
 
 	/* Print a stacktrace on some signals */
 	sa.sa_flags = SA_RESETHAND | SA_NODEFER;
@@ -6007,6 +6016,16 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 #endif
+}
+
+/* ================= main =================== */
+
+int main(int argc, char **argv)
+{
+	int ho_error;
+
+	setup_signals();
+
 	MY_INIT(argv[0]);
 	xb_regex_init();
 
