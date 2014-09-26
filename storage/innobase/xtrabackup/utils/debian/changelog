@@ -1,3 +1,9 @@
+percona-xtrabackup (2.2.5) unstable; urgency=low
+
+  * Update to new release Percona XtraBackup 2.2.5
+
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Fri, 26 Sep 2014 11:03:39 +0200
+
 percona-xtrabackup (2.2.4) unstable; urgency=low
 
   * Changed options to build with system zlib
