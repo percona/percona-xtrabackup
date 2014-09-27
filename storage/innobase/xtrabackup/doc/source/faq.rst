@@ -35,7 +35,7 @@ Why doesn't the :program:`xtrabackup` binary include MyISAM tables and other fil
 
 :program:`xtrabackup` is a C program written to take advantage of the InnoDB or XtraDB features in order to make it as fast, less resource-consuming and unobtrusive (locking the database server) as possible. That is only possible with those engines. In the case of MyISAM a "read lock" is needed.
 
-:program:`innobackupex` is a script written in Perl which wraps :program:`xtrabackup` and other backup tools (such as :program:`tar4ibd`) and provides you with the functionality of each tool taking care of the details.
+:program:`innobackupex` is a script written in Perl which wraps :program:`xtrabackup` and other backup tools and provides you with the functionality of each tool taking care of the details.
 
 However, for some specific tasks, you must use :program:`xtrabackup` directly. See the :ref:`user-manual` for details on each one.
 

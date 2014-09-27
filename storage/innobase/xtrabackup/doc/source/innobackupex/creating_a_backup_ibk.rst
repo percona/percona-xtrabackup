@@ -2,7 +2,7 @@
  Creating a Backup with |innobackupex|
 =======================================
 
-|innobackupex| is the tool that glues |xtrabackup| and |tar4ibd|, which are specific tools, plus adding functionality to provide a single interface to backup all the data in your database server.
+|innobackupex| is the tool which provides functionality to backup a whole MySQL database instance using the |xtrabackup| in combination with tools like |xbstream| and |xbcrypt|.
 
 To create a full backup, invoke the script with the options needed to connect to the server and only one argument: the path to the directory where the backup will be stored ::
 
