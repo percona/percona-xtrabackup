@@ -69,6 +69,9 @@
    datadir
     The directory in which the database server stores its databases. Most Linux distribution use :file:`/var/lib/mysql` by default.
 
+   xbcrypt
+     To support encryption and decryption of the backups, a new tool xbcrypt was introduced to |Percona XtraBackup|. This utility has been modeled after The xbstream binary to perform encryption and decryption outside of |Percona XtraBackup|.
+     
    xbstream
      To support simultaneous compression and streaming, a new custom streaming format called xbstream was introduced to |Percona XtraBackup| in addition to the TAR format. 
 

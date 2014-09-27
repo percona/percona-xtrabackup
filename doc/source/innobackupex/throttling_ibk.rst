@@ -8,4 +8,8 @@ This option is passed directly to |xtrabackup| binary and only limits the operat
 
 One way of checking the current I/O operations at a system is with :command:`iostat` command. See :ref:`throttling_backups_xbk` for details of how throttling works.
 
+.. note:: 
+
+   :option:`innobackupex --throttle` option works only during the backup phase, ie. it will not work with :option:`innobackupex --apply-log` and :option:`innobackupex --copy-back` options.
+
 The :option:`--throttle` option is similar to the ``--sleep`` option in ``mysqlbackup`` and should be used instead of it, as ``--sleep`` will be ignored.

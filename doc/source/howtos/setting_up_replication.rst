@@ -56,7 +56,7 @@ In order for snapshot to be consistent you need to prepare the data:
 
 .. code-block:: console
 
-   TheMaster$ innobackupex --user=yourDBuser --password=MaGiCdB1 /
+   TheMaster$ innobackupex --user=yourDBuser --password=MaGiCdB1 \
               --apply-log /path/to/backupdir/$TIMESTAMP/
 
 You need to select path where your snapshot has been taken, for example /home/backups/2012-01-16_11-14-43. If everything is ok you should get the same OK message. Now the transaction logs are applied to the data files, and new ones are created: your data files are ready to be used by the MySQL server.

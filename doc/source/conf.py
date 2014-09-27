@@ -96,6 +96,8 @@ rst_prolog = '''
 
 .. |xbstream|  replace:: :term:`xbstream`
 
+.. |xbcrypt|  replace:: :term:`xbcrypt`
+
 .. |XtraDB|  replace:: :term:`XtraDB`
 
 .. |InnoDB|  replace:: :term:`InnoDB`

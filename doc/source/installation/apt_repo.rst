@@ -39,13 +39,13 @@ Ubuntu
  * 13.04 (raring)
  * 13.10 (saucy)
 
-Experimental Repository
-=======================
+Percona `apt` Testing repository
+=================================
 
-Percona now offers experimental repository for beta releases. To enable it add this to :file:`/etc/apt/sources.list`, replacing ``VERSION`` with the name of your distribution: ::
+Percona offers pre-release builds from the testing repository. To enable it add the following lines to your  :file:`/etc/apt/sources.list` , replacing ``VERSION`` with the name of your distribution: ::
 
-  deb http://repo.percona.com/apt VERSION main experimental
-  deb-src http://repo.percona.com/apt VERSION main experimental
+  deb http://repo.percona.com/apt VERSION main testing
+  deb-src http://repo.percona.com/apt VERSION main testing
 
 Ubuntu PPA of daily builds
 ==========================
