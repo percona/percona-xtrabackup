@@ -2700,7 +2700,8 @@ sub wait_for_ibbackup_suspend {
     print STDERR "$prefix Suspend file '$suspend_file'\n\n";
     wait_for_ibbackup_file_create($suspend_file);
     $now = current_time();
-    open XTRABACKUP_PID, "> $option_tmpdir/$xtrabackup_pid_file";
+    open XTRABACKUP_PID, ">", "$option_tmpdir/$xtrabackup_pid_file"
+        or die "Cannot open $option_tmpdir/$xtrabackup_pid_file: $OS_ERROR";
     print XTRABACKUP_PID $ibbackup_pid;
     close XTRABACKUP_PID;
     print STDERR "\n$now  $prefix Continuing after ibbackup has suspended\n";
@@ -4093,8 +4094,8 @@ sub backup_files {
             mkdir("$option_tmpdir/$database") ||
                 die "Failed to create directory $option_tmpdir/$database: $!";
 
-            open XTRABACKUP_FH, "> $option_tmpdir/$database/db.opt"
-                || die "Cannot create file $option_tmpdir/db.opt: $!";
+            open XTRABACKUP_FH, ">", "$option_tmpdir/$database/db.opt"
+                or die "Cannot create file $option_tmpdir/db.opt: $!";
             close XTRABACKUP_FH;
 
             backup_file_via_stream("$option_tmpdir", "$database/db.opt");
@@ -4828,15 +4829,15 @@ sub write_to_backup_file {
     my $dst_file = substr($file_name, $filepos + 1);
     my $dst_path = substr($file_name, 0, $filepos + 1);
  
-    open XTRABACKUP_FH, "> $option_tmpdir/$dst_file"
-      || die "Cannot open file $option_tmpdir/$dst_file: $!\n";
+    open XTRABACKUP_FH, ">", "$option_tmpdir/$dst_file"
+      or die "Cannot open file $option_tmpdir/$dst_file: $!\n";
     print XTRABACKUP_FH $write_data;
     close XTRABACKUP_FH;
     backup_file($option_tmpdir, $dst_file, $file_name);
     unlink "$option_tmpdir/$dst_file";
   } else {
-    open XTRABACKUP_FH, "> $file_name"
-      || die "Cannot open file $file_name: $!\n";
+    open XTRABACKUP_FH, ">", "$file_name"
+      or die "Cannot open file $file_name: $!\n";
     print XTRABACKUP_FH $write_data;
     close XTRABACKUP_FH;
   }

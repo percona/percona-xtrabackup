@@ -1,3 +1,5 @@
+.. _yum_repo:
+
 ===================================
  Percona :program:`yum` Repository
 ===================================
@@ -52,7 +54,10 @@ The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too, 
 
 * *CentOS* 5 and *RHEL* 5
 * *CentOS* 6 and *RHEL* 6
+* *CentOS* 7 and *RHEL* 7
 * *Amazon Linux AMI* (works the same as *CentOS* 5)
+
+.. _yum_testing:
 
 Percona `yum` Testing Repository
 =================================
