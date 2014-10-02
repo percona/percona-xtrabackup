@@ -80,6 +80,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test
 
 %changelog
+* Fri Sep 26 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Update to new release Percona XtraBackup 2.2.5
+
 * Thu Sep 11 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Changed options to build with system zlib
 
