@@ -22,6 +22,7 @@ use File::Copy;
 use File::Path;
 use English qw(-no_match_vars);
 use Time::HiRes qw(usleep);
+use Carp qw(longmess);
 
 # version of this script
 my $innobackup_version = '1.5.1-xtrabackup';
@@ -1661,6 +1662,9 @@ BEGIN {
       ));
 
     *CORE::GLOBAL::die = sub {
+
+        print STDERR longmess("$prefix got a fatal error with the following ".
+                              "stacktrace:");
 
         print STDERR "$prefix Error: @_";
 
