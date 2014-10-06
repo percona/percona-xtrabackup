@@ -4,7 +4,7 @@
 
 start_server --innodb_file_per_table
 
-if [ ${ASAN_OPTIONS:-undefined} = "undefined" ]
+if [ ${ASAN_OPTIONS:-undefined} != "undefined" ]
 then
     skip_test "Incompatible with AddressSanitizer"
 fi

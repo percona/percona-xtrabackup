@@ -23,6 +23,7 @@ use File::Path;
 use English qw(-no_match_vars);
 use Time::HiRes qw(usleep);
 use Carp qw(longmess);
+use Cwd qw(realpath);
 
 # version of this script
 my $innobackup_version = '1.5.1-xtrabackup';
@@ -1896,10 +1897,10 @@ sub decrypt_decompress {
 # process.
 #
 sub backup {
-    my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
+    my $orig_datadir = get_option('datadir');
     my $suspend_file;
-    my $buffer_pool_filename = get_option(\%config, $option_defaults_group,
-                                          'innodb_buffer_pool_filename');
+    my $buffer_pool_filename = get_option_safe('innodb_buffer_pool_filename',
+                                               '');
 
     detect_mysql_capabilities_for_backup(\%mysql);
 
@@ -2038,7 +2039,8 @@ sub backup {
     # copy ib_lru_dump
     # Copy buffer poll dump and/or LRU dump
     foreach my $dump_name ($buffer_pool_filename, 'ib_lru_dump') {
-      if (!$option_rsync && -e "$orig_datadir/$dump_name") {
+        if (!$option_rsync && $dump_name ne '' &&
+            -e "$orig_datadir/$dump_name") {
         backup_file("$orig_datadir", "$dump_name", "$backup_dir/$dump_name")
       }
     }
@@ -2401,14 +2403,6 @@ sub parse_innodb_data_file_path {
 #
 sub copy_back {
     my $move_flag = shift;
-    my $orig_datadir = get_option(\%config, $option_defaults_group, 'datadir');
-    my $orig_ibdata_dir = 
-        get_option(\%config, $option_defaults_group, 'innodb_data_home_dir');
-    my $orig_innodb_data_file_path = 
-        get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
-    my $orig_iblog_dir =
-        get_option(\%config, $option_defaults_group, 'innodb_log_group_home_dir');
-    my $orig_undo_dir = $orig_ibdata_dir;
     my $iblog_files = 'ib_logfile.*';
     my $ibundo_files = 'undo[0-9]{3}';
     my $excluded_files = 
@@ -2418,21 +2412,24 @@ sub copy_back {
         '.*\.pmap|.*\.tmp|' .
         $iblog_files . '|'.
         $ibundo_files;
-    my $compressed_data_file = '.*\.ibz$';
     my $file;
-    my $backup_innodb_data_file_path;
 
-    if (has_option(\%config, $option_defaults_group, 'innodb_doublewrite_file')) {
+    my $orig_datadir = get_option('datadir');
+    my $orig_ibdata_dir = get_option_safe('innodb_data_home_dir',
+                                         $orig_datadir);
+    my $orig_innodb_data_file_path = get_option_safe('innodb_data_file_path',
+                                                     '');
+    my $orig_iblog_dir = get_option_safe('innodb_log_group_home_dir',
+                                        $orig_datadir);
+    my $orig_undo_dir = get_option_safe('innodb_undo_directory',
+                                       $orig_datadir);
+
+    if (has_option('innodb_doublewrite_file')) {
         my $doublewrite_file =
-                get_option(\%config, $option_defaults_group,
-                            'innodb_doublewrite_file');
+                get_option('innodb_doublewrite_file');
         $excluded_files = $excluded_files . '|' . $doublewrite_file;
     }
 
-    if (has_option(\%config, $option_defaults_group, 'innodb_undo_directory')) {
-        $orig_undo_dir = get_option(\%config, $option_defaults_group,
-                                    'innodb_undo_directory');
-    }
     # check whether files should be copied or moved to dest directory
     my $move_or_copy_file = $move_flag ? \&move_file : \&copy_file;
     my $move_or_copy_dir = $move_flag ?
@@ -2568,11 +2565,7 @@ sub apply_log {
     my $cmdline_copy = '';
     my $options = '';
 
-    if ($option_defaults_file) {
-        $options = $options . " --defaults-file=\"$option_defaults_file\" ";
-    } else {
-        $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
-    }
+    $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
 
     if ($option_defaults_extra_file) {
         $options = $options . " --defaults-extra-file=\"$option_defaults_extra_file\" ";
@@ -2603,7 +2596,7 @@ sub apply_log {
     }
 
     my $innodb_data_file_path = 
-        get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
+        get_option('innodb_data_file_path');
 
     # run ibbackup as a child process
     $cmdline = "$option_ibbackup_binary $options";
@@ -2784,6 +2777,21 @@ sub start_ibbackup {
         $options = $options . " --target-dir=" . $option_tmpdir;
     } else {
         $options = $options . " --target-dir=$backup_dir";
+    }
+
+    my $datadir = get_option('datadir');
+    if (!has_option_in_config('datadir')) {
+        $options .= " --datadir=\"$datadir\"";
+    }
+
+    my $innodb_log_file_size = get_option('innodb_log_file_size');
+    if (!has_option_in_config('innodb_log_file_size')) {
+        $options .= " --innodb_log_file_size=\"$innodb_log_file_size\"";
+    }
+
+    my $innodb_data_file_path = get_option('innodb_data_file_path');
+    if (!has_option_in_config('innodb_data_file_path')) {
+        $options .= " --innodb_data_file_path=\"$innodb_data_file_path\"";
     }
 
     if ($option_tmpdir) {
@@ -3579,44 +3587,44 @@ sub init {
     print STDERR "           At the end of a successful $run run $innobackup_script\n";
     print STDERR "           prints \"completed OK!\".\n\n";
 
-    if (!$option_copy_back && !$option_move_back
-        && !$option_decrypt && !$option_decompress) {
-        # we are making a backup or applying log to backup
-        if (!$option_apply_log) {
-            # we are making a backup, we need mysql server
-            get_mysql_vars(\%mysql);
-            $mysql_server_version = $mysql{vars}->{version}->{Value};
-            print STDERR "$prefix Using mysql server version $mysql_server_version\n";
+    if ($option_apply_log || $option_copy_back || $option_move_back) {
+        # read server configuration file
+        read_config_file(\%config);
+    } elsif ($option_backup) {
+        # we are making a backup, read server configuration from SHOW VARIABLES
+        get_mysql_vars(\%mysql);
+
+        # and make sure datadir value is the same in configuration file
+        read_config_file(\%config);
+
+        my $server_val = $mysql{vars}->{datadir}->{Value};
+
+        if (has_option_in_config('datadir')) {
+            my $config_val = $config{$option_defaults_group}{datadir};
+
+            if ($server_val ne $config_val &&
+                # Try to canonicalize paths
+                realpath($server_val) ne realpath($config_val)) {
+
+                die "option 'datadir' has different values:\n" .
+                    "  '$config_val' in defaults file\n" .
+                    "  '$server_val' in SHOW VARIABLES\n"
+                }
         }
+
+        $mysql_server_version = $mysql{vars}->{version}->{Value};
+        print STDERR "$prefix  Using server version $mysql_server_version\n";
         print STDERR "\n";
-        
-        if ($option_include 
-            && $ibbackup_version 
-            && $ibbackup_version le "2.0") {
-            # --include option was given, but ibbackup is too
-            # old to support it
-            die "--include option was given, but ibbackup is too old"
-                . " to support it. You must upgrade to InnoDB Hot Backup"
-                . " v2.0 in order to use --include option.\n";
-        }
     }
 
-    if (!$option_decrypt && !$option_decompress) {
-      # read MySQL options file
-      #read_config_file($config_file, \%config);
-      read_config_file(\%config);
-
-      if(!$option_tmpdir) {
-          $option_tmpdir = get_option(\%config, $option_defaults_group, 'tmpdir');
-      }
+    if (!$option_tmpdir && ($option_backup || $option_apply_log) &&
+        has_option('tmpdir')) {
+        $option_tmpdir = get_option('tmpdir');
+        # tmpdir can be a colon-separated list of multiple directories
+        $option_tmpdir = (split(/:/, $option_tmpdir))[0];
     }
 
-    # get innodb log home directory from options file
-    #$innodb_log_group_home_dir = 
-    #    get_option(\%config, 'mysqld', 'innodb_log_group_home_dir');
-
-    if (!$option_apply_log && !$option_copy_back && !$option_move_back
-        && !$option_decrypt && !$option_decompress) {
+    if ($option_backup) {
         # we are making a backup, create a new backup directory
         $backup_dir = File::Spec->rel2abs(make_backup_dir());
         print STDERR "$prefix Created backup directory $backup_dir\n";
@@ -3656,10 +3664,6 @@ sub init {
                 die "Failed to delete " .
                     "'$option_tmpdir/$xtrabackup_pid_file': $!";
         }
-
-    } elsif ($option_copy_back || $option_move_back) {
-        #$backup_config_file = $backup_dir . '/backup-my.cnf';
-        #read_config_file($backup_config_file, \%backup_config);
     }
 }
 
@@ -3693,16 +3697,18 @@ sub write_backup_config_file {
 
     my $option_name;
     foreach $option_name (@option_names) {
-        if (has_option(\%config, $option_defaults_group, $option_name)) {
-            my $option_value = get_option(\%config, $option_defaults_group, $option_name);
+        if (has_option($option_name)) {
+            my $option_value = get_option($option_name);
             $options_dump .= "$option_name=$option_value\n";
         }
     }
-    if (has_option(\%config,
-        $option_defaults_group, "innodb_doublewrite_file")) {
-        $options_dump .= "innodb_doublewrite_file=" . (split(/\/+/,
-                get_option(\%config, $option_defaults_group,
-                            'innodb_doublewrite_file')))[-1] . "\n";
+    if (has_option('innodb_doublewrite_file')) {
+        my $option_value = (split(/\/+/,
+                                  get_option('innodb_doublewrite_file')))[-1];
+
+        if (defined($option_value)) {
+            $options_dump .= "innodb_doublewrite_file=" . $option_value . "\n";
+        }
     }
 
     write_to_backup_file("$filename", "$options_dump");
@@ -3940,8 +3946,6 @@ sub check_args {
 #
 sub make_backup_dir {
     my $dir;
-    my $innodb_data_file_path = 
-        get_option(\%config, $option_defaults_group, 'innodb_data_file_path');
 
     # create backup directory
     $dir = $backup_root;
@@ -3952,19 +3956,6 @@ sub make_backup_dir {
     $dir .= '/' . strftime("%Y-%m-%d_%H-%M-%S", localtime())
        unless $option_no_timestamp;
     mkdir($dir, 0777) || die "Failed to create backup directory $dir: $!";
-
-    # create subdirectories for ibdata files if needed
-#    foreach my $a (split(/;/, $innodb_data_file_path)) {
-#        my $path = (split(/:/,$a))[0];
-#        my @relative_path = split(/\/+/, $path);
-#        pop @relative_path;
-#        if (@relative_path) {
-#            # there is a non-trivial path from the backup directory
-#            # to the directory of this backup ibdata file, check
-#            # that all the directories in the path exist.
-#            create_path_if_needed($dir, \@relative_path);
-#        }
-#    }
 
     return $dir;
 }
@@ -4023,9 +4014,9 @@ sub remove_from_array {
 #
 sub backup_files {
     my $prep_mode = shift;
-    my $source_dir = get_option(\%config, $option_defaults_group, 'datadir');
-    my $buffer_pool_filename = get_option(\%config, $option_defaults_group,
-                                          'innodb_buffer_pool_filename');
+    my $source_dir = get_option('datadir');
+    my $buffer_pool_filename = get_option_safe('innodb_buffer_pool_filename',
+                                              '');
     my @list;
     my $file;
     my $database;
@@ -4145,7 +4136,7 @@ sub backup_files {
 
     if ($option_rsync) {
         foreach my $dump_name ($buffer_pool_filename, 'ib_lru_dump') {
-            if (-e "$source_dir/$dump_name") {
+            if ($dump_name ne '' && -e "$source_dir/$dump_name") {
                 print RSYNC "$dump_name\n";
                 if (!$prep_mode) {
                     $rsync_files_hash{"$dump_name"} = 1;
@@ -4289,10 +4280,11 @@ sub read_config_file {
     my $options = '';
 
 
-    if ($option_defaults_file) {
+    if ($option_apply_log) {
+        $options = $options .
+            " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
+    } elsif ($option_defaults_file) {
         $options = $options . " --defaults-file=\"$option_defaults_file\" ";
-    } elsif ($option_apply_log) {
-        $options = $options . " --defaults-file=\"${backup_dir}/backup-my.cnf\" ";
     }
 
     if ($option_defaults_extra_file) {
@@ -4367,60 +4359,114 @@ sub read_config_file {
       }
    }
 }
-    
 
-# has_option return whether the config has an option with the given name
+
+# has_option_in_config return true if the configuration file defines an option
+# with the given name.
+#
 #    Parameters:
-#       config_ref   a reference to a config data
-#       group        option group name
+#       option_name  name of the option
+#    Return value:
+#       true if option exists, otherwise false
+#
+sub has_option_in_config {
+   my $option_name = shift;
+   my $group_hash_ref;
+
+   if (!exists $config{$option_defaults_group}) {
+       return 0;
+    }
+
+    $group_hash_ref = $config{$option_defaults_group};
+
+    return exists ${$group_hash_ref}{$option_name};
+}
+
+
+# has_option returns 1 if an option with the given name exists in either
+# defaults file file as reported by 'xtrabackup --print-param' or (in backup
+# mode) SHOW VARIABLES. Otherwise returns 0.
+#
+#    Parameters:
 #       option_name  name of the option
 #    Return value:
 #       true if option exists, otherwise false
 #
 sub has_option {
-    my $config_ref = shift;
-    my $group = shift;
     my $option_name = shift;
-    my $group_hash_ref;
 
-    if (!exists ${$config_ref}{$group}) {
-        # no group
-        die "no '$group' group in MySQL options";
+    if (has_option_in_config($option_name)) {
+        return 1;
     }
 
-    $group_hash_ref = ${$config_ref}{$group};
-    
-    return exists ${$group_hash_ref}{$option_name};
-}
-    
+    if ($option_backup) {
+        if (!defined($mysql{vars})) {
+            get_mysql_vars(\%mysql);
+        }
 
-# get_option subroutine returns the value of given option in the config
-# structure. If option is missing, this subroutine calls exit.
-#    Parameters:
-#       config_ref   a reference to a config data
-#       group        option group name
+        return defined($mysql{vars}->{$option_name});
+    }
+
+    return 0;
+}
+
+
+# get_option returns the value of an option with the given name as defined
+# either in defaults file as reported by 'xtrabackup --print-param' or (in
+# backup mode) SHOW VARIABLES.
+#
+# This subroutine aborts with an error if the option is not defined.
+#
+#  Parameters:
 #       option_name  name of the option
 #    Return value:
 #       option value as a string
 #
 sub get_option {
-    my $config_ref = shift;
-    my $group = shift;
     my $option_name = shift;
     my $group_hash_ref;
 
-    if (!exists $config{$group}) {
-        # no group
-        die "no '$group' group in MySQL options";
-    }
-    
-    $group_hash_ref = ${$config_ref}{$group};
-    if (!exists ${$group_hash_ref}{$option_name}) {
-        # no option
-        die "no '$option_name' option in group '$group' in MySQL options";
+    if (!$option_backup) {
+        if (!exists $config{$option_defaults_group}) {
+            # no group
+            die "no '$option_defaults_group' group in server configuration " .
+                "file '$option_defaults_file'";
+        }
+
+        $group_hash_ref = $config{$option_defaults_group};
+        if (!exists ${$group_hash_ref}{$option_name}) {
+            # no option
+            die "no '$option_name' option in group '$option_defaults_group' " .
+                "in server configuration file '$option_defaults_file'";
+        }
+
+        return ${$group_hash_ref}{$option_name};
     }
 
-    return ${$group_hash_ref}{$option_name};
+    if (!defined($mysql{vars})) {
+        get_mysql_vars(\%mysql);
+    }
+
+    if (!defined($mysql{vars}->{$option_name})) {
+        die "no '$option_name' option in SHOW VARIABLES";
+    }
+
+    return $mysql{vars}->{$option_name}->{Value};
+}
+
+#
+# Identical to get_option, except that the second argument is returned on error,
+# i.e. if the option is not defined.
+#
+sub get_option_safe {
+    my $option_name = shift;
+    my $fallback_value = shift;
+
+    if (has_option($option_name)) {
+        return get_option($option_name);
+    }
+
+    return $fallback_value;
 }
 
 # get_table_name subroutine returns table name of specified file.

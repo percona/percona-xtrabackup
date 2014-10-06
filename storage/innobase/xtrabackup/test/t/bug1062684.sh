@@ -7,7 +7,7 @@
 . inc/common.sh
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
-innodb-data-file-path=ibdata1:${DEFAULT_IBDATA_SIZE};ibdata2:5M:autoextend
+innodb-data-file-path=ibdata1:10M;ibdata2:5M:autoextend
 "
 
 start_server
@@ -22,8 +22,8 @@ ${MYSQL} ${MYSQL_ARGS} -e "insert into test values (1, 1);" incremental_sample
 mkdir -p $topdir/backup
 
 vlog "Starting backup"
-innobackupex  $topdir/backup
-full_backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{print $2}'`
+full_backup_dir=$topdir/backup/full
+innobackupex --no-timestamp $full_backup_dir
 vlog "Full backup done to directory $full_backup_dir"
 
 # Changing data
@@ -47,9 +47,9 @@ vlog "# INCREMENTAL #"
 vlog "###############"
 
 # Incremental backup
+inc_backup_dir=$topdir/backup/inc
 innobackupex --incremental --incremental-basedir=$full_backup_dir \
-    $topdir/backup
-inc_backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | tail -n 1 | awk -F\' '{print $2}'`
+    --no-timestamp $inc_backup_dir
 vlog "Incremental backup done to directory $inc_backup_dir"
 
 vlog "Preparing backup"
@@ -84,7 +84,7 @@ vlog "###########"
 innobackupex --copy-back $full_backup_dir
 vlog "Data restored"
 
-start_server --innodb-data-file-path="ibdata1:${DEFAULT_IBDATA_SIZE};ibdata2:5M:autoextend"
+start_server
 
 vlog "Checking checksums"
 checksum_test_b=`checksum_table incremental_sample test`

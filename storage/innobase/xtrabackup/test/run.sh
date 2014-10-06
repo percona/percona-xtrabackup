@@ -373,9 +373,6 @@ function get_version_info()
        fi
     fi
 
-    # Version-specific defaults
-    DEFAULT_IBDATA_SIZE="10M"
-
     # Determine MySQL flavor
     if [[ "$MYSQL_VERSION" =~ "MariaDB" ]]
     then
@@ -410,8 +407,7 @@ function get_version_info()
             ;;
         5.5 )
             ;;
-        5.6 | 10.0 )
-            DEFAULT_IBDATA_SIZE="12M"
+        5.6 | 10.0 | 10.1)
             ;;
         *)
             vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
@@ -440,7 +436,7 @@ function get_version_info()
     export MYSQL_VERSION MYSQL_VERSION_COMMENT MYSQL_FLAVOR \
 	INNODB_VERSION XTRADB_VERSION INNODB_FLAVOR \
 	XB_BIN IB_BIN IB_ARGS XB_ARGS MYSQLD_EXTRA_ARGS \
-        DEFAULT_IBDATA_SIZE WSREP_READY LIBGALERA_PATH
+        WSREP_READY LIBGALERA_PATH
 }
 
 ###########################################################################
