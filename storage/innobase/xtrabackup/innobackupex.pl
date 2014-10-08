@@ -3835,9 +3835,29 @@ sub check_args {
             "options are mutually exclusive";
     }
 
-    if ($option_copy_back && $option_move_back) {
-        print STDERR "$prefix --copy-back and --move-back options are " .
-            "mutually exclusive";
+    my @mixed_options = ();
+
+    if ($option_decompress) {
+        push(@mixed_options, "--decompress");
+    } elsif ($option_decrypt) {
+        push(@mixed_options, "--decrypt");
+    }
+
+    if ($option_copy_back) {
+        push(@mixed_options, "--copy-back");
+    }
+
+    if ($option_move_back) {
+        push(@mixed_options, "--move-back");
+    }
+
+    if ($option_apply_log) {
+        push(@mixed_options, "--apply-log");
+    }
+
+    if (scalar(@mixed_options) > 1) {
+        die join(' and ', @mixed_options) .
+            " are mutually exclusive";
     }
 
     if ($option_compress == 0) {
