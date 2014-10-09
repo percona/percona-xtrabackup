@@ -66,6 +66,9 @@ static const ulint IO_IBUF_SEGMENT = 0;
 /** Log segment id */
 static const ulint IO_LOG_SEGMENT = 1;
 
+/** Number of retries for partial I/O's */
+static const ulint NUM_RETRIES_ON_PARTIAL_IO = 10;
+
 /* This specifies the file permissions InnoDB uses when it creates files in
 Unix; the value of os_innodb_umask is initialized in ha_innodb.cc to
 my_umask */
@@ -652,7 +655,7 @@ os_file_handle_error_cond_exit(
 		}
 
 		if (should_exit) {
-			exit(1);
+			ut_error;
 		}
 	}
 
@@ -2336,11 +2339,75 @@ os_file_flush_func(
 #endif
 }
 
-#ifndef __WIN__
+#ifndef _WIN32
+/*******************************************************************//**
+Does a syncronous read or write depending upon the type specified
+In case of partial reads/writes the function tries
+NUM_RETRIES_ON_PARTIAL_IO times to read/write the complete data.
+@return number of bytes read/written, -1 if error */
+static __attribute__((warn_unused_result))
+ssize_t
+os_file_io(
+/*==========*/
+	os_file_t	file,	/*!< in: handle to a file */
+	void*		buf,	/*!< in: buffer where to read/write */
+	ulint		n,	/*!< in: number of bytes to read/write */
+	off_t		offset,	/*!< in: file offset from where to read/write */
+	ulint		type)   /*!< in: type for read or write */
+{
+	ssize_t bytes_returned = 0;
+	ssize_t n_bytes;
+
+	for (ulint i = 0; i < NUM_RETRIES_ON_PARTIAL_IO; ++i) {
+		if (type == OS_FILE_READ ) {
+			n_bytes = pread(file, buf, n, offset);
+		} else {
+			ut_ad(type == OS_FILE_WRITE);
+			n_bytes = pwrite(file, buf, n, offset);
+		}
+
+		if ((ulint) n_bytes == n) {
+			bytes_returned += n_bytes;
+			return(bytes_returned);
+		} else if (n_bytes > 0 && (ulint) n_bytes < n) {
+			/* For partial read/write scenario */
+			if (type == OS_FILE_READ) {
+				ib_logf(IB_LOG_LEVEL_WARN,
+					"%lu bytes should have"
+					" been read. Only %lu bytes"
+					" read. Retrying again to read"
+					" the remaining bytes.",
+					(ulong) n, (ulong) n_bytes);
+			} else {
+				ib_logf(IB_LOG_LEVEL_WARN,
+					"%lu bytes should have"
+					" been written. Only %lu bytes"
+					" written. Retrying again to"
+					" write the remaining bytes.",
+					(ulong) n, (ulong) n_bytes);
+			}
+
+			buf = (uchar*) buf + (ulint) n_bytes;
+			n -=  (ulint) n_bytes;
+			offset += n_bytes;
+			bytes_returned += (ulint) n_bytes;
+
+		} else {
+			break;
+		}
+	}
+
+	ib_logf(IB_LOG_LEVEL_WARN,
+		"Retry attempts for %s partial data failed.",
+		type == OS_FILE_READ ? "reading" : "writing");
+
+	return(bytes_returned);
+}
+
 /*******************************************************************//**
 Does a synchronous read operation in Posix.
-@return	number of bytes read, -1 if error */
-static __attribute__((nonnull, warn_unused_result))
+@return number of bytes read, -1 if error */
+static __attribute__((warn_unused_result))
 ssize_t
 os_file_pread(
 /*==========*/
@@ -2349,10 +2416,8 @@ os_file_pread(
 	ulint		n,	/*!< in: number of bytes to read */
 	os_offset_t	offset)	/*!< in: file offset from where to read */
 {
-	off_t	offs;
-#if defined(HAVE_PREAD) && !defined(HAVE_BROKEN_PREAD)
-	ssize_t	n_bytes;
-#endif /* HAVE_PREAD && !HAVE_BROKEN_PREAD */
+	off_t		offs;
+	ssize_t		read_bytes;
 
 	ut_ad(n);
 
@@ -2360,98 +2425,45 @@ os_file_pread(
 	64-bit address */
 	offs = (off_t) offset;
 
-	if (sizeof(off_t) <= 4) {
-		if (offset != (os_offset_t) offs) {
-			ib_logf(IB_LOG_LEVEL_ERROR,
-				"File read at offset > 4 GB");
-		}
+	if (sizeof(off_t) <= 4 && offset != (os_offset_t) offs) {
+		ib_logf(IB_LOG_LEVEL_ERROR, "File read at offset > 4 GB");
 	}
 
 	os_n_file_reads++;
 
-#if defined(HAVE_PREAD) && !defined(HAVE_BROKEN_PREAD)
-#if defined(HAVE_ATOMIC_BUILTINS) && UNIV_WORD_SIZE == 8
+# if defined(HAVE_ATOMIC_BUILTINS)
 	(void) os_atomic_increment_ulint(&os_n_pending_reads, 1);
 	(void) os_atomic_increment_ulint(&os_file_n_pending_preads, 1);
 	MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_READS);
-#else
-	os_mutex_enter(os_file_count_mutex);
+# else
+	mutex_enter(&os_file_count_mutex);
 	os_file_n_pending_preads++;
 	os_n_pending_reads++;
 	MONITOR_INC(MONITOR_OS_PENDING_READS);
-	os_mutex_exit(os_file_count_mutex);
-#endif /* HAVE_ATOMIC_BUILTINS && UNIV_WORD == 8 */
+	mutex_exit(&os_file_count_mutex);
+# endif /* HAVE_ATOMIC_BUILTINS */
 
-	n_bytes = pread(file, buf, n, offs);
+	read_bytes = os_file_io(file, buf, n, offs, OS_FILE_READ);
 
-#if defined(HAVE_ATOMIC_BUILTINS) && UNIV_WORD_SIZE == 8
+# ifdef HAVE_ATOMIC_BUILTINS
 	(void) os_atomic_decrement_ulint(&os_n_pending_reads, 1);
 	(void) os_atomic_decrement_ulint(&os_file_n_pending_preads, 1);
 	MONITOR_ATOMIC_DEC(MONITOR_OS_PENDING_READS);
-#else
-	os_mutex_enter(os_file_count_mutex);
+# else
+	mutex_enter(&os_file_count_mutex);
 	os_file_n_pending_preads--;
 	os_n_pending_reads--;
 	MONITOR_DEC(MONITOR_OS_PENDING_READS);
-	os_mutex_exit(os_file_count_mutex);
-#endif /* !HAVE_ATOMIC_BUILTINS || UNIV_WORD == 8 */
+	mutex_exit(&os_file_count_mutex);
+# endif /* HAVE_ATOMIC_BUILTINS */
 
-	return(n_bytes);
-#else
-	{
-		off_t	ret_offset;
-		ssize_t	ret;
-#ifndef UNIV_HOTBACKUP
-		ulint	i;
-#endif /* !UNIV_HOTBACKUP */
-
-#if defined(HAVE_ATOMIC_BUILTINS) && UNIV_WORD_SIZE == 8
-		(void) os_atomic_increment_ulint(&os_n_pending_reads, 1);
-		MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_READS);
-#else
-		os_mutex_enter(os_file_count_mutex);
-		os_n_pending_reads++;
-		MONITOR_INC(MONITOR_OS_PENDING_READS);
-		os_mutex_exit(os_file_count_mutex);
-#endif /* HAVE_ATOMIC_BUILTINS && UNIV_WORD == 8 */
-#ifndef UNIV_HOTBACKUP
-		/* Protect the seek / read operation with a mutex */
-		i = ((ulint) file) % OS_FILE_N_SEEK_MUTEXES;
-
-		os_mutex_enter(os_file_seek_mutexes[i]);
-#endif /* !UNIV_HOTBACKUP */
-
-		ret_offset = lseek(file, offs, SEEK_SET);
-
-		if (ret_offset < 0) {
-			ret = -1;
-		} else {
-			ret = read(file, buf, (ssize_t) n);
-		}
-
-#ifndef UNIV_HOTBACKUP
-		os_mutex_exit(os_file_seek_mutexes[i]);
-#endif /* !UNIV_HOTBACKUP */
-
-#if defined(HAVE_ATOMIC_BUILTINS) && UNIV_WORD_SIZE == 8
-		(void) os_atomic_decrement_ulint(&os_n_pending_reads, 1);
-		MONITOR_ATOIC_DEC(MONITOR_OS_PENDING_READS);
-#else
-		os_mutex_enter(os_file_count_mutex);
-		os_n_pending_reads--;
-		MONITOR_DEC(MONITOR_OS_PENDING_READS);
-		os_mutex_exit(os_file_count_mutex);
-#endif /* HAVE_ATOMIC_BUILTINS && UNIV_WORD_SIZE == 8 */
-
-		return(ret);
-	}
-#endif
+	return(read_bytes);
 }
 
 /*******************************************************************//**
 Does a synchronous write operation in Posix.
-@return	number of bytes written, -1 if error */
-static __attribute__((nonnull, warn_unused_result))
+@return number of bytes written, -1 if error */
+static __attribute__((warn_unused_result))
 ssize_t
 os_file_pwrite(
 /*===========*/
@@ -2460,95 +2472,49 @@ os_file_pwrite(
 	ulint		n,	/*!< in: number of bytes to write */
 	os_offset_t	offset)	/*!< in: file offset where to write */
 {
-	ssize_t	ret;
-	off_t	offs;
+	off_t		offs;
+	ssize_t		written_bytes;
 
 	ut_ad(n);
-	ut_ad(!srv_read_only_mode);
 
 	/* If off_t is > 4 bytes in size, then we assume we can pass a
 	64-bit address */
 	offs = (off_t) offset;
 
-	if (sizeof(off_t) <= 4) {
-		if (offset != (os_offset_t) offs) {
-			ib_logf(IB_LOG_LEVEL_ERROR,
-				"File write at offset > 4 GB.");
-		}
+	if (sizeof(off_t) <= 4 && offset != (os_offset_t) offs) {
+		ib_logf(IB_LOG_LEVEL_ERROR, "file write at offset > 4 GB.");
 	}
 
 	os_n_file_writes++;
 
-#if defined(HAVE_PWRITE) && !defined(HAVE_BROKEN_PREAD)
-#if !defined(HAVE_ATOMIC_BUILTINS) || UNIV_WORD_SIZE < 8
-	os_mutex_enter(os_file_count_mutex);
-	os_file_n_pending_pwrites++;
-	os_n_pending_writes++;
-	MONITOR_INC(MONITOR_OS_PENDING_WRITES);
-	os_mutex_exit(os_file_count_mutex);
-#else
+#ifdef HAVE_ATOMIC_BUILTINS
 	(void) os_atomic_increment_ulint(&os_n_pending_writes, 1);
 	(void) os_atomic_increment_ulint(&os_file_n_pending_pwrites, 1);
 	MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_WRITES);
-#endif /* !HAVE_ATOMIC_BUILTINS || UNIV_WORD < 8 */
-
-	ret = pwrite(file, buf, (ssize_t) n, offs);
-
-#if !defined(HAVE_ATOMIC_BUILTINS) || UNIV_WORD_SIZE < 8
-	os_mutex_enter(os_file_count_mutex);
-	os_file_n_pending_pwrites--;
-	os_n_pending_writes--;
-	MONITOR_DEC(MONITOR_OS_PENDING_WRITES);
-	os_mutex_exit(os_file_count_mutex);
 #else
+	mutex_enter(&os_file_count_mutex);
+	os_file_n_pending_pwrites++;
+	os_n_pending_writes++;
+	MONITOR_INC(MONITOR_OS_PENDING_WRITES);
+	mutex_exit(&os_file_count_mutex);
+#endif /* HAVE_ATOMIC_BUILTINS */
+
+	written_bytes = os_file_io(
+		file, (void*) buf, n, offs, OS_FILE_WRITE);
+
+#ifdef HAVE_ATOMIC_BUILTINS
 	(void) os_atomic_decrement_ulint(&os_n_pending_writes, 1);
 	(void) os_atomic_decrement_ulint(&os_file_n_pending_pwrites, 1);
 	MONITOR_ATOMIC_DEC(MONITOR_OS_PENDING_WRITES);
-#endif /* !HAVE_ATOMIC_BUILTINS || UNIV_WORD < 8 */
-
-	return(ret);
 #else
-	{
-		off_t	ret_offset;
-# ifndef UNIV_HOTBACKUP
-		ulint	i;
-# endif /* !UNIV_HOTBACKUP */
+	mutex_enter(&os_file_count_mutex);
+	os_file_n_pending_pwrites--;
+	os_n_pending_writes--;
+	MONITOR_DEC(MONITOR_OS_PENDING_WRITES);
+	mutex_exit(&os_file_count_mutex);
+#endif /* HAVE_ATOMIC_BUILTINS */
 
-		os_mutex_enter(os_file_count_mutex);
-		os_n_pending_writes++;
-		MONITOR_INC(MONITOR_OS_PENDING_WRITES);
-		os_mutex_exit(os_file_count_mutex);
-
-# ifndef UNIV_HOTBACKUP
-		/* Protect the seek / write operation with a mutex */
-		i = ((ulint) file) % OS_FILE_N_SEEK_MUTEXES;
-
-		os_mutex_enter(os_file_seek_mutexes[i]);
-# endif /* UNIV_HOTBACKUP */
-
-		ret_offset = lseek(file, offs, SEEK_SET);
-
-		if (ret_offset < 0) {
-			ret = -1;
-
-			goto func_exit;
-		}
-
-		ret = write(file, buf, (ssize_t) n);
-
-func_exit:
-# ifndef UNIV_HOTBACKUP
-		os_mutex_exit(os_file_seek_mutexes[i]);
-# endif /* !UNIV_HOTBACKUP */
-
-		os_mutex_enter(os_file_count_mutex);
-		os_n_pending_writes--;
-		MONITOR_DEC(MONITOR_OS_PENDING_WRITES);
-		os_mutex_exit(os_file_count_mutex);
-
-		return(ret);
-	}
-#endif /* !UNIV_HOTBACKUP */
+	return(written_bytes);
 }
 #endif
 
@@ -2659,6 +2625,13 @@ error_handling:
 	retry = os_file_handle_error(NULL, "read");
 
 	if (retry) {
+#ifndef _WIN32
+		if (ret > 0 && (ulint) ret < n) {
+			buf = (uchar*) buf + (ulint) ret;
+			offset += (ulint) ret;
+			n -= (ulint) ret;
+		}
+#endif
 		goto try_again;
 	}
 
@@ -2782,6 +2755,13 @@ error_handling:
 	retry = os_file_handle_error_no_exit(NULL, "read", FALSE);
 
 	if (retry) {
+#ifndef _WIN32
+		if (ret > 0 && (ulint) ret < n) {
+			buf = (uchar*) buf + (ulint) ret;
+			offset += ret;
+			n -= (ulint) ret;
+		}
+#endif /* _WIN32 */
 		goto try_again;
 	}
 
@@ -5047,6 +5027,7 @@ os_aio_linux_handle(
 	segment = os_aio_get_array_and_local_segment(&array, global_seg);
 	n = array->n_slots / array->n_segments;
 
+wait_for_event:
 	/* Loop until we have found a completed request. */
 	for (;;) {
 		ibool	any_reserved = FALSE;
@@ -5108,6 +5089,41 @@ found:
 	if (slot->ret == 0 && slot->n_bytes == (long) slot->len) {
 
 		ret = TRUE;
+	} else if ((slot->ret == 0) && (slot->n_bytes > 0)
+		   &&  (slot->n_bytes < (long) slot->len)) {
+		/* Partial read or write scenario */
+		int submit_ret;
+		struct iocb*    iocb;
+		slot->buf = (byte*)slot->buf + slot->n_bytes;
+		slot->offset = slot->offset + slot->n_bytes;
+		slot->len = slot->len - slot->n_bytes;
+		/* Resetting the bytes read/written */
+		slot->n_bytes = 0;
+		slot->io_already_done = false;
+		iocb = &(slot->control);
+
+		if (slot->type == OS_FILE_READ) {
+			io_prep_pread(&slot->control, slot->file, slot->buf,
+				      slot->len, (off_t) slot->offset);
+		} else {
+			ut_a(slot->type == OS_FILE_WRITE);
+			io_prep_pwrite(&slot->control, slot->file, slot->buf,
+				       slot->len, (off_t) slot->offset);
+		}
+		/* Resubmit an I/O request */
+		submit_ret = io_submit(array->aio_ctx[segment], 1, &iocb);
+		if (submit_ret < 0 ) {
+			/* Aborting in case of submit failure */
+			ib_logf(IB_LOG_LEVEL_FATAL,
+				"Native Linux AIO interface. io_submit()"
+				" call failed when resubmitting a partial"
+				" I/O request on the file %s.",
+				slot->name);
+		} else {
+			ret = false;
+			os_mutex_exit(array->mutex);
+			goto wait_for_event;
+		}
 	} else {
 		errno = -slot->ret;
 
