@@ -2436,11 +2436,11 @@ os_file_pread(
 	(void) os_atomic_increment_ulint(&os_file_n_pending_preads, 1);
 	MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_READS);
 # else
-	mutex_enter(&os_file_count_mutex);
+	os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_preads++;
 	os_n_pending_reads++;
 	MONITOR_INC(MONITOR_OS_PENDING_READS);
-	mutex_exit(&os_file_count_mutex);
+	os_mutex_exit(os_file_count_mutex);
 # endif /* HAVE_ATOMIC_BUILTINS */
 
 	read_bytes = os_file_io(file, buf, n, offs, OS_FILE_READ);
@@ -2450,11 +2450,11 @@ os_file_pread(
 	(void) os_atomic_decrement_ulint(&os_file_n_pending_preads, 1);
 	MONITOR_ATOMIC_DEC(MONITOR_OS_PENDING_READS);
 # else
-	mutex_enter(&os_file_count_mutex);
+	os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_preads--;
 	os_n_pending_reads--;
 	MONITOR_DEC(MONITOR_OS_PENDING_READS);
-	mutex_exit(&os_file_count_mutex);
+	os_mutex_exit(os_file_count_mutex);
 # endif /* HAVE_ATOMIC_BUILTINS */
 
 	return(read_bytes);
@@ -2492,11 +2492,11 @@ os_file_pwrite(
 	(void) os_atomic_increment_ulint(&os_file_n_pending_pwrites, 1);
 	MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_WRITES);
 #else
-	mutex_enter(&os_file_count_mutex);
+	os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_pwrites++;
 	os_n_pending_writes++;
 	MONITOR_INC(MONITOR_OS_PENDING_WRITES);
-	mutex_exit(&os_file_count_mutex);
+	os_mutex_exit(os_file_count_mutex);
 #endif /* HAVE_ATOMIC_BUILTINS */
 
 	written_bytes = os_file_io(
@@ -2507,11 +2507,11 @@ os_file_pwrite(
 	(void) os_atomic_decrement_ulint(&os_file_n_pending_pwrites, 1);
 	MONITOR_ATOMIC_DEC(MONITOR_OS_PENDING_WRITES);
 #else
-	mutex_enter(&os_file_count_mutex);
+	os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_pwrites--;
 	os_n_pending_writes--;
 	MONITOR_DEC(MONITOR_OS_PENDING_WRITES);
-	mutex_exit(&os_file_count_mutex);
+	os_mutex_exit(os_file_count_mutex);
 #endif /* HAVE_ATOMIC_BUILTINS */
 
 	return(written_bytes);
