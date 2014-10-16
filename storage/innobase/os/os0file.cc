@@ -2431,7 +2431,7 @@ os_file_pread(
 
 	os_n_file_reads++;
 
-# if defined(HAVE_ATOMIC_BUILTINS)
+# if defined(HAVE_ATOMIC_BUILTINS_64)
 	(void) os_atomic_increment_ulint(&os_n_pending_reads, 1);
 	(void) os_atomic_increment_ulint(&os_file_n_pending_preads, 1);
 	MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_READS);
@@ -2445,7 +2445,7 @@ os_file_pread(
 
 	read_bytes = os_file_io(file, buf, n, offs, OS_FILE_READ);
 
-# ifdef HAVE_ATOMIC_BUILTINS
+# if defined(HAVE_ATOMIC_BUILTINS_64)
 	(void) os_atomic_decrement_ulint(&os_n_pending_reads, 1);
 	(void) os_atomic_decrement_ulint(&os_file_n_pending_preads, 1);
 	MONITOR_ATOMIC_DEC(MONITOR_OS_PENDING_READS);
@@ -2487,7 +2487,7 @@ os_file_pwrite(
 
 	os_n_file_writes++;
 
-#ifdef HAVE_ATOMIC_BUILTINS
+#if defined(HAVE_ATOMIC_BUILTINS_64)
 	(void) os_atomic_increment_ulint(&os_n_pending_writes, 1);
 	(void) os_atomic_increment_ulint(&os_file_n_pending_pwrites, 1);
 	MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_WRITES);
@@ -2502,7 +2502,7 @@ os_file_pwrite(
 	written_bytes = os_file_io(
 		file, (void*) buf, n, offs, OS_FILE_WRITE);
 
-#ifdef HAVE_ATOMIC_BUILTINS
+#if defined(HAVE_ATOMIC_BUILTINS_64)
 	(void) os_atomic_decrement_ulint(&os_n_pending_writes, 1);
 	(void) os_atomic_decrement_ulint(&os_file_n_pending_pwrites, 1);
 	MONITOR_ATOMIC_DEC(MONITOR_OS_PENDING_WRITES);
