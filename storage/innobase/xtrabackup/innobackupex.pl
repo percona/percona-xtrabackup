@@ -3583,6 +3583,11 @@ sub init {
     } else {
         $run = 'apply-log';
     }
+
+    my $now = current_time();
+
+    print STDERR "$now  $prefix Starting the $run operation\n\n";
+
     print STDERR "IMPORTANT: Please check that the $run run completes successfully.\n";
     print STDERR "           At the end of a successful $run run $innobackup_script\n";
     print STDERR "           prints \"completed OK!\".\n\n";
