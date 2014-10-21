@@ -14,10 +14,14 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 INCLUDE(gcrypt)
+INCLUDE(curl)
+INCLUDE(libev)
 
 ADD_SUBDIRECTORY(libarchive)
 
 FIND_GCRYPT()
+FIND_CURL()
+FIND_EV()
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/include
@@ -106,4 +110,22 @@ TARGET_LINK_LIBRARIES(xbcrypt
   ${GCRYPT_LIBS}
   mysys
   mysys_ssl
+  )
+
+########################################################################
+# xbcloud binary
+########################################################################
+MYSQL_ADD_EXECUTABLE(xbcloud
+  xbcloud.cc
+  )
+
+SET_TARGET_PROPERTIES(xbcloud
+        PROPERTIES LINKER_LANGUAGE CXX
+        )
+
+TARGET_LINK_LIBRARIES(xbcloud
+  ${GCRYPT_LIBS}
+  ${LIBEV_LIBRARIES}
+  ${CURL_LIBRARIES}
+  mysys
   )
