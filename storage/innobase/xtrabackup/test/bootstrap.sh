@@ -47,12 +47,12 @@ case "$1" in
 
     innodb55)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.5.36-linux2.6-$arch.tar.gz"
+        tarball="mysql-5.5.40-linux2.6-$arch.tar.gz"
         ;;
 
     innodb56)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.6.16-linux-glibc2.5-$arch.tar.gz"
+        tarball="mysql-5.6.21-linux-glibc2.5-$arch.tar.gz"
         ;;
 
     xtradb51)
@@ -62,12 +62,12 @@ case "$1" in
 
     xtradb55)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.5.38-rel35.2-691.Linux.$arch.tar.gz"
+        tarball="Percona-Server-5.5.40-rel36.1-707.Linux.$arch.tar.gz"
         ;;
 
     xtradb56)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.6.19-rel67.0-648.Linux.$arch.tar.gz"
+        tarball="Percona-Server-5.6.21-rel69.0-675.Linux.$arch.tar.gz"
         ;;
 
     mariadb51)
@@ -87,12 +87,12 @@ case "$1" in
 
     mariadb55)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.5.32-linux-$arch.tar.gz"
+        tarball="mariadb-5.5.40-linux-$arch.tar.gz"
         ;;
 
     mariadb100)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-10.0.3-linux-$arch.tar.gz"
+        tarball="mariadb-10.0.14-linux-$arch.tar.gz"
         ;;
 
     *)
