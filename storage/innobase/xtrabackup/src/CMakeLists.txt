@@ -30,6 +30,8 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/libarchive/libarchive
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/quicklz
   ${GCRYPT_INCLUDE_DIR}
+  ${CURL_INCLUDE_DIRS}
+  ${LIBEV_INCLUDE_DIRS}
   )
 
 ########################################################################
