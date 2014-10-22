@@ -22,7 +22,7 @@ find_path(LIBEV_INCLUDE_DIRS ev.h PATHS
     /usr/include
     /usr/local/include
     /opt/local/include
-    /usr/include/ev
+    /usr/include/libev
   )
 
 set(LIBEV_LIB_PATHS /usr/lib /usr/local/lib /opt/local/lib)
