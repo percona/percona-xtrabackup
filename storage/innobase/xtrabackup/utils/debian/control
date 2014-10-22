@@ -14,6 +14,8 @@ Build-Depends: automake,
                libtool,
                libz-dev,
                libgcrypt-dev,
+               libev-dev,
+               libcurl-dev,
                lsb-release
 Standards-Version: 3.9.5
 Homepage: http://www.percona.com/software/percona-xtrabackup

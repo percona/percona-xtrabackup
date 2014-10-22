@@ -16,7 +16,7 @@ License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
-BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel
+BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel, libcurl-devel
 Requires:       perl(DBD::mysql), rsync
 BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 
@@ -45,6 +45,7 @@ This package contains the test suite for Percona XtraBackup %{version}
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xtrabackup
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbstream
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcrypt
+echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcloud
 #
 %else
 #
@@ -73,6 +74,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xtrabackup
 %{_bindir}/xbstream
 %{_bindir}/xbcrypt
+%{_bindir}/xbcloud
 %doc COPYING
 
 %files -n percona-xtrabackup-test
