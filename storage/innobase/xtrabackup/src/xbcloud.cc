@@ -529,8 +529,8 @@ static void remsock(socket_info *fdp, global_io_info *global)
 static void setsock(socket_info *fdp, curl_socket_t s, CURL *easy, int action,
                     global_io_info *global)
 {
-    int kind = (action & CURL_POLL_IN  ? EV_READ  : 0) |
-               (action & CURL_POLL_OUT ? EV_WRITE : 0);
+    int kind = (action & CURL_POLL_IN  ? (int)(EV_READ)  : 0) |
+               (action & CURL_POLL_OUT ? (int)(EV_WRITE) : 0);
 
     fdp->sockfd = s;
     fdp->action = action;
@@ -675,7 +675,7 @@ static int swift_upload_read_cb(void *ptr, size_t size, size_t nmemb, void *data
             gcry_md_reset(conn->md5);
             chunk.idx = conn->chunk_no;
             strcpy(chunk.md5, conn->hash);
-            sprintf(chunk.name, "%s/%s-%020ld", conn->container, conn->name,
+            sprintf(chunk.name, "%s/%s-%020zu", conn->container, conn->name,
                     conn->chunk_no);
             chunk.size = conn->upload_size;
             slo_add_chunk(conn->global->manifest, &chunk);
@@ -910,7 +910,7 @@ swift_manifest_read_cb(void *buffer, size_t size, size_t nmemb, void *data)
     chunk = (slo_chunk *)(dynamic_array_ptr(&manifest->chunks, idx));
     len = snprintf(
                 (char *)(buffer), nmemb * size,
-                "%s{\"path\":\"%s\", \"etag\":\"%s\", \"size_bytes\":%lu}%s",
+                "%s{\"path\":\"%s\", \"etag\":\"%s\", \"size_bytes\":%zu}%s",
                 prefix,
                 chunk->name,
                 chunk->md5,
