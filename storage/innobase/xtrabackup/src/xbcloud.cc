@@ -116,7 +116,9 @@ static const char *opt_container = NULL;
 static const char *opt_url = NULL;
 static const char *opt_key = NULL;
 static const char *opt_name = NULL;
+static const char *opt_cacert = NULL;
 static int opt_parallel = 1;
+static int opt_insecure = 0;
 static enum {MODE_GET, MODE_PUT} opt_mode;
 
 static
@@ -176,16 +178,30 @@ int parse_args(int argc, char **argv)
     }
 
     while (1) {
+        enum {
+            OPT_HELP = 10,
+            OPT_STORAGE,
+            OPT_SWIFT_CONTAINER,
+            OPT_SWIFT_URL,
+            OPT_SWIFT_KEY,
+            OPT_SWIFT_USER,
+            OPT_PARALLEL,
+            OPT_CACERT,
+            OPT_INSECURE,
+            OPT_VERBOSE
+        };
         static struct option long_options[] =
         {
-            {"verbose", no_argument, &opt_verbose, 1},
-            {"help", no_argument, 0, 'h'},
-            {"storage", required_argument, 0, 's'},
-            {"swift-container", required_argument, 0, 'c'},
-            {"swift-user", required_argument, 0, 'u'},
-            {"swift-url", required_argument, 0, 'l'},
-            {"swift-key", required_argument, 0, 'k'},
-            {"parallel", required_argument, 0, 'p'},
+            {"verbose", no_argument, &opt_verbose, OPT_VERBOSE},
+            {"help", no_argument, 0, OPT_HELP},
+            {"storage", required_argument, 0, OPT_STORAGE},
+            {"swift-container", required_argument, 0, OPT_SWIFT_CONTAINER},
+            {"swift-user", required_argument, 0, OPT_SWIFT_USER},
+            {"swift-url", required_argument, 0, OPT_SWIFT_URL},
+            {"swift-key", required_argument, 0, OPT_SWIFT_KEY},
+            {"parallel", required_argument, 0, OPT_PARALLEL},
+            {"cacert", required_argument, 0, OPT_CACERT},
+            {"insecure", no_argument, &opt_insecure, OPT_INSECURE},
             {NULL, 0, 0, 0}
         };
 
@@ -199,7 +215,7 @@ int parse_args(int argc, char **argv)
         switch (c) {
         case 0:
             break;
-        case 's':
+        case OPT_STORAGE:
             if (strcmp(optarg, "Swift") == 0) {
                 opt_storage = SWIFT;
             } else if (strcmp(optarg, "S3") == 0) {
@@ -210,28 +226,31 @@ int parse_args(int argc, char **argv)
                 return 1;
             }
             break;
-        case 'c':
+        case OPT_SWIFT_CONTAINER:
             opt_container = optarg;
             break;
-        case 'u':
+        case OPT_SWIFT_USER:
             opt_user = optarg;
             break;
-        case 'l':
+        case OPT_SWIFT_URL:
             opt_url = optarg;
             break;
-        case 'k':
+        case OPT_SWIFT_KEY:
             opt_key = optarg;
             break;
-        case 'p':
+        case OPT_PARALLEL:
             opt_parallel = atoi(optarg);
             if (opt_parallel < 1) {
                 fprintf(stderr, "wrong value for parallel option %s\n", optarg);
                 return 1;
             }
             break;
-        case 'h':
+        case OPT_HELP:
             usage();
             return 1;
+        case OPT_CACERT:
+            opt_cacert = optarg;
+            break;
         default:
             return 1;
         }
@@ -358,6 +377,10 @@ swift_auth(const char *auth_url, const char *username, const char *key,
                                swift_auth_header_read_cb);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, info);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
+        if (opt_cacert != NULL)
+            curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cacert);
+        if (opt_insecure)
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
 
         res = curl_easy_perform(curl);
 
@@ -423,6 +446,10 @@ swift_create_container(swift_auth_info *info, const char *name)
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_null_cb);
         curl_easy_setopt(curl, CURLOPT_PUT, 1L);
+        if (opt_cacert != NULL)
+            curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cacert);
+        if (opt_insecure)
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
 
         res = curl_easy_perform(curl);
 
@@ -750,6 +777,10 @@ static int conn_upload_init(connection_info *conn)
     curl_easy_setopt(conn->easy, CURLOPT_HTTPHEADER, conn->slist);
     curl_easy_setopt(conn->easy, CURLOPT_HEADERFUNCTION, upload_header_read_cb);
     curl_easy_setopt(conn->easy, CURLOPT_HEADERDATA, conn);
+    if (opt_cacert != NULL)
+        curl_easy_setopt(conn->easy, CURLOPT_CAINFO, opt_cacert);
+    if (opt_insecure)
+        curl_easy_setopt(conn->easy, CURLOPT_SSL_VERIFYPEER, FALSE);
 
     rc = curl_multi_add_handle(conn->global->multi, conn->easy);
     mcode_or_die("conn_upload_init: curl_multi_add_handle", rc);
@@ -983,6 +1014,10 @@ int swift_upload_manifest(swift_auth_info *auth, const char *container,
         curl_easy_setopt(curl, CURLOPT_READFUNCTION, swift_manifest_read_cb);
         curl_easy_setopt(curl, CURLOPT_READDATA, manifest);
         curl_easy_setopt(curl, CURLOPT_PUT, 1L);
+        if (opt_cacert != NULL)
+            curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cacert);
+        if (opt_insecure)
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
 
         res = curl_easy_perform(curl);
 
@@ -1050,6 +1085,10 @@ int swift_download(swift_auth_info *auth, const char *container,
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_download_cb);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, stdout);
+        if (opt_cacert != NULL)
+            curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cacert);
+        if (opt_insecure)
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
 
         res = curl_easy_perform(curl);
 
