@@ -2138,21 +2138,26 @@ sub is_in_array {
 }
 
 #
-# Check if a given directory exists, or fail with an error otherwise
+# Check if a given directory exists, or create one otherwise.
 #
 
 sub if_directory_exists {
     my $empty_dir = shift;
     my $is_directory_empty_comment = shift;
     if (! -d $empty_dir) {
-        die "$is_directory_empty_comment directory '$empty_dir' does not exist!";
+        eval { mkpath($empty_dir) };
+        if ($@) {
+            die "Can not create $is_directory_empty_comment directory " .
+                "'$empty_dir': $@";
+        }
     }
 }
 
 #
 # if_directory_exists_and_empty accepts two arguments:
 # variable with directory name and comment.
-# Sub checks that directory exists and is empty
+# Sub checks that directory exists and is empty 
+# or creates one if it doesn't exists.
 # usage: is_directory_exists_and_empty($directory,"Comment");
 #
 
@@ -2418,7 +2423,7 @@ sub copy_back {
     my $orig_ibdata_dir = get_option_safe('innodb_data_home_dir',
                                          $orig_datadir);
     my $orig_innodb_data_file_path = get_option_safe('innodb_data_file_path',
-                                                     '');
+                                                     'ibdata1:10M:autoextend');
     my $orig_iblog_dir = get_option_safe('innodb_log_group_home_dir',
                                         $orig_datadir);
     my $orig_undo_dir = get_option_safe('innodb_undo_directory',
