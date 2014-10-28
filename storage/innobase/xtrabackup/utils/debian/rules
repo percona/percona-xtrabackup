@@ -35,7 +35,7 @@ override_dh_auto_build:
 	make -j$(NCPU)
 
 override_dh_strip:
-	dh_strip --dbg-package=percona-xtrabackup-dbg
+	dh_strip --dbg-package=percona-xtrabackup-dbg-23
 
 %:
 	dh $@

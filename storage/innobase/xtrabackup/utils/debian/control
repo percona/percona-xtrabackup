@@ -1,4 +1,4 @@
-Source: percona-xtrabackup
+Source: percona-xtrabackup-23
 Section: database
 Priority: extra
 Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
@@ -20,10 +20,11 @@ Build-Depends: automake,
 Standards-Version: 3.9.5
 Homepage: http://www.percona.com/software/percona-xtrabackup
 
-Package: percona-xtrabackup
+Package: percona-xtrabackup-23
 Architecture: any
 Depends: libdbd-mysql-perl, rsync, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
+Conflicts: percona-xtrabackup, percona-xtrabackup-21
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
 Enhances: mysql-server
@@ -33,27 +34,17 @@ Description: Open source backup tool for InnoDB and XtraDB
  InnoDB, XtraDB and MyISAM tables on MySQL/Percona Server 5.1 and
  5.5 servers, and has many advanced features.
 
-Package: percona-xtrabackup-dbg
+Package: percona-xtrabackup-dbg-23
 Section: debug
 Architecture: any
-Depends: percona-xtrabackup (= ${binary:Version}), ${misc:Depends}
+Depends: percona-xtrabackup-23 (= ${binary:Version}), ${misc:Depends}
 Description: Debug symbols for Percona XtraBackup
  Debug symbols for the binaries in percona-xtrabackup. Install this
  package if you need to run any of those with gdb.
 
-Package: percona-xtrabackup-test
+Package: percona-xtrabackup-test-23
 Architecture: any
-Depends: mysql-client, percona-xtrabackup, python, ${misc:Depends}
+Depends: mysql-client, percona-xtrabackup-23, python, ${misc:Depends}
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.
-
-Package: xtrabackup
-Architecture: all
-Section: oldlibs
-Depends: percona-xtrabackup, ${misc:Depends}
-Description: Transitional package for percona-xtrabackup
- In 2.2.x, the XtraBackup package name was rebranded to
- percona-xtrabackup. This package is an empty dummy package
- that depends on percona-xtrabackup, and replaces older versions of
- xtrabackup (2.0.0). It is not intended to be installed manually.
