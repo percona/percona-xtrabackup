@@ -16,7 +16,12 @@ License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
-BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel, libcurl-devel
+BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel
+%if 0%{?rhel} > 5
+BuildRequires:  libcurl-devel
+%else
+BuildRequires:  curl-devel
+%endif
 Requires:       perl(DBD::mysql), rsync
 BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 
