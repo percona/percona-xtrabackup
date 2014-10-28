@@ -22,6 +22,7 @@ BuildRequires:  libcurl-devel
 %else
 BuildRequires:  curl-devel
 %endif
+Conflicts:      percona-xtrabackup, percona-xtrabackup-21
 Requires:       perl(DBD::mysql), rsync
 BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 
