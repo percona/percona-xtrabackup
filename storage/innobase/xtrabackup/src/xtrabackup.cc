@@ -2643,6 +2643,8 @@ xb_load_tablespaces(void)
 	srv_undo_tablespaces_init(), because fil_is_user_tablespace_id() *
 	relies on srv_undo_tablespaces_open to be properly initialized */
 
+	msg("xtrabackup: Generating a list of tablespaces\n");
+
 	err = fil_load_single_table_tablespaces(xb_check_if_open_tablespace);
 	if (err != DB_SUCCESS) {
 		return(err);

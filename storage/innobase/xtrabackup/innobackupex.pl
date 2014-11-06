@@ -77,6 +77,8 @@ my $have_changed_page_bitmaps = 0;
 my $have_backup_locks = 0;
 my $have_galera_enabled = 0;
 my $have_flush_engine_logs = 0;
+my $have_multi_threaded_slave = 0;
+my $have_gtid_slave = 0;
 
 # command line options
 my $option_help = '';
@@ -1904,6 +1906,15 @@ sub backup {
 
     detect_mysql_capabilities_for_backup(\%mysql);
 
+
+    # Do not allow --slave-info with a multi-threded non-GTID slave,
+    # see https://bugs.launchpad.net/percona-xtrabackup/+bug/1372679
+    if ($option_slave_info and $have_multi_threaded_slave
+        and !$have_gtid_slave) {
+        die "The --slave-info option requires GTID enabled for a " .
+            "multi-threaded slave."
+    }
+
     #
     # if one of the history incrementals is being used, try to grab the
     # innodb_to_lsn from the history table and set the option_incremental_lsn
@@ -2138,21 +2149,26 @@ sub is_in_array {
 }
 
 #
-# Check if a given directory exists, or fail with an error otherwise
+# Check if a given directory exists, or create one otherwise.
 #
 
 sub if_directory_exists {
     my $empty_dir = shift;
     my $is_directory_empty_comment = shift;
     if (! -d $empty_dir) {
-        die "$is_directory_empty_comment directory '$empty_dir' does not exist!";
+        eval { mkpath($empty_dir) };
+        if ($@) {
+            die "Can not create $is_directory_empty_comment directory " .
+                "'$empty_dir': $@";
+        }
     }
 }
 
 #
 # if_directory_exists_and_empty accepts two arguments:
 # variable with directory name and comment.
-# Sub checks that directory exists and is empty
+# Sub checks that directory exists and is empty 
+# or creates one if it doesn't exists.
 # usage: is_directory_exists_and_empty($directory,"Comment");
 #
 
@@ -2418,7 +2434,7 @@ sub copy_back {
     my $orig_ibdata_dir = get_option_safe('innodb_data_home_dir',
                                          $orig_datadir);
     my $orig_innodb_data_file_path = get_option_safe('innodb_data_file_path',
-                                                     '');
+                                                     'ibdata1:10M:autoextend');
     my $orig_iblog_dir = get_option_safe('innodb_log_group_home_dir',
                                         $orig_datadir);
     my $orig_undo_dir = get_option_safe('innodb_undo_directory',
@@ -3583,6 +3599,11 @@ sub init {
     } else {
         $run = 'apply-log';
     }
+
+    my $now = current_time();
+
+    print STDERR "$now  $prefix Starting the $run operation\n\n";
+
     print STDERR "IMPORTANT: Please check that the $run run completes successfully.\n";
     print STDERR "           At the end of a successful $run run $innobackup_script\n";
     print STDERR "           prints \"completed OK!\".\n\n";
@@ -4917,20 +4938,26 @@ sub write_to_backup_file {
 # Query the server to find out what backup capabilities it supports.
 #
 sub detect_mysql_capabilities_for_backup {
+    my $con = shift;
+
     if ($option_incremental) {
         $have_changed_page_bitmaps =
-            mysql_query($_[0], "SELECT COUNT(*) FROM " .
+            mysql_query($con, "SELECT COUNT(*) FROM " .
                         "INFORMATION_SCHEMA.PLUGINS " .
                         "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
     }
 
-    if (!defined($_[0]->{vars})) {
-        get_mysql_vars($_[0]);
+    if (!defined($con->{vars})) {
+        get_mysql_vars($con);
     }
 
-    $have_backup_locks = defined($_[0]->{vars}->{have_backup_locks});
+    if (!defined($con->{slave_status})) {
+        get_mysql_slave_status($con);
+    }
 
-    $have_galera_enabled = defined($_[0]->{vars}->{wsrep_on});
+    $have_backup_locks = defined($con->{vars}->{have_backup_locks});
+
+    $have_galera_enabled = defined($con->{vars}->{wsrep_on});
 
     if ($option_galera_info && !$have_galera_enabled) {
         my $now = current_time();
@@ -4942,7 +4969,7 @@ sub detect_mysql_capabilities_for_backup {
         $option_galera_info = 0;
     }
 
-    if ($mysql{vars}->{version}->{Value} =~ m/5\.[123]\.\d/) {
+    if ($con->{vars}->{version}->{Value} =~ m/5\.[123]\.\d/) {
         my $now = current_time();
 
         print STDERR "\n$now  $prefix Warning: FLUSH ENGINE LOGS " .
@@ -4953,6 +4980,19 @@ sub detect_mysql_capabilities_for_backup {
         $have_flush_engine_logs = 0;
     } else {
         $have_flush_engine_logs = 1;
+    }
+
+    if (defined($con->{vars}->{slave_parallel_workers}) and
+        ($con->{vars}->{slave_parallel_workers}->{Value} > 0)) {
+        $have_multi_threaded_slave = 1;
+    }
+
+    my $gtid_executed = $con->{slave_status}->{Executed_Gtid_Set};
+    my $gtid_slave_pos = $con->{vars}->{gtid_slave_pos};
+
+    if ((defined($gtid_executed) and $gtid_executed ne '') or
+        (defined($gtid_slave_pos) and $gtid_slave_pos ne '')) {
+        $have_gtid_slave = 1;
     }
 }
 
