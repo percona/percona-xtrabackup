@@ -91,6 +91,9 @@ rm -rf $RPM_BUILD_ROOT
 * Fri Sep 28 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.0alpha1
 
+* Wed Sep 29 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Update to new release Percona XtraBackup 2.2.6
+
 * Fri Sep 26 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.2.5
 
