@@ -27,6 +27,7 @@ else
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_56
 	echo 'main() { return 300; }' | gcc -x c - -o xbstream
 	echo 'main() { return 300; }' | gcc -x c - -o xbcrypt
+	echo 'main() { return 300; }' | gcc -x c - -o xbcloud
 endif
 
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
