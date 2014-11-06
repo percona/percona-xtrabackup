@@ -15,6 +15,9 @@ Whether it is a 24x7 highly loaded server or a low-transaction-volume environmen
 
 |Percona XtraBackup| is a combination of the |xtrabackup| *C* program, and the |innobackupex| *Perl* script. The |xtrabackup| program copies and manipulates |InnoDB| and |XtraDB| data files, and the *Perl* script enables enhanced functionality, such as interacting with a running |MySQL| server and backing up |MyISAM| tables. 
 
+.. warning:: 
+
+   This release is considered **ALPHA** quality and not inteded for production.
 
 Introduction
 ============
