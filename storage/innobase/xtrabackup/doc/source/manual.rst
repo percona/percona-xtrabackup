@@ -12,6 +12,7 @@
    xtrabackup_bin/xtrabackup_binary
    xbstream/xbstream
    xbcrypt/xbcrypt
+   xbcloud/xbcloud
    how_xtrabackup_works
 
 |Percona XtraBackup| is a set of following tools:
@@ -27,5 +28,8 @@
 
 :doc:`xbstream <xbstream/xbstream>`
    utility that allows streaming and extracting files to/from the :term:`xbstream` format.
+
+:doc:`xbcloud <xbcloud/xbcloud>`
+   utility used for downloading and uploading full or part of |xbstream| archive from/to cloud.
 
 It is possible to use the |xtrabackup| binary alone, however, the recommend way is using it through the |innobackupex| wrapper script and let it execute |xtrabackup| for you. It might be helpful to first learn :doc:`how to use innobackupex <innobackupex/innobackupex_script>`, and then learn  :doc:`how to use xtrabackup <xtrabackup_bin/xtrabackup_binary>` for having a better low-level understanding or control of the tool if needed.
