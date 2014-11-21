@@ -1969,8 +1969,9 @@ sub backup {
 
     if ($have_flush_engine_logs) {
         my $now = current_time();
-        print STDERR "$now  $prefix Executing FLUSH ENGINE LOGS...\n";
-        mysql_query(\%mysql, "FLUSH ENGINE LOGS");
+        print STDERR "$now  $prefix Executing FLUSH " .
+            "NO_WRITE_TO_BINLOG ENGINE LOGS...\n";
+        mysql_query(\%mysql, "FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS");
     }
 
     # resume XtraBackup and wait till it has finished
