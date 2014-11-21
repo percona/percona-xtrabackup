@@ -311,6 +311,7 @@ void print_find_structs()
   set_links(root_by_len,max_len);
   print_hash_map("sql_functions_map");
 
+  free(hash_map);
   hash_map= 0;
   size_hash_map= 0;
 
