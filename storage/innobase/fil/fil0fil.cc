@@ -5651,8 +5651,8 @@ fil_io(
 
 	/* Do aio */
 
-	ut_a(byte_offset % OS_FILE_LOG_BLOCK_SIZE == 0);
-	ut_a((len % OS_FILE_LOG_BLOCK_SIZE) == 0);
+	ut_a(byte_offset % OS_MIN_LOG_BLOCK_SIZE == 0);
+	ut_a((len % OS_MIN_LOG_BLOCK_SIZE) == 0);
 
 #ifdef UNIV_HOTBACKUP
 	/* In mysqlbackup do normal i/o, not aio */
