@@ -17,11 +17,11 @@ Following command will take a backup to the /data/backups/$TIMESTAMP folder: ::
 In the destination folder there will be a file with the name :file:`xtrabackup_binlog_info`. This file will contain both, binary log coordinates and ``GTID`` information. :: 
 
  $ cat xtrabackup_binlog_info
- mysql-bin.000002    1232        c777888a-b6df-11e2-a604-080027635ef5:1-4
+ c777888a-b6df-11e2-a604-080027635ef5:1-4
 
 That information is also printed by innobackupex after backup is taken: ::
 
- innobackupex: MySQL binlog position: filename 'mysql-bin.000002', position 1232, gtid_executed c777888a-b6df-11e2-a604-080027635ef5:1-4
+ innobackupex: MySQL binlog position: GTID of the last change 'c777888a-b6df-11e2-a604-080027635ef5:1-4'
 
 STEP 2: Prepare the backup
 --------------------------
