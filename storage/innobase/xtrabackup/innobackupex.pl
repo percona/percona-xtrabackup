@@ -3085,13 +3085,21 @@ sub write_binlog_info {
     # from the SHOW MASTER STATUS output
     my $filename = $con->{master_status}->{File};
     my $position = $con->{master_status}->{Position};
+    my $mysql_gtid = defined($con->{vars}->{gtid_mode}) &&
+                     $con->{vars}->{gtid_mode}->{Value} eq 'ON';
+    my $mariadb_gtid = defined($con->{vars}->{gtid_current_pos});
+    my @binlog_coordinates;
+    my @binlog_info_content;
 
     # Do not create xtrabackup_binlog_info if binary log is disabled
     if (!defined($filename) or !defined($position)) {
         return;
     }
 
-    $mysql_binlog_position = "filename '$filename', position $position";
+    if ($mariadb_gtid || !$mysql_gtid) {
+        @binlog_coordinates = ("filename '$filename'", "position $position");
+        @binlog_info_content = ($filename, $position);
+    }
 
     $gtid = $con->{master_status}->{Executed_Gtid_Set};
     if (!defined($gtid)) {
@@ -3100,14 +3108,16 @@ sub write_binlog_info {
         $gtid = $con->{vars}->{gtid_current_pos}->{Value};
     }
 
-    if (defined($gtid)) {
-        $mysql_binlog_position .= ", GTID of the last change '$gtid'";
-    } else {
-        $gtid = '';
+    if ($mariadb_gtid || $mysql_gtid) {
+        push(@binlog_coordinates, "GTID of the last change '$gtid'");
+        push(@binlog_info_content, $gtid);
     }
 
+    $mysql_binlog_position = join(", ", @binlog_coordinates);
+
     # write binlog info file
-    write_to_backup_file("$binlog_info", "$filename\t$position\t\t$gtid\n");
+    write_to_backup_file($binlog_info,
+                         join("\t", @binlog_info_content) . "\n");
 }
 
 #
