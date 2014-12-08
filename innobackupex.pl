@@ -2605,7 +2605,7 @@ sub apply_log {
             push(@skip_list, "\Q$c->{filename}\E");
         }
         cleanup_dir_recursively($backup_dir,
-                             '^(' . join('|', @skip_list, '.*\.ibd') . ')$');
+                '^(' . join('|', @skip_list, '.*\.ibd', 'undo[0-9]+') . ')$');
     }
 
 }
