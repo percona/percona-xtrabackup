@@ -32,6 +32,7 @@ INCLUDE_DIRECTORIES(
   ${GCRYPT_INCLUDE_DIR}
   ${CURL_INCLUDE_DIRS}
   ${LIBEV_INCLUDE_DIRS}
+  ${CMAKE_CURRENT_BINARY_DIR}
   )
 
 ########################################################################
