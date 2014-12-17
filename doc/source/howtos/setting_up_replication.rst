@@ -80,7 +80,7 @@ Use rsync or scp to copy the data from Master to Slave. If you're syncing the da
 
 .. code-block:: console
 
-   TheMaster$ rsync -avprP -e ssh /path/to/backupdir/$TIMESTAMP TheSlave:/path/to/mysql/
+   TheMaster$ rsync -avpP -e ssh /path/to/backupdir/$TIMESTAMP TheSlave:/path/to/mysql/
 
 After data has been copied you can back up the original or previously installed |MySQL| :term:`datadir` (**NOTE**: Make sure mysqld is shut down before you move the contents of its datadir, or move the snapshot into its datadir.):
 
@@ -193,7 +193,7 @@ At ``TheSlave``, do a full backup:
 
 .. code-block:: console
 
-   TheSlave$ innobackupex --user=yourDBuser --password=MaGiCiGaM /
+   TheSlave$ innobackupex --user=yourDBuser --password=MaGiCiGaM \
              --slave-info /path/to/backupdir 
 
 By using the :option:`--slave-info` |Percona XtraBackup| creates additional file called :file:`xtrabackup_slave_info`.

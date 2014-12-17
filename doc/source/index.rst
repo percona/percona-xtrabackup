@@ -1,10 +1,10 @@
-.. Percona Xtrabackup documentation master file, created by
+.. Percona XtraBackup documentation master file, created by
    sphinx-quickstart on Fri May  6 01:04:39 2011.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
 ====================================
- Percona Xtrabackup - Documentation
+ Percona XtraBackup - Documentation
 ====================================
 
 |Percona XtraBackup| is an open-source hot backup utility for |MySQL| - based servers that doesn't lock your database during the backup.
