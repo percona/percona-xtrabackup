@@ -11,7 +11,7 @@ This release contains all of the features and bug fixes in :doc:`Percona XtraBac
 New features
 ------------
 
- |Percona Xtrabackup| now has support for :ref:`compact_backups_ibk`. This feature can be used for taking the backups that will take less amount of disk space.
+ |Percona XtraBackup| now has support for :ref:`compact_backups_ibk`. This feature can be used for taking the backups that will take less amount of disk space.
 
  |Percona XtraBackup| has implemented :ref:`encrypted_backups_ibk`. This feature can be used to encrypt/decrypt both local and streamed backups in order to add another layer of protection to the backups.
 

@@ -2,7 +2,7 @@
 LRU dump backup
 ================
 
-This feature reduces the warm up time by restoring buffer pool state from :file:`ib_lru_dump` file after restart. |Percona Xtrabackup| discovers :file:`ib_lru_dump` and backs it up automatically.
+This feature reduces the warm up time by restoring buffer pool state from :file:`ib_lru_dump` file after restart. |Percona XtraBackup| discovers :file:`ib_lru_dump` and backs it up automatically.
 
 .. image:: /_static/lru_dump.png
 

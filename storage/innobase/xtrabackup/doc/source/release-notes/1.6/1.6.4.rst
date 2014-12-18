@@ -4,7 +4,7 @@
 
 Percona is glad to announce the release of Percona XtraBackup 1.6.4 on 19 December, 2011 (Downloads are available `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-1.6.4/>`_ and from the :doc:`Percona Software Repositories </installation>`).
 
-This release is purely composed of bug fixes and is the current stable release of |Percona| |Xtrabackup|.
+This release is purely composed of bug fixes and is the current stable release of |Percona| |XtraBackup|.
 
 In this release we now compile the |xtrabackup| binary against more recent MySQL and Percona Server versions. We now build against: MySQL 5.1.59, MySQL 5.5.17, Percona Server 5.1.59-13.0 and Percona Server 5.5.16-22.0 and get all the InnoDB bug fixes each of these releases contain. Using `xtrabackup` to back up older MySQL or Percona Server releases is still supported.
 

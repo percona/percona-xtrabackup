@@ -1,5 +1,5 @@
 ==========================
- About Percona Xtrabackup
+ About Percona XtraBackup
 ==========================
 
 
