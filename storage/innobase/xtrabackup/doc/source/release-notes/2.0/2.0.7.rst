@@ -34,7 +34,7 @@ Bugs Fixed
 
  Fixed couple of warnings found in |innobackupex| when all warnings have been made ``FATAL``. Bug fixed :bug:`1116177`.
 
- If there are thousands of tables and slow IO then |Xtrabackup| can spend a lot of time opening all the tablespaces. Optimization has been implemented and |Percona XtraBackup| now avoids loading non-relevant tablespaces when partial backup is being taken which speeds up the backup process. Bug fixed :bug:`1130145`.
+ If there are thousands of tables and slow IO then |xtrabackup| can spend a lot of time opening all the tablespaces. Optimization has been implemented and |Percona XtraBackup| now avoids loading non-relevant tablespaces when partial backup is being taken which speeds up the backup process. Bug fixed :bug:`1130145`.
 
  |Percona XtraBackup| didn't initialize per-thread data in the log copying thread which could cause |Percona XtraBackup| to crash. Bug fixed :bug:`1166888`.
 
