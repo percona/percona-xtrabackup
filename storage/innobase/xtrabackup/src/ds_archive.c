@@ -27,6 +27,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 typedef struct {
 	struct archive	*archive;
 	ds_file_t	*dest_file;
+	pthread_mutex_t	mutex;
 } ds_archive_ctxt_t;
 
 typedef struct {
@@ -99,6 +100,10 @@ archive_init(const char *root __attribute__((unused)))
 			 MYF(MY_FAE));
 	archive_ctxt = (ds_archive_ctxt_t *)(ctxt + 1);
 
+	if (pthread_mutex_init(&archive_ctxt->mutex, NULL)) {
+		msg("archive_init: pthread_mutex_init() failed.\n");
+		goto err;
+	}
 
 	a = archive_write_new();
 	if (a == NULL) {
@@ -153,12 +158,14 @@ archive_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 
 	archive_ctxt = (ds_archive_ctxt_t *) ctxt->ptr;
 
+	pthread_mutex_lock(&archive_ctxt->mutex);
 	if (archive_ctxt->dest_file == NULL) {
 		archive_ctxt->dest_file = ds_open(dest_ctxt, path, mystat);
 		if (archive_ctxt->dest_file == NULL) {
 			return NULL;
 		}
 	}
+	pthread_mutex_unlock(&archive_ctxt->mutex);
 
 	file = (ds_file_t *) my_malloc(sizeof(ds_file_t) +
 				       sizeof(ds_archive_file_t),
@@ -261,6 +268,8 @@ archive_deinit(ds_ctxt_t *ctxt)
 		ds_close(archive_ctxt->dest_file);
 		archive_ctxt->dest_file = NULL;
 	}
+
+	pthread_mutex_destroy(&archive_ctxt->mutex);
 
 	my_free(ctxt);
 }
