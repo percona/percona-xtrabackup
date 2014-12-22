@@ -249,6 +249,8 @@ int xb_crypt_read_close(xb_rcrypt_t *crypt)
 {
 	if (crypt->buffer)
 		my_free(crypt->buffer);
+	if (crypt->ivbuffer)
+		my_free(crypt->ivbuffer);
 	my_free(crypt);
 
 	return 0;
