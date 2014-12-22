@@ -419,6 +419,8 @@ page_map_file_close(page_map_cursor_t *pmap_cur)
 
 	rc = my_close(pmap_cur->fd, MY_WME);
 	xb_a(rc == 0);
+
+	my_free(pmap_cur);
 }
 
 /****************************************************************************
