@@ -27,6 +27,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 typedef struct {
 	xb_wstream_t	*xbstream;
 	ds_file_t	*dest_file;
+	pthread_mutex_t	mutex;
 } ds_stream_ctxt_t;
 
 typedef struct {
@@ -82,6 +83,11 @@ xbstream_init(const char *root __attribute__((unused)))
 			 MYF(MY_FAE));
 	stream_ctxt = (ds_stream_ctxt_t *)(ctxt + 1);
 
+	if (pthread_mutex_init(&stream_ctxt->mutex, NULL)) {
+		msg("xbstream_init: pthread_mutex_init() failed.\n");
+		goto err;
+	}
+
 	xbstream = xb_stream_write_new();
 	if (xbstream == NULL) {
 		msg("xb_stream_write_new() failed.\n");
@@ -116,12 +122,14 @@ xbstream_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 
 	stream_ctxt = (ds_stream_ctxt_t *) ctxt->ptr;
 
+	pthread_mutex_lock(&stream_ctxt->mutex);
 	if (stream_ctxt->dest_file == NULL) {
 		stream_ctxt->dest_file = ds_open(dest_ctxt, path, mystat);
 		if (stream_ctxt->dest_file == NULL) {
 			return NULL;
 		}
 	}
+	pthread_mutex_unlock(&stream_ctxt->mutex);
 
 	file = (ds_file_t *) my_malloc(sizeof(ds_file_t) +
 				       sizeof(ds_stream_file_t),
@@ -208,5 +216,8 @@ xbstream_deinit(ds_ctxt_t *ctxt)
 		ds_close(stream_ctxt->dest_file);
 		stream_ctxt->dest_file = NULL;
 	}
+
+	pthread_mutex_destroy(&stream_ctxt->mutex);
+
 	my_free(ctxt);
 }

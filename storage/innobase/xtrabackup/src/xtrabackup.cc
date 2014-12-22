@@ -65,6 +65,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <row0mysql.h>
 #include <row0quiesce.h>
 #include <srv0start.h>
+#include <buf0dblwr.h>
 
 #include <sstream>
 
@@ -2707,7 +2708,11 @@ xb_data_files_close(void)
 	os_aio_free();
 
 	fil_close_all_files();
-	fil_system = NULL;
+
+	/* Free the double write data structures. */
+	if (buf_dblwr) {
+		buf_dblwr_free();
+	}
 
 	/* Reset srv_file_io_threads to its default value to avoid confusing
 	warning on --prepare in innobase_start_or_create_for_mysql()*/
@@ -3675,6 +3680,7 @@ skip_last_cp:
 	msg("\n");
 
 	os_event_free(log_copying_stop);
+	ds_close(dst_log_file);
 
 	/* Signal innobackupex that log copying has stopped and it may now
 	unlock tables, so we can possibly stream xtrabackup_logfile later
@@ -5578,6 +5584,15 @@ xtrabackup_arch_search_files(
 	return xtrabackup_arch_first_file_lsn != 0;
 }
 
+static
+void
+innodb_free_param()
+{
+	srv_free_paths_and_sizes();
+	free(internal_innobase_data_file_path);
+	free_tmpdir(&mysql_tmpdir_list);
+}
+
 static void
 xtrabackup_prepare_func(void)
 {
@@ -5712,10 +5727,15 @@ skip_check:
 	}
 	sync_close();
 	sync_initialized = FALSE;
+	if (fil_system) {
+		fil_close();
+	}
 	os_sync_free();
 	mem_close();
 	os_sync_mutex = NULL;
 	ut_free_all_mem();
+
+	innodb_free_param();
 
 	/* Reset the configuration as it might have been changed by
 	xb_data_files_init(). */
