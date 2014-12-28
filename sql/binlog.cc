@@ -1862,7 +1862,10 @@ static int log_in_use(const char* log_name)
 {
   size_t log_name_len = strlen(log_name) + 1;
   int thread_count=0;
-  DEBUG_SYNC(current_thd,"purge_logs_after_lock_index_before_thread_count");
+#ifndef DBUG_OFF
+  if (current_thd)
+    DEBUG_SYNC(current_thd,"purge_logs_after_lock_index_before_thread_count");
+#endif
   mysql_mutex_lock(&LOCK_thread_count);
 
   Thread_iterator it= global_thread_list_begin();
@@ -3355,7 +3358,7 @@ err:
   my_free(name);
   name= NULL;
   log_state= LOG_CLOSED;
-  if (binlogging_impossible_mode == ABORT_SERVER)
+  if (binlog_error_action == ABORT_SERVER)
   {
     THD *thd= current_thd;
     /*
@@ -4996,7 +4999,7 @@ end:
        - ...
     */
     close(LOG_CLOSE_INDEX);
-    if (binlogging_impossible_mode == ABORT_SERVER)
+    if (binlog_error_action == ABORT_SERVER)
     {
       THD *thd= current_thd;
       /*
