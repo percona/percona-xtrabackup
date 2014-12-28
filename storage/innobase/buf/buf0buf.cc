@@ -565,9 +565,14 @@ buf_page_is_corrupted(
 	checksum_field2 = mach_read_from_4(
 		read_buf + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM);
 
+#if FIL_PAGE_LSN % 8
+#error "FIL_PAGE_LSN must be 64 bit aligned"
+#endif
+
 	/* declare empty pages non-corrupted */
 	if (checksum_field1 == 0 && checksum_field2 == 0
-	    && mach_read_from_4(read_buf + FIL_PAGE_LSN) == 0) {
+	    && *reinterpret_cast<const ib_uint64_t*>(read_buf +
+						     FIL_PAGE_LSN) == 0) {
 		/* make sure that the page is really empty */
 #if 0
 		/* Do not make sure that the page is really empty as this check

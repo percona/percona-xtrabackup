@@ -196,7 +196,7 @@ log_buffer_extend(
 {
 	ulint	move_start;
 	ulint	move_end;
-	byte	tmp_buf[OS_FILE_LOG_BLOCK_SIZE];
+	byte	*tmp_buf = static_cast<byte *>(alloca(OS_FILE_LOG_BLOCK_SIZE));
 
 	mutex_enter(&(log_sys->mutex));
 
@@ -3462,7 +3462,11 @@ loop:
 
 	lsn = log_sys->lsn;
 
-	if (lsn != log_sys->last_checkpoint_lsn
+	ut_ad(srv_force_recovery != SRV_FORCE_NO_LOG_REDO
+	      || lsn == log_sys->last_checkpoint_lsn + LOG_BLOCK_HDR_SIZE);
+
+	if ((srv_force_recovery != SRV_FORCE_NO_LOG_REDO
+	     && lsn != log_sys->last_checkpoint_lsn)
 #ifdef UNIV_LOG_ARCHIVE
 	    || (srv_log_archive_on
 		&& lsn != log_sys->archived_lsn + LOG_BLOCK_HDR_SIZE)
