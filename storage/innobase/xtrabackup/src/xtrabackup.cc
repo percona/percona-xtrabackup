@@ -2062,7 +2062,7 @@ skip:
 }
 
 static my_bool
-xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
+xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last, my_bool is_first)
 {
 	/* definition from recv_recovery_from_checkpoint_start() */
 	log_group_t*	group;
@@ -2095,6 +2095,7 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 
 		mutex_enter(&log_sys->mutex);
 
+retry_read:
 		log_group_read_log_seg(LOG_RECOVER, log_sys->buf,
 				       group, start_lsn, end_lsn);
 
@@ -2123,6 +2124,15 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 
 			blocks_in_group = log_block_convert_lsn_to_no(
 				log_group_get_capacity(group)) - 1;
+
+			/* Can be just wrong lsn_offset. Is it PS 5.5 with large
+			log files? */
+			if (is_first &&
+			    group->lsn_offset != group->lsn_offset_alt) {
+				group->lsn_offset = group->lsn_offset_alt;
+				is_first = FALSE;
+				goto retry_read;
+			}
 
 			if (no < scanned_no ||
 			    /* Log block numbers wrap around at 0x3FFFFFFF */
@@ -2302,7 +2312,7 @@ log_copying_thread(
 				       0);
 		if (log_copying) {
 			if(xtrabackup_copy_logfile(log_copy_scanned_lsn,
-						   FALSE)) {
+						   FALSE, FALSE)) {
 
 				exit(EXIT_FAILURE);
 			}
@@ -2310,7 +2320,7 @@ log_copying_thread(
 	}
 
 	/* last copying */
-	if(xtrabackup_copy_logfile(log_copy_scanned_lsn, TRUE)) {
+	if(xtrabackup_copy_logfile(log_copy_scanned_lsn, TRUE, FALSE)) {
 
 		exit(EXIT_FAILURE);
 	}
@@ -3554,7 +3564,7 @@ reread_log_header:
 
 
 	/* copy log file by current position */
-	if(xtrabackup_copy_logfile(checkpoint_lsn_start, FALSE))
+	if(xtrabackup_copy_logfile(checkpoint_lsn_start, FALSE, TRUE))
 		exit(EXIT_FAILURE);
 
 

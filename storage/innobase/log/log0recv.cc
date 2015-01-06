@@ -800,8 +800,16 @@ recv_find_max_checkpoint(
 				buf + LOG_CHECKPOINT_LSN);
 			group->lsn_offset = mach_read_from_4(
 				buf + LOG_CHECKPOINT_OFFSET_LOW32);
-			group->lsn_offset |= ((lsn_t) mach_read_from_4(
-				buf + LOG_CHECKPOINT_OFFSET_HIGH32)) << 32;
+			group->lsn_offset_alt = group->lsn_offset;
+			if (group->file_size * group->n_files >
+				4294967296ULL /* 4GiB */) {
+				group->lsn_offset |= ((lsn_t) mach_read_from_4(
+					buf + LOG_CHECKPOINT_OFFSET_HIGH32))
+					<< 32;
+				group->lsn_offset_alt =
+					((lsn_t) mach_read_from_8(
+					buf + LOG_CHECKPOINT_ARCHIVED_LSN));
+			}
 			checkpoint_no = mach_read_from_8(
 				buf + LOG_CHECKPOINT_NO);
 
