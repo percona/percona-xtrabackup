@@ -1,3 +1,9 @@
+percona-xtrabackup (2.2.8) unstable; urgency=low
+
+  * Update to new release Percona XtraBackup 2.2.8
+
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Mon, 12 Jan 2015 10:39:48 +0100
+
 percona-xtrabackup (2.2.7) unstable; urgency=low
 
   * Update to new release Percona XtraBackup 2.2.7
