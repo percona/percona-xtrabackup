@@ -18,7 +18,7 @@ Good moment to issue a global lock is the moment when there are no long queries 
 
 Another possibility is to specify the type of query to wait on. In this case :option:`innobackupex --lock-wait-query-type`. Possible values are ``all`` and ``update``. When ``all`` is used |innobackupex| will wait for all long running queries (execution time longer than allowed by :option:`innobackupex --lock-wait-threshold`) to finish before running the ``FLUSH TABLES WITH READ LOCK``. When ``update`` is used |innobackupex| will wait on ``UPDATE/ALTER/REPLACE/INSERT`` queries to finish.
 
-Although time needed for specific query to complete is hard to predict, we can assume that queries that are running for a long time already will likely not be completed soon, and queries which are running for a short time will likely be completed shortly. |innobackupex| can use the value of :option:`innobackupex --lock-wait-threshold` option to specify which query is long running and will likely block global lock for a while.
+Although time needed for specific query to complete is hard to predict, we can assume that queries that are running for a long time already will likely not be completed soon, and queries which are running for a short time will likely be completed shortly. |innobackupex| can use the value of :option:`innobackupex --lock-wait-threshold` option to specify which query is long running and will likely block global lock for a while. In order to use this option xtrabackup user should have ``PROCESS`` and ``SUPER`` privileges.
 
 Killing the blocking queries
 ----------------------------
