@@ -153,9 +153,9 @@ bg_run bg_update_pid "mysql_update 200"
 wait_for_connection_count 2
 
 run_cmd_expect_failure ${IB_BIN} ${IB_ARGS} $topdir/full \
-                          --lock-wait-timeout=3 \
-                          --lock-wait-query-type=all \
-                          --lock-wait-threshold=1 \
+                          --ftwrl-wait-timeout=3 \
+                          --ftwrl-wait-query-type=all \
+                          --ftwrl-wait-threshold=1 \
                           --kill-long-queries-timeout=1 \
                           --kill-long-query-type=all
 
@@ -171,9 +171,9 @@ bg_run bg_update_pid "mysql_update 200"
 wait_for_connection_count 2
 
 run_cmd_expect_failure ${IB_BIN} ${IB_ARGS} $topdir/full \
-                          --lock-wait-timeout=3 \
-                          --lock-wait-query-type=update \
-                          --lock-wait-threshold=2 \
+                          --ftwrl-wait-timeout=3 \
+                          --ftwrl-wait-query-type=update \
+                          --ftwrl-wait-threshold=2 \
                           --kill-long-queries-timeout=1 \
                           --kill-long-query-type=all
 
@@ -190,9 +190,9 @@ bg_run bg_select_pid "mysql_select 200"
 wait_for_connection_count 2
 
 innobackupex $topdir/full \
-                          --lock-wait-timeout=6 \
-                          --lock-wait-query-type=update \
-                          --lock-wait-threshold=2 \
+                          --ftwrl-wait-timeout=6 \
+                          --ftwrl-wait-query-type=update \
+                          --ftwrl-wait-threshold=2 \
                           --kill-long-queries-timeout=1 \
                           --kill-long-query-type=all
 
