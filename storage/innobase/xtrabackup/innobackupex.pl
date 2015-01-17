@@ -79,6 +79,7 @@ my $have_galera_enabled = 0;
 my $have_flush_engine_logs = 0;
 my $have_multi_threaded_slave = 0;
 my $have_gtid_slave = 0;
+my $have_lock_wait_timeout = 0;
 
 # command line options
 my $option_help = '';
@@ -3444,6 +3445,13 @@ sub mysql_lock_tables {
     my $con = shift;
     my $queries_hash_ref;
 
+    if ($have_lock_wait_timeout) {
+        # Set the maximum supported session value for lock_wait_timeout to
+        # prevent unnecessary timeouts when the global value is changed from the
+        # default
+        mysql_query($con, "SET SESSION lock_wait_timeout=31536000");
+    }
+
     if ($have_backup_locks) {
         $now = current_time();
         print STDERR "$now  $prefix Executing LOCK TABLES FOR BACKUP...\n";
@@ -5005,6 +5013,8 @@ sub detect_mysql_capabilities_for_backup {
         (defined($gtid_slave_pos) and $gtid_slave_pos ne '')) {
         $have_gtid_slave = 1;
     }
+
+    $have_lock_wait_timeout = defined($con->{vars}->{lock_wait_timeout});
 }
 
 #
