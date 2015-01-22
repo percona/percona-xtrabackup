@@ -16,7 +16,9 @@ Build-Depends: automake,
                libgcrypt-dev,
                libev-dev,
                libcurl-dev,
-               lsb-release
+               lsb-release,
+               python-sphinx (>= 1.0.1),
+               python-docutils (>= 0.6)
 Standards-Version: 3.9.5
 Homepage: http://www.percona.com/software/percona-xtrabackup
 

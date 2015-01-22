@@ -8,4 +8,4 @@ percona-theme/*
 percona-theme*
 doc/source/percona-theme
 doc/source/percona-theme/
-doc/build
+doc/source/build
