@@ -17,6 +17,11 @@ URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
 BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel
+%if 0%{?rhel} > 6
+BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6
+%else
+BuildRequires:  python-sphinx10 >= 1.0.1, python-docutils >= 0.6
+%endif
 Requires:       perl(DBD::mysql), rsync
 BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 
@@ -54,7 +59,7 @@ export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRA
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\""
 #
 cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test .
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test -DINSTALL_MANDIR=%{_mandir} .
 #
 make %{?_smp_mflags}
 #
@@ -74,6 +79,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbstream
 %{_bindir}/xbcrypt
 %doc COPYING
+%doc %{_mandir}/man1/*.1.gz
 
 %files -n percona-xtrabackup-test
 %defattr(-,root,root,-)

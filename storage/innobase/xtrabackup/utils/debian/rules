@@ -19,7 +19,7 @@ override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
 	cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
-	  -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test .
+	  -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test -DINSTALL_MANDIR=/usr/share/man .
 else
 	# Dummy binaries that avoid compilation
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
