@@ -511,7 +511,8 @@ sub connect {
         ref($self->{fh}) eq 'IO::Socket::SSL'
             or die(qq/SSL connection failed for $host\n/);
         if ( $self->{fh}->can("verify_hostname") ) {
-            $self->{fh}->verify_hostname( $host, $ssl_verify_args );
+            $self->{fh}->verify_hostname( $host, $ssl_verify_args )
+                or die(qq/SSL certificate not valid for $host\n/);
         }
         else {
          my $fh = $self->{fh};
@@ -1036,11 +1037,12 @@ sub version_check {
       PTDEBUG && _d(scalar @$instances_to_check, 'instances to check');
       return unless @$instances_to_check;
 
-      my $protocol = 'https';  # optimistic, but...
+      my $protocol = 'https';
       eval { require IO::Socket::SSL; };
       if ( $EVAL_ERROR ) {
-         PTDEBUG && _d($EVAL_ERROR);
-         $protocol = 'http';
+          PTDEBUG && _d($EVAL_ERROR);
+          PTDEBUG && _d("SSL not available, won't run version_check");
+          return;
       }
       PTDEBUG && _d('Using', $protocol);
 
@@ -1475,6 +1477,10 @@ sub get_from_mysql {
       PTDEBUG && _d('Cannot check', $item,
          'because there are no MySQL instances');
       return;
+   }
+
+   if ($item->{item} eq 'MySQL' && $item->{type} eq 'mysql_variable') {
+       $item->{vars} = ['version_comment', 'version'];
    }
 
    my @versions;
