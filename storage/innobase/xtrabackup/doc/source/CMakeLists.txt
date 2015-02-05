@@ -53,24 +53,26 @@ ENDIF()
 # generate latex or pdf documentation
 IF(WITH_LATEX_DOCS OR WITH_PDF_DOCS)
   ADD_CUSTOM_COMMAND(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build/latex
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build/latex/PerconaXtraBackup-2.3.tex
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build/latex/Makefile
     COMMAND sphinx-build -b latex -d ${CMAKE_CURRENT_BINARY_DIR}/build/doctrees ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/build/latex
     VERBATIM
   )
 
   ADD_CUSTOM_TARGET(latex ALL
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/build/latex
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/build/latex/PerconaXtraBackup-2.3.tex
   )
 
   IF(WITH_PDF_DOCS)
     ADD_CUSTOM_COMMAND(
       OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build/latex/PerconaXtraBackup-2.3.pdf
       COMMAND make -C ${CMAKE_CURRENT_BINARY_DIR}/build/latex all-pdf
+      DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/build/latex/PerconaXtraBackup-2.3.tex
+      DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/build/latex/Makefile
       VERBATIM
     )
 
     ADD_CUSTOM_TARGET(latexpdf ALL
-      DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/build/latex
       DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/build/latex/PerconaXtraBackup-2.3.pdf
     )
   ENDIF()
