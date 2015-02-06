@@ -79,6 +79,7 @@ my $have_galera_enabled = 0;
 my $have_flush_engine_logs = 0;
 my $have_multi_threaded_slave = 0;
 my $have_gtid_slave = 0;
+my $have_lock_wait_timeout = 0;
 
 # command line options
 my $option_help = '';
@@ -229,14 +230,14 @@ my $query_killer_pid;
 my $option_kill_long_queries_timeout = 0;
 
 # waiting for an appropriate time to start FTWRL timeout
-my $option_lock_wait_timeout = 0;
+my $option_ftwrl_wait_timeout = 0;
 
 # how old should be query to be waited for
-my $option_lock_wait_threshold = 60;
+my $option_ftwrl_wait_threshold = 60;
 
 # which type of queries we are waiting for during the pre-FTWRL phase
 # possible values are "update" and "all"
-my $option_lock_wait_query_type = "all";
+my $option_ftwrl_wait_query_type = "all";
 
 # which type of queries wa are waiting when clearing the way for FTWRL
 # by killing; possible values are "select" and "all"
@@ -510,7 +511,8 @@ sub connect {
         ref($self->{fh}) eq 'IO::Socket::SSL'
             or die(qq/SSL connection failed for $host\n/);
         if ( $self->{fh}->can("verify_hostname") ) {
-            $self->{fh}->verify_hostname( $host, $ssl_verify_args );
+            $self->{fh}->verify_hostname( $host, $ssl_verify_args )
+                or die(qq/SSL certificate not valid for $host\n/);
         }
         else {
          my $fh = $self->{fh};
@@ -1035,11 +1037,12 @@ sub version_check {
       PTDEBUG && _d(scalar @$instances_to_check, 'instances to check');
       return unless @$instances_to_check;
 
-      my $protocol = 'https';  # optimistic, but...
+      my $protocol = 'https';
       eval { require IO::Socket::SSL; };
       if ( $EVAL_ERROR ) {
-         PTDEBUG && _d($EVAL_ERROR);
-         $protocol = 'http';
+          PTDEBUG && _d($EVAL_ERROR);
+          PTDEBUG && _d("SSL not available, won't run version_check");
+          return;
       }
       PTDEBUG && _d('Using', $protocol);
 
@@ -1474,6 +1477,10 @@ sub get_from_mysql {
       PTDEBUG && _d('Cannot check', $item,
          'because there are no MySQL instances');
       return;
+   }
+
+   if ($item->{item} eq 'MySQL' && $item->{type} eq 'mysql_variable') {
+       $item->{vars} = ['version_comment', 'version'];
    }
 
    my @versions;
@@ -3342,7 +3349,7 @@ sub have_queries_to_wait_for {
     while (my ($id, $process) = each %$processlist) {
         if (defined($process->{Info}) &&
             $process->{Time} >= $threshold &&
-            (($option_lock_wait_query_type eq "all" &&
+            (($option_ftwrl_wait_query_type eq "all" &&
              is_query($process->{Info})) ||
              is_update_query($process->{Info}))) {
             print STDERR "\n$now  $prefix Waiting for query $id (duration " .
@@ -3444,6 +3451,13 @@ sub mysql_lock_tables {
     my $con = shift;
     my $queries_hash_ref;
 
+    if ($have_lock_wait_timeout) {
+        # Set the maximum supported session value for lock_wait_timeout to
+        # prevent unnecessary timeouts when the global value is changed from the
+        # default
+        mysql_query($con, "SET SESSION lock_wait_timeout=31536000");
+    }
+
     if ($have_backup_locks) {
         $now = current_time();
         print STDERR "$now  $prefix Executing LOCK TABLES FOR BACKUP...\n";
@@ -3456,9 +3470,9 @@ sub mysql_lock_tables {
         return;
     }
 
-    if ($option_lock_wait_timeout) {
-        wait_for_no_updates($con, $option_lock_wait_timeout,
-                            $option_lock_wait_threshold);
+    if ($option_ftwrl_wait_timeout) {
+        wait_for_no_updates($con, $option_ftwrl_wait_timeout,
+                            $option_ftwrl_wait_threshold);
     }
 
     $now = current_time();
@@ -3831,10 +3845,10 @@ sub check_args {
                         \$option_kill_long_queries_timeout,
                         'kill-long-query-type=s' =>
                         \$option_kill_long_query_type,
-                        'lock-wait-timeout=i' => \$option_lock_wait_timeout,
-                        'lock-wait-threshold=i' => \$option_lock_wait_threshold,
-                        'lock-wait-query-type=s' =>
-                        \$option_lock_wait_query_type,
+                        'ftwrl-wait-timeout=i' => \$option_ftwrl_wait_timeout,
+                        'ftwrl-wait-threshold=i' => \$option_ftwrl_wait_threshold,
+                        'ftwrl-wait-query-type=s' =>
+                        \$option_ftwrl_wait_query_type,
                         'version-check!' => \$option_version_check,
                         'force-non-empty-directories' =>
                         \$option_force_non_empty_dirs
@@ -3902,10 +3916,10 @@ sub check_args {
         $option_compress = 0;
     }
 
-    # validate lock-wait-query-type and kill-long-query-type values
-    if (!(grep {$_ eq $option_lock_wait_query_type} qw/all update/)) {
-        die "Wrong value of lock-wait-query-type. ".
-            "Possible values are all|update, but $option_lock_wait_query_type ".
+    # validate ftwrl-wait-query-type and kill-long-query-type values
+    if (!(grep {$_ eq $option_ftwrl_wait_query_type} qw/all update/)) {
+        die "Wrong value of ftwrl-wait-query-type. ".
+            "Possible values are all|update, but $option_ftwrl_wait_query_type ".
             "is specified.";
     }
     if (!(grep {$_ eq $option_kill_long_query_type} qw/all select/)) {
@@ -5005,6 +5019,8 @@ sub detect_mysql_capabilities_for_backup {
         (defined($gtid_slave_pos) and $gtid_slave_pos ne '')) {
         $have_gtid_slave = 1;
     }
+
+    $have_lock_wait_timeout = defined($con->{vars}->{lock_wait_timeout});
 }
 
 #
@@ -5507,16 +5523,16 @@ This option specifies the number of seconds innobackupex waits between starting 
 
 This option specifies which types of queries should be killed to unblock the global lock. Default is "all".
 
-=item --lock-wait-timeout=SECONDS
+=item --ftwrl-wait-timeout=SECONDS
 
 This option specifies time in seconds that innobackupex should wait for queries that would block FTWRL before running it. If there are still such queries when the timeout expires, innobackupex terminates with an error.
 Default is 0, in which case innobackupex does not wait for queries to complete and starts FTWRL immediately.
 
-=item --lock-wait-threshold=SECONDS
+=item --ftwrl-wait-threshold=SECONDS
 
-This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of --lock-wait-timeout. FTWRL is not started until such long-running queries exist. This option has no effect if --lock-wait-timeout is 0. Default value is 60 seconds.
+This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of --ftwrl-wait-timeout. FTWRL is not started until such long-running queries exist. This option has no effect if --ftwrl-wait-timeout is 0. Default value is 60 seconds.
 
-=item --lock-wait-query-type=all|update
+=item --ftwrl-wait-query-type=all|update
 
 This option specifies which types of queries are allowed to complete before innobackupex will issue the global lock. Default is all.
 
