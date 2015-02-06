@@ -110,7 +110,7 @@ mkdir "$INSTALLDIR"
         # Install the files
         mkdir -p "$INSTALLDIR"
         cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
-          -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test . 
+          -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test -DINSTALL_MANDIR=${INSTALLDIR}/man .
         make $MAKE_JFLAG
         make install
 

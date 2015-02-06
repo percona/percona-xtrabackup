@@ -22,6 +22,11 @@ BuildRequires:  libcurl-devel
 %else
 BuildRequires:  curl-devel
 %endif
+%if 0%{?rhel} > 6 
+BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6 
+%else
+BuildRequires:  python-sphinx10 >= 1.0.1, python-docutils >= 0.6 
+%endif
 Conflicts:      percona-xtrabackup, percona-xtrabackup-21
 Requires:       perl(DBD::mysql), rsync
 BuildRoot:      %{_tmppath}/%{name}-%{version}-root
@@ -61,7 +66,7 @@ export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRA
 export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\""
 #
 cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test .
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test -DINSTALL_MANDIR=%{_mandir} .
 #
 make %{?_smp_mflags}
 #
@@ -82,13 +87,14 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbcrypt
 %{_bindir}/xbcloud
 %doc COPYING
+%doc %{_mandir}/man1/*.1.gz
 
 %files -n percona-xtrabackup-test-23
 %defattr(-,root,root,-)
 %{_datadir}/percona-xtrabackup-test
 
 %changelog
-* Fri Sep 28 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
+* Thu Oct 30 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.0alpha1
 
 * Wed Sep 29 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
