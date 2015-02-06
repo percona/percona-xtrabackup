@@ -3149,5 +3149,5 @@ sql/share/bulgarian
 ./storage/innobase/xtrabackup/src/CMakeCache.txt
 ./storage/innobase/xtrabackup/src/xtrabackup_version.h
 ./storage/innobase/xtrabackup/CMakeCache.txt
-./storage/innobase/xtrabackup/doc/build/
+./storage/innobase/xtrabackup/doc/source/build/
 ./storage/innobase/xtrabackup/doc/source/percona-theme/
