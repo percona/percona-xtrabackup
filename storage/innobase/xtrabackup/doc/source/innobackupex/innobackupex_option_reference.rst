@@ -14,6 +14,11 @@ Options
 
    Prepare a backup in ``BACKUP-DIR`` by applying the transaction log file named :file:`xtrabackup_logfile` located in the same directory. Also, create new transaction logs. The InnoDB configuration is read from the file :file:`backup-my.cnf` created by |innobackupex| when the backup was made. innobackupex --apply-log uses InnoDB configuration from ``backup-my.cnf`` by default, or from --defaults-file, if specified. InnoDB configuration in this context means server variables that affect data format, i.e. :option:`innodb_page_size`, :option:`innodb_log_block_size`, etc. Location-related variables, like :option:`innodb_log_group_home_dir` or :option:`innodb_data_file_path` are always ignored by --apply-log, so preparing a backup always works with data files from the backup directory, rather than any external ones.
 
+.. option:: --backup-locks
+
+   This option controls if backup locks should be used instead of FLUSH TABLES WITH READ LOCK on the backup stage. The option has no effect when backup locks are not supported by the server. This option is enabled by default, disable with ``--no-backup-locks``.
+
+
 .. option:: --close-files
 
    Do not keep files opened. This option is passed directly to xtrabackup. When xtrabackup opens tablespace it normally doesn't close its file handle in order to handle the DDL operations correctly. However, if the number of tablespaces is really huge and can not fit into any limit, there is an option to close file handles once they are no longer accessed. |Percona XtraBackup| can produce inconsistent backups with this option enabled. Use at your own risk.
