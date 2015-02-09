@@ -159,6 +159,8 @@ my $option_history;
 my $option_incremental_history_name = '';
 my $option_incremental_history_uuid = '';
 
+my $option_backup_locks = '1';
+
 # name of the my.cnf configuration file
 #my $config_file = '';
 
@@ -1701,7 +1703,7 @@ BEGIN {
 END {
     # We only want to execute this in the parent script process, and ignore
     # for all child processes it may spawn
-    if ($$ == $innobackupex_pid) {
+    if (defined ($innobackupex_pid) and $$ == $innobackupex_pid) {
         kill_child_processes();
     }
 }
@@ -3851,7 +3853,8 @@ sub check_args {
                         \$option_ftwrl_wait_query_type,
                         'version-check!' => \$option_version_check,
                         'force-non-empty-directories' =>
-                        \$option_force_non_empty_dirs
+                        \$option_force_non_empty_dirs,
+                        'backup-locks!' => \$option_backup_locks
     );
 
     if ($option_help) {
@@ -4980,7 +4983,8 @@ sub detect_mysql_capabilities_for_backup {
         get_mysql_slave_status($con);
     }
 
-    $have_backup_locks = defined($con->{vars}->{have_backup_locks});
+    $have_backup_locks = $option_backup_locks &&
+        defined($con->{vars}->{have_backup_locks});
 
     $have_galera_enabled = defined($con->{vars}->{wsrep_on});
 
@@ -5357,6 +5361,10 @@ indicates an error.
 =item --apply-log
 
 Prepare a backup in BACKUP-DIR by applying the transaction log file named "xtrabackup_logfile" located in the same directory. Also, create new transaction logs. The InnoDB configuration is read from the file "backup-my.cnf".
+
+=item --backup-locks
+
+This option controls if backup locks should be used instead of FLUSH TABLES WITH READ LOCK on the backup stage. The option has no effect when backup locks are not supported by the server. This option is enabled by default, disable with --no-backup-locks.
 
 =item --close-files
 

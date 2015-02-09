@@ -49,3 +49,28 @@ Com_unlock_binlog	2
 Com_unlock_tables	2
 Com_flush	2
 EOF
+
+########################################################################
+# Bug #1418820: Make backup locks usage optional
+########################################################################
+
+# Test that --no-backup-lock forces FTWRL
+
+rm -rf $topdir/full_backup
+
+innobackupex --no-timestamp --no-backup-locks $topdir/full_backup
+
+$MYSQL $MYSQL_ARGS -Ns -e \
+       "SHOW GLOBAL STATUS LIKE 'Com_%lock%'; \
+       SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
+       > $topdir/status3
+
+diff $topdir/status3 - <<EOF
+Com_lock_tables	0
+Com_lock_tables_for_backup	2
+Com_lock_binlog_for_backup	2
+Com_show_slave_status_nolock	0
+Com_unlock_binlog	2
+Com_unlock_tables	3
+Com_flush	4
+EOF
