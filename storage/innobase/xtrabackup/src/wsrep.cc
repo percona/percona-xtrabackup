@@ -56,6 +56,9 @@ permission notice:
 /*! undefined seqno */
 #define WSREP_SEQNO_UNDEFINED (-1)
 
+/*! Name of file where Galera info is stored on recovery */
+#define XB_GALERA_INFO_FILENAME "xtrabackup_galera_info"
+
 /* Galera UUID type - for all unique IDs */
 typedef struct wsrep_uuid {
     uint8_t data[16];
@@ -165,6 +168,14 @@ xb_write_galera_info()
 	XID		xid;
 	char		uuid_str[40];
 	wsrep_seqno_t	seqno;
+	MY_STAT		statinfo;
+
+	/* Do not overwrite existing an existing file to be compatible with
+	servers with older server versions */
+	if (my_stat(XB_GALERA_INFO_FILENAME, &statinfo, MYF(0)) != NULL) {
+
+		return;
+	}
 
 	memset(&xid, 0, sizeof(xid));
 	xid.formatID = -1;
@@ -179,11 +190,11 @@ xb_write_galera_info()
 		return;
 	}
 
-	fp = fopen("xtrabackup_galera_info", "w");
+	fp = fopen(XB_GALERA_INFO_FILENAME, "w");
 	if (fp == NULL) {
 
 		msg("xtrabackup: error: "
-		    "could not create xtrabackup_galera_info, errno = %d\n",
+		    "could not create "XB_GALERA_INFO_FILENAME", errno = %d\n",
 		    errno);
 		exit(EXIT_FAILURE);
 	}
@@ -196,7 +207,7 @@ xb_write_galera_info()
 	if (fprintf(fp, "%s:%lld", uuid_str, (long long) seqno) < 0) {
 
 		msg("xtrabackup: error: "
-		    "could not write to xtrabackup_galera_info, errno = %d\n",
+		    "could not write to "XB_GALERA_INFO_FILENAME", errno = %d\n",
 		    errno);
 		exit(EXIT_FAILURE);
 	}
