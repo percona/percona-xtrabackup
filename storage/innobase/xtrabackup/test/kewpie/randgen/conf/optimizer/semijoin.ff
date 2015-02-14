@@ -1,3 +1,0 @@
-$rules = {
-	'extra'	=> sub { $_ !~ m{Start temporary}sio }
-};
