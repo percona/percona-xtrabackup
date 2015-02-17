@@ -1,3 +1,0 @@
-$rules = {
-	'type'	=> sub { $_ !~ m{join buffer|BKA|BNL|hash}so }
-};
