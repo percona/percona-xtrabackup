@@ -2,7 +2,7 @@ Source: percona-xtrabackup
 Section: database
 Priority: extra
 Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
-Uploaders: Alexey Bychko <alexey.bychko@percona.com>, Clint Byrum <clint@fewbar.com>
+Uploaders: Tomislav Plavcic <tomislav.plavcic@percona.com>, Clint Byrum <clint@fewbar.com>
 Build-Depends: automake,
                bison,
                ca-certificates,
