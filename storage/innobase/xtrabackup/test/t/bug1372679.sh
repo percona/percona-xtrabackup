@@ -51,4 +51,6 @@ setup_slave $slave_id $master_id
 
 switch_server $slave_id
 
+sync_slave_with_master $slave_id $master_id
+
 innobackupex --no-timestamp --slave-info $topdir/backup
