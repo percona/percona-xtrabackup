@@ -5016,11 +5016,11 @@ sub detect_mysql_capabilities_for_backup {
         $have_multi_threaded_slave = 1;
     }
 
-    my $gtid_executed = $con->{slave_status}->{Executed_Gtid_Set};
+    my $gtid_mode = $con->{vars}->{gtid_mode};
     my $gtid_slave_pos = $con->{vars}->{gtid_slave_pos};
 
-    if ((defined($gtid_executed) and $gtid_executed ne '') or
-        (defined($gtid_slave_pos) and $gtid_slave_pos ne '')) {
+    if ((defined($gtid_mode) and $gtid_mode->{Value} eq 'ON') or
+        (defined($gtid_slave_pos) and $gtid_slave_pos->{Value} ne '')) {
         $have_gtid_slave = 1;
     }
 
