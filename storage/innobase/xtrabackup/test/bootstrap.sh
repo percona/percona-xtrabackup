@@ -47,12 +47,12 @@ case "$1" in
 
     innodb55)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.5.40-linux2.6-$arch.tar.gz"
+        tarball="mysql-5.5.42-linux2.6-$arch.tar.gz"
         ;;
 
     innodb56)
         url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.6.21-linux-glibc2.5-$arch.tar.gz"
+        tarball="mysql-5.6.23-linux-glibc2.5-$arch.tar.gz"
         ;;
 
     xtradb51)
