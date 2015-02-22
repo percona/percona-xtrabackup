@@ -67,7 +67,7 @@ case "$1" in
 
     xtradb56)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.6.22-rel72.0-738.Linux.$arch.tar.gz"
+        tarball="Percona-Server-5.6.22-rel72.0-.Linux.$arch.tar.gz"
         ;;
 
     mariadb51)
