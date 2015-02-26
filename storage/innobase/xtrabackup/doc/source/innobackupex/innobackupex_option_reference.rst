@@ -117,7 +117,7 @@ Options
 
 .. option:: --ibbackup=IBBACKUP-BINARY
 
-   This option accepts a string argument that specifies which |xtrabackup| binary should be used. The string should be the command used to run |Percona XtraBackup|. The option can be useful if the :program:`xtrabackup` binary is not in your search path or working directory and the database server is not accessible at the moment. If this option is not specified, :program:`innobackupex` attempts to determine the binary to use automatically. By default, :program:`xtrabackup` is the command used. When option :option:`--apply-log` is specified, the binary is used whose name is in the file :file:`xtrabackup_binary` in the backup directory, if that file exists, or will attempt to autodetect it. However, if :option:`--copy-back` or :option:`--move-back` is used, :program:`xtrabackup` is used unless other is specified.
+   This option specifies which |xtrabackup| binary should be used. The option accepts a string argument. IBBACKUP-BINARY should be the command used to run |Percona XtraBackup|. The option can be useful if the |xtrabackup| binary is not in your search path or working directory. If this option is not specified, |innobackupex| attempts to determine the binary to use automatically.
 
 .. option:: --include=REGEXP
 
@@ -155,15 +155,15 @@ Options
 
    This option specifies which types of queries should be killed to unblock the global lock. Default is "all".
 
-.. option:: --lock-wait-timeout=SECONDS
+.. option:: --ftwrl-wait-timeout=SECONDS
 
    This option specifies time in seconds that innobackupex should wait for queries that would block ``FLUSH TABLES WITH READ LOCK`` before running it. If there are still such queries when the timeout expires, innobackupex terminates with an error. Default is 0, in which case innobackupex does not wait for queries to complete and starts ``FLUSH TABLES WITH READ LOCK`` immediately.
 
-.. option:: --lock-wait-threshold=SECONDS
+.. option:: --ftwrl-wait-threshold=SECONDS
 
-   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --lock-wait-timeout`. FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --lock-wait-timeout is 0. Default value is 60 seconds.
+   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --ftwrl-wait-timeout`. FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --ftwrl-wait-timeout is 0. Default value is 60 seconds.
 
-.. option:: --lock-wait-query-type=all|update
+.. option:: --ftwrl-wait-query-type=all|update
 
    This option specifies which types of queries are allowed to complete before innobackupex will issue the global lock. Default is all.
 

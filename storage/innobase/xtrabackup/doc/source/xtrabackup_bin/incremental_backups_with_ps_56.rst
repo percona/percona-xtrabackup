@@ -20,7 +20,7 @@ Creating the Backup
 
 To make an incremental backup, begin with a full backup as usual. The |xtrabackup| binary writes a file called :file:`xtrabackup_checkpoints` into the backup's target directory. This file contains a line showing the ``to_lsn``, which is the database's :term:`LSN` at the end of the backup. :doc:`Create the full backup <creating_a_backup>` with a command such as the following: ::
 
-  xtrabackup_56 --backup --target-dir=/data/backup/ --datadir=/var/lib/mysql/
+  xtrabackup --backup --target-dir=/data/backup/ --datadir=/var/lib/mysql/
 
 If you want a usable full backup, use :doc:`innobackupex <../innobackupex/innobackupex_script>` since `xtrabackup` itself won't copy table definitions, triggers, or anything else that's not .ibd.
 
@@ -37,14 +37,14 @@ Using the Log Archiving to prepare the backup
 
 In order to prepare the backup we need to specify the directory that contains the archived logs with the :option:`xtrabackup --innodb-log-arch-dir` option: ::
 
- xtrabackup_56 --prepare --target-dir=/data/backup/ --innodb-log-arch-dir=/data/archived-logs/
+ xtrabackup --prepare --target-dir=/data/backup/ --innodb-log-arch-dir=/data/archived-logs/
 
 This command will use archived logs, replay them against the backup folder and bring them up to date with the latest archived log.
 
 Output should look like this: ::
 
-  xtrabackup_56 version 2.1.5 for MySQL server 5.6.11 Linux (x86_64) (revision id: 680)
-  xtrabackup: cd to /tmp/backup-01/
+  xtrabackup version 2.2.9 based on MySQL server 5.6.22 Linux (x86_64) (revision id: 5067)
+  xtrabackup: cd to /data/backup/
   xtrabackup: using the following InnoDB configuration for recovery:
   xtrabackup:   innodb_data_home_dir = ./
   xtrabackup:   innodb_data_file_path = ibdata1:10M:autoextend
@@ -110,7 +110,7 @@ You can check the :file:`xtrabackup_checkpoints` file and see that the backup_ty
 
 Additional option is available if you need to restore a backup to specific point in time. By adding the :option:`xtrabackup --to-archived-lsn` option you can specify the LSN to which the backup will be prepared. ::
 
- xtrabackup_56 --prepare --target-dir=/data/backup/ --innodb-log-arch-dir=/data/archived-logs/ --to-archived-lsn=5536301566
+ xtrabackup --prepare --target-dir=/data/backup/ --innodb-log-arch-dir=/data/archived-logs/ --to-archived-lsn=5536301566
 
 This will prepare the backup up to the specified Log Sequence Number.
  

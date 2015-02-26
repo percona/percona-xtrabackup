@@ -17,9 +17,7 @@ If no mode is specified, |innobackupex| will assume the backup mode.
 
 By default, it starts :program:`xtrabackup` with the :option:`--suspend-at-end` option, and lets it copy the InnoDB data files. When :program:`xtrabackup` finishes that, :program:`innobackupex` sees it create the :file:`xtrabackup_suspended_2` file and executes ``FLUSH TABLES WITH READ LOCK``. Then it begins copying the rest of the files.
 
-If the :option:`--ibbackup` is not supplied, |innobackupex| will try to detect it: if the :file:`xtrabackup_binary` file exists on the backup directory, it reads from it which binary of |xtrabackup| will be used. Otherwise, it will try to connect to the database server in order to determine it. If the connection can't be established, |xtrabackup| will fail and you must specify it (see :ref:`ibk-right-binary`).
-
-When the binary is determined, the connection to the database server is checked. This is done by connecting, issuing a query, and closing the connection. If everything goes well, the binary is started as a child process.
+|innobackupex| will then check the connection to the database server. This is done by connecting, issuing a query, and closing the connection. If everything goes well, the binary is started as a child process.
 
 If it is not an incremental backup, it connects to the server. It waits for slaves in a replication setup if the option :option:`--safe-slave-backup` is set and will flush all tables with **READ LOCK**, preventing all |MyISAM| tables from writing (unless option :option:`--no-lock` is specified). 
 
