@@ -5485,7 +5485,7 @@ This option specifies the host to use when connecting to the database server wit
 
 =item --ibbackup=IBBACKUP-BINARY
 
-This option specifies which xtrabackup binary should be used.  The option accepts a string argument. IBBACKUP-BINARY should be the command used to run XtraBackup. The option can be useful if the xtrabackup binary is not in your search path or working directory. If this option is not specified, innobackupex attempts to determine the binary to use automatically. By default, "xtrabackup" is the command used. However, when option --copy-back is specified, "xtrabackup_51" is the command used. And when option --apply-log is specified, the binary is used whose name is in the file "xtrabackup_binary" in the backup directory, if that file exists.
+This option specifies which xtrabackup binary should be used.  The option accepts a string argument. IBBACKUP-BINARY should be the command used to run Percona XtraBackup. The option can be useful if the xtrabackup binary is not in your search path or working directory. If this option is not specified, innobackupex attempts to determine the binary to use automatically.
 
 =item --include=REGEXP
 
