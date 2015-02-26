@@ -12,7 +12,6 @@ Getting Started with |xtrabackup|
 .. toctree::
    :maxdepth: 1
 
-   choosing_binary
    configuring
 
 The Backup Cycle - Full Backups
