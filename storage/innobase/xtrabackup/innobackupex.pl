@@ -3050,6 +3050,19 @@ sub mysql_query {
   }
 }
 
+#
+# mysql_get_one_value subroutine gets single value from MySQL query.
+# Parameters:
+#    con       mysql connection
+#    query     query to execute
+#
+sub mysql_get_one_value {
+  my ($con, $query) = @_;
+
+  my $single_val = $con->{dbh}->selectrow_array($query);
+
+  return $single_val;
+}
 
 sub get_mysql_vars {
   mysql_query($_[0], 'SHOW VARIABLES')
@@ -4970,7 +4983,7 @@ sub detect_mysql_capabilities_for_backup {
 
     if ($option_incremental) {
         $have_changed_page_bitmaps =
-            mysql_query($con, "SELECT COUNT(*) FROM " .
+            mysql_get_one_value($con, "SELECT COUNT(*) FROM " .
                         "INFORMATION_SCHEMA.PLUGINS " .
                         "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
     }
