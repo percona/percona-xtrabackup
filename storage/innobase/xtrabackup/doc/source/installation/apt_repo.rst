@@ -17,6 +17,10 @@ Remember to update the local cache: ::
 
   $ apt-get update
 
+Now you can install |Percona XtraBackup| with: ::
+
+  $ apt-get install percona-xtrabackup
+
 Supported Architectures
 =======================
 
@@ -39,6 +43,7 @@ Ubuntu
  * 12.04LTS (precise) 
  * 13.10 (saucy)
  * 14.04LTS (trusty)
+ * 14.10 (utopic)
 
 .. _debian_experimental: 
 
