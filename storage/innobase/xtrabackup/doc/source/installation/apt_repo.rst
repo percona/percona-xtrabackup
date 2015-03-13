@@ -17,6 +17,10 @@ Remember to update the local cache: ::
 
   $ apt-get update
 
+Now you can install |Percona XtraBackup| with: ::
+
+  $ apt-get install percona-xtrabackup
+
 Supported Architectures
 =======================
 
