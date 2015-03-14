@@ -41,7 +41,7 @@ Options
 
 .. option:: --copy-back
 
-    Copy all the files in a previously made backup from the backup directory to their original locations.
+    Copy all the files in a previously made backup from the backup directory to their original locations. |Percona XtraBackup| :option:`innobackupex --copy-back` option will not copy over existing files unless :option:`innobackupex --force-non-empty-directories` option is specified.
 
 .. option:: --databases=LIST
 

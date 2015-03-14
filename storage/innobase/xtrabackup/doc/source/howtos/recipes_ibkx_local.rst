@@ -36,6 +36,10 @@ To restore the already-prepared backup, first stop the server and then use the :
 
 This will copy the prepared data back to its original location as defined by the ``datadir`` in your :term:`my.cnf`.
 
+.. note:: 
+
+   The :term:`datadir` must be empty; |Percona XtraBackup| :option:`innobackupex --copy-back` option will not copy over existing files unless :option:`innobackupex --force-non-empty-directories` option is specified. Also it's important to note that |MySQL| server needs to be shut down before restore is performed. You can't restore to a :term:`datadir` of a running mysqld instance (except when importing a partial backup).  
+
 After the confirmation message::
 
   100313 02:58:44  innobackupex: completed OK!
