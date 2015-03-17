@@ -1780,7 +1780,6 @@ sub decrypt_decompress_file {
   }
   print STDERR "$prefix $file_cmd\n";
   system("$file_cmd") && die "$file_cmd failed with $!";
-  system("rm -f $file");
 }
 
 #
