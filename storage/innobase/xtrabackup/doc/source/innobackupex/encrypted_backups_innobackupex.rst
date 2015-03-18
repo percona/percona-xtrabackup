@@ -23,21 +23,19 @@ To make an encrypted backup following options need to be specified (options :opt
 
 Both :option:`--encrypt-key` option  and :option:`--encrypt-key-file` option can be used to specify the encryption key. Encryption key can be generated with command like: ::
   
-  $ openssl enc -aes-256-cbc -pass pass:Password -P -md sha1
+  $ openssl rand -base64 24
 
-Output of that command should look like this: :: 
+Example output of that command should look like this: :: 
 
-  salt=9464A264486EEC69
-  key=DDD3A1B6BC90B9A9B631913CF30E0336A2571BA854E2D65CF92A6D0BDBCBB251
-  iv =A1EDC73815467C083B0869508406637E
+  GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs
 
-In this case we can use ``iv`` value as key.
+This value then can be used as the encryption key
 
 Using the :option:`--encrypt-key` option
 -----------------------------------------
 Example of the innobackupex command using the :option:`--encrypt-key` should look like this ::
 
-  $ innobackupex --encrypt=AES256 --encrypt-key="A1EDC73815467C083B0869508406637E" /data/backups
+  $ innobackupex --encrypt=AES256 --encrypt-key="GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs" /data/backups
 
 
 Using the :option:`--encrypt-key-file` option
@@ -48,7 +46,7 @@ Example of the innobackupex command using the :option:`--encrypt-key-file` shoul
 
 .. note::
 
-  Depending on the text editor used for making the ``KEYFILE``, text file in some cases can contain the CRLF and this will cause the key size to grow and thus making it invalid. Suggested way to do this would be to create the file with: ``echo -n "A1EDC73815467C083B0869508406637E" > /data/backups/keyfile``
+  Depending on the text editor used for making the ``KEYFILE``, text file in some cases can contain the CRLF and this will cause the key size to grow and thus making it invalid. Suggested way to do this would be to create the file with: ``echo -n "GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs" > /data/backups/keyfile``
 
 
 Both of these examples will create a timestamped directory in :file:`/data/backups` containing the encrypted backup.
@@ -71,7 +69,7 @@ Backups can be decrypted with :ref:`xbcrypt`. Following one-liner can be used to
 
 In |Percona XtraBackup| 2.1.4 new :option:`innobackupex --decrypt` option has been implemented that can be used to decrypt the backups: ::
 
-  $ innobackupex --decrypt=AES256 --encrypt-key="A1EDC73815467C083B0869508406637E" /data/backups/2013-08-01_08-31-35/
+  $ innobackupex --decrypt=AES256 --encrypt-key="GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs" /data/backups/2015-03-18_08-31-35/
 
 Use of the :option:`innobackupex --decrypt` will remove the original encrypted files and leave the results in the same location.
 
@@ -86,7 +84,7 @@ Preparing Encrypted Backups
 
 After the backups have been decrypted, they can be prepared the same way as the standard full backups with the :option:`--apply-logs` option: :: 
 
-  $ innobackupex --apply-log /data/backups/2013-08-01_08-31-35/
+  $ innobackupex --apply-log /data/backups/2015-03-18_08-31-35/
 
 Restoring Encrypted Backups
 =============================
@@ -98,7 +96,7 @@ Restoring Encrypted Backups
 It will copy all the data-related files back to the server's :term:`datadir`, determined by the server's :file:`my.cnf` configuration file. You should check the last line of the output for a success message::
 
   innobackupex: Finished copying back files.
-  130801 11:08:13  innobackupex: completed OK!
+  150318 11:08:13  innobackupex: completed OK!
 
 Other Reading
 =============
