@@ -6,8 +6,8 @@
 #                       Use this to set special options that influence 
 #                       incremental backups, e.g. turns on log archiving or 
 #                       changed page bitmap output.
-#    first_inc_suspend_command: if non-empty string, passes --suspend-at-start 
-#                               to incremental XB invocation and executes the 
+#    first_inc_suspend_command: if non-empty string, suspends incremental XB
+#                               invocation at start and executes the 
 #                               given command while it's suspended
 
 . inc/common.sh
@@ -106,7 +106,7 @@ incremental_sample`
 
   if [ -n "$first_inc_suspend_command" ]
   then
-      suspend_arg="--suspend_at_start";
+      suspend_arg="--debug-sync=xtrabackup_suspend_at_start";
   else
       suspend_arg="";
   fi
@@ -120,10 +120,10 @@ incremental_sample`
 
   if [ -n "$first_inc_suspend_command" ]
   then
-      wait_for_xb_to_suspend $topdir/data/delta/xtrabackup_suspended_1
+      wait_for_xb_to_suspend $topdir/data/delta/xtrabackup_debug_sync
       ${MYSQL} ${MYSQL_ARGS} -e "$first_inc_suspend_command"
 
-      resume_suspended_xb $topdir/data/delta/xtrabackup_suspended_1
+      resume_suspended_xb $topdir/data/delta/xtrabackup_debug_sync
   fi
 
   wait $xb_pid

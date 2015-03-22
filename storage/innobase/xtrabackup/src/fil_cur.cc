@@ -46,7 +46,6 @@ For user tablespaces both "./database/table.ibd" and
 
 For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
 and "./ibdata1" yield "ibdata1" in the output. */
-static
 const char *
 xb_get_relative_path(
 /*=================*/

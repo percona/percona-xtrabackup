@@ -4,6 +4,11 @@
 
 . inc/common.sh
 
+if [ ${ASAN_OPTIONS:-undefined} != "undefined" ]
+then
+    skip_test "Incompatible with AddressSanitizer"
+fi
+
 function bg_run()
 {
     local varname=$1
@@ -24,7 +29,7 @@ function bg_run()
 function mysql_select()
 {
     vlog "Run select query with duration $1 seconds"
-    ${MYSQL} ${MYSQL_ARGS} -c test  2> /dev/null <<EOF
+    ${MYSQL} ${MYSQL_ARGS} -c test  <<EOF
         /* Run background /*SELECT*\  */
         (
          SELECT SLEEP($1) FROM t1 FOR UPDATE
@@ -38,7 +43,7 @@ EOF
 function mysql_update()
 {
     vlog "Run update query with duration $1 seconds"
-    ${MYSQL} ${MYSQL_ARGS} -c test 2> /dev/null <<EOF
+    ${MYSQL} ${MYSQL_ARGS} -c test <<EOF
         /* This is not SELECT but rather an /*UPDATE*\
         query  */
         UPDATE t1 SET a = SLEEP($1);
@@ -73,7 +78,7 @@ function kill_all_queries()
   # between SELECT and killall
   run_cmd $MYSQL $MYSQL_ARGS --force --batch  test <<EOF
   select concat('KILL ',id,';') from information_schema.processlist
-  where user='root' and time > 2 into outfile '$MYSQLD_TMPDIR/killall.sql';
+  where user='root' and time > 1 into outfile '$MYSQLD_TMPDIR/killall.sql';
   source $MYSQLD_TMPDIR/killall.sql;
 EOF
   rm -f $MYSQLD_TMPDIR/killall.sql
@@ -170,10 +175,13 @@ bg_run bg_select_pid "mysql_select 200"
 bg_run bg_update_pid "mysql_update 200"
 wait_for_connection_count 2
 
+# sleep at least --ftwrl-wait-threshold seconds
+sleep 1
+
 run_cmd_expect_failure ${IB_BIN} ${IB_ARGS} $topdir/full \
                           --ftwrl-wait-timeout=3 \
                           --ftwrl-wait-query-type=update \
-                          --ftwrl-wait-threshold=2 \
+                          --ftwrl-wait-threshold=1 \
                           --kill-long-queries-timeout=1 \
                           --kill-long-query-type=all
 
@@ -189,10 +197,13 @@ wait_for_connection_count 1
 bg_run bg_select_pid "mysql_select 200"
 wait_for_connection_count 2
 
+# sleep at least --ftwrl-wait-threshold seconds
+sleep 1
+
 innobackupex $topdir/full \
                           --ftwrl-wait-timeout=6 \
                           --ftwrl-wait-query-type=update \
-                          --ftwrl-wait-threshold=2 \
+                          --ftwrl-wait-threshold=1 \
                           --kill-long-queries-timeout=1 \
                           --kill-long-query-type=all
 
