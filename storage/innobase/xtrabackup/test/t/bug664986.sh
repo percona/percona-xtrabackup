@@ -4,6 +4,8 @@
 
 . inc/common.sh
 
+[[ $EUID -eq 0 ]] && skip_test "Can not be run by root"
+
 start_server --innodb_file_per_table
 
 run_cmd $MYSQL $MYSQL_ARGS <<EOF

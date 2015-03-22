@@ -41,11 +41,10 @@ Ubuntu
 
  * 10.04LTS (lucid)
  * 12.04LTS (precise) 
- * 13.10 (saucy)
  * 14.04LTS (trusty)
  * 14.10 (utopic)
 
-.. _debian_experimental: 
+.. _debian_testing: 
 
 Percona `apt` Testing repository
 =================================

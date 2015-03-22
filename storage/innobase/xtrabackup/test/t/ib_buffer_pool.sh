@@ -21,8 +21,9 @@ mkdir $mysql_datadir/pool
 # produce buffer pool dump
 ${MYSQL} ${MYSQL_ARGS} -e "SET GLOBAL innodb_buffer_pool_dump_now=ON;"
 
-# take a backup
+# take a backup and apply log
 innobackupex --no-timestamp $topdir/backup
+innobackupex --apply-log $topdir/backup
 
 if [ -f $topdir/backup/pool/dump ] ; then
     vlog "Buffer pool dump has been backed up"

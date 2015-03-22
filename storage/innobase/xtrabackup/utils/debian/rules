@@ -27,6 +27,7 @@ else
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup_56
 	echo 'main() { return 300; }' | gcc -x c - -o xbstream
 	echo 'main() { return 300; }' | gcc -x c - -o xbcrypt
+	echo 'main() { return 300; }' | gcc -x c - -o xbcloud
 endif
 
 	#docbook-to-man debian/xtrabackup.sgml > xtrabackup.1
@@ -34,7 +35,7 @@ override_dh_auto_build:
 	make -j$(NCPU)
 
 override_dh_strip:
-	dh_strip --dbg-package=percona-xtrabackup-dbg
+	dh_strip --dbg-package=percona-xtrabackup-dbg-23
 
 %:
 	dh $@
