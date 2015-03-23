@@ -6039,11 +6039,13 @@ next_node:
 	       && srv_start_lsn < metadata_last_lsn)) {
 		msg(
 "xtrabackup: ########################################################\n"
-"xtrabackup: # !!WARNING!!                                          #\n"
+"xtrabackup: # !!ERROR!!                                            #\n"
 "xtrabackup: # The transaction log file is corrupted.               #\n"
 "xtrabackup: # The log was not applied to the intended LSN!         #\n"
 "xtrabackup: ########################################################\n"
 		    );
+		msg("xtrabackup: Log applied to lsn " LSN_PF "\n",
+		    srv_start_lsn);
 		if (xtrabackup_incremental) {
 			msg("xtrabackup: The intended lsn is " LSN_PF "\n",
 			    incremental_last_lsn);
@@ -6051,6 +6053,7 @@ next_node:
 			msg("xtrabackup: The intended lsn is " LSN_PF "\n",
 			    metadata_last_lsn);
 		}
+		exit(EXIT_FAILURE);
 	}
 
 	xb_write_galera_info();
