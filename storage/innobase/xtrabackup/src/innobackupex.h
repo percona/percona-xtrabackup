@@ -42,31 +42,4 @@ ibx_init();
 void
 ibx_cleanup();
 
-bool
-ibx_select_history();
-
-bool
-ibx_flush_changed_page_bitmaps();
-
-bool
-ibx_backup_start();
-
-bool
-ibx_backup_finish();
-
-bool
-ibx_apply_log_finish();
-
-bool
-ibx_copy_back();
-
-bool
-ibx_decrypt_decompress();
-
-void
-ibx_capture_tool_command(int argc, char **argv);
-
-void
-ibx_completed_ok();
-
 #endif

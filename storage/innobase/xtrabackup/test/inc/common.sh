@@ -379,10 +379,6 @@ function stop_server_with_id()
         vlog "Server PID file '${MYSQLD_PIDFILE}' doesn't exist!"
     fi
 
-    # Reset XB_ARGS so we can call xtrabackup in tests even without starting the
-    # server
-    XB_ARGS="--no-defaults"
-
     # unlock the port number
     free_reserved_port $MYSQLD_PORT
 

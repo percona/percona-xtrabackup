@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2014 Percona LLC and/or its affiliates
+(c) 2009-2015 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -87,6 +87,9 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "read_filt.h"
 #include "wsrep.h"
 #include "innobackupex.h"
+#include "backup_mysql.h"
+#include "backup_copy.h"
+#include "backup_mysql.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT	10
@@ -331,6 +334,46 @@ static ulonglong global_max_value;
 
 extern "C" sig_handler handle_fatal_signal(int sig);
 
+my_bool opt_galera_info = FALSE;
+my_bool opt_slave_info = FALSE;
+my_bool opt_no_lock = FALSE;
+my_bool opt_safe_slave_backup = FALSE;
+my_bool opt_rsync = FALSE;
+my_bool opt_force_non_empty_dirs = FALSE;
+my_bool opt_noversioncheck = FALSE;
+my_bool opt_no_backup_locks = FALSE;
+my_bool opt_decompress = FALSE;
+
+char *opt_incremental_history_name = NULL;
+char *opt_incremental_history_uuid = NULL;
+
+char *opt_user = NULL;
+char *opt_password = NULL;
+char *opt_host = NULL;
+char *opt_defaults_group = NULL;
+char *opt_socket = NULL;
+uint opt_port = 0;
+char *opt_login_path = NULL;
+
+const char *query_type_names[] = { "ALL", "UPDATE", "SELECT", NullS};
+
+TYPELIB query_type_typelib= {array_elements(query_type_names) - 1, "",
+	query_type_names, NULL};
+
+ulong opt_lock_wait_query_type;
+ulong opt_kill_long_query_type;
+
+ulong opt_decrypt_algo = 0;
+
+uint opt_kill_long_queries_timeout = 0;
+uint opt_lock_wait_timeout = 0;
+uint opt_lock_wait_threshold = 0;
+uint opt_debug_sleep_before_unlock = 0;
+uint opt_safe_slave_backup_timeout = 0;
+
+const char *opt_history = NULL;
+bool opt_decrypt = false;
+
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
 #define XTRABACKUP_MAX_DATASINKS	10
@@ -507,7 +550,35 @@ enum options_xtrabackup
   OPT_DEFAULTS_GROUP,
   OPT_OPEN_FILES_LIMIT,
   OPT_CLOSE_FILES,
-  OPT_CORE_FILE
+  OPT_CORE_FILE,
+
+  OPT_COPY_BACK,
+  OPT_MOVE_BACK,
+  OPT_GALERA_INFO,
+  OPT_SLAVE_INFO,
+  OPT_NO_LOCK,
+  OPT_SAFE_SLAVE_BACKUP,
+  OPT_RSYNC,
+  OPT_FORCE_NON_EMPTY_DIRS,
+  OPT_NO_VERSION_CHECK,
+  OPT_NO_BACKUP_LOCKS,
+  OPT_DECOMPRESS,
+  OPT_USER,
+  OPT_HOST,
+  OPT_PORT,
+  OPT_PASSWORD,
+  OPT_SOCKET,
+  OPT_INCREMENTAL_HISTORY_NAME,
+  OPT_INCREMENTAL_HISTORY_UUID,
+  OPT_DECRYPT,
+  OPT_LOCK_WAIT_QUERY_TYPE,
+  OPT_KILL_LONG_QUERY_TYPE,
+  OPT_HISTORY,
+  OPT_KILL_LONG_QUERIES_TIMEOUT,
+  OPT_LOCK_WAIT_TIMEOUT,
+  OPT_LOCK_WAIT_THRESHOLD,
+  OPT_DEBUG_SLEEP_BEFORE_UNLOCK,
+  OPT_SAFE_SLAVE_BACKUP_TIMEOUT
 };
 
 struct my_option xb_long_options[] =
@@ -870,6 +941,231 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   {"core-file", OPT_CORE_FILE, "Write core on fatal signals", 0, 0, 0,
    GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+
+  {"copy-back", OPT_COPY_BACK, "Copy all the files in a previously made "
+   "backup from the backup directory to their original locations.",
+   (uchar *) &xtrabackup_copy_back, (uchar *) &xtrabackup_copy_back, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"move-back", OPT_MOVE_BACK, "Move all the files in a previously made "
+   "backup from the backup directory to the actual datadir location. "
+   "Use with caution, as it removes backup files.",
+   (uchar *) &xtrabackup_move_back, (uchar *) &xtrabackup_move_back, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"galera-info", OPT_GALERA_INFO, "This options creates the "
+   "xtrabackup_galera_info file which contains the local node state at "
+   "the time of the backup. Option should be used when performing the "
+   "backup of Percona-XtraDB-Cluster. Has no effect when backup locks "
+   "are used to create the backup.",
+   (uchar *) &opt_galera_info, (uchar *) &opt_galera_info, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"slave-info", OPT_SLAVE_INFO, "This option is useful when backing "
+   "up a replication slave server. It prints the binary log position "
+   "and name of the master server. It also writes this information to "
+   "the \"xtrabackup_slave_info\" file as a \"CHANGE MASTER\" command. "
+   "A new slave for this master can be set up by starting a slave server "
+   "on this backup and issuing a \"CHANGE MASTER\" command with the "
+   "binary log position saved in the \"xtrabackup_slave_info\" file.",
+   (uchar *) &opt_slave_info, (uchar *) &opt_slave_info, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"no-lock", OPT_NO_LOCK, "Use this option to disable table lock "
+   "with \"FLUSH TABLES WITH READ LOCK\". Use it only if ALL your "
+   "tables are InnoDB and you DO NOT CARE about the binary log "
+   "position of the backup. This option shouldn't be used if there "
+   "are any DDL statements being executed or if any updates are "
+   "happening on non-InnoDB tables (this includes the system MyISAM "
+   "tables in the mysql database), otherwise it could lead to an "
+   "inconsistent backup. If you are considering to use --no-lock "
+   "because your backups are failing to acquire the lock, this could "
+   "be because of incoming replication events preventing the lock "
+   "from succeeding. Please try using --safe-slave-backup to "
+   "momentarily stop the replication slave thread, this may help "
+   "the backup to succeed and you then don't need to resort to "
+   "using this option.",
+   (uchar *) &opt_no_lock, (uchar *) &opt_no_lock, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"safe-slave-backup", OPT_SAFE_SLAVE_BACKUP, "Stop slave SQL thread "
+   "and wait to start backup until Slave_open_temp_tables in "
+   "\"SHOW STATUS\" is zero. If there are no open temporary tables, "
+   "the backup will take place, otherwise the SQL thread will be "
+   "started and stopped until there are no open temporary tables. "
+   "The backup will fail if Slave_open_temp_tables does not become "
+   "zero after --safe-slave-backup-timeout seconds. The slave SQL "
+   "thread will be restarted when the backup finishes.",
+   (uchar *) &opt_safe_slave_backup,
+   (uchar *) &opt_safe_slave_backup,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"rsync", OPT_RSYNC, "Uses the rsync utility to optimize local file "
+   "transfers. When this option is specified, innobackupex uses rsync "
+   "to copy all non-InnoDB files instead of spawning a separate cp for "
+   "each file, which can be much faster for servers with a large number "
+   "of databases or tables.  This option cannot be used together with "
+   "--stream.",
+   (uchar *) &opt_rsync, (uchar *) &opt_rsync,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"force-non-empty-directories", OPT_FORCE_NON_EMPTY_DIRS, "This "
+   "option, when specified, makes --copy-back or --move-back transfer "
+   "files to non-empty directories. Note that no existing files will be "
+   "overwritten. If --copy-back or --nove-back has to copy a file from "
+   "the backup directory which already exists in the destination "
+   "directory, it will still fail with an error.",
+   (uchar *) &opt_force_non_empty_dirs,
+   (uchar *) &opt_force_non_empty_dirs,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"no-version-check", OPT_NO_VERSION_CHECK, "This option disables the "
+   "version check which is enabled by the --version-check option.",
+   (uchar *) &opt_noversioncheck,
+   (uchar *) &opt_noversioncheck,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"no-backup-locks", OPT_NO_BACKUP_LOCKS, "This option controls if "
+   "backup locks should be used instead of FLUSH TABLES WITH READ LOCK "
+   "on the backup stage. The option has no effect when backup locks are "
+   "not supported by the server. This option is enabled by default, "
+   "disable with --no-backup-locks.",
+   (uchar *) &opt_no_backup_locks,
+   (uchar *) &opt_no_backup_locks,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"decompress", OPT_DECOMPRESS, "Decompresses all files with the .qp "
+   "extension in a backup previously made with the --compress option.",
+   (uchar *) &opt_decompress,
+   (uchar *) &opt_decompress,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"user", OPT_USER, "This option specifies the MySQL username used "
+   "when connecting to the server, if that's not the current user. "
+   "The option accepts a string argument. See mysql --help for details.",
+   (uchar*) &opt_user, (uchar*) &opt_user, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"host", OPT_HOST, "This option specifies the host to use when "
+   "connecting to the database server with TCP/IP.  The option accepts "
+   "a string argument. See mysql --help for details.",
+   (uchar*) &opt_host, (uchar*) &opt_host, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"port", OPT_PORT, "This option specifies the port to use when "
+   "connecting to the database server with TCP/IP.  The option accepts "
+   "a string argument. See mysql --help for details.",
+   &opt_port, &opt_port, 0, GET_UINT, REQUIRED_ARG,
+   0, 0, 0, 0, 0, 0},
+
+  {"password", OPT_PASSWORD, "This option specifies the password to use "
+   "when connecting to the database. It accepts a string argument.  "
+   "See mysql --help for details.",
+   (uchar*) &opt_password, (uchar*) &opt_password, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"socket", OPT_SOCKET, "This option specifies the socket to use when "
+   "connecting to the local database server with a UNIX domain socket.  "
+   "The option accepts a string argument. See mysql --help for details.",
+   (uchar*) &opt_socket, (uchar*) &opt_socket, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"incremental-history-name", OPT_INCREMENTAL_HISTORY_NAME,
+   "This option specifies the name of the backup series stored in the "
+   "PERCONA_SCHEMA.xtrabackup_history history record to base an "
+   "incremental backup on. Xtrabackup will search the history table "
+   "looking for the most recent (highest innodb_to_lsn), successful "
+   "backup in the series and take the to_lsn value to use as the "
+   "starting lsn for the incremental backup. This will be mutually "
+   "exclusive with --incremental-history-uuid, --incremental-basedir "
+   "and --incremental-lsn. If no valid lsn can be found (no series by "
+   "that name, no successful backups by that name) xtrabackup will "
+   "return with an error. It is used with the --incremental option.",
+   (uchar*) &opt_incremental_history_name,
+   (uchar*) &opt_incremental_history_name, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"incremental-history-uuid", OPT_INCREMENTAL_HISTORY_UUID,
+   "This option specifies the UUID of the specific history record "
+   "stored in the PERCONA_SCHEMA.xtrabackup_history to base an "
+   "incremental backup on. --incremental-history-name, "
+   "--incremental-basedir and --incremental-lsn. If no valid lsn can be "
+   "found (no success record with that uuid) xtrabackup will return "
+   "with an error. It is used with the --incremental option.",
+   (uchar*) &opt_incremental_history_uuid,
+   (uchar*) &opt_incremental_history_uuid, 0, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"decrypt", OPT_DECRYPT, "Decrypts all files with the .xbcrypt "
+   "extension in a backup previously made with --encrypt option.",
+   &opt_decrypt_algo, &opt_decrypt_algo,
+   &xtrabackup_encrypt_algo_typelib, GET_ENUM, REQUIRED_ARG,
+   0, 0, 0, 0, 0, 0},
+
+  {"ftwrl-wait-query-type", OPT_LOCK_WAIT_QUERY_TYPE,
+   "This option specifies which types of queries are allowed to complete "
+   "before innobackupex will issue the global lock. Default is all.",
+   (uchar*) &opt_lock_wait_query_type,
+   (uchar*) &opt_lock_wait_query_type, &query_type_typelib,
+   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_UPDATE, 0, 0, 0, 0, 0},
+
+  {"kill-long-query-type", OPT_KILL_LONG_QUERY_TYPE,
+   "This option specifies which types of queries should be killed to "
+   "unblock the global lock. Default is \"all\".",
+   (uchar*) &opt_kill_long_query_type,
+   (uchar*) &opt_kill_long_query_type, &query_type_typelib,
+   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_SELECT, 0, 0, 0, 0, 0},
+
+  {"history", OPT_HISTORY,
+   "This option enables the tracking of backup history in the "
+   "PERCONA_SCHEMA.xtrabackup_history table. An optional history "
+   "series name may be specified that will be placed with the history "
+   "record for the current backup being taken.",
+   NULL, NULL, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"kill-long-queries-timeout", OPT_KILL_LONG_QUERIES_TIMEOUT,
+   "This option specifies the number of seconds innobackupex waits "
+   "between starting FLUSH TABLES WITH READ LOCK and killing those "
+   "queries that block it. Default is 0 seconds, which means "
+   "innobackupex will not attempt to kill any queries.",
+   (uchar*) &opt_kill_long_queries_timeout,
+   (uchar*) &opt_kill_long_queries_timeout, 0, GET_UINT,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"ftwrl-wait-timeout", OPT_LOCK_WAIT_TIMEOUT,
+   "This option specifies time in seconds that innobackupex should wait "
+   "for queries that would block FTWRL before running it. If there are "
+   "still such queries when the timeout expires, innobackupex terminates "
+   "with an error. Default is 0, in which case innobackupex does not "
+   "wait for queries to complete and starts FTWRL immediately.",
+   (uchar*) &opt_lock_wait_timeout,
+   (uchar*) &opt_lock_wait_timeout, 0, GET_UINT,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"ftwrl-wait-threshold", OPT_LOCK_WAIT_THRESHOLD,
+   "This option specifies the query run time threshold which is used by "
+   "innobackupex to detect long-running queries with a non-zero value "
+   "of --ftwrl-wait-timeout. FTWRL is not started until such "
+   "long-running queries exist. This option has no effect if "
+   "--ftwrl-wait-timeout is 0. Default value is 60 seconds.",
+   (uchar*) &opt_lock_wait_threshold,
+   (uchar*) &opt_lock_wait_threshold, 0, GET_UINT,
+   REQUIRED_ARG, 60, 0, 0, 0, 0, 0},
+
+  {"debug-sleep-before-unlock", OPT_DEBUG_SLEEP_BEFORE_UNLOCK,
+   "This is a debug-only option used by the XtraBackup test suite.",
+   (uchar*) &opt_debug_sleep_before_unlock,
+   (uchar*) &opt_debug_sleep_before_unlock, 0, GET_UINT,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"safe-slave-backup-timeout", OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
+   "How many seconds --safe-slave-backup should wait for "
+   "Slave_open_temp_tables to become zero. (default 300)",
+   (uchar*) &opt_safe_slave_backup_timeout,
+   (uchar*) &opt_safe_slave_backup_timeout, 0, GET_UINT,
+   REQUIRED_ARG, 300, 0, 0, 0, 0, 0},
+
+
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1101,6 +1397,17 @@ xb_get_one_option(int optid,
       return 1;
     }
     xtrabackup_encrypt = TRUE;
+    break;
+  case OPT_DECRYPT:
+    if (argument == NULL) {
+      msg("Missing --decrypt argument, must specify a "
+          "valid encryption  algorithm.\n");
+      return(1);
+    }
+    xtrabackup_decrypt_decompress = true;
+    break;
+  case OPT_DECOMPRESS:
+    xtrabackup_decrypt_decompress = true;
     break;
   case (int) OPT_CORE_FILE:
     test_flags |= TEST_CORE_ON_SIGNAL;
@@ -3458,10 +3765,8 @@ reread_log_header:
 
 	xtrabackup_init_datasinks();
 
-	if (innobackupex_mode) {
-		if (!ibx_select_history()) {
-			exit(EXIT_FAILURE);
-		}
+	if (!select_history()) {
+		exit(EXIT_FAILURE);
 	}
 
 	/* open the log file */
@@ -3520,10 +3825,8 @@ reread_log_header:
 	}
 
 	/* FLUSH CHANGED_PAGE_BITMAPS call */
-	if (innobackupex_mode) {
-		if (!ibx_flush_changed_page_bitmaps()) {
-			exit(EXIT_FAILURE);
-		}
+	if (!flush_changed_page_bitmaps()) {
+		exit(EXIT_FAILURE);
 	}
 	debug_sync_point("xtrabackup_suspend_at_start");
 
@@ -3589,10 +3892,8 @@ reread_log_header:
 	}
 	}
 
-	if (innobackupex_mode) {
-		if (!ibx_backup_start()) {
-			exit(EXIT_FAILURE);
-		}
+	if (!backup_start()) {
+		exit(EXIT_FAILURE);
 	}
 
 	/* read the latest checkpoint lsn */
@@ -3661,10 +3962,8 @@ skip_last_cp:
 
 	}
 
-	if (innobackupex_mode) {
-		if (!ibx_backup_finish()) {
-			exit(EXIT_FAILURE);
-		}
+	if (!backup_finish()) {
+		exit(EXIT_FAILURE);
 	}
 
 	xtrabackup_destroy_datasinks();
@@ -4094,6 +4393,8 @@ skip:
 
 end:
 	putc('\n', stdout);
+
+	fflush(stdout);
 
 	xb_filters_free();
 
@@ -5738,7 +6039,7 @@ skip_check:
 		  Unfinished transactions are not rolled back during log applying
 		  as they can be finished at the firther files applyings.
 		*/
-		srv_apply_log_only = TRUE;
+		srv_apply_log_only = xtrabackup_apply_log_only = TRUE;
 
 		if (!xtrabackup_arch_search_files(min_flushed_lsn)) {
 			goto error_cleanup;
@@ -6047,7 +6348,7 @@ next_node:
 		}
 	}
 
-	if (!ibx_apply_log_finish()) {
+	if (!apply_log_finish()) {
 		exit(EXIT_FAILURE);
 	}
 
@@ -6063,7 +6364,7 @@ next_node:
 
 	/* start InnoDB once again to create log files */
 
-	if (innobackupex_mode && !xtrabackup_apply_log_only) {
+	if (!xtrabackup_apply_log_only) {
 
 		if(innodb_init_param()) {
 			goto error;
@@ -6151,6 +6452,74 @@ append_defaults_group(const char *group)
 	ut_a(appended);
 }
 
+bool
+xb_init()
+{
+	const char *mixed_options[4] = {NULL, NULL, NULL, NULL};
+	int n_mixed_options;
+
+	/* sanity checks */
+
+	if (opt_slave_info
+		&& opt_no_lock
+		&& !opt_safe_slave_backup) {
+		msg("Error: --slave-info is used with --no-lock but "
+			"without --safe-slave-backup. The binlog position "
+			"cannot be consistent with the backup data.\n");
+		return(false);
+	}
+
+	if (opt_rsync && xtrabackup_stream_fmt) {
+		msg("Error: --rsync doesn't work with --stream\n");
+		return(false);
+	}
+
+	n_mixed_options = 0;
+
+	if (opt_decompress) {
+		mixed_options[n_mixed_options++] = "--decompress";
+	} else if (opt_decrypt) {
+		mixed_options[n_mixed_options++] = "--decrypt";
+	}
+
+	if (xtrabackup_copy_back) {
+		mixed_options[n_mixed_options++] = "--copy-back";
+	}
+
+	if (xtrabackup_move_back) {
+		mixed_options[n_mixed_options++] = "--move-back";
+	}
+
+	if (xtrabackup_prepare) {
+		mixed_options[n_mixed_options++] = "--apply-log";
+	}
+
+	if (n_mixed_options > 1) {
+		msg("Error: %s and %s are mutually exclusive\n",
+			mixed_options[0], mixed_options[1]);
+		return(false);
+	}
+
+	if (xtrabackup_backup) {
+		if ((mysql_connection = xb_mysql_connect()) == NULL) {
+			return(false);
+		}
+
+		if (!get_mysql_vars(mysql_connection)) {
+			return(false);
+		}
+
+		if (!detect_mysql_capabilities_for_backup()) {
+			return(false);
+		}
+
+		history_start_time = time(NULL);
+
+	}
+
+	return(true);
+}
+
 /* ================= main =================== */
 
 int main(int argc, char **argv)
@@ -6163,7 +6532,7 @@ int main(int argc, char **argv)
 	MY_INIT(argv[0]);
 	xb_regex_init();
 
-	ibx_capture_tool_command(argc, argv);
+	capture_tool_command(argc, argv);
 
 	if (mysql_server_init(-1, NULL, NULL))
 	{
@@ -6311,8 +6680,16 @@ int main(int argc, char **argv)
 		incremental_last_lsn = metadata_last_lsn;
 		xtrabackup_incremental = xtrabackup_incremental_dir; //dummy
 
+	} else if (opt_incremental_history_name) {
+		xtrabackup_incremental = opt_incremental_history_name;
+	} else if (opt_incremental_history_uuid) {
+		xtrabackup_incremental = opt_incremental_history_uuid;
 	} else {
 		xtrabackup_incremental = NULL;
+	}
+
+	if (!xb_init()) {
+		exit(EXIT_FAILURE);
 	}
 
 	/* --print-param */
@@ -6398,13 +6775,15 @@ int main(int argc, char **argv)
 		xtrabackup_prepare_func();
 
 	if ((xtrabackup_copy_back || xtrabackup_move_back)
-	    && !ibx_copy_back()) {
+	    && !copy_back()) {
 		exit(EXIT_FAILURE);
 	}
 
-	if (xtrabackup_decrypt_decompress && !ibx_decrypt_decompress()) {
+	if (xtrabackup_decrypt_decompress && !decrypt_decompress()) {
 		exit(EXIT_FAILURE);
 	}
+
+	backup_cleanup();
 
 	if (innobackupex_mode) {
 		ibx_cleanup();
@@ -6412,9 +6791,7 @@ int main(int argc, char **argv)
 
 	xb_regex_end();
 
-	if (innobackupex_mode) {
-		ibx_completed_ok();
-	}
+	msg("completed OK!\n");
 
         free_defaults(argv_defaults);
 

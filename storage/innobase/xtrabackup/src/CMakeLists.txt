@@ -68,6 +68,8 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbcrypt_common.c
   xbcrypt_write.c
   xbstream_write.c
+  backup_mysql.cc
+  backup_copy.cc
   )
 
 SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)

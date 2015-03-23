@@ -10,7 +10,7 @@ options="innodb_data_file_path"
 
 mkdir -p $topdir/backup
 innobackupex  $topdir/backup
-backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
+backup_dir=`grep "Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 vlog "Backup created in directory $backup_dir"
 
 # test presence of options

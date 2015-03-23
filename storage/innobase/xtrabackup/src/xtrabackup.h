@@ -126,6 +126,48 @@ extern char		*xtrabackup_stream_str;
 extern long		xtrabackup_throttle;
 extern longlong		xtrabackup_use_memory;
 
+extern my_bool		opt_galera_info;
+extern my_bool		opt_slave_info;
+extern my_bool		opt_no_lock;
+extern my_bool		opt_safe_slave_backup;
+extern my_bool		opt_rsync;
+extern my_bool		opt_force_non_empty_dirs;
+extern my_bool		opt_noversioncheck;
+extern my_bool		opt_no_backup_locks;
+extern my_bool		opt_decompress;
+
+extern char		*opt_incremental_history_name;
+extern char		*opt_incremental_history_uuid;
+
+extern char		*opt_user;
+extern char		*opt_password;
+extern char		*opt_host;
+extern char		*opt_defaults_group;
+extern char		*opt_socket;
+extern uint		opt_port;
+extern char		*opt_login_path;
+
+extern const char 	*query_type_names[];
+
+enum query_type_t {QUERY_TYPE_ALL, QUERY_TYPE_UPDATE,
+			QUERY_TYPE_SELECT};
+
+extern TYPELIB		query_type_typelib;
+
+extern ulong		opt_lock_wait_query_type;
+extern ulong		opt_kill_long_query_type;
+
+extern ulong		opt_decrypt_algo;
+
+extern uint		opt_kill_long_queries_timeout;
+extern uint		opt_lock_wait_timeout;
+extern uint		opt_lock_wait_threshold;
+extern uint		opt_debug_sleep_before_unlock;
+extern uint		opt_safe_slave_backup_timeout;
+
+extern const char	*opt_history;
+extern bool		opt_decrypt;
+
 void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,
 				const xb_delta_info_t *info);
