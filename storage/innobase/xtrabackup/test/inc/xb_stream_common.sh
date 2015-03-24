@@ -1,12 +1,13 @@
 ############################################################################
-# Common code for xb_*.sh local backup tests.
-# Expects the following variables to be set appropriately before
+# Common code for xb_stream_*.sh tests.
+# Expects the following variables to be set appropriately before 
 # including:
+#   stream_format: passed to the --stream xtrabackup option
+#   stream_extract_cmd: shell command to be used to extract the stream
 #
 # Optionally the following variables may be set:
 #   xtrabackup_option:  additional options to be passed to xtrabackup.
-#   data_decrypt_cmd: command used to decrypt data
-#   data_decompress_cmd: command used to decompress data
+#   stream_uncompress_cmd: command used to uncompress data streamed data
 ############################################################################
 
 . inc/common.sh
@@ -17,28 +18,30 @@ load_dbase_schema sakila
 load_dbase_data sakila
 
 xtrabackup_options=${xtrabackup_options:-""}
-xtrabackup_options="${xtrabackup_options} --no-timestamp"
 
 # Take backup
-backup_dir=${topdir}/backup
-xtrabackup $xtrabackup_options --backup --target-dir=$backup_dir
-vlog "Backup created in directory $backup_dir"
+mkdir -p $topdir/backup
+xtrabackup --backup --stream=$stream_format $xtrabackup_options --target-dir=$topdir/backup > $topdir/backup/out
 
 stop_server
+
 # Remove datadir
 rm -r $mysql_datadir
 
 # Restore sakila
-vlog "Applying log"
+vlog "#####################"
+vlog "# EXTRACTING STREAM #"
+vlog "#####################"
+backup_dir=$topdir/backup
 cd $backup_dir
-if [ -n "${data_decrypt_cmd:=""}" ] || [ -n "${data_decompress_cmd:=""}" ]; then 
-  vlog "###################################"
-  vlog "# DECRYPTING AND/OR DECOMPRESSING #"
-  vlog "###################################"
-  test -n "${data_decrypt_cmd:=""}" && run_cmd bash -c "$data_decrypt_cmd"
-  test -n "${data_decompress_cmd:-""}" && run_cmd bash -c "$data_decompress_cmd";
+run_cmd bash -c "$stream_extract_cmd out"
+if [ -n "${stream_uncompress_cmd:=""}" ]; then 
+  vlog "################################"
+  vlog "# DECRYPTING AND DECOMPRESSING #"
+  vlog "################################"
+  run_cmd bash -c "$stream_uncompress_cmd";
 fi
-cd - >/dev/null 2>&1
+cd - >/dev/null 2>&1 
 vlog "###########"
 vlog "# PREPARE #"
 vlog "###########"
@@ -56,5 +59,7 @@ run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila
 ########################################################################
 # Bug #1217426: Empty directory is not backed when stream is used
 ########################################################################
+
+# Check if the 'test' database is accessible by the server
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "CREATE TABLE t(a INT)" test
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT * FROM t" test

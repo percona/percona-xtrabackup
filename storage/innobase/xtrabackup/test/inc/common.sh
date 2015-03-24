@@ -10,6 +10,11 @@ function xtrabackup()
     run_cmd $XB_BIN $XB_ARGS "$@"
 }
 
+function mysql()
+{
+    run_cmd $MYSQL $MYSQL_ARGS "$@"
+}
+
 function vlog
 {
     echo "`date +"%F %T"`: `basename "$0"`: $@" >&2
@@ -239,7 +244,7 @@ function switch_server()
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
     fi
 
-    IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf --ibbackup=$XB_BIN \
+    IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf \
 --no-version-check ${IB_EXTRA_OPTS:-}"
     XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf"
 
@@ -373,10 +378,6 @@ function stop_server_with_id()
     else
         vlog "Server PID file '${MYSQLD_PIDFILE}' doesn't exist!"
     fi
-
-    # Reset XB_ARGS so we can call xtrabackup in tests even without starting the
-    # server
-    XB_ARGS="--no-defaults"
 
     # unlock the port number
     free_reserved_port $MYSQLD_PORT
@@ -624,7 +625,7 @@ function resume_suspended_xb()
 {
     local file=$1
     echo "Removing $file"
-    rm -f $file
+    kill -SIGCONT `cat $file`
 }
 
 ########################################################################
