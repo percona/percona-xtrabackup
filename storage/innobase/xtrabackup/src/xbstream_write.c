@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xbstream.h"
 
 /* Group writes smaller than this into a single chunk */
-#define XB_STREAM_MIN_CHUNK_SIZE (64 * 1024)
+#define XB_STREAM_MIN_CHUNK_SIZE (10 * 1024 * 1024)
 
 struct xb_wstream_struct {
 	pthread_mutex_t	mutex;

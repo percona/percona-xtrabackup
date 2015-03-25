@@ -30,6 +30,12 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 /* Chunk can be ignored if unknown version/format */
 #define XB_STREAM_FLAG_IGNORABLE 0x01
 
+/* Magic + flags + type + path len */
+#define CHUNK_HEADER_CONSTANT_LEN ((sizeof(XB_STREAM_CHUNK_MAGIC) - 1) + \
+				   1 + 1 + 4)
+#define CHUNK_TYPE_OFFSET (sizeof(XB_STREAM_CHUNK_MAGIC) - 1 + 1)
+#define PATH_LENGTH_OFFSET (sizeof(XB_STREAM_CHUNK_MAGIC) - 1 + 1 + 1)
+
 typedef struct xb_wstream_struct xb_wstream_t;
 
 typedef struct xb_wstream_file_struct xb_wstream_file_t;

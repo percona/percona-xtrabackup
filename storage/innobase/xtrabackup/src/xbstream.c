@@ -28,7 +28,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ds_stdout.h"
 
 #define XBSTREAM_VERSION "1.0"
-#define XBSTREAM_BUFFER_SIZE (1024 * 1024UL)
+#define XBSTREAM_BUFFER_SIZE (10 * 1024 * 1024UL)
 
 #define START_FILE_HASH_SIZE 16
 
@@ -207,18 +207,21 @@ static
 int
 stream_one_file(File file, xb_wstream_file_t *xbfile)
 {
-	uchar	buf[XBSTREAM_BUFFER_SIZE];
+	uchar	*buf;
 	size_t	bytes;
 	size_t	offset;
 
 	posix_fadvise(file, 0, 0, POSIX_FADV_SEQUENTIAL);
 	offset = my_tell(file, MYF(MY_WME));
 
+	buf = (uchar*)(my_malloc(XBSTREAM_BUFFER_SIZE, MYF(MY_FAE)));
+
 	while ((bytes = my_read(file, buf, XBSTREAM_BUFFER_SIZE,
 				MYF(MY_WME))) > 0) {
 		if (xb_stream_write_data(xbfile, buf, bytes)) {
 			msg("%s: xb_stream_write_data() failed.\n",
 			    my_progname);
+			my_free(buf);
 			return 1;
 		}
 		posix_fadvise(file, offset, XBSTREAM_BUFFER_SIZE,
@@ -226,6 +229,8 @@ stream_one_file(File file, xb_wstream_file_t *xbfile)
 		offset += XBSTREAM_BUFFER_SIZE;
 
 	}
+
+	my_free(buf);
 
 	if (bytes == (size_t) -1) {
 		return 1;
