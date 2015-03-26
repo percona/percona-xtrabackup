@@ -86,6 +86,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test
 
 %changelog
+* Thu Mar 26 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Update to new release Percona XtraBackup 2.2.10
+
 * Fri Feb 13 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Included man pages in packages
 - Update to new release Percona XtraBackup 2.2.9
