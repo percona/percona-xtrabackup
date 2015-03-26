@@ -8,7 +8,7 @@
 #####################################
 Name:           percona-xtrabackup
 Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
-Release:        %{xb_revision}%{xb_rpm_version_extra}%{?dist}
+Release:        %{xb_rpm_version_extra}%{?dist}
 Summary:        XtraBackup online backup for MySQL / InnoDB
 
 Group:          Applications/Databases
