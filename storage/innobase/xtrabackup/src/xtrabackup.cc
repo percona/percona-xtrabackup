@@ -210,7 +210,8 @@ char*	log_ignored_opt				= NULL;
 
 /* === metadata of backup === */
 #define XTRABACKUP_METADATA_FILENAME "xtrabackup_checkpoints"
-char metadata_type[30] = ""; /*[full-backuped|full-prepared|incremental]*/
+char metadata_type[30] = ""; /*[full-backuped|log-applied|
+			     full-prepared|incremental]*/
 lsn_t metadata_from_lsn = 0;
 lsn_t metadata_to_lsn = 0;
 lsn_t metadata_last_lsn = 0;
@@ -5890,10 +5891,13 @@ xtrabackup_prepare_func(void)
 		if (!strcmp(metadata_type, "full-backuped")) {
 			msg("xtrabackup: This target seems to be not prepared "
 			    "yet.\n");
+		} else if (!strcmp(metadata_type, "log-applied")) {
+			msg("xtrabackup: This target seems to be already "
+			    "prepared with --apply-log-only.\n");
+			goto skip_check;
 		} else if (!strcmp(metadata_type, "full-prepared")) {
 			msg("xtrabackup: This target seems to be already "
 			    "prepared.\n");
-			goto skip_check;
 		} else {
 			msg("xtrabackup: This target seems not to have correct "
 			    "metadata...\n");
@@ -5901,7 +5905,7 @@ xtrabackup_prepare_func(void)
 
 		if (xtrabackup_incremental) {
 			msg("xtrabackup: error: applying incremental backup "
-			    "needs target prepared.\n");
+			    "needs target prepared with --apply-log-only.\n");
 			exit(EXIT_FAILURE);
 		}
 skip_check:
@@ -6328,7 +6332,8 @@ next_node:
 	{
 		char	filename[FN_REFLEN];
 
-		strcpy(metadata_type, "full-prepared");
+		strcpy(metadata_type, srv_apply_log_only ?
+					"log-applied" : "full-prepared");
 
 		if(xtrabackup_incremental
 		   && metadata_to_lsn < incremental_to_lsn)
