@@ -86,6 +86,10 @@ After the backups have been decrypted, they can be prepared the same way as the 
 
   $ innobackupex --apply-log /data/backups/2015-03-18_08-31-35/
 
+.. note::
+
+   |Percona XtraBackup| doesn't automatically remove the encrypted files. In order to clean up the backup directory users should remove the :file:`*.xbcrypt` files.
+
 Restoring Encrypted Backups
 =============================
 

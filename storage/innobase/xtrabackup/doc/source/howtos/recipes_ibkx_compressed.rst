@@ -51,6 +51,10 @@ You should check for a confirmation message: ::
 
 Now the files in :file:`/data/backups/2013-08-01_11-24-04` is ready to be used by the server.
 
+.. note::
+
+   |Percona XtraBackup| doesn't automatically remove the compressed files. In order to clean up the backup directory users should remove the :file:`*.qp` files.
+
 Restoring the backup
 --------------------
 
