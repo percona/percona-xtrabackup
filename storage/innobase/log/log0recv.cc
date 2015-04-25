@@ -809,6 +809,10 @@ recv_find_max_checkpoint(
 				group->lsn_offset_alt =
 					((lsn_t) mach_read_from_8(
 					buf + LOG_CHECKPOINT_ARCHIVED_LSN));
+				if (group->alt_offset_chosen) {
+					group->lsn_offset =
+						group->lsn_offset_alt;
+				}
 			}
 			checkpoint_no = mach_read_from_8(
 				buf + LOG_CHECKPOINT_NO);
