@@ -8,7 +8,7 @@
 #####################################
 Name:           percona-xtrabackup-23
 Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
-Release:        %{xb_revision}%{xb_rpm_version_extra}%{?dist}
+Release:        %{xb_rpm_version_extra}%{?dist}
 Summary:        XtraBackup online backup for MySQL / InnoDB
 
 Group:          Applications/Databases
@@ -94,20 +94,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test
 
 %changelog
-<<<<<<< HEAD
 * Thu Oct 30 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.0alpha1
-=======
-* Fri Feb 13 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Included man pages in packages
-- Update to new release Percona XtraBackup 2.2.9
-
-* Mon Jan 12 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.8
-
-* Thu Dec 04 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.7
->>>>>>> 2.2
 
 * Wed Sep 29 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.2.6

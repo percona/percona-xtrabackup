@@ -82,10 +82,6 @@ test -e "$SOURCEDIR/XB_VERSION" || exit 2
 
 XTRABACKUP_VERSION="${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}.${XB_VERSION_PATCH}${XB_VERSION_EXTRA}"
 
-# Build information
-if [ -z "${REVISION:-}" ]; then
-  REVISION="$(cd "$SOURCEDIR"; bzr revno 2>/dev/null || cat REVNO)"
-fi
 # Compilation flags
 export CC=${CC:-gcc}
 export CXX=${CXX:-g++}
@@ -119,7 +115,7 @@ mkdir "$INSTALLDIR"
 
     if test "x$exit_value" = "x0"
     then
-      $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$REVISION-$(uname -s)-$(uname -m).tar.gz" \
+      $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m).tar.gz" \
             --owner=0 --group=0 -C "$INSTALLDIR/../" \
             "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)"
     fi
