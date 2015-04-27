@@ -6378,8 +6378,8 @@ next_node:
 			goto error;
 		}
 
-		srv_apply_log_only = (ibool) xtrabackup_apply_log_only;
-		srv_rebuild_indexes = (ibool) xtrabackup_rebuild_indexes;
+		srv_apply_log_only = FALSE;
+		srv_rebuild_indexes = FALSE;
 
 		/* increase IO threads */
 		if(srv_n_file_io_threads < 10) {
