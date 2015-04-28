@@ -3484,6 +3484,25 @@ sub mysql_lock_tables {
         return;
     }
 
+    if (!$option_lock_wait_timeout && !$option_kill_long_queries_timeout) {
+
+        # We do first a FLUSH TABLES. If a long update is running, the
+        # FLUSH TABLES will wait but will not stall the whole mysqld, and when
+        # the long update is done the FLUSH TABLES WITH READ LOCK will start
+        # and succeed quickly. So, FLUSH TABLES is to lower the probability
+        # of a stage where both mysqldump and most client connections
+        # are stalled. Of course, if a second long update starts between
+        # the two FLUSHes, we have that bad stall.
+
+        # Option lock_wait_timeout serve the same purpose and is not
+        # compatible with this trick.
+
+        $now = current_time();
+        print STDERR "$now  $prefix Executing FLUSH TABLES...\n";
+
+        mysql_query($con, "FLUSH TABLES");
+    }
+
     if ($option_lock_wait_timeout) {
         wait_for_no_updates($con, $option_lock_wait_timeout,
                             $option_lock_wait_threshold);
