@@ -2386,7 +2386,7 @@ skip:
 }
 
 static my_bool
-xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last, my_bool is_first)
+xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 {
 	/* definition from recv_recovery_from_checkpoint_start() */
 	log_group_t*	group;
@@ -2451,10 +2451,10 @@ retry_read:
 
 			/* Can be just wrong lsn_offset. Is it PS 5.5 with large
 			log files? */
-			if (is_first &&
+			if (!group->alt_offset_chosen &&
 			    group->lsn_offset != group->lsn_offset_alt) {
 				group->lsn_offset = group->lsn_offset_alt;
-				is_first = FALSE;
+				group->alt_offset_chosen = TRUE;
 				goto retry_read;
 			}
 
@@ -2636,7 +2636,7 @@ log_copying_thread(
 				       0);
 		if (log_copying) {
 			if(xtrabackup_copy_logfile(log_copy_scanned_lsn,
-						   FALSE, FALSE)) {
+						   FALSE)) {
 
 				exit(EXIT_FAILURE);
 			}
@@ -2644,7 +2644,7 @@ log_copying_thread(
 	}
 
 	/* last copying */
-	if(xtrabackup_copy_logfile(log_copy_scanned_lsn, TRUE, FALSE)) {
+	if(xtrabackup_copy_logfile(log_copy_scanned_lsn, TRUE)) {
 
 		exit(EXIT_FAILURE);
 	}
@@ -3810,7 +3810,7 @@ reread_log_header:
 
 
 	/* copy log file by current position */
-	if(xtrabackup_copy_logfile(checkpoint_lsn_start, FALSE, TRUE))
+	if(xtrabackup_copy_logfile(checkpoint_lsn_start, FALSE))
 		exit(EXIT_FAILURE);
 
 
