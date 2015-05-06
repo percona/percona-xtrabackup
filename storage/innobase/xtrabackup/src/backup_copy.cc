@@ -1717,7 +1717,7 @@ cleanup:
 bool
 decrypt_decompress_file(const char *filepath, uint thread_n)
 {
-	std::stringstream cmd;
+	std::stringstream cmd, message;
 	char *dest_filepath = strdup(filepath);
 	bool needs_action = false;
 
@@ -1733,6 +1733,7 @@ decrypt_decompress_file(const char *filepath, uint thread_n)
  			    << xtrabackup_encrypt_key_file;
  		}
  		dest_filepath[strlen(dest_filepath) - 8] = 0;
+ 		message << "decrypting";
  		needs_action = true;
  	}
 
@@ -1742,16 +1743,21 @@ decrypt_decompress_file(const char *filepath, uint thread_n)
 		    && opt_decrypt))) {
  		cmd << " | qpress -dio ";
  		dest_filepath[strlen(dest_filepath) - 3] = 0;
+ 		if (needs_action) {
+ 			message << " and ";
+ 		}
+ 		message << "decompressing";
  		needs_action = true;
  	}
 
  	cmd << " > " << dest_filepath;
+ 	message << " " << filepath;
 
  	free(dest_filepath);
 
  	if (needs_action) {
 
-	 	msg("[%02u] %s\n", thread_n, cmd.str().c_str());
+	 	msg("[%02u] %s\n", thread_n, message.str().c_str());
 
 	 	if (system(cmd.str().c_str()) != 0) {
 	 		return(false);

@@ -373,7 +373,7 @@ uint opt_debug_sleep_before_unlock = 0;
 uint opt_safe_slave_backup_timeout = 0;
 
 const char *opt_history = NULL;
-bool opt_decrypt = false;
+my_bool opt_decrypt = FALSE;
 
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
@@ -1405,9 +1405,11 @@ xb_get_one_option(int optid,
           "valid encryption  algorithm.\n");
       return(1);
     }
+    opt_decrypt = TRUE;
     xtrabackup_decrypt_decompress = true;
     break;
   case OPT_DECOMPRESS:
+    opt_decompress = TRUE;
     xtrabackup_decrypt_decompress = true;
     break;
   case (int) OPT_CORE_FILE:

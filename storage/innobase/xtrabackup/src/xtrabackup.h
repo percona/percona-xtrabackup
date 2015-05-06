@@ -166,7 +166,7 @@ extern uint		opt_debug_sleep_before_unlock;
 extern uint		opt_safe_slave_backup_timeout;
 
 extern const char	*opt_history;
-extern bool		opt_decrypt;
+extern my_bool		opt_decrypt;
 
 void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,
