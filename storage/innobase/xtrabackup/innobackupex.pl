@@ -1536,32 +1536,40 @@ print_version();
 # initialize global variables and perform some checks
 if ($option_backup) {
     # backup
+    if ($option_version_check) {
+        my $pid = fork();
+        if ($pid != 0) {
+            waitpid($pid, 0);
+        } else {
+            $now = current_time();
+            print STDERR
+                "$now  $prefix Executing a version check against the server...\n";
+
+            # Redirect STDOUT to STDERR, as VersionCheck prints alerts to STDOUT
+            select STDERR;
+
+            %mysql = mysql_connect(abort_on_error => 1);
+
+            VersionCheck::version_check(
+                                        force => 1,
+                                        instances => [ {
+                                                        dbh => $mysql{dbh},
+                                                        dsn => $mysql{dsn}
+                                                       }
+                                                     ]
+                                        );
+            # Restore STDOUT as the default filehandle
+            select STDOUT;
+
+            $now = current_time();
+            print STDERR "$now  $prefix Done.\n";
+            exit 0;
+        }
+    }
+
     %mysql = mysql_connect(abort_on_error => 1);
 
     check_server_version();
-
-    if ($option_version_check) {
-        $now = current_time();
-        print STDERR
-            "$now  $prefix Executing a version check against the server...\n";
-
-        # Redirect STDOUT to STDERR, as VersionCheck prints alerts to STDOUT
-        select STDERR;
-
-        VersionCheck::version_check(
-                                    force => 1,
-                                    instances => [ {
-                                                    dbh => $mysql{dbh},
-                                                    dsn => $mysql{dsn}
-                                                   }
-                                                 ]
-                                    );
-        # Restore STDOUT as the default filehandle
-        select STDOUT;
-
-        $now = current_time();
-        print STDERR "$now  $prefix Done.\n";
-    }
 }
 init();
 
