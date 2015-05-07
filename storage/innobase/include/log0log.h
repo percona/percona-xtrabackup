@@ -751,6 +751,8 @@ struct log_group_t{
 	lsn_t		lsn_offset;	/*!< the offset of the above lsn */
 	lsn_t		lsn_offset_alt;	/*!< alternative lsn offset for PS 5.5
 					with large log files */
+	ibool		alt_offset_chosen;/*!< alternative lsn offset for PS 5.5
+					with large log files is chosen */
 	ulint		n_pending_writes;/*!< number of currently pending flush
 					writes for this log group */
 	byte**		file_header_bufs_ptr;/*!< unaligned buffers */
