@@ -36,7 +36,10 @@ conn_id=`$MYSQL $MYSQL_ARGS -e "SHOW PROCESSLIST" | grep "INSERT" | awk '{print 
 start_innobackupex &
 job2=$!
 
-while ! $MYSQL $MYSQL_ARGS -e "SHOW PROCESSLIST" | grep "LOCK"
+# xtrabackup does FLUSH TABLES before FLUSH TABLES WITH READ LOCK
+# or LOCK TABLES FOR BACKUP
+# both are affected by lock_wait_timeout setting
+while ! $MYSQL $MYSQL_ARGS -e "SHOW PROCESSLIST" | grep "TABLES"
 do
     sleep 1
 done
