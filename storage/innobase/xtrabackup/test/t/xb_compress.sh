@@ -4,7 +4,7 @@
 
 require_qpress
 
-innobackupex_options="--compress --compress-threads=4 --compress-chunk-size=8K"
-data_decompress_cmd="innobackupex --decompress ./"
+xtrabackup_options="--compress --compress-threads=4 --compress-chunk-size=8K"
+data_decompress_cmd="xtrabackup --decompress --target-dir=./"
 
 . inc/xb_local.sh
