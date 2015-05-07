@@ -72,5 +72,5 @@ Com_lock_binlog_for_backup	2
 Com_show_slave_status_nolock	0
 Com_unlock_binlog	2
 Com_unlock_tables	3
-Com_flush	5
+Com_flush	6
 EOF
