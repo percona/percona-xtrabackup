@@ -14,6 +14,8 @@
 
 . inc/common.sh
 
+[ $[1 + $[ RANDOM % 5 ]] == 1 ] || skip_test "Skipping"
+
 [ "${XBCLOUD_CREDENTIALS:-unset}" == "unset" ] && \
 	skip_test "Requires XBCLOUD_CREDENTIALS"
 
@@ -23,9 +25,13 @@ load_dbase_schema sakila
 load_dbase_data sakila
 
 now=$(date +%s)
+pwdpart=$(pwd | sed 's/\//-/g')
 
-full_backup_name=${now}-full_backup
-inc_backup_name=${now}-inc_backup
+full_backup_name=${now}-${pwdpart}-full_backup
+inc_backup_name=${now}-${pwdpart}-inc_backup
+
+echo ${full_backup_name}
+echo ${inc_backup_name}
 
 full_backup_dir=$topdir/${full_backup_name}
 inc_backup_dir=$topdir/${inc_backup_name}
@@ -36,7 +42,7 @@ xtrabackup --backup --stream=xbstream --extra-lsndir=$full_backup_dir \
 	--target-dir=$full_backup_dir | xbcloud put \
 	--swift-container=test_backup \
 	${XBCLOUD_CREDENTIALS} \
-	--parallel=10 \
+	--parallel=4 \
 	${full_backup_name}
 
 vlog "take incremental backup"
@@ -83,3 +89,9 @@ diff -u $topdir/partial/partial.list - <<EOF
 ibdata1
 sakila/payment.ibd
 EOF
+
+# cleanup
+xbcloud delete --swift-container=test_backup ${XBCLOUD_CREDENTIALS} \
+	${full_backup_name}
+xbcloud delete --swift-container=test_backup ${XBCLOUD_CREDENTIALS} \
+	${inc_backup_name}
