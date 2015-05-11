@@ -2,68 +2,84 @@
 # Test xbcloud
 #
 # Set following environment variables to enable this test:
-#     SWIFT_URL, SWIFT_USER, SWIFT_KEY, SWIFT_CONTAINER
+#     XBCLOUD_CREDENTIALS
+#
+# Example:
+#     export XBCLOUD_CREDENTIALS="--storage=swift \
+#         --swift-url=http://192.168.8.80:8080/ \
+#         --swift-user=test:tester 
+#         --swift-key=testing"
 #
 ################################################################################
 
 . inc/common.sh
 
-[ "${SWIFT_URL:-unset}" == "unset" ] && skip_test "Requires Swift"
+[ "${XBCLOUD_CREDENTIALS:-unset}" == "unset" ] && \
+	skip_test "Requires XBCLOUD_CREDENTIALS"
 
 start_server --innodb_file_per_table
 
 load_dbase_schema sakila
 load_dbase_data sakila
 
-full_backup_dir=$topdir/full_backup
-part_backup_dir=$topdir/part_backup
+now=$(date +%s)
+
+full_backup_name=${now}-full_backup
+inc_backup_name=${now}-inc_backup
+
+full_backup_dir=$topdir/${full_backup_name}
+inc_backup_dir=$topdir/${inc_backup_name}
 
 vlog "take full backup"
 
-innobackupex --stream=xbstream $full_backup_dir --extra-lsndir=$full_backup_dir | xbcloud put --storage=Swift \
+xtrabackup --backup --stream=xbstream --extra-lsndir=$full_backup_dir \
+	--target-dir=$full_backup_dir | xbcloud put \
 	--swift-container=test_backup \
-	--swift-user=${SWIFT_USER} \
-	--swift-url=${SWIFT_URL} \
-	--swift-key=${SWIFT_KEY} \
+	${XBCLOUD_CREDENTIALS} \
 	--parallel=10 \
-	--verbose \
-	full_backup
+	${full_backup_name}
 
 vlog "take incremental backup"
 
-inc_lsn=`grep to_lsn $full_backup_dir/xtrabackup_checkpoints | \
-             sed 's/to_lsn = //'`
-
-[ -z "$inc_lsn" ] && die "Couldn't read to_lsn from xtrabackup_checkpoints"
-
-innobackupex --incremental --incremental-lsn=$inc_lsn --stream=xbstream part_backup_dir | xbcloud put --storage=Swift \
+xtrabackup --backup --incremental-basedir=$full_backup_dir \
+	--stream=xbstream --target-dir=inc_backup_dir | xbcloud put \
 	--swift-container=test_backup \
-	--swift-user=${SWIFT_USER} \
-	--swift-url=${SWIFT_URL} \
-	--swift-key=${SWIFT_KEY} \
-	incremental
+	${XBCLOUD_CREDENTIALS} \
+	${inc_backup_name}
 
 vlog "download and prepare"
 
 mkdir $topdir/downloaded_full
 mkdir $topdir/downloaded_inc
 
-xbcloud get --storage=Swift \
-	--swift-container=test_backup \
-	--swift-user=${SWIFT_USER} \
-	--swift-url=${SWIFT_URL} \
-	--swift-key=${SWIFT_KEY} \
-	full_backup | xbstream -xv -C $topdir/downloaded_full
+run_cmd xbcloud get --swift-container=test_backup \
+	${XBCLOUD_CREDENTIALS} \
+	${full_backup_name} | xbstream -xv -C $topdir/downloaded_full
 
-innobackupex --apply-log --redo-only $topdir/downloaded_full
+xtrabackup --prepare --apply-log-only --target-dir=$topdir/downloaded_full
 
-xbcloud get --storage=Swift \
-	--swift-container=test_backup \
-	--swift-user=${SWIFT_USER} \
-	--swift-url=${SWIFT_URL} \
-	--swift-key=${SWIFT_KEY} \
-	incremental | xbstream -xv -C $topdir/downloaded_inc
+run_cmd xbcloud get --swift-container=test_backup \
+	${XBCLOUD_CREDENTIALS} \
+	${inc_backup_name} | xbstream -xv -C $topdir/downloaded_inc
 
-innobackupex --apply-log --redo-only $topdir/downloaded_full --incremental-dir=$topdir/downloaded_inc
+xtrabackup --prepare --apply-log-only \
+	--target-dir=$topdir/downloaded_full \
+	--incremental-dir=$topdir/downloaded_inc
 
-innobackupex --apply-log $topdir/downloaded_full
+xtrabackup --prepare --target-dir=$topdir/downloaded_full
+
+# test partial download
+
+mkdir $topdir/partial
+
+xbcloud get --swift-container=test_backup ${XBCLOUD_CREDENTIALS} \
+	${full_backup_name} ibdata1 sakila/payment.ibd \
+	> $topdir/partial/partial.xbs
+
+xbstream -xv -C $topdir/partial < $topdir/partial/partial.xbs \
+				2>$topdir/partial/partial.list
+
+diff -u $topdir/partial/partial.list - <<EOF
+ibdata1
+sakila/payment.ibd
+EOF

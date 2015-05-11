@@ -177,7 +177,7 @@ tmpfile_deinit(ds_ctxt_t *ctxt)
 	ds_file_t		*dst_file;
 	ds_ctxt_t		*pipe_ctxt;
 	void			*buf = NULL;
-	const size_t		 buf_size = 1024 * 1024;
+	const size_t		 buf_size = 10 * 1024 * 1024;
 	size_t			 bytes;
 	size_t			 offset;
 

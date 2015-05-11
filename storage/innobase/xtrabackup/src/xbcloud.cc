@@ -18,6 +18,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
+#include <my_global.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,15 +26,23 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <ev.h>
 #include <unistd.h>
 #include <errno.h>
-#include <getopt.h>
 #include <gcrypt.h>
 #include <assert.h>
-#include <algorithm>
-#include <my_global.h>
 #include <my_sys.h>
+#include <my_dir.h>
+#include <my_getopt.h>
+#include <algorithm>
+#include <map>
+#include <string>
+#include <jsmn.h>
+#include "xbstream.h"
 
 using std::min;
 using std::max;
+using std::map;
+using std::string;
+
+#define XBCLOUD_VERSION "1.0"
 
 #define SWIFT_MAX_URL_SIZE 2048
 #define SWIFT_MAX_HDR_SIZE 2048
@@ -48,6 +57,8 @@ typedef struct socket_info_struct socket_info;
 typedef struct global_io_info_struct global_io_info;
 typedef struct slo_chunk_struct slo_chunk;
 typedef struct slo_manifest_struct slo_manifest;
+typedef struct container_list_struct container_list;
+typedef struct object_info_struct object_info;
 
 struct swift_auth_info_struct {
 	char url[SWIFT_MAX_URL_SIZE];
@@ -85,16 +96,23 @@ struct connection_info_struct {
 	size_t buffer_size;
 	size_t filled_size;
 	size_t upload_size;
-	size_t chunk_uploaded;
+	bool chunk_uploaded;
 	char error[CURL_ERROR_SIZE];
 	struct curl_slist *slist;
 	char *url;
 	char *container;
 	char *token;
+	char *backup_name;
 	char *name;
 	gcry_md_hd_t md5;
 	char hash[33];
 	size_t chunk_no;
+	bool magic_verified;
+	size_t chunk_path_len;
+	xb_chunk_type_t chunk_type;
+	size_t payload_size;
+	size_t chunk_size;
+	bool upload_started;
 };
 
 struct slo_chunk_struct {
@@ -109,17 +127,108 @@ struct slo_manifest_struct {
 	size_t uploaded_idx;
 };
 
-static int opt_verbose;
-static enum {S3, SWIFT} opt_storage = SWIFT;
+struct object_info_struct {
+	char hash[33];
+	char name[SWIFT_MAX_URL_SIZE];
+	size_t bytes;
+};
+
+struct container_list_struct {
+	size_t content_length;
+	size_t content_bufsize;
+	char *content_json;
+	size_t object_count;
+	object_info *objects;
+};
+
+enum {SWIFT, S3};
+const char *storage_names[] =
+{ "SWIFT", "S3", NullS};
+
+static my_bool opt_verbose = 0;
+static ulong opt_storage = SWIFT;
 static const char *opt_user = NULL; 
 static const char *opt_container = NULL;
 static const char *opt_url = NULL;
 static const char *opt_key = NULL;
 static const char *opt_name = NULL;
 static const char *opt_cacert = NULL;
-static int opt_parallel = 1;
-static int opt_insecure = 0;
+static ulong opt_parallel = 1;
+static my_bool opt_insecure = 0;
 static enum {MODE_GET, MODE_PUT} opt_mode;
+
+static char **file_list = NULL;
+static int file_list_size = 0;
+
+TYPELIB storage_typelib =
+{array_elements(storage_names)-1, "", storage_names, NULL};
+
+enum {
+	OPT_STORAGE = 256,
+	OPT_SWIFT_CONTAINER,
+	OPT_SWIFT_URL,
+	OPT_SWIFT_KEY,
+	OPT_SWIFT_USER,
+	OPT_PARALLEL,
+	OPT_CACERT,
+	OPT_INSECURE,
+	OPT_VERBOSE
+};
+
+
+static struct my_option my_long_options[] =
+{
+	{"help", '?', "Display this help and exit.",
+	 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+	{"storage", OPT_STORAGE, "Specify storage type S3/SWIFT.",
+	 &opt_storage, &opt_storage, &storage_typelib,
+	 GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+	{"swift-container", OPT_SWIFT_CONTAINER,
+	 "Swift container.",
+	 &opt_container, &opt_container, 0, GET_STR_ALLOC, REQUIRED_ARG,
+	 0, 0, 0, 0, 0, 0},
+
+	{"swift-user", OPT_SWIFT_USER,
+	 "Swift user.",
+	 &opt_user, &opt_user, 0, GET_STR_ALLOC, REQUIRED_ARG,
+	 0, 0, 0, 0, 0, 0},
+
+	{"swift-url", OPT_SWIFT_USER,
+	 "Swift URL.",
+	 &opt_url, &opt_url, 0, GET_STR_ALLOC, REQUIRED_ARG,
+	 0, 0, 0, 0, 0, 0},
+
+	{"swift-key", OPT_SWIFT_KEY,
+	 "Swift key.",
+	 &opt_key, &opt_key, 0, GET_STR_ALLOC, REQUIRED_ARG,
+	 0, 0, 0, 0, 0, 0},
+
+	{"parallel", OPT_PARALLEL,
+	 "Number of parallel chunk uploads.",
+	 &opt_parallel, &opt_parallel, 0, GET_ULONG, REQUIRED_ARG,
+	 1, 0, 0, 0, 0, 0},
+
+	{"cacert", OPT_CACERT,
+	 "CA certificate file.",
+	 &opt_cacert, &opt_cacert, 0, GET_STR_ALLOC, REQUIRED_ARG,
+	 0, 0, 0, 0, 0, 0},
+
+	{"insecure", OPT_INSECURE,
+	 "Do not verify server SSL certificate.",
+	 &opt_insecure, &opt_insecure, 0, GET_BOOL, NO_ARG,
+	 0, 0, 0, 0, 0, 0},
+
+	{"verbose", OPT_VERBOSE,
+	 "Turn ON cURL tracing.",
+	 &opt_verbose, &opt_verbose, 0, GET_BOOL, NO_ARG,
+	 0, 0, 0, 0, 0, 0},
+
+	{0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
+};
+
+static map<string, ulonglong> file_chunk_count;
 
 static
 slo_manifest *slo_manifest_init()
@@ -148,22 +257,60 @@ void slo_manifest_free(slo_manifest *manifest)
 }
 
 static
-void usage()
+void
+print_version()
 {
-	fprintf(stderr, "usage:\n"
-		"    xbcloud [options] put/get <name>\n");
+	printf("%s  Ver %s for %s (%s)\n", my_progname, XBCLOUD_VERSION,
+	       SYSTEM_TYPE, MACHINE_TYPE);
+}
+
+static
+void
+usage()
+{
+	print_version();
+	puts("Copyright (C) 2015 Percona LLC and/or its affiliates.");
+	puts("This software comes with ABSOLUTELY NO WARRANTY. "
+	     "This is free software,\nand you are welcome to modify and "
+	     "redistribute it under the GPL license.\n");
+
+	puts("Manage backups on Cloud services.\n");
+
+	puts("Usage: ");
+	printf("  %s -c put [OPTIONS...] <NAME> upload backup from STDIN into "
+	       "the cloud service with given name.\n", my_progname);
+	printf("  %s -c get [OPTIONS...] <NAME> [FILES...] stream specified "
+	       "backup or individual files from cloud service into STDOUT.\n",
+	       my_progname);
+
+	puts("\nOptions:");
+	my_print_help(my_long_options);
+}
+
+static
+my_bool
+get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
+	       char *argument __attribute__((unused)))
+{
+	switch (optid) {
+	case '?':
+		usage();
+		exit(0);
+	}
+
+	return(FALSE);
 }
 
 static
 int parse_args(int argc, char **argv)
 {
 	const char *command;
-	int c;
 
 	if (argc < 2) {
 		fprintf(stderr, "Command isn't specified. "
 			"Supported commands are put and get\n");
-		return 1;
+		usage();
+		exit(EXIT_FAILURE);
 	}
 
 	command = argv[1];
@@ -176,128 +323,61 @@ int parse_args(int argc, char **argv)
 	} else {
 		fprintf(stderr, "Unknown command %s. "
 			"Supported commands are put and get\n", command);
-		return 1;
+		usage();
+		exit(EXIT_FAILURE);
 	}
 
-	while (1) {
-		enum {
-			OPT_HELP = 10,
-			OPT_STORAGE,
-			OPT_SWIFT_CONTAINER,
-			OPT_SWIFT_URL,
-			OPT_SWIFT_KEY,
-			OPT_SWIFT_USER,
-			OPT_PARALLEL,
-			OPT_CACERT,
-			OPT_INSECURE,
-			OPT_VERBOSE
-		};
-		static struct option long_options[] =
-			{
-				{"verbose", no_argument, &opt_verbose,
-				 OPT_VERBOSE},
-				{"help", no_argument, 0, OPT_HELP},
-				{"storage", required_argument, 0, OPT_STORAGE},
-				{"swift-container", required_argument, 0,
-				 OPT_SWIFT_CONTAINER},
-				{"swift-user", required_argument, 0,
-				 OPT_SWIFT_USER},
-				{"swift-url", required_argument, 0,
-				 OPT_SWIFT_URL},
-				{"swift-key", required_argument, 0,
-				 OPT_SWIFT_KEY},
-				{"parallel", required_argument, 0,
-				 OPT_PARALLEL},
-				{"cacert", required_argument, 0, OPT_CACERT},
-				{"insecure", no_argument, &opt_insecure,
-				 OPT_INSECURE},
-				{NULL, 0, 0, 0}
-			};
+	if (strcmp(command, "put") == 0) {
+		opt_mode = MODE_PUT;
+	} else if (strcmp(command, "get") == 0) {
+		opt_mode = MODE_GET;
+	} else {
+		fprintf(stderr, "Unknown command %s. "
+			"Supported commands are put and get\n", command);
+		exit(EXIT_FAILURE);
+	}
 
-		int option_index = 0;
-
-		c = getopt_long(argc, argv, "s", long_options, &option_index);
-
-		if (c == -1)
-			break;
-
-		switch (c) {
-		case 0:
-			break;
-		case OPT_STORAGE:
-			if (strcmp(optarg, "Swift") == 0) {
-				opt_storage = SWIFT;
-			} else if (strcmp(optarg, "S3") == 0) {
-				opt_storage = S3;
-			} else {
-				fprintf(stderr, "unknown storage %s "
-					"(allowed are Swift and S3)\n", optarg);
-				return 1;
-			}
-			break;
-		case OPT_SWIFT_CONTAINER:
-			opt_container = optarg;
-			break;
-		case OPT_SWIFT_USER:
-			opt_user = optarg;
-			break;
-		case OPT_SWIFT_URL:
-			opt_url = optarg;
-			break;
-		case OPT_SWIFT_KEY:
-			opt_key = optarg;
-			break;
-		case OPT_PARALLEL:
-			opt_parallel = atoi(optarg);
-			if (opt_parallel < 1) {
-				fprintf(stderr,
-					"wrong value for parallel option %s\n",
-					optarg);
-				return 1;
-			}
-			break;
-		case OPT_HELP:
-			usage();
-			return 1;
-		case OPT_CACERT:
-			opt_cacert = optarg;
-			break;
-		default:
-			return 1;
-		}
+	if (handle_options(&argc, &argv, my_long_options, get_one_option)) {
+		exit(EXIT_FAILURE);
 	}
 
 	/* make sure name is specified */
-	while (optind < argc)
-		opt_name = argv[optind++];
-	if (opt_name == NULL)
-	{
+	if (argc < 1) {
 		fprintf(stderr, "object name is required argument\n");
-		return 1;
+		exit(EXIT_FAILURE);
 	}
+	opt_name = argv[0];
+	argc--; argv++;
 
 	/* validate arguments */
 	if (opt_storage == SWIFT) {
 		if (opt_user == NULL) {
 			fprintf(stderr, "user for Swift is not specified\n");
-			return 1;
+			exit(EXIT_FAILURE);
 		}
 		if (opt_container == NULL) {
 			fprintf(stderr,
 				"container for Swift is not specified\n");
-			return 1;
+			exit(EXIT_FAILURE);
 		}
 		if (opt_url == NULL) {
 			fprintf(stderr, "URL for Swift is not specified\n");
-			return 1;
+			exit(EXIT_FAILURE);
 		}
 		if (opt_key == NULL) {
 			fprintf(stderr, "key for Swift is not specified\n");
-			return 1;
+			exit(EXIT_FAILURE);
 		}
+	} else {
+		fprintf(stderr, "Swift is only supported storage API\n");
 	}
 
-	return 0;
+	if (argc > 0) {
+		file_list = argv;
+		file_list_size = argc;
+	}
+
+	return(0);
 }
 
 static char *hex_md5(const unsigned char *hash, char *out)
@@ -340,15 +420,14 @@ int get_http_header(const char *prefix, const char *buffer,
 }
 
 static
-size_t swift_auth_header_read_cb(void *ptr, size_t size, size_t nmemb,
+size_t swift_auth_header_read_cb(char *ptr, size_t size, size_t nmemb,
 				 void *data)
 {
 	swift_auth_info *info = (swift_auth_info*)(data);
-	const char *buffer = (const char *)(ptr);
 
-	get_http_header("X-Storage-Url: ", buffer,
+	get_http_header("X-Storage-Url: ", ptr,
 			info->url, array_elements(info->url));
-	get_http_header("X-Auth-Token: ", buffer,
+	get_http_header("X-Auth-Token: ", ptr,
 			info->token, array_elements(info->token));
 
 	return nmemb * size;
@@ -429,7 +508,7 @@ cleanup:
 
 static
 size_t
-write_null_cb(void *buffer, size_t size, size_t nmemb, void *stream) {
+write_null_cb(char *buffer, size_t size, size_t nmemb, void *stream) {
 	return nmemb * size;
 }
 
@@ -655,13 +734,14 @@ static void timer_cb(EV_P_ struct ev_timer *w, int revents)
 }
 
 static int conn_upload_init(connection_info *conn);
+static void conn_buffer_updated(connection_info *conn);
 
 static connection_info *get_current_connection(global_io_info *global)
 {
 	connection_info *conn = global->current_connection;
-	int i;
+	ulong i;
 
-	if (conn && conn->filled_size < conn->buffer_size)
+	if (conn && conn->filled_size < conn->chunk_size)
 		return conn;
 
 	for (i = 0; i < opt_parallel; i++) {
@@ -685,17 +765,18 @@ static void input_cb(EV_P_ struct ev_io *w, int revents)
 	if (conn == NULL)
 		return;
 
-	if (conn->filled_size < conn->buffer_size) {
+	if (conn->filled_size < conn->chunk_size) {
 		if (revents & EV_READ) {
 			ssize_t nbytes = read(io_global->input_fd,
 					      conn->buffer + conn->filled_size,
-					      conn->buffer_size -
+					      conn->chunk_size -
 					      conn->filled_size);
 			if (nbytes > 0) {
 				gcry_md_write(conn->md5,
 					      conn->buffer + conn->filled_size,
 					      nbytes);
 				conn->filled_size += nbytes;
+				conn_buffer_updated(conn);
 			} else if (nbytes < 0) {
 				if (errno != EAGAIN && errno != EINTR) {
 					/* failed to read input */
@@ -708,29 +789,31 @@ static void input_cb(EV_P_ struct ev_io *w, int revents)
 		}
 	}
 
-	assert(conn->filled_size <= conn->buffer_size);
+	assert(conn->filled_size <= conn->chunk_size);
 }
 
-static int swift_upload_read_cb(void *ptr, size_t size, size_t nmemb, void *data)
+static int swift_upload_read_cb(char *ptr, size_t size, size_t nmemb,
+				void *data)
 {
 	size_t realsize;
 
 	connection_info *conn = (connection_info*)(data);
 
 	if (conn->filled_size == conn->upload_size &&
-	    conn->upload_size < conn->buffer_size && !conn->global->eof) {
+	    conn->upload_size < conn->chunk_size && !conn->global->eof) {
 		ssize_t nbytes;
 		assert(conn->global->current_connection == conn);
 		do {
 			nbytes = read(conn->global->input_fd,
 				      conn->buffer + conn->filled_size,
-				      conn->buffer_size - conn->filled_size);
+				      conn->chunk_size - conn->filled_size);
 		} while (nbytes == -1 && errno == EAGAIN);
 		if (nbytes > 0) {
 			gcry_md_write(conn->md5,
 				      conn->buffer + conn->filled_size,
 				      nbytes);
 			conn->filled_size += nbytes;
+			conn_buffer_updated(conn);
 		} else {
 			conn->global->eof = 1;
 		}
@@ -741,7 +824,7 @@ static int swift_upload_read_cb(void *ptr, size_t size, size_t nmemb, void *data
 	memcpy(ptr, conn->buffer + conn->upload_size, realsize);
 	conn->upload_size += realsize;
 
-	if (conn->upload_size == conn->buffer_size ||
+	if (conn->upload_size == conn->chunk_size ||
 	    (conn->global->eof && conn->upload_size == conn->filled_size)) {
 		if (!conn->chunk_uploaded && realsize == 0) {
 			slo_chunk chunk;
@@ -757,28 +840,27 @@ static int swift_upload_read_cb(void *ptr, size_t size, size_t nmemb, void *data
 			chunk.size = conn->upload_size;
 			slo_add_chunk(conn->global->manifest, &chunk);
 
-			conn->chunk_uploaded = 1;
+			conn->chunk_uploaded = true;
 		}
 	}
 
-	assert(conn->filled_size <= conn->buffer_size);
+	assert(conn->filled_size <= conn->chunk_size);
 	assert(conn->upload_size <= conn->filled_size);
 
 	return realsize;
 }
 
 static
-size_t upload_header_read_cb(void *ptr, size_t size, size_t nmemb,
+size_t upload_header_read_cb(char *ptr, size_t size, size_t nmemb,
 			     void *data)
 {
 	connection_info *conn = (connection_info*)(data);
-	const char *buffer = (const char *)(ptr);
 	char etag[33];
 
-	if (get_http_header("Etag: ", buffer, etag, array_elements(etag)) &&
+	if (get_http_header("Etag: ", ptr, etag, array_elements(etag)) &&
 	    strcmp(etag, conn->hash) != 0) {
-		fprintf(stderr, "md5 of uploaded chunk doesn't match\n");
-		fprintf(stderr, "%s vs %s\n", etag, conn->hash);
+	    	/* TODO: md5 comparison should be smart to handle delayed
+	    	responses from server */
 	}
 
 	return nmemb * size;
@@ -786,16 +868,30 @@ size_t upload_header_read_cb(void *ptr, size_t size, size_t nmemb,
 
 static int conn_upload_init(connection_info *conn)
 {
-	char object_url[SWIFT_MAX_URL_SIZE];
-	CURLMcode rc;
-
-	snprintf(object_url, array_elements(object_url), "%s/%s/%s-%020ld",
-		 conn->url, conn->container, conn->name, conn->global->chunk_no);
-
 	conn->filled_size = 0;
 	conn->upload_size = 0;
 	conn->chunk_uploaded = 0;
+	conn->chunk_size = CHUNK_HEADER_CONSTANT_LEN;
+	conn->magic_verified = false;
+	conn->chunk_path_len = 0;
+	conn->chunk_type = XB_CHUNK_TYPE_UNKNOWN;
+	conn->payload_size = 0;
+	conn->upload_started = false;
 	conn->chunk_no = conn->global->chunk_no++;
+
+	return 0;
+}
+
+static int conn_upload_start(connection_info *conn)
+{
+	char object_url[SWIFT_MAX_URL_SIZE];
+	CURLMcode rc;
+
+	file_chunk_count[conn->name]++;
+
+	snprintf(object_url, array_elements(object_url), "%s/%s/%s/%s.%020llu",
+		 conn->url, conn->container, conn->backup_name, conn->name,
+		 file_chunk_count[conn->name]);
 
 	conn->easy = curl_easy_init();
 	if (!conn->easy) {
@@ -803,7 +899,8 @@ static int conn_upload_init(connection_info *conn)
 		return 1;
 	}
 	curl_easy_setopt(conn->easy, CURLOPT_URL, object_url);
-	curl_easy_setopt(conn->easy, CURLOPT_READFUNCTION, swift_upload_read_cb);
+	curl_easy_setopt(conn->easy, CURLOPT_READFUNCTION,
+							swift_upload_read_cb);
 	curl_easy_setopt(conn->easy, CURLOPT_READDATA, conn);
 	curl_easy_setopt(conn->easy, CURLOPT_VERBOSE, opt_verbose);
 	curl_easy_setopt(conn->easy, CURLOPT_ERRORBUFFER, conn->error);
@@ -831,6 +928,8 @@ static int conn_upload_init(connection_info *conn)
 	} while(rc == CURLM_CALL_MULTI_PERFORM);
 #endif
 
+	conn->upload_started = true;
+
 	return 0;
 }
 
@@ -840,6 +939,7 @@ static void conn_cleanup(connection_info *conn)
 		free(conn->url);
 		free(conn->container);
 		free(conn->token);
+		free(conn->backup_name);
 		free(conn->name);
 		free(conn->buffer);
 		if (conn->easy)
@@ -865,7 +965,7 @@ static connection_info *conn_new(const char *url, const char *container,
 			goto error;
 		if ((conn->token = strdup(token)) == NULL)
 			goto error;
-		if ((conn->name = strdup(name)) == NULL)
+		if ((conn->backup_name = strdup(name)) == NULL)
 			goto error;
 		if (gcry_md_open(&conn->md5, GCRY_MD_MD5, 0) != 0)
 			goto error;
@@ -893,6 +993,84 @@ error:
 	return NULL;
 }
 
+/*********************************************************************//**
+Handle input buffer updates. Parse chunk header and set appropriate
+buffer size. */
+static
+void
+conn_buffer_updated(connection_info *conn)
+{
+	bool ready_for_upload = false;
+
+	/* chunk header */
+	if (!conn->magic_verified &&
+	    conn->filled_size >= CHUNK_HEADER_CONSTANT_LEN) {
+		if (strncmp(XB_STREAM_CHUNK_MAGIC, conn->buffer,
+			sizeof(XB_STREAM_CHUNK_MAGIC) - 1) != 0) {
+
+			fprintf(stderr, "Error: magic expected\n");
+			exit(EXIT_FAILURE);
+		}
+		conn->magic_verified = true;
+		conn->chunk_path_len = uint4korr(conn->buffer
+						 + PATH_LENGTH_OFFSET);
+		conn->chunk_type = (xb_chunk_type_t)
+					(conn->buffer[CHUNK_TYPE_OFFSET]);
+		conn->chunk_size = CHUNK_HEADER_CONSTANT_LEN +
+					conn->chunk_path_len;
+		if (conn->chunk_type != XB_CHUNK_TYPE_EOF) {
+			conn->chunk_size += 16;
+		}
+	}
+
+	/* ordinary chunk */
+	if (conn->magic_verified &&
+	    conn->payload_size == 0 &&
+	    conn->chunk_type != XB_CHUNK_TYPE_EOF &&
+	    conn->filled_size >= CHUNK_HEADER_CONSTANT_LEN
+					+ conn->chunk_path_len + 16) {
+
+		conn->payload_size = uint8korr(conn->buffer +
+					CHUNK_HEADER_CONSTANT_LEN + 
+					conn->chunk_path_len);
+
+		conn->chunk_size = conn->payload_size + 4 + 16 +
+					conn->chunk_path_len +
+					CHUNK_HEADER_CONSTANT_LEN;
+
+		conn->name = (char*)(malloc(conn->chunk_path_len + 1));
+		memcpy(conn->name, conn->buffer + CHUNK_HEADER_CONSTANT_LEN,
+			conn->chunk_path_len);
+		conn->name[conn->chunk_path_len] = 0;
+
+		if (conn->buffer_size < conn->chunk_size) {
+			conn->buffer =
+			      (char *)(realloc(conn->buffer, conn->chunk_size));
+			conn->buffer_size = conn->chunk_size;
+		}
+		ready_for_upload = true;
+	}
+
+	/* EOF chunk has no payload */
+	if (conn->magic_verified &&
+	    conn->chunk_type == XB_CHUNK_TYPE_EOF &&
+	    conn->filled_size >= CHUNK_HEADER_CONSTANT_LEN
+					+ conn->chunk_path_len) {
+
+
+		conn->name = (char*)(malloc(conn->chunk_path_len + 1));
+		memcpy(conn->name, conn->buffer + CHUNK_HEADER_CONSTANT_LEN,
+			conn->chunk_path_len);
+		conn->name[conn->chunk_path_len] = 0;
+		ready_for_upload = true;
+	}
+
+	/* start upload once recieved the size of the chunk */
+	if (!conn->upload_started && ready_for_upload) {
+		conn_upload_start(conn);
+	}
+}
+
 static int init_input(global_io_info *io_global)
 {
 	ev_io_init(&io_global->input_event, input_cb, STDIN_FILENO, EV_READ);
@@ -916,10 +1094,6 @@ static int multi_timer_cb(CURLM *multi, long timeout_ms, global_io_info *global)
 	return 0;
 }
 
-static
-int swift_upload_manifest(swift_auth_info *auth, const char *container,
-			  const char *name, slo_manifest *manifest);
-
 static int cmp_chunks(const void *c1, const void *c2)
 {
 	return ((slo_chunk*)(c1))->idx - ((slo_chunk*)(c2))->idx;
@@ -930,7 +1104,7 @@ int swift_upload_parts(swift_auth_info *auth, const char *container,
 		       const char *name)
 {
 	global_io_info io_global;
-	int i;
+	ulong i;
 #if !((LIBCURL_VERSION_MAJOR >= 7) && (LIBCURL_VERSION_MINOR >= 16))
 	long timeout;
 	CURLMcode rc;
@@ -987,135 +1161,118 @@ int swift_upload_parts(swift_auth_info *auth, const char *container,
 	      io_global.manifest->chunks.elements,
 	      sizeof(slo_chunk), cmp_chunks);
 
-	if (swift_upload_manifest(auth, container, name, io_global.manifest) != 0) {
-		fprintf(stderr, "failed to create manifest\n");
-		return 1;
-	}
-
 	slo_manifest_free(io_global.manifest);
 
 	return 0;
 }
 
+
+/*********************************************************************//**
+Callback to parse header of GET request on swift contaier. */
 static
-size_t
-swift_manifest_read_cb(void *buffer, size_t size, size_t nmemb, void *data)
+size_t swift_container_list_header_cb(char *ptr, size_t size, size_t nmemb,
+				      void *data)
 {
-	slo_manifest *manifest = (slo_manifest*)(data);
-	const char *prefix;
-	const char *suffix;
-	slo_chunk *chunk;
-	size_t idx;
-	int len;
+	container_list *list = (container_list*)(data);
+	char object_count_str[100];
+	char *endptr;
 
-	idx = manifest->uploaded_idx++;
-
-	if (idx >= manifest->chunks.elements)
-		return 0;
-
-	prefix = (idx == 0) ? "[" : "";
-	suffix = (idx == manifest->chunks.elements - 1) ? "]" : ",";
-
-	chunk = (slo_chunk *)(dynamic_array_ptr(&manifest->chunks, idx));
-	len = snprintf(
-		(char *)(buffer), nmemb * size,
-		"%s{\"path\":\"%s\", \"etag\":\"%s\", \"size_bytes\":%zu}%s",
-		prefix,
-		chunk->name,
-		chunk->md5,
-		chunk->size,
-		suffix);
-
-	return len;
-}
-
-static
-int swift_upload_manifest(swift_auth_info *auth, const char *container,
-			  const char *name, slo_manifest *manifest)
-{
-	char url[SWIFT_MAX_URL_SIZE];
-	char auth_token[SWIFT_MAX_HDR_SIZE];
-	CURLcode res;
-	long http_code;
-	CURL *curl;
-	struct curl_slist *slist = NULL;
-
-	snprintf(url, array_elements(url),
-		 "%s/%s/%s?multipart-manifest=put", auth->url, container, name);
-	snprintf(auth_token, array_elements(auth_token), "X-Auth-Token: %s",
-		 auth->token);
-
-	curl = curl_easy_init();
-
-	if (curl != NULL) {
-		slist = curl_slist_append(slist, auth_token);
-
-		curl_easy_setopt(curl, CURLOPT_VERBOSE, opt_verbose);
-		curl_easy_setopt(curl, CURLOPT_URL, url);
-		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
-		curl_easy_setopt(curl, CURLOPT_READFUNCTION,
-				 swift_manifest_read_cb);
-		curl_easy_setopt(curl, CURLOPT_READDATA, manifest);
-		curl_easy_setopt(curl, CURLOPT_PUT, 1L);
-		if (opt_cacert != NULL)
-			curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cacert);
-		if (opt_insecure)
-			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
-
-		res = curl_easy_perform(curl);
-
-		if (res != CURLE_OK) {
-			fprintf(stderr, "error: curl_easy_perform() failed: %s\n",
-				curl_easy_strerror(res));
-			goto cleanup;
-		}
-		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-		if (http_code != 201 && /* created */
-		    http_code != 202    /* accepted (already exists) */) {
-			fprintf(stderr, "error: request failed "
-				"with response code: %ld\n", http_code);
-			res = CURLE_LOGIN_DENIED;
-			goto cleanup;
-		}
-	} else {
-		res = CURLE_FAILED_INIT;
-		fprintf(stderr, "error: curl_easy_init() failed\n");
-		goto cleanup;
+	if (get_http_header("X-Container-Object-Count: ", ptr,
+			object_count_str, sizeof(object_count_str))) {
+		list->object_count = strtoull(object_count_str, &endptr, 10);
 	}
 
-cleanup:
-	if (slist)
-		curl_slist_free_all(slist);
-	if (curl)
-		curl_easy_cleanup(curl);
-
-	return res;
+	return nmemb * size;
 }
 
+struct download_buffer_info {
+	off_t offset;
+	size_t size;
+	size_t result_len;
+	char *buf;
+	curl_read_callback custom_header_callback;
+	void *custom_header_callback_data;
+};
+
+/*********************************************************************//**
+Callback to parse header of GET request on swift contaier. */
+static
+size_t fetch_buffer_header_cb(char *ptr, size_t size, size_t nmemb,
+				      void *data)
+{
+	download_buffer_info *buffer_info = (download_buffer_info*)(data);
+	size_t buf_size;
+	char content_length_str[100];
+	char *endptr;
+
+	if (get_http_header("Content-Length: ", ptr,
+			content_length_str, sizeof(content_length_str))) {
+
+		buf_size = strtoull(content_length_str, &endptr, 10);
+
+		if (buffer_info->buf == NULL) {
+			buffer_info->buf = (char*)(malloc(buf_size));
+			buffer_info->size = buf_size;
+		}
+
+		if (buf_size > buffer_info->size) {
+			buffer_info->buf = (char*)
+				(realloc(buffer_info->buf, buf_size));
+			buffer_info->size = buf_size;
+		}
+
+		buffer_info->result_len = buf_size;
+	}
+
+	if (buffer_info->custom_header_callback) {
+		buffer_info->custom_header_callback(ptr, size, nmemb,
+				buffer_info->custom_header_callback_data);
+	}
+
+	return nmemb * size;
+}
+
+/*********************************************************************//**
+Write contents into string buffer */
 static
 size_t
-write_download_cb(void *buffer, size_t size, size_t nmemb, void *stream)
+fetch_buffer_cb(char *buffer, size_t size, size_t nmemb, void *out_buffer)
 {
-	FILE *out = (FILE*)(stream);
+	download_buffer_info *buffer_info = (download_buffer_info*)(out_buffer);
 
-	return fwrite(buffer, size, nmemb, out);
+	assert(buffer_info->size >= buffer_info->offset + size * nmemb);
+
+	memcpy(buffer_info->buf + buffer_info->offset, buffer, size * nmemb);
+	buffer_info->offset += size * nmemb;
+
+	return size * nmemb;
 }
 
 
+/*********************************************************************//**
+Downloads contents of URL into buffer. Caller is responsible for
+deallocating the buffer.
+@return	pointer to a buffer or NULL */
 static
-int swift_download(swift_auth_info *auth, const char *container,
-		   const char *name)
+char *
+swift_fetch_into_buffer(swift_auth_info *auth, const char *url,
+			char **buf, size_t *buf_size, size_t *result_len,
+			curl_read_callback header_callback,
+			void *header_callback_data)
 {
-	char url[SWIFT_MAX_URL_SIZE];
 	char auth_token[SWIFT_MAX_HDR_SIZE];
-	CURLcode res;
+	download_buffer_info buffer_info;
+	struct curl_slist *slist = NULL;
 	long http_code;
 	CURL *curl;
-	struct curl_slist *slist = NULL;
+	CURLcode res;
 
-	snprintf(url, array_elements(url), "%s/%s/%s", auth->url, container,
-		 name);
+	memset(&buffer_info, 0, sizeof(buffer_info));
+	buffer_info.buf = *buf;
+	buffer_info.size = *buf_size;
+	buffer_info.custom_header_callback = header_callback;
+	buffer_info.custom_header_callback_data = header_callback_data;
+
 	snprintf(auth_token, array_elements(auth_token), "X-Auth-Token: %s",
 		 auth->token);
 
@@ -1128,8 +1285,12 @@ int swift_download(swift_auth_info *auth, const char *container,
 		curl_easy_setopt(curl, CURLOPT_URL, url);
 		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_download_cb);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, stdout);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fetch_buffer_cb);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer_info);
+		curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION,
+				 fetch_buffer_header_cb);
+		curl_easy_setopt(curl, CURLOPT_HEADERDATA,
+				 &buffer_info);
 		if (opt_cacert != NULL)
 			curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cacert);
 		if (opt_insecure)
@@ -1138,7 +1299,8 @@ int swift_download(swift_auth_info *auth, const char *container,
 		res = curl_easy_perform(curl);
 
 		if (res != CURLE_OK) {
-			fprintf(stderr, "error: curl_easy_perform() failed: %s\n",
+			fprintf(stderr,
+				"error: curl_easy_perform() failed: %s\n",
 				curl_easy_strerror(res));
 			goto cleanup;
 		}
@@ -1161,7 +1323,341 @@ cleanup:
 	if (curl)
 		curl_easy_cleanup(curl);
 
-	return res;
+	if (res == CURLE_OK) {
+		*buf = buffer_info.buf;
+		*buf_size = buffer_info.size;
+		*result_len = buffer_info.result_len;
+		return(buffer_info.buf);
+	}
+
+	free(buffer_info.buf);
+	*buf = NULL;
+	*buf_size = 0;
+	*result_len = 0;
+
+	return(NULL);
+}
+
+static
+container_list *
+container_list_new()
+{
+	container_list *list =
+			(container_list *)(calloc(1, sizeof(container_list)));
+
+	return(list);
+}
+
+static
+void
+container_list_free(container_list *list)
+{
+	free(list->content_json);
+	free(list->objects);
+	free(list);
+}
+
+
+/*********************************************************************//**
+Tokenize json string. Return array of tokens. Caller is responsoble for
+deallocating the array. */
+jsmntok_t *
+json_tokenise(char *json, size_t len, int initial_tokens)
+{
+	jsmn_parser parser;
+	jsmn_init(&parser);
+
+	unsigned int n = initial_tokens;
+	jsmntok_t *tokens = (jsmntok_t *)(malloc(sizeof(jsmntok_t) * n));
+
+	int ret = jsmn_parse(&parser, json, len, tokens, n);
+
+	while (ret == JSMN_ERROR_NOMEM)
+	{
+		n = n * 2 + 1;
+		tokens = (jsmntok_t*)(realloc(tokens, sizeof(jsmntok_t) * n));
+		ret = jsmn_parse(&parser, json, len, tokens, n);
+	}
+
+	if (ret == JSMN_ERROR_INVAL) {
+		fprintf(stderr, "error: invalid JSON string\n");
+
+	}
+	if (ret == JSMN_ERROR_PART) {
+		fprintf(stderr, "error: truncated JSON string\n");
+	}
+
+	return tokens;
+}
+
+/*********************************************************************//**
+Return true if token representation equal to given string. */
+static
+bool
+json_token_eq(const char *buf, jsmntok_t *t, const char *s)
+{
+	size_t len = strlen(s);
+
+	return((size_t)(t->end - t->start) == len &&
+		(strncmp(buf + t->start, s, len) == 0));
+}
+
+/*********************************************************************//**
+Copy given token as string. */
+static
+bool
+json_token_str(const char *buf, jsmntok_t *t, char *out, int out_size)
+{
+	memcpy(out, buf + t->start, min(t->end - t->start, out_size - 1));
+	out[min(t->end - t->start, out_size - 1)] = 0;
+
+	return(true);
+}
+
+static
+int
+cmp_object_names(const void *c1, const void *c2)
+{
+	return(strcmp(((object_info*)(c1))->name, ((object_info*)(c2))->name));
+}
+
+/*********************************************************************//**
+Parse SWIFT container list response and fill output array with values
+sorted by object name. */
+static
+bool
+swift_parse_container_list(container_list *list)
+{
+	list->objects =
+		(object_info*)(calloc(list->object_count, sizeof(object_info)));
+
+	if (list->objects == NULL) {
+		fprintf(stderr, "error: out of memory\n");
+		return(false);
+	}
+
+	/*
+	[
+		{
+			"hash": string,
+			"bytes": number,
+			"name": string
+		},
+		...
+	]
+	*/
+
+	jsmntok_t *tokens = json_tokenise(list->content_json,
+					  list->content_length,
+					  list->object_count * 10);
+
+	int object_idx = 0;
+
+	if (tokens[0].type != JSMN_ARRAY) {
+		fprintf(stderr, "error: malformed response "
+				"(array expected)\n");
+		return(false);
+	}
+
+	for (int i = 1; object_idx < tokens[0].size; i++, object_idx++) {
+		jsmntok_t *t = &tokens[i];
+
+		if (t->type != JSMN_OBJECT) {
+			fprintf(stderr, "error: malformed response "
+					"(object expected)\n");
+			return(false);
+		}
+
+		for (int j = i + 1; j <= i + t->size * 2; j += 2) {
+			jsmntok_t *key = &tokens[j];
+			jsmntok_t *val = &tokens[j + 1];
+			if (key->type != JSMN_STRING) {
+				fprintf(stderr, "error: malformed response "
+						"(string expected)\n");
+				return(false);
+			}
+			if (json_token_eq(list->content_json, key, "hash")) {
+				if (val->end - val->start != 32) {
+					fprintf(stderr, "error: malformed "
+							"response "
+							"(hash must be 32 "
+							"chars long)\n");
+					return(false);
+				}
+				json_token_str(list->content_json, val,
+					       list->objects[object_idx].hash,
+					       33);
+			}
+			if (json_token_eq(list->content_json, key, "name")) {
+				json_token_str(list->content_json, val,
+					       list->objects[object_idx].name,
+					       SWIFT_MAX_URL_SIZE);
+			}
+			if (json_token_eq(list->content_json, key, "bytes")) {
+				char bytes_str[40];
+				char *endptr;
+				json_token_str(list->content_json, val,
+					       bytes_str, sizeof(bytes_str));
+				list->objects[object_idx].bytes =
+					strtoull(bytes_str, &endptr, 10);
+			}
+		}
+		i += t->size * 2;
+	}
+
+	qsort(list->objects, list->object_count,
+		sizeof(object_info), cmp_object_names);
+
+	return(true);
+}
+
+/*********************************************************************//**
+List swift container with given name. Return list of objects sorted by
+object name. */
+static
+container_list *
+swift_list(swift_auth_info *auth, const char *container)
+{
+	container_list *list;
+	char url[SWIFT_MAX_URL_SIZE];
+
+	list = container_list_new();
+
+	/* download the list in json format */
+	snprintf(url, array_elements(url), "%s/%s?format=json",
+		 auth->url, container);
+	list->content_json = swift_fetch_into_buffer(auth, url,
+			&list->content_json, &list->content_bufsize,
+			&list->content_length,
+			swift_container_list_header_cb, list);
+	if (list->content_json == NULL) {
+		container_list_free(list);
+		return(NULL);
+	}
+
+	/* parse downloaded list */
+	if (!swift_parse_container_list(list)) {
+		fprintf(stderr, "error: unable to parse container list\n");
+		container_list_free(list);
+		return(NULL);
+	}
+
+	return(list);
+}
+
+
+/*********************************************************************//**
+Return true if chunk is a part of backup with given name. */
+static
+bool
+chunk_belongs_to(const char *chunk_name, const char *backup_name)
+{
+	size_t backup_name_len = strlen(backup_name);
+
+	return((strlen(chunk_name) > backup_name_len)
+		&& (chunk_name[backup_name_len] == '/')
+		&& strncmp(chunk_name, backup_name, backup_name_len) == 0);
+}
+
+/*********************************************************************//**
+Return true if chunk is in given list. */
+static
+bool
+chunk_in_list(const char *chunk_name, char **list, int list_size)
+{
+	size_t chunk_name_len;
+
+	if (list_size == 0) {
+		return(true);
+	}
+
+	chunk_name_len = strlen(chunk_name);
+	if (chunk_name_len < 20) {
+		return(false);
+	}
+
+	for (int i = 0; i < list_size; i++) {
+		size_t item_len = strlen(list[i]);
+
+		if ((strncmp(chunk_name - item_len + chunk_name_len - 21,
+			     list[i], item_len) == 0)
+		    && (chunk_name[chunk_name_len - 21] == '.')
+		    && (chunk_name[chunk_name_len - item_len - 22] == '/')) {
+			return(true);
+		}
+	}
+
+	return(false);
+}
+
+static
+int swift_download(swift_auth_info *auth, const char *container,
+		   const char *name)
+{
+	container_list *list;
+	char *buf = NULL;
+	size_t buf_size = 0;
+	size_t result_len = 0;
+
+	if ((list = swift_list(auth, container)) == NULL) {
+		return(CURLE_FAILED_INIT);
+	}
+
+	for (size_t i = 0; i < list->object_count; i++) {
+		const char *chunk_name = list->objects[i].name;
+
+		if (chunk_belongs_to(chunk_name, name)
+		    && chunk_in_list(chunk_name, file_list, file_list_size)) {
+			char url[SWIFT_MAX_URL_SIZE];
+
+			snprintf(url, sizeof(url), "%s/%s/%s",
+				 auth->url, container, chunk_name);
+
+			if ((buf = swift_fetch_into_buffer(
+					auth, url, &buf, &buf_size, &result_len,
+					NULL, NULL)) == NULL) {
+				fprintf(stderr, "error: failed to download "
+						"chunk %s\n", chunk_name);
+				container_list_free(list);
+				return(CURLE_FAILED_INIT);
+			}
+
+			fwrite(buf, 1, result_len, stdout);
+		}
+	}
+
+	free(buf);
+
+	container_list_free(list);
+
+	return(CURLE_OK);
+}
+
+/*********************************************************************//**
+Check if backup with given name exists.
+@return	true if backup exists */
+static
+bool swift_backup_exists(swift_auth_info *auth, const char *container,
+			 const char *backup_name)
+{
+	container_list *list;
+
+	if ((list = swift_list(auth, container)) == NULL) {
+		fprintf(stderr, "Error: unable to list container %s\n",
+			container);
+		exit(EXIT_FAILURE);
+	}
+
+	for (size_t i = 0; i < list->object_count; i++) {
+		if (chunk_belongs_to(list->objects[i].name, backup_name)) {
+			container_list_free(list);
+			return(true);
+		}
+	}
+
+	container_list_free(list);
+
+	return(false);
 }
 
 int main(int argc, char **argv)
@@ -1169,8 +1665,11 @@ int main(int argc, char **argv)
 	swift_auth_info info;
 	char auth_url[SWIFT_MAX_URL_SIZE];
 
-	if (parse_args(argc, argv))
-		return 1;
+	MY_INIT(argv[0]);
+
+	if (parse_args(argc, argv)) {
+		return(EXIT_FAILURE);
+	}
 
 	if (opt_mode == MODE_PUT) {
 
@@ -1180,21 +1679,25 @@ int main(int argc, char **argv)
 
 		if (swift_auth(auth_url, opt_user, opt_key, &info) != 0) {
 			fprintf(stderr, "failed to authenticate\n");
-			return 1;
+			return(EXIT_FAILURE);
 		}
 
 		if (swift_create_container(&info, opt_container) != 0) {
 			fprintf(stderr, "failed to create container %s\n",
 				opt_container);
-			return 1;
+			return(EXIT_FAILURE);
+		}
+
+		if (swift_backup_exists(&info, opt_container, opt_name)) {
+			fprintf(stderr, "backup named '%s' already exists!\n",
+				opt_name);
+			return(EXIT_FAILURE);
 		}
 
 		if (swift_upload_parts(&info, opt_container, opt_name) != 0) {
 			fprintf(stderr, "upload failed\n");
-			return 1;
+			return(EXIT_FAILURE);
 		}
-
-		curl_global_cleanup();
 
 	} else {
 
@@ -1204,16 +1707,17 @@ int main(int argc, char **argv)
 
 		if (swift_auth(auth_url, opt_user, opt_key, &info) != 0) {
 			fprintf(stderr, "failed to authenticate\n");
-			return 1;
+			return(EXIT_FAILURE);
 		}
 
-		if (swift_download(&info, opt_container, opt_name) != 0) {
+		if (swift_download(&info, opt_container, opt_name)
+				   != CURLE_OK) {
 			fprintf(stderr, "download failed\n");
-			return 1;
+			return(EXIT_FAILURE);
 		}
-
-		curl_global_cleanup();
 	}
 
-	return 0;
+	curl_global_cleanup();
+
+	return(EXIT_SUCCESS);
 }
