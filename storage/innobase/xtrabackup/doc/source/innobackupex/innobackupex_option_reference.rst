@@ -218,11 +218,11 @@ Options
 
 .. option:: --safe-slave-backup
 
-   Stop slave SQL thread and wait to start backup until ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open temporary tables, the backup will take place, otherwise the SQL thread will be started and stopped until there are no open temporary tables. The backup will fail if ``Slave_open_temp_tables`` does not become zero after :option:`--safe-slave-backup-timeout` seconds. The slave SQL thread will be restarted when the backup finishes.
+   When specified, innobackupex will stop the slave SQL thread just before running ``FLUSH TABLES WITH READ LOCK`` and wait to start backup until ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open temporary tables, the backup will take place, otherwise the SQL thread will be started and stopped until there are no open temporary tables. The backup will fail if ``Slave_open_temp_tables`` does not become zero after :option:`innobackupex --safe-slave-backup-timeout` seconds. The slave SQL thread will be restarted when the backup finishes.
 
 .. option:: --safe-slave-backup-timeout=SECONDS
 
-   How many seconds :option:`--safe-slave-backup`` should wait for ``Slave_open_temp_tables`` to become zero. Defaults to 300 seconds.
+   How many seconds :option:`innobackupex --safe-slave-backup` should wait for ``Slave_open_temp_tables`` to become zero. Defaults to 300 seconds.
 
 .. option:: --scpopt = SCP-OPTIONS
 
