@@ -998,7 +998,9 @@ log_group_init(
 	group->state = LOG_GROUP_OK;
 	group->lsn = LOG_START_LSN;
 	group->lsn_offset = LOG_FILE_HDR_SIZE;
+	group->lsn_offset_alt = LOG_FILE_HDR_SIZE;
 	group->n_pending_writes = 0;
+	group->alt_offset_chosen = FALSE;
 
 	group->file_header_bufs_ptr = static_cast<byte**>(
 		mem_zalloc(sizeof(byte*) * n_files));
