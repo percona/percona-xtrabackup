@@ -1831,6 +1831,15 @@ dict_table_get_index_on_first_col(
 	const dict_table_t*	table,		/*!< in: table */
 	ulint			col_index);	/*!< in: position of column
 						in table */
+/*************************************************************//**
+Check whether table exists.
+@return TRUE if table exists. */
+UNIV_INTERN
+ibool
+dict_check_if_table_exists(
+/*=========================*/
+	const char*	tablename,	/*!< in: name of table */
+	ibool		dict_locked);	/*!< in: TRUE=data dictionary locked */
 
 #endif /* !UNIV_HOTBACKUP */
 

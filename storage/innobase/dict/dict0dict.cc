@@ -6704,4 +6704,34 @@ dict_tf_to_row_format_string(
 	ut_error;
 	return(0);
 }
+
+/*************************************************************//**
+Check whether table exists.
+@return TRUE if table exists. */
+UNIV_INTERN
+ibool
+dict_check_if_table_exists(
+/*=========================*/
+	const char*	tablename,	/*!< in: name of table */
+	ibool		dict_locked)	/*!< in: TRUE=data dictionary locked */
+{
+	dict_table_t*	table;
+	ibool is_exists = TRUE;
+
+	if (!dict_locked) {
+		mutex_enter(&dict_sys->mutex);
+	}
+
+	table = dict_table_get_low(tablename);
+
+	if (table == NULL) {
+		is_exists = FALSE;
+	}
+
+	if (!dict_locked) {
+		mutex_exit(&dict_sys->mutex);
+	}
+
+	return(is_exists);
+}
 #endif /* !UNIV_HOTBACKUP */
