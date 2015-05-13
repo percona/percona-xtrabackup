@@ -1208,10 +1208,6 @@ out:
 bool
 backup_start()
 {
-	if (!opt_noversioncheck) {
-		version_check();
-	}
-
 	if (!opt_no_lock) {
 		if (opt_safe_slave_backup) {
 			if (!wait_for_safe_slave(mysql_connection)) {

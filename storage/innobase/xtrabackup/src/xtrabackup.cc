@@ -6511,6 +6511,11 @@ xb_init()
 	}
 
 	if (xtrabackup_backup) {
+
+		if (!opt_noversioncheck) {
+			version_check();
+		}
+
 		if ((mysql_connection = xb_mysql_connect()) == NULL) {
 			return(false);
 		}
