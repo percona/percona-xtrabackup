@@ -2351,10 +2351,10 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	action = xb_get_copy_action();
 
 	if (xtrabackup_stream) {
-		msg("[%02u] %s %s\n", thread_n, action, node_path);
+		msg_ts("[%02u] %s %s\n", thread_n, action, node_path);
 	} else {
-		msg("[%02u] %s %s to %s\n", thread_n, action,
-		    node_path, dstfile->path);
+		msg_ts("[%02u] %s %s to %s\n", thread_n, action,
+		       node_path, dstfile->path);
 	}
 
 	/* The main copy loop */
@@ -2374,7 +2374,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	}
 
 	/* close */
-	msg("[%02u]        ...done\n", thread_n);
+	msg_ts("[%02u]        ...done\n", thread_n);
 	xb_fil_cur_close(&cursor);
 	ds_close(dstfile);
 	if (write_filter && write_filter->deinit) {
@@ -2611,8 +2611,8 @@ retry_read:
 
 		group->scanned_lsn = group_scanned_lsn;
 
-		msg(">> log scanned up to (" LSN_PF ")\n",
-		    group->scanned_lsn);
+		msg_ts(">> log scanned up to (" LSN_PF ")\n",
+		       group->scanned_lsn);
 
 		group = UT_LIST_GET_NEXT(log_groups, group);
 
@@ -6866,7 +6866,7 @@ int main(int argc, char **argv)
 
 	xb_regex_end();
 
-	msg("completed OK!\n");
+	msg_ts("completed OK!\n");
 
 	free_defaults(argv_defaults);
 
