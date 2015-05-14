@@ -63,6 +63,17 @@ static const char* SYSTEM_TABLE_NAME[] = {
 metadata even if it is marked as "corrupted". */
 UNIV_INTERN my_bool     srv_load_corrupted = FALSE;
 
+/************************************************************************
+Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
+or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
+the --tables or --tables-file options.
+
+@return TRUE if the table should be skipped. */
+my_bool
+check_if_skip_table(
+/******************/
+	const char*	name);	/*!< in: path to the table */
+
 #ifdef UNIV_DEBUG
 /****************************************************************//**
 Compare the name of an index column.
@@ -1077,6 +1088,7 @@ loop:
 
 		bool		is_temp = false;
 		bool		discarded = false;
+		bool		print_error_if_does_not_exist;
 		ib_uint32_t	flags2 = static_cast<ib_uint32_t>(
 			mach_read_from_4(field));
 
@@ -1101,13 +1113,19 @@ loop:
 			goto next_tablespace;
 		}
 
+		if (is_temp || discarded || check_if_skip_table(name)) {
+			print_error_if_does_not_exist = false;
+		} else {
+			print_error_if_does_not_exist = true;
+		}
+
 		switch (dict_check) {
 		case DICT_CHECK_ALL_LOADED:
 			/* All tablespaces should have been found in
 			fil_load_single_table_tablespaces(). */
 			if (fil_space_for_table_exists_in_mem(
-				space_id, name, TRUE, !(is_temp || discarded),
-				false, NULL, 0)
+				space_id, name, TRUE, print_error_if_does_not_exist,
+				!(is_temp || discarded), false, NULL, 0)
 			    && !(is_temp || discarded)) {
 				/* If user changes the path of .ibd files in
 				   *.isl files before doing crash recovery ,
@@ -1140,7 +1158,7 @@ loop:
 			trx_resurrect_table_locks(). */
 			if (fil_space_for_table_exists_in_mem(
 				    space_id, name, FALSE, FALSE,
-				    false, NULL, 0)) {
+				    false, false, NULL, 0)) {
 				break;
 			}
 			/* fall through */
@@ -2382,7 +2400,7 @@ err_exit:
 		table->ibd_file_missing = TRUE;
 
 	} else if (!fil_space_for_table_exists_in_mem(
-			table->space, name, FALSE, FALSE, true, heap,
+			table->space, name, FALSE, FALSE, false, true, heap,
 			table->id)) {
 
 		if (DICT_TF2_FLAG_IS_SET(table, DICT_TF2_TEMPORARY)) {
