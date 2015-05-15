@@ -21,6 +21,10 @@
 
 start_server --innodb_file_per_table
 
+# write credentials into ~/.my.cnf
+echo '[xbcloud]' > $topdir/xbcloud.cnf
+echo ${XBCLOUD_CREDENTIALS} | sed 's/ *--/\'$'\n/g' >> $topdir/xbcloud.cnf
+
 load_dbase_schema sakila
 load_dbase_data sakila
 
@@ -30,9 +34,6 @@ pwdpart=$(pwd | sed 's/\//-/g')
 full_backup_name=${now}-${pwdpart}-full_backup
 inc_backup_name=${now}-${pwdpart}-inc_backup
 
-echo ${full_backup_name}
-echo ${inc_backup_name}
-
 full_backup_dir=$topdir/${full_backup_name}
 inc_backup_dir=$topdir/${inc_backup_name}
 
@@ -40,8 +41,8 @@ vlog "take full backup"
 
 xtrabackup --backup --stream=xbstream --extra-lsndir=$full_backup_dir \
 	--target-dir=$full_backup_dir | xbcloud put \
+	--defaults-file=$topdir/xbcloud.cnf \
 	--swift-container=test_backup \
-	${XBCLOUD_CREDENTIALS} \
 	--parallel=4 \
 	${full_backup_name}
 
@@ -49,8 +50,8 @@ vlog "take incremental backup"
 
 xtrabackup --backup --incremental-basedir=$full_backup_dir \
 	--stream=xbstream --target-dir=inc_backup_dir | xbcloud put \
+	--defaults-file=$topdir/xbcloud.cnf \
 	--swift-container=test_backup \
-	${XBCLOUD_CREDENTIALS} \
 	${inc_backup_name}
 
 vlog "download and prepare"
@@ -58,14 +59,14 @@ vlog "download and prepare"
 mkdir $topdir/downloaded_full
 mkdir $topdir/downloaded_inc
 
-run_cmd xbcloud get --swift-container=test_backup \
-	${XBCLOUD_CREDENTIALS} \
+run_cmd xbcloud get --defaults-file=$topdir/xbcloud.cnf \
+	--swift-container=test_backup \
 	${full_backup_name} | xbstream -xv -C $topdir/downloaded_full
 
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/downloaded_full
 
-run_cmd xbcloud get --swift-container=test_backup \
-	${XBCLOUD_CREDENTIALS} \
+run_cmd xbcloud get --defaults-file=$topdir/xbcloud.cnf \
+	--swift-container=test_backup \
 	${inc_backup_name} | xbstream -xv -C $topdir/downloaded_inc
 
 xtrabackup --prepare --apply-log-only \
@@ -78,7 +79,8 @@ xtrabackup --prepare --target-dir=$topdir/downloaded_full
 
 mkdir $topdir/partial
 
-xbcloud get --swift-container=test_backup ${XBCLOUD_CREDENTIALS} \
+run_cmd xbcloud get --defaults-file=$topdir/xbcloud.cnf \
+	--swift-container=test_backup \
 	${full_backup_name} ibdata1 sakila/payment.ibd \
 	> $topdir/partial/partial.xbs
 
@@ -91,7 +93,9 @@ sakila/payment.ibd
 EOF
 
 # cleanup
-xbcloud delete --swift-container=test_backup ${XBCLOUD_CREDENTIALS} \
+run_cmd xbcloud delete --defaults-file=$topdir/xbcloud.cnf \
+	--swift-container=test_backup \
 	${full_backup_name}
-xbcloud delete --swift-container=test_backup ${XBCLOUD_CREDENTIALS} \
+run_cmd xbcloud delete --defaults-file=$topdir/xbcloud.cnf \
+	--swift-container=test_backup \
 	${inc_backup_name}

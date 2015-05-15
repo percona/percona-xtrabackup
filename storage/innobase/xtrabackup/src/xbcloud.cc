@@ -19,6 +19,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 *******************************************************/
 
 #include <my_global.h>
+#include <my_default.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -368,6 +369,9 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 	return(FALSE);
 }
 
+static const char *load_default_groups[]=
+	{ "xbcloud", 0 };
+
 static
 int parse_args(int argc, char **argv)
 {
@@ -393,6 +397,10 @@ int parse_args(int argc, char **argv)
 		fprintf(stderr, "Unknown command %s. "
 			"Supported commands are put and get\n", command);
 		usage();
+		exit(EXIT_FAILURE);
+	}
+
+	if (load_defaults("my", load_default_groups, &argc, &argv)) {
 		exit(EXIT_FAILURE);
 	}
 
