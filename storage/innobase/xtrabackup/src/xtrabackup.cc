@@ -1793,7 +1793,6 @@ or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
 the --tables or --tables-file options.
 
 @return TRUE if the table should be skipped. */
-static
 my_bool
 check_if_skip_table(
 /******************/
@@ -5683,6 +5682,8 @@ skip_check:
 	mem_init(srv_mem_pool_size);
 	ut_crc32_init();
 
+	xb_filters_init();
+
 	if(!innobase_log_arch_dir && xtrabackup_init_temp_log())
 		goto error;
 
@@ -6105,6 +6106,8 @@ next_node:
 		}
 	}
 
+	xb_filters_free();
+
 	if(!xtrabackup_create_ib_logfile)
 		return;
 
@@ -6118,6 +6121,8 @@ next_node:
 
 error:
 	xtrabackup_close_temp_log(FALSE);
+
+	xb_filters_free();
 
 	exit(EXIT_FAILURE);
 }
