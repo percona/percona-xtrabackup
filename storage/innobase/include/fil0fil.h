@@ -847,6 +847,9 @@ fil_space_for_table_exists_in_mem(
 					information to the .err log if a
 					matching tablespace is not found from
 					memory */
+	bool		remove_from_data_dict_if_does_not_exist,
+					/*!< in: remove from the data dictionary
+					if tablespace does not exist */
 	bool		adjust_space,	/*!< in: whether to adjust space id
 					when find table space mismatch */
 	mem_heap_t*	heap,		/*!< in: heap memory */
