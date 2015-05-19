@@ -8,7 +8,17 @@
 
    This feature implementation is considered **ALPHA** quality.
 
-|xbcloud| is a new tool which is part of the |Percona XtraBackup| 2.3.0-alpha1 release. The purpose of |xbcloud| is to download and upload full or part of |xbstream| archive from/to cloud. Archive uploading will employ multipart upload for Amazon and Large Objects on Swift. Along with |xbstream| archive index file will be uploaded which contains list of files and their parts and offsets of those parts in the |xbstream| archive. This index is needed for downloading only part of archive (one or several tables from backups) on demand.
+|xbcloud| is a new tool which is part of the |Percona XtraBackup| 2.3.0-alpha1 release. The purpose of |xbcloud| is to download and upload full or part of |xbstream| archive from/to cloud. |xbcloud| will refuse to overwrite the backup with the same name.
+
+ |xbcloud| stores each chunk as a separate object with name ``backup_name/database/table.ibd.NNNNNNNNNNNNNNNNNNNN``, where ``NNN...`` is a 0-padded serial number of chunk within file. Size of chunk produced by |xtrabackup| and |xbstream| changed to 10M. 
+
+Version specific information
+----------------------------
+ * 2.3.0-alpha1 - Initial implementation
+ * 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a :file:`.cnf` file
+ * 2.3.1-beta1 - Implemented support different :ref:`authentication options <swift_auth>` for Swift
+ * 2.3.1-beta1 - Implemented support for partial download of the cloud backups
+ * 2.3.1-beta1 - :option:`--swift-url` option has been renamed to :option:`--swift-auth-url`
 
 Usage
 -----
@@ -44,10 +54,76 @@ Following example shows how to fetch and restore the backup from Swift: ::
   innobackupex --apply-log /tmp/downloaded_full
   innobackupex --copy-back /tmp/downloaded_full
 
-Limitations
------------
+Incremental backups
+-------------------
 
-Restoring individual tables from full cloud backup isn't possible without downloading the entire backup.
+Taking incremental backups:
+
+First you need to make the full backup on which the incremental one is going to be based: :: 
+
+  xtrabackup --backup --stream=xbstream --extra-lsndir=/storage/backups/ \
+  --target-dir=/storage/backups/ | xbcloud put \
+  --storage=swift --swift-container=test_backup \
+  --swift-auth-version=2.0 --swift-user=admin \
+  --swift-tenant=admin --swift-password=xoxoxoxo \
+  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+  full_backup
+
+Then you can make the incremental backup: :: 
+
+  xtrabackup --backup --incremental-basedir=/storage/backups \
+  --stream=xbstream --target-dir=/storage/inc_backup | xbcloud put \
+  --storage=swift --swift-container=test_backup \
+  --swift-auth-version=2.0 --swift-user=admin \
+  --swift-tenant=admin --swift-password=xoxoxoxo \
+  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+  inc_backup
+
+Preparing incremental backups:  
+
+To prepare the backup you first need to download the full backup: :: 
+
+  xbcloud get --swift-container=test_backup \
+  --swift-auth-version=2.0 --swift-user=admin \
+  --swift-tenant=admin --swift-password=xoxoxoxo \
+  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+  full_backup | xbstream -xv -C /storage/downloaded_full
+
+Once you download full backup it should be prepared: ::
+
+  xtrabackup --prepare --apply-log-only --target-dir=/storage/downloaded_full
+
+After the full backup has been prepared you can download the incremental backup: ::
+  
+  xbcloud get --swift-container=test_backup \
+  --swift-auth-version=2.0 --swift-user=admin \
+  --swift-tenant=admin --swift-password=xoxoxoxo \
+  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+  inc_backup | xbstream -xv -C /storage/downloaded_inc
+
+Once the incremental backup has been downloaded you can prepare it by running: :: 
+
+  xtrabackup --prepare --apply-log-only \
+  --target-dir=/storage/downloaded_full \
+  --incremental-dir=/storage/downloaded_inc
+
+  xtrabackup --prepare --target-dir=/storage/downloaded_full
+
+Partial download of the cloud backup
+------------------------------------
+
+If you don't want to download entire backup to restore the specific database you can specify only tables you want to restore: :: 
+
+  xbcloud get --swift-container=test_backup 
+  --swift-auth-version=2.0 --swift-user=admin \
+  --swift-tenant=admin --swift-password=xoxoxoxo \
+  --swift-auth-url=http://127.0.0.1:35357/ full_backup \
+  ibdata1 sakila/payment.ibd \
+  > /storage/partial/partial.xbs
+
+  xbstream -xv -C /storage/partial < /storage/partial/partial.xbs 
+
+This command will download just ``ibdata1`` and ``sakila/payment.ibd`` table from the full backup.
 
 Command-line options
 --------------------
@@ -58,9 +134,13 @@ Command-line options
 
    Cloud storage option. Only support for Swift is currently implemented. Default is Swift
 
-.. option:: --swift-url 
+.. option:: --swift-auth-url 
 
-   URL of Swift cluster
+   URL of Swift cluster. 
+
+.. option:: --swift-storage-url
+
+   xbcloud will try to get object-store URL for given region (if any specified) from the keystone response. One can override that URL by passing --swift-storage-url=URL argument. 
 
 .. option:: --swift-user
 
@@ -85,3 +165,54 @@ Command-line options
 .. option:: --insecure 
 
    Do not verify servers certificate
+
+.. _swift_auth:
+
+Swift authentication options
+----------------------------
+
+Swift specification describe several `authentication options <http://docs.openstack.org/developer/swift/overview_auth.html>`_. |xbcloud| can authenticate against keystone with API version 2 and 3.
+
+.. option:: --swift-auth-version
+
+   Specifies the swift authentication version. Possible values are: ``1.0`` - TempAuth, ``2.0`` - Keystone v2.0, and ``3`` - Keystone v3. Default value is ``1.0``.
+
+For v2 additional options are:
+
+.. option:: --swift-tenant
+
+   Swift tenant name.
+   
+.. option:: --swift-tenant-id
+
+   Swift tenant ID.
+
+.. option:: --swift-region
+
+   Swift endpoint region. 
+
+.. option:: --swift-password
+
+   Swift password for the user.
+
+For v3 additional options are:
+.. option:: --swift-user-id
+
+   Swift user ID.
+
+.. option:: --swift-project
+
+   Swift project name.
+ 
+.. option:: --swift-project-id
+
+   Swift project ID.
+ 
+.. option:: --swift-domain
+
+   Swift domain name.
+
+.. option:: --swift-domain-id
+
+   Swift domain ID.
+

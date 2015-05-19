@@ -115,7 +115,7 @@
      Each table with the :program:`CSV Storage` engine has ``.CSV`` file which contains the data of it (which is a standard Comma Separated Value file).
 
    .opt
-     |MySQL| stores options of a database (like charset) in a file with a :option:`.opt` extension in the database directory.
+     |MySQL| stores options of a database (like charset) in a file with a :file:`.opt` extension in the database directory.
    
    .par
      Each partitioned table has .par file which contains metadata about the partitions.

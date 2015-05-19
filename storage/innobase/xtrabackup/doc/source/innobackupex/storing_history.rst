@@ -80,7 +80,7 @@ This table contains the information about the previous server backups. Informati
    * - encrypted
      - Is this an encrypted backup
  
-Limitiatons
+Limitations
 -----------
 
 * :option:`innobackupex --history` option must be specified only on the innobackupex command line and not within a configuration file in order to be effective.
