@@ -4,7 +4,7 @@
 
 .. program:: innobackupex
 
-This page documents all of the command-line options for the :program:`innobackupex` Perl script.
+This page documents all of the command-line options for the :program:`innobackupex`. 
 
 
 Options
@@ -161,7 +161,7 @@ Options
 
 .. option:: --ftwrl-wait-threshold=SECONDS
 
-   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --ftwrl-wait-timeout`. FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --ftwrl-wait-timeout is 0. Default value is 60 seconds.
+   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --ftwrl-wait-timeout`. ``FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --ftwrl-wait-timeout is 0. Default value is 60 seconds.
 
 .. option:: --ftwrl-wait-query-type=all|update
 
