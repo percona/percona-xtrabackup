@@ -4810,6 +4810,9 @@ fil_space_for_table_exists_in_mem(
 					information to the .err log if a
 					matching tablespace is not found from
 					memory */
+	bool		remove_from_data_dict_if_does_not_exist,
+					/*!< in: remove from the data dictionary
+					if tablespace does not exist */
 	bool		adjust_space,	/*!< in: whether to adjust space id
 					when find table space mismatch */
 	mem_heap_t*	heap,		/*!< in: heap memory */
@@ -4817,7 +4820,6 @@ fil_space_for_table_exists_in_mem(
 {
 	fil_space_t*	fnamespace;
 	fil_space_t*	space;
-	ibool		remove_from_data_dict = FALSE;
 
 	ut_ad(fil_system);
 
@@ -4886,9 +4888,7 @@ fil_space_for_table_exists_in_mem(
 
 	if (!print_error_if_does_not_exist) {
 
-		mutex_exit(&fil_system->mutex);
-
-		return(FALSE);
+		goto no_print_exit;
 	}
 
 	if (space == NULL) {
@@ -4898,7 +4898,6 @@ fil_space_for_table_exists_in_mem(
 				ib_logf(IB_LOG_LEVEL_WARN,
 					"It will be removed from "
 					"the data dictionary.");
-				remove_from_data_dict = TRUE;
 			}
 		} else {
 			ut_print_timestamp(stderr);
@@ -4920,10 +4919,13 @@ error_exit:
 		      "InnoDB: " REFMAN "innodb-troubleshooting-datadict.html\n"
 		      "InnoDB: for how to resolve the issue.\n", stderr);
 
+no_print_exit:
 		mutex_exit(&fil_system->mutex);
 
-		if (remove_from_data_dict && purge_sys) {
-			fil_remove_invalid_table_from_data_dict(name);
+		if (remove_from_data_dict_if_does_not_exist && purge_sys) {
+			if (space == NULL && fnamespace == NULL) {
+				fil_remove_invalid_table_from_data_dict(name);
+			}
 		}
 
 		return(FALSE);
