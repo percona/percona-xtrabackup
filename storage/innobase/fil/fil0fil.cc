@@ -41,6 +41,7 @@ Created 10/25/1995 Heikki Tuuri
 #include "mtr0mtr.h"
 #include "mtr0log.h"
 #include "dict0dict.h"
+#include "dict0priv.h"
 #include "page0page.h"
 #include "page0zip.h"
 #include "pars0pars.h"
@@ -3420,6 +3421,19 @@ fil_remove_invalid_table_from_data_dict(const char *name)
 		     "index_id CHAR;\n"
 		     "foreign_id CHAR;\n"
 		     "found INT;\n"
+
+		     "DECLARE CURSOR cur_fk IS\n"
+		     "SELECT ID FROM SYS_FOREIGN\n"
+		     "WHERE FOR_NAME = :table_name\n"
+		     "AND TO_BINARY(FOR_NAME)\n"
+		     "  = TO_BINARY(:table_name)\n"
+		     "LOCK IN SHARE MODE;\n"
+
+		     "DECLARE CURSOR cur_idx IS\n"
+		     "SELECT ID FROM SYS_INDEXES\n"
+		     "WHERE TABLE_ID = table_id\n"
+		     "LOCK IN SHARE MODE;\n"
+
 		     "BEGIN\n"
 		     "SELECT ID INTO table_id\n"
 		     "FROM SYS_TABLES\n"
@@ -3442,13 +3456,9 @@ fil_remove_invalid_table_from_data_dict(const char *name)
 		     "IF (:table_name = 'SYS_FOREIGN_COLS') THEN\n"
 		     "       found := 0;\n"
 		     "END IF;\n"
+		     "OPEN cur_fk;\n"
 		     "WHILE found = 1 LOOP\n"
-		     "       SELECT ID INTO foreign_id\n"
-		     "       FROM SYS_FOREIGN\n"
-		     "       WHERE FOR_NAME = :table_name\n"
-		     "               AND TO_BINARY(FOR_NAME)\n"
-		     "                 = TO_BINARY(:table_name)\n"
-		     "               LOCK IN SHARE MODE;\n"
+		     "       FETCH cur_fk INTO foreign_id;\n"
 		     "       IF (SQL % NOTFOUND) THEN\n"
 		     "               found := 0;\n"
 		     "       ELSE\n"
@@ -3458,12 +3468,11 @@ fil_remove_invalid_table_from_data_dict(const char *name)
 		     "               WHERE ID = foreign_id;\n"
 		     "       END IF;\n"
 		     "END LOOP;\n"
+		     "CLOSE cur_fk;\n"
 		     "found := 1;\n"
+		     "OPEN cur_idx;\n"
 		     "WHILE found = 1 LOOP\n"
-		     "       SELECT ID INTO index_id\n"
-		     "       FROM SYS_INDEXES\n"
-		     "       WHERE TABLE_ID = table_id\n"
-		     "       LOCK IN SHARE MODE;\n"
+		     "       FETCH cur_idx INTO index_id;\n"
 		     "       IF (SQL % NOTFOUND) THEN\n"
 		     "               found := 0;\n"
 		     "       ELSE\n"
@@ -3474,12 +3483,41 @@ fil_remove_invalid_table_from_data_dict(const char *name)
 		     "               AND TABLE_ID = table_id;\n"
 		     "       END IF;\n"
 		     "END LOOP;\n"
+		     "CLOSE cur_idx;\n"
 		     "DELETE FROM SYS_COLUMNS\n"
 		     "WHERE TABLE_ID = table_id;\n"
 		     "DELETE FROM SYS_TABLES\n"
-		     "WHERE ID = table_id;\n"
+		     "WHERE NAME = :table_name;\n"
 		     "END;\n"
 		     , FALSE, trx);
+
+	/* SYS_DATAFILES and SYS_TABLESPACES do not necessarily exist
+	on XtraBackup recovery. See comments around
+	dict_create_or_check_foreign_constraint_tables() in
+	innobase_start_or_create_for_mysql(). */
+	if (dict_table_get_low("SYS_DATAFILES") != NULL) {
+		info = pars_info_create();
+
+		pars_info_add_str_literal(info, "table_name", name);
+
+		que_eval_sql(info,
+			     "PROCEDURE DROP_TABLE_PROC () IS\n"
+			     "space_id INT;\n"
+
+			     "BEGIN\n"
+			     "SELECT SPACE INTO space_id\n"
+			     "FROM SYS_TABLES\n"
+			     "WHERE NAME = :table_name;\n"
+			     "IF (SQL % NOTFOUND) THEN\n"
+			     "       RETURN;\n"
+			     "END IF;\n"
+			     "DELETE FROM SYS_TABLESPACES\n"
+			     "WHERE SPACE = space_id;\n"
+			     "DELETE FROM SYS_DATAFILES\n"
+			     "WHERE SPACE = space_id;\n"
+			     "END;\n"
+			     , FALSE, trx);
+	}
 
 	trx_commit_for_mysql(trx);
 

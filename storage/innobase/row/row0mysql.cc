@@ -47,6 +47,7 @@ Created 9/17/2000 Heikki Tuuri
 #include "dict0boot.h"
 #include "dict0stats.h"
 #include "dict0stats_bg.h"
+#include "dict0priv.h"
 #include "trx0roll.h"
 #include "trx0purge.h"
 #include "trx0rec.h"
@@ -4121,7 +4122,6 @@ row_drop_table_for_mysql(
 			   "table_id CHAR;\n"
 			   "index_id CHAR;\n"
 			   "foreign_id CHAR;\n"
-			   "space_id INT;\n"
 			   "found INT;\n"
 
 			   "DECLARE CURSOR cur_fk IS\n"
@@ -4141,12 +4141,6 @@ row_drop_table_for_mysql(
 			   "FROM SYS_TABLES\n"
 			   "WHERE NAME = :table_name\n"
 			   "LOCK IN SHARE MODE;\n"
-			   "IF (SQL % NOTFOUND) THEN\n"
-			   "       RETURN;\n"
-			   "END IF;\n"
-			   "SELECT SPACE INTO space_id\n"
-			   "FROM SYS_TABLES\n"
-			   "WHERE NAME = :table_name;\n"
 			   "IF (SQL % NOTFOUND) THEN\n"
 			   "       RETURN;\n"
 			   "END IF;\n"
@@ -4192,16 +4186,40 @@ row_drop_table_for_mysql(
 			   "       END IF;\n"
 			   "END LOOP;\n"
 			   "CLOSE cur_idx;\n"
-			   "DELETE FROM SYS_TABLESPACES\n"
-			   "WHERE SPACE = space_id;\n"
-			   "DELETE FROM SYS_DATAFILES\n"
-			   "WHERE SPACE = space_id;\n"
 			   "DELETE FROM SYS_COLUMNS\n"
 			   "WHERE TABLE_ID = table_id;\n"
 			   "DELETE FROM SYS_TABLES\n"
 			   "WHERE NAME = :table_name;\n"
 			   "END;\n"
 			   , FALSE, trx);
+
+	/* SYS_DATAFILES and SYS_TABLESPACES do not necessarily exist
+	on XtraBackup recovery. See comments around
+	dict_create_or_check_foreign_constraint_tables() in
+	innobase_start_or_create_for_mysql(). */
+	if (err == DB_SUCCESS && dict_table_get_low("SYS_DATAFILES") != NULL) {
+		info = pars_info_create();
+
+		pars_info_add_str_literal(info, "table_name", name);
+
+		err = que_eval_sql(info,
+				   "PROCEDURE DROP_TABLE_PROC () IS\n"
+				   "space_id INT;\n"
+
+				   "BEGIN\n"
+				   "SELECT SPACE INTO space_id\n"
+				   "FROM SYS_TABLES\n"
+				   "WHERE NAME = :table_name;\n"
+				   "IF (SQL % NOTFOUND) THEN\n"
+				   "       RETURN;\n"
+				   "END IF;\n"
+				   "DELETE FROM SYS_TABLESPACES\n"
+				   "WHERE SPACE = space_id;\n"
+				   "DELETE FROM SYS_DATAFILES\n"
+				   "WHERE SPACE = space_id;\n"
+				   "END;\n"
+				   , FALSE, trx);
+	}
 
 	switch (err) {
 		ibool	is_temp;
