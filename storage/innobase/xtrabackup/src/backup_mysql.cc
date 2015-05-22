@@ -1173,18 +1173,13 @@ write_binlog_info(MYSQL *connection)
 
 	gtid = (gtid_executed != NULL ? gtid_executed : gtid_current_pos);
 
-	if (mariadb_gtid) {
+	if (mariadb_gtid || mysql_gtid) {
 		ut_a(asprintf(&mysql_binlog_position,
 			"filename '%s', position '%s', "
 			"GTID of the last change '%s'",
 			filename, position, gtid) != -1);
 		result = backup_file_printf(XTRABACKUP_BINLOG_INFO,
 				"%s\t%s\t%s", filename, position, gtid);
-	} else if (mysql_gtid) {
-		ut_a(asprintf(&mysql_binlog_position,
-			"GTID of the last change '%s'", gtid) != -1);
-		result = backup_file_printf(XTRABACKUP_BINLOG_INFO,
-				"%s", gtid);
 	} else {
 		ut_a(asprintf(&mysql_binlog_position,
 			"filename '%s', position '%s'",
