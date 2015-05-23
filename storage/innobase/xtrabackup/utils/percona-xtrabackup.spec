@@ -7,14 +7,14 @@
 
 #####################################
 Name:           percona-xtrabackup-23
-Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
+Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}
 Release:        %{xb_rpm_version_extra}%{?dist}
 Summary:        XtraBackup online backup for MySQL / InnoDB
 
 Group:          Applications/Databases
 License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
-Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
+Source:         percona-xtrabackup-%{version}.tar.gz
 
 BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel
 %if 0%{?rhel} > 5
@@ -45,7 +45,7 @@ AutoReqProv:    no
 This package contains the test suite for Percona XtraBackup %{version}
 
 %prep
-%setup -q -n percona-xtrabackup-%{version}%{xb_version_extra}
+%setup -q -n percona-xtrabackup-%{version}
 
 %bcond_with dummy
 
@@ -94,6 +94,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test
 
 %changelog
+* Fri May 15 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Update to new release Percona XtraBackup 2.3.1beta1
+
 * Thu Oct 30 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.0alpha1
 
