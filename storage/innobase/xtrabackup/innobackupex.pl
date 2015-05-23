@@ -3125,10 +3125,10 @@ sub write_binlog_info {
         return;
     }
 
-    if ($mariadb_gtid || !$mysql_gtid) {
-        @binlog_coordinates = ("filename '$filename'", "position $position");
-        @binlog_info_content = ($filename, $position);
-    }
+    # sometimes it is useful to know file based binlog coordinates
+    # even though GTID is enabled (see lp:1449834)
+    @binlog_coordinates = ("filename '$filename'", "position $position");
+    @binlog_info_content = ($filename, $position);
 
     $gtid = $con->{master_status}->{Executed_Gtid_Set};
     if (!defined($gtid)) {
