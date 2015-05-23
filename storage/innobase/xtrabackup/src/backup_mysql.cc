@@ -389,9 +389,12 @@ Query the server to find out what backup capabilities it supports.
 bool
 detect_mysql_capabilities_for_backup()
 {
+	/* MariaDB lists INNODB_CHANGED_PAGES in INFORMATION_SCHEMA.PLUGINS, but
+	it doesn't support FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS */
 	const char *query = "SELECT 'INNODB_CHANGED_PAGES', COUNT(*) FROM "
 				"INFORMATION_SCHEMA.PLUGINS "
-			    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'";
+			    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'"
+				"AND NOT VERSION() LIKE '10.%MariaDB%'";
 	char *innodb_changed_pages = NULL;
 	mysql_variable vars[] = {
 		{"INNODB_CHANGED_PAGES", &innodb_changed_pages}, {NULL, NULL}};
