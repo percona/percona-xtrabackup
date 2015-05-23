@@ -5007,11 +5007,14 @@ sub write_to_backup_file {
 sub detect_mysql_capabilities_for_backup {
     my $con = shift;
 
+    # MariaDB lists INNODB_CHANGED_PAGES in INFORMATION_SCHEMA.PLUGINS, but
+    # it doesn't support FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS
     if ($option_incremental) {
         $have_changed_page_bitmaps =
             mysql_get_one_value($con, "SELECT COUNT(*) FROM " .
                         "INFORMATION_SCHEMA.PLUGINS " .
-                        "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
+                        "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES' " .
+                        "AND NOT VERSION() LIKE '10.%MariaDB%'");
     }
 
     if (!defined($con->{vars})) {
