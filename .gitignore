@@ -3137,6 +3137,8 @@ support-files/plugins.files
 storage/perfschema/pfs_lex_token.h
 storage/perfschema/gen_pfs_lex_token
 sql/share/bulgarian
+sql/lex_token.h
+sql/gen_lex_token
 storage/innobase/xtrabackup/test/var/*
 storage/innobase/xtrabackup/test/results/*
 storage/innobase/xtrabackup/test/test_results.subunit

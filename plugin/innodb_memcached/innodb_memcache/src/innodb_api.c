@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -170,6 +170,40 @@ innodb_api_begin(
 			return(err);
 		}
 
+		/* If MDL is enabled, we need to create mysql handler. */
+		if (engine) {
+			/* Create a "Fake" THD if binlog is enabled */
+			/* For flush_all which request IB_LOCK_TABLE_X
+			lock, we need to add MDL lock. It's because we need
+			to block DMLs from sql layer. */
+			if (conn_data && (engine->enable_binlog
+					  || engine->enable_mdl
+					  || lock_mode == IB_LOCK_TABLE_X)) {
+				if (!conn_data->thd) {
+					conn_data->thd = handler_create_thd(
+						engine->enable_binlog);
+
+					if (!conn_data->thd) {
+						innodb_cb_cursor_close(*crsr);
+						*crsr = NULL;
+						return(DB_ERROR);
+					}
+				}
+
+				if (!conn_data->mysql_tbl) {
+					int lock_type =
+						(lock_mode == IB_LOCK_TABLE_X?
+							HDL_FLUSH : HDL_WRITE);
+					conn_data->mysql_tbl =
+						handler_open_table(
+							conn_data->thd,
+							dbname,
+							name,
+							lock_type);
+				}
+			}
+		}
+
 		err = innodb_cb_cursor_lock(engine, *crsr, lock_mode);
 
 		if (err != DB_SUCCESS) {
@@ -208,30 +242,8 @@ innodb_api_begin(
 				err = innodb_cb_cursor_lock(engine, *idx_crsr,
 						      lock_mode);
 			}
-
-			/* Create a "Fake" THD if binlog is enabled */
-			if (conn_data && (engine->enable_binlog
-					  || engine->enable_mdl)) {
-				if (!conn_data->thd) {
-					conn_data->thd = handler_create_thd(
-						engine->enable_binlog);
-
-					if (!conn_data->thd) {
-						innodb_cb_cursor_close(*crsr);
-						*crsr = NULL;
-						return(DB_ERROR);
-					}
-				}
-
-				if (!conn_data->mysql_tbl) {
-					conn_data->mysql_tbl =
-						handler_open_table(
-							conn_data->thd,
-							dbname,
-							name, HDL_WRITE);
-				}
-			}
 		}
+
 	} else {
 		ib_cb_cursor_new_trx(*crsr, ib_trx);
 
@@ -1208,17 +1220,11 @@ innodb_api_set_tpl(
 							value_len,
 							table);
 		} else {
-			err = ib_cb_col_set_value(
+			err = innodb_api_setup_field_value(
 				tpl,
 				meta_info->extra_col_info[col_to_set].field_id,
-				value, value_len, need_cpy);
-
-			if (table) {
-				handler_rec_setup_str(
-					table,
-					col_info[col_to_set].field_id,
-					value, value_len);
-			}
+				&meta_info->extra_col_info[col_to_set],
+				(char*)value, value_len, table, need_cpy);
 		}
 	} else {
 		err = innodb_api_setup_field_value(
@@ -1494,9 +1500,19 @@ innodb_api_link(
 			column_used = 0;
 		}
 
+		/* For int column, we don't support append command. */
+		if (append && !result->extra_col_value[column_used].is_str) {
+			return DB_UNSUPPORTED;
+		}
+
 		before_len = result->extra_col_value[column_used].value_len;
 		before_val = result->extra_col_value[column_used].value_str;
 	} else {
+		/* For int column, we don't support append command. */
+		if (append && !result->col_value[MCI_COL_VALUE].is_str) {
+			return DB_UNSUPPORTED;
+		}
+
 		before_len = result->col_value[MCI_COL_VALUE].value_len;
 		before_val = result->col_value[MCI_COL_VALUE].value_str;
 		column_used = UPDATE_ALL_VAL_COL;
@@ -1599,6 +1615,7 @@ innodb_api_arithmetic(
 	/* If the return message is not success or record not found, just
 	exit */
 	if (err != DB_SUCCESS && err != DB_RECORD_NOT_FOUND) {
+		*out_result = 0;
 		goto func_exit;
 	}
 
@@ -1615,7 +1632,7 @@ innodb_api_arithmetic(
 		} else {
 			/* cursor_data->mysql_tbl can't be created.
 			So safe to return here */
-			return(DB_RECORD_NOT_FOUND);
+			return(ENGINE_KEY_ENOENT);
 		}
 	}
 
@@ -1640,10 +1657,24 @@ innodb_api_arithmetic(
 		}
 
 		before_len = result.extra_col_value[column_used].value_len;
-		before_val = result.extra_col_value[column_used].value_str;
+		if (result.extra_col_value[column_used].is_str) {
+			before_val = result.extra_col_value[column_used].value_str;
+			if (before_val) {
+				value = strtoull(before_val, &end_ptr, 10);
+			}
+		} else {
+			value = result.extra_col_value[column_used].value_int;
+		}
 	} else {
 		before_len = result.col_value[MCI_COL_VALUE].value_len;
-		before_val = result.col_value[MCI_COL_VALUE].value_str;
+		if (result.col_value[MCI_COL_VALUE].is_str) {
+			before_val = result.col_value[MCI_COL_VALUE].value_str;
+			if (before_val) {
+				value = strtoull(before_val, &end_ptr, 10);
+			}
+		} else {
+			value = result.col_value[MCI_COL_VALUE].value_int;
+		}
 		column_used = UPDATE_ALL_VAL_COL;
 	}
 
@@ -1653,10 +1684,6 @@ innodb_api_arithmetic(
 	}
 
 	errno = 0;
-
-	if (before_val) {
-		value = strtoull(before_val, &end_ptr, 10);
-	}
 
 	if (errno == ERANGE) {
 		ret = ENGINE_EINVAL;

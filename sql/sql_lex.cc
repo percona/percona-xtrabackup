@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -384,6 +384,21 @@ void Lex_input_stream::body_utf8_append_literal(THD *thd,
   m_cpp_utf8_processed_ptr= end_ptr;
 }
 
+void Lex_input_stream::add_digest_token(uint token, LEX_YYSTYPE yylval)
+{
+  if (m_digest != NULL)
+  {
+    m_digest= digest_add_token(m_digest, token, yylval);
+  }
+}
+
+void Lex_input_stream::reduce_digest_token(uint token_left, uint token_right)
+{
+  if (m_digest != NULL)
+  {
+    m_digest= digest_reduce_token(m_digest, token_left, token_right);
+  }
+}
 
 /*
   This is called before every query that is to be parsed.
@@ -924,7 +939,7 @@ int MYSQLlex(YYSTYPE *yylval, THD *thd)
     lip->lookahead_token= -1;
     *yylval= *(lip->lookahead_yylval);
     lip->lookahead_yylval= NULL;
-    lip->m_digest_psi= MYSQL_ADD_TOKEN(lip->m_digest_psi, token, yylval);
+    lip->add_digest_token(token, yylval);
     return token;
   }
 
@@ -942,12 +957,10 @@ int MYSQLlex(YYSTYPE *yylval, THD *thd)
     token= lex_one_token(yylval, thd);
     switch(token) {
     case CUBE_SYM:
-      lip->m_digest_psi= MYSQL_ADD_TOKEN(lip->m_digest_psi, WITH_CUBE_SYM,
-                                         yylval);
+      lip->add_digest_token(WITH_CUBE_SYM, yylval);
       return WITH_CUBE_SYM;
     case ROLLUP_SYM:
-      lip->m_digest_psi= MYSQL_ADD_TOKEN(lip->m_digest_psi, WITH_ROLLUP_SYM,
-                                         yylval);
+      lip->add_digest_token(WITH_ROLLUP_SYM, yylval);
       return WITH_ROLLUP_SYM;
     default:
       /*
@@ -956,7 +969,7 @@ int MYSQLlex(YYSTYPE *yylval, THD *thd)
       lip->lookahead_yylval= lip->yylval;
       lip->yylval= NULL;
       lip->lookahead_token= token;
-      lip->m_digest_psi= MYSQL_ADD_TOKEN(lip->m_digest_psi, WITH, yylval);
+      lip->add_digest_token(WITH, yylval);
       return WITH;
     }
     break;
@@ -964,7 +977,7 @@ int MYSQLlex(YYSTYPE *yylval, THD *thd)
     break;
   }
 
-  lip->m_digest_psi= MYSQL_ADD_TOKEN(lip->m_digest_psi, token, yylval);
+  lip->add_digest_token(token, yylval);
   return token;
 }
 
@@ -2252,6 +2265,28 @@ bool st_select_lex::setup_ref_array(THD *thd, uint order_group_num)
   // find_order_in_list() may need some extra space, so multiply by two.
   order_group_num*= 2;
 
+  // create_distinct_group() may need some extra space
+  const bool select_distinct= MY_TEST(options & SELECT_DISTINCT);
+  if (select_distinct)
+  {
+    uint bitcount= 0;
+    Item *item;
+    List_iterator<Item> li(item_list);
+    while ((item= li++))
+    {
+      /*
+        Same test as in create_distinct_group, when it pushes new items to the
+        end of ref_pointer_array. An extra test for 'fixed' which, at this
+        stage, will be true only for columns inserted for a '*' wildcard.
+      */
+      if (item->fixed &&
+          item->type() == Item::FIELD_ITEM &&
+          item->field_type() == MYSQL_TYPE_BIT)
+        ++bitcount;
+    }
+    order_group_num+= bitcount;
+  }
+
   /*
     We have to create array in prepared statement memory if it is
     prepared statement
@@ -2275,22 +2310,13 @@ bool st_select_lex::setup_ref_array(THD *thd, uint order_group_num)
   if (!ref_pointer_array.is_null())
   {
     /*
-      The Query may have been permanently transformed by removal of
-      ORDER BY or GROUP BY. Memory has already been allocated, but by
-      reducing the size of ref_pointer_array a tight bound is
-      maintained by Bounds_checked_array
-    */
-    if (ref_pointer_array.size() > n_elems)
-      ref_pointer_array.resize(n_elems);
-
-    /*
       We need to take 'n_sum_items' into account when allocating the array,
       and this may actually increase during the optimization phase due to
       MIN/MAX rewrite in Item_in_subselect::single_value_transformer.
       In the usual case we can reuse the array from the prepare phase.
       If we need a bigger array, we must allocate a new one.
      */
-    if (ref_pointer_array.size() == n_elems)
+    if (ref_pointer_array.size() >= n_elems)
       return false;
   }
   Item **array= static_cast<Item**>(arena->alloc(sizeof(Item*) * n_elems));
