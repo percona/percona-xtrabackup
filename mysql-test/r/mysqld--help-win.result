@@ -28,6 +28,12 @@ The following options may be given as the first argument:
  --automatic-sp-privileges 
  Creating and dropping stored procedures alters ACLs
  (Defaults to on; use --skip-automatic-sp-privileges to disable.)
+ --avoid-temporal-upgrade 
+ When this option is enabled, the pre-5.6.4 temporal types
+ are not upgraded to the new format for ALTER TABLE
+ requests ADD/CHANGE/MODIFY COLUMN, ADD INDEX or FORCE
+ operation. This variable is deprecated and will be
+ removed in a future release.
  --back-log=#        The number of outstanding connection requests MySQL can
  have. This comes into play when the main MySQL thread
  gets very many connection requests in a very short time
@@ -72,6 +78,19 @@ The following options may be given as the first argument:
  binlog-format is MIXED, the format switches to row-based
  and back implicitly per each query accessing an
  NDBCLUSTER table
+ --binlog-gtid-simple-recovery 
+ If this option is enabled, the server does not scan more
+ than one binary log for every iteration when initializing
+ GTID sets on server restart. Enabling this option is very
+ useful when restarting a server which has already
+ generated lots of binary logs without GTID events. Note:
+ If this option is enabled, GLOBAL.GTID_EXECUTED and
+ GLOBAL.GTID_PURGED cannot be initialized correctly if
+ binary log(s) with GTID events were generated before
+ binary log(s) without GTID events, for example if
+ gtid_mode is disabled when the server has already
+ generated binary log(s) with GTID events and not purged
+ them.
  --binlog-ignore-db=name 
  Tells the master that updates to the given database
  should not be logged to the binary log.
@@ -395,6 +414,8 @@ The following options may be given as the first argument:
  INSERT DELAYED statements. If set to zero INSERT DELAYED
  will be not used.This variable is deprecated along with
  INSERT DELAYED.
+ --max-digest-length=# 
+ Maximum length considered for digest text.
  --max-error-count=# Max number of errors/warnings to store for a statement
  --max-heap-table-size=# 
  Don't allow creation of heap tables bigger than this
@@ -487,8 +508,8 @@ The following options may be given as the first argument:
  If this is not 0, then mysqld will use this value to
  reserve file descriptors to use with setrlimit(). If this
  value is 0 then mysqld will reserve max_connections*5 or
- max_connections + table_cache*2 (whichever is larger)
- number of file descriptors
+ max_connections + table_open_cache*2 (whichever is
+ larger) number of file descriptors
  --optimizer-prune-level=# 
  Controls the heuristic(s) applied during query
  optimization to prune less-promising partial plans from
@@ -821,22 +842,17 @@ The following options may be given as the first argument:
  --shared-memory     Enable the shared memory
  --shared-memory-base-name=name 
  Base name of shared memory
+ --show-old-temporals 
+ When this option is enabled, the pre-5.6.4 temporal types
+ will be marked in the 'SHOW CREATE TABLE' and
+ 'INFORMATION_SCHEMA.COLUMNS' table as a comment in
+ COLUMN_TYPE field. This variable is deprecated and will
+ be removed in a future release.
  --show-slave-auth-info 
  Show user and password in SHOW SLAVE HOSTS on this
  master.
  --simplified-binlog-gtid-recovery 
- If this option is enabled, the server does not scan more
- than one binary log for every iteration when initializing
- GTID sets on server restart. Enabling this option is very
- useful when restarting a server which has already
- generated lots of binary logs without GTID events. Note:
- If this option is enabled, GLOBAL.GTID_EXECUTED and
- GLOBAL.GTID_PURGED cannot be initialized correctly if
- binary log(s) with GTID events were generated before
- binary log(s) without GTID events, for example if
- gtid_mode is disabled when the server has already
- generated binary log(s) with GTID events and not purged
- them. 
+ Alias for @@binlog_gtid_simple_recovery. Deprecated
  --skip-grant-tables Start without grant tables. This gives all users FULL
  ACCESS to all tables.
  --skip-host-cache   Don't cache host names.
@@ -1024,6 +1040,7 @@ auto-increment-increment 1
 auto-increment-offset 1
 autocommit TRUE
 automatic-sp-privileges TRUE
+avoid-temporal-upgrade FALSE
 back-log 80
 big-tables FALSE
 bind-address *
@@ -1032,6 +1049,7 @@ binlog-checksum CRC32
 binlog-direct-non-transactional-updates FALSE
 binlog-error-action IGNORE_ERROR
 binlog-format STATEMENT
+binlog-gtid-simple-recovery FALSE
 binlog-max-flush-queue-time 0
 binlog-order-commits TRUE
 binlog-row-event-max-size 8192
@@ -1133,6 +1151,7 @@ max-binlog-stmt-cache-size 18446744073709547520
 max-connect-errors 100
 max-connections 151
 max-delayed-threads 20
+max-digest-length 1024
 max-error-count 64
 max-heap-table-size 16777216
 max-join-size 18446744073709551615
@@ -1256,6 +1275,7 @@ server-id 0
 server-id-bits 32
 shared-memory FALSE
 shared-memory-base-name MYSQL
+show-old-temporals FALSE
 show-slave-auth-info FALSE
 simplified-binlog-gtid-recovery FALSE
 skip-grant-tables TRUE

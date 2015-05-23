@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2014, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -378,8 +378,10 @@ because there is no parallel deadlock check. This stack is protected by
 the lock_sys_t::mutex. */
 static lock_stack_t*	lock_stack;
 
+#ifdef UNIV_DEBUG
 /** The count of the types of locks. */
 static const ulint	lock_types = UT_ARR_SIZE(lock_compatibility_matrix);
+#endif /* UNIV_DEBUG */
 
 #ifdef UNIV_PFS_MUTEX
 /* Key to register mutex with performance schema */
@@ -2026,7 +2028,8 @@ lock_rec_add_to_queue(
 
 	ut_ad(lock_mutex_own());
 	ut_ad(caller_owns_trx_mutex == trx_mutex_own(trx));
-	ut_ad(dict_index_is_clust(index) || !dict_index_is_online_ddl(index));
+	ut_ad(dict_index_is_clust(index)
+	      || dict_index_get_online_status(index) != ONLINE_INDEX_CREATION);
 #ifdef UNIV_DEBUG
 	switch (type_mode & LOCK_MODE_MASK) {
 	case LOCK_X:
