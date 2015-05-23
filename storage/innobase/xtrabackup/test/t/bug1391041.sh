@@ -31,19 +31,19 @@ innobackupex --no-timestamp $topdir/backup
 
 binlog_info=$topdir/backup/xtrabackup_binlog_info
 
-if egrep -q "filename.*position" $OUTFILE ; then
-	die "Found filename/position with GTID_MODE=ON"
+if ! egrep -q "filename.*position" $OUTFILE ; then
+	die "filename/position NOT FOUND with GTID_MODE=ON"
 fi
 
 if ! egrep -q "GTID of the last change" $OUTFILE ; then
 	die "GTID of the last change not found with GTID_MODE=ON"
 fi
 
-if egrep -q "^mysql-bin.[0-9]+[[:space:]]+[0-9]+$" $binlog_info ; then
-	die "Found filename/position with GTID_MODE=ON"
+if ! egrep -q "^mysql-bin.[0-9]+[[:space:]]+[0-9]+" $binlog_info ; then
+	die "filename/position NOT FOUND with GTID_MODE=ON"
 fi
 
-if ! egrep -q "^[a-f0-9:-]+$" $binlog_info ; then
+if ! egrep -q "[a-f0-9:-]+$" $binlog_info ; then
 	die "GTID not found in xtrabackup_binlog_info with GTID_MODE=ON"
 fi
 
