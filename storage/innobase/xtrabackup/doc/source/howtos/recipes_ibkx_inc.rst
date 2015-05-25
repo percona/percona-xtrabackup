@@ -22,7 +22,7 @@ First you have to replay the committed transactions on each backup, ::
   innobackupex --apply-log --redo-only $FULLBACKUP \
    --use-memory=1G --user=USER --password=PASSWORD
 
-The :option:`–use-memory` option is not necessary, it will speed up the process if it is used (provided that the amount of RAM given is available).
+The :option:`--use-memory` option is not necessary, it will speed up the process if it is used (provided that the amount of RAM given is available).
 
 If everything went fine, you should see an output similar to: ::
 
