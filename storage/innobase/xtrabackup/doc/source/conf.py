@@ -50,7 +50,7 @@ copyright = u'2009-2015, Percona LLC and/or its affiliates'
 # built documents.
 #
 # The short X.Y version.
-version = '2.2.10'
+version = '2.2.11'
 # The full version, including alpha/beta/rc tags.
 release = '2.2.10'
 
