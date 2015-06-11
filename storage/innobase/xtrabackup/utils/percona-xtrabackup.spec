@@ -55,8 +55,8 @@ echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xb
 #
 export CC=${CC-"gcc"}
 export CXX=${CXX-"g++"}
-export CFLAGS="$CFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\""
-export CXXFLAGS="$CXXFLAGS -DXTRABACKUP_VERSION=\\\"%{xtrabackup_version}\\\" -DXTRABACKUP_REVISION=\\\"%{xtrabackup_revision}\\\""
+export CFLAGS=${CFLAGS:-}
+export CXXFLAGS=${CXXFLAGS:-}
 #
 cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
   -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test -DINSTALL_MANDIR=%{_mandir} .
