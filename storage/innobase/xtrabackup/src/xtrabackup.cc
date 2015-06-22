@@ -6170,6 +6170,10 @@ int main(int argc, char **argv)
 	setup_signals();
 
 	MY_INIT(argv[0]);
+
+	pthread_key_create(&THR_THD, NULL);
+	my_pthread_setspecific_ptr(THR_THD, NULL);
+
 	xb_regex_init();
 
 	system_charset_info= &my_charset_utf8_general_ci;
@@ -6375,6 +6379,9 @@ int main(int argc, char **argv)
 		xtrabackup_prepare_func();
 
 	xb_regex_end();
+
+	if (THR_THD)
+		(void) pthread_key_delete(THR_THD);
 
 	exit(EXIT_SUCCESS);
 }
