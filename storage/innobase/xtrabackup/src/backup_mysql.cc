@@ -756,7 +756,10 @@ lock_tables(MYSQL *connection)
 		compatible with this trick.
 		*/
 
-		xb_mysql_query(connection, "FLUSH TABLES", false);
+		msg("Executing FLUSH NO_WRITE_TO_BINLOG TABLES...\n");
+
+		xb_mysql_query(connection,
+			       "FLUSH NO_WRITE_TO_BINLOG TABLES", false);
 	}
 
 	if (opt_lock_wait_timeout) {
