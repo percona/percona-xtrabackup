@@ -34,8 +34,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "read_filt.h"
 #include "xtrabackup.h"
 
-/* Size of read buffer in pages */
-#define XB_FIL_CUR_PAGES 64
+/* Size of read buffer in pages (640 pages = 10M for 16K sized pages) */
+#define XB_FIL_CUR_PAGES 640
 
 /***********************************************************************
 Extracts the relative path ("database/table.ibd") of a tablespace from a
@@ -46,7 +46,6 @@ For user tablespaces both "./database/table.ibd" and
 
 For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
 and "./ibdata1" yield "ibdata1" in the output. */
-static
 const char *
 xb_get_relative_path(
 /*=================*/

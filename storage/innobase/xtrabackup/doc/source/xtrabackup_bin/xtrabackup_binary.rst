@@ -48,8 +48,6 @@ Advanced Features
    restoring_individual_tables
    lru_dump
    
-..    performance_tunning_innobackupex
-
 Implementation
 ==============
 

@@ -10,16 +10,16 @@
 
 Add this to :file:`/etc/apt/sources.list`, replacing ``VERSION`` with the name of your distribution: ::
 
-  deb http://repo.percona.com/apt VERSION main
-  deb-src http://repo.percona.com/apt VERSION main
+  deb http://repo.percona.com/apt VERSION main testing
+  deb-src http://repo.percona.com/apt VERSION main testing
 
 Remember to update the local cache: ::
 
   $ apt-get update
 
-Now you can install |Percona XtraBackup| with: ::
+Now you can install |Percona XtraBackup| 2.3 with: ::
 
-  $ apt-get install percona-xtrabackup
+  $ apt-get install percona-xtrabackup-2.3
 
 Supported Architectures
 =======================
@@ -45,7 +45,7 @@ Ubuntu
  * 14.10 (utopic)
  * 15.04 (vivid)
 
-.. _debian_experimental: 
+.. _debian_testing: 
 
 Percona `apt` Testing repository
 =================================
@@ -54,4 +54,3 @@ Percona offers pre-release builds from the testing repository. To enable it add 
 
   deb http://repo.percona.com/apt VERSION main testing
   deb-src http://repo.percona.com/apt VERSION main testing
-

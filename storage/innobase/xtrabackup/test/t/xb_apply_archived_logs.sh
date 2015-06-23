@@ -261,7 +261,7 @@ function test_archived_logs
 	#########################################
 	# Apply logs only to the remembered lsn #
 	#########################################
-	# --apply-logs-only is set implicitly because unfinished transactions
+	# --apply-log-only is set implicitly because unfinished transactions
 	# can be finished on further logs applying but using this option with
 	# --innodb-log-arch-dir is tested here to prove this bug
 	# https://bugs.launchpad.net/percona-xtrabackup/+bug/1199555 is not
@@ -271,7 +271,7 @@ function test_archived_logs
 		   --target-dir=$BACKUP_DIR \
 		   --innodb-log-arch-dir=$ARCHIVED_LOGS_DIR \
 		   --to-archived-lsn=$LSN \
-		   --apply-logs-only \
+		   --apply-log-only \
 		   $XTRABACKUP_OPTIONS
 	#Copy prepared data to server data dir
 	cp -R $BACKUP_DIR/* $mysql_datadir
@@ -294,7 +294,7 @@ function test_archived_logs
 	xtrabackup --prepare \
 		   --target-dir=$BACKUP_DIR \
 		   --innodb-log-arch-dir=$ARCHIVED_LOGS_DIR \
-		   --apply-logs-only \
+		   --apply-log-only \
 		   $XTRABACKUP_OPTIONS
 	#Copy prepared data to server data dir
 	cp -R $BACKUP_DIR/* $mysql_datadir

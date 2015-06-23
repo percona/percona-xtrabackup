@@ -102,4 +102,22 @@ xb_fil_cur_close(
 /*=============*/
 	xb_fil_cur_t *cursor);	/*!< in/out: source file cursor */
 
+/***********************************************************************
+Extracts the relative path ("database/table.ibd") of a tablespace from a
+specified possibly absolute path.
+
+For user tablespaces both "./database/table.ibd" and
+"/remote/dir/database/table.ibd" result in "database/table.ibd".
+
+For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
+and "./ibdata1" yield "ibdata1" in the output. */
+const char *
+xb_get_relative_path(
+/*=================*/
+	const char*	path,		/*!< in: tablespace path (either
+			  		relative or absolute) */
+	ibool		is_system);	/*!< in: TRUE for system tablespaces,
+					i.e. when only the filename must be
+					returned. */
+
 #endif

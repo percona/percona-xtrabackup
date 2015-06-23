@@ -31,8 +31,9 @@ innodb_log_checksum_algorithm=$1
 
     rm -rf $MYSQLD_DATADIR/*
 
-    innobackupex --apply-log --defaults-file=$topdir/backup/backup-my.cnf \
-                 $topdir/backup
+    run_cmd ${IB_BIN} \
+        ${IB_ARGS/\/--defaults-file=*my.cnf/$topdir\/backup\/backup-my.cnf} \
+        --apply-log $topdir/backup
 
     innobackupex --copy-back $topdir/backup
 

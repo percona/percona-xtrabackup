@@ -33,7 +33,5 @@ $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE tmp3 ENGINE=InnoDB SELECT * FROM payment
 vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 
-resume_suspended_xb $topdir/backup/xtrabackup_suspended_2
-
 # wait's return code will be the code returned by the background process
 run_cmd wait $job_pid

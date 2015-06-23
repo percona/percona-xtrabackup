@@ -8,7 +8,7 @@ Before installing, you might want to read the :doc:`release-notes`.
 
 Ready-to-use binaries are available from the |Percona XtraBackup| `download page <http://www.percona.com/downloads/XtraBackup/>`_, including:
 
- * ``RPM`` packages for *RHEL* 5 and *RHEL* 6 (including compatible distributions such as CentOS and Oracle Enterprise Linux)
+ * ``RPM`` packages for *RHEL* 5, *RHEL* 6 and *RHEL* 7 (including compatible distributions such as *CentOS* and *Oracle Enterprise Linux*)
 
  * *Debian* packages for *Debian* and *Ubuntu*
 

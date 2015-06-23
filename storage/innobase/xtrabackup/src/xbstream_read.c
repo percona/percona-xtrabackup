@@ -79,10 +79,6 @@ validate_chunk_type(uchar code)
 		}							\
 	} while (0)
 
-/* Magic + flags + type + path len */
-#define CHUNK_HEADER_CONSTANT_LEN ((sizeof(XB_STREAM_CHUNK_MAGIC) - 1) + \
-				   1 + 1 + 4)
-
 xb_rstream_result_t
 xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 {

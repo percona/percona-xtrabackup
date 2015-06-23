@@ -3148,6 +3148,8 @@ storage/innobase/xtrabackup/src/xbstream
 storage/innobase/xtrabackup/innobackupex
 storage/innobase/xtrabackup/src/xtrabackup
 storage/innobase/xtrabackup/src/xtrabackup_version.h
+storage/innobase/xtrabackup/src/innobackupex
+storage/innobase/xtrabackup/src/version_check_pl.h
 /CMakeCache.txt
 /storage/innobase/xtrabackup/src/libarchive/DartConfiguration.tcl
 /storage/innobase/xtrabackup/src/libarchive/cmake.tmp/CheckFuncs_stub.c

@@ -20,7 +20,7 @@ mkdir -p $topdir/backup
 
 vlog "Starting backup"
 innobackupex $topdir/backup
-full_backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{print $2}'`
+full_backup_dir=`grep "Backup created in directory" $OUTFILE | awk -F\' '{print $2}'`
 vlog "Full backup done to directory $full_backup_dir"
 
 # Saving the checksum of original table

@@ -49,7 +49,8 @@ local_init(const char *root)
 {
 	ds_ctxt_t *ctxt;
 
-	if (my_mkdir(root, 0777, MYF(0)) < 0 && my_errno != EEXIST)
+	if (my_mkdir(root, 0777, MYF(0)) < 0
+	    && my_errno != EEXIST && my_errno != EISDIR)
 	{
 		my_error(EE_CANT_MKDIR, MYF(ME_BELL | ME_WAITTANG),
 			 root, my_errno);

@@ -62,11 +62,11 @@ function ib_part_add_mandatory_tables()
 	local tables_file=$2
 	for table in $mysql_datadir/mysql/*.frm
 	do
-	        echo mysql.`basename $table` >> $tables_file
+	        echo mysql.`basename ${table%.*}` >> $tables_file
 	done
 	for table in $mysql_datadir/performance_schema/*.frm
 	do
-	    echo performance_schema.`basename $table` >> $tables_file
+	    echo performance_schema.`basename ${table%.*}` >> $tables_file
 	done
 }
 

@@ -88,7 +88,7 @@ After the backups have been decrypted, they can be prepared the same way as the 
 
 .. note::
 
-   After version 2.2.10 |Percona XtraBackup| doesn't automatically remove the encrypted files. In order to clean up the backup directory users should remove the :file:`*.xbcrypt` files.
+   |Percona XtraBackup| doesn't automatically remove the encrypted files. In order to clean up the backup directory users should remove the :file:`*.xbcrypt` files.
 
 Restoring Encrypted Backups
 =============================
