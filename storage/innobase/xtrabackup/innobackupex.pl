@@ -3506,9 +3506,9 @@ sub mysql_lock_tables {
         # compatible with this trick.
 
         $now = current_time();
-        print STDERR "$now  $prefix Executing FLUSH TABLES...\n";
+        print STDERR "$now  $prefix Executing FLUSH NO_WRITE_TO_BINLOG TABLES...\n";
 
-        mysql_query($con, "FLUSH TABLES");
+        mysql_query($con, "FLUSH NO_WRITE_TO_BINLOG TABLES");
     }
 
     if ($option_lock_wait_timeout) {
