@@ -2125,15 +2125,6 @@ retry_read:
 			blocks_in_group = log_block_convert_lsn_to_no(
 				log_group_get_capacity(group)) - 1;
 
-			/* Can be just wrong lsn_offset. Is it PS 5.5 with large
-			log files? */
-			if (!group->alt_offset_chosen &&
-			    group->lsn_offset != group->lsn_offset_alt) {
-				group->lsn_offset = group->lsn_offset_alt;
-				group->alt_offset_chosen = TRUE;
-				goto retry_read;
-			}
-
 			if (no < scanned_no ||
 			    /* Log block numbers wrap around at 0x3FFFFFFF */
 			    ((scanned_no | 0x40000000UL) - no) %
@@ -2144,6 +2135,16 @@ retry_read:
 
 				break;
 			}
+
+			/* Can be just wrong lsn_offset. Is it PS 5.5 with large
+			log files? */
+			if (!group->alt_offset_chosen &&
+			    group->lsn_offset != group->lsn_offset_alt) {
+				group->lsn_offset = group->lsn_offset_alt;
+				group->alt_offset_chosen = TRUE;
+				goto retry_read;
+			}
+
 
 			msg("xtrabackup: error:"
 			    " log block numbers mismatch:\n"
