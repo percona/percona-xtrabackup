@@ -48,7 +48,7 @@ SOURCEDIR="$(readlink -f $(dirname "$0")/../../../../)"
 XTRABACKUP_VERSION="${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}.${XB_VERSION_PATCH}${XB_VERSION_EXTRA}"
 
 DEBIAN_VERSION="$(lsb_release -sc)"
-REVISION="$(cd "$SOURCEDIR"; bzr revno 2>/dev/null || cat REVNO)"
+REVISION="$(cd "$SOURCEDIR"; git rev-parse --short HEAD 2>/dev/null || cat REVNO)"
 FULL_VERSION="$XTRABACKUP_VERSION-$REVISION.$DEBIAN_VERSION"
 
 # Working directory
