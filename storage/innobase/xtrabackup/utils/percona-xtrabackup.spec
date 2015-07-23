@@ -24,8 +24,6 @@ BuildRequires:  curl-devel
 %endif
 %if 0%{?rhel} > 6 
 BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6 
-%else
-BuildRequires:  python-sphinx10 >= 1.0.1, python-docutils >= 0.6 
 %endif
 Conflicts:      percona-xtrabackup, percona-xtrabackup-21
 Requires:       perl(DBD::mysql), rsync
