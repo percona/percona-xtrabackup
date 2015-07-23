@@ -104,7 +104,7 @@ REDHAT_RELEASE="$(grep -o 'release [0-9][0-9]*' /etc/redhat-release | \
 cut -d ' ' -f 2)"
 
 if [ -z "${REVISION:-}" ]; then
-  REVISION="$(cd "$SOURCEDIR"; (bzr revno 2>/dev/null || cat REVNO))"
+  REVISION="$(cd "$SOURCEDIR"; (git rev-parse --short HEAD 2>/dev/null || cat REVNO))"
 fi
 
 # Fix problems in rpmbuild for rhel4: _libdir and _arch are not correctly set.
