@@ -3738,6 +3738,14 @@ skip_last_cp:
 	xb_filters_free();
 
 	xb_data_files_close();
+
+	/* Make sure that the latest checkpoint made it to xtrabackup_logfile */
+	if (latest_cp > log_copy_scanned_lsn) {
+		msg("xtrabackup: error: last checkpoint LSN (" LSN_PF
+		    ") is larger than last copied LSN (" LSN_PF ").\n",
+		    latest_cp, log_copy_scanned_lsn);
+		exit(EXIT_FAILURE);
+	}
 }
 
 /* ================= stats ================= */
