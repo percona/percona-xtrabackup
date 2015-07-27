@@ -4261,7 +4261,8 @@ fil_load_single_table_tablespace(
 			os_file_close(remote.file);
 			mem_free(remote.filepath);
 
-			if (srv_backup_mode) {
+			if (srv_backup_mode && (remote.id == ULINT_UNDEFINED
+				|| remote.id == 0)) {
 
 				/* Ignore files that have uninitialized space
 				IDs on the backup stage. This means that a
@@ -4287,7 +4288,8 @@ fil_load_single_table_tablespace(
 		if (!def.success) {
 			os_file_close(def.file);
 
-			if (srv_backup_mode) {
+			if (srv_backup_mode && (def.id == ULINT_UNDEFINED
+				|| def.id == 0)) {
 
 				/* Ignore files that have uninitialized space
 				IDs on the backup stage. This means that a
