@@ -482,6 +482,48 @@ EOF
 }
 
 ########################################################################
+# Get the binary log file from SHOW MASTER STATUS
+########################################################################
+function get_binlog_file()
+{
+    local count
+    local res
+
+    count=0
+    while read line; do
+        if [ $count -eq 1 ] # File:
+        then
+            res=`echo "$line" | sed s/File://`
+            break;
+        fi
+        count=$((count+1))
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+
+    echo $res
+}
+
+########################################################################
+# Get the binary log offset from SHOW MASTER STATUS
+########################################################################
+function get_binlog_pos()
+{
+    local count
+    local res
+
+    count=0
+    while read line; do
+        if [ $count -eq 2 ] # Position:
+        then
+            res=`echo "$line" | sed s/Position://`
+            break;
+        fi
+        count=$((count+1))
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+
+    echo $res
+}
+
+########################################################################
 # Wait until slave catches up with master.
 # The timeout is hardcoded to 300 seconds
 #
@@ -492,7 +534,6 @@ function sync_slave_with_master()
 {
     local slave_id=$1
     local master_id=$2
-    local count
     local master_file
     local master_pos
 
@@ -500,19 +541,8 @@ function sync_slave_with_master()
 
     # Get master log pos
     switch_server $master_id
-    count=0
-    while read line; do
-      	if [ $count -eq 1 ] # File:
-      	then
-      	    master_file=`echo "$line" | sed s/File://`
-      	elif [ $count -eq 2 ] # Position:
-      	then
-      	    master_pos=`echo "$line" | sed s/Position://`
-      	fi
-      	count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
-
-    echo "master_file=$master_file, master_pos=$master_pos"
+    master_file=`get_binlog_file`
+    master_pos=`get_binlog_pos`
 
     # Wait for the slave SQL thread to catch up
     switch_server $slave_id
@@ -773,11 +803,13 @@ function multi_row_insert()
 }
 
 ########################################################################
-# Return 0 if the server has backup locks support
+# Return 0 if the server has the specified variable and its value is YES
 ########################################################################
-function has_backup_locks()
+function has_feature_enabled()
 {
-    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
+    local var=$1
+
+    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE '$1'\G" \
               2> /dev/null | egrep -q "Value: YES$"
     then
         return 0
@@ -793,6 +825,21 @@ function has_backup_locks()
 }
 
 ########################################################################
+# Return 0 if the server has backup locks support
+########################################################################
+function has_backup_locks()
+{
+    has_feature_enabled "have_backup_locks"
+}
+
+########################################################################
+# Return 0 if the server has backup-safe binlog info
+########################################################################
+function has_backup_safe_binlog_info()
+{
+    has_feature_enabled "have_backup_safe_binlog_info"
+}
+
 # Return 0 if the platform is 64-bit
 ########################################################################
 function is_64bit()

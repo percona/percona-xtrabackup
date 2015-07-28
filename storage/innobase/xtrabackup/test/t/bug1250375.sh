@@ -28,17 +28,7 @@ innobackupex --no-timestamp --galera-info $topdir/backup
 backup_dir=$topdir/backup
 vlog "Backup created in directory $backup_dir"
 
-count=0
-master_file=
-
-while read line; do
-    if [ $count -eq 1 ] # File:
-    then
-        master_file=`echo "$line" | sed s/File://`
-        break
-    fi
-    count=$((count+1))
-done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+master_file=`get_binlog_file`
 
 cd $backup_dir
 

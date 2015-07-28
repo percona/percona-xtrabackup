@@ -58,6 +58,7 @@ char tool_args[2048];
 /* server capabilities */
 bool have_changed_page_bitmaps = false;
 bool have_backup_locks = false;
+bool have_backup_safe_binlog_info = false;
 bool have_lock_wait_timeout = false;
 bool have_galera_enabled = false;
 bool have_flush_engine_logs = false;
@@ -284,6 +285,8 @@ get_mysql_vars(MYSQL *connection)
 	char *version_var = NULL;
 	char *innodb_version_var = NULL;
 	char *have_backup_locks_var = NULL;
+	char *have_backup_safe_binlog_info_var = NULL;
+	char *log_bin_var = NULL;
 	char *lock_wait_timeout_var= NULL;
 	char *wsrep_on_var = NULL;
 	char *slave_parallel_workers_var = NULL;
@@ -297,6 +300,9 @@ get_mysql_vars(MYSQL *connection)
 
 	mysql_variable mysql_vars[] = {
 		{"have_backup_locks", &have_backup_locks_var},
+		{"have_backup_safe_binlog_info",
+		 &have_backup_safe_binlog_info_var},
+		{"log_bin", &log_bin_var},
 		{"lock_wait_timeout", &lock_wait_timeout_var},
 		{"gtid_mode", &gtid_mode_var},
 		{"version", &version_var},
@@ -317,6 +323,24 @@ get_mysql_vars(MYSQL *connection)
 
 	if (have_backup_locks_var != NULL && !opt_no_backup_locks) {
 		have_backup_locks = true;
+	}
+
+	if (opt_binlog_info == BINLOG_INFO_AUTO) {
+
+		if (have_backup_safe_binlog_info_var != NULL)
+			opt_binlog_info = BINLOG_INFO_LOCKLESS;
+		else if (log_bin_var != NULL && !strcmp(log_bin_var, "ON"))
+			opt_binlog_info = BINLOG_INFO_ON;
+		else
+			opt_binlog_info = BINLOG_INFO_OFF;
+	}
+
+	if (have_backup_safe_binlog_info_var == NULL &&
+	    opt_binlog_info == BINLOG_INFO_LOCKLESS) {
+
+		msg("Error: --binlog-info=LOCKLESS is not supported by the "
+		    "server\n");
+		return(false);
 	}
 
 	if (lock_wait_timeout_var != NULL) {
@@ -791,17 +815,21 @@ lock_tables(MYSQL *connection)
 
 
 /*********************************************************************//**
-If backup locks are used, execete LOCK BINLOG FOR BACKUP.
+If backup locks are used, execute LOCK BINLOG FOR BACKUP provided that we are
+not in the --no-lock mode and the lock has not been acquired already.
 @returns true if lock acquired */
 bool
-lock_binlog(MYSQL *connection)
+lock_binlog_maybe(MYSQL *connection)
 {
-	if (have_backup_locks) {
+	if (have_backup_locks && !opt_no_lock && !binlog_locked) {
 		msg("Executing LOCK BINLOG FOR BACKUP...\n");
 		xb_mysql_query(connection, "LOCK BINLOG FOR BACKUP", false);
+		binlog_locked = true;
+
 		return(true);
 	}
-	return(true);
+
+	return(false);
 }
 
 
@@ -818,7 +846,7 @@ unlock_all(MYSQL *connection)
 		os_thread_sleep(opt_debug_sleep_before_unlock * 1000);
 	}
 
-	if (have_backup_locks) {
+	if (binlog_locked) {
 		msg("Executing UNLOCK BINLOG\n");
 		xb_mysql_query(connection, "UNLOCK BINLOG", false);
 	}
@@ -1101,6 +1129,8 @@ write_current_binlog_file(MYSQL *connection)
 	if (gtid_exists) {
 		size_t log_bin_dir_length;
 
+		lock_binlog_maybe(connection);
+
 		xb_mysql_query(connection, "FLUSH BINARY LOGS", false);
 
 		read_mysql_variables(connection, "SHOW MASTER STATUS",
@@ -1185,13 +1215,14 @@ write_binlog_info(MYSQL *connection)
 			"GTID of the last change '%s'",
 			filename, position, gtid) != -1);
 		result = backup_file_printf(XTRABACKUP_BINLOG_INFO,
-				"%s\t%s\t%s", filename, position, gtid);
+					    "%s\t%s\t%s\n", filename, position,
+					    gtid);
 	} else {
 		ut_a(asprintf(&mysql_binlog_position,
 			"filename '%s', position '%s'",
 			filename, position) != -1);
 		result = backup_file_printf(XTRABACKUP_BINLOG_INFO,
-				"%s\t%s", filename, position);
+					    "%s\t%s\n", filename, position);
 	}
 
 cleanup:

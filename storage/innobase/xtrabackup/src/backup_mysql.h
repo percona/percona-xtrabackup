@@ -68,7 +68,7 @@ bool
 write_backup_config_file();
 
 bool
-lock_binlog(MYSQL *connection);
+lock_binlog_maybe(MYSQL *connection);
 
 bool
 lock_tables(MYSQL *connection);

@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2014 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2015 Percona LLC and/or its affiliates.
 
 Declarations for xtrabackup.cc
 
@@ -167,6 +167,11 @@ extern uint		opt_safe_slave_backup_timeout;
 
 extern const char	*opt_history;
 extern my_bool		opt_decrypt;
+
+enum binlog_info_enum { BINLOG_INFO_OFF, BINLOG_INFO_LOCKLESS, BINLOG_INFO_ON,
+			BINLOG_INFO_AUTO};
+
+extern ulong opt_binlog_info;
 
 void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,

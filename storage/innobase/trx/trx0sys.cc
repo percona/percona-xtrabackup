@@ -292,9 +292,9 @@ trx_sys_print_mysql_binlog_offset(void)
 		  + TRX_SYS_MYSQL_LOG_NAME, TRX_SYS_MYSQL_LOG_NAME_LEN);
 
 	fprintf(stderr,
-		"InnoDB: Last MySQL binlog file position %lu %lu,"
+		"xtrabackup: Last MySQL binlog file position " UINT64PF ","
 		" file name %s\n",
-		trx_sys_mysql_bin_log_pos_high, trx_sys_mysql_bin_log_pos_low,
+		trx_sys_mysql_bin_log_pos,
 		trx_sys_mysql_bin_log_name);
 
 	mtr_commit(&mtr);
