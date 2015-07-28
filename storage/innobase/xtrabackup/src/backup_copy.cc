@@ -60,6 +60,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 /* list of files to sync for --rsync mode */
 std::set<std::string> rsync_list;
 
+/* Whether LOCK BINLOG FOR BACKUP has been issued during backup */
+bool binlog_locked;
 
 /************************************************************************
 Struct represents file or directory. */
@@ -1239,11 +1241,11 @@ backup_start()
 				return(false);
 			}
 		}
-	} else {
-		lock_binlog(mysql_connection);
 	}
 
 	if (opt_slave_info) {
+		lock_binlog_maybe(mysql_connection);
+
 		if (!write_slave_info(mysql_connection)) {
 			return(false);
 		}
@@ -1262,7 +1264,11 @@ backup_start()
 		write_current_binlog_file(mysql_connection);
 	}
 
-	write_binlog_info(mysql_connection);
+	if (opt_binlog_info == BINLOG_INFO_ON) {
+
+		lock_binlog_maybe(mysql_connection);
+		write_binlog_info(mysql_connection);
+	}
 
 	if (have_flush_engine_logs) {
 		msg("Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...\n");

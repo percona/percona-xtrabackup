@@ -345,6 +345,12 @@ my_bool opt_noversioncheck = FALSE;
 my_bool opt_no_backup_locks = FALSE;
 my_bool opt_decompress = FALSE;
 
+static const char *binlog_info_values[] = {"off", "lockless", "on", "auto",
+					   NullS};
+static TYPELIB binlog_info_typelib = {array_elements(binlog_info_values)-1, "",
+				      binlog_info_values, NULL};
+ulong opt_binlog_info;
+
 char *opt_incremental_history_name = NULL;
 char *opt_incremental_history_uuid = NULL;
 
@@ -374,6 +380,9 @@ uint opt_safe_slave_backup_timeout = 0;
 
 const char *opt_history = NULL;
 my_bool opt_decrypt = FALSE;
+
+/* Whether xtrabackup_binlog_info should be created on recovery */
+static bool recover_binlog_info;
 
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
@@ -579,7 +588,8 @@ enum options_xtrabackup
   OPT_LOCK_WAIT_TIMEOUT,
   OPT_LOCK_WAIT_THRESHOLD,
   OPT_DEBUG_SLEEP_BEFORE_UNLOCK,
-  OPT_SAFE_SLAVE_BACKUP_TIMEOUT
+  OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
+  OPT_BINLOG_INFO
 };
 
 struct my_option xb_long_options[] =
@@ -1166,6 +1176,12 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (uchar*) &opt_safe_slave_backup_timeout, 0, GET_UINT,
    REQUIRED_ARG, 300, 0, 0, 0, 0, 0},
 
+  {"binlog-info", OPT_BINLOG_INFO,
+   "This option controls how XtraBackup should retrieve server's binary log "
+   "coordinates corresponding to the backup. Possible values are OFF, ON, "
+   "LOCKLESS and AUTO. See the XtraBackup manual for more information",
+   &opt_binlog_info, &opt_binlog_info,
+   &binlog_info_typelib, GET_ENUM, OPT_ARG, BINLOG_INFO_AUTO, 0, 0, 0, 0, 0},
 
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -1241,7 +1257,7 @@ static void usage(void)
 {
   puts("Open source backup tool for InnoDB and XtraDB\n\
 \n\
-Copyright (C) 2009-2013 Percona LLC and/or its affiliates.\n\
+Copyright (C) 2009-2015 Percona LLC and/or its affiliates.\n\
 Portions Copyright (C) 2000, 2011, MySQL AB & Innobase Oy. All Rights Reserved.\n\
 \n\
 This program is free software; you can redistribute it and/or\n\
@@ -1866,11 +1882,16 @@ xtrabackup_read_metadata(char *filename)
 			!= 1) {
 		metadata_last_lsn = 0;
 	}
-	/* Optional field */
+	/* Optional fields */
+
 	if (fscanf(fp, "compact = %d\n", &t) == 1) {
 		xtrabackup_compact = (t == 1);
 	} else {
 		xtrabackup_compact = 0;
+	}
+
+	if (fscanf(fp, "recover_binlog_info = %d\n", &t) == 1) {
+		recover_binlog_info = (t == 1);
 	}
 end:
 	fclose(fp);
@@ -1891,12 +1912,14 @@ xtrabackup_print_metadata(char *buf, size_t buf_len)
 		 "from_lsn = " UINT64PF "\n"
 		 "to_lsn = " UINT64PF "\n"
 		 "last_lsn = " UINT64PF "\n"
-		 "compact = %d\n",
+		 "compact = %d\n"
+		 "recover_binlog_info = %d\n",
 		 metadata_type,
 		 metadata_from_lsn,
 		 metadata_to_lsn,
 		 metadata_last_lsn,
-		 xtrabackup_compact == TRUE);
+		 MY_TEST(xtrabackup_compact == TRUE),
+		 MY_TEST(opt_binlog_info == BINLOG_INFO_LOCKLESS));
 }
 
 /***********************************************************************
@@ -5864,6 +5887,35 @@ innodb_free_param()
 	free_tmpdir(&mysql_tmpdir_list);
 }
 
+
+/**************************************************************************
+Store the current binary log coordinates in a specified file.
+@return 'false' on error. */
+static bool
+store_binlog_info(
+/*==============*/
+	const char *filename)	/*!< in: output file name */
+{
+	FILE *fp;
+
+	if (trx_sys_mysql_bin_log_name[0] == '\0') {
+		return(true);
+	}
+
+	fp = fopen(filename, "w");
+
+	if (!fp) {
+		msg("xtrabackup: failed to open '%s'\n", filename);
+		return(false);
+	}
+
+	fprintf(fp, "%s\t" UINT64PF "\n",
+		trx_sys_mysql_bin_log_name, trx_sys_mysql_bin_log_pos);
+	fclose(fp);
+
+	return(true);
+}
+
 static void
 xtrabackup_prepare_func(void)
 {
@@ -6270,29 +6322,19 @@ next_node:
 		ut_free(buf);
 	}
 
-	/* print binlog position (again?) */
-	msg("\n[notice (again)]\n"
-	    "  If you use binary log and don't use any hack of group commit,\n"
-	    "  the binary log position seems to be:\n");
+	/* print the binary log position  */
 	trx_sys_print_mysql_binlog_offset();
 	msg("\n");
 
-	/* output to xtrabackup_binlog_pos_innodb */
-	if (*trx_sys_mysql_bin_log_name != '\0') {
-		FILE *fp;
+	/* output to xtrabackup_binlog_pos_innodb and (if
+	backup_safe_binlog_info was available on the server) to
+	xtrabackup_binlog_info. In the latter case xtrabackup_binlog_pos_innodb
+	becomes redundant and is created only for compatibility. */
+	if (!store_binlog_info("xtrabackup_binlog_pos_innodb") ||
+	    (recover_binlog_info &&
+	     !store_binlog_info(XTRABACKUP_BINLOG_INFO))) {
 
-		fp = fopen("xtrabackup_binlog_pos_innodb", "w");
-		if (fp) {
-			/* Use UINT64PF instead of LSN_PF here, as we have to
-			maintain the file format. */
-			fprintf(fp, "%s\t" UINT64PF "\n",
-				trx_sys_mysql_bin_log_name,
-				trx_sys_mysql_bin_log_pos);
-			fclose(fp);
-		} else {
-			msg("xtrabackup: failed to open "
-			    "'xtrabackup_binlog_pos_innodb'\n");
-		}
+		exit(EXIT_FAILURE);
 	}
 
 	if (innobase_log_arch_dir)

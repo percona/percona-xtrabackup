@@ -1093,6 +1093,11 @@ ibx_init()
 		}
 	}
 
+	/* --binlog-info is xtrabackup only, so force
+	--binlog-info=ON. i.e. behavior before the feature had been
+	implemented */
+	opt_binlog_info = BINLOG_INFO_ON;
+
 	switch (ibx_mode) {
 	case IBX_MODE_APPLY_LOG:
 		xtrabackup_prepare = TRUE;
