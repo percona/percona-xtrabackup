@@ -10,18 +10,19 @@ To prepare a backup with |innobackupex| you have to use the :option:`--apply-log
 
 and check the last line of the output for a confirmation on the process::
 
-  111225  1:01:57  InnoDB: Shutdown completed; log sequence number 1609228
-  111225 01:01:57  innobackupex: completed OK!
+  150806 01:01:57  InnoDB: Shutdown completed; log sequence number 1609228
+  150806 01:01:57  innobackupex: completed OK!
 
 If it succeeded, |innobackupex| performed all operations needed, leaving the data ready to use immediately.
 
 Under the hood
 ==============
-reading the configuration from the files in the backup directory,
 
-|innobackupex| replayed the committed transactions in the log files (some transactions could have been done while the backup was being done) and rolled back the uncommitted ones. Once this is done, all the information lay in the tablespace (the InnoDB files), and the log files are re-created.
+|innobackupex| started the prepare process by reading the configuration from the :file:`backup-my.cnf` file in the backup directory.
 
-This implies calling :program:`xtrabackup --prepare` twice with the right binary (determined through the :file:`xtrabackup_binary` or by connecting the server). More details of this process are shown in the :doc:`xtrabackup section <../xtrabackup_bin/preparing_the_backup>`.
+After that, |innobackupex| replayed the committed transactions in the log files (some transactions could have been done while the backup was being done) and rolled back the uncommitted ones. Once this is done, all the information lay in the tablespace (the InnoDB files), and the log files are re-created.
+
+This implies calling :option:`xtrabackup --prepare` twice. More details of this process are shown in the :doc:`xtrabackup section <../xtrabackup_bin/preparing_the_backup>`.
 
 Note that this preparation is not suited for incremental backups. If you perform it on the base of an incremental backup, you will not be able to "add" the increments. See :doc:`incremental_backups_innobackupex`.
 
