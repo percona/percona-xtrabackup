@@ -6,9 +6,13 @@ After you make a backup with :option:`--backup`, the next step is to prepare it.
 
 .. note:: 
 
-  For prepare "innobackupex --apply-log" should be used which will read |InnoDB| configuration from backup-my.cnf automatically, or --defaults-file=backup-my.cnf should be passed to the xtrabackup binary if it is used for preparing the backup. Otherwise it could lead to incorrect restore because xtrabackup could use wrong configuration options. 
+  For prepare :option:`innobackupex --apply-log` should be used which will read |InnoDB| configuration from :file:`backup-my.cnf` automatically, or ``--defaults-file=backup-my.cnf`` option should be passed to the xtrabackup binary if it is used for preparing the backup. Otherwise it could lead to incorrect restore because xtrabackup could use wrong configuration options. 
 
-You can run the prepare operation on any machine; it does not need to be on the originating server or the server to which you intend to restore. You can copy the backup to a utility server and prepare it there, for example. It is important, however, that you use the same version of the xtrabackup binary that you used to create the backup to do the prepare.
+You can run the prepare operation on any machine; it does not need to be on the originating server or the server to which you intend to restore. You can copy the backup to a utility server and prepare it there, for example. 
+
+.. note:: 
+
+  You can prepare a backup created with older |Percona XtraBackup| version with a newer one, but not vice versa. Preparing a backup on an unsupported server version should be done with the latest |Percona XtraBackup| release which supports that server version. For example, if one has a backup of MySQL 5.0 created with |Percona XtraBackup| 1.6, then preparing the backup with |Percona XtraBackup| 2.2 is not supported, because support for MySQL 5.0 was removed in 2.1. Instead, the latest release in the 2.0 series should be used.
 
 During the prepare operation, |xtrabackup| boots up a kind of modified InnoDB that's embedded inside it (the libraries it was linked against). The modifications are necessary to disable InnoDB's standard safety checks, such as complaining that the log file isn't the right size, which aren't appropriate for working with backups. These modifications are only for the xtrabackup binary; you don't need a modified |InnoDB| to use |xtrabackup| for your backups.
 
