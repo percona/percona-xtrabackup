@@ -312,6 +312,7 @@ my_bool xb_close_files= FALSE;
 /* Datasinks */
 ds_ctxt_t       *ds_data     = NULL;
 ds_ctxt_t       *ds_meta     = NULL;
+ds_ctxt_t       *ds_redo     = NULL;
 
 /* String buffer used by --print-param to accumulate server options as they are
 parsed from the defaults file */
@@ -2465,12 +2466,12 @@ xtrabackup_init_datasinks(void)
 	/* Start building out the pipelines from the terminus back */
 	if (xtrabackup_stream) {
 		/* All streaming goes to stdout */
-		ds_data = ds_meta = ds_create(xtrabackup_target_dir,
-					      DS_TYPE_STDOUT);
+		ds_data = ds_meta = ds_redo = ds_create(xtrabackup_target_dir,
+						        DS_TYPE_STDOUT);
 	} else {
 		/* Local filesystem */
-		ds_data = ds_meta = ds_create(xtrabackup_target_dir,
-					      DS_TYPE_LOCAL);
+		ds_data = ds_meta = ds_redo = ds_create(xtrabackup_target_dir,
+						        DS_TYPE_LOCAL);
 	}
 
 	/* Track it for destruction */
@@ -2484,7 +2485,7 @@ xtrabackup_init_datasinks(void)
 		xtrabackup_add_datasink(ds);
 
 		ds_set_pipe(ds, ds_data);
-		ds_data = ds_meta = ds;
+		ds_data = ds_meta = ds_redo = ds;
 	}
 
 	/* Stream formatting */
@@ -2514,15 +2515,16 @@ xtrabackup_init_datasinks(void)
 			(i.e. with --suspend_at_and), because
 			innobackupex and xtrabackup streams would
 			interfere. Use temporary files instead. */
-			ds_meta = ds_create(xtrabackup_target_dir, DS_TYPE_TMPFILE);
+			ds_redo = ds_meta = ds_create(xtrabackup_target_dir,
+						      DS_TYPE_TMPFILE);
 			xtrabackup_add_datasink(ds_meta);
 			ds_set_pipe(ds_meta, ds);
 		} else {
-			ds_meta = ds_data;
+			ds_redo = ds_meta = ds_data;
 		}
 	}
 
-	/* Compression for ds_data */
+	/* Compression for ds_data and ds_redo */
 	if (xtrabackup_compress) {
 		ds_ctxt_t	*ds;
 
@@ -2531,12 +2533,29 @@ xtrabackup_init_datasinks(void)
 		ds_buffer_set_size(ds, 1024 * 1024);
 		xtrabackup_add_datasink(ds);
 		ds_set_pipe(ds, ds_data);
-		ds_data = ds;
+		if (ds_data != ds_redo) {
+			ds_data = ds;
+			ds = ds_create(xtrabackup_target_dir, DS_TYPE_BUFFER);
+			ds_buffer_set_size(ds, 1024 * 1024);
+			xtrabackup_add_datasink(ds);
+			ds_set_pipe(ds, ds_redo);
+			ds_redo = ds;
+		} else {
+			ds_redo = ds_data = ds;
+		}
 
 		ds = ds_create(xtrabackup_target_dir, DS_TYPE_COMPRESS);
 		xtrabackup_add_datasink(ds);
 		ds_set_pipe(ds, ds_data);
-		ds_data = ds;
+		if (ds_data != ds_redo) {
+			ds_data = ds;
+			ds = ds_create(xtrabackup_target_dir, DS_TYPE_COMPRESS);
+			xtrabackup_add_datasink(ds);
+			ds_set_pipe(ds, ds_redo);
+			ds_redo = ds;
+		} else {
+			ds_redo = ds_data = ds;
+		}
 	}
 }
 
@@ -2553,6 +2572,7 @@ static void xtrabackup_destroy_datasinks(void)
 	}
 	ds_data = NULL;
 	ds_meta = NULL;
+	ds_redo = NULL;
 }
 
 #define SRV_N_PENDING_IOS_PER_THREAD 	OS_AIO_N_PENDING_IOS_PER_THREAD
@@ -3527,7 +3547,7 @@ reread_log_header:
 
 	/* open the log file */
 	memset(&stat_info, 0, sizeof(MY_STAT));
-	dst_log_file = ds_open(ds_meta, XB_LOG_FILENAME, &stat_info);
+	dst_log_file = ds_open(ds_redo, XB_LOG_FILENAME, &stat_info);
 	if (dst_log_file == NULL) {
 		msg("xtrabackup: error: failed to open the target stream for "
 		    "'%s'.\n", XB_LOG_FILENAME);
