@@ -49,8 +49,6 @@ sleep 1
 
 $MYSQL $MYSQL_ARGS -e "KILL $conn_id"
 
-kill -SIGKILL $job1
-
 # Test that FTWRL / LOCK TABLES FOR BACKUP succeeds
 
 wait $job2
