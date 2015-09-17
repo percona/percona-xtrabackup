@@ -852,7 +852,11 @@ backup_file_vprintf(const char *filename, const char *fmt, va_list ap)
 	/* close */
 	msg("[%02u]        ...done\n", 0);
 	free(buf);
-	ds_close(dstfile);
+
+	if (ds_close(dstfile)) {
+		goto error_close;
+	}
+
 	return(true);
 
 error:
@@ -860,6 +864,8 @@ error:
 	if (dstfile != NULL) {
 		ds_close(dstfile);
 	}
+
+error_close:
 	msg("[%02u] Error: backup file failed.\n", 0);
 	return(false); /*ERROR*/
 }
@@ -976,7 +982,9 @@ copy_file(const char *src_file_path, const char *dst_file_path, uint thread_n)
 	/* close */
 	msg("[%02u]        ...done\n", thread_n);
 	datafile_close(&cursor);
-	ds_close(dstfile);
+	if (ds_close(dstfile)) {
+		goto error_close;
+	}
 	return(true);
 
 error:
@@ -984,6 +992,8 @@ error:
 	if (dstfile != NULL) {
 		ds_close(dstfile);
 	}
+
+error_close:
 	msg("[%02u] Error: copy_file() failed.\n", thread_n);
 	return(false); /*ERROR*/
 }
