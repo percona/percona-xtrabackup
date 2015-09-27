@@ -1934,6 +1934,7 @@ xtrabackup_stream_metadata(ds_ctxt_t *ds_ctxt)
 	size_t		len;
 	ds_file_t	*stream;
 	MY_STAT		mystat;
+	my_bool		rc = TRUE;
 
 	xtrabackup_print_metadata(buf, sizeof(buf));
 
@@ -1950,13 +1951,14 @@ xtrabackup_stream_metadata(ds_ctxt_t *ds_ctxt)
 	}
 
 	if (ds_write(stream, buf, len)) {
-		ds_close(stream);
-		return(FALSE);
+		rc = FALSE;
 	}
 
-	ds_close(stream);
+	if (ds_close(stream)) {
+		rc = FALSE;
+	}
 
-	return(TRUE);
+	return(rc);
 }
 
 /***********************************************************************
@@ -2069,7 +2071,9 @@ xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info)
 
 	ret = (ds_write(f, buf, len) == 0);
 
-	ds_close(f);
+	if (ds_close(f)) {
+		ret = FALSE;
+	}
 
 	return(ret);
 }
@@ -2287,6 +2291,7 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	const char		*action;
 	xb_read_filt_t		*read_filter;
 	ibool			is_system;
+	my_bool			rc = FALSE;
 
 	/* Get the name and the path for the tablespace. node->name always
 	contains the path (which may be absolute for remote tablespaces in
@@ -2377,11 +2382,13 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	/* close */
 	msg("[%02u]        ...done\n", thread_n);
 	xb_fil_cur_close(&cursor);
-	ds_close(dstfile);
+	if (ds_close(dstfile)) {
+		rc = TRUE;
+	}
 	if (write_filter && write_filter->deinit) {
 		write_filter->deinit(&write_filt_ctxt);
 	}
-	return(FALSE);
+	return(rc);
 
 error:
 	xb_fil_cur_close(&cursor);
@@ -3991,7 +3998,9 @@ skip_last_cp:
 	msg("\n");
 
 	os_event_free(log_copying_stop);
-	ds_close(dst_log_file);
+	if (ds_close(dst_log_file)) {
+		exit(EXIT_FAILURE);
+	}
 
 	if(!xtrabackup_incremental) {
 		strcpy(metadata_type, "full-backuped");

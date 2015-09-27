@@ -321,6 +321,7 @@ wf_compact_finalize(xb_write_filt_ctxt_t *ctxt,
 {
 	xb_fil_cur_t		*cursor = ctxt->cursor;
 	xb_wf_compact_ctxt_t	*cp = &(ctxt->u.wf_compact_ctxt);
+	my_bool			rc = TRUE;
 
 	/* Write the last endpoint of the current range, if the last pages of
 	the space have been skipped. */
@@ -336,13 +337,15 @@ wf_compact_finalize(xb_write_filt_ctxt_t *ctxt,
 	}
 
 	if (cp->buffer) {
-		ds_close(cp->buffer);
+		if (ds_close(cp->buffer)) {
+			rc = FALSE;
+		}
 	}
 	if (cp->ds_buffer) {
 		ds_destroy(cp->ds_buffer);
 	}
 
-	return(TRUE);
+	return(rc);
 }
 
 /************************************************************************
@@ -583,10 +586,10 @@ xb_expand_file(fil_node_t *node)
 
 	my_delete(pmapfile_path, MYF(MY_WME));
 
-	ds_close(tmpfile);
+	if (!ds_close(tmpfile)) {
+		success = TRUE;
+	}
 	tmpfile = NULL;
-
-	success = TRUE;
 
 	goto end;
 

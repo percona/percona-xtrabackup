@@ -377,7 +377,9 @@ encrypt_close(ds_file_t *file)
 
 	rc = xb_crypt_write_close(crypt_file->xbcrypt_file);
 
-	ds_close(dest_file);
+	if (ds_close(dest_file)) {
+		rc = 1;
+	}
 
 	my_free(file);
 
