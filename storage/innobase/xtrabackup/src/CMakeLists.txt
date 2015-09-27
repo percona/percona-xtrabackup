@@ -87,8 +87,9 @@ TARGET_LINK_LIBRARIES(xtrabackup
 # innobackupex symlink
 ########################################################################
 ADD_CUSTOM_COMMAND(TARGET xtrabackup
-                   COMMAND ln -sf xtrabackup innobackupex)
-INSTALL_SYMLINK(xtrabackup xtrabackup innobackupex bin runtime)
+                   COMMAND ${CMAKE_COMMAND} ARGS -E create_symlink
+                           xtrabackup innobackupex)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/innobackupex DESTINATION bin)
 
 ########################################################################
 # xbstream binary
