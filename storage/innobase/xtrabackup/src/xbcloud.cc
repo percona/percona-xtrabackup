@@ -602,9 +602,19 @@ cleanup:
 
 static
 size_t
-write_null_cb(char *buffer, size_t size, size_t nmemb, void *stream) {
-	return nmemb * size;
+write_null_cb(char *buffer, size_t size, size_t nmemb, void *stream)
+{
+	return fwrite(buffer, size, nmemb, stderr);
 }
+
+
+static
+size_t
+read_null_cb(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	return 0;
+}
+
 
 static
 int
@@ -632,6 +642,8 @@ swift_create_container(swift_auth_info *info, const char *name)
 		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_null_cb);
+		curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_null_cb);
+		curl_easy_setopt(curl, CURLOPT_INFILESIZE, 0L);
 		curl_easy_setopt(curl, CURLOPT_PUT, 1L);
 		if (opt_cacert != NULL)
 			curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cacert);
@@ -1118,7 +1130,7 @@ static int conn_upload_start(connection_info *conn)
 	}
 	curl_easy_setopt(conn->easy, CURLOPT_URL, object_url);
 	curl_easy_setopt(conn->easy, CURLOPT_READFUNCTION,
-							swift_upload_read_cb);
+				     swift_upload_read_cb);
 	curl_easy_setopt(conn->easy, CURLOPT_READDATA, conn);
 	curl_easy_setopt(conn->easy, CURLOPT_VERBOSE, opt_verbose);
 	curl_easy_setopt(conn->easy, CURLOPT_ERRORBUFFER, conn->error);
@@ -1129,8 +1141,10 @@ static int conn_upload_start(connection_info *conn)
 	curl_easy_setopt(conn->easy, CURLOPT_PUT, 1L);
 	curl_easy_setopt(conn->easy, CURLOPT_HTTPHEADER, conn->slist);
 	curl_easy_setopt(conn->easy, CURLOPT_HEADERFUNCTION,
-			 upload_header_read_cb);
+				     upload_header_read_cb);
 	curl_easy_setopt(conn->easy, CURLOPT_HEADERDATA, conn);
+	curl_easy_setopt(conn->easy, CURLOPT_INFILESIZE,
+				     (long) conn->chunk_size);
 	if (opt_cacert != NULL)
 		curl_easy_setopt(conn->easy, CURLOPT_CAINFO, opt_cacert);
 	if (opt_insecure)

@@ -14,7 +14,11 @@
 
 . inc/common.sh
 
-[ $[1 + $[ RANDOM % 5 ]] == 1 ] || skip_test "Skipping"
+# run this test only when backing up PS 5.6
+require_xtradb
+require_server_version_lower_than 5.7.0
+require_server_version_higher_than 5.6.0
+is_galera && skip_test "skipping"
 
 [ "${XBCLOUD_CREDENTIALS:-unset}" == "unset" ] && \
 	skip_test "Requires XBCLOUD_CREDENTIALS"
