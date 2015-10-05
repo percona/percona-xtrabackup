@@ -38,6 +38,13 @@ Created 12/18/1995 Heikki Tuuri
 
 #endif /* !UNIV_INNOCHECKSUM */
 
+/** Enum values for atomic_writes table option */
+typedef enum {
+	ATOMIC_WRITES_DEFAULT = 0,
+	ATOMIC_WRITES_ON = 1,
+	ATOMIC_WRITES_OFF = 2
+} atomic_writes_t;
+
 /* @defgroup fsp_flags InnoDB Tablespace Flag Constants @{ */
 
 /** Width of the POST_ANTELOPE flag */
@@ -53,12 +60,22 @@ to the two Barracuda row formats COMPRESSED and DYNAMIC. */
 /** Width of the DATA_DIR flag.  This flag indicates that the tablespace
 is found in a remote location, not the default data directory. */
 #define FSP_FLAGS_WIDTH_DATA_DIR	1
+/** Number of flag bits used to indicate the page compression and compression level */
+#define FSP_FLAGS_WIDTH_PAGE_COMPRESSION  1
+#define FSP_FLAGS_WIDTH_PAGE_COMPRESSION_LEVEL 4
+
+/** Number of flag bits used to indicate atomic writes for this tablespace */
+#define FSP_FLAGS_WIDTH_ATOMIC_WRITES  2
+
 /** Width of all the currently known tablespace flags */
 #define FSP_FLAGS_WIDTH		(FSP_FLAGS_WIDTH_POST_ANTELOPE	\
 				+ FSP_FLAGS_WIDTH_ZIP_SSIZE	\
 				+ FSP_FLAGS_WIDTH_ATOMIC_BLOBS	\
 				+ FSP_FLAGS_WIDTH_PAGE_SSIZE	\
-				+ FSP_FLAGS_WIDTH_DATA_DIR)
+				+ FSP_FLAGS_WIDTH_DATA_DIR      \
+				+ FSP_FLAGS_WIDTH_PAGE_COMPRESSION \
+				+ FSP_FLAGS_WIDTH_PAGE_COMPRESSION_LEVEL \
+				+ FSP_FLAGS_WIDTH_ATOMIC_WRITES )
 
 /** A mask of all the known/used bits in tablespace flags */
 #define FSP_FLAGS_MASK		(~(~0 << FSP_FLAGS_WIDTH))
@@ -71,9 +88,20 @@ is found in a remote location, not the default data directory. */
 /** Zero relative shift position of the ATOMIC_BLOBS field */
 #define FSP_FLAGS_POS_ATOMIC_BLOBS	(FSP_FLAGS_POS_ZIP_SSIZE	\
 					+ FSP_FLAGS_WIDTH_ZIP_SSIZE)
-/** Zero relative shift position of the PAGE_SSIZE field */
-#define FSP_FLAGS_POS_PAGE_SSIZE	(FSP_FLAGS_POS_ATOMIC_BLOBS	\
+/** Note that these need to be before the page size to be compatible with
+dictionary */
+/** Zero relative shift position of the PAGE_COMPRESSION field */
+#define FSP_FLAGS_POS_PAGE_COMPRESSION	(FSP_FLAGS_POS_ATOMIC_BLOBS	\
 					+ FSP_FLAGS_WIDTH_ATOMIC_BLOBS)
+/** Zero relative shift position of the PAGE_COMPRESSION_LEVEL field */
+#define FSP_FLAGS_POS_PAGE_COMPRESSION_LEVEL	(FSP_FLAGS_POS_PAGE_COMPRESSION	\
+					+ FSP_FLAGS_WIDTH_PAGE_COMPRESSION)
+/** Zero relative shift position of the ATOMIC_WRITES field */
+#define FSP_FLAGS_POS_ATOMIC_WRITES	(FSP_FLAGS_POS_PAGE_COMPRESSION_LEVEL	\
+					+ FSP_FLAGS_WIDTH_PAGE_COMPRESSION_LEVEL)
+/** Zero relative shift position of the PAGE_SSIZE field */
+#define FSP_FLAGS_POS_PAGE_SSIZE	(FSP_FLAGS_POS_ATOMIC_WRITES	\
+					+ FSP_FLAGS_WIDTH_ATOMIC_WRITES)
 /** Zero relative shift position of the start of the UNUSED bits */
 #define FSP_FLAGS_POS_DATA_DIR		(FSP_FLAGS_POS_PAGE_SSIZE	\
 					+ FSP_FLAGS_WIDTH_PAGE_SSIZE)
@@ -101,7 +129,18 @@ is found in a remote location, not the default data directory. */
 #define FSP_FLAGS_MASK_DATA_DIR					\
 		((~(~0 << FSP_FLAGS_WIDTH_DATA_DIR))		\
 		<< FSP_FLAGS_POS_DATA_DIR)
-
+/** Bit mask of the PAGE_COMPRESSION field */
+#define FSP_FLAGS_MASK_PAGE_COMPRESSION			\
+		((~(~0 << FSP_FLAGS_WIDTH_PAGE_COMPRESSION))	\
+		<< FSP_FLAGS_POS_PAGE_COMPRESSION)
+/** Bit mask of the PAGE_COMPRESSION_LEVEL field */
+#define FSP_FLAGS_MASK_PAGE_COMPRESSION_LEVEL		\
+		((~(~0 << FSP_FLAGS_WIDTH_PAGE_COMPRESSION_LEVEL))	\
+		<< FSP_FLAGS_POS_PAGE_COMPRESSION_LEVEL)
+/** Bit mask of the ATOMIC_WRITES field */
+#define FSP_FLAGS_MASK_ATOMIC_WRITES		\
+		((~(~0 << FSP_FLAGS_WIDTH_ATOMIC_WRITES))	\
+		<< FSP_FLAGS_POS_ATOMIC_WRITES)
 /** Return the value of the POST_ANTELOPE field */
 #define FSP_FLAGS_GET_POST_ANTELOPE(flags)			\
 		((flags & FSP_FLAGS_MASK_POST_ANTELOPE)		\
@@ -122,6 +161,19 @@ is found in a remote location, not the default data directory. */
 #define FSP_FLAGS_HAS_DATA_DIR(flags)				\
 		((flags & FSP_FLAGS_MASK_DATA_DIR)		\
 		>> FSP_FLAGS_POS_DATA_DIR)
+/** Return the value of the PAGE_COMPRESSION field */
+#define FSP_FLAGS_GET_PAGE_COMPRESSION(flags)		\
+		((flags & FSP_FLAGS_MASK_PAGE_COMPRESSION)	\
+		>> FSP_FLAGS_POS_PAGE_COMPRESSION)
+/** Return the value of the PAGE_COMPRESSION_LEVEL field */
+#define FSP_FLAGS_GET_PAGE_COMPRESSION_LEVEL(flags)		\
+		((flags & FSP_FLAGS_MASK_PAGE_COMPRESSION_LEVEL) \
+		>> FSP_FLAGS_POS_PAGE_COMPRESSION_LEVEL)
+/** Return the value of the ATOMIC_WRITES field */
+#define FSP_FLAGS_GET_ATOMIC_WRITES(flags)		\
+		((flags & FSP_FLAGS_MASK_ATOMIC_WRITES) \
+		>> FSP_FLAGS_POS_ATOMIC_WRITES)
+
 /** Return the contents of the UNUSED bits */
 #define FSP_FLAGS_GET_UNUSED(flags)				\
 		(flags >> FSP_FLAGS_POS_UNUSED)
@@ -739,6 +791,15 @@ ulint
 fsp_flags_get_page_size(
 /*====================*/
 	ulint	flags);		/*!< in: tablespace flags */
+
+/**********************************************************************//**
+Compute offset after xdes where crypt data can be stored
+@return	offset */
+ulint
+fsp_header_get_crypt_offset(
+/*========================*/
+	ulint   zip_size, /*!< in: zip_size */
+	ulint*  max_size); /*!< out: free space available for crypt data */
 
 #ifndef UNIV_NONINL
 #include "fsp0fsp.ic"
