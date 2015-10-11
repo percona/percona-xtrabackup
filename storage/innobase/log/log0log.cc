@@ -622,7 +622,6 @@ log_group_calc_real_offset(
 /******************************************************//**
 Calculates the offset of an lsn within a log group.
 @return	offset within the log group */
-static
 lsn_t
 log_group_calc_lsn_offset(
 /*======================*/
