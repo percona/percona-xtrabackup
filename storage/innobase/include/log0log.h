@@ -583,6 +583,14 @@ UNIV_INTERN
 void
 log_mem_free(void);
 /*==============*/
+/******************************************************//**
+Calculates the offset of an lsn within a log group.
+@return	offset within the log group */
+lsn_t
+log_group_calc_lsn_offset(
+/*======================*/
+	lsn_t			lsn,	/*!< in: lsn */
+	const log_group_t*	group);	/*!< in: log group */
 
 extern log_t*	log_sys;
 
