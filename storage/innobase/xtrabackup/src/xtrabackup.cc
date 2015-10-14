@@ -6618,10 +6618,6 @@ xb_init()
 			return(false);
 		}
 
-		if (!detect_mysql_capabilities_for_backup()) {
-			return(false);
-		}
-
 		history_start_time = time(NULL);
 
 	}

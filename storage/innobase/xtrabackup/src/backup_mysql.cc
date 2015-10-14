@@ -277,6 +277,20 @@ check_server_version(const char *version, const char *innodb_version)
 	return(true);
 }
 
+/*********************************************************************//**
+Convert MySQL version string to number.
+@return	version number. */
+static
+int
+mysql_version_number(const char *version_string)
+{
+	int version_major, version_minor, version_patch;
+
+	sscanf(version_string, "%d.%d.%d",
+	       &version_major, &version_minor, &version_patch);
+
+	return(version_major * 10000 + version_minor * 100 + version_patch);
+}
 
 /*********************************************************************//**
 Receive options important for XtraBackup from MySQL server.
@@ -378,6 +392,10 @@ get_mysql_vars(MYSQL *connection)
 
 	msg("Using server version %s\n", version_var);
 
+	if (!detect_mysql_capabilities_for_backup(version_var)) {
+		goto out;
+	}
+
 	/* make sure datadir value is the same in configuration file */
 	if (mysql_data_home != NULL && datadir_var != NULL) {
 		if (!(ret = equal_paths(mysql_data_home, datadir_var))) {
@@ -414,14 +432,11 @@ out:
 Query the server to find out what backup capabilities it supports.
 @return	true on success. */
 bool
-detect_mysql_capabilities_for_backup()
+detect_mysql_capabilities_for_backup(const char *version)
 {
-	/* MariaDB lists INNODB_CHANGED_PAGES in INFORMATION_SCHEMA.PLUGINS, but
-	it doesn't support FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS */
 	const char *query = "SELECT 'INNODB_CHANGED_PAGES', COUNT(*) FROM "
 				"INFORMATION_SCHEMA.PLUGINS "
-			    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'"
-				"AND NOT VERSION() LIKE '10.%MariaDB%'";
+			    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'";
 	char *innodb_changed_pages = NULL;
 	mysql_variable vars[] = {
 		{"INNODB_CHANGED_PAGES", &innodb_changed_pages}, {NULL, NULL}};
@@ -433,6 +448,16 @@ detect_mysql_capabilities_for_backup()
 		ut_ad(innodb_changed_pages != NULL);
 
 		have_changed_page_bitmaps = (atoi(innodb_changed_pages) == 1);
+
+		/* INNODB_CHANGED_PAGES are listed in
+		INFORMATION_SCHEMA.PLUGINS in MariaDB, but
+		FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS
+		is not supported for versions below 10.1.6
+		(see MDEV-7472) */
+		if (strstr(version, "MariaDB") != NULL &&
+		    mysql_version_number(version) < 100106) {
+			have_changed_page_bitmaps = false;
+		}
 
 		free_mysql_variables(vars);
 	}
