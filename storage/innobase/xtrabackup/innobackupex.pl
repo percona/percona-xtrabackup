@@ -5002,23 +5002,42 @@ sub write_to_backup_file {
 }
 
 #
+# Convert server version string to number
+#
+sub mysql_version_number {
+    my $version_string = shift;
+
+    $version_string = (split('-', $version_string))[0];
+    my ($version_major, $version_minor, $version_patch) =
+            split('\\.', $version_string);
+
+    return $version_major * 10000 + $version_minor * 100 + $version_patch;
+}
+
+#
 # Query the server to find out what backup capabilities it supports.
 #
 sub detect_mysql_capabilities_for_backup {
     my $con = shift;
 
+    if (!defined($con->{vars})) {
+        get_mysql_vars($con);
+    }
+
+    my $mysql_version = $mysql{vars}->{version}->{Value};
+
     # MariaDB lists INNODB_CHANGED_PAGES in INFORMATION_SCHEMA.PLUGINS, but
-    # it doesn't support FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS
+    # it doesn't support FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS for
+    # versions below 10.1.6
     if ($option_incremental) {
         $have_changed_page_bitmaps =
             mysql_get_one_value($con, "SELECT COUNT(*) FROM " .
                         "INFORMATION_SCHEMA.PLUGINS " .
-                        "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES' " .
-                        "AND NOT VERSION() LIKE '10.%MariaDB%'");
-    }
-
-    if (!defined($con->{vars})) {
-        get_mysql_vars($con);
+                        "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'");
+        if (index($mysql_version, "MariaDB") != -1 &&
+            mysql_version_number($mysql_version) < 100106) {
+            $have_changed_page_bitmaps = 0;
+        }
     }
 
     if (!defined($con->{slave_status})) {
