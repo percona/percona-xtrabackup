@@ -43,7 +43,7 @@ bool
 get_mysql_vars(MYSQL *connection);
 
 bool
-detect_mysql_capabilities_for_backup();
+detect_mysql_capabilities_for_backup(const char *version);
 
 MYSQL *
 xb_mysql_connect();
