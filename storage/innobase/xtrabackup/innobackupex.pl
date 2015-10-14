@@ -4460,7 +4460,7 @@ sub read_config_file {
               && do { last; };
 
           # unknown
-          print("$prefix: Warning: Ignored unrecognized line ",
+          print STDERR ("$prefix: Warning: Ignored unrecognized line ",
                 $i + 1,
                 " in options : '${lines[$i]}'\n"
                 );
