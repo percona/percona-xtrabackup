@@ -106,10 +106,10 @@ xb_mysql_connect()
 		return(NULL);
 	}
 
-	msg("Connecting to MySQL server host: %s, user: %s, password: %s, "
-		"port: %d, socket: %s\n", opt_host, opt_user,
-		opt_password ? "set" : "not set",
-		opt_port, opt_socket);
+	msg_ts("Connecting to MySQL server host: %s, user: %s, password: %s, "
+	       "port: %d, socket: %s\n", opt_host ? opt_host : "localhost",
+	       opt_user, opt_password ? "set" : "not set",
+	       opt_port, opt_socket);
 
 	if (!mysql_real_connect(connection,
 				opt_host ? opt_host : "localhost",
@@ -641,8 +641,8 @@ have_queries_to_wait_for(MYSQL *connection, uint threshold)
 		    && duration >= (int)threshold
 		    && ((all_queries && is_query(info))
 		    	|| is_update_query(info))) {
-			msg("Waiting for query %s (duration %d sec): %s",
-				id, duration, info);
+			msg_ts("Waiting for query %s (duration %d sec): %s",
+			       id, duration, info);
 			return(true);
 		}
 	}
@@ -671,8 +671,8 @@ kill_long_queries(MYSQL *connection, uint timeout)
 		    duration >= (int)timeout &&
 		    ((all_queries && is_query(info)) ||
 		    	is_select_query(info))) {
-			msg("Killing query %s (duration %d sec): %s\n",
-				id, duration, info);
+			msg_ts("Killing query %s (duration %d sec): %s\n",
+			       id, duration, info);
 			ut_snprintf(kill_stmt, sizeof(kill_stmt),
 				    "KILL %s", id);
 			xb_mysql_query(connection, kill_stmt, false, false);
@@ -688,8 +688,8 @@ wait_for_no_updates(MYSQL *connection, uint timeout, uint threshold)
 
 	start_time = time(NULL);
 
-	msg("Waiting %u seconds for queries running longer than %u seconds "
-		"to finish\n", timeout, threshold);
+	msg_ts("Waiting %u seconds for queries running longer than %u seconds "
+	       "to finish\n", timeout, threshold);
 
 	while (time(NULL) <= (time_t)(start_time + timeout)) {
 		if (!have_queries_to_wait_for(connection, threshold)) {
@@ -698,7 +698,7 @@ wait_for_no_updates(MYSQL *connection, uint timeout, uint threshold)
 		os_thread_sleep(1000000);
 	}
 
-	msg("Unable to obtain lock. Please try again later.");
+	msg_ts("Unable to obtain lock. Please try again later.");
 
 	return(false);
 }
@@ -716,8 +716,8 @@ kill_query_thread(
 
 	os_event_set(kill_query_thread_started);
 
-	msg("Kill query timeout %d seconds.\n",
-		opt_kill_long_queries_timeout);
+	msg_ts("Kill query timeout %d seconds.\n",
+	       opt_kill_long_queries_timeout);
 
 	while (time(NULL) - start_time <
 				(time_t)opt_kill_long_queries_timeout) {
@@ -743,7 +743,7 @@ kill_query_thread(
 	mysql_close(mysql);
 
 stop_thread:
-	msg("Kill query thread stopped\n");
+	msg_ts("Kill query thread stopped\n");
 
 	os_event_set(kill_query_thread_stopped);
 
@@ -821,7 +821,7 @@ lock_tables(MYSQL *connection)
 		}
 	}
 
-	msg("Executing FLUSH TABLES WITH READ LOCK...\n");
+	msg_ts("Executing FLUSH TABLES WITH READ LOCK...\n");
 
 	if (opt_kill_long_queries_timeout) {
 		start_query_killer();
@@ -850,7 +850,7 @@ bool
 lock_binlog_maybe(MYSQL *connection)
 {
 	if (have_backup_locks && !opt_no_lock && !binlog_locked) {
-		msg("Executing LOCK BINLOG FOR BACKUP...\n");
+		msg_ts("Executing LOCK BINLOG FOR BACKUP...\n");
 		xb_mysql_query(connection, "LOCK BINLOG FOR BACKUP", false);
 		binlog_locked = true;
 
@@ -869,20 +869,20 @@ void
 unlock_all(MYSQL *connection)
 {
 	if (opt_debug_sleep_before_unlock) {
-		msg("Debug sleep for %u seconds\n",
-			opt_debug_sleep_before_unlock);
+		msg_ts("Debug sleep for %u seconds\n",
+		       opt_debug_sleep_before_unlock);
 		os_thread_sleep(opt_debug_sleep_before_unlock * 1000);
 	}
 
 	if (binlog_locked) {
-		msg("Executing UNLOCK BINLOG\n");
+		msg_ts("Executing UNLOCK BINLOG\n");
 		xb_mysql_query(connection, "UNLOCK BINLOG", false);
 	}
 
-	msg("Executing UNLOCK TABLES\n");
+	msg_ts("Executing UNLOCK TABLES\n");
 	xb_mysql_query(connection, "UNLOCK TABLES", false);
 
-	msg("All tables unlocked\n");
+	msg_ts("All tables unlocked\n");
 }
 
 
@@ -947,36 +947,36 @@ wait_for_safe_slave(MYSQL *connection)
 	}
 
 	open_temp_tables = get_open_temp_tables(connection);
-	msg("Slave open temp tables: %d\n", open_temp_tables);
+	msg_ts("Slave open temp tables: %d\n", open_temp_tables);
 
 	while (open_temp_tables && n_attempts--) {
-		msg("Starting slave SQL thread, waiting %d seconds, then "
-			"checking Slave_open_temp_tables again (%d attempts "
-			"remaining)...\n", sleep_time, n_attempts);
+		msg_ts("Starting slave SQL thread, waiting %d seconds, then "
+		       "checking Slave_open_temp_tables again (%d attempts "
+		       "remaining)...\n", sleep_time, n_attempts);
 
 		xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
 		os_thread_sleep(sleep_time * 1000);
 		xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
 
 		open_temp_tables = get_open_temp_tables(connection);
-		msg("Slave open temp tables: %d\n", open_temp_tables);
+		msg_ts("Slave open temp tables: %d\n", open_temp_tables);
 	}
 
 	/* Restart the slave if it was running at start */
 	if (open_temp_tables == 0) {
-		msg("Slave is safe to backup\n");
+		msg_ts("Slave is safe to backup\n");
 		goto cleanup;
 	}
 
 	result = false;
 
 	if (sql_thread_started) {
-		msg("Restarting slave SQL thread.\n");
+		msg_ts("Restarting slave SQL thread.\n");
 		xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
 	}
 
-	msg("Slave_open_temp_tables did not become zero after "
-	    "%d seconds\n", opt_safe_slave_backup_timeout);
+	msg_ts("Slave_open_temp_tables did not become zero after "
+	       "%d seconds\n", opt_safe_slave_backup_timeout);
 
 cleanup:
 	free_mysql_variables(status);
