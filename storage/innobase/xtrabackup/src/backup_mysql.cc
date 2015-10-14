@@ -392,7 +392,7 @@ get_mysql_vars(MYSQL *connection)
 
 	msg("Using server version %s\n", version_var);
 
-	if (!detect_mysql_capabilities_for_backup(version_var)) {
+	if (!(ret = detect_mysql_capabilities_for_backup(version_var))) {
 		goto out;
 	}
 
