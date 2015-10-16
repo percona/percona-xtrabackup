@@ -84,6 +84,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbstream
 %{_bindir}/xbcrypt
 %{_bindir}/xbcloud
+%{_bindir}/xbcloud_osenv
 %doc COPYING
 %doc %{_mandir}/man1/*.1.gz
 
