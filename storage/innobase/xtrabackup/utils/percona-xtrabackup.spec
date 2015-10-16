@@ -21,7 +21,7 @@ BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-de
 BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6
 %endif
 Requires:       perl(DBD::mysql), rsync
-Conflicts:      percona-xtrabackup
+Conflicts:      percona-xtrabackup, percona-xtrabackup-21
 BuildRoot:      %{_tmppath}/%{name}-%{version}-root
 
 %description

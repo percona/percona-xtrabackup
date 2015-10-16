@@ -24,7 +24,7 @@ Package: percona-xtrabackup-22
 Architecture: any
 Depends: libdbd-mysql-perl, rsync, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
-Conflicts: percona-xtrabackup
+Conflicts: percona-xtrabackup, percona-xtrabackup-21
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
 Enhances: mysql-server
