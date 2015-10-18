@@ -16,7 +16,7 @@ has_backup_safe_binlog_info && lock_binlog_used=0 || lock_binlog_used=1
 
 load_sakila
 
-innobackupex --no-timestamp $topdir/full_backup
+xtrabackup --backup --target-dir=$topdir/full_backup
 
 $MYSQL $MYSQL_ARGS -Ns -e \
        "SHOW GLOBAL STATUS LIKE 'Com_%lock%'; \
@@ -35,16 +35,16 @@ Com_unlock_tables	1
 Com_flush	1
 EOF
 
-innobackupex --no-timestamp --incremental \
-             --incremental-basedir=$topdir/full_backup \
-             $topdir/inc_backup
+xtrabackup --backup \
+           --incremental-basedir=$topdir/full_backup \
+           --target-dir=$topdir/inc_backup
 
 $MYSQL $MYSQL_ARGS -Ns -e \
        "SHOW GLOBAL STATUS LIKE 'Com_%lock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status2
 
-((binlog_stmts+=lock_binlog_used))
+((binlog_stmts+=lock_binlog_used)) || true
 
 diff $topdir/status2 - <<EOF
 Com_lock_tables	0
@@ -64,7 +64,7 @@ EOF
 
 rm -rf $topdir/full_backup
 
-innobackupex --no-timestamp --no-backup-locks $topdir/full_backup
+xtrabackup --backup --no-backup-locks --target-dir=$topdir/full_backup
 
 $MYSQL $MYSQL_ARGS -Ns -e \
        "SHOW GLOBAL STATUS LIKE 'Com_%lock%'; \

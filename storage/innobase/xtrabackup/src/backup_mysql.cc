@@ -790,6 +790,7 @@ lock_tables(MYSQL *connection)
 	}
 
 	if (have_backup_locks) {
+		msg_ts("Executing LOCK TABLES FOR BACKUP...\n");
 		xb_mysql_query(connection, "LOCK TABLES FOR BACKUP", false);
 		return(true);
 	}
@@ -808,7 +809,7 @@ lock_tables(MYSQL *connection)
 		compatible with this trick.
 		*/
 
-		msg("Executing FLUSH NO_WRITE_TO_BINLOG TABLES...\n");
+		msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG TABLES...\n");
 
 		xb_mysql_query(connection,
 			       "FLUSH NO_WRITE_TO_BINLOG TABLES", false);
