@@ -10,6 +10,7 @@
    :maxdepth: 1
    :glob:
 
+   release-notes/2.2/2.2.13
    release-notes/2.2/2.2.12
    release-notes/2.2/2.2.11
    release-notes/2.2/2.2.10
