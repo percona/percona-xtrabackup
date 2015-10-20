@@ -13,9 +13,6 @@ It can back up data from |InnoDB|, |XtraDB|, and |MyISAM| tables on |MySQL| 5.1 
 
 Whether it is a 24x7 highly loaded server or a low-transaction-volume environment, |Percona XtraBackup| is designed to make backups a seamless procedure without disrupting the performance of the server in a production environment. `Commercial support contracts are available <http://www.percona.com/mysql-support/>`_.
 
-.. note:: 
-
-   This release is considered **BETA** quality and it's not intended for production.
 
 Introduction
 ============
