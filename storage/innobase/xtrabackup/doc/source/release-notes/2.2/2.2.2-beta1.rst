@@ -2,7 +2,7 @@
  |Percona XtraBackup| 2.2.2-beta1
 =======================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.2.2-beta1 on May 8th 2014. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/2.2.2/>`_. This **BETA** release will be available in :ref:`Debian experimental <debian_experimental>` and :ref:`CentOS testing <yum_testing>` repositories. 
+Percona is glad to announce the release of |Percona XtraBackup| 2.2.2-beta1 on May 8th 2014. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/2.2.2/>`_. This **BETA** release will be available in :ref:`Debian experimental <debian_testing>` and :ref:`CentOS testing <yum_testing>` repositories. 
 
 This is a **BETA** quality release and it is not intended for production. If you want a high quality, Generally Available release, the current Stable version should be used (currently 2.1.9 in the 2.1 series at the time of writing).
 
