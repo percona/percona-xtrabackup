@@ -4,12 +4,15 @@
  Compiling and Installing from Source Code
 ===========================================
 
-The source code is available from the *Launchpad* project `here <https://launchpad.net/percona-xtrabackup>`_. The easiest way to get the code is with :command:`bzr branch` of the desired release, such as the following: ::
+The source code is available from the |Percona XtraBackup| *Github* `project <https://github.com/percona/percona-xtrabackup>`_. The easiest way to get the code is with :command:`git clone` and switch to the desired release branch, such as the following: 
 
-  bzr branch lp:percona-xtrabackup/2.2
+.. code-block:: bash
+
+  $ git clone https://github.com/percona/percona-xtrabackup.git
+  $ cd percona-xtrabackup
+  $ git checkout 2.3
 
 You should then have a directory named after the release you branched, such as ``percona-xtrabackup``.
-
 
 Compiling on Linux
 ==================
@@ -21,24 +24,28 @@ The following packages and tools must be installed to compile |Percona XtraBacku
 
 In Debian-based distributions, you need to: ::
 
- $ apt-get install build-essential flex bison automake autoconf bzr \
+ $ apt-get install build-essential flex bison automake autoconf \
     libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
-    libgcrypt11-dev
+    libgcrypt11-dev libev-dev libcurl4-gnutls-dev
 
 
 In ``RPM``-based distributions, you need to: ::
  
-  $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf bzr \
-    bison libtool ncurses5-devel
+  $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf \
+    bison libtool ncurses-devel libgcrypt-devel libev-devel libcurl-devel
 
 Compiling with CMake
 --------------------
 
 At the base directory of the source code tree, if you execute: ::
 
-  $ cmake -DBUILD_CONFIG=xtrabackup_release && make -j4
+  $ cmake -DBUILD_CONFIG=xtrabackup_release -DWITH_MAN_PAGES=OFF && make -j4
 
 and you go for a coffee, at your return |Percona XtraBackup| will be ready to be used.
+
+.. note:: 
+
+  You can build |Percona XtraBackup| with man pages but this requires python-sphinx package which isn't available from that main repositories for every distribution. If you installed the ``python-sphinx`` package you remove the ``-DWITH_MAN_PAGES=OFF`` from previous command.
 
 Installation
 ------------

@@ -6,6 +6,10 @@ Percona is glad to announce the release of |Percona XtraBackup| 2.2.13 on Octobe
 
 This release is the current stable release in the 2.2 series.
 
+.. note:: 
+
+  Package name has been changed from ``percona-xtrabackup`` to ``percona-xtrabackup-22`` (``percona-xtrabackup`` now points to the latest GA release 2.3.2).
+
 Bugs Fixed
 ----------
 
@@ -21,6 +25,6 @@ Bugs Fixed
 
 Other bugs fixed: :bug:`1493015`.
 
-All of Percona's software is open-source and free, all the details of the release can be found in the `2.2.12 milestone <https://launchpad.net/percona-xtrabackup/+milestone/2.2.12>`_ at Launchpad. Bugs can be reported on the `launchpad bug tracker <https://bugs.launchpad.net/percona-xtrabackup/+filebug>`_.
+All of Percona's software is open-source and free, all the details of the release can be found in the `2.2.13 milestone <https://launchpad.net/percona-xtrabackup/+milestone/2.2.13>`_ at Launchpad. Bugs can be reported on the `launchpad bug tracker <https://bugs.launchpad.net/percona-xtrabackup/+filebug>`_.
 
 

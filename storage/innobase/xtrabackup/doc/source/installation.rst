@@ -1,28 +1,42 @@
 .. _installation:
 
-===============================================
- Installing |Percona XtraBackup| from Binaries
-===============================================
+=====================================
+ Installing |Percona XtraBackup| 2.3
+=====================================
+
+This page provides the information on how to install |Percona XtraBackup|. Following options are available:
+
+* :ref:`installing_from_binaries` (recommended)
+* Installing |Percona XtraBackup| from Downloaded :ref:`rpm <standalone_rpm>` or :ref:`apt <standalone_deb>` Packages
+* :ref:`compiling_xtrabackup`
 
 Before installing, you might want to read the :doc:`release-notes`.
 
-Ready-to-use binaries are available from the |Percona XtraBackup| `download page <http://www.percona.com/downloads/XtraBackup/>`_, including:
+.. _installing_from_binaries:
 
- * ``RPM`` packages for *RHEL* 5, *RHEL* 6 and *RHEL* 7 (including compatible distributions such as *CentOS* and *Oracle Enterprise Linux*)
+Installing |Percona XtraBackup| from Repositories
+==================================================
 
- * *Debian* packages for *Debian* and *Ubuntu*
+|Percona| provides repositories for :program:`yum` (``RPM`` packages for *Red Hat*, *CentOS* and *Amazon Linux AMI*) and :program:`apt` (:file:`.deb` packages for *Ubuntu* and *Debian*) for software such as |Percona Server|, |Percona XtraBackup|, and *Percona Toolkit*. This makes it easy to install and update your software and its dependencies through your operating system's package manager. This is the recommend way of installing where possible.
 
- * Generic ``.tar.gz`` binary packages
-
-Using Percona Software Repositories
-===================================
+Following guides describe the installation process for using the official Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 
 .. toctree::
    :maxdepth: 1
+   :titlesonly:
 
    installation/apt_repo
    installation/yum_repo
 
-|Percona| provides repositories for :program:`yum` (``RPM`` packages for *Red Hat Enterprise Linux* and compatible distributions such as *CentOS*, *Oracle Enterprise Linux*, *Amazon Linux AMI*, and *Fedora*) and :program:`apt` (:file:`.deb` packages for *Ubuntu* and *Debian*) for software such as |Percona Server|, |XtraDB|, |Percona XtraBackup|, and |Percona Toolkit|. This makes it easy to install and update your software and its dependencies through your operating system's package manager.
+Compiling and Installing from Source Code
+=========================================
 
-This is the recommend way of installing where possible.
+|Percona XtraBackup| is open source and the code is available on `Github <https://github.com/percona/percona-xtrabackup>`_. Following guide describes the compiling and installation process from source code.
+
+.. toctree::
+   :maxdepth: 1
+   :titlesonly:
+
+   installation/compiling_xtrabackup
+
+
