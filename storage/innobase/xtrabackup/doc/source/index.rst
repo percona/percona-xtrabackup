@@ -27,11 +27,10 @@ Installation
 ============
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :glob:
 
    installation
-   installation/compiling_xtrabackup
 
 User's Manual
 =============
