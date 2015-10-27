@@ -1,3 +1,10 @@
+percona-xtrabackup (2.3.2) unstable; urgency=low
+
+  * Update to new release Percona XtraBackup 2.3.2
+  * Renamed the package to percona-xtrabackup since 2.3 became GA
+
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Fri, 16 Oct 2015 17:25:26 +0200
+
 percona-xtrabackup-23 (2.3.1beta1) unstable; urgency=low
 
   * Update to new release Percona XtraBackup 2.3.1beta1
