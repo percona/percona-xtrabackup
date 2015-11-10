@@ -2682,6 +2682,9 @@ sub apply_log {
                 '^(' . join('|', @skip_list, '.*\.ibd', 'undo[0-9]+') . ')$');
     }
 
+    # remove empty directories. rmdir will fail for non-empty directories
+    finddepth(sub { rmdir $_ if -d }, $backup_dir);
+
 }
 
 #
@@ -4191,22 +4194,30 @@ sub backup_files {
                 "'$source_dir/$database/$wildcard' ($file_c files)\n";
         }
 
-        if ($file_c == 0 && $option_stream) {
-            # Stream/encrypt empty directories by backing up a fake empty
-            # db.opt file, so that empty databases are created in the backup
-            mkdir("$option_tmpdir/$database") ||
-                die "Failed to create directory $option_tmpdir/$database: $!";
+        if ($file_c == 0) {
+            if ($option_stream) {
+                # Stream/encrypt empty directories by backing up a fake empty
+                # db.opt file, so that empty databases are created in the backup
+                mkdir("$option_tmpdir/$database") ||
+                    die "Failed to create directory " .
+                        "$option_tmpdir/$database: $!";
 
-            open XTRABACKUP_FH, ">", "$option_tmpdir/$database/db.opt"
-                or die "Cannot create file $option_tmpdir/db.opt: $!";
-            close XTRABACKUP_FH;
+                open XTRABACKUP_FH, ">", "$option_tmpdir/$database/db.opt"
+                    or die "Cannot create file $option_tmpdir/db.opt: $!";
+                close XTRABACKUP_FH;
 
-            backup_file_via_stream("$option_tmpdir", "$database/db.opt");
+                backup_file_via_stream("$option_tmpdir", "$database/db.opt");
 
-            unlink("$option_tmpdir/$database/db.opt") ||
-                die "Failed to remove file $database/db.opt: $!";
-            rmdir("$option_tmpdir/$database") ||
-                die "Failed to remove directory $database: $!";
+                unlink("$option_tmpdir/$database/db.opt") ||
+                    die "Failed to remove file $database/db.opt: $!";
+                rmdir("$option_tmpdir/$database") ||
+                    die "Failed to remove directory $database: $!";
+            } else {
+                # Create empty db.opt file for empty database
+                open XTRABACKUP_FH, ">", "$backup_dir/$database/db.opt"
+                    or die "Cannot create file $option_tmpdir/db.opt: $!";
+                close XTRABACKUP_FH;
+            }
         }
 
         foreach $file (@list) {
