@@ -1107,23 +1107,18 @@ backup_files(const char *from, bool prep_mode)
 
 	while (datadir_iter_next(it, &node)) {
 
-		if (opt_rsync) {
-			if (!node.is_empty_dir) {
-				datafile_rsync_backup(node.filepath, !prep_mode,
-						rsync_tmpfile);
-			} else {
-				fprintf(rsync_tmpfile, "%s\n", node.filepath);
-			}
-			continue;
-		}
-
 		if (!node.is_empty_dir) {
-			if (!(ret = datafile_copy_backup(node.filepath, 1))) {
-				msg("Failed to copy file %s\n",
-					node.filepath);
+			if (opt_rsync) {
+				ret = datafile_rsync_backup(node.filepath,
+					!prep_mode, rsync_tmpfile);
+			} else {
+				ret = datafile_copy_backup(node.filepath, 1);
+			}
+			if (!ret) {
+				msg("Failed to copy file %s\n", node.filepath);
 				goto out;
 			}
-		} else {
+		} else if (!prep_mode) {
 			/* backup fake file into empty directory */
 			char path[FN_REFLEN];
 			ut_snprintf(path, sizeof(path),
@@ -1438,24 +1433,21 @@ ibx_cleanup_full_backup()
 	sure non-InnoDB files are cleaned up from full backup dir before
 	we copy files from incremental dir. */
 
-	if (xtrabackup_incremental) {
+	it = datadir_iter_new(xtrabackup_target_dir);
 
-		it = datadir_iter_new(xtrabackup_target_dir);
+	while (datadir_iter_next(it, &node)) {
 
-		while (datadir_iter_next(it, &node)) {
+		if (node.is_empty_dir) {
+			rmdir(node.filepath);
+		}
 
-			if (node.is_empty_dir
-			    || filename_matches(node.filepath, ext_list)) {
-				continue;
-			}
-
+		if (xtrabackup_incremental && !node.is_empty_dir
+		    && !filename_matches(node.filepath, ext_list)) {
 			unlink(node.filepath);
 		}
 	}
 
-	if (it != NULL) {
-		datadir_iter_free(it);
-	}
+	datadir_iter_free(it);
 
 	datadir_node_free(&node);
 
