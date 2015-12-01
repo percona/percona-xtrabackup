@@ -1332,7 +1332,8 @@ write_xtrabackup_info(MYSQL *connection)
 		buf_start_time,  /* start_time */
 		buf_end_time,  /* end_time */
 		history_lock_time, /* lock_time */
-		mysql_binlog_position,  /* binlog_pos */
+		mysql_binlog_position ?
+			mysql_binlog_position : "", /* binlog_pos */
 		incremental_lsn, /* innodb_from_lsn */
 		metadata_to_lsn, /* innodb_to_lsn */
 		(xtrabackup_tables /* partial */
@@ -1444,7 +1445,11 @@ write_xtrabackup_info(MYSQL *connection)
 	/* binlog_pos */
 	bind[idx].buffer_type = MYSQL_TYPE_STRING;
 	bind[idx].buffer = mysql_binlog_position;
-	bind[idx].buffer_length = strlen(mysql_binlog_position);
+	if (mysql_binlog_position != NULL) {
+		bind[idx].buffer_length = strlen(mysql_binlog_position);
+	} else {
+		bind[idx].is_null = &null;
+	}
 	++idx;
 
 	/* innodb_from_lsn */
