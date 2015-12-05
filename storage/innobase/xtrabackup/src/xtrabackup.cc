@@ -325,8 +325,9 @@ static longlong	innobase_log_file_size_save;
 
 /* set true if corresponding variable set as option config file or 
 command argument */
-bool xtrabackup_innodb_data_file_path_explicit = false;
-bool xtrabackup_innodb_log_file_size_explicit = false;
+bool innodb_data_file_path_specified = false;
+bool innodb_log_file_size_specified = false;
+bool datadir_specified = false;
 
 /* String buffer used by --print-param to accumulate server options as they are
 parsed from the defaults file */
@@ -1293,6 +1294,7 @@ xb_get_one_option(int optid,
     mysql_data_home= mysql_real_data_home;
 
     ADD_PRINT_PARAM_OPT(mysql_real_data_home);
+    datadir_specified = true;
     break;
 
   case 't':
@@ -1308,7 +1310,7 @@ xb_get_one_option(int optid,
   case OPT_INNODB_DATA_FILE_PATH:
 
     ADD_PRINT_PARAM_OPT(innobase_data_file_path);
-    xtrabackup_innodb_data_file_path_explicit = true;
+    innodb_data_file_path_specified = true;
     break;
 
   case OPT_INNODB_LOG_GROUP_HOME_DIR:
@@ -1324,7 +1326,7 @@ xb_get_one_option(int optid,
   case OPT_INNODB_LOG_FILE_SIZE:
 
     ADD_PRINT_PARAM_OPT(innobase_log_file_size);
-    xtrabackup_innodb_log_file_size_explicit = true;
+    innodb_log_file_size_specified = true;
     break;
 
   case OPT_INNODB_FLUSH_METHOD:

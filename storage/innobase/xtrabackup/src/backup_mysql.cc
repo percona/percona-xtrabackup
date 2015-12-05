@@ -41,6 +41,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <my_global.h>
 #include <mysql.h>
+#include <mysqld.h>
 #include <my_sys.h>
 #include <fnmatch.h>
 #include <string.h>
@@ -397,7 +398,12 @@ get_mysql_vars(MYSQL *connection)
 	}
 
 	/* make sure datadir value is the same in configuration file */
-	if (mysql_data_home != NULL && datadir_var != NULL) {
+	if (datadir_specified) {
+		if (!directory_exists(mysql_data_home, false)) {
+			msg("Error: option 'datadir' points to "
+			    "nonexistent directory '%s'\n", mysql_data_home);
+			goto out;
+		}
 		if (!(ret = equal_paths(mysql_data_home, datadir_var))) {
 			msg("Error: option 'datadir' has different "
 				"values:\n"
@@ -409,7 +415,12 @@ get_mysql_vars(MYSQL *connection)
 	}
 
 	/* get some default values is they are missing from my.cnf */
-	if (!xtrabackup_innodb_log_file_size_explicit) {
+	if (!datadir_specified) {
+		strmake(mysql_real_data_home, datadir_var, FN_REFLEN - 1);
+		mysql_data_home= mysql_real_data_home;
+	}
+
+	if (!innodb_log_file_size_specified) {
 		char *endptr;
 
 		innobase_log_file_size = strtoll(innodb_log_file_size_var,
@@ -417,7 +428,7 @@ get_mysql_vars(MYSQL *connection)
 		ut_ad(*endptr == 0);
 	}
 
-	if (!xtrabackup_innodb_data_file_path_explicit) {
+	if (!innodb_data_file_path_specified) {
 		innobase_data_file_path = innobase_data_file_path_alloc
 					= strdup(innodb_data_file_path_var);
 	}

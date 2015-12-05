@@ -104,8 +104,9 @@ extern long		innobase_log_files_in_group;
 extern const char	*xtrabackup_encrypt_algo_names[];
 extern TYPELIB		xtrabackup_encrypt_algo_typelib;
 
-extern bool		xtrabackup_innodb_data_file_path_explicit;
-extern bool		xtrabackup_innodb_log_file_size_explicit;
+extern bool		innodb_data_file_path_specified;
+extern bool		innodb_log_file_size_specified;
+extern bool		datadir_specified;
 
 extern int		xtrabackup_parallel;
 
