@@ -1005,7 +1005,8 @@ different devices fall back to copy and unlink.
 @return true in case of success. */
 static
 bool
-move_file(const char *src_file_path, const char *dst_file_path, uint thread_n)
+move_file(const char *src_file_path, const char *dst_file_path,
+	  const char *dst_dir, uint thread_n)
 {
 	char errbuf[MYSYS_STRERROR_SIZE];
 	char dst_file_path_abs[FN_REFLEN];
@@ -1013,7 +1014,7 @@ move_file(const char *src_file_path, const char *dst_file_path, uint thread_n)
 	size_t dirname_length;
 
 	ut_snprintf(dst_file_path_abs, sizeof(dst_file_path_abs),
-			"%s/%s", mysql_data_home, dst_file_path);
+			"%s/%s", dst_dir, dst_file_path);
 
 	dirname_part(dst_dir_abs, dst_file_path_abs, &dirname_length);
 
@@ -1063,11 +1064,13 @@ Copy or move file depending on current mode.
 static
 bool
 copy_or_move_file(const char *src_file_path,
-			const char *dst_file_path, uint thread_n)
+		  const char *dst_file_path,
+		  const char *dst_dir,
+		  uint thread_n)
 {
 	return(xtrabackup_copy_back ?
 		copy_file(src_file_path, dst_file_path, thread_n) :
-		move_file(src_file_path, dst_file_path, thread_n));
+		move_file(src_file_path, dst_file_path, dst_dir, thread_n));
 }
 
 
@@ -1473,6 +1476,7 @@ copy_back()
 	bool ret;
 	datadir_iter_t *it = NULL;
 	datadir_node_t node;
+	char *dst_dir;
 
 	if (!opt_force_non_empty_dirs) {
 		if (!directory_exists_and_empty(mysql_data_home,
@@ -1532,14 +1536,16 @@ copy_back()
 	/* copy undo tablespaces */
 	if (srv_undo_tablespaces > 0) {
 
-		ds_data = ds_create((srv_undo_dir && *srv_undo_dir)
-					? srv_undo_dir : mysql_data_home,
-				DS_TYPE_LOCAL);
+		dst_dir = (srv_undo_dir && *srv_undo_dir)
+				? srv_undo_dir : mysql_data_home;
+
+		ds_data = ds_create(dst_dir, DS_TYPE_LOCAL);
 
 		for (i = 1; i <= srv_undo_tablespaces; i++) {
 			char filename[20];
 			sprintf(filename, "undo%03lu", i);
-			if (!(ret = copy_or_move_file(filename, filename, 1))) {
+			if (!(ret = copy_or_move_file(filename, filename,
+				                      dst_dir, 1))) {
 				goto cleanup;
 			}
 		}
@@ -1550,9 +1556,10 @@ copy_back()
 
 	/* copy redo logs */
 
-	ds_data = ds_create((srv_log_group_home_dir && *srv_log_group_home_dir)
-				? srv_log_group_home_dir : mysql_data_home,
-			DS_TYPE_LOCAL);
+	dst_dir = (srv_log_group_home_dir && *srv_log_group_home_dir)
+				? srv_log_group_home_dir : mysql_data_home;
+
+	ds_data = ds_create(dst_dir, DS_TYPE_LOCAL);
 
 	for (i = 0; i < (ulong)innobase_log_files_in_group; i++) {
 		char filename[20];
@@ -1562,7 +1569,8 @@ copy_back()
 			continue;
 		}
 
-		if (!(ret = copy_or_move_file(filename, filename, 1))) {
+		if (!(ret = copy_or_move_file(filename, filename,
+					      dst_dir, 1))) {
 			goto cleanup;
 		}
 	}
@@ -1572,15 +1580,16 @@ copy_back()
 
 	/* copy innodb system tablespace(s) */
 
-	ds_data = ds_create((innobase_data_home_dir && *innobase_data_home_dir)
-				? innobase_data_home_dir : mysql_data_home,
-			DS_TYPE_LOCAL);
+	dst_dir = (innobase_data_home_dir && *innobase_data_home_dir)
+				? innobase_data_home_dir : mysql_data_home;
+
+	ds_data = ds_create(dst_dir, DS_TYPE_LOCAL);
 
 	for (i = 0; i < srv_n_data_files; i++) {
 		const char *filename = base_name(srv_data_file_names[i]);
 
-		if (!(ret = copy_or_move_file(filename,
-						srv_data_file_names[i], 1))) {
+		if (!(ret = copy_or_move_file(filename, srv_data_file_names[i],
+					      dst_dir, 1))) {
 			goto cleanup;
 		}
 	}
@@ -1664,8 +1673,8 @@ copy_back()
 			continue;
 		}
 
-		if (!(ret = copy_or_move_file(node.filepath,
-						node.filepath_rel, 1))) {
+		if (!(ret = copy_or_move_file(node.filepath, node.filepath_rel,
+					      mysql_data_home, 1))) {
 			goto cleanup;
 		}
 	}
