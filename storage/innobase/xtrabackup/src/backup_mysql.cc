@@ -1170,7 +1170,7 @@ write_current_binlog_file(MYSQL *connection)
 		if (log_bin_dir == NULL) {
 			/* log_bin_basename does not exist in MariaDB,
 			fallback to datadir */
-			log_bin_dir = datadir;
+			log_bin_dir = strdup(datadir);
 		}
 
 		dirname_part(log_bin_dir, log_bin_dir, &log_bin_dir_length);
