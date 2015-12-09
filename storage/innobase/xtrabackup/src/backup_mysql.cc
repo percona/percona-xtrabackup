@@ -1023,6 +1023,8 @@ write_slave_info(MYSQL *connection)
 		msg("This means that the server is not a "
 			"replication slave. Ignoring the --slave-info "
 			"option\n");
+		/* we still want to continue the backup */
+		result = true;
 		goto cleanup;
 	}
 
