@@ -8,7 +8,7 @@
 
    This feature implementation is considered **ALPHA** quality.
 
-|xbcloud| is a new tool which is part of the |Percona XtraBackup| 2.3.0-alpha1 release. The purpose of |xbcloud| is to download and upload full or part of |xbstream| archive from/to cloud. |xbcloud| will refuse to overwrite the backup with the same name.
+|xbcloud| is a new tool which is part of the |Percona XtraBackup| 2.3.2 release. The purpose of |xbcloud| is to download and upload full or part of |xbstream| archive from/to cloud. |xbcloud| will refuse to overwrite the backup with the same name.
 
  |xbcloud| stores each chunk as a separate object with name ``backup_name/database/table.ibd.NNNNNNNNNNNNNNNNNNNN``, where ``NNN...`` is a 0-padded serial number of chunk within file. Size of chunk produced by |xtrabackup| and |xbstream| changed to 10M. 
 
@@ -33,7 +33,7 @@ Following example shows how to make a full backup and upload it to Swift: ::
  xbcloud put --storage=Swift \
  --swift-container=test \
  --swift-user=test:tester \
- --swift-url=http://192.168.8.80:8080/ \
+ --swift-auth-url=http://192.168.8.80:8080/ \
  --swift-key=testing \
  --parallel=10 \
  full_backup
@@ -47,7 +47,7 @@ Following example shows how to fetch and restore the backup from Swift: ::
   xbcloud get --storage=Swift \
   --swift-container=test \
   --swift-user=test:tester \
-  --swift-url=http://192.168.8.80:8080/ \
+  --swift-auth-url=http://192.168.8.80:8080/ \
   --swift-key=testing \
   full_backup | xbstream -xv -C /tmp/downloaded_full
 
