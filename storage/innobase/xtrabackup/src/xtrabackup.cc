@@ -6830,6 +6830,22 @@ int main(int argc, char **argv)
 	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, NULL);
 	xtrabackup_target_dir= xtrabackup_real_target_dir;
 
+	/* get default temporary directory */
+	if (!opt_mysql_tmpdir || !opt_mysql_tmpdir[0]) {
+		opt_mysql_tmpdir = getenv("TMPDIR");
+#if defined(__WIN__)
+		if (!opt_mysql_tmpdir) {
+			opt_mysql_tmpdir = getenv("TEMP");
+		}
+		if (!opt_mysql_tmpdir) {
+			opt_mysql_tmpdir = getenv("TMP");
+		}
+#endif
+		if (!opt_mysql_tmpdir || !opt_mysql_tmpdir[0]) {
+			opt_mysql_tmpdir = const_cast<char*>(DEFAULT_TMPDIR);
+		}
+	}
+
 	/* temporary setting of enough size */
 	srv_page_size_shift = UNIV_PAGE_SIZE_SHIFT_MAX;
 	srv_page_size = UNIV_PAGE_SIZE_MAX;
