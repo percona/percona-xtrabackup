@@ -1432,6 +1432,13 @@ xb_get_one_option(int optid,
   case (int) OPT_CORE_FILE:
     test_flags |= TEST_CORE_ON_SIGNAL;
     break;
+  case OPT_HISTORY:
+    if (argument) {
+      opt_history = argument;
+    } else {
+      opt_history = "";
+    }
+    break;
   case '?':
     usage();
     exit(EXIT_SUCCESS);
