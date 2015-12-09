@@ -1344,10 +1344,17 @@ ibx_copy_incremental_over_full()
 	const char *ext_list[] = {"frm", "isl", "MYD", "MYI", "MAD", "MAI",
 		"MRG", "TRG", "TRN", "ARM", "ARZ", "CSM", "CSV", "opt", "par",
 		NULL};
+	const char *sup_files[] = {"xtrabackup_binlog_info",
+				   "xtrabackup_galera_info",
+				   "xtrabackup_slave_info",
+				   "xtrabackup_info",
+				   "ib_lru_dump",
+				   NULL};
 	datadir_iter_t *it = NULL;
 	datadir_node_t node;
 	bool ret = true;
 	char path[FN_REFLEN];
+	int i;
 
 	datadir_node_init(&node);
 
@@ -1398,12 +1405,20 @@ ibx_copy_incremental_over_full()
 			}
 		}
 
-		snprintf(path, sizeof(path), "%s/%s",
-			xtrabackup_incremental_dir,
-			"ib_lru_dump");
+		/* copy supplementary files */
 
-		if (file_exists(path)) {
-			copy_file(path, "ib_lru_dump", 0);
+		for (i = 0; sup_files[i]; i++) {
+			snprintf(path, sizeof(path), "%s/%s",
+				xtrabackup_incremental_dir,
+				sup_files[i]);
+
+			if (file_exists(sup_files[i])) {
+				unlink(sup_files[i]);
+			}
+
+			if (file_exists(path)) {
+				copy_file(path, sup_files[i], 0);
+			}
 		}
 
 	}
