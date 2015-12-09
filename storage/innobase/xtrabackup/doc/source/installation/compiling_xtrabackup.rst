@@ -26,13 +26,14 @@ In Debian-based distributions, you need to: ::
 
  $ apt-get install build-essential flex bison automake autoconf \
     libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
-    libgcrypt11-dev libev-dev libcurl4-gnutls-dev
+    libgcrypt11-dev libev-dev libcurl4-gnutls-dev vim-common
 
 
 In ``RPM``-based distributions, you need to: ::
  
   $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf \
-    bison libtool ncurses-devel libgcrypt-devel libev-devel libcurl-devel
+    bison libtool ncurses-devel libgcrypt-devel libev-devel libcurl-devel \
+    vim-common
 
 Compiling with CMake
 --------------------
