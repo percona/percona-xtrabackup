@@ -6785,14 +6785,23 @@ int main(int argc, char **argv)
 		}
 	}
 
-	/* Throw a descriptive error if --defaults-file is not the first command
-	line argument */
+	/* Throw a descriptive error if --defaults-file or --defaults-extra-file
+	is not the first command line argument */
 	for (int i = 2 ; i < argc ; i++) {
 		char *optend = strcend((argv)[i], '=');
 
 		if (!strncmp(argv[i], "--defaults-file", optend - argv[i])) {
 
 			msg("xtrabackup: Error: --defaults-file "
+			    "must be specified first on the command "
+			    "line\n");
+			exit(EXIT_FAILURE);
+		}
+
+		if (!strncmp(argv[i], "--defaults-extra-file",
+			     optend - argv[i])) {
+
+			msg("xtrabackup: Error: --defaults-extra-file "
 			    "must be specified first on the command "
 			    "line\n");
 			exit(EXIT_FAILURE);
