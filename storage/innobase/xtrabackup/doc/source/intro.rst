@@ -24,8 +24,9 @@ Percona's enterprise-grade commercial `MySQL Support <http://www.percona.com/mys
 MySQL Backup Tool Feature Comparison
 ====================================
 
+.. tabularcolumns:: |p{5cm}|p{5cm}|p{5cm}|
+
 .. list-table::
-   :widths: 30 15 15
    :header-rows: 1
 
    * - Features
@@ -36,11 +37,11 @@ MySQL Backup Tool Feature Comparison
      - Proprietary
    * - Price
      - Free
-     - Included in subscription at $5000 per Serve
+     - Included in subscription at $5000 per Server
    * - Streaming and encryption formats
      - Open source
      - Proprietary
-   * - Supported MySQL flavors
+   * - Supported |MySQL| flavors
      - |MySQL|, |Percona Server|, |MariaDB|, |Percona XtraDB Cluster|,
        *MariaDB Galera Cluster*
      - |MySQL|
