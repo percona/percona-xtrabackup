@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -17,14 +17,12 @@
 
 #include "rpl_gtid.h"
 
-#include "mysqld_error.h"
-#include "hash.h"
+#include "mysqld_error.h"      // ER_*
 
 
 Owned_gtids::Owned_gtids(Checkable_rwlock *_sid_lock)
-  : sid_lock(_sid_lock)
+  : sid_lock(_sid_lock), sidno_to_hash(key_memory_Owned_gtids_sidno_to_hash)
 {
-  my_init_dynamic_array(&sidno_to_hash, sizeof(HASH *), 0, 8);
   /*
   my_hash_init(&gtid_to_owner, &my_charset_bin, 20,
                offsetof(Node, group), sizeof(Group), NULL,
@@ -46,7 +44,6 @@ Owned_gtids::~Owned_gtids()
     my_hash_free(hash);
     my_free(hash);
   }
-  delete_dynamic(&sidno_to_hash);
   sid_lock->unlock();
   //sid_lock->assert_no_lock();
 }
@@ -59,17 +56,19 @@ enum_return_status Owned_gtids::ensure_sidno(rpl_sidno sidno)
   rpl_sidno max_sidno= get_max_sidno();
   if (sidno > max_sidno || get_hash(sidno) == NULL)
   {
-    if (allocate_dynamic(&sidno_to_hash, sidno))
-      goto error;
+    if (sidno > get_max_sidno())
+      sidno_to_hash.resize(sidno);
     for (int i= max_sidno; i < sidno; i++)
     {
-      HASH *hash= (HASH *)my_malloc(sizeof(HASH), MYF(MY_WME));
+      HASH *hash= (HASH *)my_malloc(key_memory_Owned_gtids_sidno_to_hash,
+                                    sizeof(HASH), MYF(MY_WME));
       if (hash == NULL)
         goto error;
       my_hash_init(hash, &my_charset_bin, 20,
                    offsetof(Node, gno), sizeof(rpl_gno), NULL,
-                   my_free, 0);
-      set_dynamic(&sidno_to_hash, &hash, i);
+                   my_free, 0,
+                   key_memory_Owned_gtids_sidno_to_hash);
+      sidno_to_hash[i]= hash;
     }
   }
   RETURN_OK;
@@ -85,7 +84,8 @@ enum_return_status Owned_gtids::add_gtid_owner(const Gtid &gtid,
   DBUG_ENTER("Owned_gtids::add_gtid_owner(Gtid, my_thread_id)");
   DBUG_ASSERT(!contains_gtid(gtid));
   DBUG_ASSERT(gtid.sidno <= get_max_sidno());
-  Node *n= (Node *)my_malloc(sizeof(Node), MYF(MY_WME));
+  Node *n= (Node *)my_malloc(key_memory_Sid_map_Node,
+                             sizeof(Node), MYF(MY_WME));
   if (n == NULL)
     RETURN_REPORTED_ERROR;
   n->gno= gtid.gno;
@@ -149,4 +149,22 @@ bool Owned_gtids::is_intersection_nonempty(const Gtid_set *other) const
     g= git.get();
   }
   DBUG_RETURN(false);
+}
+
+void Owned_gtids::get_gtids(Gtid_set &gtid_set) const
+{
+  DBUG_ENTER("Owned_gtids::get_gtids");
+
+  if (sid_lock != NULL)
+    sid_lock->assert_some_wrlock();
+
+  Gtid_iterator git(this);
+  Gtid g= git.get();
+  while (g.sidno != 0)
+  {
+    gtid_set._add_gtid(g);
+    git.next();
+    g= git.get();
+  }
+  DBUG_VOID_RETURN;
 }

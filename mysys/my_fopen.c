@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,10 +17,8 @@
 #include "my_static.h"
 #include <errno.h>
 #include "mysys_err.h"
+#include "my_thread_local.h"
 
-#if defined(__FreeBSD__)
-extern int getosreldate(void);
-#endif
 
 static void make_ftype(char * to,int flag);
 
@@ -42,6 +40,7 @@ FILE *my_fopen(const char *filename, int flags, myf MyFlags)
 {
   FILE *fd;
   char type[5];
+  char *dup_filename= NULL;
   DBUG_ENTER("my_fopen");
   DBUG_PRINT("my",("Name: '%s'  flags: %d  MyFlags: %d",
 		   filename, flags, MyFlags));
@@ -64,13 +63,16 @@ FILE *my_fopen(const char *filename, int flags, myf MyFlags)
     int filedesc= my_fileno(fd);
     if ((uint)filedesc >= my_file_limit)
     {
-      thread_safe_increment(my_stream_opened,&THR_LOCK_open);
+      mysql_mutex_lock(&THR_LOCK_open);
+      my_stream_opened++;
+      mysql_mutex_unlock(&THR_LOCK_open);
       DBUG_RETURN(fd);				/* safeguard */
     }
-    mysql_mutex_lock(&THR_LOCK_open);
-    if ((my_file_info[filedesc].name= (char*)
-	 my_strdup(filename,MyFlags)))
+    dup_filename= my_strdup(key_memory_my_file_info, filename, MyFlags);
+    if (dup_filename != NULL)
     {
+      mysql_mutex_lock(&THR_LOCK_open);
+      my_file_info[filedesc].name= dup_filename;
       my_stream_opened++;
       my_file_total_opened++;
       my_file_info[filedesc].type= STREAM_BY_FOPEN;
@@ -78,20 +80,19 @@ FILE *my_fopen(const char *filename, int flags, myf MyFlags)
       DBUG_PRINT("exit",("stream: 0x%lx", (long) fd));
       DBUG_RETURN(fd);
     }
-    mysql_mutex_unlock(&THR_LOCK_open);
     (void) my_fclose(fd,MyFlags);
-    my_errno=ENOMEM;
+    set_my_errno(ENOMEM);
   }
   else
-    my_errno=errno;
-  DBUG_PRINT("error",("Got error %d on open",my_errno));
+    set_my_errno(errno);
+  DBUG_PRINT("error",("Got error %d on open",my_errno()));
   if (MyFlags & (MY_FFNF | MY_FAE | MY_WME))
   {
     char errbuf[MYSYS_STRERROR_SIZE];
     my_error((flags & O_RDONLY) || (flags == O_RDONLY ) ? EE_FILENOTFOUND :
              EE_CANTCREATEFILE,
-             MYF(ME_BELL+ME_WAITTANG), filename,
-             my_errno, my_strerror(errbuf, sizeof(errbuf), my_errno));
+             MYF(0), filename,
+             my_errno(), my_strerror(errbuf, sizeof(errbuf), my_errno()));
   }
   DBUG_RETURN((FILE*) 0);
 } /* my_fopen */
@@ -143,52 +144,6 @@ static FILE *my_win_freopen(const char *path, const char *mode, FILE *stream)
   return stream;
 }
 
-#elif defined(__FreeBSD__)
-
-/* No close operation hook. */
-
-static int no_close(void *cookie __attribute__((unused)))
-{
-  return 0;
-}
-
-/*
-  A hack around a race condition in the implementation of freopen.
-
-  The race condition steams from the fact that the current fd of
-  the stream is closed before its number is used to duplicate the
-  new file descriptor. This defeats the desired atomicity of the
-  close and duplicate of dup2().
-
-  See PR number 79887 for reference:
-  http://www.freebsd.org/cgi/query-pr.cgi?pr=79887
-*/
-
-static FILE *my_freebsd_freopen(const char *path, const char *mode, FILE *stream)
-{
-  int old_fd;
-  FILE *result;
-
-  flockfile(stream);
-
-  old_fd= fileno(stream);
-
-  /* Use a no operation close hook to avoid having the fd closed. */
-  stream->_close= no_close;
-
-  /* Relies on the implicit dup2 to close old_fd. */
-  result= freopen(path, mode, stream);
-
-  /* If successful, the _close hook was replaced. */
-
-  if (result == NULL)
-    close(old_fd);
-  else
-    funlockfile(result);
-
-  return result;
-}
-
 #endif
 
 
@@ -212,16 +167,6 @@ FILE *my_freopen(const char *path, const char *mode, FILE *stream)
 
 #if defined(_WIN32)
   result= my_win_freopen(path, mode, stream);
-#elif defined(__FreeBSD__)
-  /*
-    XXX: Once the fix is ported to the stable releases, this should
-         be dependent upon the specific FreeBSD versions. Check at:
-         http://www.freebsd.org/cgi/query-pr.cgi?pr=79887
-  */
-  if (getosreldate() > 900027)
-    result= freopen(path, mode, stream);
-  else
-    result= my_freebsd_freopen(path, mode, stream);
 #else
   result= freopen(path, mode, stream);
 #endif
@@ -246,12 +191,12 @@ int my_fclose(FILE *fd, myf MyFlags)
 #endif
   if(err < 0)
   {
-    my_errno=errno;
+    set_my_errno(errno);
     if (MyFlags & (MY_FAE | MY_WME))
     {
       char errbuf[MYSYS_STRERROR_SIZE];
-      my_error(EE_BADCLOSE, MYF(ME_BELL+ME_WAITTANG), my_filename(file),
-               my_errno, my_strerror(errbuf, sizeof(errbuf), my_errno));
+      my_error(EE_BADCLOSE, MYF(0), my_filename(file),
+               my_errno(), my_strerror(errbuf, sizeof(errbuf), my_errno()));
     }
   }
   else
@@ -285,12 +230,12 @@ FILE *my_fdopen(File Filedes, const char *name, int Flags, myf MyFlags)
 #endif
   if (!fd)
   {
-    my_errno=errno;
+    set_my_errno(errno);
     if (MyFlags & (MY_FAE | MY_WME))
     {
       char errbuf[MYSYS_STRERROR_SIZE];
-      my_error(EE_CANT_OPEN_STREAM, MYF(ME_BELL+ME_WAITTANG),
-               my_errno, my_strerror(errbuf, sizeof(errbuf), my_errno));
+      my_error(EE_CANT_OPEN_STREAM, MYF(0),
+               my_errno(), my_strerror(errbuf, sizeof(errbuf), my_errno()));
     }
   }
   else
@@ -305,7 +250,8 @@ FILE *my_fdopen(File Filedes, const char *name, int Flags, myf MyFlags)
       }
       else
       {
-        my_file_info[Filedes].name=  my_strdup(name,MyFlags);
+        my_file_info[Filedes].name= my_strdup(key_memory_my_file_info,
+                                              name,MyFlags);
       }
       my_file_info[Filedes].type = STREAM_BY_FDOPEN;
     }
@@ -342,7 +288,7 @@ FILE *my_fdopen(File Filedes, const char *name, int Flags, myf MyFlags)
     a+ == O_RDWR|O_APPEND|O_CREAT
 */
 
-static void make_ftype(register char * to, register int flag)
+static void make_ftype(char * to, int flag)
 {
   /* check some possible invalid combinations */  
   DBUG_ASSERT((flag & (O_TRUNC | O_APPEND)) != (O_TRUNC | O_APPEND));

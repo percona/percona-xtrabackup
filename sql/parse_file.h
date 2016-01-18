@@ -1,5 +1,5 @@
 /* -*- C++ -*- */
-/* Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -11,19 +11,20 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef _PARSE_FILE_H_
 #define _PARSE_FILE_H_
 
-#include "my_global.h"                          // uchar
-#include "sql_string.h"                         // LEX_STRING
+#include "my_global.h"                  // uchar
+#include "mysql/mysql_lex_string.h"     // LEX_STRING
 #include "sql_alloc.h"
 
 class THD;
 
 typedef struct st_mem_root MEM_ROOT;
+typedef struct st_mysql_lex_string LEX_STRING;
 
 #define PARSE_FILE_TIMESTAMPLENGTH 19
 

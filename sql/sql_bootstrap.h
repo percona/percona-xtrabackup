@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,12 +23,12 @@
   The longest query in use depends on the documentation content,
   see the file fill_help_tables.sql
 */
-#define MAX_BOOTSTRAP_QUERY_SIZE 20000
+#define MAX_BOOTSTRAP_QUERY_SIZE 44000
 /**
   The maximum size of a bootstrap query, expressed in a single line.
   Do not increase this size, use the multiline syntax instead.
 */
-#define MAX_BOOTSTRAP_LINE_SIZE 20000
+#define MAX_BOOTSTRAP_LINE_SIZE 44000
 #define MAX_BOOTSTRAP_ERROR_LEN 256
 
 #define READ_BOOTSTRAP_SUCCESS     0
@@ -36,10 +36,10 @@
 #define READ_BOOTSTRAP_ERROR       2
 #define READ_BOOTSTRAP_QUERY_SIZE  3
 
-typedef void *fgets_input_t;
+typedef struct st_mysql_file *fgets_input_t;
 typedef char * (*fgets_fn_t)(char *, size_t, fgets_input_t, int *error);
 
-int read_bootstrap_query(char *query, int *query_length,
+int read_bootstrap_query(char *query, size_t *query_length,
                          fgets_input_t input, fgets_fn_t fgets_fn, int *error);
 
 #endif

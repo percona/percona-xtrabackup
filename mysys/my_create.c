@@ -1,5 +1,4 @@
-/* Copyright (c) 2000, 2001, 2005-2008 MySQL AB, 2009 Sun Microsystems, Inc.
-   Use is subject to license terms.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,6 +18,7 @@
 #include "mysys_err.h"
 #include <errno.h>
 #include <my_sys.h>
+#include "my_thread_local.h"
 #if defined(_WIN32)
 #include <share.h>
 #endif
@@ -64,10 +64,10 @@ File my_create(const char *FileName, int CreateFlags, int access_flags,
   */
   if (unlikely(fd >= 0 && rc < 0))
   {
-    int tmp= my_errno;
+    int tmp= my_errno();
     my_close(fd, MyFlags);
     my_delete(FileName, MyFlags);
-    my_errno= tmp;
+    set_my_errno(tmp);
   }
   
   DBUG_RETURN(rc);

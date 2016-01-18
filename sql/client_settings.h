@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,7 +20,6 @@
 #error You have already included an client_settings.h and it should not be included twice
 #endif /* CLIENT_SETTINGS_INCLUDED */
 
-#include <thr_alarm.h>
 #include <sql_common.h>
 
 /*
@@ -30,17 +29,16 @@
 */
 #define CLIENT_CAPABILITIES (CLIENT_LONG_PASSWORD | \
                              CLIENT_LONG_FLAG |     \
-                             CLIENT_SECURE_CONNECTION | \
                              CLIENT_TRANSACTIONS |  \
                              CLIENT_PROTOCOL_41 |   \
-                             CLIENT_SECURE_CONNECTION | \
+                             CLIENT_RESERVED2 | \
                              CLIENT_PLUGIN_AUTH | \
                              CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | \
-                             CLIENT_CONNECT_ATTRS)
+                             CLIENT_CONNECT_ATTRS | \
+                             CLIENT_SESSION_TRACK | \
+                             CLIENT_DEPRECATE_EOF)
 
 #define read_user_name(A) {}
-#undef HAVE_SMEM
-#undef _CUSTOMCONFIG_
 
 #define mysql_server_init(a,b,c) mysql_client_plugin_init()
 #define mysql_server_end()       mysql_client_plugin_deinit()

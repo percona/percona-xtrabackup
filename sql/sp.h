@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,9 +16,8 @@
 #ifndef _SP_H_
 #define _SP_H_
 
-#include "sql_string.h"                         // LEX_STRING
-#include "sp_head.h"                            // enum_sp_type
-
+#include "my_global.h"
+#include "sql_lex.h"       // enum_sp_type
 
 class Field;
 class Open_tables_backup;
@@ -80,7 +79,7 @@ enum
 };
 
 /* Drop all routines in database 'db' */
-int sp_drop_db_routines(THD *thd, char *db);
+int sp_drop_db_routines(THD *thd, const char *db);
 
 /**
    Acquires exclusive metadata lock on all stored routines in the
@@ -92,7 +91,7 @@ int sp_drop_db_routines(THD *thd, char *db);
    @retval  false  Success
    @retval  true   Failure
  */
-bool lock_db_routines(THD *thd, char *db);
+bool lock_db_routines(THD *thd, const char *db);
 
 sp_head *sp_find_routine(THD *thd, enum_sp_type type, sp_name *name,
                          sp_cache **cp, bool cache_only);
@@ -107,7 +106,7 @@ bool sp_exist_routines(THD *thd, TABLE_LIST *procs, bool is_proc);
 
 bool sp_show_create_routine(THD *thd, enum_sp_type type, sp_name *name);
 
-int sp_create_routine(THD *thd, sp_head *sp);
+bool sp_create_routine(THD *thd, sp_head *sp);
 
 int sp_update_routine(THD *thd, enum_sp_type type, sp_name *name,
                       st_sp_chistics *chistics);
@@ -148,7 +147,7 @@ public:
     invalidate the prepared statement at execute if it
     changes.
   */
-  ulong m_sp_cache_version;
+  int64 m_sp_cache_version;
 };
 
 
@@ -208,9 +207,7 @@ uint sp_get_flags_for_command(LEX *lex);
 bool sp_check_name(LEX_STRING *ident);
 
 TABLE_LIST *sp_add_to_query_tables(THD *thd, LEX *lex,
-                                   const char *db, const char *name,
-                                   thr_lock_type locktype,
-                                   enum_mdl_type mdl_type);
+                                   const char *db, const char *name);
 
 bool sp_check_show_access(THD *thd, sp_head *sp, bool *full_access);
 

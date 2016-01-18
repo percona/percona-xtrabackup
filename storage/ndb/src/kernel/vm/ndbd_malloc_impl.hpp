@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,9 @@
 #include <assert.h>
 #include "Pool.hpp"
 #include <Vector.hpp>
+
+#define JAM_FILE_ID 291
+
 
 /**
  * 13 -> 8192 words -> 32768 bytes
@@ -65,6 +68,7 @@ public:
   
   void set_resource_limit(const Resource_limit& rl);
   bool get_resource_limit(Uint32 id, Resource_limit& rl) const;
+  bool get_resource_limit_nolock(Uint32 id, Resource_limit& rl) const;
 
   bool init(Uint32 *watchCounter, bool allow_alloc_less_than_requested = true);
   void map(Uint32 * watchCounter, bool memlock = false, Uint32 resources[] = 0);
@@ -94,7 +98,7 @@ public:
 private:
   void grow(Uint32 start, Uint32 cnt);
 
-#define XX_RL_COUNT 9
+#define XX_RL_COUNT 10
   /**
    * Return pointer to free page data on page
    */
@@ -211,5 +215,8 @@ Ndbd_mem_manager::check(Uint32 first, Uint32 last)
   return ret;
 }
 
+
+
+#undef JAM_FILE_ID
 
 #endif 

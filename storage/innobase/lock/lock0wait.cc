@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2013, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -25,12 +25,14 @@ Created 25/5/2010 Sunny Bains
 
 #define LOCK_MODULE_IMPLEMENTATION
 
+#include "ha_prototypes.h"
+#include <mysql/service_thd_wait.h>
+
 #include "srv0mon.h"
 #include "que0que.h"
 #include "lock0lock.h"
 #include "row0mysql.h"
 #include "srv0start.h"
-#include "ha_prototypes.h"
 #include "lock0priv.h"
 
 /*********************************************************************//**
@@ -40,14 +42,11 @@ void
 lock_wait_table_print(void)
 /*=======================*/
 {
-	ulint			i;
-	const srv_slot_t*	slot;
-
 	ut_ad(lock_wait_mutex_own());
 
-	slot = lock_sys->waiting_threads;
+	const srv_slot_t*	slot = lock_sys->waiting_threads;
 
-	for (i = 0; i < OS_THREAD_MAX_N; i++, ++slot) {
+	for (ulint i = 0; i < OS_THREAD_MAX_N; i++, ++slot) {
 
 		fprintf(stderr,
 			"Slot %lu: thread type %lu,"
@@ -124,7 +123,7 @@ lock_wait_table_release_slot(
 
 /*********************************************************************//**
 Reserves a slot in the thread table for the current user OS thread.
-@return	reserved slot */
+@return reserved slot */
 static
 srv_slot_t*
 lock_wait_table_reserve_slot(
@@ -148,7 +147,7 @@ lock_wait_table_reserve_slot(
 			slot->thr->slot = slot;
 
 			if (slot->event == NULL) {
-				slot->event = os_event_create();
+				slot->event = os_event_create(0);
 				ut_a(slot->event);
 			}
 
@@ -168,16 +167,10 @@ lock_wait_table_reserve_slot(
 		}
 	}
 
-	ut_print_timestamp(stderr);
-
-	fprintf(stderr,
-		"  InnoDB: There appear to be %lu user"
-		" threads currently waiting\n"
-		"InnoDB: inside InnoDB, which is the"
-		" upper limit. Cannot continue operation.\n"
-		"InnoDB: As a last thing, we print"
-		" a list of waiting threads.\n", (ulong) OS_THREAD_MAX_N);
-
+	ib::error() << "There appear to be " << OS_THREAD_MAX_N << " user"
+		" threads currently waiting inside InnoDB, which is the upper"
+		" limit. Cannot continue operation. Before aborting, we print"
+		" a list of waiting threads.";
 	lock_wait_table_print();
 
 	ut_error;
@@ -190,7 +183,6 @@ occurs during the wait trx->error_state associated with thr is
 != DB_SUCCESS when we return. DB_LOCK_WAIT_TIMEOUT and DB_DEADLOCK
 are possible errors. DB_DEADLOCK is returned if selective deadlock
 resolution chose this transaction as a victim. */
-UNIV_INTERN
 void
 lock_wait_suspend_thread(
 /*=====================*/
@@ -200,10 +192,9 @@ lock_wait_suspend_thread(
 	srv_slot_t*	slot;
 	double		wait_time;
 	trx_t*		trx;
-	ulint		had_dict_lock;
 	ibool		was_declared_inside_innodb;
-	ib_int64_t	start_time			= 0;
-	ib_int64_t	finish_time;
+	int64_t		start_time = 0;
+	int64_t		finish_time;
 	ulint		sec;
 	ulint		ms;
 	ulong		lock_wait_timeout;
@@ -236,7 +227,7 @@ lock_wait_suspend_thread(
 		if (trx->lock.was_chosen_as_deadlock_victim) {
 
 			trx->error_state = DB_DEADLOCK;
-			trx->lock.was_chosen_as_deadlock_victim = FALSE;
+			trx->lock.was_chosen_as_deadlock_victim = false;
 		}
 
 		lock_wait_mutex_exit();
@@ -255,7 +246,7 @@ lock_wait_suspend_thread(
 		if (ut_usectime(&sec, &ms) == -1) {
 			start_time = -1;
 		} else {
-			start_time = (ib_int64_t) sec * 1000000 + ms;
+			start_time = static_cast<int64_t>(sec) * 1000000 + ms;
 		}
 	}
 
@@ -276,7 +267,7 @@ lock_wait_suspend_thread(
 
 	lock_mutex_exit();
 
-	had_dict_lock = trx->dict_operation_lock_mode;
+	ulint	had_dict_lock = trx->dict_operation_lock_mode;
 
 	switch (had_dict_lock) {
 	case 0:
@@ -350,7 +341,7 @@ lock_wait_suspend_thread(
 		if (ut_usectime(&sec, &ms) == -1) {
 			finish_time = -1;
 		} else {
-			finish_time = (ib_int64_t) sec * 1000000 + ms;
+			finish_time = static_cast<int64_t>(sec) * 1000000 + ms;
 		}
 
 		diff_time = (finish_time > start_time) ?
@@ -371,10 +362,18 @@ lock_wait_suspend_thread(
 		/* Record the lock wait time for this thread */
 		thd_set_lock_wait_time(trx->mysql_thd, diff_time);
 
+		DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
+			os_thread_sleep(1000););
+	}
+
+	/* The transaction is chosen as deadlock victim during sleep. */
+	if (trx->error_state == DB_DEADLOCK) {
+		return;
 	}
 
 	if (lock_wait_timeout < 100000000
-	    && wait_time > (double) lock_wait_timeout) {
+	    && wait_time > (double) lock_wait_timeout
+	    && !trx_is_high_priority(trx)) {
 
 		trx->error_state = DB_LOCK_WAIT_TIMEOUT;
 
@@ -390,7 +389,6 @@ lock_wait_suspend_thread(
 /********************************************************************//**
 Releases a user OS thread waiting for a lock to be released, if the
 thread is already suspended. */
-UNIV_INTERN
 void
 lock_wait_release_thread_if_suspended(
 /*==================================*/
@@ -411,7 +409,7 @@ lock_wait_release_thread_if_suspended(
 		if (trx->lock.was_chosen_as_deadlock_victim) {
 
 			trx->error_state = DB_DEADLOCK;
-			trx->lock.was_chosen_as_deadlock_victim = FALSE;
+			trx->lock.was_chosen_as_deadlock_victim = false;
 		}
 
 		os_event_set(thr->slot->event);
@@ -458,7 +456,7 @@ lock_wait_check_and_cancel(
 
 		trx_mutex_enter(trx);
 
-		if (trx->lock.wait_lock) {
+		if (trx->lock.wait_lock != NULL && !trx_is_high_priority(trx)) {
 
 			ut_a(trx->lock.que_state == TRX_QUE_LOCK_WAIT);
 
@@ -474,8 +472,8 @@ lock_wait_check_and_cancel(
 
 /*********************************************************************//**
 A thread which wakes up threads whose lock wait may have lasted too long.
-@return	a dummy parameter */
-extern "C" UNIV_INTERN
+@return a dummy parameter */
+extern "C"
 os_thread_ret_t
 DECLARE_THREAD(lock_wait_timeout_thread)(
 /*=====================================*/
@@ -483,7 +481,7 @@ DECLARE_THREAD(lock_wait_timeout_thread)(
 			/* in: a dummy parameter required by
 			os_thread_create */
 {
-	ib_int64_t	sig_count = 0;
+	int64_t		sig_count = 0;
 	os_event_t	event = lock_sys->timeout_event;
 
 	ut_ad(!srv_read_only_mode);
@@ -541,3 +539,4 @@ DECLARE_THREAD(lock_wait_timeout_thread)(
 
 	OS_THREAD_DUMMY_RETURN;
 }
+

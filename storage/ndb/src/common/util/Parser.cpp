@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,55 +22,30 @@
 #include <Properties.hpp>
 
 
-class ParseInputStream : public InputStream {
-public:
-  ParseInputStream(InputStream & in, bool trim = true, char eofComment = '#');
-  
-  char* gets(char * buf, int bufLen); 
-  void push_back(const char *);
-  void set_mutex(NdbMutex *m) { in.set_mutex(m); };
-private:
-  InputStream & in;
-  char * buffer;
-};
-
-ParseInputStream::ParseInputStream(InputStream & _in, 
-				   bool /* unused */, 
-				   char /* unused */)
-  : in(_in){
-  buffer = 0;
-}
-
-char*
-ParseInputStream::gets(char * buf, int bufLen){
-  if(buffer != 0){
-    strncpy(buf, buffer, bufLen);
-    free(buffer);
-    buffer = 0;
-    return buf;
-  }
-  char *t = in.gets(buf, bufLen);
-  return t;
-}
-
 void
-ParseInputStream::push_back(const char * str){
-  if(buffer != 0)
-    abort();
-  buffer = strdup(str);
+ParserImpl::check_parser_rows(const DummyRow* rows) const
+{
+  // Simple validation of rows definitions
+  while(rows->name)
+  {
+    assert(rows->type < rows->End);
+    rows++;
+  }
+
+  // Check that last row has type End
+  assert(rows->type == rows->End);
 }
 
-ParserImpl::ParserImpl(const DummyRow * rows, InputStream & in,
-		       bool b_cmd, bool b_empty, bool b_iarg) 
-  : m_rows(rows), input(* new ParseInputStream(in))
+
+ParserImpl::ParserImpl(const DummyRow * rows, InputStream & in)
+ : m_rows(rows), input(in)
 {
-  m_breakOnCmd = b_cmd;
-  m_breakOnEmpty = b_empty;
-  m_breakOnInvalidArg = b_iarg;
+#ifndef NDEBUG
+  check_parser_rows(rows);
+#endif
 }
 
 ParserImpl::~ParserImpl(){
-  delete & input;
 }
 
 static
@@ -78,7 +53,7 @@ bool
 Empty(const char * str){
   if(str == 0)
     return true;
-  const int len = strlen(str);
+  const int len = (int)strlen(str);
   if(len == 0)
     return false;
   for(int i = 0; i<len; i++)
@@ -96,7 +71,7 @@ void
 trim(char * str){
   if(str == NULL)
     return;
-  int len = strlen(str);
+  int len = (int)strlen(str);
   for(len--; str[len] == '\n' || str[len] == ' ' || str[len] == '\t'; len--)
     str[len] = 0;
   
@@ -156,7 +131,7 @@ ParserImpl::run(Context * ctx, const class Properties ** pDst,
     return false;
   }
 
-  int last= strlen(ctx->m_currentToken);
+  int last= (int)strlen(ctx->m_currentToken);
   if(last>0)
     last--;
 
@@ -198,13 +173,7 @@ ParserImpl::run(Context * ctx, const class Properties ** pDst,
   }
 
   if(invalidArgument){
-    char buf[sz];
-    char * tmp;
-    if(!m_breakOnInvalidArg){
-      do {
-	tmp = input.gets(buf, sz);
-      } while((! * stop) && !Eof(tmp) && !Empty(tmp));
-    }
+    // Invalid argument found, return error
     return false;
   }
 

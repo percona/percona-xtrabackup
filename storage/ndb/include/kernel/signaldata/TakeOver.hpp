@@ -1,6 +1,5 @@
 /* 
-   Copyright (C) 2007 MySQL AB, 2009 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2007, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +17,9 @@
 
 #ifndef TAKE_OVER_HPP
 #define TAKE_OVER_HPP
+
+#define JAM_FILE_ID 164
+
 
 struct StartCopyReq
 {
@@ -127,7 +129,7 @@ struct UpdateToConf
   Uint32 startingNodeId;
 };
 
-struct CreateFragReq 
+struct UpdateFragStateReq 
 {
   STATIC_CONST( SignalLength = 9 );
 
@@ -148,7 +150,7 @@ struct CreateFragReq
   Uint32 failedNodeId;
 };
 
-struct CreateFragConf 
+struct UpdateFragStateConf 
 {
   STATIC_CONST( SignalLength = 6 );
   
@@ -188,5 +190,15 @@ struct EndToConf
   Uint32 sendingNodeId;
   Uint32 startingNodeId;
 };
+
+struct EndToRep
+{
+public:
+  STATIC_CONST ( SignalLength = 1 );
+
+  Uint32 nodeId;
+};
+
+#undef JAM_FILE_ID
 
 #endif

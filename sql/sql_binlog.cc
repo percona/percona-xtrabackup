@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,21 +14,14 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#include "sql_priv.h"
 #include "sql_binlog.h"
-#include "sql_parse.h"
-#include "sql_acl.h"
-#include "rpl_info.h"
-#include "rpl_info_factory.h"
-#include "base64.h"
-#include "rpl_slave.h"                              // apply_event_and_update_pos
-#include "log_event.h"                          // Format_description_log_event,
-                                                // EVENT_LEN_OFFSET,
-                                                // EVENT_TYPE_OFFSET,
-                                                // FORMAT_DESCRIPTION_LOG_EVENT,
-                                                // START_EVENT_V3,
-                                                // Log_event_type,
-                                                // Log_event
+
+#include "my_global.h"
+#include "base64.h"                             // base64_needed_decoded_length
+#include "auth_common.h"                        // check_global_access
+#include "log_event.h"                          // Format_description_log_event
+#include "rpl_info_factory.h"                   // Rpl_info_factory
+#include "rpl_rli.h"                            // Relay_log_info
 
 
 /**
@@ -58,8 +51,8 @@ static int check_event_type(int type, Relay_log_info *rli)
 
   switch (type)
   {
-  case START_EVENT_V3:
-  case FORMAT_DESCRIPTION_EVENT:
+  case binary_log::START_EVENT_V3:
+  case binary_log::FORMAT_DESCRIPTION_EVENT:
     /*
       We need a preliminary FD event in order to parse the FD event,
       if we don't already have one.
@@ -70,17 +63,17 @@ static int check_event_type(int type, Relay_log_info *rli)
     /* It is always allowed to execute FD events. */
     return 0;
 
-  case ROWS_QUERY_LOG_EVENT:
-  case TABLE_MAP_EVENT:
-  case WRITE_ROWS_EVENT:
-  case UPDATE_ROWS_EVENT:
-  case DELETE_ROWS_EVENT:
-  case WRITE_ROWS_EVENT_V1:
-  case UPDATE_ROWS_EVENT_V1:
-  case DELETE_ROWS_EVENT_V1:
-  case PRE_GA_WRITE_ROWS_EVENT:
-  case PRE_GA_UPDATE_ROWS_EVENT:
-  case PRE_GA_DELETE_ROWS_EVENT:
+  case binary_log::ROWS_QUERY_LOG_EVENT:
+  case binary_log::TABLE_MAP_EVENT:
+  case binary_log::WRITE_ROWS_EVENT:
+  case binary_log::UPDATE_ROWS_EVENT:
+  case binary_log::DELETE_ROWS_EVENT:
+  case binary_log::WRITE_ROWS_EVENT_V1:
+  case binary_log::UPDATE_ROWS_EVENT_V1:
+  case binary_log::DELETE_ROWS_EVENT_V1:
+  case binary_log::PRE_GA_WRITE_ROWS_EVENT:
+  case binary_log::PRE_GA_UPDATE_ROWS_EVENT:
+  case binary_log::PRE_GA_DELETE_ROWS_EVENT:
     /*
       Row events are only allowed if a Format_description_event has
       already been seen.
@@ -162,7 +155,10 @@ void mysql_client_binlog_statement(THD* thd)
       future, we need to improve the code around the BINLOG command as only a
       small part of the object is required to execute it. / Alfranio
     */
-    if ((rli= Rpl_info_factory::create_rli(INFO_REPOSITORY_DUMMY, FALSE)))
+
+    /* when trying to create an rli from a client, there is no channel*/
+    if ((rli= Rpl_info_factory::create_rli(INFO_REPOSITORY_DUMMY, FALSE,
+                                           (const char*)"", true)))
     {
       thd->rli_fake= rli;
       rli->info_thd= thd;
@@ -170,7 +166,8 @@ void mysql_client_binlog_statement(THD* thd)
   }
 
   const char *error= 0;
-  char *buf= (char *) my_malloc(decoded_len, MYF(MY_WME));
+  char *buf= (char *) my_malloc(key_memory_binlog_statement_buffer,
+                                decoded_len, MYF(MY_WME));
   Log_event *ev = 0;
 
   /*
@@ -188,19 +185,13 @@ void mysql_client_binlog_statement(THD* thd)
        strptr < thd->lex->comment.str + thd->lex->comment.length ; )
   {
     char const *endptr= 0;
-    int bytes_decoded= base64_decode(strptr, coded_len, buf, &endptr,
+    int64 bytes_decoded= base64_decode(strptr, coded_len, buf, &endptr,
                                      MY_BASE64_DECODE_ALLOW_MULTIPLE_CHUNKS);
 
-#ifndef HAVE_purify
-      /*
-        This debug printout should not be used for valgrind builds
-        since it will read from unassigned memory.
-      */
     DBUG_PRINT("info",
-               ("bytes_decoded: %d  strptr: 0x%lx  endptr: 0x%lx ('%c':%d)",
+               ("bytes_decoded: %lld  strptr: 0x%lx  endptr: 0x%lx ('%c':%d)",
                 bytes_decoded, (long) strptr, (long) endptr, *endptr,
                 *endptr));
-#endif
 
     if (bytes_decoded < 0)
     {
@@ -226,7 +217,7 @@ void mysql_client_binlog_statement(THD* thd)
       order to be able to read exactly what is necessary.
     */
 
-    DBUG_PRINT("info",("binlog base64 decoded_len: %lu  bytes_decoded: %d",
+    DBUG_PRINT("info",("binlog base64 decoded_len: %lu  bytes_decoded: %lld",
                        (ulong) decoded_len, bytes_decoded));
 
     /*
@@ -246,7 +237,7 @@ void mysql_client_binlog_statement(THD* thd)
         my_error(ER_SYNTAX_ERROR, MYF(0));
         goto end;
       }
-      DBUG_PRINT("info", ("event_len=%lu, bytes_decoded=%d",
+      DBUG_PRINT("info", ("event_len=%lu, bytes_decoded=%lld",
                           event_len, bytes_decoded));
 
       if (check_event_type(bufptr[EVENT_TYPE_OFFSET], rli))
@@ -270,7 +261,7 @@ void mysql_client_binlog_statement(THD* thd)
       bytes_decoded -= event_len;
       bufptr += event_len;
 
-      DBUG_PRINT("info",("ev->get_type_code()=%d", ev->get_type_code()));
+      DBUG_PRINT("info",("ev->common_header()=%d", ev->get_type_code()));
       ev->thd= thd;
       /*
         We go directly to the application phase, since we don't need
@@ -291,8 +282,8 @@ void mysql_client_binlog_statement(THD* thd)
         ROWS_QUERY_LOG_EVENT if present in rli is deleted at the end
         of the event.
       */
-      if (ev->get_type_code() != FORMAT_DESCRIPTION_EVENT &&
-          ev->get_type_code() != ROWS_QUERY_LOG_EVENT)
+      if (ev->get_type_code() != binary_log::FORMAT_DESCRIPTION_EVENT &&
+          ev->get_type_code() != binary_log::ROWS_QUERY_LOG_EVENT)
       {
         delete ev;
         ev= NULL;

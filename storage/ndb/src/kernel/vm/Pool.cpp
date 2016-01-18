@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2006, 2008 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +19,9 @@
 #include "Pool.hpp"
 #include "SimulatedBlock.hpp"
 
+#define JAM_FILE_ID 255
+
+
 void*
 Pool_context::alloc_page(Uint32 type_id, Uint32 *i)
 {
@@ -34,13 +36,13 @@ Pool_context::release_page(Uint32 type_id, Uint32 i)
 }
 
 void*
-Pool_context::get_memroot()
+Pool_context::get_memroot() const
 {
   return m_block->m_ctx.m_mm.get_memroot();
 }
 
 void
-Pool_context::handleAbort(int err, const char * msg)
+Pool_context::handleAbort(int err, const char * msg) const
 {
   m_block->progError(__LINE__, err, msg);
 }

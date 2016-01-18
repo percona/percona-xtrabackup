@@ -1,7 +1,7 @@
 #ifndef SQL_CRYPT_INCLUDED
 #define SQL_CRYPT_INCLUDED
 
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,10 @@
 #include "sql_alloc.h"
 #include "mysql_com.h"                          /* rand_struct */
 
+/**
+  WARNING: This class is deprecated and will be removed in the next
+  server version. Please use AES encrypt/decrypt instead
+*/
 class SQL_CRYPT :public Sql_alloc
 {
   struct rand_struct rand,org_rand;
@@ -34,8 +38,8 @@ class SQL_CRYPT :public Sql_alloc
   ~SQL_CRYPT() {}
   void init(ulong *seed);
   void reinit() { shift=0; rand=org_rand; }
-  void encode(char *str, uint length);
-  void decode(char *str, uint length);
+  void encode(char *str, size_t length);
+  void decode(char *str, size_t length);
 };
 
 #endif /* SQL_CRYPT_INCLUDED */

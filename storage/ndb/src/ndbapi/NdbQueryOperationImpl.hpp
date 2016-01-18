@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -339,11 +339,18 @@ private:
     int m_activeFragCount;
     /** Number of fragments in 'm_fetchMoreFrags'. */
     int m_fetchMoreFragCount;
+
     /**
-     * Number of fragments where the final batch has been received
+     * Number of fragments where the final ResultSet has been received.
+     * (But not necessarily consumed!).
+     */
+    int m_finalFragReceivedCount;
+    /**
+     * Number of fragments where the final ResultSet has been received
      * and consumed.
      */
-    int m_finalFragCount;
+    int m_finalFragConsumedCount;
+
     /** Ordering of index scan result.*/
     NdbQueryOptions::ScanOrdering m_ordering;
     /** Needed for comparing records when ordering results.*/
@@ -357,9 +364,9 @@ private:
     NdbRootFragment** m_activeFrags;
     /**
      * Fragments from which we should request more ResultSets.
-     * Either due to the current batch has been consumed, or double buffering
-     * of result sets allows us to request another batch before the current
-     * has been consumed.
+     * Either due to the current ResultSets has been consumed,
+     * or double buffering of ResultSets allows us to request
+     * another batch before the current has been consumed.
      */
     NdbRootFragment** m_fetchMoreFrags;
 
@@ -596,6 +603,12 @@ public:
   NdbQueryOperationImpl& getRoot() const
   { return m_queryImpl.getRoot(); }
 
+  // A shorthand method.
+  Uint32 getInternalOpNo() const
+  {
+    return m_operationDef.getInternalOpNo();
+  }
+
   const NdbQueryDefImpl& getQueryDef() const
   { return m_queryImpl.getQueryDef(); }
 
@@ -716,7 +729,10 @@ public:
   Uint32 getMaxBatchRows() const
   { return m_maxBatchRows; }
 
-  /** Get size of row as required to buffer it. */  
+  /** Get size of buffer required to hold a full batch of 'packed' rows */
+  Uint32 getBatchBufferSize() const;
+
+  /** Get size of a full row. */  
   Uint32 getRowSize() const;
 
   const NdbRecord* getNdbRecord() const
@@ -780,8 +796,11 @@ private:
    */
   Uint32 m_parallelism;
   
-  /** Size of each result row (in bytes).*/
+  /** Size of each unpacked result row (in bytes).*/
   mutable Uint32 m_rowSize;
+
+  /** Size of the buffer required to hold a batch of result rows */
+  mutable Uint32 m_batchBufferSize;
 
   explicit NdbQueryOperationImpl(NdbQueryImpl& queryImpl, 
                                  const NdbQueryOperationDefImpl& def);

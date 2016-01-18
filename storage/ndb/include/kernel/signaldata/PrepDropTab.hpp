@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006, 2008 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +20,9 @@
 
 #include "SignalData.hpp"
 
+#define JAM_FILE_ID 161
+
+
 class PrepDropTabReq {
   /**
    * Sender(s)
@@ -30,11 +32,12 @@ class PrepDropTabReq {
   /**
    * Receiver(s)
    */
+  friend class Dbspj;
   friend class Dbtc;
   friend class Dblqh;
   friend class DblqhProxy;
   friend class Dbdih;
-  friend class DbtcProxy;
+  friend class DbgdmProxy;
 
   friend bool printPREP_DROP_TAB_REQ(FILE *, const Uint32 *, Uint32, Uint16);
 public:
@@ -51,11 +54,12 @@ class PrepDropTabConf {
   /**
    * Sender(s)
    */
+  friend class Dbspj;
   friend class Dbtc;
   friend class Dblqh;
   friend class DblqhProxy;
   friend class Dbdih;
-  friend class DbtcProxy;
+  friend class DbgdmProxy;
 
   /**
    * Receiver(s)
@@ -76,11 +80,12 @@ class PrepDropTabRef {
   /**
    * Sender(s)
    */
+  friend class Dbspj;
   friend class Dbtc;
   friend class Dblqh;
   friend class DblqhProxy;
   friend class Dbdih;
-  friend class DbtcProxy;
+  friend class DbgdmProxy;
 
   /**
    * Receiver(s)
@@ -106,5 +111,8 @@ private:
   Uint32 tableId;
   Uint32 errorCode;
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

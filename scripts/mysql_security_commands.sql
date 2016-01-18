@@ -19,8 +19,6 @@
 # 1) Set passwords for the root account.
 # Note that the password 'ABC123xyz' will be replaced by a random string
 # when these commands are transferred to the server.
-SET @@old_passwords=1; 
-UPDATE mysql.user SET Password=PASSWORD('ABC123xyz') WHERE User='root' and plugin='mysql_old_password';
 SET @@old_passwords=0; 
 UPDATE mysql.user SET Password=PASSWORD('ABC123xyz') WHERE User='root' and plugin in ('', 'mysql_native_password');
 SET @@old_passwords=2; 
@@ -31,6 +29,13 @@ DELETE FROM mysql.user WHERE User='';
 
 # 3) Force the root user to change the password on first connect.
 UPDATE mysql.user SET Password_expired='Y' WHERE User='root'; 
+
+# 4) remove remote accounts
+DELETE FROM mysql.user WHERE Host <> 'localhost';
+
+# 5) Drop the test database
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
 
 # In case this file is sent to a running server.
 FLUSH PRIVILEGES;

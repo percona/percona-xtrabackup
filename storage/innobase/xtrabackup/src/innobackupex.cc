@@ -45,10 +45,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql.h>
 #include <my_dir.h>
 #include <ut0mem.h>
-#include <os0sync.h>
 #include <os0file.h>
 #include <srv0start.h>
 #include <algorithm>
+#include <m_ctype.h>
 #include <mysqld.h>
 #include <my_default.h>
 #include <my_getopt.h>
@@ -61,6 +61,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "innobackupex.h"
 #include "xtrabackup.h"
 #include "xtrabackup_version.h"
+#include "xb0xb.h"
 #include "xbstream.h"
 #include "fil_cur.h"
 #include "write_filt.h"
@@ -148,9 +149,10 @@ char *ibx_xtrabackup_tables_file;
 long ibx_xtrabackup_throttle;
 char *ibx_opt_mysql_tmpdir;
 longlong ibx_xtrabackup_use_memory;
+ulong ibx_redo_log_version;
 
 
-static inline int ibx_msg(const char *fmt, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
+static inline int ibx_msg(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static inline int ibx_msg(const char *fmt, ...)
 {
 	int	result;
@@ -235,7 +237,8 @@ enum innobackupex_options
 	OPT_STREAM,
 	OPT_TABLES_FILE,
 	OPT_THROTTLE,
-	OPT_USE_MEMORY
+	OPT_USE_MEMORY,
+	OPT_REDO_LOG_VERSION
 };
 
 ibx_mode_t ibx_mode = IBX_MODE_BACKUP;
@@ -566,7 +569,7 @@ static struct my_option ibx_long_options[] =
 	 "buffer(s) for compression threads in bytes. The default value "
 	 "is 64K.", (uchar*) &ibx_xtrabackup_compress_chunk_size,
 	 (uchar*) &ibx_xtrabackup_compress_chunk_size,
-	 0, GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONGLONG_MAX, 0, 0, 0},
+	 0, GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONG_MAX, 0, 0, 0},
 
 	{"encrypt", OPT_ENCRYPT, "This option instructs xtrabackup to encrypt "
 	 "backup copies of InnoDB data files using the algorithm specified in "
@@ -606,7 +609,7 @@ static struct my_option ibx_long_options[] =
 	 "details.",
 	 (uchar*) &ibx_xtrabackup_encrypt_chunk_size,
 	 (uchar*) &ibx_xtrabackup_encrypt_chunk_size,
-	 0, GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONGLONG_MAX, 0, 0, 0},
+	 0, GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONG_MAX, 0, 0, 0},
 
 	{"export", OPT_EXPORT, "This option is passed directly to xtrabackup's "
 	 "--export option. It enables exporting individual tables for import "
@@ -728,8 +731,13 @@ static struct my_option ibx_long_options[] =
 	 "option. See the xtrabackup documentation for details.",
 	 (uchar*) &ibx_xtrabackup_use_memory,
 	 (uchar*) &ibx_xtrabackup_use_memory,
-	 0, GET_LL, REQUIRED_ARG, 100*1024*1024L, 1024*1024L, LONGLONG_MAX, 0,
+	 0, GET_LL, REQUIRED_ARG, 100*1024*1024L, 1024*1024L, LLONG_MAX, 0,
 	 1024*1024L, 0},
+
+	{"redo-log-version", OPT_REDO_LOG_VERSION,
+	 "Redo log version of the backup. For --apply-log only.",
+	 &ibx_redo_log_version, &ibx_redo_log_version, 0, GET_UINT,
+	 REQUIRED_ARG, 1, 0, 0, 0, 0, 0},
 
 	{ 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -929,8 +937,6 @@ make_backup_dir()
 bool
 ibx_handle_options(int *argc, char ***argv)
 {
-	char backup_config_path[FN_REFLEN];
-	const char *groups[] = {"mysqld", NULL};
 	int i;
 
 	if (handle_options(argc, argv, ibx_long_options, ibx_get_one_option)) {
@@ -971,14 +977,6 @@ ibx_handle_options(int *argc, char ***argv)
 	if (ibx_position_arg == NULL) {
 		ibx_msg("Missing argument\n");
 		return(false);
-	}
-
-	if (ibx_mode == IBX_MODE_APPLY_LOG
-	    || ibx_mode == IBX_MODE_COPY_BACK
-	    || ibx_mode == IBX_MODE_MOVE_BACK) {
-		ut_snprintf(backup_config_path, sizeof(backup_config_path),
-			"%s/backup_my.cnf", ibx_position_arg);
-		load_defaults(backup_config_path, groups, argc, argv);
 	}
 
 	/* set argv[0] to be the program name */
@@ -1062,6 +1060,7 @@ ibx_init()
 	xtrabackup_throttle = ibx_xtrabackup_throttle;
 	opt_mysql_tmpdir = ibx_opt_mysql_tmpdir;
 	xtrabackup_use_memory = ibx_xtrabackup_use_memory;
+	redo_log_version = ibx_redo_log_version;
 
 	if (!opt_ibx_incremental
 	    && (xtrabackup_incremental

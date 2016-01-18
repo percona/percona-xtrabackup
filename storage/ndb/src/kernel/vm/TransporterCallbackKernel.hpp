@@ -1,5 +1,4 @@
-/* Copyright (C) 2008 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,11 +13,41 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
 
-class TransporterCallbackKernel: public TransporterCallback
+#ifndef TRANSPORTER_CALLBACK_KERNEL_HPP
+#define TRANSPORTER_CALLBACK_KERNEL_HPP
+
+#include <TransporterCallback.hpp>
+
+#define JAM_FILE_ID 305
+
+
+class TransporterReceiveHandleKernel
+  : public TransporterReceiveHandle
 {
 public:
+#ifdef NDBD_MULTITHREADED
+  TransporterReceiveHandleKernel(Uint32 thr_no, Uint32 recv_thr_no) :
+    m_thr_no(thr_no), m_receiver_thread_idx(recv_thr_no) {}
+
+  /**
+   * m_thr_no == index in m_thr_data[]
+   */
+  Uint32 m_thr_no;
+
+  /**
+   * m_receiver_thread_idx == m_thr_no - firstReceiverThread ==
+   *   instance() - 1(proxy)
+   */
+  Uint32 m_receiver_thread_idx;
+
+  /**
+   * Assign nodes to this TransporterReceiveHandle
+   */
+  void assign_nodes(NodeId *recv_thread_idx_array);
+#endif
+
   /* TransporterCallback interface. */
-  void deliver_signal(SignalHeader * const header,
+  bool deliver_signal(SignalHeader * const header,
                       Uint8 prio,
                       Uint32 * const signalData,
                       LinearSectionPtr ptr[3]);
@@ -28,5 +57,11 @@ public:
   void reportError(NodeId nodeId, TransporterError errorCode,
                    const char *info = 0);
   void transporter_recv_from(NodeId node);
-  virtual ~TransporterCallbackKernel() { }
+  int checkJobBuffer();
+  virtual ~TransporterReceiveHandleKernel() { }
 };
+
+
+#undef JAM_FILE_ID
+
+#endif

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,6 +22,9 @@
 #include <RefConvert.hpp>
 #include <ndb_limits.h>
 #include <pc.hpp>
+
+#define JAM_FILE_ID 406
+
 
 /* ---------------------------------------------------------------- */
 /* ---------------------------------------------------------------- */
@@ -49,7 +52,9 @@ void Dbtup::execSTORED_PROCREQ(Signal* signal)
    * It can be done here since seize/release always succeeds.
    * The count is only used under -DERROR_INSERT via DUMP.
    */
+#if defined VM_TRACE || defined ERROR_INSERT
   BlockReference apiBlockref = signal->theData[5];
+#endif
   switch (requestInfo) {
   case ZSCAN_PROCEDURE:
   {
@@ -57,8 +62,10 @@ void Dbtup::execSTORED_PROCREQ(Signal* signal)
 #if defined VM_TRACE || defined ERROR_INSERT
     storedProcCountNonAPI(apiBlockref, +1);
 #endif
-    SectionHandle handle(this, signal);
-    ndbrequire(handle.m_cnt == 1);
+    SectionHandle handle(this);
+    handle.m_ptr[0].i = signal->theData[6];
+    handle.m_cnt = 1;
+    getSections(handle.m_cnt, handle.m_ptr);
 
     scanProcedure(signal,
                   regOperPtr.p,
@@ -89,10 +96,8 @@ void Dbtup::storedProcCountNonAPI(BlockReference apiBlockref, int add_del)
 {
   BlockNumber apiBlockno = refToBlock(apiBlockref);
   if (apiBlockno < MIN_API_BLOCK_NO) {
-    ndbassert(blockToMain(apiBlockno) == BACKUP ||
-              blockToMain(apiBlockno) == SUMA ||
-              blockToMain(apiBlockno) == DBLQH ||
-              blockToMain(apiBlockno) == DBSPJ);
+    ndbassert(blockToMain(apiBlockno) >= MIN_BLOCK_NO &&
+              blockToMain(apiBlockno) <= MAX_BLOCK_NO);
     if (add_del == +1) {
       jam();
       c_storedProcCountNonAPI++;
@@ -127,10 +132,8 @@ void Dbtup::deleteScanProcedure(Signal* signal,
   c_storedProcPool.release(storedPtr);
 
   set_trans_state(regOperPtr, TRANS_IDLE);
-  signal->theData[0] = regOperPtr->userpointer;
+  signal->theData[0] = 0; /* Success */
   signal->theData[1] = storedProcId;
-  BlockReference lqhRef = calcInstanceBlockRef(DBLQH);
-  sendSignal(lqhRef, GSN_STORED_PROCCONF, signal, 2, JBB);
 }//Dbtup::deleteScanProcedure()
 
 void Dbtup::scanProcedure(Signal* signal,
@@ -164,11 +167,8 @@ void Dbtup::scanProcedure(Signal* signal,
     return;
   }
 
-  signal->theData[0] = regOperPtr->userpointer;
+  signal->theData[0] = 0; /* Success */
   signal->theData[1] = storedPtr.i;
-  
-  BlockReference lqhRef = calcInstanceBlockRef(DBLQH);
-  sendSignal(lqhRef, GSN_STORED_PROCCONF, signal, 2, JBB);
 }//Dbtup::scanProcedure()
 
 void Dbtup::allocCopyProcedure()
@@ -332,10 +332,8 @@ void Dbtup::storedProcBufferSeizeErrorLab(Signal* signal,
 {
   regOperPtr->m_any_value = 0;
   set_trans_state(regOperPtr, TRANS_ERROR_WAIT_STORED_PROCREQ);
-  signal->theData[0] = regOperPtr->userpointer;
+  signal->theData[0] = 1; /* Failure */
   signal->theData[1] = errorCode;
   signal->theData[2] = storedProcPtr;
-  BlockReference lqhRef = calcInstanceBlockRef(DBLQH);
-  sendSignal(lqhRef, GSN_STORED_PROCREF, signal, 3, JBB);
 }//Dbtup::storedSeizeAttrinbufrecErrorLab()
 

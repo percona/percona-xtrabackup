@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -58,9 +58,9 @@ MYSQL_ADD_EXECUTABLE(ndb_mgmd
   ${NDB_MGMD_EXTRA_SRC}
   DESTINATION ${INSTALL_SBINDIR}
   COMPONENT ClusterManagementServer)
-TARGET_LINK_LIBRARIES(ndb_mgmd ndbconf ndbclient ndbmgmclient)
+TARGET_LINK_LIBRARIES(ndb_mgmd ndbconf ndbclient_static ndbmgmclient)
 IF(UNIX)
-  TARGET_LINK_LIBRARIES(ndb_mgmd ${READLINE_LIBRARY})
+  TARGET_LINK_LIBRARIES(ndb_mgmd ${EDITLINE_LIBRARY})
 ENDIF(UNIX)
 
 ADD_EXECUTABLE(MgmConfig-t

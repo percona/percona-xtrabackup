@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,13 +19,8 @@
 #include <ndb_global.h>
 #include <ndb_opts.h>
 
-#include <my_sys.h>
-#include <my_getopt.h>
-#include <mysql_version.h>
-
 #include <NdbOut.hpp>
 #include <NdbApi.hpp>
-#include <NdbSleep.h>
 #include <NDBT.hpp>
 #include <HugoTransactions.hpp>
 #include <HugoQueryBuilder.hpp>
@@ -93,7 +88,7 @@ static void usage()
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
   ndb_opt_set_usage_funcs(short_usage_sub, usage);
-  load_defaults("my", load_default_groups, &argc, &argv);
+  ndb_load_defaults(NULL, load_default_groups, &argc, &argv);
   int ho_error;
   if ((ho_error=handle_options(&argc, &argv, my_long_options,
 			       ndb_std_get_one_option)))
@@ -117,7 +112,7 @@ int main(int argc, char** argv){
 
   if(MyNdb.init() != 0)
   {
-    ERR(MyNdb.getNdbError());
+    NDB_ERR(MyNdb.getNdbError());
     return NDBT_ProgramExit(NDBT_FAILED);
   }
 
@@ -158,7 +153,7 @@ int main(int argc, char** argv){
   Vector<BaseString> list;
   BaseString tmp(_options);
   tmp.split(list, ",");
-  for (size_t i = 0; i<list.size(); i++)
+  for (unsigned i = 0; i<list.size(); i++)
   {
     bool found = false;
     for (int o = 0; _ops[o].name != 0; o++)
@@ -192,7 +187,7 @@ int main(int argc, char** argv){
     }
     HugoQueryBuilder builder(&MyNdb, tables.getBase(), mask);
     builder.setJoinLevel(_depth);
-    const NdbQueryDef * q = builder.createQuery(&MyNdb);
+    const NdbQueryDef * q = builder.createQuery();
     if (_verbose >= 2)
     {
       q->print(); ndbout << endl;
@@ -209,7 +204,7 @@ int main(int argc, char** argv){
       }
       else
       {
-        res = hq.runLookupQuery(&MyNdb, _records, _batch);
+        res = hq.runLookupQuery(&MyNdb, _records/_depth, _batch);
       }
       if (res != 0)
       {
@@ -218,7 +213,7 @@ int main(int argc, char** argv){
       if (hq.m_rows_found.size() != 0)
       {
         printf("\tfound: [ ");
-        for (size_t i = 0; i<hq.m_rows_found.size(); i++)
+        for (unsigned i = 0; i<hq.m_rows_found.size(); i++)
         {
           printf("%u ", (Uint32)hq.m_rows_found[i]);
         }

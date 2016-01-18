@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #include "my_static.h"
 #include "mysys_err.h"
 #include <m_string.h>
+#include "my_thread_local.h"
 
 /*
   Alloc for things we don't nend to free run-time (that only
@@ -37,8 +38,8 @@ void* my_once_alloc(size_t Size, myf MyFlags)
 {
   size_t get_size, max_left;
   uchar* point;
-  reg1 USED_MEM *next;
-  reg2 USED_MEM **prev;
+  USED_MEM *next;
+  USED_MEM **prev;
 
   Size= ALIGN_SIZE(Size);
   prev= &my_once_root_block;
@@ -57,19 +58,19 @@ void* my_once_alloc(size_t Size, myf MyFlags)
 
     if ((next = (USED_MEM*) malloc(get_size)) == 0)
     {
-      my_errno=errno;
+      set_my_errno(errno);
       if (MyFlags & (MY_FAE+MY_WME))
-	my_error(EE_OUTOFMEMORY, MYF(ME_BELL+ME_WAITTANG+ME_FATALERROR), get_size);
+	my_error(EE_OUTOFMEMORY, MYF(ME_FATALERROR), get_size);
       return((uchar*) 0);
     }
     DBUG_PRINT("test",("my_once_malloc %lu byte malloced", (ulong) get_size));
     next->next= 0;
-    next->size= get_size;
-    next->left= get_size-ALIGN_SIZE(sizeof(USED_MEM));
+    next->size= (uint)get_size;
+    next->left= (uint)(get_size-ALIGN_SIZE(sizeof(USED_MEM)));
     *prev=next;
   }
   point= (uchar*) ((char*) next+ (next->size-next->left));
-  next->left-= Size;
+  next->left-= (uint)Size;
 
   if (MyFlags & MY_ZEROFILL)
     memset(point, 0, Size);
@@ -105,7 +106,7 @@ void *my_once_memdup(const void *src, size_t len, myf myflags)
 
 void my_once_free(void)
 {
-  reg1 USED_MEM *next,*old;
+  USED_MEM *next,*old;
   DBUG_ENTER("my_once_free");
 
   for (next=my_once_root_block ; next ; )

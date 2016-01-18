@@ -19,7 +19,7 @@
 
 // First include (the generated) my_config.h, to get correct platform defines.
 #include "my_config.h"
-#ifdef __WIN__
+#ifdef _WIN32
 #include<Windows.h>
 #else
 #include <pthread.h>
@@ -793,7 +793,7 @@ void SSL::set_pending(Cipher suite)
     }
 }
 
-#ifdef __WIN__
+#ifdef _WIN32
 typedef volatile LONG yassl_pthread_once_t;
 #define YASSL_PTHREAD_ONCE_INIT  0
 #define YASSL_PTHREAD_ONCE_INPROGRESS 1
@@ -844,7 +844,7 @@ int yassl_pthread_once(yassl_pthread_once_t *once_control,
 #define YASSL_PTHREAD_ONCE_INIT PTHREAD_ONCE_INIT
 #endif
 #define yassl_pthread_once(C,F) pthread_once(C,F)
-#endif // __WIN__
+#endif // _WIN32
 
 // store peer's random
 void SSL::set_random(const opaque* random, ConnectionEnd sender)
@@ -1970,7 +1970,7 @@ extern "C" char *yassl_mysql_strdup(const char *from, int)
 
 extern "C"
 {
-static int
+int
 default_password_callback(char * buffer, int size_arg, int rwflag,
                           void * /* unused: callback_data */)
 {
@@ -2031,7 +2031,7 @@ SSL_CTX::GetCA_List() const
 }
 
 
-const VerifyCallback SSL_CTX::getVerifyCallback() const
+VerifyCallback SSL_CTX::getVerifyCallback() const
 {
     return verifyCallback_;
 }
@@ -2112,6 +2112,14 @@ void SSL_CTX::SetUserData(void* data)
 void SSL_CTX::SetSessionCacheOff()
 {
     sessionCacheOff_ = true;
+}
+
+
+void SSL_CTX::SetMethod(SSL_METHOD* meth)
+{
+    if(method_)
+      ysDelete(method_);
+    method_=  meth;
 }
 
 

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2012, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -16,7 +16,6 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include "sql_priv.h"
 #include "probes_mysql.h"
 #include "sql_class.h"                          // SSV
 #include "sql_table.h"
@@ -26,6 +25,7 @@
 #include <my_dir.h>
 
 #include <mysql/plugin.h>
+#include "mysql/psi/mysql_file.h"
 
 /*
   First, if you want to understand storage engines you should look at 
@@ -149,6 +149,8 @@ static handler *archive_create_handler(handlerton *hton,
   return new (mem_root) ha_archive(hton, table);
 }
 
+PSI_memory_key az_key_memory_frm;
+PSI_memory_key az_key_memory_record_buffer;
 
 #ifdef HAVE_PSI_INTERFACE
 PSI_mutex_key az_key_mutex_Archive_share_mutex;
@@ -161,10 +163,17 @@ static PSI_mutex_info all_archive_mutexes[]=
 PSI_file_key arch_key_file_metadata, arch_key_file_data, arch_key_file_frm;
 static PSI_file_info all_archive_files[]=
 {
-    { &arch_key_file_metadata, "metadata", 0},
-    { &arch_key_file_data, "data", 0},
-    { &arch_key_file_frm, "FRM", 0}
+  { &arch_key_file_metadata, "metadata", 0},
+  { &arch_key_file_data, "data", 0},
+  { &arch_key_file_frm, "FRM", 0}
 };
+
+static PSI_memory_info all_archive_memory[]=
+{
+  { &az_key_memory_frm, "FRM", 0},
+  { &az_key_memory_record_buffer, "record_buffer", 0},
+};
+
 
 static void init_archive_psi_keys(void)
 {
@@ -176,6 +185,9 @@ static void init_archive_psi_keys(void)
 
   count= array_elements(all_archive_files);
   mysql_file_register(category, all_archive_files, count);
+
+  count= array_elements(all_archive_memory);
+  mysql_memory_register(category, all_archive_memory, count);
 }
 
 
@@ -231,7 +243,7 @@ Archive_share::Archive_share()
 
 
 ha_archive::ha_archive(handlerton *hton, TABLE_SHARE *table_arg)
-  :handler(hton, table_arg), share(NULL), delayed_insert(0), bulk_insert(0)
+  :handler(hton, table_arg), share(NULL), bulk_insert(0)
 {
   /* Set our original buffer from pre-allocated memory */
   buffer.set((char *)byte_buffer, IO_SIZE, system_charset_info);
@@ -261,14 +273,18 @@ int archive_discover(handlerton *hton, THD* thd, const char *db,
   if (!(azopen(&frm_stream, az_file, O_RDONLY|O_BINARY)))
   {
     if (errno == EROFS || errno == EACCES)
-      DBUG_RETURN(my_errno= errno);
+    {
+      set_my_errno(errno);
+      DBUG_RETURN(errno);
+    }
     DBUG_RETURN(HA_ERR_CRASHED_ON_USAGE);
   }
 
   if (frm_stream.frm_length == 0)
     goto err;
 
-  frm_ptr= (char *)my_malloc(sizeof(char) * frm_stream.frm_length, MYF(0));
+  frm_ptr= (char *)my_malloc(az_key_memory_frm,
+                             sizeof(char) * frm_stream.frm_length, MYF(0));
   azread_frm(&frm_stream, frm_ptr);
   azclose(&frm_stream);
 
@@ -277,7 +293,7 @@ int archive_discover(handlerton *hton, THD* thd, const char *db,
 
   DBUG_RETURN(0);
 err:
-  my_errno= 0;
+  set_my_errno(0);
   DBUG_RETURN(1);
 }
 
@@ -396,7 +412,7 @@ unsigned int ha_archive::pack_row_v1(uchar *record)
 int ha_archive::read_data_header(azio_stream *file_to_read)
 {
   int error;
-  unsigned long ret;
+  size_t ret;
   uchar data_buffer[DATA_BUFFER_SIZE];
   DBUG_ENTER("ha_archive::read_data_header");
 
@@ -413,7 +429,7 @@ int ha_archive::read_data_header(azio_stream *file_to_read)
 
   if (ret != DATA_BUFFER_SIZE)
   {
-    DBUG_PRINT("ha_archive", ("Reading, expected %d got %lu", 
+    DBUG_PRINT("ha_archive", ("Reading, expected %d got %zu",
                               DATA_BUFFER_SIZE, ret));
     DBUG_RETURN(1);
   }
@@ -465,7 +481,7 @@ Archive_share *ha_archive::get_share(const char *table_name, int *rc)
 
     fn_format(tmp_share->data_file_name, table_name, "",
               ARZ, MY_REPLACE_EXT | MY_UNPACK_FILENAME);
-    strmov(tmp_share->table_name, table_name);
+    my_stpcpy(tmp_share->table_name, table_name);
     DBUG_PRINT("ha_archive", ("Data File %s",
                         tmp_share->data_file_name));
 
@@ -478,7 +494,7 @@ Archive_share *ha_archive::get_share(const char *table_name, int *rc)
     if (!(azopen(&archive_tmp, tmp_share->data_file_name, O_RDONLY|O_BINARY)))
     {
       delete tmp_share;
-      *rc= my_errno ? my_errno : HA_ERR_CRASHED;
+      *rc= my_errno() ? my_errno() : HA_ERR_CRASHED;
       tmp_share= NULL;
       goto err;
     }
@@ -676,7 +692,8 @@ void ha_archive::frm_load(const char *name, azio_stream *dst)
   {
     if (!mysql_file_fstat(frm_file, &file_stat, MYF(MY_WME)))
     {
-      frm_ptr= (uchar *) my_malloc(sizeof(uchar) * (size_t) file_stat.st_size, MYF(0));
+      frm_ptr= (uchar *) my_malloc(az_key_memory_frm,
+                                   sizeof(uchar) * (size_t) file_stat.st_size, MYF(0));
       if (frm_ptr)
       {
         if (mysql_file_read(frm_file, frm_ptr, (size_t) file_stat.st_size, MYF(0)) ==
@@ -712,13 +729,14 @@ int ha_archive::frm_copy(azio_stream *src, azio_stream *dst)
     return 0;
   }
 
-  if (!(frm_ptr= (char *) my_malloc(src->frm_length, MYF(0))))
+  if (!(frm_ptr= (char *) my_malloc(az_key_memory_frm,
+                                    src->frm_length, MYF(0))))
     return HA_ERR_OUT_OF_MEM;
 
   /* Write file offset is set to the end of the file. */
   if (azread_frm(src, frm_ptr) ||
       azwrite_frm(dst, frm_ptr, src->frm_length))
-    rc= my_errno ? my_errno : HA_ERR_INTERNAL_ERROR;
+    rc= my_errno() ? my_errno() : HA_ERR_INTERNAL_ERROR;
 
   my_free(frm_ptr);
 
@@ -771,7 +789,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
     We reuse name_buff since it is available.
   */
 #ifdef HAVE_READLINK
-  if (my_use_symdir &&
+  if (my_enable_symlinks &&
       create_info->data_file_name &&
       create_info->data_file_name[0] != '#')
   {
@@ -788,7 +806,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
   {
     if (create_info->data_file_name)
     {
-      push_warning_printf(table_arg->in_use, Sql_condition::WARN_LEVEL_WARN,
+      push_warning_printf(table_arg->in_use, Sql_condition::SL_WARNING,
                           WARN_OPTION_IGNORED,
                           ER_DEFAULT(WARN_OPTION_IGNORED),
                           "DATA DIRECTORY");
@@ -801,7 +819,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
   /* Archive engine never uses INDEX DIRECTORY. */
   if (create_info->index_file_name)
   {
-    push_warning_printf(table_arg->in_use, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(table_arg->in_use, Sql_condition::SL_WARNING,
                         WARN_OPTION_IGNORED,
                         ER_DEFAULT(WARN_OPTION_IGNORED),
                         "INDEX DIRECTORY");
@@ -813,7 +831,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
   */
   if (!(mysql_file_stat(arch_key_file_data, name_buff, &file_stat, MYF(0))))
   {
-    my_errno= 0;
+    set_my_errno(0);
     if (!(azopen(&create_stream, name_buff, O_CREAT|O_RDWR|O_BINARY)))
     {
       error= errno;
@@ -842,7 +860,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
     }
   }
   else
-    my_errno= 0;
+    set_my_errno(0);
 
   DBUG_PRINT("ha_archive", ("Creating File %s", name_buff));
   DBUG_PRINT("ha_archive", ("Creating Link %s", linkname));
@@ -878,7 +896,7 @@ int ha_archive::real_write_row(uchar *buf, azio_stream *writer)
     DBUG_RETURN(-1);
   }
 
-  if (!delayed_insert || !bulk_insert)
+  if (!bulk_insert)
     share->dirty= TRUE;
 
   DBUG_RETURN(0);
@@ -989,51 +1007,6 @@ int ha_archive::write_row(uchar *buf)
       rc= HA_ERR_FOUND_DUPP_KEY;
       goto error;
     }
-#ifdef DEAD_CODE
-    /*
-      Bad news, this will cause a search for the unique value which is very 
-      expensive since we will have to do a table scan which will lock up 
-      all other writers during this period. This could perhaps be optimized 
-      in the future.
-    */
-    {
-      /* 
-        First we create a buffer that we can use for reading rows, and can pass
-        to get_row().
-      */
-      if (!(read_buf= (uchar*) my_malloc(table->s->reclength, MYF(MY_WME))))
-      {
-        rc= HA_ERR_OUT_OF_MEM;
-        goto error;
-      }
-       /* 
-         All of the buffer must be written out or we won't see all of the
-         data 
-       */
-      azflush(&(share->archive_write), Z_SYNC_FLUSH);
-      /*
-        Set the position of the local read thread to the beginning position.
-      */
-      if (read_data_header(&archive))
-      {
-        rc= HA_ERR_CRASHED_ON_USAGE;
-        goto error;
-      }
-
-      Field *mfield= table->next_number_field;
-
-      while (!(get_row(&archive, read_buf)))
-      {
-        if (!memcmp(read_buf + mfield->offset(record),
-                    table->next_number_field->ptr,
-                    mfield->max_display_length()))
-        {
-          rc= HA_ERR_FOUND_DUPP_KEY;
-          goto error;
-        }
-      }
-    }
-#endif
     else
     {
       if (temp_auto > share->archive_write.auto_increment)
@@ -1061,7 +1034,7 @@ void ha_archive::get_auto_increment(ulonglong offset, ulonglong increment,
                                     ulonglong *first_value,
                                     ulonglong *nb_reserved_values)
 {
-  *nb_reserved_values= ULONGLONG_MAX;
+  *nb_reserved_values= ULLONG_MAX;
   *first_value= share->archive_write.auto_increment + 1;
 }
 
@@ -1213,7 +1186,8 @@ bool ha_archive::fix_rec_buff(unsigned int length)
   if (length > record_buffer->length)
   {
     uchar *newptr;
-    if (!(newptr=(uchar*) my_realloc((uchar*) record_buffer->buffer, 
+    if (!(newptr=(uchar*) my_realloc(az_key_memory_record_buffer,
+                                     (uchar*) record_buffer->buffer,
                                     length,
 				    MYF(MY_ALLOW_ZERO_PTR))))
       DBUG_RETURN(1);
@@ -1230,7 +1204,7 @@ int ha_archive::unpack_row(azio_stream *file_to_read, uchar *record)
 {
   DBUG_ENTER("ha_archive::unpack_row");
 
-  unsigned int read;
+  size_t read;
   int error;
   uchar size_buffer[ARCHIVE_ROW_HEADER_SIZE], *size_buffer_p= size_buffer;
   unsigned int row_len;
@@ -1300,7 +1274,7 @@ int ha_archive::get_row_version3(azio_stream *file_to_read, uchar *buf)
 
 int ha_archive::get_row_version2(azio_stream *file_to_read, uchar *buf)
 {
-  unsigned int read;
+  size_t read;
   int error;
   uint *ptr, *end;
   char *last;
@@ -1316,8 +1290,8 @@ int ha_archive::get_row_version2(azio_stream *file_to_read, uchar *buf)
 
   if (read != table->s->reclength)
   {
-    DBUG_PRINT("ha_archive::get_row_version2", ("Read %u bytes expected %u", 
-                                                read, 
+    DBUG_PRINT("ha_archive::get_row_version2", ("Read %zu bytes expected %u",
+                                                read,
                                                 (unsigned int)table->s->reclength));
     DBUG_RETURN(HA_ERR_CRASHED_ON_USAGE);
   }
@@ -1325,10 +1299,7 @@ int ha_archive::get_row_version2(azio_stream *file_to_read, uchar *buf)
   if (error == Z_STREAM_ERROR || error == Z_DATA_ERROR )
     DBUG_RETURN(HA_ERR_CRASHED_ON_USAGE);
 
-  /* 
-    If the record is the wrong size, the file is probably damaged, unless 
-    we are dealing with a delayed insert or a bulk insert.
-  */
+  /* If the record is the wrong size, the file is probably damaged. */
   if ((ulong) read != table->s->reclength)
     DBUG_RETURN(HA_ERR_END_OF_FILE);
 
@@ -1611,11 +1582,6 @@ THR_LOCK_DATA **ha_archive::store_lock(THD *thd,
                                        THR_LOCK_DATA **to,
                                        enum thr_lock_type lock_type)
 {
-  if (lock_type == TL_WRITE_DELAYED)
-    delayed_insert= TRUE;
-  else
-    delayed_insert= FALSE;
-
   if (lock_type != TL_IGNORE && lock.type == TL_UNLOCK) 
   {
     /* 
@@ -1684,7 +1650,7 @@ int ha_archive::info(uint flag)
   }
 
   /* 
-    This should be an accurate number now, though bulk and delayed inserts can
+    This should be an accurate number now, though bulk inserts can
     cause the number to be inaccurate.
   */
   stats.records= share->rows_recorded;
@@ -1747,7 +1713,7 @@ int ha_archive::extra(enum ha_extra_function operation)
   int ret= 0;
   DBUG_ENTER("ha_archive::extra");
   /* On windows we need to close all files before rename/delete. */
-#ifdef __WIN__
+#ifdef _WIN32
   switch (operation)
   {
   case HA_EXTRA_PREPARE_FOR_RENAME:
@@ -1918,14 +1884,16 @@ archive_record_buffer *ha_archive::create_record_buffer(unsigned int length)
   DBUG_ENTER("ha_archive::create_record_buffer");
   archive_record_buffer *r;
   if (!(r= 
-        (archive_record_buffer*) my_malloc(sizeof(archive_record_buffer),
+        (archive_record_buffer*) my_malloc(az_key_memory_record_buffer,
+                                           sizeof(archive_record_buffer),
                                            MYF(MY_WME))))
   {
     DBUG_RETURN(NULL); /* purecov: inspected */
   }
   r->length= (int)length;
 
-  if (!(r->buffer= (uchar*) my_malloc(r->length,
+  if (!(r->buffer= (uchar*) my_malloc(az_key_memory_record_buffer,
+                                      r->length,
                                     MYF(MY_WME))))
   {
     my_free(r);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,13 +17,13 @@
 
 #include "myisamdef.h"
 
-int mi_scan_init(register MI_INFO *info)
+int mi_scan_init(MI_INFO *info)
 {
   DBUG_ENTER("mi_scan_init");
   info->nextpos=info->s->pack.header_length;	/* Read first record */
   info->lastinx= -1;				/* Can't forward or backward */
   if (info->opt_flag & WRITE_CACHE_USED && flush_io_cache(&info->rec_cache))
-    DBUG_RETURN(my_errno);
+    DBUG_RETURN(my_errno());
   DBUG_RETURN(0);
 }
 

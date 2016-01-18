@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,7 +16,10 @@
 #ifndef RPL_REPORTING_H
 #define RPL_REPORTING_H
 
-#include "my_sys.h"                             /* loglevel */
+#include "my_global.h"
+#include "my_sys.h"                   // my_time
+#include "mysql/psi/mysql_thread.h"   // mysql_mutex_t
+
 
 /**
    Maximum size of an error message from a slave thread.
@@ -58,7 +61,7 @@ public:
                         printf() format.
   */
   virtual void report(loglevel level, int err_code, const char *msg, ...) const
-    ATTRIBUTE_FORMAT(printf, 4, 5);
+    __attribute__((format(printf, 4, 5)));
   void va_report(loglevel level, int err_code, const char *prefix_msg,
                  const char *msg, va_list v_args) const;
 
@@ -100,7 +103,6 @@ public:
 
     void update_timestamp()
     {
-      time_t skr;
       struct tm tm_tmp;
       struct tm *start;
 
@@ -124,10 +126,24 @@ public:
     char message[MAX_SLAVE_ERRMSG];
     /** Error timestamp as string */
     char timestamp[16];
+    /** Error timestamp as time_t variable. Used in performance_schema */
+    time_t skr;
+
   };
 
   Error const& last_error() const { return m_last_error; }
   bool is_error() const { return last_error().number != 0; }
+
+
+ /*
+   For MSR, there is a need to introduce error messages per channel.
+   Instead of changing the error messages in share/errmsg-utf8.txt to
+   introduce the clause, FOR CHANNEL "%s", we construct a string like this.
+   There might be problem with a client applications which could print
+   error messages and see no %s.
+   @TODO: fix this.
+ */
+  virtual const char* get_for_channel_str(bool upper_case) const = 0;
 
   virtual ~Slave_reporting_capability()= 0;
 
@@ -139,13 +155,16 @@ protected:
     va_report(level, err_code, NULL, msg, v_args);
   }
 
-private:
   /**
      Last error produced by the I/O or SQL thread respectively.
    */
   mutable Error m_last_error;
 
+private:
+
   char const *const m_thread_name;
+
+  char channel_str[100]; // FOR CHANNEL="max_64_size"
 
   // not implemented
   Slave_reporting_capability(const Slave_reporting_capability& rhs);

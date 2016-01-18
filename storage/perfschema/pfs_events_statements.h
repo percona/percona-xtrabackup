@@ -33,18 +33,20 @@ struct PFS_host;
 /** A statement record. */
 struct PFS_events_statements : public PFS_events
 {
+  enum_object_type m_sp_type;
+  char m_schema_name[NAME_LEN];
+  uint m_schema_name_length;
+  char m_object_name[NAME_LEN];
+  uint m_object_name_length;
+
   /** Database name. */
   char m_current_schema_name[NAME_LEN];
   /** Length of @c m_current_schema_name. */
   uint m_current_schema_name_length;
-  /** SQL_TEXT */
-  char m_sqltext[COL_INFO_SIZE];
-  /** Length of @ m_info. */
-  uint m_sqltext_length;
 
   /** Locked time. */
   ulonglong m_lock_time;
-  
+
   /** Diagnostics area, message text. */
   char m_message_text[MYSQL_ERRMSG_SIZE+1];
   /** Diagnostics area, error number. */
@@ -88,6 +90,20 @@ struct PFS_events_statements : public PFS_events
   ulonglong m_no_index_used;
   /** Optimizer metric, number of 'no good index used'. */
   ulonglong m_no_good_index_used;
+
+  /** True if sqltext was truncated. */
+  bool m_sqltext_truncated;
+  /** Statement character set number. */
+  uint m_sqltext_cs_number;
+
+  /**
+    SQL_TEXT.
+    This pointer is immutable,
+    and always point to pre allocated memory.
+  */
+  char *m_sqltext;
+  /** Length of @ m_info. */
+  uint m_sqltext_length;
   /**
     Statement digest.
     This underlying token array storage pointer is immutable,
@@ -99,16 +115,18 @@ struct PFS_events_statements : public PFS_events
 void insert_events_statements_history(PFS_thread *thread, PFS_events_statements *statement);
 void insert_events_statements_history_long(PFS_events_statements *statement);
 
+extern ulong nested_statement_lost;
+
 extern bool flag_events_statements_current;
 extern bool flag_events_statements_history;
 extern bool flag_events_statements_history_long;
 
 extern bool events_statements_history_long_full;
-extern volatile uint32 events_statements_history_long_index;
+extern PFS_ALIGNED PFS_cacheline_uint32 events_statements_history_long_index;
 extern PFS_events_statements *events_statements_history_long_array;
-extern ulong events_statements_history_long_size;
+extern size_t events_statements_history_long_size;
 
-int init_events_statements_history_long(uint events_statements_history_long_sizing);
+int init_events_statements_history_long(size_t events_statements_history_long_sizing);
 void cleanup_events_statements_history_long();
 
 void reset_events_statements_current();

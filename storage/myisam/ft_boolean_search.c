@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2001, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -360,7 +360,7 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, my_bool init_search)
   int subkeys=1;
   my_bool can_go_down;
   MI_INFO *info=ftb->info;
-  uint UNINIT_VAR(off), extra= HA_FT_WLEN + info->s->rec_reflength;
+  uint off= 0, extra= HA_FT_WLEN + info->s->rec_reflength;
   uchar *lastkey_buf=ftbw->word+ftbw->off;
 
   if (ftbw->flags & FTB_FLAG_TRUNC)
@@ -570,7 +570,8 @@ FT_INFO * ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   FTB_EXPR  *ftbe;
   FTB_WORD  *ftbw;
 
-  if (!(ftb=(FTB *)my_malloc(sizeof(FTB), MYF(MY_WME))))
+  if (!(ftb=(FTB *)my_malloc(mi_key_memory_FTB,
+                             sizeof(FTB), MYF(MY_WME))))
     return 0;
   ftb->please= (struct _ft_vft *) & _ft_vft_boolean;
   ftb->state=UNINITIALIZED;
@@ -583,7 +584,7 @@ FT_INFO * ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   memset(&ftb->no_dupes, 0, sizeof(TREE));
   ftb->last_word= 0;
 
-  init_alloc_root(&ftb->mem_root, 1024, 1024);
+  init_alloc_root(PSI_INSTRUMENT_ME, &ftb->mem_root, 1024, 1024);
   ftb->queue.max_elements= 0;
   if (!(ftbe=(FTB_EXPR *)alloc_root(&ftb->mem_root, sizeof(FTB_EXPR))))
     goto err;
@@ -729,7 +730,7 @@ static int _ftb_check_phrase(FTB *ftb, const uchar *document, uint len,
   param->flags= 0;
   param->mode= MYSQL_FTPARSER_WITH_STOPWORDS;
   if (unlikely(parser->parse(param)))
-    return -1;
+    DBUG_RETURN(-1);
   DBUG_RETURN(ftb_param.match ? 1 : 0);
 }
 
@@ -826,13 +827,16 @@ int ft_boolean_read_next(FT_INFO *ftb, char *record)
 
   /* black magic ON */
   if ((int) _mi_check_index(info, ftb->keynr) < 0)
-    return my_errno;
+    return my_errno();
   if (_mi_readinfo(info, F_RDLCK, 1))
-    return my_errno;
+    return my_errno();
   /* black magic OFF */
 
   if (!ftb->queue.elements)
-    return my_errno=HA_ERR_END_OF_FILE;
+  {
+    set_my_errno(HA_ERR_END_OF_FILE);
+    return HA_ERR_END_OF_FILE;
+  }
 
   /* Attention!!! Address of a local variable is used here! See err: label */
   ftb->queue.first_cmp_arg=(void *)&curdoc;
@@ -845,7 +849,7 @@ int ft_boolean_read_next(FT_INFO *ftb, char *record)
     {
       if (unlikely(_ftb_climb_the_tree(ftb, ftbw, 0)))
       {
-        my_errno= HA_ERR_OUT_OF_MEM;
+        set_my_errno(HA_ERR_OUT_OF_MEM);
         goto err;
       }
 
@@ -875,17 +879,17 @@ int ft_boolean_read_next(FT_INFO *ftb, char *record)
         if (ftb->with_scan &&
             ft_boolean_find_relevance(ftb,(uchar*) record,0)==0)
             continue; /* no match */
-        my_errno=0;
+        set_my_errno(0);
         goto err;
       }
       goto err;
     }
   }
   ftb->state=INDEX_DONE;
-  my_errno=HA_ERR_END_OF_FILE;
+  set_my_errno(HA_ERR_END_OF_FILE);
 err:
   ftb->queue.first_cmp_arg=(void *)0;
-  return my_errno;
+  return my_errno();
 }
 
 

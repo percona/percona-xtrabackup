@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -50,11 +50,11 @@ char _dig_vec_lower[] =
 */
   
 char *
-int2str(register long int val, register char *dst, register int radix, 
+int2str(long int val, char *dst, int radix, 
         int upcase)
 {
   char buffer[65];
-  register char *p;
+  char *p;
   long int new_val;
   char *dig_vec= upcase ? _dig_vec_upper : _dig_vec_lower;
   ulong uval= (ulong) val;
@@ -66,7 +66,7 @@ int2str(register long int val, register char *dst, register int radix,
     if (val < 0)
     {
       *dst++ = '-';
-      /* Avoid integer overflow in (-val) for LONGLONG_MIN (BUG#31799). */
+      /* Avoid integer overflow in (-val) for LLONG_MIN (BUG#31799). */
       uval = (ulong)0 - uval;
     }
     radix = -radix;
@@ -91,7 +91,6 @@ int2str(register long int val, register char *dst, register int radix,
   new_val= uval / (ulong) radix;
   *--p = dig_vec[(uchar) (uval- (ulong) new_val*(ulong) radix)];
   val = new_val;
-#ifdef HAVE_LDIV
   while (val != 0)
   {
     ldiv_t res;
@@ -99,14 +98,6 @@ int2str(register long int val, register char *dst, register int radix,
     *--p = dig_vec[res.rem];
     val= res.quot;
   }
-#else
-  while (val != 0)
-  {
-    new_val=val/radix;
-    *--p = dig_vec[(uchar) (val-new_val*radix)];
-    val= new_val;
-  }
-#endif
   while ((*dst++ = *p++) != 0) ;
   return dst-1;
 }
@@ -133,7 +124,7 @@ int2str(register long int val, register char *dst, register int radix,
 char *int10_to_str(long int val,char *dst,int radix)
 {
   char buffer[65];
-  register char *p;
+  char *p;
   long int new_val;
   unsigned long int uval = (unsigned long int) val;
 
@@ -142,7 +133,7 @@ char *int10_to_str(long int val,char *dst,int radix)
     if (val < 0)
     {
       *dst++ = '-';
-      /* Avoid integer overflow in (-val) for LONGLONG_MIN (BUG#31799). */
+      /* Avoid integer overflow in (-val) for LLONG_MIN (BUG#31799). */
       uval = (unsigned long int)0 - uval;
     }
   }

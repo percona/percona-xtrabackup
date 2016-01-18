@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +21,9 @@
 #include <NdbMain.h>
 #include <NdbOut.hpp>
 #include "Sysfile.hpp"
+
+#define JAM_FILE_ID 358
+
 
 static int g_all = 0;
 
@@ -58,7 +61,7 @@ char * getNSString(Uint32 ns){
 
 void
 fill(const char * buf, int mod){
-  int len = strlen(buf)+1;
+  int len = (int)(strlen(buf)+1);
   ndbout << buf << " ";
   while((len % mod) != 0){
     ndbout << " ";

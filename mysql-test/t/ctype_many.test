@@ -1,8 +1,12 @@
+
+ #Get deafult engine value
+--let $DEFAULT_ENGINE = `select @@global.default_storage_engine`
+
 -- source include/have_ucs2.inc
 -- source include/have_utf8mb4.inc
 -- source include/have_utf16.inc
 -- source include/have_utf32.inc
-
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 --disable_warnings
 DROP TABLE IF EXISTS t1;
 --enable_warnings
@@ -14,15 +18,30 @@ CREATE TABLE t1 (
   koi8_ru_f CHAR(32) CHARACTER SET koi8r NOT NULL default ''
 ) CHARSET=latin5;
 
+
+#Replace default engine value with static engine string 
+--replace_result $DEFAULT_ENGINE ENGINE
 SHOW CREATE TABLE t1;
 ALTER TABLE t1 CHANGE comment comment CHAR(32) CHARACTER SET latin2 NOT NULL;
+
+#Replace default engine value with static engine string 
+--replace_result $DEFAULT_ENGINE ENGINE
 SHOW CREATE TABLE t1;
 ALTER TABLE t1 ADD latin5_f CHAR(32) NOT NULL;
+
+#Replace default engine value with static engine string 
+--replace_result $DEFAULT_ENGINE ENGINE
 SHOW CREATE TABLE t1;
 ALTER TABLE t1 DEFAULT CHARSET=latin2;
 ALTER TABLE t1 ADD latin2_f CHAR(32) NOT NULL;
+
+#Replace default engine value with static engine string 
+--replace_result $DEFAULT_ENGINE ENGINE
 SHOW CREATE TABLE t1;
 ALTER TABLE t1 DROP latin2_f, DROP latin5_f;
+
+#Replace default engine value with static engine string 
+--replace_result $DEFAULT_ENGINE ENGINE
 SHOW CREATE TABLE t1;
 
 INSERT INTO t1 (koi8_ru_f,comment) VALUES ('a','LAT SMALL A');
@@ -331,3 +350,4 @@ CREATE TABLE t2 (a BINARY(1));
 SELECT * FROM t2 WHERE a=(SELECT a FROM t1) AND a=_LATIN1'x';
 DROP TABLE t2;
 DROP TABLE t1;
+SET sql_mode = default;

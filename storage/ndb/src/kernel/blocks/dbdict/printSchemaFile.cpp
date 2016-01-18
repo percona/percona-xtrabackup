@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,11 +21,15 @@
 #include <my_global.h>
 #include <my_sys.h>
 #include <my_dir.h>
+#include <my_thread_local.h>
 
 #include <NdbMain.h>
 #include <NdbOut.hpp>
 #include "SchemaFile.hpp"
 #include <kernel_types.h>
+
+#define JAM_FILE_ID 463
+
 
 static const char* progname = 0;
 static bool allflag = false;
@@ -240,11 +244,11 @@ NDB_COMMAND(printSchemafile,
     MY_STAT sbuf,*st;
     if(!(st=my_stat(filename, &sbuf,0)))
     {
-      ndbout << filename << ": not found my_errno=" << my_errno << endl;
+      ndbout << filename << ": not found my_errno=" << my_errno() << endl;
       exitcode = 1;
       continue;
     }
-    const Uint32 bytes = sbuf.st_size;
+    const Uint32 bytes = (Uint32)sbuf.st_size;
     
     Uint32 * buf = new Uint32[bytes/4+1];
     

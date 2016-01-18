@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2014, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 SET(DEP ndbjtie.jar
-        tie.jar
+        jtie.jar
         clusterj-api.jar
         clusterj-core.jar
         clusterj-tie.jar)
@@ -39,7 +39,11 @@ SET(CLUSTERJPA_EXPORTS "${CLUSTERJ_EXPORTS},com.mysql.clusterj.openjpa")
 CREATE_MANIFEST(clusterjpa_manifest.mf ${CLUSTERJPA_EXPORTS} clusterjpa)
 CREATE_JAR(clusterjpa ${JAVA_SOURCES}
   CLASSPATH ${CLASSPATH}
-  MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/clusterjpa_manifest.mf
+  MANIFEST ${CMAKE_CURRENT_BINARY_DIR}/clusterjpa_manifest.mf
   DEPENDENCIES ${DEP}
+  EXTRA_FILES src/main/resources/META-INF
+              src/main/resources/com
   MERGE_JARS ${JARS})
 
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/clusterjpa-${JAVA_NDB_VERSION}.jar
+        DESTINATION ${INSTALL_MYSQLSHAREDIR}/java COMPONENT ClusterJ)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,11 +17,9 @@
 #define SQL_THREAD_INCLUDED
 
 #include <my_global.h>
-#include <my_pthread.h>
+#include <mysql/psi/mysql_thread.h>
 
 namespace thread {
-
-class Thread_start_arg;
 
 /*
   An abstract class for creating/running/joining threads.
@@ -30,16 +28,14 @@ class Thread_start_arg;
 class Thread
 {
 public:
-  Thread() : m_thread_id(0)
-#ifdef __WIN__
-    , m_thread_handle(NULL)
-#endif
+  Thread()
   {}
-  virtual ~Thread();
+  virtual ~Thread()
+  {}
 
   /*
     Will create a new pthread, and invoke run();
-    Returns the value from pthread_create().
+    Returns the value from my_thread_create().
   */
   int start();
 
@@ -49,15 +45,15 @@ public:
   */
   void join();
 
-  // The id of the thread (valid only if it is actually running).
-  pthread_t thread_id() const { return m_thread_id; }
+  // The handle of the thread (valid only if it is actually running).
+  my_thread_handle thread_handle() const { return m_thread_handle; }
 
   /*
     A wrapper for the run() function.
     Users should *not* call this function directly, they should rather
     invoke the start() function.
   */
-  static void run_wrapper(Thread_start_arg*);
+  static void run_wrapper(Thread*);
 
 protected:
   /*
@@ -68,29 +64,10 @@ protected:
   virtual void run() = 0;
 
 private:
-  pthread_t m_thread_id;
-#ifdef __WIN__
-  // We need an open handle to the thread in order to join() it.
-  HANDLE m_thread_handle;
-#endif
+  my_thread_handle m_thread_handle;
 
   Thread(const Thread&);                        /* Not copyable. */
   void operator=(const Thread&);                /* Not assignable. */
-};
-
-
-// A simple wrapper around a mutex:
-// Grabs the mutex in the CTOR, releases it in the DTOR.
-class Mutex_lock
-{
-public:
-  Mutex_lock(mysql_mutex_t *mutex);
-  ~Mutex_lock();
-private:
-  mysql_mutex_t *m_mutex;
-
-  Mutex_lock(const Mutex_lock&);                /* Not copyable. */
-  void operator=(const Mutex_lock&);            /* Not assignable. */
 };
 
 

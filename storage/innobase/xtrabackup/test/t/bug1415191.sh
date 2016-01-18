@@ -2,6 +2,8 @@
 # Bug 1415191: apply log crashes - signal 11 (ib_warn_row_too_big)
 #
 
+require_server_version_lower_than 5.7.0
+
 start_server
 
 ( echo -n "CREATE TABLE test.foo ( "

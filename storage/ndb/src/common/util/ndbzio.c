@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -54,6 +54,7 @@
 #include <util/ndbzio.h>
 
 #include <my_sys.h>
+#include <my_thread_local.h>
 
 #ifdef HAVE_VALGRIND
 #include <valgrind/memcheck.h>
@@ -354,8 +355,8 @@ int ndbz_open (ndbzio_stream *s, const char *path, int Flags, File fd)
 
 int write_header(ndbzio_stream *s)
 {
-  char *buffer= (char*)s->outbuf;
-  char *ptr= buffer;
+  uchar *buffer= s->outbuf;
+  uchar *ptr= buffer;
 
   s->block_size= AZ_BUFSIZE_WRITE;
   s->version = (unsigned char)az_magic[1];
@@ -388,7 +389,7 @@ int write_header(ndbzio_stream *s)
   *(ptr + AZ_DIRTY_POS)= (unsigned char)s->dirty; /* Start of Data Block Index Block */
 
   /* Always begin at the begining, and end there as well */
-  if(my_pwrite(s->file, (uchar*) buffer, AZHEADER_SIZE + AZMETA_BUFFER_SIZE, 0,
+  if(my_pwrite(s->file, buffer, AZHEADER_SIZE + AZMETA_BUFFER_SIZE, 0,
                MYF(0)) == (size_t)-1)
     return -1;
 
@@ -425,19 +426,19 @@ int ndbzdopen(ndbzio_stream *s, File fd, int Flags)
 int read_buffer(ndbzio_stream *s)
 {
   if (s->z_eof) return EOF;
-  my_errno= 0;
+  set_my_errno(0);
   if (s->stream.avail_in == 0)
   {
-    s->stream.avail_in = my_read(s->file, (uchar *)s->inbuf, AZ_BUFSIZE_READ, MYF(0));
+    s->stream.avail_in = (uInt)my_read(s->file, (uchar *)s->inbuf, AZ_BUFSIZE_READ, MYF(0));
     if(s->stream.avail_in > 0)
-      my_errno= 0;
+      set_my_errno(0);
     if (s->stream.avail_in == 0)
     {
       s->z_eof = 1;
     }
     s->stream.next_in = s->inbuf;
   }
-  return my_errno;
+  return my_errno();
 }
 
 /*
@@ -528,7 +529,7 @@ int check_header(ndbzio_stream *s)
     s->z_err = s->z_eof ? Z_DATA_ERROR : Z_OK;
     s->start = my_tell(s->file, MYF(0));
     if(s->start == (my_off_t)-1)
-      return my_errno;
+      return my_errno();
     s->start-= s->stream.avail_in;
   }
   else if (    s->stream.next_in[0] == az_magic[0]
@@ -542,7 +543,7 @@ int check_header(ndbzio_stream *s)
     }
     header_block = get_block(s,512);
     if(!header_block)
-      return my_errno;
+      return my_errno();
     read_header(s, header_block);
   }
   else
@@ -681,7 +682,7 @@ unsigned int ZEXPORT ndbzread ( ndbzio_stream *s, voidp buf, unsigned int len, i
         bytes_read= my_read(s->file, (uchar *)next_out, s->stream.avail_out,
                             MYF(0));
         if(bytes_read>0)
-          s->stream.avail_out -= bytes_read;
+          s->stream.avail_out -= (uInt)bytes_read;
         if (bytes_read == 0)
         {
           s->z_eof = 1;
@@ -773,7 +774,7 @@ int write_buffer(ndbzio_stream *s)
                  MYF(0)) != AZ_BUFSIZE_WRITE)
     {
       s->z_err = Z_ERRNO;
-      return my_errno;
+      return my_errno();
     }
     s->stream.avail_out = AZ_BUFSIZE_WRITE;
   }
@@ -786,14 +787,10 @@ int write_buffer(ndbzio_stream *s)
 */
 unsigned int ndbzwrite (ndbzio_stream *s, const void*  buf, unsigned int len)
 {
-  unsigned int i;
   s->stream.next_in = (Bytef*)buf;
   s->stream.avail_in = len;
 
   s->rows++;
-
-  for(i=0;i<len;i++)
-    memcmp(buf,s,1);
 
   while (s->stream.avail_in != 0)
   {
@@ -1070,6 +1067,6 @@ int ndbz_file_size(ndbzio_stream *s, size_t *size)
   if (my_fstat(s->file, &stat_buf, 0) != 0)
     return -1;
 
-  *size = stat_buf.st_size;
+  *size = (size_t)stat_buf.st_size;
   return 0; /* OK */
 }

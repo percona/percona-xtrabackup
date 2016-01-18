@@ -25,8 +25,8 @@ EOF
 master_id=1
 slave_id=2
 
-start_server_with_id $master_id
-start_server_with_id $slave_id
+start_server_with_id $master_id --binlog-format=statement
+start_server_with_id $slave_id --binlog-format=statement
 
 setup_slave $slave_id $master_id
 

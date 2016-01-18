@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -79,7 +79,6 @@ class ha_archive: public handler
   uchar byte_buffer[IO_SIZE]; /* Initial buffer for our string */
   String buffer;             /* Buffer used for blob storage */
   ha_rows scan_rows;         /* Number of rows left in scan */
-  bool delayed_insert;       /* If the insert is delayed */
   bool bulk_insert;          /* If we are performing a bulk insert */
   const uchar *current_key;
   uint current_key_len;
@@ -107,7 +106,7 @@ public:
             HA_BINLOG_ROW_CAPABLE | HA_BINLOG_STMT_CAPABLE |
             HA_STATS_RECORDS_IS_EXACT |
             HA_HAS_RECORDS | HA_CAN_REPAIR |
-            HA_FILE_BASED | HA_CAN_INSERT_DELAYED | HA_CAN_GEOMETRY);
+            HA_FILE_BASED | HA_CAN_GEOMETRY);
   }
   ulong index_flags(uint idx, uint part, bool all_parts) const
   {
@@ -120,7 +119,11 @@ public:
   uint max_supported_keys()          const { return 1; }
   uint max_supported_key_length()    const { return sizeof(ulonglong); }
   uint max_supported_key_part_length() const { return sizeof(ulonglong); }
-  ha_rows records() { return share->rows_recorded; }
+  virtual int records(ha_rows *num_rows)
+  {
+    *num_rows= share->rows_recorded;
+    return 0;
+  }
   int index_init(uint keynr, bool sorted);
   virtual int index_read(uchar * buf, const uchar * key,
 			 uint key_len, enum ha_rkey_function find_flag);

@@ -1,5 +1,4 @@
-/* Copyright (c) 2002, 2004-2006 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,8 +16,6 @@
 #ifndef _rt_mbr_h
 #define _rt_mbr_h
 
-#ifdef HAVE_RTREE_KEYS
-
 int rtree_key_cmp(HA_KEYSEG *keyseg, uchar *a, uchar *b, uint key_length,
                   uint nextflag);
 int rtree_combine_rect(HA_KEYSEG *keyseg,uchar *, uchar *, uchar*, 
@@ -33,5 +30,4 @@ double rtree_perimeter_increase(HA_KEYSEG *keyseg, uchar* a, uchar* b,
 				uint key_length, double *ab_perim);
 int rtree_page_mbr(MI_INFO *info, HA_KEYSEG *keyseg, uchar *page_buf, 
                    uchar* c, uint key_length);
-#endif /*HAVE_RTREE_KEYS*/
 #endif /* _rt_mbr_h */

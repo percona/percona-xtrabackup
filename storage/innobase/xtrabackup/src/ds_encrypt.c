@@ -213,7 +213,8 @@ encrypt_init(const char *root)
 		return NULL;
 	}
 
-	ctxt = (ds_ctxt_t *) my_malloc(sizeof(ds_ctxt_t) +
+	ctxt = (ds_ctxt_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+				       sizeof(ds_ctxt_t) +
 				       sizeof(ds_encrypt_ctxt_t),
 				       MYF(MY_FAE));
 
@@ -222,7 +223,7 @@ encrypt_init(const char *root)
 	encrypt_ctxt->nthreads = xtrabackup_encrypt_threads;
 
 	ctxt->ptr = encrypt_ctxt;
-	ctxt->root = my_strdup(root, MYF(MY_FAE));
+	ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
 	return ctxt;
 }
@@ -245,7 +246,8 @@ encrypt_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 	crypt_ctxt = (ds_encrypt_ctxt_t *) ctxt->ptr;
 
 
-	file = (ds_file_t *) my_malloc(sizeof(ds_file_t) +
+	file = (ds_file_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+				       sizeof(ds_file_t) +
 				       sizeof(ds_encrypt_file_t),
 				       MYF(MY_FAE|MY_ZEROFILL));
 
@@ -414,7 +416,8 @@ create_worker_threads(uint n)
 	uint 			i;
 
 	threads = (crypt_thread_ctxt_t *)
-		my_malloc(sizeof(crypt_thread_ctxt_t) * n, MYF(MY_FAE));
+		my_malloc(PSI_NOT_INSTRUMENTED,
+			  sizeof(crypt_thread_ctxt_t) * n, MYF(MY_FAE));
 
 	for (i = 0; i < n; i++) {
 		crypt_thread_ctxt_t *thd = threads + i;
@@ -424,11 +427,13 @@ create_worker_threads(uint n)
 		thd->cancelled = FALSE;
 		thd->data_avail = FALSE;
 
-		thd->to = (char *) my_malloc(XB_CRYPT_CHUNK_SIZE,
-						   MYF(MY_FAE));
+		thd->to = (char *) my_malloc(PSI_NOT_INSTRUMENTED,
+					     XB_CRYPT_CHUNK_SIZE,
+					     MYF(MY_FAE));
 
-		thd->iv = (char *) my_malloc(encrypt_iv_len,
-						   MYF(MY_FAE));
+		thd->iv = (char *) my_malloc(PSI_NOT_INSTRUMENTED,
+					     encrypt_iv_len,
+					     MYF(MY_FAE));
 
 		/* Initialize the control mutex and condition var */
 		if (pthread_mutex_init(&thd->ctrl_mutex, NULL) ||

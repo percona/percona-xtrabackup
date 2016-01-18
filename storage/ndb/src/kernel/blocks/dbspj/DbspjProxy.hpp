@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,9 +16,12 @@
 #ifndef NDB_DBSPJ_PROXY_HPP
 #define NDB_DBSPJ_PROXY_HPP
 
-#include <LocalProxy.hpp>
+#include "../dbgdm/DbgdmProxy.hpp"
 
-class DbspjProxy : public LocalProxy {
+#define JAM_FILE_ID 480
+
+
+class DbspjProxy : public DbgdmProxy {
 public:
   DbspjProxy(Block_context& ctx);
   virtual ~DbspjProxy();
@@ -28,5 +31,8 @@ protected:
   virtual SimulatedBlock* newWorker(Uint32 instanceNo);
 
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

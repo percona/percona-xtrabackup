@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +17,8 @@
 
 #ifndef TransporterInternalDefinitions_H
 #define TransporterInternalDefinitions_H
+
+#include <Checksum.hpp>
 
 #if defined DEBUG_TRANSPORTER || defined VM_TRACE
 #include <NdbOut.hpp>
@@ -49,10 +50,7 @@
 inline
 Uint32
 computeChecksum(const Uint32 * const startOfData, int nWords) {
-  Uint32 chksum = startOfData[0];
-  for (int i=1; i < nWords; i++)
-    chksum ^= startOfData[i];
-  return chksum;
+  return computeXorChecksum(startOfData+1, nWords-1, startOfData[0]);
 }
 
 struct Protocol6 {
@@ -113,6 +111,8 @@ struct Protocol6 {
   static Uint32 getCheckSumIncluded(const Uint32 & word1);
   static Uint32 getPrio            (const Uint32 & word1);
   static Uint32 getMessageLength   (const Uint32 & word1);
+
+  static bool verifyByteOrder       (const Uint32 & word1, Uint32 byteOrder);
 
   static void setByteOrder       (Uint32 & word1, Uint32 byteOrder);
   static void setCompressed      (Uint32 & word1, Uint32 compressed);
@@ -197,6 +197,16 @@ inline
 Uint32
 Protocol6::getPrio(const Uint32 & word1){
   return (word1 & WORD1_PRIO_MASK) >> WORD1_PRIO_SHIFT;
+}
+
+inline
+bool
+Protocol6::verifyByteOrder(const Uint32 & word1, Uint32 byteOrder)
+{
+  Uint32 tmp = byteOrder;
+  tmp |= (tmp << 7);
+  tmp |= (tmp << 24);
+  return (word1 & WORD1_BYTEORDER_MASK) == tmp;
 }
 
 inline

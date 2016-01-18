@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2008 MySQL AB, 2008-2010 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -76,7 +75,7 @@
 #define CPCD_END() \
  { 0, \
    0, \
-   ParserRow<CPCDAPISession>::Arg, \
+   ParserRow<CPCDAPISession>::End, \
    ParserRow<CPCDAPISession>::Int, \
    ParserRow<CPCDAPISession>::Optional, \
    ParserRow<CPCDAPISession>::IgnoreMinMax, \
@@ -150,7 +149,7 @@ CPCDAPISession::CPCDAPISession(NDB_SOCKET_TYPE sock,
 {
   m_input = new SocketInputStream(sock, 7*24*60*60000);
   m_output = new SocketOutputStream(sock);
-  m_parser = new Parser<CPCDAPISession>(commands, *m_input, true, true, true);
+  m_parser = new Parser<CPCDAPISession>(commands, *m_input);
 }
 
 CPCDAPISession::CPCDAPISession(FILE * f, CPCD & cpcd)
@@ -158,7 +157,7 @@ CPCDAPISession::CPCDAPISession(FILE * f, CPCD & cpcd)
   , m_cpcd(cpcd)
 {
   m_input = new FileInputStream(f);
-  m_parser = new Parser<CPCDAPISession>(commands, *m_input, true, true, true);
+  m_parser = new Parser<CPCDAPISession>(commands, *m_input);
   m_output = 0;
 }
   
@@ -182,7 +181,7 @@ CPCDAPISession::runSession(){
 
     switch(ctx.m_status){
     case Parser_t::Ok:
-      for(size_t i = 0; i<ctx.m_aliasUsed.size(); i++)
+      for(unsigned i = 0; i<ctx.m_aliasUsed.size(); i++)
 	ndbout_c("Used alias: %s -> %s", 
 		 ctx.m_aliasUsed[i]->name, ctx.m_aliasUsed[i]->realName);
       break;
@@ -199,7 +198,7 @@ CPCDAPISession::runSession(){
 void
 CPCDAPISession::stopSession(){
   CPCD::RequestStatus rs;
-  for(size_t i = 0; i<m_temporaryProcesses.size(); i++){
+  for(unsigned i = 0; i<m_temporaryProcesses.size(); i++){
     Uint32 id = m_temporaryProcesses[i];
     m_cpcd.undefineProcess(&rs, id);
   }
@@ -215,7 +214,7 @@ CPCDAPISession::loadFile(){
 
     switch(ctx.m_status){
     case Parser_t::Ok:
-      for(size_t i = 0; i<ctx.m_aliasUsed.size(); i++)
+      for(unsigned i = 0; i<ctx.m_aliasUsed.size(); i++)
 	ndbout_c("Used alias: %s -> %s", 
 		 ctx.m_aliasUsed[i]->name, ctx.m_aliasUsed[i]->realName);
       break;
@@ -348,7 +347,7 @@ CPCDAPISession::listProcesses(Parser_t::Context & /* unused */,
   m_output->println("%s", "");
   
 
-  for(size_t i = 0; i < proclist->size(); i++) {
+  for(unsigned i = 0; i < proclist->size(); i++) {
     CPCD::Process *p = (*proclist)[i];
 
     m_output->println("process");

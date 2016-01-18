@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,6 +26,21 @@
 #endif
 
 #include <my_global.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#ifdef HAVE_SYS_TIME_H
+#include <sys/time.h>
+#endif
+#ifdef _WIN32
+#include <process.h>
+#endif
+
+#if defined __GNUC__
+# define ATTRIBUTE_FORMAT(style, m, n) __attribute__((format(style, m, n)))
+#else
+# define ATTRIBUTE_FORMAT(style, m, n)
+#endif
 
 #ifdef HAVE_NDB_CONFIG_H
 #include "ndb_config.h"
@@ -39,7 +54,7 @@
 #define NDB_PORT 1186
 #endif
 
-#if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__) || defined(WIN32)
+#if defined(_WIN32)
 #define NDB_WIN32 1
 #define NDB_WIN 1
 #define PATH_MAX 256
@@ -153,12 +168,6 @@ extern "C" {
 #define PATH_MAX 1024
 #endif
 
-#if defined(_lint) || defined(FORCE_INIT_OF_VARS)
-#define LINT_SET_PTR = {0,0}
-#else
-#define LINT_SET_PTR
-#endif
-
 #ifndef MIN
 #define MIN(x,y) (((x)<(y))?(x):(y))
 #endif
@@ -189,7 +198,7 @@ extern "C" {
  * Zero length array not allowed in C
  * Add use of array to avoid compiler warning
  */
-#define STATIC_ASSERT(expr) { char static_assert[(expr)? 1 : 0] = {'\0'}; if (static_assert[0]) {}; }
+#define STATIC_ASSERT(expr) { char a_static_assert[(expr)? 1 : 0] = {'\0'}; if (a_static_assert[0]) {}; }
 #else
 #define STATIC_ASSERT(expr)
 #endif
@@ -268,6 +277,18 @@ extern "C" {
 #define ATTRIBUTE_NOINLINE
 #endif
 
+/**
+ * sizeof cacheline (in bytes)
+ *
+ * TODO: Add configure check...
+ */
+#define NDB_CL 64
+
+/**
+ * Pad to NDB_CL size
+ */
+#define NDB_CL_PADSZ(x) (NDB_CL - ((x) % NDB_CL))
+
 /*
  * require is like a normal assert, only it's always on (eg. in release)
  */
@@ -275,7 +296,8 @@ C_MODE_START
 /** see below */
 typedef int(*RequirePrinter)(const char *fmt, ...);
 void require_failed(int exitcode, RequirePrinter p,
-                    const char* expr, const char* file, int line);
+                    const char* expr, const char* file, int line)
+                    ATTRIBUTE_NORETURN;
 int ndbout_printer(const char * fmt, ...);
 C_MODE_END
 /*
@@ -297,5 +319,77 @@ C_MODE_END
  * this require is like a normal assert.  (only it's always on)
 */
 #define require(v) require_exit_or_core_with_printer((v), 0, 0)
+
+struct LinearSectionPtr
+{
+  Uint32 sz;
+  Uint32 * p;
+};
+
+struct SegmentedSectionPtrPOD
+{
+  Uint32 sz;
+  Uint32 i;
+  struct SectionSegment * p;
+
+#ifdef __cplusplus
+  void setNull() { p = 0;}
+  bool isNull() const { return p == 0;}
+  inline SegmentedSectionPtrPOD& assign(struct SegmentedSectionPtr&);
+#endif
+};
+
+struct SegmentedSectionPtr
+{
+  Uint32 sz;
+  Uint32 i;
+  struct SectionSegment * p;
+
+#ifdef __cplusplus
+  SegmentedSectionPtr() {}
+  SegmentedSectionPtr(Uint32 sz_arg, Uint32 i_arg,
+                      struct SectionSegment *p_arg)
+    :sz(sz_arg), i(i_arg), p(p_arg)
+  {}
+  SegmentedSectionPtr(const SegmentedSectionPtrPOD & src)
+    :sz(src.sz), i(src.i), p(src.p)
+  {}
+
+  void setNull() { p = 0;}
+  bool isNull() const { return p == 0;}
+#endif
+};
+
+#ifdef __cplusplus
+inline
+SegmentedSectionPtrPOD&
+SegmentedSectionPtrPOD::assign(struct SegmentedSectionPtr& src)
+{
+  this->i = src.i;
+  this->p = src.p;
+  this->sz = src.sz;
+  return *this;
+}
+#endif
+
+/* Abstract interface for iterating over
+ * words in a section
+ */
+#ifdef __cplusplus
+struct GenericSectionIterator
+{
+  virtual ~GenericSectionIterator() {};
+  virtual void reset()=0;
+  virtual const Uint32* getNextWords(Uint32& sz)=0;
+};
+#else
+struct GenericSectionIterator;
+#endif
+
+struct GenericSectionPtr
+{
+  Uint32 sz;
+  struct GenericSectionIterator* sectionIter;
+};
 
 #endif

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 #include <util/basestring_vsnprintf.h>
 
-#ifndef __WIN__
+#ifndef _WIN32
 
 #include <dirent.h>
 
@@ -215,7 +215,10 @@ NdbDir::create(const char *dir, mode_t mode, bool ignore_existing)
 #else
   if (mkdir(dir, mode) != 0)
   {
-    if (ignore_existing && errno == EEXIST)
+    int error = errno;
+    if (ignore_existing &&
+        (error == EEXIST ||
+         error == EISDIR))
       return true;
 
     fprintf(stderr,
@@ -280,7 +283,7 @@ NdbDir::remove_recursive(const char* dir, bool only_contents)
     fprintf(stderr, "Too long path to remove: '%s'\n", dir);
     return false;
   }
-  int start_len = strlen(path);
+  int start_len = (int)strlen(path);
 
   const char* name;
   NdbDir::Iterator iter;
@@ -298,7 +301,7 @@ loop:
       if ((strcmp(".", name) == 0) || (strcmp("..", name) == 0))
         continue;
 
-      int end_len, len = strlen(path);
+      int end_len, len = (int)strlen(path);
       if ((end_len = basestring_snprintf(path + len, sizeof(path) - len,
                                          "%s", name)) < 0)
       {
@@ -329,7 +332,7 @@ loop:
     }
     iter.close();
 
-    int len = strlen(path);
+    int len = (int)strlen(path);
     path[len - 1] = 0; // remove ending slash
 
     char * prev_slash = strrchr(path, IF_WIN('\\', '/'));

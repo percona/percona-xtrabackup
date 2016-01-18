@@ -96,7 +96,8 @@ archive_init(const char *root __attribute__((unused)))
 	ds_archive_ctxt_t	*archive_ctxt;
 	struct archive		*a;
 
-	ctxt = my_malloc(sizeof(ds_ctxt_t) + sizeof(ds_archive_ctxt_t),
+	ctxt = my_malloc(PSI_NOT_INSTRUMENTED,
+			 sizeof(ds_ctxt_t) + sizeof(ds_archive_ctxt_t),
 			 MYF(MY_FAE));
 	archive_ctxt = (ds_archive_ctxt_t *)(ctxt + 1);
 
@@ -167,7 +168,8 @@ archive_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 	}
 	pthread_mutex_unlock(&archive_ctxt->mutex);
 
-	file = (ds_file_t *) my_malloc(sizeof(ds_file_t) +
+	file = (ds_file_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+				       sizeof(ds_file_t) +
 				       sizeof(ds_archive_file_t),
 				       MYF(MY_FAE));
 

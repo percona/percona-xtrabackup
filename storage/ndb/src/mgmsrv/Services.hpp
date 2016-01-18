@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2008 MySQL AB, 2008-2010 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -29,8 +28,6 @@
 
 class MgmApiSession : public SocketServer::Session
 {
-  static void stop_session_if_timed_out(SocketServer::Session *_s, void *data);
-  static void stop_session_if_not_connected(SocketServer::Session *_s, void *data);
   static void list_session(SocketServer::Session *_s, void *data);
   static void get_session(SocketServer::Session *_s, void *data);
 private:
@@ -40,7 +37,6 @@ private:
   InputStream *m_input;
   OutputStream *m_output;
   Parser_t *m_parser;
-  MgmtSrvr::Allocated_resources *m_allocated_resources;
   char m_err_str[1024];
   int m_stopSelf; // -1 is restart, 0 do nothing, 1 stop
   NdbMutex *m_mutex;
@@ -130,6 +126,8 @@ public:
   void show_variables(Parser_t::Context &ctx, Properties const &args);
 
   void dump_events(Parser_t::Context &ctx, Properties const &args);
+
+  void set_ports(Parser_t::Context &, Properties const &args);
 };
 
 class MgmApiService : public SocketServer::Service {

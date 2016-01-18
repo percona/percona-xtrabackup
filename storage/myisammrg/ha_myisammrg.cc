@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -86,8 +86,6 @@
 */
 
 #define MYSQL_SERVER 1
-#include "sql_priv.h"
-#include "unireg.h"
 #include "sql_cache.h"                          // query_cache_*
 #include "sql_show.h"                           // append_identifier
 #include "sql_table.h"                         // build_table_filename
@@ -121,7 +119,7 @@ static handler *myisammrg_create_handler(handlerton *hton,
 ha_myisammrg::ha_myisammrg(handlerton *hton, TABLE_SHARE *table_arg)
   :handler(hton, table_arg), file(0), is_cloned(0)
 {
-  init_sql_alloc(&children_mem_root,
+  init_sql_alloc(rg_key_memory_children, &children_mem_root,
                  FN_REFLEN + ALLOC_ROOT_MIN_BLOCK_SIZE, 0);
 }
 
@@ -228,7 +226,7 @@ const char *ha_myisammrg::index_type(uint key_number)
     children_last_l -----------------------------------------+
 */
 
-CPP_UNNAMED_NS_START
+namespace {
 
 extern "C" int myisammrg_parent_open_callback(void *callback_param,
                                               const char *filename)
@@ -238,9 +236,9 @@ extern "C" int myisammrg_parent_open_callback(void *callback_param,
   Mrg_child_def *mrg_child_def;
   char          *db;
   char          *table_name;
-  uint          dirlen;
-  uint          db_length;
-  uint          table_name_length;
+  size_t        dirlen;
+  size_t        db_length;
+  size_t        table_name_length;
   char          dir_path[FN_REFLEN];
   char          name_buf[NAME_LEN];
   DBUG_ENTER("myisammrg_parent_open_callback");
@@ -328,7 +326,7 @@ extern "C" int myisammrg_parent_open_callback(void *callback_param,
   DBUG_RETURN(0);
 }
 
-CPP_UNNAMED_NS_END
+}
 
 
 /**
@@ -374,7 +372,7 @@ int ha_myisammrg::open(const char *name, int mode __attribute__((unused)),
   children_l= NULL;
   children_last_l= NULL;
   child_def_list.empty();
-  my_errno= 0;
+  set_my_errno(0);
 
   /* retrieve children table list. */
   if (is_cloned)
@@ -389,8 +387,8 @@ int ha_myisammrg::open(const char *name, int mode __attribute__((unused)),
     */
     if (!(file= myrg_open(name, table->db_stat,  HA_OPEN_IGNORE_IF_LOCKED)))
     {
-      DBUG_PRINT("error", ("my_errno %d", my_errno));
-      DBUG_RETURN(my_errno ? my_errno : -1); 
+      DBUG_PRINT("error", ("my_errno %d", my_errno()));
+      DBUG_RETURN(my_errno() ? my_errno() : -1); 
     }
 
     file->children_attached= TRUE;
@@ -400,8 +398,8 @@ int ha_myisammrg::open(const char *name, int mode __attribute__((unused)),
   else if (!(file= myrg_parent_open(name, myisammrg_parent_open_callback, this)))
   {
     /* purecov: begin inspected */
-    DBUG_PRINT("error", ("my_errno %d", my_errno));
-    DBUG_RETURN(my_errno ? my_errno : -1);
+    DBUG_PRINT("error", ("my_errno %d", my_errno()));
+    DBUG_RETURN(my_errno() ? my_errno() : -1);
     /* purecov: end */
   }
   DBUG_PRINT("myrg", ("MYRG_INFO: 0x%lx  child tables: %u",
@@ -490,26 +488,30 @@ int ha_myisammrg::add_children_list(void)
     */
     child_l->prelocking_placeholder= parent_l->prelocking_placeholder;
     /*
-      For statements which acquire a SNW metadata lock on a parent table and
-      then later try to upgrade it to an X lock (e.g. ALTER TABLE), SNW
-      locks should be also taken on the children tables.
+      For ALTER TABLE statements, which acquire a SU metadata lock on a
+      parent table and then later try to upgrade it first to SNW and then
+      to X lock, SNW locks should be also taken on the children tables.
 
-      Otherwise we end up in a situation where the thread trying to upgrade SNW
-      to X lock on the parent also holds a SR metadata lock and a read
-      thr_lock.c lock on the child. As a result, another thread might be
-      blocked on the thr_lock.c lock for the child after successfully acquiring
-      a SR or SW metadata lock on it. If at the same time this second thread
-      has a shared metadata lock on the parent table or there is some other
-      thread which has a shared metadata lock on the parent and is waiting for
-      this second thread, we get a deadlock. This deadlock cannot be properly
-      detected by the MDL subsystem as part of the waiting happens within
-      thr_lock.c. By taking SNW locks on the child tables we ensure that any
-      thread which waits for a thread doing SNW -> X upgrade, does this within
-      the MDL subsystem and thus potential deadlocks are exposed to the deadlock
+      Otherwise, we end up in a situation where the thread trying to upgrade
+      SU to SNW/SNW to X lock on the parent also holds a SR metadata lock
+      and a read thr_lock.c lock on the child. As a result, another thread
+      might be blocked on the thr_lock.c lock for the child after successfully
+      acquiring a SR or SW metadata lock on it. If at the same time this second
+      thread has a shared metadata lock on the parent table or there is some
+      other thread which has a shared metadata lock on the parent and is waiting
+      for this second thread, we get a deadlock. This deadlock cannot be
+      properly detected by the MDL subsystem as part of the waiting happens
+      within thr_lock.c. By taking SNW locks on the child tables we ensure that
+      any thread which waits for a thread doing upgrade, does this within the
+      MDL subsystem and thus potential deadlocks are exposed to the deadlock
       detector.
 
-      We don't do the same thing for SNRW locks as this would allow
-      DDL on implicitly locked underlying tables of a MERGE table.
+      We don't do similar thing for SNRW locks as only S locks associated with
+      open HANDLER statements can cause issue with SNRW -> X upgrade. But this
+      issue is solved thanks to notification mechanism in MDL subsystem.
+
+      SRO locks don't require similar handling since they are never upgraded and
+      underlying tables are always propertly protected by thr_lock.c locks.
     */
     if (! thd->locked_tables_mode &&
         parent_l->mdl_request.type == MDL_SHARED_UPGRADABLE)
@@ -611,7 +613,7 @@ public:
     next child table. It is called for each child table.
 */
 
-CPP_UNNAMED_NS_START
+namespace {
 
 extern "C" MI_INFO *myisammrg_attach_children_callback(void *callback_param)
 {
@@ -705,7 +707,7 @@ extern "C" MI_INFO *myisammrg_attach_children_callback(void *callback_param)
   DBUG_RETURN(myisam);
 }
 
-CPP_UNNAMED_NS_END
+}
 
 
 /**
@@ -820,11 +822,11 @@ int ha_myisammrg::attach_children(void)
                            myisammrg_attach_children_callback, &param,
                            (my_bool *) &param.need_compat_check))
   {
-    error= my_errno;
+    error= my_errno();
     goto err;
   }
   DBUG_PRINT("myrg", ("calling myrg_extrafunc"));
-  myrg_extrafunc(file, query_cache_invalidate_by_MyISAM_filename_ref);
+  myrg_extrafunc(file, &query_cache_invalidate_by_MyISAM_filename);
   if (!(test_if_locked == HA_OPEN_WAIT_IF_LOCKED ||
 	test_if_locked == HA_OPEN_ABORT_IF_LOCKED))
     myrg_extra(file,HA_EXTRA_NO_WAIT_LOCK,0);
@@ -905,7 +907,7 @@ int ha_myisammrg::attach_children(void)
         break;
     }
   }
-#if !defined(BIG_TABLES) || SIZEOF_OFF_T == 4
+#if SIZEOF_OFF_T == 4
   /* Merge table has more than 2G rows */
   if (table->s->crashed)
   {
@@ -922,7 +924,8 @@ err:
   DBUG_PRINT("error", ("attaching MERGE children failed: %d", error));
   print_error(error, MYF(0));
   detach_children();
-  DBUG_RETURN(my_errno= error);
+  set_my_errno(error);
+  DBUG_RETURN(error);
 }
 
 
@@ -1030,8 +1033,8 @@ int ha_myisammrg::detach_children(void)
   if (myrg_detach_children(this->file))
   {
     /* purecov: begin inspected */
-    print_error(my_errno, MYF(0));
-    DBUG_RETURN(my_errno ? my_errno : -1);
+    print_error(my_errno(), MYF(0));
+    DBUG_RETURN(my_errno() ? my_errno() : -1);
     /* purecov: end */
   }
 
@@ -1251,12 +1254,12 @@ ha_rows ha_myisammrg::records_in_range(uint inx, key_range *min_key,
 int ha_myisammrg::truncate()
 {
   int err= 0;
-  MYRG_TABLE *table;
+  MYRG_TABLE *my_table;
   DBUG_ENTER("ha_myisammrg::truncate");
 
-  for (table= file->open_tables; table != file->end_table; table++)
+  for (my_table= file->open_tables; my_table != file->end_table; my_table++)
   {
-    if ((err= mi_delete_all_rows(table->table)))
+    if ((err= mi_delete_all_rows(my_table->table)))
       break;
   }
 
@@ -1275,7 +1278,7 @@ int ha_myisammrg::info(uint flag)
   */
   stats.records = (ha_rows) mrg_info.records;
   stats.deleted = (ha_rows) mrg_info.deleted;
-#if !defined(BIG_TABLES) || SIZEOF_OFF_T == 4
+#if SIZEOF_OFF_T == 4
   if ((mrg_info.records >= (ulonglong) 1 << 32) ||
       (mrg_info.deleted >= (ulonglong) 1 << 32))
     table->s->crashed= 1;
@@ -1324,16 +1327,6 @@ int ha_myisammrg::info(uint flag)
   {
     if (table->s->key_parts && mrg_info.rec_per_key)
     {
-#ifdef HAVE_purify
-      /*
-        valgrind may be unhappy about it, because optimizer may access values
-        between file->keys and table->key_parts, that will be uninitialized.
-        It's safe though, because even if opimizer will decide to use a key
-        with such a number, it'll be an error later anyway.
-      */
-      memset(table->key_info[0].rec_per_key, 0,
-             sizeof(table->key_info[0].rec_per_key[0]) * table->s->key_parts);
-#endif
       memcpy((char*) table->key_info[0].rec_per_key,
 	     (char*) mrg_info.rec_per_key,
              sizeof(table->key_info[0].rec_per_key[0]) *
@@ -1476,7 +1469,7 @@ void ha_myisammrg::update_create_info(HA_CREATE_INFO *create_info)
       {
         TABLE_LIST *ptr;
 
-        if (!(ptr= (TABLE_LIST *) thd->calloc(sizeof(TABLE_LIST))))
+        if (!(ptr= (TABLE_LIST *) thd->mem_calloc(sizeof(TABLE_LIST))))
           goto err;
 
         if (!(ptr->table_name= thd->strmake(child_table->table_name,
@@ -1509,7 +1502,7 @@ err:
 }
 
 
-int ha_myisammrg::create(const char *name, register TABLE *form,
+int ha_myisammrg::create(const char *name, TABLE *form,
 			 HA_CREATE_INFO *create_info)
 {
   char buff[FN_REFLEN];
@@ -1544,8 +1537,8 @@ int ha_myisammrg::create(const char *name, register TABLE *form,
       opened through the table cache. They are opened by db.table_name,
       not by their path name.
     */
-    uint length= build_table_filename(buff, sizeof(buff),
-                                      tables->db, tables->table_name, "", 0);
+    size_t length= build_table_filename(buff, sizeof(buff),
+                                        tables->db, tables->table_name, "", 0);
     /*
       If a MyISAM table is in the same directory as the MERGE table,
       we use the table name without a path. This means that the
@@ -1600,7 +1593,8 @@ void ha_myisammrg::append_create_info(String *packet)
   for (first= open_table= children_l;;
        open_table= open_table->next_global)
   {
-    LEX_STRING db= { open_table->db, open_table->db_length };
+    LEX_STRING db= { const_cast<char*>(open_table->db),
+                    open_table->db_length };  
 
     if (open_table != first)
       packet->append(',');
@@ -1638,9 +1632,10 @@ int ha_myisammrg::check(THD* thd, HA_CHECK_OPT* check_opt)
 }
 
 
-ha_rows ha_myisammrg::records()
+int ha_myisammrg::records(ha_rows *num_rows)
 {
-  return myrg_records(file);
+  *num_rows= myrg_records(file);
+  return 0;
 }
 
 

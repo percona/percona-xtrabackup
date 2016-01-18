@@ -1,4 +1,4 @@
-/*
+	/*
    Copyright (c) 2002, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
@@ -38,6 +38,16 @@ C_MODE_START
 #define GET_FLAGSET   15
 #define GET_PASSWORD  16
 
+#if SIZEOF_INT == 4
+#define GET_INT32 GET_INT
+#define GET_UINT32 GET_UINT
+#elif SIZEOF_LONG == 4
+#define GET_INT32 GET_LONG
+#define GET_UINT32 GET_ULONG
+#else
+#error Neither int or long is of 4 bytes width
+#endif
+
 #define GET_ASK_ADDR	 128
 #define GET_TYPE_MASK	 127
 
@@ -58,7 +68,7 @@ struct my_option
                                            marks the end of the my_option[]
                                            array.
                                          */
-  int        id;                        /**< For 0<id<255 it's means one
+  int        id;                        /**< For 0<id<=255 it's means one
                                            character for a short option
                                            (like -A), if >255 no short option
                                            is created, but a long option still
@@ -98,7 +108,7 @@ typedef my_bool (*my_get_one_option)(int, const struct my_option *, char *);
   must return a pointer to a variable of type uint. A argument is stored in
   the location pointed to by the returned pointer.
 */
-typedef void *(*my_getopt_value)(const char *, uint, const struct my_option *,
+typedef void *(*my_getopt_value)(const char *, size_t, const struct my_option *,
                                  int *);
 
 
@@ -112,12 +122,13 @@ extern int handle_options (int *argc, char ***argv,
 extern int my_handle_options (int *argc, char ***argv,
                               const struct my_option *longopts,
                               my_get_one_option,
-                              const char **command_list);
+                              const char **command_list, my_bool ignore_unknown_option);
 extern void print_cmdline_password_warning();
 extern void my_cleanup_options(const struct my_option *options);
 extern void my_cleanup_options(const struct my_option *options);
 extern void my_print_help(const struct my_option *options);
 extern void my_print_variables(const struct my_option *options);
+extern void my_print_variables_ex(const struct my_option *options, FILE* file);
 extern void my_getopt_register_get_addr(my_getopt_value);
 
 ulonglong getopt_ull_limit_value(ulonglong num, const struct my_option *optp,

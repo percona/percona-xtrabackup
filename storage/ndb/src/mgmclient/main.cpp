@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,10 +20,10 @@
 
 // copied from mysql.cc to get readline
 extern "C" {
-#if defined( __WIN__)
+#if defined(_WIN32)
 #include <conio.h>
 #elif !defined(__NETWARE__)
-#include <readline/readline.h>
+#include <readline.h>
 extern "C" int add_history(const char *command); /* From readline directory */
 extern "C" int read_history(const char *command);
 extern "C" int write_history(const char *command);
@@ -115,7 +115,7 @@ int main(int argc, char** argv){
   NDB_INIT(argv[0]);
 
   ndb_opt_set_usage_funcs(short_usage_sub, usage);
-  load_defaults("my",load_default_groups,&argc,&argv);
+  ndb_load_defaults(NULL, load_default_groups,&argc,&argv);
   int ho_error;
 #ifndef DBUG_OFF
   opt_debug= "d:t:O,/tmp/ndb_mgm.trace";

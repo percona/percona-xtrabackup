@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -187,7 +187,7 @@ int get_ER_error_msg(uint code, const char **name_ptr, const char **msg_ptr)
   return 0;
 }
 
-#if defined(__WIN__)
+#if defined(_WIN32)
 static my_bool print_win_error_msg(DWORD error, my_bool verbose)
 {
   LPTSTR s;
@@ -207,6 +207,13 @@ static my_bool print_win_error_msg(DWORD error, my_bool verbose)
 }
 #endif
 
+
+static const char *get_handler_error_message(int nr)
+{
+  return handler_error_messages[nr - HA_ERR_FIRST];
+}
+
+
 /*
   Register handler error messages for usage with my_error()
 
@@ -215,12 +222,7 @@ static my_bool print_win_error_msg(DWORD error, my_bool verbose)
     will ignore calls to register already registered error numbers.
 */
 
-static const char **get_handler_error_messages()
-{
-  return handler_error_messages;
-}
-
-void my_handler_error_register(void)
+void my_handler_error_register()
 {
   /*
     If you got compilation error here about compile_time_assert array, check
@@ -230,7 +232,7 @@ void my_handler_error_register(void)
   */
   compile_time_assert(HA_ERR_FIRST + array_elements(handler_error_messages) ==
                       HA_ERR_LAST + 1);
-  my_error_register(get_handler_error_messages, HA_ERR_FIRST,
+  my_error_register(get_handler_error_message, HA_ERR_FIRST,
                     HA_ERR_FIRST+ array_elements(handler_error_messages)-1);
 }
 
@@ -247,7 +249,7 @@ int main(int argc,char *argv[])
   const char *msg;
   const char *name;
   char *unknown_error = 0;
-#if defined(__WIN__)
+#if defined(_WIN32)
   my_bool skip_win_message= 0;
 #endif
   MY_INIT(argv[0]);
@@ -274,7 +276,7 @@ int main(int argc,char *argv[])
       the same pointer on some platforms such as Windows
     */
     unknown_error= malloc(strlen(msg)+1);
-    strmov(unknown_error, msg);
+    my_stpcpy(unknown_error, msg);
 
     for ( ; argc-- > 0 ; argv++)
     {
@@ -345,17 +347,17 @@ int main(int argc,char *argv[])
       }
       if (!found)
       {
-#if defined(__WIN__)
+#if defined(_WIN32)
         if (!(skip_win_message= !print_win_error_msg((DWORD)code, verbose)))
         {
 #endif
           fprintf(stderr,"Illegal error code: %d\n",code);
           error=1;
-#if defined(__WIN__)
+#if defined(_WIN32)
         }
 #endif
       }
-#if defined(__WIN__)
+#if defined(_WIN32)
       if (!skip_win_message)
         print_win_error_msg((DWORD)code, verbose);
 #endif

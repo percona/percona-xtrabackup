@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql_version.h>
 #include <my_base.h>
 #include <mysys_err.h>
+#include <my_thread_local.h>
 #include "common.h"
 #include "datasink.h"
 
@@ -50,16 +51,16 @@ local_init(const char *root)
 	ds_ctxt_t *ctxt;
 
 	if (my_mkdir(root, 0777, MYF(0)) < 0
-	    && my_errno != EEXIST && my_errno != EISDIR)
+	    && my_errno() != EEXIST && my_errno() != EISDIR)
 	{
-		my_error(EE_CANT_MKDIR, MYF(ME_BELL | ME_WAITTANG),
-			 root, my_errno);
+		my_error(EE_CANT_MKDIR, MYF(ME_BELL),
+			 root, my_errno());
 		return NULL;
 	}
 
-	ctxt = my_malloc(sizeof(ds_ctxt_t), MYF(MY_FAE));
+	ctxt = my_malloc(PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t), MYF(MY_FAE));
 
-	ctxt->root = my_strdup(root, MYF(MY_FAE));
+	ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
 	return ctxt;
 }
@@ -81,9 +82,9 @@ local_open(ds_ctxt_t *ctxt, const char *path,
 
 	/* Create the directory if needed */
 	dirname_part(dirpath, fullpath, &dirpath_len);
-	if (my_mkdir(dirpath, 0777, MYF(0)) < 0 && my_errno != EEXIST) {
-		my_error(EE_CANT_MKDIR, MYF(ME_BELL | ME_WAITTANG),
-			 dirpath, my_errno);
+	if (my_mkdir(dirpath, 0777, MYF(0)) < 0 && my_errno() != EEXIST) {
+		my_error(EE_CANT_MKDIR, MYF(ME_BELL),
+			 dirpath, my_errno());
 		return NULL;
 	}
 
@@ -95,7 +96,8 @@ local_open(ds_ctxt_t *ctxt, const char *path,
 
 	path_len = strlen(fullpath) + 1; /* terminating '\0' */
 
-	file = (ds_file_t *) my_malloc(sizeof(ds_file_t) +
+	file = (ds_file_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+				       sizeof(ds_file_t) +
 				       sizeof(ds_local_file_t) +
 				       path_len,
 				       MYF(MY_FAE));

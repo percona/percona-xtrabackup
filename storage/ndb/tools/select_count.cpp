@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -56,7 +56,7 @@ static struct my_option my_long_options[] =
 
 static void short_usage_sub(void)
 {
-  ndb_short_usage_sub(NULL);
+  ndb_short_usage_sub("<table name>[, <table name>[, ...]]");
 }
 
 static void usage()
@@ -67,7 +67,7 @@ static void usage()
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
   ndb_opt_set_usage_funcs(short_usage_sub, usage);
-  load_defaults("my",load_default_groups,&argc,&argv);
+  ndb_load_defaults(NULL,load_default_groups,&argc,&argv);
   int ho_error;
 #ifndef DBUG_OFF
   opt_debug= "d:t:O,/tmp/ndb_select_count.trace";
@@ -95,7 +95,7 @@ int main(int argc, char** argv){
 
   Ndb MyNdb(&con, _dbname );
   if(MyNdb.init() != 0){
-    ERR(MyNdb.getNdbError());
+    NDB_ERR(MyNdb.getNdbError());
     return NDBT_ProgramExit(NDBT_FAILED);
   }
 
@@ -137,7 +137,7 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
   if ((code.interpret_exit_last_row() != 0) ||
       (code.finalise() != 0))
   {
-    ERR(code.getNdbError());
+    NDB_ERR(code.getNdbError());
     return NDBT_FAILED;
   }
 
@@ -158,18 +158,18 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
 	retryAttempt++;
 	continue;
       }
-      ERR(err);
+      NDB_ERR(err);
       return NDBT_FAILED;
     }
     pOp = pTrans->getNdbScanOperation(pTab->getName());	
     if (pOp == NULL) {
-      ERR(pTrans->getNdbError());
+      NDB_ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
       return NDBT_FAILED;
     }
 
     if( pOp->readTuples(NdbScanOperation::LM_Dirty) ) {
-      ERR(pTrans->getNdbError());
+      NDB_ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
       return NDBT_FAILED;
     }
@@ -177,7 +177,7 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
 
     check = pOp->setInterpretedCode(&code);
     if( check == -1 ) {
-      ERR(pTrans->getNdbError());
+      NDB_ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
       return NDBT_FAILED;
     }
@@ -188,7 +188,7 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
     pOp->getValue(NdbDictionary::Column::ROW_SIZE, (char*)&row_size);
     check = pTrans->execute(NdbTransaction::NoCommit);
     if( check == -1 ) {
-      ERR(pTrans->getNdbError());
+      NDB_ERR(pTrans->getNdbError());
       pNdb->closeTransaction(pTrans);
       return NDBT_FAILED;
     }
@@ -208,7 +208,7 @@ select_count(Ndb* pNdb, const NdbDictionary::Table* pTab,
 	retryAttempt++;
 	continue;
       }
-      ERR(err);
+      NDB_ERR(err);
       pNdb->closeTransaction(pTrans);
       return NDBT_FAILED;
     }

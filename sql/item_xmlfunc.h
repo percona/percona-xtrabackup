@@ -1,7 +1,7 @@
 #ifndef ITEM_XMLFUNC_INCLUDED
 #define ITEM_XMLFUNC_INCLUDED
 
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
+#include "item_strfunc.h"     // Item_str_func
 
 /* This file defines all XML functions */
 
@@ -25,18 +26,19 @@ protected:
   String tmp_value, pxml;
   Item *nodeset_func;
 public:
-  Item_xml_str_func(Item *a, Item *b): 
-    Item_str_func(a,b) 
+  Item_xml_str_func(const POS &pos, Item *a, Item *b): 
+    Item_str_func(pos, a,b) 
   {
     maybe_null= TRUE;
   }
-  Item_xml_str_func(Item *a, Item *b, Item *c): 
-    Item_str_func(a,b,c) 
+  Item_xml_str_func(const POS &pos, Item *a, Item *b, Item *c): 
+    Item_str_func(pos, a,b,c) 
   {
     maybe_null= TRUE;
   }
   void fix_length_and_dec();
   String *parse_xml(String *raw_xml, String *parsed_xml_buf);
+  bool check_gcol_func_processor(uchar *int_arg) { return false; }
 
 protected:
   /** 
@@ -55,7 +57,9 @@ protected:
 class Item_func_xml_extractvalue: public Item_xml_str_func
 {
 public:
-  Item_func_xml_extractvalue(Item *a,Item *b) :Item_xml_str_func(a,b) {}
+  Item_func_xml_extractvalue(const POS &pos, Item *a, Item *b)
+    :Item_xml_str_func(pos, a, b)
+  {}
   const char *func_name() const { return "extractvalue"; }
   String *val_str(String *);
 };
@@ -65,9 +69,13 @@ class Item_func_xml_update: public Item_xml_str_func
 {
   String tmp_value2, tmp_value3;
 public:
-  Item_func_xml_update(Item *a,Item *b,Item *c) :Item_xml_str_func(a,b,c) {}
+  Item_func_xml_update(const POS &pos, Item *a, Item *b, Item *c)
+    :Item_xml_str_func(pos, a, b, c)
+  {}
   const char *func_name() const { return "updatexml"; }
   String *val_str(String *);
+  bool check_gcol_func_processor(uchar *int_arg)
+  { return true; }
 };
 
 #endif /* ITEM_XMLFUNC_INCLUDED */

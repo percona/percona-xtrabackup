@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,6 +15,14 @@
 
 #ifndef SQL_TABLE_MAINTENANCE_H
 #define SQL_TABLE_MAINTENANCE_H
+
+#include "my_global.h"
+#include "sql_cmd.h"       // Sql_cmd
+
+class THD;
+struct TABLE_LIST;
+typedef struct st_key_cache KEY_CACHE;
+typedef struct st_mysql_lex_string LEX_STRING;
 
 /* Must be able to hold ALTER TABLE t PARTITION BY ... KEY ALGORITHM = 1 ... */
 #define SQL_ADMIN_MSG_TEXT_SIZE 128 * 1024
@@ -120,6 +128,17 @@ public:
   {
     return SQLCOM_REPAIR;
   }
+};
+
+
+/**
+  Sql_cmd_shutdown represents the SHUTDOWN statement.
+*/
+class Sql_cmd_shutdown : public Sql_cmd
+{
+public:
+  virtual bool execute(THD *thd);
+  virtual enum_sql_command sql_command_code() const { return SQLCOM_SHUTDOWN; }
 };
 
 #endif

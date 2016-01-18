@@ -60,7 +60,7 @@ DROP USER test_user@'localhost';
 CREATE USER test_user@'localhost';
 GRANT ALL ON *.* TO test_user@'localhost';
 REVOKE PROCESS ON *.* FROM test_user@'localhost';
-SET PASSWORD FOR test_user@'localhost' = PASSWORD('ddictpass');
+SET PASSWORD FOR test_user@'localhost' = 'ddictpass';
 --disable_warnings
 DROP TABLE IF EXISTS test.t1;
 --enable_warnings
@@ -72,6 +72,7 @@ echo
 # Show the definition of the PROCESSLIST table
 #--------------------------------------------------------------------------
 ;
+--replace_result InnoDB TMP_TABLE_ENGINE MyISAM TMP_TABLE_ENGINE 
 SHOW CREATE TABLE INFORMATION_SCHEMA.PROCESSLIST;
 
 echo

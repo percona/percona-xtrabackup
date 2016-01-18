@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,21 +21,27 @@
 #include <m_ctype.h>
 #include <my_sys.h>
 #include <m_string.h>
-#ifndef WIN32
-#  include <sys/types.h>
-#  include <sys/socket.h>
-#  ifndef HAVE_BROKEN_NETINET_INCLUDES
-#    include <netinet/in.h>
-#  endif
-#  include <arpa/inet.h>
-#  include <netdb.h>
-#endif
-#include <my_net.h>
 #include <my_getopt.h>
 
-#if !defined(_AIX) && !defined(h_errno)
+#ifndef WIN32
+#  include <sys/types.h>
+#  include <netdb.h>
+#endif
+#ifdef HAVE_SYS_SOCKET_H
+#  include <sys/socket.h>
+#endif
+#ifdef HAVE_NETINET_IN_H
+#  include <netinet/in.h>
+#endif
+#ifdef HAVE_ARPA_INET_H
+#  include <arpa/inet.h>
+#endif
+
+#if !defined(h_errno)
 extern int h_errno;
 #endif
+
+typedef uint32 in_addr_t;
 
 static my_bool silent;
 

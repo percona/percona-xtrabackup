@@ -106,10 +106,8 @@ WHERE  ( alias2.col_varchar_key IN (
 );
 
 eval CREATE TABLE where_subselect_19379 $query;
---disable_ps_protocol # because of BUG#12595688
 eval SELECT * FROM where_subselect_19379 WHERE (field1, field2) NOT IN
 ($query); 
---enable_ps_protocol
 
 select * from information_schema.OPTIMIZER_TRACE;
 
@@ -215,9 +213,12 @@ let $query=
   order by alias1 . col_varchar_key  , field1
 ;
 
-eval CREATE TABLE where_updatedelete_20769 $query;
+--source include/turn_off_only_full_group_by.inc
 
+eval CREATE TABLE where_updatedelete_20769 $query;
 eval UPDATE where_updatedelete_20769 SET field1 = ( $query );
+
+--source include/restore_sql_mode_after_turn_off_only_full_group_by.inc
 
 DROP TABLE where_updatedelete_20769;
 DROP TABLE t1,t2,t3;
@@ -266,6 +267,19 @@ SELECT * FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 DROP TABLE t1;
 
 --echo #
+--echo # Bug #18346750 OPTIMIZER_TRACE & DBUG_PRINT CRASH IN ST_SELECT_LEX::PRINT
+--echo #
+
+CREATE TABLE t1 (a INT, PRIMARY KEY (a))
+ PARTITION BY KEY (a) PARTITIONS 2;
+INSERT INTO t1 VALUES (1),(2);
+--ERROR ER_SUBQUERY_NO_1_ROW
+SELECT  1 FROM t1 ,t1 w
+ WHERE t1.a <=> (SELECT 22 FROM t1 GROUP BY (SELECT 1 FROM t1));
+SELECT TRACE LIKE "%select had some error%" FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+DROP TABLE t1;
+
+--echo #
 --echo # Bug#18791851 CRASH IN ST_SELECT_LEX::PRINT WITH OPTIMIZER_TRACE ON SUBQUERY
 --echo #
 
@@ -311,6 +325,8 @@ CREATE TABLE t4 (
   KEY col_varchar_key (col_varchar_key,col_int_key)
 );
 
+--source include/turn_off_only_full_group_by.inc
+
 SELECT alias1.col_int_nokey AS field1,
        alias2.col_varchar_key AS field2,
        alias1.col_time_key AS field3,
@@ -334,4 +350,123 @@ WHERE
   AND alias1.col_int_key = alias2.pk
 HAVING  alias1.col_int_nokey  IN ( SELECT 2 FROM DUAL ) ;
 
+--source include/restore_sql_mode_after_turn_off_only_full_group_by.inc
+
 DROP TABLE t1,t2,t3,t4;
+
+# Inspired by testcase of
+# Bug #18345786	CRASH AROUND ST_JOIN_TABLE::AND_WITH_CONDITION
+CREATE TABLE t1(a INT);
+SET @a:=(SELECT ROW(1, 2)=
+ROW((SELECT 1 FROM t1 LEFT JOIN t1 t2 ON 1
+               HAVING 3 IN (SELECT 2 FROM DUAL)),
+    1));
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #18945693 CRASH IN PRINT_TABLE_ARRAY AT SQL/SQL_LEX.CC ON 2ND EXEC OF PREPARED STATEMENT
+--echo #
+
+CREATE TABLE t1 (
+  pk INT NOT NULL,
+  col_int_nokey INT,
+  col_int_key INT,
+  col_varchar_key VARCHAR(1),
+  col_varchar_nokey VARCHAR(1)
+);
+
+INSERT INTO t1 VALUES (13,7,3,'y','y'),(14,0,4,'c','c');
+
+CREATE TABLE t2 (
+  pk INT NOT NULL,
+  col_int_nokey INT,
+  col_int_key INT,
+  col_varchar_key VARCHAR(1),
+  col_varchar_nokey VARCHAR(1)
+);
+
+INSERT INTO t2 VALUES (20,9,8,'e','e');
+
+CREATE TABLE t3 (
+  pk INT NOT NULL,
+  col_int_nokey INT,
+  col_int_key INT,
+  col_varchar_key VARCHAR(1),
+  col_varchar_nokey VARCHAR(1)
+);
+
+INSERT INTO t3 VALUES (1,1,7,'k','k');
+
+PREPARE prep_stmt FROM "
+SELECT
+  alias1.col_varchar_nokey AS field1,
+  MAX(alias1.pk) AS field2
+FROM t3 AS alias1
+GROUP BY field1
+HAVING
+  1 > (
+       SELECT MAX(SQ4_alias1.col_varchar_nokey)
+       FROM t1 AS SQ4_alias1
+            RIGHT OUTER JOIN
+            (
+              t2 AS SQ4_alias2
+              JOIN t1 AS SQ4_alias3
+              ON SQ4_alias3.col_int_key = SQ4_alias2.col_int_nokey
+            )
+            ON SQ4_alias3.pk = SQ4_alias2.col_int_nokey
+      )
+";
+
+EXECUTE prep_stmt;
+EXECUTE prep_stmt;
+
+DROP TABLE t1,t2,t3;
+
+--echo #
+--echo # Bug#19063289 CRASH IN PRINT_TABLE_ARRAY ON 2ND EXECUTION OF PS WITH SUBQUERY AND VIEW
+--echo #
+
+CREATE TABLE B (
+pk INTEGER,
+col_int_key INTEGER,
+col_varchar_nokey VARCHAR(1)
+);
+
+CREATE TABLE C (
+col_int_nokey INTEGER,
+col_int_key INTEGER,
+col_varchar_key VARCHAR(1),
+col_varchar_nokey VARCHAR(1)
+) ;
+
+CREATE TABLE CC (
+pk INTEGER,
+col_int_key INTEGER
+) ENGINE=MYISAM;
+
+INSERT INTO CC VALUES (1, 0),(2, 7);
+
+PREPARE stmt FROM "
+SELECT
+alias1.col_int_key AS field1 ,
+COUNT(alias1.pk) AS field2
+FROM
+CC AS alias1
+GROUP BY field1
+HAVING
+alias1.col_int_key >
+  (
+    SELECT
+    MAX(  SQ2_alias2.col_int_key ) AS SQ2_field1
+    FROM
+    C AS SQ2_alias1 LEFT  JOIN
+       ( B AS SQ2_alias2 INNER JOIN C AS SQ2_alias3
+         ON 1)
+       ON 1
+  )
+OR field2 < 2
+";
+EXECUTE stmt;
+EXECUTE stmt;
+
+DROP TABLE B,C,CC;

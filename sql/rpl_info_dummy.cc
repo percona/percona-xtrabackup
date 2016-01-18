@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,7 +13,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
 
-#include <my_global.h>
 #include "rpl_info_dummy.h"
 
 Rpl_info_dummy::Rpl_info_dummy(const int nparam)
@@ -127,7 +126,7 @@ bool Rpl_info_dummy::do_set_info(const int pos __attribute__((unused)),
 }
 
 bool Rpl_info_dummy::do_set_info(const int pos __attribute__((unused)),
-                                const Dynamic_ids *value __attribute__((unused)))
+                                const Server_ids *value __attribute__((unused)))
 {
   DBUG_ASSERT(!abort);
 
@@ -182,8 +181,8 @@ bool Rpl_info_dummy::do_get_info(const int pos __attribute__((unused)),
 }
 
 bool Rpl_info_dummy::do_get_info(const int pos __attribute__((unused)),
-                                Dynamic_ids *value __attribute__((unused)),
-                                const Dynamic_ids *default_value __attribute__((unused)))
+                                Server_ids *value __attribute__((unused)),
+                                const Server_ids *default_value __attribute__((unused)))
 {
   DBUG_ASSERT(!abort);
 

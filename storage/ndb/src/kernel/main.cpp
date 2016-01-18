@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,7 +23,12 @@
 #include "ndbd.hpp"
 #include "angel.hpp"
 
+#include "../common/util/parse_mask.hpp"
+
 #include <EventLogger.hpp>
+
+#define JAM_FILE_ID 485
+
 extern EventLogger * g_eventLogger;
 
 static int opt_daemon, opt_no_daemon, opt_foreground,
@@ -34,6 +39,8 @@ static int opt_report_fd;
 static int opt_initial;
 static int opt_no_start;
 static unsigned opt_allocated_nodeid;
+static int opt_retries;
+static int opt_delay;
 
 extern NdbNodeBitmask g_nowait_nodes;
 
@@ -81,11 +88,19 @@ static struct my_option my_long_options[] =
   { "report-fd", 256,
     "INTERNAL: fd where to write extra shutdown status",
     (uchar**) &opt_report_fd, (uchar**) &opt_report_fd, 0,
-    GET_UINT, REQUIRED_ARG, 0, 0, ~0, 0, 0, 0 },
+    GET_UINT, REQUIRED_ARG, 0, 0, INT_MAX, 0, 0, 0 },
   { "allocated-nodeid", 256,
     "INTERNAL: nodeid allocated by angel process",
     (uchar**) &opt_allocated_nodeid, (uchar**) &opt_allocated_nodeid, 0,
-    GET_UINT, REQUIRED_ARG, 0, 0, ~0, 0, 0, 0 },
+    GET_UINT, REQUIRED_ARG, 0, 0, UINT_MAX, 0, 0, 0 },
+  { "connect-retries", 'r',
+    "Number of times mgmd is contacted at start. -1: eternal retries",
+    (uchar**) &opt_retries, (uchar**) &opt_retries, 0,
+    GET_INT, REQUIRED_ARG, 12, -1, 65535, 0, 0, 0 },
+  { "connect-delay", NDB_OPT_NOSHORT,
+    "Number of seconds between each connection attempt",
+    (uchar**) &opt_delay, (uchar**) &opt_delay, 0,
+    GET_INT, REQUIRED_ARG, 5, 0, 3600, 0, 0, 0 },
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -103,10 +118,6 @@ static void usage()
   ndb_usage(short_usage_sub, load_default_groups, my_long_options);
 }
 
-extern int g_ndb_init_need_monotonic;
-
-#include "../common/util/parse_mask.hpp"
-
 /**
  * C++ Standard 3.6.1/3:
  *  The function main shall not be used (3.2) within a program.
@@ -116,7 +127,6 @@ extern int g_ndb_init_need_monotonic;
 int
 real_main(int argc, char** argv)
 {
-  g_ndb_init_need_monotonic = 1;
   NDB_INIT(argv[0]);
 
   // Print to stdout/console
@@ -133,7 +143,7 @@ real_main(int argc, char** argv)
   g_eventLogger->m_logLevel.setLogLevel(LogLevel::llStartUp, 15);
 
   ndb_opt_set_usage_funcs(short_usage_sub, usage);
-  load_defaults("my",load_default_groups,&argc,&argv);
+  ndb_load_defaults(NULL,load_default_groups,&argc,&argv);
 
 #ifndef DBUG_OFF
   opt_debug= "d:t:O,/tmp/ndbd.trace";
@@ -184,12 +194,23 @@ real_main(int argc, char** argv)
       opt_allocated_nodeid ||
       opt_report_fd)
   {
+    /**
+      This is where we start running the real data node process after
+      reading options. This function will never return.
+    */
     ndbd_run(opt_foreground, opt_report_fd,
              opt_ndb_connectstring, opt_ndb_nodeid, opt_bind_address,
              opt_no_start, opt_initial, opt_initialstart,
-             opt_allocated_nodeid);
+             opt_allocated_nodeid, opt_retries, opt_delay);
   }
 
+  /**
+    The angel process takes care of automatic restarts, by default this is
+    the default to have an angel process. When an angel process is used the
+    program will enter into angel_run from where we fork off the real data
+    node process, the real process will always have opt_allocated_nodeid
+    set since we don't want the nodeid to change between restarts.
+  */
   angel_run(progname,
             original_args,
             opt_ndb_connectstring,
@@ -197,7 +218,9 @@ real_main(int argc, char** argv)
             opt_bind_address,
             opt_initial,
             opt_no_start,
-            opt_daemon);
+            opt_daemon,
+            opt_retries,
+            opt_delay);
 
   return 1; // Never reached
 }

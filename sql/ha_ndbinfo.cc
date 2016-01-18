@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2009 Sun Microsystems Inc.
-   All rights reserved. Use is subject to license terms.
+   Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,9 +16,8 @@
 */
 
 #include "ha_ndbcluster_glue.h"
-
-#ifdef WITH_NDBCLUSTER_STORAGE_ENGINE
 #include "ha_ndbinfo.h"
+#include "ndb_tdc.h"
 #include "../storage/ndb/src/ndbapi/NdbInfo.hpp"
 
 
@@ -114,7 +112,7 @@ offline_update(THD* thd, struct st_mysql_sys_var* var,
   opt_ndbinfo_offline = new_offline;
 
   // Close any open tables which may be in the old mode
-  (void)close_cached_tables(thd, NULL, false, true, false);
+  (void)ndb_tdc_close_cached_tables();
 
   DBUG_VOID_RETURN;
 }
@@ -190,6 +188,7 @@ enum ndbinfo_error_codes {
   ERR_INCOMPAT_TABLE_DEF = 40001
 };
 
+static
 struct error_message {
   int error;
   const char* message;
@@ -232,7 +231,7 @@ static int err2mysql(int error)
   default:
     break;
   }
-  push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
+  push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                       ER_GET_ERRNO, ER(ER_GET_ERRNO), error);
   DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
 }
@@ -246,7 +245,7 @@ bool ha_ndbinfo::get_error_message(int error, String *buf)
   if (!message)
     DBUG_RETURN(false);
 
-  buf->set(message, strlen(message), &my_charset_bin);
+  buf->set(message, (uint32)strlen(message), &my_charset_bin);
   DBUG_PRINT("exit", ("message: %s", buf->ptr()));
   DBUG_RETURN(false);
 }
@@ -312,8 +311,8 @@ warn_incompatible(const NdbInfo::Table* ndb_tab, bool fatal,
              opt_ndbinfo_table_prefix, ndb_tab->getName(), explanation);
   generate_sql(ndb_tab, msg);
 
-  const Sql_condition::enum_warning_level level =
-    (fatal ? Sql_condition::WARN_LEVEL_WARN : Sql_condition::WARN_LEVEL_NOTE);
+  const Sql_condition::enum_severity_level level =
+    (fatal ? Sql_condition::SL_WARNING : Sql_condition::SL_NOTE);
   push_warning(current_thd, level, ERR_INCOMPAT_TABLE_DEF, msg.c_str());
 
   DBUG_VOID_RETURN;
@@ -467,7 +466,7 @@ int ha_ndbinfo::rnd_init(bool scan)
 
   if (is_offline())
   {
-    push_warning(current_thd, Sql_condition::WARN_LEVEL_NOTE, 1,
+    push_warning(current_thd, Sql_condition::SL_NOTE, 1,
                  "'NDBINFO' has been started in offline mode "
                  "since the 'NDBCLUSTER' engine is disabled "
                  "or @@global.ndbinfo_offline is turned on "
@@ -476,6 +475,33 @@ int ha_ndbinfo::rnd_init(bool scan)
   }
 
   assert(is_open());
+
+  if (m_impl.m_scan_op)
+  {
+    /*
+      It should be impossible to come here with an already open
+      scan, assumption is that rnd_end() would be called to indicate
+      that the previous scan should be closed or perhaps like it says
+      in decsription of rnd_init() that it "may be called two times". Once
+      to open the cursor and once to position te cursor at first row.
+
+      Unfortunately the assumption and description of rnd_init() is not
+      correct. The rnd_init function is used on an open scan to reposition
+      it back to first row. For ha_ndbinfo this means closing
+      the scan and letting it be reopened.
+    */
+    assert(scan); // "only makes sense if scan=1" (from rnd_init() description)
+
+    DBUG_PRINT("info", ("Closing scan to position it back to first row"));
+
+    // Release the scan operation
+    g_ndbinfo->releaseScanOperation(m_impl.m_scan_op);
+    m_impl.m_scan_op = NULL;
+
+    // Release pointers to the columns
+    m_impl.m_columns.clear();
+  }
+
   assert(m_impl.m_scan_op == NULL); // No scan already ongoing
 
   if (m_impl.m_first_use)
@@ -531,7 +557,11 @@ int ha_ndbinfo::rnd_init(bool scan)
     DBUG_RETURN(err2mysql(err));
 
   if ((err = scan_op->readTuples()) != 0)
+  {
+    // Release the scan operation
+    g_ndbinfo->releaseScanOperation(scan_op);
     DBUG_RETURN(err2mysql(err));
+  }
 
   /* Read all columns specified in read_set */
   for (uint i = 0; i < table->s->fields; i++)
@@ -544,7 +574,13 @@ int ha_ndbinfo::rnd_init(bool scan)
   }
 
   if ((err = scan_op->execute()) != 0)
+  {
+    // Release pointers to the columns
+    m_impl.m_columns.clear();
+    // Release the scan operation
+    g_ndbinfo->releaseScanOperation(scan_op);
     DBUG_RETURN(err2mysql(err));
+  }
 
   m_impl.m_scan_op = scan_op;
   DBUG_RETURN(0);
@@ -578,7 +614,17 @@ int ha_ndbinfo::rnd_next(uchar *buf)
     DBUG_RETURN(HA_ERR_END_OF_FILE);
 
   assert(is_open());
-  assert(m_impl.m_scan_op);
+
+  if (!m_impl.m_scan_op)
+  {
+    /*
+     It should be impossible to come here without a scan operation.
+     But apparently it's not safe to assume that rnd_next() isn't
+     called even though rnd_init() returned an error. Thus double check
+     that the scan operation exists and bail out in case it doesn't.
+    */
+    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+  }
 
   if ((err = m_impl.m_scan_op->nextResult()) == 0)
     DBUG_RETURN(HA_ERR_END_OF_FILE);
@@ -737,7 +783,9 @@ ndbinfo_find_files(handlerton *hton, THD *thd,
 
 handlerton* ndbinfo_hton;
 
-int ndbinfo_init(void *plugin)
+static
+int
+ndbinfo_init(void *plugin)
 {
   DBUG_ENTER("ndbinfo_init");
 
@@ -782,7 +830,9 @@ int ndbinfo_init(void *plugin)
   DBUG_RETURN(0);
 }
 
-int ndbinfo_deinit(void *plugin)
+static
+int
+ndbinfo_deinit(void *plugin)
 {
   DBUG_ENTER("ndbinfo_deinit");
 
@@ -807,6 +857,26 @@ struct st_mysql_sys_var* ndbinfo_system_variables[]= {
   NULL
 };
 
-template class Vector<const NdbInfoRecAttr*>;
+struct st_mysql_storage_engine ndbinfo_storage_engine=
+{
+  MYSQL_HANDLERTON_INTERFACE_VERSION
+};
 
-#endif
+struct st_mysql_plugin ndbinfo_plugin =
+{
+  MYSQL_STORAGE_ENGINE_PLUGIN,
+  &ndbinfo_storage_engine,
+  "ndbinfo",
+  "Sun Microsystems Inc.",
+  "MySQL Cluster system information storage engine",
+  PLUGIN_LICENSE_GPL,
+  ndbinfo_init,               /* plugin init */
+  ndbinfo_deinit,             /* plugin deinit */
+  0x0001,                     /* plugin version */
+  NULL,                       /* status variables */
+  ndbinfo_system_variables,   /* system variables */
+  NULL,                       /* config options */
+  0
+};
+
+template class Vector<const NdbInfoRecAttr*>;

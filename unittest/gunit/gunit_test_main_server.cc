@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,10 +22,14 @@
 #include "test_utils.h"
 #include <stdlib.h>
 
+#ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
+#include "../storage/perfschema/pfs_server.h"
+#endif /* WITH_PERFSCHEMA_STORAGE_ENGINE */
+
 namespace {
 
 my_bool opt_use_tap= true;
-my_bool opt_help= false;
+my_bool opt_unit_help= false;
 
 struct my_option unittest_options[] =
 {
@@ -36,9 +40,9 @@ struct my_option unittest_options[] =
     0, NULL
   },
   { "help", 2, "Help.",
-    &opt_help, &opt_help, NULL,
+    &opt_unit_help, &opt_unit_help, NULL,
     GET_BOOL, NO_ARG,
-    opt_help, 0, 1, 0,
+    opt_unit_help, 0, 1, 0,
     0, NULL
   },
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
@@ -58,6 +62,11 @@ extern void install_tap_listener();
 int main(int argc, char **argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
+
+#ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
+  pre_initialize_performance_schema();
+#endif /*WITH_PERFSCHEMA_STORAGE_ENGINE */
+
   ::testing::InitGoogleMock(&argc, argv);
   MY_INIT(argv[0]);
 
@@ -65,7 +74,7 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   if (opt_use_tap)
     install_tap_listener();
-  if (opt_help)
+  if (opt_unit_help)
     printf("\n\nTest options: [--[disable-]tap-output]\n");
 
   my_testing::setup_server_for_unit_tests();

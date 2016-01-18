@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2007 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +20,9 @@
 
 #include "SignalData.hpp"
 
+#define JAM_FILE_ID 163
+
+
 /**
  * This is signal is sent from TC to API
  * It means that the transaction was committed
@@ -35,7 +37,10 @@ class TcCommitConf {
    *  Reciver(s)
    */
   friend class Ndb;
+  friend class NdbImpl;
   friend class NdbTransaction;
+
+  friend class TransporterFacade;
 
 public:
   STATIC_CONST( SignalLength = 5 );
@@ -75,5 +80,8 @@ private:
   Uint32 transId2;
   Uint32 errorCode;
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

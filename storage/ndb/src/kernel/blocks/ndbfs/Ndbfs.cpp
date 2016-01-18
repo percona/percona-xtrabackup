@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -36,6 +36,7 @@
 #include <signaldata/NdbfsContinueB.hpp>
 #include <signaldata/DumpStateOrd.hpp>
 #include <signaldata/AllocMem.hpp>
+#include <signaldata/BuildIndxImpl.hpp>
 
 #include <RefConvert.hpp>
 #include <portlib/NdbDir.hpp>
@@ -43,6 +44,9 @@
 #include <Configuration.hpp>
 
 #include <EventLogger.hpp>
+
+#define JAM_FILE_ID 393
+
 extern EventLogger * g_eventLogger;
 
 NdbMutex g_active_bound_threads_mutex;
@@ -275,6 +279,22 @@ Ndbfs::execREAD_CONFIG_REQ(Signal* signal)
   Uint32 noIdleFiles = 27;
 
   ndb_mgm_get_int_parameter(p, CFG_DB_INITIAL_OPEN_FILES, &noIdleFiles);
+
+  {
+    /**
+     * each logpart keeps up to 3 logfiles open at any given time...
+     *   (bound)
+     * make sure noIdleFiles is atleast 4 times #logparts
+     */
+    Uint32 logParts = NDB_DEFAULT_LOG_PARTS;
+    ndb_mgm_get_int_parameter(p, CFG_DB_NO_REDOLOG_PARTS, &logParts);
+    Uint32 logfiles = 4 * logParts;
+    if (noIdleFiles < logfiles)
+    {
+      noIdleFiles = logfiles;
+    }
+  }
+
   // Make sure at least "noIdleFiles" files can be created
   if (noIdleFiles > m_maxFiles && m_maxFiles != 0)
     m_maxFiles = noIdleFiles;
@@ -384,7 +404,6 @@ Ndbfs::execFSOPENREQ(Signal* signal)
   ndbrequire(file != NULL);
 
   Uint32 userPointer = fsOpenReq->userPointer;
-  
   
   SectionHandle handle(this, signal);
   SegmentedSectionPtr ptr; ptr.setNull();
@@ -569,7 +588,7 @@ Ndbfs::execFSCLOSEREQ(Signal * signal)
 void 
 Ndbfs::readWriteRequest(int action, Signal * signal)
 {
-  Uint32 theData[25 + 2 * 32];
+  Uint32 theData[25 + 2 * NDB_FS_RW_PAGES];
   memcpy(theData, signal->theData, 4 * signal->getLength());
   SectionHandle handle(this, signal);
   if (handle.m_cnt > 0)
@@ -962,8 +981,6 @@ Ndbfs::execALLOC_MEM_REQ(Signal* signal)
   ndbrequire(forward(file, request));
 }
 
-#include <signaldata/BuildIndxImpl.hpp>
-
 void
 Ndbfs::execBUILD_INDX_IMPL_REQ(Signal* signal)
 {
@@ -1037,7 +1054,10 @@ Ndbfs::createAsyncFile()
     // Print info about all open files
     for (unsigned i = 0; i < theFiles.size(); i++){
       AsyncFile* file = theFiles[i];
-      ndbout_c("%2d (0x%lx): %s", i, (long) file, file->isOpen()?"OPEN":"CLOSED");
+      ndbout_c("%2d (0x%lx): %s",
+               i,
+               (long) file,
+               file->isOpen() ?"OPEN" : "CLOSED");
     }
     ERROR_SET(fatal, NDBD_EXIT_AFS_MAXOPEN,""," Ndbfs::createAsyncFile");
   }
@@ -1076,6 +1096,8 @@ Ndbfs::createIoThread(bool bound)
 
     struct NdbThread* thrptr = thr->doStart();
     globalEmulatorData.theConfiguration->addThread(thrptr, NdbfsThread);
+    thr->set_real_time(
+      globalEmulatorData.theConfiguration->get_io_real_time());
 
     if (bound)
       m_bound_threads_cnt++;
@@ -1270,6 +1292,7 @@ Ndbfs::report(Request * request, Signal* signal)
 	m_maxOpenedFiles = theOpenFiles.size();
 
       fsConf->filePointer = request->theFilePointer;
+      fsConf->fileInfo = request->m_fileinfo;
       sendSignal(ref, GSN_FSOPENCONF, signal, 3, JBA);
       break;
     }
@@ -1627,9 +1650,10 @@ Ndbfs::execDUMP_STATE_ORD(Signal* signal)
       AsyncFile* file = theFiles[i];
       if (file == 0)
         continue;
-      ndbout_c("%u : %s %s", i,
+      ndbout_c("%u : %s %s fileInfo=%08x", i,
                file->theFileName.c_str() ? file->theFileName.c_str() : "",
-               file->isOpen() ? "OPEN" : "CLOSED");
+               file->isOpen() ? "OPEN" : "CLOSED",
+               file->get_fileinfo());
     }
   }
 }//Ndbfs::execDUMP_STATE_ORD()
@@ -1637,7 +1661,7 @@ Ndbfs::execDUMP_STATE_ORD(Signal* signal)
 const char*
 Ndbfs::get_filename(Uint32 fd) const
 {
-  jamEntry();
+  jamNoBlock();
   const AsyncFile* openFile = theOpenFiles.find(fd);
   if(openFile)
     return openFile->theFileName.get_base_name();

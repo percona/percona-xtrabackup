@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ protected:
 
 TEST_F(FatalSignalDeathTest, Abort)
 {
-#if defined(__WIN__)
+#if defined(_WIN32)
   EXPECT_DEATH_IF_SUPPORTED(abort(), ".* UTC - mysqld got exception.*");
 #else
   EXPECT_DEATH_IF_SUPPORTED(abort(), ".* UTC - mysqld got signal 6.*");
@@ -54,7 +54,7 @@ TEST_F(FatalSignalDeathTest, Abort)
 TEST_F(FatalSignalDeathTest, Segfault)
 {
   int *pint= NULL;
-#if defined(__WIN__)
+#if defined(_WIN32)
   /*
    After upgrading from gtest 1.5 to 1.6 this segfault is no longer
    caught by handle_fatal_signal(). We get an empty error message from the
@@ -86,7 +86,7 @@ int array_size(const T (&)[size])
 TEST(PrintUtilities, Utoa)
 {
   char buff[22];
-  ulonglong intarr[]= { 0, 1, 8, 12, 1234, 88888, ULONG_MAX, ULONGLONG_MAX };
+  ulonglong intarr[]= { 0, 1, 8, 12, 1234, 88888, ULONG_MAX, ULLONG_MAX };
   char sprintbuff[22];
   for (int ix= 0; ix < array_size(intarr); ++ix)
   {
@@ -110,7 +110,7 @@ TEST(PrintUtilities, Itoa)
 {
   char buff[22];
   char sprintbuff[22];
-  longlong intarr[]= { 0, 1, 8, 12, 1234, 88888, LONG_MAX, LONGLONG_MAX };
+  longlong intarr[]= { 0, 1, 8, 12, 1234, 88888, LONG_MAX, LLONG_MAX };
 
   for (int ix= 0; ix < array_size(intarr); ++ix)
   {
@@ -171,8 +171,8 @@ TEST(PrintUtilities, Printf)
   my_safe_snprintf(buff, sizeof(buff), "hello %u hello", (unsigned) 42);
   EXPECT_STREQ("hello 42 hello", buff);
 
-  my_safe_snprintf(buff, sizeof(buff), "hello %llu hello", ULONGLONG_MAX);
-  sprintf(sprintfbuff, "hello %llu hello", ULONGLONG_MAX);
+  my_safe_snprintf(buff, sizeof(buff), "hello %llu hello", ULLONG_MAX);
+  sprintf(sprintfbuff, "hello %llu hello", ULLONG_MAX);
   EXPECT_STREQ(sprintfbuff, buff);
 
   my_safe_snprintf(buff, sizeof(buff), "hello %x hello", 42);
@@ -191,7 +191,7 @@ TEST(PrintUtilities, Printf)
   void *p= this;
   my_safe_snprintf(buff, sizeof(buff), "hello 0x%p hello", p);
   my_snprintf(sprintfbuff, sizeof(sprintfbuff), "hello %p hello", p);
-  EXPECT_STREQ(sprintfbuff, buff);
+  EXPECT_STREQ(sprintfbuff, buff) << "my_safe_snprintf:" << buff;
 }
 
 
@@ -199,7 +199,8 @@ TEST(PrintUtilities, Printf)
 TEST(HashFiloTest, TestHashFiloZeroSize)
 {
   hash_filo *t_cache;
-  t_cache= new hash_filo(5, 0, 0,
+  t_cache= new hash_filo(PSI_NOT_INSTRUMENTED,
+                         5, 0, 0,
                          (my_hash_get_key) NULL,
                          (my_hash_free_key) NULL,
                          NULL);

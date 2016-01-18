@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,12 +13,13 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/* USE_MY_STREAM isn't set because we can't thrust my_fclose! */
-
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include "mysys_err.h"
 #include <errno.h>
 #include <stdio.h>
+#include "my_thread_local.h"
+
 
 #ifdef HAVE_FSEEKO
 #undef ftell
@@ -57,7 +58,7 @@ size_t my_fread(FILE *stream, uchar *Buffer, size_t Count, myf MyFlags)
       if (ferror(stream))
       {
         char errbuf[MYSYS_STRERROR_SIZE];
-        my_error(EE_READ, MYF(ME_BELL+ME_WAITTANG),
+        my_error(EE_READ, MYF(0),
                  my_filename(my_fileno(stream)),
                  errno, my_strerror(errbuf, sizeof(errbuf), errno));
       }
@@ -65,12 +66,12 @@ size_t my_fread(FILE *stream, uchar *Buffer, size_t Count, myf MyFlags)
       if (MyFlags & (MY_NABP | MY_FNABP))
       {
         char errbuf[MYSYS_STRERROR_SIZE];
-        my_error(EE_EOFERR, MYF(ME_BELL+ME_WAITTANG),
+        my_error(EE_EOFERR, MYF(0),
                  my_filename(my_fileno(stream)), errno,
                  my_strerror(errbuf, sizeof(errbuf), errno));
       }
     }
-    my_errno=errno ? errno : -1;
+    set_my_errno(errno ? errno : -1);
     if (ferror(stream) || MyFlags & (MY_NABP | MY_FNABP))
       DBUG_RETURN((size_t) -1);			/* Return with error */
   }
@@ -98,17 +99,12 @@ size_t my_fwrite(FILE *stream, const uchar *Buffer, size_t Count, myf MyFlags)
 {
   size_t writtenbytes =0;
   my_off_t seekptr;
-#if !defined(NO_BACKGROUND) && defined(USE_MY_STREAM)
-  uint errors;
-#endif
+
   DBUG_ENTER("my_fwrite");
   DBUG_PRINT("my",("stream: 0x%lx  Buffer: 0x%lx  Count: %u  MyFlags: %d",
 		   (long) stream, (long) Buffer, (uint) Count, MyFlags));
   DBUG_EXECUTE_IF("simulate_fwrite_error",  DBUG_RETURN(-1););
 
-#if !defined(NO_BACKGROUND) && defined(USE_MY_STREAM)
-  errors=0;
-#endif
   seekptr= ftell(stream);
   for (;;)
   {
@@ -117,7 +113,7 @@ size_t my_fwrite(FILE *stream, const uchar *Buffer, size_t Count, myf MyFlags)
                                    Count, stream)) != Count)
     {
       DBUG_PRINT("error",("Write only %d bytes", (int) writtenbytes));
-      my_errno=errno;
+      set_my_errno(errno);
       if (written != (size_t) -1)
       {
 	seekptr+=written;
@@ -125,32 +121,17 @@ size_t my_fwrite(FILE *stream, const uchar *Buffer, size_t Count, myf MyFlags)
 	writtenbytes+=written;
 	Count-=written;
       }
-#ifdef EINTR
       if (errno == EINTR)
       {
 	(void) my_fseek(stream,seekptr,MY_SEEK_SET,MYF(0));
 	continue;
       }
-#endif
-#if !defined(NO_BACKGROUND) && defined(USE_MY_STREAM)
-      if (my_thread_var->abort)
-	MyFlags&= ~ MY_WAIT_IF_FULL;		/* End if aborted by user */
-
-      if ((errno == ENOSPC || errno == EDQUOT) &&
-          (MyFlags & MY_WAIT_IF_FULL))
-      {
-        wait_for_free_space("[stream]", errors);
-        errors++;
-        (void) my_fseek(stream,seekptr,MY_SEEK_SET,MYF(0));
-        continue;
-      }
-#endif
       if (ferror(stream) || (MyFlags & (MY_NABP | MY_FNABP)))
       {
         if (MyFlags & (MY_WME | MY_FAE | MY_FNABP))
         {
           char errbuf[MYSYS_STRERROR_SIZE];
-          my_error(EE_WRITE, MYF(ME_BELL+ME_WAITTANG),
+          my_error(EE_WRITE, MYF(0),
                    my_filename(my_fileno(stream)),
                    errno, my_strerror(errbuf, sizeof(errbuf), errno));
         }

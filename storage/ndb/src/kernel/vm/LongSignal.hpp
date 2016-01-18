@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,10 @@
 
 #include "pc.hpp"
 #include <ArrayPool.hpp>
+#include "DataBuffer.hpp"
+
+#define JAM_FILE_ID 288
+
 
 /**
  * Section handling
@@ -50,12 +54,53 @@ struct SectionSegment {
 /**
  * Pool for SectionSegments
  */
-class SectionSegmentPool : public ArrayPool<SectionSegment> {};
+class SectionSegmentPool : public ArrayPool<SectionSegment> 
+{
+private:
+  // Print an informative error message.
+  static void handleOutOfSegments(ArrayPool<SectionSegment>& pool);
+public:
+  SectionSegmentPool() : 
+    ArrayPool<SectionSegment>(&handleOutOfSegments){}
+};
 
 /**
  * And the instance
  */
 extern SectionSegmentPool g_sectionSegmentPool;
+
+/**
+ * Interface for utils for working with a
+ * Section Segment pool - hides details of
+ * cache / mt etc.
+ */
+class SegmentUtils
+{
+public:
+  virtual ~SegmentUtils() {};
+
+  /* 'Provider interface' */
+  /* Low level ops needed to build tools */
+  virtual SectionSegment* getSegmentPtr(Uint32 iVal) = 0;
+  void getSegmentPtr(Ptr<SectionSegment>& ptr, Uint32 iVal);
+  virtual bool seizeSegment(Ptr<SectionSegment>& p) = 0;
+  virtual void releaseSegment(Uint32 iVal) = 0;
+
+  /* Release a linked list of segments with valid size) */
+  virtual void releaseSegmentList(Uint32 iVal) = 0;
+};
+
+inline void SegmentUtils::getSegmentPtr(Ptr<SectionSegment>& ptr, Uint32 iVal)
+{
+  ptr.i = iVal;
+  ptr.p = getSegmentPtr(iVal);
+}
+
+/* Higher level utils */
+/* Currently defined in SegmentList.cpp, should move to somewhere else */
+bool sectionAppend(SegmentUtils& su, Uint32& firstSegmentIVal, const Uint32* src, Uint32 len);
+bool sectionConsume(SegmentUtils& su, Uint32& firstSegmentIVal, Uint32* dst, Uint32 len);
+bool sectionVerify(SegmentUtils& su, Uint32 firstIVal);
 
 /**
  * Function prototypes
@@ -76,8 +121,6 @@ Uint32* getLastWordPtr(Uint32 id);
 bool verifySection(Uint32 firstIVal, 
                    SectionSegmentPool& thePool= g_sectionSegmentPool);
 
-#include "DataBuffer.hpp"
-
 template<Uint32 sz>
 void
 append(DataBuffer<sz>& dst, SegmentedSectionPtr ptr, SectionSegmentPool& pool){
@@ -89,5 +132,7 @@ append(DataBuffer<sz>& dst, SegmentedSectionPtr ptr, SectionSegmentPool& pool){
   }
   dst.append(ptr.p->theData, len);
 }
+
+#undef JAM_FILE_ID
 
 #endif

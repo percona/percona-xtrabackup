@@ -15,7 +15,7 @@ trap terminate SIGHUP SIGINT SIGQUIT SIGTERM
 result=0
 
 # Default test timeout in seconds
-TEST_TIMEOUT=900
+TEST_TIMEOUT=1800
 
 # Magic exit code to indicate a skipped test
 export SKIPPED_EXIT_CODE=200
@@ -408,6 +408,8 @@ function get_version_info()
         5.5 )
             ;;
         5.6 | 10.0 | 10.1)
+            ;;
+        5.7 )
             ;;
         *)
             vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"

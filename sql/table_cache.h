@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -119,7 +119,7 @@ public:
   void assert_owner() { mysql_mutex_assert_owner(&m_lock); }
 
   inline TABLE* get_table(THD *thd, my_hash_value_type hash_value,
-                          const char *key, uint key_length,
+                          const char *key, size_t key_length,
                           TABLE_SHARE **share);
 
   inline void release_table(THD *thd, TABLE *table);
@@ -149,19 +149,22 @@ public:
   /** Maximum supported number of table cache instances. */
   static const int MAX_TABLE_CACHES= 64;
 
+  /** Default number of table cache instances */
+  static const int DEFAULT_MAX_TABLE_CACHES= 16;
+
   bool init();
   void destroy();
 
   /** Get instance of table cache to be used by particular connection. */
   Table_cache* get_cache(THD *thd)
   {
-    return &m_table_cache[thd->thread_id % table_cache_instances];
+    return &m_table_cache[thd->thread_id() % table_cache_instances];
   }
 
   /** Get index for the table cache in container. */
   uint cache_index(Table_cache *cache) const
   {
-    return (cache - &m_table_cache[0]);
+    return static_cast<uint>(cache - &m_table_cache[0]);
   }
 
   uint cached_tables();
@@ -459,7 +462,7 @@ void Table_cache::remove_table(TABLE *table)
 */
 
 TABLE* Table_cache::get_table(THD *thd, my_hash_value_type hash_value,
-                              const char *key, uint key_length,
+                              const char *key, size_t key_length,
                               TABLE_SHARE **share)
 {
   Table_cache_element *el;

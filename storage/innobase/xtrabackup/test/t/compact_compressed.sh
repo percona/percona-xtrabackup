@@ -4,6 +4,8 @@
 
 . inc/common.sh
 
+skip_test "Enable when bug #1192834 is fixed"
+
 if [ -z "$INNODB_VERSION" ]; then
     skip_test "Requires InnoDB plugin or XtraDB"
 fi

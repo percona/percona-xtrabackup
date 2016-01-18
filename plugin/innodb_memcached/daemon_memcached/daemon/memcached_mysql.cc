@@ -19,7 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 /**************************************************//**
 @file memcached_mysql.cc
-InnoDB Memcached Plugin 
+InnoDB Memcached Plugin
 
 Created 04/12/2011 Jimmy Yang
 *******************************************************/
@@ -41,7 +41,7 @@ struct mysql_memcached_context
 
 /** Variables for configure options */
 static char*	mci_engine_library = NULL;
-static char*	mci_eng_lib_path = NULL; 
+static char*	mci_eng_lib_path = NULL;
 static char*	mci_memcached_option = NULL;
 static unsigned int mci_r_batch_size = 1048576;
 static unsigned int mci_w_batch_size = 32;
@@ -104,6 +104,7 @@ static int daemon_memcached_plugin_deinit(void *p)
                 return(0);
         }
 
+	loop_count = 0;
 	if (!shutdown_complete()) {
 		shutdown_server();
 	}
@@ -139,7 +140,8 @@ static int daemon_memcached_plugin_init(void *p)
 	pthread_attr_t			attr;
 	struct st_plugin_int*		plugin = (struct st_plugin_int *)p;
 
-	con = (mysql_memcached_context*) my_malloc(sizeof(*con), MYF(0));
+	con = (mysql_memcached_context*) my_malloc(PSI_INSTRUMENT_ME,
+                                                   sizeof(*con), MYF(0));
 
 	if (mci_engine_library) {
 		char*	lib_path = (mci_eng_lib_path)
@@ -149,6 +151,7 @@ static int daemon_memcached_plugin_init(void *p)
 				  + strlen(FN_DIRSEP) + 1;
 
 		con->memcached_conf.m_engine_library = (char*) my_malloc(
+                        PSI_INSTRUMENT_ME,
 			lib_len, MYF(0));
 
 		strxmov(con->memcached_conf.m_engine_library, lib_path,

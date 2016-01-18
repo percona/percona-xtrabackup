@@ -1,6 +1,4 @@
-/*
-   Copyright (C) 2009 Sun Microsystems Inc.
-   All rights reserved. Use is subject to license terms.
+/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,16 +11,12 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
-*/
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef HA_NDBINFO_H
 #define HA_NDBINFO_H
 
-#include <mysql/plugin.h>
-
-int ndbinfo_init(void *plugin);
-int ndbinfo_deinit(void *plugin);
+#include <handler.h>
 
 class ha_ndbinfo: public handler
 {
@@ -75,6 +69,14 @@ public:
   uint8 table_cache_type() {
     // Don't put ndbinfo results in query cache
     return HA_CACHE_TBL_NOCACHE;
+  }
+
+  virtual ha_rows estimate_rows_upper_bound() {
+    // Estimate "many" rows to be returned so that filesort
+    // allocates buffers properly.
+    // Default impl. for this function is otherwise 10 rows
+    // in case handler hasn't filled in stats.records
+    return HA_POS_ERROR;
   }
 
 private:

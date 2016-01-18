@@ -1,5 +1,4 @@
-/* Copyright (c) 2000, 2002, 2003, 2007 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,6 +14,7 @@
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include <stdarg.h>
 
 /*
@@ -32,7 +32,7 @@
 	NULL
 */
 
-void* my_multi_malloc(myf myFlags, ...)
+void* my_multi_malloc(PSI_memory_key key, myf myFlags, ...)
 {
   va_list args;
   char **ptr,*start,*res;
@@ -48,7 +48,7 @@ void* my_multi_malloc(myf myFlags, ...)
   }
   va_end(args);
 
-  if (!(start=(char *) my_malloc(tot_length,myFlags)))
+  if (!(start=(char *) my_malloc(key, tot_length,myFlags)))
     DBUG_RETURN(0); /* purecov: inspected */
 
   va_start(args,myFlags);

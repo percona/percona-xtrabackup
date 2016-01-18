@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -32,6 +32,9 @@ void printErrorAndFlags(Uint32 used_flags);
 #define DEBUG(x)
 #define PRINT_ERRORANDFLAGS(f)
 #endif
+
+
+#define JAM_FILE_ID 381
 
 const int ERR_ReadUnderflow = 1000;
 
@@ -82,7 +85,7 @@ public:
 	char *buf;
 	size_t size;
 	off_t offset;
-      } pages[32];
+      } pages[NDB_FS_RW_PAGES];
     } readWrite;
     struct {
       const char * buf;
@@ -118,6 +121,9 @@ public:
   bool m_do_bind;
 
   MemoryChannel<Request>::ListMember m_mem_channel;
+
+  // file info for debug
+  Uint32 m_fileinfo;
 };
 
 NdbOut& operator <<(NdbOut&, const Request&);
@@ -141,6 +147,10 @@ public:
   virtual ~AsyncIoThread() {};
 
   struct NdbThread* doStart();
+  void set_real_time(bool real_time)
+  {
+    m_real_time = real_time;
+  }
   void shutdown();
 
   // its a thread so its always running
@@ -162,6 +172,7 @@ private:
   MemoryChannel<Request> *theMemoryChannelPtr;
   MemoryChannel<Request> theMemoryChannel; // If file-bound
 
+  bool   m_real_time;
   bool   theStartFlag;
   struct NdbThread* theThreadPtr;
   NdbMutex* theStartMutexPtr;
@@ -180,5 +191,8 @@ private:
   void attach(AsyncFile*);
   void detach(AsyncFile*);
 };
+
+
+#undef JAM_FILE_ID
 
 #endif
