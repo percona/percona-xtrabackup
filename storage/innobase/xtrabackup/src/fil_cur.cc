@@ -349,13 +349,11 @@ read_retry:
 
 		if (Compression::is_compressed_page(page)) {
 
-
 			if (os_file_decompress_page(false, page,
 			    cursor->scratch, cursor->page_size) != DB_SUCCESS) {
 				goto corruption;
 			}
 
-			memcpy(page, cursor->scratch, cursor->page_size);
 		}
 
 		if (buf_page_is_corrupted(TRUE, page, page_size, false)) {
