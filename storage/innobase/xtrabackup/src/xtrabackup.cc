@@ -6743,24 +6743,62 @@ int main(int argc, char **argv)
 	system_charset_info= &my_charset_utf8_general_ci;
 	key_map_full.set_all();
 
-	/* scan options for group to load defaults from */
+	/* scan options for group and config file to load defaults from */
 	{
 		int	i;
 		char*	optend;
+
+		char*	target_dir = NULL;
+		bool	prepare = false;
+
+		char	conf_file[FN_REFLEN];
+
 		for (i=1; i < argc; i++) {
+
 			optend = strcend(argv[i], '=');
+
 			if (strncmp(argv[i], "--defaults-group",
 				    optend - argv[i]) == 0) {
 				defaults_group = optend + 1;
 				append_defaults_group(defaults_group);
 			}
+
 			if (strncmp(argv[i], "--login-path",
 				    optend - argv[i]) == 0) {
 				append_defaults_group(optend + 1);
 			}
+
+			if (!strncmp(argv[i], "--prepare",
+				     optend - argv[i])) {
+				prepare = true;
+			}
+
+			if (!strncmp(argv[i], "--apply-log",
+				     optend - argv[i])) {
+				prepare = true;
+			}
+
+			if (!strncmp(argv[i], "--target-dir",
+				     optend - argv[i]) && *optend) {
+				target_dir = optend + 1;
+			}
+
+			if (!*optend && argv[i][0] != '-') {
+				target_dir = argv[i];
+			}
+		}
+
+		snprintf(conf_file, sizeof(conf_file), "my");
+
+		if (prepare && target_dir) {
+			snprintf(conf_file, sizeof(conf_file),
+				 "%s/backup-my.cnf", target_dir);
+		}
+		if (load_defaults(conf_file, xb_load_default_groups,
+				  &argc, &argv)) {
+			exit(EXIT_FAILURE);
 		}
 	}
-	load_defaults("my", xb_load_default_groups, &argc, &argv);
         argv_defaults = argv;
 
 	print_param_str <<

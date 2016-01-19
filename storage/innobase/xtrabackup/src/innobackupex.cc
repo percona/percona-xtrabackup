@@ -929,8 +929,6 @@ make_backup_dir()
 bool
 ibx_handle_options(int *argc, char ***argv)
 {
-	char backup_config_path[FN_REFLEN];
-	const char *groups[] = {"mysqld", NULL};
 	int i;
 
 	if (handle_options(argc, argv, ibx_long_options, ibx_get_one_option)) {
@@ -971,14 +969,6 @@ ibx_handle_options(int *argc, char ***argv)
 	if (ibx_position_arg == NULL) {
 		ibx_msg("Missing argument\n");
 		return(false);
-	}
-
-	if (ibx_mode == IBX_MODE_APPLY_LOG
-	    || ibx_mode == IBX_MODE_COPY_BACK
-	    || ibx_mode == IBX_MODE_MOVE_BACK) {
-		ut_snprintf(backup_config_path, sizeof(backup_config_path),
-			"%s/backup_my.cnf", ibx_position_arg);
-		load_defaults(backup_config_path, groups, argc, argv);
 	}
 
 	/* set argv[0] to be the program name */
