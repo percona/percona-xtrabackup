@@ -8,6 +8,15 @@ require_server_version_higher_than 5.7.9
 
 start_server --innodb_file_per_table
 
+function mysql_n_dirty_pages()
+{
+	result=$( $MYSQL $MYSQL_ARGS -se \
+		"SHOW STATUS LIKE 'innodb_buffer_pool_pages_dirty'" | \
+		awk '{ print $2 }' )
+	echo "Dirty pages left $result"
+	return $result
+}
+
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
 CREATE TABLE t1 (c1 BLOB) COMPRESSION="zlib";
@@ -21,6 +30,10 @@ INSERT INTO t1 SELECT * FROM t1;
 
 EOF
 
+while ! mysql_n_dirty_pages ; do
+	sleep 1
+done
+
 xtrabackup --backup --target-dir=$topdir/backup
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -31,6 +44,10 @@ INSERT INTO t1 SELECT * FROM t1;
 INSERT INTO t1 SELECT * FROM t1;
 
 EOF
+
+while ! mysql_n_dirty_pages ; do
+	sleep 1
+done
 
 xtrabackup --backup --target-dir=$topdir/backup1 --incremental-basedir=$topdir/backup
 
