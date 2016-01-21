@@ -3175,8 +3175,12 @@ xb_load_single_table_tablespace(
 			ut_error;
 		}
 
-		if (srv_backup_mode && !srv_close_files) {
-			fil_space_open(space->name);
+		/* by opening the tablespace we forcing node and space objects
+		in the cache to be populated with fields from space header */
+		fil_space_open(space->name);
+
+		if (!srv_backup_mode || srv_close_files) {
+			fil_space_close(space->name);
 		}
 	} else {
 		if (xtrabackup_backup) {
