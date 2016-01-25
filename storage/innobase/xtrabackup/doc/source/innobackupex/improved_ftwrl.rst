@@ -4,7 +4,11 @@
 Improved ``FLUSH TABLES WITH READ LOCK`` handling
 ==================================================
 
-When taking backups, ``FLUSH TABLES WITH READ LOCK`` is being used before the non-InnoDB files are being backed up to ensure backup is being consistent. ``FLUSH TABLES WITH READ LOCK`` can be run even though there may be a running query that has been executing for hours. In this case everything will be locked up in ``Waiting for table flush`` or ``Waiting for master to send event`` states. Killing the ``FLUSH TABLES WITH READ LOCK`` does not correct this issue either. In this case the only way to get the server operating normally again is to kill off the long running queries that blocked it to begin with. This means that if there are long running queries ``FLUSH TABLES WITH READ LOCK`` can get stuck, leaving server in read-only mode until waiting for these queries to complete.  
+When taking backups, ``FLUSH TABLES WITH READ LOCK`` is being used before the non-InnoDB files are being backed up to ensure backup is being consistent. ``FLUSH TABLES WITH READ LOCK`` can be run even though there may be a running query that has been executing for hours. In this case everything will be locked up in ``Waiting for table flush`` or ``Waiting for master to send event`` states. Killing the ``FLUSH TABLES WITH READ LOCK`` does not correct this issue either. In this case the only way to get the server operating normally again is to kill off the long running queries that blocked it to begin with. This means that if there are long running queries ``FLUSH TABLES WITH READ LOCK`` can get stuck, leaving server in read-only mode until waiting for these queries to complete. 
+
+.. note:: 
+
+  All described in this section has no effect when backup locks are used. |Percona XtraBackup| will use `Backup locks <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_ where available as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK``. This feature is available in |Percona Server| 5.6+. |Percona XtraBackup| uses this automatically to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.  
 
 In order to prevent this from happening two things have been implemented:
 
@@ -49,7 +53,3 @@ Running the |innobackupex| with the following options: ::
 
 will cause |innobackupex| to spend no longer than 3 minutes waiting for all queries older than 40 seconds to complete. After ``FLUSH TABLES WITH READ LOCK`` is issued, |innobackupex| will wait 20 seconds for lock to be acquired. If lock is still not acquired after 20 seconds, it will kill all queries which are running longer that the ``FLUSH TABLES WITH READ LOCK``.
 
-Version Information
--------------------
-
-This feature has been implemented in |Percona XtraBackup| 2.1.4.
