@@ -15,7 +15,7 @@ Making a Backup
 
 If no mode is specified, |innobackupex| will assume the backup mode.
 
-By default, it starts :program:`xtrabackup` with the :option:`--suspend-at-end` option, and lets it copy the InnoDB data files. When :program:`xtrabackup` finishes that, :program:`innobackupex` sees it create the :file:`xtrabackup_suspended_2` file and executes ``FLUSH TABLES WITH READ LOCK``. Then it begins copying the rest of the files.
+By default, it starts :program:`xtrabackup` with the :option:`--suspend-at-end` option, and lets it copy the InnoDB data files. When :program:`xtrabackup` finishes that, :program:`innobackupex` sees it create the :file:`xtrabackup_suspended_2` file and executes ``FLUSH TABLES WITH READ LOCK``. :program:`xtrabackup` will use `Backup locks <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_ where available as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK``. This feature is available in |Percona Server| 5.6+. |Percona XtraBackup| uses this automatically to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables. Then it begins copying the rest of the files.
 
 |innobackupex| will then check |MySQL| variables to determine which features are supported by server. Special interest are backup locks, changed page bitmaps, GTID mode, etc. If everything goes well, the binary is started as a child process.
 
@@ -23,7 +23,7 @@ By default, it starts :program:`xtrabackup` with the :option:`--suspend-at-end` 
 
 .. note:: 
 
-  Locking is done only for MyISAM and other non-InnoDB tables, and only **after** |Percona XtraBackup| is finished backing up all InnoDB/XtraDB data and logs.
+  Locking is done only for MyISAM and other non-InnoDB tables, and only **after** |Percona XtraBackup| is finished backing up all InnoDB/XtraDB data and logs. |Percona XtraBackup| will use `Backup locks <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_ where available as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK``. This feature is available in |Percona Server| 5.6+. |Percona XtraBackup| uses this automatically to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
 
 Once this is done, the backup of the files will begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.TRG`, :term:`.TRN`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV`, ``.par``,  and :term:`.opt` files.
 

@@ -28,6 +28,8 @@ Using the :option:`--tables-file` Option
 
 The ``--tables-file`` option specifies a file that can contain multiple table names, one table name per line in the file. Only the tables named in the file will be backed up. Names are matched exactly, case-sensitive, with no pattern or regular expression matching. The table names must be fully qualified, in ``databasename.tablename`` format. 
 
+.. code-block:: bash
+
   $ echo "mydatabase.mytable" > /tmp/tables.txt
   $ xtrabackup --backup --tables-file=/tmp/tables.txt 
 
