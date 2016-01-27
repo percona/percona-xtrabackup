@@ -5567,8 +5567,15 @@ xb_delta_open_matching_space(
 			bool		exists;
 			os_file_type_t	type;
 
-			snprintf(tmpname, FN_REFLEN, "%s/xtrabackup_tmp_#%lu",
-				 dbname, fil_space->id);
+			if (dbname != NULL) {
+				snprintf(tmpname, FN_REFLEN,
+					 "%s/xtrabackup_tmp_#%lu",
+					 dbname, fil_space->id);
+			} else {
+				snprintf(tmpname, FN_REFLEN,
+					 "./xtrabackup_tmp_#%lu",
+					 fil_space->id);
+			}
 
 			oldpath = mem_strdup(
 				UT_LIST_GET_FIRST(fil_space->chain)->name);
@@ -5921,7 +5928,6 @@ rm_if_not_found(
 			snprintf(name, FN_REFLEN, "%s/%s/%s", data_home_dir,
 				 db_name, file_name);
 		} else {
-			ut_error;
 			snprintf(name, FN_REFLEN, "%s/%s", data_home_dir,
 				 file_name);
 		}
