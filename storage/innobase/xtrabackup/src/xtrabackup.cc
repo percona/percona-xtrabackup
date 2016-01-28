@@ -1733,6 +1733,7 @@ innodb_init_param(void)
 	/* TDOD: add option */
 	srv_buf_pool_chunk_unit = 134217728;
 	srv_buf_pool_size = (ulint) xtrabackup_use_memory;
+	srv_buf_pool_instances = 1;
 
 	srv_n_file_io_threads = (ulint) innobase_file_io_threads;
 	srv_n_read_io_threads = (ulint) innobase_read_io_threads;
@@ -3489,6 +3490,8 @@ xb_data_files_close(void)
 
 	fil_close_all_files();
 
+	fil_close();
+
 	/* Free the double write data structures. */
 	if (buf_dblwr) {
 		buf_dblwr_free();
@@ -4441,6 +4444,20 @@ skip_last_cp:
 	xb_filters_free();
 
 	xb_data_files_close();
+
+	log_shutdown();
+
+	trx_pool_close();
+
+	lock_sys_close();
+
+	os_thread_free();
+
+	row_mysql_close();
+
+	os_aio_free();
+
+	sync_check_close();
 
 	/* Make sure that the latest checkpoint made it to xtrabackup_logfile */
 	if (latest_cp > log_copy_scanned_lsn) {
@@ -6684,7 +6701,6 @@ skip_check:
 	sync_check_enable();
 #endif
 	os_thread_init();
-	// os_io_init_simple();
 	trx_pool_init();
 	ut_crc32_init();
 
@@ -6749,6 +6765,11 @@ skip_check:
 	if (fil_system) {
 		fil_close();
 	}
+
+	trx_pool_close();
+
+	os_thread_free();
+
 	sync_check_close();
 
 	innodb_free_param();
@@ -6961,6 +6982,8 @@ next_node:
 		}
 
 		ut_free(buf);
+
+		datafiles_iter_free(it);
 	}
 
 	/* print the binary log position  */
@@ -7018,7 +7041,6 @@ next_node:
 	os_thread_init();
 	trx_pool_init();
 	que_init();
-	// os_io_init_simple();
 
 	if(xtrabackup_close_temp_log(TRUE))
 		exit(EXIT_FAILURE);
@@ -7055,10 +7077,15 @@ next_node:
 		exit(EXIT_FAILURE);
 	}
 
-	sync_check_close();
+	trx_pool_close();
+
 	if (fil_system) {
 		fil_close();
 	}
+
+	os_thread_free();
+
+	sync_check_close();
 
 	/* start InnoDB once again to create log files */
 

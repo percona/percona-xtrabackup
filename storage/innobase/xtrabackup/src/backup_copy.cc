@@ -1877,6 +1877,8 @@ decrypt_decompress()
 
 	ds_data = NULL;
 
+	os_thread_free();
+
 	sync_check_close();
 
 	return(ret);

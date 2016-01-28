@@ -573,9 +573,6 @@ public:
 	{
 		m_mutex.destroy();
 
-		/* we should not delete pointers because they were not
-		allocated on heap */
-#if 0
 		for (Counters::iterator it = m_counters.begin();
 		     it != m_counters.end();
 		     ++it) {
@@ -584,7 +581,6 @@ public:
 
 			UT_DELETE(count);
 		}
-#endif
 	}
 
 	/** Reset all counters to zero. It is not protected by any
