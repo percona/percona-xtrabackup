@@ -1550,6 +1550,7 @@ write_backup_config_file()
 		"innodb_log_block_size=%lu\n"
 		"innodb_undo_directory=%s\n"
 		"innodb_undo_tablespaces=%lu\n"
+		"%s%s\n"
 		"%s%s\n",
 		innodb_checksum_algorithm_names[srv_checksum_algorithm],
 		innodb_checksum_algorithm_names[srv_log_checksum_algorithm],
@@ -1562,7 +1563,11 @@ write_backup_config_file()
 		srv_undo_dir,
 		srv_undo_tablespaces,
 		innobase_doublewrite_file ? "innodb_doublewrite_file=" : "",
-		innobase_doublewrite_file ? innobase_doublewrite_file : "");
+		innobase_doublewrite_file ? innobase_doublewrite_file : "",
+		innobase_buffer_pool_filename ?
+			"innodb_buffer_pool_filename=" : "",
+		innobase_buffer_pool_filename ?
+			innobase_buffer_pool_filename : "");
 }
 
 
