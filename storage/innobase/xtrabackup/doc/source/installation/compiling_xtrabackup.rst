@@ -10,7 +10,7 @@ The source code is available from the |Percona XtraBackup| *Github* `project <ht
 
   $ git clone https://github.com/percona/percona-xtrabackup.git
   $ cd percona-xtrabackup
-  $ git checkout 2.3
+  $ git checkout 2.4
 
 You should then have a directory named after the release you branched, such as ``percona-xtrabackup``.
 
