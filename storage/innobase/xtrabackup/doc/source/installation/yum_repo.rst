@@ -29,11 +29,11 @@ Supported Platforms:
 What's in each RPM package?
 ===========================
 
-The ``percona-xtrabackup`` package contains the latest |Percona XtraBackup| GA binaries and associated files.
+The ``percona-xtrabackup-24`` package contains the latest |Percona XtraBackup| GA binaries and associated files.
 
-The ``percona-xtrabackup-debuginfo`` package contains the debug symbols for binaries in ``percona-xtrabackup``.
+The ``percona-xtrabackup-24-debuginfo`` package contains the debug symbols for binaries in ``percona-xtrabackup``.
 
-The ``percona-xtrabackup-test`` package contains the test suite for |Percona XtraBackup|.
+The ``percona-xtrabackup-test-24`` package contains the test suite for |Percona XtraBackup|.
 
 The ``percona-xtrabackup-2x`` package contains the older version of the |Percona XtraBackup|.
 
@@ -97,7 +97,7 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 
    .. code-block:: bash
 
-     yum install percona-xtrabackup
+     yum install percona-xtrabackup-24
 
 .. _yum_testing:
 
@@ -115,13 +115,13 @@ Download the packages of the desired series for your architecture from the `down
 
 .. code-block:: bash
 
-  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.2/binary/redhat/7/x86_64/percona-xtrabackup-2.3.2-1.el7.x86_64.rpm
+  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.0/binary/redhat/7/x86_64/percona-xtrabackup-24-2.4.0-rc1.1.el7.x86_64.rpm
 
 Now you can install |Percona XtraBackup| by running:
 
 .. code-block:: bash
 
- $ yum localinstall percona-xtrabackup-2.3.2-1.el7.x86_64.rpm
+ $ yum localinstall percona-xtrabackup-24-2.4.0-rc1.1.el7.x86_64.rpm
 
 .. note::
 
