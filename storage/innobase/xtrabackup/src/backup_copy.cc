@@ -1165,6 +1165,7 @@ backup_files(const char *from, bool prep_mode)
 		msg_ts("Starting rsync as: %s\n", cmd.str().c_str());
 		if ((err = system(cmd.str().c_str()) && !prep_mode) != 0) {
 			msg_ts("Error: rsync failed with error code %d\n", err);
+			ret = false;
 			goto out;
 		}
 		msg_ts("rsync finished successfully.\n");
