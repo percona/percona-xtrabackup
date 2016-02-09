@@ -937,7 +937,7 @@ make_backup_dir()
 bool
 ibx_handle_options(int *argc, char ***argv)
 {
-	int i;
+	int i, n_arguments;
 
 	if (handle_options(argc, argv, ibx_long_options, ibx_get_one_option)) {
 		return(false);
@@ -957,6 +957,7 @@ ibx_handle_options(int *argc, char ***argv)
 
 	/* find and save position argument */
 	i = 0;
+	n_arguments = 0;
 	while (i < *argc) {
 		char *opt = (*argv)[i];
 
@@ -968,10 +969,14 @@ ibx_handle_options(int *argc, char ***argv)
 					opt);
 			}
 			ibx_position_arg = opt;
-			--(*argc);
-			continue;
+			++n_arguments;
 		}
 		++i;
+	}
+
+	*argc -= n_arguments;
+	if (n_arguments > 1) {
+		return(false);
 	}
 
 	if (ibx_position_arg == NULL) {
