@@ -279,14 +279,18 @@ Datafile::set_name(const char*	name)
 
 	if (name != NULL) {
 		m_name = mem_strdup(name);
-	} else if (fsp_is_file_per_table(m_space_id, m_flags)) {
-		m_name = fil_path_to_space_name(m_filepath);
-	} else {
+	} else if (!fsp_is_file_per_table(m_space_id, m_flags) ||
+		   strchr(m_filepath, OS_PATH_SEPARATOR) ==
+		   strrchr(m_filepath, OS_PATH_SEPARATOR)) {
+		/* FSP flags could be unitialized. Treat the tablespace as
+		general if it contains only one path separator. */
 		/* Give this general tablespace a temporary name. */
 		m_name = static_cast<char*>(
 			ut_malloc_nokey(strlen(general_space_name) + 20));
 
 		sprintf(m_name, "%s_" ULINTPF, general_space_name, m_space_id);
+	} else {
+		m_name = fil_path_to_space_name(m_filepath);
 	}
 }
 
