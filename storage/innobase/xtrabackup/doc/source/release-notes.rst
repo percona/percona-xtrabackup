@@ -10,6 +10,7 @@
    :glob:
 
 
+   release-notes/2.4/2.4.1
    release-notes/2.4/2.4.0-rc1
 
 |Percona XtraBackup| 2.3 
