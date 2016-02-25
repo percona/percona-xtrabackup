@@ -849,7 +849,7 @@ xb_rebuild_indexes_for_table(
 	error = row_merge_build_indexes(trx, table, table, FALSE, indexes,
 					add_key_nums, n_indexes, &dummy_table,
 					NULL, NULL, ULINT_UNDEFINED, null_seq,
-					true, NULL, NULL);
+					true, NULL, NULL, NULL);
 	ut_a(error == DB_SUCCESS);
 
 	mem_heap_free(heap);

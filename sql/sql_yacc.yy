@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015 Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016 Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -557,6 +557,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, YYLTYPE **c, ulong *yystacksize);
 %token  COMPLETION_SYM
 %token  COMPRESSED_SYM
 %token  COMPRESSION_SYM
+%token  ENCRYPTION_SYM
 %token  CONCURRENT
 %token  CONDITION_SYM                 /* SQL-2003-R, SQL-2008-R */
 %token  CONNECTION_SYM
@@ -715,6 +716,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, YYLTYPE **c, ulong *yystacksize);
 %token  INSENSITIVE_SYM               /* SQL-2003-R */
 %token  INSERT                        /* SQL-2003-R */
 %token  INSERT_METHOD
+%token  INSTANCE_SYM
 %token  INSTALL_SYM
 %token  INTERVAL_SYM                  /* SQL-2003-R */
 %token  INTO                          /* SQL-2003-R */
@@ -951,6 +953,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, YYLTYPE **c, ulong *yystacksize);
 %token  RIGHT                         /* SQL-2003-R */
 %token  ROLLBACK_SYM                  /* SQL-2003-R */
 %token  ROLLUP_SYM                    /* SQL-2003-R */
+%token  ROTATE_SYM
 %token  ROUTINE_SYM                   /* SQL-2003-N */
 %token  ROWS_SYM                      /* SQL-2003-R */
 %token  ROW_FORMAT_SYM
@@ -1528,6 +1531,7 @@ END_OF_INPUT
         insert_stmt
         replace_stmt
         shutdown_stmt
+	alter_instance_stmt
 
 %type <table_ident> table_ident_opt_wild
 
@@ -1555,6 +1559,9 @@ END_OF_INPUT
 %type <column_row_value_list_pair> insert_from_constructor
 
 %type <optimizer_hints> SELECT_SYM INSERT REPLACE UPDATE_SYM DELETE_SYM
+
+%type <alter_instance_action> alter_instance_action
+
 
 %%
 
@@ -5913,6 +5920,11 @@ create_table_option:
             Lex->create_info.used_fields|= HA_CREATE_USED_COMPRESS;
             Lex->create_info.compress= $3;
 	  }
+        | ENCRYPTION_SYM opt_equal TEXT_STRING_sys
+	  {
+            Lex->create_info.used_fields|= HA_CREATE_USED_ENCRYPT;
+            Lex->create_info.encrypt_type= $3;
+	  }
         | AUTO_INC opt_equal ulonglong_num
           {
             Lex->create_info.auto_increment_value=$3;
@@ -7645,6 +7657,7 @@ alter:
             $2->uses_identified_by_clause= true;
             Lex->contains_plaintext_password= true;
           }
+        | alter_instance_stmt { MAKE_CMD($1); }
         ;
 
 alter_user_command:
@@ -7797,8 +7810,22 @@ ident_or_empty:
         ;
 
 alter_commands:
-          /* empty */
-        | DISCARD TABLESPACE_SYM
+          alter_command_list
+        | alter_command_list partitioning
+        | alter_command_list remove_partitioning
+        | standalone_alter_commands
+        | alter_commands_modifier_list ',' standalone_alter_commands
+        ;
+
+alter_command_list:
+	  /* empty */
+        | alter_commands_modifier_list
+        | alter_list
+        | alter_commands_modifier_list ',' alter_list
+        ;
+
+standalone_alter_commands:
+          DISCARD TABLESPACE_SYM
           {
             Lex->m_sql_cmd= new (YYTHD->mem_root)
               Sql_cmd_discard_import_tablespace(
@@ -7814,12 +7841,6 @@ alter_commands:
             if (Lex->m_sql_cmd == NULL)
               MYSQL_YYABORT;
           }
-        | alter_list
-          opt_partitioning
-        | alter_list
-          remove_partitioning
-        | remove_partitioning
-        | partitioning
 /*
   This part was added for release 5.1 by Mikael Ronström.
   From here we insert a number of commands to manage the partitions of a
@@ -8078,6 +8099,12 @@ alt_part_name_item:
 alter_list:
           alter_list_item
         | alter_list ',' alter_list_item
+        | alter_list ',' alter_commands_modifier
+        ;
+
+alter_commands_modifier_list:
+          alter_commands_modifier
+        | alter_commands_modifier_list ',' alter_commands_modifier
         ;
 
 add_column:
@@ -8262,7 +8289,7 @@ alter_list_item:
             lex->create_info.default_table_charset= $5;
             lex->create_info.used_fields|= (HA_CREATE_USED_CHARSET |
               HA_CREATE_USED_DEFAULT_CHARSET);
-            lex->alter_info.flags|= Alter_info::ALTER_CONVERT;
+            lex->alter_info.flags|= Alter_info::ALTER_OPTIONS;
           }
         | create_table_options_space_separated
           {
@@ -8283,12 +8310,15 @@ alter_list_item:
             LEX *lex=Lex;
             lex->alter_info.flags|= Alter_info::ALTER_ORDER;
           }
-        | alter_algorithm_option
-        | alter_lock_option
         | UPGRADE_SYM PARTITIONING_SYM
           {
             Lex->alter_info.flags|= Alter_info::ALTER_UPGRADE_PARTITIONING;
           }
+        ;
+
+alter_commands_modifier:
+          alter_algorithm_option
+        | alter_lock_option
         | alter_opt_validation
         ;
 
@@ -13309,6 +13339,7 @@ keyword_sp:
         | COMPLETION_SYM           {}
         | COMPRESSED_SYM           {}
         | COMPRESSION_SYM          {}
+        | ENCRYPTION_SYM           {}
         | CONCURRENT               {}
         | CONNECTION_SYM           {}
         | CONSISTENT_SYM           {}
@@ -13382,6 +13413,7 @@ keyword_sp:
         | IMPORT                   {}
         | INDEXES                  {}
         | INITIAL_SIZE_SYM         {}
+        | INSTANCE_SYM             {}
         | IO_SYM                   {}
         | IPC_SYM                  {}
         | ISOLATION                {}
@@ -13510,6 +13542,7 @@ keyword_sp:
         | RETURNS_SYM              {}
         | REVERSE_SYM              {}
         | ROLLUP_SYM               {}
+        | ROTATE_SYM               {}
         | ROUTINE_SYM              {}
         | ROWS_SYM                 {}
         | ROW_COUNT_SYM            {}
@@ -13931,6 +13964,28 @@ shutdown_stmt:
           {
             Lex->sql_command= SQLCOM_SHUTDOWN;
             $$= NEW_PTN PT_shutdown();
+          }
+        ;
+
+alter_instance_stmt:
+          ALTER INSTANCE_SYM alter_instance_action
+          {
+            Lex->sql_command= SQLCOM_ALTER_INSTANCE;
+            $$= NEW_PTN PT_alter_instance($3);
+          }
+
+alter_instance_action:
+          ROTATE_SYM ident_or_text MASTER_SYM KEY_SYM
+          {
+            if (!my_strcasecmp(system_charset_info, $2.str, "INNODB"))
+            {
+              $$= ROTATE_INNODB_MASTER_KEY;
+            }
+            else
+            {
+              YYTHD->parse_error_at(@2, ER(ER_SYNTAX_ERROR));
+              MYSQL_YYABORT;
+            }
           }
         ;
 

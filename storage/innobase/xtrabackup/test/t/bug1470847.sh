@@ -4,7 +4,7 @@
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb-log-files-in-group=4
-innodb-log-file-size=2M
+innodb-log-file-size=4M
 "
 start_server
 
@@ -36,7 +36,7 @@ function mysql_n_dirty_pages()
 }
 
 # fill 3 of 4 redo log files
-while [ `mysql_lsn` -lt 6502000 ] ; do
+while [ `mysql_lsn` -lt 12600000 ] ; do
 	run_cmd ${MYSQL} ${MYSQL_ARGS} -e \
 		"INSERT INTO t SELECT NULL FROM t LIMIT 1000" test
 done
