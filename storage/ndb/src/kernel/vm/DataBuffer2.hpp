@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,6 +17,11 @@
 
 #ifndef DATA_BUFFER2_HPP
 #define DATA_BUFFER2_HPP
+
+#include <ErrorReporter.hpp>
+
+#define JAM_FILE_ID 268
+
 
 /**
  * @class  DataBuffer
@@ -240,9 +245,13 @@ DataBuffer2<sz, Pool>::import(const DataBufferIterator & it,
 
   if (left)
   {
-    memcpy(p->data+ind, src, 4 * left);
     if (len <= left)
+    {
+      memcpy(p->data+ind, src, 4 * len);
       return true;
+    }
+
+    memcpy(p->data+ind, src, 4 * left);
 
     src += left;
     len -= left;
@@ -610,6 +619,9 @@ DataBuffer2<sz, Pool>::ConstDataBufferIterator::assign(const DataBufferIterator 
   this->ind = src.ind;
   this->pos = src.pos;
 }
+
+
+#undef JAM_FILE_ID
 
 #endif
 

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,19 +18,17 @@
 #ifndef ABSTRACT_QUERY_PLAN_H_INCLUDED
 #define ABSTRACT_QUERY_PLAN_H_INCLUDED
 
+#include "my_global.h"      // uint
+#include "item_cmpfunc.h"   // Item_equal_iterator
+
 struct TABLE;
-struct st_join_table;
-typedef st_join_table JOIN_TAB;
 class JOIN;
 class Item;
 class Item_field;
-class Item_equal_iterator;
-
-#include "sql_list.h"
 
 /**
   Abstract query plan (AQP) is an interface for examining certain aspects of 
-  query plans without accessing mysqld internal classes (JOIN_TAB, SQL_SELECT 
+  query plans without accessing mysqld internal classes (JOIN_TAB, QEP_TAB, 
   etc.) directly.
 
   AQP maps join execution plans, as represented by mysqld internals, to a set 
@@ -47,6 +45,11 @@ class Item_equal_iterator;
   execution plan that may be executed in the engine rather than in mysqld. By 
   using the AQP rather than the mysqld internals directly, the coupling between
   the engine and mysqld is reduced.
+
+  The AQP also provides functions which allows the storage engine
+  to change the query execution plan for the part of the join which
+  it will handle. Thus be aware that although the QEP_TAB*'s are const
+  they may be modified.
 */
 namespace AQP
 {
@@ -73,16 +76,16 @@ namespace AQP
 
   private:
     /** 
-      Array of the JOIN_TABs that are the internal representation of table
+      Array of the QEP_TABs that are the internal representation of table
       access operations.
     */
-    const JOIN_TAB* const m_join_tabs;
+    const QEP_TAB* const m_qep_tabs;
 
     /** Number of table access operations. */
     const uint m_access_count;
     Table_access* m_table_accesses;
 
-    const JOIN_TAB* get_join_tab(uint join_tab_no) const;
+    const QEP_TAB* get_qep_tab(uint qep_tab_no) const;
 
     // No copying.
     Join_plan(const Join_plan&);
@@ -199,7 +202,15 @@ namespace AQP
 
     bool uses_join_cache() const;
 
+    const Table_access* get_firstmatch_last_skipped() const;
+
     bool filesort_before_join() const;
+
+    /**
+       Change the query plan for this part of the join to use
+       the pushed functions
+    */
+    void set_pushed_table_access_method() const;
 
   private:
 
@@ -222,7 +233,7 @@ namespace AQP
 
     explicit Table_access();
 
-    const JOIN_TAB* get_join_tab() const;
+    const QEP_TAB* get_qep_tab() const;
 
     void compute_type_and_index() const;
 

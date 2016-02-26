@@ -369,7 +369,7 @@ drop table t1;
 mysqltest: At line 1: query 'let $var2= `failing query`' failed: 1064: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'failing query' at line 1
 mysqltest: At line 1: Missing required argument 'filename' to command 'source'
 mysqltest: At line 1: Could not open './non_existingFile' for reading, errno: 2
-mysqltest: In included file "MYSQLTEST_VARDIR/tmp/recursive.sql": 
+mysqltest: In included file MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
 included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
 included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
 included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
@@ -384,10 +384,10 @@ included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
 included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
 included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
 included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
-included from MYSQLTEST_VARDIR/tmp/recursive.sql at line 1:
+included from <stdin> at line 1:
 At line 1: Source directives are nesting too deep
-mysqltest: In included file "MYSQLTEST_VARDIR/tmp/error.sql": 
-included from MYSQLTEST_VARDIR/tmp/error.sql at line 1:
+mysqltest: In included file MYSQLTEST_VARDIR/tmp/error.sql at line 1:
+included from <stdin> at line 1:
 At line 1: query 'garbage ' failed: 1064: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'garbage' at line 1
 
 2 = outer loop variable after while
@@ -515,8 +515,8 @@ counter is 6
 counter is 7
 1
 Testing while with not
-mysqltest: In included file "MYSQLTEST_VARDIR/tmp/mysqltest_while.inc": 
-included from MYSQLTEST_VARDIR/tmp/mysqltest_while.inc at line 65:
+mysqltest: In included file MYSQLTEST_VARDIR/tmp/mysqltest_while.inc at line 65:
+included from <stdin> at line 1:
 At line 64: Nesting too deeply
 mysqltest: At line 1: missing '(' in while
 mysqltest: At line 1: missing ')' in while
@@ -567,11 +567,11 @@ mysqltest: At line 1: query 'connect  con2,localhost,root,,illegal_db' failed: 1
 mysqltest: At line 1: Illegal argument for port: 'illegal_port'
 mysqltest: At line 1: Illegal option to connect: SMTP
 200 connects succeeded
-mysqltest: In included file "MYSQLTEST_VARDIR/tmp/mysqltest.sql": 
-included from MYSQLTEST_VARDIR/tmp/mysqltest.sql at line 3:
+mysqltest: In included file MYSQLTEST_VARDIR/tmp/mysqltest.sql at line 3:
+included from <stdin> at line 1:
 At line 3: connection 'test_con1' not found in connection pool
-mysqltest: In included file "MYSQLTEST_VARDIR/tmp/mysqltest.sql": 
-included from MYSQLTEST_VARDIR/tmp/mysqltest.sql at line 2:
+mysqltest: In included file MYSQLTEST_VARDIR/tmp/mysqltest.sql at line 2:
+included from <stdin> at line 1:
 At line 2: Connection test_con1 already exists
 show tables;
 ERROR 3D000: No database selected
@@ -964,3 +964,31 @@ con2
 con2
 -closed_connection-
 End of tests
+# To test cat_file command can handle \r\n at the 256th place
+# This test file will contain \r at the 256th position and in its
+# multiples.Extra characters to fill space,some more extra characters
+###############
+# inserting carraige return and line feed
+# Next in line is to add \r followed by \n but \r not being in 256th
+# position but in 255th position followed by \n 
+###### ###### ###### ######
+###### ###### ###### ######
+######## ###### ###### ###### ######
+# inserting carraige return and line feed
+
+# just a random carriage return and line feed
+
+# just a random carriage return only
+
+Bug#21963113 MYSQLTESTS REPLACE_REGEX CANNOT
+MATCH ^ (BEGINNING OF LINE) ATOM
+
+select "a" as a;
+R
+R
+select "R" Rs R;
+R
+R
+select "a" as R;
+R
+R

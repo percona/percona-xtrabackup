@@ -12,6 +12,10 @@ Known issues:
 
  * For |MySQL| or |Percona Server| version 5.6 it is NOT recommended to set ``innodb_log_compressed_pages=OFF`` for servers that use compressed |InnoDB| tables which are backed up with |Percona XtraBackup|. This option makes |InnoDB| recovery (and thus, backup prepare) sensible to ``zlib`` versions. In case the host where a backup prepare is performed uses a different ``zlib`` version than the one that was used by the server during runtime, backup prepare may fail due to differences in compression algorithms.
 
+ * Backed-up table data could not be recovered if backup was taken while running ``OPTIMIZE TABLE`` (bug :bug:`1541763`) or ``ALTER TABLE ... TABLESPACE`` (bug :bug:`1532878`) on that table.
+
+ * Compact Backups currently don't work due to bug :bug:`1192834`.
+
 Limitations:
 
  * The Aria storage engine is part of |MariaDB| and has been integrated in it for many years and Aria table files backup support has been added to |innobackupex| in 2011. The issue is that the engine uses recovery log files and an :file:`aria_log_control` file that are not backuped by |innobackupex|. As stated in the `documentation <https://mariadb.com/kb/en/aria-faq/#when-is-it-safe-to-remove-old-log-files>`_, starting |MariaDB| without the :file:`maria_log_control` file will mark all the Aria tables as corrupted with this error when doing a ``CHECK`` on the table : ``Table is from another system and must be zerofilled or repaired to be usable on this system``. This means that the Aria tables from an |innobackupex| backup must be repaired before being usable (this could be quite long depending on the size of the table). Another option is ``aria_chk --zerofil table`` on all Aria tables present on the backup after the prepare phase.

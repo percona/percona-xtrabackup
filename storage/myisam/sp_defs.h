@@ -1,5 +1,4 @@
-/* Copyright (c) 2002, 2004-2007 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,8 +20,6 @@
 #define SPTYPE HA_KEYTYPE_DOUBLE
 #define SPLEN  8
 
-#ifdef HAVE_SPATIAL
-
 enum wkbType
 {
   wkbPoint = 1,
@@ -40,8 +37,7 @@ enum wkbByteOrder
   wkbNDR = 1     /* Little Endian */
 };                                    
 
-uint sp_make_key(register MI_INFO *info, uint keynr, uchar *key,
+uint sp_make_key(MI_INFO *info, uint keynr, uchar *key,
                  const uchar *record, my_off_t filepos);
 
-#endif /*HAVE_SPATIAL*/
 #endif /* _SP_DEFS_H */

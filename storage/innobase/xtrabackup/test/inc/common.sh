@@ -10,6 +10,11 @@ function xtrabackup()
     run_cmd $XB_BIN $XB_ARGS "$@"
 }
 
+function mysql()
+{
+    run_cmd $MYSQL $MYSQL_ARGS "$@"
+}
+
 function vlog
 {
     echo "`date +"%F %T"`: `basename "$0"`: $@" >&2
@@ -36,9 +41,20 @@ function call_mysql_install_db()
 
         cd $MYSQL_BASEDIR
 
-        if ! $MYSQL_INSTALL_DB --defaults-file=${MYSQLD_VARDIR}/my.cnf \
+        CLIENT_VERSION_STRING=`${MYSQL} --version`
+
+        if [[ ${CLIENT_VERSION_STRING} == *"5.7."* ]] ; then
+            INSTALL_CMD="${MYSQLD} \
+            --defaults-file=${MYSQLD_VARDIR}/my.cnf \
             --basedir=${MYSQL_BASEDIR} \
-            ${MYSQLD_EXTRA_ARGS}
+            --initialize-insecure"
+        else
+            INSTALL_CMD="${MYSQL_INSTALL_DB}
+            --defaults-file=${MYSQLD_VARDIR}/my.cnf \
+            --basedir=${MYSQL_BASEDIR}"
+        fi
+
+        if ! ${INSTALL_CMD} ${MYSQLD_EXTRA_ARGS}
         then
             vlog "mysql_install_db failed. Server log (if exists):"
             vlog "----------------"
@@ -46,6 +62,8 @@ function call_mysql_install_db()
             vlog "----------------"
             exit -1
         fi
+
+        [ -d ${MYSQLD_DATADIR}/test ] || mkdir ${MYSQLD_DATADIR}/test
 
         cd - >/dev/null 2>&1
 }
@@ -56,7 +74,7 @@ function call_mysql_install_db()
 function mysql_ping()
 {
     local pid=$1
-    local attempts=60
+    local attempts=200
     local i
 
     for ((i=1; i<=attempts; i++))
@@ -239,7 +257,7 @@ function switch_server()
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
     fi
 
-    IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf --ibbackup=$XB_BIN \
+    IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf \
 --no-version-check ${IB_EXTRA_OPTS:-}"
     XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf"
 
@@ -298,8 +316,11 @@ log-bin=mysql-bin
 relay-log=mysql-relay-bin
 pid-file=${MYSQLD_PIDFILE}
 replicate-ignore-db=mysql
+replicate-ignore-db=performance_schema
+replicate-ignore-db=sys
 innodb_log_file_size=48M
 ${MYSQLD_EXTRA_MY_CNF_OPTS:-}
+#core-file
 
 [client]
 socket=${MYSQLD_SOCKET}
@@ -373,10 +394,6 @@ function stop_server_with_id()
     else
         vlog "Server PID file '${MYSQLD_PIDFILE}' doesn't exist!"
     fi
-
-    # Reset XB_ARGS so we can call xtrabackup in tests even without starting the
-    # server
-    XB_ARGS="--no-defaults"
 
     # unlock the port number
     free_reserved_port $MYSQLD_PORT
@@ -481,6 +498,48 @@ EOF
 }
 
 ########################################################################
+# Get the binary log file from SHOW MASTER STATUS
+########################################################################
+function get_binlog_file()
+{
+    local count
+    local res
+
+    count=0
+    while read line; do
+        if [ $count -eq 1 ] # File:
+        then
+            res=`echo "$line" | sed s/File://`
+            break;
+        fi
+        count=$((count+1))
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+
+    echo $res
+}
+
+########################################################################
+# Get the binary log offset from SHOW MASTER STATUS
+########################################################################
+function get_binlog_pos()
+{
+    local count
+    local res
+
+    count=0
+    while read line; do
+        if [ $count -eq 2 ] # Position:
+        then
+            res=`echo "$line" | sed s/Position://`
+            break;
+        fi
+        count=$((count+1))
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+
+    echo $res
+}
+
+########################################################################
 # Wait until slave catches up with master.
 # The timeout is hardcoded to 300 seconds
 #
@@ -491,7 +550,6 @@ function sync_slave_with_master()
 {
     local slave_id=$1
     local master_id=$2
-    local count
     local master_file
     local master_pos
 
@@ -499,19 +557,8 @@ function sync_slave_with_master()
 
     # Get master log pos
     switch_server $master_id
-    count=0
-    while read line; do
-      	if [ $count -eq 1 ] # File:
-      	then
-      	    master_file=`echo "$line" | sed s/File://`
-      	elif [ $count -eq 2 ] # Position:
-      	then
-      	    master_pos=`echo "$line" | sed s/Position://`
-      	fi
-      	count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
-
-    echo "master_file=$master_file, master_pos=$master_pos"
+    master_file=`get_binlog_file`
+    master_pos=`get_binlog_pos`
 
     # Wait for the slave SQL thread to catch up
     switch_server $slave_id
@@ -624,7 +671,7 @@ function resume_suspended_xb()
 {
     local file=$1
     echo "Removing $file"
-    rm -f $file
+    kill -SIGCONT `cat $file`
 }
 
 ########################################################################
@@ -772,11 +819,13 @@ function multi_row_insert()
 }
 
 ########################################################################
-# Return 0 if the server has backup locks support
+# Return 0 if the server has the specified variable and its value is YES
 ########################################################################
-function has_backup_locks()
+function has_feature_enabled()
 {
-    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE 'have_backup_locks'\G" \
+    local var=$1
+
+    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE '$1'\G" \
               2> /dev/null | egrep -q "Value: YES$"
     then
         return 0
@@ -792,6 +841,21 @@ function has_backup_locks()
 }
 
 ########################################################################
+# Return 0 if the server has backup locks support
+########################################################################
+function has_backup_locks()
+{
+    has_feature_enabled "have_backup_locks"
+}
+
+########################################################################
+# Return 0 if the server has backup-safe binlog info
+########################################################################
+function has_backup_safe_binlog_info()
+{
+    has_feature_enabled "have_backup_safe_binlog_info"
+}
+
 # Return 0 if the platform is 64-bit
 ########################################################################
 function is_64bit()

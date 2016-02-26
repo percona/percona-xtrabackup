@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,6 +17,9 @@
 #include <m_string.h>
 #include <m_ctype.h>
 #include <fcntl.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 #include <my_xml.h>
 
 #define ROW_LEN		16
@@ -27,12 +30,12 @@ static CHARSET_INFO all_charsets[512];
 
 
 void
-print_array(FILE *f, const char *set, const char *name, uchar *a, int n)
+print_array(FILE *f, const char *set, const char *name, const uchar *a, int n)
 {
   int i;
 
-  fprintf(f,"uchar %s_%s[] = {\n", name, set);
-  
+  fprintf(f,"static const uchar %s_%s[] = {\n", name, set);
+
   for (i=0 ;i<n ; i++)
   {
     fprintf(f,"0x%02X",a[i]);
@@ -44,12 +47,12 @@ print_array(FILE *f, const char *set, const char *name, uchar *a, int n)
 
 
 void
-print_array16(FILE *f, const char *set, const char *name, uint16 *a, int n)
+print_array16(FILE *f, const char *set, const char *name, const uint16 *a, int n)
 {
   int i;
 
-  fprintf(f,"uint16 %s_%s[] = {\n", name, set);
-  
+  fprintf(f,"static const uint16 %s_%s[] = {\n", name, set);
+
   for (i=0 ;i<n ; i++)
   {
     fprintf(f,"0x%04X",a[i]);
@@ -157,9 +160,9 @@ my_charset_loader_init(MY_CHARSET_LOADER *loader)
 {
   loader->error[0]= '\0';
   loader->once_alloc= malloc;
-  loader->malloc= malloc;
-  loader->realloc= realloc;
-  loader->free= free;
+  loader->mem_malloc= malloc;
+  loader->mem_realloc= realloc;
+  loader->mem_free= free;
   loader->reporter= default_reporter;
   loader->add_collation= add_collation;
 }
@@ -251,6 +254,7 @@ void dispcset(FILE *f,CHARSET_INFO *cs)
   fprintf(f,"  1,                          /* casedn_multiply*/\n");
   fprintf(f,"  1,                          /* mbminlen      */\n");
   fprintf(f,"  1,                          /* mbmaxlen      */\n");
+  fprintf(f,"  1,                          /* mbmaxlenlen   */\n");
   fprintf(f,"  0,                          /* min_sort_char */\n");
   fprintf(f,"  255,                        /* max_sort_char */\n");
   fprintf(f,"  ' ',                        /* pad_char      */\n");
@@ -258,7 +262,10 @@ void dispcset(FILE *f,CHARSET_INFO *cs)
   fprintf(f,"  1,                          /* levels_for_compare */\n");
   fprintf(f,"  1,                          /* levels_for_order   */\n");
   
-  fprintf(f,"  &my_charset_8bit_handler,\n");
+  if (my_charset_is_8bit_pure_ascii(cs))
+    fprintf(f,"  &my_charset_ascii_handler,\n");
+  else
+    fprintf(f,"  &my_charset_8bit_handler,\n");
   if (cs->state & MY_CS_BINSORT)
     fprintf(f,"  &my_collation_8bit_bin_handler,\n");
   else
@@ -271,7 +278,7 @@ static void
 fprint_copyright(FILE *file)
 {
   fprintf(file,
-"/* Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.\n"
+"/* Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.\n"
 "\n"
 "   This program is free software; you can redistribute it and/or modify\n"
 "   it under the terms of the GNU General Public License as published by\n"
@@ -329,7 +336,7 @@ main(int argc, char **argv  __attribute__((unused)))
   fprintf(f, "  edit the XML definitions in sql/share/charsets/ instead.\n\n");
   fprintf(f, "  To re-generate, run the following in the strings/ "
           "directory:\n");
-  fprintf(f, "    ./conf_to_src ../sql/share/charsets/ > FILE\n");
+  fprintf(f, "    ./conf_to_src {CMAKE_SOURCE_DIR}/sql/share/charsets/ > ctype-extra.c\n");
   fprintf(f, "*/\n\n");
   fprint_copyright(f);
   fprintf(f,"#include <my_global.h>\n");

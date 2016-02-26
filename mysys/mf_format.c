@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,6 +14,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include <m_string.h>
 
 /*
@@ -28,9 +29,8 @@ char * fn_format(char * to, const char *name, const char *dir,
 {
   char dev[FN_REFLEN], buff[FN_REFLEN], *pos, *startpos;
   const char *ext;
-  reg1 size_t length;
+  size_t length;
   size_t dev_length;
-  my_bool not_used;
   DBUG_ENTER("fn_format");
   DBUG_ASSERT(name != NULL);
   DBUG_ASSERT(extension != NULL);
@@ -57,7 +57,7 @@ char * fn_format(char * to, const char *name, const char *dir,
   if (flag & MY_PACK_FILENAME)
     pack_dirname(dev,dev);			/* Put in ./.. and ~/.. */
   if (flag & MY_UNPACK_FILENAME)
-    (void) unpack_dirname(dev, dev, &not_used);	/* Replace ~/.. with dir */
+    (void) unpack_dirname(dev,dev);		/* Replace ~/.. with dir */
 
   if (!(flag & MY_APPEND_EXT) &&
       (pos= (char*) strchr(name,FN_EXTCHAR)) != NullS)
@@ -94,11 +94,11 @@ char * fn_format(char * to, const char *name, const char *dir,
   {
     if (to == startpos)
     {
-      bmove(buff,(uchar*) name,length);		/* Save name for last copy */
+      memmove(buff, name, length);              /* Save name for last copy */
       name=buff;
     }
-    pos=strmake(strmov(to,dev),name,length);
-    (void) strmov(pos,ext);			/* Don't convert extension */
+    pos=strmake(my_stpcpy(to,dev),name,length);
+    (void) my_stpcpy(pos,ext);			/* Don't convert extension */
   }
   /*
     If MY_RETURN_REAL_PATH and MY_RESOLVE_SYMLINK is given, only do
@@ -109,7 +109,7 @@ char * fn_format(char * to, const char *name, const char *dir,
 				   MY_RESOLVE_LINK: 0));
   else if (flag & MY_RESOLVE_SYMLINKS)
   {
-    strmov(buff,to);
+    my_stpcpy(buff,to);
     (void) my_readlink(to, buff, MYF(0));
   }
   DBUG_RETURN(to);
@@ -123,8 +123,8 @@ char * fn_format(char * to, const char *name, const char *dir,
 
 size_t strlength(const char *str)
 {
-  reg1 const char * pos;
-  reg2 const char * found;
+  const char * pos;
+  const char * found;
   DBUG_ENTER("strlength");
 
   pos= found= str;

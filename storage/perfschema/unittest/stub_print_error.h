@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 bool pfs_initialized= false;
 
-void *pfs_malloc(size_t size, myf flags)
+void *pfs_malloc(PFS_builtin_memory_class *klass, size_t size, myf flags)
 {
   void *ptr= malloc(size);
   if (ptr && (flags & MY_ZEROFILL))
@@ -27,10 +27,35 @@ void *pfs_malloc(size_t size, myf flags)
   return ptr;
 }
 
-void pfs_free(void *ptr)
+void pfs_free(PFS_builtin_memory_class *, size_t, void *ptr)
 {
   if (ptr != NULL)
     free(ptr);
+}
+
+void *pfs_malloc_array(PFS_builtin_memory_class *klass, size_t n, size_t size, myf flags)
+{
+  size_t array_size= n * size;
+  /* Check for overflow before allocating. */
+  if (is_overflow(array_size, n, size))
+    return NULL;
+  return pfs_malloc(klass, array_size, flags);
+}
+
+void pfs_free_array(PFS_builtin_memory_class *klass, size_t n, size_t size, void *ptr)
+{
+  if (ptr == NULL)
+    return;
+  size_t array_size= n * size;
+  return pfs_free(klass, array_size, ptr);
+}
+
+bool is_overflow(size_t product, size_t n1, size_t n2)
+{
+  if (n1 != 0 && (product / n1 != n2))
+    return true;
+  else
+    return false;
 }
 
 void pfs_print_error(const char *format, ...)

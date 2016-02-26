@@ -4,7 +4,7 @@
  How |innobackupex| Works
 ==========================
 
-:program:`innobackupex` is a script written in Perl that wraps the :program:`xtrabackup` and performs the tasks where the performance and efficiency of *C* program isn't needed. In this way, it provides a convenient and integrated approach to backing up in many common scenarios. 
+From |Percona XtraBackup| version 2.3 :program:`innobackupex` is has been rewritten in *C* and set up as a symlink to the :program:`xtrabackup`. |innobackupex| supports all features and syntax as 2.2 version did, but it is now deprecated and will be removed in next major release. Syntax for new features will not be added to the innobackupex, only to the xtrabackup.
 
 The following describes the rationale behind :program:`innobackupex` actions.
 

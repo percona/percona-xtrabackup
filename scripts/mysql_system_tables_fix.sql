@@ -1,4 +1,4 @@
--- Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+-- Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -24,7 +24,69 @@
 # adding a 'SHOW WARNINGS' after the statement.
 
 set sql_mode='';
-set storage_engine=MyISAM;
+set default_storage_engine=MyISAM;
+
+# Move distributed grant tables to default engine during upgrade, remember
+# which tables was moved so they can be moved back after upgrade
+SET @had_distributed_user =
+  (SELECT COUNT(table_name) FROM information_schema.tables
+     WHERE table_schema = 'mysql' AND table_name = 'user' AND
+           table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
+SET @cmd="ALTER TABLE mysql.user ENGINE=MyISAM";
+SET @str = IF(@had_distributed_user > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @had_distributed_db =
+  (SELECT COUNT(table_name) FROM information_schema.tables
+     WHERE table_schema = 'mysql' AND table_name = 'db' AND
+           table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
+SET @cmd="ALTER TABLE mysql.db ENGINE=MyISAM";
+SET @str = IF(@had_distributed_db > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @had_distributed_tables_priv =
+  (SELECT COUNT(table_name) FROM information_schema.tables
+     WHERE table_schema = 'mysql' AND table_name = 'tables_priv' AND
+           table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
+SET @cmd="ALTER TABLE mysql.tables_priv ENGINE=MyISAM";
+SET @str = IF(@had_distributed_tables_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @had_distributed_columns_priv =
+  (SELECT COUNT(table_name) FROM information_schema.tables
+     WHERE table_schema = 'mysql' AND table_name = 'columns_priv' AND
+           table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
+SET @cmd="ALTER TABLE mysql.columns_priv ENGINE=MyISAM";
+SET @str = IF(@had_distributed_columns_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @had_distributed_procs_priv =
+  (SELECT COUNT(table_name) FROM information_schema.tables
+     WHERE table_schema = 'mysql' AND table_name = 'procs_priv' AND
+           table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
+SET @cmd="ALTER TABLE mysql.procs_priv ENGINE=MyISAM";
+SET @str = IF(@had_distributed_procs_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @had_distributed_proxies_priv =
+  (SELECT COUNT(table_name) FROM information_schema.tables
+     WHERE table_schema = 'mysql' AND table_name = 'proxies_priv' AND
+           table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER' );
+SET @cmd="ALTER TABLE mysql.proxies_priv ENGINE=MyISAM";
+SET @str = IF(@had_distributed_proxies_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
 
 ALTER TABLE user add File_priv enum('N','Y') COLLATE utf8_general_ci NOT NULL;
 
@@ -59,7 +121,7 @@ ALTER TABLE tables_priv
 ALTER TABLE tables_priv
   MODIFY Host char(60) NOT NULL default '',
   MODIFY Db char(64) NOT NULL default '',
-  MODIFY User char(16) NOT NULL default '',
+  MODIFY User char(32) NOT NULL default '',
   MODIFY Table_name char(64) NOT NULL default '',
   MODIFY Grantor char(77) NOT NULL default '',
   ENGINE=MyISAM,
@@ -87,7 +149,7 @@ ALTER TABLE columns_priv
 ALTER TABLE columns_priv
   MODIFY Host char(60) NOT NULL default '',
   MODIFY Db char(64) NOT NULL default '',
-  MODIFY User char(16) NOT NULL default '',
+  MODIFY User char(32) NOT NULL default '',
   MODIFY Table_name char(64) NOT NULL default '',
   MODIFY Column_name char(64) NOT NULL default '',
   ENGINE=MyISAM,
@@ -154,10 +216,9 @@ alter table func comment='User defined functions';
 # and reset all char columns to correct width
 ALTER TABLE user
   MODIFY Host char(60) NOT NULL default '',
-  MODIFY User char(16) NOT NULL default '',
+  MODIFY User char(32) NOT NULL default '',
   ENGINE=MyISAM, CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 ALTER TABLE user
-  MODIFY Password char(41) character set latin1 collate latin1_bin NOT NULL default '',
   MODIFY Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
   MODIFY Insert_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
   MODIFY Update_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
@@ -184,7 +245,7 @@ ALTER TABLE user
 ALTER TABLE db
   MODIFY Host char(60) NOT NULL default '',
   MODIFY Db char(64) NOT NULL default '',
-  MODIFY User char(16) NOT NULL default '',
+  MODIFY User char(32) NOT NULL default '',
   ENGINE=MyISAM, CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 ALTER TABLE db
   MODIFY  Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
@@ -212,12 +273,12 @@ ALTER TABLE func
 SET @old_log_state = @@global.general_log;
 SET GLOBAL general_log = 'OFF';
 ALTER TABLE general_log
-  MODIFY event_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  MODIFY event_time TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   MODIFY user_host MEDIUMTEXT NOT NULL,
   MODIFY thread_id INTEGER NOT NULL,
   MODIFY server_id INTEGER UNSIGNED NOT NULL,
   MODIFY command_type VARCHAR(64) NOT NULL,
-  MODIFY argument MEDIUMTEXT NOT NULL;
+  MODIFY argument MEDIUMBLOB NOT NULL;
 ALTER TABLE general_log
   MODIFY thread_id BIGINT(21) UNSIGNED NOT NULL;
 SET GLOBAL general_log = @old_log_state;
@@ -225,17 +286,17 @@ SET GLOBAL general_log = @old_log_state;
 SET @old_log_state = @@global.slow_query_log;
 SET GLOBAL slow_query_log = 'OFF';
 ALTER TABLE slow_log
-  MODIFY start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  MODIFY start_time TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   MODIFY user_host MEDIUMTEXT NOT NULL,
-  MODIFY query_time TIME NOT NULL,
-  MODIFY lock_time TIME NOT NULL,
+  MODIFY query_time TIME(6) NOT NULL,
+  MODIFY lock_time TIME(6) NOT NULL,
   MODIFY rows_sent INTEGER NOT NULL,
   MODIFY rows_examined INTEGER NOT NULL,
   MODIFY db VARCHAR(512) NOT NULL,
   MODIFY last_insert_id INTEGER NOT NULL,
   MODIFY insert_id INTEGER NOT NULL,
   MODIFY server_id INTEGER UNSIGNED NOT NULL,
-  MODIFY sql_text MEDIUMTEXT NOT NULL;
+  MODIFY sql_text MEDIUMBLOB NOT NULL;
 ALTER TABLE slow_log
   ADD COLUMN thread_id INTEGER NOT NULL AFTER sql_text;
 ALTER TABLE slow_log
@@ -332,6 +393,7 @@ UPDATE user LEFT JOIN db USING (Host,User) SET Create_user_priv='Y'
 #
 
 ALTER TABLE procs_priv
+  MODIFY User char(32) NOT NULL default '',
   ENGINE=MyISAM,
   CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 
@@ -339,7 +401,7 @@ ALTER TABLE procs_priv
   MODIFY Proc_priv set('Execute','Alter Routine','Grant')
     COLLATE utf8_general_ci DEFAULT '' NOT NULL;
 
-ALTER IGNORE TABLE procs_priv
+ALTER TABLE procs_priv
   MODIFY Routine_name char(64)
     COLLATE utf8_general_ci DEFAULT '' NOT NULL;
 
@@ -403,13 +465,13 @@ ALTER TABLE proc MODIFY name char(64) DEFAULT '' NOT NULL,
 
 # Correct the character set and collation
 ALTER TABLE proc CONVERT TO CHARACTER SET utf8;
-# Reset some fields after the conversion
+# Reset some fields after the conversion and change comment from char(64) to text
 ALTER TABLE proc  MODIFY db
                          char(64) collate utf8_bin DEFAULT '' NOT NULL,
                   MODIFY definer
                          char(77) collate utf8_bin DEFAULT '' NOT NULL,
                   MODIFY comment
-                         char(64) collate utf8_bin DEFAULT '' NOT NULL;
+                         text collate utf8_bin DEFAULT '' NOT NULL;
 
 ALTER TABLE proc ADD character_set_client
                      char(32) collate utf8_bin DEFAULT NULL
@@ -462,10 +524,6 @@ UPDATE proc AS p SET db_collation  =
 ALTER TABLE proc ADD body_utf8 longblob DEFAULT NULL
                      AFTER db_collation;
 ALTER TABLE proc MODIFY body_utf8 longblob DEFAULT NULL;
-
-# Change comment from char(64) to text
-ALTER TABLE proc MODIFY comment
-                        text collate utf8_bin NOT NULL;
 
 #
 # EVENT privilege
@@ -606,10 +664,9 @@ DROP PREPARE stmt;
 
 drop procedure mysql.die;
 
-ALTER TABLE user ADD plugin char(64) DEFAULT 'mysql_native_password',  ADD authentication_string TEXT;
-ALTER TABLE user MODIFY plugin char(64) DEFAULT 'mysql_native_password';
+ALTER TABLE user ADD plugin char(64) DEFAULT 'mysql_native_password' NOT NULL,  ADD authentication_string TEXT;
+ALTER TABLE user MODIFY plugin char(64) DEFAULT 'mysql_native_password' NOT NULL;
 UPDATE user SET plugin=IF((length(password) = 41) OR (length(password) = 0), 'mysql_native_password', '') WHERE plugin = '';
-UPDATE user SET plugin=IF(length(password) = 16, 'mysql_old_password', '') WHERE plugin = '';
 ALTER TABLE user MODIFY authentication_string TEXT;
 
 -- establish if the field is already there.
@@ -632,20 +689,18 @@ DROP TABLE tmp_proxies_priv;
 
 -- Checking for any duplicate hostname and username combination are exists.
 -- If exits we will throw error.
-DROP PROCEDURE IF EXISTS mysql.count_duplicate_host_names;
-DELIMITER //
-CREATE PROCEDURE mysql.count_duplicate_host_names()
-BEGIN
-  SET @duplicate_hosts=(SELECT count(*) FROM mysql.user GROUP BY user, lower(host) HAVING count(*) > 1 LIMIT 1);
-  IF @duplicate_hosts > 1 THEN
-    SIGNAL SQLSTATE '45000'  SET MESSAGE_TEXT = 'Multiple accounts exist for @user_name, @host_name that differ only in Host lettercase; remove all except one of them';
-  END IF;
-END //
-DELIMITER ;
-CALL mysql.count_duplicate_host_names();
+DROP PROCEDURE IF EXISTS mysql.warn_duplicate_host_names;
+CREATE PROCEDURE mysql.warn_duplicate_host_names() SIGNAL SQLSTATE '45000'  SET MESSAGE_TEXT = 'Multiple accounts exist for @user_name, @host_name that differ only in Host lettercase; remove all except one of them';
+SET @cmd='call mysql.warn_duplicate_host_names()';
+SET @duplicate_hosts=(SELECT count(*) FROM mysql.user GROUP BY user, lower(host) HAVING count(*) > 1 LIMIT 1);
+SET @str=IF(@duplicate_hosts > 1, @cmd, 'SET @dummy=0');
+
+PREPARE stmt FROM @str;
+EXECUTE stmt;
 -- Get warnings (if any)
 SHOW WARNINGS;
-DROP PROCEDURE mysql.count_duplicate_host_names;
+DROP PREPARE stmt;
+DROP PROCEDURE mysql.warn_duplicate_host_names;
 
 # Convering the host name to lower case for existing users
 UPDATE user SET host=LOWER( host ) WHERE LOWER( host ) <> host;
@@ -669,29 +724,6 @@ ALTER TABLE ndb_binlog_index
   DROP PRIMARY KEY,
   ADD PRIMARY KEY(epoch, orig_server_id, orig_epoch);
 
-# Activate the new, possible modified privilege tables
-# This should not be needed, but gives us some extra testing that the above
-# changes was correct
-
-flush privileges;
-
-ALTER TABLE slave_master_info ADD Ssl_crl TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The file used for the Certificate Revocation List (CRL)';
-ALTER TABLE slave_master_info ADD Ssl_crlpath TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The path used for Certificate Revocation List (CRL) files';
-ALTER TABLE slave_master_info STATS_PERSISTENT=0;
-ALTER TABLE slave_worker_info STATS_PERSISTENT=0;
-ALTER TABLE slave_relay_log_info STATS_PERSISTENT=0;
-
-SET @have_innodb= (SELECT COUNT(engine) FROM information_schema.engines WHERE engine='InnoDB' AND support != 'NO');
-SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_table_stats STATS_PERSISTENT=0", "SET @dummy = 0");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_index_stats STATS_PERSISTENT=0", "SET @dummy = 0");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
 --
 -- Check for accounts with old pre-4.1 passwords and issue a warning
 --
@@ -712,29 +744,119 @@ DROP PREPARE stmt;
 DROP PROCEDURE mysql.warn_pre41_pwd;
 
 --
+-- Add timestamp and expiry columns
+--
+
+ALTER TABLE user ADD password_last_changed timestamp NULL;
+UPDATE user SET password_last_changed = CURRENT_TIMESTAMP WHERE plugin in ('mysql_native_password','sha256_password') and password_last_changed is NULL;
+
+ALTER TABLE user ADD password_lifetime smallint unsigned NULL;
+
+--
+-- Add account_locked column
+--
+SET @hadAccountLocked:=0;
+SELECT @hadAccountLocked:=1 FROM user WHERE account_locked LIKE '%';
+
+ALTER TABLE user ADD account_locked ENUM('N', 'Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL;
+UPDATE user SET account_locked = 'N' WHERE @hadAccountLocked=0;
+
+-- need to compensate for the ALTER TABLE user .. CONVERT TO CHARACTER SET above
+ALTER TABLE user MODIFY account_locked ENUM('N', 'Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL;
+
+--
+-- Drop password column
+--
+
+SET @have_password= (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'mysql'
+                    AND TABLE_NAME='user'
+                    AND column_name='password');
+SET @str=IF(@have_password <> 0, "UPDATE user SET authentication_string = password where LENGTH(password) > 0 and plugin = 'mysql_native_password'", "SET @dummy = 0");
+# We have already put mysql_native_password as plugin value in cases where length(PASSWORD) is either 0 or 41.
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+SET @str=IF(@have_password <> 0, "ALTER TABLE user DROP password", "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+# Activate the new, possible modified privilege tables
+# This should not be needed, but gives us some extra testing that the above
+# changes was correct
+
+flush privileges;
+
+ALTER TABLE slave_master_info ADD Ssl_crl TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The file used for the Certificate Revocation List (CRL)';
+ALTER TABLE slave_master_info ADD Ssl_crlpath TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The path used for Certificate Revocation List (CRL) files';
+ALTER TABLE slave_master_info ADD Tls_version TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Tls version';
+ALTER TABLE slave_master_info STATS_PERSISTENT=0;
+ALTER TABLE slave_worker_info STATS_PERSISTENT=0;
+ALTER TABLE slave_relay_log_info STATS_PERSISTENT=0;
+ALTER TABLE gtid_executed STATS_PERSISTENT=0;
+
+#
+# From 5.7 onwards, all slave info tables have Channel_Name as a column.
+# This column is needed  for multi-source replication
+#
+ALTER TABLE slave_master_info
+  ADD Channel_name CHAR(64) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT '' COMMENT 'The channel on which the slave is connected to a source. Used in Multisource Replication',
+  DROP PRIMARY KEY,
+  ADD PRIMARY KEY(Channel_name);
+
+ALTER TABLE slave_relay_log_info
+  ADD Channel_name CHAR(64) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT '' COMMENT 'The channel on which the slave is connected to a source. Used in Multisource Replication',
+  DROP PRIMARY KEY,
+  ADD PRIMARY KEY(Channel_name);
+
+ALTER TABLE slave_worker_info
+  ADD Channel_name CHAR(64) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT '' COMMENT 'The channel on which the slave is connected to a source. Used in Multisource Replication',
+  DROP PRIMARY KEY,
+  ADD PRIMARY KEY(Channel_name, Id);
+
+SET @have_innodb= (SELECT COUNT(engine) FROM information_schema.engines WHERE engine='InnoDB' AND support != 'NO');
+SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_table_stats STATS_PERSISTENT=0", "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_index_stats STATS_PERSISTENT=0", "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+#
+# ndb_binlog_index table
+#
+ALTER TABLE ndb_binlog_index
+  ADD COLUMN next_position BIGINT UNSIGNED NOT NULL;
+ALTER TABLE ndb_binlog_index
+  ADD COLUMN next_file VARCHAR(255) NOT NULL;
+
+--
 -- Check for non-empty host table and issue a warning
 --
 
 DROP PROCEDURE IF EXISTS mysql.warn_host_table_nonempty;
-DELIMITER //
-CREATE PROCEDURE mysql.warn_host_table_nonempty()
-BEGIN
-  SET @have_host_table=0;
-  SET @host_table_nonempty=0;
-  SET @have_host_table=(SELECT COUNT(*) FROM information_schema.tables WHERE table_name LIKE 'host' AND table_schema LIKE 'mysql' AND table_type LIKE 'BASE TABLE');
+CREATE PROCEDURE mysql.warn_host_table_nonempty() SIGNAL SQLSTATE '01000' SET MESSAGE_TEXT='Table mysql.host is not empty. It is deprecated and will be removed in a future release.';
+SET @cmd='call mysql.warn_host_table_nonempty()';
 
-  IF @have_host_table > 0 THEN
-    SET @host_table_nonempty=(SELECT COUNT(*) FROM mysql.host);
-  END IF;
+SET @have_host_table=0;
+SET @host_table_nonempty=0;
+SET @have_host_table=(SELECT COUNT(*) FROM information_schema.tables WHERE table_name LIKE 'host' AND table_schema LIKE 'mysql' AND table_type LIKE 'BASE TABLE');
 
-  IF @host_table_nonempty > 0 THEN
-    SIGNAL SQLSTATE '01000' SET MESSAGE_TEXT='Table mysql.host is not empty. It is deprecated and will be removed in a future release.';
-  END IF;
-END //
-DELIMITER ;
-CALL mysql.warn_host_table_nonempty();
+SET @host_table_nonempty_str=IF(@have_host_table > 0, 'SET @host_table_nonempty=(SELECT COUNT(*) FROM mysql.host)', 'SET @dummy=0');
+PREPARE stmt FROM @host_table_nonempty_str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @str=IF(@host_table_nonempty > 0, @cmd, 'SET @dummy=0');
+
+PREPARE stmt FROM @str;
+EXECUTE stmt;
 -- Get warnings (if any)
 SHOW WARNINGS;
+DROP PREPARE stmt;
 DROP PROCEDURE mysql.warn_host_table_nonempty;
 
 --
@@ -744,3 +866,57 @@ DROP PROCEDURE mysql.warn_host_table_nonempty;
 ALTER TABLE help_category MODIFY url TEXT NOT NULL;
 ALTER TABLE help_topic MODIFY url TEXT NOT NULL;
 
+--
+-- Upgrade a table engine from MyISAM to InnoDB for the system tables
+-- help_topic, help_category, help_relation, help_keyword, plugin, servers,
+-- time_zone, time_zone_leap_second, time_zone_name, time_zone_transition,
+-- time_zone_transition_type.
+
+ALTER TABLE help_topic ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE help_category ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE help_relation ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE help_keyword ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE plugin ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE servers ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE time_zone ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE time_zone_leap_second ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE time_zone_name ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE time_zone_transition ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE time_zone_transition_type ENGINE=InnoDB STATS_PERSISTENT=0;
+
+# Move any distributed grant tables back to NDB after upgrade
+SET @cmd="ALTER TABLE mysql.user ENGINE=NDB";
+SET @str = IF(@had_distributed_user > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.db ENGINE=NDB";
+SET @str = IF(@had_distributed_db > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.tables_priv ENGINE=NDB";
+SET @str = IF(@had_distributed_tables_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.columns_priv ENGINE=NDB";
+SET @str = IF(@had_distributed_columns_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.procs_priv ENGINE=NDB";
+SET @str = IF(@had_distributed_procs_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.proxies_priv ENGINE=NDB";
+SET @str = IF(@had_distributed_proxies_priv > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;

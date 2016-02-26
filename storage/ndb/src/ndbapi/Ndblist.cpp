@@ -44,6 +44,7 @@ Ndb::checkFailedNode()
        */
       NdbTransaction * tNdbCon = theConnectionArray[node_id];
       theConnectionArray[node_id] = NULL;
+      theConnectionArrayLast[node_id] = NULL;
       while (tNdbCon != NULL) {
         NdbTransaction* tempNdbCon = tNdbCon;
         tNdbCon = tNdbCon->next();
@@ -130,7 +131,7 @@ NdbTransaction*
 Ndb::getNdbCon()
 {
   NdbTransaction* tNdbCon = theImpl->theConIdleList.seize(this);
-  tNdbCon->theMagicNumber = 0x37412619;
+  tNdbCon->theMagicNumber = tNdbCon->getMagicNumber();
   return tNdbCon;
 }
 
@@ -486,7 +487,7 @@ Ndb::releaseConnectToNdb(NdbTransaction* a_con)
   tSignal.setData(theMyRef, 2);
   tSignal.setData(a_con->ptr2int(), 3); 
   a_con->Status(NdbTransaction::DisConnecting);
-  a_con->theMagicNumber = 0x37412619;
+  a_con->theMagicNumber = a_con->getMagicNumber();
   int ret_code = sendRecSignal(node_id,
                                WAIT_TC_RELEASE,
                                &tSignal,

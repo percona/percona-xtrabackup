@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2012, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2014, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -40,12 +40,12 @@ the same clustered index unique key did not have any record, even delete
 marked, at the time of the insert.  InnoDB is eager in a rollback:
 if it figures out that an index record will be removed in the purge
 anyway, it will remove it in the rollback.
-@return	DB_SUCCESS */
-UNIV_INTERN
+@return DB_SUCCESS */
 dberr_t
 row_undo_ins(
 /*=========*/
-	undo_node_t*	node)	/*!< in: row undo node */
+	undo_node_t*	node,	/*!< in: row undo node */
+	que_thr_t*	thr)	/*!< in: query thread */
 	__attribute__((nonnull, warn_unused_result));
 #ifndef UNIV_NONINL
 #include "row0uins.ic"

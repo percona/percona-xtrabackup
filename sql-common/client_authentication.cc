@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@
 #include <openssl/applink.c>
 #endif
 #endif
-#include "mysql/service_my_plugin_log.h"
+#include "mysql/plugin.h"
 
 #define MAX_CIPHER_LENGTH 1024
 
@@ -99,12 +99,12 @@ RSA *rsa_init(MYSQL *mysql)
       If a key path was submitted but no key located then we print an error
       message. Else we just report that there is no public key.
     */
-    fprintf(stderr,"Can't locate server public key '%s'\n",
-              mysql->options.extension->server_public_key_path);
+    my_message_local(WARNING_LEVEL, "Can't locate server public key '%s'",
+                     mysql->options.extension->server_public_key_path);
 
     return 0;
   }
-  
+
   mysql_mutex_lock(&g_public_key_mutex);
   key= g_public_key= PEM_read_RSA_PUBKEY(pub_key_file, 0, 0, 0);
   mysql_mutex_unlock(&g_public_key_mutex);
@@ -112,8 +112,8 @@ RSA *rsa_init(MYSQL *mysql)
   if (g_public_key == NULL)
   {
     ERR_clear_error();
-    fprintf(stderr, "Public key is not in PEM format: '%s'\n",
-            mysql->options.extension->server_public_key_path);
+    my_message_local(WARNING_LEVEL, "Public key is not in PEM format: '%s'",
+                     mysql->options.extension->server_public_key_path);
     return 0;
   }
 
@@ -171,7 +171,7 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
 
   if (mysql_get_ssl_cipher(mysql) != NULL)
     connection_is_secure= true;
-  
+
   /* If connection isn't secure attempt to get the RSA public key file */
   if (!connection_is_secure)
   {
@@ -184,13 +184,13 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
   {
     /* We're not using a password */
     static const unsigned char zero_byte= '\0'; 
-    if (vio->write_packet(vio, (const unsigned char *) &zero_byte, 1))
+    if (vio->write_packet(vio, &zero_byte, 1))
       DBUG_RETURN(CR_ERROR);
   }
   else
   {
     /* Password is a 0-terminated byte array ('\0' character included) */
-    unsigned int passwd_len= strlen(mysql->passwd) + 1;
+    unsigned int passwd_len= static_cast<unsigned int>(strlen(mysql->passwd) + 1);
     if (!connection_is_secure)
     {
 #if !defined(HAVE_YASSL)
@@ -217,9 +217,28 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
         }
         got_public_key_from_server= true;
       }
+
+      /*
+        An arbitrary limitation based on the assumption that passwords
+        larger than e.g. 15 symbols don't contribute to security.
+        Note also that it's furter restricted to RSA_size() - 41 down
+        below, so this leaves 471 bytes of possible RSA key sizes which
+        should be reasonably future-proof.
+        We avoid heap allocation for speed reasons.
+      */
+      char passwd_scramble[512];
+
+      if (passwd_len > sizeof(passwd_scramble))
+      {
+        /* password too long for the buffer */
+        if (got_public_key_from_server)
+          RSA_free(public_key);
+        DBUG_RETURN(CR_ERROR);
+      }
+      memmove(passwd_scramble, mysql->passwd, passwd_len);
       
       /* Obfuscate the plain text password with the session scramble */
-      xor_string(mysql->passwd, strlen(mysql->passwd), (char *) scramble_pkt,
+      xor_string(passwd_scramble, passwd_len - 1, (char *) scramble_pkt,
                  SCRAMBLE_LENGTH);
       /* Encrypt the password and send it to the server */
       int cipher_length= RSA_size(public_key);
@@ -230,9 +249,11 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
       if (passwd_len + 41 >= (unsigned) cipher_length)
       {
         /* password message is to long */
+        if (got_public_key_from_server)
+          RSA_free(public_key);
         DBUG_RETURN(CR_ERROR);
       }
-      RSA_public_encrypt(passwd_len, (unsigned char *) mysql->passwd,
+      RSA_public_encrypt(passwd_len, (unsigned char *) passwd_scramble,
                          encrypted_password,
                          public_key, RSA_PKCS1_OAEP_PADDING);
       if (got_public_key_from_server)
@@ -253,8 +274,6 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
       if (vio->write_packet(vio, (uchar*) mysql->passwd, passwd_len))
         DBUG_RETURN(CR_ERROR);
     }
-    
-    memset(mysql->passwd, 0, passwd_len);
   }
     
   DBUG_RETURN(CR_OK);

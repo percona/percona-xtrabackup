@@ -9,7 +9,7 @@ load_dbase_data sakila
 mkdir -p $topdir/backup
 xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/backup
 vlog "Backup taken, trying stats"
-xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup
+xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only --target-dir=$topdir/backup
 
 # First check that xtrabackup fails with the correct error message
 # when trying to get stats before creating the log files

@@ -27,7 +27,7 @@ int
 poll_socket(ndb_socket_t socket, bool read, bool write,
             int timeout_millis, int* total_elapsed_millis)
 {
-  const NDB_TICKS start = NdbTick_CurrentMillisecond();
+  const NDB_TICKS start = NdbTick_getCurrentTicks();
 
   timeout_millis -= *total_elapsed_millis;
 
@@ -38,8 +38,8 @@ poll_socket(ndb_socket_t socket, bool read, bool write,
     ndb_poll(socket, read, write, false, timeout_millis);
 
   // Calculate elapsed time in this function
-  const int elapsed_millis = (int)(NdbTick_CurrentMillisecond() - start);
-  assert(elapsed_millis >= 0);
+  const NDB_TICKS now = NdbTick_getCurrentTicks();
+  const int elapsed_millis = (int)(NdbTick_Elapsed(start,now).milliSec());
 
   // Update the total elapsed time
   *total_elapsed_millis += elapsed_millis;
@@ -123,7 +123,7 @@ readln_socket(NDB_SOCKET_TYPE socket, int timeout_millis, int *time,
         *time = 0;
 
 	ptr[0]= 0;
-	return ptr - buf;
+	return (int)(ptr - buf);
       }
     }
     
@@ -226,7 +226,7 @@ vprint_socket(NDB_SOCKET_TYPE socket, int timeout_millis, int *time,
   } else
     return 0;
 
-  int ret = write_socket(socket, timeout_millis, time, buf2, size);
+  int ret = write_socket(socket, timeout_millis, time, buf2, (int)size);
   if(buf2 != buf)
     free(buf2);
   return ret;
@@ -254,7 +254,7 @@ vprintln_socket(NDB_SOCKET_TYPE socket, int timeout_millis, int *time,
   }
   buf2[size-1]='\n';
 
-  int ret = write_socket(socket, timeout_millis, time, buf2, size);
+  int ret = write_socket(socket, timeout_millis, time, buf2, (int)size);
   if(buf2 != buf)
     free(buf2);
   return ret;

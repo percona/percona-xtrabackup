@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -62,9 +62,10 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       --share->tot_locks;
       if (info->lock_type == F_WRLCK && !share->w_locks &&
 	  !share->delay_key_write && flush_key_blocks(share->key_cache,
+                                                      keycache_thread_var(),
 						      share->kfile,FLUSH_KEEP))
       {
-	error=my_errno;
+	error=my_errno();
         mi_print_error(info->s, HA_ERR_CRASHED);
 	mi_mark_crashed(info);		/* Mark that table must be checked */
       }
@@ -72,7 +73,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       {
 	if (end_io_cache(&info->rec_cache))
 	{
-	  error=my_errno;
+	  error=my_errno();
           mi_print_error(info->s, HA_ERR_CRASHED);
 	  mi_mark_crashed(info);
 	}
@@ -83,30 +84,28 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 			   (uint) share->changed, share->w_locks));
 	if (share->changed && !share->w_locks)
 	{
-#ifdef HAVE_MMAP
-    if ((info->s->mmaped_length != info->s->state.state.data_file_length) &&
-        (info->s->nonmmaped_inserts > MAX_NONMAPPED_INSERTS))
-    {
-      if (info->s->concurrent_insert)
-        mysql_rwlock_wrlock(&info->s->mmap_lock);
-      mi_remap_file(info, info->s->state.state.data_file_length);
-      info->s->nonmmaped_inserts= 0;
-      if (info->s->concurrent_insert)
-        mysql_rwlock_unlock(&info->s->mmap_lock);
-    }
-#endif
+          if ((info->s->mmaped_length != info->s->state.state.data_file_length) &&
+              (info->s->nonmmaped_inserts > MAX_NONMAPPED_INSERTS))
+          {
+            if (info->s->concurrent_insert)
+              mysql_rwlock_wrlock(&info->s->mmap_lock);
+            mi_remap_file(info, info->s->state.state.data_file_length);
+            info->s->nonmmaped_inserts= 0;
+            if (info->s->concurrent_insert)
+              mysql_rwlock_unlock(&info->s->mmap_lock);
+          }
 	  share->state.process= share->last_process=share->this_process;
 	  share->state.unique=   info->last_unique=  info->this_unique;
 	  share->state.update_count= info->last_loop= ++info->this_loop;
           if (mi_state_info_write(share->kfile, &share->state, 1))
-	    error=my_errno;
+	    error=my_errno();
 	  share->changed=0;
 	  if (myisam_flush)
 	  {
             if (mysql_file_sync(share->kfile, MYF(0)))
-	      error= my_errno;
+	      error= my_errno();
             if (mysql_file_sync(info->dfile, MYF(0)))
-	      error= my_errno;
+	      error= my_errno();
 	  }
 	  else
 	    share->not_flushed=1;
@@ -122,13 +121,13 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	  {					/* Only read locks left */
 	    if (my_lock(share->kfile,F_RDLCK,0L,F_TO_EOF,
 			MYF(MY_WME | MY_SEEK_NOT_DONE)) && !error)
-	      error=my_errno;
+	      error=my_errno();
 	  }
 	  else if (!share->w_locks)
 	  {					/* No more locks */
 	    if (my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
 			MYF(MY_WME | MY_SEEK_NOT_DONE)) && !error)
-	      error=my_errno;
+	      error=my_errno();
 	  }
 	}
       }
@@ -150,7 +149,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
           if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
 		      MYF(MY_SEEK_NOT_DONE)))
 	  {
-	    error=my_errno;
+	    error=my_errno();
 	    break;
 	  }
 	}
@@ -164,14 +163,14 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
 		    info->lock_wait | MY_SEEK_NOT_DONE))
 	{
-	  error=my_errno;
+	  error=my_errno();
 	  break;
 	}
 	if (mi_state_info_read_dsk(share->kfile, &share->state, 1))
 	{
-	  error=my_errno;
+	  error=my_errno();
 	  (void) my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
-	  my_errno=error;
+	  set_my_errno(error);
 	  break;
 	}
       }
@@ -189,7 +188,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	  if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
 		      MYF(info->lock_wait | MY_SEEK_NOT_DONE)))
 	  {
-	    error=my_errno;
+	    error=my_errno();
 	    break;
 	  }
 	  share->r_locks--;
@@ -205,17 +204,17 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	  if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
 		      info->lock_wait | MY_SEEK_NOT_DONE))
 	  {
-	    error=my_errno;
+	    error=my_errno();
 	    break;
 	  }
 	  if (!share->r_locks)
 	  {
 	    if (mi_state_info_read_dsk(share->kfile, &share->state, 1))
 	    {
-	      error=my_errno;
+	      error=my_errno();
 	      (void) my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
 			   info->lock_wait | MY_SEEK_NOT_DONE);
-	      my_errno=error;
+	      set_my_errno(error);
 	      break;
 	    }
 	  }
@@ -389,7 +388,7 @@ my_bool mi_check_status(void *param)
  ** functions to read / write the state
 ****************************************************************************/
 
-int _mi_readinfo(register MI_INFO *info, int lock_type, int check_keybuffer)
+int _mi_readinfo(MI_INFO *info, int lock_type, int check_keybuffer)
 {
   DBUG_ENTER("_mi_readinfo");
 
@@ -403,10 +402,10 @@ int _mi_readinfo(register MI_INFO *info, int lock_type, int check_keybuffer)
 	DBUG_RETURN(1);
       if (mi_state_info_read_dsk(share->kfile, &share->state, 1))
       {
-	int error=my_errno ? my_errno : -1;
+	int error=my_errno() ? my_errno() : -1;
 	(void) my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
 		     MYF(MY_SEEK_NOT_DONE));
-	my_errno=error;
+	set_my_errno(error);
 	DBUG_RETURN(1);
       }
     }
@@ -416,7 +415,7 @@ int _mi_readinfo(register MI_INFO *info, int lock_type, int check_keybuffer)
   }
   else if (lock_type == F_WRLCK && info->lock_type == F_RDLCK)
   {
-    my_errno=EACCES;				/* Not allowed to change */
+    set_my_errno(EACCES);				/* Not allowed to change */
     DBUG_RETURN(-1);				/* when have read_lock() */
   }
   DBUG_RETURN(0);
@@ -428,7 +427,7 @@ int _mi_readinfo(register MI_INFO *info, int lock_type, int check_keybuffer)
   request
 */
 
-int _mi_writeinfo(register MI_INFO *info, uint operation)
+int _mi_writeinfo(MI_INFO *info, uint operation)
 {
   int error,olderror;
   MYISAM_SHARE *share=info->s;
@@ -439,14 +438,14 @@ int _mi_writeinfo(register MI_INFO *info, uint operation)
   error=0;
   if (share->tot_locks == 0)
   {
-    olderror=my_errno;			/* Remember last error */
+    olderror=my_errno();			/* Remember last error */
     if (operation)
     {					/* Two threads can't be here */
       share->state.process= share->last_process=   share->this_process;
       share->state.unique=  info->last_unique=	   info->this_unique;
       share->state.update_count= info->last_loop= ++info->this_loop;
       if ((error=mi_state_info_write(share->kfile, &share->state, 1)))
-	olderror=my_errno;
+	olderror=my_errno();
 #ifdef _WIN32
       if (myisam_flush)
       {
@@ -459,7 +458,7 @@ int _mi_writeinfo(register MI_INFO *info, uint operation)
 	my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
 		MYF(MY_WME | MY_SEEK_NOT_DONE)) && !error)
       DBUG_RETURN(1);
-    my_errno=olderror;
+    set_my_errno(olderror);
   }
   else if (operation)
     share->changed= 1;			/* Mark keyfile changed */
@@ -470,7 +469,7 @@ int _mi_writeinfo(register MI_INFO *info, uint operation)
 	/* Test if someone has changed the database */
 	/* (Should be called after readinfo) */
 
-int _mi_test_if_changed(register MI_INFO *info)
+int _mi_test_if_changed(MI_INFO *info)
 {
   MYISAM_SHARE *share=info->s;
   if (share->state.process != share->last_process ||
@@ -479,7 +478,8 @@ int _mi_test_if_changed(register MI_INFO *info)
   {						/* Keyfile has changed */
     DBUG_PRINT("info",("index file changed"));
     if (share->state.process != share->this_process)
-      (void) flush_key_blocks(share->key_cache, share->kfile, FLUSH_RELEASE);
+      (void) flush_key_blocks(share->key_cache, keycache_thread_var(),
+                              share->kfile, FLUSH_RELEASE);
     share->last_process=share->state.process;
     info->last_unique=	share->state.unique;
     info->last_loop=	share->state.update_count;
@@ -515,7 +515,7 @@ int _mi_test_if_changed(register MI_INFO *info)
 int _mi_mark_file_changed(MI_INFO *info)
 {
   uchar buff[3];
-  register MYISAM_SHARE *share=info->s;
+  MYISAM_SHARE *share=info->s;
   DBUG_ENTER("_mi_mark_file_changed");
 
   if (!(share->state.changed & STATE_CHANGED) || ! share->global_changed)
@@ -548,7 +548,7 @@ int _mi_mark_file_changed(MI_INFO *info)
 int _mi_decrement_open_count(MI_INFO *info)
 {
   uchar buff[2];
-  register MYISAM_SHARE *share=info->s;
+  MYISAM_SHARE *share=info->s;
   int lock_error=0,write_error=0;
   if (share->global_changed)
   {

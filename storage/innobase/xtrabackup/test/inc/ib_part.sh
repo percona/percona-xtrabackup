@@ -28,10 +28,10 @@ PARTITION BY RANGE (a)
 (PARTITION p0 VALUES LESS THAN (100) ENGINE = $engine,
  PARTITION P1 VALUES LESS THAN (200) ENGINE = $engine,
  PARTITION p2 VALUES LESS THAN (300)
-   DATA DIRECTORY = '$topdir/ext' INDEX DIRECTORY = '$topdir/ext'
+   DATA DIRECTORY = '$topdir/ext'
    ENGINE = $engine,
  PARTITION p3 VALUES LESS THAN (400)
-   DATA DIRECTORY = '$topdir/ext' INDEX DIRECTORY = '$topdir/ext'
+   DATA DIRECTORY = '$topdir/ext'
    ENGINE = $engine,
  PARTITION p4 VALUES LESS THAN MAXVALUE ENGINE = $engine);
 EOF
@@ -62,11 +62,11 @@ function ib_part_add_mandatory_tables()
 	local tables_file=$2
 	for table in $mysql_datadir/mysql/*.frm
 	do
-	        echo mysql.`basename $table` >> $tables_file
+	        echo mysql.`basename ${table%.*}` >> $tables_file
 	done
 	for table in $mysql_datadir/performance_schema/*.frm
 	do
-	    echo performance_schema.`basename $table` >> $tables_file
+	    echo performance_schema.`basename ${table%.*}` >> $tables_file
 	done
 }
 

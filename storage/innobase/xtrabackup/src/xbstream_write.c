@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xbstream.h"
 
 /* Group writes smaller than this into a single chunk */
-#define XB_STREAM_MIN_CHUNK_SIZE (64 * 1024)
+#define XB_STREAM_MIN_CHUNK_SIZE (10 * 1024 * 1024)
 
 struct xb_wstream_struct {
 	pthread_mutex_t	mutex;
@@ -64,7 +64,8 @@ xb_stream_write_new(void)
 {
 	xb_wstream_t	*stream;
 
-	stream = (xb_wstream_t *) my_malloc(sizeof(xb_wstream_t), MYF(MY_FAE));
+	stream = (xb_wstream_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+					    sizeof(xb_wstream_t), MYF(MY_FAE));
 	pthread_mutex_init(&stream->mutex, NULL);
 
 	return stream;;
@@ -86,7 +87,8 @@ xb_stream_write_open(xb_wstream_t *stream, const char *path,
 		return NULL;
 	}
 
-	file = (xb_wstream_file_t *) my_malloc(sizeof(xb_wstream_file_t) +
+	file = (xb_wstream_file_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+					       sizeof(xb_wstream_file_t) +
 					       path_len + 1, MYF(MY_FAE));
 
 	file->path = (char *) (file + 1);

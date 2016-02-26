@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2007 MySQL AB, 2008 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -27,6 +26,8 @@ class NDBT_Stats;
 
 class HugoTransactions : public HugoOperations {
 public:
+  struct HugoBound { int attr; int type; const void* value; };
+
   HugoTransactions(const NdbDictionary::Table&,
 		   const NdbDictionary::Index* idx = 0);
   ~HugoTransactions();
@@ -37,7 +38,8 @@ public:
 		int doSleep = 0,
                 bool oneTrans = false,
 		int updateValue = 0,
-		bool abort = false);
+		bool abort = false,
+                bool abort_on_first_error = false);
 
   int loadTableStartFrom(Ndb*, 
                          int startFrom,
@@ -47,7 +49,8 @@ public:
                          int doSleep = 0,
                          bool oneTrans = false,
                          int updateValue = 0,
-                         bool abort = false);
+                         bool abort = false,
+                         bool abort_on_first_error = false);
 
   int scanReadRecords(Ndb*, 
 		      int records,
@@ -62,7 +65,8 @@ public:
 		      int abort = 0,
 		      int parallelism = 0,
 		      NdbOperation::LockMode = NdbOperation::LM_Read,
-                      int scan_flags = 0);
+                      int scan_flags = 0,
+                      int bound_cnt = 0, const HugoBound* bound_arr = 0);
 
   int pkReadRecords(Ndb*, 
 		    int records,
@@ -137,6 +141,8 @@ public:
 			 int batchsize = 1);
 
   void setRetryMax(int retryMax = 100) { m_retryMax = retryMax; }
+  // XXX only for scanUpdateRecords
+  bool getRetryMaxReached() const { return m_retryMaxReached; }
   
   Uint64 m_latest_gci;
 
@@ -148,15 +154,23 @@ public:
     m_thr_no = thr_no;
   }
 
+  // generate empty updates for testing
+  void setAllowEmptyUpdates(bool allow) {
+    m_empty_update = allow;
+  }
+
 protected:  
   NDBT_ResultRow row;
   int m_defaultScanUpdateMethod;
   int m_retryMax;
+  bool m_retryMaxReached;
 
   NDBT_Stats* m_stats_latency;
 
   int m_thr_count;      // 0 if no separation between threads
   int m_thr_no;
+
+  bool m_empty_update;
 };
 
 

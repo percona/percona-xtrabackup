@@ -34,8 +34,6 @@ In |Percona XtraBackup| 2.1.4 new :option:`innobackupex --decompress` option has
 
   $ innobackupex --decompress /data/backup/2013-08-01_11-24-04/
 
-This option will remove the original compressed files and leave the uncompressed ones in the same location.
-
 .. note:: 
 
   In order to successfully use the :option:`innobackupex --decompress` option, qpress binary needs to installed and within the path.
@@ -53,7 +51,7 @@ Now the files in :file:`/data/backups/2013-08-01_11-24-04` is ready to be used b
 
 .. note::
 
-   After version 2.2.10 |Percona XtraBackup| doesn't automatically remove the compressed files. In order to clean up the backup directory users should remove the :file:`*.qp` files.
+   |Percona XtraBackup| doesn't automatically remove the compressed files. In order to clean up the backup directory users should remove the :file:`*.qp` files.
 
 Restoring the backup
 --------------------

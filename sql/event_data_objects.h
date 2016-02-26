@@ -1,6 +1,6 @@
 #ifndef _EVENT_DATA_OBJECTS_H_
 #define _EVENT_DATA_OBJECTS_H_
-/* Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,13 +22,28 @@
   @file event_data_objects.h
 */
 
-#include "event_parse_data.h"
-#include "thr_lock.h"                           /* thr_lock_type */
+#include "my_global.h"
+#include "m_string.h"                   // LEX_CSTRING
+#include "my_alloc.h"                   // MEM_ROOT
+#include "my_time.h"                    // my_time_t
+#include "mysql/mysql_lex_string.h"     // LEX_STRING
+
+#include "my_thread.h"                  // Needed for psi.h
+#include <pfs_stage_provider.h>
+#include <mysql/psi/mysql_stage.h>
+
+#include <pfs_statement_provider.h>
+#include <mysql/psi/mysql_statement.h>
 
 class Field;
+class String;
 class THD;
 class Time_zone;
 struct TABLE;
+typedef ulonglong sql_mode_t;
+typedef struct st_mysql_lex_string LEX_STRING;
+
+void init_scheduler_psi_keys(void);
 
 class Event_queue_element_for_exec
 {
@@ -44,10 +59,21 @@ public:
   bool dropped;
   THD *thd;
 
+  void claim_memory_ownership();
+
 private:
   /* Prevent use of these */
   Event_queue_element_for_exec(const Event_queue_element_for_exec &);
   void operator=(Event_queue_element_for_exec &);
+#ifdef HAVE_PSI_INTERFACE
+public:
+  PSI_statement_info* get_psi_info()
+  {
+    return & psi_info;
+  }
+
+  static PSI_statement_info psi_info;
+#endif
 };
 
 
@@ -124,8 +150,8 @@ class Event_timed : public Event_queue_element
 public:
   LEX_STRING body;
 
-  LEX_STRING definer_user;
-  LEX_STRING definer_host;
+  LEX_CSTRING definer_user;
+  LEX_CSTRING definer_host;
 
   LEX_STRING comment;
 
@@ -155,8 +181,8 @@ class Event_job_data : public Event_basic
 {
 public:
   LEX_STRING body;
-  LEX_STRING definer_user;
-  LEX_STRING definer_host;
+  LEX_CSTRING definer_user;
+  LEX_CSTRING definer_host;
 
   sql_mode_t sql_mode;
 

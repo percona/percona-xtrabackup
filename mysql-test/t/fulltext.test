@@ -1,3 +1,11 @@
+# This tests the functionality of the fulltext search of Myisam engine
+# The implementation of the fulltext search is different in InnoDB engine
+# All tests are required to run with Myisam.
+# Hence MTR starts mysqld with MyISAM as default
+
+--source include/force_myisam_default.inc
+--source include/have_myisam.inc
+
 #
 # Test of fulltext index
 #
@@ -290,7 +298,9 @@ SELECT t, collation(t) FROM t1 WHERE MATCH t AGAINST ('Osnabrück');
 SELECT t, collation(t) FROM t1 WHERE MATCH t AGAINST ('Osnabrueck');
 SELECT t, collation(t),FORMAT(MATCH t AGAINST ('Osnabruck'),6) FROM t1 WHERE MATCH t AGAINST ('Osnabruck');
 #alter table t1 modify t text character set latin1 collate latin1_german2_ci not null;
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 alter table t1 modify t varchar(200) collate latin1_german2_ci not null;
+SET sql_mode = default;
 SELECT t, collation(t) FROM t1 WHERE MATCH t AGAINST ('Osnabrück');
 SELECT t, collation(t) FROM t1 WHERE MATCH t AGAINST ('Osnabrueck');
 DROP TABLE t1;
@@ -632,3 +642,17 @@ DEALLOCATE PREPARE stmt;
 DROP TABLE t1;
 
 --echo End of 5.1 tests
+
+--echo # Bug#21140111: Explain ... match against: Assertion failed: ret ...
+
+CREATE TABLE z(a INTEGER) engine=innodb;
+CREATE TABLE q(b TEXT CHARSET latin1, fulltext(b)) engine=innodb;
+
+let $query=
+SELECT 1 FROM q
+WHERE (SELECT MATCH(b) AGAINST ('*') FROM z);
+
+--error ER_WRONG_ARGUMENTS
+eval explain format=json $query;
+
+DROP TABLE z, q;

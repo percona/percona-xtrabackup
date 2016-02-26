@@ -15,8 +15,6 @@
 
 #include "vio_priv.h"
 
-#ifdef _WIN32
-
 static size_t wait_overlapped_result(Vio *vio, int timeout)
 {
   size_t ret= (size_t) -1;
@@ -59,7 +57,7 @@ size_t vio_read_pipe(Vio *vio, uchar *buf, size_t count)
   DBUG_ENTER("vio_read_pipe");
 
   /* Attempt to read from the pipe (overlapped I/O). */
-  if (ReadFile(vio->hPipe, buf, count, &transferred, &vio->overlapped))
+  if (ReadFile(vio->hPipe, buf, (DWORD)count, &transferred, &vio->overlapped))
   {
     /* The operation completed immediately. */
     ret= transferred;
@@ -79,7 +77,7 @@ size_t vio_write_pipe(Vio *vio, const uchar *buf, size_t count)
   DBUG_ENTER("vio_write_pipe");
 
   /* Attempt to write to the pipe (overlapped I/O). */
-  if (WriteFile(vio->hPipe, buf, count, &transferred, &vio->overlapped))
+  if (WriteFile(vio->hPipe, buf, (DWORD)count, &transferred, &vio->overlapped))
   {
     /* The operation completed immediately. */
     ret= transferred;
@@ -117,6 +115,3 @@ int vio_shutdown_pipe(Vio *vio)
 
   DBUG_RETURN(ret);
 }
-
-#endif
-

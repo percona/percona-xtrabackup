@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 #include <my_sys.h>
 #include <m_string.h>
 #include "heap.h"
+#include "my_thread_local.h"
 
 static int get_options(int argc, char *argv[]);
 
@@ -70,13 +71,13 @@ int main(int argc, char **argv)
       !(file= heap_open(filename, 2)))
     goto err;
   printf("- Writing records:s\n");
-  strmov((char*) record,"          ..... key           ");
+  my_stpcpy((char*) record,"          ..... key           ");
 
   for (i=49 ; i>=1 ; i-=2 )
   {
     j=i%25 +1;
     sprintf((char*) key,"%6d",j);
-    bmove(record+1,key,6);
+    memmove(record + 1, key, 6);
     error=heap_write(file,record);
     if (heap_check_heap(file,0))
     {
@@ -85,7 +86,7 @@ int main(int argc, char **argv)
     }
     flags[j]=1;
     if (verbose || error) printf("J= %2d  heap_write: %d  my_errno: %d\n",
-       j,error,my_errno);
+                                 j,error,my_errno());
   }
   if (heap_close(file))
     goto err;
@@ -101,14 +102,14 @@ int main(int argc, char **argv)
     if ((error = heap_rkey(file,record,0,key,6,HA_READ_KEY_EXACT)))
     {
       if (verbose || (flags[j] == 1 ||
-		      (error && my_errno != HA_ERR_KEY_NOT_FOUND)))
-	printf("key: %s  rkey:   %3d  my_errno: %3d\n",(char*) key,error,my_errno);
+		      (error && my_errno() != HA_ERR_KEY_NOT_FOUND)))
+	printf("key: %s  rkey:   %3d  my_errno: %3d\n",(char*) key,error,my_errno());
     }
     else
     {
       error=heap_delete(file,record);
       if (error || verbose)
-	printf("key: %s  delete: %d  my_errno: %d\n",(char*) key,error,my_errno);
+	printf("key: %s  delete: %d  my_errno: %d\n",(char*) key,error,my_errno());
       flags[j]=0;
       if (! error)
 	deleted++;
@@ -124,49 +125,24 @@ int main(int argc, char **argv)
   for (i=1 ; i<=25 ; i++)
   {
     sprintf((char*) key,"%6d",i);
-    bmove(record+1,key,6);
-    my_errno=0;
+    memmove(record + 1, key, 6);
+    set_my_errno(0);
     error=heap_rkey(file,record,0,key,6,HA_READ_KEY_EXACT);
     if (verbose ||
 	(error == 0 && flags[i] != 1) ||
-	(error && (flags[i] != 0 || my_errno != HA_ERR_KEY_NOT_FOUND)))
+	(error && (flags[i] != 0 || my_errno() != HA_ERR_KEY_NOT_FOUND)))
     {
       printf("key: %s  rkey: %3d  my_errno: %3d  record: %s\n",
-             (char*) key,error,my_errno,record+1);
+             (char*) key,error,my_errno(),record+1);
     }
   }
-
-#ifdef OLD_HEAP_VERSION
-  {
-    int found;
-    printf("- Reading records with position\n");
-    for (i=1,found=0 ; i <= 30 ; i++)
-    {
-      my_errno=0;
-      if ((error=heap_rrnd(file,record,i == 1 ? 0L : (ulong) -1)) ==
-	  HA_ERR_END_OF_FILE)
-      {
-	if (found != 25-deleted)
-	  printf("Found only %d of %d records\n",found,25-deleted);
-	break;
-      }
-      if (!error)
-	found++;
-      if (verbose || (error != 0 && error != HA_ERR_RECORD_DELETED))
-      {
-	printf("pos: %2d  ni_rrnd: %3d  my_errno: %3d  record: %s\n",
-	       i-1,error,my_errno,(char*) record+1);
-      }
-    }
-  }
-#endif
 
   if (heap_close(file) || hp_panic(HA_PANIC_CLOSE))
     goto err;
   my_end(MY_GIVE_INFO);
   return(0);
 err:
-  printf("got error: %d when using heap-database\n",my_errno);
+  printf("got error: %d when using heap-database\n",my_errno());
   return(1);
 } /* main */
 

@@ -47,6 +47,7 @@ done
 # Make sure we wait longer than lock_wait_timeout
 sleep 1
 
+echo "Letting innobackupex to go!"
 $MYSQL $MYSQL_ARGS -e "KILL $conn_id"
 
 # Test that FTWRL / LOCK TABLES FOR BACKUP succeeds

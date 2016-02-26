@@ -1,5 +1,4 @@
-/* Copyright 2008, 2009 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,16 +15,19 @@
 
 #include "SafeMutex.hpp"
 
+#define JAM_FILE_ID 265
+
+
 int
 SafeMutex::create()
 {
   int ret;
   if (m_initdone)
     return err(ErrState, __LINE__);
-  ret = pthread_mutex_init(&m_mutex, 0);
+  ret = native_mutex_init(&m_mutex, 0);
   if (ret != 0)
     return err(ret, __LINE__);
-  ret = pthread_cond_init(&m_cond, 0);
+  ret = native_cond_init(&m_cond);
   if (ret != 0)
     return err(ret, __LINE__);
   m_initdone = true;
@@ -38,10 +40,10 @@ SafeMutex::destroy()
   int ret;
   if (!m_initdone)
     return err(ErrState, __LINE__);
-  ret = pthread_cond_destroy(&m_cond);
+  ret = native_cond_destroy(&m_cond);
   if (ret != 0)
     return err(ret, __LINE__);
-  ret = pthread_mutex_destroy(&m_mutex);
+  ret = native_mutex_destroy(&m_mutex);
   if (ret != 0)
     return err(ret, __LINE__);
   m_initdone = false;
@@ -53,12 +55,12 @@ SafeMutex::lock()
 {
   int ret;
   if (m_simple) {
-    ret = pthread_mutex_lock(&m_mutex);
+    ret = native_mutex_lock(&m_mutex);
     if (ret != 0)
       return err(ret, __LINE__);
     return 0;
   }
-  ret = pthread_mutex_lock(&m_mutex);
+  ret = native_mutex_lock(&m_mutex);
   if (ret != 0)
     return err(ret, __LINE__);
   return lock_impl();
@@ -68,14 +70,14 @@ int
 SafeMutex::lock_impl()
 {
   int ret;
-  pthread_t self = pthread_self();
+  my_thread_t self = my_thread_self();
   assert(self != 0);
   while (1) {
     if (m_level == 0) {
       assert(m_owner == 0);
       m_owner = self;
     } else if (m_owner != self) {
-      ret = pthread_cond_wait(&m_cond, &m_mutex);
+      ret = native_cond_wait(&m_cond, &m_mutex);
       if (ret != 0)
         return err(ret, __LINE__);
       continue;
@@ -85,10 +87,10 @@ SafeMutex::lock_impl()
     m_level++;
     if (m_usage < m_level)
       m_usage = m_level;
-    ret = pthread_cond_signal(&m_cond);
+    ret = native_cond_signal(&m_cond);
     if (ret != 0)
       return err(ret, __LINE__);
-    ret = pthread_mutex_unlock(&m_mutex);
+    ret = native_mutex_unlock(&m_mutex);
     if (ret != 0)
       return err(ret, __LINE__);
     break;
@@ -101,12 +103,12 @@ SafeMutex::unlock()
 {
   int ret;
   if (m_simple) {
-    ret = pthread_mutex_unlock(&m_mutex);
+    ret = native_mutex_unlock(&m_mutex);
     if (ret != 0)
       return err(ret, __LINE__);
     return 0;
   }
-  ret = pthread_mutex_lock(&m_mutex);
+  ret = native_mutex_lock(&m_mutex);
   if (ret != 0)
     return err(ret, __LINE__);
   return unlock_impl();
@@ -116,7 +118,7 @@ int
 SafeMutex::unlock_impl()
 {
   int ret;
-  pthread_t self = pthread_self();
+  my_thread_t self = my_thread_self();
   assert(self != 0);
   if (m_owner != self)
     return err(ErrOwner, __LINE__);
@@ -125,11 +127,11 @@ SafeMutex::unlock_impl()
   m_level--;
   if (m_level == 0) {
     m_owner = 0;
-    ret = pthread_cond_signal(&m_cond);
+    ret = native_cond_signal(&m_cond);
     if (ret != 0)
       return err(ret, __LINE__);
   }
-  ret = pthread_mutex_unlock(&m_mutex);
+  ret = native_mutex_unlock(&m_mutex);
   if (ret != 0)
     return err(ret, __LINE__);
   return 0;

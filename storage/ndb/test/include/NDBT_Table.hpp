@@ -37,7 +37,7 @@ public:
                  Uint32 defaultValBytes = 0):
     NdbDictionary::Column(_name)
   {
-    assert(_name != 0);
+    require(_name != 0);
     
     setType(_type);
     setLength(_length);
@@ -58,7 +58,6 @@ class NDBT_Table : public NdbDictionary::Table {
    * Print meta information about table 
    * (information on how it is strored, what the attributes look like etc.)
    */
-  friend class NdbOut& operator <<(class NdbOut&, const NDBT_Table &);
 public: 
   
   NDBT_Table(const char* name, 
@@ -66,7 +65,7 @@ public:
 	     const NdbDictionary::Column attributes[])
     : NdbDictionary::Table(name)
   {
-    assert(name != 0);
+    require(name != 0);
     
     //setStoredTable(stored);
     for(int i = 0; i<noOfAttributes; i++)
@@ -76,7 +75,7 @@ public:
     NdbError error;
     int ret = aggregate(error);
     (void)ret;
-    assert(ret == 0);
+    require(ret == 0);
   }
 
   NDBT_Table(const char* name, 
@@ -84,7 +83,7 @@ public:
 	     NdbDictionary::Column* attributePtrs[])
     : NdbDictionary::Table(name)
   {
-    assert(name != 0);
+    require(name != 0);
     
     //setStoredTable(stored);
     for(int i = 0; i<noOfAttributes; i++)
@@ -93,7 +92,8 @@ public:
     // validate() might cause initialization order problem with charset
     NdbError error;
     int ret = aggregate(error);
-    assert(ret == 0);
+    (void)ret;
+    require(ret == 0);
   }
   
   static const NdbDictionary::Table * discoverTableFromDb(Ndb* ndb,
@@ -105,14 +105,5 @@ const NdbDictionary::Table *
 NDBT_Table::discoverTableFromDb(Ndb* ndb, const char * name){
   return ndb->getDictionary()->getTable(name);
 }
-
-
-/**
- * Print meta information about index
- * (information on how it is strored, what the attributes look like etc.)
- */
-class NdbOut& operator <<(class NdbOut&, const NdbDictionary::Index &);
-
-
 
 #endif

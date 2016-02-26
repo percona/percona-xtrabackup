@@ -16,13 +16,18 @@ License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
-BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel
-%if 0%{?rhel} > 6
-BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6
+BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel
+%if 0%{?rhel} > 5
+BuildRequires:  libcurl-devel
+%else
+BuildRequires:  curl-devel
 %endif
+%if 0%{?rhel} > 6 
+BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6 
+%endif
+Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
 Requires:       perl(DBD::mysql), rsync
-Conflicts:      percona-xtrabackup, percona-xtrabackup-21
-BuildRoot:      %{_tmppath}/%{name}-%{version}-root
+BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines
@@ -30,12 +35,12 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 %package -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 Summary:        Test suite for Percona XtraBackup
 Group:          Applications/Databases
-Requires:       percona-xtrabackup-%{version}%{xb_version_extra} = %{version}-%{release}
+Requires:       percona-xtrabackup-%{xb_version_major}%{xb_version_minor} = %{version}-%{release}
 Requires:       /usr/bin/mysql
 AutoReqProv:    no
 
 %description -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
-This package contains the test suite for Percona XtraBackup %{version}
+This package contains the test suite for Percona XtraBackup %{version}%{xb_version_extra}
 
 %prep
 %setup -q -n percona-xtrabackup-%{version}%{xb_version_extra}
@@ -49,6 +54,7 @@ This package contains the test suite for Percona XtraBackup %{version}
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xtrabackup
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbstream
 echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcrypt
+echo 'main() { return 300; }' | gcc -x c - -o storage/innobase/xtrabackup/src/xbcloud
 #
 %else
 #
@@ -58,7 +64,8 @@ export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
 cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test -DINSTALL_MANDIR=%{_mandir} .
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost .
 #
 make %{?_smp_mflags}
 #
@@ -77,36 +84,31 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xtrabackup
 %{_bindir}/xbstream
 %{_bindir}/xbcrypt
+%{_bindir}/xbcloud
+%{_bindir}/xbcloud_osenv
 %doc COPYING
 %doc %{_mandir}/man1/*.1.gz
 
 %files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 %defattr(-,root,root,-)
-%{_datadir}/percona-xtrabackup-test
+%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
 %changelog
+* Wed Feb 03 2016 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Packaging updates for version 2.4.0-rc1
+
+* Mon Dec 14 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Update to new release Percona XtraBackup 2.3.3
+
 * Fri Oct 16 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.13
-- Renamed the package to percona-xtrabackup-22 since 2.3 is GA
+- Update to new release Percona XtraBackup 2.3.2
+- Renamed the package to percona-xtrabackup since 2.3 became GA
 
-* Tue Jul 28 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.12
+* Fri May 15 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Update to new release Percona XtraBackup 2.3.1beta1
 
-* Mon May 25 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.11
-
-* Thu Mar 26 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.10
-
-* Fri Feb 13 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Included man pages in packages
-- Update to new release Percona XtraBackup 2.2.9
-
-* Mon Jan 12 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.8
-
-* Thu Dec 04 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.2.7
+* Thu Oct 30 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Update to new release Percona XtraBackup 2.3.0alpha1
 
 * Wed Sep 29 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.2.6

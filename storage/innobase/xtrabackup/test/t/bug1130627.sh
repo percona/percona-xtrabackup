@@ -46,18 +46,17 @@ test -f $topdir/backup/test/t_myisam#P#p5.MYI
 rm -rf $topdir/backup
 
 # Test that specifying partitions with --databases works
-# TODO: uncomment when bug #569387 is fixed
 
-# innobackupex --no-timestamp \
-#     --databases='test.t_myisam#P#p5 test.t_innodb#P#p5' $topdir/backup
-# innobackupex --apply-log $topdir/backup
+innobackupex --no-timestamp \
+    --databases='test.t_myisam#P#p5 test.t_innodb#P#p5' $topdir/backup
+innobackupex --apply-log $topdir/backup
 
-# test "$file_cnt" -eq 3
-# test -f $topdir/backup/test/t_innodb#P#p5.ibd
-# test -f $topdir/backup/test/t_myisam#P#p5.MYD
-# test -f $topdir/backup/test/t_myisam#P#p5.MYI
+test "$file_cnt" -eq 3
+test -f $topdir/backup/test/t_innodb#P#p5.ibd
+test -f $topdir/backup/test/t_myisam#P#p5.MYD
+test -f $topdir/backup/test/t_myisam#P#p5.MYI
 
-# rm -rf $topdir/backup
+rm -rf $topdir/backup
 
 # Test that specifying partitions with --tables-file works
 cat >$topdir/tables_file <<EOF

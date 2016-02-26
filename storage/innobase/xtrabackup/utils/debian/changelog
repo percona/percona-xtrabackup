@@ -1,75 +1,31 @@
-percona-xtrabackup-22 (2.2.13) unstable; urgency=low
+percona-xtrabackup-24 (2.4.0rc1) unstable; urgency=low
 
-  * Update to new release Percona XtraBackup 2.2.13
-  * Renamed the package to percona-xtrabackup-22 since 2.3 is GA
+  * Packaging changes for version 2.4.0-rc1
 
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Fri, 16 Oct 2015 13:21:12 +0200
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Wed, 03 Feb 2016 13:07:20 +0100
 
-percona-xtrabackup (2.2.12) unstable; urgency=low
+percona-xtrabackup (2.3.3) unstable; urgency=low
 
-  * Update to new release Percona XtraBackup 2.2.12
+  * Update to new release Percona XtraBackup 2.3.3
 
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Tue, 28 Jul 2015 08:51:03 +0200
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Mon, 14 Dec 2015 20:46:36 +0100
 
-percona-xtrabackup (2.2.11) unstable; urgency=low
+percona-xtrabackup (2.3.2) unstable; urgency=low
 
-  * Update to new release Percona XtraBackup 2.2.11
+  * Update to new release Percona XtraBackup 2.3.2
+  * Renamed the package to percona-xtrabackup since 2.3 became GA
 
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Mon, 25 May 2015 15:51:51 +0200
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Fri, 16 Oct 2015 17:25:26 +0200
 
-percona-xtrabackup (2.2.10) unstable; urgency=low
+percona-xtrabackup-23 (2.3.1beta1) unstable; urgency=low
 
-  * Update to new release Percona XtraBackup 2.2.10
+  * Update to new release Percona XtraBackup 2.3.1beta1
 
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Thu, 26 Mar 2015 16:20:44 +0100
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Fri, 15 May 2015 08:20:44 +0100
 
-percona-xtrabackup (2.2.9) unstable; urgency=low
+percona-xtrabackup-23 (2.3.0alpha1) unstable; urgency=low
 
-  * Included man pages in packages
-  * Update to new release Percona XtraBackup 2.2.9
+  * Update to new release Percona XtraBackup 2.3.0alpha1
 
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Fri, 13 Feb 2015 15:33:54 +0100
-
-percona-xtrabackup (2.2.8) unstable; urgency=low
-
-  * Update to new release Percona XtraBackup 2.2.8
-
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Mon, 12 Jan 2015 10:39:48 +0100
-
-percona-xtrabackup (2.2.7) unstable; urgency=low
-
-  * Update to new release Percona XtraBackup 2.2.7
-
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Thu, 04 Dec 2014 14:48:52 +0100
-
-percona-xtrabackup (2.2.6) unstable; urgency=low
-
-  * Update to new release Percona XtraBackup 2.2.6 
-
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Wed, 29 Oct 2014 09:16:16 +0100
-
-percona-xtrabackup (2.2.5) unstable; urgency=low
-
-  * Update to new release Percona XtraBackup 2.2.5
-
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Fri, 26 Sep 2014 11:03:39 +0200
-
-percona-xtrabackup (2.2.4) unstable; urgency=low
-
-  * Changed options to build with system zlib
-
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Thu, 11 Sep 2014 12:24:13 +0200
-
-percona-xtrabackup (2.2.3) unstable; urgency=low
-
-  * renamed package from percona-xtrabackup-22 to percona-xtrabackup
-
- -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Mon, 09 Jun 2014 00:16:53 +0200
-
-percona-xtrabackup (2.2.1) unstable; urgency=low
-
-  * Update to new upstream alpha Percona XtraBackup 2.2.1
-
- -- Alexey Bychko <alexey.bychko@percona.com>  Thu, 27 Mar 2014 16:54:36 +0700
-
+ -- Tomislav Plavcic <tomislav.plavcic@percona.com>  Thu, 30 Oct 2014 15:33:54 +0100
 

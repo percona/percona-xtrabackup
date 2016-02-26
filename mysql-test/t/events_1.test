@@ -1,3 +1,4 @@
+
 # changes 2008-02-20 hhunger splitted events.test into events_1 and events_2
 # changes 2008-02-22 hhunger replaced all sleep by wait_condition
 #
@@ -125,7 +126,7 @@ drop event existant;
 
 create table t_event3 (a int, b float);
 drop event if exists event3;
-create event event3 on schedule every 50 + 10 minute starts date_add("20100101", interval 5 minute) ends date_add("20151010", interval 5 day) comment "portokala_comment" DO insert into t_event3 values (unix_timestamp(), rand());
+create event event3 on schedule every 50 + 10 minute starts date_add(curdate(), interval 5 minute) ends date_add(curdate(), interval 5 day) comment "portokala_comment" DO insert into t_event3 values (unix_timestamp(), rand());
 let $wait_condition=SELECT count(*)=0 from t_event3;
 --source include/wait_condition.inc
 select count(*) from t_event3;
@@ -274,7 +275,9 @@ SHOW EVENTS;
 --echo 
 --echo First, let's add a column to the end and check the error is emitted.
 --echo 
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 ALTER TABLE mysql.event ADD dummy INT;
+SET sql_mode = default;
 --error ER_EVENT_OPEN_TABLE_FAILED
 SHOW EVENTS;
 --error ER_EVENT_OPEN_TABLE_FAILED

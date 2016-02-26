@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,9 @@
 
 #include "SignalData.hpp"
 #include <NodeBitmask.hpp>
+
+#define JAM_FILE_ID 79
+
 
 
 struct SubCreateReq {
@@ -124,6 +127,7 @@ struct SubStartRef {
     BusyWithNR = 1405,
     NodeDied = 1427
     ,NotStarted = 1428
+    ,SubscriberNodeIdUndefined = 1429
   };
 
   STATIC_CONST( SignalLength = 7 );
@@ -418,12 +422,24 @@ struct SubGcpCompleteRep {
   STATIC_CONST( MISSING_DATA = 4 );
   STATIC_CONST( ADD_CNT = 8 );  // Uses hi 16-bit for delta
   STATIC_CONST( SUB_CNT = 16);  // Uses hi 16-bit for delta
+  STATIC_CONST( SUB_DATA_STREAMS_IN_SIGNAL = 32); // Whether sub datat stream identifiers are appended to signal
+  // If the number of sub data streams increase in future, we may need to put the identifiers in a separate section.
 
   Uint32 gci_hi;
   Uint32 senderRef;
   Uint32 gcp_complete_rep_count;
   Uint32 gci_lo;
   Uint32 flags;
+
+  /**
+   * If SUB_DATA_STREAMS_IN_SIGNAL flag is set,
+   * gcp_complete_rep_count will indicate the number of 16-bit data
+   * stream identifiers appended.  A word is packed with two stream
+   * identifiers.  If and odd number of identifiers are indicated,
+   * the high 16-bit of last word are not used, but should be zero
+   * filled.
+   */
+  Uint32 sub_data_streams[1];
 };
 
 struct SubGcpCompleteAck {
@@ -565,7 +581,11 @@ struct SumaContinueB
     ,API_FAIL_SUBSCRIPTION = 6
     ,SUB_STOP_REQ = 7
     ,RETRY_DICT_LOCK = 8
+    ,HANDOVER_WAIT_TIMEOUT = 9
   };
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

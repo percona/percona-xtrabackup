@@ -10,7 +10,7 @@ The source code is available from the |Percona XtraBackup| *Github* `project <ht
 
   $ git clone https://github.com/percona/percona-xtrabackup.git
   $ cd percona-xtrabackup
-  $ git checkout 2.2
+  $ git checkout 2.4
 
 You should then have a directory named after the release you branched, such as ``percona-xtrabackup``.
 
@@ -26,13 +26,14 @@ In Debian-based distributions, you need to: ::
 
  $ apt-get install build-essential flex bison automake autoconf \
     libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
-    libgcrypt11-dev
+    libgcrypt11-dev libev-dev libcurl4-gnutls-dev vim-common
 
 
 In ``RPM``-based distributions, you need to: ::
  
   $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf \
-    bison libtool ncurses-devel libgcrypt-devel libev-devel
+    bison libtool ncurses-devel libgcrypt-devel libev-devel libcurl-devel \
+    vim-common
 
 Compiling with CMake
 --------------------

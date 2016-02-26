@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -80,7 +80,7 @@ IF(CMAKE_BUILD_TYPE)
   ENDIF()
 ENDIF()
 
-# On windows do: 'devenv mysql.sln /build Debug /project test-mtr'
+# On windows do: 'cmake --build . --config debug --target test-mtr'
 # On unix do: 'make test-mtr'
 ADD_CUSTOM_TARGET(test-mtr
   COMMAND perl ./mysql-test-run.pl --force --parallel=4 --suite=main
@@ -120,3 +120,18 @@ FOREACH(collin ${infiles})
     FILE(APPEND ${colldone} "${collin}\n")
   ENDIF()
 ENDFOREACH()
+
+# With different MAX_INDEXES values, server might behave differently in
+# certain cases. 'max_indexes.inc' file should be updated accordingly to
+# reflect the current MAX_INDEXES value. This file helps MTR to decide on
+# which tests should be skipped.
+# NOTE: While committing a patch please make sure that the file is unmodified
+# and should show the default MAX_INDEXES (i.e. 64U).
+IF (MAX_INDEXES)
+  IF(NOT (${MAX_INDEXES} EQUAL 64U))
+    FILE(WRITE include/max_indexes.inc
+         "# Warning: This is an auto-generated file. Please do not modify it.
+--let $max_indexes = ${MAX_INDEXES}\n")
+    MESSAGE(STATUS "mysql-test/include/max_indexes.inc adjusted")
+  ENDIF()
+ENDIF()

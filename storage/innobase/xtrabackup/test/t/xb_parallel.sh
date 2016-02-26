@@ -9,7 +9,7 @@ load_dbase_data sakila
 vlog "Creating the backup directory: $topdir/backup"
 mkdir -p $topdir/backup
 innobackupex $topdir/backup --parallel=8
-backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
+backup_dir=`grep "Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 
 #echo "Backup dir in $backup_dir"
 

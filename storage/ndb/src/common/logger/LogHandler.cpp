@@ -24,7 +24,6 @@
 // PUBLIC
 //
 LogHandler::LogHandler() : 
-  m_pDateTimeFormat("%d-%.2d-%.2d %.2d:%.2d:%.2d"),
   m_errorCode(0),
   m_errorStr(NULL)
 {
@@ -97,12 +96,13 @@ const char*
 LogHandler::getDefaultHeader(char* pStr, const char* pCategory, 
 			     Logger::LoggerLevel level) const
 {
-  char time[MAX_DATE_TIME_HEADER_LENGTH];
+  char timestamp[64];
+  Logger::format_timestamp(m_now, timestamp, sizeof(timestamp));
+
   BaseString::snprintf(pStr, MAX_HEADER_LENGTH, "%s [%s] %s -- ", 
-	     getTimeAsString((char*)time),
-	     pCategory,
-	     Logger::LoggerLevelNames[level]);
- 
+                       timestamp,
+                       pCategory,
+                       Logger::LoggerLevelNames[level]);
   return pStr;
 }
 
@@ -113,35 +113,6 @@ LogHandler::getDefaultFooter() const
   return "\n";
 }
 
-const char* 
-LogHandler::getDateTimeFormat() const
-{
-  return m_pDateTimeFormat;	
-}
-
-void 
-LogHandler::setDateTimeFormat(const char* pFormat)
-{
-  m_pDateTimeFormat = (char*)pFormat;
-}
-
-char* 
-LogHandler::getTimeAsString(char* pStr) const 
-{
-  struct tm* tm_now;
-  tm_now = ::localtime(&m_now); //uses the "current" timezone
-
-  BaseString::snprintf(pStr, MAX_DATE_TIME_HEADER_LENGTH, 
-	     m_pDateTimeFormat, 
-	     tm_now->tm_year + 1900, 
-	     tm_now->tm_mon + 1, //month is [0,11]. +1 -> [1,12]
-	     tm_now->tm_mday,
-	     tm_now->tm_hour,
-	     tm_now->tm_min,
-	     tm_now->tm_sec);
-  
-  return pStr;
-}
 
 int 
 LogHandler::getErrorCode() const
@@ -175,7 +146,7 @@ LogHandler::parseParams(const BaseString &_params) {
   bool ret = true;
 
   _params.split(v_args, ",");
-  for(size_t i=0; i < v_args.size(); i++) {
+  for(unsigned i=0; i < v_args.size(); i++) {
     Vector<BaseString> v_param_value;
     if(v_args[i].split(v_param_value, "=", 2) != 2)
     {

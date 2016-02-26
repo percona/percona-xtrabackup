@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 
 INCLUDE_DIRECTORIES(${NDB_SOURCE_DIR}/src/common/mgmcommon)
 
-ADD_LIBRARY(ndbmgmclient STATIC
+ADD_CONVENIENCE_LIBRARY(ndbmgmclient
             CommandInterpreter.cpp)
 
 IF(WITHOUT_SERVER)
@@ -37,5 +37,5 @@ TARGET_LINK_LIBRARIES(ndb_mgm
                mysys
                strings)
 IF(UNIX)
-  TARGET_LINK_LIBRARIES(ndb_mgm ${READLINE_LIBRARY})
+  TARGET_LINK_LIBRARIES(ndb_mgm ${EDITLINE_LIBRARY})
 ENDIF(UNIX)

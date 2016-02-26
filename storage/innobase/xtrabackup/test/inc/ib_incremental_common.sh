@@ -28,7 +28,7 @@ innobackupex --no-timestamp $full_backup_dir
 # Changing data
 
 vlog "Making changes to database"
-${MYSQL} ${MYSQL_ARGS} -e "create table t2 (a int(11) default null, number int(11) default null) engine=innodb" incremental_sample
+${MYSQL} ${MYSQL_ARGS} -e "create table t2 (a int(11) default null, number text default null) engine=innodb" incremental_sample
 
 multi_row_insert incremental_sample.test \({101..1000},1000\)
 multi_row_insert incremental_sample.t2 \({101..1000},1000\)

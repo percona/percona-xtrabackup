@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -49,17 +49,39 @@ struct Attrib {
     indexCreated = false;
   }
 };
+
 class AttribList {
 public:
-  AttribList(){};
+  AttribList(){}
   ~AttribList(){
-    for(size_t i = 0; i < attriblist.size(); i++){      
+    for(unsigned i = 0; i < attriblist.size(); i++){
       delete attriblist[i];
     }
-  };
+  }
   void buildAttribList(const NdbDictionary::Table* pTab); 
   Vector<Attrib*> attriblist;
 };
+
+/**
+ * TODO expose in ndbapi
+ */
+static
+bool
+isIndexable(const NdbDictionary::Column* col)
+{
+  if (col == 0)
+    return false;
+
+  switch(col->getType())
+  {
+  case NDB_TYPE_BIT:
+  case NDB_TYPE_BLOB:
+  case NDB_TYPE_TEXT:
+    return false;
+  default:
+    return true;
+  }
+}
 
 void AttribList::buildAttribList(const NdbDictionary::Table* pTab){
   attriblist.clear();
@@ -139,6 +161,36 @@ void AttribList::buildAttribList(const NdbDictionary::Table* pTab){
   }
 #endif
 
+  /**
+   * Trim away combinations that contain non indexable columns
+   */
+  Vector<Attrib*> tmp;
+  for (Uint32 ii = 0; ii < attriblist.size(); ii++)
+  {
+    Attrib* attr = attriblist[ii];
+    for (int j = 0; j < attr->numAttribs; j++)
+    {
+      if (!isIndexable(pTab->getColumn(attr->attribs[j])))
+      {
+        delete attr;
+        goto skip;
+      }
+    }
+
+    if (attr->numAttribs + pTab->getNoOfPrimaryKeys() >
+        NDB_MAX_ATTRIBUTES_IN_INDEX)
+    {
+      delete attr;
+      goto skip;
+    }
+
+    tmp.push_back(attr);
+skip:
+    (void)1;
+  }
+
+  attriblist.clear();
+  attriblist = tmp;
 }
 
 char idxName[255];
@@ -260,7 +312,7 @@ int create_index(NDBT_Context* ctx, int indxNum,
       attr->indexCreated = false;
       ndbout << "FAILED!" << endl;
       const NdbError err = pNdb->getDictionary()->getNdbError();
-      ERR(err);
+      NDB_ERR(err);
       if (err.classification == NdbError::ApplicationError)
         return SKIP_INDEX;
       
@@ -290,7 +342,7 @@ int drop_index(int indxNum, Ndb* pNdb,
   ndbout << "Dropping index "<<idxName<<"(" << pTab->getName() << ") ";
   if (pNdb->getDictionary()->dropIndex(idxName, pTab->getName()) != 0){
     ndbout << "FAILED!" << endl;
-    ERR(pNdb->getDictionary()->getNdbError());
+    NDB_ERR(pNdb->getDictionary()->getNdbError());
     result = NDBT_FAILED;
   } else {
     ndbout << "OK!" << endl;
@@ -381,7 +433,7 @@ int createRandomIndex_Drop(NDBT_Context* ctx, NDBT_Step* step){
   if (pNdb->getDictionary()->dropIndex(idxName, 
 				       ctx->getTab()->getName()) != 0){
     ndbout << "FAILED!" << endl;
-    ERR(pNdb->getDictionary()->getNdbError());
+    NDB_ERR(pNdb->getDictionary()->getNdbError());
     return NDBT_FAILED;
   } else {
     ndbout << "OK!" << endl;
@@ -432,7 +484,7 @@ int createPkIndex(NDBT_Context* ctx, NDBT_Step* step){
     if (!idx)
     {
       ndbout << "Failed - Index does not exist and DDL not allowed" << endl;
-      ERR(pNdb->getDictionary()->getNdbError());
+      NDB_ERR(pNdb->getDictionary()->getNdbError());
       return NDBT_FAILED;
     }
     else
@@ -445,7 +497,7 @@ int createPkIndex(NDBT_Context* ctx, NDBT_Step* step){
     if (pNdb->getDictionary()->createIndex(pIdx) != 0){
       ndbout << "FAILED!" << endl;
       const NdbError err = pNdb->getDictionary()->getNdbError();
-      ERR(err);
+      NDB_ERR(err);
       return NDBT_FAILED;
     }
   }
@@ -467,7 +519,7 @@ int createPkIndex_Drop(NDBT_Context* ctx, NDBT_Step* step){
     if (pNdb->getDictionary()->dropIndex(pkIdxName, 
                                          pTab->getName()) != 0){
       ndbout << "FAILED!" << endl;
-      ERR(pNdb->getDictionary()->getNdbError());
+      NDB_ERR(pNdb->getDictionary()->getNdbError());
       return NDBT_FAILED;
     } else {
       ndbout << "OK!" << endl;
@@ -610,8 +662,16 @@ runTransactions3(NDBT_Context* ctx, NDBT_Step* step){
     if(ctx->isTestStopped())
       break;
 
+    if (utilTrans.verifyIndex(pNdb, idxName, parallel) != 0){
+      g_err << "Inconsistent index" << endl;
+      return NDBT_FAILED;
+    }
     if(utilTrans.clearTable(pNdb, rows, parallel) != 0){
       g_err << "Clear table failed" << endl;
+      return NDBT_FAILED;
+    }
+    if (utilTrans.verifyIndex(pNdb, idxName, parallel) != 0){
+      g_err << "Inconsistent index" << endl;
       return NDBT_FAILED;
     }
 
@@ -850,7 +910,7 @@ int tryAddUniqueIndex(Ndb* pNdb,
   {
     ndbout << "FAILED!" << endl;
     const NdbError err = pNdb->getDictionary()->getNdbError();
-    ERR(err);
+    NDB_ERR(err);
     return -1;
   }
 
@@ -884,7 +944,7 @@ int tryInsertUniqueRecord(NDBT_Step* step,
       }
       else
       {
-        ERR(err);
+        NDB_ERR(err);
         return NDBT_FAILED;
       }
     }
@@ -1003,7 +1063,7 @@ int runConstraintDetails(NDBT_Context* ctx, NDBT_Step* step)
       
       NdbError err = trans->getNdbError();
       
-      ERR(err);
+      NDB_ERR(err);
       
       CHECKRET(err.code == 893);
       
@@ -1262,7 +1322,7 @@ int runSystemRestart1(NDBT_Context* ctx, NDBT_Step* step){
   return result;
 }
 
-#define CHECK2(b, t) if(!b){ g_err << __LINE__ << ": " << t << endl; break;}
+#define CHECK2(b, t) if(!(b)){ g_err << __LINE__ << ": " << t << endl; break;}
 #define CHECKOKORTIMEOUT(e, t) { int rc= (e);        \
     if (rc != 0) {                                      \
       if (rc == 266) {                                  \
@@ -1355,7 +1415,7 @@ runMixedUpdateInterleaved(Ndb* pNdb,
                           int updatesValue,
                           bool ixFirst)
 {
-  Uint32 execRc= 0;
+  int execRc= 0;
   if ((pkFailRec != -1) || (ixFailRec != -1))
   {
     execRc= 626;
@@ -1840,16 +1900,19 @@ runBuildDuring(NDBT_Context* ctx, NDBT_Step* step){
     if(ctx->isTestStopped())
       break;
 
-    ctx->setProperty("pause", 1);
-    int count = 0;
-    for(int j = 0; count < Threads && !ctx->isTestStopped(); 
-	j = (j+1) % Threads){
-      char buf[255];
-      sprintf(buf, "Thread%d_paused", j);
-      int tmp = ctx->getProperty(buf, (Uint32)0);
-      count += tmp;
+    if (Threads)
+    {
+      ctx->setProperty("pause", 1);
+      int count = 0;
+      for(int j = 0; count < Threads && !ctx->isTestStopped();
+          j = (j+1) % Threads){
+        char buf[255];
+        sprintf(buf, "Thread%d_paused", j);
+        int tmp = ctx->getProperty(buf, (Uint32)0);
+        count += tmp;
+      }
     }
-    
+
     if(ctx->isTestStopped())
       break;
 
@@ -1870,8 +1933,11 @@ runBuildDuring(NDBT_Context* ctx, NDBT_Step* step){
     }
 #endif
 
-    ctx->setProperty("pause", (Uint32)0);
-    NdbSleep_SecSleep(2);
+    if (Threads)
+    {
+      ctx->setProperty("pause", (Uint32)0);
+      NdbSleep_SecSleep(2);
+    }
   }
 
   ctx->stopTest();
@@ -2010,7 +2076,7 @@ runUniqueNullTransactions(NDBT_Context* ctx, NDBT_Step* step){
     if (!idx)
     {
       ndbout << "Failed - Index does not exist and DDL not allowed" << endl;
-      ERR(pNdb->getDictionary()->getNdbError());
+      NDB_ERR(pNdb->getDictionary()->getNdbError());
       return NDBT_FAILED;
     }
     else
@@ -2023,7 +2089,7 @@ runUniqueNullTransactions(NDBT_Context* ctx, NDBT_Step* step){
     if (pNdb->getDictionary()->createIndex(pIdx) != 0){
       ndbout << "FAILED!" << endl;
       const NdbError err = pNdb->getDictionary()->getNdbError();
-      ERR(err);
+      NDB_ERR(err);
       return NDBT_FAILED;
     }
   }
@@ -2440,7 +2506,11 @@ runTrigOverload(NDBT_Context* ctx, NDBT_Step* step)
 
   unsigned numScenarios = 3;
   unsigned errorInserts[3] = {8085, 8086, 0};
-  int results[3] = {218, 218, 0};
+  int results[3] = {
+    293, // Inconsistent trigger state in TC block
+    218, // Out of LongMessageBuffer
+    0
+  };
 
   unsigned iterations = 50;
 
@@ -3349,7 +3419,6 @@ TESTCASE("NFNR3",
   INITIALIZER(createPkIndex);
   STEP(runRestarts);
   STEP(runTransactions3);
-  STEP(runVerifyIndex);
   FINALIZER(runVerifyIndex);
   FINALIZER(createPkIndex_Drop);
   FINALIZER(createRandomIndex_Drop);
@@ -3365,7 +3434,6 @@ TESTCASE("NFNR3_O",
   INITIALIZER(createPkIndex);
   STEP(runRestarts);
   STEP(runTransactions3);
-  STEP(runVerifyIndex);
   FINALIZER(runVerifyIndex);
   FINALIZER(createPkIndex_Drop);
   FINALIZER(createRandomIndex_Drop);
@@ -3499,6 +3567,17 @@ TESTCASE("BuildDuring",
   STEP(runBuildDuring);
   STEP(runTransactions4);
   //STEP(runTransactions4);
+  FINALIZER(runClearTable);
+}
+TESTCASE("BuildDuring2",
+	 "Test that index build when running transactions work"){
+  TC_PROPERTY("OrderedIndex", (unsigned)0);
+  TC_PROPERTY("LoggedIndexes", (unsigned)0);
+  TC_PROPERTY("BatchSize", 1);
+  TC_PROPERTY("UntilStopped", Uint32(1));
+  INITIALIZER(runClearTable);
+  STEP(runBuildDuring);
+  STEPS(runMixedDML, 3);
   FINALIZER(runClearTable);
 }
 TESTCASE("BuildDuring_O", 

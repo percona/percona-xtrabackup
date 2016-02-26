@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,7 +14,13 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "rpl_info_table.h"
-#include "rpl_utility.h"
+
+#include "dynamic_ids.h"            // Server_ids
+#include "log.h"                    // sql_print_error
+#include "rpl_info_table_access.h"  // Rpl_info_table_access
+#include "rpl_info_values.h"        // Rpl_info_values
+#include "sql_class.h"              // THD
+
 
 Rpl_info_table::Rpl_info_table(uint nparam,
                                const char* param_schema,
@@ -24,26 +30,29 @@ Rpl_info_table::Rpl_info_table(uint nparam,
   str_schema.str= str_table.str= NULL;
   str_schema.length= str_table.length= 0;
 
-  uint schema_length= strlen(param_schema);
-  if ((str_schema.str= (char *) my_malloc(schema_length + 1, MYF(0))))
+  size_t schema_length= strlen(param_schema);
+  if ((str_schema.str= (char *) my_malloc(key_memory_Rpl_info_table,
+                                          schema_length + 1, MYF(0))))
   {
     str_schema.length= schema_length;
     strmake(str_schema.str, param_schema, schema_length);
   }
   
-  uint table_length= strlen(param_table);
-  if ((str_table.str= (char *) my_malloc(table_length + 1, MYF(0))))
+  size_t table_length= strlen(param_table);
+  if ((str_table.str= (char *) my_malloc(key_memory_Rpl_info_table,
+                                         table_length + 1, MYF(0))))
   {
     str_table.length= table_length;
     strmake(str_table.str, param_table, table_length);
   }
 
   if ((description= (char *)
-      my_malloc(str_schema.length + str_table.length + 2, MYF(0))))
+      my_malloc(key_memory_Rpl_info_table,
+                str_schema.length + str_table.length + 2, MYF(0))))
   {
-    char *pos= strmov(description, param_schema);
-    pos= strmov(pos, ".");
-    pos= strmov(pos, param_table);
+    char *pos= my_stpcpy(description, param_schema);
+    pos= my_stpcpy(pos, ".");
+    pos= my_stpcpy(pos, param_table);
   }
 
   access= new Rpl_info_table_access();
@@ -67,7 +76,7 @@ int Rpl_info_table::do_init_info()
 
 int Rpl_info_table::do_init_info(uint instance)
 {
-  return do_init_info(FIND_SCAN, instance);
+  return do_init_info(FIND_KEY, instance);
 }
 
 int Rpl_info_table::do_init_info(enum_find_method method, uint instance)
@@ -75,7 +84,7 @@ int Rpl_info_table::do_init_info(enum_find_method method, uint instance)
   int error= 1;
   enum enum_return_id res= FOUND_ID;
   TABLE *table= NULL;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   Open_tables_backup backup;
 
   DBUG_ENTER("Rlp_info_table::do_init_info");
@@ -139,7 +148,7 @@ int Rpl_info_table::do_flush_info(const bool force)
   int error= 1;
   enum enum_return_id res= FOUND_ID;
   TABLE *table= NULL;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   Open_tables_backup backup;
 
   DBUG_ENTER("Rpl_info_table::do_flush_info");
@@ -153,6 +162,7 @@ int Rpl_info_table::do_flush_info(const bool force)
   sync_counter= 0;
   saved_mode= thd->variables.sql_mode;
   tmp_disable_binlog(thd);
+  thd->is_operating_substatement_implicitly= true;
 
   /*
     Opens and locks the rpl_info table before accessing it.
@@ -225,8 +235,9 @@ end:
              mts_debug_concurrent_access < 2 && mts_debug_concurrent_access >  0)
       {
         DBUG_PRINT("mts", ("Waiting while locks are acquired to show "
-          "concurrency in mts: %u %lu\n", mts_debug_concurrent_access,
-          (ulong) thd->thread_id));
+                           "concurrency in mts: %u %u\n",
+                           mts_debug_concurrent_access,
+                           thd->thread_id()));
         my_sleep(6000000);
       }
     };
@@ -236,6 +247,7 @@ end:
     Unlocks and closes the rpl_info table.
   */
   access->close_table(thd, table, &backup, error);
+  thd->is_operating_substatement_implicitly= false;
   reenable_binlog(thd);
   thd->variables.sql_mode= saved_mode;
   access->drop_thd(thd);
@@ -252,7 +264,7 @@ int Rpl_info_table::do_clean_info()
   int error= 1;
   enum enum_return_id res= FOUND_ID;
   TABLE *table= NULL;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   Open_tables_backup backup;
 
   DBUG_ENTER("Rpl_info_table::do_remove_info");
@@ -297,23 +309,37 @@ end:
   DBUG_RETURN(error);
 }
 
+/**
+   Removes records belonging to the channel_name parameter's channel.
+
+   @param nparam             number of fields in the table
+   @param param_schema       schema name
+   @param param_table        table name
+   @param channel_name       channel name
+   @param channel_field_idx  channel name field index
+
+   @return 0   on success
+           1   when a failure happens
+*/
 int Rpl_info_table::do_reset_info(uint nparam,
                                   const char* param_schema,
-                                  const char *param_table)
+                                  const char *param_table,
+                                  const char *channel_name,
+                                  uint  channel_field_idx)
 {
-  int error= 1;
+  int error= 0;
   TABLE *table= NULL;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   Open_tables_backup backup;
   Rpl_info_table *info= NULL;
   THD *thd= NULL;
-  enum enum_return_id scan_retval= FOUND_ID;
+  int handler_error= 0;
 
   DBUG_ENTER("Rpl_info_table::do_reset_info");
 
   if (!(info= new Rpl_info_table(nparam, param_schema,
                                  param_table)))
-    DBUG_RETURN(error);
+    DBUG_RETURN(1);
 
   thd= info->access->create_thd();
   saved_mode= thd->variables.sql_mode;
@@ -325,22 +351,69 @@ int Rpl_info_table::do_reset_info(uint nparam,
   if (info->access->open_table(thd, info->str_schema, info->str_table,
                                info->get_number_info(), TL_WRITE,
                                &table, &backup))
-    goto end;
-
-  /*
-    Delete all rows in the rpl_info table. We cannot use truncate() since it
-    is a non-transactional DDL operation.
-  */
-  while ((scan_retval= info->access->scan_info(table, 1)) == FOUND_ID)
   {
-    if ((error= table->file->ha_delete_row(table->record[0])))
-    {
-       table->file->print_error(error, MYF(0));
-       goto end;
-    }
+    error= 1;
+    goto end;
   }
-  error= (scan_retval == ERROR_ID);
 
+  if (!(handler_error= table->file->ha_index_init(0, 1)))
+  {
+    KEY *key_info= table->key_info;
+
+    /*
+      Currently this method is used only for Worker info table
+      resetting.
+      todo: for another table in future, consider to make use of the
+      passed parameter to locate the lookup key.
+    */
+    DBUG_ASSERT(strcmp(info->str_table.str, "slave_worker_info") == 0);
+
+    if (!key_info || key_info->user_defined_key_parts == 0 ||
+        key_info->key_part[0].field != table->field[channel_field_idx])
+    {
+      sql_print_error("Corrupted table %s.%s. Check out table definition.",
+                      info->str_schema.str, info->str_table.str);
+      error= 1;
+      table->file->ha_index_end();
+      goto end;
+    }
+
+    uint fieldnr= key_info->key_part[0].fieldnr - 1;
+    table->field[fieldnr]->store(channel_name,
+                                 strlen(channel_name),
+                                 &my_charset_bin);
+    uint key_len= key_info->key_part[0].store_length;
+    uchar *key_buf= table->field[fieldnr]->ptr;
+
+    if (!(handler_error= table->file->ha_index_read_map(table->record[0],
+                                                        key_buf,
+                                                        (key_part_map) 1,
+                                                        HA_READ_KEY_EXACT)))
+    {
+      do
+      {
+        if ((handler_error= table->file->ha_delete_row(table->record[0])))
+          break;
+      }
+      while (!(handler_error= table->file->ha_index_next_same(table->record[0],
+                                                           key_buf,
+                                                           key_len)));
+      if (handler_error != HA_ERR_END_OF_FILE)
+        error= 1;
+    }
+    else
+    {
+      /*
+        Being reset table can be even empty, and that's benign.
+      */
+      if (handler_error != HA_ERR_KEY_NOT_FOUND)
+        error= 1;
+    }
+
+    if (error)
+      table->file->print_error(handler_error, MYF(0));
+    table->file->ha_index_end();
+  }
 end:
   /*
     Unlocks and closes the rpl_info table.
@@ -356,7 +429,7 @@ end:
 enum_return_check Rpl_info_table::do_check_info()
 {
   TABLE *table= NULL;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   Open_tables_backup backup;
   enum_return_check return_check= ERROR_CHECKING_REPOSITORY;
 
@@ -411,7 +484,7 @@ end:
 enum_return_check Rpl_info_table::do_check_info(uint instance)
 {
   TABLE *table= NULL;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   Open_tables_backup backup;
   enum_return_check return_check= ERROR_CHECKING_REPOSITORY;
 
@@ -470,7 +543,7 @@ bool Rpl_info_table::do_count_info(uint nparam,
 {
   int error= 1;
   TABLE *table= NULL;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   Open_tables_backup backup;
   Rpl_info_table *info= NULL;
   THD *thd= NULL;
@@ -577,9 +650,9 @@ bool Rpl_info_table::do_set_info(const int pos, const float value)
                                             &my_charset_bin));
 }
 
-bool Rpl_info_table::do_set_info(const int pos, const Dynamic_ids *value)
+bool Rpl_info_table::do_set_info(const int pos, const Server_ids *value)
 {
-  if (const_cast<Dynamic_ids *>(value)->pack_dynamic_ids(&field_values->value[pos]))
+  if (const_cast<Server_ids*>(value)->pack_dynamic_ids(&field_values->value[pos]))
     return TRUE;
 
   return FALSE;
@@ -603,7 +676,7 @@ bool Rpl_info_table::do_get_info(const int pos, uchar *value, const size_t size,
                                  const uchar *default_value __attribute__((unused)))
 {
   if (field_values->value[pos].length() == size)
-    return (!memcpy((char *) value, (char *)
+    return (!memcpy((char *) value,
             field_values->value[pos].c_ptr_safe(), size));
   return TRUE;
 }
@@ -660,8 +733,8 @@ bool Rpl_info_table::do_get_info(const int pos, float *value,
   return TRUE;
 }
 
-bool Rpl_info_table::do_get_info(const int pos, Dynamic_ids *value,
-                                 const Dynamic_ids *default_value __attribute__((unused)))
+bool Rpl_info_table::do_get_info(const int pos, Server_ids *value,
+                                 const Server_ids *default_value __attribute__((unused)))
 {
   if (value->unpack_dynamic_ids(field_values->value[pos].c_ptr_safe()))
     return TRUE;
@@ -682,11 +755,15 @@ bool Rpl_info_table::do_is_transactional()
 bool Rpl_info_table::do_update_is_transactional()
 {
   bool error= TRUE;
-  ulong saved_mode;
+  sql_mode_t saved_mode;
   TABLE *table= NULL;
   Open_tables_backup backup;
 
   DBUG_ENTER("Rpl_info_table::do_update_is_transactional");
+  DBUG_EXECUTE_IF("simulate_update_is_transactional_error",
+                  {
+                    DBUG_RETURN(TRUE);
+                  });
 
   THD *thd= access->create_thd();
   saved_mode= thd->variables.sql_mode;

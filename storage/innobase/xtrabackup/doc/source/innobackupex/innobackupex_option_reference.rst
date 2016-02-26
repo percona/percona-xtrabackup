@@ -4,7 +4,7 @@
 
 .. program:: innobackupex
 
-This page documents all of the command-line options for the :program:`innobackupex` Perl script.
+This page documents all of the command-line options for the :program:`innobackupex`. 
 
 
 Options
@@ -57,11 +57,11 @@ Options
 
 .. option:: --defaults-file=[MY.CNF]
 
-   This option accepts a string argument that specifies what file to read the default MySQL options from. It is also passed directly to :program:`xtrabackup` 's defaults-file option. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
+   This option accepts a string argument that specifies what file to read the default MySQL options from. Must be given as the first option on the command-line.
 
 .. option:: --defaults-extra-file=[MY.CNF]
 
-   This option specifies what extra file to read the default |MySQL| options from before the standard defaults-file. The option accepts a string argument. It is also passed directly to xtrabackup's --defaults-extra-file option. See the :program:`xtrabackup` :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
+   This option specifies what extra file to read the default |MySQL| options from before the standard defaults-file. Must be given as the first option on the command-line.
 
 .. option:: --defaults-group=GROUP-NAME
 
@@ -155,15 +155,15 @@ Options
 
    This option specifies which types of queries should be killed to unblock the global lock. Default is "all".
 
-.. option:: --lock-wait-timeout=SECONDS
+.. option:: --ftwrl-wait-timeout=SECONDS
 
    This option specifies time in seconds that innobackupex should wait for queries that would block ``FLUSH TABLES WITH READ LOCK`` before running it. If there are still such queries when the timeout expires, innobackupex terminates with an error. Default is 0, in which case innobackupex does not wait for queries to complete and starts ``FLUSH TABLES WITH READ LOCK`` immediately. Where supported (Percona Server 5.6+) xtrabackup will automatically use `Backup Locks <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_ as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
 
-.. option:: --lock-wait-threshold=SECONDS
+.. option:: --ftwrl-wait-threshold=SECONDS
 
-   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --lock-wait-timeout`. ``FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --lock-wait-timeout is 0. Default value is 60 seconds. Where supported (Percona Server 5.6+) xtrabackup will automatically use `Backup Locks <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_ as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
+   This option specifies the query run time threshold which is used by innobackupex to detect long-running queries with a non-zero value of :option:`innobackupex --ftwrl-wait-timeout`. ``FLUSH TABLES WITH READ LOCK`` is not started until such long-running queries exist. This option has no effect if --ftwrl-wait-timeout is 0. Default value is 60 seconds. Where supported (Percona Server 5.6+) xtrabackup will automatically use `Backup Locks <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_ as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
 
-.. option:: --lock-wait-query-type=all|update
+.. option:: --ftwrl-wait-query-type=all|update
 
    This option specifies which types of queries are allowed to complete before innobackupex will issue the global lock. Default is all.
 

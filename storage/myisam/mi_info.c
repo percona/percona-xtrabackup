@@ -1,5 +1,4 @@
-/* Copyright (c) 2000, 2001, 2003-2007 MySQL AB, 2009 Sun Microsystems, Inc.
-   Use is subject to license terms.
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,7 +16,7 @@
 /* Return useful base information for an open table */
 
 #include "myisamdef.h"
-#ifdef	__WIN__
+#ifdef	_WIN32
 #include <sys/stat.h>
 #endif
 
@@ -32,7 +31,7 @@ my_off_t mi_position(MI_INFO *info)
 /* Get information about the table */
 /* if flag == 2 one get current info (no sync from database */
 
-int mi_status(MI_INFO *info, register MI_ISAMINFO *x, uint flag)
+int mi_status(MI_INFO *info, MI_ISAMINFO *x, uint flag)
 {
   MY_STAT state;
   MYISAM_SHARE *share=info->s;
@@ -127,7 +126,7 @@ void mi_report_error(int errcode, const char *file_name)
 
   if ((lgt= strlen(file_name)) > 64)
     file_name+= lgt - 64;
-  my_error(errcode, MYF(ME_NOREFRESH), file_name);
+  my_error(errcode, MYF(ME_ERRORLOG), file_name);
   DBUG_VOID_RETURN;
 }
 

@@ -1,5 +1,4 @@
-/* Copyright (c) 2010, 2014, Oracle and/or its affiliates. All rights
-   reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,9 +16,80 @@
 #ifndef SQL_ALTER_TABLE_H
 #define SQL_ALTER_TABLE_H
 
-class Alter_drop;
-class Alter_column;
+#include "sql_cmd.h"  // Sql_cmd
+#include "sql_list.h" // List
+
+class Create_field;
+class Item;
 class Key;
+class String;
+struct TABLE_LIST;
+
+/**
+  Class representing DROP COLUMN, DROP KEY and DROP FOREIGN KEY
+  clauses in ALTER TABLE statement.
+*/
+
+class Alter_drop :public Sql_alloc {
+public:
+  enum drop_type {KEY, COLUMN, FOREIGN_KEY };
+  const char *name;
+  enum drop_type type;
+  Alter_drop(enum drop_type par_type,const char *par_name)
+    :name(par_name), type(par_type)
+  {
+    DBUG_ASSERT(par_name != NULL);
+  }
+  /**
+    Used to make a clone of this object for ALTER/CREATE TABLE
+    @sa comment for Key_part_spec::clone
+  */
+  Alter_drop *clone(MEM_ROOT *mem_root) const
+    { return new (mem_root) Alter_drop(*this); }
+};
+
+
+/**
+  Class representing SET DEFAULT and DROP DEFAULT clauses in
+  ALTER TABLE statement.
+*/
+
+class Alter_column :public Sql_alloc {
+public:
+  const char *name;
+  Item *def;
+  Alter_column(const char *par_name,Item *literal)
+    :name(par_name), def(literal) {}
+  /**
+    Used to make a clone of this object for ALTER/CREATE TABLE
+    @sa comment for Key_part_spec::clone
+  */
+  Alter_column *clone(MEM_ROOT *mem_root) const
+    { return new (mem_root) Alter_column(*this); }
+};
+
+
+/**
+  Class which instances represent RENAME INDEX clauses in
+  ALTER TABLE statement.
+*/
+
+class Alter_rename_key :public Sql_alloc {
+public:
+  const char *old_name;
+  const char *new_name;
+
+  Alter_rename_key(const char *old_name_arg, const char *new_name_arg)
+    : old_name(old_name_arg), new_name(new_name_arg)
+  { }
+
+  /**
+    Used to make a clone of this object for ALTER/CREATE TABLE
+    @sa comment for Key_part_spec::clone
+  */
+  Alter_rename_key *clone(MEM_ROOT *mem_root) const
+  { return new (mem_root) Alter_rename_key(*this); }
+};
 
 
 /**
@@ -125,6 +195,11 @@ public:
   // Set for ADD [COLUMN] FIRST | AFTER
   static const uint ALTER_COLUMN_ORDER          = 1L << 26;
 
+  // Set for RENAME INDEX
+  static const uint ALTER_RENAME_INDEX          = 1L << 27;
+
+  // Set for UPGRADE PARTITIONING
+  static const uint ALTER_UPGRADE_PARTITIONING  = 1L << 30;
 
   enum enum_enable_or_disable { LEAVE_AS_IS, ENABLE, DISABLE };
 
@@ -165,12 +240,36 @@ public:
   };
 
 
-  // Columns and keys to be dropped.
+  /**
+    Status of validation clause in ALTER TABLE statement. Used during
+    partitions and GC alterations.
+  */
+  enum enum_with_validation
+  {
+    /**
+      Default value, used when it's not specified in the statement.
+      Means WITH VALIDATION for partitions alterations and WITHOUT VALIDATION
+      for altering virtual GC.
+    */
+    ALTER_VALIDATION_DEFAULT,
+    ALTER_WITH_VALIDATION,
+    ALTER_WITHOUT_VALIDATION
+  };
+
+
+  /**
+     Columns and keys to be dropped.
+     After mysql_prepare_alter_table() it contains only foreign keys and
+     virtual generated columns to be dropped. This information is necessary
+     for the storage engine to do in-place alter.
+  */
   List<Alter_drop>              drop_list;
   // Columns for ALTER_COLUMN_CHANGE_DEFAULT.
   List<Alter_column>            alter_list;
   // List of keys, used by both CREATE and ALTER TABLE.
   List<Key>                     key_list;
+  // Keys to be renamed.
+  List<Alter_rename_key>        alter_rename_key_list;
   // List of columns, used by both CREATE and ALTER TABLE.
   List<Create_field>            create_list;
   // Type of ALTER TABLE operation.
@@ -178,21 +277,26 @@ public:
   // Enable or disable keys.
   enum_enable_or_disable        keys_onoff;
   // List of partitions.
-  List<char>                    partition_names;
+  List<String>                  partition_names;
   // Number of partitions.
   uint                          num_parts;
   // Type of ALTER TABLE algorithm.
   enum_alter_table_algorithm    requested_algorithm;
   // Type of ALTER TABLE lock.
   enum_alter_table_lock         requested_lock;
-
+  /*
+    Whether VALIDATION is asked for an operation. Used during virtual GC and
+    partitions alterations.
+  */
+  enum_with_validation          with_validation;
 
   Alter_info() :
     flags(0),
     keys_onoff(LEAVE_AS_IS),
     num_parts(0),
     requested_algorithm(ALTER_TABLE_ALGORITHM_DEFAULT),
-    requested_lock(ALTER_TABLE_LOCK_DEFAULT)
+    requested_lock(ALTER_TABLE_LOCK_DEFAULT),
+    with_validation(ALTER_VALIDATION_DEFAULT)
   {}
 
   void reset()
@@ -200,6 +304,7 @@ public:
     drop_list.empty();
     alter_list.empty();
     key_list.empty();
+    alter_rename_key_list.empty();
     create_list.empty();
     flags= 0;
     keys_onoff= LEAVE_AS_IS;
@@ -207,6 +312,7 @@ public:
     partition_names.empty();
     requested_algorithm= ALTER_TABLE_ALGORITHM_DEFAULT;
     requested_lock= ALTER_TABLE_LOCK_DEFAULT;
+    with_validation= ALTER_VALIDATION_DEFAULT;
   }
 
 
@@ -265,7 +371,7 @@ public:
   Alter_table_ctx();
 
   Alter_table_ctx(THD *thd, TABLE_LIST *table_list, uint tables_opened_arg,
-                  char *new_db_arg, char *new_name_arg);
+                  const char *new_db_arg, const char *new_name_arg);
 
   /**
      @return true if the table is moved to another database, false otherwise.
@@ -312,38 +418,21 @@ public:
   const char *get_tmp_path() const
   { return tmp_path; }
 
-  /**
-    Mark ALTER TABLE as needing to produce foreign key error if
-    it deletes a row from the table being changed.
-  */
-  void set_fk_error_if_delete_row(FOREIGN_KEY_INFO *fk)
-  {
-    fk_error_if_delete_row= true;
-    fk_error_id= fk->foreign_id->str;
-    fk_error_table= fk->foreign_table->str;
-  }
-
 public:
+  typedef uint error_if_not_empty_mask;
+  static const error_if_not_empty_mask DATETIME_WITHOUT_DEFAULT= 1 << 0;
+  static const error_if_not_empty_mask GEOMETRY_WITHOUT_DEFAULT= 1 << 1;
+
   Create_field *datetime_field;
-  bool         error_if_not_empty;
+  error_if_not_empty_mask error_if_not_empty;
   uint         tables_opened;
-  char         *db;
-  char         *table_name;
-  char         *alias;
-  char         *new_db;
-  char         *new_name;
-  char         *new_alias;
+  const char   *db;
+  const char   *table_name;
+  const char   *alias;
+  const char   *new_db;
+  const char   *new_name;
+  const char   *new_alias;
   char         tmp_name[80];
-  /**
-    Indicates that if a row is deleted during copying of data from old version
-    of table to the new version ER_FK_CANNOT_DELETE_PARENT error should be
-    emitted.
-  */
-  bool         fk_error_if_delete_row;
-  /** Name of foreign key for the above error. */
-  const char   *fk_error_id;
-  /** Name of table for the above error. */
-  const char   *fk_error_table;
 
 private:
   char new_filename[FN_REFLEN + 1];

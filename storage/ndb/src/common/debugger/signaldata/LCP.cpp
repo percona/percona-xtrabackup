@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -30,10 +29,10 @@ printSTART_LCP_REQ(FILE * output, const Uint32 * theData,
   char buf1[8*_NDB_NODE_BITMASK_SIZE+1];
   char buf2[8*_NDB_NODE_BITMASK_SIZE+1];
   fprintf(output, 
-	  " Sender: %d LcpId: %d\n"
+	  " Sender: %d LcpId: %d PauseStart: %d\n"
 	  " ParticipatingDIH = %s\n"
 	  " ParticipatingLQH = %s\n",
-	  refToNode(sig->senderRef), sig->lcpId,
+	  refToNode(sig->senderRef), sig->lcpId, sig->pauseStart,
 	  sig->participatingDIH.getText(buf1),
 	  sig->participatingLQH.getText(buf2));
   
@@ -87,5 +86,40 @@ printLCP_COMPLETE_REP(FILE * output, const Uint32 * theData,
   
   fprintf(output, " LcpId: %d NodeId: %d Block: %s\n",
 	  sig->lcpId, sig->nodeId, getBlockName(sig->blockNo));
+  return true;
+}
+
+bool
+printLCP_STATUS_REQ(FILE * output, const Uint32 * theData, 
+                    Uint32 len, Uint16 receiverBlockNo){
+  const LcpStatusReq* const sig = (LcpStatusReq*) theData;
+  
+  fprintf(output, " SenderRef : %x SenderData : %u\n", 
+          sig->senderRef, sig->senderData);
+  return true;
+}
+
+bool
+printLCP_STATUS_CONF(FILE * output, const Uint32 * theData, 
+                     Uint32 len, Uint16 receiverBlockNo){
+  const LcpStatusConf* const sig = (LcpStatusConf*) theData;
+  
+  fprintf(output, " SenderRef : %x SenderData : %u LcpState : %u tableId : %u fragId : %u\n",
+          sig->senderRef, sig->senderData, sig->lcpState, sig->tableId, sig->fragId);
+  fprintf(output, " replica(Progress : %llu), lcpDone (Rows : %llu, Bytes : %llu)\n",
+          (((Uint64)sig->completionStateHi) << 32) + sig->completionStateLo,
+          (((Uint64)sig->lcpDoneRowsHi) << 32) + sig->lcpDoneRowsLo,
+          (((Uint64)sig->lcpDoneBytesHi) << 32) + sig->lcpDoneBytesLo);
+  fprintf(output, "lcpScannedPages : %u", sig->lcpScannedPages);
+  return true;
+}
+
+bool
+printLCP_STATUS_REF(FILE * output, const Uint32 * theData, 
+                    Uint32 len, Uint16 receiverBlockNo){
+  const LcpStatusRef* const sig = (LcpStatusRef*) theData;
+  
+  fprintf(output, " SenderRef : %x, SenderData : %u Error : %u\n", 
+          sig->senderRef, sig->senderData, sig->error);
   return true;
 }

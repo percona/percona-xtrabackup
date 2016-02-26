@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved. 
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,20 +16,12 @@
 #ifndef MY_DBUG_INCLUDED
 #define MY_DBUG_INCLUDED
 
-#ifndef __WIN__
-#ifdef HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-#include <signal.h>
-#endif  /* not __WIN__ */
+#include "my_global.h"                          /* MYSQL_PLUGIN_IMPORT */
 
 #ifdef  __cplusplus
 extern "C" {
 #endif
-#if !defined(DBUG_OFF) && !defined(_lint)
+#if !defined(DBUG_OFF)
 
 struct _db_stack_frame_ {
   const char *func;      /* function name of the previous stack frame       */
@@ -57,7 +49,8 @@ extern  void _db_return_(uint _line_, struct _db_stack_frame_ *_stack_frame_);
 extern  void _db_pargs_(uint _line_,const char *keyword);
 extern  int _db_enabled_();
 extern  void _db_doprnt_(const char *format,...)
-  ATTRIBUTE_FORMAT(printf, 1, 2);
+  __attribute__((format(printf, 1, 2)));
+extern  void _db_doputs_(const char *log);
 extern  void _db_dump_(uint _line_,const char *keyword,
                        const unsigned char *memory, size_t length);
 extern  void _db_end_(void);
@@ -92,6 +85,24 @@ extern  const char* _db_get_func_(void);
             } \
           } \
         } while(0)
+
+/*
+  An alternate to DBUG_PRINT() macro, which takes a single string
+  as the second argument.
+*/
+#define DBUG_PUTS(keyword,arg) \
+        do \
+        {  \
+          if (_dbug_on_) \
+          { \
+            _db_pargs_(__LINE__,keyword); \
+            if (_db_enabled_()) \
+            {  \
+              _db_doputs_(arg); \
+            } \
+          } \
+        } while(0)
+
 #define DBUG_PUSH(a1) _db_push_ (a1)
 #define DBUG_POP() _db_pop_ ()
 #define DBUG_SET(a1) _db_set_ (a1)
@@ -109,18 +120,18 @@ extern  const char* _db_get_func_(void);
 #define DBUG_EXPLAIN_INITIAL(buf,len) _db_explain_init_((buf),(len))
 #define DEBUGGER_OFF                    do { _dbug_on_= 0; } while(0)
 #define DEBUGGER_ON                     do { _dbug_on_= 1; } while(0)
-#ifndef __WIN__
+#ifndef _WIN32
 #define DBUG_ABORT()                    (_db_flush_(), abort())
 #else
 /*
   Avoid popup with abort/retry/ignore buttons. When BUG#31745 is fixed we can
-  call abort() instead of _exit(3) (now it would cause a "test signal" popup).
+  call abort() instead of _exit(2) (now it would cause a "test signal" popup).
 */
 #include <crtdbg.h>
 #define DBUG_ABORT() (_db_flush_(),\
                      (void)_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE),\
                      (void)_CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR),\
-                     _exit(3))
+                     _exit(2))
 #endif
 #define DBUG_CHECK_CRASH(func, op) \
   do { char _dbuf_[255]; strxnmov(_dbuf_, sizeof(_dbuf_)-1, (func), (op)); \
@@ -140,7 +151,7 @@ extern  const char* _db_get_func_(void);
   An alternative would be to use _exit(EXIT_FAILURE),
   but then valgrind would report lots of memory leaks.
  */
-#ifdef __WIN__
+#ifdef _WIN32
 #define DBUG_SUICIDE() DBUG_ABORT()
 #else
 extern void _db_suicide_();
@@ -159,6 +170,8 @@ extern void _db_flush_gcov_();
 #define DBUG_EVALUATE(keyword,a1,a2) (a2)
 #define DBUG_EVALUATE_IF(keyword,a1,a2) (a2)
 #define DBUG_PRINT(keyword,arglist)     do { } while(0)
+#define DBUG_PUTS(keyword,arg)          do { } while(0)
+#define DBUG_LOG(keyword,arglist)       do { } while(0)
 #define DBUG_PUSH(a1)                   do { } while(0)
 #define DBUG_SET(a1)                    do { } while(0)
 #define DBUG_SET_INITIAL(a1)            do { } while(0)
@@ -202,5 +215,31 @@ void debug_sync_point(const char* lock_name, uint lock_timeout);
 #ifdef	__cplusplus
 }
 #endif
+
+#ifdef __cplusplus
+#if !defined(DBUG_OFF)
+#include <sstream>
+
+/*
+  A C++ interface to the DBUG_PUTS macro.  The DBUG_LOG macro also
+  takes two arguments.  The first argument is the keyword, as that of the
+  DBUG_PRINT.  The 2nd argument 'v' will be passed to a C++ output stream.
+  This enables the use of C++ style output stream operator.  In the code, it
+  will be used as follows:
+
+  DBUG_LOG("blob", "space: " << space_id);
+
+  Note: DBUG_PRINT() has a limitation of 1024 bytes for a single
+  print out.  This limitation is not there for DBUG_PUTS and DBUG_LOG
+  macros.
+*/
+
+#define DBUG_LOG(keyword, v) do { \
+	std::ostringstream		sout; \
+	sout << v; \
+	DBUG_PUTS(keyword, sout.str().c_str()); \
+} while(0)
+#endif /* DBUG_OFF */
+#endif /* __cplusplus */
 
 #endif /* MY_DBUG_INCLUDED */

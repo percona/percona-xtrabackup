@@ -14,6 +14,7 @@
 #  4) Master should throw error instead of silently sending GTIDs 3 and 4.
 ###############################################################################
 
+--source include/not_group_replication_plugin.inc
 --source include/have_gtid.inc
 --source include/have_binlog_format_statement.inc
 --let $rpl_skip_start_slave= 1
@@ -97,19 +98,22 @@ DROP TABLE t1;
 # Step-3) Fake raid failure( by manually deleting binary log file)
 --connection master
 --let $master_datadir= `SELECT @@datadir;`
+FLUSH LOGS;
+DELETE FROM mysql.gtid_executed;
 --remove_file $master_datadir/master-bin.000001
+--remove_file $master_datadir/master-bin.000002
 --remove_file $master_datadir/master-bin.index
 
 # Step-4) Restart Master, thus removing those gtids from executed gtid set.
 --let $rpl_server_number= 1
 --source include/rpl_restart_server.inc
-
 # Step-5) Restart slave's I/O thread, Slave sends its gtids which are purged on Master
 --connection slave
 START SLAVE IO_THREAD;
 
 # Step-6) Make sure I/O thread gets error and informs the situation to the Slave.
---let $slave_io_errno= convert_error(ER_MASTER_FATAL_ERROR_READING_BINLOG)
+--let $slave_io_errno=1236
+#convert_error(ER_MASTER_FATAL_ERROR_READING_BINLOG)
 --let $show_slave_io_error= 1
 --source include/wait_for_slave_io_error.inc
 call mtr.add_suppression(".*Slave has more GTIDs than the master has.*");

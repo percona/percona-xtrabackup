@@ -1,6 +1,4 @@
-/*
-   Copyright (C) 2000-2003 MySQL AB
-    All rights reserved. Use is subject to license terms.
+/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,14 +19,3 @@
 #define NDB_APPLY_TABLE "ndb_apply_status"
 #define NDB_SCHEMA_TABLE "ndb_schema"
 #define NDB_REPLICATION_TABLE "ndb_replication"
-
-enum Ndb_binlog_type
-{
-  NBT_DEFAULT                   = 0
-  ,NBT_NO_LOGGING               = 1
-  ,NBT_UPDATED_ONLY             = 2
-  ,NBT_FULL                     = 3
-  ,NBT_USE_UPDATE               = 4 /* bit 0x4 indicates USE_UPDATE */
-  ,NBT_UPDATED_ONLY_USE_UPDATE  = NBT_UPDATED_ONLY | NBT_USE_UPDATE
-  ,NBT_FULL_USE_UPDATE          = NBT_FULL         | NBT_USE_UPDATE
-};

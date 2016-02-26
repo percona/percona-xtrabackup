@@ -7,7 +7,14 @@
 start_server --innodb_file_per_table
 load_sakila
 
-stop_server
+# make sure all pages are flushed
+while true
+do
+	DIRTY=`mysql -Ns -e "SHOW GLOBAL STATUS LIKE 'Innodb_buffer_pool_pages_dirty'" | awk '{print $2;}'`
+	if [ "$DIRTY" == "0" ] ; then
+		break
+	fi
+done
 
 # Full backup
 vlog "Starting backup"

@@ -72,7 +72,7 @@ ERROR: Cannot access basedir at '/basedir_not_there/'.
 # 
 # Attempt to use bad paths - plugin_dir
 #
-ERROR: Cannot read plugin config file daemon_example. File does not exist.
+ERROR: Cannot access plugin_dir at '/plugin_not_there/'.
 # 
 # Attempt to use bad paths - mysqld
 #
@@ -105,7 +105,7 @@ ERROR: Missing --plugin_dir option.
 # Show the help.
 #
 mysql_plugin  Ver V.V.VV Distrib XX.XX.XX
-Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
 Enable or disable plugins.
 

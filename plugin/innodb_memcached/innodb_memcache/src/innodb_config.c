@@ -523,9 +523,9 @@ innodb_config_meta_hash_init(
 	if (err != DB_SUCCESS) {
 		fprintf(stderr, " InnoDB_Memcached: Please create config table"
 				"'%s' in database '%s' by running"
-				" 'innodb_memcached_config.sql. error %d'\n",
+				" 'innodb_memcached_config.sql. error %s'\n",
 			MCI_CFG_CONTAINER_TABLE, MCI_CFG_DB_NAME,
-			err);
+			ib_cb_ut_strerr(err));
 		err = DB_ERROR;
 		goto func_exit;
 	}
@@ -1142,7 +1142,7 @@ innodb_verify(
 	info->cas_enabled = false;
 	info->exp_enabled = false;
 
-#ifdef __WIN__
+#ifdef _WIN32
 	sprintf(table_name, "%s\%s", dbname, name);
 #else
 	snprintf(table_name, sizeof(table_name), "%s/%s", dbname, name);

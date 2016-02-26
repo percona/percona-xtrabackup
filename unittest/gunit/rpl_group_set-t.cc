@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@
 #define NON_DISABLED_UNITTEST_GTID
 
 #include "sql_class.h"
-#include "my_pthread.h"
+#include "my_thread.h"
 #include "binlog.h"
 #include "rpl_gtid.h"
 
@@ -103,8 +103,8 @@ public:
     rpl_sidno sidno;
     rpl_gno gno;
     const rpl_sid *sid;
-    char sid_str[rpl_sid::TEXT_LENGTH + 1];
-    char gtid_str[rpl_sid::TEXT_LENGTH + 1 + MAX_GNO_TEXT_LENGTH + 1];
+    char sid_str[binary_log::Uuid::TEXT_LENGTH + 1];
+    char gtid_str[binary_log::Uuid::TEXT_LENGTH + 1 + MAX_GNO_TEXT_LENGTH + 1];
     bool is_first, is_last, is_auto;
 #ifndef NO_DBUG
     void print() const
@@ -192,8 +192,8 @@ public:
         ASSERT_NE((rpl_sid *)NULL, substage.sid) << group_test->errtext;
         substage.sid->to_string(substage.sid_str);
         substage.sid->to_string(substage.gtid_str);
-        substage.gtid_str[rpl_sid::TEXT_LENGTH]= ':';
-        format_gno(substage.gtid_str + rpl_sid::TEXT_LENGTH + 1, substage.gno);
+        substage.gtid_str[rpl_sid.TEXT_LENGTH]= ':';
+        format_gno(substage.gtid_str + rpl_sid.TEXT_LENGTH + 1, substage.gno);
 
         ASSERT_LE(1, other_sm->add_permanent(substage.sid))
           << group_test->errtext;
@@ -246,7 +246,8 @@ public:
   int errtext_stack_pos;
   bool verbose;
 
-  void append_errtext(int line, const char *fmt, ...) ATTRIBUTE_FORMAT(printf, 3, 4)
+  void append_errtext(int line, const char *fmt, ...)
+    __attribute__((format(printf, 3, 4)))
   {
     va_list argp;
     va_start(argp, fmt);
@@ -352,7 +353,7 @@ TEST_F(GroupTest, Sid_map)
     const rpl_sid *sid;
     char buf[100];
     EXPECT_NE((rpl_sid *)NULL, sid= sm.sidno_to_sid(sidno)) << errtext;
-    const int max_len= Uuid::TEXT_LENGTH;
+    const int max_len= binary_log::Uuid::TEXT_LENGTH;
     EXPECT_EQ(max_len, sid->to_string(buf)) << errtext;
     EXPECT_STRCASEEQ(uuids[i], buf) << errtext;
     EXPECT_EQ(sidno, sm.sid_to_sidno(sid)) << errtext;
@@ -508,7 +509,7 @@ TEST_F(GroupTest, Group_containers)
 
   // Do not generate warnings (because that causes segfault when done
   // from a unittest).
-  global_system_variables.log_warnings= 0;
+  global_system_variables.log_error_verbosity= 1;
 
   mysql_bin_log.server_uuid_sidno= 1;
 
@@ -591,7 +592,7 @@ TEST_F(GroupTest, Group_containers)
   THD *thd= (THD *)malloc(sizeof(THD));
   ASSERT_NE((THD *)NULL, thd) << errtext;
   Gtid_specification *gtid_next= &thd->variables.gtid_next;
-  thd->thread_id= 4711;
+  thd->set_new_thread_id();
   gtid_next->type= Gtid_specification::AUTOMATIC;
   my_bool &gtid_end= thd->variables.gtid_end;
   my_bool &gtid_commit= thd->variables.gtid_commit;

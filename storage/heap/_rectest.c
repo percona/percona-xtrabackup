@@ -1,5 +1,4 @@
-/* Copyright (c) 2000-2002, 2005-2007 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,13 +18,14 @@
 
 #include "heapdef.h"
 
-int hp_rectest(register HP_INFO *info, register const uchar *old)
+int hp_rectest(HP_INFO *info, const uchar *old)
 {
   DBUG_ENTER("hp_rectest");
 
   if (memcmp(info->current_ptr,old,(size_t) info->s->reclength))
   {
-    DBUG_RETURN((my_errno=HA_ERR_RECORD_CHANGED)); /* Record have changed */
+    set_my_errno(HA_ERR_RECORD_CHANGED);
+    DBUG_RETURN(HA_ERR_RECORD_CHANGED); /* Record have changed */
   }
   DBUG_RETURN(0);
 } /* _heap_rectest */

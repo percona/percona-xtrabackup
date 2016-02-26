@@ -71,13 +71,14 @@ buffer_init(const char *root)
 	ds_ctxt_t		*ctxt;
 	ds_buffer_ctxt_t	*buffer_ctxt;
 
-	ctxt = my_malloc(sizeof(ds_ctxt_t) + sizeof(ds_buffer_ctxt_t),
+	ctxt = my_malloc(PSI_NOT_INSTRUMENTED,
+			 sizeof(ds_ctxt_t) + sizeof(ds_buffer_ctxt_t),
 			 MYF(MY_FAE));
 	buffer_ctxt = (ds_buffer_ctxt_t *) (ctxt + 1);
 	buffer_ctxt->buffer_size = DS_DEFAULT_BUFFER_SIZE;
 
 	ctxt->ptr = buffer_ctxt;
-	ctxt->root = my_strdup(root, MYF(MY_FAE));
+	ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
 	return ctxt;
 }
@@ -101,7 +102,8 @@ buffer_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 
 	buffer_ctxt = (ds_buffer_ctxt_t *) ctxt->ptr;
 
-	file = (ds_file_t *) my_malloc(sizeof(ds_file_t) +
+	file = (ds_file_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+				       sizeof(ds_file_t) +
 				       sizeof(ds_buffer_file_t) +
 				       buffer_ctxt->buffer_size,
 				       MYF(MY_FAE));
@@ -166,6 +168,7 @@ static int
 buffer_close(ds_file_t *file)
 {
 	ds_buffer_file_t	*buffer_file;
+	int			ret;
 
 	buffer_file = (ds_buffer_file_t *) file->ptr;
 	if (buffer_file->pos > 0) {
@@ -173,11 +176,11 @@ buffer_close(ds_file_t *file)
 			 buffer_file->pos);
 	}
 
-	ds_close(buffer_file->dst_file);
+	ret = ds_close(buffer_file->dst_file);
 
 	my_free(file);
 
-	return 0;
+	return ret;
 }
 
 static void

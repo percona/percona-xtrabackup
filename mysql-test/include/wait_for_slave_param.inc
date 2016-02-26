@@ -11,6 +11,8 @@
 # [--let $slave_param_comparison= [ < | <= | >= | > | = | != ]]
 # [--let $slave_timeout= NUMBER]
 # [--let $slave_error_param= [Slave_SQL_Errno | Slave_IO_Errno]]
+# [--let $slave_io_running_check_disable= 1]
+# [--let $rpl_channel_name= NAME]
 # [--let $rpl_debug= 1]
 # --source include/wait_for_slave_param.inc
 #
@@ -28,8 +30,12 @@
 #   string '!=', like this:
 #     --let $slave_param_comparison= !=
 #
+# $rpl_channel_name
+#   If this is not '', adds a FOR CHANNEL  '$rpl_channel_name' clause
+#   to SHOW SLAVE STATUS.
+#
 # $slave_timeout
-#   The default timeout is 60 seconds. You can change the timeout by
+#   The default timeout is 30 seconds. You can change the timeout by
 #   setting $slave_timeout. The unit is one second.
 #
 # $slave_error_param
@@ -38,14 +44,32 @@
 #   this script will faile immediately.  Typically, this should be set
 #   to Last_IO_Errno or Last_SQL_Errno.
 #
+# $slave_io_running_check_disable
+#   If set, this bypasses the check to see if the IO thread is started,
+#   so params can be checked and verified for a stopped IO thread as
+#   well. Otherwise check is made, and it is checked if the IO thread
+#   is connected successfully with master.
+#
 # $rpl_debug
 #   See include/rpl_init.inc
+#
+# ==== mysqltest variables configured by this file ====
+#
+# This file sets $slave_param_statement to the SQL statement used to
+# get the slave status: either SHOW SLAVE STATUS or SHOW SLAVE STATUS
+# FOR CHANNEL  '<channel>'.
 
 
---let $include_filename= wait_for_slave_param.inc [$slave_param]
+--let $_wait_for_slave_params= $slave_param
+if ($rpl_channel_name != '')
+{
+  --let $_wait_for_slave_params= $_wait_for_slave_params channel=$rpl_channel_name
+}
+--let $include_filename= wait_for_slave_param.inc [$_wait_for_slave_params]
 --source include/begin_include_file.inc
 
 --let $default_timeout= 30
+
 --let $sleep_freq= 10
 --let $sleep_time= `select 1.0 / $sleep_freq`
 
@@ -55,6 +79,9 @@ let $_slave_timeout= $slave_timeout;
 if (!$_slave_timeout)
 {
   let $_slave_timeout= `select $default_timeout * $sleep_freq`;
+}
+if ($VALGRIND_TEST) {
+  let $_slave_timeout= `select $_slave_timeout * 6`;
 }
 
 if ($slave_error_param == '')
@@ -73,25 +100,34 @@ if ($rpl_debug)
   --echo Waiting until '$slave_param' $_slave_param_comparison '$slave_param_value' [timeout='$_slave_timeout', \$slave_error_param='$slave_error_param']
 }
 
---let $_slave_check_configured= query_get_value("SHOW SLAVE STATUS", Slave_IO_Running, 1)
-
-if ($_slave_check_configured == 'No such row')
+--let $slave_param_statement= SHOW SLAVE STATUS
+if ($rpl_channel_name != '')
 {
-  --echo **** ERROR: SHOW SLAVE STATUS returned empty result set. Slave not configured. ****
-  --source include/show_rpl_debug_info.inc
-  --die SHOW SLAVE STATUS returned empty result set. Slave not configured.
+  --let $slave_param_statement= $slave_param_statement FOR CHANNEL  '$rpl_channel_name'
+}
+
+if (!$slave_io_running_check_disable)
+{
+  --let $_slave_check_configured= query_get_value($slave_param_statement, Slave_IO_Running, 1)
+
+  if ($_slave_check_configured == 'No such row')
+  {
+    --echo **** ERROR: $slave_param_statement returned empty result set. Slave not configured. ****
+    --source include/show_rpl_debug_info.inc
+    --die SHOW SLAVE STATUS returned empty result set. Slave not configured.
+  }
 }
 
 --let $_slave_timeout_counter= `select $_slave_timeout * $sleep_freq`
 --let $_slave_continue= 1
 while ($_slave_continue)
 {
-  --let $_show_slave_status_value= query_get_value("SHOW SLAVE STATUS", $slave_param, 1)
+  --let $_show_slave_status_value= query_get_value($slave_param_statement, $slave_param, 1)
 
   # Check if an error condition is reached.
   if (!$slave_error_param)
   {
-    --let $_show_slave_status_error_value= query_get_value("SHOW SLAVE STATUS", $slave_error_param, 1)
+    --let $_show_slave_status_error_value= query_get_value($slave_param_statement, $slave_error_param, 1)
     if ($_show_slave_status_error_value)
     {
       --echo **** ERROR: $slave_error_param = '$_show_slave_status_error_value' while waiting for slave parameter $slave_param $_slave_param_comparison $slave_param_value ****

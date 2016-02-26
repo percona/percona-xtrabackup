@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,8 +21,10 @@
 #include "sql_class.h"
 #include "set_var.h"
 
-extern pthread_key(MEM_ROOT**,THR_MALLOC);
-extern pthread_key(THD*, THR_THD);
+extern thread_local_key_t THR_MALLOC;
+extern thread_local_key_t THR_THD;
+extern bool THR_THD_initialized;
+extern bool THR_MALLOC_initialized;
 extern mysql_mutex_t LOCK_open;
 extern uint    opt_debug_sync_timeout;
 extern "C" void sql_alloc_error_handler(void);
@@ -35,6 +37,16 @@ int array_size(const T (&)[size])
 }
 
 namespace my_testing {
+
+inline int native_compare(size_t *length, unsigned char **a, unsigned char **b)
+{
+  return memcmp(*a, *b, *length);
+}
+
+inline qsort2_cmp get_ptr_compare(size_t size __attribute__((unused)))
+{
+  return (qsort2_cmp) native_compare;
+}
 
 void setup_server_for_unit_tests();
 void teardown_server_for_unit_tests();
@@ -76,9 +88,8 @@ public:
   virtual bool handle_condition(THD *thd,
                                 uint sql_errno,
                                 const char* sqlstate,
-                                Sql_condition::enum_warning_level level,
-                                const char* msg,
-                                Sql_condition ** cond_hdl);
+                                Sql_condition::enum_severity_level *level,
+                                const char* msg);
 
   int handle_called() const { return m_handle_called; }
 private:

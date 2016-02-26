@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -85,7 +85,19 @@ public class InvocationHandlerImpl<T> implements InvocationHandler,
         numberOfFields = domainTypeHandler.getNumberOfFields();
         properties = new Object[numberOfFields];
         modifiedFields = new BitSet(numberOfFields);
-        domainTypeHandler.initializeNotPersistentFields(this);
+        domainTypeHandler.initializePrimitiveFields(this);
+    }
+
+    public void release() {
+        this.properties = null;
+        this.typemap = null;
+        this.domainTypeHandler = null;
+        this.proxy = null;
+        this.objectManager = null;
+    }
+
+    public boolean wasReleased() {
+        return this.domainTypeHandler == null;
     }
 
     public void setProxy(Object proxy) {
@@ -304,6 +316,14 @@ public class InvocationHandlerImpl<T> implements InvocationHandler,
         return doubleValue(fieldNumber);
     }
 
+    public byte[] getLobBytes(int fieldNumber) {
+        return bytesValue(fieldNumber);
+    }
+
+    public String getLobString(int fieldNumber) {
+        return stringValue(fieldNumber);
+    }
+
     public Byte getObjectByte(int fieldNumber) {
         return (Byte)properties[fieldNumber];
     }
@@ -369,6 +389,14 @@ public class InvocationHandlerImpl<T> implements InvocationHandler,
     }
 
     public void setBytes(int fieldNumber, byte[] value) {
+        properties[fieldNumber] = value;
+    }
+
+    public void setLobBytes(int fieldNumber, byte[] value) {
+        properties[fieldNumber] = value;
+    }
+
+    public void setLobString(int fieldNumber, String value) {
         properties[fieldNumber] = value;
     }
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 #include "table_cache.h"
 
+#include "mysqld_thd_manager.h"
 #include "ha_example.h"
 
 /*
@@ -32,6 +33,10 @@ namespace table_cache_unittest {
 
 using my_testing::Server_initializer;
 
+#ifdef SAFE_MUTEX
+static const char *assert_string=
+  ".*Assertion.*count > 0.*my_thread_equal.*";
+#endif
 
 /**
   Test fixture for basic tests involving Table_cache
@@ -49,10 +54,13 @@ protected:
 
   virtual void SetUp()
   {
+    Global_THD_manager *thd_manager= Global_THD_manager::get_instance();
+    thd_manager->set_unit_test();
+    // Reset thread ID counter for each test.
+    thd_manager->set_thread_id_counter(1);
     for (uint i= 0; i < MAX_THREADS; ++i)
     {
       initializer[i].SetUp();
-      initializer[i].thd()->thread_id= i + 1;
     }
 
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
@@ -135,7 +143,7 @@ public:
     memset(cache_element_arr, 0, sizeof(cache_element_arr));
     cache_element= cache_element_arr;
     // MEM_ROOT is used for constructing ha_example() instances.
-    init_alloc_root(&m_mem_root, 1024, 0);
+    init_alloc_root(PSI_NOT_INSTRUMENTED, &m_mem_root, 1024, 0);
     /*
       Assertion in some of Table_cache methods check that version of
       the share is up-to-date.
@@ -152,7 +160,7 @@ public:
 
   TABLE *create_table(THD *thd)
   {
-    TABLE *result= (TABLE *)my_malloc(sizeof(TABLE), MYF(0));
+    TABLE *result= (TABLE *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(TABLE), MYF(0));
 
     memset(result, 0, sizeof(TABLE));
     result->s= this;
@@ -195,7 +203,7 @@ TEST_F(TableCacheBasicDeathTest, CacheCreateAndDestroy)
   // Cache should be not locked after creation
 #ifdef SAFE_MUTEX
   EXPECT_DEATH_IF_SUPPORTED(table_cache.assert_owner(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
 #endif
   table_cache.destroy();
 }
@@ -214,7 +222,7 @@ TEST_F(TableCacheBasicDeathTest, CacheLockAndUnlock)
 #ifdef SAFE_MUTEX
   // Cache should not be locked after creation
   EXPECT_DEATH_IF_SUPPORTED(table_cache.assert_owner(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
 #endif
 
   // And get locked after we call its lock() method
@@ -225,7 +233,7 @@ TEST_F(TableCacheBasicDeathTest, CacheLockAndUnlock)
   table_cache.unlock();
 #ifdef SAFE_MUTEX
   EXPECT_DEATH_IF_SUPPORTED(table_cache.assert_owner(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
 #endif
 
   table_cache.destroy();
@@ -266,9 +274,9 @@ TEST_F(TableCacheBasicDeathTest, ManagerCreateAndDestroy)
   // And not locked
 #ifdef SAFE_MUTEX
   EXPECT_DEATH_IF_SUPPORTED(cache_1->assert_owner(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
   EXPECT_DEATH_IF_SUPPORTED(cache_2->assert_owner(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
 #endif
 
   table_cache_manager.destroy();
@@ -737,9 +745,9 @@ TEST_F(TableCacheDoubleCacheDeathTest, ManagerLockAndUnlock)
   // Nor caches nor LOCK_open should not be locked after initialization
 #ifdef SAFE_MUTEX
   EXPECT_DEATH_IF_SUPPORTED(table_cache_manager.assert_owner_all(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
   EXPECT_DEATH_IF_SUPPORTED(table_cache_manager.assert_owner_all_and_tdc(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
 #endif
 
   // And get locked after we call its lock_all_and_tdc() method.
@@ -761,9 +769,9 @@ TEST_F(TableCacheDoubleCacheDeathTest, ManagerLockAndUnlock)
 
 #ifdef SAFE_MUTEX
   EXPECT_DEATH_IF_SUPPORTED(table_cache_manager.assert_owner_all(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
   EXPECT_DEATH_IF_SUPPORTED(table_cache_manager.assert_owner_all_and_tdc(),
-                            ".*Assertion.*count > 0.*pthread_equal.*");
+                            assert_string);
 #endif
 }
 

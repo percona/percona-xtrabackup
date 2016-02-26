@@ -6,10 +6,6 @@
 
 |Percona XtraBackup| has implemented support for encrypted backups. This feature was introduced in |Percona XtraBackup| 2.1. It can be used to encrypt/decrypt local or streaming backup with |xbstream| option (streaming tar backups are not supported) in order to add another layer of protection to the backups. Encryption is done with the ``libgcrypt`` library.
 
-.. note:: 
-
-  Encryption related options are currently ignored by |innobackupex| when specified in :file:`my.cnf`.
-
 Creating Encrypted Backups
 ===========================
 
@@ -88,7 +84,7 @@ After the backups have been decrypted, they can be prepared the same way as the 
 
 .. note::
 
-   After version 2.2.10 |Percona XtraBackup| doesn't automatically remove the encrypted files. In order to clean up the backup directory users should remove the :file:`*.xbcrypt` files.
+   |Percona XtraBackup| doesn't automatically remove the encrypted files. In order to clean up the backup directory users should remove the :file:`*.xbcrypt` files.
 
 Restoring Encrypted Backups
 =============================

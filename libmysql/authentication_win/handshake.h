@@ -49,7 +49,7 @@ class Security_buffer: public SecBufferDesc
 
     m_buf.BufferType= SECBUFFER_TOKEN;
     m_buf.pvBuffer= ptr;
-    m_buf.cbBuffer= len;
+    m_buf.cbBuffer= (ulong)len;
   }
 
   /// If @c false, no deallocation will be done in the destructor.
@@ -67,7 +67,7 @@ class Security_buffer: public SecBufferDesc
 
   ~Security_buffer()
   {
-    free();
+    mem_free();
   }
 
   byte*  ptr() const
@@ -85,7 +85,7 @@ class Security_buffer: public SecBufferDesc
     return Blob(ptr(), len());
   }
 
-  void free(void);
+  void mem_free(void);
 };
 
 

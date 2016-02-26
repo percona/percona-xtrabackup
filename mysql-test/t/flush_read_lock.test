@@ -974,21 +974,14 @@ let $statement= insert into t1_temp values (1);
 let $cleanup_stmt= delete from t1_temp limit 1;
 --source include/check_ftwrl_compatible.inc
 
---echo #
---echo # 18.c) INSERT DELAYED is incompatible with FTWRL.
-let $statement= insert delayed into t1_base values (1);
-let $cleanup_stmt1= ;
---source include/check_ftwrl_incompatible.inc
-delete from t1_base;
-
 --echo # 
---echo # 18.d) INSERT SELECT into base table is incompatible with FTWRL.
+--echo # 18.c) INSERT SELECT into base table is incompatible with FTWRL.
 let $statement= insert into t1_base select * from t1_temp;
 let $cleanup_stmt1= ;
 --source include/check_ftwrl_incompatible.inc
 
 --echo #
---echo # 18.e) INSERT SELECT into temp table is compatible with FTWRL.
+--echo # 18.d) INSERT SELECT into temp table is compatible with FTWRL.
 let $statement= insert into t1_temp select * from t1_base;
 let $cleanup_stmt= ;
 --source include/check_ftwrl_compatible.inc
@@ -1396,7 +1389,10 @@ let $cleanup_stmt= ;
 --echo # 29) REVOKE variants.
 --echo # 
 --echo # 29.1) REVOKE privileges is incompatible with FTWRL. 
+set @orig_sql_mode= @@sql_mode;
+set sql_mode= (select replace(@@sql_mode,'NO_AUTO_CREATE_USER',''));
 grant all privileges on t1_base to mysqltest_u1;
+set sql_mode= @orig_sql_mode;
 let $statement= revoke all privileges on t1_base from mysqltest_u1;
 let $cleanup_stmt1= grant all privileges on t1_base to mysqltest_u1;
 --echo # Skip last part of testing as this statement does
@@ -1495,7 +1491,7 @@ let $skip_3rd_check= ;
 --echo #
 --echo # 31.d.I) SET PASSWORD is incompatible with FTWRL as it changes data.
 create user mysqltest_u1;
-let $statement= set password for 'mysqltest_u1' = password('');
+let $statement= ALTER USER 'mysqltest_u1' IDENTIFIED BY '';
 let $cleanup_stmt1= ;
 --echo # Skip last part of compatibility testing as our helper debug
 --echo # sync-point doesn't work for SET statements.

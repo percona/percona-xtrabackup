@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2009, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
 #define KERNEL_NDBINFO_HPP
 
 #include <signaldata/DbinfoScan.hpp>
+
+#define JAM_FILE_ID 230
+
 
 class Ndbinfo {
 public:
@@ -46,7 +49,18 @@ public:
     RESOURCES_TABLEID =          7,
     COUNTERS_TABLEID =           8,
     NODES_TABLEID =              9,
-    DISKPAGEBUFFER_TABLEID =     10
+    DISKPAGEBUFFER_TABLEID =     10,
+    THREADBLOCKS_TABLEID =       11,
+    THREADSTAT_TABLEID =         12,
+    TRANSACTIONS_TABLEID =       13,
+    OPERATIONS_TABLEID =         14,
+    MEMBERSHIP_TABLEID =         15,
+    DICT_OBJ_INFO_TABLEID =      16,
+    FRAG_MEM_USE_TABLEID =       17,
+    DISK_WRITE_SPEED_BASE_TABLEID = 18,
+    DISK_WRITE_SPEED_AGGREGATE_TABLEID = 19,
+    FRAG_OPERATIONS_TABLEID =    20,
+    RESTART_INFO_TABLEID =       21
   };
 
   struct Table {
@@ -197,7 +211,15 @@ public:
     SPJ_SCAN_BATCHES_RETURNED_COUNTER = 20,
     SPJ_SCAN_ROWS_RETURNED_COUNTER = 21,
     SPJ_PRUNED_RANGE_SCANS_RECEIVED_COUNTER = 22,
-    SPJ_CONST_PRUNED_RANGE_SCANS_RECEIVED_COUNTER = 23
+    SPJ_CONST_PRUNED_RANGE_SCANS_RECEIVED_COUNTER = 23,
+    LOCAL_READ_COUNTER = 24,
+    LOCAL_WRITE_COUNTER = 25,
+    LQHKEY_OVERLOAD = 26,
+    LQHKEY_OVERLOAD_TC = 27,
+    LQHKEY_OVERLOAD_READER = 28,
+    LQHKEY_OVERLOAD_NODE_PEER = 29,
+    LQHKEY_OVERLOAD_SUBSCRIBER = 30,
+    LQHSCAN_SLOWDOWN = 31
   };
 
   struct counter_entry {
@@ -205,5 +227,8 @@ public:
     Uint64 val;
   };
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

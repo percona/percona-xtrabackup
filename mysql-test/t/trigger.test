@@ -1,3 +1,8 @@
+# The include statement below is a temp one for tests that are yet to
+#be ported to run with InnoDB,
+#but needs to be kept for tests that would need MyISAM in future.
+--source include/force_myisam_default.inc
+
 # This test uses chmod, can't be run with root permissions
 -- source include/not_as_root.inc
 
@@ -325,8 +330,6 @@ create trigger trg before insert on t2 for each row set @a:=1;
 create trigger trg before insert on t1 for each row set @a:=1;
 --error ER_TRG_ALREADY_EXISTS
 create trigger trg after insert on t1 for each row set @a:=1;
---error ER_NOT_SUPPORTED_YET
-create trigger trg2 before insert on t1 for each row set @a:=1;
 --error ER_TRG_ALREADY_EXISTS
 create trigger trg before insert on t3 for each row set @a:=1;
 create trigger trg2 before insert on t3 for each row set @a:=1;
@@ -1391,7 +1394,7 @@ CREATE TABLE t1(c INT);
 CREATE TABLE t2(c INT);
 
 --error ER_WRONG_STRING_LENGTH
-CREATE DEFINER=1234567890abcdefGHIKL@localhost
+CREATE DEFINER=1234567890abcdefGHIKL1234567890abcdefGHIKL@localhost
   TRIGGER t1_bi BEFORE INSERT ON t1 FOR EACH ROW SET @a = 1;
 
 --error ER_WRONG_STRING_LENGTH
@@ -1559,7 +1562,7 @@ drop table t1;
 # Bug#25398: crash when a trigger contains a SELECT with 
 #            trigger fields in the select list under DISTINCT
 #
-
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 CREATE TABLE t1 (
   id int NOT NULL DEFAULT '0',
   a  varchar(10) NOT NULL,
@@ -1600,7 +1603,7 @@ UPDATE t1 SET c='Bang!' WHERE id=1;
 SELECT fubar_id FROM t2;
 
 DROP TABLE t1,t2;
-
+SET sql_mode = default;
 #
 # Bug#21285 (Incorrect message error deleting records in a table with a
 #           trigger for inserting)
@@ -2275,7 +2278,7 @@ drop table if exists t1;
 create table t1 (i int, j int);
 
 create trigger t1_bi before insert on t1 for each row begin end;
---error ER_NOT_SUPPORTED_YET
+--error ER_TRG_ALREADY_EXISTS
 create trigger t1_bi before insert on t1 for each row begin end;
 drop trigger t1_bi;
 --error ER_TRG_DOES_NOT_EXIST
@@ -2403,7 +2406,7 @@ DROP TABLE t1, t2;
 CREATE TABLE t1 (id INT NOT NULL);
 CREATE TABLE t2 (id INT NOT NULL);
 INSERT t1 VALUES (1),(2),(3);
-UPDATE t1 SET id=NULL;
+UPDATE IGNORE t1 SET id=NULL;
 CREATE TRIGGER t1_bu BEFORE UPDATE ON t1 FOR EACH ROW
   INSERT INTO t2 VALUES (3);
 UPDATE t1 SET id=NULL;
@@ -2474,7 +2477,7 @@ DROP TEMPORARY TABLE t2;
 #
 # Bug#36649: Condition area is not properly cleaned up after stored routine invocation
 #
-
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 --disable_warnings
 DROP TRIGGER IF EXISTS trg1;
 DROP TABLE IF EXISTS t1;
@@ -2533,7 +2536,7 @@ INSERT INTO t1 VALUES (1),(2);
 DROP TRIGGER trg1;
 DROP TRIGGER trg2;
 DROP TABLE t1;
-
+SET sql_mode = default;
 
 --echo #
 --echo # Bug #46747 "Crash in MDL_ticket::upgrade_shared_lock_to_exclusive
@@ -2638,6 +2641,198 @@ DROP TRIGGER t2_ai;
 DROP TABLE t1, t2, t3;
 
 --echo #
+--echo # Bug#14493938 - CREATE TEMPORARY TABLE INSIDE TRIGGER -- CRASH (DEBUG ONLY)
+--echo #
+
+CREATE TABLE t1 (a INT, b INT DEFAULT 150);
+
+delimiter |;
+CREATE TRIGGER t1_bi BEFORE INSERT ON t1
+FOR EACH ROW 
+BEGIN
+  CREATE TEMPORARY TABLE t2 AS SELECT NEW.a, NEW.b;
+  INSERT INTO t2(a) VALUES (10);
+  INSERT INTO t2 VALUES (100, 500);
+  INSERT INTO t2(a) VALUES (1000);
+END
+|
+delimiter ;|
+
+INSERT INTO t1 VALUES (1, 2);
+SELECT * FROM t2;
+
+DROP TABLE t1;
+DROP TEMPORARY TABLE t2;
+
+--echo #
+--echo # Bug#15985318 - ASSERTION FAILED: ! thd->in_sub_stmt with certain
+--echo #                                    commands in triggers
+--echo #
+
+CREATE TABLE t1(a INT);
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER t1_au AFTER UPDATE ON t1 FOR EACH ROW START SLAVE;
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER t1_au AFTER UPDATE ON t1 FOR EACH ROW STOP SLAVE;
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER t1_au AFTER UPDATE ON t1 FOR EACH ROW
+CREATE SERVER s FOREIGN DATA WRAPPER mysql OPTIONS (USER 'Remote',
+                                                    HOST '192.168.1.106',
+                                                    DATABASE 'test');
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER t1_bu BEFORE UPDATE ON t1 FOR EACH ROW
+ALTER SERVER s OPTIONS (password '1');
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER tr1 AFTER UPDATE ON t1 FOR EACH ROW
+DROP SERVER IF EXISTS s;
+
+CREATE DATABASE db1;
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER tr1 AFTER UPDATE ON t1 FOR EACH ROW
+ALTER DATABASE db1 CHARACTER SET latin1;
+
+DROP DATABASE db1;
+
+CREATE USER 'u1'@'localhost' IDENTIFIED BY 'pass';
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER tr1 AFTER UPDATE ON t1 FOR EACH ROW
+ALTER USER 'u1'@'localhost' PASSWORD EXPIRE;
+
+DROP USER 'u1'@'localhost';
+
+--error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
+CREATE TRIGGER tr1 AFTER UPDATE ON t1 FOR EACH ROW
+CHANGE MASTER TO MASTER_SSL = 0;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#17864349 - CHANGING TRUNCATE TABLE TO DROP TABLE & CREATE TABLE
+--echo # MAKES TRIGGER.TEST FAIL
+--echo #
+
+--echo # The following tests check for non in-place update (i.e. using temporary table)
+--echo # of column with different datatypes
+
+SET @save_sql_mode= @@sql_mode;
+SET sql_mode= 'traditional';
+
+let $column1_type_name = INT;
+let $column2_type_name = INT;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = TINYINT;
+let $column2_type_name = TINYINT;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = BOOL;
+let $column2_type_name = BOOL;
+let $column2_value = TRUE;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = SMALLINT;
+let $column2_type_name = SMALLINT;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = BIGINT;
+let $column2_type_name = BIGINT;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = DECIMAL;
+let $column2_type_name = DECIMAL;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = FLOAT;
+let $column2_type_name = FLOAT;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = DOUBLE;
+let $column2_type_name = DOUBLE;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = BIT;
+let $column2_type_name = BIT;
+let $column2_value = 1;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = ENUM('a', 'b', 'c');
+let $column2_type_name = ENUM('a', 'b', 'c');
+let $column2_value = 'b';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = SET('a', 'b', 'c');
+let $column2_type_name = SET('a', 'b', 'c');
+let $column2_value = 'b';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = VARBINARY(10);
+let $column2_type_name = VARBINARY(10);
+let $column2_value = 'binary';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = BINARY(10);
+let $column2_type_name = BINARY(10);
+let $column2_value = 'binary';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = TINYTEXT;
+let $column2_type_name = TINYTEXT;
+let $column2_value = 'text';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = TEXT(10);
+let $column2_type_name = TEXT(10);
+let $column2_value = 'text';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = BLOB;
+let $column2_type_name = BLOB;
+let $column2_value = 'binary';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = VARCHAR(5);
+let $column2_type_name = INT;
+let $column2_value = 3;
+--source include/trigger_17864349.inc
+
+let $column1_type_name = INT;
+let $column2_type_name = VARCHAR(5);
+let $column2_value = 'str';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = VARCHAR(15);
+let $column2_type_name = VARCHAR(5);
+let $column2_value = 'str';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = VARCHAR(15);
+let $column2_type_name = BLOB;
+let $column2_value = 'str';
+--source include/trigger_17864349.inc
+
+let $column1_type_name = TEXT(20);
+let $column2_type_name = TEXT(10);
+let $column2_value = 'text';
+--source include/trigger_17864349.inc
+
+SET sql_mode= @save_sql_mode;
+
+# End of tests for Bug#17864349
+--echo #
 --echo # Bug#18596756 - FAILED PREPARING OF TRIGGER ON TRUNCATED TABLES CAUSE
 --echo #                ERROR 1054.
 --echo #
@@ -2667,4 +2862,29 @@ INSERT INTO t1 VALUES(0);
 
 DROP TABLE t1;
 
---echo End of 6.0 tests.
+--echo #
+--echo # Bug#16522924 : UPDATE TRIGGER INVOKED WHEN UPDATE IGNORE MEANS
+--echo #                      THAT NO UPDATE IS PERFORMED
+--echo #
+CREATE TABLE t1 (a INT PRIMARY KEY);
+CREATE TABLE t2 (after_update CHAR(50));
+CREATE TABLE t3(b INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1), (2);
+INSERT INTO t3 VALUES (1);
+DELIMITER |;
+CREATE TRIGGER post_update_t1 AFTER UPDATE ON t1
+FOR EACH ROW BEGIN
+  INSERT INTO t2 VALUES("POST UPDATE TRIGGER FOR UPDATE IGNORE ON t1 FIRED");
+END|
+DELIMITER ;|
+UPDATE IGNORE t1 SET a=2 WHERE a=1;
+SELECT * FROM t2;
+UPDATE IGNORE t1,t3 SET t1.a=2 WHERE t1.a=1;
+SELECT * FROM t2;
+UPDATE IGNORE t3,t1 SET t1.a=2 WHERE t1.a=1;
+SELECT * FROM t1;
+SELECT * FROM t2;
+DROP TRIGGER post_update_t1;
+DROP TABLE t1,t2,t3;
+
+--echo End of 5.7 tests.

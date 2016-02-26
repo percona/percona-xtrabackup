@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,11 +21,8 @@
 */
 
 #include "records.h"
-#include "sql_priv.h"
-#include "records.h"
 #include "sql_list.h"
 #include "filesort.h"            // filesort_free_buffers
-#include "opt_range.h"                          // SQL_SELECT
 #include "sql_class.h"                          // THD
 #include "sql_select.h"          // JOIN_TAB
 
@@ -33,8 +30,8 @@
 static int rr_quick(READ_RECORD *info);
 int rr_sequential(READ_RECORD *info);
 static int rr_from_tempfile(READ_RECORD *info);
-static int rr_unpack_from_tempfile(READ_RECORD *info);
-static int rr_unpack_from_buffer(READ_RECORD *info);
+template<bool> static int rr_unpack_from_tempfile(READ_RECORD *info);
+template<bool> static int rr_unpack_from_buffer(READ_RECORD *info);
 static int rr_from_pointers(READ_RECORD *info);
 static int rr_from_cache(READ_RECORD *info);
 static int init_rr_cache(THD *thd, READ_RECORD *info);
@@ -111,9 +108,10 @@ bool init_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table,
     init_read_record()
       info              OUT read structure
       thd               Thread handle
-      table             Table the data [originally] comes from.
-      select            SQL_SELECT structure. We may select->quick or 
-                        select->file as data source
+      table             Table the data [originally] comes from; if NULL,
+      'table' is inferred from 'qep_tab'; if non-NULL, 'qep_tab' must be NULL.
+      qep_tab           QEP_TAB for 'table', if there is one; we may use
+      qep_tab->quick() as data source
       use_record_cache  Call file->extra_opt(HA_EXTRA_CACHE,...)
                         if we're going to do sequential read and some
                         additional conditions are satisfied.
@@ -179,8 +177,8 @@ bool init_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table,
   @retval true   error
   @retval false  success
 */
-bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
-		      SQL_SELECT *select,
+bool init_read_record(READ_RECORD *info,THD *thd,
+                      TABLE *table, QEP_TAB *qep_tab,
 		      int use_record_cache, bool print_error, 
                       bool disable_rr_cache)
 {
@@ -188,19 +186,24 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
   IO_CACHE *tempfile;
   DBUG_ENTER("init_read_record");
 
+  // If only 'table' is given, assume no quick, no condition.
+  DBUG_ASSERT(!(table && qep_tab));
+  if (!table)
+    table= qep_tab->table();
+
   memset(info, 0, sizeof(*info));
   info->thd=thd;
   info->table=table;
   info->forms= &info->table;		/* Only one table */
   
   if (table->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE &&
-      !table->sort.addon_field)
+      !table->sort.using_addon_fields())
     (void) table->file->extra(HA_EXTRA_MMAP);
   
-  if (table->sort.addon_field)
+  if (table->sort.using_addon_fields())
   {
-    info->rec_buf= table->sort.addon_buf;
-    info->ref_length= table->sort.addon_length;
+    info->rec_buf= table->sort.addon_fields->get_addon_buf();
+    info->ref_length= table->sort.addon_fields->get_addon_buf_length();
   }
   else
   {
@@ -208,15 +211,13 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
     info->record= table->record[0];
     info->ref_length= table->file->ref_length;
   }
-  info->select=select;
+  info->quick= qep_tab ? qep_tab->quick() : NULL;
   info->print_error=print_error;
   info->unlock_row= rr_unlock_row;
   info->ignore_not_found_rows= 0;
   table->status=0;			/* And it's always found */
 
-  if (select && my_b_inited(&select->file))
-    tempfile= &select->file;
-  else if (select && select->quick && select->quick->clustered_pk_range())
+  if (info->quick && info->quick->clustered_pk_range())
   {
     /*
       In case of QUICK_INDEX_MERGE_SELECT with clustered pk range we have to
@@ -229,9 +230,20 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
     tempfile= table->sort.io_cache;
   if (tempfile && my_b_inited(tempfile)) // Test if ref-records was used
   {
-    DBUG_PRINT("info",("using rr_from_tempfile"));
-    info->read_record= (table->sort.addon_field ?
-                        rr_unpack_from_tempfile : rr_from_tempfile);
+    if (table->sort.using_addon_fields())
+    {
+      DBUG_PRINT("info",("using rr_unpack_from_tempfile"));
+      if (table->sort.addon_fields->using_packed_addons())
+        info->read_record= rr_unpack_from_tempfile<true>;
+      else
+        info->read_record= rr_unpack_from_tempfile<false>;
+    }
+    else
+    {
+      DBUG_PRINT("info",("using rr_from_tempfile"));
+      info->read_record= rr_from_tempfile;
+    }
+
     info->io_cache=tempfile;
     reinit_io_cache(info->io_cache,READ_CACHE,0L,0,0);
     info->ref_pos=table->file->ref;
@@ -245,7 +257,7 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
       and table->sort.io_cache is read sequentially
     */
     if (!disable_rr_cache &&
-        !table->sort.addon_field &&
+        !table->sort.using_addon_fields() &&
 	thd->variables.read_rnd_buff_size &&
 	!(table->file->ha_table_flags() & HA_FAST_KEY_READ) &&
 	(table->db_stat & HA_READ_ONLY ||
@@ -259,26 +271,41 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
         info->ref_length <= MAX_REFLENGTH)
     {
       if (init_rr_cache(thd, info))
-        DBUG_RETURN(true);
+        goto skip_caching;
       DBUG_PRINT("info",("using rr_from_cache"));
       info->read_record=rr_from_cache;
     }
   }
-  else if (select && select->quick)
+  else if (info->quick)
   {
     DBUG_PRINT("info",("using rr_quick"));
     info->read_record=rr_quick;
   }
-  else if (table->sort.record_pointers)
+  // See save_index() which stores the filesort result set.
+  else if (table->sort.has_filesort_result_in_memory())
   {
-    DBUG_PRINT("info",("using record_pointers"));
     if ((error= table->file->ha_rnd_init(0)))
       goto err;
-    info->cache_pos=table->sort.record_pointers;
-    info->cache_end=info->cache_pos+ 
-                    table->sort.found_records*info->ref_length;
-    info->read_record= (table->sort.addon_field ?
-                        rr_unpack_from_buffer : rr_from_pointers);
+
+    info->cache_pos=table->sort.sorted_result;
+    if (table->sort.using_addon_fields())
+    {
+      DBUG_PRINT("info",("using rr_unpack_from_buffer"));
+      DBUG_ASSERT(table->sort.sorted_result_in_fsbuf);
+      info->unpack_counter= 0;
+      if (table->sort.addon_fields->using_packed_addons())
+        info->read_record= rr_unpack_from_buffer<true>;
+      else
+        info->read_record= rr_unpack_from_buffer<false>;
+      info->cache_end= table->sort.sorted_result_end;
+    }
+    else
+    {
+      DBUG_PRINT("info",("using rr_from_pointers"));
+      info->read_record= rr_from_pointers;
+      info->cache_end=
+        info->cache_pos + table->sort.found_records * info->ref_length;
+    }
   }
   else
   {
@@ -296,16 +323,20 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
       (void) table->file->extra_opt(HA_EXTRA_CACHE,
 				  thd->variables.read_buff_size);
   }
-  /* 
+
+skip_caching:
+  /*
     Do condition pushdown for UPDATE/DELETE.
-    TODO: Remove this from here as it causes two condition pushdown calls 
+    TODO: Remove this from here as it causes two condition pushdown calls
     when we're running a SELECT and the condition cannot be pushed down.
+    Some temporary tables do not have a TABLE_LIST object, and it is never
+    needed to push down conditions (ECP) for such tables.
   */
   if (thd->optimizer_switch_flag(OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN) &&
-      select && select->cond && 
-      (select->cond->used_tables() & table->map) &&
+      qep_tab && qep_tab->condition() && table->pos_in_table_list &&
+      (qep_tab->condition()->used_tables() & table->pos_in_table_list->map()) &&
       !table->file->pushed_cond)
-    table->file->cond_push(select->cond);
+    table->file->cond_push(qep_tab->condition());
 
   DBUG_RETURN(false);
 
@@ -321,7 +352,7 @@ void end_read_record(READ_RECORD *info)
 {                   /* free cache if used */
   if (info->cache)
   {
-    my_free_lock(info->cache);
+    my_free(info->cache);
     info->cache=0;
   }
   if (info->table && info->table->key_read)
@@ -364,7 +395,7 @@ static int rr_handle_error(READ_RECORD *info, int error)
 static int rr_quick(READ_RECORD *info)
 {
   int tmp;
-  while ((tmp= info->select->quick->get_next()))
+  while ((tmp= info->quick->get_next()))
   {
     if (info->thd->killed || (tmp != HA_ERR_RECORD_DELETED))
     {
@@ -372,6 +403,7 @@ static int rr_quick(READ_RECORD *info)
       break;
     }
   }
+
   return tmp;
 }
 
@@ -511,6 +543,30 @@ static int rr_from_tempfile(READ_RECORD *info)
 } /* rr_from_tempfile */
 
 
+template<bool Packed_addon_fields>
+inline void Filesort_info::unpack_addon_fields(uchar *buff)
+{
+  Sort_addon_field *addonf= addon_fields->begin();
+
+  const uchar *start_of_record= buff + addonf->offset;
+
+  for ( ; addonf != addon_fields->end(); ++addonf)
+  {
+    Field *field= addonf->field;
+    if (addonf->null_bit && (addonf->null_bit & buff[addonf->null_offset]))
+    {
+      field->set_null();
+      continue;
+    }
+    field->set_notnull();
+    if (Packed_addon_fields)
+      start_of_record= field->unpack(field->ptr, start_of_record);
+    else
+      field->unpack(field->ptr, buff + addonf->offset);
+  }
+}
+
+
 /**
   Read a result set record from a temporary file after sorting.
 
@@ -520,19 +576,45 @@ static int rr_from_tempfile(READ_RECORD *info)
   positions in the regular record buffer.
 
   @param info          Reference to the context including record descriptors
-
+  @tparam Packed_addon_fields Are the addon fields packed?
+     This is a compile-time constant, to avoid if (....) tests during execution.
   @retval
     0   Record successfully read.
   @retval
     -1   There is no record to be read anymore.
 */
-
+template<bool Packed_addon_fields>
 static int rr_unpack_from_tempfile(READ_RECORD *info)
 {
-  if (my_b_read(info->io_cache, info->rec_buf, info->ref_length))
-    return -1;
-  TABLE *table= info->table;
-  (*table->sort.unpack)(table->sort.addon_field, info->rec_buf);
+  uchar *destination= info->rec_buf;
+#ifndef DBUG_OFF
+  my_off_t where= my_b_tell(info->io_cache);
+#endif
+  if (Packed_addon_fields)
+  {
+    const uint len_sz= Addon_fields::size_of_length_field;
+
+    // First read length of the record.
+    if (my_b_read(info->io_cache, destination, len_sz))
+      return -1;
+    uint res_length= Addon_fields::read_addon_length(destination);
+    DBUG_PRINT("info", ("rr_unpack from %llu to %p sz %u",
+                        static_cast<ulonglong>(where),
+                        destination, res_length));
+    DBUG_ASSERT(res_length > len_sz);
+    DBUG_ASSERT(info->table->sort.using_addon_fields());
+
+    // Then read the rest of the record.
+    if (my_b_read(info->io_cache, destination + len_sz, res_length - len_sz))
+      return -1;                                /* purecov: inspected */
+  }
+  else
+  {
+    if (my_b_read(info->io_cache, destination, info->ref_length))
+      return -1;
+  }
+
+  info->table->sort.unpack_addon_fields<Packed_addon_fields>(destination);
 
   return 0;
 }
@@ -565,36 +647,47 @@ static int rr_from_pointers(READ_RECORD *info)
 /**
   Read a result set record from a buffer after sorting.
 
-  The function first reads the next sorted record from the sort buffer.
-  If a success it calls a callback function that unpacks 
-  the fields values use in the result set from this buffer into their
-  positions in the regular record buffer.
+  Get the next record from the filesort buffer,
+  then unpack the fields into their positions in the regular record buffer.
 
   @param info          Reference to the context including record descriptors
+  @tparam Packed_addon_fields Are the addon fields packed?
+     This is a compile-time constant, to avoid if (....) tests during execution.
 
   @retval
     0   Record successfully read.
   @retval
     -1   There is no record to be read anymore.
 */
-
+template<bool Packed_addon_fields>
 static int rr_unpack_from_buffer(READ_RECORD *info)
 {
-  if (info->cache_pos == info->cache_end)
+  if (info->unpack_counter == info->table->sort.found_records)
     return -1;                      /* End of buffer */
-  TABLE *table= info->table;
-  (*table->sort.unpack)(table->sort.addon_field, info->cache_pos);
-  info->cache_pos+= info->ref_length;
 
+  uchar *record= info->table->sort.get_sorted_record(
+    static_cast<uint>(info->unpack_counter));
+  uchar *plen= record + info->table->sort.get_sort_length();
+  info->table->sort.unpack_addon_fields<Packed_addon_fields>(plen);
+  info->unpack_counter++;
   return 0;
 }
 	/* cacheing of records from a database */
 
+/**
+  Initialize caching of records from temporary file.
+  
+  @retval
+    0 OK, use caching.
+    1 Buffer is too small, or cannot be allocated.
+      Skip caching, and read records directly from temporary file.
+ */
 static int init_rr_cache(THD *thd, READ_RECORD *info)
 {
   uint rec_cache_size;
   DBUG_ENTER("init_rr_cache");
 
+  READ_RECORD info_copy= *info;
   info->struct_length= 3+MAX_REFLENGTH;
   info->reclength= ALIGN_SIZE(info->table->s->reclength+1);
   if (info->reclength < info->struct_length)
@@ -606,13 +699,15 @@ static int init_rr_cache(THD *thd, READ_RECORD *info)
   rec_cache_size= info->cache_records*info->reclength;
   info->rec_cache_size= info->cache_records*info->ref_length;
 
-  // We have to allocate one more byte to use uint3korr (see comments for it)
   if (info->cache_records <= 2 ||
-      !(info->cache=(uchar*) my_malloc_lock(rec_cache_size+info->cache_records*
-					   info->struct_length+1,
-					   MYF(0))))
+      !(info->cache=(uchar*) my_malloc(key_memory_READ_RECORD_cache,
+                                       rec_cache_size+info->cache_records*
+                                       info->struct_length,
+                                       MYF(0))))
+  {
+    *info= info_copy;
     DBUG_RETURN(1);
-
+  }
   DBUG_PRINT("info",("Allocated buffert for %d records",info->cache_records));
   info->read_positions=info->cache+rec_cache_size;
   info->cache_pos=info->cache_end=info->cache;
@@ -630,7 +725,7 @@ static int rr_cmp(const void *p_ref_length, const void *a, const void *b)
 
 static int rr_from_cache(READ_RECORD *info)
 {
-  reg1 uint i;
+  uint i;
   ulong length;
   my_off_t rest_of_file;
   int16 error;
@@ -643,7 +738,7 @@ static int rr_from_cache(READ_RECORD *info)
     {
       if (info->cache_pos[info->error_offset])
       {
-	shortget(error,info->cache_pos);
+	shortget(&error, info->cache_pos);
 	if (info->print_error)
 	  info->table->file->print_error(error,MYF(0));
       }
@@ -694,7 +789,7 @@ static int rr_from_cache(READ_RECORD *info)
 	record_pos[info->error_offset]=1;
 	shortstore(record_pos,error);
 	DBUG_PRINT("error",("Got error: %d:%d when reading row",
-			    my_errno, (int) error));
+			    my_errno(), (int) error));
       }
       else
 	record_pos[info->error_offset]=0;
@@ -709,7 +804,7 @@ static int rr_from_cache(READ_RECORD *info)
   used in all access methods.
 */
 
-void rr_unlock_row(st_join_table *tab)
+void rr_unlock_row(QEP_TAB *tab)
 {
   READ_RECORD *info= &tab->read_record;
   info->table->file->unlock_row();

@@ -14,10 +14,22 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 INCLUDE(gcrypt)
+INCLUDE(curl)
+INCLUDE(libev)
 
 ADD_SUBDIRECTORY(libarchive)
+ADD_SUBDIRECTORY(jsmn)
 
 FIND_GCRYPT()
+FIND_CURL()
+FIND_EV()
+
+# xxd is needed to embed version_check script
+FIND_PROGRAM(XXD_PATH xxd)
+
+IF(NOT XXD_PATH)
+  MESSAGE(FATAL_ERROR "xxd not found. Try to install vim-common.")
+ENDIF(NOT XXD_PATH)
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/include
@@ -25,7 +37,10 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/sql
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/libarchive/libarchive
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/quicklz
+  ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/jsmn
   ${GCRYPT_INCLUDE_DIR}
+  ${CURL_INCLUDE_DIRS}
+  ${LIBEV_INCLUDE_DIRS}
   ${CMAKE_CURRENT_BINARY_DIR}
   )
 
@@ -35,9 +50,18 @@ INCLUDE_DIRECTORIES(
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/xtrabackup_version.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/xtrabackup_version.h )
 
+ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
+                   COMMAND ${XXD_PATH} --include version_check.pl
+                   ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
+                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+ADD_CUSTOM_TARGET(GenVersionCheck
+                  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
+
 
 MYSQL_ADD_EXECUTABLE(xtrabackup
   xtrabackup.cc
+  innobackupex.cc
   changed_page_bitmap.cc
   compact.cc
   datasink.c
@@ -57,6 +81,8 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbcrypt_common.c
   xbcrypt_write.c
   xbstream_write.c
+  backup_mysql.cc
+  backup_copy.cc
   )
 
 SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)
@@ -66,6 +92,16 @@ TARGET_LINK_LIBRARIES(xtrabackup
   ${GCRYPT_LIBS} 
   archive_static
   )
+
+ADD_DEPENDENCIES(xtrabackup GenVersionCheck)
+
+########################################################################
+# innobackupex symlink
+########################################################################
+ADD_CUSTOM_COMMAND(TARGET xtrabackup
+                   COMMAND ${CMAKE_COMMAND} ARGS -E create_symlink
+                           xtrabackup innobackupex)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/innobackupex DESTINATION bin)
 
 ########################################################################
 # xbstream binary
@@ -107,4 +143,24 @@ TARGET_LINK_LIBRARIES(xbcrypt
   ${GCRYPT_LIBS}
   mysys
   mysys_ssl
+  )
+
+########################################################################
+# xbcloud binary
+########################################################################
+MYSQL_ADD_EXECUTABLE(xbcloud
+  xbcloud.cc
+  )
+
+SET_TARGET_PROPERTIES(xbcloud
+        PROPERTIES LINKER_LANGUAGE CXX
+        )
+
+TARGET_LINK_LIBRARIES(xbcloud
+  ${GCRYPT_LIBS}
+  ${LIBEV_LIBRARIES}
+  ${CURL_LIBRARIES}
+  mysys
+  mysys_ssl
+  jsmn
   )

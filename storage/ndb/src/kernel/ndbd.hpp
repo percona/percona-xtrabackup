@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,11 +16,14 @@
 #ifndef NDBD_HPP
 #define NDBD_HPP
 
+#define JAM_FILE_ID 218
+
+
 void
 ndbd_run(bool foreground, int report_fd,
          const char* connect_str, int force_nodeid, const char* bind_address,
          bool no_start, bool initial, bool initialstart,
-         unsigned allocated_nodeid);
+         unsigned allocated_nodeid, int connect_retries, int connect_delay);
 
 enum NdbShutdownType {
   NST_Normal,
@@ -54,5 +57,8 @@ NdbShutdown(int error_code,
 	    NdbRestartType restartType = NRT_Default);
 
 
+
+
+#undef JAM_FILE_ID
 
 #endif

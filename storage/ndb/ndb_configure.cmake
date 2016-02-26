@@ -1,5 +1,5 @@
 
-# Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2014, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -44,9 +44,11 @@ INCLUDE(CheckCSourceCompiles)
 INCLUDE(CheckCXXSourceCompiles)
 INCLUDE(CheckCXXSourceRuns)
 INCLUDE(ndb_require_variable)
+INCLUDE(ndb_check_mysql_include_file)
 
 CHECK_FUNCTION_EXISTS(posix_memalign HAVE_POSIX_MEMALIGN)
 CHECK_FUNCTION_EXISTS(clock_gettime HAVE_CLOCK_GETTIME)
+CHECK_FUNCTION_EXISTS(nanosleep HAVE_NANOSLEEP)
 CHECK_FUNCTION_EXISTS(pthread_condattr_setclock HAVE_PTHREAD_CONDATTR_SETCLOCK)
 CHECK_FUNCTION_EXISTS(pthread_self HAVE_PTHREAD_SELF)
 CHECK_FUNCTION_EXISTS(sched_get_priority_min HAVE_SCHED_GET_PRIORITY_MIN)
@@ -68,7 +70,7 @@ CHECK_FUNCTION_EXISTS(bzero HAVE_BZERO)
 
 CHECK_INCLUDE_FILES(sun_prefetch.h HAVE_SUN_PREFETCH_H)
 
-CHECK_CXX_SOURCE_COMPILES("
+CHECK_CXX_SOURCE_RUNS("
 unsigned A = 7;
 int main()
 {
@@ -76,6 +78,24 @@ int main()
   return 0;
 }"
 HAVE___BUILTIN_FFS)
+
+CHECK_CXX_SOURCE_COMPILES("
+unsigned A = 7;
+int main()
+{
+  unsigned a = __builtin_ctz(A);
+  return 0;
+}"
+HAVE___BUILTIN_CTZ)
+
+CHECK_CXX_SOURCE_COMPILES("
+unsigned A = 7;
+int main()
+{
+  unsigned a = __builtin_clz(A);
+  return 0;
+}"
+HAVE___BUILTIN_CLZ)
 
 CHECK_C_SOURCE_COMPILES("
 #include <intrin.h>
@@ -87,6 +107,40 @@ int main()
   return (int)a;
 }"
 HAVE__BITSCANFORWARD)
+
+CHECK_C_SOURCE_COMPILES("
+#include <intrin.h>
+unsigned long A = 7;
+int main()
+{
+  unsigned long a;
+  unsigned char res = _BitScanReverse(&a, A);
+  return (int)a;
+}"
+HAVE__BITSCANREVERSE)
+
+#Mac OS X thread CPU usage
+CHECK_CXX_SOURCE_COMPILES("
+#include <mach/mach_init.h>
+#include <mach/thread_act.h>
+#include <mach/mach_port.h>
+int main()
+{
+mach_port_t thread_port;
+kern_return_t ret_code;
+mach_msg_type_number_t basic_info_count;
+thread_basic_info_data_t basic_info;
+mach_port_t current_task = mach_task_self();
+
+thread_port = mach_thread_self();
+ret_code = thread_info(thread_port,
+                       THREAD_BASIC_INFO,
+                       (thread_info_t) &basic_info,
+                       &basic_info_count);
+mach_port_deallocate(current_task, thread_port);
+return 0;
+}"
+HAVE_MAC_OS_X_THREAD_INFO)
 
 # Linux scheduling and locking support
 CHECK_C_SOURCE_COMPILES("
@@ -148,36 +202,6 @@ HAVE_LINUX_FUTEX)
 OPTION(WITH_NDBMTD
   "Build the MySQL Cluster multithreadded data node" ON)
 
-IF(WITH_NDBMTD)
-  # checking atomic.h needed for spinlock's on sparc and Sun Studio
-  CHECK_INCLUDE_FILES(atomic.h HAVE_ATOMIC_H)
-
-  # checking assembler needed for ndbmtd
-  CHECK_CXX_SOURCE_RUNS("
-  #define HAVE_ATOMIC_H ${HAVE_ATOMIC_H}
-  #include \"${CMAKE_SOURCE_DIR}/storage/ndb/src/kernel/vm/mt-asm.h\"
-  int main()
-  {
-    unsigned int a = 0;
-    volatile unsigned int *ap = (volatile unsigned int*)&a;
-    #ifdef NDB_HAVE_XCNG
-      a = xcng(ap, 1);
-      cpu_pause();
-    #endif
-    mb();
-    * ap = 2;
-    rmb();
-    * ap = 1;
-    wmb();
-    * ap = 0;
-    read_barrier_depends();
-    return a;
-  }"
-  NDB_BUILD_NDBMTD)
-ELSE()
-  SET(NDB_BUILD_NDBMTD CACHE INTERNAL "")
-ENDIF()
-
 SET(WITH_NDB_PORT "" CACHE INTEGER
   "Default port used by MySQL Cluster management server")
 IF(WITH_NDB_PORT GREATER 0)
@@ -185,8 +209,15 @@ IF(WITH_NDB_PORT GREATER 0)
   MESSAGE(STATUS "Setting MySQL Cluster management server port to ${NDB_PORT}")
 ENDIF()
 
+#
+# Check which MySQL include files exists
+#
+NDB_CHECK_MYSQL_INCLUDE_FILE(my_default.h HAVE_MY_DEFAULT_H)
+
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/include/ndb_config.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/include/ndb_config.h)
+# Exclude ndb_config.h from "make dist"
+LIST(APPEND CPACK_SOURCE_IGNORE_FILES include/ndb_config\\\\.h$)
 
 # Define HAVE_NDB_CONFIG_H to make ndb_global.h include the
 # generated ndb_config.h
@@ -206,6 +237,9 @@ IF(WITH_CLASSPATH)
   MESSAGE(STATUS "Using supplied classpath: ${WITH_CLASSPATH}")
 ELSE()
   SET(WITH_CLASSPATH "$ENV{CLASSPATH}")
+  IF(WIN32)
+    STRING(REPLACE "\\" "/" WITH_CLASSPATH "${WITH_CLASSPATH}")
+  ENDIF()
   IF(WITH_CLASSPATH)
     MESSAGE(STATUS "Using CLASSPATH from environment: ${WITH_CLASSPATH}")    
   ENDIF()

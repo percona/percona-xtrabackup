@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -229,4 +229,20 @@ public interface Session {
      */
     void markModified(Object instance, String fieldName);
 
+    /** Unload the schema definition for a class. This must be done after the schema
+     * definition has changed in the database due to an alter table command.
+     * The next time the class is used the schema will be reloaded.
+     * @param cls the class for which the schema is unloaded
+     * @return the name of the schema that was unloaded
+     */
+    String unloadSchema(Class<?> cls);
+
+    /** Release resources associated with an instance. The instance must be a domain object obtained via
+     * session.newInstance(T.class), find(T.class), or query; or Iterable<T>, or array T[].
+     * Resources released can include direct buffers used to hold instance data.
+     * Released resources may be returned to a pool.
+     * @throws ClusterJUserException if the instance is not a domain object T, Iterable<T>, or array T[],
+     * or if the object is used after calling this method.
+     */
+    <T> T release(T obj);
 }

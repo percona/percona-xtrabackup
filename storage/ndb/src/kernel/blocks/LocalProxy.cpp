@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,21 +16,26 @@
 #include <mt.hpp>
 #include "LocalProxy.hpp"
 
+//#define DBINFO_SCAN_TRACE
+#ifdef DBINFO_SCAN_TRACE
+#include <debugger/DebuggerNames.hpp>
+#endif
+
+#define JAM_FILE_ID 437
+
+
 LocalProxy::LocalProxy(BlockNumber blockNumber, Block_context& ctx) :
   SimulatedBlock(blockNumber, ctx)
 {
   BLOCK_CONSTRUCTOR(LocalProxy);
 
   ndbrequire(instance() == 0); // this is main block
-  c_lqhWorkers = 0;
-  c_extraWorkers = 0; // sub-class constructor can set
   c_workers = 0;
   Uint32 i;
   for (i = 0; i < MaxWorkers; i++)
     c_worker[i] = 0;
 
-  c_ssIdSeq = 0;
-
+  c_anyWorkerCounter = 0;
   c_typeOfStart = NodeState::ST_ILLEGAL_TYPE;
   c_masterNodeId = ZNIL;
 
@@ -95,6 +100,10 @@ LocalProxy::LocalProxy(BlockNumber blockNumber, Block_context& ctx) :
 
   // GSN_SYNC_PATH_REQ
   addRecSignal(GSN_SYNC_PATH_REQ, &LocalProxy::execSYNC_PATH_REQ, true);
+
+  // GSN_API_FAILREQ
+  addRecSignal(GSN_API_FAILREQ, &LocalProxy::execAPI_FAILREQ);
+  addRecSignal(GSN_API_FAILCONF, &LocalProxy::execAPI_FAILCONF);
 }
 
 LocalProxy::~LocalProxy()
@@ -183,13 +192,13 @@ LocalProxy::lastReply(const SsSequential& ss)
 }
 
 void
-LocalProxy::sendREQ(Signal* signal, SsParallel& ss)
+LocalProxy::sendREQ(Signal* signal, SsParallel& ss, bool skipLast)
 {
   ndbrequire(ss.m_sendREQ != 0);
 
   ss.m_workerMask.clear();
   ss.m_worker = 0;
-  const Uint32 count = ss.m_extraLast ? c_lqhWorkers : c_workers;
+  const Uint32 count = skipLast ? c_workers - 1 : c_workers;
   SectionHandle handle(this);
   restoreHandle(handle, ss);
   while (ss.m_worker < count) {
@@ -262,21 +271,6 @@ LocalProxy::lastReply(const SsParallel& ss)
   return ss.m_workerMask.isclear();
 }
 
-bool
-LocalProxy::lastExtra(Signal* signal, SsParallel& ss)
-{
-  SectionHandle handle(this);
-  if (c_lqhWorkers + ss.m_extraSent < c_workers) {
-    jam();
-    ss.m_worker = c_lqhWorkers + ss.m_extraSent;
-    ss.m_workerMask.set(ss.m_worker);
-    (this->*ss.m_sendREQ)(signal, ss.m_ssId, &handle);
-    ss.m_extraSent++;
-    return false;
-  }
-  return true;
-}
-
 // used in "reverse" proxying (start with worker REQs)
 void
 LocalProxy::setMask(SsParallel& ss)
@@ -297,12 +291,10 @@ LocalProxy::setMask(SsParallel& ss, const WorkerMask& mask)
 void
 LocalProxy::loadWorkers()
 {
-  c_lqhWorkers = getLqhWorkers();
-  c_workers = c_lqhWorkers + c_extraWorkers;
-
-  Uint32 i;
-  for (i = 0; i < c_workers; i++) {
-    jam();
+  c_workers = mt_get_instance_count(number());
+  for (Uint32 i = 0; i < c_workers; i++)
+  {
+    jamNoBlock();
     Uint32 instanceNo = workerInstance(i);
 
     SimulatedBlock* worker = newWorker(instanceNo);
@@ -310,12 +302,39 @@ LocalProxy::loadWorkers()
     ndbrequire(this->getInstance(instanceNo) == worker);
     c_worker[i] = worker;
 
-    if (i < c_lqhWorkers) {
-      add_lqh_worker_thr_map(number(), instanceNo);
-    } else {
-      add_extra_worker_thr_map(number(), instanceNo);
-    }
+    mt_add_thr_map(number(), instanceNo);
   }
+}
+
+void
+LocalProxy::forwardToWorkerIndex(Signal* signal, Uint32 index)
+{
+  jam();
+  /**
+   * We statelessly forward to one of our 
+   * workers, including any sections that 
+   * might be attached.
+   */
+  BlockReference destRef = workerRef(index);
+  SectionHandle sh(this, signal);
+  
+  sendSignal(destRef,
+             signal->header.theVerId_signalNumber,
+             signal,
+             signal->getLength(),
+             JBB,
+             &sh);
+};
+
+void
+LocalProxy::forwardToAnyWorker(Signal* signal)
+{
+  jam();
+
+  /* Won't work for fragmented signals */
+  ndbassert(signal->header.m_fragmentInfo == 0);
+
+  forwardToWorkerIndex(signal, getAnyWorkerIndex());
 }
 
 // GSN_READ_CONFIG_REQ
@@ -1042,11 +1061,6 @@ LocalProxy::sendDROP_TRIG_IMPL_CONF(Signal* signal, Uint32 ssId)
 
 // GSN_DBINFO_SCANREQ
 
-//#define DBINFO_SCAN_TRACE
-#ifdef DBINFO_SCAN_TRACE
-#include <debugger/DebuggerNames.hpp>
-#endif
-
 static Uint32
 switchRef(Uint32 block, Uint32 instance, Uint32 node)
 {
@@ -1334,6 +1348,53 @@ LocalProxy::execSYNC_PATH_REQ(Signal* signal)
                signal->getLength(),
                JobBufferLevel(req->prio));
   }
+}
+
+// GSN_API_FAILREQ
+
+void
+LocalProxy::execAPI_FAILREQ(Signal* signal)
+{
+  Uint32 nodeId = signal->theData[0];
+  Ss_API_FAILREQ& ss = ssSeize<Ss_API_FAILREQ>(nodeId);
+
+  ss.m_ref = signal->theData[1];
+  sendREQ(signal, ss);
+}
+
+void
+LocalProxy::sendAPI_FAILREQ(Signal* signal, Uint32 ssId, SectionHandle*)
+{
+  Ss_API_FAILREQ& ss = ssFind<Ss_API_FAILREQ>(ssId);
+
+  signal->theData[0] = ssId;
+  signal->theData[1] = reference();
+  sendSignal(workerRef(ss.m_worker), GSN_API_FAILREQ,
+             signal, 2, JBB);
+}
+
+void
+LocalProxy::execAPI_FAILCONF(Signal* signal)
+{
+  Uint32 nodeId = signal->theData[0];
+  Ss_API_FAILREQ& ss = ssFind<Ss_API_FAILREQ>(nodeId);
+  recvCONF(signal, ss);
+}
+
+void
+LocalProxy::sendAPI_FAILCONF(Signal* signal, Uint32 ssId)
+{
+  Ss_API_FAILREQ& ss = ssFind<Ss_API_FAILREQ>(ssId);
+
+  if (!lastReply(ss))
+    return;
+
+  signal->theData[0] = ssId;
+  signal->theData[1] = reference();
+  sendSignal(ss.m_ref, GSN_API_FAILCONF,
+             signal, 2, JBB);
+
+  ssRelease<Ss_API_FAILREQ>(ssId);
 }
 
 BLOCK_FUNCTIONS(LocalProxy)

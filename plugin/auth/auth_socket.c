@@ -1,4 +1,4 @@
-/*  Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+/*  Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
     
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License as
@@ -23,7 +23,9 @@
   the owner of the client process matches the user name that was used when
   connecting to mysqld.
 */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE /* for struct ucred */
+#endif
 
 #include <mysql/plugin_auth.h>
 #include <sys/socket.h>
@@ -59,20 +61,55 @@ static int socket_auth(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *info)
   if (cred_len != sizeof(cred))
     return CR_ERROR;
 
-  /* and find the username for this uid */
+  /* and find the socket user name for this uid */
   getpwuid_r(cred.uid, &pwd_buf, buf, sizeof(buf), &pwd);
   if (pwd == NULL)
     return CR_ERROR;
 
-  /* now it's simple as that */
-  return strcmp(pwd->pw_name, info->user_name) ? CR_ERROR : CR_OK;
+  /* fill in the external user name used */
+  strncpy(info->external_user, pwd->pw_name, sizeof(info->external_user) - 1);
+  info->external_user[sizeof(info->external_user) - 1]= 0;
+
+  if (!strcmp(pwd->pw_name, info->user_name) ||
+      !strcmp(pwd->pw_name, info->auth_string))
+    return CR_OK;
+  else
+    return CR_ERROR;
+}
+
+int generate_auth_string_hash(char *outbuf __attribute__((unused)),
+                              unsigned int *buflen,
+                              const char *inbuf __attribute__((unused)),
+                              unsigned int inbuflen __attribute__((unused)))
+{
+  *buflen= 0;
+  return 0;
+}
+
+int validate_auth_string_hash(char* const inbuf  __attribute__((unused)),
+                              unsigned int buflen  __attribute__((unused)))
+{
+  return 0;
+}
+
+int set_salt(const char* password __attribute__((unused)),
+             unsigned int password_len __attribute__((unused)),
+             unsigned char* salt __attribute__((unused)),
+             unsigned char* salt_len)
+{
+  *salt_len= 0;
+  return 0;
 }
 
 static struct st_mysql_auth socket_auth_handler=
 {
   MYSQL_AUTHENTICATION_INTERFACE_VERSION,
   0,
-  socket_auth
+  socket_auth,
+  generate_auth_string_hash,
+  validate_auth_string_hash,
+  set_salt,
+  AUTH_FLAG_PRIVILEGED_USER_FOR_PASSWORD_CHANGE
 };
 
 mysql_declare_plugin(socket_auth)
@@ -85,7 +122,7 @@ mysql_declare_plugin(socket_auth)
   PLUGIN_LICENSE_GPL,
   NULL,
   NULL,
-  0x0100,
+  0x0101,
   NULL,
   NULL,
   NULL,

@@ -3,8 +3,11 @@
  *  memcached - memory caching daemon
  *
  *       http://www.danga.com/memcached/
- *
+ *  Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
  *  Copyright 2003 Danga Interactive, Inc.  All rights reserved.
+ *  This file was modified by Oracle on 28-08-2015.
+ *  Modifications copyright (c) 2015, Oracle and/or its affiliates.
+ *  All rights reserved.
  *
  *  Use and distribution licensed under the BSD license.  See
  *  the LICENSE file for full text.
@@ -32,6 +35,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <dlfcn.h>
 
 #include "memcached_mysql.h"
 
@@ -4247,6 +4251,13 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         return;
     }
 
+    /* Negative expire values not allowed */
+
+    if (exptime_int < 0) {
+        out_string(c, "CLIENT_ERROR Invalid expire time");
+        return;
+    }
+
     /* Ubuntu 8.04 breaks when I pass exptime to safe_strtol */
     exptime = exptime_int;
 
@@ -6423,6 +6434,15 @@ static void *new_independent_stats(void) {
     int ii;
     int nrecords = num_independent_stats();
     struct independent_stats *independent_stats = calloc(sizeof(independent_stats) + sizeof(struct thread_stats) * nrecords, 1);
+
+#ifdef INNODB_MEMCACHED
+    if (independent_stats == NULL) {
+	fprintf(stderr, "Unable to allocate memory for"
+		       "independent_stats...\n");
+       return (NULL);
+    }
+#endif
+
     if (settings.topkeys > 0)
         independent_stats->topkeys = topkeys_init(settings.topkeys);
     for (ii = 0; ii < nrecords; ii++)
@@ -7001,9 +7021,8 @@ daemon_memcached_make_option(char* option, int* option_argc,
 		num_arg++;
 	}
 
-	free(my_str);
-
-	my_str = option;
+	/* reset my_str, since strtok_r could alter it */
+	strncpy(my_str, option, strlen(option));
 
 	*option_argv = (char**) malloc((num_arg + 1)
 				       * sizeof(**option_argv));
@@ -7011,7 +7030,7 @@ daemon_memcached_make_option(char* option, int* option_argc,
 	for (opt_str = strtok_r(my_str, sep, &last);
 	     opt_str;
 	     opt_str = strtok_r(NULL, sep, &last)) {
-		(*option_argv)[i] = my_strdupl(opt_str, strlen(opt_str));
+		(*option_argv)[i] = opt_str;
 		i++;
 	}
 
@@ -7062,6 +7081,8 @@ int main (int argc, char **argv) {
     int option_argc = 0;
     char** option_argv = NULL;
     eng_config_info_t my_eng_config;
+
+    memcached_initialized = 0;
 
     if (m_config->m_engine_library) {
 	engine = m_config->m_engine_library;
@@ -7851,6 +7872,12 @@ int main (int argc, char **argv) {
 
     default_independent_stats = new_independent_stats();
 
+#ifdef INNODB_MEMCACHED
+    if (!default_independent_stats) {
+	exit(EXIT_FAILURE);
+    }
+#endif
+
 #ifndef __WIN32__
     /*
      * ignore SIGPIPE signals; we can use errno == EPIPE if we
@@ -7960,6 +7987,14 @@ func_exit:
     /* Clean up strdup() call for bind() address */
     if (settings.inter)
       free(settings.inter);
+
+#ifdef INNODB_MEMCACHED
+    /* free event base */
+    if (main_base) {
+        event_base_free(main_base);
+        main_base = NULL;
+    }
+#endif
 
     memcached_shutdown = 2;
     memcached_initialized = 2;

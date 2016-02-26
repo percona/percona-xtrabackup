@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,13 +13,13 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-/*
-  Common tests for client/sql_string and sql/sql_string.
-  TODO: Why do we have two versions of String?
- */
 
-
+// With PFS: get it from pfs_server_stubs.cc
+#ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
+extern "C" CHARSET_INFO *system_charset_info;
+#else
 CHARSET_INFO *system_charset_info= NULL;
+#endif
 
 TEST(StringTest, EmptyString)
 {
@@ -52,7 +52,7 @@ TEST(StringDeathTest, AppendEmptyString)
   tbl_name.append(String(table_name, system_charset_info));
   // We now have eight characters, c_ptr() is not safe.
 #ifndef DBUG_OFF
-  EXPECT_DEATH_IF_SUPPORTED(tbl_name.c_ptr(), ".*Alloced_length >= .*");
+  EXPECT_DEATH_IF_SUPPORTED(tbl_name.c_ptr(), ".*m_alloced_length >= .*");
 #endif
   EXPECT_STREQ("aaaaaaa.", tbl_name.c_ptr_safe());
 }

@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +20,9 @@
 
 #include "SignalData.hpp"
 
+#define JAM_FILE_ID 169
+
+
 class TuxBoundInfo {
   friend class Dblqh;
   friend class Dbtux;
@@ -34,7 +36,10 @@ public:
     BoundEQ = 4,
     // stats scan parameter ids
     StatSaveSize = 11,
-    StatSaveScale = 12
+    StatSaveScale = 12,
+
+    // Invalid bound
+    InvalidBound = 0xFFFFFFFF
   };
   enum ErrorCode {
     InvalidAttrInfo = 4110,
@@ -60,5 +65,8 @@ private:
   
   Uint32 data[1];
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

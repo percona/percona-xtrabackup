@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include "my_sys.h"
 #include "hash.h"
 #include "rpl_mi.h"
+#include "rpl_rli.h"
 
 #ifdef HAVE_NDB_BINLOG
 
@@ -28,11 +29,13 @@ extern Master_info *active_mi;
 
 uint32 ndb_mi_get_master_server_id()
 {
+  DBUG_ASSERT (active_mi != NULL);
   return (uint32) active_mi->master_id;
 }
 
 const char* ndb_mi_get_group_master_log_name()
 {
+  DBUG_ASSERT (active_mi != NULL);
 #if MYSQL_VERSION_ID < 50600
   return active_mi->rli.group_master_log_name;
 #else
@@ -42,6 +45,7 @@ const char* ndb_mi_get_group_master_log_name()
 
 uint64 ndb_mi_get_group_master_log_pos()
 {
+  DBUG_ASSERT (active_mi != NULL);
 #if MYSQL_VERSION_ID < 50600
   return (uint64) active_mi->rli.group_master_log_pos;
 #else
@@ -51,6 +55,7 @@ uint64 ndb_mi_get_group_master_log_pos()
 
 uint64 ndb_mi_get_future_event_relay_log_pos()
 {
+  DBUG_ASSERT (active_mi != NULL);
 #if MYSQL_VERSION_ID < 50600
   return (uint64) active_mi->rli.future_event_relay_log_pos;
 #else
@@ -60,6 +65,7 @@ uint64 ndb_mi_get_future_event_relay_log_pos()
 
 uint64 ndb_mi_get_group_relay_log_pos()
 {
+  DBUG_ASSERT (active_mi != NULL);
 #if MYSQL_VERSION_ID < 50600
   return (uint64) active_mi->rli.group_relay_log_pos;
 #else
@@ -69,17 +75,43 @@ uint64 ndb_mi_get_group_relay_log_pos()
 
 bool ndb_mi_get_ignore_server_id(uint32 server_id)
 {
+  DBUG_ASSERT (active_mi != NULL);
   return (active_mi->shall_ignore_server_id(server_id) != 0);
 }
 
 uint32 ndb_mi_get_slave_run_id()
 {
+  DBUG_ASSERT (active_mi != NULL);
+#if MYSQL_VERSION_ID < 50600
+  return active_mi->rli.slave_run_id;
+#else
   return active_mi->rli->slave_run_id;
+#endif
 }
 
-bool ndb_mi_get_in_relay_log_statement(Relay_log_info* rli)
+ulong ndb_mi_get_relay_log_trans_retries()
 {
-  return (rli->get_flag(Relay_log_info::IN_STMT) != 0);
+  DBUG_ASSERT (active_mi != NULL);
+#if MYSQL_VERSION_ID < 50600
+  return active_mi->rli.trans_retries;
+#else
+  return active_mi->rli->trans_retries;
+#endif
+}
+
+void ndb_mi_set_relay_log_trans_retries(ulong number)
+{
+  DBUG_ASSERT (active_mi != NULL);
+#if MYSQL_VERSION_ID < 50600
+  active_mi->rli.trans_retries = number;
+#else
+  active_mi->rli->trans_retries = number;
+#endif
+}
+
+bool ndb_mi_get_slave_sql_running()
+{
+  return active_mi->rli->slave_running;
 }
 
 /* #ifdef HAVE_NDB_BINLOG */

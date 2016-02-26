@@ -1,6 +1,5 @@
 /*
-   Copyright 2009, 2010 Sun Microsystems, Inc.
-   All rights reserved. Use is subject to license terms.
+   Copyright 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -63,12 +62,15 @@ public:
   {
   public:
 
-    Table(const char *name, Uint32 id);
+
+    Table(const char *name, Uint32 id,
+          const class VirtualTable* virt = NULL);
     Table(const Table& tab);
     const Table & operator=(const Table& tab);
     ~Table();
 
     const char * getName() const;
+    static const Uint32 InvalidTableId = ~0;
     Uint32 getTableId() const;
 
     bool addColumn(const Column aCol);
@@ -76,11 +78,14 @@ public:
     const Column* getColumn(const unsigned attributeId) const;
     const Column* getColumn(const char * name) const;
 
+    const class VirtualTable* getVirtualTable() const;
+
   private:
     friend class NdbInfo;
     BaseString m_name;
     Uint32 m_table_id;
     Vector<Column*> m_columns;
+    const class VirtualTable * m_virt;
   };
 
   NdbInfo(class Ndb_cluster_connection* connection,
@@ -103,7 +108,7 @@ private:
   unsigned m_connect_count;
   unsigned m_min_db_version;
   class Ndb_cluster_connection* m_connection;
-  pthread_mutex_t m_mutex;
+  native_mutex_t m_mutex;
   HashMap<BaseString, Table, BaseString_get_key> m_tables;
   Table* m_tables_table;
   Table* m_columns_table;
@@ -116,11 +121,14 @@ private:
 
   bool load_ndbinfo_tables();
   bool load_hardcoded_tables(void);
+  bool load_virtual_tables(void);
   bool load_tables();
   bool check_tables();
   void flush_tables();
 
   BaseString mysql_table_name(const char* table_name) const;
+
+  Vector<Table*> m_virtual_tables;
 
 };
 

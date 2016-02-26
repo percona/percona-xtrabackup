@@ -21,19 +21,19 @@ function test_force_non_empty_dirs()
 
     touch $MYSQLD_DATADIR/non_existing_file
 
-    # check that --*-back fails without --force-non-empty-directories
+    vlog "check that $1 fails without --force-non-empty-directories"
     run_cmd_expect_failure $IB_BIN $IB_ARGS $1 $topdir/backup
 
     rm -rf $topdir/backup
     cp -a $topdir/backup_copy $topdir/backup
 
-    # check that --*-back works with --force-non-empty-directories
+    vlog "check that $1 works with --force-non-empty-directories"
     innobackupex $1 --force-non-empty-directories $topdir/backup
 
     rm -rf $topdir/backup
     cp -a $topdir/backup_copy $topdir/backup
 
-    # check that --*-back --force-non-empty-directories does not overwrite files
+    vlog "check that $1 --force-non-empty-directories does not overwrite files"
     touch $MYSQLD_DATADIR/ibdata1
     run_cmd_expect_failure $IB_BIN $IB_ARGS $1 --force-non-empty-directories \
                            $topdir/backup

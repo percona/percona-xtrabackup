@@ -31,14 +31,14 @@ let $message= ####### Testcase for mix of db and table level: #######;
 	eval create table t1 (f1 char(20)) engine= $engine_type;
 
 	create User test_yesprivs@localhost;
-	set password for test_yesprivs@localhost = password('PWD');
+	set password for test_yesprivs@localhost = 'PWD';
 	revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
 	grant ALL  on priv1_db.* to test_yesprivs@localhost;
         grant SELECT,UPDATE on priv2_db.* to test_yesprivs@localhost;
 	show grants for test_yesprivs@localhost;
 
         create User test_noprivs@localhost;
-        set password for test_noprivs@localhost = password('PWD');
+        set password for test_noprivs@localhost = 'PWD';
         revoke ALL PRIVILEGES, GRANT OPTION FROM test_noprivs@localhost;
         grant SELECT,INSERT,UPDATE on priv1_db.* to test_noprivs@localhost;
         grant SELECT,INSERT on priv2_db.* to test_noprivs@localhost;
@@ -123,6 +123,7 @@ let $message= no trigger privilege on table level for create:;
 
 	connection default;
         select current_user;
+--replace_column 6 #
 	show triggers;
         grant TRIGGER on priv1_db.t1 to test_yesprivs@localhost;
         show grants for test_yesprivs@localhost;
@@ -131,6 +132,7 @@ let $message= trigger privilege on table level for create:;
 --source include/show_msg.inc
 	connection yes_privs;
         select current_user;
+--replace_column 6 #
 	show triggers;
 	create trigger trg1_2 before INSERT  on t1 for each row
 		set new.f1 = 'trig 1_2-yes';

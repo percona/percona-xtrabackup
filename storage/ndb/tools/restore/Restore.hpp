@@ -30,6 +30,11 @@
 #include <ndb_version.h>
 #include <version.h>
 
+#define NDB_RESTORE_STAGING_SUFFIX "$ST"
+#ifdef ERROR_INSERT
+#define NDB_RESTORE_ERROR_INSERT_SMALL_BUFFER 1
+#endif
+
 enum TableChangesMask
 {
   /**
@@ -99,7 +104,9 @@ struct AttributeDesc {
   Uint32 m_nullBitIndex;
   AttrConvertFunc convertFunc;
   void *parameter;
+  Uint32 parameterSz; 
   bool truncation_detected;
+  bool staging;
 
 public:
   
@@ -293,6 +300,10 @@ public:
   const TableS *getMainTable() const {
     return m_main_table;
   }
+ 
+  Uint32 getMainColumnId() const {
+    return m_main_column_id;
+  }
 
   TableS& operator=(TableS& org) ;
 
@@ -304,7 +315,11 @@ public:
   bool isBroken() const {
     return m_broken || (m_main_table && m_main_table->isBroken());
   }
-  
+
+  bool m_staging;
+  BaseString m_stagingName;
+  NdbDictionary::Table* m_stagingTable;
+  int m_stagingFlags;
 }; // TableS;
 
 class RestoreLogIterator;
@@ -324,7 +339,9 @@ protected:
   void * m_buffer_ptr;
   Uint32 m_buffer_sz;
   Uint32 m_buffer_data_left;
-
+#ifdef ERROR_INSERT
+  unsigned m_error_insert;
+#endif
   Uint64 m_file_size;
   Uint64 m_file_pos;
   
@@ -363,6 +380,9 @@ public:
 
   Uint64 get_file_size() const { return m_file_size; }
   Uint64 get_file_pos() const { return m_file_pos; }
+#ifdef ERROR_INSERT
+  void error_insert(unsigned int code); 
+#endif
 
 private:
   void
@@ -403,6 +423,7 @@ public:
   Uint32 getNoOfTables() const { return allTables.size();}
   
   const TableS * operator[](int i) const { return allTables[i];}
+  TableS * operator[](int i) { return allTables[i];}
   TableS * getTable(Uint32 tableId) const;
 
   Uint32 getNoOfObjects() const { return m_objects.size();}

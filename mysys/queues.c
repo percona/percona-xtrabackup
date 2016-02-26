@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /*
-  Code for generell handling of priority Queues.
+  Code for handling of priority Queues.
   Implemention of queues from "Algoritms in C" by Robert Sedgewick.
   An optimisation of _downheap suggested in Exercise 7.51 in "Data
   Structures & Algorithms in C++" by Mark Allen Weiss, Second Edition
@@ -23,9 +23,11 @@
 */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include "mysys_err.h"
 #include <queues.h>
 
+int resize_queue(QUEUE *queue, uint max_elements);
 
 /*
   Init queue
@@ -53,7 +55,8 @@ int init_queue(QUEUE *queue, uint max_elements, uint offset_to_key,
 	       void *first_cmp_arg)
 {
   DBUG_ENTER("init_queue");
-  if ((queue->root= (uchar **) my_malloc((max_elements+1)*sizeof(void*),
+  if ((queue->root= (uchar **) my_malloc(key_memory_QUEUE,
+                                         (max_elements+1)*sizeof(void*),
 					 MYF(MY_WME))) == 0)
     DBUG_RETURN(1);
   queue->elements=0;
@@ -166,7 +169,8 @@ int resize_queue(QUEUE *queue, uint max_elements)
   DBUG_ENTER("resize_queue");
   if (queue->max_elements == max_elements)
     DBUG_RETURN(0);
-  if ((new_root= (uchar **) my_realloc((void *)queue->root,
+  if ((new_root= (uchar **) my_realloc(key_memory_QUEUE,
+                                       (void *)queue->root,
 				      (max_elements+1)*sizeof(void*),
 				      MYF(MY_WME))) == 0)
     DBUG_RETURN(1);
@@ -202,9 +206,9 @@ void delete_queue(QUEUE *queue)
 
 	/* Code for insert, search and delete of elements */
 
-void queue_insert(register QUEUE *queue, uchar *element)
+void queue_insert(QUEUE *queue, uchar *element)
 {
-  reg2 uint idx, next;
+  uint idx, next;
   DBUG_ASSERT(queue->elements < queue->max_elements);
   queue->root[0]= element;
   idx= ++queue->elements;
@@ -220,35 +224,10 @@ void queue_insert(register QUEUE *queue, uchar *element)
   queue->root[idx]= element;
 }
 
-/*
-  Does safe insert. If no more space left on the queue resize it.
-  Return codes:
-    0 - OK
-    1 - Cannot allocate more memory
-    2 - auto_extend is 0, the operation would
-  
-*/
-
-int queue_insert_safe(register QUEUE *queue, uchar *element)
-{
-
-  if (queue->elements == queue->max_elements)
-  {
-    if (!queue->auto_extent)
-      return 2;
-    else if (resize_queue(queue, queue->max_elements + queue->auto_extent))
-      return 1;
-  }
-  
-  queue_insert(queue, element);
-  return 0;
-}
-
-
 	/* Remove item from queue */
 	/* Returns pointer to removed element */
 
-uchar *queue_remove(register QUEUE *queue, uint idx)
+uchar *queue_remove(QUEUE *queue, uint idx)
 {
   uchar *element;
   DBUG_ASSERT(idx < queue->max_elements);
@@ -258,18 +237,8 @@ uchar *queue_remove(register QUEUE *queue, uint idx)
   return element;
 }
 
-	/* Fix when element on top has been replaced */
 
-#ifndef queue_replaced
-void queue_replaced(QUEUE *queue)
-{
-  _downheap(queue,1);
-}
-#endif
-
-#ifndef OLD_VERSION
-
-void _downheap(register QUEUE *queue, uint idx)
+void _downheap(QUEUE *queue, uint idx)
 {
   uchar *element;
   uint elements,half_queue,offset_to_key, next_index;
@@ -316,43 +285,6 @@ void _downheap(register QUEUE *queue, uint idx)
   }
   queue->root[idx]=element;
 }
-
-#else
-  /*
-    The old _downheap version is kept for comparisons with the benchmark
-    suit or new benchmarks anyone wants to run for comparisons.
-  */
-	/* Fix heap when index have changed */
-void _downheap(register QUEUE *queue, uint idx)
-{
-  uchar *element;
-  uint elements,half_queue,next_index,offset_to_key;
-
-  offset_to_key=queue->offset_to_key;
-  element=queue->root[idx];
-  half_queue=(elements=queue->elements) >> 1;
-
-  while (idx <= half_queue)
-  {
-    next_index=idx+idx;
-    if (next_index < elements &&
-	(queue->compare(queue->first_cmp_arg,
-			queue->root[next_index]+offset_to_key,
-			queue->root[next_index+1]+offset_to_key) *
-	 queue->max_at_top) > 0)
-      next_index++;
-    if ((queue->compare(queue->first_cmp_arg,
-                        queue->root[next_index]+offset_to_key,
-                        element+offset_to_key) * queue->max_at_top) >= 0)
-      break;
-    queue->root[idx]=queue->root[next_index];
-    idx=next_index;
-  }
-  queue->root[idx]=element;
-}
-
-
-#endif
 
 /*
   Fix heap when every element was changed.
@@ -582,13 +514,14 @@ my_bool do_test(uint no_parts, uint l_max_ind, my_bool l_fix_used)
   tot_no_parts= no_parts;
   tot_no_loops= 1024;
   perform_insert(&queue);
-  if ((result= perform_ins_del(&queue, max_ind)))
-  delete_queue(&queue);
+  result= perform_ins_del(&queue, max_ind);
   if (result)
   {
     printf("Error\n");
+    delete_queue(&queue);
     return TRUE;
   }
+  delete_queue(&queue);
   return FALSE;
 }
 
@@ -664,6 +597,7 @@ static void benchmark_test()
     queue_remove(queue, (uint) 0);
   queue_remove_all(queue);
   stop_measurement();
+  delete_queue(queue);
 }
 
 int main()

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -66,10 +66,12 @@ extern const char *globerrs[];  /* my_error_messages is here */
 #define EE_CHANGE_OWNERSHIP     31
 #define EE_CHANGE_PERMISSIONS   32
 #define EE_CANT_SEEK            33
-#define EE_ERROR_LAST           33 /* Copy last error nr */
+#define EE_CAPACITY_EXCEEDED    34
+#define EE_ERROR_LAST           34 /* Copy last error nr */
 /* Add error numbers before EE_ERROR_LAST and change it accordingly. */
 
-  /* exit codes for all MySQL programs */
+/* Exit codes for option processing. When exiting from server use the
+   MYSQLD_*EXIT codes defined in sql_const.h */
 
 #define EXIT_UNSPECIFIED_ERROR		1
 #define EXIT_UNKNOWN_OPTION		2

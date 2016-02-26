@@ -49,12 +49,14 @@ struct xb_fil_cur_t {
 					/*!< read filter context */
 	byte*		orig_buf;	/*!< read buffer */
 	byte*		buf;		/*!< aligned pointer for orig_buf */
+	byte*		scratch;	/*!< page to use for temporary
+					decompress */
 	ulint		buf_size;	/*!< buffer size in bytes */
 	ulint		buf_read;	/*!< number of read bytes in buffer
 					after the last cursor read */
 	ulint		buf_npages;	/*!< number of pages in buffer after the
 					last cursor read */
-	ib_int64_t	buf_offset;	/*!< file offset of the first page in
+	ib_uint64_t	buf_offset;	/*!< file offset of the first page in
 					buffer */
 	ulint		buf_page_no;	/*!< number of the first page in
 					buffer */
@@ -101,5 +103,23 @@ void
 xb_fil_cur_close(
 /*=============*/
 	xb_fil_cur_t *cursor);	/*!< in/out: source file cursor */
+
+/***********************************************************************
+Extracts the relative path ("database/table.ibd") of a tablespace from a
+specified possibly absolute path.
+
+For user tablespaces both "./database/table.ibd" and
+"/remote/dir/database/table.ibd" result in "database/table.ibd".
+
+For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
+and "./ibdata1" yield "ibdata1" in the output. */
+const char *
+xb_get_relative_path(
+/*=================*/
+	const char*	path,		/*!< in: tablespace path (either
+			  		relative or absolute) */
+	ibool		is_system);	/*!< in: TRUE for system tablespaces,
+					i.e. when only the filename must be
+					returned. */
 
 #endif

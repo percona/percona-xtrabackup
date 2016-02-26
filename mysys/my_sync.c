@@ -14,8 +14,10 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include "mysys_err.h"
 #include <errno.h>
+#include "my_thread_local.h"
 
 static void (*before_sync_wait)(void)= 0;
 static void (*after_sync_wait)(void)= 0;
@@ -85,8 +87,9 @@ int my_sync(File fd, myf my_flags)
   if (res)
   {
     int er= errno;
-    if (!(my_errno= er))
-      my_errno= -1;                             /* Unknown error */
+    set_my_errno(er);
+    if (!er)
+      set_my_errno(-1);                             /* Unknown error */
     if (after_sync_wait)
       (*after_sync_wait)();
     if ((my_flags & MY_IGNORE_BADFD) &&
@@ -102,8 +105,8 @@ int my_sync(File fd, myf my_flags)
     else if (my_flags & MY_WME)
     {
       char errbuf[MYSYS_STRERROR_SIZE];
-      my_error(EE_SYNC, MYF(ME_BELL+ME_WAITTANG), my_filename(fd),
-               my_errno, my_strerror(errbuf, sizeof(errbuf), my_errno));
+      my_error(EE_SYNC, MYF(0), my_filename(fd),
+               my_errno(), my_strerror(errbuf, sizeof(errbuf), my_errno()));
     }
   }
   else
@@ -113,11 +116,6 @@ int my_sync(File fd, myf my_flags)
   }
   DBUG_RETURN(res);
 } /* my_sync */
-
-
-#ifdef NEED_EXPLICIT_SYNC_DIR
-
-static const char cur_dir_name[]= {FN_CURLIB, 0};
 
 
 /*
@@ -132,8 +130,18 @@ static const char cur_dir_name[]= {FN_CURLIB, 0};
     0 if ok, !=0 if error
 */
 
-int my_sync_dir(const char *dir_name, myf my_flags)
+#ifdef __linux
+static const char cur_dir_name[]= {FN_CURLIB, 0};
+#endif
+
+int my_sync_dir(const char *dir_name __attribute__((unused)),
+                myf my_flags __attribute__((unused)))
 {
+/*
+  Only Linux is known to need an explicit sync of the directory to make sure a
+  file creation/deletion/renaming in(from,to) this directory durable.
+*/
+#ifdef __linux__
   File dir_fd;
   int res= 0;
   const char *correct_dir_name;
@@ -155,17 +163,10 @@ int my_sync_dir(const char *dir_name, myf my_flags)
   else
     res= 1;
   DBUG_RETURN(res);
-}
-
-#else /* NEED_EXPLICIT_SYNC_DIR */
-
-int my_sync_dir(const char *dir_name __attribute__((unused)),
-                myf my_flags __attribute__((unused)))
-{
+#else
   return 0;
+#endif
 }
-
-#endif /* NEED_EXPLICIT_SYNC_DIR */
 
 
 /*
@@ -180,23 +181,15 @@ int my_sync_dir(const char *dir_name __attribute__((unused)),
     0 if ok, !=0 if error
 */
 
-#ifdef NEED_EXPLICIT_SYNC_DIR
-
-int my_sync_dir_by_file(const char *file_name, myf my_flags)
+int my_sync_dir_by_file(const char *file_name __attribute__((unused)),
+                        myf my_flags __attribute__((unused)))
 {
+#ifdef __linux__
   char dir_name[FN_REFLEN];
   size_t dir_name_length;
   dirname_part(dir_name, file_name, &dir_name_length);
   return my_sync_dir(dir_name, my_flags);
-}
-
-#else /* NEED_EXPLICIT_SYNC_DIR */
-
-int my_sync_dir_by_file(const char *file_name __attribute__((unused)),
-                        myf my_flags __attribute__((unused)))
-{
+#else
   return 0;
+#endif
 }
-
-#endif /* NEED_EXPLICIT_SYNC_DIR */
-

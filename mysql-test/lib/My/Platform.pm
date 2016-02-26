@@ -1,6 +1,5 @@
 # -*- cperl -*-
-# Copyright (c) 2008 MySQL AB, 2008, 2009 Sun Microsystems, Inc.
-# Use is subject to license terms.
+# Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -104,17 +103,21 @@ sub posix_path {
 use File::Temp qw /tempdir/;
 
 sub check_socket_path_length {
-  my ($path)= @_;
+  my ($path,$parallel)= @_;
 
   return 0 if IS_WINDOWS;
-  # This may not be true, but we can't test for it on AIX due to Perl bug
-  # See Bug #45771
-  return 0 if ($^O eq 'aix');
 
   require IO::Socket::UNIX;
 
   my $truncated= undef;
 
+  ##append extra chars if --parallel because $opt_tmpdir will be longer
+  if ( $parallel > 9 || $parallel eq "auto" ) {
+    $path=$path."xxx";
+  }
+  elsif ( $parallel > 1 ) {
+    $path=$path."xx" ;
+  }
   # Create a tempfile name with same length as "path"
   my $tmpdir = tempdir( CLEANUP => 0);
   my $len = length($path) - length($tmpdir) - 1;

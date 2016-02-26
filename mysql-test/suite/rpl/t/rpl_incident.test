@@ -1,6 +1,16 @@
 --source include/not_gtid_enabled.inc
---source include/master-slave.inc
+--source include/not_group_replication_plugin.inc
 --source include/have_debug.inc
+--source include/force_restart.inc
+--source include/master-slave.inc
+
+CALL mtr.add_suppression("Generate an incident log event before writing the "
+                         "real event to the binary log for testing purposes. "
+                         "An incident event has been written to the binary "
+                         "log which will stop the slaves.");
+
+--let @old_debug= @@global.debug
+SET GLOBAL DEBUG="+d,incident_database_resync_on_replace";
 
 --echo **** On Master ****
 CREATE TABLE t1 (a INT);
@@ -38,5 +48,7 @@ source include/check_slave_is_running.inc;
 
 connection master;
 DROP TABLE t1;
---source include/sync_slave_sql_with_master.inc
+SET GLOBAL DEBUG= @old_debug;
+
+--sync_slave_with_master
 --source include/rpl_end.inc

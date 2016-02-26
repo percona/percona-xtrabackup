@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,15 +18,18 @@
 
 #ifdef HAVE_REPLICATION
 
-#include "table.h"
-#include "rpl_info.h"
-#include "rpl_mi.h"
-#include "rpl_rli.h"
-#include "rpl_rli_pdb.h"
-#include "rpl_info_file.h"
-#include "rpl_info_table.h"
-#include "rpl_info_dummy.h"
-#include "rpl_info_handler.h"
+#include "my_global.h"
+#include "rpl_channel_service_interface.h" // enum_channel_type
+#include "rpl_info_handler.h"              // enum_return_check
+
+#include <vector>
+
+class Master_info;
+class Multisource_info;
+class Relay_log_info;
+class Rpl_info;
+class Slave_worker;
+
 
 extern ulong opt_mi_repository_id;
 extern ulong opt_rli_repository_id;
@@ -34,12 +37,23 @@ extern ulong opt_rli_repository_id;
 class Rpl_info_factory
 {
 public:
-  static bool create_coordinators(uint mi_option, Master_info **mi,
-                                  uint rli_option, Relay_log_info **rli);
-  static Master_info *create_mi(uint rli_option);
+  static bool create_slave_info_objects(uint mi_option, uint rli_option, int
+                                        thread_mask, Multisource_info *pchannel_map);
+
+  static Master_info*
+  create_slave_per_channel(uint mi_option,uint rli_option,
+                           const char* channel,
+                           bool convert_repo,
+                           Multisource_info* channel_map,
+                           enum_channel_type channel_type=
+                               SLAVE_REPLICATION_CHANNEL);
+
+  static Master_info *create_mi(uint rli_option, const char* channel,
+                                bool conver_repo);
   static bool change_mi_repository(Master_info *mi, const uint mi_option,
                                    const char **msg);
-  static Relay_log_info *create_rli(uint rli_option, bool is_slave_recovery);
+  static Relay_log_info *create_rli(uint rli_option, bool is_slave_recovery,
+                                    const char* channel, bool convert_repo);
   static bool change_rli_repository(Relay_log_info *rli, const uint rli_option,
                                     const char **msg);
   static Slave_worker *create_worker(uint rli_option, uint worker_id,
@@ -100,6 +114,10 @@ private:
                                 uint* found_rep_option,
                                 const struct_table_data table_data,
                                 const struct_file_data file_data, const char **msg);
+  static bool create_channel_list(std::vector<const char*> & channel_list, uint mi_instances,
+                                  uint mi_repository, const char* default_channel);
+
+  static bool create_channel_list_from_mi_table(std::vector<const char*> &channel_list);
 };
 
 #endif

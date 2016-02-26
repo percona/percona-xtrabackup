@@ -1,5 +1,4 @@
-/* Copyright (c) 2000, 2002-2005, 2007 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,8 +14,6 @@
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
 
 #include "myisamdef.h"
-
-#ifdef HAVE_RTREE_KEYS
 #include "rt_index.h"
 #include "rt_key.h"
 #include "rt_mbr.h"
@@ -103,5 +100,3 @@ int rtree_set_key_mbr(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key,
 
   DBUG_RETURN(rtree_page_mbr(info, keyinfo->seg, info->buff, key, key_length));
 }
-
-#endif /*HAVE_RTREE_KEYS*/

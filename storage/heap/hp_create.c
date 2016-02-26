@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -131,7 +131,8 @@ int heap_create(const char *name, HP_CREATE_INFO *create_info,
           keyinfo->get_key_length= hp_rb_key_length;
       }
     }
-    if (!(share= (HP_SHARE*) my_malloc((uint) sizeof(HP_SHARE)+
+    if (!(share= (HP_SHARE*) my_malloc(hp_key_memory_HP_SHARE,
+                                       (uint) sizeof(HP_SHARE)+
 				       keys*sizeof(HP_KEYDEF)+
 				       key_segs*sizeof(HA_KEYSEG),
 				       MYF(MY_ZEROFILL))))
@@ -188,16 +189,20 @@ int heap_create(const char *name, HP_CREATE_INFO *create_info,
     share->auto_increment= create_info->auto_increment;
     share->create_time= (long) time((time_t*) 0);
     /* Must be allocated separately for rename to work */
-    if (!(share->name= my_strdup(name,MYF(0))))
+    if (!(share->name= my_strdup(hp_key_memory_HP_SHARE,
+                                 name, MYF(0))))
     {
       my_free(share);
       goto err;
     }
-    thr_lock_init(&share->lock);
-    mysql_mutex_init(hp_key_mutex_HP_SHARE_intern_lock,
-                     &share->intern_lock, MY_MUTEX_INIT_FAST);
     if (!create_info->internal_table)
     {
+      /*
+        Do not initialize THR_LOCK object for internal temporary tables.
+        It is not needed for such tables. Calling thr_lock_init() can
+        cause scalability issues since it acquires global lock.
+      */
+      thr_lock_init(&share->lock);
       share->open_list.data= (void*) share;
       heap_share_list= list_add(heap_share_list,&share->open_list);
     }
@@ -267,7 +272,7 @@ static inline void heap_try_free(HP_SHARE *share)
 int heap_delete_table(const char *name)
 {
   int result;
-  reg1 HP_SHARE *share;
+  HP_SHARE *share;
   DBUG_ENTER("heap_delete_table");
 
   mysql_mutex_lock(&THR_LOCK_heap);
@@ -278,7 +283,8 @@ int heap_delete_table(const char *name)
   }
   else
   {
-    result= my_errno=ENOENT;
+    result= ENOENT;
+    set_my_errno(result);
   }
   mysql_mutex_unlock(&THR_LOCK_heap);
   DBUG_RETURN(result);
@@ -297,11 +303,12 @@ void heap_drop_table(HP_INFO *info)
 
 void hp_free(HP_SHARE *share)
 {
-  if (share->open_list.data)                    /* If not internal table */
+  my_bool not_internal_table= (share->open_list.data != NULL);
+  if (not_internal_table)                    /* If not internal table */
     heap_share_list= list_delete(heap_share_list, &share->open_list);
   hp_clear(share);			/* Remove blocks from memory */
-  thr_lock_delete(&share->lock);
-  mysql_mutex_destroy(&share->intern_lock);
+  if (not_internal_table)
+    thr_lock_delete(&share->lock);
   my_free(share->name);
   my_free(share);
   return;

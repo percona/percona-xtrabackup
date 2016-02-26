@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,25 +23,32 @@
   This file implements classes defined in field.h
 */
 
-#include "sql_priv.h"
-#include "sql_select.h"
-#include "rpl_rli.h"                            // Pull in Relay_log_info
-#include "rpl_slave.h"                          // Pull in rpl_master_has_bug()
-#include "strfunc.h"                            // find_type2, find_set
-#include "sql_time.h"                    // str_to_datetime_with_warn,
-                                         // str_to_time_with_warn,
-                                         // TIME_to_timestamp,
-                                         // make_time, make_date,
-                                         // make_truncated_value_warning
-#include "tztime.h"                      // struct Time_zone
+#include "field.h"
+
 #include "filesort.h"                    // change_double_for_sort
+#include "item_timefunc.h"               // Item_func_now_local
+#include "json_binary.h"                 // json_binary::serialize
+#include "json_dom.h"                    // Json_dom, Json_wrapper
+#include "item_json_func.h"              // ensure_utf8mb4
 #include "log_event.h"                   // class Table_map_log_event
-#include <m_ctype.h>
-#include <errno.h>
+#include "rpl_rli.h"                     // Relay_log_info
+#include "rpl_slave.h"                   // rpl_master_has_bug
+#include "sql_class.h"                   // THD
 #include "sql_join_buffer.h"             // CACHE_FIELD
+#include "sql_time.h"                    // str_to_datetime_with_warn
+#include "strfunc.h"                     // find_type2
+#include "template_utils.h"              // pointer_cast
+#include "tztime.h"                      // Time_zone
+#include "spatial.h"                     // Geometry
+#include "sql_base.h"                    // is_equal
+
+#include <algorithm>
+#include <memory>                        // auto_ptr
 
 using std::max;
 using std::min;
+
+#define FLAGSTR(V,F) ((V)&(F)?#F" ":"")
 
 // Maximum allowed exponent value for converting string to decimal
 #define MAX_EXPONENT 1024
@@ -56,7 +63,7 @@ const char field_separator=',';
 #define LONGLONG_TO_STRING_CONVERSION_BUFFER_SIZE 128
 #define DECIMAL_TO_STRING_CONVERSION_BUFFER_SIZE 128
 #define BLOB_PACK_LENGTH_TO_MAX_LENGH(arg) \
-((ulong) ((LL(1) << MY_MIN(arg, 4) * 8) - LL(1)))
+((ulong) ((1LL << MY_MIN(arg, 4) * 8) - 1LL))
 
 /*
   Rules for merging different types of fields in UNION
@@ -66,7 +73,7 @@ const char field_separator=',';
   and index of field in thia array.
 */
 #define FIELDTYPE_TEAR_FROM (MYSQL_TYPE_BIT + 1)
-#define FIELDTYPE_TEAR_TO   (MYSQL_TYPE_NEWDECIMAL - 1)
+#define FIELDTYPE_TEAR_TO   (MYSQL_TYPE_JSON - 1)
 #define FIELDTYPE_NUM (FIELDTYPE_TEAR_FROM + (255 - FIELDTYPE_TEAR_TO))
 
 
@@ -101,7 +108,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -132,7 +141,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_TINY,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -163,7 +174,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_SHORT,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -194,7 +207,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_LONG,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -225,7 +240,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_FLOAT,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_DOUBLE,      MYSQL_TYPE_VARCHAR,
@@ -256,7 +273,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_DOUBLE,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_DOUBLE,      MYSQL_TYPE_VARCHAR,
@@ -287,8 +306,10 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_DATETIME,    MYSQL_TYPE_YEAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_NEWDATE,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
     MYSQL_TYPE_BIT,
+  //MYSQL_TYPE_JSON
+    MYSQL_TYPE_JSON,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_ENUM,
   //MYSQL_TYPE_SET          MYSQL_TYPE_TINY_BLOB
@@ -318,7 +339,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_DATETIME,    MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_DATETIME,    MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -349,7 +372,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_LONGLONG,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_NEWDATE,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -380,7 +405,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_INT24,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_NEWDATE,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL    MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -411,7 +438,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_DATETIME,    MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_NEWDATE,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -442,7 +471,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_DATETIME,    MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_NEWDATE,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -473,7 +504,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_DATETIME,    MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_DATETIME,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -504,7 +537,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_YEAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -535,7 +570,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_DATETIME,    MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_NEWDATE,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -566,7 +603,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -597,8 +636,10 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
     MYSQL_TYPE_BIT,
+  //MYSQL_TYPE_JSON
+    MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_SET          MYSQL_TYPE_TINY_BLOB
@@ -607,6 +648,39 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_LONG_BLOB,
   //MYSQL_TYPE_BLOB         MYSQL_TYPE_VAR_STRING
     MYSQL_TYPE_BLOB,        MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_STRING       MYSQL_TYPE_GEOMETRY
+    MYSQL_TYPE_STRING,      MYSQL_TYPE_VARCHAR
+  },
+  /* MYSQL_TYPE_JSON -> */
+  {
+  //MYSQL_TYPE_DECIMAL      MYSQL_TYPE_TINY
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_SHORT        MYSQL_TYPE_LONG
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_FLOAT        MYSQL_TYPE_DOUBLE
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_NULL         MYSQL_TYPE_TIMESTAMP
+    MYSQL_TYPE_JSON,        MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_LONGLONG     MYSQL_TYPE_INT24
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_DATE         MYSQL_TYPE_TIME
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_DATETIME     MYSQL_TYPE_YEAR
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
+    MYSQL_TYPE_JSON,
+  //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_SET          MYSQL_TYPE_TINY_BLOB
+    MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_LONG_BLOB,
+  //MYSQL_TYPE_MEDIUM_BLOB  MYSQL_TYPE_LONG_BLOB
+    MYSQL_TYPE_LONG_BLOB,   MYSQL_TYPE_LONG_BLOB,
+  //MYSQL_TYPE_BLOB         MYSQL_TYPE_VAR_STRING
+    MYSQL_TYPE_LONG_BLOB,   MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_STRING       MYSQL_TYPE_GEOMETRY
     MYSQL_TYPE_STRING,      MYSQL_TYPE_VARCHAR
   },
@@ -628,7 +702,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_NEWDECIMAL,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_NEWDECIMAL,  MYSQL_TYPE_VARCHAR,
@@ -659,7 +735,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -690,7 +768,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -721,8 +801,10 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_TINY_BLOB,   MYSQL_TYPE_TINY_BLOB,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_TINY_BLOB,   MYSQL_TYPE_TINY_BLOB,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
     MYSQL_TYPE_TINY_BLOB,
+  //MYSQL_TYPE_JSON
+    MYSQL_TYPE_LONG_BLOB,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_TINY_BLOB,   MYSQL_TYPE_TINY_BLOB,
   //MYSQL_TYPE_SET          MYSQL_TYPE_TINY_BLOB
@@ -752,8 +834,10 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_MEDIUM_BLOB,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_MEDIUM_BLOB,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
     MYSQL_TYPE_MEDIUM_BLOB,
+  //MYSQL_TYPE_JSON
+    MYSQL_TYPE_LONG_BLOB,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_MEDIUM_BLOB,
   //MYSQL_TYPE_SET          MYSQL_TYPE_TINY_BLOB
@@ -783,7 +867,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_LONG_BLOB,   MYSQL_TYPE_LONG_BLOB,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_LONG_BLOB,   MYSQL_TYPE_LONG_BLOB,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_LONG_BLOB,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_LONG_BLOB,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_LONG_BLOB,   MYSQL_TYPE_LONG_BLOB,
@@ -814,8 +900,10 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_BLOB,        MYSQL_TYPE_BLOB,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_BLOB,        MYSQL_TYPE_BLOB,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
     MYSQL_TYPE_BLOB,
+  //MYSQL_TYPE_JSON
+    MYSQL_TYPE_LONG_BLOB,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_BLOB,        MYSQL_TYPE_BLOB,
   //MYSQL_TYPE_SET          MYSQL_TYPE_TINY_BLOB
@@ -845,7 +933,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -876,7 +966,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_STRING,      MYSQL_TYPE_STRING,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_STRING,      MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_STRING,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_STRING,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_STRING,      MYSQL_TYPE_STRING,
@@ -907,7 +999,9 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+    MYSQL_TYPE_VARCHAR,
+  //MYSQL_TYPE_JSON
     MYSQL_TYPE_VARCHAR,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
     MYSQL_TYPE_VARCHAR,     MYSQL_TYPE_VARCHAR,
@@ -921,6 +1015,18 @@ static enum_field_types field_types_merge_rules [FIELDTYPE_NUM][FIELDTYPE_NUM]=
     MYSQL_TYPE_STRING,      MYSQL_TYPE_GEOMETRY
   }
 };
+
+
+/**
+  Set field to temporary value NULL.
+*/
+void Field::set_tmp_null()
+{
+  m_is_tmp_null= true;
+
+  m_count_cuted_fields_saved= table ? table->in_use->count_cuted_fields :
+                                      current_thd->count_cuted_fields;
+}
 
 
 /**
@@ -959,7 +1065,9 @@ static Item_result field_types_result_type [FIELDTYPE_NUM]=
   STRING_RESULT,            INT_RESULT,
   //MYSQL_TYPE_NEWDATE      MYSQL_TYPE_VARCHAR
   STRING_RESULT,            STRING_RESULT,
-  //MYSQL_TYPE_BIT          <16>-<245>
+  //MYSQL_TYPE_BIT          <16>-<244>
+  STRING_RESULT,
+  //MYSQL_TYPE_JSON
   STRING_RESULT,
   //MYSQL_TYPE_NEWDECIMAL   MYSQL_TYPE_ENUM
   DECIMAL_RESULT,           STRING_RESULT,
@@ -972,6 +1080,41 @@ static Item_result field_types_result_type [FIELDTYPE_NUM]=
   //MYSQL_TYPE_STRING       MYSQL_TYPE_GEOMETRY
   STRING_RESULT,            STRING_RESULT
 };
+
+
+/**
+  Convert Field::geometry_type to the corresponding Geometry::wkbType.
+
+  @param t The geometry_type to convert
+
+  @return The corresponding Geometry::wkbType, or
+          Geometry::wkb_invalid_type if there's not suitable type.
+*/
+static Geometry::wkbType geometry_type_to_wkb_type(Field::geometry_type t)
+{
+  switch(t)
+  {
+  case Field::GEOM_GEOMETRY:
+    return Geometry::wkb_invalid_type;
+  case Field::GEOM_POINT:
+    return Geometry::wkb_point;
+  case Field::GEOM_LINESTRING:
+    return Geometry::wkb_linestring;
+  case Field::GEOM_POLYGON:
+    return Geometry::wkb_polygon;
+  case Field::GEOM_MULTIPOINT:
+    return Geometry::wkb_multipoint;
+  case Field::GEOM_MULTILINESTRING:
+    return Geometry::wkb_multilinestring;
+  case Field::GEOM_MULTIPOLYGON:
+    return Geometry::wkb_multipolygon;
+  case Field::GEOM_GEOMETRYCOLLECTION:
+    return Geometry::wkb_geometrycollection;
+  default:
+    DBUG_ASSERT(0);
+    return Geometry::wkb_invalid_type;
+  }
+}
 
 
 /*
@@ -1006,7 +1149,7 @@ test_if_important_data(const CHARSET_INFO *cs, const char *str,
    in other files.
  */
 
-CPP_UNNAMED_NS_START
+namespace {
 
 int compare(unsigned int a, unsigned int b)
 {
@@ -1017,7 +1160,7 @@ int compare(unsigned int a, unsigned int b)
   return 0;
 }
 
-CPP_UNNAMED_NS_END
+} // namespace
 
 /**
   Detect Item_result by given field type of UNION merge result.
@@ -1063,7 +1206,7 @@ static void push_numerical_conversion_warning(THD* thd, const char* str,
 
     String tmp(buf, sizeof(buf), cs);
     tmp.copy(str, length, cs);
-    push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(thd, Sql_condition::SL_WARNING,
                         error, ER(error), typestr, tmp.c_ptr(),
                         field_name, row_num);
 }
@@ -1085,29 +1228,88 @@ static void set_decimal_warning(Field_new_decimal *field,
                                 int dec_error,
                                 my_decimal *dec_value,
                                 const char *from,
-                                uint length,
+                                size_t length,
                                 const CHARSET_INFO *charset_arg)
 {
   switch (dec_error) {
   case E_DEC_TRUNCATED:
-    field->set_warning(Sql_condition::WARN_LEVEL_NOTE, WARN_DATA_TRUNCATED, 1);
+    field->set_warning(Sql_condition::SL_NOTE, WARN_DATA_TRUNCATED, 1);
     break;
   case E_DEC_OVERFLOW:
-    field->set_warning(Sql_condition::WARN_LEVEL_WARN,
+    field->set_warning(Sql_condition::SL_WARNING,
                        ER_WARN_DATA_OUT_OF_RANGE, 1);
     field->set_value_on_overflow(dec_value, dec_value->sign());
     break;
   case E_DEC_BAD_NUM:
     ErrConvString errmsg(from, length, charset_arg);
     const Diagnostics_area *da= field->table->in_use->get_stmt_da();
-    push_warning_printf(field->table->in_use, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(field->table->in_use, Sql_condition::SL_WARNING,
                         ER_TRUNCATED_WRONG_VALUE_FOR_FIELD,
                         ER(ER_TRUNCATED_WRONG_VALUE_FOR_FIELD),
                         "decimal", errmsg.ptr(), field->field_name,
-                        static_cast<ulong>(da->current_row_for_warning()));
+                        da->current_row_for_condition());
     my_decimal_set_zero(dec_value);
   }
 }
+
+
+/**
+  Copy string with optional character set conversion.
+
+  This calls helper function well_formed_copy_nchars to copy string
+  with optional character set convertion. Specially, it checks if
+  the ASCII code point exceeds code range. If YES, it allows the
+  input but raises a warning.
+
+  @param to_cs                    Character set of "to" string
+  @param to                       Store result here
+  @param to_length                Maxinum length of "to" string
+  @param from_cs                  From character set
+  @param from                     Copy from here
+  @param from_length              Length of from string
+  @param nchars                   Copy not more that nchars characters
+  @param well_formed_error_pos    Return position when "from" is not well
+                                  formed or NULL otherwise.
+  @param cannot_convert_error_pos Return position where a not convertable
+                                  character met, or NULL otherwise.
+  @param from_end_pos             Return position where scanning of "from"
+                                  string stopped.
+
+  @retval length of bytes copied to 'to'
+*/
+
+size_t field_well_formed_copy_nchars(const CHARSET_INFO *to_cs,
+                                     char *to, size_t to_length,
+                                     const CHARSET_INFO *from_cs,
+                                     const char *from, size_t from_length,
+                                     size_t nchars,
+                                     const char **well_formed_error_pos,
+                                     const char **cannot_convert_error_pos,
+                                     const char **from_end_pos)
+{
+  size_t res = well_formed_copy_nchars(to_cs, to, to_length, from_cs,
+                                       from, from_length, nchars,
+                                       well_formed_error_pos,
+                                       cannot_convert_error_pos,
+                                       from_end_pos);
+  /*
+   If the code point is out of ascii range, we only give user a warning
+   in 5.7. Need to change to give a ERROR in future version.
+  */
+  if ((to_cs->state & MY_CS_PUREASCII) && *well_formed_error_pos != NULL)
+  {
+    char tmp[32];
+    *well_formed_error_pos = NULL;
+    convert_to_printable(tmp, sizeof(tmp), from, from_length, from_cs, 6);
+    push_warning_printf(current_thd, Sql_condition::SL_WARNING,
+                        ER_INVALID_CHARACTER_STRING,
+                        ER_THD(current_thd, ER_INVALID_CHARACTER_STRING),
+                        "ascii", tmp);
+  }
+  return res;
+
+}
+
 
 /**
   Check whether a field type can be partially indexed by a key.
@@ -1164,9 +1366,8 @@ void Field_num::prepend_zeros(String *value)
   int diff;
   if ((diff= (int) (field_length - value->length())) > 0)
   {
-    bmove_upp((uchar*) value->ptr()+field_length,
-              (uchar*) value->ptr()+value->length(),
-	      value->length());
+    memmove(const_cast<char*>(value->ptr()) + field_length - value->length(),
+            value->ptr(), value->length());
     memset(const_cast<char*>(value->ptr()), '0', diff);
     value->length(field_length);
     (void) value->c_ptr_quick();		// Avoid warnings in purify
@@ -1191,25 +1392,25 @@ void Field_num::prepend_zeros(String *value)
 */
 
 type_conversion_status
-Field_num::check_int(const CHARSET_INFO *cs, const char *str, int length,
+Field_num::check_int(const CHARSET_INFO *cs, const char *str, size_t length,
                      const char *int_end, int error)
 {
   /* Test if we get an empty string or wrong integer */
   if (str == int_end || error == MY_ERRNO_EDOM)
   {
     ErrConvString err(str, length, cs);
-    push_warning_printf(table->in_use, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(table->in_use, Sql_condition::SL_WARNING,
                         ER_TRUNCATED_WRONG_VALUE_FOR_FIELD, 
                         ER(ER_TRUNCATED_WRONG_VALUE_FOR_FIELD),
                         "integer", err.ptr(), field_name,
-                        (ulong) table->in_use->get_stmt_da()->
-                        current_row_for_warning());
+                        table->in_use->get_stmt_da()->
+                        current_row_for_condition());
     return TYPE_ERR_BAD_VALUE;
   }
   /* Test if we have garbage at the end of the given string. */
   if (test_if_important_data(cs, int_end, str + length))
   {
-    set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+    set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
     return TYPE_WARN_TRUNCATED;
   }
   return TYPE_OK;
@@ -1239,7 +1440,7 @@ Field_num::check_int(const CHARSET_INFO *cs, const char *str, int length,
 */
 
 type_conversion_status
-Field_num::get_int(const CHARSET_INFO *cs, const char *from, uint len,
+Field_num::get_int(const CHARSET_INFO *cs, const char *from, size_t len,
                    longlong *rnd, ulonglong unsigned_max,
                    longlong signed_min, longlong signed_max)
 {
@@ -1275,7 +1476,7 @@ Field_num::get_int(const CHARSET_INFO *cs, const char *from, uint len,
   return TYPE_OK;
 
 out_of_range:
-  set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+  set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
   return TYPE_WARN_OUT_OF_RANGE;
 }
 
@@ -1311,12 +1512,12 @@ bool Field::warn_if_overflow(int op_result)
 {
   if (op_result == E_DEC_OVERFLOW)
   {
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return true;
   }
   if (op_result == E_DEC_TRUNCATED)
   {
-    set_warning(Sql_condition::WARN_LEVEL_NOTE, WARN_DATA_TRUNCATED, 1);
+    set_warning(Sql_condition::SL_NOTE, WARN_DATA_TRUNCATED, 1);
     /* We return 0 here as this is not a critical issue */
   }
   return false;
@@ -1351,17 +1552,120 @@ String *Field::val_int_as_str(String *val_buffer, my_bool unsigned_val)
 Field::Field(uchar *ptr_arg,uint32 length_arg,uchar *null_ptr_arg,
 	     uchar null_bit_arg,
 	     utype unireg_check_arg, const char *field_name_arg)
-  :ptr(ptr_arg), null_ptr(null_ptr_arg),
+  :ptr(ptr_arg),
+   m_null_ptr(null_ptr_arg),
+   m_is_tmp_nullable(false),
+   m_is_tmp_null(false),
    table(0), orig_table(0), table_name(0),
    field_name(field_name_arg),
    unireg_check(unireg_check_arg),
    field_length(length_arg), null_bit(null_bit_arg), 
-   is_created_from_null_item(FALSE)
+   is_created_from_null_item(FALSE), m_indexed(false),
+   m_warnings_pushed(0),
+   gcol_info(0), stored_in_db(TRUE)
+
 {
-  flags=null_ptr ? 0: NOT_NULL_FLAG;
+  flags=real_maybe_null() ? 0: NOT_NULL_FLAG;
   comment.str= (char*) "";
   comment.length=0;
   field_index= 0;
+}
+
+
+/**
+  Check NOT NULL constraint on the field after temporary nullability is
+  disabled.
+
+  @param warning_no Warning to report.
+
+  @return TYPE_OK if the value is Ok, or corresponding error code from
+  the type_conversion_status enum.
+*/
+type_conversion_status Field::check_constraints(int mysql_errno)
+{
+  /*
+    Ensure that Field::check_constraints() is called only when temporary
+    nullability is disabled.
+  */
+
+  DBUG_ASSERT(!is_tmp_nullable());
+
+  if (real_maybe_null())
+    return TYPE_OK; // If the field is nullable, we're Ok.
+
+  if (!m_is_tmp_null)
+    return TYPE_OK; // If the field was not NULL, we're Ok.
+
+  // The field has been set to NULL.
+
+  /*
+    If the field is of AUTO_INCREMENT, and the next number
+    has been assigned to it, we're Ok.
+  */
+
+  if (this == table->next_number_field)
+    return TYPE_OK;
+
+  /*
+    If the field is of TIMESTAMP its default value is CURRENT_TIMESTAMP
+    and was set before calling this method. Therefore m_is_tmp_null == false
+    for such field and we leave check_constraints() before this
+    DBUG_ASSERT is fired.
+  */
+  DBUG_ASSERT (type() != MYSQL_TYPE_TIMESTAMP);
+
+  switch (m_count_cuted_fields_saved) {
+  case CHECK_FIELD_WARN:
+    set_warning(Sql_condition::SL_WARNING, mysql_errno, 1);
+    /* fall through */
+  case CHECK_FIELD_IGNORE:
+    return TYPE_OK;
+  case CHECK_FIELD_ERROR_FOR_NULL:
+    if (!table->in_use->no_errors)
+      my_error(ER_BAD_NULL_ERROR, MYF(0), field_name);
+    return TYPE_ERR_NULL_CONSTRAINT_VIOLATION;
+  }
+
+  DBUG_ASSERT(0); // impossible
+  return TYPE_ERR_NULL_CONSTRAINT_VIOLATION;
+}
+
+
+/**
+  Set field to value NULL.
+
+  @param row_offset    This is the offset between the row being updated
+                       and table->record[0]
+*/
+void Field::set_null(my_ptrdiff_t row_offset)
+{
+  if (real_maybe_null())
+  {
+    m_null_ptr[row_offset]|= null_bit;
+  }
+  else if (is_tmp_nullable())
+  {
+    set_tmp_null();
+  }
+}
+
+
+/**
+  Set field to value NOT NULL.
+
+  @param row_offset    This is the offset between the row being updated
+                       and table->record[0]
+*/
+void Field::set_notnull(my_ptrdiff_t row_offset)
+{
+  if (real_maybe_null())
+  {
+    m_null_ptr[row_offset]&= (uchar) ~null_bit;
+  }
+  else if (is_tmp_nullable())
+  {
+    reset_tmp_null();
+  }
 }
 
 
@@ -1379,24 +1683,46 @@ void Field::hash(ulong *nr, ulong *nr2)
   }
 }
 
-size_t
-Field::do_last_null_byte() const
+size_t Field::do_last_null_byte() const
 {
-  DBUG_ASSERT(null_ptr == NULL || null_ptr >= table->record[0]);
-  if (null_ptr)
-    return null_offset() + 1;
-  return LAST_NULL_BYTE_UNDEF;
+  DBUG_ASSERT(!real_maybe_null() || m_null_ptr >= table->record[0]);
+  return real_maybe_null() ? null_offset() + 1 : (size_t) LAST_NULL_BYTE_UNDEF;
 }
 
 
-void Field::copy_from_tmp(int row_offset)
+void Field::copy_data(my_ptrdiff_t src_record_offset)
 {
-  memcpy(ptr,ptr+row_offset,pack_length());
-  if (null_ptr)
+  memcpy(ptr, ptr + src_record_offset, pack_length());
+
+  if (real_maybe_null())
   {
-    *null_ptr= (uchar) ((null_ptr[0] & (uchar) ~(uint) null_bit) |
-			(null_ptr[row_offset] & (uchar) null_bit));
-  }
+    // Set to NULL if the source record is NULL, otherwise set to NOT-NULL.
+    m_null_ptr[0]= (m_null_ptr[0]                 & ~null_bit) |
+                   (m_null_ptr[src_record_offset] &  null_bit);
+  } else if (is_tmp_nullable())
+    m_is_tmp_null= false;
+}
+
+
+bool Field::send_text(Protocol *protocol)
+{
+  if (is_null())
+    return protocol->store_null();
+  char buff[MAX_FIELD_WIDTH];
+  String str(buff, sizeof(buff), &my_charset_bin);
+#ifndef DBUG_OFF
+  my_bitmap_map *old_map= 0;
+  if (table->file)
+    old_map= dbug_tmp_use_all_columns(table, table->read_set);
+#endif
+
+  String *res= val_str(&str);
+#ifndef DBUG_OFF
+  if (old_map)
+    dbug_tmp_restore_column_map(table->read_set, old_map);
+#endif
+
+  return res ? protocol->store(res) : protocol->store_null();
 }
 
 
@@ -1404,8 +1730,10 @@ bool Field::send_binary(Protocol *protocol)
 {
   char buff[MAX_FIELD_WIDTH];
   String tmp(buff,sizeof(buff),charset());
-  val_str(&tmp);
-  return protocol->store(tmp.ptr(), tmp.length(), tmp.charset());
+  if (is_null())
+    return protocol->store_null();
+  String *res= val_str(&tmp);
+  return res ? protocol->store(res) : protocol->store_null();
 }
 
 
@@ -1458,7 +1786,7 @@ bool Field::compatible_field_size(uint field_metadata,
 
 
 type_conversion_status
-Field::store(const char *to, uint length, const CHARSET_INFO *cs,
+Field::store(const char *to, size_t length, const CHARSET_INFO *cs,
              enum_check_fields check_level)
 {
   enum_check_fields old_check_level= table->in_use->count_cuted_fields;
@@ -1615,8 +1943,9 @@ void Field::make_field(Send_field *field)
   field->charsetnr= charset()->number;
   field->length=field_length;
   field->type=type();
-  field->flags=table->maybe_null ? (flags & ~NOT_NULL_FLAG) : flags;
+  field->flags=table->is_nullable() ? (flags & ~NOT_NULL_FLAG) : flags;
   field->decimals= decimals();
+  field->field= false;
 }
 
 
@@ -1638,7 +1967,7 @@ longlong Field::convert_decimal2longlong(const my_decimal *val,
   if (unsigned_flag && val->sign())
   {
     // Converting a signed decimal to unsigned int
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     *has_overflow= true;
     return 0;
   }
@@ -1652,9 +1981,9 @@ longlong Field::convert_decimal2longlong(const my_decimal *val,
   {
     *has_overflow= true;
     if (unsigned_flag)
-      return ULONGLONG_MAX;
+      return ULLONG_MAX;
 
-    return (val->sign() ? LONGLONG_MIN : LONGLONG_MAX);
+    return (val->sign() ? LLONG_MIN : LLONG_MAX);
   }
 
   return val_ll;
@@ -1707,7 +2036,7 @@ my_decimal* Field_num::val_decimal(my_decimal *decimal_value)
 }
 
 
-bool Field_num::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_num::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   DBUG_ASSERT(result_type() == INT_RESULT);
   return my_longlong_to_datetime_with_warn(val_int(), ltime, fuzzydate);
@@ -1748,7 +2077,7 @@ void Field_str::make_field(Send_field *field)
 
   @note
     Field_str is the base class for fields implemeting
-    [VAR]CHAR, VAR[BINARY], BLOB/TEXT, GEOMETRY.
+    [VAR]CHAR, VAR[BINARY], BLOB/TEXT, GEOMETRY, JSON.
     String value should be converted to floating point value according
     our rules, so we use double to store value of decimal in string.
 
@@ -1808,7 +2137,7 @@ uint Field::fill_cache_field(CACHE_FIELD *copy)
 }
 
 
-bool Field::get_date(MYSQL_TIME *ltime,uint fuzzydate)
+bool Field::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   char buff[MAX_DATE_STRING_REP_LENGTH];
   String tmp(buff,sizeof(buff),&my_charset_bin),*res;
@@ -1866,12 +2195,13 @@ Field *Field::new_field(MEM_ROOT *root, TABLE *new_table,
   if (tmp == NULL)
     return 0;
 
-  if (tmp->table->maybe_null)
+  if (tmp->table->is_nullable())
     tmp->flags&= ~NOT_NULL_FLAG;
   tmp->table= new_table;
   tmp->key_start.init(0);
   tmp->part_of_key.init(0);
   tmp->part_of_sortkey.init(0);
+  tmp->m_indexed= false;
   /*
     todo: We should never alter unireg_check after an object is constructed,
     and the member should be made const. But a lot of code depends upon this
@@ -1894,7 +2224,7 @@ Field *Field::new_key_field(MEM_ROOT *root, TABLE *new_table,
   if ((tmp= new_field(root, new_table, table == new_table)))
   {
     tmp->ptr=      new_ptr;
-    tmp->null_ptr= new_null_ptr;
+    tmp->m_null_ptr= new_null_ptr;
     tmp->null_bit= new_null_bit;
   }
   return tmp;
@@ -1938,7 +2268,7 @@ void Field_decimal::overflow(bool negative)
   uint len=field_length;
   uchar *to=ptr, filler= '9';
 
-  set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+  set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
   if (negative)
   {
     if (!unsigned_flag)
@@ -1972,7 +2302,7 @@ void Field_decimal::overflow(bool negative)
 }
 
 
-type_conversion_status Field_decimal::store(const char *from_arg, uint len,
+type_conversion_status Field_decimal::store(const char *from_arg, size_t len,
                                             const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
@@ -2011,16 +2341,16 @@ type_conversion_status Field_decimal::store(const char *from_arg, uint len,
     Pointers used when digits move from the left of the '.' to the
     right of the '.' (explained below)
   */
-  const uchar *UNINIT_VAR(int_digits_tail_from);
+  const uchar *int_digits_tail_from= NULL;
   /* Number of 0 that need to be added at the left of the '.' (1E3: 3 zeros) */
-  uint UNINIT_VAR(int_digits_added_zeros);
+  uint int_digits_added_zeros= 0;
   /*
     Pointer used when digits move from the right of the '.' to the left
     of the '.'
   */
-  const uchar *UNINIT_VAR(frac_digits_head_end);
+  const uchar *frac_digits_head_end= NULL;
   /* Number of 0 that need to be added at the right of the '.' (for 1E-3) */
-  uint UNINIT_VAR(frac_digits_added_zeros);
+  uint frac_digits_added_zeros= 0;
   uchar *pos,*tmp_left_pos,*tmp_right_pos;
   /* Pointers that are used as limits (begin and end of the field buffer) */
   uchar *left_wall,*right_wall;
@@ -2047,7 +2377,7 @@ type_conversion_status Field_decimal::store(const char *from_arg, uint len,
     from++;
   if (from == end)
   {
-    set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+    set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
     is_cuted_fields_incr=1;
   }
   else if (*from == '+' || *from == '-')	// Found some sign ?
@@ -2065,14 +2395,6 @@ type_conversion_status Field_decimal::store(const char *from_arg, uint len,
         Field_decimal::overflow(1);
         return TYPE_WARN_OUT_OF_RANGE;
       }
-      /* 
-	 Defining this will not store "+" for unsigned decimal type even if
-	 it is passed in numeric string. This will make some tests to fail
-      */	 
-#ifdef DONT_ALLOW_UNSIGNED_PLUS      
-      else 
-        sign_char=0;
-#endif 	
     }
   }
 
@@ -2123,7 +2445,7 @@ type_conversion_status Field_decimal::store(const char *from_arg, uint len,
     for (;from != end && my_isspace(&my_charset_bin, *from); from++) ;
     if (from != end)                     // If still something left, warn
     {
-      set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+      set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
       is_cuted_fields_incr=1;
     }
   }
@@ -2301,7 +2623,7 @@ type_conversion_status Field_decimal::store(const char *from_arg, uint len,
         if (tmp_char != '0')			// Losing a non zero digit ?
         {
           if (!is_cuted_fields_incr)
-            set_warning(Sql_condition::WARN_LEVEL_WARN, 
+            set_warning(Sql_condition::SL_WARNING,
                         WARN_DATA_TRUNCATED, 1);
           return TYPE_OK;
         }
@@ -2324,7 +2646,7 @@ type_conversion_status Field_decimal::store(const char *from_arg, uint len,
             This is a note, not a warning, as we don't want to abort
             when we cut decimals in strict mode
           */
-	  set_warning(Sql_condition::WARN_LEVEL_NOTE, WARN_DATA_TRUNCATED, 1);
+	  set_warning(Sql_condition::SL_NOTE, WARN_DATA_TRUNCATED, 1);
         }
         return TYPE_OK;
       }
@@ -2354,12 +2676,12 @@ type_conversion_status Field_decimal::store(double nr)
     return TYPE_WARN_OUT_OF_RANGE;
   }
 
-  reg4 uint i;
+  size_t i;
   size_t length;
   uchar fyllchar,*to;
   char buff[DOUBLE_TO_STRING_CONVERSION_BUFFER_SIZE];
 
-  fyllchar = zerofill ? (char) '0' : (char) ' ';
+  fyllchar = zerofill ? '0' : ' ';
   length= my_fcvt(nr, dec, buff, NULL);
 
   if (length > field_length)
@@ -2400,7 +2722,7 @@ type_conversion_status Field_decimal::store(longlong nr, bool unsigned_val)
     return TYPE_WARN_OUT_OF_RANGE;
   }
 
-  fyllchar = zerofill ? (char) '0' : (char) ' ';
+  fyllchar = zerofill ? '0' : ' ';
   to= ptr;
   for (uint i=int_part-length ; i-- > 0 ;)
     *to++ = fyllchar;
@@ -2490,7 +2812,7 @@ int Field_decimal::cmp(const uchar *a_ptr,const uchar *b_ptr)
 }
 
 
-void Field_decimal::make_sort_key(uchar *to, uint length)
+void Field_decimal::make_sort_key(uchar *to, size_t length)
 {
   uchar *str,*end;
   for (str=ptr,end=ptr+length;
@@ -2674,7 +2996,7 @@ Field_new_decimal::store_value(const my_decimal *decimal_value)
   if (unsigned_flag && decimal_value->sign())
   {
     DBUG_PRINT("info", ("unsigned overflow"));
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     error= TYPE_WARN_OUT_OF_RANGE;
     decimal_value= &decimal_zero;
   }
@@ -2696,7 +3018,7 @@ Field_new_decimal::store_value(const my_decimal *decimal_value)
     set_value_on_overflow(&buff, decimal_value->sign());
     my_decimal2binary(E_DEC_FATAL_ERROR, &buff, ptr, precision, dec);
   }
-  DBUG_EXECUTE("info", print_decimal_buff(decimal_value, (uchar *) ptr,
+  DBUG_EXECUTE("info", print_decimal_buff(decimal_value, ptr,
                                           bin_size););
   DBUG_RETURN((err != E_DEC_OK) ? decimal_err_to_type_conv_status(err)
                                 : error);
@@ -2704,7 +3026,7 @@ Field_new_decimal::store_value(const my_decimal *decimal_value)
 
 
 type_conversion_status
-Field_new_decimal::store(const char *from, uint length,
+Field_new_decimal::store(const char *from, size_t length,
                          const CHARSET_INFO *charset_arg)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
@@ -2716,15 +3038,16 @@ Field_new_decimal::store(const char *from, uint length,
                           from, length, charset_arg,
                           &decimal_value);
 
-  if (err != 0 && table->in_use->abort_on_warning)
+  if (err != 0 && !table->in_use->lex->is_ignore()
+               && table->in_use->is_strict_mode())
   {
     ErrConvString errmsg(from, length, charset_arg);
     const Diagnostics_area *da= table->in_use->get_stmt_da();
-    push_warning_printf(table->in_use, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(table->in_use, Sql_condition::SL_WARNING,
                         ER_TRUNCATED_WRONG_VALUE_FOR_FIELD,
                         ER(ER_TRUNCATED_WRONG_VALUE_FOR_FIELD),
                         "decimal", errmsg.ptr(), field_name,
-                        static_cast<ulong>(da->current_row_for_warning()));
+                        da->current_row_for_condition());
     DBUG_RETURN(decimal_err_to_type_conv_status(err));
   }
 
@@ -2840,7 +3163,7 @@ my_decimal* Field_new_decimal::val_decimal(my_decimal *decimal_value)
   DBUG_ENTER("Field_new_decimal::val_decimal");
   binary2my_decimal(E_DEC_FATAL_ERROR, ptr, decimal_value,
                     precision, dec);
-  DBUG_EXECUTE("info", print_decimal_buff(decimal_value, (uchar *) ptr,
+  DBUG_EXECUTE("info", print_decimal_buff(decimal_value, ptr,
                                           bin_size););
   DBUG_RETURN(decimal_value);
 }
@@ -2859,7 +3182,7 @@ String *Field_new_decimal::val_str(String *val_buffer,
 }
 
 
-bool Field_new_decimal::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_new_decimal::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   my_decimal buf, *decimal_value= val_decimal(&buf);
   if (!decimal_value)
@@ -2889,9 +3212,9 @@ int Field_new_decimal::cmp(const uchar *a,const uchar*b)
 }
 
 
-void Field_new_decimal::make_sort_key(uchar *buff, uint length)
+void Field_new_decimal::make_sort_key(uchar *buff, size_t length)
 {
-  memcpy(buff, ptr, min<uint>(length, bin_size));
+  memcpy(buff, ptr, min(length, static_cast<size_t>(bin_size)));
 }
 
 
@@ -3037,12 +3360,22 @@ Field_new_decimal::unpack(uchar* to,
   return from+len;
 }
 
+bool Field_new_decimal::send_binary(Protocol *protocol)
+{
+  my_decimal dec_value;
+  if (is_null())
+    return protocol->store_null();
+  return protocol->store_decimal(val_decimal(&dec_value),
+                                 zerofill ? precision : 0, dec);
+}
+
+
 /****************************************************************************
 ** tiny int
 ****************************************************************************/
 
 type_conversion_status
-Field_tiny::store(const char *from,uint len, const CHARSET_INFO *cs)
+Field_tiny::store(const char *from, size_t len, const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   longlong rnd;
@@ -3064,13 +3397,13 @@ type_conversion_status Field_tiny::store(double nr)
     if (nr < 0.0)
     {
       *ptr=0;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > 255.0)
     {
       *ptr=(char) 255;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3081,13 +3414,13 @@ type_conversion_status Field_tiny::store(double nr)
     if (nr < -128.0)
     {
       *ptr= (char) -128;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > 127.0)
     {
       *ptr=127;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3107,13 +3440,13 @@ type_conversion_status Field_tiny::store(longlong nr, bool unsigned_val)
     if (nr < 0 && !unsigned_val)
     {
       *ptr= 0;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if ((ulonglong) nr > (ulonglong) 255)
     {
       *ptr= (char) 255;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3126,13 +3459,13 @@ type_conversion_status Field_tiny::store(longlong nr, bool unsigned_val)
     if (nr < -128)
     {
       *ptr= (char) -128;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > 127)
     {
       *ptr=127;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3186,7 +3519,10 @@ String *Field_tiny::val_str(String *val_buffer,
 
 bool Field_tiny::send_binary(Protocol *protocol)
 {
-  return protocol->store_tiny((longlong) (int8) ptr[0]);
+  if (is_null())
+    return protocol->store_null();
+  return protocol->store_tiny((longlong) unsigned_flag? (uint8) ptr[0]:
+                                                         (int8) ptr[0]);
 }
 
 int Field_tiny::cmp(const uchar *a_ptr, const uchar *b_ptr)
@@ -3198,7 +3534,7 @@ int Field_tiny::cmp(const uchar *a_ptr, const uchar *b_ptr)
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
-void Field_tiny::make_sort_key(uchar *to, uint length)
+void Field_tiny::make_sort_key(uchar *to, size_t length)
 {
   DBUG_ASSERT(length >= 1);
   if (unsigned_flag)
@@ -3220,7 +3556,7 @@ void Field_tiny::sql_type(String &res) const
 ****************************************************************************/
 
 type_conversion_status
-Field_short::store(const char *from,uint len, const CHARSET_INFO *cs)
+Field_short::store(const char *from, size_t len, const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   int store_tmp;
@@ -3252,13 +3588,13 @@ type_conversion_status Field_short::store(double nr)
     if (nr < 0)
     {
       res=0;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > (double) UINT_MAX16)
     {
       res=(int16) UINT_MAX16;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3269,13 +3605,13 @@ type_conversion_status Field_short::store(double nr)
     if (nr < (double) INT_MIN16)
     {
       res=INT_MIN16;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > (double) INT_MAX16)
     {
       res=INT_MAX16;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3304,13 +3640,13 @@ type_conversion_status Field_short::store(longlong nr, bool unsigned_val)
     if (nr < 0L && !unsigned_val)
     {
       res=0;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if ((ulonglong) nr > (ulonglong) UINT_MAX16)
     {
       res=(int16) UINT_MAX16;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3324,13 +3660,13 @@ type_conversion_status Field_short::store(longlong nr, bool unsigned_val)
     if (nr < INT_MIN16)
     {
       res=INT_MIN16;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > (longlong) INT_MAX16)
     {
       res=INT_MAX16;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3357,7 +3693,7 @@ double Field_short::val_real(void)
     j=sint2korr(ptr);
   else
 #endif
-    shortget(j,ptr);
+    shortget(&j, ptr);
   return unsigned_flag ? (double) (unsigned short) j : (double) j;
 }
 
@@ -3370,7 +3706,7 @@ longlong Field_short::val_int(void)
     j=sint2korr(ptr);
   else
 #endif
-    shortget(j,ptr);
+    shortget(&j, ptr);
   return unsigned_flag ? (longlong) (unsigned short) j : (longlong) j;
 }
 
@@ -3390,7 +3726,7 @@ String *Field_short::val_str(String *val_buffer,
     j=sint2korr(ptr);
   else
 #endif
-    shortget(j,ptr);
+    shortget(&j, ptr);
 
   if (unsigned_flag)
     length=(uint) cs->cset->long10_to_str(cs, to, mlength, 10, 
@@ -3407,6 +3743,8 @@ String *Field_short::val_str(String *val_buffer,
 
 bool Field_short::send_binary(Protocol *protocol)
 {
+  if (is_null())
+    return protocol->store_null();
   return protocol->store_short(Field_short::val_int());
 }
 
@@ -3423,8 +3761,8 @@ int Field_short::cmp(const uchar *a_ptr, const uchar *b_ptr)
   else
 #endif
   {
-    shortget(a,a_ptr);
-    shortget(b,b_ptr);
+    shortget(&a, a_ptr);
+    shortget(&b, b_ptr);
   }
 
   if (unsigned_flag)
@@ -3433,7 +3771,7 @@ int Field_short::cmp(const uchar *a_ptr, const uchar *b_ptr)
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
-void Field_short::make_sort_key(uchar *to, uint length)
+void Field_short::make_sort_key(uchar *to, size_t length)
 {
   DBUG_ASSERT(length >= 2);
 #ifdef WORDS_BIGENDIAN
@@ -3469,7 +3807,7 @@ void Field_short::sql_type(String &res) const
   Field type medium int (3 byte)
 ****************************************************************************/
 
-type_conversion_status Field_medium::store(const char *from,uint len,
+type_conversion_status Field_medium::store(const char *from, size_t len,
                                            const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
@@ -3494,14 +3832,14 @@ type_conversion_status Field_medium::store(double nr)
     if (nr < 0)
     {
       int3store(ptr,0);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr >= (double) (long) (1L << 24))
     {
       uint32 tmp=(uint32) (1L << 24)-1L;
       int3store(ptr,tmp);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3513,14 +3851,14 @@ type_conversion_status Field_medium::store(double nr)
     {
       long tmp=(long) INT_MIN24;
       int3store(ptr,tmp);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > (double) INT_MAX24)
     {
       long tmp=(long) INT_MAX24;
       int3store(ptr,tmp);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3540,14 +3878,14 @@ type_conversion_status Field_medium::store(longlong nr, bool unsigned_val)
     if (nr < 0 && !unsigned_val)
     {
       int3store(ptr,0);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if ((ulonglong) nr >= (ulonglong) (long) (1L << 24))
     {
       long tmp= (long) (1L << 24)-1L;
       int3store(ptr,tmp);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3562,14 +3900,14 @@ type_conversion_status Field_medium::store(longlong nr, bool unsigned_val)
     {
       long tmp= (long) INT_MIN24;
       int3store(ptr,tmp);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else if (nr > (longlong) INT_MAX24)
     {
       long tmp=(long) INT_MAX24;
       int3store(ptr,tmp);
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3618,6 +3956,8 @@ String *Field_medium::val_str(String *val_buffer,
 bool Field_medium::send_binary(Protocol *protocol)
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
+  if (is_null())
+    return protocol->store_null();
   return protocol->store_long(Field_medium::val_int());
 }
 
@@ -3638,7 +3978,7 @@ int Field_medium::cmp(const uchar *a_ptr, const uchar *b_ptr)
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
-void Field_medium::make_sort_key(uchar *to, uint length)
+void Field_medium::make_sort_key(uchar *to, size_t length)
 {
   DBUG_ASSERT(length >= 3);
   if (unsigned_flag)
@@ -3662,7 +4002,7 @@ void Field_medium::sql_type(String &res) const
 ** long int
 ****************************************************************************/
 
-type_conversion_status Field_long::store(const char *from,uint len,
+type_conversion_status Field_long::store(const char *from, size_t len,
                                          const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
@@ -3700,7 +4040,7 @@ type_conversion_status Field_long::store(double nr)
     else if (nr > (double) UINT_MAX32)
     {
       res= UINT_MAX32;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
@@ -3722,7 +4062,7 @@ type_conversion_status Field_long::store(double nr)
       res=(int32) (longlong) nr;
   }
   if (error)
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
 
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
@@ -3743,7 +4083,7 @@ type_conversion_status Field_long::store(double nr)
   @param unsigned_val  whether or not 'nr' should be interpreted as 
                        signed or unsigned. E.g., if 'nr' has all bits
                        set it is interpreted as -1 if unsigned_val is 
-                       false and ULONGLONG_MAX if unsigned_val is true.
+                       false and ULLONG_MAX if unsigned_val is true.
 */
 type_conversion_status Field_long::store(longlong nr, bool unsigned_val)
 {
@@ -3758,7 +4098,7 @@ type_conversion_status Field_long::store(longlong nr, bool unsigned_val)
       res=0;
       error= TYPE_WARN_OUT_OF_RANGE;
     }
-    else if ((ulonglong) nr >= (LL(1) << 32))
+    else if ((ulonglong) nr >= (1LL << 32))
     {
       res=(int32) (uint32) ~0L;
       error= TYPE_WARN_OUT_OF_RANGE;
@@ -3787,7 +4127,7 @@ type_conversion_status Field_long::store(longlong nr, bool unsigned_val)
       res=(int32) nr;
   }
   if (error)
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
 
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
@@ -3810,7 +4150,7 @@ double Field_long::val_real(void)
     j=sint4korr(ptr);
   else
 #endif
-    longget(j,ptr);
+    longget(&j, ptr);
   return unsigned_flag ? (double) (uint32) j : (double) j;
 }
 
@@ -3825,7 +4165,7 @@ longlong Field_long::val_int(void)
     j=sint4korr(ptr);
   else
 #endif
-    longget(j,ptr);
+    longget(&j, ptr);
   return unsigned_flag ? (longlong) (uint32) j : (longlong) j;
 }
 
@@ -3834,7 +4174,7 @@ String *Field_long::val_str(String *val_buffer,
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
   const CHARSET_INFO *cs= &my_charset_numeric;
-  uint length;
+  size_t length;
   uint mlength=max(field_length+1,12*cs->mbmaxlen);
   val_buffer->alloc(mlength);
   char *to=(char*) val_buffer->ptr();
@@ -3844,7 +4184,7 @@ String *Field_long::val_str(String *val_buffer,
     j=sint4korr(ptr);
   else
 #endif
-    longget(j,ptr);
+    longget(&j, ptr);
 
   if (unsigned_flag)
     length=cs->cset->long10_to_str(cs,to,mlength, 10,(long) (uint32)j);
@@ -3861,6 +4201,8 @@ String *Field_long::val_str(String *val_buffer,
 bool Field_long::send_binary(Protocol *protocol)
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
+  if (is_null())
+    return protocol->store_null();
   return protocol->store_long(Field_long::val_int());
 }
 
@@ -3876,15 +4218,15 @@ int Field_long::cmp(const uchar *a_ptr, const uchar *b_ptr)
   else
 #endif
   {
-    longget(a,a_ptr);
-    longget(b,b_ptr);
+    longget(&a, a_ptr);
+    longget(&b, b_ptr);
   }
   if (unsigned_flag)
     return ((uint32) a < (uint32) b) ? -1 : ((uint32) a > (uint32) b) ? 1 : 0;
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
-void Field_long::make_sort_key(uchar *to, uint length)
+void Field_long::make_sort_key(uchar *to, size_t length)
 {
   DBUG_ASSERT(length >= 4);  
 #ifdef WORDS_BIGENDIAN
@@ -3925,7 +4267,7 @@ void Field_long::sql_type(String &res) const
 ****************************************************************************/
 
 type_conversion_status
-Field_longlong::store(const char *from,uint len, const CHARSET_INFO *cs)
+Field_longlong::store(const char *from, size_t len, const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   int conv_err= 0;
@@ -3936,7 +4278,7 @@ Field_longlong::store(const char *from,uint len, const CHARSET_INFO *cs)
   tmp= cs->cset->strntoull10rnd(cs,from,len,unsigned_flag,&end,&conv_err);
   if (conv_err == MY_ERRNO_ERANGE)
   {
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     error= TYPE_WARN_OUT_OF_RANGE;
   }
   else if (table->in_use->count_cuted_fields && 
@@ -3971,7 +4313,7 @@ type_conversion_status Field_longlong::store(double nr)
       res=0;
       error= TYPE_WARN_OUT_OF_RANGE;
     }
-    else if (nr >= (double) ULONGLONG_MAX)
+    else if (nr >= (double) ULLONG_MAX)
     {
       res= ~(longlong) 0;
       error= TYPE_WARN_OUT_OF_RANGE;
@@ -3981,23 +4323,23 @@ type_conversion_status Field_longlong::store(double nr)
   }
   else
   {
-    if (nr <= (double) LONGLONG_MIN)
+    if (nr <= (double) LLONG_MIN)
     {
-      res= LONGLONG_MIN;
-      if (nr < (double) LONGLONG_MIN)
+      res= LLONG_MIN;
+      if (nr < (double) LLONG_MIN)
         error= TYPE_WARN_OUT_OF_RANGE;
     }
-    else if (nr >= (double) (ulonglong) LONGLONG_MAX)
+    else if (nr >= (double) (ulonglong) LLONG_MAX)
     {
-      res= LONGLONG_MAX;
-      if (nr > (double) LONGLONG_MAX)
+      res= LLONG_MAX;
+      if (nr > (double) LLONG_MAX)
         error= TYPE_WARN_OUT_OF_RANGE;
     }
     else
       res=(longlong) nr;
   }
   if (error)
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
 
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
@@ -4024,8 +4366,8 @@ type_conversion_status Field_longlong::store(longlong nr, bool unsigned_val)
     */
     if (unsigned_flag != unsigned_val)
     {
-      nr= unsigned_flag ? (ulonglong) 0 : (ulonglong) LONGLONG_MAX;
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      nr= unsigned_flag ? (ulonglong) 0 : (ulonglong) LLONG_MAX;
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
       error= TYPE_WARN_OUT_OF_RANGE;
     }
   }
@@ -4053,7 +4395,7 @@ double Field_longlong::val_real(void)
   }
   else
 #endif
-    longlongget(j,ptr);
+    longlongget(&j, ptr);
   /* The following is open coded to avoid a bug in gcc 3.3 */
   if (unsigned_flag)
   {
@@ -4073,7 +4415,7 @@ longlong Field_longlong::val_int(void)
     j=sint8korr(ptr);
   else
 #endif
-    longlongget(j,ptr);
+    longlongget(&j, ptr);
   return j;
 }
 
@@ -4092,7 +4434,7 @@ String *Field_longlong::val_str(String *val_buffer,
     j=sint8korr(ptr);
   else
 #endif
-    longlongget(j,ptr);
+    longlongget(&j, ptr);
 
   length=(uint) (cs->cset->longlong10_to_str)(cs,to,mlength,
 					unsigned_flag ? 10 : -10, j);
@@ -4107,6 +4449,8 @@ String *Field_longlong::val_str(String *val_buffer,
 bool Field_longlong::send_binary(Protocol *protocol)
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
+  if (is_null())
+    return protocol->store_null();
   return protocol->store_longlong(Field_longlong::val_int(), unsigned_flag);
 }
 
@@ -4123,8 +4467,8 @@ int Field_longlong::cmp(const uchar *a_ptr, const uchar *b_ptr)
   else
 #endif
   {
-    longlongget(a,a_ptr);
-    longlongget(b,b_ptr);
+    longlongget(&a, a_ptr);
+    longlongget(&b, b_ptr);
   }
   if (unsigned_flag)
     return ((ulonglong) a < (ulonglong) b) ? -1 :
@@ -4133,10 +4477,10 @@ int Field_longlong::cmp(const uchar *a_ptr, const uchar *b_ptr)
 }
 
 
-void Field_longlong::make_sort_key(uchar *to, uint length)
+void Field_longlong::make_sort_key(uchar *to, size_t length)
 {
-  const int from_length= PACK_LENGTH;
-  const int to_length= min<int>(from_length, length);
+  const size_t from_length= PACK_LENGTH;
+  const size_t to_length= min(from_length, length);
 #ifdef WORDS_BIGENDIAN
   if (table == NULL || !table->s->db_low_byte_first)
     copy_integer<true>(to, to_length, ptr, from_length, unsigned_flag);
@@ -4211,7 +4555,7 @@ Field_real::store_time(MYSQL_TIME *ltime,
 ****************************************************************************/
 
 type_conversion_status
-Field_float::store(const char *from,uint len, const CHARSET_INFO *cs)
+Field_float::store(const char *from, size_t len, const CHARSET_INFO *cs)
 {
   int conv_error;
   type_conversion_status err= TYPE_OK;
@@ -4220,7 +4564,7 @@ Field_float::store(const char *from,uint len, const CHARSET_INFO *cs)
   if (conv_error || (!len || ((uint) (end-from) != len &&
                               table->in_use->count_cuted_fields)))
   {
-    set_warning(Sql_condition::WARN_LEVEL_WARN,
+    set_warning(Sql_condition::SL_WARNING,
                 (conv_error ? ER_WARN_DATA_OUT_OF_RANGE
                             : WARN_DATA_TRUNCATED),
                 1);
@@ -4265,7 +4609,7 @@ double Field_float::val_real(void)
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float4get(j,ptr);
+    float4get(&j,ptr);
   }
   else
 #endif
@@ -4279,7 +4623,7 @@ longlong Field_float::val_int(void)
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float4get(j,ptr);
+    float4get(&j,ptr);
   }
   else
 #endif
@@ -4297,7 +4641,7 @@ String *Field_float::val_str(String *val_buffer,
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float4get(nr,ptr);
+    float4get(&nr,ptr);
   }
   else
 #endif
@@ -4338,8 +4682,8 @@ int Field_float::cmp(const uchar *a_ptr, const uchar *b_ptr)
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float4get(a,a_ptr);
-    float4get(b,b_ptr);
+    float4get(&a,a_ptr);
+    float4get(&b,b_ptr);
   }
   else
 #endif
@@ -4352,24 +4696,24 @@ int Field_float::cmp(const uchar *a_ptr, const uchar *b_ptr)
 
 #define FLT_EXP_DIG (sizeof(float)*8-FLT_MANT_DIG)
 
-void Field_float::make_sort_key(uchar *to, uint length)
+void Field_float::make_sort_key(uchar *to, size_t length)
 {
   DBUG_ASSERT(length >= 4);
   float nr;
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float4get(nr,ptr);
+    float4get(&nr,ptr);
   }
   else
 #endif
-    memcpy(&nr, ptr, min<uint>(length, sizeof(float)));
+    memcpy(&nr, ptr, min(length, sizeof(float)));
 
   uchar *tmp= to;
   if (nr == (float) 0.0)
   {						/* Change to zero string */
     tmp[0]=(uchar) 128;
-    memset(tmp + 1, 0, min<uint>(length, sizeof(nr) - 1));
+    memset(tmp + 1, 0, min(length, sizeof(nr) - 1));
   }
   else
   {
@@ -4399,6 +4743,8 @@ void Field_float::make_sort_key(uchar *to, uint length)
 bool Field_float::send_binary(Protocol *protocol)
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
+  if (is_null())
+    return protocol->store_null();
   return protocol->store((float) Field_float::val_real(), dec, (String*) 0);
 }
 
@@ -4440,7 +4786,7 @@ void Field_float::sql_type(String &res) const
 ****************************************************************************/
 
 type_conversion_status
-Field_double::store(const char *from,uint len, const CHARSET_INFO *cs)
+Field_double::store(const char *from, size_t len, const CHARSET_INFO *cs)
 {
   int conv_error;
   type_conversion_status error= TYPE_OK;
@@ -4449,7 +4795,7 @@ Field_double::store(const char *from,uint len, const CHARSET_INFO *cs)
   if ((conv_error != 0) || (!len || ((uint) (end-from) != len &&
                                      table->in_use->count_cuted_fields)))
   {
-    set_warning(Sql_condition::WARN_LEVEL_WARN,
+    set_warning(Sql_condition::SL_WARNING,
                 (conv_error ? ER_WARN_DATA_OUT_OF_RANGE
                             : WARN_DATA_TRUNCATED),
                 1);
@@ -4496,13 +4842,13 @@ bool Field_real::truncate(double *nr, double max_value)
   {
     *nr= 0;
     set_null();
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return true;
   }
   else if (unsigned_flag && *nr < 0)
   {
     *nr= 0;
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return true;
   }
 
@@ -4527,13 +4873,13 @@ bool Field_real::truncate(double *nr, double max_value)
   if (*nr < -max_value)
   {
     *nr= -max_value;
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return true;
   }
   else if (*nr > max_value)
   {
     *nr= max_value;
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return true;
   }
 
@@ -4555,11 +4901,11 @@ double Field_double::val_real(void)
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float8get(j,ptr);
+    float8get(&j,ptr);
   }
   else
 #endif
-    doubleget(j,ptr);
+    doubleget(&j,ptr);
   return j;
 }
 
@@ -4571,20 +4917,20 @@ longlong Field_double::val_int(void)
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float8get(j,ptr);
+    float8get(&j,ptr);
   }
   else
 #endif
-    doubleget(j,ptr);
+    doubleget(&j,ptr);
   /* Check whether we fit into longlong range */
-  if (j <= (double) LONGLONG_MIN)
+  if (j <= (double) LLONG_MIN)
   {
-    res= (longlong) LONGLONG_MIN;
+    res= (longlong) LLONG_MIN;
     goto warn;
   }
-  if (j >= (double) (ulonglong) LONGLONG_MAX)
+  if (j >= (double) (ulonglong) LLONG_MAX)
   {
-    res= (longlong) LONGLONG_MAX;
+    res= (longlong) LLONG_MAX;
     goto warn;
   }
   return (longlong) rint(j);
@@ -4595,7 +4941,7 @@ warn:
     String tmp(buf, sizeof(buf), &my_charset_latin1), *str;
     str= val_str(&tmp, 0);
     ErrConvString err(str);
-    push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                         ER_TRUNCATED_WRONG_VALUE,
                         ER(ER_TRUNCATED_WRONG_VALUE), "INTEGER",
                         err.ptr());
@@ -4612,7 +4958,7 @@ my_decimal *Field_real::val_decimal(my_decimal *decimal_value)
 }
 
 
-bool Field_real::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_real::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   return my_double_to_datetime_with_warn(val_real(), ltime, fuzzydate);
 }
@@ -4633,11 +4979,11 @@ String *Field_double::val_str(String *val_buffer,
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float8get(nr,ptr);
+    float8get(&nr,ptr);
   }
   else
 #endif
-    doubleget(nr,ptr);
+    doubleget(&nr,ptr);
   uint to_length= DOUBLE_TO_STRING_CONVERSION_BUFFER_SIZE;
   if (val_buffer->alloc(to_length))
   {
@@ -4662,7 +5008,10 @@ String *Field_double::val_str(String *val_buffer,
 
 bool Field_double::send_binary(Protocol *protocol)
 {
-  return protocol->store((double) Field_double::val_real(), dec, (String*) 0);
+  if (is_null())
+    return protocol->store_null();
+  String buf;
+  return protocol->store(Field_double::val_real(), dec, &buf);
 }
 
 
@@ -4672,14 +5021,14 @@ int Field_double::cmp(const uchar *a_ptr, const uchar *b_ptr)
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float8get(a,a_ptr);
-    float8get(b,b_ptr);
+    float8get(&a,a_ptr);
+    float8get(&b,b_ptr);
   }
   else
 #endif
   {
-    doubleget(a, a_ptr);
-    doubleget(b, b_ptr);
+    doubleget(&a, a_ptr);
+    doubleget(&b, b_ptr);
   }
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
@@ -4689,17 +5038,17 @@ int Field_double::cmp(const uchar *a_ptr, const uchar *b_ptr)
 
 /* The following should work for IEEE */
 
-void Field_double::make_sort_key(uchar *to, uint length)
+void Field_double::make_sort_key(uchar *to, size_t length)
 {
   double nr;
 #ifdef WORDS_BIGENDIAN
   if (table->s->db_low_byte_first)
   {
-    float8get(nr, ptr);
+    float8get(&nr, ptr);
   }
   else
 #endif
-    doubleget(nr, ptr);
+    doubleget(&nr, ptr);
   if (length < 8)
   {
     uchar buff[8];
@@ -4779,21 +5128,21 @@ Field_temporal::set_warnings(ErrConvString str, int warnings)
 
   if (warnings & MYSQL_TIME_WARN_TRUNCATED)
   {
-    set_datetime_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED,
+    set_datetime_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED,
                          str, ts_type, !cut_incremented);
     cut_incremented= 1;
   }
   if (warnings & (MYSQL_TIME_WARN_OUT_OF_RANGE | MYSQL_TIME_WARN_ZERO_DATE |
                   MYSQL_TIME_WARN_ZERO_IN_DATE))
   {
-    set_datetime_warning(Sql_condition::WARN_LEVEL_WARN,
+    set_datetime_warning(Sql_condition::SL_WARNING,
                          ER_WARN_DATA_OUT_OF_RANGE,
                          str, ts_type, !cut_incremented);
     cut_incremented= 1;
   }
   if (warnings & MYSQL_TIME_WARN_INVALID_TIMESTAMP)
   {
-    set_datetime_warning(Sql_condition::WARN_LEVEL_WARN,
+    set_datetime_warning(Sql_condition::SL_WARNING,
                          ER_WARN_INVALID_TIMESTAMP,
                          str, ts_type, !cut_incremented);
     cut_incremented= 1;
@@ -4801,7 +5150,7 @@ Field_temporal::set_warnings(ErrConvString str, int warnings)
   if ((warnings & MYSQL_TIME_NOTE_TRUNCATED) &&
       !(warnings & MYSQL_TIME_WARN_TRUNCATED))
   {
-    set_datetime_warning(Sql_condition::WARN_LEVEL_NOTE, WARN_DATA_TRUNCATED,
+    set_datetime_warning(Sql_condition::SL_NOTE, WARN_DATA_TRUNCATED,
                          str, ts_type, !cut_incremented);
   }   
 }
@@ -4837,7 +5186,8 @@ Field_temporal::store_lldiv_t(const lldiv_t *lld, int *warnings)
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   type_conversion_status error;
   MYSQL_TIME ltime;
-  error= convert_number_to_TIME(lld->quot, 0, lld->rem, &ltime, warnings);
+  error= convert_number_to_TIME(lld->quot, 0, static_cast<int>(lld->rem),
+                                &ltime, warnings);
   if (error == TYPE_OK || error == TYPE_NOTE_TRUNCATED)
     error= store_internal_with_round(&ltime, warnings);
   else if (!*warnings)
@@ -4892,7 +5242,7 @@ type_conversion_status Field_temporal::store(double nr)
                     value
 */
 type_conversion_status
-Field_temporal::store(const char *str, uint len, const CHARSET_INFO *cs)
+Field_temporal::store(const char *str, size_t len, const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   type_conversion_status error= TYPE_OK;
@@ -4942,7 +5292,7 @@ Field_temporal::convert_number_to_datetime(longlong nr, bool unsigned_val,
     e.g. 111111 -> 20111111000000
   */
   longlong tmp= number_to_datetime(nr, ltime, date_flags(), warnings);
-  if (tmp == LL(-1))
+  if (tmp == -1LL)
     reset();
   return tmp;
 }
@@ -4953,8 +5303,9 @@ Field_temporal::convert_number_to_datetime(longlong nr, bool unsigned_val,
 *****************************************************************************/
 
 
-bool Field_temporal_with_date::get_internal_check_zero(MYSQL_TIME *ltime,
-                                                       uint fuzzydate)
+bool
+Field_temporal_with_date::get_internal_check_zero(MYSQL_TIME *ltime,
+                                                  my_time_flags_t fuzzydate)
 {
   if (get_date_internal(ltime)) /* '0000-00-00' */
   {
@@ -4992,8 +5343,8 @@ longlong Field_temporal_with_date::val_time_temporal()
   Convert a number in format YYMMDDhhmmss to string.
   Straight coded to avoid problem with slow longlong arithmetic and sprintf.
 
-  @param OUT  String - pointer to convert to.
-  @param      tmp    - number with datetime value.
+  @param[out] pos      pointer to convert to.
+  @param      tmp      number with datetime value.
 */
 static inline int
 my_datetime_number_to_str(char *pos, longlong tmp)
@@ -5049,7 +5400,7 @@ String *Field_temporal_with_date::val_str(String *val_buffer, String *val_ptr)
     val_buffer->set_ascii(my_zero_datetime6, field_length);
     return val_buffer;
   }
-  make_datetime((DATE_TIME_FORMAT *) 0, &ltime, val_buffer, dec);
+  make_datetime((Date_time_format *) 0, &ltime, val_buffer, dec);
   return val_buffer;
 }
 
@@ -5068,7 +5419,7 @@ Field_temporal_with_date::convert_number_to_TIME(longlong nr,
     return TYPE_WARN_OUT_OF_RANGE;
   }
 
-  if (convert_number_to_datetime(nr, unsigned_val, ltime, warnings) == LL(-1))
+  if (convert_number_to_datetime(nr, unsigned_val, ltime, warnings) == -1LL)
     return TYPE_ERR_BAD_VALUE;
 
   if (ltime->time_type == MYSQL_TIMESTAMP_DATE && nanoseconds)
@@ -5136,7 +5487,7 @@ Field_temporal_with_date::store_time(MYSQL_TIME *ltime,
 
 
 bool
-Field_temporal_with_date::convert_str_to_TIME(const char *str, uint len,
+Field_temporal_with_date::convert_str_to_TIME(const char *str, size_t len,
                                               const CHARSET_INFO *cs,
                                               MYSQL_TIME *ltime,
                                               MYSQL_TIME_STATUS *status)
@@ -5148,6 +5499,8 @@ Field_temporal_with_date::convert_str_to_TIME(const char *str, uint len,
 bool Field_temporal_with_date::send_binary(Protocol *protocol)
 {
   MYSQL_TIME ltime;
+  if (is_null())
+    return protocol->store_null();
   if (get_date_internal(&ltime))
   {
     // Only MYSQL_TYPE_TIMESTAMP can return an error in get_date_internal()
@@ -5175,7 +5528,7 @@ Field_temporal_with_date::store_internal_with_round(MYSQL_TIME *ltime,
 /**
   Validate date value stored in the field.
 
-  Now we check whether date value is zero or has zero in date or not and set
+  Now we check whether date value is zero or has zero in date or not and sets
   warning/error message appropriately(depending on the sql_mode).
 */
 type_conversion_status Field_temporal_with_date::validate_stored_val(THD *thd)
@@ -5228,7 +5581,7 @@ Field_temporal_with_date_and_time::convert_TIME_to_timestamp(THD *thd,
                                                              int *warnings)
 {
   /*
-    No needs to do check_date(TIME_NO_ZERO_IN_DATE),
+    No need to do check_date(TIME_NO_ZERO_IN_DATE),
     because it has been done earlier in
     store_time(), number_to_datetime() or str_to_datetime().
   */
@@ -5276,7 +5629,7 @@ longlong Field_temporal_with_date_and_timef::val_int()
 }
 
 
-my_decimal *Field_temporal_with_date_and_timef::val_decimal(my_decimal *dec)
+my_decimal *Field_temporal_with_date_and_timef::val_decimal(my_decimal *dec_arg)
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
   MYSQL_TIME ltime;
@@ -5286,7 +5639,7 @@ my_decimal *Field_temporal_with_date_and_timef::val_decimal(my_decimal *dec)
     DBUG_ASSERT(type() == MYSQL_TYPE_TIMESTAMP);
     set_zero_time(&ltime, MYSQL_TIMESTAMP_DATETIME);
   }
-  return date2my_decimal(&ltime, dec);
+  return date2my_decimal(&ltime, dec_arg);
 }
 
 
@@ -5357,10 +5710,13 @@ Field_timestamp::Field_timestamp(bool maybe_null_arg,
 }
 
 
-ulonglong Field_timestamp::date_flags(const THD *thd)
+my_time_flags_t Field_timestamp::date_flags(const THD *thd)
 {
   /* We don't want to store invalid or fuzzy datetime values in TIMESTAMP */
-  return (thd->variables.sql_mode & MODE_NO_ZERO_DATE) | MODE_NO_ZERO_IN_DATE;
+  my_time_flags_t date_flags= TIME_NO_ZERO_IN_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
+    date_flags|= TIME_NO_ZERO_DATE;
+  return date_flags;
 }
 
 
@@ -5392,7 +5748,7 @@ bool Field_timestamp::get_date_internal(MYSQL_TIME *ltime)
     temp= uint4korr(ptr);
   else
 #endif
-    longget(temp, ptr);
+    ulongget(&temp, ptr);
   if (!temp)
     return true;
   thd->time_zone()->gmt_sec_to_TIME(ltime, (my_time_t) temp);
@@ -5415,8 +5771,8 @@ bool Field_timestamp::get_timestamp(struct timeval *tm, int *warnings)
     return false;
   }
 #endif
-  long tmp;
-  longget(tmp,ptr);
+  int32 tmp;
+  longget(&tmp, ptr);
   tm->tv_sec= tmp;
   return false;
 }
@@ -5454,7 +5810,7 @@ longlong Field_timestamp::val_int()
 }
 
 
-bool Field_timestamp::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_timestamp::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   /* Don't do check_fuzzy_date() as month and year are never 0 for timestamp */
   return get_internal_check_zero(ltime, fuzzydate);
@@ -5473,14 +5829,14 @@ int Field_timestamp::cmp(const uchar *a_ptr, const uchar *b_ptr)
   else
 #endif
   {
-  longget(a,a_ptr);
-  longget(b,b_ptr);
+  longget(&a, a_ptr);
+  longget(&b, b_ptr);
   }
   return ((uint32) a < (uint32) b) ? -1 : ((uint32) a > (uint32) b) ? 1 : 0;
 }
 
 
-void Field_timestamp::make_sort_key(uchar *to,uint length __attribute__((unused)))
+void Field_timestamp::make_sort_key(uchar *to, size_t length __attribute__((unused)))
 {
 #ifdef WORDS_BIGENDIAN
   if (!table || !table->s->db_low_byte_first)
@@ -5552,10 +5908,13 @@ Field_timestampf::Field_timestampf(bool maybe_null_arg,
 }
 
 
-ulonglong Field_timestampf::date_flags(const THD *thd)
+my_time_flags_t Field_timestampf::date_flags(const THD *thd)
 {
   /* We don't want to store invalid or fuzzy datetime values in TIMESTAMP */
-  return (thd->variables.sql_mode & MODE_NO_ZERO_DATE) | MODE_NO_ZERO_IN_DATE;
+  my_time_flags_t date_flags= TIME_NO_ZERO_IN_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
+    date_flags|= TIME_NO_ZERO_DATE;
+  return date_flags;
 }
 
 
@@ -5593,7 +5952,7 @@ type_conversion_status Field_timestampf::store_packed(longlong nr)
 }
 
 
-bool Field_timestampf::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_timestampf::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   /* Don't do check_fuzzy_date() as month and year are never 0 for timestamp */
   return get_internal_check_zero(ltime, fuzzydate);
@@ -5656,7 +6015,7 @@ type_conversion_status Field_timestampf::validate_stored_val(THD *thd)
 
 
 bool
-Field_time_common::convert_str_to_TIME(const char *str, uint len,
+Field_time_common::convert_str_to_TIME(const char *str, size_t len,
                                        const CHARSET_INFO *cs,
                                        MYSQL_TIME *ltime,
                                        MYSQL_TIME_STATUS *status)
@@ -5736,7 +6095,7 @@ String *Field_time_common::val_str(String *val_buffer,
     DBUG_ASSERT(0);
     set_zero_time(&ltime, MYSQL_TIMESTAMP_TIME);
   }
-  make_time((DATE_TIME_FORMAT *) 0, &ltime, val_buffer, dec);
+  make_time((Date_time_format *) 0, &ltime, val_buffer, dec);
   return val_buffer;
 }
 
@@ -5747,7 +6106,7 @@ String *Field_time_common::val_str(String *val_buffer,
   the result as a DATETIME value.
 */
 
-bool Field_time_common::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_time_common::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
   MYSQL_TIME tm;
@@ -5778,6 +6137,8 @@ longlong Field_time_common::val_date_temporal()
 bool Field_time_common::send_binary(Protocol *protocol)
 {
   MYSQL_TIME ltime;
+  if (is_null())
+    return protocol->store_null();
   if (get_time(&ltime))
   {
     DBUG_ASSERT(0);
@@ -5847,13 +6208,13 @@ bool Field_time::get_time(MYSQL_TIME *ltime)
 int Field_time::cmp(const uchar *a_ptr, const uchar *b_ptr)
 {
   int32 a,b;
-  a=(int32) sint3korr(a_ptr);
-  b=(int32) sint3korr(b_ptr);
+  a= sint3korr(a_ptr);
+  b= sint3korr(b_ptr);
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
 
-void Field_time::make_sort_key(uchar *to, uint length)
+void Field_time::make_sort_key(uchar *to, size_t length)
 {
   DBUG_ASSERT(length >= 3);
   to[0] = (uchar) (ptr[2] ^ 128);
@@ -5982,7 +6343,7 @@ bool Field_timef::get_time(MYSQL_TIME *ltime)
 ****************************************************************************/
 
 type_conversion_status
-Field_year::store(const char *from, uint len,const CHARSET_INFO *cs)
+Field_year::store(const char *from, size_t len,const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   char *end;
@@ -5994,7 +6355,7 @@ Field_year::store(const char *from, uint len,const CHARSET_INFO *cs)
       conv_error == MY_ERRNO_ERANGE)
   {
     *ptr=0;
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return TYPE_WARN_OUT_OF_RANGE;
   }
   else if (conv_error)
@@ -6060,7 +6421,7 @@ type_conversion_status Field_year::store(longlong nr, bool unsigned_val)
   if (nr < 0 || (nr >= 100 && nr <= 1900) || nr > 2155)
   {
     *ptr= 0;
-    set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return TYPE_WARN_OUT_OF_RANGE;
   }
   if (nr != 0 || field_length != 4)		// 0000 -> 0; 00 -> 2000
@@ -6078,6 +6439,8 @@ type_conversion_status Field_year::store(longlong nr, bool unsigned_val)
 bool Field_year::send_binary(Protocol *protocol)
 {
   ASSERT_COLUMN_MARKED_FOR_READ;
+  if (is_null())
+    return protocol->store_null();
   ulonglong tmp= Field_year::val_int();
   return protocol->store_short(tmp);
 }
@@ -6129,9 +6492,16 @@ void Field_year::sql_type(String &res) const
 ** In number context: YYYYMMDD
 ****************************************************************************/
 
-ulonglong Field_newdate::date_flags(const THD *thd)
+my_time_flags_t Field_newdate::date_flags(const THD *thd)
 {
-  return TIME_FUZZY_DATE | thd->datetime_flags();
+  my_time_flags_t date_flags= TIME_FUZZY_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
+    date_flags|= TIME_NO_ZERO_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_IN_DATE)
+    date_flags|= TIME_NO_ZERO_IN_DATE;
+  if (thd->variables.sql_mode & MODE_INVALID_DATES)
+    date_flags|= TIME_INVALID_DATES;
+  return date_flags;
 }
 
 
@@ -6151,7 +6521,7 @@ Field_newdate::store_internal(const MYSQL_TIME *ltime, int *warnings)
 
 bool Field_newdate::get_date_internal(MYSQL_TIME *ltime)
 {
-  uint32 tmp= (uint32) uint3korr(ptr);
+  uint32 tmp= uint3korr(ptr);
   ltime->day=   tmp & 31;
   ltime->month= (tmp >> 5) & 15;
   ltime->year=  (tmp >> 9);
@@ -6173,6 +6543,8 @@ type_conversion_status Field_newdate::store_packed(longlong nr)
 bool Field_newdate::send_binary(Protocol *protocol)
 {
   MYSQL_TIME ltime;
+  if (is_null())
+    return protocol->store_null();
   get_date(&ltime, 0);
   return protocol->store_date(&ltime);
 }
@@ -6208,7 +6580,7 @@ String *Field_newdate::val_str(String *val_buffer,
   ASSERT_COLUMN_MARKED_FOR_READ;
   val_buffer->alloc(field_length);
   val_buffer->length(field_length);
-  uint32 tmp=(uint32) uint3korr(ptr);
+  uint32 tmp= uint3korr(ptr);
   int part;
   char *pos=(char*) val_buffer->ptr()+10;
 
@@ -6232,7 +6604,7 @@ String *Field_newdate::val_str(String *val_buffer,
 }
 
 
-bool Field_newdate::get_date(MYSQL_TIME *ltime,uint fuzzydate)
+bool Field_newdate::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   return get_internal_check_zero(ltime, fuzzydate) ||
          check_fuzzy_date(ltime, fuzzydate);
@@ -6242,13 +6614,13 @@ bool Field_newdate::get_date(MYSQL_TIME *ltime,uint fuzzydate)
 int Field_newdate::cmp(const uchar *a_ptr, const uchar *b_ptr)
 {
   uint32 a,b;
-  a=(uint32) uint3korr(a_ptr);
-  b=(uint32) uint3korr(b_ptr);
+  a= uint3korr(a_ptr);
+  b= uint3korr(b_ptr);
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
 
-void Field_newdate::make_sort_key(uchar *to, uint length)
+void Field_newdate::make_sort_key(uchar *to, size_t length)
 {
   DBUG_ASSERT(length >= 3);
   to[0] = ptr[2];
@@ -6271,9 +6643,16 @@ void Field_newdate::sql_type(String &res) const
 ****************************************************************************/
 
 
-ulonglong Field_datetime::date_flags(const THD *thd)
+my_time_flags_t Field_datetime::date_flags(const THD *thd)
 {
-  return TIME_FUZZY_DATE | thd->datetime_flags();
+  my_time_flags_t date_flags= TIME_FUZZY_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
+    date_flags|= TIME_NO_ZERO_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_IN_DATE)
+    date_flags|= TIME_NO_ZERO_IN_DATE;
+  if (thd->variables.sql_mode & MODE_INVALID_DATES)
+    date_flags|= TIME_INVALID_DATES;
+  return date_flags;
 }
 
 
@@ -6326,7 +6705,7 @@ datetime_get_internal(TABLE *table, uchar *ptr)
     tmp= sint8korr(ptr);
   else
 #endif
-    longlongget(tmp, ptr);
+    longlongget(&tmp, ptr);
   return tmp;
 }
 
@@ -6359,7 +6738,7 @@ type_conversion_status Field_datetime::store(longlong nr, bool unsigned_val)
   type_conversion_status error= TYPE_OK;
   longlong tmp= convert_number_to_datetime(nr, unsigned_val,
                                            &ltime, &warnings);
-  if (tmp == LL(-1))
+  if (tmp == -1LL)
     error= TYPE_ERR_BAD_VALUE;
   else
   {
@@ -6406,7 +6785,7 @@ String *Field_datetime::val_str(String *val_buffer,
 }
 
 
-bool Field_datetime::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_datetime::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   return get_internal_check_zero(ltime, fuzzydate) ||
          check_fuzzy_date(ltime, fuzzydate);
@@ -6425,17 +6804,17 @@ int Field_datetime::cmp(const uchar *a_ptr, const uchar *b_ptr)
   else
 #endif
   {
-    longlongget(a,a_ptr);
-    longlongget(b,b_ptr);
+    longlongget(&a, a_ptr);
+    longlongget(&b, b_ptr);
   }
   return ((ulonglong) a < (ulonglong) b) ? -1 :
     ((ulonglong) a > (ulonglong) b) ? 1 : 0;
 }
 
-void Field_datetime::make_sort_key(uchar *to, uint length)
+void Field_datetime::make_sort_key(uchar *to, size_t length)
 {
-  const int pack_length= PACK_LENGTH;
-  const int to_length= min<uint>(pack_length, length);
+  const size_t pack_length= PACK_LENGTH;
+  const size_t to_length= min(pack_length, length);
 #ifdef WORDS_BIGENDIAN
   if (!table || !table->s->db_low_byte_first)
     copy_integer<true>(to, to_length, ptr, pack_length, true);
@@ -6458,9 +6837,16 @@ void Field_datetime::sql_type(String &res) const
 ****************************************************************************/
 
 
-ulonglong Field_datetimef::date_flags(const THD *thd)
+my_time_flags_t Field_datetimef::date_flags(const THD *thd)
 {
-  return TIME_FUZZY_DATE | thd->datetime_flags();
+  my_time_flags_t date_flags= TIME_FUZZY_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
+    date_flags|= TIME_NO_ZERO_DATE;
+  if (thd->variables.sql_mode & MODE_NO_ZERO_IN_DATE)
+    date_flags|= TIME_NO_ZERO_IN_DATE;
+  if (thd->variables.sql_mode & MODE_INVALID_DATES)
+    date_flags|= TIME_INVALID_DATES;
+  return date_flags;
 }
 
 
@@ -6476,7 +6862,7 @@ void Field_datetimef::store_timestamp_internal(const timeval *tm)
 
 
 
-bool Field_datetimef::get_date(MYSQL_TIME *ltime, uint fuzzydate)
+bool Field_datetimef::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
 {
   return get_internal_check_zero(ltime, fuzzydate) ||
          check_fuzzy_date(ltime, fuzzydate);
@@ -6549,6 +6935,10 @@ type_conversion_status Field_datetimef::store_packed(longlong nr)
 
       "Cannot convert character string: 'xxx' for column 't' at row 1"
 
+  @param  original_string            this is is the original string that was
+                                     supposed to be copied. Helps in keeping
+                                     track of whether a value has been
+                                     completely truncated.
   @param  well_formed_error_pos      position of the first non-wellformed
                                      character in the source string
   @param  cannot_convert_error_pos   position of the first non-convertable
@@ -6559,17 +6949,19 @@ type_conversion_status Field_datetimef::store_packed(longlong nr)
   @param  count_spaces               treat trailing spaces as important data
   @param  cs                         character set of the string
 
-  @return TYPE_OK, TYPE_NOTE_TRUNCATED, TYPE_WARN_TRUNCATED
+  @return TYPE_OK, TYPE_NOTE_TRUNCATED, TYPE_WARN_TRUNCATED,
+          TYPE_WARN_ALL_TRUNCATED
 
 */
 
 type_conversion_status
-Field_longstr::check_string_copy_error(const char *well_formed_error_pos,
+Field_longstr::check_string_copy_error(const char *original_string,
+                                       const char *well_formed_error_pos,
                                        const char *cannot_convert_error_pos,
                                        const char *from_end_pos,
                                        const char *end,
                                        bool count_spaces,
-                                       const CHARSET_INFO *cs) const
+                                       const CHARSET_INFO *cs)
 {
   const char *pos;
   char tmp[32];
@@ -6582,11 +6974,15 @@ Field_longstr::check_string_copy_error(const char *well_formed_error_pos,
   convert_to_printable(tmp, sizeof(tmp), pos, (end - pos), cs, 6);
 
   push_warning_printf(thd,
-                      Sql_condition::WARN_LEVEL_WARN,
+                      Sql_condition::SL_WARNING,
                       ER_TRUNCATED_WRONG_VALUE_FOR_FIELD,
                       ER(ER_TRUNCATED_WRONG_VALUE_FOR_FIELD),
                       "string", tmp, field_name,
-                      thd->get_stmt_da()->current_row_for_warning());
+                      thd->get_stmt_da()->current_row_for_condition());
+
+  if (well_formed_error_pos == original_string)
+    return TYPE_WARN_ALL_TRUNCATED;
+
   return TYPE_WARN_TRUNCATED;
 }
 
@@ -6601,8 +6997,8 @@ Field_longstr::check_string_copy_error(const char *well_formed_error_pos,
     count_spaces             - Treat traling spaces as important data
 
   RETURN VALUES
-    false  - None was truncated (or we don't count cut fields)
-    true   - Some bytes were truncated
+    TYPE_OK    - None was truncated
+    != TYPE_OK - Some bytes were truncated
 
   NOTE
     Check if we lost any important data (anything in a binary string,
@@ -6613,21 +7009,28 @@ Field_longstr::check_string_copy_error(const char *well_formed_error_pos,
 
 type_conversion_status
 Field_longstr::report_if_important_data(const char *pstr, const char *end,
-                                        bool count_spaces) const
+                                        bool count_spaces)
 {
-  if ((pstr < end) && table->in_use->count_cuted_fields)
+  if (pstr < end)       // String is truncated
   {
     if (test_if_important_data(field_charset, pstr, end))
     {
-      if (table->in_use->abort_on_warning)
-        set_warning(Sql_condition::WARN_LEVEL_WARN, ER_DATA_TOO_LONG, 1);
-      else
-        set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+      // Warning should only be written when count_cuted_fields is set
+      if (table->in_use->count_cuted_fields)
+      {
+        if (!table->in_use->lex->is_ignore() && table->in_use->is_strict_mode())
+          set_warning(Sql_condition::SL_WARNING, ER_DATA_TOO_LONG, 1);
+        else
+          set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
+      }
       return TYPE_WARN_TRUNCATED;
     }
     else if (count_spaces)
     { /* If we lost only spaces then produce a NOTE, not a WARNING */
-      set_warning(Sql_condition::WARN_LEVEL_NOTE, WARN_DATA_TRUNCATED, 1);
+      if (table->in_use->count_cuted_fields)
+      {
+        set_warning(Sql_condition::SL_NOTE, WARN_DATA_TRUNCATED, 1);
+      }
       return TYPE_NOTE_TRUNCATED;
     }
   }
@@ -6638,10 +7041,10 @@ Field_longstr::report_if_important_data(const char *pstr, const char *end,
 	/* Copy a string and fill with space */
 
 type_conversion_status
-Field_string::store(const char *from,uint length,const CHARSET_INFO *cs)
+Field_string::store(const char *from, size_t length,const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
-  uint copy_length;
+  size_t copy_length;
   const char *well_formed_error_pos;
   const char *cannot_convert_error_pos;
   const char *from_end_pos;
@@ -6649,7 +7052,7 @@ Field_string::store(const char *from,uint length,const CHARSET_INFO *cs)
   /* See the comment for Field_long::store(long long) */
   DBUG_ASSERT(table->in_use == current_thd);
 
-  copy_length= well_formed_copy_nchars(field_charset,
+  copy_length= field_well_formed_copy_nchars(field_charset,
                                        (char*) ptr, field_length,
                                        cs, from, length,
                                        field_length / field_charset->mbmaxlen,
@@ -6663,7 +7066,7 @@ Field_string::store(const char *from,uint length,const CHARSET_INFO *cs)
                               field_length-copy_length,
                               field_charset->pad_char);
 
-  return check_string_copy_error(well_formed_error_pos,
+  return check_string_copy_error(from, well_formed_error_pos,
                                  cannot_convert_error_pos, from_end_pos,
                                  from + length, false, cs);
 }
@@ -6691,12 +7094,44 @@ type_conversion_status Field_str::store(double nr)
 
   if (error)
   {
-    if (table->in_use->abort_on_warning)
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_DATA_TOO_LONG, 1);
+    if (!table->in_use->lex->is_ignore() && table->in_use->is_strict_mode())
+      set_warning(Sql_condition::SL_WARNING, ER_DATA_TOO_LONG, 1);
     else
-      set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+      set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
   }
   return store(buff, length, &my_charset_numeric);
+}
+
+
+/**
+  Check whether generated columns' expressions are the same.
+
+  @param field  An existing field to compare against
+
+  @return true means the same, otherwise not.
+*/
+
+bool Field::gcol_expr_is_equal(const Field *field) const
+{
+  DBUG_ASSERT(is_gcol() && field->is_gcol());
+
+  return gcol_info->expr_item->eq(field->gcol_info->expr_item, true);
+}
+
+
+/**
+  Check whether generated columns' expressions are the same.
+
+  @param field  A new field to compare against
+
+  @return true means the same, otherwise not.
+*/
+
+bool Field::gcol_expr_is_equal(const Create_field *field) const
+{
+  DBUG_ASSERT(is_gcol() && field->is_gcol());
+
+  return ::is_equal(&gcol_info->expr_str, &field->gcol_info->expr_str);
 }
 
 
@@ -6717,11 +7152,11 @@ uint Field_str::is_equal(Create_field *new_field)
 type_conversion_status Field_string::store(longlong nr, bool unsigned_val)
 {
   char buff[64];
-  int  l;
+  size_t  l;
   const CHARSET_INFO *cs=charset();
   l= (cs->cset->longlong10_to_str)(cs,buff,sizeof(buff),
                                    unsigned_val ? 10 : -10, nr);
-  return Field_string::store(buff,(uint)l,cs);
+  return Field_string::store(buff, l, cs);
 }
 
 
@@ -6754,7 +7189,7 @@ double Field_string::val_real(void)
                                           (char*) ptr + field_length))))
   {
     ErrConvString err((char*) ptr, field_length, cs);
-    push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                         ER_TRUNCATED_WRONG_VALUE,
                         ER(ER_TRUNCATED_WRONG_VALUE), "DOUBLE",
                         err.ptr());
@@ -6778,7 +7213,7 @@ longlong Field_string::val_int(void)
                                           (char*) ptr + field_length))))
   {
     ErrConvString err((char*) ptr, field_length, cs);
-    push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                         ER_TRUNCATED_WRONG_VALUE, 
                         ER(ER_TRUNCATED_WRONG_VALUE),
                         "INTEGER", err.ptr());
@@ -6793,7 +7228,7 @@ String *Field_string::val_str(String *val_buffer __attribute__((unused)),
   ASSERT_COLUMN_MARKED_FOR_READ;
   /* See the comment for Field_long::store(long long) */
   DBUG_ASSERT(table->in_use == current_thd);
-  uint length;
+  size_t length;
   if (table->in_use->variables.sql_mode &
       MODE_PAD_CHAR_TO_FULL_LENGTH)
     length= my_charpos(field_charset, ptr, ptr + field_length,
@@ -6814,7 +7249,7 @@ my_decimal *Field_string::val_decimal(my_decimal *decimal_value)
   if (!table->in_use->no_errors && err)
   {
     ErrConvString errmsg((char*) ptr, field_length, charset());
-    push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
+    push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                         ER_TRUNCATED_WRONG_VALUE, 
                         ER(ER_TRUNCATED_WRONG_VALUE),
                         "DECIMAL", errmsg.ptr());
@@ -6860,7 +7295,7 @@ Field_string::compatible_field_size(uint field_metadata,
 
 int Field_string::cmp(const uchar *a_ptr, const uchar *b_ptr)
 {
-  uint a_len, b_len;
+  size_t a_len, b_len;
 
   if (field_charset->mbmaxlen != 1)
   {
@@ -6881,9 +7316,9 @@ int Field_string::cmp(const uchar *a_ptr, const uchar *b_ptr)
 }
 
 
-void Field_string::make_sort_key(uchar *to, uint length)
+void Field_string::make_sort_key(uchar *to, size_t length)
 {
-  uint tmp __attribute__((unused))=
+  size_t tmp __attribute__((unused))=
     field_charset->coll->strnxfrm(field_charset,
                                   to, length, char_length(),
                                   ptr, field_length,
@@ -6897,7 +7332,7 @@ void Field_string::sql_type(String &res) const
 {
   THD *thd= table->in_use;
   const CHARSET_INFO *cs=res.charset();
-  ulong length;
+  size_t length;
 
   length= cs->cset->snprintf(cs,(char*) res.ptr(),
                              res.alloced_length(), "%s(%d)",
@@ -7059,17 +7494,18 @@ uint Field_string::packed_col_length(const uchar *data_ptr, uint length)
 }
 
 
-uint Field_string::max_packed_col_length(uint max_length)
+uint Field_string::max_packed_col_length()
 {
-  return (max_length > 255 ? 2 : 1)+max_length;
+  const uint max_length= pack_length();
+  return (max_length > 255 ? 2 : 1) + max_length;
 }
 
 
-uint Field_string::get_key_image(uchar *buff, uint length, imagetype type_arg)
+size_t Field_string::get_key_image(uchar *buff, size_t length, imagetype type_arg)
 {
-  uint bytes = my_charpos(field_charset, (char*) ptr,
-                          (char*) ptr + field_length,
-                          length / field_charset->mbmaxlen);
+  size_t bytes = my_charpos(field_charset, (char*) ptr,
+                            (char*) ptr + field_length,
+                            length / field_charset->mbmaxlen);
   memcpy(buff, ptr, bytes);
   if (bytes < length)
     field_charset->cset->fill(field_charset, (char*) buff + bytes,
@@ -7141,16 +7577,16 @@ int Field_varstring::do_save_field_metadata(uchar *metadata_ptr)
   return 2;
 }
 
-type_conversion_status Field_varstring::store(const char *from,uint length,
+type_conversion_status Field_varstring::store(const char *from, size_t length,
                                               const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
-  uint copy_length;
+  size_t copy_length;
   const char *well_formed_error_pos;
   const char *cannot_convert_error_pos;
   const char *from_end_pos;
 
-  copy_length= well_formed_copy_nchars(field_charset,
+  copy_length= field_well_formed_copy_nchars(field_charset,
                                        (char*) ptr + length_bytes,
                                        field_length,
                                        cs, from, length,
@@ -7162,9 +7598,9 @@ type_conversion_status Field_varstring::store(const char *from,uint length,
   if (length_bytes == 1)
     *ptr= (uchar) copy_length;
   else
-    int2store(ptr, copy_length);
+    int2store(ptr, static_cast<uint16>(copy_length));
 
-  return check_string_copy_error(well_formed_error_pos,
+  return check_string_copy_error(from, well_formed_error_pos,
                                  cannot_convert_error_pos, from_end_pos,
                                  from + length, true, cs);
 }
@@ -7327,9 +7763,9 @@ int Field_varstring::key_cmp(const uchar *a,const uchar *b)
 }
 
 
-void Field_varstring::make_sort_key(uchar *to,uint length)
+void Field_varstring::make_sort_key(uchar *to, size_t length)
 {
-  uint tot_length=  length_bytes == 1 ? (uint) *ptr : uint2korr(ptr);
+  size_t tot_length=  length_bytes == 1 ? (uint) *ptr : uint2korr(ptr);
 
   if (field_charset == &my_charset_bin)
   {
@@ -7366,7 +7802,7 @@ void Field_varstring::sql_type(String &res) const
 {
   THD *thd= table->in_use;
   const CHARSET_INFO *cs=res.charset();
-  ulong length;
+  size_t length;
 
   length= cs->cset->snprintf(cs,(char*) res.ptr(),
                              res.alloced_length(), "%s(%d)",
@@ -7379,9 +7815,10 @@ void Field_varstring::sql_type(String &res) const
 }
 
 
-uint32 Field_varstring::data_length()
+uint32 Field_varstring::data_length(uint row_offset)
 {
-  return length_bytes == 1 ? (uint32) *ptr : uint2korr(ptr);
+  return length_bytes == 1 ?
+    (uint32) *(ptr + row_offset) : uint2korr(ptr + row_offset);
 }
 
 /*
@@ -7460,14 +7897,14 @@ uint Field_varstring::packed_col_length(const uchar *data_ptr, uint length)
 }
 
 
-uint Field_varstring::max_packed_col_length(uint max_length)
+size_t Field_varstring::get_key_image(uchar *buff, size_t length, imagetype type)
 {
-  return (max_length > 255 ? 2 : 1)+max_length;
-}
-
-uint Field_varstring::get_key_image(uchar *buff, uint length, imagetype type)
-{
-  uint f_length=  length_bytes == 1 ? (uint) *ptr : uint2korr(ptr);
+  /*
+    If NULL, data bytes may have been left random by the storage engine, so
+    don't try to read them.
+  */
+  uint f_length= is_null() ? 0 :
+    (length_bytes == 1 ? (uint) *ptr : uint2korr(ptr));
   uint local_char_length= length / field_charset->mbmaxlen;
   uchar *pos= ptr+length_bytes;
   local_char_length= my_charpos(field_charset, pos, pos + f_length,
@@ -7488,7 +7925,7 @@ uint Field_varstring::get_key_image(uchar *buff, uint length, imagetype type)
 }
 
 
-void Field_varstring::set_key_image(const uchar *buff,uint length)
+void Field_varstring::set_key_image(const uchar *buff, size_t length)
 {
   length= uint2korr(buff);			// Real length is here
   (void) Field_varstring::store((const char*) buff+HA_KEY_BLOB_LENGTH, length,
@@ -7556,6 +7993,8 @@ uint Field_varstring::is_equal(Create_field *new_field)
   {
     if (new_field->length == max_display_length())
       return IS_EQUAL_YES;
+    DBUG_ASSERT(0 == (new_field->length % field_charset->mbmaxlen));
+    DBUG_ASSERT(0 == (max_display_length() % field_charset->mbmaxlen));
     if (new_field->length > max_display_length() &&
 	((new_field->length <= 255 && max_display_length() <= 255) ||
 	 (new_field->length > 255 && max_display_length() > 255)))
@@ -7650,11 +8089,11 @@ uint32 Field_blob::get_length(const uchar *pos, uint packlength_arg, bool low_by
 	tmp=sint2korr(pos);
       else
 #endif
-	shortget(tmp,pos);
+	ushortget(&tmp, pos);
       return (uint32) tmp;
     }
   case 3:
-    return (uint32) uint3korr(pos);
+    return uint3korr(pos);
   case 4:
     {
       uint32 tmp;
@@ -7663,8 +8102,8 @@ uint32 Field_blob::get_length(const uchar *pos, uint packlength_arg, bool low_by
 	tmp=uint4korr(pos);
       else
 #endif
-	longget(tmp,pos);
-      return (uint32) tmp;
+	ulongget(&tmp, pos);
+      return tmp;
     }
   }
   /* When expanding this, see also MAX_FIELD_BLOBLENGTH. */
@@ -7704,16 +8143,16 @@ void Field_blob::put_length(uchar *pos, uint32 length)
 
 /**
   Store a blob value to memory storage.
-  @param     from         - the string value to store.
-  @param     length       - length of the string value.
-  @param     cs           - character set of the string value.
-  @param     max_length   - Cut at this length safely (multibyte aware).
-  @param OUT blob_storage - Memory storage to put value to.
+  @param      from         the string value to store.
+  @param      length       length of the string value.
+  @param      cs           character set of the string value.
+  @param      max_length   Cut at this length safely (multibyte aware).
+  @param[out] blob_storage Memory storage to put value to.
 */
 type_conversion_status
-Field_blob::store_to_mem(const char *from, uint length,
+Field_blob::store_to_mem(const char *from, size_t length,
                          const CHARSET_INFO *cs,
-                         uint max_length,
+                         size_t max_length,
                          Blob_mem_storage *blob_storage)
 {
   DBUG_ASSERT(length > 0);
@@ -7723,7 +8162,6 @@ Field_blob::store_to_mem(const char *from, uint length,
     queries having GROUP_CONCAT with ORDER BY or DISTINCT,
     hence some assersions:
   */
-  DBUG_ASSERT(!f_is_hex_escape(flags));
   DBUG_ASSERT(field_charset == cs);
   DBUG_ASSERT(length <= max_data_length());
 
@@ -7746,10 +8184,10 @@ Field_blob::store_to_mem(const char *from, uint length,
 
 
 type_conversion_status
-Field_blob::store_internal(const char *from, uint length,
+Field_blob::store_internal(const char *from, size_t length,
                            const CHARSET_INFO *cs)
 {
-  uint new_length;
+  size_t new_length;
   char buff[STRING_BUFFER_USUAL_SIZE], *tmp;
   String tmpstr(buff,sizeof(buff), &my_charset_bin);
 
@@ -7777,20 +8215,12 @@ Field_blob::store_internal(const char *from, uint length,
     from= tmpstr.ptr();
   }
 
-  new_length= min(max_data_length(), field_charset->mbmaxlen * length);
+  new_length= min<size_t>(max_data_length(), field_charset->mbmaxlen * length);
+
   if (value.alloc(new_length))
     goto oom_error;
+
   tmp= const_cast<char*>(value.ptr());
-
-  if (f_is_hex_escape(flags))
-  {
-    uint copy_length= my_copy_with_hex_escaping(field_charset,
-                                                tmp, new_length,
-                                                from, length);
-    store_ptr_and_length(tmp, copy_length);
-    return TYPE_OK;
-  }
-
 
   {
     const char *well_formed_error_pos;
@@ -7801,16 +8231,16 @@ Field_blob::store_internal(const char *from, uint length,
       is never used to limit the length of the data. The cut of long data
       is done with the new_length value.
     */
-    uint copy_length= well_formed_copy_nchars(field_charset,
-                                              tmp, new_length,
-                                              cs, from, length,
-                                              length,
-                                              &well_formed_error_pos,
-                                              &cannot_convert_error_pos,
-                                              &from_end_pos);
+    size_t copy_length= field_well_formed_copy_nchars(field_charset,
+                                                tmp, new_length,
+                                                cs, from, length,
+                                                length,
+                                                &well_formed_error_pos,
+                                                &cannot_convert_error_pos,
+                                                &from_end_pos);
 
     store_ptr_and_length(tmp, copy_length);
-    return check_string_copy_error(well_formed_error_pos,
+    return check_string_copy_error(from, well_formed_error_pos,
                                    cannot_convert_error_pos, from_end_pos,
                                    from + length, true, cs);
   }
@@ -7823,7 +8253,7 @@ oom_error:
 
 
 type_conversion_status
-Field_blob::store(const char *from, uint length, const CHARSET_INFO *cs)
+Field_blob::store(const char *from, size_t length, const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
 
@@ -7846,7 +8276,7 @@ type_conversion_status Field_blob::store(double nr)
 {
   const CHARSET_INFO *cs=charset();
   value.set_real(nr, NOT_FIXED_DEC, cs);
-  return Field_blob::store(value.ptr(),(uint) value.length(), cs);
+  return Field_blob::store(value.ptr(), value.length(), cs);
 }
 
 
@@ -7854,7 +8284,7 @@ type_conversion_status Field_blob::store(longlong nr, bool unsigned_val)
 {
   const CHARSET_INFO *cs=charset();
   value.set_int(nr, unsigned_val, cs);
-  return Field_blob::store(value.ptr(), (uint) value.length(), cs);
+  return Field_blob::store(value.ptr(), value.length(), cs);
 }
 
 
@@ -7964,12 +8394,11 @@ int Field_blob::cmp_binary(const uchar *a_ptr, const uchar *b_ptr,
 
 /* The following is used only when comparing a key */
 
-uint Field_blob::get_key_image(uchar *buff,uint length, imagetype type_arg)
+size_t Field_blob::get_key_image(uchar *buff, size_t length, imagetype type_arg)
 {
   uint32 blob_length= get_length(ptr);
   uchar *blob;
 
-#ifdef HAVE_SPATIAL
   if (type_arg == itMBR)
   {
     MBR mbr;
@@ -7995,7 +8424,6 @@ uint Field_blob::get_key_image(uchar *buff,uint length, imagetype type_arg)
     }
     return image_length;
   }
-#endif /*HAVE_SPATIAL*/
 
   get_ptr(&blob);
   uint local_char_length= length / field_charset->mbmaxlen;
@@ -8012,13 +8440,13 @@ uint Field_blob::get_key_image(uchar *buff,uint length, imagetype type_arg)
     memset(buff+HA_KEY_BLOB_LENGTH+blob_length, 0, (length-blob_length));
     length=(uint) blob_length;
   }
-  int2store(buff,length);
+  int2store(buff, static_cast<uint16>(length));
   memcpy(buff+HA_KEY_BLOB_LENGTH, blob, length);
   return HA_KEY_BLOB_LENGTH+length;
 }
 
 
-void Field_blob::set_key_image(const uchar *buff,uint length)
+void Field_blob::set_key_image(const uchar *buff, size_t length)
 {
   length= uint2korr(buff);
   (void) Field_blob::store((const char*) buff+HA_KEY_BLOB_LENGTH, length,
@@ -8074,10 +8502,10 @@ uint32 Field_blob::sort_length() const
 }
 
 
-void Field_blob::make_sort_key(uchar *to,uint length)
+void Field_blob::make_sort_key(uchar *to, size_t length)
 {
   uchar *blob;
-  uint blob_length=get_length();
+  size_t blob_length=get_length();
 
   if (!blob_length)
     memset(to, 0, length);
@@ -8197,8 +8625,8 @@ const uchar *Field_blob::unpack(uchar *to,
   uint32 const length= get_length(from, master_packlength, low_byte_first);
   DBUG_DUMP("packed", from, length + master_packlength);
   bitmap_set_bit(table->write_set, field_index);
-  store(reinterpret_cast<const char*>(from) + master_packlength,
-        length, field_charset);
+  Field_blob::store(pointer_cast<const char*>(from) + master_packlength,
+                    length, field_charset);
 #ifndef DBUG_OFF  
   uchar *vptr;
   get_ptr(&vptr);
@@ -8216,9 +8644,12 @@ uint Field_blob::packed_col_length(const uchar *data_ptr, uint length)
 }
 
 
-uint Field_blob::max_packed_col_length(uint max_length)
+uint Field_blob::max_packed_col_length()
 {
-  return (max_length > 255 ? 2 : 1)+max_length;
+  // We do not use addon fields for blobs.
+  DBUG_ASSERT(false);
+  const uint max_length= pack_length();
+  return (max_length > 255 ? 2 : 1) + max_length;
 }
 
 
@@ -8229,8 +8660,51 @@ uint Field_blob::is_equal(Create_field *new_field)
           new_field->pack_length == pack_length());
 }
 
+/**
+  Save the current BLOB value to avoid that it gets overwritten.
 
-#ifdef HAVE_SPATIAL
+  This is used when updating virtual generated columns that are
+  BLOBs. Some storage engines require that we have both the old and
+  new BLOB value for virtual generated columns that are indexed in
+  order for the storage engine to be able to maintain the index. This
+  function will transfer the buffer storing the current BLOB value
+  from 'value' to 'old_value'. This avoids that the current BLOB value
+  is over-written when the new BLOB value is saved into this field.
+
+  The reason this requires special handling when updating/deleting
+  virtual columns of BLOB type is that the BLOB value is not known to
+  the storage engine. For stored columns, the "old" BLOB value is read
+  by the storage engine, Field_blob is made to point to the engine's
+  internal buffer; Field_blob's internal buffer (Field_blob::value)
+  isn't used and remains available to store the "new" value.  For
+  virtual generated columns, the "old" value is written directly into
+  Field_blob::value when reading the record to be
+  updated/deleted. This is done in update_generated_read_fields(). 
+  Since, in this case, the "old" value already occupies the place to
+  store the "new" value, we must call this function before we write
+  the "new" value into Field_blob::value object so that the "old"
+  value does not get over-written. The table->record[1] buffer will
+  have a pointer that points to the memory buffer inside
+  old_value. The storage engine will use table->record[1] to read the
+  old value for the BLOB and use table->record[0] to read the new
+  value.
+
+  This function must be called before we store the new BLOB value in
+  this field object.
+*/
+
+void Field_blob::keep_old_value()
+{
+  /*
+    We should only need to keep a copy of the blob value in the case
+    where this is a virtual genarated column (that is indexed).
+  */
+  DBUG_ASSERT(is_virtual_gcol());
+
+  // Transfer ownership of the current BLOB value to old_value
+  old_value.takeover(value);
+}
+
 
 void Field_geom::sql_type(String &res) const
 {
@@ -8288,19 +8762,37 @@ type_conversion_status Field_geom::store_decimal(const my_decimal *)
 }
 
 
+type_conversion_status Field_geom::store(const char *from, size_t length,
+                                         const CHARSET_INFO *cs)
+{
+  if (length < SRID_SIZE + WKB_HEADER_SIZE + sizeof(uint32))
+  {
+    memset(ptr, 0, Field_blob::pack_length());
+    my_error(ER_CANT_CREATE_GEOMETRY_OBJECT, MYF(0));
+    return TYPE_ERR_BAD_VALUE;
+  }
+
+  return Field_blob::store(from, length, cs);
+}
+
+
 type_conversion_status
-Field_geom::store_internal(const char *from, uint length,
+Field_geom::store_internal(const char *from, size_t length,
                            const CHARSET_INFO *cs)
 {
-  uint32 wkb_type;
-
   DBUG_ASSERT(length > 0);
 
-  // Check given WKB
-  if (from == Geometry::bad_geometry_data.ptr() ||
-      length < SRID_SIZE + WKB_HEADER_SIZE + SIZEOF_STORED_DOUBLE * 2 ||
-      (wkb_type= uint4korr(from + SRID_SIZE + 1)) < (uint32) Geometry::wkb_point ||
-       wkb_type > (uint32) Geometry::wkb_last)
+  // Check that the given WKB
+  // 1. isn't marked as bad geometry data
+  // 2. isn't shorter than empty geometrycollection
+  // 3. is a valid geometry type
+  // 4. is well formed
+  if (from == Geometry::bad_geometry_data.ptr() ||                    // 1
+      length < SRID_SIZE + WKB_HEADER_SIZE + sizeof(uint32) ||        // 2
+      !Geometry::is_valid_geotype(uint4korr(from + SRID_SIZE + 1)) || // 3
+      !Geometry::is_well_formed(from, length,                         // 4
+                                geometry_type_to_wkb_type(geom_type),
+                                Geometry::wkb_ndr))
   {
     memset(ptr, 0, Field_blob::pack_length());  
     my_message(ER_CANT_CREATE_GEOMETRY_OBJECT,
@@ -8328,7 +8820,387 @@ uint Field_geom::is_equal(Create_field *new_field)
 }
 
 
-#endif /*HAVE_SPATIAL*/
+/**
+  Get the type of this field (json).
+  @param str  the string that receives the type
+*/
+void Field_json::sql_type(String &str) const
+{
+  str.set_ascii(STRING_WITH_LEN("json"));
+}
+
+
+/// Create a shallow clone of this field in the specified MEM_ROOT.
+Field_json *Field_json::clone(MEM_ROOT *mem_root) const
+{
+  DBUG_ASSERT(type() == MYSQL_TYPE_JSON);
+  return new (mem_root) Field_json(*this);
+}
+
+
+/// Create a shallow clone of this field.
+Field_json *Field_json::clone() const
+{
+  DBUG_ASSERT(type() == MYSQL_TYPE_JSON);
+  return new Field_json(*this);
+}
+
+
+/**
+  Check if a new field is compatible with this one.
+  @param new_field  the new field
+  @return true if new_field is compatible with this field, false otherwise
+*/
+uint Field_json::is_equal(Create_field *new_field)
+{
+  // All JSON fields are compatible with each other.
+  return (new_field->sql_type == real_type());
+}
+
+
+/**
+  Store data in this JSON field.
+
+  JSON data is usually stored using store(Field_json*) or store_json(), so this
+  function will only be called if non-JSON data is attempted stored in a JSON
+  field. This results in an error in most cases.
+
+  It will attempt to parse the string (unless it's binary) as JSON text, and
+  store a binary representation of JSON document if the string could be parsed.
+
+  Note that we override store() and not store_internal() because
+  Field_blob::store() contains logic that bypasses store_internal() in
+  some cases we care about. In particular:
+
+  - When supplied an empty string, we want to raise a JSON syntax
+    error instead of silently inserting an empty byte string.
+
+  - When called from GROUP_CONCAT with ORDER BY or DISTINCT, we want
+    to do the same data conversion as usual, whereas
+    Field_blob::store() jumps directly to Field_blob::store_to_mem()
+    with the unprocessed input data.
+
+  @param from   the start of the data to be stored
+  @param length the length of the data
+  @param cs     the character set of the data
+  @return zero on success, non-zero on failure
+*/
+type_conversion_status
+Field_json::store(const char *from, size_t length, const CHARSET_INFO *cs)
+{
+  ASSERT_COLUMN_MARKED_FOR_WRITE;
+
+  /*
+    First clear the field so that it doesn't contain garbage if we
+    return with an error. Some callers continue for a while even after
+    an error has been raised, and they could get into trouble if the
+    field contains garbage.
+  */
+  reset();
+
+  const char *s;
+  size_t ss;
+  String v(from, length, cs);
+
+  if (ensure_utf8mb4(&v, &value, &s, &ss, true))
+  {
+    return TYPE_ERR_BAD_VALUE;
+  }
+
+  const char *parse_err;
+  size_t err_offset;
+  std::auto_ptr<Json_dom> dom(Json_dom::parse(s, ss, &parse_err, &err_offset));
+
+  if (dom.get() == NULL)
+  {
+    if (parse_err != NULL)
+    {
+      // Syntax error.
+      my_error(ER_INVALID_JSON_TEXT, MYF(0),
+               parse_err, err_offset, v.c_ptr_safe());
+    }
+    return TYPE_ERR_BAD_VALUE;
+  }
+
+  if (json_binary::serialize(dom.get(), &value))
+    return TYPE_ERR_BAD_VALUE;
+
+  return store_binary(value.ptr(), value.length());
+}
+
+
+/**
+  Helper function for raising an error when trying to store a value
+  into a JSON column, and that value needs to be cast to JSON before
+  it can be stored.
+*/
+type_conversion_status Field_json::unsupported_conversion()
+{
+  ASSERT_COLUMN_MARKED_FOR_WRITE;
+  String s;
+  s.append("column ");
+  s.append(*table_name);
+  s.append('.');
+  s.append(field_name);
+  my_error(ER_INVALID_JSON_TEXT, MYF(0), "not a JSON text, may need CAST",
+           0, s.c_ptr_safe());
+  return TYPE_ERR_BAD_VALUE;
+}
+
+
+/**
+  Store the provided JSON binary data in this field.
+
+  @param[in] ptr     pointer to JSON binary data
+  @param[in] length  the length of the binary data
+  @return zero on success, non-zero on failure
+*/
+type_conversion_status Field_json::store_binary(const char *ptr, size_t length)
+{
+  /*
+    We expect that a valid binary representation of a JSON document is
+    passed to us.
+
+    We make an exception for the case of an empty binary string. Even
+    though an empty binary string is not a valid representation of a
+    JSON document, we might be served one as a result of inserting
+    NULL or DEFAULT into a not nullable JSON column using INSERT
+    IGNORE, or inserting DEFAULT into a not nullable JSON column in
+    non-strict SQL mode.
+
+    We accept an empty binary string in those cases. Such values will
+    be converted to the JSON null literal when they are read with
+    Field_json::val_json().
+  */
+  DBUG_ASSERT(length == 0 || json_binary::parse_binary(ptr, length).is_valid());
+
+  if (value.length() > UINT_MAX32)
+  {
+    /* purecov: begin inspected */
+    my_error(ER_JSON_VALUE_TOO_BIG, MYF(0));
+    return TYPE_ERR_BAD_VALUE;
+    /* purecov: end */
+  }
+
+  return Field_blob::store(ptr, length, field_charset);
+}
+
+
+/// Store a double in a JSON field. Will raise an error for now.
+type_conversion_status Field_json::store(double nr)
+{
+  return unsupported_conversion();
+}
+
+
+/// Store an integer in a JSON field. Will raise an error for now.
+type_conversion_status Field_json::store(longlong nr, bool unsigned_val)
+{
+  return unsupported_conversion();
+}
+
+
+/// Store a decimal in a JSON field. Will raise an error for now.
+type_conversion_status Field_json::store_decimal(const my_decimal *)
+{
+  return unsupported_conversion();
+}
+
+
+/// Store a TIME value in a JSON field. Will raise an error for now.
+type_conversion_status Field_json::store_time(MYSQL_TIME *ltime, uint8 dec_arg)
+{
+  return unsupported_conversion();
+}
+
+
+/**
+  Store a JSON value as binary.
+
+  @param json  the JSON value to store
+  @return zero on success, non-zero otherwise
+*/
+type_conversion_status Field_json::store_json(Json_wrapper *json)
+{
+  ASSERT_COLUMN_MARKED_FOR_WRITE;
+
+  json_binary::Value json_val= json->to_value();
+  if (json_val.type() == json_binary::Value::ERROR ||
+      json_val.raw_binary(&value))
+    return TYPE_ERR_BAD_VALUE;
+
+  return store_binary(value.ptr(), value.length());
+}
+
+
+/**
+  Copy the contents of a non-null JSON field into this field.
+
+  @param[in] field the field to copy data from
+  @return zero on success, non-zero on failure
+*/
+type_conversion_status Field_json::store(Field_json *field)
+{
+  /*
+    The callers of this function have already checked for null, so we
+    don't need to handle it here for now. Assert that field is not
+    null.
+  */
+  DBUG_ASSERT(!field->is_null());
+
+  String tmp;
+  String *s= field->Field_blob::val_str(&tmp, &tmp);
+  return store_binary(s->ptr(), s->length());
+}
+
+
+bool Field_json::val_json(Json_wrapper *wr)
+{
+  ASSERT_COLUMN_MARKED_FOR_READ;
+  DBUG_ASSERT(!is_null());
+
+  String tmp;
+  String *s= Field_blob::val_str(&tmp, &tmp);
+
+  /*
+    The empty string is not a valid JSON binary representation, so we
+    should have returned an error. However, sometimes an empty
+    Field_json object is created in order to retrieve meta-data.
+    Return a dummy value instead of raising an error. Bug#21104470.
+
+    The field could also contain an empty string after forcing NULL or
+    DEFAULT into a not nullable JSON column using lax error checking
+    (such as INSERT IGNORE or non-strict SQL mode). The JSON null
+    literal is used to represent the empty value in this case.
+    Bug#21437989.
+  */
+  if (s->length() == 0)
+  {
+    Json_wrapper w(new (std::nothrow) Json_null());
+    wr->steal(&w);
+    return false;
+  }
+
+  json_binary::Value v(json_binary::parse_binary(s->ptr(), s->length()));
+  if (v.type() == json_binary::Value::ERROR)
+  {
+    /* purecov: begin inspected */
+    my_error(ER_INVALID_JSON_BINARY_DATA, MYF(0));
+    return true;
+    /* purecov: end */
+  }
+
+  Json_wrapper w(v);
+  wr->steal(&w);
+  return false;
+}
+
+longlong Field_json::val_int()
+{
+  ASSERT_COLUMN_MARKED_FOR_READ;
+
+  Json_wrapper wr;
+  if (is_null() || val_json(&wr))
+    return 0;                                   /* purecov: inspected */
+
+  return wr.coerce_int(field_name);
+}
+
+
+double Field_json::val_real()
+{
+  ASSERT_COLUMN_MARKED_FOR_READ;
+
+  Json_wrapper wr;
+  if (is_null() || val_json(&wr))
+    return 0.0;                                 /* purecov: inspected */
+
+  return wr.coerce_real(field_name);
+}
+
+
+String *Field_json::val_str(String *buf1, String *buf2 __attribute__((unused)))
+{
+  ASSERT_COLUMN_MARKED_FOR_READ;
+
+  /*
+    Per contract of Field::val_str(String*,String*), buf1 should be
+    used if the value needs to be converted to string, and buf2 should
+    be used if the string value is already known. We need to convert,
+    so use buf1.
+  */
+  buf1->length(0);
+
+  Json_wrapper wr;
+  if (is_null() || val_json(&wr) || wr.to_string(buf1, true, field_name))
+    buf1->length(0);
+
+  return buf1;
+}
+
+my_decimal *Field_json::val_decimal(my_decimal *decimal_value)
+{
+  ASSERT_COLUMN_MARKED_FOR_READ;
+
+  Json_wrapper wr;
+  if (is_null() || val_json(&wr))
+  {
+    /* purecov: begin inspected */
+    my_decimal_set_zero(decimal_value);
+    return decimal_value;
+    /* purecov: end */
+  }
+
+  return wr.coerce_decimal(decimal_value, field_name);
+}
+
+
+bool Field_json::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
+{
+  bool result= get_time(ltime);
+  if (!result && ltime->time_type == MYSQL_TIMESTAMP_TIME)
+  {
+    MYSQL_TIME tmp= *ltime;
+    time_to_datetime(current_thd, &tmp, ltime);
+  }
+  return result;
+}
+
+
+bool Field_json::get_time(MYSQL_TIME *ltime)
+{
+  ASSERT_COLUMN_MARKED_FOR_READ;
+
+  Json_wrapper wr;
+  bool result= is_null() || val_json(&wr) || wr.coerce_time(ltime, field_name);
+  if (result)
+    set_zero_time(ltime, MYSQL_TIMESTAMP_DATETIME); /* purecov: inspected */
+  return result;
+}
+
+
+void Field_json::make_sort_key(uchar *to, size_t length)
+{
+  Json_wrapper wr;
+  if (val_json(&wr))
+  {
+    /* purecov: begin inspected */
+    memset(to, 0, length);
+    return;
+    /* purecov: end */
+  }
+  wr.make_sort_key(to, length);
+}
+
+
+ulonglong Field_json::make_hash_key(ulonglong *hash_val)
+{
+  Json_wrapper wr;
+  if (val_json(&wr))
+    return *hash_val;                         /* purecov: inspected */
+  return wr.make_hash_key(hash_val);
+}
+
 
 /****************************************************************************
 ** enum type.
@@ -8392,7 +9264,7 @@ void Field_enum::store_type(ulonglong value)
 */
 
 type_conversion_status
-Field_enum::store(const char *from,uint length,const CHARSET_INFO *cs)
+Field_enum::store(const char *from, size_t length,const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   int err= 0;
@@ -8422,14 +9294,14 @@ Field_enum::store(const char *from,uint length,const CHARSET_INFO *cs)
       if (err || end != from+length || tmp > typelib->count)
       {
 	tmp=0;
-	set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+	set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
         ret= TYPE_WARN_TRUNCATED;
       }
       if (!table->in_use->count_cuted_fields)
         ret= TYPE_OK;
     }
     else
-      set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+      set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
   }
   store_type((ulonglong) tmp);
   return ret;
@@ -8448,7 +9320,7 @@ type_conversion_status Field_enum::store(longlong nr, bool unsigned_val)
   type_conversion_status error= TYPE_OK;
   if ((ulonglong) nr > typelib->count || nr == 0)
   {
-    set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+    set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
     if (nr != 0 || table->in_use->count_cuted_fields)
     {
       nr= 0;
@@ -8488,7 +9360,7 @@ longlong Field_enum::val_int(void)
       tmp=sint2korr(ptr);
     else
 #endif
-      shortget(tmp,ptr);
+      ushortget(&tmp, ptr);
     return (longlong) tmp;
   }
   case 3:
@@ -8501,7 +9373,7 @@ longlong Field_enum::val_int(void)
       tmp=uint4korr(ptr);
     else
 #endif
-      longget(tmp,ptr);
+      ulongget(&tmp, ptr);
     return (longlong) tmp;
   }
   case 8:
@@ -8512,7 +9384,7 @@ longlong Field_enum::val_int(void)
       tmp=sint8korr(ptr);
     else
 #endif
-      longlongget(tmp,ptr);
+      longlongget(&tmp, ptr);
     return tmp;
   }
   }
@@ -8546,7 +9418,7 @@ String *Field_enum::val_str(String *val_buffer __attribute__((unused)),
   if (!tmp || tmp > typelib->count)
     val_ptr->set("", 0, field_charset);
   else
-    val_ptr->set((const char*) typelib->type_names[tmp-1],
+    val_ptr->set(typelib->type_names[tmp-1],
 		 typelib->type_lengths[tmp-1],
 		 field_charset);
   return val_ptr;
@@ -8563,7 +9435,7 @@ int Field_enum::cmp(const uchar *a_ptr, const uchar *b_ptr)
   return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
-void Field_enum::make_sort_key(uchar *to, uint length)
+void Field_enum::make_sort_key(uchar *to, size_t length)
 {
 #ifdef WORDS_BIGENDIAN
   if (!table->s->db_low_byte_first)
@@ -8619,7 +9491,7 @@ Field *Field_enum::new_field(MEM_ROOT *root, TABLE *new_table,
 
 
 type_conversion_status
-Field_set::store(const char *from,uint length,const CHARSET_INFO *cs)
+Field_set::store(const char *from, size_t length,const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   bool got_warning= 0;
@@ -8645,16 +9517,17 @@ Field_set::store(const char *from,uint length,const CHARSET_INFO *cs)
     /* This is for reading numbers with LOAD DATA INFILE */
     char *end;
     tmp=my_strntoull(cs,from,length,10,&end,&err);
-    if (err || end != from+length ||
-	tmp > (ulonglong) (((longlong) 1 << typelib->count) - (longlong) 1))
+    if (err || 
+        end != from+length ||
+        (typelib->count < 64 && tmp >= (1ULL << typelib->count)))
     {
       tmp=0;      
-      set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+      set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
       ret= TYPE_WARN_TRUNCATED;
     }
   }
   else if (got_warning)
-    set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+    set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
   store_type(tmp);
   return ret;
 }
@@ -8667,14 +9540,14 @@ type_conversion_status Field_set::store(longlong nr, bool unsigned_val)
   ulonglong max_nr;
 
   if (sizeof(ulonglong)*8 <= typelib->count)
-    max_nr= ULONGLONG_MAX;
+    max_nr= ULLONG_MAX;
   else
-    max_nr= (ULL(1) << typelib->count) - 1;
+    max_nr= (1ULL << typelib->count) - 1;
 
   if ((ulonglong) nr > max_nr)
   {
     nr&= max_nr;
-    set_warning(Sql_condition::WARN_LEVEL_WARN, WARN_DATA_TRUNCATED, 1);
+    set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
     error= TYPE_WARN_TRUNCATED;
   }
   store_type((ulonglong) nr);
@@ -8688,20 +9561,20 @@ String *Field_set::val_str(String *val_buffer,
   ulonglong tmp=(ulonglong) Field_enum::val_int();
   uint bitnr=0;
 
+  /*
+    Some callers expect *val_buffer to contain the result,
+    so we assign to it, rather than doing 'return &empty_set_string.
+  */
+  *val_buffer= empty_set_string;
   if (tmp == 0)
   {
-    /*
-      Some callers expect *val_buffer to contain the result,
-      so we assign to it, rather than doing 'return &empty_set_string.
-     */
-    *val_buffer= empty_set_string;
     return val_buffer;
   }
 
   val_buffer->set_charset(field_charset);
   val_buffer->length(0);
 
-  while (tmp && bitnr < (uint) typelib->count)
+  while (tmp && bitnr < typelib->count)
   {
     if (tmp & 1)
     {
@@ -8963,7 +9836,7 @@ Field_bit::Field_bit(uchar *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
   flags|= UNSIGNED_FLAG;
   /*
     Ensure that Field::eq() can distinguish between two different bit fields.
-    (two bit fields that are not null, may have same ptr and null_ptr)
+    (two bit fields that are not null, may have same ptr and m_null_ptr)
   */
   if (!null_ptr_arg)
     null_bit= bit_ofs_arg;
@@ -9001,9 +9874,9 @@ Field_bit::do_last_null_byte() const
   */
   DBUG_PRINT("test", ("bit_ofs: %d, bit_len: %d  bit_ptr: 0x%lx",
                       bit_ofs, bit_len, (long) bit_ptr));
-  uchar *result;
+  const uchar *result;
   if (bit_len == 0)
-    result= null_ptr;
+    result= get_null_ptr();
   else if (bit_ofs + bit_len > 8)
     result= bit_ptr + 1;
   else
@@ -9043,13 +9916,13 @@ uint Field_bit::is_equal(Create_field *new_field)
 
                        
 type_conversion_status
-Field_bit::store(const char *from, uint length, const CHARSET_INFO *cs)
+Field_bit::store(const char *from, size_t length, const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
   int delta;
 
   for (; length && !*from; from++, length--) ;         // skip left 0's
-  delta= bytes_in_rec - length;
+  delta= bytes_in_rec - static_cast<int>(length);
 
   /*
     *from should probably be treated like uint here see BUG#13727586
@@ -9060,10 +9933,10 @@ Field_bit::store(const char *from, uint length, const CHARSET_INFO *cs)
   {
     set_rec_bits((1 << bit_len) - 1, bit_ptr, bit_ofs, bit_len);
     memset(ptr, 0xff, bytes_in_rec);
-    if (table->in_use->really_abort_on_warning())
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_DATA_TOO_LONG, 1);
+    if (table->in_use->is_strict_mode())
+      set_warning(Sql_condition::SL_WARNING, ER_DATA_TOO_LONG, 1);
     else
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return TYPE_WARN_OUT_OF_RANGE;
   }
   /* delta is >= -1 here */
@@ -9197,7 +10070,7 @@ int Field_bit::cmp_max(const uchar *a, const uchar *b, uint max_len)
     if ((flag= (int) (bits_a - bits_b)))
       return flag;
   }
-  return memcmp(a, b, field_length);
+  return memcmp(a, b, pack_length());
 }
 
 
@@ -9230,7 +10103,7 @@ int Field_bit::cmp_offset(uint row_offset)
 }
 
 
-uint Field_bit::get_key_image(uchar *buff, uint length, imagetype type_arg)
+size_t Field_bit::get_key_image(uchar *buff, size_t length, imagetype type_arg)
 {
   if (bit_len)
   {
@@ -9238,7 +10111,7 @@ uint Field_bit::get_key_image(uchar *buff, uint length, imagetype type_arg)
     *buff++= bits;
     length--;
   }
-  uint data_length = min(length, bytes_in_rec);
+  size_t data_length = min(length, static_cast<size_t>(bytes_in_rec));
   memcpy(buff, ptr, data_length);
   return data_length + 1;
 }
@@ -9340,9 +10213,9 @@ Field_bit::compatible_field_size(uint field_metadata,
 void Field_bit::sql_type(String &res) const
 {
   const CHARSET_INFO *cs= res.charset();
-  ulong length= cs->cset->snprintf(cs, (char*) res.ptr(), res.alloced_length(),
+  size_t length= cs->cset->snprintf(cs, (char*) res.ptr(), res.alloced_length(),
                                    "bit(%d)", (int) field_length);
-  res.length((uint) length);
+  res.length(length);
 }
 
 
@@ -9452,7 +10325,6 @@ Field_bit::unpack(uchar *to, const uchar *from, uint param_data,
     value[new_len - len]= value[new_len - len] & ((1U << from_bit_len) - 1);
   bitmap_set_bit(table->write_set,field_index);
   store(value, new_len, system_charset_info);
-  my_afree(value);
   DBUG_RETURN(from + len);
 }
 
@@ -9461,7 +10333,7 @@ void Field_bit::set_default()
 {
   if (bit_len > 0)
   {
-    my_ptrdiff_t const offset= table->s->default_values - table->record[0];
+    my_ptrdiff_t offset= table->default_values_offset();
     uchar bits= get_rec_bits(bit_ptr + offset, bit_ofs, bit_len);
     set_rec_bits(bits, bit_ptr, bit_ofs, bit_len);
   }
@@ -9485,7 +10357,7 @@ Field_bit_as_char::Field_bit_as_char(uchar *ptr_arg, uint32 len_arg,
 }
 
 
-type_conversion_status Field_bit_as_char::store(const char *from, uint length,
+type_conversion_status Field_bit_as_char::store(const char *from, size_t length,
                                                 const CHARSET_INFO *cs)
 {
   ASSERT_COLUMN_MARKED_FOR_WRITE;
@@ -9493,7 +10365,7 @@ type_conversion_status Field_bit_as_char::store(const char *from, uint length,
   uchar bits= (uchar) (field_length & 7);
 
   for (; length && !*from; from++, length--) ;         // skip left 0's
-  delta= bytes_in_rec - length;
+  delta= bytes_in_rec - static_cast<int>(length);
 
   if (delta < 0 ||
       (delta == 0 && bits && (uint) (uchar) *from >= (uint) (1 << bits)))
@@ -9501,10 +10373,10 @@ type_conversion_status Field_bit_as_char::store(const char *from, uint length,
     memset(ptr, 0xff, bytes_in_rec);
     if (bits)
       *ptr&= ((1 << bits) - 1); /* set first uchar */
-    if (table->in_use->really_abort_on_warning())
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_DATA_TOO_LONG, 1);
+    if (table->in_use->is_strict_mode())
+      set_warning(Sql_condition::SL_WARNING, ER_DATA_TOO_LONG, 1);
     else
-      set_warning(Sql_condition::WARN_LEVEL_WARN, ER_WARN_DATA_OUT_OF_RANGE, 1);
+      set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
     return TYPE_WARN_OUT_OF_RANGE;
   }
   memset(ptr, 0, delta);
@@ -9516,9 +10388,9 @@ type_conversion_status Field_bit_as_char::store(const char *from, uint length,
 void Field_bit_as_char::sql_type(String &res) const
 {
   const CHARSET_INFO *cs= res.charset();
-  ulong length= cs->cset->snprintf(cs, (char*) res.ptr(), res.alloced_length(),
-                                   "bit(%d)", (int) field_length);
-  res.length((uint) length);
+  size_t length= cs->cset->snprintf(cs, (char*) res.ptr(), res.alloced_length(),
+                                    "bit(%d)", (int) field_length);
+  res.length(length);
 }
 
 
@@ -9538,6 +10410,7 @@ void Create_field::create_length_to_internal_length(void)
   case MYSQL_TYPE_LONG_BLOB:
   case MYSQL_TYPE_BLOB:
   case MYSQL_TYPE_GEOMETRY:
+  case MYSQL_TYPE_JSON:
   case MYSQL_TYPE_VAR_STRING:
   case MYSQL_TYPE_STRING:
   case MYSQL_TYPE_VARCHAR:
@@ -9616,6 +10489,10 @@ void Create_field::init_for_tmp_table(enum_field_types sql_type_arg,
     pack_flag= FIELDFLAG_GEOM;
     break;
 
+  case MYSQL_TYPE_JSON:
+    pack_flag= FIELDFLAG_JSON;
+    break;
+
   case MYSQL_TYPE_ENUM:
     pack_flag= FIELDFLAG_INTERVAL;
     break;
@@ -9660,8 +10537,11 @@ void Create_field::init_for_tmp_table(enum_field_types sql_type_arg,
   case MYSQL_TYPE_LONG_BLOB:
   case MYSQL_TYPE_BLOB:
   case MYSQL_TYPE_GEOMETRY:
-    // If you are going to use the above types, you have to pass a
-    // pack_length as parameter. Assert that is really done.
+  case MYSQL_TYPE_JSON:
+    /*
+      If you are going to use the above types, you have to pass a
+      pack_length as parameter. Assert that is really done.
+    */
     DBUG_ASSERT(pack_length_arg != ~0U);
     pack_flag|= pack_length_to_packflag(pack_length_arg);
     break;
@@ -9674,13 +10554,17 @@ void Create_field::init_for_tmp_table(enum_field_types sql_type_arg,
     (maybe_null ? FIELDFLAG_MAYBE_NULL : 0) |
     (is_unsigned ? 0 : FIELDFLAG_DECIMAL);
 
-  DBUG_PRINT("debug", ("pack_flag: %s%s%s%s%s%s, pack_type: %d",
+  gcol_info= 0;
+  stored_in_db= TRUE;
+
+  DBUG_PRINT("debug", ("pack_flag: %s%s%s%s%s%s%s, pack_type: %d",
                        FLAGSTR(pack_flag, FIELDFLAG_BINARY),
                        FLAGSTR(pack_flag, FIELDFLAG_NUMBER),
                        FLAGSTR(pack_flag, FIELDFLAG_INTERVAL),
                        FLAGSTR(pack_flag, FIELDFLAG_GEOM),
                        FLAGSTR(pack_flag, FIELDFLAG_BLOB),
                        FLAGSTR(pack_flag, FIELDFLAG_DECIMAL),
+                       FLAGSTR(pack_flag, FIELDFLAG_JSON),
                        f_packtype(pack_flag)));
   DBUG_VOID_RETURN;
 }
@@ -9704,6 +10588,7 @@ void Create_field::init_for_tmp_table(enum_field_types sql_type_arg,
   @param fld_interval_list     Interval list (if any.)
   @param fld_charset           Column charset.
   @param fld_geom_type         Column geometry type (if any.)
+  @param fld_gcol_info         Generated column data
 
   @retval
     FALSE on success.
@@ -9717,7 +10602,8 @@ bool Create_field::init(THD *thd, const char *fld_name,
                         Item *fld_default_value, Item *fld_on_update_value,
                         LEX_STRING *fld_comment, const char *fld_change,
                         List<String> *fld_interval_list,
-                        const CHARSET_INFO *fld_charset, uint fld_geom_type)
+                        const CHARSET_INFO *fld_charset, uint fld_geom_type,
+                        Generated_column *fld_gcol_info)
 {
   uint sign_len, allowed_type_modifier= 0;
   ulong max_field_charlength= MAX_FIELD_CHARLENGTH;
@@ -9783,6 +10669,62 @@ bool Create_field::init(THD *thd, const char *fld_name,
   interval_list.empty();
 
   comment= *fld_comment;
+  gcol_info= fld_gcol_info;
+  stored_in_db= TRUE;
+
+  /* Initialize data for a virtual field */
+  if (gcol_info)
+  {
+    DBUG_ASSERT(gcol_info->expr_item);
+    stored_in_db= gcol_info->get_field_stored();
+    /*
+      Perform per item-type checks to determine if the expression is 
+      allowed for a generated column.
+      Note that validation of the specific function is done later in
+      procedures open_table_from_share and fix_fields_gcol_func
+    */
+    switch (gcol_info->expr_item->type()) {
+    case Item::FUNC_ITEM:
+      if (((Item_func *)gcol_info->expr_item)->functype() ==
+          Item_func::FUNC_SP)
+      {
+        my_error(ER_GENERATED_COLUMN_FUNCTION_IS_NOT_ALLOWED, MYF(0),
+                 field_name);
+        DBUG_RETURN(TRUE);
+      }
+      break;
+    case Item::COPY_STR_ITEM:
+    case Item::FIELD_AVG_ITEM:
+    case Item::PROC_ITEM:
+    case Item::REF_ITEM:
+    case Item::FIELD_STD_ITEM:
+    case Item::FIELD_VARIANCE_ITEM:
+    case Item::INSERT_VALUE_ITEM:
+    case Item::SUBSELECT_ITEM:
+    case Item::CACHE_ITEM:
+    case Item::TYPE_HOLDER:
+    case Item::PARAM_ITEM:
+    case Item::TRIGGER_FIELD_ITEM:
+    case Item::XPATH_NODESET:
+    case Item::XPATH_NODESET_CMP:
+    case Item::VIEW_FIXER_ITEM:
+      my_error(ER_GENERATED_COLUMN_FUNCTION_IS_NOT_ALLOWED, MYF(0),
+               field_name);
+      DBUG_RETURN(TRUE);
+      break;
+    default:
+      // Continue with the field creation
+      break;
+    }
+    /*
+      Make a field created for the real type.
+      Note that "real" and generated fields differ from each other
+      only by Field::gcol_info, which is always 0 for normal columns.
+      gcol_info is updated for fields later in procedure open_binary_frm.
+    */
+    sql_type= fld_type= gcol_info->get_real_type();
+  }
+
   /*
     Set NO_DEFAULT_VALUE_FLAG if this field doesn't have a default value and
     it is NOT NULL and not an AUTO_INCREMENT field.
@@ -9847,7 +10789,11 @@ bool Create_field::init(THD *thd, const char *fld_name,
   case MYSQL_TYPE_NULL:
     break;
   case MYSQL_TYPE_NEWDECIMAL:
-    my_decimal_trim(&length, &decimals);
+    {
+      ulong precision= static_cast<ulong>(length);
+      my_decimal_trim(&precision, &decimals);
+      length= precision;
+    } 
     if (length > DECIMAL_MAX_PRECISION)
     {
       my_error(ER_TOO_BIG_PRECISION, MYF(0), static_cast<int>(length),
@@ -9879,6 +10825,7 @@ bool Create_field::init(THD *thd, const char *fld_name,
   case MYSQL_TYPE_LONG_BLOB:
   case MYSQL_TYPE_MEDIUM_BLOB:
   case MYSQL_TYPE_GEOMETRY:
+  case MYSQL_TYPE_JSON:
     if (fld_default_value)
     {
       /* Allow empty as default value. */
@@ -9899,7 +10846,7 @@ bool Create_field::init(THD *thd, const char *fld_name,
         /*
           Otherwise a default of '' is just a warning.
         */
-        push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
+        push_warning_printf(thd, Sql_condition::SL_WARNING,
                             ER_BLOB_CANT_HAVE_DEFAULT,
                             ER(ER_BLOB_CANT_HAVE_DEFAULT),
                             fld_name);
@@ -9909,7 +10856,7 @@ bool Create_field::init(THD *thd, const char *fld_name,
     flags|= BLOB_FLAG;
     break;
   case MYSQL_TYPE_YEAR:
-    if (!fld_length || length != 2)
+    if (!fld_length || length != 4)
       length= 4; /* Default length */
     flags|= ZEROFILL_FLAG | UNSIGNED_FLAG;
     break;
@@ -9918,7 +10865,7 @@ bool Create_field::init(THD *thd, const char *fld_name,
     allowed_type_modifier= AUTO_INCREMENT_FLAG;
     if (fld_length && !fld_decimals)
     {
-      uint tmp_length= length;
+      size_t tmp_length= length;
       if (tmp_length > PRECISION_FOR_DOUBLE)
       {
         my_error(ER_WRONG_FIELD_SPEC, MYF(0), fld_name);
@@ -9979,7 +10926,7 @@ bool Create_field::init(THD *thd, const char *fld_name,
       DBUG_ASSERT(MAX_DATETIME_COMPRESSED_WIDTH < UINT_MAX);
       if (length != UINT_MAX)  /* avoid overflow; is safe because of min() */
         length= ((length+1)/2)*2;
-      length= min<ulong>(length, MAX_DATETIME_COMPRESSED_WIDTH);
+      length= min<size_t>(length, MAX_DATETIME_COMPRESSED_WIDTH);
     }
     
     /*
@@ -10038,7 +10985,10 @@ bool Create_field::init(THD *thd, const char *fld_name,
   case MYSQL_TYPE_BIT:
     {
       if (!fld_length)
-        length= 1;
+      {
+        my_error(ER_INVALID_FIELD_SIZE, MYF(0), fld_name);
+        DBUG_RETURN(TRUE);
+      }
       if (length > MAX_BIT_FIELD_LENGTH)
       {
         my_error(ER_TOO_BIG_DISPLAYWIDTH, MYF(0), fld_name,
@@ -10050,7 +11000,7 @@ bool Create_field::init(THD *thd, const char *fld_name,
     }
   case MYSQL_TYPE_DECIMAL:
     DBUG_ASSERT(0); /* Was obsolete */
-  }
+ }
   /* Remember the value of length */
   char_length= length;
 
@@ -10100,7 +11050,7 @@ enum_field_types get_blob_type_from_length(ulong length)
   Make a field from the .frm file info
 */
 
-uint32 calc_pack_length(enum_field_types type,uint32 length)
+size_t calc_pack_length(enum_field_types type, size_t length)
 {
   switch (type) {
   case MYSQL_TYPE_VAR_STRING:
@@ -10135,6 +11085,7 @@ uint32 calc_pack_length(enum_field_types type,uint32 length)
   case MYSQL_TYPE_MEDIUM_BLOB:	return 3+portable_sizeof_char_ptr;
   case MYSQL_TYPE_LONG_BLOB:	return 4+portable_sizeof_char_ptr;
   case MYSQL_TYPE_GEOMETRY:	return 4+portable_sizeof_char_ptr;
+  case MYSQL_TYPE_JSON:         return 4+portable_sizeof_char_ptr;
   case MYSQL_TYPE_SET:
   case MYSQL_TYPE_ENUM:
   case MYSQL_TYPE_NEWDECIMAL:
@@ -10158,8 +11109,7 @@ uint pack_length_to_packflag(uint type)
   return 0;					// This shouldn't happen
 }
 
-
-Field *make_field(TABLE_SHARE *share, uchar *ptr, uint32 field_length,
+Field *make_field(TABLE_SHARE *share, uchar *ptr, size_t field_length,
 		  uchar *null_pos, uchar null_bit,
 		  uint pack_flag,
 		  enum_field_types field_type,
@@ -10169,8 +11119,8 @@ Field *make_field(TABLE_SHARE *share, uchar *ptr, uint32 field_length,
 		  TYPELIB *interval,
 		  const char *field_name)
 {
-  uchar *UNINIT_VAR(bit_ptr);
-  uchar UNINIT_VAR(bit_offset);
+  uchar *bit_ptr= NULL;
+  uchar bit_offset= 0;
   if (field_type == MYSQL_TYPE_BIT && !f_bit_as_char(pack_flag))
   {
     bit_ptr= null_pos;
@@ -10195,7 +11145,8 @@ Field *make_field(TABLE_SHARE *share, uchar *ptr, uint32 field_length,
   if (is_temporal_real_type(field_type))
     field_charset= &my_charset_numeric;
 
-  DBUG_PRINT("debug", ("field_type: %d, field_length: %u, interval: %p, pack_flag: %s%s%s%s%s",
+  DBUG_PRINT("debug", ("field_type: %d, field_length: %zu, "
+                       "interval: %p, pack_flag: %s%s%s%s%s",
                        field_type, field_length, interval,
                        FLAGSTR(pack_flag, FIELDFLAG_BINARY),
                        FLAGSTR(pack_flag, FIELDFLAG_INTERVAL),
@@ -10227,12 +11178,14 @@ Field *make_field(TABLE_SHARE *share, uchar *ptr, uint32 field_length,
 				      f_packtype(pack_flag),
 				      field_length);
 
-#ifdef HAVE_SPATIAL
     if (f_is_geom(pack_flag))
       return new Field_geom(ptr,null_pos,null_bit,
 			    unireg_check, field_name, share,
 			    pack_length, geom_type);
-#endif
+    if (f_is_json(pack_flag))
+      return new Field_json(ptr, null_pos, null_bit,
+                            unireg_check, field_name, share,
+                            pack_length);
     if (f_is_blob(pack_flag))
       return new Field_blob(ptr,null_pos,null_bit,
 			    unireg_check, field_name, share,
@@ -10368,7 +11321,7 @@ Field *make_field(TABLE_SHARE *share, uchar *ptr, uint32 field_length,
 
 Create_field::Create_field(Field *old_field,Field *orig_field) :
   field_name(old_field->field_name),
-  change(old_field->field_name),
+  change(NULL),
   comment(old_field->comment),
   sql_type(old_field->real_type()),
   length(old_field->field_length),
@@ -10378,7 +11331,9 @@ Create_field::Create_field(Field *old_field,Field *orig_field) :
   key_length(old_field->key_length()),
   unireg_check(old_field->unireg_check),
   charset(old_field->charset()),		// May be NULL ptr
-  field(old_field)
+  field(old_field),
+  gcol_info(old_field->gcol_info),
+  stored_in_db(old_field->stored_in_db)
 {
 
   switch (sql_type) {
@@ -10405,20 +11360,12 @@ Create_field::Create_field(Field *old_field,Field *orig_field) :
     /* This is corrected in create_length_to_internal_length */
     length= (length+charset->mbmaxlen-1) / charset->mbmaxlen;
     break;
-#ifdef HAVE_SPATIAL
   case MYSQL_TYPE_GEOMETRY:
     geom_type= ((Field_geom*)old_field)->geom_type;
     break;
-#endif
   case MYSQL_TYPE_YEAR:
     if (length != 4)
-    {
-      push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
-                          ER_INVALID_YEAR_COLUMN_LENGTH,
-                          ER(ER_INVALID_YEAR_COLUMN_LENGTH),
-                          length);
-      length= 4; // convert obsolete YEAR(2) to YEAR(4)
-    }
+      length= 4; //set default value
     break;
   default:
     break;
@@ -10464,18 +11411,16 @@ Create_field::Create_field(Field *old_field,Field *orig_field) :
     {
       char buff[MAX_FIELD_WIDTH];
       String tmp(buff,sizeof(buff), charset);
-      my_ptrdiff_t diff;
 
       /* Get the value from default_values */
-      diff= (my_ptrdiff_t) (orig_field->table->s->default_values-
-                            orig_field->table->record[0]);
+      my_ptrdiff_t diff= orig_field->table->default_values_offset();
       orig_field->move_field_offset(diff);	// Points now at default_values
       if (!orig_field->is_real_null())
       {
         char buff[MAX_FIELD_WIDTH], *pos;
         String tmp(buff, sizeof(buff), charset), *res;
         res= orig_field->val_str(&tmp);
-        pos= (char*) sql_strmake(res->ptr(), res->length());
+        pos= sql_strmake(res->ptr(), res->length());
         def= new Item_string(pos, res->length(), charset);
       }
       orig_field->move_field_offset(-diff);	// Back to record[0]
@@ -10516,6 +11461,45 @@ uint32 Field_blob::char_length()
   }
 }
 
+/**
+  This function creates a separate copy of blob value.
+
+  @param [in] mem_root
+    mem_root that is used to allocate memory for 'copy_of_value'.
+
+  @return - Can fail if we are out of memory.
+    @retval false   Success
+    @retval true    Failure
+*/
+
+bool Field_blob::copy_blob_value(MEM_ROOT *mem_root)
+{
+  DBUG_ENTER("copy_blob_value");
+
+  // Testing memory allocation failure
+  DBUG_EXECUTE_IF("simulate_blob_memory_allocation_fail",
+                  DBUG_SET("+d,simulate_out_of_memory"););
+
+  // Allocate new memory location
+  size_t ulen= get_length(ptr);
+
+  char *blob_value= (char *) alloc_root(mem_root, ulen);
+  if (!blob_value)
+    DBUG_RETURN(true);
+
+  // Copy Data
+  uchar *temp_ptr;
+  get_ptr(&temp_ptr);
+  memcpy(blob_value, temp_ptr, ulen);
+
+  // Set ptr of Field for duplicated data
+  store_ptr_and_length(blob_value, ulen);
+
+  // Set 'value' with the duplicated data
+  value.set(blob_value, ulen, value.charset());
+
+  DBUG_RETURN(false);
+}
 
 /**
   maximum possible display length for blob.
@@ -10547,12 +11531,17 @@ uint32 Field_blob::max_display_length()
  Warning handling
 *****************************************************************************/
 
+
 /**
   Produce warning or note about data saved into field.
 
   @param level            - level of message (Note/Warning/Error)
   @param code             - error code of message to be produced
   @param cut_increment    - whenever we should increase cut fields count
+  @param view_db_name     - if set this is the database name for view
+                            that causes the warning
+  @param view_name        - if set this is the name of view that causes
+                            the warning
 
   @note
     This function won't produce warning and increase cut fields counter
@@ -10561,29 +11550,82 @@ uint32 Field_blob::max_display_length()
     if count_cuted_fields == CHECK_FIELD_IGNORE then we ignore notes.
     This allows us to avoid notes in optimisation, like convert_constant_item().
 
+    In case of execution statements INSERT/INSERT SELECT/REPLACE/REPLACE SELECT
+    the method emits only one warning message for the following
+    types of warning: ER_BAD_NULL_ERROR, ER_WARN_NULL_TO_NOTNULL,
+    ER_NO_DEFAULT_FOR_FIELD.
   @retval
     1 if count_cuted_fields == CHECK_FIELD_IGNORE and error level is not NOTE
   @retval
     0 otherwise
 */
 
-bool 
-Field::set_warning(Sql_condition::enum_warning_level level, uint code,
-                   int cut_increment) const
+bool Field::set_warning(Sql_condition::enum_severity_level level,
+                        uint code,
+                        int cut_increment,
+                        const char *view_db_name,
+                        const char *view_name)
 {
   /*
     If this field was created only for type conversion purposes it
     will have table == NULL.
   */
+
   THD *thd= table ? table->in_use : current_thd;
-  if (thd->count_cuted_fields)
+
+  if (!thd->count_cuted_fields)
+    return level >= Sql_condition::SL_WARNING;
+
+  thd->cuted_fields+= cut_increment;
+
+  if (thd->lex->sql_command != SQLCOM_INSERT &&
+      thd->lex->sql_command != SQLCOM_INSERT_SELECT &&
+      thd->lex->sql_command != SQLCOM_REPLACE &&
+      thd->lex->sql_command != SQLCOM_REPLACE_SELECT)
   {
-    thd->cuted_fields+= cut_increment;
+    // We aggregate warnings from only INSERT and REPLACE statements.
+
     push_warning_printf(thd, level, code, ER(code), field_name,
-                        thd->get_stmt_da()->current_row_for_warning());
+                        thd->get_stmt_da()->current_row_for_condition());
+
     return 0;
   }
-  return level >= Sql_condition::WARN_LEVEL_WARN;
+
+  unsigned int current_warning_mask= 0;
+
+  if (code == ER_BAD_NULL_ERROR)
+    current_warning_mask= BAD_NULL_ERROR_PUSHED;
+  else if (code == ER_NO_DEFAULT_FOR_FIELD)
+    current_warning_mask= NO_DEFAULT_FOR_FIELD_PUSHED;
+
+  if (current_warning_mask)
+  {
+    if (!(m_warnings_pushed & current_warning_mask))
+    {
+      push_warning_printf(thd, level, code, ER(code), field_name,
+                          thd->get_stmt_da()->current_row_for_condition());
+      m_warnings_pushed|= current_warning_mask;
+    }
+  }
+  else if (code == ER_NO_DEFAULT_FOR_VIEW_FIELD)
+  {
+    if (!(m_warnings_pushed & NO_DEFAULT_FOR_VIEW_FIELD_PUSHED))
+    {
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_NO_DEFAULT_FOR_VIEW_FIELD,
+                          ER(ER_NO_DEFAULT_FOR_VIEW_FIELD),
+                          view_db_name,
+                          view_name);
+      m_warnings_pushed|= NO_DEFAULT_FOR_VIEW_FIELD_PUSHED;
+    }
+  }
+  else
+  {
+    push_warning_printf(thd, level, code, ER(code), field_name,
+                        thd->get_stmt_da()->current_row_for_condition());
+  }
+
+  return 0;
 }
 
 
@@ -10601,14 +11643,17 @@ Field::set_warning(Sql_condition::enum_warning_level level, uint code,
     thread.
 */
 void 
-Field_temporal::set_datetime_warning(Sql_condition::enum_warning_level level,
+Field_temporal::set_datetime_warning(Sql_condition::enum_severity_level level,
                                      uint code,
                                      ErrConvString val,
                                      timestamp_type ts_type,
                                      int cut_increment)
 {
   THD *thd= table ? table->in_use : current_thd;
-  if (thd->really_abort_on_warning() ||
+  if ((!thd->lex->is_ignore() &&
+       ((thd->variables.sql_mode & MODE_STRICT_ALL_TABLES) ||
+        (thd->variables.sql_mode & MODE_STRICT_TRANS_TABLES &&
+         !thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::STMT)))) ||
       set_warning(level, code, cut_increment))
     make_truncated_value_warning(thd, level, val, ts_type, field_name);
 }

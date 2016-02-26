@@ -15,7 +15,7 @@ vlog "mysql password has been changed to contain special char"
 
 vlog "Starting innobackupex wrapper"
 innobackupex --password='$PASSWD' $topdir/backup
-backup_dir=`grep "innobackupex: Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
+backup_dir=`grep "Backup created in directory" $OUTFILE | awk -F\' '{ print $2}'`
 
 run_cmd ${MYSQLADMIN} ${MYSQL_ARGS} -p'$PASSWD' password ''
 

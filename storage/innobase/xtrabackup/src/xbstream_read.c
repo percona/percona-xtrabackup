@@ -43,9 +43,11 @@ xb_stream_read_new(void)
 {
 	xb_rstream_t *stream;
 
-	stream = (xb_rstream_t *) my_malloc(sizeof(xb_rstream_t), MYF(MY_FAE));
+	stream = (xb_rstream_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+					    sizeof(xb_rstream_t), MYF(MY_FAE));
 
-	stream->buffer = my_malloc(INIT_BUFFER_LEN, MYF(MY_FAE));
+	stream->buffer = my_malloc(PSI_NOT_INSTRUMENTED,
+				   INIT_BUFFER_LEN, MYF(MY_FAE));
 	stream->buflen = INIT_BUFFER_LEN;
 
 	stream->fd = fileno(stdin);
@@ -78,10 +80,6 @@ validate_chunk_type(uchar code)
 			goto err;                                 	\
 		}							\
 	} while (0)
-
-/* Magic + flags + type + path len */
-#define CHUNK_HEADER_CONSTANT_LEN ((sizeof(XB_STREAM_CHUNK_MAGIC) - 1) + \
-				   1 + 1 + 4)
 
 xb_rstream_result_t
 xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
@@ -183,7 +181,8 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 
 	/* Reallocate the buffer if needed */
 	if (chunk->length > stream->buflen) {
-		stream->buffer = my_realloc(stream->buffer, chunk->length,
+		stream->buffer = my_realloc(PSI_NOT_INSTRUMENTED,
+					    stream->buffer, chunk->length,
 					    MYF(MY_WME));
 		if (stream->buffer == NULL) {
 			msg("xb_stream_read_chunk(): failed to increase buffer "

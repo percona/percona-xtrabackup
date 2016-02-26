@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,11 +13,14 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sql_priv.h"
-#include "unireg.h"                      // REQUIRED by other includes
-#include "rpl_rli.h"
 #include "rpl_record_old.h"
-#include "log_event.h"                          // Log_event_type
+
+#include "my_bitmap.h"     // MY_BITMAP
+#include "field.h"         // Field
+#include "rpl_rli.h"       // Relay_log_info
+#include "table.h"         // TABLE
+
+using binary_log::Log_event_type;
 
 size_t
 pack_row_old(TABLE *table, MY_BITMAP const* cols,
@@ -28,7 +31,7 @@ pack_row_old(TABLE *table, MY_BITMAP const* cols,
   uchar *ptr;
   uint i;
   my_ptrdiff_t const rec_offset= record - table->record[0];
-  my_ptrdiff_t const def_offset= table->s->default_values - table->record[0];
+  my_ptrdiff_t const def_offset= table->default_values_offset();
   memcpy(row_data, record, n_null_bytes);
   ptr= row_data+n_null_bytes;
 
@@ -93,7 +96,7 @@ unpack_row_old(Relay_log_info *rli,
                MY_BITMAP* const rw_set, Log_event_type const event_type)
 {
   DBUG_ASSERT(record && row);
-  my_ptrdiff_t const offset= record - (uchar*) table->record[0];
+  my_ptrdiff_t const offset= record - table->record[0];
   size_t master_null_bytes= table->s->null_bytes;
 
   if (colcnt != table->s->fields)
@@ -171,7 +174,7 @@ unpack_row_old(Relay_log_info *rli,
                          (*field_ptr)->flags, mask,
                          (*field_ptr)->flags & mask));
 
-    if (event_type == WRITE_ROWS_EVENT &&
+    if (event_type == binary_log::WRITE_ROWS_EVENT &&
         ((*field_ptr)->flags & mask) == mask)
     {
       rli->report(ERROR_LEVEL, ER_NO_DEFAULT_FOR_FIELD,

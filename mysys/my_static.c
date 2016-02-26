@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,9 +20,34 @@
 
 #include "mysys_priv.h"
 #include "my_static.h"
-#include "my_alarm.h"
 
-my_bool timed_mutexes= 0;
+PSI_memory_key key_memory_charset_file;
+PSI_memory_key key_memory_charset_loader;
+PSI_memory_key key_memory_lf_node;
+PSI_memory_key key_memory_lf_dynarray;
+PSI_memory_key key_memory_lf_slist;
+PSI_memory_key key_memory_LIST;
+PSI_memory_key key_memory_IO_CACHE;
+PSI_memory_key key_memory_KEY_CACHE;
+PSI_memory_key key_memory_SAFE_HASH_ENTRY;
+PSI_memory_key key_memory_MY_BITMAP_bitmap;
+PSI_memory_key key_memory_my_compress_alloc;
+PSI_memory_key key_memory_pack_frm;
+PSI_memory_key key_memory_my_err_head;
+PSI_memory_key key_memory_my_file_info;
+PSI_memory_key key_memory_max_alloca;
+PSI_memory_key key_memory_MY_DIR;
+PSI_memory_key key_memory_MY_STAT;
+PSI_memory_key key_memory_MY_TMPDIR_full_list;
+PSI_memory_key key_memory_QUEUE;
+PSI_memory_key key_memory_DYNAMIC_STRING;
+PSI_memory_key key_memory_TREE;
+
+#ifdef _WIN32
+PSI_memory_key key_memory_win_SECURITY_ATTRIBUTES;
+PSI_memory_key key_memory_win_PACL;
+PSI_memory_key key_memory_win_IP_ADAPTER_ADDRESSES;
+#endif /* _WIN32 */
 
 	/* from my_init */
 char *	home_dir=0;
@@ -37,11 +62,6 @@ struct st_my_file_info my_file_info_default[MY_NFILE];
 uint   my_file_limit= MY_NFILE;
 struct st_my_file_info *my_file_info= my_file_info_default;
 
-	/* From mf_brkhant */
-int			my_dont_interrupt=0;
-volatile int		_my_signals=0;
-struct st_remember _my_sig_remember[MAX_SIGNALS]={{0,0}};
-
 	/* from mf_reccache.c */
 ulong my_default_record_cache_size=RECORD_CACHE_SIZE;
 
@@ -55,38 +75,54 @@ USED_MEM* my_once_root_block=0;			/* pointer to first block */
 uint	  my_once_extra=ONCE_ALLOC_INIT;	/* Memory to alloc / block */
 
 	/* from my_largepage.c */
-#ifdef HAVE_LARGE_PAGES
+#ifdef HAVE_LINUX_LARGE_PAGES
 my_bool my_use_large_pages= 0;
 uint    my_large_page_size= 0;
 #endif
 
-	/* from my_alarm */
-int volatile my_have_got_alarm=0;	/* declare variable to reset */
-ulong my_time_to_wait_for_lock=2;	/* In seconds */
-
 	/* from errors.c */
-#ifdef SHARED_LIBRARY
-const char *globerrs[GLOBERRS];		/* my_error_messages is here */
-#endif
-void (*my_abort_hook)(int) = (void(*)(int)) exit;
 void (*error_handler_hook)(uint error, const char *str, myf MyFlags)=
   my_message_stderr;
 void (*fatal_error_handler_hook)(uint error, const char *str, myf MyFlags)=
   my_message_stderr;
+void (*local_message_hook)(enum loglevel ll, const char *format, va_list args)=
+  my_message_local_stderr;
 
-static void proc_info_dummy(void *a __attribute__((unused)),
+static void enter_cond_dummy(void *a __attribute__((unused)),
+                             mysql_cond_t *b __attribute__((unused)),
+                             mysql_mutex_t *c __attribute__((unused)),
+                             const PSI_stage_info *d __attribute__((unused)),
+                             PSI_stage_info *e __attribute__((unused)),
+                             const char *f __attribute__((unused)),
+                             const char *g __attribute__((unused)),
+                             int h __attribute__((unused)))
+{ };
+
+static void exit_cond_dummy(void *a __attribute__((unused)),
                             const PSI_stage_info *b __attribute__((unused)),
-                            PSI_stage_info *c __attribute__((unused)),
+                            const char *c __attribute__((unused)),
                             const char *d __attribute__((unused)),
-                            const char *e __attribute__((unused)),
-                            const unsigned int f __attribute__((unused)))
+                            int e __attribute__((unused)))
+{ };
+
+static int is_killed_dummy(const void *a __attribute__((unused)))
 {
-  return;
+  return 0;
 }
 
-/* this is to be able to call set_thd_proc_info from the C code */
-void (*proc_info_hook)(void *, const PSI_stage_info *, PSI_stage_info *,
-                       const char *, const char *, const unsigned int)= proc_info_dummy;
+/*
+  Initialize these hooks to dummy implementations. The real server
+  implementations will be set during server startup by
+  init_server_components().
+*/
+void (*enter_cond_hook)(void *, mysql_cond_t *, mysql_mutex_t *,
+                        const PSI_stage_info *, PSI_stage_info *,
+                        const char *, const char *, int)= enter_cond_dummy;
+
+void (*exit_cond_hook)(void *, const PSI_stage_info *,
+                       const char *, const char *, int)= exit_cond_dummy;
+
+int (*is_killed_hook)(const void *)= is_killed_dummy;
 
 #if defined(ENABLED_DEBUG_SYNC)
 /**
@@ -96,14 +132,12 @@ void (*proc_info_hook)(void *, const PSI_stage_info *, PSI_stage_info *,
 void (*debug_sync_C_callback_ptr)(const char *, size_t);
 #endif /* defined(ENABLED_DEBUG_SYNC) */
 
-#ifdef __WIN__
+#ifdef _WIN32
 /* from my_getsystime.c */
 ulonglong query_performance_frequency, query_performance_offset;
 #endif
 
 	/* How to disable options */
 my_bool my_disable_locking=0;
-my_bool my_disable_async_io=0;
-my_bool my_disable_flush_key_blocks=0;
-my_bool my_disable_symlinks=0;
+my_bool my_enable_symlinks= 1;
 

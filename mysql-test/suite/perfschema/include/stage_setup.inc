@@ -24,14 +24,17 @@
 
 --source include/not_embedded.inc
 --source include/have_perfschema.inc
---source ../include/no_protocol.inc
+--source include/no_protocol.inc
 
 --disable_query_log
 
+set @orig_sql_mode= @@sql_mode;
+set sql_mode= (select replace(@@sql_mode,'NO_AUTO_CREATE_USER',''));
 grant ALL on *.* to user1@localhost;
 grant ALL on *.* to user2@localhost;
 grant ALL on *.* to user3@localhost;
 grant ALL on *.* to user4@localhost;
+set sql_mode= @orig_sql_mode;
 
 flush privileges;
 

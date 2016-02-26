@@ -4,6 +4,7 @@
 
 require_xtradb
 require_server_version_higher_than 5.6.13
+require_server_version_lower_than 5.7.0
 
 function test_with_algorithm()
 {
@@ -31,8 +32,9 @@ innodb_log_checksum_algorithm=$1
 
     rm -rf $MYSQLD_DATADIR/*
 
-    innobackupex --apply-log --defaults-file=$topdir/backup/backup-my.cnf \
-                 $topdir/backup
+    run_cmd ${IB_BIN} \
+        ${IB_ARGS/\/--defaults-file=*my.cnf/$topdir\/backup\/backup-my.cnf} \
+        --apply-log $topdir/backup
 
     innobackupex --copy-back $topdir/backup
 

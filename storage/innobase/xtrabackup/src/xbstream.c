@@ -28,7 +28,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ds_stdout.h"
 
 #define XBSTREAM_VERSION "1.0"
-#define XBSTREAM_BUFFER_SIZE (1024 * 1024UL)
+#define XBSTREAM_BUFFER_SIZE (10 * 1024 * 1024UL)
 
 #define START_FILE_HASH_SIZE 16
 
@@ -207,18 +207,22 @@ static
 int
 stream_one_file(File file, xb_wstream_file_t *xbfile)
 {
-	uchar	buf[XBSTREAM_BUFFER_SIZE];
+	uchar	*buf;
 	size_t	bytes;
 	size_t	offset;
 
 	posix_fadvise(file, 0, 0, POSIX_FADV_SEQUENTIAL);
 	offset = my_tell(file, MYF(MY_WME));
 
+	buf = (uchar*)(my_malloc(PSI_NOT_INSTRUMENTED, XBSTREAM_BUFFER_SIZE,
+				 MYF(MY_FAE)));
+
 	while ((bytes = my_read(file, buf, XBSTREAM_BUFFER_SIZE,
 				MYF(MY_WME))) > 0) {
 		if (xb_stream_write_data(xbfile, buf, bytes)) {
 			msg("%s: xb_stream_write_data() failed.\n",
 			    my_progname);
+			my_free(buf);
 			return 1;
 		}
 		posix_fadvise(file, offset, XBSTREAM_BUFFER_SIZE,
@@ -226,6 +230,8 @@ stream_one_file(File file, xb_wstream_file_t *xbfile)
 		offset += XBSTREAM_BUFFER_SIZE;
 
 	}
+
+	my_free(buf);
 
 	if (bytes == (size_t) -1) {
 		return 1;
@@ -304,13 +310,15 @@ file_entry_new(ds_ctxt_t *ds_ctxt, const char *path, uint pathlen)
 	file_entry_t	*entry;
 	ds_file_t	*file;
 
-	entry = (file_entry_t *) my_malloc(sizeof(file_entry_t),
+	entry = (file_entry_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+					   sizeof(file_entry_t),
 					   MYF(MY_WME | MY_ZEROFILL));
 	if (entry == NULL) {
 		return NULL;
 	}
 
-	entry->path = my_strndup(path, pathlen, MYF(MY_WME));
+	entry->path = my_strndup(PSI_NOT_INSTRUMENTED,
+				 path, pathlen, MYF(MY_WME));
 	if (entry->path == NULL) {
 		goto err;
 	}
@@ -381,7 +389,8 @@ mode_extract(int argc __attribute__((unused)),
 
 	if (my_hash_init(&filehash, &my_charset_bin, START_FILE_HASH_SIZE,
 			  0, 0, (my_hash_get_key) get_file_entry_key,
-			  (my_hash_free_key) file_entry_free, MYF(0))) {
+			  (my_hash_free_key) file_entry_free, MYF(0),
+			  PSI_NOT_INSTRUMENTED)) {
 		msg("%s: failed to initialize file hash.\n", my_progname);
 		goto err;
 	}

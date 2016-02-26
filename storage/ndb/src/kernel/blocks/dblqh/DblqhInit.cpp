@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +21,9 @@
 #include "Dblqh.hpp"
 #include <ndb_limits.h>
 #include "DblqhCommon.hpp"
+
+#define JAM_FILE_ID 452
+
 
 #define DEBUG(x) { ndbout << "LQH::" << x << endl; }
 
@@ -64,11 +67,15 @@ void Dblqh::initData()
 
   cLqhTimeOutCount = 0;
   cLqhTimeOutCheckCount = 0;
-  cbookedAccOps = 0;
   cpackedListIndex = 0;
   m_backup_ptr = RNIL;
   clogFileSize = 16;
   cmaxLogFilesInPageZero = 40;
+  cmaxValidLogFilesInPageZero = cmaxLogFilesInPageZero - 1;
+
+#if defined VM_TRACE || defined ERROR_INSERT
+  cmaxLogFilesInPageZero_DUMP = 0;
+#endif
 
    totalLogFiles = 0;
    logFileInitDone = 0;
@@ -90,6 +97,33 @@ void Dblqh::initData()
   c_max_redo_lag_counter = 3; // 3 strikes and you're out
 
   c_max_parallel_scans_per_frag = 32;
+
+  c_lcpFragWatchdog.block = this;
+  c_lcpFragWatchdog.reset();
+  c_lcpFragWatchdog.thread_active = false;
+
+  c_keyOverloads           = 0;
+  c_keyOverloadsTcNode     = 0;
+  c_keyOverloadsReaderApi  = 0;
+  c_keyOverloadsPeerNode   = 0;
+  c_keyOverloadsSubscriber = 0;
+  c_scanSlowDowns          = 0;
+
+  c_fragmentsStarted = 0;
+  c_fragmentsStartedWithCopy = 0;
+
+  c_fragCopyTable = 0;
+  c_fragCopyFrag = 0;
+  c_fragCopyRowsIns = 0;
+  c_fragCopyRowsDel = 0;
+  c_fragBytesCopied = 0;
+
+  c_fragmentCopyStart = 0;
+  c_fragmentsCopied = 0;
+  c_totalCopyRowsIns = 0;
+  c_totalCopyRowsDel = 0;
+  c_totalBytesCopied = 0;
+
 }//Dblqh::initData()
 
 void Dblqh::initRecords() 
@@ -117,7 +151,7 @@ void Dblqh::initRecords()
 
   logPartRecord = (LogPartRecord*)allocRecord("LogPartRecord",
 					      sizeof(LogPartRecord), 
-					      clogPartFileSize);
+					      NDB_MAX_LOG_PARTS);
 
   logFileRecord = (LogFileRecord*)allocRecord("LogFileRecord",
 					      sizeof(LogFileRecord),
@@ -264,6 +298,7 @@ Dblqh::Dblqh(Block_context& ctx, Uint32 instanceNumber):
   c_lcp_waiting_fragments(c_fragment_pool),
   c_lcp_restoring_fragments(c_fragment_pool),
   c_lcp_complete_fragments(c_fragment_pool),
+  c_queued_lcp_frag_ord(c_fragment_pool),
   m_commitAckMarkerHash(m_commitAckMarkerPool),
   c_scanTakeOverHash(c_scanRecordPool)
 {
@@ -332,7 +367,6 @@ Dblqh::Dblqh(Block_context& ctx, Uint32 instanceNumber):
   addRecSignal(GSN_TUPSEIZEREF, &Dblqh::execTUPSEIZEREF);
   addRecSignal(GSN_ACCKEYCONF, &Dblqh::execACCKEYCONF);
   addRecSignal(GSN_ACCKEYREF, &Dblqh::execACCKEYREF);
-  addRecSignal(GSN_TUPKEYCONF, &Dblqh::execTUPKEYCONF);
   addRecSignal(GSN_TUPKEYREF, &Dblqh::execTUPKEYREF);
   addRecSignal(GSN_ABORT, &Dblqh::execABORT);
   addRecSignal(GSN_ABORTREQ, &Dblqh::execABORTREQ);
@@ -343,17 +377,12 @@ Dblqh::Dblqh(Block_context& ctx, Uint32 instanceNumber):
 #endif
   addRecSignal(GSN_SCAN_FRAGREQ, &Dblqh::execSCAN_FRAGREQ);
   addRecSignal(GSN_SCAN_NEXTREQ, &Dblqh::execSCAN_NEXTREQ);
-  addRecSignal(GSN_ACC_SCANCONF, &Dblqh::execACC_SCANCONF);
-  addRecSignal(GSN_ACC_SCANREF, &Dblqh::execACC_SCANREF);
   addRecSignal(GSN_NEXT_SCANCONF, &Dblqh::execNEXT_SCANCONF);
   addRecSignal(GSN_NEXT_SCANREF, &Dblqh::execNEXT_SCANREF);
-  addRecSignal(GSN_STORED_PROCCONF, &Dblqh::execSTORED_PROCCONF);
-  addRecSignal(GSN_STORED_PROCREF, &Dblqh::execSTORED_PROCREF);
   addRecSignal(GSN_COPY_FRAGREQ, &Dblqh::execCOPY_FRAGREQ);
   addRecSignal(GSN_COPY_FRAGREF, &Dblqh::execCOPY_FRAGREF);
   addRecSignal(GSN_COPY_FRAGCONF, &Dblqh::execCOPY_FRAGCONF);
   addRecSignal(GSN_COPY_ACTIVEREQ, &Dblqh::execCOPY_ACTIVEREQ);
-  addRecSignal(GSN_COPY_STATEREQ, &Dblqh::execCOPY_STATEREQ);
   addRecSignal(GSN_LQH_TRANSREQ, &Dblqh::execLQH_TRANSREQ);
   addRecSignal(GSN_TRANSID_AI, &Dblqh::execTRANSID_AI);
   addRecSignal(GSN_INCL_NODEREQ, &Dblqh::execINCL_NODEREQ);
@@ -388,7 +417,6 @@ Dblqh::Dblqh(Block_context& ctx, Uint32 instanceNumber):
   addRecSignal(GSN_DROP_TAB_REF, &Dblqh::execDROP_TAB_REF);
   addRecSignal(GSN_DROP_TAB_CONF, &Dblqh::execDROP_TAB_CONF);
 
-  addRecSignal(GSN_LQH_ALLOCREQ, &Dblqh::execLQH_ALLOCREQ);
   addRecSignal(GSN_LQH_WRITELOG_REQ, &Dblqh::execLQH_WRITELOG_REQ);
   addRecSignal(GSN_TUP_DEALLOCREQ, &Dblqh::execTUP_DEALLOCREQ);
 
@@ -426,6 +454,9 @@ Dblqh::Dblqh(Block_context& ctx, Uint32 instanceNumber):
 
   addRecSignal(GSN_FIRE_TRIG_REQ, &Dblqh::execFIRE_TRIG_REQ);
 
+  addRecSignal(GSN_LCP_STATUS_CONF, &Dblqh::execLCP_STATUS_CONF);
+  addRecSignal(GSN_LCP_STATUS_REF, &Dblqh::execLCP_STATUS_REF);
+
   initData();
 
 #ifdef VM_TRACE
@@ -443,7 +474,6 @@ Dblqh::Dblqh(Block_context& ctx, Uint32 instanceNumber):
       &scanptr,
       &tabptr,
       &tcConnectptr,
-      &tcNodeFailptr,
     }; 
     init_globals_list(tmp, sizeof(tmp)/sizeof(tmp[0]));
   }
