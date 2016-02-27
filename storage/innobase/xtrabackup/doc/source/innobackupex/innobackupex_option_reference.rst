@@ -49,7 +49,7 @@ Options
 
 .. option:: --decompress
 
-   Decompresses all files with the .qp extension in a backup previously made with the --compress option. The :option:`innobackupex --parallel` option will allow multiple files to be decrypted and/or decompressed simultaneously. In order to decompress, the qpress utility MUST be installed and accessable within the path. This process will remove the original compressed/encrypted files and leave the results in the same location.
+   Decompresses all files with the .qp extension in a backup previously made with the --compress option. The :option:`innobackupex --parallel` option will allow multiple files to be decrypted and/or decompressed simultaneously. In order to decompress, the qpress utility MUST be installed and accessible within the path. This process will remove the original compressed/encrypted files and leave the results in the same location. **NOTE:** After version 2.2.10 Percona XtraBackup doesn't automatically remove the compressed files. In order to clean up the backup directory users should remove the ``*.qp`` files manually.
 
 .. option:: --decrypt=ENCRYPTION-ALGORITHM
 
