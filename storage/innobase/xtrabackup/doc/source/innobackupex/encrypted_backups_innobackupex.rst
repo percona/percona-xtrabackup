@@ -4,7 +4,7 @@
  Encrypted Backups
 ===================
 
-|Percona XtraBackup| has implemented support for encrypted backups. This feature was introduced in |Percona XtraBackup| 2.1. It can be used to encrypt/decrypt local or streaming backup with |xbstream| option (streaming tar backups are not supported) in order to add another layer of protection to the backups. Encryption is done with the ``libgcrypt`` library.
+|Percona XtraBackup| has implemented support for encrypted backups. It can be used to encrypt/decrypt local or streaming backup with |xbstream| option (streaming tar backups are not supported) in order to add another layer of protection to the backups. Encryption is done with the ``libgcrypt`` library.
 
 Creating Encrypted Backups
 ===========================
@@ -63,11 +63,11 @@ Backups can be decrypted with :ref:`xbcrypt`. Following one-liner can be used to
 
   $ for i in `find . -iname "*\.xbcrypt"`; do xbcrypt -d --encrypt-key-file=/root/secret_key --encrypt-algo=AES256 < $i > $(dirname $i)/$(basename $i .xbcrypt) && rm $i; done
 
-In |Percona XtraBackup| 2.1.4 new :option:`innobackupex --decrypt` option has been implemented that can be used to decrypt the backups: ::
+|Percona XtraBackup| :option:`innobackupex --decrypt` option has been implemented that can be used to decrypt the backups: ::
 
   $ innobackupex --decrypt=AES256 --encrypt-key="GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs" /data/backups/2015-03-18_08-31-35/
 
-Use of the :option:`innobackupex --decrypt` will remove the original encrypted files and leave the results in the same location.
+|Percona XtraBackup| doesn't automatically remove the encrypted files. In order to clean up the backup directory users should remove the :file:`*.xbcrypt` files.
 
 .. note::
  
