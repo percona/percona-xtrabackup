@@ -3136,6 +3136,7 @@ xb_load_single_table_tablespace(
 	size_t	namelen		= strlen(filname);
 	ulint	pathlen		= dirname == NULL ? namelen + 1: dirlen + namelen + 2;
 	lsn_t	flush_lsn;
+	dberr_t	err;
 	fil_space_t	*space;
 
 	name = static_cast<char*>(ut_malloc_nokey(pathlen));
@@ -3155,7 +3156,9 @@ xb_load_single_table_tablespace(
 		exit(EXIT_FAILURE);
 	}
 
-	if (file->validate_first_page(&flush_lsn) == DB_SUCCESS) {
+	err = file->validate_first_page(&flush_lsn, false);
+
+	if (err == DB_SUCCESS) {
 
 		os_offset_t	node_size = os_file_get_size(file->handle());
 		bool		is_tmp = FSP_FLAGS_GET_TEMPORARY(file->flags());
@@ -3184,7 +3187,9 @@ xb_load_single_table_tablespace(
 			fil_space_close(space->name);
 		}
 	} else {
-		if (xtrabackup_backup) {
+		/* allow corrupted first page for xtrabackup, it coulde be just
+		zero-filled page, which we restoer from redo log later */
+		if (xtrabackup_backup && err != DB_CORRUPTION) {
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -4454,8 +4459,6 @@ skip_last_cp:
 	os_thread_free();
 
 	row_mysql_close();
-
-	os_aio_free();
 
 	sync_check_close();
 

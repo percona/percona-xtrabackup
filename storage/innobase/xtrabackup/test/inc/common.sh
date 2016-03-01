@@ -43,13 +43,13 @@ function call_mysql_install_db()
 
         CLIENT_VERSION_STRING=`${MYSQL} --version`
 
-        if [[ ${CLIENT_VERSION_STRING} == *"5.7."* ]] ; then
+        if [[ ${CLIENT_VERSION_STRING} =~ Ver.*5\.7\.[0-9] ]] ; then
             INSTALL_CMD="${MYSQLD} \
             --defaults-file=${MYSQLD_VARDIR}/my.cnf \
             --basedir=${MYSQL_BASEDIR} \
             --initialize-insecure"
         else
-            INSTALL_CMD="${MYSQL_INSTALL_DB}
+            INSTALL_CMD="${MYSQL_INSTALL_DB} \
             --defaults-file=${MYSQLD_VARDIR}/my.cnf \
             --basedir=${MYSQL_BASEDIR}"
         fi
