@@ -1062,7 +1062,9 @@ write_slave_info(MYSQL *connection)
 	} else if (gtid_slave_pos && *gtid_slave_pos) {
 		/* MariaDB >= 10.0 with GTID enabled */
 		result = backup_file_printf(XTRABACKUP_SLAVE_INFO,
-			"CHANGE MASTER TO master_use_gtid = slave_pos\n");
+			"SET GLOBAL gtid_slave_pos = '%s';\n"
+			"CHANGE MASTER TO master_use_gtid = slave_pos\n",
+			gtid_slave_pos);
 		ut_a(asprintf(&mysql_slave_position,
 			"master host '%s', gtid_slave_pos %s",
 			master, gtid_slave_pos) != -1);
