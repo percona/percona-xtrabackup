@@ -107,6 +107,11 @@ xb_mysql_connect()
 		return(NULL);
 	}
 
+	if (!opt_secure_auth) {
+		mysql_options(connection, MYSQL_SECURE_AUTH,
+			      (char *) &opt_secure_auth);
+	}
+
 	msg_ts("Connecting to MySQL server host: %s, user: %s, password: %s, "
 	       "port: %d, socket: %s\n", opt_host ? opt_host : "localhost",
 	       opt_user, opt_password ? "set" : "not set",

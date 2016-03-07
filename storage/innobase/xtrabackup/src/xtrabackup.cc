@@ -591,7 +591,8 @@ enum options_xtrabackup
   OPT_LOCK_WAIT_THRESHOLD,
   OPT_DEBUG_SLEEP_BEFORE_UNLOCK,
   OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
-  OPT_BINLOG_INFO
+  OPT_BINLOG_INFO,
+  OPT_XB_SECURE_AUTH
 };
 
 struct my_option xb_long_options[] =
@@ -1184,6 +1185,10 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "LOCKLESS and AUTO. See the XtraBackup manual for more information",
    &opt_binlog_info, &opt_binlog_info,
    &binlog_info_typelib, GET_ENUM, OPT_ARG, BINLOG_INFO_AUTO, 0, 0, 0, 0, 0},
+
+  {"secure-auth", OPT_XB_SECURE_AUTH, "Refuse client connecting to server if it"
+    " uses old (pre-4.1.1) protocol.", &opt_secure_auth,
+    &opt_secure_auth, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
 
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
