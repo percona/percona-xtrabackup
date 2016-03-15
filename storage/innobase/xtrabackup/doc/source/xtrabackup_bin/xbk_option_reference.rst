@@ -161,6 +161,10 @@ Options
 
    Use this number of threads to rebuild indexes in a compact backup. Only has effect with --prepare and --rebuild-indexes.
 
+.. option:: --secure-auth       
+
+   Refuse client connecting to server if it uses old (pre-4.1.1) protocol. (Enabled by default; use --skip-secure-auth to disable.)
+
 .. option:: --stats
 
    Causes :program:`xtrabackup` to scan the specified data files and print out index statistics.
