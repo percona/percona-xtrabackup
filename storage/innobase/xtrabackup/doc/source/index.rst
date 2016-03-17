@@ -41,6 +41,15 @@ User's Manual
 
    manual
 
+Advanced Features
+=================
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   advanced/lockless_bin-log
+
 Tutorials, Recipes, How-tos
 ===========================
 
@@ -58,13 +67,18 @@ Tutorials, Recipes, How-tos
 
 * :ref:`aux-guides`
 
-Miscellaneous
-=============
+References
+==========
 
 .. toctree::
    :maxdepth: 1
    :glob:
 
+   xtrabackup_bin/xbk_option_reference
+   innobackupex/innobackupex_option_reference
+   xbcloud/xbcloud
+   xbcrypt/xbcrypt
+   xbstream/xbstream
    known_issues
    faq
    release-notes
