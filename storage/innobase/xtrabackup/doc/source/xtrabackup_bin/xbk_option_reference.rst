@@ -17,6 +17,10 @@ Options
 
    Make a backup and place it in :option:`--target-dir`. See :doc:`Creating a backup <creating_a_backup>`.
 
+.. option:: --binlog-info
+
+   This option controls how |Percona XtraBackup| should retrieve server's binary log coordinates corresponding to the backup. Possible values are ``OFF``, ``ON``, ``LOCKLESS`` and ``AUTO``. See the |Percona XtraBackup| :ref:`lockless_bin-log`  manual page for more information
+
 .. option:: --close-files
 
    Do not keep files opened. When xtrabackup opens tablespace it normally doesn't close its file handle in order to handle the DDL operations correctly. However, if the number of tablespaces is really huge and can not fit into any limit, there is an option to close file handles once they are no longer accessed. |Percona XtraBackup| can produce inconsistent backups with this option enabled. Use at your own risk.
