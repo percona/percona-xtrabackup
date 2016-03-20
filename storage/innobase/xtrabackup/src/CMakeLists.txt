@@ -1,4 +1,4 @@
-# Copyright (c) 2013 Percona LLC and/or its affiliates.
+# Copyright (c) 2013-2016 Percona LLC and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,6 +16,8 @@
 INCLUDE(gcrypt)
 INCLUDE(curl)
 INCLUDE(libev)
+
+INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 ADD_SUBDIRECTORY(libarchive)
 ADD_SUBDIRECTORY(jsmn)
@@ -58,6 +60,15 @@ ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
 ADD_CUSTOM_TARGET(GenVersionCheck
                   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
 
+ADD_COMPILE_FLAGS(
+  keyring.cc
+  ../../../../plugin/keyring/keyring_impl.cc
+  ../../../../plugin/keyring/keyring_key.cc
+  ../../../../plugin/keyring/buffered_file_io.cc
+  ../../../../plugin/keyring/keys_container.cc
+  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
+)
+
 
 MYSQL_ADD_EXECUTABLE(xtrabackup
   xtrabackup.cc
@@ -83,6 +94,11 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbstream_write.c
   backup_mysql.cc
   backup_copy.cc
+  keyring.cc
+  ../../../../plugin/keyring/keyring_impl.cc
+  ../../../../plugin/keyring/keyring_key.cc
+  ../../../../plugin/keyring/buffered_file_io.cc
+  ../../../../plugin/keyring/keys_container.cc
   )
 
 SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)

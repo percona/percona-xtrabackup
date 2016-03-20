@@ -1582,6 +1582,7 @@ write_backup_config_file()
 		"innodb_log_block_size=%lu\n"
 		"innodb_undo_directory=%s\n"
 		"innodb_undo_tablespaces=%lu\n"
+		"server_id=%lu\n"
 		"%s%s\n"
 		"redo_log_version=%lu\n"
 		"%s%s\n",
@@ -1595,6 +1596,7 @@ write_backup_config_file()
 		srv_log_block_size,
 		srv_undo_dir,
 		srv_undo_tablespaces,
+		(ulint)server_id,
 		innobase_doublewrite_file ? "innodb_doublewrite_file=" : "",
 		innobase_doublewrite_file ? innobase_doublewrite_file : "",
 		redo_log_version,

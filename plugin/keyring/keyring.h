@@ -27,8 +27,10 @@ using namespace keyring;
 namespace keyring
 {
 /* Always defined. */
+#ifdef HAVE_PSI_INTERFACE
   extern PSI_memory_key key_memory_KEYRING;
   extern PSI_rwlock_key key_LOCK_keyring;
+#endif
 }
 
 extern mysql_rwlock_t LOCK_keyring;

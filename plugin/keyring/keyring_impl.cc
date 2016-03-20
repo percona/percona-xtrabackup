@@ -20,7 +20,9 @@ namespace keyring
 {
 /* Always defined. */
   PSI_memory_key key_memory_KEYRING;
+#ifdef HAVE_PSI_INTERFACE
   PSI_rwlock_key key_LOCK_keyring;
+#endif
 }
 
 mysql_rwlock_t LOCK_keyring;
