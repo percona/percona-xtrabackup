@@ -4441,6 +4441,9 @@ skip_last_cp:
 
 	xtrabackup_destroy_datasinks();
 
+	/* Sleep 5 seconds to make room for io_watching_thread exit the while loop */
+	os_thread_sleep(5000000); /*5 sec*/
+	
 	if (wait_throttle)
 		os_event_destroy(wait_throttle);
 
