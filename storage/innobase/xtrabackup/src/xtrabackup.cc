@@ -2761,6 +2761,8 @@ xb_load_tablespaces(void)
 		return(err);
 	}
 
+	debug_sync_point("xtrabackup_load_tablespaces_pause");
+
 	return(DB_SUCCESS);
 }
 
