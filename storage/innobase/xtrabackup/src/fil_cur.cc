@@ -260,6 +260,14 @@ xb_fil_cur_open(
 
 	cursor->scratch = static_cast<byte *>
 		(ut_malloc_nokey(cursor->page_size));
+	cursor->decrypt = static_cast<byte *>
+		(ut_malloc_nokey(cursor->page_size));
+
+	memcpy(cursor->encryption_key, node->space->encryption_key,
+	       sizeof(cursor->encryption_key));
+	memcpy(cursor->encryption_iv, node->space->encryption_iv,
+	       sizeof(cursor->encryption_iv));
+	cursor->encryption_klen = node->space->encryption_klen;
 
 	return(XB_FIL_CUR_SUCCESS);
 }
@@ -288,6 +296,11 @@ xb_fil_cur_read(
 					  cursor->page_size,
 					  cursor->zip_size != 0);
 	IORequest		read_request(IORequest::READ);
+
+	read_request.encryption_algorithm(Encryption::AES);
+	read_request.encryption_key(cursor->encryption_key,
+				    cursor->encryption_klen,
+				    cursor->encryption_iv);
 
 	cursor->read_filter->get_next_batch(&cursor->read_filter_ctxt,
 					    &offset, &to_read);
@@ -347,6 +360,34 @@ read_retry:
 	for (page = cursor->buf, i = 0; i < npages;
 	     page += cursor->page_size, i++) {
 
+		if (Encryption::is_encrypted_page(page)) {
+			dberr_t		ret;
+			Encryption	encryption(read_request.encryption_algorithm());
+
+			memcpy(cursor->decrypt, page, cursor->page_size);
+			ret = encryption.decrypt(read_request, cursor->decrypt,
+						 cursor->page_size,
+						 cursor->scratch,
+						 cursor->page_size);
+			if (ret != DB_SUCCESS) {
+				goto corruption;
+			}
+
+			if (Compression::is_compressed_page(page)) {
+				if (os_file_decompress_page(false,
+				    cursor->decrypt, cursor->scratch,
+				    cursor->page_size) != DB_SUCCESS) {
+					goto corruption;
+				}
+			}
+
+			if (buf_page_is_corrupted(TRUE, cursor->decrypt,
+						  page_size, false)) {
+				goto corruption;
+			}
+
+		}
+
 		if (Compression::is_compressed_page(page)) {
 
 			if (os_file_decompress_page(false, page,
@@ -356,7 +397,8 @@ read_retry:
 
 		}
 
-		if (buf_page_is_corrupted(TRUE, page, page_size, false)) {
+		if (!Encryption::is_encrypted_page(page) &&
+		    buf_page_is_corrupted(TRUE, page, page_size, false)) {
 
 corruption:
 
@@ -412,6 +454,9 @@ xb_fil_cur_close(
 
 	if (cursor->scratch != NULL) {
 		ut_free(cursor->scratch);
+	}
+	if (cursor->decrypt != NULL) {
+		ut_free(cursor->decrypt);
 	}
 	if (cursor->orig_buf != NULL) {
 		ut_free(cursor->orig_buf);

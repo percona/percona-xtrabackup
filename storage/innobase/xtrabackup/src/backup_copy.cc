@@ -40,7 +40,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 *******************************************************/
 
 #include <my_global.h>
-#include <os0file.h>
+#include <my_sys.h>
 #include <my_dir.h>
 #include <ut0mem.h>
 #include <ut0new.h>
@@ -447,7 +447,7 @@ datadir_iter_free(datadir_iter_t *it)
 /************************************************************************
 Holds the state needed to copy single data file. */
 struct datafile_cur_t {
-	os_file_t	file;
+	File		fd;
 	char		rel_path[FN_REFLEN];
 	char		abs_path[FN_REFLEN];
 	MY_STAT		statinfo;
@@ -463,8 +463,8 @@ static
 void
 datafile_close(datafile_cur_t *cursor)
 {
-	if (cursor->file != 0) {
-		os_file_close(cursor->file);
+	if (cursor->fd != -1) {
+		my_close(cursor->fd, MYF(0));
 	}
 	ut_free(cursor->buf);
 }
@@ -473,8 +473,6 @@ static
 bool
 datafile_open(const char *file, datafile_cur_t *cursor, uint thread_n)
 {
-	bool		success;
-
 	memset(cursor, 0, sizeof(datafile_cur_t));
 
 	strncpy(cursor->abs_path, file, sizeof(cursor->abs_path));
@@ -487,13 +485,9 @@ datafile_open(const char *file, datafile_cur_t *cursor, uint thread_n)
 		xb_get_relative_path(cursor->abs_path, FALSE),
 		sizeof(cursor->rel_path));
 
-	cursor->file = os_file_create_simple_no_error_handling(0,
-							cursor->abs_path,
-							OS_FILE_OPEN,
-							OS_FILE_READ_ONLY,
-							false,
-							&success);
-	if (!success) {
+	cursor->fd = my_open(cursor->abs_path, O_RDONLY, MYF(MY_WME));
+
+	if (cursor->fd == -1) {
 		/* The following call prints an error message */
 		os_file_get_last_error(TRUE);
 
@@ -504,7 +498,7 @@ datafile_open(const char *file, datafile_cur_t *cursor, uint thread_n)
 		return(false);
 	}
 
-	if (my_fstat(cursor->file, &cursor->statinfo, MYF(MY_WME))) {
+	if (my_fstat(cursor->fd, &cursor->statinfo, MYF(MY_WME))) {
 		msg("[%02u] error: cannot stat %s\n",
 			thread_n, cursor->abs_path);
 
@@ -513,7 +507,7 @@ datafile_open(const char *file, datafile_cur_t *cursor, uint thread_n)
 		return(false);
 	}
 
-	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(cursor->fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 
 	cursor->buf_size = 10 * 1024 * 1024;
 	cursor->buf = static_cast<byte *>(ut_malloc_nokey(cursor->buf_size));
@@ -526,9 +520,8 @@ static
 xb_fil_cur_result_t
 datafile_read(datafile_cur_t *cursor)
 {
-	ulint		success;
 	ulint		to_read;
-	IORequest	read_request(IORequest::READ);
+	ulint		count;
 
 	xtrabackup_io_throttling();
 
@@ -539,17 +532,16 @@ datafile_read(datafile_cur_t *cursor)
 		return(XB_FIL_CUR_EOF);
 	}
 
-	success = os_file_read(read_request, cursor->file, cursor->buf,
-			       cursor->buf_offset, to_read);
-	if (!success) {
+	count = my_read(cursor->fd, cursor->buf, to_read, MYF(0));
+	if (count == MY_FILE_ERROR) {
 		return(XB_FIL_CUR_ERROR);
 	}
 
-	posix_fadvise(cursor->file, cursor->buf_offset, to_read,
+	posix_fadvise(cursor->fd, cursor->buf_offset, count,
 			POSIX_FADV_DONTNEED);
 
-	cursor->buf_read = to_read;
-	cursor->buf_offset += to_read;
+	cursor->buf_read = count;
+	cursor->buf_offset += count;
 
 	return(XB_FIL_CUR_SUCCESS);
 }

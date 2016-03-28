@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2015 Percona LLC and/or its affiliates
+(c) 2009-2016 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -68,6 +68,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <row0quiesce.h>
 #include <srv0start.h>
 #include <buf0dblwr.h>
+#include <my_aes.h>
 
 #include <sstream>
 #include <mysql.h>
@@ -92,6 +93,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "backup_copy.h"
 #include "backup_mysql.h"
+#include "keyring.h"
 #include "xb0xb.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
@@ -297,6 +299,8 @@ my_bool innobase_create_status_file		= FALSE;
 my_bool innobase_adaptive_hash_index		= TRUE;
 
 static char *internal_innobase_data_file_path	= NULL;
+
+char*	xb_keyring_file_data			= NULL;
 
 /* The following counter is used to convey information to InnoDB
 about server activity: in selects it is not sensible to call
@@ -527,6 +531,7 @@ enum options_xtrabackup
   OPT_XTRA_ENCRYPT_KEY_FILE,
   OPT_XTRA_ENCRYPT_THREADS,
   OPT_XTRA_ENCRYPT_CHUNK_SIZE,
+  OPT_XTRA_SERVER_ID,
   OPT_LOG,
   OPT_INNODB,
   OPT_INNODB_CHECKSUMS,
@@ -614,7 +619,8 @@ enum options_xtrabackup
   OPT_DEBUG_SLEEP_BEFORE_UNLOCK,
   OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
   OPT_BINLOG_INFO,
-  OPT_REDO_LOG_VERSION
+  OPT_REDO_LOG_VERSION,
+  OPT_KEYRING_FILE_DATA
 };
 
 struct my_option xb_long_options[] =
@@ -1207,6 +1213,15 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "Redo log version of the backup. For --prepare only.",
    &redo_log_version, &redo_log_version, 0, GET_UINT,
    REQUIRED_ARG, 1, 0, 0, 0, 0, 0},
+
+  {"keyring-file-data", OPT_KEYRING_FILE_DATA,
+   "The path to the keyring file.", &xb_keyring_file_data,
+   &xb_keyring_file_data, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0,
+   0},
+
+  {"server-id", OPT_XTRA_SERVER_ID, "The server instance being backed up",
+   &server_id, &server_id, 0, GET_UINT, REQUIRED_ARG, 0, 0, UINT_MAX32,
+   0, 0, 0},
 
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -3173,6 +3188,19 @@ xb_load_single_table_tablespace(
 
 		ut_a(space != NULL);
 
+		/* For encryption tablespace, initialize encryption
+		information.*/
+		if (FSP_FLAGS_GET_ENCRYPTION(file->flags())) {
+			byte*	key = file->m_encryption_key;
+			byte*	iv = file->m_encryption_iv;
+			ut_ad(key && iv);
+
+			err = fil_set_encryption(space->id, Encryption::AES,
+						 key, iv);
+			ut_ad(err == DB_SUCCESS);
+		}
+
+
 		if (!fil_node_create(file->filepath(), n_pages, space,
 				     false, false)) {
 			ut_error;
@@ -4078,6 +4106,8 @@ xtrabackup_backup_func(void)
 
 	srv_general_init();
 	ut_crc32_init();
+
+	xb_keyring_init(xb_keyring_file_data);
 
 	xb_filters_init();
 
@@ -6526,6 +6556,195 @@ xb_export_cfg_write(
 
 }
 
+/** Write the transfer key to CFP file.
+@param[in]	table		write the data for this table
+@param[in]	file		file to write to
+@return DB_SUCCESS or error code. */
+static	__attribute__((nonnull, warn_unused_result))
+dberr_t
+xb_export_write_transfer_key(
+	const dict_table_t*	table,
+	FILE*			file)
+{
+	byte		key_size[sizeof(ib_uint32_t)];
+	byte		row[ENCRYPTION_KEY_LEN * 3];
+	byte*		ptr = row;
+	byte*		transfer_key = ptr;
+	lint		elen;
+
+	ut_ad(table->encryption_key != NULL
+	      && table->encryption_iv != NULL);
+
+	/* Write the encryption key size. */
+	mach_write_to_4(key_size, ENCRYPTION_KEY_LEN);
+
+	if (fwrite(&key_size, 1,  sizeof(key_size), file)
+		!= sizeof(key_size)) {
+		msg("IO Write error: (%d, %s) %s",
+			errno, strerror(errno),
+			"while writing key size.");
+
+		return(DB_IO_ERROR);
+	}
+
+	/* Generate and write the transfer key. */
+	Encryption::random_value(transfer_key);
+	if (fwrite(transfer_key, 1, ENCRYPTION_KEY_LEN, file)
+		!= ENCRYPTION_KEY_LEN) {
+		msg("IO Write error: (%d, %s) %s",
+			errno, strerror(errno),
+			"while writing transfer key.");
+
+		return(DB_IO_ERROR);
+	}
+
+	ptr += ENCRYPTION_KEY_LEN;
+
+	/* Encrypt tablespace key. */
+	elen = my_aes_encrypt(
+		reinterpret_cast<unsigned char*>(table->encryption_key),
+		ENCRYPTION_KEY_LEN,
+		ptr,
+		reinterpret_cast<unsigned char*>(transfer_key),
+		ENCRYPTION_KEY_LEN,
+		my_aes_256_ecb,
+		NULL, false);
+
+	if (elen == MY_AES_BAD_DATA) {
+		msg("IO Write error: (%d, %s) %s",
+			errno, strerror(errno),
+			"while encrypt tablespace key.");
+		return(DB_ERROR);
+	}
+
+	/* Write encrypted tablespace key */
+	if (fwrite(ptr, 1, ENCRYPTION_KEY_LEN, file)
+		!= ENCRYPTION_KEY_LEN) {
+		msg("IO Write error: (%d, %s) %s",
+			errno, strerror(errno),
+			"while writing encrypted tablespace key.");
+
+		return(DB_IO_ERROR);
+	}
+	ptr += ENCRYPTION_KEY_LEN;
+
+	/* Encrypt tablespace iv. */
+	elen = my_aes_encrypt(
+		reinterpret_cast<unsigned char*>(table->encryption_iv),
+		ENCRYPTION_KEY_LEN,
+		ptr,
+		reinterpret_cast<unsigned char*>(transfer_key),
+		ENCRYPTION_KEY_LEN,
+		my_aes_256_ecb,
+		NULL, false);
+
+	if (elen == MY_AES_BAD_DATA) {
+		msg("IO Write error: (%d, %s) %s",
+			errno, strerror(errno),
+			"while encrypt tablespace iv.");
+		return(DB_ERROR);
+	}
+
+	/* Write encrypted tablespace iv */
+	if (fwrite(ptr, 1, ENCRYPTION_KEY_LEN, file)
+		!= ENCRYPTION_KEY_LEN) {
+		msg("IO Write error: (%d, %s) %s",
+			errno, strerror(errno),
+			"while writing encrypted tablespace iv.");
+
+		return(DB_IO_ERROR);
+	}
+
+	return(DB_SUCCESS);
+}
+
+/** Write the encryption data after quiesce.
+@param[in]	table		write the data for this table
+@return DB_SUCCESS or error code */
+static	__attribute__((nonnull, warn_unused_result))
+dberr_t
+xb_export_cfp_write(
+	dict_table_t*	table)
+{
+	dberr_t			err;
+	char			name[OS_FILE_MAX_PATH];
+
+	/* If table is not encrypted, return. */
+	if (!dict_table_is_encrypted(table)) {
+		return(DB_SUCCESS);
+	}
+
+	/* Get the encryption key and iv from space */
+	/* For encrypted table, before we discard the tablespace,
+	we need save the encryption information into table, otherwise,
+	this information will be lost in fil_discard_tablespace along
+	with fil_space_free(). */
+	if (table->encryption_key == NULL) {
+		table->encryption_key =
+			static_cast<byte*>(mem_heap_alloc(table->heap,
+							  ENCRYPTION_KEY_LEN));
+
+		table->encryption_iv =
+			static_cast<byte*>(mem_heap_alloc(table->heap,
+							  ENCRYPTION_KEY_LEN));
+
+		fil_space_t*	space = fil_space_get(table->space);
+		ut_ad(space != NULL && FSP_FLAGS_GET_ENCRYPTION(space->flags));
+
+		memcpy(table->encryption_key,
+		       space->encryption_key,
+		       ENCRYPTION_KEY_LEN);
+		memcpy(table->encryption_iv,
+		       space->encryption_iv,
+		       ENCRYPTION_KEY_LEN);
+	}
+
+	srv_get_encryption_data_filename(table, name, sizeof(name));
+
+	ib::info() << "Writing table encryption data to '" << name << "'";
+
+	FILE*	file = fopen(name, "w+b");
+
+	if (file == NULL) {
+		msg("Can't create file '%-.200s' (errno: %d - %s)",
+			 name, errno, strerror(errno));
+
+		err = DB_IO_ERROR;
+	} else {
+		err = xb_export_write_transfer_key(table, file);
+
+		if (fflush(file) != 0) {
+
+			char	buf[BUFSIZ];
+
+			ut_snprintf(buf, sizeof(buf), "%s flush() failed",
+				    name);
+
+			msg("IO Write error: (%d, %s) %s",
+				errno, strerror(errno), buf);
+
+			err = DB_IO_ERROR;
+		}
+
+		if (fclose(file) != 0) {
+			char	buf[BUFSIZ];
+
+			ut_snprintf(buf, sizeof(buf), "%s flose() failed",
+				    name);
+
+			msg("IO Write error: (%d, %s) %s",
+				errno, strerror(errno), buf);
+			err = DB_IO_ERROR;
+		}
+	}
+
+	/* Clean the encryption information */
+	table->encryption_key = NULL;
+	table->encryption_iv = NULL;
+
+	return(err);
+}
+
 #if 0
 /********************************************************************//**
 Searches archived log files in archived log directory. The min and max
@@ -6728,6 +6947,8 @@ skip_check:
 		goto error_cleanup;
 	}
 
+	xb_keyring_init(xb_keyring_file_data);
+
 	/* Expand compacted datafiles */
 
 	if (xtrabackup_compact) {
@@ -6929,6 +7150,11 @@ skip_check:
 
 			/* Write MySQL 5.6 .cfg file */
 			if (!xb_export_cfg_write(node, table)) {
+				goto next_node;
+			}
+
+			/* Write transfer key for tablespace file */
+			if (!xb_export_cfp_write(table)) {
 				goto next_node;
 			}
 

@@ -171,7 +171,10 @@ my_bool Buffered_file_io::init(std::string *keyring_filename)
          mysql_file_close(file, MYF(0)) < 0;
 }
 
-my_bool Buffered_file_io::flush_to_file(PSI_file_key *file_key,
+my_bool Buffered_file_io::flush_to_file(
+#ifdef HAVE_PSI_INTERFACE
+                                      PSI_file_key *file_key,
+#endif
                                       const std::string* filename)
 {
   File file;
@@ -195,7 +198,11 @@ my_bool Buffered_file_io::flush_to_file(PSI_file_key *file_key,
 
 my_bool Buffered_file_io::flush_to_backup()
 {
-  if (flush_to_file(&keyring_backup_file_data_key, get_backup_filename()) == FALSE)
+  if (flush_to_file(
+#ifdef HAVE_PSI_INTERFACE
+    &keyring_backup_file_data_key,
+#endif
+    get_backup_filename()) == FALSE)
   {
     backup_exists= TRUE;
     return FALSE;
@@ -210,7 +217,11 @@ my_bool Buffered_file_io::remove_backup()
 
 my_bool Buffered_file_io::flush_to_keyring()
 {
-  return flush_to_file(&keyring_file_data_key, &keyring_filename);
+  return flush_to_file(
+#ifdef HAVE_PSI_INTERFACE
+    &keyring_file_data_key,
+#endif
+    &keyring_filename);
 }
 
 my_bool Buffered_file_io::close()

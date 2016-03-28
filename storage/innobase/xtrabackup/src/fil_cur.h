@@ -51,6 +51,8 @@ struct xb_fil_cur_t {
 	byte*		buf;		/*!< aligned pointer for orig_buf */
 	byte*		scratch;	/*!< page to use for temporary
 					decompress */
+	byte*		decrypt;	/*!< page to use for temporary
+					decrypt */
 	ulint		buf_size;	/*!< buffer size in bytes */
 	ulint		buf_read;	/*!< number of read bytes in buffer
 					after the last cursor read */
@@ -63,6 +65,13 @@ struct xb_fil_cur_t {
 	uint		thread_n;	/*!< thread number for diagnostics */
 	ulint		space_id;	/*!< ID of tablespace */
 	ulint		space_size;	/*!< space size in pages */
+
+	unsigned char	encryption_key[32];
+					/*!< encryption key */
+	ulint		encryption_klen;
+					/*!< encryption key length */
+	unsigned char	encryption_iv[32];
+					/*!< encryption iv */
 };
 
 typedef enum {

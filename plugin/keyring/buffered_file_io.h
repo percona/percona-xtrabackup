@@ -64,7 +64,11 @@ private:
   my_bool remove_backup();
   my_bool open_backup_file(File *backup_file);
   my_bool load_keyring_into_input_buffer(File file);
-  my_bool flush_to_file(PSI_file_key *file_key, const std::string* filename);
+  my_bool flush_to_file(
+#ifdef HAVE_PSI_INTERFACE
+    PSI_file_key *file_key,
+#endif
+    const std::string* filename);
   inline my_bool check_file_structure(File file, size_t file_size);
   my_bool is_file_tag_correct(File file);
   my_bool is_file_version_correct(File file);

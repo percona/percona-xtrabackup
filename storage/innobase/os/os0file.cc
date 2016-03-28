@@ -82,6 +82,11 @@ bool	innodb_calling_exit;
 #include <mysqld.h>
 #include <mysql/service_mysql_keyring.h>
 
+#define my_key_fetch mysql_key_fetch
+
+my_bool mysql_key_fetch(const char *key_id, char **key_type, const char *user_id,
+                        void **key, size_t *key_len);
+
 /** Insert buffer segment id */
 static const ulint IO_IBUF_SEGMENT = 0;
 
@@ -1643,7 +1648,10 @@ os_file_io_complete(
 
 		return(DB_SUCCESS);
 
-	} else if (type.is_read()) {
+	} else if (type.is_read() && !srv_read_only_mode) {
+		/* Do not decrypt / decompress when taking a backup.
+		   We actually decompress the pages in fil_cur.
+		   We want encrypted pages to remain encrypted. */
 		dberr_t		ret;
 		Encryption	encryption(type.encryption_algorithm());
 
