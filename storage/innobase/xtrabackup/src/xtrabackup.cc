@@ -172,6 +172,7 @@ lsn_t checkpoint_no_start;
 lsn_t log_copy_scanned_lsn;
 ibool log_copying = TRUE;
 ibool log_copying_running = FALSE;
+ibool io_watching_thread_running = FALSE;
 
 ibool xtrabackup_logfile_is_renamed = FALSE;
 
@@ -2797,14 +2798,10 @@ io_watching_thread(
 	/* currently, for --backup only */
 	ut_a(xtrabackup_backup);
 
+	io_watching_thread_running = TRUE;
+
 	while (log_copying) {
 		os_thread_sleep(1000000); /*1 sec*/
-
-		//for DEBUG
-		//if (io_ticket == xtrabackup_throttle) {
-		//	msg("There seem to be no IO...?\n");
-		//}
-
 		io_ticket = xtrabackup_throttle;
 		os_event_set(wait_throttle);
 	}
@@ -2812,6 +2809,8 @@ io_watching_thread(
 	/* stop io throttle */
 	xtrabackup_throttle = 0;
 	os_event_set(wait_throttle);
+
+	io_watching_thread_running = FALSE;
 
 	os_thread_exit(NULL);
 
@@ -3962,7 +3961,8 @@ reread_log_header:
 		io_ticket = xtrabackup_throttle;
 		wait_throttle = os_event_create();
 
-		os_thread_create(io_watching_thread, NULL, &io_watching_thread_id);
+		os_thread_create(io_watching_thread, NULL,
+				 &io_watching_thread_id);
 	}
 
 	mutex_enter(&log_sys->mutex);
@@ -4133,8 +4133,14 @@ skip_last_cp:
 
 	xtrabackup_destroy_datasinks();
 
-	if (wait_throttle)
+	if (wait_throttle) {
+		/* wait for io_watching_thread completion */
+		while (io_watching_thread_running) {
+			os_thread_sleep(1000000);
+		}
 		os_event_free(wait_throttle);
+		wait_throttle = NULL;
+	}
 
 	msg("xtrabackup: Transaction log of lsn (" LSN_PF ") to (" LSN_PF
 	    ") was copied.\n", checkpoint_lsn_start, log_copy_scanned_lsn);
