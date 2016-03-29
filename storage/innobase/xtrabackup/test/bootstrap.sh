@@ -57,7 +57,7 @@ case "$1" in
 
     innodb57)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="mysql-5.7.10-linux-glibc2.5-$arch.tar.gz"
+        tarball="mysql-5.7.11-linux-glibc2.5-$arch.tar.gz"
         ;;
 
     xtradb51)
@@ -77,7 +77,7 @@ case "$1" in
 
     xtradb57)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.7.10-1rc1-Linux.$arch.tar.gz"
+        tarball="Percona-Server-5.7.11-4-Linux.$arch.tar.gz"
         ;;
 
     mariadb51)
