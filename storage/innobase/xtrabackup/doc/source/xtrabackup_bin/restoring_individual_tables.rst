@@ -19,27 +19,43 @@ Let's see how to export and import the following table: ::
 Exporting the Table
 ===================
 
-This table should have been created in :term:`innodb_file_per_table` mode, so after taking a backup as usual with :option:`--backup`, the :term:`.ibd` file should exist in the target directory: ::
+This table should have been created in :option:`innodb_file_per_table` mode, so after taking a backup as usual with :option:`xtrabackup --backup`, the :term:`.ibd` file should exist in the target directory: 
+
+.. code-block:: bash
 
   $ find /data/backups/mysql/ -name export_test.*
   /data/backups/mysql/test/export_test.ibd
 
-when you prepare the backup, add the extra parameter :option:`--export` to the command. Here is an example: ::
+when you prepare the backup, add the extra parameter :option:`xtrabackup --export` to the command. Here is an example: 
+
+.. code-block:: bash
 
   $ xtrabackup --prepare --export --target-dir=/data/backups/mysql/
 
-Now you should see a :term:`.exp` file in the target directory: ::
+.. note:: 
+
+  If you're trying to restore :ref:`encrypted InnoDB tablespace <encrypted_innodb_tablespace_backups>` table you'll need to specify the keyring file as well:
+
+  .. code-block:: bash
+
+    xtrabackup --prepare --export --target-dir=/tmp/table \
+    --keyring-file-data=/var/lib/mysql-keyring/keyring
+
+Now you should see a :term:`.exp` file in the target directory: 
+
+.. code-block:: bash
 
   $ find /data/backups/mysql/ -name export_test.*
   /data/backups/mysql/test/export_test.exp
   /data/backups/mysql/test/export_test.ibd
   /data/backups/mysql/test/export_test.cfg
 
-These three files are all you need to import the table into a server running |Percona Server| with |XtraDB| or |MySQL| 5.6.
+These three files are all you need to import the table into a server running |Percona Server| with |XtraDB| or |MySQL| 5.7. In case server is using `InnoDB Tablespace Encryption <http://dev.mysql.com/doc/refman/5.7/en/innodb-tablespace-encryption.html>`_ additional :file:`.cfp` file be listed for encrypted tables. 
 
 .. note:: 
 
-  |MySQL| uses ``.cfg`` file which contains |InnoDB| dictionary dump in special format. This format is different from the ``.exp`` one which is used in |XtraDB| for the same purpose. Strictly speaking, a ``.cfg`` file is not required to import a tablespace to |MySQL| 5.6 or |Percona Server| 5.6. A tablespace will be imported successfully even if it is from another server, but |InnoDB| will do schema validation if the corresponding ``.cfg`` file is present in the same directory.
+  |MySQL| uses ``.cfg`` file which contains |InnoDB| dictionary dump in special format. This format is different from the ``.exp`` one which is used in |XtraDB| for the same purpose. Strictly speaking, a ``.cfg`` file is not required to import a tablespace to |MySQL| 5.7 or |Percona Server| 5.7. A tablespace will be imported successfully even if it is from another server, but |InnoDB| will do schema validation if the corresponding ``.cfg`` file is present in the same directory.
+
 
 Importing the Table
 ===================

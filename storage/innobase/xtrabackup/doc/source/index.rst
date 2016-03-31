@@ -49,6 +49,7 @@ Advanced Features
    :glob:
 
    advanced/lockless_bin-log
+   advanced/encrypted_innodb_tablespace_backups
 
 Tutorials, Recipes, How-tos
 ===========================
