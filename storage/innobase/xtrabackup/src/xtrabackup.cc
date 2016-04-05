@@ -7049,9 +7049,13 @@ int main(int argc, char **argv)
 	if (xtrabackup_prepare)
 		xtrabackup_prepare_func();
 
-	if ((xtrabackup_copy_back || xtrabackup_move_back)
-	    && !copy_back()) {
-		exit(EXIT_FAILURE);
+	if (xtrabackup_copy_back || xtrabackup_move_back) {
+		if (!datadir_specified) {
+			msg("Error: datadir must be specified.\n");
+			exit(EXIT_FAILURE);
+		}
+		if (!copy_back())
+			exit(EXIT_FAILURE);
 	}
 
 	if (xtrabackup_decrypt_decompress && !decrypt_decompress()) {

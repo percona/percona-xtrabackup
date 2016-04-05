@@ -1494,6 +1494,8 @@ copy_back()
 	datadir_node_t node;
 	char *dst_dir;
 
+	memset(&node, 0, sizeof(node));
+
 	if (!opt_force_non_empty_dirs) {
 		if (!directory_exists_and_empty(mysql_data_home,
 							"Original data")) {
