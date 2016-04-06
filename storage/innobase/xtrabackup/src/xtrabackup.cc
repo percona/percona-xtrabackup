@@ -1122,7 +1122,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "before innobackupex will issue the global lock. Default is all.",
    (uchar*) &opt_lock_wait_query_type,
    (uchar*) &opt_lock_wait_query_type, &query_type_typelib,
-   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_UPDATE, 0, 0, 0, 0, 0},
+   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_ALL, 0, 0, 0, 0, 0},
 
   {"kill-long-query-type", OPT_KILL_LONG_QUERY_TYPE,
    "This option specifies which types of queries should be killed to "
