@@ -1144,7 +1144,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "before innobackupex will issue the global lock. Default is all.",
    (uchar*) &opt_lock_wait_query_type,
    (uchar*) &opt_lock_wait_query_type, &query_type_typelib,
-   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_UPDATE, 0, 0, 0, 0, 0},
+   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_ALL, 0, 0, 0, 0, 0},
 
   {"kill-long-query-type", OPT_KILL_LONG_QUERY_TYPE,
    "This option specifies which types of queries should be killed to "
@@ -7824,9 +7824,13 @@ int main(int argc, char **argv)
 	if (xtrabackup_prepare)
 		xtrabackup_prepare_func();
 
-	if ((xtrabackup_copy_back || xtrabackup_move_back)
-	    && !copy_back()) {
-		exit(EXIT_FAILURE);
+	if (xtrabackup_copy_back || xtrabackup_move_back) {
+		if (!datadir_specified) {
+			msg("Error: datadir must be specified.\n");
+			exit(EXIT_FAILURE);
+		}
+		if (!copy_back())
+			exit(EXIT_FAILURE);
 	}
 
 	if (xtrabackup_decrypt_decompress && !decrypt_decompress()) {
