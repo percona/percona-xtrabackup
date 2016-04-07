@@ -412,6 +412,11 @@ get_mysql_vars(MYSQL *connection)
 			    "nonexistent directory '%s'\n", mysql_data_home);
 			goto out;
 		}
+		if (!directory_exists(datadir_var, false)) {
+			msg("Error: MySQL variable 'datadir' points to "
+			    "nonexistent directory '%s'\n", datadir_var);
+			goto out;
+		}
 		if (!(ret = equal_paths(mysql_data_home, datadir_var))) {
 			msg("Error: option 'datadir' has different "
 				"values:\n"
