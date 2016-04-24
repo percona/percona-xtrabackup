@@ -1078,7 +1078,7 @@ write_slave_info(MYSQL *connection)
 			"CHANGE MASTER TO MASTER_LOG_FILE='%s', "
 			"MASTER_LOG_POS=%s\n", filename, position);
 		ut_a(asprintf(&mysql_slave_position,
-			"master host '%s', filename '%s', position '%s",
+			"master host '%s', filename '%s', position '%s'",
 			master, filename, position) != -1);
 	}
 
