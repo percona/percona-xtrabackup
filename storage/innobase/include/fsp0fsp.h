@@ -81,6 +81,37 @@ is found in a remote location, not the default data directory. */
 #define FSP_FLAGS_POS_UNUSED		(FSP_FLAGS_POS_DATA_DIR	\
 					+ FSP_FLAGS_WIDTH_DATA_DIR)
 
+/** MariaDB extra tablespace flag withds,
+PAGE_COMPRESSION = 1,
+PAGE_COMPRESSION_LEVEL = 4
+ATOMIC_WRITES = 2 */
+#define FSP_EXTRA_POS_MARIADB		(1 + 4 + 2)
+
+/** Zero relative shift position of the start of the UNUSED bits for
+MariaDB */
+#define FSP_FLAGS_POS_UNUSED_MARIADB	(FSP_FLAGS_POS_DATA_DIR	   \
+					+ FSP_FLAGS_WIDTH_DATA_DIR \
+					+ FSP_EXTRA_POS_MARIADB)
+
+/** Zero relative shift position of the PAGE_SSIZE field for MariaDB*/
+#define FSP_FLAGS_POS_PAGE_SSIZE_MARIADB		\
+		(FSP_FLAGS_POS_ATOMIC_BLOBS		\
+		 + FSP_EXTRA_POS_MARIADB)
+
+/** Return the contents of the UNUSED bits for MariaDB */
+#define FSP_FLAGS_GET_UNUSED_MARIADB(flags)		\
+		(flags >> FSP_FLAGS_POS_UNUSED_MARIADB)
+
+/** Bit mask of the PAGE_SSIZE field for MariaDB */
+#define FSP_FLAGS_MASK_PAGE_SSIZE_MARIADB		        \
+		((~(~0 << FSP_FLAGS_WIDTH_PAGE_SSIZE))		\
+		<< FSP_FLAGS_POS_PAGE_SSIZE_MARIADB)
+
+/** Return the contents of the SSIZE bits for MariaDB */
+#define FSP_FLAGS_GET_PAGE_SSIZE_MARIADB(flags)			\
+		((flags & FSP_FLAGS_MASK_PAGE_SSIZE_MARIADB)		\
+		>> FSP_FLAGS_POS_PAGE_SSIZE_MARIADB)
+
 /** Bit mask of the POST_ANTELOPE field */
 #define FSP_FLAGS_MASK_POST_ANTELOPE				\
 		((~(~0 << FSP_FLAGS_WIDTH_POST_ANTELOPE))	\

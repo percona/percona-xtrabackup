@@ -63,8 +63,19 @@ fsp_flags_is_valid(
 	ulint	atomic_blobs = FSP_FLAGS_HAS_ATOMIC_BLOBS(flags);
 	ulint	page_ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
 	ulint	unused = FSP_FLAGS_GET_UNUSED(flags);
+	ulint	mariadb_unused =  FSP_FLAGS_GET_UNUSED_MARIADB(flags);
+	ulint	mariadb_page_ssize = FSP_FLAGS_GET_PAGE_SSIZE_MARIADB(flags);
 
 	DBUG_EXECUTE_IF("fsp_flags_is_valid_failure", return(false););
+
+	/* If there is flags that are MariaDB extended flags,
+	read unused and page size from MariaDB positions. */
+	if ((unused && mariadb_unused == 0) ||
+	    (page_ssize && (page_ssize < UNIV_PAGE_SIZE_MIN ||
+	     page_ssize > UNIV_PAGE_SIZE_MAX))) {
+		unused = mariadb_unused;
+		page_ssize = mariadb_page_ssize;
+	}
 
 	/* fsp_flags is zero unless atomic_blobs is set. */
 	/* Make sure there are no bits that we do not know about. */

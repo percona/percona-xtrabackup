@@ -33,6 +33,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "common.h"
 #include "read_filt.h"
 #include "xtrabackup.h"
+#include "mariadb.h"
 
 /* Size of read buffer in pages (640 pages = 10M for 16K sized pages) */
 #define XB_FIL_CUR_PAGES 640
@@ -258,6 +259,8 @@ xb_fil_cur_open(
 	cursor->read_filter = read_filter;
 	cursor->read_filter->init(&cursor->read_filter_ctxt, cursor,
 				  node->space->id);
+	cursor->encrypted = mariadb_check_tablespace_encryption(cursor->file,
+		cursor->abs_path, zip_size);
 
 	return(XB_FIL_CUR_SUCCESS);
 }
@@ -339,8 +342,14 @@ read_retry:
 	partially written pages */
 	for (page = cursor->buf, i = 0; i < npages;
 	     page += cursor->page_size, i++) {
+		bool mariadb_compressed = mariadb_check_compression(page);
 
-		if (buf_page_is_corrupted(TRUE, page, cursor->zip_size)) {
+		/* MariaDB tablespaces using compression do not have correct
+		checksum. Similarly, encrypted tablespaces. All other
+		tablespaces should have correct checksums. */
+		if (!cursor->encrypted &&
+		    !mariadb_compressed &&
+		    buf_page_is_corrupted(TRUE, page, cursor->zip_size)) {
 
 			ulint page_no = cursor->buf_page_no + i;
 

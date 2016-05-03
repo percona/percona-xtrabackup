@@ -90,6 +90,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "backup_copy.h"
 #include "backup_mysql.h"
+#include "mariadb.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT	10
@@ -2520,6 +2521,7 @@ xtrabackup_scan_log_recs(
 	bool		is_last,	/*!< in: whether it is last segment
 					to copy */
 	lsn_t		start_lsn,	/*!< in: buffer start lsn */
+	bool		encrypted,	/*!< in: true if log encrypted */
 	lsn_t*		contiguous_lsn,	/*!< in/out: it is known that all log
 					groups contain contiguous log data up
 					to this lsn */
@@ -2544,6 +2546,11 @@ xtrabackup_scan_log_recs(
 		ulint	scanned_no = log_block_convert_lsn_to_no(scanned_lsn);
 		ibool	checksum_is_ok =
 			log_block_checksum_is_ok_or_old_format(log_block);
+
+		if (encrypted) {
+			/* MariaDB: Encrypted log blocks have incorrect checksum */
+			checksum_is_ok = true;
+		}
 
 		if (no != scanned_no && checksum_is_ok) {
 			ulint blocks_in_group;
@@ -2668,6 +2675,7 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 	log_group_t*	group;
 	lsn_t		group_scanned_lsn;
 	lsn_t		contiguous_lsn;
+	bool		encrypted = false;
 
 	ut_a(dst_log_file != NULL);
 
@@ -2688,6 +2696,10 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 
 		start_lsn = contiguous_lsn;
 
+		/* Read checkpoint records to find out is the redo-log
+		encrypted */
+		encrypted = mariadb_check_encryption(group);
+
 		while (!finished) {
 
 			end_lsn = start_lsn + RECV_SCAN_SIZE;
@@ -2700,7 +2712,8 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 					       group, start_lsn, end_lsn);
 
 			 if (!xtrabackup_scan_log_recs(group, is_last,
-				start_lsn, &contiguous_lsn, &group_scanned_lsn,
+				start_lsn, encrypted,
+				&contiguous_lsn, &group_scanned_lsn,
 				&finished)) {
 				goto error;
 			 }
