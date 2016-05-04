@@ -4348,7 +4348,7 @@ skip_validate:
 }
 #endif /* !UNIV_HOTBACKUP */
 
-#ifdef UNIV_HOTBACKUP
+#if 1
 /*******************************************************************//**
 Allocates a file name for an old version of a single-table tablespace.
 The string must be freed by caller with ut_free()!
@@ -4723,7 +4723,7 @@ fil_ibd_load(
 		/* Fall through to error handling */
 
 	case DB_TABLESPACE_EXISTS:
-#ifdef UNIV_HOTBACKUP
+#if 1
 		if (file.flags() == ~(ulint)0) {
 			return FIL_LOAD_OK;
 		}
@@ -4737,14 +4737,14 @@ fil_ibd_load(
 
 	ut_ad(space == NULL);
 
-#ifdef UNIV_HOTBACKUP
+#if 1
 	if (file.space_id() == ULINT_UNDEFINED || file.space_id() == 0) {
 		char*	new_path;
 
 		ib::info() << "Renaming tablespace file '" << file.filepath()
 			<< "' with space ID " << file.space_id() << " to "
 			<< file.name() << "_ibbackup_old_vers_<timestamp>"
-			" because its size " << size() << " is too small"
+			" because its size " << 0 << " is too small"
 			" (< 4 pages 16 kB each), or the space id in the"
 			" file header is not sensible. This can happen in"
 			" an mysqlbackup run, and is not dangerous.";

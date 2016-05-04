@@ -265,7 +265,8 @@ fil_name_process(
 		if (!p.second && !f.deleted) {
 			f.deleted = true;
 			if (f.space != NULL) {
-				fil_space_free(space_id, false);
+				fil_delete_tablespace(space_id,
+					BUF_REMOVE_FLUSH_NO_WRITE);
 				f.space = NULL;
 			}
 		}
@@ -808,7 +809,9 @@ fil_name_parse(
 			space_id, first_page_no,
 			name,
 			new_name)) {
+#if 0
 			recv_sys->found_corrupt_fs = true;
+#endif
 		}
 	}
 
