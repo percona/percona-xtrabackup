@@ -1,5 +1,5 @@
 #
-# Basic test of InnoDB encryption support
+# Test for reencrypt feature
 #
 
 require_server_version_higher_than 5.7.10
@@ -66,7 +66,8 @@ ${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
 	  --target-dir=$topdir/backup \
 	  --keyring-file-data=$keyring_file
 ${XB_BIN} --prepare --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file
+	  --keyring-file-data=$keyring_file \
+	  --reencrypt-for-server-id=200
 
 stop_server
 
@@ -74,7 +75,7 @@ rm -rf $mysql_datadir
 
 xtrabackup --copy-back --target-dir=$topdir/backup
 
-start_server --keyring_file_data=$keyring_file --server_id=10
+start_server --keyring_file_data=$keyring_file --server_id=200
 
 run_cmd $MYSQL $MYSQL_ARGS -e "SELECT @@server_id" test
 run_cmd $MYSQL $MYSQL_ARGS -e "SELECT @@keyring_file_data" test

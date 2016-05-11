@@ -82,11 +82,6 @@ bool	innodb_calling_exit;
 #include <mysqld.h>
 #include <mysql/service_mysql_keyring.h>
 
-#define my_key_fetch mysql_key_fetch
-
-my_bool mysql_key_fetch(const char *key_id, char **key_type, const char *user_id,
-                        void **key, size_t *key_len);
-
 /** Insert buffer segment id */
 static const ulint IO_IBUF_SEGMENT = 0;
 
