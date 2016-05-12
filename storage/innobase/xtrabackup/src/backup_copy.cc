@@ -1277,11 +1277,7 @@ backup_start()
 		write_binlog_info(mysql_connection);
 	}
 
-	if (have_flush_engine_logs) {
-		msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...\n");
-		xb_mysql_query(mysql_connection,
-			"FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS", false);
-	}
+	flush_engine_logs_maybe(mysql_connection);
 
 	return(true);
 }

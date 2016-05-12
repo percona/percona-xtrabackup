@@ -82,6 +82,9 @@ time_t history_start_time;
 time_t history_end_time;
 time_t history_lock_time;
 
+/* Whether FLUSH ENGINE LOGS has been issued during backup */
+bool engine_logs_flushed = false;
+
 char *innobase_data_file_path_alloc = NULL;
 
 MYSQL *mysql_connection;
@@ -859,6 +862,21 @@ lock_tables(MYSQL *connection)
 }
 
 
+bool
+flush_engine_logs_maybe(MYSQL *connection) {
+	if (have_flush_engine_logs) {
+		if (!engine_logs_flushed) {
+			msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...\n");
+			xb_mysql_query(connection,
+				"FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS", false);
+			engine_logs_flushed = true;
+			return true;
+		}
+	}
+	return false;
+}
+
+
 /*********************************************************************//**
 If backup locks are used, execute LOCK BINLOG FOR BACKUP provided that we are
 not in the --no-lock mode and the lock has not been acquired already.
@@ -1180,7 +1198,9 @@ write_current_binlog_file(MYSQL *connection)
 
 		lock_binlog_maybe(connection);
 
+		msg_ts("Executing FLUSH BINARY LOGS\n");
 		xb_mysql_query(connection, "FLUSH BINARY LOGS", false);
+		flush_engine_logs_maybe(connection);
 
 		read_mysql_variables(connection, "SHOW MASTER STATUS",
 			status_after_flush, false);
