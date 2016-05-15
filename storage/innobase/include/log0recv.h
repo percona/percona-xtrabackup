@@ -360,6 +360,47 @@ struct recv_sys_t{
 			encryption_list;
 };
 
+/** Whether to store redo log records to the hash table */
+enum store_t {
+	/** Do not store redo log records. */
+	STORE_NO,
+	/** Store redo log records. */
+	STORE_YES,
+	/** Store redo log records if the tablespace exists. */
+	STORE_IF_EXISTS
+};
+
+/** Parse log records from a buffer and optionally store them to a
+hash table to wait merging to file pages.
+@param[in]	checkpoint_lsn	the LSN of the latest checkpoint
+@param[in]	store		whether to store page operations
+@param[in]	apply		whether to apply the records
+@return whether MLOG_CHECKPOINT record was seen the first time,
+or corruption was noticed */
+__attribute__((warn_unused_result))
+bool
+recv_parse_log_recs(
+	lsn_t		checkpoint_lsn,
+	store_t		store,
+	bool		apply);
+
+/*******************************************************//**
+Moves the parsing buffer data left to the buffer start. */
+void
+recv_sys_justify_left_parsing_buf(void);
+
+
+/*******************************************************//**
+Adds data from a new log block to the parsing buffer of recv_sys if
+recv_sys->parse_start_lsn is non-zero.
+@return true if more data added */
+bool
+recv_sys_add_to_parsing_buf(
+/*========================*/
+	const byte*	log_block,	/*!< in: log block */
+	lsn_t		scanned_lsn);	/*!< in: lsn of how far we were able
+					to find data in this log block */
+
 /** The recovery system */
 extern recv_sys_t*	recv_sys;
 
@@ -389,9 +430,11 @@ extern bool		recv_no_log_write;
 number (FIL_PAGE_LSN) is in the future.  Initially FALSE, and set by
 recv_recovery_from_checkpoint_start(). */
 extern bool		recv_lsn_checks_on;
-#ifdef UNIV_HOTBACKUP
+#if 1
 /** TRUE when the redo log is being backed up */
 extern bool		recv_is_making_a_backup;
+/** last flushed lsn read at the start of backup */
+extern volatile lsn_t	backup_redo_log_flushed_lsn;
 #endif /* UNIV_HOTBACKUP */
 
 #ifndef UNIV_HOTBACKUP

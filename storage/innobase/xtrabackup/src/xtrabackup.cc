@@ -2585,6 +2585,7 @@ xtrabackup_scan_log_recs(
 					to this lsn */
 	lsn_t*		group_scanned_lsn,/*!< out: scanning succeeded up to
 					this lsn */
+	lsn_t		checkpoint_lsn,	/*!< in: latest checkpoint LSN */
 	bool*		finished)	/*!< out: false if is not able to scan
 					any more in this log group */
 {
@@ -2592,6 +2593,7 @@ xtrabackup_scan_log_recs(
 	ulint		data_len;
 	ulint		write_size;
 	const byte*	log_block;
+	bool		more_data	= false;
 
 	ulint		scanned_checkpoint_no = 0;
 
@@ -2687,8 +2689,43 @@ xtrabackup_scan_log_recs(
 			break;
 		}
 
+		if (!recv_sys->parse_start_lsn
+		    && (log_block_get_first_rec_group(log_block) > 0)) {
+
+			/* We found a point from which to start the parsing
+			of log records */
+
+			recv_sys->parse_start_lsn = scanned_lsn
+				+ log_block_get_first_rec_group(log_block);
+			recv_sys->scanned_lsn = recv_sys->parse_start_lsn;
+			recv_sys->recovered_lsn = recv_sys->parse_start_lsn;
+		}
+
 		scanned_lsn = scanned_lsn + data_len;
 		scanned_checkpoint_no = log_block_get_checkpoint_no(log_block);
+
+		if (scanned_lsn > recv_sys->scanned_lsn) {
+
+			/* We were able to find more log data: add it to the
+			parsing buffer if parse_start_lsn is already
+			non-zero */
+
+			if (recv_sys->len + 4 * OS_FILE_LOG_BLOCK_SIZE
+			    >= RECV_PARSING_BUF_SIZE) {
+				ib::error() << "Log parsing buffer overflow."
+					" Recovery may have failed!";
+
+				recv_sys->found_corrupt_log = true;
+
+			} else if (!recv_sys->found_corrupt_log) {
+				more_data = recv_sys_add_to_parsing_buf(
+					log_block, scanned_lsn);
+			}
+
+			recv_sys->scanned_lsn = scanned_lsn;
+			recv_sys->scanned_checkpoint_no
+				= log_block_get_checkpoint_no(log_block);
+		}
 
 		if (data_len < OS_FILE_LOG_BLOCK_SIZE) {
 			/* Log data for this group ends here */
@@ -2716,6 +2753,25 @@ xtrabackup_scan_log_recs(
 		msg("xtrabackup: Error: "
 		    "write to logfile failed\n");
 		return(false);
+	}
+
+	if (more_data && !recv_sys->found_corrupt_log) {
+		/* Try to parse more log records */
+
+		if (recv_parse_log_recs(checkpoint_lsn,	/*!< in: latest checkpoint LSN */
+					STORE_NO, false)) {
+			ut_ad(recv_sys->found_corrupt_log
+			      || recv_sys->found_corrupt_fs
+			      || recv_sys->mlog_checkpoint_lsn
+			      == recv_sys->recovered_lsn);
+			return(true);
+		}
+
+		if (recv_sys->recovered_offset > RECV_PARSING_BUF_SIZE / 4) {
+			/* Move parsing buffer data to the buffer start */
+
+			recv_sys_justify_left_parsing_buf();
+		}
 	}
 
 	return(true);
@@ -2761,7 +2817,7 @@ xtrabackup_copy_logfile(lsn_t from_lsn, my_bool is_last)
 
 			 if (!xtrabackup_scan_log_recs(group, is_last,
 				start_lsn, &contiguous_lsn, &group_scanned_lsn,
-				&finished)) {
+				from_lsn, &finished)) {
 				goto error;
 			 }
 
@@ -4009,6 +4065,8 @@ xtrabackup_backup_func(void)
 	ib_mutex_t		 count_mutex;
 	data_thread_ctxt_t 	*data_threads;
 
+	recv_is_making_a_backup = true;
+
 #ifdef USE_POSIX_FADVISE
 	msg("xtrabackup: uses posix_fadvise().\n");
 #endif
@@ -4122,6 +4180,9 @@ xtrabackup_backup_func(void)
 	xb_fil_io_init();
 
 	log_init();
+
+	recv_sys_create();
+	recv_sys_init(buf_pool_get_curr_size());
 
 	lock_sys_create(srv_lock_table_size);
 

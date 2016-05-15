@@ -2502,7 +2502,7 @@ fil_op_log_parse_or_replay(
 	printf("new name %s\n", new_name);
 	}
 	*/
-	if (!space_id) {
+	if (!space_id || recv_is_making_a_backup) {
 		return(ptr);
 	}
 
