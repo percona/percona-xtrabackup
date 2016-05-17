@@ -122,8 +122,8 @@ buffer pool before the pages have been recovered to the up-to-date state.
 
 TRUE means that recovery is running and no operations on the log files
 are allowed yet: the variable name is misleading. */
-#ifndef UNIV_HOTBACKUP
 bool	recv_no_ibuf_operations;
+#if 0
 /** TRUE when the redo log is being backed up */
 # define recv_is_making_a_backup		false
 /** TRUE when recovering from a backed up redo log file */
@@ -131,8 +131,8 @@ bool	recv_no_ibuf_operations;
 #else /* !UNIV_HOTBACKUP */
 /** true if the backup is an offline backup */
 volatile bool is_online_redo_copy = true;
-/**true if the last flushed lsn read at the start of backup */
-volatile lsn_t backup_redo_log_flushed_lsn;
+/** last flushed lsn read at the start of backup */
+volatile lsn_t backup_redo_log_flushed_lsn = 0;
 
 /** TRUE when the redo log is being backed up */
 bool	recv_is_making_a_backup	= false;
@@ -1766,7 +1766,7 @@ recv_parse_or_apply_log_rec_body(
 		return(fil_name_parse(ptr, end_ptr, space_id, page_no, type,
 				      apply));
 	case MLOG_INDEX_LOAD:
-#ifdef UNIV_HOTBACKUP
+#if 1
 		/* While scaning redo logs during  backup phase a
 		MLOG_INDEX_LOAD type redo log record indicates a DDL
 		(create index, alter table...)is performed with
@@ -1789,13 +1789,13 @@ recv_parse_or_apply_log_rec_body(
 			if (is_online_redo_copy) {
 				if (backup_redo_log_flushed_lsn
 				    < recv_sys->recovered_lsn) {
-					ib::trace() << "Last flushed lsn: "
+					ib::info() << "Last flushed lsn: "
 						<< backup_redo_log_flushed_lsn
 						<< " load_index lsn "
 						<< recv_sys->recovered_lsn;
 
 					if (backup_redo_log_flushed_lsn == 0)
-						ib::error() << "MEB was not "
+						ib::error() << "PXB was not "
 							"able to determine the"
 							"InnoDB Engine Status";
 
@@ -1804,7 +1804,7 @@ recv_parse_or_apply_log_rec_body(
 						" has been performed. All"
 						" modified pages may not have"
 						" been flushed to the disk yet."
-						" \n    MEB will not be able"
+						" \n    PXB will not be able"
 						" take a consistent backup."
 						" Retry the backup operation";
 				}
@@ -1812,7 +1812,7 @@ recv_parse_or_apply_log_rec_body(
 				backup started hence no error */
 			} else {
 				/* offline backup */
-				ib::trace() << "Last flushed lsn: "
+				ib::info() << "Last flushed lsn: "
 					<< backup_redo_log_flushed_lsn
 					<< " load_index lsn "
 					<< recv_sys->recovered_lsn;
@@ -3256,16 +3256,6 @@ recv_report_corrupt_log(
 	return(true);
 }
 
-/** Whether to store redo log records to the hash table */
-enum store_t {
-	/** Do not store redo log records. */
-	STORE_NO,
-	/** Store redo log records. */
-	STORE_YES,
-	/** Store redo log records if the tablespace exists. */
-	STORE_IF_EXISTS
-};
-
 /** Parse log records from a buffer and optionally store them to a
 hash table to wait merging to file pages.
 @param[in]	checkpoint_lsn	the LSN of the latest checkpoint
@@ -3273,7 +3263,7 @@ hash table to wait merging to file pages.
 @param[in]	apply		whether to apply the records
 @return whether MLOG_CHECKPOINT record was seen the first time,
 or corruption was noticed */
-static __attribute__((warn_unused_result))
+__attribute__((warn_unused_result))
 bool
 recv_parse_log_recs(
 	lsn_t		checkpoint_lsn,
@@ -3615,7 +3605,6 @@ loop:
 Adds data from a new log block to the parsing buffer of recv_sys if
 recv_sys->parse_start_lsn is non-zero.
 @return true if more data added */
-static
 bool
 recv_sys_add_to_parsing_buf(
 /*========================*/
@@ -3688,7 +3677,6 @@ recv_sys_add_to_parsing_buf(
 
 /*******************************************************//**
 Moves the parsing buffer data left to the buffer start. */
-static
 void
 recv_sys_justify_left_parsing_buf(void)
 /*===================================*/

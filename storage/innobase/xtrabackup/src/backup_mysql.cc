@@ -254,6 +254,34 @@ read_mysql_one_value(MYSQL *connection, const char *query)
 }
 
 static
+void
+parse_show_engine_innodb_status(MYSQL *connection)
+{
+	MYSQL_RES *mysql_result;
+	MYSQL_ROW row;
+
+	mysql_result = xb_mysql_query(connection, "SHOW ENGINE INNODB STATUS",
+				      true);
+
+	ut_ad(mysql_num_fields(mysql_result) == 3);
+
+	if ((row = mysql_fetch_row(mysql_result))) {
+		std::stringstream data(row[2]);
+		std::string line;
+
+		while (std::getline(data, line)) {
+			lsn_t lsn;
+			if (sscanf(line.c_str(), "Log flushed up to " LSN_PF,
+				   &lsn) == 1) {
+				backup_redo_log_flushed_lsn = lsn;
+			}
+		}
+	}
+
+	mysql_free_result(mysql_result);
+}
+
+static
 bool
 check_server_version(const char *version, const char *innodb_version)
 {
@@ -469,6 +497,8 @@ get_mysql_vars(MYSQL *connection)
 		innobase_data_file_path = innobase_data_file_path_alloc
 					= strdup(innodb_data_file_path_var);
 	}
+
+	parse_show_engine_innodb_status(connection);
 
 out:
 	free_mysql_variables(mysql_vars);
