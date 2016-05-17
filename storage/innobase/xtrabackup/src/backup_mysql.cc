@@ -1234,7 +1234,7 @@ write_current_binlog_file(MYSQL *connection)
 
 		ut_snprintf(filepath, sizeof(filepath), "%s/%s",
 				log_bin_dir, log_bin_file);
-		result = copy_file(filepath, log_bin_file, 0);
+		result = copy_file(ds_data, filepath, log_bin_file, 0);
 	}
 
 cleanup:

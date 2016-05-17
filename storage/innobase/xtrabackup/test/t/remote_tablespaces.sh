@@ -36,6 +36,11 @@ rm -rf $remote_dir
 innobackupex --apply-log $topdir/backup
 innobackupex --copy-back $topdir/backup
 
+if [ ! -f $remote_dir/test/t.ibd ] ; then
+	vlog "Tablepace $remote_dir/t.ibd is missing!"
+	exit -1
+fi
+
 start_server
 
 checksum_b=`checksum_table test t`
