@@ -38,8 +38,19 @@ bool
 xb_keyring_init(const char *file_path)
 {
 	const char *keyring_file_data_value = file_path;
+	MY_STAT stat_arg;
 
 	if (file_path == NULL) {
+		return(false);
+	}
+
+	if (!my_stat(file_path, &stat_arg, MYF(0))) {
+		logger->log(MY_ERROR_LEVEL, "Could not find keyring file.");
+		return(false);
+	}
+
+	if (stat_arg.st_size == 0) {
+		logger->log(MY_ERROR_LEVEL, "Keyring file is empty.");
 		return(false);
 	}
 
@@ -82,3 +93,58 @@ xb_keyring_init(const char *file_path)
 	}
 }
 
+int my_key_fetch(const char *key_id, char **key_type, const char *user_id,
+                 void **key, size_t *key_len)
+{
+  try
+  {
+    return mysql_key_fetch(key_id, key_type, user_id, key,
+                           key_len);
+  }
+  catch (...)
+  {
+    return TRUE;
+  }
+}
+
+int my_key_store(const char *key_id, const char *key_type, const char *user_id,
+                 const void *key, size_t key_len)
+{
+  try
+  {
+    Buffered_file_io keyring_io(logger.get());
+    return mysql_key_store(&keyring_io, key_id, key_type, user_id, key,
+                           key_len);
+  }
+  catch (...)
+  {
+    return TRUE;
+  }
+}
+
+int my_key_remove(const char *key_id, const char *user_id)
+{
+  try
+  {
+    Buffered_file_io keyring_io(logger.get());
+    return mysql_key_remove(&keyring_io, key_id, user_id);
+  }
+  catch (...)
+  {
+    return TRUE;
+  }
+}
+
+int my_key_generate(const char *key_id, const char *key_type,
+                    const char *user_id, size_t key_len)
+{
+  try
+  {
+    Buffered_file_io keyring_io(logger.get());
+    return mysql_key_generate(&keyring_io, key_id, key_type, user_id, key_len);
+  }
+  catch (...)
+  {
+    return TRUE;
+  }
+}

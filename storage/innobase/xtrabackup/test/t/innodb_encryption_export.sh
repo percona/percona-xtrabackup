@@ -5,7 +5,7 @@
 
 require_server_version_higher_than 5.7.10
 
-keyring_file=$topdir/keyring_file
+keyring_file=${TEST_VAR_ROOT}/keyring_file
 
 start_server --keyring-file-data=$keyring_file --server-id=10
 

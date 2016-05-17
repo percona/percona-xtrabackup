@@ -412,6 +412,10 @@ static bool recover_binlog_info;
 /* Redo log format version */
 ulint redo_log_version = REDO_LOG_V1;
 
+/* New server-id to encrypt tablespace keys for */
+ulint opt_encrypt_server_id = 0;
+bool opt_encrypt_for_server_id_specified = false;
+
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
 #define XTRABACKUP_MAX_DATASINKS	10
@@ -532,6 +536,7 @@ enum options_xtrabackup
   OPT_XTRA_ENCRYPT_THREADS,
   OPT_XTRA_ENCRYPT_CHUNK_SIZE,
   OPT_XTRA_SERVER_ID,
+  OPT_XTRA_ENCRYPT_FOR_SERVER_ID,
   OPT_LOG,
   OPT_INNODB,
   OPT_INNODB_CHECKSUMS,
@@ -1223,6 +1228,12 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    &server_id, &server_id, 0, GET_UINT, REQUIRED_ARG, 0, 0, UINT_MAX32,
    0, 0, 0},
 
+  {"reencrypt-for-server-id", OPT_XTRA_ENCRYPT_FOR_SERVER_ID,
+   "Re-encrypt tablespace keys for given server-id.",
+   &opt_encrypt_server_id, &opt_encrypt_server_id, 0,
+   GET_UINT, REQUIRED_ARG, 0, 0, UINT_MAX32,
+   0, 0, 0},
+
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1479,6 +1490,9 @@ xb_get_one_option(int optid,
     } else {
       opt_history = "";
     }
+    break;
+  case OPT_XTRA_ENCRYPT_FOR_SERVER_ID:
+    opt_encrypt_for_server_id_specified = true;
     break;
   case '?':
     usage();
@@ -6806,6 +6820,57 @@ xb_export_cfp_write(
 	return(err);
 }
 
+/*********************************************************************//**
+Re-encrypt tablespace keys with newly generated master key having ID
+based on new server-id.
+@return true in case of success otherwise false. */
+static
+bool
+reencrypt_tablespace_keys(
+	ulint new_server_id)
+{
+	xb_keyring_init(xb_keyring_file_data);
+
+	/* re-encrypt for new server-id */
+	byte*	master_key = NULL;
+
+	/* Check if keyring loaded and the currently master key
+	can be fetched. */
+	if (Encryption::master_key_id != 0) {
+		Encryption::get_master_key(Encryption::master_key_id,
+					   &master_key);
+		if (master_key == NULL) {
+			msg("xtrabackup: error: Can't find master key.\n");
+			goto error;
+		}
+		my_free(master_key);
+	}
+
+	master_key = NULL;
+
+	/* Generate the new master key. */
+	server_id = new_server_id;
+	Encryption::create_master_key(&master_key);
+
+        if (master_key == NULL) {
+		msg("xtrabackup: error: Can't create master key.\n");
+		goto error;
+        }
+
+	/* If rotation failure, return error */
+	if (!fil_encryption_rotate()) {
+		msg("xtrabackup: error: Can't rotate master key.\n");
+		goto error;
+	}
+
+	return(true);
+
+error:
+	my_free(master_key);
+
+	return(false);
+}
+
 #if 0
 /********************************************************************//**
 Searches archived log files in archived log directory. The min and max
@@ -7410,6 +7475,12 @@ next_node:
 
 		if(innodb_init())
 			goto error;
+
+		if (opt_encrypt_for_server_id_specified) {
+			reencrypt_tablespace_keys(opt_encrypt_server_id);
+			msg("xtrabackup: error: "
+			    "Tablespace keys are not reencrypted.\n");
+		}
 
 		if(innodb_end())
 			goto error;
