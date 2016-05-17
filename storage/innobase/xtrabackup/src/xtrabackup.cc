@@ -7416,9 +7416,11 @@ next_node:
 			goto error;
 
 		if (opt_encrypt_for_server_id_specified) {
-			reencrypt_tablespace_keys(opt_encrypt_server_id);
-			msg("xtrabackup: error: "
-			    "Tablespace keys are not reencrypted.\n");
+			if (!reencrypt_tablespace_keys(opt_encrypt_server_id)) {
+				msg("xtrabackup: error: "
+				    "Tablespace keys are not reencrypted.\n");
+				goto error;
+			}
 		}
 
 		if(innodb_end())
