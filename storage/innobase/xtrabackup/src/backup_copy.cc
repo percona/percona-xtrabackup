@@ -771,7 +771,7 @@ datafile_copy_backup(const char *filepath, uint thread_n)
 	}
 
 	if (filename_matches(filepath, ext_list)) {
-		return copy_file(filepath, filepath, thread_n);
+		return copy_file(ds_data, filepath, filepath, thread_n);
 	}
 
 	return(true);
@@ -940,7 +940,10 @@ run_data_threads(datadir_iter_t *it, os_thread_func_t func, uint n)
 Copy file for backup/restore.
 @return true in case of success. */
 bool
-copy_file(const char *src_file_path, const char *dst_file_path, uint thread_n)
+copy_file(ds_ctxt_t *datasink,
+	  const char *src_file_path,
+	  const char *dst_file_path,
+	  uint thread_n)
 {
 	char			 dst_name[FN_REFLEN];
 	ds_file_t		*dstfile = NULL;
@@ -954,8 +957,8 @@ copy_file(const char *src_file_path, const char *dst_file_path, uint thread_n)
 
 	strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
 
-	dstfile = ds_open(ds_data, trim_dotslash(dst_file_path),
-				   &cursor.statinfo);
+	dstfile = ds_open(datasink, trim_dotslash(dst_file_path),
+			  &cursor.statinfo);
 	if (dstfile == NULL) {
 		msg("[%02u] error: "
 			"cannot open the destination stream for %s\n",
@@ -1005,7 +1008,9 @@ different devices fall back to copy and unlink.
 @return true in case of success. */
 static
 bool
-move_file(const char *src_file_path, const char *dst_file_path,
+move_file(ds_ctxt_t *datasink,
+	  const char *src_file_path,
+	  const char *dst_file_path,
 	  const char *dst_dir, uint thread_n)
 {
 	char errbuf[MYSYS_STRERROR_SIZE];
@@ -1035,7 +1040,7 @@ move_file(const char *src_file_path, const char *dst_file_path,
 	if (my_rename(src_file_path, dst_file_path_abs, MYF(0)) != 0) {
 		if (my_errno == EXDEV) {
 			bool ret;
-			ret = copy_file(src_file_path,
+			ret = copy_file(datasink, src_file_path,
 					dst_file_path, thread_n);
 			msg_ts("[%02u] Removing %s\n", thread_n, src_file_path);
 			if (unlink(src_file_path) != 0) {
@@ -1068,9 +1073,63 @@ copy_or_move_file(const char *src_file_path,
 		  const char *dst_dir,
 		  uint thread_n)
 {
-	return(xtrabackup_copy_back ?
-		copy_file(src_file_path, dst_file_path, thread_n) :
-		move_file(src_file_path, dst_file_path, dst_dir, thread_n));
+	ds_ctxt_t *datasink = ds_data;		/* copy to datadir by default */
+	char *filepath = NULL;
+	char filedir[FN_REFLEN];
+	size_t filedir_len;
+	bool ret;
+
+	/* check if there is .isl file */
+	if (ends_with(src_file_path, ".ibd")) {
+		char *link_filepath;
+
+		link_filepath = strdup(src_file_path);
+		strcpy(link_filepath + strlen(link_filepath) - 3, "isl");
+
+		FILE *file = fopen(link_filepath, "r+b");
+		if (file) {
+			filepath = static_cast<char*>(malloc(OS_FILE_MAX_PATH));
+
+			os_file_read_string(file, filepath, OS_FILE_MAX_PATH);
+			fclose(file);
+
+			if (strlen(filepath)) {
+				/* Trim whitespace from end of filepath */
+				ulint lastch = strlen(filepath) - 1;
+				while (lastch > 4 && filepath[lastch] <= 0x20) {
+					filepath[lastch--] = 0x00;
+				}
+				srv_normalize_path_for_win(filepath);
+			}
+
+			dirname_part(filedir, filepath, &filedir_len);
+
+			dst_file_path = filepath + filedir_len;
+			dst_dir = filedir;
+
+			if (!directory_exists(dst_dir, true)) {
+				ret = false;
+				goto cleanup;
+			}
+
+			datasink = ds_create(dst_dir, DS_TYPE_LOCAL);
+		}
+		free(link_filepath);
+	}
+
+	ret = (xtrabackup_copy_back ?
+		copy_file(datasink, src_file_path, dst_file_path, thread_n) :
+		move_file(datasink, src_file_path, dst_file_path,
+			  dst_dir, thread_n));
+
+cleanup:
+	free(filepath);
+
+	if (datasink != ds_data) {
+		ds_destroy(datasink);
+	}
+
+	return(ret);
 }
 
 
@@ -1310,10 +1369,10 @@ backup_finish()
 			const char *dst_name;
 
 			dst_name = trim_dotslash(buffer_pool_filename);
-			copy_file(buffer_pool_filename, dst_name, 0);
+			copy_file(ds_data, buffer_pool_filename, dst_name, 0);
 		}
 		if (file_exists("ib_lru_dump")) {
-			copy_file("ib_lru_dump", "ib_lru_dump", 0);
+			copy_file(ds_data, "ib_lru_dump", "ib_lru_dump", 0);
 		}
 	}
 
@@ -1382,7 +1441,7 @@ ibx_copy_incremental_over_full()
 				unlink(node.filepath_rel);
 			}
 
-			if (!(ret = copy_file(node.filepath,
+			if (!(ret = copy_file(ds_data, node.filepath,
 						node.filepath_rel, 1))) {
 				msg("Failed to copy file %s\n",
 					node.filepath);
@@ -1401,8 +1460,8 @@ ibx_copy_incremental_over_full()
 				src_name);
 
 			if (file_exists(path)) {
-				copy_file(path, innobase_buffer_pool_filename,
-						0);
+				copy_file(ds_data, path,
+					  innobase_buffer_pool_filename, 0);
 			}
 		}
 
@@ -1418,7 +1477,7 @@ ibx_copy_incremental_over_full()
 			}
 
 			if (file_exists(path)) {
-				copy_file(path, sup_files[i], 0);
+				copy_file(ds_data, path, sup_files[i], 0);
 			}
 		}
 
@@ -1713,7 +1772,9 @@ copy_back()
 		from data directory */
 		if (file_exists(src_name) &&
 			!file_exists(innobase_buffer_pool_filename)) {
-			copy_file(src_name, innobase_buffer_pool_filename, 0);
+			copy_or_move_file(src_name,
+					  innobase_buffer_pool_filename,
+					  mysql_data_home, 0);
 		}
 	}
 

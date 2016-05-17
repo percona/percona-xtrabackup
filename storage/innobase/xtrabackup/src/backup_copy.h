@@ -3,6 +3,7 @@
 #define XTRABACKUP_BACKUP_COPY_H
 
 #include <my_global.h>
+#include "datasink.h"
 
 /* special files */
 #define XTRABACKUP_SLAVE_INFO "xtrabackup_slave_info"
@@ -25,7 +26,10 @@ equal_paths(const char *first, const char *second);
 Copy file for backup/restore.
 @return true in case of success. */
 bool
-copy_file(const char *src_file_path, const char *dst_file_path, uint thread_n);
+copy_file(ds_ctxt_t *datasink,
+	  const char *src_file_path,
+	  const char *dst_file_path,
+	  uint thread_n);
 
 bool
 backup_start();
