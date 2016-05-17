@@ -46,7 +46,7 @@ std::string*Buffered_file_io::get_backup_filename()
   if(backup_filename.empty() == FALSE)
     return &backup_filename;
   backup_filename.append(keyring_filename);
-  backup_filename.append(".backup");
+  backup_filename.append(".xtrabackup");
   return &backup_filename;
 }
 
