@@ -4561,6 +4561,8 @@ skip_last_cp:
 
 	xb_data_files_close();
 
+	recv_sys_debug_free();
+
 	log_shutdown();
 
 	trx_pool_close();
