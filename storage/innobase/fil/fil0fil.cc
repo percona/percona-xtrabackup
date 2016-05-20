@@ -2574,7 +2574,7 @@ fil_op_log_parse_or_replay(
 		} else if (log_flags & MLOG_FILE_FLAG_TEMP) {
 			/* Temporary table, do nothing */
 		} else {
-			const char*	path = fil_make_ibd_name(name, false);
+			char*	path = fil_make_ibd_name(name, false);
 
 			/* Create the database directory for name, if it does
 			not exist yet */
@@ -2585,6 +2585,7 @@ fil_op_log_parse_or_replay(
 					!= DB_SUCCESS) {
 				//ut_error;
 			}
+			ut_free(path);
 		}
 
 		break;
