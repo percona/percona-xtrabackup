@@ -373,7 +373,7 @@ read_retry:
 				goto corruption;
 			}
 
-			if (Compression::is_compressed_page(page)) {
+			if (Compression::is_compressed_page(cursor->decrypt)) {
 				if (os_file_decompress_page(false,
 				    cursor->decrypt, cursor->scratch,
 				    cursor->page_size) != DB_SUCCESS) {
