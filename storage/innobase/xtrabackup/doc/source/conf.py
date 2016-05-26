@@ -97,11 +97,11 @@ rst_prolog = '''
 
 .. |xbcrypt|  replace:: :term:`xbcrypt`
 
-.. |XtraDB|  replace:: :term:`XtraDB`
+.. |XtraDB|  replace:: *XtraDB*
 
-.. |InnoDB|  replace:: :term:`InnoDB`
+.. |InnoDB|  replace:: *InnoDB*
 
-.. |MyISAM|  replace:: :term:`MyISAM`
+.. |MyISAM|  replace:: *MyISAM*
 
 .. |Percona Toolkit|  replace:: *Percona Toolkit*
 

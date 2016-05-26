@@ -6,15 +6,6 @@ The |innobackupex| tool is a *Perl* script that acts as a wrapper for the :doc:`
 
 This manual section explains how to use |innobackupex| in detail.
 
-Prerequisites
-=============
-
-.. toctree::
-   :maxdepth: 1
-
-   privileges
-
-
 The Backup Cycle - Full Backups
 ===============================
 
