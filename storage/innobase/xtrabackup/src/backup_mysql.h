@@ -68,6 +68,9 @@ bool
 write_backup_config_file();
 
 bool
+flush_engine_logs_maybe(MYSQL *connection);
+
+bool
 lock_binlog_maybe(MYSQL *connection);
 
 bool
