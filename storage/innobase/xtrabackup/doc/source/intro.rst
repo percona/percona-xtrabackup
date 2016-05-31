@@ -3,7 +3,9 @@
 ==========================
 
 
-*Percona XtraBackup* is the world's only open-source, free |MySQL| hot backup software that performs non-blocking backups for |InnoDB| and |XtraDB| databases. With *Percona XtraBackup*, you can achieve the following benefits:
+*Percona XtraBackup* is the world's only open-source, free |MySQL| hot backup
+software that performs non-blocking backups for |InnoDB| and |XtraDB|
+databases. With *Percona XtraBackup*, you can achieve the following benefits:
 
 * Backups that complete quickly and reliably
 
@@ -15,11 +17,20 @@
 
 * Higher uptime due to faster restore time
 
-|Percona XtraBackup| makes |MySQL| hot backups for all versions of |Percona Server|, |MySQL|, and |MariaDB|. It performs streaming, compressed, and incremental |MySQL| backups.
+|Percona XtraBackup| makes |MySQL| hot backups for all versions of |Percona
+Server|, |MySQL|, and |MariaDB|. It performs streaming, compressed, and
+incremental |MySQL| backups.
 
-|Percona XtraBackup| works with |MySQL|, |MariaDB|, and |Percona Server|. It supports completely non-blocking backups of |InnoDB|, |XtraDB|, and *HailDB* storage engines. In addition, it can back up the following storage engines by briefly pausing writes at the end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and :term:`Archive <.ARM>`, including partitioned tables, triggers, and database options.
+|Percona XtraBackup| works with |MySQL|, |MariaDB|, and |Percona Server|. It
+supports completely non-blocking backups of |InnoDB|, |XtraDB|, and *HailDB*
+storage engines. In addition, it can back up the following storage engines by
+briefly pausing writes at the end of the backup: |MyISAM|,
+:term:`Merge <.MRG>`, and :term:`Archive <.ARM>`, including partitioned tables,
+triggers, and database options.
 
-Percona's enterprise-grade commercial `MySQL Support <http://www.percona.com/mysql-support/>`_ contracts include support for |Percona XtraBackup|. We recommend support for critical production deployments.
+Percona's enterprise-grade commercial `MySQL Support
+<http://www.percona.com/mysql-support/>`_ contracts include support for
+|Percona XtraBackup|. We recommend support for critical production deployments.
 
 MySQL Backup Tool Feature Comparison
 ====================================
@@ -163,7 +174,8 @@ MySQL Backup Tool Feature Comparison
 What are the features of Percona XtraBackup?
 ============================================
 
-Here is a short list of |Percona XtraBackup| features. See the documentation for more.
+Here is a short list of |Percona XtraBackup| features. See the documentation
+for more.
 
 * Create hot |InnoDB| backups without pausing your database
 * Make incremental backups of |MySQL|
@@ -178,16 +190,32 @@ Here is a short list of |Percona XtraBackup| features. See the documentation for
 
 .. [#n-1] |InnoDB| tables are still locked while copying non-|InnoDB| data.
 
-.. [#n-2] Fast incremental backups are supported for |Percona Server| with XtraDB changed page tracking enabled.
+.. [#n-2] Fast incremental backups are supported for |Percona Server| with
+          XtraDB changed page tracking enabled.
 
-.. [#n-3] |Percona XtraBackup| supports encryption with any kinds of backups. *MySQL Enterprise Backup* only supports encryption for single-file backups.
+.. [#n-3] |Percona XtraBackup| supports encryption with any kinds of backups.
+          *MySQL Enterprise Backup* only supports encryption for single-file
+          backups.
 
-.. [#n-4] |Percona XtraBackup| performs throttling based on the number of IO operations per second. *MySQL Enterprise Backup* supports a configurable sleep time between operations.
+.. [#n-4] |Percona XtraBackup| performs throttling based on the number of IO
+          operations per second. *MySQL Enterprise Backup* supports a
+          configurable sleep time between operations.
 
-.. [#n-5] |Percona XtraBackup| skips secondary index pages and recreates them when a compact backup is prepared. *MySQL Enterprise Backup* skips unused pages and reinserts on the prepare stage.
+.. [#n-5] |Percona XtraBackup| skips secondary index pages and recreates them
+          when a compact backup is prepared. *MySQL Enterprise Backup* skips
+          unused pages and reinserts on the prepare stage.
 
-.. [#n-6] |Percona XtraBackup| can export individual tables even from a full backup, regardless of the InnoDB version. *MySQL Enterprise Backup* uses InnoDB 5.6 transportable tablespaces only when performing a partial backup.
+.. [#n-6] |Percona XtraBackup| can export individual tables even from a full
+          backup, regardless of the InnoDB version. *MySQL Enterprise Backup*
+          uses InnoDB 5.6 transportable tablespaces only when performing a
+          partial backup.
 
-.. [#n-7] Tables exported with |Percona XtraBackup| can be imported into |Percona Server| 5.1, 5.5 or 5.6+, or |MySQL| 5.6+. Transportable tablespaces created with *MySQL Enterprise Backup* can only be imported to |Percona Server| 5.6+, |MySQL| 5.6+ or |MariaDB| 10.0+.
+.. [#n-7] Tables exported with |Percona XtraBackup| can be imported into
+          |Percona Server| 5.1, 5.5 or 5.6+, or |MySQL| 5.6+. Transportable
+          tablespaces created with *MySQL Enterprise Backup* can only be
+          imported to |Percona Server| 5.6+, |MySQL| 5.6+ or |MariaDB| 10.0+.
 
-.. [#n-8] Backup locks is a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` available in |Percona Server| 5.6+. |Percona XtraBackup| uses them automatically to copy non-InnoDB data to avoid blocking DML queries that modify |InnoDB| tables.
+.. [#n-8] Backup locks is a lightweight alternative to ``FLUSH TABLES WITH READ
+          LOCK`` available in |Percona Server| 5.6+. |Percona XtraBackup| uses
+          them automatically to copy non-InnoDB data to avoid blocking DML
+          queries that modify |InnoDB| tables.
