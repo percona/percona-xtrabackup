@@ -40,26 +40,26 @@ xb_keyring_init(const char *file_path)
 	const char *keyring_file_data_value = file_path;
 	MY_STAT stat_arg;
 
-	if (file_path == NULL) {
-		return(false);
-	}
-
-	if (!my_stat(file_path, &stat_arg, MYF(0))) {
-		logger->log(MY_ERROR_LEVEL, "Could not find keyring file.");
-		return(false);
-	}
-
-	if (stat_arg.st_size == 0) {
-		logger->log(MY_ERROR_LEVEL, "Keyring file is empty.");
-		return(false);
-	}
-
 	try {
+		logger.reset(new XtraKLogger());
+
+		if (file_path == NULL) {
+			return(false);
+		}
+
+		if (!my_stat(file_path, &stat_arg, MYF(0))) {
+			logger->log(MY_ERROR_LEVEL, "Could not find keyring file.");
+			return(false);
+		}
+
+		if (stat_arg.st_size == 0) {
+			logger->log(MY_ERROR_LEVEL, "Keyring file is empty.");
+			return(false);
+		}
 
 		if (init_keyring_locks())
 			return(false);
 
-		logger.reset(new XtraKLogger());
 		if (create_keyring_dir_if_does_not_exist(
 			keyring_file_data_value))
 		{
