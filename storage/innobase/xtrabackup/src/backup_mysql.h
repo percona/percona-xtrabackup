@@ -11,6 +11,7 @@ extern bool have_galera_enabled;
 extern bool have_flush_engine_logs;
 extern bool have_multi_threaded_slave;
 extern bool have_gtid_slave;
+extern bool have_tokudb;
 
 
 /* History on server */

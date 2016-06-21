@@ -55,6 +55,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sstream>
 #include <algorithm>
 #include "fil_cur.h"
+#include "xb_regex.h"
 #include "xtrabackup.h"
 #include "common.h"
 #include "backup_copy.h"
@@ -745,6 +746,38 @@ filename_matches(const char *filename, const char **ext_list)
 
 
 /************************************************************************
+Check if file name with given set of regex rules.
+@return true if it does. */
+static xb_regmatch_t files_regmatch[1];
+static bool
+filename_matches_regex(const char *filename, const char **ext_list)
+{
+	int ret;
+	xb_regex_t regex;
+	char errbuf[100];
+
+	const char **ext;
+
+	for (ext = ext_list; *ext; ext++) {
+		ret = xb_regcomp(&regex, *ext, REG_EXTENDED);
+		if (ret != 0) {
+			xb_regerror(ret, &regex, errbuf, sizeof(errbuf));
+			msg("backup_copy: error: filess regcomp(%s): %s\n",
+					*ext, errbuf);
+			exit(EXIT_FAILURE);
+		}
+		ret = xb_regexec(&regex, filename, 1, files_regmatch, 0);
+		xb_regfree(&regex);
+		if (ret != REG_NOMATCH) {
+			return (true);
+		}
+	}
+
+	return(false);
+}
+
+
+/************************************************************************
 Copy data file for backup. Also check if it is allowed to copy by
 comparing its name to the list of known data file types and checking
 if passes the rules for partial backup.
@@ -772,6 +805,50 @@ datafile_copy_backup(const char *filepath, uint thread_n)
 	}
 
 	if (filename_matches(filepath, ext_list)) {
+		return copy_file(ds_data, filepath, filepath, thread_n);
+	}
+
+	return(true);
+}
+
+/************************************************************************
+Copy TokuDB data file for backup.
+@return true if file backed up or skipped successfully.
+************************************************************************/
+static bool
+tokudb_data_file_copy_backup(const char *filepath, uint thread_n)
+{
+	const char *ext_list[] = {"tokudb",
+		NULL};
+
+	if (check_if_skip_table(filepath)) {
+		msg_ts("[%02u] Skipping %s.\n", thread_n, filepath);
+		return(true);
+	}
+
+	if (filename_matches(filepath, ext_list)) {
+		return copy_file(ds_data, filepath, filepath, thread_n);
+	}
+
+	return(true);
+}
+
+/************************************************************************
+Copy TokuDB redo-log file for backup.
+@return true if file backed up or skipped successfully.
+************************************************************************/
+static bool
+tokudb_redolog_file_copy_backup(const char *filepath, uint thread_n)
+{
+	const char *ext_list[] = {"log[0-9]+.tokulog[0-9]",
+		NULL};
+
+	if (check_if_skip_table(filepath)) {
+		msg_ts("[%02u] Skipping %s.\n", thread_n, filepath);
+		return(true);
+	}
+
+	if (filename_matches_regex(filepath, ext_list)) {
 		return copy_file(ds_data, filepath, filepath, thread_n);
 	}
 
@@ -1274,9 +1351,129 @@ out:
 	return(ret);
 }
 
+/************************************************************************
+ Acquire tokudb checkpoint lock.
+************************************************************************/
+static void
+tokudb_lock_checkpoint(MYSQL *connection)
+{
+	msg_ts("Executing SET GLOBAL tokudb_checkpoint_lock=ON\n");
+	/* First to disable tokudb_checkpoint_on_flush_logs or we will in dead lock */
+	xb_mysql_query(connection, "SET GLOBAL tokudb_checkpoint_on_flush_logs=OFF", false);
+	xb_mysql_query(connection, "SET GLOBAL tokudb_checkpoint_lock=ON", false);
+	msg_ts("tokudb_checkpoint_locked\n");
+}
+
+/************************************************************************
+ Release tokudb checkpoint lock.
+************************************************************************/
+static void
+tokudb_unlock_checkpoint(MYSQL *connection)
+{
+	msg_ts("Executing SET GLOBAL tokudb_checkpoint_lock=OFF\n");
+	xb_mysql_query(connection, "SET GLOBAL tokudb_checkpoint_lock=OFF", false);
+	msg_ts("tokudb_checkpoint_unlocked\n");
+}
+
+/************************************************************************
+ Back up tokudb.directory/environment/rollback files.
+************************************************************************/
+static bool
+backup_tokudb_env_files(void)
+{
+	bool ret = true;
+	const char **copy;
+	const char *copy_lists[] = {"tokudb.directory", "tokudb.environment", "tokudb.rollback", NULL};
+
+	msg_ts("Starting %s tokudb.directory/tokudb.environment/tokudb.rollback...\n", "to backup");
+	for (copy= copy_lists; *copy; copy++) {
+		ret = copy_file(ds_data, *copy, *copy, 1);
+		if (!ret) {
+			msg("Failed to copy TokuDB env file %s\n", *copy);
+			return ret;
+		}
+	}
+
+	return ret;
+}
+
+/************************************************************************
+ Backup tokudb redo-log files (log[0-9].tokulog[0-9)
+************************************************************************/
+static bool
+backup_tokudb_redo_log_files(const char *from)
+{
+	datadir_iter_t *it;
+	datadir_node_t node;
+	bool ret = true;
+
+	msg_ts("Starting %s TokuDB redo-log files\n", "to backup");
+
+	datadir_node_init(&node);
+	it = datadir_iter_new(from, false);
+
+	while (datadir_iter_next(it, &node)) {
+		if (!node.is_empty_dir) {
+			ret = tokudb_redolog_file_copy_backup(node.filepath, 1);
+			if (!ret) {
+				msg("Failed to copy tokudb redo file %s\n", node.filepath);
+				goto out;
+			}
+		}
+	}
+
+	msg_ts("Finished %s TokuDB redo-log files\n", "backing up");
+
+out:
+	datadir_iter_free(it);
+	datadir_node_free(&node);
+
+	return(ret);
+}
+
+
+/************************************************************************
+ Backup tokudb data files (*.tokudb)
+************************************************************************/
+static bool
+backup_tokudb_data_files(const char *from)
+{
+	datadir_iter_t *it;
+	datadir_node_t node;
+	bool ret = true;
+
+	msg_ts("Starting %s TokuDB data files\n", "to backup");
+
+	datadir_node_init(&node);
+	it = datadir_iter_new(from, false);
+
+	while (datadir_iter_next(it, &node)) {
+		if (!node.is_empty_dir) {
+			ret = tokudb_data_file_copy_backup(node.filepath, 1);
+			if (!ret) {
+				msg("Failed to copy TokuDB data file %s\n", node.filepath);
+				goto out;
+			}
+		}
+	}
+	msg_ts("Finished %s TokuDB data files\n", "backing up");
+
+out:
+	datadir_iter_free(it);
+	datadir_node_free(&node);
+
+	return(ret);
+}
+
+
 bool
 backup_start()
 {
+	/* tokudb checkpoint lock */
+	if (have_tokudb) {
+		tokudb_lock_checkpoint(mysql_connection);
+	}
+
 	if (!opt_no_lock) {
 		if (opt_safe_slave_backup) {
 			if (!wait_for_safe_slave(mysql_connection)) {
@@ -1343,6 +1540,15 @@ backup_start()
 			"FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS", false);
 	}
 
+	/* backup tokudb env&redos */
+	if (have_tokudb) {
+		if (!backup_tokudb_env_files())
+			return(false);
+	}
+	if (have_tokudb) {
+		backup_tokudb_redo_log_files(fil_path_to_mysql_datadir);
+	}
+
 	return(true);
 }
 
@@ -1357,6 +1563,19 @@ backup_finish()
 	} else {
 		history_lock_time = time(NULL) - history_lock_time;
 	}
+
+	/* backup tokudb data files */
+	if (have_tokudb) {
+		if (!backup_tokudb_data_files(fil_path_to_mysql_datadir)) {
+			return false;
+		}
+	}
+
+	/* tokudb checkpoint unlock */
+	if (have_tokudb) {
+		tokudb_unlock_checkpoint(mysql_connection);
+	}
+
 
 	if (opt_safe_slave_backup && sql_thread_started) {
 		msg("Starting slave SQL thread\n");
