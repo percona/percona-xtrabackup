@@ -977,7 +977,7 @@ log_group_file_header_flush_0(
 	/* lsn of the start of data in this log file */
 	static const uint FILE_START_LSN = 4;
 
-	ut_ad(mutex_own(&(log_sys->mutex)));
+	ut_ad(log_write_mutex_own());
 	ut_ad(!recv_no_log_write);
 	ut_a(nth_file < group->n_files);
 

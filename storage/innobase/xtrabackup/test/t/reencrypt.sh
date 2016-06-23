@@ -6,11 +6,12 @@ require_server_version_higher_than 5.7.10
 
 keyring_file=${TEST_VAR_ROOT}/keyring_file
 
-start_server --keyring-file-data=$keyring_file --server_id=10
+start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file --server_id=10
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
 SELECT @@server_id;
+SELECT @@server_uuid;
 
 CREATE TABLE t1 (c1 VARCHAR(100)) ENCRYPTION='Y';
 
@@ -27,6 +28,11 @@ INSERT INTO t1 SELECT * FROM t1;
 ALTER INSTANCE ROTATE INNODB MASTER KEY;
 
 EOF
+
+# wait for InnoDB to flush all dirty pages
+innodb_wait_for_flush_all
+
+cat $mysql_datadir/auto.cnf
 
 xtrabackup --backup --target-dir=$topdir/backup \
 	   --keyring-file-data=$keyring_file --server_id=10
@@ -75,9 +81,16 @@ rm -rf $mysql_datadir
 
 xtrabackup --copy-back --target-dir=$topdir/backup
 
-start_server --keyring_file_data=$keyring_file --server_id=200
+cat > $mysql_datadir/auto.cnf <<EOF
+[auto]
+server_uuid=8a94f357-aab4-11df-86ab-c80aa9429562
+EOF
 
-run_cmd $MYSQL $MYSQL_ARGS -e "SELECT @@server_id" test
-run_cmd $MYSQL $MYSQL_ARGS -e "SELECT @@keyring_file_data" test
-run_cmd $MYSQL $MYSQL_ARGS -e "SELECT SUM(c1) FROM t1" test
+start_server --early-plugin-load=keyring_file.so --keyring_file_data=$keyring_file --server_id=200
 
+run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+SELECT @@server_id;
+SELECT @@server_uuid;
+SELECT @@keyring_file_data;
+SELECT SUM(c1) FROM t1;
+EOF
