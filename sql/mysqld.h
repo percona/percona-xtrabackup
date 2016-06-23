@@ -473,7 +473,6 @@ extern PSI_thread_key key_thread_bootstrap,
   key_thread_handle_manager, key_thread_main,
   key_thread_one_connection, key_thread_signal_hand,
   key_thread_compress_gtid_table, key_thread_parser_service;
-extern PSI_thread_key key_thread_daemon_plugin;
 extern PSI_thread_key key_thread_timer_notifier;
 
 extern PSI_file_key key_file_map;
@@ -736,6 +735,7 @@ extern PSI_stage_info stage_worker_waiting_for_its_turn_to_commit;
 extern PSI_stage_info stage_worker_waiting_for_commit_parent;
 extern PSI_stage_info stage_suspending;
 extern PSI_stage_info stage_starting;
+extern PSI_stage_info stage_waiting_for_no_channel_reference;
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
 /**
   Statement instrumentation keys (sql).
@@ -929,7 +929,13 @@ enum enum_query_type
     Change all Item_basic_constant to ? (used by query rewrite to compute
     digest.)  Un-resolved hints will also be printed in this format.
   */
-  QT_NORMALIZED_FORMAT= (1 << 8)
+  QT_NORMALIZED_FORMAT= (1 << 8),
+  /**
+    If an expression is constant, print the expression, not the value
+    it evaluates to. Should be used for error messages, so that they
+    don't reveal values.
+  */
+  QT_NO_DATA_EXPANSION= (1 << 9),
 };
 
 /* query_id */
@@ -937,7 +943,7 @@ typedef int64 query_id_t;
 extern query_id_t global_query_id;
 
 /* increment query_id and return it.  */
-inline __attribute__((warn_unused_result)) query_id_t next_query_id()
+inline MY_ATTRIBUTE((warn_unused_result)) query_id_t next_query_id()
 {
   query_id_t id= my_atomic_add64(&global_query_id, 1);
   return (id+1);
@@ -947,7 +953,7 @@ inline __attribute__((warn_unused_result)) query_id_t next_query_id()
   TODO: Replace this with an inline function.
  */
 #ifndef EMBEDDED_LIBRARY
-extern "C" void unireg_abort(int exit_code) __attribute__((noreturn));
+extern "C" void unireg_abort(int exit_code) MY_ATTRIBUTE((noreturn));
 #else
 extern "C" void unireg_clear(int exit_code);
 #define unireg_abort(exit_code) do { unireg_clear(exit_code); DBUG_RETURN(exit_code); } while(0)

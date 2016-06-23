@@ -22,6 +22,7 @@
 #include "item_timefunc.h"    // Item_func_unix_timestamp
 #include "log.h"              // query_logger
 #include "log_event.h"        // slave_execute_deferred_events
+#include "mysys_err.h"        // EE_CAPACITY_EXCEEDED
 #include "opt_explain.h"      // mysql_explain_other
 #include "opt_trace.h"        // Opt_trace_start
 #include "partition_info.h"   // partition_info
@@ -1723,7 +1724,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
   {
     STATUS_VAR current_global_status_var;
     ulong uptime;
-    size_t length __attribute__((unused));
+    size_t length MY_ATTRIBUTE((unused));
     ulonglong queries_per_second1000;
     char buff[250];
     size_t buff_len= sizeof(buff);
@@ -2747,7 +2748,7 @@ mysql_execute_command(THD *thd, bool first_level)
   case SQLCOM_SELECT:
   {
     DBUG_EXECUTE_IF("use_attachable_trx",
-                    thd->begin_attachable_transaction(););
+                    thd->begin_attachable_ro_transaction(););
 
     thd->clear_current_query_costs();
 
@@ -5029,9 +5030,9 @@ finish:
   {
     static unsigned long total_leaked_bytes= 0;
     unsigned long leaked= 0;
-    unsigned long dubious __attribute__((unused));
-    unsigned long reachable __attribute__((unused));
-    unsigned long suppressed __attribute__((unused));
+    unsigned long dubious MY_ATTRIBUTE((unused));
+    unsigned long reachable MY_ATTRIBUTE((unused));
+    unsigned long suppressed MY_ATTRIBUTE((unused));
     /*
       We could possibly use VALGRIND_DO_CHANGED_LEAK_CHECK here,
       but that is a fairly new addition to the Valgrind api.
@@ -5144,7 +5145,7 @@ long max_stack_used;
   - Passing to check_stack_overrun() prevents the compiler from removing it.
 */
 bool check_stack_overrun(THD *thd, long margin,
-			 uchar *buf __attribute__((unused)))
+			 uchar *buf MY_ATTRIBUTE((unused)))
 {
   long stack_used;
   DBUG_ASSERT(thd == current_thd);
@@ -5376,7 +5377,7 @@ void mysql_init_multi_delete(LEX *lex)
 
 void mysql_parse(THD *thd, Parser_state *parser_state)
 {
-  int error __attribute__((unused));
+  int error MY_ATTRIBUTE((unused));
   DBUG_ENTER("mysql_parse");
   DBUG_PRINT("mysql_parse", ("query: '%s'", thd->query().str));
 
@@ -5410,12 +5411,18 @@ void mysql_parse(THD *thd, Parser_state *parser_state)
   if (query_cache.send_result_to_client(thd, thd->query()) <= 0)
   {
     LEX *lex= thd->lex;
+    const char *found_semicolon;
 
-    bool err= parse_sql(thd, parser_state, NULL);
+    bool err= thd->get_stmt_da()->is_error();
+
     if (!err)
-      err= invoke_post_parse_rewrite_plugins(thd, false);
+    {
+      err= parse_sql(thd, parser_state, NULL);
+      if (!err)
+        err= invoke_post_parse_rewrite_plugins(thd, false);
 
-    const char *found_semicolon= parser_state->m_lip.found_semicolon;
+      found_semicolon= parser_state->m_lip.found_semicolon;
+    }
 
     if (!err)
     {
@@ -6899,6 +6906,42 @@ bool check_host_name(const LEX_CSTRING &str)
 }
 
 
+class Parser_oom_handler : public Internal_error_handler
+{
+public:
+  Parser_oom_handler()
+    : m_has_errors(false), m_is_mem_error(false)
+  {}
+  virtual bool handle_condition(THD *thd,
+                                uint sql_errno,
+                                const char* sqlstate,
+                                Sql_condition::enum_severity_level *level,
+                                const char* msg)
+  {
+    if (*level == Sql_condition::SL_ERROR)
+    {
+      m_has_errors= true;
+      /* Out of memory error is reported only once. Return as handled */
+      if (m_is_mem_error && sql_errno == EE_CAPACITY_EXCEEDED)
+        return true;
+      if (sql_errno == EE_CAPACITY_EXCEEDED)
+      {
+        m_is_mem_error= true;
+        my_error(ER_CAPACITY_EXCEEDED, MYF(0),
+                 static_cast<ulonglong>(thd->variables.parser_max_mem_size),
+                 "parser_max_mem_size",
+                 ER_THD(thd, ER_CAPACITY_EXCEEDED_IN_PARSER));
+        return true;
+      }
+    }
+    return false;
+  }
+private:
+  bool m_has_errors;
+  bool m_is_mem_error;
+};
+
+
 extern int MYSQLparse(class THD *thd); // from sql_yacc.cc
 
 
@@ -7000,10 +7043,20 @@ bool parse_sql(THD *thd,
   Diagnostics_area *parser_da= thd->get_parser_da();
   Diagnostics_area *da=        thd->get_stmt_da();
 
+  Parser_oom_handler poomh;
+  // Note that we may be called recursively here, on INFORMATION_SCHEMA queries.
+
+  set_memroot_max_capacity(thd->mem_root, thd->variables.parser_max_mem_size);
+  set_memroot_error_reporting(thd->mem_root, true);
+  thd->push_internal_handler(&poomh);
+
   thd->push_diagnostics_area(parser_da, false);
 
   bool mysql_parse_status= MYSQLparse(thd) != 0;
 
+  thd->pop_internal_handler();
+  set_memroot_max_capacity(thd->mem_root, 0);
+  set_memroot_error_reporting(thd->mem_root, false);
   /*
     Unwind diagnostics area.
 

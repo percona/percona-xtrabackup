@@ -2045,6 +2045,16 @@ public:
   { return true; }
 
   /**
+    Check if a generated expression depends on DEFAULT function.
+
+    @param arg ignored
+
+    @returns false if the function is not DEFAULT(), otherwise true.
+  */
+  virtual bool check_gcol_depend_default_processor(uchar *arg)
+  { return false; }
+
+  /**
     @brief  update_indexed_column_map
     Update columns map for index.
 
@@ -2537,6 +2547,12 @@ public:
   bool send(Protocol *protocol, String *str)
   {
     return value_item->send(protocol, str);
+  }
+
+  virtual bool cache_const_expr_analyzer(uchar **arg)
+  {
+    // Item_name_const always wraps a literal, so there is no need to cache it.
+    return false;
   }
 
 protected:
@@ -3079,10 +3095,6 @@ class Item_param :public Item,
                   private Settable_routine_parameter
 {
   typedef Item super;
-
-  char cnvbuf[MAX_FIELD_WIDTH];
-  String cnvstr;
-  Item *cnvitem;
 
 protected:
   type_conversion_status save_in_field_inner(Field *field, bool no_conversions);
@@ -4907,6 +4919,9 @@ public:
            (arg && arg->walk(processor, walk, args)) ||
            ((walk & WALK_POSTFIX) && (this->*processor)(args));
   }
+
+  bool check_gcol_depend_default_processor(uchar *arg)
+  { return true; }
 
   Item *transform(Item_transformer transformer, uchar *args);
 };

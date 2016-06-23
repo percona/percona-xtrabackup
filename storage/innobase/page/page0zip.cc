@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2005, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -123,7 +123,7 @@ Compare at most sizeof(field_ref_zero) bytes.
 independently of any UNIV_ debugging conditions. */
 #if defined UNIV_DEBUG || defined UNIV_ZIP_DEBUG
 # include <stdarg.h>
-__attribute__((format (printf, 1, 2)))
+MY_ATTRIBUTE((format (printf, 1, 2)))
 /**********************************************************************//**
 Report a failure to decompress or compress.
 @return number of characters printed */
@@ -741,8 +741,8 @@ static
 void
 page_zip_free(
 /*==========*/
-	void*	opaque __attribute__((unused)),	/*!< in: memory heap */
-	void*	address __attribute__((unused)))/*!< in: object to free */
+	void*	opaque MY_ATTRIBUTE((unused)),	/*!< in: memory heap */
+	void*	address MY_ATTRIBUTE((unused)))/*!< in: object to free */
 {
 }
 
@@ -1732,7 +1732,7 @@ page_zip_fields_decode(
 /**********************************************************************//**
 Populate the sparse page directory from the dense directory.
 @return TRUE on success, FALSE on failure */
-static __attribute__((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((nonnull, warn_unused_result))
 ibool
 page_zip_dir_decode(
 /*================*/
@@ -3642,7 +3642,6 @@ page_zip_write_rec(
 	ulint		heap_no;
 	byte*		slot;
 
-	ut_ad(PAGE_ZIP_MATCH(rec, page_zip));
 	ut_ad(page_zip_simple_validate(page_zip));
 	ut_ad(page_zip_get_size(page_zip)
 	      > PAGE_DATA + page_zip_dir_size(page_zip));
@@ -3894,7 +3893,6 @@ page_zip_write_blob_ptr(
 	ut_ad(rec != NULL);
 	ut_ad(index != NULL);
 	ut_ad(offsets != NULL);
-	ut_ad(PAGE_ZIP_MATCH(rec, page_zip));
 	ut_ad(page_simple_validate_new((page_t*) page));
 	ut_ad(page_zip_simple_validate(page_zip));
 	ut_ad(page_zip_get_size(page_zip)
@@ -4047,7 +4045,6 @@ page_zip_write_node_ptr(
 	page_t*	page	= page_align(rec);
 #endif /* UNIV_DEBUG */
 
-	ut_ad(PAGE_ZIP_MATCH(rec, page_zip));
 	ut_ad(page_simple_validate_new(page));
 	ut_ad(page_zip_simple_validate(page_zip));
 	ut_ad(page_zip_get_size(page_zip)
@@ -4114,8 +4111,6 @@ page_zip_write_trx_id_and_roll_ptr(
 	page_t*	page	= page_align(rec);
 #endif /* UNIV_DEBUG */
 	ulint	len;
-
-	ut_ad(PAGE_ZIP_MATCH(rec, page_zip));
 
 	ut_ad(page_simple_validate_new(page));
 	ut_ad(page_zip_simple_validate(page_zip));
@@ -5049,6 +5044,8 @@ page_zip_verify_checksum(
 		return(TRUE);
 	}
 
+	bool	legacy_checksum_checked = false;
+
 	switch (curr_algo) {
 	case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
 	case SRV_CHECKSUM_ALGORITHM_CRC32:
@@ -5067,9 +5064,18 @@ page_zip_verify_checksum(
 			return(TRUE);
 		}
 
-		if (stored == page_zip_calc_checksum(data, size, curr_algo,
-						     true)) {
-			return(TRUE);
+		/* We need to check whether the stored checksum matches legacy
+		big endian checksum or Innodb checksum. We optimize the order
+		based on earlier results. if earlier we have found pages
+		matching legacy big endian checksum, we try to match it first.
+		Otherwise we check innodb checksum first. */
+		if (legacy_big_endian_checksum) {
+			if (stored == page_zip_calc_checksum(
+				data, size, curr_algo, true)) {
+
+				return(TRUE);
+			}
+			legacy_checksum_checked = true;
 		}
 
 		if (stored == page_zip_calc_checksum(
@@ -5086,6 +5092,15 @@ page_zip_verify_checksum(
 #endif	/* UNIV_INNOCHECKSUM */
 
 			return(TRUE);
+		}
+
+		/* If legacy checksum is not checked, do it now. */
+		if (!legacy_checksum_checked
+		    && stored == page_zip_calc_checksum(
+			data, size, curr_algo, true)) {
+
+			legacy_big_endian_checksum = true;
+				return(TRUE);
 		}
 
 		break;

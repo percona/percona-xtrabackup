@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 #include "my_global.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/service_rules_table.h"
+#include "mysql/service_ssl_wrapper.h"
 #include "sql_cache.h"
 #include "sql_error.h"
 #include "sql_parse.h"
@@ -43,7 +44,9 @@ void invoke_pre_parse_rewrite_plugins(THD *thd)
   Diagnostics_area *plugin_da= thd->get_query_rewrite_plugin_da();
   if (plugin_da == NULL)
     return;
+  plugin_da->reset_diagnostics_area();
   plugin_da->reset_condition_info(thd);
+
   Diagnostics_area *da= thd->get_parser_da();
   thd->push_diagnostics_area(plugin_da, false);
   mysql_event_parse_rewrite_plugin_flag flags=
@@ -53,7 +56,9 @@ void invoke_pre_parse_rewrite_plugins(THD *thd)
                      &flags,
                      &rewritten_query);
 
-  if (flags & MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_QUERY_REWRITTEN)
+  /* Do not continue when the plugin set the error state. */
+  if (!plugin_da->is_error() &&
+      flags & MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_QUERY_REWRITTEN)
   {
     // It is a rewrite fulltext plugin and we need a rewrite we must have
     // generated a new query then.
@@ -65,11 +70,17 @@ void invoke_pre_parse_rewrite_plugins(THD *thd)
     my_free((void *)rewritten_query.str);
   }
 
-  da->copy_sql_conditions_from_da(thd, plugin_da);
-
+  da->copy_non_errors_from_da(thd, plugin_da);
   thd->pop_diagnostics_area();
-}
 
+  if (plugin_da->is_error())
+  {
+    thd->get_stmt_da()->set_error_status(plugin_da->mysql_errno(),
+                                         plugin_da->message_text(),
+                                         plugin_da->returned_sqlstate());
+    plugin_da->reset_diagnostics_area();
+  }
+}
 
 void enable_digest_if_any_plugin_needs_it(THD *thd, Parser_state *ps)
 {
@@ -104,6 +115,13 @@ bool invoke_post_parse_rewrite_plugins(THD *thd, my_bool is_prepared)
     int dummy= 
 #endif
       rules_table_service::
+      dummy_function_to_ensure_we_are_linked_into_the_server();
+    DBUG_ASSERT(dummy == 1);
+
+#ifndef DBUG_OFF
+    dummy=
+#endif
+      ssl_wrappe_service::
       dummy_function_to_ensure_we_are_linked_into_the_server();
     DBUG_ASSERT(dummy == 1);
   }

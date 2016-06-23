@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1252,12 +1252,17 @@ char *get_56_lenc_string(char **buffer,
 
   *string_length= (size_t)net_field_length_ll((uchar **)buffer);
 
+  DBUG_EXECUTE_IF("sha256_password_scramble_too_long",
+                  *string_length= SIZE_T_MAX;
+  );
+
   size_t len_len= (size_t)(*buffer - begin);
   
-  if (*string_length + len_len > *max_bytes_available)
+  if (*string_length > *max_bytes_available - len_len)
     return NULL;
 
-  *max_bytes_available -= *string_length + len_len;
+  *max_bytes_available -= *string_length;
+  *max_bytes_available -= len_len;
   *buffer += *string_length;
   return (char *)(begin + len_len);
 }
@@ -2196,7 +2201,8 @@ acl_authenticate(THD *thd, enum_server_command command)
     acl_log_connect(mpvio.auth_info.user_name, mpvio.auth_info.host_or_ip,
       mpvio.auth_info.authenticated_as, mpvio.db.str, thd, command);
   }
-  if (!mpvio.can_authenticate() && res == CR_OK)
+  if (res == CR_OK &&
+      (!mpvio.can_authenticate() || thd->is_error()))
   {
     res= CR_ERROR;
   }
@@ -2253,6 +2259,9 @@ acl_authenticate(THD *thd, enum_server_command command)
       acl_log_connect(mpvio.auth_info.user_name, mpvio.auth_info.host_or_ip,
         mpvio.auth_info.authenticated_as, mpvio.db.str, thd, command);
     }
+
+    if (thd->is_error())
+      DBUG_RETURN(1);
 
     if (is_proxy_user)
     {
@@ -2594,9 +2603,9 @@ int validate_sha256_password_hash(char* const inbuf, unsigned int buflen)
   return 1;
 }
 
-int set_sha256_salt(const char* password __attribute__((unused)),
-                    unsigned int password_len __attribute__((unused)),
-                    unsigned char* salt __attribute__((unused)),
+int set_sha256_salt(const char* password MY_ATTRIBUTE((unused)),
+                    unsigned int password_len MY_ATTRIBUTE((unused)),
+                    unsigned char* salt MY_ATTRIBUTE((unused)),
                     unsigned char *salt_len)
 {
   *salt_len= 0;

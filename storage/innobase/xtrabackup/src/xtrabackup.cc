@@ -2909,7 +2909,7 @@ log_copying_thread(
 
 	log_copying_running = FALSE;
 	my_thread_end();
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	return(0);
 }
@@ -2942,7 +2942,7 @@ io_watching_thread(
 
 	io_watching_thread_running = FALSE;
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	return(0);
 }
@@ -2974,7 +2974,7 @@ io_handler_thread(
 	The thread actually never comes here because it is exited in an
 	os_event_wait(). */
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 #ifndef __WIN__
 	return(NULL);				/* Not reached */
@@ -3018,7 +3018,7 @@ data_copy_thread_func(
 	mutex_exit(ctxt->count_mutex);
 
 	my_thread_end();
-	os_thread_exit(NULL);
+	os_thread_exit();
 	OS_THREAD_DUMMY_RETURN;
 }
 
@@ -6831,46 +6831,64 @@ bool
 reencrypt_tablespace_keys(
 	ulint new_server_id)
 {
+	byte*			master_key = NULL;
+	bool			ret = false;
+	Encryption::Version	version;
+
 	xb_keyring_init(xb_keyring_file_data);
 
-	/* re-encrypt for new server-id */
-	byte*	master_key = NULL;
-
-	/* Check if keyring loaded and the currently master key
+	/* Check if keyring loaded and the current master key
 	can be fetched. */
 	if (Encryption::master_key_id != 0) {
-		Encryption::get_master_key(Encryption::master_key_id,
-					   &master_key);
+		ulint			master_key_id;
+
+		Encryption::get_master_key(&master_key_id,
+					   &master_key,
+					   &version);
 		if (master_key == NULL) {
 			msg("xtrabackup: error: Can't find master key.\n");
-			goto error;
+			return(false);
 		}
+		msg("xtrabackup: found master key version %s.\n",
+		    version == Encryption::ENCRYPTION_VERSION_1 ?
+		    "= 5.7.11" : ">= 5.7.12");
 		my_free(master_key);
+
+		if (version != Encryption::ENCRYPTION_VERSION_1) {
+			msg("xtrabackup: reencryption is not needed.\n");
+			return(true);
+		}
+	} else {
+
+		/* no encrypted tablespaces */
+
+		return(true);
 	}
 
 	master_key = NULL;
 
 	/* Generate the new master key. */
 	server_id = new_server_id;
-	Encryption::create_master_key(&master_key);
+	Encryption::create_master_key_v0(&master_key);
 
         if (master_key == NULL) {
 		msg("xtrabackup: error: Can't create master key.\n");
-		goto error;
+                return(false);
         }
 
-	/* If rotation failure, return error */
-	if (!fil_encryption_rotate()) {
-		msg("xtrabackup: error: Can't rotate master key.\n");
-		goto error;
-	}
+	ret = fil_encryption_rotate();
 
-	return(true);
-
-error:
 	my_free(master_key);
 
-	return(false);
+	/* If rotation failure, return error */
+	if (!ret) {
+		msg("xtrabackup: error: Can't rotate master key.\n");
+	} else {
+		msg("xtrabackup: Keys reencrypted for server-id %lu.\n",
+		    server_id);
+	}
+
+	return(ret);
 }
 
 #if 0
