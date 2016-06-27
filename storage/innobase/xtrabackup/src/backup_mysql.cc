@@ -84,8 +84,6 @@ time_t history_start_time;
 time_t history_end_time;
 time_t history_lock_time;
 
-char *innobase_data_file_path_alloc = NULL;
-
 MYSQL *mysql_connection;
 
 extern "C" {
@@ -342,8 +340,13 @@ get_mysql_vars(MYSQL *connection)
 	char *gtid_slave_pos_var = NULL;
 	char *innodb_buffer_pool_filename_var = NULL;
 	char *datadir_var = NULL;
+	char *innodb_log_group_home_dir_var = NULL;
 	char *innodb_log_file_size_var = NULL;
+	char *innodb_log_files_in_group_var = NULL;
 	char *innodb_data_file_path_var = NULL;
+	char *innodb_data_home_dir_var = NULL;
+	char *innodb_undo_directory_var = NULL;
+	char *innodb_page_size_var = NULL;
 	char *innodb_log_checksums_var = NULL;
 	char *innodb_log_checksum_algorithm_var = NULL;
 
@@ -364,8 +367,13 @@ get_mysql_vars(MYSQL *connection)
 		{"innodb_buffer_pool_filename",
 			&innodb_buffer_pool_filename_var},
 		{"datadir", &datadir_var},
+		{"innodb_log_group_home_dir", &innodb_log_group_home_dir_var},
 		{"innodb_log_file_size", &innodb_log_file_size_var},
+		{"innodb_log_files_in_group", &innodb_log_files_in_group_var},
 		{"innodb_data_file_path", &innodb_data_file_path_var},
+		{"innodb_data_home_dir", &innodb_data_home_dir_var},
+		{"innodb_undo_directory", &innodb_undo_directory_var},
+		{"innodb_page_size", &innodb_page_size_var},
 		{"innodb_log_checksums", &innodb_log_checksums_var},
 		{"innodb_log_checksum_algorithm",
 			&innodb_log_checksum_algorithm_var},
@@ -434,38 +442,78 @@ get_mysql_vars(MYSQL *connection)
 	}
 
 	/* make sure datadir value is the same in configuration file */
-	if (datadir_specified) {
+	if (check_if_param_set("datadir")) {
 		if (!directory_exists(mysql_data_home, false)) {
-			msg("Error: option 'datadir' points to "
+			msg("Warning: option 'datadir' points to "
 			    "nonexistent directory '%s'\n", mysql_data_home);
-			goto out;
 		}
 		if (!directory_exists(datadir_var, false)) {
-			msg("Error: MySQL variable 'datadir' points to "
+			msg("Warning: MySQL variable 'datadir' points to "
 			    "nonexistent directory '%s'\n", datadir_var);
-			goto out;
 		}
-		if (!(ret = equal_paths(mysql_data_home, datadir_var))) {
-			msg("Error: option 'datadir' has different "
+		if (!equal_paths(mysql_data_home, datadir_var)) {
+			msg("Warning: option 'datadir' has different "
 				"values:\n"
 				"  '%s' in defaults file\n"
 				"  '%s' in SHOW VARIABLES\n",
 				mysql_data_home, datadir_var);
-			goto out;
 		}
 	}
 
 	/* get some default values is they are missing from my.cnf */
-	if (!datadir_specified) {
+	if (!check_if_param_set("datadir") && datadir_var && *datadir_var) {
 		strmake(mysql_real_data_home, datadir_var, FN_REFLEN - 1);
 		mysql_data_home= mysql_real_data_home;
 	}
 
-	if (!innodb_log_file_size_specified) {
+	if (!check_if_param_set("innodb_data_file_path")
+	    && innodb_data_file_path_var && *innodb_data_file_path_var) {
+		innobase_data_file_path = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_data_file_path_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_data_home_dir")
+	    && innodb_data_home_dir_var && *innodb_data_home_dir_var) {
+		innobase_data_home_dir = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_data_home_dir_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_log_group_home_dir")
+	    && innodb_log_group_home_dir_var
+	    && *innodb_log_group_home_dir_var) {
+		srv_log_group_home_dir = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_log_group_home_dir_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_undo_directory")
+	    && innodb_undo_directory_var && *innodb_undo_directory_var) {
+		srv_undo_dir = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_undo_directory_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_log_files_in_group")
+	    && innodb_log_files_in_group_var) {
 		char *endptr;
 
-		innobase_log_file_size = strtoll(innodb_log_file_size_var,
-							&endptr, 10);
+		innobase_log_files_in_group = strtol(
+			innodb_log_files_in_group_var, &endptr, 10);
+		ut_ad(*endptr == 0);
+	}
+
+	if (!check_if_param_set("innodb_log_file_size")
+	    && innodb_log_file_size_var) {
+		char *endptr;
+
+		innobase_log_file_size = strtoll(
+			innodb_log_file_size_var, &endptr, 10);
+		ut_ad(*endptr == 0);
+	}
+
+	if (!check_if_param_set("innodb_page_size") && innodb_page_size_var) {
+		char *endptr;
+
+		innobase_page_size = strtoll(
+			innodb_page_size_var, &endptr, 10);
 		ut_ad(*endptr == 0);
 	}
 
@@ -491,11 +539,6 @@ get_mysql_vars(MYSQL *connection)
 			srv_log_checksum_algorithm =
 				SRV_CHECKSUM_ALGORITHM_NONE;
 		}
-	}
-
-	if (!innodb_data_file_path_specified) {
-		innobase_data_file_path = innobase_data_file_path_alloc
-					= strdup(innodb_data_file_path_var);
 	}
 
 	parse_show_engine_innodb_status(connection);
@@ -1718,8 +1761,6 @@ backup_cleanup()
 	free(mysql_slave_position);
 	free(mysql_binlog_position);
 	free(buffer_pool_filename);
-
-	free(innobase_data_file_path_alloc);
 
 	if (mysql_connection) {
 		mysql_close(mysql_connection);
