@@ -382,7 +382,7 @@ get_mysql_vars(MYSQL *connection)
 		have_galera_enabled = true;
 	}
 
-	if (strcmp(version_var, "5.5") >= 0) {
+	if (fnmatch("5.[123].*", version_var, FNM_PATHNAME) != 0) {
 		have_flush_engine_logs = true;
 	}
 
