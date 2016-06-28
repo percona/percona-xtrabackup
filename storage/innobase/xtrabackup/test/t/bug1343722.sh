@@ -12,7 +12,7 @@ start_server_with_id 2
 $IB_BIN $IB_ARGS --socket=$socket --no-timestamp $topdir/backup 2>&1 |
     grep 'has different values'
 
-if [[ ${PIPESTATUS[0]} == 0 ]]
+if [[ ${PIPESTATUS[0]} != 0 ]]
 then
-    die "innobackupex did not fail as expected"
+    die "innobackupex failed"
 fi

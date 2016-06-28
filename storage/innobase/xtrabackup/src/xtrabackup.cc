@@ -71,6 +71,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_aes.h>
 
 #include <sstream>
+#include <set>
 #include <mysql.h>
 
 #define G_PTR uchar*
@@ -347,14 +348,14 @@ static longlong	innobase_log_file_size_save;
 
 /* set true if corresponding variable set as option config file or 
 command argument */
-bool innodb_data_file_path_specified = false;
-bool innodb_log_file_size_specified = false;
-bool datadir_specified = false;
 bool innodb_log_checksum_algorithm_specified = false;
 
 /* String buffer used by --print-param to accumulate server options as they are
 parsed from the defaults file */
 static std::ostringstream print_param_str;
+
+/* Set of specified parameters */
+std::set<std::string> param_set;
 
 static ulonglong global_max_value;
 
@@ -802,12 +803,11 @@ Disable with --skip-innodb-checksums.", (G_PTR*) &innobase_use_checksums,
    0, GET_ULONG, REQUIRED_ARG, 500L, 1L, ULONG_MAX, 0, 1L, 0},
 */
   {"innodb_data_file_path", OPT_INNODB_DATA_FILE_PATH,
-   "Path to individual files and their sizes.", (G_PTR*) &innobase_data_file_path,
-   (G_PTR*) &innobase_data_file_path, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   "Path to individual files and their sizes.", &innobase_data_file_path,
+   &innobase_data_file_path, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_data_home_dir", OPT_INNODB_DATA_HOME_DIR,
-   "The common part for InnoDB table spaces.", (G_PTR*) &innobase_data_home_dir,
-   (G_PTR*) &innobase_data_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0,
-   0},
+   "The common part for InnoDB table spaces.", &innobase_data_home_dir,
+   &innobase_data_home_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_doublewrite", OPT_INNODB_DOUBLEWRITE, "Enable InnoDB doublewrite buffer (enabled by default). \
 Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*) &innobase_use_doublewrite, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
@@ -871,13 +871,13 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    GET_LL, REQUIRED_ARG, 48*1024*1024L, 1*1024*1024L, LLONG_MAX, 0,
    1024*1024L, 0},
   {"innodb_log_files_in_group", OPT_INNODB_LOG_FILES_IN_GROUP,
-   "Number of log files in the log group. InnoDB writes to the files in a circular fashion. Value 3 is recommended here.",
-   (G_PTR*) &innobase_log_files_in_group, (G_PTR*) &innobase_log_files_in_group,
+   "Number of log files in the log group. InnoDB writes to the files in a "
+   "circular fashion. Value 3 is recommended here.",
+   &innobase_log_files_in_group, &innobase_log_files_in_group,
    0, GET_LONG, REQUIRED_ARG, 2, 2, 100, 0, 1, 0},
   {"innodb_log_group_home_dir", OPT_INNODB_LOG_GROUP_HOME_DIR,
-   "Path to InnoDB log files.", (G_PTR*) &srv_log_group_home_dir,
-   (G_PTR*) &srv_log_group_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
-   0, 0},
+   "Path to InnoDB log files.", &srv_log_group_home_dir,
+   &srv_log_group_home_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_max_dirty_pages_pct", OPT_INNODB_MAX_DIRTY_PAGES_PCT,
    "Percentage of dirty pages allowed in bufferpool.", (G_PTR*) &srv_max_buf_pool_modified_pct,
    (G_PTR*) &srv_max_buf_pool_modified_pct, 0, GET_ULONG, REQUIRED_ARG, 90, 0, 100, 0, 0, 0},
@@ -952,8 +952,8 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_CRC32, 0, 0, 0, 0, 0},
   {"innodb_undo_directory", OPT_INNODB_UNDO_DIRECTORY,
    "Directory where undo tablespace files live, this path can be absolute.",
-   (G_PTR*) &srv_undo_dir, (G_PTR*) &srv_undo_dir,
-   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   &srv_undo_dir, &srv_undo_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
+   0},
 
   {"innodb_undo_tablespaces", OPT_INNODB_UNDO_TABLESPACES,
    "Number of undo tablespaces to use.",
@@ -1330,7 +1330,19 @@ You can download full text of the license on http://www.gnu.org/licenses/gpl-2.0
 }
 
 #define ADD_PRINT_PARAM_OPT(value)              \
-  print_param_str << opt->name << "=" << value << "\n";
+  { \
+    print_param_str << opt->name << "=" << value << "\n"; \
+    param_set.insert(opt->name); \
+  }
+
+/************************************************************************
+Check if parameter is set in defaults file or via command line argument
+@return true if parameter is set. */
+bool
+check_if_param_set(const char *param)
+{
+	return param_set.find(param) != param_set.end();
+}
 
 my_bool
 xb_get_one_option(int optid,
@@ -1343,7 +1355,6 @@ xb_get_one_option(int optid,
     mysql_data_home= mysql_real_data_home;
 
     ADD_PRINT_PARAM_OPT(mysql_real_data_home);
-    datadir_specified = true;
     break;
 
   case 't':
@@ -1359,7 +1370,6 @@ xb_get_one_option(int optid,
   case OPT_INNODB_DATA_FILE_PATH:
 
     ADD_PRINT_PARAM_OPT(innobase_data_file_path);
-    innodb_data_file_path_specified = true;
     break;
 
   case OPT_INNODB_LOG_GROUP_HOME_DIR:
@@ -1375,7 +1385,6 @@ xb_get_one_option(int optid,
   case OPT_INNODB_LOG_FILE_SIZE:
 
     ADD_PRINT_PARAM_OPT(innobase_log_file_size);
-    innodb_log_file_size_specified = true;
     break;
 
   case OPT_INNODB_FLUSH_METHOD:
@@ -1860,7 +1869,8 @@ innodb_init_param(void)
 	directory. */
 
 	if (!srv_undo_dir || !xtrabackup_backup) {
-		srv_undo_dir = (char *) ".";
+		my_free(srv_undo_dir);
+		srv_undo_dir = my_strdup(PSI_NOT_INSTRUMENTED, ".", MYF(MY_FAE));
 	}
 
 	innodb_log_checksum_func_update(srv_log_checksum_algorithm);
@@ -7961,7 +7971,7 @@ int main(int argc, char **argv)
 		xtrabackup_prepare_func();
 
 	if (xtrabackup_copy_back || xtrabackup_move_back) {
-		if (!datadir_specified) {
+		if (!check_if_param_set("datadir")) {
 			msg("Error: datadir must be specified.\n");
 			exit(EXIT_FAILURE);
 		}
