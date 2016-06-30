@@ -99,7 +99,7 @@ mariadb_check_encryption(
 				buf += LOG_CRYPT_ENTRY_SIZE;
 
 				if (key_version != 0) {
-					msg("xtrabackup: Redo log encrypted on checkpoint %lu key_version %lu\n",
+					msg("xtrabackup: Redo log encrypted on checkpoint " LSN_PF " key_version %lu\n",
 						checkpoint_no, key_version);
 					encrypted = true;
 				}
@@ -179,6 +179,7 @@ mariadb_check_tablespace_encryption(
 
 	if (memcmp(page + offset, EMPTY_PATTERN, MAGIC_SZ) == 0 ||
 	    memcmp(page + offset, CRYPT_MAGIC, MAGIC_SZ) != 0) {
+		ut_free(buf);
 		return false;
 	}
 
@@ -186,13 +187,17 @@ mariadb_check_tablespace_encryption(
 
 	if (! (type == CRYPT_SCHEME_UNENCRYPTED ||
 	       type == CRYPT_SCHEME_1)) {
+		ut_free(buf);
 		return false;
 	}
 
 	ulint iv_length = mach_read_from_1(page + offset + MAGIC_SZ + 1);
+
 	if (iv_length != CRYPT_SCHEME_1_IV_LEN) {
+		ut_free(buf);
 		return false;
 	}
+
 	uint min_key_version = mach_read_from_4
 		(page + offset + MAGIC_SZ + 2 + iv_length);
 
