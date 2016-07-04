@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -235,7 +235,7 @@ row_sel_sec_rec_is_for_clust_rec(
 					row, v_col, clust_index,
 					&heap, NULL, NULL,
 					thr_get_trx(thr)->mysql_thd,
-					thr->prebuilt->m_mysql_table);
+					thr->prebuilt->m_mysql_table, NULL);
 
 			clust_len = vfield->len;
 			clust_field = static_cast<byte*>(vfield->data);
@@ -739,7 +739,7 @@ sel_enqueue_prefetched_row(
 /*********************************************************************//**
 Builds a previous version of a clustered index record for a consistent read
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 row_sel_build_prev_vers(
 /*====================*/
@@ -874,7 +874,7 @@ row_sel_test_other_conds(
 Retrieves the clustered index record corresponding to a record in a
 non-clustered index. Does the necessary locking.
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 row_sel_get_clust_rec(
 /*==================*/
@@ -1566,7 +1566,7 @@ func_exit:
 /*********************************************************************//**
 Performs a select step.
 @return DB_SUCCESS or error code */
-static __attribute__((warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_sel(
 /*====*/
@@ -3040,7 +3040,7 @@ row_sel_field_store_in_mysql_format_func(
 #endif /* UNIV_DEBUG */
 /**************************************************************//**
 Convert a field in the Innobase format to a field in the MySQL format. */
-static __attribute__((warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 ibool
 row_sel_store_mysql_field_func(
 /*===========================*/
@@ -3199,7 +3199,7 @@ Note that the template in prebuilt may advise us to copy only a few
 columns to mysql_rec, other columns are left blank. All columns may not
 be needed in the query.
 @return TRUE on success, FALSE if not all columns could be retrieved */
-static __attribute__((warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 ibool
 row_sel_store_mysql_rec(
 /*====================*/
@@ -3218,6 +3218,7 @@ row_sel_store_mysql_rec(
 					rec_get_offsets(rec) */
 {
 	ulint		i;
+	mem_heap_t*	heap = NULL;
 	DBUG_ENTER("row_sel_store_mysql_rec");
 
 	ut_ad(rec_clust || index == prebuilt->index);
@@ -3249,6 +3250,43 @@ row_sel_store_mysql_rec(
 
 			const dfield_t* dfield = dtuple_get_nth_v_field(
 				vrow, col->v_pos);
+
+			/* If this is a partitioned table, it might request
+			InnoDB to fill out virtual column data even it is
+			not indexed (materialized) by setting prebuilt->
+			m_read_virtual_key set. Such info is usually filled
+			by server, but due to the nature of partition table
+			frame work, it is now need to be filled by InnoDB.
+			So we will need to compute the value here */
+			if (dfield_get_type(dfield)->mtype == DATA_MISSING) {
+
+				ut_ad(prebuilt->m_read_virtual_key);
+
+				que_thr_t*	thr = que_fork_get_first_thr(
+					prebuilt->sel_graph);
+
+				if (heap == NULL) {
+					heap = mem_heap_create(100);
+				}
+
+				dtuple_t*	row = row_build(
+					ROW_COPY_DATA, index, rec, offsets,
+					NULL, NULL, NULL, NULL, heap);
+
+				/* BLOB field goes to separate heap */
+				if (DATA_LARGE_MTYPE(templ->type)
+				    && prebuilt->blob_heap == NULL) {
+					prebuilt->blob_heap = mem_heap_create(
+                                        UNIV_PAGE_SIZE);
+				}
+
+				dfield = innobase_get_computed_value(
+					row, col, index,
+					&heap, prebuilt->blob_heap,
+					NULL,
+					thr_get_trx(thr)->mysql_thd,
+					prebuilt->m_mysql_table, NULL);
+			}
 
 			if (dfield->len == UNIV_SQL_NULL) {
 				mysql_rec[templ->mysql_null_byte_offset]
@@ -3285,6 +3323,10 @@ row_sel_store_mysql_rec(
 		if (!row_sel_store_mysql_field(mysql_rec, prebuilt,
 					       rec, index, offsets,
 					       field_no, templ)) {
+			if (heap != NULL) {
+				mem_heap_free(heap);
+			}
+
 			DBUG_RETURN(FALSE);
 		}
 	}
@@ -3302,13 +3344,17 @@ row_sel_store_mysql_rec(
 		}
 	}
 
+	if (heap != NULL) {
+		mem_heap_free(heap);
+	}
+
 	DBUG_RETURN(TRUE);
 }
 
 /*********************************************************************//**
 Builds a previous version of a clustered index record for a consistent read
 @return DB_SUCCESS or error code */
-static __attribute__((warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_sel_build_prev_vers_for_mysql(
 /*==============================*/
@@ -3347,7 +3393,7 @@ Retrieves the clustered index record corresponding to a record in a
 non-clustered index. Does the necessary locking. Used in the MySQL
 interface.
 @return DB_SUCCESS, DB_SUCCESS_LOCKED_REC, or error code */
-static __attribute__((warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_sel_get_clust_rec_for_mysql(
 /*============================*/
@@ -4401,6 +4447,9 @@ row_sel_fill_vrow(
 	*vrow = dtuple_create_with_vcol(
 		heap, 0, dict_table_get_n_v_cols(index->table));
 
+	/* Initialize all virtual row's mtype to DATA_MISSING */
+	dtuple_init_v_fld(*vrow);
+
 	for (ulint i = 0; i < dict_index_get_n_fields(index); i++) {
 		const dict_field_t*     field;
                 const dict_col_t*       col;
@@ -4420,6 +4469,7 @@ row_sel_fill_vrow(
 			dfield_t* dfield = dtuple_get_nth_v_field(
 				*vrow, vcol->v_pos);
 			dfield_set_data(dfield, data, len);
+			dict_col_copy_type(col, dfield_get_type(dfield));
 		}
 	}
 }

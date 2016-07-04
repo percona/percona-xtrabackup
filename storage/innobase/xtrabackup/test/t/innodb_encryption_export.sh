@@ -7,7 +7,7 @@ require_server_version_higher_than 5.7.10
 
 keyring_file=${TEST_VAR_ROOT}/keyring_file
 
-start_server --keyring-file-data=$keyring_file --server-id=10
+start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file --server-id=10
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
@@ -26,6 +26,9 @@ INSERT INTO t1 SELECT * FROM t1;
 ALTER INSTANCE ROTATE INNODB MASTER KEY;
 
 EOF
+
+# wait for InnoDB to flush all dirty pages
+innodb_wait_for_flush_all
 
 xtrabackup --backup --target-dir=$topdir/backup \
 	   --keyring-file-data=$keyring_file --server-id=10
@@ -73,7 +76,7 @@ EOF
 
 stop_server
 
-start_server --keyring-file-data=$keyring_file --server-id=20
+start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file --server-id=20
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 

@@ -42,7 +42,8 @@ public:
   void reserve_buffer(size_t memory_size);
   my_bool close();
   my_bool flush_to_backup();
-  my_bool flush_to_keyring();
+  /* Both attributes are unused */
+  my_bool flush_to_keyring(IKey *key = NULL, Flush_operation operation = STORE_KEY);
   /**
    * Writes key into the buffer
    * @param key the key to be written to the buffer
@@ -54,7 +55,7 @@ public:
    * @param key the key where memory from the buffer is going to be placed
    * @return TRUE on success
   */
-  my_bool operator>>(IKey* key);
+  my_bool operator>>(IKey **key);
 protected:
   Buffer buffer;
 private:

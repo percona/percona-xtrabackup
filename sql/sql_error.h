@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -434,6 +434,17 @@ public:
   bool has_sql_condition(const char *message_text, size_t message_length) const;
 
   /**
+    Checks if the condition list contains SQL-condition with the given error
+    code.
+
+    @param sql_errno    Error code
+
+    @return true if the condition list contains an SQL-condition with the given
+    error code.
+  */
+  bool has_sql_condition(uint sql_errno) const;
+
+  /**
     Reset the current condition information stored in the Diagnostics Area.
     Clear all conditions, the number of conditions, reset current row counter
     to point to the first row.
@@ -692,14 +703,14 @@ void push_warning(THD *thd, Sql_condition::enum_severity_level severity,
                   uint code, const char *message_text);
 
 /*
-  Note that this __attribute__ check cannot detect number/type mismatch
+  Note that this MY_ATTRIBUTE check cannot detect number/type mismatch
   since the format string is not known at compile time.
   It can however detect if push_warning_printf() is used without any
   printf arguments. In such cases, use push_warning() instead.
 */
 void push_warning_printf(THD *thd, Sql_condition::enum_severity_level severity,
                          uint code, const char *format, ...)
-                         __attribute__((format(printf, 4, 5)));
+                         MY_ATTRIBUTE((format(printf, 4, 5)));
 
 /**
   Generates a warning that a feature is deprecated.

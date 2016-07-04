@@ -314,7 +314,7 @@ DECLARE_THREAD(io_handler_thread)(
 	The thread actually never comes here because it is exited in an
 	os_event_wait(). */
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	OS_THREAD_DUMMY_RETURN;
 }
@@ -324,7 +324,7 @@ DECLARE_THREAD(io_handler_thread)(
 /*********************************************************************//**
 Creates a log file.
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 create_log_file(
 /*============*/
@@ -521,7 +521,7 @@ create_log_files_rename(
 /*********************************************************************//**
 Opens a log file.
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 open_log_file(
 /*==========*/
@@ -1702,7 +1702,8 @@ innobase_start_or_create_for_mysql(void)
 					strlen(fil_path_to_mysql_datadir)
 					+ 20 + sizeof "/innodb_status."));
 
-			sprintf(srv_monitor_file_name, "%s/innodb_status.%lu",
+			sprintf(srv_monitor_file_name,
+				"%s/innodb_status." ULINTPF,
 				fil_path_to_mysql_datadir,
 				os_proc_get_number());
 
@@ -2303,7 +2304,8 @@ files_checked:
 		server could crash in middle of key rotation. Some tablespace
 		didn't complete key rotation. Here, we will resume the
 		rotation. */
-		if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
+		if (!srv_read_only_mode
+		    && srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
 			fil_encryption_rotate();
 		}
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -447,7 +447,7 @@ print_hex:
 		fputs(" Hex: ",stderr);
 
 		for (i = 0; i < len; i++) {
-			fprintf(stderr, "%02lx", (ulint) *data++);
+			fprintf(stderr, "%02lx", static_cast<ulong>(*data++));
 		}
 
 		if (dfield_is_ext(dfield)) {
@@ -762,7 +762,7 @@ from entry with dtuple_convert_big_rec. */
 void
 dtuple_convert_back_big_rec(
 /*========================*/
-	dict_index_t*	index __attribute__((unused)),	/*!< in: index */
+	dict_index_t*	index MY_ATTRIBUTE((unused)),	/*!< in: index */
 	dtuple_t*	entry,	/*!< in: entry whose data was put to vector */
 	big_rec_t*	vector)	/*!< in, own: big rec vector; it is
 				freed in this function */

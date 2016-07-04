@@ -818,7 +818,7 @@ xb_rebuild_indexes_for_table(
 		index->to_be_dropped = 1;
 
 		/* Patch up any FK referencing this index with NULL */
-		dict_foreign_replace_index(table, NULL, index);
+		ut_a(dict_foreign_replace_index(table, NULL, index));
 
 		dict_index_remove_from_cache(table, index);
 

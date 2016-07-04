@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -92,7 +92,7 @@ before hash index building is started */
 @param[in]	n_fields	number of complete fields
 @param[in]	n_bytes		number of bytes in an incomplete last field
 @return	number of complete or incomplete fields */
-inline __attribute__((warn_unused_result))
+inline MY_ATTRIBUTE((warn_unused_result))
 ulint
 btr_search_get_n_fields(
 	ulint	n_fields,
@@ -104,7 +104,7 @@ btr_search_get_n_fields(
 /** Determine the number of accessed key fields.
 @param[in]	cursor		b-tree cursor
 @return	number of complete or incomplete fields */
-inline __attribute__((warn_unused_result))
+inline MY_ATTRIBUTE((warn_unused_result))
 ulint
 btr_search_get_n_fields(
 	const btr_cur_t*	cursor)
@@ -1020,7 +1020,7 @@ btr_search_guess_on_hash(
 		return(FALSE);
 	}
 
-	buf_block_t*	block = buf_block_align(rec);
+	buf_block_t*	block = buf_block_from_ahi(rec);
 
 	if (!has_search_latch) {
 
@@ -2018,7 +2018,7 @@ btr_search_hash_table_validate(ulint hash_table_id)
 
 		for (; node != NULL; node = node->next) {
 			const buf_block_t*	block
-				= buf_block_align((byte*) node->data);
+				= buf_block_from_ahi((byte*) node->data);
 			const buf_block_t*	hash_block;
 			buf_pool_t*		buf_pool;
 			index_id_t		page_index_id;

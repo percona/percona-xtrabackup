@@ -940,7 +940,7 @@ extern "C"
 os_thread_ret_t
 DECLARE_THREAD(recv_writer_thread)(
 /*===============================*/
-	void*	arg __attribute__((unused)))
+	void*	arg MY_ATTRIBUTE((unused)))
 			/*!< in: a dummy parameter required by
 			os_thread_create */
 {
@@ -982,7 +982,7 @@ DECLARE_THREAD(recv_writer_thread)(
 	/* We count the number of threads in os_thread_exit().
 	A created thread should always use that to exit and not
 	use return() to exit. */
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	OS_THREAD_DUMMY_RETURN;
 }
@@ -1189,7 +1189,7 @@ recv_check_log_header_checksum(
 @param[out]	max_group	log group, or NULL
 @param[out]	max_field	LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
-static __attribute__((warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 recv_find_max_checkpoint_0(
 	log_group_t**	max_group,
@@ -1337,7 +1337,7 @@ recv_log_format_0_recover(lsn_t lsn)
 @param[out]	max_group	log group, or NULL
 @param[out]	max_field	LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
-__attribute__((warn_unused_result))
+MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 recv_find_max_checkpoint(
 	log_group_t**	max_group,
@@ -1683,7 +1683,8 @@ fil_write_encryption_parse(
 
 	if (offset >= UNIV_PAGE_SIZE
 	    || len + offset > UNIV_PAGE_SIZE
-	    || len != ENCRYPTION_INFO_SIZE) {
+	    || (len != ENCRYPTION_INFO_SIZE_V1
+		&& len != ENCRYPTION_INFO_SIZE_V2)) {
 		recv_sys->found_corrupt_log = TRUE;
 		return(NULL);
 	}
@@ -1702,9 +1703,10 @@ fil_write_encryption_parse(
 			<< space_id << " is invalid";
 	}
 
-	ut_ad(len == ENCRYPTION_INFO_SIZE);
+	ut_ad(len == ENCRYPTION_INFO_SIZE_V1
+	      || len == ENCRYPTION_INFO_SIZE_V2);
 
-	ptr += ENCRYPTION_INFO_SIZE;
+	ptr += len;
 
 	if (space == NULL) {
 		if (is_new) {
@@ -3266,7 +3268,7 @@ hash table to wait merging to file pages.
 @param[in]	apply		whether to apply the records
 @return whether MLOG_CHECKPOINT record was seen the first time,
 or corruption was noticed */
-__attribute__((warn_unused_result))
+MY_ATTRIBUTE((warn_unused_result))
 bool
 recv_parse_log_recs(
 	lsn_t		checkpoint_lsn,
@@ -4048,7 +4050,7 @@ xb_load_single_table_tablespaces(bool (*pred)(const char*, const char*));
 
 /** Check if all tablespaces were found for crash recovery.
 @return error code or DB_SUCCESS */
-static __attribute__((warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 recv_init_crash_recovery_spaces(void)
 {

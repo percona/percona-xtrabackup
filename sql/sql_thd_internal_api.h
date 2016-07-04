@@ -28,8 +28,6 @@
 
 class THD;
 
-#ifdef HAVE_PSI_INTERFACE
-
 /**
   Set up various THD data for a new connection
 
@@ -38,7 +36,11 @@ class THD;
   @param              bound          True if bound to a physical thread.
   @param              psi_key        Instrumentation key for the thread.
 */
-int thd_init(THD *thd, char *stack_start, bool bound, PSI_thread_key psi_key);
+int thd_init(THD *thd, char *stack_start, bool bound
+#ifdef HAVE_PSI_INTERFACE
+  , PSI_thread_key psi_key
+#endif
+  );
 
 /**
   Create a THD and do proper initialization of it.
@@ -55,9 +57,11 @@ int thd_init(THD *thd, char *stack_start, bool bound, PSI_thread_key psi_key);
         SHOW PROCESSLIST and the server will not wait for them to
         terminate during shutdown.
 */
-THD *create_thd(bool enable_plugins, bool background_thread, bool bound, PSI_thread_key psi_key);
-
-#endif /*HAVE_PSI_INTERFACE*/
+THD *create_thd(bool enable_plugins, bool background_thread, bool bound
+#ifdef HAVE_PSI_INTERFACE
+  , PSI_thread_key psi_key
+#endif
+  );
 
 /**
   Cleanup the THD object, remove it from the global list of THDs

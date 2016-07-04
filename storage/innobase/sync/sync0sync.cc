@@ -56,6 +56,7 @@ mysql_pfs_key_t	ibuf_bitmap_mutex_key;
 mysql_pfs_key_t	ibuf_mutex_key;
 mysql_pfs_key_t	ibuf_pessimistic_insert_mutex_key;
 mysql_pfs_key_t	log_sys_mutex_key;
+mysql_pfs_key_t	log_sys_write_mutex_key;
 mysql_pfs_key_t	log_cmdq_mutex_key;
 mysql_pfs_key_t	log_flush_order_mutex_key;
 mysql_pfs_key_t	mutex_list_mutex_key;
@@ -120,9 +121,6 @@ mysql_pfs_key_t	fts_cache_rw_lock_key;
 mysql_pfs_key_t	fts_cache_init_rw_lock_key;
 mysql_pfs_key_t trx_i_s_cache_lock_key;
 mysql_pfs_key_t	trx_purge_latch_key;
-# ifdef UNIV_DEBUG
-mysql_pfs_key_t	buf_chunk_map_latch_key;
-# endif /* UNIV_DEBUG */
 #endif /* UNIV_PFS_RWLOCK */
 
 /** For monitoring active mutexes */

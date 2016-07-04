@@ -21,7 +21,7 @@ namespace keyring {
 extern PSI_memory_key key_memory_KEYRING;
 
 static uchar *get_hash_key(const uchar *key, size_t *length,
-                           my_bool not_used __attribute__((unused)))
+                           my_bool not_used MY_ATTRIBUTE((unused)))
 {
   std::string *key_signature= reinterpret_cast<const IKey *>(key)->get_key_signature();
   *length= key_signature->length();
@@ -77,10 +77,10 @@ my_bool Keys_container::store_key_in_hash(IKey *key)
 
 my_bool Keys_container::store_key(IKeyring_io* keyring_io, IKey* key)
 {
-  keyring_io->open(&keyring_storage_url);
-  if (flush_to_backup(keyring_io) || store_key_in_hash(key))
+  if (keyring_io->open(&keyring_storage_url) || flush_to_backup(keyring_io) ||
+      store_key_in_hash(key))
     return TRUE;//keyring_io destructor will take care of removing the backup(if exists)
-  if (flush_to_keyring(keyring_io) || keyring_io->close())
+  if (flush_to_keyring(keyring_io, key, STORE_KEY) || keyring_io->close())
   {
     remove_key_from_hash(key);
     return TRUE;
@@ -127,13 +127,12 @@ my_bool Keys_container::remove_key_from_hash(IKey *key)
 
 my_bool Keys_container::remove_key(IKeyring_io *keyring_io, IKey *key)
 {
-  keyring_io->open(&keyring_storage_url);
   IKey* fetched_key_to_delete= get_key_from_hash(key);
-  if(fetched_key_to_delete == NULL)
+  if(fetched_key_to_delete == NULL || keyring_io->open(&keyring_storage_url))
     return TRUE;
   if (flush_to_backup(keyring_io) || remove_key_from_hash(fetched_key_to_delete))
     return TRUE;//keyring_io destructor will take care of removing the backup(if exists)
-  if (flush_to_keyring(keyring_io) || keyring_io->close())
+  if (flush_to_keyring(keyring_io, fetched_key_to_delete, REMOVE_KEY) || keyring_io->close())
   {
     //reinsert the key
     store_key_in_hash(fetched_key_to_delete);
@@ -155,23 +154,24 @@ void Keys_container::free_keys_hash()
 my_bool Keys_container::load_keys_from_keyring_storage(IKeyring_io *keyring_io)
 {
   my_bool was_error= FALSE;
-  Key *key_loaded= new Key();
-  while(*keyring_io >> key_loaded)
+  IKey *key_loaded= NULL;
+  while(*keyring_io >> &key_loaded)
   {
-    if (key_loaded->is_key_valid() == FALSE || store_key_in_hash(key_loaded))
+    if (key_loaded == NULL || key_loaded->is_key_valid() == FALSE ||
+        store_key_in_hash(key_loaded))
     {
       was_error= TRUE;
+      delete key_loaded;
       break;
     }
-    key_loaded= new Key();
+    key_loaded= NULL;
   }
   if(was_error)
   {
     logger->log(MY_ERROR_LEVEL, "Error while loading keyring content. "
-                                "The keyring file might be malformed");
+                                "The keyring might be malformed");
     memory_needed_to_flush_to_disk= 0;
   }
-  delete key_loaded;
   keyring_io->close();
   return was_error;
 }
@@ -192,9 +192,11 @@ my_bool Keys_container::upload_keys_into_output_buffer(IKeyring_io *keyring_io)
   return FALSE;
 }
 
-my_bool Keys_container::flush_to_keyring(IKeyring_io *keyring_io)
+my_bool Keys_container::flush_to_keyring(IKeyring_io *keyring_io, IKey *key,
+                                         Flush_operation operation)
 {
-  if(flush_by(keyring_io, &IKeyring_io::flush_to_keyring))
+  if (upload_keys_into_output_buffer(keyring_io) ||
+      keyring_io->flush_to_keyring(key, operation))
   {
     logger->log(MY_ERROR_LEVEL, "Could not flush keys to keyring");
     return TRUE;
@@ -204,19 +206,13 @@ my_bool Keys_container::flush_to_keyring(IKeyring_io *keyring_io)
 
 my_bool Keys_container::flush_to_backup(IKeyring_io *keyring_io)
 {
-  if(flush_by(keyring_io, &IKeyring_io::flush_to_backup))
+  if (upload_keys_into_output_buffer(keyring_io) ||
+      keyring_io->flush_to_backup())
   {
     logger->log(MY_ERROR_LEVEL, "Could not flush keys to keyring's backup");
     return TRUE;
   }
   return FALSE;
-}
-
-my_bool Keys_container::flush_by(IKeyring_io *keyring_io, my_bool (IKeyring_io::*flush)())
-{
-  if (upload_keys_into_output_buffer(keyring_io))
-    return TRUE;
-  return (keyring_io->*flush)();
 }
 
 } //namespace keyring
