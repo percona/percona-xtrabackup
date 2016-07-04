@@ -1252,7 +1252,6 @@ write_current_binlog_file(MYSQL *connection)
 	char *gtid_binlog_state = NULL;
 	char *log_bin_file = NULL;
 	char *log_bin_dir = NULL;
-	char *datadir = NULL;
 	bool gtid_exists;
 	bool result = true;
 	char filepath[FN_REFLEN];
@@ -1270,7 +1269,6 @@ write_current_binlog_file(MYSQL *connection)
 	mysql_variable vars[] = {
 		{"gtid_binlog_state", &gtid_binlog_state},
 		{"log_bin_basename", &log_bin_dir},
-		{"datadir", &datadir},
 		{NULL, NULL}
 	};
 
@@ -1290,13 +1288,24 @@ write_current_binlog_file(MYSQL *connection)
 		read_mysql_variables(connection, "SHOW MASTER STATUS",
 			status_after_flush, false);
 
-		if (log_bin_dir == NULL) {
-			/* log_bin_basename does not exist in MariaDB,
-			fallback to datadir */
-			log_bin_dir = strdup(datadir);
+		if (opt_log_bin != NULL && strchr(opt_log_bin, FN_LIBCHAR)) {
+			/* If log_bin is set, it has priority */
+			if (log_bin_dir) {
+				free(log_bin_dir);
+			}
+			log_bin_dir = strdup(opt_log_bin);
+		} else if (log_bin_dir == NULL) {
+			/* Default location is MySQL datadir */
+			log_bin_dir = strdup("./");
 		}
 
 		dirname_part(log_bin_dir, log_bin_dir, &log_bin_dir_length);
+
+		/* strip final slash if it is not the only path component */
+		if (log_bin_dir_length > 1 &&
+		    log_bin_dir[log_bin_dir_length - 1] == FN_LIBCHAR) {
+			log_bin_dir[log_bin_dir_length - 1] = 0;
+		}
 
 		if (log_bin_dir == NULL || log_bin_file == NULL) {
 			msg("Failed to get master binlog coordinates from "
@@ -1305,8 +1314,8 @@ write_current_binlog_file(MYSQL *connection)
 			goto cleanup;
 		}
 
-		ut_snprintf(filepath, sizeof(filepath), "%s/%s",
-				log_bin_dir, log_bin_file);
+		ut_snprintf(filepath, sizeof(filepath), "%s%c%s",
+				log_bin_dir, FN_LIBCHAR, log_bin_file);
 		result = copy_file(ds_data, filepath, log_bin_file, 0);
 	}
 
