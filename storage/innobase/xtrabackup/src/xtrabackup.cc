@@ -362,6 +362,7 @@ char *opt_defaults_group = NULL;
 char *opt_socket = NULL;
 uint opt_port = 0;
 char *opt_login_path = NULL;
+char *opt_log_bin = NULL;
 
 const char *query_type_names[] = { "ALL", "UPDATE", "SELECT", NullS};
 
@@ -729,6 +730,9 @@ struct my_option xb_long_options[] =
    {"log", OPT_LOG, "Ignored option for MySQL option compatibility",
    (G_PTR*) &log_ignored_opt, (G_PTR*) &log_ignored_opt, 0,
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+   {"log_bin", OPT_LOG, "Base name for the log sequence",
+   &opt_log_bin, &opt_log_bin, 0, GET_STR_ALLOC, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
    {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
    (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,

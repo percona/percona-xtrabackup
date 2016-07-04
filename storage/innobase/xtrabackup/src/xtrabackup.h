@@ -144,6 +144,7 @@ extern char		*opt_defaults_group;
 extern char		*opt_socket;
 extern uint		opt_port;
 extern char		*opt_login_path;
+extern char		*opt_log_bin;
 
 extern const char 	*query_type_names[];
 
