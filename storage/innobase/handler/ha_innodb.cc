@@ -1610,6 +1610,12 @@ innobase_get_cset_width(
 				sql_print_warning(
 					"Unknown collation #%lu.", cset);
 			}
+		} else if (cset == 253) {
+			/* Charset collation utf8_general50_ci is not support in Oracle MySQL */
+			ut_print_timestamp(stderr);
+			fprintf(stderr,
+				" InnoDB: Warning: Charset collation 'utf8_general50_ci' is"
+				" not supported in Oracle MySQL.\n");
 		} else {
 
 			ut_a(cset == 0);
