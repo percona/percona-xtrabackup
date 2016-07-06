@@ -645,8 +645,12 @@ equal_paths(const char *first, const char *second)
 	char real_first[PATH_MAX];
 	char real_second[PATH_MAX];
 
-	ut_a(realpath(first, real_first) != NULL);
-	ut_a(realpath(second, real_second) != NULL);
+	if (realpath(first, real_first) == NULL) {
+		return false;
+	}
+	if (realpath(second, real_second) == NULL) {
+		return false;
+	}
 
 	return (strcmp(real_first, real_second) == 0);
 }
@@ -662,12 +666,16 @@ directory_exists(const char *dir, bool create)
 	MY_STAT stat_arg;
 	char errbuf[MYSYS_STRERROR_SIZE];
 
-	if (!my_stat(dir, &stat_arg, MYF(0))) {
+	if (my_stat(dir, &stat_arg, MYF(0)) == NULL) {
+
+		if (!create) {
+			return(false);
+		}
 
 		if (mkdirp(dir, 0777, MYF(0)) < 0) {
 
 			msg("Can not create directory %s: %s\n", dir,
-				my_strerror(errbuf, sizeof(errbuf), my_errno));
+			    my_strerror(errbuf, sizeof(errbuf), my_errno));
 
 			return(false);
 
