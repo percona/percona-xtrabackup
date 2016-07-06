@@ -2455,6 +2455,18 @@ xtrabackup_choose_lsn_offset(lsn_t start_lsn)
 
 	group = UT_LIST_GET_FIRST(log_sys->log_groups);
 
+	if (mysql_server_version < 50500 || mysql_server_version > 50600) {
+		/* only make sense for Percona Server 5.5 */
+		return;
+	}
+
+	if (server_flavor == FLAVOR_PERCONA_SERVER) {
+		/* it is Percona Server 5.5 */
+		group->alt_offset_chosen = true;
+		group->lsn_offset = group->lsn_offset_alt;
+		return;
+	}
+
 	if (group->lsn_offset_alt == group->lsn_offset ||
 	    group->lsn_offset_alt == (lsn_t) -1) {
 		/* we have only one option */

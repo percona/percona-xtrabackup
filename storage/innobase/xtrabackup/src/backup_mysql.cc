@@ -43,7 +43,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql.h>
 #include <mysqld.h>
 #include <my_sys.h>
-#include <fnmatch.h>
 #include <string.h>
 #include "common.h"
 #include "xtrabackup.h"
@@ -55,6 +54,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 char *tool_name;
 char tool_args[2048];
+
+/* mysql flavor and version */
+mysql_flavor_t server_flavor = FLAVOR_UNKNOWN;
+unsigned long mysql_server_version = 0;
 
 /* server capabilities */
 bool have_changed_page_bitmaps = false;
@@ -256,44 +259,48 @@ read_mysql_one_value(MYSQL *connection, const char *query)
 
 static
 bool
-check_server_version(const char *version, const char *innodb_version)
+check_server_version(unsigned long version_number,
+		     const char *version_string,
+		     const char *version_comment,
+		     const char *innodb_version)
 {
-	if (!((fnmatch("5.[123].*", version, FNM_PATHNAME) == 0
-	       && innodb_version != NULL)
-	      || (fnmatch("5.5.*", version, FNM_PATHNAME) == 0)
-	      || (fnmatch("5.6.*", version, FNM_PATHNAME) == 0)
-	      || (fnmatch("10.[01].*", version, FNM_PATHNAME) == 0))) {
-		if (fnmatch("5.1.*", version, FNM_PATHNAME) == 0
-		    && innodb_version == NULL) {
-			msg("Error: Built-in InnoDB in MySQL 5.1 is not "
-				"supported in this release. You can either use "
-				"Percona XtraBackup 2.0, or upgrade to InnoDB "
-				"plugin.\n");
-		} else {
-			msg("Error: Unsupported server version: "
-				"'%s'. Please report a bug at "
-				"https://bugs.launchpad.net/"
-				"percona-xtrabackup\n", version);
-		}
-		return(false);
+	bool version_supported = false;
+	bool mysql51 = false;
+
+	mysql_server_version = version_number;
+
+	server_flavor = FLAVOR_UNKNOWN;
+	if (strstr(version_comment, "Percona") != NULL) {
+		server_flavor = FLAVOR_PERCONA_SERVER;
+	} else if (strstr(version_comment, "MariaDB") != NULL ||
+		   strstr(version_string, "MariaDB") != NULL) {
+		server_flavor = FLAVOR_MARIADB;
+	} else if (strstr(version_comment, "MySQL") != NULL) {
+		server_flavor = FLAVOR_MYSQL;
 	}
 
-	return(true);
-}
+	mysql51 = version_number > 50100 && version_number < 50500;
+	version_supported = version_supported
+		|| (mysql51 && innodb_version != NULL);
+	version_supported = version_supported
+		|| (version_number > 50500 && version_number < 50700);
+	version_supported = version_supported
+		|| ((version_number > 100000 && version_number < 100200)
+		    && server_flavor == FLAVOR_MARIADB);
 
-/*********************************************************************//**
-Convert MySQL version string to number.
-@return	version number. */
-static
-int
-mysql_version_number(const char *version_string)
-{
-	int version_major, version_minor, version_patch;
+	if (mysql51 && innodb_version == NULL) {
+		msg("Error: Built-in InnoDB in MySQL 5.1 is not "
+		    "supported in this release. You can either use "
+		    "Percona XtraBackup 2.0, or upgrade to InnoDB "
+		    "plugin.\n");
+	} else if (!version_supported) {
+		msg("Error: Unsupported server version: '%s'. Please "
+		    "report a bug at "
+		    "https://bugs.launchpad.net/percona-xtrabackup\n",
+		    version_string);
+	}
 
-	sscanf(version_string, "%d.%d.%d",
-	       &version_major, &version_minor, &version_patch);
-
-	return(version_major * 10000 + version_minor * 100 + version_patch);
+	return(version_supported);
 }
 
 /*********************************************************************//**
@@ -304,6 +311,7 @@ get_mysql_vars(MYSQL *connection)
 {
 	char *gtid_mode_var = NULL;
 	char *version_var = NULL;
+	char *version_comment_var = NULL;
 	char *innodb_version_var = NULL;
 	char *have_backup_locks_var = NULL;
 	char *have_backup_safe_binlog_info_var = NULL;
@@ -322,6 +330,8 @@ get_mysql_vars(MYSQL *connection)
 	char *innodb_undo_directory_var = NULL;
 	char *innodb_page_size_var = NULL;
 
+	unsigned long server_version = mysql_get_server_version(connection);
+
 	bool ret = true;
 
 	mysql_variable mysql_vars[] = {
@@ -332,6 +342,7 @@ get_mysql_vars(MYSQL *connection)
 		{"lock_wait_timeout", &lock_wait_timeout_var},
 		{"gtid_mode", &gtid_mode_var},
 		{"version", &version_var},
+		{"version_comment", &version_comment_var},
 		{"innodb_version", &innodb_version_var},
 		{"wsrep_on", &wsrep_on_var},
 		{"slave_parallel_workers", &slave_parallel_workers_var},
@@ -382,7 +393,15 @@ get_mysql_vars(MYSQL *connection)
 		have_galera_enabled = true;
 	}
 
-	if (strcmp(version_var, "5.5") >= 0) {
+	/* Check server version compatibility and detect server flavor */
+
+	if (!(ret = check_server_version(server_version, version_var,
+					 version_comment_var,
+					 innodb_version_var))) {
+		goto out;
+	}
+
+	if (server_version > 50500) {
 		have_flush_engine_logs = true;
 	}
 
@@ -400,13 +419,9 @@ get_mysql_vars(MYSQL *connection)
 		have_gtid_slave = true;
 	}
 
-	if (!(ret = check_server_version(version_var, innodb_version_var))) {
-		goto out;
-	}
-
 	msg("Using server version %s\n", version_var);
 
-	if (!(ret = detect_mysql_capabilities_for_backup(version_var))) {
+	if (!(ret = detect_mysql_capabilities_for_backup())) {
 		goto out;
 	}
 
@@ -496,7 +511,7 @@ out:
 Query the server to find out what backup capabilities it supports.
 @return	true on success. */
 bool
-detect_mysql_capabilities_for_backup(const char *version)
+detect_mysql_capabilities_for_backup()
 {
 	const char *query = "SELECT 'INNODB_CHANGED_PAGES', COUNT(*) FROM "
 				"INFORMATION_SCHEMA.PLUGINS "
@@ -518,8 +533,8 @@ detect_mysql_capabilities_for_backup(const char *version)
 		FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS
 		is not supported for versions below 10.1.6
 		(see MDEV-7472) */
-		if (strstr(version, "MariaDB") != NULL &&
-		    mysql_version_number(version) < 100106) {
+		if (server_flavor == FLAVOR_MARIADB &&
+		    mysql_server_version < 100106) {
 			have_changed_page_bitmaps = false;
 		}
 
