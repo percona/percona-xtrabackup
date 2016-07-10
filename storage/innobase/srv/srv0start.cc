@@ -2575,6 +2575,7 @@ files_checked:
 	    && srv_sys_space.can_auto_extend_last_file()
 	    && sum_of_data_file_sizes < tablespace_size_in_header) {
 
+#if 0
 		ib::error() << "Tablespace size stored in header is "
 			<< tablespace_size_in_header << " pages, but the sum"
 			" of data file sizes is only "
@@ -2596,33 +2597,7 @@ files_checked:
 
 			return(srv_init_abort(DB_ERROR));
 		}
-	}
-
-	if (!srv_read_only_mode
-	    && srv_sys_space.can_auto_extend_last_file()
-	    && sum_of_data_file_sizes < tablespace_size_in_header) {
-
-		ib::error() << "Tablespace size stored in header is "
-			<< tablespace_size_in_header << " pages, but the sum"
-			" of data file sizes is only "
-			<< sum_of_data_file_sizes << " pages";
-
-		if (srv_force_recovery == 0) {
-
-			ib::error()
-				<< "Cannot start InnoDB. The tail of"
-				" the system tablespace is"
-				" missing. Have you edited"
-				" innodb_data_file_path in my.cnf in an"
-				" InnoDB: inappropriate way, removing"
-				" ibdata files from there?"
-				" You can set innodb_force_recovery=1"
-				" in my.cnf to force"
-				" InnoDB: a startup if you are trying to"
-				" recover a badly corrupt database.";
-
-			return(srv_init_abort(DB_ERROR));
-		}
+#endif
 	}
 
 	if (srv_rebuild_indexes) {
