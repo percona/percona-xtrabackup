@@ -5931,13 +5931,12 @@ xtrabackup_apply_delta(
 
 	os_file_set_nocache(dst_file, dst_path, "OPEN");
 
-	/* allocate buffer for incremental backup (4096 pages) */
+	/* allocate buffer for incremental backup */
 	incremental_buffer_base = static_cast<byte *>
-		(ut_malloc_nokey((UNIV_PAGE_SIZE_MAX / 4 + 1) *
-			   UNIV_PAGE_SIZE_MAX));
+		(ut_malloc_nokey((page_size / 4 + 1) * page_size +
+			UNIV_PAGE_SIZE_MAX));
 	incremental_buffer = static_cast<byte *>
-		(ut_align(incremental_buffer_base,
-			  UNIV_PAGE_SIZE_MAX));
+		(ut_align(incremental_buffer_base, UNIV_PAGE_SIZE_MAX));
 
 	msg("Applying %s to %s...\n", src_path, dst_path);
 
