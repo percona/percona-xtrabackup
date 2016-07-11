@@ -890,7 +890,6 @@ log_group_init(
 	group->lsn = LOG_START_LSN;
 	group->lsn_offset = LOG_FILE_HDR_SIZE;
 	group->lsn_offset_ps55 = LOG_FILE_HDR_SIZE;
-	group->lsn_offset_ms56 = LOG_FILE_HDR_SIZE;
 
 	group->file_header_bufs_ptr = static_cast<byte**>(
 		ut_zalloc_nokey(sizeof(byte*) * n_files));

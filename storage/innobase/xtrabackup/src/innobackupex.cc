@@ -53,7 +53,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_default.h>
 #include <my_getopt.h>
 #include <strings.h>
-#include <fnmatch.h>
 #include <string>
 #include <sstream>
 #include <set>
