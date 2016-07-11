@@ -2534,11 +2534,11 @@ skip:
 
 static
 void
-xtrabackup_choose_lsn_offset(lsn_t start_lsn, lsn_t lsn_offset_alt)
+xtrabackup_choose_lsn_offset(lsn_t start_lsn)
 {
-	ulint no, alt_no, expected_no;
+	ulint no, expected_no;
 	ulint blocks_in_group;
-	lsn_t tmp_offset, end_lsn;
+	lsn_t end_lsn;
 	log_group_t *group;
 
 	start_lsn = ut_uint64_align_down(start_lsn, OS_FILE_LOG_BLOCK_SIZE);
@@ -2546,54 +2546,52 @@ xtrabackup_choose_lsn_offset(lsn_t start_lsn, lsn_t lsn_offset_alt)
 
 	group = UT_LIST_GET_FIRST(log_sys->log_groups);
 
-	if (lsn_offset_alt == group->lsn_offset ||
-	    lsn_offset_alt == (lsn_t) -1) {
+	if (mysql_server_version < 50500) {
+		/* server doesn't support log files larger than 4G */
+		return;
+	}
+
+	if (server_flavor == FLAVOR_PERCONA_SERVER &&
+	    (mysql_server_version > 50500 && mysql_server_version < 50600)) {
+		/* it is Percona Server 5.5 */
+		group->lsn_offset = group->lsn_offset_ps55;
+		return;
+	}
+
+	if (group->lsn_offset_ps55 == group->lsn_offset ||
+	    group->lsn_offset_ps55 == (lsn_t) -1) {
 		/* we have only one option */
 		return;
 	}
 
-	no = alt_no = (ulint) -1;
+	no = (ulint) -1;
 
 	blocks_in_group = log_block_convert_lsn_to_no(
 		log_group_get_capacity(group)) - 1;
 
-	/* read log block number from usual offset */
-	if (group->lsn_offset < group->file_size * group->n_files &&
-	    (log_group_calc_lsn_offset(start_lsn, group) %
-	     UNIV_PAGE_SIZE) % OS_MIN_LOG_BLOCK_SIZE == 0) {
-		log_group_read_log_seg(log_sys->buf, group, start_lsn, end_lsn);
-		no = log_block_get_hdr_no(log_sys->buf);
-	}
-
-	/* read log block number from alternative offset */
-	tmp_offset = group->lsn_offset;
-	group->lsn_offset = lsn_offset_alt;
-
-	if (group->lsn_offset < group->file_size * group->n_files &&
-	    (log_group_calc_lsn_offset(start_lsn, group) %
-	     UNIV_PAGE_SIZE) % OS_MIN_LOG_BLOCK_SIZE == 0) {
-		log_group_read_log_seg(log_sys->buf, group, start_lsn, end_lsn);
-		alt_no = log_block_get_hdr_no(log_sys->buf);
-	}
+	lsn_t offsets[2] = {group->lsn_offset,
+			    group->lsn_offset_ps55};
 
 	expected_no = log_block_convert_lsn_to_no(start_lsn);
 
-	ut_a(!(no == expected_no && alt_no == expected_no));
+	for (int i = 0; i < 2; i++) {
+		group->lsn_offset = offsets[i];
 
-	group->lsn_offset = tmp_offset;
+		/* read log block number */
+		if (group->lsn_offset < group->file_size * group->n_files &&
+		    (log_group_calc_lsn_offset(start_lsn, group) %
+		     UNIV_PAGE_SIZE) % OS_MIN_LOG_BLOCK_SIZE == 0) {
+			log_group_read_log_seg(log_sys->buf, group,
+					       start_lsn, end_lsn);
+			no = log_block_get_hdr_no(log_sys->buf);
+		}
 
-	if ((no <= expected_no &&
-		((expected_no - no) % blocks_in_group) == 0) ||
-	    ((expected_no | 0x40000000UL) - no) % blocks_in_group == 0) {
-		/* default offset looks ok */
-		return;
-	}
-
-	if ((alt_no <= expected_no &&
-		((expected_no - alt_no) % blocks_in_group) == 0) ||
-	    ((expected_no | 0x40000000UL) - alt_no) % blocks_in_group == 0) {
-		/* alternative offset looks ok */
-		group->lsn_offset = lsn_offset_alt;
+		if ((no <= expected_no &&
+			((expected_no - no) % blocks_in_group) == 0) ||
+		    ((expected_no | 0x40000000UL) - no) % blocks_in_group == 0) {
+			/* offset looks ok */
+			return;
+		}
 	}
 }
 
@@ -4384,11 +4382,7 @@ reread_log_header:
 	}
 
 	mutex_enter(&log_sys->mutex);
-	log_group_t *group = UT_LIST_GET_FIRST(log_sys->log_groups);
-	xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-				     group->lsn_offset_ms56);
-	xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-				     group->lsn_offset_ps55);
+	xtrabackup_choose_lsn_offset(checkpoint_lsn_start);
 	mutex_exit(&log_sys->mutex);
 
 	/* copy log file by current position */
@@ -4499,11 +4493,7 @@ reread_log_header:
 
 		log_group_header_read(max_cp_group, max_cp_field);
 
-		log_group_t *group = UT_LIST_GET_FIRST(log_sys->log_groups);
-		xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-					     group->lsn_offset_ms56);
-		xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-					     group->lsn_offset_ps55);
+		xtrabackup_choose_lsn_offset(checkpoint_lsn_start);
 
 		latest_cp = mach_read_from_8(log_sys->checkpoint_buf +
 					     LOG_CHECKPOINT_LSN);

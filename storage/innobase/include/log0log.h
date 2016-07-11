@@ -624,8 +624,6 @@ struct log_group_t{
 	lsn_t				lsn_offset;
 	/** alternative lsn offset for PS 5.5 with large log files */
 	lsn_t				lsn_offset_ps55;
-	/** alternative lsn offset for MySQL 5.6 with large log files */
-	lsn_t				lsn_offset_ms56;
 	/** unaligned buffers */
 	byte**				file_header_bufs_ptr;
 	/** buffers for each file header in the group */
