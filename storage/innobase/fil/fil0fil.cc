@@ -5325,7 +5325,7 @@ retry:
 
 		os_has_said_disk_full = !(success = (end == node_start + len));
 
-		pages_added = static_cast<ulint>(end - node_start) / page_size;
+		pages_added = static_cast<ulint>(end - node->size * page_size) / page_size;
 
 	} else {
 		success = true;
