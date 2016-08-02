@@ -96,6 +96,7 @@ MariaDB */
 /** Zero relative shift position of the PAGE_SSIZE field for MariaDB*/
 #define FSP_FLAGS_POS_PAGE_SSIZE_MARIADB		\
 		(FSP_FLAGS_POS_ATOMIC_BLOBS		\
+		 + FSP_FLAGS_WIDTH_ATOMIC_BLOBS		\
 		 + FSP_EXTRA_POS_MARIADB)
 
 /** Return the contents of the UNUSED bits for MariaDB */
