@@ -819,6 +819,7 @@ static bool
 tokudb_data_file_copy_backup(const char *filepath, uint thread_n)
 {
 	const char *ext_list[] = {"tokudb",
+		"__tokudb_lock_dont_delete_me_data",
 		NULL};
 
 	if (check_if_skip_table(filepath)) {
