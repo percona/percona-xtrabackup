@@ -1,3 +1,5 @@
+.. _xbk_option_reference:
+
 ============================================
  The :program:`xtrabackup` Option Reference
 ============================================
