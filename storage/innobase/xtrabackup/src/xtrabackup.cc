@@ -7658,6 +7658,7 @@ int main(int argc, char **argv)
 {
 	int ho_error;
 	char **argv_defaults;
+	char cwd[FN_REFLEN];
 
 	setup_signals();
 
@@ -7820,8 +7821,8 @@ int main(int argc, char **argv)
 	}
 
 	/* Ensure target dir is not relative to datadir */
-	fn_format(xtrabackup_real_target_dir, xtrabackup_target_dir,
-		  "", "", MY_UNPACK_FILENAME | MY_RETURN_REAL_PATH);
+	my_getwd(cwd, sizeof(cwd), MYF(0));
+	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, cwd);
 	xtrabackup_target_dir= xtrabackup_real_target_dir;
 
 	/* get default temporary directory */
