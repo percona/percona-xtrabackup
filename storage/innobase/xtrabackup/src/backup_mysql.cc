@@ -1091,7 +1091,7 @@ wait_for_safe_slave(MYSQL *connection)
 		       "remaining)...\n", sleep_time, n_attempts);
 
 		xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
-		os_thread_sleep(sleep_time * 1000);
+		os_thread_sleep(sleep_time * 1000000);
 		xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
 
 		open_temp_tables = get_open_temp_tables(connection);
