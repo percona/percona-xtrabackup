@@ -3858,7 +3858,7 @@ xtrabackup_backup_func(void)
 	/* create extra LSN dir if it does not exist. */
 	if (xtrabackup_extra_lsndir
 		&&!my_stat(xtrabackup_extra_lsndir,&stat_info,MYF(0))
-		&& (my_mkdir(xtrabackup_extra_lsndir,0777,MYF(0)) < 0)){
+		&& (my_mkdir(xtrabackup_extra_lsndir,0777,MYF(0)) < 0)) {
 		msg("xtrabackup: Error: cannot mkdir %d: %s\n",
 		    my_errno, xtrabackup_extra_lsndir);
 		exit(EXIT_FAILURE);
@@ -4136,17 +4136,19 @@ skip_last_cp:
 	metadata_last_lsn = log_copy_scanned_lsn;
 
 	if (!xtrabackup_stream_metadata(ds_meta)) {
-		msg("xtrabackup: error: "
-		    "xtrabackup_stream_metadata() failed.\n");
+		msg("xtrabackup: Error: failed to stream metadata.\n");
+		exit(EXIT_FAILURE);
 	}
 	if (xtrabackup_extra_lsndir) {
 		char	filename[FN_REFLEN];
 
 		sprintf(filename, "%s/%s", xtrabackup_extra_lsndir,
 			XTRABACKUP_METADATA_FILENAME);
-		if (!xtrabackup_write_metadata(filename))
-			msg("xtrabackup: error: "
-			    "xtrabackup_write_metadata() failed.\n");
+		if (!xtrabackup_write_metadata(filename)) {
+			msg("xtrabackup: Error: failed to write metadata "
+			    "to '%s'.\n", filename);
+			exit(EXIT_FAILURE);
+		}
 
 	}
 
@@ -6113,8 +6115,11 @@ xtrabackup_prepare_func(void)
 	sprintf(metadata_path, "%s/%s", xtrabackup_target_dir,
 		XTRABACKUP_METADATA_FILENAME);
 
-	if (!xtrabackup_read_metadata(metadata_path))
-		msg("xtrabackup: error: xtrabackup_read_metadata()\n");
+	if (!xtrabackup_read_metadata(metadata_path)) {
+		msg("xtrabackup: Error: failed to read metadata from '%s'\n",
+		    metadata_path);
+		exit(EXIT_FAILURE);
+	}
 
 	if (!innobase_log_arch_dir)
 	{
@@ -6131,6 +6136,7 @@ xtrabackup_prepare_func(void)
 		} else {
 			msg("xtrabackup: This target seems not to have correct "
 			    "metadata...\n");
+			exit(EXIT_FAILURE);
 		}
 
 		if (xtrabackup_incremental) {
@@ -6562,16 +6568,20 @@ next_node:
 		}
 
 		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
-		if (!xtrabackup_write_metadata(filename))
-			msg("xtrabackup: error: xtrabackup_write_metadata"
-			    "(xtrabackup_target_dir)\n");
+		if (!xtrabackup_write_metadata(filename)) {
+
+			msg("xtrabackup: Error: failed to write metadata "
+			    "to '%s'\n", filename);
+			exit(EXIT_FAILURE);
+		}
 
 		if(xtrabackup_extra_lsndir) {
 			sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_METADATA_FILENAME);
-			if (!xtrabackup_write_metadata(filename))
-				msg("xtrabackup: error: "
-				    "xtrabackup_write_metadata"
-				    "(xtrabackup_extra_lsndir)\n");
+			if (!xtrabackup_write_metadata(filename)) {
+				msg("xtrabackup: Error: failed to write "
+				    "metadata to '%s'\n", filename);
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 
