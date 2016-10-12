@@ -161,8 +161,10 @@ Backup validity is not guaranteed if prepare process was interrupted.
   If you intend the backup to be the basis for further incremental backups, you
   should use the :option:`--apply-log-only` option when preparing the backup,
   or you will not be able to apply incremental backups to it. See the
-  documentation on preparing :ref:`incremental backups <xb_incremental>` for
-  more details.
+  documentation on preparing :ref:`incremental backups <incremental_backup>`
+  for more details.
+
+.. _restoring_a_backup:
 
 Restoring a Backup
 ==================
