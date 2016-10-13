@@ -9,7 +9,7 @@ This release is the current GA (Generally Available) stable release in the 2.1 s
 New Features
 ------------
 
- |Percona XtraBackup| now supports new form of :ref:`incremental backups <xb_incremental_ps_56>` for |Percona Server| 5.6 that uses `Log Archiving for XtraDB <http://www.percona.com/doc/percona-server/5.6/management/log_archiving.html>`_ feature.
+ |Percona XtraBackup| now supports new form of incremental backups for |Percona Server| 5.6 that uses `Log Archiving for XtraDB <http://www.percona.com/doc/percona-server/5.6/management/log_archiving.html>`_ feature.
 
  |Percona XtraBackup| now supports new :option:`innobackupex --version-check` option. When specified, |innobackupex| will perform a version check against the server on the backup stage after creating a server connection.
 

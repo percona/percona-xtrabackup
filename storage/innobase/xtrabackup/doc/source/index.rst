@@ -61,6 +61,7 @@ Backup Scenarios
    :glob:
 
    backup_scenarios/full_backup
+   backup_scenarios/incremental_backup
 
 User's Manual
 =============
