@@ -23,7 +23,6 @@ Other Types of Backups
    :maxdepth: 1
 
    incremental_backups
-   incremental_backups_with_ps_56
    partial_backups
    compact_backups
 

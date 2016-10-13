@@ -61,6 +61,7 @@ Backup Scenarios
    :glob:
 
    backup_scenarios/full_backup
+   backup_scenarios/incremental_backup
 
 User's Manual
 =============
@@ -79,6 +80,7 @@ Advanced Features
    :glob:
 
    advanced/lockless_bin-log
+   advanced/incremental_backups_with_ps_56
 
 Tutorials, Recipes, How-tos
 ===========================
