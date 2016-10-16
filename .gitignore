@@ -2842,7 +2842,6 @@ strings/test_decimal
 support-files/*.ini
 support-files/MacOSX/Description.plist
 support-files/MacOSX/Info.plist
-support-files/MacOSX/ReadMe.txt
 support-files/MacOSX/StartupParameters.plist
 support-files/MacOSX/postflight
 support-files/MacOSX/postinstall
@@ -3136,3 +3135,4 @@ storage/innobase/xtrabackup/src/version_check_pl.h
 /CMakeCache.txt
 /storage/innobase/xtrabackup/src/libarchive/DartConfiguration.tcl
 /storage/innobase/xtrabackup/src/libarchive/cmake.tmp/CheckFuncs_stub.c
+build.sh

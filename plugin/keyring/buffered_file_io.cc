@@ -215,7 +215,9 @@ my_bool Buffered_file_io::remove_backup()
   return remove(get_backup_filename()->c_str()) == 0 ? FALSE : TRUE;
 }
 
-my_bool Buffered_file_io::flush_to_keyring()
+
+my_bool Buffered_file_io::flush_to_keyring(IKey *key /*=NULL*/MY_ATTRIBUTE((unused)),
+                                           Flush_operation operation /*= STORE_KEY*/MY_ATTRIBUTE((unused)))
 {
   return flush_to_file(
 #ifdef HAVE_PSI_INTERFACE
@@ -250,19 +252,23 @@ my_bool Buffered_file_io::operator<<(const IKey* key)
   return TRUE;
 }
 
-my_bool Buffered_file_io::operator>>(IKey* key)
+my_bool Buffered_file_io::operator>>(IKey **key)
 {
+  *key= NULL;
+
+  boost::movelib::unique_ptr<Key> key_ptr(new Key());
   size_t number_of_bytes_read_from_buffer = 0;
   if (buffer.data == NULL)
   {
     DBUG_ASSERT(buffer.size == 0);
     return FALSE;
   }
-  if (key->load_from_buffer(buffer.data + buffer.position,
-                            &number_of_bytes_read_from_buffer,
-                            buffer.size - buffer.position) == FALSE)
+  if (key_ptr->load_from_buffer(buffer.data + buffer.position,
+                                &number_of_bytes_read_from_buffer,
+                                buffer.size - buffer.position) == FALSE)
   {
     buffer.position += number_of_bytes_read_from_buffer;
+    *key= key_ptr.release();
     return TRUE;
   }
   return FALSE;

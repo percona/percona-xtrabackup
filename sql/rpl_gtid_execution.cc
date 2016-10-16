@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -420,6 +420,7 @@ bool gtid_reacquire_ownership_if_anonymous(THD *thd)
   - SHOW
   - SELECT
   - DO
+  - An empty statement because of a skipped version comment
   That means it is guaranteed not to cause any changes in the
   database.
 */
@@ -434,8 +435,9 @@ static bool is_stmt_innocent(const THD *thd)
     (sql_command == SQLCOM_SET_OPTION) && !lex->is_set_password_sql;
   bool is_select= (sql_command == SQLCOM_SELECT);
   bool is_do= (sql_command == SQLCOM_DO);
+  bool is_empty= (sql_command == SQLCOM_EMPTY_QUERY);
   return
-    (is_set || is_select || is_do || is_show) &&
+    (is_set || is_select || is_do || is_show || is_empty) &&
     !lex->uses_stored_routines();
 }
 
@@ -453,7 +455,8 @@ enum_gtid_statement_status gtid_pre_statement_checks(THD *thd)
   DBUG_ASSERT(gtid_next->type != AUTOMATIC_GROUP ||
               thd->owned_gtid.is_empty());
 
-  if (stmt_causes_implicit_commit(thd, CF_IMPLICIT_COMMIT_BEGIN) &&
+  if ((stmt_causes_implicit_commit(thd, CF_IMPLICIT_COMMIT_BEGIN) ||
+       thd->lex->sql_command == SQLCOM_BEGIN) &&
       thd->in_active_multi_stmt_transaction() &&
       gtid_next->type == GTID_GROUP)
   {

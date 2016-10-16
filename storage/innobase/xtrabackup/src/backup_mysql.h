@@ -3,6 +3,12 @@
 
 #include <mysql.h>
 
+/* mysql flavor and version */
+enum mysql_flavor_t { FLAVOR_UNKNOWN, FLAVOR_MYSQL,
+		      FLAVOR_PERCONA_SERVER, FLAVOR_MARIADB };
+extern mysql_flavor_t server_flavor;
+extern unsigned long mysql_server_version;
+
 /* server capabilities */
 extern bool have_changed_page_bitmaps;
 extern bool have_backup_locks;
@@ -44,7 +50,7 @@ bool
 get_mysql_vars(MYSQL *connection);
 
 bool
-detect_mysql_capabilities_for_backup(const char *version);
+detect_mysql_capabilities_for_backup();
 
 MYSQL *
 xb_mysql_connect();

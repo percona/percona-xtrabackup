@@ -6,14 +6,6 @@ The |xtrabackup| binary is a compiled C program that is linked with the |InnoDB|
 
 The tool runs in either :option:`--backup` or :option:`--prepare` mode, corresponding to the two main functions it performs. There are several variations on these functions to accomplish different tasks, and there are two less commonly used modes, :option:`--stats` and :option:`--print-param`. 
 
-Getting Started with |xtrabackup|
-=================================
-
-.. toctree::
-   :maxdepth: 1
-
-   configuring
-
 The Backup Cycle - Full Backups
 ===============================
 
@@ -31,7 +23,6 @@ Other Types of Backups
    :maxdepth: 1
 
    incremental_backups
-   incremental_backups_with_ps_56
    partial_backups
    compact_backups
 
@@ -54,7 +45,6 @@ Implementation
 .. toctree::
    :maxdepth: 1
 
-   limitation
    implementation_details
    xtrabackup_exit_codes
 

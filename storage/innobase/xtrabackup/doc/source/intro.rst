@@ -1,7 +1,8 @@
+.. _intro:
+
 ==========================
  About Percona XtraBackup
 ==========================
-
 
 *Percona XtraBackup* is the world's only open-source, free |MySQL| hot backup
 software that performs non-blocking backups for |InnoDB| and |XtraDB|

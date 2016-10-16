@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2012, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -397,7 +397,7 @@ extern "C"
 os_thread_ret_t
 DECLARE_THREAD(dict_stats_thread)(
 /*==============================*/
-	void*	arg __attribute__((unused)))	/*!< in: a dummy parameter
+	void*	arg MY_ATTRIBUTE((unused)))	/*!< in: a dummy parameter
 						required by os_thread_create */
 {
 	ut_a(!srv_read_only_mode);
@@ -447,7 +447,7 @@ DECLARE_THREAD(dict_stats_thread)(
 
 	/* We count the number of threads in os_thread_exit(). A created
 	thread should always use that to exit instead of return(). */
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	OS_THREAD_DUMMY_RETURN;
 }

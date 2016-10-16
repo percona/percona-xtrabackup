@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -425,7 +425,7 @@ static handler *federated_create_handler(handlerton *hton,
 /* Function we use in the creation of our hash to get key */
 
 static uchar *federated_get_key(FEDERATED_SHARE *share, size_t *length,
-                                my_bool not_used __attribute__ ((unused)))
+                                my_bool not_used MY_ATTRIBUTE ((unused)))
 {
   *length= share->share_key_length;
   return (uchar*) share->share_key;
@@ -1681,6 +1681,7 @@ int ha_federated::open(const char *name, int mode, uint test_if_locked)
 
 int ha_federated::close(void)
 {
+  THD *thd= current_thd;
   DBUG_ENTER("ha_federated::close");
 
   free_result();
@@ -1692,7 +1693,7 @@ int ha_federated::close(void)
     FLUSH TABLES will quit the connection and if connection is broken,
     it will reconnect again and quit silently.
   */
-  if (mysql && !vio_is_connected(mysql->net.vio))
+  if (mysql && (!mysql->net.vio || !vio_is_connected(mysql->net.vio)))
      mysql->net.error= 2;
 
   /* Disconnect from mysql */
@@ -1706,8 +1707,15 @@ int ha_federated::close(void)
     if the original query was not issued against the FEDERATED table.
     So, don't propagate errors from mysql_close().
   */
-  if (table->in_use)
+  if (table->in_use && thd != table->in_use)
     table->in_use->clear_error();
+
+  /*
+    Errors from mysql_close() are silently ignored for flush tables.
+    Close the connection silently.
+  */
+  if (thd && thd->lex->sql_command == SQLCOM_FLUSH)
+     thd->clear_error();
 
   DBUG_RETURN(free_share(share));
 }
@@ -2749,7 +2757,7 @@ int ha_federated::read_next(uchar *buf, MYSQL_RES *result)
   @param[in]  record  record data (unused)
 */
 
-void ha_federated::position(const uchar *record __attribute__ ((unused)))
+void ha_federated::position(const uchar *record MY_ATTRIBUTE ((unused)))
 {
   DBUG_ENTER("ha_federated::position");
   
@@ -3428,7 +3436,7 @@ int ha_federated::execute_simple_query(const char *query, int len)
 {
   DBUG_ENTER("ha_federated::execute_simple_query");
 
-  if (mysql_real_query(mysql, query, len))
+  if (mysql_real_query(mysql, query, (ulong)len))
   {
     DBUG_RETURN(stash_remote_error());
   }

@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -64,13 +64,27 @@ ENDIF()
 
 # The default C++ library for SunPro is really old, and not standards compliant.
 # http://www.oracle.com/technetwork/server-storage/solaris10/cmp-stlport-libcstd-142559.html
-# Use stlport rather than Rogue Wave.
+# Use stlport rather than Rogue Wave,
+#   unless otherwise specified on command line.
 IF(CMAKE_SYSTEM_NAME MATCHES "SunOS")
   IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
-    IF(SUNPRO_CXX_LIBRARY)
-      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=${SUNPRO_CXX_LIBRARY}")
+    IF(CMAKE_CXX_FLAGS MATCHES "-std=")
+      ADD_DEFINITIONS(-D__MATHERR_RENAME_EXCEPTION)
+      SET(CMAKE_SHARED_LIBRARY_C_FLAGS
+        "${CMAKE_SHARED_LIBRARY_C_FLAGS} -lc")
+      SET(CMAKE_SHARED_LIBRARY_CXX_FLAGS
+        "${CMAKE_SHARED_LIBRARY_CXX_FLAGS} -lstdc++ -lgcc_s -lCrunG3 -lc")
+      SET(QUOTED_CMAKE_CXX_LINK_FLAGS "-lstdc++ -lgcc_s -lCrunG3 -lc")
     ELSE()
-      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=stlport4")
+      IF(SUNPRO_CXX_LIBRARY)
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=${SUNPRO_CXX_LIBRARY}")
+        IF(SUNPRO_CXX_LIBRARY STREQUAL "stdcxx4")
+          ADD_DEFINITIONS(-D__MATHERR_RENAME_EXCEPTION)
+          SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -template=extdef")
+        ENDIF()
+      ELSE()
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=stlport4")
+      ENDIF()
     ENDIF()
   ENDIF()
 ENDIF()
@@ -843,4 +857,10 @@ IF(HAVE_NUMAIF_H AND WITH_NUMA)
     }"
     HAVE_LIBNUMA)
     SET(CMAKE_REQUIRED_LIBRARIES ${SAVE_CMAKE_REQUIRED_LIBRARIES})
+ENDIF()
+
+# needed for libevent
+CHECK_TYPE_SIZE("socklen_t" SIZEOF_SOCKLEN_T)
+IF(SIZEOF_SOCKLEN_T)
+  SET(HAVE_SOCKLEN_T 1)
 ENDIF()

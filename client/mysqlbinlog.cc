@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -46,9 +46,9 @@
   rpl_gtid.h, hence the early forward declaration.
 */
 static void error(const char *format, ...)
-  __attribute__((format(printf, 1, 2)));
+  MY_ATTRIBUTE((format(printf, 1, 2)));
 static void warning(const char *format, ...)
-  __attribute__((format(printf, 1, 2)));
+  MY_ATTRIBUTE((format(printf, 1, 2)));
 
 #include "rpl_gtid.h"
 #include "log_event.h"
@@ -73,6 +73,21 @@ using std::max;
 */
 static
 std::map<std::string, std::string> map_mysqlbinlog_rewrite_db;
+
+/**
+  The function represents Log_event delete wrapper
+  to reset possibly active temp_buf member.
+  It's to be invoked in context where the member is
+  not bound with dynamically allocated memory and therefore can
+  be reset as simple as with plain assignment to NULL.
+
+  @param ev  a pointer to Log_event instance
+*/
+inline void reset_temp_buf_and_delete(Log_event *ev)
+{
+  ev->temp_buf= NULL;
+  delete ev;
+}
 
 static bool
 rewrite_db(char **buf, ulong *buf_size,
@@ -2103,7 +2118,7 @@ static my_time_t convert_str_to_timestamp(const char* str)
 
 
 extern "C" my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
+get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
 	       char *argument)
 {
   bool tty_password=0;
@@ -2729,6 +2744,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
             if ((rev->ident_len != logname_len) ||
                 memcmp(rev->new_log_ident, logname, logname_len))
             {
+              reset_temp_buf_and_delete(rev);
               DBUG_RETURN(OK_CONTINUE);
             }
             /*
@@ -2737,6 +2753,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
               log. If we are running with to_last_remote_log, we print it,
               because it serves as a useful marker between binlogs then.
             */
+            reset_temp_buf_and_delete(rev);
             continue;
           }
           /*
@@ -2807,10 +2824,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
           retval= ERROR_STOP;
         }
         if (ev)
-        {
-          ev->temp_buf=0;
-          delete ev;
-        }
+          reset_temp_buf_and_delete(ev);
       }
       else
       {

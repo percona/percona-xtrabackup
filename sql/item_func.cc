@@ -4884,6 +4884,9 @@ longlong Item_master_pos_wait::val_int()
       mi= channel_map.get_default_channel_mi();
   }
 
+  if (mi != NULL)
+    mi->inc_reference();
+
   channel_map.unlock();
 
   if (mi == NULL ||
@@ -4892,6 +4895,9 @@ longlong Item_master_pos_wait::val_int()
     null_value = 1;
     event_count=0;
   }
+
+  if (mi != NULL)
+    mi->dec_reference();
 #endif
   return event_count;
 }
@@ -5049,6 +5055,9 @@ longlong Item_master_gtid_set_wait::val_int()
   }
   gtid_state->begin_gtid_wait(GTID_MODE_LOCK_CHANNEL_MAP);
 
+  if (mi)
+    mi->inc_reference();
+
   channel_map.unlock();
 
   if (mi && mi->rli)
@@ -5065,6 +5074,9 @@ longlong Item_master_gtid_set_wait::val_int()
       Replication has not been set up, we should return NULL;
      */
     null_value = 1;
+
+  if (mi != NULL)
+    mi->dec_reference();
 #endif
 
   gtid_state->end_gtid_wait();
@@ -5223,7 +5235,7 @@ struct User_level_lock
 /** Extract a hash key from User_level_lock. */
 
 uchar *ull_get_key(const uchar *ptr, size_t *length,
-                   my_bool not_used __attribute__((unused)))
+                   my_bool not_used MY_ATTRIBUTE((unused)))
 {
   const User_level_lock *ull = reinterpret_cast<const User_level_lock*>(ptr);
   const MDL_key *key = ull->ticket->get_key();

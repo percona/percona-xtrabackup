@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2010, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2010, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -635,8 +635,18 @@ row_merge_fts_doc_tokenize(
 		dfield_dup(field, buf->heap);
 
 		/* One variable length column, word with its lenght less than
-		fts_max_token_size, add one extra size and one extra byte */
-		cur_len += 2;
+		fts_max_token_size, add one extra size and one extra byte.
+
+		Since the max length for FTS token now is larger than 255,
+		so we will need to signify length byte itself, so only 1 to 128
+		bytes can be used for 1 bytes, larger than that 2 bytes. */
+		if (t_str.f_len < 128) {
+			/* Extra size is one byte. */
+			cur_len += 2;
+		} else {
+			/* Extra size is two bytes. */
+			cur_len += 3;
+		}
 
 		/* Reserve one byte for the end marker of row_merge_block_t. */
 		if (buf->total_size + data_size[idx] + cur_len
@@ -1013,7 +1023,7 @@ func_exit:
 	os_event_set(psort_info->psort_common->sort_event);
 	psort_info->child_status = FTS_CHILD_EXITING;
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	OS_THREAD_DUMMY_RETURN;
 }
@@ -1059,7 +1069,7 @@ fts_parallel_merge(
 	os_event_set(psort_info->psort_common->merge_event);
 	psort_info->child_status = FTS_CHILD_EXITING;
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	OS_THREAD_DUMMY_RETURN;
 }
@@ -1139,7 +1149,7 @@ row_merge_write_fts_node(
 /********************************************************************//**
 Insert processed FTS data to auxillary index tables.
 @return DB_SUCCESS if insertion runs fine */
-static __attribute__((nonnull))
+static MY_ATTRIBUTE((nonnull))
 dberr_t
 row_merge_write_fts_word(
 /*=====================*/

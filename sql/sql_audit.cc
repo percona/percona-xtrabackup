@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,8 +18,10 @@
 #include "log.h"
 #include "mysqld.h"                             // sql_statement_names
 #include "sql_class.h"                          // THD
+#include "sql_thd_internal_api.h"               // create_thd / destroy_thd
 #include "sql_plugin.h"                         // my_plugin_foreach
 #include "sql_rewrite.h"                        // mysql_rewrite_query
+#include "sql_parse.h"                          // check_stack_overrun
 
 /**
   @class Audit_error_handler
@@ -33,7 +35,7 @@ private:
   /**
     @brief Blocked copy constructor (private).
   */
-  Audit_error_handler(const Audit_error_handler &obj __attribute__((unused))):
+  Audit_error_handler(const Audit_error_handler &obj MY_ATTRIBUTE((unused))):
     m_thd(NULL), m_warning_message(NULL),
     m_error_reported(false), m_active(false)
   {
@@ -144,6 +146,59 @@ private:
 
   /** Handler has been activated. */
   const bool m_active;
+};
+
+/**
+  Self destroying THD.
+*/
+class Auto_THD : public Internal_error_handler
+{
+public:
+  /**
+    Create THD object and initialize internal variables.
+  */
+  Auto_THD() :
+    thd(create_thd(false, true, false
+#ifdef HAVE_PSI_INTERFACE
+      , 0
+#endif
+      ))
+  {
+    thd->push_internal_handler(this);
+  }
+
+  /**
+    Deinitialize THD.
+  */
+  virtual ~Auto_THD()
+  {
+    thd->pop_internal_handler();
+    destroy_thd(thd);
+  }
+
+  /**
+    Error handler that prints error message on to the error log.
+
+    @param thd       Current THD.
+    @param sql_errno Error id.
+    @param sqlstate  State of the SQL error.
+    @param level     Error level.
+    @param msg       Message to be reported.
+
+    @return This function always return false.
+  */
+  virtual bool handle_condition(THD *thd MY_ATTRIBUTE((unused)),
+            uint sql_errno MY_ATTRIBUTE((unused)),
+            const char* sqlstate MY_ATTRIBUTE((unused)),
+            Sql_condition::enum_severity_level *level MY_ATTRIBUTE((unused)),
+            const char* msg)
+  {
+    sql_print_error("%s", msg);
+    return false;
+  }
+
+  /** Thd associated with the object. */
+  THD *thd;
 };
 
 struct st_mysql_event_generic
@@ -266,6 +321,9 @@ int mysql_audit_notify(THD *thd, mysql_event_general_subclass_t subclass,
     event.general_query.length= 0;
     event.general_time= my_time(0);
   }
+
+  DBUG_EXECUTE_IF("audit_log_negative_general_error_code",
+                  event.general_error_code*= -1;);
 
   event.general_command.str= msg;
   event.general_command.length= msg_len;
@@ -599,20 +657,23 @@ int mysql_audit_notify(THD *thd, mysql_event_global_variable_subclass_t subclass
 }
 
 int mysql_audit_notify(mysql_event_server_startup_subclass_t subclass,
+                       const char *subclass_name,
                        const char **argv,
                        unsigned int argc)
 {
   mysql_event_server_startup event;
+  Auto_THD thd;
 
-  if (mysql_audit_acquire_plugins(0, MYSQL_AUDIT_SERVER_STARTUP_CLASS,
-                                   static_cast<unsigned long>(subclass)))
+  if (mysql_audit_acquire_plugins(thd.thd, MYSQL_AUDIT_SERVER_STARTUP_CLASS,
+                                  static_cast<unsigned long>(subclass)))
     return 0;
 
   event.event_subclass= subclass;
   event.argv= argv;
   event.argc= argc;
 
-  return event_class_dispatch(0, MYSQL_AUDIT_SERVER_STARTUP_CLASS, &event);
+  return event_class_dispatch_error(thd.thd, MYSQL_AUDIT_SERVER_STARTUP_CLASS,
+                                    subclass_name, &event);
 }
 
 int mysql_audit_notify(mysql_event_server_shutdown_subclass_t subclass,
@@ -1205,6 +1266,24 @@ static int event_class_dispatch(THD *thd, mysql_event_class_t event_class,
   else
   {
     plugin_ref *plugins, *plugins_last;
+    THD *stack_overflow_thd= current_thd;
+
+    /*
+      Does not allow infinite recursive calls that crash the server.
+      This happens when error is reported from within a plugin that already
+      is receiving error event (MYSQL_AUDIT_GENERAL_ERROR). This condition
+      breaks the recursion, when the stack size gets close to its minimal
+      value.
+      The stack to be guarded should be the one of the currently running
+      thread.
+      If there's THD then a current_thd should be present too.
+    */
+    DBUG_ASSERT(stack_overflow_thd != NULL);
+    if (check_stack_overrun(stack_overflow_thd, STACK_MIN_SIZE * 5,
+                            reinterpret_cast<uchar *>(&event_generic)))
+    {
+      return 0;
+    }
 
     /* Use the cached set of audit plugins */
     plugins= thd->audit_class_plugins.begin();
@@ -1255,7 +1334,7 @@ static int event_class_dispatch_error(THD *thd,
 }
 
 /**  There's at least one active audit plugin tracking a specified class */
-bool is_audit_plugin_class_active(THD *thd __attribute__((unused)),
+bool is_audit_plugin_class_active(THD *thd MY_ATTRIBUTE((unused)),
                                   unsigned long event_class)
 {
   return mysql_global_audit_mask[event_class] != 0;

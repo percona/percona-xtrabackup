@@ -129,6 +129,7 @@ namespace keyring__keys_container_unittest
     Buffered_file_io keyring_io(logger);
     EXPECT_EQ(keys_container->init(&keyring_io, keyring_correct_struct), 0);
     remove(keyring_correct_struct);
+    delete sample_key; //unused in this test
   }
 
   TEST_F(Keys_container_test, InitWithFileWithIncorrectKeyringVersion)
@@ -141,6 +142,7 @@ namespace keyring__keys_container_unittest
                 log(MY_ERROR_LEVEL, StrEq("Incorrect Keyring file version")));
     EXPECT_EQ(keys_container->init(&keyring_io, keyring_incorrect_version), 1);
     remove(keyring_incorrect_version);
+    delete sample_key; //unused in this test
   }
 
   TEST_F(Keys_container_test, InitWithFileWithIncorrectTAG)
@@ -151,6 +153,7 @@ namespace keyring__keys_container_unittest
     Buffered_file_io keyring_io(logger);
     EXPECT_EQ(keys_container->init(&keyring_io, keyring_incorrect_tag), 1);
     remove(keyring_incorrect_tag);
+    delete sample_key; //unused in this test
   }
 
   TEST_F(Keys_container_test, StoreFetchRemove)
@@ -643,25 +646,27 @@ namespace keyring__keys_container_unittest
     MOCK_METHOD1(open, my_bool(std::string *keyring_filename));
     MOCK_METHOD1(reserve_buffer, void(size_t memory_size));
     MOCK_METHOD0(flush_to_backup, my_bool());
-    MOCK_METHOD0(flush_to_keyring, my_bool());
+
+    MOCK_METHOD2(flush_to_keyring, my_bool(IKey *key, Flush_operation operation));
     MOCK_METHOD1(operator_out, my_bool(const IKey* key));
-    MOCK_METHOD1(operator_in, my_bool(IKey* key));
+    MOCK_METHOD1(operator_in, my_bool(IKey **key));
     MOCK_METHOD0(close, my_bool());
 
 
     virtual my_bool operator<< (const IKey* key) { return operator_out(key); }
-    virtual my_bool operator>> (IKey* key) {
+    virtual my_bool operator>> (IKey **key) {
+      *key= new Key(); //will be deleted by keys_container
       if (load_key_from_buffer_on_call_number >= 0 && load_key_from_buffer_on_call_number == operator_in_call_counter)
       {
         size_t number_of_bytes_read= 0;
-        key->load_from_buffer(buffer, &number_of_bytes_read, buffer_size);
+        (*key)->load_from_buffer(buffer, &number_of_bytes_read, buffer_size);
         assert (number_of_bytes_read == buffer_size); //there was only one key in buffer so the whole key should have been read
       }
       operator_in_call_counter++;
       if (set_invalid_key_in_operator_in)
       {
         std::string invalid_key_type("ZZZ");
-        key->set_key_type(&invalid_key_type);
+        (*key)->set_key_type(&invalid_key_type);
       }
       return operator_in(key);
     }
@@ -722,7 +727,7 @@ namespace keyring__keys_container_unittest
       EXPECT_CALL(*keyring_io, reserve_buffer(sample_key->get_key_pod_size()));
       EXPECT_CALL(*keyring_io, operator_out(sample_key))
         .WillOnce(Return(1));
-      EXPECT_CALL(*keyring_io, flush_to_keyring())
+      EXPECT_CALL(*keyring_io, flush_to_keyring(sample_key, STORE_KEY))
         .WillOnce(Return(0));
       EXPECT_CALL(*keyring_io, close())
         .WillOnce(Return(0));
@@ -746,7 +751,7 @@ namespace keyring__keys_container_unittest
       EXPECT_CALL(*keyring_io, operator_in(_)).WillOnce(Return(1));
     }
     EXPECT_CALL(*keyring_io, close());
-    EXPECT_CALL(*logger, log(MY_ERROR_LEVEL, StrEq("Error while loading keyring content. The keyring file might be malformed")));
+    EXPECT_CALL(*logger, log(MY_ERROR_LEVEL, StrEq("Error while loading keyring content. The keyring might be malformed")));
 
     EXPECT_EQ(keys_container->init(keyring_io, file_name), 1);
     ASSERT_TRUE(keys_container->get_number_of_keys() == 0);
@@ -778,7 +783,7 @@ namespace keyring__keys_container_unittest
       EXPECT_CALL(*keyring_io, flush_to_backup())
         .WillOnce(Return(0));
       EXPECT_CALL(*keyring_io, reserve_buffer(0));
-      EXPECT_CALL(*keyring_io, flush_to_keyring())
+      EXPECT_CALL(*keyring_io, flush_to_keyring(sample_key, REMOVE_KEY))
         .WillOnce(Return(0));
       EXPECT_CALL(*keyring_io, close())
         .WillOnce(Return(0));
@@ -821,7 +826,7 @@ namespace keyring__keys_container_unittest
         .WillOnce(Return(1));
       EXPECT_CALL(*keyring_io, operator_out(sample_key))
         .WillOnce(Return(1));
-      EXPECT_CALL(*keyring_io, flush_to_keyring())
+      EXPECT_CALL(*keyring_io, flush_to_keyring(key2, STORE_KEY))
         .WillOnce(Return(0));
       EXPECT_CALL(*keyring_io, close())
        .WillOnce(Return(0));
@@ -877,10 +882,27 @@ namespace keyring__keys_container_unittest
       EXPECT_CALL(*keyring_io, reserve_buffer(sample_key->get_key_pod_size()));
       EXPECT_CALL(*keyring_io, operator_out(sample_key))
         .WillOnce(Return(1));
-      EXPECT_CALL(*keyring_io, flush_to_keyring())
+      EXPECT_CALL(*keyring_io, flush_to_keyring(sample_key, STORE_KEY))
         .WillOnce(Return(1));
       //backup file remains
     }
+
+    EXPECT_EQ(keys_container->store_key(keyring_io, sample_key), 1);
+    ASSERT_TRUE(keys_container->get_number_of_keys() == 0);
+    delete logger;
+    delete keyring_io;
+    delete sample_key;
+  }
+
+  TEST_F(Keys_container_with_mocked_io_test, ErrorFromIOFlushWhileOpenningIOForKeyStore)
+  {
+    keyring_io= new Mock_keyring_io();
+    ILogger *logger= new Mock_logger();
+    keys_container= new Keys_container(logger);
+    expect_calls_on_init();
+    EXPECT_EQ(keys_container->init(keyring_io, file_name), 0);
+
+    EXPECT_CALL(*keyring_io, open(Pointee(StrEq(file_name)))).WillOnce(Return(1));
 
     EXPECT_EQ(keys_container->store_key(keyring_io, sample_key), 1);
     ASSERT_TRUE(keys_container->get_number_of_keys() == 0);

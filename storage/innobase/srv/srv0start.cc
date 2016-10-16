@@ -314,7 +314,7 @@ DECLARE_THREAD(io_handler_thread)(
 	The thread actually never comes here because it is exited in an
 	os_event_wait(). */
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	OS_THREAD_DUMMY_RETURN;
 }
@@ -324,7 +324,7 @@ DECLARE_THREAD(io_handler_thread)(
 /*********************************************************************//**
 Creates a log file.
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 create_log_file(
 /*============*/
@@ -521,7 +521,7 @@ create_log_files_rename(
 /*********************************************************************//**
 Opens a log file.
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 open_log_file(
 /*==========*/
@@ -1702,7 +1702,8 @@ innobase_start_or_create_for_mysql(void)
 					strlen(fil_path_to_mysql_datadir)
 					+ 20 + sizeof "/innodb_status."));
 
-			sprintf(srv_monitor_file_name, "%s/innodb_status.%lu",
+			sprintf(srv_monitor_file_name,
+				"%s/innodb_status." ULINTPF,
 				fil_path_to_mysql_datadir,
 				os_proc_get_number());
 
@@ -2303,7 +2304,8 @@ files_checked:
 		server could crash in middle of key rotation. Some tablespace
 		didn't complete key rotation. Here, we will resume the
 		rotation. */
-		if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
+		if (!srv_read_only_mode
+		    && srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
 			fil_encryption_rotate();
 		}
 
@@ -2573,6 +2575,7 @@ files_checked:
 	    && srv_sys_space.can_auto_extend_last_file()
 	    && sum_of_data_file_sizes < tablespace_size_in_header) {
 
+#if 0
 		ib::error() << "Tablespace size stored in header is "
 			<< tablespace_size_in_header << " pages, but the sum"
 			" of data file sizes is only "
@@ -2594,33 +2597,7 @@ files_checked:
 
 			return(srv_init_abort(DB_ERROR));
 		}
-	}
-
-	if (!srv_read_only_mode
-	    && srv_sys_space.can_auto_extend_last_file()
-	    && sum_of_data_file_sizes < tablespace_size_in_header) {
-
-		ib::error() << "Tablespace size stored in header is "
-			<< tablespace_size_in_header << " pages, but the sum"
-			" of data file sizes is only "
-			<< sum_of_data_file_sizes << " pages";
-
-		if (srv_force_recovery == 0) {
-
-			ib::error()
-				<< "Cannot start InnoDB. The tail of"
-				" the system tablespace is"
-				" missing. Have you edited"
-				" innodb_data_file_path in my.cnf in an"
-				" InnoDB: inappropriate way, removing"
-				" ibdata files from there?"
-				" You can set innodb_force_recovery=1"
-				" in my.cnf to force"
-				" InnoDB: a startup if you are trying to"
-				" recover a badly corrupt database.";
-
-			return(srv_init_abort(DB_ERROR));
-		}
+#endif
 	}
 
 	if (srv_rebuild_indexes) {

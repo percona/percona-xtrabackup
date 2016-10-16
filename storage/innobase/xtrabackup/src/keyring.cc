@@ -21,6 +21,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <../plugin/keyring/keyring.h>
 #include "common.h"
 
+using namespace keyring;
+
 class XtraKLogger : public ILogger
 {
 public:
@@ -41,6 +43,7 @@ xb_keyring_init(const char *file_path)
 	MY_STAT stat_arg;
 
 	try {
+
 		logger.reset(new XtraKLogger());
 
 		if (file_path == NULL) {
@@ -60,15 +63,6 @@ xb_keyring_init(const char *file_path)
 		if (init_keyring_locks())
 			return(false);
 
-		if (create_keyring_dir_if_does_not_exist(
-			keyring_file_data_value))
-		{
-			logger->log(MY_ERROR_LEVEL, "Could not create keyring "
-				"directory. The keyring_file will stay "
-				"unusable until correct path to the keyring "
-				"directory gets provided");
-			return(false);
-		}
 		Buffered_file_io keyring_io(logger.get());
 		keys.reset(new Keys_container(logger.get()));
 		if (keys->init(&keyring_io, keyring_file_data_value))
@@ -96,44 +90,22 @@ xb_keyring_init(const char *file_path)
 int my_key_fetch(const char *key_id, char **key_type, const char *user_id,
                  void **key, size_t *key_len)
 {
-  try
-  {
-    return mysql_key_fetch(key_id, key_type, user_id, key,
-                           key_len);
-  }
-  catch (...)
-  {
-    return TRUE;
-  }
+  return mysql_key_fetch<Buffered_file_io, Key>(key_id, key_type, user_id, key,
+                                                key_len);
 }
 
-int my_key_store(const char *key_id, const char *key_type, const char *user_id,
-                 const void *key, size_t key_len)
+int my_key_store(const char *key_id, const char *key_type,
+                 const char *user_id, const void *key, size_t key_len)
 {
-  try
-  {
-    Buffered_file_io keyring_io(logger.get());
-    return mysql_key_store(&keyring_io, key_id, key_type, user_id, key,
-                           key_len);
-  }
-  catch (...)
-  {
-    return TRUE;
-  }
+  return mysql_key_store<Buffered_file_io, Key>(key_id, key_type, user_id, key,
+                                                key_len);
 }
 
 int my_key_remove(const char *key_id, const char *user_id)
 {
-  try
-  {
-    Buffered_file_io keyring_io(logger.get());
-    return mysql_key_remove(&keyring_io, key_id, user_id);
-  }
-  catch (...)
-  {
-    return TRUE;
-  }
+  return mysql_key_remove<Buffered_file_io, Key>(key_id, user_id);
 }
+
 
 int my_key_generate(const char *key_id, const char *key_type,
                     const char *user_id, size_t key_len)
@@ -141,10 +113,22 @@ int my_key_generate(const char *key_id, const char *key_type,
   try
   {
     Buffered_file_io keyring_io(logger.get());
-    return mysql_key_generate(&keyring_io, key_id, key_type, user_id, key_len);
+    boost::movelib::unique_ptr<IKey> key_candidate(new Key(key_id, key_type, user_id, NULL, 0));
+
+    boost::movelib::unique_ptr<uchar[]> key(new uchar[key_len]);
+    if (key.get() == NULL)
+      return TRUE;
+    memset(key.get(), 0, key_len);
+    if (is_keys_container_initialized == FALSE || check_key_for_writting(key_candidate.get(), "generating") ||
+        my_rand_buffer(key.get(), key_len))
+      return TRUE;
+
+    return my_key_store(key_id, key_type, user_id, key.get(), key_len) == TRUE;
   }
   catch (...)
   {
+    if (logger != NULL)
+      logger->log(MY_ERROR_LEVEL, "Failed to generate a key due to internal exception inside keyring_file plugin");
     return TRUE;
   }
 }

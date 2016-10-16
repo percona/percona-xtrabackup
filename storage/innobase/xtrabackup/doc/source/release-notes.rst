@@ -10,26 +10,28 @@
    :glob:
 
 
+   release-notes/2.4/2.4.4
    release-notes/2.4/2.4.3
    release-notes/2.4/2.4.2
    release-notes/2.4/2.4.1
    release-notes/2.4/2.4.0-rc1
 
-|Percona XtraBackup| 2.3 
-=========================
+|Percona XtraBackup| 2.3
+========================
 
 .. toctree::
    :maxdepth: 1
    :glob:
 
+   release-notes/2.3/2.3.5
    release-notes/2.3/2.3.4
    release-notes/2.3/2.3.3
    release-notes/2.3/2.3.2
    release-notes/2.3/2.3.1-beta1
    release-notes/2.3/2.3.0-alpha1
-   
+
 |Percona XtraBackup| 2.2
-=========================
+========================
 
 .. toctree::
    :maxdepth: 1
@@ -48,9 +50,9 @@
    release-notes/2.2/2.2.3
    release-notes/2.2/2.2.2-beta1
    release-notes/2.2/2.2.1-alpha1
-   
+
 |Percona XtraBackup| 2.1
-=========================
+========================
 
 .. toctree::
    :maxdepth: 1
@@ -68,7 +70,7 @@
    release-notes/2.1/2.1.0-rc1
    release-notes/2.1/2.1.0-beta1
    release-notes/2.1/2.1.0-alpha1
-   
+
 |Percona XtraBackup| 2.0
 =========================
 

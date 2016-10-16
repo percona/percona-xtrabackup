@@ -16,7 +16,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************
 
@@ -44,7 +44,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_sys.h>
 #include <ha_prototypes.h>
 #include <srv0srv.h>
-#include <fnmatch.h>
 #include <string.h>
 #include "common.h"
 #include "xtrabackup.h"
@@ -57,6 +56,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 char *tool_name;
 char tool_args[2048];
+
+/* mysql flavor and version */
+mysql_flavor_t server_flavor = FLAVOR_UNKNOWN;
+unsigned long mysql_server_version = 0;
 
 /* server capabilities */
 bool have_changed_page_bitmaps = false;
@@ -84,8 +87,6 @@ char *buffer_pool_filename = NULL;
 time_t history_start_time;
 time_t history_end_time;
 time_t history_lock_time;
-
-char *innobase_data_file_path_alloc = NULL;
 
 MYSQL *mysql_connection;
 
@@ -284,45 +285,48 @@ parse_show_engine_innodb_status(MYSQL *connection)
 
 static
 bool
-check_server_version(const char *version, const char *innodb_version)
+check_server_version(unsigned long version_number,
+		     const char *version_string,
+		     const char *version_comment,
+		     const char *innodb_version)
 {
-	if (!((fnmatch("5.[123].*", version, FNM_PATHNAME) == 0
-	       && innodb_version != NULL)
-	      || (fnmatch("5.5.*", version, FNM_PATHNAME) == 0)
-	      || (fnmatch("5.6.*", version, FNM_PATHNAME) == 0)
-	      || (fnmatch("5.7.*", version, FNM_PATHNAME) == 0)
-	      || (fnmatch("10.[01].*", version, FNM_PATHNAME) == 0))) {
-		if (fnmatch("5.1.*", version, FNM_PATHNAME) == 0
-		    && innodb_version == NULL) {
-			msg("Error: Built-in InnoDB in MySQL 5.1 is not "
-				"supported in this release. You can either use "
-				"Percona XtraBackup 2.0, or upgrade to InnoDB "
-				"plugin.\n");
-		} else {
-			msg("Error: Unsupported server version: "
-				"'%s'. Please report a bug at "
-				"https://bugs.launchpad.net/"
-				"percona-xtrabackup\n", version);
-		}
-		return(false);
+	bool version_supported = false;
+	bool mysql51 = false;
+
+	mysql_server_version = version_number;
+
+	server_flavor = FLAVOR_UNKNOWN;
+	if (strstr(version_comment, "Percona") != NULL) {
+		server_flavor = FLAVOR_PERCONA_SERVER;
+	} else if (strstr(version_comment, "MariaDB") != NULL ||
+		   strstr(version_string, "MariaDB") != NULL) {
+		server_flavor = FLAVOR_MARIADB;
+	} else if (strstr(version_comment, "MySQL") != NULL) {
+		server_flavor = FLAVOR_MYSQL;
 	}
 
-	return(true);
-}
+	mysql51 = version_number > 50100 && version_number < 50500;
+	version_supported = version_supported
+		|| (mysql51 && innodb_version != NULL);
+	version_supported = version_supported
+		|| (version_number > 50500 && version_number < 50800);
+	version_supported = version_supported
+		|| ((version_number > 100000 && version_number < 100200)
+		    && server_flavor == FLAVOR_MARIADB);
 
-/*********************************************************************//**
-Convert MySQL version string to number.
-@return	version number. */
-static
-int
-mysql_version_number(const char *version_string)
-{
-	int version_major, version_minor, version_patch;
+	if (mysql51 && innodb_version == NULL) {
+		msg("Error: Built-in InnoDB in MySQL 5.1 is not "
+		    "supported in this release. You can either use "
+		    "Percona XtraBackup 2.0, or upgrade to InnoDB "
+		    "plugin.\n");
+	} else if (!version_supported) {
+		msg("Error: Unsupported server version: '%s'. Please "
+		    "report a bug at "
+		    "https://bugs.launchpad.net/percona-xtrabackup\n",
+		    version_string);
+	}
 
-	sscanf(version_string, "%d.%d.%d",
-	       &version_major, &version_minor, &version_patch);
-
-	return(version_major * 10000 + version_minor * 100 + version_patch);
+	return(version_supported);
 }
 
 /*********************************************************************//**
@@ -333,6 +337,7 @@ get_mysql_vars(MYSQL *connection)
 {
 	char *gtid_mode_var = NULL;
 	char *version_var = NULL;
+	char *version_comment_var = NULL;
 	char *innodb_version_var = NULL;
 	char *have_backup_locks_var = NULL;
 	char *have_backup_safe_binlog_info_var = NULL;
@@ -343,11 +348,18 @@ get_mysql_vars(MYSQL *connection)
 	char *gtid_slave_pos_var = NULL;
 	char *innodb_buffer_pool_filename_var = NULL;
 	char *datadir_var = NULL;
+	char *innodb_log_group_home_dir_var = NULL;
 	char *innodb_log_file_size_var = NULL;
+	char *innodb_log_files_in_group_var = NULL;
 	char *innodb_data_file_path_var = NULL;
+	char *innodb_data_home_dir_var = NULL;
+	char *innodb_undo_directory_var = NULL;
+	char *innodb_page_size_var = NULL;
 	char *innodb_log_checksums_var = NULL;
 	char *innodb_log_checksum_algorithm_var = NULL;
 	char *tokudb_checkpoint_lock_var = NULL;
+
+	unsigned long server_version = mysql_get_server_version(connection);
 
 	bool ret = true;
 
@@ -359,6 +371,7 @@ get_mysql_vars(MYSQL *connection)
 		{"lock_wait_timeout", &lock_wait_timeout_var},
 		{"gtid_mode", &gtid_mode_var},
 		{"version", &version_var},
+		{"version_comment", &version_comment_var},
 		{"innodb_version", &innodb_version_var},
 		{"wsrep_on", &wsrep_on_var},
 		{"slave_parallel_workers", &slave_parallel_workers_var},
@@ -366,8 +379,13 @@ get_mysql_vars(MYSQL *connection)
 		{"innodb_buffer_pool_filename",
 			&innodb_buffer_pool_filename_var},
 		{"datadir", &datadir_var},
+		{"innodb_log_group_home_dir", &innodb_log_group_home_dir_var},
 		{"innodb_log_file_size", &innodb_log_file_size_var},
+		{"innodb_log_files_in_group", &innodb_log_files_in_group_var},
 		{"innodb_data_file_path", &innodb_data_file_path_var},
+		{"innodb_data_home_dir", &innodb_data_home_dir_var},
+		{"innodb_undo_directory", &innodb_undo_directory_var},
+		{"innodb_page_size", &innodb_page_size_var},
 		{"innodb_log_checksums", &innodb_log_checksums_var},
 		{"innodb_log_checksum_algorithm",
 			&innodb_log_checksum_algorithm_var},
@@ -408,7 +426,15 @@ get_mysql_vars(MYSQL *connection)
 		have_galera_enabled = true;
 	}
 
-	if (strcmp(version_var, "5.5") >= 0) {
+	/* Check server version compatibility and detect server flavor */
+
+	if (!(ret = check_server_version(server_version, version_var,
+					 version_comment_var,
+					 innodb_version_var))) {
+		goto out;
+	}
+
+	if (server_version > 50500) {
 		have_flush_engine_logs = true;
 	}
 
@@ -426,49 +452,85 @@ get_mysql_vars(MYSQL *connection)
 		have_gtid_slave = true;
 	}
 
-	if (!(ret = check_server_version(version_var, innodb_version_var))) {
-		goto out;
-	}
-
 	msg("Using server version %s\n", version_var);
 
-	if (!(ret = detect_mysql_capabilities_for_backup(version_var))) {
+	if (!(ret = detect_mysql_capabilities_for_backup())) {
 		goto out;
 	}
 
 	/* make sure datadir value is the same in configuration file */
-	if (datadir_specified) {
+	if (check_if_param_set("datadir")) {
 		if (!directory_exists(mysql_data_home, false)) {
-			msg("Error: option 'datadir' points to "
+			msg("Warning: option 'datadir' points to "
 			    "nonexistent directory '%s'\n", mysql_data_home);
-			goto out;
 		}
 		if (!directory_exists(datadir_var, false)) {
-			msg("Error: MySQL variable 'datadir' points to "
+			msg("Warning: MySQL variable 'datadir' points to "
 			    "nonexistent directory '%s'\n", datadir_var);
-			goto out;
 		}
-		if (!(ret = equal_paths(mysql_data_home, datadir_var))) {
-			msg("Error: option 'datadir' has different "
+		if (!equal_paths(mysql_data_home, datadir_var)) {
+			msg("Warning: option 'datadir' has different "
 				"values:\n"
 				"  '%s' in defaults file\n"
 				"  '%s' in SHOW VARIABLES\n",
 				mysql_data_home, datadir_var);
-			goto out;
 		}
 	}
 
 	/* get some default values is they are missing from my.cnf */
-	if (!datadir_specified) {
+	if (!check_if_param_set("datadir") && datadir_var && *datadir_var) {
 		strmake(mysql_real_data_home, datadir_var, FN_REFLEN - 1);
 		mysql_data_home= mysql_real_data_home;
 	}
 
-	if (!innodb_log_file_size_specified) {
+	if (!check_if_param_set("innodb_data_file_path")
+	    && innodb_data_file_path_var && *innodb_data_file_path_var) {
+		innobase_data_file_path = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_data_file_path_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_data_home_dir")
+	    && innodb_data_home_dir_var && *innodb_data_home_dir_var) {
+		innobase_data_home_dir = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_data_home_dir_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_log_group_home_dir")
+	    && innodb_log_group_home_dir_var
+	    && *innodb_log_group_home_dir_var) {
+		srv_log_group_home_dir = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_log_group_home_dir_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_undo_directory")
+	    && innodb_undo_directory_var && *innodb_undo_directory_var) {
+		srv_undo_dir = my_strdup(PSI_NOT_INSTRUMENTED,
+			innodb_undo_directory_var, MYF(MY_FAE));
+	}
+
+	if (!check_if_param_set("innodb_log_files_in_group")
+	    && innodb_log_files_in_group_var) {
 		char *endptr;
 
-		innobase_log_file_size = strtoll(innodb_log_file_size_var,
-							&endptr, 10);
+		innobase_log_files_in_group = strtol(
+			innodb_log_files_in_group_var, &endptr, 10);
+		ut_ad(*endptr == 0);
+	}
+
+	if (!check_if_param_set("innodb_log_file_size")
+	    && innodb_log_file_size_var) {
+		char *endptr;
+
+		innobase_log_file_size = strtoll(
+			innodb_log_file_size_var, &endptr, 10);
+		ut_ad(*endptr == 0);
+	}
+
+	if (!check_if_param_set("innodb_page_size") && innodb_page_size_var) {
+		char *endptr;
+
+		innobase_page_size = strtoll(
+			innodb_page_size_var, &endptr, 10);
 		ut_ad(*endptr == 0);
 	}
 
@@ -496,11 +558,6 @@ get_mysql_vars(MYSQL *connection)
 		}
 	}
 
-	if (!innodb_data_file_path_specified) {
-		innobase_data_file_path = innobase_data_file_path_alloc
-					= strdup(innodb_data_file_path_var);
-	}
-
 	/* TokuDB plugin check via tokudb_checkpoint_lock */
 	if (tokudb_checkpoint_lock_var != NULL) {
 		have_tokudb = true;
@@ -518,7 +575,7 @@ out:
 Query the server to find out what backup capabilities it supports.
 @return	true on success. */
 bool
-detect_mysql_capabilities_for_backup(const char *version)
+detect_mysql_capabilities_for_backup()
 {
 	const char *query = "SELECT 'INNODB_CHANGED_PAGES', COUNT(*) FROM "
 				"INFORMATION_SCHEMA.PLUGINS "
@@ -540,8 +597,8 @@ detect_mysql_capabilities_for_backup(const char *version)
 		FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS
 		is not supported for versions below 10.1.6
 		(see MDEV-7472) */
-		if (strstr(version, "MariaDB") != NULL &&
-		    mysql_version_number(version) < 100106) {
+		if (server_flavor == FLAVOR_MARIADB &&
+		    mysql_server_version < 100106) {
 			have_changed_page_bitmaps = false;
 		}
 
@@ -833,7 +890,7 @@ stop_thread:
 
 	os_event_set(kill_query_thread_stopped);
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 	OS_THREAD_DUMMY_RETURN;
 }
 
@@ -1043,7 +1100,7 @@ wait_for_safe_slave(MYSQL *connection)
 		       "remaining)...\n", sleep_time, n_attempts);
 
 		xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
-		os_thread_sleep(sleep_time * 1000);
+		os_thread_sleep(sleep_time * 1000000);
 		xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
 
 		open_temp_tables = get_open_temp_tables(connection);
@@ -1218,7 +1275,6 @@ write_current_binlog_file(MYSQL *connection)
 	char *gtid_binlog_state = NULL;
 	char *log_bin_file = NULL;
 	char *log_bin_dir = NULL;
-	char *datadir = NULL;
 	bool gtid_exists;
 	bool result = true;
 	char filepath[FN_REFLEN];
@@ -1236,7 +1292,6 @@ write_current_binlog_file(MYSQL *connection)
 	mysql_variable vars[] = {
 		{"gtid_binlog_state", &gtid_binlog_state},
 		{"log_bin_basename", &log_bin_dir},
-		{"datadir", &datadir},
 		{NULL, NULL}
 	};
 
@@ -1256,13 +1311,24 @@ write_current_binlog_file(MYSQL *connection)
 		read_mysql_variables(connection, "SHOW MASTER STATUS",
 			status_after_flush, false);
 
-		if (log_bin_dir == NULL) {
-			/* log_bin_basename does not exist in MariaDB,
-			fallback to datadir */
-			log_bin_dir = strdup(datadir);
+		if (opt_log_bin != NULL && strchr(opt_log_bin, FN_LIBCHAR)) {
+			/* If log_bin is set, it has priority */
+			if (log_bin_dir) {
+				free(log_bin_dir);
+			}
+			log_bin_dir = strdup(opt_log_bin);
+		} else if (log_bin_dir == NULL) {
+			/* Default location is MySQL datadir */
+			log_bin_dir = strdup("./");
 		}
 
 		dirname_part(log_bin_dir, log_bin_dir, &log_bin_dir_length);
+
+		/* strip final slash if it is not the only path component */
+		if (log_bin_dir_length > 1 &&
+		    log_bin_dir[log_bin_dir_length - 1] == FN_LIBCHAR) {
+			log_bin_dir[log_bin_dir_length - 1] = 0;
+		}
 
 		if (log_bin_dir == NULL || log_bin_file == NULL) {
 			msg("Failed to get master binlog coordinates from "
@@ -1271,8 +1337,8 @@ write_current_binlog_file(MYSQL *connection)
 			goto cleanup;
 		}
 
-		ut_snprintf(filepath, sizeof(filepath), "%s/%s",
-				log_bin_dir, log_bin_file);
+		ut_snprintf(filepath, sizeof(filepath), "%s%c%s",
+				log_bin_dir, FN_LIBCHAR, log_bin_file);
 		result = copy_file(ds_data, filepath, log_bin_file, 0);
 	}
 
@@ -1727,8 +1793,6 @@ backup_cleanup()
 	free(mysql_slave_position);
 	free(mysql_binlog_position);
 	free(buffer_pool_filename);
-
-	free(innobase_data_file_path_alloc);
 
 	if (mysql_connection) {
 		mysql_close(mysql_connection);

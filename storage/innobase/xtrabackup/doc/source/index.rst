@@ -51,6 +51,17 @@ Prerequisites
    :glob:
 
    using_xtrabackup/privileges
+   using_xtrabackup/configuring
+
+Backup Scenarios
+================
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   backup_scenarios/full_backup
+   backup_scenarios/incremental_backup
 
 User's Manual
 =============

@@ -14,7 +14,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
@@ -100,13 +100,10 @@ extern char		*xtrabackup_encrypt_key;
 extern char		*xtrabackup_encrypt_key_file;
 extern longlong		innobase_log_file_size;
 extern long		innobase_log_files_in_group;
+extern longlong		innobase_page_size;
 
 extern const char	*xtrabackup_encrypt_algo_names[];
 extern TYPELIB		xtrabackup_encrypt_algo_typelib;
-
-extern bool		innodb_data_file_path_specified;
-extern bool		innodb_log_file_size_specified;
-extern bool		datadir_specified;
 
 extern int		xtrabackup_parallel;
 
@@ -147,6 +144,7 @@ extern char		*opt_defaults_group;
 extern char		*opt_socket;
 extern uint		opt_port;
 extern char		*opt_login_path;
+extern char		*opt_log_bin;
 
 extern const char 	*query_type_names[];
 
@@ -206,6 +204,13 @@ bool
 check_if_skip_table(
 /******************/
 	const char*	name);	/*!< in: path to the table */
+
+/************************************************************************
+Check if parameter is set in defaults file or via command line argument
+@return true if parameter is set. */
+bool
+check_if_param_set(const char *param);
+
 
 void
 xtrabackup_backup_func(void);

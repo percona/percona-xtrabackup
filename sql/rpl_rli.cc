@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 #include "sql_base.h"              // close_thread_tables
 #include "strfunc.h"               // strconvert
 #include "transaction.h"           // trans_commit_stmt
-
+#include "debug_sync.h"
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
 
@@ -79,7 +79,8 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery
    cur_log_fd(-1), relay_log(&sync_relaylog_period, SEQ_READ_APPEND),
    is_relay_log_recovery(is_slave_recovery),
    save_temporary_tables(0),
-   cur_log_old_open_count(0), group_relay_log_pos(0), event_relay_log_number(0),
+   cur_log_old_open_count(0), error_on_rli_init_info(false),
+   group_relay_log_pos(0), event_relay_log_number(0),
    event_relay_log_pos(0), event_start_pos(0),
    group_master_log_pos(0),
    gtid_set(global_sid_map, global_sid_lock),
@@ -114,7 +115,7 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery
    reported_unsafe_warning(false), rli_description_event(NULL),
    commit_order_mngr(NULL),
    sql_delay(0), sql_delay_end(0), m_flags(0), row_stmt_start_timestamp(0),
-   long_find_row_note_printed(false), error_on_rli_init_info(false),
+   long_find_row_note_printed(false),
    thd_tx_priority(0),
    is_native_trx_detached(false)
 {
@@ -148,6 +149,11 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery
   cached_charset_invalidate();
   inited_hash_workers= FALSE;
   channel_open_temp_tables.atomic_set(0);
+  /*
+    For applier threads, currently_executing_gtid is set to automatic
+    when they are not executing any transaction.
+  */
+  currently_executing_gtid.set_automatic();
 
   if (!rli_fake)
   {
@@ -726,6 +732,8 @@ int Relay_log_info::wait_for_pos(THD* thd, String* log_name,
   DBUG_PRINT("enter",("log_name: '%s'  log_pos: %lu  timeout: %lu",
                       log_name->c_ptr_safe(), (ulong) log_pos, (ulong) timeout));
 
+  DEBUG_SYNC(thd, "begin_master_pos_wait");
+
   set_timespec(&abstime, timeout);
   mysql_mutex_lock(&data_lock);
   thd->ENTER_COND(&data_cond, &data_lock,
@@ -944,6 +952,8 @@ int Relay_log_info::wait_for_gtid_set(THD* thd, const Gtid_set* wait_gtid_set,
 
   if (!inited)
     DBUG_RETURN(-2);
+
+  DEBUG_SYNC(thd, "begin_wait_for_gtid_set");
 
   set_timespec(&abstime, timeout);
   mysql_mutex_lock(&data_lock);
@@ -1528,9 +1538,7 @@ bool Relay_log_info::is_until_satisfied(THD *thd, Log_event *ev)
     break;
 
   case UNTIL_SQL_AFTER_MTS_GAPS:
-#ifndef DBUG_OFF
   case UNTIL_DONE:
-#endif
     /*
       TODO: this condition is actually post-execution or post-scheduling
             so the proper place to check it before SQL thread goes
@@ -1545,9 +1553,7 @@ bool Relay_log_info::is_until_satisfied(THD *thd, Log_event *ev)
                             "UNTIL SQL_AFTER_MTS_GAPS as it has "
                             "processed all gap transactions left from "
                             "the previous slave session.");
-#ifndef DBUG_OFF
       until_condition= UNTIL_DONE;
-#endif
       DBUG_RETURN(true);
     }
     else
@@ -2096,8 +2102,13 @@ a file name for --relay-log-index option.", opt_relaylog_index_name);
       be useful to ensure the Retrieved_Gtid_Set behavior when auto
       positioning is disabled (we could have transactions spanning multiple
       relay log files in this case).
+      We will skip this initialization if relay_log_recovery is set in order
+      to save time, as neither the GTIDs nor the transaction_parser state
+      would be useful when the relay log will be cleaned up later when calling
+      init_recovery.
     */
-    if (!gtid_retrieved_initialized &&
+    if (!is_relay_log_recovery &&
+        !gtid_retrieved_initialized &&
         relay_log.init_gtid_sets(&gtid_set, NULL,
                                  opt_slave_sql_verify_checksum,
                                  true/*true=need lock*/,
@@ -2246,7 +2257,11 @@ a file name for --relay-log-index option.", opt_relaylog_index_name);
     goto err;
   }
 
-  is_relay_log_recovery= FALSE;
+  /*
+    In case of MTS the recovery is deferred until the end of global_init_info.
+  */
+  if (!mi->rli->mts_recovery_group_cnt)
+    is_relay_log_recovery= FALSE;
   DBUG_RETURN(error);
 
 err:
@@ -2869,4 +2884,11 @@ const char* Relay_log_info::get_for_channel_str(bool upper_case) const
     return mi->get_for_channel_str(upper_case);
 }
 
+enum_return_status Relay_log_info::add_gtid_set(const Gtid_set *gtid_set)
+{
+  DBUG_ENTER("Relay_log_info::add_gtid_set(gtid_set)");
 
+  enum_return_status return_status= this->gtid_set.add_gtid_set(gtid_set);
+
+  DBUG_RETURN(return_status);
+}

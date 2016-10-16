@@ -16,7 +16,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************
 
@@ -647,8 +647,12 @@ equal_paths(const char *first, const char *second)
 	char real_first[PATH_MAX];
 	char real_second[PATH_MAX];
 
-	ut_a(realpath(first, real_first) != NULL);
-	ut_a(realpath(second, real_second) != NULL);
+	if (realpath(first, real_first) == NULL) {
+		return false;
+	}
+	if (realpath(second, real_second) == NULL) {
+		return false;
+	}
 
 	return (strcmp(real_first, real_second) == 0);
 }
@@ -664,7 +668,11 @@ directory_exists(const char *dir, bool create)
 	MY_STAT stat_arg;
 	char errbuf[MYSYS_STRERROR_SIZE];
 
-	if (!my_stat(dir, &stat_arg, MYF(0))) {
+	if (my_stat(dir, &stat_arg, MYF(0)) == NULL) {
+
+		if (!create) {
+			return(false);
+		}
 
 		if (mkdirp(dir, 0777, MYF(0)) < 0) {
 
@@ -2112,7 +2120,7 @@ cleanup:
 
 	ctxt->ret = ret;
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 	OS_THREAD_DUMMY_RETURN;
 }
 

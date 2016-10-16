@@ -16,7 +16,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************
 
@@ -71,6 +71,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_aes.h>
 
 #include <sstream>
+#include <set>
 #include <mysql.h>
 
 #define G_PTR uchar*
@@ -347,14 +348,14 @@ static longlong	innobase_log_file_size_save;
 
 /* set true if corresponding variable set as option config file or 
 command argument */
-bool innodb_data_file_path_specified = false;
-bool innodb_log_file_size_specified = false;
-bool datadir_specified = false;
 bool innodb_log_checksum_algorithm_specified = false;
 
 /* String buffer used by --print-param to accumulate server options as they are
 parsed from the defaults file */
 static std::ostringstream print_param_str;
+
+/* Set of specified parameters */
+std::set<std::string> param_set;
 
 static ulonglong global_max_value;
 
@@ -386,6 +387,7 @@ char *opt_defaults_group = NULL;
 char *opt_socket = NULL;
 uint opt_port = 0;
 char *opt_login_path = NULL;
+char *opt_log_bin = NULL;
 
 const char *query_type_names[] = { "ALL", "UPDATE", "SELECT", NullS};
 
@@ -764,6 +766,9 @@ struct my_option xb_long_options[] =
    (G_PTR*) &log_ignored_opt, (G_PTR*) &log_ignored_opt, 0,
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
+   {"log_bin", OPT_LOG, "Base name for the log sequence",
+   &opt_log_bin, &opt_log_bin, 0, GET_STR_ALLOC, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
    {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
    (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
@@ -802,12 +807,11 @@ Disable with --skip-innodb-checksums.", (G_PTR*) &innobase_use_checksums,
    0, GET_ULONG, REQUIRED_ARG, 500L, 1L, ULONG_MAX, 0, 1L, 0},
 */
   {"innodb_data_file_path", OPT_INNODB_DATA_FILE_PATH,
-   "Path to individual files and their sizes.", (G_PTR*) &innobase_data_file_path,
-   (G_PTR*) &innobase_data_file_path, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   "Path to individual files and their sizes.", &innobase_data_file_path,
+   &innobase_data_file_path, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_data_home_dir", OPT_INNODB_DATA_HOME_DIR,
-   "The common part for InnoDB table spaces.", (G_PTR*) &innobase_data_home_dir,
-   (G_PTR*) &innobase_data_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0,
-   0},
+   "The common part for InnoDB table spaces.", &innobase_data_home_dir,
+   &innobase_data_home_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_doublewrite", OPT_INNODB_DOUBLEWRITE, "Enable InnoDB doublewrite buffer (enabled by default). \
 Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    (G_PTR*) &innobase_use_doublewrite, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
@@ -871,13 +875,13 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    GET_LL, REQUIRED_ARG, 48*1024*1024L, 1*1024*1024L, LLONG_MAX, 0,
    1024*1024L, 0},
   {"innodb_log_files_in_group", OPT_INNODB_LOG_FILES_IN_GROUP,
-   "Number of log files in the log group. InnoDB writes to the files in a circular fashion. Value 3 is recommended here.",
-   (G_PTR*) &innobase_log_files_in_group, (G_PTR*) &innobase_log_files_in_group,
+   "Number of log files in the log group. InnoDB writes to the files in a "
+   "circular fashion. Value 3 is recommended here.",
+   &innobase_log_files_in_group, &innobase_log_files_in_group,
    0, GET_LONG, REQUIRED_ARG, 2, 2, 100, 0, 1, 0},
   {"innodb_log_group_home_dir", OPT_INNODB_LOG_GROUP_HOME_DIR,
-   "Path to InnoDB log files.", (G_PTR*) &srv_log_group_home_dir,
-   (G_PTR*) &srv_log_group_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
-   0, 0},
+   "Path to InnoDB log files.", &srv_log_group_home_dir,
+   &srv_log_group_home_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_max_dirty_pages_pct", OPT_INNODB_MAX_DIRTY_PAGES_PCT,
    "Percentage of dirty pages allowed in bufferpool.", (G_PTR*) &srv_max_buf_pool_modified_pct,
    (G_PTR*) &srv_max_buf_pool_modified_pct, 0, GET_ULONG, REQUIRED_ARG, 90, 0, 100, 0, 0, 0},
@@ -952,8 +956,8 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_CRC32, 0, 0, 0, 0, 0},
   {"innodb_undo_directory", OPT_INNODB_UNDO_DIRECTORY,
    "Directory where undo tablespace files live, this path can be absolute.",
-   (G_PTR*) &srv_undo_dir, (G_PTR*) &srv_undo_dir,
-   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   &srv_undo_dir, &srv_undo_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
+   0},
 
   {"innodb_undo_tablespaces", OPT_INNODB_UNDO_TABLESPACES,
    "Number of undo tablespaces to use.",
@@ -1330,7 +1334,19 @@ You can download full text of the license on http://www.gnu.org/licenses/gpl-2.0
 }
 
 #define ADD_PRINT_PARAM_OPT(value)              \
-  print_param_str << opt->name << "=" << value << "\n";
+  { \
+    print_param_str << opt->name << "=" << value << "\n"; \
+    param_set.insert(opt->name); \
+  }
+
+/************************************************************************
+Check if parameter is set in defaults file or via command line argument
+@return true if parameter is set. */
+bool
+check_if_param_set(const char *param)
+{
+	return param_set.find(param) != param_set.end();
+}
 
 my_bool
 xb_get_one_option(int optid,
@@ -1343,7 +1359,6 @@ xb_get_one_option(int optid,
     mysql_data_home= mysql_real_data_home;
 
     ADD_PRINT_PARAM_OPT(mysql_real_data_home);
-    datadir_specified = true;
     break;
 
   case 't':
@@ -1359,7 +1374,6 @@ xb_get_one_option(int optid,
   case OPT_INNODB_DATA_FILE_PATH:
 
     ADD_PRINT_PARAM_OPT(innobase_data_file_path);
-    innodb_data_file_path_specified = true;
     break;
 
   case OPT_INNODB_LOG_GROUP_HOME_DIR:
@@ -1375,7 +1389,6 @@ xb_get_one_option(int optid,
   case OPT_INNODB_LOG_FILE_SIZE:
 
     ADD_PRINT_PARAM_OPT(innobase_log_file_size);
-    innodb_log_file_size_specified = true;
     break;
 
   case OPT_INNODB_FLUSH_METHOD:
@@ -1860,7 +1873,8 @@ innodb_init_param(void)
 	directory. */
 
 	if (!srv_undo_dir || !xtrabackup_backup) {
-		srv_undo_dir = (char *) ".";
+		my_free(srv_undo_dir);
+		srv_undo_dir = my_strdup(PSI_NOT_INSTRUMENTED, ".", MYF(MY_FAE));
 	}
 
 	innodb_log_checksum_func_update(srv_log_checksum_algorithm);
@@ -2520,11 +2534,11 @@ skip:
 
 static
 void
-xtrabackup_choose_lsn_offset(lsn_t start_lsn, lsn_t lsn_offset_alt)
+xtrabackup_choose_lsn_offset(lsn_t start_lsn)
 {
-	ulint no, alt_no, expected_no;
+	ulint no, expected_no;
 	ulint blocks_in_group;
-	lsn_t tmp_offset, end_lsn;
+	lsn_t end_lsn;
 	log_group_t *group;
 
 	start_lsn = ut_uint64_align_down(start_lsn, OS_FILE_LOG_BLOCK_SIZE);
@@ -2532,54 +2546,52 @@ xtrabackup_choose_lsn_offset(lsn_t start_lsn, lsn_t lsn_offset_alt)
 
 	group = UT_LIST_GET_FIRST(log_sys->log_groups);
 
-	if (lsn_offset_alt == group->lsn_offset ||
-	    lsn_offset_alt == (lsn_t) -1) {
+	if (mysql_server_version < 50500) {
+		/* server doesn't support log files larger than 4G */
+		return;
+	}
+
+	if (server_flavor == FLAVOR_PERCONA_SERVER &&
+	    (mysql_server_version > 50500 && mysql_server_version < 50600)) {
+		/* it is Percona Server 5.5 */
+		group->lsn_offset = group->lsn_offset_ps55;
+		return;
+	}
+
+	if (group->lsn_offset_ps55 == group->lsn_offset ||
+	    group->lsn_offset_ps55 == (lsn_t) -1) {
 		/* we have only one option */
 		return;
 	}
 
-	no = alt_no = (ulint) -1;
+	no = (ulint) -1;
 
 	blocks_in_group = log_block_convert_lsn_to_no(
 		log_group_get_capacity(group)) - 1;
 
-	/* read log block number from usual offset */
-	if (group->lsn_offset < group->file_size * group->n_files &&
-	    (log_group_calc_lsn_offset(start_lsn, group) %
-	     UNIV_PAGE_SIZE) % OS_MIN_LOG_BLOCK_SIZE == 0) {
-		log_group_read_log_seg(log_sys->buf, group, start_lsn, end_lsn);
-		no = log_block_get_hdr_no(log_sys->buf);
-	}
-
-	/* read log block number from alternative offset */
-	tmp_offset = group->lsn_offset;
-	group->lsn_offset = lsn_offset_alt;
-
-	if (group->lsn_offset < group->file_size * group->n_files &&
-	    (log_group_calc_lsn_offset(start_lsn, group) %
-	     UNIV_PAGE_SIZE) % OS_MIN_LOG_BLOCK_SIZE == 0) {
-		log_group_read_log_seg(log_sys->buf, group, start_lsn, end_lsn);
-		alt_no = log_block_get_hdr_no(log_sys->buf);
-	}
+	lsn_t offsets[2] = {group->lsn_offset,
+			    group->lsn_offset_ps55};
 
 	expected_no = log_block_convert_lsn_to_no(start_lsn);
 
-	ut_a(!(no == expected_no && alt_no == expected_no));
+	for (int i = 0; i < 2; i++) {
+		group->lsn_offset = offsets[i];
 
-	group->lsn_offset = tmp_offset;
+		/* read log block number */
+		if (group->lsn_offset < group->file_size * group->n_files &&
+		    (log_group_calc_lsn_offset(start_lsn, group) %
+		     UNIV_PAGE_SIZE) % OS_MIN_LOG_BLOCK_SIZE == 0) {
+			log_group_read_log_seg(log_sys->buf, group,
+					       start_lsn, end_lsn);
+			no = log_block_get_hdr_no(log_sys->buf);
+		}
 
-	if ((no <= expected_no &&
-		((expected_no - no) % blocks_in_group) == 0) ||
-	    ((expected_no | 0x40000000UL) - no) % blocks_in_group == 0) {
-		/* default offset looks ok */
-		return;
-	}
-
-	if ((alt_no <= expected_no &&
-		((expected_no - alt_no) % blocks_in_group) == 0) ||
-	    ((expected_no | 0x40000000UL) - alt_no) % blocks_in_group == 0) {
-		/* alternative offset looks ok */
-		group->lsn_offset = lsn_offset_alt;
+		if ((no <= expected_no &&
+			((expected_no - no) % blocks_in_group) == 0) ||
+		    ((expected_no | 0x40000000UL) - no) % blocks_in_group == 0) {
+			/* offset looks ok */
+			return;
+		}
 	}
 }
 
@@ -2909,7 +2921,7 @@ log_copying_thread(
 
 	log_copying_running = FALSE;
 	my_thread_end();
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	return(0);
 }
@@ -2942,7 +2954,7 @@ io_watching_thread(
 
 	io_watching_thread_running = FALSE;
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	return(0);
 }
@@ -2974,7 +2986,7 @@ io_handler_thread(
 	The thread actually never comes here because it is exited in an
 	os_event_wait(). */
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 #ifndef __WIN__
 	return(NULL);				/* Not reached */
@@ -3018,7 +3030,7 @@ data_copy_thread_func(
 	mutex_exit(ctxt->count_mutex);
 
 	my_thread_end();
-	os_thread_exit(NULL);
+	os_thread_exit();
 	OS_THREAD_DUMMY_RETURN;
 }
 
@@ -4239,7 +4251,7 @@ xtrabackup_backup_func(void)
 	/* create extra LSN dir if it does not exist. */
 	if (xtrabackup_extra_lsndir
 		&&!my_stat(xtrabackup_extra_lsndir,&stat_info,MYF(0))
-		&& (my_mkdir(xtrabackup_extra_lsndir,0777,MYF(0)) < 0)){
+		&& (my_mkdir(xtrabackup_extra_lsndir,0777,MYF(0)) < 0)) {
 		msg("xtrabackup: Error: cannot mkdir %d: %s\n",
 		    my_errno(), xtrabackup_extra_lsndir);
 		exit(EXIT_FAILURE);
@@ -4370,11 +4382,7 @@ reread_log_header:
 	}
 
 	mutex_enter(&log_sys->mutex);
-	log_group_t *group = UT_LIST_GET_FIRST(log_sys->log_groups);
-	xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-				     group->lsn_offset_ms56);
-	xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-				     group->lsn_offset_ps55);
+	xtrabackup_choose_lsn_offset(checkpoint_lsn_start);
 	mutex_exit(&log_sys->mutex);
 
 	/* copy log file by current position */
@@ -4485,11 +4493,7 @@ reread_log_header:
 
 		log_group_header_read(max_cp_group, max_cp_field);
 
-		log_group_t *group = UT_LIST_GET_FIRST(log_sys->log_groups);
-		xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-					     group->lsn_offset_ms56);
-		xtrabackup_choose_lsn_offset(checkpoint_lsn_start,
-					     group->lsn_offset_ps55);
+		xtrabackup_choose_lsn_offset(checkpoint_lsn_start);
 
 		latest_cp = mach_read_from_8(log_sys->checkpoint_buf +
 					     LOG_CHECKPOINT_LSN);
@@ -4526,17 +4530,19 @@ skip_last_cp:
 	metadata_last_lsn = log_copy_scanned_lsn;
 
 	if (!xtrabackup_stream_metadata(ds_meta)) {
-		msg("xtrabackup: error: "
-		    "xtrabackup_stream_metadata() failed.\n");
+		msg("xtrabackup: Error: failed to stream metadata.\n");
+		exit(EXIT_FAILURE);
 	}
 	if (xtrabackup_extra_lsndir) {
 		char	filename[FN_REFLEN];
 
 		sprintf(filename, "%s/%s", xtrabackup_extra_lsndir,
 			XTRABACKUP_METADATA_FILENAME);
-		if (!xtrabackup_write_metadata(filename))
-			msg("xtrabackup: error: "
-			    "xtrabackup_write_metadata() failed.\n");
+		if (!xtrabackup_write_metadata(filename)) {
+			msg("xtrabackup: Error: failed to write metadata "
+			    "to '%s'.\n", filename);
+			exit(EXIT_FAILURE);
+		}
 
 	}
 
@@ -5917,13 +5923,12 @@ xtrabackup_apply_delta(
 
 	os_file_set_nocache(dst_file, dst_path, "OPEN");
 
-	/* allocate buffer for incremental backup (4096 pages) */
+	/* allocate buffer for incremental backup */
 	incremental_buffer_base = static_cast<byte *>
-		(ut_malloc_nokey((UNIV_PAGE_SIZE_MAX / 4 + 1) *
-			   UNIV_PAGE_SIZE_MAX));
+		(ut_malloc_nokey((page_size / 4 + 1) * page_size +
+			UNIV_PAGE_SIZE_MAX));
 	incremental_buffer = static_cast<byte *>
-		(ut_align(incremental_buffer_base,
-			  UNIV_PAGE_SIZE_MAX));
+		(ut_align(incremental_buffer_base, UNIV_PAGE_SIZE_MAX));
 
 	msg("Applying %s to %s...\n", src_path, dst_path);
 
@@ -6831,46 +6836,64 @@ bool
 reencrypt_tablespace_keys(
 	ulint new_server_id)
 {
+	byte*			master_key = NULL;
+	bool			ret = false;
+	Encryption::Version	version;
+
 	xb_keyring_init(xb_keyring_file_data);
 
-	/* re-encrypt for new server-id */
-	byte*	master_key = NULL;
-
-	/* Check if keyring loaded and the currently master key
+	/* Check if keyring loaded and the current master key
 	can be fetched. */
 	if (Encryption::master_key_id != 0) {
-		Encryption::get_master_key(Encryption::master_key_id,
-					   &master_key);
+		ulint			master_key_id;
+
+		Encryption::get_master_key(&master_key_id,
+					   &master_key,
+					   &version);
 		if (master_key == NULL) {
 			msg("xtrabackup: error: Can't find master key.\n");
-			goto error;
+			return(false);
 		}
+		msg("xtrabackup: found master key version %s.\n",
+		    version == Encryption::ENCRYPTION_VERSION_1 ?
+		    "= 5.7.11" : ">= 5.7.12");
 		my_free(master_key);
+
+		if (version != Encryption::ENCRYPTION_VERSION_1) {
+			msg("xtrabackup: reencryption is not needed.\n");
+			return(true);
+		}
+	} else {
+
+		/* no encrypted tablespaces */
+
+		return(true);
 	}
 
 	master_key = NULL;
 
 	/* Generate the new master key. */
 	server_id = new_server_id;
-	Encryption::create_master_key(&master_key);
+	Encryption::create_master_key_v0(&master_key);
 
         if (master_key == NULL) {
 		msg("xtrabackup: error: Can't create master key.\n");
-		goto error;
+                return(false);
         }
 
-	/* If rotation failure, return error */
-	if (!fil_encryption_rotate()) {
-		msg("xtrabackup: error: Can't rotate master key.\n");
-		goto error;
-	}
+	ret = fil_encryption_rotate();
 
-	return(true);
-
-error:
 	my_free(master_key);
 
-	return(false);
+	/* If rotation failure, return error */
+	if (!ret) {
+		msg("xtrabackup: error: Can't rotate master key.\n");
+	} else {
+		msg("xtrabackup: Keys reencrypted for server-id %lu.\n",
+		    server_id);
+	}
+
+	return(ret);
 }
 
 #if 0
@@ -7017,8 +7040,11 @@ xtrabackup_prepare_func(void)
 	sprintf(metadata_path, "%s/%s", xtrabackup_target_dir,
 		XTRABACKUP_METADATA_FILENAME);
 
-	if (!xtrabackup_read_metadata(metadata_path))
-		msg("xtrabackup: error: xtrabackup_read_metadata()\n");
+	if (!xtrabackup_read_metadata(metadata_path)) {
+		msg("xtrabackup: Error: failed to read metadata from '%s'\n",
+		    metadata_path);
+		exit(EXIT_FAILURE);
+	}
 
 	if (!innobase_log_arch_dir)
 	{
@@ -7035,6 +7061,7 @@ xtrabackup_prepare_func(void)
 		} else {
 			msg("xtrabackup: This target seems not to have correct "
 			    "metadata...\n");
+			exit(EXIT_FAILURE);
 		}
 
 		if (xtrabackup_incremental) {
@@ -7429,16 +7456,20 @@ next_node:
 		}
 
 		sprintf(filename, "%s/%s", xtrabackup_target_dir, XTRABACKUP_METADATA_FILENAME);
-		if (!xtrabackup_write_metadata(filename))
-			msg("xtrabackup: error: xtrabackup_write_metadata"
-			    "(xtrabackup_target_dir)\n");
+		if (!xtrabackup_write_metadata(filename)) {
+
+			msg("xtrabackup: Error: failed to write metadata "
+			    "to '%s'\n", filename);
+			exit(EXIT_FAILURE);
+		}
 
 		if(xtrabackup_extra_lsndir) {
 			sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_METADATA_FILENAME);
-			if (!xtrabackup_write_metadata(filename))
-				msg("xtrabackup: error: "
-				    "xtrabackup_write_metadata"
-				    "(xtrabackup_extra_lsndir)\n");
+			if (!xtrabackup_write_metadata(filename)) {
+				msg("xtrabackup: Error: failed to write "
+				    "metadata to '%s'\n", filename);
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 
@@ -7637,6 +7668,7 @@ int main(int argc, char **argv)
 {
 	int ho_error;
 	char **argv_defaults;
+	char cwd[FN_REFLEN];
 
 	setup_signals();
 
@@ -7799,8 +7831,8 @@ int main(int argc, char **argv)
 	}
 
 	/* Ensure target dir is not relative to datadir */
-	fn_format(xtrabackup_real_target_dir, xtrabackup_target_dir,
-		  "", "", MY_UNPACK_FILENAME | MY_RETURN_REAL_PATH);
+	my_getwd(cwd, sizeof(cwd), MYF(0));
+	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, cwd);
 	xtrabackup_target_dir= xtrabackup_real_target_dir;
 
 	/* get default temporary directory */
@@ -7961,7 +7993,7 @@ int main(int argc, char **argv)
 		xtrabackup_prepare_func();
 
 	if (xtrabackup_copy_back || xtrabackup_move_back) {
-		if (!datadir_specified) {
+		if (!check_if_param_set("datadir")) {
 			msg("Error: datadir must be specified.\n");
 			exit(EXIT_FAILURE);
 		}
