@@ -167,6 +167,14 @@ extern uint		opt_safe_slave_backup_timeout;
 extern const char	*opt_history;
 extern my_bool		opt_decrypt;
 
+#if defined(HAVE_OPENSSL)
+extern my_bool opt_use_ssl;
+extern my_bool opt_ssl_verify_server_cert;
+#if !defined(HAVE_YASSL)
+extern char *opt_server_public_key;
+#endif
+#endif
+
 enum binlog_info_enum { BINLOG_INFO_OFF, BINLOG_INFO_LOCKLESS, BINLOG_INFO_ON,
 			BINLOG_INFO_AUTO};
 

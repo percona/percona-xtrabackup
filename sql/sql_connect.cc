@@ -40,7 +40,7 @@
 using std::min;
 using std::max;
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 /*
   Without SSL the handshake consists of one packet. This packet
   has both client capabilites and scrambled password.
@@ -56,7 +56,7 @@ using std::max;
 #define MIN_HANDSHAKE_SIZE      2
 #else
 #define MIN_HANDSHAKE_SIZE      6
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 
 /*
   Get structure for logging connection data for the current user

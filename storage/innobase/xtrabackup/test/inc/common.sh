@@ -809,8 +809,30 @@ function has_feature_enabled()
 {
     local var=$1
 
-    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE '$1'\G" \
-              2> /dev/null | egrep -q "Value: YES$"
+    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE '$var'\G" \
+              2> /dev/null | egrep -q 'Value: YES$'
+    then
+        return 0
+    fi
+
+    # Was the server available?
+    if [[ ${PIPESTATUS[0]} != 0 ]]
+    then
+        die "Server is unavailable"
+    fi
+
+    return 1
+}
+
+########################################################################
+# Return 0 if the server has the specified status variable
+########################################################################
+function has_status_variable()
+{
+    local var=$1
+
+    if $MYSQL $MYSQL_ARGS -s -e "SHOW STATUS LIKE '$var'\G" \
+              2> /dev/null | egrep -q "^Variable_name: $var"
     then
         return 0
     fi
@@ -838,6 +860,14 @@ function has_backup_locks()
 function has_backup_safe_binlog_info()
 {
     has_feature_enabled "have_backup_safe_binlog_info"
+}
+
+########################################################################
+# Return 0 if the server has been compiled with OpenSSL
+########################################################################
+function has_openssl()
+{
+    has_status_variable "Rsa_public_key"
 }
 
 # Return 0 if the platform is 64-bit

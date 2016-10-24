@@ -1104,7 +1104,7 @@ static int add_init_command(struct st_mysql_options *options, const char *cmd)
         my_strdup((STR), MYF(MY_WME)) : NULL;                    \
     } while (0)
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 #define SET_SSL_OPTION(opt_var,arg) \
     if (mysql->options.opt_var) \
       my_free(mysql->options.opt_var); \
@@ -1226,7 +1226,7 @@ void mysql_read_default_options(struct st_mysql_options *options,
 	case OPT_return_found_rows:
 	  options->client_flag|=CLIENT_FOUND_ROWS;
 	  break;
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 	case OPT_ssl_key:
 	  my_free(options->ssl_key);
           options->ssl_key = my_strdup(opt_arg, MYF(MY_WME));
@@ -1262,7 +1262,7 @@ void mysql_read_default_options(struct st_mysql_options *options,
         case OPT_ssl_crl:
         case OPT_ssl_crlpath:
 	  break;
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 	case OPT_character_sets_dir:
 	  my_free(options->charset_dir);
           options->charset_dir = my_strdup(opt_arg, MYF(MY_WME));
@@ -1734,7 +1734,7 @@ mysql_ssl_set(MYSQL *mysql __attribute__((unused)) ,
 {
   my_bool result= 0;
   DBUG_ENTER("mysql_ssl_set");
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   result=
     mysql_options(mysql, MYSQL_OPT_SSL_KEY,    key)    +
     mysql_options(mysql, MYSQL_OPT_SSL_CERT,   cert)   +
@@ -1752,7 +1752,7 @@ mysql_ssl_set(MYSQL *mysql __attribute__((unused)) ,
   NB! Errors are not reported until you do mysql_real_connect.
 */
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 
 static void
 mysql_ssl_free(MYSQL *mysql __attribute__((unused)))
@@ -1788,7 +1788,7 @@ mysql_ssl_free(MYSQL *mysql __attribute__((unused)))
   DBUG_VOID_RETURN;
 }
 
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 
 /*
   Return the SSL cipher (if any) used for current
@@ -1804,10 +1804,10 @@ const char * STDCALL
 mysql_get_ssl_cipher(MYSQL *mysql __attribute__((unused)))
 {
   DBUG_ENTER("mysql_get_ssl_cipher");
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   if (mysql->net.vio && mysql->net.vio->ssl_arg)
     DBUG_RETURN(SSL_get_cipher_name((SSL*)mysql->net.vio->ssl_arg));
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
   DBUG_RETURN(NULL);
 }
 
@@ -1829,7 +1829,7 @@ mysql_get_ssl_cipher(MYSQL *mysql __attribute__((unused)))
 
  */
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 
 static int ssl_verify_server_cert(Vio *vio, const char* server_hostname, const char **errptr)
 {
@@ -1893,7 +1893,7 @@ static int ssl_verify_server_cert(Vio *vio, const char* server_hostname, const c
   DBUG_RETURN(1);
 }
 
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 
 
 /*
@@ -2599,7 +2599,7 @@ static int send_client_reply_packet(MCPVIO_EXT *mpvio,
   if (mysql->client_flag & CLIENT_MULTI_STATEMENTS)
     mysql->client_flag|= CLIENT_MULTI_RESULTS;
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   if (mysql->options.ssl_key || mysql->options.ssl_cert ||
       mysql->options.ssl_ca || mysql->options.ssl_capath ||
       mysql->options.ssl_cipher ||
@@ -2608,7 +2608,7 @@ static int send_client_reply_packet(MCPVIO_EXT *mpvio,
     mysql->options.use_ssl= 1;
   if (mysql->options.use_ssl)
     mysql->client_flag|= CLIENT_SSL;
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY*/
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
   if (mpvio->db)
     mysql->client_flag|= CLIENT_CONNECT_WITH_DB;
   else
@@ -3939,9 +3939,9 @@ static void mysql_close_free_options(MYSQL *mysql)
     delete_dynamic(init_commands);
     my_free(init_commands);
   }
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   mysql_ssl_free(mysql);
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 #ifdef HAVE_SMEM
   if (mysql->options.shared_memory_base_name != def_shared_memory_base_name)
     my_free(mysql->options.shared_memory_base_name);
