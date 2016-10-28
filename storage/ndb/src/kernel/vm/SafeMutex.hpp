@@ -1,5 +1,4 @@
-/* Copyright 2008 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,15 +16,15 @@
 #ifndef NDB_SAFE_MUTEX_HPP
 #define NDB_SAFE_MUTEX_HPP
 
-#ifdef __WIN__
 #include <ndb_global.h>
-#include <my_pthread.h>
-#else
-#include <pthread.h>
-#endif
+#include <thr_cond.h>
+#include <thr_mutex.h>
 #include <assert.h>
 #include <ndb_types.h>
 #include <NdbOut.hpp>
+
+#define JAM_FILE_ID 220
+
 
 /*
  * Recursive mutex with recursion limit >= 1.  Intended for debugging.
@@ -45,9 +44,9 @@ class SafeMutex {
   const Uint32 m_limit; // error if usage exceeds this
   const bool m_debug;   // use recursive implementation even for limit 1
   const bool m_simple;
-  pthread_mutex_t m_mutex;
-  pthread_cond_t m_cond;
-  pthread_t m_owner;
+  native_mutex_t m_mutex;
+  native_cond_t m_cond;
+  my_thread_t m_owner;
   bool m_initdone;
   Uint32 m_level;
   Uint32 m_usage;       // max level used so far
@@ -92,5 +91,8 @@ private:
   int lock_impl();
   int unlock_impl();
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

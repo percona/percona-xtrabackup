@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
 #define DIH_CONTINUEB_H
 
 #include "SignalData.hpp"
+
+#define JAM_FILE_ID 114
+
 
 class DihContinueB {
   /**
@@ -68,14 +71,16 @@ private:
     WAIT_DROP_TAB_WRITING_TO_FILE = 42,
     //CHECK_WAIT_DROP_TAB_FAILED_LQH = 43,
     ZTO_START_FRAGMENTS = 44
-    ,ZCOPY_NODE_WAIT_CREATE_FRAG = 45
     ,ZWAIT_OLD_SCAN = 46
     ,ZLCP_TRY_LOCK = 47
-    ,ZDELAY_RELEASE_FRAGMENT_INFO_MUTEX = 48
     ,ZTO_START_LOGGING = 49
     ,ZGET_TABINFO = 50
     ,ZGET_TABINFO_SEND = 51
+    ,ZDEQUEUE_LCP_REP = 52
   };
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

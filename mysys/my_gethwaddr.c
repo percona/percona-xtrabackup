@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@
 /* if there are many available, any non-zero one can be used */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include <m_string.h>
 
 #ifndef MAIN
@@ -126,7 +127,7 @@ my_bool my_gethwaddr(uchar *to)
   return res;
 }
 
-#elif defined(__WIN__)
+#elif defined(_WIN32)
 
 /*
   Workaround for BUG#32082 (Definition of VOID in my_global.h conflicts with
@@ -186,7 +187,8 @@ my_bool my_gethwaddr(uchar *to)
   if (fnGetAdaptersAddresses(AF_UNSPEC, 0, 0, &adapterAddresses, &address_len)
       == ERROR_BUFFER_OVERFLOW)
   {
-    pAdapterAddresses= my_malloc(address_len, 0);
+    pAdapterAddresses= my_malloc(key_memory_win_IP_ADAPTER_ADDRESSES,
+                                 address_len, 0);
     if (!pAdapterAddresses)
       return 1;                                   /* error, alloc failed */
   }
@@ -226,16 +228,16 @@ my_bool my_gethwaddr(uchar *to)
   return return_val;
 }
 
-#else /* __FreeBSD__ || __linux__ || __WIN__ */
+#else /* __FreeBSD__ || __linux__ || _WIN32 */
 /* just fail */
-my_bool my_gethwaddr(uchar *to __attribute__((unused)))
+my_bool my_gethwaddr(uchar *to MY_ATTRIBUTE((unused)))
 {
   return 1;
 }
 #endif
 
 #else /* MAIN */
-int main(int argc __attribute__((unused)),char **argv)
+int main(int argc MY_ATTRIBUTE((unused)),char **argv)
 {
   uchar mac[6];
   uint i;

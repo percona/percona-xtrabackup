@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 	/* Print a key in user understandable format */
 
-void _mi_print_key(FILE *stream, register HA_KEYSEG *keyseg,
+void _mi_print_key(FILE *stream, HA_KEYSEG *keyseg,
 		   const uchar *key, uint length)
 {
   int flag;
@@ -113,7 +113,6 @@ void _mi_print_key(FILE *stream, register HA_KEYSEG *keyseg,
       (void) fprintf(stream,"%g",d_1);
       key=end;
       break;
-#ifdef HAVE_LONG_LONG
     case HA_KEYTYPE_LONGLONG:
     {
       char buff[21];
@@ -140,7 +139,6 @@ void _mi_print_key(FILE *stream, register HA_KEYSEG *keyseg,
       break;
     }
 
-#endif
     case HA_KEYTYPE_VARTEXT1:                   /* VARCHAR and TEXT */
     case HA_KEYTYPE_VARTEXT2:                   /* VARCHAR and TEXT */
     case HA_KEYTYPE_VARBINARY1:                 /* VARBINARY and BLOB */
@@ -195,9 +193,10 @@ my_bool check_table_is_closed(const char *name, const char *where)
       if (share->last_version)
       {
         mysql_mutex_unlock(&THR_LOCK_myisam);
-	fprintf(stderr,"Warning:  Table: %s is open on %s\n", name,where);
-	DBUG_PRINT("warning",("Table: %s is open on %s", name,where));
-	DBUG_RETURN(1);
+        my_message_local(WARNING_LEVEL,
+                         "Table: %s is open on %s", name,where);
+        DBUG_PRINT("warning",("Table: %s is open on %s", name,where));
+        DBUG_RETURN(1);
       }
     }
   }

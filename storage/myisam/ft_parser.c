@@ -1,4 +1,5 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights
+   reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +17,7 @@
 /* Written by Sergei A. Golubchik, who has a shared copyright to this code */
 
 #include "ftdefs.h"
+#include "ctype.h"
 
 typedef struct st_ft_docstat {
   FT_WORD *list;
@@ -89,7 +91,7 @@ my_bool ft_boolean_check_syntax_string(const uchar *str)
   for (i=0; i<sizeof(DEFAULT_FTB_SYNTAX); i++)
   {
     /* limiting to 7-bit ascii only */
-    if ((unsigned char)(str[i]) > 127 || my_isalnum(default_charset_info, str[i]))
+    if ((unsigned char)(str[i]) > 127 || isalnum(str[i]))
       return 1;
     for (j=0; j<i; j++)
       if (str[i] == str[j] && (i != 11 || j != 10))
@@ -257,7 +259,7 @@ void ft_parse_init(TREE *wtree, const CHARSET_INFO *cs)
 
 static int ft_add_word(MYSQL_FTPARSER_PARAM *param,
                        char *word, int word_len,
-             MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info __attribute__((unused)))
+             MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info MY_ATTRIBUTE((unused)))
 {
   TREE *wtree;
   FT_WORD w;
@@ -340,9 +342,11 @@ MYSQL_FTPARSER_PARAM* ftparser_alloc_param(MI_INFO *info)
       (ftb_check_phrase_internal, ftb_phrase_add_word). Thus MAX_PARAM_NR=2.
     */
     info->ftparser_param= (MYSQL_FTPARSER_PARAM *)
-      my_malloc(MAX_PARAM_NR * sizeof(MYSQL_FTPARSER_PARAM) *
+      my_malloc(mi_key_memory_FTPARSER_PARAM,
+                MAX_PARAM_NR * sizeof(MYSQL_FTPARSER_PARAM) *
                 info->s->ftkeys, MYF(MY_WME | MY_ZEROFILL));
-    init_alloc_root(&info->ft_memroot, FTPARSER_MEMROOT_ALLOC_SIZE, 0);
+    init_alloc_root(mi_key_memory_ft_memroot,
+                    &info->ft_memroot, FTPARSER_MEMROOT_ALLOC_SIZE, 0);
   }
   return info->ftparser_param;
 }

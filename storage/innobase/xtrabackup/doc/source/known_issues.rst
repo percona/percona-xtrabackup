@@ -26,6 +26,12 @@ Known issues:
    ``zlib`` version than the one that was used by the server during runtime,
    backup prepare may fail due to differences in compression algorithms.
 
+ * Backed-up table data could not be recovered if backup was taken while
+   running ``OPTIMIZE TABLE`` (bug :bug:`1541763`) or ``ALTER TABLE ...
+   TABLESPACE`` (bug :bug:`1532878`) on that table.
+
+ * Compact Backups currently don't work due to bug :bug:`1192834`.
+
  * Backup fails with ``Error 24: 'Too many open files'``. This usually happens
    when database being backed up contains large amount of files and |Percona
    XtraBackup| can't open all of them to create a successful backup. In order
@@ -42,6 +48,10 @@ The ``xtrabackup`` binary has some limitations you should be aware of to ensure
 that your backups go smoothly and are recoverable.
 
 Limitations:
+
+ * |Percona XtraBackup| 2.4 currently doesn't support `InnoDB Tablespace
+   Encryption
+   <http://dev.mysql.com/doc/refman/5.7/en/innodb-tablespace-encryption.html>`_.
 
  * The Aria storage engine is part of |MariaDB| and has been integrated in it
    for many years and Aria table files backup support has been added to

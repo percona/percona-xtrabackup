@@ -1,19 +1,17 @@
-# Copyright (C) 2008-2010 Sun Microsystems, Inc. All rights reserved.
-# Use is subject to license terms.
+# Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; version 2 of the License.
 #
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-# General Public License for more details.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301
-# USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ################################################################################
 # outer_join.yy
@@ -159,7 +157,7 @@ table_list:
 #| table_only_list
  ;
 
-outer_join_pattern:
+outer_join_pattern_unused:
    { $stack->push() }      
    table_ref { $stack->set("left",$stack->get("result")); }
    outer_join_type JOIN table_ref join_spec
@@ -201,8 +199,9 @@ lookahead_for_table_alias:
 
 # NOTE can't make use of 'existing_table_item' as <table_expr> has not been produced yet
 table_alias:
+   # If there are 'outer tables': choose either inner or outer table_ref
    { $prng->arrayElement(\@table_refs) }
-#  { $table_refs[$table_refs-1] }
+ | { scalar(@outer_tables) > 0 ? $prng->arrayElement(\@outer_tables) : $prng->arrayElement(\@table_refs) }
  ;
 
 outer_table_unused:
@@ -354,10 +353,8 @@ existing_right_table:
 ## Ref: ISO 9075, Chap 7.6 <where clause> ##
 ############################################
 where_clause:
-   # <where_clause> is optional, except in sub queries where we always append a correlation to outer tables
-   { scalar(@outer_tables) > 0 ? "WHERE" : "" } correlate_iff_subquery
- | WHERE search_condition 
-   { scalar(@outer_tables) > 0 ? "AND" : "" }   correlate_iff_subquery
+   # <where_clause> is optional
+ | WHERE search_condition
  ;
 
 ################################################################################
@@ -611,7 +608,7 @@ subqry_leave:
    { $stack->pop(); undef}
  ;
 
-correlate_iff_subquery:
+correlate_iff_subquery_unused:
    { scalar(@outer_tables) > 0 ? $prng->arrayElement(\@table_refs).".pk "."= ".$prng->arrayElement(\@outer_tables).".pk " : "" }
  ;
 
@@ -663,6 +660,7 @@ common_int_predicate:
    int_column comparison_operator _digit
  | int_column comparison_operator _digit
  | int_column comparison_operator _digit
+ | int_column comparison_operator int_column
  | int_column not BETWEEN _digit[invariant] AND _digit[invariant]+_digit
  ;
 

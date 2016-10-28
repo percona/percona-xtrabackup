@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2007 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +20,9 @@
 
 #include "SignalData.hpp"
 
+#define JAM_FILE_ID 58
+
+
 /**
  * 
  */
@@ -28,10 +30,12 @@ class TcKeyConf {
   /**
    * Reciver(s)
    */
-  friend class Ndb;
+  friend class NdbImpl;
   friend class NdbTransaction;
   friend class Ndbcntr;
   friend class DbUtil;
+
+  friend class TransporterFacade;
 
   /**
    * Sender(s)
@@ -51,9 +55,8 @@ public:
   STATIC_CONST( StaticLength = 5 );
   STATIC_CONST( OperationLength = 2 );
   STATIC_CONST( DirtyReadBit = (((Uint32)1) << 31) );
-  
-private:
 
+protected:
   /**
    * DATA VARIABLES
    */
@@ -76,7 +79,7 @@ private:
   // No of actually sent = getNoOfOperations(confInfo)
   //-------------------------------------------------------------
   OperationConf operations[10];
-  
+
   /**
    * Get:ers for confInfo
    */
@@ -131,5 +134,8 @@ TcKeyConf::setMarkerFlag(Uint32 & confInfo, Uint32 flag){
   ASSERT_BOOL(flag, "TcKeyConf::setMarkerFlag");
   confInfo |= (flag << 17);
 }
+
+
+#undef JAM_FILE_ID
 
 #endif

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -68,6 +68,7 @@
 
 #define CFG_DB_FILESYSTEM_PATH        125
 #define CFG_DB_NO_REDOLOG_FILES       126
+#define CFG_DB_NO_REDOLOG_PARTS       632
 #define CFG_DB_REDOLOG_FILE_SIZE      140
 
 #define CFG_DB_LCP_DISC_PAGES_TUP     127
@@ -116,7 +117,7 @@
 
 #define CFG_DB_DISK_SYNCH_SIZE        163
 #define CFG_DB_CHECKPOINT_SPEED       164
-#define CFG_DB_CHECKPOINT_SPEED_SR    165
+#define CFG_DB_CHECKPOINT_SPEED_RESTART 165
 
 #define CFG_DB_MEMREPORT_FREQUENCY    166
 #define CFG_DB_BACKUP_REPORT_FREQUENCY    167
@@ -197,9 +198,39 @@
 #define CFG_DB_MAX_DML_OPERATIONS_PER_TRANSACTION 627
 #define CFG_DB_MT_THREAD_CONFIG          628
 
+#define CFG_DB_CRASH_ON_CORRUPTED_TUPLE  629
+#define CFG_DB_FREE_PCT                  630
+
+#define CFG_DB_LCP_SCAN_WATCHDOG_LIMIT   631
+
+/* 632 used for CFG_DB_NO_REDOLOG_PARTS */
+
+#define CFG_DB_AT_RESTART_SKIP_INDEXES   633
+#define CFG_DB_AT_RESTART_SKIP_FKS       634
+#define CFG_DB_SERVER_PORT               635
+#define CFG_DB_TCPBIND_INADDR_ANY        636
+#define CFG_DB_AT_RESTART_SUBSCRIBER_CONNECT_TIMEOUT 637
+
+#define CFG_DB_MIN_DISK_WRITE_SPEED   638
+#define CFG_DB_MAX_DISK_WRITE_SPEED   639
+#define CFG_DB_MAX_DISK_WRITE_SPEED_OTHER_NODE_RESTART   640
+#define CFG_DB_MAX_DISK_WRITE_SPEED_OWN_RESTART   641
+
+/* <= 641 used */
+#define CFG_MIXOLOGY_LEVEL            642
+#define CFG_DB_PARALLEL_COPY_THREADS  643
+#define CFG_DB_MAX_SEND_DELAY         644
+
 #define CFG_NODE_ARBIT_RANK           200
 #define CFG_NODE_ARBIT_DELAY          201
 #define CFG_RESERVED_SEND_BUFFER_MEMORY 202
+#define CFG_EXTRA_SEND_BUFFER_MEMORY  203
+
+#define CFG_MGMD_MGMD_HEARTBEAT_INTERVAL 204
+
+#define CFG_DB_DISK_PAGE_BUFFER_ENTRIES 205
+
+#define CFG_DB_GCP_TIMEOUT           206
 
 #define CFG_MIN_LOGLEVEL          250
 #define CFG_LOGLEVEL_STARTUP      250
@@ -218,6 +249,8 @@
 #define CFG_MAX_LOGLEVEL          262
 
 #define CFG_MGM_PORT                  300
+
+#define CFG_DB_MAX_BUFFERED_EPOCH_BYTES 350
 
 #define CFG_CONNECTION_NODE_1         400
 #define CFG_CONNECTION_NODE_2         401
@@ -268,6 +301,9 @@
 #define CFG_AUTO_RECONNECT            803
 #define CFG_HB_THREAD_PRIO            804
 #define CFG_DEFAULT_OPERATION_REDO_PROBLEM_ACTION 805
+#define CFG_DEFAULT_HASHMAP_SIZE      806
+#define CFG_CONNECT_BACKOFF_MAX_TIME 807
+#define CFG_START_CONNECT_BACKOFF_MAX_TIME 808
 
 /**
  * Internal

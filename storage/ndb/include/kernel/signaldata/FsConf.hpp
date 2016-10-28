@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003, 2005, 2006 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +19,9 @@
 #define FS_CONF_H
 
 #include "SignalData.hpp"
+
+#define JAM_FILE_ID 206
+
 
 /**
  * FsConf - Common signal class for all CONF signals sent from Ndbfs
@@ -76,8 +78,14 @@ private:
     UintR filePointer;          // FSOPENCONF
     Uint32 bytes_read;          // FSREADCONF (when allow partial read)      
   };
+
+  // debug info for trace log
+  Uint32 fileInfo;
 };
 
 
+
+
+#undef JAM_FILE_ID
 
 #endif

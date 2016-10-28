@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -43,6 +43,7 @@ struct ReceiveBuffer {
 };
 
 class TCP_Transporter : public Transporter {
+  friend struct TransporterReceiveData;
   friend class TransporterRegistry;
   friend class Loopback_Transporter;
 private:
@@ -51,6 +52,12 @@ private:
 
   // Disconnect, delete send buffers and receive buffer
   virtual ~TCP_Transporter();
+
+  /**
+   * Clear any data buffered in the transporter.
+   * Should only be called in a disconnected state.
+   */
+  virtual void resetBuffers();
 
   virtual bool configure_derived(const TransporterConfiguration* conf);
 
@@ -63,13 +70,13 @@ private:
    * Retrieves the contents of the send buffers and writes it on
    * the external TCP/IP interface.
    */
-  int doSend();
+  bool doSend();
   
   /**
    * It reads the external TCP/IP interface once 
    * and puts the data in the receiveBuffer
    */
-  int doReceive(); 
+  int doReceive(TransporterReceiveHandle&);
 
   /**
    * Returns socket (used for select)
@@ -104,7 +111,7 @@ protected:
   bool connect_common(NDB_SOCKET_TYPE sockfd);
   
   /**
-   * Disconnects a TCP/IP node. Empty receivebuffer.
+   * Disconnects a TCP/IP node, possibly blocking.
    */
   virtual void disconnectImpl();
   
@@ -161,6 +168,7 @@ inline
 void
 TCP_Transporter::updateReceiveDataPtr(Uint32 bytesRead){
   char * ptr = (char *)receiveBuffer.readPtr;
+  assert(receiveBuffer.sizeOfData >= bytesRead);
   ptr += bytesRead;
   receiveBuffer.readPtr = (Uint32*)ptr;
   receiveBuffer.sizeOfData -= bytesRead;

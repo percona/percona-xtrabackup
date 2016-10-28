@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,9 +18,6 @@
 
 
 #include "myisam.h"
-
-#ifdef HAVE_RTREE_KEYS
-
 #include "rt_index.h"
 
 #define MAX_REC_LENGTH 1024
@@ -79,7 +76,7 @@ static double rt_data[]=
   -1
 };
 
-int main(int argc __attribute__((unused)),char *argv[] __attribute__((unused)))
+int main(int argc MY_ATTRIBUTE((unused)),char *argv[] MY_ATTRIBUTE((unused)))
 {
   MY_INIT(argv[0]);
   exit(run_test("rt_test"));
@@ -367,7 +364,7 @@ static int read_with_pos (MI_INFO * file,int silent)
 
 
 static void print_record(uchar * record,
-			 my_off_t offs __attribute__((unused)),
+			 my_off_t offs MY_ATTRIBUTE((unused)),
 			 const char * tail)
 {
   int i;
@@ -378,7 +375,7 @@ static void print_record(uchar * record,
   for ( pos=record+1, i=0; i<2*ndims; i++)
    {
       memcpy(&c,pos,sizeof(c));
-      float8get(c,pos);
+      float8get(&c,pos);
       printf(" %.14g ",c);
       pos+=sizeof(c);
    }
@@ -420,10 +417,9 @@ static void create_record(uchar *record,uint rownr)
 }
 
 #else
-int main(int argc __attribute__((unused)),char *argv[] __attribute__((unused)))
+int main(int argc MY_ATTRIBUTE((unused)),char *argv[] MY_ATTRIBUTE((unused)))
 {
   exit(0);
 }
-#endif /*HAVE_RTREE_KEYS*/
 
 #include "mi_extrafunc.h"

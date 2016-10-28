@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006, 2008 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +20,9 @@
 
 #include <ndb_global.h>
 #include "ArrayPool.hpp"
+
+#define JAM_FILE_ID 307
+
 
 /**
  * DLHashTable2 is a DLHashTable variant meant for cases where different
@@ -180,18 +182,15 @@ DLHashTable2<T, U>::setSize(Uint32 size){
   Uint32 i = 1;
   while(i < size) i *= 2;
 
-  if(mask == (i - 1)){
-    /**
-     * The size is already set to <b>size</b>
-     */
-    return true;
-  }
-
-  if(mask != 0){
-    /**
-     * The mask is already set
-     */
-    return false;
+  if (hashValues != NULL)
+  {
+    /*
+      If setSize() is called twice with different size values then this is 
+      most likely a bug.
+    */
+    assert(mask == i-1); 
+    // Return true if size already set to 'size', false otherwise.
+    return mask == i-1;
   }
   
   mask = (i - 1);
@@ -514,4 +513,7 @@ DLHashTable2<T, U>::find(Ptr<T> & ptr, const T & key) const {
   ptr.p = NULL;
   return false;
 }
+
+#undef JAM_FILE_ID
+
 #endif

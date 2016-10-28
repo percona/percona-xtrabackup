@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -10,8 +10,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file
@@ -20,14 +20,19 @@
   Text .frm files management routines
 */
 
-#include "sql_priv.h"
 #include "parse_file.h"
-#include "unireg.h"                            // CREATE_MODE
 #include "sql_table.h"                        // build_table_filename
 #include <errno.h>
 #include <m_ctype.h>
 #include <my_sys.h>
 #include <my_dir.h>
+#include "mysqld.h"                           // reg_ext
+#include "mysqld_error.h"                     // ER_*
+#include "sql_const.h"                        // CREATE_MODE
+#include "sql_list.h"                         // List_iterator_fast
+
+#include "pfs_file_provider.h"
+#include "mysql/psi/mysql_file.h"
 
 /* from sql_db.cc */
 extern long mysql_rm_arc_files(THD *thd, MY_DIR *dirp, const char *org_path);
@@ -215,7 +220,7 @@ sql_create_definition_file(const LEX_STRING *dir, const LEX_STRING *file_name,
   File handler;
   IO_CACHE file;
   char path[FN_REFLEN+1];	// +1 to put temporary file name for sure
-  int path_end;
+  size_t path_end;
   File_option *param;
   DBUG_ENTER("sql_create_definition_file");
   DBUG_PRINT("enter", ("Dir: %s, file: %s, base 0x%lx",
@@ -358,7 +363,7 @@ my_bool rename_in_schema_file(THD *thd,
     parser object
 */
 
-File_parser * 
+File_parser *
 sql_parse_prepare(const LEX_STRING *file_name, MEM_ROOT *mem_root,
 		  bool bad_format_errors)
 {
@@ -386,7 +391,8 @@ sql_parse_prepare(const LEX_STRING *file_name, MEM_ROOT *mem_root,
     DBUG_RETURN(0);
   }
 
-  if (!(buff= (char*) alloc_root(mem_root, stat_info.st_size+1)))
+  if (!(buff= (char*) alloc_root(mem_root,
+                                 static_cast<size_t>(stat_info.st_size)+1)))
   {
     DBUG_RETURN(0);
   }
@@ -397,7 +403,8 @@ sql_parse_prepare(const LEX_STRING *file_name, MEM_ROOT *mem_root,
     DBUG_RETURN(0);
   }
   
-  if ((len= mysql_file_read(file, (uchar *)buff, stat_info.st_size,
+  if ((len= mysql_file_read(file, (uchar *)buff,
+                            static_cast<size_t>(stat_info.st_size),
                             MYF(MY_WME))) == MY_FILE_ERROR)
   {
     mysql_file_close(file, MYF(MY_WME));
@@ -719,12 +726,12 @@ File_parser::parse(uchar* base, MEM_ROOT *mem_root,
     {
       File_option *parameter= parameters+first_param,
 	*parameters_end= parameters+required;
-      int len= 0;
+      size_t len= 0;
       for (; parameter < parameters_end; parameter++)
       {
 	len= parameter->name.length;
 	// check length
-	if (len < (end-ptr) && ptr[len] != '=')
+	if (len < static_cast<size_t>(end-ptr) && ptr[len] != '=')
 	  continue;
 	// check keyword
 	if (memcmp(parameter->name.str, ptr, len) == 0)

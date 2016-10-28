@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006, 2008 MySQL AB, 2008, 2009 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -241,9 +240,13 @@ Config::pack64(BaseString& encoded) const
   if (m_configValues->m_config.pack(buf) == 0)
     return false;
 
-  // Expand the string to correct length by filling with Z
+  /*
+    Expand the string to correct length by filling with Z.
+    The base64 encoded data of UtilBuffer can be of max length (1024*1024)/3*4
+    hence using int to store the length.
+  */
   encoded.assfmt("%*s",
-                 base64_needed_encoded_length(buf.length()),
+                 (int)base64_needed_encoded_length(buf.length()),
                  "Z");
 
   if (base64_encode(buf.get_data(),
@@ -538,7 +541,8 @@ diff_connections(const Config* a, const Config* b, Properties& diff)
     ConfigValues::ConstIterator itB(b->m_configValues->m_config);
     require(itB.openSection(CFG_SECTION_CONNECTION, sectionNo) == true);
 
-    Uint32 nodeId1_B, nodeId2_B;
+    Uint32 nodeId1_B = 0; /* Silence compiler warning */
+    Uint32 nodeId2_B = 0; /* Silence compiler warning */
     require(itB.get(CFG_CONNECTION_NODE_1, &nodeId1_B) == true);
     require(itB.get(CFG_CONNECTION_NODE_2, &nodeId2_B) == true);
     require(nodeId1_A == nodeId1_B && nodeId2_A == nodeId2_B);
@@ -752,7 +756,10 @@ bool Config::illegal_change(const Properties& diff_list) const {
       Uint32 type;
       require(what->get("Type", &type));
       if (type == DT_ILLEGAL_CHANGE)
+      {
         illegal= true;
+        break;
+      }
     }
   }
   return illegal;

@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,29 +19,39 @@ SET(MYSYS_SOURCES  array.c charset-def.c charset.c checksum.c
 				errors.c hash.c list.c mf_cache.c mf_dirname.c mf_fn_ext.c
 				mf_format.c mf_getdate.c mf_iocache.c mf_iocache2.c mf_keycache.c 
 				mf_keycaches.c mf_loadpath.c mf_pack.c mf_path.c mf_qsort.c mf_qsort2.c
-				mf_radix.c mf_same.c mf_sort.c mf_soundex.c mf_arr_appstr.c mf_tempdir.c
+				mf_radix.c mf_same.c mf_soundex.c mf_arr_appstr.c
 				mf_tempfile.c mf_unixpath.c mf_wcomp.c mulalloc.c my_access.c
 				my_alloc.c my_bit.c my_bitmap.c my_chsize.c
 				my_compress.c my_copy.c  my_create.c my_delete.c
 				my_div.c my_error.c my_file.c my_fopen.c my_fstream.c 
 				my_gethwaddr.c my_getsystime.c my_getwd.c my_compare.c my_init.c
 				my_lib.c my_lock.c my_malloc.c my_mess.c
-				my_mkdir.c my_mmap.c my_once.c my_open.c my_pread.c my_pthread.c
-				my_quick.c my_read.c my_redel.c my_rename.c my_seek.c my_sleep.c
+				my_mkdir.c my_mmap.c my_once.c my_open.c my_pread.c
+				my_read.c my_redel.c my_rename.c my_seek.c
 				my_static.c my_symlink.c my_symlink2.c my_sync.c my_thr_init.c 
-				my_write.c ptr_cmp.c queues.c stacktrace.c
-				string.c thr_alarm.c thr_lock.c thr_mutex.c
-				thr_rwlock.c tree.c typelib.c base64.c my_memmem.c my_getpagesize.c
+				my_write.c ptr_cmp.c queues.c sql_chars.c stacktrace.c
+				string.c thr_cond.c thr_lock.c thr_mutex.c
+				thr_rwlock.c tree.c typelib.c base64.c my_memmem.c
 				lf_alloc-pin.c lf_dynarray.c lf_hash.c
-				my_atomic.c my_getncpus.c
-				my_rdtsc.c waiting_threads.c psi_noop.c)
+				my_rdtsc.c psi_noop.c my_syslog.c
+				my_chmod.c my_thread.c)
 
 IF (WIN32)
- SET (MYSYS_SOURCES ${MYSYS_SOURCES} my_winthread.c my_wincond.c my_winerr.c my_winfile.c my_windac.c my_conio.c)
+  LIST(APPEND MYSYS_SOURCES
+    my_conio.c
+    my_windac.c
+    my_winerr.c
+    my_winfile.c
+    win_timers.c
+  )
 ENDIF()
 
-IF(HAVE_ALARM)
- SET(MYSYS_SOURCES ${MYSYS_SOURCES} my_alarm.c)
+IF(HAVE_POSIX_TIMERS)
+ SET(MYSYS_SOURCES ${MYSYS_SOURCES} posix_timers.c)
+ENDIF()
+
+IF(HAVE_KQUEUE_TIMERS)
+  SET(MYSYS_SOURCES ${MYSYS_SOURCES} kqueue_timers.c)
 ENDIF()
 
 IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_C_COMPILER_ID MATCHES "SunPro")
@@ -50,12 +60,8 @@ IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_C_COMPILER_ID MATCHES "SunPro")
    PROPERTIES COMPILE_FLAGS "${CMAKE_CURRENT_SOURCE_DIR}/my_timer_cycles.il")
 ENDIF()
 
-IF(HAVE_LARGE_PAGES)
+IF(HAVE_LINUX_LARGE_PAGES)
  SET(MYSYS_SOURCES ${MYSYS_SOURCES} my_largepage.c)
-ENDIF()
-
-IF(HAVE_MLOCK)
- SET(MYSYS_SOURCES ${MYSYS_SOURCES} my_lockmem.c)
 ENDIF()
 
 ADD_CONVENIENCE_LIBRARY(mysys ${MYSYS_SOURCES})
@@ -76,7 +82,19 @@ TARGET_LINK_LIBRARIES(queues mysys)
 SET_TARGET_PROPERTIES(queues PROPERTIES COMPILE_FLAGS "-DMAIN")
 ADD_TEST(queues_test queues)
 
+ADD_EXECUTABLE(base64_test base64.c)
+SET_TARGET_PROPERTIES(base64_test PROPERTIES COMPILE_FLAGS "-DMAIN")
+TARGET_LINK_LIBRARIES(base64_test mysys)
+
 IF(MSVC)
    INSTALL_DEBUG_TARGET(mysys DESTINATION ${INSTALL_LIBDIR}/debug)
 ENDIF()
 
+MY_CHECK_CXX_COMPILER_FLAG("-Wno-deprecated-declarations" HAVE_NO_DEPREC_CONST)
+
+IF(CMAKE_GENERATOR MATCHES "Xcode" AND HAVE_NO_DEPREC_CONST)
+  INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
+  ADD_COMPILE_FLAGS(
+    stacktrace.c
+    COMPILE_FLAGS -Wno-deprecated-declarations)
+ENDIF()

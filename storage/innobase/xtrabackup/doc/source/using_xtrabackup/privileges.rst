@@ -95,8 +95,9 @@ backed up:
 
   * ``CREATE TABLESPACE`` in order to import tables (see :ref:`imp_exp_ibk`),
 
-  * ``PROCESS`` in order to see all threads which are running on the server
-    (see :ref:`improved_ftwrl`),
+  * ``PROCESS`` in order to run ``SHOW ENGINE INNODB STATUS`` (which is
+    mandatory), and optionally to see all threads which are running on the
+    server (see :ref:`improved_ftwrl`),
 
   * ``SUPER`` in order to start/stop the slave threads in a replication
     environment, use `XtraDB Changed Page Tracking

@@ -1,5 +1,4 @@
-/* Copyright (c) 2000-2002, 2005-2007 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,7 +27,7 @@ int myrg_lock_database(MYRG_INFO *info, int lock_type)
   error=0;
   for (file=info->open_tables ; file != info->end_table ; file++) 
   {
-#ifdef __WIN__
+#ifdef _WIN32
     /*
       Make sure this table is marked as owned by a merge table.
       The semaphore is never released as long as table remains

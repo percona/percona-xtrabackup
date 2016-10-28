@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,24 +14,24 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sql_priv.h"
-#include "unireg.h"
+#include "events.h"
+
 #include "sql_parse.h"                          // check_access
 #include "sql_base.h"                           // close_mysql_tables
 #include "sql_show.h"                           // append_definer
-#include "events.h"
 #include "sql_db.h"                          // check_db_dir_existence
 #include "sql_table.h"                       // write_bin_log
 #include "tztime.h"                             // struct Time_zone
-#include "sql_acl.h"                            // EVENT_ACL
+#include "auth_common.h"                        // EVENT_ACL
 #include "records.h"          // init_read_record, end_read_record
 #include "event_data_objects.h"
 #include "event_db_repository.h"
 #include "event_queue.h"
 #include "event_scheduler.h"
 #include "sp_head.h" // for Stored_program_creation_ctx
-#include "set_var.h"
 #include "lock.h"   // lock_object_name
+#include "log.h"
+#include "mysql/psi/mysql_sp.h"
 
 /**
   @addtogroup Event_Scheduler
@@ -275,7 +275,7 @@ create_query_string(THD *thd, String *buf)
   if (buf->append(STRING_WITH_LEN("CREATE ")))
     return 1;
   /* Append definer */
-  append_definer(thd, buf, &(thd->lex->definer->user), &(thd->lex->definer->host));
+  append_definer(thd, buf, thd->lex->definer->user, thd->lex->definer->host);
   /* Append the left part of thd->query after "DEFINER" part */
   if (buf->append(thd->lex->stmt_definition_begin,
                   thd->lex->stmt_definition_end -
@@ -308,6 +308,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data,
 {
   bool ret;
   bool save_binlog_row_based, event_already_exists;
+  ulong save_binlog_format= thd->variables.binlog_format;
   DBUG_ENTER("Events::create_event");
 
   if (check_if_system_tables_error())
@@ -327,6 +328,10 @@ Events::create_event(THD *thd, Event_parse_data *parse_data,
   if (check_access(thd, EVENT_ACL, parse_data->dbname.str, NULL, NULL, 0, 0))
     DBUG_RETURN(TRUE);
 
+  if (lock_object_name(thd, MDL_key::EVENT,
+                       parse_data->dbname.str, parse_data->name.str))
+    DBUG_RETURN(TRUE);
+
   if (check_db_dir_existence(parse_data->dbname.str))
   {
     my_error(ER_BAD_DB_ERROR, MYF(0), parse_data->dbname.str);
@@ -341,10 +346,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data,
   */
   if ((save_binlog_row_based= thd->is_current_stmt_binlog_format_row()))
     thd->clear_current_stmt_binlog_format_row();
-
-  if (lock_object_name(thd, MDL_key::EVENT,
-                       parse_data->dbname.str, parse_data->name.str))
-    DBUG_RETURN(TRUE);
+  thd->variables.binlog_format= BINLOG_FORMAT_STMT;
 
   /* On error conditions my_error() is called so no need to handle here */
   if (!(ret= db_repository->create_event(thd, parse_data, if_not_exists,
@@ -353,7 +355,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data,
     Event_queue_element *new_element;
     bool dropped= 0;
 
-    if (!event_already_exists)
+    if (opt_event_scheduler != Events::EVENTS_DISABLED && !event_already_exists)
     {
       if (!(new_element= new Event_queue_element()))
         ret= TRUE;                                // OOM
@@ -380,7 +382,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data,
     if (!dropped)
     {
       /* Binlog the create event. */
-      DBUG_ASSERT(thd->query() && thd->query_length());
+      DBUG_ASSERT(thd->query().str && thd->query().length);
       String log_query;
       if (create_query_string(thd, &log_query))
       {
@@ -403,6 +405,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data,
   DBUG_ASSERT(!thd->is_current_stmt_binlog_format_row());
   if (save_binlog_row_based)
     thd->set_current_stmt_binlog_format_row();
+  thd->variables.binlog_format= save_binlog_format;
 
   DBUG_RETURN(ret);
 }
@@ -433,6 +436,7 @@ Events::update_event(THD *thd, Event_parse_data *parse_data,
 {
   int ret;
   bool save_binlog_row_based;
+  ulong save_binlog_format= thd->variables.binlog_format;
   Event_queue_element *new_element;
 
   DBUG_ENTER("Events::update_event");
@@ -446,7 +450,17 @@ Events::update_event(THD *thd, Event_parse_data *parse_data,
   if (check_access(thd, EVENT_ACL, parse_data->dbname.str, NULL, NULL, 0, 0))
     DBUG_RETURN(TRUE);
 
-  if (new_dbname)                               /* It's a rename */
+  if (lock_object_name(thd, MDL_key::EVENT,
+                       parse_data->dbname.str, parse_data->name.str))
+    DBUG_RETURN(TRUE);
+
+  if (check_db_dir_existence(parse_data->dbname.str))
+  {
+    my_error(ER_BAD_DB_ERROR, MYF(0), parse_data->dbname.str);
+    DBUG_RETURN(TRUE);
+  }
+
+  if (new_dbname != NULL)                               /* It's a rename */
   {
     /* Check that the new and the old names differ. */
     if ( !sortcmp_lex_string(parse_data->dbname, *new_dbname,
@@ -467,6 +481,13 @@ Events::update_event(THD *thd, Event_parse_data *parse_data,
     if (check_access(thd, EVENT_ACL, new_dbname->str, NULL, NULL, 0, 0))
       DBUG_RETURN(TRUE);
 
+    /*
+      Acquire mdl exclusive lock on target database name.
+    */
+    if (lock_object_name(thd, MDL_key::EVENT,
+                         new_dbname->str, new_name->str))
+      DBUG_RETURN(TRUE);
+
     /* Check that the target database exists */
     if (check_db_dir_existence(new_dbname->str))
     {
@@ -481,10 +502,7 @@ Events::update_event(THD *thd, Event_parse_data *parse_data,
   */
   if ((save_binlog_row_based= thd->is_current_stmt_binlog_format_row()))
     thd->clear_current_stmt_binlog_format_row();
-
-  if (lock_object_name(thd, MDL_key::EVENT,
-                       parse_data->dbname.str, parse_data->name.str))
-    DBUG_RETURN(TRUE);
+  thd->variables.binlog_format= BINLOG_FORMAT_STMT;
 
   /* On error conditions my_error() is called so no need to handle here */
   if (!(ret= db_repository->update_event(thd, parse_data,
@@ -493,36 +511,40 @@ Events::update_event(THD *thd, Event_parse_data *parse_data,
     LEX_STRING dbname= new_dbname ? *new_dbname : parse_data->dbname;
     LEX_STRING name= new_name ? *new_name : parse_data->name;
 
-    if (!(new_element= new Event_queue_element()))
-      ret= TRUE;                                // OOM
-    else if ((ret= db_repository->load_named_event(thd, dbname, name,
-                                                   new_element)))
-      delete new_element;
-    else
+    if (opt_event_scheduler != Events::EVENTS_DISABLED)
     {
-      /*
-        TODO: check if an update actually has inserted an entry
-        into the queue.
-        If not, and the element is ON COMPLETION NOT PRESERVE, delete
-        it right away.
-      */
-      if (event_queue)
-        event_queue->update_event(thd, parse_data->dbname, parse_data->name,
-                                  new_element);
-      /* Binlog the alter event. */
-      DBUG_ASSERT(thd->query() && thd->query_length());
+      if (!(new_element= new Event_queue_element()))
+        ret= TRUE;                                // OOM
+      else if ((ret= db_repository->load_named_event(thd, dbname, name,
+                                                   new_element)))
+        delete new_element;
+      else
+      {
+        /*
+          TODO: check if an update actually has inserted an entry
+          into the queue.
+          If not, and the element is ON COMPLETION NOT PRESERVE, delete
+          it right away.
+        */
+        if (event_queue)
+          event_queue->update_event(thd, parse_data->dbname, parse_data->name,
+                                    new_element);
+        /* Binlog the alter event. */
+        DBUG_ASSERT(thd->query().str && thd->query().length);
 
-      thd->add_to_binlog_accessed_dbs(parse_data->dbname.str);
-      if (new_dbname)
-        thd->add_to_binlog_accessed_dbs(new_dbname->str);
+        thd->add_to_binlog_accessed_dbs(parse_data->dbname.str);
+        if (new_dbname)
+          thd->add_to_binlog_accessed_dbs(new_dbname->str);
 
-      ret= write_bin_log(thd, TRUE, thd->query(), thd->query_length());
+        ret= write_bin_log(thd, true, thd->query().str, thd->query().length);
+      }
     }
   }
   /* Restore the state of binlog format */
   DBUG_ASSERT(!thd->is_current_stmt_binlog_format_row());
   if (save_binlog_row_based)
     thd->set_current_stmt_binlog_format_row();
+  thd->variables.binlog_format= save_binlog_format;
 
   DBUG_RETURN(ret);
 }
@@ -556,7 +578,6 @@ bool
 Events::drop_event(THD *thd, LEX_STRING dbname, LEX_STRING name, bool if_exists)
 {
   int ret;
-  bool save_binlog_row_based;
   DBUG_ENTER("Events::drop_event");
 
   if (check_if_system_tables_error())
@@ -564,13 +585,6 @@ Events::drop_event(THD *thd, LEX_STRING dbname, LEX_STRING name, bool if_exists)
 
   if (check_access(thd, EVENT_ACL, dbname.str, NULL, NULL, 0, 0))
     DBUG_RETURN(TRUE);
-
-  /*
-    Turn off row binlogging of this statement and use statement-based so
-    that all supporting tables are updated for DROP EVENT command.
-  */
-  if ((save_binlog_row_based= thd->is_current_stmt_binlog_format_row()))
-    thd->clear_current_stmt_binlog_format_row();
 
   if (lock_object_name(thd, MDL_key::EVENT,
                        dbname.str, name.str))
@@ -581,15 +595,16 @@ Events::drop_event(THD *thd, LEX_STRING dbname, LEX_STRING name, bool if_exists)
     if (event_queue)
       event_queue->drop_event(thd, dbname, name);
     /* Binlog the drop event. */
-    DBUG_ASSERT(thd->query() && thd->query_length());
+    DBUG_ASSERT(thd->query().str && thd->query().length);
 
     thd->add_to_binlog_accessed_dbs(dbname.str);
-    ret= write_bin_log(thd, TRUE, thd->query(), thd->query_length());
+    ret= write_bin_log(thd, TRUE, thd->query().str, thd->query().length);
+#ifdef HAVE_PSI_SP_INTERFACE
+    /* Drop statistics for this stored program from performance schema. */
+    MYSQL_DROP_SP(SP_TYPE_EVENT,
+                  dbname.str, dbname.length, name.str, name.length);
+#endif 
   }
-  /* Restore the state of binlog format */
-  DBUG_ASSERT(!thd->is_current_stmt_binlog_format_row());
-  if (save_binlog_row_based)
-    thd->set_current_stmt_binlog_format_row();
   DBUG_RETURN(ret);
 }
 
@@ -606,9 +621,9 @@ Events::drop_event(THD *thd, LEX_STRING dbname, LEX_STRING name, bool if_exists)
 */
 
 void
-Events::drop_schema_events(THD *thd, char *db)
+Events::drop_schema_events(THD *thd, const char *db)
 {
-  LEX_STRING const db_lex= { db, strlen(db) };
+  LEX_STRING db_lex= { const_cast<char*>(db), strlen(db) };
 
   DBUG_ENTER("Events::drop_schema_events");
   DBUG_PRINT("enter", ("dropping events from %s", db));
@@ -669,11 +684,11 @@ send_show_create_event(THD *thd, Event_timed *et, Protocol *protocol)
   field_list.push_back(
     new Item_empty_string("Database Collation", MY_CS_NAME_SIZE));
 
-  if (protocol->send_result_set_metadata(&field_list,
-                            Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
+  if (thd->send_result_metadata(&field_list,
+                                Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
     DBUG_RETURN(TRUE);
 
-  protocol->prepare_for_resend();
+  protocol->start_row();
 
   protocol->store(et->name.str, et->name.length, system_charset_info);
   protocol->store(sql_mode.str, sql_mode.length, system_charset_info);
@@ -690,7 +705,7 @@ send_show_create_event(THD *thd, Event_timed *et, Protocol *protocol)
                   strlen(et->creation_ctx->get_db_cl()->name),
                   system_charset_info);
 
-  if (protocol->write())
+  if (protocol->end_row())
     DBUG_RETURN(TRUE);
 
   my_eof(thd);
@@ -737,7 +752,7 @@ Events::show_create_event(THD *thd, LEX_STRING dbname, LEX_STRING name)
   ret= db_repository->load_named_event(thd, dbname, name, &et);
 
   if (!ret)
-    ret= send_show_create_event(thd, &et, thd->protocol);
+    ret= send_show_create_event(thd, &et, thd->get_protocol());
 
   DBUG_RETURN(ret);
 }
@@ -770,17 +785,34 @@ Events::fill_schema_events(THD *thd, TABLE_LIST *tables, Item * /* cond */)
     DBUG_RETURN(1);
 
   /*
-    If it's SHOW EVENTS then thd->lex->select_lex.db is guaranteed not to
+    If it's SHOW EVENTS then thd->lex->select_lex->db is guaranteed not to
     be NULL. Let's do an assert anyway.
   */
   if (thd->lex->sql_command == SQLCOM_SHOW_EVENTS)
   {
-    DBUG_ASSERT(thd->lex->select_lex.db);
-    if (!is_infoschema_db(thd->lex->select_lex.db) && // There is no events in I_S
-        check_access(thd, EVENT_ACL, thd->lex->select_lex.db,
-                     NULL, NULL, 0, 0))
+    db= thd->lex->select_lex->db;
+    DBUG_ASSERT(db != NULL);
+    /*
+      Nobody has EVENT_ACL for I_S and P_S,
+      even with a GRANT ALL to *.*,
+      because these schemas have additional ACL restrictions:
+      see ACL_internal_schema_registry.
+
+      Yet there are no events in I_S and P_S to hide either,
+      so this check voluntarily does not enforce ACL for
+      SHOW EVENTS in I_S or P_S,
+      to return an empty list instead of an access denied error.
+
+      This is more user friendly, in particular for tools.
+
+      EVENT_ACL is not fine grained enough to differentiate:
+      - creating / updating / deleting events
+      - viewing existing events
+    */
+    if (! is_infoschema_db(db) &&
+        ! is_perfschema_db(db) &&
+        check_access(thd, EVENT_ACL, db, NULL, NULL, 0, 0))
       DBUG_RETURN(1);
-    db= thd->lex->select_lex.db;
   }
   ret= db_repository->fill_schema_events(thd, tables, db);
 
@@ -901,12 +933,13 @@ end:
   if (res)
   {
     delete db_repository;
+    db_repository= NULL;
     delete event_queue;
+    event_queue= NULL;
     delete scheduler;
+    scheduler= NULL;
   }
   delete thd;
-  /* Remember that we don't have a THD */
-  my_pthread_setspecific_ptr(THR_THD,  NULL);
 
   DBUG_RETURN(res);
 }
@@ -971,12 +1004,19 @@ PSI_stage_info stage_waiting_on_empty_queue= { 0, "Waiting on empty queue", 0};
 PSI_stage_info stage_waiting_for_next_activation= { 0, "Waiting for next activation", 0};
 PSI_stage_info stage_waiting_for_scheduler_to_stop= { 0, "Waiting for the scheduler to stop", 0};
 
+PSI_memory_key key_memory_event_basic_root;
+
 #ifdef HAVE_PSI_INTERFACE
 PSI_stage_info *all_events_stages[]=
 {
   & stage_waiting_on_empty_queue,
   & stage_waiting_for_next_activation,
   & stage_waiting_for_scheduler_to_stop
+};
+
+static PSI_memory_info all_events_memory[]=
+{
+  { &key_memory_event_basic_root, "Event_basic::mem_root", PSI_FLAG_GLOBAL}
 };
 
 static void init_events_psi_keys(void)
@@ -996,6 +1036,8 @@ static void init_events_psi_keys(void)
   count= array_elements(all_events_stages);
   mysql_stage_register(category, all_events_stages, count);
 
+  count= array_elements(all_events_memory);
+  mysql_memory_register(category, all_events_memory, count);
 }
 #endif /* HAVE_PSI_INTERFACE */
 
@@ -1053,12 +1095,16 @@ Events::dump_internal_status()
 
 bool Events::start(int *err_no)
 {
-  return scheduler->start(err_no);
+  bool ret= false;
+  if (scheduler) ret= scheduler->start(err_no);
+  return ret;
 }
 
 bool Events::stop()
 {
-  return scheduler->stop();
+  bool ret= false;
+  if (scheduler) ret= scheduler->stop();
+  return ret;
 }
 
 /**
@@ -1100,15 +1146,15 @@ Events::load_events_from_db(THD *thd)
     Temporarily reset it to read-write.
   */
 
-  saved_master_access= thd->security_ctx->master_access;
-  thd->security_ctx->master_access |= SUPER_ACL;
+  saved_master_access= thd->security_context()->master_access();
+  thd->security_context()->set_master_access(saved_master_access | SUPER_ACL);
   bool save_tx_read_only= thd->tx_read_only;
   thd->tx_read_only= false;
 
   ret= db_repository->open_event_table(thd, TL_WRITE, &table);
 
   thd->tx_read_only= save_tx_read_only;
-  thd->security_ctx->master_access= saved_master_access;
+  thd->security_context()->set_master_access(saved_master_access);
 
   if (ret)
   {

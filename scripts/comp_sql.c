@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -65,7 +65,7 @@ static void die(const char *fmt, ...)
 
 char *fgets_fn(char *buffer, size_t size, fgets_input_t input, int *error)
 {
-  char *line= fgets(buffer, size, (FILE*) input);
+  char *line= fgets(buffer, (int)size, (FILE*) input);
   if (error)
     *error= (line == NULL) ? ferror((FILE*)input) : 0;
   return line;
@@ -83,7 +83,7 @@ static void print_query(FILE *out, const char *query)
     {
       /* Wrap to the next line, tabulated. */
       fprintf(out, "\"\n  \"");
-      column= 2;
+      column= 3;
     }
     switch(*ptr)
     {
@@ -93,13 +93,17 @@ static void print_query(FILE *out, const char *query)
         and wrap to the next line, tabulated.
       */
       fprintf(out, "\\n\"\n  \"");
-      column= 2;
+      column= 3;
       break;
     case '\r':
       /* Skipped */
       break;
     case '\"':
       fprintf(out, "\\\"");
+      column+= 2;
+      break;
+    case '\\':
+      fprintf(out, "\\\\");
       column++;
       break;
     default:
@@ -119,7 +123,7 @@ int main(int argc, char *argv[])
   char* infile_name= argv[2];
   char* outfile_name= argv[3];
   int rc;
-  int query_length= 0;
+  size_t query_length= 0;
   int error= 0;
   char *err_ptr;
 
@@ -159,12 +163,12 @@ int main(int argc, char *argv[])
         break;
 
       case READ_BOOTSTRAP_QUERY_SIZE:
-        die("Failed to read the boostrap input file. Query size exceeded %d bytes.\n"
+        die("Failed to read the bootstrap input file. Query size exceeded %d bytes.\n"
             "Last query: '%s'.\n", MAX_BOOTSTRAP_LINE_SIZE, err_ptr);
         break;
-    
+
       default:
-        die("Failed to read the boostrap input file. Unknown error.\n");
+        die("Failed to read the bootstrap input file. Unknown error.\n");
         break;
       }
     }

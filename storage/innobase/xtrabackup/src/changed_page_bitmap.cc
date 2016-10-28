@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "common.h"
 #include "xtrabackup.h"
+#include "srv0srv.h"
 
 /* TODO: copy-pasted shared definitions from the XtraDB bitmap write code.
 Remove these on the first opportunity, i.e. single-binary XtraBackup.  */
@@ -185,17 +186,18 @@ log_online_read_bitmap_page(
 	ibool				*checksum_ok)	/*!<out: TRUE if page
 							checksum OK */
 {
-	ulint	checksum;
-	ulint	actual_checksum;
-	ibool	success;
+	ulint		checksum;
+	ulint		actual_checksum;
+	ibool		success;
+	IORequest	read_request(IORequest::READ);
 
 	ut_a(bitmap_file->size >= MODIFIED_PAGE_BLOCK_SIZE);
 	ut_a(bitmap_file->offset
 	     <= bitmap_file->size - MODIFIED_PAGE_BLOCK_SIZE);
 	ut_a(bitmap_file->offset % MODIFIED_PAGE_BLOCK_SIZE == 0);
 
-	success = os_file_read(bitmap_file->file, page, bitmap_file->offset,
-				  MODIFIED_PAGE_BLOCK_SIZE);
+	success = os_file_read(read_request, bitmap_file->file, page,
+			       bitmap_file->offset, MODIFIED_PAGE_BLOCK_SIZE);
 
 	if (UNIV_UNLIKELY(!success)) {
 
@@ -355,8 +357,8 @@ log_online_setup_bitmap_file_range(
 
 	bitmap_files->files =
 		static_cast<log_online_bitmap_file_range_t::files_t *>
-		(ut_malloc(bitmap_files->count
-			   * sizeof(bitmap_files->files[0])));
+		(ut_malloc_nokey(bitmap_files->count
+				 * sizeof(bitmap_files->files[0])));
 	memset(bitmap_files->files, 0,
 	       bitmap_files->count * sizeof(bitmap_files->files[0]));
 
@@ -438,17 +440,20 @@ log_online_open_bitmap_file_read_only(
 	log_online_bitmap_file_t*	bitmap_file)	/*!<out: opened bitmap
 							file */
 {
-	ibool	success	= FALSE;
+	bool	success	= FALSE;
 
 	xb_ad(name[0] != '\0');
 
-	ut_snprintf(bitmap_file->name, FN_REFLEN, "%s%s", srv_data_home, name);
+	ut_snprintf(bitmap_file->name, FN_REFLEN, "%s/%s", srv_data_home, name);
 	bitmap_file->file
 		= os_file_create_simple_no_error_handling(0, bitmap_file->name,
 							  OS_FILE_OPEN,
 							  OS_FILE_READ_ONLY,
+							  srv_read_only_mode,
 							  &success);
 	if (UNIV_UNLIKELY(!success)) {
+
+		os_file_get_last_error(true);
 
 		/* Here and below assume that bitmap file names do not
 		contain apostrophes, thus no need for ut_print_filename(). */
@@ -923,7 +928,7 @@ xb_page_bitmap_range_init(
 	byte			search_page[MODIFIED_PAGE_BLOCK_SIZE];
 	xb_page_bitmap_range	*result
 		= static_cast<xb_page_bitmap_range *>
-		(ut_malloc(sizeof(*result)));
+		(ut_malloc_nokey(sizeof(*result)));
 
 	memset(result, 0, sizeof(*result));
 	result->bitmap = bitmap;

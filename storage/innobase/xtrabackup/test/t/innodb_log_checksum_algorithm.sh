@@ -4,6 +4,7 @@
 
 require_xtradb
 require_server_version_higher_than 5.6.13
+require_server_version_lower_than 5.7.0
 
 function test_with_algorithm()
 {

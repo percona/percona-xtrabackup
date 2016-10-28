@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2009, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -32,18 +32,18 @@ Created 1/20/1994 Heikki Tuuri
 
 /*******************************************************//**
 Creates a 64-bit integer out of two 32-bit integers.
-@return	created integer */
+@return created integer */
 UNIV_INLINE
 ib_uint64_t
 ut_ull_create(
 /*==========*/
 	ulint	high,	/*!< in: high-order 32 bits */
 	ulint	low)	/*!< in: low-order 32 bits */
-	__attribute__((const));
+	MY_ATTRIBUTE((const));
 
 /********************************************************//**
 Rounds a 64-bit integer downward to a multiple of a power of 2.
-@return	rounded value */
+@return rounded value */
 UNIV_INLINE
 ib_uint64_t
 ut_uint64_align_down(
@@ -53,7 +53,7 @@ ut_uint64_align_down(
 					which must be a power of 2 */
 /********************************************************//**
 Rounds ib_uint64_t upward to a multiple of a power of 2.
-@return	rounded value */
+@return rounded value */
 UNIV_INLINE
 ib_uint64_t
 ut_uint64_align_up(
@@ -63,7 +63,7 @@ ut_uint64_align_up(
 					which must be a power of 2 */
 /*********************************************************//**
 The following function rounds up a pointer to the nearest aligned address.
-@return	aligned pointer */
+@return aligned pointer */
 UNIV_INLINE
 void*
 ut_align(
@@ -73,28 +73,28 @@ ut_align(
 /*********************************************************//**
 The following function rounds down a pointer to the nearest
 aligned address.
-@return	aligned pointer */
+@return aligned pointer */
 UNIV_INLINE
 void*
 ut_align_down(
 /*==========*/
 	const void*	ptr,		/*!< in: pointer */
 	ulint		align_no)	/*!< in: align by this number */
-		__attribute__((const));
+		MY_ATTRIBUTE((const));
 /*********************************************************//**
 The following function computes the offset of a pointer from the nearest
 aligned address.
-@return	distance from aligned pointer */
+@return distance from aligned pointer */
 UNIV_INLINE
 ulint
 ut_align_offset(
 /*============*/
 	const void*	ptr,		/*!< in: pointer */
 	ulint		align_no)	/*!< in: align by this number */
-			__attribute__((const));
+			MY_ATTRIBUTE((const));
 /*****************************************************************//**
 Gets the nth bit of a ulint.
-@return	TRUE if nth bit is 1; 0th bit is defined to be the least significant */
+@return TRUE if nth bit is 1; 0th bit is defined to be the least significant */
 UNIV_INLINE
 ibool
 ut_bit_get_nth(
@@ -103,7 +103,7 @@ ut_bit_get_nth(
 	ulint	n);	/*!< in: nth bit requested */
 /*****************************************************************//**
 Sets the nth bit of a ulint.
-@return	the ulint with the bit set as requested */
+@return the ulint with the bit set as requested */
 UNIV_INLINE
 ulint
 ut_bit_set_nth(

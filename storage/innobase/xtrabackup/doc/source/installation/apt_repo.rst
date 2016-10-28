@@ -30,14 +30,14 @@ Supported Platforms:
 What's in each DEB package?
 ===========================
 
-The ``percona-xtrabackup`` package contains the latest |Percona XtraBackup|
+The ``percona-xtrabackup-24`` package contains the latest |Percona XtraBackup|
 GA binaries and associated files.
 
-The ``percona-xtrabackup-dbg`` package contains the debug symbols for binaries
-in ``percona-xtrabackup``.
+The ``percona-xtrabackup-dbg-24`` package contains the debug symbols for
+binaries in ``percona-xtrabackup-24``.
 
-The ``percona-xtrabackup-test`` package contains the test suite for |Percona
-XtraBackup|.
+The ``percona-xtrabackup-test-24`` package contains the test suite for
+|Percona XtraBackup|.
 
 The ``percona-xtrabackup-2x`` package contains the older version of the
 |Percona XtraBackup|.
@@ -72,7 +72,7 @@ Installing |Percona XtraBackup| from Percona ``apt`` repository
 
    .. code-block:: bash
 
-     $ sudo apt-get install percona-xtrabackup
+     $ sudo apt-get install percona-xtrabackup-24
 
 .. _debian_testing:
 
@@ -122,19 +122,19 @@ Installing |Percona XtraBackup| using downloaded deb packages
 
 Download the packages of the desired series for your architecture from the
 `download page <https://www.percona.com/downloads/XtraBackup/>`_. Following
-example will download |Percona XtraBackup| 2.3.2 release package for *Debian*
+example will download |Percona XtraBackup| 2.4.4 release package for *Debian*
 8.0:
 
 .. code-block:: bash
 
-  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.5/\
-  binary/debian/jessie/x86_64/percona-xtrabackup_2.3.5-1.jessie_amd64.deb
+  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.4/\
+  binary/debian/jessie/x86_64/percona-xtrabackup-24_2.4.4-1.jessie_amd64.deb
 
 Now you can install |Percona XtraBackup| by running:
 
 .. code-block:: bash
 
-  $ sudo dpkg -i percona-xtrabackup_2.3.5-1.jessie_amd64.deb
+  $ sudo dpkg -i percona-xtrabackup-24_2.4.4-1.jessie_amd64.deb
 
 .. note::
 
@@ -151,4 +151,4 @@ packages.
 
    .. code-block:: bash
 
-     $ sudo apt-get remove percona-xtrabackup
+     $ sudo apt-get remove percona-xtrabackup-24

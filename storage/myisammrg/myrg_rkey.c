@@ -1,5 +1,4 @@
-/* Copyright (c) 2000-2003, 2005-2008 MySQL AB, 2009 Sun Microsystems, Inc.
-   Use is subject to license terms.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -39,16 +38,16 @@
 int myrg_rkey(MYRG_INFO *info,uchar *buf,int inx, const uchar *key,
             key_part_map keypart_map, enum ha_rkey_function search_flag)
 {
-  uchar *UNINIT_VAR(key_buff);
-  uint UNINIT_VAR(pack_key_length);
-  uint16 UNINIT_VAR(last_used_keyseg);
+  uchar *key_buff= NULL;
+  uint pack_key_length= 0;
+  uint16 last_used_keyseg= 0;
   MYRG_TABLE *table;
   MI_INFO *mi;
   int err;
   DBUG_ENTER("myrg_rkey");
 
   if (_myrg_init_queue(info,inx,search_flag))
-    DBUG_RETURN(my_errno);
+    DBUG_RETURN(my_errno());
 
   for (table=info->open_tables ; table != info->end_table ; table++)
   {

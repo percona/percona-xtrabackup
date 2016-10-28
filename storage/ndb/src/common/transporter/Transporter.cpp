@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -43,7 +43,11 @@ Transporter::Transporter(TransporterRegistry &t_reg,
   : m_s_port(s_port), remoteNodeId(rNodeId), localNodeId(lNodeId),
     isServer(lNodeId==serverNodeId),
     m_packer(_signalId, _checksum), m_max_send_buffer(max_send_buffer),
-    m_overload_limit(0xFFFFFFFF), isMgmConnection(_isMgmConnection),
+    m_overload_limit(0xFFFFFFFF), m_slowdown_limit(0xFFFFFFFF),
+    m_bytes_sent(0), m_bytes_received(0),
+    m_connect_count(0),
+    m_overload_count(0), m_slowdown_count(0),
+    isMgmConnection(_isMgmConnection),
     m_connected(false),
     m_type(_type),
     m_transporter_registry(t_reg)
@@ -51,7 +55,6 @@ Transporter::Transporter(TransporterRegistry &t_reg,
   DBUG_ENTER("Transporter::Transporter");
   if (rHostName && strlen(rHostName) > 0){
     strncpy(remoteHostName, rHostName, sizeof(remoteHostName));
-    Ndb_getInAddr(&remoteHostAddress, rHostName);
   }
   else
   {
@@ -74,19 +77,16 @@ Transporter::Transporter(TransporterRegistry &t_reg,
   checksumUsed    = _checksum;
   signalIdUsed    = _signalId;
 
-  m_timeOutMillis = 30000;
+  m_timeOutMillis = 3000;
 
   m_connect_address.s_addr= 0;
-  if(s_port<0)
-    s_port= -s_port; // was dynamic
 
   if (isServer)
     m_socket_client= 0;
   else
   {
-    m_socket_client= new SocketClient(remoteHostName, s_port,
-				      new SocketAuthSimple("ndbd",
-							   "ndbd passwd"));
+    m_socket_client= new SocketClient(new SocketAuthSimple("ndbd",
+                                                           "ndbd passwd"));
 
     m_socket_client->set_connect_timeout(m_timeOutMillis);
   }
@@ -148,6 +148,9 @@ Transporter::connect_server(NDB_SOCKET_TYPE sockfd,
     DBUG_RETURN(false);
   }
 
+  m_connect_count++;
+  resetCounters();
+
   m_connected  = true;
 
   DBUG_RETURN(true);
@@ -162,9 +165,20 @@ Transporter::connect_client() {
   if(m_connected)
     DBUG_RETURN(true);
 
+  int port = m_s_port;
+  if (port<0)
+  {
+    // The port number is stored as negative to indicate it's a port number
+    // which the server side setup dynamically and thus was communicated
+    // to the client via the ndb_mgmd.
+    // Reverse the negative port number to get the connectable port
+    port= -port;
+  }
+
   if(isMgmConnection)
   {
-    sockfd= m_transporter_registry.connect_ndb_mgmd(m_socket_client);
+    sockfd= m_transporter_registry.connect_ndb_mgmd(remoteHostName,
+                                                    port);
   }
   else
   {
@@ -179,7 +193,9 @@ Transporter::connect_client() {
       if (m_socket_client->bind(localHostName, 0) != 0)
         DBUG_RETURN(false);
     }
-    sockfd= m_socket_client->connect();
+
+    sockfd= m_socket_client->connect(remoteHostName,
+                                     port);
   }
 
   DBUG_RETURN(connect_client(sockfd));
@@ -274,6 +290,9 @@ Transporter::connect_client(NDB_SOCKET_TYPE sockfd) {
   if (!connect_client_impl(sockfd))
     DBUG_RETURN(false);
 
+  m_connect_count++;
+  resetCounters();
+
   m_connected = true;
 
   DBUG_RETURN(true);
@@ -290,3 +309,11 @@ Transporter::doDisconnect() {
   disconnectImpl();
 }
 
+void
+Transporter::resetCounters()
+{
+  m_bytes_sent = 0;
+  m_bytes_received = 0;
+  m_overload_count = 0;
+  m_slowdown_count = 0;
+};

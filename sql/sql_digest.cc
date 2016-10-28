@@ -18,22 +18,14 @@
 */
 
 #include "my_global.h"
+#include "my_sys.h"
 #include "my_md5.h"
-#include "mysqld_error.h"
-#include "sql_data_change.h"
-
-#include "sql_string.h"
-#include "sql_class.h"
 #include "sql_lex.h"
+#include "sql_signal.h"
+#include "sql_get_diagnostics.h"
+#include "sql_string.h"
 #include "sql_digest.h"
 #include "sql_digest_stream.h"
-
-#include "sql_get_diagnostics.h"
-
-#ifdef NEVER
-#include "my_sys.h"
-#include "sql_signal.h"
-#endif
 
 /* Generated code */
 #include "sql_yacc.h"
@@ -49,13 +41,19 @@
 
 #define SIZE_OF_A_TOKEN 2
 
+ulong max_digest_length= 0;
+ulong get_max_digest_length()
+{
+  return max_digest_length;
+}
+
 /**
   Read a single token from token array.
 */
 inline uint read_token(const sql_digest_storage *digest_storage,
                        uint index, uint *tok)
 {
-  uint safe_byte_count= digest_storage->m_byte_count;
+  size_t safe_byte_count= digest_storage->m_byte_count;
 
   if (index + SIZE_OF_A_TOKEN <= safe_byte_count &&
       safe_byte_count <= digest_storage->m_token_array_length)
@@ -224,6 +222,8 @@ void compute_digest_text(const sql_digest_storage* digest_storage,
     /* All identifiers are printed with their name. */
     case IDENT:
     case IDENT_QUOTED:
+    case TOK_IDENT:
+    case TOK_IDENT_AT:
       {
         char *id_ptr= NULL;
         int id_len= 0;
@@ -259,13 +259,13 @@ void compute_digest_text(const sql_digest_storage* digest_storage,
           break;
         }
         /* Copy the converted identifier into the digest string. */
-        if (tok == IDENT_QUOTED)
-          digest_output->append("`", 1);
+        digest_output->append("`", 1);
         if (id_length > 0)
           digest_output->append(id_string, id_length);
-        if (tok == IDENT_QUOTED)
+        if (tok == TOK_IDENT_AT) // No space before @ in "table@query_block".
           digest_output->append("`", 1);
-        digest_output->append(" ", 1);
+        else
+          digest_output->append("` ", 2);
       }
       break;
 
@@ -570,11 +570,22 @@ sql_digest_state* digest_add_token(sql_digest_state *state,
     }
     case IDENT:
     case IDENT_QUOTED:
+    case TOK_IDENT_AT:
     {
       YYSTYPE *lex_token= yylval;
       char *yytext= lex_token->lex_str.str;
       size_t yylen= lex_token->lex_str.length;
 
+      /*
+        REDUCE:
+          TOK_IDENT := IDENT | IDENT_QUOTED
+        The parser gives IDENT or IDENT_TOKEN for the same text,
+        depending on the character set used.
+        We unify both to always print the same digest text,
+        and always have the same digest hash.
+      */
+      if (token != TOK_IDENT_AT)
+        token= TOK_IDENT;
       /* Add this token and identifier string to digest storage. */
       store_token_identifier(digest_storage, token, yylen, yytext);
 

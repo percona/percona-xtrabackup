@@ -4,6 +4,7 @@
 
 require_xtradb
 require_server_version_higher_than 5.6.10
+require_server_version_lower_than 5.7.0
 
 init_server_variables 1
 switch_server 1

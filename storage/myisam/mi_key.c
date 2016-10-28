@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,11 +18,6 @@
 #include "myisamdef.h"
 #include "m_ctype.h"
 #include "sp_defs.h"
-#ifdef HAVE_IEEEFP_H
-#include <ieeefp.h>
-#endif
-
-#define CHECK_KEYS                              /* Enable safety checks */
 
 #define FIX_LENGTH(cs, pos, length, char_length)                            \
             do {                                                            \
@@ -49,12 +44,12 @@ static int _mi_put_key_in_record(MI_INFO *info, uint keynr,
     Length of key
 */
 
-uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
+uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key,
 		  const uchar *record, my_off_t filepos)
 {
   uchar *pos;
   uchar *start;
-  reg1 HA_KEYSEG *keyseg;
+  HA_KEYSEG *keyseg;
   my_bool is_ft= info->s->keyinfo[keynr].flag & HA_FULLTEXT;
   DBUG_ENTER("_mi_make_key");
 
@@ -63,11 +58,7 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
     /*
       TODO: nulls processing
     */
-#ifdef HAVE_SPATIAL
     DBUG_RETURN(sp_make_key(info,keynr,key,record,filepos));
-#else
-    DBUG_ASSERT(0); /* mi_open should check that this never happens*/
-#endif
   }
 
   start=key;
@@ -150,11 +141,10 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
     }
     else if (keyseg->flag & HA_SWAP_KEY)
     {						/* Numerical column */
-#ifdef HAVE_ISNAN
       if (type == HA_KEYTYPE_FLOAT)
       {
 	float nr;
-	float4get(nr,pos);
+	float4get(&nr,pos);
 	if (my_isnan(nr))
 	{
 	  /* Replace NAN with zero */
@@ -166,7 +156,7 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
       else if (type == HA_KEYTYPE_DOUBLE)
       {
 	double nr;
-	float8get(nr,pos);
+	float8get(&nr,pos);
 	if (my_isnan(nr))
 	{
 	  memset(key, 0, length);
@@ -174,7 +164,6 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
 	  continue;
 	}
       }
-#endif
       pos+=length;
       while (length--)
       {
@@ -216,7 +205,7 @@ uint _mi_make_key(register MI_INFO *info, uint keynr, uchar *key,
      last_use_keyseg    Store pointer to the keyseg after the last used one
 */
 
-uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
+uint _mi_pack_key(MI_INFO *info, uint keynr, uchar *key, uchar *old,
                   key_part_map keypart_map, HA_KEYSEG **last_used_keyseg)
 {
   uchar *start_key=key;
@@ -327,12 +316,12 @@ uint _mi_pack_key(register MI_INFO *info, uint keynr, uchar *key, uchar *old,
    1   error
 */
 
-static int _mi_put_key_in_record(register MI_INFO *info, uint keynr, 
+static int _mi_put_key_in_record(MI_INFO *info, uint keynr, 
                                  my_bool unpack_blobs, uchar *record)
 {
-  reg2 uchar *key;
+  uchar *key;
   uchar *pos,*key_end;
-  reg1 HA_KEYSEG *keyseg;
+  HA_KEYSEG *keyseg;
   uchar *blob_ptr;
   DBUG_ENTER("_mi_put_key_in_record");
 
@@ -374,10 +363,8 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
     {
       uint length;
       get_key_length(length,key);
-#ifdef CHECK_KEYS
       if (length > keyseg->length || key+length > key_end)
 	goto err;
-#endif
       pos= record+keyseg->start;
       if (keyseg->type != (int) HA_KEYTYPE_NUM)
       {
@@ -400,10 +387,8 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
     {
       uint length;
       get_key_length(length,key);
-#ifdef CHECK_KEYS
       if (length > keyseg->length || key+length > key_end)
 	goto err;
-#endif
       /* Store key length */
       if (keyseg->bit_start == 1)
         *(uchar*) (record+keyseg->start)= (uchar) length;
@@ -417,10 +402,8 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
     {
       uint length;
       get_key_length(length,key);
-#ifdef CHECK_KEYS
       if (length > keyseg->length || key+length > key_end)
 	goto err;
-#endif
       if (unpack_blobs)
       {
         memcpy(record+keyseg->start+keyseg->bit_start,
@@ -436,10 +419,8 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
     {
       uchar *to=  record+keyseg->start+keyseg->length;
       uchar *end= key+keyseg->length;
-#ifdef CHECK_KEYS
       if (end > key_end)
 	goto err;
-#endif
       do
       {
 	 *--to= *key++;
@@ -448,10 +429,8 @@ static int _mi_put_key_in_record(register MI_INFO *info, uint keynr,
     }
     else
     {
-#ifdef CHECK_KEYS
       if (key+keyseg->length > key_end)
 	goto err;
-#endif
       memcpy(record+keyseg->start,(uchar*) key,
 	     (size_t) keyseg->length);
       key+= keyseg->length;
@@ -476,13 +455,13 @@ int _mi_read_key_record(MI_INFO *info, my_off_t filepos, uchar *buf)
       if (_mi_put_key_in_record(info, (uint)info->lastinx, TRUE, buf))
       {
         mi_print_error(info->s, HA_ERR_CRASHED);
-	my_errno=HA_ERR_CRASHED;
+	set_my_errno(HA_ERR_CRASHED);
 	return -1;
       }
       info->update|= HA_STATE_AKTIV; /* We should find a record */
       return 0;
     }
-    my_errno=HA_ERR_WRONG_INDEX;
+    set_my_errno(HA_ERR_WRONG_INDEX);
   }
   return(-1);				/* Wrong data to read */
 }
@@ -505,12 +484,12 @@ int _mi_read_key_record(MI_INFO *info, my_off_t filepos, uchar *buf)
     2   Index condition is not satisfied, end the scan. 
 */
 
-int mi_check_index_cond(register MI_INFO *info, uint keynr, uchar *record)
+int mi_check_index_cond(MI_INFO *info, uint keynr, uchar *record)
 {
   if (_mi_put_key_in_record(info, keynr, FALSE, record))
   {
     mi_print_error(info->s, HA_ERR_CRASHED);
-    my_errno=HA_ERR_CRASHED;
+    set_my_errno(HA_ERR_CRASHED);
     return -1;
   }
   return info->index_cond_func(info->index_cond_func_arg);
@@ -565,7 +544,7 @@ ulonglong retrieve_auto_increment(MI_INFO *info,const uchar *record)
   case HA_KEYTYPE_FLOAT:                        /* This shouldn't be used */
   {
     float f_1;
-    float4get(f_1,key);
+    float4get(&f_1,key);
     /* Ignore negative values */
     value = (f_1 < (float) 0.0) ? 0 : (ulonglong) f_1;
     break;
@@ -573,7 +552,7 @@ ulonglong retrieve_auto_increment(MI_INFO *info,const uchar *record)
   case HA_KEYTYPE_DOUBLE:                       /* This shouldn't be used */
   {
     double f_1;
-    float8get(f_1,key);
+    float8get(&f_1,key);
     /* Ignore negative values */
     value = (f_1 < 0.0) ? 0 : (ulonglong) f_1;
     break;

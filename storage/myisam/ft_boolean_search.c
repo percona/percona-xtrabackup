@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -199,7 +199,8 @@ static int ftb_query_add_word(MYSQL_FTPARSER_PARAM *param,
       ftbw= (FTB_WORD *)alloc_root(&ftb_param->ftb->mem_root,
                                    sizeof(FTB_WORD) +
                                    (info->trunc ? MI_MAX_KEY_BUFF :
-                                    word_len * ftb_param->ftb->charset->mbmaxlen +
+                                    (word_len + 1) *
+                                    ftb_param->ftb->charset->mbmaxlen +
                                     HA_FT_WLEN +
                                     ftb_param->ftb->info->s->rec_reflength));
       ftbw->len= word_len + 1;
@@ -331,7 +332,7 @@ static int _ftb_parse_query(FTB *ftb, uchar *query, uint len,
 }
 
 
-static int _ftb_no_dupes_cmp(const void* not_used __attribute__((unused)),
+static int _ftb_no_dupes_cmp(const void* not_used MY_ATTRIBUTE((unused)),
                              const void *a,const void *b)
 {
   return CMP_NUM((*((my_off_t*)a)), (*((my_off_t*)b)));
@@ -360,8 +361,10 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, my_bool init_search)
   int subkeys=1;
   my_bool can_go_down;
   MI_INFO *info=ftb->info;
-  uint UNINIT_VAR(off), extra= HA_FT_WLEN + info->s->rec_reflength;
+  uint off= 0, extra= HA_FT_WLEN + info->s->rec_reflength;
   uchar *lastkey_buf=ftbw->word+ftbw->off;
+  uint max_word_length= (ftbw->flags & FTB_FLAG_TRUNC) ? MI_MAX_KEY_BUFF :
+                        ((ftbw->len) * ftb->charset->mbmaxlen) + extra;
 
   if (ftbw->flags & FTB_FLAG_TRUNC)
     lastkey_buf+=ftbw->len;
@@ -421,7 +424,7 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, my_bool init_search)
              (my_bool) (ftbw->flags & FTB_FLAG_TRUNC),0);
   }
 
-  if (r) /* not found */
+  if (r || info->lastkey_length > max_word_length) /* not found */
   {
     if (!ftbw->off || !(ftbw->flags & FTB_FLAG_TRUNC))
     {
@@ -570,7 +573,8 @@ FT_INFO * ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   FTB_EXPR  *ftbe;
   FTB_WORD  *ftbw;
 
-  if (!(ftb=(FTB *)my_malloc(sizeof(FTB), MYF(MY_WME))))
+  if (!(ftb=(FTB *)my_malloc(mi_key_memory_FTB,
+                             sizeof(FTB), MYF(MY_WME))))
     return 0;
   ftb->please= (struct _ft_vft *) & _ft_vft_boolean;
   ftb->state=UNINITIALIZED;
@@ -583,7 +587,7 @@ FT_INFO * ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   memset(&ftb->no_dupes, 0, sizeof(TREE));
   ftb->last_word= 0;
 
-  init_alloc_root(&ftb->mem_root, 1024, 1024);
+  init_alloc_root(PSI_INSTRUMENT_ME, &ftb->mem_root, 1024, 1024);
   ftb->queue.max_elements= 0;
   if (!(ftbe=(FTB_EXPR *)alloc_root(&ftb->mem_root, sizeof(FTB_EXPR))))
     goto err;
@@ -640,7 +644,7 @@ typedef struct st_my_ftb_phrase_param
 
 static int ftb_phrase_add_word(MYSQL_FTPARSER_PARAM *param,
                                char *word, int word_len,
-    MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info __attribute__((unused)))
+    MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info MY_ATTRIBUTE((unused)))
 {
   MY_FTB_PHRASE_PARAM *phrase_param= param->mysql_ftparam;
   FT_WORD *w= (FT_WORD *)phrase_param->document->data;
@@ -729,7 +733,7 @@ static int _ftb_check_phrase(FTB *ftb, const uchar *document, uint len,
   param->flags= 0;
   param->mode= MYSQL_FTPARSER_WITH_STOPWORDS;
   if (unlikely(parser->parse(param)))
-    return -1;
+    DBUG_RETURN(-1);
   DBUG_RETURN(ftb_param.match ? 1 : 0);
 }
 
@@ -826,13 +830,16 @@ int ft_boolean_read_next(FT_INFO *ftb, char *record)
 
   /* black magic ON */
   if ((int) _mi_check_index(info, ftb->keynr) < 0)
-    return my_errno;
+    return my_errno();
   if (_mi_readinfo(info, F_RDLCK, 1))
-    return my_errno;
+    return my_errno();
   /* black magic OFF */
 
   if (!ftb->queue.elements)
-    return my_errno=HA_ERR_END_OF_FILE;
+  {
+    set_my_errno(HA_ERR_END_OF_FILE);
+    return HA_ERR_END_OF_FILE;
+  }
 
   /* Attention!!! Address of a local variable is used here! See err: label */
   ftb->queue.first_cmp_arg=(void *)&curdoc;
@@ -845,7 +852,7 @@ int ft_boolean_read_next(FT_INFO *ftb, char *record)
     {
       if (unlikely(_ftb_climb_the_tree(ftb, ftbw, 0)))
       {
-        my_errno= HA_ERR_OUT_OF_MEM;
+        set_my_errno(HA_ERR_OUT_OF_MEM);
         goto err;
       }
 
@@ -875,17 +882,17 @@ int ft_boolean_read_next(FT_INFO *ftb, char *record)
         if (ftb->with_scan &&
             ft_boolean_find_relevance(ftb,(uchar*) record,0)==0)
             continue; /* no match */
-        my_errno=0;
+        set_my_errno(0);
         goto err;
       }
       goto err;
     }
   }
   ftb->state=INDEX_DONE;
-  my_errno=HA_ERR_END_OF_FILE;
+  set_my_errno(HA_ERR_END_OF_FILE);
 err:
   ftb->queue.first_cmp_arg=(void *)0;
-  return my_errno;
+  return my_errno();
 }
 
 
@@ -898,7 +905,7 @@ typedef struct st_my_ftb_find_param
 
 static int ftb_find_relevance_add_word(MYSQL_FTPARSER_PARAM *param,
                                        char *word, int len,
-             MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info __attribute__((unused)))
+             MYSQL_FTPARSER_BOOLEAN_INFO *boolean_info MY_ATTRIBUTE((unused)))
 {
   MY_FTB_FIND_PARAM *ftb_param= param->mysql_ftparam;
   FT_INFO *ftb= ftb_param->ftb;

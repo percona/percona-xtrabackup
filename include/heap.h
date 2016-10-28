@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,7 +28,6 @@ extern "C" {
 #include <my_base.h>
 #endif
 
-#include <my_pthread.h>
 #include <thr_lock.h>
 
 #include "my_compare.h"
@@ -150,7 +149,6 @@ typedef struct st_heap_share
   char * name;			/* Name of "memory-file" */
   time_t create_time;
   THR_LOCK lock;
-  mysql_mutex_t intern_lock;            /* Locking for use with _locking */
   my_bool delete_on_close;
   LIST open_list;
   uint auto_key;
@@ -212,7 +210,7 @@ extern int heap_write(HP_INFO *info,const uchar *buff);
 extern int heap_update(HP_INFO *info,const uchar *old,const uchar *newdata);
 extern int heap_rrnd(HP_INFO *info,uchar *buf,uchar *pos);
 extern int heap_scan_init(HP_INFO *info);
-extern int heap_scan(register HP_INFO *info, uchar *record);
+extern int heap_scan(HP_INFO *info, uchar *record);
 extern int heap_delete(HP_INFO *info,const uchar *buff);
 extern int heap_info(HP_INFO *info,HEAPINFO *x,int flag);
 extern int heap_create(const char *name,
@@ -244,21 +242,7 @@ extern uchar * heap_find(HP_INFO *info,int inx,const uchar *key);
 extern int heap_check_heap(HP_INFO *info, my_bool print_status);
 extern uchar *heap_position(HP_INFO *info);
 
-/* The following is for programs that uses the old HEAP interface where
-   pointer to rows where a long instead of a (uchar*).
-*/
-
-#if defined(WANT_OLD_HEAP_VERSION) || defined(OLD_HEAP_VERSION)
-extern int heap_rrnd_old(HP_INFO *info,uchar *buf,ulong pos);
-extern ulong heap_position_old(HP_INFO *info);
-#endif
-#ifdef OLD_HEAP_VERSION
-typedef ulong HEAP_PTR;
-#define heap_position(A) heap_position_old(A)
-#define heap_rrnd(A,B,C) heap_rrnd_old(A,B,C)
-#else
 typedef uchar *HEAP_PTR;
-#endif
 
 #ifdef	__cplusplus
 }

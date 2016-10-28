@@ -108,22 +108,7 @@ public:
    * @return the footer.
    */
   const char* getDefaultFooter() const;
-  
-  /**
-   * Returns the date and time format used by ctime().
-   *
-   * @return the date and time format.
-   */
-  const char* getDateTimeFormat() const;
-
-  /**
-   * Sets the date and time format. It needs to have the same arguments
-   * a ctime().
-   *
-   * @param pFormat  the date and time format.
-   */
-  void setDateTimeFormat(const char* pFormat);
-  
+    
   /**
    * Returns the error code.
    */
@@ -190,8 +175,6 @@ public:
   virtual off_t getMaxSize() {return -1;};
 
 protected:
-  /** Max length of the date and time header in the log. */
-  STATIC_CONST( MAX_DATE_TIME_HEADER_LENGTH = 64 );
   /** Max length of the header the log. */
   STATIC_CONST( MAX_HEADER_LENGTH = 128 );
   /** Max lenght of footer in the log. */
@@ -219,13 +202,6 @@ protected:
   virtual void writeFooter() = 0;
   
 private: 
-  /**
-   * Returns a string date and time string.
-   * @note does not update time, uses m_now as time
-   * @param pStr a string.
-   * @return a string with date and time.
-   */
-  char* getTimeAsString(char* pStr) const;
   time_t m_now;
 
   /** Prohibit */
@@ -233,7 +209,6 @@ private:
   LogHandler* operator = (const LogHandler&);
   bool operator == (const LogHandler&);
 
-  const char* m_pDateTimeFormat;
   int m_errorCode;
   char* m_errorStr;
 

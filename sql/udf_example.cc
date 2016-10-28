@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -119,11 +119,11 @@
 #include <algorithm>
 
 #if defined(MYSQL_SERVER)
-#include <m_string.h>		/* To get strmov() */
+#include <m_string.h>		/* To get my_stpcpy() */
 #else
 /* when compiled as standalone */
 #include <string.h>
-#define strmov(a,b) stpcpy(a,b)
+#define my_stpcpy(a,b) stpcpy(a,b)
 #endif
 
 #include <mysql.h>
@@ -137,7 +137,7 @@
 #ifdef HAVE_DLOPEN
 
 #if !defined(HAVE_GETHOSTBYADDR_R) || !defined(HAVE_SOLARIS_STYLE_GETHOST)
-static pthread_mutex_t LOCK_hostname;
+static native_mutex_t LOCK_hostname;
 #endif
 
 /* These must be right or mysqld will not find the symbol! */
@@ -227,7 +227,7 @@ my_bool metaphon_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 ****************************************************************************/
 
 
-void metaphon_deinit(UDF_INIT *initid __attribute__((unused)))
+void metaphon_deinit(UDF_INIT *initid MY_ATTRIBUTE((unused)))
 {
 }
 
@@ -273,9 +273,9 @@ static char codes[26] =  {
 #define NOGHTOF(x)  (codes[(x) - 'A'] & 16)	/* BDH */
 
 
-char *metaphon(UDF_INIT *initid __attribute__((unused)),
+char *metaphon(UDF_INIT *initid MY_ATTRIBUTE((unused)),
                UDF_ARGS *args, char *result, unsigned long *length,
-               char *is_null, char *error __attribute__((unused)))
+               char *is_null, char *error MY_ATTRIBUTE((unused)))
 {
   const char *word=args->args[0];
   const char *w_end;
@@ -397,7 +397,7 @@ char *metaphon(UDF_INIT *initid __attribute__((unused)),
 		  *result++ = (( n == n_start &&
 				 !ISVOWEL ( n[2])) ||
 			       *( n - 1 ) == 'S' ) ?
-		    (char)'K' : (char)'X';
+		    'K' : 'X';
 		else
 		  *result++ = 'K';
 	  }
@@ -407,7 +407,7 @@ char *metaphon(UDF_INIT *initid __attribute__((unused)),
 	  *result++ =
 	    ( n[1] == 'G' &&
 	      MAKESOFT ( n[2])) ?
-	    (char)'J' : (char)'T';
+	    'J' : 'T';
 	  break;
 
 	case 'G':   /* complicated, see table in text */
@@ -430,7 +430,7 @@ char *metaphon(UDF_INIT *initid __attribute__((unused)),
 	    *result++ =
 	      ( MAKESOFT ( *( n  + 1 )) &&
 		n[2] != 'G' ) ?
-	      (char)'J' : (char)'K';
+	      'J' : 'K';
 	  else
 	    if ( n[1] == 'H'   &&
 		!NOGHTOF( *( n - 3 )) &&
@@ -454,7 +454,7 @@ char *metaphon(UDF_INIT *initid __attribute__((unused)),
 
 	case 'P':    /* PH = F, else P = P */
 	  *result++ = *( n +  1 ) == 'H'
-	    ? (char)'F' : (char)'P';
+	    ? 'F' : 'P';
 	  break;
 	case 'Q':   /* Q = K (U after Q is already gone */
 	  *result++ = 'K';
@@ -465,7 +465,7 @@ char *metaphon(UDF_INIT *initid __attribute__((unused)),
 			( *(n  + 1) == 'I' &&
 			  ( n[2] == 'O' ||
 			    n[2] == 'A')))  ?
-	    (char)'X' : (char)'S';
+	    'X' : 'S';
 	  break;
 
 	case 'T':  /* TIO, TIA = X ("sh" sound) */
@@ -550,8 +550,8 @@ my_bool myfunc_double_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 }
 
 
-double myfunc_double(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
-                     char *is_null, char *error __attribute__((unused)))
+double myfunc_double(UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
+                     char *is_null, char *error MY_ATTRIBUTE((unused)))
 {
   unsigned long val = 0;
   unsigned long v = 0;
@@ -589,9 +589,9 @@ double myfunc_double(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
 
 /* This function returns the sum of all arguments */
 
-longlong myfunc_int(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
-                    char *is_null __attribute__((unused)),
-                    char *error __attribute__((unused)))
+longlong myfunc_int(UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
+                    char *is_null MY_ATTRIBUTE((unused)),
+                    char *error MY_ATTRIBUTE((unused)))
 {
   longlong val = 0;
   uint i;
@@ -621,9 +621,9 @@ longlong myfunc_int(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
   At least one of _init/_deinit is needed unless the server is started
   with --allow_suspicious_udfs.
 */
-my_bool myfunc_int_init(UDF_INIT *initid __attribute__((unused)),
-                        UDF_ARGS *args __attribute__((unused)),
-                        char *message __attribute__((unused)))
+my_bool myfunc_int_init(UDF_INIT *initid MY_ATTRIBUTE((unused)),
+                        UDF_ARGS *args MY_ATTRIBUTE((unused)),
+                        char *message MY_ATTRIBUTE((unused)))
 {
   return 0;
 }
@@ -637,7 +637,7 @@ my_bool sequence_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 {
   if (args->arg_count > 1)
   {
-    strmov(message,"This function takes none or 1 argument");
+    my_stpcpy(message,"This function takes none or 1 argument");
     return 1;
   }
   if (args->arg_count)
@@ -645,7 +645,7 @@ my_bool sequence_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 
   if (!(initid->ptr=(char*) malloc(sizeof(longlong))))
   {
-    strmov(message,"Couldn't allocate memory");
+    my_stpcpy(message,"Couldn't allocate memory");
     return 1;
   }
   memset(initid->ptr, 0, sizeof(longlong));
@@ -663,9 +663,9 @@ void sequence_deinit(UDF_INIT *initid)
     free(initid->ptr);
 }
 
-longlong sequence(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
-                  char *is_null __attribute__((unused)),
-                  char *error __attribute__((unused)))
+longlong sequence(UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
+                  char *is_null MY_ATTRIBUTE((unused)),
+                  char *error MY_ATTRIBUTE((unused)))
 {
   ulonglong val=0;
   if (args->arg_count)
@@ -683,13 +683,17 @@ longlong sequence(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
 **
 ****************************************************************************/
 
-#ifdef __WIN__
-#include <winsock2.h>
-#else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#ifndef _WIN32
 #include <netdb.h>
+#endif
+#ifdef HAVE_ARPA_INET_H
+#include <arpa/inet.h>
+#endif
+#ifdef HAVE_NETINET_IN_H
+#include <netinet/in.h>
+#endif
+#ifdef HAVE_SYS_SOCKET_H
+#include <sys/socket.h>
 #endif
 
 C_MODE_START;
@@ -716,27 +720,27 @@ my_bool lookup_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 {
   if (args->arg_count != 1 || args->arg_type[0] != STRING_RESULT)
   {
-    strmov(message,"Wrong arguments to lookup;  Use the source");
+    my_stpcpy(message,"Wrong arguments to lookup;  Use the source");
     return 1;
   }
   initid->max_length=11;
   initid->maybe_null=1;
 #if !defined(HAVE_GETHOSTBYADDR_R) || !defined(HAVE_SOLARIS_STYLE_GETHOST)
-  (void) pthread_mutex_init(&LOCK_hostname,MY_MUTEX_INIT_SLOW);
+  (void) native_mutex_init(&LOCK_hostname,MY_MUTEX_INIT_SLOW);
 #endif
   return 0;
 }
 
-void lookup_deinit(UDF_INIT *initid __attribute__((unused)))
+void lookup_deinit(UDF_INIT *initid MY_ATTRIBUTE((unused)))
 {
 #if !defined(HAVE_GETHOSTBYADDR_R) || !defined(HAVE_SOLARIS_STYLE_GETHOST)
-  (void) pthread_mutex_destroy(&LOCK_hostname);
+  (void) native_mutex_destroy(&LOCK_hostname);
 #endif
 }
 
-char *lookup(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
+char *lookup(UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
              char *result, unsigned long *res_length, char *null_value,
-             char *error __attribute__((unused)))
+             char *error MY_ATTRIBUTE((unused)))
 {
   uint length;
   char name_buff[256];
@@ -765,17 +769,17 @@ char *lookup(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
     return 0;
   }
 #else
-  pthread_mutex_lock(&LOCK_hostname);
+  native_mutex_lock(&LOCK_hostname);
   if (!(hostent= gethostbyname((char*) name_buff)))
   {
-    pthread_mutex_unlock(&LOCK_hostname);
+    native_mutex_unlock(&LOCK_hostname);
     *null_value= 1;
     return 0;
   }
-  pthread_mutex_unlock(&LOCK_hostname);
+  native_mutex_unlock(&LOCK_hostname);
 #endif
   memcpy(&in, *hostent->h_addr_list, sizeof(in.s_addr));
-  *res_length= (ulong) (strmov(result, inet_ntoa(in)) - result);
+  *res_length= (ulong) (my_stpcpy(result, inet_ntoa(in)) - result);
   return result;
 }
 
@@ -795,28 +799,28 @@ my_bool reverse_lookup_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
       INT_RESULT;
   else
   {
-    strmov(message,
+    my_stpcpy(message,
 	   "Wrong number of arguments to reverse_lookup;  Use the source");
     return 1;
   }
   initid->max_length=32;
   initid->maybe_null=1;
 #if !defined(HAVE_GETHOSTBYADDR_R) || !defined(HAVE_SOLARIS_STYLE_GETHOST)
-  (void) pthread_mutex_init(&LOCK_hostname,MY_MUTEX_INIT_SLOW);
+  (void) native_mutex_init(&LOCK_hostname,MY_MUTEX_INIT_SLOW);
 #endif
   return 0;
 }
 
-void reverse_lookup_deinit(UDF_INIT *initid __attribute__((unused)))
+void reverse_lookup_deinit(UDF_INIT *initid MY_ATTRIBUTE((unused)))
 {
 #if !defined(HAVE_GETHOSTBYADDR_R) || !defined(HAVE_SOLARIS_STYLE_GETHOST)
-  (void) pthread_mutex_destroy(&LOCK_hostname);
+  (void) native_mutex_destroy(&LOCK_hostname);
 #endif
 }
 
-char *reverse_lookup(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
+char *reverse_lookup(UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
                      char *result, unsigned long *res_length,
-                     char *null_value, char *error __attribute__((unused)))
+                     char *null_value, char *error MY_ATTRIBUTE((unused)))
 {
 #if defined(HAVE_GETHOSTBYADDR_R) && defined(HAVE_SOLARIS_STYLE_GETHOST)
   char name_buff[256];
@@ -869,16 +873,16 @@ char *reverse_lookup(UDF_INIT *initid __attribute__((unused)), UDF_ARGS *args,
     return 0;
   }
 #else
-  pthread_mutex_lock(&LOCK_hostname);
+  native_mutex_lock(&LOCK_hostname);
   if (!(hp= gethostbyaddr((char*) &taddr, sizeof(taddr), AF_INET)))
   {
-    pthread_mutex_unlock(&LOCK_hostname);
+    native_mutex_unlock(&LOCK_hostname);
     *null_value= 1;
     return 0;
   }
-  pthread_mutex_unlock(&LOCK_hostname);
+  native_mutex_unlock(&LOCK_hostname);
 #endif
-  *res_length=(ulong) (strmov(result,hp->h_name) - result);
+  *res_length=(ulong) (my_stpcpy(result,hp->h_name) - result);
   return result;
 }
 
@@ -939,7 +943,7 @@ avgcost_init( UDF_INIT* initid, UDF_ARGS* args, char* message )
 
   if (!(data = new (std::nothrow) avgcost_data))
   {
-    strmov(message,"Couldn't allocate memory");
+    my_stpcpy(message,"Couldn't allocate memory");
     return 1;
   }
   data->totalquantity	= 0;
@@ -970,8 +974,8 @@ avgcost_reset(UDF_INIT* initid, UDF_ARGS* args, char* is_null, char* message)
 /* This is needed to get things to work in MySQL 4.1.1 and above */
 
 void
-avgcost_clear(UDF_INIT* initid, char* is_null __attribute__((unused)),
-              char* message __attribute__((unused)))
+avgcost_clear(UDF_INIT* initid, char* is_null MY_ATTRIBUTE((unused)),
+              char* message MY_ATTRIBUTE((unused)))
 {
   struct avgcost_data* data = (struct avgcost_data*)initid->ptr;
   data->totalprice=	0.0;
@@ -982,8 +986,8 @@ avgcost_clear(UDF_INIT* initid, char* is_null __attribute__((unused)),
 
 void
 avgcost_add(UDF_INIT* initid, UDF_ARGS* args,
-            char* is_null __attribute__((unused)),
-            char* message __attribute__((unused)))
+            char* is_null MY_ATTRIBUTE((unused)),
+            char* message MY_ATTRIBUTE((unused)))
 {
   if (args->args[0] && args->args[1])
   {
@@ -1029,8 +1033,8 @@ avgcost_add(UDF_INIT* initid, UDF_ARGS* args,
 
 
 double
-avgcost( UDF_INIT* initid, UDF_ARGS* args __attribute__((unused)),
-         char* is_null, char* error __attribute__((unused)))
+avgcost( UDF_INIT* initid, UDF_ARGS* args MY_ATTRIBUTE((unused)),
+         char* is_null, char* error MY_ATTRIBUTE((unused)))
 {
   struct avgcost_data* data = (struct avgcost_data*)initid->ptr;
   if (!data->count || !data->totalquantity)
@@ -1054,7 +1058,7 @@ my_bool myfunc_argument_name_init(UDF_INIT *initid, UDF_ARGS *args,
 {
   if (args->arg_count != 1)
   {
-    strmov(message,"myfunc_argument_name_init accepts only one argument");
+    my_stpcpy(message,"myfunc_argument_name_init accepts only one argument");
     return 1;
   }
   initid->max_length= args->attribute_lengths[0];
@@ -1063,10 +1067,10 @@ my_bool myfunc_argument_name_init(UDF_INIT *initid, UDF_ARGS *args,
   return 0;
 }
 
-char *myfunc_argument_name(UDF_INIT *initid __attribute__((unused)),
+char *myfunc_argument_name(UDF_INIT *initid MY_ATTRIBUTE((unused)),
                            UDF_ARGS *args, char *result,
                            unsigned long *length, char *null_value,
-                           char *error __attribute__((unused)))
+                           char *error MY_ATTRIBUTE((unused)))
 {
   if (!args->attributes[0])
   {
@@ -1087,16 +1091,16 @@ my_bool is_const_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 {
   if (args->arg_count != 1)
   {
-    strmov(message, "IS_CONST accepts only one argument");
+    my_stpcpy(message, "IS_CONST accepts only one argument");
     return 1;
   }
   initid->ptr= (char*)((args->args[0] != NULL) ? 1UL : 0);
   return 0;
 }
 
-char * is_const(UDF_INIT *initid, UDF_ARGS *args __attribute__((unused)),
+char * is_const(UDF_INIT *initid, UDF_ARGS *args MY_ATTRIBUTE((unused)),
                 char *result, unsigned long *length,
-                char *is_null, char *error __attribute__((unused)))
+                char *is_null, char *error MY_ATTRIBUTE((unused)))
 {
   if (initid->ptr != 0) {
     sprintf(result, "const");
@@ -1115,7 +1119,7 @@ my_bool check_const_len_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 {
   if (args->arg_count != 1)
   {
-    strmov(message, "CHECK_CONST_LEN accepts only one argument");
+    my_stpcpy(message, "CHECK_CONST_LEN accepts only one argument");
     return 1;
   }
   if (args->args[0] == 0)
@@ -1135,11 +1139,11 @@ my_bool check_const_len_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 }
 
 extern "C"
-char * check_const_len(UDF_INIT *initid, UDF_ARGS *args __attribute__((unused)),
+char * check_const_len(UDF_INIT *initid, UDF_ARGS *args MY_ATTRIBUTE((unused)),
                 char *result, unsigned long *length,
-                char *is_null, char *error __attribute__((unused)))
+                char *is_null, char *error MY_ATTRIBUTE((unused)))
 {
-  strmov(result, initid->ptr);
+  my_stpcpy(result, initid->ptr);
   *length= (uint) strlen(result);
   *is_null= 0;
   return result;
@@ -1168,7 +1172,7 @@ my_bool  my_median_init  (UDF_INIT *initid, UDF_ARGS *args, char *message)
   My_median_data *data= new (std::nothrow) My_median_data;
   if (!data)
   {
-    strmov(message,"Could not allocate memory");
+    my_stpcpy(message,"Could not allocate memory");
     return true;
   }
   initid->ptr= static_cast<char*>(static_cast<void*>(data));
@@ -1183,8 +1187,8 @@ void my_median_deinit(UDF_INIT* initid)
 }
 
 void my_median_add(UDF_INIT* initid, UDF_ARGS* args,
-                   char* is_null __attribute__((unused)),
-                   char* message __attribute__((unused)))
+                   char* is_null MY_ATTRIBUTE((unused)),
+                   char* message MY_ATTRIBUTE((unused)))
 {
   My_median_data *data=
     static_cast<My_median_data*>(static_cast<void*>(initid->ptr));
@@ -1197,8 +1201,8 @@ void my_median_add(UDF_INIT* initid, UDF_ARGS* args,
 }
 
 void my_median_clear(UDF_INIT* initid, UDF_ARGS* args,
-                     char* is_null __attribute__((unused)),
-                     char* message __attribute__((unused)))
+                     char* is_null MY_ATTRIBUTE((unused)),
+                     char* message MY_ATTRIBUTE((unused)))
 {
   My_median_data *data=
     static_cast<My_median_data*>(static_cast<void*>(initid->ptr));
@@ -1207,7 +1211,7 @@ void my_median_clear(UDF_INIT* initid, UDF_ARGS* args,
 
 longlong my_median(UDF_INIT* initid, UDF_ARGS* args,
                    char* is_null,
-                   char* message __attribute__((unused)))
+                   char* message MY_ATTRIBUTE((unused)))
 {
   My_median_data *data=
     static_cast<My_median_data*>(static_cast<void*>(initid->ptr));

@@ -28,8 +28,8 @@
 
 uchar *hp_find_block(HP_BLOCK *block, ulong pos)
 {
-  reg1 int i;
-  reg3 HP_PTRS *ptr; /* block base ptr */
+  int i;
+  HP_PTRS *ptr; /* block base ptr */
 
   for (i=block->levels-1, ptr=block->root ; i > 0 ; i--)
   {
@@ -56,7 +56,7 @@ uchar *hp_find_block(HP_BLOCK *block, ulong pos)
 
 int hp_get_new_block(HP_BLOCK *block, size_t *alloc_length)
 {
-  reg1 uint i,j;
+  uint i,j;
   HP_PTRS *root;
 
   for (i=0 ; i < block->levels ; i++)
@@ -77,7 +77,8 @@ int hp_get_new_block(HP_BLOCK *block, size_t *alloc_length)
    */
   *alloc_length= sizeof(HP_PTRS)* i + (ulonglong) block->records_in_block *
                                               block->recbuffer;
-  if (!(root=(HP_PTRS*) my_malloc(*alloc_length,MYF(MY_WME))))
+  if (!(root=(HP_PTRS*) my_malloc(hp_key_memory_HP_PTRS,
+                                  *alloc_length,MYF(MY_WME))))
     return 1;
 
   if (i == 0)

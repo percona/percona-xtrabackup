@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -53,7 +53,7 @@
 
 
 GET_FILENAME_COMPONENT(MYSQL_CMAKE_SCRIPT_DIR ${CMAKE_CURRENT_LIST_FILE} PATH)
-IF(WIN32 OR CYGWIN OR APPLE OR WITH_PIC OR DISABLE_SHARED OR NOT CMAKE_SHARED_LIBRARY_C_FLAGS)
+IF(WIN32 OR APPLE OR WITH_PIC OR DISABLE_SHARED OR NOT CMAKE_SHARED_LIBRARY_C_FLAGS)
  SET(_SKIP_PIC 1)
 ENDIF()
 
@@ -155,10 +155,15 @@ MACRO(MERGE_STATIC_LIBS TARGET OUTPUT_NAME LIBS_TO_MERGE)
       ENDIF()
     ENDIF()
   ENDFOREACH()
+
   IF(OSLIBS)
     LIST(REMOVE_DUPLICATES OSLIBS)
     TARGET_LINK_LIBRARIES(${TARGET} ${OSLIBS})
     MESSAGE(STATUS "Library ${TARGET} depends on OSLIBS ${OSLIBS}")
+  ENDIF()
+
+  IF(STATIC_LIBS)
+    LIST(REMOVE_DUPLICATES STATIC_LIBS)
   ENDIF()
 
   # Make the generated dummy source file depended on all static input
@@ -188,7 +193,7 @@ MACRO(MERGE_STATIC_LIBS TARGET OUTPUT_NAME LIBS_TO_MERGE)
         ${STATIC_LIBS}
       )  
     ELSE()
-      # Generic Unix, Cygwin or MinGW. In post-build step, call
+      # Generic Unix or MinGW. In post-build step, call
       # script, that extracts objects from archives with "ar x" 
       # and repacks them with "ar r"
       SET(TARGET ${TARGET})
@@ -287,21 +292,14 @@ FUNCTION(GET_DEPENDEND_OS_LIBS target result)
   SET(${result} ${ret} PARENT_SCOPE)
 ENDFUNCTION()
 
-# We try to hide the symbols in yassl/zlib to avoid name clashes with
-# other libraries like openssl.
-FUNCTION(RESTRICT_SYMBOL_EXPORTS target)
+INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
+
+FUNCTION(RESTRICT_SYMBOL_SOURCE target)
   IF(CMAKE_COMPILER_IS_GNUCXX AND UNIX)
     SET(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -Werror")
     CHECK_C_COMPILER_FLAG("-fvisibility=hidden" HAVE_VISIBILITY_HIDDEN)
     IF(HAVE_VISIBILITY_HIDDEN)
-      MESSAGE(STATUS "HAVE_VISIBILITY_HIDDEN")
-      GET_TARGET_PROPERTY(COMPILE_FLAGS ${target} COMPILE_FLAGS)
-      IF(NOT COMPILE_FLAGS)
-        # Avoid COMPILE_FLAGS-NOTFOUND
-        SET(COMPILE_FLAGS)
-      ENDIF()
-      SET_TARGET_PROPERTIES(${target} PROPERTIES 
-        COMPILE_FLAGS "${COMPILE_FLAGS} -fvisibility=hidden")
+      ADD_COMPILE_FLAGS(${target} COMPILE_FLAGS "-fvisibility=hidden")
     ENDIF()
   ENDIF()
 ENDFUNCTION()

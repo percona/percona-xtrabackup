@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,7 +23,9 @@
 */
 
 #include "sql_data_change.h"
-#include "sql_class.h"
+
+#include "sql_class.h"  // THD
+#include "table.h"      // TABLE
 
 /**
    Allocates and initializes a MY_BITMAP bitmap, containing one bit per column
@@ -106,8 +108,8 @@ bool COPY_INFO::get_function_default_columns(TABLE *table)
       Item *lvalue_item;
       while ((lvalue_item= lvalue_it++) != NULL)
         lvalue_item->walk(&Item::remove_column_from_bitmap,
-                          true,
-                          reinterpret_cast<uchar*>(m_function_default_columns));
+                      Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
+                      reinterpret_cast<uchar*>(m_function_default_columns));
     }
   }
 
@@ -139,6 +141,14 @@ void COPY_INFO::set_function_defaults(TABLE *table)
         break;
       }
     }
+
+  /**
+    @todo combine this call to update_generated_write_fields() with the
+    one in fill_record() to avoid updating virtual generated fields twice.
+  */
+  if (table->has_gcol())
+    update_generated_write_fields(table->write_set, table);
+
   DBUG_VOID_RETURN;
 }
 

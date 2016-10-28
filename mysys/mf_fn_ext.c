@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@
     name		Name of file
 
   DESCRIPTION
-    The extension is defined as everything after the first extension character
+    The extension is defined as everything after the last extension character
     (normally '.') after the directory name.
 
   RETURN VALUES
@@ -35,11 +35,11 @@
 
 char *fn_ext(const char *name)
 {
-  register const char *pos, *gpos;
+  const char *pos, *gpos;
   DBUG_ENTER("fn_ext");
   DBUG_PRINT("mfunkt",("name: '%s'",name));
 
-#if defined(FN_DEVCHAR) || defined(BASKSLASH_MBTAIL)
+#if defined(FN_DEVCHAR) || defined(_WIN32)
   {
     char buff[FN_REFLEN];
     size_t res_length;
@@ -49,6 +49,6 @@ char *fn_ext(const char *name)
   if (!(gpos= strrchr(name, FN_LIBCHAR)))
     gpos= name;
 #endif
-  pos=strchr(gpos,FN_EXTCHAR);
+  pos=strrchr(gpos,FN_EXTCHAR);
   DBUG_RETURN((char*) (pos ? pos : strend(gpos)));
 } /* fn_ext */

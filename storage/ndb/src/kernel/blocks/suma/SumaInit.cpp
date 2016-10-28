@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
 
 #include <Properties.hpp>
 #include <Configuration.hpp>
+
+#define JAM_FILE_ID 468
+
 
 Suma::Suma(Block_context& ctx) :
   SimulatedBlock(SUMA, ctx),
@@ -154,6 +157,26 @@ Suma::Suma(Block_context& ctx) :
 Suma::~Suma()
 {
   c_page_pool.clear();
+}
+
+bool
+Suma::getParam(const char * param, Uint32 * retVal)
+{
+  if (param != NULL && retVal != NULL)
+  {
+    if (strcmp(param, "FragmentSendPool") == 0)
+    {
+      /* FragmentSendPool
+       * We increase the size of the fragment send pool
+       * to possibly handle max number of SQL nodes
+       * being subscribers
+       */
+
+      *retVal= MAX_NODES;
+      return true;
+    }
+  }
+  return false;
 }
 
 BLOCK_FUNCTIONS(Suma)

@@ -20,9 +20,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <my_base.h>
 #include <my_getopt.h>
+#include <my_dir.h>
 #include "common.h"
 #include "xbcrypt.h"
 #include <gcrypt.h>
+#include <string.h>
 
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
 
@@ -94,7 +96,7 @@ static struct my_option my_long_options[] =
 	{"encrypt-chunk-size", 's', "Size of working buffer for encryption in"
 	 " bytes. The default value is 64K.",
 	 &opt_encrypt_chunk_size, &opt_encrypt_chunk_size, 0,
-	GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULONGLONG_MAX, 0, 0, 0},
+	GET_ULL, REQUIRED_ARG, (1 << 16), 1024, ULLONG_MAX, 0, 0, 0},
 
 	{"verbose", 'v', "Display verbose status output.",
 	 &opt_verbose, &opt_verbose,
@@ -370,12 +372,14 @@ mode_decrypt(File filein, File fileout)
 
 			if (decryptbufsize < originalsize) {
 				if (decryptbufsize) {
-					decryptbuf = my_realloc(decryptbuf,
+					decryptbuf = my_realloc(PSI_NOT_INSTRUMENTED,
+								decryptbuf,
 								originalsize,
 								MYF(MY_WME));
 					decryptbufsize = originalsize;
 				} else {
-					decryptbuf = my_malloc(originalsize,
+					decryptbuf = my_malloc(PSI_NOT_INSTRUMENTED,
+							       originalsize,
 							       MYF(MY_WME));
 					decryptbufsize = originalsize;
 				}
@@ -501,11 +505,11 @@ mode_encrypt(File filein, File fileout)
 		goto err;
 	}
 
-	ivbuf = my_malloc(encrypt_iv_len, MYF(MY_FAE));
+	ivbuf = my_malloc(PSI_NOT_INSTRUMENTED, encrypt_iv_len, MYF(MY_FAE));
 
 	/* now read in data in chunk size, encrypt and write out */
 	chunkbuflen = opt_encrypt_chunk_size;
-	chunkbuf = my_malloc(chunkbuflen, MYF(MY_FAE));
+	chunkbuf = my_malloc(PSI_NOT_INSTRUMENTED, chunkbuflen, MYF(MY_FAE));
 	while ((bytesread = my_read(filein, chunkbuf, chunkbuflen,
 				    MYF(MY_WME))) > 0) {
 
@@ -535,12 +539,14 @@ mode_encrypt(File filein, File fileout)
 
 			if (encryptbuflen < bytesread) {
 				if (encryptbuflen) {
-					encryptbuf = my_realloc(encryptbuf,
+					encryptbuf = my_realloc(PSI_NOT_INSTRUMENTED,
+								encryptbuf,
 								bytesread,
 								MYF(MY_WME));
 					encryptbuflen = bytesread;
 				} else {
-					encryptbuf = my_malloc(bytesread,
+					encryptbuf = my_malloc(PSI_NOT_INSTRUMENTED,
+							       bytesread,
 							       MYF(MY_WME));
 					encryptbuflen = bytesread;
 				}

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2013, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2012, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -23,10 +23,12 @@ Code used for background table and index stats gathering.
 Created Apr 25, 2012 Vasil Dimov
 *******************************************************/
 
-#include "row0mysql.h"
-#include "srv0start.h"
+#include "dict0dict.h"
 #include "dict0stats.h"
 #include "dict0stats_bg.h"
+#include "row0mysql.h"
+#include "srv0start.h"
+#include "ut0new.h"
 
 #ifdef UNIV_NONINL
 # include "dict0stats_bg.ic"
@@ -40,24 +42,47 @@ Created Apr 25, 2012 Vasil Dimov
 #define SHUTTING_DOWN()		(srv_shutdown_state != SRV_SHUTDOWN_NONE)
 
 /** Event to wake up the stats thread */
-UNIV_INTERN os_event_t		dict_stats_event = NULL;
+os_event_t			dict_stats_event = NULL;
+
+#ifdef UNIV_DEBUG
+/** Used by SET GLOBAL innodb_dict_stats_disabled_debug = 1; */
+my_bool				innodb_dict_stats_disabled_debug;
+
+static os_event_t		dict_stats_disabled_event;
+#endif /* UNIV_DEBUG */
 
 /** This mutex protects the "recalc_pool" variable. */
 static ib_mutex_t		recalc_pool_mutex;
-#ifdef HAVE_PSI_INTERFACE
-static mysql_pfs_key_t		recalc_pool_mutex_key;
-#endif /* HAVE_PSI_INTERFACE */
 
 /** The number of tables that can be added to "recalc_pool" before
 it is enlarged */
-static const ulint RECALC_POOL_INITIAL_SLOTS = 128;
+static const ulint		RECALC_POOL_INITIAL_SLOTS = 128;
+
+/** Allocator type, used by std::vector */
+typedef ut_allocator<table_id_t>
+	recalc_pool_allocator_t;
 
 /** The multitude of tables whose stats are to be automatically
 recalculated - an STL vector */
-typedef std::vector<table_id_t>	recalc_pool_t;
-static recalc_pool_t		recalc_pool;
+typedef std::vector<table_id_t, recalc_pool_allocator_t>
+	recalc_pool_t;
 
-typedef recalc_pool_t::iterator	recalc_pool_iterator_t;
+/** Iterator type for iterating over the elements of objects of type
+recalc_pool_t. */
+typedef recalc_pool_t::iterator
+	recalc_pool_iterator_t;
+
+/** Pool where we store information on which tables are to be processed
+by background statistics gathering. */
+static recalc_pool_t*		recalc_pool;
+
+/** Variable to initiate shutdown the dict stats thread. Note we don't
+use 'srv_shutdown_state' because we want to shutdown dict stats thread
+before purge thread. */
+static bool dict_stats_start_shutdown;
+
+/** Event to wait for shutdown of the dict stats thread */
+static os_event_t dict_stats_shutdown_event;
 
 /*****************************************************************//**
 Initialize the recalc pool, called once during thread initialization. */
@@ -68,7 +93,11 @@ dict_stats_recalc_pool_init()
 {
 	ut_ad(!srv_read_only_mode);
 
-	recalc_pool.reserve(RECALC_POOL_INITIAL_SLOTS);
+	const PSI_memory_key	key = mem_key_dict_stats_bg_recalc_pool_t;
+
+	recalc_pool = UT_NEW(recalc_pool_t(recalc_pool_allocator_t(key)), key);
+
+	recalc_pool->reserve(RECALC_POOL_INITIAL_SLOTS);
 }
 
 /*****************************************************************//**
@@ -81,7 +110,9 @@ dict_stats_recalc_pool_deinit()
 {
 	ut_ad(!srv_read_only_mode);
 
-	recalc_pool.clear();
+	recalc_pool->clear();
+
+	UT_DELETE(recalc_pool);
 }
 
 /*****************************************************************//**
@@ -90,7 +121,6 @@ background stats gathering thread. Only the table id is added to the
 list, so the table can be closed after being enqueued and it will be
 opened when needed. If the table does not exist later (has been DROPped),
 then it will be removed from the pool and skipped. */
-UNIV_INTERN
 void
 dict_stats_recalc_pool_add(
 /*=======================*/
@@ -101,8 +131,8 @@ dict_stats_recalc_pool_add(
 	mutex_enter(&recalc_pool_mutex);
 
 	/* quit if already in the list */
-	for (recalc_pool_iterator_t iter = recalc_pool.begin();
-	     iter != recalc_pool.end();
+	for (recalc_pool_iterator_t iter = recalc_pool->begin();
+	     iter != recalc_pool->end();
 	     ++iter) {
 
 		if (*iter == table->id) {
@@ -111,7 +141,7 @@ dict_stats_recalc_pool_add(
 		}
 	}
 
-	recalc_pool.push_back(table->id);
+	recalc_pool->push_back(table->id);
 
 	mutex_exit(&recalc_pool_mutex);
 
@@ -133,14 +163,14 @@ dict_stats_recalc_pool_get(
 
 	mutex_enter(&recalc_pool_mutex);
 
-	if (recalc_pool.empty()) {
+	if (recalc_pool->empty()) {
 		mutex_exit(&recalc_pool_mutex);
 		return(false);
 	}
 
-	*id = recalc_pool[0];
+	*id = recalc_pool->at(0);
 
-	recalc_pool.erase(recalc_pool.begin());
+	recalc_pool->erase(recalc_pool->begin());
 
 	mutex_exit(&recalc_pool_mutex);
 
@@ -150,7 +180,6 @@ dict_stats_recalc_pool_get(
 /*****************************************************************//**
 Delete a given table from the auto recalc pool.
 dict_stats_recalc_pool_del() */
-UNIV_INTERN
 void
 dict_stats_recalc_pool_del(
 /*=======================*/
@@ -163,13 +192,13 @@ dict_stats_recalc_pool_del(
 
 	ut_ad(table->id > 0);
 
-	for (recalc_pool_iterator_t iter = recalc_pool.begin();
-	     iter != recalc_pool.end();
+	for (recalc_pool_iterator_t iter = recalc_pool->begin();
+	     iter != recalc_pool->end();
 	     ++iter) {
 
 		if (*iter == table->id) {
 			/* erase() invalidates the iterator */
-			recalc_pool.erase(iter);
+			recalc_pool->erase(iter);
 			break;
 		}
 	}
@@ -186,7 +215,6 @@ The background stats thread is guaranteed not to start using the specified
 table after this function returns and before the caller unlocks the data
 dictionary because it sets the BG_STAT_IN_PROGRESS bit in table->stats_bg_flag
 under dict_sys->mutex. */
-UNIV_INTERN
 void
 dict_stats_wait_bg_to_stop_using_table(
 /*===================================*/
@@ -202,14 +230,16 @@ dict_stats_wait_bg_to_stop_using_table(
 /*****************************************************************//**
 Initialize global variables needed for the operation of dict_stats_thread()
 Must be called before dict_stats_thread() is started. */
-UNIV_INTERN
 void
 dict_stats_thread_init()
 /*====================*/
 {
 	ut_a(!srv_read_only_mode);
 
-	dict_stats_event = os_event_create();
+	dict_stats_event = os_event_create(0);
+	dict_stats_shutdown_event = os_event_create(0);
+
+	ut_d(dict_stats_disabled_event = os_event_create(0));
 
 	/* The recalc_pool_mutex is acquired from:
 	1) the background stats gathering thread before any other latch
@@ -224,8 +254,8 @@ dict_stats_thread_init()
 	   and dict_operation_lock (SYNC_DICT_OPERATION) have been locked
 	   (thus a level <SYNC_DICT && <SYNC_DICT_OPERATION would do)
 	So we choose SYNC_STATS_AUTO_RECALC to be about below SYNC_DICT. */
-	mutex_create(recalc_pool_mutex_key, &recalc_pool_mutex,
-		     SYNC_STATS_AUTO_RECALC);
+
+	mutex_create(LATCH_ID_RECALC_POOL, &recalc_pool_mutex);
 
 	dict_stats_recalc_pool_init();
 }
@@ -233,7 +263,6 @@ dict_stats_thread_init()
 /*****************************************************************//**
 Free resources allocated by dict_stats_thread_init(), must be called
 after dict_stats_thread() has exited. */
-UNIV_INTERN
 void
 dict_stats_thread_deinit()
 /*======================*/
@@ -244,10 +273,17 @@ dict_stats_thread_deinit()
 	dict_stats_recalc_pool_deinit();
 
 	mutex_free(&recalc_pool_mutex);
-	memset(&recalc_pool_mutex, 0x0, sizeof(recalc_pool_mutex));
 
-	os_event_free(dict_stats_event);
+#ifdef UNIV_DEBUG
+	os_event_destroy(dict_stats_disabled_event);
+	dict_stats_disabled_event = NULL;
+#endif /* UNIV_DEBUG */
+
+	os_event_destroy(dict_stats_event);
+	os_event_destroy(dict_stats_shutdown_event);
 	dict_stats_event = NULL;
+	dict_stats_shutdown_event = NULL;
+	dict_stats_start_shutdown = false;
 }
 
 /*****************************************************************//**
@@ -322,23 +358,59 @@ dict_stats_process_entry_from_recalc_pool()
 	mutex_exit(&dict_sys->mutex);
 }
 
+#ifdef UNIV_DEBUG
+/** Disables dict stats thread. It's used by:
+	SET GLOBAL innodb_dict_stats_disabled_debug = 1 (0).
+@param[in]	thd		thread handle
+@param[in]	var		pointer to system variable
+@param[out]	var_ptr		where the formal string goes
+@param[in]	save		immediate result from check function */
+void
+dict_stats_disabled_debug_update(
+	THD*				thd,
+	struct st_mysql_sys_var*	var,
+	void*				var_ptr,
+	const void*			save)
+{
+	/* This method is protected by mutex, as every SET GLOBAL .. */
+	ut_ad(dict_stats_disabled_event != NULL);
+
+	const bool disable = *static_cast<const my_bool*>(save);
+
+	const int64_t sig_count = os_event_reset(dict_stats_disabled_event);
+
+	innodb_dict_stats_disabled_debug = disable;
+
+	if (disable) {
+		os_event_set(dict_stats_event);
+		os_event_wait_low(dict_stats_disabled_event, sig_count);
+	}
+}
+#endif /* UNIV_DEBUG */
+
 /*****************************************************************//**
 This is the thread for background stats gathering. It pops tables, from
 the auto recalc list and proceeds them, eventually recalculating their
 statistics.
 @return this function does not return, it calls os_thread_exit() */
-extern "C" UNIV_INTERN
+extern "C"
 os_thread_ret_t
 DECLARE_THREAD(dict_stats_thread)(
 /*==============================*/
-	void*	arg __attribute__((unused)))	/*!< in: a dummy parameter
+	void*	arg MY_ATTRIBUTE((unused)))	/*!< in: a dummy parameter
 						required by os_thread_create */
 {
 	ut_a(!srv_read_only_mode);
 
+	my_thread_init();
+
+#ifdef UNIV_PFS_THREAD
+	pfs_register_thread(dict_stats_thread_key);
+#endif /* UNIV_PFS_THREAD */
+
 	srv_dict_stats_thread_active = TRUE;
 
-	while (!SHUTTING_DOWN()) {
+	while (!dict_stats_start_shutdown) {
 
 		/* Wake up periodically even if not signaled. This is
 		because we may lose an event - if the below call to
@@ -348,7 +420,18 @@ DECLARE_THREAD(dict_stats_thread)(
 		os_event_wait_time(
 			dict_stats_event, MIN_RECALC_INTERVAL * 1000000);
 
-		if (SHUTTING_DOWN()) {
+#ifdef UNIV_DEBUG
+		while (innodb_dict_stats_disabled_debug) {
+			os_event_set(dict_stats_disabled_event);
+			if (dict_stats_start_shutdown) {
+				break;
+			}
+			os_event_wait_time(
+				dict_stats_event, 100000);
+		}
+#endif /* UNIV_DEBUG */
+
+		if (dict_stats_start_shutdown) {
 			break;
 		}
 
@@ -359,9 +442,21 @@ DECLARE_THREAD(dict_stats_thread)(
 
 	srv_dict_stats_thread_active = FALSE;
 
+	os_event_set(dict_stats_shutdown_event);
+	my_thread_end();
+
 	/* We count the number of threads in os_thread_exit(). A created
 	thread should always use that to exit instead of return(). */
-	os_thread_exit(NULL);
+	os_thread_exit();
 
 	OS_THREAD_DUMMY_RETURN;
+}
+
+/** Shutdown the dict stats thread. */
+void
+dict_stats_shutdown()
+{
+	dict_stats_start_shutdown = true;
+	os_event_set(dict_stats_event);
+	os_event_wait(dict_stats_shutdown_event);
 }

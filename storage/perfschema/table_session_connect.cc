@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -14,6 +14,7 @@
   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
 #include "table_session_connect.h"
+#include "field.h"
 
 static const TABLE_FIELD_TYPE field_types[]=
 {
@@ -47,7 +48,7 @@ table_session_connect::table_session_connect(const PFS_engine_table_share *share
 {
   if (session_connect_attrs_size_per_thread > 0)
   {
-    m_copy_session_connect_attrs= (char *) my_malloc(/* 5.7: PSI_INSTRUMENT_ME, */
+    m_copy_session_connect_attrs= (char *) my_malloc(PSI_INSTRUMENT_ME,
                                              session_connect_attrs_size_per_thread,
                                              MYF(0));
   }
@@ -169,7 +170,7 @@ bool read_nth_attr(const char *connect_attrs,
 
     if (idx == ordinal)
       *attr_name_length= copy_length;
-      
+
     /* read the value */
     if (parse_length_encoded_string(&ptr,
                                     attr_value, max_attr_value, &copy_length,
@@ -191,8 +192,8 @@ bool read_nth_attr(const char *connect_attrs,
 
 void table_session_connect::make_row(PFS_thread *pfs, uint ordinal)
 {
-  pfs_lock lock;
-  pfs_lock session_lock;
+  pfs_optimistic_state lock;
+  pfs_optimistic_state session_lock;
   PFS_thread_class *safe_class;
   const CHARSET_INFO *cs;
 
@@ -251,7 +252,8 @@ void table_session_connect::make_row(PFS_thread *pfs, uint ordinal)
                     &m_row.m_attr_value_length))
   {
     /* we don't expect internal threads to have connection attributes */
-    DBUG_ASSERT(pfs->m_processlist_id != 0);
+    if (pfs->m_processlist_id == 0)
+	return;
 
     m_row.m_ordinal_position= ordinal;
     m_row.m_process_id= pfs->m_processlist_id;

@@ -1,5 +1,4 @@
-/* Copyright (c) 2000-2003, 2007 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -12,7 +11,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <my_global.h>
 #include <mysql_com.h>
@@ -21,7 +20,7 @@
 /* Get the length of next field. Change parameter to point at fieldstart */
 ulong STDCALL net_field_length(uchar **packet)
 {
-  reg1 uchar *pos= (uchar *)*packet;
+  uchar *pos= (uchar *)*packet;
   if (*pos < 251)
   {
     (*packet)++;
@@ -49,7 +48,7 @@ ulong STDCALL net_field_length(uchar **packet)
 /* The same as above but returns longlong */
 my_ulonglong net_field_length_ll(uchar **packet)
 {
-  reg1 uchar *pos= *packet;
+  uchar *pos= *packet;
   if (*pos < 251)
   {
     (*packet)++;
@@ -71,11 +70,7 @@ my_ulonglong net_field_length_ll(uchar **packet)
     return (my_ulonglong) uint3korr(pos+1);
   }
   (*packet)+=9;					/* Must be 254 when here */
-#ifdef NO_CLIENT_LONGLONG
-  return (my_ulonglong) uint4korr(pos+1);
-#else
   return (my_ulonglong) uint8korr(pos+1);
-#endif
 }
 
 /*
@@ -88,7 +83,7 @@ my_ulonglong net_field_length_ll(uchar **packet)
 
   NOTES
     This is mostly used to store lengths of strings.
-    We have to cast the result for the LL() becasue of a bug in Forte CC
+    We have to cast the result of the LL because of a bug in Forte CC
     compiler.
 
   RETURN
@@ -97,19 +92,19 @@ my_ulonglong net_field_length_ll(uchar **packet)
 
 uchar *net_store_length(uchar *packet, ulonglong length)
 {
-  if (length < (ulonglong) LL(251))
+  if (length < (ulonglong) 251LL)
   {
     *packet=(uchar) length;
     return packet+1;
   }
   /* 251 is reserved for NULL */
-  if (length < (ulonglong) LL(65536))
+  if (length < (ulonglong) 65536LL)
   {
     *packet++=252;
     int2store(packet,(uint) length);
     return packet+2;
   }
-  if (length < (ulonglong) LL(16777216))
+  if (length < (ulonglong) 16777216LL)
   {
     *packet++=253;
     int3store(packet,(ulong) length);
@@ -118,5 +113,28 @@ uchar *net_store_length(uchar *packet, ulonglong length)
   *packet++=254;
   int8store(packet,length);
   return packet+8;
+}
+
+
+/**
+  The length of space required to store the resulting length-encoded integer
+  for the given number. This function can be used at places where one needs to
+  dynamically allocate the buffer for a given number to be stored as length-
+  encoded integer.
+
+  @param num [IN]   the input number
+
+  @return length of buffer needed to store this number [1, 3, 4, 9].
+*/
+
+uint net_length_size(ulonglong num)
+{
+  if (num < (ulonglong) 252LL)
+    return 1;
+  if (num < (ulonglong) 65536LL)
+    return 3;
+  if (num < (ulonglong) 16777216LL)
+    return 4;
+  return 9;
 }
 

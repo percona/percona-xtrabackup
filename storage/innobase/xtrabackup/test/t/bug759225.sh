@@ -11,6 +11,7 @@ then
 fi
 
 require_xtradb
+require_server_version_lower_than 5.7.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_flush_method=ALL_O_DIRECT

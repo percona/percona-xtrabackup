@@ -41,12 +41,14 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <my_global.h>
 #include <mysql.h>
-#include <mysqld.h>
 #include <my_sys.h>
+#include <ha_prototypes.h>
+#include <srv0srv.h>
 #include <string.h>
 #include "common.h"
 #include "xtrabackup.h"
 #include "xtrabackup_version.h"
+#include "xb0xb.h"
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "mysqld.h"
@@ -106,11 +108,6 @@ xb_mysql_connect()
 		msg("Failed to init MySQL struct: %s.\n",
 			mysql_error(connection));
 		return(NULL);
-	}
-
-	if (!opt_secure_auth) {
-		mysql_options(connection, MYSQL_SECURE_AUTH,
-			      (char *) &opt_secure_auth);
 	}
 
 	msg_ts("Connecting to MySQL server host: %s, user: %s, password: %s, "
@@ -258,6 +255,34 @@ read_mysql_one_value(MYSQL *connection, const char *query)
 }
 
 static
+void
+parse_show_engine_innodb_status(MYSQL *connection)
+{
+	MYSQL_RES *mysql_result;
+	MYSQL_ROW row;
+
+	mysql_result = xb_mysql_query(connection, "SHOW ENGINE INNODB STATUS",
+				      true);
+
+	ut_ad(mysql_num_fields(mysql_result) == 3);
+
+	if ((row = mysql_fetch_row(mysql_result))) {
+		std::stringstream data(row[2]);
+		std::string line;
+
+		while (std::getline(data, line)) {
+			lsn_t lsn;
+			if (sscanf(line.c_str(), "Log flushed up to " LSN_PF,
+				   &lsn) == 1) {
+				backup_redo_log_flushed_lsn = lsn;
+			}
+		}
+	}
+
+	mysql_free_result(mysql_result);
+}
+
+static
 bool
 check_server_version(unsigned long version_number,
 		     const char *version_string,
@@ -283,7 +308,7 @@ check_server_version(unsigned long version_number,
 	version_supported = version_supported
 		|| (mysql51 && innodb_version != NULL);
 	version_supported = version_supported
-		|| (version_number > 50500 && version_number < 50700);
+		|| (version_number > 50500 && version_number < 50800);
 	version_supported = version_supported
 		|| ((version_number > 100000 && version_number < 100200)
 		    && server_flavor == FLAVOR_MARIADB);
@@ -329,6 +354,8 @@ get_mysql_vars(MYSQL *connection)
 	char *innodb_data_home_dir_var = NULL;
 	char *innodb_undo_directory_var = NULL;
 	char *innodb_page_size_var = NULL;
+	char *innodb_log_checksums_var = NULL;
+	char *innodb_log_checksum_algorithm_var = NULL;
 
 	unsigned long server_version = mysql_get_server_version(connection);
 
@@ -357,6 +384,9 @@ get_mysql_vars(MYSQL *connection)
 		{"innodb_data_home_dir", &innodb_data_home_dir_var},
 		{"innodb_undo_directory", &innodb_undo_directory_var},
 		{"innodb_page_size", &innodb_page_size_var},
+		{"innodb_log_checksums", &innodb_log_checksums_var},
+		{"innodb_log_checksum_algorithm",
+			&innodb_log_checksum_algorithm_var},
 		{NULL, NULL}
 	};
 
@@ -452,26 +482,26 @@ get_mysql_vars(MYSQL *connection)
 
 	if (!check_if_param_set("innodb_data_file_path")
 	    && innodb_data_file_path_var && *innodb_data_file_path_var) {
-		innobase_data_file_path = my_strdup(
+		innobase_data_file_path = my_strdup(PSI_NOT_INSTRUMENTED,
 			innodb_data_file_path_var, MYF(MY_FAE));
 	}
 
 	if (!check_if_param_set("innodb_data_home_dir")
 	    && innodb_data_home_dir_var && *innodb_data_home_dir_var) {
-		innobase_data_home_dir = my_strdup(
+		innobase_data_home_dir = my_strdup(PSI_NOT_INSTRUMENTED,
 			innodb_data_home_dir_var, MYF(MY_FAE));
 	}
 
 	if (!check_if_param_set("innodb_log_group_home_dir")
 	    && innodb_log_group_home_dir_var
 	    && *innodb_log_group_home_dir_var) {
-		srv_log_group_home_dir = my_strdup(
+		srv_log_group_home_dir = my_strdup(PSI_NOT_INSTRUMENTED,
 			innodb_log_group_home_dir_var, MYF(MY_FAE));
 	}
 
 	if (!check_if_param_set("innodb_undo_directory")
 	    && innodb_undo_directory_var && *innodb_undo_directory_var) {
-		srv_undo_dir = my_strdup(
+		srv_undo_dir = my_strdup(PSI_NOT_INSTRUMENTED,
 			innodb_undo_directory_var, MYF(MY_FAE));
 	}
 
@@ -500,6 +530,32 @@ get_mysql_vars(MYSQL *connection)
 			innodb_page_size_var, &endptr, 10);
 		ut_ad(*endptr == 0);
 	}
+
+	if (!innodb_log_checksum_algorithm_specified &&
+		innodb_log_checksum_algorithm_var) {
+		for (uint i = 0;
+		     i < innodb_checksum_algorithm_typelib.count;
+		     i++) {
+			if (strcasecmp(innodb_log_checksum_algorithm_var,
+			    innodb_checksum_algorithm_typelib.type_names[i])
+			    == 0) {
+				srv_log_checksum_algorithm = i;
+			}
+		}
+	}
+
+	if (!innodb_log_checksum_algorithm_specified &&
+		innodb_log_checksums_var) {
+		if (strcasecmp(innodb_log_checksums_var, "ON") == 0) {
+			srv_log_checksum_algorithm =
+				SRV_CHECKSUM_ALGORITHM_STRICT_CRC32;
+		} else {
+			srv_log_checksum_algorithm =
+				SRV_CHECKSUM_ALGORITHM_NONE;
+		}
+	}
+
+	parse_show_engine_innodb_status(connection);
 
 out:
 	free_mysql_variables(mysql_vars);
@@ -826,7 +882,7 @@ stop_thread:
 
 	os_event_set(kill_query_thread_stopped);
 
-	os_thread_exit(NULL);
+	os_thread_exit();
 	OS_THREAD_DUMMY_RETURN;
 }
 
@@ -835,9 +891,9 @@ static
 void
 start_query_killer()
 {
-	kill_query_thread_stop		= os_event_create();
-	kill_query_thread_started	= os_event_create();
-	kill_query_thread_stopped	= os_event_create();
+	kill_query_thread_stop    = os_event_create("kill_query_thread_stop");
+	kill_query_thread_started = os_event_create("kill_query_thread_started");
+	kill_query_thread_stopped = os_event_create("kill_query_thread_stopped");
 
 	os_thread_create(kill_query_thread, NULL, &kill_query_thread_id);
 
@@ -1629,7 +1685,9 @@ write_backup_config_file()
 		"innodb_log_block_size=%lu\n"
 		"innodb_undo_directory=%s\n"
 		"innodb_undo_tablespaces=%lu\n"
+		"server_id=%lu\n"
 		"%s%s\n"
+		"redo_log_version=%lu\n"
 		"%s%s\n",
 		innodb_checksum_algorithm_names[srv_checksum_algorithm],
 		innodb_checksum_algorithm_names[srv_log_checksum_algorithm],
@@ -1641,8 +1699,10 @@ write_backup_config_file()
 		srv_log_block_size,
 		srv_undo_dir,
 		srv_undo_tablespaces,
+		(ulint)server_id,
 		innobase_doublewrite_file ? "innodb_doublewrite_file=" : "",
 		innobase_doublewrite_file ? innobase_doublewrite_file : "",
+		redo_log_version,
 		innobase_buffer_pool_filename ?
 			"innodb_buffer_pool_filename=" : "",
 		innobase_buffer_pool_filename ?

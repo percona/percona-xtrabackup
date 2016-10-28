@@ -1,6 +1,6 @@
 
 /*
-   Copyright (c) 2000, 2012, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,10 +28,12 @@
 #include <m_string.h>
 #include <my_getopt.h>
 #include "my_default.h"
+#include <welcome_copyright_notice.h> /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
 
 
 const char *config_file="my";			/* Default config file */
 static char *my_login_path;
+static my_bool *show_passwords;
 uint verbose= 0, opt_defaults_file_used= 0;
 const char *default_dbug_option="d:t:o,/tmp/my_print_defaults.trace";
 
@@ -87,6 +89,9 @@ static struct my_option my_long_options[] =
   {"login-path", 'l', "Path to be read from under the login file.",
    &my_login_path, &my_login_path, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
+  {"show", 's', "Show passwords in plain text.",
+   &show_passwords, &show_passwords, 0, GET_BOOL, NO_ARG,
+   0, 0, 0, 0, 0, 0},
   {"help", '?', "Display this help message and exit.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"verbose", 'v', "Increase the output level",
@@ -103,7 +108,7 @@ static void usage(my_bool version)
 	 MACHINE_TYPE);
   if (version)
     return;
-  puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
+  puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   puts("Prints all arguments that is give to some program using the default files");
   printf("Usage: %s [OPTIONS] groups\n", my_progname);
   my_print_help(my_long_options);
@@ -114,8 +119,8 @@ static void usage(my_bool version)
 
 
 static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument __attribute__((unused)))
+get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
+	       char *argument MY_ATTRIBUTE((unused)))
 {
   switch (optid) {
     case 'c':
@@ -177,7 +182,8 @@ int main(int argc, char **argv)
   arguments[count]= 0;
 
   /* Check out the args */
-  if (!(load_default_groups=(char**) my_malloc((argc+1)*sizeof(char*),
+  if (!(load_default_groups=(char**) my_malloc(PSI_NOT_INSTRUMENTED,
+                                               (argc+1)*sizeof(char*),
 					       MYF(MY_WME))))
     exit(1);
   if (get_options(&argc,&argv))
@@ -203,7 +209,12 @@ int main(int argc, char **argv)
 
   for (argument= arguments+1 ; *argument ; argument++)
     if (!my_getopt_is_args_separator(*argument))           /* skip arguments separator */
-      puts(*argument);
+    {
+      if (!(show_passwords) && strncmp(*argument, "--password", 10) == 0)
+        puts("--password=*****");
+      else
+        puts(*argument);
+    }
   my_free(load_default_groups);
   free_defaults(arguments);
 

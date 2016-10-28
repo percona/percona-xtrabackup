@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,9 +16,11 @@
 #ifndef RPL_INFO_HANDLER_H
 #define RPL_INFO_HANDLER_H
 
-#include <my_global.h>
-#include <dynamic_ids.h>
-#include "rpl_info_values.h"
+#include "my_global.h"
+
+class Rpl_info_values;
+class Server_ids;
+
 
 enum enum_info_repository
 {
@@ -107,7 +109,7 @@ public:
 
   /**
     Deletes any information in the repository. In contrast to the
-    @code remove_info() method, the repository is not removed.
+    @c remove_info() method, the repository is not removed.
 
     @retval FALSE No error
     @retval TRUE  Failure
@@ -202,6 +204,27 @@ public:
   }
 
   /**
+    set the value of a field pointed at @c pk_cursor to
+    @ value.
+
+    @param[in]   pk_cursor   cursor for the filed value.
+    @param[in]   value       fieled[pk_cursor] would be set
+                             this value.
+
+    @retval      FALSE       ok
+    @retval      TRUE       error.
+  */
+
+  template <class TypeHandler>
+  bool set_info(int pk_cursor, TypeHandler const value)
+  {
+    if (pk_cursor >= ninfo)
+      return TRUE;
+
+    return (do_set_info(pk_cursor, value));
+  }
+
+  /**
     Returns the value of a field.
     Any call must be done in the right order which
     is defined by the caller that wants to return
@@ -268,8 +291,8 @@ public:
     @retval FALSE No error
     @retval TRUE Failure
   */
-  bool get_info(Dynamic_ids *value,
-                const Dynamic_ids *default_value)
+  bool get_info(Server_ids *value,
+                const Server_ids *default_value)
   {
     if (cursor >= ninfo || prv_error)
       return TRUE;
@@ -384,7 +407,7 @@ private:
   virtual bool do_set_info(const int pos, const ulong value)= 0;
   virtual bool do_set_info(const int pos, const int value)= 0;
   virtual bool do_set_info(const int pos, const float value)= 0;
-  virtual bool do_set_info(const int pos, const Dynamic_ids *value)= 0;
+  virtual bool do_set_info(const int pos, const Server_ids *value)= 0;
   virtual bool do_get_info(const int pos, char *value,
                            const size_t size,
                            const char *default_value)= 0;
@@ -397,8 +420,8 @@ private:
                            const int default_value)= 0;
   virtual bool do_get_info(const int pos, float *value,
                            const float default_value)= 0;
-  virtual bool do_get_info(const int pos, Dynamic_ids *value,
-                           const Dynamic_ids *default_value)= 0;
+  virtual bool do_get_info(const int pos, Server_ids *value,
+                           const Server_ids *default_value)= 0;
   virtual char* do_get_description_info()= 0;
   virtual bool do_is_transactional()= 0;
   virtual bool do_update_is_transactional()= 0;

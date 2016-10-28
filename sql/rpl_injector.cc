@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,14 +13,14 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#include "sql_priv.h" 
-#include "unireg.h"                             // REQUIRED by later includes
 #include "rpl_injector.h"
-#include "transaction.h"
-#include "sql_parse.h"                          // begin_trans, end_trans, COMMIT
-#include "sql_base.h"                           // close_thread_tables
-#include "log_event.h"                          // Incident_log_event
+
 #include "binlog.h"                             // mysql_bin_log
+#include "log_event.h"                          // Incident_log_event
+#include "sql_base.h"                           // close_thread_tables
+#include "sql_class.h"                          // THD
+#include "transaction.h"                        // trans_begin
+
 
 /*
   injector::transaction - member definitions
@@ -38,7 +38,8 @@ injector::transaction::transaction(MYSQL_BIN_LOG *log, THD *thd)
   LOG_INFO log_info;
   log->get_current_log(&log_info);
   /* !!! binlog_pos does not follow RAII !!! */
-  m_start_pos.m_file_name= my_strdup(log_info.log_file_name, MYF(0));
+  m_start_pos.m_file_name= my_strdup(key_memory_binlog_pos,
+                                     log_info.log_file_name, MYF(0));
   m_start_pos.m_file_pos= log_info.pos;
 
   if (unlikely(m_start_pos.m_file_name == NULL))
@@ -124,7 +125,8 @@ int injector::transaction::commit()
    if ((error == 0) &&
        (m_thd->binlog_next_event_pos.file_name != NULL) &&
        ((m_next_pos.m_file_name=
-         my_strdup(m_thd->binlog_next_event_pos.file_name, MYF(0))) != NULL))
+         my_strdup(key_memory_binlog_pos,
+                   m_thd->binlog_next_event_pos.file_name, MYF(0))) != NULL))
    {
      m_next_pos.m_file_pos= m_thd->binlog_next_event_pos.pos;
    }
@@ -309,14 +311,11 @@ void injector::new_trans(THD *thd, injector::transaction *ptr)
    DBUG_VOID_RETURN;
 }
 
-int injector::record_incident(THD *thd, Incident incident)
-{
-  Incident_log_event ev(thd, incident);
-  return mysql_bin_log.write_incident(&ev, true/*need_lock_log=true*/);
-}
-
-int injector::record_incident(THD *thd, Incident incident, LEX_STRING const message)
+int injector::record_incident(THD *thd,
+                              binary_log::Incident_event::enum_incident incident,
+                              LEX_STRING const message)
 {
   Incident_log_event ev(thd, incident, message);
-  return mysql_bin_log.write_incident(&ev, true/*need_lock_log=true*/);
+  return mysql_bin_log.write_incident(&ev, true/*need_lock_log=true*/,
+                                      message.str);
 }

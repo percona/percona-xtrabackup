@@ -1,6 +1,6 @@
 /* Copyright (C) 2007 Google Inc.
    Copyright (C) 2008 MySQL AB
-   Use is subject to license terms
+   Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 
 #include "semisync_slave.h"
 #include <mysql.h>
+#include <mysqld_error.h>
 
 ReplSemiSyncSlave repl_semisync;
 
@@ -43,23 +44,39 @@ int repl_semi_slave_request_dump(Binlog_relay_IO_param *param,
 {
   MYSQL *mysql= param->mysql;
   MYSQL_RES *res= 0;
-  MYSQL_ROW row;
+#ifndef DBUG_OFF
+  MYSQL_ROW row= NULL;
+#endif
   const char *query;
+  uint mysql_error= 0;
 
   if (!repl_semisync.getSlaveEnabled())
     return 0;
 
   /* Check if master server has semi-sync plugin installed */
-  query= "SHOW VARIABLES LIKE 'rpl_semi_sync_master_enabled'";
-  if (mysql_real_query(mysql, query, strlen(query)) ||
+  query= "SELECT @@global.rpl_semi_sync_master_enabled";
+  if (mysql_real_query(mysql, query, static_cast<ulong>(strlen(query))) ||
       !(res= mysql_store_result(mysql)))
   {
-    sql_print_error("Execution failed on master: %s", query);
-    return 1;
+    mysql_error= mysql_errno(mysql);
+    if (mysql_error != ER_UNKNOWN_SYSTEM_VARIABLE)
+    {
+      sql_print_error("Execution failed on master: %s; error %d", query, mysql_error);
+      return 1;
+    }
+  }
+  else
+  {
+#ifndef DBUG_OFF
+    row=
+#endif
+      mysql_fetch_row(res);
   }
 
-  row= mysql_fetch_row(res);
-  if (!row)
+  DBUG_ASSERT(mysql_error == ER_UNKNOWN_SYSTEM_VARIABLE ||
+              strtoul(row[0], 0, 10) == 0 || strtoul(row[0], 0, 10) == 1);
+
+  if (mysql_error == ER_UNKNOWN_SYSTEM_VARIABLE)
   {
     /* Master does not support semi-sync */
     sql_print_warning("Master server does not support semi-sync, "
@@ -75,7 +92,7 @@ int repl_semi_slave_request_dump(Binlog_relay_IO_param *param,
     replication
   */
   query= "SET @rpl_semi_sync_slave= 1";
-  if (mysql_real_query(mysql, query, strlen(query)))
+  if (mysql_real_query(mysql, query, static_cast<ulong>(strlen(query))))
   {
     sql_print_error("Set 'rpl_semi_sync_slave=1' on master failed");
     return 1;
@@ -127,6 +144,11 @@ int repl_semi_slave_io_end(Binlog_relay_IO_param *param)
   return repl_semisync.slaveStop(param);
 }
 
+int repl_semi_slave_sql_stop(Binlog_relay_IO_param *param, bool aborted)
+{
+  return 0;
+}
+
 C_MODE_END
 
 static void fix_rpl_semi_sync_slave_enabled(MYSQL_THD thd,
@@ -174,8 +196,8 @@ static SYS_VAR* semi_sync_slave_system_vars[]= {
 /* plugin status variables */
 static SHOW_VAR semi_sync_slave_status_vars[]= {
   {"Rpl_semi_sync_slave_status",
-   (char*) &rpl_semi_sync_slave_status,    SHOW_BOOL},
-  {NULL, NULL, SHOW_BOOL},
+   (char*) &rpl_semi_sync_slave_status, SHOW_BOOL, SHOW_SCOPE_GLOBAL},
+  {NULL, NULL, SHOW_BOOL, SHOW_SCOPE_GLOBAL},
 };
 
 Binlog_relay_IO_observer relay_io_observer = {
@@ -183,6 +205,7 @@ Binlog_relay_IO_observer relay_io_observer = {
 
   repl_semi_slave_io_start,	// start
   repl_semi_slave_io_end,	// stop
+  repl_semi_slave_sql_stop,     // stop sql thread
   repl_semi_slave_request_dump,	// request_transmit
   repl_semi_slave_read_event,	// after_read_event
   repl_semi_slave_queue_event,	// after_queue_event

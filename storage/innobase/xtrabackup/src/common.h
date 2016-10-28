@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define XB_COMMON_H
 
 #include <my_global.h>
+#include <my_sys.h>
 #include <mysql_version.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -43,7 +44,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #define XB_DELTA_INFO_SUFFIX ".meta"
 
-static inline int msg(const char *fmt, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
+static inline int msg(const char *fmt, ...)
+		__attribute__((format(printf, 1, 2)));
 static inline int msg(const char *fmt, ...)
 {
 	int	result;
@@ -56,7 +58,8 @@ static inline int msg(const char *fmt, ...)
 	return result;
 }
 
-static inline int msg_ts(const char *fmt, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
+static inline int msg_ts(const char *fmt, ...)
+		__attribute__((format(printf, 1, 2)));
 static inline int msg_ts(const char *fmt, ...)
 {
 	int	result;

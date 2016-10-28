@@ -41,9 +41,20 @@ function call_mysql_install_db()
 
         cd $MYSQL_BASEDIR
 
-        if ! $MYSQL_INSTALL_DB --defaults-file=${MYSQLD_VARDIR}/my.cnf \
+        CLIENT_VERSION_STRING=`${MYSQL} --version`
+
+        if [[ ${CLIENT_VERSION_STRING} =~ Ver.*5\.7\.[0-9] ]] ; then
+            INSTALL_CMD="${MYSQLD} \
+            --defaults-file=${MYSQLD_VARDIR}/my.cnf \
             --basedir=${MYSQL_BASEDIR} \
-            ${MYSQLD_EXTRA_ARGS}
+            --initialize-insecure"
+        else
+            INSTALL_CMD="${MYSQL_INSTALL_DB} \
+            --defaults-file=${MYSQLD_VARDIR}/my.cnf \
+            --basedir=${MYSQL_BASEDIR}"
+        fi
+
+        if ! ${INSTALL_CMD} ${MYSQLD_EXTRA_ARGS}
         then
             vlog "mysql_install_db failed. Server log (if exists):"
             vlog "----------------"
@@ -51,6 +62,8 @@ function call_mysql_install_db()
             vlog "----------------"
             exit -1
         fi
+
+        [ -d ${MYSQLD_DATADIR}/test ] || mkdir ${MYSQLD_DATADIR}/test
 
         cd - >/dev/null 2>&1
 }
@@ -61,7 +74,7 @@ function call_mysql_install_db()
 function mysql_ping()
 {
     local pid=$1
-    local attempts=60
+    local attempts=200
     local i
 
     for ((i=1; i<=attempts; i++))
@@ -303,8 +316,11 @@ log-bin=mysql-bin
 relay-log=mysql-relay-bin
 pid-file=${MYSQLD_PIDFILE}
 replicate-ignore-db=mysql
+replicate-ignore-db=performance_schema
+replicate-ignore-db=sys
 innodb_log_file_size=48M
 ${MYSQLD_EXTRA_MY_CNF_OPTS:-}
+#core-file
 
 [client]
 socket=${MYSQLD_SOCKET}
@@ -846,6 +862,43 @@ function is_64bit()
 {
     uname -m 2>&1 | grep 'x86_64'
 }
+
+# Return number of dirty pages
+########################################################################
+function innodb_n_dirty_pages()
+{
+    result=$( $MYSQL $MYSQL_ARGS -se \
+        "SHOW STATUS LIKE 'innodb_buffer_pool_pages_dirty'" | \
+        awk '{ print $2 }' )
+    echo "Dirty pages left $result"
+    return $result
+}
+
+# Wait for InnoDB to flush all dirty pages
+########################################################################
+function innodb_wait_for_flush_all()
+{
+    while ! innodb_n_dirty_pages ; do
+        sleep 1
+    done
+}
+
+# Return current LSN
+########################################################################
+function innodb_lsn()
+{
+    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
+        grep "Log sequence number" | awk '{ print $4 }'
+}
+
+# Return flushed LSN
+########################################################################
+function innodb_flushed_lsn()
+{
+    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
+        grep "Log flushed up to" | awk '{ print $5 }'
+}
+
 
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=

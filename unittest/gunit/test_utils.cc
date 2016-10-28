@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,7 +19,9 @@
 
 #include "test_utils.h"
 #include "rpl_handler.h"                        // delegates_init()
-#include "global_threads.h"                     // LOCK_thread_count
+#include "mysqld_thd_manager.h"                 // Global_THD_manager
+#include "opt_costconstantcache.h"              // optimizer cost constant cache
+#include "log.h"                                // query_logger
 
 namespace my_testing {
 
@@ -42,31 +44,36 @@ extern "C" void test_error_handler_hook(uint err, const char *str, myf MyFlags)
 void setup_server_for_unit_tests()
 {
   static char *my_name= strdup(my_progname);
-  char *argv[] = { my_name, 0 };
-  set_remaining_args(1, argv);
-  mysql_mutex_init(key_LOCK_error_log, &LOCK_error_log, MY_MUTEX_INIT_FAST);
+  char *argv[] = { my_name,
+                   const_cast<char*>("--secure-file-priv=NULL"),
+                   const_cast<char*>("--early_plugin_load=\"\""),
+                   const_cast<char*>("--log_syslog=0"),
+                   const_cast<char*>("--explicit_defaults_for_timestamp"),
+                   const_cast<char*>("--datadir=" DATA_DIR),
+                   const_cast<char*>("--lc-messages-dir=" ERRMSG_DIR), 0 };
+  set_remaining_args(6, argv);
   system_charset_info= &my_charset_utf8_general_ci;
   sys_var_init();
   init_common_variables();
   my_init_signals();
   randominit(&sql_rand, 0, 0);
-  xid_cache_init();
+  transaction_cache_init();
   delegates_init();
   gtid_server_init();
   error_handler_hook= test_error_handler_hook;
-  // Initialize logger last, to avoid spurious warnings to stderr.
-  logger.init_base();
+  // Initialize Query_logger last, to avoid spurious warnings to stderr.
+  query_logger.init();
+  init_optimizer_cost_module(false);
 }
 
 void teardown_server_for_unit_tests()
 {
   sys_var_end();
   delegates_destroy();
-  xid_cache_free();
+  transaction_cache_free();
   gtid_server_cleanup();
-  mysql_mutex_destroy(&LOCK_error_log);
-  logger.cleanup_base();
-  logger.cleanup_end();
+  query_logger.cleanup();
+  delete_optimizer_cost_module();
 }
 
 void Server_initializer::set_expected_error(uint val)
@@ -79,22 +86,18 @@ void Server_initializer::SetUp()
   expected_error= 0;
   m_thd= new THD(false);
   THD *stack_thd= m_thd;
+
+  m_thd->set_new_thread_id();
+
   m_thd->thread_stack= (char*) &stack_thd;
   m_thd->store_globals();
   lex_start(m_thd);
   m_thd->set_current_time();
-
-  mysql_mutex_lock(&LOCK_thread_count);
-  m_thd->thread_id= m_thd->variables.pseudo_thread_id= thread_id++;
-  mysql_mutex_unlock(&LOCK_thread_count);
-
-  my_pthread_setspecific_ptr(THR_THD, m_thd);
 }
 
 void Server_initializer::TearDown()
 {
   m_thd->cleanup_after_query();
-  my_pthread_setspecific_ptr(THR_THD, NULL);
   delete m_thd;
 }
 
@@ -125,9 +128,8 @@ Mock_error_handler::~Mock_error_handler()
 bool Mock_error_handler::handle_condition(THD *thd,
                                           uint sql_errno,
                                           const char* sqlstate,
-                                          Sql_condition::enum_warning_level level,
-                                          const char* msg,
-                                          Sql_condition ** cond_hdl)
+                                          Sql_condition::enum_severity_level *level,
+                                          const char* msg)
 {
   EXPECT_EQ(m_expected_error, sql_errno);
   ++m_handle_called;

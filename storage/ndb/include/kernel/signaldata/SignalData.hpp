@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +21,9 @@
 #include <ndb_global.h>
 #include <kernel/ndb_limits.h>
 #include <kernel/kernel_types.h>
+
+#define JAM_FILE_ID 61
+
 
 #define ASSERT_BOOL(flag, message) assert(flag<=1)
 #define ASSERT_RANGE(value, min, max, message) \
@@ -320,5 +323,24 @@ GSN_PRINT_SIGNATURE(printINDEX_STAT_REP);
 GSN_PRINT_SIGNATURE(printGET_CONFIG_REQ);
 GSN_PRINT_SIGNATURE(printGET_CONFIG_REF);
 GSN_PRINT_SIGNATURE(printGET_CONFIG_CONF);
+
+GSN_PRINT_SIGNATURE(printALLOC_NODEID_REQ);
+GSN_PRINT_SIGNATURE(printALLOC_NODEID_CONF);
+GSN_PRINT_SIGNATURE(printALLOC_NODEID_REF);
+
+GSN_PRINT_SIGNATURE(printLCP_STATUS_REQ);
+GSN_PRINT_SIGNATURE(printLCP_STATUS_CONF);
+GSN_PRINT_SIGNATURE(printLCP_STATUS_REF);
+
+GSN_PRINT_SIGNATURE(printCREATE_FK_REQ);
+GSN_PRINT_SIGNATURE(printCREATE_FK_REF);
+GSN_PRINT_SIGNATURE(printCREATE_FK_CONF);
+GSN_PRINT_SIGNATURE(printDROP_FK_REQ);
+GSN_PRINT_SIGNATURE(printDROP_FK_REF);
+GSN_PRINT_SIGNATURE(printDROP_FK_CONF);
+
+GSN_PRINT_SIGNATURE(printISOLATE_ORD);
+
+#undef JAM_FILE_ID
 
 #endif

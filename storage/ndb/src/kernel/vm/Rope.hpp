@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
 #define NDB_ROPE_HPP
 
 #include "DataBuffer.hpp"
+
+#define JAM_FILE_ID 316
+
 
 typedef DataBuffer<7> RopeBase;
 typedef DataBuffer<7>::DataBufferPool RopePool;
@@ -56,16 +59,16 @@ private:
   const RopeHandle & src;
 };
 
-class Rope : private RopeBase {
+class LocalRope : private RopeBase {
 public:
-  Rope(RopePool& thePool, RopeHandle& handle)  
+  LocalRope(RopePool& thePool, RopeHandle& handle)
     : RopeBase(thePool), src(handle)
   {
     this->head = src.m_head;
     m_hash = src.m_hash;
   }
   
-  ~Rope(){
+  ~LocalRope(){
     src.m_head = this->head;
     src.m_hash = m_hash;
   }
@@ -94,13 +97,13 @@ private:
 
 inline
 Uint32
-Rope::size() const {
+LocalRope::size() const {
   return head.used;
 }
 
 inline
 bool
-Rope::empty() const {
+LocalRope::empty() const {
   return head.used == 0;
 }
 
@@ -115,6 +118,9 @@ bool
 ConstRope::empty() const {
   return head.used == 0;
 }
+
+
+#undef JAM_FILE_ID
 
 #endif
 

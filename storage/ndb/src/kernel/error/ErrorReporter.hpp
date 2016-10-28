@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,9 @@
 
 #include "../ndbd.hpp"
 
+#define JAM_FILE_ID 487
+
+
 class ErrorReporter
 {
 public:
@@ -45,11 +48,13 @@ public:
 			    char* messptr);
 
   static int get_trace_no();
-  
-  static const char* formatTimeStampString();
-  
+
+  static void prepare_to_crash(bool first_phase, bool error_insert_crash);
 private:
   static enum NdbShutdownType s_errorHandlerShutdownType;
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

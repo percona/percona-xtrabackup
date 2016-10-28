@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -47,6 +47,13 @@
 */
 
 #ifdef __cplusplus
+class THD;
+#define MYSQL_THD THD*
+#else
+#define MYSQL_THD void*
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -62,6 +69,10 @@ extern "C" {
   that could easily be for many milliseconds or even seconds and the same
   holds true for global read locks, table locks and other meta data locks.
   Another event of interest is going to sleep for an extended time.
+
+  Note that user-level locks no longer use THD_WAIT_USER_LOCK wait type.
+  Since their implementation relies on metadata locks manager it uses
+  THD_WAIT_META_DATA_LOCK instead.
 */
 typedef enum _thd_wait_type_e {
   THD_WAIT_SLEEP= 1,

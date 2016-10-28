@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -30,6 +30,9 @@
 
 #include <NodeState.hpp>
 #include <NdbTick.h>
+
+#define JAM_FILE_ID 457
+
 
 #ifdef NDBCNTR_C
 /*
@@ -75,7 +78,7 @@ public:
 
   struct StartRecord {
     StartRecord() {}
-    Uint64 m_startTime;
+    NDB_TICKS m_startTime;
     
     void reset();
     NdbNodeBitmask m_starting;
@@ -86,7 +89,8 @@ public:
     Uint32 m_lastGci;
     Uint32 m_lastGciNodeId;
 
-    Uint64 m_startPartialTimeout;
+    // Timeouts in ms since 'm_startTime' 
+    Uint64 m_startPartialTimeout;  // UNUSED!
     Uint64 m_startPartitionedTimeout;
     Uint64 m_startFailureTimeout;
     struct {
@@ -149,8 +153,9 @@ public:
   // schema trans
   Uint32 c_schemaTransId;
   Uint32 c_schemaTransKey;
-  Uint32 c_hashMapId;
-  Uint32 c_hashMapVersion;
+  // intersignal transient store of: hash_map, logfilegroup, tablesspace
+  Uint32 c_objectId; 
+  Uint32 c_objectVersion;;
 
 public:
   Ndbcntr(Block_context&);
@@ -234,7 +239,7 @@ private:
   void sendCntrStartReq(Signal* signal);
   void sendCntrStartRef(Signal*, Uint32 nodeId, CntrStartRef::ErrorCode);
   void sendNdbSttor(Signal* signal);
-  void sendSttorry(Signal* signal);
+  void sendSttorry(Signal* signal, Uint32 delayed = 0);
 
   bool trySystemRestart(Signal* signal);
   void startWaitingNodes(Signal* signal);
@@ -295,6 +300,8 @@ private:
 
   void updateNodeState(Signal* signal, const NodeState & newState) const ;
   void getNodeGroup(Signal* signal);
+
+  void send_node_started_rep(Signal *signal);
 
   // Initialisation
   void initData();
@@ -416,5 +423,8 @@ private:
   void execSTART_ORD(Signal* signal);
   void execREAD_CONFIG_CONF(Signal*);
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

@@ -117,31 +117,6 @@ void LocalConfig::setError(int lineNumber, const char * _msg) {
   strncpy(error_msg, _msg, sizeof(error_msg));
 }
 
-void LocalConfig::printError() const {
-  ndbout << "Configuration error" << endl;
-  if (error_line)
-    ndbout << "Line: "<< error_line << ", ";
-  ndbout << error_msg << endl << endl;
-}
-
-void LocalConfig::printUsage() const {
-  ndbout << "This node needs information on how to connect"<<endl
-	 << "to the NDB Management Server."<<endl
-	 << "The information can be supplied in one of the following ways:"
-	 << endl;
-    
-  ndbout << "1. Put a Ndb.cfg file in the directory where you start"<<endl 
-	 << "   the node. "<< endl
-	 << "   Ex: Ndb.cfg" << endl
-	 << "   | host=localhost:"<<NDB_PORT<<endl;
-    
-  ndbout << "2. Use the environment variable NDB_CONNECTSTRING to "<<endl
-	 << "   provide this information." <<endl
-	 << "   Ex: " << endl
-	 << "   >export NDB_CONNECTSTRING=\"host=localhost:"<<NDB_PORT<<"\""
-	 <<endl<<endl;
-}
-  
 const char *nodeIdTokens[] = {
   "OwnProcessId %i",
   "nodeid=%i",
@@ -262,8 +237,8 @@ LocalConfig::parseString(const char * connectString, BaseString &err){
   char * copy = strdup(connectString);
   NdbAutoPtr<char> tmp_aptr(copy);
 
-  for (char *tok = strtok_r(copy,";,",&for_strtok); tok != 0;
-       tok = strtok_r(NULL, ";,", &for_strtok)) {
+  for (char *tok = my_strtok_r(copy,";,",&for_strtok); tok != 0;
+       tok = my_strtok_r(NULL, ";,", &for_strtok)) {
     if (tok[0] == '#') continue;
 
     if (!_ownNodeId) // only one nodeid definition allowed

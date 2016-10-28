@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2007, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,17 +18,17 @@
 #ifndef NDBT_MIX_RESTARTER_HPP
 #define NDBT_MIX_RESTARTER_HPP
 
+#include <ndb_global.h>
 #include <mgmapi.h>
 #include <Vector.hpp>
 #include <BaseString.hpp>
 #include "NdbRestarter.hpp"
 #include "NDBT_Test.hpp"
 
-#define NMR_SR                       "SR"
-#define NMR_SR_THREADS               "SR_ThreadCount"
-#define NMR_SR_THREADS_STOPPED       "SR_ThreadsStoppedCount"
-#define NMR_SR_VALIDATE_THREADS      "SR_ValidateThreadCount"
-#define NMR_SR_VALIDATE_THREADS_DONE "SR_ValidateThreadsDoneCount"
+#define NMR_SR                         "SR"
+#define NMR_SR_THREADS_ACTIVE          "SR_ThreadsActiveCount"
+#define NMR_SR_VALIDATE_THREADS        "SR_ValidateThreadCount"
+#define NMR_SR_VALIDATE_THREADS_ACTIVE "SR_ValidateThreadsActiveCount"
 
 class NdbMixRestarter : public NdbRestarter 
 {
@@ -72,7 +72,7 @@ private:
   unsigned ownseed;
   Uint32 m_mask;
   Vector<ndb_mgm_node_state> m_nodes;
-  int restart_cluster(NDBT_Context* ctx, NDBT_Step* step, bool abort = true);
+  int restart_cluster(NDBT_Context* ctx, NDBT_Step* step, bool abort = false);
 };
 
 #endif

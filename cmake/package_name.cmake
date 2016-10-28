@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -51,17 +51,6 @@ IF(NOT XB_VERSION)
         ELSE()
           SET(DEFAULT_MACHINE "${CMAKE_SYSTEM_PROCESSOR}-64bit")
         ENDIF()
-      ENDIF()
-    ELSEIF(CMAKE_SYSTEM_NAME MATCHES "HP-UX")
-      STRING(REPLACE "B." "" VER "${CMAKE_SYSTEM_VERSION}")
-      SET(DEFAULT_PLATFORM "hpux${VER}")
-      IF(64BIT)
-        SET(DEFAULT_MACHINE "${CMAKE_SYSTEM_PROCESSOR}-64bit")
-      ENDIF()
-    ELSEIF(CMAKE_SYSTEM_NAME MATCHES "AIX")
-      SET(DEFAULT_PLATFORM "${CMAKE_SYSTEM_NAME}5.${CMAKE_SYSTEM_VERSION}")
-      IF(64BIT)
-        SET(DEFAULT_MACHINE "${CMAKE_SYSTEM_PROCESSOR}-64bit")
       ENDIF()
     ELSEIF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
       STRING(REGEX MATCH "[0-9]+\\.[0-9]+"  VER "${CMAKE_SYSTEM_VERSION}")

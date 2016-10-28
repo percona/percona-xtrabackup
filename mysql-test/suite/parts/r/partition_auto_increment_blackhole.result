@@ -49,7 +49,7 @@ SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='test'
   AND TABLE_NAME='t1';
 AUTO_INCREMENT
 1
-UPDATE t1 SET c1 = NULL WHERE c1 = 4;
+UPDATE IGNORE t1 SET c1 = NULL WHERE c1 = 4;
 INSERT INTO t1 VALUES (NULL);
 INSERT INTO t1 VALUES (NULL);
 SELECT * FROM t1 ORDER BY c1;
@@ -189,6 +189,8 @@ INSERT INTO t1 VALUES (1, 1), (99, 99);
 # mysql_errno: 0
 INSERT INTO t1 VALUES (1, NULL);
 SET @@session.sql_mode = 'NO_AUTO_VALUE_ON_ZERO';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 INSERT INTO t1 VALUES (1, 0);
 SELECT * FROM t1 ORDER BY c1, c2;
 c1	c2
@@ -206,7 +208,9 @@ INSERT INTO t1 VALUES (2, NULL), (4, 7);
 INSERT INTO t1 VALUES (1, NULL);
 SELECT * FROM t1 ORDER BY c1, c2;
 c1	c2
-SET @@session.sql_mode = 'NO_ENGINE_SUBSTITUTION';
+SET @@session.sql_mode = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 DROP TABLE t1;
 # Simple test with NULL, 0 and explicit values both incr. and desc.
 CREATE TABLE t1 (
@@ -234,7 +238,7 @@ SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='test'
   AND TABLE_NAME='t1';
 AUTO_INCREMENT
 1
-UPDATE t1 SET c1 = NULL WHERE c1 = 4;
+UPDATE IGNORE t1 SET c1 = NULL WHERE c1 = 4;
 INSERT INTO t1 VALUES (NULL);
 INSERT INTO t1 VALUES (NULL);
 SELECT * FROM t1 ORDER BY c1;
@@ -565,6 +569,8 @@ SELECT * FROM t1 ORDER BY c1;
 c1
 # Test sql_mode 'NO_AUTO_VALUE_ON_ZERO'
 SET @@session.sql_mode = 'NO_AUTO_VALUE_ON_ZERO';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 INSERT INTO t1 (c1) VALUES (300);
 SHOW CREATE TABLE t1;
 Table	Create Table
@@ -594,7 +600,9 @@ t1	CREATE TABLE `t1` (
 PARTITIONS 2 */
 SELECT * FROM t1 ORDER BY c1;
 c1
-SET @@session.sql_mode = 'NO_ENGINE_SUBSTITUTION';
+SET @@session.sql_mode = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 DROP TABLE t1;
 # Test SET INSERT_ID
 CREATE TABLE t1 (c1 INT NOT NULL AUTO_INCREMENT, PRIMARY KEY (c1))
@@ -762,6 +770,9 @@ INSERT INTO t(c2) VALUES (10);
 INSERT INTO t(c2) VALUES (20);
 INSERT INTO t VALUES (126,30);
 INSERT INTO t VALUES (127,40);
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 INSERT INTO t VALUES (128,50);
 Warnings:
 Warning	1264	Out of range value for column 'c1' at row 1
@@ -814,6 +825,7 @@ UPDATE t SET c1 = -6 WHERE c1 = 2;
 SELECT * FROM t ORDER BY c1 ASC;
 c1	c2
 DROP TABLE t;
+SET sql_mode = default;
 # Updating the partition table with a value that crosses the upper limits
 # on both the positive and the negative side.
 CREATE TABLE t (c1 TINYINT NOT NULL AUTO_INCREMENT, PRIMARY KEY(c1),
@@ -824,10 +836,10 @@ INSERT INTO t VALUES (126,30);
 INSERT INTO t VALUES (127,40);
 SELECT * FROM t ORDER BY c1 ASC;
 c1	c2
-UPDATE t SET c1 = 130 where c1 = 127;
+UPDATE IGNORE t SET c1 = 130 where c1 = 127;
 SELECT * FROM t ORDER BY c1 ASC;
 c1	c2
-UPDATE t SET c1 = -140 where c1 = 126;
+UPDATE IGNORE t SET c1 = -140 where c1 = 126;
 SELECT * FROM t ORDER BY c1 ASC;
 c1	c2
 DROP TABLE t;
@@ -837,7 +849,6 @@ UNIQUE KEY (a))
 ENGINE='Blackhole'
 PARTITION BY KEY(a) PARTITIONS 2;
 SET LAST_INSERT_ID = 999;
-SET INSERT_ID = 0;
 INSERT INTO t1 SET a = 1 ON DUPLICATE KEY UPDATE a = NULL;
 SELECT LAST_INSERT_ID();
 LAST_INSERT_ID()
@@ -864,3 +875,260 @@ SELECT * FROM t1;
 a
 DROP TABLE t1;
 ##############################################################################
+#
+# Test overflow
+#
+# Single row insert signed int
+CREATE TABLE t1
+(a int not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0x7FFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1");
+INSERT INTO t1 VALUES (NULL, "0");
+INSERT INTO t1 VALUES (NULL, "Overflow");
+SHOW WARNINGS;
+Level	Code	Message
+Error	1264	Out of range value for column 'a' at row 1
+Error	1264	Out of range value for column 't1' at row 167
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;
+CREATE TABLE `t1` (
+`a` int(11) NOT NULL AUTO_INCREMENT,
+`b` varchar(64) DEFAULT NULL,
+PRIMARY KEY (`a`)
+) ENGINE='Blackhole'
+AUTO_INCREMENT=2147483648 DEFAULT CHARSET=latin1
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (NULL, "Overflow");
+# mysql_errno: 0
+INSERT INTO t1 VALUES (NULL, "Overflow");
+# mysql_errno: 0
+DROP TABLE t1;
+# Multi row insert signed int
+CREATE TABLE t1
+(a int not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0x7FFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1"), (NULL, "0"), (NULL, "Overflow");
+ERROR HY000: Failed to read auto-increment value from storage engine
+INSERT INTO t1 VALUES (NULL, "1");
+# mysql_errno: 1264
+INSERT INTO t1 VALUES (NULL, "0");
+# mysql_errno: 1264
+INSERT INTO t1 VALUES (NULL, "Overflow");
+ERROR 22003: Out of range value for column 'a' at row 1
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;
+# Single row insert unsigned int
+CREATE TABLE t1
+(a int unsigned not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0xFFFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1");
+INSERT INTO t1 VALUES (NULL, "0");
+INSERT INTO t1 VALUES (NULL, "Overflow");
+ERROR 22003: Out of range value for column 'a' at row 1
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;
+CREATE TABLE `t1` (
+`a` int(10) unsigned NOT NULL AUTO_INCREMENT,
+`b` varchar(64) DEFAULT NULL,
+PRIMARY KEY (`a`)
+) ENGINE='Blackhole' AUTO_INCREMENT=4294967296 DEFAULT CHARSET=latin1
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (NULL, "Overflow");
+# mysql_errno: 0
+DROP TABLE t1;
+# Multi row insert unsigned int
+CREATE TABLE t1
+(a int unsigned not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0xFFFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1"), (NULL, "0"), (NULL, "Overflow");
+ERROR HY000: Failed to read auto-increment value from storage engine
+INSERT INTO t1 VALUES (NULL, "1");
+# mysql_errno: 1264
+INSERT INTO t1 VALUES (NULL, "0");
+# mysql_errno: 1264
+INSERT INTO t1 VALUES (NULL, "Overflow");
+ERROR 22003: Out of range value for column 'a' at row 1
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;
+# Single row insert signed bigint
+CREATE TABLE t1
+(a bigint not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0x7FFFFFFFFFFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1");
+INSERT INTO t1 VALUES (NULL, "0");
+INSERT INTO t1 VALUES (NULL, "Overflow");
+ERROR 22003: Out of range value for column 'a' at row 1
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` bigint(20) NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;
+CREATE TABLE `t1` (
+`a` bigint(20) NOT NULL AUTO_INCREMENT,
+`b` varchar(64) DEFAULT NULL,
+PRIMARY KEY (`a`)
+) ENGINE='Blackhole' AUTO_INCREMENT=9223372036854775808 DEFAULT CHARSET=latin1
+PARTITION BY HASH (a)
+PARTITIONS 3;
+INSERT INTO t1 VALUES (NULL, "Overflow");
+# mysql_errno: 0
+DROP TABLE t1;
+# Multi row insert signed bigint
+CREATE TABLE t1
+(a bigint not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0x7FFFFFFFFFFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1"), (NULL, "0"), (NULL, "Overflow");
+ERROR HY000: Failed to read auto-increment value from storage engine
+INSERT INTO t1 VALUES (NULL, "1");
+# mysql_errno: 1264
+INSERT INTO t1 VALUES (NULL, "0");
+# mysql_errno: 1264
+INSERT INTO t1 VALUES (NULL, "Overflow");
+ERROR 22003: Out of range value for column 'a' at row 1
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` bigint(20) NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;
+# Single row insert unsigned bigint
+CREATE TABLE t1
+(a bigint unsigned not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0xFFFFFFFFFFFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1");
+INSERT INTO t1 VALUES (NULL, "0");
+ERROR HY000: Failed to read auto-increment value from storage engine
+INSERT INTO t1 VALUES (NULL, "Overflow");
+ERROR HY000: Failed to read auto-increment value from storage engine
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;
+CREATE TABLE `t1` (
+`a` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+`b` varchar(64) DEFAULT NULL,
+PRIMARY KEY (`a`)
+) ENGINE='Blackhole' AUTO_INCREMENT=18446744073709551615 DEFAULT CHARSET=latin1
+PARTITION BY HASH (a)
+PARTITIONS 3;
+INSERT INTO t1 VALUES (NULL, "Overflow");
+# mysql_errno: 0
+DROP TABLE t1;
+# Multi row insert unsigned bigint
+CREATE TABLE t1
+(a bigint unsigned not null auto_increment primary key, b varchar(64))
+ENGINE = 'Blackhole'
+PARTITION BY HASH (a) PARTITIONS 3;
+INSERT INTO t1 VALUES (0xFFFFFFFFFFFFFFFD, "2");
+INSERT INTO t1 VALUES (NULL, "1"), (NULL, "0"), (NULL, "Overflow");
+ERROR HY000: Failed to read auto-increment value from storage engine
+INSERT INTO t1 VALUES (NULL, "1");
+# mysql_errno: 1467
+INSERT INTO t1 VALUES (NULL, "0");
+# mysql_errno: 1467
+INSERT INTO t1 VALUES (NULL, "Overflow");
+Got one of the listed errors
+# mysql_errno: 1467
+INSERT INTO t1 VALUES (5, "non-generated number");
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `b` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`a`)
+) ENGINE=BLACKHOLE DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY HASH (a)
+PARTITIONS 3 */
+SELECT * FROM t1;
+a	b
+DROP TABLE t1;

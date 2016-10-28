@@ -1,5 +1,4 @@
-/* Copyright (c) 2000-2002, 2005-2007 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +25,7 @@
 	   HA_ERR_KEY_NOT_FOUND = Record not found with key
 	*/
 
-int heap_rsame(register HP_INFO *info, uchar *record, int inx)
+int heap_rsame(HP_INFO *info, uchar *record, int inx)
 {
   HP_SHARE *share=info->s;
   DBUG_ENTER("heap_rsame");
@@ -36,7 +35,8 @@ int heap_rsame(register HP_INFO *info, uchar *record, int inx)
   {
     if (inx < -1 || inx >= (int) share->keys)
     {
-      DBUG_RETURN(my_errno=HA_ERR_WRONG_INDEX);
+      set_my_errno(HA_ERR_WRONG_INDEX);
+      DBUG_RETURN(HA_ERR_WRONG_INDEX);
     }
     else if (inx != -1)
     {
@@ -45,7 +45,7 @@ int heap_rsame(register HP_INFO *info, uchar *record, int inx)
       if (!hp_search(info, share->keydef + inx, info->lastkey, 3))
       {
 	info->update=0;
-	DBUG_RETURN(my_errno);
+	DBUG_RETURN(my_errno());
       }
     }
     memcpy(record,info->current_ptr,(size_t) share->reclength);
@@ -53,5 +53,6 @@ int heap_rsame(register HP_INFO *info, uchar *record, int inx)
   }
   info->update=0;
 
-  DBUG_RETURN(my_errno=HA_ERR_RECORD_DELETED);
+  set_my_errno(HA_ERR_RECORD_DELETED);
+  DBUG_RETURN(HA_ERR_RECORD_DELETED);
 }

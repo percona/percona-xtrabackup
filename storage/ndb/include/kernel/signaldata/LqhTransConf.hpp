@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003, 2005-2008 MySQL AB, 2008 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +20,9 @@
 
 #include "SignalData.hpp"
 
+#define JAM_FILE_ID 21
+
+
 /**
  * This signal is sent as response to a LQH_TRANSREQ
  * which is sent as by a take-over TC
@@ -39,13 +41,14 @@ class LqhTransConf {
 
   friend bool printLQH_TRANSCONF(FILE *, const Uint32 *, Uint32, Uint16);  
 public:
-  STATIC_CONST( SignalLength = 17 );
+  STATIC_CONST( SignalLength = 18 );
 
   /**
    * Upgrade
    */
   STATIC_CONST( SignalLength_GCI_LO = 16 );
   STATIC_CONST( SignalLength_FRAG_ID = 17 );
+  STATIC_CONST( SignalLength_INST_ID = 18 );
 private:
 
   /**
@@ -86,6 +89,7 @@ private:
   Uint32 tableId;
   Uint32 gci_lo;
   Uint32 fragId;
+  Uint32 maxInstanceId;
 
   /**
    * Getters
@@ -225,5 +229,8 @@ LqhTransConf::setMarkerFlag(UintR & requestInfo, UintR val){
   ASSERT_BOOL(val, "LqhTransConf::setMarkerFlag");
   requestInfo |= (val << LTC_MARKER_SHIFT);
 }
+
+
+#undef JAM_FILE_ID
 
 #endif

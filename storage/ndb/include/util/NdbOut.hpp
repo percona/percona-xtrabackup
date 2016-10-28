@@ -1,6 +1,5 @@
-/*
-   Copyright (C) 2003, 2005, 2006, 2008 MySQL AB, 2008, 2009 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+/* Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -74,9 +73,10 @@ public:
   NdbOut& operator<<(float);
   NdbOut& operator<<(double);
   NdbOut& endline(void);
-  NdbOut& flushline(void);
+  NdbOut& flushline(bool force=true);
   NdbOut& setHexFormat(int _format);
-  
+  NdbOut& hexdump(const Uint32 * words, size_t count);  
+
   NdbOut();
   NdbOut(OutputStream &, bool autoflush = true);
   virtual ~NdbOut();
@@ -92,11 +92,6 @@ private:
   int isHex;
   bool m_autoflush;
 };
-
-#ifdef NDB_WIN
-typedef int(*NdbOutF)(char*);
-extern NdbOutF ndbout_svc;
-#endif
 
 inline NdbOut& NdbOut::operator<<(NdbOut& (* _f)(NdbOut&)) {
   (* _f)(*this); 
@@ -120,8 +115,6 @@ inline NdbOut& dec(NdbOut& _NdbOut) {
 }
 extern "C"
 void ndbout_c(const char * fmt, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
-extern "C"
-void vndbout_c(const char * fmt, va_list ap);
 
 class FilteredNdbOut : public NdbOut {
 public:

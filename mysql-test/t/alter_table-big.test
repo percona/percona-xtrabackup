@@ -1,3 +1,8 @@
+# The include statement below is a temp one for tests that are yet to
+#be ported to run with InnoDB,
+#but needs to be kept for tests that would need MyISAM in future.
+--source include/force_myisam_default.inc
+
 #
 # Tests for various concurrency-related aspects of ALTER TABLE implemetation
 #
@@ -7,7 +12,7 @@
 --source include/have_debug.inc
 # Also we are using SBR to check that statements are executed
 # in proper order.
---source include/have_binlog_format_mixed_or_statement.inc
+--source include/force_binlog_format_statement.inc
 
 #
 # Test for Bug#25044 ALTER TABLE ... ENABLE KEYS acquires global
@@ -171,3 +176,4 @@ source include/show_binlog_events.inc;
 
 
 --echo End of 5.1 tests
+--source include/restore_default_binlog_format.inc

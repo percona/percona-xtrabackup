@@ -1,6 +1,6 @@
 #ifndef SQL_ALLOC_INCLUDED
 #define SQL_ALLOC_INCLUDED
-/* Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,9 +15,8 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-#include "thr_malloc.h"
-#include "my_sys.h"
-#include "m_string.h"
+#include "my_sys.h"         // TRASH
+#include "thr_malloc.h"     // alloc_root
 
 /**
   MySQL standard memory allocator class. You have to inherit the class
@@ -44,15 +43,9 @@ public:
   static void operator delete[](void *ptr, MEM_ROOT *mem_root)
   { /* never called */ }
   static void operator delete[](void *ptr, size_t size) { TRASH(ptr, size); }
-#ifdef HAVE_purify
-  bool dummy;
-  inline Sql_alloc() :dummy(0) {}
-  inline ~Sql_alloc() {}
-#else
+
   inline Sql_alloc() {}
   inline ~Sql_alloc() {}
-#endif
-
 };
 
 #endif // SQL_ALLOC_INCLUDED

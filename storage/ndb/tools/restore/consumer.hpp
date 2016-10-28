@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -30,12 +30,16 @@ public:
   virtual bool init(Uint32 tableCompabilityMask) { return true;}
   virtual bool object(Uint32 tableType, const void*) { return true;}
   virtual bool table(const TableS &){return true;}
+  virtual bool fk(Uint32 tableType, const void*) { return true;}
   virtual bool endOfTables() { return true; }
+  virtual bool endOfTablesFK() { return true; }
   virtual void tuple(const TupleS &, Uint32 fragId){}
   virtual void tuple_free(){}
   virtual void endOfTuples(){}
   virtual void logEntry(const LogEntry &){}
   virtual void endOfLogEntrys(){}
+  virtual bool prepare_staging(const TableS &){return true;}
+  virtual bool finalize_staging(const TableS &){return true;}
   virtual bool finalize_table(const TableS &){return true;}
   virtual bool rebuild_indexes(const TableS &) { return true;}
   virtual bool createSystable(const TableS &){ return true;}
@@ -50,11 +54,13 @@ public:
     {return true;}
   virtual bool report_completed(unsigned backup_id, unsigned node_id)
     {return true;}
+  virtual bool isMissingTable(const TableS &){return false;}
   NODE_GROUP_MAP *m_nodegroup_map;
   uint            m_nodegroup_map_len;
   virtual bool has_temp_error() {return false;}
   virtual bool table_equal(const TableS &) { return true; }
-  virtual bool table_compatible_check(const TableS &) {return true;}
+  virtual bool table_compatible_check(TableS &) {return true;}
+  virtual bool check_blobs(TableS &) {return true;}
 };
 
 #endif

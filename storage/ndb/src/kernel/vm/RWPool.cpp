@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2006-2008 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,6 +18,9 @@
 #include "RWPool.hpp"
 #include <ndbd_exit_codes.h>
 #include <NdbOut.hpp>
+
+#define JAM_FILE_ID 278
+
 
 #define REC_NIL GLOBAL_PAGE_SIZE_WORDS
 
@@ -39,7 +41,9 @@ RWPool::init(const Record_info& ri, const Pool_context& pc)
   m_record_info.m_offset_magic = ((ri.m_offset_magic + 3) >> 2);
   m_record_info.m_offset_next_pool = ((ri.m_offset_next_pool + 3) >> 2);
   m_memroot = (RWPage*)m_ctx.get_memroot();
+#ifdef VM_TRACE
   ndbout_c("RWPool::init(%x, %d)",ri.m_type_id, m_record_info.m_size);
+#endif
 }
 
 bool

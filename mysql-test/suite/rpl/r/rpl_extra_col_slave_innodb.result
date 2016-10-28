@@ -146,6 +146,9 @@ DROP TABLE t6;
 **** Extra Colums Start ****
 *** Create t7 on slave  ***
 STOP SLAVE;
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t7 (a INT KEY, b BLOB, c CHAR(5),
 d TIMESTAMP NULL DEFAULT '0000-00-00 00:00:00',
 e CHAR(20) DEFAULT 'Extra Column Testing')
@@ -177,6 +180,7 @@ STOP SLAVE;
 CREATE TABLE t8 (a INT KEY, b BLOB, c CHAR(5),
 d TIMESTAMP NULL DEFAULT '0000-00-00 00:00:00',
 e INT)ENGINE='InnoDB';
+SET sql_mode = default;
 *** Create t8 on Master ***
 CREATE TABLE t8 (a INT PRIMARY KEY, b BLOB, c CHAR(5)
 ) ENGINE='InnoDB';

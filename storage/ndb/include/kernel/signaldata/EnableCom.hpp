@@ -1,5 +1,4 @@
-/* Copyright (C) 2008 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,9 +18,13 @@
 
 #include "SignalData.hpp"
 
+#define JAM_FILE_ID 40
+
+
 class EnableComReq  {
   friend class Qmgr;
-  friend class Cmvmi;
+  friend class Trpman;
+  friend class TrpmanProxy;
 
 public:
   STATIC_CONST( SignalLength = 2 + NodeBitmask::Size );
@@ -34,6 +37,8 @@ private:
 
 class EnableComConf  {
   friend class Qmgr;
+  friend class Trpman;
+  friend class TrpmanProxy;
   friend class Cmvmi;
 
 public:
@@ -44,5 +49,8 @@ private:
   Uint32 m_senderData;
   Uint32 m_nodeIds[NodeBitmask::Size];
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

@@ -1,7 +1,6 @@
 /*
-  Copyright 2009 Sun Microsystems, Inc.
+  Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
 
-   All rights reserved. Use is subject to license terms.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +25,7 @@
 class NdbProcess
 {
 #ifdef _WIN32
-  tyepdef DWORD pid_t;
+  typedef DWORD pid_t;
 #endif
   pid_t m_pid;
   BaseString m_name;
@@ -63,6 +62,12 @@ public:
       BaseString tmp;
       tmp.assfmt("%s%d", str, val);
       m_args.push_back(tmp);
+    }
+
+    void add(const Args & args)
+    {
+      for (unsigned i = 0; i < args.m_args.size(); i++)
+        add(args.m_args[i].c_str());
     }
 
     const Vector<BaseString>& args(void) const
@@ -157,7 +162,7 @@ public:
       }
       NdbSleep_MilliSleep(10);
     }
-    assert(false); // Never reached
+    require(false); // Never reached
   }
 
 private:
@@ -195,7 +200,7 @@ private:
       printf("Started process: %d\n", pid);
       return true;
     }
-    assert(tmp == 0);
+    require(tmp == 0);
 
     if (cwd && chdir(cwd) != 0)
     {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include <m_string.h>
 #include <stdarg.h>
 #include <m_ctype.h>
@@ -401,7 +402,7 @@ process_flags:
 
     if (*fmt == 's')				/* String parameter */
     {
-      reg2 char *par = va_arg(args, char *);
+      char *par = va_arg(args, char *);
       size_t length2 = strlen(par);
       /* TODO: implement precision */
       out_length+= length2;
@@ -424,7 +425,7 @@ process_flags:
     }
     else if (*fmt == 'd' || *fmt == 'u')	/* Integer parameter */
     {
-      register int iarg;
+      int iarg;
       size_t length2;
       char buff[32];
 
@@ -446,10 +447,8 @@ process_flags:
           memset(buffz, ' ', minimum_width - length2);
         if (my_b_write(info, buffz, minimum_width - length2))
         {
-          my_afree(buffz);
           goto err;
         }
-        my_afree(buffz);
       }
 
       out_length+= length2;
@@ -459,7 +458,7 @@ process_flags:
     else if ((*fmt == 'l' && fmt[1] == 'd') || fmt[1] == 'u')
       /* long parameter */
     {
-      register long iarg;
+      long iarg;
       size_t length2;
       char buff[32];
 

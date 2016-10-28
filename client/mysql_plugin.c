@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
 
 #define SHOW_VERSION "1.0.0"
 #define PRINT_VERSION do { printf("%s  Ver %s Distrib %s\n",    \
@@ -98,6 +102,9 @@ int main(int argc,char *argv[])
   char tp_path[FN_REFLEN];
   char server_path[FN_REFLEN];
   char operation[16];
+
+  fprintf(stderr, "Warning: mysql_plugin is deprecated and will be removed in a future "
+          "version.\n");
 
   MY_INIT(argv[0]);
   plugin_data.name= 0; // initialize name
@@ -187,13 +194,14 @@ static char *get_value(char *line, const char *item)
   int item_len= (int)strlen(item);
   int line_len = (int)strlen(line);
 
-  if ((strncasecmp(line, item, item_len) == 0))
+  if ((native_strncasecmp(line, item, item_len) == 0))
   {
     int start= 0;
     char *s= 0;
 
     s = line + item_len + 1;
-    destination= my_strndup(s, line_len - start, MYF(MY_FAE));
+    destination= my_strndup(PSI_NOT_INSTRUMENTED,
+                            s, line_len - start, MYF(MY_FAE));
     destination[line_len - item_len - 2]= 0;
   }
   return destination;
@@ -235,7 +243,7 @@ static int run_command(char* cmd, const char *mode)
 }
 
 
-#ifdef __WIN__
+#ifdef _WIN32
 /**
   Check to see if there are spaces in a path.
   
@@ -261,9 +269,10 @@ static int has_spaces(const char *path)
 static char *convert_path(const char *argument)
 {
   /* Convert / to \\ to make Windows paths */
-  char *winfilename= my_strdup(argument, MYF(MY_FAE));
+  char *winfilename= my_strdup(PSI_NOT_INSTRUMENTED,
+                               argument, MYF(MY_FAE));
   char *pos, *end;
-  int length= strlen(argument);
+  size_t length= strlen(argument);
 
   for (pos= winfilename, end= pos+length ; pos < end ; pos++)
   {
@@ -288,12 +297,13 @@ static char *add_quotes(const char *path)
   char windows_cmd_friendly[FN_REFLEN];
 
   if (has_spaces(path))
-    snprintf(windows_cmd_friendly, sizeof(windows_cmd_friendly),
-             "\"%s\"", path);
+    my_snprintf(windows_cmd_friendly, sizeof(windows_cmd_friendly),
+                "\"%s\"", path);
   else
-    snprintf(windows_cmd_friendly, sizeof(windows_cmd_friendly),
-             "%s", path);
-  return my_strdup(windows_cmd_friendly, MYF(MY_FAE));
+    my_snprintf(windows_cmd_friendly, sizeof(windows_cmd_friendly),
+                "%s", path);
+  return my_strdup(PSI_NOT_INSTRUMENTED,
+                   windows_cmd_friendly, MYF(MY_FAE));
 }
 #endif
 
@@ -331,7 +341,7 @@ static int get_default_values()
     if ((error= make_tempfile(defaults_file, "txt")))
       goto exit;
 
-#ifdef __WIN__
+#ifdef _WIN32
     {
       char *format_str= 0;
   
@@ -340,16 +350,16 @@ static int get_default_values()
       else
         format_str = "%s mysqld > %s";
   
-      snprintf(defaults_cmd, sizeof(defaults_cmd), format_str,
-               add_quotes(tool_path), add_quotes(defaults_file));
+      my_snprintf(defaults_cmd, sizeof(defaults_cmd), format_str,
+                  add_quotes(tool_path), add_quotes(defaults_file));
       if (opt_verbose)
       {
         printf("# my_print_defaults found: %s\n", tool_path);
       }
     }
 #else
-    snprintf(defaults_cmd, sizeof(defaults_cmd),
-             "%s mysqld > %s", tool_path, defaults_file);
+    my_snprintf(defaults_cmd, sizeof(defaults_cmd),
+                "%s mysqld > %s", tool_path, defaults_file);
 #endif
 
     /* Execute the command */
@@ -372,19 +382,23 @@ static int get_default_values()
 
       if ((opt_datadir == 0) && ((value= get_value(line, "--datadir"))))
       {
-        opt_datadir= my_strdup(value, MYF(MY_FAE));
+        opt_datadir= my_strdup(PSI_NOT_INSTRUMENTED,
+                               value, MYF(MY_FAE));
       }
       if ((opt_basedir == 0) && ((value= get_value(line, "--basedir"))))
       {
-        opt_basedir= my_strdup(value, MYF(MY_FAE));
+        opt_basedir= my_strdup(PSI_NOT_INSTRUMENTED,
+                               value, MYF(MY_FAE));
       }
       if ((opt_plugin_dir == 0) && ((value= get_value(line, "--plugin_dir"))))
       {
-        opt_plugin_dir= my_strdup(value, MYF(MY_FAE));
+        opt_plugin_dir= my_strdup(PSI_NOT_INSTRUMENTED,
+                                  value, MYF(MY_FAE));
       }
       if ((opt_plugin_ini == 0) && ((value= get_value(line, "--plugin_ini"))))
       {
-        opt_plugin_ini= my_strdup(value, MYF(MY_FAE));
+        opt_plugin_ini= my_strdup(PSI_NOT_INSTRUMENTED,
+                                  value, MYF(MY_FAE));
       }
     }
   }
@@ -406,7 +420,7 @@ exit:
 static void usage(void)
 {
   PRINT_VERSION;
-  puts("Copyright (c) 2011, Oracle and/or its affiliates. "
+  puts("Copyright (c) 2011, 2016, Oracle and/or its affiliates. "
        "All rights reserved.\n");
   puts("Enable or disable plugins.");
   printf("\nUsage: %s [options] <plugin> ENABLE|DISABLE\n\nOptions:\n",
@@ -471,7 +485,7 @@ static void print_default_values(void)
 
 static my_bool
 get_one_option(int optid,
-               const struct my_option *opt __attribute__((unused)),
+               const struct my_option *opt MY_ATTRIBUTE((unused)),
                char *argument)
 {
   switch(optid) {
@@ -494,22 +508,28 @@ get_one_option(int optid,
     usage();
     exit(0);
   case 'd':
-    opt_datadir= my_strdup(argument, MYF(MY_FAE));
+    opt_datadir= my_strdup(PSI_NOT_INSTRUMENTED,
+                           argument, MYF(MY_FAE));
     break;
   case 'b':
-    opt_basedir= my_strdup(argument, MYF(MY_FAE));
+    opt_basedir= my_strdup(PSI_NOT_INSTRUMENTED,
+                           argument, MYF(MY_FAE));
     break;
   case 'p':
-    opt_plugin_dir= my_strdup(argument, MYF(MY_FAE));
+    opt_plugin_dir= my_strdup(PSI_NOT_INSTRUMENTED,
+                              argument, MYF(MY_FAE));
     break;
   case 'i':
-    opt_plugin_ini= my_strdup(argument, MYF(MY_FAE));
+    opt_plugin_ini= my_strdup(PSI_NOT_INSTRUMENTED,
+                              argument, MYF(MY_FAE));
     break;
   case 'm':
-    opt_mysqld= my_strdup(argument, MYF(MY_FAE));
+    opt_mysqld= my_strdup(PSI_NOT_INSTRUMENTED,
+                          argument, MYF(MY_FAE));
     break;
   case 'f':
-    opt_my_print_defaults= my_strdup(argument, MYF(MY_FAE));
+    opt_my_print_defaults= my_strdup(PSI_NOT_INSTRUMENTED,
+                                     argument, MYF(MY_FAE));
     break;
   }
   return 0;
@@ -552,7 +572,7 @@ static int search_dir(const char * base_path, const char *tool_name,
 {
   char new_path[FN_REFLEN];
   char source_path[FN_REFLEN];
-#if __WIN__
+#if _WIN32
   char win_abs_path[FN_REFLEN];
   char self_name[FN_REFLEN];
   const char *last_fn_libchar;
@@ -572,7 +592,7 @@ static int search_dir(const char * base_path, const char *tool_name,
     return 0;
   }  
 
-#if __WIN__
+#if _WIN32
   /*
     On Windows above code will not be able to find the file since
     path names are not absolute and file_exists works only with 
@@ -653,7 +673,8 @@ static int load_plugin_data(char *plugin_name, char *config_file)
   if (opt_plugin_ini == 0)
   {
     fn_format(path, config_file, opt_plugin_dir, "", MYF(0));
-    opt_plugin_ini= my_strdup(path, MYF(MY_FAE));
+    opt_plugin_ini= my_strdup(PSI_NOT_INSTRUMENTED,
+                              path, MYF(MY_FAE));
   }
   if (!file_exists(opt_plugin_ini))
   {
@@ -669,7 +690,8 @@ static int load_plugin_data(char *plugin_name, char *config_file)
   }
 
   /* save name */
-  plugin_data.name= my_strdup(plugin_name, MYF(MY_WME));
+  plugin_data.name= my_strdup(PSI_NOT_INSTRUMENTED,
+                              plugin_name, MYF(MY_WME));
 
   /* Read plugin components */
   while (i < 16)
@@ -699,14 +721,16 @@ static int load_plugin_data(char *plugin_name, char *config_file)
       /* Add proper file extension for soname */
       strcat(line, FN_SOEXT);
       /* save so_name */
-      plugin_data.so_name= my_strdup(line, MYF(MY_WME|MY_ZEROFILL));
+      plugin_data.so_name= my_strdup(PSI_NOT_INSTRUMENTED,
+                                     line, MYF(MY_WME|MY_ZEROFILL));
       i++;
     }
     else
     {
       if (strlen(line) > 0)
       {
-        plugin_data.components[i]= my_strdup(line, MYF(MY_WME));
+        plugin_data.components[i]= my_strdup(PSI_NOT_INSTRUMENTED,
+                                             line, MYF(MY_WME));
         i++;
       }
       else
@@ -749,11 +773,11 @@ static int check_options(int argc, char **argv, char *operation)
   
   /* Form prefix strings for the options. */
   const char *basedir_prefix = "--basedir=";
-  int basedir_len= strlen(basedir_prefix);
+  size_t basedir_len= strlen(basedir_prefix);
   const char *datadir_prefix = "--datadir=";
-  int datadir_len= strlen(datadir_prefix);
+  size_t datadir_len= strlen(datadir_prefix);
   const char *plugin_dir_prefix = "--plugin_dir=";
-  int plugin_dir_len= strlen(plugin_dir_prefix);
+  size_t plugin_dir_len= strlen(plugin_dir_prefix);
 
   strcpy(plugin_name, "");
   for (i = 0; i < argc && num_found < 5; i++)
@@ -763,36 +787,44 @@ static int check_options(int argc, char **argv, char *operation)
     {
       continue;
     }
-    if ((strcasecmp(argv[i], "ENABLE") == 0) ||
-        (strcasecmp(argv[i], "DISABLE") == 0))
+    if ((native_strcasecmp(argv[i], "ENABLE") == 0) ||
+        (native_strcasecmp(argv[i], "DISABLE") == 0))
     {
       strcpy(operation, argv[i]);
       num_found++;
     }
-    else if ((strncasecmp(argv[i], basedir_prefix, basedir_len) == 0) &&
+    else if ((native_strncasecmp(argv[i], basedir_prefix, basedir_len) == 0) &&
              !opt_basedir)
     {
-      opt_basedir= my_strndup(argv[i]+basedir_len,
+      opt_basedir= my_strndup(PSI_NOT_INSTRUMENTED,
+                              argv[i]+basedir_len,
                               strlen(argv[i])-basedir_len, MYF(MY_FAE));
       num_found++;
     }
-    else if ((strncasecmp(argv[i], datadir_prefix, datadir_len) == 0) &&
+    else if ((native_strncasecmp(argv[i], datadir_prefix, datadir_len) == 0) &&
              !opt_datadir)
     {
-      opt_datadir= my_strndup(argv[i]+datadir_len,
+      opt_datadir= my_strndup(PSI_NOT_INSTRUMENTED,
+                              argv[i]+datadir_len,
                               strlen(argv[i])-datadir_len, MYF(MY_FAE));
       num_found++;
     }
-    else if ((strncasecmp(argv[i], plugin_dir_prefix, plugin_dir_len) == 0) &&
+    else if ((native_strncasecmp(argv[i], plugin_dir_prefix, plugin_dir_len) == 0) &&
              !opt_plugin_dir)
     {
-      opt_plugin_dir= my_strndup(argv[i]+plugin_dir_len,
+      opt_plugin_dir= my_strndup(PSI_NOT_INSTRUMENTED,
+                                 argv[i]+plugin_dir_len,
                                  strlen(argv[i])-plugin_dir_len, MYF(MY_FAE));
       num_found++;
     }
     /* read the plugin config file and check for match against argument */
     else
     {
+      if (strlen(argv[i]) + 4 + 1 > FN_REFLEN)
+      {
+        fprintf(stderr, "ERROR: argument is too long.\n");
+        return 1;
+      }
       strcpy(plugin_name, argv[i]);
       strcpy(config_file, argv[i]);
       strcat(config_file, ".ini");
@@ -823,7 +855,7 @@ static int check_options(int argc, char **argv, char *operation)
     {
       return 1;
     }
-    if (strcasecmp(plugin_data.name, plugin_name) != 0)
+    if (native_strcasecmp(plugin_data.name, plugin_name) != 0)
     {
       fprintf(stderr, "ERROR: plugin name requested does not match config "
               "file data.\n");
@@ -884,16 +916,18 @@ static int process_options(int argc, char *argv[], char *operation)
     if (opt_basedir[i-1] != FN_LIBCHAR || opt_basedir[i-1] != FN_LIBCHAR2)
     {
       char buff[FN_REFLEN];
+      memset(buff, 0, sizeof(buff));
       
       strncpy(buff, opt_basedir, sizeof(buff) - 1);
-#ifdef __WIN__
+#ifdef _WIN32
       strncat(buff, "/", sizeof(buff) - strlen(buff) - 1);
 #else
       strncat(buff, FN_DIRSEP, sizeof(buff) - strlen(buff) - 1);
 #endif
       buff[sizeof(buff) - 1]= 0;
       my_free(opt_basedir);
-      opt_basedir= my_strdup(buff, MYF(MY_FAE));
+      opt_basedir= my_strdup(PSI_NOT_INSTRUMENTED,
+                             buff, MYF(MY_FAE));
     }
   }
   
@@ -1053,7 +1087,7 @@ static int find_plugin(char *tp_path)
 
 
 /**
-  Build the boostrap file.
+  Build the bootstrap file.
   
   Create a new file and populate it with SQL commands to ENABLE or DISABLE
   the plugin via REPLACE and DELETE operations on the mysql.plugin table.
@@ -1096,7 +1130,7 @@ static int build_bootstrap_file(char *operation, char *bootstrap)
     error= 1;
     goto exit;
   }
-  if (strcasecmp(operation, "enable") == 0)
+  if (native_strcasecmp(operation, "enable") == 0)
   {
     int i= 0;
     fprintf(file, "REPLACE INTO mysql.plugin VALUES ");
@@ -1182,7 +1216,7 @@ exit:
   
   Create a command line sequence to launch mysqld in bootstrap mode. This
   will allow mysqld to launch a minimal server instance to read and
-  execute SQL commands from a file piped in (the boostrap file). We use
+  execute SQL commands from a file piped in (the bootstrap file). We use
   the --no-defaults option to skip reading values from the config file.
 
   The bootstrap mode skips loading of plugins and many other subsystems.
@@ -1203,7 +1237,7 @@ static int bootstrap_server(char *server_path, char *bootstrap_file)
   char bootstrap_cmd[FN_REFLEN];
   int error= 0;
 
-#ifdef __WIN__
+#ifdef _WIN32
   char *format_str= 0;
   const char *verbose_str= NULL;
    
@@ -1218,14 +1252,14 @@ static int bootstrap_server(char *server_path, char *bootstrap_file)
   else 
     format_str= "%s %s --bootstrap --datadir=%s --basedir=%s < %s";
 
-  snprintf(bootstrap_cmd, sizeof(bootstrap_cmd), format_str,
-           add_quotes(convert_path(server_path)), verbose_str,
-           add_quotes(opt_datadir), add_quotes(opt_basedir),
-           add_quotes(bootstrap_file));
+  my_snprintf(bootstrap_cmd, sizeof(bootstrap_cmd), format_str,
+              add_quotes(convert_path(server_path)), verbose_str,
+              add_quotes(opt_datadir), add_quotes(opt_basedir),
+              add_quotes(bootstrap_file));
 #else
-  snprintf(bootstrap_cmd, sizeof(bootstrap_cmd),
-           "%s --no-defaults --bootstrap --datadir=%s --basedir=%s"
-           " < %s", server_path, opt_datadir, opt_basedir, bootstrap_file);
+  my_snprintf(bootstrap_cmd, sizeof(bootstrap_cmd),
+              "%s --no-defaults --bootstrap --datadir=%s --basedir=%s"
+              " < %s", server_path, opt_datadir, opt_basedir, bootstrap_file);
 #endif
 
   /* Execute the command */

@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
+ Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -148,9 +148,11 @@ public class AllTests {
             TestSuite suite = (TestSuite) suite();
             System.out.println("Found '" + suite.testCount() + "' test classes in jar file.");
             TestResult res = junit.textui.TestRunner.run(suite);
+            System.out.println("Finished running tests in '" + jarFile + "'");
             System.exit(res.wasSuccessful() ? 0 : 1);
         } else {
             usage();
         }
     }
 }
+

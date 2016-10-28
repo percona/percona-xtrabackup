@@ -44,7 +44,7 @@ typedef struct {
 	fil_space_t	*space;
 	fil_node_t	*node;
 	ibool		started;
-	os_ib_mutex_t	mutex;
+	ib_mutex_t	mutex;
 } datafiles_iter_t;
 
 /* value of the --incremental option */
@@ -192,7 +192,7 @@ void xb_data_files_close(void);
 /***********************************************************************
 Reads the space flags from a given data file and returns the compressed
 page size, or 0 if the space is not compressed. */
-ulint xb_get_zip_size(os_file_t file);
+const page_size_t xb_get_zip_size(os_file_t file, bool *success);
 
 /************************************************************************
 Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
@@ -200,7 +200,7 @@ or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
 the --tables or --tables-file options.
 
 @return TRUE if the table should be skipped. */
-my_bool
+bool
 check_if_skip_table(
 /******************/
 	const char*	name);	/*!< in: path to the table */

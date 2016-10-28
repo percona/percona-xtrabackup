@@ -1,6 +1,5 @@
 /* 
-   Copyright (C) 2007 MySQL AB, 2008 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,6 +25,9 @@
  */
 
 #include <ndbzio.h>
+
+#define JAM_FILE_ID 397
+
 
 /**
  * PREAD/PWRITE is needed to use file != thread
@@ -62,8 +64,16 @@ public:
 
   virtual void createDirectories();
 
+  virtual Uint32 get_fileinfo() const {
+    Uint32 ft = (Uint32)m_filetype;
+    Uint32 fd = (Uint32)theFd;
+    return (ft << 16) | (fd & 0xFFFF);
+  }
+
 private:
   int theFd;
+  int m_filetype;
+  void set_or_check_filetype(bool set);
 
   int use_gz;
   ndbzio_stream nzf;
@@ -109,5 +119,8 @@ private:
   };
 #endif
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2012, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -34,20 +34,18 @@ Created 3/14/1997 Heikki Tuuri
 #include "trx0types.h"
 #include "que0types.h"
 #include "row0types.h"
-#include "row0purge.h"
 #include "ut0vec.h"
 
-/********************************************************************//**
-Creates a purge node to a query graph.
-@return	own: purge node */
-UNIV_INTERN
+/** Create a purge node to a query graph.
+@param[in]	parent	parent node, i.e., a thr node
+@param[in]	heap	memory heap where created
+@return own: purge node */
 purge_node_t*
 row_purge_node_create(
-/*==================*/
-	que_thr_t*	parent,		/*!< in: parent node, i.e., a
-					thr node */
-	mem_heap_t*	heap)		/*!< in: memory heap where created */
-	__attribute__((nonnull, warn_unused_result));
+	que_thr_t*	parent,
+	mem_heap_t*	heap)
+	MY_ATTRIBUTE((warn_unused_result));
+
 /***********************************************************//**
 Determines if it is possible to remove a secondary index entry.
 Removal is possible if the secondary index entry does not refer to any
@@ -62,25 +60,23 @@ inserts a record that the secondary index entry would refer to.
 However, in that case, the user transaction would also re-insert the
 secondary index entry after purge has removed it and released the leaf
 page latch.
-@return	true if the secondary index record can be purged */
-UNIV_INTERN
+@return true if the secondary index record can be purged */
 bool
 row_purge_poss_sec(
 /*===============*/
 	purge_node_t*	node,	/*!< in/out: row purge node */
 	dict_index_t*	index,	/*!< in: secondary index */
 	const dtuple_t*	entry)	/*!< in: secondary index entry */
-	__attribute__((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((nonnull, warn_unused_result));
 /***************************************************************
 Does the purge operation for a single undo log record. This is a high-level
 function used in an SQL execution graph.
-@return	query thread to run next or NULL */
-UNIV_INTERN
+@return query thread to run next or NULL */
 que_thr_t*
 row_purge_step(
 /*===========*/
 	que_thr_t*	thr)	/*!< in: query thread */
-	__attribute__((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((nonnull, warn_unused_result));
 
 /* Purge node structure */
 
@@ -91,9 +87,9 @@ struct purge_node_t{
 	roll_ptr_t	roll_ptr;/* roll pointer to undo log record */
 	ib_vector_t*    undo_recs;/*!< Undo recs to purge */
 
-	undo_no_t	undo_no;/* undo number of the record */
+	undo_no_t	undo_no;/*!< undo number of the record */
 
-	ulint		rec_type;/* undo log record type: TRX_UNDO_INSERT_REC,
+	ulint		rec_type;/*!< undo log record type: TRX_UNDO_INSERT_REC,
 				... */
 	dict_table_t*	table;	/*!< table where purge is done */
 
@@ -118,7 +114,18 @@ struct purge_node_t{
 	btr_pcur_t	pcur;	/*!< persistent cursor used in searching the
 				clustered index record */
 	ibool		done;	/* Debug flag */
+	trx_id_t	trx_id;	/*!< trx id for this purging record */
 
+#ifdef UNIV_DEBUG
+	/***********************************************************//**
+	Validate the persisent cursor. The purge node has two references
+	to the clustered index record - one via the ref member, and the
+	other via the persistent cursor.  These two references must match
+	each other if the found_clust flag is set.
+	@return true if the persistent cursor is consistent with
+	the ref member.*/
+	bool	validate_pcur();
+#endif
 };
 
 #ifndef UNIV_NONINL

@@ -1,5 +1,4 @@
-/* Copyright (C) 2007, 2008 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2007, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +17,9 @@
 #define DICT_SIGNAL_HPP
 
 #include <Bitmask.hpp>
+
+#define JAM_FILE_ID 187
+
 
 struct DictSignal
 {
@@ -144,5 +146,8 @@ public:
     return val < size ? name[val] : "?";
   }
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

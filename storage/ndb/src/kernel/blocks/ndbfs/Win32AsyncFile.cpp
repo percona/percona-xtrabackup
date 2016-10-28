@@ -1,5 +1,5 @@
 /* 
-   Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,6 +22,9 @@
 #include <signaldata/FsRef.hpp>
 #include <signaldata/FsOpenReq.hpp>
 #include <signaldata/FsReadWriteReq.hpp>
+
+#define JAM_FILE_ID 399
+
 
 Win32AsyncFile::Win32AsyncFile(SimulatedBlock& fs) :
   AsyncFile(fs),hFile(INVALID_HANDLE_VALUE)
@@ -71,6 +74,12 @@ void Win32AsyncFile::openReq(Request* request)
     dwCreationDisposition = OPEN_EXISTING;
   }
 
+  m_always_sync = false;
+  if (flags & FsOpenReq::OM_SYNC)
+  {
+    m_always_sync = true;
+  }
+
   switch(flags & 3){
   case FsOpenReq::OM_READONLY:
     dwDesiredAccess = GENERIC_READ;
@@ -92,6 +101,12 @@ void Win32AsyncFile::openReq(Request* request)
 
   if(INVALID_HANDLE_VALUE == hFile) {
     request->error = GetLastError();
+  
+    if((ERROR_FILE_EXISTS == request->error) && (flags & (FsOpenReq::OM_CREATE|FsOpenReq::OM_CREATE_IF_NONE))) {
+      request->error = FsRef::fsErrFileExists;
+      return;
+    }
+
     if(((ERROR_PATH_NOT_FOUND == request->error) || (ERROR_INVALID_NAME == request->error))
 		&& (flags & (FsOpenReq::OM_CREATE|FsOpenReq::OM_CREATE_IF_NONE))) {
       createDirectories();
@@ -217,7 +232,7 @@ Win32AsyncFile::readBuffer(Request* req, char * buf, size_t size, off_t offset)
     DWORD dwBytesRead;
     BOOL bRead = ReadFile(hFile,
                           buf,
-                          size,
+                          (DWORD)size,
                           &dwBytesRead,
                           &ov);
     if(!bRead){
@@ -248,7 +263,7 @@ Win32AsyncFile::readBuffer(Request* req, char * buf, size_t size, off_t offset)
 
     buf += bytes_read;
     size -= bytes_read;
-    offset += bytes_read;
+    offset += (off_t)bytes_read;
   }
   return 0;
 }
@@ -277,7 +292,7 @@ Win32AsyncFile::writeBuffer(const char * buf, size_t size, off_t offset)
     size_t bytes_written = 0;
 
     DWORD dwWritten;
-    BOOL bWrite = WriteFile(hFile, buf, bytes_to_write, &dwWritten, &ov);
+    BOOL bWrite = WriteFile(hFile, buf, (DWORD)bytes_to_write, &dwWritten, &ov);
     if(!bWrite) {
       return GetLastError();
     }
@@ -288,7 +303,7 @@ Win32AsyncFile::writeBuffer(const char * buf, size_t size, off_t offset)
 
     buf += bytes_written;
     size -= bytes_written;
-    offset += bytes_written;
+    offset += (off_t)bytes_written;
   }
   return 0;
 }
@@ -317,7 +332,9 @@ bool Win32AsyncFile::isOpen(){
 void
 Win32AsyncFile::syncReq(Request * request)
 {
-  if(m_auto_sync_freq && m_write_wo_sync == 0){
+  if ((m_auto_sync_freq && m_write_wo_sync == 0) ||
+      m_always_sync)
+  {
     return;
   }
   if(!FlushFileBuffers(hFile)) {
@@ -346,7 +363,9 @@ Win32AsyncFile::appendReq(Request * request){
     size -= dwWritten;
   }
 
-  if(m_auto_sync_freq && m_write_wo_sync > m_auto_sync_freq){
+  if((m_auto_sync_freq && m_write_wo_sync > m_auto_sync_freq) ||
+      m_always_sync)
+  {
     syncReq(request);
   }
 }
@@ -393,7 +412,7 @@ loop:
   do {
     if (0 != strcmp(".", ffd.cFileName) && 0 != strcmp("..", ffd.cFileName))
     {
-      int len = strlen(path);
+      int len = (int)strlen(path);
       strcat(path, ffd.cFileName);
       if(DeleteFile(path) || RemoveDirectory(path)) 
       {

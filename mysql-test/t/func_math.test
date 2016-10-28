@@ -1,3 +1,8 @@
+# The include statement below is a temp one for tests that are yet to
+#be ported to run with InnoDB,
+#but needs to be kept for tests that would need MyISAM in future.
+--source include/force_myisam_default.inc
+
 #
 # Test of math functions
 #
@@ -351,10 +356,10 @@ DROP TABLE t1;
 --echo # Bug#11764994  57900: CREATE TABLE .. SELECT ASSERTS SCALE >= 0 && PRECISION > 0 && SCALE <= PR
 --echo #
 
+--error ER_WRONG_ARGUMENTS
 CREATE TABLE t1 SELECT CEIL(LINESTRINGFROMWKB(1) DIV NULL);
-DROP TABLE t1;
+--error ER_WRONG_ARGUMENTS
 CREATE TABLE t1 SELECT FLOOR(LINESTRINGFROMWKB(1) DIV NULL);
-DROP TABLE t1;
 
 --echo #
 --echo # Bug#11765923  58937: MANY VALGRIND ERRORS AFTER GROUPING BY RESULT OF DECIMAL COLUMN FUNCTION
@@ -520,7 +525,7 @@ as foo;
 --echo #            my_gcvt: Assertion `width > 0 && to != ((void *)0)' failed
 --echo #
 CREATE TABLE t1(a char(0));
-INSERT INTO t1 (SELECT -pi());
+INSERT IGNORE INTO t1 (SELECT -pi());
 DROP TABLE t1;
 
 --echo #
@@ -570,3 +575,111 @@ select 5.0 div 2.0;
 select 5.0 div 2;
 select 5 div 2.0;
 select 5.9 div 2, 1.23456789e3 DIV 2, 1.23456789e9 DIV 2, 1.23456789e19 DIV 2;
+
+--echo #
+--echo # Bug#11758319 BEHAVIOR OF LOGARITHMIC FUNCTIONS DEPENDS ON
+--echo #              ERROR_FOR_DIVISION_BY_ZERO
+--echo # Bug#50507 Behavior of logarithmic functions depends on
+--echo #              ERROR_FOR_DIVISION_BY_ZERO
+
+CREATE TABLE t1(a DOUBLE);
+
+SET sql_mode='NO_AUTO_CREATE_USER';
+INSERT INTO t1 VALUES (ln(1));
+INSERT INTO t1 VALUES (ln(0));
+INSERT INTO t1 VALUES (ln(-1));
+INSERT INTO t1 VALUES (log(0));
+INSERT INTO t1 VALUES (log(1,0));
+INSERT INTO t1 VALUES (log2(0));
+INSERT INTO t1 VALUES (log10(0));
+SELECT * FROM t1 ORDER BY a;
+
+SET sql_mode=default;
+INSERT INTO t1 VALUES (ln(1));
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+INSERT INTO t1 VALUES (ln(0));
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+INSERT INTO t1 VALUES (ln(-1));
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+INSERT INTO t1 VALUES (log(0));
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+INSERT INTO t1 VALUES (log(1,0));
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+INSERT INTO t1 VALUES (log2(0));
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+INSERT INTO t1 VALUES (log10(0));
+SELECT * FROM t1 ORDER BY a;
+
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+UPDATE t1 SET a = ln(0);
+SELECT * FROM t1 ORDER BY a;
+
+SET sql_mode='NO_AUTO_CREATE_USER';
+UPDATE t1 SET a = ln(0);
+SELECT * FROM t1 ORDER BY a;
+
+SET sql_mode=default;
+--error ER_INVALID_ARGUMENT_FOR_LOGARITHM
+DELETE FROM t1 WHERE a <=> ln(0);
+SELECT * FROM t1 ORDER BY a;
+
+SET sql_mode='NO_AUTO_CREATE_USER';
+DELETE FROM t1 WHERE a <=> ln(0);
+SELECT * FROM t1 ORDER BY a;
+
+DROP TABLE t1;
+SET sql_mode=default;
+
+--echo #
+--echo # Bug#19047527 SQRT() : UNINITIALISED VALUE IN MY_STRTOD
+--echo #
+
+do sqrt(weight_string(_eucjpms "0E+"));
+
+
+--echo #
+--echo # Bug#21279005 - ROUND FUNCTION INCORRECT IN WHERE-CLAUSE
+--echo #                USING LOCAL VARIABLE
+
+DELIMITER |;
+CREATE PROCEDURE test_round_fn()
+BEGIN
+  DECLARE num_digits int;
+  SET num_digits := 3;
+
+  CREATE TEMPORARY TABLE tmp_test (
+    number double
+  );
+  INSERT INTO tmp_test
+  VALUES (1),(0);
+
+  SELECT
+    number,
+    Round(number, num_digits) > 0,
+    Round(number, 3) > 0
+  FROM
+    tmp_test;
+
+  SELECT
+    number,
+    Round(number, num_digits) > 0,
+    Round(number, 3) > 0
+  FROM
+    tmp_test
+  WHERE
+    Round(number, 3) >= 0;
+
+  SELECT
+    number,
+    Round(number, num_digits) > 0,
+    Round(number, 3) > 0
+  FROM
+    tmp_test
+  WHERE
+    Round(number, num_digits) >= 0;
+
+END|
+DELIMITER ;|
+
+CALL test_round_fn();
+DROP PROCEDURE test_round_fn;

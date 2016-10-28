@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2007 MySQL AB, 2008 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +22,9 @@
 #include <mgmapi_config_parameters.h>
 #include <ndb_version.h>
 
+#define JAM_FILE_ID 0
+
+
 class NodeInfo {
 public:
   NodeInfo();
@@ -37,15 +39,14 @@ public:
     INVALID = 255 ///< Invalid type
   };
   NodeType getType() const;
-  
+
   Uint32 m_version;       ///< Ndb version
   Uint32 m_mysql_version; ///< MySQL version
   Uint32 m_lqh_workers;   ///< LQH workers
   Uint32 m_type;          ///< Node type
   Uint32 m_connectCount;  ///< No of times connected
-  bool   m_connected;     ///< Node is connected
-  Uint32 m_heartbeat_cnt; ///< Missed heartbeats
-  
+  Uint32 m_connected;     ///< Node is connected
+
   friend NdbOut & operator<<(NdbOut&, const NodeInfo&); 
 };
 
@@ -57,7 +58,6 @@ NodeInfo::NodeInfo(){
   m_lqh_workers = 0;
   m_type = INVALID;
   m_connectCount = 0;
-  m_heartbeat_cnt= 0;
 }
 
 inline
@@ -125,5 +125,8 @@ struct NodeVersionInfo
     Uint32 m_max_version;
   } m_type [3]; // Indexed as NodeInfo::Type 
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

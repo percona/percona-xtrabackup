@@ -29,44 +29,39 @@ case "$1" in
 
 	if [ -z "$2" ];
 	then
+
 		set -e
 
 		MYSQLDATA=/var/lib/mysql
+		MYSQLFILES=/var/lib/mysql-files
 
-		if [ ! -d "${MYSQLDATA}/mysql" -a ! -L "${MYSQLDATA}/mysql" ];
+		if [ ! "$(ls -A ${MYSQLDATA})" ] && [ -d ${MYSQLFILES} ];
 		then
-			mkdir ${MYSQLDATA}/mysql
-			chown mysql:mysql ${MYSQLDATA}/mysql
-			chmod 750 ${MYSQLDATA}/mysql
-			if [ ! "$(ls -A ${MYSQLDATA}/mysql)" ];
+			db_get mysql-community-server/root-pass && PASSWD=${RET}
+			if [ ! -z "${PASSWD}" ];
 			then
-				mysql_install_db --user=mysql > /dev/null
-			fi
-		fi
+				SQL=/var/lib/mysql-files/SQL
+				touch ${SQL}
+				chmod 600 ${SQL}
+				chown mysql:mysql ${SQL}
 
-		db_get mysql-community-server/root-pass && PASSWD=${RET}
-		if [ ! -z "${PASSWD}" ];
-		then
-			db_set mysql-community-server/root-pass ""
-			db_set mysql-community-server/re-root-pass ""
-			PASSWD="UPDATE user SET password=PASSWORD('${PASSWD}') WHERE user='root';"
-		else
-			PASSWD=""
-		fi
-
-		SQL=`mktemp`
-		if [ -f "${SQL}" ];
-		then
-			chmod 700 ${SQL}
-			cat << EOF > ${SQL}
+				db_set mysql-community-server/root-pass ""
+				db_set mysql-community-server/re-root-pass ""
+				cat << EOF > ${SQL}
 USE mysql;
-${PASSWD}
-DELETE FROM user WHERE user='';
-FLUSH PRIVILEGES;
+UPDATE user SET authentication_string=PASSWORD('${PASSWD}') WHERE user='root';
 EOF
-			mysqld --basedir=/usr --bootstrap --user=mysql --skip-grant-tables < $SQL
-			PASSWD=""
-			rm -f ${SQL}
+				PASSWD=""
+				su - mysql -s /bin/bash -c "/usr/sbin/mysqld --initialize-insecure=on --init-file=${SQL} 2>&1 > /dev/null"
+				rm -f ${SQL}
+			else
+				su - mysql -s /bin/bash -c "/usr/sbin/mysqld --initialize-insecure=on 2>&1 > /dev/null"
+				su - mysql -s /bin/bash -c "/usr/sbin/mysqld --log_error_verbosity=2 2>&1 > /dev/null &"
+				while [ ! -e $(my_print_defaults mysqld | grep pid-file | cut -d= -f2) ]; do sleep 1; done
+				mysql -e "INSTALL PLUGIN auth_socket SONAME 'auth_socket.so'"
+				mysql -e "USE mysql; UPDATE user SET plugin='auth_socket' WHERE user='root'"
+				mysqladmin shutdown
+			fi
 		fi
 
 		set +e

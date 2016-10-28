@@ -31,9 +31,9 @@ struct xb_fil_cur_t;
 
 /* The read filter context */
 struct xb_read_filt_ctxt_t {
-	ib_int64_t		offset;		/*!< current file offset */
-	ib_int64_t		data_file_size;	/*!< data file size */
-	ib_int64_t		buffer_capacity;/*!< read buffer capacity */
+	ib_uint64_t		offset;		/*!< current file offset */
+	ib_uint64_t		data_file_size;	/*!< data file size */
+	ib_uint64_t		buffer_capacity;/*!< read buffer capacity */
 	ulint			space_id;	/*!< space id */
 	/* The following fields used only in bitmap filter */
 	/* Move these to union if any other filters are added in future */
@@ -51,8 +51,8 @@ struct xb_read_filt_t {
 		     const xb_fil_cur_t* cursor,
 		     ulint space_id);
 	void (*get_next_batch)(xb_read_filt_ctxt_t* ctxt,
-			       ib_int64_t* read_batch_start,
-			       ib_int64_t* read_batch_len);
+			       ib_uint64_t* read_batch_start,
+			       ib_uint64_t* read_batch_len);
 	void (*deinit)(xb_read_filt_ctxt_t* ctxt);
 };
 

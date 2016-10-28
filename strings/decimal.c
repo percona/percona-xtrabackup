@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -136,12 +136,7 @@ static const dec1 frac_max[DIG_PER_DEC1-1]={
   999900000, 999990000, 999999000,
   999999900, 999999990 };
 
-#ifdef HAVE_purify
-#define sanity(d) DBUG_ASSERT((d)->len > 0)
-#else
-#define sanity(d) DBUG_ASSERT((d)->len >0 && ((d)->buf[0] | \
-                              (d)->buf[(d)->len-1] | 1))
-#endif
+#define sanity(d) DBUG_ASSERT((d)->len >0)
 
 #define FIX_INTG_FRAC_ERROR(len, intg1, frac1, error)                   \
         do                                                              \
@@ -1000,6 +995,9 @@ internal_str2dec(const char *from, decimal_t *to, char **end, my_bool fixed)
         error= decimal_shift(to, (int) exponent);
     }
   }
+  /* Avoid returning negative zero, cfr. decimal_cmp() */
+  if (to->sign && decimal_is_zero(to))
+    to->sign= FALSE;
   return error;
 
 fatal_error:
@@ -1055,7 +1053,7 @@ int double2decimal(double from, decimal_t *to)
   char buff[FLOATING_POINT_BUFFER], *end;
   int res;
   DBUG_ENTER("double2decimal");
-  end= buff + my_gcvt(from, MY_GCVT_ARG_DOUBLE, sizeof(buff) - 1, buff, NULL);
+  end= buff + my_gcvt(from, MY_GCVT_ARG_DOUBLE, (int)sizeof(buff) - 1, buff, NULL);
   res= string2decimal(buff, to, &end);
   DBUG_PRINT("exit", ("res: %d", res));
   DBUG_RETURN(res);
@@ -1064,26 +1062,34 @@ int double2decimal(double from, decimal_t *to)
 
 static int ull2dec(ulonglong from, decimal_t *to)
 {
-  int intg1, error=E_DEC_OK;
-  ulonglong x=from;
+  int intg1;
+  int error= E_DEC_OK;
+  ulonglong x= from;
   dec1 *buf;
 
   sanity(to);
 
-  for (intg1=1; from >= DIG_BASE; intg1++, from/=DIG_BASE) ;
+  if (from == 0)
+    intg1= 1;
+  else
+  {
+    /* Count the number of decimal_digit_t's we need. */
+    for (intg1= 0; from != 0; intg1++, from/= DIG_BASE)
+      ;
+  }
   if (unlikely(intg1 > to->len))
   {
-    intg1=to->len;
-    error=E_DEC_OVERFLOW;
+    intg1= to->len;
+    error= E_DEC_OVERFLOW;
   }
-  to->frac=0;
-  to->intg=intg1*DIG_PER_DEC1;
+  to->frac= 0;
+  to->intg= intg1 * DIG_PER_DEC1;
 
-  for (buf=to->buf+intg1; intg1; intg1--)
+  for (buf= to->buf + intg1; intg1; intg1--)
   {
-    ulonglong y=x/DIG_BASE;
-    *--buf=(dec1)(x-y*DIG_BASE);
-    x=y;
+    ulonglong y= x / DIG_BASE;
+    *--buf=(dec1)(x - y * DIG_BASE);
+    x= y;
   }
   return error;
 }
@@ -1109,7 +1115,7 @@ int decimal2ulonglong(decimal_t *from, ulonglong *to)
 
   if (from->sign)
   {
-      *to=ULL(0);
+      *to=0ULL;
       return E_DEC_OVERFLOW;
   }
 
@@ -1117,9 +1123,9 @@ int decimal2ulonglong(decimal_t *from, ulonglong *to)
   {
     ulonglong y=x;
     x=x*DIG_BASE + *buf++;
-    if (unlikely(y > ((ulonglong) ULONGLONG_MAX/DIG_BASE) || x < y))
+    if (unlikely(y > ((ulonglong) ULLONG_MAX/DIG_BASE) || x < y))
     {
-      *to=ULONGLONG_MAX;
+      *to=ULLONG_MAX;
       return E_DEC_OVERFLOW;
     }
   }
@@ -1142,24 +1148,24 @@ int decimal2longlong(decimal_t *from, longlong *to)
     /*
       Attention: trick!
       we're calculating -|from| instead of |from| here
-      because |LONGLONG_MIN| > LONGLONG_MAX
+      because |LLONG_MIN| > LLONG_MAX
       so we can convert -9223372036854775808 correctly
     */
     x=x*DIG_BASE - *buf++;
-    if (unlikely(y < (LONGLONG_MIN/DIG_BASE) || x > y))
+    if (unlikely(y < (LLONG_MIN/DIG_BASE) || x > y))
     {
       /*
         the decimal is bigger than any possible integer
         return border integer depending on the sign
       */
-      *to= from->sign ? LONGLONG_MIN : LONGLONG_MAX;
+      *to= from->sign ? LLONG_MIN : LLONG_MAX;
       return E_DEC_OVERFLOW;
     }
   }
   /* boundary case: 9223372036854775808 */
-  if (unlikely(from->sign==0 && x == LONGLONG_MIN))
+  if (unlikely(from->sign==0 && x == LLONG_MIN))
   {
-    *to= LONGLONG_MAX;
+    *to= LLONG_MAX;
     return E_DEC_OVERFLOW;
   }
 
@@ -1505,7 +1511,7 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale)
   if (intg0x)
   {
     int i=dig2bytes[intg0x];
-    dec1 UNINIT_VAR(x);
+    dec1 x= 0;
     switch (i)
     {
       case 1: x=mi_sint1korr(from); break;
@@ -1546,7 +1552,7 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale)
   if (frac0x)
   {
     int i=dig2bytes[frac0x];
-    dec1 UNINIT_VAR(x);
+    dec1 x= 0;
     switch (i)
     {
       case 1: x=mi_sint1korr(from); break;
@@ -1560,7 +1566,6 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale)
       goto err;
     buf++;
   }
-  my_afree(d_copy);
 
   /*
     No digits? We have read the number zero, of unspecified precision.
@@ -1571,7 +1576,6 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale)
   return error;
 
 err:
-  my_afree(d_copy);
   decimal_make_zero(to);
   return(E_DEC_BAD_NUM);
 }
@@ -1604,6 +1608,10 @@ int decimal_bin_size(int precision, int scale)
       intg0x=intg-intg0*DIG_PER_DEC1, frac0x=scale-frac0*DIG_PER_DEC1;
 
   DBUG_ASSERT(scale >= 0 && precision > 0 && scale <= precision);
+  DBUG_ASSERT(intg0x >= 0);
+  DBUG_ASSERT(intg0x <= DIG_PER_DEC1);
+  DBUG_ASSERT(frac0x >= 0);
+  DBUG_ASSERT(frac0x <= DIG_PER_DEC1);
   return intg0*sizeof(dec1)+dig2bytes[intg0x]+
          frac0*sizeof(dec1)+dig2bytes[frac0x];
 }
@@ -1631,7 +1639,7 @@ decimal_round(const decimal_t *from, decimal_t *to, int scale,
               decimal_round_mode mode)
 {
   int frac0=scale>0 ? ROUND_UP(scale) : (scale + 1)/DIG_PER_DEC1,
-    frac1=ROUND_UP(from->frac), UNINIT_VAR(round_digit),
+    frac1=ROUND_UP(from->frac), round_digit= 0,
     intg0=ROUND_UP(from->intg), error=E_DEC_OK, len=to->len;
 
   dec1 *buf0=from->buf, *buf1=to->buf, x, y, carry=0;
@@ -2117,6 +2125,11 @@ int decimal_cmp(const decimal_t *from1, const decimal_t *from2)
 {
   if (likely(from1->sign == from2->sign))
     return do_sub(from1, from2, 0);
+
+  // Reject negative zero, cfr. internal_str2dec()
+  DBUG_ASSERT(!(decimal_is_zero(from1) && from1->sign));
+  DBUG_ASSERT(!(decimal_is_zero(from2) && from2->sign));
+
   return from1->sign > from2->sign ? -1 : 1;
 }
 
@@ -2279,11 +2292,23 @@ int decimal_mul(const decimal_t *from1, const decimal_t *from2, decimal_t *to)
 static int do_div_mod(const decimal_t *from1, const decimal_t *from2,
                       decimal_t *to, decimal_t *mod, int scale_incr)
 {
+
+  /*
+    frac* - number of digits in fractional part of the number
+    prec* - precision of the number
+    intg* - number of digits in the integer part
+    buf* - buffer having the actual number
+    All variables ending with 0 - like frac0, intg0 etc are
+    for the final result. Similarly frac1, intg1 etc are for
+    the first number and frac2, intg2 etc are for the second number
+   */
   int frac1=ROUND_UP(from1->frac)*DIG_PER_DEC1, prec1=from1->intg+frac1,
       frac2=ROUND_UP(from2->frac)*DIG_PER_DEC1, prec2=from2->intg+frac2,
-      UNINIT_VAR(error), i, intg0, frac0, len1, len2, dintg, div_mod=(!mod);
-  dec1 *buf0, *buf1=from1->buf, *buf2=from2->buf, *tmp1,
-       *start2, *stop2, *stop1, *stop0, norm2, carry, *start1, dcarry;
+      error= 0, i, intg0, frac0, len1, len2,
+      dintg, /* Holds the estimate of number of integer digits in final result */
+      div_mod=(!mod) /*true if this is division */;
+  dec1 *buf0, *buf1=from1->buf, *buf2=from2->buf, *start1, *stop1,
+       *start2, *stop2, *stop0 ,norm2, carry, dcarry, *tmp1;
   dec2 norm_factor, x, guess, y;
 
   if (mod)
@@ -2291,7 +2316,10 @@ static int do_div_mod(const decimal_t *from1, const decimal_t *from2,
 
   sanity(to);
 
-  /* removing all the leading zeroes */
+  /*
+    removing all the leading zeroes in the second number. Leading zeroes are
+    added later to the result.
+   */
   i= ((prec2 - 1) % DIG_PER_DEC1) + 1;
   while (prec2 > 0 && *buf2 == 0)
   {
@@ -2301,8 +2329,19 @@ static int do_div_mod(const decimal_t *from1, const decimal_t *from2,
   }
   if (prec2 <= 0) /* short-circuit everything: from2 == 0 */
     return E_DEC_DIV_ZERO;
+
+  /*
+    Remove the remanining zeroes . For ex: for 0.000000000001
+    the above while loop removes 9 zeroes and the result will have 0.0001
+    these remaining zeroes are removed here
+   */
   prec2-= count_leading_zeroes((prec2 - 1) % DIG_PER_DEC1, *buf2);
   DBUG_ASSERT(prec2 > 0);
+
+  /*
+   Do the same for the first number. Remove the leading zeroes.
+   Check if the number is actually 0. Then remove the remaining zeroes.
+   */
 
   i=((prec1-1) % DIG_PER_DEC1)+1;
   while (prec1 > 0 && *buf1 == 0)
@@ -2323,6 +2362,7 @@ static int do_div_mod(const decimal_t *from1, const decimal_t *from2,
   if ((scale_incr-= frac1 - from1->frac + frac2 - from2->frac) < 0)
     scale_incr=0;
 
+  /* Calculate the integer digits in final result */
   dintg=(prec1-frac1)-(prec2-frac2)+(*buf1 >= *buf2);
   if (dintg < 0)
   {
@@ -2467,13 +2507,23 @@ static int do_div_mod(const decimal_t *from1, const decimal_t *from2,
   {
     /*
       now the result is in tmp1, it has
-        intg=prec1-frac1
-        frac=max(frac1, frac2)=to->frac
-    */
+      intg=prec1-frac1  if there were no leading zeroes.
+                        If leading zeroes were present, they have been removed
+                        earlier. We need to now add them back to the result.
+      frac=max(frac1, frac2)=to->frac
+     */
     if (dcarry)
       *--start1=dcarry;
     buf0=to->buf;
-    intg0=(int) (ROUND_UP(prec1-frac1)-(start1-tmp1));
+    /* Calculate the final result's integer digits */
+    dintg= (prec1 - frac1) - ((start1 - tmp1) * DIG_PER_DEC1);
+    if (dintg < 0)
+    {
+      /* If leading zeroes in the fractional part were earlier stripped */
+      intg0= dintg / DIG_PER_DEC1;
+    }
+    else
+      intg0= ROUND_UP(dintg);
     frac0=ROUND_UP(to->frac);
     error=E_DEC_OK;
     if (unlikely(frac0==0 && intg0==0))
@@ -2483,6 +2533,7 @@ static int do_div_mod(const decimal_t *from1, const decimal_t *from2,
     }
     if (intg0<=0)
     {
+      /* Add back the leading zeroes that were earlier stripped */
       if (unlikely(-intg0 >= to->len))
       {
         decimal_make_zero(to);
@@ -2520,7 +2571,6 @@ static int do_div_mod(const decimal_t *from1, const decimal_t *from2,
         *buf0++=*start1++;
   }
 done:
-  my_afree(tmp1);
   tmp1= remove_leading_zeroes(to, &to->intg);
   if(to->buf != tmp1)
     memmove(to->buf, tmp1,

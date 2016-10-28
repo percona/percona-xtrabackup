@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <dict0mem.h>
 #include <dict0priv.h>
 #include <fsp0fsp.h>
+#include <trx0trx.h>
 #include <handler0alter.h>
 #include <ibuf0ibuf.h>
 #include <page0page.h>
@@ -372,7 +373,8 @@ page_map_file_open(const char *path)
 	/* Must be a series of 8-byte tuples */
 	xb_a(statinfo.st_size % 8 == 0);
 
-	pmap_cur = (page_map_cursor_t *) my_malloc(sizeof(page_map_cursor_t),
+	pmap_cur = (page_map_cursor_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+						   sizeof(page_map_cursor_t),
 						   MYF(MY_FAE));
 
 	pmap_cur->fd = my_open(path, O_RDONLY, MYF(MY_WME));
@@ -784,7 +786,7 @@ xb_rebuild_indexes_for_table(
 
 	for (i = 0; (index = dict_table_get_next_index(index)); i++) {
 
-		msg("[%02lu]   Found index %s\n", thread_n, index->name);
+		msg("[%02lu]   Found index %s\n", thread_n, index->name());
 
 		/* Pretend that it's the current trx that created this index.
 		Required to avoid 5.6+ debug assertions. */
@@ -816,7 +818,7 @@ xb_rebuild_indexes_for_table(
 		index->to_be_dropped = 1;
 
 		/* Patch up any FK referencing this index with NULL */
-		dict_foreign_replace_index(table, NULL, index);
+		ut_a(dict_foreign_replace_index(table, NULL, index));
 
 		dict_index_remove_from_cache(table, index);
 
@@ -830,7 +832,7 @@ xb_rebuild_indexes_for_table(
 
 	for (i = 0; i < n_indexes; i++) {
 		indexes[i] = row_merge_create_index(trx, table,
-						    &index_defs[i]);
+						    &index_defs[i], NULL);
 		add_key_nums[i] = index_defs[i].key_number;
 	}
 
@@ -846,7 +848,8 @@ xb_rebuild_indexes_for_table(
 
 	error = row_merge_build_indexes(trx, table, table, FALSE, indexes,
 					add_key_nums, n_indexes, &dummy_table,
-					NULL, NULL, ULINT_UNDEFINED, null_seq);
+					NULL, NULL, ULINT_UNDEFINED, null_seq,
+					true, NULL, NULL, NULL);
 	ut_a(error == DB_SUCCESS);
 
 	mem_heap_free(heap);
@@ -890,7 +893,7 @@ xb_rebuild_indexes_thread_func(
 			break;
 		}
 
-		UT_LIST_REMOVE(list, table_list, rebuild_table);
+		UT_LIST_REMOVE(table_list, rebuild_table);
 
 		pthread_mutex_unlock(&table_list_mutex);
 
@@ -920,8 +923,8 @@ xb_rebuild_indexes_thread_func(
 
 		ut_d(table->n_ref_count--);
 
-		mem_free(rebuild_table->name);
-		mem_free(rebuild_table);
+		ut_free(rebuild_table->name);
+		ut_free(rebuild_table);
 	}
 
 	trx_commit_for_mysql(trx);
@@ -965,9 +968,9 @@ xb_compact_rebuild_indexes(void)
 
 	/* Enlarge the fatal lock wait timeout during index rebuild
 	operation. */
-	os_increment_counter_by_amount(server_mutex,
-				       srv_fatal_semaphore_wait_threshold,
-				       7200);
+	os_atomic_increment_ulint(
+		&srv_fatal_semaphore_wait_threshold,
+		72000);
 
 	mtr_start(&mtr);
 
@@ -976,7 +979,7 @@ xb_compact_rebuild_indexes(void)
 	ut_a(!dict_table_is_comp(sys_tables));
 
 	pthread_mutex_init(&table_list_mutex, NULL);
-	UT_LIST_INIT(table_list);
+	UT_LIST_INIT(table_list, &index_rebuild_table_t::list);
 
 	btr_pcur_open_at_index_side(TRUE, sys_index, BTR_SEARCH_LEAF, &pcur,
 				    TRUE, 0, &mtr);
@@ -1009,11 +1012,11 @@ xb_compact_rebuild_indexes(void)
 		field = rec_get_nth_field_old(rec, 0, &len);
 
 		rebuild_table = static_cast<index_rebuild_table_t *>
-			(mem_alloc(sizeof(*rebuild_table)));
+			(ut_malloc_nokey(sizeof(*rebuild_table)));
 		rebuild_table->name = mem_strdupl((char*) field, len);
 		rebuild_table->space_id = space_id;
 
-		UT_LIST_ADD_LAST(list, table_list, rebuild_table);
+		UT_LIST_ADD_LAST(table_list, rebuild_table);
 	}
 
 	btr_pcur_close(&pcur);
@@ -1034,8 +1037,8 @@ xb_compact_rebuild_indexes(void)
 	}
 
 	threads = (index_rebuild_thread_t *)
-		mem_alloc(sizeof(*threads) *
-			  xtrabackup_rebuild_threads);
+		ut_malloc_nokey(sizeof(*threads) *
+				xtrabackup_rebuild_threads);
 
 	for (i = 0; i < xtrabackup_rebuild_threads; i++) {
 
@@ -1055,5 +1058,5 @@ xb_compact_rebuild_indexes(void)
 		pthread_join(threads[i].id, NULL);
 	}
 
-	mem_free(threads);
+	ut_free(threads);
 }

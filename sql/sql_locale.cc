@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,11 +20,10 @@
   !! This file is built from my_locale.pl !!
 */
 
-#include "sql_priv.h"
-#include "unireg.h"
 #include "sql_locale.h"
 #include "sql_class.h"                          // THD
 #include "my_sys.h"                             // MY_*, NullS, NULL
+#include "log.h"
 
 
 enum err_msgs_index
@@ -37,30 +36,30 @@ enum err_msgs_index
 
 MY_LOCALE_ERRMSGS global_errmsgs[]=
 {
-  {"english", NULL},
-  {"czech", NULL},
-  {"danish", NULL},
-  {"dutch", NULL},
-  {"estonian", NULL},
-  {"french", NULL},
-  {"german", NULL},
-  {"greek", NULL},
-  {"hungarian", NULL},
-  {"italian", NULL},
-  {"japanese", NULL},
-  {"korean", NULL},
-  {"norwegian", NULL},
-  {"norwegian-ny", NULL},
-  {"polish", NULL},
-  {"portuguese", NULL},
-  {"romanian", NULL},
-  {"russian", NULL},
-  {"serbian", NULL},
-  {"slovak", NULL},
-  {"spanish", NULL},
-  {"swedish", NULL},
-  {"ukrainian", NULL},
-  {NULL, NULL}
+  MY_LOCALE_ERRMSGS("english"),
+  MY_LOCALE_ERRMSGS("czech"),
+  MY_LOCALE_ERRMSGS("danish"),
+  MY_LOCALE_ERRMSGS("dutch"),
+  MY_LOCALE_ERRMSGS("estonian"),
+  MY_LOCALE_ERRMSGS("french"),
+  MY_LOCALE_ERRMSGS("german"),
+  MY_LOCALE_ERRMSGS("greek"),
+  MY_LOCALE_ERRMSGS("hungarian"),
+  MY_LOCALE_ERRMSGS("italian"),
+  MY_LOCALE_ERRMSGS("japanese"),
+  MY_LOCALE_ERRMSGS("korean"),
+  MY_LOCALE_ERRMSGS("norwegian"),
+  MY_LOCALE_ERRMSGS("norwegian-ny"),
+  MY_LOCALE_ERRMSGS("polish"),
+  MY_LOCALE_ERRMSGS("portuguese"),
+  MY_LOCALE_ERRMSGS("romanian"),
+  MY_LOCALE_ERRMSGS("russian"),
+  MY_LOCALE_ERRMSGS("serbian"),
+  MY_LOCALE_ERRMSGS("slovak"),
+  MY_LOCALE_ERRMSGS("spanish"),
+  MY_LOCALE_ERRMSGS("swedish"),
+  MY_LOCALE_ERRMSGS("ukrainian"),
+  MY_LOCALE_ERRMSGS(NULL)
 };
 
 
@@ -3492,7 +3491,7 @@ MY_LOCALE *my_locale_by_name(const char *name)
     if (thd)
     {
       // Send a warning to the client
-      push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
                           ER_WARN_DEPRECATED_SYNTAX, ER(ER_WARN_DEPRECATED_SYNTAX),
                           name, locale->name);
     }
@@ -3510,8 +3509,8 @@ MY_LOCALE *my_locale_by_name(const char *name)
 
 void cleanup_errmsgs()
 {
-  for (MY_LOCALE_ERRMSGS *msgs= global_errmsgs; msgs->language; msgs++)
+  for (MY_LOCALE_ERRMSGS *msgs= global_errmsgs; msgs->get_language(); msgs++)
   {
-    my_free(msgs->errmsgs);
+    msgs->destroy();
   }
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -51,6 +51,7 @@ reportShutdown(const ndb_mgm_configuration* config,
 
   Uint32 length, theData[25];
   EventReport *rep= CAST_PTR(EventReport, &theData[0]);
+  rep->eventType = 0; /* Ensure it's initialised */
 
   rep->setNodeId(nodeid);
   if (restart)
@@ -141,7 +142,11 @@ ignore_signals(void)
 #elif defined SIGINFO
     SIGINFO,
 #endif
+#ifdef _WIN32
+    SIGTERM,
+#else
     SIGQUIT,
+#endif
     SIGTERM,
 #ifdef SIGTSTP
     SIGTSTP,
@@ -168,7 +173,11 @@ ignore_signals(void)
     SIGPOLL,
 #endif
     SIGSEGV,
+#ifdef _WIN32
+    SIGINT,
+#else
     SIGPIPE,
+#endif
 #ifdef SIGTRAP
     SIGTRAP
 #endif
@@ -314,6 +323,9 @@ kill(pid_t pid, int sig)
   return pid;
 }
 #endif
+
+#define JAM_FILE_ID 333
+
 
 extern int real_main(int, char**);
 
@@ -543,7 +555,9 @@ angel_run(const char* progname,
           const char* bind_address,
           bool initial,
           bool no_start,
-          bool daemon)
+          bool daemon,
+          int connnect_retries,
+          int connect_delay)
 {
   ConfigRetriever retriever(connect_str,
                             force_nodeid,
@@ -557,8 +571,6 @@ angel_run(const char* progname,
     angel_exit(1);
   }
 
-  const int connnect_retries = 12;
-  const int connect_delay = 5;
   const int verbose = 1;
   if (retriever.do_connect(connnect_retries, connect_delay, verbose) != 0)
   {
@@ -570,7 +582,7 @@ angel_run(const char* progname,
                       retriever.get_mgmd_host(),
                       retriever.get_mgmd_port());
 
-  const int alloc_retries = 2;
+  const int alloc_retries = 10;
   const int alloc_delay = 3;
   const Uint32 nodeid = retriever.allocNodeId(alloc_retries, alloc_delay);
   if (nodeid == 0)
@@ -825,8 +837,6 @@ angel_run(const char* progname,
       NdbSleep_SecSleep(restart_delay_secs);
     };
 
-    const int connnect_retries = 12;
-    const int connect_delay = 5;
     const int verbose = 1;
     if (retriever.do_connect(connnect_retries, connect_delay, verbose) != 0)
     {
@@ -842,7 +852,7 @@ angel_run(const char* progname,
     retriever.setNodeId(nodeid);
 
     g_eventLogger->debug("Angel reallocating nodeid %d", nodeid);
-    const int alloc_retries = 10;
+    const int alloc_retries = 20;
     const int alloc_delay = 3;
     const Uint32 realloced = retriever.allocNodeId(alloc_retries, alloc_delay);
     if (realloced == 0)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -30,14 +30,21 @@ HP_INFO *heap_open_from_share(HP_SHARE *share, int mode)
   HP_INFO *info;
   DBUG_ENTER("heap_open_from_share");
 
-  if (!(info= (HP_INFO*) my_malloc((uint) sizeof(HP_INFO) +
+  if (!(info= (HP_INFO*) my_malloc(hp_key_memory_HP_INFO,
+                                   (uint) sizeof(HP_INFO) +
 				  2 * share->max_key_length,
 				  MYF(MY_ZEROFILL))))
   {
     DBUG_RETURN(0);
   }
   share->open_count++; 
-  thr_lock_data_init(&share->lock,&info->lock,NULL);
+  /*
+    Don't initialize THR_LOCK_DATA for internal temporary tables as it
+    is not used for them anyway (and THR_LOCK is not initialized for them
+    too).
+  */
+  if (share->open_list.data != NULL)
+    thr_lock_data_init(&share->lock, &info->lock, NULL);
   info->s= share;
   info->lastkey= (uchar*) (info + 1);
   info->recbuf= (uchar*) (info->lastkey + share->max_key_length);
@@ -112,7 +119,7 @@ HP_INFO *heap_open(const char *name, int mode)
   mysql_mutex_lock(&THR_LOCK_heap);
   if (!(share= hp_find_named_heap(name)))
   {
-    my_errno= ENOENT;
+    set_my_errno(ENOENT);
     mysql_mutex_unlock(&THR_LOCK_heap);
     DBUG_RETURN(0);
   }

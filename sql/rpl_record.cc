@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,13 +13,16 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-#include "sql_priv.h"
-#include "unireg.h"
-#include "rpl_rli.h"
 #include "rpl_record.h"
-#include "rpl_slave.h"                  // Need to pull in slave_print_msg
-#include "rpl_utility.h"
-#include "rpl_rli.h"
+
+#include "my_bitmap.h"        // MY_BITMAP
+#include "derror.h"           // ER_THD
+#include "field.h"            // Field
+#include "mysqld.h"           // ER
+#include "rpl_rli.h"          // Relay_log_info
+#include "rpl_utility.h"      // table_def
+#include "table.h"            // TABLE
+#include "template_utils.h"   // down_cast
 
 using std::min;
 using std::max;
@@ -67,7 +70,7 @@ pack_row(TABLE *table, MY_BITMAP const* cols,
   uchar *pack_ptr = row_data + null_byte_count;
   uchar *null_ptr = row_data;
   my_ptrdiff_t const rec_offset= record - table->record[0];
-  my_ptrdiff_t const def_offset= table->s->default_values - table->record[0];
+  my_ptrdiff_t const def_offset= table->default_values_offset();
 
   DBUG_ENTER("pack_row");
 
@@ -321,7 +324,7 @@ unpack_row(Relay_log_info const *rli,
         else
         {
           f->set_default();
-          push_warning_printf(current_thd, Sql_condition::WARN_LEVEL_WARN,
+          push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                               ER_BAD_NULL_ERROR, ER(ER_BAD_NULL_ERROR),
                               f->field_name);
         }
@@ -346,6 +349,20 @@ unpack_row(Relay_log_info const *rli,
           my_error(ER_SLAVE_CORRUPT_EVENT, MYF(0));
           DBUG_RETURN(ER_SLAVE_CORRUPT_EVENT);
         }
+        /*
+          For a virtual generated column of blob type, we have to keep
+          both the old and new value for the blob since this might be
+          needed by the storage engine during updates.
+
+          The reason why this needs special handling is that the virtual
+          generated blobs are neither stored in the record buffers nor
+          stored by the storage engine. This special handling for blobs
+          is normally taken care of in update_generated_write_fields()
+          but this function is not called when applying updated records
+          in replication.
+        */
+        if (f->type() == MYSQL_TYPE_BLOB && f->is_virtual_gcol())
+          (down_cast<Field_blob*>(f))->keep_old_value();
         pack_ptr= f->unpack(f->ptr, pack_ptr, metadata, TRUE);
 	DBUG_PRINT("debug", ("Unpacked; metadata: 0x%x;"
                              " pack_ptr: 0x%lx; pack_ptr': 0x%lx; bytes: %d",
@@ -384,7 +401,7 @@ unpack_row(Relay_log_info const *rli,
                              source_type.c_ptr_safe(), value_string.c_ptr_safe()));
 #endif
         copy.set(*field_ptr, f, TRUE);
-        (*copy.do_copy)(&copy);
+        copy.invoke_do_copy(&copy);
 #ifndef DBUG_OFF
         char target_buf[MAX_FIELD_WIDTH];
         String target_type(target_buf, sizeof(target_buf), system_charset_info);
@@ -498,7 +515,7 @@ int prepare_record(TABLE *const table, const MY_BITMAP *cols, const bool check)
       {
         f->set_default();
         push_warning_printf(current_thd,
-                            Sql_condition::WARN_LEVEL_WARN,
+                            Sql_condition::SL_WARNING,
                             ER_NO_DEFAULT_FOR_FIELD,
                             ER(ER_NO_DEFAULT_FOR_FIELD),
                             f->field_name);

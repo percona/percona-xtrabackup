@@ -1,5 +1,6 @@
 drop table if exists t1,t2;
 drop database if exists mysqltest;
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION,NO_AUTO_CREATE_USER';
 create table t1 (
 col1 int not null auto_increment primary key,
 col2 varchar(30) not null,
@@ -298,13 +299,6 @@ t1	0	a	1	a	A	3	NULL	NULL	YES	BTREE
 t1	0	a	2	b	A	300	NULL	NULL	YES	BTREE		
 t1	1	b	1	b	A	100	NULL	NULL	YES	BTREE		
 drop table t1;
-CREATE TABLE t1 (i int(10), index(i) );
-ALTER TABLE t1 DISABLE KEYS;
-INSERT DELAYED INTO t1 VALUES(1),(2),(3);
-Warnings:
-Warning	1287	'INSERT DELAYED' is deprecated and will be removed in a future release. Please use INSERT instead
-ALTER TABLE t1 ENABLE KEYS;
-drop table t1;
 CREATE TABLE t1 (
 Host varchar(16) binary NOT NULL default '',
 User varchar(16) binary NOT NULL default '',
@@ -405,6 +399,15 @@ t2	CREATE TABLE `t2` (
 drop table if exists t1, t2;
 create table t1 (a int, b int, c int, d int, e int, f int, g int, h int,i int, primary key (a,b,c,d,e,f,g,i,h)) engine=MyISAM;
 insert into t1 (a) values(1);
+Warnings:
+Warning	1364	Field 'b' doesn't have a default value
+Warning	1364	Field 'c' doesn't have a default value
+Warning	1364	Field 'd' doesn't have a default value
+Warning	1364	Field 'e' doesn't have a default value
+Warning	1364	Field 'f' doesn't have a default value
+Warning	1364	Field 'g' doesn't have a default value
+Warning	1364	Field 'h' doesn't have a default value
+Warning	1364	Field 'i' doesn't have a default value
 show table status like 't1';
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
 t1	MyISAM	10	Fixed	1	37	X	X	X	X	X	X	X	X	latin1_swedish_ci	NULL		
@@ -848,10 +851,7 @@ id
 50
 51
 drop table t1;
-set @orig_sql_mode = @@sql_mode;
-set sql_mode="no_zero_date";
-Warnings:
-Warning	1681	'NO_ZERO_DATE' is deprecated and will be removed in a future release.
+set sql_mode= default;
 create table t1(f1 int);
 alter table t1 add column f2 datetime not null, add column f21 date not null;
 insert into t1 values(1,'2000-01-01','2000-01-01');
@@ -868,7 +868,6 @@ select * from t1;
 f1	f2	f21	f4	f41
 1	2000-01-01 00:00:00	2000-01-01	2002-02-02 00:00:00	2002-02-02
 drop table t1;
-set sql_mode= @orig_sql_mode;
 create table t1 (v varchar(32));
 insert into t1 values ('def'),('abc'),('hij'),('3r4f');
 select * from t1;
@@ -1483,17 +1482,17 @@ ALTER TABLE t1 ADD INDEX i2(b), ALGORITHM= DEFAULT;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i3(b), ALGORITHM= COPY;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i4(b), ALGORITHM= INPLACE;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i4' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i4' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i5(b), ALGORITHM= INVALID;
 ERROR HY000: Unknown ALGORITHM 'INVALID'
 ALTER TABLE m1 ENABLE KEYS;
@@ -1518,17 +1517,17 @@ ALTER TABLE t1 ADD INDEX i2(b), ALGORITHM= DEFAULT;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i3(b), ALGORITHM= COPY;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i4(b), ALGORITHM= INPLACE;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i4' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i4' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 SET SESSION old_alter_table= 0;
 affected rows: 0
 ALTER TABLE t1 DROP INDEX i1, DROP INDEX i2, DROP INDEX i3, DROP INDEX i4;
@@ -1550,17 +1549,17 @@ ALTER TABLE t1 ADD INDEX i2(b), LOCK= NONE;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i3(b), LOCK= SHARED;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i4(b), LOCK= EXCLUSIVE;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i4' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i4' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i5(b), LOCK= INVALID;
 ERROR HY000: Unknown LOCK type 'INVALID'
 ALTER TABLE m1 ENABLE KEYS, LOCK= DEFAULT;
@@ -1580,24 +1579,24 @@ ALTER TABLE t1 ADD INDEX i2(b), ALGORITHM= INPLACE, LOCK= SHARED;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i2' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i3(b), ALGORITHM= INPLACE, LOCK= EXCLUSIVE;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i3' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i4(b), ALGORITHM= COPY, LOCK= NONE;
 ERROR 0A000: LOCK=NONE is not supported. Reason: COPY algorithm requires a lock. Try LOCK=SHARED.
 ALTER TABLE t1 ADD INDEX i5(b), ALGORITHM= COPY, LOCK= SHARED;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i5' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i5' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE t1 ADD INDEX i6(b), ALGORITHM= COPY, LOCK= EXCLUSIVE;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 1
 Warnings:
-Note	1831	Duplicate index 'i6' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
+Warning	1831	Duplicate index 'i6' defined on the table 'test.t1'. This is deprecated and will be disallowed in a future release.
 ALTER TABLE m1 ENABLE KEYS, ALGORITHM= INPLACE, LOCK= NONE;
 ERROR 0A000: LOCK=NONE/SHARED is not supported for this operation. Try LOCK=EXCLUSIVE.
 ALTER TABLE m1 ENABLE KEYS, ALGORITHM= INPLACE, LOCK= SHARED;
@@ -1719,8 +1718,8 @@ ALTER TABLE tm1 DROP INDEX im3;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 0
 ALTER TABLE ti1 DROP COLUMN d2;
-affected rows: 2
-info: Records: 2  Duplicates: 0  Warnings: 0
+affected rows: 0
+info: Records: 0  Duplicates: 0  Warnings: 0
 ALTER TABLE tm1 DROP COLUMN d2;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 0
@@ -1778,12 +1777,9 @@ info: Records: 0  Duplicates: 0  Warnings: 0
 ALTER TABLE tm1 MODIFY COLUMN e INT FIRST;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 0
-SET @orig_sql_mode = @@sql_mode;
-SET @@sql_mode = 'STRICT_TRANS_TABLES';
 ALTER TABLE ti1 MODIFY COLUMN c INT NOT NULL;
 affected rows: 0
 info: Records: 0  Duplicates: 0  Warnings: 0
-SET @@sql_mode = @orig_sql_mode;
 ALTER TABLE tm1 MODIFY COLUMN c INT NOT NULL;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 0
@@ -1794,8 +1790,8 @@ ALTER TABLE tm1 MODIFY COLUMN c INT NULL;
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 0
 ALTER TABLE ti1 MODIFY COLUMN h VARCHAR(30);
-affected rows: 2
-info: Records: 2  Duplicates: 0  Warnings: 0
+affected rows: 0
+info: Records: 0  Duplicates: 0  Warnings: 0
 ALTER TABLE tm1 MODIFY COLUMN h VARCHAR(30);
 affected rows: 2
 info: Records: 2  Duplicates: 0  Warnings: 0
@@ -1936,7 +1932,7 @@ DROP TABLE tm1;
 # Bug#11815557 60269: MYSQL SHOULD REJECT ATTEMPTS TO CREATE SYSTEM
 #                     TABLES IN INCORRECT ENGINE
 #
-# Note: This test assumes that only MyISAM supports system tables.
+# Note: This test assumes that only MyISAM and InnoDB supports system tables.
 #       If other engines are made to support system tables,
 #       then this test needs to be updated
 #
@@ -1951,8 +1947,8 @@ ALTER TABLE func ENGINE=csv;
 ERROR HY000: Storage engine 'CSV' does not support system tables. [mysql.func]
 ALTER TABLE event ENGINE=merge;
 ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.event]
-ALTER TABLE servers ENGINE=innodb;
-ERROR HY000: Storage engine 'InnoDB' does not support system tables. [mysql.servers]
+ALTER TABLE servers ENGINE=merge;
+ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.servers]
 ALTER TABLE procs_priv ENGINE=memory;
 ERROR HY000: Storage engine 'MEMORY' does not support system tables. [mysql.procs_priv]
 ALTER TABLE tables_priv ENGINE=heap;
@@ -1961,8 +1957,8 @@ ALTER TABLE columns_priv ENGINE=csv;
 ERROR HY000: Storage engine 'CSV' does not support system tables. [mysql.columns_priv]
 ALTER TABLE time_zone ENGINE=merge;
 ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.time_zone]
-ALTER TABLE help_topic ENGINE=innodb;
-ERROR HY000: Storage engine 'InnoDB' does not support system tables. [mysql.help_topic]
+ALTER TABLE help_topic ENGINE=merge;
+ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.help_topic]
 CREATE TABLE db (dummy int) ENGINE=innodb;
 ERROR HY000: Storage engine 'InnoDB' does not support system tables. [mysql.db]
 CREATE TABLE user (dummy int) ENGINE=memory;
@@ -1973,8 +1969,8 @@ CREATE TABLE func (dummy int) ENGINE=csv;
 ERROR HY000: Storage engine 'CSV' does not support system tables. [mysql.func]
 CREATE TABLE event (dummy int) ENGINE=merge;
 ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.event]
-CREATE TABLE servers (dummy int) ENGINE=innodb;
-ERROR HY000: Storage engine 'InnoDB' does not support system tables. [mysql.servers]
+CREATE TABLE servers (dummy int) ENGINE=merge;
+ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.servers]
 CREATE TABLE procs_priv (dummy int) ENGINE=memory;
 ERROR HY000: Storage engine 'MEMORY' does not support system tables. [mysql.procs_priv]
 CREATE TABLE tables_priv (dummy int) ENGINE=heap;
@@ -1983,11 +1979,707 @@ CREATE TABLE columns_priv (dummy int) ENGINE=csv;
 ERROR HY000: Storage engine 'CSV' does not support system tables. [mysql.columns_priv]
 CREATE TABLE time_zone (dummy int) ENGINE=merge;
 ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.time_zone]
-CREATE TABLE help_topic (dummy int) ENGINE=innodb;
-ERROR HY000: Storage engine 'InnoDB' does not support system tables. [mysql.help_topic]
+CREATE TABLE help_topic (dummy int) ENGINE=merge;
+ERROR HY000: Storage engine 'MRG_MYISAM' does not support system tables. [mysql.help_topic]
 use test;
 # End of Bug#11815557
 #
+# Tests for WL#6555 "Online rename index".
+#
+#
+# 1) Tests for syntax and semantics of ALTER TABLE RENAME
+#    KEY/INDEX result.
+#
+# 1.a) Both RENAME KEY and RENAME INDEX variants should be
+#      allowed and produce expected results.
+create table t1 (pk int primary key, i int, j int, key a(i));
+alter table t1 rename key a to b;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `b` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 rename index b to c;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# 1.b) It should be impossible to rename index that doesn't
+#      exists, dropped or added within the same ALTER TABLE.
+alter table t1 rename key d to e;
+ERROR 42000: Key 'd' doesn't exist in table 't1'
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 drop key c, rename key c to d;
+ERROR 42000: Key 'c' doesn't exist in table 't1'
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 add key d(j), rename key d to e;
+ERROR 42000: Key 'd' doesn't exist in table 't1'
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# 1.c) It should be impossible to rename index to a name
+#      which is already used by another index, or is used
+#      by index which is added within the same ALTER TABLE.
+alter table t1 add key d(j);
+alter table t1 rename key c to d;
+ERROR 42000: Duplicate key name 'd'
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`i`),
+  KEY `d` (`j`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 drop key d;
+alter table t1 add key d(j), rename key c to d;
+ERROR 42000: Duplicate key name 'd'
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# 1.d) It should be possible to rename index to a name
+#      which belongs to index which is dropped within the
+#      same ALTER TABLE.
+alter table t1 add key d(j);
+alter table t1 drop key c, rename key d to c;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`j`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# 1.e) We disallow renaming from/to PRIMARY as it might
+#      lead to some other key becoming "primary" internally,
+#      which will be interpreted as dropping/addition of
+#      primary key.
+alter table t1 rename key primary to d;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'primary to d' at line 1
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`j`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# Even using 'funny' syntax.
+alter table t1 rename key t1.primary to d;
+ERROR 42000: Incorrect index name 'primary'
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`j`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 rename key c to primary;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'primary' at line 1
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`j`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 rename key c to t1.primary;
+ERROR 42000: Incorrect index name 'primary'
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `pk` int(11) NOT NULL,
+  `i` int(11) DEFAULT NULL,
+  `j` int(11) DEFAULT NULL,
+  PRIMARY KEY (`pk`),
+  KEY `c` (`j`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t1;
+#
+# 2) More complex tests for semantics of ALTER TABLE.
+#
+# 2.a) Check that standalone RENAME KEY works as expected
+#      for unique and non-unique indexes.
+create table t1 (a int, unique u(a), b int, key k(b));
+alter table t1 rename key u to uu;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  UNIQUE KEY `uu` (`a`),
+  KEY `k` (`b`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 rename key k to kk;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  UNIQUE KEY `uu` (`a`),
+  KEY `kk` (`b`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# 2.b) Check how that this clause can be mixed with other
+#      clauses which don't affect key or its columns.
+alter table t1 rename key kk to kkk, add column c int;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  UNIQUE KEY `uu` (`a`),
+  KEY `kkk` (`b`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 rename key uu to uuu, add key c(c);
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  UNIQUE KEY `uuu` (`a`),
+  KEY `kkk` (`b`),
+  KEY `c` (`c`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 rename key kkk to k, drop key uuu;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  KEY `k` (`b`),
+  KEY `c` (`c`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t1 rename key k to kk, rename to t2;
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  KEY `kk` (`b`),
+  KEY `c` (`c`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# 2.c) Check that this clause properly works even in case
+#      when it is mixed with clauses affecting columns in
+#      the key renamed.
+alter table t2 rename key c to cc, modify column c bigint not null first;
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `c` bigint(20) NOT NULL,
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  KEY `kk` (`b`),
+  KEY `cc` (`c`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+# Create multi-component key for next example.
+alter table t2 add unique u (a, b, c);
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `c` bigint(20) NOT NULL,
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  UNIQUE KEY `u` (`a`,`b`,`c`),
+  KEY `kk` (`b`),
+  KEY `cc` (`c`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+alter table t2 rename key u to uu, drop column b;
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `c` bigint(20) NOT NULL,
+  `a` int(11) DEFAULT NULL,
+  UNIQUE KEY `uu` (`a`,`c`),
+  KEY `cc` (`c`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t2;
+#
+# 3) Test coverage for handling of RENAME INDEX clause in
+#    various storage engines and using different ALTER
+#    algorithm.
+#
+# 3.a) Test coverage for simple storage engines (MyISAM/Heap).
+create table t1 (i int, key k(i)) engine=myisam;
+insert into t1 values (1);
+create table t2 (i int, key k(i)) engine=memory;
+insert into t2 values (1);
+# MyISAM and Heap should be able to handle key renaming in-place.
+alter table t1 algorithm=inplace, rename key k to kk;
+alter table t2 algorithm=inplace, rename key k to kk;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kk` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kk` (`i`)
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
+# So by default in-place algorithm should be chosen.
+# (ALTER TABLE should report 0 rows affected).
+alter table t1 rename key kk to kkk;
+affected rows: 0
+info: Records: 0  Duplicates: 0  Warnings: 0
+alter table t2 rename key kk to kkk;
+affected rows: 0
+info: Records: 0  Duplicates: 0  Warnings: 0
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kkk` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kkk` (`i`)
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
+# Copy algorithm should work as well.
+alter table t1 algorithm=copy, rename key kkk to kkkk;
+alter table t2 algorithm=copy, rename key kkk to kkkk;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kkkk` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kkkk` (`i`)
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
+# When renaming is combined with other in-place operation
+# it still works as expected (i.e. works in-place).
+alter table t1 algorithm=inplace, rename key kkkk to k, alter column i set default 100;
+alter table t2 algorithm=inplace, rename key kkkk to k, alter column i set default 100;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) DEFAULT '100',
+  KEY `k` (`i`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `i` int(11) DEFAULT '100',
+  KEY `k` (`i`)
+) ENGINE=MEMORY DEFAULT CHARSET=latin1
+# Combining with non-inplace operation results in the whole ALTER
+# becoming non-inplace. 
+alter table t1 algorithm=inplace, rename key k to kk, add column j int;
+ERROR 0A000: ALGORITHM=INPLACE is not supported for this operation. Try ALGORITHM=COPY.
+alter table t2 algorithm=inplace, rename key k to kk, add column j int;
+ERROR 0A000: ALGORITHM=INPLACE is not supported for this operation. Try ALGORITHM=COPY.
+drop table t1, t2;
+# 3.b) Basic tests for InnoDB. More tests can be found in
+#      innodb.innodb_rename_index*
+create table t1 (i int, key k(i)) engine=innodb;
+insert into t1 values (1);
+# Basic rename, inplace algorithm should be chosen
+alter table t1 algorithm=inplace, rename key k to kk;
+affected rows: 0
+info: Records: 0  Duplicates: 0  Warnings: 0
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kk` (`i`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+# copy algorithm should work as well.
+alter table t1 algorithm=copy, rename key kk to kkk;
+affected rows: 1
+info: Records: 1  Duplicates: 0  Warnings: 0
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `i` int(11) DEFAULT NULL,
+  KEY `kkk` (`i`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+drop table t1;
+#
+# 4) Additional coverage for complex cases in which code
+#    in ALTER TABLE comparing old and new table version
+#    got confused.
+#
+# Once InnoDB starts to support in-place index renaming the result
+# of below statements should stay the same. Information about
+# indexes returned by SHOW CREATE TABLE (from .FRM) and by
+# InnoDB (from InnoDB data-dictionary) should be consistent.
+#
+create table t1 ( a int, b int, c int, d int,
+primary key (a), index i1 (b), index i2 (c) ) engine=innodb;
+alter table t1 add index i1 (d), rename index i1 to x;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  `d` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`),
+  KEY `x` (`b`),
+  KEY `i2` (`c`),
+  KEY `i1` (`d`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+select i.name as k, f.name as c from information_schema.innodb_sys_tables as t,
+information_schema.innodb_sys_indexes as i,
+information_schema.innodb_sys_fields as f
+where t.name='test/t1' and t.table_id = i.table_id and i.index_id = f.index_id
+order by k, c;
+k	c
+i1	d
+i2	c
+PRIMARY	a
+x	b
+drop table t1;
+create table t1 (a int, b int, c int, d int,
+primary key (a), index i1 (b), index i2 (c)) engine=innodb;
+alter table t1 add index i1 (d), rename index i1 to i2, drop index i2;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  `d` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`),
+  KEY `i2` (`b`),
+  KEY `i1` (`d`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+select i.name as k, f.name as c from information_schema.innodb_sys_tables as t,
+information_schema.innodb_sys_indexes as i,
+information_schema.innodb_sys_fields as f
+where t.name='test/t1' and t.table_id = i.table_id and i.index_id = f.index_id
+order by k, c;
+k	c
+i1	d
+i2	b
+PRIMARY	a
+drop table t1;
+#
+# The below ALTER TABLE statement should either drop and recreate key
+# under new name, or simply rename it. It should not bring .FRM and
+# InnoDB data-dictionary out of sync thus causing asserts.
+#
+create table t1 (i int, key x(i)) engine=InnoDB;
+alter table t1 drop key x, add key X(i), alter column i set default 10;
+drop table t1;
+#
+# Coverage for changes to ALTER TABLE ... IMPORT/DISCARD TABLESPACE
+# code introduced by WL#6671 "Improve scalability by not using
+# thr_lock.c locks for InnoDB tables".
+#
+# Check that ALTER TABLE ... IMPORT/DISCARD TABLESPACE acquires X
+# metadata lock on the table even when executed under LOCK TABLES.
+#
+# Suppress error messages which will be generated by IMPORT TABLESPACE
+call mtr.add_suppression("InnoDB: Trying to import a tablespace, but could not open the tablespace file");
+call mtr.add_suppression("InnoDB: Operating system error number 2 in a file operation.");
+call mtr.add_suppression("InnoDB: The error means the system cannot find the path specified.");
+CREATE TABLE t1 (i INT) ENGINE=InnoDB;
+#
+# 1) Check that ALTER TABLE ... IMPORT/DISCARD TABLESPACE on
+#    base table acquire X lock (when not under LOCK TABLES).
+# 
+connect con1, localhost, root;
+# Acquire S lock on table 't1'.
+HANDLER t1 OPEN;
+connect con2, localhost, root;
+# Sending:
+ALTER TABLE t1 DISCARD TABLESPACE;
+connection default;
+# Wait until ALTER TABLE is blocked since it tries to acquire X lock.
+connection con1;
+# Unblock ALTER TABLE DISCARD
+HANDLER t1 CLOSE;
+connection con2;
+# Reaping ALTER TABLE DISCARD
+connection con1;
+# Acquire S lock on table 't1'.
+HANDLER t1 OPEN;
+connection con2;
+# Sending:
+ALTER TABLE t1 IMPORT TABLESPACE;
+connection default;
+# Wait until ALTER TABLE is blocked since it tries to acquire X lock.
+connection con1;
+# Unblock ALTER TABLE IMPORT
+HANDLER t1 CLOSE;
+connection con2;
+# Reaping ALTER TABLE IMPORT
+# It should fail as no tablespace was copied after DISCARD.
+ERROR HY000: Tablespace is missing for table `test`.`t1`.
+connection default;
+DROP TABLE t1;
+#
+# 2) ALTER TABLE ... IMPORT/DISCARD TABLESPACE on temporary table
+#    should not try to acquire X metadata lock on base table.
+#
+CREATE TABLE t1 (i INT) ENGINE=InnoDB;
+connection con1;
+# Acquire S lock on table 't1'.
+HANDLER t1 OPEN;
+connection con2;
+CREATE TEMPORARY TABLE t1 (j INT) ENGINE=InnoDB;
+# Both DISCARD and IMPORT on temporary table should fail without
+# acquiring any locks and blocking.
+ALTER TABLE t1 DISCARD TABLESPACE;
+ERROR HY000: Cannot DISCARD/IMPORT tablespace associated with temporary table
+ALTER TABLE t1 IMPORT TABLESPACE;
+ERROR HY000: Cannot DISCARD/IMPORT tablespace associated with temporary table
+DROP TEMPORARY TABLE t1;
+#
+# 3) Check that ALTER TABLE ... IMPORT/DISCARD TABLESPACE on
+#    base table under LOCK TABLES acquire X lock.
+# 
+connection con2;
+LOCK TABLES t1 WRITE;
+# Sending:
+ALTER TABLE t1 DISCARD TABLESPACE;
+connection default;
+# Wait until ALTER TABLE is blocked since it tries to acquire X lock.
+connection con1;
+# Unblock ALTER TABLE DISCARD
+HANDLER t1 CLOSE;
+connection con2;
+# Reaping ALTER TABLE DISCARD
+connection con1;
+# Acquire S lock on table 't1'.
+HANDLER t1 OPEN;
+connection con2;
+# Sending:
+ALTER TABLE t1 IMPORT TABLESPACE;
+connection default;
+# Wait until ALTER TABLE is blocked since it tries to acquire X lock.
+connection con1;
+# Unblock ALTER TABLE IMPORT
+HANDLER t1 CLOSE;
+connection con2;
+# Reaping ALTER TABLE IMPORT
+# It should fail as no tablespace was copied after DISCARD.
+ERROR HY000: Tablespace is missing for table `test`.`t1`.
+UNLOCK TABLES;
+connection default;
+DROP TABLE t1;
+#
+# 4) Under LOCK TABLES, ALTER TABLE ... IMPORT/DISCARD TABLESPACE on
+#    temporary table should not try to acquire X metadata lock on base
+#    table.
+#
+CREATE TABLE t1 (i INT) ENGINE=InnoDB;
+connection con1;
+# Acquire S lock on table 't1'.
+HANDLER t1 OPEN;
+connection con2;
+CREATE TEMPORARY TABLE t1 (j INT) ENGINE=InnoDB;
+LOCK TABLES t1 WRITE;
+# Both DISCARD and IMPORT on temporary table should fail without
+# acquiring any locks and blocking.
+ALTER TABLE t1 DISCARD TABLESPACE;
+ERROR HY000: Cannot DISCARD/IMPORT tablespace associated with temporary table
+ALTER TABLE t1 IMPORT TABLESPACE;
+ERROR HY000: Cannot DISCARD/IMPORT tablespace associated with temporary table
+UNLOCK TABLES;
+DROP TEMPORARY TABLE t1;
+connection con1;
+HANDLER t1 CLOSE;
+#
+# Clean-up.
+#
+disconnect con1;
+disconnect con2;
+connection default;
+DROP TABLE t1;
+SET sql_mode = default;
+#
+# BUG 19779365: INDEX COMMENT IN ADD INDEX IS IGNORED.
+#
+# After the patch, the alter table reflects the new
+# index comment or the lack of comment for the indexes.
+CREATE TABLE t1(fld1 int, key key1(fld1));
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT 'test';
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		test
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'test');
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		test
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1);
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'test');
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		test
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT 'success';
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		success
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'old comment');
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		old comment
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT 'new comment';
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		new comment
+DROP TABLE t1;
+#
+# Bug#19635706
+# Verify that it is possible to add a unique key to a not-NULL POINT 
+# column and that this key is promoted to primary key
+# 
+CREATE TABLE t1(a INT NOT NULL, b POINT NOT NULL) ENGINE=INNODB;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` point NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+ALTER TABLE t1 ADD UNIQUE INDEX (b);
+# Note that SHOW CREATE TABLE does not list b as a primary key, 
+# even though it was promoted. This appears to be the case also 
+# for other column types.
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` point NOT NULL,
+  UNIQUE KEY `b` (`b`(25))
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+ALTER TABLE t1 ADD UNIQUE INDEX (a);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` point NOT NULL,
+  UNIQUE KEY `b` (`b`(25)),
+  UNIQUE KEY `a` (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+# Verify that the expected indices have been created by Innodb
+SELECT T.NAME AS TABLE_NAME, I.NAME AS INDEX_NAME, 
+CASE I.TYPE 
+WHEN 0 THEN 'Secondary' 
+WHEN 1 THEN 'Clustered' 
+WHEN 2 THEN 'Unique' 
+WHEN 3 THEN 'Primary' 
+WHEN 32 THEN 'Full text' 
+WHEN 64 THEN 'Spatial' 
+ELSE 'Unknown' 
+END AS INDEX_TYPE, 
+F.NAME AS FIELD_NAME, F.POS AS FIELD_POS FROM 
+INFORMATION_SCHEMA.INNODB_SYS_TABLES AS T JOIN 
+INFORMATION_SCHEMA.INNODB_SYS_INDEXES AS I JOIN 
+INFORMATION_SCHEMA.INNODB_SYS_FIELDS AS F 
+ON I.INDEX_ID = F.INDEX_ID AND I.TABLE_ID = T.TABLE_ID 
+WHERE T.NAME = 'test/t1';
+TABLE_NAME	INDEX_NAME	INDEX_TYPE	FIELD_NAME	FIELD_POS
+test/t1	b	Primary	b	0
+test/t1	a	Unique	a	0
+DROP TABLE t1;
+#
+# BUG#16886196 - ALTER TABLE FAILS TO CONVERT TO PREFIX INDEX IN
+#                ALTER_COLUMN_EQUAL_PACK_LENGTH
+SET @orig_sql_mode = @@sql_mode;
+SET sql_mode= '';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
+# Test with '767' as index size limit.
+SET GLOBAL innodb_large_prefix=OFF;
+Warnings:
+Warning	131	Using innodb_large_prefix is deprecated and the parameter may be removed in future releases. See http://dev.mysql.com/doc/refman/5.7/en/innodb-file-format.html
+CREATE TABLE t1(fld1 VARCHAR(767), KEY a(fld1)) ENGINE= INNODB;
+INSERT INTO t1 VALUES('a');
+ALTER TABLE t1 CHANGE fld1 fld1 VARCHAR(768), ALGORITHM= INPLACE;
+Warnings:
+Warning	1071	Specified key was too long; max key length is 767 bytes
+# Without patch, the below statement will assert in a debug build.
+SELECT COUNT(*) FROM t1 WHERE fld1= 'a';
+COUNT(*)
+1
+# Cleanup.
+DROP TABLE t1;
+SET GLOBAL innodb_large_prefix=default;
+Warnings:
+Warning	131	Using innodb_large_prefix is deprecated and the parameter may be removed in future releases. See http://dev.mysql.com/doc/refman/5.7/en/innodb-file-format.html
+# Test with innodb large prefix indexes(Upto 3072).
+CREATE TABLE t1(fld1 VARCHAR(3072), KEY a(fld1)) ENGINE= INNODB
+ROW_FORMAT= DYNAMIC;
+INSERT INTO t1 VALUES('a');
+ALTER TABLE t1 CHANGE fld1 fld1 VARCHAR(3073), ALGORITHM= INPLACE;
+Warnings:
+Warning	1071	Specified key was too long; max key length is 3072 bytes
+# Without patch, the below statement will assert in a debug build.
+SELECT COUNT(*) FROM t1 WHERE fld1= 'a';
+COUNT(*)
+1
+# Cleanup.
+DROP TABLE t1;
+SET sql_mode= @orig_sql_mode;
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 # BUG#17246318 - ALTER TABLE SHOULD NOT ALLOW CREATION OF TABLES
 #                WITH BOTH 5.5 AND 5.6 TEMPORALS
 #
@@ -1998,11 +2690,13 @@ use test;
 ALTER TABLE t1 ENGINE= INNODB;
 #ALTER operations using INPLACE algorithm is disallowed
 #since the table contains old temporal type.
-ALTER TABLE t1 ADD COLUMN fld4 TIMESTAMP, ALGORITHM= INPLACE;
+ALTER TABLE t1 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111',
+ALGORITHM= INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
 ALTER TABLE t1 ADD COLUMN fld4 TIMESTAMP FIRST, ALGORITHM= INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
-ALTER TABLE t1 ADD COLUMN fld4 TIMESTAMP AFTER f_timestamp, ALGORITHM= INPLACE;
+ALTER TABLE t1 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111' AFTER f_timestamp,
+ALGORITHM= INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
 ALTER TABLE t1 CHANGE COLUMN f_time fld4 TIMESTAMP, ALGORITHM= INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
@@ -2022,7 +2716,7 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP, ALGORITHM= COPY;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111', ALGORITHM= COPY;
 Warnings:
 Note	1880	TIME/TIMESTAMP/DATETIME columns of old format have been upgraded to the new format.
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
@@ -2052,7 +2746,8 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP AFTER f_timestamp, ALGORITHM= COPY;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111' AFTER f_timestamp,
+ALGORITHM= COPY;
 Warnings:
 Note	1880	TIME/TIMESTAMP/DATETIME columns of old format have been upgraded to the new format.
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
@@ -2114,7 +2809,7 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP, ALGORITHM= DEFAULT;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111', ALGORITHM= DEFAULT;
 Warnings:
 Note	1880	TIME/TIMESTAMP/DATETIME columns of old format have been upgraded to the new format.
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
@@ -2144,7 +2839,8 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP AFTER f_timestamp, ALGORITHM= DEFAULT;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111' AFTER f_timestamp,
+ALGORITHM= DEFAULT;
 Warnings:
 Note	1880	TIME/TIMESTAMP/DATETIME columns of old format have been upgraded to the new format.
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
@@ -2224,7 +2920,7 @@ t2	CREATE TABLE `t2` (
   `f_timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `f_datetime` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP, ALGORITHM= COPY;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111', ALGORITHM= COPY;
 Warnings:
 Note	1880	TIME/TIMESTAMP/DATETIME columns of old format have been upgraded to the new format.
 #After upgrade.
@@ -2234,7 +2930,7 @@ t2	CREATE TABLE `t2` (
   `f_time` time DEFAULT NULL,
   `f_timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `f_datetime` datetime DEFAULT NULL,
-  `fld4` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00'
+  `fld4` timestamp NOT NULL DEFAULT '2020-12-11 11:01:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
 #Examples of the Alter operation which does not upgrade
 #the temporal formats. 
@@ -2297,12 +2993,12 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP, ALGORITHM= INPLACE;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111', ALGORITHM= INPLACE;
 SELECT f_time, f_datetime, f_timestamp, fld4, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)),
 HEX(WEIGHT_STRING(fld4)) FROM t2;
 f_time	f_datetime	f_timestamp	fld4	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))	HEX(WEIGHT_STRING(fld4))
-22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	0000-00-00 00:00:00	83640E	0000124A7C3C8A4E	4ECAA4EE	00000000
+22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	2020-12-11 11:01:00	83640E	0000124A7C3C8A4E	4ECAA4EE	5FD3273C
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
@@ -2317,12 +3013,13 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld6 TIMESTAMP AFTER f_timestamp, ALGORITHM= INPLACE;
+ALTER TABLE t2 ADD COLUMN fld6 TIMESTAMP DEFAULT '201211111' AFTER f_timestamp,
+ALGORITHM= INPLACE;
 SELECT f_time, f_datetime, f_timestamp, fld6, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)),
 HEX(WEIGHT_STRING(fld6)) FROM t2;
 f_time	f_datetime	f_timestamp	fld6	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))	HEX(WEIGHT_STRING(fld6))
-22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	0000-00-00 00:00:00	83640E	0000124A7C3C8A4E	4ECAA4EE	00000000
+22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	2020-12-11 11:01:00	83640E	0000124A7C3C8A4E	4ECAA4EE	5FD3273C
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
@@ -2343,7 +3040,7 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP, ALGORITHM= COPY;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111', ALGORITHM= COPY;
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
@@ -2363,7 +3060,8 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld6 TIMESTAMP AFTER f_timestamp, ALGORITHM= COPY;
+ALTER TABLE t2 ADD COLUMN fld6 TIMESTAMP DEFAULT '201211111' AFTER f_timestamp,
+ALGORITHM= COPY;
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
@@ -2411,7 +3109,7 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP, ALGORITHM= DEFAULT;
+ALTER TABLE t2 ADD COLUMN fld4 TIMESTAMP DEFAULT '201211111', ALGORITHM= DEFAULT;
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
@@ -2431,7 +3129,8 @@ SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
 22:22:22	2011-11-21 22:22:22	2011-11-21 22:22:22	83640E	0000124A7C3C8A4E	4ECAA4EE
-ALTER TABLE t2 ADD COLUMN fld6 TIMESTAMP AFTER f_timestamp, ALGORITHM= DEFAULT;
+ALTER TABLE t2 ADD COLUMN fld6 TIMESTAMP DEFAULT '201211111' AFTER f_timestamp,
+ALGORITHM= DEFAULT;
 SELECT f_time, f_datetime, f_timestamp, HEX(WEIGHT_STRING(f_time)),
 HEX(WEIGHT_STRING(f_datetime)), HEX(WEIGHT_STRING(f_timestamp)) FROM t2;
 f_time	f_datetime	f_timestamp	HEX(WEIGHT_STRING(f_time))	HEX(WEIGHT_STRING(f_datetime))	HEX(WEIGHT_STRING(f_timestamp))
@@ -2545,3 +3244,256 @@ SET @@session.show_old_temporals= @save_show_old_temporals;
 Warnings:
 Warning	1287	'@@show_old_temporals' is deprecated and will be removed in a future release.
 DROP TABLE t1, t2;
+#
+#BUG#20106553: ALTER TABLE WHICH CHANGES INDEX COMMENT IS NOT
+#              LONGER INPLACE/FAST OPERATION.
+#Without the patch, the ALTER TABLE to change the index
+#comment using INPLACE algorithm reports an error.
+CREATE TABLE t1(fld1 int, key key1(fld1)) ENGINE= INNODB;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT 'test',
+ALGORITHM= INPLACE;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		test
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'test') ENGINE= MyISAM;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		test
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1), ALGORITHM=INPLACE;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'test') ENGINE= INNODB;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		test
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT 'success',
+ALGORITHM= INPLACE;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		success
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'old comment') ENGINE=MyISAM;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		old comment
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT 'new comment',
+ALGORITHM= INPLACE;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	NULL	NULL	NULL	YES	BTREE		new comment
+DROP TABLE t1;
+#Test cases with merge threshold specified in the index comment.
+CREATE TABLE t1(fld1 int, key key1(fld1)) ENGINE=INNODB;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		
+SELECT MERGE_THRESHOLD from INFORMATION_SCHEMA.INNODB_SYS_INDEXES WHERE NAME='key1';
+MERGE_THRESHOLD
+50
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT
+'MERGE_THRESHOLD=45';
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		MERGE_THRESHOLD=45
+SELECT MERGE_THRESHOLD from INFORMATION_SCHEMA.INNODB_SYS_INDEXES WHERE NAME='key1';
+MERGE_THRESHOLD
+45
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'MERGE_THRESHOLD=40') 
+ENGINE=INNODB;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		MERGE_THRESHOLD=40
+SELECT MERGE_THRESHOLD from INFORMATION_SCHEMA.INNODB_SYS_INDEXES WHERE NAME='key1';
+MERGE_THRESHOLD
+40
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1);
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		
+SELECT MERGE_THRESHOLD from INFORMATION_SCHEMA.INNODB_SYS_INDEXES WHERE NAME='key1';
+MERGE_THRESHOLD
+50
+DROP TABLE t1;
+CREATE TABLE t1(fld1 int, key key1(fld1) COMMENT 'MERGE_THRESHOLD=40')
+ENGINE=INNODB;
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		MERGE_THRESHOLD=40
+SELECT MERGE_THRESHOLD from INFORMATION_SCHEMA.INNODB_SYS_INDEXES WHERE NAME='key1';
+MERGE_THRESHOLD
+40
+ALTER TABLE t1 DROP INDEX key1, ADD INDEX key1(fld1) COMMENT
+'MERGE_THRESHOLD=45';
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+t1	1	key1	1	fld1	A	0	NULL	NULL	YES	BTREE		MERGE_THRESHOLD=45
+SELECT MERGE_THRESHOLD from INFORMATION_SCHEMA.INNODB_SYS_INDEXES WHERE NAME='key1';
+MERGE_THRESHOLD
+45
+DROP TABLE t1;
+#
+# Bug#20748660 THD->MDL_CONTEXT.OWNS_EQUAL_OR_STRONGER_LOCK | CREATE_INFO->TABLESPACE
+#
+# A failing DISCARD/IMPORT TABLESPACE may leave the flag THD::tablespace_op
+# in an incorrect state, causing a succeeding statement to fail.
+
+# Create a tablespace with a table.
+CREATE TABLESPACE s ADD DATAFILE 's.ibd' ENGINE InnoDB;
+CREATE TABLE t (i int) TABLESPACE s ENGINE InnoDB;
+# The following statent will fail because the table is not partitioned.
+# Without the fix, the THD::tablespace_op flag will be left set.
+ALTER TABLE t DISCARD PARTITION p TABLESPACE;
+ERROR HY000: Partition management on a not partitioned table is not possible
+# Without the patch, this statement will inherit the tablespace_op flag
+# from the previous statement, causing the statement below to fail due
+# to not acquiring the required MDL lock.
+ALTER TABLE t TABLESPACE s;
+# Drop table and tablespace.
+DROP TABLE t;
+DROP TABLESPACE s ENGINE InnoDB;
+#
+# BUG#20106837: ALTER TABLE WHICH DROPS AND ADDS THE SAME FULLTEXT
+#               INDEX IS NOT INPLACE/FAST.
+CREATE TABLE t1(fld1 varchar(200), FULLTEXT(fld1)) ENGINE=MyISAM;
+INSERT INTO t1 VALUES('ABCD');
+#Without patch, it was not fast a INPLACE ALTER.
+ALTER TABLE t1 DROP INDEX fld1, ADD FULLTEXT INDEX fld1(fld1);
+affected rows: 0
+info: Records: 0  Duplicates: 0  Warnings: 0
+#Without patch, reports an error 'ER_ALTER_OPERATION_NOT_SUPPORTED'.
+ALTER TABLE t1 ALGORITHM=INPLACE, DROP INDEX fld1,
+ADD FULLTEXT INDEX fld1(fld1);
+DROP TABLE t1;
+#Test with InnoDB engine.
+CREATE TABLE t1(fld1 varchar(200), FULLTEXT(fld1)) ENGINE=INNODB;
+INSERT INTO t1 VALUES('ABCD');
+#Without patch, it was not fast a INPLACE ALTER.
+ALTER TABLE t1 DROP INDEX fld1, ADD FULLTEXT INDEX fld1(fld1);
+affected rows: 0
+info: Records: 0  Duplicates: 0  Warnings: 0
+#Without patch, reports an error 'ER_ALTER_OPERATION_NOT_SUPPORTED'.
+ALTER TABLE t1 ALGORITHM=INPLACE, DROP INDEX fld1,
+ADD FULLTEXT INDEX fld1(fld1);
+DROP TABLE t1;
+#
+# Bug#20146455: FIND_KEY_CI RETURNS NULL, CAUSES CRASH IN
+#               FILL_ALTER_INPLACE_INFO
+#
+CREATE TABLE t1 (a INT PRIMARY KEY, b INT,
+FOREIGN KEY (b) REFERENCES t1(a)) ENGINE= MyISAM;
+ALTER TABLE t1 RENAME INDEX b TO w, ADD FOREIGN KEY (b) REFERENCES t1(a);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`),
+  KEY `w` (`b`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+DROP TABLE t1;
+CREATE TABLE t1 (a INT PRIMARY KEY, b INT,
+FOREIGN KEY (b) REFERENCES t1(a)) ENGINE= InnoDB;
+ALTER TABLE t1 RENAME INDEX b TO w, ADD FOREIGN KEY (b) REFERENCES t1(a);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL,
+  `b` int(11) DEFAULT NULL,
+  PRIMARY KEY (`a`),
+  KEY `w` (`b`),
+  CONSTRAINT `t1_ibfk_1` FOREIGN KEY (`b`) REFERENCES `t1` (`a`),
+  CONSTRAINT `t1_ibfk_2` FOREIGN KEY (`b`) REFERENCES `t1` (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+DROP TABLE t1;
+#
+# Bug#22017616: ASSERTION FAILED: TABLE_SHARE->IS_MISSING_PRIMARY_KEY()
+# == M_PREBUILT->CLUST_IND
+#
+# Ensure that adding indexes with virtual columns are not promoted to
+# primary keys
+#
+# Base line with normal column - should be promoted
+CREATE TABLE t0(a INT NOT NULL) ENGINE=INNODB;
+ALTER TABLE t0 ADD UNIQUE INDEX (a);
+# Case a: Create table with virtual unique not null column
+CREATE TABLE t1(a POINT GENERATED ALWAYS AS (POINT(1,1)) VIRTUAL UNIQUE NOT NULL) ENGINE=INNODB;
+SELECT * FROM t1;
+a
+# Case b: Create table with index on virtual point column
+CREATE TABLE t2(a POINT GENERATED ALWAYS AS (POINT(1,1)) VIRTUAL NOT NULL, UNIQUE INDEX no_pk(a(1))) ENGINE=INNODB;
+SELECT * FROM t2;
+a
+# Case c: Add unique index on virtual point column
+CREATE TABLE t3(a POINT GENERATED ALWAYS AS (POINT(1,1)) VIRTUAL NOT NULL)
+ENGINE=INNODB;
+ALTER TABLE t3 ADD UNIQUE INDEX (a(1));
+SELECT * FROM t3;
+a
+# Case d: Add unique index on virtual blob column
+CREATE TABLE t4 (a BLOB, b BLOB GENERATED ALWAYS AS (a) VIRTUAL NOT NULL) ENGINE=INNODB;
+ALTER TABLE t4 ADD UNIQUE INDEX (b(1));
+SELECT * FROM t4;
+a	b
+# Query I_S to verify that 'a' is promoted to pk only when it
+# isn't virtual
+SELECT T.NAME AS TABLE_NAME, I.NAME AS INDEX_NAME,
+CASE (I.TYPE & 3)
+WHEN 3 THEN "yes"
+            ELSE "no" END AS IS_PRIMARY_KEY,
+F.NAME AS FIELD_NAME, F.POS AS FIELD_POS FROM
+INFORMATION_SCHEMA.INNODB_SYS_TABLES AS T JOIN
+INFORMATION_SCHEMA.INNODB_SYS_INDEXES AS I JOIN
+INFORMATION_SCHEMA.INNODB_SYS_FIELDS AS F
+ON I.INDEX_ID = F.INDEX_ID AND I.TABLE_ID = T.TABLE_ID
+WHERE T.NAME LIKE 'test/%';
+TABLE_NAME	INDEX_NAME	IS_PRIMARY_KEY	FIELD_NAME	FIELD_POS
+test/t0	a	yes	a	0
+test/t1	a	no	a	0
+test/t2	no_pk	no	a	0
+test/t3	a	no	a	0
+test/t4	b	no	b	0
+DROP TABLE t0;
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+DROP TABLE t4;
+#
+# Bug#21345391: ALTER TABLE ... CONVERT TO CHARACTER SET NOT EFFECT
+#               AND REMAIN A TEMP TABLE
+CREATE TABLE t1 (fld1 INT PRIMARY KEY) ENGINE = INNODB CHARACTER SET gbk;
+ALTER TABLE t1 CONVERT TO CHARACTER SET UTF8, ALGORITHM = INPLACE;
+# Without fix, the CHARSET SET for table remains gbk.
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `fld1` int(11) NOT NULL,
+  PRIMARY KEY (`fld1`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+# Without fix, the temporary .frm file is not cleaned up.
+DROP TABLE t1;
+# Test cases added for coverage.
+# Reports an error for tables containing datatypes supporting
+# characters.
+CREATE TABLE t1 (fld1 CHAR(10) PRIMARY KEY) ENGINE = INNODB CHARACTER SET gbk;
+ALTER TABLE t1 CONVERT TO CHARACTER SET UTF8, ALGORITHM = INPLACE;
+ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
+DROP TABLE t1;
+# ALTER TABLE, CHARACTER SET operation.
+CREATE TABLE t1 (fld1 INT PRIMARY KEY, fld2 CHAR(10)) ENGINE = INNODB
+CHARACTER SET gbk;
+ALTER TABLE t1 CHARACTER SET UTF8, ALGORITHM = INPLACE;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `fld1` int(11) NOT NULL,
+  `fld2` char(10) CHARACTER SET gbk DEFAULT NULL,
+  PRIMARY KEY (`fld1`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+DROP TABLE t1;

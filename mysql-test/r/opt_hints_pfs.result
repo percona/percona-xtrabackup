@@ -1,0 +1,51 @@
+#
+# Bug #21286261: QUERY DIGEST DOES NOT REFLECT NEW OPTIMIZER HINTS
+#
+CREATE TABLE t1(i INT);
+CREATE TABLE t2(i INT);
+# Digests should be same (empty hint comment):
+SELECT        * FROM t1;
+SELECT /*+ */ * FROM t1;
+SELECT digest, digest_text FROM performance_schema.events_statements_history ORDER BY timer_start DESC LIMIT 2;
+digest	digest_text
+52efb366ff07b747f41a99d625b6169e	SELECT * FROM `t1` 
+52efb366ff07b747f41a99d625b6169e	SELECT * FROM `t1` 
+# Digests should be different:
+SELECT * FROM t1, t2;
+SELECT /*+
+BKA(t1@qb1)
+BNL(@qb1 t1)
+DUPSWEEDOUT
+FIRSTMATCH
+INTOEXISTS
+LOOSESCAN
+MATERIALIZATION
+MRR(t1)
+NO_BKA(t2)
+NO_BNL(t2)
+NO_ICP(t2)
+NO_MRR(t2)
+NO_RANGE_OPTIMIZATION(t2)
+NO_SEMIJOIN(t2)
+QB_NAME(qb1)
+SEMIJOIN(t1)
+SUBQUERY(t1)
+*/ * FROM t1, t2;
+SELECT digest, digest_text FROM performance_schema.events_statements_history ORDER BY timer_start DESC LIMIT 2;
+digest	digest_text
+fec6917f393db4a4ab0aa807a5571b5a	SELECT /*+ BKA ( `t1`@`qb1` ) BNL ( @`qb1` `t1` ) DUPSWEEDOUT FIRSTMATCH INTOEXISTS LOOSESCAN MATERIALIZATION MRR ( `t1` ) NO_BKA ( `t2` ) NO_BNL ( `t2` ) NO_ICP ( `t2` ) NO_MRR ( `t2` ) NO_RANGE_OPTIMIZATION ( `t2` ) NO_SEMIJOIN ( `t2` ) QB_NAME ( `qb1` ) SEMIJOIN ( `t1` ) SUBQUERY ( `t1` ) */ * FROM `t1` , `t2` 
+3a823be8a3decc4895780d814f38c6cb	SELECT * FROM `t1` , `t2` 
+SELECT * FROM t2, t1;
+SELECT /*+ MAX_EXECUTION_TIME(10) */ * FROM t2, t1;
+SELECT digest, digest_text FROM performance_schema.events_statements_history ORDER BY timer_start DESC LIMIT 2;
+digest	digest_text
+636155394b2f53391a970c2c8c13ed9f	SELECT /*+ MAX_EXECUTION_TIME (?) */ * FROM `t2` , `t1` 
+17ba1f25fb5e2b957bbd51689455864f	SELECT * FROM `t2` , `t1` 
+SELECT 1;
+SELECT /*+ bad_hint_also_goes_to_digest */ 1;
+SELECT digest, digest_text FROM performance_schema.events_statements_history ORDER BY timer_start DESC LIMIT 2;
+digest	digest_text
+11f1f8f16ba99049bfabf724f29a195a	SELECT /*+ `bad_hint_also_goes_to_digest` */ ? 
+f29eded39dd5fa102f18987679dd0c14	SELECT ? 
+DROP TABLE t1, t2;
+#

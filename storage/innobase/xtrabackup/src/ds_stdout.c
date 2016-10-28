@@ -48,9 +48,9 @@ stdout_init(const char *root)
 {
 	ds_ctxt_t *ctxt;
 
-	ctxt = my_malloc(sizeof(ds_ctxt_t), MYF(MY_FAE));
+	ctxt = my_malloc(PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t), MYF(MY_FAE));
 
-	ctxt->root = my_strdup(root, MYF(MY_FAE));
+	ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
 	return ctxt;
 }
@@ -68,7 +68,8 @@ stdout_open(ds_ctxt_t *ctxt __attribute__((unused)),
 
 	pathlen = strlen(fullpath) + 1;
 
-	file = (ds_file_t *) my_malloc(sizeof(ds_file_t) +
+	file = (ds_file_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+				       sizeof(ds_file_t) +
 				       sizeof(ds_stdout_file_t) +
 				       pathlen,
 				       MYF(MY_FAE));

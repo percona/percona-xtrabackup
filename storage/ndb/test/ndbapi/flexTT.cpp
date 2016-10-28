@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -164,7 +164,9 @@ waitForThreads(void)
     NdbSleep_MilliSleep(20);
     for (int i = 0; i < (int)tNoOfThreads ; i++) {
       if (ThreadReady[i] == 0) {
+        // Found one thread not yet ready, continue waiting
         cont = 1;
+        break;
       }//if
     }//for
   } while (cont == 1);
@@ -442,9 +444,10 @@ bool executeTransaction(TransNdb* transNdbRef)
     Uint32 tKey[2];
     tKey[0] = startKey;
     tKey[1] = threadBase;
-    MyTrans = aNdbObject->startTransaction((Uint32)0, //Priority
-                                         (const char*)&tKey[0],   //Main PKey
-                                         (Uint32)8);           //Key Length
+    MyTrans = aNdbObject->startTransaction(
+                     (const NdbDictionary::Table *)0, //No table used here
+                     (const char*)&tKey[0],           //Main PKey
+                     (Uint32)8);                      //Key Length
   } else {
    MyTrans = aNdbObject->startTransaction();
   }//if

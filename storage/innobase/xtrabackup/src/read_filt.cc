@@ -65,10 +65,10 @@ rf_pass_through_get_next_batch(
 /*===========================*/
 	xb_read_filt_ctxt_t*	ctxt,			/*!<in/out: read filter
 							context */
-	ib_int64_t*		read_batch_start,	/*!<out: starting read
+	ib_uint64_t*		read_batch_start,	/*!<out: starting read
 							offset in bytes for the
 							next batch of pages */
-	ib_int64_t*		read_batch_len)		/*!<out: length in
+	ib_uint64_t*		read_batch_len)		/*!<out: length in
 							bytes of the next batch
 							of pages */
 {
@@ -119,10 +119,10 @@ rf_bitmap_get_next_batch(
 /*=====================*/
 	xb_read_filt_ctxt_t*	ctxt,			/*!<in/out: read filter
 							context */
-	ib_int64_t*		read_batch_start,	/*!<out: starting read
+	ib_uint64_t*		read_batch_start,	/*!<out: starting read
 							offset in bytes for the
 							next batch of pages */
-	ib_int64_t*		read_batch_len)		/*!<out: length in
+	ib_uint64_t*		read_batch_len)		/*!<out: length in
 							bytes of the next batch
 							of pages */
 {

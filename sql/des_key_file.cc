@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2001, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,10 +14,12 @@
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
 #include "my_global.h"          // HAVE_*
-#include "sql_priv.h"
 #include "des_key_file.h"       // st_des_keyschedule, st_des_keyblock
 #include "log.h"                // sql_print_error
 #include <m_ctype.h>
+
+#include "pfs_file_provider.h"
+#include "mysql/psi/mysql_file.h"
 
 #ifdef HAVE_OPENSSL
 
@@ -59,7 +61,7 @@ load_des_key_file(const char *file_name)
     char *start, *end;
     char buf[1024], offset;
     st_des_keyblock keyblock;
-    uint length;
+    size_t length;
 
     if (!(length=my_b_gets(&io,buf,sizeof(buf)-1)))
       break;					// End of file

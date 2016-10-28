@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,8 @@
 #include "mysys_priv.h"
 #include "mysys_err.h"
 #include <my_sys.h>
+#include "my_thread_local.h"
+
 
 int my_delete(const char *name, myf MyFlags)
 {
@@ -25,11 +27,11 @@ int my_delete(const char *name, myf MyFlags)
 
   if ((err = unlink(name)) == -1)
   {
-    my_errno=errno;
+    set_my_errno(errno);
     if (MyFlags & (MY_FAE+MY_WME))
     {
       char errbuf[MYSYS_STRERROR_SIZE];
-      my_error(EE_DELETE, MYF(ME_BELL+ME_WAITTANG+(MyFlags & ME_NOINPUT)),
+      my_error(EE_DELETE, MYF(0),
                name, errno, my_strerror(errbuf, sizeof(errbuf), errno));
     }
   }
@@ -39,7 +41,7 @@ int my_delete(const char *name, myf MyFlags)
   DBUG_RETURN(err);
 } /* my_delete */
 
-#if defined(__WIN__)
+#if defined(_WIN32)
 /**
   Delete file which is possibly not closed.
 
@@ -99,7 +101,7 @@ int nt_share_delete(const char *name, myf MyFlags)
 
   if (errno == ERROR_FILE_NOT_FOUND)
   {
-    my_errno= ENOENT;    // marking, that `name' doesn't exist 
+    set_my_errno(ENOENT);    // marking, that `name' doesn't exist 
   }
   else if (errno == 0)
   {
@@ -113,18 +115,18 @@ int nt_share_delete(const char *name, myf MyFlags)
     */
     errno= GetLastError();
     if (errno == 0)
-      my_errno= ENOENT; // marking, that `buf' doesn't exist
+      set_my_errno(ENOENT); // marking, that `buf' doesn't exist
     else
-      my_errno= errno;
+      set_my_errno(errno);
   }
   else
-    my_errno= errno;
+    set_my_errno(errno);
 
   if (MyFlags & (MY_FAE+MY_WME))
   {
     char errbuf[MYSYS_STRERROR_SIZE];
-    my_error(EE_DELETE, MYF(ME_BELL + ME_WAITTANG + (MyFlags & ME_NOINPUT)),
-             name, my_errno, my_strerror(errbuf, sizeof(errbuf), my_errno));
+    my_error(EE_DELETE, MYF(0),
+             name, my_errno(), my_strerror(errbuf, sizeof(errbuf), my_errno()));
   }
   DBUG_RETURN(-1);
 }

@@ -3,7 +3,7 @@
 
 #include "sql_executor.h"
 
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -121,7 +121,7 @@ protected:
     case 1: return uint(*ptr);
     case 2: return uint2korr(ptr);
     case 4: return uint4korr(ptr);
-    case 8: return uint8korr(ptr);
+    case 8: return static_cast<ulong>(uint8korr(ptr));
     }
     return 0;
   }
@@ -285,6 +285,8 @@ protected:
   /** Cached value of calc_check_only_first_match(join_tab) */
   bool check_only_first_match;
 
+  void filter_virtual_gcol_base_cols();
+  void restore_virtual_gcol_base_cols();
   void calc_record_fields();     
   int alloc_fields(uint external_fields);
   void create_flag_fields();
@@ -382,7 +384,7 @@ protected:
   virtual void restore_last_record();
 
   /*Set match flag for a record in join buffer if it has not been set yet */
-  bool set_match_flag_if_none(JOIN_TAB *first_inner, uchar *rec_ptr);
+  bool set_match_flag_if_none(QEP_TAB *first_inner, uchar *rec_ptr);
 
   enum_nested_loop_state generate_full_extensions(uchar *rec_ptr);
 
@@ -390,13 +392,7 @@ protected:
   virtual bool check_match(uchar *rec_ptr);
 
   /** @returns whether we should check only the first match for this table */
-  bool calc_check_only_first_match(const JOIN_TAB *t) const
-  {
-    return (t->last_sj_inner_tab == t &&
-            t->get_sj_strategy() == SJ_OPT_FIRST_MATCH) ||
-      (t->first_inner && t->first_inner->last_inner == t &&
-       t->table->reginfo.not_exists_optimize);
-  }
+  bool calc_check_only_first_match(const QEP_TAB *t) const;
 
   /* 
     This function shall add a record into the join buffer and return TRUE
@@ -412,9 +408,6 @@ public:
 
   /* Shall initialize the join cache structure */ 
   virtual int init()=0;  
-
-  /* The function shall return TRUE only for BKA caches */
-  virtual bool is_key_access() { return FALSE; }
 
   /* Shall reset the join buffer for reading/writing */
   virtual void reset_cache(bool for_writing);
@@ -466,15 +459,15 @@ public:
     cache object to which this cache is linked, or NULL if this cache is not
     linked.
   */
-  JOIN_CACHE(JOIN *j, JOIN_TAB *tab, JOIN_CACHE *prev)
-    : QEP_operation(tab), join(j), buff(NULL), prev_cache(prev),
+  JOIN_CACHE(JOIN *j, QEP_TAB *qep_tab_arg, JOIN_CACHE *prev)
+    : QEP_operation(qep_tab_arg), join(j), buff(NULL), prev_cache(prev),
     next_cache(NULL)
     {
       if (prev_cache)
         prev_cache->next_cache= this;
     }
   virtual ~JOIN_CACHE() {}
-  void free()
+  void mem_free()
   {
     /*
       JOIN_CACHE doesn't support unlinking cache chain. This code is needed
@@ -494,7 +487,14 @@ public:
   }
 
   /** Bits describing cache's type @sa setup_join_buffering() */
-  enum {ALG_NONE= 0, ALG_BNL= 1, ALG_BKA= 2, ALG_BKA_UNIQUE= 4};
+  enum enum_join_cache_type
+  {ALG_NONE= 0, ALG_BNL= 1, ALG_BKA= 2, ALG_BKA_UNIQUE= 4};
+
+  virtual enum_join_cache_type cache_type() const= 0;
+
+  /* TRUE <=> cache reads rows by key */
+  bool is_key_access() const
+  { return cache_type() & (ALG_BKA | ALG_BKA_UNIQUE ); }
 
   friend class JOIN_CACHE_BNL;
   friend class JOIN_CACHE_BKA;
@@ -510,13 +510,17 @@ protected:
   enum_nested_loop_state join_matching_records(bool skip_last);
 
 public:
-  JOIN_CACHE_BNL(JOIN *j, JOIN_TAB *tab, JOIN_CACHE *prev)
-    : JOIN_CACHE(j, tab, prev)
+  JOIN_CACHE_BNL(JOIN *j, QEP_TAB *qep_tab_arg, JOIN_CACHE *prev)
+    : JOIN_CACHE(j, qep_tab_arg, prev), const_cond(NULL)
   {}
 
   /* Initialize the BNL cache */       
   int init();
 
+  enum_join_cache_type cache_type() const { return ALG_BNL; }
+
+private:
+  Item *const_cond;
 };
 
 class JOIN_CACHE_BKA :public JOIN_CACHE
@@ -573,20 +577,20 @@ protected:
 public:
   
   /// The MRR mode initially is set to 'flags'
-  JOIN_CACHE_BKA(JOIN *j, JOIN_TAB *tab, uint flags, JOIN_CACHE* prev)
-    : JOIN_CACHE(j, tab, prev), mrr_mode(flags)
+  JOIN_CACHE_BKA(JOIN *j, QEP_TAB *qep_tab_arg, uint flags, JOIN_CACHE* prev)
+    : JOIN_CACHE(j, qep_tab_arg, prev), mrr_mode(flags)
   {}
 
   /* Initialize the BKA cache */       
   int init();
-
-  bool is_key_access() { return TRUE; }
 
   /* Shall get the key built over the next record from the join buffer */
   virtual uint get_next_key(uchar **key);
 
   /* Check if the record combination matches the index condition */
   bool skip_index_tuple(range_seq_t rseq, char *range_info);
+
+  enum_join_cache_type cache_type() const { return ALG_BKA; }
 };
 
 /*
@@ -808,7 +812,8 @@ protected:
   */ 
   ulong rem_space() 
   { 
-    return std::max<ulong>(last_key_entry-end_pos-aux_buff_size, 0UL);
+    return std::max(static_cast<ulong>(last_key_entry - end_pos-aux_buff_size),
+                    0UL);
   }
 
   /* 
@@ -838,8 +843,8 @@ protected:
 
 public:
 
-  JOIN_CACHE_BKA_UNIQUE(JOIN *j, JOIN_TAB *tab, uint flags, JOIN_CACHE* prev)
-    : JOIN_CACHE_BKA(j, tab, flags, prev)
+  JOIN_CACHE_BKA_UNIQUE(JOIN *j, QEP_TAB *qep_tab_arg, uint flags, JOIN_CACHE* prev)
+    : JOIN_CACHE_BKA(j, qep_tab_arg, flags, prev)
   {}
 
   /* Initialize the BKA_UNIQUE cache */       
@@ -868,6 +873,8 @@ public:
   
   /* Check if the record combination matches the index condition */
   bool skip_index_tuple(range_seq_t rseq, char *range_info);
+
+  enum_join_cache_type cache_type() const { return ALG_BKA_UNIQUE; }
 };
 
 

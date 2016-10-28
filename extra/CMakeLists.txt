@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2012, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,12 +16,14 @@
 INCLUDE_DIRECTORIES(
 ${CMAKE_SOURCE_DIR}/include 
 ${ZLIB_INCLUDE_DIR}
+${LZ4_INCLUDE_DIR}
 # Following is for perror, in case NDB is compiled in.
 ${CMAKE_SOURCE_DIR}/storage/ndb/include
-${CMAKE_SOURCE_DIR}/storage/ndb/include/util  
+${CMAKE_BINARY_DIR}/storage/ndb/include
 ${CMAKE_SOURCE_DIR}/storage/ndb/include/ndbapi
-${CMAKE_SOURCE_DIR}/storage/ndb/include/portlib
 ${CMAKE_SOURCE_DIR}/storage/ndb/include/mgmapi)
+
+INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 # Default install component for the files is Server here
 SET(MYSQL_INSTALL_COMPONENT Server)
@@ -32,6 +34,14 @@ IF(NOT CMAKE_CROSSCOMPILING)
  SET_TARGET_PROPERTIES(comp_err PROPERTIES LINKER_LANGUAGE CXX)
 ENDIF()
 
+IF (BUILD_BUNDLED_LZ4)
+  ADD_CONVENIENCE_LIBRARY(lz4_lib
+    lz4/lz4.c
+    lz4/lz4frame.c
+    lz4/lz4hc.c
+    lz4/xxhash.c
+  )
+ENDIF()
 
 ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}/include/mysqld_error.h 
                    ${PROJECT_BINARY_DIR}/sql/share/english/errmsg.sys
@@ -51,6 +61,9 @@ ADD_CUSTOM_TARGET(GenError
                   ${PROJECT_BINARY_DIR}/include/mysqld_error.h
                   ${PROJECT_BINARY_DIR}/sql/share/english/errmsg.sys 
                   ${PROJECT_SOURCE_DIR}/sql/share/errmsg-utf8.txt)
+
+# Set InnoDB mutex type
+ADD_DEFINITIONS(-DMUTEX_EVENT)
 
 ## Most executables depend on libeay32.dll (through mysys_ssl).
 ## For 'comp_err' we need it to be available during build.

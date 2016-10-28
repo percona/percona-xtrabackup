@@ -35,7 +35,7 @@ if ($select) {
 
 if ($innodb) {
   if ($no_rows) {
---replace_column 9 X
+--replace_column 10 X
   }
 }
 --eval EXPLAIN $query
@@ -48,7 +48,7 @@ FLUSH STATUS;
 FLUSH TABLES;
 if ($innodb) {
   if ($no_rows) {
---replace_column 9 X 10 X
+--replace_column 10 X 11 X
   }
 }
 --eval EXPLAIN EXTENDED $query
@@ -58,18 +58,20 @@ if (`SELECT ROW_COUNT() > 0`) {
 }
 --echo # Status of EXPLAIN EXTENDED query
 --disable_query_log
+--disable_warnings
 SHOW STATUS WHERE (Variable_name LIKE 'Sort%' OR
                    Variable_name LIKE 'Handler_read_%' OR
                    Variable_name = 'Handler_write' OR
                    Variable_name = 'Handler_update' OR
                    Variable_name = 'Handler_delete') AND Value <> 0;
+--enable_warnings
 --enable_query_log
 
 if ($json) {
 if ($innodb) {
   if ($no_rows) {
---replace_regex /"rows": [0-9]+/"rows": "X"/ /"filtered": [0-9.]+/"filtered": "X"/
-  }
+--replace_regex /"rows_examined_per_scan": [0-9]+/"rows_examined_per_scan": "X"/ /_per_join": [0-9]+/_per_join": "X"/ /_per_join": "[0-9]+K"/_per_join": "X"/  /"filtered": "[0-9.]+"/"filtered": "X"/ /_cost": "[0-9.]+"/_cost": "X"/ /"data_read_per_join": "[0-9.]+"/"data_read_per_join": "X"/
+}
 }
 --eval EXPLAIN FORMAT=JSON $query;
 if ($validation) {
@@ -88,22 +90,24 @@ FLUSH STATUS;
 FLUSH TABLES;
 if ($innodb) {
   if ($no_rows) {
---replace_column 9 X 10 X
+--replace_column 10 X 11 X
   }
 }
 --eval EXPLAIN EXTENDED $select
 --echo # Status of EXPLAIN EXTENDED "equivalent" SELECT query execution
 --disable_query_log
+--disable_warnings
 SHOW STATUS WHERE (Variable_name LIKE 'Sort%' OR
                    Variable_name LIKE 'Handler_read_%' OR
                    Variable_name = 'Handler_write' OR
                    Variable_name = 'Handler_update' OR
                    Variable_name = 'Handler_delete') AND Value <> 0;
+--enable_warnings
 --enable_query_log
 if ($json) {
 if ($innodb) {
   if ($no_rows) {
---replace_regex /"rows": [0-9]+/"rows": "X"/ /"filtered": [0-9.]+/"filtered": "X"/
+--replace_regex /"rows_examined_per_scan": [0-9]+/"rows_examined_per_scan": "X"/ /_per_join": [0-9]+/_per_join": "X"/ /_per_join": "[0-9]+K"/_per_join": "X"/  /"filtered": "[0-9.]+"/"filtered": "X"/ /_cost": "[0-9.]+"/_cost": "X"/ /"data_read_per_join": "[0-9.]+"/"data_read_per_join": "X"/
   }
 }
 --eval EXPLAIN FORMAT=JSON $select;
@@ -135,23 +139,27 @@ if ($select) {
 --eval $select
 --enable_result_log
 --echo # Status of "equivalent" SELECT query execution:
+--disable_warnings
 SHOW STATUS WHERE (Variable_name LIKE 'Sort%' OR
                    Variable_name LIKE 'Handler_read_%' OR
                    Variable_name = 'Handler_write' OR
                    Variable_name = 'Handler_update' OR
                    Variable_name = 'Handler_delete') AND Value <> 0;
+--enable_warnings
 }
 
 FLUSH STATUS;
 FLUSH TABLES;
 --eval $query
 --echo # Status of testing query execution:
+--disable_warnings
 SHOW STATUS WHERE (Variable_name LIKE 'Sort%' OR
                    Variable_name LIKE 'Handler_read_%' OR
                    Variable_name = 'Handler_write' OR
                    Variable_name = 'Handler_update' OR
                    Variable_name = 'Handler_delete') AND Value <> 0;
 
+--enable_warnings
 --let $query=
 --let $select=
 --let $no_rows=

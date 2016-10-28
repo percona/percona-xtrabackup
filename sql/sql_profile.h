@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,11 +16,14 @@
 #ifndef _SQL_PROFILE_H
 #define _SQL_PROFILE_H
 
+#include "my_global.h"
+
 class Item;
 struct TABLE_LIST;
 class THD;
 typedef struct st_field_info ST_FIELD_INFO;
 typedef struct st_schema_table ST_SCHEMA_TABLE;
+typedef int64 query_id_t;
 
 extern ST_FIELD_INFO query_profile_statistics_info[];
 int fill_query_profile_statistics_info(THD *thd, TABLE_LIST *tables, Item *cond);
@@ -40,13 +43,16 @@ int make_profile_table_for_show(THD *thd, ST_SCHEMA_TABLE *schema_table);
 
 
 #if defined(ENABLED_PROFILING)
-#include "sql_priv.h"
-#include "unireg.h"
+#include "mysql/mysql_lex_string.h"         // LEX_STRING
+typedef struct st_mysql_lex_string LEX_STRING;
 
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
 #endif
 
+#include "mysql/psi/psi_memory.h"
+#include "mysql/service_mysql_alloc.h"
+extern PSI_memory_key key_memory_queue_item;
 
 class PROF_MEASUREMENT;
 class QUERY_PROFILE;
@@ -93,7 +99,8 @@ public:
   {
     struct queue_item *new_item;
 
-    new_item= (struct queue_item *) my_malloc(sizeof(struct queue_item), MYF(0));
+    new_item= (struct queue_item *) my_malloc(key_memory_queue_item,
+                                              sizeof(struct queue_item), MYF(0));
 
     new_item->payload= payload;
 
@@ -169,15 +176,15 @@ private:
   friend class PROFILING;
 
   QUERY_PROFILE *profile;
-  char *status;
+  const char *status;
 #ifdef HAVE_GETRUSAGE
   struct rusage rusage;
 #elif defined(_WIN32)
   FILETIME ftKernel, ftUser;
 #endif
 
-  char *function;
-  char *file;
+  const char *function;
+  const char *file;
   unsigned int line;
 
   ulong m_seq;
@@ -210,7 +217,7 @@ private:
   PROFILING *profiling;
 
   query_id_t profiling_query_id;        /* Session-specific id. */
-  char *query_source;
+  LEX_STRING m_query_source;
 
   double m_start_time_usecs;
   double m_end_time_usecs;
@@ -221,7 +228,7 @@ private:
   QUERY_PROFILE(PROFILING *profiling_arg, const char *status_arg);
   ~QUERY_PROFILE();
 
-  void set_query_source(char *query_source_arg, uint query_length_arg);
+  void set_query_source(const char *query_source_arg, size_t query_length_arg);
 
   /* Add a profile status change to the current profile. */
   void new_status(const char *status_arg,
@@ -262,7 +269,7 @@ private:
 public:
   PROFILING();
   ~PROFILING();
-  void set_query_source(char *query_source_arg, uint query_length_arg);
+  void set_query_source(const char *query_source_arg, size_t query_length_arg);
 
   void start_new_query(const char *initial_state= "starting");
 
@@ -281,6 +288,7 @@ public:
 
   /* ... from INFORMATION_SCHEMA.PROFILING ... */
   int fill_statistics_info(THD *thd, TABLE_LIST *tables, Item *cond);
+  void cleanup();
 };
 
 #  endif /* HAVE_PROFILING */

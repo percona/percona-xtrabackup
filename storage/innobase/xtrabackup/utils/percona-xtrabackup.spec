@@ -6,7 +6,7 @@
 %define xb_revision       @@XB_REVISION@@
 
 #####################################
-Name:           percona-xtrabackup
+Name:           percona-xtrabackup-%{xb_version_major}%{xb_version_minor}
 Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
 Release:        %{xb_rpm_version_extra}%{?dist}
 Summary:        XtraBackup online backup for MySQL / InnoDB
@@ -25,21 +25,21 @@ BuildRequires:  curl-devel
 %if 0%{?rhel} > 6 
 BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6 
 %endif
-Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22
+Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
 Requires:       perl(DBD::mysql), rsync
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines
 
-%package -n percona-xtrabackup-test
+%package -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 Summary:        Test suite for Percona XtraBackup
 Group:          Applications/Databases
-Requires:       percona-xtrabackup = %{version}-%{release}
+Requires:       percona-xtrabackup-%{xb_version_major}%{xb_version_minor} = %{version}-%{release}
 Requires:       /usr/bin/mysql
 AutoReqProv:    no
 
-%description -n percona-xtrabackup-test
+%description -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 This package contains the test suite for Percona XtraBackup %{version}%{xb_version_extra}
 
 %prep
@@ -64,7 +64,8 @@ export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
 cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test -DINSTALL_MANDIR=%{_mandir} .
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost .
 #
 make %{?_smp_mflags}
 #
@@ -88,13 +89,13 @@ rm -rf $RPM_BUILD_ROOT
 %doc COPYING
 %doc %{_mandir}/man1/*.1.gz
 
-%files -n percona-xtrabackup-test
+%files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 %defattr(-,root,root,-)
-%{_datadir}/percona-xtrabackup-test
+%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
 %changelog
-* Mon Mar 14 2016 Tomislav Plavcic <tomislav.plavcic@percona.com>
-- Update to new release Percona XtraBackup 2.3.4
+* Wed Feb 03 2016 Tomislav Plavcic <tomislav.plavcic@percona.com>
+- Packaging updates for version 2.4.0-rc1
 
 * Mon Dec 14 2015 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.3

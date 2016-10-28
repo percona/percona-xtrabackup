@@ -43,6 +43,10 @@ Options
 
    This option specifies the number of worker threads used by |xtrabackup| for parallel data compression. This option defaults to 1. Parallel compression ('--compress-threads') can be used together with parallel file copying ('--parallel'). For example, '--parallel=4 --compress --compress-threads=2' will create 4 IO threads that will read the data and pipe it to 2 compression threads. 
 
+.. option:: --copy-back         
+
+   Copy all the files in a previously made backup from the backup directory to their original locations.
+
 .. option:: --create-ib-logfile
 
    This option is not currently implemented. To create the InnoDB log files, you must prepare the backup twice at present.
@@ -123,6 +127,10 @@ Options
     --innodb-read-io-threads
     --innodb-write-io-threads
 
+.. option:: --keyring-file-data=FILENAME
+
+   The path to the keyring file.
+
 .. option:: --log-copy-interval=#
 
    This option specifies time interval between checks done by log copying thread in milliseconds (default is 1 second).
@@ -167,9 +175,17 @@ Options
 
    Use this number of threads to rebuild indexes in a compact backup. Only has effect with --prepare and --rebuild-indexes.
 
+.. option:: --reencrypt-for-server-id=<new_server_id>
+
+   Use this option to start the server instance with different server_id from the one the encrypted backup was taken from, like a replication slave or a galera node. When this option is used, xtrabackup will, as a prepare step, generate a new master key with ID based on the new server_id, store it into keyring file and re-encrypt the tablespace keys inside of tablespace headers. Option should be passed for :option:`--prepare` (final step).
+
 .. option:: --secure-auth       
 
    Refuse client connecting to server if it uses old (pre-4.1.1) protocol. (Enabled by default; use --skip-secure-auth to disable.)
+
+.. option:: --server-id=#
+
+   The server instance being backed up.
 
 .. option:: --stats
 

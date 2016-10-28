@@ -4,8 +4,7 @@
 Lockless binary log information
 ===============================
 
-|Percona XtraBackup| implemented support for lock-less binary log information
-in 2.3.2. When the `Lockless binary log information
+When the `Lockless binary log information
 <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-safe-binlog-information>`_
 feature is available [#n-1]_ on the server, |Percona XtraBackup| can trust
 binary log information stored in the |InnoDB| system header and avoid executing

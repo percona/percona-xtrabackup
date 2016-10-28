@@ -1,6 +1,6 @@
 #! /bin/bash
 #
-# Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
-
 
 
 # MySQL Database start/stop script
@@ -45,7 +44,7 @@
 rc_reset
 
 STARTTIMEOUT=180
-STOPTIMEOUT=60
+STOPTIMEOUT=600
 PROG=/usr/bin/mysqld_safe
 
 [ -e /etc/sysconfig/mysql ] && . /etc/sysconfig/mysql
@@ -53,11 +52,15 @@ PROG=/usr/bin/mysqld_safe
 # Lock directory
 lockfile=/var/lock/subsys/mysql
 
+# Support for extra options passed to mysqld
+command=$1 && shift
+extra_opts="$@"
+
 get_option () {
     local section=$1
     local option=$2
     local default=$3
-    ret=$(/usr/bin/my_print_defaults $section | grep '^--'${option}'=' | cut -d= -f2-)
+    ret=$(/usr/bin/my_print_defaults $section | grep '^--'${option}'=' | cut -d= -f2- | tail -n 1)
     [ -z $ret ] && ret=$default
     echo $ret
 }
@@ -67,6 +70,20 @@ socket=$(get_option  mysqld socket "$datadir/mysql.sock")
 pidfile=$(get_option mysqld_safe pid-file "/var/run/mysql/mysqld.pid")
 logfile=$(get_option mysqld_safe log-error "/var/log/mysql/mysqld.log")
 
+install_validate_password_sql_file () {
+    local dir
+    local initfile
+    if [ -d /var/lib/mysql-files ]; then
+        dir=/var/lib/mysql-files
+    else
+        dir=/tmp
+    fi
+    initfile="$(mktemp $dir/install-validate-password-plugin.XXXXXX.sql)"
+    chown mysql:mysql "$initfile"
+    echo "INSERT INTO mysql.plugin (name, dl) VALUES ('validate_password', 'validate_password.so');" > $initfile
+    echo $initfile
+}
+
 install_db () {
     # Note: something different than datadir=/var/lib/mysql requires 
     # SELinux policy changes (in enforcing mode)
@@ -74,7 +91,7 @@ install_db () {
     logfile=$(get_option mysqld_safe log-error "/var/log/mysql/mysqld.log")
 
     # Restore log, dir, perms and SELinux contexts
-    [ -d "$datadir" ] || install -d -m 0755 -omysql -gmysql "$datadir" || return 1
+    [ -d "$datadir" ] || install -d -m 0751 -omysql -gmysql "$datadir" || return 1
 
     [ -e $logfile ] || touch $logfile || return 1
     chmod 0640 $logfile
@@ -87,9 +104,17 @@ install_db () {
     # If special mysql dir is in place, skip db install 
     [ -d "$datadir/mysql" ] && return 0
 
-    # Create initial db
-    /usr/bin/mysql_install_db --datadir="$datadir" --rpm --user=mysql --keep-my-cnf
-    return $?
+    # Create initial db and install validate password plugin
+    initfile="$(install_validate_password_sql_file)"
+    /usr/sbin/mysqld --initialize --datadir="$datadir" --user=mysql --init-file="$initfile"
+    ret=$?
+    rm -f "$initfile"
+
+    # Generate certs if neded
+    if [ -x /usr/bin/mysql_ssl_rsa_setup -a ! -e "${datadir}/server-key.pem" ] ; then
+        /usr/bin/mysql_ssl_rsa_setup --datadir="$datadir" --uid=mysql >/dev/null 2>&1
+    fi
+    return $ret
 }
 
 # Wait for ping to answer to signal startup completed,
@@ -153,7 +178,7 @@ start () {
 	rc_failed 6 ; rc_status -v ; rc_exit
     fi
 
-    $PROG --basedir=/usr --datadir="$datadir" --pid-file="$pidfile" >/dev/null 2>&1 &
+    $PROG --basedir=/usr --datadir="$datadir" --pid-file="$pidfile" $extra_opts >/dev/null 2>&1 &
     if pinger $! ; then
 	echo -n "Starting service MySQL:"
 	touch $lockfile
@@ -233,7 +258,7 @@ status () {
    rc_status -v
 }  
 
-case "$1" in
+case "$command" in
     start  ) start   ;;
     stop   ) stop    ;;
     restart) restart ;;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -70,7 +70,7 @@ public:
   Cache* m_cacheBuild;
   Cache* m_cacheQuery;
   Cache* m_cacheClean;
-  // mutex for query cache switch, memory barrier would do
+  // mutex for query cache switch and reference count
   NdbMutex* m_query_mutex;
   NdbEventOperation* m_eventOp;
   Mem* m_mem_handler;
@@ -119,7 +119,7 @@ public:
     uint m_cachePos;
     uint m_cacheKeyOffset;   // in bytes
     uint m_cacheValueOffset; // in bytes
-    MicroSecondTimer m_start;
+    NDB_TICKS m_start;
     Con(NdbIndexStatImpl* impl, Head& head, Ndb* ndb);
     ~Con();
     int startTransaction();
@@ -127,7 +127,7 @@ public:
     int getNdbOperation();
     int getNdbIndexScanOperation();
     void set_time();
-    NDB_TICKS get_time();
+    Uint64 get_time(); //Elapsed time(us) since set_time
   };
 
   // index
@@ -185,6 +185,8 @@ public:
     // performance
     mutable Uint64 m_save_time;
     mutable Uint64 m_sort_time;
+    // in use by query_stat
+    mutable uint m_ref_count;
     Cache();
     // pos is index < sampleCount, addr is offset in keyArray
     uint get_keyaddr(uint pos) const;
@@ -197,8 +199,12 @@ public:
     // for sort
     void swap_entry(uint pos1, uint pos2);
     // get stats values primitives
+    double get_rir1(uint pos) const;
+    double get_rir1(uint pos1, uint pos2) const;
     double get_rir(uint pos) const;
     double get_rir(uint pos1, uint pos2) const;
+    double get_unq1(uint pos, uint k) const;
+    double get_unq1(uint pos1, uint pos2, uint k) const;
     double get_unq(uint pos, uint k) const;
     double get_unq(uint pos1, uint pos2, uint k) const;
     double get_rpk(uint pos, uint k) const;
@@ -210,7 +216,9 @@ public:
   void cache_isort(Cache& c);
   void cache_hsort(Cache& c);
   void cache_hsort_sift(Cache& c, int i, int count);
+#ifdef ndb_index_stat_hsort_verify
   void cache_hsort_verify(Cache& c, int count);
+#endif
   int cache_verify(const Cache& c);
   void move_cache();
   void clean_cache();

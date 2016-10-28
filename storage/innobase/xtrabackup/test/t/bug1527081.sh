@@ -5,7 +5,7 @@
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb-log-files-in-group=4
-innodb-log-file-size=2M
+innodb-log-file-size=4M
 "
 
 start_server

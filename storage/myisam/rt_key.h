@@ -1,5 +1,4 @@
-/* Copyright (c) 2002, 2004-2006 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,8 +18,6 @@
 #ifndef _rt_key_h
 #define _rt_key_h
 
-#ifdef HAVE_RTREE_KEYS
-
 int rtree_add_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key, 
                  uint key_length, uchar *page_buf, my_off_t *new_page);
 int rtree_delete_key(MI_INFO *info, uchar *page, uchar *key, 
@@ -28,5 +25,4 @@ int rtree_delete_key(MI_INFO *info, uchar *page, uchar *key,
 int rtree_set_key_mbr(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key, 
                     uint key_length, my_off_t child_page);
 
-#endif /*HAVE_RTREE_KEYS*/
 #endif /* _rt_key_h */

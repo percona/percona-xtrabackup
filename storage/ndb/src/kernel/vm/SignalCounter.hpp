@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2007 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -36,6 +35,7 @@ public:
   /**
    * When sending to different node
    */
+  void setWaitingFor(NdbNodeBitmask nodes);
   void setWaitingFor(Uint32 nodeId);
   void clearWaitingFor(Uint32 nodeId);
   void forceClearWaitingFor(Uint32 nodeId);
@@ -46,7 +46,6 @@ public:
   const char * getText() const;
 
   SignalCounter& operator=(const NdbNodeBitmask & bitmask);
-  SignalCounter& operator=(const NodeReceiverGroup& rg);
 
   /**
    * When sending to same node
@@ -56,7 +55,17 @@ public:
   SignalCounter& operator++(int);
   SignalCounter& operator+=(Uint32);
   Uint32 getCount() const;
+
+  const NdbNodeBitmask& getNodeBitmask() const { return m_nodes; }
 };
+
+inline
+void
+SignalCounter::setWaitingFor(NdbNodeBitmask nodes)
+{
+  m_nodes.assign(nodes);
+  m_count = nodes.count();
+}
 
 inline
 void 
@@ -160,15 +169,6 @@ SignalCounter&
 SignalCounter::operator=(const NdbNodeBitmask & bitmask){
   m_nodes = bitmask;
   m_count = bitmask.count();
-  return * this;
-}
-
-inline
-SignalCounter&
-SignalCounter::operator=(const NodeReceiverGroup & rg){
-  assert(rg.m_nodes.find(65) == NodeBitmask::NotFound);
-  memcpy(&m_nodes, &rg.m_nodes, sizeof(m_nodes));
-  m_count = m_nodes.count();
   return * this;
 }
 

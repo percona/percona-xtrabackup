@@ -1,5 +1,7 @@
 . inc/common.sh
 
+skip_test "Enable when archived logs functionality restored"
+
 #The result to return
 RESULT=0
 

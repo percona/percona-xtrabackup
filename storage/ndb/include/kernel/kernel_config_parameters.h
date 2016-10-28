@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2004-2006, 2008 MySQL AB, 2008, 2009 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2004, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,10 +20,9 @@
 
 #define PRIVATE_BASE          14000
 
-#define CFG_ACC_DIR_RANGE     (PRIVATE_BASE +  1)
-#define CFG_ACC_DIR_ARRAY     (PRIVATE_BASE +  2)
 #define CFG_ACC_FRAGMENT      (PRIVATE_BASE +  3)
 #define CFG_ACC_OP_RECS       (PRIVATE_BASE +  4)
+/* TODO: remove. CFG_ACC_OVERFLOW_RECS obsoleted ... */
 #define CFG_ACC_OVERFLOW_RECS (PRIVATE_BASE +  5)
 #define CFG_ACC_PAGE8         (PRIVATE_BASE +  6)
 #define CFG_ACC_ROOT_FRAG     (PRIVATE_BASE +  7)
@@ -63,5 +61,7 @@
 #define CFG_TUX_FRAGMENT      (PRIVATE_BASE + 41)
 #define CFG_TUX_ATTRIBUTE     (PRIVATE_BASE + 42)
 #define CFG_TUX_SCAN_OP       (PRIVATE_BASE + 43)
+
+#define CFG_SPJ_TABLE         (PRIVATE_BASE + 44)
 
 #endif

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,9 @@
 #include "DbtuxProxy.hpp"
 #include "Dbtux.hpp"
 #include "../dblqh/DblqhCommon.hpp"
+
+#define JAM_FILE_ID 370
+
 
 DbtuxProxy::DbtuxProxy(Block_context& ctx) :
   LocalProxy(DBTUX, ctx)
@@ -144,7 +147,6 @@ DbtuxProxy::sendINDEX_STAT_IMPL_REQ(Signal* signal, Uint32 ssId,
   const Uint32 instance = workerInstance(ss.m_worker);
   NdbLogPartInfo lpinfo(instance);
 
-  //XXX remove unused
   switch (req->requestType) {
   case IndexStatReq::RT_START_MON:
     /*
@@ -152,11 +154,6 @@ DbtuxProxy::sendINDEX_STAT_IMPL_REQ(Signal* signal, Uint32 ssId,
      * to turn off any possible old assignment.  In MT-LQH we also have
      * to check which worker owns the frag.
      */
-    if (req->fragId != ZNIL
-        && !lpinfo.partNoOwner(req->indexId, req->fragId)) {
-      jam();
-      req->fragId = ZNIL;
-    }
     break;
   case IndexStatReq::RT_STOP_MON:
     /*
@@ -165,34 +162,8 @@ DbtuxProxy::sendINDEX_STAT_IMPL_REQ(Signal* signal, Uint32 ssId,
      */
     ndbrequire(req->fragId == ZNIL);
     break;
-  case IndexStatReq::RT_SCAN_FRAG:
-    ndbrequire(req->fragId != ZNIL);
-    if (!lpinfo.partNoOwner(req->indexId, req->fragId)) {
-      jam();
-      skipReq(ss);
-      return;
-    }
-    break;
-  case IndexStatReq::RT_CLEAN_NEW:
-  case IndexStatReq::RT_CLEAN_OLD:
-  case IndexStatReq::RT_CLEAN_ALL:
-    ndbrequire(req->fragId == ZNIL);
-    break;
-  case IndexStatReq::RT_DROP_HEAD:
-    /*
-     * Only one client can do the PK-delete of the head record.  We use
-     * of course the worker which owns the assigned fragment.
-     */
-    ndbrequire(req->fragId != ZNIL);
-    if (!lpinfo.partNoOwner(req->indexId, req->fragId)) {
-      jam();
-      skipReq(ss);
-      return;
-    }
-    break;
   default:
     ndbrequire(false);
-    break;
   }
 
   sendSignal(workerRef(ss.m_worker), GSN_INDEX_STAT_IMPL_REQ,
@@ -256,36 +227,10 @@ DbtuxProxy::execINDEX_STAT_REP(Signal* signal)
   jamEntry();
   const IndexStatRep* rep =
     (const IndexStatRep*)signal->getDataPtr();
-  Ss_INDEX_STAT_REP& ss = ssSeize<Ss_INDEX_STAT_REP>();
-  ss.m_rep = *rep;
-  ndbrequire(signal->getLength() == IndexStatRep::SignalLength);
-  sendREQ(signal, ss);
-  ssRelease<Ss_INDEX_STAT_REP>(ss);
-}
 
-void
-DbtuxProxy::sendINDEX_STAT_REP(Signal* signal, Uint32 ssId,
-                               SectionHandle*)
-{
-  Ss_INDEX_STAT_REP& ss = ssFind<Ss_INDEX_STAT_REP>(ssId);
-
-  IndexStatRep* rep = (IndexStatRep*)signal->getDataPtrSend();
-  *rep = ss.m_rep;
-  rep->senderData = reference();
-  rep->senderData = ssId;
-
-  const Uint32 instance = workerInstance(ss.m_worker);
-  NdbLogPartInfo lpinfo(instance);
-
-  ndbrequire(rep->fragId != ZNIL);
-  if (!lpinfo.partNoOwner(rep->indexId, rep->fragId)) {
-    jam();
-    skipReq(ss);
-    return;
-  }
-
-  sendSignal(workerRef(ss.m_worker), GSN_INDEX_STAT_REP,
-             signal, IndexStatRep::SignalLength, JBB);
+  Uint32 instance = getInstanceKey(rep->indexId, rep->fragId);
+  sendSignal(numberToRef(DBTUX, instance, getOwnNodeId()),
+             GSN_INDEX_STAT_REP, signal, signal->getLength(), JBB);
 }
 
 BLOCK_FUNCTIONS(DbtuxProxy)

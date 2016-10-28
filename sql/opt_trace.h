@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,7 +17,6 @@
 #define OPT_TRACE_INCLUDED
 
 #include "my_config.h"  // OPTIMIZER_TRACE
-#include "sql_array.h"  // Dynamic_array
 #include "sql_list.h"   // because sql_cmd.h needs it
 #include "sql_cmd.h"    // for enum_sql_command
 #include "opt_trace_context.h" // Opt_trace_context
@@ -28,6 +27,8 @@ struct TABLE;
 class sp_head;
 class sp_printable;
 class set_var_base;
+class Cost_estimate;
+class Item;
 
 /**
    @file
@@ -335,7 +336,7 @@ class set_var_base;
   @c sp_lex_keeper::reset_lex_and_exec_core()), we check this LEX in the
   constructor of Opt_trace_start.
   Or it may be a LEX describing a view, we check this LEX when
-  opening the view (@c mysql_make_view()).
+  opening the view (@c open_and_read_view()).
 
   Those checks are greatly simplified by disabling traces in case of security
   context changes. @see opt_trace_disable_if_no_security_context_access().
@@ -707,7 +708,7 @@ public:
      Helper to put the database/table name in an object.
      @param  tab  TABLE* pointer
   */
-  Opt_trace_struct& add_utf8_table(const TABLE *tab)
+  Opt_trace_struct& add_utf8_table(const TABLE_LIST *tab)
   {
     if (likely(!started))
       return *this;
@@ -723,6 +724,18 @@ public:
       // Clearer than any huge number.
       add_alnum("select#", "fake") :
       add("select#", select_number);
+  }
+  /**
+     Add a value to the structure.
+     @param  key    key
+     @param  cost   the value of Cost_estimate
+     @return a reference to the structure
+  */
+  Opt_trace_struct& add(const char *key, const Cost_estimate &cost)
+  {
+    if (likely(!started))
+      return *this;
+    return do_add(key, cost);
   }
 
   /**
@@ -799,7 +812,8 @@ private:
   Opt_trace_struct& do_add(const char *key, double value);
   Opt_trace_struct& do_add_hex(const char *key, uint64 value);
   Opt_trace_struct& do_add_null(const char *key);
-  Opt_trace_struct& do_add_utf8_table(const TABLE *tab);
+  Opt_trace_struct& do_add_utf8_table(const TABLE_LIST *tab);
+  Opt_trace_struct& do_add(const char *key, const Cost_estimate &value);
 
   Opt_trace_struct(const Opt_trace_struct&);            ///< not defined
   Opt_trace_struct& operator=(const Opt_trace_struct&); ///< not defined
@@ -1147,8 +1161,10 @@ public:
   Opt_trace_object& add(const char *key, longlong value) { return *this; }
   Opt_trace_object& add(const char *key, ulonglong value) { return *this; }
   Opt_trace_object& add(const char *key, double value) { return *this; }
+  Opt_trace_object& add(const char *key, const Cost_estimate &cost)
+  { return *this; }
   Opt_trace_object& add_hex(const char *key, uint64 value) { return *this; }
-  Opt_trace_object& add_utf8_table(const TABLE *tab) { return *this; }
+  Opt_trace_object& add_utf8_table(const TABLE_LIST *tab) { return *this; }
   Opt_trace_object& add_select_number(uint select_number) { return *this; }
   void end() {}
 };
@@ -1178,7 +1194,7 @@ public:
   Opt_trace_array& add(ulonglong value) { return *this; }
   Opt_trace_array& add(double value) { return *this; }
   Opt_trace_array& add_hex(uint64 value) { return *this; }
-  Opt_trace_array& add_utf8_table(TABLE *tab) { return *this; }
+  Opt_trace_array& add_utf8_table(const TABLE_LIST *tab) { return *this; }
   Opt_trace_array& add_select_number(uint select_number) { return *this; }
   void end() {}
 };

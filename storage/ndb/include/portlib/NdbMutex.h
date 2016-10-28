@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006, 2008 MySQL AB, 2009 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,21 +19,18 @@
 #define NDB_MUTEX_H
 
 #include <ndb_global.h>
+#include <thr_mutex.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
-#if defined NDB_WIN32
-#include <my_pthread.h>
-#else
-#include <pthread.h>
-#endif
-#ifndef NDB_MUTEX_STAT
-typedef pthread_mutex_t NdbMutex;
+#if !defined NDB_MUTEX_STAT && !defined NDB_MUTEX_DEADLOCK_DETECTOR
+typedef native_mutex_t NdbMutex;
 #else
 typedef struct {
-  pthread_mutex_t mutex;
+  native_mutex_t mutex;
+#ifdef NDB_MUTEX_STAT
   unsigned cnt_lock;
   unsigned cnt_lock_contention;
   unsigned cnt_trylock_ok;
@@ -47,6 +43,10 @@ typedef struct {
   unsigned long long max_hold_time_ns;
   unsigned long long lock_start_time_ns;
   char name[32];
+#endif
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+  struct ndb_mutex_state * m_mutex_state;
+#endif
 } NdbMutex;
 #endif
 
@@ -76,6 +76,7 @@ int NdbMutex_InitWithName(NdbMutex* p_mutex, const char * name);
  * * returnvalue: 0 = succeeded, -1 = failed
  */
 int NdbMutex_Destroy(NdbMutex* p_mutex);
+int NdbMutex_Deinit(NdbMutex* p_mutex);
 
 /**
  * Lock a mutex

@@ -42,13 +42,14 @@ permission notice:
 
 #include <mysql_version.h>
 #include <my_base.h>
+#include <my_dir.h>
 #include <handler.h>
 #include <trx0sys.h>
 
 #include "common.h"
 
 #define WSREP_XID_PREFIX "WSREPXid"
-#define WSREP_XID_PREFIX_LEN MYSQL_XID_PREFIX_LEN
+#define WSREP_XID_PREFIX_LEN 8
 #define WSREP_XID_UUID_OFFSET 8
 #define WSREP_XID_SEQNO_OFFSET (WSREP_XID_UUID_OFFSET + sizeof(wsrep_uuid_t))
 #define WSREP_XID_GTRID_LEN (WSREP_XID_SEQNO_OFFSET + sizeof(wsrep_seqno_t))
@@ -83,10 +84,11 @@ wsrep_is_wsrep_xid(
 {
 	const XID*	xid = reinterpret_cast<const XID*>(xid_ptr);
 
-	return((xid->formatID      == 1                   &&
-		xid->gtrid_length  == WSREP_XID_GTRID_LEN &&
-		xid->bqual_length  == 0                   &&
-		!memcmp(xid->data, WSREP_XID_PREFIX, WSREP_XID_PREFIX_LEN)));
+	return((xid->get_format_id()      == 1                   &&
+		xid->get_gtrid_length()   == WSREP_XID_GTRID_LEN &&
+		xid->get_bqual_length()   == 0                   &&
+		!memcmp(xid->get_data(), WSREP_XID_PREFIX,
+			WSREP_XID_PREFIX_LEN)));
 }
 
 /***********************************************************************//**
@@ -103,7 +105,7 @@ wsrep_xid_uuid(
 {
 	if (wsrep_is_wsrep_xid(xid)) {
 		return(reinterpret_cast<const wsrep_uuid_t*>
-		       (xid->data + WSREP_XID_UUID_OFFSET));
+		       (xid->get_data() + WSREP_XID_UUID_OFFSET));
 	} else {
 		return(&WSREP_UUID_UNDEFINED);
 	}
@@ -120,7 +122,7 @@ wsrep_seqno_t wsrep_xid_seqno(
 {
 	if (wsrep_is_wsrep_xid(xid)) {
 		wsrep_seqno_t seqno;
-		memcpy(&seqno, xid->data + WSREP_XID_SEQNO_OFFSET,
+		memcpy(&seqno, xid->get_data() + WSREP_XID_SEQNO_OFFSET,
 		       sizeof(wsrep_seqno_t));
 
 		return(seqno);
@@ -178,7 +180,7 @@ xb_write_galera_info()
 	}
 
 	memset(&xid, 0, sizeof(xid));
-	xid.formatID = -1;
+	xid.set_format_id(-1);
 
 	if (!trx_sys_read_wsrep_checkpoint(&xid)) {
 

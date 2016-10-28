@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,6 +15,25 @@
 
 #include "LongSignal.hpp"
 #include "LongSignalImpl.hpp"
+#include <EventLogger.hpp>
+
+extern EventLogger * g_eventLogger;
+
+#define JAM_FILE_ID 262
+
+// Static function.
+void 
+SectionSegmentPool::handleOutOfSegments(ArrayPool<SectionSegment>& pool)
+{
+  g_eventLogger
+    ->warning("The long message buffer is out of free elements. This may "
+              "cause the data node to crash. Consider increasing the buffer "
+              "size via the LongMessageBuffer configuration parameter. The "
+              "current size of this pool is %lu bytes. You may also check "
+              "the state of this buffer via the ndbinfo.memoryusage table.", 
+              static_cast<unsigned long>
+              (pool.getSize() * sizeof(SectionSegment)));
+};
 
 /**
  * verifySection
@@ -32,7 +51,9 @@ verifySection(Uint32 firstIVal, SectionSegmentPool& thePool)
 
   assert(first != NULL);
   Uint32 totalSize= first->m_sz;
+#ifdef VM_TRACE
   Uint32 lastSegIVal= first->m_lastSegment;
+#endif
 
   /* Hmm, need to be careful of length == 0
    * Nature abhors a segmented section with length 0
@@ -313,7 +334,6 @@ appendToSection(SPC_ARG Uint32& firstSegmentIVal, const Uint32* src, Uint32 len)
 
   return true;
 }
-
 bool
 import(SPC_ARG Ptr<SectionSegment> & first, const Uint32 * src, Uint32 len){
 
@@ -468,3 +488,8 @@ writeToSection(Uint32 firstSegmentIVal, Uint32 offset,
   }
 }
 
+/** 
+ * #undef is needed since this file is included by LongSignal_nonmt.cpp
+ * and LongSignal_mt.cpp
+ */
+#undef JAM_FILE_ID

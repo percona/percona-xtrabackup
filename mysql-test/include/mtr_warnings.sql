@@ -99,6 +99,8 @@ INSERT INTO global_suppressions VALUES
  ("Forcing shutdown of [0-9]* plugins"),
  ("Forcing close of thread"),
 
+ ("innodb-page-size has been changed"),
+
  /*
    Due to timing issues, it might be that this warning
    is printed when the server shuts down and the
@@ -175,6 +177,8 @@ INSERT INTO global_suppressions VALUES
  ("No existing UUID has been found, so we assume that this is the first time that this server has been started.*"),
  /*It will print a warning if server is run without --explicit_defaults_for_timestamp.*/
  ("TIMESTAMP with implicit DEFAULT value is deprecated. Please use --explicit_defaults_for_timestamp server option (see documentation for more details)*"),
+ /*It will print a warning if a server is run without NO_AUTO_CREATE_USER sql mode.*/
+ ("'NO_AUTO_CREATE_USER' sql mode was not set."),
 
  /* Added 2009-08-XX after fixing Bug #42408 */
 
@@ -207,21 +211,14 @@ INSERT INTO global_suppressions VALUES
    Transient network failures that cause warnings on reconnect.
    BUG#47743 and BUG#47983.
  */
- ("Slave I/O: Get master SERVER_UUID failed with error:.*"),
- ("Slave I/O: Get master SERVER_ID failed with error:.*"),
- ("Slave I/O: Get master clock failed with error:.*"),
- ("Slave I/O: Get master COLLATION_SERVER failed with error:.*"),
- ("Slave I/O: Get master TIME_ZONE failed with error:.*"),
- ("Slave I/O: The slave I/O thread stops because a fatal error is encountered when it tried to SET @master_binlog_checksum on master.*"),
- ("Slave I/O: Get master BINLOG_CHECKSUM failed with error.*"),
- ("Slave I/O: Notifying master by SET @master_binlog_checksum= @@global.binlog_checksum failed with error.*"),
- /*
-   BUG#42147 - Concurrent DML and LOCK TABLE ... READ for InnoDB 
-   table cause warnings in errlog
-   Note: This is a temporary suppression until Bug#42147 can be 
-   fixed properly. See bug page for more information.
-  */
- ("Found lock of type 6 that is write and read locked"),
+ ("Slave I/O.*: Get master SERVER_UUID failed with error:.*"),
+ ("Slave I/O.*: Get master SERVER_ID failed with error:.*"),
+ ("Slave I/O.*: Get master clock failed with error:.*"),
+ ("Slave I/O.*: Get master COLLATION_SERVER failed with error:.*"),
+ ("Slave I/O.*: Get master TIME_ZONE failed with error:.*"),
+ ("Slave I/O.*: The slave I/O thread stops because a fatal error is encountered when it tried to SET @master_binlog_checksum on master.*"),
+ ("Slave I/O.*: Get master BINLOG_CHECKSUM failed with error.*"),
+ ("Slave I/O.*: Notifying master by SET @master_binlog_checksum= @@global.binlog_checksum failed with error.*"),
 
  /*
    Warning message is printed out whenever a slave is started with
@@ -239,12 +236,22 @@ INSERT INTO global_suppressions VALUES
   In MTS if the user issues a stop slave sql while it is scheduling a group
   of events, this warning is emitted.
   */
- ("Slave SQL: Coordinator thread of multi-threaded slave is being stopped in the middle of assigning a group of events.*"),
+ ("Slave SQL.*: Coordinator thread of multi-threaded slave is being stopped in the middle of assigning a group of events.*"),
  
  ("Changed limits: max_open_files: *"),
  ("Changed limits: max_connections: *"),
  ("Changed limits: table_open_cache: *"),
  ("Could not increase number of max_open_files to more than *"),
+
+ /*
+   Warning message introduced by wl#7706
+ */
+ ("CA certificate .* is self signed"),
+
+ /*
+   Warnings related to --secure-file-priv
+ */
+ ("Insecure configuration for --secure-file-priv:*"),
 
  ("THE_LAST_SUPPRESSION")||
 

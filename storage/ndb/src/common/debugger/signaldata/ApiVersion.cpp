@@ -1,5 +1,4 @@
-/* Copyright 2008 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+/* Copyright (c) 2008, 2012, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -46,6 +45,6 @@ printAPI_VERSION_CONF(FILE * output,
           " senderRef: (node: %d, block: %d), nodeId: %d\n" \
           " version: %d, mysql_version: %d, inet_addr: %d\n",
 	  refToNode(sig->senderRef), refToBlock(sig->senderRef),
-	  sig->nodeId, sig->version, sig->mysql_version, sig->inet_addr);
+	  sig->nodeId, sig->version, sig->mysql_version, sig->m_inet_addr);
   return true;
 }

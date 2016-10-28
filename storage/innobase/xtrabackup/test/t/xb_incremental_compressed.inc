@@ -30,7 +30,7 @@ innodb_strict_mode
 innodb_file_per_table
 innodb_file_format=Barracuda
 innodb_max_dirty_pages_pct=0
-innodb_log_file_size=1M"
+innodb_log_file_size=4M"
   
   start_server
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2012, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -30,55 +30,54 @@ Created 10/10/1995 Heikki Tuuri
 #include "log0log.h"
 #include "ut0byte.h"
 
-#ifdef __WIN__
-#define SRV_PATH_SEPARATOR	'\\'
+// Forward declaration
+struct dict_table_t;
+
+#ifdef DBUG_OFF
+# define RECOVERY_CRASH(x) do {} while(0)
 #else
-#define SRV_PATH_SEPARATOR	'/'
-#endif
+# define RECOVERY_CRASH(x) do {						\
+	if (srv_force_recovery_crash == x) {				\
+		fprintf(stderr, "innodb_force_recovery_crash=%lu\n",	\
+			srv_force_recovery_crash);			\
+		fflush(stderr);						\
+		_exit(3);						\
+	}								\
+} while (0)
+#endif /* DBUG_OFF */
+
+/** Log 'spaces' have id's >= this */
+#define SRV_LOG_SPACE_FIRST_ID		0xFFFFFFF0UL
+
+/** If buffer pool is less than the size,
+only one buffer pool instance is used. */
+#define BUF_POOL_SIZE_THRESHOLD		(1024 * 1024 * 1024)
 
 /** Files comprising the system tablespace */
 extern os_file_t	files[1000];
 
 /*********************************************************************//**
-Normalizes a directory path for Windows: converts slashes to backslashes. */
-UNIV_INTERN
-void
-srv_normalize_path_for_win(
-/*=======================*/
-	char*	str);	/*!< in/out: null-terminated character string */
-/*********************************************************************//**
-Reads the data files and their sizes from a character string given in
-the .cnf file.
-@return	TRUE if ok, FALSE on parse error */
-UNIV_INTERN
-ibool
-srv_parse_data_file_paths_and_sizes(
-/*================================*/
+Parse temporary tablespace configuration.
+@return true if ok, false on parse error */
+bool
+srv_parse_temp_data_file_paths_and_sizes(
+/*=====================================*/
 	char*	str);	/*!< in/out: the data file path string */
-/*********************************************************************//**
-Frees the memory allocated by srv_parse_data_file_paths_and_sizes()
-and srv_parse_log_group_home_dirs(). */
-UNIV_INTERN
-void
-srv_free_paths_and_sizes(void);
-/*==========================*/
 /*********************************************************************//**
 Adds a slash or a backslash to the end of a string if it is missing
 and the string is not empty.
-@return	string which has the separator if the string is not empty */
-UNIV_INTERN
+@return string which has the separator if the string is not empty */
 char*
 srv_add_path_separator_if_needed(
 /*=============================*/
 	char*	str);	/*!< in: null-terminated character string */
 /********************************************************************
 Opens the configured number of undo tablespaces.
-@return	DB_SUCCESS or error code */
-UNIV_INTERN
+@return DB_SUCCESS or error code */
 dberr_t
 srv_undo_tablespaces_init(
 /*======================*/
-	ibool		create_new_db,		/*!< in: TRUE if new db being
+	bool		create_new_db,		/*!< in: TRUE if new db being
 						created */
 	ibool		backup_mode,		/*!< in: TRUE disables reading
 						the system tablespace (used in
@@ -87,27 +86,25 @@ srv_undo_tablespaces_init(
 	const ulint	n_conf_tablespaces,	/*!< in: configured undo
 						tablespaces */
 	ulint*		n_opened);		/*!< out: number of UNDO
-						tablespaces successfully */
+						tablespaces successfully
+						discovered and opened */
 #ifndef UNIV_HOTBACKUP
 /****************************************************************//**
 Starts Innobase and creates a new database if database files
 are not found and the user wants.
-@return	DB_SUCCESS or error code */
-UNIV_INTERN
+@return DB_SUCCESS or error code */
 dberr_t
 innobase_start_or_create_for_mysql(void);
 /*====================================*/
 /****************************************************************//**
 Shuts down the Innobase database.
-@return	DB_SUCCESS or error code */
-UNIV_INTERN
+@return DB_SUCCESS or error code */
 dberr_t
 innobase_shutdown_for_mysql(void);
 
 /********************************************************************
 Signal all per-table background threads to shutdown, and wait for them to do
 so. */
-UNIV_INTERN
 void
 srv_shutdown_table_bg_threads(void);
 /*=============================*/
@@ -117,7 +114,6 @@ Copy the file path component of the physical file to parameter. It will
 copy up to and including the terminating path separator.
 @return number of bytes copied or ULINT_UNDEFINED if destination buffer
 	is smaller than the path to be copied. */
-UNIV_INTERN
 ulint
 srv_path_copy(
 /*==========*/
@@ -125,59 +121,61 @@ srv_path_copy(
 	ulint		dest_len,	/*!< in: max bytes to copy */
 	const char*	basedir,	/*!< in: base directory */
 	const char*	table_name)	/*!< in: source table name */
-	__attribute__((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((nonnull, warn_unused_result));
 
-/*****************************************************************//**
-Get the meta-data filename from the table name. */
-UNIV_INTERN
+/**
+Shutdown all background threads created by InnoDB. */
+void
+srv_shutdown_all_bg_threads();
+
+/** Get the meta-data filename from the table name for a
+single-table tablespace.
+@param[in]	table		table object
+@param[out]	filename	filename
+@param[in]	max_len		filename max length */
 void
 srv_get_meta_data_filename(
-/*======================*/
-	dict_table_t*	table,		/*!< in: table */
-	char*			filename,	/*!< out: filename */
-	ulint			max_len)	/*!< in: filename max length */
-	__attribute__((nonnull));
+	dict_table_t*	table,
+	char*		filename,
+	ulint		max_len);
 
-/*********************************************************************//**
-Creates or opens database data files and closes them.
-@return	DB_SUCCESS or error code */
-UNIV_INTERN __attribute__((nonnull, warn_unused_result))
-dberr_t
-open_or_create_data_files(
-/*======================*/
-	ibool*		create_new_db,	/*!< out: TRUE if new database should be
-					created */
-	lsn_t*		min_flushed_lsn,/*!< out: min of flushed lsn
-					values in data files */
-	lsn_t*		max_flushed_lsn,/*!< out: max of flushed lsn
-					values in data files */
-	ulint*		sum_of_new_sizes);/*!< out: sum of sizes of the
-					new files added */
+/****************************************************************//**
+Shutdown all background threads created by InnoDB. */
+void
+srv_shutdown_all_bg_threads();
+
+/** Get the encryption-data filename from the table name for a
+single-table tablespace.
+@param[in]	table		table object
+@param[out]	filename	filename
+@param[in]	max_len		filename max length */
+void
+srv_get_encryption_data_filename(
+	dict_table_t*	table,
+	char*		filename,
+	ulint		max_len);
 
 /** Log sequence number at shutdown */
 extern	lsn_t	srv_shutdown_lsn;
 /** Log sequence number immediately after startup */
 extern	lsn_t	srv_start_lsn;
 
-#ifdef HAVE_DARWIN_THREADS
-/** TRUE if the F_FULLFSYNC option is available */
-extern	ibool	srv_have_fullfsync;
-#endif
-
 /** TRUE if the server is being started */
-extern	ibool	srv_is_being_started;
+extern	bool	srv_is_being_started;
+/** TRUE if SYS_TABLESPACES is available for lookups */
+extern	bool	srv_sys_tablespaces_open;
 /** TRUE if the server was successfully started */
 extern	ibool	srv_was_started;
 /** TRUE if the server is being started, before rolling back any
 incomplete transactions */
-extern	ibool	srv_startup_is_before_trx_rollback_phase;
+extern	bool	srv_startup_is_before_trx_rollback_phase;
 
 /** TRUE if a raw partition is in use */
 extern	ibool	srv_start_raw_disk_in_use;
 
 
 /** Shutdown state */
-enum srv_shutdown_state {
+enum srv_shutdown_t {
 	SRV_SHUTDOWN_NONE = 0,	/*!< Database running normally */
 	SRV_SHUTDOWN_CLEANUP,	/*!< Cleaning up in
 				logs_empty_and_mark_files_at_shutdown() */
@@ -194,10 +192,7 @@ enum srv_shutdown_state {
 
 /** At a shutdown this value climbs from SRV_SHUTDOWN_NONE to
 SRV_SHUTDOWN_CLEANUP and then to SRV_SHUTDOWN_LAST_PHASE, and so on */
-extern	enum srv_shutdown_state	srv_shutdown_state;
+extern	enum srv_shutdown_t	srv_shutdown_state;
 #endif /* !UNIV_HOTBACKUP */
-
-/** Log 'spaces' have id's >= this */
-#define SRV_LOG_SPACE_FIRST_ID		0xFFFFFFF0UL
 
 #endif

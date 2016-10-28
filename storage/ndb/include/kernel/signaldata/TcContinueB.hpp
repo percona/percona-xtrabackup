@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2006, 2008 MySQL AB
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +19,9 @@
 #define TC_CONTINUEB_H
 
 #include "SignalData.hpp"
+
+#define JAM_FILE_ID 16
+
 
 class TcContinueB {
   /**
@@ -44,11 +46,18 @@ private:
     ZWAIT_ABORT_ALL                        = 14,
     ZCHECK_SCAN_ACTIVE_FAILED_LQH          = 15,
     TRIGGER_PENDING                        = 17,
-    
-    DelayTCKEYCONF = 18,
-    ZNF_CHECK_TRANSACTIONS = 19,
-    ZSEND_FIRE_TRIG_REQ = 20
+    DelayTCKEYCONF                         = 18,
+    ZNF_CHECK_TRANSACTIONS                 = 19,
+    ZSEND_FIRE_TRIG_REQ                    = 20,
+    ZSTART_FRAG_SCANS                      = 21
+#ifdef ERROR_INSERT
+    ,ZDEBUG_DELAYED_ABORT                  = 22
+    ,ZDEBUG_DELAY_TCROLLBACKREP            = 23
+#endif
   };
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2007, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -29,10 +29,10 @@ setup_directories(atrt_config& config, int setup)
    * 1 = setup
    * 2 = setup+clean
    */
-  for (size_t i = 0; i < config.m_clusters.size(); i++)
+  for (unsigned i = 0; i < config.m_clusters.size(); i++)
   {
     atrt_cluster& cluster = *config.m_clusters[i];
-    for (size_t j = 0; j<cluster.m_processes.size(); j++)
+    for (unsigned j = 0; j<cluster.m_processes.size(); j++)
     {
       atrt_process& proc = *cluster.m_processes[j];
       const char * dir = proc.m_proc.m_cwd.c_str();
@@ -111,7 +111,7 @@ printfile(FILE* out, Properties& props, const char * section, ...)
     va_end(ap);
     fprintf(out, "\n");
     
-    for (; name; name = it.next())
+    for (; name;  name = it.next())
     {
       const char* val;
       props.get(name, &val);
@@ -120,6 +120,24 @@ printfile(FILE* out, Properties& props, const char * section, ...)
     fprintf(out, "\n");
   }
   fflush(out);
+}
+
+static
+char *
+dirname(const char * path)
+{
+  char * s = strdup(path);
+  size_t len = strlen(s);
+  for (size_t i = 1; i<len; i++)
+  {
+    if (s[len - i] == '/')
+    {
+      s[len - i] = 0;
+      return s;
+    }
+  }
+  free(s);
+  return 0;
 }
 
 bool
@@ -167,10 +185,10 @@ setup_files(atrt_config& config, int setup, int sshx)
     /**
      * Do mysql_install_db
      */
-    for (size_t i = 0; i < config.m_clusters.size(); i++)
+    for (unsigned i = 0; i < config.m_clusters.size(); i++)
     {
       atrt_cluster& cluster = *config.m_clusters[i];
-      for (size_t j = 0; j<cluster.m_processes.size(); j++)
+      for (unsigned j = 0; j<cluster.m_processes.size(); j++)
       {
 	atrt_process& proc = *cluster.m_processes[j];
 	if (proc.m_type == atrt_process::AP_MYSQLD)
@@ -179,8 +197,8 @@ setup_files(atrt_config& config, int setup, int sshx)
 	  const char * val;
 	  require(proc.m_options.m_loaded.get("--datadir=", &val));
 	  BaseString tmp;
-	  tmp.assfmt("%s/bin/mysql_install_db --defaults-file=%s/my.cnf --datadir=%s > %s/mysql_install_db.log 2>&1",
-		     g_prefix, g_basedir, val, proc.m_proc.m_cwd.c_str());
+	  tmp.assfmt("%s --defaults-file=%s/my.cnf --basedir=%s --datadir=%s > %s/mysql_install_db.log 2>&1",
+		     g_mysql_install_db_bin_path, g_basedir, g_prefix, val, proc.m_proc.m_cwd.c_str());
 
           to_fwd_slashes(tmp);
 	  if (sh(tmp.c_str()) != 0)
@@ -224,7 +242,7 @@ setup_files(atrt_config& config, int setup, int sshx)
     fprintf(out, "# %s\n", ctime(&now));
   }
   
-  for (size_t i = 0; i < config.m_clusters.size(); i++)
+  for (unsigned i = 0; i < config.m_clusters.size(); i++)
   {
     atrt_cluster& cluster = *config.m_clusters[i];
     if (out)
@@ -234,7 +252,7 @@ setup_files(atrt_config& config, int setup, int sshx)
 		"[mysql_cluster%s]", cluster.m_name.c_str());
     }
       
-    for (size_t j = 0; j<cluster.m_processes.size(); j++)
+    for (unsigned j = 0; j<cluster.m_processes.size(); j++)
     {
       atrt_process& proc = *cluster.m_processes[j];
       
@@ -305,16 +323,41 @@ setup_files(atrt_config& config, int setup, int sshx)
 	  }
 	  fprintf(fenv, "\"\nexport CMD\n");
 	}
-	
-	fprintf(fenv, "PATH=%s/bin:%s/libexec:$PATH\n", g_prefix, g_prefix);
+
+        fprintf(fenv, "PATH=");
+        for (int i = 0; g_search_path[i] != 0; i++)
+        {
+          fprintf(fenv, "%s/%s:", g_prefix, g_search_path[i]);
+        }
+        fprintf(fenv, "$PATH\n");
 	keys.push_back("PATH");
-	for (size_t k = 0; k<keys.size(); k++)
+
+        {
+          /**
+           * In 5.5...binaries aren't compiled with rpath
+           * So we need an explicit LD_LIBRARY_PATH
+           *
+           * Use path from libmysqlclient.so
+           */
+          char * dir = dirname(g_libmysqlclient_so_path);
+#if defined(__MACH__)
+          fprintf(fenv, "DYLD_LIBRARY_PATH=%s:$DYLD_LIBRARY_PATH\n", dir);
+          keys.push_back("DYLD_LIBRARY_PATH");
+#else
+          fprintf(fenv, "LD_LIBRARY_PATH=%s:$LD_LIBRARY_PATH\n", dir);
+          keys.push_back("LD_LIBRARY_PATH");
+#endif
+          free(dir);
+        }
+
+        for (unsigned k = 0; k<keys.size(); k++)
 	  fprintf(fenv, "export %s\n", keys[k].c_str());
+
 	fflush(fenv);
 	fclose(fenv);
       }
       free(env);
-      
+
       {
         tmp.assfmt("%s/ssh-login.sh", proc.m_proc.m_cwd.c_str());
         FILE* fenv = fopen(tmp.c_str(), "w+");
@@ -362,7 +405,7 @@ create_directory(const char * path)
   }
   
   BaseString cwd = IF_WIN("","/");
-  for (size_t i = 0; i < list.size(); i++) 
+  for (unsigned i = 0; i < list.size(); i++)
   {
     cwd.append(list[i].c_str());
     cwd.append("/");

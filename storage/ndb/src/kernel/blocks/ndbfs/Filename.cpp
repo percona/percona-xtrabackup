@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -24,6 +24,9 @@
 #include "Ndbfs.hpp"
 
 #include <signaldata/FsOpenReq.hpp>
+
+#define JAM_FILE_ID 383
+
 
 static const char* fileExtension[] = {
   ".Data",
@@ -197,7 +200,7 @@ Filename::set(Ndbfs* fs,
   strcat(theName, fileExtension[type]);
   
   if(dir == true){
-    for(int l = strlen(theName) - 1; l >= 0; l--){
+    for(int l = (int)strlen(theName) - 1; l >= 0; l--){
       if(theName[l] == DIR_SEPARATOR[0]){
 	theName[l] = 0;
 	break;

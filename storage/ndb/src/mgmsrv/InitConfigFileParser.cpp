@@ -186,7 +186,7 @@ InitConfigFileParser::run_config_rules(Context& ctx)
 						      ConfigInfo::m_ConfigRules[i].m_ruleData))
       return 0;
 
-    for(size_t j = 0; j<tmp.size(); j++){
+    for(unsigned j = 0; j<tmp.size(); j++){
       BaseString::snprintf(ctx.fname, sizeof(ctx.fname),
                            "%s", tmp[j].m_sectionType.c_str());
       ctx.type             = InitConfigFileParser::Section;
@@ -420,7 +420,7 @@ bool InitConfigFileParser::convertStringToUint64(const char* s,
 
   errno = 0;
   char* p;
-  Int64 v = strtoll(s, &p, log10base);
+  Int64 v = my_strtoll(s, &p, log10base);
   if (errno != 0)
     return false;
   
@@ -478,7 +478,7 @@ bool InitConfigFileParser::convertStringToBool(const char* s, bool& val) {
 //****************************************************************************
 static void
 trim(char * str){
-  int len = strlen(str);
+  int len = (int)strlen(str);
   for(len--;
       (str[len] == '\r' || str[len] == '\n' || 
        str[len] == ' ' || str[len] == '\t') && 
@@ -551,7 +551,7 @@ InitConfigFileParser::parseDefaultSectionHeader(const char* line) const {
   if (no != 2) return NULL;
 
   // Not correct keyword at end
-  if (!strcasecmp(token2, "DEFAULT") == 0) return NULL;
+  if (!native_strcasecmp(token2, "DEFAULT") == 0) return NULL;
 
   const char *token1_alias= m_info->getAlias(token1);
   if (token1_alias == 0)
@@ -581,7 +581,7 @@ bool
 InitConfigFileParser::storeSection(Context& ctx){
   if(ctx.m_currentSection == NULL)
     return true;
-  for(int i = strlen(ctx.fname) - 1; i>=0; i--){
+  for(int i = (int)strlen(ctx.fname) - 1; i>=0; i--){
     ctx.fname[i] = toupper(ctx.fname[i]);
   }
   BaseString::snprintf(ctx.pname, sizeof(ctx.pname), "%s", ctx.fname);
@@ -645,6 +645,9 @@ InitConfigFileParser::Context::reportWarning(const char * fmt, ...){
 
 #include <my_sys.h>
 #include <my_getopt.h>
+#ifdef HAVE_MY_DEFAULT_H
+#include <my_default.h>
+#endif
 
 static int order = 1;
 static 
@@ -807,10 +810,9 @@ InitConfigFileParser::load_mycnf_groups(Vector<struct my_option> & options,
 Config *
 InitConfigFileParser::parse_mycnf() 
 {
-  int i;
   Config * res = 0;
   Vector<struct my_option> options;
-  for(i = 0; i<ConfigInfo::m_NoOfParams; i++)
+  for(int i = 0 ; i < ConfigInfo::m_NoOfParams ; ++ i)
   {
     {
       struct my_option opt;
@@ -915,16 +917,15 @@ InitConfigFileParser::parse_mycnf()
   {
     struct sect { struct my_option* src; const char * name; } sections[] = 
       {
-	{ ndb_mgmd, "MGM" }
-	,{ ndbd, "DB" }
-	,{ mysqld, "API" }
-	,{ api, "API" }
-	,{ 0, 0 }, { 0, 0 }
+	{ ndb_mgmd, "MGM" },
+	{ ndbd, "DB" },
+	{ mysqld, "API" },
+	{ api, "API" }
       };
-    
-    for(i = 0; sections[i].src; i++)
+
+    for(unsigned i = 0; i + 1 < NDB_ARRAY_SIZE(sections) ; i++)
     {
-      for(int j = i + 1; sections[j].src; j++)
+      for(unsigned j = i + 1; j < NDB_ARRAY_SIZE(sections) ; j++)
       {
 	if (sections[j].src->app_type < sections[i].src->app_type)
 	{
@@ -937,7 +938,7 @@ InitConfigFileParser::parse_mycnf()
     
     ctx.type = InitConfigFileParser::Section;
     ctx.m_sectionLineno  = ctx.m_lineno;      
-    for(i = 0; sections[i].src; i++)
+    for(unsigned i = 0; i < NDB_ARRAY_SIZE(sections) ; i++)
     {
       if (sections[i].src->app_type)
       {
@@ -1014,7 +1015,7 @@ InitConfigFileParser::parse_mycnf()
   res = run_config_rules(ctx);
 
 end:
-  for(i = 0; options[i].name; i++)
+  for(int i = 0; options[i].name; i++)
     free(options[i].value);
 
   return res;

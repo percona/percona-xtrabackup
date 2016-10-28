@@ -1,5 +1,4 @@
-/* Copyright (c) 2000, 2001, 2005-2007 MySQL AB, 2009 Sun Microsystems, Inc.
-   Use is subject to license terms.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -43,7 +42,7 @@ int myrg_create(const char *name, const char **table_names,
   {
     for ( ; *table_names ; table_names++)
     {
-      strmov(buff,*table_names);
+      my_stpcpy(buff,*table_names);
       if (fix_names)
 	fn_same(buff,name,4);
       *(end=strend(buff))='\n';
@@ -66,10 +65,11 @@ int myrg_create(const char *name, const char **table_names,
   DBUG_RETURN(0);
 
 err:
-  save_errno=my_errno ? my_errno : -1;
+  save_errno=my_errno() ? my_errno() : -1;
   switch (errpos) {
   case 1:
     (void) mysql_file_close(file, MYF(0));
   }
-  DBUG_RETURN(my_errno=save_errno);
+  set_my_errno(save_errno);
+  DBUG_RETURN(save_errno);
 } /* myrg_create */

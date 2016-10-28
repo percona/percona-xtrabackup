@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,14 +31,15 @@ extern char *	mysql_unix_port;
                              CLIENT_LONG_FLAG |     \
                              CLIENT_TRANSACTIONS |  \
                              CLIENT_PROTOCOL_41 | \
-                             CLIENT_SECURE_CONNECTION | \
+                             CLIENT_RESERVED2 | \
                              CLIENT_MULTI_RESULTS | \
                              CLIENT_PS_MULTI_RESULTS | \
                              CLIENT_PLUGIN_AUTH | \
                              CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | \
-                             CLIENT_CONNECT_ATTRS)
+                             CLIENT_CONNECT_ATTRS | \
+                             CLIENT_SESSION_TRACK | \
+                             CLIENT_DEPRECATE_EOF)
 
-sig_handler my_pipe_sig_handler(int sig);
 void read_user_name(char *name);
 my_bool handle_local_infile(MYSQL *mysql, const char *net_filename);
 

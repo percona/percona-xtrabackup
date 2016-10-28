@@ -55,6 +55,11 @@ case "$1" in
         tarball="mysql-5.6.23-linux-glibc2.5-$arch.tar.gz"
         ;;
 
+    innodb57)
+        url="http://s3.amazonaws.com/percona.com/downloads/community"
+        tarball="mysql-5.7.13-linux-glibc2.5-$arch.tar.gz"
+        ;;
+
     xtradb51)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
         tarball="Percona-Server-5.1.73-rel14.12-625.Linux.$arch.tar.gz"
@@ -68,6 +73,11 @@ case "$1" in
     xtradb56)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
         tarball="Percona-Server-5.6.22-rel72.0-.Linux.$arch.tar.gz"
+        ;;
+
+    xtradb57)
+        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
+        tarball="Percona-Server-5.7.13-6-Linux.$arch.tar.gz"
         ;;
 
     mariadb51)

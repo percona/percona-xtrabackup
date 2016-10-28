@@ -53,20 +53,20 @@ CONCAT(LOCALTIMESTAMP()), CONCAT(LOCALTIMESTAMP(6)),
 CONCAT(SYSDATE()), CONCAT(SYSDATE(6));
 DESCRIBE t1;
 Field	Type	Null	Key	Default	Extra
-CONCAT(CURRENT_TIME())	varchar(8)	NO			
-CONCAT(CURRENT_TIME(6))	varchar(15)	NO			
-CONCAT(UTC_TIME())	varchar(8)	NO			
-CONCAT(UTC_TIME(6))	varchar(15)	NO			
-CONCAT(CURRENT_TIMESTAMP())	varchar(19)	NO			
-CONCAT(CURRENT_TIMESTAMP(6))	varchar(26)	NO			
-CONCAT(UTC_TIMESTAMP())	varchar(19)	NO			
-CONCAT(UTC_TIMESTAMP(6))	varchar(26)	NO			
-CONCAT(LOCALTIME())	varchar(19)	NO			
-CONCAT(LOCALTIME(6))	varchar(26)	NO			
-CONCAT(LOCALTIMESTAMP())	varchar(19)	NO			
-CONCAT(LOCALTIMESTAMP(6))	varchar(26)	NO			
-CONCAT(SYSDATE())	varchar(19)	NO			
-CONCAT(SYSDATE(6))	varchar(26)	NO			
+CONCAT(CURRENT_TIME())	varchar(8)	YES		NULL	
+CONCAT(CURRENT_TIME(6))	varchar(15)	YES		NULL	
+CONCAT(UTC_TIME())	varchar(8)	YES		NULL	
+CONCAT(UTC_TIME(6))	varchar(15)	YES		NULL	
+CONCAT(CURRENT_TIMESTAMP())	varchar(19)	YES		NULL	
+CONCAT(CURRENT_TIMESTAMP(6))	varchar(26)	YES		NULL	
+CONCAT(UTC_TIMESTAMP())	varchar(19)	YES		NULL	
+CONCAT(UTC_TIMESTAMP(6))	varchar(26)	YES		NULL	
+CONCAT(LOCALTIME())	varchar(19)	YES		NULL	
+CONCAT(LOCALTIME(6))	varchar(26)	YES		NULL	
+CONCAT(LOCALTIMESTAMP())	varchar(19)	YES		NULL	
+CONCAT(LOCALTIMESTAMP(6))	varchar(26)	YES		NULL	
+CONCAT(SYSDATE())	varchar(19)	YES		NULL	
+CONCAT(SYSDATE(6))	varchar(26)	YES		NULL	
 DROP TABLE t1;
 CREATE TABLE t1 AS SELECT
 NOW(0), NOW(1), NOW(2), NOW(3), NOW(4), NOW(5), NOW(6);
@@ -512,7 +512,7 @@ DROP TABLE t1;
 #
 CREATE TABLE t1 (a DECIMAL(23,4));
 INSERT INTO t1 VALUES (NULL),(101010.9999),(-101010.9999);
-INSERT INTO t1 VALUES (9999999999999999999999.1), (999999.1);
+INSERT IGNORE INTO t1 VALUES (9999999999999999999999.1), (999999.1);
 Warnings:
 Warning	1264	Out of range value for column 'a' at row 1
 SELECT a, CAST(a AS TIME(3)) FROM t1;
@@ -2535,18 +2535,18 @@ DROP TABLE t1;
 CREATE TABLE t1 (a TIME(-1));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1))' at line 1
 CREATE TABLE t1 (a TIME(7));
-ERROR 42000: Too big precision 7 specified for column 'a'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'a'. Maximum is 6.
 CREATE TABLE t1 (a TIME(31));
-ERROR 42000: Too big precision 31 specified for column 'a'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'a'. Maximum is 6.
 #
 # Testing bad FSPs with TIME functions
 #
 SELECT CURTIME(-1);
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1)' at line 1
 SELECT CURTIME(7);
-ERROR 42000: Too big precision 7 specified for column 'curtime'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'curtime'. Maximum is 6.
 SELECT CURTIME(31);
-ERROR 42000: Too big precision 31 specified for column 'curtime'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'curtime'. Maximum is 6.
 #
 # Testing INSERT, ORDER, KEY, BETWEEN, comparison
 #
@@ -2662,8 +2662,10 @@ a
 -01:00:00.999999
 -838:59:59.000000
 EXPLAIN SELECT * FROM t1 WHERE a='01:02:03.456700';
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ref	a	a	6	const	1	Using where; Using index
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ref	a	a	6	const	1	100.00	Using where; Using index
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` = '01:02:03.456700')
 SELECT * FROM t1 WHERE a='01:02:03.456700';
 a
 01:02:03.456700
@@ -2716,6 +2718,9 @@ DROP TABLE t1;
 #
 # Testing bad values
 #
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a TIME(6));
 INSERT INTO t1 VALUES (106060);
 Warnings:
@@ -2736,6 +2741,7 @@ a
 00:00:00.000000
 00:00:00.000000
 DROP TABLE t1;
+SET sql_mode = default;
 #
 # Testing bad values with TRADITIONAL mode
 #
@@ -2811,6 +2817,9 @@ DROP TABLE t1;
 #
 # Testing huge values
 #
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a TIME(6));
 INSERT INTO t1 VALUES (CAST(0xFFFFFFFF00000000 AS SIGNED));
 Warnings:
@@ -2858,6 +2867,7 @@ SELECT * FROM t1;
 a
 00:00:00.111111
 DROP TABLE t1;
+SET sql_mode = default;
 #
 # Testing IN
 #
@@ -2895,9 +2905,10 @@ a
 # Testing Item_temporal_with_ref::print
 #
 EXPLAIN EXTENDED SELECT * FROM t1 WHERE a IN (990000,0);
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	14	100.00	Using where
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	14	20.00	Using where
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` in ('99:00:00.000000','00:00:00.000000'))
 #
 # Testing IN with index: field->store_packed
@@ -3196,6 +3207,9 @@ DROP TABLE t1;
 #
 # Testing INSERT with near-maximum and near-minimum supported values.
 #
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a TIME(6));
 INSERT INTO t1 VALUES ('838:59:59.999999');
 Warnings:
@@ -3473,6 +3487,7 @@ a
 -838:59:59.000000
 -838:59:59.000000
 DROP TABLE t1;
+SET sql_mode = default;
 #
 # Testing UPDATE between TIME(6) and TIME/INT/DECIMAL/FLOAT
 #
@@ -4223,8 +4238,8 @@ INSERT INTO t1 VALUES ('10:10:10.1', '10:10:10.1', '10:10:10.1');
 INSERT INTO t1 VALUES ('34:10:10.1', '34:10:10.1', '34:10:10.1');
 ALTER TABLE t1 MODIFY a DATETIME(6), MODIFY b TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), MODIFY c DATE;
 Warnings:
-Note	1265	Data truncated for column 'c' at row 1
-Note	1265	Data truncated for column 'c' at row 2
+Note	1292	Incorrect date value: '10:10:10' for column 'c' at row 1
+Note	1292	Incorrect date value: '34:10:10' for column 'c' at row 2
 SELECT * FROM t1;
 a	b	c
 2001-01-01 10:10:10.100000	2001-01-01 10:10:10.100000	2001-01-01
@@ -4239,8 +4254,8 @@ CREATE TABLE t1 (t6 TIME(6), d DATE, ts6 TIMESTAMP(6) NOT NULL DEFAULT CURRENT_T
 INSERT INTO t1 (t6) VALUES ('10:10:10.1'), ('34:10:10.1');
 UPDATE t1 SET d=t6, ts6=t6, dt6=t6;
 Warnings:
-Note	1265	Data truncated for column 'd' at row 1
-Note	1265	Data truncated for column 'd' at row 2
+Note	1292	Incorrect date value: '10:10:10' for column 'd' at row 1
+Note	1292	Incorrect date value: '34:10:10' for column 'd' at row 2
 SELECT * FROM t1;
 t6	d	ts6	dt6
 10:10:10.100000	2001-01-01	2001-01-01 10:10:10.100000	2001-01-01 10:10:10.100000
@@ -4251,44 +4266,52 @@ SET @@timestamp=default;
 # Testing EXPLAIN EXTENDED SELECT for CAST(TIME(N))
 #
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME);
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time) AS `CAST('10:10:10' AS TIME)`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(0));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time) AS `CAST('10:10:10' AS TIME(0))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(1));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(1)) AS `CAST('10:10:10' AS TIME(1))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(2));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(2)) AS `CAST('10:10:10' AS TIME(2))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(3));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(3)) AS `CAST('10:10:10' AS TIME(3))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(4));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(4)) AS `CAST('10:10:10' AS TIME(4))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(5));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(5)) AS `CAST('10:10:10' AS TIME(5))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(6));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(6)) AS `CAST('10:10:10' AS TIME(6))`
 #
 # Testing CAST with bad FSPs
@@ -4296,9 +4319,9 @@ Note	1003	/* select#1 */ select cast('10:10:10' as time(6)) AS `CAST('10:10:10' 
 SELECT CAST(1 AS TIME(-1));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1))' at line 1
 SELECT CAST(1 AS TIME(7));
-ERROR 42000: Too big precision 7 specified for column 'CAST'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'CAST'. Maximum is 6.
 SELECT CAST(1 AS TIME(31));
-ERROR 42000: Too big precision 31 specified for column 'CAST'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'CAST'. Maximum is 6.
 #
 # Testing conversion from TIME(6) to INT
 #
@@ -5031,6 +5054,9 @@ Warning	1292	Truncated incorrect time value: '838:59:59.000000567'
 #
 # Testing CAST to TIME and TIME(6)
 #
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 AS SELECT
 CAST(1 AS TIME),
 CAST(100000000 AS TIME),
@@ -5071,6 +5097,7 @@ t1	CREATE TABLE `t1` (
   `CAST(1e0 AS TIME(6))` time(6) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 DROP TABLE t1;
+SET sql_mode = default;
 CREATE TABLE t1 (a TIME, b TIME(6));
 INSERT INTO t1 VALUES ('11:22:33', '11:22:33.123456');
 CREATE TABLE t2 AS SELECT CAST(a AS TIME), CAST(b AS TIME) FROM t1;
@@ -5354,7 +5381,7 @@ SELECT a;
 END//
 SHOW CREATE PROCEDURE p1//
 Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
-p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`()
+p1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`()
 BEGIN
 DECLARE a TIME(6);
 SET a='11:22:33.123';
@@ -5370,7 +5397,7 @@ SELECT a;
 END//
 SHOW CREATE PROCEDURE p1//
 Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
-p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`(a TIME(6))
+p1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`(a TIME(6))
 BEGIN
 SELECT a;
 END	latin1	latin1_swedish_ci	latin1_swedish_ci
@@ -5396,7 +5423,7 @@ DROP TABLE t1;
 END//
 SHOW CREATE PROCEDURE p1//
 Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
-p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`()
+p1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`()
 BEGIN
 DECLARE a TIME(6);
 CREATE TABLE t1 AS SELECT a;
@@ -5415,7 +5442,7 @@ RETURN a;
 END//
 SHOW CREATE FUNCTION p1//
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
-p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `p1`(a TIME(6)) RETURNS time(6)
+p1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `p1`(a TIME(6)) RETURNS time(6)
 BEGIN
 RETURN a;
 END	latin1	latin1_swedish_ci	latin1_swedish_ci
@@ -5448,6 +5475,7 @@ COLUMN_KEY
 EXTRA	
 PRIVILEGES	#
 COLUMN_COMMENT	
+GENERATION_EXPRESSION	
 DROP TABLE t1;
 #
 # SELECT from a subquery
@@ -5528,7 +5556,7 @@ SELECT DATE_ADD(TIME'00:00:00.0', INTERVAL 1000000000000000000000.1 SECOND);
 DATE_ADD(TIME'00:00:00.0', INTERVAL 1000000000000000000000.1 SECOND)
 00:00:00.0
 Warnings:
-Warning	1292	Truncated incorrect DECIMAL value: ''
+Warning	1292	Truncated incorrect DECIMAL value: '1000000000000000000000.1'
 CREATE TABLE t1 AS SELECT
 DATE_ADD(TIME'00:00:00', INTERVAL 1 SECOND) AS t0s0,
 DATE_ADD(TIME'00:00:00', INTERVAL 1.1 SECOND) AS t0s1,
@@ -5839,6 +5867,9 @@ ADD a4 VARCHAR(32), ADD a5 VARCHAR(32),
 ADD d0 DATETIME(0),
 ADD d1 DATETIME(1), ADD d2 DATETIME(2), ADD d3 DATETIME(3),
 ADD d4 DATETIME(4), ADD d5 DATETIME(5), ADD d6 DATETIME(6);
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 UPDATE t1 SET
 a0= LEFT(a6, LENGTH(a6) - 6),
 a1= LEFT(a6, LENGTH(a6) - 5),
@@ -5846,7 +5877,7 @@ a2= LEFT(a6, LENGTH(a6) - 4),
 a3= LEFT(a6, LENGTH(a6) - 3),
 a4= LEFT(a6, LENGTH(a6) - 2),
 a5= LEFT(a6, LENGTH(a6) - 1);
-UPDATE t1 SET d0= a0, d1= a1, d2= a2, d3= a3, d4= a4, d5= a5, d6= a6;
+UPDATE IGNORE t1 SET d0= a0, d1= a1, d2= a2, d3= a3, d4= a4, d5= a5, d6= a6;
 SELECT a6, d6, HEX(WEIGHT_STRING(d6)) FROM t1 ORDER BY d6;
 a6	d6	HEX(WEIGHT_STRING(d6))
 0000-00-00 00:00:00.000000	0000-00-00 00:00:00.000000	8000000000000000
@@ -7054,6 +7085,7 @@ wst3	FEF3FF7EFA03E8
 wst4	FEF3FF7EFA03E8
 wst5	FEF3FF7EFA0186A0
 wst6	FEF3FF7EFA0186A0
+SET sql_mode = default;
 DROP VIEW v1;
 DROP TABLE t1;
 #
@@ -7062,27 +7094,30 @@ DROP TABLE t1;
 CREATE TABLE t1 (a DATETIME(-1));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1))' at line 1
 CREATE TABLE t1 (a DATETIME(7));
-ERROR 42000: Too big precision 7 specified for column 'a'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'a'. Maximum is 6.
 CREATE TABLE t1 (a DATETIME(31));
-ERROR 42000: Too big precision 31 specified for column 'a'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'a'. Maximum is 6.
 #
 # Testing bad FSPs with DATETIME functions
 #
 SELECT SYSDATE(-1);
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1)' at line 1
 SELECT SYSDATE(7);
-ERROR 42000: Too big precision 7 specified for column 'sysdate'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'sysdate'. Maximum is 6.
 SELECT SYSDATE(31);
-ERROR 42000: Too big precision 31 specified for column 'sysdate'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'sysdate'. Maximum is 6.
 SELECT NOW(-1);
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1)' at line 1
 SELECT NOW(7);
-ERROR 42000: Too big precision 7 specified for column 'now'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'now'. Maximum is 6.
 SELECT NOW(31);
-ERROR 42000: Too big precision 31 specified for column 'now'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'now'. Maximum is 6.
 #
 # Testing INSERT, ORDER, KEY, BETWEEN, comparison
 #
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a DATETIME(6) NOT NULL);
 INSERT INTO t1 VALUES ('0000-00-00 00:00:00.000000');
 INSERT INTO t1 VALUES ('0000-00-00 23:59:59.999999');
@@ -7165,8 +7200,10 @@ a
 0000-00-00 23:59:59.999999
 0000-00-00 00:00:00.000000
 EXPLAIN SELECT * FROM t1 WHERE a='2000-01-01 01:02:03.456700';
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ref	a	a	8	const	1	Using index
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ref	a	a	8	const	1	100.00	Using index
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` = '2000-01-01 01:02:03.456700')
 SELECT * FROM t1 WHERE a='2000-01-01 01:02:03.456700';
 a
 2000-01-01 01:02:03.456700
@@ -7333,12 +7370,14 @@ a
 0000-00-00 00:00:00.000000
 0000-00-00 00:00:00.000000
 DROP TABLE t1;
+SET sql_mode = default;
 #
 # Testing values with zeros in dates
 #
-SET sql_mode=no_zero_in_date;
+SET sql_mode='NO_ZERO_IN_DATE';
 Warnings:
-Warning	1681	'NO_ZERO_IN_DATE' is deprecated and will be removed in a future release.
+Warning	3135	'NO_ZERO_DATE', 'NO_ZERO_IN_DATE' and 'ERROR_FOR_DIVISION_BY_ZERO' sql modes should be used with strict mode. They will be merged with strict mode in a future release.
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a DATETIME, b DATETIME(6));
 INSERT INTO t1 VALUES ('1999-00-00 00:00:00', '1999-00-00 00:00:00');
 Warnings:
@@ -7399,6 +7438,9 @@ SET sql_mode=default;
 #
 # Testing rounding
 #
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a DATETIME(6));
 INSERT INTO t1 VALUES (20010101100000.1234567);
 INSERT INTO t1 VALUES (20010228235959.9999997);
@@ -7839,9 +7881,10 @@ a
 # Testing Item_temporal_with_ref::print
 #
 EXPLAIN EXTENDED SELECT * FROM t1 WHERE a IN (0.000001,0);
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	11	100.00	Using where
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	11	20.00	Using where
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` in ('0000-00-00 00:00:00.000001','0000-00-00 00:00:00.000000'))
 #
 # Testing IN with index: involves field->store_packed()
@@ -8590,6 +8633,7 @@ t2	CREATE TABLE `t2` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 DROP TABLE t2;
 DROP TABLE t1;
+SET sql_mode = default;
 #
 # Testing functions ADDTIME, SUBTIME, TIMESTAMP, TIMEDIFF, DATE_ADD/SUB
 #
@@ -8939,6 +8983,9 @@ DROP TABLE t1;
 #
 # Testing copy from DATETIME to DATETIME(6) and vice versa
 #
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a DATETIME(6), b DATETIME);
 INSERT INTO t1 VALUES ('2001-01-01 01:02:03.123456','0000-00-00 00:00:00');
 UPDATE t1 SET b=a;
@@ -9031,44 +9078,52 @@ DROP TABLE t1;
 # Testing EXPLAIN EXTENDED SELECT for CAST(DATETIME(N))
 #
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME);
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime) AS `CAST('10:10:10' AS DATETIME)`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(0));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime) AS `CAST('10:10:10' AS DATETIME(0))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(1));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(1)) AS `CAST('10:10:10' AS DATETIME(1))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(2));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(2)) AS `CAST('10:10:10' AS DATETIME(2))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(3));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(3)) AS `CAST('10:10:10' AS DATETIME(3))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(4));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(4)) AS `CAST('10:10:10' AS DATETIME(4))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(5));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(5)) AS `CAST('10:10:10' AS DATETIME(5))`
 EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(6));
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(6)) AS `CAST('10:10:10' AS DATETIME(6))`
 #
 # Testing CAST with bad FSPs
@@ -9076,9 +9131,9 @@ Note	1003	/* select#1 */ select cast('10:10:10' as datetime(6)) AS `CAST('10:10:
 SELECT CAST(1 AS DATETIME(-1));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1))' at line 1
 SELECT CAST(1 AS DATETIME(7));
-ERROR 42000: Too big precision 7 specified for column 'CAST'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'CAST'. Maximum is 6.
 SELECT CAST(1 AS DATETIME(31));
-ERROR 42000: Too big precision 31 specified for column 'CAST'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'CAST'. Maximum is 6.
 #
 # Testing conversion from DATETIME(6) to INT
 #
@@ -10370,6 +10425,7 @@ COLUMN_KEY
 EXTRA	
 PRIVILEGES	#
 COLUMN_COMMENT	
+GENERATION_EXPRESSION	
 DROP TABLE t1;
 #
 # SELECT from a subquery
@@ -11878,9 +11934,9 @@ SET time_zone=default;
 CREATE TABLE t1 (a TIMESTAMP(-1));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-1))' at line 1
 CREATE TABLE t1 (a TIMESTAMP(7));
-ERROR 42000: Too big precision 7 specified for column 'a'. Maximum is 6.
+ERROR 42000: Too-big precision 7 specified for 'a'. Maximum is 6.
 CREATE TABLE t1 (a TIMESTAMP(31));
-ERROR 42000: Too big precision 31 specified for column 'a'. Maximum is 6.
+ERROR 42000: Too-big precision 31 specified for 'a'. Maximum is 6.
 #
 # Testing rounding when altering TIMESTAMP(N) to a smaller size
 #
@@ -12285,8 +12341,10 @@ a
 0000-00-00 00:00:00.000000
 0000-00-00 00:00:00.000000
 EXPLAIN SELECT * FROM t1 WHERE a='2000-01-01 01:02:03.456700';
-id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ref	a	a	7	const	1	Using index
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ref	a	a	7	const	1	100.00	Using index
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` = '2000-01-01 01:02:03.456700')
 SELECT * FROM t1 WHERE a='2000-01-01 01:02:03.456700';
 a
 2000-01-01 01:02:03.456700
@@ -14743,6 +14801,7 @@ COLUMN_KEY
 EXTRA	on update CURRENT_TIMESTAMP(6)
 PRIVILEGES	#
 COLUMN_COMMENT	
+GENERATION_EXPRESSION	
 DROP TABLE t1;
 #
 # SELECT from a subquery
@@ -15541,7 +15600,6 @@ s1
 1000-00-01 00:00:00
 1000-00-01 00:00:00
 DROP TABLE t1;
-SET sql_mode=default;
 SELECT SYSDATE(6) LIKE '____-__-__ __:__:__.______';
 SYSDATE(6) LIKE '____-__-__ __:__:__.______'
 1
@@ -17526,4 +17584,19 @@ key1	col
 8	01:02:31.200000
 9	00:00:00.000000
 DROP TABLE t;
+SET sql_mode = default;
 # End of 5.6 tests
+#
+# Bug#19900900 ASSERTION `!CHECK_DATETIME_RANGE(LTIME)' FAILED
+#              TIME_TO_LONGLONG_DATETIME_PACKED
+#
+SET @@session.sql_buffer_result=TRUE;
+CREATE TABLE t1(a DATETIME) engine=innodb;
+INSERT INTO t1 VALUES('9999-12-31 23:59:58.000015');
+SELECT ADDTIME(a, 100000) FROM t1;
+ADDTIME(a, 100000)
+NULL
+Warnings:
+Warning	1441	Datetime function: add_time field overflow
+SET @@session.sql_buffer_result=default;
+DROP TABLE t1;

@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 ADD_CONVENIENCE_LIBRARY(ndbsignaldata
-        AlterIndxImpl.cpp BuildIndxImpl.cpp BuildIndx.cpp
+	AlterIndxImpl.cpp BuildIndxImpl.cpp BuildIndx.cpp
         CreateIndxImpl.cpp CreateTab.cpp
         CreateTable.cpp CreateTrigImpl.cpp #DihSwitchReplicaReq.cpp
         DropIndxImpl.cpp DropTable.cpp DropTrigImpl.cpp
@@ -45,5 +45,5 @@ ADD_CONVENIENCE_LIBRARY(ndbsignaldata
         ScanFrag.cpp ApiVersion.cpp
         LocalRouteOrd.cpp
 	DbinfoScan.cpp NodePing.cpp
-	IndexStatSignal.cpp GetConfig.cpp)
-
+	IndexStatSignal.cpp GetConfig.cpp AllocNodeId.cpp
+        CreateFK.cpp DropFK.cpp IsolateOrd.cpp)

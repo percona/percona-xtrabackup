@@ -37,7 +37,8 @@ xb_crypt_read_open(void *userdata, xb_crypt_read_callback *onread)
 
 	xb_ad(onread);
 
-	crypt = (xb_rcrypt_t *) my_malloc(sizeof(xb_rcrypt_t), MYF(MY_FAE));
+	crypt = (xb_rcrypt_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+					  sizeof(xb_rcrypt_t), MYF(MY_FAE));
 
 	crypt->userdata = userdata;
 	crypt->read = onread;
@@ -153,8 +154,9 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 
 	if (*ivlen > crypt->ivbufsize) {
 		if (crypt->ivbuffer) {
-			crypt->ivbuffer = my_realloc(crypt->ivbuffer, *ivlen,
-						   MYF(MY_WME));
+			crypt->ivbuffer = my_realloc(PSI_NOT_INSTRUMENTED,
+						     crypt->ivbuffer, *ivlen,
+						     MYF(MY_WME));
 			if (crypt->ivbuffer == NULL) {
 				msg("%s:%s: failed to increase iv buffer to "
 				    "%llu bytes.\n", my_progname, __FUNCTION__,
@@ -163,7 +165,8 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 				goto err;
 			}
 		} else {
-			crypt->ivbuffer = my_malloc(*ivlen, MYF(MY_WME));
+			crypt->ivbuffer = my_malloc(PSI_NOT_INSTRUMENTED,
+						    *ivlen, MYF(MY_WME));
 			if (crypt->ivbuffer == NULL) {
 				msg("%s:%s: failed to allocate iv buffer of "
 				    "%llu bytes.\n", my_progname, __FUNCTION__,
@@ -189,7 +192,8 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 
 	if (*olen > crypt->bufsize) {
 		if (crypt->buffer) {
-			crypt->buffer = my_realloc(crypt->buffer, *olen,
+			crypt->buffer = my_realloc(PSI_NOT_INSTRUMENTED,
+						   crypt->buffer, *olen,
 						   MYF(MY_WME));
 			if (crypt->buffer == NULL) {
 				msg("%s:%s: failed to increase buffer to "
@@ -199,7 +203,8 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 				goto err;
 			}
 		} else {
-			crypt->buffer = my_malloc(*olen, MYF(MY_WME));
+			crypt->buffer = my_malloc(PSI_NOT_INSTRUMENTED,
+						  *olen, MYF(MY_WME));
 			if (crypt->buffer == NULL) {
 				msg("%s:%s: failed to allocate buffer of "
 				    "%llu bytes.\n", my_progname, __FUNCTION__,

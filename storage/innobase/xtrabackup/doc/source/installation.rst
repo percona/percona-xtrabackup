@@ -1,7 +1,7 @@
 .. _installation:
 
 ===================================
-Installing |Percona XtraBackup| 2.3
+Installing |Percona XtraBackup| 2.4
 ===================================
 
 This page provides the information on how to install |Percona XtraBackup|.

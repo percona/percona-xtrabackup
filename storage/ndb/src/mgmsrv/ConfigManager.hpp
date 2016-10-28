@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -256,6 +256,8 @@ public:
                              BaseString& msg);
 
   bool set_dynamic_port(int node1, int node2, int value, BaseString& msg);
+  bool set_dynamic_ports(int node, MgmtSrvr::DynPortSpec ports[],
+                         unsigned num_ports, BaseString& msg);
   bool get_dynamic_port(int node1, int node2, int *value,
                         BaseString& msg) const;
 

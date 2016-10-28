@@ -5,7 +5,7 @@
 --disable_warnings
 drop table if exists t1, t2, t3;
 --enable_warnings
-
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 CREATE TABLE t1 (
   event_date date DEFAULT '0000-00-00' NOT NULL,
   type int(11) DEFAULT '0' NOT NULL,
@@ -180,6 +180,7 @@ drop table t1;
 create table t1 (x int, y int, index(x), index(y));
 insert into t1 (x) values (1),(2),(3),(4),(5),(6),(7),(8),(9);
 update t1 set y=x;
+analyze table t1;
 # between with only one end fixed
 explain select * from t1, t1 t2 where t1.y = 8 and t2.x between 7 and t1.y+0;
 explain select * from t1, t1 t2 where t1.y = 8 and t2.x >= 7 and t2.x <= t1.y+0;
@@ -810,13 +811,13 @@ INSERT INTO `t1` VALUES
 (0,0),(1,0),(2,0),(3,0),(4,0),(5,1),(6,1),(7,1),(8,1),(9,1),(10,2),(11,2),(12,2)
 ,(13,2),(14,2),(15,3),(16,3),(17,3),(18,3),(19,3);
 
---replace_column 9 #
+--replace_column 10 #
 explain select * from t1 where a in (3,4)  and b in (1,2,3);
---replace_column 9 #
+--replace_column 10 #
 explain select * from v1 where a in (3,4)  and b in (1,2,3);
---replace_column 9 #
+--replace_column 10 #
 explain select * from t1 where a between 3 and 4 and b between 1 and 2;
---replace_column 9 #
+--replace_column 10 #
 explain select * from v1 where a between 3 and 4 and b between 1 and 2;
  
 drop view v1;
@@ -836,18 +837,18 @@ insert into t1 select concat('a', 1000 + A.a + 10 * (B.a + 10 * C.a)), ''
 create table t2 (a varchar(10), filler char(200), key(a));
 insert into t2 select * from t1;
 
---replace_column 9 #
+--replace_column 10 #
 explain select * from t1 where a between 'a' and 'a '; 
---replace_column 9 #
+--replace_column 10 #
 explain select * from t1 where a = 'a' or a='a ';
 
---replace_column 9 #
+--replace_column 10 #
 explain select * from t2 where a between 'a' and 'a '; 
---replace_column 9 #
+--replace_column 10 #
 explain select * from t2 where a = 'a' or a='a ';
 
 update t1 set a='b' where a<>'a';
---replace_column 9 #
+--replace_column 10 #
 explain select * from t1 where a not between 'b' and 'b'; 
 select a, hex(filler) from t1 where a not between 'b' and 'b'; 
 
@@ -890,6 +891,8 @@ CREATE TABLE t1 (
 INSERT INTO t1(id) VALUES (1), (2), (3), (4), (5), (6), (7), (8);
 
 INSERT INTO t1(b,c) VALUES (3,4), (3,4);
+
+ANALYZE TABLE t1;
 
 SELECT * FROM t1 WHERE b<=3 AND 3<=c;
 SELECT * FROM t1 WHERE 3 BETWEEN b AND c;
@@ -1197,7 +1200,7 @@ INSERT INTO t2 VALUES ('2009-09-23 12:00:00'), ('2009-09-23 12:00:00'),
                       ('2009-09-23 12:00:00');
 
 --echo # DATE vs DATE
---replace_column 1 X 2 X 3 X 7 X 8 X 9 X 10 X
+--replace_column 1 X 2 X 3 X 8 X 9 X 10 X 12 X
 EXPLAIN
 SELECT * FROM t1 WHERE a >= '2009/09/23';
 SELECT * FROM t1 WHERE a >= '2009/09/23';
@@ -1208,7 +1211,7 @@ SELECT * FROM t1 WHERE a >= '2009.09.23';
 SELECT * FROM t1 WHERE a >= '2009:09:23';
 
 --echo # DATE vs DATETIME
---replace_column 1 X 2 X 3 X 7 X 8 X 9 X 10 X
+--replace_column 1 X 2 X 3 X 8 X 9 X 10 X 12 X
 EXPLAIN
 SELECT * FROM t2 WHERE a >= '2009/09/23';
 SELECT * FROM t2 WHERE a >= '2009/09/23';
@@ -1220,7 +1223,7 @@ SELECT * FROM t2 WHERE a >= '2009.09.23';
 SELECT * FROM t2 WHERE a >= '2009:09:23';
 
 --echo # DATETIME vs DATETIME
---replace_column 1 X 2 X 3 X 7 X 8 X 9 X 10 X
+--replace_column 1 X 2 X 3 X 8 X 9 X 10 X 12 X
 EXPLAIN
 SELECT * FROM t2 WHERE a >= '2009/09/23 12:00:00';
 SELECT * FROM t2 WHERE a >= '2009/09/23 12:00:00';
@@ -1231,7 +1234,7 @@ SELECT * FROM t2 WHERE a >= '2009.09.23 12:00:00';
 SELECT * FROM t2 WHERE a >= '2009:09:23 12:00:00';
 
 --echo # DATETIME vs DATE
---replace_column 1 X 2 X 3 X 7 X 8 X 9 X 10 X
+--replace_column 1 X 2 X 3 X 8 X 9 X 10 X 12 X
 EXPLAIN
 SELECT * FROM t1 WHERE a >= '2009/09/23 00:00:00';
 SELECT * FROM t1 WHERE a >= '2009/09/23 00:00:00';
@@ -1302,7 +1305,7 @@ CREATE TABLE t1 (a INT, b INT, PRIMARY KEY (a));
 
 INSERT INTO t1 VALUES (0,0), (1,1);
 
---replace_column 1 @ 2 @ 3 @ 5 @ 6 @ 7 @ 8 @ 9 @ 10 @
+--replace_column 1 @ 2 @ 3 @ 6 @ 7 @ 8 @ 9 @ 10 @ 12 @
 EXPLAIN 
 SELECT * FROM t1 FORCE INDEX (PRIMARY) 
  WHERE (a>=1 AND a<=2) OR (a>=4 AND a<=5) OR (a>=0 AND a <=10);
@@ -1795,4 +1798,604 @@ eval $query_ba;
 
 --echo
 DROP TABLE t1,t2;
+
+--echo #
+--echo # WL#7019: Add support for row value constructors in in predicates to
+--echo # range optimizer
+--echo #
+CREATE TABLE t1 (a INT, b INT, c INT, KEY x(a, b));
+
+INSERT INTO t1 VALUES (2, 2, 2), (3, 3, 3), (4, 4, 4), (5, 5, 5), (6, 6, 6),
+  (7, 7, 7), (8, 8, 8), (9, 9, 9);
+
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+
+INSERT INTO t1 VALUES (0, 0, 0), (1, 1, 1);
+
+ANALYZE TABLE t1;
+
+CREATE TABLE t2 (a INT, b INT, c INT, d INT, KEY x(a, b));
+
+INSERT INTO t2 VALUES (2, 2, 2, 2), (3, 3, 3, 3), (4, 4, 4, 4), (5, 5, 5, 5),
+  (6, 6, 6, 6), (7, 7, 7, 7), (8, 8, 8, 8), (9, 9, 9, 9);
+
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+INSERT INTO t2 SELECT * FROM t2;
+
+INSERT INTO t2 VALUES (0, 0, 0, 0), (1, 1, 1, 1);
+
+ANALYZE TABLE t2;
+
+CREATE TABLE t3 (a INT, b INT, c INT, d INT, KEY x(a, b, c));
+
+INSERT INTO t3 VALUES (2, 2, 2, 2), (3, 3, 3, 3), (4, 4, 4, 4), (5, 5, 5, 5),
+  (6, 6, 6, 6), (7, 7, 7, 7), (8, 8, 8, 8), (9, 9, 9, 9);
+
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+INSERT INTO t3 SELECT * FROM t3;
+
+INSERT INTO t3 VALUES (0, 0, 0, 0), (1, 1, 1, 1);
+
+ANALYZE TABLE t3;
+
+EXPLAIN SELECT a, b FROM t1 WHERE (a, b) IN ((NULL, NULL), (NULL, NULL));
+
+let $ERC_query=
+SELECT a, b FROM t1 WHERE (a = 0 AND b = 0) OR (a = 1 AND b = 1);
+source include/explain_run_count.inc;
+
+let $ERC_query= SELECT a, b FROM t1 WHERE (a, b) IN ((0, 0));
+source include/explain_run_count.inc;
+
+let $ERC_query= SELECT a, b FROM t1 WHERE (a, b) IN ((0, 0), (1, 1));
+source include/explain_run_count.inc;
+
+let $ERC_query=SELECT a, b, c FROM t2 WHERE (a, b, c) IN ((0, 0, 0), (1, 1, 1));
+source include/explain_run_count.inc;
+
+let $ERC_query=SELECT a, b, c FROM t3 WHERE (a, b, c) IN ((0, 0, 0), (1, 1, 1));
+source include/explain_run_count.inc;
+
+let $ERC_query= SELECT a, b FROM t1 WHERE a = 0 AND b = 0 OR (a, b) IN ((1, 1));
+source include/explain_run_count.inc;
+
+let $ERC_query= SELECT a, b FROM t1 WHERE (a, b) IN ((1, 1)) OR a = 0 AND b = 0;
+source include/explain_run_count.inc;
+
+let $ERC_query=
+SELECT a, b FROM t2 WHERE (a, b, c) IN ((1, 1, 1)) OR a = 0 AND b = 0 AND c = 0;
+source include/explain_run_count.inc;
+
+let $ERC_query=
+SELECT a, b FROM t3 WHERE (a, b, c) IN ((1, 1, 1)) OR a = 0 AND b = 0 AND c = 0;
+source include/explain_run_count.inc;
+
+let $ERC_query= SELECT a, b FROM t1 WHERE (a, b) IN (((SELECT 1), 1));
+source include/explain_run_count.inc;
+
+let $ERC_query= SELECT a, b FROM t1 WHERE (a, b) IN (('0', 0), (1, 1));
+source include/explain_run_count.inc;
+
+SET @v = 0;
+let $ERC_query= SELECT a, b FROM t1 WHERE (a, b) IN ((@v, 0), (1, 1));
+source include/explain_run_count.inc;
+
+CREATE TABLE t4 ( a INT, b INT );
+
+INSERT INTO t4 VALUES (1, 1), (2, 2), (3, 3), (4, 4), (5, 5);
+INSERT INTO t4 SELECT a + 5, b + 5 FROM t4;
+INSERT INTO t4 SELECT * FROM t4;
+INSERT INTO t4 SELECT * FROM t4;
+INSERT INTO t4 SELECT * FROM t4;
+INSERT INTO t4 SELECT * FROM t4;
+INSERT INTO t4 SELECT * FROM t4;
+INSERT INTO t4 SELECT * FROM t4;
+
+--echo # Inner table in a nested-loops join
+EXPLAIN
+SELECT t4.*, t1.a, t1.b
+FROM t4 JOIN t1 USING(a, b)
+WHERE (t4.a, t4.b) IN ((1, 1), (0, 0));
+
+--echo # Join on IN
+EXPLAIN
+SELECT t4.*, t1.a, t1.b
+FROM t4 JOIN t1
+WHERE (t1.a, t1.b) IN ((t4.a, t4.b), (0, 0));
+
+EXPLAIN
+SELECT t4.*, t1.a, t1.b
+FROM t4 JOIN t1
+WHERE (t1.a, t1.b) IN ((t4.a, t4.b), (1, 1));
+
+
+--echo #
+--echo # Tests for non-deterministic functions.
+--echo #
+CREATE FUNCTION f1() RETURNS INT NOT DETERMINISTIC RETURN 1;
+
+--echo # The statement immediately below should not use range access.
+EXPLAIN SELECT a, b FROM t1 WHERE (a, b, c) IN ((0, 0, 0), (f1(), 1, 1));
+EXPLAIN SELECT a, b FROM t1 WHERE (a, b, c) IN ((0, 0, 0), (1, f1(), 1));
+EXPLAIN SELECT a, b FROM t1 WHERE (a, b, c) IN ((0, 0, 0), (1, 1, f1()));
+
+--echo # The statement immediately below should not use range access.
+EXPLAIN SELECT a, b FROM t1 WHERE (a, b) IN ((f1(), 1));
+
+DROP FUNCTION f1;
+
+--echo # The statement immediately below should not use range access.
+EXPLAIN
+SELECT a, b
+FROM t1 AS t1o
+WHERE EXISTS ( SELECT 1 FROM t1 WHERE (a, b) IN ((t1o.a, t1o.b)) );
+
+--echo #
+--echo # Tests of dynamic range access
+--echo #
+CREATE TABLE t5 (a int, b int, KEY (a));
+INSERT INTO t5 VALUES (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1);
+
+CREATE TABLE t6 (a int, b int, KEY (a));
+INSERT INTO t6 VALUES (3, 2), (4, 2), (100, 100), (101, 201), (102, 102);
+
+CREATE TABLE t7 (a int, b int, KEY (a, b));
+INSERT INTO t7 VALUES (1, 1), (2, 2), (1000, 1000), (1001, 1001), (1002, 1002),
+(1003, 1003), (1004, 1004);
+
+let $ERC_query=
+SELECT *
+FROM t5 JOIN t6 ON t5.a = t6.a JOIN t7
+WHERE t7.a IN (t5.b, t6.b);
+source include/explain_run_count.inc;
+
+let $ERC_query=
+SELECT *
+FROM t5 JOIN t6 ON t5.a = t6.a JOIN t7
+WHERE (t7.a, t7.b) IN ((t5.b, 1), (t6.b, 1));
+source include/explain_run_count.inc;
+
+--echo #
+--echo # Regression tests of the worklog below.
+--echo #
+
+--echo # Make sure we process IN predicates only.
+--echo # The code around this is very unclear.
+EXPLAIN SELECT a, b FROM t1 WHERE (a, b) != (1, 1);
+
+--echo # This should give us a ref scan, as it always did.
+EXPLAIN SELECT a, b FROM t1 WHERE (a, b) IN ((0, 0));
+
+EXPLAIN SELECT a, b FROM t1 WHERE (a, c) IN ((0, 0));
+
+--echo # ref scan on x(a).
+EXPLAIN SELECT * FROM t1 WHERE (a, c) IN ((0, 0), (1, 1));
+
+DROP TABLE t1, t2, t3, t4, t5, t6, t7;
+
+--echo #
+--echo # Bug#17635476: CRASH IN GET_MM_PARTS() OR ASSERT IN
+--echo # GET_FUNC_MM_TREE_FROM_IN_PREDICATE()
+--echo #
+CREATE TABLE t1 (
+  a INT,
+  b INT,
+  KEY (a)
+) ENGINE = INNODB;
+
+SELECT DISTINCT a FROM t1 WHERE (a, b) IN ((0, 0), (1, 1));
+
+INSERT INTO t1 VALUES (0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6),
+  (7, 7), (8, 8), (9, 9);
+ANALYZE TABLE t1;
+
+CREATE TABLE t2 (
+  a INT,
+  b INT,
+  KEY (a, b)
+);
+
+INSERT INTO t2 SELECT * FROM t1;
+ANALYZE TABLE t2;
+
+let $ERC_query=
+SELECT DISTINCT a FROM t1 WHERE (a, b) IN ((0, 0), (1, 1));
+source include/explain_run_count.inc;
+
+let $ERC_query=
+SELECT DISTINCT a FROM t2 WHERE (a, b) IN ((0, 0), (1, 1));
+source include/explain_run_count.inc;
+
+--echo # Should not use range scan.
+EXPLAIN SELECT DISTINCT a FROM t1 WHERE (NULL, b) IN ((0, 0), (1, 1));
+
+--echo # Should not use range scan.
+EXPLAIN SELECT DISTINCT a FROM t2 WHERE (NULL, b) IN ((0, 0), (1, 1));
+
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug#17755540 VALGRIND ERROR WHEN SETTING UP ROW COMPARATORS
+--echo #
+
+CREATE TABLE t2 (a INT, b INT, c INT, d INT, KEY x(a, b));
+
+INSERT INTO t2 VALUES (2, 2, 2, 2), (3, 3, 3, 3), (4, 4, 4, 4), (5, 5, 5, 5),
+  (6, 6, 6, 6), (7, 7, 7, 7), (8, 8, 8, 8), (9, 9, 9, 9);
+
+INSERT INTO t2 SELECT * FROM t2;
+
+INSERT INTO t2 VALUES (0, 0, 0, 0), (1, 1, 1, 1);
+
+ANALYZE TABLE t2;
+
+SELECT a, b FROM t2 WHERE (a, b) IN ((0, 0), (1, 1));
+DROP TABLE t2;
+
+--echo #
+--echo # BUG#18364815: OPTIMIZER PREFERS TABLE SCAN WHEN 
+--echo #               USING "IN" WITH VALUE OF DIFFERENT TYPE
+--echo #
+
+CREATE TABLE t1 (a INT PRIMARY KEY, b INT);
+
+INSERT INTO t1 VALUES (1,1), (2,1), (3,1), (4,1), (5,1), (6,1);
+
+EXPLAIN SELECT * FROM t1 WHERE a IN (1, 2);
+EXPLAIN SELECT * FROM t1 WHERE a IN (1, "2");
+
+SELECT * FROM t1 WHERE a IN (1, 2);
+SELECT * FROM t1 WHERE a IN (1, "2");
+
+DROP TABLE t1;
+
+--echo # 
+--echo # Bug#18715670
+--echo # CRASH IN DECIMAL_ACTUAL_FRACTION COMPARING DECIMAL TO NULLS
+--echo # 
+
+CREATE TABLE t1(n DECIMAL(39,19) NOT NULL, KEY(n)) engine=innodb;
+INSERT INTO t1 SET n=0;
+SELECT 1 FROM t1 WHERE n NOT IN(NULL, NULL);
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#18759597 MISSING ROWS ON WHERE .. 
+--echo #              IN QUERY WITH VARIABLES AND CONCAT
+--echo #
+
+CREATE TABLE t1 (
+  col_varchar_key varchar(2),
+  KEY col_varchar_key (col_varchar_key)
+) ENGINE=InnoDB;
+
+INSERT INTO t1 VALUES ('n'),('xm');
+
+SET @var1 = 't', @var2 = 'him',
+    @var3 = 'n', @var4 = 'n',
+    @var5 = 'n', @var6 = 'g',
+    @var7 = 'b', @var8 = 'o',
+    @var9 = 'm', @var10 = 'xm', @var11 = 'u'
+;
+
+SELECT col_varchar_key AS field1
+FROM t1
+WHERE ( col_varchar_key, col_varchar_key ) IN (
+  ('m', @var1  ),
+  ('n', @var3  ),
+  ('a', @var5  ),
+  ('l', @var7  ),
+  (CONCAT('x', @var9 ), @var10 )
+);
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#18535226 	DEBUG CRASH ON QUICK_RANGE_SELECT::RESET
+--echo #
+
+SET @old_tmp_table_size=@@tmp_table_size;
+SET tmp_table_size=1024;
+
+CREATE TABLE t1 (
+  pk INT NOT NULL,
+  col_int_key INT,
+  col_date_key date,
+  col_date_nokey date,
+  col_time_key time,
+  col_time_nokey time,
+  col_datetime_key datetime,
+  col_datetime_nokey datetime,
+  col_varchar_key varchar(1),
+  col_varchar_nokey varchar(1),
+  PRIMARY KEY (pk),
+  KEY col_int_key (col_int_key)
+) ENGINE=MyISAM;
+
+INSERT INTO t1 VALUES
+(5,0,'2001-05-06','2001-05-06','16:21:18','16:21:18','2001-11-08 21:02:12',
+'2001-11-08 21:02:12','x','x'),(6,7,'2006-03-03','2006-03-03','18:56:33',
+'18:56:33','2003-04-01 00:00:00','2003-04-01 00:00:00','i','i'),
+(7,7,'2007-12-28','2007-12-28',NULL,NULL,'1900-01-01 00:00:00',
+'1900-01-01 00:00:00','e','e'),(8,1,'2004-10-20','2004-10-20','09:29:08',
+'09:29:08','2007-07-12 00:00:00','2007-07-12 00:00:00','p','p'),
+(9,7,'2008-04-09','2008-04-09','19:11:10','19:11:10',
+'2005-04-04 01:21:01','2005-04-04 01:21:01','s','s'),
+(10,1,'2005-12-25','2005-12-25','11:57:26','11:57:26',
+'1900-01-01 00:00:00','1900-01-01 00:00:00','j','j');
+
+SELECT alias1.col_int_key
+FROM
+( SELECT SQ1_alias1.* FROM t1 AS SQ1_alias1, t1 AS SQ1_alias2 ) AS alias1,
+(SELECT 7 AS col_int_nokey) AS alias2
+WHERE
+alias2.col_int_nokey = alias1.pk
+AND alias1.col_varchar_nokey < alias1.col_varchar_key
+ORDER BY alias1.col_varchar_key;
+
+DROP TABLE t1;
+SET tmp_table_size=@old_tmp_table_size;
+SET sql_mode = default;
+
+--echo #
+--echo # Bug#19585938 Crash in get_full_func_mm_tree with null
+--echo #              item_field->table_ref
+--echo #
+
+CREATE TABLE t1(id INTEGER, col1 INTEGER, col2 INTEGER, PRIMARY KEY(id));
+
+INSERT INTO t1 VALUES (1,2,3), (3,2,1);
+
+SELECT (SELECT 1
+        FROM t1
+        WHERE SUM(1) < id
+       ) AS c
+FROM t1
+GROUP BY col1;
+
+SELECT (SELECT 1
+        FROM t1
+        WHERE id > SUM(1)
+       ) AS c
+FROM t1
+GROUP BY col1;
+
+SELECT (SELECT 1
+        FROM t1
+        WHERE SUM(1) BETWEEN id AND id+1
+       ) AS c
+FROM t1
+GROUP BY col1;
+
+SELECT (SELECT 1
+        FROM t1
+        WHERE id BETWEEN SUM(1) AND SUM(5)
+       ) AS c
+FROM t1
+GROUP BY col1;
+
+SELECT (SELECT 1
+        FROM t1
+        WHERE SUM(1) BETWEEN COUNT(*) AND id
+       ) AS c
+FROM t1
+GROUP BY col1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#21415791 VALGRIND ERROR (CONDITIONAL JUMP) AT KEY_AND
+--echo #              (RANGE_OPT_PARAM*, SEL_ARG*, SEL_AR
+--echo #
+CREATE TABLE t1 (
+  col_varchar_10 VARCHAR(10),
+  pk INTEGER NOT NULL,
+  col_int_key INTEGER,
+  PRIMARY KEY (pk),
+  KEY col_int_key (col_int_key),
+  KEY col_varchar_10 (col_varchar_10)
+) ENGINE=InnoDB;
+
+INSERT INTO t1 (
+pk, col_varchar_10, col_int_key) VALUES
+(1, 'ttttt', 0), (2, 'zzzzz', 0), (3, 'ggggg', 0),
+(4, 'hhhhh', 0), (5, 'kkkkk', 0), (6, 'lllll', 0);
+
+CREATE TABLE t2 (
+  pk INTEGER NOT NULL,
+  col_varchar_10 VARCHAR(10),
+  PRIMARY KEY (pk),
+  KEY col_varchar_10 (col_varchar_10)
+) ENGINE=InnoDB;
+
+INSERT INTO t2 (
+pk,  col_varchar_10) VALUES
+(1, '00000'), (2, '00000'), (3, '44444'), (4, '00000'),
+(5, NULL), (6, NULL), (7, NULL);
+
+SELECT COUNT(t1.col_int_key)
+FROM t2 RIGHT OUTER JOIN t1 ON t2.col_varchar_10 <= t1.col_varchar_10
+WHERE t2.pk <> 4 OR t2.pk != t1.col_int_key AND t2.pk <> 1000;
+
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug #20229614: OR CONDITIONS ON MULTI-COLUMN INDEX MAY NOT USE ALL
+--echo #                INDEX COLUMNS TO FILTER ROWS
+--echo #
+
+CREATE TABLE t1 (
+  c1 INT,
+  c2 INT,
+  c3 INT,
+  PRIMARY KEY(c1, c2, c3)
+) ENGINE=INNODB;
+
+INSERT INTO t1 VALUES (1, 1, 1), (1, 1, 2), (1, 1, 3),
+                      (1, 1, 4), (1, 1, 5);
+INSERT INTO t1 SELECT c1, 2, c3 FROM t1;
+INSERT INTO t1 SELECT c1, 3, c3 FROM t1 WHERE c2 = 1;
+
+ANALYZE TABLE t1;
+
+SELECT COUNT(*) FROM t1;
+
+EXPLAIN SELECT c1, c2, c3
+        FROM t1
+        WHERE (c1 = 1 AND c2 = 1 AND c3 = 1) OR
+              (c1 = 1 AND c2 = 2 AND c3 = 2) OR
+              (c1 = 1 AND c2 = 2 AND c3 = 3);
+DROP TABLE t1;
+
+
+--echo #
+--echo # Bug#21139683: ASSERTION FAILED: TYPE_ARG == MAYBE_KEY ||
+--echo #               TYPE_ARG == IMPOSSIBLE
+--echo #
+
+CREATE TABLE t1 (
+  a BLOB,
+  PRIMARY KEY(a(1)),
+  KEY(a(1))
+) ENGINE=INNODB;
+
+SELECT 1 FROM t1 WHERE a <> 'a' OR a <> "";
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#19333852: RESULT DIFF IN QUERY HAVING DISTINCT
+--echo #               WITH GROUP BY
+--echo #
+
+CREATE TABLE t1 (
+  v1 VARCHAR(20) CHARACTER SET utf8 NOT NULL,
+  pk INTEGER NOT NULL,
+  PRIMARY KEY (pk),
+  KEY v1_key (v1(10))
+) ENGINE=InnoDB;
+
+INSERT INTO t1 VALUES ('ABCDE',19), ('JLVGO',14);
+
+Let query1= SELECT * FROM t1 WHERE t1.v1 < CHAR(128);
+Let query2= SELECT * FROM t1 WHERE t1.v1 = CHAR(128);
+Let query3= SELECT * FROM t1 WHERE t1.v1 BETWEEN 'f' AND CHAR(128);
+
+eval EXPLAIN $query1;
+eval EXPLAIN $query2;
+eval EXPLAIN $query3;
+
+eval $query1;
+eval $query2;
+eval $query3;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #21761867: ASSERTION `TYPE_ARG == MAYBE_KEY ||
+--echo #                TYPE_ARG == IMPOSSIBLE' FAILED.
+--echo #
+
+CREATE TABLE t1 (
+  c10 INT NOT NULL,
+  c12 INT NOT NULL,
+  c18 INT,
+  PRIMARY KEY (c10,c12),
+  UNIQUE KEY key_c12(c12),
+  KEY key_c18(c18));
+
+INSERT INTO t1 VALUES(11,5,0), (12,6,1), (13,7,2), (14,8,3), (15,9,4);
+
+CREATE TABLE t2 (
+  c10 INT NOT NULL,
+  c12 INT NOT NULL,
+  PRIMARY KEY(c10,c12));
+
+CREATE TABLE t3 (c10 INT NOT NULL);
+
+SELECT t2.c10
+FROM t1
+     RIGHT JOIN t3
+     LEFT JOIN t2
+     ON t3.c10 = t2.c10
+     ON t1.c12 > t2.c12
+WHERE
+     t1.c10 <= 25
+     AND
+     t1.c18 IS NOT NULL
+     OR
+     t1.c10 > 5
+     AND
+     t1.c18 IN (15,16,18);
+
+DROP TABLE t1, t2, t3;
+
+--echo #
+--echo # Bug #21318711: WRONG RESULTS FOR TRUNCATED COLUMN AND AGGREGATION
+--echo #
+
+CREATE TABLE t1 (
+  col1 VARCHAR(5),
+  col2 INT NOT NULL,
+  PRIMARY KEY (col1, col2)
+) ENGINE=InnoDB;
+
+INSERT INTO t1 VALUES ('abcde', 10);
+
+let $query1= SELECT MAX(col2) FROM t1 WHERE col1 = 'abcdeaa';
+let $query2= SELECT MAX(col2) FROM t1 WHERE col1 = 'abcde  ';
+
+eval EXPLAIN $query1;
+eval EXPLAIN $query2;
+
+eval $query1;
+eval $query2;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug# 22283790: RANGE OPTIMIZER UTILIZES TOO MUCH MEMORY WITH
+--echo #                MANY OR CONDITIONS
+--echo #
+
+CREATE TABLE t1 (
+ f1 INTEGER,
+ KEY (f1)
+);
+
+INSERT INTO t1 VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15);
+
+SET @orig_range_optimizer_max_mem_size= @@range_optimizer_max_mem_size;
+SET range_optimizer_max_mem_size= 5000;
+
+EXPLAIN SELECT * FROM t1 WHERE f1=1 OR f1=2 OR f1=3 OR f1=4 OR f1=5
+OR f1=6 OR f1=7 OR f1=8 OR f1=9 OR f1=10 OR f1=11;
+
+SET range_optimizer_max_mem_size= @orig_range_optimizer_max_mem_size;
+
+DROP TABLE t1;
+
+--echo #
 

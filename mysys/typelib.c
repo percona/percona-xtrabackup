@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 /* Functions to handle typelib */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include <m_string.h>
 #include <m_ctype.h>
 
@@ -68,7 +69,7 @@ int find_type_or_exit(const char *x, TYPELIB *typelib, const char *option)
 int find_type(const char *x, const TYPELIB *typelib, uint flags)
 {
   int find,pos;
-  int UNINIT_VAR(findpos);                       /* guarded by find */
+  int findpos= 0;                       /* guarded by find */
   const char *i;
   const char *j;
   DBUG_ENTER("find_type");
@@ -128,14 +129,14 @@ int find_type(const char *x, const TYPELIB *typelib, uint flags)
   first type is 1, 0 = empty field
 */
 
-void make_type(register char * to, register uint nr,
-	       register TYPELIB *typelib)
+void make_type(char * to, uint nr,
+	       TYPELIB *typelib)
 {
   DBUG_ENTER("make_type");
   if (!nr)
     to[0]=0;
   else
-    (void) strmov(to,get_type(typelib,nr-1));
+    (void) my_stpcpy(to,get_type(typelib,nr-1));
   DBUG_VOID_RETURN;
 } /* make_type */
 
@@ -193,7 +194,7 @@ my_ulonglong find_typeset(char *x, TYPELIB *lib, int *err)
       x++;
     if ((find= find_type(i, lib, FIND_TYPE_COMMA_TERM) - 1) < 0)
       DBUG_RETURN(0);
-    result|= (ULL(1) << find);
+    result|= (1ULL << find);
   }
   *err= 0;
   DBUG_RETURN(result);
@@ -375,7 +376,7 @@ my_ulonglong find_set_from_flags(const TYPELIB *lib, uint default_name,
       continue;
    err:
       *err_pos= (char*)start;
-      *err_len= end - start;
+      *err_len= (uint)(end - start);
       break;
     }
   }

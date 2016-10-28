@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,7 +21,6 @@
 
 /* We only need the tokens here */
 #define YYSTYPE_IS_DECLARED
-#include <sql_yacc.h>
 #include <lex.h>
 
 #include <welcome_copyright_notice.h> /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
@@ -56,7 +55,18 @@ int tok_row_single_value= 0;
 int tok_row_single_value_list= 0;
 int tok_row_multiple_value= 0;
 int tok_row_multiple_value_list= 0;
+int tok_ident= 0;
+int tok_ident_at= 0; ///< Fake token for the left part of table@query_block.
+int tok_hint_comment_open= 0; ///< Fake token value for "/*+" of hint comments.
+int tok_hint_comment_close= 0; ///< Fake token value for "*/" of hint comments.
 int tok_unused= 0;
+
+/**
+  Adjustment value to translate hint parser's internal token values to generally
+  visible token values. This adjustment is necessary, since keyword token values
+  of separate parsers may interfere.
+*/
+int tok_hint_adjust= 0;
 
 void set_token(int tok, const char *str)
 {
@@ -137,6 +147,8 @@ void compute_tokens()
   set_token(SET_VAR, ":=");
   set_token(UNDERSCORE_CHARSET, "(_charset)");
   set_token(END_OF_INPUT, "");
+  set_token(JSON_SEPARATOR_SYM, "->");
+  set_token(JSON_UNQUOTED_SEPARATOR_SYM, "->>");
 
   /*
     Values.
@@ -172,15 +184,33 @@ void compute_tokens()
   */
   for (i= 0; i< sizeof(symbols)/sizeof(symbols[0]); i++)
   {
+    if (!(symbols[i].group & SG_MAIN_PARSER))
+      continue;
     set_token(symbols[i].tok, symbols[i].name);
   }
 
   /*
-    See sql_functions[] in sql/lex.h
+    FAKE tokens to output "optimizer hint" keywords.
+
+    Hint keyword token values may interfere with token values of the main SQL
+    parser, so the tok_hint_adjust adjustment is needed to add them into
+    compiled_token_array and lex_token_array.
+
+    Also see the TOK_HINT_ADJUST() adjustment macro definition.
   */
-  for (i= 0; i< sizeof(sql_functions)/sizeof(sql_functions[0]); i++)
+  int tok_hint_min= INT_MAX;
+  for (unsigned int i= 0; i < sizeof(symbols)/sizeof(symbols[0]); i++)
   {
-    set_token(sql_functions[i].tok, sql_functions[i].name);
+    if ((symbols[i].group & SG_HINTS) &&
+        static_cast<int>(symbols[i].tok) < tok_hint_min)
+      tok_hint_min= symbols[i].tok; // Calculate the minimal hint token value.
+  }
+  tok_hint_adjust= max_token_seen + 1 - tok_hint_min;
+  for (unsigned int i= 0; i < sizeof(symbols)/sizeof(symbols[0]); i++)
+  {
+    if (!(symbols[i].group & SG_HINTS))
+      continue;
+    set_token(symbols[i].tok + tok_hint_adjust, symbols[i].name);
   }
 
   /*
@@ -211,6 +241,22 @@ void compute_tokens()
   max_token_seen++;
   tok_row_multiple_value_list= max_token_seen;
   set_token(tok_row_multiple_value_list, "(...) /* , ... */");
+
+  max_token_seen++;
+  tok_ident= max_token_seen;
+  set_token(tok_ident, "(tok_id)");
+
+  max_token_seen++;
+  tok_ident_at= max_token_seen;
+  set_token(tok_ident_at, "(tok_id_at)");
+
+  max_token_seen++;
+  tok_hint_comment_open= max_token_seen;
+  set_token(tok_hint_comment_open, HINT_COMMENT_STARTER);
+
+  max_token_seen++;
+  tok_hint_comment_close= max_token_seen;
+  set_token(tok_hint_comment_close, HINT_COMMENT_TERMINATOR);
 
   max_token_seen++;
   tok_unused= max_token_seen;
@@ -323,6 +369,11 @@ void print_tokens()
   printf("#define TOK_ROW_SINGLE_VALUE_LIST %d\n", tok_row_single_value_list);
   printf("#define TOK_ROW_MULTIPLE_VALUE %d\n", tok_row_multiple_value);
   printf("#define TOK_ROW_MULTIPLE_VALUE_LIST %d\n", tok_row_multiple_value_list);
+  printf("#define TOK_IDENT %d\n", tok_ident);
+  printf("#define TOK_IDENT_AT %d\n", tok_ident_at);
+  printf("#define TOK_HINT_COMMENT_OPEN %d\n", tok_hint_comment_open);
+  printf("#define TOK_HINT_COMMENT_CLOSE %d\n", tok_hint_comment_close);
+  printf("#define TOK_HINT_ADJUST(x) ((x) + %d)\n", tok_hint_adjust);
   printf("#define TOK_UNUSED %d\n", tok_unused);
 }
 

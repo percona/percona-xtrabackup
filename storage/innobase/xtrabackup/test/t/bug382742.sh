@@ -2,6 +2,9 @@
 # Bug #382742: Absolute paths in innodb_data_file_path are not supported
 ########################################################################
 
+# MySQL 5.7 require write permissions for innodb_data_home_dir
+require_server_version_lower_than 5.7.0
+
 # Use this as an absolute path prefix in innodb_data_file_path
 innodb_data_home_dir=$TEST_VAR_ROOT/innodb_data_home_dir
 

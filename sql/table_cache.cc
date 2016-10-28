@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ PSI_mutex_info Table_cache::m_mutex_keys[]= {
 
 extern "C" uchar *table_cache_key(const uchar *record,
                                   size_t *length,
-                                  my_bool not_used __attribute__((unused)))
+                                  my_bool not_used MY_ATTRIBUTE((unused)))
 {
   TABLE_SHARE *share= ((Table_cache_element*)record)->get_share();
   *length= share->table_cache_key.length;
@@ -63,7 +63,8 @@ bool Table_cache::init()
   if (my_hash_init(&m_cache, &my_charset_bin,
                    table_cache_size_per_instance, 0, 0,
                    table_cache_key, (my_hash_free_key) table_cache_free_entry,
-                   0))
+                   0,
+                   PSI_INSTRUMENT_ME))
   {
     mysql_mutex_destroy(&m_lock);
     return true;
@@ -182,9 +183,9 @@ void Table_cache::print_tables()
     TABLE *entry;
     while ((entry= it++))
     {
-      printf("%-14.14s %-32s%6ld%8ld%6d  %s\n",
+      printf("%-14.14s %-32s%6ld%8u%6d  %s\n",
              entry->s->db.str, entry->s->table_name.str, entry->s->version,
-             entry->in_use->thread_id, entry->db_stat ? 1 : 0,
+             entry->in_use->thread_id(), entry->db_stat ? 1 : 0,
              lock_descriptions[(int)entry->reginfo.lock_type]);
     }
     it.init(el->free_tables);

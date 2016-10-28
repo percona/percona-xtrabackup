@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -225,7 +225,7 @@ public:
   /**
    * Get the ordinal position of this operation within the QueryDef.
    */
-  Uint32 getQueryOperationIx() const;
+  Uint32 getOpNo() const;
 
   Uint32 getNoOfParentOperations() const;
   const NdbQueryOperationDef* getParentOperation(Uint32 i) const;
@@ -330,6 +330,7 @@ public:
   {}
 
 private:
+  friend class NdbQueryBuilder;
   friend class NdbQueryIndexScanOperationDefImpl;
   const NdbQueryOperand* const *m_low;  // 'Pointer to array of pointers', NULL terminated
   const bool m_lowInclusive;

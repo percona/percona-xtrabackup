@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -116,8 +116,8 @@ static int compare_bin(uchar *a, uint a_length, uchar *b, uint b_length,
 
 #define FCMP(A,B) ((int) (A) - (int) (B))
 
-int ha_key_cmp(register HA_KEYSEG *keyseg, register uchar *a,
-	       register uchar *b, uint key_length, uint nextflag,
+int ha_key_cmp(HA_KEYSEG *keyseg, uchar *a,
+	       uchar *b, uint key_length, uint nextflag,
 	       uint *diff_pos)
 {
   int flag;
@@ -420,7 +420,6 @@ int ha_key_cmp(register HA_KEYSEG *keyseg, register uchar *a,
         swap_variables(uchar*, a, b);
       break;
     }
-#ifdef HAVE_LONG_LONG
     case HA_KEYTYPE_LONGLONG:
     {
       longlong ll_a,ll_b;
@@ -443,7 +442,6 @@ int ha_key_cmp(register HA_KEYSEG *keyseg, register uchar *a,
       b+= 8;
       break;
     }
-#endif
     case HA_KEYTYPE_END:                        /* Ready */
       goto end;                                 /* diff_pos is incremented */
     }

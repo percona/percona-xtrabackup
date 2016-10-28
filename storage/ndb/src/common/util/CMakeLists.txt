@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -48,15 +48,27 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
             strdup.c
             ConfigValues.cpp
             ndb_init.cpp
-            ndb_opts.c
+            ndb_opts.cpp
             basestring_vsnprintf.c
             Bitmask.cpp
 	    SparseBitmask.cpp
             require.c
             Vector.cpp
             NdbPack.cpp
+            HashMap2.cpp
+            LinkedStack.cpp
+            decimal_utils.cpp
+            CharsetMap.cpp
+            CharsetMapImpl.cpp
 )
-TARGET_LINK_LIBRARIES(ndbgeneral ndbtrace ${ZLIB_LIBRARY} mysys)
+SET(NDBGENERAL_LIBS ndbtrace ${ZLIB_LIBRARY} mysys)
+# Some parts of mysys has been split into it's own library
+# called mysys_ssl, existence of new library is indicated
+# by new include file my_default.h detected in ndb_configure.cmake
+IF(HAVE_MY_DEFAULT_H)
+  LIST(APPEND NDBGENERAL_LIBS mysys_ssl) 
+ENDIF()
+TARGET_LINK_LIBRARIES(ndbgeneral ${NDBGENERAL_LIBS})
 
 ADD_EXECUTABLE(BaseString-t BaseString.cpp)
 SET_TARGET_PROPERTIES(BaseString-t
@@ -88,3 +100,22 @@ SET_TARGET_PROPERTIES(NdbPack-t
                       PROPERTIES COMPILE_FLAGS "-DTEST_NDB_PACK")
 TARGET_LINK_LIBRARIES(NdbPack-t ndbgeneral ndbportlib)
 
+ADD_EXECUTABLE(HashMap2-t HashMap2.cpp)
+SET_TARGET_PROPERTIES(HashMap2-t
+                      PROPERTIES COMPILE_FLAGS "-DTEST_HASHMAP2")
+TARGET_LINK_LIBRARIES(HashMap2-t ndbgeneral)
+
+ADD_EXECUTABLE(LinkedStack-t LinkedStack.cpp)
+SET_TARGET_PROPERTIES(LinkedStack-t
+                      PROPERTIES COMPILE_FLAGS "-DTEST_LINKEDSTACK")
+TARGET_LINK_LIBRARIES(LinkedStack-t ndbgeneral)
+
+ADD_EXECUTABLE(mysql_utils_test-t mysql_utils_test.cpp)
+SET_TARGET_PROPERTIES(mysql_utils_test-t
+                      PROPERTIES COMPILE_FLAGS "-DTEST_MYSQL_UTILS")
+TARGET_LINK_LIBRARIES(mysql_utils_test-t ndbgeneral  ndbportlib)
+
+ADD_EXECUTABLE(NdbSqlUtil-t NdbSqlUtil.cpp)
+SET_TARGET_PROPERTIES(NdbSqlUtil-t
+                      PROPERTIES COMPILE_FLAGS "-DTEST_NDB_SQL_UTIL")
+TARGET_LINK_LIBRARIES(NdbSqlUtil-t ndbgeneral ndbportlib)

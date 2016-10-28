@@ -19,6 +19,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 *******************************************************/
 
 #include <my_base.h>
+#include <my_thread_local.h>
 #include "common.h"
 #include "xbcrypt.h"
 
@@ -40,14 +41,14 @@ xb_crypt_read_key_file(const char *filename, void** key, uint *keylength)
 
 	if (!(fp = my_fopen(filename, O_RDONLY, MYF(0)))) {
 		msg("%s:%s: unable to open config file \"%s\", errno(%d)\n",
-			my_progname, __FUNCTION__, filename, my_errno);
+			my_progname, __FUNCTION__, filename, my_errno());
 		return FALSE;
 	}
 
 	fseek(fp, 0 , SEEK_END);
 	*keylength = ftell(fp);
 	rewind(fp);
-	*key = my_malloc(*keylength, MYF(MY_FAE));
+	*key = my_malloc(PSI_NOT_INSTRUMENTED, *keylength, MYF(MY_FAE));
 	*keylength = fread(*key, 1, *keylength, fp);
 	my_fclose(fp, MYF(0));
 	return TRUE;

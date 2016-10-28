@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2011, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2007, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -26,16 +26,17 @@ Created 2007-03-27 Sunny Bains
 #ifndef INNOBASE_FTS0TYPES_H
 #define INNOBASE_FTS0TYPES_H
 
+#include "univ.i"
+#include "fts0fts.h"
+#include "fut0fut.h"
+#include "pars0pars.h"
 #include "que0types.h"
 #include "ut0byte.h"
-#include "fut0fut.h"
 #include "ut0rbt.h"
-#include "fts0fts.h"
 
 /** Types used within FTS. */
 struct fts_que_t;
 struct fts_node_t;
-struct fts_utf8_str_t;
 
 /** Callbacks used within FTS. */
 typedef pars_user_func_cb_t fts_sql_callback;
@@ -122,7 +123,11 @@ struct fts_sync_t {
 	doc_id_t	max_doc_id;	/*!< The doc id at which the cache was
 					noted as being full, we use this to
 					set the upper_limit field */
-        ib_time_t	start_time;	/*!< SYNC start time */
+	ib_time_t	start_time;	/*!< SYNC start time */
+	bool		in_progress;	/*!< flag whether sync is in progress.*/
+	bool		unlock_cache;	/*!< flag whether unlock cache when
+					write fts node */
+	os_event_t	event;		/*!< sync finish event */
 };
 
 /** The cache for the FTS system. It is a memory-based inverted index
@@ -164,7 +169,6 @@ struct fts_cache_t {
 					and deleted_doc_ids, ie. transient
 					objects, they are recreated after
 					a SYNC is completed */
-
 
 	ib_alloc_t*	self_heap;	/*!< This heap is the heap out of
 					which an instance of the cache itself
@@ -212,6 +216,7 @@ struct fts_node_t {
 	ulint		ilist_size_alloc;
 					/*!< Allocated size of ilist in
 					bytes */
+	bool		synced;		/*!< flag whether the node is synced */
 };
 
 /** A tokenizer word. Contains information about one word. */
@@ -266,6 +271,12 @@ struct fts_doc_t {
 					same lifespan, most notably
 					the vector of token positions */
 	CHARSET_INFO*	charset;	/*!< Document's charset info */
+
+	st_mysql_ftparser* parser;	/*!< fts plugin parser */
+
+	bool		is_ngram;	/*!< Whether it is a ngram parser */
+
+	ib_rbt_t*	stopwords;	/*!< Stopwords */
 };
 
 /** A token and its positions within a document. */
@@ -279,33 +290,6 @@ struct fts_token_t {
 
 /** It's defined in fts/fts0fts.c */
 extern const fts_index_selector_t fts_index_selector[];
-
-/******************************************************************//**
-Compare two UTF-8 strings. */
-UNIV_INLINE
-int
-fts_utf8_string_cmp(
-/*================*/
-						/*!< out:
-						< 0 if n1 < n2,
-						0 if n1 == n2,
-						> 0 if n1 > n2 */
-	const void*	p1,			/*!< in: key */
-	const void*	p2);			/*!< in: node */
-
-/******************************************************************//**
-Compare two UTF-8 strings, and return match (0) if
-passed in "key" value equals or is the prefix of the "node" value. */
-UNIV_INLINE
-int
-fts_utf8_string_cmp_prefix(
-/*=======================*/
-						/*!< out:
-						< 0 if n1 < n2,
-						0 if n1 == n2,
-						> 0 if n1 > n2 */
-	const void*	p1,			/*!< in: key */
-	const void*	p2);			/*!< in: node */
 
 /******************************************************************//**
 Compare two fts_trx_row_t instances doc_ids. */
@@ -357,11 +341,11 @@ fts_decode_vlc(
 			incremented by the number of bytes decoded */
 
 /******************************************************************//**
-Duplicate an UTF-8 string. */
+Duplicate a string. */
 UNIV_INLINE
 void
-fts_utf8_string_dup(
-/*================*/
+fts_string_dup(
+/*===========*/
 						/*!< out:
 						< 0 if n1 < n2,
 						0 if n1 == n2,
@@ -393,43 +377,6 @@ fts_encode_int(
 						enough space */
 
 /******************************************************************//**
-Decode a UTF-8 character.
-
-http://www.unicode.org/versions/Unicode4.0.0/ch03.pdf:
-
- Scalar Value              1st Byte 2nd Byte 3rd Byte 4th Byte
-00000000 0xxxxxxx          0xxxxxxx
-00000yyy yyxxxxxx          110yyyyy 10xxxxxx
-zzzzyyyy yyxxxxxx          1110zzzz 10yyyyyy 10xxxxxx
-000uuuzz zzzzyyyy yyxxxxxx 11110uuu 10zzzzzz 10yyyyyy 10xxxxxx
-
-This function decodes UTF-8 sequences up to 6 bytes (31 bits).
-
-On error *ptr will point to the first byte that was not correctly
-decoded. This will hopefully help in resyncing the input. */
-UNIV_INLINE
-ulint
-fts_utf8_decode(
-/*============*/
-						/*!< out: UTF8_ERROR if *ptr
-						did not point to a valid
-						UTF-8 sequence, or the
-						Unicode code point. */
-	const byte**	ptr);			/*!< in/out: pointer to
-						UTF-8 string. The
-						pointer is advanced to
-						the start of the next
-						character. */
-
-/******************************************************************//**
-Lowercase an UTF-8 string. */
-UNIV_INLINE
-void
-fts_utf8_tolower(
-/*=============*/
-	fts_string_t*	str);			/*!< in: string */
-
-/******************************************************************//**
 Get the selected FTS aux INDEX suffix. */
 UNIV_INLINE
 const char*
@@ -437,34 +384,17 @@ fts_get_suffix(
 /*===========*/
 	ulint		selected);		/*!< in: selected index */
 
-/********************************************************************
-Get the number of index selectors. */
-UNIV_INLINE
-ulint
-fts_get_n_selectors(void);
-/*=====================*/
-
-/******************************************************************//**
-Select the FTS auxiliary index for the given string.
+/** Select the FTS auxiliary index for the given character.
+@param[in]	cs	charset
+@param[in]	str	string
+@param[in]	len	string length in bytes
 @return the index to use for the string */
 UNIV_INLINE
 ulint
 fts_select_index(
-/*=============*/
-	const CHARSET_INFO*	cs,		/*!< Charset */
-	const byte*		str,		/*!< in: word string */
-	ulint			len);		/*!< in: string length */
-
-/********************************************************************
-Select the next FTS auxiliary index for the given character.
-@return the next index to use for character */
-UNIV_INLINE
-ulint
-fts_select_next_index(
-/*==================*/
-	const CHARSET_INFO*	cs,		/*!< Charset */
-	const byte*		str,		/*!< in: string */
-	ulint			len);		/*!< in: string length */
+	const CHARSET_INFO*	cs,
+	const byte*		str,
+	ulint			len);
 
 #ifndef UNIV_NONINL
 #include "fts0types.ic"

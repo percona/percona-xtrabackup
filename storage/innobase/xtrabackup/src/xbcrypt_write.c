@@ -32,7 +32,8 @@ xb_crypt_write_open(void *userdata, xb_crypt_write_callback *onwrite)
 
 	xb_ad(onwrite);
 
-	crypt = (xb_wcrypt_t *) my_malloc(sizeof(xb_wcrypt_t), MYF(MY_FAE));
+	crypt = (xb_wcrypt_t *) my_malloc(PSI_NOT_INSTRUMENTED,
+					  sizeof(xb_wcrypt_t), MYF(MY_FAE));
 
 	crypt->userdata = userdata;
 	crypt->write = onwrite;

@@ -15,7 +15,7 @@ extern bool binlog_locked;
 
 bool
 backup_file_printf(const char *filename, const char *fmt, ...)
-		ATTRIBUTE_FORMAT(printf, 2, 0);
+		__attribute__((format(printf, 2, 0)));
 
 /************************************************************************
 Return true if first and second arguments are the same path. */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,20 +19,7 @@
 #ifndef _my_base_h
 #define _my_base_h
 
-#ifndef stdin				/* Included first in handler */
-#define CHSIZE_USED
-#include <my_global.h>
-#include <my_dir.h>			/* This includes types */
-#include <my_sys.h>
-#include <m_string.h>
-#include <errno.h>
-
-#ifndef EOVERFLOW
-#define EOVERFLOW 84
-#endif
-
-#endif	/* stdin */
-#include <my_list.h>
+#include "my_global.h"
 
 /* The following is bits in the flag parameter to ha_open() */
 
@@ -88,7 +75,8 @@ enum ha_rkey_function {
   HA_READ_MBR_INTERSECT,          /* Minimum Bounding Rectangle intersect */
   HA_READ_MBR_WITHIN,             /* Minimum Bounding Rectangle within */
   HA_READ_MBR_DISJOINT,           /* Minimum Bounding Rectangle disjoint */
-  HA_READ_MBR_EQUAL               /* Minimum Bounding Rectangle equal */
+  HA_READ_MBR_EQUAL,              /* Minimum Bounding Rectangle equal */
+  HA_READ_INVALID= -1             /* Invalid enumeration value, always last. */
 };
 
 	/* Key algorithm types */
@@ -277,6 +265,20 @@ enum ha_base_keytype {
   This flag can be calculated -- it's based on key lengths comparison.
 */
 #define HA_KEY_HAS_PART_KEY_SEG 65536
+/**
+  Key was renamed (or is result of renaming a key).
+
+  This is another flag internal to SQL-layer.
+  Used by in-place ALTER TABLE implementation.
+
+  @note This flag can be set for keys which have other changes than
+        simple renaming as well. So from the point of view of storage
+        engine such key might have to be dropped and re-created with
+        new definition.
+*/
+#define HA_KEY_RENAMED          (1 << 17)
+/** Set if a key is on any virtual generated columns */
+#define HA_VIRTUAL_GEN_KEY      (1 << 18)
 
 	/* Automatic bits in key-flag */
 
@@ -419,7 +421,7 @@ is the global server default. */
 #define HA_ERR_INDEX_FILE_FULL	136	/* No more room in file */
 #define HA_ERR_END_OF_FILE	137	/* end in next/prev/first/last */
 #define HA_ERR_UNSUPPORTED	138	/* unsupported extension used */
-#define HA_ERR_TO_BIG_ROW	139	/* Too big row */
+#define HA_ERR_TOO_BIG_ROW	139	/* Too big row */
 #define HA_WRONG_CREATE_OPTION	140	/* Wrong create option */
 #define HA_ERR_FOUND_DUPP_UNIQUE 141	/* Dupplicate unique on write */
 #define HA_ERR_UNKNOWN_CHARSET	 142	/* Can't open charset */
@@ -480,13 +482,23 @@ is the global server default. */
 #define HA_ERR_TABLE_IN_FK_CHECK  183    /* Table being used in foreign key check */
 #define HA_ERR_TABLESPACE_EXISTS  184    /* The tablespace existed in storage engine */
 #define HA_ERR_TOO_MANY_FIELDS    185    /* Table has too many columns */
-#define HA_ERR_ROW_IN_WRONG_PARTITION 186 /* Row in wrong partition */
-#define HA_ERR_INNODB_READ_ONLY   187    /* InnoDB is in read only mode. */
+#define HA_ERR_ROW_IN_WRONG_PARTITION  186  /* Row in wrong partition */
+#define HA_ERR_INNODB_READ_ONLY        187  /* InnoDB is in read only mode. */
 #define HA_ERR_FTS_EXCEED_RESULT_CACHE_LIMIT  188 /* FTS query exceeds result cache limit */
-#define HA_ERR_TEMP_FILE_WRITE_FAILURE	189	/* Temporary file write failure */
-#define HA_ERR_INNODB_FORCED_RECOVERY 190	/* Innodb is in force recovery mode */
-#define HA_ERR_FTS_TOO_MANY_WORDS_IN_PHRASE	191 /* Too many words in a phrase */
-#define HA_ERR_LAST               191    /* Copy of last error nr */
+#define HA_ERR_TEMP_FILE_WRITE_FAILURE 189  /* Temporary file write failure */
+#define HA_ERR_INNODB_FORCED_RECOVERY  190  /* Innodb is in force recovery mode */
+#define HA_ERR_FTS_TOO_MANY_WORDS_IN_PHRASE   191 /* Too many words in a phrase */
+#define HA_ERR_FK_DEPTH_EXCEEDED       192  /* FK cascade depth exceeded */
+#define HA_MISSING_CREATE_OPTION       193  /* Option Missing during Create */
+#define HA_ERR_SE_OUT_OF_MEMORY        194  /* Out of memory in storage engine */
+#define HA_ERR_TABLE_CORRUPT           195  /* Table/Clustered index is corrupted. */
+#define HA_ERR_QUERY_INTERRUPTED       196  /* The query was interrupted */
+#define HA_ERR_TABLESPACE_MISSING      197  /* Missing Tablespace */
+#define HA_ERR_TABLESPACE_IS_NOT_EMPTY 198  /* Tablespace is not empty */
+#define HA_ERR_WRONG_FILE_NAME         199  /* Invalid Filename */
+#define HA_ERR_NOT_ALLOWED_COMMAND     200  /* Operation is not allowed */
+#define HA_ERR_COMPUTE_FAILED          201  /* Compute generated column value failed */
+#define HA_ERR_LAST                    201  /* Copy of last error nr */
 
 /* Number of different errors */
 #define HA_ERR_ERRORS            (HA_ERR_LAST - HA_ERR_FIRST + 1)
@@ -556,7 +568,7 @@ enum data_file_type {
 
 /* For key ranges */
 
-enum key_range_flag {
+enum key_range_flags {
   NO_MIN_RANGE=      1 << 0,                    ///< from -inf
   NO_MAX_RANGE=      1 << 1,                    ///< to +inf
   /*  X < key, i.e. not including the left endpoint */
@@ -580,7 +592,11 @@ enum key_range_flag {
     least one keypart the condition is "keypart IS NULL".
   */
   NULL_RANGE=        1 << 6,
-  GEOM_FLAG=         1 << 7,                     ///< GIS
+  /**
+    This flag means that the index is an rtree index, and the interval is
+    specified using HA_READ_MBR_XXX defined in enum ha_rkey_function.
+  */
+  GEOM_FLAG=         1 << 7,
   /* Deprecated, currently used only by NDB at row retrieval */
   SKIP_RANGE=        1 << 8,
   /* 
@@ -609,13 +625,8 @@ typedef struct st_key_multi_range
 
 
 /* For number of records */
-#ifdef BIG_TABLES
 #define rows2double(A)	ulonglong2double(A)
 typedef my_off_t	ha_rows;
-#else
-#define rows2double(A)	(double) (A)
-typedef ulong		ha_rows;
-#endif
 
 #define HA_POS_ERROR	(~ (ha_rows) 0)
 #define HA_OFFSET_ERROR	(~ (my_off_t) 0)
@@ -623,7 +634,7 @@ typedef ulong		ha_rows;
 #if SYSTEM_SIZEOF_OFF_T == 4
 #define MAX_FILE_SIZE	INT_MAX32
 #else
-#define MAX_FILE_SIZE	LONGLONG_MAX
+#define MAX_FILE_SIZE	LLONG_MAX
 #endif
 
 #define HA_VARCHAR_PACKLENGTH(field_length) ((field_length) < 256 ? 1 :2)

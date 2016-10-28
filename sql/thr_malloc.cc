@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,8 +16,6 @@
 
 /* Mallocs for used in threads */
 
-#include "sql_priv.h"
-#include "unireg.h"
 #include "thr_malloc.h"
 #include "sql_class.h"
 
@@ -28,16 +26,16 @@ using std::max;
 
 extern "C" void sql_alloc_error_handler(void);
 
-void init_sql_alloc(MEM_ROOT *mem_root, uint block_size, uint pre_alloc)
+void init_sql_alloc(PSI_memory_key key,
+                    MEM_ROOT *mem_root, size_t block_size, size_t pre_alloc)
 {
-  init_alloc_root(mem_root, block_size, pre_alloc);
+  init_alloc_root(key, mem_root, block_size, pre_alloc);
   mem_root->error_handler=sql_alloc_error_handler;
 }
 
-
 void *sql_alloc(size_t Size)
 {
-  MEM_ROOT *root= *my_pthread_getspecific_ptr(MEM_ROOT**,THR_MALLOC);
+  MEM_ROOT *root= *my_thread_get_THR_MALLOC();
   return alloc_root(root,Size);
 }
 
@@ -104,7 +102,7 @@ char *sql_strmake_with_convert(const char *str, size_t arg_length,
   else
   {
     uint dummy_errors;
-    new_length= copy_and_convert((char*) pos, new_length, to_cs, str,
+    new_length= copy_and_convert(pos, new_length, to_cs, str,
 				 arg_length, from_cs, &dummy_errors);
   }
   pos[new_length]= 0;

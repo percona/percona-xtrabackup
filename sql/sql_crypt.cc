@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,9 +20,11 @@
  The strongness of this crypt is large based on how good the random
  generator is.	It should be ok for short strings, but for communication one
  needs something like 'ssh'.
+
+ WARNING: This class is deprecated and will be removed in the next
+ server version. Please use AES encrypt/decrypt instead
 */
 
-#include "sql_priv.h"
 #include "sql_crypt.h"
 #include "password.h"
 
@@ -48,9 +50,9 @@ void SQL_CRYPT::init(ulong *rand_nr)
 }
 
 
-void SQL_CRYPT::encode(char *str,uint length)
+void SQL_CRYPT::encode(char *str, size_t length)
 {
-  for (uint i=0; i < length; i++)
+  for (size_t i=0; i < length; i++)
   {
     shift^=(uint) (my_rnd(&rand)*255.0);
     uint idx= (uint) (uchar) str[0];
@@ -60,9 +62,9 @@ void SQL_CRYPT::encode(char *str,uint length)
 }
 
 
-void SQL_CRYPT::decode(char *str,uint length)
+void SQL_CRYPT::decode(char *str, size_t length)
 {
-  for (uint i=0; i < length; i++)
+  for (size_t i=0; i < length; i++)
   {
     shift^=(uint) (my_rnd(&rand)*255.0);
     uint idx= (uint) ((uchar) str[0] ^ shift);

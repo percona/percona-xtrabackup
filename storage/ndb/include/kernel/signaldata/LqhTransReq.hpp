@@ -1,5 +1,4 @@
-/* Copyright (C) 2008 MySQL AB
-   Use is subject to license terms
+/* Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,11 +18,19 @@
 
 #include "SignalData.hpp"
 
+#define JAM_FILE_ID 38
+
+
 struct LqhTransReq {
-  STATIC_CONST( SignalLength = 3 );
+  STATIC_CONST( SignalLength = 4 );
+  STATIC_CONST( OldSignalLength = 3 );
   Uint32 senderData;
   Uint32 senderRef;
   Uint32 failedNodeId;
+  Uint32 instanceId;
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

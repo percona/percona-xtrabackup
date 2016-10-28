@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@
 
 // type alias for mapping the 2-element int array in CharsetMap::recode();
 // provides basic error checking by jtie requiring array length >= 2.
-typedef ttrait< _jintArray *, int32_t *, _jtie_j_ArrayMapper< _jtie_j_BoundedArray< _jintArray, 2 > > * > ttrait_int32_2p_a;
+typedef ttrait< _jintArray *, Int32 *, _jtie_j_ArrayMapper< _jtie_j_BoundedArray< _jintArray, 2 > > * > ttrait_Int32_2p_a;
 
 JTIE_DEFINE_PEER_CLASS_MAPPING(CharsetMap,
                                c_m_n_m_CharsetMap)
@@ -201,9 +201,9 @@ Java_com_mysql_ndbjtie_mysql_CharsetMap_recode(JNIEnv * env, jobject obj, jintAr
 {
     TRACE("jint Java_com_mysql_ndbjtie_mysql_CharsetMap_recode(JNIEnv *, jobject, jintArray, jint, jint, jobject, jobject)");
 #ifndef NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
-    return gcall_mfr< ttrait_c_m_n_m_CharsetMap_ct, ttrait_c_m_n_m_CharsetMap_RecodeStatus_iv/*_enum_*/, ttrait_int32_2p_a, ttrait_int, ttrait_int, ttrait_void_0cp_bb, ttrait_void_0p_bb, &CharsetMap::recode >(env, obj, p0, p1, p2, p3, p4);
+    return gcall_mfr< ttrait_c_m_n_m_CharsetMap_ct, ttrait_c_m_n_m_CharsetMap_RecodeStatus_iv/*_enum_*/, ttrait_Int32_2p_a, ttrait_int, ttrait_int, ttrait_void_0cp_bb, ttrait_void_0p_bb, &CharsetMap::recode >(env, obj, p0, p1, p2, p3, p4);
 #else
-    return gcall_fr< ttrait_c_m_n_m_CharsetMap_RecodeStatus_iv/*_enum_*/, ttrait_c_m_n_m_CharsetMap_cr, ttrait_int32_2p_a, ttrait_int, ttrait_int, ttrait_void_0cp_bb, ttrait_void_0p_bb, &MysqlUtilsWrapper::CharsetMap__recode >(env, NULL, obj, p0, p1, p2, p3, p4);
+    return gcall_fr< ttrait_c_m_n_m_CharsetMap_RecodeStatus_iv/*_enum_*/, ttrait_c_m_n_m_CharsetMap_cr, ttrait_Int32_2p_a, ttrait_int, ttrait_int, ttrait_void_0cp_bb, ttrait_void_0p_bb, &MysqlUtilsWrapper::CharsetMap__recode >(env, NULL, obj, p0, p1, p2, p3, p4);
 #endif // NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
 }
 
@@ -240,6 +240,86 @@ Java_com_mysql_ndbjtie_mysql_Utils_decimal_1bin2str(JNIEnv * env, jclass cls, jo
     return gcall_fr< ttrait_int, ttrait_void_0cp_bb, ttrait_int, ttrait_int, ttrait_int, ttrait_char_0p_bb, ttrait_int, &::decimal_bin2str >(env, cls, p0, p1, p2, p3, p4, p5);
 #else
     return gcall_fr< ttrait_int, ttrait_void_0cp_bb, ttrait_int, ttrait_int, ttrait_int, ttrait_char_0p_bb, ttrait_int, &MysqlUtilsWrapper::decimal_bin2str >(env, cls, p0, p1, p2, p3, p4, p5);
+#endif // NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+}
+
+/*
+ * Class:     com_mysql_ndbjtie_mysql_Utils
+ * Method:    dbugPush
+ * Signature: (Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL
+Java_com_mysql_ndbjtie_mysql_Utils_dbugPush(JNIEnv * env, jclass cls, jstring p0)
+{
+    TRACE("void Java_com_mysql_ndbjtie_mysql_Utils_dbugPush(JNIEnv *, jclass, jstring)");
+#ifndef NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+    gcall_fv< ttrait_char_cp_jutf8null, &::dbugPush >(env, cls, p0);
+#else
+    gcall_fv< ttrait_char_cp_jutf8null, &MysqlUtilsWrapper::dbugPush >(env, cls, p0);
+#endif // NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+}
+
+/*
+ * Class:     com_mysql_ndbjtie_mysql_Utils
+ * Method:    dbugPop
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL
+Java_com_mysql_ndbjtie_mysql_Utils_dbugPop(JNIEnv * env, jclass cls)
+{
+    TRACE("void Java_com_mysql_ndbjtie_mysql_Utils_dbugPop(JNIEnv *, jclass)");
+#ifndef NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+    gcall_fv< &::dbugPop >(env, cls);
+#else
+    gcall_fv< &MysqlUtilsWrapper::dbugPop >(env, cls);
+#endif // NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+}
+
+/*
+ * Class:     com_mysql_ndbjtie_mysql_Utils
+ * Method:    dbugSet
+ * Signature: (Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL
+Java_com_mysql_ndbjtie_mysql_Utils_dbugSet(JNIEnv * env, jclass cls, jstring p0)
+{
+    TRACE("void Java_com_mysql_ndbjtie_mysql_Utils_dbugSet(JNIEnv *, jclass, jstring)");
+#ifndef NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+    gcall_fv< ttrait_char_cp_jutf8null, &::dbugSet >(env, cls, p0);
+#else
+    gcall_fv< ttrait_char_cp_jutf8null, &MysqlUtilsWrapper::dbugSet >(env, cls, p0);
+#endif // NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+}
+
+/*
+ * Class:     com_mysql_ndbjtie_mysql_Utils
+ * Method:    dbugExplain
+ * Signature: (Ljava/nio/ByteBuffer;I)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL
+Java_com_mysql_ndbjtie_mysql_Utils_dbugExplain(JNIEnv * env, jclass cls, jobject p0, jint p1)
+{
+    TRACE("jstring Java_com_mysql_ndbjtie_mysql_Utils_dbugExplain(JNIEnv *, jclass, jobject, jint)");
+#ifndef NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+    return gcall_fr< ttrait_char_cp_jutf8null, ttrait_char_0p_bb, ttrait_int, &::dbugExplain >(env, cls, p0, p1);
+#else
+    return gcall_fr< ttrait_char_cp_jutf8null, ttrait_char_0p_bb, ttrait_int, &MysqlUtilsWrapper::dbugExplain >(env, cls, p0, p1);
+#endif // NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+}
+
+/*
+ * Class:     com_mysql_ndbjtie_mysql_Utils
+ * Method:    dbugPrint
+ * Signature: (Ljava/lang/String;Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL
+Java_com_mysql_ndbjtie_mysql_Utils_dbugPrint(JNIEnv * env, jclass cls, jstring p0, jstring p1)
+{
+    TRACE("void Java_com_mysql_ndbjtie_mysql_Utils_dbugPrint(JNIEnv *, jclass, jstring, jstring)");
+#ifndef NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
+    gcall_fv< ttrait_char_cp_jutf8null, ttrait_char_cp_jutf8null, &::dbugPrint >(env, cls, p0, p1);
+#else
+    gcall_fv< ttrait_char_cp_jutf8null, ttrait_char_cp_jutf8null, &MysqlUtilsWrapper::dbugPrint >(env, cls, p0, p1);
 #endif // NDBJTIE_USE_WRAPPED_VARIANT_FOR_FUNCTION
 }
 

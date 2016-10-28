@@ -1,3 +1,4 @@
+
 #
 # testing of purging of binary log files bug#18199/Bug#18453
 #
@@ -14,10 +15,8 @@ call mtr.add_suppression('MYSQL_BIN_LOG::open failed to sync the index file');
 call mtr.add_suppression('Turning logging off for the whole duration of the MySQL server process.');
 call mtr.add_suppression('Could not open .*');
 call mtr.add_suppression('MYSQL_BIN_LOG::purge_logs failed to clean registers before purging logs.');
-call mtr.add_suppression("The server was unable to create a new log file. "
-                         "An incident event has been written to the binary "
-                         "log which will stop the slaves.");
 let $old=`select @@debug`;
+let $saved_binlog_error_action=`SELECT @@GLOBAL.binlog_error_action`;
 
 RESET MASTER;
 
@@ -223,6 +222,7 @@ SELECT @index;
 
 --echo # fault_injection_registering_index
 SET SESSION debug="+d,fault_injection_registering_index";
+SET GLOBAL binlog_error_action= IGNORE_ERROR;
 # normalize strerror message for solaris10-sparc-64bit as long as errno is OK
 -- replace_regex /\.[\\\/]master/master/ /errno: 1 - .*\)/errno: 1 - Operation not permitted)/
 -- error ER_CANT_OPEN_FILE
@@ -244,6 +244,7 @@ SELECT @index;
 
 --echo # fault_injection_updating_index
 SET SESSION debug="+d,fault_injection_updating_index";
+SET GLOBAL binlog_error_action= IGNORE_ERROR;
 # normalize strerror message for solaris10-sparc-64bit as long as errno is OK
 -- replace_regex /\.[\\\/]master/master/ /errno: 1 - .*\)/errno: 1 - Operation not permitted)/
 -- error ER_CANT_OPEN_FILE
@@ -421,5 +422,6 @@ file_exists $MYSQLD_DATADIR/master-bin.000013;
 file_exists $MYSQLD_DATADIR/master-bin.000014;
 
 eval SET SESSION debug="$old";
+eval SET GLOBAL binlog_error_action= $saved_binlog_error_action;
 
 --echo End of tests

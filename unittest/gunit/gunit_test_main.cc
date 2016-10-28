@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,13 +19,16 @@
 #include <gmock/gmock.h>
 
 #include "my_getopt.h"
+#include "my_thread_local.h"
 
 #include <stdlib.h>
+
+class Cost_constant_cache;
 
 namespace {
 
 my_bool opt_use_tap= true;
-my_bool opt_help= false;
+my_bool opt_unit_help= false;
 
 struct my_option unittest_options[] =
 {
@@ -36,9 +39,9 @@ struct my_option unittest_options[] =
     0, NULL
   },
   { "help", 2, "Help.",
-    &opt_help, &opt_help, NULL,
+    &opt_unit_help, &opt_unit_help, NULL,
     GET_BOOL, NO_ARG,
-    opt_help, 0, 1, 0,
+    opt_unit_help, 0, 1, 0,
     0, NULL
   },
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
@@ -55,8 +58,12 @@ extern "C" my_bool get_one_option(int, const struct my_option *, char *)
 // Some globals needed for merge_small_tests.cc
 mysql_mutex_t LOCK_open;
 uint    opt_debug_sync_timeout= 0;
-pthread_key(MEM_ROOT**,THR_MALLOC);
-pthread_key(THD*, THR_THD);
+thread_local_key_t THR_MALLOC;
+thread_local_key_t THR_THD;
+bool THR_THD_initialized= false;
+bool THR_MALLOC_initialized= false;
+// Needed for linking with opt_costconstantcache.cc and Fake_Cost_model_server
+Cost_constant_cache *cost_constant_cache= NULL;
 
 extern "C" void sql_alloc_error_handler(void)
 {
@@ -76,7 +83,7 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   if (opt_use_tap)
     install_tap_listener();
-  if (opt_help)
+  if (opt_unit_help)
     printf("\n\nTest options: [--[disable-]tap-output]\n");
 
   return RUN_ALL_TESTS();

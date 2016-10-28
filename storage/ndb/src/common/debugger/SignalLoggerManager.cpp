@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 #include <ndb_global.h>
 
 #include "SignalLoggerManager.hpp"
-#include <LongSignal.hpp>
+#include "TransporterDefinitions.hpp"
 #include <GlobalSignalNumbers.h>
 #include <DebuggerNames.hpp>
 #include <NdbTick.h>
@@ -27,7 +27,7 @@
 #ifdef VM_TRACE_TIME
 static char* mytime()
 {
-  NDB_TICKS t = NdbTick_CurrentMillisecond();
+  Uint64 t = NdbTick_CurrentMillisecond();
   uint s = (t / 1000) % 3600;
   uint ms = t % 1000;
   static char buf[100];
@@ -46,9 +46,12 @@ SignalLoggerManager::SignalLoggerManager()
 
   // using mutex avoids MT log mixups but has some serializing effect
   m_mutex = 0;
+
+#ifdef NDB_USE_GET_ENV
   const char* p = NdbEnv_GetEnv("NDB_SIGNAL_LOG_MUTEX", (char*)0, 0);
   if (p != 0 && strchr("1Y", p[0]) != 0)
     m_mutex = NdbMutex_Create();
+#endif
 }
 
 SignalLoggerManager::~SignalLoggerManager()
@@ -67,8 +70,11 @@ SignalLoggerManager::~SignalLoggerManager()
 FILE *
 SignalLoggerManager::setOutputStream(FILE * output)
 {
-  if(outputStream != 0){
+  if (outputStream != 0)
+  {
+    lock();
     fflush(outputStream);
+    unlock();
   }
 
   FILE * out = outputStream;
@@ -85,8 +91,12 @@ SignalLoggerManager::getOutputStream() const
 void
 SignalLoggerManager::flushSignalLog()
 {
-  if(outputStream != 0)
+  if (outputStream != 0)
+  {
+    lock();
     fflush(outputStream);
+    unlock();
+  }
 }
 
 void
@@ -111,7 +121,7 @@ SignalLoggerManager::setLogDistributed(bool val){
   m_logDistributed = val;
 }
 
-int
+static int
 getParameter(char *blocks[NO_OF_BLOCKS], const char * par, const char * line)
 {
   const char * loc = strstr(line, par);
@@ -126,7 +136,7 @@ getParameter(char *blocks[NO_OF_BLOCKS], const char * par, const char * line)
   char * tmp = copy;
   bool done = false;
   while(!done){
-    int len = strcspn(tmp, ", ;:\0");
+    int len = (int)strcspn(tmp, ", ;:\0");
     if(len == 0)
       done = true;
     else {
@@ -154,16 +164,27 @@ SignalLoggerManager::log(LogMode logMode, const char * params)
   const int count = getParameter(blocks, "BLOCK=", params);
   
   int cnt = 0;
-  if((count == 1 && !strcmp(blocks[0], "ALL")) ||
-     count == 0){
-    
-    for (int number = 0; number < NO_OF_BLOCKS; ++number){
+  if(count == 0 ||
+     (count == 1 && !strcmp(blocks[0], "ALL")))
+  {
+    // Inform all blocks about the new log mode
+    for (int number = 0; number < NO_OF_BLOCKS; ++number)
       cnt += log(SLM_ON, MIN_BLOCK_NO + number, logMode);
-    }
-  } else {
-    for (int i = 0; i < count; ++i){
-      BlockNumber number = getBlockNo(blocks[i]);
-      cnt += log(SLM_ON, number, logMode);
+  }
+  else
+  {
+    // Inform only specified blocks about the new log mode
+    for (int i = 0; i < count; ++i)
+    {
+      BlockNumber bno = getBlockNo(blocks[i]);
+      if (bno == 0)
+      {
+        // Could not find any block with matching name
+        ndbout_c("Could not turn on signal logging for unknown block '%s'",
+                 blocks[i]);
+        continue;
+      }
+      cnt += log(SLM_ON, bno, logMode);
     }
   }
   for(int i = 0; i<count; i++){
@@ -176,20 +197,24 @@ SignalLoggerManager::log(LogMode logMode, const char * params)
 int
 SignalLoggerManager::log(int cmd, BlockNumber bno, LogMode logMode)
 {
-  // Normalise blocknumber for use in logModes array
-  const BlockNumber bno2 = bno-MIN_BLOCK_NO;
-  assert(bno2<NO_OF_BLOCKS);
+  // Make sure bno is valid range
+  assert(bno >= MIN_BLOCK_NO && bno <= MAX_BLOCK_NO);
+
+  // Convert bno to index into logModes
+  const size_t index = bno-MIN_BLOCK_NO;
+  assert(index < NDB_ARRAY_SIZE(logModes));
+
   switch(cmd){
   case SLM_ON:
-    logModes[bno2] |= logMode;
+    logModes[index] |= logMode;
     return 1;
     break;
   case SLM_OFF:
-    logModes[bno2] &= (~logMode);
+    logModes[index] &= (~logMode);
     return 1;
     break;
   case SLM_TOGGLE:
-    logModes[bno2] ^= logMode;
+    logModes[index] ^= logMode;
     return 1;
     break;
   }

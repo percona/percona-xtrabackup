@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -292,7 +292,7 @@ end:
 
 static my_bool
 get_one_option(int optid,
-	       const struct my_option *opt __attribute__((unused)),
+	       const struct my_option *opt MY_ATTRIBUTE((unused)),
 	       char *argument)
 {
   switch (optid) {
@@ -322,7 +322,7 @@ get_one_option(int optid,
   case 'A':
     opt_autoincrement= 1;
     if (argument)
-      new_auto_increment_value= strtoull(argument, NULL, 0);
+      new_auto_increment_value= my_strtoull(argument, NULL, 0);
     else
       new_auto_increment_value= 0;
     break;
@@ -388,8 +388,8 @@ static struct my_option my_long_options[] =
 static void usage(void)
 {
   print_version();
-  puts("Copyright 2007-2008 MySQL AB, 2008 Sun Microsystems, Inc.");
-  puts("This software comes with ABSOLUTELY NO WARRANTY. This is free software,\nand you are welcome to modify and redistribute it under the GPL license\n");
+  puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2007"));
+
   puts("Read and modify Archive files directly\n");
   printf("Usage: %s [OPTIONS] file_to_be_looked_at [file_for_backup]\n", my_progname);
   print_defaults("my", load_default_groups);
@@ -413,7 +413,7 @@ static void get_options(int *argc, char ***argv)
   if (*argc == 0)
   {
     usage();
-    exit(-1);
+    exit(1);
   }
 
   return;

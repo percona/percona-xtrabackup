@@ -1,4 +1,4 @@
-/*  Copyright (c) 2014, 2015 Oracle and/or its affiliates. All rights reserved.
+/*  Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License as
@@ -32,17 +32,45 @@
 #include <stdlib.h>
 
 static int mysql_no_login(
-    MYSQL_PLUGIN_VIO *vio __attribute__((unused)),
-    MYSQL_SERVER_AUTH_INFO *info __attribute__((unused)))
+    MYSQL_PLUGIN_VIO *vio MY_ATTRIBUTE((unused)),
+    MYSQL_SERVER_AUTH_INFO *info MY_ATTRIBUTE((unused)))
 {
   return CR_ERROR;
+}
+
+int generate_auth_string_hash(char *outbuf MY_ATTRIBUTE((unused)),
+                              unsigned int *buflen,
+                              const char *inbuf MY_ATTRIBUTE((unused)),
+                              unsigned int inbuflen MY_ATTRIBUTE((unused)))
+{
+  *buflen= 0;
+  return 0;
+}
+
+int validate_auth_string_hash(char* const inbuf  MY_ATTRIBUTE((unused)),
+                              unsigned int buflen  MY_ATTRIBUTE((unused)))
+{
+  return 0;
+}
+
+int set_salt(const char* password MY_ATTRIBUTE((unused)),
+             unsigned int password_len MY_ATTRIBUTE((unused)),
+             unsigned char* salt MY_ATTRIBUTE((unused)),
+             unsigned char* salt_len)
+{
+  *salt_len= 0;
+  return 0;
 }
 
 static struct st_mysql_auth mysql_no_login_handler=
 {
   MYSQL_AUTHENTICATION_INTERFACE_VERSION,
   0,
-  mysql_no_login
+  mysql_no_login,
+  generate_auth_string_hash,
+  validate_auth_string_hash,
+  set_salt,
+  AUTH_FLAG_PRIVILEGED_USER_FOR_PASSWORD_CHANGE
 };
 
 mysql_declare_plugin(mysql_no_login)
@@ -55,7 +83,7 @@ mysql_declare_plugin(mysql_no_login)
   PLUGIN_LICENSE_GPL,                           /* License          */
   NULL,                                         /* Init function    */
   NULL,                                         /* Deinit function  */
-  0x0100,                                       /* Version (1.0)    */
+  0x0101,                                       /* Version (1.0)    */
   NULL,                                         /* status variables */
   NULL,                                         /* system variables */
   NULL,                                         /* config options   */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,9 +14,6 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "myisamdef.h"
-
-#ifdef HAVE_RTREE_KEYS
-
 #include "rt_index.h"
 #include "rt_key.h"
 #include "rt_mbr.h"
@@ -68,6 +65,10 @@ static double mbr_join_square(const double *a, const double *b, int n_dim)
     b += 2;
   }while (a != end);
 
+  /* Check for infinity or NaN */
+  if (my_isinf(square) || my_isnan(square))
+    square = DBL_MAX;
+
   return square;
 }
 
@@ -101,6 +102,9 @@ static void pick_seeds(SplitStruct *node, int n_entries,
 
   double max_d = -DBL_MAX;
   double d;
+
+  *seed_a = node;
+  *seed_b = node + 1;
 
   for (cur1 = node; cur1 < lim1; ++cur1)
   {
@@ -178,11 +182,11 @@ static int split_rtree_node(SplitStruct *node, int n_entries,
                    double **d_buffer, int n_dim)
 {
   SplitStruct *cur;
-  SplitStruct *UNINIT_VAR(a), *UNINIT_VAR(b);
+  SplitStruct *a= NULL, *b= NULL;
   double *g1 = reserve_coords(d_buffer, n_dim);
   double *g2 = reserve_coords(d_buffer, n_dim);
-  SplitStruct *UNINIT_VAR(next);
-  int UNINIT_VAR(next_node);
+  SplitStruct *next= NULL;
+  int next_node= 0;
   int i;
   SplitStruct *end = node + n_entries;
 
@@ -333,8 +337,5 @@ int rtree_split_page(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page, uchar *key,
   DBUG_PRINT("rtree", ("split new block: %lu", (ulong) *new_page_offs));
 
 split_err:
-  my_afree((uchar*) coord_buf);
   DBUG_RETURN(err_code);
 }
-
-#endif /*HAVE_RTREE_KEYS*/

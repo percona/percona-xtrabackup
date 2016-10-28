@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,10 +28,14 @@
 #include <NdbSleep.h>
 
 #include <EventLogger.hpp>
+
+#define JAM_FILE_ID 388
+
 extern EventLogger * g_eventLogger;
 
 AsyncIoThread::AsyncIoThread(class Ndbfs& fs, bool bound)
-  : m_fs(fs)
+  : m_fs(fs),
+    m_real_time(false)
 {
   m_current_file = 0;
   if (bound)
@@ -60,13 +64,7 @@ struct NdbThread*
 AsyncIoThread::doStart()
 {
   // Stacksize for filesystem threads
-#if !defined(DBUG_OFF) && defined (__hpux)
-  // Empirical evidence indicates at least 32k
-  const NDB_THREAD_STACKSIZE stackSize = 32768;
-#else
-  // Otherwise an 8k stack should be enough
-  const NDB_THREAD_STACKSIZE stackSize = 8192;
-#endif
+  const NDB_THREAD_STACKSIZE stackSize = 128*1024;
 
   char buf[16];
   numAsyncFiles++;
@@ -126,7 +124,9 @@ AsyncIoThread::dispatch(Request *request)
 void
 AsyncIoThread::run()
 {
+  bool first_flag = true;
   Request *request;
+  NDB_TICKS last_yield_ticks;
 
   // Create theMemoryChannel in the thread that will wait for it
   NdbMutex_Lock(theStartMutexPtr);
@@ -134,8 +134,47 @@ AsyncIoThread::run()
   NdbMutex_Unlock(theStartMutexPtr);
   NdbCondition_Signal(theStartConditionPtr);
 
+  EmulatedJamBuffer jamBuffer;
+  jamBuffer.theEmulatedJamIndex = 0;
+  // This key is needed by jamNoBlock().
+  NdbThread_SetTlsKey(NDB_THREAD_TLS_JAM, &jamBuffer);
+
   while (1)
   {
+    if (m_real_time)
+    {
+      /**
+       * If we are running in real-time we'll simply insert a break every
+       * so often to ensure that low-prio threads aren't blocked from the
+       * CPU, this is especially important if we're using a compressed
+       * file system where lots of CPU is used by this thread.
+       */
+      bool yield_flag = false;
+      const NDB_TICKS current_ticks = NdbTick_getCurrentTicks();
+
+      if (first_flag)
+      {
+        first_flag = false;
+        yield_flag = true;
+      }
+      else
+      {
+        Uint64 micros_passed =
+          NdbTick_Elapsed(last_yield_ticks, current_ticks).microSec();
+        if (micros_passed > 10000)
+        {
+          yield_flag = true;
+        }
+      }
+      if (yield_flag)
+      {
+        if (NdbThread_yield_rt(theThreadPtr, TRUE))
+        {
+          m_real_time = false;
+        }
+        last_yield_ticks = current_ticks;
+      }
+    }
     request = theMemoryChannelPtr->readChannel();
     if (!request || request->action == Request::end)
     {

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2011, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2006, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -30,15 +30,12 @@ Created December 2006 by Marko Makela
 
 #include "buf0buf.h"
 #include "buf0buddy.h"
-#include "ut0ut.h"
-#include "sync0sync.h"
 
 /**********************************************************************//**
 Allocate a block.  The thread calling this function must hold
 buf_pool->mutex and must not hold buf_pool->zip_mutex or any block->mutex.
 The buf_pool_mutex may be released and reacquired.
-@return	allocated block, never NULL */
-UNIV_INTERN
+@return allocated block, never NULL */
 void*
 buf_buddy_alloc_low(
 /*================*/
@@ -50,11 +47,10 @@ buf_buddy_alloc_low(
 					allocated from the LRU list and
 					buf_pool->mutex was temporarily
 					released */
-	__attribute__((malloc, nonnull));
+	MY_ATTRIBUTE((malloc, nonnull));
 
 /**********************************************************************//**
 Deallocate a block. */
-UNIV_INTERN
 void
 buf_buddy_free_low(
 /*===============*/
@@ -63,11 +59,11 @@ buf_buddy_free_low(
 					pointed to by the buffer pool */
 	ulint		i)		/*!< in: index of buf_pool->zip_free[],
 					or BUF_BUDDY_SIZES */
-	__attribute__((nonnull));
+	MY_ATTRIBUTE((nonnull));
 
 /**********************************************************************//**
 Get the index of buf_pool->zip_free[] for a given block size.
-@return	index of buf_pool->zip_free[], or BUF_BUDDY_SIZES */
+@return index of buf_pool->zip_free[], or BUF_BUDDY_SIZES */
 UNIV_INLINE
 ulint
 buf_buddy_get_slot(
@@ -91,7 +87,7 @@ Allocate a block.  The thread calling this function must hold
 buf_pool->mutex and must not hold buf_pool->zip_mutex or any
 block->mutex.  The buf_pool->mutex may be released and reacquired.
 This function should only be used for allocating compressed page frames.
-@return	allocated block, never NULL */
+@return allocated block, never NULL */
 UNIV_INLINE
 byte*
 buf_buddy_alloc(

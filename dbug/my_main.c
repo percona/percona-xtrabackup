@@ -8,13 +8,13 @@
 #endif
 
 #include <my_global.h>	/* This includes dbug.h */
-#include <my_pthread.h>
+#include <my_thread.h>
 
 int main (argc, argv)
 int argc;
 char *argv[];
 {
-  register int result, ix;
+  int result, ix;
   extern int factorial(int);
   my_thread_global_init();
 

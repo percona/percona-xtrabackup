@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -48,12 +48,13 @@ TODO:
 */
 
 #include "mysys_priv.h"
+#include "my_sys.h"
 #include <m_string.h>
-#ifdef HAVE_AIOWAIT
-#include "mysys_err.h"
-static void my_aiowait(my_aio_result *result);
-#endif
 #include <errno.h>
+#include "my_thread_local.h"
+#include "mysql/psi/mysql_file.h"
+
+PSI_file_key key_file_io_cache;
 
 #define lock_append_buffer(info) \
   mysql_mutex_lock(&(info)->append_buffer_lock)
@@ -122,38 +123,48 @@ init_functions(IO_CACHE* info)
 /*
   Initialize an IO_CACHE object
 
-  SYNOPSOS
-    init_io_cache()
-    info		cache handler to initialize
-    file		File that should be associated to to the handler
-			If == -1 then real_open_cached_file()
-			will be called when it's time to open file.
-    cachesize		Size of buffer to allocate for read/write
-			If == 0 then use my_default_record_cache_size
-    type		Type of cache
-    seek_offset		Where cache should start reading/writing
-    use_async_io	Set to 1 of we should use async_io (if avaiable)
-    cache_myflags	Bitmap of differnt flags
-			MY_WME | MY_FAE | MY_NABP | MY_FNABP |
-			MY_DONT_CHECK_FILESIZE
+  SYNOPSIS
+    init_io_cache_ext()
+    info               cache handler to initialize
+    file               File that should be associated to to the handler
+                       If == -1 then real_open_cached_file()
+                       will be called when it's time to open file.
+    cachesize          Size of buffer to allocate for read/write
+                       If == 0 then use my_default_record_cache_size
+    type               Type of cache
+    seek_offset        Where cache should start reading/writing
+    use_async_io       Set to 1 of we should use async_io (if avaiable)
+    cache_myflags      Bitmap of different flags
+                       MY_WME | MY_FAE | MY_NABP | MY_FNABP |
+                       MY_DONT_CHECK_FILESIZE
+    file_key           Instrumented file key for temporary cache file
 
   RETURN
     0  ok
     #  error
 */
 
-int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
-		  enum cache_type type, my_off_t seek_offset,
-		  pbool use_async_io, myf cache_myflags)
+int inline_init_io_cache_ext(IO_CACHE *info, File file, size_t cachesize,
+                             enum cache_type type, my_off_t seek_offset,
+                             pbool use_async_io, myf cache_myflags
+#ifdef HAVE_PSI_FILE_INTERFACE
+                             , PSI_file_key file_key
+#endif
+                             )
 {
   size_t min_cache;
   my_off_t pos;
   my_off_t end_of_file= ~(my_off_t) 0;
-  DBUG_ENTER("init_io_cache");
+  DBUG_ENTER("init_io_cache_ext");
   DBUG_PRINT("enter",("cache: 0x%lx  type: %d  pos: %ld",
-		      (ulong) info, (int) type, (ulong) seek_offset));
+             (ulong) info, (int) type, (ulong) seek_offset));
 
   info->file= file;
+#ifdef HAVE_PSI_FILE_INTERFACE
+  info->file_key= file_key;
+#else
+  info->file_key= 0;
+#endif
   info->type= TYPE_NOT_SET;	    /* Don't set it until mutex are created */
   info->pos_in_file= seek_offset;
   info->pre_close = info->pre_read = info->post_read = 0;
@@ -165,7 +176,7 @@ int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
   if (file >= 0)
   {
     pos= mysql_file_tell(file, MYF(0));
-    if ((pos == (my_off_t) -1) && (my_errno == ESPIPE))
+    if ((pos == (my_off_t) -1) && (my_errno() == ESPIPE))
     {
       /*
          This kind of object doesn't support seek() or tell(). Don't set a
@@ -187,10 +198,10 @@ int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
   info->share=0;
 
   if (!cachesize && !(cachesize= my_default_record_cache_size))
-    DBUG_RETURN(1);				/* No cache requested */
+    DBUG_RETURN(1);        /* No cache requested */
   min_cache=use_async_io ? IO_SIZE*4 : IO_SIZE*2;
   if (type == READ_CACHE || type == SEQ_READ_APPEND)
-  {						/* Assume file isn't growing */
+  {                       /* Assume file isn't growing */
     if (!(cache_myflags & MY_DONT_CHECK_FILESIZE))
     {
       /* Calculate end of file to avoid allocating oversized buffers */
@@ -198,12 +209,12 @@ int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
       /* Need to reset seek_not_done now that we just did a seek. */
       info->seek_not_done= end_of_file == seek_offset ? 0 : 1;
       if (end_of_file < seek_offset)
-	end_of_file=seek_offset;
+        end_of_file=seek_offset;
       /* Trim cache size if the file is very small */
       if ((my_off_t) cachesize > end_of_file-seek_offset+IO_SIZE*2-1)
       {
-	cachesize= (size_t) (end_of_file-seek_offset)+IO_SIZE*2-1;
-	use_async_io=0;				/* No need to use async */
+        cachesize= (size_t) (end_of_file-seek_offset)+IO_SIZE*2-1;
+        use_async_io=0;    /* No need to use async */
       }
     }
   }
@@ -222,23 +233,24 @@ int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
       myf flags= (myf) (cache_myflags & ~(MY_WME | MY_WAIT_IF_FULL));
 
       if (cachesize < min_cache)
-	cachesize = min_cache;
+        cachesize = min_cache;
       buffer_block= cachesize;
       if (type == SEQ_READ_APPEND)
-	buffer_block *= 2;
+        buffer_block *= 2;
       if (cachesize == min_cache)
         flags|= (myf) MY_WME;
 
-      if ((info->buffer= (uchar*) my_malloc(buffer_block, flags)) != 0)
+      if ((info->buffer= (uchar*) my_malloc(key_memory_IO_CACHE,
+                                            buffer_block, flags)) != 0)
       {
-	info->write_buffer=info->buffer;
-	if (type == SEQ_READ_APPEND)
-	  info->write_buffer = info->buffer + cachesize;
-	info->alloced_buffer=1;
-	break;					/* Enough memory found */
+        info->write_buffer=info->buffer;
+        if (type == SEQ_READ_APPEND)
+          info->write_buffer = info->buffer + cachesize;
+        info->alloced_buffer=1;
+        break;    /* Enough memory found */
       }
       if (cachesize == min_cache)
-	DBUG_RETURN(2);				/* Can't alloc cache */
+        DBUG_RETURN(2);    /* Can't alloc cache */
       /* Try with less memory */
       cachesize= (cachesize*3/4 & ~(min_cache-1));
     }
@@ -274,45 +286,26 @@ int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
   info->error=0;
   info->type= type;
   init_functions(info);
-#ifdef HAVE_AIOWAIT
-  if (use_async_io && ! my_disable_async_io)
-  {
-    DBUG_PRINT("info",("Using async io"));
-    info->read_length/=2;
-    info->read_function=_my_b_async_read;
-  }
-  info->inited=info->aio_result.pending=0;
-#endif
   DBUG_RETURN(0);
-}						/* init_io_cache */
+}  /* init_io_cache_ext */
 
-	/* Wait until current request is ready */
+/*
+  Initialize an IO_CACHE object
 
-#ifdef HAVE_AIOWAIT
-static void my_aiowait(my_aio_result *result)
+  SYNOPSIS
+    init_io_cache() - Wrapper for init_io_cache_ext()
+
+  NOTE
+    This function should be used if the IO_CACHE tempfile is not instrumented.
+*/
+
+int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
+                  enum cache_type type, my_off_t seek_offset,
+                  pbool use_async_io, myf cache_myflags)
 {
-  if (result->pending)
-  {
-    struct aio_result_t *tmp;
-    for (;;)
-    {
-      if ((int) (tmp=aiowait((struct timeval *) 0)) == -1)
-      {
-	if (errno == EINTR)
-	  continue;
-	DBUG_PRINT("error",("No aio request, error: %d",errno));
-	result->pending=0;			/* Assume everythings is ok */
-	break;
-      }
-      ((my_aio_result*) tmp)->pending=0;
-      if ((my_aio_result*) tmp == result)
-	break;
-    }
-  }
-  return;
+  return init_io_cache_ext(info, file, cachesize, type, seek_offset,
+                           use_async_io, cache_myflags, key_file_io_cache);
 }
-#endif
-
 
 /*
   Use this to reset cache to re-start reading or to change the type
@@ -323,7 +316,7 @@ static void my_aiowait(my_aio_result *result)
 
 my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
 			my_off_t seek_offset,
-			pbool use_async_io __attribute__((unused)),
+			pbool use_async_io MY_ATTRIBUTE((unused)),
 			pbool clear_cache)
 {
   DBUG_ENTER("reinit_io_cache");
@@ -367,9 +360,6 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
       info->write_pos=pos;
     else
       info->read_pos= pos;
-#ifdef HAVE_AIOWAIT
-    my_aiowait(&info->aio_result);		/* Wait for outstanding req */
-#endif
   }
   else
   {
@@ -401,16 +391,6 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
   info->error=0;
   init_functions(info);
 
-#ifdef HAVE_AIOWAIT
-  if (use_async_io && ! my_disable_async_io &&
-      ((ulong) info->buffer_length <
-       (ulong) (info->end_of_file - seek_offset)))
-  {
-    info->read_length=info->buffer_length/2;
-    info->read_function=_my_b_async_read;
-  }
-  info->inited=0;
-#endif
   DBUG_RETURN(0);
 } /* reinit_io_cache */
 
@@ -446,7 +426,7 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
              Otherwise info->error contains the number of bytes in Buffer.
 */
 
-int _my_b_read(register IO_CACHE *info, uchar *Buffer, size_t Count)
+int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count)
 {
   size_t length,diff_length,left_length, max_length;
   my_off_t pos_in_file;
@@ -485,7 +465,7 @@ int _my_b_read(register IO_CACHE *info, uchar *Buffer, size_t Count)
         info->file is a pipe or socket or FIFO.  We never should have tried
         to seek on that.  See Bugs#25807 and #22828 for more info.
       */
-      DBUG_ASSERT(my_errno != ESPIPE);
+      DBUG_ASSERT(my_errno() != ESPIPE);
       info->error= -1;
       DBUG_RETURN(1);
     }
@@ -554,7 +534,7 @@ int _my_b_read(register IO_CACHE *info, uchar *Buffer, size_t Count)
     if (Count)
     {
       /* We couldn't fulfil the request. Return, how much we got. */
-      info->error= left_length;
+      info->error= (int)left_length;
       DBUG_RETURN(1);
     }
     length=0;				/* Didn't read any chars */
@@ -671,8 +651,8 @@ void init_io_cache_share(IO_CACHE *read_cache, IO_CACHE_SHARE *cshare,
 
   mysql_mutex_init(key_IO_CACHE_SHARE_mutex,
                    &cshare->mutex, MY_MUTEX_INIT_FAST);
-  mysql_cond_init(key_IO_CACHE_SHARE_cond, &cshare->cond, 0);
-  mysql_cond_init(key_IO_CACHE_SHARE_cond_writer, &cshare->cond_writer, 0);
+  mysql_cond_init(key_IO_CACHE_SHARE_cond, &cshare->cond);
+  mysql_cond_init(key_IO_CACHE_SHARE_cond_writer, &cshare->cond_writer);
 
   cshare->running_threads= num_threads;
   cshare->total_threads=   num_threads;
@@ -989,7 +969,7 @@ static void unlock_io_cache(IO_CACHE *cache)
     1      Error: can't read requested characters
 */
 
-int _my_b_read_r(register IO_CACHE *cache, uchar *Buffer, size_t Count)
+int _my_b_read_r(IO_CACHE *cache, uchar *Buffer, size_t Count)
 {
   my_off_t pos_in_file;
   size_t length, diff_length, left_length;
@@ -1129,7 +1109,7 @@ static void copy_to_read_buffer(IO_CACHE *write_cache,
   while (write_length)
   {
     size_t copy_length= MY_MIN(write_length, write_cache->buffer_length);
-    int  __attribute__((unused)) rc;
+    int  MY_ATTRIBUTE((unused)) rc;
 
     rc= lock_io_cache(write_cache, write_cache->pos_in_file);
     /* The writing thread does always have the lock when it awakes. */
@@ -1163,7 +1143,7 @@ static void copy_to_read_buffer(IO_CACHE *write_cache,
     1  Failed to read
 */
 
-int _my_b_seq_read(register IO_CACHE *info, uchar *Buffer, size_t Count)
+int _my_b_seq_read(IO_CACHE *info, uchar *Buffer, size_t Count)
 {
   size_t length, diff_length, left_length, save_count, max_length;
   my_off_t pos_in_file;
@@ -1291,7 +1271,7 @@ read_append_buffer:
     info->append_read_pos += copy_len;
     Count -= copy_len;
     if (Count)
-      info->error = save_count - Count;
+      info->error = (int)(save_count - Count);
 
     /* Fill read buffer with data from write buffer */
     memcpy(info->buffer, info->append_read_pos,
@@ -1305,206 +1285,6 @@ read_append_buffer:
   unlock_append_buffer(info);
   return Count ? 1 : 0;
 }
-
-
-#ifdef HAVE_AIOWAIT
-
-/*
-  Read from the IO_CACHE into a buffer and feed asynchronously
-  from disk when needed.
-
-  SYNOPSIS
-    _my_b_async_read()
-      info                      IO_CACHE pointer
-      Buffer                    Buffer to retrieve count bytes from file
-      Count                     Number of bytes to read into Buffer
-
-  RETURN VALUE
-    -1          An error has occurred; my_errno is set.
-     0          Success
-     1          An error has occurred; IO_CACHE to error state.
-*/
-
-int _my_b_async_read(register IO_CACHE *info, uchar *Buffer, size_t Count)
-{
-  size_t length,read_length,diff_length,left_length,use_length,org_Count;
-  size_t max_length;
-  my_off_t next_pos_in_file;
-  uchar *read_buffer;
-
-  memcpy(Buffer,info->read_pos,
-	 (left_length= (size_t) (info->read_end-info->read_pos)));
-  Buffer+=left_length;
-  org_Count=Count;
-  Count-=left_length;
-
-  if (info->inited)
-  {						/* wait for read block */
-    info->inited=0;				/* No more block to read */
-    my_aiowait(&info->aio_result);		/* Wait for outstanding req */
-    if (info->aio_result.result.aio_errno)
-    {
-      if (info->myflags & MY_WME)
-      {
-        char errbuf[MYSYS_STRERROR_SIZE];
-        my_error(EE_READ, MYF(ME_BELL+ME_WAITTANG),
-                 my_filename(info->file),
-                 info->aio_result.result.aio_errno,
-                 my_strerror(errbuf, sizeof(errbuf),
-                             info->aio_result.result.aio_errno));
-      my_errno=info->aio_result.result.aio_errno;
-      info->error= -1;
-      return(1);
-    }
-    if (! (read_length= (size_t) info->aio_result.result.aio_return) ||
-	read_length == (size_t) -1)
-    {
-      my_errno=0;				/* For testing */
-      info->error= (read_length == (size_t) -1 ? -1 :
-		    (int) (read_length+left_length));
-      return(1);
-    }
-    info->pos_in_file+= (size_t) (info->read_end - info->request_pos);
-
-    if (info->request_pos != info->buffer)
-      info->request_pos=info->buffer;
-    else
-      info->request_pos=info->buffer+info->read_length;
-    info->read_pos=info->request_pos;
-    next_pos_in_file=info->aio_read_pos+read_length;
-
-	/* Check if pos_in_file is changed
-	   (_ni_read_cache may have skipped some bytes) */
-
-    if (info->aio_read_pos < info->pos_in_file)
-    {						/* Fix if skipped bytes */
-      if (info->aio_read_pos + read_length < info->pos_in_file)
-      {
-	read_length=0;				/* Skip block */
-	next_pos_in_file=info->pos_in_file;
-      }
-      else
-      {
-	my_off_t offset= (info->pos_in_file - info->aio_read_pos);
-	info->pos_in_file=info->aio_read_pos; /* Whe are here */
-	info->read_pos=info->request_pos+offset;
-	read_length-=offset;			/* Bytes left from read_pos */
-      }
-    }
-#ifndef DBUG_OFF
-    if (info->aio_read_pos > info->pos_in_file)
-    {
-      my_errno=EINVAL;
-      return(info->read_length= (size_t) -1);
-    }
-#endif
-	/* Copy found bytes to buffer */
-    length= MY_MIN(Count, read_length);
-    memcpy(Buffer,info->read_pos,(size_t) length);
-    Buffer+=length;
-    Count-=length;
-    left_length+=length;
-    info->read_end=info->rc_pos+read_length;
-    info->read_pos+=length;
-  }
-  else
-    next_pos_in_file=(info->pos_in_file+ (size_t)
-		      (info->read_end - info->request_pos));
-
-	/* If reading large blocks, or first read or read with skip */
-  if (Count)
-  {
-    if (next_pos_in_file == info->end_of_file)
-    {
-      info->error=(int) (read_length+left_length);
-      return 1;
-    }
-    
-    if (mysql_file_seek(info->file, next_pos_in_file, MY_SEEK_SET, MYF(0))
-        == MY_FILEPOS_ERROR)
-    {
-      info->error= -1;
-      return (1);
-    }
-
-    read_length=IO_SIZE*2- (size_t) (next_pos_in_file & (IO_SIZE-1));
-    if (Count < read_length)
-    {					/* Small block, read to cache */
-      if ((read_length=mysql_file_read(info->file,info->request_pos,
-			               read_length, info->myflags)) == (size_t) -1)
-        return info->error= -1;
-      use_length= MY_MIN(Count, read_length);
-      memcpy(Buffer,info->request_pos,(size_t) use_length);
-      info->read_pos=info->request_pos+Count;
-      info->read_end=info->request_pos+read_length;
-      info->pos_in_file=next_pos_in_file;	/* Start of block in cache */
-      next_pos_in_file+=read_length;
-
-      if (Count != use_length)
-      {					/* Didn't find hole block */
-        if (info->myflags & (MY_WME | MY_FAE | MY_FNABP) && Count != org_Count)
-        {
-          char errbuf[MYSYS_STRERROR_SIZE];
-          my_error(EE_EOFERR, MYF(ME_BELL+ME_WAITTANG), my_filename(info->file),
-                   my_errno, my_strerror(errbuf, sizeof(errbuf), my_errno));
-        }
-        info->error=(int) (read_length+left_length);
-        return 1;
-      }
-    }
-    else
-    {						/* Big block, don't cache it */
-      if ((read_length= mysql_file_read(info->file, Buffer, Count,info->myflags))
-	  != Count)
-      {
-	info->error= read_length == (size_t) -1 ? -1 : read_length+left_length;
-	return 1;
-      }
-      info->read_pos=info->read_end=info->request_pos;
-      info->pos_in_file=(next_pos_in_file+=Count);
-    }
-  }
-
-  /* Read next block with asyncronic io */
-  diff_length=(next_pos_in_file & (IO_SIZE-1));
-  max_length= info->read_length - diff_length;
-  if (max_length > info->end_of_file - next_pos_in_file)
-    max_length= (size_t) (info->end_of_file - next_pos_in_file);
-
-  if (info->request_pos != info->buffer)
-    read_buffer=info->buffer;
-  else
-    read_buffer=info->buffer+info->read_length;
-  info->aio_read_pos=next_pos_in_file;
-  if (max_length)
-  {
-    info->aio_result.result.aio_errno=AIO_INPROGRESS;	/* Marker for test */
-    DBUG_PRINT("aioread",("filepos: %ld  length: %lu",
-			  (ulong) next_pos_in_file, (ulong) max_length));
-    if (aioread(info->file,read_buffer, max_length,
-		(my_off_t) next_pos_in_file,MY_SEEK_SET,
-		&info->aio_result.result))
-    {						/* Skip async io */
-      my_errno=errno;
-      DBUG_PRINT("error",("got error: %d, aio_result: %d from aioread, async skipped",
-			  errno, info->aio_result.result.aio_errno));
-      if (info->request_pos != info->buffer)
-      {
-	bmove(info->buffer,info->request_pos,
-	      (size_t) (info->read_end - info->read_pos));
-	info->request_pos=info->buffer;
-	info->read_pos-=info->read_length;
-	info->read_end-=info->read_length;
-      }
-      info->read_length=info->buffer_length;	/* Use hole buffer */
-      info->read_function=_my_b_read;		/* Use normal IO_READ next */
-    }
-    else
-      info->inited=info->aio_result.pending=1;
-  }
-  return 0;					/* Block read, async in use */
-} /* _my_b_async_read */
-#endif
 
 
 /* Read one byte when buffer is empty */
@@ -1532,7 +1312,7 @@ int _my_b_get(IO_CACHE *info)
    -1 On error; my_errno contains error code.
 */
 
-int _my_b_write(register IO_CACHE *info, const uchar *Buffer, size_t Count)
+int _my_b_write(IO_CACHE *info, const uchar *Buffer, size_t Count)
 {
   size_t rest_length,length;
   my_off_t pos_in_file= info->pos_in_file;
@@ -1543,7 +1323,8 @@ int _my_b_write(register IO_CACHE *info, const uchar *Buffer, size_t Count)
                   });
   if (pos_in_file+info->buffer_length > info->end_of_file)
   {
-    my_errno=errno=EFBIG;
+    errno=EFBIG;
+    set_my_errno(EFBIG);
     return info->error = -1;
   }
 
@@ -1606,7 +1387,7 @@ int _my_b_write(register IO_CACHE *info, const uchar *Buffer, size_t Count)
   the write buffer before we are ready with it.
 */
 
-int my_b_append(register IO_CACHE *info, const uchar *Buffer, size_t Count)
+int my_b_append(IO_CACHE *info, const uchar *Buffer, size_t Count)
 {
   size_t rest_length,length;
 
@@ -1670,7 +1451,7 @@ int my_b_safe_write(IO_CACHE *info, const uchar *Buffer, size_t Count)
   we will never get a seek over the end of the buffer
 */
 
-int my_block_write(register IO_CACHE *info, const uchar *Buffer, size_t Count,
+int my_block_write(IO_CACHE *info, const uchar *Buffer, size_t Count,
 		   my_off_t pos)
 {
   size_t length;
@@ -1686,8 +1467,8 @@ int my_block_write(register IO_CACHE *info, const uchar *Buffer, size_t Count,
   {
     /* Of no overlap, write everything without buffering */
     if (pos + Count <= info->pos_in_file)
-      return mysql_file_pwrite(info->file, Buffer, Count, pos,
-		               info->myflags | MY_NABP);
+      return (int)mysql_file_pwrite(info->file, Buffer, Count, pos,
+                                    info->myflags | MY_NABP);
     /* Write the part of the block that is before buffer */
     length= (uint) (info->pos_in_file - pos);
     if (mysql_file_pwrite(info->file, Buffer, length, pos, info->myflags | MY_NABP))
@@ -1695,7 +1476,7 @@ int my_block_write(register IO_CACHE *info, const uchar *Buffer, size_t Count,
     Buffer+=length;
     pos+=  length;
     Count-= length;
-#ifndef HAVE_PREAD
+#ifdef _WIN32
     info->seek_not_done=1;
 #endif
   }
@@ -1732,7 +1513,7 @@ int my_block_write(register IO_CACHE *info, const uchar *Buffer, size_t Count,
   unlock_append_buffer(info);
 
 int my_b_flush_io_cache(IO_CACHE *info,
-                        int need_append_buffer_lock __attribute__((unused)))
+                        int need_append_buffer_lock MY_ATTRIBUTE((unused)))
 {
   size_t length;
   my_off_t pos_in_file;
@@ -1740,6 +1521,10 @@ int my_b_flush_io_cache(IO_CACHE *info,
   DBUG_ENTER("my_b_flush_io_cache");
   DBUG_PRINT("enter", ("cache: 0x%lx", (long) info));
 
+  DBUG_EXECUTE_IF("simulate_error_during_flush_cache_to_file",
+                  {
+                    DBUG_RETURN(TRUE);
+                  });
   if (!append_cache)
     need_append_buffer_lock= 0;
 
@@ -1805,13 +1590,6 @@ int my_b_flush_io_cache(IO_CACHE *info,
       DBUG_RETURN(info->error);
     }
   }
-#ifdef HAVE_AIOWAIT
-  else if (info->type != READ_NET)
-  {
-    my_aiowait(&info->aio_result);		/* Wait for outstanding req */
-    info->inited=0;
-  }
-#endif
   UNLOCK_APPEND_BUFFER;
   DBUG_RETURN(0);
 }
@@ -1916,7 +1694,8 @@ int main(int argc, char** argv)
   char* block, *block_end;
   MY_INIT(argv[0]);
   max_block = cache_size*3;
-  if (!(block=(char*)my_malloc(max_block,MYF(MY_WME))))
+  if (!(block=(char*)my_malloc(PSI_NOT_INSTRUMENTED,
+                               max_block,MYF(MY_WME))))
     die("Not enough memory to allocate test block");
   block_end = block + max_block;
   for (p = block,i=0; p < block_end;i++)

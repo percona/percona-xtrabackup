@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2012, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ enum_timer_name idle_timer= TIMER_NAME_MICROSEC;
 enum_timer_name wait_timer= TIMER_NAME_CYCLE;
 enum_timer_name stage_timer= TIMER_NAME_NANOSEC;
 enum_timer_name statement_timer= TIMER_NAME_NANOSEC;
+enum_timer_name transaction_timer= TIMER_NAME_NANOSEC;
 MY_TIMER_INFO pfs_timer_info;
 
 static ulonglong cycle_v0;
@@ -125,6 +126,42 @@ void init_timers(void)
   */
 
   /*
+    For WAIT, the cycle timer is used by default. However, it is not available
+    on all architectures. Fall back to the nanosecond timer in this case. It is
+    unlikely that neither cycle nor nanosecond are available, but we continue
+    probing less resolution timers anyway for consistency with other events.
+  */
+
+  if (cycle_to_pico != 0)
+  {
+    /* Normal case. */
+    wait_timer= TIMER_NAME_CYCLE;
+  }
+  else if (nanosec_to_pico != 0)
+  {
+    /* Robustness, no known cases. */
+    wait_timer= TIMER_NAME_NANOSEC;
+  }
+  else if (microsec_to_pico != 0)
+  {
+    /* Robustness, no known cases. */
+    wait_timer= TIMER_NAME_MICROSEC;
+  }
+  else if (millisec_to_pico != 0)
+  {
+    /* Robustness, no known cases. */
+    wait_timer= TIMER_NAME_MILLISEC;
+  }
+  else
+  {
+    /*
+       Will never be reached on any architecture, but must provide a default if
+       no other timers are available.
+    */
+    wait_timer= TIMER_NAME_TICK;
+  }
+
+  /*
     For STAGE and STATEMENT, a timer with a fixed frequency is better.
     The prefered timer is nanosecond, or lower resolutions.
   */
@@ -134,30 +171,35 @@ void init_timers(void)
     /* Normal case. */
     stage_timer= TIMER_NAME_NANOSEC;
     statement_timer= TIMER_NAME_NANOSEC;
+    transaction_timer= TIMER_NAME_NANOSEC;
   }
   else if (microsec_to_pico != 0)
   {
     /* Windows. */
     stage_timer= TIMER_NAME_MICROSEC;
     statement_timer= TIMER_NAME_MICROSEC;
+    transaction_timer= TIMER_NAME_MICROSEC;
   }
   else if (millisec_to_pico != 0)
   {
     /* Robustness, no known cases. */
     stage_timer= TIMER_NAME_MILLISEC;
     statement_timer= TIMER_NAME_MILLISEC;
+    transaction_timer= TIMER_NAME_MILLISEC;
   }
   else if (tick_to_pico != 0)
   {
     /* Robustness, no known cases. */
     stage_timer= TIMER_NAME_TICK;
     statement_timer= TIMER_NAME_TICK;
+    transaction_timer= TIMER_NAME_TICK;
   }
   else
   {
     /* Robustness, no known cases. */
     stage_timer= TIMER_NAME_CYCLE;
     statement_timer= TIMER_NAME_CYCLE;
+    transaction_timer= TIMER_NAME_CYCLE;
   }
 
   /*
@@ -174,7 +216,7 @@ void init_timers(void)
   else if (millisec_to_pico != 0)
   {
     /* Robustness, no known cases. */
-    idle_timer= TIMER_NAME_MILLISEC;
+    wait_timer= TIMER_NAME_MILLISEC;
   }
   else if (tick_to_pico != 0)
   {

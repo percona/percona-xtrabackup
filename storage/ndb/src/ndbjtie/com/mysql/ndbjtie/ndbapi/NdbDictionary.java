@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2010, 2014, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -156,6 +156,7 @@ public class NdbDictionary extends Wrapper
             int StorageTypeMemory = 0 /*_NDB_STORAGETYPE_MEMORY_*/,
                 StorageTypeDisk = 1 /*_NDB_STORAGETYPE_DISK_*/;
         }
+        boolean getAutoIncrement() /*_const_*/;
         String/*_const char *_*/ getName() /*_const_*/;
         boolean getNullable() /*_const_*/;
         boolean getPrimaryKey() /*_const_*/;
@@ -179,6 +180,7 @@ public class NdbDictionary extends Wrapper
     }
     static public class Column extends Wrapper implements ColumnConst
     {
+        public final native boolean getAutoIncrement() /*_const_*/;
         public final native String/*_const char *_*/ getName() /*_const_*/;
         public final native boolean getNullable() /*_const_*/;
         public final native boolean getPrimaryKey() /*_const_*/;
@@ -462,7 +464,7 @@ public class NdbDictionary extends Wrapper
     static public interface RecordSpecificationConstArray extends ArrayWrapper< RecordSpecificationConst >
     {
     }
-    static public class RecordSpecificationArray extends Wrapper implements RecordSpecificationConstArray 
+    static public class RecordSpecificationArray extends Wrapper implements RecordSpecificationConstArray
     {
         static public native RecordSpecificationArray create(int length);
         static public native void delete(RecordSpecificationArray e);
@@ -477,6 +479,7 @@ public class NdbDictionary extends Wrapper
     }
     static public class /*_struct_*/ RecordSpecification extends Wrapper implements RecordSpecificationConst
     {
+        static public final native int/*_Uint32_*/ size();
         public final native ColumnConst/*_const Column *_*/ column();
         public final native int/*_Uint32_*/ offset();
         public final native int/*_Uint32_*/ nullbit_byte_offset();
@@ -655,7 +658,7 @@ public class NdbDictionary extends Wrapper
             static public interface ElementConstArray extends ArrayWrapper< ElementConst >
             {
             }
-            static public class ElementArray extends Wrapper implements ElementConstArray 
+            static public class ElementArray extends Wrapper implements ElementConstArray
             {
                 static public native ElementArray create(int length);
                 static public native void delete(ElementArray e);

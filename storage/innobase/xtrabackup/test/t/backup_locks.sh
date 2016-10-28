@@ -19,7 +19,8 @@ load_sakila
 xtrabackup --backup --target-dir=$topdir/full_backup
 
 $MYSQL $MYSQL_ARGS -Ns -e \
-       "SHOW GLOBAL STATUS LIKE 'Com_%lock%'; \
+       "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
+       SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status1
 
@@ -29,7 +30,6 @@ diff $topdir/status1 - <<EOF
 Com_lock_tables	0
 Com_lock_tables_for_backup	1
 Com_lock_binlog_for_backup	$binlog_stmts
-Com_show_slave_status_nolock	0
 Com_unlock_binlog	$binlog_stmts
 Com_unlock_tables	1
 Com_flush	1
@@ -40,7 +40,8 @@ xtrabackup --backup \
            --target-dir=$topdir/inc_backup
 
 $MYSQL $MYSQL_ARGS -Ns -e \
-       "SHOW GLOBAL STATUS LIKE 'Com_%lock%'; \
+       "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
+       SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status2
 
@@ -50,7 +51,6 @@ diff $topdir/status2 - <<EOF
 Com_lock_tables	0
 Com_lock_tables_for_backup	2
 Com_lock_binlog_for_backup	$binlog_stmts
-Com_show_slave_status_nolock	0
 Com_unlock_binlog	$binlog_stmts
 Com_unlock_tables	2
 Com_flush	3
@@ -67,7 +67,8 @@ rm -rf $topdir/full_backup
 xtrabackup --backup --no-backup-locks --target-dir=$topdir/full_backup
 
 $MYSQL $MYSQL_ARGS -Ns -e \
-       "SHOW GLOBAL STATUS LIKE 'Com_%lock%'; \
+       "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
+       SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status3
 
@@ -75,7 +76,6 @@ diff $topdir/status3 - <<EOF
 Com_lock_tables	0
 Com_lock_tables_for_backup	2
 Com_lock_binlog_for_backup	$binlog_stmts
-Com_show_slave_status_nolock	0
 Com_unlock_binlog	$binlog_stmts
 Com_unlock_tables	3
 Com_flush	6

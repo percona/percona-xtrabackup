@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -75,7 +75,7 @@ client_thread(	void*	arg)
 }
 
 int
-main(int argc __attribute__((unused)), char** argv)
+main(int argc MY_ATTRIBUTE((unused)), char** argv)
 {
 	char	server_key[] = "../SSL/server-key.pem",
 		server_cert[] = "../SSL/server-cert.pem";
@@ -91,7 +91,7 @@ main(int argc __attribute__((unused)), char** argv)
 	struct sockaddr_in sa_cli;
 	int listen_sd;
 	int err;
-        size_socket client_len;
+        socket_len_t client_len;
 	int	reuseaddr = 1; /* better testing, uh? */
 
 	MY_INIT(argv[0]);

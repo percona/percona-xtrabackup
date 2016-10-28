@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,12 +17,14 @@
 
 #ifndef _thr_lock_h
 #define _thr_lock_h
+
+#include <my_thread.h>
+#include <my_list.h>
+#include "mysql/psi/mysql_thread.h"
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
-
-#include <my_pthread.h>
-#include <my_list.h>
 
 struct st_thr_lock;
 extern ulong locks_immediate,locks_waited ;
@@ -53,13 +55,16 @@ enum thr_lock_type { TL_IGNORE=-1,
 			reading/writing to the table.
 		      */
 		     TL_WRITE_ALLOW_WRITE,
+                     /*
+                       parser only! Late bound low_priority_flag.
+                       At open_tables() becomes thd->insert_lock_default.
+                     */
+                     TL_WRITE_CONCURRENT_DEFAULT,
 		     /*
 		       WRITE lock used by concurrent insert. Will allow
 		       READ, if one could use concurrent insert on table.
 		     */
 		     TL_WRITE_CONCURRENT_INSERT,
-		     /* Write used by INSERT DELAYED.  Allows READ locks */
-		     TL_WRITE_DELAYED,
                      /* 
                        parser only! Late bound low_priority flag. 
                        At open_tables() becomes thd->update_lock_default.
@@ -77,7 +82,6 @@ enum enum_thr_lock_result { THR_LOCK_SUCCESS= 0, THR_LOCK_ABORTED= 1,
 
 
 extern ulong max_write_lock_count;
-extern my_bool thr_lock_inited;
 extern enum thr_lock_type thr_upgraded_concurrent_insert_lock;
 
 /*
@@ -87,8 +91,8 @@ extern enum thr_lock_type thr_upgraded_concurrent_insert_lock;
 
 typedef struct st_thr_lock_info
 {
-  pthread_t thread;
   my_thread_id thread_id;
+  mysql_cond_t *suspend;
 } THR_LOCK_INFO;
 
 
@@ -128,8 +132,8 @@ typedef struct st_thr_lock {
 extern LIST *thr_lock_thread_list;
 extern mysql_mutex_t THR_LOCK_lock;
 
-my_bool init_thr_lock(void);		/* Must be called once/thread */
-void thr_lock_info_init(THR_LOCK_INFO *info);
+void thr_lock_info_init(THR_LOCK_INFO *info, my_thread_id thread_id,
+                        mysql_cond_t *suspend);
 void thr_lock_init(THR_LOCK *lock);
 void thr_lock_delete(THR_LOCK *lock);
 void thr_lock_data_init(THR_LOCK *lock,THR_LOCK_DATA *data,
@@ -146,15 +150,10 @@ void thr_multi_unlock(THR_LOCK_DATA **data,uint count);
 void
 thr_lock_merge_status(THR_LOCK_DATA **data, uint count);
 void thr_abort_locks(THR_LOCK *lock, my_bool upgrade_lock);
-my_bool thr_abort_locks_for_thread(THR_LOCK *lock, my_thread_id thread);
+void thr_abort_locks_for_thread(THR_LOCK *lock, my_thread_id thread);
 void thr_print_locks(void);		/* For debugging */
-my_bool thr_upgrade_write_delay_lock(THR_LOCK_DATA *data,
-                                     enum thr_lock_type new_lock_type,
-                                     ulong lock_wait_timeout);
 void    thr_downgrade_write_lock(THR_LOCK_DATA *data,
                                  enum thr_lock_type new_lock_type);
-my_bool thr_reschedule_write_lock(THR_LOCK_DATA *data,
-                                  ulong lock_wait_timeout);
 void thr_set_lock_wait_callback(void (*before_wait)(void),
                                 void (*after_wait)(void));
 #ifdef	__cplusplus

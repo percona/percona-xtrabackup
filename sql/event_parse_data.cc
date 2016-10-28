@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,11 +14,10 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-#include "sql_priv.h"
-#include "unireg.h"
 #include "sp_head.h"
 #include "event_parse_data.h"
 #include "sql_time.h"                           // TIME_to_timestamp
+#include "item_timefunc.h"                      // get_interval_value
 
 /*
   Returns a new instance
@@ -126,7 +125,7 @@ Event_parse_data::check_if_in_the_past(THD *thd, my_time_t ltime_utc)
   {
     switch (thd->lex->sql_command) {
     case SQLCOM_CREATE_EVENT:
-      push_warning(thd, Sql_condition::WARN_LEVEL_NOTE,
+      push_warning(thd, Sql_condition::SL_NOTE,
                    ER_EVENT_CANNOT_CREATE_IN_THE_PAST,
                    ER(ER_EVENT_CANNOT_CREATE_IN_THE_PAST));
       break;
@@ -143,7 +142,7 @@ Event_parse_data::check_if_in_the_past(THD *thd, my_time_t ltime_utc)
   {
     status= Event_parse_data::DISABLED;
     status_changed= true;
-    push_warning(thd, Sql_condition::WARN_LEVEL_NOTE,
+    push_warning(thd, Sql_condition::SL_NOTE,
                  ER_EVENT_EXEC_TIME_IN_THE_PAST,
                  ER(ER_EVENT_EXEC_TIME_IN_THE_PAST));
   }
@@ -257,7 +256,7 @@ int
 Event_parse_data::init_interval(THD *thd)
 {
   String value;
-  INTERVAL interval_tmp;
+  Interval interval_tmp;
 
   DBUG_ENTER("Event_parse_data::init_interval");
   if (!item_expression)
@@ -475,7 +474,7 @@ void
 Event_parse_data::report_bad_value(const char *item_name, Item *bad_item)
 {
   char buff[120];
-  String str(buff,(uint32) sizeof(buff), system_charset_info);
+  String str(buff, sizeof(buff), system_charset_info);
   String *str2= bad_item->fixed? bad_item->val_str(&str):NULL;
   my_error(ER_WRONG_VALUE, MYF(0), item_name, str2? str2->c_ptr_safe():"NULL");
 }

@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2012, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -31,8 +31,11 @@ ADD_EXECUTABLE(restart restart.cpp)
 ADD_EXECUTABLE(verify_index verify_index.cpp)
 ADD_EXECUTABLE(copy_tab copy_tab.cpp)
 ADD_EXECUTABLE(create_index create_index.cpp)
-ADD_EXECUTABLE(ndb_cpcc cpcc.cpp)
 ADD_EXECUTABLE(hugoJoin hugoJoin.cpp)
+ADD_EXECUTABLE(ndb_connect connect.cpp)
+
+ADD_EXECUTABLE(create_fk create_fk.cpp)
+ADD_EXECUTABLE(drop_fk drop_fk.cpp)
 
 SET(BINS
     hugoFill
@@ -48,8 +51,10 @@ SET(BINS
     verify_index
     copy_tab
     create_index
-    ndb_cpcc
-    hugoJoin)
+    hugoJoin
+    ndb_connect
+    create_fk
+    drop_fk)
 
 FOREACH(B ${BINS})
   TARGET_LINK_LIBRARIES(${B} ndbNDBT)
@@ -57,3 +62,9 @@ FOREACH(B ${BINS})
 ENDFOREACH()
 
 INSTALL(TARGETS ${BINS} DESTINATION bin)
+
+ADD_EXECUTABLE(ndb_cpcc cpcc.cpp)
+TARGET_LINK_LIBRARIES(ndb_cpcc ndbNDBT)
+TARGET_LINK_LIBRARIES(ndb_cpcc ndbclient_static)
+INSTALL(TARGETS ndb_cpcc DESTINATION bin)
+

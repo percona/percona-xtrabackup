@@ -1,6 +1,5 @@
 /*
-   Copyright (C) 2003-2008 MySQL AB, 2009 Sun Microsystems, Inc.
-    All rights reserved. Use is subject to license terms.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +19,9 @@
 #define SCAN_TAB_H
 
 #include "SignalData.hpp"
+
+#define JAM_FILE_ID 56
+
 
 /**
  * 
@@ -132,7 +134,14 @@ private:
 /**
  * Request Info
  *
- p = Parallelism           - 8  Bits -> Max 256 (Bit 0-7)
+ p = Parallelism           - 8  Bits -> Max 255 (Bit 0-7).
+                                        Note: these bits are ignored since
+                                        7.0.34, 7.1.23, 7.2.7 and should be
+                                        zero-filled until future reuse.
+                                        For signal sent to old nodes they
+                                        should be filled in.
+                                        Check version with
+                                        ndbd_scan_tabreq_implicit_parallelism().
  l = Lock mode             - 1  Bit 8
  h = Hold lock mode        - 1  Bit 10
  c = Read Committed        - 1  Bit 11
@@ -578,5 +587,8 @@ private:
     in the signal (else they are sent in the first long signal section).
   */
 };
+
+
+#undef JAM_FILE_ID
 
 #endif

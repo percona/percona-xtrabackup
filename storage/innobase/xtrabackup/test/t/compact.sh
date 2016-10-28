@@ -4,6 +4,8 @@
 
 . inc/common.sh
 
+skip_test "Enable when bug #1192834 is fixed"
+
 start_server --innodb_file_per_table
 load_dbase_schema sakila
 load_dbase_data sakila

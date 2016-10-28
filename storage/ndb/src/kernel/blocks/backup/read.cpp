@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,6 +25,9 @@
 #include <SimpleProperties.hpp>
 #include <ndb_version.h>
 #include <util/ndbzio.h>
+
+#define JAM_FILE_ID 476
+
 
 bool readHeader(ndbzio_stream*, BackupFormat::FileHeader *);
 bool readFragHeader(ndbzio_stream*, BackupFormat::DataFile::FragmentHeader *);
@@ -229,7 +232,7 @@ size_t
 aread(void * buf, size_t sz, size_t n, ndbzio_stream* f)
 {
   int error = 0;
-  unsigned r = ndbzread(f, buf, (sz * n), &error);
+  unsigned r = ndbzread(f, buf, (unsigned)(sz * n), &error);
   if (error || r != (sz * n))
   {
     printf("Failed to read!!");

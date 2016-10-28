@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,13 +25,23 @@ ADD_DEFINITIONS(${SSL_DEFINES})
 ADD_DEFINITIONS(-Dget_tty_password_ext=yassl_mysql_get_tty_password_ext)
 ADD_DEFINITIONS(-Dget_tty_password=yassl_mysql_get_tty_password)
 
+
+MY_CHECK_CXX_COMPILER_FLAG("-Wno-unused-const-variable" HAVE_NO_UNUSED_CONST_VAR)
+
+IF(CMAKE_GENERATOR MATCHES "Xcode" AND HAVE_NO_UNUSED_CONST_VAR)
+  INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
+  ADD_COMPILE_FLAGS(
+    src/yassl_int.cpp
+    src/socket_wrapper.cpp
+    COMPILE_FLAGS -Wno-unused-const-variable)
+ENDIF()
+
 SET(YASSL_SOURCES  src/buffer.cpp src/cert_wrapper.cpp src/crypto_wrapper.cpp src/handshake.cpp src/lock.cpp 
 				src/log.cpp src/socket_wrapper.cpp src/ssl.cpp src/timer.cpp src/yassl_error.cpp 
 				src/yassl_imp.cpp src/yassl_int.cpp
                                 ../../client/get_password.c )
 
 ADD_CONVENIENCE_LIBRARY(yassl ${YASSL_SOURCES})
-RESTRICT_SYMBOL_EXPORTS(yassl)
 
 IF(MSVC)
    INSTALL_DEBUG_TARGET(yassl DESTINATION ${INSTALL_LIBDIR}/debug)

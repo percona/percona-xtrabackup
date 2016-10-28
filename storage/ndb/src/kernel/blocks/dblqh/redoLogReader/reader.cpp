@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -30,6 +30,9 @@
 #include <my_dir.h>
 
 #include "records.hpp"
+
+#define JAM_FILE_ID 449
+
 
 #define RETURN_ERROR 1
 #define RETURN_OK 0
@@ -85,7 +88,7 @@ NDB_COMMAND(redoLogFileReader,  "redoLogFileReader", "redoLogFileReader", "Read 
   {
     MY_STAT buf;
     my_stat(fileName, &buf, MYF(0));
-    NO_MBYTE_IN_FILE = buf.st_size / (1024 * 1024);
+    NO_MBYTE_IN_FILE = (unsigned)(buf.st_size / (1024 * 1024));
     if (NO_MBYTE_IN_FILE != 16)
     {
       ndbout_c("Detected %umb files", NO_MBYTE_IN_FILE);
@@ -396,24 +399,20 @@ Uint32 readFromFile(FILE * f, Uint32 *toPtr, Uint32 sizeInWords) {
 
 
 void usage(const char * prg){
-  ndbout << endl << "Usage: " << endl << prg 
-	 << " <Binary log file> [-noprint] [-nocheck] [-mbyte <0-15>] "
-	 << "[-mbyteheaders] [-pageheaders] [-filedescriptors] [-page <0-31>] "
-	 << "[-pageindex <12-8191>] -twiddle"
+  ndbout << endl << "Usage: ndbd_read_log_reader [OPTIONS]:" << endl << prg 
+	 << " <Binary log file> [-noprint] [-dump] [-twiddle] [-lap] [-nocheck] [--help] " 
+	 <<"[-mbyte <0-15>] [-mbyteheaders] [-pageheaders] [-filedescriptors] [-page <0-31>]  [-pageindex <12-8191>]"
 	 << endl << endl;
   
 }
 void readArguments(int argc, const char** argv)
 {
-  if(argc < 2 || argc > 9){
+  if(argc < 2 ){
     usage(argv[0]);
     doExit();
   }
 
-  strcpy(fileName, argv[1]);
-  argc--;
-
-  int i = 2;
+  int i = 1;
   while (argc > 1)
     {
       if (strcmp(argv[i], "-noprint") == 0) {
@@ -433,6 +432,10 @@ void readArguments(int argc, const char** argv)
       } else if (strcmp(argv[i], "-lap") == 0) {
 	thePrintFlag = false;
 	onlyLap = true;
+      } else if (strcmp(argv[i], "--help") == 0) {
+      	ndbout<<"\nThis command reads a redo log file, checking it for errors, printing its contents in a human-readable format, or both.";
+      	usage(argv[0]);
+      	exit(0);
       } else if (strcmp(argv[i], "-mbyte") == 0) {
 	startAtMbyte = atoi(argv[i+1]);
 	argc--;
@@ -453,6 +456,8 @@ void readArguments(int argc, const char** argv)
 	}
 	argc--;
 	i++;
+      } else if (i==1) {
+      	 strcpy(fileName, argv[1]);
       } else {
 	usage(argv[0]);
 	doExit();

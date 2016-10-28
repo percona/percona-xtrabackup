@@ -1,7 +1,7 @@
+--source include/have_null_audit_plugin.inc
 # Test for WL#3771 (audit null plugin)
 # Created by HHunger 2009-09-02
 #
---source include/have_null_audit_plugin.inc
 --source include/not_embedded.inc
 
 # Adjustment to the OS dependent extension of shared libraries.
@@ -15,22 +15,22 @@ if(`SELECT CONVERT(@@version_compile_os USING latin1)
 # Adjustment to the fact that protocols which lead to the use
 # of prepared statements cause that a higher number of
 # plugin calls gets counted.
-let $expected_calls= 21;
+let $expected_calls= 65;
 if(`SELECT $PS_PROTOCOL > 0`)
 {
-   let $expected_calls= 47;
+   let $expected_calls= 107;
 }
 if(`SELECT $SP_PROTOCOL > 0`)
 {
-   let $expected_calls= 66;
+   let $expected_calls= 65;
 }
 if(`SELECT $CURSOR_PROTOCOL > 0`)
 {
-   let $expected_calls= 48;
+   let $expected_calls= 50;
 }
 if(`SELECT $VIEW_PROTOCOL > 0`)
 {
-   let $expected_calls= 30;
+   let $expected_calls= 94;
 }
 
 --replace_result $expected_extension  <expected_extension>

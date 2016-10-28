@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define XBSTREAM_H
 
 #include <my_base.h>
+#include <my_dir.h>
 
 /* Magic value in a chunk header */
 #define XB_STREAM_CHUNK_MAGIC "XBSTCK01"

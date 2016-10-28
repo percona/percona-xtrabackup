@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,13 +17,11 @@
 #define TEST_MDL_CONTEXT_OWNER_INCLUDED
 
 #include <mdl.h>
-#include <my_pthread.h>
 
 class Test_MDL_context_owner : public MDL_context_owner
 {
 public:
   Test_MDL_context_owner()
-    : m_current_mutex(NULL)
   {}
   virtual void enter_cond(mysql_cond_t *cond,
                           mysql_mutex_t* mutex,
@@ -33,8 +31,6 @@ public:
                           const char *src_file,
                           int src_line)
   {
-    m_current_mutex= mutex;
-    return;
   }
 
   virtual void exit_cond(const PSI_stage_info *stage,
@@ -42,14 +38,18 @@ public:
                          const char *src_file,
                          int src_line)
   {
-    mysql_mutex_unlock(m_current_mutex);
   }
 
   virtual int  is_killed() { return 0; }
+  virtual bool is_connected() { return true; }
   virtual THD* get_thd()   { return NULL; }
 
-private:
-  mysql_mutex_t *m_current_mutex;
+  virtual bool notify_hton_pre_acquire_exclusive(const MDL_key *mdl_key)
+  { return false; }
+  virtual void notify_hton_post_release_exclusive(const MDL_key *mdl_key)
+  { }
+
+  virtual uint get_rand_seed() { return 0; }
 };
 
 #endif  // TEST_MDL_CONTEXT_OWNER_INCLUDED

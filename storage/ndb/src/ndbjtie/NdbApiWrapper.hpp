@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ Copyright (c) 2010, 2014, Oracle and/or its affiliates. All rights reserved.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -62,6 +62,13 @@ struct NdbApiWrapper {
 // ---------------------------------------------------------------------------
 
 // mapped by "com_mysql_ndbjtie_ndbapi_Ndb.h"
+
+    static int 
+    Ndb__getAutoIncrementValue
+    ( Ndb & obj , const NdbDictionary::Table * p1, Uint64 & ret, Uint32 batch, Uint64 step, Uint64 start )
+    {
+        return obj.getAutoIncrementValue(p1, ret, batch, step, start);
+    }
 
     static const char *
     Ndb__getDatabaseName
@@ -442,6 +449,13 @@ struct NdbApiWrapper {
 // ---------------------------------------------------------------------------
 
 // mapped by "com_mysql_ndbjtie_ndbapi_NdbDictionary_Column.h"
+
+    static bool
+    NdbDictionary__Column__getAutoIncrement
+    ( const NdbDictionary::Column & obj )
+    {
+        return obj.getAutoIncrement();
+    }
 
     static const char *
     NdbDictionary__Column__getName
@@ -1414,6 +1428,13 @@ struct NdbApiWrapper {
 // ---------------------------------------------------------------------------
 
 // mapped by "com_mysql_ndbjtie_ndbapi_NdbDictionary_RecordSpecification.h"
+
+    static Uint32
+    NdbDictionary__RecordSpecification__size
+    ( )
+    {
+        return NdbDictionary::RecordSpecification::size();
+    }
 
 // ---------------------------------------------------------------------------
 
@@ -2847,6 +2868,13 @@ struct NdbApiWrapper {
 
 // mapped by "com_mysql_ndbjtie_ndbapi_NdbOperation_OperationOptions.h"
 
+    static Uint32
+    NdbOperation__OperationOptions__size
+    ( )
+    {
+        return NdbOperation::OperationOptions::size();
+    }
+
 // ---------------------------------------------------------------------------
 
 // mapped by "com_mysql_ndbjtie_ndbapi_NdbOperation_SetValueSpec.h"
@@ -3178,6 +3206,13 @@ struct NdbApiWrapper {
         return obj.nextResult(p0, p1);
     }
 
+    static int
+    NdbScanOperation__nextResultCopyOut
+    ( NdbScanOperation & obj, char * p0, bool p1, bool p2 )
+    {
+        return obj.nextResultCopyOut(p0, p1, p2);
+    }
+
     static void
     NdbScanOperation__close
     ( NdbScanOperation & obj, bool p0, bool p1 )
@@ -3251,6 +3286,13 @@ struct NdbApiWrapper {
 // ---------------------------------------------------------------------------
 
 // mapped by "com_mysql_ndbjtie_ndbapi_NdbScanOperation_ScanOptions.h"
+
+    static Uint32
+    NdbScanOperation__ScanOptions__size
+    ( )
+    {
+        return NdbScanOperation::ScanOptions::size();
+    }
 
 // ---------------------------------------------------------------------------
 
@@ -3427,6 +3469,17 @@ struct NdbApiWrapper {
 // ---------------------------------------------------------------------------
 
 // mapped by "com_mysql_ndbjtie_ndbapi_Ndb_Key_part_ptr.h"
+
+// ---------------------------------------------------------------------------
+
+// mapped by "com_mysql_ndbjtie_ndbapi_Ndb_PartitionSpec.h"
+
+    static Uint32
+    Ndb__PartitionSpec__size
+    ( )
+    {
+        return Ndb::PartitionSpec::size();
+    }
 
 // ---------------------------------------------------------------------------
 

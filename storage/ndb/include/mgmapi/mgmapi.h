@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -252,10 +252,7 @@ extern "C" {
      *  management server
      */
     int connect_count;
-    /** IP address of node when it connected to the management server.
-     *  @note This value will be empty if the management server has restarted
-     *        since the node last connected.
-     */
+    /** IP address of node as seen by the other nodes in the cluster. */
     char connect_address[
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
 			 sizeof("000.000.000.000")+1
@@ -402,7 +399,11 @@ extern "C" {
   void ndb_mgm_destroy_handle(NdbMgmHandle * handle);
 
   /**
-   * Set a name of the handle.  Name is reported in cluster log.
+   * Set a name of the handle.
+   *
+   * NOTE! Name is reported in cluster log only when the
+   * handle subsequently is used to allocate a nodeid
+   * using ndb_mgm_alloc_nodeid().
    *
    * @param   handle        Management handle
    * @param   name          Name
@@ -1105,6 +1106,11 @@ extern "C" {
    * Attempt to retrieve next log event and will fill in the supplied
    * struct dst
    *
+   * Note that the category value returned by this variant is missing
+   * an offset of CFG_MIN_LOGLEVEL.
+   * ndb_logevent_get_next2() should be used to get the correct category
+   * value.
+   *
    * @param dst Pointer to struct to fill in event information
    * @param timeout_in_milliseconds Timeout for waiting for event
    *
@@ -1115,6 +1121,23 @@ extern "C" {
   int ndb_logevent_get_next(const NdbLogEventHandle,
 			    struct ndb_logevent *dst,
 			    unsigned timeout_in_milliseconds);
+
+  /**
+   * Attempt to retrieve next log event and will fill in the supplied
+   * struct dst
+   * This variant returns the correct category value, while the
+   * previous variant returned a category value missing an offset.
+   *
+   * @param dst Pointer to struct to fill in event information
+   * @param timeout_in_milliseconds Timeout for waiting for event
+   *
+   * @return     >0 if event exists, 0 no event (timed out), or -1 on error.
+   *
+   * @note Return value <=0 will leave dst untouched
+   */
+  int ndb_logevent_get_next2(const NdbLogEventHandle,
+                             struct ndb_logevent *dst,
+                             unsigned timeout_in_milliseconds);
 
   /**
    * Retrieve laterst error code
@@ -1379,7 +1402,7 @@ extern "C" {
   /**
    *   Struct containing array of ndb_logevents
    *   of the requested type, describing for example
-   *   memoryusage or baclupstatus for the whole cluster,
+   *   memoryusage or backupstatus for the whole cluster,
    *   returned from ndb_mgm_dump_events()
    */
   struct ndb_mgm_events {

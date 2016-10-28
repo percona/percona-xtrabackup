@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -133,9 +133,19 @@ public:
    * Returns the index of the first occurance of the character c.
    *
    * @params c character to look for
+   * @params pos position to start searching from
    * @returns index of character, of -1 if no character found
    */
-  ssize_t indexOf(char c) const;
+  ssize_t indexOf(char c, size_t pos = 0) const;
+
+  /**
+   * Returns the index of the first occurance of the string needle
+   *
+   * @params needle string to search for
+   * @params pos position to start searching from
+   * @returns index of character, of -1 if no character found
+   */
+  ssize_t indexOf(const char * needle, size_t pos = 0) const;
 
   /**
    * Returns the index of the last occurance of the character c.
@@ -227,6 +237,7 @@ public:
   static BaseString getPrettyText(unsigned size, const Uint32 data[]);
   static BaseString getPrettyTextShort(unsigned size, const Uint32 data[]);
 
+  static size_t hexdump(char * buf, size_t len, const Uint32 * wordbuf, size_t numwords);
 private:
   char* m_chr;
   unsigned m_len;

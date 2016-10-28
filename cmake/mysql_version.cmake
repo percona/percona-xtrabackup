@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,8 +17,8 @@
 # Global constants, only to be changed between major releases.
 #
 
-SET(SHARED_LIB_MAJOR_VERSION "18")
-SET(SHARED_LIB_MINOR_VERSION "1")
+SET(SHARED_LIB_MAJOR_VERSION "20")
+SET(SHARED_LIB_MINOR_VERSION "3")
 SET(PROTOCOL_VERSION "10")
 SET(DOT_FRM_VERSION "6")
 
@@ -50,18 +50,25 @@ MACRO(GET_MYSQL_VERSION)
   MYSQL_GET_CONFIG_VALUE("MYSQL_VERSION_PATCH" PATCH_VERSION VERSION)
   MYSQL_GET_CONFIG_VALUE("MYSQL_VERSION_EXTRA" EXTRA_VERSION VERSION)
 
-  IF(NOT MAJOR_VERSION OR NOT MINOR_VERSION OR NOT PATCH_VERSION)
+  IF(NOT DEFINED MAJOR_VERSION OR
+     NOT DEFINED MINOR_VERSION OR
+     NOT DEFINED PATCH_VERSION)
     MESSAGE(FATAL_ERROR "VERSION file cannot be parsed.")
   ENDIF()
 
-  SET(VERSION "${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}${EXTRA_VERSION}")
-  SET(MYSQL_BASE_VERSION "${MAJOR_VERSION}.${MINOR_VERSION}" CACHE INTERNAL "MySQL Base version")
-  SET(MYSQL_NO_DASH_VERSION "${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}")
+  SET(VERSION
+    "${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}${EXTRA_VERSION}")
+  SET(MYSQL_BASE_VERSION
+    "${MAJOR_VERSION}.${MINOR_VERSION}" CACHE INTERNAL "MySQL Base version")
+  SET(MYSQL_NO_DASH_VERSION
+    "${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}")
+
   # Use NDBVERSION irregardless of whether this is Cluster or not, if not
   # then the regex will be ignored anyway.
   STRING(REGEX REPLACE "^.*-ndb-" "" NDBVERSION "${VERSION}")
   STRING(REPLACE "-" "_" MYSQL_RPM_VERSION "${NDBVERSION}")
-  MATH(EXPR MYSQL_VERSION_ID "10000*${MAJOR_VERSION} + 100*${MINOR_VERSION} + ${PATCH_VERSION}")
+  MATH(EXPR MYSQL_VERSION_ID
+    "10000*${MAJOR_VERSION} + 100*${MINOR_VERSION} + ${PATCH_VERSION}")
   MARK_AS_ADVANCED(VERSION MYSQL_VERSION_ID MYSQL_BASE_VERSION)
 ENDMACRO()
 
@@ -116,6 +123,12 @@ GET_MYSQL_VERSION()
 # Get XtraBackup version
 GET_XTRABACKUP_VERSION()
 
+SET(SHARED_LIB_PATCH_VERSION ${PATCH_VERSION})
+
+# Beware : This is a hack to reset SHARED_LIB_PATCH_VERSION in accordance
+# with the change in value of SHARED_LIB_MINOR_VERSION.
+MATH(EXPR SHARED_LIB_PATCH_VERSION "${SHARED_LIB_PATCH_VERSION}-13")
+
 SET(MYSQL_TCP_PORT_DEFAULT "3306")
 
 IF(NOT MYSQL_TCP_PORT)
@@ -133,6 +146,16 @@ IF(NOT COMPILATION_COMMENT)
   SET(COMPILATION_COMMENT "Source distribution")
 ENDIF()
 
+# Get the sys schema version from the mysql_sys_schema.sql file
+# however if compiling without performance schema, always use version 1.0.0
+MACRO(GET_SYS_SCHEMA_VERSION)
+  FILE (STRINGS ${CMAKE_SOURCE_DIR}/scripts/mysql_sys_schema.sql str REGEX "SELECT \\'([0-9]+\\.[0-9]+\\.[0-9]+)\\' AS sys_version")
+  IF(str)
+    STRING(REGEX MATCH "([0-9]+\\.[0-9]+\\.[0-9]+)" SYS_SCHEMA_VERSION "${str}")
+  ENDIF()
+ENDMACRO()
+
+GET_SYS_SCHEMA_VERSION()
 
 INCLUDE(package_name)
 IF(NOT CPACK_PACKAGE_FILE_NAME)

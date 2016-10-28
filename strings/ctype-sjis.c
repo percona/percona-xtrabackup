@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@
  * .configure. mbmaxlen_sjis=2
  */
 
-static uchar ctype_sjis[257] =
+static const uchar ctype_sjis[257] =
 {
     0,				/* For standard library */
     0040, 0040, 0040, 0040, 0040, 0040, 0040, 0040,	/* NUL ^A - ^G */
@@ -68,7 +68,7 @@ static uchar ctype_sjis[257] =
     0020, 0020, 0020, 0020, 0020, 0000, 0000, 0000
 };
 
-static uchar to_lower_sjis[]=
+static const uchar to_lower_sjis[]=
 {
   '\000','\001','\002','\003','\004','\005','\006','\007',
   '\010','\011','\012','\013','\014','\015','\016','\017',
@@ -104,7 +104,7 @@ static uchar to_lower_sjis[]=
   (uchar) '\370',(uchar) '\371',(uchar) '\372',(uchar) '\373',(uchar) '\374',(uchar) '\375',(uchar) '\376',(uchar) '\377'
 };
 
-static uchar to_upper_sjis[]=
+static const uchar to_upper_sjis[]=
 {
   '\000','\001','\002','\003','\004','\005','\006','\007',
   '\010','\011','\012','\013','\014','\015','\016','\017',
@@ -140,7 +140,7 @@ static uchar to_upper_sjis[]=
   (uchar) '\370',(uchar) '\371',(uchar) '\372',(uchar) '\373',(uchar) '\374',(uchar) '\375',(uchar) '\376',(uchar) '\377'
 };
 
-static uchar sort_order_sjis[]=
+static const uchar sort_order_sjis[]=
 {
   '\000','\001','\002','\003','\004','\005','\006','\007',
   '\010','\011','\012','\013','\014','\015','\016','\017',
@@ -182,13 +182,13 @@ static uchar sort_order_sjis[]=
                        (0x80<=(c) && (c)<=0xfc))
 
 
-static uint ismbchar_sjis(const CHARSET_INFO *cs __attribute__((unused)),
+static uint ismbchar_sjis(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 			 const char* p, const char *e)
 {
   return (issjishead((uchar) *p) && (e-p)>1 && issjistail((uchar)p[1]) ? 2: 0);
 }
 
-static uint mbcharlen_sjis(const CHARSET_INFO *cs __attribute__((unused)),
+static uint mbcharlen_sjis(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
                            uint c)
 {
   return (issjishead((uchar) c) ? 2 : 1);
@@ -198,7 +198,7 @@ static uint mbcharlen_sjis(const CHARSET_INFO *cs __attribute__((unused)),
 #define sjiscode(c,d)	((((uint) (uchar)(c)) << 8) | (uint) (uchar) (d))
 
 
-static MY_UNICASE_CHARACTER c81[256]=
+static const MY_UNICASE_CHARACTER c81[256]=
 {
   /* 8100-810F */
   {0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},
@@ -408,7 +408,7 @@ static MY_UNICASE_CHARACTER c81[256]=
 };
 
 
-static MY_UNICASE_CHARACTER c82[256]=
+static const MY_UNICASE_CHARACTER c82[256]=
 {
   /* 8200-820F */
   {0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},
@@ -616,7 +616,7 @@ static MY_UNICASE_CHARACTER c82[256]=
 };
 
 
-static MY_UNICASE_CHARACTER c83[256]=
+static const MY_UNICASE_CHARACTER c83[256]=
 {
   /* 8300-830F */
   {0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},
@@ -826,7 +826,7 @@ static MY_UNICASE_CHARACTER c83[256]=
 };
 
 
-static MY_UNICASE_CHARACTER c84[256]=
+static const MY_UNICASE_CHARACTER c84[256]=
 {
   /* 8400-840F */
   {0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},
@@ -1036,7 +1036,7 @@ static MY_UNICASE_CHARACTER c84[256]=
 };
 
 
-static MY_UNICASE_CHARACTER *my_caseinfo_pages_sjis[256]=
+static const MY_UNICASE_CHARACTER *my_caseinfo_pages_sjis[256]=
 {
   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, /* 0 */
   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
@@ -1112,7 +1112,7 @@ static int my_strnncoll_sjis_internal(const CHARSET_INFO *cs,
 }
 
 
-static int my_strnncoll_sjis(const CHARSET_INFO *cs __attribute__((unused)),
+static int my_strnncoll_sjis(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
                              const uchar *a, size_t a_length, 
                              const uchar *b, size_t b_length,
                              my_bool b_is_prefix)
@@ -1124,7 +1124,7 @@ static int my_strnncoll_sjis(const CHARSET_INFO *cs __attribute__((unused)),
 }
 
 
-static int my_strnncollsp_sjis(const CHARSET_INFO *cs __attribute__((unused)),
+static int my_strnncollsp_sjis(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 			       const uchar *a, size_t a_length, 
 			       const uchar *b, size_t b_length,
                                my_bool diff_if_only_endspace_difference)
@@ -1164,7 +1164,7 @@ static int my_strnncollsp_sjis(const CHARSET_INFO *cs __attribute__((unused)),
 
 
 /* SJIS->Unicode conversion table */
-static uint16 sjis_to_unicode[65536]=
+static const uint16 sjis_to_unicode[65536]=
 {
       0x0000,      0x0001,      0x0002,      0x0003, /* 0000 */
       0x0004,      0x0005,      0x0006,      0x0007,
@@ -17554,7 +17554,7 @@ static uint16 sjis_to_unicode[65536]=
 
 
 /* Unicode->SJIS conversion table */
-static uint16 unicode_to_sjis[65536]=
+static const uint16 unicode_to_sjis[65536]=
 {
       0x0000,      0x0001,      0x0002,      0x0003, /* 0000 */
       0x0004,      0x0005,      0x0006,      0x0007,
@@ -33968,7 +33968,7 @@ static uint16 unicode_to_sjis[65536]=
   @retval   MY_CS_ILSEQ    If a wrong byte sequence was found
 */
 static int
-my_mb_wc_sjis(const CHARSET_INFO *cs  __attribute__((unused)),
+my_mb_wc_sjis(const CHARSET_INFO *cs  MY_ATTRIBUTE((unused)),
 	      my_wc_t *pwc, const uchar *s, const uchar *e){
   int hi;
 
@@ -34012,7 +34012,7 @@ my_mb_wc_sjis(const CHARSET_INFO *cs  __attribute__((unused)),
   @retval   MY_CS_ILUNI    If the Unicode character does not exist in SJIS
 */
 static int
-my_wc_mb_sjis(const CHARSET_INFO *cs __attribute__((unused)),
+my_wc_mb_sjis(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 	      my_wc_t wc, uchar *s, uchar *e)
 {
   int code;
@@ -34061,7 +34061,7 @@ mb:
 
 
 static
-size_t my_numcells_sjis(const CHARSET_INFO *cs __attribute__((unused)),
+size_t my_numcells_sjis(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
                       const char *str, const char *str_end)
 {
   size_t clen;
@@ -34094,7 +34094,7 @@ size_t my_numcells_sjis(const CHARSET_INFO *cs __attribute__((unused)),
   CP932 additional characters are also accepted.
 */
 static
-size_t my_well_formed_len_sjis(const CHARSET_INFO *cs __attribute__((unused)),
+size_t my_well_formed_len_sjis(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
                                const char *b, const char *e,
                                size_t pos, int *error)
 {
@@ -34198,7 +34198,8 @@ CHARSET_INFO my_charset_sjis_japanese_ci=
     1,                  /* caseup_multiply  */
     1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
-    2,			/* mbmaxlen */
+    2,			/* mbmaxlen   */
+    1,			/* mbmaxlenlen */
     0,			/* min_sort_char */
     0xFCFC,		/* max_sort_char */
     ' ',                /* pad char      */
@@ -34231,7 +34232,8 @@ CHARSET_INFO my_charset_sjis_bin=
     1,                  /* caseup_multiply  */
     1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
-    2,			/* mbmaxlen */
+    2,			/* mbmaxlen   */
+    1,			/* mbmaxlenlen */
     0,			/* min_sort_char */
     0xFCFC,		/* max_sort_char */
     ' ',                /* pad char      */

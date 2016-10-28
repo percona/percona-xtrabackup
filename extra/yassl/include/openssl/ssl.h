@@ -34,7 +34,7 @@
 #include "rsa.h"
 
 
-#define YASSL_VERSION "2.3.7"
+#define YASSL_VERSION "2.3.9b"
 
 
 #if defined(__cplusplus)
@@ -237,6 +237,8 @@ long         SSL_get_verify_result(SSL*);
 
 typedef int (*VerifyCallback)(int, X509_STORE_CTX*);
 typedef int (*pem_password_cb)(char*, int, int, void*);
+int default_password_callback(char * buffer, int size_arg, int rwflag,
+                              void * u);
 
 void SSL_CTX_set_verify(SSL_CTX*, int, VerifyCallback verify_callback);
 int  SSL_CTX_load_verify_locations(SSL_CTX*, const char*, const char*);
@@ -333,9 +335,6 @@ enum { /* ssl Constants */
     SSL_OP_ALL                              = 61,
     SSL_OP_SINGLE_DH_USE                    = 62,
     SSL_OP_EPHEMERAL_RSA                    = 63,
-    SSL_OP_NO_SSLv2                         = 64,
-    SSL_OP_NO_SSLv3                         = 65,
-    SSL_OP_NO_TLSv1                         = 66,
     SSL_OP_PKCS1_CHECK_1                    = 67,
     SSL_OP_PKCS1_CHECK_2                    = 68,
     SSL_OP_NETSCAPE_CA_DN_BUG               = 69,
@@ -356,8 +355,12 @@ enum { /* ssl Constants */
     SSL_RECEIVED_SHUTDOWN = 94,
     SSL_CB_ALERT          = 95,
     SSL_CB_READ           = 96,
-    SSL_CB_HANDSHAKE_DONE = 97
+    SSL_CB_HANDSHAKE_DONE = 97,
 
+    SSL_OP_NO_SSLv2                         = 128,
+    SSL_OP_NO_SSLv3                         = 256,
+    SSL_OP_NO_TLSv1                         = 512,
+    SSL_OP_NO_TLSv1_1                       = 1024,
 };
 
 
@@ -390,7 +393,7 @@ char* SSL_alert_type_string_long(int);
 char* SSL_alert_desc_string_long(int);
 char* SSL_state_string_long(SSL*);
 
-
+X509* PEM_read_X509(FILE *fp, X509 *x, pem_password_cb cb, void *u);
 /* EVP stuff, des and md5, different file? */
 typedef char EVP_MD;
 

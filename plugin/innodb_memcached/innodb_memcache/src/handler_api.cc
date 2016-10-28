@@ -25,13 +25,12 @@ Created 3/14/2011 Jimmy Yang
 #include "handler_api.h"
 
 #include <my_global.h>
-#include <sql_priv.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <mysql_version.h>
 #include <mysql/plugin.h>
 #include <my_dir.h>
-#include "my_pthread.h"
+#include "my_thread.h"
 #include "my_sys.h"
 #include "m_string.h"
 #include "sql_plugin.h"
@@ -43,6 +42,7 @@ Created 3/14/2011 Jimmy Yang
 #include "transaction.h"
 #include "sql_handler.h"
 #include "handler.h"
+#include "mysqld_thd_manager.h"
 
 #include "log_event.h"
 #include "innodb_config.h"
@@ -51,7 +51,7 @@ Created 3/14/2011 Jimmy Yang
 /** Some handler functions defined in sql/sql_table.cc and sql/handler.cc etc.
 and being used here */
 extern int write_bin_log(THD *thd, bool clear_error,
-			 char const *query, ulong query_length,
+			 const char *query, size_t query_length,
 			 bool is_trans= false);
 
 /** function to close a connection and thd, defined in sql/handler.cc */
@@ -86,9 +86,8 @@ handler_create_thd(
 		return(NULL);
 	}
 
-	my_net_init(&thd->net,(st_vio*) 0);
-	thd->variables.pseudo_thread_id = thread_id++;
-	thd->thread_id = thd->variables.pseudo_thread_id;
+	thd->get_protocol_classic()->init_net((st_vio *) 0);
+	thd->set_new_thread_id();
 	thd->thread_stack = reinterpret_cast<char*>(&thd);
 	thd->store_globals();
 
@@ -114,13 +113,10 @@ handler_thd_attach(
 	THD*	thd = static_cast<THD*>(my_thd);
 
 	if (original_thd) {
-		*original_thd = my_pthread_getspecific(THD*, THR_THD);
-		assert(thd->mysys_var);
+          *original_thd = current_thd;
 	}
 
-	my_pthread_setspecific_ptr(THR_THD, thd);
-	my_pthread_setspecific_ptr(THR_MALLOC, &thd->mem_root);
-	set_mysys_var(thd->mysys_var);
+	thd->store_globals();
 }
 
 /**********************************************************************//**
@@ -146,20 +142,17 @@ handler_open_table(
 	tables.init_one_table(db_name, strlen(db_name), table_name,
 			      strlen(table_name), table_name, lock_mode);
 
-	tables.mdl_request.init(MDL_key::TABLE, db_name, table_name,
-				(lock_mode > TL_READ)
-				? MDL_SHARED_WRITE
-				: MDL_SHARED_READ, MDL_TRANSACTION);
-
 	/* For flush, we need to request exclusive mdl lock. */
 	if (lock_type == HDL_FLUSH) {
-		tables.mdl_request.init(MDL_key::TABLE, db_name, table_name,
-					MDL_EXCLUSIVE, MDL_TRANSACTION);
+		MDL_REQUEST_INIT(&tables.mdl_request,
+				 MDL_key::TABLE, db_name, table_name,
+				 MDL_EXCLUSIVE, MDL_TRANSACTION);
 	} else {
-		tables.mdl_request.init(MDL_key::TABLE, db_name, table_name,
-					(lock_mode > TL_READ)
-					? MDL_SHARED_WRITE
-					: MDL_SHARED_READ, MDL_TRANSACTION);
+		MDL_REQUEST_INIT(&tables.mdl_request,
+				 MDL_key::TABLE, db_name, table_name,
+				 (lock_mode > TL_READ)
+				 ? MDL_SHARED_WRITE : MDL_SHARED_READ,
+				 MDL_TRANSACTION);
 	}
 
 	if (!open_table(thd, &tables, &table_ctx)) {
@@ -241,6 +234,7 @@ handler_binlog_rollback(
 	  Memcached plugin doesn't use thd_mark_transaction_to_rollback()
 	  on deadlocks. So no special handling for this flag is needed.
 	*/
+	assert(! thd->transaction_rollback_request);
 	if (tc_log) {
 		tc_log->rollback(thd, true);
 	}
@@ -372,16 +366,21 @@ handler_close_thd(
 /*==============*/
 	void*		my_thd)		/*!< in: THD */
 {
-	THD*	thd = static_cast<THD*>(my_thd);
+	THD* thd= static_cast<THD*>(my_thd);
 
 	/* destructor will not free it, because net.vio is 0. */
-	net_end(&thd->net);
-
+	thd->get_protocol_classic()->end_net();
 	thd->release_resources();
 	delete (thd);
+}
 
-	/* Don't have a THD anymore */
-	my_pthread_setspecific_ptr(THR_THD,  0);
+/**********************************************************************//**
+Check if global read lock is active */
+
+bool
+handler_check_global_read_lock_active()
+{
+        return Global_read_lock::global_read_lock_active();
 }
 
 /**********************************************************************//**
@@ -402,7 +401,7 @@ handler_unlock_table(
 	lock_mode = (mode & HDL_READ) ? TL_READ : TL_WRITE;
 
 	if (lock_mode == TL_WRITE) {
-		query_cache_invalidate3(thd, table, 1);
+		query_cache.invalidate(thd, table, TRUE);
 		table->file->ha_release_auto_increment();
 	}
 

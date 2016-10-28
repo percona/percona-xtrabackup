@@ -4,6 +4,7 @@
 . inc/common.sh
 
 require_xtradb
+require_server_version_lower_than 5.7.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_log_block_size=4096

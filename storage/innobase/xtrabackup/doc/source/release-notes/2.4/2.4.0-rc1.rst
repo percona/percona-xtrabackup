@@ -1,0 +1,28 @@
+================================
+ |Percona XtraBackup| 2.4.0-rc1
+================================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.0-rc1 on
+February 8th 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt <apt_repo>`
+and :ref:`yum <yum_repo>` repositories.
+
+This is a **Release Candidate** quality release and it is not intended for
+production. If you want a high quality, Generally Available release, the
+current Stable version should be used (currently 2.3.3 in the 2.3 series at the
+time of writing).
+
+New features
+------------
+
+ |Percona XtraBackup| has implemented basic support for |MySQL| 5.7 and
+ |Percona Server| 5.7.
+
+Known Issues
+------------
+
+ Backed-up table data could not be recovered if backup was taken while running
+ ``OPTIMIZE TABLE`` (bug :bug:`1541763`) or ``ALTER TABLE ... TABLESPACE`` (bug
+ :bug:`1532878`) on that table.
+
+ Compact Backups currently don't work due to bug :bug:`1192834`.

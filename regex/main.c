@@ -2,6 +2,9 @@
 #include <m_string.h>
 #include <sys/types.h>
 #include <assert.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #include "my_regex.h"
 #include "main.ih"
@@ -22,7 +25,8 @@ extern int split(char *string, char *fields[], int nfields, char *sep);
 extern void regprint(my_regex_t *r, FILE *d);
 
 
-#ifdef __WIN__
+#ifdef _WIN32
+#define snprintf _snprintf
 char *optarg= "";
 int optind= 1;
 int opterr;
@@ -67,7 +71,7 @@ char *argv[];
 	int c;
 	int errflg = 0;
 	int opt_inline = 0;
-	register int i;
+	int i;
         char *input_file_name= NULL;
 	extern int optind;
 	extern char *optarg;
@@ -289,9 +293,9 @@ int opts;			/* may not match f1 */
 	int nshould;
 	char erbuf[100];
 	int err;
-	int len;
+	size_t len;
 	const char *type = (opts & MY_REG_EXTENDED) ? "ERE" : "BRE";
-	register int i;
+	int i;
 	char *grump;
 	char f0copy[1000];
 	char f2copy[1000];
@@ -304,8 +308,8 @@ int opts;			/* may not match f1 */
 		/* unexpected error or wrong error */
 		len = my_regerror(err, &re, erbuf, sizeof(erbuf));
 		fprintf(stderr, "%d: %s error %s, %d/%d `%s'\n",
-					line, type, eprint(err), len,
-					(int) sizeof(erbuf), erbuf);
+                        line, type, eprint(err), (int )len,
+                        (int) sizeof(erbuf), erbuf);
 		status = 1;
 	} else if (err == 0 && opt('C', f1)) {
 		/* unexpected success */
@@ -335,8 +339,8 @@ int opts;			/* may not match f1 */
 		/* unexpected error or wrong error */
 		len = my_regerror(err, &re, erbuf, sizeof(erbuf));
 		fprintf(stderr, "%d: %s exec error %s, %d/%d `%s'\n",
-					line, type, eprint(err), len,
-					(int) sizeof(erbuf), erbuf);
+                        line, type, eprint(err), (int)len,
+                        (int) sizeof(erbuf), erbuf);
 		status = 1;
 	} else if (err != 0) {
 		/* nothing more to check */
@@ -388,9 +392,9 @@ options(type, s)
 int type;			/* 'c' compile, 'e' exec */
 char *s;
 {
-	register char *p;
-	register int o = (type == 'c') ? copts : eopts;
-	register const char *legal = (type == 'c') ? "bisnmp" : "^$#tl";
+	char *p;
+	int o = (type == 'c') ? copts : eopts;
+	const char *legal = (type == 'c') ? "bisnmp" : "^$#tl";
 
 	for (p = s; *p != '\0'; p++)
 		if (strchr(legal, *p) != NULL)
@@ -454,7 +458,7 @@ char *s;
  */
 void
 fixstr(p)
-register char *p;
+char *p;
 {
 	if (p == NULL)
 		return;
@@ -480,11 +484,11 @@ char *str;
 my_regmatch_t sub;
 char *should;
 {
-	register int len;
-	register int shlen;
-	register char *p;
+	size_t len;
+	size_t shlen;
+	char *p;
 	static char grump[500];
-	register char *at = NULL;
+	char *at = NULL;
 
 	if (should != NULL && strcmp(should, "-") == 0)
 		should = NULL;
@@ -498,7 +502,8 @@ char *should;
 				(sub.rm_so != -1 && sub.rm_eo == -1) ||
 				(sub.rm_so != -1 && sub.rm_so < 0) ||
 				(sub.rm_eo != -1 && sub.rm_eo < 0) ) {
-		sprintf(grump, "start %ld end %ld", (long)sub.rm_so,
+		snprintf(grump, sizeof(grump),
+			 "start %ld end %ld", (long)sub.rm_so,
 							(long)sub.rm_eo);
 		return(grump);
 	}
@@ -511,24 +516,25 @@ char *should;
 
 	/* check for in range */
 	if ((int) sub.rm_eo > (int) strlen(str)) {
-		sprintf(grump, "start %ld end %ld, past end of string",
+		snprintf(grump, sizeof(grump),
+			 "start %ld end %ld, past end of string",
 					(long)sub.rm_so, (long)sub.rm_eo);
 		return(grump);
 	}
 
-	len = (int)(sub.rm_eo - sub.rm_so);
-	shlen = (int)strlen(should);
+	len = (size_t)(sub.rm_eo - sub.rm_so);
+	shlen = strlen(should);
 	p = str + sub.rm_so;
 
 	/* check for not supposed to match */
 	if (should == NULL) {
-		sprintf(grump, "matched `%.*s'", len, p);
+          snprintf(grump, sizeof(grump), "matched `%.*s'", (int)len, p);
 		return(grump);
 	}
 
 	/* check for wrong match */
-	if (len != shlen || strncmp(p, should, (size_t)shlen) != 0) {
-		sprintf(grump, "matched `%.*s' instead", len, p);
+	if (len != shlen || strncmp(p, should, shlen) != 0) {
+          snprintf(grump, sizeof(grump), "matched `%.*s' instead", (int)len, p);
 		return(grump);
 	}
 	if (shlen > 0)
@@ -541,7 +547,8 @@ char *should;
 	if (shlen == 0)
 		shlen = 1;	/* force check for end-of-string */
 	if (strncmp(p, at, shlen) != 0) {
-		sprintf(grump, "matched null at `%.20s'", p);
+		snprintf(grump, sizeof(grump),
+			 "matched null at `%.20s'", p);
 		return(grump);
 	}
 	return(NULL);
@@ -574,7 +581,7 @@ char *name;
 	static char efbuf[100];
 	my_regex_t re;
 
-	sprintf(efbuf, "MY_REG_%s", name);
+	snprintf(efbuf, sizeof(efbuf), "MY_REG_%s", name);
 	assert(strlen(efbuf) < sizeof(efbuf));
 	re.re_endp = efbuf;
 	(void) my_regerror(MY_REG_ATOI, &re, efbuf, sizeof(efbuf));

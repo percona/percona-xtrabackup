@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,9 @@
 
 #include <NodeState.hpp>
 
+#define JAM_FILE_ID 165
+
+
 /**
  * NodeStateRep
  *
@@ -37,7 +40,9 @@ class NodeStateRep {
    */
   friend class SimulatedBlock;
   friend class Dbtux;
-  
+  friend class Dbacc;
+  friend class Dbtup;
+
 public:
   STATIC_CONST( SignalLength = NodeState::DataLength );
 private:
@@ -94,5 +99,8 @@ private:
   Uint32 senderData;
 };
 
+
+
+#undef JAM_FILE_ID
 
 #endif

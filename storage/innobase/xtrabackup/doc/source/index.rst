@@ -11,8 +11,8 @@
 servers that doesn't lock your database during the backup.
 
 It can back up data from |InnoDB|, |XtraDB|, and |MyISAM| tables on |MySQL| 5.1
-[#n-1]_, 5.5 and 5.6 servers, as well as |Percona Server| with |XtraDB|. For a
-high-level overview of many of its advanced features, including a feature
+[#n-1]_, 5.5, 5.6 and 5.7 servers, as well as |Percona Server| with |XtraDB|.
+For a high-level overview of many of its advanced features, including a feature
 comparison, please see :doc:`intro`.
 
 Whether it is a 24x7 highly loaded server or a low-transaction-volume
@@ -80,7 +80,7 @@ Advanced Features
    :glob:
 
    advanced/lockless_bin-log
-   advanced/incremental_backups_with_ps_56
+   advanced/encrypted_innodb_tablespace_backups
 
 Tutorials, Recipes, How-tos
 ===========================

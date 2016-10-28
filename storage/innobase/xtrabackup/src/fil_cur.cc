@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <fil0fil.h>
 #include <srv0start.h>
 #include <trx0sys.h>
+#include <fsp0sysspace.h>
 
 #include "fil_cur.h"
 #include "common.h"
@@ -62,7 +63,7 @@ xb_get_relative_path(
 	prev = NULL;
 	cur = path;
 
-	while ((next = strchr(cur, SRV_PATH_SEPARATOR)) != NULL) {
+	while ((next = strchr(cur, OS_PATH_SEPARATOR)) != NULL) {
 
 		prev = cur;
 		cur = next + 1;
@@ -95,7 +96,7 @@ xb_fil_node_close_file(
 	ut_a(node->n_pending_flushes == 0);
 	ut_a(!node->being_extended);
 
-	if (!node->open) {
+	if (!node->is_open) {
 
 		mutex_exit(&fil_system->mutex);
 
@@ -105,19 +106,19 @@ xb_fil_node_close_file(
 	ret = os_file_close(node->handle);
 	ut_a(ret);
 
-	node->open = FALSE;
+	node->is_open = false;
 
 	ut_a(fil_system->n_open > 0);
 	fil_system->n_open--;
 	fil_n_file_opened--;
 
-	if (node->space->purpose == FIL_TABLESPACE &&
+	if (node->space->purpose == FIL_TYPE_TABLESPACE &&
 	    fil_is_user_tablespace_id(node->space->id)) {
 
 		ut_a(UT_LIST_GET_LEN(fil_system->LRU) > 0);
 
 		/* The node is in the LRU list, remove it */
-		UT_LIST_REMOVE(LRU, fil_system->LRU, node);
+		UT_LIST_REMOVE(fil_system->LRU, node);
 	}
 
 	mutex_exit(&fil_system->mutex);
@@ -136,10 +137,9 @@ xb_fil_cur_open(
 	fil_node_t*	node,		/*!< in: source tablespace node */
 	uint		thread_n)	/*!< thread number for diagnostics */
 {
-	ulint	page_size;
-	ulint	page_size_shift;
-	ulint	zip_size;
-	ibool	success;
+	page_size_t	page_size(0, 0, false);
+	ulint		page_size_shift;
+	bool		success;
 
 	/* Initialize these first so xb_fil_cur_close() handles them correctly
 	in case of error */
@@ -167,6 +167,7 @@ xb_fil_cur_open(
 			os_file_create_simple_no_error_handling(0, node->name,
 								OS_FILE_OPEN,
 								OS_FILE_READ_ONLY,
+								srv_read_only_mode,
 								&success);
 		if (!success) {
 			/* The following call prints an error message */
@@ -180,22 +181,22 @@ xb_fil_cur_open(
 		}
 		mutex_enter(&fil_system->mutex);
 
-		node->open = TRUE;
+		node->is_open = true;
 
 		fil_system->n_open++;
 		fil_n_file_opened++;
 
-		if (node->space->purpose == FIL_TABLESPACE &&
+		if (node->space->purpose == FIL_TYPE_TABLESPACE &&
 		    fil_is_user_tablespace_id(node->space->id)) {
 
 			/* Put the node to the LRU list */
-			UT_LIST_ADD_FIRST(LRU, fil_system->LRU, node);
+			UT_LIST_ADD_FIRST(fil_system->LRU, node);
 		}
 
 		mutex_exit(&fil_system->mutex);
 	}
 
-	ut_ad(node->open);
+	ut_ad(node->is_open);
 
 	cursor->node = node;
 	cursor->file = node->handle;
@@ -218,32 +219,30 @@ xb_fil_cur_open(
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
 
 	/* Determine the page size */
-	zip_size = xb_get_zip_size(cursor->file);
-	if (zip_size == ULINT_UNDEFINED) {
+	page_size.copy_from(xb_get_zip_size(cursor->file, &success));
+	if (!success) {
 		xb_fil_cur_close(cursor);
 		return(XB_FIL_CUR_SKIP);
-	} else if (zip_size) {
-		page_size = zip_size;
-		page_size_shift = get_bit_shift(page_size);
+	} else if (page_size.is_compressed()) {
+		page_size_shift = get_bit_shift(page_size.physical());
 		msg("[%02u] %s is compressed with page size = "
-		    "%lu bytes\n", thread_n, node->name, page_size);
+		    "%lu bytes\n", thread_n, node->name, page_size.physical());
 		if (page_size_shift < 10 || page_size_shift > 14) {
 			msg("[%02u] xtrabackup: Error: Invalid "
-			    "page size: %lu.\n", thread_n, page_size);
+			    "page size: %lu.\n", thread_n, page_size.physical());
 			ut_error;
 		}
 	} else {
-		page_size = UNIV_PAGE_SIZE;
 		page_size_shift = UNIV_PAGE_SIZE_SHIFT;
 	}
-	cursor->page_size = page_size;
+	cursor->page_size = page_size.physical();
 	cursor->page_size_shift = page_size_shift;
-	cursor->zip_size = zip_size;
+	cursor->zip_size = page_size.is_compressed() ? page_size.physical() : 0;
 
 	/* Allocate read buffer */
-	cursor->buf_size = XB_FIL_CUR_PAGES * page_size;
+	cursor->buf_size = XB_FIL_CUR_PAGES * page_size.physical();
 	cursor->orig_buf = static_cast<byte *>
-		(ut_malloc(cursor->buf_size + UNIV_PAGE_SIZE));
+		(ut_malloc_nokey(cursor->buf_size + UNIV_PAGE_SIZE));
 	cursor->buf = static_cast<byte *>
 		(ut_align(cursor->orig_buf, UNIV_PAGE_SIZE));
 
@@ -253,11 +252,22 @@ xb_fil_cur_open(
 	cursor->buf_page_no = 0;
 	cursor->thread_n = thread_n;
 
-	cursor->space_size = cursor->statinfo.st_size / page_size;
+	cursor->space_size = cursor->statinfo.st_size / page_size.physical();
 
 	cursor->read_filter = read_filter;
 	cursor->read_filter->init(&cursor->read_filter_ctxt, cursor,
 				  node->space->id);
+
+	cursor->scratch = static_cast<byte *>
+		(ut_malloc_nokey(cursor->page_size));
+	cursor->decrypt = static_cast<byte *>
+		(ut_malloc_nokey(cursor->page_size));
+
+	memcpy(cursor->encryption_key, node->space->encryption_key,
+	       sizeof(cursor->encryption_key));
+	memcpy(cursor->encryption_iv, node->space->encryption_iv,
+	       sizeof(cursor->encryption_iv));
+	cursor->encryption_klen = node->space->encryption_klen;
 
 	return(XB_FIL_CUR_SUCCESS);
 }
@@ -279,8 +289,18 @@ xb_fil_cur_read(
 	ulint			npages;
 	ulint			retry_count;
 	xb_fil_cur_result_t	ret;
-	ib_int64_t		offset;
-	ib_int64_t		to_read;
+	ib_uint64_t		offset;
+	ib_uint64_t		to_read;
+	page_size_t		page_size(cursor->zip_size != 0 ?
+					  cursor->zip_size : cursor->page_size,
+					  cursor->page_size,
+					  cursor->zip_size != 0);
+	IORequest		read_request(IORequest::READ);
+
+	read_request.encryption_algorithm(Encryption::AES);
+	read_request.encryption_key(cursor->encryption_key,
+				    cursor->encryption_klen,
+				    cursor->encryption_iv);
 
 	cursor->read_filter->get_next_batch(&cursor->read_filter_ctxt,
 					    &offset, &to_read);
@@ -289,16 +309,16 @@ xb_fil_cur_read(
 		return(XB_FIL_CUR_EOF);
 	}
 
-	if (to_read > (ib_int64_t) cursor->buf_size) {
-		to_read = (ib_int64_t) cursor->buf_size;
+	if (to_read > (ib_uint64_t) cursor->buf_size) {
+		to_read = (ib_uint64_t) cursor->buf_size;
 	}
 
 	xb_a(to_read > 0 && to_read <= 0xFFFFFFFFLL);
 
 	if (to_read % cursor->page_size != 0 &&
-	    offset + to_read == cursor->statinfo.st_size) {
+	    offset + to_read == (ib_uint64_t) cursor->statinfo.st_size) {
 
-		if (to_read < (ib_int64_t) cursor->page_size) {
+		if (to_read < (ib_uint64_t) cursor->page_size) {
 			msg("[%02u] xtrabackup: Warning: junk at the end of "
 			    "%s:\n", cursor->thread_n, cursor->abs_path);
 			msg("[%02u] xtrabackup: Warning: offset = %llu, "
@@ -310,7 +330,7 @@ xb_fil_cur_read(
 			return(XB_FIL_CUR_EOF);
 		}
 
-		to_read = (ib_int64_t) (((ulint) to_read) &
+		to_read = (ib_uint64_t) (((ulint) to_read) &
 					~(cursor->page_size - 1));
 	}
 
@@ -329,7 +349,7 @@ read_retry:
 	cursor->buf_offset = offset;
 	cursor->buf_page_no = (ulint) (offset >> cursor->page_size_shift);
 
-	success = os_file_read(cursor->file, cursor->buf, offset,
+	success = os_file_read(read_request, cursor->file, cursor->buf, offset,
 			       to_read);
 	if (!success) {
 		return(XB_FIL_CUR_ERROR);
@@ -340,7 +360,47 @@ read_retry:
 	for (page = cursor->buf, i = 0; i < npages;
 	     page += cursor->page_size, i++) {
 
-		if (buf_page_is_corrupted(TRUE, page, cursor->zip_size)) {
+		if (Encryption::is_encrypted_page(page)) {
+			dberr_t		ret;
+			Encryption	encryption(read_request.encryption_algorithm());
+
+			memcpy(cursor->decrypt, page, cursor->page_size);
+			ret = encryption.decrypt(read_request, cursor->decrypt,
+						 cursor->page_size,
+						 cursor->scratch,
+						 cursor->page_size);
+			if (ret != DB_SUCCESS) {
+				goto corruption;
+			}
+
+			if (Compression::is_compressed_page(cursor->decrypt)) {
+				if (os_file_decompress_page(false,
+				    cursor->decrypt, cursor->scratch,
+				    cursor->page_size) != DB_SUCCESS) {
+					goto corruption;
+				}
+			}
+
+			if (buf_page_is_corrupted(TRUE, cursor->decrypt,
+						  page_size, false)) {
+				goto corruption;
+			}
+
+		}
+
+		if (Compression::is_compressed_page(page)) {
+
+			if (os_file_decompress_page(false, page,
+			    cursor->scratch, cursor->page_size) != DB_SUCCESS) {
+				goto corruption;
+			}
+
+		}
+
+		if (!Encryption::is_encrypted_page(page) &&
+		    buf_page_is_corrupted(TRUE, page, page_size, false)) {
+
+corruption:
 
 			ulint page_no = cursor->buf_page_no + i;
 
@@ -392,6 +452,12 @@ xb_fil_cur_close(
 {
 	cursor->read_filter->deinit(&cursor->read_filter_ctxt);
 
+	if (cursor->scratch != NULL) {
+		ut_free(cursor->scratch);
+	}
+	if (cursor->decrypt != NULL) {
+		ut_free(cursor->decrypt);
+	}
 	if (cursor->orig_buf != NULL) {
 		ut_free(cursor->orig_buf);
 	}

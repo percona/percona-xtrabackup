@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,9 @@
 #include "mysys_priv.h"
 #include "my_static.h"
 #include <m_string.h>
+#ifdef HAVE_SYS_RESOURCE_H
+#include <sys/resource.h>  /* RLIMIT_NOFILE */
+#endif
 
 /*
   set how many open files we want to be able to handle
@@ -32,11 +35,16 @@
     May be more or less than max_file_limit!
 */
 
-#if defined(HAVE_GETRLIMIT) && defined(RLIMIT_NOFILE)
+#if defined(HAVE_GETRLIMIT)
 
+/*
+  This value is certainly wrong on all 64bit platforms,
+  and also wrong on many 32bit platforms.
+  It is better to get a compile error, than to use a wrong value.
 #ifndef RLIM_INFINITY
 #define RLIM_INFINITY ((uint) 0xffffffff)
 #endif
+*/
 
 static uint set_max_open_files(uint max_file_limit)
 {
@@ -51,7 +59,7 @@ static uint set_max_open_files(uint max_file_limit)
     DBUG_PRINT("info", ("rlim_cur: %u  rlim_max: %u",
 			(uint) rlimit.rlim_cur,
 			(uint) rlimit.rlim_max));
-    if (rlimit.rlim_cur == RLIM_INFINITY)
+    if (rlimit.rlim_cur == (rlim_t) RLIM_INFINITY)
       rlimit.rlim_cur = max_file_limit;
     if (rlimit.rlim_cur >= max_file_limit)
       DBUG_RETURN(rlimit.rlim_cur);		/* purecov: inspected */
@@ -75,7 +83,7 @@ static uint set_max_open_files(uint max_file_limit)
 static uint set_max_open_files(uint max_file_limit)
 {
   /* We don't know the limit. Return best guess */
-  return min(max_file_limit, OS_FILE_LIMIT);
+  return MY_MIN(max_file_limit, OS_FILE_LIMIT);
 }
 #endif
 
@@ -102,7 +110,8 @@ uint my_set_max_open_files(uint files)
   if (files <= MY_NFILE)
     DBUG_RETURN(files);
 
-  if (!(tmp= (struct st_my_file_info*) my_malloc(sizeof(*tmp) * files,
+  if (!(tmp= (struct st_my_file_info*) my_malloc(key_memory_my_file_info,
+                                                 sizeof(*tmp) * files,
 						 MYF(MY_WME))))
     DBUG_RETURN(MY_NFILE);
 
