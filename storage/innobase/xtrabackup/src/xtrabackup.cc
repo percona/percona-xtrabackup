@@ -2630,8 +2630,7 @@ xtrabackup_scan_log_recs(
 	while (log_block < log_sys->buf + RECV_SCAN_SIZE && !*finished) {
 		ulint	no = log_block_get_hdr_no(log_block);
 		ulint	scanned_no = log_block_convert_lsn_to_no(scanned_lsn);
-		ibool	checksum_is_ok = true;
-			log_block_checksum_is_ok(log_block);
+		ibool	checksum_is_ok = log_block_checksum_is_ok(log_block);
 
 		if (no != scanned_no && checksum_is_ok) {
 			ulint blocks_in_group;
