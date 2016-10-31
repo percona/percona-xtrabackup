@@ -712,7 +712,7 @@ bool check_global_access(THD *thd, ulong want_access);
 /* sql_user_table */
 void close_acl_tables(THD *thd);
 
-#ifndef EMBEDDED_LIBRARY
+#if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
 typedef enum ssl_artifacts_status
 {
   SSL_ARTIFACTS_NOT_FOUND= 0,
@@ -721,7 +721,7 @@ typedef enum ssl_artifacts_status
   SSL_ARTIFACTS_AUTO_DETECTED
 } ssl_artifacts_status;
 
-#endif /* EMBEDDED_LIBRARY */
+#endif /* !EMBEDDED_LIBRARY || XTRABACKUP */
 
 #if defined(HAVE_OPENSSL) && !defined(HAVE_YASSL)
 extern my_bool opt_auto_generate_certs;

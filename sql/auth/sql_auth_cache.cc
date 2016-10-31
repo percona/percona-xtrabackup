@@ -48,6 +48,7 @@ struct ACL_internal_schema_registry_entry
 static ACL_internal_schema_registry_entry registry_array[2];
 static uint m_registry_array_size= 0;
 
+bool initialized=0;
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
 MEM_ROOT global_acl_memory;
 MEM_ROOT memex;
@@ -60,7 +61,6 @@ HASH column_priv_hash, proc_priv_hash, func_priv_hash;
 hash_filo *acl_cache;
 HASH acl_check_hosts;
 
-bool initialized=0;
 bool allow_all_hosts=1;
 uint grant_version=0; /* Version of priv tables */
 my_bool validate_user_plugins= TRUE;

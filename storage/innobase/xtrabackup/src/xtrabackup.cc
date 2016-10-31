@@ -408,6 +408,22 @@ uint opt_safe_slave_backup_timeout = 0;
 const char *opt_history = NULL;
 my_bool opt_decrypt = FALSE;
 
+const char *ssl_mode_names_lib[] =
+  {"DISABLED", "PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY",
+   NullS };
+TYPELIB ssl_mode_typelib = {array_elements(ssl_mode_names_lib) - 1, "",
+                            ssl_mode_names_lib, NULL};
+
+#if defined(HAVE_OPENSSL)
+uint opt_ssl_mode     = SSL_MODE_PREFERRED;
+my_bool opt_use_ssl_arg= TRUE;
+my_bool opt_ssl_verify_server_cert_arg = FALSE;
+my_bool ssl_mode_set_explicitly= FALSE;
+#if !defined(HAVE_YASSL)
+char *opt_server_public_key = NULL;
+#endif
+#endif
+
 /* Whether xtrabackup_binlog_info should be created on recovery */
 static bool recover_binlog_info;
 
@@ -417,6 +433,11 @@ ulint redo_log_version = REDO_LOG_V1;
 /* New server-id to encrypt tablespace keys for */
 ulint opt_encrypt_server_id = 0;
 bool opt_encrypt_for_server_id_specified = false;
+
+#define CLIENT_WARN_DEPRECATED(opt, new_opt) \
+  printf("WARNING: " opt \
+         " is deprecated and will be removed in a future version. " \
+         "Use " new_opt " instead.\n")
 
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
@@ -507,7 +528,8 @@ typedef struct {
 
 enum options_xtrabackup
 {
-  OPT_XTRA_TARGET_DIR=256,
+  OPT_XTRA_TARGET_DIR = 1000,     /* make sure it is larger
+                                     than OPT_MAX_CLIENT_OPTION */
   OPT_XTRA_BACKUP,
   OPT_XTRA_STATS,
   OPT_XTRA_PREPARE,
@@ -627,7 +649,14 @@ enum options_xtrabackup
   OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
   OPT_BINLOG_INFO,
   OPT_REDO_LOG_VERSION,
-  OPT_KEYRING_FILE_DATA
+  OPT_KEYRING_FILE_DATA,
+  OPT_XB_SECURE_AUTH,
+
+  OPT_SSL_SSL,
+  OPT_SSL_MODE,
+  OPT_SSL_VERIFY_SERVER_CERT,
+  OPT_SERVER_PUBLIC_KEY,
+
 };
 
 struct my_option xb_long_options[] =
@@ -1238,6 +1267,15 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    GET_UINT, REQUIRED_ARG, 0, 0, UINT_MAX32,
    0, 0, 0},
 
+#include "sslopt-longopts.h"
+
+#if !defined(HAVE_YASSL)
+  {"server-public-key-path", OPT_SERVER_PUBLIC_KEY,
+   "File path to the server public RSA key in PEM format.",
+   &opt_server_public_key, &opt_server_public_key, 0,
+   GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#endif
+
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1507,6 +1545,9 @@ xb_get_one_option(int optid,
   case OPT_XTRA_ENCRYPT_FOR_SERVER_ID:
     opt_encrypt_for_server_id_specified = true;
     break;
+
+#include "sslopt-case.h"
+
   case '?':
     usage();
     exit(EXIT_SUCCESS);

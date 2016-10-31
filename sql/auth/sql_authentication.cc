@@ -429,12 +429,12 @@ bool auth_plugin_supports_expiration(const char *plugin_name)
 
 
 /* few defines to have less ifdef's in the code below */
-#ifdef EMBEDDED_LIBRARY
+#if defined(EMBEDDED_LIBRARY) && !defined(XTRABACKUP)
 #undef HAVE_OPENSSL
 #ifdef NO_EMBEDDED_ACCESS_CHECKS
 #define initialized 0
 #endif /* NO_EMBEDDED_ACCESS_CHECKS */
-#endif /* EMBEDDED_LIBRARY */
+#endif /* EMBEDDED_LIBRARY || XTRABACKUP */
 #ifndef HAVE_OPENSSL
 #define ssl_acceptor_fd 0
 #define sslaccept(A,B,C) 1

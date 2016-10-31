@@ -259,10 +259,10 @@ public:
 
 /* Data Structures */
 
+extern bool initialized;
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
 extern MEM_ROOT global_acl_memory;
 extern MEM_ROOT memex; 
-extern bool initialized;
 const size_t ACL_PREALLOC_SIZE = 10U;
 extern Prealloced_array<ACL_USER, ACL_PREALLOC_SIZE> *acl_users;
 extern Prealloced_array<ACL_PROXY_USER, ACL_PREALLOC_SIZE> *acl_proxy_users;

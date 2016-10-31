@@ -1865,7 +1865,7 @@ void mysql_read_default_options(struct st_mysql_options *options,
 	case OPT_return_found_rows:
 	  options->client_flag|=CLIENT_FOUND_ROWS;
 	  break;
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 	case OPT_ssl_key:
 	  my_free(options->ssl_key);
           options->ssl_key = my_strdup(key_memory_mysql_options,
@@ -1910,7 +1910,7 @@ void mysql_read_default_options(struct st_mysql_options *options,
         case OPT_ssl_crlpath:
         case OPT_tls_version :
 	  break;
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 	case OPT_character_sets_dir:
 	  my_free(options->charset_dir);
           options->charset_dir = my_strdup(key_memory_mysql_options,
@@ -2567,7 +2567,7 @@ mysql_ssl_set(MYSQL *mysql MY_ATTRIBUTE((unused)) ,
 {
   my_bool result= 0;
   DBUG_ENTER("mysql_ssl_set");
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   result=
     mysql_options(mysql, MYSQL_OPT_SSL_KEY,    key)    +
     mysql_options(mysql, MYSQL_OPT_SSL_CERT,   cert)   +
@@ -2585,7 +2585,7 @@ mysql_ssl_set(MYSQL *mysql MY_ATTRIBUTE((unused)) ,
   NB! Errors are not reported until you do mysql_real_connect.
 */
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 
 static void
 mysql_ssl_free(MYSQL *mysql MY_ATTRIBUTE((unused)))
@@ -2624,7 +2624,7 @@ mysql_ssl_free(MYSQL *mysql MY_ATTRIBUTE((unused)))
   DBUG_VOID_RETURN;
 }
 
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 
 /*
   Return the SSL cipher (if any) used for current
@@ -2640,10 +2640,10 @@ const char * STDCALL
 mysql_get_ssl_cipher(MYSQL *mysql MY_ATTRIBUTE((unused)))
 {
   DBUG_ENTER("mysql_get_ssl_cipher");
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   if (mysql->net.vio && mysql->net.vio->ssl_arg)
     DBUG_RETURN(SSL_get_cipher_name((SSL*)mysql->net.vio->ssl_arg));
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
   DBUG_RETURN(NULL);
 }
 
@@ -2665,7 +2665,7 @@ mysql_get_ssl_cipher(MYSQL *mysql MY_ATTRIBUTE((unused)))
 
  */
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
 
 static int ssl_verify_server_cert(Vio *vio, const char* server_hostname, const char **errptr)
 {
@@ -2767,7 +2767,7 @@ error:
   DBUG_RETURN(ret_validation);
 }
 
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 
 
 /*
@@ -3463,11 +3463,11 @@ cli_calculate_client_flag(MYSQL *mysql, const char *db, ulong client_flag)
   if (mysql->client_flag & CLIENT_MULTI_STATEMENTS)
     mysql->client_flag|= CLIENT_MULTI_RESULTS;
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   if (mysql->options.extension &&
       mysql->options.extension->ssl_mode != SSL_MODE_DISABLED)
     mysql->client_flag |= CLIENT_SSL;
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY*/
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 
   if (db)
     mysql->client_flag|= CLIENT_CONNECT_WITH_DB;
@@ -4968,9 +4968,9 @@ void mysql_close_free_options(MYSQL *mysql)
     delete_dynamic(init_commands);
     my_free(init_commands);
   }
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   mysql_ssl_free(mysql);
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
 #if defined (_WIN32) && !defined (EMBEDDED_LIBRARY)
   if (mysql->options.shared_memory_base_name != def_shared_memory_base_name)
     my_free(mysql->options.shared_memory_base_name);
