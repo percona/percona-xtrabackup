@@ -602,7 +602,8 @@ swift_temp_auth(const char *auth_url, swift_auth_info *info)
 			goto cleanup;
 		}
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-		if (http_code != 200) {
+		if (http_code != 200 &&
+			http_code != 204) {
 			fprintf(stderr, "error: authentication failed "
 				"with response code: %ld\n", http_code);
 			res = CURLE_LOGIN_DENIED;
@@ -1079,9 +1080,9 @@ size_t upload_header_read_cb(char *ptr, size_t size, size_t nmemb,
 	connection_info *conn = (connection_info *)(data);
 	char etag[33];
 
-	if (get_http_header("Etag: ", ptr, etag, array_elements(etag))) {
+	if (get_http_header("ETag: ", ptr, etag, array_elements(etag))) {
 		if (strcmp(conn->hash, etag) != 0) {
-			fprintf(stderr, "erorr: etag mismatch\n");
+			fprintf(stderr, "error: ETag mismatch\n");
 			exit(EXIT_FAILURE);
 		}
 		fprintf(stderr, "acked chunk %s\n", etag);
