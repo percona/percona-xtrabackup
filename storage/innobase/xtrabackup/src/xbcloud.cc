@@ -509,7 +509,7 @@ int get_http_header(const char *prefix, const char *buffer,
 
 	prefix_len = strlen(prefix);
 
-	if (strncmp(buffer, prefix, prefix_len) == 0) {
+	if (strncasecmp(buffer, prefix, prefix_len) == 0) {
 		beg = buffer + prefix_len;
 		end = strchr(beg, '\r');
 
@@ -603,7 +603,7 @@ swift_temp_auth(const char *auth_url, swift_auth_info *info)
 		}
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 		if (http_code != 200 &&
-			http_code != 204) {
+		    http_code != 204) {
 			fprintf(stderr, "error: authentication failed "
 				"with response code: %ld\n", http_code);
 			res = CURLE_LOGIN_DENIED;
@@ -1080,7 +1080,7 @@ size_t upload_header_read_cb(char *ptr, size_t size, size_t nmemb,
 	connection_info *conn = (connection_info *)(data);
 	char etag[33];
 
-	if (get_http_header("ETag: ", ptr, etag, array_elements(etag))) {
+	if (get_http_header("Etag: ", ptr, etag, array_elements(etag))) {
 		if (strcmp(conn->hash, etag) != 0) {
 			fprintf(stderr, "error: ETag mismatch\n");
 			exit(EXIT_FAILURE);
