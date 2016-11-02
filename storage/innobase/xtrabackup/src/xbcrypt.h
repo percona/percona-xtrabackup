@@ -25,8 +25,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 
 #define XB_CRYPT_CHUNK_MAGIC1 "XBCRYP01"
-#define XB_CRYPT_CHUNK_MAGIC2 "XBCRYP02" /* must be same size as ^^ */
+#define XB_CRYPT_CHUNK_MAGIC2 "XBCRYP02"
+#define XB_CRYPT_CHUNK_MAGIC3 "XBCRYP03" /* must be same size as ^^ */
+#define XB_CRYPT_CHUNK_MAGIC_CURRENT XB_CRYPT_CHUNK_MAGIC3
 #define XB_CRYPT_CHUNK_MAGIC_SIZE (sizeof(XB_CRYPT_CHUNK_MAGIC1)-1)
+
+#define XB_CRYPT_HASH GCRY_MD_SHA256
+#define XB_CRYPT_HASH_LEN 32
 
 /******************************************************************************
 Write interface */
@@ -66,7 +71,7 @@ typedef enum {
 
 xb_rcrypt_result_t xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf,
 				       size_t *olen, size_t *elen, void **iv,
-				       size_t *ivlen);
+				       size_t *ivlen, my_bool *hash_appended);
 
 int xb_crypt_read_close(xb_rcrypt_t *crypt);
 

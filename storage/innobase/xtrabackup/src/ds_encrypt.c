@@ -36,7 +36,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "xbcrypt.h"
 
+#if !defined(GCRYPT_VERSION_NUMBER) || (GCRYPT_VERSION_NUMBER < 0x010600)
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
+#endif
 
 #define XB_CRYPT_CHUNK_SIZE ((size_t) (xtrabackup_encrypt_chunk_size))
 
@@ -101,7 +103,6 @@ static uint encrypt_algos[] = { GCRY_CIPHER_NONE, GCRY_CIPHER_AES128,
 static uint encrypt_algo;
 static const uint encrypt_mode = GCRY_CIPHER_MODE_CTR;
 static uint encrypt_key_len = 0;
-static const unsigned char encrypt_iv[] = "Percona Xtrabackup is Awesome!!!";
 static size_t encrypt_iv_len = 0;
 
 static
@@ -132,6 +133,7 @@ encrypt_init(const char *root)
 
 	/* Acording to gcrypt docs (and my testing), setting up the threading
 	   callbacks must be done first, so, lets give it a shot */
+#if !defined(GCRYPT_VERSION_NUMBER) || (GCRYPT_VERSION_NUMBER < 0x010600)
 	gcry_error = gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
 	if (gcry_error) {
 		msg("encrypt: unable to set libgcrypt thread cbs - "
@@ -140,6 +142,7 @@ encrypt_init(const char *root)
 		    gcry_strerror(gcry_error));
 		return NULL;
 	}
+#endif
 
 	/* Version check should be the very next call because it
 	makes sure that important subsystems are intialized. */
@@ -181,7 +184,6 @@ encrypt_init(const char *root)
 	/* Set up the iv length */
 	encrypt_iv_len = gcry_cipher_get_algo_blklen(encrypt_algo);
 	xb_a(encrypt_iv_len > 0);
-	xb_a(encrypt_iv_len <= sizeof(encrypt_iv));
 
 	/* Now set up the key */
 	if (xtrabackup_encrypt_key == NULL &&
@@ -345,7 +347,8 @@ encrypt_write(ds_file_t *file, const void *buf, size_t len)
 
 			if (xb_crypt_write_chunk(crypt_file->xbcrypt_file,
 						 threads[i].to,
-						 threads[i].from_len,
+						 threads[i].from_len +
+							XB_CRYPT_HASH_LEN,
 						 threads[i].to_len,
 						 threads[i].iv,
 						 encrypt_iv_len)) {
@@ -424,8 +427,8 @@ create_worker_threads(uint n)
 		thd->cancelled = FALSE;
 		thd->data_avail = FALSE;
 
-		thd->to = (char *) my_malloc(XB_CRYPT_CHUNK_SIZE,
-						   MYF(MY_FAE));
+		thd->to = (char *) my_malloc(XB_CRYPT_CHUNK_SIZE +
+					     XB_CRYPT_HASH_LEN, MYF(MY_FAE));
 
 		thd->iv = (char *) my_malloc(encrypt_iv_len,
 						   MYF(MY_FAE));
@@ -552,6 +555,14 @@ encrypt_worker_thread_func(void *arg)
 		if (thd->cancelled)
 			break;
 
+		/* ensure that XB_CRYPT_HASH_LEN is the correct length
+		of XB_CRYPT_HASH hashing algorithm output */
+		assert(gcry_md_get_algo_dlen(XB_CRYPT_HASH) ==
+		       XB_CRYPT_HASH_LEN);
+
+		memcpy(thd->to, thd->from, thd->from_len);
+		gcry_md_hash_buffer(XB_CRYPT_HASH, thd->to + thd->from_len,
+				    thd->from, thd->from_len);
 		thd->to_len = thd->from_len;
 
 		if (encrypt_algo != GCRY_CIPHER_NONE) {
@@ -568,7 +579,7 @@ encrypt_worker_thread_func(void *arg)
 			}
 
 			xb_crypt_create_iv(thd->iv, encrypt_iv_len);
-			gcry_error = gcry_cipher_setiv(thd->cipher_handle,
+			gcry_error = gcry_cipher_setctr(thd->cipher_handle,
 							thd->iv,
 							encrypt_iv_len);
 			if (gcry_error) {
@@ -582,9 +593,11 @@ encrypt_worker_thread_func(void *arg)
 
 			gcry_error = gcry_cipher_encrypt(thd->cipher_handle,
 							 thd->to,
-							 thd->to_len,
-							 thd->from,
-							 thd->from_len);
+							 thd->to_len +
+							 XB_CRYPT_HASH_LEN,
+							 thd->to,
+							 thd->from_len +
+							 XB_CRYPT_HASH_LEN);
 			if (gcry_error) {
 				msg("encrypt: unable to encrypt buffer - "
 				    "%s : %s\n", gcry_strsource(gcry_error),
@@ -592,8 +605,10 @@ encrypt_worker_thread_func(void *arg)
 				thd->to_len = 0;
 			}
 		} else {
-			memcpy(thd->to, thd->from, thd->from_len);
+			memcpy(thd->to, thd->from,
+			       thd->from_len + XB_CRYPT_HASH_LEN);
 		}
+		thd->to_len += XB_CRYPT_HASH_LEN;
 	}
 
 	pthread_mutex_unlock(&thd->data_mutex);
