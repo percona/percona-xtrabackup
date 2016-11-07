@@ -4,7 +4,7 @@
 
 . inc/common.sh
 
-if ! is_server_version_higher_than 5.6.0 && ! is_xtradb
+if is_galera || ( ! is_server_version_higher_than 5.6.0 && ! is_xtradb )
 then
     skip_test "Requires either XtraDB or a 5.6 server"
 fi
