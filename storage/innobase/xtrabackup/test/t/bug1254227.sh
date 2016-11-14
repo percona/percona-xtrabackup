@@ -2,6 +2,8 @@
 # Bug #1254227: xtrabackup_56 does not roll back prepared XA transactions
 #########################################################################
 
+is_galera && skip_test "Requires a server without Galera support"
+
 start_server
 
 mkfifo $topdir/fifo
