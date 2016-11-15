@@ -83,6 +83,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbstream_write.c
   backup_mysql.cc
   backup_copy.cc
+  mariadb.cc
   )
 
 SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)

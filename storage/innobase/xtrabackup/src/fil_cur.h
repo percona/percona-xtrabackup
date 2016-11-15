@@ -61,6 +61,7 @@ struct xb_fil_cur_t {
 	uint		thread_n;	/*!< thread number for diagnostics */
 	ulint		space_id;	/*!< ID of tablespace */
 	ulint		space_size;	/*!< space size in pages */
+	bool		encrypted;	/*!< true if tablespace encrypted */
 };
 
 typedef enum {
