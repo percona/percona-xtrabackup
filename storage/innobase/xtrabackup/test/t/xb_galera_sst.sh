@@ -28,6 +28,7 @@ listen_addr2="${ADDR}:$(get_free_port 5)"
 
 vlog "Starting server $node1"
 start_server_with_id $node1 --innodb_file_per_table  --binlog-format=ROW \
+                     --pxc_strict_mode=DISABLED \
                      --wsrep-provider=$LIBGALERA_PATH \
                      --wsrep_cluster_address=gcomm:// \
                      --wsrep_sst_receive_address=$recv_addr1 \
@@ -35,7 +36,7 @@ start_server_with_id $node1 --innodb_file_per_table  --binlog-format=ROW \
                      --wsrep_provider_options="gmcast.listen_addr=tcp://$listen_addr1${pdebug}" \
                      --wsrep_sst_method=xtrabackup-v2 \
                      --wsrep_sst_auth=$SUSER:$SSTPASS  \
-                     --wsrep_node_address=$ADDR $debug 
+                     --wsrep_node_address=$ADDR $debug
 
 load_sakila
 
@@ -46,6 +47,7 @@ EOF
 
 vlog "Starting server $node2"
 start_server_with_id $node2 --innodb_file_per_table --binlog-format=ROW \
+                     --pxc_strict_mode=DISABLED \
                      --wsrep-provider=$LIBGALERA_PATH \
                      --wsrep_cluster_address=gcomm://$listen_addr1 \
                      --wsrep_sst_receive_address=$recv_addr2 \
