@@ -20,7 +20,7 @@ start_server
 
 # Load some data so we have a non-empty Executed_Gtid_Set
 $MYSQL $MYSQL_ARGS test <<EOF
-CREATE TABLE t1(a INT) ENGINE=InnoDB;
+CREATE TABLE t1(a INT PRIMARY KEY) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (1), (2), (3);
 EOF
 
