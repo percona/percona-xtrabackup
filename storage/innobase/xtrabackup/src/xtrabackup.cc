@@ -6804,8 +6804,8 @@ int main(int argc, char **argv)
 
 			optend = strcend(tmp_argv.c_str(), '=');
 
-			if (strncmp(argv[i], "--defaults-group",
-				    optend - argv[i]) == 0) {
+			if (strncmp(tmp_argv.c_str(), "--defaults-group",
+				    optend - tmp_argv.c_str()) == 0) {
 				defaults_group = optend + 1;
 				append_defaults_group(defaults_group);
 			}
