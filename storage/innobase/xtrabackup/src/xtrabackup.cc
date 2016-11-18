@@ -6798,18 +6798,11 @@ int main(int argc, char **argv)
 		char	conf_file[FN_REFLEN];
 
 		for (i=1; i < argc; i++) {
-
-			optend = strcend(argv[i], '=');
 			
-			/* bug fix for https://bugs.launchpad.net/percona-xtrabackup/2.3/+bug/1642329 
-                         * when in the parameter client sends -- -- or -- * params then optent variable stays empty.
-                         * After this the third parameter of strncmp function is constructed with optent variable
-                         * and it makes unpredictable different problems on the result.
-                         */
-                        if(strlen(optend) == 0) {
-                            fprintf(stderr, "Parameter is wrong\n");
-                            exit(EXIT_FAILURE);
-                        }
+			// Bug fix for https://bugs.launchpad.net/percona-xtrabackup/2.3/+bug/1642329
+			std::string tmp_argv(argv[i]);
+
+			optend = strcend(tmp_argv.c_str(), '=');
 
 			if (strncmp(argv[i], "--defaults-group",
 				    optend - argv[i]) == 0) {
