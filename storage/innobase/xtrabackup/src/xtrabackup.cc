@@ -6800,19 +6800,23 @@ int main(int argc, char **argv)
 		for (i=1; i < argc; i++) {
 			
 			// Bug fix for https://bugs.launchpad.net/percona-xtrabackup/2.3/+bug/1642329
-			std::string tmp_argv(argv[i]);
+			optend = strcend(argv[i], '=');
+                        
+                        char *new_optend = NULL;
+                        
+                        if(*optend != '\0') {
+                            new_optend = optend + 1;
+                        }
 
-			optend = strcend(tmp_argv.c_str(), '=');
-
-			if (strncmp(tmp_argv.c_str(), "--defaults-group",
-				    optend - tmp_argv.c_str()) == 0) {
-				defaults_group = optend + 1;
-				append_defaults_group(defaults_group);
+			if (strncmp(argv[i], "--defaults-group",
+				    optend - argv[i]) == 0) {
+				defaults_group = new_optend;
+                                append_defaults_group(defaults_group);
 			}
 
 			if (strncmp(argv[i], "--login-path",
 				    optend - argv[i]) == 0) {
-				append_defaults_group(optend + 1);
+				append_defaults_group(new_optend);
 			}
 
 			if (!strncmp(argv[i], "--prepare",
@@ -6827,7 +6831,7 @@ int main(int argc, char **argv)
 
 			if (!strncmp(argv[i], "--target-dir",
 				     optend - argv[i]) && *optend) {
-				target_dir = optend + 1;
+				target_dir = new_optend;
 			}
 
 			if (!*optend && argv[i][0] != '-') {
