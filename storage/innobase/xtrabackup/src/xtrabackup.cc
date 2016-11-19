@@ -122,6 +122,7 @@ tablespace. */
 const char reserved_temporary_space_name[] = "innodb_temporary";
 
 /* === xtrabackup specific options === */
+my_bool reverse_regex_match = TRUE;
 char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
 char *xtrabackup_target_dir= xtrabackup_real_target_dir;
 my_bool xtrabackup_version = FALSE;
@@ -627,7 +628,8 @@ enum options_xtrabackup
   OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
   OPT_BINLOG_INFO,
   OPT_REDO_LOG_VERSION,
-  OPT_KEYRING_FILE_DATA
+  OPT_KEYRING_FILE_DATA,
+  OPT_REVERSE_REGEX_MATCH
 };
 
 struct my_option xb_long_options[] =
@@ -1237,6 +1239,11 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    &opt_encrypt_server_id, &opt_encrypt_server_id, 0,
    GET_UINT, REQUIRED_ARG, 0, 0, UINT_MAX32,
    0, 0, 0},
+ {"reverse-regex-match", OPT_REVERSE_REGEX_MATCH,
+   "reverse regex match filter for tables and databases",
+   (G_PTR*) &reverse_regex_match,
+   (G_PTR*) &reverse_regex_match, 0, GET_BOOL, NO_ARG,
+   FALSE, 0, 0, 0, 0, 0},
 
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -2235,7 +2242,7 @@ check_if_table_matches_filters(const char *name)
 Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
 or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
 the --tables or --tables-file options.
-
+# Netease RDS
 @return TRUE if the table should be skipped. */
 bool
 check_if_skip_table(
@@ -2250,7 +2257,7 @@ check_if_skip_table(
 	if (UT_LIST_GET_LEN(regex_list) == 0 &&
 	    tables_hash == NULL &&
 	    databases_hash == NULL) {
-		return(false);
+		return reverse_regex_match ? (true): (false);
 	}
 
 	dbname = NULL;
@@ -2261,7 +2268,7 @@ check_if_skip_table(
 	}
 
 	if (dbname == NULL) {
-		return(false);
+		return reverse_regex_match ? (true): (false);
 	}
 
 	strncpy(buf, dbname, FN_REFLEN);
@@ -2277,12 +2284,12 @@ check_if_skip_table(
 			    !strcmp(database->name, buf));
 		/* Table's database isn't found, skip the table */
 		if (!database) {
-			return(true);
+		    return reverse_regex_match ? (false): (true);
 		}
 		/* There aren't tables specified for the database,
 		it should be backed up entirely */
 		if (!database->has_tables) {
-			return(false);
+		    return reverse_regex_match ? (true): (false);
 		}
 	}
 
@@ -2302,7 +2309,7 @@ check_if_skip_table(
 	partitions with regexps like '^test[.]t#P#p5' */
 	if (check_if_table_matches_filters(buf)) {
 
-		return(false);
+		return reverse_regex_match ? (true): (false);
 	}
 	if ((eptr = strstr(buf, "#P#")) != NULL) {
 
@@ -2310,11 +2317,11 @@ check_if_skip_table(
 
 		if (check_if_table_matches_filters(buf)) {
 
-			return(false);
+		    return reverse_regex_match ? (true): (false);
 		}
 	}
 
-	return(true);
+    return reverse_regex_match ? (false): (true);
 }
 
 /***********************************************************************
