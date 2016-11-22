@@ -118,6 +118,25 @@ xb_mysql_connect()
 	       opt_user, opt_password ? "set" : "not set",
 	       opt_port, opt_socket);
 
+#ifdef HAVE_OPENSSL
+	if (opt_use_ssl)
+	{
+		mysql_ssl_set(connection, opt_ssl_key, opt_ssl_cert,
+			      opt_ssl_ca, opt_ssl_capath,
+			      opt_ssl_cipher);
+		mysql_options(connection, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
+		mysql_options(connection, MYSQL_OPT_SSL_CRLPATH,
+			      opt_ssl_crlpath);
+	}
+	mysql_options(connection,MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
+		      (char*)&opt_ssl_verify_server_cert);
+#if !defined(HAVE_YASSL)
+	  if (opt_server_public_key && *opt_server_public_key)
+		mysql_options(connection, MYSQL_SERVER_PUBLIC_KEY,
+			      opt_server_public_key);
+#endif
+#endif
+
 	if (!mysql_real_connect(connection,
 				opt_host ? opt_host : "localhost",
 				opt_user,

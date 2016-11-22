@@ -1256,7 +1256,7 @@ static void openssl_lock(int, openssl_lock_t *, const char *, int);
 static unsigned long openssl_id_function();
 #endif
 char *des_key_file;
-#ifndef EMBEDDED_LIBRARY
+#if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
 struct st_VioSSLFd *ssl_acceptor_fd;
 #endif
 #endif /* HAVE_OPENSSL */
@@ -4349,7 +4349,7 @@ static int init_ssl()
   CRYPTO_malloc_init();
 #endif
   ssl_start();
-#ifndef EMBEDDED_LIBRARY
+#if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
   if (opt_use_ssl)
   {
     enum enum_ssl_init_error error= SSL_INITERR_NOERROR;
@@ -4375,7 +4375,7 @@ static int init_ssl()
   }
 #else
   have_ssl= SHOW_OPTION_DISABLED;
-#endif /* ! EMBEDDED_LIBRARY */
+#endif /* ! EMBEDDED_LIBRARY || XTRABACKUP */
   if (des_key_file)
     load_des_key_file(des_key_file);
 #ifndef HAVE_YASSL

@@ -383,6 +383,13 @@ uint opt_safe_slave_backup_timeout = 0;
 const char *opt_history = NULL;
 my_bool opt_decrypt = FALSE;
 
+#if defined(HAVE_OPENSSL)
+my_bool opt_ssl_verify_server_cert = FALSE;
+#if !defined(HAVE_YASSL)
+char *opt_server_public_key = NULL;
+#endif
+#endif
+
 /* Whether xtrabackup_binlog_info should be created on recovery */
 static bool recover_binlog_info;
 
@@ -475,7 +482,8 @@ typedef struct {
 
 enum options_xtrabackup
 {
-  OPT_XTRA_TARGET_DIR=256,
+  OPT_XTRA_TARGET_DIR = 1000,     /* make sure it is larger
+                                     than OPT_MAX_CLIENT_OPTION */
   OPT_XTRA_BACKUP,
   OPT_XTRA_STATS,
   OPT_XTRA_PREPARE,
@@ -592,7 +600,12 @@ enum options_xtrabackup
   OPT_DEBUG_SLEEP_BEFORE_UNLOCK,
   OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
   OPT_BINLOG_INFO,
-  OPT_XB_SECURE_AUTH
+  OPT_XB_SECURE_AUTH,
+
+  OPT_SSL_SSL,
+  OPT_SSL_VERIFY_SERVER_CERT,
+  OPT_SERVER_PUBLIC_KEY,
+
 };
 
 struct my_option xb_long_options[] =
@@ -1192,6 +1205,15 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
     " uses old (pre-4.1.1) protocol.", &opt_secure_auth,
     &opt_secure_auth, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
 
+#include "sslopt-longopts.h"
+
+#if !defined(HAVE_YASSL)
+  {"server-public-key-path", OPT_SERVER_PUBLIC_KEY,
+   "File path to the server public RSA key in PEM format.",
+   &opt_server_public_key, &opt_server_public_key, 0,
+   GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#endif
+
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1457,6 +1479,9 @@ xb_get_one_option(int optid,
       opt_history = "";
     }
     break;
+
+#include "sslopt-case.h"
+
   case '?':
     usage();
     exit(EXIT_SUCCESS);

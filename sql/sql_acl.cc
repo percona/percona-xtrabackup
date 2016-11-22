@@ -9267,7 +9267,9 @@ get_cached_table_access(GRANT_INTERNAL_INFO *grant_internal_info,
 
 /* few defines to have less ifdef's in the code below */
 #ifdef EMBEDDED_LIBRARY
+#ifndef XTRABACKUP
 #undef HAVE_OPENSSL
+#endif
 #ifdef NO_EMBEDDED_ACCESS_CHECKS
 #define initialized 0
 #endif

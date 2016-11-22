@@ -44,6 +44,8 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}
   )
 
+ADD_DEFINITIONS(${SSL_DEFINES})
+
 ########################################################################
 # xtrabackup binary
 ########################################################################
@@ -58,6 +60,10 @@ ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
 ADD_CUSTOM_TARGET(GenVersionCheck
                   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
 
+SET_SOURCE_FILES_PROPERTIES(
+  xtrabackup.cc
+  backup_mysql.cc
+  PROPERTIES COMPILE_FLAGS -DMYSQL_CLIENT)
 
 MYSQL_ADD_EXECUTABLE(xtrabackup
   xtrabackup.cc
@@ -83,6 +89,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbstream_write.c
   backup_mysql.cc
   backup_copy.cc
+  ../../../../sql-common/client_authentication.cc
   )
 
 SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)
