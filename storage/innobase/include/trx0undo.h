@@ -301,7 +301,7 @@ trx_undo_assign_undo(
 					referred rollback segment. */
 	ulint		type)		/*!< in: TRX_UNDO_INSERT or
 					TRX_UNDO_UPDATE */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 /******************************************************************//**
 Sets the state of the undo log segment at a transaction finish.
 @return undo log segment header page, x-latched */

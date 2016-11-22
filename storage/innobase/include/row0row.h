@@ -269,8 +269,8 @@ row_build_row_ref_in_tuple(
 	const dict_index_t*	index,	/*!< in: secondary index */
 	ulint*			offsets,/*!< in: rec_get_offsets(rec, index)
 					or NULL */
-	trx_t*			trx)	/*!< in: transaction or NULL */
-	MY_ATTRIBUTE((nonnull(1,2,3)));
+	trx_t*			trx);	/*!< in: transaction or NULL */
+
 /*******************************************************************//**
 Builds from a secondary index record a row reference with which we can
 search the clustered index record. */

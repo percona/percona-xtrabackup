@@ -999,8 +999,8 @@ page_dir_split_slot(
 	page_t*		page,	/*!< in: index page */
 	page_zip_des_t*	page_zip,/*!< in/out: compressed page whose
 				uncompressed part will be written, or NULL */
-	ulint		slot_no)/*!< in: the directory slot */
-	MY_ATTRIBUTE((nonnull(1)));
+	ulint		slot_no);/*!< in: the directory slot */
+
 /*************************************************************//**
 Tries to balance the given directory slot with too few records
 with the upper neighbor, so that there are at least the minimum number
@@ -1011,8 +1011,8 @@ page_dir_balance_slot(
 /*==================*/
 	page_t*		page,	/*!< in/out: index page */
 	page_zip_des_t*	page_zip,/*!< in/out: compressed page, or NULL */
-	ulint		slot_no)/*!< in: the directory slot */
-	MY_ATTRIBUTE((nonnull(1)));
+	ulint		slot_no);/*!< in: the directory slot */
+
 /**********************************************************//**
 Parses a log record of a record list end or start deletion.
 @return end of log record or NULL */

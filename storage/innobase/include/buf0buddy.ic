@@ -47,7 +47,7 @@ buf_buddy_alloc_low(
 					allocated from the LRU list and
 					buf_pool->mutex was temporarily
 					released */
-	MY_ATTRIBUTE((malloc, nonnull));
+	MY_ATTRIBUTE((malloc));
 
 /**********************************************************************//**
 Deallocate a block. */

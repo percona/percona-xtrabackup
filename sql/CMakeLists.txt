@@ -309,7 +309,7 @@ ADD_COMPILE_FLAGS(
   item_geofunc_setops.cc
   item_json_func.cc
   spatial.cc
-  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
+  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
 )
 
 # Fixes "C1128: number of sections exceeded object file format limit" in MSVC /MD

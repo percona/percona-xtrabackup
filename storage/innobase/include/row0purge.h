@@ -76,7 +76,7 @@ que_thr_t*
 row_purge_step(
 /*===========*/
 	que_thr_t*	thr)	/*!< in: query thread */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 
 /* Purge node structure */
 
