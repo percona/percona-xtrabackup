@@ -62,7 +62,7 @@ int xb_crypt_write_chunk(xb_wcrypt_t *crypt, const void *buf, size_t olen,
 
 	ptr = tmpbuf;
 
-	memcpy(ptr, XB_CRYPT_CHUNK_MAGIC2, XB_CRYPT_CHUNK_MAGIC_SIZE);
+	memcpy(ptr, XB_CRYPT_CHUNK_MAGIC_CURRENT, XB_CRYPT_CHUNK_MAGIC_SIZE);
 	ptr += XB_CRYPT_CHUNK_MAGIC_SIZE;
 
 	int8store(ptr, (ulonglong)0);	/* reserved */

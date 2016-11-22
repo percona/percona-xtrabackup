@@ -26,9 +26,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <gcrypt.h>
 #include <string.h>
 
+#if !defined(GCRYPT_VERSION_NUMBER) || (GCRYPT_VERSION_NUMBER < 0x010600)
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
+#endif
 
-#define XBCRYPT_VERSION "1.0"
+#define XBCRYPT_VERSION "1.1"
 
 typedef enum {
 	RUN_MODE_NONE,
@@ -58,8 +60,6 @@ static uint 		encrypt_algos[] = { GCRY_CIPHER_NONE,
 static int		encrypt_algo = 0;
 static int		encrypt_mode = GCRY_CIPHER_MODE_CTR;
 static uint 		encrypt_key_len = 0;
-static const unsigned char v1_encrypt_iv[] =
-			    "Percona Xtrabackup is Awesome!!!";
 static size_t 		encrypt_iv_len = 0;
 
 static struct my_option my_long_options[] =
@@ -132,7 +132,9 @@ mode_encrypt(File filein, File fileout);
 int
 main(int argc, char **argv)
 {
+#if !defined(GCRYPT_VERSION_NUMBER) || (GCRYPT_VERSION_NUMBER < 0x010600)
 	gcry_error_t 		gcry_error;
+#endif
 	File filein = 0;
 	File fileout = 0;
 
@@ -144,6 +146,7 @@ main(int argc, char **argv)
 
 	/* Acording to gcrypt docs (and my testing), setting up the threading
 	   callbacks must be done first, so, lets give it a shot */
+#if !defined(GCRYPT_VERSION_NUMBER) || (GCRYPT_VERSION_NUMBER < 0x010600)
 	gcry_error = gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
 	if (gcry_error) {
 		msg("%s: unable to set libgcrypt thread cbs - "
@@ -152,6 +155,7 @@ main(int argc, char **argv)
 		    gcry_strerror(gcry_error));
 		return 1;
 	}
+#endif
 
 	/* Version check should be the very first call because it
 	makes sure that important subsystems are intialized. */
@@ -305,6 +309,7 @@ mode_decrypt(File filein, File fileout)
 	xb_rcrypt_result_t	result;
 	gcry_cipher_hd_t	cipher_handle;
 	gcry_error_t		gcry_error;
+	my_bool			hash_appended;
 
 	if (encrypt_algo != GCRY_CIPHER_NONE) {
 		gcry_error = gcry_cipher_open(&cipher_handle,
@@ -340,7 +345,7 @@ mode_decrypt(File filein, File fileout)
 	/* Walk the encrypted chunks, decrypting them and writing out */
 	while ((result = xb_crypt_read_chunk(xbcrypt_file, &chunkbuf,
 					     &originalsize, &chunksize,
-					     &ivbuf, &ivsize))
+					     &ivbuf, &ivsize, &hash_appended))
 		== XB_CRYPT_READ_CHUNK) {
 
 		if (encrypt_algo != GCRY_CIPHER_NONE) {
@@ -354,13 +359,9 @@ mode_decrypt(File filein, File fileout)
 			}
 
 			if (ivsize) {
-				gcry_error = gcry_cipher_setiv(cipher_handle,
-							       ivbuf,
-							       ivsize);
-			} else {
-				gcry_error = gcry_cipher_setiv(cipher_handle,
-							       v1_encrypt_iv,
-							       encrypt_iv_len);
+				gcry_error = gcry_cipher_setctr(cipher_handle,
+								ivbuf,
+								ivsize);
 			}
 			if (gcry_error) {
 				msg("%s:decrypt: unable to set cipher iv - "
@@ -371,18 +372,12 @@ mode_decrypt(File filein, File fileout)
 			}
 
 			if (decryptbufsize < originalsize) {
-				if (decryptbufsize) {
-					decryptbuf = my_realloc(PSI_NOT_INSTRUMENTED,
-								decryptbuf,
-								originalsize,
-								MYF(MY_WME));
-					decryptbufsize = originalsize;
-				} else {
-					decryptbuf = my_malloc(PSI_NOT_INSTRUMENTED,
-							       originalsize,
-							       MYF(MY_WME));
-					decryptbufsize = originalsize;
-				}
+				decryptbuf = my_realloc(
+					PSI_NOT_INSTRUMENTED,
+					decryptbuf,
+					originalsize,
+					MYF(MY_WME | MY_ALLOW_ZERO_PTR));
+				decryptbufsize = originalsize;
 			}
 
 			/* Try to decrypt it */
@@ -404,8 +399,29 @@ mode_decrypt(File filein, File fileout)
 			decryptbuf = chunkbuf;
 		}
 
+		if (hash_appended) {
+			uchar hash[XB_CRYPT_HASH_LEN];
+
+			originalsize -= XB_CRYPT_HASH_LEN;
+
+			/* ensure that XB_CRYPT_HASH_LEN is the correct length
+			of XB_CRYPT_HASH hashing algorithm output */
+			assert(gcry_md_get_algo_dlen(XB_CRYPT_HASH) ==
+			       XB_CRYPT_HASH_LEN);
+			gcry_md_hash_buffer(XB_CRYPT_HASH, hash, decryptbuf,
+					    originalsize);
+			if (memcmp(hash, (char *) decryptbuf + originalsize,
+				   XB_CRYPT_HASH_LEN) != 0) {
+				msg("%s:%s invalid plaintext hash. "
+				    "Wrong encrytion key specified?\n",
+				    my_progname, __FUNCTION__);
+				result = XB_CRYPT_READ_ERROR;
+				goto err;
+			}
+		}
+
 		/* Write it out */
-		if (my_write(fileout, decryptbuf, originalsize,
+		if (my_write(fileout, (const uchar *) decryptbuf, originalsize,
 			     MYF(MY_WME | MY_NABP))) {
 			msg("%s:decrypt: unable to write output chunk.\n",
 			    my_progname);
@@ -460,7 +476,7 @@ mode_encrypt(File filein, File fileout)
 {
 	size_t			bytesread;
 	size_t			chunkbuflen;
-	void			*chunkbuf = NULL;
+	uchar			*chunkbuf = NULL;
 	void			*ivbuf = NULL;
 	size_t			encryptbuflen = 0;
 	size_t			encryptedlen = 0;
@@ -508,10 +524,20 @@ mode_encrypt(File filein, File fileout)
 	ivbuf = my_malloc(PSI_NOT_INSTRUMENTED, encrypt_iv_len, MYF(MY_FAE));
 
 	/* now read in data in chunk size, encrypt and write out */
-	chunkbuflen = opt_encrypt_chunk_size;
-	chunkbuf = my_malloc(PSI_NOT_INSTRUMENTED, chunkbuflen, MYF(MY_FAE));
-	while ((bytesread = my_read(filein, chunkbuf, chunkbuflen,
+	chunkbuflen = opt_encrypt_chunk_size + XB_CRYPT_HASH_LEN;
+	chunkbuf = (uchar *) my_malloc(PSI_NOT_INSTRUMENTED,
+				       chunkbuflen, MYF(MY_FAE));
+	while ((bytesread = my_read(filein, chunkbuf, opt_encrypt_chunk_size,
 				    MYF(MY_WME))) > 0) {
+
+		size_t origbuflen = bytesread + XB_CRYPT_HASH_LEN;
+
+		/* ensure that XB_CRYPT_HASH_LEN is the correct length
+		of XB_CRYPT_HASH hashing algorithm output */
+		assert(XB_CRYPT_HASH_LEN ==
+		       gcry_md_get_algo_dlen(XB_CRYPT_HASH));
+		gcry_md_hash_buffer(XB_CRYPT_HASH, chunkbuf + bytesread,
+				    chunkbuf, bytesread);
 
 		if (encrypt_algo != GCRY_CIPHER_NONE) {
 			gcry_error = gcry_cipher_reset(cipher_handle);
@@ -525,7 +551,7 @@ mode_encrypt(File filein, File fileout)
 			}
 
 			xb_crypt_create_iv(ivbuf, encrypt_iv_len);
-			gcry_error = gcry_cipher_setiv(cipher_handle,
+			gcry_error = gcry_cipher_setctr(cipher_handle,
 							ivbuf,
 							encrypt_iv_len);
 
@@ -537,28 +563,20 @@ mode_encrypt(File filein, File fileout)
 				continue;
 			}
 
-			if (encryptbuflen < bytesread) {
-				if (encryptbuflen) {
-					encryptbuf = my_realloc(PSI_NOT_INSTRUMENTED,
-								encryptbuf,
-								bytesread,
-								MYF(MY_WME));
-					encryptbuflen = bytesread;
-				} else {
-					encryptbuf = my_malloc(PSI_NOT_INSTRUMENTED,
-							       bytesread,
-							       MYF(MY_WME));
-					encryptbuflen = bytesread;
-				}
+			if (encryptbuflen < origbuflen) {
+				encryptbuf = my_realloc(PSI_NOT_INSTRUMENTED,
+					encryptbuf, origbuflen,
+					MYF(MY_WME | MY_ALLOW_ZERO_PTR));
+				encryptbuflen = origbuflen;
 			}
 
 			gcry_error = gcry_cipher_encrypt(cipher_handle,
 							 encryptbuf,
 							 encryptbuflen,
 							 chunkbuf,
-							 bytesread);
+							 origbuflen);
 
-			encryptedlen = bytesread;
+			encryptedlen = origbuflen;
 
 			if (gcry_error) {
 				msg("%s:encrypt: unable to encrypt chunk - "
@@ -569,11 +587,12 @@ mode_encrypt(File filein, File fileout)
 				goto err;
 			}
 		} else {
-			encryptedlen = bytesread;
+			encryptedlen = origbuflen;
 			encryptbuf = chunkbuf;
 		}
 
-		if (xb_crypt_write_chunk(xbcrypt_file, encryptbuf, bytesread,
+		if (xb_crypt_write_chunk(xbcrypt_file, encryptbuf,
+					 bytesread + XB_CRYPT_HASH_LEN,
 					 encryptedlen, ivbuf, encrypt_iv_len)) {
 			msg("%s:encrypt: abcrypt_write_chunk() failed.\n",
 			    my_progname);

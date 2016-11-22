@@ -52,7 +52,7 @@ xb_crypt_read_open(void *userdata, xb_crypt_read_callback *onread)
 
 xb_rcrypt_result_t
 xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
-		    void **iv, size_t *ivlen)
+		    void **iv, size_t *ivlen, my_bool *hash_appended)
 
 {
 	uchar		tmpbuf[XB_CRYPT_CHUNK_MAGIC_SIZE + 8 + 8 + 8 + 4];
@@ -78,10 +78,15 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 
 	ptr = tmpbuf;
 
-	if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC1, XB_CRYPT_CHUNK_MAGIC_SIZE) == 0) {
-		version = 1;
-	} else if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC2, XB_CRYPT_CHUNK_MAGIC_SIZE) == 0) {
+	if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC3,
+		   XB_CRYPT_CHUNK_MAGIC_SIZE) == 0) {
+		version = 3;
+	} else if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC2,
+			  XB_CRYPT_CHUNK_MAGIC_SIZE) == 0) {
 		version = 2;
+	} else if (memcmp(ptr, XB_CRYPT_CHUNK_MAGIC1,
+			  XB_CRYPT_CHUNK_MAGIC_SIZE) == 0) {
+		version = 1;
 	} else {
 		msg("%s:%s: wrong chunk magic at offset 0x%llx.\n",
 		    my_progname, __FUNCTION__, crypt->offset);
@@ -153,27 +158,15 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 	}
 
 	if (*ivlen > crypt->ivbufsize) {
-		if (crypt->ivbuffer) {
-			crypt->ivbuffer = my_realloc(PSI_NOT_INSTRUMENTED,
-						     crypt->ivbuffer, *ivlen,
-						     MYF(MY_WME));
-			if (crypt->ivbuffer == NULL) {
-				msg("%s:%s: failed to increase iv buffer to "
-				    "%llu bytes.\n", my_progname, __FUNCTION__,
-				    (ulonglong)*ivlen);
-				result = XB_CRYPT_READ_ERROR;
-				goto err;
-			}
-		} else {
-			crypt->ivbuffer = my_malloc(PSI_NOT_INSTRUMENTED,
-						    *ivlen, MYF(MY_WME));
-			if (crypt->ivbuffer == NULL) {
-				msg("%s:%s: failed to allocate iv buffer of "
-				    "%llu bytes.\n", my_progname, __FUNCTION__,
-				    (ulonglong)*ivlen);
-				result = XB_CRYPT_READ_ERROR;
-				goto err;
-			}
+		crypt->ivbuffer = my_realloc(PSI_NOT_INSTRUMENTED,
+					     crypt->ivbuffer, *ivlen,
+					     MYF(MY_WME | MY_ALLOW_ZERO_PTR));
+		if (crypt->ivbuffer == NULL) {
+			msg("%s:%s: failed to increase iv buffer to "
+			    "%llu bytes.\n", my_progname, __FUNCTION__,
+			    (ulonglong)*ivlen);
+			result = XB_CRYPT_READ_ERROR;
+			goto err;
 		}
 		crypt->ivbufsize = *ivlen;
 	}
@@ -190,28 +183,23 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 		*iv = crypt->ivbuffer;
 	}
 
+	/* for version euqals 2 we need to read in the iv data but do not init
+	CTR with it */
+	if (version == 2) {
+		*ivlen = 0;
+		*iv = 0;
+	}
+
 	if (*olen > crypt->bufsize) {
-		if (crypt->buffer) {
-			crypt->buffer = my_realloc(PSI_NOT_INSTRUMENTED,
-						   crypt->buffer, *olen,
-						   MYF(MY_WME));
-			if (crypt->buffer == NULL) {
-				msg("%s:%s: failed to increase buffer to "
-				    "%llu bytes.\n", my_progname, __FUNCTION__,
-				    (ulonglong)*olen);
-				result = XB_CRYPT_READ_ERROR;
-				goto err;
-			}
-		} else {
-			crypt->buffer = my_malloc(PSI_NOT_INSTRUMENTED,
-						  *olen, MYF(MY_WME));
-			if (crypt->buffer == NULL) {
-				msg("%s:%s: failed to allocate buffer of "
-				    "%llu bytes.\n", my_progname, __FUNCTION__,
-				    (ulonglong)*olen);
-				result = XB_CRYPT_READ_ERROR;
-				goto err;
-			}
+		crypt->buffer = my_realloc(PSI_NOT_INSTRUMENTED,
+					   crypt->buffer, *olen,
+					   MYF(MY_WME | MY_ALLOW_ZERO_PTR));
+		if (crypt->buffer == NULL) {
+			msg("%s:%s: failed to increase buffer to "
+			    "%llu bytes.\n", my_progname, __FUNCTION__,
+			    (ulonglong)*olen);
+			result = XB_CRYPT_READ_ERROR;
+			goto err;
 		}
 		crypt->bufsize = *olen;
 	}
@@ -238,6 +226,9 @@ xb_crypt_read_chunk(xb_rcrypt_t *crypt, void **buf, size_t *olen, size_t *elen,
 
 	crypt->offset += *elen;
 	*buf = crypt->buffer;
+
+	*hash_appended = version > 2;
+
 	goto exit;
 
 err:
