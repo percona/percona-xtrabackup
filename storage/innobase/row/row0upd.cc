@@ -2488,7 +2488,7 @@ to this node, we assume that we have a persistent cursor which was on a
 record, and the position of the cursor is stored in the cursor.
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static __attribute__((nonnull, warn_unused_result))
+static __attribute__((warn_unused_result))
 dberr_t
 row_upd(
 /*====*/
@@ -2497,7 +2497,8 @@ row_upd(
 {
 	dberr_t		err	= DB_SUCCESS;
 
-	ut_ad(node && thr);
+	ut_ad(node != NULL);
+	ut_ad(thr != NULL);
 
 	if (UNIV_LIKELY(node->in_mysql_interface)) {
 

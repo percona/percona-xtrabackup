@@ -746,8 +746,7 @@ fts_savepoint_take(
 /*===============*/
 	trx_t*		trx,			/*!< in: transaction */
 	fts_trx_t*	fts_trx,		/*!< in: fts transaction */
-	const char*	name)			/*!< in: savepoint name */
-	__attribute__((nonnull));
+	const char*	name);			/*!< in: savepoint name */
 /**********************************************************************//**
 Refresh last statement savepoint. */
 UNIV_INTERN

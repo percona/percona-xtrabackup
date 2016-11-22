@@ -153,9 +153,8 @@ row_build(
 	row_ext_t**		ext,	/*!< out, own: cache of
 					externally stored column
 					prefixes, or NULL */
-	mem_heap_t*		heap)	/*!< in: memory heap from which
+	mem_heap_t*		heap);	/*!< in: memory heap from which
 					the memory needed is allocated */
-	__attribute__((nonnull(2,3,9)));
 /*******************************************************************//**
 Converts an index record to a typed data tuple.
 @return index entry built; does not set info_bits, and the data fields
@@ -171,7 +170,7 @@ row_rec_to_index_entry_low(
 					stored columns */
 	mem_heap_t*		heap)	/*!< in: memory heap from which
 					the memory needed is allocated */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*******************************************************************//**
 Converts an index record to a typed data tuple. NOTE that externally
 stored (often big) fields are NOT copied to heap.
@@ -187,7 +186,7 @@ row_rec_to_index_entry(
 					stored columns */
 	mem_heap_t*		heap)	/*!< in: memory heap from which
 					the memory needed is allocated */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*******************************************************************//**
 Builds from a secondary index record a row reference with which we can
 search the clustered index record.
@@ -210,7 +209,7 @@ row_build_row_ref(
 				as long as the row reference is used! */
 	mem_heap_t*	heap)	/*!< in: memory heap from which the memory
 				needed is allocated */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*******************************************************************//**
 Builds from a secondary index record a row reference with which we can
 search the clustered index record. */

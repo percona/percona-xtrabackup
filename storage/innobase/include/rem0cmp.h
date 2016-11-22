@@ -169,12 +169,11 @@ cmp_dtuple_rec_with_match_low(
 				/*!< in/out: number of already completely
 				matched fields; when function returns,
 				contains the value for current comparison */
-	ulint*		matched_bytes)
+	ulint*		matched_bytes);
 				/*!< in/out: number of already matched
 				bytes within the first field not completely
 				matched; when function returns, contains the
 				value for current comparison */
-	__attribute__((nonnull));
 #define cmp_dtuple_rec_with_match(tuple,rec,offsets,fields,bytes)	\
 	cmp_dtuple_rec_with_match_low(					\
 		tuple,rec,offsets,dtuple_get_n_fields_cmp(tuple),fields,bytes)

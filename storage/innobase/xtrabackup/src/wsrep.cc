@@ -194,7 +194,8 @@ xb_write_galera_info()
 	if (fp == NULL) {
 
 		msg("xtrabackup: error: "
-		    "could not create "XB_GALERA_INFO_FILENAME", errno = %d\n",
+		    "could not create " XB_GALERA_INFO_FILENAME
+		    ", errno = %d\n",
 		    errno);
 		exit(EXIT_FAILURE);
 	}
@@ -207,7 +208,8 @@ xb_write_galera_info()
 	if (fprintf(fp, "%s:%lld", uuid_str, (long long) seqno) < 0) {
 
 		msg("xtrabackup: error: "
-		    "could not write to "XB_GALERA_INFO_FILENAME", errno = %d\n",
+		    "could not write to " XB_GALERA_INFO_FILENAME
+		    ", errno = %d\n",
 		    errno);
 		exit(EXIT_FAILURE);
 	}

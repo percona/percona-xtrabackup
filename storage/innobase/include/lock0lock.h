@@ -465,7 +465,7 @@ lock_table(
 				in dictionary cache */
 	enum lock_mode	mode,	/*!< in: lock mode */
 	que_thr_t*	thr)	/*!< in: query thread */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*********************************************************************//**
 Creates a table IX lock object for a resurrected transaction. */
 UNIV_INTERN
