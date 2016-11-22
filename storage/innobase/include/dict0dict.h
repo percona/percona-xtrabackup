@@ -196,8 +196,7 @@ void
 dict_col_copy_type(
 /*===============*/
 	const dict_col_t*	col,	/*!< in: column */
-	dtype_t*		type)	/*!< out: data type */
-	__attribute__((nonnull));
+	dtype_t*		type);	/*!< out: data type */
 /**********************************************************************//**
 Determine bytes of column prefix to be stored in the undo log. Please
 note if the table format is UNIV_FORMAT_A (< UNIV_FORMAT_B), no prefix
@@ -440,7 +439,7 @@ dict_table_get_referenced_constraint(
 /*=================================*/
 	dict_table_t*	table,	/*!< in: InnoDB table */
 	dict_index_t*	index)	/*!< in: InnoDB index */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*********************************************************************//**
 Checks if a table is referenced by foreign keys.
 @return	TRUE if table is referenced by a foreign key */
@@ -487,7 +486,7 @@ dict_table_get_foreign_constraint(
 /*==============================*/
 	dict_table_t*	table,	/*!< in: InnoDB table */
 	dict_index_t*	index)	/*!< in: InnoDB index */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*********************************************************************//**
 Scans a table create SQL string and adds to the data dictionary
 the foreign key constraints declared in the string. This function
@@ -722,7 +721,7 @@ ulint
 dict_index_is_clust(
 /*================*/
 	const dict_index_t*	index)	/*!< in: index */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 /********************************************************************//**
 Check whether the index is unique.
 @return	nonzero for unique index, zero for other indexes */
@@ -731,7 +730,7 @@ ulint
 dict_index_is_unique(
 /*=================*/
 	const dict_index_t*	index)	/*!< in: index */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 /********************************************************************//**
 Check whether the index is the insert buffer tree.
 @return	nonzero for insert buffer, zero for other indexes */
@@ -740,7 +739,7 @@ ulint
 dict_index_is_ibuf(
 /*===============*/
 	const dict_index_t*	index)	/*!< in: index */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 /********************************************************************//**
 Check whether the index is a secondary index or the insert buffer tree.
 @return	nonzero for insert buffer, zero for other indexes */
@@ -749,7 +748,7 @@ ulint
 dict_index_is_sec_or_ibuf(
 /*======================*/
 	const dict_index_t*	index)	/*!< in: index */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 
 /************************************************************************
 Gets the all the FTS indexes for the table. NOTE: must not be called for
@@ -771,7 +770,7 @@ ulint
 dict_table_get_n_user_cols(
 /*=======================*/
 	const dict_table_t*	table)	/*!< in: table */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 /********************************************************************//**
 Gets the number of system columns in a table in the dictionary cache.
 @return	number of system (e.g., ROW_ID) columns of a table */
@@ -780,7 +779,7 @@ ulint
 dict_table_get_n_sys_cols(
 /*======================*/
 	const dict_table_t*	table)	/*!< in: table */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 /********************************************************************//**
 Gets the number of all columns (also system) in a table in the dictionary
 cache.
@@ -790,7 +789,7 @@ ulint
 dict_table_get_n_cols(
 /*==================*/
 	const dict_table_t*	table)	/*!< in: table */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 /********************************************************************//**
 Gets the approximately estimated number of rows in the table.
 @return	estimated number of rows */
@@ -799,7 +798,7 @@ ib_uint64_t
 dict_table_get_n_rows(
 /*==================*/
 	const dict_table_t*	table)	/*!< in: table */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /********************************************************************//**
 Increment the number of rows in the table by one.
 Notice that this operation is not protected by any latch, the number is
@@ -1740,8 +1739,7 @@ void
 dict_set_corrupted_index_cache_only(
 /*================================*/
 	dict_index_t*	index,		/*!< in/out: index */
-	dict_table_t*	table)		/*!< in/out: table */
-	__attribute__((nonnull));
+	dict_table_t*	table);		/*!< in/out: table */
 
 /**********************************************************************//**
 Flags a table with specified space_id corrupted in the table dictionary
@@ -1771,7 +1769,7 @@ bool
 dict_table_is_discarded(
 /*====================*/
 	const dict_table_t*	table)	/*!< in: table to check */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 
 /********************************************************************//**
 Check if it is a temporary table.
@@ -1781,7 +1779,7 @@ bool
 dict_table_is_temporary(
 /*====================*/
 	const dict_table_t*	table)	/*!< in: table to check */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 
 #ifndef UNIV_HOTBACKUP
 /*********************************************************************//**

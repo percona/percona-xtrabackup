@@ -67,8 +67,7 @@ void
 dfield_set_type(
 /*============*/
 	dfield_t*	field,	/*!< in: SQL data field */
-	const dtype_t*	type)	/*!< in: pointer to data type struct */
-	__attribute__((nonnull));
+	const dtype_t*	type);	/*!< in: pointer to data type struct */
 /*********************************************************************//**
 Gets length of field data.
 @return	length of data; UNIV_SQL_NULL if SQL null data */
@@ -147,8 +146,7 @@ void
 dfield_copy_data(
 /*=============*/
 	dfield_t*	field1,	/*!< out: field to copy to */
-	const dfield_t*	field2)	/*!< in: field to copy from */
-	__attribute__((nonnull));
+	const dfield_t*	field2);/*!< in: field to copy from */
 /*********************************************************************//**
 Copies a data field to another. */
 UNIV_INLINE
@@ -272,7 +270,7 @@ dtuple_create_from_mem(
 	void*	buf,		/*!< in, out: buffer to use */
 	ulint	buf_size,	/*!< in: buffer size */
 	ulint	n_fields)	/*!< in: number of fields */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 
 /**********************************************************//**
 Creates a data tuple to a memory heap. The default value for number
@@ -340,7 +338,7 @@ dtuple_coll_cmp(
 /*============*/
 	const dtuple_t*	tuple1,	/*!< in: tuple 1 */
 	const dtuple_t*	tuple2)	/*!< in: tuple 2 */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /************************************************************//**
 Folds a prefix given as the number of fields of a tuple.
 @return	the folded value */
@@ -353,7 +351,7 @@ dtuple_fold(
 	ulint		n_bytes,/*!< in: number of bytes to fold in an
 				incomplete last field */
 	index_id_t	tree_id)/*!< in: index tree id */
-	__attribute__((nonnull, pure, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*******************************************************************//**
 Sets types of fields binary in a tuple. */
 UNIV_INLINE

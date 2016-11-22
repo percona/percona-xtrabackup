@@ -1683,7 +1683,8 @@ row_update_for_mysql(
 	trx_t*		trx		= prebuilt->trx;
 	ulint		fk_depth	= 0;
 
-	ut_ad(prebuilt && trx);
+	ut_ad(prebuilt != NULL);
+	ut_ad(trx != NULL);
 	UT_NOT_USED(mysql_rec);
 
 	if (prebuilt->table->ibd_file_missing) {
@@ -1880,7 +1881,8 @@ row_unlock_for_mysql(
 	btr_pcur_t*	clust_pcur	= &prebuilt->clust_pcur;
 	trx_t*		trx		= prebuilt->trx;
 
-	ut_ad(prebuilt && trx);
+	ut_ad(prebuilt != NULL);
+	ut_ad(trx != NULL);
 
 	if (UNIV_UNLIKELY
 	    (!srv_locks_unsafe_for_binlog

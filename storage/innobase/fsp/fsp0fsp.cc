@@ -132,7 +132,7 @@ fsp_fill_free_list(
 	ulint		space,		/*!< in: space */
 	fsp_header_t*	header,		/*!< in/out: space header */
 	mtr_t*		mtr)		/*!< in/out: mini-transaction */
-	UNIV_COLD __attribute__((nonnull));
+	UNIV_COLD;
 /**********************************************************************//**
 Allocates a single free page from a segment. This function implements
 the intelligent allocation strategy which tries to minimize file space
@@ -1046,7 +1046,8 @@ fsp_fill_free_list(
 	ulint	i;
 	mtr_t	ibuf_mtr;
 
-	ut_ad(header && mtr);
+	ut_ad(header != NULL);
+	ut_ad(mtr != NULL);
 	ut_ad(page_offset(header) == FSP_HEADER_OFFSET);
 
 	/* Check if we can fill free list from above the free list limit */
@@ -3012,7 +3013,8 @@ fseg_free_page_low(
 	ib_id_t	seg_id;
 	ulint	i;
 
-	ut_ad(seg_inode && mtr);
+	ut_ad(seg_inode != NULL);
+	ut_ad(mtr != NULL);
 	ut_ad(mach_read_from_4(seg_inode + FSEG_MAGIC_N)
 	      == FSEG_MAGIC_N_VALUE);
 	ut_ad(!((page_offset(seg_inode) - FSEG_ARR_OFFSET) % FSEG_INODE_SIZE));
@@ -3221,7 +3223,8 @@ fseg_free_extent(
 	ulint	descr_n_used;
 	ulint	i;
 
-	ut_ad(seg_inode && mtr);
+	ut_ad(seg_inode != NULL);
+	ut_ad(mtr != NULL);
 
 	descr = xdes_get_descriptor(space, zip_size, page, mtr);
 

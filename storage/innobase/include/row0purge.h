@@ -47,7 +47,7 @@ row_purge_node_create(
 	que_thr_t*	parent,		/*!< in: parent node, i.e., a
 					thr node */
 	mem_heap_t*	heap)		/*!< in: memory heap where created */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /***********************************************************//**
 Determines if it is possible to remove a secondary index entry.
 Removal is possible if the secondary index entry does not refer to any

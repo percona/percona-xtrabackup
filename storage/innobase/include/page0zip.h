@@ -58,7 +58,7 @@ ulint
 page_zip_get_size(
 /*==============*/
 	const page_zip_des_t*	page_zip)	/*!< in: compressed page */
-	__attribute__((nonnull, pure));
+	__attribute__((warn_unused_result));
 /**********************************************************************//**
 Set the size of a compressed page in bytes. */
 UNIV_INLINE
@@ -195,7 +195,7 @@ page_zip_max_ins_size(
 /*==================*/
 	const page_zip_des_t*	page_zip,/*!< in: compressed page */
 	ibool			is_clust)/*!< in: TRUE if clustered index */
-	__attribute__((nonnull, pure));
+	__attribute__((warn_unused_result));
 
 /**********************************************************************//**
 Determine if enough space is available in the modification log.
@@ -209,7 +209,7 @@ page_zip_available(
 	ulint			length,	/*!< in: combined size of the record */
 	ulint			create)	/*!< in: nonzero=add the record to
 					the heap */
-	__attribute__((nonnull, pure));
+	__attribute__((warn_unused_result));
 
 /**********************************************************************//**
 Write data to the uncompressed header portion of a page.  The data must
@@ -449,8 +449,7 @@ page_zip_parse_compress(
 	byte*		ptr,	/*!< in: buffer */
 	byte*		end_ptr,/*!< in: buffer end */
 	page_t*		page,	/*!< out: uncompressed page */
-	page_zip_des_t*	page_zip)/*!< out: compressed page */
-	__attribute__((nonnull(1,2)));
+	page_zip_des_t*	page_zip);/*!< out: compressed page */
 
 /**********************************************************************//**
 Calculate the compressed page checksum.

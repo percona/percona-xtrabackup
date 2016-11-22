@@ -509,7 +509,7 @@ create_options_are_invalid(
 					columns and indexes */
 	HA_CREATE_INFO*	create_info,	/*!< in: create info. */
 	bool		use_tablespace)	/*!< in: srv_file_per_table */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 
 /*********************************************************************//**
 Retrieve the FTS Relevance Ranking result for doc with doc_id

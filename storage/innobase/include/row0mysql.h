@@ -276,7 +276,7 @@ row_update_for_mysql(
 					the MySQL format */
 	row_prebuilt_t*	prebuilt)	/*!< in: prebuilt struct in MySQL
 					handle */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*********************************************************************//**
 This can only be used when srv_locks_unsafe_for_binlog is TRUE or this
 session is using a READ COMMITTED or READ UNCOMMITTED isolation level.
@@ -292,12 +292,11 @@ row_unlock_for_mysql(
 /*=================*/
 	row_prebuilt_t*	prebuilt,	/*!< in/out: prebuilt struct in MySQL
 					handle */
-	ibool		has_latches_on_recs)/*!< in: TRUE if called
+	ibool		has_latches_on_recs);/*!< in: TRUE if called
 					so that we have the latches on
 					the records under pcur and
 					clust_pcur, and we do not need
 					to reposition the cursors. */
-	__attribute__((nonnull));
 /*********************************************************************//**
 Checks if a table name contains the string "/#sql" which denotes temporary
 tables in MySQL.
@@ -488,10 +487,9 @@ row_drop_table_for_mysql(
 	const char*	name,	/*!< in: table name */
 	trx_t*		trx,	/*!< in: dictionary transaction handle */
 	bool		drop_db,/*!< in: true=dropping whole database */
-	bool		nonatomic = true)
+	bool		nonatomic = true);
 				/*!< in: whether it is permitted
 				to release and reacquire dict_operation_lock */
-	__attribute__((nonnull));
 /*********************************************************************//**
 Drop all temporary tables during crash recovery. */
 UNIV_INTERN
@@ -530,8 +528,7 @@ dberr_t
 row_drop_database_for_mysql(
 /*========================*/
 	const char*	name,	/*!< in: database name which ends to '/' */
-	trx_t*		trx)	/*!< in: transaction handle */
-	__attribute__((nonnull));
+	trx_t*		trx);	/*!< in: transaction handle */
 /*********************************************************************//**
 Renames a table for MySQL.
 @return	error code or DB_SUCCESS */
@@ -543,7 +540,7 @@ row_rename_table_for_mysql(
 	const char*	new_name,	/*!< in: new table name */
 	trx_t*		trx,		/*!< in/out: transaction */
 	bool		commit)		/*!< in: whether to commit trx */
-	__attribute__((nonnull, warn_unused_result));
+	__attribute__((warn_unused_result));
 /*********************************************************************//**
 Checks that the index contains entries in an ascending order, unique
 constraint is not broken, and calculates the number of index entries

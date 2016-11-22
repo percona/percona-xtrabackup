@@ -232,7 +232,7 @@ page_header_get_offs(
 /*=================*/
 	const page_t*	page,	/*!< in: page */
 	ulint		field)	/*!< in: PAGE_FREE, ... */
-	__attribute__((nonnull, pure));
+	__attribute__((warn_unused_result));
 
 /*************************************************************//**
 Returns the pointer stored in the given header field, or NULL. */
@@ -524,7 +524,7 @@ bool
 page_is_leaf(
 /*=========*/
 	const page_t*	page)	/*!< in: page */
-	__attribute__((nonnull, pure));
+	__attribute__((warn_unused_result));
 /************************************************************//**
 Determine whether the page is empty.
 @return	true if the page is empty (PAGE_N_RECS = 0) */
@@ -533,7 +533,7 @@ bool
 page_is_empty(
 /*==========*/
 	const page_t*	page)	/*!< in: page */
-	__attribute__((nonnull, pure));
+	__attribute__((warn_unused_result));
 /************************************************************//**
 Determine whether the page contains garbage.
 @return	true if the page contains garbage (PAGE_GARBAGE is not 0) */
@@ -542,7 +542,7 @@ bool
 page_has_garbage(
 /*=============*/
 	const page_t*	page)	/*!< in: page */
-	__attribute__((nonnull, pure));
+	__attribute__((warn_unused_result));
 /************************************************************//**
 Gets the pointer to the next record on the page.
 @return	pointer to next record */
@@ -642,7 +642,7 @@ ibool
 page_rec_is_user_rec(
 /*=================*/
 	const rec_t*	rec)	/*!< in: record */
-	__attribute__((const));
+	__attribute__((warn_unused_result));
 /************************************************************//**
 TRUE if the record is the supremum record on a page.
 @return	TRUE if the supremum record */
@@ -651,7 +651,7 @@ ibool
 page_rec_is_supremum(
 /*=================*/
 	const rec_t*	rec)	/*!< in: record */
-	__attribute__((const));
+	__attribute__((warn_unused_result));
 
 /************************************************************//**
 TRUE if the record is the infimum record on a page.
