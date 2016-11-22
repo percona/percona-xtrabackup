@@ -633,7 +633,9 @@ typedef char		my_bool; /* Small bool */
 #ifdef EMBEDDED_LIBRARY
 #define NO_EMBEDDED_ACCESS_CHECKS
 /* Things we don't need in the embedded version of MySQL */
+#if !defined(XTRABACKUP)
 #undef HAVE_OPENSSL
+#endif
 #endif /* EMBEDDED_LIBRARY */
 
 

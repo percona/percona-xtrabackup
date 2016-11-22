@@ -850,7 +850,7 @@ char *opt_ssl_ca= NULL, *opt_ssl_capath= NULL, *opt_ssl_cert= NULL,
 
 #ifdef HAVE_OPENSSL
 char *des_key_file;
-#ifndef EMBEDDED_LIBRARY
+#if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
 struct st_VioSSLFd *ssl_acceptor_fd;
 SSL *ssl_acceptor;
 #endif
@@ -3213,7 +3213,7 @@ static int init_thread_environment()
   return 0;
 }
 
-#ifndef EMBEDDED_LIBRARY
+#if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
 ssl_artifacts_status auto_detect_ssl()
 {
   MY_STAT cert_stat, cert_key, ca_stat;
@@ -3339,7 +3339,7 @@ int warn_self_signed_ca()
   return ret_val;
 }
 
-#endif /* EMBEDDED_LIBRARY */
+#endif /* !EMBEDDED_LIBRARY || XTRABACKUP */
 
 static int init_ssl()
 {
@@ -3348,7 +3348,7 @@ static int init_ssl()
   CRYPTO_malloc_init();
 #endif
   ssl_start();
-#ifndef EMBEDDED_LIBRARY
+#if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
 
   if (opt_use_ssl)
   {
@@ -3417,7 +3417,7 @@ static int init_ssl()
   }
 #else
   have_ssl= SHOW_OPTION_DISABLED;
-#endif /* ! EMBEDDED_LIBRARY */
+#endif /* ! EMBEDDED_LIBRARY || XTRABACKUP */
   if (des_key_file)
     load_des_key_file(des_key_file);
 #ifndef HAVE_YASSL

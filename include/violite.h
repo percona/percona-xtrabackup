@@ -192,7 +192,7 @@ typedef my_socket YASSL_SOCKET_T;
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#ifndef EMBEDDED_LIBRARY
+#if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
 enum enum_ssl_init_error
 {
   SSL_INITERR_NOERROR= 0, SSL_INITERR_CERT, SSL_INITERR_KEY, 
@@ -227,7 +227,7 @@ void free_vio_ssl_acceptor_fd(struct st_VioSSLFd *fd);
 
 void vio_ssl_end();
 
-#endif /* ! EMBEDDED_LIBRARY */
+#endif /* ! EMBEDDED_LIBRARY) || XTRABACKUP */
 #endif /* HAVE_OPENSSL */
 
 void ssl_start(void);
