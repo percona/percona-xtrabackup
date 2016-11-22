@@ -369,7 +369,7 @@ btr_cur_update_alloc_zip_func(
 	bool		create,	/*!< in: true=delete-and-insert,
 				false=update-in-place */
 	mtr_t*		mtr)	/*!< in/out: mini-transaction */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 #ifdef UNIV_DEBUG
 # define btr_cur_update_alloc_zip(page_zip,cursor,index,offsets,len,cr,mtr) \
 	btr_cur_update_alloc_zip_func(page_zip,cursor,index,offsets,len,cr,mtr)
@@ -672,8 +672,7 @@ btr_cur_disown_inherited_fields(
 	dict_index_t*	index,	/*!< in: index of the page */
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	const upd_t*	update,	/*!< in: update vector */
-	mtr_t*		mtr)	/*!< in/out: mini-transaction */
-	MY_ATTRIBUTE((nonnull(2,3,4,5,6)));
+	mtr_t*		mtr);	/*!< in/out: mini-transaction */
 
 /** Operation code for btr_store_big_rec_extern_fields(). */
 enum blob_op {
@@ -814,8 +813,8 @@ btr_push_update_extern_fields(
 /*==========================*/
 	dtuple_t*	tuple,	/*!< in/out: data tuple */
 	const upd_t*	update,	/*!< in: update vector */
-	mem_heap_t*	heap)	/*!< in: memory heap */
-	MY_ATTRIBUTE((nonnull));
+	mem_heap_t*	heap);	/*!< in: memory heap */
+
 /***********************************************************//**
 Sets a secondary index record's delete mark to the given value. This
 function is only used by the insert buffer merge mechanism. */

@@ -68,7 +68,7 @@ ADD_COMPILE_FLAGS(
   ../../../../plugin/keyring/keyring_key.cc
   ../../../../plugin/keyring/buffered_file_io.cc
   ../../../../plugin/keyring/keys_container.cc
-  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
+  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
 )
 
 ADD_COMPILE_FLAGS(

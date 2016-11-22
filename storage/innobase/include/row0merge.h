@@ -222,8 +222,8 @@ row_merge_rename_index_to_add(
 /*==========================*/
 	trx_t*		trx,		/*!< in/out: transaction */
 	table_id_t	table_id,	/*!< in: table identifier */
-	index_id_t	index_id)	/*!< in: index identifier */
-	MY_ATTRIBUTE((nonnull));
+	index_id_t	index_id);	/*!< in: index identifier */
+
 /*********************************************************************//**
 Rename an index in the dictionary that is to be dropped. The data
 dictionary must have been locked exclusively by the caller, because
@@ -234,8 +234,8 @@ row_merge_rename_index_to_drop(
 /*===========================*/
 	trx_t*		trx,		/*!< in/out: transaction */
 	table_id_t	table_id,	/*!< in: table identifier */
-	index_id_t	index_id)	/*!< in: index identifier */
-	MY_ATTRIBUTE((nonnull));
+	index_id_t	index_id);	/*!< in: index identifier */
+
 /** Create the index and load in to the dictionary.
 @param[in,out]	trx		trx (sets error_state)
 @param[in,out]	table		the index is on this table
@@ -433,5 +433,5 @@ row_merge_read_rec(
 					or NULL on end of list
 					(non-NULL on I/O error) */
 	ulint*			offsets)/*!< out: offsets of mrec */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 #endif /* row0merge.h */

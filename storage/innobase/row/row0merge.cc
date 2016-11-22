@@ -936,7 +936,7 @@ respectively */
 
 /**********************************************************************//**
 Merge sort the tuple buffer in main memory. */
-static MY_ATTRIBUTE((nonnull(4,5)))
+static
 void
 row_merge_tuple_sort(
 /*=================*/
@@ -4063,7 +4063,7 @@ row_merge_rename_tables_dict(
 @param[in,out]	index	index
 @param[in]	add_v	new virtual columns added along with add index call
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_merge_create_index_graph(
 	trx_t*			trx,

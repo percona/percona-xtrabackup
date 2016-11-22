@@ -3749,7 +3749,7 @@ fseg_page_is_free(
 
 /**********************************************************************//**
 Frees an extent of a segment to the space free list. */
-static MY_ATTRIBUTE((nonnull))
+static
 void
 fseg_free_extent(
 /*=============*/
