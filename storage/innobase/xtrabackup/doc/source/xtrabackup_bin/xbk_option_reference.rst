@@ -171,6 +171,42 @@ Options
 
    Refuse client connecting to server if it uses old (pre-4.1.1) protocol. (Enabled by default; use --skip-secure-auth to disable.)
 
+.. option:: --ssl
+
+   Enable secure connection. More information can be found in `--ssl <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl>`_ MySQL server documentation. 
+
+.. option:: --ssl-ca 
+
+   Path of the file which contains list of trusted SSL CAs. More information can be found in `--ssl-ca <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-ca>`_ MySQL server documentation.
+
+.. option:: --ssl-capath
+
+   Directory path that contains trusted SSL CA certificates in PEM format. More information can be found in `--ssl-capath <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-capath>`_ MySQL server documentation.
+
+.. option:: --ssl-cert
+
+   Path of the file which contains X509 certificate in PEM format. More information can be found in `--ssl-cert <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-cert>`_ MySQL server documentation.
+
+.. option:: --ssl-cipher
+
+   List of permitted ciphers to use for connection encryption. More information can be found in `--ssl-cipher <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-cipher>`_ MySQL server documentation.
+
+.. option:: --ssl-crl
+
+   Path of the file that contains certificate revocation lists. More information can be found in `--ssl-crl <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-crl>`_ MySQL server documentation.
+
+.. option:: --ssl-crlpath
+
+   Path of directory that contains certificate revocation list files. More information can be found in `--ssl-crlpath <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-crlpath>`_ MySQL server documentation.
+
+.. option:: --ssl-key
+
+   Path of file that contains X509 key in PEM format. More information can be found in `--ssl-key <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-key>`_ MySQL server documentation.
+
+.. option:: --ssl-verify-server-cert
+
+   Verify server certificate Common Name value against host name used when connecting to server. More information can be found in `--ssl-verify-server-cert <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-verify-server-cert>`_ MySQL server documentation.
+
 .. option:: --stats
 
    Causes :program:`xtrabackup` to scan the specified data files and print out index statistics.
