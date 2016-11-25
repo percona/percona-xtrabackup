@@ -63,9 +63,16 @@ export CXX=${CXX-"g++"}
 export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
-cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
+%if 0%{?rhel} > 5
+  cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+    -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
   -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost .
+%else
+  cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+    -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost .
+%endif
+
 #
 make %{?_smp_mflags}
 #
