@@ -57,7 +57,7 @@ Bugs Fixed
  :bug:`1638017` and :bug:`1638020` (*Txomin Barturen*).
 
  Some older versions of |MySQL| did not bother to initialize page type
- field for pages which are not index pages (see upstream :mysqlbug:`#76262` for
+ field for pages which are not index pages (see upstream :mysqlbug:`76262` for
  more information). Having this page type uninitialized could cause
  |xtrabackup| to crash on prepare. Bug fixed :bug:`1641426`.
 
