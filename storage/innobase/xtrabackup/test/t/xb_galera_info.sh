@@ -17,8 +17,11 @@ else
 fi
 
 backup_dir=$topdir/backup
+backup_dir1=$topdir/backup1
 
-innobackupex --no-timestamp --galera-info $backup_dir 
+xtrabackup --backup --galera-info --target-dir=$backup_dir
+
+xtrabackup --backup --galera-info --target-dir=$backup_dir1  --incremental-basedir=$backup_dir
 
 vlog "Backup created in directory $backup_dir"
 
@@ -27,7 +30,13 @@ vlog "Backup created in directory $backup_dir"
 if has_backup_locks
 then
     vlog "Preparing the backup to create xtrabackup_galera_info"
-    innobackupex --apply-log $backup_dir
+    xtrabackup --prepare --apply-log-only --target-dir=$backup_dir
+
+    # bug 1643803: incremental backups do not include xtrabackup_binlog_info and xtrabackup_galera_info
+    test -f $backup_dir/xtrabackup_galera_info ||
+      die "xtrabackup_galera_info was not created"
+
+    xtrabackup --prepare --target-dir=$backup_dir --incremental-dir=$backup_dir1
 fi
 
 test -f $backup_dir/xtrabackup_galera_info ||

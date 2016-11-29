@@ -163,7 +163,7 @@ wsrep_uuid_print(
 Store Galera checkpoint info in the 'xtrabackup_galera_info' file, if that
 information is present in the trx system header. Otherwise, do nothing. */
 void
-xb_write_galera_info()
+xb_write_galera_info(bool incremental_prepare)
 /*==================*/
 {
 	FILE*		fp;
@@ -174,7 +174,8 @@ xb_write_galera_info()
 
 	/* Do not overwrite existing an existing file to be compatible with
 	servers with older server versions */
-	if (my_stat(XB_GALERA_INFO_FILENAME, &statinfo, MYF(0)) != NULL) {
+	if (!incremental_prepare &&
+		my_stat(XB_GALERA_INFO_FILENAME, &statinfo, MYF(0)) != NULL) {
 
 		return;
 	}
