@@ -19,8 +19,8 @@ Supported Releases:
 
  * 12.04LTS (precise)
  * 14.04LTS (trusty)
- * 15.10 (wily)
  * 16.04LTS (xenial)
+ * 16.10 (yakkety)
 
 Supported Platforms:
 
@@ -122,7 +122,7 @@ Installing |Percona XtraBackup| using downloaded deb packages
 
 Download the packages of the desired series for your architecture from the
 `download page <https://www.percona.com/downloads/XtraBackup/>`_. Following
-example will download |Percona XtraBackup| 2.3.2 release package for *Debian*
+example will download |Percona XtraBackup| 2.3.5 release package for *Debian*
 8.0:
 
 .. code-block:: bash
