@@ -1481,11 +1481,11 @@ ibx_copy_incremental_over_full()
 				xtrabackup_incremental_dir,
 				sup_files[i]);
 
-			if (file_exists(sup_files[i])) {
-				unlink(sup_files[i]);
-			}
-
-			if (file_exists(path)) {
+			if (file_exists(path))
+			{
+				if (file_exists(sup_files[i])) {
+					unlink(sup_files[i]);
+				}
 				copy_file(ds_data, path, sup_files[i], 0);
 			}
 		}
