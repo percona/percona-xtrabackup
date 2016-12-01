@@ -6559,7 +6559,7 @@ next_node:
 		exit(EXIT_FAILURE);
 	}
 
-	xb_write_galera_info();
+	xb_write_galera_info(xtrabackup_incremental);
 
 	if(innodb_end())
 		goto error_cleanup;
