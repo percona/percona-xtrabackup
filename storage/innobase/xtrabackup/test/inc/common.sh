@@ -259,7 +259,8 @@ function switch_server()
 
     IB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf \
 --no-version-check ${IB_EXTRA_OPTS:-}"
-    XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf"
+    XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf \
+--no-version-check ${XB_EXTRA_OPTS:-}"
 
     # Some aliases for compatibility, as tests use the following names
     topdir="$MYSQLD_VARDIR"
