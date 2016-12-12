@@ -6825,6 +6825,16 @@ int main(int argc, char **argv)
 		for (i=1; i < argc; i++) {
 
 			optend = strcend(argv[i], '=');
+			
+			/* bug fix for https://bugs.launchpad.net/percona-xtrabackup/2.3/+bug/1642329 
+                         * when in the parameter client sends -- -- or -- * params then optent variable stays empty.
+                         * After this the third parameter of strncmp function is constructed with optent variable
+                         * and it makes unpredictable different problems on the result.
+                         */
+                        if(strlen(optend) == 0) {
+                            fprintf(stderr, "Parameter is wrong\n");
+                            exit(EXIT_FAILURE);
+                        }
 
 			if (strncmp(argv[i], "--defaults-group",
 				    optend - argv[i]) == 0) {
