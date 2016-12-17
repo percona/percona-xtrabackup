@@ -154,6 +154,10 @@ char *xtrabackup_incremental_basedir = NULL; /* for --backup */
 char *xtrabackup_extra_lsndir = NULL; /* for --backup with --extra-lsndir */
 char *xtrabackup_incremental_dir = NULL; /* for --prepare */
 
+char xtrabackup_real_incremental_basedir[FN_REFLEN];
+char xtrabackup_real_extra_lsndir[FN_REFLEN];
+char xtrabackup_real_incremental_dir[FN_REFLEN];
+
 lsn_t xtrabackup_archived_to_lsn = 0; /* for --archived-to-lsn */
 
 char *xtrabackup_tables = NULL;
@@ -7882,10 +7886,40 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	/* Ensure target dir is not relative to datadir */
+	/* Expand target-dir, incremental-basedir, etc. */
+
 	my_getwd(cwd, sizeof(cwd), MYF(0));
-	my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, cwd);
+
+	my_load_path(xtrabackup_real_target_dir,
+		     xtrabackup_target_dir, cwd);
+	unpack_dirname(xtrabackup_real_target_dir,
+		       xtrabackup_real_target_dir);
 	xtrabackup_target_dir= xtrabackup_real_target_dir;
+
+	if (xtrabackup_incremental_basedir) {
+		my_load_path(xtrabackup_real_incremental_basedir,
+			     xtrabackup_incremental_basedir, cwd);
+		unpack_dirname(xtrabackup_real_incremental_basedir,
+			       xtrabackup_real_incremental_basedir);
+		xtrabackup_incremental_basedir =
+			xtrabackup_real_incremental_basedir;
+	}
+
+	if (xtrabackup_incremental_dir) {
+		my_load_path(xtrabackup_real_incremental_dir,
+			     xtrabackup_incremental_dir, cwd);
+		unpack_dirname(xtrabackup_real_incremental_dir,
+			       xtrabackup_real_incremental_dir);
+		xtrabackup_incremental_dir = xtrabackup_real_incremental_dir;
+	}
+
+	if (xtrabackup_extra_lsndir) {
+		my_load_path(xtrabackup_real_extra_lsndir,
+			     xtrabackup_extra_lsndir, cwd);
+		unpack_dirname(xtrabackup_real_extra_lsndir,
+			       xtrabackup_real_extra_lsndir);
+		xtrabackup_extra_lsndir = xtrabackup_real_extra_lsndir;
+	}
 
 	/* get default temporary directory */
 	if (!opt_mysql_tmpdir || !opt_mysql_tmpdir[0]) {
