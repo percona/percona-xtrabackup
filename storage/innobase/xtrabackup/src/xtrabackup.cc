@@ -1090,7 +1090,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
   {"password", OPT_PASSWORD, "This option specifies the password to use "
    "when connecting to the database. It accepts a string argument.  "
    "See mysql --help for details.",
-   (uchar*) &opt_password, (uchar*) &opt_password, 0, GET_STR,
+   0, 0, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
   {"socket", OPT_SOCKET, "This option specifies the socket to use when "
@@ -1479,6 +1479,18 @@ xb_get_one_option(int optid,
       opt_history = "";
     }
     break;
+  case OPT_PASSWORD:
+    if (argument)
+    {
+      char *start = argument;
+      my_free(opt_password);
+      opt_password= my_strdup(argument, MYF(MY_FAE));
+      while (*argument) *argument++= 'x';               // Destroy argument
+      if (*start)
+	start[1]=0 ;
+    }
+    break;
+
 
 #include "sslopt-case.h"
 
