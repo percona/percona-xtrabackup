@@ -405,7 +405,7 @@ static struct my_option ibx_long_options[] =
 	{"password", OPT_PASSWORD, "This option specifies the password to use "
 	 "when connecting to the database. It accepts a string argument.  "
 	 "See mysql --help for details.",
-	 (uchar*) &opt_ibx_password, (uchar*) &opt_ibx_password, 0, GET_STR,
+	 0, 0, 0, GET_STR,
 	 REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
 	{"socket", OPT_SOCKET, "This option specifies the socket to use when "
@@ -908,7 +908,18 @@ ibx_get_one_option(int optid,
 		}
 		xtrabackup_encrypt = TRUE;
 		break;
-	}
+	case OPT_PASSWORD:
+		if (argument)
+		{
+		        char *start = argument;
+			my_free(opt_ibx_password);
+			opt_ibx_password= my_strdup(PSI_NOT_INSTRUMENTED, argument, MYF(MY_FAE));
+			while (*argument) *argument++= 'x';		  // Destroy argument
+			if (*start)
+			  start[1]=0 ;
+		}
+		break;
+        }
 	return(0);
 }
 
