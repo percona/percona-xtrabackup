@@ -349,6 +349,7 @@ my_bool opt_force_non_empty_dirs = FALSE;
 my_bool opt_noversioncheck = FALSE;
 my_bool opt_no_backup_locks = FALSE;
 my_bool opt_decompress = FALSE;
+my_bool opt_remove_original = FALSE;
 
 static const char *binlog_info_values[] = {"off", "lockless", "on", "auto",
 					   NullS};
@@ -595,6 +596,7 @@ enum options_xtrabackup
   OPT_INCREMENTAL_HISTORY_NAME,
   OPT_INCREMENTAL_HISTORY_UUID,
   OPT_DECRYPT,
+  OPT_REMOVE_ORIGINAL,
   OPT_LOCK_WAIT_QUERY_TYPE,
   OPT_KILL_LONG_QUERY_TYPE,
   OPT_HISTORY,
@@ -1134,6 +1136,12 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    &opt_decrypt_algo, &opt_decrypt_algo,
    &xtrabackup_encrypt_algo_typelib, GET_ENUM, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
+
+  {"remove-original", OPT_REMOVE_ORIGINAL, "Remove .qp and .xbcrypt files "
+   "after decryption and decompression.",
+   (uchar *) &opt_remove_original,
+   (uchar *) &opt_remove_original,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
   {"ftwrl-wait-query-type", OPT_LOCK_WAIT_QUERY_TYPE,
    "This option specifies which types of queries are allowed to complete "
