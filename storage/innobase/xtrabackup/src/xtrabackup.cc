@@ -440,9 +440,9 @@ ulint opt_encrypt_server_id = 0;
 bool opt_encrypt_for_server_id_specified = false;
 
 #define CLIENT_WARN_DEPRECATED(opt, new_opt) \
-  printf("WARNING: " opt \
-         " is deprecated and will be removed in a future version. " \
-         "Use " new_opt " instead.\n")
+  msg("WARNING: " opt \
+      " is deprecated and will be removed in a future version. " \
+      "Use " new_opt " instead.\n")
 
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
