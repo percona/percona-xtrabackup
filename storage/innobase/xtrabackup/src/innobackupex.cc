@@ -148,7 +148,6 @@ char *ibx_xtrabackup_tables_file;
 long ibx_xtrabackup_throttle;
 char *ibx_opt_mysql_tmpdir;
 longlong ibx_xtrabackup_use_memory;
-ulong ibx_redo_log_version;
 
 
 static inline int ibx_msg(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -236,8 +235,7 @@ enum innobackupex_options
 	OPT_STREAM,
 	OPT_TABLES_FILE,
 	OPT_THROTTLE,
-	OPT_USE_MEMORY,
-	OPT_REDO_LOG_VERSION
+	OPT_USE_MEMORY
 };
 
 ibx_mode_t ibx_mode = IBX_MODE_BACKUP;
@@ -733,11 +731,6 @@ static struct my_option ibx_long_options[] =
 	 0, GET_LL, REQUIRED_ARG, 100*1024*1024L, 1024*1024L, LLONG_MAX, 0,
 	 1024*1024L, 0},
 
-	{"redo-log-version", OPT_REDO_LOG_VERSION,
-	 "Redo log version of the backup. For --apply-log only.",
-	 &ibx_redo_log_version, &ibx_redo_log_version, 0, GET_UINT,
-	 REQUIRED_ARG, 1, 0, 0, 0, 0, 0},
-
 	{ 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1075,7 +1068,6 @@ ibx_init()
 	xtrabackup_throttle = ibx_xtrabackup_throttle;
 	opt_mysql_tmpdir = ibx_opt_mysql_tmpdir;
 	xtrabackup_use_memory = ibx_xtrabackup_use_memory;
-	redo_log_version = ibx_redo_log_version;
 
 	if (!opt_ibx_incremental
 	    && (xtrabackup_incremental
