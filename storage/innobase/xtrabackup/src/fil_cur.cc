@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "read_filt.h"
 #include "xtrabackup.h"
+#include "page0zip.h"
 
 /* Size of read buffer in pages */
 #define XB_FIL_CUR_PAGES 64
@@ -253,6 +254,7 @@ xb_fil_cur_open(
 	cursor->buf_offset = 0;
 	cursor->buf_page_no = 0;
 	cursor->thread_n = thread_n;
+	cursor->encryption = CRYPT_SCHEME_UNENCRYPTED;
 
 	cursor->space_size = cursor->statinfo.st_size / page_size;
 
@@ -261,6 +263,91 @@ xb_fil_cur_open(
 				  node->space->id);
 
 	return(XB_FIL_CUR_SUCCESS);
+}
+
+/******************************************************************
+Read crypt data from a page (0)
+@return crypt information from page 0. */
+static
+void
+fil_space_read_crypt_data(
+/*======================*/
+	ulint		space,	/*!< in: file space id */
+	const byte*	page,	/*!< in: page 0 */
+	ulint		offset,	/*!< in: offset */
+	xb_fil_cur_t*	cursor) /*!< in/out: source file cursor */
+{
+	if (memcmp(page + offset, EMPTY_PATTERN, MAGIC_SZ) == 0) {
+		/* Crypt data is not stored. */
+		return;
+	}
+
+	if (memcmp(page + offset, CRYPT_MAGIC, MAGIC_SZ) != 0) {
+		/* Crypt data is not stored. */
+		return;
+	}
+
+	ulint type = mach_read_from_1(page + offset + MAGIC_SZ + 0);
+
+	if (! (type == CRYPT_SCHEME_UNENCRYPTED ||
+	       type == CRYPT_SCHEME_1)) {
+		/* Assume not present */
+		return;
+	}
+
+	ulint iv_length = mach_read_from_1(page + offset + MAGIC_SZ + 1);
+
+	if (! (iv_length == CRYPT_SCHEME_1_IV_LEN)) {
+		/* Assume not present */
+		return;
+	}
+
+	if (type == CRYPT_SCHEME_1) {
+		msg("[%02u] %s is encrypted\n", cursor->thread_n, cursor->abs_path);
+	}
+
+	cursor->encryption = type;
+}
+
+/******************************************************************
+Calculate post encryption checksum
+@return page checksum or BUF_NO_CHECKSUM_MAGIC
+not needed. */
+UNIV_INTERN
+ulint
+fil_crypt_calculate_checksum(
+/*=========================*/
+	ulint	zip_size,	/*!< in: zip_size or 0 */
+	byte*	dst_frame)	/*!< in: page where to calculate */
+{
+	ib_uint32_t checksum = 0;
+	srv_checksum_algorithm_t algorithm =
+			static_cast<srv_checksum_algorithm_t>(srv_checksum_algorithm);
+
+	if (zip_size == 0) {
+		switch (algorithm) {
+		case SRV_CHECKSUM_ALGORITHM_CRC32:
+		case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
+			checksum = buf_calc_page_crc32(dst_frame);
+			break;
+		case SRV_CHECKSUM_ALGORITHM_INNODB:
+		case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
+			checksum = (ib_uint32_t) buf_calc_page_new_checksum(
+				dst_frame);
+			break;
+		case SRV_CHECKSUM_ALGORITHM_NONE:
+		case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
+			checksum = BUF_NO_CHECKSUM_MAGIC;
+			break;
+			/* no default so the compiler will emit a warning
+			* if new enum is added and not handled here */
+		}
+	} else {
+		checksum = page_zip_calc_checksum(dst_frame, zip_size,
+				                          algorithm);
+	}
+
+	return checksum;
 }
 
 /************************************************************************
@@ -340,40 +427,68 @@ read_retry:
 	partially written pages */
 	for (page = cursor->buf, i = 0; i < npages;
 	     page += cursor->page_size, i++) {
+		ulint page_no = cursor->buf_page_no + i;
+
+		if (offset == 0 && page_no == 0) {
+			ulint crypt_offset = fsp_header_get_crypt_offset(
+				cursor->zip_size, NULL);
+			fil_space_read_crypt_data(cursor->space_id, page, crypt_offset, cursor);
+		}
 
 		if (buf_page_is_corrupted(TRUE, page, cursor->zip_size)) {
+			uint key_version = mach_read_from_4(page + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION);
+			ulint page_type = mach_read_from_2(page+FIL_PAGE_TYPE);
+			ulint stored_checksum = BUF_NO_CHECKSUM_MAGIC;
+			ulint calculated_checksum =  BUF_NO_CHECKSUM_MAGIC;
+			bool page_compressed = (page_type == FIL_PAGE_PAGE_COMPRESSED);
+			bool page_compressed_encrypted = (page_type == FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED);
+			bool corrupted = true;
 
-			ulint page_no = cursor->buf_page_no + i;
+			if (key_version != 0 ||
+				(cursor->encryption != CRYPT_SCHEME_UNENCRYPTED) ||
+				page_compressed || page_compressed_encrypted) {
 
-			if (cursor->is_system &&
-			    page_no >= FSP_EXTENT_SIZE &&
-			    page_no < FSP_EXTENT_SIZE * 3) {
-				/* skip doublewrite buffer pages */
-				xb_a(cursor->page_size == UNIV_PAGE_SIZE);
-				msg("[%02u] xtrabackup: "
-				    "Page %lu is a doublewrite buffer page, "
-				    "skipping.\n", cursor->thread_n, page_no);
-			} else {
-				retry_count--;
-				if (retry_count == 0) {
+				/* Page is really corrupted if post encryption stored
+				checksum does not match calculated checksum after page was
+				read. For pages compressed and then encrypted, there is no
+				checksum. */
+				stored_checksum = mach_read_from_4(page + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION + 4);
+				calculated_checksum = fil_crypt_calculate_checksum(cursor->zip_size, page);
+				corrupted = (!page_compressed_encrypted && stored_checksum != calculated_checksum);
+			}
+
+			if (corrupted) {
+				if (cursor->is_system &&
+					page_no >= FSP_EXTENT_SIZE &&
+					page_no < FSP_EXTENT_SIZE * 3) {
+					/* skip doublewrite buffer pages */
+					xb_a(cursor->page_size == UNIV_PAGE_SIZE);
 					msg("[%02u] xtrabackup: "
-					    "Error: failed to read page after "
-					    "10 retries. File %s seems to be "
-					    "corrupted.\n", cursor->thread_n,
-					    cursor->abs_path);
-					ret = XB_FIL_CUR_ERROR;
-					break;
+						"Page %lu is a doublewrite buffer page, "
+						"skipping.\n", cursor->thread_n, page_no);
+				} else {
+					retry_count--;
+					if (retry_count == 0) {
+						msg("[%02u] xtrabackup: "
+							"Error: failed to read page after "
+							"10 retries. File %s seems to be "
+							"corrupted.\n", cursor->thread_n,
+							cursor->abs_path);
+						ret = XB_FIL_CUR_ERROR;
+						break;
+					}
+					msg("[%02u] xtrabackup: "
+						"Database page corruption detected at page "
+						"%lu, retrying...\n", cursor->thread_n,
+						page_no);
+
+					os_thread_sleep(100000);
+
+					goto read_retry;
 				}
-				msg("[%02u] xtrabackup: "
-				    "Database page corruption detected at page "
-				    "%lu, retrying...\n", cursor->thread_n,
-				    page_no);
-
-				os_thread_sleep(100000);
-
-				goto read_retry;
 			}
 		}
+
 		cursor->buf_read += cursor->page_size;
 		cursor->buf_npages++;
 	}

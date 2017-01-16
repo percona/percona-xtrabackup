@@ -63,6 +63,9 @@ fsp_flags_is_valid(
 	ulint	atomic_blobs = FSP_FLAGS_HAS_ATOMIC_BLOBS(flags);
 	ulint	page_ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
 	ulint	unused = FSP_FLAGS_GET_UNUSED(flags);
+	ulint	page_compression = FSP_FLAGS_GET_PAGE_COMPRESSION(flags);
+	ulint	page_compression_level = FSP_FLAGS_GET_PAGE_COMPRESSION_LEVEL(flags);
+	ulint	atomic_writes = FSP_FLAGS_GET_ATOMIC_WRITES(flags);
 
 	DBUG_EXECUTE_IF("fsp_flags_is_valid_failure", return(false););
 
@@ -102,6 +105,18 @@ fsp_flags_is_valid(
 
 	} else if (UNIV_PAGE_SIZE != UNIV_PAGE_SIZE_ORIG && !page_ssize) {
 		return(false);
+	}
+
+	/* Page compression level requires page compression and atomic blobs
+	to be set */
+        if (page_compression_level || page_compression) {
+		if (!page_compression || !atomic_blobs) {
+			return(false);
+		}
+	}
+
+	if (atomic_writes > ATOMIC_WRITES_OFF) {
+		return (false);
 	}
 
 #if UNIV_FORMAT_MAX != UNIV_FORMAT_B

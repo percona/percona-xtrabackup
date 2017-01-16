@@ -28,6 +28,18 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_dir.h>
 #include "read_filt.h"
 
+#define MAGIC_SZ 6
+
+static const unsigned char CRYPT_MAGIC[MAGIC_SZ] = {
+	's', 0xE, 0xC, 'R', 'E', 't' };
+
+static const unsigned char EMPTY_PATTERN[MAGIC_SZ] = {
+	0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
+
+#define CRYPT_SCHEME_1 1
+#define CRYPT_SCHEME_1_IV_LEN 16
+#define CRYPT_SCHEME_UNENCRYPTED 0
+
 struct xb_fil_cur_t {
 	os_file_t	file;		/*!< source file handle */
 	fil_node_t*	node;		/*!< source tablespace node */
@@ -61,6 +73,7 @@ struct xb_fil_cur_t {
 	uint		thread_n;	/*!< thread number for diagnostics */
 	ulint		space_id;	/*!< ID of tablespace */
 	ulint		space_size;	/*!< space size in pages */
+	ulint		encryption;	/*!< encryption type if present */
 };
 
 typedef enum {

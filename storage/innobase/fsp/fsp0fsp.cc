@@ -1304,6 +1304,37 @@ fsp_page_create(
 }
 
 /**********************************************************************//**
+Compute offset after xdes where crypt data can be stored
+@return	offset */
+ulint
+fsp_header_get_crypt_offset(
+/*========================*/
+	ulint   zip_size, /*!< in: zip_size */
+	ulint*  max_size) /*!< out: free space available for crypt data */
+{
+	ulint pageno = 0;
+	/* compute first page_no that will have xdes stored on page != 0*/
+	for (ulint i = 0;
+	     (pageno = xdes_calc_descriptor_page(zip_size, i)) == 0; )
+		i++;
+
+	/* use pageno prior to this...i.e last page on page 0 */
+	ut_ad(pageno > 0);
+	pageno--;
+
+	ulint iv_offset = XDES_ARR_OFFSET +
+		XDES_SIZE * (1 + xdes_calc_descriptor_index(zip_size, pageno));
+
+	if (max_size != NULL) {
+		/* return how much free space there is available on page */
+		*max_size = (zip_size ? zip_size : UNIV_PAGE_SIZE) -
+			(FSP_HEADER_OFFSET + iv_offset + FIL_PAGE_DATA_END);
+	}
+
+	return FSP_HEADER_OFFSET + iv_offset;
+}
+
+/**********************************************************************//**
 Allocates a single free page from a space. The page is marked as used.
 @retval NULL if no page could be allocated
 @retval block, rw_lock_x_lock_count(&block->lock) == 1 if allocation succeeded

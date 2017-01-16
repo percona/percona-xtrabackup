@@ -127,6 +127,14 @@ extern fil_addr_t	fil_addr_null;
 					data file (ibdata*, not *.ibd):
 					the file has been flushed to disk
 					at least up to this lsn */
+#define FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION 26 /*!< for the first page
+					in a system tablespace data file
+					(ibdata*, not *.ibd): the file has
+					been flushed to disk at least up
+					to this lsn
+					for other pages: a 32-bit key version
+					used to encrypt the page + 32-bit checksum
+					or 64 bits of zero if no encryption*/
 #define FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID  34 /*!< starting from 4.1.x this
 					contains the space id of the page */
 #define FIL_PAGE_SPACE_ID  FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID
@@ -145,6 +153,9 @@ extern fil_addr_t	fil_addr_null;
 #ifndef UNIV_INNOCHECKSUM
 
 /** File page types (values of FIL_PAGE_TYPE) @{ */
+#define FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED 37401 /*!< Page is compressed and
+						 then encrypted */
+#define FIL_PAGE_PAGE_COMPRESSED 34354  /*!< page compressed page */
 #define FIL_PAGE_INDEX		17855	/*!< B-tree node */
 #define FIL_PAGE_UNDO_LOG	2	/*!< Undo log page */
 #define FIL_PAGE_INODE		3	/*!< Index node */
