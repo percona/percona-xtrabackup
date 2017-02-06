@@ -124,7 +124,7 @@ xb_mysql_connect()
 	    opt_ssl_mode < SSL_MODE_VERIFY_CA &&
 	    (opt_ssl_ca || opt_ssl_capath))
 	{
-		printf("WARNING: no verification of server certificate will "
+		msg("WARNING: no verification of server certificate will "
 		       "be done. Use --ssl-mode=VERIFY_CA or "
 		       "VERIFY_IDENTITY.\n");
 	}
