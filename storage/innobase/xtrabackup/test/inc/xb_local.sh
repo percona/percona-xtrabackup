@@ -17,7 +17,6 @@ load_dbase_schema sakila
 load_dbase_data sakila
 
 xtrabackup_options=${xtrabackup_options:-""}
-xtrabackup_options="${xtrabackup_options} --no-timestamp"
 
 # Take backup
 backup_dir=${topdir}/backup
