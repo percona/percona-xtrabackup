@@ -588,11 +588,6 @@ enum options_xtrabackup
   OPT_NO_VERSION_CHECK,
   OPT_NO_BACKUP_LOCKS,
   OPT_DECOMPRESS,
-  OPT_USER,
-  OPT_HOST,
-  OPT_PORT,
-  OPT_PASSWORD,
-  OPT_SOCKET,
   OPT_INCREMENTAL_HISTORY_NAME,
   OPT_INCREMENTAL_HISTORY_UUID,
   OPT_DECRYPT,
@@ -862,31 +857,31 @@ struct my_option xb_client_options[] =
    (uchar *) &opt_decompress,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
-  {"user", OPT_USER, "This option specifies the MySQL username used "
+  {"user", 'u', "This option specifies the MySQL username used "
    "when connecting to the server, if that's not the current user. "
    "The option accepts a string argument. See mysql --help for details.",
    (uchar*) &opt_user, (uchar*) &opt_user, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-  {"host", OPT_HOST, "This option specifies the host to use when "
+  {"host", 'H', "This option specifies the host to use when "
    "connecting to the database server with TCP/IP.  The option accepts "
    "a string argument. See mysql --help for details.",
    (uchar*) &opt_host, (uchar*) &opt_host, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-  {"port", OPT_PORT, "This option specifies the port to use when "
+  {"port", 'P', "This option specifies the port to use when "
    "connecting to the database server with TCP/IP.  The option accepts "
    "a string argument. See mysql --help for details.",
    &opt_port, &opt_port, 0, GET_UINT, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
 
-  {"password", OPT_PASSWORD, "This option specifies the password to use "
+  {"password", 'p', "This option specifies the password to use "
    "when connecting to the database. It accepts a string argument.  "
    "See mysql --help for details.",
    0, 0, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-  {"socket", OPT_SOCKET, "This option specifies the socket to use when "
+  {"socket", 'S', "This option specifies the socket to use when "
    "connecting to the local database server with a UNIX domain socket.  "
    "The option accepts a string argument. See mysql --help for details.",
    (uchar*) &opt_socket, (uchar*) &opt_socket, 0, GET_STR,
@@ -1483,15 +1478,15 @@ xb_get_one_option(int optid,
       opt_history = "";
     }
     break;
-  case OPT_PASSWORD:
+  case 'p':
     if (argument)
     {
-      char *start = argument;
+      char *start= argument;
       my_free(opt_password);
       opt_password= my_strdup(argument, MYF(MY_FAE));
       while (*argument) *argument++= 'x';               // Destroy argument
       if (*start)
-	start[1]=0 ;
+        start[1]=0 ;
     }
     break;
 
@@ -6889,15 +6884,16 @@ handle_options(int argc, char **argv, char ***argv_client, char ***argv_server)
 	for (int i = 2 ; i < argc ; i++) {
 		char *optend = strcend((argv)[i], '=');
 
-		if (!strncmp(argv[i], "--defaults-file", optend - argv[i])) {
+		if (optend - argv[i] == 15 &&
+                    !strncmp(argv[i], "--defaults-file", optend - argv[i])) {
 
 			msg("xtrabackup: Error: --defaults-file "
 			    "must be specified first on the command "
 			    "line\n");
 			exit(EXIT_FAILURE);
 		}
-
-		if (!strncmp(argv[i], "--defaults-extra-file",
+                if (optend - argv[i] == 21 &&
+		    !strncmp(argv[i], "--defaults-extra-file",
 			     optend - argv[i])) {
 
 			msg("xtrabackup: Error: --defaults-extra-file "

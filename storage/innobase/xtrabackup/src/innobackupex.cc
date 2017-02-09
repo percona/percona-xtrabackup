@@ -177,12 +177,7 @@ static inline int ibx_msg(const char *fmt, ...)
 
 enum innobackupex_options
 {
-	OPT_USER = 256,
-	OPT_HOST,
-	OPT_PORT,
-	OPT_PASSWORD,
-	OPT_SOCKET,
-	OPT_APPLY_LOG,
+	OPT_APPLY_LOG = 256,
 	OPT_COPY_BACK,
 	OPT_MOVE_BACK,
 	OPT_REDO_ONLY,
@@ -381,31 +376,31 @@ static struct my_option ibx_long_options[] =
 	 (uchar *) &opt_ibx_decompress,
 	 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
-	{"user", OPT_USER, "This option specifies the MySQL username used "
+	{"user", 'u', "This option specifies the MySQL username used "
 	 "when connecting to the server, if that's not the current user. "
 	 "The option accepts a string argument. See mysql --help for details.",
 	 (uchar*) &opt_ibx_user, (uchar*) &opt_ibx_user, 0, GET_STR,
 	 REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-	{"host", OPT_HOST, "This option specifies the host to use when "
+	{"host", 'H', "This option specifies the host to use when "
 	 "connecting to the database server with TCP/IP.  The option accepts "
 	 "a string argument. See mysql --help for details.",
 	 (uchar*) &opt_ibx_host, (uchar*) &opt_ibx_host, 0, GET_STR,
 	 REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-	{"port", OPT_PORT, "This option specifies the port to use when "
+	{"port", 'P', "This option specifies the port to use when "
 	 "connecting to the database server with TCP/IP.  The option accepts "
 	 "a string argument. See mysql --help for details.",
 	 &opt_ibx_port, &opt_ibx_port, 0, GET_UINT, REQUIRED_ARG,
 	 0, 0, 0, 0, 0, 0},
 
-	{"password", OPT_PASSWORD, "This option specifies the password to use "
+	{"password", 'p', "This option specifies the password to use "
 	 "when connecting to the database. It accepts a string argument.  "
 	 "See mysql --help for details.",
 	 0, 0, 0, GET_STR,
 	 REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-	{"socket", OPT_SOCKET, "This option specifies the socket to use when "
+	{"socket", 'S', "This option specifies the socket to use when "
 	 "connecting to the local database server with a UNIX domain socket.  "
 	 "The option accepts a string argument. See mysql --help for details.",
 	 (uchar*) &opt_ibx_socket, (uchar*) &opt_ibx_socket, 0, GET_STR,
@@ -900,15 +895,17 @@ ibx_get_one_option(int optid,
 		}
 		xtrabackup_encrypt = TRUE;
 		break;
-	case OPT_PASSWORD:
+	case 'p':
 		if (argument)
 		{
 		        char *start = argument;
 			my_free(opt_ibx_password);
 			opt_ibx_password= my_strdup(argument, MYF(MY_FAE));
-			while (*argument) *argument++= 'x';		  // Destroy argument
+			/*  Destroy argument */
+			while (*argument)
+				*argument++= 'x';
 			if (*start)
-			  start[1]=0 ;
+				start[1]=0 ;
 		}
 		break;
         }
