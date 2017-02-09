@@ -44,6 +44,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysqld.h>
 #include <my_sys.h>
 #include <string.h>
+#include <limits>
 #include "common.h"
 #include "xtrabackup.h"
 #include "xtrabackup_version.h"
@@ -101,6 +102,9 @@ MYSQL *
 xb_mysql_connect()
 {
 	MYSQL *connection = mysql_init(NULL);
+	char mysql_port_str[std::numeric_limits<int>::digits10 + 3];
+
+	sprintf(mysql_port_str, "%d", opt_port);
 
 	if (connection == NULL) {
 		msg("Failed to init MySQL struct: %s.\n",
@@ -114,9 +118,11 @@ xb_mysql_connect()
 	}
 
 	msg_ts("Connecting to MySQL server host: %s, user: %s, password: %s, "
-	       "port: %d, socket: %s\n", opt_host ? opt_host : "localhost",
-	       opt_user, opt_password ? "set" : "not set",
-	       opt_port, opt_socket);
+	       "port: %s, socket: %s\n", opt_host ? opt_host : "localhost",
+	       opt_user ? opt_user : "not set",
+	       opt_password ? "set" : "not set",
+	       opt_port != 0 ? mysql_port_str : "not set",
+	       opt_socket ? opt_socket : "not set");
 
 #ifdef HAVE_OPENSSL
 	if (opt_use_ssl)
