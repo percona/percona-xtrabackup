@@ -27,6 +27,11 @@ BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6
 %endif
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22
 Requires:       perl(DBD::mysql), rsync
+%if 0%{?rhel} < 7
+Requires: perl-MD5
+%else
+Requires: perl-Digest-MD5
+%endif
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
 %description
@@ -93,6 +98,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test
 
 %changelog
+* Mon Feb 13 2017 Evgeniy Patlan <evgeniy.patlan@percona.com>
+- Update to new release Percona XtraBackup 2.3.7
+
 * Mon Mar 14 2016 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.4
 
