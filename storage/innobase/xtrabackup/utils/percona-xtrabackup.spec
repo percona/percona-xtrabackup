@@ -27,7 +27,13 @@ BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6
 %endif
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
 Requires:       perl(DBD::mysql), rsync
+%if 0%{?rhel} < 7
+Requires: perl-MD5
+%else
+Requires: perl-Digest-MD5
+%endif
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
+
 
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines
