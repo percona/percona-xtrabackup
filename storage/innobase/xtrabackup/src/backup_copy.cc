@@ -1228,7 +1228,7 @@ backup_files(const char *from, bool prep_mode)
 	       prep_mode ? "prep copy of" : "to backup");
 
 	datadir_node_init(&node);
-	it = datadir_iter_new(from);
+	it = datadir_iter_new(from, false);
 
 	while (datadir_iter_next(it, &node)) {
 

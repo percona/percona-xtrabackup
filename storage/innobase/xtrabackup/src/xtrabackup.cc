@@ -3272,6 +3272,12 @@ xb_load_single_table_tablespace(
 	const char *filname,
 	bool is_remote)
 {
+	/* Ignore .isl files on XtraBackup recovery. All tablespaces must be
+	local. */
+	if (is_remote && !srv_backup_mode) {
+		return;
+	}
+
 	/* The name ends in .ibd or .isl;
 	try opening the file */
 	char*	name;
@@ -3455,7 +3461,6 @@ xb_load_single_table_tablespaces(bool (*pred)(const char*, const char*))
 				bool is_remote;
 
 				if (fileinfo.type == OS_FILE_TYPE_DIR) {
-
 					goto next_file_item;
 				}
 
@@ -3467,11 +3472,7 @@ xb_load_single_table_tablespaces(bool (*pred)(const char*, const char*))
 				if (strlen(fileinfo.name) > 4
 				    && (0 == strcmp(fileinfo.name
 						   + strlen(fileinfo.name) - 4,
-						   ".ibd")
-					/* Ignore .isl files on XtraBackup
-					recovery, all tablespaces must be
-					local. */
-					|| (srv_backup_mode && is_remote))
+						   ".ibd"))
 				    && (!pred
 					|| pred(dbinfo.name, fileinfo.name))) {
 					xb_load_single_table_tablespace(
