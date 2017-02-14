@@ -29,9 +29,9 @@ archived log files should look like this:
  ib_log_archive_00000000010145937920
  ib_log_archive_00000000010196267520
 
-In order to enable this feature, variable :option:`innodb_log_archive` should
+In order to enable this feature, variable ``innodb_log_archive`` should
 be set to ``ON``. Once the feature has been enabled, directory specified with
-:option:`innodb_log_arch_dir` (|MySQL| datadir by default) will contain the
+``innodb_log_arch_dir`` (|MySQL| datadir by default) will contain the
 archived log files.
 
 Creating the Backup
@@ -154,7 +154,8 @@ can specify the LSN to which the backup will be prepared.
 
 .. code-block:: bash
 
-  $ xtrabackup --prepare --target-dir=/data/backup/ --innodb-log-arch-dir=/data/archived-logs/ --to-archived-lsn=5536301566
+  $ xtrabackup --prepare --target-dir=/data/backup/ \
+  --innodb-log-arch-dir=/data/archived-logs/ --to-archived-lsn=5536301566
 
 This will prepare the backup up to the specified Log Sequence Number.
 
@@ -164,4 +165,5 @@ This will prepare the backup up to the specified Log Sequence Number.
   you'll need to either restore the backup as usual and let server to cleanup
   on startup because transactions will not be rolled back and server startup
   could take longer or manually remove ``ib_logfiles`` and
-  :file:`xtrabackup_logfile` and run :option:`--prepare` second time.
+  :file:`xtrabackup_logfile` and run :option:`xtrabackup --prepare` second
+  time.
