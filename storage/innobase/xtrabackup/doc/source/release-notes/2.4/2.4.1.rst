@@ -22,7 +22,7 @@ New features
 Bugs Fixed
 ----------
 
- |Percona XtraBackup| didn't respect :option:`innodb_log_file_size` variable
+ |Percona XtraBackup| didn't respect ``innodb_log_file_size`` variable
  stored in :file:`backup-my.cnf`. Bug fixed :bug:`1527081`.
 
  If server would run out of space while backups were taken with
