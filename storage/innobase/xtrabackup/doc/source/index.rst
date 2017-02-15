@@ -62,6 +62,7 @@ Backup Scenarios
 
    backup_scenarios/full_backup
    backup_scenarios/incremental_backup
+   backup_scenarios/encrypted_backup
 
 User's Manual
 =============
