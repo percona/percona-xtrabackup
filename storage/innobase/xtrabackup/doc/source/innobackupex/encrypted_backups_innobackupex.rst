@@ -11,7 +11,7 @@ Creating Encrypted Backups
 
 To make an encrypted backup following options need to be specified (options :option:`--encrypt-key` and :option:`--encrypt-key-file` are mutually exclusive, i.e. just one of them needs to be provided): 
 
- * :option:`--encryption=ALGORITHM` - currently supported algorithms are: ``AES128``, ``AES192`` and ``AES256``
+ * :option:`--encrypt=ALGORITHM` - currently supported algorithms are: ``AES128``, ``AES192`` and ``AES256``
 
  * :option:`--encrypt-key=ENCRYPTION_KEY` - proper length encryption key to use. It is not recommended to use this option where there is uncontrolled access to the machine as the command line and thus the key can be viewed as part of the process info. 
 
