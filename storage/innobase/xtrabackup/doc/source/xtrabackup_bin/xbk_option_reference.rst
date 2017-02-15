@@ -109,7 +109,7 @@ Options
 .. option:: --decrypt=ENCRYPTION-ALGORITHM
 
    Decrypts all files with the :file:`.xbcrypt` extension in a backup
-   previously made with :option:`xtrbackup --encrypt` option. The
+   previously made with :option:`xtrabackup --encrypt` option. The
    :option:`xtrabackup --parallel` option will allow multiple files to be
    decrypted simultaneously. |Percona XtraBackup| doesn't
    automatically remove the encrypted files. In order to clean up the backup
@@ -187,6 +187,37 @@ Options
    directories. No existing files will be overwritten. If files that need to
    be copied/moved from the backup directory already exist in the destination
    directory, it will still fail with an error.
+
+.. option:: --ftwrl-wait-timeout=SECONDS
+
+   This option specifies time in seconds that xtrabackup should wait for
+   queries that would block ``FLUSH TABLES WITH READ LOCK`` before running it.
+   If there are still such queries when the timeout expires, xtrabackup
+   terminates with an error. Default is ``0``, in which case it does not wait
+   for queries to complete and starts ``FLUSH TABLES WITH READ LOCK``
+   immediately. Where supported (Percona Server 5.6+) xtrabackup will
+   automatically use `Backup Locks
+   <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_
+   as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
+   non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
+
+.. option:: --ftwrl-wait-threshold=SECONDS
+
+   This option specifies the query run time threshold which is used by
+   xtrabackup to detect long-running queries with a non-zero value of
+   :option:`xtrabackup --ftwrl-wait-timeout`. ``FLUSH TABLES WITH READ LOCK``
+   is not started until such long-running queries exist. This option has no
+   effect if :option:`xtrabackup --ftwrl-wait-timeout` is ``0``. Default value
+   is ``60`` seconds. Where supported (Percona Server 5.6+) xtrabackup will
+   automatically use `Backup Locks
+   <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_
+   as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
+   non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
+
+.. option:: --ftwrl-wait-query-type=all|update
+
+   This option specifies which types of queries are allowed to complete before
+   xtrabackup will issue the global lock. Default is ``all``.
 
 .. option:: --galera-info
 
