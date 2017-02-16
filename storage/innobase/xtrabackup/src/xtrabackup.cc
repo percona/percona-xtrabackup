@@ -6935,9 +6935,20 @@ handle_options(int argc, char **argv, char ***argv_client, char ***argv_server)
 
 		if (strncmp(opt, "--", 2) &&
 		    !(strlen(opt) == 2 && opt[0] == '-')) {
+			bool server_option = true;
 
-			msg("xtrabackup: Error: unknown argument: '%s'\n", opt);
-			exit(EXIT_FAILURE);
+			for (int j = 0; j < argc_server; j++) {
+				if (opt == (*argv_server)[j]) {
+					server_option = false;
+					break;
+				}
+			}
+
+			if (!server_option) {
+				msg("xtrabackup: Error:"
+				    " unknown argument: '%s'\n", opt);
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 }
