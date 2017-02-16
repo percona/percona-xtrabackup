@@ -4,6 +4,7 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%global mysqldatadir /var/lib/mysql
 
 #####################################
 Name:           percona-xtrabackup-%{xb_version_major}%{xb_version_minor}
@@ -72,11 +73,11 @@ export CXXFLAGS=${CXXFLAGS:-}
 %if 0%{?rhel} > 5
   cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost .
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" .
 %else
   cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost .
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" .
 %endif
 
 #
