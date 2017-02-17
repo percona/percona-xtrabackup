@@ -33,10 +33,10 @@ following values:
   the binary log information at all, neither during the backup creation, nor
   after preparing it. This can help when a user just wants to copy data without
   any meta information like binary log or replication coordinates. In this
-  case, :option:`--binlog-info=OFF` can be passed to |Percona XtraBackup| and
-  ``LOCK BINLOG FOR BACKUP`` will not be executed, even if the backup-safe
-  binlog info feature is not provided by the server (but the backup locks
-  feature is still a requirement).
+  case, ``xtrabackup --binlog-info=OFF`` can be passed to |Percona
+  XtraBackup| and ``LOCK BINLOG FOR BACKUP`` will not be executed, even if the
+  backup-safe binlog info feature is not provided by the server (but the backup
+  locks feature is still a requirement).
 
 * ``ON`` - This matches the old behavior, i.e. the one before this |Percona
   XtraBackup| feature had been implemented. When specified, |Percona
@@ -56,8 +56,8 @@ following values:
 
 * ``AUTO`` - This is the default value. When used, |Percona XtraBackup| will
   automatically switch to either ``ON`` or ``LOCKLESS``, depending on the
-  server-side feature availability, i.e. whether the
-  :option:`have_backup_safe_binlog_info` server variable is available.
+  server-side feature availability, i.e., whether the
+  ``have_backup_safe_binlog_info`` server variable is available.
 
 .. rubric:: Footnotes
 

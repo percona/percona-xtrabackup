@@ -68,18 +68,52 @@ Options
 
 .. option:: --copy-back
 
-   Copy all the files in a previously made backup from the backup directory to their original locations.
+   Copy all the files in a previously made backup from the backup directory to
+   their original locations. This option will not copy over existing files
+   unless :option:`xtrabackup --force-non-empty-directories` option is
+   specified.
 
 .. option:: --create-ib-logfile
 
    This option is not currently implemented. To create the InnoDB log files,
    you must prepare the backup twice at present.
 
+.. option:: --databases=#
+
+   This option specifies the list of databases and tables that should be backed
+   up. The option accepts the list of the form ``"databasename1[.table_name1]
+   databasename2[.table_name2] . . ."``.
+
+.. option:: --databases-file=#
+
+   This option specifies the path to the file containing the list of databases
+   and tables that should be backed up. The file can contain the list elements
+   of the form ``databasename1[.table_name1]``, one element per line.
+
 .. option:: --datadir=DIRECTORY
 
    The source directory for the backup. This should be the same as the datadir
    for your |MySQL| server, so it should be read from :file:`my.cnf` if that
    exists; otherwise you must specify it on the command line.
+
+.. option:: --decompress
+
+   Decompresses all files with the :file:`.qp` extension in a backup previously
+   made with the :option:`xtrabackup --compress` option. The
+   :option:`xtrabackup --parallel` option will allow multiple files to be
+   decrypted simultaneously. In order to decompress, the qpress utility MUST be
+   installed and accessible within the path. |Percona XtraBackup| doesn't
+   automatically remove the compressed files. In order to clean up the backup
+   directory users should use :option:`xtrabackup --remove-original` option.
+
+.. option:: --decrypt=ENCRYPTION-ALGORITHM
+
+   Decrypts all files with the :file:`.xbcrypt` extension in a backup
+   previously made with :option:`xtrabackup --encrypt` option. The
+   :option:`xtrabackup --parallel` option will allow multiple files to be
+   decrypted simultaneously. |Percona XtraBackup| doesn't
+   automatically remove the encrypted files. In order to clean up the backup
+   directory users should use :option:`xtrabackup --remove-original` option.
 
 .. option:: --defaults-extra-file=[MY.CNF]
 
@@ -99,6 +133,43 @@ Options
    :option:`--defaults-group` option. It is needed for ``mysqld_multi``
    deployments.
 
+.. option:: --encrypt=ENCRYPTION_ALGORITHM
+
+   This option instructs xtrabackup to encrypt backup copies of InnoDB data
+   files using the algorithm specified in the ENCRYPTION_ALGORITHM. It is
+   passed directly to the xtrabackup child process. See the
+   :program:`xtrabackup`
+   :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-key=ENCRYPTION_KEY
+
+   This option instructs xtrabackup to use the given ``ENCRYPTION_KEY`` when
+   using the :option:`xtrabackup --encrypt` option. It is passed directly to
+   the xtrabackup child process. See the :program:`xtrabackup`
+   :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-key-file=ENCRYPTION_KEY_FILE
+
+   This option instructs xtrabackup to use the encryption key stored in the
+   given ``ENCRYPTION_KEY_FILE`` when using the :option:`xtrabackup --encrypt`
+   option. It is passed directly to the xtrabackup child process. See the
+   :program:`xtrabackup` :doc:`documentation
+   <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-threads=#
+
+   This option specifies the number of worker threads that will be used for
+   parallel encryption. It is passed directly to the xtrabackup child process.
+   See the :program:`xtrabackup` :doc:`documentation
+   <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+.. option:: --encrypt-chunk-size=#
+
+   This option specifies the size of the internal working buffer for each
+   encryption thread, measured in bytes. It is passed directly to the
+   xtrabackup child process. See the :program:`xtrabackup` :doc:`documentation
+   <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
 .. option:: --export
 
    Create files necessary for exporting tables. See :doc:`Restoring Individual
@@ -108,6 +179,52 @@ Options
 
    (for --backup): save an extra copy of the :file:`xtrabackup_checkpoints`
    file in this directory.
+
+.. option:: --force-non-empty-directories
+
+   When specified, it makes :option`xtrabackup --copy-back` and
+   :option:`xtrabackup --move-back` option transfer files to non-empty
+   directories. No existing files will be overwritten. If files that need to
+   be copied/moved from the backup directory already exist in the destination
+   directory, it will still fail with an error.
+
+.. option:: --ftwrl-wait-timeout=SECONDS
+
+   This option specifies time in seconds that xtrabackup should wait for
+   queries that would block ``FLUSH TABLES WITH READ LOCK`` before running it.
+   If there are still such queries when the timeout expires, xtrabackup
+   terminates with an error. Default is ``0``, in which case it does not wait
+   for queries to complete and starts ``FLUSH TABLES WITH READ LOCK``
+   immediately. Where supported (Percona Server 5.6+) xtrabackup will
+   automatically use `Backup Locks
+   <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_
+   as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
+   non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
+
+.. option:: --ftwrl-wait-threshold=SECONDS
+
+   This option specifies the query run time threshold which is used by
+   xtrabackup to detect long-running queries with a non-zero value of
+   :option:`xtrabackup --ftwrl-wait-timeout`. ``FLUSH TABLES WITH READ LOCK``
+   is not started until such long-running queries exist. This option has no
+   effect if :option:`xtrabackup --ftwrl-wait-timeout` is ``0``. Default value
+   is ``60`` seconds. Where supported (Percona Server 5.6+) xtrabackup will
+   automatically use `Backup Locks
+   <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_
+   as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
+   non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
+
+.. option:: --ftwrl-wait-query-type=all|update
+
+   This option specifies which types of queries are allowed to complete before
+   xtrabackup will issue the global lock. Default is ``all``.
+
+.. option:: --galera-info
+
+   This options creates the :file:`xtrabackup_galera_info` file which contains
+   the local node state at the time of the backup. Option should be used when
+   performing the backup of |Percona XtraDB Cluster|. It has no effect when
+   backup locks are used to create the backup.
 
 .. option:: --incremental-basedir=DIRECTORY
 
@@ -193,22 +310,16 @@ Options
    InnoDB log files to ``STDOUT`` until the :option:`--suspend-at-end` file is
    deleted. This option enables :option:`--suspend-at-end` automatically.
 
+.. option:: --move-back
+
+   Move all the files in a previously made backup from the backup directory to
+   their original locations. As this option removes backup files, it must be
+   used with caution.
+
 .. option:: --no-defaults
 
    Don't read default options from any option file. Must be given as the first
    option on the command-line.
-
-.. option:: --databases=#
-
-   This option specifies the list of databases and tables that should be backed
-   up. The option accepts the list of the form ``"databasename1[.table_name1]
-   databasename2[.table_name2] . . ."``.
-
-.. option:: --databases-file=#
-
-   This option specifies the path to the file containing the list of databases
-   and tables that should be backed up. The file can contain the list elements
-   of the form ``databasename1[.table_name1]``, one element per line.
 
 .. option:: --parallel=#
 
@@ -257,6 +368,31 @@ Options
    keyring file and re-encrypt the tablespace keys inside of tablespace
    headers. Option should be passed for :option:`--prepare` (final step).
 
+.. option:: --remove-original
+
+   Implemented in |Percona XtraBackup| 2.3.7, this option when specified will
+   remove :file:`.qp`, :file:`.xbcrypt` and :file:`.qp.xbcrypt` files after
+   decryption and decompression.
+
+.. option:: --safe-slave-backup
+
+   When specified, xtrabackup will stop the slave SQL thread just before
+   running ``FLUSH TABLES WITH READ LOCK`` and wait to start backup until
+   ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open
+   temporary tables, the backup will take place, otherwise the SQL thread will
+   be started and stopped until there are no open temporary tables. The backup
+   will fail if ``Slave_open_temp_tables`` does not become zero after
+   :option:`xtrabackup --safe-slave-backup-timeout` seconds. The slave SQL
+   thread will be restarted when the backup finishes. This option is
+   implemented in order to deal with `replicating temporary tables
+   <https://dev.mysql.com/doc/refman/5.7/en/replication-features-temptables.html>`_
+   and isn't neccessary with Row-Based-Replication.
+
+.. option:: --safe-slave-backup-timeout=SECONDS
+
+   How many seconds :option:`xtrabackup --safe-slave-backup` should wait for
+   ``Slave_open_temp_tables`` to become zero. Defaults to 300 seconds.
+
 .. option:: --secure-auth
 
    Refuse client connecting to server if it uses old (pre-4.1.1) protocol.
@@ -265,6 +401,15 @@ Options
 .. option:: --server-id=#
 
    The server instance being backed up.
+
+.. option:: --slave-info
+
+   This option is useful when backing up a replication slave server. It prints
+   the binary log position of the master server. It also writes this
+   information to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER``
+   command. A new slave for this master can be set up by starting a slave
+   server on this backup and issuing a ``CHANGE MASTER`` command with the
+   binary log position saved in the :file:`xtrabackup_slave_info` file.
 
 .. option:: --ssl
 

@@ -64,6 +64,10 @@ Bugs Fixed
  |Percona XtraBackup| would fail to backup *MariaDB* 10.2 with the
  ``unsupported server version`` error message. Bug fixed :bug:`1602842`.
 
+ Fixed misleading error message about missing metadata. Bug fixed :bug:`1557027`.
+
+ Backing up with an SSL user didn't work correctly. Bug fixed :bug:`1546872`.
+
 Other bugs fixed: :bug:`1639764`, :bug:`1639767`, :bug:`1641596`, and
 :bug:`1641601`.
 
