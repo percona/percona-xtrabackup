@@ -3,7 +3,7 @@
 ==========================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.4.6
-on February 17th 2017. Downloads are available from our `download site
+on February 22nd 2017. Downloads are available from our `download site
 <http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt
 <apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
@@ -44,9 +44,9 @@ Bugs Fixed
  will now require ``perl-MD5`` package to be installed from *EPEL* repositories
  on *CentOS 5* and *CentOS 6* (along with ``libev``). Bug fixed :bug:`1644018`.
 
- |Percona XtraBackup| now supports ``-h``, ``-u`` and ``-p`` shortcuts for
- ``--hostname``, ``--user`` and ``--password``. Bugs fixed :bug:`1655438` and
- :bug:`1652044`.
+ |Percona XtraBackup| now supports ``-H``, ``-h``, ``-u`` and ``-p`` shortcuts
+ for ``--hostname``, ``--datadir``, ``--user`` and ``--password`` respectively.
+ Bugs fixed :bug:`1655438` and :bug:`1652044`.
 
-Other bugs fixed: :bug:`1655278`. 
+Other bugs fixed: :bug:`1655278`.
 
