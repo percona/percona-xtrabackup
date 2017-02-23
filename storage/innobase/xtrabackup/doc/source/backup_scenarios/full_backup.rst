@@ -4,6 +4,8 @@
 The Backup Cycle - Full Backups
 ===============================
 
+.. _creating_a_backup:
+
 Creating a backup
 =================
 

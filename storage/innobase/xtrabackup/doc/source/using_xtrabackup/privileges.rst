@@ -35,7 +35,7 @@ Connecting to the server
 ========================
 
 The database user used to connect to the server and its password are specified
-by the :option:`--user` and :option:`--password` option:
+by the :option:`xtrabackup --user` and :option:`xtrabackup --password` option:
 
 .. code-block:: bash
 
@@ -44,8 +44,8 @@ by the :option:`--user` and :option:`--password` option:
   $ innobackupex --user=DBUSER --password=SECRET /path/to/backup/dir/
   $ innobackupex --user=LUKE  --password=US3TH3F0RC3 --stream=tar ./ | bzip2 -
 
-If you don't use the :option:`--user` option, |Percona XtraBackup| will assume
-the database user whose name is the system user executing it.
+If you don't use the :option:`xtrabackup --user` option, |Percona XtraBackup|
+will assume the database user whose name is the system user executing it.
 
 Other Connection Options
 ------------------------
@@ -64,7 +64,7 @@ Option       Description
 ===========  ==================================================================
 
 These options are passed to the :command:`mysql` child process without
-alteration, see :option:`mysql --help` for details.
+alteration, see ``mysql --help`` for details.
 
 .. note::
 

@@ -8,17 +8,17 @@ Index of files created by Percona XtraBackup
 
     * :file:`backup-my.cnf`
        This file contains information to start the mini instance of InnoDB
-       during the :option:`--apply-log`. This is **NOT** a backup of original
-       :file:`my.cnf`. The InnoDB configuration is read from the file
+       during the :option:`xtrabackup --prepare`. This is **NOT** a backup of
+       original :file:`my.cnf`. The InnoDB configuration is read from the file
        :file:`backup-my.cnf` created by |innobackupex| when the backup was
-       made. :option:`innobackupex --apply-log` uses InnoDB configuration from
+       made. :option:`xtrabackup --prepare` uses InnoDB configuration from
        ``backup-my.cnf`` by default, or from
-       :option:`innobackupex --defaults-file`, if specified. InnoDB
+       :option:`xtrabackup --defaults-file`, if specified. InnoDB
        configuration in this context means server variables that affect data
-       format, i.e. :option:`innodb_page_size`,
-       :option:`innodb_log_block_size`, etc. Location-related variables, like
-       :option:`innodb_log_group_home_dir` or :option:`innodb_data_file_path`
-       are always ignored by :option:`innobackupex --apply-log`, so preparing
+       format, i.e. ``innodb_page_size`` option,
+       ``innodb_log_block_size``, etc. Location-related variables, like
+       ``innodb_log_group_home_dir`` or ``innodb_data_file_path``
+       are always ignored by :option:`xtrabackup --prepare`, so preparing
        a backup always works with data files from the backup directory, rather
        than any external ones.
 
@@ -58,9 +58,9 @@ Index of files created by Percona XtraBackup
        The |xtrabackup| binary used in the process.
 
     * :file:`xtrabackup_logfile`
-       Contains data needed for running the: :option:`--apply-log`. The bigger
-       this file is the :option:`--apply-log` process will take longer to
-       finish.
+       Contains data needed for running the: :option:`xtrabackup --prepare`.
+       The bigger this file is the :option:`xtrabackup --prepare` process
+       will take longer to finish.
 
     * :file:`<table_name>.delta.meta`
        This file is going to be created when performing the incremental backup.
@@ -82,14 +82,14 @@ Index of files created by Percona XtraBackup
        respectively.
 
 * Information related to the replication environment (if using the
-  :option:`--slave-info` option):
+  :option:`xtrabackup --slave-info` option):
 
     * :file:`xtrabackup_slave_info`
        The ``CHANGE MASTER`` statement needed for setting up a slave.
 
 * Information related to the *Galera* and *Percona XtraDB Cluster* (if using
-  the :option:`--galera-info` option):
+  the :option:`xtrabackup --galera-info` option):
 
     * :file:`xtrabackup_galera_info`
-       Contains the values of status variables :option:`wsrep_local_state_uuid`
-       and :option:`wsrep_last_committed`.
+       Contains the values of ``wsrep_local_state_uuid`` and
+       ``wsrep_last_committed`` status variables
