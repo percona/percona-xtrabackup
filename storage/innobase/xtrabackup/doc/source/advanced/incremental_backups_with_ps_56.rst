@@ -10,7 +10,7 @@ for XtraDB
 This feature makes copies of the old log files before they are overwritten,
 thus saving all the redo log for a write workload.
 
-.. note:: 
+.. note::
 
   This feature was removed in Percona Server 5.7, and not supported by |Percona
   XtraBackup| 2.4.

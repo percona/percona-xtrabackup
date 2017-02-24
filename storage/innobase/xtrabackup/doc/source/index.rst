@@ -62,6 +62,7 @@ Backup Scenarios
 
    backup_scenarios/full_backup
    backup_scenarios/incremental_backup
+   backup_scenarios/compressed_backup
    backup_scenarios/encrypted_backup
 
 User's Manual
@@ -80,6 +81,7 @@ Advanced Features
    :maxdepth: 1
    :glob:
 
+   advanced/throttling_backups
    advanced/lockless_bin-log
    advanced/incremental_backups_with_ps_56
 
