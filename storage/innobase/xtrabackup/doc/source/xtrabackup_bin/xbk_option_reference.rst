@@ -19,8 +19,8 @@ Options
 
 .. option:: --backup
 
-   Make a backup and place it in :option:`--target-dir`. See :doc:`Creating a
-   backup <creating_a_backup>`.
+   Make a backup and place it in :option:`xtrabackup --target-dir`. See
+   :ref:`Creating a backup <creating_a_backup>`.
 
 .. option:: --binlog-info
 
@@ -61,10 +61,10 @@ Options
 
    This option specifies the number of worker threads used by |xtrabackup| for
    parallel data compression. This option defaults to ``1``. Parallel
-   compression (:option:`--compress-threads`) can be used together with
-   parallel file copying (:option:`--parallel`). For example, ``--parallel=4
-   --compress --compress-threads=2`` will create 4 IO threads that will read
-   the data and pipe it to 2 compression threads.
+   compression (:option:` xtrabackup --compress-threads`) can be used together
+   with parallel file copying (:option:`xtrabackup --parallel`). For example,
+   ``--parallel=4 --compress --compress-threads=2`` will create 4 I/O threads
+   that will read the data and pipe it to 2 compression threads.
 
 .. option:: --copy-back
 
@@ -130,8 +130,8 @@ Options
 
    This option is to set the group which should be read from the configuration
    file. This is used by |innobackupex| if you use the
-   :option:`--defaults-group` option. It is needed for ``mysqld_multi``
-   deployments.
+   :option:`xtrabackup --defaults-group` option. It is needed for
+   ``mysqld_multi`` deployments.
 
 .. option:: --encrypt=ENCRYPTION_ALGORITHM
 
@@ -246,13 +246,11 @@ Options
 .. option:: --incremental-lsn=LSN
 
    When creating an incremental backup, you can specify the log sequence number
-   (:term:`LSN`) instead of specifying :option:`--incremental-basedir`. For
-   databases created by *MySQL* and *Percona Server* 5.0-series versions,
-   specify the :term:`LSN` as two 32-bit integers in high:low format. For
-   databases created in 5.1 and later, specify the :term:`LSN` as a single
-   64-bit integer.  **ATTENTION**: If a wrong LSN value is specified (a user
-   error which |Percona XtraBackup| is unable to detect), the backup will be
-   unusable. Be careful!
+   (:term:`LSN`) instead of specifying
+   :option:`xtrabackup --incremental-basedir`. For databases created in 5.1 and
+   later, specify the :term:`LSN` as a single 64-bit integer. **ATTENTION**: If
+   a wrong LSN value is specified (a user  error which |Percona XtraBackup| is
+   unable to detect), the backup will be unusable. Be careful!
 
 .. option:: --innodb-log-arch-dir=DIRECTORY
 
@@ -304,12 +302,6 @@ Options
    This option specifies time interval between checks done by log copying
    thread in milliseconds (default is 1 second).
 
-.. option:: --log-stream
-
-   Makes |xtrabackup| not copy data files, and output the contents of the
-   InnoDB log files to ``STDOUT`` until the :option:`--suspend-at-end` file is
-   deleted. This option enables :option:`--suspend-at-end` automatically.
-
 .. option:: --move-back
 
    Move all the files in a previously made backup from the backup directory to
@@ -335,8 +327,8 @@ Options
 .. option:: --prepare
 
    Makes :program:`xtrabackup` perform recovery on a backup created with
-   :option:`--backup`, so that it is ready to use. See :doc:`preparing a backup
-   <preparing_the_backup>`.
+   :option:`xtrabackup --backup`, so that it is ready to use. See
+   :ref:`preparing a backup <preparing_a_backup>`.
 
 .. option:: --print-defaults
 
@@ -370,7 +362,7 @@ Options
 
 .. option:: --remove-original
 
-   Implemented in |Percona XtraBackup| 2.3.7, this option when specified will
+   Implemented in |Percona XtraBackup| 2.4.6, this option when specified will
    remove :file:`.qp`, :file:`.xbcrypt` and :file:`.qp.xbcrypt` files after
    decryption and decompression.
 
@@ -491,15 +483,6 @@ Options
    Stream all backup files to the standard output in the specified format.
    Currently supported formats are ``xbstream`` and ``tar``.
 
-.. option:: --suspend-at-end
-
-   Causes :program:`xtrabackup` to create a file called
-   :file:`xtrabackup_suspended` in the :option:`--target-dir`. Instead of
-   exiting after copying data files, :program:`xtrabackup` continues to copy
-   the log file, and waits until the :file:`xtrabackup_suspended` file is
-   deleted. This enables xtrabackup and other programs to coordinate their
-   work. See :ref:`scripting-xtrabackup`.
-
 .. option:: --tables=name
 
    A regular expression against which the full tablename, in
@@ -525,14 +508,14 @@ Options
 
 .. option:: --throttle=#
 
-   This option limits :option:`--backup` to the specified number of read+write
-   pairs of operations per second. See :doc:`throttling a backup
+   This option limits :option:`xtrabackup --backup` to the specified number of
+   read+write pairs of operations per second. See :doc:`throttling a backup
    <throttling_backups>`.
 
 .. option:: --tmpdir=name
 
    This option is currently not used for anything except printing out the
-   correct tmpdir parameter when :option:`--print-param` is used.
+   correct tmpdir parameter when :option:`xtrabackup --print-param` is used.
 
 .. option:: --to-archived-lsn=LSN
 
@@ -543,9 +526,10 @@ Options
 .. option:: --use-memory=#
 
    This option affects how much memory is allocated for preparing a backup with
-   :option:`--prepare`, or analyzing statistics with :option:`--stats`. Its
-   purpose is similar to :term:`innodb_buffer_pool_size`. It does not do the
-   same thing as the similarly named option in Oracle's InnoDB Hot Backup tool.
+   :option:`xtrabackup --prepare`, or analyzing statistics with
+   :option:`xtrabackup --stats`. Its purpose is similar
+   to :term:`innodb_buffer_pool_size`. It does not do the same thing as the
+   similarly named option in Oracle's InnoDB Hot Backup tool.
    The default value is 100MB, and if you have enough available memory, 1GB to
    2GB is a good recommended value. Multiples are supported providing the unit
    (e.g. 1MB, 1M, 1GB, 1G).
