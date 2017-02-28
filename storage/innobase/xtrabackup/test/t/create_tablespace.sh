@@ -29,6 +29,10 @@ INSERT INTO test.t2_2 VALUES (10), (20), (30);
 INSERT INTO test.t2_3 VALUES (100), (200), (300);
 EOF
 
+count=`ls $mysql_datadir/*.isl | wc -l`
+vlog  "$count .isl files in datadir, expecting 1"
+test $count -eq 1
+
 xtrabackup --backup --target-dir=$topdir/full
 
 run_cmd $MYSQL $MYSQL_ARGS <<EOF
@@ -121,3 +125,7 @@ $MYSQL $MYSQL_ARGS -e "SELECT * FROM test.t3_2"
 $MYSQL $MYSQL_ARGS -e "SELECT * FROM test.t3_3"
 
 verify_db_state test
+
+count=`ls $mysql_datadir/*.isl | wc -l`
+vlog  "$count .isl files in datadir after restore, expecting 1"
+test $count -eq 1
