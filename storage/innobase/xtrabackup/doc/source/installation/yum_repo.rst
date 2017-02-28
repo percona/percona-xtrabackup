@@ -118,9 +118,7 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 
    In order to sucessfully install |Percona XtraBackup| ``libev`` package will
    need to be installed first. ``libev`` package can be installed from the
-   `EPEL <https://fedoraproject.org/wiki/EPEL>`_ repositories. Additionally for
-   *CentOS 5* and *CentOS 6* ``perl-MD5`` package is required from the same
-   repository.
+   `EPEL <https://fedoraproject.org/wiki/EPEL>`_ repositories.
 
 .. _yum_testing:
 
