@@ -876,13 +876,24 @@ fil_set_max_space_id_if_bigger(
 /*===========================*/
 	ulint	max_id);/*!< in: maximum known id */
 #ifndef UNIV_HOTBACKUP
-/** Write the flushed LSN to the page header of the first page in the
+/****************************************************************//**
+Writes the flushed lsn to the page header of the first page of each
+data file in the system tablespace.
+@return	DB_SUCCESS or error number */
+dberr_t
+fil_write_flushed_lsn_to_data_files(
+/*================================*/
+	lsn_t	lsn);		/*!< in: lsn to write */
+
+/** Write the flushed LSN to the page header of the given page in the
 system tablespace.
 @param[in]	lsn	flushed LSN
+@param[in]	page_no	page number
 @return DB_SUCCESS or error number */
 dberr_t
 fil_write_flushed_lsn(
-	lsn_t	lsn);
+	lsn_t	lsn,
+	ulint	page_no);
 
 /** Acquire a tablespace when it could be dropped concurrently.
 Used by background threads that do not necessarily hold proper locks

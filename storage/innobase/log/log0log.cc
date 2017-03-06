@@ -2492,7 +2492,7 @@ loop:
 	srv_shutdown_lsn = lsn;
 
 	if (!srv_read_only_mode) {
-		fil_write_flushed_lsn(lsn);
+		fil_write_flushed_lsn_to_data_files(lsn);
 	}
 
 	fil_close_all_files();
