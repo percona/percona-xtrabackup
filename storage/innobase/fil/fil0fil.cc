@@ -1820,13 +1820,59 @@ fil_set_max_space_id_if_bigger(
 	mutex_exit(&fil_system->mutex);
 }
 
-/** Write the flushed LSN to the page header of the first page in the
+/****************************************************************//**
+Writes the flushed lsn to the page header of the first page of each
+data file in the system tablespace.
+@return	DB_SUCCESS or error number */
+dberr_t
+fil_write_flushed_lsn_to_data_files(
+/*================================*/
+	lsn_t	lsn)		/*!< in: lsn to write */
+{
+	fil_space_t*	space;
+	fil_node_t*	node;
+	dberr_t		err;
+	ulint		sum_of_sizes = 0;
+
+	mutex_enter(&fil_system->mutex);
+
+	space = fil_space_get_by_id(TRX_SYS_SPACE);
+
+	ut_ad(space->purpose == FIL_TYPE_TABLESPACE
+	      && !fil_is_user_tablespace_id(space->id));
+
+	for (node = UT_LIST_GET_FIRST(space->chain);
+	     node != NULL;
+	     node = UT_LIST_GET_NEXT(chain, node)) {
+
+		mutex_exit(&fil_system->mutex);
+
+		err = fil_write_flushed_lsn(lsn, sum_of_sizes);
+
+		if (err != DB_SUCCESS) {
+
+			return(err);
+		}
+
+		mutex_enter(&fil_system->mutex);
+
+		sum_of_sizes += node->size;
+	}
+
+	mutex_exit(&fil_system->mutex);
+
+	return(DB_SUCCESS);
+}
+
+/** Write the flushed LSN to the page header of the given page in the
 system tablespace.
 @param[in]	lsn	flushed LSN
+@param[in]	page_no	page number
 @return DB_SUCCESS or error number */
 dberr_t
 fil_write_flushed_lsn(
-	lsn_t	lsn)
+	lsn_t	lsn,
+	ulint	page_no)
 {
 	byte*	buf1;
 	byte*	buf;
@@ -1835,7 +1881,7 @@ fil_write_flushed_lsn(
 	buf1 = static_cast<byte*>(ut_malloc_nokey(2 * UNIV_PAGE_SIZE));
 	buf = static_cast<byte*>(ut_align(buf1, UNIV_PAGE_SIZE));
 
-	const page_id_t	page_id(TRX_SYS_SPACE, 0);
+	const page_id_t	page_id(TRX_SYS_SPACE, page_no);
 
 	err = fil_read(page_id, univ_page_size, 0, univ_page_size.physical(),
 		       buf);

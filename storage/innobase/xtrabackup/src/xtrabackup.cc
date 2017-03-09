@@ -7539,6 +7539,12 @@ next_node:
 
 	if (!xtrabackup_apply_log_only) {
 
+		/* xtrabackup_incremental_dir is used to indicate that
+		we are going to apply incremental backup. Here we already
+		applied incremental backup and are about to do final prepare
+		of the full backup */
+		xtrabackup_incremental_dir = NULL;
+
 		if(innodb_init_param()) {
 			goto error;
 		}

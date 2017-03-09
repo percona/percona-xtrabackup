@@ -2138,7 +2138,7 @@ files_checked:
 
 		flushed_lsn = log_get_lsn();
 
-		fil_write_flushed_lsn(flushed_lsn);
+		fil_write_flushed_lsn_to_data_files(flushed_lsn);
 
 		create_log_files_rename(
 			logfilename, dirnamelen, flushed_lsn, logfile0);
@@ -2343,7 +2343,7 @@ files_checked:
 			RECOVERY_CRASH(3);
 
 			/* Stamp the LSN to the data files. */
-			fil_write_flushed_lsn(flushed_lsn);
+			fil_write_flushed_lsn_to_data_files(flushed_lsn);
 
 			RECOVERY_CRASH(4);
 
