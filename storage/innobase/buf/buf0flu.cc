@@ -918,6 +918,12 @@ buf_flush_init_for_writing(
 					reset_type = FIL_PAGE_TYPE_TRX_SYS;
 				}
 				break;
+			case 6:
+				if (block->page.id.page_no() == 6 &&
+				    block->page.id.space() == TRX_SYS_SPACE) {
+					reset_type = FIL_PAGE_TYPE_SYS;
+				}
+				break;
 			default:
 				switch (page_type) {
 				case FIL_PAGE_INDEX:
