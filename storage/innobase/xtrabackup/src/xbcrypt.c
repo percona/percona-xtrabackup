@@ -23,7 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "xbcrypt.h"
 #include "xbcrypt_common.h"
-#include <gcrypt.h>
+#include "crc_glue.h"
 
 #if !defined(GCRYPT_VERSION_NUMBER) || (GCRYPT_VERSION_NUMBER < 0x010600)
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
@@ -138,6 +138,8 @@ main(int argc, char **argv)
 	File fileout = 0;
 
 	MY_INIT(argv[0]);
+
+	crc_init();
 
 	if (get_options(&argc, &argv)) {
 		goto err;
