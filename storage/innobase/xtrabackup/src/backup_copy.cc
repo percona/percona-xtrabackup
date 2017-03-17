@@ -262,6 +262,11 @@ datadir_iter_next_database(datadir_iter_t *it)
 			return(true);
 		}
 
+		if (check_if_skip_database_by_path(it->dbpath)) {
+			msg("Skipping db: %s\n", it->dbpath);
+			continue;
+		}
+
 		/* We want wrong directory permissions to be a fatal error for
 		XtraBackup. */
 		it->dbdir = os_file_opendir(it->dbpath, TRUE);

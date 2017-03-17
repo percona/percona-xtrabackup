@@ -59,6 +59,8 @@ Created 10/25/1995 Heikki Tuuri
 static ulint srv_data_read, srv_data_written;
 #endif /* !UNIV_HOTBACKUP */
 
+my_bool check_if_skip_database_by_path(const char* name);
+
 /*
 		IMPLEMENTATION OF THE TABLESPACE MEMORY CACHE
 		=============================================
@@ -4670,9 +4672,14 @@ fil_load_single_table_tablespaces(ibool (*pred)(const char*, const char*))
 			    "%s/%s", fil_path_to_mysql_datadir, dbinfo.name);
 		srv_normalize_path_for_win(dbpath);
 
-		/* We want wrong directory permissions to be a fatal error for
-		XtraBackup. */
-		dbdir = os_file_opendir(dbpath, TRUE);
+		if (check_if_skip_database_by_path(dbpath)) {
+			fprintf(stderr, "Skipping db: %s\n", dbpath);
+			dbdir = NULL;
+		} else {
+			/* We want wrong directory permissions to be a fatal
+			error for XtraBackup. */
+			dbdir = os_file_opendir(dbpath, TRUE);
+		}
 
 		if (dbdir != NULL) {
 
