@@ -346,9 +346,13 @@ static long	innobase_log_files_in_group_save;
 static char	*srv_log_group_home_dir_save;
 static longlong	innobase_log_file_size_save;
 
-/* set true if corresponding variable set as option config file or 
+/* set true if corresponding variable set as option config file or
 command argument */
 bool innodb_log_checksum_algorithm_specified = false;
+
+/* set true if corresponding variable set as option config file or
+command argument */
+bool innodb_checksum_algorithm_specified = false;
 
 /* String buffer used by --print-param to accumulate server options as they are
 parsed from the defaults file */
@@ -1464,6 +1468,7 @@ xb_get_one_option(int optid,
     ut_a(srv_checksum_algorithm <= SRV_CHECKSUM_ALGORITHM_STRICT_NONE);
 
     ADD_PRINT_PARAM_OPT(innodb_checksum_algorithm_names[srv_checksum_algorithm]);
+    innodb_checksum_algorithm_specified = true;
     break;
 
   case OPT_INNODB_LOG_CHECKSUM_ALGORITHM:
@@ -5298,7 +5303,7 @@ retry:
 	for (field = LOG_CHECKPOINT_1; field <= LOG_CHECKPOINT_2;
 			field += LOG_CHECKPOINT_2 - LOG_CHECKPOINT_1) {
 
-		/* checkpoint checksum is always crc32 for MySQL 5.7.9+ */
+		/* InnoDB using CRC32 by default since 5.7.9+ */
 		if (log_block_get_checksum(log_buf + field)
 		    == log_block_calc_checksum_crc32(log_buf + field) &&
 		    mach_read_from_4(log_buf + LOG_HEADER_FORMAT)
@@ -5308,10 +5313,18 @@ retry:
 				srv_log_checksum_algorithm =
 					SRV_CHECKSUM_ALGORITHM_CRC32;
 			}
+			if (!innodb_checksum_algorithm_specified) {
+				srv_checksum_algorithm =
+					SRV_CHECKSUM_ALGORITHM_CRC32;
+			}
 		} else if (check_log_header_checksum_0(log_buf + field)) {
 			redo_log_version = REDO_LOG_V0;
 			if (!innodb_log_checksum_algorithm_specified) {
 				srv_log_checksum_algorithm =
+					SRV_CHECKSUM_ALGORITHM_INNODB;
+			}
+			if (!innodb_checksum_algorithm_specified) {
+				srv_checksum_algorithm =
 					SRV_CHECKSUM_ALGORITHM_INNODB;
 			}
 		} else {
