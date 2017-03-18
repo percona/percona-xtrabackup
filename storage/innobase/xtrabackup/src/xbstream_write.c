@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2013 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2017 Percona LLC and/or its affiliates.
 
 The xbstream format writer implementation.
 
@@ -203,12 +203,13 @@ xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf, size_t len)
 	int8store(ptr, len);                     /* Payload length */
 	ptr += 8;
 
+	checksum = crc32(0, buf, len);           /* checksum */
+
 	pthread_mutex_lock(&stream->mutex);
 
 	int8store(ptr, file->offset);            /* Payload offset */
 	ptr += 8;
 
-	checksum = crc32(0, buf, len);           /* checksum */
 	int4store(ptr, checksum);
 	ptr += 4;
 
