@@ -1518,8 +1518,10 @@ write_xtrabackup_info(MYSQL *connection)
 		incremental_lsn, /* innodb_from_lsn */
 		metadata_to_lsn, /* innodb_to_lsn */
 		(xtrabackup_tables /* partial */
+		 || xtrabackup_tables_exclude
 		 || xtrabackup_tables_file
 		 || xtrabackup_databases
+		 || xtrabackup_databases_exclude
 		 || xtrabackup_databases_file) ? "Y" : "N",
 		xtrabackup_incremental ? "Y" : "N", /* incremental */
 		xb_stream_name[xtrabackup_stream_fmt], /* format */
@@ -1646,8 +1648,10 @@ write_xtrabackup_info(MYSQL *connection)
 	/* partial (Y | N) */
 	bind[idx].buffer_type = MYSQL_TYPE_STRING;
 	bind[idx].buffer = (char*)((xtrabackup_tables
+				    || xtrabackup_tables_exclude
 				    || xtrabackup_tables_file
 				    || xtrabackup_databases
+				    || xtrabackup_databases_exclude
 				    || xtrabackup_databases_file) ? "Y" : "N");
 	bind[idx].buffer_length = 1;
 	++idx;
