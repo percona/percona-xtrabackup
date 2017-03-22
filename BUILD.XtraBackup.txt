@@ -18,6 +18,17 @@ In RPM-based distributions, you need to:
 
   $ yum install cmake gcc gcc-c++ libaio libaio-devel automake autoconf bzr \
     bison libtool ncurses5-devel
+    
+Compiling under SLES 12.1
+--------------------
+
+In order to compile xtrabackup for SLES 12.1 you'll need the following packages:
+
+  $ zypper install autoconf automake bison bzr cmake gcc gcc-c++ libaio libaio-devel libcurl-devel libev-devel libev4 libgcrypt-devel libncurses5 libtool ncurses-devel python-Sphinx
+  
+after that you need to disable compiling with Man pages (unless you need them) by changing the cmake option `WITH_MAN_PAGES` to `OFF` in `cmake/build_configurations/xtrabackup_release.cmake`
+
+Then you can continue with the instructions below
 
 Compiling with CMake
 --------------------
