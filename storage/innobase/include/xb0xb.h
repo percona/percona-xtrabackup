@@ -32,6 +32,7 @@ typedef enum {REDO_LOG_V0, REDO_LOG_V1} redo_log_version_t;
 extern ulint redo_log_version;
 
 extern bool innodb_log_checksum_algorithm_specified;
+extern bool innodb_checksum_algorithm_specified;
 
 /******************************************************************************
 Callback used in buf_page_io_complete() to detect compacted pages.

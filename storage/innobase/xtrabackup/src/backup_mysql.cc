@@ -389,6 +389,7 @@ get_mysql_vars(MYSQL *connection)
 	char *innodb_page_size_var = NULL;
 	char *innodb_log_checksums_var = NULL;
 	char *innodb_log_checksum_algorithm_var = NULL;
+	char *innodb_checksum_algorithm_var = NULL;
 
 	unsigned long server_version = mysql_get_server_version(connection);
 
@@ -420,6 +421,7 @@ get_mysql_vars(MYSQL *connection)
 		{"innodb_log_checksums", &innodb_log_checksums_var},
 		{"innodb_log_checksum_algorithm",
 			&innodb_log_checksum_algorithm_var},
+		{"innodb_checksum_algorithm", &innodb_checksum_algorithm_var},
 		{NULL, NULL}
 	};
 
@@ -573,6 +575,19 @@ get_mysql_vars(MYSQL *connection)
 			    innodb_checksum_algorithm_typelib.type_names[i])
 			    == 0) {
 				srv_log_checksum_algorithm = i;
+			}
+		}
+	}
+
+	if (!innodb_checksum_algorithm_specified &&
+		innodb_checksum_algorithm_var) {
+		for (uint i = 0;
+		     i < innodb_checksum_algorithm_typelib.count;
+		     i++) {
+			if (strcasecmp(innodb_checksum_algorithm_var,
+			    innodb_checksum_algorithm_typelib.type_names[i])
+			    == 0) {
+				srv_checksum_algorithm = i;
 			}
 		}
 	}
