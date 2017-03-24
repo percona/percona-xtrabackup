@@ -2040,7 +2040,7 @@ version_check()
 		return;
 	}
 
-	fputs((const char *)version_check_pl, pipe);
+	fwrite((const char *) version_check_pl, version_check_pl_len, 1, pipe);
 
 	pclose(pipe);
 }
