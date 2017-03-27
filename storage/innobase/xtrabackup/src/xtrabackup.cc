@@ -91,6 +91,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "backup_copy.h"
 #include "backup_mysql.h"
+#include "ds_encrypt.h"
+#include "xbcrypt_common.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT	10
@@ -3016,6 +3018,12 @@ xtrabackup_init_datasinks(void)
 	/* Encryption */
 	if (xtrabackup_encrypt) {
 		ds_ctxt_t	*ds;
+
+                ds_encrypt_algo = xtrabackup_encrypt_algo;
+                ds_encrypt_key = xtrabackup_encrypt_key;
+                ds_encrypt_key_file = xtrabackup_encrypt_key_file;
+                ds_encrypt_encrypt_threads = xtrabackup_encrypt_threads;
+                ds_encrypt_encrypt_chunk_size = xtrabackup_encrypt_chunk_size;
 
 		ds = ds_create(xtrabackup_target_dir, DS_TYPE_ENCRYPT);
 		xtrabackup_add_datasink(ds);
