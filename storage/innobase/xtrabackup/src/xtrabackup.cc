@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2016 Percona LLC and/or its affiliates
+(c) 2009-2017 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -1077,8 +1077,8 @@ struct my_option xb_server_options[] =
    (G_PTR*) &opt_mysql_tmpdir,
    (G_PTR*) &opt_mysql_tmpdir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"parallel", OPT_XTRA_PARALLEL,
-   "Number of threads to use for parallel datafiles transfer. Does not have "
-   "any effect in the stream mode. The default value is 1.",
+   "Number of threads to use for parallel datafiles transfer. "
+   "The default value is 1.",
    (G_PTR*) &xtrabackup_parallel, (G_PTR*) &xtrabackup_parallel, 0, GET_INT,
    REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
 
