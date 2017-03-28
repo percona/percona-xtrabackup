@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2013 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2017 Percona LLC and/or its affiliates.
 
 The xbstream format reader implementation.
 
@@ -34,8 +34,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 struct xb_rstream_struct {
 	my_off_t	offset;
 	File 		fd;
-	void 		*buffer;
-	size_t		buflen;
 };
 
 xb_rstream_t *
@@ -44,9 +42,6 @@ xb_stream_read_new(void)
 	xb_rstream_t *stream;
 
 	stream = (xb_rstream_t *) my_malloc(sizeof(xb_rstream_t), MYF(MY_FAE));
-
-	stream->buffer = my_malloc(INIT_BUFFER_LEN, MYF(MY_FAE));
-	stream->buflen = INIT_BUFFER_LEN;
 
 	stream->fd = fileno(stdin);
 	stream->offset = 0;
@@ -71,6 +66,23 @@ validate_chunk_type(uchar code)
 	}
 }
 
+int
+xb_stream_validate_checksum(xb_rstream_chunk_t *chunk)
+{
+	ulong	checksum;
+
+	checksum = crc32(0, chunk->data, chunk->length);
+	if (checksum != chunk->checksum) {
+		msg("xb_stream_read_chunk(): invalid checksum at offset "
+		    "0x%llx: expected 0x%lx, read 0x%lx.\n",
+		    (ulonglong) chunk->checksum_offset, chunk->checksum,
+		    checksum);
+		return XB_STREAM_READ_ERROR;
+	}
+
+	return XB_STREAM_READ_CHUNK;
+}
+
 #define F_READ(buf,len)                                       	\
 	do {                                                      	\
 		if (xb_read_full(fd, buf, len) < len) {	\
@@ -87,8 +99,6 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 	uint		pathlen;
 	size_t		tbytes;
 	ulonglong	ullval;
-	ulong		checksum_exp;
-	ulong		checksum;
 	File		fd = stream->fd;
 
 	xb_ad(sizeof(tmpbuf) >= CHUNK_HEADER_CONSTANT_LEN);
@@ -178,38 +188,29 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 	stream->offset += 8;
 
 	/* Reallocate the buffer if needed */
-	if (chunk->length > stream->buflen) {
-		stream->buffer = my_realloc(stream->buffer, chunk->length,
-					    MYF(MY_WME));
-		if (stream->buffer == NULL) {
+	if (chunk->length > chunk->buflen) {
+		chunk->data = my_realloc(chunk->data, chunk->length,
+					 MYF(MY_WME | MY_ALLOW_ZERO_PTR));
+		if (chunk->data == NULL) {
 			msg("xb_stream_read_chunk(): failed to increase buffer "
 			    "to %lu bytes.\n", (ulong) chunk->length);
 			goto err;
 		}
-		stream->buflen = chunk->length;
+		chunk->buflen = chunk->length;
 	}
 
 	/* Checksum */
 	F_READ(tmpbuf, 4);
-	checksum_exp = uint4korr(tmpbuf);
+	chunk->checksum = uint4korr(tmpbuf);
+	chunk->checksum_offset = stream->offset;
 
 	/* Payload */
 	if (chunk->length > 0) {
-		F_READ(stream->buffer, chunk->length);
+		F_READ(chunk->data, chunk->length);
 		stream->offset += chunk->length;
 	}
 
-	checksum = crc32(0, stream->buffer, chunk->length);
-	if (checksum != checksum_exp) {
-		msg("xb_stream_read_chunk(): invalid checksum at offset "
-		    "0x%llx: expected 0x%lx, read 0x%lx.\n",
-		    (ulonglong) stream->offset, checksum_exp, checksum);
-		goto err;
-	}
 	stream->offset += 4;
-
-	chunk->data = stream->buffer;
-	chunk->checksum = checksum;
 
 	return XB_STREAM_READ_CHUNK;
 
@@ -220,7 +221,6 @@ err:
 int
 xb_stream_read_done(xb_rstream_t *stream)
 {
-	my_free(stream->buffer);
 	my_free(stream);
 
 	return 0;
