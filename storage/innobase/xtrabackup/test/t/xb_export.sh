@@ -5,6 +5,51 @@ then
     skip_test "Requires XtraDB or MySQL 5.6+"
 fi
 
+function init_schema() {
+	local database_name=$1
+	local table_name=$2
+	local columns_count=$3
+
+	local cmd="create database if not exists $database_name; "
+	cmd+="create table $database_name.$table_name ("
+	for ((c=1; c<=$columns_count; ++c ))
+	do
+		cmd+="\`c$c\` int,"
+	done
+	for ((c=1; c<=$columns_count; ++c ))
+	do
+		cmd+="index \`c$c\` (\`c$c\`),"
+	done
+	cmd=${cmd%?}
+	cmd+=") engine=InnoDB;"
+
+	echo "$cmd" | run_cmd $MYSQL $MYSQL_ARGS
+}
+
+function insert_data() {
+	local database_name=$1
+	local table_name=$2
+	local columns_count=$3
+	local rows_count=$4
+
+	local cmd="INSERT INTO $database_name.$table_name VALUES"
+	local val=0
+	for ((r=1; r<=$rows_count; ++r ))
+	do
+		cmd+="("
+		for ((c=1; c<=$columns_count; ++c ))
+		do
+			cmd+="$val,"
+			((++val))
+		done
+		cmd=${cmd%?}
+		cmd+="),"
+	done
+	cmd=${cmd%?}
+	cmd+=";"
+	echo "$cmd" | run_cmd $MYSQL $MYSQL_ARGS
+}
+
 import_option=""
 
 if is_xtradb
@@ -30,12 +75,30 @@ start_server $mysql_extra_args
 backup_dir=$topdir/xb_export_backup
 rm -rf $backup_dir
 mkdir $backup_dir
+indices_count=10
+rows_count=3
+
+# Pre-5.6.0 secnario: not too many indexes, both .exp files generated Ok.
+max_indices_count=30
+exp_files_count=2
+
+
+if is_server_version_higher_than 5.6.0
+then
+	# Post-5.6.0 scenario: many indexes, only one .exp file is generated.
+	# Despite that both .cfg are generated and both tables can be imported.
+	max_indices_count=64
+	exp_files_count=1
+fi
 
 # Loading table schema
-load_dbase_schema incremental_sample
+init_schema incremental_sample test $max_indices_count
+init_schema incremental_sample test2 $indices_count
 
 # Adding some data to database
-multi_row_insert incremental_sample.test \({1..100},100\)
+insert_data incremental_sample test $max_indices_count $rows_count
+insert_data incremental_sample test2 $indices_count $rows_count
+
 
 checksum_1=`checksum_table incremental_sample test`
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
@@ -50,13 +113,20 @@ vlog "Re-initializing database server"
 stop_server
 rm -rf ${MYSQLD_DATADIR}
 start_server $mysql_extra_args
-load_dbase_schema incremental_sample
+init_schema incremental_sample test $max_indices_count
 vlog "Database was re-initialized"
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test discard tablespace;" incremental_sample
 
 xtrabackup --datadir=$mysql_datadir --prepare --export \
     --target-dir=$backup_dir
+
+exp_count=`find $backup_dir/incremental_sample -name '*.exp' | wc -l`
+cfg_count=`find $backup_dir/incremental_sample -name '*.cfg' | wc -l`
+vlog "Verifying .exp files in backup, expecting $exp_files_count."
+test "$exp_count" -eq "$exp_files_count"
+vlog "Verifying .cfg files in backup, expecting 2."
+test "$cfg_count" -eq 2
 
 run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
 run_cmd ls -lah $mysql_datadir/incremental_sample/
