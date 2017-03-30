@@ -790,6 +790,52 @@ function require_qpress()
     fi
 }
 
+function require_tokudb()
+{
+    if ! [ -a $(dirname ${MYSQLD})/../lib/mysql/plugin/ha_tokudb.so ]; then
+        skip_test "Requires TokuDB"
+    fi
+
+    # Modified piece from ps_tokudb_admin
+    local SCRIPT_PWD=$(dirname ${MYSQLD})
+    LIBJEMALLOC_LOCATION=""
+
+    # Check location for libjemalloc.so.1
+    printf "Checking location of jemalloc library ...\n"
+    for libjemall in "${SCRIPT_PWD}/lib/mysql" "/usr/lib64" "/usr/lib/x86_64-linux-gnu" "/usr/lib"; do
+      if [ -r "$libjemall/libjemalloc.so.1" ]; then
+	LIBJEMALLOC_LOCATION="$libjemall/libjemalloc.so.1"
+	break
+      fi
+    done
+    if [ -z $LIBJEMALLOC_LOCATION ]; then
+      vlog "ERROR: Cannot find libjemalloc.so.1 library. Make sure you have libjemalloc1 on debian|ubuntu or jemalloc on centos package installed.\n\n";
+      skip_test "Requires jemalloc for TokuDB"
+    else
+      vlog "INFO: Using jemalloc library from $LIBJEMALLOC_LOCATION\n\n";
+    fi
+}
+
+##############################################################################
+# Start a server with TokuDB plugins loaded and enabled.
+# Server id is 1, any arguments are passsed to the mysqld.
+##############################################################################
+function start_server_with_tokudb()
+{
+    local OLD_LD_PRELOAD=${LD_PRELOAD:-""}
+
+    LD_PRELOAD="$LIBJEMALLOC_LOCATION:$OLD_LD_PRELOAD" TOKU_HUGE_PAGES_OK=1 \
+    start_server $* --plugin-load-add="\
+tokudb=ha_tokudb.so:\
+tokudb_file_map=ha_tokudb.so:\
+tokudb_fractal_tree_info=ha_tokudb.so:\
+tokudb_fractal_tree_block_map=ha_tokudb.so:\
+tokudb_trx=ha_tokudb.so:\
+tokudb_locks=ha_tokudb.so:\
+tokudb_lock_waits=ha_tokudb.so:\
+tokudb_background_job_status=ha_tokudb.so"
+}
+
 ##############################################################################
 # Execute a multi-row INSERT into a specified table.
 #
