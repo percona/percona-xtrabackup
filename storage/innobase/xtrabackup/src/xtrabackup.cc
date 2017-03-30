@@ -6856,7 +6856,7 @@ xb_export_cfg_write(
 	file = fopen(file_path, "w+b");
 
 	if (file == NULL) {
-		msg("xtrabackup: Error: cannot close %s\n", node->name);
+		msg("xtrabackup: Error: cannot open %s\n", node->name);
 
 		success = false;
 	} else {
@@ -7538,17 +7538,20 @@ skip_check:
 				    table_name);
 				goto next_node;
 			}
-			index = dict_table_get_first_index(table);
-			n_index = UT_LIST_GET_LEN(table->indexes);
-			if (n_index > 31) {
-				msg("xtrabackup: error: "
-				    "sorry, cannot export over "
-				    "31 indexes for now.\n");
-				goto next_node;
-			}
 
 			/* Write MySQL 5.6 .cfg file */
 			if (!xb_export_cfg_write(node, table)) {
+				goto next_node;
+			}
+
+			index = dict_table_get_first_index(table);
+			n_index = UT_LIST_GET_LEN(table->indexes);
+			if (n_index > 31) {
+				msg("xtrabackup: warning: table '%s' has more "
+				    "than 31 indexes, .exp file was not "
+				    "generated. Table will fail to import "
+				    "on server version prior to 5.6.\n",
+				    table->name);
 				goto next_node;
 			}
 
