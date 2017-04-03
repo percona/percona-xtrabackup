@@ -99,6 +99,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xb0xb.h"
 #include "ds_encrypt.h"
 #include "xbcrypt_common.h"
+#include "crc_glue.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT	10
@@ -4434,6 +4435,7 @@ xtrabackup_backup_func(void)
 
 	srv_general_init();
 	ut_crc32_init();
+	crc_init();
 
 	xb_keyring_init(xb_keyring_file_data);
 
