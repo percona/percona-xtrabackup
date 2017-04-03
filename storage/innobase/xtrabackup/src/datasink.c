@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ds_stdout.h"
 #include "ds_tmpfile.h"
 #include "ds_encrypt.h"
+#include "ds_decrypt.h"
 #include "ds_buffer.h"
 
 /************************************************************************
@@ -56,6 +57,9 @@ ds_create(const char *root, ds_type_t type)
 		break;
 	case DS_TYPE_ENCRYPT:
 		ds = &datasink_encrypt;
+		break;
+	case DS_TYPE_DECRYPT:
+		ds = &datasink_decrypt;
 		break;
 	case DS_TYPE_TMPFILE:
 		ds = &datasink_tmpfile;

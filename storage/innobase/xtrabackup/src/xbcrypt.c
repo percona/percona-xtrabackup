@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_dir.h>
 #include "common.h"
 #include "xbcrypt.h"
+#include "xbcrypt_common.h"
 #include <gcrypt.h>
 #include <string.h>
 
@@ -406,8 +407,8 @@ mode_decrypt(File filein, File fileout)
 
 			/* ensure that XB_CRYPT_HASH_LEN is the correct length
 			of XB_CRYPT_HASH hashing algorithm output */
-			assert(gcry_md_get_algo_dlen(XB_CRYPT_HASH) ==
-			       XB_CRYPT_HASH_LEN);
+			xb_a(gcry_md_get_algo_dlen(XB_CRYPT_HASH) ==
+			     XB_CRYPT_HASH_LEN);
 			gcry_md_hash_buffer(XB_CRYPT_HASH, hash, decryptbuf,
 					    originalsize);
 			if (memcmp(hash, (char *) decryptbuf + originalsize,
@@ -534,8 +535,7 @@ mode_encrypt(File filein, File fileout)
 
 		/* ensure that XB_CRYPT_HASH_LEN is the correct length
 		of XB_CRYPT_HASH hashing algorithm output */
-		assert(XB_CRYPT_HASH_LEN ==
-		       gcry_md_get_algo_dlen(XB_CRYPT_HASH));
+		xb_a(XB_CRYPT_HASH_LEN == gcry_md_get_algo_dlen(XB_CRYPT_HASH));
 		gcry_md_hash_buffer(XB_CRYPT_HASH, chunkbuf + bytesread,
 				    chunkbuf, bytesread);
 
