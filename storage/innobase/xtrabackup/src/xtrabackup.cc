@@ -7559,7 +7559,7 @@ skip_check:
 				    "than 31 indexes, .exp file was not "
 				    "generated. Table will fail to import "
 				    "on server version prior to 5.6.\n",
-				    table->name);
+				    table_name);
 				goto next_node;
 			}
 
