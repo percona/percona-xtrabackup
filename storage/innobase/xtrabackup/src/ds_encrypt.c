@@ -557,8 +557,7 @@ encrypt_worker_thread_func(void *arg)
 
 		/* ensure that XB_CRYPT_HASH_LEN is the correct length
 		of XB_CRYPT_HASH hashing algorithm output */
-		assert(gcry_md_get_algo_dlen(XB_CRYPT_HASH) ==
-		       XB_CRYPT_HASH_LEN);
+		xb_a(gcry_md_get_algo_dlen(XB_CRYPT_HASH) == XB_CRYPT_HASH_LEN);
 
 		memcpy(thd->to, thd->from, thd->from_len);
 		gcry_md_hash_buffer(XB_CRYPT_HASH, thd->to + thd->from_len,

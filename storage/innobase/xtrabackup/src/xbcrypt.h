@@ -65,6 +65,7 @@ xb_rcrypt_t *xb_crypt_read_open(void *userdata,
 
 typedef enum {
 	XB_CRYPT_READ_CHUNK,
+	XB_CRYPT_READ_INCOMPLETE,
 	XB_CRYPT_READ_EOF,
 	XB_CRYPT_READ_ERROR
 } xb_rcrypt_result_t;
