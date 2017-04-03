@@ -1,4 +1,4 @@
-# Copyright (c) 2013-2016 Percona LLC and/or its affiliates.
+# Copyright (c) 2013, 2017 Percona LLC and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -86,6 +86,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   ds_buffer.c
   ds_compress.c
   ds_encrypt.c
+  ds_decrypt.c
   ds_local.c
   ds_stdout.c
   ds_tmpfile.c
@@ -134,10 +135,13 @@ MYSQL_ADD_EXECUTABLE(xbstream
   ds_buffer.c
   ds_local.c
   ds_stdout.c
+  ds_decrypt.c
   datasink.c
   xbstream.c
   xbstream_read.c
   xbstream_write.c
+  xbcrypt_common.c
+  xbcrypt_write.c
   )
 
 SET_TARGET_PROPERTIES(xbstream
@@ -145,6 +149,7 @@ SET_TARGET_PROPERTIES(xbstream
         )
 
 TARGET_LINK_LIBRARIES(xbstream
+  ${GCRYPT_LIBS}
   mysys
   mysys_ssl
   )
