@@ -377,6 +377,7 @@ my_bool opt_noversioncheck = FALSE;
 my_bool opt_no_backup_locks = FALSE;
 my_bool opt_decompress = FALSE;
 my_bool opt_remove_original = FALSE;
+my_bool opt_tables_compatibility_check = TRUE;
 
 static const char *binlog_info_values[] = {"off", "lockless", "on", "auto",
 					   NullS};
@@ -662,6 +663,8 @@ enum options_xtrabackup
 
   OPT_XTRA_TABLES_EXCLUDE,
   OPT_XTRA_DATABASES_EXCLUDE,
+
+  OPT_XTRA_TABLES_COMPATIBILITY_CHECK,
 };
 
 struct my_option xb_client_options[] =
@@ -906,6 +909,13 @@ struct my_option xb_client_options[] =
    (uchar *) &opt_noversioncheck,
    (uchar *) &opt_noversioncheck,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"tables-compatibility-check", OPT_XTRA_TABLES_COMPATIBILITY_CHECK,
+   "This option enables engine compatibility warning.",
+   (uchar *) & opt_tables_compatibility_check,
+   (uchar *) & opt_tables_compatibility_check,
+   0, GET_BOOL, NO_ARG, TRUE, 0, 0, 0, 0, 0},
+
 
   {"no-backup-locks", OPT_NO_BACKUP_LOCKS, "This option controls if "
    "backup locks should be used instead of FLUSH TABLES WITH READ LOCK "
@@ -4326,6 +4336,41 @@ end:
 #endif
 }
 
+/**************************************************************************
+Prints a warning for every table that uses unsupported engine and
+hence will not be backed up. */
+static void
+xb_tables_compatibility_check()
+{
+	const char* query = "SELECT\n"
+			    "  CONCAT(table_schema, '/', table_name), engine\n"
+			    "FROM information_schema.tables\n"
+			    "WHERE engine NOT IN (\n"
+			    "  'MyISAM', 'InnoDB', 'CSV', 'MRG_MYISAM'\n"
+			    ")\n"
+			    "AND table_schema NOT IN (\n"
+			    "  'performance_schema', 'information_schema',"
+			    "  'mysql'\n"
+			    ");";
+
+	MYSQL_RES* result = xb_mysql_query(mysql_connection, query, true, true);
+	MYSQL_ROW row;
+	if (!result) {
+		return;
+	}
+
+	ut_a(mysql_num_fields(result) == 2);
+	while ((row = mysql_fetch_row(result))) {
+		if (!check_if_skip_table(row[0])) {
+			*strchr(row[0], '/') = '.';
+			msg("Warning: \"%s\" uses engine \"%s\" "
+			    "and will not be backed up.\n", row[0], row[1]);
+		}
+	}
+
+	mysql_free_result(result);
+}
+
 void
 xtrabackup_backup_func(void)
 {
@@ -4440,6 +4485,10 @@ xtrabackup_backup_func(void)
 	xb_keyring_init(xb_keyring_file_data);
 
 	xb_filters_init();
+
+	if (opt_tables_compatibility_check) {
+		xb_tables_compatibility_check();
+	}
 
 	{
 	ibool	log_file_created;
