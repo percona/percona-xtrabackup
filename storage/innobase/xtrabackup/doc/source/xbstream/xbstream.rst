@@ -12,7 +12,7 @@ dynamically generated files, for example dynamically compressed files. Other
 advantages of xbstream over traditional streaming/archive format include
 ability to stream multiple files concurrently (so it is possible to use
 streaming in the xbstream format together with the --parallel option) and more
-compact data storage. 
+compact data storage.
 
 This utility has a tar-like interface:
 
@@ -54,7 +54,7 @@ The resulting files have the qpress archive format, i.e., every ``*.qp`` file
 produced by |xtrabackup| is essentially a one-file qpress archive and can be
 extracted and uncompressed by the `qpress file archiver
 <http://www.quicklz.com/>`_. This means that there is no need to decompress
-entire backup to restore a single table as with :file:`tar.gz`. 
+entire backup to restore a single table as with :file:`tar.gz`.
 
 Files can be decompressed using the **qpress** tool that can be downloaded from
 `here <http://www.quicklz.com/>`_. Qpress supports multi-threaded decompression.

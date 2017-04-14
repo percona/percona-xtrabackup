@@ -1,0 +1,56 @@
+==========================
+|Percona XtraBackup| 2.4.7
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.7 on
+April 17th 2017. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.7/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.4
+series.
+
+New Features
+============
+
+ |Percona XtraBackup| now uses hardware accelerated implementation of ``crc32``
+ where it is supported.
+
+ |Percona XtraBackup| has implemented new options:
+ :option:`xtrabackup --tables-exclude` and
+ :option:`xtrabackup --databases-exclude`
+ that work similar to :option:`xtrabackup --tables` and
+ :option:`xtrabackup --databases`
+ options, but exclude given names/paths from backup.
+
+ :ref:`xbstream_binary` now supports parallel extraction with the
+ ``--parallel`` option.
+
+ :ref:`xbstream_binary` now supports following new options: ``--decrypt``,
+ ``--encrypt-threads``, ``--encrypt-key``, and ``--encrypt-key-file``.
+ When ``--decrypt`` option is specified |xbstream| will automatically decrypt
+ encrypted files when extracting input stream. Either ``--encrypt-key`` or
+ ``--encrypt-key-file`` options must be specified to provide encryption key,
+ but not both. Option ``--encrypt-threads`` specifies the number of worker
+ threads doing the encryption, default is ``1``.
+
+Bugs fixed
+==========
+
+ Backups were missing :file:`*.isl` files for general tablespace. Bug fixed
+ :bug:`1658692`.
+
+ In 5.7 |MySQL| changed default checksum algorithm to ``crc32``, while
+ |xtrabackup| was using ``innodb``. This caused |xtrabackup| to perform extra
+ checksum calculations which were not needed. Bug fixed :bug:`1664405`.
+
+ For system tablespaces consisting of multiple files |xtrabackup| updated LSN
+ only in first file. This caused |MySQL| versions lower than 5.7 to fail on
+ startup. Bug fixed :bug:`1669592`.
+
+ :option:`xtrabackup --export` can now export tables that have more than 31
+ index. Bug fixed :bug:`1089681`.
+
+ ``Unrecognized character \x01; marked by <-- HERE`` message could be seen if
+ backups were taken with the version check enabled. Bug fixed
+ :bug:`1651978`.
