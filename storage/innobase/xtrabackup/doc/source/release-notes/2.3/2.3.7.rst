@@ -1,0 +1,53 @@
+==========================
+|Percona XtraBackup| 2.3.7
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.3.7 on
+February 22nd 2017. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.7/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.3
+series.
+
+New Features
+============
+
+ |Percona XtraBackup| has implemented new
+ :option:`xtrabackup --remove-original` option that can be used to remove the
+ encrypted and compressed files once they've been decrypted/decompressed.
+
+Bugs fixed
+==========
+
+ |xtrabackup| was using username set for server in a configuration file even if
+ a different user was defined in the users configuration file. Bug fixed
+ :bug:`1551706`.
+
+ Incremental backups did not include :file:`xtrabackup_binlog_info` and
+ :file:`xtrabackup_galera_info` files. Bug fixed :bug:`1643803`.
+
+ |Percona XtraBackup| would fail to compile with ``-DWITH_DEBUG`` and
+ ``-DWITH_SSL=system`` options. Bug fixed :bug:`1647551`.
+
+ :option:`xtrabackup --move-back` did not always restore out-of-datadir
+ tablespaces to their original directories. Bug fixed :bug:`1648322`.
+
+ |innobackupex| and |xtrabackup| scripts were showing the password in the
+ :program:`ps` output when it was passed as a command line argument. Bug fixed
+ :bug:`907280`.
+
+ Incremental backup would fail with path like ``~/backup/inc_1``
+ because |xtrabackup| didn't properly expand tilde. Bug fixed :bug:`1642826`.
+
+ Fixed missing dependency check for ``perl(Digest::MD5)`` in rpm packages. Bug
+ fixed :bug:`1644018`.
+
+ |Percona XtraBackup| now supports ``-H``, ``-h``, ``-u`` and ``-p`` shortcuts
+ for ``--hostname``, ``--datadir``, ``--user`` and ``--password`` respectively.
+ Bugs fixed :bug:`1655438` and :bug:`1652044`.
+
+**[UPDATE 2016-02-28]:** New packages have been pushed to repositories with
+incremented package version to address the bug :bug:`1667610`.
+
+Other bugs fixed: :bug:`1655278`.

@@ -90,8 +90,8 @@ logs to the data.
 Restoring a backup
 ------------------
 
-To restore a backup with |xtrabackup| you can use the :option:`--copy-back` or
-:option:`--move-backup` options.
+To restore a backup with |xtrabackup| you can use the
+:option:`xtrabackup --copy-back` or :option:`xtrabackup --move-back` options.
 
 |xtrabackup| will read from the :file:`my.cnf` the variables :term:`datadir`,
 :term:`innodb_data_home_dir`, :term:`innodb_data_file_path`,

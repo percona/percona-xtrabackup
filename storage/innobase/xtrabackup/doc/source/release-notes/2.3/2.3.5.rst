@@ -20,12 +20,12 @@ Bugs fixed
  location pointed by the :file:`.isl` files. Bug fixed :bug:`1555423`.
 
  When called with insufficient parameters, like specifying the empty
- :option:`--defaults-file` option, |Percona XtraBackup| could crash. Bug
- fixed :bug:`1566228`.
+ :option:`xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
+ Bug fixed :bug:`1566228`.
 
  Documentation states that the default value for
- :option:`--ftwrl-wait-query-type` is ``all``, however it was ``update``.
- Changed the default value to reflect the documentation. Bug fixed
+ :option:`xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
+ ``update``. Changed the default value to reflect the documentation. Bug fixed
  :bug:`1566315`.
 
  Free Software Foundation address in copyright notices was outdated. Bug fixed

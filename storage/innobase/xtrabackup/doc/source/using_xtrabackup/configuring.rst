@@ -41,10 +41,10 @@ System Configuration and NFS Volumes
 ------------------------------------
 
 The |xtrabackup| tool requires no special configuration on most systems.
-However, the storage where the :option:`--target-dir` is located must behave
-properly when ``fsync()`` is called. In particular, we have noticed that NFS
-volumes not mounted with the ``sync`` option might not really sync the data. As
-a result, if you back up to an NFS volume mounted with the async option, and
-then try to prepare the backup from a different server that also mounts that
-volume, the data might appear to be corrupt. You can use the ``sync`` mount
-option to avoid this problem.
+However, the storage where the :option:`xtrabackup --target-dir` is located
+must behave properly when ``fsync()`` is called. In particular, we have noticed
+that NFS volumes not mounted with the ``sync`` option might not really sync the
+data. As a result, if you back up to an NFS volume mounted with the async
+option, and then try to prepare the backup from a different server that also
+mounts that volume, the data might appear to be corrupt. You can use the
+``sync`` mount option to avoid this problem.
