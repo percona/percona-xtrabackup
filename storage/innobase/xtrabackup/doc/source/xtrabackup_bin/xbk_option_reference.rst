@@ -84,6 +84,13 @@ Options
    up. The option accepts the list of the form ``"databasename1[.table_name1]
    databasename2[.table_name2] . . ."``.
 
+.. option::  --databases-exclude=name
+
+   Excluding databases based on name, Operates the same way
+   as :option:`xtrabackup --databases`, but matched names are excluded from
+   backup. Note that this option has a higher priority than
+   :option:`xtrabackup --databases`.
+
 .. option:: --databases-file=#
 
    This option specifies the path to the file containing the list of databases
@@ -488,6 +495,13 @@ Options
    A regular expression against which the full tablename, in
    ``databasename.tablename`` format, is matched. If the name matches, the
    table is backed up. See :doc:`partial backups <partial_backups>`.
+
+.. option:: --tables-exclude=name
+
+   Filtering by regexp for table names. Operates the same
+   way as :option:`xtrabackup --tables`, but matched names are excluded from
+   backup. Note that this option has a higher priority than
+   :option:`xtrabackup --tables`.
 
 .. option:: --tables-file=name
 
