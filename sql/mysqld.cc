@@ -4346,7 +4346,11 @@ static int init_ssl()
 {
 #ifdef HAVE_OPENSSL
 #ifndef HAVE_YASSL
+#if OPENSSL_VERSION_NUMBER >= 0x10100005L
+  OPENSSL_malloc_init();
+#else
   CRYPTO_malloc_init();
+#endif
 #endif
   ssl_start();
 #if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
