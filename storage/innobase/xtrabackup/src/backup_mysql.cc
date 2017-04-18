@@ -79,7 +79,7 @@ os_event_t	kill_query_thread_stopped;
 os_event_t	kill_query_thread_stop;
 
 bool sql_thread_started = false;
-char *mysql_slave_position = NULL;
+std::string mysql_slave_position;
 char *mysql_binlog_position = NULL;
 char *buffer_pool_filename = NULL;
 
@@ -205,22 +205,21 @@ struct mysql_variable {
 	char **value;
 };
 
-
+/*********************************************************************//**
+Read mysql_variable from MYSQL_RES, return number of rows consumed. */
 static
-void
-read_mysql_variables(MYSQL *connection, const char *query, mysql_variable *vars,
+int
+read_mysql_variables_from_result(MYSQL_RES *mysql_result, mysql_variable *vars,
 	bool vertical_result)
 {
-	MYSQL_RES *mysql_result;
 	MYSQL_ROW row;
 	mysql_variable *var;
-
-	mysql_result = xb_mysql_query(connection, query, true);
-
 	ut_ad(!vertical_result || mysql_num_fields(mysql_result) == 2);
+	int rows_read = 0;
 
 	if (vertical_result) {
 		while ((row = mysql_fetch_row(mysql_result))) {
+			++rows_read;
 			char *name = row[0];
 			char *value = row[1];
 			for (var = vars; var->name; var++) {
@@ -234,6 +233,8 @@ read_mysql_variables(MYSQL *connection, const char *query, mysql_variable *vars,
 		MYSQL_FIELD *field;
 
 		if ((row = mysql_fetch_row(mysql_result)) != NULL) {
+			mysql_field_seek(mysql_result, 0);
+			++rows_read;
 			int i = 0;
 			while ((field = mysql_fetch_field(mysql_result))
 				!= NULL) {
@@ -249,7 +250,17 @@ read_mysql_variables(MYSQL *connection, const char *query, mysql_variable *vars,
 			}
 		}
 	}
+	return rows_read;
+}
 
+
+static
+void
+read_mysql_variables(MYSQL *connection, const char *query, mysql_variable *vars,
+	bool vertical_result)
+{
+	MYSQL_RES *mysql_result = xb_mysql_query(connection, query, true);
+	read_mysql_variables_from_result(mysql_result, vars, vertical_result);
 	mysql_free_result(mysql_result);
 }
 
@@ -262,9 +273,9 @@ free_mysql_variables(mysql_variable *vars)
 
 	for (var = vars; var->name; var++) {
 		free(*(var->value));
+		*var->value = NULL;
 	}
 }
-
 
 static
 char *
@@ -1181,14 +1192,21 @@ write_slave_info(MYSQL *connection)
 	char *gtid_executed = NULL;
 	char *position = NULL;
 	char *gtid_slave_pos = NULL;
-	char *ptr;
-	bool result = false;
+	char *ptr = NULL;
+	char *tmp_mysql_slave_position = NULL;
+	char *writable_channel_name = NULL;
+	const char* channel_info = NULL;
+	bool result = true;
+	const size_t channel_info_maxlen = 128;
+	char channel_info_buf[channel_info_maxlen];
+	ds_file_t	*slave_info_file	= NULL;
 
 	mysql_variable status[] = {
 		{"Master_Host", &master},
 		{"Relay_Master_Log_File", &filename},
 		{"Exec_Master_Log_Pos", &position},
 		{"Executed_Gtid_Set", &gtid_executed},
+		{"Channel_Name", &writable_channel_name},
 		{NULL, NULL}
 	};
 
@@ -1196,62 +1214,121 @@ write_slave_info(MYSQL *connection)
 		{"gtid_slave_pos", &gtid_slave_pos},
 		{NULL, NULL}
 	};
-
-	read_mysql_variables(connection, "SHOW SLAVE STATUS", status, false);
 	read_mysql_variables(connection, "SHOW VARIABLES", variables, true);
 
-	if (master == NULL || filename == NULL || position == NULL) {
-		msg("Failed to get master binlog coordinates "
-			"from SHOW SLAVE STATUS\n");
-		msg("This means that the server is not a "
-			"replication slave. Ignoring the --slave-info "
-			"option\n");
-		/* we still want to continue the backup */
-		result = true;
-		goto cleanup;
-	}
-
-	/* Print slave status to a file.
-	If GTID mode is used, construct a CHANGE MASTER statement with
-	MASTER_AUTO_POSITION and correct a gtid_purged value. */
-	if (gtid_executed != NULL && *gtid_executed) {
-		/* MySQL >= 5.6 with GTID enabled */
-
-		for (ptr = strchr(gtid_executed, '\n');
-		     ptr;
-		     ptr = strchr(ptr, '\n')) {
-			*ptr = ' ';
+	MYSQL_RES* slave_status_res = xb_mysql_query(connection,
+		"SHOW SLAVE STATUS", true, true);
+	int masters_count = 0;
+	while (read_mysql_variables_from_result(slave_status_res, status,
+		false)) {
+		if (master == NULL || filename == NULL || position == NULL) {
+			msg("Failed to get master binlog coordinates "
+				"from SHOW SLAVE STATUS\n");
+			msg("This means that the server is not a "
+				"replication slave. Ignoring the --slave-info "
+				"option\n");
+			/* we still want to continue the backup */
+			goto cleanup;
 		}
 
-		result = backup_file_printf(XTRABACKUP_SLAVE_INFO,
-			"SET GLOBAL gtid_purged='%s';\n"
-			"CHANGE MASTER TO MASTER_AUTO_POSITION=1\n",
-			gtid_executed);
+		const char* channel_name = writable_channel_name;
+		if (channel_name && channel_name[0] != '\0') {
+			const char* clause_format = " FOR CHANNEL '%s'";
+			xb_a(channel_info_maxlen >
+				strlen(channel_name) + strlen(clause_format));
+			snprintf(channel_info_buf, channel_info_maxlen,
+				clause_format, channel_name);
+			channel_info = channel_info_buf;
+		} else {
+			channel_name = channel_info = "";
+		}
 
-		ut_a(asprintf(&mysql_slave_position,
-			"master host '%s', purge list '%s'",
-			master, gtid_executed) != -1);
-	} else if (gtid_slave_pos && *gtid_slave_pos) {
-		/* MariaDB >= 10.0 with GTID enabled */
-		result = backup_file_printf(XTRABACKUP_SLAVE_INFO,
-			"SET GLOBAL gtid_slave_pos = '%s';\n"
-			"CHANGE MASTER TO master_use_gtid = slave_pos\n",
-			gtid_slave_pos);
-		ut_a(asprintf(&mysql_slave_position,
-			"master host '%s', gtid_slave_pos %s",
-			master, gtid_slave_pos) != -1);
-	} else {
-		result = backup_file_printf(XTRABACKUP_SLAVE_INFO,
-			"CHANGE MASTER TO MASTER_LOG_FILE='%s', "
-			"MASTER_LOG_POS=%s\n", filename, position);
-		ut_a(asprintf(&mysql_slave_position,
-			"master host '%s', filename '%s', position '%s'",
-			master, filename, position) != -1);
+		if (!slave_info_file) {
+			MY_STAT		 stat;
+			slave_info_file = ds_open(ds_data,
+				XTRABACKUP_SLAVE_INFO, &stat);
+			if (!slave_info_file) {
+				msg("Failed to open %s for writing.",
+					XTRABACKUP_SLAVE_INFO);
+				result = false;
+				goto cleanup;
+			}
+		}
+		++masters_count;
+
+		/* Print slave status to a file.
+		If GTID mode is used, construct a CHANGE MASTER statement with
+		MASTER_AUTO_POSITION and correct a gtid_purged value. */
+		if (gtid_executed != NULL && *gtid_executed) {
+			/* MySQL >= 5.6 with GTID enabled */
+
+			for (ptr = strchr(gtid_executed, '\n');
+			     ptr;
+			     ptr = strchr(ptr, '\n')) {
+				*ptr = ' ';
+			}
+
+			if (masters_count == 1) {
+				result &= backup_ds_printf(slave_info_file,
+					"SET GLOBAL gtid_purged='%s';\n",
+					gtid_executed);
+			}
+			result &= backup_ds_printf(slave_info_file,
+				"CHANGE MASTER TO MASTER_AUTO_POSITION=1%s;\n",
+				channel_info);
+
+			ut_a(asprintf(&tmp_mysql_slave_position,
+				"master host '%s', purge list '%s', "
+				"channel name: '%s'",
+				master, gtid_executed, channel_name) != -1);
+		} else if (gtid_slave_pos && *gtid_slave_pos) {
+			/* MariaDB >= 10.0 with GTID enabled */
+			if (masters_count == 1) {
+				result &= backup_ds_printf(slave_info_file,
+					"SET GLOBAL gtid_slave_pos = '%s';\n",
+					gtid_slave_pos);
+			}
+			result &= backup_ds_printf(slave_info_file,
+				"CHANGE MASTER TO master_use_gtid = slave_pos"
+				"%s;\n",
+				channel_info);
+			ut_a(asprintf(&tmp_mysql_slave_position,
+				"master host '%s', gtid_slave_pos %s, "
+				"channel name: '%s'",
+				master, gtid_slave_pos, channel_name) != -1);
+		} else {
+			result &= backup_ds_printf(slave_info_file,
+				"CHANGE MASTER TO MASTER_LOG_FILE='%s', "
+				"MASTER_LOG_POS=%s%s;\n",
+				filename, position, channel_info);
+			ut_a(asprintf(&tmp_mysql_slave_position,
+				"master host '%s', filename '%s', "
+				"position '%s', channel name: '%s'",
+				master, filename, position,
+				channel_name) != -1);
+		}
+		if (!result) {
+			goto cleanup;
+		}
+		free_mysql_variables(status);
+
+		if (tmp_mysql_slave_position) {
+			mysql_slave_position += '\n';
+			mysql_slave_position += *tmp_mysql_slave_position;
+		}
+		free(tmp_mysql_slave_position);
+		tmp_mysql_slave_position = NULL;
 	}
 
 cleanup:
+	if (slave_info_file) {
+		ds_close(slave_info_file);
+	}
+
+	mysql_free_result(slave_status_res);
 	free_mysql_variables(status);
 	free_mysql_variables(variables);
+	free(tmp_mysql_slave_position);
 
 	return(result);
 }
@@ -1833,7 +1910,6 @@ Deallocate memory, disconnect from MySQL server, etc.
 void
 backup_cleanup()
 {
-	free(mysql_slave_position);
 	free(mysql_binlog_position);
 	free(buffer_pool_filename);
 

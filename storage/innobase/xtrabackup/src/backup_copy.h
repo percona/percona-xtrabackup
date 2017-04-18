@@ -17,6 +17,10 @@ bool
 backup_file_printf(const char *filename, const char *fmt, ...)
 		__attribute__((format(printf, 2, 0)));
 
+bool
+backup_ds_printf(ds_file_t *dstfile, const char *fmt, ...)
+		__attribute__((format(printf, 2, 0)));
+
 /************************************************************************
 Return true if first and second arguments are the same path. */
 bool

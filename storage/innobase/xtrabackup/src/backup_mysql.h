@@ -2,6 +2,7 @@
 #define XTRABACKUP_BACKUP_MYSQL_H
 
 #include <mysql.h>
+#include <string>
 
 /* mysql flavor and version */
 enum mysql_flavor_t { FLAVOR_UNKNOWN, FLAVOR_MYSQL,
@@ -26,7 +27,7 @@ extern time_t history_lock_time;
 
 
 extern bool sql_thread_started;
-extern char *mysql_slave_position;
+extern std::string mysql_slave_position;
 extern char *mysql_binlog_position;
 extern char *buffer_pool_filename;
 
