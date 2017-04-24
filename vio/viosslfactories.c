@@ -36,9 +36,22 @@ static unsigned char dh512_g[]={
 
 static DH *get_dh512(void)
 {
-  DH *dh;
-  if ((dh=DH_new()))
+  DH *dh = DH_new();
+
+  if (dh != NULL)
   {
+#if OPENSSL_VERSION_NUMBER >= 0x10100005L
+    BIGNUM *p, *g;
+    p = BN_bin2bn(dh512_p, sizeof(dh512_p), NULL);
+    g = BN_bin2bn(dh512_g, sizeof(dh512_g), NULL);
+    if (p == NULL || g == NULL || !DH_set0_pqg(dh, p, NULL, g))
+    {
+      DH_free(dh);
+      BN_free(p);
+      BN_free(g);
+      dh=0;
+    }
+#else
     dh->p=BN_bin2bn(dh512_p,sizeof(dh512_p),NULL);
     dh->g=BN_bin2bn(dh512_g,sizeof(dh512_g),NULL);
     if (! dh->p || ! dh->g)
@@ -46,6 +59,7 @@ static DH *get_dh512(void)
       DH_free(dh);
       dh=0;
     }
+#endif
   }
   return(dh);
 }
