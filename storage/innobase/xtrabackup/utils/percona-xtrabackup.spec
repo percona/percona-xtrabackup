@@ -4,6 +4,7 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%global mysqldatadir /var/lib/mysql
 
 #####################################
 Name:           percona-xtrabackup
@@ -27,6 +28,7 @@ BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6
 %endif
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22
 Requires:       perl(DBD::mysql), rsync
+Requires:	perl(Digest::MD5)
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
 %description
@@ -63,7 +65,7 @@ export CXX=${CXX-"g++"}
 export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
-cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
   -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test -DINSTALL_MANDIR=%{_mandir} .
 #
 make %{?_smp_mflags}
@@ -93,6 +95,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test
 
 %changelog
+* Mon Feb 13 2017 Evgeniy Patlan <evgeniy.patlan@percona.com>
+- Update to new release Percona XtraBackup 2.3.7
+
 * Mon Mar 14 2016 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.4
 
