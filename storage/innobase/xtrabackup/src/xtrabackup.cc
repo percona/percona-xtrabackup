@@ -2037,6 +2037,26 @@ xtrabackup_stream_metadata(ds_ctxt_t *ds_ctxt)
 	return(rc);
 }
 
+
+static
+my_bool write_to_file(const char *filepath, const char *data)
+{
+	size_t len = strlen(data);
+	FILE *fp = fopen(filepath, "w");
+	if(!fp) {
+		msg("xtrabackup: Error: cannot open %s\n", filepath);
+		return(FALSE);
+	}
+	if (fwrite(data, len, 1, fp) < 1) {
+		fclose(fp);
+		return(FALSE);
+	}
+
+	fclose(fp);
+	return TRUE;
+}
+
+
 /***********************************************************************
 Write backup meta info to a specified file.
 @return TRUE on success, FALSE on failure. */
@@ -2045,26 +2065,9 @@ my_bool
 xtrabackup_write_metadata(const char *filepath)
 {
 	char		buf[1024];
-	size_t		len;
-	FILE		*fp;
 
 	xtrabackup_print_metadata(buf, sizeof(buf));
-
-	len = strlen(buf);
-
-	fp = fopen(filepath, "w");
-	if(!fp) {
-		msg("xtrabackup: Error: cannot open %s\n", filepath);
-		return(FALSE);
-	}
-	if (fwrite(buf, len, 1, fp) < 1) {
-		fclose(fp);
-		return(FALSE);
-	}
-
-	fclose(fp);
-
-	return(TRUE);
+	return write_to_file(filepath, buf);
 }
 
 /***********************************************************************
@@ -2152,6 +2155,20 @@ xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info)
 	}
 
 	return(ret);
+}
+
+static my_bool
+xtrabackup_write_info(const char *filepath)
+{
+	char *xtrabackup_info_data = get_xtrabackup_info(mysql_connection);
+	if (!xtrabackup_info_data) {
+		return FALSE;
+	}
+
+	my_bool result = write_to_file(filepath, xtrabackup_info_data);
+
+	free(xtrabackup_info_data);
+	return result;
 }
 
 /* ================= backup ================= */
@@ -4366,6 +4383,11 @@ skip_last_cp:
 		msg("xtrabackup: Error: failed to stream metadata.\n");
 		exit(EXIT_FAILURE);
 	}
+
+	if (!backup_finish()) {
+		exit(EXIT_FAILURE);
+	}
+
 	if (xtrabackup_extra_lsndir) {
 		char	filename[FN_REFLEN];
 
@@ -4377,10 +4399,14 @@ skip_last_cp:
 			exit(EXIT_FAILURE);
 		}
 
-	}
+		sprintf(filename, "%s/%s", xtrabackup_extra_lsndir,
+			XTRABACKUP_INFO);
+		if (!xtrabackup_write_info(filename)) {
+			msg("xtrabackup: Error: failed to write info "
+			    "to '%s'.\n", filename);
+			exit(EXIT_FAILURE);
+		}
 
-	if (!backup_finish()) {
-		exit(EXIT_FAILURE);
 	}
 
 	xtrabackup_destroy_datasinks();

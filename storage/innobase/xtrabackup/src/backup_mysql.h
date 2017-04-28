@@ -67,6 +67,9 @@ write_current_binlog_file(MYSQL *connection);
 bool
 write_binlog_info(MYSQL *connection);
 
+char*
+get_xtrabackup_info(MYSQL *connection);
+
 bool
 write_xtrabackup_info(MYSQL *connection);
 
