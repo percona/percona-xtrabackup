@@ -831,20 +831,33 @@ datafile_rsync_backup(const char *filepath, bool save_to_list, FILE *f)
 
 static
 bool
-backup_file_vprintf(const char *filename, const char *fmt, va_list ap)
+backup_ds_print(ds_file_t *dstfile, const char *message, int len)
+{
+	const char *action = xb_get_copy_action("Writing");
+	msg_ts("[%02u] %s %s\n", 0, action, dstfile->path);
+
+	if (ds_write(dstfile, message, len)) {
+		goto error;
+	}
+
+	msg_ts("[%02u]        ...done\n", 0);
+	return true;
+
+error:
+	msg("[%02u] Error: %s backup file failed.\n", 0, action);
+	return false;
+}
+
+static
+bool
+backup_file_print(const char *filename, const char *message, int len)
 {
 	ds_file_t	*dstfile	= NULL;
-	MY_STAT		 stat;			/* unused for now */
-	char		*buf		= 0;
-	int		 buf_len;
-	const char	*action;
+	MY_STAT		 stat;
 
 	memset(&stat, 0, sizeof(stat));
-
-	buf_len = vasprintf(&buf, fmt, ap);
-
-	stat.st_size = buf_len;
 	stat.st_mtime = my_time(0);
+	stat.st_size = len;
 
 	dstfile = ds_open(ds_data, filename, &stat);
 	if (dstfile == NULL) {
@@ -854,20 +867,9 @@ backup_file_vprintf(const char *filename, const char *fmt, va_list ap)
 		goto error;
 	}
 
-	action = xb_get_copy_action("Writing");
-	msg_ts("[%02u] %s %s\n", 0, action, filename);
-
-	if (buf_len == -1) {
+	if (!backup_ds_print(dstfile, message, len)) {
 		goto error;
 	}
-
-	if (ds_write(dstfile, buf, buf_len)) {
-		goto error;
-	}
-
-	/* close */
-	msg_ts("[%02u]        ...done\n", 0);
-	free(buf);
 
 	if (ds_close(dstfile)) {
 		goto error_close;
@@ -876,13 +878,11 @@ backup_file_vprintf(const char *filename, const char *fmt, va_list ap)
 	return(true);
 
 error:
-	free(buf);
 	if (dstfile != NULL) {
 		ds_close(dstfile);
 	}
 
 error_close:
-	msg("[%02u] Error: backup file failed.\n", 0);
 	return(false); /*ERROR*/
 }
 
@@ -890,15 +890,44 @@ error_close:
 bool
 backup_file_printf(const char *filename, const char *fmt, ...)
 {
-	bool result;
+	bool result  = false;
+	char *buf    = 0;
+	int  buf_len = 0;
 	va_list ap;
 
 	va_start(ap, fmt);
-
-	result = backup_file_vprintf(filename, fmt, ap);
-
+	buf_len = vasprintf(&buf, fmt, ap);
 	va_end(ap);
 
+	if (buf_len == -1) {
+		return false;
+	}
+
+	result = backup_file_print(filename, buf, buf_len);
+
+	free(buf);
+	return(result);
+}
+
+bool
+backup_ds_printf(ds_file_t *dstfile, const char *fmt, ...)
+{
+	bool result  = false;
+	char *buf    = 0;
+	int  buf_len = 0;
+	va_list ap;
+
+	va_start(ap, fmt);
+	buf_len = vasprintf(&buf, fmt, ap);
+	va_end(ap);
+
+	if (buf_len == -1) {
+		return false;
+	}
+
+	result = backup_ds_print(dstfile, buf, buf_len);
+
+	free(buf);
 	return(result);
 }
 
@@ -1448,9 +1477,9 @@ backup_finish()
 	if (mysql_binlog_position != NULL) {
 		msg("MySQL binlog position: %s\n", mysql_binlog_position);
 	}
-	if (mysql_slave_position && opt_slave_info) {
+	if (!mysql_slave_position.empty() && opt_slave_info) {
 		msg("MySQL slave binlog position: %s\n",
-			mysql_slave_position);
+			mysql_slave_position.c_str());
 	}
 
 	if (!write_backup_config_file()) {
