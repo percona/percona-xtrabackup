@@ -2848,6 +2848,9 @@ files_checked:
 	os_fast_mutex_free(&srv_os_test_mutex);
 
 	if (srv_rebuild_indexes) {
+		while (trx_rollback_or_clean_is_active) {
+			os_thread_sleep(100000);
+		}
 		xb_compact_rebuild_indexes();
 	}
 

@@ -46,6 +46,7 @@ Created 3/14/1997 Heikki Tuuri
 #include "log0log.h"
 #include "srv0mon.h"
 #include "srv0start.h"
+#include "xb0xb.h"
 
 /*************************************************************************
 IMPORTANT NOTE: Any operation that generates redo MUST check that there
@@ -504,6 +505,11 @@ row_purge_remove_sec_if_poss(
 {
 	ibool	success;
 	ulint	n_tries		= 0;
+
+	if (srv_compact_backup) {
+		/* we don't have secondary indexes, lets skip this */
+		return;
+	}
 
 	/*	fputs("Purge: Removing secondary record\n", stderr); */
 

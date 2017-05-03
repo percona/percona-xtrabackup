@@ -46,6 +46,7 @@ Created 2/25/1997 Heikki Tuuri
 #include "que0que.h"
 #include "ibuf0ibuf.h"
 #include "log0log.h"
+#include "xb0xb.h"
 
 /*************************************************************************
 IMPORTANT NOTE: Any operation that generates redo MUST check that there
@@ -359,6 +360,11 @@ row_undo_ins_remove_sec_rec(
 	dberr_t		err	= DB_SUCCESS;
 	dict_index_t*	index	= node->index;
 	mem_heap_t*	heap;
+
+	if (srv_compact_backup) {
+		/* we don't have secondary indexes, lets skip this */
+		return(DB_SUCCESS);
+	}
 
 	heap = mem_heap_create(1024);
 
