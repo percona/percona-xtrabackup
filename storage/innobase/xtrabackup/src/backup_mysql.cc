@@ -80,11 +80,15 @@ bool sql_thread_started = false;
 char *mysql_slave_position = NULL;
 char *mysql_binlog_position = NULL;
 char *buffer_pool_filename = NULL;
+static char *backup_uuid = NULL;
 
 /* History on server */
 time_t history_start_time;
 time_t history_end_time;
 time_t history_lock_time;
+
+/* Stream type name, to be used with xtrabackup_stream_fmt */
+const char *xb_stream_format_name[] = {"file", "tar", "xbstream"};
 
 MYSQL *mysql_connection;
 
@@ -280,6 +284,17 @@ read_mysql_one_value(MYSQL *connection, const char *query)
 	mysql_free_result(mysql_result);
 
 	return(result);
+}
+
+/* UUID of the backup, gives same value until explicitly reset.
+Returned value should NOT be free()-d. */
+static
+const char* get_backup_uuid(MYSQL *connection)
+{
+	if (!backup_uuid) {
+		backup_uuid = read_mysql_one_value(connection, "SELECT UUID()");
+	}
+	return backup_uuid;
 }
 
 static
@@ -1378,48 +1393,35 @@ cleanup:
 	return(result);
 }
 
-
+inline static
+bool format_time(time_t time, char *dest, size_t max_size)
+{
+	tm tm;
+	localtime_r(&time, &tm);
+	return strftime(dest, max_size,
+		 "%Y-%m-%d %H:%M:%S", &tm) != 0;
+}
 
 /*********************************************************************//**
-Writes xtrabackup_info file and if backup_history is enable creates
-PERCONA_SCHEMA.xtrabackup_history and writes a new history record to the
-table containing all the history info particular to the just completed
-backup. */
-bool
-write_xtrabackup_info(MYSQL *connection)
+Allocates and writes contents of xtrabackup_info into buffer;
+Invoke free() on return value once you don't need it.
+*/
+char* get_xtrabackup_info(MYSQL *connection)
 {
-	MYSQL_STMT *stmt;
-	MYSQL_BIND bind[19];
-	char *uuid = NULL;
-	char *server_version = NULL;
-	char buf_start_time[100];
-	char buf_end_time[100];
-	int idx;
-	tm tm;
-	my_bool null = TRUE;
+	const char *uuid = get_backup_uuid(connection);
+	char *server_version = read_mysql_one_value(connection, "SELECT VERSION()");
 
-	const char *xb_stream_name[] = {"file", "tar", "xbstream"};
-	const char *ins_query = "insert into PERCONA_SCHEMA.xtrabackup_history("
-		"uuid, name, tool_name, tool_command, tool_version, "
-		"ibbackup_version, server_version, start_time, end_time, "
-		"lock_time, binlog_pos, innodb_from_lsn, innodb_to_lsn, "
-		"partial, incremental, format, compact, compressed, "
-		"encrypted) "
-		"values(?,?,?,?,?,?,?,from_unixtime(?),from_unixtime(?),"
-		"?,?,?,?,?,?,?,?,?,?)";
+	static const size_t time_buf_size = 100;
+	char buf_start_time[time_buf_size];
+	char buf_end_time[time_buf_size];
 
-	ut_ad(xtrabackup_stream_fmt < 3);
+	format_time(history_start_time, buf_start_time, time_buf_size);
+	format_time(history_end_time, buf_end_time, time_buf_size);
 
-	uuid = read_mysql_one_value(connection, "SELECT UUID()");
-	server_version = read_mysql_one_value(connection, "SELECT VERSION()");
-	localtime_r(&history_start_time, &tm);
-	strftime(buf_start_time, sizeof(buf_start_time),
-		 "%Y-%m-%d %H:%M:%S", &tm);
-	history_end_time = time(NULL);
-	localtime_r(&history_end_time, &tm);
-	strftime(buf_end_time, sizeof(buf_end_time),
-		 "%Y-%m-%d %H:%M:%S", &tm);
-	backup_file_printf(XTRABACKUP_INFO,
+	ut_a(uuid);
+	ut_a(server_version);
+	char* result = NULL;
+	asprintf(&result,
 		"uuid = %s\n"
 		"name = %s\n"
 		"tool_name = %s\n"
@@ -1429,10 +1431,10 @@ write_xtrabackup_info(MYSQL *connection)
 		"server_version = %s\n"
 		"start_time = %s\n"
 		"end_time = %s\n"
-		"lock_time = %d\n"
+		"lock_time = %ld\n"
 		"binlog_pos = %s\n"
-		"innodb_from_lsn = %llu\n"
-		"innodb_to_lsn = %llu\n"
+		"innodb_from_lsn = " LSN_PF "\n"
+		"innodb_to_lsn = " LSN_PF "\n"
 		"partial = %s\n"
 		"incremental = %s\n"
 		"format = %s\n"
@@ -1448,7 +1450,7 @@ write_xtrabackup_info(MYSQL *connection)
 		server_version,  /* server_version */
 		buf_start_time,  /* start_time */
 		buf_end_time,  /* end_time */
-		history_lock_time, /* lock_time */
+		(long int)history_lock_time, /* lock_time */
 		mysql_binlog_position ?
 			mysql_binlog_position : "", /* binlog_pos */
 		incremental_lsn, /* innodb_from_lsn */
@@ -1460,14 +1462,59 @@ write_xtrabackup_info(MYSQL *connection)
 		 || xtrabackup_databases_exclude
 		 || xtrabackup_databases_file) ? "Y" : "N",
 		xtrabackup_incremental ? "Y" : "N", /* incremental */
-		xb_stream_name[xtrabackup_stream_fmt], /* format */
+		xb_stream_format_name[xtrabackup_stream_fmt], /* format */
 		xtrabackup_compact ? "Y" : "N", /* compact */
 		xtrabackup_compress ? "compressed" : "N", /* compressed */
 		xtrabackup_encrypt ? "Y" : "N"); /* encrypted */
 
+	free(server_version);
+	return result;
+}
+
+
+
+/*********************************************************************//**
+Writes xtrabackup_info file and if backup_history is enable creates
+PERCONA_SCHEMA.xtrabackup_history and writes a new history record to the
+table containing all the history info particular to the just completed
+backup. */
+bool
+write_xtrabackup_info(MYSQL *connection)
+{
+	MYSQL_STMT *stmt;
+	MYSQL_BIND bind[19];
+	const char *uuid = NULL;
+	char *server_version = NULL;
+	char* xtrabackup_info_data = NULL;
+	int idx;
+	my_bool null = TRUE;
+
+	const char *ins_query = "insert into PERCONA_SCHEMA.xtrabackup_history("
+		"uuid, name, tool_name, tool_command, tool_version, "
+		"ibbackup_version, server_version, start_time, end_time, "
+		"lock_time, binlog_pos, innodb_from_lsn, innodb_to_lsn, "
+		"partial, incremental, format, compact, compressed, "
+		"encrypted) "
+		"values(?,?,?,?,?,?,?,from_unixtime(?),from_unixtime(?),"
+		"?,?,?,?,?,?,?,?,?,?)";
+
+	ut_ad((uint)xtrabackup_stream_fmt <
+		array_elements(xb_stream_format_name));
+	const char *stream_format_name =
+		xb_stream_format_name[xtrabackup_stream_fmt];
+	history_end_time = time(NULL);
+
+	xtrabackup_info_data = get_xtrabackup_info(connection);
+	if (!backup_file_printf(XTRABACKUP_INFO, "%s", xtrabackup_info_data)) {
+		goto cleanup;
+	}
+
 	if (!opt_history) {
 		goto cleanup;
 	}
+
+	uuid = get_backup_uuid(connection);
+	server_version = read_mysql_one_value(connection, "SELECT VERSION()");
 
 	xb_mysql_query(connection,
 		"CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA", false);
@@ -1503,7 +1550,7 @@ write_xtrabackup_info(MYSQL *connection)
 
 	/* uuid */
 	bind[idx].buffer_type = MYSQL_TYPE_STRING;
-	bind[idx].buffer = uuid;
+	bind[idx].buffer = (char*)uuid;
 	bind[idx].buffer_length = strlen(uuid);
 	++idx;
 
@@ -1604,8 +1651,8 @@ write_xtrabackup_info(MYSQL *connection)
 
 	/* format (file | tar | xbstream) */
 	bind[idx].buffer_type = MYSQL_TYPE_STRING;
-	bind[idx].buffer = (char*)(xb_stream_name[xtrabackup_stream_fmt]);
-	bind[idx].buffer_length = strlen(xb_stream_name[xtrabackup_stream_fmt]);
+	bind[idx].buffer = (char*)(stream_format_name);
+	bind[idx].buffer_length = strlen(stream_format_name);
 	++idx;
 
 	/* compact (Y | N) */
@@ -1635,7 +1682,7 @@ write_xtrabackup_info(MYSQL *connection)
 
 cleanup:
 
-	free(uuid);
+	free(xtrabackup_info_data);
 	free(server_version);
 
 	return(true);
@@ -1753,6 +1800,8 @@ backup_cleanup()
 	free(mysql_slave_position);
 	free(mysql_binlog_position);
 	free(buffer_pool_filename);
+	free(backup_uuid);
+	backup_uuid = NULL;
 
 	if (mysql_connection) {
 		mysql_close(mysql_connection);
