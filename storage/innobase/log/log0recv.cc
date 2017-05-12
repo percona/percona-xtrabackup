@@ -1689,7 +1689,8 @@ fil_write_encryption_parse(
 		fprintf(stderr, "Got %lu from redo log:", space->id);
 	}
 #endif
-	if (!fsp_header_decode_encryption_info(key,
+	if (!recv_is_making_a_backup &&
+	    !fsp_header_decode_encryption_info(key,
 					       iv,
 					       ptr)) {
 		recv_sys->found_corrupt_log = TRUE;
@@ -1702,6 +1703,10 @@ fil_write_encryption_parse(
 	      || len == ENCRYPTION_INFO_SIZE_V2);
 
 	ptr += len;
+
+	if (recv_is_making_a_backup) {
+		return(ptr);
+	}
 
 	if (space == NULL) {
 		if (is_new) {
