@@ -483,6 +483,27 @@ EOF
 }
 
 ########################################################################
+# Get executed gtid set from SHOW MASTER STATUS
+########################################################################
+function get_gtid_executed()
+{
+    local count
+    local res
+
+    count=0
+    while read line; do
+        if [ $count -eq 5 ] # File:
+        then
+            res=`echo "$line" | sed s/Executed_Gtid_Set://`
+            break;
+        fi
+        count=$((count+1))
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+
+    echo $res
+}
+
+########################################################################
 # Get the binary log file from SHOW MASTER STATUS
 ########################################################################
 function get_binlog_file()
@@ -848,6 +869,28 @@ function has_status_variable()
 }
 
 ########################################################################
+# Return 0 if the server has specified variable turned ON
+########################################################################
+function is_variable_on()
+{
+    local var=$1
+
+    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE '$var'\G" \
+              2> /dev/null | egrep -q "Value: ON"
+    then
+        return 0
+    fi
+
+    # Was the server available?
+    if [[ ${PIPESTATUS[0]} != 0 ]]
+    then
+        die "Server is unavailable"
+    fi
+
+    return 1
+}
+
+########################################################################
 # Return 0 if the server has backup locks support
 ########################################################################
 function has_backup_locks()
@@ -869,6 +912,14 @@ function has_backup_safe_binlog_info()
 function has_openssl()
 {
     has_status_variable "Rsa_public_key"
+}
+
+########################################################################
+# Return 0 if the server has been compiled with OpenSSL
+########################################################################
+function is_gtid_mode()
+{
+    is_variable_on "gtid_mode"
 }
 
 # Return 0 if the platform is 64-bit
