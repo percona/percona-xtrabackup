@@ -4,6 +4,10 @@
 
 . inc/common.sh
 
+# For details please see:
+# https://blueprints.launchpad.net/percona-xtrabackup/+spec/test-framework-mariadb-support
+is_mariadb && skip_test "disabled for MariaDB"
+
 require_server_version_higher_than 5.6.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="

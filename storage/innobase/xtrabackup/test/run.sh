@@ -385,7 +385,10 @@ function get_version_info()
     fi
 
     # Determine InnoDB flavor
-    if [ -n "$XTRADB_VERSION" ]
+    if [[ "$MYSQL_VERSION" =~ "MariaDB" ]]
+    then
+	INNODB_FLAVOR="MariaDB"
+    elif [ -n "$XTRADB_VERSION" ]
     then
 	INNODB_FLAVOR="XtraDB"
     else

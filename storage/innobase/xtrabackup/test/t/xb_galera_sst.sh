@@ -6,6 +6,10 @@
 
 require_galera
 
+# For details please see:
+# https://blueprints.launchpad.net/percona-xtrabackup/+spec/test-framework-mariadb-support
+is_mariadb && skip_test "disabled for MariaDB"
+
 node1=1
 # node2 will be getting SST
 node2=901

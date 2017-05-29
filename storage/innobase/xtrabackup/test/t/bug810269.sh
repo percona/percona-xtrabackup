@@ -5,6 +5,11 @@
 
 . inc/common.sh
 
+# Skip until https://bugs.launchpad.net/percona-xtrabackup/+bug/1691083 is fixed.
+# For details please see:
+# https://blueprints.launchpad.net/percona-xtrabackup/+spec/test-framework-mariadb-support
+is_mariadb && skip_test "disabled for MariaDB"
+
 if [ -z "$INNODB_VERSION" ]; then
     skip_test "Requires InnoDB plugin or XtraDB"
 fi

@@ -9,6 +9,11 @@
 . inc/common.sh
 . inc/ib_part.sh
 
+# Skip until https://bugs.launchpad.net/percona-xtrabackup/+bug/1691102 is fixed.
+# For details please see:
+# https://blueprints.launchpad.net/percona-xtrabackup/+spec/test-framework-mariadb-support
+is_mariadb && skip_test "disabled for MariaDB"
+
 start_server --innodb_file_per_table
 
 require_partitioning

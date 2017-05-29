@@ -3,7 +3,8 @@
 ########################################################################
 
 require_server_version_higher_than 5.6.0
-require_xtradb
+
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table"

@@ -1,6 +1,6 @@
 # Test diagnostics for missing bitmap data and --incremental-force-scan option
 
-require_xtradb
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 is_64bit || skip_test "Disabled on 32-bit hosts due to LP bug #1359182"
 
 . inc/common.sh

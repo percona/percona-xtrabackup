@@ -1,5 +1,9 @@
 . inc/common.sh
 
+# For details please see:
+# https://blueprints.launchpad.net/percona-xtrabackup/+spec/test-framework-mariadb-support
+is_mariadb && skip_test "disabled for MariaDB"
+
 #The result to return
 RESULT=0
 

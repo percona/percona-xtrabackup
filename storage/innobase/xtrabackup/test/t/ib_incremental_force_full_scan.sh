@@ -1,6 +1,6 @@
 # Test for incremental backups that use forced full scan even when bitmaps are present
 
-require_xtradb
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 is_64bit || skip_test "Disabled on 32-bit hosts due to LP bug #1359182"
 
 MYSQLD_EXTRA_MY_CNF_OPTS="

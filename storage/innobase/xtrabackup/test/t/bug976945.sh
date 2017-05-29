@@ -3,7 +3,7 @@
 ############################################################################
 . inc/common.sh
 
-require_xtradb
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_log_block_size=4096

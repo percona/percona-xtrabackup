@@ -2,7 +2,7 @@
 # Bug #1227240: backups not working with archive logging enabled
 ########################################################################
 
-require_xtradb
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 require_server_version_higher_than 5.6.10
 
 init_server_variables 1

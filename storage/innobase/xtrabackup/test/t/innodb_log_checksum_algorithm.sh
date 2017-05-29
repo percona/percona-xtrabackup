@@ -2,7 +2,7 @@
 # Test for innodb_log_checksum_algorithm feature in Percona Server 5.6
 ########################################################################
 
-require_xtradb
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 require_server_version_higher_than 5.6.13
 
 function test_with_algorithm()

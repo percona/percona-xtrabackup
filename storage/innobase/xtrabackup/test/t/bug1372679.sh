@@ -5,6 +5,10 @@
 
 require_server_version_higher_than 5.6.0
 
+# For details please see:
+# https://blueprints.launchpad.net/percona-xtrabackup/+spec/test-framework-mariadb-support
+is_mariadb && skip_test "disabled for MariaDB"
+
 # Test that --slave-info with MTS enabled + GTID disabled fails
 
 MYSQLD_EXTRA_MY_CNF_OPTS="

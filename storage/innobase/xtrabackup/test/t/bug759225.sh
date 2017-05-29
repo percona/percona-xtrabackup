@@ -10,7 +10,7 @@ then
     skip_test "Requires Linux"
 fi
 
-require_xtradb
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_flush_method=ALL_O_DIRECT

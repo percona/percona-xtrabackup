@@ -737,7 +737,7 @@ function require_server_version_lower_than()
 ########################################################################
 function is_xtradb()
 {
-    [ -n "$XTRADB_VERSION" ]
+    [ "$INNODB_FLAVOR" == "XtraDB" ]
 }
 
 #########################################################################
@@ -772,6 +772,22 @@ function require_qpress()
     if ! which qpress > /dev/null 2>&1 ; then
         skip_test "Requires qpress to be installed"
     fi
+}
+
+########################################################################
+# Return 0 if the server is MariaDB
+########################################################################
+function is_mariadb()
+{
+    [ "$MYSQL_FLAVOR" == "MariaDB" ]
+}
+
+########################################################################
+# Skip the test if not running against MariaDB server
+########################################################################
+function require_mariadb()
+{
+    is_mariadb || skip_test "Requires MariaDB"
 }
 
 ##############################################################################
@@ -876,6 +892,35 @@ function has_openssl()
 function is_64bit()
 {
     uname -m 2>&1 | grep 'x86_64'
+}
+
+
+# Return 0 if given file has valid binlog info
+########################################################################
+function check_binlog_info()
+{
+    if is_mariadb;
+    then
+        egrep -q '^mysql-bin.[0-9]+[[:space:]]+[0-9]+[-0-9]+$' \
+            "$1"
+    else
+        egrep -q 'mysql-bin.[0-9]+[[:space:]]+[0-9]+$' \
+            "$1"
+    fi
+}
+
+# Return 0 if given file has valid slave info
+########################################################################
+function check_slave_info()
+{
+    if is_mariadb;
+    then
+        egrep -z 'SET GLOBAL gtid_slave_pos = .*;.*CHANGE MASTER TO master_use_gtid = slave_pos' \
+            "$1"
+    else
+        egrep -q '^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+$' \
+            "$1"
+    fi
 }
 
 # To avoid unbound variable error when no server have been started

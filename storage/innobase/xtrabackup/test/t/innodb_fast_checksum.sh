@@ -2,7 +2,7 @@
 # Test for XtraDB innodb_fast_checksum option
 ########################################################################
 
-require_xtradb
+is_xtradb || is_mariadb || skip_test "Requires XtraDB or MariaDB"
 require_server_version_lower_than 5.6.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
