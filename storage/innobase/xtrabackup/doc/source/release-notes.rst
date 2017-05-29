@@ -10,6 +10,7 @@
    :glob:
 
 
+   release-notes/2.4/2.4.7-2
    release-notes/2.4/2.4.7
    release-notes/2.4/2.4.6
    release-notes/2.4/2.4.5

@@ -1,0 +1,16 @@
+============================
+|Percona XtraBackup| 2.4.7-2
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.7-2 on
+May 29th 2017. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.7-2/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.4
+series.
+
+Bugs fixed
+==========
+
+ Fixed build failure on Debian 9.0 (*Stretch*). Bug fixed :bug:`1678947`.
