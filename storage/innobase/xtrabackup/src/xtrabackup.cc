@@ -352,6 +352,7 @@ my_bool opt_noversioncheck = FALSE;
 my_bool opt_no_backup_locks = FALSE;
 my_bool opt_decompress = FALSE;
 my_bool opt_remove_original = FALSE;
+static my_bool opt_check_privileges = FALSE;
 
 static const char *binlog_info_values[] = {"off", "lockless", "on", "auto",
 					   NullS};
@@ -396,6 +397,9 @@ my_bool opt_ssl_verify_server_cert = FALSE;
 char *opt_server_public_key = NULL;
 #endif
 #endif
+
+static void
+check_all_privileges();
 
 /* Whether xtrabackup_binlog_info should be created on recovery */
 static bool recover_binlog_info;
@@ -611,6 +615,7 @@ enum options_xtrabackup
 
   OPT_XTRA_TABLES_EXCLUDE,
   OPT_XTRA_DATABASES_EXCLUDE,
+  OPT_XTRA_CHECK_PRIVILEGES,
 };
 
 struct my_option xb_client_options[] =
@@ -1012,6 +1017,10 @@ struct my_option xb_client_options[] =
   {"secure-auth", OPT_XB_SECURE_AUTH, "Refuse client connecting to server if it"
     " uses old (pre-4.1.1) protocol.", &opt_secure_auth,
     &opt_secure_auth, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+
+  {"check-privileges", OPT_XTRA_CHECK_PRIVILEGES, "Check database user "
+    "privileges before performing any query.", &opt_check_privileges,
+   &opt_check_privileges, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
 #include "sslopt-longopts.h"
 
@@ -3565,22 +3574,31 @@ xb_register_table(
 }
 
 static
+bool compile_regex(
+	const char* regex_string,
+	const char* error_context,
+	xb_regex_t* compiled_re)
+{
+	char	errbuf[100];
+	int	ret = xb_regcomp(compiled_re, regex_string, REG_EXTENDED);
+	if (ret != 0) {
+		xb_regerror(ret, compiled_re, errbuf, sizeof(errbuf));
+		msg("xtrabackup: error: %s regcomp(%s): %s\n",
+			error_context, regex_string, errbuf);
+		return false;
+	}
+	return true;
+}
+
+static
 void
 xb_add_regex_to_list(
 	const char* regex,  /*!< in: regex */
 	const char* error_context,  /*!< in: context to error message */
 	regex_list_t* list) /*! in: list to put new regex to */
 {
-	char			errbuf[100];
-	int			ret;
-
 	xb_regex_t compiled_regex;
-	ret = xb_regcomp(&compiled_regex, regex, REG_EXTENDED);
-
-	if (ret != 0) {
-		xb_regerror(ret, &compiled_regex, errbuf, sizeof(errbuf));
-		msg("xtrabackup: error: %s regcomp(%s): %s\n",
-			error_context, regex, errbuf);
+	if (!compile_regex(regex, error_context, &compiled_regex)) {
 		exit(EXIT_FAILURE);
 	}
 
@@ -7017,11 +7035,233 @@ xb_init()
 			return(false);
 		}
 
+		if (opt_check_privileges) {
+			check_all_privileges();
+		}
+
 		history_start_time = time(NULL);
 
 	}
 
 	return(true);
+}
+
+static const char*
+normalize_privilege_target_name(const char* name)
+{
+	if (strcmp(name, "*") == 0) {
+		return "\\*";
+	} else {
+		/* should have no regex special characters. */
+		ut_ad(strpbrk(name, ".()[]*+?") == 0);
+	}
+	return name;
+}
+
+/******************************************************************//**
+Check if specific privilege is granted.
+Uses regexp magic to check if requested privilege is granted for given
+database.table or database.* or *.*
+or if user has 'ALL PRIVILEGES' granted.
+@return true if requested privilege is granted, false otherwise. */
+static bool
+has_privilege(const std::list<std::string> &granted,
+	const char* required,
+	const char* db_name,
+	const char* table_name)
+{
+	char buffer[1000];
+	xb_regex_t priv_re;
+	xb_regmatch_t tables_regmatch[1];
+	bool result = false;
+
+	db_name = normalize_privilege_target_name(db_name);
+	table_name = normalize_privilege_target_name(table_name);
+
+	int written = snprintf(buffer, sizeof(buffer),
+		"GRANT .*(%s)|(ALL PRIVILEGES).* ON (\\*|`%s`)\\.(\\*|`%s`)",
+		required, db_name, table_name);
+	if (written < 0 || written == sizeof(buffer)
+		|| !compile_regex(buffer, "has_privilege", &priv_re)) {
+		exit(EXIT_FAILURE);
+	}
+
+	typedef std::list<std::string>::const_iterator string_iter;
+	for (string_iter i = granted.begin(), e = granted.end(); i != e; ++i) {
+		int res = xb_regexec(&priv_re, i->c_str(),
+			1, tables_regmatch, 0);
+
+		if (res != REG_NOMATCH) {
+			result = true;
+			break;
+		}
+	}
+
+	xb_regfree(&priv_re);
+	return result;
+}
+
+enum {
+	PRIVILEGE_OK = 0,
+	PRIVILEGE_WARNING = 1,
+	PRIVILEGE_ERROR = 2,
+};
+
+/******************************************************************//**
+Check if specific privilege is granted.
+Prints error message if required privilege is missing.
+@return PRIVILEGE_OK if requested privilege is granted, error otherwise. */
+static
+int check_privilege(
+	const std::list<std::string> &granted_priv, /* in: list of
+							granted privileges*/
+	const char* required,		/* in: required privilege name */
+	const char* target_database,	/* in: required privilege target
+						database name */
+	const char* target_table,	/* in: required privilege target
+						table name */
+	int error = PRIVILEGE_ERROR)	/* in: return value if privilege
+						is not granted */
+{
+	if (!has_privilege(granted_priv,
+		required, target_database, target_table)) {
+		msg("xtrabackup: %s: missing required privilege %s on %s.%s\n",
+			(error == PRIVILEGE_ERROR ? "Error" : "Warning"),
+			required, target_database, target_table);
+		return error;
+	}
+	return PRIVILEGE_OK;
+}
+
+/******************************************************************//**
+Check DB user privileges according to the intended actions.
+
+Fetches DB user privileges, determines intended actions based on
+command-line arguments and prints missing privileges.
+May terminate application with EXIT_FAILURE exit code.*/
+static void
+check_all_privileges()
+{
+	if (!mysql_connection) {
+		/* Not connected, no queries is going to be executed. */
+		return;
+	}
+
+	/* Fetch effective privileges. */
+	std::list<std::string> granted_privileges;
+	MYSQL_ROW row = 0;
+	MYSQL_RES* result = xb_mysql_query(mysql_connection, "SHOW GRANTS",
+		true);
+	while((row = mysql_fetch_row(result))) {
+		granted_privileges.push_back(*row);
+	}
+	mysql_free_result(result);
+
+	int check_result = PRIVILEGE_OK;
+	bool reload_checked = false;
+
+	/* SHOW DATABASES */
+	check_result |= check_privilege(granted_privileges,
+		"SHOW DATABASES", "*", "*");
+
+	/* SELECT 'INNODB_CHANGED_PAGES', COUNT(*) FROM INFORMATION_SCHEMA.PLUGINS */
+	check_result |= check_privilege(
+		granted_privileges,
+		"SELECT", "INFORMATION_SCHEMA", "PLUGINS");
+
+
+	if (xb_mysql_numrows(mysql_connection,
+		"SHOW DATABASES LIKE 'PERCONA_SCHEMA';",
+		false) == 0) {
+		/* CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA */
+		check_result |= check_privilege(
+			granted_privileges,
+			"CREATE", "*", "*");
+	} else if (xb_mysql_numrows(mysql_connection,
+		"SHOW TABLES IN PERCONA_SCHEMA "
+		"LIKE 'xtrabackup_history';",
+		false) == 0) {
+		/* CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history */
+		check_result |= check_privilege(
+			granted_privileges,
+			"CREATE", "PERCONA_SCHEMA", "*");
+	}
+
+	/* FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS */
+	if (have_flush_engine_logs
+		/* FLUSH NO_WRITE_TO_BINLOG TABLES */
+		|| (opt_lock_wait_timeout && !opt_kill_long_queries_timeout
+			&& !opt_no_lock)
+		/* FLUSH TABLES WITH READ LOCK */
+		|| !opt_no_lock
+		/* LOCK BINLOG FOR BACKUP */
+		/* UNLOCK BINLOG */
+		|| (have_backup_locks && !opt_no_lock)) {
+		check_result |= check_privilege(
+			granted_privileges,
+			"RELOAD", "*", "*");
+		reload_checked = true;
+	}
+
+
+	/* FLUSH TABLES WITH READ LOCK */
+	if (!opt_no_lock
+		/* LOCK TABLES FOR BACKUP */
+		/* UNLOCK TABLES */
+		|| (have_backup_locks && !opt_no_lock) || opt_slave_info
+		|| opt_binlog_info == BINLOG_INFO_ON) {
+		check_result |= check_privilege(
+			granted_privileges,
+			"LOCK TABLES", "*", "*");
+	}
+
+	/* SELECT innodb_to_lsn FROM PERCONA_SCHEMA.xtrabackup_history ... */
+	if (opt_incremental_history_name || opt_incremental_history_uuid) {
+		check_result |= check_privilege(
+			granted_privileges,
+			"SELECT", "PERCONA_SCHEMA", "xtrabackup_history");
+	}
+
+	/* SHOW FULL PROCESSLIST */
+	if (opt_lock_wait_timeout || opt_kill_long_queries_timeout) {
+		check_result |= check_privilege(granted_privileges,
+			"PROCESS", "*", "*");
+	}
+
+	if (!reload_checked
+		/* FLUSH BINARY LOGS */
+		&& opt_galera_info) {
+		check_result |= check_privilege(
+			granted_privileges,
+			"RELOAD", "*", "*",
+			PRIVILEGE_WARNING);
+	}
+
+	/* KILL ... */
+	if (opt_kill_long_queries_timeout
+		/* START SLAVE SQL_THREAD */
+		/* STOP SLAVE SQL_THREAD */
+		|| opt_safe_slave_backup) {
+		check_result |= check_privilege(
+			granted_privileges,
+			"SUPER", "*", "*",
+			PRIVILEGE_WARNING);
+	}
+
+	/* SHOW MASTER STATUS */
+	/* SHOW SLAVE STATUS */
+	if (opt_galera_info || opt_slave_info
+		|| (opt_no_lock && opt_safe_slave_backup)
+		/* LOCK BINLOG FOR BACKUP */
+		|| (have_backup_locks && !opt_no_lock)) {
+		check_result |= check_privilege(granted_privileges,
+			"REPLICATION CLIENT", "*", "*",
+			PRIVILEGE_WARNING);
+	}
+
+	if (check_result & PRIVILEGE_ERROR) {
+		exit(EXIT_FAILURE);
+	}
 }
 
 void

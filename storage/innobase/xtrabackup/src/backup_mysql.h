@@ -58,6 +58,9 @@ MYSQL_RES *
 xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
 		bool die_on_error = true);
 
+my_ulonglong
+xb_mysql_numrows(MYSQL *connection, const char *query, bool die_on_error);
+
 void
 unlock_all(MYSQL *connection);
 
