@@ -123,15 +123,6 @@ standard full backups with the :option:`xtrabackup --prepare` option:
 
   $ xtrabackup --prepare --target-dir=/data/backups/
 
-.. note::
-
-   |Percona XtraBackup| doesn't automatically remove the encrypted files. In
-   order to clean up the backup directory you should use
-   :option:`xtrabackup --remove-original` option. Even if they're not removed
-   these files will not be copied/moved over to the datadir if
-   :option:`xtrabackup --copy-back` or :option:`xtrabackup --move-back` are
-   used.
-
 Restoring Encrypted Backups
 =============================
 

@@ -72,7 +72,7 @@ You should also see the notification of the creation of a file needed for import
 
 Note that you can use the :option:`--export` option with :option:`--apply-log` to an already-prepared backup in order to create the :term:`.exp` files.
 
-Finally, check the for the confirmation message in the output::
+Finally, check for the confirmation message in the output::
 
   111225 00:54:18  innobackupex: completed OK!
 

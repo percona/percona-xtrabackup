@@ -4,7 +4,7 @@
 
 After creating a backup, the data is not ready to be restored. There might be uncommitted transactions to be undone or transactions in the logs to be replayed. Doing those pending operations will make the data files consistent and it is the purpose of the **prepare stage**. Once this has been done, the data is ready to be used. 
 
-To prepare a backup with |innobackupex| you have to use the :option:`--apply-log` and the path to the backup directory as an argument::
+To prepare a backup with |innobackupex| you have to use the :option:`--apply-log` and full path to the backup directory as an argument::
 
   $ innobackupex --apply-log /path/to/BACKUP-DIR
 

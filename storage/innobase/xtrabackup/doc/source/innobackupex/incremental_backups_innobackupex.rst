@@ -25,8 +25,11 @@ If you check at the :file:`xtrabackup-checkpoints` file in ``BASE-DIR``, you sho
 
   backup_type = full-backuped
   from_lsn = 0
-  to_lsn = 1291135
-
+  to_lsn = 1626007
+  last_lsn = 1626007
+  compact = 0
+  recover_binlog_info = 1
+ 
 To create an incremental backup the next day, use the :option:`--incremental` option and provide the BASEDIR::
 
   $ innobackupex --incremental /data/backups --incremental-basedir=BASEDIR
@@ -36,25 +39,31 @@ and another timestamped directory will be created in :file:`/data/backups`, in t
 If you check at the :file:`xtrabackup-checkpoints` file in ``INCREMENTAL-DIR-1``, you should see something like::
 
   backup_type = incremental
-  from_lsn = 1291135
-  to_lsn = 1352113
+  from_lsn = 1626007
+  to_lsn = 4124244
+  last_lsn = 4124244
+  compact = 0
+  recover_binlog_info = 1
 
 Creating another incremental backup the next day will be analogous, but this time the previous incremental one will be base: ::
 
   $ innobackupex --incremental /data/backups --incremental-basedir=INCREMENTAL-DIR-1
 
-yielding (in this example) :file:`/data/backups/2013-04-02_23-01-18`. We will use ``INCREMENTAL-DIR-2`` instead for simplicity.
+Yielding (in this example) :file:`/data/backups/2013-04-02_23-01-18`. We will use ``INCREMENTAL-DIR-2`` instead for simplicity.
 
 At this point, the :file:`xtrabackup-checkpoints` file in ``INCREMENTAL-DIR-2`` should contain something like::
 
   backup_type = incremental
-  from_lsn = 1352113
-  to_lsn = 1358967 
+  from_lsn = 4124244
+  to_lsn = 6938371
+  last_lsn = 7110572
+  compact = 0
+  recover_binlog_info = 1
 
 As it was said before, an incremental backup only copy pages with a |LSN| greater than a specific value. Providing the |LSN| would have produced directories with the same data inside: ::
 
-  innobackupex --incremental /data/backups --incremental-lsn=1291135
-  innobackupex --incremental /data/backups --incremental-lsn=1358967
+  innobackupex --incremental /data/backups --incremental-lsn=4124244
+  innobackupex --incremental /data/backups --incremental-lsn=6938371
 
 This is a very useful way of doing an incremental backup, since not always the base or the last incremental will be available in the system.
 
@@ -77,8 +86,8 @@ Having this in mind, the procedure is very straight-forward using the :option:`-
 
 You should see an output similar to: ::
 
-  120103 22:00:12 InnoDB: Shutdown completed; log sequence number 1291135
-  120103 22:00:12 innobackupex: completed OK!
+  160103 22:00:12 InnoDB: Shutdown completed; log sequence number 4124244
+  160103 22:00:12 innobackupex: completed OK!
 
 Then, the first incremental backup can be applied to the base backup, by issuing: ::
 
@@ -86,8 +95,8 @@ Then, the first incremental backup can be applied to the base backup, by issuing
 
 You should see an output similar to the previous one but with corresponding |LSN|: ::
 
-  120103 22:08:43 InnoDB: Shutdown completed; log sequence number 1358967
-  120103 22:08:43 innobackupex: completed OK!
+  160103 22:08:43 InnoDB: Shutdown completed; log sequence number 6938371
+  160103 22:08:43 innobackupex: completed OK!
 
 If no :option:`--incremental-dir` is set, |innobackupex| will use the most recent subdirectory created in the basedir.
 
