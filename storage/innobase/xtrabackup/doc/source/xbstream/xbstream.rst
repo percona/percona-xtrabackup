@@ -36,12 +36,14 @@ This utility has a tar-like interface:
    been implemented in |Percona XtraBackup| 2.4.7.
 
  - the ``--encrypt-key`` option is used to specify the encryption key that will
-   be used. It can't be used with ``--encrypt-key-file`` option. This option
-   has been implemented in |Percona XtraBackup| 2.4.7.
+   be used. It can't be used with ``--encrypt-key-file`` option because they
+   are mutually exclusive. This option has been implemented in |Percona
+   XtraBackup| 2.4.7.
 
  - the ``--encrypt-key-file`` option is used to specify the file that contains
-   the encryption key. It can't be used with ``--encrypt-key-file`` option.
-   This option has been implemented in |Percona XtraBackup| 2.4.7.
+   the encryption key. It can't be used with ``--encrypt-key`` option.
+   because they are mutually exclusive. This option has been implemented in
+   |Percona XtraBackup| 2.4.7.
 
 The utility also tries to minimize its impact on the OS page cache by using the
 appropriate ``posix_fadvise()`` calls when available.

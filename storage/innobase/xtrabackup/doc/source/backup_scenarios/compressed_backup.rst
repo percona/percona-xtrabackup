@@ -63,8 +63,8 @@ that can be used to decompress the backup.
   :option:`xtrabackup --decompress` option to decompress multiple files
   simultaneously.
 
-|Percona XtraBackup| doesn't automatically remove the encrypted files. In order
-to clean up the backup directory you should use
+|Percona XtraBackup| doesn't automatically remove the compressed files. In
+order to clean up the backup directory you should use
 :option:`xtrabackup --remove-original` option. Even if they're not removed
 these files will not be copied/moved over to the datadir if
 :option:`xtrabackup --copy-back` or :option:`xtrabackup --move-back` are used.
