@@ -420,16 +420,6 @@ get_mysql_vars(MYSQL *connection)
 		have_backup_locks = true;
 	}
 
-	if (opt_binlog_info == BINLOG_INFO_AUTO) {
-
-		if (have_backup_safe_binlog_info_var != NULL)
-			opt_binlog_info = BINLOG_INFO_LOCKLESS;
-		else if (log_bin_var != NULL && !strcmp(log_bin_var, "ON"))
-			opt_binlog_info = BINLOG_INFO_ON;
-		else
-			opt_binlog_info = BINLOG_INFO_OFF;
-	}
-
 	if (have_backup_safe_binlog_info_var == NULL &&
 	    opt_binlog_info == BINLOG_INFO_LOCKLESS) {
 
@@ -470,6 +460,17 @@ get_mysql_vars(MYSQL *connection)
 	if ((gtid_mode_var && strcmp(gtid_mode_var, "ON") == 0) ||
 	    (gtid_slave_pos_var && *gtid_slave_pos_var)) {
 		have_gtid_slave = true;
+	}
+
+	if (opt_binlog_info == BINLOG_INFO_AUTO) {
+
+		if (have_backup_safe_binlog_info_var != NULL &&
+		    !have_gtid_slave)
+			opt_binlog_info = BINLOG_INFO_LOCKLESS;
+		else if (log_bin_var != NULL && !strcmp(log_bin_var, "ON"))
+			opt_binlog_info = BINLOG_INFO_ON;
+		else
+			opt_binlog_info = BINLOG_INFO_OFF;
 	}
 
 	msg("Using server version %s\n", version_var);
