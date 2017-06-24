@@ -2303,7 +2303,9 @@ loop:
 
 	active_thd = srv_get_active_thread_type();
 
-	if (active_thd != SRV_NONE) {
+	if (active_thd != SRV_NONE
+		|| (srv_fast_shutdown != 2
+			&& trx_rollback_or_clean_is_active)) {
 
 		if (active_thd == SRV_PURGE) {
 			srv_purge_wakeup();
@@ -2319,11 +2321,8 @@ loop:
 
 			switch (active_thd) {
 			case SRV_NONE:
-				/* This shouldn't happen because we've
-				already checked for this case before
-				entering the if(). We handle it here
-				to avoid a compiler warning. */
-				ut_error;
+				thread_type = "rollback";
+				break;
 			case SRV_WORKER:
 				thread_type = "worker threads";
 				break;
