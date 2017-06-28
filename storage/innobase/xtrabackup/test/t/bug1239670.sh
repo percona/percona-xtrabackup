@@ -15,7 +15,7 @@ slave_id=2
 start_server_with_id $master_id
 start_server_with_id $slave_id
 
-setup_slave $slave_id $master_id
+setup_slave GTID $slave_id $master_id
 
 switch_server $master_id
 
