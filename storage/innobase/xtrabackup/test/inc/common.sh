@@ -461,25 +461,52 @@ function force_checkpoint()
 ########################################################################
 # Configure a specified server as a slave
 # Synopsis:
-#   setup_slave <slave_id> <master_id>
+#   setup_slave [GTID] [USE_CHANNELS] <slave_id> <master_id> ... <master_id>
 #########################################################################
 function setup_slave()
 {
-    local slave_id=$1
-    local master_id=$2
+    local extra=""
+    if [ "$1" == "GTID" ]
+    then
+        extra=", MASTER_AUTO_POSITION = 1"
+        shift
+        echo "Setting up slave in GTID mode"
+    fi
 
-    vlog "Setting up server #$slave_id as a slave of server #$master_id"
+    local use_channels=0
+    if [ "$1" == "USE_CHANNELS" ]
+    then
+        use_channels=1
+        shift
+        echo "Using channels"
+    fi
 
-    switch_server $slave_id
+    local -r slave_id_arg=$1
+    shift
 
-    run_cmd $MYSQL $MYSQL_ARGS <<EOF
+    switch_server $slave_id_arg
+    while [ "$#" -ne 0 ]
+    do
+        local master_id_arg=$1
+        shift
+
+        vlog "Setting up server #$slave_id_arg as a slave of server #$master_id_arg"
+        if [ "$use_channels" -eq 1 ]
+        then
+            local master_channel="FOR CHANNEL 'master-$master_id_arg'"
+        fi
+
+        run_cmd $MYSQL $MYSQL_ARGS <<EOF
 CHANGE MASTER TO
   MASTER_HOST='localhost',
   MASTER_USER='root',
-  MASTER_PORT=${SRV_MYSQLD_PORT[$master_id]};
-
-START SLAVE
+  MASTER_PORT=${SRV_MYSQLD_PORT[$master_id_arg]}
+  $extra
+  ${master_channel:-};
 EOF
+    done
+
+    mysql -e "START SLAVE"
 }
 
 ########################################################################
