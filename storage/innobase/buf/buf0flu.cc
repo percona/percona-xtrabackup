@@ -3371,7 +3371,7 @@ DECLARE_THREAD(buf_flush_page_cleaner_coordinator)(
 
 	ut_ad(srv_shutdown_state > 0);
 	if (srv_fast_shutdown == 2
-	    || srv_shutdown_state < SRV_SHUTDOWN_FLUSH_PHASE) {
+	    || srv_shutdown_state == SRV_SHUTDOWN_EXIT_THREADS) {
 		/* In very fast shutdown or when innodb failed to start, we
 		simulate a crash of the buffer pool. We are not required to do
 		any flushing. */
