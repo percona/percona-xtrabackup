@@ -45,7 +45,10 @@ function check_privileges()
     # hard to find list that would match exactly on all platforms and configurations.
     while IFS= read -r line
     do
-        run_cmd grep -qFi "$line" "$priv_file"
+        if [ -n "$line"]
+        then
+            run_cmd grep -qFi "$line" "$priv_file"
+        fi
     done
 
     vlog "#############################################################"
@@ -54,13 +57,30 @@ function check_privileges()
 mysql -e "CREATE USER $user;"
 vlog "Verifying that xtrabackup fails when user has no required privileges."
 
-check_privileges "PERCONA_SCHEMA db missing" FAILURE \
-<<EOF
-CREATE on *.*
-LOCK TABLES on *.*
-RELOAD on *.*
+default_privileges="
 SELECT on INFORMATION_SCHEMA.PLUGINS
 SHOW DATABASES on *.*
+"
+
+if has_feature_enabled "have_backup_locks"
+then
+    default_privileges+="
+LOCK TABLES on *.*
+REPLICATION CLIENT on *.*
+"
+fi
+
+if is_server_version_higher_than 5.5.0
+then
+    default_privileges+="
+RELOAD on *.*
+"
+fi
+
+check_privileges "PERCONA_SCHEMA db missing" FAILURE \
+<<EOF
+$default_privileges
+CREATE on *.*
 EOF
 
 run_cmd mysql \
@@ -72,10 +92,8 @@ EOF
 
 check_privileges "PERCONA_SCHEMA.xtrabackup_history missing" FAILURE \
 <<EOF
+$default_privileges
 CREATE on PERCONA_SCHEMA.*
-LOCK TABLES on *.*
-RELOAD on *.*
-SELECT on INFORMATION_SCHEMA.PLUGINS
 EOF
 
 # xtrabackup does not check validity of table, it is Ok to mock it.
@@ -88,9 +106,7 @@ EOF
 
 check_privileges "PERCONA_SCHEMA.xtrabackup_history present" FAILURE \
 <<EOF
-LOCK TABLES on *.*
-RELOAD on *.*
-SELECT on INFORMATION_SCHEMA.PLUGINS
+$default_privileges
 EOF
 
 run_cmd mysql \
@@ -99,20 +115,10 @@ DROP DATABASE PERCONA_SCHEMA;
 REVOKE CREATE ON PERCONA_SCHEMA.* FROM $user@'localhost';
 EOF
 
-check_privileges "Simple" FAILURE --no-lock \
-<<EOF
-CREATE on *.*
-LOCK TABLES on *.*
-RELOAD on *.*
-SELECT on INFORMATION_SCHEMA.PLUGINS
-EOF
-
 check_privileges "Simple" FAILURE --safe-slave-backup \
 <<EOF
+$default_privileges
 CREATE on *.*
-LOCK TABLES on *.*
-RELOAD on *.*
-SELECT on INFORMATION_SCHEMA.PLUGINS
 SUPER on *.*
 EOF
 
@@ -127,7 +133,6 @@ REPLICATION CLIENT on *.*
 SELECT on INFORMATION_SCHEMA.PLUGINS
 EOF
 fi
-
 
 vlog "Granting some privileges to the user."
 run_cmd mysql \
