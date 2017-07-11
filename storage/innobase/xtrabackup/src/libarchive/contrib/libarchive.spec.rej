@@ -1,0 +1,8 @@
+--- contrib/libarchive.spec	2017-06-14 12:47:06.429438606 +0300
++++ home/enmk/proj/pxb-2.3/storage/innobase/xtrabackup/src/libarchive/contrib/libarchive.spec	2017-02-17 10:13:06.827080001 +0300
+@@ -1,4 +1,4 @@
+-# $LastChangedRevision$, $LastChangedDate$
++# $LastChangedRevision: 8 $, $LastChangedDate: 2008-05-01 00:11:33 +0200 (Thu, 01 May 2008) $
+ Summary:        Library to create and read several different archive formats
+ Summary(pl):    Biblioteka do tworzenia i odczytu ró¿nych formatów archiwów
+ Name:           libarchive

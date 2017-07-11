@@ -1,18 +1,22 @@
 #!/bin/sh
 
+set -e
+
 #
 # Simple script to repopulate the 'doc' tree from
 # the mdoc man pages stored in each project.
 #
 
 # Collect list of man pages, relative to my subdirs
+test -d man || mkdir man
 cd man
 MANPAGES=`for d in libarchive tar cpio;do ls ../../$d/*.[135];done | grep -v '\.so\.'`
 cd ..
 
 # Build Makefile in 'man' directory
 cd man
-rm -f *.[135]
+chmod +w .
+rm -f *.[135] Makefile
 echo > Makefile
 echo "default: all" >>Makefile
 echo >>Makefile
@@ -28,8 +32,10 @@ echo $all >>Makefile
 cd ..
 
 # Rebuild Makefile in 'text' directory
+test -d text || mkdir text
 cd text
-rm -f *.txt
+chmod +w .
+rm -f *.txt Makefile
 echo > Makefile
 echo "default: all" >>Makefile
 echo >>Makefile
@@ -45,8 +51,10 @@ echo $all >>Makefile
 cd ..
 
 # Rebuild Makefile in 'pdf' directory
+test -d pdf || mkdir pdf
 cd pdf
-rm -f *.pdf
+chmod +w .
+rm -f *.pdf Makefile
 echo > Makefile
 echo "default: all" >>Makefile
 echo >>Makefile
@@ -62,8 +70,10 @@ echo $all >>Makefile
 cd ..
 
 # Build Makefile in 'html' directory
+test -d html || mkdir html
 cd html
-rm -f *.html
+chmod +w .
+rm -f *.html Makefile
 echo > Makefile
 echo "default: all" >>Makefile
 echo >>Makefile
@@ -72,15 +82,17 @@ for f in $MANPAGES; do
     outname="`basename $f`.html"
     echo >> Makefile
     echo $outname: $f >> Makefile
-    echo "	groff -mdoc2html $f > $outname" >> Makefile
+    echo "	groff -mdoc -T html $f > $outname" >> Makefile
     all="$all $outname"
 done
 echo $all >>Makefile
 cd ..
 
 # Build Makefile in 'wiki' directory
+test -d wiki || mkdir wiki
 cd wiki
-rm -f *.wiki
+chmod +w .
+rm -f *.wiki Makefile
 echo > Makefile
 echo "default: all" >>Makefile
 echo >>Makefile
@@ -103,5 +115,5 @@ cd ..
 (cd pdf && make)
 # Format all of the manpages to HTML
 (cd html && make)
-# Format all of the manpages to Google Wiki syntax
+# Format all of the manpages to wiki syntax
 (cd wiki && make)
