@@ -11,8 +11,6 @@
 #define XTRABACKUP_BINLOG_INFO "xtrabackup_binlog_info"
 #define XTRABACKUP_INFO "xtrabackup_info"
 
-extern bool binlog_locked;
-
 bool
 backup_file_printf(const char *filename, const char *fmt, ...)
 		__attribute__((format(printf, 2, 0)));
