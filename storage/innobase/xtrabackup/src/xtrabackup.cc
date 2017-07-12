@@ -3521,6 +3521,30 @@ xb_load_single_table_tablespace(
 	delete file;
 }
 
+static
+bool
+is_remote_tablespace_name(const char *path)
+{
+	size_t len = strlen(path);
+	return len > 4 && strcmp(path + len - 4, ".isl") == 0;
+}
+
+static
+bool
+is_local_tablespace_name(const char *path)
+{
+	size_t len = strlen(path);
+	return len > 4 && strcmp(path + len - 4, ".ibd") == 0;
+}
+
+static
+bool
+is_tablespace_name(const char *path)
+{
+	return is_remote_tablespace_name(path)
+		|| is_local_tablespace_name(path);
+}
+
 /********************************************************************//**
 At the server startup, if we need crash recovery, scans the database
 directories under the MySQL datadir, looking for .ibd files. Those files are
@@ -3561,25 +3585,18 @@ xb_load_single_table_tablespaces(bool (*pred)(const char*, const char*))
 					 &dbinfo);
 	while (ret == 0) {
 		ulint len;
+		bool is_tablespace;
+		bool is_remote;
+
+		is_tablespace = is_tablespace_name(dbinfo.name);
+		is_remote = is_remote_tablespace_name(dbinfo.name);
 
 		/* General tablespaces are always at the first level of the
 		data home dir */
-		if (dbinfo.type == OS_FILE_TYPE_FILE &&
-		    strlen(dbinfo.name) > 4 &&
-		    strcmp(dbinfo.name + strlen(dbinfo.name) - 4, ".isl")
-				== 0 &&
+		if (dbinfo.type == OS_FILE_TYPE_FILE && is_tablespace &&
 		    !(pred && !pred(".", dbinfo.name))) {
-			xb_load_single_table_tablespace(NULL, dbinfo.name,
-							true);
-		}
-
-		if (dbinfo.type == OS_FILE_TYPE_FILE &&
-		    strlen(dbinfo.name) > 4 &&
-		    strcmp(dbinfo.name + strlen(dbinfo.name) - 4, ".ibd")
-				== 0 &&
-		    !(pred && !pred(".", dbinfo.name))) {
-			xb_load_single_table_tablespace(NULL, dbinfo.name,
-							false);
+			xb_load_single_table_tablespace(
+				NULL, dbinfo.name, is_remote);
 		}
 
 		if (dbinfo.type == OS_FILE_TYPE_FILE
@@ -3618,26 +3635,22 @@ xb_load_single_table_tablespaces(bool (*pred)(const char*, const char*))
 		if (dbdir != NULL) {
 
 			/* We found a database directory; loop through it,
-			looking for possible .ibd files in it */
+			looking for possible .ibd and .isl files in it */
 
 			ret = fil_file_readdir_next_file(&err, dbpath, dbdir,
 							 &fileinfo);
 			while (ret == 0) {
-				bool is_remote;
-
 				if (fileinfo.type == OS_FILE_TYPE_DIR) {
 					goto next_file_item;
 				}
 
-				is_remote = strcmp(fileinfo.name
-					  + strlen(fileinfo.name) - 4,
-					  ".isl") == 0;
+				is_tablespace = is_tablespace_name(
+					fileinfo.name);
+				is_remote = is_remote_tablespace_name(
+					fileinfo.name);
 
 				/* We found a symlink or a file */
-				if (strlen(fileinfo.name) > 4
-				    && (0 == strcmp(fileinfo.name
-						   + strlen(fileinfo.name) - 4,
-						   ".ibd"))
+				if (is_tablespace
 				    && (!pred
 					|| pred(dbinfo.name, fileinfo.name))) {
 					xb_load_single_table_tablespace(

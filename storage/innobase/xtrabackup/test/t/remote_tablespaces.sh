@@ -41,6 +41,11 @@ stop_server
 rm -rf $mysql_datadir/*
 rm -rf $remote_dir
 
+for ((i=0; i<12; i++))
+do
+    test -f $topdir/backup/test/t${i}.ibd || die "Remote tablespace is missing from backup!"
+done
+
 innobackupex --apply-log $topdir/backup
 
 for cmd in "--copy-back" "--move-back" ; do
