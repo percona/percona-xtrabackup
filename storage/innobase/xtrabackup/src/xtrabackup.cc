@@ -8361,6 +8361,12 @@ int main(int argc, char **argv)
 		    "only with --prepare they will be reset\n");
 	}
 
+	if (xtrabackup_backup && xtrabackup_compact) {
+		msg("xtrabackup: error: compact backups are not supported "
+		    "by this version of xtrabackup\n");
+		exit(EXIT_FAILURE);
+	}
+
 	/* cannot execute both for now */
 	{
 		int num = 0;
