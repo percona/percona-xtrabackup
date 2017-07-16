@@ -7618,6 +7618,11 @@ int main(int argc, char **argv)
 		    "as --innodb-log-arch-dir and --to-archived-lsn can be used "
 		    "only with --prepare they will be reset\n");
 	}
+	if (xtrabackup_throttle && !xtrabackup_backup) {
+		xtrabackup_throttle = 0;
+		msg("xtrabackup: warning: --throttle has effect "
+		    "only with --backup");
+	}
 
 	/* cannot execute both for now */
 	{
