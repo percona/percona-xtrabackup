@@ -1208,6 +1208,9 @@ write_slave_info(MYSQL *connection)
 	char *gtid_executed = NULL;
 	char *position = NULL;
 	char *gtid_slave_pos = NULL;
+	char *auto_position = NULL;
+	char *using_gtid = NULL;
+
 	char *ptr = NULL;
 	char *tmp_mysql_slave_position = NULL;
 	char *writable_channel_name = NULL;
@@ -1223,6 +1226,8 @@ write_slave_info(MYSQL *connection)
 		{"Exec_Master_Log_Pos", &position},
 		{"Executed_Gtid_Set", &gtid_executed},
 		{"Channel_Name", &writable_channel_name},
+		{"Auto_Position", &auto_position},
+		{"Using_Gtid", &using_gtid},
 		{NULL, NULL}
 	};
 
@@ -1275,7 +1280,7 @@ write_slave_info(MYSQL *connection)
 		/* Print slave status to a file.
 		If GTID mode is used, construct a CHANGE MASTER statement with
 		MASTER_AUTO_POSITION and correct a gtid_purged value. */
-		if (gtid_executed != NULL && *gtid_executed) {
+		if (auto_position != NULL && !strcmp(auto_position, "1")) {
 			/* MySQL >= 5.6 with GTID enabled */
 
 			for (ptr = strchr(gtid_executed, '\n');
@@ -1297,7 +1302,7 @@ write_slave_info(MYSQL *connection)
 				"master host '%s', purge list '%s', "
 				"channel name: '%s'",
 				master, gtid_executed, channel_name) != -1);
-		} else if (gtid_slave_pos && *gtid_slave_pos) {
+		} else if (using_gtid && !strcasecmp(using_gtid, "yes")) {
 			/* MariaDB >= 10.0 with GTID enabled */
 			if (masters_count == 1) {
 				result &= backup_ds_printf(slave_info_file,
