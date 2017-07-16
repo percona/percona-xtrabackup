@@ -33,9 +33,18 @@
 #define __LA_DEAD
 #endif
 
-extern const char *lafe_progname;
+#if defined(__GNUC__) && (__GNUC__ > 2 || \
+			  (__GNUC__ == 2 && __GNUC_MINOR__ >= 7))
+#define	__LA_PRINTFLIKE(f,a)	__attribute__((__format__(__printf__, f, a)))
+#else
+#define	__LA_PRINTFLIKE(f,a)
+#endif
 
-void	lafe_warnc(int code, const char *fmt, ...);
-void	lafe_errc(int eval, int code, const char *fmt, ...) __LA_DEAD;
+void	lafe_warnc(int code, const char *fmt, ...) __LA_PRINTFLIKE(2, 3);
+void	lafe_errc(int eval, int code, const char *fmt, ...) __LA_DEAD
+		  __LA_PRINTFLIKE(3, 4);
+
+const char *	lafe_getprogname(void);
+void		lafe_setprogname(const char *name, const char *defaultname);
 
 #endif

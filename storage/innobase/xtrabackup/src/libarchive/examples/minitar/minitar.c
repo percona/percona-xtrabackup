@@ -40,8 +40,6 @@
  */
 
 #include <sys/types.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/stat.h>
 
 #include <archive.h>
@@ -51,10 +49,6 @@ __FBSDID("$FreeBSD$");
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#ifndef NO_CREATE
-#include "tree.h"
-#endif
 
 /*
  * NO_CREATE implies NO_BZIP2_CREATE and NO_GZIP_CREATE and NO_COMPRESS_CREATE.
@@ -228,7 +222,6 @@ static void
 create(const char *filename, int compress, const char **argv)
 {
 	struct archive *a;
-	struct archive *disk;
 	struct archive_entry *entry;
 	ssize_t len;
 	int fd;
@@ -237,59 +230,101 @@ create(const char *filename, int compress, const char **argv)
 	switch (compress) {
 #ifndef NO_BZIP2_CREATE
 	case 'j': case 'y':
-		archive_write_set_compression_bzip2(a);
+		archive_write_add_filter_bzip2(a);
 		break;
 #endif
 #ifndef NO_COMPRESS_CREATE
 	case 'Z':
-		archive_write_set_compression_compress(a);
+		archive_write_add_filter_compress(a);
 		break;
 #endif
 #ifndef NO_GZIP_CREATE
 	case 'z':
-		archive_write_set_compression_gzip(a);
+		archive_write_add_filter_gzip(a);
 		break;
 #endif
 	default:
-		archive_write_set_compression_none(a);
+		archive_write_add_filter_none(a);
 		break;
 	}
 	archive_write_set_format_ustar(a);
-	if (strcmp(filename, "-") == 0)
+	if (filename != NULL && strcmp(filename, "-") == 0)
 		filename = NULL;
-	archive_write_open_file(a, filename);
+	archive_write_open_filename(a, filename);
 
-	disk = archive_read_disk_new();
-#ifndef NO_LOOKUP
-	archive_read_disk_set_standard_lookup(disk);
-#endif
 	while (*argv != NULL) {
-		struct tree *t = tree_open(*argv);
-		while (tree_next(t)) {
+		struct archive *disk = archive_read_disk_new();
+#ifndef NO_LOOKUP
+		archive_read_disk_set_standard_lookup(disk);
+#endif
+		int r;
+
+		r = archive_read_disk_open(disk, *argv);
+		if (r != ARCHIVE_OK) {
+			errmsg(archive_error_string(disk));
+			errmsg("\n");
+			exit(1);
+		}
+
+		for (;;) {
+			int needcr = 0;
+
 			entry = archive_entry_new();
-			archive_entry_set_pathname(entry, tree_current_path(t));
-			archive_read_disk_entry_from_file(disk, entry, -1,
-			    tree_current_stat(t));
+			r = archive_read_next_header2(disk, entry);
+			if (r == ARCHIVE_EOF)
+				break;
+			if (r != ARCHIVE_OK) {
+				errmsg(archive_error_string(disk));
+				errmsg("\n");
+				exit(1);
+			}
+			archive_read_disk_descend(disk);
 			if (verbose) {
 				msg("a ");
-				msg(tree_current_path(t));
+				msg(archive_entry_pathname(entry));
+				needcr = 1;
 			}
-			archive_write_header(a, entry);
-			fd = open(tree_current_access_path(t), O_RDONLY);
-			len = read(fd, buff, sizeof(buff));
-			while (len > 0) {
-				archive_write_data(a, buff, len);
+			r = archive_write_header(a, entry);
+			if (r < ARCHIVE_OK) {
+				errmsg(": ");
+				errmsg(archive_error_string(a));
+				needcr = 1;
+			}
+			if (r == ARCHIVE_FATAL)
+				exit(1);
+			if (r > ARCHIVE_FAILED) {
+#if 0
+				/* Ideally, we would be able to use
+				 * the same code to copy a body from
+				 * an archive_read_disk to an
+				 * archive_write that we use for
+				 * copying data from an archive_read
+				 * to an archive_write_disk.
+				 * Unfortunately, this doesn't quite
+				 * work yet. */
+				copy_data(disk, a);
+#else
+				/* For now, we use a simpler loop to copy data
+				 * into the target archive. */
+				fd = open(archive_entry_sourcepath(entry), O_RDONLY);
 				len = read(fd, buff, sizeof(buff));
+				while (len > 0) {
+					archive_write_data(a, buff, len);
+					len = read(fd, buff, sizeof(buff));
+				}
+				close(fd);
+#endif
 			}
-			close(fd);
 			archive_entry_free(entry);
-			if (verbose)
+			if (needcr)
 				msg("\n");
 		}
+		archive_read_close(disk);
+		archive_read_free(disk);
 		argv++;
 	}
 	archive_write_close(a);
-	archive_write_finish(a);
+	archive_write_free(a);
 }
 #endif
 
@@ -305,13 +340,13 @@ extract(const char *filename, int do_extract, int flags)
 	ext = archive_write_disk_new();
 	archive_write_disk_set_options(ext, flags);
 #ifndef NO_BZIP2_EXTRACT
-	archive_read_support_compression_bzip2(a);
+	archive_read_support_filter_bzip2(a);
 #endif
 #ifndef NO_GZIP_EXTRACT
-	archive_read_support_compression_gzip(a);
+	archive_read_support_filter_gzip(a);
 #endif
 #ifndef NO_COMPRESS_EXTRACT
-	archive_read_support_compression_compress(a);
+	archive_read_support_filter_compress(a);
 #endif
 #ifndef NO_TAR_EXTRACT
 	archive_read_support_format_tar(a);
@@ -324,12 +359,13 @@ extract(const char *filename, int do_extract, int flags)
 #endif
 	if (filename != NULL && strcmp(filename, "-") == 0)
 		filename = NULL;
-	if ((r = archive_read_open_file(a, filename, 10240))) {
+	if ((r = archive_read_open_filename(a, filename, 10240))) {
 		errmsg(archive_error_string(a));
 		errmsg("\n");
 		exit(r);
 	}
 	for (;;) {
+		int needcr = 0;
 		r = archive_read_next_header(a, &entry);
 		if (r == ARCHIVE_EOF)
 			break;
@@ -340,20 +376,28 @@ extract(const char *filename, int do_extract, int flags)
 		}
 		if (verbose && do_extract)
 			msg("x ");
-		if (verbose || !do_extract)
+		if (verbose || !do_extract) {
 			msg(archive_entry_pathname(entry));
+			msg(" ");
+			needcr = 1;
+		}
 		if (do_extract) {
 			r = archive_write_header(ext, entry);
-			if (r != ARCHIVE_OK)
+			if (r != ARCHIVE_OK) {
 				errmsg(archive_error_string(a));
-			else
-				copy_data(a, ext);
+				needcr = 1;
+			}
+			else {
+				r = copy_data(a, ext);
+				if (r != ARCHIVE_OK)
+					needcr = 1;
+			}
 		}
-		if (verbose || !do_extract)
+		if (needcr)
 			msg("\n");
 	}
 	archive_read_close(a);
-	archive_read_finish(a);
+	archive_read_free(a);
 	exit(0);
 }
 
@@ -363,16 +407,16 @@ copy_data(struct archive *ar, struct archive *aw)
 	int r;
 	const void *buff;
 	size_t size;
-	off_t offset;
+	int64_t offset;
 
 	for (;;) {
 		r = archive_read_data_block(ar, &buff, &size, &offset);
-		if (r == ARCHIVE_EOF) {
-			errmsg(archive_error_string(ar));
+		if (r == ARCHIVE_EOF)
 			return (ARCHIVE_OK);
-		}
-		if (r != ARCHIVE_OK)
+		if (r != ARCHIVE_OK) {
+			errmsg(archive_error_string(ar));
 			return (r);
+		}
 		r = archive_write_data_block(aw, buff, size, offset);
 		if (r != ARCHIVE_OK) {
 			errmsg(archive_error_string(ar));
@@ -390,6 +434,9 @@ msg(const char *m)
 static void
 errmsg(const char *m)
 {
+	if (m == NULL) {
+		m = "Error: No error description provided.\n";
+	}
 	write(2, m, strlen(m));
 }
 
