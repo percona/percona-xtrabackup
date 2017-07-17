@@ -1,4 +1,8 @@
 /*
+ * This file is in the public domain.  Use it as you see fit.
+ */
+
+/*
  * "untar" is an extremely simple tar extractor:
  *  * A single C source file, so it should be easy to compile
  *    and run on any system with a C compiler.
@@ -38,7 +42,7 @@ parseoct(const char *p, size_t n)
 {
 	int i = 0;
 
-	while (*p < '0' || *p > '7') {
+	while ((*p < '0' || *p > '7') && n > 0) {
 		++p;
 		--n;
 	}
@@ -95,7 +99,7 @@ static FILE *
 create_file(char *pathname, int mode)
 {
 	FILE *f;
-	f = fopen(pathname, "w+");
+	f = fopen(pathname, "wb+");
 	if (f == NULL) {
 		/* Try creating parent dir and then creating file. */
 		char *p = strrchr(pathname, '/');
@@ -103,7 +107,7 @@ create_file(char *pathname, int mode)
 			*p = '\0';
 			create_dir(pathname, 0755);
 			*p = '/';
-			f = fopen(pathname, "w+");
+			f = fopen(pathname, "wb+");
 		}
 	}
 	return (f);
@@ -140,7 +144,7 @@ untar(FILE *a, const char *path)
 		if (bytes_read < 512) {
 			fprintf(stderr,
 			    "Short read on %s: expected 512, got %d\n",
-			    path, bytes_read);
+			    path, (int)bytes_read);
 			return;
 		}
 		if (is_end_of_archive(buff)) {
@@ -183,7 +187,7 @@ untar(FILE *a, const char *path)
 			if (bytes_read < 512) {
 				fprintf(stderr,
 				    "Short read on %s: Expected 512, got %d\n",
-				    path, bytes_read);
+				    path, (int)bytes_read);
 				return;
 			}
 			if (filesize < 512)
@@ -213,7 +217,7 @@ main(int argc, char **argv)
 
 	++argv; /* Skip program name */
 	for ( ;*argv != NULL; ++argv) {
-		a = fopen(*argv, "r");
+		a = fopen(*argv, "rb");
 		if (a == NULL)
 			fprintf(stderr, "Unable to open %s\n", *argv);
 		else {
