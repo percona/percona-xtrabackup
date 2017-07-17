@@ -303,6 +303,7 @@ static char *xtrabackup_debug_sync = NULL;
 
 my_bool xtrabackup_compact = FALSE;
 my_bool xtrabackup_rebuild_indexes = FALSE;
+my_bool xtrabackup_compact_need_expand = FALSE;
 
 my_bool xtrabackup_incremental_force_scan = FALSE;
 
@@ -1971,9 +1972,11 @@ xtrabackup_read_metadata(char *filename)
 	/* Optional fields */
 
 	if (fscanf(fp, "compact = %d\n", &t) == 1) {
-		xtrabackup_compact = (t == 1);
+		xtrabackup_compact = (t != 0);
+		xtrabackup_compact_need_expand = (t == 1);
 	} else {
-		xtrabackup_compact = 0;
+		xtrabackup_compact = FALSE;
+		xtrabackup_compact_need_expand = FALSE;
 	}
 
 	if (fscanf(fp, "recover_binlog_info = %d\n", &t) == 1) {
@@ -2004,7 +2007,11 @@ xtrabackup_print_metadata(char *buf, size_t buf_len)
 		 metadata_from_lsn,
 		 metadata_to_lsn,
 		 metadata_last_lsn,
-		 MY_TEST(xtrabackup_compact == TRUE),
+		 /* compact = 1 means backup is compact, not expanded
+		    compact = 2 means backup is compact, expanded */
+		 xtrabackup_compact ?
+			(xtrabackup_backup ||
+				xtrabackup_compact_need_expand ? 1 : 2) : 0,
 		 MY_TEST(opt_binlog_info == BINLOG_INFO_LOCKLESS));
 }
 
@@ -6453,13 +6460,13 @@ skip_check:
 	if (xtrabackup_compact) {
 		srv_compact_backup = TRUE;
 
-		if (!xb_expand_datafiles()) {
+		if (xtrabackup_compact_need_expand && !xb_expand_datafiles()) {
 			goto error_cleanup;
 		}
 
-		/* Reset the 'compact' flag in xtrabackup_checkpoints so we
+		/* Update 'compact' flag in xtrabackup_checkpoints so we
 		don't expand on subsequent invocations. */
-		xtrabackup_compact = FALSE;
+		xtrabackup_compact_need_expand = FALSE;
 		if (!xtrabackup_write_metadata(metadata_path)) {
 			msg("xtrabackup: error: xtrabackup_write_metadata() "
 			    "failed\n");

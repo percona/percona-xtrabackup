@@ -10,7 +10,7 @@ load_dbase_data sakila
 
 backup_dir="$topdir/backup"
 
-innobackupex --no-timestamp --compact $backup_dir
+xtrabackup --backup --compact --target-dir=$backup_dir
 vlog "Backup created in directory $backup_dir"
 
 record_db_state sakila
@@ -22,11 +22,12 @@ rm -r $mysql_datadir
 
 # Restore sakila
 
-innobackupex --apply-log --rebuild-indexes $backup_dir
+xtrabackup --prepare --apply-log-only --target-dir=$backup_dir
+xtrabackup --prepare --rebuild-indexes --target-dir=$backup_dir
 
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
-innobackupex --copy-back $backup_dir
+xtrabackup --copy-back --target-dir=$backup_dir
 
 start_server
 
@@ -38,7 +39,7 @@ verify_db_state sakila
 
 rm -rf $backup_dir
 
-innobackupex --no-timestamp --compact $backup_dir
+xtrabackup --backup --compact --target-dir=$backup_dir
 vlog "Backup created in directory $backup_dir"
 
 record_db_state sakila
@@ -50,13 +51,13 @@ rm -r $mysql_datadir
 
 # Restore sakila
 
-innobackupex --apply-log --rebuild-indexes --rebuild-threads=16 $backup_dir
+xtrabackup --prepare --rebuild-indexes --rebuild-threads=16 --target-dir=$backup_dir
 
 grep -q "Starting 16 threads to rebuild indexes" $OUTFILE
 
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir
-innobackupex --copy-back $backup_dir
+xtrabackup --copy-back --target-dir=$backup_dir
 
 start_server
 

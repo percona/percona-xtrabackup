@@ -4118,6 +4118,8 @@ buf_page_io_complete(
 		if (srv_compact_backup && buf_page_is_compacted(frame)) {
 
 			bpage->is_compacted = TRUE;
+		} else {
+			bpage->is_compacted = FALSE;
 		}
 
 		/* If this page is not uninitialized and not in the

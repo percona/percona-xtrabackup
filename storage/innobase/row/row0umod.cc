@@ -44,6 +44,7 @@ Created 2/27/1997 Heikki Tuuri
 #include "row0upd.h"
 #include "que0que.h"
 #include "log0log.h"
+#include "xb0xb.h"
 
 /* Considerations on undoing a modify operation.
 (1) Undoing a delete marking: all index records should be found. Some of
@@ -527,6 +528,11 @@ row_undo_mod_del_mark_or_remove_sec(
 {
 	dberr_t	err;
 
+	if (srv_compact_backup) {
+		/* we don't have secondary indexes, lets skip this */
+		return DB_SUCCESS;
+	}
+
 	err = row_undo_mod_del_mark_or_remove_sec_low(node, thr, index,
 						      entry, BTR_MODIFY_LEAF);
 	if (err == DB_SUCCESS) {
@@ -571,6 +577,11 @@ row_undo_mod_del_unmark_sec_and_undo_update(
 	enum row_search_result	search_result;
 
 	ut_ad(trx->id);
+
+	if (srv_compact_backup) {
+		/* we don't have secondary indexes, lets skip this */
+		return DB_SUCCESS;
+	}
 
 	log_free_check();
 	mtr_start(&mtr);
@@ -790,6 +801,11 @@ row_undo_mod_upd_del_sec(
 	ut_ad(node->rec_type == TRX_UNDO_UPD_DEL_REC);
 	ut_ad(!node->undo_row);
 
+	if (srv_compact_backup) {
+		/* we don't have secondary indexes, lets skip this */
+		return DB_SUCCESS;
+	}
+
 	heap = mem_heap_create(1024);
 
 	while (node->index != NULL) {
@@ -856,6 +872,11 @@ row_undo_mod_del_mark_sec(
 
 	ut_ad(!node->undo_row);
 
+	if (srv_compact_backup) {
+		/* we don't have secondary indexes, lets skip this */
+		return DB_SUCCESS;
+	}
+
 	heap = mem_heap_create(1024);
 
 	while (node->index != NULL) {
@@ -921,6 +942,11 @@ row_undo_mod_upd_exist_sec(
 {
 	mem_heap_t*	heap;
 	dberr_t		err	= DB_SUCCESS;
+
+	if (srv_compact_backup) {
+		/* we don't have secondary indexes, lets skip this */
+		return DB_SUCCESS;
+	}
 
 	if (node->index == NULL
 	    || ((node->cmpl_info & UPD_NODE_NO_ORD_CHANGE))) {

@@ -1775,12 +1775,13 @@ recv_recover_page_func(
 				memset(FIL_PAGE_LSN + page_zip->data, 0, 8);
 			}
 
-			if (!block->page.is_compacted
-			    && block->page.is_compacted) {
+			if (block->page.is_compacted) {
 
 				ut_ad(srv_compact_backup);
 
 				block->page.is_compacted = FALSE;
+
+				memset(page, 0, UNIV_PAGE_SIZE);
 			}
 		}
 
