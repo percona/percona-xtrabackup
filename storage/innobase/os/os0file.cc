@@ -811,7 +811,7 @@ os_file_io_complete(
 	byte*		buf,
 	byte*		scratch,
 	ulint		src_len,
-	ulint		offset,
+	os_offset_t	offset,
 	ulint		len);
 
 /** Does simulated AIO. This function should be called by an i/o-handler
@@ -956,7 +956,7 @@ public:
 		return(os_file_io_complete(
 				slot->type, slot->file, slot->buf,
 				NULL, slot->original_len,
-				static_cast<ulint>(slot->offset),
+				slot->offset,
 				slot->len));
 	}
 
@@ -1677,7 +1677,7 @@ os_file_io_complete(
 	byte*		buf,
 	byte*		scratch,
 	ulint		src_len,
-	ulint		offset,
+	os_offset_t	offset,
 	ulint		len)
 {
 	/* We never compress/decompress the first page */
@@ -5446,7 +5446,7 @@ os_file_io(
 					type, file,
 					reinterpret_cast<byte*>(buf),
 					compressed_page, original_n,
-					static_cast<ulint>(offset), n);
+					offset, n);
 			} else {
 
 				*err = DB_SUCCESS;
