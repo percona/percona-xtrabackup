@@ -102,7 +102,7 @@ vlog "Testing incremental based on history name"
 multi_row_insert incremental_sample.test \({101..200},100\)
 
 innobackupex --history=test1 --incremental \
---incremental-history-name=test1 --compact $backup_dir > /dev/null
+--incremental-history-name=test1 $backup_dir > /dev/null
 
 # saving for later
 get_one_value "uuid"
@@ -114,7 +114,7 @@ second_to_lsn=$val
 
 check_for_value "format" "file"
 check_for_value "incremental" "Y"
-check_for_value "compact" "Y"
+check_for_value "compact" "N"
 
 if [ -z "$second_from_lsn" ] || [ "$second_from_lsn" != "$first_to_lsn" ]
 then

@@ -4,9 +4,14 @@
 
 . inc/common.sh
 
-skip_test "Enable when bug #1192834 is fixed"
-
 start_server --innodb_file_per_table
+
+# someday we may fix bug #1192834 in 2.4
+run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --compact --target-dir=$topdir/backup
+grep -q "compact backups are not supported" < $OUTFILE
+
+exit 0
+
 load_dbase_schema sakila
 load_dbase_data sakila
 
