@@ -50,6 +50,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
 -x options  Extra options to pass to xtrabackup
 -i options  Extra options to pass to innobackupex
+-r path     Use specified path as root directory for test workers.
 EOF
 }
 
@@ -754,7 +755,7 @@ SUBUNIT_OUT=test_results.subunit
 NWORKERS=
 DEBUG_WORKER=""
 
-while getopts "fgh?:t:s:d:c:j:T:x:i:" options; do
+while getopts "fgh?:t:s:d:c:j:T:x:i:r:" options; do
         case $options in
             f ) force="yes";;
             t )
@@ -800,6 +801,16 @@ recognized for compatibility";;
                 IB_EXTRA_OPTS="$OPTARG"
                 ;;
 
+            r )
+                if [ ! -d $OPTARG ]
+                then
+                    echo "Wrong -r argument: $OPTARG make sure that directory exists"
+                    exit -1
+                fi
+                TEST_BASEDIR="$OPTARG"
+                TEST_VAR_ROOT="$TEST_BASEDIR/var"
+                ;;
+
             ? ) echo "Use \`$0 -h' for the list of available options."
                     exit -1;;
         esac
@@ -821,8 +832,9 @@ mkdir results
 
 cleanup_all_workers >>$OUTFILE 2>&1
 
-rm -rf var test_results.subunit
-mkdir var
+echo "Using $TEST_VAR_ROOT as test root"
+rm -rf $TEST_VAR_ROOT test_results.subunit
+mkdir -p $TEST_VAR_ROOT
 
 echo "Detecting server version..." | tee -a $OUTFILE
 
