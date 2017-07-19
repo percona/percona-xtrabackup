@@ -1786,7 +1786,7 @@ recv_parse_or_apply_log_rec_body(
 		of offline backup and continue.
 		*/
 		if (!recv_recovery_on) {
-			if (is_online_redo_copy) {
+			if (!opt_lock_ddl_per_table) {
 				if (backup_redo_log_flushed_lsn
 				    < recv_sys->recovered_lsn) {
 					ib::info() << "Last flushed lsn: "
@@ -1799,14 +1799,15 @@ recv_parse_or_apply_log_rec_body(
 							"able to determine the"
 							"InnoDB Engine Status";
 
-					ib::fatal() << "An optimized(without"
+					ib::error() << "An optimized (without"
 						" redo logging) DDLoperation"
 						" has been performed. All"
 						" modified pages may not have"
 						" been flushed to the disk yet."
-						" \n    PXB will not be able"
+						" \nPXB will not be able"
 						" take a consistent backup."
 						" Retry the backup operation";
+					exit(EXIT_FAILURE);
 				}
 				/** else the index is flushed to disk before
 				backup started hence no error */
@@ -1817,12 +1818,10 @@ recv_parse_or_apply_log_rec_body(
 					<< " load_index lsn "
 					<< recv_sys->recovered_lsn;
 
-				ib::warn() << "An optimized(without redo"
+				ib::warn() << "An optimized (without redo"
 					" logging) DDL operation has been"
 					" performed. All modified pages may not"
-					" have been flushed to the disk yet."
-					" \n    This offline backup may not"
-					" be consistent";
+					" have been flushed to the disk yet.";
 			}
 		}
 #endif /* UNIV_HOTBACKUP */

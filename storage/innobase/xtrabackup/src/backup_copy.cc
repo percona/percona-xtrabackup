@@ -67,9 +67,6 @@ static std::set<std::string> rsync_list;
 /* locations of tablespaces read from .isl files */
 static std::map<std::string, std::string> tablespace_locations;
 
-/* Whether LOCK BINLOG FOR BACKUP has been issued during backup */
-bool binlog_locked;
-
 /************************************************************************
 Struct represents file or directory. */
 struct datadir_node_t {
@@ -1386,7 +1383,7 @@ backup_start()
 
 		history_lock_time = time(NULL);
 
-		if (!lock_tables(mysql_connection)) {
+		if (!lock_tables_maybe(mysql_connection)) {
 			return(false);
 		}
 	}

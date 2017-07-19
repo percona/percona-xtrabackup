@@ -94,6 +94,13 @@ const char *xb_stream_format_name[] = {"file", "tar", "xbstream"};
 
 MYSQL *mysql_connection;
 
+/* Whether LOCK BINLOG FOR BACKUP has been issued during backup */
+static bool binlog_locked;
+
+/* Whether LOCK TABLES FOR BACKUP / FLUSH TABLES WITH READ LOCK has been issued
+during backup */
+static bool tables_locked;
+
 extern "C" {
 MYSQL * STDCALL
 cli_mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
@@ -313,7 +320,6 @@ const char* get_backup_uuid(MYSQL *connection)
 	return backup_uuid;
 }
 
-static
 void
 parse_show_engine_innodb_status(MYSQL *connection)
 {
@@ -629,8 +635,6 @@ get_mysql_vars(MYSQL *connection)
 				SRV_CHECKSUM_ALGORITHM_NONE;
 		}
 	}
-
-	parse_show_engine_innodb_status(connection);
 
 out:
 	free_mysql_variables(mysql_vars);
@@ -985,26 +989,57 @@ stop_query_killer()
 	os_event_wait_time(kill_query_thread_stopped, 60000);
 }
 
+
+/*********************************************************************//**
+Function acquires a backup tables lock if supported by the server.
+Allows to specify timeout in seconds for attempts to acquire the lock.
+@returns true if lock acquired */
+bool
+lock_tables_for_backup(MYSQL *connection, int timeout)
+{
+	if (have_lock_wait_timeout) {
+		char query[200];
+
+		ut_snprintf(query, sizeof(query),
+			    "SET SESSION lock_wait_timeout=%d", timeout);
+
+		xb_mysql_query(connection, query, false);
+	}
+
+	if (have_backup_locks) {
+		msg_ts("Executing LOCK TABLES FOR BACKUP...\n");
+		xb_mysql_query(connection, "LOCK TABLES FOR BACKUP", true);
+		tables_locked = true;
+		return(true);
+	}
+
+	msg_ts("Error: LOCK TABLES FOR BACKUP is not supported.\n");
+
+	return(false);
+}
+
 /*********************************************************************//**
 Function acquires either a backup tables lock, if supported
 by the server, or a global read lock (FLUSH TABLES WITH READ LOCK)
 otherwise.
 @returns true if lock acquired */
 bool
-lock_tables(MYSQL *connection)
+lock_tables_maybe(MYSQL *connection)
 {
+	if (tables_locked || opt_lock_ddl_per_table) {
+		return(true);
+	}
+
+	if (have_backup_locks) {
+		return lock_tables_for_backup(connection);
+	}
+
 	if (have_lock_wait_timeout) {
 		/* Set the maximum supported session value for
 		lock_wait_timeout to prevent unnecessary timeouts when the
 		global value is changed from the default */
 		xb_mysql_query(connection,
 			"SET SESSION lock_wait_timeout=31536000", false);
-	}
-
-	if (have_backup_locks) {
-		msg_ts("Executing LOCK TABLES FOR BACKUP...\n");
-		xb_mysql_query(connection, "LOCK TABLES FOR BACKUP", false);
-		return(true);
 	}
 
 	if (!opt_lock_wait_timeout && !opt_kill_long_queries_timeout) {
@@ -1050,6 +1085,8 @@ lock_tables(MYSQL *connection)
 	if (opt_kill_long_queries_timeout) {
 		stop_query_killer();
 	}
+
+	tables_locked = true;
 
 	return(true);
 }
@@ -1974,3 +2011,75 @@ backup_cleanup()
 		mysql_close(mysql_connection);
 	}
 }
+
+static ib_mutex_t mdl_lock_con_mutex;
+static MYSQL *mdl_con = NULL;
+
+void
+mdl_lock_init()
+{
+	mutex_create(LATCH_ID_XTRA_DATAFILES_ITER_MUTEX, &mdl_lock_con_mutex);
+
+	mdl_con = xb_mysql_connect();
+
+	if (mdl_con != NULL) {
+		xb_mysql_query(mdl_con, "BEGIN", false, true);
+	}
+}
+
+
+void
+mdl_lock_table(ulint space_id)
+{
+	MYSQL_RES *mysql_result = NULL;
+	MYSQL_ROW row;
+	char *query;
+
+	mutex_enter(&mdl_lock_con_mutex);
+
+	xb_a(asprintf(&query,
+		"SELECT NAME FROM INFORMATION_SCHEMA.INNODB_SYS_TABLES "
+		"WHERE SPACE = %lu", space_id));
+
+	xb_mysql_query(mdl_con, query, true, true);
+
+	mysql_result = xb_mysql_query(mdl_con, query, true);
+
+	while ((row = mysql_fetch_row(mysql_result))) {
+		char *table_name = strdup(row[0]);
+		char *separator = strchr(table_name, '/');
+		char *lock_query;
+
+		if (separator != NULL) {
+			*separator = '.';
+		}
+
+		msg_ts("Locking MDL for %s\n", table_name);
+
+		xb_a(asprintf(&lock_query,
+			"SELECT * FROM %s LIMIT 1",
+			table_name));
+
+		xb_mysql_query(mdl_con, lock_query, false, false);
+
+		free(lock_query);
+		free(table_name);
+	}
+
+	mysql_free_result(mysql_result);
+	free(query);
+
+	mutex_exit(&mdl_lock_con_mutex);
+}
+
+
+void
+mdl_unlock_all()
+{
+	msg_ts("Unlocking MDL for all tables");
+
+	xb_mysql_query(mdl_con, "COMMIT", false, true);
+
+	mutex_free(&mdl_lock_con_mutex);
+}
+

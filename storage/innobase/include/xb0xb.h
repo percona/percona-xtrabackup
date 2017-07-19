@@ -34,6 +34,8 @@ extern ulint redo_log_version;
 extern bool innodb_log_checksum_algorithm_specified;
 extern bool innodb_checksum_algorithm_specified;
 
+extern my_bool opt_lock_ddl_per_table;
+
 /******************************************************************************
 Callback used in buf_page_io_complete() to detect compacted pages.
 @return TRUE if the page is marked as compacted, FALSE otherwise. */

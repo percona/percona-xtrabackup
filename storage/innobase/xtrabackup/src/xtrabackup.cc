@@ -413,6 +413,10 @@ uint opt_lock_wait_threshold = 0;
 uint opt_debug_sleep_before_unlock = 0;
 uint opt_safe_slave_backup_timeout = 0;
 
+my_bool opt_lock_ddl = FALSE;
+my_bool opt_lock_ddl_per_table = FALSE;
+uint opt_lock_ddl_timeout = 0;
+
 const char *opt_history = NULL;
 my_bool opt_decrypt = FALSE;
 
@@ -633,6 +637,9 @@ enum options_xtrabackup
   OPT_GALERA_INFO,
   OPT_SLAVE_INFO,
   OPT_NO_LOCK,
+  OPT_LOCK_DDL,
+  OPT_LOCK_DDL_TIMEOUT,
+  OPT_LOCK_DDL_PER_TABLE,
   OPT_SAFE_SLAVE_BACKUP,
   OPT_RSYNC,
   OPT_FORCE_NON_EMPTY_DIRS,
@@ -871,6 +878,23 @@ struct my_option xb_client_options[] =
    "the backup to succeed and you then don't need to resort to "
    "using this option.",
    (uchar *) &opt_no_lock, (uchar *) &opt_no_lock, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"lock-ddl", OPT_LOCK_DDL, "Issue LOCK TABLES FOR BACKUP if it is "
+   "supported by server at the beginning of the backup to block all DDL "
+   "operations.", (uchar*) &opt_lock_ddl, (uchar*) &opt_lock_ddl, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"lock-ddl-timeout", OPT_LOCK_DDL_TIMEOUT,
+   "If LOCK TABLES FOR BACKUP does not return within given timeout, abort "
+   "the backup.",
+   (uchar*) &opt_lock_ddl_timeout,
+   (uchar*) &opt_lock_ddl_timeout, 0, GET_UINT,
+   REQUIRED_ARG, 31536000, 1, 31536000, 0, 1, 0},
+
+  {"lock-ddl-per-table", OPT_LOCK_DDL_PER_TABLE, "Lock DDL for each table "
+   "before xtrabackup starts to copy it and until the backup is completed.",
+   (uchar*) &opt_lock_ddl_per_table, (uchar*) &opt_lock_ddl_per_table, 0,
    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
   {"safe-slave-backup", OPT_SAFE_SLAVE_BACKUP, "Stop slave SQL thread "
@@ -2618,6 +2642,10 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 	const char* const node_path = node->name;
 
 	is_system = !fil_is_user_tablespace_id(node->space->id);
+
+	if (!is_system && opt_lock_ddl_per_table) {
+		mdl_lock_table(node->space->id);
+	}
 
 	if (!is_system && check_if_skip_table(node_name)) {
 		msg("[%02u] Skipping %s.\n", thread_n, node_name);
@@ -4437,9 +4465,11 @@ xtrabackup_backup_func(void)
 	srv_read_only_mode = TRUE;
 
 	srv_backup_mode = TRUE;
-	srv_close_files = xb_close_files;
+	/* We can safely close files if we don't allow DDL during the
+	backup */
+	srv_close_files = xb_close_files || opt_lock_ddl;
 
-	if (srv_close_files)
+	if (xb_close_files)
 		msg("xtrabackup: warning: close-files specified. Use it "
 		    "at your own risk. If there are DDL operations like table DROP TABLE "
 		    "or RENAME TABLE during the backup, inconsistent backup will be "
@@ -4753,6 +4783,10 @@ reread_log_header:
 		    "files transfer\n", xtrabackup_parallel);
 	}
 
+	if (opt_lock_ddl_per_table) {
+		mdl_lock_init();
+	}
+
 	it = datafiles_iter_new(f_system);
 	if (it == NULL) {
 		msg("xtrabackup: Error: datafiles_iter_new() failed.\n");
@@ -4882,6 +4916,10 @@ skip_last_cp:
 			exit(EXIT_FAILURE);
 		}
 
+	}
+
+	if (opt_lock_ddl_per_table) {
+		mdl_unlock_all();
 	}
 
 	xtrabackup_destroy_datasinks();
@@ -8008,6 +8046,14 @@ xb_init()
 		}
 
 		history_start_time = time(NULL);
+
+		if (opt_lock_ddl &&
+			!lock_tables_for_backup(mysql_connection,
+				opt_lock_ddl_timeout)) {
+			return(false);
+		}
+
+		parse_show_engine_innodb_status(mysql_connection);
 
 	}
 
