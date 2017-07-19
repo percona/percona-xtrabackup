@@ -8248,8 +8248,8 @@ check_all_privileges()
 	if (!opt_no_lock
 		/* LOCK TABLES FOR BACKUP */
 		/* UNLOCK TABLES */
-		|| (have_backup_locks && !opt_no_lock) || opt_slave_info
-		|| opt_binlog_info == BINLOG_INFO_ON) {
+		&& ((have_backup_locks && !opt_no_lock) || opt_slave_info
+		|| opt_binlog_info == BINLOG_INFO_ON)) {
 		check_result |= check_privilege(
 			granted_privileges,
 			"LOCK TABLES", "*", "*");
