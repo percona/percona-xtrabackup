@@ -318,6 +318,21 @@ Options
 
    The path to the keyring file.
 
+.. option:: --lock-ddl
+
+   Issue ``LOCK TABLES FOR BACKUP`` if it is supported by server
+   at the beginning of the backup to block all DDL operations.
+
+.. option:: --lock-ddl-per-table
+
+   Lock DDL for each table before xtrabackup starts to copy
+   it and until the backup is completed.
+
+.. option:: --lock-ddl-timeout
+
+   If ``LOCK TABLES FOR BACKUP`` does not return within given
+   timeout, abort the backup.
+
 .. option:: --log-copy-interval=#
 
    This option specifies time interval between checks done by log copying

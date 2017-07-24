@@ -1,0 +1,64 @@
+==========================
+|Percona XtraBackup| 2.4.8
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.8 on
+July 24th 2017. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.8/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.4
+series.
+
+New Features
+============
+
+ To avoid issues with |MySQL| 5.7 skipping redo log for DDL |Percona
+ XtraBackup| has implemented three new options
+ (:option:`xtrabackup --lock-ddl`,
+ :option:`xtrabackup --lock-ddl-timeout`,
+ :option:`xtrabackup --lock-ddl-per-table`) that can be used to place MDL locks
+ on tables while they are copied.
+
+ New :option:`xtrabackup --check-privileges` option has been implemented that
+ can be used to check if |Percona XtraBackup| has all
+ :ref:`required privileges <privileges>` to perform the backup.
+
+Bugs fixed
+==========
+
+ |xtrabackup| would hang with ``Waiting for master thread to be
+ suspended`` message when backup was being prepared. Bug fixed :bug:`1671437`.
+
+ |xtrabackup| would fail to prepare the backup with ``6th page is not
+ initialized`` message in case server didn't properly initialize the page. Bug
+ fixed :bug:`1671722`.
+
+ |xbstream| could run out of file descriptors while extracting the backup
+ which contains many tables. Bug fixed :bug:`1690823`
+
+ When a table was created with the ``DATA DIRECTORY`` option |xtrabackup| would
+ back up the ``.frm`` and ``.isl`` files, but not the ``.ibd`` file. Due to the
+ missing ``.ibd`` files backup then could not be restored. Bug fixed
+ :bug:`1701736`.
+
+ |Percona XtraBackup| incorrectly determined use of ``master_auto_postion``
+ on a slave, and thus generated invalid :file:`xtrabackup_slave_info` file.
+ Bug fixed :bug:`1705193`.
+
+ |Percona XtraBackup| will now print a warning if it encounters unsupported
+ storage engine. Bug fixed :bug:`1394493`.
+
+ |Percona XtraBackup| would crash while backing up MariaDB 10.2.x with
+ ``--ftwrl-*`` options. Bug fixed :bug:`1704636`.
+
+ :option:`xtrabackup --slave-info` didn't write the correct information into
+ :file:`xtrabackup_slave_info` file when multi-source replication was used.
+ Bug fixed :bug:`1551634`.
+
+ Along with :file:`xtrabackup_checkpints` file, |xtrabackup| now copies
+ :file:`xtrabackup_info` file into directory specified by
+ :option:`xtrabackup --extra-lsndir` option. Bug fixed :bug:`1600656`.
+
+ GTID position was not recorded when :option:`xtrabackup --binlog-info` option
+ was set to ``AUTO``. Bug fixed :bug:`1651505`.

@@ -45,7 +45,7 @@ binaries in ``percona-xtrabackup-24``.
 The ``percona-xtrabackup-test-24`` package contains the test suite for |Percona
 XtraBackup|.
 
-The ``percona-xtrabackup-2x`` package contains the older version of the
+The ``percona-xtrabackup`` package contains the older version of the
 |Percona XtraBackup|.
 
 Installing |Percona XtraBackup| from Percona ``yum`` repository
