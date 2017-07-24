@@ -29,6 +29,20 @@ Options
    ``OFF``, ``ON``, ``LOCKLESS`` and ``AUTO``. See the |Percona XtraBackup|
    :ref:`lockless_bin-log`  manual page for more information.
 
+.. option:: --check-privileges
+
+   This option checks if |Percona XtraBackup| has all required privileges to
+   take the backup. When this option is used backup may terminate right after
+   starting if some of the required privileges are missing. However, there is
+   a level of uncertainty and some missing privileges may not be required to
+   perform a backup, those are marked as warnings and backup is not aborted.
+   In case of missing privileges the output can look like this:
+
+   .. code-block:: bash
+
+     xtrabackup: Error: missing required privilege LOCK TABLES on *.*
+     xtrabackup: Warning: missing required privilege REPLICATION CLIENT on *.*
+
 .. option:: --close-files
 
    Do not keep files opened. When |xtrabackup| opens tablespace it normally
@@ -185,7 +199,7 @@ Options
 .. option:: --extra-lsndir=DIRECTORY
 
    (for --backup): save an extra copy of the :file:`xtrabackup_checkpoints`
-   file in this directory.
+   and :file:`xtrabackup_info` files in this directory.
 
 .. option:: --force-non-empty-directories
 
