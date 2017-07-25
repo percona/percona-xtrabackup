@@ -903,13 +903,15 @@ backup_file_printf(const char *filename, const char *fmt, ...)
 
 static
 bool
-run_data_threads(datadir_iter_t *it, os_thread_func_t func, uint n)
+run_data_threads(datadir_iter_t *it, os_thread_func_t func, uint n,
+		 const char *thread_description)
 {
 	datadir_thread_ctxt_t	*data_threads;
 	uint			i, count;
 	os_ib_mutex_t		count_mutex;
 	bool			ret;
 
+	ut_a(thread_description);
 	data_threads = (datadir_thread_ctxt_t*)
 				(ut_malloc(sizeof(datadir_thread_ctxt_t) * n));
 
@@ -941,7 +943,8 @@ run_data_threads(datadir_iter_t *it, os_thread_func_t func, uint n)
 	for (i = 0; i < n; i++) {
 		ret = data_threads[i].ret && ret;
 		if (!data_threads[i].ret) {
-			msg("Error: thread %u failed.\n", i);
+			msg("Error: %s thread %u failed.\n", thread_description,
+			    i);
 		}
 	}
 
@@ -1610,6 +1613,111 @@ apply_log_finish()
 	return(true);
 }
 
+bool should_skip_file_on_copy_back(const char *filepath) {
+	const char *filename;
+	char c_tmp;
+	int i_tmp;
+
+	const char *ext_list[] = {"backup-my.cnf", "xtrabackup_logfile",
+		"xtrabackup_binary", "xtrabackup_binlog_info",
+		"xtrabackup_checkpoints", ".qp", ".pmap", ".tmp",
+		".xbcrypt", NULL};
+
+	filename = base_name(filepath);
+
+	/* skip .qp and .xbcrypt files */
+	if (filename_matches(filename, ext_list)) {
+		return true;
+	}
+
+	/* skip undo tablespaces */
+	if (sscanf(filename, "undo%d%c", &i_tmp, &c_tmp) == 1) {
+		return true;
+	}
+
+	/* skip redo logs */
+	if (sscanf(filename, "ib_logfile%d%c", &i_tmp, &c_tmp) == 1) {
+		return true;
+	}
+
+	/* skip innodb data files */
+	for (ulint i = 0; i < srv_n_data_files; i++) {
+		const char *ibfile;
+
+		ibfile = base_name(srv_data_file_names[i]);
+
+		if (strcmp(ibfile, filename) == 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+os_thread_ret_t
+copy_back_thread_func(void* data) {
+	bool ret = false;
+	datadir_thread_ctxt_t* ctx = (datadir_thread_ctxt_t*)data;
+	datadir_node_t node;
+
+	if (my_thread_init()) {
+		goto cleanup;
+	}
+
+	datadir_node_init(&node);
+
+	while (datadir_iter_next(ctx->it, &node)) {
+		/* create empty directories */
+		if (node.is_empty_dir) {
+			char path[FN_REFLEN];
+
+			snprintf(path, sizeof(path), "%s/%s",
+				mysql_data_home, node.filepath_rel);
+
+			msg_ts("[%02u] Creating directory %s\n", ctx->n_thread,
+			       path);
+
+			if (mkdirp(path, 0777, MYF(0)) < 0) {
+				char errbuf[MYSYS_STRERROR_SIZE];
+
+				msg("Can not create directory %s: %s\n",
+					path, my_strerror(errbuf,
+						sizeof(errbuf), my_errno));
+				ret = false;
+
+				goto cleanup;
+
+			}
+
+			msg_ts("[%02u] ...done.", 1);
+
+			continue;
+		}
+
+		if (should_skip_file_on_copy_back(node.filepath)) {
+			continue;
+		}
+
+		if (!(ret = copy_or_move_file(node.filepath, node.filepath_rel,
+					      mysql_data_home,
+					      ctx->n_thread))) {
+			goto cleanup;
+		}
+	}
+cleanup:
+	my_thread_end();
+	datadir_node_free(&node);
+
+	os_mutex_enter(ctx->count_mutex);
+	--(*ctx->count);
+	os_mutex_exit(ctx->count_mutex);
+
+	ctx->ret = ret;
+
+	os_thread_exit(NULL);
+	OS_THREAD_DUMMY_RETURN;
+}
+
 bool
 copy_back()
 {
@@ -1617,10 +1725,7 @@ copy_back()
 	ulint i;
 	bool ret;
 	datadir_iter_t *it = NULL;
-	datadir_node_t node;
 	char *dst_dir;
-
-	memset(&node, 0, sizeof(node));
 
 	if (!opt_force_non_empty_dirs) {
 		if (!directory_exists_and_empty(mysql_data_home,
@@ -1746,85 +1851,19 @@ copy_back()
 
 	it = datadir_iter_new(".", false);
 
-	datadir_node_init(&node);
+	ut_a(xtrabackup_parallel >= 0);
+	if (xtrabackup_parallel > 1) {
+		msg("xtrabackup: Starting %u threads for parallel data "
+		    "files transfer\n", xtrabackup_parallel);
+	}
 
-	while (datadir_iter_next(it, &node)) {
-		const char *ext_list[] = {"backup-my.cnf", "xtrabackup_logfile",
-			"xtrabackup_binary", "xtrabackup_binlog_info",
-			"xtrabackup_checkpoints", ".qp", ".pmap", ".tmp",
-			".xbcrypt", NULL};
-		const char *filename;
-		char c_tmp;
-		int i_tmp;
-		bool is_ibdata_file;
-
-		/* create empty directories */
-		if (node.is_empty_dir) {
-			char path[FN_REFLEN];
-
-			snprintf(path, sizeof(path), "%s/%s",
-				mysql_data_home, node.filepath_rel);
-
-			msg_ts("[%02u] Creating directory %s\n", 1, path);
-
-			if (mkdirp(path, 0777, MYF(0)) < 0) {
-				char errbuf[MYSYS_STRERROR_SIZE];
-
-				msg("Can not create directory %s: %s\n",
-					path, my_strerror(errbuf,
-						sizeof(errbuf), my_errno));
-				ret = false;
-
-				goto cleanup;
-
-			}
-
-			msg_ts("[%02u] ...done.", 1);
-
-			continue;
-		}
-
-		filename = base_name(node.filepath);
-
-		/* skip .qp and .xbcrypt files */
-		if (filename_matches(filename, ext_list)) {
-			continue;
-		}
-
-		/* skip undo tablespaces */
-		if (sscanf(filename, "undo%d%c", &i_tmp, &c_tmp) == 1) {
-			continue;
-		}
-
-		/* skip redo logs */
-		if (sscanf(filename, "ib_logfile%d%c", &i_tmp, &c_tmp) == 1) {
-			continue;
-		}
-
-		/* skip innodb data files */
-		is_ibdata_file = false;
-		for (i = 0; i < srv_n_data_files; i++) {
-			const char *ibfile;
-
-			ibfile = base_name(srv_data_file_names[i]);
-
-			if (strcmp(ibfile, filename) == 0) {
-				is_ibdata_file = true;
-				continue;
-			}
-		}
-		if (is_ibdata_file) {
-			continue;
-		}
-
-		if (!(ret = copy_or_move_file(node.filepath, node.filepath_rel,
-					      mysql_data_home, 1))) {
-			goto cleanup;
-		}
+	ret = run_data_threads(it, copy_back_thread_func,
+		xtrabackup_parallel ? xtrabackup_parallel : 1, "copy-back");
+	if (!ret) {
+		goto cleanup;
 	}
 
 	/* copy buufer pool dump */
-
 	if (innobase_buffer_pool_filename) {
 		const char *src_name;
 		char path[FN_REFLEN];
@@ -1849,8 +1888,6 @@ cleanup:
 	if (it != NULL) {
 		datadir_iter_free(it);
 	}
-
-	datadir_node_free(&node);
 
 	free(innobase_data_file_path_copy);
 
@@ -1999,7 +2036,8 @@ decrypt_decompress()
 	ut_a(xtrabackup_parallel >= 0);
 
 	ret = run_data_threads(it, decrypt_decompress_thread_func,
-		xtrabackup_parallel ? xtrabackup_parallel : 1);
+		xtrabackup_parallel ? xtrabackup_parallel : 1,
+		"decrypt and decompress");
 
 	if (it != NULL) {
 		datadir_iter_free(it);
