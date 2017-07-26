@@ -29,7 +29,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 extern char		*ds_encrypt_key;
 extern char		*ds_encrypt_key_file;
-extern int		ds_encrypt_threads;
 extern ulong		ds_encrypt_algo;
 
 /******************************************************************************
