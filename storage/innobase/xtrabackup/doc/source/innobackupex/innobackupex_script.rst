@@ -1,10 +1,13 @@
 =========================
- The innobackupex Script
+ The innobackupex Program
 =========================
 
-The |innobackupex| tool is a *Perl* script that acts as a wrapper for the :doc:`xtrabackup <../xtrabackup_bin/xtrabackup_binary>` *C* program. It is a patched version of the ``innobackup`` *Perl* script that *Oracle* distributes with the *InnoDB Hot Backup* tool. It enables more functionality by integrating |xtrabackup| and other functions such as file copying and streaming, and adds some convenience. It lets you perform point-in-time backups of |InnoDB| / |XtraDB| tables together with the schema definitions, |MyISAM| tables, and other portions of the server.
+The |innobackupex| program is a symlink to the :doc:`xtrabackup <../xtrabackup_bin/xtrabackup_binary>` *C* program. It lets you perform point-in-time backups of |InnoDB| / |XtraDB| tables together with the schema definitions, |MyISAM| tables, and other portions of the server. In previous versions |innobackupex| was implemented as a *Perl* script.
 
 This manual section explains how to use |innobackupex| in detail.
+
+.. warning::
+   The |innobackupex| program is deprecated. Please switch to |xtrabackup|.
 
 The Backup Cycle - Full Backups
 ===============================
