@@ -420,6 +420,7 @@ uint opt_lock_ddl_timeout = 0;
 
 const char *opt_history = NULL;
 my_bool opt_decrypt = FALSE;
+uint opt_read_buffer_size = 0;
 
 const char *ssl_mode_names_lib[] =
   {"DISABLED", "PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY",
@@ -677,6 +678,7 @@ enum options_xtrabackup
 
   OPT_XTRA_TABLES_COMPATIBILITY_CHECK,
   OPT_XTRA_CHECK_PRIVILEGES,
+  OPT_XTRA_READ_BUFFER_SIZE,
 };
 
 struct my_option xb_client_options[] =
@@ -1108,6 +1110,15 @@ struct my_option xb_client_options[] =
   {"check-privileges", OPT_XTRA_CHECK_PRIVILEGES, "Check database user "
     "privileges before performing any query.", &opt_check_privileges,
    &opt_check_privileges, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"read_buffer_size",
+   OPT_XTRA_READ_BUFFER_SIZE,
+   "Set datafile read buffer size, given value is scaled up to page size."
+   " Default is 10Mb.",
+   &opt_read_buffer_size,
+   &opt_read_buffer_size,
+   0, GET_UINT, OPT_ARG, UNIV_PAGE_SIZE_MAX*640,
+   UNIV_PAGE_SIZE_MAX, UINT_MAX, 0, UNIV_PAGE_SIZE_MAX, 0},
 
 #include "sslopt-longopts.h"
 

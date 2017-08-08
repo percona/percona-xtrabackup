@@ -168,6 +168,8 @@ extern uint		opt_safe_slave_backup_timeout;
 extern const char	*opt_history;
 extern my_bool		opt_decrypt;
 
+extern uint		opt_read_buffer_size;
+
 #if defined(HAVE_OPENSSL)
 extern uint opt_ssl_mode;
 extern my_bool opt_use_ssl_arg;

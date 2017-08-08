@@ -239,8 +239,9 @@ xb_fil_cur_open(
 	cursor->page_size_shift = page_size_shift;
 	cursor->zip_size = page_size.is_compressed() ? page_size.physical() : 0;
 
+	ut_a(opt_read_buffer_size >= UNIV_PAGE_SIZE);
 	/* Allocate read buffer */
-	cursor->buf_size = XB_FIL_CUR_PAGES * page_size.physical();
+	cursor->buf_size = opt_read_buffer_size;
 	cursor->orig_buf = static_cast<byte *>
 		(ut_malloc_nokey(cursor->buf_size + UNIV_PAGE_SIZE));
 	cursor->buf = static_cast<byte *>
