@@ -60,6 +60,7 @@ typedef struct {
 /* Encryption options */
 uint		ds_encrypt_encrypt_threads;
 ulonglong	ds_encrypt_encrypt_chunk_size;
+my_bool	ds_encrypt_modify_file_extension = TRUE;
 
 static ds_ctxt_t *encrypt_init(const char *root);
 static ds_file_t *encrypt_open(ds_ctxt_t *ctxt, const char *path,
@@ -143,6 +144,7 @@ encrypt_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 	ds_encrypt_file_t	*crypt_file;
 
 	char			new_name[FN_REFLEN];
+	const char*		used_name;
 	ds_file_t		*file;
 
 	xb_ad(ctxt->pipe_ctxt != NULL);
@@ -158,11 +160,26 @@ encrypt_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 
 	crypt_file = (ds_encrypt_file_t *) (file + 1);
 
-	/* Append the .xbcrypt extension to the filename */
-	fn_format(new_name, path, "", ".xbcrypt", MYF(MY_APPEND_EXT));
-	crypt_file->dest_file = ds_open(dest_ctxt, new_name, mystat);
+	/* xtrabackup and xbstream rely on fact that extension is appended on
+	   encryption and removed on decryption.
+	   That works well with piping compression and excryption datasinks,
+	   hinting on how to access contents of the file when it is needed.
+	   However, xbcrypt (and its users) does not expect such magic,
+	   and extension is set manually by the user or caller script.
+	   Here implicit extension modification causes more trouble than good.
+
+	   See also ds_decrypt_modify_file_extension . */
+	if (ds_encrypt_modify_file_extension) {
+		/* Append the .xbcrypt extension to the filename */
+		fn_format(new_name, path, "", ".xbcrypt", MYF(MY_APPEND_EXT));
+		used_name = new_name;
+	} else {
+		used_name = path;
+	}
+
+	crypt_file->dest_file = ds_open(dest_ctxt, used_name, mystat);
 	if (crypt_file->dest_file == NULL) {
-		msg("encrypt: ds_open(\"%s\") failed.\n", new_name);
+		msg("encrypt: ds_open(\"%s\") failed.\n", used_name);
 		goto err;
 	}
 
@@ -248,24 +265,24 @@ encrypt_write(ds_file_t *file, const void *buf, size_t len)
 						  &thd->data_mutex);
 			}
 
-			xb_a(threads[i].to_len > 0);
+			xb_a(thd->to_len > 0);
 
 			if (xb_crypt_write_chunk(crypt_file->xbcrypt_file,
-						 threads[i].to,
-						 threads[i].from_len +
+						 thd->to,
+						 thd->from_len +
 							XB_CRYPT_HASH_LEN,
-						 threads[i].to_len,
-						 threads[i].iv,
+						 thd->to_len,
+						 thd->iv,
 						 encrypt_iv_len)) {
 				msg("encrypt: write to the destination file "
 				    "failed.\n");
 				return 1;
 			}
 
-			crypt_file->bytes_processed += threads[i].from_len;
+			crypt_file->bytes_processed += thd->from_len;
 
-			pthread_mutex_unlock(&threads[i].data_mutex);
-			pthread_mutex_unlock(&threads[i].ctrl_mutex);
+			pthread_mutex_unlock(&thd->data_mutex);
+			pthread_mutex_unlock(&thd->ctrl_mutex);
 		}
 	}
 

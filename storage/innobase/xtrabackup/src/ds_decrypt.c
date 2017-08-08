@@ -68,7 +68,8 @@ typedef struct {
 	size_t			buf_size;
 } ds_decrypt_file_t;
 
-int		ds_decrypt_encrypt_threads = 1;
+uint		ds_decrypt_encrypt_threads = 1;
+my_bool	ds_decrypt_modify_file_extension = TRUE;
 
 static ds_ctxt_t *decrypt_init(const char *root);
 static ds_file_t *decrypt_open(ds_ctxt_t *ctxt, const char *path,
@@ -133,6 +134,8 @@ decrypt_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 	ds_decrypt_file_t	*crypt_file;
 
 	char			new_name[FN_REFLEN];
+	const char		*used_name = path;
+	char			*xbcrypt_ext_pos;
 	ds_file_t		*file;
 
 	xb_ad(ctxt->pipe_ctxt != NULL);
@@ -148,12 +151,26 @@ decrypt_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat)
 
 	crypt_file = (ds_decrypt_file_t *) (file + 1);
 
-	/* Remove the .xbcrypt extension from the filename */
-	strncpy(new_name, path, FN_REFLEN);
-	new_name[strlen(new_name) - 8] = 0;
-	crypt_file->dest_file = ds_open(dest_ctxt, new_name, mystat);
+	/* xtrabackup and xbstream rely on fact that extension is appended on
+	   encryption and removed on decryption.
+	   That works well with piping compression and excryption datasinks,
+	   hinting on how to access contents of the file when it is needed.
+	   However, xbcrypt (and its users) does not expect such magic,
+	   and extension is set manually by the user or caller script.
+	   Here implicit extension modification causes more trouble than good.
+
+	   See also ds_encrypt_modify_file_extension . */
+	if (ds_decrypt_modify_file_extension) {
+		/* Remove the .xbcrypt extension from the filename */
+		if ((xbcrypt_ext_pos = strstr(path, ".xbcrypt"))) {
+			strncpy(new_name, path, xbcrypt_ext_pos - path);
+			new_name[xbcrypt_ext_pos - path] = 0;
+			used_name = new_name;
+		}
+	}
+	crypt_file->dest_file = ds_open(dest_ctxt, used_name, mystat);
 	if (crypt_file->dest_file == NULL) {
-		msg("decrypt: ds_open(\"%s\") failed.\n", new_name);
+		msg("decrypt: ds_open(\"%s\") failed.\n", used_name);
 		goto err;
 	}
 
