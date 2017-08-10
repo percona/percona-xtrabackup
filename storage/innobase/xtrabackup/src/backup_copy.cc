@@ -845,7 +845,6 @@ error:
 	return false;
 }
 
-static
 bool
 backup_file_print(const char *filename, const char *message, int len)
 {
@@ -901,28 +900,6 @@ backup_file_printf(const char *filename, const char *fmt, ...)
 	}
 
 	result = backup_file_print(filename, buf, buf_len);
-
-	free(buf);
-	return(result);
-}
-
-bool
-backup_ds_printf(ds_file_t *dstfile, const char *fmt, ...)
-{
-	bool result  = false;
-	char *buf    = 0;
-	int  buf_len = 0;
-	va_list ap;
-
-	va_start(ap, fmt);
-	buf_len = vasprintf(&buf, fmt, ap);
-	va_end(ap);
-
-	if (buf_len == -1) {
-		return false;
-	}
-
-	result = backup_ds_print(dstfile, buf, buf_len);
 
 	free(buf);
 	return(result);

@@ -4,6 +4,7 @@ master_id=1
 slave_id=2
 slave2_id=3
 slave3_id=4
+binlog_slave_info_pattern='^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+;$'
 
 start_server_with_id $master_id
 start_server_with_id $slave_id
@@ -28,8 +29,27 @@ xtrabackup --backup --no-timestamp --slave-info --binlog-info=on --target-dir=$t
 run_cmd egrep -q '^mysql-bin.[0-9]+[[:space:]]+[0-9]+$' \
     $topdir/backup/xtrabackup_binlog_info
 
-run_cmd egrep -q '^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+;$' \
+run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
+
+mkdir $topdir/tar_backup $topdir/xbstream_backup
+
+vlog "Full backup of the slave server to a tar stream"
+xtrabackup --backup --no-timestamp --slave-info --binlog-info=on --stream=tar \
+    | tar -x -C $topdir/tar_backup
+
+vlog "Verifying that untared xtrabackup_slave_info is not corrupted"
+run_cmd egrep -q "$binlog_slave_info_pattern" \
+    $topdir/tar_backup/xtrabackup_slave_info
+
+vlog "Full backup of the slave server to a xbstream stream"
+xtrabackup --backup --no-timestamp --slave-info --binlog-info=on --stream=xbstream \
+    | xbstream -xv -C $topdir/xbstream_backup
+
+vlog "Verifying that xtrabackup_slave_info is not corrupted"
+run_cmd egrep -q "$binlog_slave_info_pattern" \
+    $topdir/xbstream_backup/xtrabackup_slave_info
+
 
 if is_server_version_higher_than 5.6.9
 then

@@ -12,11 +12,10 @@
 #define XTRABACKUP_INFO "xtrabackup_info"
 
 bool
-backup_file_printf(const char *filename, const char *fmt, ...)
-		__attribute__((format(printf, 2, 0)));
+backup_file_print(const char *filename, const char *message, int len);
 
 bool
-backup_ds_printf(ds_file_t *dstfile, const char *fmt, ...)
+backup_file_printf(const char *filename, const char *fmt, ...)
 		__attribute__((format(printf, 2, 0)));
 
 /************************************************************************
