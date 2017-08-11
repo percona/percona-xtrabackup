@@ -43,6 +43,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql.h>
 #include <mysqld.h>
 #include <my_sys.h>
+#include <stdlib.h>
 #include <string.h>
 #include <limits>
 #include "common.h"
@@ -59,6 +60,7 @@ char tool_args[2048];
 /* mysql flavor and version */
 mysql_flavor_t server_flavor = FLAVOR_UNKNOWN;
 unsigned long mysql_server_version = 0;
+uint slave_parallel_workers = 0;
 
 /* server capabilities */
 bool have_changed_page_bitmaps = false;
@@ -449,7 +451,10 @@ get_mysql_vars(MYSQL *connection)
 	}
 
 	if (slave_parallel_workers_var != NULL
-		&& atoi(slave_parallel_workers_var) > 0) {
+		&& (slave_parallel_workers = (uint)strtoul(
+				slave_parallel_workers_var,
+				NULL, 10)) > 0
+		&& errno != EINVAL ) {
 		have_multi_threaded_slave = true;
 	}
 
@@ -601,13 +606,6 @@ detect_mysql_capabilities_for_backup()
 		 	"line, but the server does not support Galera "
 		 	"replication. Ignoring the option.\n");
 		opt_galera_info = false;
-	}
-
-	if (opt_slave_info && have_multi_threaded_slave &&
-	    !have_gtid_slave) {
-	    	msg("The --slave-info option requires GTID enabled for a "
-			"multi-threaded slave.\n");
-		return(false);
 	}
 
 	return(true);
@@ -1044,6 +1042,80 @@ get_open_temp_tables(MYSQL *connection)
 }
 
 /*********************************************************************//**
+Wait until there are no gaps for MTS slave. Returns immediatelly if slave
+is using GTID-replication with 'MASTER_AUTO_POSITION = 1' or GTID on MariaDB.
+Waiting is limited by given amount of seconds, used waiting time is reported
+in output parameter.
+Dies on timeout. */
+static
+bool
+wait_for_mts_gaps(MYSQL *connection, uint max_sleep_time, uint *sleeped_for)
+{
+	const int sleep_time = 1;
+	int n_attempts = 0;
+
+	char *slave_sql_running = NULL;
+	char *auto_position = NULL;
+	char *using_gtid = NULL;
+
+	bool result = true;
+
+	mysql_variable gtid_status[] = {
+		{"Auto_Position", &auto_position},
+		{"Using_Gtid", &using_gtid},
+		{NULL, NULL}
+	};
+	mysql_variable sql_thread_status[] = {
+		{"Slave_SQL_Running", &slave_sql_running},
+		{NULL, NULL}
+	};
+	n_attempts = (int)max_sleep_time / sleep_time;
+
+	read_mysql_variables(connection, "SHOW SLAVE STATUS", gtid_status,
+			     false);
+	if ((auto_position && strcasecmp(auto_position, "1") == 0) ||
+	    (using_gtid && strcasecmp(using_gtid, "Yes") == 0)) {
+		goto cleanup;
+	}
+
+	ut_a(sleeped_for);
+	*sleeped_for = 0;
+	xb_mysql_query(connection, "START SLAVE UNTIL SQL_AFTER_MTS_GAPS",
+		       false);
+
+	read_mysql_variables(connection, "SHOW SLAVE STATUS", sql_thread_status, false);
+	while (slave_sql_running &&
+	       strcasecmp(slave_sql_running, "Yes") == 0 &&
+	       n_attempts-- > 0) {
+		msg_ts("Waiting %d seconds for SQL thread"
+		       "with `UNTIL SQL_AFTER_MTS_GAPS` to terminate"
+		       "(%d attempts remaining)...\n",
+		       sleep_time, n_attempts);
+
+		os_thread_sleep(sleep_time * 1000000);
+		*sleeped_for += sleep_time;
+
+		free_mysql_variables(sql_thread_status);
+		read_mysql_variables(connection, "SHOW SLAVE STATUS",
+				     sql_thread_status, false);
+	}
+
+	if (strcmp(slave_sql_running, "Yes") == 0) {
+		msg_ts("SQL thread is still running, forcing it to stop");
+		xb_mysql_query(connection, "STOP SLAVE SQL_THREAD",
+			       false);
+
+		result = false;
+		goto cleanup;
+	}
+
+cleanup:
+	free_mysql_variables(gtid_status);
+	free_mysql_variables(sql_thread_status);
+	return result;
+}
+
+/*********************************************************************//**
 Wait until it's safe to backup a slave.  Returns immediately if
 the host isn't a slave.  Currently there's only one check:
 Slave_open_temp_tables has to be zero.  Dies on timeout. */
@@ -1052,9 +1124,12 @@ wait_for_safe_slave(MYSQL *connection)
 {
 	char *read_master_log_pos = NULL;
 	char *slave_sql_running = NULL;
+	const uint sleep_time = 3;
+
 	int n_attempts = 1;
-	const int sleep_time = 3;
+	uint sleeped_for = 0;
 	int open_temp_tables = 0;
+	bool restore_workers=false;
 	bool result = true;
 
 	mysql_variable status[] = {
@@ -1078,14 +1153,30 @@ wait_for_safe_slave(MYSQL *connection)
 		xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
 	}
 
-	if (opt_safe_slave_backup_timeout > 0) {
-		n_attempts = opt_safe_slave_backup_timeout / sleep_time;
+	if (have_multi_threaded_slave && opt_safe_slave_backup_timeout > 0) {
+		if (!wait_for_mts_gaps(connection,
+				opt_safe_slave_backup_timeout - sleep_time,
+				&sleeped_for)) {
+			goto error;
+		}
+		if (slave_parallel_workers > 1) {
+			/* To avoid new gaps, run in single-threaded mode. */
+			xb_mysql_query(connection,
+				"SET @@GLOBAL.slave_parallel_workers = 1",
+				false);
+			restore_workers = true;
+		}
+	}
+
+	if (opt_safe_slave_backup_timeout > 0 &&
+	    opt_safe_slave_backup_timeout > sleeped_for) {
+		n_attempts = (opt_safe_slave_backup_timeout - sleeped_for)/
+				sleep_time;
 	}
 
 	open_temp_tables = get_open_temp_tables(connection);
 	msg_ts("Slave open temp tables: %d\n", open_temp_tables);
-
-	while (open_temp_tables && n_attempts--) {
+	while (open_temp_tables && n_attempts-- > 0) {
 		msg_ts("Starting slave SQL thread, waiting %d seconds, then "
 		       "checking Slave_open_temp_tables again (%d attempts "
 		       "remaining)...\n", sleep_time, n_attempts);
@@ -1098,21 +1189,30 @@ wait_for_safe_slave(MYSQL *connection)
 		msg_ts("Slave open temp tables: %d\n", open_temp_tables);
 	}
 
+	if (restore_workers) {
+		char query_buf[128] = {'\0'};
+		snprintf(query_buf, sizeof(query_buf),
+			 "SET @@GLOBAL.slave_parallel_workers = %u",
+			 slave_parallel_workers);
+		xb_mysql_query(connection, query_buf, false);
+	}
+
 	/* Restart the slave if it was running at start */
 	if (open_temp_tables == 0) {
 		msg_ts("Slave is safe to backup\n");
 		goto cleanup;
+	} else {
+		msg_ts("Slave_open_temp_tables did not become zero after "
+		       "%d seconds\n", opt_safe_slave_backup_timeout);
 	}
 
+error:
 	result = false;
 
 	if (sql_thread_started) {
 		msg_ts("Restarting slave SQL thread.\n");
 		xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
 	}
-
-	msg_ts("Slave_open_temp_tables did not become zero after "
-	       "%d seconds\n", opt_safe_slave_backup_timeout);
 
 cleanup:
 	free_mysql_variables(status);
