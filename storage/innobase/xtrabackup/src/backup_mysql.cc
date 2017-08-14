@@ -97,6 +97,9 @@ MYSQL *mysql_connection;
 /* Whether LOCK BINLOG FOR BACKUP has been issued during backup */
 static bool binlog_locked;
 
+/* Whether FLUSH BINARY LOGS has been issued during backup */
+static bool binlog_flushed;
+
 /* Whether LOCK TABLES FOR BACKUP / FLUSH TABLES WITH READ LOCK has been issued
 during backup */
 static bool tables_locked;
@@ -1123,6 +1126,18 @@ lock_binlog_maybe(MYSQL *connection)
 	return(false);
 }
 
+bool
+flush_binlogs_maybe(MYSQL *connection)
+{
+	if (!binlog_flushed) {
+		msg_ts("Executing FLUSH BINARY LOGS...\n");
+		xb_mysql_query(connection, "FLUSH BINARY LOGS", false, false);
+		binlog_flushed = true;
+		return (true);
+	}
+	return (false);
+}
+
 
 /*********************************************************************//**
 Releases either global read lock acquired with FTWRL and the binlog
@@ -1487,7 +1502,7 @@ write_current_binlog_file(MYSQL *connection)
 
 		lock_binlog_maybe(connection);
 
-		xb_mysql_query(connection, "FLUSH BINARY LOGS", false);
+		flush_binlogs_maybe(connection);
 
 		read_mysql_variables(connection, "SHOW MASTER STATUS",
 			status_after_flush, false);
@@ -1577,6 +1592,9 @@ write_binlog_info(MYSQL *connection)
 	gtid = (gtid_executed != NULL ? gtid_executed : gtid_current_pos);
 
 	if (mariadb_gtid || mysql_gtid) {
+		if (mysql_gtid && mysql_server_version >= 50705) {
+			flush_binlogs_maybe(connection);
+		}
 		ut_a(asprintf(&mysql_binlog_position,
 			"filename '%s', position '%s', "
 			"GTID of the last change '%s'",
