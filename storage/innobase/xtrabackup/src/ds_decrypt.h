@@ -25,6 +25,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 extern datasink_t	datasink_decrypt;
 
-extern int		ds_decrypt_encrypt_threads;
+extern uint		ds_decrypt_encrypt_threads;
+/* A switch that controls if `.xbcrypt` extension is removed from file name.*/
+extern my_bool		ds_decrypt_modify_file_extension;
 
 #endif

@@ -28,6 +28,8 @@ extern datasink_t datasink_encrypt;
 /* Encryption options */
 extern uint		ds_encrypt_encrypt_threads;
 extern ulonglong	ds_encrypt_encrypt_chunk_size;
+/* Switch that controls if `.xbcrypt` extension is appended to the file name. */
+extern my_bool		ds_encrypt_modify_file_extension;
 
 
 #endif
