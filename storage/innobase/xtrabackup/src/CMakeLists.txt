@@ -166,6 +166,11 @@ MYSQL_ADD_EXECUTABLE(xbcrypt
   xbcrypt_common.c
   xbcrypt_read.c
   xbcrypt_write.c
+  datasink.c
+  ds_encrypt.c
+  ds_decrypt.c
+  ds_local.c
+  ds_stdout.c
   )
 
 SET_TARGET_PROPERTIES(xbcrypt

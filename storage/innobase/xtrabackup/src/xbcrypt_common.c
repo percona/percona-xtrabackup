@@ -122,6 +122,7 @@ xb_crypt_init(uint *iv_len)
 	}
 
 	/* Determine the algorithm */
+	xb_a(ds_encrypt_algo < array_elements(encrypt_algos));
 	encrypt_algo = encrypt_algos[ds_encrypt_algo];
 
 	/* Set up the iv length */

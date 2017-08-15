@@ -48,8 +48,8 @@ TYPELIB xbstream_encrypt_algo_typelib=
 {array_elements(xbstream_encrypt_algo_names)-1,"",
 	xbstream_encrypt_algo_names, NULL};
 
-/* Need the following definitions to avoid linking with ds_*.o and their link
-dependencies */
+/* Following definitions are to avoid linking with unused datasinks
+   and their link dependencies */
 datasink_t datasink_archive;
 datasink_t datasink_xbstream;
 datasink_t datasink_compress;
