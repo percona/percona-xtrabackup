@@ -24,10 +24,18 @@ run_cmd_expect_failure $IB_BIN $IB_ARGS --no-timestamp --slave-info --no-lock \
   $topdir/backup
 
 vlog "Full backup of the slave server"
-xtrabackup --backup --no-timestamp --slave-info --binlog-info=on --target-dir=$topdir/backup
+xtrabackup --backup --target-dir=$topdir/backup \
+    --no-timestamp --slave-info --binlog-info=on \
+    2>&1 | tee $topdir/pxb.log
 
 run_cmd egrep -q '^mysql-bin.[0-9]+[[:space:]]+[0-9]+$' \
     $topdir/backup/xtrabackup_binlog_info
+
+run_cmd grep 'MySQL binlog position: ' $topdir/pxb.log | \
+    egrep 'filename '\''mysql-bin.\d+'\'', position '\''\d+'\'''
+
+run_cmd grep 'MySQL slave binlog position: ' $topdir/pxb.log | \
+    egrep 'master host '\''\w+'\'', filename mysql-bin.\d+'\'', position '\''\d+'\'', channel name: '\''\w*'\'''
 
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
