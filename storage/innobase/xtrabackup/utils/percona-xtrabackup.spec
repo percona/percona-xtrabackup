@@ -31,6 +31,7 @@ Requires:       perl(DBD::mysql), rsync
 Requires:	perl(Digest::MD5)
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
+
 %description
 Percona XtraBackup is OpenSource online (non-blockable) backup solution for InnoDB and XtraDB engines
 
@@ -74,25 +75,94 @@ make %{?_smp_mflags}
 #
 %install
 rm -rf $RPM_BUILD_ROOT
-make install DESTDIR=$RPM_BUILD_ROOT
+install -d $RPM_BUILD_ROOT/opt
+install -d $RPM_BUILD_ROOT/opt/percona-xtrabackup
+install -d $RPM_BUILD_ROOT/opt/percona-xtrabackup/2.3
+make install DESTDIR=$RPM_BUILD_ROOT/opt/percona-xtrabackup/2.3
+install -d $RPM_BUILD_ROOT/%{_datadir}
+install -d $RPM_BUILD_ROOT/%{_datadir}/percona-xtrabackup-test
+mv $RPM_BUILD_ROOT/opt/percona-xtrabackup/2.3/usr/share/percona-xtrabackup-test $RPM_BUILD_ROOT/usr/share/percona-xtrabackup-test
+
+
+%post
+BIN_PATH=/opt/percona-xtrabackup/2.3/usr/bin
+DOC_PATH=/opt/percona-xtrabackup/2.3/usr/share/man/man1
+FILES=$BIN_PATH/*
+for f in $FILES
+do
+  file=/usr/bin/$(basename $f)-23
+  if [ -L $file ];
+  then
+    rm -rf $file
+  fi
+  ln -s $f $file
+done
+FILES=$DOC_PATH/*
+for f in $FILES
+do
+  file=/usr/share/man/man1/$(basename $f)-23
+  if [ -L $file ];
+  then
+    rm -rf $file
+  fi
+  ln -s $f $file 
+done
+for f in /usr/bin/innobackupex /usr/bin/xtrabackup /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
+do
+  FileName=$(basename $f)
+  if [ -L $f ]; then
+    package=$(rpm -qfi $f | grep Name | awk '{print $3}')
+    if [ $package == 'percona-xtrabackup-24' ]; then
+      echo "You have percona-xtrabackup-24 installed please update it firstly!"
+    else
+      rm -rf $f
+      update-alternatives --install $f $FileName "/usr/bin/$FileName-23" 100
+    fi
+  elif [ -f $f ]; then
+    echo "You have percona-xtrabackup installed please update it firstly!"
+  else
+    update-alternatives --install $f $FileName "/usr/bin/$FileName-23" 100
+  fi
+done
+
+%postun
+if [ "$1" = 0 ]; then
+  for f in /usr/bin/innobackupex /usr/bin/xtrabackup /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
+  do
+    FileName=$(basename $f)
+    update-alternatives --remove $FileName "/usr/bin/$FileName-23"
+    rm -rf $f
+  done
+fi
+
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%{_bindir}/innobackupex
-%{_bindir}/xtrabackup
-%{_bindir}/xbstream
-%{_bindir}/xbcrypt
-%{_bindir}/xbcloud
-%{_bindir}/xbcloud_osenv
+/opt/percona-xtrabackup/2.3/%{_bindir}/innobackupex
+/opt/percona-xtrabackup/2.3/%{_bindir}/xtrabackup
+/opt/percona-xtrabackup/2.3/%{_bindir}/xbstream
+/opt/percona-xtrabackup/2.3/%{_bindir}/xbcrypt
+/opt/percona-xtrabackup/2.3/%{_bindir}/xbcloud
+/opt/percona-xtrabackup/2.3/%{_bindir}/xbcloud_osenv
 %doc COPYING
-%doc %{_mandir}/man1/*.1.gz
+%doc /opt/percona-xtrabackup/2.3/%{_mandir}/man1/*.1
 
 %files -n percona-xtrabackup-test
 %defattr(-,root,root,-)
 %{_datadir}/percona-xtrabackup-test
+
+
+%triggerpostun -- percona-xtrabackup < 2.3.9
+update-alternatives --install /usr/bin/innobackupex innobackupex "/usr/bin/innobackupex-23" 100
+update-alternatives --install /usr/bin/xtrabackup xtrabackup "/usr/bin/xtrabackup-23" 100
+update-alternatives --install /usr/bin/xbstream xbstream "/usr/bin/xbstream-23" 100
+update-alternatives --install /usr/bin/xbcrypt xbcrypt "/usr/bin/xbcrypt-23" 100
+update-alternatives --install /usr/bin/xbcloud xbcloud "/usr/bin/xbcloud-23" 100
+update-alternatives --install /usr/bin/xbcloud_osenv xbcloud_osenv "/usr/bin/xbcloud_osenv-23" 100
+
 
 %changelog
 * Mon Feb 13 2017 Evgeniy Patlan <evgeniy.patlan@percona.com>
