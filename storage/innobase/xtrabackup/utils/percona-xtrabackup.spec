@@ -26,7 +26,7 @@ BuildRequires:  curl-devel
 %if 0%{?rhel} > 6 
 BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6 
 %endif
-Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
+Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22
 Requires:       perl(DBD::mysql), rsync
 Requires:	perl(Digest::MD5)
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
@@ -120,16 +120,16 @@ do
   FileName=$(basename $f)
   if [ -L $f ]; then
     package=$(rpm -qfi $f | grep Name | awk '{print $3}')
-    if [ $package == 'percona-xtrabackup-24' ]; then
-      echo "You have percona-xtrabackup-24 installed please update it firstly!"
+    if [ $package == 'percona-xtrabackup' ]; then
+      echo "You have percona-xtrabackup installed please update it firstly!"
     else
       rm -rf $f
-      update-alternatives --install $f $FileName "/usr/bin/$FileName-23" 100
+      update-alternatives --install $f $FileName "/usr/bin/$FileName-24" 110
     fi
   elif [ -f $f ]; then
     echo "You have percona-xtrabackup installed please update it firstly!"
   else
-    update-alternatives --install $f $FileName "/usr/bin/$FileName-23" 100
+    update-alternatives --install $f $FileName "/usr/bin/$FileName-24" 110
   fi
 done
 
@@ -138,7 +138,7 @@ if [ "$1" = 0 ]; then
   for f in /usr/bin/innobackupex /usr/bin/xtrabackup /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
   do
     FileName=$(basename $f)
-    update-alternatives --remove $FileName "/usr/bin/$FileName-23"
+    update-alternatives --remove $FileName "/usr/bin/$FileName-24"
     rm -rf $f
   done
 fi
@@ -162,14 +162,13 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
-
-%triggerpostun -- percona-xtrabackup < 2.3.9
-update-alternatives --install /usr/bin/innobackupex innobackupex "/usr/bin/innobackupex-23" 100
-update-alternatives --install /usr/bin/xtrabackup xtrabackup "/usr/bin/xtrabackup-23" 100
-update-alternatives --install /usr/bin/xbstream xbstream "/usr/bin/xbstream-23" 100
-update-alternatives --install /usr/bin/xbcrypt xbcrypt "/usr/bin/xbcrypt-23" 100
-update-alternatives --install /usr/bin/xbcloud xbcloud "/usr/bin/xbcloud-23" 100
-update-alternatives --install /usr/bin/xbcloud_osenv xbcloud_osenv "/usr/bin/xbcloud_osenv-23" 100
+%triggerpostun -- percona-xtrabackup-24 < 2.4.8
+update-alternatives --install /usr/bin/innobackupex innobackupex "/usr/bin/innobackupex-24" 110
+update-alternatives --install /usr/bin/xtrabackup xtrabackup "/usr/bin/xtrabackup-24" 110
+update-alternatives --install /usr/bin/xbstream xbstream "/usr/bin/xbstream-24" 110
+update-alternatives --install /usr/bin/xbcrypt xbcrypt "/usr/bin/xbcrypt-24" 110
+update-alternatives --install /usr/bin/xbcloud xbcloud "/usr/bin/xbcloud-24" 110
+update-alternatives --install /usr/bin/xbcloud_osenv xbcloud_osenv "/usr/bin/xbcloud_osenv-24" 110
 
 
 %changelog
