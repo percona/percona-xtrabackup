@@ -1612,7 +1612,15 @@ innobase_get_cset_width(
 			}
 		} else {
 
-			ut_a(cset == 0);
+			if (cset != 0) {
+				/* Since we don't do anything fancy with the
+				data itself, it is safe to ignore missing
+				collation. (special case for collation that
+				isn't supported in vanilla MySQL) */
+				ib_logf(IB_LOG_LEVEL_WARN,
+					"Unknown collation #%lu.",
+					cset);
+			}
 		}
 
 		*mbminlen = *mbmaxlen = 0;
