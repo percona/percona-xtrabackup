@@ -162,7 +162,7 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
-%triggerpostun -- percona-xtrabackup-24 < 2.4.8
+%triggerpostun -- percona-xtrabackup-24 < 2.4.9
 update-alternatives --install /usr/bin/innobackupex innobackupex "/usr/bin/innobackupex-24" 110
 update-alternatives --install /usr/bin/xtrabackup xtrabackup "/usr/bin/xtrabackup-24" 110
 update-alternatives --install /usr/bin/xbstream xbstream "/usr/bin/xbstream-24" 110
