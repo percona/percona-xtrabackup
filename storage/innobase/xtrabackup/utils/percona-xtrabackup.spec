@@ -89,7 +89,7 @@ install -d $RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_versi
 make install DESTDIR=$RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}
 install -d $RPM_BUILD_ROOT/%{_datadir}
 install -d $RPM_BUILD_ROOT/%{_datadir}/percona-xtrabackup-test
-mv $RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/share/percona-xtrabackup-test $RPM_BUILD_ROOT/usr/share/percona-xtrabackup-test
+mv $RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/share/percona-xtrabackup-test-24 $RPM_BUILD_ROOT/usr/share/percona-xtrabackup-test-24
 
 
 %post
