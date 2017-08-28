@@ -155,7 +155,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test
 
 
-%triggerpostun -- percona-xtrabackup < 2.3.9
+%triggerpostun -- percona-xtrabackup < 2.3.10
 update-alternatives --install /usr/bin/innobackupex innobackupex "/usr/bin/innobackupex-23" 100
 update-alternatives --install /usr/bin/xtrabackup xtrabackup "/usr/bin/xtrabackup-23" 100
 update-alternatives --install /usr/bin/xbstream xbstream "/usr/bin/xbstream-23" 100
