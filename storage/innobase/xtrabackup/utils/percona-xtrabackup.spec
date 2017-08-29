@@ -95,6 +95,8 @@ mv $RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor
 %post
 BIN_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/bin
 DOC_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/share/man/man1
+cmd=''
+man_cmd=''
 FILES=$BIN_PATH/*
 for f in $FILES
 do
@@ -108,39 +110,49 @@ done
 FILES=$DOC_PATH/*
 for f in $FILES
 do
-  file=/usr/share/man/man1/$(basename $f)-%{xb_version_major}%{xb_version_minor}
+  FileName=$(basename $f)
+  file=/usr/share/man/man1/$FileName-%{xb_version_major}%{xb_version_minor}
   if [ -L $file ];
   then
     rm -rf $file
   fi
-  ln -s $f $file 
+  ln -s $f $file
+  man_cmd=" $man_cmd --slave /usr/share/man/man1/$FileName $FileName $file"
 done
-for f in /usr/bin/innobackupex /usr/bin/xtrabackup /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
+for f in /usr/bin/xtrabackup /usr/bin/innobackupex /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
 do
   FileName=$(basename $f)
   if [ -L $f ]; then
     package=$(rpm -qfi $f | grep Name | awk '{print $3}')
+    if [ -z "$package" ]; then
+      package="alternatives"
+    fi
     if [ $package == 'percona-xtrabackup' ]; then
       echo "You have percona-xtrabackup installed please update it firstly!"
     else
       rm -rf $f
-      update-alternatives --install $f $FileName "/usr/bin/$FileName-24" 110
+      if [ -z "$cmd" ]; then
+        cmd="update-alternatives --install $f $FileName /usr/bin/$FileName-24 110"
+      else
+        cmd="$cmd --slave $f $FileName /usr/bin/$FileName-24 "
+      fi
     fi
   elif [ -f $f ]; then
     echo "You have percona-xtrabackup installed please update it firstly!"
   else
-    update-alternatives --install $f $FileName "/usr/bin/$FileName-24" 110
+    if [ -z "$cmd" ]; then
+      cmd="update-alternatives --install $f $FileName /usr/bin/$FileName-24 110"
+    else
+      cmd="$cmd --slave $f $FileName /usr/bin/$FileName-24"
+    fi
   fi
 done
+cmd="$cmd $man_cmd"
+$cmd
 
 %postun
 if [ "$1" = 0 ]; then
-  for f in /usr/bin/innobackupex /usr/bin/xtrabackup /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
-  do
-    FileName=$(basename $f)
-    update-alternatives --remove $FileName "/usr/bin/$FileName-24"
-    rm -rf $f
-  done
+  update-alternatives --remove xtrabackup "/usr/bin/xtrabackup-24"
 fi
 
 
@@ -163,13 +175,27 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
 %triggerpostun -- percona-xtrabackup-24 < 2.4.9
-update-alternatives --install /usr/bin/innobackupex innobackupex "/usr/bin/innobackupex-24" 110
-update-alternatives --install /usr/bin/xtrabackup xtrabackup "/usr/bin/xtrabackup-24" 110
-update-alternatives --install /usr/bin/xbstream xbstream "/usr/bin/xbstream-24" 110
-update-alternatives --install /usr/bin/xbcrypt xbcrypt "/usr/bin/xbcrypt-24" 110
-update-alternatives --install /usr/bin/xbcloud xbcloud "/usr/bin/xbcloud-24" 110
-update-alternatives --install /usr/bin/xbcloud_osenv xbcloud_osenv "/usr/bin/xbcloud_osenv-24" 110
-
+DOC_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/share/man/man1
+cmd=''
+man_cmd=''
+FILES=$DOC_PATH/*
+for f in $FILES
+do
+  FileName=$(basename $f)
+  file=/usr/share/man/man1/$FileName-%{xb_version_major}%{xb_version_minor}
+  man_cmd=" $man_cmd --slave /usr/share/man/man1/$FileName $FileName $file"
+done
+for f in /usr/bin/xtrabackup /usr/bin/innobackupex /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
+do
+  FileName=$(basename $f)
+  if [ -z "$cmd" ]; then
+    cmd="update-alternatives --install $f $FileName /usr/bin/$FileName-24 110"
+  else
+    cmd="$cmd --slave $f $FileName /usr/bin/$FileName-24 "
+  fi
+done
+cmd="$cmd $man_cmd"
+$cmd
 
 %changelog
 * Wed Feb 03 2016 Tomislav Plavcic <tomislav.plavcic@percona.com>
