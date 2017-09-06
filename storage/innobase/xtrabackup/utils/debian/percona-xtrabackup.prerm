@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+
+update-alternatives --remove xtrabackup "/usr/bin/xtrabackup-23" || true
+for f in /usr/bin/xtrabackup-23 /usr/bin/innobackupex-23 /usr/bin/xbstream-23 /usr/bin/xbcrypt-23 /usr/bin/xbcloud-23 /usr/bin/xbcloud_osenv-23
+do
+  rm -f $f
+done
+#DEBHELPER#
+
+
+set +e
+
+exit 0

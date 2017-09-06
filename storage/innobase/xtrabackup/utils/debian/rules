@@ -4,7 +4,6 @@
 #export DH_VERBOSE=1
 
 NCPU=$(shell grep -c processor /proc/cpuinfo)
-
 # These are used for cross-compiling and for saving the configure script
 # from having to guess our platform (since we know it already)
 DEB_HOST_GNU_TYPE   ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
@@ -18,8 +17,8 @@ endif
 override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
-	cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
-	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test -DINSTALL_MANDIR=/usr/share/man .
+	cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/opt/percona-xtrabackup/2. -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
+	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/opt/percona-xtrabackup/2.3/percona-xtrabackup-test -DINSTALL_MANDIR=/opt/percona-xtrabackup/2.3 .
 else
 	# Dummy binaries that avoid compilation
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup

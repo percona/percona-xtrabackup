@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+rm -f /usr/share/percona-xtrabackup-test
+#DEBHELPER#
+
+set +e
+
+exit 0

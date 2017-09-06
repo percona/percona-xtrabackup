@@ -1,0 +1,76 @@
+#!/bin/sh
+
+set -e
+case "$1" in
+  configure)
+    BIN_PATH=/opt/percona-xtrabackup/2.3/bin
+    DOC_PATH=/opt/percona-xtrabackup/2.3/man1
+    cmd=''
+    man_cmd=''
+    FILES=$BIN_PATH/*
+    for f in $FILES
+    do
+      file=/usr/bin/$(basename $f)-23
+      if [ -L $file ];
+      then
+        rm -rf $file
+      fi
+      ln -s $f $file
+    done
+    FILES=$DOC_PATH/*
+    for f in $FILES
+    do
+      FileName=$(basename $f)
+      file=/usr/share/man/man1/$FileName-23
+      if [ -L $file ];
+      then
+        rm -rf $file
+      fi
+      ln -s $f $file
+      man_cmd=" $man_cmd --slave /usr/share/man/man1/$FileName $FileName $file"
+    done
+    for f in /usr/bin/xtrabackup /usr/bin/innobackupex /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
+    do
+      FileName=$(basename $f)
+      if [ -f $f ]; then
+        echo "You have percona-xtrabackup installed please update it firstly!"
+        exit 1
+      elif [ -L $f ]; then
+        package=$(dpkg -S $f | awk -F':' '{print $1}')
+        if [ -z "$package" ]; then
+          package="alternatives"
+        fi
+        if [ $package = 'percona-xtrabackup-24' ]; then
+          echo "You have percona-xtrabackup-24 installed please update it firstly!"
+          exit 1
+        else
+          rm -rf $f
+          if [ -z "$cmd" ]; then
+            cmd="update-alternatives --install $f $FileName /usr/bin/$FileName-23 100"
+          else
+            cmd="$cmd --slave $f $FileName /usr/bin/$FileName-23 "
+          fi
+        fi
+      else
+        if [ -z "$cmd" ]; then
+          cmd="update-alternatives --install $f $FileName /usr/bin/$FileName-23 100"
+        else
+          cmd="$cmd --slave $f $FileName /usr/bin/$FileName-23"
+        fi
+      fi
+    done
+    cmd="$cmd $man_cmd"
+    $cmd
+  ;;  
+
+  abort-upgrade|abort-remove|abort-configure)
+  ;;  
+
+  *)  
+    echo "postinst called with unknown argument '$1'" 1>&2
+    exit 1
+  ;;  
+esac
+#DEBHELPER#
+
+exit 0

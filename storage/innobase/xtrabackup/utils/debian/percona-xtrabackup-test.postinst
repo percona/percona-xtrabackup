@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set -e
+case "$1" in
+  configure)
+    if [ ! -L /usr/share/percona-xtranackup-test -a ! -f /usr/share/percona-xtranackup-test ]; then
+    ln -s /opt/percona-xtrabackup/2.3/percona-xtrabackup-test /usr/share/percona-xtrabackup-test
+  ;;
+
+  abort-upgrade|abort-remove|abort-configure)
+  ;;
+
+  *)
+    echo "postinst called with unknown argument '$1'" 1>&2
+    exit 1
+  ;;
+esac
+#DEBHELPER#
+
+exit 0
+
