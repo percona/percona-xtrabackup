@@ -1,2 +1,2 @@
-/usr/bin
-/usr/share/man/man1
+/opt/percona-xtrabackup/2.4/bin/
+/opt/percona-xtrabackup/2.4/man1/

@@ -26,9 +26,9 @@ Package: percona-xtrabackup-24
 Architecture: any
 Depends: libdbd-mysql-perl, rsync, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
-Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
-Breaks: xtrabackup (<< 2.0.0~)
-Replaces: xtrabackup (<< 2.0.0~)
+Conflicts: percona-xtrabackup-21, percona-xtrabackup-22
+Breaks: xtrabackup (<< 2.0.0~), percona-xtrabackup-24 (<< 2.4.9~)
+Replaces: xtrabackup (<< 2.0.0~), percona-xtrabackup-24 (<< 2.4.9~)
 Enhances: mysql-server
 Description: Open source backup tool for InnoDB and XtraDB
  Percona XtraBackup is an open-source hot backup utility for MySQL that
