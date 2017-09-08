@@ -32,7 +32,7 @@ case "$1" in
     for f in /usr/bin/xtrabackup /usr/bin/innobackupex /usr/bin/xbstream /usr/bin/xbcrypt /usr/bin/xbcloud /usr/bin/xbcloud_osenv
     do
       FileName=$(basename $f)
-      if [ -f $f ]; then
+      if [ -f $f -a ! -L $f ]; then
         echo "You have percona-xtrabackup installed please update it firstly!"
         exit 1
       elif [ -L $f ]; then
