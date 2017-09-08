@@ -145,7 +145,7 @@ if [ ! -L /usr/share/percona-xtrabackup-test -a ! -f /usr/share/percona-xtraback
   ln -s /opt/percona-xtrabackup/%{xb_version_major}%{xb_version_minor}/percona-xtrabackup-test /usr/share/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} || true
 fi
 
-%postun -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+%postun -n percona-xtrabackup-test
 rm -f /usr/share/percona-xtrabackup-test-percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
 %clean
