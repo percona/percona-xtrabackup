@@ -159,7 +159,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %files -n percona-xtrabackup-test
 %defattr(-,root,root,-)
-/opt/percona-xtrabackup/%{xb_version_major}%{xb_version_minor}/percona-xtrabackup-test
+/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/percona-xtrabackup-test
 
 %triggerpostun -- percona-xtrabackup < 2.3.10
 DOC_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/man1
