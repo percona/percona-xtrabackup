@@ -66,15 +66,9 @@ export CXX=${CXX-"g++"}
 export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
-%if 0%{?rhel} > 5
-  cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-    -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
+  cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor} \
+    -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/percona-xtrabackup-test -DINSTALL_MANDIR=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor} \
   -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" .
-%else
-  cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-    -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" .
-%endif
 
 #
 make %{?_smp_mflags}
@@ -83,18 +77,12 @@ make %{?_smp_mflags}
 #
 %install
 rm -rf $RPM_BUILD_ROOT
-install -d $RPM_BUILD_ROOT/opt
-install -d $RPM_BUILD_ROOT/opt/percona-xtrabackup
-install -d $RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}
-make install DESTDIR=$RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}
-install -d $RPM_BUILD_ROOT/%{_datadir}
-install -d $RPM_BUILD_ROOT/%{_datadir}/percona-xtrabackup-test-24
-mv $RPM_BUILD_ROOT/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/share/percona-xtrabackup-test-24 $RPM_BUILD_ROOT/usr/share/percona-xtrabackup-test-24
+make install DESTDIR=$RPM_BUILD_ROOT
 
 
 %post
-BIN_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/bin
-DOC_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/share/man/man1
+BIN_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/bin
+DOC_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/man1
 cmd=''
 man_cmd=''
 FILES=$BIN_PATH/*
@@ -155,27 +143,29 @@ if [ "$1" = 0 ]; then
   update-alternatives --remove xtrabackup "/usr/bin/xtrabackup-24"
 fi
 
+%post -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+if [ ! -L /usr/share/percona-xtrabackup-test -a ! -f /usr/share/percona-xtrabackup-test ]; then
+  ln -s /opt/percona-xtrabackup/%{xb_version_major}%{xb_version_minor}/percona-xtrabackup-test /usr/share/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} || true
+fi
+
+%postun -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+rm -f /usr/share/percona-xtrabackup-test-percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/%{_bindir}/innobackupex
-/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/%{_bindir}/xtrabackup
-/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/%{_bindir}/xbstream
-/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/%{_bindir}/xbcrypt
-/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/%{_bindir}/xbcloud
-/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/%{_bindir}/xbcloud_osenv
+/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/bin/*
 %doc COPYING
-%doc /opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/%{_mandir}/man1/*.1
+%doc /opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/man1/*.1
 
 %files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 %defattr(-,root,root,-)
-%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
+/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/percona-xtrabackup-test
 
 %triggerpostun -- percona-xtrabackup-24 < 2.4.9
-DOC_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/usr/share/man/man1
+DOC_PATH=/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/man1
 cmd=''
 man_cmd=''
 FILES=$DOC_PATH/*
