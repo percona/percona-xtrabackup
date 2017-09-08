@@ -153,7 +153,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/bin/innobackupex
+/opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/bin/*
 %doc COPYING
 %doc /opt/percona-xtrabackup/%{xb_version_major}.%{xb_version_minor}/man1/*.1
 
