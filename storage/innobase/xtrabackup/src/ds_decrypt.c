@@ -358,13 +358,15 @@ decrypt_write(ds_file_t *file, const void *buf, size_t len)
 	nthreads = crypt_ctxt->nthreads;
 
 	if (crypt_file->buf_len > 0) {
+		const size_t remainder = crypt_file->buf_len;
+		size_t new_data_size = 0;
 		thd = threads;
 
 		pthread_mutex_lock(&thd->ctrl_mutex);
-
 		do {
-			if (parse_result == XB_CRYPT_READ_INCOMPLETE) {
-				crypt_file->buf_size = crypt_file->buf_size * 2;
+			if (parse_result == XB_CRYPT_READ_INCOMPLETE
+			    || crypt_file->buf_size == remainder) {
+				crypt_file->buf_size *= 2;
 				crypt_file->buf = (uchar *) my_realloc(
 						PSI_NOT_INSTRUMENTED,
 						crypt_file->buf,
@@ -372,13 +374,16 @@ decrypt_write(ds_file_t *file, const void *buf, size_t len)
 						MYF(MY_FAE|MY_ALLOW_ZERO_PTR));
 			}
 
-			memcpy(crypt_file->buf + crypt_file->buf_len,
-			       buf, MY_MIN(crypt_file->buf_size -
-					   crypt_file->buf_len, len));
+			new_data_size = MY_MIN(crypt_file->buf_size -
+					       remainder, len);
+			xb_ad(new_data_size > 0u);
+			memcpy(crypt_file->buf + remainder, buf,
+			       new_data_size);
 
 			parse_result = parse_xbcrypt_chunk(
 				thd, crypt_file->buf,
-				crypt_file->buf_size, &bytes_processed);
+				remainder + new_data_size,
+				&bytes_processed);
 
 			if (parse_result == XB_CRYPT_READ_ERROR) {
 				pthread_mutex_unlock(&thd->ctrl_mutex);
@@ -386,10 +391,19 @@ decrypt_write(ds_file_t *file, const void *buf, size_t len)
 			}
 
 		} while (parse_result == XB_CRYPT_READ_INCOMPLETE &&
-			 crypt_file->buf_size < len);
+			 crypt_file->buf_size < remainder + len);
+		crypt_file->buf_len += new_data_size;
+
+		/* Give caller a chance to supply remaining data in subsequent
+		invocations, closing a file will report an error if there is
+		still some buffered data left unprocessed. */
+		if (parse_result == XB_CRYPT_READ_INCOMPLETE) {
+			pthread_mutex_unlock(&thd->ctrl_mutex);
+			return 0;
+		}
 
 		if (parse_result != XB_CRYPT_READ_CHUNK) {
-			msg("decrypt: incomplete data.\n");
+			msg("decrypt: failed to decrypt.\n");
 			pthread_mutex_unlock(&thd->ctrl_mutex);
 			return 1;
 		}
@@ -399,8 +413,9 @@ decrypt_write(ds_file_t *file, const void *buf, size_t len)
 		pthread_cond_signal(&thd->data_cond);
 		pthread_mutex_unlock(&thd->data_mutex);
 
-		len -= bytes_processed - crypt_file->buf_len;
-		buf += bytes_processed - crypt_file->buf_len;
+		xb_ad(bytes_processed > remainder);
+		len -= bytes_processed - remainder;
+		buf += bytes_processed - remainder;
 
 		/* reap */
 
@@ -535,7 +550,15 @@ decrypt_close(ds_file_t *file)
 	crypt_file = (ds_decrypt_file_t *) file->ptr;
 	dest_file = crypt_file->dest_file;
 
+	if (crypt_file->buf_len != 0) {
+		msg("decrypt: incomplete data, "
+		    "%zu bytes are still not decrypted.\n",
+		    crypt_file->buf_len);
+		rc = 2;
+	}
+
 	if (ds_close(dest_file)) {
+		msg("decrypt: failed to close dest file.\n");
 		rc = 1;
 	}
 

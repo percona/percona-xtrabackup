@@ -52,6 +52,7 @@ static void 		*opt_encrypt_key = NULL;
 static ulonglong	opt_encrypt_chunk_size = 0;
 static my_bool		opt_verbose = FALSE;
 static uint 		opt_encrypt_threads = 1;
+static uint		opt_read_buffer_size = 0;
 
 static uint 		encrypt_key_len = 0;
 
@@ -96,6 +97,13 @@ static struct my_option my_long_options[] =
 	 "The default value is 1",
 	 &opt_encrypt_threads, &opt_encrypt_threads, 0,
 	 GET_UINT, OPT_ARG, 1, 1, UINT_MAX, 0, 0, 0},
+
+	{"read-buffer-size", 'r',
+	 "Read buffer size. The defaut value is 10Mb.",
+	 &opt_read_buffer_size, &opt_read_buffer_size, 0, GET_UINT, OPT_ARG,
+	 10*1024*1024, 1, UINT_MAX,
+	 0, 0, 0
+	},
 
 	{"verbose", 'v', "Display verbose status output.",
 	 &opt_verbose, &opt_verbose,
@@ -291,12 +299,23 @@ process(File filein, ds_file_t* fileout, const char* action)
 	ulonglong		ttlbyteswritten = 0;
 
 	chunkbuf = (uchar *) my_malloc(PSI_NOT_INSTRUMENTED,
-				       opt_encrypt_chunk_size, MYF(MY_FAE));
-	while ((bytesread = my_read(filein, chunkbuf, opt_encrypt_chunk_size,
-				    MYF(MY_WME))) > 0) {
+				       opt_read_buffer_size, MYF(MY_FAE));
+	while (TRUE) {
+		bytesread = my_read(filein, chunkbuf, opt_read_buffer_size,
+				    MYF(MY_WME));
+		if (bytesread == 0) {
+			break;
+		}
+
+		if (bytesread == MY_FILE_ERROR) {
+			msg("%s failed to %s: can't read input.\n",
+			    my_progname, action);
+			goto err;
+		}
 
 		if (ds_write(fileout, chunkbuf, bytesread)) {
-			msg("%s failed to %s ", my_progname, action);
+			msg("%s failed to %s: can't write to output.\n",
+			    my_progname, action);
 			goto err;
 		}
 
