@@ -77,3 +77,29 @@ this can be done with the ``ulimit`` command for specific backup session or by
 editing the :file:`/etc/security/limits.conf` to change it globally (**NOTE**:
 the maximum possible value that can be set up is ``1048576`` which is a
 hard-coded constant in the Linux kernel).
+
+How to deal with skipping of redo logs for DDL operations?
+==========================================================
+
+To prevent creating corrupted backups when running DDL operations,
+Percona XtraBackup aborts if it detects that redo logging is disabled.
+In this case, the following error is printed::
+
+ [FATAL] InnoDB: An optimized (without redo logging) DDL operation has been performed. All modified pages may not have been flushed to the disk yet.
+ Percona XtraBackup will not be able to take a consistent backup. Retry the backup operation.
+
+.. note:: Redo logging is disabled during a `sorted index build
+   <https://dev.mysql.com/doc/refman/5.7/en/sorted-index-builds.html>`_
+
+To avoid this error,
+Percona XtraBackup can use metadata locks on tables while they are copied:
+
+* To block all DDL operations, use the :option:`--lock-ddl` option
+  that issues ``LOCK TABLES FOR BACKUP``.
+
+* If ``LOCK TABLES FOR BACKUP`` is not supported,
+  you can block DDL for each table
+  before XtraBackup starts to copy it
+  and until the backup is completed
+  using the :option:`--lock-ddl-per-table` option.
+

@@ -49,10 +49,6 @@ that your backups go smoothly and are recoverable.
 
 Limitations:
 
- * |Percona XtraBackup| 2.4 currently doesn't support `InnoDB Tablespace
-   Encryption
-   <http://dev.mysql.com/doc/refman/5.7/en/innodb-tablespace-encryption.html>`_.
-
  * The Aria storage engine is part of |MariaDB| and has been integrated in it
    for many years and Aria table files backup support has been added to
    |innobackupex| in 2011. The issue is that the engine uses recovery log files
