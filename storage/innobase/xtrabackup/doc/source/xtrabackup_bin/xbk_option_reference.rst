@@ -31,12 +31,12 @@ Options
 
 .. option:: --check-privileges
 
-   This option checks if |Percona XtraBackup| has all required privileges to
-   take the backup. When this option is used backup may terminate right after
-   starting if some of the required privileges are missing. However, there is
-   a level of uncertainty and some missing privileges may not be required to
-   perform a backup, those are marked as warnings and backup is not aborted.
-   In case of missing privileges the output can look like this:
+   This option checks if |Percona XtraBackup| has all required privileges.
+   If a missing privilege is required for the current operation,
+   it will terminate and print out an error message.
+   If a missing privilege is not required for the current operation,
+   but may be necessary for some other XtraBackup operation,
+   the process is not aborted and a warning is printed.
 
    .. code-block:: bash
 
