@@ -29,6 +29,12 @@ run_cmd xbcrypt -d -i ${test_file}.xbcrypt \
 vlog "Comparing..."
 run_cmd cmp inc/decrypt_v1_test_file.txt ${test_file}.txt
 
+vlog "Piping..."
+run_cmd xbcrypt -i inc/decrypt_v1_test_file.txt \
+    -a ${encrypt_algo} -k ${encrypt_key} \
+    | xbcrypt -d -a ${encrypt_algo} -k ${encrypt_key} \
+    > ${test_file}_pipes.txt
+run_cmd cmp inc/decrypt_v1_test_file.txt ${test_file}_pipes.txt
 
 vlog "Parallel encryption-decryption"
 run_cmd xbcrypt -i inc/decrypt_v1_test_file.txt \
