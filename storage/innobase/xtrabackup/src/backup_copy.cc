@@ -514,7 +514,8 @@ datafile_open(const char *file, datafile_cur_t *cursor, uint thread_n)
 
 	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
 
-	cursor->buf_size = 10 * 1024 * 1024;
+	ut_a(opt_read_buffer_size >= UNIV_PAGE_SIZE);
+	cursor->buf_size = opt_read_buffer_size;
 	cursor->buf = static_cast<byte *>(ut_malloc(cursor->buf_size));
 
 	return(true);

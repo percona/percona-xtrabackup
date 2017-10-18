@@ -240,8 +240,9 @@ xb_fil_cur_open(
 	cursor->page_size_shift = page_size_shift;
 	cursor->zip_size = zip_size;
 
+	ut_a(opt_read_buffer_size >= UNIV_PAGE_SIZE);
 	/* Allocate read buffer */
-	cursor->buf_size = XB_FIL_CUR_PAGES * page_size;
+	cursor->buf_size = opt_read_buffer_size;
 	cursor->orig_buf = static_cast<byte *>
 		(ut_malloc(cursor->buf_size + UNIV_PAGE_SIZE));
 	cursor->buf = static_cast<byte *>
