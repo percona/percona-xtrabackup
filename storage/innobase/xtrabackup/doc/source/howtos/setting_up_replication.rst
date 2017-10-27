@@ -35,6 +35,11 @@ Setting up a slave for replication with |Percona XtraBackup| is really a very st
 * ``Percona XtraBackup``
   The backup tool we will use. It should be installed in both computers for convenience.
 
+.. note:: It is not recommended to mix MySQL variants
+   (Percona Server, MySQL, MariaDB) in your replication setup.
+   This may produce incorrect :file:`xtrabackup_slave_info` file
+   when adding a new slave.
+
 STEP 1: Make a backup on ``TheMaster`` and prepare it
 =====================================================
 
@@ -42,34 +47,45 @@ At ``TheMaster``, issue the following to a shell:
 
 .. code-block:: console
 
-   TheMaster$ innobackupex --user=yourDBuser --password=MaGiCdB1 /path/to/backupdir 
+   TheMaster$ xtrabackup --backup --user=yourDBuser --password=MaGiCdB1 --target-dir=/path/to/backupdir 
 
 After this is finished you should get:
 
 .. code-block:: console
 
-   innobackupex: completed OK! 
+   xtrabackup: completed OK! 
 
-This will make a copy of your |MySQL| data dir to the /path/to/backupdir/$TIMESTAMP. You have told |Percona XtraBackup| (through the |innobackupex| script) to connect to the database server using your database user and password, and do a hot backup of all your data in it (all |MyISAM|, |InnoDB| tables and indexes in them).
+This will make a copy of your |MySQL| data dir
+to the :file:`/path/to/backupdir` directory.
+You have told |Percona XtraBackup| to connect to the database server
+using your database user and password,
+and do a hot backup of all your data in it
+(all |MyISAM|, |InnoDB| tables and indexes in them).
 
 In order for snapshot to be consistent you need to prepare the data:
 
 .. code-block:: console
 
-   TheMaster$ innobackupex --user=yourDBuser --password=MaGiCdB1 \
-              --apply-log /path/to/backupdir/$TIMESTAMP/
+   TheMaster$ xtrabackup --user=yourDBuser --password=MaGiCdB1 \
+                --prepare --target-dir=/path/to/backupdir
 
-You need to select path where your snapshot has been taken, for example /home/backups/2012-01-16_11-14-43. If everything is ok you should get the same OK message. Now the transaction logs are applied to the data files, and new ones are created: your data files are ready to be used by the MySQL server.
+You need to select path where your snapshot has been taken.
+If everything is ok you should get the same OK message.
+Now the transaction logs are applied to the data files,
+and new ones are created:
+your data files are ready to be used by the MySQL server.
 
-|Percona XtraBackup| knows where your data is by reading your :term:`my.cnf`. If you have your configuration file in a non-standard place, you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
+|Percona XtraBackup| knows where your data is by reading your :term:`my.cnf`.
+If you have your configuration file in a non-standard place,
+you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
 
-If you want to skip writing the username/password every time you want to access |MySQL|, you can set it up in your $HOME folder. Just edit .my.cnf and add:
+If you want to skip writing the user name and password
+every time you want to access |MySQL|,
+you can set it up in :file:`.mylogin.cnf` as follows::
 
-.. code-block:: console
-   
-   [client]
-   user=root
-   pass=MaGiCdB1
+ mysql_config_editor set --login-path=client --host=localhost --user=root --password
+
+For more information, see `MySQL Configuration Utility <https://dev.mysql.com/doc/refman/5.6/en/mysql-config-editor.html>`.
 
 This is will give you root access to MySQL. 
 
@@ -80,7 +96,7 @@ Use rsync or scp to copy the data from Master to Slave. If you're syncing the da
 
 .. code-block:: console
 
-   TheMaster$ rsync -avpP -e ssh /path/to/backupdir/$TIMESTAMP TheSlave:/path/to/mysql/
+   TheMaster$ rsync -avpP -e ssh /path/to/backupdir TheSlave:/path/to/mysql/
 
 After data has been copied you can back up the original or previously installed |MySQL| :term:`datadir` (**NOTE**: Make sure mysqld is shut down before you move the contents of its datadir, or move the snapshot into its datadir.):
 
@@ -92,7 +108,7 @@ and move the snapshot from ``TheMaster`` in its place:
 
 .. code-block:: console
 
-   TheSlave$ mv /path/to/mysql/$TIMESTAMP /path/to/mysql/datadir
+   TheSlave$ xtrabackup --move-back --target-dir=/path/to/mysql/backupdir
 
 After you copy data over, make sure |MySQL| has proper permissions to access them.
 
@@ -193,8 +209,8 @@ At ``TheSlave``, do a full backup:
 
 .. code-block:: console
 
-   TheSlave$ innobackupex --user=yourDBuser --password=MaGiCiGaM \
-             --slave-info /path/to/backupdir 
+   TheSlave$ xtrabackup --user=yourDBuser --password=MaGiCiGaM \
+               --backup --slave-info --target-dir=/path/to/backupdir
 
 By using the :option:`--slave-info` |Percona XtraBackup| creates additional file called :file:`xtrabackup_slave_info`.
 
@@ -202,13 +218,13 @@ Apply the logs:
 
 .. code-block:: console
 
-   TheSlave$ innobackupex --apply-log --use-memory=2G /path/to/backupdir/$TIMESTAMP/
+   TheSlave$ xtrabackup --prepare --use-memory=2G --target-dir=/path/to/backupdir/
 
 Copy the directory from the ``TheSlave`` to ``TheNewSlave`` (**NOTE**: Make sure mysqld is shut down on ``TheNewSlave`` before you copy the contents the snapshot into its :term:`datadir`.): 
 
 .. code-block:: console
 
-   rsync -avprP -e ssh /path/to/backupdir/$TIMESTAMP TheNewSlave:/path/to/mysql/datadir
+   rsync -avprP -e ssh /path/to/backupdir TheNewSlave:/path/to/mysql/datadir
 
 Add additional grant on the master:
 
@@ -247,6 +263,6 @@ and start the slave:
 
 .. code-block:: mysql
 
-   TheSlave|mysql> START SLAVE;
+   TheNEWSlave|mysql> START SLAVE;
 
 If both IO and SQL threads are running when you check the ``TheNewSlave``, server is replicating ``TheMaster``.
