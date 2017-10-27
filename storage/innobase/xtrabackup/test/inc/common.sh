@@ -501,6 +501,7 @@ function setup_slave()
     shift
 
     switch_server $slave_id_arg
+    mysql -e "STOP SLAVE"
     while [ "$#" -ne 0 ]
     do
         local master_id_arg=$1
