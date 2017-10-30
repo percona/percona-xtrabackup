@@ -5,6 +5,8 @@ slave_id=2
 slave2_id=3
 slave3_id=4
 binlog_slave_info_pattern='^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+;$'
+pxb_log_binlog_info_pattern='filename '\''mysql-bin.[0-9]+'\'', position '\''[0-9]+'\'''
+pxb_log_slave_info_pattern='master host '\''[a-zA-Z0-9\.-]+'\'', filename '\''mysql-bin.[0-9]+'\'', position '\''[0-9]+'\'', channel name: '\''[a-zA-Z0-9\.-]*'\'''
 
 start_server_with_id $master_id
 start_server_with_id $slave_id
@@ -31,11 +33,10 @@ xtrabackup --backup --target-dir=$topdir/backup \
 run_cmd egrep -q '^mysql-bin.[0-9]+[[:space:]]+[0-9]+$' \
     $topdir/backup/xtrabackup_binlog_info
 
-run_cmd grep 'MySQL binlog position: ' $topdir/pxb.log | \
-    egrep 'filename '\''mysql-bin.\d+'\'', position '\''\d+'\'''
+run_cmd egrep "MySQL binlog position: $pxb_log_binlog_info_pattern" $topdir/pxb.log
 
-run_cmd grep 'MySQL slave binlog position: ' $topdir/pxb.log | \
-    egrep 'master host '\''\w+'\'', filename mysql-bin.\d+'\'', position '\''\d+'\'', channel name: '\''\w*'\'''
+run_cmd egrep "MySQL slave binlog position: $pxb_log_slave_info_pattern" $topdir/pxb.log
+#    egrep 'master host '\''\w+'\'', filename mysql-bin.\d+'\'', position '\''\d+'\'', channel name: '\''\w*'\'''
 
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
@@ -96,6 +97,6 @@ then
     vlog "Full backup of the GTID slave server"
     xtrabackup --backup --no-timestamp --slave-info --target-dir=$topdir/backup
 
-    run_cmd egrep -q '^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+;$' \
+    run_cmd egrep -q "$binlog_slave_info_pattern" \
         $topdir/backup/xtrabackup_slave_info
 fi
