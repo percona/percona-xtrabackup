@@ -86,7 +86,7 @@ public:
 
     /** Lock for protecting the queue. */
     mysql_mutex_t m_lock;
-  } __attribute__((aligned(CPU_LEVEL1_DCACHE_LINESIZE)));
+  };
 
 public:
   Stage_manager()

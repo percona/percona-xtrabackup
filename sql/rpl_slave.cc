@@ -2953,6 +2953,7 @@ bool show_slave_status(THD* thd, Master_info* mi)
       break;
     case Relay_log_info::UNTIL_SQL_AFTER_MTS_GAPS:
       until_type= "SQL_AFTER_MTS_GAPS";
+      break;
 #ifndef DBUG_OFF
     case Relay_log_info::UNTIL_DONE:
       until_type= "DONE";

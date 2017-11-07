@@ -790,6 +790,7 @@ public:
         is_handled= FALSE;
         break;
       }
+      // Fall through
     case ER_COLUMNACCESS_DENIED_ERROR:
     case ER_VIEW_NO_EXPLAIN: /* Error was anonymized, ignore all the same. */
     case ER_PROCACCESS_DENIED_ERROR:
