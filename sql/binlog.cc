@@ -4021,6 +4021,7 @@ read_gtids_from_binlog(const char *filename, Gtid_set *all_gtids,
         break;
       }
     }
+    // Fall through.
     default:
       // if we found any other event type without finding a
       // previous_gtids_log_event, then the rest of this binlog

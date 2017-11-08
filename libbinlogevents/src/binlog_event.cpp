@@ -170,6 +170,8 @@ Log_event_header(const char* buf, uint16_t binlog_version)
     @endverbatim
    */
 
+    // Fall through.
+
   default:
     memcpy(&flags, buf + FLAGS_OFFSET, sizeof(flags));
     flags= le16toh(flags);

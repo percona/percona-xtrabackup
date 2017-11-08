@@ -532,8 +532,8 @@ User_var_event(const char* buf, unsigned int event_len,
                          (description_event->footer()->checksum_alg ==
                           BINLOG_CHECKSUM_ALG_OFF));
   size_t data_written= (header()->data_written- checksum_verify);
-  BAPI_ASSERT(((bytes_read == data_written) ? 0 : BINLOG_CHECKSUM_LEN)||
-              ((bytes_read == data_written - 1) ? 0 : BINLOG_CHECKSUM_LEN));
+  BAPI_ASSERT((bytes_read == data_written - (checksum_verify ? 0 : BINLOG_CHECKSUM_LEN))||
+              (bytes_read == data_written - 1 - (checksum_verify ? 0 : BINLOG_CHECKSUM_LEN)));
 #endif
     if ((header()->data_written - bytes_read) > 0)
     {

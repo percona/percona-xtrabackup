@@ -13,6 +13,21 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+MACRO(MY_ADD_C_WARNING_FLAG WARNING_FLAG)
+  MY_CHECK_C_COMPILER_FLAG("-${WARNING_FLAG}" HAVE_${WARNING_FLAG})
+  IF(HAVE_${WARNING_FLAG})
+    SET(MY_C_WARNING_FLAGS "${MY_C_WARNING_FLAGS} -${WARNING_FLAG}")
+  ENDIF()
+ENDMACRO()
+
+MACRO(MY_ADD_CXX_WARNING_FLAG WARNING_FLAG)
+  STRING(REPLACE "c++" "cpp" WARNING_VAR ${WARNING_FLAG})
+  MY_CHECK_CXX_COMPILER_FLAG("-${WARNING_FLAG}" HAVE_${WARNING_VAR})
+  IF(HAVE_${WARNING_VAR})
+    SET(MY_CXX_WARNING_FLAGS "${MY_CXX_WARNING_FLAGS} -${WARNING_FLAG}")
+  ENDIF()
+ENDMACRO()
+
 # Common warning flags for GCC, G++, Clang and Clang++
 SET(MY_WARNING_FLAGS "-Wall -Wextra -Wformat-security -Wvla")
 
@@ -23,6 +38,11 @@ SET(MY_C_WARNING_FLAGS
 # Common warning flags for G++ and Clang++
 SET(MY_CXX_WARNING_FLAGS
     "${MY_WARNING_FLAGS} -Woverloaded-virtual -Wno-unused-parameter")
+
+# The default =3 given by -Wextra is a bit too strict for our code.
+IF(CMAKE_COMPILER_IS_GNUCXX)
+  MY_ADD_CXX_WARNING_FLAG("Wimplicit-fallthrough=2")
+ENDIF()
 
 # Extra warning flags for Clang++
 IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
