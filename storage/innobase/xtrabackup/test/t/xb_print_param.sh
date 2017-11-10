@@ -44,3 +44,8 @@ innodb_checksum_algorithm=strict_crc32
 innodb_log_checksum_algorithm=none
 innodb_buffer_pool_filename=/some/buffer/pool/file
 EOF
+
+diff -u <($XB_BIN --no-defautls 2>/dev/null | grep -E log.buffer.size) - <<EOF
+  --innodb-log-buffer-size=# 
+innodb-log-buffer-size            16777216
+EOF
