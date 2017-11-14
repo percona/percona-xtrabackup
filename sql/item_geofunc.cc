@@ -1341,6 +1341,7 @@ bool Item_func_geomfromgeojson::fix_fields(THD *thd, Item **ref)
       maybe_null= (args[0]->maybe_null || args[1]->maybe_null ||
                    args[2]->maybe_null);
     }
+    // Fall through.
   case 2:
     {
       // Validate options argument
@@ -1351,6 +1352,7 @@ bool Item_func_geomfromgeojson::fix_fields(THD *thd, Item **ref)
       }
       maybe_null= (args[0]->maybe_null || args[1]->maybe_null);
     }
+    // Fall through.
   case 1:
     {
       /*
@@ -1832,7 +1834,7 @@ append_geometry(Geometry::wkb_parser *parser, Json_object *geometry,
                                    add_short_crs_urn,
                                    add_long_crs_urn,
                                    geometry_srid);
-          else if (Geometry::wkb_multilinestring)
+          else if (header.wkb_type == Geometry::wkb_multilinestring)
             result= append_linestring(parser, points, mbr, calling_function,
                                       max_decimal_digits,
                                       add_bounding_box,

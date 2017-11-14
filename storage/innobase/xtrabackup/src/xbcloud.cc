@@ -1986,7 +1986,7 @@ bool swift_delete(swift_auth_info *auth, const char *container,
 	container_list *list;
 
 	if ((list = swift_list(auth, container, name)) == NULL) {
-		return(CURLE_FAILED_INIT);
+		return(false);
 	}
 
 	for (size_t i = 0; i < list->object_count; i++) {
@@ -2003,14 +2003,14 @@ bool swift_delete(swift_auth_info *auth, const char *container,
 				fprintf(stderr, "error: failed to delete "
 						"chunk %s\n", chunk_name);
 				container_list_free(list);
-				return(CURLE_FAILED_INIT);
+				return(false);
 			}
 		}
 	}
 
 	container_list_free(list);
 
-	return(CURLE_OK);
+	return(true);
 }
 
 /*********************************************************************//**
@@ -2704,8 +2704,7 @@ int main(int argc, char **argv)
 
 	} else if (opt_mode == MODE_DELETE) {
 
-		if (swift_delete(&info, opt_swift_container, opt_name)
-				   != CURLE_OK) {
+		if (!swift_delete(&info, opt_swift_container, opt_name)) {
 			fprintf(stderr, "error: delete failed\n");
 			return(EXIT_FAILURE);
 		}

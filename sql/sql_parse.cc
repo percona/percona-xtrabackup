@@ -3511,6 +3511,7 @@ end_with_restore_list:
       DBUG_PRINT("debug", ("Just after generate_incident()"));
     }
 #endif
+    /* Fall through */
   case SQLCOM_INSERT:
   case SQLCOM_REPLACE_SELECT:
   case SQLCOM_INSERT_SELECT:
@@ -4087,6 +4088,7 @@ end_with_restore_list:
       initialize this variable because RESET shares the same code as FLUSH
     */
     lex->no_write_to_binlog= 1;
+    /* Fall through */
   case SQLCOM_FLUSH:
   {
     int write_to_binlog;

@@ -5909,10 +5909,6 @@ xb_space_create_file(
 			return(false);
 		}
 
-		if (error == OS_FILE_DISK_FULL) {
-			return(DB_OUT_OF_FILE_SPACE);
-		}
-
 		return(false);
 	}
 
@@ -6565,8 +6561,7 @@ next_file_item_1:
 		        goto next_datadir_item;
 		}
 
-		sprintf(dbpath, "%s/%s", path,
-								dbinfo.name);
+		fn_format(dbpath, dbinfo.name, path, "", MYF(0));
 		os_normalize_path(dbpath);
 
 		dbdir = os_file_opendir(dbpath, false);

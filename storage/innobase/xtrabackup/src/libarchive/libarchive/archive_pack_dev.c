@@ -60,6 +60,9 @@ __RCSID("$NetBSD$");
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#ifdef MAJOR_IN_SYSMACROS
+#include <sys/sysmacros.h>
+#endif
 
 #include "archive_pack_dev.h"
 

@@ -62,6 +62,7 @@ int mi_panic(enum ha_panic_function flag)
 	if (mi_lock_database(info,F_UNLCK))
 	  error=my_errno();
       }
+      break;
     case HA_PANIC_READ:			/* Restore to before WRITE */
       if (info->was_locked)
       {
