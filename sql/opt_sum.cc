@@ -1031,13 +1031,14 @@ static int maxmin_in_range(bool max_fl, Field* field, Item *cond)
 
   if (cond->used_tables() != field->table->map)
     return 0;
-  bool less_fl= 0;
+  bool less_fl= false;
   switch (((Item_func*) cond)->functype()) {
   case Item_func::BETWEEN:
     return cond->val_int() == 0;                // Return 1 if WHERE is false
   case Item_func::LT_FUNC:
   case Item_func::LE_FUNC:
-    less_fl= 1;
+    less_fl= true;
+    // Fall through
   case Item_func::GT_FUNC:
   case Item_func::GE_FUNC:
   {

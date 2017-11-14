@@ -5789,8 +5789,7 @@ next_file_item_1:
 		        goto next_datadir_item;
 		}
 
-		sprintf(dbpath, "%s/%s", path,
-								dbinfo.name);
+		fn_format(dbpath, dbinfo.name, path, "", MYF(0));
 		srv_normalize_path_for_win(dbpath);
 
 		dbdir = os_file_opendir(dbpath, FALSE);

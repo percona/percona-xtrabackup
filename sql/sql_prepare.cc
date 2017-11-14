@@ -2089,6 +2089,7 @@ static bool check_prepared_statement(Prepared_statement *stmt)
     /* mysql_test_update returns 2 if we need to switch to multi-update */
     if (res != 2)
       break;
+    /* fall through */
 
   case SQLCOM_UPDATE_MULTI:
     res= mysql_test_multiupdate(stmt, tables, res == 2);
