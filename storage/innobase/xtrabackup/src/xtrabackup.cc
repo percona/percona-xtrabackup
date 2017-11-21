@@ -1117,7 +1117,7 @@ struct my_option xb_client_options[] =
    " Default is 10Mb.",
    &opt_read_buffer_size,
    &opt_read_buffer_size,
-   0, GET_UINT, OPT_ARG, UNIV_PAGE_SIZE_MAX*640,
+   0, GET_UINT, OPT_ARG, 10*1024*1024,
    UNIV_PAGE_SIZE_MAX, UINT_MAX, 0, UNIV_PAGE_SIZE_MAX, 0},
 
 #include "sslopt-longopts.h"
