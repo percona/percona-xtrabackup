@@ -22,6 +22,7 @@ function restore_from()
     else
         vlog "Preparing $backup_path"
     fi
+
     run_cmd xtrabackup --prepare $extra --target-dir=$backup_path
 
     while [ "$#" -ne 0 ]
@@ -48,41 +49,41 @@ function test_backup_with_custom_read_buffer()
 {
     local buffer_size=$1
     local backup_dest=$topdir/backup_${buffer_size}
-    local backup_dest_base=$topdir/backup_${buffer_size}_base
-    local backup_dest_inc=$topdir/backup_${buffer_size}_inc
+    local backup_dest_base=${backup_dest}_base
+    local backup_dest_inc=${backup_dest}_inc
 
-    vlog "$buffer_size buffer size"
-    vlog "Regular backup."
+    record_db_state incremental_sample
+    vlog "Regular backup : $buffer_size buffer size"
     xtrabackup --backup --target-dir=$backup_dest \
         --read_buffer_size=$buffer_size
 
     mkdir $backup_dest_base
     cp -r $backup_dest/* $backup_dest_base
 
-    vlog "Restoring."
+    vlog "Restoring : $buffer_size buffer size"
     restore_from $backup_dest
 
-    vlog "Verifying."
+    vlog "Verifying : $buffer_size buffer size"
     verify_db_state incremental_sample
 
-    vlog "Inserting more data into table"
+    vlog "Inserting more data into table : $buffer_size buffer size"
     multi_row_insert incremental_sample.test \({1000..1500},200\)
     record_db_state incremental_sample
 
-    vlog "Incremental backup."
+    vlog "Incremental backup  : $buffer_size buffer size"
     xtrabackup --backup \
         --incremental-basedir=$backup_dest_base \
         --target-dir=$backup_dest_inc
 
-    vlog "Restoring incremental."
-    restore_from $backup_dest $backup_dest_inc
+    vlog "Restoring incremental : $buffer_size buffer size"
+    restore_from $backup_dest_base $backup_dest_inc
 
-    vlog "Verifying incremental."
+    vlog "Verifying incremental : $buffer_size buffer size"
     verify_db_state incremental_sample
 }
 
 load_dbase_schema incremental_sample
-multi_row_insert incremental_sample.test \({1..1000},100\)
+multi_row_insert incremental_sample.test \({1..999},100\)
 
 vlog "Creating a MyISAM-powered clone of the incremental_sample.test"
 mysql -e "show create table incremental_sample.test;" \
@@ -96,7 +97,6 @@ $(cat $topdir/test_myISAM.sql);
 insert into test_MyISAM select * from test;
 EOF
 
-record_db_state incremental_sample
 
 test_backup_with_custom_read_buffer 1Kb
 
