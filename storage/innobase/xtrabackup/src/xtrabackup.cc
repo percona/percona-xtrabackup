@@ -7638,7 +7638,7 @@ int main(int argc, char **argv)
 	if (xtrabackup_throttle && !xtrabackup_backup) {
 		xtrabackup_throttle = 0;
 		msg("xtrabackup: warning: --throttle has effect "
-		    "only with --backup");
+		    "only with --backup\n");
 	}
 
 	/* cannot execute both for now */
