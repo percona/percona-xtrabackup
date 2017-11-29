@@ -180,7 +180,7 @@ Options
 .. option:: --encrypt-threads=#
 
    This option specifies the number of worker threads that will be used for
-   parallel encryption. It is passed directly to the xtrabackup child process.
+   parallel encryption/decryption.
    See the :program:`xtrabackup` :doc:`documentation
    <../xtrabackup_bin/xtrabackup_binary>` for more details.
 
@@ -303,7 +303,10 @@ Options
 
    This option specifies the number of threads to use to copy multiple data
    files concurrently when creating a backup. The default value is 1 (i.e., no
-   concurrent transfer).
+   concurrent transfer). In |Percona XtraBackup| 2.3.10 and newer, this option
+   can be used with :option:`xtrabackup --copy-back` option to copy the user
+   data files in parallel (redo logs and system tablespaces are copied in the
+   main thread).
 
 .. option:: --password=PASSWORD
 
