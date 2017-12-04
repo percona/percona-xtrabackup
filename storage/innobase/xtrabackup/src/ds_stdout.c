@@ -109,7 +109,7 @@ stdout_close(ds_file_t *file)
 {
 	my_free(file);
 
-	return 1;
+	return 0;
 }
 
 static
