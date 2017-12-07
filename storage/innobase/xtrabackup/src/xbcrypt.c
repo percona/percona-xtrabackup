@@ -53,8 +53,6 @@ static my_bool		opt_verbose = FALSE;
 static uint 		opt_encrypt_threads = 1;
 static uint		opt_read_buffer_size = 0;
 
-static uint 		encrypt_key_len = 0;
-
 static struct my_option my_long_options[] =
 {
 	{"help", '?', "Display this help and exit.",
@@ -159,26 +157,6 @@ main(int argc, char **argv)
 	if (get_options(&argc, &argv)) {
 		goto cleanup;
 	}
-	/* Now set up the key */
-	if (opt_encrypt_key == NULL && opt_encrypt_key_file == NULL) {
-		msg("%s: no encryption key or key file specified.\n",
-		    my_progname);
-		return 1;
-	} else if (opt_encrypt_key && opt_encrypt_key_file) {
-		msg("%s: both encryption key and key file specified.\n",
-		    my_progname);
-		return 1;
-	} else if (opt_encrypt_key_file) {
-		if (!xb_crypt_read_key_file(opt_encrypt_key_file,
-					    &opt_encrypt_key,
-					    &encrypt_key_len)) {
-			msg("%s: unable to read encryption key file \"%s\".\n",
-			    opt_encrypt_key_file, my_progname);
-			return 1;
-		}
-	} else {
-		encrypt_key_len = strlen(opt_encrypt_key);
-	}
 
 	if (opt_input_file) {
 		MY_STAT 	input_file_stat;
@@ -269,8 +247,8 @@ cleanup:
 		my_close(filein, MYF(MY_WME));
 	}
 
-	if (fileout) {
-		ds_close(fileout);
+	if (fileout && ds_close(fileout)) {
+		result = EXIT_FAILURE;
 	}
 	if (crypto_ds) {
 		ds_destroy(crypto_ds);
