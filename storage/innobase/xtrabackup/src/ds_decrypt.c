@@ -55,8 +55,6 @@ typedef struct {
 	uint			nthreads;
 	int			encrypt_algo;
 	size_t			chunk_size;
-	char			*encrypt_key;
-	char			*encrypt_key_file;
 } ds_decrypt_ctxt_t;
 
 typedef struct {
@@ -613,7 +611,9 @@ create_worker_threads(uint n)
 			goto err;
 		}
 
-		xb_crypt_cipher_open(&thd->cipher_handle);
+		if (xb_crypt_cipher_open(&thd->cipher_handle)) {
+			goto err;
+		}
 
 		pthread_mutex_lock(&thd->ctrl_mutex);
 
