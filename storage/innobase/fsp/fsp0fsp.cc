@@ -277,9 +277,14 @@ fsp_flags_is_valid(
 
 	/* Only single-table and not temp tablespaces use the encryption
 	clause. */
-	if (is_encryption && (is_shared || is_temp)) {
+//	if (is_encryption && (is_shared || is_temp)) {
+//		return(false);
+//	}
+
+	if (is_encryption &&  is_temp) {
 		return(false);
 	}
+
 
 #if UNIV_FORMAT_MAX != UNIV_FORMAT_B
 # error UNIV_FORMAT_MAX != UNIV_FORMAT_B, Add more validations.
