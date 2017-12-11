@@ -2,7 +2,7 @@ start_server
 
 vlog "Full backup"
 
-mysql -e "CREATE TEMPORARY TABLE test.tmp (a INT) ENGINE=InnoDB"
+mysql -e "CREATE TABLE test.tmp (a INT) ENGINE=InnoDB"
 mysql -e "INSERT INTO test.tmp VALUES(1)"
 
 
