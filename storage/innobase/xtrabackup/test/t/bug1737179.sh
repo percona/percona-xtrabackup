@@ -15,7 +15,7 @@ vlog "Prepare full"
 
 xtrabackup --prepare --apply-log-only \
     --throttle=40 \
-    --target-dir=$topdir/data/full > tee $topdir/pxb.log 2>&1
+    --target-dir=$topdir/data/full > $topdir/pxb.log 2>&1
 
 vlog "Prepare incremental"
 xtrabackup --prepare --apply-log-only \
