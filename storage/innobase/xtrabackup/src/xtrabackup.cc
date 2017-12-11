@@ -7790,10 +7790,10 @@ next_node:
 	}
 
 	/* print the binary log position  */
-	if (!recv_needed_recovery) {
-        trx_sys_print_mysql_binlog_offset();
-        msg("\n");
-    }
+//	if (!recv_needed_recovery) {
+//        trx_sys_print_mysql_binlog_offset();
+//        msg("\n");
+//    }
 
 	/* output to xtrabackup_binlog_pos_innodb and (if
 	backup_safe_binlog_info was available on the server) to
