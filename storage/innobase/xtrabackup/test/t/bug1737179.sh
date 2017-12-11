@@ -22,4 +22,4 @@ xtrabackup --prepare --apply-log-only \
     --throttle=40 \
     --target-dir=$topdir/data/full --incremental-dir=$topdir/data/delta >> $topdir/pxb.log 2>&1
 
-run_cmd grep 'InnoDB: xtrabackup: Last MySQL binlog file position' $topdir/pxb.log > $topdir/output
+run_cmd grep 'InnoDB: xtrabackup: Last MySQL binlog file position' $topdir/pxb.log
