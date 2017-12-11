@@ -1,34 +1,20 @@
 start_server
 
-function run_create() {
-local name=$1
-mysql <<EOF
-CREATE TEMPORARY TABLE $name (a INT) ENGINE=InnoDB;
-EOF
-}
-
-function run_insert() {
-local name=$1
-local val=$2
-mysql <<EOF
-INSERT INTO $name VALUES($val);
-EOF
-}
-
 vlog "Full backup"
 
-run_create test.tmp
-run_insert test.tmp 1
+mysql -e "CREATE TEMPORARY TABLE test.tmp (a INT) ENGINE=InnoDB"
+mysql -e "INSERT INTO test.tmp VALUES(1)"
+
 
 xtrabackup --backup \
     --target-dir=$topdir/data/full
 
 vlog "Incremental backup"
 
-run_insert test.tmp 2
-run_insert test.tmp 3
-run_insert test.tmp 4
-run_insert test.tmp 5
+mysql -e "INSERT INTO test.tmp VALUES(2)"
+mysql -e "INSERT INTO test.tmp VALUES(3)"
+mysql -e "INSERT INTO test.tmp VALUES(4)"
+mysql -e "INSERT INTO test.tmp VALUES(5)"
 
 xtrabackup --backup \
     --target-dir=$topdir/data/delta \
