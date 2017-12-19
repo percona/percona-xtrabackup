@@ -2140,7 +2140,7 @@ mdl_lock_table(ulint space_id)
 void
 mdl_unlock_all()
 {
-	msg_ts("Unlocking MDL for all tables");
+	msg_ts("Unlocking MDL for all tables\n");
 
 	xb_mysql_query(mdl_con, "COMMIT", false, true);
 
