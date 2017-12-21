@@ -959,7 +959,7 @@ struct my_option xb_client_options[] =
    "unblock the global lock. Default is \"all\".",
    (uchar*) &opt_kill_long_query_type,
    (uchar*) &opt_kill_long_query_type, &query_type_typelib,
-   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_SELECT, 0, 0, 0, 0, 0},
+   GET_ENUM, REQUIRED_ARG, QUERY_TYPE_ALL, 0, 0, 0, 0, 0},
 
   {"history", OPT_HISTORY,
    "This option enables the tracking of backup history in the "
