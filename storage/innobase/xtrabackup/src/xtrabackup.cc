@@ -8014,6 +8014,11 @@ xb_init()
 	int n_mixed_options;
 
 	/* sanity checks */
+    if (opt_lock_ddl && opt_lock_ddl_per_table) {
+        msg("Error: %s and %s are mutually exclusive\n",
+            "--lock-ddl", "--lock-ddl-per-table");
+        return(false);
+    }
 
 	if (opt_slave_info
 		&& opt_no_lock
