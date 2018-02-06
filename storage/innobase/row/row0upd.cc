@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -174,7 +174,7 @@ NOTE that this function will temporarily commit mtr and lose the
 pcur position!
 
 @return DB_SUCCESS or an error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_upd_check_references_constraints(
 /*=================================*/
@@ -223,6 +223,9 @@ row_upd_check_references_constraints(
 		row_mysql_freeze_data_dictionary(trx);
 	}
 
+	DEBUG_SYNC_C_IF_THD(thr_get_trx(thr)->mysql_thd,
+			    "foreign_constraint_check_for_insert");
+
 	for (dict_foreign_set::iterator it = table->referenced_set.begin();
 	     it != table->referenced_set.end();
 	     ++it) {
@@ -248,6 +251,26 @@ row_upd_check_references_constraints(
 				ref_table = dict_table_open_on_name(
 					foreign->foreign_table_name_lookup,
 					FALSE, FALSE, DICT_ERR_IGNORE_NONE);
+			}
+
+			/** dict_operation_lock is held both here and by truncate operations.
+			If a truncate is in process by another concurrent thread,
+			there can be 2 conditions possible:
+			1) row_truncate_table_for_mysql() is not yet called.
+			2) Truncate releases dict_operation_lock
+			during eviction of pages from buffer pool
+			for a file-per-table tablespace.
+
+			In case of (1), truncate will wait for FK operation
+			to complete.
+			In case of (2), truncate will be rolled forward even
+			if it is interrupted. So if the foreign table is
+			undergoing a truncate, ignore the FK check. */
+
+			if (foreign_table != NULL
+			    && fil_space_is_being_truncated(
+						foreign_table->space)) {
+				continue;
 			}
 
 			/* NOTE that if the thread ends up waiting for a lock
@@ -965,7 +988,8 @@ row_upd_build_difference_binary(
 
 			dfield_t*	vfield = innobase_get_computed_value(
 				update->old_vrow, col, index,
-				&v_heap, heap, NULL, thd, mysql_table, NULL);
+				&v_heap, heap, NULL, thd, mysql_table,
+				NULL, NULL, NULL);
 
 			if (!dfield_data_is_binary_equal(
 				dfield, vfield->len,
@@ -1980,7 +2004,8 @@ row_upd_store_v_row(
 					innobase_get_computed_value(
 						node->row, col, index,
 						&heap, node->heap, NULL,
-						thd, mysql_table, NULL);
+						thd, mysql_table, NULL,
+						NULL, NULL);
 				}
 			}
 		}
@@ -2082,7 +2107,7 @@ srv_mbr_print(const byte* data)
 Updates a secondary index entry of a row.
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_upd_sec_index_entry(
 /*====================*/
@@ -2313,7 +2338,7 @@ Updates the secondary index record if it is changed in the row update or
 deletes it if this is a delete.
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_upd_sec_step(
 /*=============*/
@@ -2759,7 +2784,7 @@ row_upd_del_mark_clust_rec(
 Updates the clustered index record.
 @return DB_SUCCESS if operation successfully completed, DB_LOCK_WAIT
 in case of a lock wait, else error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_upd_clust_step(
 /*===============*/

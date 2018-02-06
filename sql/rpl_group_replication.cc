@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -12,10 +12,6 @@
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
-
-#ifndef HAVE_REPLICATION
-#define HAVE_REPLICATION
-#endif
 
 #include "rpl_group_replication.h"
 #include "rpl_channel_service_interface.h"
@@ -142,6 +138,7 @@ Group_replication_handler* group_replication_handler= NULL;
 /*
   Group Replication plugin handler function accessors.
 */
+#ifdef HAVE_REPLICATION
 int group_replication_init(const char* plugin_name)
 {
   if (initialize_channel_service_interface())
@@ -149,23 +146,39 @@ int group_replication_init(const char* plugin_name)
     return 1;
   }
 
-  if (group_replication_handler != NULL)
-    return 1;
+  mysql_mutex_lock(&LOCK_group_replication_handler);
+  if (group_replication_handler == NULL)
+  {
+    group_replication_handler= new Group_replication_handler(plugin_name);
 
-  group_replication_handler= new Group_replication_handler(plugin_name);
+    if (group_replication_handler)
+    {
+      int ret= group_replication_handler->init();
+      mysql_mutex_unlock(&LOCK_group_replication_handler);
+      return ret;
+    }
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
 
-  if (group_replication_handler)
-    return group_replication_handler->init();
   return 1;
 }
+#endif
 
 int group_replication_cleanup()
 {
-  if (!group_replication_handler)
+  mysql_mutex_lock(&LOCK_group_replication_handler);
+  if (group_replication_handler != NULL)
+  {
+    delete group_replication_handler;
+    group_replication_handler= NULL;
+  }
+  else
+  {
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
     return 1;
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
 
-  delete group_replication_handler;
-  group_replication_handler= NULL;
   return 0;
 }
 
@@ -178,6 +191,7 @@ bool is_group_replication_plugin_loaded()
 
 int group_replication_start()
 {
+  mysql_mutex_lock(&LOCK_group_replication_handler);
   if (is_group_replication_plugin_loaded())
   {
     /*
@@ -196,16 +210,24 @@ int group_replication_start()
     gtid_mode_lock->rdlock();
     int ret= group_replication_handler->start();
     gtid_mode_lock->unlock();
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
     return ret;
   }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
   sql_print_error("Group Replication plugin is not installed.");
   return 1;
 }
 
 int group_replication_stop()
 {
+  mysql_mutex_lock(&LOCK_group_replication_handler);
   if (is_group_replication_plugin_loaded())
-   return group_replication_handler->stop();
+  {
+    int ret= group_replication_handler->stop();
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
+    return ret;
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
 
   sql_print_error("Group Replication plugin is not installed.");
   return 1;
@@ -213,8 +235,15 @@ int group_replication_stop()
 
 bool is_group_replication_running()
 {
+  mysql_mutex_lock(&LOCK_group_replication_handler);
   if (is_group_replication_plugin_loaded())
-    return group_replication_handler->is_running();
+  {
+    bool ret= group_replication_handler->is_running();
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
+    return ret;
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
+
   return false;
 }
 
@@ -228,8 +257,15 @@ int set_group_replication_retrieved_certification_info(View_change_log_event *vi
 bool get_group_replication_connection_status_info(
     const GROUP_REPLICATION_CONNECTION_STATUS_CALLBACKS& callbacks)
 {
+  mysql_mutex_lock(&LOCK_group_replication_handler);
   if (is_group_replication_plugin_loaded())
-    return group_replication_handler->get_connection_status_info(callbacks);
+  {
+    int ret= group_replication_handler->get_connection_status_info(callbacks);
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
+    return ret;
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
+
   return true;
 }
 
@@ -237,34 +273,59 @@ bool get_group_replication_group_members_info(
     unsigned int index,
     const GROUP_REPLICATION_GROUP_MEMBERS_CALLBACKS& callbacks)
 {
+  mysql_mutex_lock(&LOCK_group_replication_handler);
   if (is_group_replication_plugin_loaded())
-    return group_replication_handler->get_group_members_info(index, callbacks);
+  {
+    bool ret=
+      group_replication_handler->get_group_members_info(index, callbacks);
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
+    return ret;
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
+
   return true;
 }
 
 bool get_group_replication_group_member_stats_info(
     const GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS& callbacks)
 {
+  mysql_mutex_lock(&LOCK_group_replication_handler);
   if (is_group_replication_plugin_loaded())
-    return group_replication_handler->get_group_member_stats_info(callbacks);
+  {
+    bool ret= group_replication_handler->get_group_member_stats_info(callbacks);
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
+    return ret;
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
+
   return true;
 }
 
 unsigned int get_group_replication_members_number_info()
 {
+  mysql_mutex_lock(&LOCK_group_replication_handler);
   if (is_group_replication_plugin_loaded())
-    return group_replication_handler->get_members_number_info();
+  {
+    unsigned int ret= group_replication_handler->get_members_number_info();
+    mysql_mutex_unlock(&LOCK_group_replication_handler);
+    return ret;
+  }
+  mysql_mutex_unlock(&LOCK_group_replication_handler);
+
   return 0;
 }
+
 
 
 /*
   Server methods exported to plugin through
   include/mysql/group_replication_priv.h
 */
-
-void get_server_host_port_uuid(char **hostname, uint *port, char** uuid)
-{
+#ifdef HAVE_REPLICATION
+void get_server_parameters(char **hostname, uint *port, char** uuid,
+                           unsigned int *out_server_version,
+                           st_server_ssl_variables* server_ssl_variables)
+  {
   /*
     use startup option report-host and report-port when provided,
     as value provided by glob_hostname, which used gethostname() function
@@ -282,8 +343,43 @@ void get_server_host_port_uuid(char **hostname, uint *port, char** uuid)
     *port= mysqld_port;
 
   *uuid= server_uuid;
+
+  //Convert server version to hex
+
+  ulong major= 0, minor= 0, patch= 0;
+  char *pos= server_version, *end_pos;
+  //extract each server decimal number, e.g., for 5.9.30 -> 5, 9 and 30
+  major= strtoul(pos, &end_pos, 10);  pos=end_pos+1;
+  minor= strtoul(pos, &end_pos, 10);  pos=end_pos+1;
+  patch= strtoul(pos, &end_pos, 10);
+
+  /*
+    Convert to a equivalent hex representation.
+    5.9.30 -> 0x050930
+    version= 0 x 16^5 + 5 x 16^4 + 0 x 16^3 + 9 x 16^2 + 3 x 16^1 + 0 x 16^0
+  */
+  int v1= patch / 10;
+  int v0= patch - v1 * 10;
+  int v3= minor / 10;
+  int v2= minor - v3 * 10;
+  int v5= major / 10;
+  int v4= major - v5 * 10;
+
+  *out_server_version= v0 + v1 * 16 + v2 * 256 + v3 * 4096 + v4 * 65536 + v5 * 1048576;
+
+  server_ssl_variables->have_ssl_opt= (have_ssl == SHOW_OPTION_YES);
+  server_ssl_variables->ssl_ca= opt_ssl_ca;
+  server_ssl_variables->ssl_capath= opt_ssl_capath;
+  server_ssl_variables->tls_version= opt_tls_version;
+  server_ssl_variables->ssl_cert= opt_ssl_cert;
+  server_ssl_variables->ssl_cipher= opt_ssl_cipher;
+  server_ssl_variables->ssl_key= opt_ssl_key;
+  server_ssl_variables->ssl_crl= opt_ssl_crl;
+  server_ssl_variables->ssl_crlpath= opt_ssl_crlpath;
+
   return;
 }
+#endif
 
 ulong get_server_id()
 {
@@ -321,12 +417,14 @@ get_server_startup_prerequirements(Trans_context_info& requirements,
   requirements.gtid_mode=
     get_gtid_mode(has_lock ? GTID_MODE_LOCK_GTID_MODE :
                   GTID_MODE_LOCK_NONE);
+  requirements.log_slave_updates= opt_log_slave_updates;
   requirements.transaction_write_set_extraction=
     global_system_variables.transaction_write_set_extraction;
   requirements.mi_repository_type= opt_mi_repository_id;
   requirements.rli_repository_type= opt_rli_repository_id;
   requirements.parallel_applier_type= mts_parallel_option;
   requirements.parallel_applier_workers= opt_mts_slave_parallel_workers;
+  requirements.parallel_applier_preserve_commit_order= opt_slave_preserve_commit_order;
 }
 #endif //HAVE_REPLICATION
 

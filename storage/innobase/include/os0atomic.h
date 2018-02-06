@@ -1,5 +1,5 @@
 /*****************************************************************************
-Copyright (c) 1995, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -208,6 +208,8 @@ amount to decrement. There is no atomic substract function on Windows */
 Returns true if swapped, ptr is pointer to target, old_val is value to
 compare to, new_val is the value to swap in. */
 
+#if defined(HAVE_GCC_SYNC_BUILTINS)
+
 # define os_compare_and_swap(ptr, old_val, new_val) \
 	__sync_bool_compare_and_swap(ptr, old_val, new_val)
 
@@ -220,9 +222,47 @@ compare to, new_val is the value to swap in. */
 # define os_compare_and_swap_uint32(ptr, old_val, new_val) \
 	os_compare_and_swap(ptr, old_val, new_val)
 
+#else
+
+UNIV_INLINE
+bool
+os_compare_and_swap_ulint(volatile ulint* ptr, ulint old_val, ulint new_val)
+{
+  return __atomic_compare_exchange_n(ptr, &old_val, new_val, 0,
+                                     __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+
+UNIV_INLINE
+bool
+os_compare_and_swap_lint(volatile lint* ptr, lint old_val, lint new_val)
+{
+  return __atomic_compare_exchange_n(ptr, &old_val, new_val, 0,
+				     __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+
+UNIV_INLINE
+bool
+os_compare_and_swap_uint32(volatile ib_uint32_t* ptr, ib_uint32_t old_val, ib_uint32_t new_val)
+{
+  return __atomic_compare_exchange_n(ptr, &old_val, new_val, 0,
+                                     __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+
+#endif /* HAVE_GCC_SYNC_BUILTINS */
+
 # ifdef HAVE_IB_ATOMIC_PTHREAD_T_GCC
+#if defined(HAVE_GCC_SYNC_BUILTINS)
 #  define os_compare_and_swap_thread_id(ptr, old_val, new_val) \
 	os_compare_and_swap(ptr, old_val, new_val)
+#else
+UNIV_INLINE
+bool
+os_compare_and_swap_thread_id(volatile os_thread_id_t* ptr, os_thread_id_t old_val, os_thread_id_t new_val)
+{
+  return __atomic_compare_exchange_n(ptr, &old_val, new_val, 0,
+                                     __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+#endif /* HAVE_GCC_SYNC_BUILTINS */
 #  define INNODB_RW_LOCKS_USE_ATOMICS
 #  define IB_ATOMICS_STARTUP_MSG \
 	"Mutexes and rw_locks use GCC atomic builtins"
@@ -235,8 +275,13 @@ compare to, new_val is the value to swap in. */
 Returns the resulting value, ptr is pointer to target, amount is the
 amount of increment. */
 
+#if defined(HAVE_GCC_SYNC_BUILTINS)
 # define os_atomic_increment(ptr, amount) \
 	__sync_add_and_fetch(ptr, amount)
+#else
+# define os_atomic_increment(ptr, amount) \
+	__atomic_add_fetch(ptr, amount, __ATOMIC_SEQ_CST)
+#endif /* HAVE_GCC_SYNC_BUILTINS */
 
 # define os_atomic_increment_lint(ptr, amount) \
 	os_atomic_increment(ptr, amount)
@@ -253,8 +298,13 @@ amount of increment. */
 /* Returns the resulting value, ptr is pointer to target, amount is the
 amount to decrement. */
 
+#if defined(HAVE_GCC_SYNC_BUILTINS)
 # define os_atomic_decrement(ptr, amount) \
 	__sync_sub_and_fetch(ptr, amount)
+#else
+# define os_atomic_decrement(ptr, amount) \
+	__atomic_sub_fetch(ptr, amount, __ATOMIC_SEQ_CST)
+#endif /* HAVE_GCC_SYNC_BUILTINS */
 
 # define os_atomic_decrement_lint(ptr, amount) \
 	os_atomic_decrement(ptr, amount)
@@ -276,7 +326,15 @@ amount to decrement. */
 #define CAS(l, o, n)		os_atomic_val_compare_and_swap((l), (o), (n))
 
 /** barrier definitions for memory ordering */
-#ifdef HAVE_IB_GCC_ATOMIC_THREAD_FENCE
+#if defined(HAVE_IB_MACHINE_BARRIER_SOLARIS)
+# define HAVE_MEMORY_BARRIER
+# include <mbarrier.h>
+# define os_rmb	__machine_r_barrier()
+# define os_wmb	__machine_w_barrier()
+# define IB_MEMORY_BARRIER_STARTUP_MSG \
+	"Solaris memory ordering functions are used for memory barrier"
+
+#elif defined HAVE_IB_GCC_ATOMIC_THREAD_FENCE
 # define HAVE_MEMORY_BARRIER
 # define os_rmb	__atomic_thread_fence(__ATOMIC_ACQUIRE)
 # define os_wmb	__atomic_thread_fence(__ATOMIC_RELEASE)
@@ -289,14 +347,6 @@ amount to decrement. */
 # define os_wmb	__sync_synchronize()
 # define IB_MEMORY_BARRIER_STARTUP_MSG \
 	"GCC builtin __sync_synchronize() is used for memory barrier"
-
-#elif defined(HAVE_IB_MACHINE_BARRIER_SOLARIS)
-# define HAVE_MEMORY_BARRIER
-# include <mbarrier.h>
-# define os_rmb	__machine_r_barrier()
-# define os_wmb	__machine_w_barrier()
-# define IB_MEMORY_BARRIER_STARTUP_MSG \
-	"Solaris memory ordering functions are used for memory barrier"
 
 #elif defined(HAVE_WINDOWS_MM_FENCE) && defined(_WIN64)
 # define HAVE_MEMORY_BARRIER

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -44,7 +44,7 @@ int mysql_check_errors;
 const int SYS_TABLE_COUNT = 1;
 const int SYS_VIEW_COUNT = 100;
 const int SYS_TRIGGER_COUNT = 2;
-const int SYS_FUNCTION_COUNT = 21;
+const int SYS_FUNCTION_COUNT = 22;
 const int SYS_PROCEDURE_COUNT = 26;
 
 /**
@@ -131,6 +131,61 @@ public:
   }
 
   /**
+    @param query Query to execute
+    @return -1 if error, 1 if equal to value, 0 if different from value
+  */
+  int execute_conditional_query(const char* query, const char* value_to_compare)
+  {
+    int condition_result= -1;
+    if (!mysql_query(this->m_mysql_connection, query))
+    {
+      MYSQL_RES *result = mysql_store_result(this->m_mysql_connection);
+      if (result)
+      {
+        MYSQL_ROW row;
+        if ((row = mysql_fetch_row(result)))
+        {
+          condition_result= (strcmp(row[0], value_to_compare) == 0);
+        }
+        mysql_free_result(result);
+      }
+    }
+    return condition_result;
+  }
+
+  /**
+    @return -1 if error, 1 if user is not there, 0 if it is
+  */
+  int check_session_user_absence()
+  {
+    int no_session_user =
+      execute_conditional_query(
+        "SELECT COUNT(*) FROM mysql.user WHERE user = 'mysql.session'",
+        "0");
+    return no_session_user;
+  }
+
+  /**
+    @return -1 if error, 1 if the user is correctly configured, 0 if not
+  */
+  int check_session_user_configuration()
+  {
+    int is_user_configured = 0;
+    is_user_configured =
+      execute_conditional_query(
+        "SELECT SUM(count)=3 FROM ( "
+          "SELECT COUNT(*) as count FROM mysql.tables_priv WHERE "
+          "Table_priv='Select' and User='mysql.session' and Db='mysql' and Table_name='user' "
+          "UNION ALL "
+          "SELECT COUNT(*) as count FROM mysql.db WHERE "
+          "Select_priv='Y' and User='mysql.session' and Db='performance_schema' "
+          "UNION ALL "
+          "SELECT COUNT(*) as count FROM mysql.user WHERE "
+          "Super_priv='Y' and User='mysql.session') as user_priv;",
+        "1");
+    return is_user_configured;
+  }
+  /**
     Error codes:
     EXIT_INIT_ERROR - Initialization error.
     EXIT_ALREADY_UPGRADED - Server already upgraded.
@@ -192,6 +247,35 @@ public:
       return EXIT_BAD_VERSION;
 
     /*
+      Check and see if the Server Session Service default user exists
+    */
+
+    int user_is_not_there= check_session_user_absence();
+    int is_user_correctly_configured= 1;
+
+    if(!user_is_not_there)
+    {
+      is_user_correctly_configured= check_session_user_configuration();
+    }
+
+    if(!is_user_correctly_configured)
+    {
+      return this->print_error(
+          EXIT_UPGRADING_QUERIES_ERROR,
+          "The mysql.session exists but is not correctly configured."
+            " The mysql.session needs SELECT privileges in the"
+            " performance_schema database and the mysql.db table and also"
+            " SUPER privileges.");
+    }
+
+    if (user_is_not_there < 0 || is_user_correctly_configured < 0)
+    {
+      return this->print_error(EXIT_UPGRADING_QUERIES_ERROR,
+                               "Query against mysql.user table failed "
+                                 "when checking the mysql.session.");
+    }
+
+    /*
       Run "mysql_fix_privilege_tables.sql" and "mysqlcheck".
 
       First, upgrade all tables in the system database and then check
@@ -240,6 +324,32 @@ public:
           return EXIT_UPGRADING_QUERIES_ERROR;
         }
       } else {
+        /* If the database is empty, upgrade */
+        if (!mysql_query(this->m_mysql_connection,
+          "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'sys'"))
+        {
+          MYSQL_RES *result = mysql_store_result(this->m_mysql_connection);
+          if (result)
+          {
+            MYSQL_ROW row;
+            if ((row = mysql_fetch_row(result)))
+            {
+              if (strcmp(row[0], "0") == 0)
+              {
+                // The sys database contained nothing
+                stringstream ss;
+                ss << "Found empty sys database. Installing the sys schema.";
+                this->print_verbose_message(ss.str());
+                if (this->run_sys_schema_upgrade() != 0)
+                {
+                  return EXIT_UPGRADING_QUERIES_ERROR;
+                }
+              }
+            }
+            mysql_free_result(result);
+          }
+        }
+
         /* If the version is smaller, upgrade */
         if (mysql_query(this->m_mysql_connection, "SELECT * FROM sys.version") != 0)
         {
@@ -350,7 +460,7 @@ public:
           "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA = 'sys'") != 0)
         {
           return this->print_error(EXIT_UPGRADING_QUERIES_ERROR,
-              "Query against INFORMATION_SCHEMA.TABLES failed when checking the sys schema.");
+              "Query against INFORMATION_SCHEMA.TRIGGERS failed when checking the sys schema.");
         } else {
           MYSQL_RES *result = mysql_store_result(this->m_mysql_connection);
           if (result)
@@ -380,7 +490,7 @@ public:
           "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = 'sys' AND ROUTINE_TYPE = 'FUNCTION'") != 0)
         {
           return this->print_error(EXIT_UPGRADING_QUERIES_ERROR,
-              "Query against INFORMATION_SCHEMA.TABLES failed when checking the sys schema.");
+              "Query against INFORMATION_SCHEMA.ROUTINES failed when checking the sys schema.");
         } else {
           MYSQL_RES *result = mysql_store_result(this->m_mysql_connection);
           if (result)
@@ -410,7 +520,7 @@ public:
           "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = 'sys' AND ROUTINE_TYPE = 'PROCEDURE'") != 0)
         {
           return this->print_error(EXIT_UPGRADING_QUERIES_ERROR,
-              "Query against INFORMATION_SCHEMA.TABLES failed when checking the sys schema.");
+              "Query against INFORMATION_SCHEMA.ROUTINES failed when checking the sys schema.");
         } else {
           MYSQL_RES *result = mysql_store_result(this->m_mysql_connection);
           if (result)

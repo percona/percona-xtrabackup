@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -49,6 +49,7 @@
 #include "datadict.h"   // dd_frm_type()
 #include "sql_hset.h"   // Hash_set
 #include "sql_tmp_table.h" // free_tmp_table
+#include "sql_update.h" // records_are_comparable
 #include "table_cache.h" // Table_cache_manager, Table_cache
 #include "log.h"
 #include "binlog.h"
@@ -226,6 +227,7 @@ bool Strict_error_handler::handle_condition(THD *thd,
   case ER_CUT_VALUE_GROUP_CONCAT:
   case ER_DATETIME_FUNCTION_OVERFLOW:
   case ER_WARN_TOO_FEW_RECORDS:
+  case ER_WARN_TOO_MANY_RECORDS:
   case ER_INVALID_ARGUMENT_FOR_LOGARITHM:
   case ER_NUMERIC_JSON_VALUE_OUT_OF_RANGE:
   case ER_INVALID_JSON_VALUE_FOR_CAST:
@@ -6044,6 +6046,15 @@ handle_view(THD *thd, Query_tables_list *prelocking_ctx,
                                  &table_list->view_query()->sroutines_list,
                                  table_list->top_table());
   }
+
+  /*
+    If a trigger was defined on one of the associated tables then assign the
+    'trg_event_map' value of the view to the next table in table_list. When a
+    Stored function is invoked, all the associated tables including the tables
+    associated with the trigger are prelocked.
+  */
+  if (table_list->trg_event_map && table_list->next_global)
+    table_list->next_global->trg_event_map= table_list->trg_event_map;
   return FALSE;
 }
 
@@ -7165,7 +7176,10 @@ find_field_in_view(THD *thd, TABLE_LIST *table_list,
           Use own arena for Prepared Statements or data will be freed after
           PREPARE.
         */
-        Prepared_stmt_arena_holder ps_arena_holder(thd, register_tree_change);
+        Prepared_stmt_arena_holder ps_arena_holder(
+          thd,
+          register_tree_change &&
+            thd->stmt_arena->is_stmt_prepare_or_first_stmt_execute());
 
         /*
           create_item() may, or may not create a new Item, depending on
@@ -9402,6 +9416,7 @@ inline bool call_before_insert_triggers(THD *thd,
   before triggers.
 
   @param thd           thread context
+  @param optype_info   COPY_INFO structure used for default values handling
   @param fields        Item_fields list to be filled
   @param values        values to fill with
   @param table         TABLE-object holding list of triggers to be invoked
@@ -9418,7 +9433,8 @@ inline bool call_before_insert_triggers(THD *thd,
 */
 
 bool
-fill_record_n_invoke_before_triggers(THD *thd, List<Item> &fields,
+fill_record_n_invoke_before_triggers(THD *thd, COPY_INFO *optype_info,
+                                     List<Item> &fields,
                                      List<Item> &values, TABLE *table,
                                      enum enum_trigger_event_type event,
                                      int num_fields)
@@ -9442,6 +9458,14 @@ fill_record_n_invoke_before_triggers(THD *thd, List<Item> &fields,
       MY_BITMAP insert_into_fields_bitmap;
       bitmap_init(&insert_into_fields_bitmap, NULL, num_fields, false);
 
+      /*
+        Evaluate DEFAULT functions like CURRENT_TIMESTAMP.
+        COPY_INFO::set_function_defaults() causes store_timestamp to be called
+        on the columns that are not on the list of assigned_columns.
+      */
+      if (optype_info->function_defaults_apply_on_columns(table->write_set))
+        optype_info->set_function_defaults(table);
+
       rc= fill_record(thd, table, fields, values, NULL,
                       &insert_into_fields_bitmap);
 
@@ -9453,9 +9477,33 @@ fill_record_n_invoke_before_triggers(THD *thd, List<Item> &fields,
     }
     else
     {
-      rc= fill_record(thd, table, fields, values, NULL, NULL) ||
-          table->triggers->process_triggers(thd, event, TRG_ACTION_BEFORE,
-                                            true);
+      rc= fill_record(thd, table, fields, values, NULL, NULL);
+
+      if (!rc)
+      {
+        /*
+          Unlike INSERT and LOAD, UPDATE operation requires comparison of old
+          and new records to determine whether function defaults have to be
+          evaluated.
+        */
+        if (optype_info->get_operation_type() == COPY_INFO::UPDATE_OPERATION)
+        {
+          /*
+            Evaluate function defaults for columns with ON UPDATE clause only
+            if any other column of the row is updated.
+          */
+          if ((!records_are_comparable(table) || compare_records(table)) &&
+              (optype_info->
+               function_defaults_apply_on_columns(table->write_set)))
+            optype_info->set_function_defaults(table);
+        }
+        else if(optype_info->
+                function_defaults_apply_on_columns(table->write_set))
+          optype_info->set_function_defaults(table);
+
+        rc= table->triggers->process_triggers(thd, event, TRG_ACTION_BEFORE,
+                                              true);
+      }
     }
     /* 
       Re-calculate generated fields to cater for cases when base columns are 

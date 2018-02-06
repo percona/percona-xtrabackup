@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -306,8 +306,8 @@ typedef struct st_lex_master_info
     changed variable or if it should be left at old value
    */
   enum {LEX_MI_UNCHANGED= 0, LEX_MI_DISABLE, LEX_MI_ENABLE}
-    ssl, ssl_verify_server_cert, heartbeat_opt, repl_ignore_server_ids_opt, 
-    retry_count_opt, auto_position;
+    ssl, ssl_verify_server_cert, heartbeat_opt, repl_ignore_server_ids_opt,
+    retry_count_opt, auto_position, port_opt;
   char *ssl_key, *ssl_cert, *ssl_ca, *ssl_capath, *ssl_cipher;
   char *ssl_crl, *ssl_crlpath, *tls_version;
   char *relay_log_name;
@@ -3122,7 +3122,7 @@ private:
     With Visual Studio, an std::map will always allocate two small objects
     on the heap. Sometimes we put LEX objects in a MEM_ROOT, and never run
     the LEX DTOR. To avoid memory leaks, put this std::map on the heap,
-    and call clear_values_map() in lex_end()
+    and call clear_values_map() at the end of each statement
    */
   std::map<Field *,Field *> *insert_update_values_map;
 public:

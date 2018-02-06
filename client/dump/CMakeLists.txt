@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,61 +13,43 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
-
-# Exclude mysqlpump tool from being compiled by SunStudio compiler. It has bug
-# that forbids usage of pure virtual interfaces (and other classes with no
-# fields) without dummy workarounds. In fact, only libmysql must be build with
-# this toolset, so it is acceptable to exclude mysqlpump here.
+# If we are building client-only (-DWITHOUT_SERVER=ON) with Solaris Studio,
+# we skip building the mysqlpump tool. The server, and mysqlpump, will be built
+# using gcc.
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/dump
 )
 
 IF (CMAKE_CXX_COMPILER_ID STREQUAL "SunPro")
-  RETURN()
+  IF (WITHOUT_SERVER)
+    MESSAGE(STATUS "Not building mysqlpump")
+    RETURN()
+  ENDIF()
 ENDIF()
 
 # Prevent Boost from including external precompiled Boost libraries, use
-# threading (not implemented for Solaris) and turn off unused functionality.
+# threading (not implemented for older Solaris Studio compilers)
+# and turn off unused functionality.
 IF(USING_LOCAL_BOOST)
   ADD_DEFINITIONS(
     -DBOOST_ALL_NO_LIB
     -DBOOST_SYSTEM_NO_DEPRECATED)
 ENDIF()
 
-IF(WIN32)
-  LIST(APPEND BOOST_THREAD_SOURCES
-    ${BOOST_SOURCES_DIR}/libs/thread/src/win32/thread.cpp
-    ${BOOST_SOURCES_DIR}/libs/thread/src/win32/tss_dll.cpp
-    ${BOOST_SOURCES_DIR}/libs/thread/src/win32/tss_pe.cpp
-  )
-ELSE()
-  LIST(APPEND BOOST_THREAD_SOURCES
-    ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/once.cpp
-    ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/thread.cpp
-  )
-ENDIF()
-
 SET(BOOST_LIB_SOURCES
-  ${BOOST_SOURCES_DIR}/libs/atomic/src/lockpool.cpp
   ${BOOST_SOURCES_DIR}/libs/chrono/src/chrono.cpp
-  ${BOOST_SOURCES_DIR}/libs/chrono/src/process_cpu_clocks.cpp
-  ${BOOST_SOURCES_DIR}/libs/chrono/src/thread_clock.cpp
   ${BOOST_SOURCES_DIR}/libs/system/src/error_code.cpp
-  ${BOOST_SOURCES_DIR}/libs/thread/src/future.cpp
 )
 
 IF(USING_LOCAL_BOOST)
-  ADD_CONVENIENCE_LIBRARY(boost_lib ${BOOST_LIB_SOURCES} ${BOOST_THREAD_SOURCES})
+  ADD_CONVENIENCE_LIBRARY(boost_lib ${BOOST_LIB_SOURCES})
 
-  SET_TARGET_PROPERTIES(boost_lib
-    PROPERTIES COMPILE_FLAGS "-DBOOST_THREAD_BUILD_LIB")
   # Do not build library unless it is needed by some other target.
   SET_PROPERTY(TARGET boost_lib PROPERTY EXCLUDE_FROM_ALL TRUE)
 
   ADD_COMPILE_FLAGS(
     ${BOOST_LIB_SOURCES}
-    ${BOOST_THREAD_SOURCES}
     COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
     )
 
@@ -168,8 +150,6 @@ ADD_COMPILE_FLAGS(
 
 # Files that use Boost sources that trigger compilation warnings
 SET(MYSQLPUMP_BOOST_SOURCES
-  ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/once.cpp
-  ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/thread.cpp
   abstract_crawler.cc
   abstract_mysql_chain_element_extension.cc
   abstract_progress_watcher.cc

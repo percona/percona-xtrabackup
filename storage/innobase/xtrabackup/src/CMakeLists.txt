@@ -23,8 +23,9 @@ ADD_SUBDIRECTORY(libarchive)
 ADD_SUBDIRECTORY(crc)
 ADD_SUBDIRECTORY(jsmn)
 
+SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 FIND_GCRYPT()
-FIND_CURL()
+MYSQL_CHECK_CURL()
 FIND_EV()
 
 # xxd is needed to embed version_check script
@@ -64,14 +65,26 @@ ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
 ADD_CUSTOM_TARGET(GenVersionCheck
                   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
 
-ADD_COMPILE_FLAGS(
+SET(keyring_source_files
   keyring.cc
-  ../../../../plugin/keyring/keyring_impl.cc
-  ../../../../plugin/keyring/keyring_key.cc
+  ../../../../plugin/keyring/common/keyring_impl.cc
+  ../../../../plugin/keyring/common/keyring_key.cc
+  ../../../../plugin/keyring/common/keys_container.cc
+  ../../../../plugin/keyring/buffer.cc
   ../../../../plugin/keyring/buffered_file_io.cc
-  ../../../../plugin/keyring/keys_container.cc
-  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
+  ../../../../plugin/keyring/hash_to_buffer_serializer.cc
+  ../../../../plugin/keyring/file_io.cc
+  ../../../../plugin/keyring/keyring.cc
 )
+
+ADD_COMPILE_FLAGS(
+  ${keyring_source_files}
+  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
+  -DEMBEDDED_LIBRARY
+)
+
+SET_SOURCE_FILES_PROPERTIES(${keyring_source_files}
+  PROPERTIES COMPILE_DEFINITIONS "EMBEDDED_LIBRARY")
 
 ADD_COMPILE_FLAGS(
   xtrabackup.cc
@@ -103,11 +116,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbstream_write.c
   backup_mysql.cc
   backup_copy.cc
-  keyring.cc
-  ../../../../plugin/keyring/keyring_impl.cc
-  ../../../../plugin/keyring/keyring_key.cc
-  ../../../../plugin/keyring/buffered_file_io.cc
-  ../../../../plugin/keyring/keys_container.cc
+  ${keyring_source_files}
   ../../../../sql-common/client_authentication.cc
   ../../../../sql/des_key_file.cc
   )

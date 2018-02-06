@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -202,8 +202,10 @@ public:
 
 	void position(uchar *record);
 
+#ifdef WL6742
+	/* Removing WL6742 as part of Bug #23046302 */
 	virtual int records(ha_rows* num_rows);
-
+#endif
 	ha_rows records_in_range(
 		uint			inx,
 		key_range*		min_key,
@@ -973,6 +975,19 @@ innodb_base_col_setup(
 	const Field*	field,
 	dict_v_col_t*	v_col);
 
+/** Set up base columns for stored column
+@param[in]	table	InnoDB table
+@param[in]	field	MySQL field
+@param[in,out]	s_col	stored column */
+void
+innodb_base_col_setup_for_stored(
+	const dict_table_t*	table,
+	const Field*		field,
+	dict_s_col_t*		s_col);
+
+/** whether this ia stored column */
+#define innobase_is_s_fld(field) ((field)->gcol_info && (field)->stored_in_db)
+
 /** whether this is a computed virtual column */
 #define innobase_is_v_fld(field) ((field)->gcol_info && !(field)->stored_in_db)
 
@@ -1073,8 +1088,3 @@ innobase_build_v_templ_callback(
 the table virtual columns' template */
 typedef void (*my_gcolumn_templatecallback_t)(const TABLE*, void*);
 
-/** Get the computed value by supplying the base column values.
-@param[in,out]  table   the table whose virtual column template to be built */
-void
-innobase_init_vc_templ(
-        dict_table_t*   table);

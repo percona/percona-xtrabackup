@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -230,7 +230,7 @@ Does an insert operation by updating a delete-marked existing record
 in the index. This situation can occur if the delete-marked record is
 kept in the index for consistent reads.
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_ins_sec_index_entry_by_modify(
 /*==============================*/
@@ -324,7 +324,7 @@ Does an insert operation by delete unmarking and updating a delete marked
 existing record in the index. This situation can occur if the delete marked
 record is kept in the index for consistent reads.
 @return DB_SUCCESS, DB_FAIL, or error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_ins_clust_index_entry_by_modify(
 /*================================*/
@@ -447,7 +447,7 @@ row_ins_cascade_ancestor_updates_table(
 Returns the number of ancestor UPDATE or DELETE nodes of a
 cascaded update/delete node.
 @return number of ancestors */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 ulint
 row_ins_cascade_n_ancestors(
 /*========================*/
@@ -521,7 +521,6 @@ row_ins_cascade_calc_update_vec(
 	update = cascade->update;
 
 	update->info_bits = 0;
-	update->n_fields = foreign->n_fields;
 
 	n_fields_updated = 0;
 
@@ -927,6 +926,118 @@ row_ins_invalidate_query_cache(
 	innobase_invalidate_query_cache(thr_get_trx(thr), name, len);
 }
 
+/** Fill virtual column information in cascade node for the child table.
+@param[out]	cascade		child update node
+@param[in]	rec		clustered rec of child table
+@param[in]	index		clustered index of child table
+@param[in]	node		parent update node
+@param[in]	foreign		foreign key information
+@param[out]	err		error code. */
+static
+void
+row_ins_foreign_fill_virtual(
+	upd_node_t*		cascade,
+	const rec_t*		rec,
+	dict_index_t*		index,
+	upd_node_t*		node,
+	dict_foreign_t*		foreign,
+	dberr_t*		err)
+{
+	row_ext_t*	ext;
+	THD*		thd = current_thd;
+	ulint		offsets_[REC_OFFS_NORMAL_SIZE];
+	rec_offs_init(offsets_);
+	const ulint*	offsets =
+		rec_get_offsets(rec, index, offsets_,
+				ULINT_UNDEFINED, &cascade->heap);
+	mem_heap_t*	v_heap = NULL;
+	upd_t*		update = cascade->update;
+	ulint		n_v_fld = index->table->n_v_def;
+	ulint		n_diff;
+	upd_field_t*	upd_field;
+	dict_vcol_set*	v_cols = foreign->v_cols;
+
+	update->old_vrow = row_build(
+		ROW_COPY_POINTERS, index, rec,
+		offsets, index->table, NULL, NULL,
+		&ext, cascade->heap);
+
+	n_diff = update->n_fields;
+
+	update->n_fields += n_v_fld;
+
+	if (index->table->vc_templ == NULL) {
+		/** This can occur when there is a cascading
+		delete or update after restart. */
+		innobase_init_vc_templ(index->table);
+	}
+
+	for (ulint i = 0; i < n_v_fld; i++) {
+
+		dict_v_col_t*     col = dict_table_get_nth_v_col(
+				index->table, i);
+
+		dict_vcol_set::iterator it = v_cols->find(col);
+
+		if (it == v_cols->end()) {
+			continue;
+		}
+
+		dfield_t*	vfield = innobase_get_computed_value(
+				update->old_vrow, col, index,
+				&v_heap, update->heap, NULL, thd, NULL,
+				NULL, NULL, NULL);
+
+		if (vfield == NULL) {
+			*err = DB_COMPUTE_VALUE_FAILED;
+			goto func_exit;
+		}
+
+		upd_field = upd_get_nth_field(update, n_diff);
+
+		upd_field->old_v_val = static_cast<dfield_t*>(
+				mem_heap_alloc(cascade->heap,
+					sizeof *upd_field->old_v_val));
+
+		dfield_copy(upd_field->old_v_val, vfield);
+
+		upd_field_set_v_field_no(upd_field, i, index);
+
+		if (node->is_delete
+		    ? (foreign->type & DICT_FOREIGN_ON_DELETE_SET_NULL)
+		    : (foreign->type & DICT_FOREIGN_ON_UPDATE_SET_NULL)) {
+
+			dfield_set_null(&upd_field->new_val);
+		}
+
+		if (!node->is_delete
+		    && (foreign->type & DICT_FOREIGN_ON_UPDATE_CASCADE)) {
+
+			dfield_t* new_vfield = innobase_get_computed_value(
+					update->old_vrow, col, index,
+					&v_heap, update->heap, NULL, thd,
+					NULL, NULL, node->update, foreign);
+
+			if (new_vfield == NULL) {
+				*err = DB_COMPUTE_VALUE_FAILED;
+				goto func_exit;
+			}
+
+			dfield_copy(&(upd_field->new_val), new_vfield);
+		}
+
+		n_diff++;
+	}
+
+	update->n_fields = n_diff;
+	*err = DB_SUCCESS;
+
+func_exit:
+	if (v_heap) {
+		mem_heap_free(v_heap);
+	}
+}
+
 /*********************************************************************//**
 Perform referential actions or checks when a parent row is deleted or updated
 and the constraint had an ON DELETE or ON UPDATE condition which was not
@@ -1210,6 +1321,18 @@ row_ins_foreign_check_on_constraint(
 		if (fts_col_affacted) {
 			cascade->fts_doc_id = doc_id;
 		}
+
+		if (foreign->v_cols != NULL
+		    && foreign->v_cols->size() > 0) {
+			row_ins_foreign_fill_virtual(
+				cascade, clust_rec, clust_index,
+				node, foreign, &err);
+
+			if (err != DB_SUCCESS) {
+				goto nonstandard_exit_func;
+			}
+		}
+
 	} else if (table->fts && cascade->is_delete) {
 		/* DICT_FOREIGN_ON_DELETE_CASCADE case */
 		for (i = 0; i < foreign->n_fields; i++) {
@@ -1237,6 +1360,18 @@ row_ins_foreign_check_on_constraint(
 		n_to_update = row_ins_cascade_calc_update_vec(
 			node, foreign, cascade->cascade_heap,
 			trx, &fts_col_affacted, cascade);
+
+
+		if (foreign->v_cols != NULL
+		    && foreign->v_cols->size() > 0) {
+			row_ins_foreign_fill_virtual(
+				cascade, clust_rec, clust_index,
+				node, foreign, &err);
+
+			if (err != DB_SUCCESS) {
+				goto nonstandard_exit_func;
+			}
+		}
 
 		if (n_to_update == ULINT_UNDEFINED) {
 			err = DB_ROW_IS_REFERENCED;
@@ -1440,6 +1575,10 @@ row_ins_check_foreign_constraint(
 	ulint		offsets_[REC_OFFS_NORMAL_SIZE];
 	ulint*		offsets		= offsets_;
 
+	bool		skip_gap_lock;
+
+	skip_gap_lock = (trx->isolation_level <= TRX_ISO_READ_COMMITTED);
+
 	DBUG_ENTER("row_ins_check_foreign_constraint");
 
 	rec_offs_init(offsets_);
@@ -1567,6 +1706,11 @@ row_ins_check_foreign_constraint(
 
 		if (page_rec_is_supremum(rec)) {
 
+			if (skip_gap_lock) {
+
+				continue;
+			}
+
 			err = row_ins_set_shared_rec_lock(LOCK_ORDINARY, block,
 							  rec, check_index,
 							  offsets, thr);
@@ -1582,10 +1726,17 @@ row_ins_check_foreign_constraint(
 		cmp = cmp_dtuple_rec(entry, rec, offsets);
 
 		if (cmp == 0) {
+
+			ulint	lock_type;
+
+			lock_type = skip_gap_lock
+				? LOCK_REC_NOT_GAP
+				: LOCK_ORDINARY;
+
 			if (rec_get_deleted_flag(rec,
 						 rec_offs_comp(offsets))) {
 				err = row_ins_set_shared_rec_lock(
-					LOCK_ORDINARY, block,
+					lock_type, block,
 					rec, check_index, offsets, thr);
 				switch (err) {
 				case DB_SUCCESS_LOCKED_REC:
@@ -1659,9 +1810,13 @@ row_ins_check_foreign_constraint(
 		} else {
 			ut_a(cmp < 0);
 
-			err = row_ins_set_shared_rec_lock(
-				LOCK_GAP, block,
-				rec, check_index, offsets, thr);
+			err = DB_SUCCESS;
+
+			if (!skip_gap_lock) {
+				err = row_ins_set_shared_rec_lock(
+					LOCK_GAP, block,
+					rec, check_index, offsets, thr);
+			}
 
 			switch (err) {
 			case DB_SUCCESS_LOCKED_REC:
@@ -1712,6 +1867,8 @@ do_possible_lock_wait:
 		/* To avoid check_table being dropped, increment counter */
 		os_atomic_increment_ulint(
 			&check_table->n_foreign_key_checks_running, 1);
+
+		trx_kill_blocking(trx);
 
 		lock_wait_suspend_thread(thr);
 
@@ -2422,7 +2579,9 @@ err_exit:
 		doesn't fit the provided slot then existing record is added
 		to free list and new record is inserted. This also means
 		cursor that we have cached for SELECT is now invalid. */
-		index->last_sel_cur->invalid = true;
+		if(index->last_sel_cur) {
+			index->last_sel_cur->invalid = true;
+		}
 
 		err = row_ins_clust_index_entry_by_modify(
 			&pcur, flags, mode, &offsets, &offsets_heap,
@@ -2975,7 +3134,9 @@ row_ins_sec_index_entry_low(
 		is doesn't fit the provided slot then existing record is added
 		to free list and new record is inserted. This also means
 		cursor that we have cached for SELECT is now invalid. */
-		index->last_sel_cur->invalid = true;
+		if(index->last_sel_cur) {
+			index->last_sel_cur->invalid = true;
+		}
 
 		/* There is already an index entry with a long enough common
 		prefix, we must convert the insert into a modify of an
@@ -3154,6 +3315,12 @@ row_ins_clust_index_entry(
 
 	if (dict_table_is_intrinsic(index->table)
 	    && dict_index_is_auto_gen_clust(index)) {
+
+		/* Check if the memory allocated for intrinsic cache*/
+		if(!index->last_ins_cur) {
+			dict_allocate_mem_intrinsic_cache(index);
+		}
+
 		err = row_ins_sorted_clust_index_entry(
 			BTR_MODIFY_LEAF, index, entry, n_ext, thr);
 	} else {
@@ -3174,6 +3341,9 @@ row_ins_clust_index_entry(
 	/* Try then pessimistic descent to the B-tree */
 	if (!dict_table_is_intrinsic(index->table)) {
 		log_free_check();
+	} else if(!index->last_sel_cur) {
+		dict_allocate_mem_intrinsic_cache(index);
+		index->last_sel_cur->invalid = true;
 	} else {
 		index->last_sel_cur->invalid = true;
 	}
@@ -3253,6 +3423,9 @@ row_ins_sec_index_entry(
 
 		if (!dict_table_is_intrinsic(index->table)) {
 			log_free_check();
+		} else if(!index->last_sel_cur) {
+			dict_allocate_mem_intrinsic_cache(index);
+			index->last_sel_cur->invalid = true;
 		} else {
 			index->last_sel_cur->invalid = true;
 		}

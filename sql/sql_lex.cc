@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -529,7 +529,6 @@ void lex_end(LEX *lex)
 
   delete lex->sphead;
   lex->sphead= NULL;
-  lex->clear_values_map();
 
   DBUG_VOID_RETURN;
 }
@@ -1396,6 +1395,7 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd)
     case MY_LEX_ESCAPE:
       if (lip->yyGet() == 'N')
       {					// Allow \N as shortcut for NULL
+        push_deprecated_warn(thd, "\\N", "NULL");
 	yylval->lex_str.str=(char*) "\\N";
 	yylval->lex_str.length=2;
 	return NULL_SYM;
@@ -2338,16 +2338,16 @@ void st_select_lex_unit::exclude_level()
         removed, we must also exclude the Name_resolution_context
         belonging to this level. Do this by looping through inner
         subqueries and changing their contexts' outer context pointers
-        to point to the outer context of the removed SELECT_LEX.
+        to point to the outer select's context.
       */
       for (SELECT_LEX *s= u->first_select(); s; s= s->next_select())
       {
         if (s->context.outer_context == &sl->context)
-          s->context.outer_context= sl->context.outer_context;
+          s->context.outer_context= &sl->outer_select()->context;
       }
       if (u->fake_select_lex &&
           u->fake_select_lex->context.outer_context == &sl->context)
-        u->fake_select_lex->context.outer_context= sl->context.outer_context;
+        u->fake_select_lex->context.outer_context= &sl->outer_select()->context;
       u->master= master;
       last= &(u->next);
     }
@@ -3032,7 +3032,17 @@ void TABLE_LIST::print(THD *thd, String *str, enum_query_type query_type) const
       }
       else
       {
-        append_identifier(thd, str, table_name, table_name_length);
+        /**
+         Fix for printing empty string when internal_table_name is
+         used. Actual length of internal_table_name cannot be reduced
+         as server expects a valid string of length atleast 1 for any
+         table. So while printing we use the correct length of the
+         table_name i.e 0 when internal_table_name is used.
+        */
+        if (table_name != internal_table_name)
+          append_identifier(thd, str, table_name, table_name_length);
+        else
+          append_identifier(thd, str, table_name, 0);
         cmp_name= table_name;
       }
       if (partition_names && partition_names->elements)
@@ -4040,6 +4050,9 @@ void LEX::first_lists_tables_same()
     if (query_tables_last == &first_table->next_global)
       query_tables_last= first_table->prev_global;
 
+    if (query_tables_own_last == &first_table->next_global)
+      query_tables_own_last= first_table->prev_global;
+
     if ((next= *first_table->prev_global= first_table->next_global))
       next->prev_global= first_table->prev_global;
     /* include in new place */
@@ -4731,8 +4744,8 @@ void st_lex_master_info::initialize()
   gtid_until_condition= UNTIL_SQL_BEFORE_GTIDS;
   view_id= NULL;
   until_after_gaps= false;
-  ssl= ssl_verify_server_cert= heartbeat_opt= repl_ignore_server_ids_opt= 
-    retry_count_opt= auto_position= LEX_MI_UNCHANGED;
+  ssl= ssl_verify_server_cert= heartbeat_opt= repl_ignore_server_ids_opt=
+    retry_count_opt= auto_position= port_opt= LEX_MI_UNCHANGED;
   ssl_key= ssl_cert= ssl_ca= ssl_capath= ssl_cipher= NULL;
   ssl_crl= ssl_crlpath= NULL;
   tls_version= NULL;

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -34,7 +34,6 @@ Created 11/5/1995 Heikki Tuuri
 
 #include "page0size.h"
 #include "buf0buf.h"
-
 #ifdef UNIV_NONINL
 #include "buf0buf.ic"
 #endif
@@ -76,7 +75,9 @@ Created 11/5/1995 Heikki Tuuri
 #include <map>
 #include <sstream>
 
-#if defined(HAVE_LIBNUMA) && defined(WITH_NUMA)
+my_bool  srv_numa_interleave = FALSE;
+
+#ifdef HAVE_LIBNUMA
 #include <numa.h>
 #include <numaif.h>
 
@@ -117,7 +118,7 @@ struct set_numa_interleave_t
 #define NUMA_MEMPOLICY_INTERLEAVE_IN_SCOPE set_numa_interleave_t scoped_numa
 #else
 #define NUMA_MEMPOLICY_INTERLEAVE_IN_SCOPE
-#endif /* HAVE_LIBNUMA && WITH_NUMA */
+#endif /* HAVE_LIBNUMA */
 
 /*
 		IMPLEMENTATION OF THE BUFFER POOL
@@ -1459,15 +1460,16 @@ pfs_register_buffer_block(
 		rwlock = &block->lock;
 		ut_a(!rwlock->pfs_psi);
 		rwlock->pfs_psi = (PSI_server)
-			? PSI_server->init_rwlock(buf_block_lock_key, rwlock)
+			? PSI_server->init_rwlock(
+				buf_block_lock_key.m_value, rwlock)
 			: NULL;
 
 #   ifdef UNIV_DEBUG
 		rwlock = &block->debug_latch;
 		ut_a(!rwlock->pfs_psi);
 		rwlock->pfs_psi = (PSI_server)
-			? PSI_server->init_rwlock(buf_block_debug_latch_key,
-						  rwlock)
+			? PSI_server->init_rwlock(
+				buf_block_debug_latch_key.m_value, rwlock)
 			: NULL;
 #   endif /* UNIV_DEBUG */
 
@@ -1488,6 +1490,10 @@ buf_block_init(
 	byte*		frame)		/*!< in: pointer to buffer frame */
 {
 	UNIV_MEM_DESC(frame, UNIV_PAGE_SIZE);
+
+	/* This function should only be executed at database startup or by
+	buf_pool_resize(). Either way, adaptive hash index must not exist. */
+	assert_block_ahi_empty_on_init(block);
 
 	block->frame = frame;
 
@@ -1514,9 +1520,6 @@ buf_block_init(
 	ut_d(block->in_unzip_LRU_list = FALSE);
 	ut_d(block->in_withdraw_list = FALSE);
 
-#if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
-	block->n_pointers = 0;
-#endif /* UNIV_AHI_DEBUG || UNIV_DEBUG */
 	page_zip_des_init(&block->page.zip);
 
 	mutex_create(LATCH_ID_BUF_BLOCK_MUTEX, &block->mutex);
@@ -1582,7 +1585,7 @@ buf_chunk_init(
 		return(NULL);
 	}
 
-#if defined(HAVE_LIBNUMA) && defined(WITH_NUMA)
+#ifdef HAVE_LIBNUMA
 	if (srv_numa_interleave) {
 		int	st = mbind(chunk->mem, chunk->mem_size(),
 				   MPOL_INTERLEAVE,
@@ -1595,7 +1598,7 @@ buf_chunk_init(
 				" (error: " << strerror(errno) << ").";
 		}
 	}
-#endif /* HAVE_LIBNUMA && WITH_NUMA */
+#endif /* HAVE_LIBNUMA */
 
 
 	/* Allocate the block descriptors from
@@ -2171,6 +2174,10 @@ buf_page_realloc(
 
 		/* set other flags of buf_block_t */
 
+		/* This code should only be executed by buf_pool_resize(),
+		while the adaptive hash index is disabled. */
+		assert_block_ahi_empty(block);
+		assert_block_ahi_empty_on_init(new_block);
 		ut_ad(!block->index);
 		new_block->index	= NULL;
 		new_block->n_hash_helps	= 0;
@@ -3135,20 +3142,23 @@ buf_pool_clear_hash_index(void)
 
 			for (; i--; block++) {
 				dict_index_t*	index	= block->index;
+				assert_block_ahi_valid(block);
 
 				/* We can set block->index = NULL
-				when we have an x-latch on search latch;
-				see the comment in buf0buf.h */
+				and block->n_pointers = 0
+				when btr_search_own_all(RW_LOCK_X);
+				see the comments in buf0buf.h */
 
 				if (!index) {
-					/* Not hashed */
 					continue;
 				}
 
-				block->index = NULL;
+				ut_ad(buf_block_get_state(block)
+                                      == BUF_BLOCK_FILE_PAGE);
 # if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
 				block->n_pointers = 0;
 # endif /* UNIV_AHI_DEBUG || UNIV_DEBUG */
+				block->index = NULL;
 			}
 		}
 	}
@@ -3836,6 +3846,9 @@ buf_block_init_low(
 /*===============*/
 	buf_block_t*	block)	/*!< in: block to init */
 {
+	/* No adaptive hash index entries may point to a previously
+	unused (and now freshly allocated) block. */
+	assert_block_ahi_empty_on_init(block);
 	block->index		= NULL;
 	block->made_dirty_with_no_latch = false;
 	block->skip_flush_check = false;
@@ -3930,14 +3943,17 @@ buf_block_from_ahi(const byte* ptr)
 	ut_ad(buf_chunk_map_ref == buf_chunk_map_reg);
 	ut_ad(!buf_pool_resizing);
 
-	const byte* bound = reinterpret_cast<uintptr_t>(ptr)
-			    > srv_buf_pool_chunk_unit
-			    ? ptr - srv_buf_pool_chunk_unit : 0;
-	it = chunk_map->upper_bound(bound);
+	buf_chunk_t*	chunk;
+	it = chunk_map->upper_bound(ptr);
 
-	ut_a(it != chunk_map->end());
+	ut_a(it != chunk_map->begin());
 
-	buf_chunk_t*	chunk = it->second;
+	if (it == chunk_map->end()) {
+		chunk = chunk_map->rbegin()->second;
+	} else {
+		chunk = (--it)->second;
+	}
+
 	ulint		offs = ptr - chunk->blocks->frame;
 
 	offs >>= UNIV_PAGE_SIZE_SHIFT;

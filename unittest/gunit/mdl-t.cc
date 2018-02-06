@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -4019,7 +4019,8 @@ TEST_F(MDLTest, FindLockOwner)
   /* There should be no lock owner before we have started any threads. */
   MDLTestContextVisitor visitor1;
   EXPECT_FALSE(m_mdl_context.find_lock_owner(&mdl_key, &visitor1));
-  EXPECT_EQ(NULL, visitor1.get_visited_ctx());
+  const MDL_context *null_context= NULL;
+  EXPECT_EQ(null_context, visitor1.get_visited_ctx());
 
   /*
     Start the first thread and wait until it grabs the lock.
@@ -4058,7 +4059,7 @@ TEST_F(MDLTest, FindLockOwner)
   /* There should be no lock owners again. */
   MDLTestContextVisitor visitor4;
   EXPECT_FALSE(m_mdl_context.find_lock_owner(&mdl_key, &visitor4));
-  EXPECT_EQ(NULL, visitor4.get_visited_ctx());
+  EXPECT_EQ(null_context, visitor4.get_visited_ctx());
 }
 
 
@@ -4081,8 +4082,10 @@ protected:
     MDLTest::TearDown();
   }
 
-  virtual bool notify_hton_pre_acquire_exclusive(const MDL_key *mdl_key)
+  virtual bool notify_hton_pre_acquire_exclusive(const MDL_key *mdl_key,
+                                                 bool *victimized)
   {
+    *victimized = false;
     m_pre_acquire_count++;
     m_pre_acquire_key.mdl_key_init(mdl_key);
     return m_refuse_acquire;

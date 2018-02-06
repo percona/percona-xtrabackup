@@ -6,9 +6,9 @@ require_server_version_higher_than 5.6.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 default-authentication-plugin=sha256_password
-ssl-ca=${TEST_BASEDIR}/inc/ssl-certs/cacert.pem
-ssl-cert=${TEST_BASEDIR}/inc/ssl-certs/server-cert.pem
-ssl-key=${TEST_BASEDIR}/inc/ssl-certs/server-key.pem
+ssl-ca=${PWD}/inc/ssl-certs/cacert.pem
+ssl-cert=${PWD}/inc/ssl-certs/server-cert.pem
+ssl-key=${PWD}/inc/ssl-certs/server-key.pem
 "
 
 start_server
@@ -55,9 +55,9 @@ run_cmd ${MYSQL} \
 	--host=127.0.0.1 \
 	--port=${MYSQLD_PORT} \
 	--ssl \
-	--ssl-ca=${TEST_BASEDIR}/inc/ssl-certs/cacert.pem \
-	--ssl-cert=${TEST_BASEDIR}/inc/ssl-certs/client-cert.pem \
-	--ssl-key=${TEST_BASEDIR}/inc/ssl-certs/client-key.pem \
+	--ssl-ca=${PWD}/inc/ssl-certs/cacert.pem \
+	--ssl-cert=${PWD}/inc/ssl-certs/client-cert.pem \
+	--ssl-key=${PWD}/inc/ssl-certs/client-key.pem \
 	-e '\s'
 
 vlog 'connecting with xtrabackup'
@@ -69,9 +69,9 @@ run_cmd ${XB_BIN} \
 	--host=127.0.0.1 \
 	--port=${MYSQLD_PORT} \
 	--ssl \
-	--ssl-ca=${TEST_BASEDIR}/inc/ssl-certs/cacert.pem \
-	--ssl-cert=${TEST_BASEDIR}/inc/ssl-certs/client-cert.pem \
-	--ssl-key=${TEST_BASEDIR}/inc/ssl-certs/client-key.pem \
+	--ssl-ca=${PWD}/inc/ssl-certs/cacert.pem \
+	--ssl-cert=${PWD}/inc/ssl-certs/client-cert.pem \
+	--ssl-key=${PWD}/inc/ssl-certs/client-key.pem \
 	--target-dir=$topdir/backup1
 
 fi
@@ -90,8 +90,8 @@ then
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 default-authentication-plugin=sha256_password
-sha256_password_private_key_path=${TEST_BASEDIR}/inc/ssl-certs/rsa_private_key.pem
-sha256_password_public_key_path=${TEST_BASEDIR}/inc/ssl-certs/rsa_public_key.pem
+sha256_password_private_key_path=${PWD}/inc/ssl-certs/rsa_private_key.pem
+sha256_password_public_key_path=${PWD}/inc/ssl-certs/rsa_public_key.pem
 "
 
 start_server

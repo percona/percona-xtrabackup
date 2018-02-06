@@ -381,8 +381,7 @@ __attribute__((warn_unused_result))
 bool
 recv_parse_log_recs(
 	lsn_t		checkpoint_lsn,
-	store_t		store,
-	bool		apply);
+	store_t		store);
 
 /*******************************************************//**
 Moves the parsing buffer data left to the buffer start. */

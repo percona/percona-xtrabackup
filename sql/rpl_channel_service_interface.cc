@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -246,14 +246,19 @@ int channel_create(const char* channel,
   /* create a new channel if doesn't exist */
   if (!mi)
   {
-    if ((error= add_new_channel(&mi, channel,
-                                channel_info->type)))
+    if ((error= add_new_channel(&mi, channel)))
         goto err;
   }
 
   lex_mi= new st_lex_master_info();
   lex_mi->channel= channel;
   lex_mi->host= channel_info->hostname;
+  /*
+    'group_replication_recovery' channel (*after recovery is done*)
+    or 'group_replication_applier' channel wants to set the port number
+    to '0' as there is no actual network usage on these channels.
+  */
+  lex_mi->port_opt= LEX_MASTER_INFO::LEX_MI_ENABLE;
   lex_mi->port= channel_info->port;
   lex_mi->user= channel_info->user;
   lex_mi->password= channel_info->password;
@@ -268,7 +273,8 @@ int channel_create(const char* channel,
   if (channel_info->auto_position)
   {
     lex_mi->auto_position= LEX_MASTER_INFO::LEX_MI_ENABLE;
-    if (mi && mi->is_auto_position())
+    if ((mi && mi->is_auto_position()) ||
+        channel_info->auto_position == RPL_SERVICE_SERVER_DEFAULT)
     {
       //So change master allows new configurations with a running SQL thread
       lex_mi->auto_position= LEX_MASTER_INFO::LEX_MI_UNCHANGED;
@@ -449,6 +455,8 @@ int channel_stop(const char* channel,
 
   int thread_mask= 0;
   int server_thd_mask= 0;
+  int error= 0;
+  bool thd_init= false;
   lock_slave_threads(mi);
 
   init_thread_mask(&server_thd_mask, mi, 0 /* not inverse*/);
@@ -466,16 +474,15 @@ int channel_stop(const char* channel,
 
   if (thread_mask == 0)
   {
-    mi->channel_unlock();
-    channel_map.unlock();
-    DBUG_RETURN(0);
+    goto end;
   }
 
-  bool thd_init= init_thread_context();
+  thd_init= init_thread_context();
 
-  int error= terminate_slave_threads(mi, thread_mask, timeout, false);
+  error= terminate_slave_threads(mi, thread_mask, timeout, false);
+
+end:
   unlock_slave_threads(mi);
-
   mi->channel_unlock();
   channel_map.unlock();
 
@@ -750,7 +757,8 @@ int channel_queue_packet(const char* channel,
   DBUG_RETURN(result);
 }
 
-int channel_wait_until_apply_queue_applied(char* channel, long long timeout)
+int channel_wait_until_apply_queue_applied(const char* channel,
+                                           double timeout)
 {
   DBUG_ENTER("channel_wait_until_apply_queue_applied(channel, timeout)");
 
@@ -779,7 +787,7 @@ int channel_wait_until_apply_queue_applied(char* channel, long long timeout)
   DBUG_RETURN(error);
 }
 
-int channel_is_applier_waiting(char* channel)
+int channel_is_applier_waiting(const char* channel)
 {
   DBUG_ENTER("channel_is_applier_waiting(channel)");
   int result= RPL_CHANNEL_SERVICE_CHANNEL_DOES_NOT_EXISTS_ERROR;
@@ -881,4 +889,95 @@ int channel_flush(const char* channel)
   DBUG_RETURN(error ? 1 : 0);
 }
 
+int channel_get_retrieved_gtid_set(const char* channel,
+                                   char** retrieved_set)
+{
+  DBUG_ENTER("channel_get_retrieved_gtid_set(channel,retrieved_set)");
+
+  channel_map.rdlock();
+
+  Master_info *mi= channel_map.get_mi(channel);
+
+  if (mi == NULL)
+  {
+    channel_map.unlock();
+    DBUG_RETURN(RPL_CHANNEL_SERVICE_CHANNEL_DOES_NOT_EXISTS_ERROR);
+  }
+
+  mi->inc_reference();
+  channel_map.unlock();
+
+  int error= 0;
+  const Gtid_set* receiver_gtid_set= mi->rli->get_gtid_set();
+  if (receiver_gtid_set->to_string(retrieved_set,
+                                   true /*need_lock*/) == -1)
+    error= ER_OUTOFMEMORY;
+
+  mi->dec_reference();
+
+  DBUG_RETURN(error);
+}
+
+bool channel_is_stopping(const char* channel,
+                         enum_channel_thread_types thd_type)
+{
+  bool is_stopping= false;
+  DBUG_ENTER("channel_is_stopping(channel, thd_type");
+
+  channel_map.rdlock();
+  Master_info *mi= channel_map.get_mi(channel);
+  if (mi == NULL)
+  {
+    channel_map.unlock();
+    DBUG_RETURN(false);
+  }
+
+  mi->channel_rdlock();
+
+  switch(thd_type)
+  {
+    case CHANNEL_NO_THD:
+      break;
+    case CHANNEL_RECEIVER_THREAD:
+      is_stopping= likely(mi->is_stopping.atomic_get());
+      break;
+    case CHANNEL_APPLIER_THREAD:
+      is_stopping= likely(mi->rli->is_stopping.atomic_get());
+      break;
+    default:
+      DBUG_ASSERT(0);
+  }
+
+  mi->channel_unlock();
+  channel_map.unlock();
+
+  DBUG_RETURN(is_stopping);
+}
+
+bool is_partial_transaction_on_channel_relay_log(const char *channel)
+{
+  DBUG_ENTER("is_partial_transaction_on_channel_relay_log(channel)");
+  channel_map.rdlock();
+  Master_info *mi= channel_map.get_mi(channel);
+  if (mi == NULL)
+  {
+    channel_map.unlock();
+    DBUG_RETURN(false);
+  }
+  mi->channel_rdlock();
+  bool ret= mi->transaction_parser.is_inside_transaction();
+  mi->channel_unlock();
+  channel_map.unlock();
+  DBUG_RETURN(ret);
+}
+
+bool is_any_slave_channel_running(int thread_mask)
+{
+  bool status;
+  DBUG_ENTER("is_any_slave_channel_running");
+  channel_map.rdlock();
+  status= is_any_slave_channel_running(thread_mask, NULL);
+  channel_map.unlock();
+  DBUG_RETURN(status);
+}
 #endif /* HAVE_REPLICATION */

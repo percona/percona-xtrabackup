@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#include <sys/stat.h>
 
 C_MODE_START
 
@@ -89,6 +90,7 @@ C_MODE_START
 #define MY_RESOLVE_LINK 128	/* my_realpath(); Only resolve links */
 #define MY_HOLD_ORIGINAL_MODES 128  /* my_copy() holds to file modes */
 #define MY_REDEL_MAKE_BACKUP 256
+#define MY_REDEL_NO_COPY_STAT 512 /* my_redel() doesn't call my_copystat() */
 #define MY_SEEK_NOT_DONE 32	/* my_lock may have to do a seek */
 #define MY_DONT_WAIT	64	/* my_lock() don't wait if can't lock */
 #define MY_ZEROFILL	32	/* my_malloc(), fill array with zero */
@@ -218,7 +220,7 @@ extern void (*fatal_error_handler_hook)(uint my_err, const char *str,
 extern void (*local_message_hook)(enum loglevel ll,
                                   const char *format, va_list args);
 extern uint my_file_limit;
-extern ulong my_thread_stack_size;
+extern MYSQL_PLUGIN_IMPORT ulong my_thread_stack_size;
 
 /*
   Hooks for reporting execution stage information. The server implementation
@@ -468,6 +470,16 @@ typedef struct st_io_cache		/* Used when cacheing files */
 
 typedef int (*qsort2_cmp)(const void *, const void *, const void *);
 
+/*
+  Subset of struct stat fields filled by stat/lstat/fstat that uniquely
+  identify a file
+*/
+typedef struct st_file_id
+{
+  dev_t st_dev;
+  ino_t st_ino;
+} ST_FILE_ID;
+
 typedef void (*my_error_reporter)(enum loglevel level, const char *format, ...)
   MY_ATTRIBUTE((format(printf, 2, 3)));
 
@@ -539,8 +551,9 @@ extern File my_create(const char *FileName,int CreateFlags,
 extern int my_close(File Filedes,myf MyFlags);
 extern int my_mkdir(const char *dir, int Flags, myf MyFlags);
 extern int my_readlink(char *to, const char *filename, myf MyFlags);
-extern int my_is_symlink(const char *filename);
+extern int my_is_symlink(const char *filename, ST_FILE_ID *file_id);
 extern int my_realpath(char *to, const char *filename, myf MyFlags);
+extern int my_is_same_file(File file, const ST_FILE_ID *file_id);
 extern File my_create_with_symlink(const char *linkname, const char *filename,
 				   int createflags, int access_flags,
 				   myf MyFlags);
@@ -862,6 +875,14 @@ extern my_bool my_gethwaddr(uchar *to);
 
 #ifndef MAP_NOSYNC
 #define MAP_NOSYNC      0
+#endif
+
+/*
+  Not defined in FreeBSD 11.
+  Was never implemented in FreeBSD, so we just set it to 0.
+*/
+#ifndef MAP_NORESERVE
+#define MAP_NORESERVE 0
 #endif
 
 #ifdef HAVE_MMAP64

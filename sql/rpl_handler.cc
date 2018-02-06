@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -304,7 +304,8 @@ int Trans_delegate::before_commit(THD *thd, bool all,
                                   ulonglong cache_log_max_size)
 {
   DBUG_ENTER("Trans_delegate::before_commit");
-  Trans_param param= TRANS_PARAM_ZERO;
+  Trans_param param;
+  TRANS_PARAM_ZERO(param);
   param.server_id= thd->server_id;
   param.server_uuid= server_uuid;
   param.thread_id= thd->thread_id();
@@ -323,6 +324,44 @@ int Trans_delegate::before_commit(THD *thd, bool all,
   int ret= 0;
   FOREACH_OBSERVER(ret, before_commit, thd, (&param));
   DBUG_RETURN(ret);
+}
+
+/**
+ Helper method to check if the given table has 'CASCADE' foreign key or not.
+
+ @param[in]   TABLE     Table object that needs to be verified.
+ @param[in]   THD       Current execution thread.
+
+ @return bool TRUE      If the table has 'CASCADE' foreign key.
+              FALSE     If the table does not have 'CASCADE' foreign key.
+*/
+bool has_cascade_foreign_key(TABLE *table, THD *thd)
+{
+  DBUG_ENTER("has_cascade_foreign_key");
+  List<FOREIGN_KEY_INFO> f_key_list;
+  table->file->get_foreign_key_list(thd, &f_key_list);
+
+  FOREIGN_KEY_INFO *f_key_info;
+  List_iterator_fast<FOREIGN_KEY_INFO> foreign_key_iterator(f_key_list);
+  while ((f_key_info=foreign_key_iterator++))
+  {
+    /*
+     The possible values for update_method are
+     {"CASCADE", "SET NULL", "NO ACTION", "RESTRICT"}.
+
+     Hence we are avoiding the usage of strncmp
+     ("'update_method' value with 'CASCADE'") and just comparing
+     the first character of the update_method value with 'C'.
+    */
+    if (f_key_info->update_method->str[0] == 'C' ||
+        f_key_info->delete_method->str[0] == 'C')
+    {
+      DBUG_ASSERT(!strncmp(f_key_info->update_method->str, "CASCADE", 7) ||
+                  !strncmp(f_key_info->delete_method->str, "CASCADE", 7));
+      DBUG_RETURN(TRUE);
+    }
+  }
+  DBUG_RETURN(FALSE);
 }
 
 /**
@@ -347,7 +386,12 @@ Trans_delegate::prepare_table_info(THD* thd,
   std::vector<Trans_table_info> table_info_holder;
   for(; open_tables != NULL; open_tables= open_tables->next)
   {
-    Trans_table_info table_info = {0,0,0};
+    Trans_table_info table_info = {0,0,0,0};
+
+    if (open_tables->no_replicate)
+    {
+      continue;
+    }
 
     table_info.table_name= open_tables->s->table_name.str;
 
@@ -365,7 +409,13 @@ Trans_delegate::prepare_table_info(THD* thd,
 
     table_info.number_of_primary_keys= primary_keys;
 
-    table_info.transactional_table= open_tables->file->has_transactions();
+    table_info.db_type= open_tables->s->db_type()->db_type;
+
+    /*
+      Find out if the table has foreign key with ON UPDATE/DELETE CASCADE
+      clause.
+    */
+    table_info.has_cascade_foreign_key= has_cascade_foreign_key(open_tables, thd);
 
     table_info_holder.push_back(table_info);
   }
@@ -391,8 +441,10 @@ Trans_delegate::prepare_table_info(THD* thd,
                                 = (*table_info_holder_it).number_of_primary_keys;
       table_info_list[table].table_name
                                 = (*table_info_holder_it).table_name;
-      table_info_list[table].transactional_table
-                                = (*table_info_holder_it).transactional_table;
+      table_info_list[table].db_type
+                                = (*table_info_holder_it).db_type;
+      table_info_list[table].has_cascade_foreign_key
+                                = (*table_info_holder_it).has_cascade_foreign_key;
     }
   }
 
@@ -419,12 +471,16 @@ void prepare_transaction_context(THD* thd, Trans_context_info& ctx_info)
   //Extracting the session value of transaction_write_set_extraction
   ctx_info.transaction_write_set_extraction=
     thd->variables.transaction_write_set_extraction;
+
+  //Extracting transaction isolation level
+  ctx_info.tx_isolation= thd->tx_isolation;
 }
 
 int Trans_delegate::before_dml(THD* thd, int& result)
 {
   DBUG_ENTER("Trans_delegate::before_dml");
-  Trans_param param= TRANS_PARAM_ZERO;
+  Trans_param param;
+  TRANS_PARAM_ZERO(param);
 
   param.server_id= thd->server_id;
   param.server_uuid= server_uuid;
@@ -444,7 +500,8 @@ int Trans_delegate::before_dml(THD* thd, int& result)
 int Trans_delegate::before_rollback(THD *thd, bool all)
 {
   DBUG_ENTER("Trans_delegate::before_rollback");
-  Trans_param param= TRANS_PARAM_ZERO;
+  Trans_param param;
+  TRANS_PARAM_ZERO(param);
   param.server_id= thd->server_id;
   param.server_uuid= server_uuid;
   param.thread_id= thd->thread_id();
@@ -462,7 +519,8 @@ int Trans_delegate::before_rollback(THD *thd, bool all)
 int Trans_delegate::after_commit(THD *thd, bool all)
 {
   DBUG_ENTER("Trans_delegate::after_commit");
-  Trans_param param= TRANS_PARAM_ZERO;
+  Trans_param param;
+  TRANS_PARAM_ZERO(param);
   param.server_uuid= server_uuid;
   param.thread_id= thd->thread_id();
 
@@ -485,7 +543,8 @@ int Trans_delegate::after_commit(THD *thd, bool all)
 int Trans_delegate::after_rollback(THD *thd, bool all)
 {
   DBUG_ENTER("Trans_delegate::after_rollback");
-  Trans_param param= TRANS_PARAM_ZERO;
+  Trans_param param;
+  TRANS_PARAM_ZERO(param);
   param.server_uuid= server_uuid;
   param.thread_id= thd->thread_id();
 
@@ -734,7 +793,7 @@ int Binlog_transmit_delegate::before_send_event(THD *thd, ushort flags,
 
   int ret= 0;
   FOREACH_OBSERVER(ret, before_send_event, thd,
-                   (&param, (uchar *)packet->c_ptr(),
+                   (&param, (uchar *)packet->ptr(),
                     packet->length(),
                     log_file+dirname_length(log_file), log_pos));
   return ret;
@@ -753,7 +812,7 @@ int Binlog_transmit_delegate::after_send_event(THD *thd, ushort flags,
 
   int ret= 0;
   FOREACH_OBSERVER(ret, after_send_event, thd,
-                   (&param, packet->c_ptr(), packet->length(),
+                   (&param, packet->ptr(), packet->length(),
                    skipped_log_file+dirname_length(skipped_log_file),
                     skipped_log_pos));
   return ret;
@@ -775,6 +834,7 @@ void Binlog_relay_IO_delegate::init_param(Binlog_relay_IO_param *param,
                                           Master_info *mi)
 {
   param->mysql= mi->mysql;
+  param->channel_name= mi->get_channel();
   param->user= const_cast<char *>(mi->get_user());
   param->host= mi->host;
   param->port= mi->port;
@@ -805,6 +865,18 @@ int Binlog_relay_IO_delegate::thread_stop(THD *thd, Master_info *mi)
 
   int ret= 0;
   FOREACH_OBSERVER(ret, thread_stop, thd, (&param));
+  return ret;
+}
+
+int Binlog_relay_IO_delegate::applier_start(THD *thd, Master_info *mi)
+{
+  Binlog_relay_IO_param param;
+  init_param(&param, mi);
+  param.server_id= thd->server_id;
+  param.thread_id= thd->thread_id();
+
+  int ret= 0;
+  FOREACH_OBSERVER(ret, applier_start, thd, (&param));
   return ret;
 }
 

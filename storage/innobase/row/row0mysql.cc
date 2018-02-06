@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -752,6 +752,7 @@ handle_new_error:
 	case DB_FTS_INVALID_DOCID:
 	case DB_INTERRUPTED:
 	case DB_CANT_CREATE_GEOMETRY_OBJECT:
+	case DB_COMPUTE_VALUE_FAILED:
 		DBUG_EXECUTE_IF("row_mysql_crash_if_error", {
 					log_buffer_flush_to_disk();
 					DBUG_SUICIDE(); });
@@ -1732,6 +1733,8 @@ run_again:
 
 	row_ins_step(thr);
 
+	DEBUG_SYNC_C("ib_after_row_insert_step");
+
 	err = trx->error_state;
 
 	if (err != DB_SUCCESS) {
@@ -2283,7 +2286,9 @@ row_update_for_mysql_using_cursor(
 				node->upd_ext ? node->upd_ext->n_ext : 0,
 				false);
 			/* Commit the open mtr as we are processing UPDATE. */
-			index->last_ins_cur->release();
+			if (index->last_ins_cur) {
+				index->last_ins_cur->release();
+			}
 		} else {
 			err = row_ins_sec_index_entry(index, entry, thr, false);
 		}
@@ -2327,7 +2332,9 @@ row_del_upd_for_mysql_using_cursor(
 	to change. */
 	thr = que_fork_get_first_thr(prebuilt->upd_graph);
 	clust_index = dict_table_get_first_index(prebuilt->table);
-	clust_index->last_ins_cur->release();
+	if (clust_index->last_ins_cur) {
+		clust_index->last_ins_cur->release();
+	}
 
 	/* Step-1: Select the appropriate cursor that will help build
 	the original row and updated row. */
@@ -2604,6 +2611,7 @@ run_again:
 		node->cascade_upd_nodes = cascade_upd_nodes;
 		cascade_upd_nodes->pop_front();
 		thr->fk_cascade_depth++;
+		prebuilt->m_mysql_table = NULL;
 
 		goto run_again;
 	}
@@ -2728,15 +2736,20 @@ row_delete_all_rows(
 	dict_table_t*	table)
 {
 	dberr_t		err = DB_SUCCESS;
+	dict_index_t*	index;
 
+
+	index = dict_table_get_first_index(table);
 	/* Step-0: If there is cached insert position along with mtr
 	commit it before starting delete/update action. */
-	dict_table_get_first_index(table)->last_ins_cur->release();
+	if (index->last_ins_cur) {
+		index->last_ins_cur->release();
+	}
 
 	/* Step-1: Now truncate all the indexes and re-create them.
 	Note: This is ddl action even though delete all rows is
 	DML action. Any error during this action is ir-reversible. */
-	for (dict_index_t* index = UT_LIST_GET_FIRST(table->indexes);
+	for (index = UT_LIST_GET_FIRST(table->indexes);
 	     index != NULL && err == DB_SUCCESS;
 	     index = UT_LIST_GET_NEXT(indexes, index)) {
 
@@ -3515,12 +3528,26 @@ loop:
 		return(n_tables + n_tables_dropped);
 	}
 
+	DBUG_EXECUTE_IF("row_drop_tables_in_background_sleep",
+		os_thread_sleep(5000000);
+	);
+
 	table = dict_table_open_on_name(drop->table_name, FALSE, FALSE,
 					DICT_ERR_IGNORE_NONE);
 
 	if (table == NULL) {
 		/* If for some reason the table has already been dropped
 		through some other mechanism, do not try to drop it */
+
+		goto already_dropped;
+	}
+
+	if (!table->to_be_dropped) {
+		/* There is a scenario: the old table is dropped
+		just after it's added into drop list, and new
+		table with the same name is created, then we try
+		to drop the new table in background. */
+		dict_table_close(table, FALSE, FALSE);
 
 		goto already_dropped;
 	}
@@ -3627,15 +3654,16 @@ row_add_table_to_background_drop_list(
 	return(TRUE);
 }
 
-/*********************************************************************//**
-Reassigns the table identifier of a table.
+/** Reassigns the table identifier of a table.
+@param[in,out]	table	table
+@param[in,out]	trx	transaction
+@param[out]	new_id	new table id
 @return error code or DB_SUCCESS */
 dberr_t
 row_mysql_table_id_reassign(
-/*========================*/
-	dict_table_t*	table,	/*!< in/out: table */
-	trx_t*		trx,	/*!< in/out: transaction */
-	table_id_t*	new_id)	/*!< out: new table id */
+	dict_table_t*	table,
+	trx_t*		trx,
+	table_id_t*	new_id)
 {
 	dberr_t		err;
 	pars_info_t*	info	= pars_info_create();
@@ -3657,6 +3685,8 @@ row_mysql_table_id_reassign(
 		"UPDATE SYS_COLUMNS SET TABLE_ID = :new_id\n"
 		" WHERE TABLE_ID = :old_id;\n"
 		"UPDATE SYS_INDEXES SET TABLE_ID = :new_id\n"
+		" WHERE TABLE_ID = :old_id;\n"
+		"UPDATE SYS_VIRTUAL SET TABLE_ID = :new_id\n"
 		" WHERE TABLE_ID = :old_id;\n"
 		"END;\n", FALSE, trx);
 
@@ -4406,6 +4436,13 @@ row_drop_table_for_mysql(
 		}
 	}
 
+
+	DBUG_EXECUTE_IF("row_drop_table_add_to_background",
+		row_add_table_to_background_drop_list(table->name.m_name);
+		err = DB_SUCCESS;
+		goto funct_exit;
+	);
+
 	/* TODO: could we replace the counter n_foreign_key_checks_running
 	with lock checks on the table? Acquire here an exclusive lock on the
 	table, and rewrite lock0lock.cc and the lock wait in srv0srv.cc so that
@@ -4938,7 +4975,7 @@ row_mysql_drop_temp_tables(void)
 Drop all foreign keys in a database, see Bug#18942.
 Called at the end of row_drop_database_for_mysql().
 @return error code or DB_SUCCESS */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 drop_all_foreign_keys_in_db(
 /*========================*/
@@ -5038,6 +5075,19 @@ loop:
 	row_mysql_lock_data_dictionary(trx);
 
 	while ((table_name = dict_get_first_table_name_in_db(name))) {
+		/* Drop parent table if it is a fts aux table, to
+		avoid accessing dropped fts aux tables in information
+		scheam when parent table still exists.
+		Note: Drop parent table will drop fts aux tables. */
+		char*	parent_table_name;
+		parent_table_name = fts_get_parent_table_name(
+				table_name, strlen(table_name));
+
+		if (parent_table_name != NULL) {
+			ut_free(table_name);
+			table_name = parent_table_name;
+		}
+
 		ut_a(memcmp(table_name, name, namelen) == 0);
 
 		table = dict_table_open_on_name(
@@ -5342,6 +5392,15 @@ row_rename_table_for_mysql(
 	    && !table->ibd_file_missing) {
 		/* Make a new pathname to update SYS_DATAFILES. */
 		char*	new_path = row_make_new_pathname(table, new_name);
+		char*	old_path = fil_space_get_first_path(table->space);
+
+		/* If old path and new path are the same means tablename
+		has not changed and only the database name holding the table
+		has changed so we need to make the complete filepath again. */
+		if (!dict_tables_have_same_db(old_name, new_name)) {
+			ut_free(new_path);
+			new_path = fil_make_filepath(NULL, new_name, IBD, false);
+		}
 
 		info = pars_info_create();
 
@@ -5361,6 +5420,7 @@ row_rename_table_for_mysql(
 				   "END;\n"
 				   , FALSE, trx);
 
+		ut_free(old_path);
 		ut_free(new_path);
 	}
 	if (err != DB_SUCCESS) {
@@ -5547,6 +5607,13 @@ end:
 			goto funct_exit;
 		}
 
+		/* In case of copy alter, template db_name and
+		table_name should be renamed only for newly
+		created table. */
+		if (table->vc_templ != NULL && !new_is_tmp) {
+			innobase_rename_vc_templ(table);
+		}
+
 		/* We only want to switch off some of the type checking in
 		an ALTER TABLE...ALGORITHM=COPY, not in a RENAME. */
 		dict_names_t	fk_tables;
@@ -5579,6 +5646,24 @@ end:
 			trx_rollback_to_savepoint(trx, NULL);
 			trx->error_state = DB_SUCCESS;
 		}
+
+		/* Check whether virtual column or stored column affects
+		the foreign key constraint of the table. */
+		if (dict_foreigns_has_s_base_col(
+				table->foreign_set, table)) {
+			err = DB_NO_FK_ON_S_BASE_COL;
+			ut_a(DB_SUCCESS == dict_table_rename_in_cache(
+				table, old_name, FALSE));
+			trx->error_state = DB_SUCCESS;
+			trx_rollback_to_savepoint(trx, NULL);
+			trx->error_state = DB_SUCCESS;
+			goto funct_exit;
+		}
+
+		/* Fill the virtual column set in foreign when
+		the table undergoes copy alter operation. */
+		dict_mem_table_free_foreign_vcol_set(table);
+		dict_mem_table_fill_foreign_vcol_set(table);
 
 		while (!fk_tables.empty()) {
 			dict_load_table(fk_tables.front(), true,
@@ -5701,9 +5786,13 @@ row_scan_index_for_mysql(
 	row_prebuilt_t*		prebuilt,	/*!< in: prebuilt struct
 						in MySQL handle */
 	const dict_index_t*	index,		/*!< in: index */
+#ifdef WL6742
+	/* Removing WL6742 as part of Bug 23046302 */
+
 	bool			check_keys,	/*!< in: true=check for mis-
 						ordered or duplicate records,
 						false=count the rows only */
+#endif
 	ulint*			n_rows)		/*!< out: number of entries
 						seen in the consistent read */
 {
@@ -5770,7 +5859,7 @@ loop:
 		goto func_exit;
 	default:
 	{
-		const char* doing = check_keys? "CHECK TABLE" : "COUNT(*)";
+		const char* doing = "CHECK TABLE";
 		ib::warn() << doing << " on index " << index->name << " of"
 			" table " << index->table->name << " returned " << ret;
 	}
@@ -5786,9 +5875,12 @@ func_exit:
 
 	*n_rows = *n_rows + 1;
 
+#ifdef WL6742
+	/*Removing WL6742 as part of Bug 23046302 */
 	if (!check_keys) {
 		goto next_rec;
 	}
+#endif
 	/* else this code is doing handler::check() for CHECK TABLE */
 
 	/* row_search... returns the index record in buf, record origin offset
@@ -5869,8 +5961,10 @@ not_ok:
 			mem_heap_free(tmp_heap);
 		}
 	}
-
+#ifdef WL6742
+/* Removed WL6742 as part of Bug 23046302 */
 next_rec:
+#endif
 	ret = row_search_for_mysql(
 		buf, PAGE_CUR_G, prebuilt, 0, ROW_SEL_NEXT);
 

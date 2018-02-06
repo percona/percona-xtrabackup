@@ -3615,7 +3615,6 @@ dict_foreign_find_index(
 		if (types_idx != index
 		    && !(index->type & DICT_FTS)
 		    && !dict_index_is_spatial(index)
-		    && !dict_index_has_virtual(index)
 		    && !index->to_be_dropped
 		    && dict_foreign_qualify_index(
 			    table, col_names, columns, n_cols,
@@ -4610,8 +4609,8 @@ loop:
 			return(DB_CANNOT_ADD_CONSTRAINT);
 		}
 
-		if (dict_foreigns_has_v_base_col(local_fk_set, table)) {
-			return(DB_NO_FK_ON_V_BASE_COL);
+		if (dict_foreigns_has_s_base_col(local_fk_set, table)) {
+			return(DB_NO_FK_ON_S_BASE_COL);
 		}
 
 		/**********************************************************/
@@ -4629,6 +4628,8 @@ loop:
 				      local_fk_set.end(),
 				      dict_foreign_add_to_referenced_table());
 			local_fk_set.clear();
+
+			dict_mem_table_fill_foreign_vcol_set(table);
 		}
 		return(error);
 	}
@@ -5799,6 +5800,13 @@ dict_set_corrupted(
 		goto func_exit;
 	}
 
+	/* If this is read only mode, do not update SYS_INDEXES, just
+	mark it as corrupted in memory */
+	if (srv_read_only_mode) {
+		index->type |= DICT_CORRUPT;
+		goto func_exit;
+	}
+
 	heap = mem_heap_create(sizeof(dtuple_t) + 2 * (sizeof(dfield_t)
 			       + sizeof(que_fork_t) + sizeof(upd_node_t)
 			       + sizeof(upd_t) + 12));
@@ -6660,8 +6668,6 @@ dict_foreign_qualify_index(
 
 		field = dict_index_get_nth_field(index, i);
 		col_no = dict_col_get_no(field->col);
-
-		ut_ad(!dict_col_is_virtual(field->col));
 
 		if (field->prefix_len != 0) {
 			/* We do not accept column prefix

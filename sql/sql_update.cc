@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -471,7 +471,7 @@ bool mysql_update(THD *thd,
   /* Update the table->file->stats.records number */
   table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
 
-  table->mark_columns_needed_for_update();
+  table->mark_columns_needed_for_update(false/*mark_binlog_columns=false*/);
   if (table->vfield &&
       validate_gc_assignment(thd, &fields, &values, table))
     DBUG_RETURN(0);
@@ -566,6 +566,7 @@ bool mysql_update(THD *thd,
   }
 
   used_key_is_modified|= partition_key_modified(table, table->write_set);
+  table->mark_columns_per_binlog_row_image();
 
   using_filesort= order && need_sort;
 
@@ -810,9 +811,8 @@ bool mysql_update(THD *thd,
           continue;  /* repeat the read of the same row if it still exists */
 
         store_record(table,record[1]);
-        if (fill_record_n_invoke_before_triggers(thd, fields, values,
-                                                 table,
-                                                 TRG_EVENT_UPDATE, 0))
+        if (fill_record_n_invoke_before_triggers(thd, &update, fields, values,
+                                                 table, TRG_EVENT_UPDATE, 0))
           break; /* purecov: inspected */
 
         found++;
@@ -2079,12 +2079,12 @@ bool Query_result_update::initialize_tables(JOIN *join)
       }
       if (safe_update_on_fly(thd, join->best_ref[0], table_ref, all_tables))
       {
-        table->mark_columns_needed_for_update();
+        table->mark_columns_needed_for_update(true/*mark_binlog_columns=true*/);
 	table_to_update= table;			// Update table on the fly
 	continue;
       }
     }
-    table->mark_columns_needed_for_update();
+    table->mark_columns_needed_for_update(true/*mark_binlog_columns=true*/);
 
     if (table->vfield &&
         validate_gc_assignment(thd, fields, values, table))
@@ -2269,7 +2269,7 @@ bool Query_result_update::send_data(List<Item> &not_used_values)
     {
       table->status|= STATUS_UPDATED;
       store_record(table,record[1]);
-      if (fill_record_n_invoke_before_triggers(thd,
+      if (fill_record_n_invoke_before_triggers(thd, update_operations[offset],
                                                *fields_for_table[offset],
                                                *values_for_table[offset],
                                                table,

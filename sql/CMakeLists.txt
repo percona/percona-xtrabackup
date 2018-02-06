@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ INCLUDE_DIRECTORIES(
   ${ZLIB_INCLUDE_DIR}
   ${SSL_INCLUDE_DIRS}
   ${CMAKE_BINARY_DIR}/sql
+  ${LZ4_INCLUDE_DIR}
 )
 
 SET(CONF_SOURCES
@@ -252,6 +253,7 @@ SET(SQL_SOURCE
   ${GEN_DIGEST_SOURCES}
   ${CONF_SOURCES}
   ${SQL_SHARED_SOURCES}
+  ../extra/lz4/xxhash.c
   ../libmysql/errmsg.c
   ../sql-common/client.c
   ../sql-common/client_plugin.c
@@ -312,9 +314,13 @@ ADD_COMPILE_FLAGS(
   COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
 )
 
-# Fixes "C1128: number of sections exceeded object file format limit" in MSVC /MD
-# The flag /bigobj is not added if the build is not WINDOWS_RUNTIME_MD (/MD)
-IF(WINDOWS_RUNTIME_MD AND CMAKE_SIZEOF_VOID_P MATCHES 8)
+ADD_COMPILE_FLAGS(
+  ../extra/lz4/xxhash.c
+  COMPILE_FLAGS -DXXH_NAMESPACE=MY_
+)
+
+# Fixes "C1128: number of sections exceeded object file format limit" in MSVC
+IF(WIN32 AND CMAKE_SIZEOF_VOID_P MATCHES 8)
   ADD_COMPILE_FLAGS(item_geofunc_setops.cc COMPILE_FLAGS "/bigobj")
 ENDIF()
 
@@ -335,6 +341,21 @@ IF(HAVE_NO_UNUSED_TYPEDEFS)
     spatial.cc
     COMPILE_FLAGS "-Wno-unused-local-typedefs"
   )
+ENDIF()
+
+# Boost source has misleading indentation
+MY_CHECK_CXX_COMPILER_FLAG("-Wmisleading-indentation"
+                           HAVE_MISLEADING_INDENTATION)
+IF(HAVE_MISLEADING_INDENTATION)
+  ADD_COMPILE_FLAGS(
+    geometry_rtree.cc
+    item_geofunc.cc
+    item_geofunc_buffer.cc
+    item_geofunc_internal.cc
+    item_geofunc_relchecks.cc
+    item_geofunc_relchecks_bgwrap.cc
+    item_geofunc_setops.cc    
+    COMPILE_FLAGS "-Wno-misleading-indentation")
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_FLAG("-fno-builtin-memcmp" HAVE_NO_BUILTIN_MEMCMP)

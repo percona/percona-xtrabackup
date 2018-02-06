@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -59,6 +59,8 @@
 #include "sql_time.h"                    // global_date_format
 #include "table_cache.h"                 // Table_cache_manager
 #include "transaction.h"                 // trans_commit_stmt
+#include "rpl_write_set_handler.h"       // transaction_write_set_hashing_algorithms
+#include "rpl_group_replication.h"       // is_group_replication_running
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
 #include "../storage/perfschema/pfs_server.h"
@@ -1829,6 +1831,17 @@ static Sys_var_mybool Sys_log_bin(
 
 static bool transaction_write_set_check(sys_var *self, THD *thd, set_var *var)
 {
+#ifdef HAVE_REPLICATION
+  // Can't change the algorithm when group replication is enabled.
+  if (is_group_replication_running())
+  {
+    my_message(ER_GROUP_REPLICATION_RUNNING,
+               "The write set algorithm cannot be changed when Group replication"
+               " is running.", MYF(0));
+    return true;
+  }
+#endif
+
   if (var->type == OPT_GLOBAL &&
       global_system_variables.binlog_format != BINLOG_FORMAT_ROW)
   {
@@ -1862,9 +1875,6 @@ static bool transaction_write_set_check(sys_var *self, THD *thd, set_var *var)
   }
   return false;
 }
-
-static const char *transaction_write_set_hashing_algorithms[]=
-       {"OFF", "MURMUR32", 0};
 
 static Sys_var_enum Sys_extract_write_set(
        "transaction_write_set_extraction",
@@ -1945,7 +1955,9 @@ static Sys_var_charptr Sys_log_error(
        "log_error", "Error log file",
        READ_ONLY GLOBAL_VAR(log_error_dest),
        CMD_LINE(OPT_ARG, OPT_LOG_ERROR),
-       IN_FS_CHARSET, DEFAULT(disabled_my_option));
+       IN_FS_CHARSET, DEFAULT(disabled_my_option), NO_MUTEX_GUARD,
+       NOT_IN_BINLOG, ON_CHECK(NULL), ON_UPDATE(NULL),
+       NULL, sys_var::PARSE_EARLY);
 
 static Sys_var_mybool Sys_log_queries_not_using_indexes(
        "log_queries_not_using_indexes",
@@ -2543,8 +2555,16 @@ static Sys_var_ulong Sys_net_buffer_length(
 static bool fix_net_read_timeout(sys_var *self, THD *thd, enum_var_type type)
 {
   if (type != OPT_GLOBAL)
+  {
+    // net_buffer_length is a specific property for the classic protocols
+    if (!thd->is_classic_protocol())
+    {
+      my_error(ER_PLUGGABLE_PROTOCOL_COMMAND_NOT_SUPPORTED, MYF(0));
+      return true;
+    }
     my_net_set_read_timeout(thd->get_protocol_classic()->get_net(),
                             thd->variables.net_read_timeout);
+  }
   return false;
 }
 static Sys_var_ulong Sys_net_read_timeout(
@@ -2559,8 +2579,16 @@ static Sys_var_ulong Sys_net_read_timeout(
 static bool fix_net_write_timeout(sys_var *self, THD *thd, enum_var_type type)
 {
   if (type != OPT_GLOBAL)
+  {
+    // net_read_timeout is a specific property for the classic protocols
+    if (!thd->is_classic_protocol())
+    {
+      my_error(ER_PLUGGABLE_PROTOCOL_COMMAND_NOT_SUPPORTED, MYF(0));
+      return true;
+    }
     my_net_set_write_timeout(thd->get_protocol_classic()->get_net(),
                              thd->variables.net_write_timeout);
+  }
   return false;
 }
 static Sys_var_ulong Sys_net_write_timeout(
@@ -2575,8 +2603,16 @@ static Sys_var_ulong Sys_net_write_timeout(
 static bool fix_net_retry_count(sys_var *self, THD *thd, enum_var_type type)
 {
   if (type != OPT_GLOBAL)
+  {
+    // net_write_timeout is a specific property for the classic protocols
+    if (!thd->is_classic_protocol())
+    {
+      my_error(ER_PLUGGABLE_PROTOCOL_COMMAND_NOT_SUPPORTED, MYF(0));
+      return true;
+    }
     thd->get_protocol_classic()->get_net()->retry_count=
       thd->variables.net_retry_count;
+  }
   return false;
 }
 static Sys_var_ulong Sys_net_retry_count(
@@ -3930,12 +3966,6 @@ bool Sys_var_tx_isolation::session_update(THD *thd, set_var *var)
   if (var->type == OPT_DEFAULT || !(thd->in_active_multi_stmt_transaction() ||
                                     thd->in_sub_stmt))
   {
-    Transaction_state_tracker *tst= NULL;
-
-    if (thd->variables.session_track_transaction_info > TX_TRACK_NONE)
-      tst= (Transaction_state_tracker *)
-             thd->session_tracker.get_tracker(TRANSACTION_INFO_TRACKER);
-
     /*
       Update the isolation level of the next transaction.
       I.e. if one did:
@@ -3955,35 +3985,10 @@ bool Sys_var_tx_isolation::session_update(THD *thd, set_var *var)
       TRANSACTION would always succeed making the characteristics
       effective for the next transaction that starts.
      */
-    thd->tx_isolation= (enum_tx_isolation) var->save_result.ulonglong_value;
-
-    if (var->type == OPT_DEFAULT)
-    {
-      enum enum_tx_isol_level l;
-      switch (thd->tx_isolation) {
-      case ISO_READ_UNCOMMITTED:
-        l=  TX_ISOL_UNCOMMITTED;
-        break;
-      case ISO_READ_COMMITTED:
-        l=  TX_ISOL_COMMITTED;
-        break;
-      case ISO_REPEATABLE_READ:
-        l= TX_ISOL_REPEATABLE;
-        break;
-      case ISO_SERIALIZABLE:
-        l= TX_ISOL_SERIALIZABLE;
-        break;
-      default:
-        DBUG_ASSERT(0);
-        return TRUE;
-      }
-      if (tst)
-        tst->set_isol_level(thd, l);
-    }
-    else if (tst)
-    {
-      tst->set_isol_level(thd, TX_ISOL_INHERIT);
-    }
+    enum_tx_isolation tx_isol;
+    tx_isol= (enum_tx_isolation) var->save_result.ulonglong_value;
+    bool one_shot= (var->type == OPT_DEFAULT);
+    return set_tx_isolation(thd, tx_isol, one_shot);
   }
   return FALSE;
 }
@@ -4623,6 +4628,14 @@ static bool check_log_path(sys_var *self, THD *thd, set_var *var)
 
   if (!var->save_result.string_value.str)
     return true;
+
+  if (!is_valid_log_name(var->save_result.string_value.str,
+                         var->save_result.string_value.length))
+  {
+    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0),
+             self->name.str, var->save_result.string_value.str);
+    return true;
+  }
 
   if (var->save_result.string_value.length > FN_REFLEN)
   { // path is too long

@@ -118,7 +118,7 @@ Retirn true if character if file separator */
 bool
 is_path_separator(char c)
 {
-	return(c == FN_LIBCHAR || c == FN_LIBCHAR2);
+	return is_directory_separator(c);
 }
 
 

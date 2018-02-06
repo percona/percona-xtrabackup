@@ -3882,3 +3882,98 @@ DELETE t1, t2
 FROM t1 LEFT JOIN t2 ON t1.id = t2.id
 WHERE t1.id IN (SELECT * FROM (SELECT id FROM t1) AS t1sub);
 DROP TABLE t1, t2;
+# Bug#22967439: Mysql 5.7 vs 5.6 incorrect SELECT statement result
+CREATE TABLE t1
+(integer1 INTEGER NULL,
+integer2 INTEGER NULL,
+varchar1 VARCHAR(255) NULL);
+CREATE TABLE t2
+(integer1 INTEGER NULL,
+integer2 INTEGER NULL,
+varchar1 VARCHAR(255) NULL,
+varchar2 VARCHAR(255) NULL);
+INSERT INTO t1 VALUES
+(11,12,'test1'), (21,22,'test2'), (31,32,'test3');
+INSERT INTO t2 VALUES
+(11,12,'test1','test12'), (21,22,'test2','test22'), (31,32,'test3','test32');
+SELECT g_t3.g_f1, g_t3.g_f2, g_t3.g_f3
+FROM (SELECT g_t0.integer1 AS g_f1,
+g_t0.integer2 AS g_f2,
+g_t0.varchar1 AS g_f3
+FROM t1 g_t0
+) g_t3
+GROUP BY g_t3.g_f1, g_t3.g_f2, g_t3.g_f3
+HAVING g_t3.g_f3 = (select varchar1
+from t2
+where integer1 = g_t3.g_f1
+);
+g_f1	g_f2	g_f3
+11	12	test1
+21	22	test2
+31	32	test3
+DROP TABLE t1, t2;
+#
+# Bug #25343335: DERIVED TABLE SELECT LIST'S REFERENCE TO ALIAS CAUSES
+#                INCORRECT BEHAVIOR
+#
+CREATE TABLE t1 (c11 int);
+INSERT INTO t1 VALUES (1);
+EXPLAIN SELECT *
+FROM (SELECT (1) alias1,
+(SELECT alias1) alias2
+FROM t1) X ;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	t1	NULL	system	NULL	NULL	NULL	NULL	1	100.00	NULL
+3	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1276	Field or reference 'alias1' of SELECT #3 was resolved in SELECT #2
+Note	1003	/* select#1 */ select 1 AS `alias1`,(/* select#3 */ select `alias1`) AS `alias2` from dual
+SELECT *
+FROM (SELECT (1) alias1,
+(SELECT alias1) alias2
+FROM t1) X ;
+alias1	alias2
+1	1
+PREPARE xx FROM 'SELECT *
+FROM (SELECT (1) alias1,
+(SELECT alias1) alias2
+FROM t1) X ';
+EXECUTE xx;
+alias1	alias2
+1	1
+EXECUTE xx;
+alias1	alias2
+1	1
+EXECUTE xx;
+alias1	alias2
+1	1
+EXPLAIN SELECT alias2
+FROM (SELECT (1) alias1,
+(SELECT alias1) alias2
+FROM t1) X ;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	t1	NULL	system	NULL	NULL	NULL	NULL	1	100.00	NULL
+3	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1276	Field or reference 'alias1' of SELECT #3 was resolved in SELECT #2
+Note	1003	/* select#1 */ select (/* select#3 */ select `alias1`) AS `alias2` from dual
+SELECT alias2
+FROM (SELECT (1) alias1,
+(SELECT alias1) alias2
+FROM t1) X ;
+alias2
+1
+PREPARE yy FROM 'SELECT alias2
+FROM (SELECT (1) alias1,
+(SELECT alias1) alias2
+FROM t1) X ';
+EXECUTE yy;
+alias2
+1
+EXECUTE yy;
+alias2
+1
+EXECUTE yy;
+alias2
+1
+DROP TABLE t1;

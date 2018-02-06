@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -67,7 +67,7 @@ fsp_free_extent(
 /********************************************************************//**
 Marks a page used. The page must reside within the extents of the given
 segment. */
-static MY_ATTRIBUTE((nonnull))
+static
 void
 fseg_mark_page_used(
 /*================*/
@@ -1281,6 +1281,7 @@ fsp_header_decode_encryption_info(
 	if (crc1 != crc2) {
 		ib::error() << "Failed to decrpt encryption information,"
 			<< " please check key file is not changed!";
+		my_free(master_key);
 		return(false);
 	}
 
@@ -1437,7 +1438,7 @@ fsp_try_extend_data_file_with_pages(
 @param[in,out]	header	tablespace header
 @param[in,out]	mtr	mini-transaction
 @return whether the tablespace was extended */
-static UNIV_COLD MY_ATTRIBUTE((nonnull))
+static UNIV_COLD
 ulint
 fsp_try_extend_data_file(
 	fil_space_t*	space,
@@ -1802,7 +1803,7 @@ fsp_alloc_free_extent(
 
 /**********************************************************************//**
 Allocates a single free page from a space. */
-static MY_ATTRIBUTE((nonnull))
+static
 void
 fsp_alloc_from_free_frag(
 /*=====================*/
@@ -3506,7 +3507,7 @@ fsp_get_available_space_in_free_extents(
 /********************************************************************//**
 Marks a page used. The page must reside within the extents of the given
 segment. */
-static MY_ATTRIBUTE((nonnull))
+static
 void
 fseg_mark_page_used(
 /*================*/

@@ -164,7 +164,6 @@ trx_rseg_get_on_id(
 	server is being upgraded from pre-5.7.2. In such case return
 	rseg from pending_purge_rseg_array array. */
 	if (is_redo_rseg && trx_sys_is_noredo_rseg_slot(id)) {
-		ut_ad(trx_sys->pending_purge_rseg_array[id] != NULL);
 		return(trx_sys->pending_purge_rseg_array[id]);
 	}
 

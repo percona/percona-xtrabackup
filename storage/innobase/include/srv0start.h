@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -54,7 +54,7 @@ only one buffer pool instance is used. */
 #define BUF_POOL_SIZE_THRESHOLD		(1024 * 1024 * 1024)
 
 /** Files comprising the system tablespace */
-extern os_file_t	files[1000];
+extern pfs_os_file_t	files[1000];
 
 /*********************************************************************//**
 Parse temporary tablespace configuration.
@@ -79,7 +79,7 @@ srv_undo_tablespaces_init(
 /*======================*/
 	bool		create_new_db,		/*!< in: TRUE if new db being
 						created */
-	ibool		backup_mode,		/*!< in: TRUE disables reading
+	bool		backup_mode,		/*!< in: TRUE disables reading
 						the system tablespace (used in
 						XtraBackup), FALSE is passed on
 						recovery. */
@@ -173,6 +173,8 @@ extern	bool	srv_startup_is_before_trx_rollback_phase;
 /** TRUE if a raw partition is in use */
 extern	ibool	srv_start_raw_disk_in_use;
 
+/** UNDO tablespaces starts with space id. */
+extern	ulint	srv_undo_space_id_start;
 
 /** Shutdown state */
 enum srv_shutdown_t {

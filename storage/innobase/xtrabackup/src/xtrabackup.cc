@@ -516,7 +516,6 @@ datafiles_iter_next(datafiles_iter_t *it)
 		goto end;
 
 	it->node = UT_LIST_GET_FIRST(it->space->chain);
-
 end:
 	new_node = it->node;
 	mutex_exit(&it->mutex);
@@ -2567,7 +2566,7 @@ check_if_skip_table(
 Reads the space flags from a given data file and returns the
 page size. */
 const page_size_t
-xb_get_zip_size(os_file_t file, bool *success)
+xb_get_zip_size(pfs_os_file_t file, bool *success)
 {
 	byte		*buf;
 	byte		*page;
@@ -3034,7 +3033,7 @@ xtrabackup_scan_log_recs(
 		/* Try to parse more log records */
 
 		if (recv_parse_log_recs(checkpoint_lsn,	/*!< in: latest checkpoint LSN */
-					STORE_NO, false)) {
+					STORE_NO)) {
 			ut_ad(recv_sys->found_corrupt_log
 			      || recv_sys->found_corrupt_fs
 			      || recv_sys->mlog_checkpoint_lsn
@@ -5525,7 +5524,7 @@ update_log_temp_checkpoint(
 static my_bool
 xtrabackup_init_temp_log(void)
 {
-	os_file_t	src_file = XB_FILE_UNDEFINED;
+	pfs_os_file_t	src_file = XB_FILE_UNDEFINED;
 	char		src_path[FN_REFLEN];
 	char		dst_path[FN_REFLEN];
 	bool		success;
@@ -5856,7 +5855,7 @@ xb_space_create_file(
 	ulint		space_id,	/*!<in: space id */
 	ulint		flags __attribute__((unused)),/*!<in: tablespace
 					flags */
-	os_file_t*	file)		/*!<out: file handle */
+	pfs_os_file_t*	file)		/*!<out: file handle */
 {
 	const ulint	size = FIL_IBD_FILE_INITIAL_SIZE;
 	dberr_t		err;
@@ -5917,7 +5916,7 @@ xb_space_create_file(
 	if (fil_fusionio_enable_atomic_write(*file)) {
 
 		/* This is required by FusionIO HW/Firmware */
-		int	ret = posix_fallocate(*file, 0, size * UNIV_PAGE_SIZE);
+		int	ret = posix_fallocate(file->m_file, 0, size * UNIV_PAGE_SIZE);
 
 		if (ret != 0) {
 
@@ -6035,7 +6034,7 @@ mismatching ID, renames it to xtrabackup_tmp_#ID.ibd. If there was no
 matching file, creates a new tablespace.
 @return file handle of matched or created file */
 static
-os_file_t
+pfs_os_file_t
 xb_delta_open_matching_space(
 	const char*	dbname,		/* in: path to destination database dir */
 	const char*	name,		/* in: name of delta file (without .delta) */
@@ -6049,7 +6048,7 @@ xb_delta_open_matching_space(
 	char			dest_space_name[FN_REFLEN];
 	bool			ok;
 	fil_space_t*		fil_space;
-	os_file_t		file	= 0;
+	pfs_os_file_t		file	= XB_FILE_UNDEFINED;
 	ulint			tablespace_flags;
 	xb_filter_entry_t*	table;
 
@@ -6237,8 +6236,8 @@ xtrabackup_apply_delta(
 					including the .delta extension */
 	void*		/*data*/)
 {
-	os_file_t	src_file = XB_FILE_UNDEFINED;
-	os_file_t	dst_file = XB_FILE_UNDEFINED;
+	pfs_os_file_t	src_file = XB_FILE_UNDEFINED;
+	pfs_os_file_t	dst_file = XB_FILE_UNDEFINED;
 	char	src_path[FN_REFLEN];
 	char	dst_path[FN_REFLEN];
 	char	meta_path[FN_REFLEN];
@@ -6312,9 +6311,9 @@ xtrabackup_apply_delta(
 		goto error;
 	}
 
-	posix_fadvise(src_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(src_file.m_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 
-	os_file_set_nocache(src_file, src_path, "OPEN");
+	os_file_set_nocache(src_file.m_file, src_path, "OPEN");
 
 	dst_file = xb_delta_open_matching_space(
 			dbname, space_name, info.space_id, info.zip_size,
@@ -6324,9 +6323,9 @@ xtrabackup_apply_delta(
 		goto error;
 	}
 
-	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
+	posix_fadvise(dst_file.m_file, 0, 0, POSIX_FADV_DONTNEED);
 
-	os_file_set_nocache(dst_file, dst_path, "OPEN");
+	os_file_set_nocache(dst_file.m_file, dst_path, "OPEN");
 
 	/* allocate buffer for incremental backup */
 	incremental_buffer_base = static_cast<byte *>
@@ -6380,7 +6379,8 @@ xtrabackup_apply_delta(
 			goto error;
 		}
 
-		posix_fadvise(src_file, offset, page_in_buffer * page_size,
+		posix_fadvise(src_file.m_file, offset,
+			      page_in_buffer * page_size,
 			      POSIX_FADV_DONTNEED);
 
 		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
@@ -6625,7 +6625,7 @@ xtrabackup_apply_deltas()
 static my_bool
 xtrabackup_close_temp_log(my_bool clear_flag)
 {
-	os_file_t	src_file = XB_FILE_UNDEFINED;
+	pfs_os_file_t	src_file = XB_FILE_UNDEFINED;
 	char		src_path[FN_REFLEN];
 	char		dst_path[FN_REFLEN];
 	bool		success;
@@ -7634,7 +7634,7 @@ skip_check:
 
 	if (xtrabackup_export) {
 		msg("xtrabackup: export option is specified.\n");
-		os_file_t	info_file = XB_FILE_UNDEFINED;
+		pfs_os_file_t	info_file = XB_FILE_UNDEFINED;
 		char		info_file_path[FN_REFLEN];
 		bool		success;
 		char		table_name[FN_REFLEN];

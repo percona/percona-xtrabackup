@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -36,7 +36,6 @@ SET(CMAKE_HAVE_PTHREAD_H CACHE  INTERNAL "") # Only needed by CMake
 # Header files
 SET(HAVE_ALLOCA_H CACHE  INTERNAL "")
 SET(HAVE_ARPA_INET_H CACHE  INTERNAL "")
-SET(HAVE_DIRENT_H CACHE  INTERNAL "")
 SET(HAVE_DLFCN_H CACHE  INTERNAL "")
 SET(HAVE_EXECINFO_H CACHE  INTERNAL "")
 SET(HAVE_FPU_CONTROL_H CACHE  INTERNAL "")
@@ -204,11 +203,11 @@ SET(HAVE_FCNTL_NONBLOCK CACHE  INTERNAL "") # Only needed by CMake
 # Not checked for Windows HAVE_PAUSE_INSTRUCTION
 # Not checked for Windows HAVE_FAKE_PAUSE_INSTRUCTION
 # Not checked for Windows HAVE_ABI_CXA_DEMANGLE
-SET(HAVE_BSS_START CACHE  INTERNAL "")
 SET(HAVE_BUILTIN_UNREACHABLE CACHE  INTERNAL "")
 SET(HAVE_BUILTIN_EXPECT CACHE  INTERNAL "")
 SET(HAVE_BUILTIN_STPCPY CACHE  INTERNAL "")
 SET(HAVE_GCC_ATOMIC_BUILTINS CACHE  INTERNAL "")
+SET(HAVE_GCC_SYNC_BUILTINS CACHE  INTERNAL "")
 # Derived result HAVE_VALGRIND
 
 # IPV6
