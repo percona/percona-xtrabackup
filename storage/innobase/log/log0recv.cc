@@ -138,7 +138,6 @@ volatile lsn_t backup_redo_log_flushed_lsn = 0;
 bool	recv_is_making_a_backup	= false;
 /** TRUE when recovering from a backed up redo log file */
 bool	recv_is_from_backup	= false;
-# define buf_pool_get_curr_size() (5 * 1024 * 1024)
 #endif /* !UNIV_HOTBACKUP */
 /** The following counter is used to decide when to print info on
 log scan */
