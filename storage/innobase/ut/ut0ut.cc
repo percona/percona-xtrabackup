@@ -734,6 +734,8 @@ ut_strerr(
 		return("Tablespace deleted or being deleted");
 	case DB_TABLESPACE_TRUNCATED:
 		return("Tablespace was truncated");
+	case DB_PAGE_IS_BLANK:
+		return("Page is blank");
 	case DB_TABLESPACE_NOT_FOUND:
 		return("Tablespace not found");
 	case DB_LOCK_TABLE_FULL:

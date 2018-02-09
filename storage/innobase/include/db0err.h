@@ -137,6 +137,8 @@ enum dberr_t {
 
 	DB_TABLESPACE_TRUNCATED,	/*!< tablespace was truncated */
 
+	DB_PAGE_IS_BLANK,		/*!< page is blank */
+
 	DB_IO_ERROR = 100,		/*!< Generic IO error */
 
 	DB_IO_DECOMPRESS_FAIL,		/*!< Failure to decompress a page
