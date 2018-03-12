@@ -5392,6 +5392,7 @@ buf_page_init_for_read(
 		mutex_exit(&buf_pool->zip_mutex);
 	}
 
+	ut_ad(mutex_own(&buf_pool->mutex));
 	buf_pool->n_pend_reads++;
 func_exit:
 	buf_pool_mutex_exit(buf_pool);
@@ -5698,6 +5699,7 @@ buf_mark_space_corrupt(
 	}
 
 	ut_ad(buf_pool->n_pend_reads > 0);
+	ut_ad(mutex_own(&buf_pool->mutex));
 	buf_pool->n_pend_reads--;
 
 	buf_pool_mutex_exit(buf_pool);
@@ -5893,6 +5895,13 @@ corrupt:
 			recv_recover_page(TRUE, (buf_block_t*) bpage);
 		}
 
+		buf_pool_mutex_enter(buf_pool);
+		ut_ad(buf_pool->n_pend_reads > 0);
+		ut_ad(mutex_own(&buf_pool->mutex));
+		buf_pool->n_pend_reads--;
+		buf_pool->stat.n_pages_read++;
+		buf_pool_mutex_exit(buf_pool);
+
 		/* If space is being truncated then avoid ibuf operation.
 		During re-init we have already freed ibuf entries. */
 		if (uncompressed
@@ -5935,10 +5944,6 @@ corrupt:
 		/* NOTE that the call to ibuf may have moved the ownership of
 		the x-latch to this OS thread: do not let this confuse you in
 		debugging! */
-
-		ut_ad(buf_pool->n_pend_reads > 0);
-		buf_pool->n_pend_reads--;
-		buf_pool->stat.n_pages_read++;
 
 		if (uncompressed) {
 			rw_lock_x_unlock_gen(&((buf_block_t*) bpage)->lock,

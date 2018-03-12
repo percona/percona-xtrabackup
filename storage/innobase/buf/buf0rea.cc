@@ -84,6 +84,7 @@ buf_read_page_handle_error(
 	buf_LRU_free_one_page(bpage);
 
 	ut_ad(buf_pool->n_pend_reads > 0);
+	ut_ad(mutex_own(&buf_pool->mutex));
 	buf_pool->n_pend_reads--;
 
 	buf_pool_mutex_exit(buf_pool);
