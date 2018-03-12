@@ -550,6 +550,7 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 	char*		prev_name;
 	char*		prev_filepath;
 	const char*	error_txt = NULL;
+	dberr_t		err_code = DB_CORRUPTION;	/* default error code */
 
 	m_is_valid = true;
 
@@ -582,6 +583,7 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 
 		if (nonzero_bytes == 0) {
 			error_txt = "Header page consists of zero bytes";
+			err_code = DB_PAGE_IS_BLANK;
 		}
 	}
 
@@ -630,7 +632,7 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 
 		free_first_page();
 
-		return(DB_CORRUPTION);
+		return(err_code);
 
 	}
 

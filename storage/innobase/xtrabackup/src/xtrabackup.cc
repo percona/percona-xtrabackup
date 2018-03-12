@@ -3556,9 +3556,9 @@ xb_load_single_table_tablespace(
 			fil_space_close(space->name);
 		}
 	} else {
-		/* allow corrupted first page for xtrabackup, it coulde be just
-		zero-filled page, which we restoer from redo log later */
-		if (xtrabackup_backup && err != DB_CORRUPTION) {
+		/* allow corrupted first page for xtrabackup, it could be just
+		zero-filled page, which we'll restore from redo log later */
+		if (xtrabackup_backup && err != DB_PAGE_IS_BLANK) {
 			exit(EXIT_FAILURE);
 		}
 	}
