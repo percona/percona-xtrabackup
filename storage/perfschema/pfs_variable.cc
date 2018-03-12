@@ -1151,7 +1151,9 @@ void PFS_status_variable_cache::manifest(THD *thd, const SHOW_VAR *show_var_arra
        show_var_iter && show_var_iter->name;
        show_var_iter++)
   {
-    char value_buf[SHOW_VAR_FUNC_BUFF_SIZE+1]; /* work buffer */
+    // work buffer, must be aligned to handle long/longlong values
+    my_aligned_storage<SHOW_VAR_FUNC_BUFF_SIZE+1, MY_ALIGNOF(longlong)>
+      value_buf;
     SHOW_VAR show_var_tmp;
     const SHOW_VAR *show_var_ptr= show_var_iter;  /* preserve array pointer */
 
@@ -1169,7 +1171,7 @@ void PFS_status_variable_cache::manifest(THD *thd, const SHOW_VAR *show_var_arra
       */
       for (const SHOW_VAR *var= show_var_ptr; var->type == SHOW_FUNC; var= &show_var_tmp)
       {
-        ((mysql_show_var_func)(var->value))(thd, &show_var_tmp, value_buf);
+        ((mysql_show_var_func)(var->value))(thd, &show_var_tmp, value_buf.data);
       }
       show_var_ptr= &show_var_tmp;
     }
@@ -1232,12 +1234,10 @@ void Status_variable::init(const SHOW_VAR *show_var, STATUS_VAR *status_vars, en
   m_type= show_var->type;
   m_scope= show_var->scope;
 
-  const CHARSET_INFO *charset= system_charset_info;
-
   /* Get the value of the status variable. */
   const char *value;
   value= get_one_variable(current_thd, show_var, query_scope, m_type,
-                          status_vars, &charset, m_value_str, &m_value_length);
+                          status_vars, &m_charset, m_value_str, &m_value_length);
   m_value_length= MY_MIN(m_value_length, SHOW_VAR_FUNC_BUFF_SIZE);
 
   /* Returned value may reference a string other than m_value_str. */

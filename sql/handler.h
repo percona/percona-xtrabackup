@@ -2,7 +2,7 @@
 #define HANDLER_INCLUDED
 
 /*
-   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -916,6 +916,8 @@ struct handlerton
                               lock is to be acquired/was released.
     @param notification_type  Indicates whether this is pre-acquire or
                               post-release notification.
+    @param victimized        'true' if locking failed as we were selected
+                              as a victim in order to avoid possible deadlocks.
 
     @note Notification is done only for objects from TABLESPACE, SCHEMA,
           TABLE, FUNCTION, PROCEDURE, TRIGGER and EVENT namespaces.
@@ -937,7 +939,8 @@ struct handlerton
             True - if it has failed/lock should not be acquired.
   */
   bool (*notify_exclusive_mdl)(THD *thd, const MDL_key *mdl_key,
-                               ha_notification_type notification_type);
+                               ha_notification_type notification_type,
+                               bool *victimized);
 
   /**
     Notify/get permission from storage engine before or after execution of
@@ -2833,6 +2836,7 @@ public:
                      enum_range_scan_direction direction);
   int compare_key(key_range *range);
   int compare_key_icp(const key_range *range) const;
+  int compare_key_in_buffer(const uchar *buf) const;
   virtual int ft_init() { return HA_ERR_WRONG_COMMAND; }
   void ft_end() { ft_handler=NULL; }
   virtual FT_INFO *ft_init_ext(uint flags, uint inx,String *key)
@@ -4121,11 +4125,15 @@ void ha_set_normalized_disabled_se_str(const std::string &disabled_se_str);
 bool ha_is_storage_engine_disabled(handlerton *se_engine);
 
 bool ha_notify_exclusive_mdl(THD *thd, const MDL_key *mdl_key,
-                             ha_notification_type notification_type);
+                             ha_notification_type notification_type,
+                             bool *victimized);
 bool ha_notify_alter_table(THD *thd, const MDL_key *mdl_key,
                            ha_notification_type notification_type);
 
 int commit_owned_gtids(THD *thd, bool all, bool *need_clear_ptr);
 int commit_owned_gtid_by_partial_command(THD *thd);
+bool set_tx_isolation(THD *thd,
+                      enum_tx_isolation tx_isolation,
+                      bool one_shot);
 
 #endif /* HANDLER_INCLUDED */

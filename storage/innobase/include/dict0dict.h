@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -125,10 +125,9 @@ dict_table_close(
 /*=============*/
 	dict_table_t*	table,		/*!< in/out: table */
 	ibool		dict_locked,	/*!< in: TRUE=data dictionary locked */
-	ibool		try_drop)	/*!< in: TRUE=try to drop any orphan
+	ibool		try_drop);	/*!< in: TRUE=try to drop any orphan
 					indexes after an aborted online
 					index creation */
-	MY_ATTRIBUTE((nonnull));
 /*********************************************************************//**
 Closes the only open handle to a table and drops a table while assuring
 that dict_sys->mutex is held the whole time.  This assures that the table
@@ -172,9 +171,9 @@ dict_col_set_mbminmaxlen(
 	dict_col_t*	col,		/*!< in/out: column */
 	ulint		mbminlen,	/*!< in: minimum multi-byte
 					character size, in bytes */
-	ulint		mbmaxlen)	/*!< in: minimum multi-byte
+	ulint		mbmaxlen);	/*!< in: minimum multi-byte
 					character size, in bytes */
-	MY_ATTRIBUTE((nonnull));
+
 /*********************************************************************//**
 Gets the column data type. */
 UNIV_INLINE
@@ -306,16 +305,15 @@ Acquire the autoinc lock. */
 void
 dict_table_autoinc_lock(
 /*====================*/
-	dict_table_t*	table)	/*!< in/out: table */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in/out: table */
+
 /********************************************************************//**
 Unconditionally set the autoinc counter. */
 void
 dict_table_autoinc_initialize(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table */
-	ib_uint64_t	value)	/*!< in: next value to assign to a row */
-	MY_ATTRIBUTE((nonnull));
+	ib_uint64_t	value);	/*!< in: next value to assign to a row */
 
 /** Store autoinc value when the table is evicted.
 @param[in]	table	table evicted */
@@ -346,15 +344,14 @@ dict_table_autoinc_update_if_greater(
 /*=================================*/
 
 	dict_table_t*	table,	/*!< in/out: table */
-	ib_uint64_t	value)	/*!< in: value which was assigned to a row */
-	MY_ATTRIBUTE((nonnull));
+	ib_uint64_t	value);	/*!< in: value which was assigned to a row */
 /********************************************************************//**
 Release the autoinc lock. */
 void
 dict_table_autoinc_unlock(
 /*======================*/
-	dict_table_t*	table)	/*!< in/out: table */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in/out: table */
+
 #endif /* !UNIV_HOTBACKUP */
 /**********************************************************************//**
 Adds system columns to a table object. */
@@ -363,7 +360,6 @@ dict_table_add_system_columns(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table */
 	mem_heap_t*	heap);	/*!< in: temporary heap */
-
 #ifndef UNIV_HOTBACKUP
 /** Mark if table has big rows.
 @param[in,out]	table	table handler */
@@ -378,15 +374,15 @@ dict_table_add_to_cache(
 /*====================*/
 	dict_table_t*	table,		/*!< in: table */
 	ibool		can_be_evicted,	/*!< in: TRUE if can be evicted*/
-	mem_heap_t*	heap)		/*!< in: temporary heap */
-	MY_ATTRIBUTE((nonnull));
+	mem_heap_t*	heap);		/*!< in: temporary heap */
+
 /**********************************************************************//**
 Removes a table object from the dictionary cache. */
 void
 dict_table_remove_from_cache(
 /*=========================*/
-	dict_table_t*	table)	/*!< in, own: table */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in, own: table */
+
 /**********************************************************************//**
 Removes a table object from the dictionary cache. */
 void
@@ -425,15 +421,13 @@ void
 dict_table_change_id_in_cache(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table object already in cache */
-	table_id_t	new_id);/*!< in: new id to set */
-
+	table_id_t	new_id);	/*!< in: new id to set */
 /**********************************************************************//**
 Removes a foreign constraint struct from the dictionary cache. */
 void
 dict_foreign_remove_from_cache(
 /*===========================*/
-	dict_foreign_t*	foreign)	/*!< in, own: foreign constraint */
-	MY_ATTRIBUTE((nonnull));
+	dict_foreign_t*	foreign);	/*!< in, own: foreign constraint */
 /**********************************************************************//**
 Adds a foreign key constraint object to the dictionary cache. May free
 the object if there already is an object with the same identifier in.
@@ -453,7 +447,7 @@ dict_foreign_add_to_cache(
 				compatibility */
 	dict_err_ignore_t	ignore_err)
 				/*!< in: error to be ignored */
-	MY_ATTRIBUTE((nonnull(1), warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 /*********************************************************************//**
 Checks if a table is referenced by foreign keys.
 @return TRUE if table is referenced by a foreign key */
@@ -474,7 +468,7 @@ dict_foreign_replace_index(
 					/*!< in: column names, or NULL
 					to use table->col_names */
 	const dict_index_t*	index)	/*!< in: index to be replaced */
-	MY_ATTRIBUTE((nonnull(1,3), warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 /**********************************************************************//**
 Determines whether a string starts with the specified keyword.
 @return TRUE if str starts with keyword */
@@ -574,7 +568,7 @@ dict_foreign_find_index(
 					/*!< in: nonzero if none of
 					the columns must be declared
 					NOT NULL */
-	MY_ATTRIBUTE((nonnull(1,3), warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 /**********************************************************************//**
 Returns a column's name.
 @return column name. NOTE: not guaranteed to stay valid if table is
@@ -618,8 +612,7 @@ dict_print_info_on_foreign_keys(
 				of SHOW TABLE STATUS */
 	FILE*		file,	/*!< in: file where to print */
 	trx_t*		trx,	/*!< in: transaction */
-	dict_table_t*	table)	/*!< in: table */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in: table */
 /**********************************************************************//**
 Outputs info on a foreign key of a table in a format suitable for
 CREATE TABLE. */
@@ -629,8 +622,7 @@ dict_print_info_on_foreign_key_in_create_format(
 	FILE*		file,		/*!< in: file where to print */
 	trx_t*		trx,		/*!< in: transaction */
 	dict_foreign_t*	foreign,	/*!< in: foreign key constraint */
-	ibool		add_newline)	/*!< in: whether to add a newline */
-	MY_ATTRIBUTE((nonnull(1,3)));
+	ibool		add_newline);	/*!< in: whether to add a newline */
 /*********************************************************************//**
 Tries to find an index whose first fields are the columns in the array,
 in the same order and is not marked for deletion and is not the same
@@ -658,7 +650,7 @@ dict_foreign_qualify_index(
 					/*!< in: nonzero if none of
 					the columns must be declared
 					NOT NULL */
-	MY_ATTRIBUTE((nonnull(1,3), warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 #ifdef UNIV_DEBUG
 /********************************************************************//**
 Gets the first index on the table (the clustered index).
@@ -853,8 +845,7 @@ UNIV_INLINE
 void
 dict_table_n_rows_inc(
 /*==================*/
-	dict_table_t*	table)	/*!< in/out: table */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in/out: table */
 /********************************************************************//**
 Decrement the number of rows in the table by one.
 Notice that this operation is not protected by any latch, the number is
@@ -863,9 +854,7 @@ UNIV_INLINE
 void
 dict_table_n_rows_dec(
 /*==================*/
-	dict_table_t*	table)	/*!< in/out: table */
-	MY_ATTRIBUTE((nonnull));
-
+	dict_table_t*	table);	/*!< in/out: table */
 
 /** Get nth virtual column
 @param[in]	table	target table
@@ -1052,7 +1041,6 @@ void
 dict_table_x_lock_indexes(
 /*======================*/
 	dict_table_t*	table);	/*!< in: table */
-
 /*********************************************************************//**
 Release the exclusive locks on all index tree. */
 UNIV_INLINE
@@ -1060,7 +1048,6 @@ void
 dict_table_x_unlock_indexes(
 /*========================*/
 	dict_table_t*	table);	/*!< in: table */
-
 /********************************************************************//**
 Checks if a column is in the ordering columns of the clustered index of a
 table. Column prefixes are treated like whole columns.
@@ -1099,8 +1086,7 @@ void
 dict_table_copy_types(
 /*==================*/
 	dtuple_t*		tuple,	/*!< in/out: data tuple */
-	const dict_table_t*	table)	/*!< in: table */
-	MY_ATTRIBUTE((nonnull));
+	const dict_table_t*	table);	/*!< in: table */
 /********************************************************************
 Wait until all the background threads of the given table have exited, i.e.,
 bg_threads == 0. Note: bg_threads_mutex must be reserved when
@@ -1109,9 +1095,8 @@ void
 dict_table_wait_for_bg_threads_to_exit(
 /*===================================*/
 	dict_table_t*	table,	/* in: table */
-	ulint		delay)	/* in: time in microseconds to wait between
+	ulint		delay);	/* in: time in microseconds to wait between
 				checks of bg_threads. */
-	MY_ATTRIBUTE((nonnull));
 /**********************************************************************//**
 Looks for an index with the given id. NOTE that we do not reserve
 the dictionary mutex: this function is for emergency purposes like
@@ -1354,8 +1339,7 @@ dict_index_add_col(
 	dict_index_t*		index,		/*!< in/out: index */
 	const dict_table_t*	table,		/*!< in: table */
 	dict_col_t*		col,		/*!< in: column */
-	ulint			prefix_len)	/*!< in: column prefix length */
-	MY_ATTRIBUTE((nonnull));
+	ulint			prefix_len);	/*!< in: column prefix length */
 #ifndef UNIV_HOTBACKUP
 /*******************************************************************//**
 Copies types of fields contained in index to tuple. */
@@ -1364,9 +1348,8 @@ dict_index_copy_types(
 /*==================*/
 	dtuple_t*		tuple,		/*!< in/out: data tuple */
 	const dict_index_t*	index,		/*!< in: index */
-	ulint			n_fields)	/*!< in: number of
+	ulint			n_fields);	/*!< in: number of
 						field types to copy */
-	MY_ATTRIBUTE((nonnull));
 #endif /* !UNIV_HOTBACKUP */
 /*********************************************************************//**
 Gets the field column.
@@ -1424,9 +1407,8 @@ dict_table_check_for_dup_indexes(
 /*=============================*/
 	const dict_table_t*	table,	/*!< in: Check for dup indexes
 					in this table */
-	enum check_name		check)	/*!< in: whether and when to allow
+	enum check_name		check);	/*!< in: whether and when to allow
 					temporary index names */
-	MY_ATTRIBUTE((nonnull));
 #endif /* UNIV_DEBUG */
 /**********************************************************************//**
 Builds a node pointer out of a physical record and a page number.
@@ -1479,6 +1461,7 @@ dict_index_get_space(
 /*=================*/
 	const dict_index_t*	index)	/*!< in: index */
 	MY_ATTRIBUTE((warn_unused_result));
+
 /*********************************************************************//**
 Sets the space id of the root of the index tree. */
 UNIV_INLINE
@@ -1486,8 +1469,8 @@ void
 dict_index_set_space(
 /*=================*/
 	dict_index_t*	index,	/*!< in/out: index */
-	ulint		space)	/*!< in: space id */
-	MY_ATTRIBUTE((nonnull));
+	ulint		space);	/*!< in: space id */
+
 /*********************************************************************//**
 Gets the page number of the root of the index tree.
 @return page number */
@@ -1526,15 +1509,15 @@ dict_index_get_online_status(
 /*=========================*/
 	const dict_index_t*	index)	/*!< in: secondary index */
 	MY_ATTRIBUTE((warn_unused_result));
+
 /********************************************************************//**
 Sets the status of online index creation. */
 UNIV_INLINE
 void
 dict_index_set_online_status(
 /*=========================*/
-	dict_index_t*			index,	/*!< in/out: index */
-	enum online_index_status	status)	/*!< in: status */
-	MY_ATTRIBUTE((nonnull));
+	dict_index_t*			index,		/*!< in/out: index */
+	enum online_index_status	status);	/*!< in: status */
 /********************************************************************//**
 Determines if a secondary index is being or has been created online,
 or if the table is being rebuilt online, allowing concurrent modifications
@@ -1661,15 +1644,13 @@ UNIV_INLINE
 void
 dict_table_prevent_eviction(
 /*========================*/
-	dict_table_t*	table)	/*!< in: table to prevent eviction */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in: table to prevent eviction */
 /**********************************************************************//**
 Move a table to the non LRU end of the LRU list. */
 void
 dict_table_move_from_lru_to_non_lru(
 /*================================*/
-	dict_table_t*	table)	/*!< in: table to move from LRU to non-LRU */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in: table to move from LRU to non-LRU */
 /** Looks for an index with the given id given a table instance.
 @param[in]	table	table instance
 @param[in]	id	index id
@@ -1677,15 +1658,13 @@ dict_table_move_from_lru_to_non_lru(
 dict_index_t*
 dict_table_find_index_on_id(
 	const dict_table_t*	table,
-	index_id_t		id)
-	MY_ATTRIBUTE((nonnull));
+	index_id_t		id);
 /**********************************************************************//**
 Move to the most recently used segment of the LRU list. */
 void
 dict_move_to_mru(
 /*=============*/
-	dict_table_t*	table)	/*!< in: table to move to MRU */
-	MY_ATTRIBUTE((nonnull));
+	dict_table_t*	table);	/*!< in: table to move to MRU */
 
 /** Maximum number of columns in a foreign key constraint. Please Note MySQL
 has a much lower limit on the number of columns allowed in a foreign key
@@ -1823,8 +1802,7 @@ dict_fs2utf8(
 	char*		db_utf8,	/*!< out: database name, e.g. dцb */
 	size_t		db_utf8_size,	/*!< in: dbname_utf8 size */
 	char*		table_utf8,	/*!< out: table name, e.g. aюbØc */
-	size_t		table_utf8_size)/*!< in: table_utf8 size */
-	MY_ATTRIBUTE((nonnull));
+	size_t		table_utf8_size); /*!< in: table_utf8 size */
 
 /** Resize the hash tables besed on the current buffer pool size. */
 void
@@ -2030,7 +2008,6 @@ void
 dict_index_zip_success(
 /*===================*/
 	dict_index_t*	index);	/*!< in/out: index to be updated. */
-
 /*********************************************************************//**
 This function should be called whenever a page compression attempt
 fails. Updates the compression padding information. */
@@ -2038,7 +2015,6 @@ void
 dict_index_zip_failure(
 /*===================*/
 	dict_index_t*	index);	/*!< in/out: index to be updated. */
-
 /*********************************************************************//**
 Return the optimal page size, for which page will likely compress.
 @return page size beyond which page may not compress*/
@@ -2133,6 +2109,13 @@ UNIV_INLINE
 bool
 dict_table_have_virtual_index(
 	dict_table_t*	table);
+
+/** Allocate memory for intrinsic cache elements in the index
+ * @param[in]      index   index object */
+UNIV_INLINE
+void
+dict_allocate_mem_intrinsic_cache(
+                dict_index_t*           index);
 
 #endif /* !UNIV_HOTBACKUP */
 

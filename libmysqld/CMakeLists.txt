@@ -31,6 +31,7 @@ INCLUDE_DIRECTORIES(
   ${SSL_INCLUDE_DIRS}
   ${SSL_INTERNAL_INCLUDE_DIRS}
   ${CMAKE_SOURCE_DIR}/sql/backup
+  ${LZ4_INCLUDE_DIR}
 )
 
 # We should generate these separately for libmysqld to avoid
@@ -40,11 +41,17 @@ SET(GEN_YACC_SOURCES
   ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
   ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.h
   ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/lex_hash.h
 )
 
 SET(GEN_SOURCES
   ${CMAKE_BINARY_DIR}/sql/sql_builtin.cc
-  ${CMAKE_BINARY_DIR}/sql/lex_hash.h 
+)
+
+ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/lex_hash.h
+  COMMAND gen_lex_hash > lex_hash.h
+  DEPENDS gen_lex_hash
 )
 
 SET_SOURCE_FILES_PROPERTIES(${GEN_YACC_SOURCES}
@@ -61,6 +68,7 @@ SET(SQL_EMBEDDED_SOURCES
   libmysqld.c
   ${GEN_SOURCES}
   ${GEN_YACC_SOURCES}
+  ../extra/lz4/xxhash.c
   ../client/get_password.c
   ../libmysql/errmsg.c
   ../libmysql/libmysql.c
@@ -118,6 +126,11 @@ ADD_COMPILE_FLAGS(
   COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
 )
 
+ADD_COMPILE_FLAGS(
+  ../extra/lz4/xxhash.c
+  COMPILE_FLAGS -DXXH_NAMESPACE=MY_
+)
+
 # Fixes "C1128: number of sections exceeded object file format limit" in MSVC /MD
 # The flag /bigobj is not added if the build is not /MD
 IF(WIN32 AND CMAKE_SIZEOF_VOID_P MATCHES 8)
@@ -152,6 +165,21 @@ IF(HAVE_NO_UNUSED_TYPEDEFS)
     ../sql/spatial.cc
     COMPILE_FLAGS "-Wno-unused-local-typedefs"
   )
+ENDIF()
+
+# Boost source has misleading indentation
+MY_CHECK_CXX_COMPILER_FLAG("-Wmisleading-indentation"
+                           HAVE_MISLEADING_INDENTATION)
+IF(HAVE_MISLEADING_INDENTATION)
+  ADD_COMPILE_FLAGS(
+    ../sql/geometry_rtree.cc
+    ../sql/item_geofunc.cc
+    ../sql/item_geofunc_buffer.cc
+    ../sql/item_geofunc_internal.cc
+    ../sql/item_geofunc_relchecks.cc
+    ../sql/item_geofunc_relchecks_bgwrap.cc
+    ../sql/item_geofunc_setops.cc    
+    COMPILE_FLAGS "-Wno-misleading-indentation")
 ENDIF()
 
 # Handle out-of-source build from source package with possibly broken 

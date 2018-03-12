@@ -289,6 +289,7 @@ sub collect_one_suite($)
       $suitedir= my_find_dir($::basedir,
 			     ["share/mysql-test/suite",
 			      "mysql-test/suite",
+                              "lib/mysql-test/suite",
 			      "internal/mysql-test/suite",
 			      "mysql-test",
 			      # Look in storage engine specific suite dirs
@@ -296,6 +297,8 @@ sub collect_one_suite($)
 			      # Look in plugin specific suite dir
 			      "plugin/$suite/tests",
 			      "internal/plugin/$suite/tests",
+			      "rapid/plugin/$suite/tests",
+			      "rapid/mysql-test/suite",
 			     ],
 			     [$suite, "mtr"], ($suite =~ /^i_/));
       return unless $suitedir;
@@ -860,6 +863,12 @@ sub collect_one_test_case {
   }
 
   # ----------------------------------------------------------------------
+  # Check for replicaton tests
+  # ----------------------------------------------------------------------
+  $tinfo->{'rpl_test'}= 1 if ($suitename =~ 'rpl');
+  $tinfo->{'grp_rpl_test'}= 1 if ($suitename =~ 'group_replication');
+
+  # ----------------------------------------------------------------------
   # Check for disabled tests
   # ----------------------------------------------------------------------
   my $marked_as_disabled= 0;
@@ -1045,7 +1054,7 @@ sub collect_one_test_case {
     push(@{$tinfo->{'slave_opt'}}, "--loose-skip-log-bin");
   }
 
-  if ( $tinfo->{'rpl_test'} )
+  if ( $tinfo->{'rpl_test'} or $tinfo->{'grp_rpl_test'} )
   {
     if ( $skip_rpl )
     {
@@ -1082,6 +1091,18 @@ sub collect_one_test_case {
       $tinfo->{'comment'}= "No SSL support";
       return $tinfo;
     }
+  }
+
+  # Check for group replication tests
+  if ( $tinfo->{'grp_rpl_test'} )
+  {
+    $::group_replication= 1;
+  }
+
+  # Check for xplugin tests
+  if ( $tinfo->{'xplugin_test'} )
+  {
+    $::xplugin= 1;
   }
 
   if ( $tinfo->{'not_windows'} && IS_WINDOWS )
@@ -1174,6 +1195,12 @@ my @tags=
  ["include/have_ssl.inc", "need_ssl", 1],
  ["include/have_ssl_communication.inc", "need_ssl", 1],
  ["include/not_windows.inc", "not_windows", 1],
+
+ # Tests with below .inc file are considered to be group replication tests
+ ["have_group_replication_plugin_base.inc", "grp_rpl_test", 1],
+
+ # Tests with below .inc file are considered to be xplugin tests
+ ["include/have_mysqlx_plugin.inc", "xplugin_test", 1],
 );
 
 

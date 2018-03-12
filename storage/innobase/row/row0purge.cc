@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -48,6 +48,7 @@ Created 3/14/1997 Heikki Tuuri
 #include "srv0start.h"
 #include "handler.h"
 #include "ha_innodb.h"
+#include "fil0fil.h"
 
 /*************************************************************************
 IMPORTANT NOTE: Any operation that generates redo MUST check that there
@@ -504,10 +505,18 @@ row_purge_remove_sec_if_poss_leaf(
 
 			if (dict_index_is_spatial(index)) {
 				const page_t*   page;
+				const trx_t*	trx = NULL;
+
+				if (btr_cur->rtr_info != NULL
+				    && btr_cur->rtr_info->thr != NULL) {
+					trx = thr_get_trx(
+						btr_cur->rtr_info->thr);
+				}
 
 				page = btr_cur_get_page(btr_cur);
 
 				if (!lock_test_prdt_page_lock(
+					trx,
 					page_get_space_id(page),
 					page_get_page_no(page))
 				     && page_get_n_recs(page) < 2
@@ -857,6 +866,20 @@ try_again:
 
 	if (node->table == NULL) {
 		/* The table has been dropped: no need to do purge */
+		goto err_exit;
+	}
+
+	if (fil_space_is_being_truncated(node->table->space)) {
+
+#if UNIV_DEBUG
+		ib::info() << "Record with space id "
+			   << node->table->space
+			   << " belongs to table which is being truncated"
+			   << " therefore skipping this undo record.";
+#endif
+		ut_ad(dict_table_is_file_per_table(node->table));
+		dict_table_close(node->table, FALSE, FALSE);
+		node->table = NULL;
 		goto err_exit;
 	}
 

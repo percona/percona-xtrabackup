@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -403,11 +403,7 @@ int init_slave()
                                                           opt_rli_repository_id,
                                                           thread_mask,
                                                           &channel_map)))
-  {
     sql_print_error("Failed to create or recover replication info repositories.");
-    error = 1;
-    goto err;
-  }
 
 #ifndef DBUG_OFF
   /* @todo: Print it for all the channels */
@@ -477,15 +473,8 @@ int init_slave()
                                 mi,
                                 thread_mask))
         {
-          /*
-            Creation of slave threads for subsequent channels are stopped
-            if a failure occurs in this iteration.
-            @todo:have an option if the user wants to continue
-            the replication for other channels.
-          */
-          sql_print_error("Failed to create slave threads");
-          error= 1;
-          goto err;
+          sql_print_error("Failed to start slave threads for channel '%s'",
+                          mi->get_channel());
         }
       }
     }
@@ -495,9 +484,11 @@ err:
 
   channel_map.unlock();
   if (error)
-    sql_print_information("Check error log for additional messages. "
-                          "You will not be able to start replication until "
-                          "the issue is resolved and the server restarted.");
+    sql_print_information("Some of the channels are not created/initialized "
+                          "properly. Check for additional messages above. "
+                          "You will not be able to start replication on those "
+                          "channels until the issue is resolved and "
+                          "the server restarted.");
   DBUG_RETURN(error);
 }
 
@@ -529,7 +520,7 @@ bool start_slave(THD *thd)
 
   DBUG_ENTER("start_slave(THD)");
   Master_info *mi;
-  bool channel_configured;
+  bool channel_configured, error= false;
 
   if (channel_map.get_num_instances() == 1)
   {
@@ -569,15 +560,17 @@ bool start_slave(THD *thd)
         {
           sql_print_error("Slave: Could not start slave for channel '%s'."
                           " operation discontinued", mi->get_channel());
-          DBUG_RETURN(true);
+          error= true;
         }
       }
     }
   }
-  /* no error */
-  my_ok(thd);
-
-  DBUG_RETURN(false);
+  if (!error)
+  {
+    /* no error */
+    my_ok(thd);
+  }
+  DBUG_RETURN(error);
 }
 
 
@@ -610,9 +603,6 @@ int stop_slave(THD *thd)
 
     error= stop_slave(thd, mi, 1,
                       false /*for_one_channel*/, &push_temp_table_warning);
-
-    if (error)
-      goto err;
   }
   else
   {
@@ -624,22 +614,23 @@ int stop_slave(THD *thd)
 
       if (channel_configured)
       {
-        error= stop_slave(thd, mi, 1,
-                          false /*for_one_channel*/, &push_temp_table_warning);
-
-        if (error)
+        if (stop_slave(thd, mi, 1,
+                       false /*for_one_channel*/, &push_temp_table_warning))
         {
           sql_print_error("Slave: Could not stop slave for channel '%s'"
                           " operation discontinued", mi->get_channel());
-          goto err;
+          error= 1;
         }
       }
     }
   }
-  /* no error */
-  my_ok(thd);
 
-err:
+  if (!error)
+  {
+    /* no error */
+    my_ok(thd);
+  }
+
   DBUG_RETURN(error);
 }
 
@@ -1251,7 +1242,9 @@ err:
 
 
 
-int global_init_info(Master_info* mi, bool ignore_if_no_info, int thread_mask)
+int load_mi_and_rli_from_repositories(Master_info* mi,
+                                      bool ignore_if_no_info,
+                                      int thread_mask)
 {
   DBUG_ENTER("init_info");
   DBUG_ASSERT(mi != NULL && mi->rli != NULL);
@@ -1480,7 +1473,13 @@ static void print_slave_skip_errors(void)
     }
     if (buff != slave_skip_error_names)
       buff--; // Remove last ','
-    if (errnum < MAX_SLAVE_ERROR)
+    /*
+      The range for client side error is [2000-2999]
+      so if the errnum doesn't lie in that and if less
+      than MAX_SLAVE_ERROR[10000] we enter the if loop.
+    */
+    if (errnum < MAX_SLAVE_ERROR &&
+        (errnum < CR_MIN_ERROR || errnum > CR_MAX_ERROR))
     {
       /* Couldn't show all errors */
       buff= my_stpcpy(buff, "..."); /* purecov: tested */
@@ -1530,7 +1529,13 @@ static void add_slave_skip_errors(const uint* errors, uint n_errors)
   for (uint i = 0; i < n_errors; i++)
   {
     const uint err_code = errors[i];
-    if (err_code < MAX_SLAVE_ERROR)
+    /*
+      The range for client side error is [2000-2999]
+      so if the err_code doesn't lie in that and if less
+      than MAX_SLAVE_ERROR[10000] we enter the if loop.
+    */
+    if (err_code < MAX_SLAVE_ERROR &&
+        (err_code < CR_MIN_ERROR || err_code > CR_MAX_ERROR))
        bitmap_set_bit(&slave_error_mask, err_code);
   }
   DBUG_VOID_RETURN;
@@ -1687,6 +1692,13 @@ int terminate_slave_threads(Master_info* mi, int thread_mask,
   {
     DBUG_PRINT("info",("Terminating IO thread"));
     mi->abort_slave=1;
+    DBUG_EXECUTE_IF("pause_after_queue_event",
+                    {
+                      const char act[]=
+                        "now SIGNAL reached_stopping_io_thread";
+                      DBUG_ASSERT(!debug_sync_set_action(current_thd,
+                                                         STRING_WITH_LEN(act)));
+                    };);
     if ((error=terminate_slave_thread(mi->info_thd,io_lock,
                                       &mi->stop_cond,
                                       &mi->slave_running,
@@ -2429,6 +2441,7 @@ int io_thread_init_commands(MYSQL *mysql, Master_info *mi)
 {
   char query[256];
   int ret= 0;
+  DBUG_EXECUTE_IF("fake_5_5_version_slave", return ret;);
 
   sprintf(query, "SET @slave_uuid= '%s'", server_uuid);
   if (mysql_real_query(mysql, query, static_cast<ulong>(strlen(query)))
@@ -5233,6 +5246,16 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli)
                         DBUG_ASSERT(!debug_sync_set_action(thd, STRING_WITH_LEN(act)));
                       }
                     };);
+      DBUG_EXECUTE_IF("dbug.calculate_sbm_after_fake_rotate_log_event",
+                    {
+                      if (ev->get_type_code() == binary_log::ROTATE_EVENT && ev->is_artificial_event())
+                      {
+                      const char act[]= "now signal signal.reached wait_for signal.done_sbm_calculation";
+                      DBUG_ASSERT(opt_debug_sync_timeout > 0);
+                      DBUG_ASSERT(!debug_sync_set_action(thd,
+                                                         STRING_WITH_LEN(act)));
+                      }
+                    };);
       /*
         Format_description_log_event should not be deleted because it will be
         used to read info about the relay log's format; it will be deleted when
@@ -5290,16 +5313,17 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli)
         if (rli->trans_retries < slave_trans_retries)
         {
           /*
-            The transactions has to be rolled back before global_init_info is
-            called. Because global_init_info will starts a new transaction if
-            master_info_repository is TABLE.
+            The transactions has to be rolled back before
+            load_mi_and_rli_from_repositories is called. Because
+            load_mi_and_rli_from_repositories will starts a new
+            transaction if master_info_repository is TABLE.
           */
           rli->cleanup_context(thd, 1);
           /*
              We need to figure out if there is a test case that covers
              this part. \Alfranio.
           */
-          if (global_init_info(rli->mi, false, SLAVE_SQL))
+          if (load_mi_and_rli_from_repositories(rli->mi, false, SLAVE_SQL))
             sql_print_error("Failed to initialize the master info structure%s",
                             rli->get_for_channel_str());
           else if (rli->init_relay_log_pos(rli->get_group_relay_log_name(),
@@ -5588,9 +5612,14 @@ connected:
                     };);
     DBUG_EXECUTE_IF("dbug.calculate_sbm_after_previous_gtid_log_event",
                     {
-                      /* Fake that thread started 3 mints ago */
+                      /* Fake that thread started 3 minutes ago */
                       thd->start_time.tv_sec-=180;
                     };);
+  DBUG_EXECUTE_IF("dbug.calculate_sbm_after_fake_rotate_log_event",
+                  {
+                    /* Fake that thread started 3 minutes ago */
+                    thd->start_time.tv_sec-=180;
+                  };);
   mysql_mutex_lock(&mi->run_lock);
   mi->slave_running= MYSQL_SLAVE_RUN_CONNECT;
   mysql_mutex_unlock(&mi->run_lock);
@@ -5893,7 +5922,20 @@ err:
   sql_print_information("Slave I/O thread exiting%s, read up to log '%s', position %s",
                         mi->get_for_channel_str(), mi->get_io_rpl_log_name(),
                         llstr(mi->get_master_log_pos(), llbuff));
+  /* At this point the I/O thread will not try to reconnect anymore. */
+  mi->is_stopping.atomic_set(1);
   (void) RUN_HOOK(binlog_relay_io, thread_stop, (thd, mi));
+  /*
+    Pause the IO thread and wait for 'continue_to_stop_io_thread'
+    signal to continue to shutdown the IO thread.
+  */
+  DBUG_EXECUTE_IF("pause_after_io_thread_stop_hook",
+                  {
+                    const char act[]= "now SIGNAL reached_stopping_io_thread "
+                                      "WAIT_FOR continue_to_stop_io_thread";
+                    DBUG_ASSERT(!debug_sync_set_action(thd,
+                                                       STRING_WITH_LEN(act)));
+                  };);
   thd->reset_query();
   thd->reset_db(NULL_CSTR);
   if (mysql)
@@ -5935,6 +5977,7 @@ err:
 
   mi->abort_slave= 0;
   mi->slave_running= 0;
+  mi->is_stopping.atomic_set(0);
   mysql_mutex_lock(&mi->info_thd_lock);
   mi->info_thd= NULL;
   mysql_mutex_unlock(&mi->info_thd_lock);
@@ -7120,6 +7163,16 @@ extern "C" void *handle_slave_sql(void *arg)
   set_timespec_nsec(&rli->stats_begin, 0);
   rli->currently_executing_gtid.set_automatic();
 
+  if (RUN_HOOK(binlog_relay_io, applier_start, (thd, rli->mi)))
+  {
+    mysql_cond_broadcast(&rli->start_cond);
+    mysql_mutex_unlock(&rli->run_lock);
+    rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                "Failed to run 'applier_start' hook");
+    goto err;
+  }
+
   /* MTS: starting the worker pool */
   if (slave_start_workers(rli, rli->opt_slave_parallel_workers, &mts_inited) != 0)
   {
@@ -7387,10 +7440,11 @@ llstr(rli->get_group_master_log_pos(), llbuff));
                         llstr(rli->get_group_master_log_pos(), llbuff));
 
  err:
-
+  /* At this point the SQL thread will not try to work anymore. */
+  rli->is_stopping.atomic_set(1);
   (void) RUN_HOOK(binlog_relay_io, applier_stop,
                   (thd, rli->mi,
-                   (abort_loop || thd->killed || rli->abort_slave)));
+                   rli->is_error() || !rli->sql_thread_kill_accepted));
 
   slave_stop_workers(rli, &mts_inited); // stopping worker pool
   delete rli->current_mts_submode;
@@ -7414,6 +7468,18 @@ llstr(rli->get_group_master_log_pos(), llbuff));
   thd->reset_query();
   thd->reset_db(NULL_CSTR);
 
+  /*
+    Pause the SQL thread and wait for 'continue_to_stop_sql_thread'
+    signal to continue to shutdown the SQL thread.
+  */
+  DBUG_EXECUTE_IF("pause_after_sql_thread_stop_hook",
+                  {
+                    const char act[]= "now SIGNAL reached_stopping_sql_thread "
+                                      "WAIT_FOR continue_to_stop_sql_thread";
+                    DBUG_ASSERT(!debug_sync_set_action(thd,
+                                                       STRING_WITH_LEN(act)));
+                  };);
+
   THD_STAGE_INFO(thd, stage_waiting_for_slave_mutex_on_exit);
   mysql_mutex_lock(&rli->run_lock);
   /* We need data_lock, at least to wake up any waiting master_pos_wait() */
@@ -7421,6 +7487,7 @@ llstr(rli->get_group_master_log_pos(), llbuff));
   DBUG_ASSERT(rli->slave_running == 1); // tracking buffer overrun
   /* When master_pos_wait() wakes up it will check this and terminate */
   rli->slave_running= 0;
+  rli->is_stopping.atomic_set(0);
   /* Forget the relay log's format */
   rli->set_rli_description_event(NULL);
   /* Wake up master_pos_wait() */
@@ -7973,6 +8040,8 @@ bool queue_event(Master_info* mi,const char* buf, ulong event_len)
   );
   binary_log_debug::debug_checksum_test=
     DBUG_EVALUATE_IF("simulate_checksum_test_failure", true, false);
+  binary_log_debug::debug_checksum_test=
+    DBUG_EVALUATE_IF("gr_simulate_checksum_test_failure", true, binary_log_debug::debug_checksum_test);
   if (Log_event_footer::event_checksum_test((uchar *) buf,
                                             event_len, checksum_alg))
   {
@@ -8630,8 +8699,11 @@ static int connect_to_master(THD* thd, MYSQL* mysql, Master_info* mi,
   }
 
 #ifdef HAVE_OPENSSL
+  /* By default the channel is not configured to use SSL */
+  enum mysql_ssl_mode ssl_mode= SSL_MODE_DISABLED;
   if (mi->ssl)
   {
+    /* The channel is configured to use SSL */
     mysql_ssl_set(mysql,
                   mi->ssl_key[0]?mi->ssl_key:0,
                   mi->ssl_cert[0]?mi->ssl_cert:0,
@@ -8648,15 +8720,14 @@ static int connect_to_master(THD* thd, MYSQL* mysql, Master_info* mi,
                   mi->tls_version[0] ? mi->tls_version : 0);
     mysql_options(mysql, MYSQL_OPT_SSL_CRLPATH,
                   mi->ssl_crlpath[0] ? mi->ssl_crlpath : 0);
-    enum mysql_ssl_mode ssl_mode;
     if (mi->ssl_verify_server_cert)
       ssl_mode= SSL_MODE_VERIFY_IDENTITY;
     else if (mi->ssl_ca[0] || mi->ssl_capath[0])
       ssl_mode= SSL_MODE_VERIFY_CA;
     else
       ssl_mode= SSL_MODE_REQUIRED;
-    mysql_options(mysql, MYSQL_OPT_SSL_MODE, &ssl_mode);
   }
+  mysql_options(mysql, MYSQL_OPT_SSL_MODE, &ssl_mode);
 #endif
 
   /*
@@ -9634,25 +9705,36 @@ bool rpl_master_has_bug(const Relay_log_info *rli, uint bug_id, bool report,
                       " so slave stops; check error log on slave"
                       " for more info", MYF(0), bug_id);
       // a verbose message for the error log
-      rli->report(ERROR_LEVEL, ER_UNKNOWN_ERROR,
-                  "According to the master's version ('%s'),"
-                  " it is probable that master suffers from this bug:"
-                  " http://bugs.mysql.com/bug.php?id=%u"
-                  " and thus replicating the current binary log event"
-                  " may make the slave's data become different from the"
-                  " master's data."
-                  " To take no risk, slave refuses to replicate"
-                  " this event and stops."
-                  " We recommend that all updates be stopped on the"
-                  " master and slave, that the data of both be"
-                  " manually synchronized,"
-                  " that master's binary logs be deleted,"
-                  " that master be upgraded to a version at least"
-                  " equal to '%d.%d.%d'. Then replication can be"
-                  " restarted.",
-                  rli->get_rli_description_event()->server_version,
-                  bug_id,
-                  fixed_in[0], fixed_in[1], fixed_in[2]);
+      enum loglevel report_level= INFORMATION_LEVEL;
+      if (!ignored_error_code(ER_UNKNOWN_ERROR))
+      {
+        report_level= ERROR_LEVEL;
+        current_thd->is_slave_error= 1;
+      }
+      /* In case of ignored errors report warnings only if log_warnings > 1. */
+      else if (log_warnings > 1)
+        report_level= WARNING_LEVEL;
+
+      if (report_level != INFORMATION_LEVEL)
+        rli->report(report_level, ER_UNKNOWN_ERROR,
+                    "According to the master's version ('%s'),"
+                    " it is probable that master suffers from this bug:"
+                    " http://bugs.mysql.com/bug.php?id=%u"
+                    " and thus replicating the current binary log event"
+                    " may make the slave's data become different from the"
+                    " master's data."
+                    " To take no risk, slave refuses to replicate"
+                    " this event and stops."
+                    " We recommend that all updates be stopped on the"
+                    " master and slave, that the data of both be"
+                    " manually synchronized,"
+                    " that master's binary logs be deleted,"
+                    " that master be upgraded to a version at least"
+                    " equal to '%d.%d.%d'. Then replication can be"
+                    " restarted.",
+                    rli->get_rli_description_event()->server_version,
+                    bug_id,
+                    fixed_in[0], fixed_in[1], fixed_in[2]);
       return TRUE;
     }
   }
@@ -9762,7 +9844,7 @@ bool start_slave(THD* thd,
   }
   if (thread_mask) //some threads are stopped, start them
   {
-    if (global_init_info(mi, false, thread_mask))
+    if (load_mi_and_rli_from_repositories(mi, false, thread_mask))
     {
       is_error= true;
       my_error(ER_MASTER_INFO, MYF(0));
@@ -10256,11 +10338,11 @@ int reset_slave(THD *thd, Master_info* mi, bool reset_all)
 
     if (is_default)
     {
-      if (Rpl_info_factory::
-          create_slave_per_channel(opt_mi_repository_id, opt_rli_repository_id,
-                                   channel_map.get_default_channel(),
-                                   true, &channel_map, SLAVE_REPLICATION_CHANNEL)
-          == NULL)
+      if (!Rpl_info_factory::create_mi_and_rli_objects(opt_mi_repository_id,
+                                                       opt_rli_repository_id,
+                                                       channel_map.get_default_channel(),
+                                                       true,
+                                                       &channel_map))
       {
         error= ER_MASTER_INFO;
         my_message(ER_MASTER_INFO, ER(ER_MASTER_INFO), MYF(0));
@@ -10449,27 +10531,11 @@ static bool have_change_master_execute_option(const LEX_MASTER_INFO* lex_mi,
 */
 
 static int change_receive_options(THD* thd, LEX_MASTER_INFO* lex_mi,
-                                  Master_info* mi, bool need_relay_log_purge)
+                                  Master_info* mi)
 {
   int ret= 0; /* return value. Set if there is an error. */
 
   DBUG_ENTER("change_receive_options");
-
-  /*
-    We want to save the old receive configurations so that we can use them to
-    print the changes in these configurations (from-to form). This is used in
-    sql_print_information() later.
-  */
-  char saved_host[HOSTNAME_LENGTH + 1], saved_bind_addr[HOSTNAME_LENGTH + 1];
-  uint saved_port= 0;
-  char saved_log_name[FN_REFLEN];
-  my_off_t saved_log_pos= 0;
-
-  strmake(saved_host, mi->host, HOSTNAME_LENGTH);
-  strmake(saved_bind_addr, mi->bind_addr, HOSTNAME_LENGTH);
-  saved_port= mi->port;
-  strmake(saved_log_name, mi->get_master_log_name(), FN_REFLEN - 1);
-  saved_log_pos= mi->get_master_log_pos();
 
   /*
     If the user specified host or port without binlog or position,
@@ -10545,7 +10611,13 @@ static int change_receive_options(THD* thd, LEX_MASTER_INFO* lex_mi,
     strmake(mi->host, lex_mi->host, sizeof(mi->host)-1);
   if (lex_mi->bind_addr)
     strmake(mi->bind_addr, lex_mi->bind_addr, sizeof(mi->bind_addr)-1);
-  if (lex_mi->port)
+  /*
+    Setting channel's port number explicitly to '0' should be allowed.
+    Eg: 'group_replication_recovery' channel (*after recovery is done*)
+    or 'group_replication_applier' channel wants to set the port number
+    to '0' as there is no actual network usage on these channels.
+  */
+  if (lex_mi->port || lex_mi->port_opt == LEX_MASTER_INFO::LEX_MI_ENABLE)
     mi->port = lex_mi->port;
   if (lex_mi->connect_retry)
     mi->connect_retry = lex_mi->connect_retry;
@@ -10629,46 +10701,6 @@ static int change_receive_options(THD* thd, LEX_MASTER_INFO* lex_mi,
                  ER_SLAVE_IGNORED_SSL_PARAMS, ER(ER_SLAVE_IGNORED_SSL_PARAMS));
 #endif
 
-  /*
-    If user did specify neither host nor port nor any log name nor any log
-    pos, i.e. he specified only user/password/master_connect_retry, he probably
-    wants replication to resume from where it had left, i.e. from the
-    coordinates of the **SQL** thread (imagine the case where the I/O is ahead
-    of the SQL; restarting from the coordinates of the I/O would lose some
-    events which is probably unwanted when you are just doing minor changes
-    like changing master_connect_retry).
-    A side-effect is that if only the I/O thread was started, this thread may
-    restart from ''/4 after the CHANGE MASTER. That's a minor problem (it is a
-    much more unlikely situation than the one we are fixing here).
-    Note: coordinates of the SQL thread must be read here, before the
-    'if (need_relay_log_purge)' block which resets them.
-  */
-  if (!lex_mi->host && !lex_mi->port &&
-      !lex_mi->log_file_name && !lex_mi->pos &&
-      need_relay_log_purge)
-  {
-    /*
-      Sometimes mi->rli->master_log_pos == 0 (it happens when the SQL thread is
-      not initialized), so we use a max().
-      What happens to mi->rli->master_log_pos during the initialization stages
-      of replication is not 100% clear, so we guard against problems using
-      max().
-    */
-    mi->set_master_log_pos(max<ulonglong>(BIN_LOG_HEADER_SIZE,
-                                          mi->rli->get_group_master_log_pos()));
-    mi->set_master_log_name(mi->rli->get_group_master_log_name());
-  }
-
-  sql_print_information("'CHANGE MASTER TO%s executed'. "
-    "Previous state master_host='%s', master_port= %u, master_log_file='%s', "
-    "master_log_pos= %ld, master_bind='%s'. "
-    "New state master_host='%s', master_port= %u, master_log_file='%s', "
-    "master_log_pos= %ld, master_bind='%s'.",
-    mi->get_for_channel_str(true),
-    saved_host, saved_port, saved_log_name, (ulong) saved_log_pos,
-    saved_bind_addr, mi->host, mi->port, mi->get_master_log_name(),
-    (ulong) mi->get_master_log_pos(), mi->bind_addr);
-
 err:
   DBUG_RETURN(ret);
 }
@@ -10684,9 +10716,6 @@ err:
 
   @param lex_mi structure that holds all change master options given on the
                 change master command.
-                Coming from the an executing statement or set directly this
-                shall contain connection settings like hostname, user, password
-                and other settings like the number of connection retries.
 
   @param mi     Pointer to Master_info object belonging to the slave's IO
                 thread.
@@ -10740,7 +10769,10 @@ static void change_execute_options(LEX_MASTER_INFO* lex_mi, Master_info* mi)
                         connection retries.
 
   @param preserve_logs  If the decision of purging the logs should be always be
-                        false even if a relay log name is given to the method.
+                        false even if no relay log name/position is given to
+                        the method. The preserve_logs parameter will not be
+                        respected when the relay log info repository is not
+                        initialized.
 
   @retval 0   success
   @retval !=0 error
@@ -10764,6 +10796,16 @@ int change_master(THD* thd, Master_info* mi, LEX_MASTER_INFO* lex_mi,
     options are not used.
   */
   bool need_relay_log_purge= 1;
+
+  /*
+    We want to save the old receive configurations so that we can use them to
+    print the changes in these configurations (from-to form). This is used in
+    sql_print_information() later.
+  */
+  char saved_host[HOSTNAME_LENGTH + 1], saved_bind_addr[HOSTNAME_LENGTH + 1];
+  uint saved_port= 0;
+  char saved_log_name[FN_REFLEN];
+  my_off_t saved_log_pos= 0;
 
   DBUG_ENTER("change_master");
 
@@ -10858,7 +10900,9 @@ int change_master(THD* thd, Master_info* mi, LEX_MASTER_INFO* lex_mi,
   have_execute_option= have_change_master_execute_option(lex_mi,
                                                          &need_relay_log_purge);
 
-  if (preserve_logs && need_relay_log_purge)
+  if (need_relay_log_purge && /* If we should purge the logs for this channel */
+      preserve_logs &&        /* And we were asked to keep them */
+      mi->rli->inited)        /* And the channel was initialized properly */
   {
     need_relay_log_purge= false;
   }
@@ -10898,14 +10942,14 @@ int change_master(THD* thd, Master_info* mi, LEX_MASTER_INFO* lex_mi,
   int thread_mask_stopped_threads;
 
   /*
-    Before global_init_info() call, get a bit mask to indicate stopped threads
-    in thread_mask_stopped_threads. Since the third argguement is 1,
-    thread_mask when the function returns stands for stopped threads.
+    Before load_mi_and_rli_from_repositories() call, get a bit mask to indicate
+    stopped threads in thread_mask_stopped_threads. Since the third argguement
+    is 1, thread_mask when the function returns stands for stopped threads.
   */
 
   init_thread_mask(&thread_mask_stopped_threads, mi, 1);
 
-  if (global_init_info(mi, false, thread_mask_stopped_threads))
+  if (load_mi_and_rli_from_repositories(mi, false, thread_mask_stopped_threads))
   {
     error= ER_MASTER_INFO;
     my_message(ER_MASTER_INFO, ER(ER_MASTER_INFO), MYF(0));
@@ -10970,11 +11014,62 @@ int change_master(THD* thd, Master_info* mi, LEX_MASTER_INFO* lex_mi,
 
   if (have_receive_option)
   {
-    if ((error= change_receive_options(thd, lex_mi, mi, need_relay_log_purge)))
+    strmake(saved_host, mi->host, HOSTNAME_LENGTH);
+    strmake(saved_bind_addr, mi->bind_addr, HOSTNAME_LENGTH);
+    saved_port= mi->port;
+    strmake(saved_log_name, mi->get_master_log_name(), FN_REFLEN - 1);
+    saved_log_pos= mi->get_master_log_pos();
+
+    if ((error= change_receive_options(thd, lex_mi, mi)))
     {
       goto err;
     }
   }
+
+  /*
+    If user didn't specify neither host nor port nor any log name nor any log
+    pos, i.e. he specified only user/password/master_connect_retry, master_delay,
+    he probably  wants replication to resume from where it had left, i.e. from the
+    coordinates of the **SQL** thread (imagine the case where the I/O is ahead
+    of the SQL; restarting from the coordinates of the I/O would lose some
+    events which is probably unwanted when you are just doing minor changes
+    like changing master_connect_retry).
+    Note: coordinates of the SQL thread must be read before the block which
+    resets them.
+  */
+  if (need_relay_log_purge)
+  {
+    /*
+      A side-effect is that if only the I/O thread was started, this thread may
+      restart from ''/4 after the CHANGE MASTER. That's a minor problem (it is a
+      much more unlikely situation than the one we are fixing here).
+    */
+    if (!lex_mi->host && !lex_mi->port &&
+        !lex_mi->log_file_name && !lex_mi->pos)
+    {
+      /*
+        Sometimes mi->rli->master_log_pos == 0 (it happens when the SQL thread is
+        not initialized), so we use a max().
+        What happens to mi->rli->master_log_pos during the initialization stages
+        of replication is not 100% clear, so we guard against problems using
+        max().
+      */
+      mi->set_master_log_pos(max<ulonglong>(BIN_LOG_HEADER_SIZE,
+                                            mi->rli->get_group_master_log_pos()));
+      mi->set_master_log_name(mi->rli->get_group_master_log_name());
+    }
+  }
+
+  if (have_receive_option)
+    sql_print_information("'CHANGE MASTER TO%s executed'. "
+      "Previous state master_host='%s', master_port= %u, master_log_file='%s', "
+      "master_log_pos= %ld, master_bind='%s'. "
+      "New state master_host='%s', master_port= %u, master_log_file='%s', "
+      "master_log_pos= %ld, master_bind='%s'.",
+      mi->get_for_channel_str(true),
+      saved_host, saved_port, saved_log_name, (ulong) saved_log_pos,
+      saved_bind_addr, mi->host, mi->port, mi->get_master_log_name(),
+      (ulong) mi->get_master_log_pos(), mi->bind_addr);
 
   if (have_execute_option)
     change_execute_options(lex_mi, mi);
@@ -11049,8 +11144,9 @@ int change_master(THD* thd, Master_info* mi, LEX_MASTER_INFO* lex_mi,
       */
       const char* msg;
       relay_log_purge= 0;
-      /* Relay log is already initialized */
 
+      /* Relay log must be already initialized */
+      DBUG_ASSERT(mi->rli->inited);
       if (mi->rli->init_relay_log_pos(mi->rli->get_group_relay_log_name(),
                                       mi->rli->get_group_relay_log_pos(),
                                       true/*we do need mi->rli->data_lock*/,
@@ -11149,10 +11245,8 @@ err:
                                      the reference is stored in *mi
    @param[in]      channel           The channel on which the change
                                      master was introduced.
-   @param[in]      channel_type      The channel type to be added.
 */
-int add_new_channel(Master_info** mi, const char* channel,
-                    enum_channel_type channel_type)
+int add_new_channel(Master_info** mi, const char* channel)
 {
   DBUG_ENTER("add_new_channel");
 
@@ -11204,11 +11298,11 @@ int add_new_channel(Master_info** mi, const char* channel,
     goto err;
   }
 
-  if (!((*mi)=Rpl_info_factory::create_slave_per_channel(
-                                             opt_mi_repository_id,
-                                             opt_rli_repository_id,
-                                             channel, false, &channel_map,
-                                             channel_type)))
+  if (!((*mi)=Rpl_info_factory::create_mi_and_rli_objects(opt_mi_repository_id,
+                                                          opt_rli_repository_id,
+                                                          channel,
+                                                          false,
+                                                          &channel_map)))
   {
     error= ER_MASTER_INFO;
     my_message(ER_MASTER_INFO, ER(ER_MASTER_INFO), MYF(0));
@@ -11341,12 +11435,8 @@ bool change_master_cmd(THD *thd)
   /* create a new channel if doesn't exist */
   if (!mi && strcmp(lex->mi.channel, channel_map.get_default_channel()))
   {
-    enum_channel_type channel_type= SLAVE_REPLICATION_CHANNEL;
-    if (channel_map.is_group_replication_channel_name(lex->mi.channel))
-      channel_type= GROUP_REPLICATION_CHANNEL;
-
     /* The mi will be returned holding mi->channel_lock for writing */
-    if (add_new_channel(&mi, lex->mi.channel, channel_type))
+    if (add_new_channel(&mi, lex->mi.channel))
       goto err;
   }
 
@@ -11423,12 +11513,15 @@ static int check_slave_sql_config_conflict(const Relay_log_info *rli)
   {
     const char* channel= const_cast<Relay_log_info*>(rli)->get_channel();
     if (slave_parallel_workers > 0 &&
-        channel_mts_submode != MTS_PARALLEL_TYPE_LOGICAL_CLOCK &&
+        (channel_mts_submode != MTS_PARALLEL_TYPE_LOGICAL_CLOCK ||
+         (channel_mts_submode == MTS_PARALLEL_TYPE_LOGICAL_CLOCK &&
+          !opt_slave_preserve_commit_order)) &&
         channel_map.is_group_replication_channel_name(channel, true))
     {
         my_error(ER_SLAVE_CHANNEL_OPERATION_NOT_ALLOWED, MYF(0),
                  "START SLAVE SQL_THREAD when SLAVE_PARALLEL_WORKERS > 0 "
-                 "and SLAVE_PARALLEL_TYPE != LOGICAL_CLOCK", channel);
+                 "and SLAVE_PARALLEL_TYPE != LOGICAL_CLOCK "
+                 "or SLAVE_PRESERVE_COMMIT_ORDER != ON", channel);
         return ER_SLAVE_CHANNEL_OPERATION_NOT_ALLOWED;
     }
   }

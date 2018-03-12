@@ -100,8 +100,8 @@ trx_undo_rec_get_pars(
 	bool*		updated_extern,	/*!< out: true if we updated an
 					externally stored fild */
 	undo_no_t*	undo_no,	/*!< out: undo log record number */
-	table_id_t*	table_id)	/*!< out: table id */
-	MY_ATTRIBUTE((nonnull));
+	table_id_t*	table_id);	/*!< out: table id */
+
 /*******************************************************************//**
 Builds a row reference from an undo log record.
 @return pointer to remaining part of undo record */
@@ -230,7 +230,7 @@ trx_undo_get_undo_rec_low(
 	roll_ptr_t	roll_ptr,	/*!< in: roll pointer to record */
 	mem_heap_t*	heap,		/*!< in: memory heap where copied */
 	bool		is_redo_rseg)	/*!< in: true if redo rseg. */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 
 /** status bit used for trx_undo_prev_version_build() */
 

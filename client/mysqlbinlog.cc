@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2257,6 +2257,12 @@ static int parse_args(int *argc, char*** argv)
 */
 static Exit_status safe_connect()
 {
+  /*
+    A possible old connection's resources are reclaimed now
+    at new connect attempt. The final safe_connect resources
+    are mysql_closed at the end of program, explicitly.
+  */
+  mysql_close(mysql);
   mysql= mysql_init(NULL);
 
   if (!mysql)
@@ -2784,6 +2790,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
                                        MYF(MY_WME))))
           {
             error("Could not create log file '%s'", log_file_name);
+            reset_temp_buf_and_delete(ev);
             DBUG_RETURN(ERROR_STOP);
           }
           DBUG_EXECUTE_IF("simulate_result_file_write_error_for_FD_event",
@@ -2792,6 +2799,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
                         BIN_LOG_HEADER_SIZE, MYF(MY_NABP)))
           {
             error("Could not write into log file '%s'", log_file_name);
+            reset_temp_buf_and_delete(ev);
             DBUG_RETURN(ERROR_STOP);
           }
           /*
@@ -2825,6 +2833,9 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
         }
         if (ev)
           reset_temp_buf_and_delete(ev);
+
+        /* Flush result_file after every event */
+        fflush(result_file);
       }
       else
       {
@@ -2842,7 +2853,10 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
       File file;
 
       if ((file= load_processor.prepare_new_file_for_old_format(le,fname)) < 0)
+      {
+        reset_temp_buf_and_delete(ev);
         DBUG_RETURN(ERROR_STOP);
+      }
 
       retval= process_event(print_event_info, ev, old_off, logname);
       if (retval != OK_CONTINUE)

@@ -22,10 +22,10 @@
 #include "my_dir.h"	/* Structs used by my_dir,includes sys/types */
 #include "mysys_err.h"
 #include "my_thread_local.h"
-
 #if !defined(_WIN32)
 # include <dirent.h>
 #endif
+
 
 /*
   We are assuming that directory we are reading is either has less than 
@@ -83,7 +83,7 @@ MY_DIR	*my_dir(const char *path, myf MyFlags)
   DBUG_PRINT("my",("path: '%s' MyFlags: %d",path,MyFlags));
 
   dirp = opendir(directory_file_name(tmp_path,(char *) path));
-  if (dirp == NULL || 
+  if (dirp == NULL ||
       ! (buffer= my_malloc(key_memory_MY_DIR,
                            ALIGN_SIZE(sizeof(MY_DIR)) + 
                            ALIGN_SIZE(sizeof(DYNAMIC_ARRAY)) +
@@ -93,7 +93,7 @@ MY_DIR	*my_dir(const char *path, myf MyFlags)
   dir_entries_storage= (DYNAMIC_ARRAY*)(buffer + ALIGN_SIZE(sizeof(MY_DIR)));
   names_storage= (MEM_ROOT*)(buffer + ALIGN_SIZE(sizeof(MY_DIR)) +
                              ALIGN_SIZE(sizeof(DYNAMIC_ARRAY)));
-  
+
   if (my_init_dynamic_array(dir_entries_storage,
                             key_memory_MY_DIR,
                             sizeof(FILEINFO),

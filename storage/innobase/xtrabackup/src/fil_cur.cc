@@ -201,7 +201,7 @@ xb_fil_cur_open(
 	cursor->node = node;
 	cursor->file = node->handle;
 
-	if (my_fstat(cursor->file, &cursor->statinfo, MYF(MY_WME))) {
+	if (my_fstat(cursor->file.m_file, &cursor->statinfo, MYF(MY_WME))) {
 		msg("[%02u] xtrabackup: error: cannot stat %s\n",
 		    thread_n, cursor->abs_path);
 
@@ -213,10 +213,10 @@ xb_fil_cur_open(
 	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT
 	    || srv_unix_file_flush_method == SRV_UNIX_O_DIRECT_NO_FSYNC) {
 
-		os_file_set_nocache(cursor->file, node->name, "OPEN");
+		os_file_set_nocache(cursor->file.m_file, node->name, "OPEN");
 	}
 
-	posix_fadvise(cursor->file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(cursor->file.m_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 
 	/* Determine the page size */
 	page_size.copy_from(xb_get_zip_size(cursor->file, &success));
@@ -438,7 +438,7 @@ corruption:
 		cursor->buf_npages++;
 	}
 
-	posix_fadvise(cursor->file, offset, to_read, POSIX_FADV_DONTNEED);
+	posix_fadvise(cursor->file.m_file, offset, to_read, POSIX_FADV_DONTNEED);
 
 	return(ret);
 }

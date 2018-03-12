@@ -26,7 +26,6 @@ INCLUDE(CTest)
 INCLUDE(${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlx_protobuf.cmake)
 
 INCLUDE(${PROJECT_SOURCE_DIR}/rapid/plugin/x/source_files.cmake)
-LIST(REMOVE_ITEM xplugin_SRC "${MYSQLX_PROJECT_DIR}/src/mysql_variables.cc")
 
 MYSQLX_PROTOBUF_GENERATE_CPP_NAMES(protobuf_SRC ${PROTOBUF_MYSQLX_FILES})
 
@@ -71,7 +70,7 @@ INCLUDE_DIRECTORIES(SYSTEM
     ${LIBEVENT_INCLUDE_DIR}
     ${GMOCK_INCLUDE_DIRS}
     ${GTEST_INCLUDE_DIR}
-    ${CMAKE_BINARY_DIR}/rapid/plugin/x/protobuf
+    ${CMAKE_BINARY_DIR}/rapid/plugin/x/generated/protobuf
 )
 
 INCLUDE_DIRECTORIES(
@@ -85,6 +84,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/regex
   ${PROJECT_SOURCE_DIR}/sql
   ${PROJECT_SOURCE_DIR}/include/mysql
+  ${CMAKE_BINARY_DIR}/rapid/plugin/x/generated/
 )
 
 FILE(
@@ -97,36 +97,54 @@ FILE(
   "${CMAKE_CURRENT_SOURCE_DIR}/stubs/misc.cc"
   "${CMAKE_CURRENT_SOURCE_DIR}/stubs/plugin.cc"
   "${CMAKE_CURRENT_SOURCE_DIR}/test_main.cc"
-  "${CMAKE_CURRENT_SOURCE_DIR}/boost_code.cc"
   "${CMAKE_CURRENT_SOURCE_DIR}/mysqlx_pb_wrapper.cc"
   "${PROJECT_SOURCE_DIR}/rapid/plugin/x/src/mysql_function_names.cc"
   "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/mysqlx_row.cc"
 )
 
-ADD_EXECUTABLE(xplugin_unit_tests ${unit_tests_SRC} ${xplugin_SRC} ${protobuf_SRC})
+# boost::shared_ptr depends on scoped_lock
+# Prevent missing symbols scoped_lock() CTOR/DTOR in sasl_authentication_t.cc
+#   boost::atomics::detail::lockpool::scoped_lock::~scoped_lock()
+UNSET(BOOST_LIB_SOURCES)
+IF (CMAKE_CXX_COMPILER_ID STREQUAL "SunPro")
+  SET(BOOST_LIB_SOURCES
+    ${BOOST_SOURCES_DIR}/libs/atomic/src/lockpool.cpp)
+ENDIF()
 
-ADD_DEPENDENCIES(xplugin_unit_tests mysqlxtest)
+SET(unit_tests_EXE xplugin_unit_tests)
+
+ADD_EXECUTABLE(${unit_tests_EXE}
+  ${unit_tests_SRC} ${xplugin_SRC} ${protobuf_SRC} ${BOOST_LIB_SOURCES}
+)
+
+ADD_DEPENDENCIES(${unit_tests_EXE} mysqlxtest)
 
 # New warning in Visual Studio 2008
 # '%$S': virtual function overrides '%$pS', previous versions of the compiler
 # did not override when parameters only differed by const/volatile qualifiers
 IF(WIN32)
-  SET_TARGET_PROPERTIES(xplugin_unit_tests PROPERTIES COMPILE_FLAGS "/wd4373")
+  SET_TARGET_PROPERTIES(${unit_tests_EXE} PROPERTIES COMPILE_FLAGS "/wd4373")
 ENDIF(WIN32)
 
+# Segfault in the unit test with -xO3, so lower optimization level
+IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
+  ADD_COMPILE_FLAGS(
+    ${CMAKE_CURRENT_SOURCE_DIR}/callback_command_delegate_t.cc
+    COMPILE_FLAGS "-xO2")
+ENDIF()
+
 TARGET_LINK_LIBRARIES(
-  xplugin_unit_tests
-  xplugin
+  ${unit_tests_EXE}
   gtest
   regex
   gmock
   mysqlservices
   mysqlclient
-  ${LIBEVENT_LIBRARY}
+  ${LIBEVENT_LIBRARY} ${LIBEVENT_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${PROTOBUF_LIBRARY}
   ${GCOV_LDFLAGS}
 )
 
-INCLUDE(TestGroups.txt)
+ADD_TEST(xplugin ${unit_tests_EXE})
 

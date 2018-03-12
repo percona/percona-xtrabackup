@@ -36,7 +36,7 @@ Remove these on the first opportunity, i.e. single-binary XtraBackup.  */
 /** Single bitmap file information */
 struct log_online_bitmap_file_t {
 	char		name[FN_REFLEN];	/*!< Name with full path */
-	os_file_t	file;			/*!< Handle to opened file */
+	pfs_os_file_t	file;			/*!< Handle to opened file */
 	ib_uint64_t	size;			/*!< Size of the file */
 	ib_uint64_t	offset;			/*!< Offset of the next read,
 						or count of already-read bytes
@@ -466,8 +466,8 @@ log_online_open_bitmap_file_read_only(
 	bitmap_file->offset = 0;
 
 #ifdef UNIV_LINUX
-	posix_fadvise(bitmap_file->file, 0, 0, POSIX_FADV_SEQUENTIAL);
-	posix_fadvise(bitmap_file->file, 0, 0, POSIX_FADV_NOREUSE);
+	posix_fadvise(bitmap_file->file.m_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+	posix_fadvise(bitmap_file->file.m_file, 0, 0, POSIX_FADV_NOREUSE);
 #endif
 
 	return TRUE;

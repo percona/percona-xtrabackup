@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2011, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2011, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -380,11 +380,12 @@ row_log_online_op(
 			goto err_exit;
 		}
 
-		err = os_file_write(
+		err = os_file_write_int_fd(
 			request,
 			"(modification log)",
-			OS_FILE_FROM_FD(log->fd),
+			log->fd,
 			log->tail.block, byte_offset, srv_sort_buf_size);
+
 		log->tail.blocks++;
 		if (err != DB_SUCCESS) {
 write_failed:
@@ -498,11 +499,12 @@ row_log_table_close_func(
 			goto err_exit;
 		}
 
-		err = os_file_write(
+		err = os_file_write_int_fd(
 			request,
 			"(modification log)",
-			OS_FILE_FROM_FD(log->fd),
+			log->fd,
 			log->tail.block, byte_offset, srv_sort_buf_size);
+
 		log->tail.blocks++;
 		if (err != DB_SUCCESS) {
 write_failed:
@@ -646,7 +648,7 @@ row_log_table_delete(
 		&old_pk_extra_size);
 	ut_ad(old_pk_extra_size < 0x100);
 
-	mrec_size = 4 + old_pk_size;
+	mrec_size = 6 + old_pk_size;
 
 	/* Log enough prefix of the BLOB unless both the
 	old and new table are in COMPACT or REDUNDANT format,
@@ -683,8 +685,8 @@ row_log_table_delete(
 		*b++ = static_cast<byte>(old_pk_extra_size);
 
 		/* Log the size of external prefix we saved */
-		mach_write_to_2(b, ext_size);
-		b += 2;
+		mach_write_to_4(b, ext_size);
+		b += 4;
 
 		rec_convert_dtuple_to_temp(
 			b + old_pk_extra_size, new_index,
@@ -817,12 +819,9 @@ row_log_table_low_redundant(
 
 	mrec_size = ROW_LOG_HEADER_SIZE + size + (extra_size >= 0x80);
 
-	if (ventry && ventry->n_v_fields > 0) {
-		ulint	v_extra = 0;
-		mrec_size += rec_get_converted_size_temp(
-			index, NULL, 0, ventry, &v_extra);
-
+	if (num_v) {
 		if (o_ventry) {
+			ulint	v_extra = 0;
 			mrec_size += rec_get_converted_size_temp(
 				index, NULL, 0, o_ventry, &v_extra);
 		}
@@ -875,11 +874,7 @@ row_log_table_low_redundant(
 			ventry);
 		b += size;
 
-		if (ventry && ventry->n_v_fields > 0) {
-			rec_convert_dtuple_to_temp(
-				b, new_index, NULL, 0, ventry);
-			b += mach_read_from_2(b);
-
+		if (num_v) {
 			if (o_ventry) {
 				rec_convert_dtuple_to_temp(
 					b, new_index, NULL, 0, o_ventry);
@@ -940,6 +935,13 @@ row_log_table_low(
 	ut_ad(fil_page_get_type(page_align(rec)) == FIL_PAGE_INDEX);
 	ut_ad(page_is_leaf(page_align(rec)));
 	ut_ad(!page_is_comp(page_align(rec)) == !rec_offs_comp(offsets));
+	/* old_pk=row_log_table_get_pk() [not needed in INSERT] is a prefix
+	of the clustered index record (PRIMARY KEY,DB_TRX_ID,DB_ROLL_PTR),
+	with no information on virtual columns */
+	ut_ad(!old_pk || !insert);
+	ut_ad(!old_pk || old_pk->n_v_fields == 0);
+	ut_ad(!o_ventry || !insert);
+	ut_ad(!o_ventry || ventry);
 
 	if (dict_index_is_corrupted(index)
 	    || !dict_index_is_online_ddl(index)
@@ -993,7 +995,7 @@ row_log_table_low(
 
 		old_pk_size = rec_get_converted_size_temp(
 			new_index, old_pk->fields, old_pk->n_fields,
-			old_pk, &old_pk_extra_size);
+			NULL, &old_pk_extra_size);
 		ut_ad(old_pk_extra_size < 0x100);
 		mrec_size += 1/*old_pk_extra_size*/ + old_pk_size;
 	}
@@ -2193,8 +2195,9 @@ func_exit_committed:
 		goto func_exit_committed;
 	}
 
-	dtuple_t*	entry	= row_build_index_entry(
-		row, NULL, index, heap);
+	/** It allows to create tuple with virtual column information. */
+	dtuple_t*	entry	= row_build_index_entry_low(
+		row, NULL, index, heap, ROW_BUILD_FOR_INSERT);
 	upd_t*		update	= row_upd_build_difference_binary(
 		index, entry, btr_pcur_get_rec(&pcur), cur_offsets,
 		false, NULL, heap, dup->table);
@@ -2418,6 +2421,9 @@ row_log_table_apply_op(
 		next_mrec = mrec + rec_offs_data_size(offsets);
 
 		if (log->table->n_v_cols) {
+			if (next_mrec + 2 > mrec_end) {
+				return(NULL);
+			}
 			next_mrec += mach_read_from_2(next_mrec);
 		}
 
@@ -2438,14 +2444,14 @@ row_log_table_apply_op(
 		break;
 
 	case ROW_T_DELETE:
-		/* 1 (extra_size) + 2 (ext_size) + at least 1 (payload) */
-		if (mrec + 4 >= mrec_end) {
+		/* 1 (extra_size) + 4 (ext_size) + at least 1 (payload) */
+		if (mrec + 6 >= mrec_end) {
 			return(NULL);
 		}
 
 		extra_size = *mrec++;
-		ext_size = mach_read_from_2(mrec);
-		mrec += 2;
+		ext_size = mach_read_from_4(mrec);
+		mrec += 4;
 		ut_ad(mrec < mrec_end);
 
 		/* We assume extra_size < 0x100 for the PRIMARY KEY prefix.
@@ -2456,6 +2462,10 @@ row_log_table_apply_op(
 		rec_init_offsets_temp(mrec, new_index, offsets);
 		next_mrec = mrec + rec_offs_data_size(offsets) + ext_size;
 		if (log->table->n_v_cols) {
+			if (next_mrec + 2 > mrec_end) {
+				return(NULL);
+			}
+
 			next_mrec += mach_read_from_2(next_mrec);
 		}
 
@@ -2773,6 +2783,7 @@ row_log_table_apply_ops(
 	const ulint	new_trx_id_col	= dict_col_get_clust_pos(
 		dict_table_get_sys_col(new_table, DATA_TRX_ID), new_index);
 	trx_t*		trx		= thr_get_trx(thr);
+	dberr_t		err;
 
 	ut_ad(dict_index_is_clust(index));
 	ut_ad(dict_index_is_online_ddl(index));
@@ -2877,9 +2888,9 @@ all_done:
 
 		IORequest	request;
 
-		dberr_t	err = os_file_read_no_error_handling(
+		err = os_file_read_no_error_handling_int_fd(
 			request,
-			OS_FILE_FROM_FD(index->online_log->fd),
+			index->online_log->fd,
 			index->online_log->head.block, ofs,
 			srv_sort_buf_size,
 			NULL);
@@ -3707,10 +3718,9 @@ all_done:
 		}
 
 		IORequest	request;
-
-		dberr_t	err = os_file_read_no_error_handling(
+		dberr_t	err = os_file_read_no_error_handling_int_fd(
 			request,
-			OS_FILE_FROM_FD(index->online_log->fd),
+				index->online_log->fd,
 			index->online_log->head.block, ofs,
 			srv_sort_buf_size,
 			NULL);

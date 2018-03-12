@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -786,6 +786,27 @@ public:
       }
     }
   }
+
+  /**
+    Update use count for SEL_ARG's next_key_part.
+    This function does NOT update use_count of the current
+    SEL_ARG object.
+
+    Primarily used for reducing reference count of next_key_part of a
+    node when removed from SEL_ARG tree during tree merge operations.
+
+    @param count The number of additional references to this SEL_ARG
+                 tree.
+  */
+  void increment_next_key_part_use_count(long count)
+  {
+    if (next_key_part)
+    {
+      next_key_part->use_count+= count;
+      next_key_part->increment_use_count(count);
+    }
+  }
+
   void free_tree()
   {
     for (SEL_ARG *pos=first(); pos ; pos=pos->next)
@@ -3370,6 +3391,16 @@ bool prune_partitions(THD *thd, TABLE *table, Item *pprune_cond)
 {
   partition_info *part_info = table->part_info;
   DBUG_ENTER("prune_partitions");
+
+  /*
+    If the prepare stage already have completed pruning successfully,
+    it is no use of running prune_partitions() again on the same condition.
+    Since it will not be able to prune anything more than the previous call
+    from the prepare step.
+  */
+  if (part_info && part_info->is_pruning_completed)
+    DBUG_RETURN(false);
+
   table->all_partitions_pruned_away= false;
 
   if (!part_info)
@@ -3393,15 +3424,6 @@ bool prune_partitions(THD *thd, TABLE *table, Item *pprune_cond)
     table->all_partitions_pruned_away= true;
     DBUG_RETURN(false);
   }
-
-  /*
-    If the prepare stage already have completed pruning successfully,
-    it is no use of running prune_partitions() again on the same condition.
-    Since it will not be able to prune anything more than the previous call
-    from the prepare step.
-  */
-  if (part_info->is_pruning_completed)
-    DBUG_RETURN(false);
 
   PART_PRUNE_PARAM prune_param;
   MEM_ROOT alloc;
@@ -7136,11 +7158,22 @@ static bool save_value_and_handle_conversion(SEL_ARG **tree,
   case TYPE_NOTE_TRUNCATED:
   case TYPE_WARN_TRUNCATED:
     return false;
-  case TYPE_WARN_ALL_TRUNCATED:
+  case TYPE_WARN_INVALID_STRING:
     /*
-      A completely truncated value can not be used for creating a valid range
-      key
+      An invalid string does not produce any rows when used with
+      equality operator.
     */
+    if (comp_op == Item_func::EQUAL_FUNC || comp_op == Item_func::EQ_FUNC)
+    {
+      *impossible_cond_cause= "invalid_characters_in_string";
+      goto impossible_cond;
+    }
+    /*
+      For other operations on invalid strings, we assume that the range
+      predicate is always true and let evaluate_join_record() decide
+      the outcome.
+    */
+    return true;
   case TYPE_ERR_BAD_VALUE:
     /*
       In the case of incompatible values, MySQL's SQL dialect has some
@@ -8552,7 +8585,7 @@ key_or(RANGE_OPT_PARAM *param, SEL_ARG *key1, SEL_ARG *key2)
           Use the relevant range in key1.
         */
         cur_key1->merge_flags(cur_key2);        // Copy maybe flags
-        cur_key2->increment_use_count(-1);      // Free not used tree
+        cur_key2->increment_next_key_part_use_count(-1);  // Free not used tree
       }
       else
       {
@@ -8682,15 +8715,11 @@ key_or(RANGE_OPT_PARAM *param, SEL_ARG *key1, SEL_ARG *key2)
 
             Move on to next range in key2
           */
-          if (cur_key2->next_key_part)
-          {
-            /*
-              cur_key2 will no longer be used. Reduce reference count
-              of SEL_ARGs in its next_key_part.
-            */
-            cur_key2->next_key_part->use_count--;
-            cur_key2->next_key_part->increment_use_count(-1);
-          }
+          /*
+            cur_key2 will no longer be used. Reduce reference count
+            of SEL_ARGs in its next_key_part.
+          */
+          cur_key2->increment_next_key_part_use_count(-1);
           cur_key2= cur_key2->next;
           continue;
         }
@@ -9029,7 +9058,7 @@ SEL_ARG::tree_delete(SEL_ARG *key)
     key->prev->next=key->next;
   if (key->next)
     key->next->prev=key->prev;
-  key->increment_use_count(-1);
+  key->increment_next_key_part_use_count(-1);
   if (!key->parent)
     par= &root;
   else
@@ -10966,13 +10995,36 @@ int QUICK_RANGE_SELECT::reset()
 
   if (!file->inited)
   {
+    /*
+      read_set is set to the correct value for ror_merge_scan here as a
+      subquery execution during optimization might result in innodb not
+      initializing the read set in index_read() leading to wrong
+      results while merging.
+    */
+    MY_BITMAP * const save_read_set= head->read_set;
+    MY_BITMAP * const save_write_set= head->write_set;
     const bool sorted= (mrr_flags & HA_MRR_SORTED);
     DBUG_EXECUTE_IF("bug14365043_2",
                     DBUG_SET("+d,ha_index_init_fail"););
+
+    /* Pass index specifc read set for ror_merged_scan */
+    if (in_ror_merged_scan)
+    {
+      /*
+        We don't need to signal the bitmap change as the bitmap is always the
+        same for this head->file
+      */
+      head->column_bitmaps_set_no_signal(&column_bitmap, &column_bitmap);
+    }
     if ((error= file->ha_index_init(index, sorted)))
     {
       file->print_error(error, MYF(0));
       DBUG_RETURN(error);
+    }
+    if (in_ror_merged_scan)
+    {
+      /* Restore bitmaps set on entry */
+      head->column_bitmaps_set_no_signal(save_read_set, save_write_set);
     }
   }
 
@@ -12151,7 +12203,7 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, const Cost_estimate *cost_e
           part of 'cur_index'
         */
         if (bitmap_is_set(table->read_set, cur_field->field_index) &&
-            !cur_field->part_of_key_not_clustered.is_set(cur_index))
+            !cur_field->is_part_of_actual_key(thd, cur_index))
         {
           cause= "not_covering";
           goto next_index;                  // Field was not part of key
@@ -12350,7 +12402,7 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, const Cost_estimate *cost_e
 
         /* Check if cur_part is referenced in the WHERE clause. */
         if (join->where_cond->walk(&Item::find_item_in_field_list_processor,
-                                   Item::WALK_POSTFIX,
+                                   Item::WALK_SUBQUERY_POSTFIX,
                                    (uchar*) key_part_range))
         {
           cause= "keypart_reference_from_where_clause";

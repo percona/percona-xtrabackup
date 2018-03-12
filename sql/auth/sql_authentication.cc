@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -135,8 +135,11 @@ Rsa_authentication_keys::get_key_file_path(char *key, String *key_file_path)
      If a fully qualified path is entered use that, else assume the keys are 
      stored in the data directory.
    */
-  if (strchr(key, FN_LIBCHAR) != NULL ||
-      strchr(key, FN_LIBCHAR2) != NULL)
+  if (strchr(key, FN_LIBCHAR) != NULL
+#ifdef _WIN32
+      || strchr(key, FN_LIBCHAR2) != NULL
+#endif
+     )
     key_file_path->set_quick(key, strlen(key), system_charset_info);
   else
   {
@@ -210,6 +213,7 @@ Rsa_authentication_keys::read_key_file(RSA **key_ptr,
     }
 
     /* For public key, read key file content into a char buffer. */
+    bool read_error= false;
     if (!is_priv_key)
     {
       int filesize;
@@ -217,10 +221,18 @@ Rsa_authentication_keys::read_key_file(RSA **key_ptr,
       filesize= ftell(key_file);
       fseek(key_file, 0, SEEK_SET);
       *key_text_buffer= new char[filesize+1];
-      (void) fread(*key_text_buffer, filesize, 1, key_file);
+      int items_read= fread(*key_text_buffer, filesize, 1, key_file);
+      read_error= items_read != 1;
+      if (read_error)
+      {
+        char errbuf[MYSQL_ERRMSG_SIZE];
+        sql_print_error("Failure to read key file: %s",
+                        my_strerror(errbuf, MYSQL_ERRMSG_SIZE, my_errno()));
+      }
       (*key_text_buffer)[filesize]= '\0';
     }
     fclose(key_file);
+    return read_error;
   }
   return false;
 }
@@ -1230,6 +1242,9 @@ char *get_56_lenc_string(char **buffer,
 {
   static char empty_string[1]= { '\0' };
   char *begin= *buffer;
+  uchar *pos= (uchar *)begin;
+  size_t required_length= 9;
+
 
   if (*max_bytes_available == 0)
     return NULL;
@@ -1250,6 +1265,27 @@ char *get_56_lenc_string(char **buffer,
     return empty_string;
   }
 
+  /* Make sure we have enough bytes available for net_field_length_ll */
+  DBUG_EXECUTE_IF("buffer_too_short_3",
+                  *pos= 252; *max_bytes_available= 2;
+  );
+  DBUG_EXECUTE_IF("buffer_too_short_4",
+                  *pos= 253; *max_bytes_available= 3;
+  );
+  DBUG_EXECUTE_IF("buffer_too_short_9",
+                  *pos= 254; *max_bytes_available= 8;
+  );
+
+  if (*pos <= 251)
+    required_length= 1;
+  if (*pos == 252)
+    required_length= 3;
+  if (*pos == 253)
+    required_length= 4;
+
+  if (*max_bytes_available < required_length)
+    return NULL;
+
   *string_length= (size_t)net_field_length_ll((uchar **)buffer);
 
   DBUG_EXECUTE_IF("sha256_password_scramble_too_long",
@@ -1257,6 +1293,9 @@ char *get_56_lenc_string(char **buffer,
   );
 
   size_t len_len= (size_t)(*buffer - begin);
+
+  DBUG_ASSERT((*max_bytes_available >= len_len) &&
+              (len_len == required_length));
   
   if (*string_length > *max_bytes_available - len_len)
     return NULL;
@@ -2029,6 +2068,18 @@ check_password_lifetime(THD *thd, const ACL_USER *acl_user)
       }
     }
   }
+  DBUG_EXECUTE_IF("force_password_interval_expire",
+                  {
+                    if (!acl_user->use_default_password_lifetime &&
+                        acl_user->password_lifetime)
+                      password_time_expired= true;
+                  });
+  DBUG_EXECUTE_IF("force_password_interval_expire_for_time_type",
+                  {
+                    if (acl_user->password_last_changed.time_type !=
+                        MYSQL_TIMESTAMP_ERROR)
+                      password_time_expired= true;
+                  });
   return password_time_expired;
 }
 
@@ -2073,6 +2124,20 @@ acl_log_connect(const char *user,
       db ? db : (char*) "",
       vio_name_str);
   }
+}
+
+/*
+  Assign priv_user and priv_host fields of the Security_context.
+
+  @param sctx Security context, which priv_user and priv_host fields are
+              updated.
+  @param user Authenticated user data.
+*/
+inline void
+assign_priv_user_host(Security_context *sctx, ACL_USER *user)
+{
+  sctx->assign_priv_user(user->user, user->user ? strlen(user->user) : 0);
+  sctx->assign_priv_host(user->host.get_host(), user->host.get_host_len());
 }
 
 /**
@@ -2207,6 +2272,15 @@ acl_authenticate(THD *thd, enum_server_command command)
     res= CR_ERROR;
   }
 
+  /*
+    Assign account user/host data to the current THD. This information is used
+    when the authentication fails after this point and we call audit api
+    notification event. Client user/host connects to the existing account is
+    easily distinguished from other connects.
+  */
+  if (mpvio.can_authenticate())
+    assign_priv_user_host(sctx, const_cast<ACL_USER *>(acl_user));
+
   if (res > CR_OK && mpvio.status != MPVIO_EXT::SUCCESS)
   {
     Host_errors errors;
@@ -2307,11 +2381,7 @@ acl_authenticate(THD *thd, enum_server_command command)
 #endif /* NO_EMBEDDED_ACCESS_CHECKS */
 
     sctx->set_master_access(acl_user->access);
-    sctx->assign_priv_user(acl_user->user, acl_user->user ?
-                                           strlen(acl_user->user) : 0);
-    sctx->assign_priv_host(acl_user->host.get_host(),
-                           acl_user->host.get_host() ?
-                           strlen(acl_user->host.get_host()) : 0);
+    assign_priv_user_host(sctx, const_cast<ACL_USER *>(acl_user));
 
     if (!(sctx->check_access(SUPER_ACL)) && !thd->is_error())
     {

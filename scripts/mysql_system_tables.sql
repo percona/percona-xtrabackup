@@ -1,4 +1,4 @@
--- Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+-- Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -226,23 +226,10 @@ CREATE TABLE IF NOT EXISTS server_cost (
   PRIMARY KEY (cost_name)
 ) ENGINE=InnoDB CHARACTER SET=utf8 COLLATE=utf8_general_ci STATS_PERSISTENT=0;
 
-INSERT IGNORE INTO server_cost VALUES
-  ("row_evaluate_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
-
-INSERT IGNORE INTO server_cost VALUES
-  ("key_compare_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
-
-INSERT IGNORE INTO server_cost VALUES
-  ("memory_temptable_create_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
-
-INSERT IGNORE INTO server_cost VALUES
-  ("memory_temptable_row_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
-
-INSERT IGNORE INTO server_cost VALUES
-  ("disk_temptable_create_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
-
-INSERT IGNORE INTO server_cost VALUES
-  ("disk_temptable_row_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
+INSERT IGNORE INTO server_cost(cost_name) VALUES
+  ("row_evaluate_cost"), ("key_compare_cost"),
+  ("memory_temptable_create_cost"), ("memory_temptable_row_cost"),
+  ("disk_temptable_create_cost"), ("disk_temptable_row_cost");
 
 -- Engine cost constants
 
@@ -256,10 +243,9 @@ CREATE TABLE IF NOT EXISTS engine_cost (
   PRIMARY KEY (cost_name, engine_name, device_type)
 ) ENGINE=InnoDB CHARACTER SET=utf8 COLLATE=utf8_general_ci STATS_PERSISTENT=0;
 
-INSERT IGNORE INTO engine_cost VALUES
-  ("default", 0, "memory_block_read_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
-INSERT IGNORE INTO engine_cost VALUES
-  ("default", 0, "io_block_read_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
+INSERT IGNORE INTO engine_cost(engine_name, device_type, cost_name) VALUES
+  ("default", 0, "memory_block_read_cost"),
+  ("default", 0, "io_block_read_cost");
 
 --
 -- PERFORMANCE SCHEMA INSTALLATION
@@ -2231,7 +2217,7 @@ SET @cmd="CREATE TABLE performance_schema.replication_group_member_stats("
   "COUNT_TRANSACTIONS_IN_QUEUE BIGINT unsigned not null,"
   "COUNT_TRANSACTIONS_CHECKED BIGINT unsigned not null,"
   "COUNT_CONFLICTS_DETECTED BIGINT unsigned not null,"
-  "COUNT_TRANSACTIONS_VALIDATING BIGINT unsigned not null,"
+  "COUNT_TRANSACTIONS_ROWS_VALIDATING BIGINT unsigned not null,"
   "TRANSACTIONS_COMMITTED_ALL_MEMBERS LONGTEXT not null,"
   "LAST_CONFLICT_FREE_TRANSACTION TEXT not null"
   ") ENGINE=PERFORMANCE_SCHEMA;";
@@ -2271,7 +2257,7 @@ SET @cmd="CREATE TABLE performance_schema.replication_connection_status("
   "SERVICE_STATE ENUM('ON','OFF','CONNECTING') not null,"
   "COUNT_RECEIVED_HEARTBEATS bigint unsigned NOT NULL DEFAULT 0,"
   "LAST_HEARTBEAT_TIMESTAMP TIMESTAMP(0) not null COMMENT 'Shows when the most recent heartbeat signal was received.',"
-  "RECEIVED_TRANSACTION_SET TEXT not null,"
+  "RECEIVED_TRANSACTION_SET LONGTEXT not null,"
   "LAST_ERROR_NUMBER INTEGER not null,"
   "LAST_ERROR_MESSAGE VARCHAR(1024) not null,"
   "LAST_ERROR_TIMESTAMP TIMESTAMP(0) not null"

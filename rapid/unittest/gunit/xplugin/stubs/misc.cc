@@ -42,6 +42,13 @@ PSI_cond_key KEY_cond_x_queue = PSI_NOT_INSTRUMENTED;
 
 PSI_rwlock_key KEY_rwlock_x_client_list_clients = PSI_NOT_INSTRUMENTED;
 
+PSI_memory_key KEY_memory_x_recv_buffer = PSI_NOT_INSTRUMENTED;
+PSI_memory_key KEY_memory_x_send_buffer = PSI_NOT_INSTRUMENTED;
+
+PSI_socket_key KEY_socket_x_tcpip = PSI_NOT_INSTRUMENTED;
+PSI_socket_key KEY_socket_x_unix = PSI_NOT_INSTRUMENTED;
+PSI_socket_key KEY_socket_x_client_connection = PSI_NOT_INSTRUMENTED;
+
 const char  *my_localhost;
 bool volatile abort_loop;
 
@@ -63,9 +70,6 @@ int unregister_server_state_observer(Server_state_observer *observer, void *p)
 {
   return 0;
 }
-
-struct st_Vio;
-typedef struct st_Vio Vio;
 
 extern "C"
 void ssl_wrapper_version(Vio *vio, char *version, const size_t version_size)

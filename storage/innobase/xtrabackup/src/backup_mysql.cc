@@ -2105,8 +2105,6 @@ mdl_lock_table(ulint space_id)
 		"SELECT NAME FROM INFORMATION_SCHEMA.INNODB_SYS_TABLES "
 		"WHERE SPACE = %lu", space_id));
 
-	xb_mysql_query(mdl_con, query, true, true);
-
 	mysql_result = xb_mysql_query(mdl_con, query, true);
 
 	while ((row = mysql_fetch_row(mysql_result))) {

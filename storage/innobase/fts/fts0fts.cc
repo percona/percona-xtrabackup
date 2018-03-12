@@ -92,6 +92,7 @@ static const ulint FTS_DEADLOCK_RETRY_WAIT = 100000;
 /** variable to record innodb_fts_internal_tbl_name for information
 schema table INNODB_FTS_INSERTED etc. */
 char* fts_internal_tbl_name		= NULL;
+char* fts_internal_tbl_name2		= NULL;
 
 /** InnoDB default stopword list:
 There are different versions of stopwords, the stop words listed
@@ -213,13 +214,15 @@ FTS auxiliary INDEX table and clear the cache at the end.
 @param[in,out]	sync		sync state
 @param[in]	unlock_cache	whether unlock cache lock when write node
 @param[in]	wait		whether wait when a sync is in progress
+@param[in]      has_dict        whether has dict operation lock
 @return DB_SUCCESS if all OK */
 static
 dberr_t
 fts_sync(
 	fts_sync_t*	sync,
 	bool		unlock_cache,
-	bool		wait);
+	bool		wait,
+	bool		has_dict);
 
 /****************************************************************//**
 Release all resources help by the words rb tree e.g., the node ilist. */
@@ -1040,8 +1043,6 @@ fts_cache_clear(
 {
 	ulint		i;
 
-	rw_lock_x_lock(&cache->init_lock);
-
 	for (i = 0; i < ib_vector_size(cache->indexes); ++i) {
 		ulint			j;
 		fts_index_cache_t*	index_cache;
@@ -1078,8 +1079,6 @@ fts_cache_clear(
 
 		index_cache->doc_stats = NULL;
 	}
-
-	rw_lock_x_unlock(&cache->init_lock);
 
 	mem_heap_free(static_cast<mem_heap_t*>(cache->sync_heap->arg));
 	cache->sync_heap->arg = NULL;
@@ -3650,7 +3649,7 @@ fts_add_doc_by_id(
 
 				DBUG_EXECUTE_IF(
 					"fts_instrument_sync_debug",
-					fts_sync(cache->sync, true, true);
+					fts_sync(cache->sync, true, true, false);
 				);
 
 				DEBUG_SYNC_C("fts_instrument_sync_request");
@@ -4467,13 +4466,11 @@ fts_sync_index(
 }
 
 /** Check if index cache has been synced completely
-@param[in,out]	sync		sync state
 @param[in,out]	index_cache	index cache
 @return true if index is synced, otherwise false. */
 static
 bool
 fts_sync_index_check(
-	fts_sync_t*		sync,
 	fts_index_cache_t*	index_cache)
 {
 	const ib_rbt_node_t*	rbt_node;
@@ -4496,14 +4493,36 @@ fts_sync_index_check(
 	return(true);
 }
 
-/*********************************************************************//**
-Commit the SYNC, change state of processed doc ids etc.
+/** Reset synced flag in index cache when rollback
+@param[in,out]	index_cache	index cache */
+static
+void
+fts_sync_index_reset(
+	fts_index_cache_t*	index_cache)
+{
+	const ib_rbt_node_t*	rbt_node;
+
+	for (rbt_node = rbt_first(index_cache->words);
+	     rbt_node != NULL;
+	     rbt_node = rbt_next(index_cache->words, rbt_node)) {
+
+		fts_tokenizer_word_t*	word;
+		word = rbt_value(fts_tokenizer_word_t, rbt_node);
+
+		fts_node_t*	fts_node;
+		fts_node = static_cast<fts_node_t*>(ib_vector_last(word->nodes));
+
+		fts_node->synced = false;
+	}
+}
+
+/** Commit the SYNC, change state of processed doc ids etc.
+@param[in,out]	sync	sync state
 @return DB_SUCCESS if all OK */
 static  MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 fts_sync_commit(
-/*============*/
-	fts_sync_t*	sync)			/*!< in: sync state */
+	fts_sync_t*	sync)
 {
 	dberr_t		error;
 	trx_t*		trx = sync->trx;
@@ -4554,6 +4573,8 @@ fts_sync_commit(
 			<< " ins/sec";
 	}
 
+	/* Avoid assertion in trx_free(). */
+	trx->dict_operation_lock_mode = 0;
 	trx_free_for_background(trx);
 
 	return(error);
@@ -4570,14 +4591,16 @@ fts_sync_rollback(
 	trx_t*		trx = sync->trx;
 	fts_cache_t*	cache = sync->table->fts->cache;
 
-	rw_lock_x_lock(&cache->init_lock);
-
 	for (ulint i = 0; i < ib_vector_size(cache->indexes); ++i) {
 		ulint			j;
 		fts_index_cache_t*	index_cache;
 
 		index_cache = static_cast<fts_index_cache_t*>(
 			ib_vector_get(cache->indexes, i));
+
+		/* Reset synced flag so nodes will not be skipped
+		in the next sync, see fts_sync_write_words(). */
+		fts_sync_index_reset(index_cache);
 
 		for (j = 0; fts_index_selector[j].value; ++j) {
 
@@ -4601,10 +4624,12 @@ fts_sync_rollback(
 		}
 	}
 
-	rw_lock_x_unlock(&cache->init_lock);
 	rw_lock_x_unlock(&cache->lock);
 
 	fts_sql_rollback(trx);
+
+	/* Avoid assertion in trx_free(). */
+	trx->dict_operation_lock_mode = 0;
 	trx_free_for_background(trx);
 }
 
@@ -4613,13 +4638,15 @@ FTS auxiliary INDEX table and clear the cache at the end.
 @param[in,out]	sync		sync state
 @param[in]	unlock_cache	whether unlock cache lock when write node
 @param[in]	wait		whether wait when a sync is in progress
+@param[in]      has_dict        whether has dict operation lock
 @return DB_SUCCESS if all OK */
 static
 dberr_t
 fts_sync(
 	fts_sync_t*	sync,
 	bool		unlock_cache,
-	bool		wait)
+	bool		wait,
+	bool		has_dict)
 {
 	ulint		i;
 	dberr_t		error = DB_SUCCESS;
@@ -4647,6 +4674,12 @@ fts_sync(
 
 	DEBUG_SYNC_C("fts_sync_begin");
 	fts_sync_begin(sync);
+
+	/* When sync in background, we hold dict operation lock
+	to prevent DDL like DROP INDEX, etc. */
+	if (has_dict) {
+		sync->trx->dict_operation_lock_mode = RW_S_LATCH;
+	}
 
 begin_sync:
 	if (cache->total_size > fts_max_cache_size) {
@@ -4684,7 +4717,7 @@ begin_sync:
 			ib_vector_get(cache->indexes, i));
 
 		if (index_cache->index->to_be_dropped
-		    || fts_sync_index_check(sync, index_cache)) {
+		    || fts_sync_index_check(index_cache)) {
 			continue;
 		}
 
@@ -4699,6 +4732,7 @@ end_sync:
 	}
 
 	rw_lock_x_lock(&cache->lock);
+	sync->interrupted = false;
 	sync->in_progress = false;
 	os_event_set(sync->event);
 	rw_lock_x_unlock(&cache->lock);
@@ -4722,12 +4756,14 @@ FTS auxiliary INDEX table and clear the cache at the end.
 @param[in,out]	table		fts table
 @param[in]	unlock_cache	whether unlock cache when write node
 @param[in]	wait		whether wait for existing sync to finish
+@param[in]	has_dict	whether has dict operation lock
 @return DB_SUCCESS on success, error code on failure. */
 dberr_t
 fts_sync_table(
 	dict_table_t*	table,
 	bool		unlock_cache,
-	bool		wait)
+	bool		wait,
+	bool		has_dict)
 {
 	dberr_t	err = DB_SUCCESS;
 
@@ -4735,7 +4771,8 @@ fts_sync_table(
 
 	if (!dict_table_is_discarded(table) && table->fts->cache
 	    && !dict_table_is_corrupted(table)) {
-		err = fts_sync(table->fts->cache->sync, unlock_cache, wait);
+		err = fts_sync(table->fts->cache->sync,
+			       unlock_cache, wait, has_dict);
 	}
 
 	return(err);
@@ -6888,6 +6925,36 @@ fts_check_corrupt_index(
 
 	dict_table_close(table, true, false);
 	return(0);
+}
+
+/* Get parent table name if it's a fts aux table
+@param[in]	aux_table_name	aux table name
+@param[in]	aux_table_len	aux table length
+@return parent table name, or NULL */
+char*
+fts_get_parent_table_name(
+	const char*	aux_table_name,
+	ulint		aux_table_len)
+{
+	fts_aux_table_t	aux_table;
+	char*		parent_table_name = NULL;
+
+	if (fts_is_aux_table_name(&aux_table, aux_table_name, aux_table_len)) {
+		dict_table_t*	parent_table;
+
+		parent_table = dict_table_open_on_id(
+			aux_table.parent_id, TRUE, DICT_TABLE_OP_NORMAL);
+
+		if (parent_table != NULL) {
+			parent_table_name = mem_strdupl(
+				parent_table->name.m_name,
+				strlen(parent_table->name.m_name));
+
+			dict_table_close(parent_table, TRUE, FALSE);
+		}
+	}
+
+	return(parent_table_name);
 }
 
 /** Check the validity of the parent table.

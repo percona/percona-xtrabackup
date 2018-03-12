@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -229,7 +229,7 @@ IF(WIN32)
   ADD_SUBDIRECTORY(authentication_win)
   LIST(APPEND LIBS auth_win_client)
 ENDIF()
-
+  
 # Merge several convenience libraries into one big mysqlclient
 MERGE_LIBRARIES(mysqlclient STATIC ${LIBS} COMPONENT Development NOINSTALL 1)
 
@@ -354,3 +354,4 @@ IF(DISABLE_SHARED)
 ELSE()
   TARGET_LINK_LIBRARIES(libmysql_api_test libmysql)
 ENDIF()
+

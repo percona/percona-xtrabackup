@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
  
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@
 #cmakedefine HAVE_LIBDL 1
 #cmakedefine HAVE_LIBRT 1
 #cmakedefine HAVE_LIBWRAP 1
+#cmakedefine HAVE_LIBWRAP_PROTOTYPES 1
 
 /* Header files */
 #cmakedefine HAVE_ALLOCA_H 1
@@ -180,6 +181,9 @@
 #cmakedefine HAVE_U_INT32_T 1
 #cmakedefine HAVE_STRUCT_TIMESPEC
 
+/* Support for tagging symbols with __attribute__((visibility("hidden"))) */
+#cmakedefine HAVE_VISIBILITY_HIDDEN 1
+
 /* Code tests*/
 #cmakedefine STACK_DIRECTION @STACK_DIRECTION@
 #cmakedefine TIME_WITH_SYS_TIME 1
@@ -188,11 +192,11 @@
 #cmakedefine HAVE_FAKE_PAUSE_INSTRUCTION 1
 #cmakedefine HAVE_HMT_PRIORITY_INSTRUCTION 1
 #cmakedefine HAVE_ABI_CXA_DEMANGLE 1
-#cmakedefine HAVE_BSS_START 1
 #cmakedefine HAVE_BUILTIN_UNREACHABLE 1
 #cmakedefine HAVE_BUILTIN_EXPECT 1
 #cmakedefine HAVE_BUILTIN_STPCPY 1
 #cmakedefine HAVE_GCC_ATOMIC_BUILTINS 1
+#cmakedefine HAVE_GCC_SYNC_BUILTINS 1
 #cmakedefine HAVE_VALGRIND
 
 /* IPV6 */
@@ -270,6 +274,7 @@
 #cmakedefine HAVE_NCURSES_H 1
 #cmakedefine USE_LIBEDIT_INTERFACE 1
 #cmakedefine HAVE_HIST_ENTRY 1
+#cmakedefine USE_NEW_EDITLINE_INTERFACE 1
 
 /*
  * Libedit

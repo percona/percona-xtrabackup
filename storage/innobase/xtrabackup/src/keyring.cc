@@ -18,10 +18,17 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <my_base.h>
 #include <my_aes.h>
-#include <../plugin/keyring/keyring.h>
+#include <../plugin/keyring/common/keyring.h>
+#include <../plugin/keyring/buffered_file_io.h>
 #include "common.h"
+#include <boost/move/unique_ptr.hpp>
 
 using namespace keyring;
+
+namespace
+{
+  const char* keychain_plugin_name = "PXB";
+}
 
 class XtraKLogger : public ILogger
 {
@@ -63,9 +70,9 @@ xb_keyring_init(const char *file_path)
 		if (init_keyring_locks())
 			return(false);
 
-		Buffered_file_io keyring_io(logger.get());
+		IKeyring_io *keyring_io= new Buffered_file_io(logger.get());
 		keys.reset(new Keys_container(logger.get()));
-		if (keys->init(&keyring_io, keyring_file_data_value))
+		if (keys->init(keyring_io, keyring_file_data_value))
 		{
 			is_keys_container_initialized = FALSE;
 			logger->log(MY_ERROR_LEVEL, "keyring_file "
@@ -90,20 +97,20 @@ xb_keyring_init(const char *file_path)
 int my_key_fetch(const char *key_id, char **key_type, const char *user_id,
                  void **key, size_t *key_len)
 {
-  return mysql_key_fetch<Buffered_file_io, Key>(key_id, key_type, user_id, key,
-                                                key_len);
+  return mysql_key_fetch<Key>(key_id, key_type, user_id, key,
+                                           key_len, keychain_plugin_name);
 }
 
 int my_key_store(const char *key_id, const char *key_type,
                  const char *user_id, const void *key, size_t key_len)
 {
-  return mysql_key_store<Buffered_file_io, Key>(key_id, key_type, user_id, key,
-                                                key_len);
+  return mysql_key_store<Key>(key_id, key_type, user_id, key,
+                                           key_len, keychain_plugin_name);
 }
 
 int my_key_remove(const char *key_id, const char *user_id)
 {
-  return mysql_key_remove<Buffered_file_io, Key>(key_id, user_id);
+  return mysql_key_remove<Key>(key_id, user_id, keychain_plugin_name);
 }
 
 
@@ -119,7 +126,7 @@ int my_key_generate(const char *key_id, const char *key_type,
     if (key.get() == NULL)
       return TRUE;
     memset(key.get(), 0, key_len);
-    if (is_keys_container_initialized == FALSE || check_key_for_writting(key_candidate.get(), "generating") ||
+    if (is_keys_container_initialized == FALSE || check_key_for_writing(key_candidate.get(), "generating") ||
         my_rand_buffer(key.get(), key_len))
       return TRUE;
 

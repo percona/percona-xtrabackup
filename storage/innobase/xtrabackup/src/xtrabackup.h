@@ -27,10 +27,16 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "changed_page_bitmap.h"
 
 #ifdef __WIN__
-#define XB_FILE_UNDEFINED NULL
+#define XB_FILE_UNDEFINED { NULL };
 #else
-#define XB_FILE_UNDEFINED (-1)
+const pfs_os_file_t XB_FILE_UNDEFINED = { OS_FILE_CLOSED };
 #endif
+inline bool operator==(const pfs_os_file_t& lhs, const pfs_os_file_t& rhs) {
+	return lhs.m_file == rhs.m_file;
+}
+inline bool operator!=(const pfs_os_file_t& lhs, const pfs_os_file_t& rhs) {
+	return !(lhs == rhs);
+}
 
 typedef struct {
 	ulint	page_size;
@@ -205,7 +211,7 @@ void xb_data_files_close(void);
 /***********************************************************************
 Reads the space flags from a given data file and returns the compressed
 page size, or 0 if the space is not compressed. */
-const page_size_t xb_get_zip_size(os_file_t file, bool *success);
+const page_size_t xb_get_zip_size(pfs_os_file_t file, bool *success);
 
 /************************************************************************
 Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
