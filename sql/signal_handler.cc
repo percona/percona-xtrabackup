@@ -113,7 +113,7 @@ extern "C" sig_handler handle_fatal_signal(int sig)
                         my_thread_stack_size);
   }
   my_safe_printf_stderr("%s", "\n"
-    "Please report a bug at https://bugs.launchpad.net/percona-xtrabackup\n");
+    "Please report a bug at https://jira.percona.com/projects/PXB\n");
 
 #endif /* HAVE_STACKTRACE */
 
