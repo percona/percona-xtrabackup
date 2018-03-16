@@ -399,7 +399,7 @@ check_server_version(unsigned long version_number,
 	} else if (!version_supported) {
 		msg("Error: Unsupported server version: '%s'. Please "
 		    "report a bug at "
-		    "https://bugs.launchpad.net/percona-xtrabackup\n",
+		    "https://jira.percona.com/projects/PXB\n",
 		    version_string);
 	}
 
