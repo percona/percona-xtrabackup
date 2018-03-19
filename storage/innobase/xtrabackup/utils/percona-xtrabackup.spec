@@ -84,10 +84,6 @@ make %{?_smp_mflags}
 %install
 rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
-rm -rf $RPM_BUILD_ROOT/%{_bindir}/myisam_ftdump
-rm -rf $RPM_BUILD_ROOT/%{_bindir}/myisamchk
-rm -rf $RPM_BUILD_ROOT/%{_bindir}/myisamlog
-rm -rf $RPM_BUILD_ROOT/%{_bindir}/myisampack
 
 %clean
 rm -rf $RPM_BUILD_ROOT
