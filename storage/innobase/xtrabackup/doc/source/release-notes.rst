@@ -9,7 +9,7 @@
    :maxdepth: 1
    :glob:
 
-
+   release-notes/2.4/2.4.10
    release-notes/2.4/2.4.9
    release-notes/2.4/2.4.8
    release-notes/2.4/2.4.7-2
