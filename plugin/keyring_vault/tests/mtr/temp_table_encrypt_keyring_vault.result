@@ -1,0 +1,60 @@
+call mtr.add_suppression("\\[ERROR\\] Function 'keyring_vault' already exists");
+call mtr.add_suppression("\\[ERROR\\] Couldn't load plugin named 'keyring_vault' with soname 'keyring_vault.*'.");
+call mtr.add_suppression("Plugin keyring_vault reported");
+# restart:<hidden args>
+CREATE TEMPORARY TABLE t01 (a TEXT) ENGINE=InnoDB;
+INSERT INTO t01 VALUES ('Lorem ipsum dolor sit amet, consectetur adipiscing elit');
+Pattern found.
+CREATE TEMPORARY TABLE t04 (a TEXT) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
+INSERT INTO t04 VALUES ('Praesent tristique eros a tempus fringilla');
+Pattern found.
+DROP TABLE t04;
+SET GLOBAL innodb_temp_tablespace_encrypt = ON;
+CREATE TEMPORARY TABLE t02 (a INT) ENGINE=InnoDB ENCRYPTION='Y';
+ERROR HY000: InnoDB: Unsupported encryption option for temporary tables.
+CREATE TEMPORARY TABLE t03 (a TEXT) ENGINE=InnoDB ENCRYPTION='N';
+INSERT INTO t03 VALUES ('Curabitur laoreet, velit non interdum venenatis');
+Pattern not found.
+CREATE TEMPORARY TABLE t04 (a TEXT) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
+INSERT INTO t04 VALUES ('Praesent tristique eros a tempus fringilla');
+Pattern not found.
+CREATE TEMPORARY TABLE t05 (a INT) ENGINE=InnoDB ROW_FORMAT=COMPRESSED ENCRYPTION='y';
+ERROR HY000: InnoDB: Unsupported encryption option for temporary tables.
+CREATE TEMPORARY TABLE t06 (a INT) ENGINE=InnoDB ROW_FORMAT=COMPRESSED ENCRYPTION='n';
+INSERT INTO t06 VALUES (1), (2), (3);
+SET GLOBAL innodb_temp_tablespace_encrypt = OFF;
+CREATE TEMPORARY TABLE t07 (a INT) ENGINE=InnoDB;
+INSERT INTO t07 VALUES (1), (2), (3);
+SET GLOBAL innodb_temp_tablespace_encrypt = ON;
+CREATE TABLE t10 (a INT AUTO_INCREMENT PRIMARY KEY, b INT);
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) VALUES (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000)), (FLOOR(RAND() * 10000));
+INSERT INTO t10 (b) SELECT b FROM t10;
+INSERT INTO t10 (b) SELECT b FROM t10;
+INSERT INTO t10 (b) SELECT b FROM t10;
+INSERT INTO t10 (b) SELECT b FROM t10;
+CREATE INDEX t10_b ON t10 (b);
+DROP INDEX t10_b ON t10;
+CREATE INDEX t10_b ON t10 (b) ALGORITHM=COPY;
+DROP INDEX t10_b ON t10 ALGORITHM=COPY;
+# restart:<hidden args>
+CREATE TEMPORARY TABLE t01 (a INT) ENGINE=InnoDB;
+INSERT INTO t01 VALUES (1), (2), (3);
+# Kill and restart:<hidden args>
+CREATE TEMPORARY TABLE t01 (a INT) ENGINE=InnoDB;
+INSERT INTO t01 VALUES (1), (2), (3);
+# restart:<hidden args>
+CREATE TEMPORARY TABLE t01 (a INT) ENGINE=InnoDB;
+INSERT INTO t01 VALUES (1), (2), (3);
+# restart:<hidden args>
+CREATE TEMPORARY TABLE t01 (a INT) ENGINE=InnoDB;
+INSERT INTO t01 VALUES (1), (2), (3);
+DROP TABLE t10;

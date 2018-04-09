@@ -27,6 +27,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <gcrypt.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern char		*ds_encrypt_key;
 extern char		*ds_encrypt_key_file;
 extern ulong		ds_encrypt_algo;
@@ -37,6 +41,10 @@ my_bool xb_crypt_read_key_file(const char *filename,
 			       void** key, uint *keylength);
 
 void xb_crypt_create_iv(void* ivbuf, size_t ivlen);
+
+/* Initialize libgcrypt */
+gcry_error_t
+xb_libgcrypt_init();
 
 /* Initialize gcrypt and setup encryption key and IV lengths */
 gcry_error_t
@@ -60,3 +68,7 @@ xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
 gcry_error_t
 xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
 		 size_t from_len, uchar *to, size_t *to_len, uchar *iv);
+
+#ifdef __cplusplus
+}
+#endif

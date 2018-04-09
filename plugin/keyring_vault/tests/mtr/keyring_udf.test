@@ -1,0 +1,178 @@
+--source include/have_keyring_vault_plugin.inc
+--source include/have_keyring_udf_plugin.inc
+--source include/not_embedded.inc
+
+call mtr.add_suppression("Error while fetching key: key_id cannot be empty");
+call mtr.add_suppression("Error while removing key: key_id cannot be empty");
+call mtr.add_suppression("Error while generating key: invalid key_type");
+call mtr.add_suppression("Error while generating key: key_id cannot be empty");
+call mtr.add_suppression("Error while storing key: invalid key_type");
+call mtr.add_suppression("Error while storing key: key_id cannot be empty");
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+# Create mount points
+--let MOUNT_POINT_SERVICE_OP=CREATE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_2
+--source mount_point_service.inc
+
+let server_uuid = query_get_value(SELECT @@SERVER_UUID, @@SERVER_UUID, 1);
+
+--echo # Check what happens when we have not yet loaded keyring_udf or keyring_vault
+--source include/keyring_udf_missing_plugin.inc
+
+# We need both plugins - keyring_vault and keyring_udf in one place - to be able to load both plugins
+if ($KEYRING_UDF_DIR != $KEYRING_PLUGIN_DIR)
+{
+  --replace_regex /\.dll/.so/
+  --error 0,1
+  --remove_file $KEYRING_UDF_DIR/$KEYRING_VAULT_PLUGIN
+  --replace_regex /\.dll/.so/
+  --copy_file $KEYRING_VAULT_PLUGIN_DIR/$KEYRING_VAULT_PLUGIN $KEYRING_UDF_DIR/$KEYRING_VAULT_PLUGIN
+}
+--echo # Re-starting mysql server with keyring_vault plugin.
+--let $restart_hide_args=1
+--let $restart_parameters="restart:--early-plugin-load="keyring_vault=$KEYRING_VAULT_PLUGIN" --loose-keyring_vault_config=$KEYRING_CONF_FILE_1"
+--source include/restart_mysqld.inc
+
+--echo # Check what happens when we have not yet loaded keyring_udf
+--source include/keyring_udf_missing_plugin.inc
+
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_udf SONAME '$KEYRING_UDF';
+--echo # Check if keys are available after server restart
+--replace_regex /\.dll/.so/
+eval create function keyring_key_store returns integer soname '$KEYRING_UDF';
+--replace_regex /\.dll/.so/
+eval create function keyring_key_generate returns integer soname '$KEYRING_UDF';
+--replace_regex /\.dll/.so/
+eval create function keyring_key_remove returns integer soname '$KEYRING_UDF';
+--replace_regex /\.dll/.so/
+eval create function keyring_key_fetch returns string soname '$KEYRING_UDF';
+
+let key_id = `select CONCAT('Rob_AES_128', '$server_uuid')`;
+--replace_result $key_id key_id
+eval select keyring_key_generate('$key_id','AES',16);
+let key_id = `select CONCAT('Rob_AES_128_store', '$server_uuid')`;
+--replace_result $key_id key_id
+eval select keyring_key_store('$key_id','AES',"0123456789012345");
+
+--echo # Check if checking keyring_vault configuration file works fine
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_2';
+--replace_result $key_id key_id
+eval select keyring_key_generate('$key_id','AES',16);
+--replace_result $key_id key_id
+eval select keyring_key_fetch('$key_id') into @x;
+select LENGTH(@x);
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_1';
+--replace_result $key_id key_id
+eval select keyring_key_fetch('$key_id') into @x;
+select LENGTH(@x);
+--replace_result $key_id key_id
+eval select keyring_key_remove('$key_id');
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_2';
+--replace_result $key_id key_id
+eval select keyring_key_fetch('$key_id') into @x;
+select LENGTH(@x);
+--replace_result $key_id key_id
+eval select keyring_key_remove('$key_id');
+
+drop function keyring_key_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_generate;
+
+--echo # Re-starting mysql server with keyring_vault plugin.
+--let $restart_hide_args=1
+--let $restart_parameters="restart:--early-plugin-load="keyring_vault=$KEYRING_VAULT_PLUGIN" --loose-keyring_vault_config=$KEYRING_CONF_FILE_1"
+--source include/restart_mysqld.inc
+
+--replace_regex /\.dll/.so/
+eval create function keyring_key_fetch returns string soname '$KEYRING_UDF';
+--replace_regex /\.dll/.so/
+eval create function keyring_key_type_fetch returns string soname '$KEYRING_UDF';
+--replace_regex /\.dll/.so/
+eval create function keyring_key_length_fetch returns integer soname '$KEYRING_UDF';
+--replace_regex /\.dll/.so/
+eval create function keyring_key_remove returns integer soname '$KEYRING_UDF';
+
+let key_id = `select CONCAT('Rob_AES_128', '$server_uuid')`;
+--replace_result $key_id key_id
+eval select keyring_key_fetch('$key_id') into @x;
+select LENGTH(@x);
+--replace_result $key_id key_id
+eval select keyring_key_length_fetch('$key_id');
+--replace_result $key_id key_id
+eval select keyring_key_type_fetch('$key_id');
+--replace_result $key_id key_id
+eval select keyring_key_remove('$key_id');
+
+drop function keyring_key_fetch;
+drop function keyring_key_type_fetch;
+drop function keyring_key_length_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_store;
+
+--echo # Test cases for keyring_udf and keyring_vault plugins loaded
+--source include/keyring_udf_keyring_plugin_loaded.inc
+--source include/keyring_udf_keyring_plugin_loaded_store_operations.inc
+
+# Tests that are not available in main keyring_udf_keyring_plugin_loaded
+# Generate AES_512
+let key_id = `select CONCAT('Rob_AES_512', '$server_uuid')`;
+--replace_result $key_id key_id
+eval select keyring_key_generate('$key_id','AES',64);
+--replace_result $key_id key_id
+eval set @x= keyring_key_fetch('$key_id');
+eval select LENGTH(@x);
+--replace_result $key_id key_id
+eval select keyring_key_type_fetch('$key_id');
+--replace_result $key_id key_id
+eval select keyring_key_length_fetch('$key_id');
+--replace_result $key_id key_id
+eval select keyring_key_remove('$key_id');
+# Generate DES 512
+let key_id = `select CONCAT('Rob_DSA_4096', '$server_uuid')`;
+--replace_result $key_id key_id
+eval select keyring_key_generate('$key_id','DSA',512);
+--replace_result $key_id key_id
+eval set @x= keyring_key_fetch('$key_id');
+select LENGTH(@x);
+--replace_result $key_id key_id
+eval select keyring_key_type_fetch('$key_id');
+--replace_result $key_id key_id
+eval select keyring_key_length_fetch('$key_id');
+--replace_result $key_id key_id
+eval select keyring_key_remove('$key_id');
+
+UNINSTALL PLUGIN keyring_vault;
+--echo # Test cases for keyring_udf loaded and keyring_vault plugin not loaded
+--source include/keyring_udf_keyring_plugin_not_loaded.inc
+
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_vault SONAME '$KEYRING_VAULT_PLUGIN';
+
+UNINSTALL PLUGIN keyring_udf;
+--echo # Test cases for keyring_udf not loaded and keyring_vault plugin loaded
+--source include/keyring_udf_keyring_udf_plugin_not_loaded.inc
+
+drop function keyring_key_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_generate;
+drop function keyring_key_type_fetch;
+drop function keyring_key_length_fetch;
+
+# Delete mount points
+--let MOUNT_POINT_SERVICE_OP=DELETE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_2
+--source mount_point_service.inc

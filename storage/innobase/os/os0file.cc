@@ -1701,7 +1701,7 @@ os_file_io_complete(
 
 		return(DB_SUCCESS);
 
-	} else if (type.is_read() && !srv_read_only_mode) {
+	} else if (type.is_read() && !srv_backup_mode) {
 		/* Do not decrypt / decompress when taking a backup.
 		   We actually decompress the pages in fil_cur.
 		   We want encrypted pages to remain encrypted. */

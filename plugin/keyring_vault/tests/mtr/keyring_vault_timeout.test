@@ -1,0 +1,65 @@
+--source include/have_keyring_vault_plugin.inc
+
+# PS-298: keyring_vault's timeout should be configurable
+
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'CURL returned this error code: 28 with error message : Connection timed out after");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not retrieve list of keys from Vault.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Error while loading keyring content. The keyring might be malformed'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'CURL returned this error code: 28 with error message : connect\\(\\) timed out!'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+
+--let $KEYRING_CONF_FILE_1=$MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault_incorrect_server.conf
+--let $KEYRING_CONF_TEMPLATE_FILE=$MYSQL_TEST_DIR/std_data/keyring_vault_confs/keyring_vault_incorrect_server.conf
+--let $KEYRING_CONF_FILE_TO_GENERATE=$KEYRING_CONF_FILE_1
+--source generate_conf_file.inc
+
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_vault SONAME '$KEYRING_VAULT_PLUGIN';
+
+--let $assert_text= Default vaule of keyring_vault_timeout should be 15
+--let $assert_cond= "[SELECT @@keyring_vault_timeout = 15]" = 1
+--source include/assert.inc
+
+SET @@GLOBAL.keyring_vault_timeout=15;
+
+let $connection_time_start= `SELECT UNIX_TIMESTAMP()`;
+
+# Here, we are trying to set keyring_vault_config variable to existing, but not accessible address.
+# As the connection is not possible we should receive connection timeout - according the to value of
+# keyring_vault_timeout variable.
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--error ER_WRONG_VALUE_FOR_VAR
+eval SET @@GLOBAL.keyring_vault_config='$KEYRING_CONF_FILE_1';
+
+let $connection_time_end= `SELECT UNIX_TIMESTAMP()`;
+let $connection_time= `SELECT $connection_time_end - $connection_time_start`;
+
+# Here, we check if connection timeouted correctly - we should receive timeout after
+# keyring_vault_timeout seconds. We do not check the upper bound as we cannot
+# estimate how much time connection can take in build system (Jenkins).
+
+let $timeout= `SELECT @@GLOBAL.keyring_vault_timeout`;
+let $assert_text= Connection time must be bigger than keyring_vault_timeout;
+let $assert_cond= $timeout <= $connection_time;
+source include/assert.inc;
+
+SET @@GLOBAL.keyring_vault_timeout=5;
+
+let $connection_time_start= `SELECT UNIX_TIMESTAMP()`;
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--error ER_WRONG_VALUE_FOR_VAR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_1';
+
+let $connection_time_end= `SELECT UNIX_TIMESTAMP()`;
+let $connection_time= `SELECT $connection_time_end - $connection_time_start`;
+
+let $timeout= `SELECT @@GLOBAL.keyring_vault_timeout`;
+let $assert_text= Connection time must be bigger than keyring_vault_timeout;
+let $assert_cond= $timeout <= $connection_time;
+source include/assert.inc;
+
+UNINSTALL PLUGIN keyring_vault;

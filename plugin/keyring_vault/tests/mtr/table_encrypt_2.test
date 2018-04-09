@@ -1,0 +1,36 @@
+# InnoDB transparent tablespace data encryption
+# This test case will test basic encryption support features.
+
+--source include/have_keyring_vault_plugin.inc
+--source include/no_valgrind_without_big.inc
+--source include/have_innodb.inc
+--source include/not_embedded.inc
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+# Create mount points
+--let MOUNT_POINT_SERVICE_OP=CREATE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_2
+--source mount_point_service.inc
+
+--let $keyring1_restart_param=restart:--early-plugin-load="keyring_vault=$KEYRING_VAULT_PLUGIN" --loose-keyring_vault_config=$KEYRING_CONF_FILE_1 $KEYRING_VAULT_PLUGIN_OPT
+--let $keyring2_restart_param=restart:--early-plugin-load="keyring_vault=$KEYRING_VAULT_PLUGIN" --loose-keyring_vault_config=$KEYRING_CONF_FILE_2 $KEYRING_VAULT_PLUGIN_OPT
+
+call mtr.add_suppression("\\[ERROR\\] Function 'keyring_vault' already exists");
+call mtr.add_suppression("\\[ERROR\\] Couldn't load plugin named 'keyring_vault' with soname 'keyring_vault.*'.");
+call mtr.add_suppression("Plugin keyring_vault reported");
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config="$KEYRING_CONF_FILE_1";
+
+--source include/table_encrypt_2.inc
+
+# Delete mount points
+--let MOUNT_POINT_SERVICE_OP=DELETE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_2
+--source mount_point_service.inc

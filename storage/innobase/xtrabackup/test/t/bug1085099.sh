@@ -4,6 +4,12 @@
 
 . inc/common.sh
 
+# Lower server versions attempt to write to the tmpdir when xtrabackup
+# performing specific queries. This test aims to check that xtrabackup
+# doesn't access to tmpdir, not mysqld, so we'll just skip the test
+# on affected server versions.
+require_server_version_higher_than 5.7.0
+
 start_server
 
 $MYSQL $MYSQL_ARGS test <<EOF

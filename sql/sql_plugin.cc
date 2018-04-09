@@ -1557,8 +1557,8 @@ int plugin_init(int *argc, char **argv, int flags)
   }
 
   /* should now be set to MyISAM storage engine */
-  DBUG_ASSERT(global_system_variables.table_plugin);
-  DBUG_ASSERT(global_system_variables.temp_table_plugin);
+  // DBUG_ASSERT(global_system_variables.table_plugin);
+  // DBUG_ASSERT(global_system_variables.temp_table_plugin);
 
   mysql_mutex_unlock(&LOCK_plugin);
 

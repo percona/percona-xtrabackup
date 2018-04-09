@@ -1,0 +1,93 @@
+# Keyring_vault plugin and keyring_vault_config variable testing.
+
+--source include/have_keyring_vault_plugin.inc
+--source include/not_embedded.inc
+
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'Could not read secret_mount_point from the configuration file.'");
+call mtr.add_suppression("\\[Error\\] Function 'keyring_vault' already exists");
+call mtr.add_suppression("\\[Error\\] Couldn't load plugin named 'keyring_vault' with soname 'keyring_vault.so'.");
+
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not retrieve list of keys from Vault. Vault has returned the following error\\(s\\): \\[\"permission denied\"\\]'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Error while loading keyring content. The keyring might be malformed'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '.*' not found");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not read file with credentials.'");
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+# Create mount points
+--let MOUNT_POINT_SERVICE_OP=CREATE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+
+# Installing keyring plugin.
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_vault SONAME '$KEYRING_VAULT_PLUGIN';
+# Check keyring plugin
+query_vertical SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+--echo
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_1';
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+SELECT @@global.keyring_vault_config;
+# Creating table with encryption.
+CREATE TABLE t1(c1 INT, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+
+# Setting keyring_vault_config value to file.
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_2';
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+SELECT @@global.keyring_vault_config;
+
+# Invalid values
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.keyring_vault_config='';
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.keyring_vault_config='#^$^@E&(';
+--error ER_WRONG_TYPE_FOR_VAR
+SET @@global.keyring_vault_config=1;
+#This statement generates Could not read secret_mount_point error
+#As location can be opened for reading
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.keyring_vault_config='/';
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+--error ER_GLOBAL_VARIABLE
+eval SET @@session.keyring_vault_config='$MYSQL_TMP_DIR/new_keyring_vault_config';
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+--error ER_GLOBAL_VARIABLE
+eval SET @@local.keyring_vault_config='$MYSQL_TMP_DIR/new_keyring_vault_config';
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--error ER_WRONG_VALUE_FOR_VAR
+eval SET @@global.keyring_vault_config='$KEYRING_INVALID_TOKEN_CONF_FILE';
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_1';
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+SELECT @@global.keyring_vault_config;
+
+# Setting keyring_vault_config value to dir.
+--Error ER_WRONG_VALUE_FOR_VAR
+SET @@global.keyring_vault_config='MYSQL_test_invalid/dir/';
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+SELECT @@global.keyring_vault_config;
+--echo
+
+UNINSTALL PLUGIN keyring_vault;
+# Check keyring plugin
+query_vertical SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+
+# Cleanup
+DROP TABLE t1;
+
+# Delete mount points
+--let MOUNT_POINT_SERVICE_OP=DELETE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+--echo
+--echo #End:

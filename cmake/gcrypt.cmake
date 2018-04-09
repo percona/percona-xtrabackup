@@ -15,7 +15,7 @@
 
 MACRO (FIND_GCRYPT)
 
-  IF (NOT GGRYPT_INCLUDE_PATH)
+  IF (NOT GCRYPT_INCLUDE_PATH)
     SET(GCRYPT_INCLUDE_PATH /usr/include /usr/local/include /opt/local/include)
   ENDIF()
 

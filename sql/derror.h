@@ -25,6 +25,7 @@ class THD;
 
 class MY_LOCALE_ERRMSGS
 {
+public:
   const char *language;
   const char **errmsgs;
 

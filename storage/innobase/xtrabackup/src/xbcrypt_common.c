@@ -70,7 +70,7 @@ xb_crypt_create_iv(void* ivbuf, size_t ivlen)
 }
 
 gcry_error_t
-xb_crypt_init(uint *iv_len)
+xb_libgcrypt_init()
 {
 	gcry_error_t 		gcry_error;
 
@@ -110,6 +110,24 @@ xb_crypt_init(uint *iv_len)
 		    gcry_strerror(gcry_error));
 		return gcry_error;
 	}
+
+	/* Finalize gcry initialization. */
+	gcry_error = gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
+	if (gcry_error) {
+		msg("encryption: unable to finish libgcrypt initialization - "
+		    "%s : %s\n",
+		    gcry_strsource(gcry_error),
+		    gcry_strerror(gcry_error));
+		return gcry_error;
+	}
+
+	return gcry_error;
+}
+
+gcry_error_t
+xb_crypt_init(uint *iv_len)
+{
+	gcry_error_t 		gcry_error;
 
 	/* Finalize gcry initialization. */
 	gcry_error = gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);

@@ -1,0 +1,29 @@
+--source include/have_keyring_vault_plugin.inc
+--source include/not_embedded.inc
+
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '../../../../../bad_dir/bad_keyring_vault.conf' not found");
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR $KEYRING_PLUGIN keyring_vault.so $KEYRING_VAULT_PLUGIN_OPT KEYRING_VAULT_PLUGIN_OPT
+--let $restart_parameters="restart:$KEYRING_VAULT_PLUGIN_LOAD --loose-keyring_vault_config=$KEYRING_CONF_FILE_1 $KEYRING_VAULT_PLUGIN_OPT"
+--source include/restart_mysqld.inc
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+SELECT @@global.keyring_vault_config;
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config= '$KEYRING_CONF_FILE_2';
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+SELECT @@global.keyring_vault_config;
+--Error ER_WRONG_VALUE_FOR_VAR
+SET @@global.keyring_vault_config= '../../../../../bad_dir/bad_keyring_vault.conf';
+--Error ER_WRONG_VALUE_FOR_VAR
+SET @@global.keyring_vault_config=NULL;
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+SELECT @@global.keyring_vault_config;
+
+# cleanup
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config= '$KEYRING_CONF_FILE_1';

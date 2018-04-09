@@ -1,0 +1,23 @@
+--source include/have_keyring_vault_plugin.inc
+--source include/not_embedded.inc
+
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--error ER_UNKNOWN_SYSTEM_VARIABLE
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_1';
+
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_vault SONAME '$KEYRING_VAULT_PLUGIN';
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_2';
+#cleanup
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_1';
+UNINSTALL PLUGIN keyring_vault;

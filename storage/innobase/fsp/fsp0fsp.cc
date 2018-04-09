@@ -228,7 +228,6 @@ fsp_flags_is_valid(
 	bool	has_data_dir = FSP_FLAGS_HAS_DATA_DIR(flags);
 	bool	is_shared = FSP_FLAGS_GET_SHARED(flags);
 	bool	is_temp = FSP_FLAGS_GET_TEMPORARY(flags);
-	bool	is_encryption = FSP_FLAGS_GET_ENCRYPTION(flags);
 
 	ulint	unused = FSP_FLAGS_GET_UNUSED(flags);
 
@@ -272,12 +271,6 @@ fsp_flags_is_valid(
 	It is not compatible with the TABLESPACE clause.  Nor is it
 	compatible with the TEMPORARY clause. */
 	if (has_data_dir && (is_shared || is_temp)) {
-		return(false);
-	}
-
-	/* Only single-table and not temp tablespaces use the encryption
-	clause. */
-	if (is_encryption && (is_shared || is_temp)) {
 		return(false);
 	}
 
@@ -859,7 +852,6 @@ fsp_header_init_fields(
 /** Get the offset of encrytion information in page 0.
 @param[in]	page_size	page size.
 @return	offset on success, otherwise 0. */
-static
 ulint
 fsp_header_get_encryption_offset(
 	const page_size_t&	page_size)

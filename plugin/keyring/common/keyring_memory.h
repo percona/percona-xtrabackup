@@ -17,7 +17,6 @@
 #define MYSQL_KEYRING_MEMORY_H
 
 #include <my_global.h>
-#include <my_sys.h>
 #include <mysql/plugin_keyring.h>
 #include <limits>
 #include <memory>
@@ -56,6 +55,32 @@ namespace keyring {
       {
           my_free(ptr);
       }
+  };
+
+  template <class T> class Secure_allocator : public std::allocator<T>
+  {
+  public:
+
+    template<class U> struct rebind { typedef Secure_allocator<U> other; };
+    Secure_allocator() throw() {}
+    Secure_allocator(const Secure_allocator& secure_allocator) : std::allocator<T>(secure_allocator)
+    {}
+    template <class U> Secure_allocator(const Secure_allocator<U>&) throw() {}
+
+    T* allocate(size_t n)
+    {
+      if (n == 0)
+        return NULL;
+      else if (n > INT_MAX)
+        throw std::bad_alloc();
+      return keyring_malloc<T*>(n*sizeof(T));
+    }
+
+    void deallocate(T *p, size_t n)
+    {
+      memset_s(p, n, 0, n);
+      my_free(p);
+    }
   };
 } //namespace keyring
  

@@ -39,7 +39,7 @@ backup_finish();
 bool
 apply_log_finish();
 bool
-copy_back();
+copy_back(int argc, char **argv);
 bool
 decrypt_decompress();
 void

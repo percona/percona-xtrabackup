@@ -1,0 +1,27 @@
+# test temporary tables encryption with keyring_file plugin
+
+--source include/have_innodb.inc
+--source include/have_keyring_vault_plugin.inc
+--source include/have_innodb.inc
+--source include/not_embedded.inc
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+# Create mount points
+--let MOUNT_POINT_SERVICE_OP=CREATE
+--let KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+
+--let $keyring_restart_param=restart:--early-plugin-load="keyring_vault=$KEYRING_VAULT_PLUGIN" --keyring_vault_config=$KEYRING_CONF_FILE $KEYRING_VAULT_PLUGIN_OPT
+
+call mtr.add_suppression("\\[ERROR\\] Function 'keyring_vault' already exists");
+call mtr.add_suppression("\\[ERROR\\] Couldn't load plugin named 'keyring_vault' with soname 'keyring_vault.*'.");
+call mtr.add_suppression("Plugin keyring_vault reported");
+
+--source suite/innodb/include/temp_table_encrypt.inc
+
+# Delete mount points
+--let MOUNT_POINT_SERVICE_OP=DELETE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE
+--source mount_point_service.inc

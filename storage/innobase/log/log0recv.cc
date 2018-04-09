@@ -1683,13 +1683,22 @@ fil_write_encryption_parse(
 		fprintf(stderr, "Got %lu from redo log:", space->id);
 	}
 #endif
-	if (!fsp_header_decode_encryption_info(key,
-					       iv,
-					       ptr)) {
-		recv_sys->found_corrupt_log = TRUE;
-		ib::warn() << "Encryption information"
-			<< " in the redo log of space "
-			<< space_id << " is invalid";
+	if (srv_backup_mode || !use_dumped_tablespace_keys) {
+		if (!fsp_header_decode_encryption_info(key,
+						       iv,
+						       ptr)) {
+			recv_sys->found_corrupt_log = TRUE;
+			ib::warn() << "Encryption information"
+				<< " in the redo log of space "
+				<< space_id << " is invalid";
+		}
+	} else {
+		ulint master_key_id = mach_read_from_4(
+			ptr + ENCRYPTION_MAGIC_SIZE);
+		if (Encryption::master_key_id < master_key_id) {
+			Encryption::master_key_id = master_key_id;
+		}
+		xb_fetch_tablespace_key(space_id, key, iv);
 	}
 
 	ut_ad(len == ENCRYPTION_INFO_SIZE_V1

@@ -282,6 +282,7 @@ function set_vars()
     if test -d $PWD/../src
     then
         PATH="$PWD/..:$PWD/../src:$PATH"
+        XTRABACKUP_BASEDIR="$PWD/../src"
     fi
 
     if test -d $PWD/../bin
@@ -299,7 +300,8 @@ function set_vars()
     DYLD_LIBRARY_PATH="$LD_LIBRARY_PATH"
 
     export TAR MYSQL_BASEDIR MYSQL MYSQLD MYSQLADMIN \
-MYSQL_INSTALL_DB PATH LD_LIBRARY_PATH DYLD_LIBRARY_PATH MYSQLDUMP
+MYSQL_INSTALL_DB PATH LD_LIBRARY_PATH DYLD_LIBRARY_PATH MYSQLDUMP \
+XTRABACKUP_BASEDIR
 
     # Use stage-v.percona.com as a VersionCheck server
     export PERCONA_VERSION_CHECK_URL=https://stage-v.percona.com

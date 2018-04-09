@@ -1,0 +1,25 @@
+--source include/have_keyring_vault_plugin.inc
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+# Create mount points
+--let MOUNT_POINT_SERVICE_OP=CREATE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+
+--let $keyring_restart_param=restart:--early-plugin-load="keyring_vault=$KEYRING_VAULT_PLUGIN" --loose-keyring_vault_config=$KEYRING_CONF_FILE_1 $KEYRING_VAULT_PLUGIN_OPT --innodb-sort-buffer-size=64k --innodb_encrypt_online_alter_logs=ON
+
+call mtr.add_suppression("\\[ERROR\\] Function 'keyring_vault' already exists");
+call mtr.add_suppression("\\[ERROR\\] Couldn't load plugin named 'keyring_vault' with soname 'keyring_vault.*'.");
+call mtr.add_suppression("Plugin keyring_vault reported");
+
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config="$KEYRING_CONF_FILE_1";
+
+--source include/innodb_row_log_encryption.inc
+
+# Delete mount points
+--let MOUNT_POINT_SERVICE_OP=DELETE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc

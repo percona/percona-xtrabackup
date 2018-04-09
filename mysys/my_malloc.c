@@ -323,3 +323,16 @@ char *my_strndup(PSI_memory_key key, const char *from, size_t length, myf my_fla
   return ptr;
 }
 
+#if !defined(HAVE_MEMSET_S)
+void memset_s(void *dest, size_t dest_max, int c, size_t n)
+{
+#if defined(WIN32)
+  SecureZeroMemory(dest, n);
+#else
+  volatile unsigned char *p = (unsigned char*)(dest);
+  while (dest_max-- && n--) {
+    *p++ = c;
+  }
+#endif
+}
+#endif

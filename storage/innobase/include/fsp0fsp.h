@@ -367,6 +367,22 @@ fsp_header_init_fields(
 	ulint	flags);		/*!< in: tablespace flags (FSP_SPACE_FLAGS):
 				0, or table->flags if newer than COMPACT */
 
+/** Get the offset of encrytion information in page 0.
+@param[in]	page_size	page size.
+@return	offset on success, otherwise 0. */
+ulint
+fsp_header_get_encryption_offset(
+	const page_size_t&	page_size);
+
+/** Fill the encryption info.
+@param[in]	space		tablespace
+@param[in,out]	encrypt_info	buffer for encrypt key.
+@return true if success. */
+bool
+fsp_header_fill_encryption_info(
+	fil_space_t*		space,
+	byte*			encrypt_info);
+
 /** Rotate the encryption info in the space header.
 @param[in]	space		tablespace
 @param[in]      encrypt_info	buffer for re-encrypt key.

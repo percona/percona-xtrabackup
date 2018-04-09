@@ -1,0 +1,633 @@
+call mtr.add_suppression("Error while fetching key: key_id cannot be empty");
+call mtr.add_suppression("Error while removing key: key_id cannot be empty");
+call mtr.add_suppression("Error while generating key: invalid key_type");
+call mtr.add_suppression("Error while generating key: key_id cannot be empty");
+call mtr.add_suppression("Error while storing key: invalid key_type");
+call mtr.add_suppression("Error while storing key: key_id cannot be empty");
+# Check what happens when we have not yet loaded keyring_udf or keyring_vault
+create function keyring_key_store returns integer soname 'keyring_udf.so';
+create function keyring_key_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_type_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_length_fetch returns integer soname 'keyring_udf.so';
+create function keyring_key_remove returns integer soname 'keyring_udf.so';
+create function keyring_key_generate returns integer soname 'keyring_udf.so';
+select * from mysql.func where name like '%keyring%' order by name;
+name	ret	dl	type
+keyring_key_fetch	0	keyring_udf.so	function
+keyring_key_generate	2	keyring_udf.so	function
+keyring_key_length_fetch	2	keyring_udf.so	function
+keyring_key_remove	2	keyring_udf.so	function
+keyring_key_store	2	keyring_udf.so	function
+keyring_key_type_fetch	0	keyring_udf.so	function
+select keyring_key_generate('Rob_AES_128','AES',16);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_store('Rob_AES_128','AES',"0123456789012345");
+ERROR HY000: Can't initialize function 'keyring_key_store'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_fetch('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_type_fetch('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_type_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_length_fetch('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_length_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_remove('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_remove'; This function requires keyring_udf plugin which is not installed. Please install
+drop function keyring_key_store;
+drop function keyring_key_fetch;
+drop function keyring_key_type_fetch;
+drop function keyring_key_length_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_generate;
+# Re-starting mysql server with keyring_vault plugin.
+# restart:<hidden args>
+# Check what happens when we have not yet loaded keyring_udf
+create function keyring_key_store returns integer soname 'keyring_udf.so';
+create function keyring_key_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_type_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_length_fetch returns integer soname 'keyring_udf.so';
+create function keyring_key_remove returns integer soname 'keyring_udf.so';
+create function keyring_key_generate returns integer soname 'keyring_udf.so';
+select * from mysql.func where name like '%keyring%' order by name;
+name	ret	dl	type
+keyring_key_fetch	0	keyring_udf.so	function
+keyring_key_generate	2	keyring_udf.so	function
+keyring_key_length_fetch	2	keyring_udf.so	function
+keyring_key_remove	2	keyring_udf.so	function
+keyring_key_store	2	keyring_udf.so	function
+keyring_key_type_fetch	0	keyring_udf.so	function
+select keyring_key_generate('Rob_AES_128','AES',16);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_store('Rob_AES_128','AES',"0123456789012345");
+ERROR HY000: Can't initialize function 'keyring_key_store'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_fetch('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_type_fetch('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_type_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_length_fetch('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_length_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_remove('Rob_AES_128');
+ERROR HY000: Can't initialize function 'keyring_key_remove'; This function requires keyring_udf plugin which is not installed. Please install
+drop function keyring_key_store;
+drop function keyring_key_fetch;
+drop function keyring_key_type_fetch;
+drop function keyring_key_length_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_generate;
+INSTALL PLUGIN keyring_udf SONAME 'keyring_udf.so';
+# Check if keys are available after server restart
+create function keyring_key_store returns integer soname 'keyring_udf.so';
+create function keyring_key_generate returns integer soname 'keyring_udf.so';
+create function keyring_key_remove returns integer soname 'keyring_udf.so';
+create function keyring_key_fetch returns string soname 'keyring_udf.so';
+select keyring_key_generate('key_id','AES',16);
+keyring_key_generate('key_id','AES',16)
+1
+select keyring_key_store('key_id','AES',"0123456789012345");
+keyring_key_store('key_id','AES',"0123456789012345")
+1
+# Check if checking keyring_vault configuration file works fine
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault2.conf';
+select keyring_key_generate('key_id','AES',16);
+keyring_key_generate('key_id','AES',16)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+16
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault1.conf';
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+16
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault2.conf';
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+16
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+drop function keyring_key_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_generate;
+# Re-starting mysql server with keyring_vault plugin.
+# restart:<hidden args>
+create function keyring_key_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_type_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_length_fetch returns integer soname 'keyring_udf.so';
+create function keyring_key_remove returns integer soname 'keyring_udf.so';
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+16
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+16
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+drop function keyring_key_fetch;
+drop function keyring_key_type_fetch;
+drop function keyring_key_length_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_store;
+# Test cases for keyring_udf and keyring_vault plugins loaded
+create function keyring_key_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_type_fetch returns string soname 'keyring_udf.so';
+create function keyring_key_length_fetch returns integer soname 'keyring_udf.so';
+create function keyring_key_remove returns integer soname 'keyring_udf.so';
+create function keyring_key_generate returns integer soname 'keyring_udf.so';
+select keyring_key_fetch('Key_1','AES');
+ERROR HY000: Can't initialize function 'keyring_key_fetch'; Mismatch in number of arguments to the function.
+select keyring_key_type_fetch('Key_1','AES');
+ERROR HY000: Can't initialize function 'keyring_key_type_fetch'; Mismatch in number of arguments to the function.
+select keyring_key_length_fetch('Key_1','AES');
+ERROR HY000: Can't initialize function 'keyring_key_length_fetch'; Mismatch in number of arguments to the function.
+select keyring_key_remove('Key_1','AES');
+ERROR HY000: Can't initialize function 'keyring_key_remove'; Mismatch in number of arguments to the function.
+select keyring_key_generate('Key_1');
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch in number of arguments to the function.
+select keyring_key_generate('Key_1','AES');
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch in number of arguments to the function.
+select keyring_key_generate('Key_1','');
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch in number of arguments to the function.
+select keyring_key_fetch('Key_1',NULL);
+ERROR HY000: Can't initialize function 'keyring_key_fetch'; Mismatch in number of arguments to the function.
+select keyring_key_fetch(1);
+ERROR HY000: Can't initialize function 'keyring_key_fetch'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_fetch(NULL);
+ERROR HY000: Can't initialize function 'keyring_key_fetch'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_type_fetch(1);
+ERROR HY000: Can't initialize function 'keyring_key_type_fetch'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_type_fetch(NULL);
+ERROR HY000: Can't initialize function 'keyring_key_type_fetch'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_length_fetch(1);
+ERROR HY000: Can't initialize function 'keyring_key_length_fetch'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_length_fetch(NULL);
+ERROR HY000: Can't initialize function 'keyring_key_length_fetch'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_generate('Key_1','AES','123');
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. An integer argument is expected for key length.
+select keyring_key_generate(NULL,'AES','123');
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_generate('Key_1',NULL,'123');
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. A string argument is expected for key type.
+select keyring_key_generate('Key_1','AES',NULL);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. An integer argument is expected for key length.
+select keyring_key_generate(NULL,NULL,NULL);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_generate(1,'AES',123);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_generate('Key_1',123,'123');
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. A string argument is expected for key type.
+select keyring_key_generate('Key_invalid_key_type',123,123);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. A string argument is expected for key type.
+select keyring_key_remove(1);
+ERROR HY000: Can't initialize function 'keyring_key_remove'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_remove(NULL);
+ERROR HY000: Can't initialize function 'keyring_key_remove'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_generate('Rob_AES_8196','AES',2049);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; The key is to long. The max length of the key is 2048
+select PLUGIN_NAME,PLUGIN_AUTHOR from information_schema.plugins where PLUGIN_NAME like '%keyring%';
+PLUGIN_NAME	PLUGIN_AUTHOR
+keyring_vault	Percona
+keyring_udf	Oracle Corporation
+select keyring_key_generate('key_id','AES',16);
+keyring_key_generate('key_id','AES',16)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+16
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+16
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id', 'AES', 24);
+keyring_key_generate('key_id', 'AES', 24)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+24
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+24
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','AES',32);
+keyring_key_generate('key_id','AES',32)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+32
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+32
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','RSA',128);
+keyring_key_generate('key_id','RSA',128)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+128
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+RSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+128
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','RSA',256);
+keyring_key_generate('key_id','RSA',256)
+1
+select keyring_key_fetch('key_id') into @x;
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+RSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+256
+select LENGTH(@x);
+LENGTH(@x)
+256
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','RSA',512);
+keyring_key_generate('key_id','RSA',512)
+1
+select keyring_key_fetch('key_id') into @x;
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+RSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+512
+select LENGTH(@x);
+LENGTH(@x)
+512
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','DSA',128);
+keyring_key_generate('key_id','DSA',128)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+128
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+DSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+128
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','DSA',256);
+keyring_key_generate('key_id','DSA',256)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+256
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+DSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+256
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','DSA',384);
+keyring_key_generate('key_id','DSA',384)
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+384
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+DSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+384
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_fetch('key') into @x;
+select @x;
+@x
+NULL
+select keyring_key_type_fetch('key') into @x;
+select @x;
+@x
+NULL
+select keyring_key_length_fetch('key') into @x;
+select @x;
+@x
+NULL
+#Testing with AES_ENCRYPT/AES_DECRYPT
+select keyring_key_generate('$key_id','AES',16);
+keyring_key_generate('$key_id','AES',16)
+1
+select AES_ENCRYPT('secret message', keyring_key_fetch('$key_id')) into @cipher;
+select AES_DECRYPT(@cipher, keyring_key_fetch('$key_id'));
+AES_DECRYPT(@cipher, keyring_key_fetch('$key_id'))
+secret message
+select keyring_key_remove('$key_id');
+keyring_key_remove('$key_id')
+1
+select keyring_key_fetch('Rob1');
+keyring_key_fetch('Rob1')
+NULL
+select keyring_key_type_fetch('Rob1');
+keyring_key_type_fetch('Rob1')
+NULL
+select keyring_key_length_fetch('Rob1');
+keyring_key_length_fetch('Rob1')
+NULL
+select keyring_key_fetch('') into @x;
+ERROR HY000: Function 'keyring_key_fetch' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_length_fetch('') into @x;
+ERROR HY000: Function 'keyring_key_length_fetch' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_type_fetch('') into @x;
+ERROR HY000: Function 'keyring_key_type_fetch' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_remove('Rob_not_existing') into @x;
+ERROR HY000: Function 'keyring_key_remove' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_remove('') into @x;
+ERROR HY000: Function 'keyring_key_remove' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_generate('Wrong_type','xxx', 16) into @x;
+ERROR HY000: Function 'keyring_key_generate' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_generate('','AES', 16) into @x;
+ERROR HY000: Function 'keyring_key_generate' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+# Testing privileges
+select keyring_key_generate('roots_key_id', 'AES',16);
+keyring_key_generate('roots_key_id', 'AES',16)
+1
+create definer=root@localhost procedure shared_key() select keyring_key_fetch('$roots_key_id');
+CREATE USER user_execute_test@localhost;
+select keyring_key_generate('Rob_DSA_no_privilege','DSA',384);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; The user is not privileged to execute this function. User needs to have EXECUTE 
+GRANT EXECUTE ON *.* TO 'user_execute_test'@'localhost';
+select keyring_key_generate('key_id','DSA',384);
+keyring_key_generate('key_id','DSA',384)
+1
+select keyring_key_generate('key_id','DSA',384);
+keyring_key_generate('key_id','DSA',384)
+1
+#Check if user you can access another user's keys
+select keyring_key_remove('roots_key_id');
+ERROR HY000: Function 'keyring_key_remove' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+#Check that the user is able to access the key via procedure
+call shared_key();
+keyring_key_fetch('$roots_key_id')
+#
+DROP PROCEDURE shared_key;
+#Check if a user can create a key with id that already exist but belongs
+#to another user.
+select keyring_key_generate('key_id','DSA',384);
+keyring_key_generate('key_id','DSA',384)
+1
+#Check if user with larger privileges can access another user's key
+select keyring_key_remove('key_id');
+ERROR HY000: Function 'keyring_key_remove' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+#Cleanup
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_remove('roots_key_id');
+keyring_key_remove('roots_key_id')
+1
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+DROP USER 'user_execute_test'@'localhost';
+create function keyring_key_store returns integer soname 'keyring_udf.so';
+select keyring_key_store('Key_1');
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch in number of arguments to the function.
+select keyring_key_store('Key_1','AES');
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch in number of arguments to the function.
+select keyring_key_store('Key_1','AES',123);
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key.
+select keyring_key_store(NULL,'AES',123);
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_store('Key_1',NULL,123);
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key type.
+select keyring_key_store('Key_1','AES',NULL);
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key.
+select keyring_key_store(NULL,NULL,NULL);
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_store(1234,NULL,'53247@#$%^');
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_store(1,'AES','123');
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key id.
+select keyring_key_store('Key_1',123,'123');
+ERROR HY000: Can't initialize function 'keyring_key_store'; Mismatch encountered. A string argument is expected for key type.
+select keyring_key_store('key_id','AES',"0123456789012345");
+keyring_key_store('key_id','AES',"0123456789012345")
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+16
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+16
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_store('key_id','AES',"012345678901234567890%@3");
+keyring_key_store('key_id','AES',"012345678901234567890%@3")
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+24
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+24
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_store('key_id','AES',"01234567890123456789012345678901");
+keyring_key_store('key_id','AES',"01234567890123456789012345678901")
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+32
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+32
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_store('key_id','RSA',"01234567890123456789012345678901234567890123456789012345678901230123456789012345678901234567890123456789012345678901234567890123");
+keyring_key_store('key_id','RSA',"01234567890123456789012345678901234567890123456789012345678901230123456789012345678901234567890123456789012345678901234567890123")
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+128
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+RSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+128
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_store('key_id','DSA',"01234567890123456789012345678901234567890123456789012345678901230123456789012345678901234567890123456789012345678901234567890123");
+keyring_key_store('key_id','DSA',"01234567890123456789012345678901234567890123456789012345678901230123456789012345678901234567890123456789012345678901234567890123")
+1
+select keyring_key_fetch('key_id') into @x;
+select LENGTH(@x);
+LENGTH(@x)
+128
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+DSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+128
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_store('Wrong_type','xxx', '0123456789012345') into @x;
+ERROR HY000: Function 'keyring_key_store' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_store('','AES', '0123456789012345') into @x;
+ERROR HY000: Function 'keyring_key_store' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select @x;
+@x
+NULL
+select keyring_key_generate('key_id','AES',64);
+keyring_key_generate('key_id','AES',64)
+1
+set @x= keyring_key_fetch('key_id');
+select LENGTH(@x);
+LENGTH(@x)
+64
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+AES
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+64
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+select keyring_key_generate('key_id','DSA',512);
+keyring_key_generate('key_id','DSA',512)
+1
+set @x= keyring_key_fetch('key_id');
+select LENGTH(@x);
+LENGTH(@x)
+512
+select keyring_key_type_fetch('key_id');
+keyring_key_type_fetch('key_id')
+DSA
+select keyring_key_length_fetch('key_id');
+keyring_key_length_fetch('key_id')
+512
+select keyring_key_remove('key_id');
+keyring_key_remove('key_id')
+1
+UNINSTALL PLUGIN keyring_vault;
+# Test cases for keyring_udf loaded and keyring_vault plugin not loaded
+#The keyring plugin was uninstalled, the keyring_udf functions should fail with
+#appropriate error message
+select keyring_key_store('Rob_uninstalled','AES','123');
+ERROR HY000: Function 'keyring_key_store' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select keyring_key_fetch('Rob_uninstalled');
+ERROR HY000: Function 'keyring_key_fetch' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select keyring_key_type_fetch('Rob_uninstalled');
+ERROR HY000: Function 'keyring_key_type_fetch' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select keyring_key_length_fetch('Rob_uninstalled');
+ERROR HY000: Function 'keyring_key_length_fetch' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select keyring_key_remove('Rob_uninstalled');
+ERROR HY000: Function 'keyring_key_remove' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+select keyring_key_generate('Rob_uninstalled_generate','DSA',128);
+ERROR HY000: Function 'keyring_key_generate' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using.
+INSTALL PLUGIN keyring_vault SONAME 'keyring_vault.so';
+UNINSTALL PLUGIN keyring_udf;
+# Test cases for keyring_udf not loaded and keyring_vault plugin loaded
+select keyring_key_store('Rob_uninstalled','AES','123');
+ERROR HY000: Can't initialize function 'keyring_key_store'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_fetch('Rob_uninstalled');
+ERROR HY000: Can't initialize function 'keyring_key_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_type_fetch('Rob_uninstalled');
+ERROR HY000: Can't initialize function 'keyring_key_type_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_length_fetch('Rob_uninstalled');
+ERROR HY000: Can't initialize function 'keyring_key_length_fetch'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_remove('Rob_uninstalled');
+ERROR HY000: Can't initialize function 'keyring_key_remove'; This function requires keyring_udf plugin which is not installed. Please install
+select keyring_key_generate('Rob_uninstalled_generate','DSA',128);
+ERROR HY000: Can't initialize function 'keyring_key_generate'; This function requires keyring_udf plugin which is not installed. Please install
+drop function keyring_key_fetch;
+drop function keyring_key_remove;
+drop function keyring_key_generate;
+drop function keyring_key_type_fetch;
+drop function keyring_key_length_fetch;

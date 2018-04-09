@@ -16,8 +16,8 @@
 #ifndef MYSQL_HASH_TO_BUFFER_SERIALIZER_H
 #define MYSQL_HASH_TO_BUFFER_SERIALIZER_H
 
-#include "common/i_serializer.h"
-#include "common/i_keyring_key.h"
+#include "i_serializer.h"
+#include "i_keyring_key.h"
 #include "buffer.h"
 
 namespace keyring

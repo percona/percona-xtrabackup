@@ -16,8 +16,8 @@
 #ifndef MYSQL_BUFFER_H
 #define MYSQL_BUFFER_H
 
-#include "common/keyring_memory.h"
-#include "common/i_serialized_object.h"
+#include "keyring_memory.h"
+#include "i_serialized_object.h"
 
 namespace keyring
 {

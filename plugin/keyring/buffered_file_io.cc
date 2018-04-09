@@ -22,11 +22,10 @@ namespace keyring {
 
 extern PSI_memory_key key_memory_KEYRING;
 const my_off_t EOF_TAG_SIZE= 3;
-#ifdef PSI_FILE_KEY_DEFINED
-PSI_file_key keyring_file_data_key = 0;
-PSI_file_key keyring_backup_file_data_key = 0;
+#if defined(HAVE_PSI_INTERFACE)
+PSI_file_key keyring_file_data_key;
+PSI_file_key keyring_backup_file_data_key;
 
-#ifdef HAVE_PSI_INTERFACE
 static PSI_file_info all_keyring_files[]=
 {
   { &keyring_file_data_key, "keyring_file_data", 0},
@@ -41,8 +40,10 @@ void keyring_init_psi_file_keys(void)
   count= array_elements(all_keyring_files);
   mysql_file_register(category, all_keyring_files, count);
 }
-#endif /* HAVE_PSI_INTERFACE */
-#endif /* PSI_FILE_KEY_DEFINED */
+#elif defined(PSI_FILE_KEY_DEFINED)
+PSI_file_key keyring_file_data_key = 0;
+PSI_file_key keyring_backup_file_data_key = 0;
+#endif
 
 std::string*Buffered_file_io::get_backup_filename()
 {
@@ -220,7 +221,6 @@ my_bool Buffered_file_io::init(std::string *keyring_filename)
 
 my_bool Buffered_file_io::flush_buffer_to_file(Buffer *buffer,
                                                File file)
-
 {
   if (file_io.write(file, reinterpret_cast<const uchar*>(file_version.c_str()),
                     file_version.length(), MYF(MY_WME)) == file_version.length() &&
