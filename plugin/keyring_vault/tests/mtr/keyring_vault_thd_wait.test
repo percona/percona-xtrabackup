@@ -1,0 +1,38 @@
+--source include/have_keyring_vault_plugin.inc
+--source include/not_embedded.inc
+--source include/have_innodb.inc
+--source include/have_debug.inc
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+# Create mount points
+--let MOUNT_POINT_SERVICE_OP=CREATE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+
+let $restart_parameters = restart: --early-plugin-load="keyring_vault=$KEYRING_VAULT_PLUGIN" --keyring_vault_config=$KEYRING_CONF_FILE_1 $KEYRING_VAULT_PLUGIN_OPT;
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR $KEYRING_PLUGIN keyring_vault.so $KEYRING_VAULT_PLUGIN_OPT KEYRING_VAULT_PLUGIN_OPT
+--source include/restart_mysqld.inc
+
+# Create encrypted table to be sure there is Innodb Master Key in keyring,
+# which will need to be fetched from keyring on keyring_vault initialization
+CREATE TABLE t1(c1 INT, c2 char(20)) ENCRYPTION="Y" ENGINE=InnoDB;
+INSERT INTO t1 VALUES(1,"aaaaa");
+
+UNINSTALL PLUGIN keyring_vault;
+
+SET SESSION debug="+d,vault_network_lag";
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_vault SONAME '$KEYRING_VAULT_PLUGIN';
+
+SELECT * FROM t1;
+
+# cleanup
+SET SESSION debug="-d,vault_network_lag";
+DROP TABLE t1;
+
+# Delete mount points
+--let MOUNT_POINT_SERVICE_OP=DELETE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc

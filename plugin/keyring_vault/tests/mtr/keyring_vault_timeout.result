@@ -1,0 +1,21 @@
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'CURL returned this error code: 28 with error message : Connection timed out after");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not retrieve list of keys from Vault.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Error while loading keyring content. The keyring might be malformed'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'CURL returned this error code: 28 with error message : connect\\(\\) timed out!'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+INSTALL PLUGIN keyring_vault SONAME 'keyring_vault.so';
+Warnings:
+Warning	29	File '' not found (Errcode: 2 - No such file or directory)
+Warning	42000	keyring_vault initialization failure. Please check the server log.
+include/assert.inc [Default vaule of keyring_vault_timeout should be 15]
+SET @@GLOBAL.keyring_vault_timeout=15;
+SET @@GLOBAL.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault_incorrect_server.conf';
+ERROR 42000: Variable 'keyring_vault_config' can't be set to the value of 'MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault_incorrect_server.conf'
+include/assert.inc [Connection time must be bigger than keyring_vault_timeout]
+SET @@GLOBAL.keyring_vault_timeout=5;
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault_incorrect_server.conf';
+ERROR 42000: Variable 'keyring_vault_config' can't be set to the value of 'MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault_incorrect_server.conf'
+include/assert.inc [Connection time must be bigger than keyring_vault_timeout]
+UNINSTALL PLUGIN keyring_vault;

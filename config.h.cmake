@@ -134,6 +134,7 @@
 #cmakedefine HAVE_MEMALIGN 1
 #cmakedefine HAVE_NL_LANGINFO 1
 #cmakedefine HAVE_HTONLL 1
+#cmakedefine HAVE_MEMSET_S 1
 #cmakedefine DNS_USE_CPU_CLOCK_FOR_ID 1
 #cmakedefine HAVE_EPOLL 1
 /* #cmakedefine HAVE_EVENT_PORTS 1 */

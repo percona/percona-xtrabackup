@@ -132,11 +132,13 @@ main(int argc, char **argv)
 {
 	MY_INIT(argv[0]);
 
-	crc_init();
-
 	if (get_options(&argc, &argv)) {
 		goto err;
 	}
+
+	xb_libgcrypt_init();
+
+	crc_init();
 
 	if (opt_mode == RUN_MODE_NONE) {
 		msg("%s: either -c or -x must be specified.\n", my_progname);

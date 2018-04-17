@@ -36,6 +36,8 @@ extern bool innodb_checksum_algorithm_specified;
 
 extern my_bool opt_lock_ddl_per_table;
 
+extern bool use_dumped_tablespace_keys;
+
 /******************************************************************************
 Callback used in buf_page_io_complete() to detect compacted pages.
 @return TRUE if the page is marked as compacted, FALSE otherwise. */
@@ -49,6 +51,13 @@ Rebuild all secondary indexes in all tables in separate spaces. Called from
 innobase_start_or_create_for_mysql(). */
 void
 xb_compact_rebuild_indexes(void);
+
+/** Fetch tablespace key from "xtrabackup_keys".
+@param[in]	space_id	tablespace id
+@param[out]	key		fetched tablespace key
+@param[out]	key		fetched tablespace iv */
+void
+xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
 
 #ifdef __cplusplus
 }

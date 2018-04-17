@@ -1,0 +1,11 @@
+--source include/have_keyring_vault_plugin.inc
+--source include/not_embedded.inc
+
+# This test checks behavior of keyring_vault plugin when it is initialized on server startup and
+# incorrect path to configuration file is assigned to keyring_vault_config variable. The path is
+# set in master.opt file.
+
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '../bad_dir/../../bad_keyring' not found");
+

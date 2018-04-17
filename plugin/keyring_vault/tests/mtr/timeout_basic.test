@@ -1,0 +1,184 @@
+###############################################################################
+#                                                                             #
+# Variable Name: keyring_vault_timeout                                        #
+# Scope: GLOBAL                                                               #
+# Access Type: Dynamic                                                        #
+# Data Type: numeric                                                          #
+# Default Value: 15                                                           #
+# Range: 0 - 86400                                                            #
+#                                                                             #
+###############################################################################
+
+--source include/have_keyring_vault_plugin.inc
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+
+#############################################################
+#                 Save initial value                        #
+#############################################################
+
+SET @start_global_value = @@GLOBAL.keyring_vault_timeout;
+
+############################################################
+#     Display the DEFAULT value of kering_vault__timeout   #
+############################################################
+
+SET @@GLOBAL.keyring_vault_timeout = 100;
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+SELECT @@GLOBAL.keyring_vault_timeout;
+
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.keyring_vault_timeout;
+
+############################################################
+#     Check the DEFAULT value of keyring_vault_timeout     #
+############################################################
+
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+
+--let $assert_text= Default vaule of keyring_vault_timeout should be 15
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 15]" = 1
+--source include/assert.inc
+
+###############################################################################
+# Change the value of keyring_vault_timeout to a valid value for GLOBAL Scope #
+###############################################################################
+
+--echo # Disable keyring_vault's timeout
+SET @@GLOBAL.keyring_vault_timeout= 0;
+--let $assert_text= keyring_vault timeout should be disabled (i.e. equal to 0)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 0]" = 1
+--source include/assert.inc
+
+--echo # Turn keyring_vault's timeout and set it to minimal value, i.e. 1s
+SET @@GLOBAL.keyring_vault_timeout= 1;
+--let $assert_text= keyring_vault timeout should be enabled and set to min (i.e. equal to 1)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 1]" = 1
+--source include/assert.inc
+
+--echo # Set keyring_vault's timeout and set it to maximum value, i.e. 86400s (24 hours)
+SET @@GLOBAL.keyring_vault_timeout= 86400;
+--let $assert_text= keyring_vault timeout should be set to max (i.e. equal to 86400)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 86400]" = 1
+--source include/assert.inc
+
+--echo # Set keyring_vault's timeout to DEFAULT, i.e. 15s
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+
+#################################################################
+# Change the value of keyring_vault_timeout to an invalid value #
+#################################################################
+
+SET @@GLOBAL.keyring_vault_timeout = -1;
+--let $assert_text= keyring_vault timeout should be 0
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 0]" = 1
+--source include/assert.inc
+SET @@GLOBAL.keyring_vault_timeout = -1024;
+--let $assert_text= keyring_vault timeout should be 0
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 0]" = 1
+--source include/assert.inc
+--echo # Set to max + 1
+SET @@GLOBAL.keyring_vault_timeout= 86400;
+SELECT @@GLOBAL.keyring_vault_timeout;
+--let $assert_text= keyring_vault timeout should be set to max (i.e. equal to 86400)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 86400]" = 1
+--source include/assert.inc
+
+SET @@GLOBAL.keyring_vault_timeout= 123456789031;
+--let $assert_text= keyring_vault timeout should be set to max (i.e. equal to 86400)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 86400]" = 1
+--source include/assert.inc
+
+--echo # Set keyring_vault's timeout to DEFAULT, i.e. 15s
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+
+--Error ER_WRONG_TYPE_FOR_VAR
+SET @@GLOBAL.keyring_vault_timeout = ' ';
+--echo # keyring_vault_timeout should not be changed
+--let $assert_text= keyring_vault timeout should be set to default (i.e. equal to 15)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 15]" = 1
+--source include/assert.inc
+
+--Error ER_WRONG_TYPE_FOR_VAR
+SET @@GLOBAL.keyring_vault_timeout = ON;
+
+--echo # keyring_vault_timeout should not be changed
+--let $assert_text= keyring_vault timeout should be set to default (i.e. equal to 15)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 15]" = 1
+--source include/assert.inc
+
+--Error ER_WRONG_TYPE_FOR_VAR
+SET @@GLOBAL.keyring_vault_timeout = OFF;
+--echo # keyring_vault_timeout should not be changed
+--let $assert_text= keyring_vault timeout should be set to default (i.e. equal to 15)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 15]" = 1
+--source include/assert.inc
+
+--Error ER_WRONG_TYPE_FOR_VAR
+SET @@GLOBAL.keyring_vault_timeout = 65530.34;
+--echo # keyring_vault_timeout should not be changed
+--let $assert_text= keyring_vault timeout should be set to default (i.e. equal to 15)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 15]" = 1
+--source include/assert.inc
+
+--Error ER_WRONG_TYPE_FOR_VAR
+SET @@GLOBAL.keyring_vault_timeout ="Test";
+--echo # keyring_vault_timeout should not be changed
+--let $assert_text= keyring_vault timeout should be set to default (i.e. equal to 15)
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 15]" = 1
+--source include/assert.inc
+
+SET @@GLOBAL.keyring_vault_timeout = True;
+--echo # keyring_vault_timeout should be casted to 1
+--let $assert_text= keyring_vault_timeout should be casted to 1
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 1]" = 1
+--source include/assert.inc
+
+SET @@GLOBAL.keyring_vault_timeout = False;
+--echo # keyring_vault_timeout should be casted to 0
+--let $assert_text= keyring_vault_timeout should be casted to 0
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = 0]" = 1
+--source include/assert.inc
+
+--echo # Set keyring_vault's timeout to DEFAULT, i.e. 15s
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+
+####################################################################
+#   Check if the value in GLOBAL Table matches value in variable   #
+####################################################################
+SELECT VARIABLE_VALUE FROM performance_schema.global_variables WHERE VARIABLE_NAME='keyring_vault_timeout';
+--disable_warnings
+--let $assert_text= keyring_vault_timeout should match value in GLOBAL Table
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = VARIABLE_VALUE FROM performance_schema.global_variables WHERE VARIABLE_NAME=\'keyring_vault_timeout\']" = 1
+--source include/assert.inc
+--enable_warnings
+
+########################################################################
+#    Check if accessing variable with GLOBAL and without SCOPE         #
+#    points to same global variable                                    #
+########################################################################
+
+SET @@GLOBAL.keyring_vault_timeout = 100;
+--let $assert_text= keyring_vault_timeout with GLOBAL and without SCOPE should point to same global variable
+--let $assert_cond= "[SELECT @@GLOBAL.keyring_vault_timeout = @@keyring_vault_timeout]" = 1
+
+#############################################################################
+#   Check if keyring_vault_timeout can be accessed with and without @@ sign #
+#############################################################################
+
+--error ER_GLOBAL_VARIABLE
+SET keyring_vault_timeout = 1027;
+SET @@GLOBAL.keyring_vault_timeout = 1027;
+SELECT @@keyring_vault_timeout;
+
+--Error ER_UNKNOWN_TABLE
+SELECT GLOBAL.keyring_vault_config;
+
+--Error ER_BAD_FIELD_ERROR
+SELECT keyring_vault_timeout = @@GLOBAL.keyring_vault_timeout;
+
+####################################
+#     Restore initial value        #
+####################################
+SET @@GLOBAL.keyring_vault_timeout = @start_global_value;

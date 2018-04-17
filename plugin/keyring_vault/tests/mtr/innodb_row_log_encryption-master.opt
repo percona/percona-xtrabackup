@@ -1,0 +1,4 @@
+$KEYRING_VAULT_PLUGIN_OPT
+$KEYRING_VAULT_PLUGIN_LOAD
+--innodb-sort-buffer-size=64k
+--innodb_encrypt_online_alter_logs=ON

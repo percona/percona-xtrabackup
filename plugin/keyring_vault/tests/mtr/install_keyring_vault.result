@@ -1,0 +1,12 @@
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault1.conf';
+ERROR HY000: Unknown system variable 'keyring_vault_config'
+INSTALL PLUGIN keyring_vault SONAME 'keyring_vault.so';
+Warnings:
+Warning	29	File '' not found (Errcode: 2 - No such file or directory)
+Warning	42000	keyring_vault initialization failure. Please check the server log.
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault2.conf';
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault1.conf';
+UNINSTALL PLUGIN keyring_vault;

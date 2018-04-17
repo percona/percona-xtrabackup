@@ -220,7 +220,7 @@ MACRO(MYSQL_ADD_PLUGIN)
     # an additional dependency.
     # Use MYSQL_PLUGIN_IMPORT for static data symbols to be exported.
     IF(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      TARGET_LINK_LIBRARIES (${target} mysqld ${ARG_LINK_LIBRARIES})
+      TARGET_LINK_LIBRARIES (${target} xtrabackup ${ARG_LINK_LIBRARIES})
     ENDIF()
     ADD_DEPENDENCIES(${target} GenError ${ARG_DEPENDENCIES})
 

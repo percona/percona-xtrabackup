@@ -35,6 +35,7 @@ Created 2013-7-26 by Kevin Lewis
 #ifdef UNIV_HOTBACKUP
 #include "my_sys.h"
 #endif /* UNIV_HOTBACKUP */
+#include "xb0xb.h"
 
 /** Initialize the name, size and order of this datafile
 @param[in]	name	tablespace name, will be copied
@@ -639,7 +640,8 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 	/* For encrypted tablespace, check the encryption info in the
 	first page can be decrypt by master key, otherwise, this table
 	can't be open. And for importing, we skip checking it. */
-	if (FSP_FLAGS_GET_ENCRYPTION(m_flags) && !for_import) {
+	if (FSP_FLAGS_GET_ENCRYPTION(m_flags) && !for_import
+		&& (srv_backup_mode || !use_dumped_tablespace_keys)) {
 		m_encryption_key = static_cast<byte*>(
 			ut_zalloc_nokey(ENCRYPTION_KEY_LEN));
 		m_encryption_iv = static_cast<byte*>(
@@ -676,6 +678,18 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 			ut_free(m_encryption_iv);
 			m_encryption_key = NULL;
 			m_encryption_iv = NULL;
+		}
+	}
+
+	if (FSP_FLAGS_GET_ENCRYPTION(m_flags)
+		&& !srv_backup_mode && use_dumped_tablespace_keys) {
+		const page_size_t page_size(m_flags);
+		ulint offset = fsp_header_get_encryption_offset(page_size);
+		ut_ad(offset != 0);
+		ulint master_key_id = mach_read_from_4(
+			m_first_page + offset + ENCRYPTION_MAGIC_SIZE);
+		if (Encryption::master_key_id < master_key_id) {
+			Encryption::master_key_id = master_key_id;
 		}
 	}
 

@@ -4,7 +4,7 @@
 
 require_server_version_higher_than 5.7.10
 
-keyring_file=${TEST_VAR_ROOT}/keyring_file
+. inc/keyring_file.sh
 
 start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file --server_id=10
 
@@ -64,16 +64,23 @@ xtrabackup --backup --incremental-basedir=$topdir/inc1 \
 	   --keyring-file-data=$keyring_file --server_id=10
 
 ${XB_BIN} --prepare --apply-log-only --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file
+	  --keyring-file-data=$keyring_file \
+	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
 ${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
 	  --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file
+	  --keyring-file-data=$keyring_file \
+	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
 ${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
 	  --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file
+	  --keyring-file-data=$keyring_file \
+	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
 ${XB_BIN} --prepare --target-dir=$topdir/backup \
 	  --keyring-file-data=$keyring_file \
-	  --reencrypt-for-server-id=200
+	  --reencrypt-for-server-id=200 \
+	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 stop_server
 

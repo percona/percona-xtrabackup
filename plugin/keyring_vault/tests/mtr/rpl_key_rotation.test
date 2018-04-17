@@ -1,0 +1,146 @@
+# WL#8821
+# Testing ALTER INSTANCE ROTATE INNODB MASTER KEY with replication
+# and keyring installing/uninstalling scenarios on master/slave.
+--source include/have_keyring_vault_plugin.inc
+--source include/not_embedded.inc
+--source include/master-slave.inc
+
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[Error\\] InnoDB: Can't generate new master key, please check the keyring plugin is loaded.");
+call mtr.add_suppression("\\[Error\\] InnoDB: Encryption can't find master key, please check the keyring plugin is loaded.");
+call mtr.add_suppression("Error 'Can't find master key from keyring, please check keyring plugin is loaded.");
+call mtr.add_suppression("\\[Warning\\] Slave: Can't find master key from keyring, please check keyring plugin is loaded.");
+call mtr.add_suppression("\\[Error\\] InnoDB: Can't generate new master key for tablespace encryption, please check the keyring plugin is loaded.");
+call mtr.add_suppression("The slave coordinator and worker threads are stopped");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+
+--source generate_default_conf_files.inc
+--source is_vault_server_up.inc
+
+# Create mount points
+--let MOUNT_POINT_SERVICE_OP=CREATE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--source mount_point_service.inc
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_2
+--source mount_point_service.inc
+
+--connection slave
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_2';
+
+--connection master
+--echo [On Master]
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_1';
+
+--echo
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+
+# Creating table with encryption.
+CREATE TABLE t1(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t1 VALUES(0, "aaaaa");
+INSERT INTO t1 VALUES(1, "bbbbb");
+INSERT INTO t1 VALUES(2, "ccccc");
+SELECT * FROM t1;
+
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+
+CREATE TABLE t2(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t2 SELECT * FROM t1;
+SELECT COUNT(*) FROM t2;
+
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+
+SELECT * FROM t1;
+
+--source include/sync_slave_sql_with_master.inc
+--echo [On Slave]
+
+SELECT COUNT(*) FROM t2;
+SELECT * FROM t1;
+
+--connection master
+--echo [On Master]
+CREATE TABLE t3(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t3 VALUES(0, "aaaaa");
+
+--echo
+--source include/sync_slave_sql_with_master.inc
+--echo [On Slave]
+SELECT * FROM t3;
+SELECT COUNT(*) FROM t2;
+SELECT * FROM t1;
+
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+
+# Uninstalling keyring_vault plugin on slave.
+UNINSTALL PLUGIN keyring_vault;
+--echo # Checking keyring plugin after uninstall.
+query_vertical SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+--source include/stop_slave_sql.inc
+
+--connection master
+--echo [On Master]
+CREATE TABLE t4(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t4 VALUES(1, "rpltest");
+--source include/save_master_pos.inc
+
+--connection slave
+--echo [On Slave]
+START SLAVE SQL_THREAD;
+--let $slave_sql_errno= convert_error(ER_CANNOT_FIND_KEY_IN_KEYRING)
+--source include/wait_for_slave_sql_error.inc
+
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_vault SONAME '$KEYRING_VAULT_PLUGIN';
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+eval SET @@global.keyring_vault_config='$KEYRING_CONF_FILE_2';
+query_vertical SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+--source include/start_slave_sql.inc
+--source include/sync_slave_sql.inc
+SELECT * FROM t4;
+
+--connection master
+--echo [On Master]
+--echo # Uninstalling keyring_vault plugin on master.
+UNINSTALL PLUGIN keyring_vault;
+--echo # Checking keyring plugin after uninstall.
+query_vertical SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+SELECT * FROM t1;
+--echo
+# Try to rotate master key when keyring_vault plugin uninstalled.
+--error ER_CANNOT_FIND_KEY_IN_KEYRING
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+
+--echo # Installing keyring_vault plugin on master.
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN keyring_vault SONAME '$KEYRING_VAULT_PLUGIN';
+--echo # Cleanup
+DROP TABLE t1,t2,t3,t4;
+
+--source include/sync_slave_sql_with_master.inc
+--source include/rpl_end.inc
+
+# Delete mount points
+--let MOUNT_POINT_SERVICE_OP=DELETE
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_1
+--connection master
+--source mount_point_service.inc
+--connection slave
+--source mount_point_service.inc
+--let $KEYRING_CONF_FILE=$KEYRING_CONF_FILE_2
+--connection master
+--source mount_point_service.inc
+--connection slave
+--source mount_point_service.inc
+
+#reset keyring_vault_config variable to null
+UNINSTALL PLUGIN keyring_vault;
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR $KEYRING_PLUGIN keyring_vault.so $KEYRING_VAULT_PLUGIN_OPT KEYRING_VAULT_PLUGIN_OPT
+--let $restart_parameters="restart:$KEYRING_VAULT_PLUGIN_LOAD $KEYRING_VAULT_PLUGIN_OPT"
+--source include/restart_mysqld.inc
+# End:

@@ -14,7 +14,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "buffer.h"
-#include "common/keyring_key.h"
+#include "keyring_key.h"
 
 namespace keyring
 {

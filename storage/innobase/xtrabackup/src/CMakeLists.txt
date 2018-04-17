@@ -65,26 +65,13 @@ ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
 ADD_CUSTOM_TARGET(GenVersionCheck
                   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
 
-SET(keyring_source_files
-  keyring.cc
-  ../../../../plugin/keyring/common/keyring_impl.cc
-  ../../../../plugin/keyring/common/keyring_key.cc
-  ../../../../plugin/keyring/common/keys_container.cc
-  ../../../../plugin/keyring/buffer.cc
-  ../../../../plugin/keyring/buffered_file_io.cc
-  ../../../../plugin/keyring/hash_to_buffer_serializer.cc
-  ../../../../plugin/keyring/file_io.cc
-  ../../../../plugin/keyring/keyring.cc
-)
+INCLUDE_DIRECTORIES(
+  ${CMAKE_SOURCE_DIR}/plugin/keyring
+  ${CMAKE_SOURCE_DIR}/plugin/keyring_vault
+  ${BOOST_PATCHES_DIR})
 
-ADD_COMPILE_FLAGS(
-  ${keyring_source_files}
-  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
-  -DEMBEDDED_LIBRARY
-)
-
-SET_SOURCE_FILES_PROPERTIES(${keyring_source_files}
-  PROPERTIES COMPILE_DEFINITIONS "EMBEDDED_LIBRARY")
+ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring "${CMAKE_CURRENT_BINARY_DIR}/keyring")
+ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring_vault "${CMAKE_CURRENT_BINARY_DIR}/keyring_vault")
 
 ADD_COMPILE_FLAGS(
   xtrabackup.cc
@@ -116,16 +103,17 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbstream_write.c
   backup_mysql.cc
   backup_copy.cc
-  ${keyring_source_files}
-  ../../../../sql-common/client_authentication.cc
-  ../../../../sql/des_key_file.cc
+  keyring_plugins.cc
+  kdf.cc
+  ${CMAKE_SOURCE_DIR}/sql-common/client_authentication.cc
+  ${CMAKE_SOURCE_DIR}/sql/des_key_file.cc
   )
 
 SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)
 
-TARGET_LINK_LIBRARIES(xtrabackup 
-  mysqlserver 
-  ${GCRYPT_LIBS} 
+TARGET_LINK_LIBRARIES(xtrabackup
+  mysqlserver
+  ${GCRYPT_LIBS}
   archive_static
   crc
   )

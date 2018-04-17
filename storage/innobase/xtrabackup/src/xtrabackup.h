@@ -176,6 +176,10 @@ extern my_bool		opt_decrypt;
 
 extern uint		opt_read_buffer_size;
 
+extern char		*opt_xtra_plugin_dir;
+extern char		*opt_transition_key;
+extern my_bool		opt_generate_new_master_key;
+
 #if defined(HAVE_OPENSSL)
 extern uint opt_ssl_mode;
 extern my_bool opt_use_ssl_arg;

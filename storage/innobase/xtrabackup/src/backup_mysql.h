@@ -62,6 +62,9 @@ xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
 my_ulonglong
 xb_mysql_numrows(MYSQL *connection, const char *query, bool die_on_error);
 
+char *
+read_mysql_one_value(MYSQL *connection, const char *query);
+
 void
 unlock_all(MYSQL *connection);
 

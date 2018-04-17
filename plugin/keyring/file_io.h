@@ -16,7 +16,7 @@
 #ifndef MYSQL_FILE_IO_H
 #define MYSQL_FILE_IO_H
 
-#include "common/logger.h"
+#include "logger.h"
 
 namespace keyring
 {

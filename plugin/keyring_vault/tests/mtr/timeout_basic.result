@@ -1,0 +1,88 @@
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+SET @start_global_value = @@GLOBAL.keyring_vault_timeout;
+SET @@GLOBAL.keyring_vault_timeout = 100;
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+SELECT @@GLOBAL.keyring_vault_timeout;
+@@GLOBAL.keyring_vault_timeout
+15
+SELECT @@session.keyring_vault_timeout;
+ERROR HY000: Variable 'keyring_vault_timeout' is a GLOBAL variable
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+include/assert.inc [Default vaule of keyring_vault_timeout should be 15]
+# Disable keyring_vault's timeout
+SET @@GLOBAL.keyring_vault_timeout= 0;
+include/assert.inc [keyring_vault timeout should be disabled (i.e. equal to 0)]
+# Turn keyring_vault's timeout and set it to minimal value, i.e. 1s
+SET @@GLOBAL.keyring_vault_timeout= 1;
+include/assert.inc [keyring_vault timeout should be enabled and set to min (i.e. equal to 1)]
+# Set keyring_vault's timeout and set it to maximum value, i.e. 86400s (24 hours)
+SET @@GLOBAL.keyring_vault_timeout= 86400;
+include/assert.inc [keyring_vault timeout should be set to max (i.e. equal to 86400)]
+# Set keyring_vault's timeout to DEFAULT, i.e. 15s
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+SET @@GLOBAL.keyring_vault_timeout = -1;
+Warnings:
+Warning	1292	Truncated incorrect keyring_vault_timeout value: '-1'
+include/assert.inc [keyring_vault timeout should be 0]
+SET @@GLOBAL.keyring_vault_timeout = -1024;
+Warnings:
+Warning	1292	Truncated incorrect keyring_vault_timeout value: '-1024'
+include/assert.inc [keyring_vault timeout should be 0]
+# Set to max + 1
+SET @@GLOBAL.keyring_vault_timeout= 86400;
+SELECT @@GLOBAL.keyring_vault_timeout;
+@@GLOBAL.keyring_vault_timeout
+86400
+include/assert.inc [keyring_vault timeout should be set to max (i.e. equal to 86400)]
+SET @@GLOBAL.keyring_vault_timeout= 123456789031;
+Warnings:
+Warning	1292	Truncated incorrect keyring_vault_timeout value: '123456789031'
+include/assert.inc [keyring_vault timeout should be set to max (i.e. equal to 86400)]
+# Set keyring_vault's timeout to DEFAULT, i.e. 15s
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+SET @@GLOBAL.keyring_vault_timeout = ' ';
+ERROR 42000: Incorrect argument type to variable 'keyring_vault_timeout'
+# keyring_vault_timeout should not be changed
+include/assert.inc [keyring_vault timeout should be set to default (i.e. equal to 15)]
+SET @@GLOBAL.keyring_vault_timeout = ON;
+ERROR 42000: Incorrect argument type to variable 'keyring_vault_timeout'
+# keyring_vault_timeout should not be changed
+include/assert.inc [keyring_vault timeout should be set to default (i.e. equal to 15)]
+SET @@GLOBAL.keyring_vault_timeout = OFF;
+ERROR 42000: Incorrect argument type to variable 'keyring_vault_timeout'
+# keyring_vault_timeout should not be changed
+include/assert.inc [keyring_vault timeout should be set to default (i.e. equal to 15)]
+SET @@GLOBAL.keyring_vault_timeout = 65530.34;
+ERROR 42000: Incorrect argument type to variable 'keyring_vault_timeout'
+# keyring_vault_timeout should not be changed
+include/assert.inc [keyring_vault timeout should be set to default (i.e. equal to 15)]
+SET @@GLOBAL.keyring_vault_timeout ="Test";
+ERROR 42000: Incorrect argument type to variable 'keyring_vault_timeout'
+# keyring_vault_timeout should not be changed
+include/assert.inc [keyring_vault timeout should be set to default (i.e. equal to 15)]
+SET @@GLOBAL.keyring_vault_timeout = True;
+# keyring_vault_timeout should be casted to 1
+include/assert.inc [keyring_vault_timeout should be casted to 1]
+SET @@GLOBAL.keyring_vault_timeout = False;
+# keyring_vault_timeout should be casted to 0
+include/assert.inc [keyring_vault_timeout should be casted to 0]
+# Set keyring_vault's timeout to DEFAULT, i.e. 15s
+SET @@GLOBAL.keyring_vault_timeout = DEFAULT;
+SELECT VARIABLE_VALUE FROM performance_schema.global_variables WHERE VARIABLE_NAME='keyring_vault_timeout';
+VARIABLE_VALUE
+15
+include/assert.inc [keyring_vault_timeout should match value in GLOBAL Table]
+SET @@GLOBAL.keyring_vault_timeout = 100;
+SET keyring_vault_timeout = 1027;
+ERROR HY000: Variable 'keyring_vault_timeout' is a GLOBAL variable and should be set with SET GLOBAL
+SET @@GLOBAL.keyring_vault_timeout = 1027;
+SELECT @@keyring_vault_timeout;
+@@keyring_vault_timeout
+1027
+SELECT GLOBAL.keyring_vault_config;
+ERROR 42S02: Unknown table 'GLOBAL' in field list
+SELECT keyring_vault_timeout = @@GLOBAL.keyring_vault_timeout;
+ERROR 42S22: Unknown column 'keyring_vault_timeout' in 'field list'
+SET @@GLOBAL.keyring_vault_timeout = @start_global_value;

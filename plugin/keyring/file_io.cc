@@ -28,17 +28,15 @@ namespace keyring
 my_bool is_super_user()
 {
   THD *thd = current_thd;
-#ifndef NO_EMBEDDED_ACCESS_CHECKS
   MYSQL_SECURITY_CONTEXT sec_ctx;
-#endif /* NO_EMBEDDED_ACCESS_CHECKS */
   my_svc_bool has_super_privilege = FALSE;
 
   DBUG_ASSERT(thd != NULL);
-#ifndef NO_EMBEDDED_ACCESS_CHECKS
+
   if (thd == NULL || thd_get_security_context(thd, &sec_ctx) ||
       security_context_get_option(sec_ctx, "privilege_super", &has_super_privilege))
     return FALSE;
-#endif /* NO_EMBEDDED_ACCESS_CHECKS */
+
   return has_super_privilege;
 }
 

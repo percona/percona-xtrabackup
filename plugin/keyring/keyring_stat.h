@@ -17,7 +17,6 @@
 #define MYSQL_KEYRING_STAT_H
 
 #include <my_global.h>
-#include <my_dir.h>
 
 namespace keyring
 {

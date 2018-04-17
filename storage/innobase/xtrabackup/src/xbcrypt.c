@@ -153,11 +153,13 @@ main(int argc, char **argv)
 
 	MY_INIT(argv[0]);
 
-	crc_init();
-
 	if (get_options(&argc, &argv)) {
 		goto cleanup;
 	}
+
+	xb_libgcrypt_init();
+
+	crc_init();
 
 	if (opt_input_file) {
 		MY_STAT 	input_file_stat;

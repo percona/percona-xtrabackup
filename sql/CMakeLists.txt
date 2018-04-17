@@ -73,6 +73,7 @@ SET(SQL_SHARED_SOURCES
   auth/password_policy_service.cc
   auth/sql_security_ctx.cc
   auth/service_security_context.cc
+  keyring_service.cc
   ssl_wrapper_service.cc
   bootstrap.cc
   conn_handler/connection_handler_manager.cc 
