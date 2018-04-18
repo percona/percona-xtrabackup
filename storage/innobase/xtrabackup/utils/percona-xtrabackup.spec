@@ -69,11 +69,11 @@ export CXXFLAGS=${CXXFLAGS:-}
 %if 0%{?rhel} > 5
   cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" .
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" .
 %else
   cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" .
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin"  .
 %endif
 
 #
@@ -84,6 +84,8 @@ make %{?_smp_mflags}
 %install
 rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
+rm -rf $RPM_BUILD_ROOT/%{_libdir}/libmysqlservices.a
+rm -rf $RPM_BUILD_ROOT/usr/lib/libmysqlservices.a
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -96,6 +98,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbcrypt
 %{_bindir}/xbcloud
 %{_bindir}/xbcloud_osenv
+%{_libdir}/xtrabackup/plugin/keyring_file.so
+%{_libdir}/xtrabackup/plugin/keyring_vault.so
 %doc COPYING
 %doc %{_mandir}/man1/*.1.gz
 
