@@ -196,7 +196,7 @@ xb_keyring_init_for_backup(MYSQL *connection)
 	int t_argc = keyring_plugin_args.size() + 1;
 	char **t_argv = new char *[t_argc + 1];
 
-	memset(t_argv, 0, sizeof(char *) * t_argc + 1);
+	memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
 
 	t_argv[0] = (char *) "";
 	for (int i = 1; i < t_argc; i++) {
@@ -267,7 +267,7 @@ xb_keyring_init_for_stats(int argc, char **argv)
 	int t_argc = argc;
 	char **t_argv = new char *[t_argc + 1];
 
-	memset(t_argv, 0, sizeof(char *) * t_argc + 1);
+	memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
 	memcpy(t_argv, argv, sizeof(char *) * t_argc);
 
 	plugin_init(&t_argc, t_argv, PLUGIN_INIT_SKIP_PLUGIN_TABLE);
@@ -343,7 +343,7 @@ xb_keyring_init_for_prepare(int argc, char **argv)
 	int t_argc = argc;
 	char **t_argv = new char *[t_argc + 1];
 
-	memset(t_argv, 0, sizeof(char *) * t_argc + 1);
+	memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
 	memcpy(t_argv, argv, sizeof(char *) * t_argc);
 
 	plugin_init(&t_argc, t_argv, PLUGIN_INIT_SKIP_PLUGIN_TABLE);
