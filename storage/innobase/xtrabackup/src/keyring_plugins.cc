@@ -485,7 +485,7 @@ xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
 
 		if (crc1 != crc2) {
 			msg_ts("Error reading %s: failed to decrypt key and iv "
-				"for tablespace %lu. Worng transition key?\n",
+				"for tablespace %lu. Wrong transition key?\n",
 				XTRABACKUP_KEYS_FILE, space_id);
 			goto error;
 		}
