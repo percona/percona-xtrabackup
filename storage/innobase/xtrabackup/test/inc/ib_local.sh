@@ -59,3 +59,11 @@ run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT count(*) from actor" sakila
 ########################################################################
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "CREATE TABLE t(a INT)" test
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "SELECT * FROM t" test
+
+########################################################################
+# Bug PXB-202: xtrabackup_checkpoints shouldn't be encrypted
+########################################################################
+if [ ! -f "$topdir/backup/xtrabackup_checkpoints" ]; then
+  echo "xtrabackup_checkpoints isn't exist, maybe it's encrypted/compressed?"
+  exit -1
+fi
