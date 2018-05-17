@@ -105,8 +105,6 @@ my_bool Buffered_file_io::check_if_keyring_file_can_be_opened_or_created()
   my_off_t file_size= file_io.tell(file, MYF(MY_WME));
   if ((file_size == ((my_off_t) - 1)) || file_io.close(file, MYF(MY_WME)) < 0)
     return TRUE;
-  if (file_size == 0 && file_io.remove(this->keyring_filename.c_str(), MYF(MY_WME))) //remove empty file
-    return TRUE;
   return FALSE;
 }
 
