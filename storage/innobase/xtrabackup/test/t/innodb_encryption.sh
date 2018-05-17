@@ -28,6 +28,9 @@ function test_do()
 
 	run_cmd $MYSQL $MYSQL_ARGS test -e "SELECT @@server_uuid"
 
+	# PXB-1540: XB removes and recreate keyring file of 0 size
+	xtrabackup --backup --target-dir=$topdir/backup0
+
 	run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t1 (c1 VARCHAR(100)) ${encryption_clause} ${compression_clause};
 INSERT INTO t1 (c1) VALUES ('ONE'), ('TWO'), ('THREE');
