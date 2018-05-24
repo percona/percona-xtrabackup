@@ -8624,16 +8624,17 @@ handle_options(int argc, char **argv, int *argc_client, char ***argv_client,
 	for (int i = 0 ; i < *argc_client ; i++) {
 		const char * const opt = (*argv_client)[i];
 
+		bool server_option = true;
+
+		for (int j = 0; j < *argc_server; j++) {
+			if (opt == (*argv_server)[j]) {
+				server_option = false;
+				break;
+			}
+		}
+
 		if (strncmp(opt, "--", 2) &&
 		    !(strlen(opt) == 2 && opt[0] == '-')) {
-			bool server_option = true;
-
-			for (int j = 0; j < *argc_server; j++) {
-				if (opt == (*argv_server)[j]) {
-					server_option = false;
-					break;
-				}
-			}
 
 			if (!server_option) {
 				msg("xtrabackup: Error:"
@@ -8641,6 +8642,20 @@ handle_options(int argc, char **argv, int *argc_client, char ***argv_client,
 				exit(EXIT_FAILURE);
 			}
 		}
+
+			bool client_option = true;
+			for (unsigned j = 0; j < xb_client_options_count; j++) {
+				if (strcmp(opt, (xb_client_options)[j].name)) {
+					client_option = false;
+					break;
+				}
+			}
+
+			if (!client_option && !server_option) {
+				msg("xtrabackup: Error:"
+				    " unknown argument: '%s'\n", opt);
+				exit(EXIT_FAILURE);
+			}
 	}
 
 	if (tty_password) {
