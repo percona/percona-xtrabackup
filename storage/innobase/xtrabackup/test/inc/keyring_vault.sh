@@ -26,7 +26,7 @@ VAULT_CA="${VAULT_CA:-${PWD}/inc/vault_ca.crt}"
 function keyring_vault_ping()
 {
 	curl -H "X-Vault-Token: ${VAULT_TOKEN}" \
-		--cacert "${VAULT_CA}" \
+		--cacert "${VAULT_CA}" -k \
 		"${VAULT_URL}/v1/sys/mounts" || \
 	return 1
 }
@@ -41,7 +41,7 @@ vault_ca = ${VAULT_CA}
 EOF
 
 	curl -H "X-Vault-Token: ${VAULT_TOKEN}" \
-		--cacert "${VAULT_CA}" \
+		--cacert "${VAULT_CA}" -k \
 		--data '{"type":"generic"}' \
 		-X POST \
 		"${VAULT_URL}/v1/sys/mounts/${VAULT_MOUNT_POINT}"
@@ -51,7 +51,7 @@ EOF
 function keyring_vault_unmount()
 {
 	curl -H "X-Vault-Token: ${VAULT_TOKEN}" \
-		--cacert "${VAULT_CA}" \
+		--cacert "${VAULT_CA}" -k \
 		-X DELETE \
 		"${VAULT_URL}/v1/sys/mounts/${VAULT_MOUNT_POINT}"
 	return $?
@@ -60,7 +60,7 @@ function keyring_vault_unmount()
 function keyring_vault_list_keys()
 {
 	curl -H "X-Vault-Token: ${VAULT_TOKEN}" \
-		--cacert "${VAULT_CA}" \
+		--cacert "${VAULT_CA}" -k \
 		-X LIST \
 		"${VAULT_URL}/v1/${VAULT_MOUNT_POINT}" \
 		| sed 's/^.*\[//' | sed 's/\].*$//' | tr , '\n' | sed 's/"//g'
@@ -70,7 +70,7 @@ function keyring_vault_remove_all_keys()
 {
 	for key in `keyring_vault_list_keys` ; do
 		curl -H "X-Vault-Token: ${VAULT_TOKEN}" \
-			--cacert "${VAULT_CA}" \
+			--cacert "${VAULT_CA}" -k \
 			-X DELETE \
 			"${VAULT_URL}/v1/${VAULT_MOUNT_POINT}/${key}"
 	done

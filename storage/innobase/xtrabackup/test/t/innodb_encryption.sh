@@ -31,6 +31,8 @@ function test_do()
 	# PXB-1540: XB removes and recreate keyring file of 0 size
 	xtrabackup --backup --target-dir=$topdir/backup0
 
+	rm -rf $topdir/backup0
+
 	run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t1 (c1 VARCHAR(100)) ${encryption_clause} ${compression_clause};
 INSERT INTO t1 (c1) VALUES ('ONE'), ('TWO'), ('THREE');
@@ -158,10 +160,12 @@ function cleanup_keyring() {
 	keyring_vault_remove_all_keys
 }
 
-# trap "keyring_vault_unmount" EXIT
+trap "keyring_vault_unmount" EXIT
 
 test_do "ENCRYPTION='y'" "" "top-secret"
 
+keyring_vault_unmount
+trap "" EXIT
 
 # cleanup environment variables
 MYSQLD_EXTRA_MY_CNF_OPTS=
@@ -195,6 +199,9 @@ function cleanup_keyring() {
 	keyring_vault_remove_all_keys
 }
 
-# trap "keyring_vault_unmount" EXIT
+trap "keyring_vault_unmount" EXIT
 
 test_do "ENCRYPTION='y'" "COMPRESSION='zlib'" "generate"
+
+keyring_vault_unmount
+trap "" EXIT
