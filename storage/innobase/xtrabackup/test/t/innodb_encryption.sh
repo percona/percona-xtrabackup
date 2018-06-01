@@ -160,11 +160,13 @@ function cleanup_keyring() {
 	keyring_vault_remove_all_keys
 }
 
-# trap "keyring_vault_unmount" EXIT
+trap "keyring_vault_unmount" EXIT
 
 test_do "ENCRYPTION='y'" "" "top-secret"
-fi
 
+keyring_vault_unmount
+trap "" EXIT
+fi
 
 # cleanup environment variables
 MYSQLD_EXTRA_MY_CNF_OPTS=
@@ -197,7 +199,9 @@ function cleanup_keyring() {
 	keyring_vault_remove_all_keys
 }
 
-# trap "keyring_vault_unmount" EXIT
+trap "keyring_vault_unmount" EXIT
 
 test_do "ENCRYPTION='y'" "COMPRESSION='zlib'" "generate"
+keyring_vault_unmount
+trap "" EXIT
 fi

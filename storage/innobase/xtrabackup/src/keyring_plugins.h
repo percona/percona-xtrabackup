@@ -47,6 +47,16 @@ bool
 xb_keyring_init_for_prepare(int argc, char **argv);
 
 
+/** Initialize keyring plugin for stats mode. Configuration is read from
+argc and argv, server uuid is read from backup-my.cnf, plugin name is read
+from my.cnf.
+@param[in, out]	argc	Command line options (count)
+@param[in, out]	argv	Command line options (values)
+@return true if success */
+bool
+xb_keyring_init_for_copy_back(int argc, char **argv);
+
+
 /** Check is "xtrabackup_keys" file exists.
 @return true if exists */
 bool
