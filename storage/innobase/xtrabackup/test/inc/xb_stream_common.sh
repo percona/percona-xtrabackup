@@ -35,6 +35,10 @@ vlog "#####################"
 backup_dir=$topdir/backup
 cd $backup_dir
 run_cmd bash -c "$stream_extract_cmd out"
+
+# PXB-1542: attempt to extract second time must fail with appropriate error code
+run_cmd_expect_failure bash -c "$stream_extract_cmd out"
+
 if [ -n "${stream_uncompress_cmd:=""}" ]; then 
   vlog "################################"
   vlog "# DECRYPTING AND DECOMPRESSING #"
