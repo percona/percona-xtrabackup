@@ -470,6 +470,7 @@ extract_worker_thread_func(void *arg)
 					       chunk.path,
 					       chunk.pathlen);
 			if (entry == NULL) {
+				res = XB_STREAM_READ_ERROR;
 				pthread_mutex_unlock(ctxt->mutex);
 				break;
 			}
