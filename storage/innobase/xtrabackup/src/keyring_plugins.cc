@@ -46,6 +46,30 @@ const char *XTRABACKUP_KEYS_FILE = "xtrabackup_keys";
 const char *XTRABACKUP_KEYS_MAGIC = "KEYSV01";
 const size_t XTRABACKUP_KEYS_MAGIC_SIZE = 7;
 
+/** Load plugins and keep argc and argv untouched */
+static void
+init_plugins(int argc, char **argv)
+{
+	int t_argc = argc;
+	char **t_argv = new char *[t_argc + 1];
+
+	memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
+	memcpy(t_argv, argv, sizeof(char *) * t_argc);
+
+	mysql_optional_plugins[0] = 0;
+	mysql_mandatory_plugins[0] = 0;
+
+	if (opt_xtra_plugin_dir != NULL) {
+		strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN);
+	} else {
+		strcpy(opt_plugin_dir, PLUGINDIR);
+	}
+
+	plugin_init(&t_argc, t_argv, PLUGIN_INIT_SKIP_PLUGIN_TABLE);
+
+	delete [] t_argv;
+}
+
 /** Fetch tablespace key from "xtrabackup_keys".
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
@@ -203,16 +227,7 @@ xb_keyring_init_for_backup(MYSQL *connection)
 		t_argv[i] = (char *) keyring_plugin_args[i - 1].c_str();
 	}
 
-	mysql_optional_plugins[0] = 0;
-	mysql_mandatory_plugins[0] = 0;
-
-	if (opt_xtra_plugin_dir != NULL) {
-		strcpy(opt_plugin_dir, opt_xtra_plugin_dir);
-	} else {
-		strcpy(opt_plugin_dir, PLUGINDIR);
-	}
-
-	plugin_init(&t_argc, t_argv, PLUGIN_INIT_SKIP_PLUGIN_TABLE);
+	init_plugins(t_argc, t_argv);
 
 	delete [] t_argv;
 
@@ -225,7 +240,7 @@ get_one_option(int optid MY_ATTRIBUTE((unused)),
 	       const struct my_option *opt MY_ATTRIBUTE((unused)),
 	       char *argument MY_ATTRIBUTE((unused)))
 {
-	return 0;
+	return(FALSE);
 }
 
 /** Initialize keyring plugin for stats mode. Configuration is read from
@@ -236,15 +251,6 @@ argc and argv.
 bool
 xb_keyring_init_for_stats(int argc, char **argv)
 {
-	mysql_optional_plugins[0] = 0;
-	mysql_mandatory_plugins[0] = 0;
-
-	if (opt_xtra_plugin_dir != NULL) {
-		strcpy(opt_plugin_dir, opt_xtra_plugin_dir);
-	} else {
-		strcpy(opt_plugin_dir, PLUGINDIR);
-	}
-
 	char *plugin_load = NULL;
 
 	my_option keyring_options[] = {
@@ -264,15 +270,7 @@ xb_keyring_init_for_stats(int argc, char **argv)
 				MYF(MY_FAE))));
 	}
 
-	int t_argc = argc;
-	char **t_argv = new char *[t_argc + 1];
-
-	memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
-	memcpy(t_argv, argv, sizeof(char *) * t_argc);
-
-	plugin_init(&t_argc, t_argv, PLUGIN_INIT_SKIP_PLUGIN_TABLE);
-
-	delete [] t_argv;
+	init_plugins(argc, argv);
 
 	return(true);
 }
@@ -285,15 +283,6 @@ argc and argv, server uuid and plugin name is read from backup-my.cnf.
 bool
 xb_keyring_init_for_prepare(int argc, char **argv)
 {
-	mysql_optional_plugins[0] = 0;
-	mysql_mandatory_plugins[0] = 0;
-
-	if (opt_xtra_plugin_dir != NULL) {
-		strcpy(opt_plugin_dir, opt_xtra_plugin_dir);
-	} else {
-		strcpy(opt_plugin_dir, PLUGINDIR);
-	}
-
 	char *uuid = NULL;
 	char *plugin_load = NULL;
 	const char *groups[] = {"mysqld", NULL};
@@ -340,16 +329,127 @@ xb_keyring_init_for_prepare(int argc, char **argv)
 		strncpy(server_uuid, uuid, ENCRYPTION_SERVER_UUID_LEN);
 	}
 
-	int t_argc = argc;
+	init_plugins(argc, argv);
+
+	free_defaults(old_argv);
+
+	return(true);
+}
+
+static std::vector<std::string> plugin_load_list;
+
+static
+my_bool
+get_plugin_load_option(int optid MY_ATTRIBUTE((unused)),
+	       const struct my_option *opt MY_ATTRIBUTE((unused)),
+	       char *argument)
+{
+	std::string token;
+	std::istringstream token_stream(argument);
+	while (std::getline(token_stream, token, ';'))
+	{
+		plugin_load_list.push_back(token);
+	}
+	return(FALSE);
+}
+
+/** Initialize keyring plugin for stats mode. Configuration is read from
+argc and argv, server uuid is read from backup-my.cnf, plugin name is read
+from my.cnf.
+@param[in, out]	argc	Command line options (count)
+@param[in, out]	argv	Command line options (values)
+@return true if success */
+bool
+xb_keyring_init_for_copy_back(int argc, char **argv)
+{
+	mysql_optional_plugins[0] = 0;
+	mysql_mandatory_plugins[0] = 0;
+
+	if (opt_xtra_plugin_dir != NULL) {
+		strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN);
+	} else {
+		strcpy(opt_plugin_dir, PLUGINDIR);
+	}
+
+	char *uuid = NULL;
+	const char *groups[] = {"mysqld", NULL};
+
+	my_option keyring_options[] = {
+		{"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR,
+		 REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
+	};
+
+	char *exename = (char *) "xtrabackup";
+	char **backup_my_argv = &exename;
+	int backup_my_argc = 1;
+	char fname[FN_REFLEN];
+
+	/* we need full name so that only backup-my.cnf will be read */
+	if (fn_format(fname, "backup-my.cnf", xtrabackup_target_dir, "",
+		      MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
+		return(false);
+	}
+
+	if (my_load_defaults(fname, groups, &backup_my_argc,
+			     &backup_my_argv, NULL)) {
+		return(false);
+	}
+
+	char **old_argv = backup_my_argv;
+	if (handle_options(&backup_my_argc, &backup_my_argv, keyring_options,
+			   get_one_option)) {
+		return(false);
+	}
+
+	memset(server_uuid, 0, ENCRYPTION_SERVER_UUID_LEN + 1);
+	if (uuid != NULL) {
+		strncpy(server_uuid, uuid, ENCRYPTION_SERVER_UUID_LEN);
+	}
+
+	/* copy argc, argv because handle_options will destroy them */
+
+	int t_argc = argc + 1;
 	char **t_argv = new char *[t_argc + 1];
 
 	memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
-	memcpy(t_argv, argv, sizeof(char *) * t_argc);
+	t_argv[0] = exename;
+	memcpy(t_argv + 1, argv, sizeof(char *) * argc);
 
-	plugin_init(&t_argc, t_argv, PLUGIN_INIT_SKIP_PLUGIN_TABLE);
+	my_option plugin_load_options[] = {
+		{"early-plugin-load", 1, "", 0, 0, 0, GET_STR, REQUIRED_ARG,
+		 0, 0, 0, 0, 0, 0},
+		{"plugin-load", 2, "", 0, 0, 0, GET_STR, REQUIRED_ARG,
+		 0, 0, 0, 0, 0, 0},
+		{"plugin-load-add", 3, "", 0, 0, 0, GET_STR, REQUIRED_ARG,
+		 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
+	};
+
+	char **old_t_argv = t_argv;
+	if (handle_options(&t_argc, &t_argv, plugin_load_options,
+			   get_plugin_load_option)) {
+		delete [] old_t_argv;
+		return(false);
+	}
+
+	/* pick only plugins starting with keyring_ */
+	for (std::vector<std::string>::iterator i = plugin_load_list.begin();
+		i != plugin_load_list.end(); i++) {
+		const size_t prefix_len = sizeof("keyring_") - 1;
+		const char *plugin_name = i->c_str();
+		if (strlen(plugin_name) > prefix_len &&
+		    strncmp(plugin_name, "keyring_", prefix_len) == 0) {
+			opt_plugin_load_list_ptr->push_back(
+				new i_string(my_strdup(PSI_NOT_INSTRUMENTED,
+					plugin_name, MYF(MY_FAE))));
+		}
+	}
+
+	init_plugins(argc, argv);
 
 	free_defaults(old_argv);
-	delete [] t_argv;
+	delete [] old_t_argv;
 
 	return(true);
 }
