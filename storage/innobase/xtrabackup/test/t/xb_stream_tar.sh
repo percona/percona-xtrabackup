@@ -2,7 +2,7 @@
 # Test streaming in the TAR format
 ############################################################################
 
-stream_extract_cmd="$TAR -ixvf"
+stream_extract_cmd="$TAR -ixvkf"
 
 stream_format=tar
 
