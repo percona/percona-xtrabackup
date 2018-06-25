@@ -1,0 +1,39 @@
+===========================
+|Percona XtraBackup| 2.4.12
+===========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.12 on
+June 22, 2018. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.12/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+All Percona software is open-source and free.
+
+New features and improvements
+=============================
+
+* |Percona XtraBackup| now prints used arguments to standard output. Bug
+  fixed :jirabug:`PXB-1494`.
+
+
+Bugs fixed
+==========
+
+* ``xtrabackup --copy-back`` didn't read which encryption plugin to use from
+  ``plugin-load`` setting of the ``my.cnf`` configuration file. Bug fixed
+  :jirabug:`PXB-1544`.
+
+* xbstream was exiting with zero return code when it failed to create one or
+  more target files instead of returning error code 1. Bug fixed
+  :jirabug:`PXB-1542`.
+
+* Meeting a zero sized keyring file, |Percona XtraBackup| was removing and
+  immediately recreating it, which could affect external software noticing this
+  file had undergo manipulations. Bug fixed  :jirabug:`PXB-1540`.
+
+* ``xtrabackup_checkpoints`` files were encrypted during a backup, which caused
+  additional difficulties to take incremental backups. Bug fixed
+  :jirabug:`PXB-202`.
+
+Other bugs fixed: :jirabug:`PXB-1526` "Test kill_long_selects.sh failing with
+MySQL 5.7.21".
