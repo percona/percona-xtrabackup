@@ -180,6 +180,10 @@ extern char		*opt_xtra_plugin_dir;
 extern char		*opt_transition_key;
 extern my_bool		opt_generate_new_master_key;
 
+extern uint		opt_dump_innodb_buffer_pool_timeout;
+extern uint		opt_dump_innodb_buffer_pool_pct;
+extern my_bool		opt_dump_innodb_buffer_pool;
+
 #if defined(HAVE_OPENSSL)
 extern uint opt_ssl_mode;
 extern my_bool opt_use_ssl_arg;

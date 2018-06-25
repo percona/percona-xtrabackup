@@ -113,4 +113,7 @@ mdl_lock_table(ulint space_id);
 void
 mdl_unlock_all();
 
+void
+dump_innodb_buffer_pool(MYSQL *connection);
+
 #endif

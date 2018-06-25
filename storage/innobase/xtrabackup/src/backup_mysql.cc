@@ -2160,3 +2160,71 @@ mdl_unlock_all()
 	mutex_free(&mdl_lock_con_mutex);
 }
 
+void dump_innodb_buffer_pool(MYSQL *connection)
+{
+	const ssize_t routine_start_time = (ssize_t)my_time(MY_WME);
+	const ssize_t timeout = opt_dump_innodb_buffer_pool_timeout;
+
+	char *innodb_buffer_pool_dump_status;
+	char *innodb_buffer_pool_dump_pct;
+	char *change_bp_dump_pct_query;
+
+	int original_innodb_buffer_pool_dump_pct;
+
+	/* Verify if we need to change innodb_buffer_pool_dump_pct */
+	if(opt_dump_innodb_buffer_pool_pct != 0)
+	{
+		mysql_variable variables[] = {
+			{"innodb_buffer_pool_dump_pct", &innodb_buffer_pool_dump_pct},
+			{NULL, NULL}
+		};
+		read_mysql_variables(connection,
+			"SHOW GLOBAL VARIABLES LIKE 'innodb_buffer_pool_dump_pct'", variables, true);
+
+		original_innodb_buffer_pool_dump_pct = atoi(innodb_buffer_pool_dump_pct);
+
+		free_mysql_variables(variables);
+		xb_a(asprintf(&change_bp_dump_pct_query,
+				"SET GLOBAL innodb_buffer_pool_dump_pct = %u",
+				opt_dump_innodb_buffer_pool_pct));
+		xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
+	}
+
+
+	msg_ts("Executing SET GLOBAL innodb_buffer_pool_dump_now=ON...\n");
+	xb_mysql_query(mysql_connection,
+		"SET GLOBAL innodb_buffer_pool_dump_now=ON;", false);
+
+	mysql_variable status[] = {
+			{"Innodb_buffer_pool_dump_status", &innodb_buffer_pool_dump_status},
+			{NULL, NULL}
+	};
+
+	/* check if dump has been completed */
+	while (!strstr(innodb_buffer_pool_dump_status, "dump completed at"))
+	{
+		if(routine_start_time + timeout < (ssize_t)my_time(MY_WME))
+		{
+			msg_ts("InnoDB Buffer Pool Dump was not completed after %d seconds...  "
+			"Adjust --dump-innodb-buffer-pool-timeout if you need higher wait time before copying %s.\n",
+			opt_dump_innodb_buffer_pool_timeout, buffer_pool_filename);
+			break;
+		}
+
+		read_mysql_variables(connection,
+			"SHOW STATUS LIKE 'Innodb_buffer_pool_dump_status'", status, true);
+
+		sleep(1);
+	}
+
+	free_mysql_variables(status);
+
+	/* restore original innodb_buffer_pool_dump_pct */
+	if(opt_dump_innodb_buffer_pool_pct != 0)
+	{
+		xb_a(asprintf(&change_bp_dump_pct_query,
+				"SET GLOBAL innodb_buffer_pool_dump_pct = %u",
+				original_innodb_buffer_pool_dump_pct));
+		xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
+	}
+}

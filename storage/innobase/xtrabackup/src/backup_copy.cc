@@ -1559,6 +1559,9 @@ backup_finish()
 
 	/* Copy buffer pool dump or LRU dump */
 	if (!opt_rsync) {
+		if(opt_dump_innodb_buffer_pool)
+			dump_innodb_buffer_pool(mysql_connection);
+
 		if (buffer_pool_filename && file_exists(buffer_pool_filename)) {
 			const char *dst_name;
 
