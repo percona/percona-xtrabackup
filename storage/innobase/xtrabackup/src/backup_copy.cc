@@ -542,7 +542,7 @@ datafile_read(datafile_cur_t *cursor)
 
 	xtrabackup_io_throttling();
 
-	to_read = min(cursor->statinfo.st_size - cursor->buf_offset, 
+	to_read = min(cursor->statinfo.st_size - cursor->buf_offset,
 		      cursor->buf_size);
 
 	if (to_read == 0) {
@@ -1560,7 +1560,8 @@ backup_finish()
 	/* Copy buffer pool dump or LRU dump */
 	if (!opt_rsync) {
 		if(opt_dump_innodb_buffer_pool)
-			dump_innodb_buffer_pool(mysql_connection);
+			check_dump_innodb_buffer_pool(mysql_connection);
+
 
 		if (buffer_pool_filename && file_exists(buffer_pool_filename)) {
 			const char *dst_name;

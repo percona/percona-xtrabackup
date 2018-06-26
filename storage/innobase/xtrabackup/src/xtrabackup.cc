@@ -4737,6 +4737,11 @@ xtrabackup_backup_func(void)
 		exit(EXIT_FAILURE);
 	}
 
+	if (!opt_rsync) {
+		if(opt_dump_innodb_buffer_pool)
+	    	dump_innodb_buffer_pool(mysql_connection);
+	}
+
         {
         fil_system_t*   f_system = fil_system;
 

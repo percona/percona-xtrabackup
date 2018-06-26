@@ -113,7 +113,13 @@ mdl_lock_table(ulint space_id);
 void
 mdl_unlock_all();
 
+bool
+has_innodb_buffer_pool_dump_pct(void);
+
 void
 dump_innodb_buffer_pool(MYSQL *connection);
+
+void
+check_dump_innodb_buffer_pool(MYSQL *connection);
 
 #endif
