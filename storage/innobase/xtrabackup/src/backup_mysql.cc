@@ -2185,7 +2185,7 @@ dump_innodb_buffer_pool(MYSQL *connection)
 	char *change_bp_dump_pct_query;
 
 	/* Verify if we need to change innodb_buffer_pool_dump_pct */
-	if(opt_dump_innodb_buffer_pool_pct != 0 && 	has_innodb_buffer_pool_dump_pct())
+	if(opt_dump_innodb_buffer_pool_pct != 0 && has_innodb_buffer_pool_dump_pct())
 	{
 		mysql_variable variables[] = {
 			{"innodb_buffer_pool_dump_pct", &innodb_buffer_pool_dump_pct},
@@ -2246,7 +2246,7 @@ check_dump_innodb_buffer_pool(MYSQL *connection)
 	free_mysql_variables(status);
 
 	/* restore original innodb_buffer_pool_dump_pct */
-	if(opt_dump_innodb_buffer_pool_pct != 0 && 	has_innodb_buffer_pool_dump_pct())
+	if(opt_dump_innodb_buffer_pool_pct != 0 && has_innodb_buffer_pool_dump_pct())
 	{
 		xb_a(asprintf(&change_bp_dump_pct_query,
 				"SET GLOBAL innodb_buffer_pool_dump_pct = %u",

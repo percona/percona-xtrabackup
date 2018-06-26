@@ -542,7 +542,7 @@ datafile_read(datafile_cur_t *cursor)
 
 	xtrabackup_io_throttling();
 
-	to_read = min(cursor->statinfo.st_size - cursor->buf_offset,
+	to_read = min(cursor->statinfo.st_size - cursor->buf_offset, 
 		      cursor->buf_size);
 
 	if (to_read == 0) {
