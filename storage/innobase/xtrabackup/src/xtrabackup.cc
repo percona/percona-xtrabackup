@@ -4738,8 +4738,9 @@ xtrabackup_backup_func(void)
 	}
 
 	if (!opt_rsync) {
-		if(opt_dump_innodb_buffer_pool)
+		if(opt_dump_innodb_buffer_pool && has_innodb_buffer_pool_dump()) {
 	    	dump_innodb_buffer_pool(mysql_connection);
+		}
 	}
 
         {
