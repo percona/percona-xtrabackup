@@ -1559,7 +1559,7 @@ backup_finish()
 
 	/* Copy buffer pool dump or LRU dump */
 	if (!opt_rsync) {
-		if(opt_dump_innodb_buffer_pool) {
+		if(opt_dump_innodb_buffer_pool && has_innodb_buffer_pool_dump()) {
 			check_dump_innodb_buffer_pool(mysql_connection);
 		}
 
