@@ -8,7 +8,7 @@ As of |MySQL| 5.7.11, InnoDB supports data `encryption for InnoDB tables <http:/
 
 For authenticated user or application to access encrypted tablespace, InnoDB will use master encryption key to decrypt the tablespace key. The master encryption key is stored in a keyring file in the location specified by the :option:`keyring_file_data` configuration option. 
 
-Support for encrypted InnoDB tablespace backups has been implemented in |Percona XtraBackup| 2.4.2 by implementing :option:`xtrabackup --keyring-file-data` and :option:`xtrabackup --server-id` options. These options are only recognized by |xtrabackup| binary i.e., |innobackupex| will not be able to backup and prepare encrypted tablespaces.
+Support for encrypted InnoDB tablespace backups has been implemented in |Percona XtraBackup| 2.4.2 by implementing :option:`xtrabackup --keyring-file-data` option (and also :option:`xtrabackup --server-id` option, needed for |MySQL| prior to 5.7.13). These options are only recognized by |xtrabackup| binary i.e., |innobackupex| will not be able to backup and prepare encrypted tablespaces.
 
 .. contents::
    :local:
@@ -16,12 +16,22 @@ Support for encrypted InnoDB tablespace backups has been implemented in |Percona
 Creating Backup
 ===============
 
-In order to backup and prepare database containing encrypted InnoDB tablespaces, you must specify the path to keyring file by using the :option:`xtrabackup --keyring-file-data` and server id by using the :option:`--server-id` options.
+In order to backup and prepare database containing encrypted InnoDB tablespaces, you must specify the path to keyring file by using the :option:`xtrabackup --keyring-file-data` option.
 
 .. code-block:: bash
 
   xtrabackup --backup --target-dir=/data/backup/ --user=root \
-  --keyring-file-data=/var/lib/mysql-keyring/keyring --server_id=1
+  --keyring-file-data=/var/lib/mysql-keyring/keyring
+
+.. note:: for use with |MySQL| prior to 5.7.13 :option:`--server-id` option is
+   added to the backup creation command, making previous example to look like
+   the following:
+
+   .. code-block:: bash
+
+      xtrabackup --backup --target-dir=/data/backup/ --user=root \
+      --keyring-file-data=/var/lib/mysql-keyring/keyring --server-id=1
+
 
 After |xtrabackup| is finished taking the backup you should see the following message:
 
@@ -37,7 +47,7 @@ After |xtrabackup| is finished taking the backup you should see the following me
 Preparing the Backup
 ====================
 
-In order to prepare the backup you'll need to specify the keyring-file-data (server-id is stored in :file:`backup-my.cnf` file, so it can be omitted when preparing the backup). 
+In order to prepare the backup you'll need to specify the keyring-file-data (server-id is stored in :file:`backup-my.cnf` file, so it can be omitted when preparing the backup, regardless of the |MySQL| version used). 
 
 .. code-block:: bash
 
@@ -66,7 +76,7 @@ To make an incremental backup, begin with a full backup. The |xtrabackup| binary
 .. code-block:: bash
 
   xtrabackup --backup --target-dir=/data/backups/base \
-  --keyring-file-data=/var/lib/mysql-keyring/keyring --server_id=1
+  --keyring-file-data=/var/lib/mysql-keyring/keyring
 
 .. warning:: 
 
@@ -89,7 +99,7 @@ Now that you have a full backup, you can make an incremental backup based on it.
 
    xtrabackup --backup --target-dir=/data/backups/inc1 \
    --incremental-basedir=/data/backups/base \
-  --keyring-file-data=/var/lib/mysql-keyring/keyring --server_id=1
+  --keyring-file-data=/var/lib/mysql-keyring/keyring
 
 .. warning:: 
 
@@ -112,7 +122,7 @@ The meaning should be self-evident. It's now possible to use this directory as t
 
    xtrabackup --backup --target-dir=/data/backups/inc2 \
    --incremental-basedir=/data/backups/inc1 \
-   --keyring-file-data=/var/lib/mysql-keyring/keyring --server_id=1
+   --keyring-file-data=/var/lib/mysql-keyring/keyring
 
 Preparing the Incremental Backups
 ---------------------------------
