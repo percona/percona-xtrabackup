@@ -18,7 +18,7 @@ load_sakila
 
 mkdir $topdir/backup
 
-xtrabackup --backup --dump-innodb-buffer-pool --dump-innodb-buffer-pool-pct=100 --target-dir=$topdir/backup
+xtrabackup --backup --dump-innodb-buffer-pool --dump-innodb-buffer-pool-pct=100 --rsync --target-dir=$topdir/backup
 
 $MYSQL $MYSQL_ARGS -e \
        "SHOW ENGINE INNODB STATUS\G" | grep "Database pages" \
