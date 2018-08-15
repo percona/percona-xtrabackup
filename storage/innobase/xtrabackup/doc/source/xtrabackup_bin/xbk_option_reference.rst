@@ -349,6 +349,8 @@ Options
    Don't read default options from any option file. Must be given as the first
    option on the command-line.
 
+.. include:: ../.res/contents/option.no-version-check.txt
+
 .. option:: --parallel=#
 
    This option specifies the number of threads to use to copy multiple data
@@ -589,3 +591,5 @@ Options
 .. option:: --version
 
    This option prints |xtrabackup| version and exits.
+
+.. |program| replace:: :program:`xtrabackup`
