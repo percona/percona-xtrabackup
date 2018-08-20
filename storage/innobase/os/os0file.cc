@@ -203,10 +203,10 @@ bool os_is_o_direct_supported() {
 
 #ifndef _WIN32
 /** Umask for creating files */
-static ulint os_innodb_umask = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+ulint os_innodb_umask = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 #else
 /** Umask for creating files */
-static ulint os_innodb_umask = 0;
+ulint os_innodb_umask = 0;
 
 /* On Windows when using native AIO the number of AIO requests
 that a thread can handle at a given time is limited to 32

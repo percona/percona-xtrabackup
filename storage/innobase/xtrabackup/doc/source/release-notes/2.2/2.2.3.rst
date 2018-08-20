@@ -1,0 +1,44 @@
+==========================
+|Percona XtraBackup| 2.2.3
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.2.3 on June
+12th 2014. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/2.2.2/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the first GA (Generally Available) stable release in the 2.2
+series.
+
+Bugs Fixed
+----------
+
+ Fixed the |InnoDB| redo log incompatibility with 5.1/5.5 server and compressed
+ tables which was introduced by the upstream fix in |MySQL| 5.6.11 that could
+ make |InnoDB| crash on recovery when replaying redo logs created on earlier
+ versions. Bug fixed :bug:`1255476`.
+
+ |Percona XtraBackup| did not flush the |InnoDB| REDO log buffer before
+ finalizing the log copy. This would only become a problem when the binary log
+ coordinates were used after restoring from a backup: the actual data files
+ state after recovery could be inconsistent with the binary log coordinates.
+ Bug fixed :bug:`1320685`.
+
+ |innobackupex| now sets ``wsrep_causal_reads`` to ``0`` before executing
+ ``FLUSH TABLES WITH READ LOCK`` if the server is a member of the Galera
+ cluster. Bug fixed :bug:`1320441`.
+
+ :file:`storage/innobase/xtrabackup/CMakeLists.txt` now honors the
+ ``XB_DISTRIBUTION`` environment variable when configuring ``innobackupex.pl``
+ to |innobackupex|. Bug fixed :bug:`1320856`.
+
+ When `backup locks
+ <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
+ are used, ``xtrabackup_slave_info`` should be written under ``BINLOG`` lock
+ instead of ``TABLE`` lock. Bug fixed :bug:`1328532`.
+
+ Other bugs fixed: :bug:`1318540`.
+
+All of Percona's software is open-source and free, all the details of the
+release can be found in the `2.2.3 milestone
+<https://launchpad.net/percona-xtrabackup/+milestone/2.2.3-ga>`_ at Launchpad.

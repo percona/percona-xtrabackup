@@ -118,6 +118,18 @@
 #include "sql_common.h"
 #ifdef MYSQL_SERVER
 #include "sql/client_settings.h"
+
+#ifdef XTRABACKUP
+MYSQL_FIELD *cli_list_fields(MYSQL *mysql);
+bool cli_read_prepare_result(MYSQL *mysql, MYSQL_STMT *stmt);
+MYSQL_DATA *cli_read_rows(MYSQL *mysql, MYSQL_FIELD *mysql_fields, uint fields);
+int cli_stmt_execute(MYSQL_STMT *stmt);
+int cli_read_binary_rows(MYSQL_STMT *stmt);
+int cli_unbuffered_fetch(MYSQL *mysql, char **row);
+const char *cli_read_statistics(MYSQL *mysql);
+int cli_read_change_user_result(MYSQL *mysql);
+#endif
+
 #else
 #include "libmysql/client_settings.h"
 #endif
@@ -2696,7 +2708,7 @@ static MYSQL_METHODS client_methods = {
     cli_fetch_lengths,          /* fetch_lengths */
     cli_flush_use_result,       /* flush_use_result */
     cli_read_change_user_result /* read_change_user_result */
-#ifndef MYSQL_SERVER
+#if !defined(MYSQL_SERVER) || defined(XTRABACKUP)
     ,
     cli_list_fields,         /* list_fields */
     cli_read_prepare_result, /* read_prepare_result */

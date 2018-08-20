@@ -361,19 +361,19 @@ static TYPELIB innodb_stats_method_typelib = {
 #endif /* UNIV_HOTBACKUP */
 
 /** Possible values of the parameter innodb_checksum_algorithm */
-static const char *innodb_checksum_algorithm_names[] = {
+const char *innodb_checksum_algorithm_names[] = {
     "crc32", "strict_crc32", "innodb", "strict_innodb",
     "none",  "strict_none",  NullS};
 
 /** Used to define an enumerate type of the system variable
 innodb_checksum_algorithm. */
-static TYPELIB innodb_checksum_algorithm_typelib = {
+TYPELIB innodb_checksum_algorithm_typelib = {
     array_elements(innodb_checksum_algorithm_names) - 1,
     "innodb_checksum_algorithm_typelib", innodb_checksum_algorithm_names, NULL};
 
 #ifndef UNIV_HOTBACKUP
 /** Names of allowed values of innodb_flush_method */
-static const char *innodb_flush_method_names[] = {
+const char *innodb_flush_method_names[] = {
 #ifndef _WIN32 /* See srv_unix_flush_t */
     "fsync", "O_DSYNC", "littlesync", "nosync", "O_DIRECT", "O_DIRECT_NO_FSYNC",
 #else /* _WIN32; see srv_win_flush_t */
@@ -382,7 +382,7 @@ static const char *innodb_flush_method_names[] = {
     NullS};
 
 /** Enumeration of innodb_flush_method */
-static TYPELIB innodb_flush_method_typelib = {
+TYPELIB innodb_flush_method_typelib = {
     array_elements(innodb_flush_method_names) - 1,
     "innodb_flush_method_typelib", innodb_flush_method_names, NULL};
 
@@ -4268,13 +4268,13 @@ static int innodb_init(void *p) {
   /* After this point, error handling has to use
   innodb_init_abort(). */
 
-  if (!srv_sys_space.parse_params(innobase_data_file_path, true)) {
+  if (!srv_sys_space.parse_params(innobase_data_file_path, true, false)) {
     ib::error(ER_IB_MSG_545)
         << "Unable to parse innodb_data_file_path=" << innobase_data_file_path;
     DBUG_RETURN(innodb_init_abort());
   }
 
-  if (!srv_tmp_space.parse_params(innobase_temp_data_file_path, false)) {
+  if (!srv_tmp_space.parse_params(innobase_temp_data_file_path, false, false)) {
     ib::error(ER_IB_MSG_546) << "Unable to parse innodb_temp_data_file_path="
                              << innobase_temp_data_file_path;
     DBUG_RETURN(innodb_init_abort());

@@ -41,7 +41,7 @@
 SET(BOOST_PACKAGE_NAME "boost_1_66_0")
 SET(BOOST_TARBALL "${BOOST_PACKAGE_NAME}.tar.gz")
 SET(BOOST_DOWNLOAD_URL
-  "http://dl.bintray.com/boostorg/release/1.66.0/source/${BOOST_TARBALL}"
+  "http://jenkins.percona.com/downloads/boost/${BOOST_TARBALL}"
   )
 
 SET(OLD_PACKAGE_NAMES

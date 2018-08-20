@@ -534,6 +534,12 @@ extern ulong srv_max_purge_lag;
 extern ulong srv_max_purge_lag_delay;
 
 extern ulong srv_replication_delay;
+
+extern bool srv_apply_log_only;
+
+extern bool srv_backup_mode;
+extern bool srv_close_files;
+
 /*-------------------------------------------*/
 
 extern bool srv_print_innodb_monitor;
@@ -890,6 +896,10 @@ void srv_purge_wakeup(void);
 /** Check if the purge threads are active, both coordinator and worker threads
 @return true if any thread is active, false if no thread is active */
 bool srv_purge_threads_active();
+
+/** Initializes the synchronization primitives, memory system, and the thread
+ local storage. */
+void srv_general_init();
 
 #ifdef UNIV_DEBUG
 struct SYS_VAR;

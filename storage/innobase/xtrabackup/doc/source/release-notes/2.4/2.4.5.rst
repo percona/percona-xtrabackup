@@ -1,0 +1,73 @@
+==========================
+|Percona XtraBackup| 2.4.5
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.5
+on November 29th 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt
+<apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the GA (Generally Available) stable release in the 2.4
+series.
+
+New features
+------------
+
+ |Percona XtraBackup| now supports ``SHA256`` passwords. Using the ``SHA256``
+ algorithm requires either SSL encrypted connection, or using public
+ key encryption for password exchange which is only available when both
+ client and server are linked with OpenSSL.
+
+ |Percona XtraBackup| now supports `Command Options for Secure Connections
+ <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-ca>`_.
+
+ **NOTE:** Due to |xbcrypt| format changes, backups encrypted with this
+ |Percona XtraBackup| version will not be recoverable by older versions.
+ 
+
+Bugs Fixed
+----------
+
+ |Percona XtraBackup| would crash while preparing the backup, during the
+ shutdown, when master thread was performing checkpoint and purge thread was
+ expecting that all other threads completed or were idle. Bug fixed
+ :bug:`1618555`.
+
+ Safe slave backup algorithm performed too short delays between retries which
+ could cause backups to fail on a busy servers. Bug fixed :bug:`1624473`.
+
+ |Percona XtraBackup| didn't check the logblock checksums. Bug fixed
+ :bug:`1633448`.
+
+ Fixed new compilation warnings with GCC 6. Bug fixed :bug:`1641612`.
+
+ |xbcrypt| was not setting the Initialization Vector (IV) correctly (and thus
+ is was not using an IV). This was causing the same ciphertext to be generated
+ across different runs (for the same message/same key). The IV provides the
+ extra randomness to ensure that the same ciphertext is not generated across
+ runs. Bug fixed :bug:`1643949`.
+     
+ ``target-dir`` was no longer relative to current directory but to ``datadir``
+ instead. Bug fixed :bug:`1611568`.
+
+ Backup would still succeed even if |xtrabackup| would fail to write the
+ metadata. Bug fixed :bug:`1623210`.
+
+ |xbcloud| now supports EMC ECS Swift API Authorization requests. Bugs fixed
+ :bug:`1638017` and :bug:`1638020` (*Txomin Barturen*).
+
+ Some older versions of |MySQL| did not bother to initialize page type
+ field for pages which are not index pages (see upstream :mysqlbug:`76262` for
+ more information). Having this page type uninitialized could cause
+ |xtrabackup| to crash on prepare. Bug fixed :bug:`1641426`.
+
+ |Percona XtraBackup| would fail to backup *MariaDB* 10.2 with the
+ ``unsupported server version`` error message. Bug fixed :bug:`1602842`.
+
+ Fixed misleading error message about missing metadata. Bug fixed :bug:`1557027`.
+
+ Backing up with an SSL user didn't work correctly. Bug fixed :bug:`1546872`.
+
+Other bugs fixed: :bug:`1639764`, :bug:`1639767`, :bug:`1641596`, and
+:bug:`1641601`.
+

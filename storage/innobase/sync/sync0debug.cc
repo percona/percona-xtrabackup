@@ -1448,6 +1448,13 @@ static void sync_latch_meta_init() UNIV_NOTHROW {
   LATCH_ADD_MUTEX(CLONE_SNAPSHOT, SYNC_NO_ORDER_CHECK,
                   clone_snapshot_mutex_key);
 
+  // xtrabackup
+  LATCH_ADD_MUTEX(XTRA_DATAFILES_ITER_MUTEX, SYNC_MUTEX, PFS_NOT_INSTRUMENTED);
+
+  LATCH_ADD_MUTEX(XTRA_COUNT_MUTEX, SYNC_MUTEX, PFS_NOT_INSTRUMENTED);
+
+  LATCH_ADD_MUTEX(XTRA_DATADIR_ITER_T_MUTEX, SYNC_MUTEX, PFS_NOT_INSTRUMENTED);
+
   latch_id_t id = LATCH_ID_NONE;
 
   /* The array should be ordered on latch ID.We need to

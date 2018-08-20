@@ -296,6 +296,7 @@ CHECK_FUNCTION_EXISTS (vasprintf HAVE_VASPRINTF)
 CHECK_FUNCTION_EXISTS (memalign HAVE_MEMALIGN)
 CHECK_FUNCTION_EXISTS (nl_langinfo HAVE_NL_LANGINFO)
 CHECK_FUNCTION_EXISTS (ntohll HAVE_HTONLL)
+CHECK_FUNCTION_EXISTS (memset_s HAVE_MEMSET_S)
 
 CHECK_FUNCTION_EXISTS (epoll_create HAVE_EPOLL)
 # Temperarily  Quote event port out as we encounter error in port_getn

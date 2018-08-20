@@ -496,6 +496,7 @@ SET(SQL_SHARED_SOURCES
   tztime.cc
   uniques.cc
   xa.cc
+  ../libmysql/libmysql.cc
   ${MYSQL_SERVER_SUB_COMPONENT_SOURCES}
 )
 
@@ -566,7 +567,6 @@ SET(SQL_SOURCE
   protocol_callback.cc
   signal_handler.cc
   sql_audit.cc
-  sql_client.cc
   srv_session.cc
   srv_session_info_service.cc
   srv_session_service.cc
@@ -709,64 +709,12 @@ ELSE()
   SET(MYSQLD_SOURCE main.cc)
 ENDIF()
 
-MYSQL_ADD_EXECUTABLE(mysqld
-  ${MYSQLD_SOURCE} DESTINATION ${INSTALL_SBINDIR} COMPONENT Server)
-
 OPTION(DEBUG_EXTNAME "Build server as mysqld-debug (debug builds only)" OFF)
 MARK_AS_ADVANCED(DEBUG_EXTNAME)
 
 IF(DEBUG_EXTNAME)
   SET_TARGET_PROPERTIES(mysqld PROPERTIES DEBUG_OUTPUT_NAME "mysqld-debug")
 ENDIF()
-
-IF(APPLE) 
-  # Add CoreServices framework since some dloadable plugins may need it 
-  FIND_LIBRARY(CORESERVICES NAMES CoreServices) 
-  IF(CORESERVICES) 
-    TARGET_LINK_LIBRARIES(mysqld ${CORESERVICES}) 
-  ENDIF() 
-  IF(NOT BUILD_IS_SINGLE_CONFIG)
-    ADD_COMPILE_FLAGS(mysqld.cc COMPILE_FLAGS -DAPPLE_XCODE)
-  ENDIF()
-ENDIF() 
-
-IF(NOT DISABLE_SHARED)
-  SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE)
-  GET_TARGET_PROPERTY(mysqld_link_flags mysqld LINK_FLAGS)
-  IF(NOT mysqld_link_flags)
-    SET(mysqld_link_flags)
-  ENDIF()
-  IF(MSVC)
-    # Set module definition file.
-    SET_TARGET_PROPERTIES(mysqld
-      PROPERTIES LINK_FLAGS "${mysqld_link_flags} /DEF:${CMAKE_CURRENT_BINARY_DIR}/mysqld.def")
-
-    SET(_PLATFORM  x64)
-    ADD_CUSTOM_COMMAND(TARGET mysqld PRE_LINK
-      COMMAND echo ${_PLATFORM} && cscript ARGS //nologo ${PROJECT_SOURCE_DIR}/win/create_def_file.js
-      ${_PLATFORM}
-      "$<TARGET_FILE:binlog>"
-      "$<TARGET_FILE:binlogevents_static>"
-      "$<TARGET_FILE:dbug>"
-      "$<TARGET_FILE:mysys>"
-      "$<TARGET_FILE:mysys_ssl>"
-      "$<TARGET_FILE:slave>"
-      "$<TARGET_FILE:sql_main>"
-      "$<TARGET_FILE:strings>"
-      "$<TARGET_FILE:vio>"
-      > mysqld.def
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-    ADD_DEPENDENCIES(sql_main GenError)
-  ENDIF()
-ENDIF()
-
-SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE) 
-TARGET_LINK_LIBRARIES(mysqld
-  sql_main sql_gis binlog rpl master slave sql_main sql_dd sql_gis mysys mysys_ssl
-  binlogevents_static ${ICU_LIBRARIES})
-
-# Remove transitive link dependencies when linking plugins
-SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERFACE_LINK_LIBRARIES "")
 
 SET(WITH_MYSQLD_LDFLAGS "" CACHE STRING "Additional linker flags for mysqld")
 MARK_AS_ADVANCED(WITH_MYSQLD_LDFLAGS)
@@ -778,13 +726,6 @@ IF(WITH_MYSQLD_LDFLAGS)
   SET_TARGET_PROPERTIES(mysqld PROPERTIES LINK_FLAGS 
      "${MYSQLD_LINK_FLAGS} ${WITH_MYSQLD_LDFLAGS}")
 ENDIF()
-
-# See DEBUG_EXTNAME above: mysqld may already have name mysqld-debug,
-# and the rename is a no-op. If it is called 'mysqld' we rename it.
-INSTALL_DEBUG_TARGET(mysqld
-  DESTINATION ${INSTALL_SBINDIR}
-  RENAME mysqld-debug${CMAKE_EXECUTABLE_SUFFIX}
-)
 
 # Handle out-of-source build from source package with possibly broken 
 # bison. Copy bison output to from source to build directory, if not already 

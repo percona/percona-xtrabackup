@@ -678,7 +678,7 @@ static void dict_stats_update_transient_for_index(
  are not saved on disk.
  This was the only way to calculate statistics before the
  Persistent Statistics feature was introduced. */
-static void dict_stats_update_transient(
+void dict_stats_update_transient(
     dict_table_t *table) /*!< in/out: table */
 {
   dict_index_t *index;

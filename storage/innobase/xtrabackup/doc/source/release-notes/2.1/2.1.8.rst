@@ -1,0 +1,28 @@
+============================
+ |Percona XtraBackup| 2.1.8 
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.8 on March 6th 2014. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.6/>`_ and :doc:`Percona Software Repositories </installation>`.
+
+This release is the current GA (Generally Available) stable release in the 2.1 series.
+
+Bugs Fixed
+----------
+
+ Due to incorrect usage of ``posix_fadvise()`` hints, |Percona XtraBackup| discarded read-ahead buffers which resulted in higher ``I/O`` rate on the backup stage. Bug fixed :bug:`1093385`.
+
+ Spurious trailing data blocks that would normally be ignored by |InnoDB| could lead to an assertion failure on the backup stage. Bug fixed :bug:`1177201`.
+
+ A spurious warning message could cause issues with third-party wrapper scripts. Bug fixed :bug:`1271956`.
+
+ :ref:`xbcrypt <xbcrypt>` could fail with the ``xbcrypt:xb_crypt_read_chunk: unable to read chunk iv size at offset`` error under some circumstances. Bug fixed :bug:`1273196`.
+
+ :ref:`xbstream <xbstream_binary>` could sometimes hang when extracting a broken or incomplete input stream. Bug fixed :bug:`1273207`.
+
+ Preparing backups of |MySQL| or |Percona Server| 5.6 could raise an assertion failure in |Percona XtraBackup|. Bug fixed :bug:`1273468`.
+
+ The downtime is decreased when the :option:`innobackupex --safe-slave-backup` option is used to backup a replication slave. The SQL thread is now started before a temporary copy of redo log is streamed into the final location. Bug fixed :bug:`1284778`.
+
+ Disabled the "binary version check" functionality in the VersionCheck  module due to security concerns. Bug fixed :bug:`1285166`.
+
+Other bugs fixed: :bug:`1284078`. 

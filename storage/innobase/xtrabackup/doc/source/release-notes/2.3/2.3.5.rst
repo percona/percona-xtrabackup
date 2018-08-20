@@ -1,0 +1,46 @@
+============================
+ |Percona XtraBackup| 2.3.5
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.3.5 on July
+8th 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.5/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.3
+series.
+
+Bugs fixed
+==========
+
+ Backup process would fail if :option:`xtrabackup --throttle` option was used.
+ Bug fixed :bug:`1554235`.
+
+ :file:`.ibd` files for remote tablespaces were not copied back to original
+ location pointed by the :file:`.isl` files. Bug fixed :bug:`1555423`.
+
+ When called with insufficient parameters, like specifying the empty
+ :option:`xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
+ Bug fixed :bug:`1566228`.
+
+ Documentation states that the default value for
+ :option:`xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
+ ``update``. Changed the default value to reflect the documentation. Bug fixed
+ :bug:`1566315`.
+
+ Free Software Foundation address in copyright notices was outdated. Bug fixed
+ :bug:`1222777`.
+
+ Backup process would fail if the ``datadir`` specified on the command-line was
+ not the same as one that is reported by the server. |Percona XtraBackup| now
+ allows the ``datadir`` from :file:`my.cnf` override the one from ``SHOW
+ VARIABLES``. |xtrabackup| will print a warning that they don't match, but
+ continue. Bug fixed :bug:`1526467`.
+
+ Backup process would fail on |MariaDB| if binary logs were in non-standard
+ directory. Bug fixed :bug:`1517629`.
+
+ Output of :option:`xtrabackup --slave-info` option was missing an apostrophe.
+ Bug fixed :bug:`1573371`.
+
+Other bugs fixed: :bug:`1599397`.

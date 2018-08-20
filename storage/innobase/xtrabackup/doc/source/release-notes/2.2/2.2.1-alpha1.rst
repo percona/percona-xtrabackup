@@ -1,0 +1,58 @@
+=================================
+|Percona XtraBackup| 2.2.1-alpha1
+=================================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.2.1-alpha1 on
+March 28th 2014. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/2.2.1/>`_. This **ALPHA** release,
+will be available in :ref:`Debian experimental <debian_testing>` and
+:ref:`CentOS testing <yum_testing>` repositories.
+
+This is an **ALPHA** quality release and it is not intended for production. If
+you want a high quality, Generally Available release, the current Stable
+version should be used (currently 2.1.8 in the 2.1 series at the time of
+writing).
+
+This release contains all of the features and bug fixes in
+:doc:`Percona XtraBackup 2.1.8 </release-notes/2.1/2.1.8>`, plus the following:
+
+New features
+------------
+
+ |Percona XtraBackup| has removed the multiple binaries (``xtrabackup_56``,
+ ``xtrabackup_55``, ``xtrabackup``) and now uses single ``xtrabackup`` binary
+ instead for handling backups. Single binary implementation removed the
+ requirement to download server source tarballs and removed different patches
+ which resulted in cleaner code.
+
+ |Percona XtraBackup| source layout has been changed to implement the single
+ binary. |Percona XtraBackup| code can now be found in
+ :file:`storage/innobase/xtrabackup`.
+
+ |Percona XtraBackup| implemented support for `Backup Locks
+ <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_.
+
+ |Percona XtraBackup| can now store :ref:`backup history <storing_history>` on
+ the server itself in a special table created for that purpose.
+
+ ``innobackupex-1.5.1`` symlink has been removed, instead |innobackupex| binary
+ should be used.
+
+ |Percona XtraBackup| has removed the ``build.sh`` script and it's now
+ :ref:`built with CMake <compiling_xtrabackup>`.
+
+ |Percona XtraBackup| has been rebased on |MySQL| 5.6.16.
+
+Bugs Fixed
+----------
+
+ Information about tool version used to take the backup was added by
+ implementing :ref:`backup history <storing_history>` feature. Bug fixed
+ :bug:`1133017`.
+
+ If an XtraDB-based binary was used to a backup an |InnoDB| database, it will
+ convert it to |XtraDB| by adding the ``XTRADB_1`` marker in the dictionary
+ header page and by adding the ``SYS_STATS`` table. Bug fixed :bug:`988310`.
+
+Other bugs fixed: :bug:`721690`, :bug:`1255899`, :bug:`1255901`,
+:bug:`1268300`, and :bug:`788316`.

@@ -1,0 +1,9 @@
+*******************************************************************************
+*    This is just a simple text file with enough data to make sure to fill a  *
+*     full encryption window. It will be stored in the source tree in both    *
+*  encrypted in v1 format and decrypted for comparison after decrypting with  *
+* the xbcrypt utility to validate that newer xbcrypt decryptions can properly *
+*     read and decrypt files encrypted with older versions of xtrabackup.     *
+*   The encrypted version of this file will be encrypted with AES256 and the  *
+*                      key percona_xtrabackup_is_awesome___                   *
+*******************************************************************************

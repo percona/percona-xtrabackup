@@ -1,0 +1,37 @@
+===========================
+|Percona XtraBackup| 2.4.10
+===========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.10 on
+March 30, 2018. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.10/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is based on `MySQL 5.7.19
+<http://dev.mysql.com/doc/relnotes/mysql/5.7/en/news-5-7-19.html>`_
+and is the current GA (Generally Available) stable release in the 2.4 series.
+
+Starting from now, |Percona XtraBackup| issue tracking system was moved from
+launchpad to `JIRA <https://jira.percona.com/projects/PXB>`_.
+All Percona software is open-source and free.
+
+Bugs fixed
+==========
+
+* xbcrypt with ``--encrypt-key-file`` option was failing due to regression
+  in |Percona XtraBackup| 2.4.9. Bug fixed :jirabug:`PXB-518`.
+
+* Simultaneous usage of both ``--lock-ddl`` and ``--lock-ddl-per-table`` options caused
+  |Percona XtraBackup| lock with the backup process never completed. Bug fixed
+  :jirabug:`PXB-792`.
+
+* Compilation under Mac OS X was broken. Bug fixed :jirabug:`PXB-796`.
+
+* A regression of the maximum number of pending reads and the unnoticed earlier
+  possibility of a pending reads related deadlock caused |Percona XtraBackup|
+  to stuck in prepare stage. Bug fixed: :jirabug:`PXB-1467`.
+
+* |Percona XtraBackup| skipped tablespaces with corrupted first page instead of
+  aborting the backup. Bug fixed :jirabug:`PXB-1497`.
+
+Other bugs fixed: :jirabug:`PXB-513`.

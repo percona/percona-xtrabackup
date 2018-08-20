@@ -313,10 +313,12 @@ we already have a doublewrite buffer created in the data files. If we are
 upgrading to an InnoDB version which supports multiple tablespaces, then this
 function performs the necessary update operations. If we are in a crash
 recovery, this function loads the pages from double write buffer into memory.
-@param[in]	file		File handle
-@param[in]	path		Path name of file
+@param[in]	file	                File handle
+@param[in]  path                  Path name of file
+@param[in]  load_corrupt_pages    Whether to load corrupt pages
 @return DB_SUCCESS or error code */
-dberr_t buf_dblwr_init_or_load_pages(pfs_os_file_t file, const char *path) {
+dberr_t buf_dblwr_init_or_load_pages(pfs_os_file_t file, const char *path,
+                                     bool load_corrupt_pages) {
   byte *buf;
   byte *page;
   page_no_t block1;
@@ -451,7 +453,7 @@ dberr_t buf_dblwr_init_or_load_pages(pfs_os_file_t file, const char *path) {
         return (err);
       }
 
-    } else {
+    } else if (load_corrupt_pages) {
       recv_dblwr.add(page);
     }
 

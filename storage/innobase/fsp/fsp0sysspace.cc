@@ -78,8 +78,19 @@ partition may have a specification like "\\.\C::1Gnewraw" or
 "\\.\PHYSICALDRIVE2:1Gnewraw".
 @param[in]	ptr		system tablespace file path spec
 @return next character in string after the file name */
-char *SysTablespace::parse_file_name(char *ptr) {
+char *SysTablespace::parse_file_name(char *ptr, bool filenames_only) {
   const char *start = ptr;
+
+  /* XtraBackup needs only file names on prepare */
+  if (filenames_only) {
+    char* p;
+
+    for (p = ptr; *p && *p != ';'; p++) {
+      if (*p == OS_PATH_SEPARATOR) {
+        ptr = p + 1;
+      }
+    }
+  }
 
   while ((*ptr != ':' && *ptr != '\0') ||
          (ptr != start && *ptr == ':' &&
@@ -132,7 +143,8 @@ page_no_t SysTablespace::parse_units(char *&ptr) {
 @param[in]	filepath_spec	path to data files
 @param[in]	supports_raw	true if the tablespace supports raw devices
 @return true on success parse */
-bool SysTablespace::parse_params(const char *filepath_spec, bool supports_raw) {
+bool SysTablespace::parse_params(const char *filepath_spec, bool supports_raw,
+                                 bool filenames_only) {
   char *filepath;
   page_no_t size;
   ulint n_files = 0;
@@ -148,7 +160,7 @@ bool SysTablespace::parse_params(const char *filepath_spec, bool supports_raw) {
   while (*ptr != '\0') {
     filepath = ptr;
 
-    ptr = parse_file_name(ptr);
+    ptr = parse_file_name(ptr, filenames_only);
 
     if (ptr == filepath) {
       ib::error(ER_IB_MSG_431) << "File Path Specification '" << filepath_spec
@@ -254,7 +266,7 @@ bool SysTablespace::parse_params(const char *filepath_spec, bool supports_raw) {
   while (*ptr != '\0') {
     filepath = ptr;
 
-    ptr = parse_file_name(ptr);
+    ptr = parse_file_name(ptr, false);
 
     if (*ptr == ':') {
       /* Make filepath a null-terminated string */
@@ -321,6 +333,7 @@ void SysTablespace::shutdown() {
   m_created_new_raw = 0;
   m_is_tablespace_full = false;
   m_sanity_checks_done = false;
+  fil_space_t::s_sys_space = nullptr;
 }
 
 /** Verify the size of the physical file.
@@ -531,7 +544,9 @@ dberr_t SysTablespace::read_lsn_and_check_flags(lsn_t *flushed_lsn) {
 
   ut_a(it->order() == 0);
 
-  buf_dblwr_init_or_load_pages(it->handle(), it->filepath());
+  /* XtraBackup never loads corrupted pages from
+  the doublewrite buffer */
+  buf_dblwr_init_or_load_pages(it->handle(), it->filepath(), false);
 
   /* Check the contents of the first page of the
   first datafile. */

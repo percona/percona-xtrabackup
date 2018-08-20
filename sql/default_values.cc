@@ -67,7 +67,7 @@
   @return           In-memory length of values of the submitted column.
 */
 
-static size_t column_pack_length(const dd::Column &col_obj) {
+size_t column_pack_length(const dd::Column &col_obj) {
   size_t pack_length = 0;
 
   switch (col_obj.type()) {

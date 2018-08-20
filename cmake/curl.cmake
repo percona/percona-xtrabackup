@@ -43,7 +43,7 @@ MACRO(MYSQL_CHECK_CURL)
     #  CURL_LIBRARIES      - List of libraries when using curl.
     #  CURL_FOUND          - True if curl found.
     #  CURL_VERSION_STRING - the version of curl found (since CMake 2.8.8)
-    FIND_PACKAGE(CURL)
+    FIND_PACKAGE(CURL REQUIRED)
     IF(CURL_FOUND AND
        CURL_LIBRARIES AND
        NOT CURL_LIBRARIES MATCHES "CURL_LIBRARY-NOTFOUND" AND

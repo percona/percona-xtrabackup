@@ -1,0 +1,58 @@
+==========================
+|Percona XtraBackup| 2.3.6
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.3.6 on
+November 29th 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.6/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.3
+series.
+
+New Features
+============
+
+ |Percona XtraBackup| now supports ``SHA256`` passwords. Using the ``SHA256``
+ algorithm requires either SSL encrypted connection, or using public
+ key encryption for password exchange which is only available when both
+ client and server are linked with OpenSSL.
+
+ |Percona XtraBackup| now supports `Command Options for Secure Connections
+ <https://dev.mysql.com/doc/refman/5.6/en/secure-connection-options.html#option_general_ssl-ca>`_.
+
+ **NOTE:** Due to |xbcrypt| format changes, backups encrypted with this
+ |Percona XtraBackup| version will not be recoverable by older versions.
+
+Bugs fixed
+==========
+
+ Fixed intermittent assertion failures that were happening when |Percona
+ XtraBackup| couldn't correctly identify server version. Bug fixed
+ :bug:`1568009`.
+
+ Safe slave backup algorithm performed too short delays between retries which
+ could cause backups to fail on a busy servers. Bug fixed :bug:`1624473`.
+
+ Fixed new compilation warnings with GCC 6. Bug fixed :bug:`1641612`.
+
+ |xbcrypt| was not setting the Initialization Vector (IV) correctly (and thus
+ is was not using an IV). This was causing the same ciphertext to be generated
+ across different runs (for the same message/same key). The IV provides the
+ extra randomness to ensure that the same ciphertext is not generated across
+ runs. Bug fixed :bug:`1643949`.
+
+ Backup would still succeed even if |xtrabackup| would fail to write the
+ metadata. Bug fixed :bug:`1623210`.
+
+ |xbcloud| now supports EMC ECS Swift API Authorization requests. Bugs fixed
+ :bug:`1638017` and :bug:`1638020` (*Txomin Barturen*).
+
+ |Percona XtraBackup| would fail to backup *MariaDB* 10.2 with the
+ ``unsupported server version`` error message. Bug fixed :bug:`1602842`.
+
+ Fixed misleading error message about missing metadata. Bug fixed :bug:`1557027`.
+
+ Backing up with an SSL user didn't work correctly. Bug fixed :bug:`1546872`.
+
+Other bugs fixed: :bug:`1639764` and :bug:`1639767`.

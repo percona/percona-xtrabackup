@@ -1,0 +1,64 @@
+============================
+ |Percona XtraBackup| 2.4.3
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.3
+on May 23rd 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt
+<apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the GA (Generally Available) stable release in the 2.4
+series.
+
+New features
+------------
+
+ |Percona XtraBackup| has implemented new
+ :option:`xtrabackup --reencrypt-for-server-id` option. Using this option
+ allows users to start the server instance with different ``server_id``
+ from the one the encrypted backup was taken from, like a replication slave
+ or a galera node. When this option is used, |xtrabackup| will, as a prepare
+ step, generate a new master key with ID based on the new ``server_id``,
+ store it into keyring file and re-encrypt the tablespace keys inside of
+ tablespace headers.
+
+
+Bugs Fixed
+----------
+
+ Running DDL statements on |Percona Server| 5.7 during the backup process
+ could in some cases lead to failure while preparing the backup. Bug fixed
+ :bug:`1555626`.
+
+ |MySQL| 5.7 can sometimes skip redo logging when creating an index. If such
+ ``ALTER TABLE`` is being issued during the backup, the backup would be
+ inconsistent. |xtrabackup| will now abort with error message if such ``ALTER
+ TABLE`` has been done during the backup. Bug fixed :bug:`1582345`.
+
+ :file:`.ibd` files for remote tablespaces were not copied back to original
+ location pointed by the :file:`.isl` files. Bug fixed :bug:`1555423`.
+
+ When called with insufficient parameters, like specifying the empty
+ :option:`xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
+ Bug fixed :bug:`1566228`.
+
+ Documentation states that the default value for
+ :option:`xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
+ ``update``. Changed the default value to reflect the documentation. Bug fixed
+ :bug:`1566315`.
+
+ When :option:`xtrabackup --keyring-file-data` option was specified, but no
+ keyring file was found, |xtrabackup| would create an empty one instead of
+ reporting an error. Bug fixed :bug:`1578607`.
+
+ If ``ALTER INSTANCE ROTATE INNODB MASTER KEY`` was run at same time when
+ :option:`xtrabackup --backup` was bootstrapping it could catch a moment when
+ the key was not written into the keyring file yet and |xtrabackup| would
+ overwrite the keyring with the old copy of a keyring, so the new key would be
+ lost. Bug fixed :bug:`1582601`.
+
+ Output of :option:`xtrabackup --slave-info` option was missing an apostrophe.
+ Bug fixed :bug:`1573371`.
+
+
+

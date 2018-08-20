@@ -66,6 +66,16 @@ void Tablespace::shutdown() {
   m_files.clear();
 
   m_space_id = SPACE_UNKNOWN;
+
+  if (m_name != NULL) {
+    ut_free(m_name);
+    m_name = NULL;
+  }
+  if (m_path != NULL) {
+    ut_free(m_path);
+    m_path = NULL;
+  }
+
 }
 
 /** Note that the data file was found.

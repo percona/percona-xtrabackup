@@ -1,0 +1,64 @@
+==========================
+|Percona XtraBackup| 2.2.5
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.2.5 on
+October 2nd 2014. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/2.2.5/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current stable release in the 2.2 series.
+
+New Features
+------------
+
+ |Percona XtraBackup| has been rebased on |MySQL| 5.6.21.
+
+Bugs Fixed
+----------
+
+ The fix for bug :bug:`1079700` introduced a problem for users with huge
+ numbers of |InnoDB| tablespaces, and the workaround of raising the open files
+ limits didn't work in all cases due to a limitation in the Linux kernel. A new
+ :option:`innobackupex --close-files` option has been implemented to close the
+ file handles once they are no longer accessed. **NOTE:** Using this option may
+ result in a broken backup if DDL is performed on |InnoDB| tables during the
+ backup procedure. Bug fixed :bug:`1222062`.
+
+ Fix for bug :bug:`1206309` introduced a regression in |Percona XtraBackup|
+ 2.2.0 which caused |Percona XtraBackup| to fail to copy redo logs in random
+ cases. Bug fixed :bug:`1365835`.
+
+ :option:`innobackupex --galera-info` didn't copy the last binary log file when
+ it was taking a backup from server where `backup locks
+ <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
+ are supported. Bug fixed :bug:`1368577`.
+
+ |xtrabackup| binary would accept arguments that were not options, which could
+ lead to unexpected results. Bug fixed :bug:`1367377`.
+
+ If |innobackupex| is run against |MySQL| 5.1 with built-in InnoDB, it will now
+ suggest using |Percona XtraBackup| 2.0 or upgrading to InnoDB plugin, rather
+ than just failing with the generic ``unsupported server version`` message. Bug
+ fixed :bug:`1335101`.
+
+ Using the (deprecated) ``log`` parameter in mysqld section would cause backups
+ to fail. Bug fixed :bug:`1347698`.
+
+ |Percona XtraBackup| now uses |MySQL| code to get the stack trace in case
+ |Percona XtraBackup| crashes with a segmentation fault or an assertion
+ failure. Bug fixed :bug:`766305`.
+
+ Attempt to use any of the following options without the
+ :option:`innobackupex --incremental` option now fails with an error message
+ rather than creates a full backup: :option:`innobackupex --incremental-lsn`,
+ :option:`innobackupex --incremental-basedir`,
+ :option:`innobackupex --incremental-history-name`,
+ :option:`innobackupex --incremental-history-uuid`. Bug fixed :bug:`1213778`.
+
+Other bugs fixed: :bug:`1367613`, :bug:`1368574`, :bug:`1370462`,
+:bug:`1371441`, :bug:`1373429`, :bug:`1373984`, and :bug:`1265070`.
+
+All of Percona's software is open-source and free, all the details of the
+release can be found in the `2.2.5 milestone
+<https://launchpad.net/percona-xtrabackup/+milestone/2.2.5>`_ at Launchpad.

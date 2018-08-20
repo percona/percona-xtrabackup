@@ -56,7 +56,8 @@ bool buf_dblwr_create(void);
  function performs the necessary update operations. If we are in a crash
  recovery, this function loads the pages from double write buffer into memory.
  @return DB_SUCCESS or error code */
-dberr_t buf_dblwr_init_or_load_pages(pfs_os_file_t file, const char *path);
+dberr_t buf_dblwr_init_or_load_pages(pfs_os_file_t file, const char *path,
+                                     bool load_corrupt_pages);
 
 /** Process and remove the double write buffer pages for all tablespaces. */
 void buf_dblwr_process(void);

@@ -1,0 +1,17 @@
+===========================
+|Percona XtraBackup| 2.4.11
+===========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.11 on
+April 23, 2018. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.11/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+All Percona software is open-source and free.
+
+New features and improvements
+=============================
+
+* The support of the |Percona Server| `encrypted general tablespaces <https://www.percona.com/doc/percona-server/5.7/management/data_at_rest_encryption.html#id7>`_ was implemented in this version of |Percona XtraBackup|. Issue fixed :jirabug:`PXB-1513`.
+  
+* |Percona XtraBackup| is now able to backup encrypted |Percona Server| instances which are using `keyring_vault plugin <https://www.percona.com/doc/percona-server/5.7/management/data_at_rest_encryption.html#id13>`_. Issue fixed :jirabug:`PXB-1514`.

@@ -65,6 +65,7 @@ Data dictionary interface */
 #include "query_options.h"
 #include "sql_base.h"
 #include "sql_table.h"
+#include "default_values.h"
 #endif /* !UNIV_HOTBACKUP */
 #include <bitset>
 
@@ -208,6 +209,739 @@ bool dd_mdl_for_undo(const trx_t *trx) {
   Check TRX_FORCE_ROLLBACK. */
   return (thd != nullptr && !thd->transaction_rollback_request &&
           ((trx->in_innodb & TRX_FORCE_ROLLBACK) == 0));
+}
+
+/** Determine if a table contains a fulltext index.
+@param[in]      table   dd::Table
+@return whether the table contains any fulltext index */
+inline bool dd_table_contains_fulltext(const dd::Table &table) {
+  for (const dd::Index *index : table.indexes()) {
+    if (index->type() == dd::Index::IT_FULLTEXT) {
+      return (true);
+    }
+  }
+  return (false);
+}
+
+ulint get_innobase_type_from_dd(const dd::Column *col, ulint &unsigned_type) {
+  unsigned_type = col->is_unsigned() ? DATA_UNSIGNED : 0;
+
+  switch (col->type()) {
+    case dd::enum_column_types::DECIMAL:
+      return DATA_DECIMAL;
+
+    case dd::enum_column_types::LONG:
+      return DATA_INT;
+    case dd::enum_column_types::LONGLONG:
+      return DATA_INT;
+    case dd::enum_column_types::TINY:
+      return DATA_INT;
+    case dd::enum_column_types::SHORT:
+      return DATA_INT;
+    case dd::enum_column_types::INT24:
+      return DATA_INT;
+    case dd::enum_column_types::DATE:
+      return DATA_INT;
+    case dd::enum_column_types::YEAR:
+      return DATA_INT;
+    case dd::enum_column_types::NEWDATE:
+      return DATA_INT;
+    case dd::enum_column_types::TIME:
+      return DATA_INT;
+    case dd::enum_column_types::DATETIME:
+      return DATA_INT;
+    case dd::enum_column_types::TIMESTAMP:
+      return DATA_INT;
+
+    case dd::enum_column_types::FLOAT:
+      return DATA_FLOAT;
+
+    case dd::enum_column_types::DOUBLE:
+      return DATA_DOUBLE;
+
+    case dd::enum_column_types::TYPE_NULL:
+      return 0;
+
+    case dd::enum_column_types::VAR_STRING:
+    case dd::enum_column_types::VARCHAR:
+      if (col->collation_id() == my_charset_bin.number) {
+        return DATA_BINARY;
+      } else if (col->collation_id() == my_charset_latin1.number) {
+        return DATA_VARCHAR;
+      }
+      return DATA_VARMYSQL;
+
+    case dd::enum_column_types::BIT:
+      return DATA_FIXBINARY;
+    case dd::enum_column_types::STRING:
+      if (col->collation_id() == my_charset_bin.number) {
+        return DATA_FIXBINARY;
+      } else if (col->collation_id() == my_charset_latin1.number) {
+        return DATA_CHAR;
+      }
+      return DATA_MYSQL;
+
+    case dd::enum_column_types::NEWDECIMAL:
+      return DATA_FIXBINARY;
+
+    case dd::enum_column_types::TIME2:
+      return DATA_FIXBINARY;
+    case dd::enum_column_types::TIMESTAMP2:
+      return DATA_FIXBINARY;
+    case dd::enum_column_types::DATETIME2:
+      return DATA_FIXBINARY;
+
+    case dd::enum_column_types::ENUM:
+      unsigned_type = DATA_UNSIGNED;
+      return DATA_INT;
+    case dd::enum_column_types::SET:
+      unsigned_type = DATA_UNSIGNED;
+      return DATA_INT;
+
+    case dd::enum_column_types::TINY_BLOB:
+      return DATA_BLOB;
+    case dd::enum_column_types::MEDIUM_BLOB:
+      return DATA_BLOB;
+    case dd::enum_column_types::BLOB:
+      return DATA_BLOB;
+    case dd::enum_column_types::LONG_BLOB:
+      return DATA_BLOB;
+    case dd::enum_column_types::JSON:
+      return DATA_BLOB;
+
+    case dd::enum_column_types::GEOMETRY:
+      return DATA_GEOMETRY;
+
+    default:
+      DBUG_ASSERT(!"Should not hit here"); /* purecov: deadcode */
+  }
+
+  return MYSQL_TYPE_LONG;
+}
+
+dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
+                                        const dd::Partition *dd_part,
+                                        const dd::String_type *schema_name,
+                                        bool is_implicit) {
+  mem_heap_t *heap = mem_heap_create(1000);
+
+  char table_name[MAX_FULL_NAME_LEN + 1];
+  char tmp_schema[MAX_DATABASE_NAME_LEN + 1];
+  char tmp_tablename[MAX_TABLE_NAME_LEN + 1];
+
+  tablename_to_filename(schema_name->c_str(), tmp_schema,
+                        MAX_DATABASE_NAME_LEN + 1);
+  tablename_to_filename(dd_table->name().c_str(), tmp_tablename,
+                        MAX_TABLE_NAME_LEN + 1);
+  snprintf(table_name, sizeof table_name, "%s/%s", tmp_schema, tmp_tablename);
+
+  bool has_doc_id = false;
+
+  /* First check if dd::Table contains the right hidden column
+  as FTS_DOC_ID */
+  const dd::Column *doc_col;
+  doc_col = dd_find_column(dd_table, FTS_DOC_ID_COL_NAME);
+
+  /* Check weather this is a proper typed FTS_DOC_ID */
+  if (doc_col && doc_col->type() == dd::enum_column_types::LONGLONG &&
+      !doc_col->is_nullable()) {
+    has_doc_id = true;
+  }
+
+  const bool fulltext = dd_table_contains_fulltext(*dd_table);
+
+  /* If there is a fulltext index, then it must have a FTS_DOC_ID */
+  if (fulltext) {
+    ut_ad(has_doc_id);
+  }
+
+  ulint add_doc_id = 0;
+
+  /* Need to add FTS_DOC_ID column if it is not defined by user,
+  since TABLE_SHARE::fields does not contain it if it is a hidden col */
+  if (has_doc_id && doc_col->is_se_hidden()) {
+    add_doc_id = 1;
+  }
+
+  ulint n_cols = 0;
+  for (auto dd_col : dd_table->columns()) {
+    if (!dd_col->is_se_hidden()) n_cols++;
+  }
+  n_cols += add_doc_id;
+
+  ulint n_v_cols = 0;
+  for (auto dd_col : dd_table->columns()) {
+    if (dd_col->is_virtual()) n_v_cols++;
+  }
+
+  dict_table_t *table = dict_mem_table_create(
+    table_name, 0, n_cols, n_v_cols, 0, 0);
+
+  table->id = dd_table->se_private_id();
+
+  if (dd_table->se_private_data().exists(
+          dd_table_key_strings[DD_TABLE_DATA_DIRECTORY])) {
+    table->flags |= DICT_TF_MASK_DATA_DIR;
+  }
+
+  /* Check if this table is FTS AUX table, if so, set DICT_TF2_AUX flag */
+  fts_aux_table_t aux_table;
+  if (fts_is_aux_table_name(&aux_table, table_name, strlen(table_name))) {
+    DICT_TF2_FLAG_SET(table, DICT_TF2_AUX);
+    table->parent_id = aux_table.parent_id;
+  }
+
+  table->fts = nullptr;
+  if (has_doc_id) {
+    if (fulltext) {
+      DICT_TF2_FLAG_SET(table, DICT_TF2_FTS);
+    }
+
+    if (add_doc_id) {
+      DICT_TF2_FLAG_SET(table, DICT_TF2_FTS_HAS_DOC_ID);
+    }
+
+    if (fulltext || add_doc_id) {
+      table->fts = fts_create(table);
+      table->fts->cache = fts_cache_create(table);
+    }
+  }
+
+  bool is_encrypted = false;
+  bool is_discard = false;
+
+  /* Set encryption option. */
+  dd::String_type encrypt;
+  if (dd_table->table().options().exists("encrypt_type")) {
+    dd_table->table().options().get("encrypt_type", encrypt);
+    if (!Encryption::is_none(encrypt.c_str())) {
+      ut_ad(innobase_strcasecmp(encrypt.c_str(), "y") == 0);
+      is_encrypted = true;
+    }
+  }
+
+  /* Check discard flag. */
+  const dd::Properties &p = dd_table->table().se_private_data();
+  if (p.exists(dd_table_key_strings[DD_TABLE_DISCARD])) {
+    p.get_bool(dd_table_key_strings[DD_TABLE_DISCARD], &is_discard);
+  }
+
+  if (is_discard) {
+    table->ibd_file_missing = true;
+    DICT_TF2_FLAG_SET(table, DICT_TF2_DISCARDED);
+  }
+
+  bool is_redundant = false;
+  bool blob_prefix = false;
+
+  switch (dd_table->row_format()) {
+    case dd::Table::RF_REDUNDANT:
+      is_redundant = true;
+      blob_prefix = true;
+      break;
+    case dd::Table::RF_COMPACT:
+      blob_prefix = true;
+      break;
+    default:
+      break;
+  }
+
+  if (!is_redundant) {
+    table->flags |= DICT_TF_COMPACT;
+  }
+
+  if (!blob_prefix) {
+    table->flags |= (1 << DICT_TF_POS_ATOMIC_BLOBS);
+  }
+
+  if (is_implicit) {
+    DICT_TF2_FLAG_SET(table, DICT_TF2_USE_FILE_PER_TABLE);
+  } else {
+    table->flags |= (1 << DICT_TF_POS_SHARED_SPACE);
+  }
+
+  /* since DD object ID is always INVALID_OBJECT_ID, xtrabackup is assimung
+  that temporary table name starts with '#' */
+  bool is_temp = (table->name.m_name[0] == '#');
+  if (is_temp) {
+    table->flags2 |= DICT_TF2_TEMPORARY;
+  }
+
+  if (is_encrypted) {
+    /* We don't support encrypt intrinsic and temporary table.  */
+    ut_ad(!table->is_intrinsic() && !table->is_temporary());
+    DICT_TF2_FLAG_SET(table, DICT_TF2_ENCRYPTION);
+  }
+
+  ulint i = 0;
+  for (const auto dd_col : dd_table->columns()) {
+    if (dd_col->is_se_hidden()) continue;
+
+    ulint prtype = 0;
+
+    ++i;
+
+    ulint nulls_allowed;
+    ulint unsigned_type;
+    ulint binary_type;
+    ulint charset_no;
+    ulint long_true_varchar;
+    ulint field_length = column_pack_length(*dd_col);
+    ulint col_len = field_length;
+    enum_field_types field_type = dd_get_old_field_type(dd_col->type());
+    ulint mtype = get_innobase_type_from_dd(dd_col, unsigned_type);
+
+    /* Following are MySQL internal types, never used in protocol. We have
+    field->real_type(), lets convert it to field->type() */
+    switch (field_type) {
+      case MYSQL_TYPE_TIME2:
+        field_type = MYSQL_TYPE_TIME;
+        break;
+      case MYSQL_TYPE_DATETIME2:
+        field_type = MYSQL_TYPE_DATETIME;
+        break;
+      case MYSQL_TYPE_TIMESTAMP2:
+        field_type = MYSQL_TYPE_TIMESTAMP;
+        break;
+      default:
+        break;
+    }
+
+    long_true_varchar = 0;
+    if (field_type == MYSQL_TYPE_VARCHAR) {
+      col_len -= HA_VARCHAR_PACKLENGTH(field_length);
+
+      if (HA_VARCHAR_PACKLENGTH(field_length) == 2) {
+        long_true_varchar = DATA_LONG_TRUE_VARCHAR;
+      }
+    }
+
+    nulls_allowed = dd_col->is_nullable() ? 0 : DATA_NOT_NULL;
+
+    /* Convert non nullable fields in FTS AUX tables as nullable.
+    This is because in 5.7, we created FTS AUX tables clustered
+    index with nullable field, although NULLS are not inserted.
+    When fields are nullable, the record layout is dependent on
+    that. When registering FTS AUX Tables with new DD, we cannot
+    register nullable fields as part of Primary Key. Hence we register
+    them as non-nullabe in DD but treat as nullable in InnoDB.
+    This way the compatibility with 5.7 FTS AUX tables is also
+    maintained. */
+    if (table->is_fts_aux()) {
+      const dd::Properties &p = dd_col->se_private_data();
+      if (p.exists("nullable")) {
+        bool nullable;
+        p.get_bool("nullable", &nullable);
+        nulls_allowed = nullable ? 0 : DATA_NOT_NULL;
+      }
+    }
+
+    binary_type = ((mtype == DATA_VARMYSQL) || (mtype == DATA_VARCHAR) ||
+                   (mtype == DATA_CHAR) || (mtype == DATA_MYSQL)) ? 0 :
+                      DATA_BINARY_TYPE;
+
+    charset_no = 0;
+    if (dtype_is_string_type(mtype)) {
+      charset_no = static_cast<ulint>(dd_col->collation_id());
+    }
+
+    ulint is_virtual = (dd_col->is_virtual()) ? DATA_VIRTUAL : 0;
+
+    bool is_stored = !dd_col->is_generation_expression_null() &&
+                     !dd_col->is_virtual();
+
+    prtype = dtype_form_prtype((ulint)(field_type) | nulls_allowed |
+                               unsigned_type | binary_type | long_true_varchar |
+                               is_virtual, charset_no);
+    if (!is_virtual) {
+      dict_mem_table_add_col(table, heap, dd_col->name().c_str(), mtype,
+                             prtype, col_len);
+    } else {
+      dict_mem_table_add_v_col(table, heap, dd_col->name().c_str(), mtype,
+                               prtype, col_len, i,
+                               /*field->gcol_info->non_virtual_base_columns()*/
+                               /* see unpack_gcol_info */
+                               1);
+    }
+
+    if (is_stored) {
+      ut_ad(!is_virtual);
+      /* Added stored column in m_s_cols list. */
+      dict_mem_table_add_s_col(table,
+                               /*field->gcol_info->non_virtual_base_columns()*/
+                               /* see unpack_gcol_info */
+                               1);
+    }
+  }
+
+  if (add_doc_id) {
+    /* Add the hidden FTS_DOC_ID column. */
+    fts_add_doc_id_column(table, heap);
+  }
+
+  dict_table_add_system_columns(table, heap);
+
+  /* It appears that index list for InnoDB table always starts with
+  primary key */
+  ut_ad(dd_table->indexes().size() > 0);
+  const dd::Index *primary_key = dd_table->indexes()[0];
+
+  uint n_pk_fields = std::count_if(primary_key->elements().begin(),
+      primary_key->elements().end(),
+      [](const dd::Index_element *el){ return el->length() != (uint) (-1); });
+
+  if (n_pk_fields == 0) {
+    /* primary key contains only SE hidden columns like DB_ROW_ID */
+    dict_index_t *index = dict_mem_index_create(
+        table->name.m_name, "GEN_CLUST_INDEX", 0, DICT_CLUSTERED, 0);
+    index->n_uniq = 0;
+
+    dberr_t new_err =
+        dict_index_add_to_cache(table, index, index->page, FALSE);
+    if (new_err != DB_SUCCESS) {
+      return (nullptr);
+    }
+  }
+
+  for (const auto dd_index : dd_table->indexes()) {
+    ulint n_fields = 0;
+
+    if (dd_index->is_hidden()) continue;
+
+    for (const auto *idx_elem : dd_index->elements()) {
+      if (idx_elem->length() == (uint) (-1)) continue;
+
+      n_fields++;
+    }
+
+    ulint n_uniq = n_fields;
+    ulint type = 0;
+
+    if (n_uniq == 0) continue;
+
+    if (dd_index->type() == dd::Index::IT_SPATIAL) {
+      ut_ad(!table->is_intrinsic());
+      type = DICT_SPATIAL;
+      ut_ad(n_fields == 1);
+    } else if (dd_index->type() == dd::Index::IT_FULLTEXT) {
+      ut_ad(!table->is_intrinsic());
+      type = DICT_FTS;
+      n_uniq = 0;
+    } else if (dd_index == primary_key) {
+      ut_ad(dd_index->type() == dd::Index::IT_PRIMARY ||
+            dd_index->type() == dd::Index::IT_UNIQUE);
+      ut_ad(n_uniq > 0);
+      type = DICT_CLUSTERED | DICT_UNIQUE;
+    } else {
+      type = (dd_index->type() == dd::Index::IT_UNIQUE) ? DICT_UNIQUE : 0;
+    }
+
+    dict_index_t *index =
+        dict_mem_index_create(table->name.m_name, dd_index->name().c_str(),
+                              0, type, n_fields);
+
+    index->n_uniq = n_uniq;
+
+    for (auto *idx_elem : dd_index->elements()) {
+      auto dd_col = &idx_elem->column();
+
+      if (idx_elem->length() == (uint) (-1)) continue;
+
+      if (!dd_col->is_generation_expression_null() && dd_col->is_virtual()) {
+        index->type |= DICT_VIRTUAL;
+      }
+
+      uint col_pos = 0;
+      for (auto c : dd_index->table().columns()) {
+        if (c == dd_col) break;
+        if (c->is_virtual()) continue;
+        col_pos++;
+      }
+
+      bool is_asc = (idx_elem->order() == dd::Index_element::ORDER_ASC);
+      ulint prefix_len = 0;
+
+      if (dd_index->type() == dd::Index::IT_SPATIAL) {
+        prefix_len = 0;
+      } else if (dd_index->type() == dd::Index::IT_FULLTEXT) {
+        prefix_len = 0;
+      } else if (idx_elem->length() != (uint)(-1) &&
+                 idx_elem->length() != table->cols[col_pos].len) {
+        prefix_len = idx_elem->length();
+      } else {
+        prefix_len = 0;
+      }
+
+      dict_index_add_col(index, table, &table->cols[col_pos], prefix_len, is_asc);
+    }
+
+    if (dict_index_add_to_cache(table, index, 0, FALSE) != DB_SUCCESS) {
+      ut_ad(0);
+      return (nullptr);
+    }
+
+    index = UT_LIST_GET_LAST(table->indexes);
+
+    if (index->type & DICT_FTS) {
+      ut_ad(dd_index->type() == dd::Index::IT_FULLTEXT);
+      ut_ad(index->n_uniq == 0);
+      ut_ad(n_uniq == 0);
+
+      if (table->fts->cache == nullptr) {
+        DICT_TF2_FLAG_SET(table, DICT_TF2_FTS);
+        table->fts->cache = fts_cache_create(table);
+
+        rw_lock_x_lock(&table->fts->cache->init_lock);
+        /* Notify the FTS cache about this index. */
+        fts_cache_index_cache_create(table, index);
+        rw_lock_x_unlock(&table->fts->cache->init_lock);
+      }
+    }
+
+    if (strcmp(index->name, FTS_DOC_ID_INDEX_NAME) == 0) {
+      ut_ad(table->fts_doc_id_index == nullptr);
+      table->fts_doc_id_index = index;
+    }
+
+    if (dict_index_is_spatial(index)) {
+      size_t geom_col_idx;
+      for (geom_col_idx = 0; geom_col_idx < dd_index->elements().size();
+           ++geom_col_idx) {
+        if (!dd_index->elements()[geom_col_idx]->column().is_se_hidden()) break;
+      }
+      const dd::Column &col = dd_index->elements()[geom_col_idx]->column();
+      bool srid_has_value = col.srs_id().has_value();
+      index->fill_srid_value(srid_has_value ? col.srs_id().value() : 0,
+                             srid_has_value);
+    }
+
+  }
+
+  if (dict_table_has_fts_index(table)) {
+    ut_ad(DICT_TF2_FLAG_IS_SET(table, DICT_TF2_FTS));
+  }
+
+  /* Create the ancillary tables that are common to all FTS indexes on
+  this table. */
+  if (DICT_TF2_FLAG_IS_SET(table, DICT_TF2_FTS_HAS_DOC_ID) ||
+      DICT_TF2_FLAG_IS_SET(table, DICT_TF2_FTS)) {
+    fts_doc_id_index_enum ret;
+
+    ut_ad(!table->is_intrinsic());
+    /* Check whether there already exists FTS_DOC_ID_INDEX */
+    bool has_fts_index = false;
+    for (dict_index_t *index = table->first_index();
+         index; index = index->next()) {
+      if (!innobase_strcasecmp(index->name, FTS_DOC_ID_INDEX_NAME)) {
+        has_fts_index = true;
+        break;
+      }
+    }
+    if (!has_fts_index) {
+      dict_index_t *doc_id_index;
+      doc_id_index = dict_mem_index_create(
+          table->name.m_name, FTS_DOC_ID_INDEX_NAME, 0, DICT_UNIQUE, 1);
+      doc_id_index->add_field(FTS_DOC_ID_COL_NAME, 0, true);
+
+      dberr_t err = dict_index_add_to_cache(table, doc_id_index,
+                                            doc_id_index->page, FALSE);
+      if (err != DB_SUCCESS) {
+        return (nullptr);
+      }
+
+      doc_id_index = UT_LIST_GET_LAST(table->indexes);
+      doc_id_index->hidden = true;
+    }
+
+    /* Cache all the FTS indexes on this table in the FTS
+    specific structure. They are used for FTS indexed
+    column update handling. */
+    if (dict_table_has_fts_index(table)) {
+      fts_t *fts = table->fts;
+      ut_a(fts != nullptr);
+
+      dict_table_get_all_fts_indexes(table, table->fts->indexes);
+    }
+
+    ulint fts_doc_id_col = ULINT_UNDEFINED;
+
+    ret = innobase_fts_check_doc_id_index(table, nullptr, &fts_doc_id_col);
+
+    if (ret != FTS_INCORRECT_DOC_ID_INDEX) {
+      ut_ad(table->fts->doc_col == ULINT_UNDEFINED);
+      table->fts->doc_col = fts_doc_id_col;
+      ut_ad(table->fts->doc_col != ULINT_UNDEFINED);
+
+      table->fts_doc_id_index =
+          dict_table_get_index_on_name(table, FTS_DOC_ID_INDEX_NAME);
+    }
+  }
+
+  /* Fill autoincrement data */
+  i = 0;
+  for (auto dd_col : dd_table->columns()) {
+    if (dd_col->is_se_hidden()) continue;
+
+    ++i;
+
+    if (!dd_col->is_auto_increment()) continue;
+
+    const dd::Properties &p = dd_table->table().se_private_data();
+    dict_table_autoinc_set_col_pos(table, i - 1);
+    uint64 version, autoinc = 0;
+    if (p.get_uint64(dd_table_key_strings[DD_TABLE_VERSION], &version) ||
+        p.get_uint64(dd_table_key_strings[DD_TABLE_AUTOINC], &autoinc)) {
+      ut_ad(!"problem setting AUTO_INCREMENT");
+      return (nullptr);
+    }
+
+    table->version = version;
+    dict_table_autoinc_lock(table);
+    dict_table_autoinc_initialize(table, autoinc + 1);
+    dict_table_autoinc_unlock(table);
+    table->autoinc_persisted = autoinc;
+  }
+
+  /* Now fill the space ID and Root page number for each index */
+  bool first_index = true;
+  i = 0;
+  dict_index_t *index = table->first_index();
+  for (const auto dd_index : dd_table->indexes()) {
+    ut_ad(index != nullptr);
+
+    const dd::Properties &se_private_data =
+      dd_part == nullptr ? dd_index->se_private_data() :
+                           dd_part->indexes()[i]->se_private_data();
+    uint64 id = 0;
+    uint32 root = 0;
+    uint32 sid = 0;
+    uint64 trx_id = 0;
+    dd::Object_id index_space_id = dd_index->tablespace_id();
+
+    if (dd_table->tablespace_id() == dict_sys_t::s_dd_space_id) {
+      sid = dict_sys_t::s_space_id;
+    } else if (dd_table->tablespace_id() == dict_sys_t::s_dd_temp_space_id) {
+      sid = dict_sys_t::s_temp_space_id;
+    } else {
+      if (se_private_data.get_uint32(
+              dd_index_key_strings[DD_INDEX_SPACE_ID], &sid)) {
+        return (nullptr);
+      }
+    }
+
+    if (se_private_data.get_uint64(dd_index_key_strings[DD_INDEX_ID], &id) ||
+        se_private_data.get_uint32(dd_index_key_strings[DD_INDEX_ROOT],
+                                   &root) ||
+        se_private_data.get_uint64(dd_index_key_strings[DD_INDEX_TRX_ID],
+                                   &trx_id)) {
+      return (nullptr);
+    }
+
+    if (first_index) {
+      ut_ad(table->space == 0);
+      table->space = sid;
+      table->dd_space_id = index_space_id;
+      first_index = false;
+    }
+
+    ut_ad(root > 1);
+    ut_ad(index->type & DICT_FTS || root != FIL_NULL ||
+          dict_table_is_discarded(table));
+    ut_ad(id != 0);
+    index->page = root;
+    index->space = sid;
+    index->id = id;
+    index->trx_id = trx_id;
+
+    /** Look up the spatial reference system in the
+    dictionary. Since this may cause a table open to read the
+    dictionary tables, it must be done while not holding
+    &dict_sys->mutex. */
+    if (dict_index_is_spatial(index))
+      index->rtr_srs.reset(fetch_srs(index->srid));
+
+    index = index->next();
+    ++i;
+  }
+
+  mutex_enter(&dict_sys->mutex);
+
+  dict_table_add_to_cache(table, false, heap);
+  table->acquire();
+
+  mutex_exit(&dict_sys->mutex);
+
+  mem_heap_free(heap);
+
+  return (table);
+}
+
+table_id_t dd_table_id_and_part(space_id_t space_id, const dd::Table &dd_table,
+                                const dd::Partition *&dd_part) {
+  uint64 table_id = dd_table.se_private_id();
+
+  dd_part = nullptr;
+
+  if (table_id == dd::INVALID_OBJECT_ID) {
+    /* Partitioned table */
+    ut_ad(dd_table_is_partitioned(dd_table));
+
+    for (auto part : dd_table.leaf_partitions()) {
+      for (auto index : *part->indexes()) {
+        uint64 prop_space_id;
+
+        dd::Properties &p = index->se_private_data();
+        p.get_uint64(dd_index_key_strings[DD_INDEX_SPACE_ID], &prop_space_id);
+
+        if (prop_space_id == space_id) {
+          p.get_uint64(dd_index_key_strings[DD_TABLE_ID], &table_id);
+          dd_part = part;
+          goto done;
+        }
+      }
+    }
+  }
+
+done:
+  ut_ad(table_id != dd::INVALID_OBJECT_ID);
+
+  return (table_id);
+}
+
+int dd_table_open_on_dd_obj(dd::cache::Dictionary_client *client,
+                            space_id_t space_id,
+                            const dd::Table &dd_table,
+                            dict_table_t *&table, THD *thd,
+                            const dd::String_type *schema_name,
+                            bool implicit) {
+  const dd::Partition *dd_part = nullptr;
+  const table_id_t table_id = dd_table_id_and_part(space_id, dd_table, dd_part);
+  const ulint fold = ut_fold_ull(table_id);
+
+  ut_ad(table_id != dd::INVALID_OBJECT_ID);
+
+  mutex_enter(&dict_sys->mutex);
+
+  HASH_SEARCH(id_hash, dict_sys->table_id_hash, fold, dict_table_t *, table,
+              ut_ad(table->cached), table->id == table_id);
+
+  if (table != nullptr) {
+    table->acquire();
+  }
+
+  mutex_exit(&dict_sys->mutex);
+
+  if (table != nullptr) {
+    return (0);
+  }
+
+  table = dd_table_create_on_dd_obj(&dd_table, dd_part, schema_name, implicit);
+
+  if (table != nullptr) {
+    return (0);
+  }
+
+  return (1);
 }
 
 /** Instantiate an InnoDB in-memory table metadata (dict_table_t)
@@ -834,7 +1568,7 @@ dict_table_t *dd_table_open_on_name(THD *thd, MDL_ticket **mdl,
   /* Get pointer to a table object in InnoDB dictionary cache.
   For intrinsic table, get it from session private data */
   if (thd) {
-    table = thd_to_innodb_session(thd)->lookup_table_handler(name);
+    //table = thd_to_innodb_session(thd)->lookup_table_handler(name);
   }
 
   if (table != nullptr) {
@@ -2066,18 +2800,6 @@ inline int dd_fill_dict_index(const dd::Table &dd_table, const TABLE *m_form,
   }
 
   return (error);
-}
-
-/** Determine if a table contains a fulltext index.
-@param[in]      table		dd::Table
-@return whether the table contains any fulltext index */
-inline bool dd_table_contains_fulltext(const dd::Table &table) {
-  for (const dd::Index *index : table.indexes()) {
-    if (index->type() == dd::Index::IT_FULLTEXT) {
-      return (true);
-    }
-  }
-  return (false);
 }
 
 /** Instantiate in-memory InnoDB table metadata (dict_table_t),
@@ -3788,11 +4510,9 @@ const char *dd_process_dd_tables_rec_and_mtr_commit(
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), NULL,
                                    ULINT_UNDEFINED, &heap);
 
-  const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Table>();
-
   field = rec_get_nth_field(
       rec, offsets,
-      dd_object_table.field_number("FIELD_ENGINE") + DD_FIELD_OFFSET, &len);
+      4 + DD_FIELD_OFFSET, &len);
 
   /* If "engine" field is not "innodb", return. */
   if (strncmp((const char *)field, "InnoDB", 6) != 0) {
@@ -3804,7 +4524,7 @@ const char *dd_process_dd_tables_rec_and_mtr_commit(
   /* Get the se_private_id field. */
   field = (const byte *)rec_get_nth_field(
       rec, offsets,
-      dd_object_table.field_number("FIELD_SE_PRIVATE_ID") + DD_FIELD_OFFSET,
+      12 + DD_FIELD_OFFSET,
       &len);
 
   if (len != 8) {

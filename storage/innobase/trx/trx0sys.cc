@@ -53,6 +53,16 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0trx.h"
 #include "trx0undo.h"
 
+/** If this MySQL server uses binary logging, after InnoDB has been inited
+and if it has done a crash recovery, we store the binlog file name and position
+here. */
+/* @{ */
+/** Binlog file name */
+char trx_sys_mysql_bin_log_name[TRX_SYS_MYSQL_LOG_NAME_LEN];
+/** Binlog file position, or -1 if unknown */
+ib_uint64_t trx_sys_mysql_bin_log_pos = -1;
+/* @} */
+
 /** The transaction system */
 trx_sys_t *trx_sys = NULL;
 
@@ -182,11 +192,17 @@ void trx_sys_print_mysql_binlog_offset(void) {
   trx_sys_mysql_bin_log_pos_low = mach_read_from_4(
       sys_header + TRX_SYS_MYSQL_LOG_INFO + TRX_SYS_MYSQL_LOG_OFFSET_LOW);
 
-  ib::info(ER_IB_MSG_1197) << "Last MySQL binlog file position "
-                           << trx_sys_mysql_bin_log_pos_high << " "
-                           << trx_sys_mysql_bin_log_pos_low << ", file name "
-                           << sys_header + TRX_SYS_MYSQL_LOG_INFO +
-                                  TRX_SYS_MYSQL_LOG_NAME;
+  trx_sys_mysql_bin_log_pos
+    = (((ib_uint64_t) trx_sys_mysql_bin_log_pos_high) << 32)
+    + (ib_uint64_t) trx_sys_mysql_bin_log_pos_low;
+
+  ut_memcpy(trx_sys_mysql_bin_log_name,
+    sys_header + TRX_SYS_MYSQL_LOG_INFO
+    + TRX_SYS_MYSQL_LOG_NAME, TRX_SYS_MYSQL_LOG_NAME_LEN);
+
+  ib::info(ER_IB_MSG_1197) << "xtrabackup: Last MySQL binlog file position "
+                           << trx_sys_mysql_bin_log_pos << ", file name "
+                           << trx_sys_mysql_bin_log_name;
 
   mtr_commit(&mtr);
 }
@@ -206,6 +222,52 @@ page_no_t trx_sysf_rseg_find_page_no(ulint rseg_id) {
   mtr.commit();
 
   return (page_no);
+}
+
+/*****************************************************************//**
+Read WSREP XID information from the trx system header if the magic value
+shows it is valid. This code has been copied from MySQL patches by Codership
+with some modifications.
+@return true if the magic value is valid. Otherwise
+return false and leave 'xid' unchanged. */
+bool
+trx_sys_read_wsrep_checkpoint(XID* xid)
+/*===================================*/
+{
+  trx_sysf_t* sys_header;
+  mtr_t     mtr;
+  ulint     magic;
+
+  ut_ad(xid);
+
+  mtr_start(&mtr);
+
+  sys_header = trx_sysf_get(&mtr);
+  magic = mach_read_from_4(sys_header + TRX_SYS_WSREP_XID_INFO +
+         TRX_SYS_WSREP_XID_MAGIC_N_FLD);
+
+  if (magic != TRX_SYS_WSREP_XID_MAGIC_N) {
+
+    mtr_commit(&mtr);
+    return(false);
+  }
+
+  xid->set_format_id((long)mach_read_from_4(
+    sys_header
+    + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_FORMAT));
+  xid->set_gtrid_length((long)mach_read_from_4(
+    sys_header
+    + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_GTRID_LEN));
+  xid->set_bqual_length((long)mach_read_from_4(
+    sys_header
+    + TRX_SYS_WSREP_XID_INFO + TRX_SYS_WSREP_XID_BQUAL_LEN));
+  xid->set_data(sys_header + TRX_SYS_WSREP_XID_INFO +
+          TRX_SYS_WSREP_XID_DATA,
+          XIDDATASIZE);
+
+  mtr_commit(&mtr);
+
+  return(true);
 }
 
 /** Look for a free slot for a rollback segment in the trx system file copy.

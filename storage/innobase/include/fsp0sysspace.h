@@ -88,8 +88,10 @@ class SysTablespace : public Tablespace {
   /** Parse the input params and populate member variables.
   @param	filepath_spec	path to data files
   @param	supports_raw	true if it supports raw devices
+  @param	filenames_only	true to parse only file names
   @return true on success parse */
-  bool parse_params(const char *filepath_spec, bool supports_raw);
+  bool parse_params(const char *filepath_spec, bool supports_raw,
+                    bool filenames_only);
 
   /** Check the data file specification.
   @param[in]	create_new_db		true if a new database
@@ -199,7 +201,7 @@ class SysTablespace : public Tablespace {
   \\.\C::1Gnewraw or \\.\PHYSICALDRIVE2:1Gnewraw.
   @param[in]	str		system tablespace file path spec
   @return next character in string after the file name */
-  static char *parse_file_name(char *ptr);
+  static char *parse_file_name(char *ptr, bool filenames_only);
 
   /** Convert a numeric string that optionally ends in upper or lower
   case G, M, or K, rounding off to the nearest number of megabytes.

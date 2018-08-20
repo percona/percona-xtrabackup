@@ -65,17 +65,17 @@ const char *ssl_fips_mode_names_lib[] =
 TYPELIB ssl_fips_mode_typelib = {array_elements(ssl_fips_mode_names_lib) - 1,
                                  "", ssl_fips_mode_names_lib, NULL};
 
-static uint opt_ssl_mode = SSL_MODE_PREFERRED;
-static char *opt_ssl_ca = 0;
-static char *opt_ssl_capath = 0;
-static char *opt_ssl_cert = 0;
-static char *opt_ssl_cipher = 0;
-static char *opt_ssl_key = 0;
-static char *opt_ssl_crl = 0;
-static char *opt_ssl_crlpath = 0;
-static char *opt_tls_version = 0;
-static ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
-static bool ssl_mode_set_explicitly = false;
+uint opt_ssl_mode = SSL_MODE_PREFERRED;
+char *opt_ssl_ca = 0;
+char *opt_ssl_capath = 0;
+char *opt_ssl_cert = 0;
+char *opt_ssl_cipher = 0;
+char *opt_ssl_key = 0;
+char *opt_ssl_crl = 0;
+char *opt_ssl_crlpath = 0;
+char *opt_tls_version = 0;
+ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
+bool ssl_mode_set_explicitly = false;
 
 static inline void set_client_ssl_options(MYSQL *mysql) {
   /*

@@ -1,0 +1,31 @@
+============================
+ |Percona XtraBackup| 2.1.7 
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.7 on January 24th 2014. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.7/>`_ and :doc:`Percona Software Repositories </installation>`.
+
+This release is the current GA (Generally Available) stable release in the 2.1 series.
+
+New Features
+------------
+
+ |Percona XtraBackup| has now been rebased on |MySQL| versions 5.1.73, 5.5.35, 5.6.15 and |Percona Server| versions 5.1.73-rel14.11 and 5.5.35-rel33.0.
+
+Bugs Fixed
+----------
+ 
+ After being rebased on |MySQL| 5.6.11 |Percona XtraBackup| has been affected by the upstream bug :mysqlbug:`69780`. Fixed by rebasing |Percona XtraBackup| on |MySQL| 5.6.15 which contains a fix for the upstream bug. Bug fixed :bug:`1203669`.
+
+ Backup directory would need to be specified even for running the |innobackupex| with :option:`innobackupex --help` and :option:`innobackupex --version` options. Bug fixed :bug:`1223716`.
+
+ When creating an incremental backup with the changed page tracking feature available in |Percona Server|, |innobackupex| would fail if the server had the ``ANSI_QUOTES`` SQL mode enabled. Bug fixed :bug:`1248331`.
+
+ When :option:`innobackupex --galera-info` is specified and |Percona XtraDB Cluster| is using ``GTID`` replication (version 5.6 only), |innobackupex| will execute ``FLUSH BINARY LOGS`` and then carry the current binary log as indicated in ``SHOW MASTER STATUS`` into the backup set. Bug fixed :bug:`1250375`.
+
+ |Percona XtraBackup| did not roll back prepared XA transactions when applying the log. Which was a regression introduced with the original port of |Percona XtraBackup| patches to 5.6. Fixed by restoring code that has been lost in the port. Bug fixed :bug:`1254227`.
+ 
+ |Percona XtraBackup| now uses ``libgcrypt`` built in randomization functions for setting the Initialization Vector. Bug fixed :bug:`1255300`.
+ 
+ ``xtrabackup_56`` didn't support ``ALL_O_DIRECT`` option for `innodb_flush_method <http://www.percona.com/doc/percona-server/5.6/scalability/innodb_io.html#innodb_flush_method>`_ in |Percona Server| 5.6. Bug fixed :bug:`1261877`. 
+
+Other bugs fixed: :bug:`1255019`, :bug:`1268325`, :bug:`1265759`, :bug:`1269694`, :bug:`1271501`.

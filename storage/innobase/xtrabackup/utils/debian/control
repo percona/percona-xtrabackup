@@ -1,0 +1,52 @@
+Source: percona-xtrabackup-24
+Section: database
+Priority: extra
+Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
+Uploaders: Tomislav Plavcic <tomislav.plavcic@percona.com>, Clint Byrum <clint@fewbar.com>
+Build-Depends: automake,
+               bison,
+               ca-certificates,
+               cmake,
+               debhelper (>= 7.3),
+               libaio-dev,
+               libncurses-dev,
+               libssl-dev,
+               libtool,
+               libz-dev,
+               libgcrypt-dev,
+               libev-dev,
+               libcurl-dev,
+               lsb-release,
+               python-sphinx (>= 1.0.1),
+               python-docutils (>= 0.6)
+Standards-Version: 3.9.5
+Homepage: http://www.percona.com/software/percona-xtrabackup
+
+Package: percona-xtrabackup-24
+Architecture: any
+Depends: libdbd-mysql-perl, rsync, ${misc:Depends}, ${shlibs:Depends}
+Provides: xtrabackup
+Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
+Breaks: xtrabackup (<< 2.0.0~)
+Replaces: xtrabackup (<< 2.0.0~)
+Enhances: mysql-server
+Description: Open source backup tool for InnoDB and XtraDB
+ Percona XtraBackup is an open-source hot backup utility for MySQL that
+ doesn't lock your database during the backup. It can back up data from
+ InnoDB, XtraDB and MyISAM tables on MySQL/Percona Server/MariaDB
+ servers, and has many advanced features.
+
+Package: percona-xtrabackup-dbg-24
+Section: debug
+Architecture: any
+Depends: percona-xtrabackup-24 (= ${binary:Version}), ${misc:Depends}
+Description: Debug symbols for Percona XtraBackup
+ Debug symbols for the binaries in percona-xtrabackup. Install this
+ package if you need to run any of those with gdb.
+
+Package: percona-xtrabackup-test-24
+Architecture: any
+Depends: mysql-client, percona-xtrabackup-24, python, ${misc:Depends}
+Description: Test suite for Percona XtraBackup
+ Test suite for Percona XtraBackup. Install this package if you intend
+ to run XtraBackup's test suite.

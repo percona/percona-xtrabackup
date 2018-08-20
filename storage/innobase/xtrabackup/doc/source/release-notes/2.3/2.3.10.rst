@@ -1,0 +1,39 @@
+===========================
+|Percona XtraBackup| 2.3.10
+===========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.3.10 on
+November 29th 2017. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.10/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.3
+series.
+
+New Features
+============
+
+ |Percona XtraBackup| packages are now available for *Ubuntu 17.10 (Artful)*.
+
+ |xbcrypt| now has an ability to decrypt files in parallel by specifying the
+ number of threads with the :option:`xtrabackup --encrypt-threads` option.
+
+ :option:`xtrabackup --copy-back` option can now be used with
+ :option:`xtrabackup --parallel` option to copy the user data files in
+ parallel (redo logs and system tablespaces are copied in the main thread).
+
+Bugs fixed
+==========
+
+ |Percona XtraBackup| failed to build with *GCC 7*. Bug fixed :bug:`1681721`.
+
+ |Percona XtraBackup| would crash while preparing the 5.5 backup with
+ ``utf8_general50_ci`` collation. Bug fixed :bug:`1533722` (*Fungo Wang*).
+
+ |Percona XtraBackup| would crash if :option:`xtrabackup --throttle` was used
+ while preparing backups. Fixed by making this option available only during the
+ backup process. Bug fixed :bug:`1691093`.
+
+ |Percona XtraBackup| could get stuck if backups are taken with
+ :option:`xtrabackup --safe-slave-backup` option, while there were long
+ running queries. Bug fixed :bug:`1717158`.

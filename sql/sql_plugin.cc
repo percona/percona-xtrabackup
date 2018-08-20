@@ -1517,9 +1517,12 @@ bool plugin_register_builtin_and_init_core_se(int *argc, char **argv) {
     }
   }
 
+  /* Xtrabackup does not initialize storage engine plugins */
+#if !defined(XTRABACKUP)
   /* Should now be set to MyISAM storage engine */
   DBUG_ASSERT(global_system_variables.table_plugin);
   DBUG_ASSERT(global_system_variables.temp_table_plugin);
+#endif
 
   mysql_mutex_unlock(&LOCK_plugin);
 
@@ -1570,16 +1573,25 @@ bool plugin_register_dynamic_and_init_all(int *argc, char **argv, int flags) {
   /* Temporary mem root not needed anymore, can free it here */
   free_root(&tmp_root, MYF(0));
 
+  /* Xtrabackup does not make changes to mysql.plugins table */
+#if !defined(XTRABACKUP)
   Auto_THD fake_session;
   Disable_autocommit_guard autocommit_guard(fake_session.thd);
   dd::cache::Dictionary_client::Auto_releaser releaser(
       fake_session.thd->dd_client());
+#endif
   if (!(flags & PLUGIN_INIT_SKIP_INITIALIZATION))
     if (plugin_init_initialize_and_reap()) {
+      DBUG_RETURN(false);
+#if !defined(XTRABACKUP)
       DBUG_RETURN(::end_transaction(fake_session.thd, true));
+#endif
     }
 
+#if !defined(XTRABACKUP)
   DBUG_RETURN(::end_transaction(fake_session.thd, false));
+#endif
+  DBUG_RETURN(false);
 }
 
 static bool register_builtin(st_mysql_plugin *plugin, st_plugin_int *tmp,

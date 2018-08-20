@@ -1,0 +1,3 @@
+/usr/bin
+/usr/lib/xtrabackup/plugin/*.so
+/usr/share/man/man1

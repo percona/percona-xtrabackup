@@ -54,6 +54,25 @@ struct TABLE_SHARE;
 size_t max_pack_length(const List<Create_field> &create_fields);
 
 /**
+  Calculate the length of the in-memory representation of the column.
+
+  This function calculates the amount of memory necessary to store values
+  of the submitted column. The function is used when preparing the default
+  values for the columns of a table, and for determining the size of an
+  empty record for the table which the column is a part of.
+
+  @note The implementation is based on Create_field::init() and
+        Create_field::create_length_to_internal_length().
+
+  @param  col_obj   The column object for which we calculate the
+                    in-memory length.
+
+  @return           In-memory length of values of the submitted column.
+*/
+
+size_t column_pack_length(const dd::Column &col_obj);
+
+/**
   Prepare the default value of a single column.
 
   This function creates a fake field using the submitted fake table

@@ -29,6 +29,7 @@
 static char *opt_server_public_key = 0;
 static bool opt_get_server_public_key = false;
 
+#if !defined(XTRABACKUP)
 static void set_server_public_key(MYSQL *mysql,
                                   const char *server_public_key = NULL) {
   if (server_public_key && *server_public_key)
@@ -43,3 +44,4 @@ static void set_get_server_public_key_option(
                 get_server_public_key ? get_server_public_key
                                       : &opt_get_server_public_key);
 }
+#endif

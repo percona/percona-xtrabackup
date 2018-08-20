@@ -1,0 +1,42 @@
+==========================
+|Percona XtraBackup| 2.2.7
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.2.7 on
+December 10th 2014. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/2.2.7/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current stable release in the 2.2 series.
+
+Bugs Fixed
+----------
+
+* Non-default value for `innodb_log_block_size
+  <http://www.percona.com/doc/percona-server/5.6/scalability/innodb_io.html#innodb_log_block_size>`_
+  variable would cause assertion when preparing the backup. Bug fixed
+  :bug:`1391216`.
+
+* When |Percona XtraBackup| would run ``FLUSH ENGINE LOGS`` during the backup
+  process on GTID master, command was recorded to the slave's binary log as
+  well, which lead to inconsistency between master and slave. Fixed by adding
+  the ``NO_WRITE_TO_BINLOG`` clause to ``FLUSH ENGINE LOGS`` to avoid
+  interfering with binary log and inconsistency with coordinates. Bug fixed
+  :bug:`1394632`.
+
+* Exporting tables was inefficient when backup contained a large (and
+  unrelated) change buffer. Bug fixed :bug:`1366065` (*Davi Arnaut*).
+
+* |innobackupex| was printing the GTID even if the GTID mode was disabled which
+  could cause confusion since it wasn't incrementing. Now it prints only GTID
+  when GITD mode is enabled and when GTID mode is disabled it prints only
+  filename and position. |innobackupex| still prints GTID, filename and
+  positions if *MariaDB* server is being backed up. Bug fixed :bug:`1391041`.
+
+Other bugs fixed: :bug:`1386157`.
+
+All of Percona's software is open-source and free, all the details of the
+release can be found in the `2.2.7 milestone
+<https://launchpad.net/percona-xtrabackup/+milestone/2.2.7>`_ at Launchpad.
+Bugs can be reported on the `launchpad bug tracker
+<https://bugs.launchpad.net/percona-xtrabackup/+filebug>`_.

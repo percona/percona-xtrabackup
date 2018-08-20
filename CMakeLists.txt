@@ -266,6 +266,22 @@ IF(WITH_DEFAULT_FEATURE_SET)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/feature_set.cmake)
 ENDIF()
 
+OPTION(WITH_XTRABACKUP "Build XtraBackup" ON)
+# Disallow WITH_XTRABACKUP=OFF builds
+IF(NOT WITH_XTRABACKUP)
+  MESSAGE(FATAL_ERROR "This branch does not support -DWITH_XTRABACKUP=OFF configuration.")
+ELSE()
+  ADD_DEFINITIONS(-DXTRABACKUP)
+ENDIF()
+# Disallow WITHOUT_SERVER=ON builds
+IF(WITHOUT_SERVER)
+  MESSAGE(FATAL_ERROR "This branch does not support -DWITHOUT_SERVER=ON configuration.")
+ENDIF()
+# Disallow WITH_EMBEDDED_SERVER=OFF builds
+IF(NOT WITH_EMBEDDED_SERVER)
+  MESSAGE(FATAL_ERROR "This branch does not support -DWITH_EMBEDDED_SERVER=OFF configuration.")
+ENDIF()
+
 # Add macros
 INCLUDE(character_sets)
 INCLUDE(cpu_info)
@@ -301,7 +317,7 @@ OPTION(DISABLE_SHARED
 IF(DISABLE_SHARED)
   MESSAGE("Dynamic plugins are disabled.")
 ENDIF()
-OPTION(ENABLED_PROFILING "Enable profiling" ON)
+OPTION(ENABLED_PROFILING "Enable profiling" OFF)
 OPTION(WITHOUT_SERVER OFF)
 IF(UNIX)
   OPTION(WITH_VALGRIND "Valgrind instrumentation" OFF)
@@ -310,7 +326,7 @@ IF(WIN32)
   OPTION(WITH_MSCRT_DEBUG "MS Visual Studio Debug CRT instrumentation" OFF)
 ENDIF()
 IF(NOT WITHOUT_SERVER)
-  OPTION (WITH_UNIT_TESTS "Compile MySQL with unit tests" ON)
+  OPTION (WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
 ENDIF()
 OPTION(WITH_AUTHENTICATION_LDAP
        "Report error if the LDAP authentication plugin cannot be built." OFF)
@@ -781,6 +797,7 @@ IF(NOT WITHOUT_SERVER)
   MYSQL_CHECK_PROTOBUF()
 ENDIF()
 # Try and set CURL_LIBRARY
+SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 MYSQL_CHECK_CURL()
 # Add RapidJSON library.
 # TODO: Support -DWITH_RAPIDJSON=system.
@@ -822,6 +839,8 @@ OPTION(MYSQL_MAINTAINER_MODE
 INCLUDE(maintainer)
 
 IF(WITH_UNIT_TESTS)
+ MESSAGE(STATUS "With unit tests")
+ ERROR()
  ENABLE_TESTING()
 ENDIF()
 
@@ -860,17 +879,11 @@ IF(WITH_UNIT_TESTS)
   ENDIF()
 ENDIF()
 
-ADD_SUBDIRECTORY(client)
 ADD_SUBDIRECTORY(utilities)
 ADD_SUBDIRECTORY(share)
 ADD_SUBDIRECTORY(libservices)
 
-IF(UNIX)
-  ADD_SUBDIRECTORY(man)
-ENDIF()
-
 IF(NOT WITHOUT_SERVER)
-  ADD_SUBDIRECTORY(testclients)
   ADD_SUBDIRECTORY(sql)
 ENDIF()
 
@@ -881,7 +894,6 @@ ADD_SUBDIRECTORY(scripts)
 IF(NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(mysql-test)
   ADD_SUBDIRECTORY(mysql-test/lib/My/SafeProcess)
-  ADD_SUBDIRECTORY(support-files)
   IF(EXISTS ${CMAKE_SOURCE_DIR}/internal/CMakeLists.txt)
     ADD_SUBDIRECTORY(internal)
   ENDIF()
@@ -890,7 +902,6 @@ IF(NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(packaging/rpm-fedora)
   ADD_SUBDIRECTORY(packaging/rpm-sles)
   ADD_SUBDIRECTORY(packaging/rpm-docker)
-  ADD_SUBDIRECTORY(packaging/deb-in)
 ENDIF()
 
 INCLUDE(cmake/abi_check.cmake)
@@ -963,32 +974,11 @@ IF(WIN32)
 ELSE()
   SET(CPACK_GENERATOR "TGZ")
 ENDIF() 
-ADD_SUBDIRECTORY(packaging/WiX)
-ADD_SUBDIRECTORY(packaging/solaris)
 
-IF(UNIX)
-  INSTALL(FILES Docs/mysql.info DESTINATION ${INSTALL_INFODIR} OPTIONAL COMPONENT Info)
-ENDIF()
 #
 # RPM installs documentation directly from the source tree
 #
 IF(NOT INSTALL_LAYOUT MATCHES "RPM")
-  INSTALL(FILES README LICENSE DESTINATION ${INSTALL_DOCREADMEDIR} COMPONENT Readme)
-  INSTALL(FILES ${CMAKE_BINARY_DIR}/Docs/INFO_SRC ${CMAKE_BINARY_DIR}/Docs/INFO_BIN DESTINATION ${INSTALL_DOCDIR})
-
-  # MYSQL_DOCS_LOCATON is used in "make dist", points to the documentation directory
-  SET(MYSQL_DOCS_LOCATION "" CACHE PATH "Location from where documentation is copied")
-  MARK_AS_ADVANCED(MYSQL_DOCS_LOCATION)
-  INSTALL(DIRECTORY Docs/ DESTINATION ${INSTALL_DOCDIR}
-    COMPONENT Documentation
-    PATTERN "Makefile.*" EXCLUDE
-    PATTERN "glibc*" EXCLUDE
-    PATTERN "linuxthreads.txt" EXCLUDE
-    PATTERN "myisam.txt" EXCLUDE
-    PATTERN "mysql.info" EXCLUDE
-    PATTERN "sp-imp-spec.txt" EXCLUDE
-    PATTERN "README.build" EXCLUDE
-  )
 ENDIF()
 
 IF(UNIX)

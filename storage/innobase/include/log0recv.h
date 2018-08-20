@@ -50,8 +50,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 class MetadataRecover;
 class PersistentTableMetadata;
 
-#ifdef UNIV_HOTBACKUP
-
 struct recv_addr_t;
 
 /** This is set to FALSE if the backup was originally taken with the
@@ -64,6 +62,8 @@ extern volatile bool is_online_redo_copy;
 extern volatile lsn_t backup_redo_log_flushed_lsn;
 /** TRUE when the redo log is being backed up */
 extern bool recv_is_making_a_backup;
+
+#ifdef UNIV_HOTBACKUP
 
 /** Scans the log segment and n_bytes_scanned is set to the length of valid
 log scanned.
@@ -589,6 +589,44 @@ the log and store the scanned log records in the buffer pool: we will
 use these free frames to read in pages when we start applying the
 log records to the database. */
 extern ulint recv_n_pool_free_frames;
+
+/** Check the 4-byte checksum to the trailer checksum field of a log
+block.
+@param[in]  block pointer to a log block
+@return whether the checksum matches */
+bool log_block_checksum_is_ok(const byte *block);
+
+/** Find the latest checkpoint in the log header.
+@param[in,out]  log   redo log
+@param[out] max_field LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
+@return error code or DB_SUCCESS */
+MY_ATTRIBUTE((warn_unused_result)) dberr_t
+    recv_find_max_checkpoint(log_t &log, ulint *max_field);
+
+/** Reads a specified log segment to a buffer.
+@param[in,out]  log   redo log
+@param[in,out]  buf   buffer where to read
+@param[in]  start_lsn read area start
+@param[in]  end_lsn   read area end */
+void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+                       lsn_t end_lsn);
+
+/** Adds data from a new log block to the parsing buffer of recv_sys if
+recv_sys->parse_start_lsn is non-zero.
+@param[in]  log_block   log block
+@param[in]  scanned_lsn   lsn of how far we were able
+                                        to find data in this log block
+@return true if more data added */
+bool recv_sys_add_to_parsing_buf(const byte *log_block,
+                                        lsn_t scanned_lsn);
+
+/** Moves the parsing buffer data left to the buffer start. */
+void recv_reset_buffer();
+
+/** Parse log records from a buffer and optionally store them to a
+hash table to wait merging to file pages.
+@param[in]  checkpoint_lsn  the LSN of the latest checkpoint */
+void recv_parse_log_recs(lsn_t checkpoint_lsn);
 
 #include "log0recv.ic"
 

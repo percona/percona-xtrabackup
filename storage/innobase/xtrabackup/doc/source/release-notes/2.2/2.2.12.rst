@@ -1,0 +1,57 @@
+===========================
+|Percona XtraBackup| 2.2.12
+===========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.2.12 on
+August 3rd 2015. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/XtraBackup-2.2.12/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current stable release in the 2.2 series.
+
+Bugs Fixed
+----------
+
+ |Percona XtraBackup| would segfault during the prepare phase of certain FTS
+ pages. Bug fixed :bug:`1460138`.
+
+ Fixed compilation error due to missing dependency caused by the upstream bug
+ :mysqlbug:`77226`. Bug fixed :bug:`1461129`.
+
+ Regression introduced by fixing a bug :bug:`1403237` in |Percona XtraBackup|
+ 2.2.8 could cause |xtrabackup| to read a redo log from incorrect offset which
+ would cause an assertion. Bug fixed :bug:`1464608`.
+
+ Fixed uninitialized ``current_thd`` thread-local variable. This also
+ completely fixes :bug:`1415191`. Bug fixed :bug:`1467574`.
+
+ After the release of |Percona XtraBackup| 2.2.11, |innobackupex| issues a
+ ``FLUSH TABLE`` before running the ``FLUSH TABLES WITH READ LOCK``. While it
+ will help the backups in some situation, it also implies that the ``FLUSH
+ TABLE`` will be written to the binary log. On *MariaDB* 10.0 with GTID
+ enabled, when backup was taken on the slave, this altered the GTID of that
+ slave and |Percona XtraBackup| didn't see the correct GTID anymore. Bug fixed
+ :bug:`1466446` (*Julien Pivotto*).
+
+ RPM compilation of |Percona XtraBackup| was still requiring ``bzr``. Bug fixed
+ :bug:`1466888` (*Julien Pivotto*).
+
+ Compiling |Percona XtraBackup| RPMs with ``XB_VERSION_EXTRA`` option would
+ create an incorrect RPM version. Bug fixed :bug:`1467424` (*Julien Pivotto*).
+
+ |Percona XtraBackup| would complete successfully even when redo log wasn't
+ copied completely. This means that backup were considered successful even when
+ they were corrupt. Bug fixed :bug:`1470847`.
+
+ In rare cases when there are two or more tablespaces with the same ID in the
+ data directory, |xtrabackup| picks up the first one by lexical order, which
+ could lead to losing the correct table. Bug fixed :bug:`1475487`.
+
+ |Percona XtraBackup| was missing ``revision_id`` in binaries. Bug fixed
+ :bug:`1394174`.
+
+All of Percona's software is open-source and free, all the details of the
+release can be found in the `2.2.12 milestone
+<https://launchpad.net/percona-xtrabackup/+milestone/2.2.12>`_ at Launchpad.
+Bugs can be reported on the `launchpad bug tracker
+<https://bugs.launchpad.net/percona-xtrabackup/+filebug>`_.

@@ -1,0 +1,29 @@
+============================
+ |Percona XtraBackup| 2.4.2
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.2 on April
+1st 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt <apt_repo>`
+and :ref:`yum <yum_repo>` repositories.
+
+This release is the GA (Generally Available) stable release in the 2.4 series.
+
+New features
+------------
+
+ |Percona XtraBackup| has :ref:`implemented support
+ <encrypted_innodb_tablespace_backups>` for `InnoDB tablespace encryption
+ <http://dev.mysql.com/doc/refman/5.7/en/innodb-tablespace-encryption.html>`_.
+
+ |Percona XtraBackup| has been rebased on |MySQL| 5.7.11.
+
+Bugs Fixed
+----------
+
+ When backup was taken on *MariaDB* 10 with GTID enabled, |Percona XtraBackup|
+ didn't store ``gtid_slave_pos`` in :file:`xtrabackup_slave_info` but logged it
+ only to ``STDERR``. Bug fixed :bug:`1404484`.
+
+ Backup process would fail if :option:`xtrabackup --throttle` option was used.
+ Bug fixed :bug:`1554235`.

@@ -1,0 +1,60 @@
+==========================
+|Percona XtraBackup| 2.4.9
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.9 on
+November 29th 2017. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.9/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.4
+series.
+
+New Features
+============
+
+ |Percona XtraBackup| packages are now available for *Ubuntu 17.10 (Artful)*.
+
+ |xbcrypt| now has an ability to decrypt files in parallel by specifying the
+ number of threads with the :option:`xtrabackup --encrypt-threads` option.
+
+ :option:`xtrabackup --copy-back` option can now be used with
+ :option:`xtrabackup --parallel` option to copy the user data files in
+ parallel (redo logs and system tablespaces are copied in the main thread).
+
+Bugs fixed
+==========
+
+ |Percona XtraBackup| would fail to backup large databases on 32-bit platforms.
+ Bug fixed :bug:`1602537`.
+
+ |Percona XtraBackup| failed to build with *GCC 7*. Bug fixed :bug:`1681721`.
+
+ |Percona XtraBackup| would hang during the prepare phase if there was not
+ enough room in log buffer to accommodate checkpoint information at the end
+ of the crash recovery process. Bug fixed :bug:`1705383`.
+
+ When backup was streamed in tar format with with the
+ :option:`xtrabackup --slave-info` option
+ output file :file:`xtrabackup_slave_info` did not contain the slave
+ information. Bug fixed :bug:`1707918`.
+
+ If :option:`xtrabackup --slave-info` was used while backing up 5.7 instances,
+ the master binary log coordinates were not properly displayed in the logs.
+ Bug fixed :bug:`1711010`.
+
+ :option:`innobackupex --slave-info` would report a single ``m`` instead of
+ ``slave info`` in the standard output. Bug fixed :bug:`1727920`.
+
+ |Percona XtraBackup| would crash while preparing the 5.5 backup with
+ ``utf8_general50_ci`` collation. Bug fixed :bug:`1533722` (*Fungo Wang*).
+
+ |Percona XtraBackup| would crash if :option:`xtrabackup --throttle` was used
+ while preparing backups. Fixed by making this option available only during the
+ backup process. Bug fixed :bug:`1691093`.
+
+ |Percona XtraBackup| could get stuck if backups are taken with
+ :option:`xtrabackup --safe-slave-backup` option, while there were long
+ running queries. Bug fixed :bug:`1717158`.
+
+Other bugs fixed: :bug:`1678838`, :bug:`1727922`, and :bug:`1729241`.

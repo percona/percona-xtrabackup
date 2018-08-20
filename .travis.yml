@@ -1,0 +1,99 @@
+# Ubuntu 14.04
+dist: trusty
+sudo: required
+language: cpp
+
+cache:
+  ccache: true
+  timeout: 600
+  directories:
+    - $TRAVIS_BUILD_DIR/deps     # cache Boost libraries
+
+
+env:
+  global:
+    - PARENT_BRANCH=2.5-wip
+    - CCACHE_DIR=$HOME/.ccache
+    - CCACHE_COMPRESS=1
+    - CCACHE_COMPRESSLEVEL=9
+    - CCACHE_MAXSIZE=500Mi
+    - CCACHE_CPP2=1
+
+matrix:
+  include:
+#    -
+#      env: VERSION=6.0  BUILD=RelWithDebInfo
+#      compiler: clang
+    -
+      env: VERSION=6.0  BUILD=Debug
+      compiler: clang
+#    -
+#      env: VERSION=7    BUILD=RelWithDebInfo
+#      compiler: gcc
+    -
+      env: VERSION=7    BUILD=Debug
+      compiler: gcc
+#    -
+#      env: VERSION=4.8  BUILD=RelWithDebInfo
+#      compiler: gcc
+    -
+      env: VERSION=4.8  BUILD=Debug
+      compiler: gcc
+
+script:
+  - echo --- Configure required LLVM and Ubuntu Toolchain repositories;
+    if [[ "$TRAVIS_OS_NAME" == "linux" ]] && [[ "$CC" == "clang" ]]; then
+       PACKAGES="llvm-$VERSION-dev $PACKAGES";
+       curl -sSL "http://apt.llvm.org/llvm-snapshot.gpg.key" | sudo -E apt-key add -;
+       echo "deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-$VERSION main" | sudo tee -a /etc/apt/sources.list > /dev/null;
+    fi;
+    if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+       sudo -E apt-add-repository -y "ppa:ubuntu-toolchain-r/test";
+       sudo -E apt-add-repository -y "ppa:jonathonf/binutils";
+       sudo -E apt-add-repository -y "ppa:jonathonf/gcc-5.5";
+       sudo -E apt-add-repository -y "ppa:jonathonf/gcc-6.4";
+       sudo -E apt-add-repository -y "ppa:jonathonf/gcc-7.3";
+       sudo -E apt-add-repository -y "ppa:jonathonf/gcc-8.0";
+       sudo -E apt-add-repository -y "ppa:jonathonf/mysql";
+    fi;
+
+  - echo --- Update list of packages and download dependencies;
+    if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+       CC=$CC-$VERSION;
+       CXX=$CXX-$VERSION;
+       sudo -E apt-get -yq update >> ~/apt-get-update.log 2>&1;
+       sudo -E apt-get -yq --no-install-suggests --no-install-recommends install $CXX $PACKAGES cmake cmake-curses-gui bison libncurses5-dev libaio-dev libssl-dev libevent-dev libmecab-dev libprotobuf-dev protobuf-compiler liblz4-dev libev-dev || travis_terminate 1;
+       sudo ln -s $(which ccache) /usr/lib/ccache/$CC;
+       sudo ln -s $(which ccache) /usr/lib/ccache/$CXX || echo;
+    fi
+
+  - mkdir boost;
+    cd boost;
+    wget https://dl.bintray.com/boostorg/release/1.66.0/source/boost_1_66_0.tar.gz;
+    cd ..;
+  - mkdir bin; cd bin;
+  - $CC -v
+  - $CXX -v
+  - ccache --version
+  - ccache --print-config;
+    ccache --zero-stats
+
+  - echo --- Set cmake parameters;
+    CMAKE_OPT="
+      -DCMAKE_BUILD_TYPE=$BUILD
+      -DMYSQL_MAINTAINER_MODE=OFF
+      -DENABLE_DOWNLOADS=1
+      -DDOWNLOAD_BOOST=1
+      -DWITH_BOOST=../boost
+      -DCMAKE_INSTALL_PREFIX=~/xtrabackup
+    ";
+
+  - echo --- Perform Debug or RelWithDebInfo compilation;
+    echo --- CMAKE_OPT=\"$CMAKE_OPT\";
+    echo --- ENV_VAR_CMAKE_OPT=\"$ENV_VAR_CMAKE_OPT\";
+    cmake ..
+      $CMAKE_OPT
+      $ENV_VAR_CMAKE_OPT
+  - make -j2 || travis_terminate 1
+  - ccache --show-stats;
+

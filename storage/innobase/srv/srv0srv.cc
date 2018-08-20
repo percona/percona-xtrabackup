@@ -507,6 +507,11 @@ ulong srv_doublewrite_batch_size = 120;
 
 ulong srv_replication_delay = 0;
 
+bool srv_apply_log_only = false;
+
+bool srv_backup_mode = false;
+bool srv_close_files = true;
+
 /*-------------------------------------------*/
 ulong srv_n_spin_wait_rounds = 30;
 ulong srv_spin_wait_delay = 6;
@@ -1134,7 +1139,7 @@ void srv_free(void) {
 
 /** Initializes the synchronization primitives, memory system, and the thread
  local storage. */
-static void srv_general_init() {
+void srv_general_init() {
   sync_check_init(srv_max_n_threads);
   /* Reset the system variables in the recovery module. */
   recv_sys_var_init();

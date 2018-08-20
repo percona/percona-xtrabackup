@@ -1,0 +1,36 @@
+============================
+ |Percona XtraBackup| 2.4.1
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.1 on
+February 16th 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt <apt_repo>`
+and :ref:`yum <yum_repo>` repositories.
+
+This release is the first GA (Generally Available) stable release in the 2.4
+series.
+
+This release contains all the features and bug fixes in Percona XtraBackup
+2.3.3, plus the following:
+
+New features
+------------
+
+ |Percona XtraBackup| has implemented basic support for |MySQL| 5.7 and
+ |Percona Server| 5.7.
+
+Bugs Fixed
+----------
+
+ |Percona XtraBackup| didn't respect ``innodb_log_file_size`` variable
+ stored in :file:`backup-my.cnf`. Bug fixed :bug:`1527081`.
+
+ If server would run out of space while backups were taken with
+ :option:`innobackupex --rsync` option backup process would fail but
+ |innobackupex| would still complete with ``completed OK!`` message. Bug fixed
+ :bug:`1537256`.
+
+ |Percona XtraBackup| was silently skipping extra arguments. Bug fixed
+ :bug:`1533542` (*Fungo Wang*).
+
+Other bugs fixed: :bug:`1544671` and :bug:`1535535`.

@@ -56,6 +56,16 @@ typedef UT_LIST_BASE_NODE_T(trx_t) trx_ut_list_t;
 class MVCC;
 class ReadView;
 
+/** If this MySQL server uses binary logging, after InnoDB has been inited
+and if it has done a crash recovery, we store the binlog file name and position
+here. */
+/* @{ */
+/** Binlog file name */
+extern char trx_sys_mysql_bin_log_name[];
+/** Binlog file position, or -1 if unknown */
+extern ib_uint64_t trx_sys_mysql_bin_log_pos;
+/* @} */
+
 /** The transaction system */
 extern trx_sys_t *trx_sys;
 
@@ -78,6 +88,15 @@ void trx_sys_create_sys_pages(void);
 @param[in]	rseg_id		slot number in the TRX_SYS page rseg array
 @return page number from the TRX_SYS page rseg array */
 page_no_t trx_sysf_rseg_find_page_no(ulint rseg_id);
+
+/*****************************************************************//**
+Read WSREP XID information from the trx system header if the magic value
+shows it is valid. This code has been copied from MySQL patches by Codership
+with some modifications.
+@return true if the magic value is valid. Otherwise
+return false and leave 'xid' unchanged. */
+bool
+trx_sys_read_wsrep_checkpoint(XID* xid);
 
 /** Look for a free slot for a rollback segment in the trx system file copy.
 @param[in,out]	mtr		mtr
@@ -316,6 +335,18 @@ remains the same. */
   8                               /*!< low 4 bytes of the offset \
                                   within that file */
 #define TRX_SYS_MYSQL_LOG_NAME 12 /*!< MySQL log file name */
+
+/* The offset to WSREP XID headers */
+#define TRX_SYS_WSREP_XID_INFO (UNIV_PAGE_SIZE - 3500)
+#define TRX_SYS_WSREP_XID_MAGIC_N_FLD 0
+#define TRX_SYS_WSREP_XID_MAGIC_N 0x77737265
+
+/* XID field: formatID, gtrid_len, bqual_len, xid_data */
+#define TRX_SYS_WSREP_XID_LEN        (4 + 4 + 4 + XIDDATASIZE)
+#define TRX_SYS_WSREP_XID_FORMAT     4
+#define TRX_SYS_WSREP_XID_GTRID_LEN  8
+#define TRX_SYS_WSREP_XID_BQUAL_LEN 12
+#define TRX_SYS_WSREP_XID_DATA      16
 
 /** Doublewrite buffer */
 /* @{ */

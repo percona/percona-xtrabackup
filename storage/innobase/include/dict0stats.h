@@ -248,6 +248,14 @@ class TableStatsRecord {
   mem_heap_t *m_heap;
 };
 
+/** Calculates new estimates for table and index statistics. This function
+ is relatively quick and is used to calculate transient statistics that
+ are not saved on disk.
+ This was the only way to calculate statistics before the
+ Persistent Statistics feature was introduced. */
+void dict_stats_update_transient(
+    dict_table_t *table); /*!< in/out: table */
+
 #include "dict0stats.ic"
 
 #ifdef UNIV_ENABLE_UNIT_TEST_DICT_STATS

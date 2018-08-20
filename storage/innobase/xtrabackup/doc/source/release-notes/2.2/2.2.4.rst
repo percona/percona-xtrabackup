@@ -1,0 +1,58 @@
+==========================
+|Percona XtraBackup| 2.2.4
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.2.4 on
+September 12th 2014. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/2.2.4/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current stable release in the 2.2 series.
+
+New Features
+------------
+
+ |Percona XtraBackup| has implemented support for Galera GTID autorecovery.
+ |Percona XtraBackup| retrieves the GTID information, after backing up a server
+ with `backup locks
+ <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
+ support, from the |InnoDB| trx header on recovery and creates the
+ :file:`xtrabackup_galera_info` during that stage.
+
+Bugs Fixed
+----------
+
+ |Percona XtraBackup| is now built with system ``zlib`` library instead of the
+ older bundled one. Bug fixed :bug:`1108016`.
+
+ ``apt-get source`` was downloading older version of |Percona XtraBackup|. Bug
+ fixed :bug:`1363259`.
+
+ |innobackupex| would ignore the :option:`innobackupex --databases` without
+ :option:`innobackupex --stream` option and back up all the databases. Bug
+ fixed :bug:`569387`.
+
+ ``rsync`` package wasn't a dependency although it is required for the
+ :option:`innobackupex --rsync` option. Bug fixed :bug:`1259436`.
+
+ :option:`innobackupex --galera-info` was checking only for non-capitalized
+ ``wsrep_*`` status variables which was incompatible with *MariaDB Galera
+ Cluster* 10.0. Bug fixed :bug:`1306875`.
+
+ |Percona XtraBackup| now supports *MariaDB* GTID. Bugs fixed :bug:`1329539`
+ and :bug:`1326967` (*Nirbhay Choubey*).
+
+ |Percona XtraBackup| would crash trying to remove absent table from |InnoDB|
+ data dictionary while preparing a partial backup. Bug fixed :bug:`1340717`.
+
+ *MariaDB* 10.1 is now added to the list of supported servers. Bug fixed
+ :bug:`1364398`.
+
+ |Percona XtraBackup| would fail to restore (copy-back) tables that have
+ partitions with their own tablespace location. Bug fixed :bug:`1322658`.
+
+Other bugs fixed: :bug:`1333570`, :bug:`1326224`, and :bug:`1181171`.
+
+All of Percona's software is open-source and free, all the details of the
+release can be found in the `2.2.4 milestone
+<https://launchpad.net/percona-xtrabackup/+milestone/2.2.4>`_ at Launchpad.

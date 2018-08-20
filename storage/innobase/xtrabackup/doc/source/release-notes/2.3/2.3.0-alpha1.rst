@@ -1,0 +1,28 @@
+===================================
+ |Percona XtraBackup| 2.3.0-alpha1
+===================================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.3.0-alpha1 on
+October 30th 2014. Downloads are available from our download site `here
+<http://www.percona.com/downloads/TESTING/XtraBackup/xtrabackup-2.3.0alpha1/>`_.
+This **ALPHA** release, will be available in :ref:`Debian testing
+<debian_testing>` and :ref:`CentOS testing <yum_testing>` repositories.
+
+This is an **ALPHA** quality release and it is not intended for production. If
+you want a high quality, Generally Available release, the current Stable
+version should be used (currently 2.2.5 in the 2.2 series at the time of
+writing).
+
+New features
+------------
+
+ |Percona XtraBackup| has implemented new tool, :ref:`xbcloud_binary`, which
+ can be used to upload/download full or part of |xbstream| archive from/to
+ cloud.
+
+.. note::
+
+   In order to sucessfully install Percona Xtrabackup 2.3.0-alpha1 on *CentOS*,
+   ``libev.so.4`` package will need to be installed first. ``libev.so.4``
+   package can be installed from the `EPEL
+   <https://fedoraproject.org/wiki/EPEL>`_ repositories.

@@ -1,0 +1,44 @@
+==========================
+|Percona XtraBackup| 2.3.9
+==========================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.3.9 on
+July 24th 2017. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.9/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the current GA (Generally Available) stable release in the 2.3
+series.
+
+New Features
+============
+
+ New :option:`xtrabackup --check-privileges` option has been implemented that
+ can be used to check if |Percona XtraBackup| has all
+ :ref:`required privileges <privileges>` to perform the backup.
+
+Bugs fixed
+==========
+
+ |Percona XtraBackup| would crash when being prepared if the index compaction
+ was enabled. Bug fixed :bug:`1192834`.
+
+ Fixed build failure on *Debian Stretch* by adding support for building with
+ *OpenSSL* 1.1. Bug fixed :bug:`1678947`.
+
+ |xbstream| could run out of file descriptors while extracting the backup
+ which contains many tables. Bug fixed :bug:`1690823`.
+
+ |Percona XtraBackup| incorrectly determined use of ``master_auto_postion``
+ on a slave, and thus generated invalid :file:`xtrabackup_slave_info` file.
+ Bug fixed :bug:`1705193`.
+
+ |Percona XtraBackup| would crash while backing up MariaDB 10.2.x with
+ ``--ftwrl-*`` options. Bug fixed :bug:`1704636`.
+
+ Along with :file:`xtrabackup_checkpints` file, |xtrabackup| now copies
+ :file:`xtrabackup_info` file into directory specified by
+ :option:`xtrabackup --extra-lsndir` option. Bug fixed :bug:`1600656`.
+
+ GTID position was not recorded when :option:`xtrabackup --binlog-info` option
+ was set to ``AUTO``. Bug fixed :bug:`1651505`.

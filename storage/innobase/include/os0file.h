@@ -123,6 +123,9 @@ typedef int os_file_t;
 
 #endif /* _WIN32 */
 
+/** Umask for creating files */
+extern ulint  os_innodb_umask;
+
 /** Common file descriptor for file IO instrumentation with PFS
 on windows and other platforms */
 struct pfs_os_file_t {
@@ -880,7 +883,7 @@ bool os_file_create_directory(const char *pathname, bool fail_if_exists);
 entry in directory.
 @param[in]	path	path to the file
 @param[in]	name	name of the file */
-typedef void (*os_dir_cbk_t)(const char *path, const char *name);
+typedef std::function<void(const char *path, const char *name)> os_dir_cbk_t;
 
 /** This function scans the contents of a directory and invokes the callback
 for each entry.

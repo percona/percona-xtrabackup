@@ -1,0 +1,60 @@
+============================
+ |Percona XtraBackup| 2.4.4
+============================
+
+Percona is glad to announce the release of |Percona XtraBackup| 2.4.4
+on July 25th 2016. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt
+<apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+This release is the GA (Generally Available) stable release in the 2.4
+series.
+
+New features
+------------
+
+ |Percona XtraBackup| has been rebased on |MySQL| 5.7.13.
+
+Bugs Fixed
+----------
+
+ |Percona XtraBackup| reported the difference in the actual size of the system
+ tablespace and the size which was stored in the tablespace header. This check
+ is now skipped for tablespaces with autoextend support. Bug fixed
+ :bug:`1550322`.
+
+ Because |Percona Server| 5.5 and |MySQL| 5.6 store the LSN offset for large
+ log files at different places inside the redo log header, |Percona Xtrabackup|
+ was trying to guess which offset is better to use by trying to read from each
+ one and compare the log block numbers and assert ``lsn_chosen == 1`` when both
+ LSNs looked correct, but they were different. Fixed by improving the server
+ detection. Bug fixed :bug:`1568009`.
+
+ |Percona XtraBackup| didn't correctly detect when tables were both compressed
+ and encrypted. Bug fixed :bug:`1582130`.
+
+ |Percona XtraBackup| would crash if the keyring file was empty. Bug fixed
+ :bug:`1590351`.
+
+ Backup couldn't be prepared when the size in cache didn't match the physical
+ size. Bug fixed :bug:`1604299`.
+
+ Free Software Foundation address in copyright notices was outdated. Bug fixed
+ :bug:`1222777`.
+
+ Backup process would fail if the ``datadir`` specified on the command-line was
+ not the same as one that is reported by the server. |Percona XtraBackup| now
+ allows the ``datadir`` from :file:`my.cnf` override the one from ``SHOW
+ VARIABLES``. |xtrabackup| will print a warning that they don't match, but
+ continue. Bug fixed :bug:`1526467`.
+
+ With upstream change of maximum page size from 16K to 64K, the size of
+ incremental buffer became 1G. Which increased the requirement to 1G of RAM in
+ order to prepare the backup. While in fact there is no need to allocate such
+ a large buffer for smaller pages. Bug fixed :bug:`1582456`.
+
+ Backup process would fail on |MariaDB| Galera cluster operating in GTID mode
+ if binary logs were in non-standard directory. Bug fixed :bug:`1517629`.
+
+Other bugs fixed: :bug:`1583717`, :bug:`1583954`, and :bug:`1599397`.
+
