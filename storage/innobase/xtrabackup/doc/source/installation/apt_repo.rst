@@ -22,6 +22,7 @@ Supported Releases:
  * 16.04LTS (xenial)
  * 17.04 (zesty)
  * 17.10 (artful)
+ * 18.04 (bionic)
 
 Supported Platforms:
 
@@ -50,14 +51,14 @@ Installing |Percona XtraBackup| from Percona ``apt`` repository
 
    .. code-block:: bash
 
-     $ wget https://repo.percona.com/apt/percona-release_0.1-4.$(lsb_release -sc)_all.deb
+     $ wget https://repo.percona.com/apt/percona-release_0.1-6.$(lsb_release -sc)_all.deb
 
 2. Install the downloaded package with :program:`dpkg`. To do that, run the
    following commands as root or with :program:`sudo`:
 
    .. code-block:: bash
 
-     $ sudo dpkg -i percona-release_0.1-4.$(lsb_release -sc)_all.deb
+     $ sudo dpkg -i percona-release_0.1-6.$(lsb_release -sc)_all.deb
 
    Once you install this package the Percona repositories should be added. You
    can check the repository setup in the
