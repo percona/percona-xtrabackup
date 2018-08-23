@@ -30,8 +30,8 @@ mysql -e 'SELECT * FROM INFORMATION_SCHEMA.TABLES\G'
 # also test xtrabackup --stats work with --tables-file
 xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup
 
-# COUNT=`xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup \
-#        | grep table: | grep -v "mysql/" | awk '{print $2}' | sort -u | wc -l`
+COUNT=`xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup \
+       | grep table: | grep -v "mysql/" | awk '{print $2}' | sort -u | wc -l`
 
 if [ $COUNT != 5 ] ; then
 	vlog "xtrabackup --stats does not work"

@@ -2106,14 +2106,12 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 		ut_a(space != nullptr);
 
 		bool implicit = fsp_is_file_per_table(space_id, space->flags);
-		if (dd_table_open_on_dd_obj(dc, space_id, *dd_table.get(),
+		if (dd_table_load_on_dd_obj(dc, space_id, *dd_table.get(),
 					    ib_table, thd, &schema_name,
 					    implicit) != 0) {
 			err = DB_ERROR;
 			goto error;
 		}
-
-		dd_table_close(ib_table, thd, nullptr, false);
 	}
 
 	return (DB_SUCCESS);
@@ -5233,6 +5231,77 @@ loop:
 	return(TRUE);
 }
 
+static void stat_with_rec(dict_table_t* table, THD* thd, MDL_ticket* mdl_on_tab)
+{
+  mutex_exit(&(dict_sys->mutex));
+  if(table != nullptr)
+  {
+    if (!check_if_skip_table(table->name.m_name))
+    {
+      dict_index_t*	 index;
+      if (table->first_index()) {
+        dict_stats_update_transient(table);
+      }
+
+      index = UT_LIST_GET_FIRST(table->indexes);
+      while (index != NULL)
+      {
+        ib_uint64_t n_vals;
+        bool	       found;
+
+        if (index->n_user_defined_cols > 0) {
+          n_vals = index->stat_n_diff_key_vals[
+            index->n_user_defined_cols];
+        } else {
+          n_vals = index->stat_n_diff_key_vals[1];
+        }
+
+        fprintf(stdout,
+            "	table: %s, index: %s, space id: %lu, root page: %lu"
+            ", zip size: %lu"
+            "\n	estimated statistics in dictionary:\n"
+            "		key vals: %lu, leaf pages: %lu, size pages: %lu\n"
+            "	real statistics:\n",
+            table->name.m_name, index->name(),
+            (ulong) index->space,
+            (ulong) index->page,
+            (ulong) fil_space_get_page_size(index->space, &found).physical(),
+            (ulong) n_vals,
+            (ulong) index->stat_n_leaf_pages,
+            (ulong) index->stat_index_size);
+
+        {
+          mtr_t	 local_mtr;
+          page_t* root;
+          ulint	 page_level;
+
+          mtr_start(&local_mtr);
+
+          mtr_x_lock(&(index->lock), &local_mtr);
+
+          root = btr_root_get(index, &local_mtr);
+          page_level = btr_page_get_level(root, &local_mtr);
+
+          xtrabackup_stats_level(index, page_level);
+
+          mtr_commit(&local_mtr);
+        }
+
+        putc('\n', stdout);
+        index = UT_LIST_GET_NEXT(indexes, index);
+
+      }
+
+    }
+  }
+  mutex_enter(&(dict_sys->mutex));
+  if(table != nullptr) {
+    dd_table_close(table, thd, &mdl_on_tab, true);
+  }
+}
+
+
+
 static void
 xtrabackup_stats_func(int argc, char **argv)
 {
@@ -5337,82 +5406,41 @@ xtrabackup_stats_func(int argc, char **argv)
 		while(rec) {
 			MDL_ticket* mdl_on_tab = nullptr;
 			dd_process_dd_tables_rec_and_mtr_commit(heap, rec, &table, sys_tables, &mdl_on_tab, &mtr);
-			mutex_exit(&(dict_sys->mutex));
-			if(table != nullptr)
-			{
-				// We have to skip some functions in the mysql db, 
-				// because DD tables loaded from the sdi files crash updates & lookups
-				// const bool mysql_space = strncmp(table->name.m_name, "mysql", 5) == 0;
-				if (!check_if_skip_table(table->name.m_name))
-				{
-					dict_index_t*	 index;
-					if (table->first_index()/* && !mysql_space*/) {
-						dict_stats_update_transient(table);
-					}
 
-					 index = UT_LIST_GET_FIRST(table->indexes);
-					 while (index != NULL)
-					 {
-						 ib_uint64_t n_vals;
-						 bool	       found;
+      stat_with_rec(table, thd, mdl_on_tab);
 
-						 if (index->n_user_defined_cols > 0) {
-							 n_vals = index->stat_n_diff_key_vals[
-								 index->n_user_defined_cols];
-						 } else {
-							 n_vals = index->stat_n_diff_key_vals[1];
-						 }
+      mem_heap_empty(heap);
 
-						 fprintf(stdout,
-								 "	table: %s, index: %s, space id: %lu, root page: %lu"
-								 ", zip size: %lu"
-								 "\n	estimated statistics in dictionary:\n"
-								 "		key vals: %lu, leaf pages: %lu, size pages: %lu\n"
-								 "	real statistics:\n",
-								 table->name.m_name, index->name(),
-								 (ulong) index->space,
-								 (ulong) index->page,
-								 (ulong) fil_space_get_page_size(index->space, &found).physical(),
-								 (ulong) n_vals,
-								 (ulong) index->stat_n_leaf_pages,
-								 (ulong) index->stat_index_size);
+      mtr_start(&mtr);
 
-						 // if(!mysql_space) {
-							 mtr_t	 local_mtr;
-							 page_t* root;
-							 ulint	 page_level;
-
-							 mtr_start(&local_mtr);
-
-							 mtr_x_lock(&(index->lock), &local_mtr);
-
-							 root = btr_root_get(index, &local_mtr);
-							 page_level = btr_page_get_level(root, &local_mtr);
-
-							 xtrabackup_stats_level(index, page_level);
-
-							 mtr_commit(&local_mtr);
-						 // }
-
-						 putc('\n', stdout);
-						 index = UT_LIST_GET_NEXT(indexes, index);
-
-					 }
-
-				}
-			}
-			mem_heap_empty(heap);
-			mutex_enter(&(dict_sys->mutex));
-			if(table != nullptr) {
-				dd_table_close(table, thd, &mdl_on_tab, true);
-			}
-			mtr_start(&mtr);
 			rec = (rec_t*)dd_getnext_system_rec(&pcur, &mtr);
 		}
 
 		mtr_commit(&mtr);
 		dd_table_close(sys_tables, thd, &mdl, true);
 		mem_heap_empty(heap);
+
+		mtr_start(&mtr);
+
+		rec = dd_startscan_system(thd, &mdl, &pcur, &mtr, "mysql/table_partitions", &sys_tables);
+
+		while(rec) {
+			MDL_ticket* mdl_on_tab = nullptr;
+			dd_process_dd_partitions_rec_and_mtr_commit(heap, rec, &table, sys_tables, &mdl_on_tab, &mtr);
+
+      stat_with_rec(table, thd, mdl_on_tab);
+
+      mem_heap_empty(heap);
+
+      mtr_start(&mtr);
+
+			rec = (rec_t*)dd_getnext_system_rec(&pcur, &mtr);
+		}
+
+		mtr_commit(&mtr);
+		dd_table_close(sys_tables, thd, &mdl, true);
+		mem_heap_empty(heap);
+
 		mutex_exit(&(dict_sys->mutex));
 
 		destroy_thd(thd);
