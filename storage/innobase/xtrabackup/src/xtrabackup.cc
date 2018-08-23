@@ -8278,37 +8278,8 @@ handle_options(int argc, char **argv, int *argc_client, char ***argv_client,
 
 void setup_error_messages()
 {
-	static const char *all_msgs[4000];
 	my_default_lc_messages = &my_locale_en_US;
-	my_default_lc_messages->errmsgs->errmsgs = all_msgs;
-
-	struct {
-		int id;
-		const char *fmt;
-	}
-	xb_msgs[] = {
-		{ ER_DATABASE_NAME,"Database" },
-		{ ER_TABLE_NAME,"Table"},
-		{ ER_PARTITION_NAME, "Partition" },
-		{ ER_SUBPARTITION_NAME, "Subpartition" },
-		{ ER_TEMPORARY_NAME, "Temporary"},
-		{ ER_RENAMED_NAME, "Renamed"},
-		{ ER_CANT_FIND_DL_ENTRY, "Can't find symbol '%-.128s' in library"},
-		{ ER_CANT_OPEN_LIBRARY, "Can't open shared library '%-.192s' (errno: %d, %-.128s)" },
-		{ ER_OUTOFMEMORY, "Out of memory; restart server and try again (needed %d bytes)" },
-		{ ER_CANT_OPEN_LIBRARY, "Can't open shared library '%-.192s' (errno: %d, %-.128s)" },
-		{ ER_UDF_NO_PATHS, "No paths allowed for shared library" },
-		{ ER_CANT_INITIALIZE_UDF,"Can't initialize function '%-.192s'; %-.80s"},
-		{ ER_PLUGIN_IS_NOT_LOADED,"Plugin '%-.192s' is not loaded" }
-	};
-
-	for (int i = 0; i < (int)array_elements(all_msgs); i++) {
-		all_msgs[i] = "Unknown error";
-	}
-
-	for (int i = 0; i < (int)array_elements(xb_msgs); i++) {
-		all_msgs[xb_msgs[i].id - 1000] = xb_msgs[i].fmt;
-	}
+	my_default_lc_messages->errmsgs->read_texts();
 }
 
 /* ================= main =================== */
@@ -8513,7 +8484,7 @@ int main(int argc, char **argv)
 	character_set_filesystem= &my_charset_bin;
 
 	sys_var_init();
-	// setup_error_messages();
+	setup_error_messages();
 
 	/* --backup */
 	if (xtrabackup_backup) {
