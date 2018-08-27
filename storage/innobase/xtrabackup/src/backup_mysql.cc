@@ -466,8 +466,9 @@ get_mysql_vars(MYSQL *connection)
 	char *innodb_undo_directory_var = NULL;
 	char *innodb_page_size_var = NULL;
 	char *innodb_log_checksums_var = NULL;
-	// char *innodb_log_checksum_algorithm_var = NULL;
 	char *innodb_checksum_algorithm_var = NULL;
+	char *innodb_redo_log_encrypt_var = NULL;
+	char *innodb_undo_log_encrypt_var = NULL;
 	char *server_uuid_var = NULL;
 
 	unsigned long server_version = mysql_get_server_version(connection);
@@ -498,6 +499,8 @@ get_mysql_vars(MYSQL *connection)
 		{"innodb_undo_directory", &innodb_undo_directory_var},
 		{"innodb_page_size", &innodb_page_size_var},
 		{"innodb_log_checksums", &innodb_log_checksums_var},
+		{"innodb_redo_log_encrypt", &innodb_redo_log_encrypt_var},
+		{"innodb_undo_log_encrypt", &innodb_undo_log_encrypt_var},
 		{"server_uuid", &server_uuid_var},
 		{NULL, NULL}
 	};
@@ -642,6 +645,24 @@ get_mysql_vars(MYSQL *connection)
 		innobase_page_size = strtoll(
 			innodb_page_size_var, &endptr, 10);
 		ut_ad(*endptr == 0);
+	}
+
+	if (!check_if_param_set("innodb_redo_log_encrypt")
+		&& innodb_redo_log_encrypt_var) {
+		if (strcmp(innodb_redo_log_encrypt_var, "ON") == 0) {
+			srv_redo_log_encrypt = true;
+		} else {
+			srv_redo_log_encrypt = false;
+		}
+	}
+
+	if (!check_if_param_set("innodb_undo_log_encrypt")
+		&& innodb_undo_log_encrypt_var) {
+		if (strcmp(innodb_undo_log_encrypt_var, "ON") == 0) {
+			srv_undo_log_encrypt = true;
+		} else {
+			srv_undo_log_encrypt = false;
+		}
 	}
 
 	if (!innodb_checksum_algorithm_specified &&
@@ -1989,14 +2010,16 @@ write_backup_config_file()
 	  << "innodb_data_file_path=" << innobase_data_file_path << "\n"
 	  << "innodb_log_files_in_group=" << srv_n_log_files << "\n"
 	  << "innodb_log_file_size=" << innobase_log_file_size << "\n"
-	  // << "innodb_fast_checksum="
-	  // << (srv_fast_checksum ? "true" : "false") << "\n"
 	  << "innodb_page_size=" << srv_page_size << "\n"
-	  // << "innodb_log_block_size=" << srv_log_block_size << "\n"
 	  << "innodb_undo_directory=" << srv_undo_dir << "\n"
 	  << "innodb_undo_tablespaces=" << srv_undo_tablespaces << "\n"
 	  << "server_id=" << server_id << "\n"
-	  << "innodb_log_checksums=" << (srv_log_checksums ? "ON" : "OFF") << "\n";
+	  << "innodb_log_checksums=" << (srv_log_checksums ? "ON" : "OFF")
+	  << "\n"
+	  << "innodb_redo_log_encrypt=" << (srv_redo_log_encrypt ? "ON" : "OFF")
+	  << "\n"
+	  << "innodb_undo_log_encrypt=" << (srv_undo_log_encrypt ? "ON" : "OFF")
+	  << "\n";
 
 	if (innobase_doublewrite_file) {
 		s << "innodb_doublewrite_file="

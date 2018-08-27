@@ -36,18 +36,19 @@ buf_page_is_compacted(
 /*==================*/
 	const byte*	page);	/*!< in: a database page */
 
-/******************************************************************************
-Rebuild all secondary indexes in all tables in separate spaces. Called from
-innobase_start_or_create_for_mysql(). */
-void
-xb_compact_rebuild_indexes(void);
-
 /** Fetch tablespace key from "xtrabackup_keys".
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
 @param[out]	key		fetched tablespace iv */
 void
 xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
+
+/** Fetch tablespace key from "xtrabackup_keys" and set the encryption
+type for the tablespace.
+@param[in]	space		tablespace
+@return DB_SUCCESS or error code */
+dberr_t
+xb_set_encryption(fil_space_t *space);
 
 /** Add file to tablespace map.
 @param[in]	file_name	file name

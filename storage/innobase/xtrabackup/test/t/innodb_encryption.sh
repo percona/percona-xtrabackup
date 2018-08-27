@@ -6,9 +6,8 @@ require_server_version_higher_than 5.7.10
 
 function test_do()
 {
-	encryption_clause=$1
-	compression_clause=$2
-	transition_key=$3
+	table_options=$1
+	transition_key=$2
 
 	if [[ "$transition_key" = "generate" ]] ; then
 		backup_options="--generate-transition-key"
@@ -34,7 +33,7 @@ function test_do()
 	rm -rf $topdir/backup0
 
 	run_cmd $MYSQL $MYSQL_ARGS test <<EOF
-CREATE TABLE t1 (c1 VARCHAR(100)) ${encryption_clause} ${compression_clause};
+CREATE TABLE t1 (c1 VARCHAR(100)) ${table_options};
 INSERT INTO t1 (c1) VALUES ('ONE'), ('TWO'), ('THREE');
 INSERT INTO t1 (c1) VALUES ('10'), ('20'), ('30');
 INSERT INTO t1 SELECT * FROM t1;
@@ -42,7 +41,7 @@ INSERT INTO t1 SELECT * FROM t1;
 INSERT INTO t1 SELECT * FROM t1;
 INSERT INTO t1 SELECT * FROM t1;
 ALTER INSTANCE ROTATE INNODB MASTER KEY;
-CREATE TABLE t2 (c1 VARCHAR(100)) ${encryption_clause} ${compression_clause};
+CREATE TABLE t2 (c1 VARCHAR(100)) ${table_options};
 INSERT INTO t2 SELECT * FROM t1;
 EOF
 
@@ -57,7 +56,7 @@ EOF
 INSERT INTO t1 SELECT * FROM t1;
 ALTER INSTANCE ROTATE INNODB MASTER KEY;
 INSERT INTO t1 SELECT * FROM t1;
-CREATE TABLE t3 (c1 VARCHAR(100)) ${encryption_clause} ${compression_clause};
+CREATE TABLE t3 (c1 VARCHAR(100)) ${table_options};
 INSERT INTO t3 SELECT * FROM t1;
 DROP TABLE t2;
 EOF
@@ -90,7 +89,6 @@ EOF
 		   $prepare_options
 
 	# check that stats works
-	# TODO: enable when stats fixed
 	xtrabackup --stats --datadir=$topdir/backup --plugin-load=${plugin_load}
 
 	# make sure t1.ibd is still encrypted
@@ -134,6 +132,11 @@ EOF
 
 }
 
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_redo_log_encrypt=ON
+innodb_undo_log_encrypt=ON
+"
+
 # run with keyring_file plugin first
 
 . inc/keyring_file.sh
@@ -142,11 +145,14 @@ function cleanup_keyring() {
 	rm -rf $keyring_file
 }
 
-test_do "ENCRYPTION='y'" "" "top-secret"
+test_do "ENCRYPTION='y'" "top-secret"
 
 if is_xtradb && keyring_vault_ping ; then
 # cleanup environment variables
-MYSQLD_EXTRA_MY_CNF_OPTS=
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_redo_log_encrypt=ON
+innodb_undo_log_encrypt=ON
+"
 XB_EXTRA_MY_CNF_OPTS=
 
 
@@ -162,14 +168,17 @@ function cleanup_keyring() {
 
 trap "keyring_vault_unmount" EXIT
 
-test_do "ENCRYPTION='y'" "" "top-secret"
+test_do "ENCRYPTION='y'" "top-secret"
 
 keyring_vault_unmount
 trap "" EXIT
 fi
 
 # cleanup environment variables
-MYSQLD_EXTRA_MY_CNF_OPTS=
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_redo_log_encrypt=ON
+innodb_undo_log_encrypt=ON
+"
 XB_EXTRA_MY_CNF_OPTS=
 
 
@@ -181,11 +190,14 @@ function cleanup_keyring() {
 	rm -rf $keyring_file
 }
 
-test_do "ENCRYPTION='y'" "COMPRESSION='lz4'" "none"
+test_do "ENCRYPTION='y' COMPRESSION='lz4'" "none"
 
 if is_xtradb && keyring_vault_ping ; then
 # cleanup environment variables
-MYSQLD_EXTRA_MY_CNF_OPTS=
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_redo_log_encrypt=ON
+innodb_undo_log_encrypt=ON
+"
 XB_EXTRA_MY_CNF_OPTS=
 
 
@@ -201,7 +213,7 @@ function cleanup_keyring() {
 
 trap "keyring_vault_unmount" EXIT
 
-test_do "ENCRYPTION='y'" "COMPRESSION='zlib'" "generate"
+test_do "ENCRYPTION='y' COMPRESSION='zlib'" "generate"
 keyring_vault_unmount
 trap "" EXIT
 fi

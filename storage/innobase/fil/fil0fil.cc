@@ -5628,6 +5628,16 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
     }
   }
 
+  if (FSP_FLAGS_GET_ENCRYPTION(space->flags) && !srv_backup_mode &&
+      use_dumped_tablespace_keys) {
+    err = xb_set_encryption(space);
+    if (err != DB_SUCCESS) {
+      ib::error() << "Cannot find encryption key for tablespace '%s'."
+                  << space->name;
+      return (FIL_LOAD_INVALID);
+    }
+  }
+
   return (FIL_LOAD_OK);
 }
 

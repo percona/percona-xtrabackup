@@ -90,10 +90,26 @@ xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv)
 
 	it = encryption_info.find(space_id);
 
-	ut_ad(it != encryption_info.end());
+	ut_a(it != encryption_info.end());
 
 	memcpy(key, it->second.key, ENCRYPTION_KEY_LEN);
 	memcpy(iv, it->second.iv, ENCRYPTION_KEY_LEN);
+}
+
+/** Fetch tablespace key from "xtrabackup_keys" and set the encryption
+type for the tablespace.
+@param[in]	space		tablespace
+@return DB_SUCCESS or error code */
+dberr_t
+xb_set_encryption(fil_space_t *space)
+{
+	byte key[ENCRYPTION_KEY_LEN];
+	byte iv[ENCRYPTION_KEY_LEN];
+
+	xb_fetch_tablespace_key(space->id, key, iv);
+
+	space->flags |= FSP_FLAGS_MASK_ENCRYPTION;
+	return (fil_set_encryption(space->id, Encryption::AES, key, iv));
 }
 
 const char *TRANSITION_KEY_PRIFIX = "XBKey";
@@ -761,7 +777,7 @@ xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
 	}
 
 	err = Fil_space_iterator::for_each_space(
-		false,
+		true,
 		[&](fil_space_t* space) {
 			if (space->encryption_type == Encryption::NONE) {
 				return (DB_SUCCESS);
