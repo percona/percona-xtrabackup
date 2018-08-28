@@ -60,6 +60,11 @@ case "$1" in
         tarball="mysql-5.7.21-linux-glibc2.12-$arch.tar.gz"
         ;;
 
+    innodb80)
+        url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
+        tarball="mysql-8.0.11-linux-glibc2.12-$arch.tar.gz"
+        ;;
+
     xtradb51)
         url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
         tarball="Percona-Server-5.1.73-rel14.12-625.Linux.$arch.tar.gz"
