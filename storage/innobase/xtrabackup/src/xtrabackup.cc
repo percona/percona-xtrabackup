@@ -4559,6 +4559,16 @@ xtrabackup_backup_func(void)
 		static_cast<srv_win_flush_t>(innodb_flush_method);
 	ut_ad(innodb_flush_method <= SRV_WIN_IO_NORMAL);
 #endif
+	switch(srv_unix_file_flush_method) {
+		case SRV_UNIX_O_DIRECT:
+			msg("xtrabackup: using O_DIRECT\n");
+			break;
+		case SRV_UNIX_O_DIRECT_NO_FSYNC:
+			msg("xtrabackup: using O_DIRECT_NO_FSYNC\n");
+			break;
+		default:
+			break;
+	}
 
 	if (srv_buf_pool_size >= 1000 * 1024 * 1024) {
                                   /* Here we still have srv_pool_size counted
