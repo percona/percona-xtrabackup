@@ -19,7 +19,7 @@ override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
 	cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
-	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-24 -DINSTALL_MANDIR=/usr/share/man \
+	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 -DINSTALL_MANDIR=/usr/share/man \
 	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
 	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin .
 else
@@ -37,7 +37,7 @@ override_dh_auto_build:
 	make -j$(NCPU)
 
 override_dh_strip:
-	dh_strip --dbg-package=percona-xtrabackup-dbg-24
+	dh_strip --dbg-package=percona-xtrabackup-dbg-80
 
 %:
 	dh $@
