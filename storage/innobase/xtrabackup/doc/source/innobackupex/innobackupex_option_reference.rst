@@ -180,13 +180,12 @@ Options
    Use this option to disable table lock with ``FLUSH TABLES WITH READ LOCK``. Use it only if ALL your tables are InnoDB and you **DO NOT CARE** about the binary log position of the backup. This option shouldn't be used if there are any ``DDL`` statements being executed or if any updates are happening on non-InnoDB tables (this includes the system MyISAM tables in the *mysql* database), otherwise it could lead to an inconsistent backup. Where supported (Percona Server 5.6+) xtrabackup will automatically use `Backup Locks <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_ as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
    If you are considering to use :option:`--no-lock` because your backups are failing to acquire the lock, this could be because of incoming replication events preventing the lock from succeeding. Please try using :option:`--safe-slave-backup` to momentarily stop the replication slave thread, this may help the backup to succeed and you then don't need to resort to using this option.
    :file:`xtrabackup_binlog_info` is not created when --no-lock option is used (because ``SHOW MASTER STATUS`` may be inconsistent), but under certain conditions :file:`xtrabackup_binlog_pos_innodb` can be used instead to get consistent binlog coordinates as described in :ref:`working_with_binlogs`.
+
 .. option:: --no-timestamp
 
    This option prevents creation of a time-stamped subdirectory of the ``BACKUP-ROOT-DIR`` given on the command line. When it is specified, the backup is done in ``BACKUP-ROOT-DIR`` instead.
 
-.. option:: --no-version-check
-
-   This option disables the version check which is enabled by the --version-check option.
+.. include:: ../.res/contents/option.no-version-check.txt
 
 .. option:: --parallel=NUMBER-OF-THREADS
 
@@ -268,6 +267,4 @@ Options
 
    This option displays the |innobackupex| version and copyright notice and then exits.
 
-.. option:: --version-check
-
-   When this option is specified, innobackupex will perform a version check against the server on the backup stage after creating a server connection.
+.. |program| replace:: :program:`innobackupex`
