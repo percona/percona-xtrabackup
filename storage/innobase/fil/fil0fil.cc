@@ -9603,12 +9603,12 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
     fil_space_t *space = fil_space_get(page_id.space());
 
     if (space != nullptr) {
+      xb_tablespace_map_delete(space->name);
+
       dberr_t err =
           fil_delete_tablespace(page_id.space(), BUF_REMOVE_FLUSH_NO_WRITE);
 
       ut_a(err == DB_SUCCESS);
-
-      xb_tablespace_map_delete(space->name);
     }
 
   }
