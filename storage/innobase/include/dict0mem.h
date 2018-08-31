@@ -1941,13 +1941,13 @@ detect this and will eventually quit sooner. */
     return (s);
   }
 
-  int field_number(const char* field_name) const {
-    for(int i = 0; i < n_def; ++i) {
-      if(strcmp(field_name, get_col_name(i)) == 0) {
+  int field_number(const char *field_name) const {
+    for (int i = 0; i < n_def; ++i) {
+      if (strcmp(field_name, get_col_name(i)) == 0) {
         return i;
       }
     }
-    ut_ad(0);
+    ut_a(0);
   }
 
   /**Gets the nth column of a table.
