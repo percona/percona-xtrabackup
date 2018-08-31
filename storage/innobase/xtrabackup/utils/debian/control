@@ -1,8 +1,8 @@
-Source: percona-xtrabackup-24
+Source: percona-xtrabackup-80
 Section: database
 Priority: extra
-Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
-Uploaders: Tomislav Plavcic <tomislav.plavcic@percona.com>, Clint Byrum <clint@fewbar.com>
+Maintainer: Percona Development Team <opensource-dev@percona.com>
+Uploaders: Evgeniy Patlan <evgeniy.patlan@percona.com>
 Build-Depends: automake,
                bison,
                ca-certificates,
@@ -22,11 +22,11 @@ Build-Depends: automake,
 Standards-Version: 3.9.5
 Homepage: http://www.percona.com/software/percona-xtrabackup
 
-Package: percona-xtrabackup-24
+Package: percona-xtrabackup-80
 Architecture: any
 Depends: libdbd-mysql-perl, rsync, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
-Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
+Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
 Enhances: mysql-server
@@ -36,17 +36,17 @@ Description: Open source backup tool for InnoDB and XtraDB
  InnoDB, XtraDB and MyISAM tables on MySQL/Percona Server/MariaDB
  servers, and has many advanced features.
 
-Package: percona-xtrabackup-dbg-24
+Package: percona-xtrabackup-dbg-80
 Section: debug
 Architecture: any
-Depends: percona-xtrabackup-24 (= ${binary:Version}), ${misc:Depends}
+Depends: percona-xtrabackup-80 (= ${binary:Version}), ${misc:Depends}
 Description: Debug symbols for Percona XtraBackup
  Debug symbols for the binaries in percona-xtrabackup. Install this
  package if you need to run any of those with gdb.
 
-Package: percona-xtrabackup-test-24
+Package: percona-xtrabackup-test-80
 Architecture: any
-Depends: mysql-client, percona-xtrabackup-24, python, ${misc:Depends}
+Depends: mysql-client, percona-xtrabackup-80, python, ${misc:Depends}
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.
