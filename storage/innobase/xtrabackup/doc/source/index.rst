@@ -120,6 +120,7 @@ References
    glossary
    xtrabackup-files
    trademark-policy
+   Version checking <version-check>
 
 Indices and tables
 ==================
