@@ -83,7 +83,7 @@ function ib_part_restore()
 
 	# Restore database from backup
 	cp -rv $topdir/backup/* $mysql_datadir
-	mkdir $mysql_datadir/mysql
+	[ -d $mysql_datadir/mysql ] || mkdir $mysql_datadir/mysql
 	vlog "database restored from backup"
 
 }
