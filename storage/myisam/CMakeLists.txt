@@ -58,24 +58,6 @@ MYSQL_ADD_PLUGIN(myisam ${MYISAM_SOURCES}
   LINK_LIBRARIES mysys myisam_sys
 )
 
-ADD_CONVENIENCE_LIBRARY(myisam_nopfs ${MYISAM_SOURCES})
-ADD_DEPENDENCIES(myisam_nopfs GenError)
-TARGET_LINK_LIBRARIES(myisam_nopfs mysys myisam_sys)
-SET(MYISAM_NOPFS myisam_nopfs)
-
-MYSQL_ADD_EXECUTABLE(myisam_ftdump myisam_ftdump.cc)
-TARGET_LINK_LIBRARIES(myisam_ftdump ${MYISAM_NOPFS} mysys_ssl)
-SET_TARGET_PROPERTIES(myisam_ftdump PROPERTIES LINKER_LANGUAGE CXX)
-
-MYSQL_ADD_EXECUTABLE(myisamchk myisamchk.cc)
-TARGET_LINK_LIBRARIES(myisamchk ${MYISAM_NOPFS} mysys_ssl)
-
-MYSQL_ADD_EXECUTABLE(myisamlog myisamlog.cc)
-TARGET_LINK_LIBRARIES(myisamlog ${MYISAM_NOPFS} ${LIBSOCKET})
-
-MYSQL_ADD_EXECUTABLE(myisampack myisampack.cc)
-TARGET_LINK_LIBRARIES(myisampack ${MYISAM_NOPFS} mysys_ssl)
-
 IF(WITH_UNIT_TESTS AND FALSE)
   MYSQL_ADD_EXECUTABLE(mi_test1 mi_test1.cc SKIP_INSTALL)
   TARGET_LINK_LIBRARIES(mi_test1 ${MYISAM_NOPFS} mysys_ssl)

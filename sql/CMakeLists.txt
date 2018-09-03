@@ -712,21 +712,6 @@ ENDIF()
 OPTION(DEBUG_EXTNAME "Build server as mysqld-debug (debug builds only)" OFF)
 MARK_AS_ADVANCED(DEBUG_EXTNAME)
 
-IF(DEBUG_EXTNAME)
-  SET_TARGET_PROPERTIES(mysqld PROPERTIES DEBUG_OUTPUT_NAME "mysqld-debug")
-ENDIF()
-
-SET(WITH_MYSQLD_LDFLAGS "" CACHE STRING "Additional linker flags for mysqld")
-MARK_AS_ADVANCED(WITH_MYSQLD_LDFLAGS)
-IF(WITH_MYSQLD_LDFLAGS)
-  GET_TARGET_PROPERTY(mysqld LINK_FLAGS MYSQLD_LINK_FLAGS)
-  IF(NOT MYSQLD_LINK_FLAGS)
-    SET(MYSQLD_LINK_FLAGS) 
-  ENDIF() 
-  SET_TARGET_PROPERTIES(mysqld PROPERTIES LINK_FLAGS 
-     "${MYSQLD_LINK_FLAGS} ${WITH_MYSQLD_LDFLAGS}")
-ENDIF()
-
 # Handle out-of-source build from source package with possibly broken 
 # bison. Copy bison output to from source to build directory, if not already 
 # there
@@ -774,11 +759,6 @@ ADD_CUSTOM_COMMAND(
   DEPENDS gen_lex_hash
 )
 
-MYSQL_ADD_EXECUTABLE(mysql_tzinfo_to_sql tztime.cc)
-SET_TARGET_PROPERTIES(mysql_tzinfo_to_sql PROPERTIES COMPILE_FLAGS "-DTZINFO2SQL")
-TARGET_LINK_LIBRARIES(mysql_tzinfo_to_sql mysys mysys_ssl)
-ADD_DEPENDENCIES(mysql_tzinfo_to_sql GenError)
-
 ADD_CUSTOM_TARGET( 
         GenServerSource
         DEPENDS ${GEN_SOURCES}
@@ -793,26 +773,6 @@ ADD_CUSTOM_TARGET(
   GenKeywordList
   DEPENDS ${GEN_KEYWORD_LIST_SOURCES}
 )
-
-MYSQL_ADD_PLUGIN(udf_example udf_example.cc
-                 MODULE_ONLY TEST_ONLY MODULE_OUTPUT_NAME "udf_example")
-IF(NOT DISABLE_SHARED)
-  IF(WIN32)
-    SET_TARGET_PROPERTIES(udf_example
-      PROPERTIES LINK_FLAGS
-      "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/udf_example.def")
-  ENDIF()
-ENDIF()
-
-MYSQL_ADD_PLUGIN(locking_service locking_service_udf.cc
-                 MODULE_ONLY MODULE_OUTPUT_NAME "locking_service")
-IF(NOT DISABLE_SHARED)
-  IF(WIN32)
-    SET_TARGET_PROPERTIES(locking_service
-      PROPERTIES LINK_FLAGS
-      "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/locking_service.def")
-  ENDIF()
-ENDIF()
 
 FOREACH(tool gtar tar git)
   STRING(TOUPPER ${tool}  TOOL)
