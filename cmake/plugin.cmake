@@ -262,6 +262,7 @@ ENDMACRO()
 # subdirectories, configure sql_builtin.cc
 MACRO(CONFIGURE_PLUGINS)
   FILE(GLOB dirs_storage ${CMAKE_SOURCE_DIR}/storage/*)
+  LIST(REMOVE_ITEM dirs_storage ${CMAKE_SOURCE_DIR}/storage/example)
   FOREACH(dir ${dirs_storage} ${dirs_plugin} ${dirs_rapid_plugin})
     IF (EXISTS ${dir}/CMakeLists.txt)
       ADD_SUBDIRECTORY(${dir})

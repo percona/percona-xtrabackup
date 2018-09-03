@@ -140,9 +140,10 @@ ENDMACRO()
 
 # Add all CMake projects under components
 MACRO(CONFIGURE_COMPONENTS)
-  FILE(GLOB dirs_components ${CMAKE_SOURCE_DIR}/components/*)
-  FILE(GLOB dirs_components_test ${CMAKE_SOURCE_DIR}/components/test/*)
-  FOREACH(dir ${dirs_components} ${dirs_components_test})
+  SET(dirs_components
+    ${CMAKE_SOURCE_DIR}/components/library_mysys
+    ${CMAKE_SOURCE_DIR}/components/mysql_server)
+  FOREACH(dir ${dirs_components})
     IF (EXISTS ${dir}/CMakeLists.txt)
       ADD_SUBDIRECTORY(${dir})
     ENDIF()

@@ -200,18 +200,6 @@ IF(UNIX)
 )
 ENDIF()
 
-IF(NOT WITHOUT_SERVER)
-  INSTALL(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables.sql
-    ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables_data.sql
-    ${CMAKE_CURRENT_SOURCE_DIR}/fill_help_tables.sql
-    ${CMAKE_CURRENT_SOURCE_DIR}/mysql_sys_schema.sql
-    ${CMAKE_CURRENT_SOURCE_DIR}/mysql_test_data_timezone.sql
-    ${FIX_PRIVILEGES_SQL}
-    DESTINATION ${INSTALL_MYSQLSHAREDIR} COMPONENT Server
-  )
-ENDIF()
-
 # TCMalloc hacks
 IF(MALLOC_LIB)
   MESSAGE("Using tcmalloc '${MALLOC_LIB}'")
@@ -454,20 +442,6 @@ ELSE()
   # On Unix, most of the files end up in the bin directory
   SET(mysql_config_COMPONENT COMPONENT Development)
 
-  IF(WITH_SYSTEMD)
-    SET(BIN_SCRIPTS
-      mysql_config
-      mysqldumpslow
-      )
-  ELSE()
-    SET(BIN_SCRIPTS
-      mysql_config
-      mysqldumpslow
-      mysqld_multi
-      mysqld_safe
-      )
-  ENDIF()
-
   SET(PKGCONFIG_FILE ${LIBMYSQL_OS_OUTPUT_NAME}.pc)
   STRING(REGEX REPLACE "/mysql$" "" PKGCONFIG_DIR "${INSTALL_LIBDIR}")
   SET(PKGCONFIG_DIR "${PKGCONFIG_DIR}/pkgconfig")
@@ -481,16 +455,6 @@ ELSE()
   CONFIGURE_FILE(mysqlclient.pc.in
     ${CMAKE_CURRENT_BINARY_DIR}/${PKGCONFIG_FILE}
     ESCAPE_QUOTES @ONLY)
-
-  IF(INSTALL_PKGCONFIGDIR)
-    MESSAGE(STATUS "INSTALL ${PKGCONFIG_FILE} ${INSTALL_PKGCONFIGDIR}")
-    INSTALL(FILES
-      ${CMAKE_CURRENT_BINARY_DIR}/${PKGCONFIG_FILE}
-      DESTINATION ${INSTALL_PKGCONFIGDIR}
-      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-      COMPONENT Development
-      )
-  ENDIF()
 
   FOREACH(file ${BIN_SCRIPTS})
     IF(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${file}.sh)
