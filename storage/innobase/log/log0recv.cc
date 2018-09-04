@@ -66,6 +66,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0rec.h"
 #include "trx0undo.h"
 #include "ut0new.h"
+#include "xb0xb.h"
 
 #ifndef UNIV_HOTBACKUP
 #include "buf0rea.h"
@@ -1572,7 +1573,7 @@ static byte *recv_parse_or_apply_log_rec_body(
           recv_sys->bytes_to_ignore_before_checkpoint != 0));
 
     case MLOG_INDEX_LOAD:
-#ifdef UNIV_HOTBACKUP
+#if defined(UNIV_HOTBACKUP) || defined(XTRABACKUP)
       /* While scaning redo logs during  backup phase a
       MLOG_INDEX_LOAD type redo log record indicates a DDL
       (create index, alter table...)is performed with
@@ -1591,13 +1592,13 @@ static byte *recv_parse_or_apply_log_rec_body(
       Error out in case of online backup and emit a warning in case
       of offline backup and continue. */
       if (!recv_recovery_on) {
-        if (is_online_redo_copy) {
+        if (!opt_lock_ddl_per_table) {
           if (backup_redo_log_flushed_lsn < recv_sys->recovered_lsn) {
-            ib::trace_1() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
-                          << " load_index lsn " << recv_sys->recovered_lsn;
+            ib::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
+                       << " load_index lsn " << recv_sys->recovered_lsn;
 
             if (backup_redo_log_flushed_lsn == 0) {
-              ib::error(ER_IB_MSG_715) << "MEB was not able"
+              ib::error(ER_IB_MSG_715) << "PXB was not able"
                                        << " to determine the"
                                        << " InnoDB Engine"
                                        << " Status";
@@ -1609,7 +1610,7 @@ static byte *recv_parse_or_apply_log_rec_body(
                                      << " performed. All modified"
                                      << " pages may not have been"
                                      << " flushed to the disk yet.\n"
-                                     << "    MEB will not be able to"
+                                     << "    PXB will not be able to"
                                      << " take a consistent backup."
                                      << " Retry the backup"
                                      << " operation";
@@ -1618,8 +1619,8 @@ static byte *recv_parse_or_apply_log_rec_body(
           backup started hence no error */
         } else {
           /* offline backup */
-          ib::trace_1() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
-                        << " load_index lsn " << recv_sys->recovered_lsn;
+          ib::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
+                     << " load_index lsn " << recv_sys->recovered_lsn;
 
           ib::warn(ER_IB_MSG_717);
         }

@@ -60,6 +60,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0roll.h"
 #include "trx0sys.h"
 #include "trx0trx.h"
+#include "xb0xb.h"
 
 /**************************************************/ /**
  @page PAGE_INNODB_REDO_LOG_THREADS Background redo log threads
@@ -2329,6 +2330,20 @@ bool log_read_encryption() {
 
   if (memcmp(log_block_buf + LOG_HEADER_CREATOR_END, ENCRYPTION_KEY_MAGIC_V3,
              ENCRYPTION_MAGIC_SIZE) == 0) {
+    if (use_dumped_tablespace_keys && !srv_backup_mode) {
+      ut_free(log_block_buf_ptr);
+      fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+      err = xb_set_encryption(space);
+      if (err != DB_SUCCESS) {
+        ib::error() << "Cannot find encryption key for redo log.";
+        return (false);
+      }
+      return (true);
+    }
+
+    /* check_keyring modifies keyring by generating new key and saving it.
+    XtraBackup must avoid touching keyring on backup. */
+#if !defined(XTRABACKUP)
     /* Make sure the keyring is loaded. */
     if (!Encryption::check_keyring()) {
       ut_free(log_block_buf_ptr);
@@ -2336,6 +2351,7 @@ bool log_read_encryption() {
                                 << " but keyring plugin is not loaded.";
       return (false);
     }
+#endif
 
     if (Encryption::decode_encryption_info(
             key, iv, log_block_buf + LOG_HEADER_CREATOR_END)) {
