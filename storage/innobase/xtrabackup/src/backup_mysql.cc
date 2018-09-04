@@ -399,7 +399,6 @@ check_server_version(unsigned long version_number,
 		     const char *innodb_version)
 {
 	bool version_supported = false;
-	bool mysql51 = false;
 
 	mysql_server_version = version_number;
 
@@ -413,23 +412,10 @@ check_server_version(unsigned long version_number,
 		server_flavor = FLAVOR_MYSQL;
 	}
 
-	mysql51 = version_number > 50100 && version_number < 50500;
-	version_supported = version_supported
-		|| (mysql51 && innodb_version != NULL);
-	version_supported = version_supported
-		|| (version_number > 50500 && version_number < 50800);
-	version_supported = version_supported
-		|| ((version_number > 100000 && version_number < 100300)
-		    && server_flavor == FLAVOR_MARIADB);
 	version_supported = version_supported
 		|| (version_number > 80000 && version_number < 90000);
 
-	if (mysql51 && innodb_version == NULL) {
-		msg("Error: Built-in InnoDB in MySQL 5.1 is not "
-		    "supported in this release. You can either use "
-		    "Percona XtraBackup 2.0, or upgrade to InnoDB "
-		    "plugin.\n");
-	} else if (!version_supported) {
+	if (!version_supported) {
 		msg("Error: Unsupported server version: '%s'. Please "
 		    "report a bug at "
 		    "https://jira.percona.com/projects/PXB\n",
