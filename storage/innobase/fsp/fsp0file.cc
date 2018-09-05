@@ -653,13 +653,10 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 						   m_encryption_key,
 						   m_encryption_iv,
 						   m_first_page)) {
-			ib::error()
+			ib::info()
 				<< "Encryption information in"
 				<< " datafile: " << m_filepath
-				<< " can't be decrypted"
-				<< " , please confirm the keyfile"
-				<< " is match and keyring plugin"
-				<< " is loaded.";
+				<< " can't be decrypted.";
 
 			m_is_valid = false;
 			free_first_page();
@@ -667,7 +664,7 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 			ut_free(m_encryption_iv);
 			m_encryption_key = NULL;
 			m_encryption_iv = NULL;
-			return(DB_CORRUPTION);
+			return(DB_PAGE_IS_BLANK);
 		}
 
 		if (recv_recovery_is_on()
