@@ -275,7 +275,7 @@ function set_vars()
     if gnused --version > /dev/null 2>&1
     then
         SED=gnused
-    elif gtar --version > /dev/null 2>&1
+    elif gsed --version > /dev/null 2>&1
     then
         SED=gsed
     else
