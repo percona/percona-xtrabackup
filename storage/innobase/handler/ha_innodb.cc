@@ -4410,7 +4410,7 @@ static int innobase_init_files(dict_init_mode_t dict_init_mode,
   directories.push_back(FIL_PATH_SEPARATOR);
   directories.append(MySQL_datadir_path.path());
 
-  err = srv_start(create, directories);
+  err = srv_start(create, directories, ULLONG_MAX);
 
   if (err != DB_SUCCESS) {
     DBUG_RETURN(innodb_init_abort());

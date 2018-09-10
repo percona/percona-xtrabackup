@@ -10,6 +10,8 @@ start_server
 
 has_backup_locks && skip_test "Requires server without backup locks support"
 
+mysql -e 'CREATE TABLE t1 (a INT) engine=MyISAM' test
+
 $MYSQL $MYSQL_ARGS -Ns -e \
        "SHOW GLOBAL STATUS LIKE 'Com_unlock_tables%'; \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \

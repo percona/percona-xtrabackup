@@ -107,6 +107,8 @@ has_backup_locks && skip_test "Requires a server without backup locks support"
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t1(a INT) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (1);
+CREATE TABLE t2(a INT) ENGINE=MyISAM;
+INSERT INTO t2 VALUES (1);
 EOF
 
 mkdir $topdir/full

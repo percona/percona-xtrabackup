@@ -91,11 +91,13 @@ dberr_t srv_undo_tablespaces_upgrade();
 dberr_t srv_undo_tablespaces_update(ulong target);
 
 /** Start InnoDB.
-@param[in]	create_new_db		Whether to create a new database
-@param[in]	scan_directories	Scan directories for .ibd files for
+@param[in]  create_new_db     Whether to create a new database
+@param[in]  scan_directories  Scan directories for .ibd files for
                                         recovery "dir1;dir2; ... dirN"
+@param[in]  to_lsn            LSN to stop recovery at
 @return DB_SUCCESS or error code */
-dberr_t srv_start(bool create_new_db, const std::string &scan_directories);
+dberr_t srv_start(bool create_new_db, const std::string &scan_directories,
+                  lsn_t to_lsn);
 
 /** On a restart, initialize the remaining InnoDB subsystems so that
 any tables (including data dictionary tables) can be accessed. */

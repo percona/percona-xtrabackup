@@ -5,9 +5,11 @@
 start_server
 
 mysql -e "CREATE USER 'bkpuser'@'localhost' IDENTIFIED BY '111'"
-mysql -e "GRANT RELOAD, LOCK TABLES, PROCESS, REPLICATION CLIENT ON *.* TO 'bkpuser'@'localhost';"
-mysql -e "GRANT ALL ON PERCONA_SCHEMA.* TO 'bkpuser'@'localhost';"
+mysql -e "GRANT BACKUP_ADMIN, RELOAD, LOCK TABLES, PROCESS, REPLICATION CLIENT ON *.* TO 'bkpuser'@'localhost'"
+mysql -e "GRANT SELECT ON performance_schema.log_status TO 'bkpuser'@'localhost'"
+mysql -e "GRANT ALL ON PERCONA_SCHEMA.* TO 'bkpuser'@'localhost'"
 mysql -e "SET GLOBAL init_connect='set autocommit=0'"
+mysql -e "FLUSH PRIVILEGES"
 
 xtrabackup -ubkpuser -p111 --backup --history=abcx --target-dir=$topdir/backup
 

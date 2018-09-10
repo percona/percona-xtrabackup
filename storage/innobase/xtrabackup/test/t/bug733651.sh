@@ -13,18 +13,6 @@ then
     options="$options innodb_page_size"
 fi
 
-# innodb_fast_checksum is supported in XtraDB 5.1/5.5
-if is_xtradb && is_server_version_lower_than 5.6.0
-then
-    options="$options innodb_fast_checksum"
-fi
-
-# innodb_log_block_size is only supported in XtraDB
-if is_xtradb
-then
-    options="$options innodb_log_block_size"
-fi
-
 start_server
 
 xtrabackup --backup --target-dir=$topdir/backup

@@ -1140,8 +1140,11 @@ out:
 	return(ret);
 }
 
+/* Backup non-InnoDB data.
+@param  backup_lsn   backup LSN
+@return true if success. */
 bool
-backup_start()
+backup_start(lsn_t &backup_lsn)
 {
 	if (!opt_no_lock) {
 		if (opt_safe_slave_backup) {
@@ -1165,20 +1168,18 @@ backup_start()
 		return(false);
 	}
 
-	// There is no need to stop slave thread before coping non-Innodb data when
+	// There is no need to stop slave thread before copying non-Innodb data when
 	// --no-lock option is used because --no-lock option requires that no DDL or
 	// DML to non-transaction tables can occur.
-	if (opt_no_lock) {
-		if (opt_safe_slave_backup) {
-			if (!wait_for_safe_slave(mysql_connection)) {
-				return(false);
-			}
+	if (opt_no_lock && opt_safe_slave_backup) {
+		if (!wait_for_safe_slave(mysql_connection)) {
+			return(false);
 		}
 	}
 
-	if (opt_slave_info) {
-		lock_binlog_maybe(mysql_connection);
+	log_status_get(mysql_connection);
 
+	if (opt_slave_info) {
 		if (!write_slave_info(mysql_connection)) {
 			return(false);
 		}
@@ -1197,11 +1198,7 @@ backup_start()
 		write_current_binlog_file(mysql_connection);
 	}
 
-	if (opt_binlog_info == BINLOG_INFO_ON) {
-
-		lock_binlog_maybe(mysql_connection);
-		write_binlog_info(mysql_connection);
-	}
+	write_binlog_info(mysql_connection, backup_lsn);
 
 	if (have_flush_engine_logs) {
 		msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...\n");
@@ -1213,6 +1210,8 @@ backup_start()
 }
 
 
+/* Finsh the backup. Release all locks. Write down backup metadata.
+@return true if success. */
 bool
 backup_finish()
 {
@@ -1244,8 +1243,9 @@ backup_finish()
 	}
 
 	msg_ts("Backup created in directory '%s'\n", xtrabackup_target_dir);
-	if (mysql_binlog_position != NULL) {
-		msg("MySQL binlog position: %s\n", mysql_binlog_position);
+	if (!mysql_binlog_position.empty()) {
+		msg("MySQL binlog position: %s\n",
+			mysql_binlog_position.c_str());
 	}
 	if (!mysql_slave_position.empty() && opt_slave_info) {
 		msg("MySQL slave binlog position: %s\n",
