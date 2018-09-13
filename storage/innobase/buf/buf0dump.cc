@@ -711,5 +711,7 @@ void buf_dump_thread() {
   my_thread_end();
 
   std::atomic_thread_fence(std::memory_order_seq_cst);
+#ifndef XTRABACKUP
   srv_threads.m_buf_dump_thread_active = false;
+#endif
 }
