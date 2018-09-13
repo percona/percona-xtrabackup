@@ -1737,8 +1737,10 @@ const char *srv_any_background_threads_are_active() {
     thread_active = "srv_lock_timeout thread";
   } else if (srv_threads.m_monitor_thread_active) {
     thread_active = "srv_monitor_thread";
+#ifndef XTRABACKUP
   } else if (srv_threads.m_buf_dump_thread_active) {
     thread_active = "buf_dump_thread";
+#endif
   } else if (srv_threads.m_buf_resize_thread_active) {
     thread_active = "buf_resize_thread";
   }

@@ -490,7 +490,7 @@ datafile_copy_backup(const char *filepath, uint thread_n)
 {
 	const char *ext_list[] = {"frm", "isl", "MYD", "MYI", "MAD", "MAI",
 		"MRG", "TRG", "TRN", "ARM", "ARZ", "CSM", "CSV", "opt", "par",
-		NULL};
+		"sdi", NULL};
 
 	/* Get the name and the path for the tablespace. node->name always
 	contains the path (which may be absolute for remote tablespaces in

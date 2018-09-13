@@ -146,7 +146,9 @@ struct Srv_threads {
   bool m_error_monitor_thread_active;
 
   /** true if buffer pool dump/load thread is created */
+#ifndef XTRABACKUP
   bool m_buf_dump_thread_active;
+#endif
 
   /** true if buffer pool resize thread is created */
   bool m_buf_resize_thread_active;
