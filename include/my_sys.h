@@ -596,6 +596,9 @@ extern size_t my_fwrite(FILE *stream, const uchar *Buffer, size_t Count,
                         myf MyFlags);
 extern my_off_t my_fseek(FILE *stream, my_off_t pos, int whence);
 extern my_off_t my_ftell(FILE *stream);
+#if !defined(HAVE_MEMSET_S)
+void memset_s(void *dest, size_t dest_max, int c, size_t n);
+#endif
 
 /* implemented in my_syslog.c */
 

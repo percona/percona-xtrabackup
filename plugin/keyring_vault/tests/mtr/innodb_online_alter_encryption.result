@@ -1,0 +1,132 @@
+call mtr.add_suppression("\\[ERROR\\] Function 'keyring_vault' already exists");
+call mtr.add_suppression("\\[ERROR\\] Couldn't load plugin named 'keyring_vault' with soname 'keyring_vault.*'.");
+call mtr.add_suppression("Plugin keyring_vault reported");
+SET @@global.keyring_vault_config="MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault1.conf";
+# restart:<hidden args>
+CREATE TABLE t1 (id INT NOT NULL PRIMARY KEY, a VARCHAR(255)) ENGINE=InnoDB ENCRYPTION='y';
+CREATE TABLE t2 (id INT NOT NULL PRIMARY KEY, a VARCHAR(255)) ENGINE=InnoDB;
+CREATE TABLE t3 (id INT, a VARCHAR(255)) ENGINE=InnoDB ENCRYPTION='y';
+CREATE TABLE t4 (id INT, a VARCHAR(255)) ENGINE=InnoDB;
+CREATE TABLE t5 (id INT NOT NULL PRIMARY KEY, a TEXT(500), b VARCHAR(255), FULLTEXT(b)) ENGINE=InnoDB ENCRYPTION='y';
+CREATE TABLE t6 (id INT, a TEXT(500), b VARCHAR(255), FULLTEXT(b)) ENGINE=InnoDB;
+CREATE TABLE t7 (id INT NOT NULL PRIMARY KEY, a VARCHAR(255)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED ENCRYPTION='y';
+CREATE PROCEDURE innodb_insert_proc (repeat_count INT)
+BEGIN
+DECLARE current_num INT;
+SET current_num = 0;
+WHILE current_num < repeat_count DO
+INSERT INTO t1 VALUES (current_num, REPEAT('foobar', 42));
+INSERT INTO t2 VALUES (current_num, REPEAT('temp', 42));
+INSERT INTO t3 VALUES (current_num, REPEAT('barfoo', 42));
+INSERT INTO t4 VALUES (current_num, REPEAT('repeat', 42));
+INSERT INTO t5 VALUES (current_num, SUBSTRING('A BC DEF GHIJ KLM NOPQRS TUV WXYZ 012 3456789', RAND() * 36 + 1, 100), REPEAT('author new', 22));
+INSERT INTO t6 VALUES (current_num, SUBSTRING('A BC DEF GHIJ KLM NOPQRS TUV WXYZ 012 3456789', RAND() * 36 + 1, 100), REPEAT('mangled old', 22));
+INSERT INTO t7 VALUES (current_num, REPEAT('mysql', 42));
+SET current_num = current_num + 1;
+END WHILE;
+END//
+COMMIT;
+SET autocommit=0;
+CALL innodb_insert_proc(15000);
+COMMIT;
+SET autocommit=1;
+ALTER TABLE t1 ADD COLUMN b INT DEFAULT 2;
+ALTER TABLE t2 ADD COLUMN b INT DEFAULT 2;
+ALTER TABLE t7 ADD COLUMN b INT DEFAULT 2;
+ALTER TABLE t1 ADD KEY a(a), ADD KEY b(b);
+ALTER TABLE t2 ADD KEY a(a), ADD KEY b(b);
+ALTER TABLE t3 ADD COLUMN c INT DEFAULT 5;
+ALTER TABLE t4 ADD COLUMN c INT DEFAULT 5;
+ALTER TABLE t3 ADD KEY (a), ADD KEY c(c);
+ALTER TABLE t4 ADD KEY (a), ADD KEY c(c);
+ALTER TABLE t5 ADD FULLTEXT(a);
+ALTER TABLE t6 ADD FULLTEXT(a);
+ALTER TABLE t7 ADD KEY a(a), ADD KEY b(b);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `id` int(11) NOT NULL,
+  `a` varchar(255) DEFAULT NULL,
+  `b` int(11) DEFAULT '2',
+  PRIMARY KEY (`id`),
+  KEY `a` (`a`),
+  KEY `b` (`b`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='y'
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `id` int(11) NOT NULL,
+  `a` varchar(255) DEFAULT NULL,
+  `b` int(11) DEFAULT '2',
+  PRIMARY KEY (`id`),
+  KEY `a` (`a`),
+  KEY `b` (`b`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+SHOW CREATE TABLE t3;
+Table	Create Table
+t3	CREATE TABLE `t3` (
+  `id` int(11) DEFAULT NULL,
+  `a` varchar(255) DEFAULT NULL,
+  `c` int(11) DEFAULT '5',
+  KEY `a` (`a`),
+  KEY `c` (`c`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='y'
+SHOW CREATE TABLE t4;
+Table	Create Table
+t4	CREATE TABLE `t4` (
+  `id` int(11) DEFAULT NULL,
+  `a` varchar(255) DEFAULT NULL,
+  `c` int(11) DEFAULT '5',
+  KEY `a` (`a`),
+  KEY `c` (`c`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+SHOW CREATE TABLE t5;
+Table	Create Table
+t5	CREATE TABLE `t5` (
+  `id` int(11) NOT NULL,
+  `a` text,
+  `b` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  FULLTEXT KEY `b` (`b`),
+  FULLTEXT KEY `a` (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='y'
+SHOW CREATE TABLE t6;
+Table	Create Table
+t6	CREATE TABLE `t6` (
+  `id` int(11) DEFAULT NULL,
+  `a` text,
+  `b` varchar(255) DEFAULT NULL,
+  FULLTEXT KEY `b` (`b`),
+  FULLTEXT KEY `a` (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+SHOW CREATE TABLE t7;
+Table	Create Table
+t7	CREATE TABLE `t7` (
+  `id` int(11) NOT NULL,
+  `a` varchar(255) DEFAULT NULL,
+  `b` int(11) DEFAULT '2',
+  PRIMARY KEY (`id`),
+  KEY `a` (`a`),
+  KEY `b` (`b`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=COMPRESSED ENCRYPTION='y'
+# Restarting server
+SELECT COUNT(1) FROM t2;
+COUNT(1)
+15000
+SELECT COUNT(1) FROM t3;
+COUNT(1)
+15000
+SELECT COUNT(1) FROM t4;
+COUNT(1)
+15000
+SELECT COUNT(1) FROM t5;
+COUNT(1)
+15000
+SELECT COUNT(1) FROM t6;
+COUNT(1)
+15000
+SELECT COUNT(1) FROM t7;
+COUNT(1)
+15000
+DROP PROCEDURE innodb_insert_proc;
+DROP TABLE t1, t2, t3, t4, t5, t6, t7;

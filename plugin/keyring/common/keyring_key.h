@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,7 @@ struct Key : IKey {
             const void *a_key, size_t a_key_len);
 
   void clear_key_data();
-  void create_key_signature() const;
+  virtual void create_key_signature() const;
   bool load_string_from_buffer(const uchar *buffer, size_t *buffer_position,
                                size_t key_pod_size, std::string *string,
                                size_t string_length);

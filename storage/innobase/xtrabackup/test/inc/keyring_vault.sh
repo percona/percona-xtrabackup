@@ -27,6 +27,7 @@ function keyring_vault_ping()
 {
 	curl -H "X-Vault-Token: ${VAULT_TOKEN}" \
 		--cacert "${VAULT_CA}" -k \
+		--connect-timeout 3 \
 		"${VAULT_URL}/v1/sys/mounts" || \
 	return 1
 }

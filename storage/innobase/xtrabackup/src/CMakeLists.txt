@@ -62,11 +62,11 @@ ADD_CUSTOM_TARGET(GenVersionCheck
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/plugin/keyring
-  # ${CMAKE_SOURCE_DIR}/plugin/keyring_vault
+  ${CMAKE_SOURCE_DIR}/plugin/keyring_vault
   ${BOOST_PATCHES_DIR})
 
 ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring "${CMAKE_CURRENT_BINARY_DIR}/keyring")
-# ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring_vault "${CMAKE_CURRENT_BINARY_DIR}/keyring_vault")
+ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring_vault "${CMAKE_CURRENT_BINARY_DIR}/keyring_vault")
 
 ADD_COMPILE_FLAGS(
   xtrabackup.cc

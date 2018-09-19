@@ -1,0 +1,120 @@
+include/master-slave.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the master info repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START SLAVE; see the 'START SLAVE Syntax' in the MySQL Manual for more information.
+[connection master]
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
+call mtr.add_suppression("\\[Error\\] InnoDB: Can't generate new master key, please check the keyring plugin is loaded.");
+call mtr.add_suppression("\\[Error\\] InnoDB: Encryption can't find master key, please check the keyring plugin is loaded.");
+call mtr.add_suppression("Error 'Can't find master key from keyring, please check keyring plugin is loaded.");
+call mtr.add_suppression("\\[Warning\\] Slave: Can't find master key from keyring, please check keyring plugin is loaded.");
+call mtr.add_suppression("\\[Error\\] InnoDB: Can't generate new master key for tablespace encryption, please check the keyring plugin is loaded.");
+call mtr.add_suppression("The slave coordinator and worker threads are stopped");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault2.conf';
+[On Master]
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault1.conf';
+
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+CREATE TABLE t1(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t1 VALUES(0, "aaaaa");
+INSERT INTO t1 VALUES(1, "bbbbb");
+INSERT INTO t1 VALUES(2, "ccccc");
+SELECT * FROM t1;
+c1	c2
+0	aaaaa
+1	bbbbb
+2	ccccc
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+CREATE TABLE t2(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t2 SELECT * FROM t1;
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+3
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+SELECT * FROM t1;
+c1	c2
+0	aaaaa
+1	bbbbb
+2	ccccc
+include/sync_slave_sql_with_master.inc
+[On Slave]
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+3
+SELECT * FROM t1;
+c1	c2
+0	aaaaa
+1	bbbbb
+2	ccccc
+[On Master]
+CREATE TABLE t3(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t3 VALUES(0, "aaaaa");
+
+include/sync_slave_sql_with_master.inc
+[On Slave]
+SELECT * FROM t3;
+c1	c2
+0	aaaaa
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+3
+SELECT * FROM t1;
+c1	c2
+0	aaaaa
+1	bbbbb
+2	ccccc
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+UNINSTALL PLUGIN keyring_vault;
+# Checking keyring plugin after uninstall.
+SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+include/stop_slave_sql.inc
+[On Master]
+CREATE TABLE t4(c1 INT PRIMARY KEY, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
+INSERT INTO t4 VALUES(1, "rpltest");
+include/save_master_pos.inc
+[On Slave]
+START SLAVE SQL_THREAD;
+include/wait_for_slave_sql_error.inc [errno=3185]
+INSTALL PLUGIN keyring_vault SONAME 'keyring_vault.so';
+Warnings:
+Warning	29	File '' not found (Errcode: 2 - No such file or directory)
+Warning	42000	keyring_vault initialization failure. Please check the server log.
+SET @@global.keyring_vault_config='MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault2.conf';
+SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+PLUGIN_NAME	keyring_vault
+PLUGIN_VERSION	1.0
+PLUGIN_STATUS	ACTIVE
+include/start_slave_sql.inc
+include/sync_slave_sql.inc
+SELECT * FROM t4;
+c1	c2
+1	rpltest
+[On Master]
+# Uninstalling keyring_vault plugin on master.
+UNINSTALL PLUGIN keyring_vault;
+# Checking keyring plugin after uninstall.
+SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
+FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';
+SELECT * FROM t1;
+c1	c2
+0	aaaaa
+1	bbbbb
+2	ccccc
+
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+ERROR HY000: Can't find master key from keyring, please check keyring plugin is loaded.
+# Installing keyring_vault plugin on master.
+INSTALL PLUGIN keyring_vault SONAME 'keyring_vault.so';
+Warnings:
+Warning	29	File '' not found (Errcode: 2 - No such file or directory)
+Warning	42000	keyring_vault initialization failure. Please check the server log.
+# Cleanup
+DROP TABLE t1,t2,t3,t4;
+include/sync_slave_sql_with_master.inc
+include/rpl_end.inc
+UNINSTALL PLUGIN keyring_vault;
+# restart:--plugin_load=keyring_vault=keyring_vault.so KEYRING_VAULT_PLUGIN_OPT

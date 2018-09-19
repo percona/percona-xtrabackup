@@ -281,10 +281,6 @@ bool Buffered_file_io::check_if_keyring_file_can_be_opened_or_created() {
   if (((file_size == (my_off_t)-1)) || file_io.close(file, MYF(MY_WME)) < 0)
     return true;
 
-  // empty file (any remnant) should be deleted
-  if (file_size == 0 && file_io.remove(keyring_filename.c_str(), MYF(MY_WME)))
-    return true;
-
   // keyring file is accessible (we can open or create it)
   return false;
 }
