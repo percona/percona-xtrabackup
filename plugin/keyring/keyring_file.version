@@ -1,0 +1,8 @@
+KEYRING_FILE_VERSION_1.0 {
+  global:
+     _mysql_*;
+     mysql_malloc_service;
+     my_plugin_log_service;
+     security_context_service;
+  local: *;
+};

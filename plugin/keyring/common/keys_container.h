@@ -32,6 +32,7 @@
 #include "my_sharedlib.h"
 #include "plugin/keyring/common/i_keyring_io.h"
 #include "plugin/keyring/common/i_keys_container.h"
+#include "plugin/keyring/common/i_system_keys_container.h"
 #include "plugin/keyring/common/keyring_key.h"
 #include "plugin/keyring/common/keyring_memory.h"
 #include "plugin/keyring/common/logger.h"
@@ -79,6 +80,7 @@ class Keys_container : public IKeys_container {
   ILogger *logger;
   IKeyring_io *keyring_io;
   std::string keyring_storage_url;
+  std::unique_ptr<ISystem_keys_container> system_keys_container;
 };
 
 }  // namespace keyring

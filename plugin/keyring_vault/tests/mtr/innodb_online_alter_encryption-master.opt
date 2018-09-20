@@ -1,0 +1,3 @@
+$KEYRING_VAULT_PLUGIN_OPT
+$KEYRING_VAULT_PLUGIN_LOAD
+--innodb-sort-buffer-size=64k

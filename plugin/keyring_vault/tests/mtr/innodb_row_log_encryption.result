@@ -1,0 +1,36 @@
+call mtr.add_suppression("\\[ERROR\\] Function 'keyring_vault' already exists");
+call mtr.add_suppression("\\[ERROR\\] Couldn't load plugin named 'keyring_vault' with soname 'keyring_vault.*'.");
+call mtr.add_suppression("Plugin keyring_vault reported");
+SET @@global.keyring_vault_config="MYSQLTEST_VARDIR/std_data/keyring_vault_confs/keyring_vault1.conf";
+# restart:<hidden args>
+CREATE TABLE t1(id INT NOT NULL PRIMARY KEY AUTO_INCREMENT, credit_card VARCHAR(200), private VARCHAR(50)) ENGINE=InnoDB ENCRYPTION='y';
+SET DEBUG_SYNC= 'row_merge_after_scan SIGNAL opened WAIT_FOR rotated';
+ALTER TABLE t1 ADD INDEX secret (credit_card), ALGORITHM=INPLACE, LOCK=NONE;
+SET DEBUG_SYNC= 'now WAIT_FOR opened';
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+SET DEBUG_SYNC= 'now SIGNAL rotated';
+CREATE TABLE t2(id int) ENGINE=InnoDB;
+SET DEBUG_SYNC= 'row_merge_after_scan SIGNAL opened WAIT_FOR updated';
+ALTER TABLE t1 ADD INDEX secret2 (private), ALGORITHM=INPLACE, LOCK=NONE;
+SET DEBUG_SYNC= 'now WAIT_FOR opened';
+INSERT INTO t1(credit_card) SELECT credit_card FROM t1;
+INSERT INTO t1(credit_card) SELECT credit_card FROM t1;
+INSERT INTO t1(credit_card) SELECT credit_card FROM t1;
+SET DEBUG_SYNC= 'now SIGNAL updated';
+DROP TABLE t2;
+SELECT variable_value > 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_num_pages_encrypted';
+variable_value > 0
+SELECT variable_value > 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_encryption_n_merge_blocks_encrypted';
+variable_value > 0
+1
+SELECT variable_value > 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_encryption_n_merge_blocks_decrypted';
+variable_value > 0
+1
+SELECT variable_value > 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_encryption_n_rowlog_blocks_encrypted';
+variable_value > 0
+1
+SELECT variable_value > 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_encryption_n_rowlog_blocks_decrypted';
+variable_value > 0
+1
+DROP TABLE t1;
+SET DEBUG_SYNC= 'RESET';

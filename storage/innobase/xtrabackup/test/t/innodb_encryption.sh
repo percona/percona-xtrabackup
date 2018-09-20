@@ -147,6 +147,8 @@ function cleanup_keyring() {
 
 test_do "ENCRYPTION='y'" "top-secret"
 
+. inc/keyring_vault.sh
+
 if is_xtradb && keyring_vault_ping ; then
 # cleanup environment variables
 MYSQLD_EXTRA_MY_CNF_OPTS="
@@ -159,7 +161,6 @@ XB_EXTRA_MY_CNF_OPTS=
 # and rerun with keyring_vault
 
 . inc/keyring_vault.sh
-
 keyring_vault_mount
 
 function cleanup_keyring() {
@@ -192,6 +193,8 @@ function cleanup_keyring() {
 
 test_do "ENCRYPTION='y' COMPRESSION='lz4'" "none"
 
+. inc/keyring_vault.sh
+
 if is_xtradb && keyring_vault_ping ; then
 # cleanup environment variables
 MYSQLD_EXTRA_MY_CNF_OPTS="
@@ -204,7 +207,6 @@ XB_EXTRA_MY_CNF_OPTS=
 # and rerun with keyring_vault
 
 . inc/keyring_vault.sh
-
 keyring_vault_mount
 
 function cleanup_keyring() {
