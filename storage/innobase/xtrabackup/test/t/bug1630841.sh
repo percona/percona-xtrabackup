@@ -43,9 +43,10 @@ then
 
 vlog "Creating user 'pxb'"
 
-${MYSQL} ${MYSQL_ARGS} -e "CREATE USER pxb@'localhost' IDENTIFIED BY 'password1' REQUIRE SSL"
-${MYSQL} ${MYSQL_ARGS} -e "GRANT PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO pxb@'localhost'"
-${MYSQL} ${MYSQL_ARGS} -e "FLUSH PRIVILEGES"
+mysql -e "CREATE USER pxb@'localhost' IDENTIFIED BY 'password1' REQUIRE SSL"
+mysql -e "GRANT BACKUP_ADMIN, PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO pxb@'localhost'"
+mysql -e "GRANT SELECT ON performance_schema.log_status TO pxb@'localhost'"
+mysql -e "FLUSH PRIVILEGES"
 
 vlog 'connecting with MYSQL cli'
 run_cmd ${MYSQL} \
@@ -94,9 +95,10 @@ sha256_password_public_key_path=${PWD}/inc/ssl-certs/rsa_public_key.pem
 
 start_server
 
-${MYSQL} ${MYSQL_ARGS} -e "CREATE USER pbx@'localhost' IDENTIFIED BY 'password1'"
-${MYSQL} ${MYSQL_ARGS} -e "GRANT PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO pbx@'localhost'"
-${MYSQL} ${MYSQL_ARGS} -e "FLUSH PRIVILEGES"
+mysql -e "CREATE USER pbx@'localhost' IDENTIFIED BY 'password1'"
+mysql -e "GRANT BACKUP_ADMIN, PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO pbx@'localhost'"
+mysql -e "GRANT SELECT ON performance_schema.log_status TO pbx@'localhost'"
+mysql -e "FLUSH PRIVILEGES"
 
 vlog 'connecting with MYSQL cli'
 run_cmd ${MYSQL} \

@@ -179,8 +179,6 @@ extern bool		opt_generate_new_master_key;
 enum binlog_info_enum { BINLOG_INFO_OFF, BINLOG_INFO_LOCKLESS, BINLOG_INFO_ON,
 			BINLOG_INFO_AUTO};
 
-extern ulong opt_binlog_info;
-
 void xtrabackup_io_throttling(void);
 bool xb_write_delta_metadata(const char *filename,
 			     const xb_delta_info_t *info);

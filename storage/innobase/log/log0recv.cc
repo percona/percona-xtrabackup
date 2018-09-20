@@ -3039,6 +3039,7 @@ automatically when the hash table becomes full.
 @param[in,out]	contiguous_lsn	it is known that log contain
                                 contiguous log data up to this lsn
 @param[out]	read_upto_lsn	scanning succeeded up to this lsn
+@param[in]  to_lsn LSN to stop scanning at
 @return true if not able to scan any more in this log */
 #ifndef UNIV_HOTBACKUP
 static bool recv_scan_log_recs(log_t &log,
@@ -3047,7 +3048,8 @@ bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
                                ulint max_memory, const byte *buf, ulint len,
                                lsn_t checkpoint_lsn, lsn_t start_lsn,
-                               lsn_t *contiguous_lsn, lsn_t *read_upto_lsn) {
+                               lsn_t *contiguous_lsn, lsn_t *read_upto_lsn,
+                               lsn_t to_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
   bool finished = false;
@@ -3173,6 +3175,11 @@ bool meb_scan_log_recs(
 
     scanned_lsn += data_len;
 
+    /* clip redo log at the specified LSN */
+    if (scanned_lsn > to_lsn) {
+      scanned_lsn = to_lsn;
+    }
+
     if (scanned_lsn > recv_sys->scanned_lsn) {
 #ifndef UNIV_HOTBACKUP
       if (srv_read_only_mode) {
@@ -3215,7 +3222,7 @@ bool meb_scan_log_recs(
       recv_sys->scanned_checkpoint_no = log_block_get_checkpoint_no(log_block);
     }
 
-    if (data_len < OS_FILE_LOG_BLOCK_SIZE) {
+    if (data_len < OS_FILE_LOG_BLOCK_SIZE || scanned_lsn >= to_lsn) {
       /* Log data for this group ends here */
       finished = true;
 
@@ -3313,11 +3320,13 @@ void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
 
 /** Scans log from a buffer and stores new log data to the parsing buffer.
 Parses and hashes the log records if new data found.
-@param[in,out]	log			redo log
-@param[in,out]	contiguous_lsn		log sequence number
-                                        until which all redo log has been
-                                        scanned */
-static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn) {
+@param[in,out]	log               redo log
+@param[in,out]  contiguous_lsn    log sequence number
+                                  until which all redo log has been
+                                  scanned
+@param[in,out]  to_lsn            LSN to stop recovery at */
+static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
+                                lsn_t to_lsn) {
   mutex_enter(&recv_sys->mutex);
 
   recv_sys->len = 0;
@@ -3366,7 +3375,7 @@ static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn) {
 
     finished = recv_scan_log_recs(log, max_mem, log.buf, RECV_SCAN_SIZE,
                                   checkpoint_lsn, start_lsn, contiguous_lsn,
-                                  &log.scanned_lsn);
+                                  &log.scanned_lsn, to_lsn);
 
     start_lsn = end_lsn;
   }
@@ -3400,10 +3409,12 @@ static void recv_init_crash_recovery() {
 /** Start recovering from a redo log checkpoint.
 @see recv_recovery_from_checkpoint_finish
 @param[in,out]	log		redo log
-@param[in]	flush_lsn	FIL_PAGE_FILE_FLUSH_LSN
+@param[in]  flush_lsn FIL_PAGE_FILE_FLUSH_LSN
                                 of first system tablespace page
+@param[in]  to_lsn    LSN to store recovery at
 @return error code or DB_SUCCESS */
-dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
+dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
+                                            lsn_t to_lsn) {
   /* Initialize red-black tree for fast insertions into the
   flush_list during recovery process. */
   buf_flush_init_flush_rbt();
@@ -3550,7 +3561,7 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
 
   contiguous_lsn = checkpoint_lsn;
 
-  recv_recovery_begin(log, &contiguous_lsn);
+  recv_recovery_begin(log, &contiguous_lsn, to_lsn);
 
   lsn_t recovered_lsn;
 
