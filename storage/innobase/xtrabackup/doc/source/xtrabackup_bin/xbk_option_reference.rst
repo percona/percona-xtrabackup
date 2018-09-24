@@ -556,9 +556,14 @@ Options
 
 .. option:: --throttle=#
 
-   This option limits :option:`xtrabackup --backup` to the specified number of
-   read+write pairs of operations per second. See :doc:`throttling a backup
-   <throttling_backups>`.
+   This option limits the number of chunks copied per second. The chunk size is
+   *10 MB*. To limit the bandwidth to *10 MB/s*, set the option to *1*:
+   `--throttle=1`.
+
+   .. seealso::
+
+      More information about how to throttle a backup
+         :ref:`throttling_backups_xbk`
 
 .. option:: --tmpdir=name
 
