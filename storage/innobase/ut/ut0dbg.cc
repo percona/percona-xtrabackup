@@ -47,7 +47,8 @@ void ut_dbg_assertion_failed(
     const char *file, /*!< in: source file containing the assertion */
     ulint line)       /*!< in: line number of the assertion */
 {
-#if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS)
+#if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS) && \
+    !defined(XTRABACKUP)
   sql_print_error("InnoDB: Assertion failure: %s:" ULINTPF
                   "%s%s\n"
                   "InnoDB: thread " UINT64PF,

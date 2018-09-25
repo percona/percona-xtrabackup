@@ -2434,7 +2434,7 @@ bool Fil_shard::open_file(fil_node_t *file, bool extend) {
   if (file->size == 0 ||
       (space->size_in_header == 0 && space->purpose == FIL_TYPE_TABLESPACE &&
        file == &space->files.front()
-#ifndef UNIV_HOTBACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
        && undo::is_active(space->id) && srv_startup_is_before_trx_rollback_phase
 #endif /* !UNIV_HOTBACKUP */
        )) {

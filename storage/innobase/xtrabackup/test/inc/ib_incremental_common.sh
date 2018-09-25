@@ -65,7 +65,14 @@ else
     ib_inc_extra_args="${ib_inc_extra_args:-""} --incremental-basedir=$full_backup_dir"
 fi
 
+$MYSQL $MYSQL_ARGS \
+    -e 'START TRANSACTION; DELETE FROM t2 LIMIT 1000; SELECT SLEEP(200000);' \
+    incremental_sample &
+job_id=$!
+
 xtrabackup --backup $ib_inc_extra_args --target-dir=$inc_backup_dir
+
+kill -SIGKILL $job_id
 
 vlog "Preparing backup"
 # Prepare backup
