@@ -391,6 +391,10 @@ static dberr_t create_log_files(char *logfilename, size_t dirnamelen, lsn_t lsn,
     log_space->flags |= FSP_FLAGS_MASK_ENCRYPTION;
     err = fil_set_encryption(log_space->id, Encryption::AES, NULL, NULL);
     ut_ad(err == DB_SUCCESS);
+    if (use_dumped_tablespace_keys && !srv_backup_mode) {
+      xb_insert_tablespace_key(log_space->id, log_space->encryption_key,
+                               log_space->encryption_iv);
+    }
   }
 
   const ulonglong file_pages = srv_log_file_size / UNIV_PAGE_SIZE;
@@ -2477,7 +2481,8 @@ files_checked:
   didn't complete key rotation. Here, we will resume the
   rotation. */
   if (!srv_read_only_mode && !create_new_db &&
-      srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
+      srv_force_recovery < SRV_FORCE_NO_LOG_REDO &&
+      !use_dumped_tablespace_keys) {
     if (!fil_encryption_rotate()) {
       ib::info(ER_IB_MSG_1146) << "fil_encryption_rotate() failed!";
     }
