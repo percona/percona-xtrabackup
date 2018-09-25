@@ -563,7 +563,7 @@ Options
    .. seealso::
 
       More information about how to throttle a backup
-         :ref:`throttling_backups_xbk`
+         :ref:`throttling_backups`
 
 .. option:: --tmpdir=name
 
