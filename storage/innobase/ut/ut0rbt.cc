@@ -827,34 +827,30 @@ ib_rbt_node_t *rbt_remove_node(
   return ((ib_rbt_node_t *)const_node);
 }
 
-/**********************************************************************//**
-Find the node that has the lowest key that is >= key.
-@return node satisfying the lower bound constraint or NULL */
-const ib_rbt_node_t*
-rbt_lower_bound(
-/*============*/
-  const ib_rbt_t* tree,     /*!< in: rb tree */
-  const void* key)      /*!< in: key to search */
+/**********************************************************************/ /**
+ Find the node that has the lowest key that is >= key.
+ @return node satisfying the lower bound constraint or NULL */
+const ib_rbt_node_t *rbt_lower_bound(
+    /*============*/
+    const ib_rbt_t *tree, /*!< in: rb tree */
+    const void *key)      /*!< in: key to search */
 {
-  ib_rbt_node_t*  lb_node = NULL;
-  ib_rbt_node_t*  current = ROOT(tree);
+  ib_rbt_node_t *lb_node = NULL;
+  ib_rbt_node_t *current = ROOT(tree);
 
   while (current != tree->nil) {
     int result;
 
     if (tree->cmp_arg) {
-      result = tree->compare_with_arg(
-        tree->cmp_arg, key, current->value);
+      result = tree->compare_with_arg(tree->cmp_arg, key, current->value);
     } else {
       result = tree->compare(key, current->value);
     }
 
     if (result > 0) {
-
       current = current->right;
 
     } else if (result < 0) {
-
       lb_node = current;
       current = current->left;
 
@@ -864,38 +860,34 @@ rbt_lower_bound(
     }
   }
 
-  return(lb_node);
+  return (lb_node);
 }
 
-/**********************************************************************//**
-Find the node that has the greatest key that is <= key.
-@return node satisfying the upper bound constraint or NULL */
-const ib_rbt_node_t*
-rbt_upper_bound(
-/*============*/
-  const ib_rbt_t* tree,     /*!< in: rb tree */
-  const void* key)      /*!< in: key to search */
+/**********************************************************************/ /**
+ Find the node that has the greatest key that is <= key.
+ @return node satisfying the upper bound constraint or NULL */
+const ib_rbt_node_t *rbt_upper_bound(
+    /*============*/
+    const ib_rbt_t *tree, /*!< in: rb tree */
+    const void *key)      /*!< in: key to search */
 {
-  ib_rbt_node_t*  ub_node = NULL;
-  ib_rbt_node_t*  current = ROOT(tree);
+  ib_rbt_node_t *ub_node = NULL;
+  ib_rbt_node_t *current = ROOT(tree);
 
   while (current != tree->nil) {
     int result;
 
     if (tree->cmp_arg) {
-      result = tree->compare_with_arg(
-        tree->cmp_arg, key, current->value);
+      result = tree->compare_with_arg(tree->cmp_arg, key, current->value);
     } else {
       result = tree->compare(key, current->value);
     }
 
     if (result > 0) {
-
       ub_node = current;
       current = current->right;
 
     } else if (result < 0) {
-
       current = current->left;
 
     } else {
@@ -904,7 +896,7 @@ rbt_upper_bound(
     }
   }
 
-  return(ub_node);
+  return (ub_node);
 }
 
 /** Find the node that has the greatest key that is <= key.

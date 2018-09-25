@@ -941,8 +941,8 @@ static dberr_t recv_log_recover_pre_8_0_4(log_t &log,
 @param[in,out]	log		redo log
 @param[out]	max_field	LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
-MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    recv_find_max_checkpoint(log_t &log, ulint *max_field) {
+MY_ATTRIBUTE((warn_unused_result))
+dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field) {
   bool found_checkpoint = false;
 
   *max_field = 0;
@@ -2956,8 +2956,7 @@ recv_sys->parse_start_lsn is non-zero.
 @param[in]	scanned_lsn		lsn of how far we were able
                                         to find data in this log block
 @return true if more data added */
-bool recv_sys_add_to_parsing_buf(const byte *log_block,
-                                        lsn_t scanned_lsn) {
+bool recv_sys_add_to_parsing_buf(const byte *log_block, lsn_t scanned_lsn) {
   ut_ad(scanned_lsn >= recv_sys->scanned_lsn);
 
   if (!recv_sys->parse_start_lsn) {
@@ -3272,8 +3271,7 @@ bool meb_scan_log_recs(
 @param[in,out]	buf		buffer where to read
 @param[in]	start_lsn	read area start
 @param[in]	end_lsn		read area end */
-void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                       lsn_t end_lsn) {
+void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn, lsn_t end_lsn) {
   log_background_threads_inactive_validate(log);
 
   do {

@@ -75,7 +75,6 @@ void Tablespace::shutdown() {
     ut_free(m_path);
     m_path = NULL;
   }
-
 }
 
 /** Note that the data file was found.

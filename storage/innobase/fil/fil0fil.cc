@@ -3416,7 +3416,7 @@ bool fil_node_open_file(fil_node_t *file) {
 
 /** Closes a file.
 @param[in] file file to close. */
-void fil_node_close_file(fil_node_t* file) {
+void fil_node_close_file(fil_node_t *file) {
   if (!file->is_open) {
     return;
   }
@@ -9212,8 +9212,8 @@ and return the absolute file path and tablespace name
 @param[in]  space_id tablesapce ID emitted by the redo log
 @param[out] absolute_path absolute path of tablespace
 @param[out] tablespace_name name in the form of database/table */
-static void fil_make_abs_file_path(const char *file_name,
-                                   ulint flags, space_id_t space_id,
+static void fil_make_abs_file_path(const char *file_name, ulint flags,
+                                   space_id_t space_id,
                                    std::string &absolute_path,
                                    std::string &tablespace_name) {
   Datafile df;
@@ -9311,32 +9311,30 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
 
   if (!srv_backup_mode &&
       (files.second == nullptr || files.second->size() == 0)) {
+    abs_file_path = xb_tablespace_backup_file_path(abs_file_path.c_str());
+    bool exists = Fil_path(abs_file_path).is_file_and_exists();
 
-      abs_file_path = xb_tablespace_backup_file_path(abs_file_path.c_str());
-      bool exists = Fil_path(abs_file_path).is_file_and_exists();
+    if (!exists && !fil_space_get(page_id.space())) {
+      ib::info() << "Creating the tablespace : " << abs_file_path
+                 << ", space_id : " << page_id.space();
 
-      if (!exists && !fil_space_get(page_id.space())) {
-        ib::info() << "Creating the tablespace : " << abs_file_path
-                   << ", space_id : " << page_id.space();
+      dberr_t ret = fil_ibd_create(page_id.space(), tablespace_name.c_str(),
+                                   abs_file_path.c_str(), flags,
+                                   FIL_IBD_FILE_INITIAL_SIZE);
 
-        dberr_t ret = fil_ibd_create(page_id.space(), tablespace_name.c_str(),
-                                     abs_file_path.c_str(), flags,
-                                     FIL_IBD_FILE_INITIAL_SIZE);
-
-        if (ret != DB_SUCCESS) {
-          ib::fatal()
-              << "Could not create the tablespace : " << abs_file_path
-              << " with space Id : " << page_id.space();
-        }
-
-        bool success = fil_system->insert(page_id.space(), abs_file_path);
-
-        if (!success) {
-          ib::fatal() << "Could not insert the tablespace : " << abs_file_path
-                      << " with space Id : " << page_id.space() << " to "
-                      << "the list of known tablespaces";
-        }
+      if (ret != DB_SUCCESS) {
+        ib::fatal() << "Could not create the tablespace : " << abs_file_path
+                    << " with space Id : " << page_id.space();
       }
+
+      bool success = fil_system->insert(page_id.space(), abs_file_path);
+
+      if (!success) {
+        ib::fatal() << "Could not insert the tablespace : " << abs_file_path
+                    << " with space Id : " << page_id.space() << " to "
+                    << "the list of known tablespaces";
+      }
+    }
   }
 
   if (srv_backup_mode) {
@@ -9492,7 +9490,6 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 #endif /* UNIV_HOTBACKUP */
 
   if (!srv_backup_mode) {
-
     bool success;
 
     success = fil_tablespace_open_for_recovery(page_id.space());
@@ -9510,8 +9507,8 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
     std::string abs_file_path;
     std::string tablespace_name;
 
-    fil_make_abs_file_path(to_name, space->flags, space->id,
-                           abs_file_path, tablespace_name);
+    fil_make_abs_file_path(to_name, space->flags, space->id, abs_file_path,
+                           tablespace_name);
 
     success = fil_op_replay_rename(page_id, from_name, to_name);
     ut_a(success);
@@ -9600,7 +9597,6 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
 #else  /* !UNIV_HOTBACKUP */
 
   if (!srv_backup_mode) {
-
     bool success;
 
     success = fil_tablespace_open_for_recovery(page_id.space());
@@ -9620,7 +9616,6 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
 
       ut_a(err == DB_SUCCESS);
     }
-
   }
 
   const auto result = fil_system->get_scanned_files(page_id.space());

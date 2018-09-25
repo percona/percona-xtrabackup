@@ -1517,7 +1517,7 @@ bool plugin_register_builtin_and_init_core_se(int *argc, char **argv) {
     }
   }
 
-  /* Xtrabackup does not initialize storage engine plugins */
+    /* Xtrabackup does not initialize storage engine plugins */
 #if !defined(XTRABACKUP)
   /* Should now be set to MyISAM storage engine */
   DBUG_ASSERT(global_system_variables.table_plugin);

@@ -22,166 +22,168 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define XB_XTRABACKUP_H
 
 #include <my_getopt.h>
+#include "changed_page_bitmap.h"
 #include "datasink.h"
 #include "xbstream.h"
-#include "changed_page_bitmap.h"
 
 #ifdef __WIN__
-#define XB_FILE_UNDEFINED { NULL };
+#define XB_FILE_UNDEFINED {NULL};
 #else
-const pfs_os_file_t XB_FILE_UNDEFINED = { NULL, OS_FILE_CLOSED };
+const pfs_os_file_t XB_FILE_UNDEFINED = {NULL, OS_FILE_CLOSED};
 #endif
-inline bool operator==(const pfs_os_file_t& lhs, const pfs_os_file_t& rhs) {
-	return lhs.m_file == rhs.m_file;
+inline bool operator==(const pfs_os_file_t &lhs, const pfs_os_file_t &rhs) {
+  return lhs.m_file == rhs.m_file;
 }
-inline bool operator!=(const pfs_os_file_t& lhs, const pfs_os_file_t& rhs) {
-	return !(lhs == rhs);
+inline bool operator!=(const pfs_os_file_t &lhs, const pfs_os_file_t &rhs) {
+  return !(lhs == rhs);
 }
 
 typedef struct {
-	ulint	page_size;
-	ulint	zip_size;
-	ulint	space_id;
+  ulint page_size;
+  ulint zip_size;
+  ulint space_id;
 } xb_delta_info_t;
 
 /* ======== Datafiles iterator ======== */
 typedef struct {
-	std::vector<fil_node_t*> nodes;
-	std::vector<fil_node_t*>::iterator i;
-	ib_mutex_t	mutex;
+  std::vector<fil_node_t *> nodes;
+  std::vector<fil_node_t *>::iterator i;
+  ib_mutex_t mutex;
 } datafiles_iter_t;
 
 /* value of the --incremental option */
 extern lsn_t incremental_lsn;
 
-extern char		*xtrabackup_target_dir;
-extern char		*xtrabackup_incremental_dir;
-extern char		*xtrabackup_incremental_basedir;
-extern char		*innobase_data_home_dir;
-extern char		*innobase_buffer_pool_filename;
-extern ds_ctxt_t	*ds_meta;
-extern ds_ctxt_t	*ds_data;
+extern char *xtrabackup_target_dir;
+extern char *xtrabackup_incremental_dir;
+extern char *xtrabackup_incremental_basedir;
+extern char *innobase_data_home_dir;
+extern char *innobase_buffer_pool_filename;
+extern ds_ctxt_t *ds_meta;
+extern ds_ctxt_t *ds_data;
 
 /* The last checkpoint LSN at the backup startup time */
 extern lsn_t checkpoint_lsn_start;
 
 extern xb_page_bitmap *changed_page_bitmap;
 
-extern ulint	xtrabackup_rebuild_threads;
+extern ulint xtrabackup_rebuild_threads;
 
-extern char		*xtrabackup_incremental;
-extern bool		xtrabackup_incremental_force_scan;
+extern char *xtrabackup_incremental;
+extern bool xtrabackup_incremental_force_scan;
 
-extern lsn_t		metadata_from_lsn;
-extern lsn_t		metadata_to_lsn;
-extern lsn_t		metadata_last_lsn;
+extern lsn_t metadata_from_lsn;
+extern lsn_t metadata_to_lsn;
+extern lsn_t metadata_last_lsn;
 
-extern xb_stream_fmt_t	xtrabackup_stream_fmt;
-extern bool		xtrabackup_stream;
+extern xb_stream_fmt_t xtrabackup_stream_fmt;
+extern bool xtrabackup_stream;
 
-extern char		*xtrabackup_tables;
-extern char		*xtrabackup_tables_file;
-extern char		*xtrabackup_databases;
-extern char		*xtrabackup_databases_file;
-extern char		*xtrabackup_tables_exclude;
-extern char		*xtrabackup_databases_exclude;
+extern char *xtrabackup_tables;
+extern char *xtrabackup_tables_file;
+extern char *xtrabackup_databases;
+extern char *xtrabackup_databases_file;
+extern char *xtrabackup_tables_exclude;
+extern char *xtrabackup_databases_exclude;
 
-extern bool		xtrabackup_compress;
-extern bool		xtrabackup_encrypt;
+extern bool xtrabackup_compress;
+extern bool xtrabackup_encrypt;
 
-extern bool		xtrabackup_backup;
-extern bool		xtrabackup_prepare;
-extern bool		xtrabackup_apply_log_only;
-extern bool		xtrabackup_copy_back;
-extern bool		xtrabackup_move_back;
-extern bool		xtrabackup_decrypt_decompress;
+extern bool xtrabackup_backup;
+extern bool xtrabackup_prepare;
+extern bool xtrabackup_apply_log_only;
+extern bool xtrabackup_copy_back;
+extern bool xtrabackup_move_back;
+extern bool xtrabackup_decrypt_decompress;
 
-extern char		*innobase_data_file_path;
-extern char		*innobase_doublewrite_file;
-extern char		*xtrabackup_encrypt_key;
-extern char		*xtrabackup_encrypt_key_file;
-extern longlong		innobase_log_file_size;
-extern long		innobase_log_files_in_group;
-extern longlong		innobase_page_size;
+extern char *innobase_data_file_path;
+extern char *innobase_doublewrite_file;
+extern char *xtrabackup_encrypt_key;
+extern char *xtrabackup_encrypt_key_file;
+extern longlong innobase_log_file_size;
+extern long innobase_log_files_in_group;
+extern longlong innobase_page_size;
 
-extern const char	*xtrabackup_encrypt_algo_names[];
-extern TYPELIB		xtrabackup_encrypt_algo_typelib;
+extern const char *xtrabackup_encrypt_algo_names[];
+extern TYPELIB xtrabackup_encrypt_algo_typelib;
 
-extern int		xtrabackup_parallel;
+extern int xtrabackup_parallel;
 
-extern bool		xb_close_files;
-extern const char	*xtrabackup_compress_alg;
-extern uint		xtrabackup_compress_threads;
-extern ulonglong	xtrabackup_compress_chunk_size;
-extern ulong		xtrabackup_encrypt_algo;
-extern uint		xtrabackup_encrypt_threads;
-extern ulonglong	xtrabackup_encrypt_chunk_size;
-extern bool		xtrabackup_export;
-extern char		*xtrabackup_incremental_basedir;
-extern char		*xtrabackup_extra_lsndir;
-extern char		*xtrabackup_incremental_dir;
-extern ulint		xtrabackup_log_copy_interval;
-extern char		*xtrabackup_stream_str;
-extern long		xtrabackup_throttle;
-extern longlong		xtrabackup_use_memory;
+extern bool xb_close_files;
+extern const char *xtrabackup_compress_alg;
+extern uint xtrabackup_compress_threads;
+extern ulonglong xtrabackup_compress_chunk_size;
+extern ulong xtrabackup_encrypt_algo;
+extern uint xtrabackup_encrypt_threads;
+extern ulonglong xtrabackup_encrypt_chunk_size;
+extern bool xtrabackup_export;
+extern char *xtrabackup_incremental_basedir;
+extern char *xtrabackup_extra_lsndir;
+extern char *xtrabackup_incremental_dir;
+extern ulint xtrabackup_log_copy_interval;
+extern char *xtrabackup_stream_str;
+extern long xtrabackup_throttle;
+extern longlong xtrabackup_use_memory;
 
-extern bool		opt_galera_info;
-extern bool		opt_slave_info;
-extern bool		opt_no_lock;
-extern bool		opt_safe_slave_backup;
-extern bool		opt_rsync;
-extern bool		opt_force_non_empty_dirs;
-extern bool		opt_noversioncheck;
-extern bool		opt_no_backup_locks;
-extern bool		opt_decompress;
-extern bool		opt_remove_original;
-extern bool		opt_no_tables_compatibility_check;
+extern bool opt_galera_info;
+extern bool opt_slave_info;
+extern bool opt_no_lock;
+extern bool opt_safe_slave_backup;
+extern bool opt_rsync;
+extern bool opt_force_non_empty_dirs;
+extern bool opt_noversioncheck;
+extern bool opt_no_backup_locks;
+extern bool opt_decompress;
+extern bool opt_remove_original;
+extern bool opt_no_tables_compatibility_check;
 
-extern char		*opt_incremental_history_name;
-extern char		*opt_incremental_history_uuid;
+extern char *opt_incremental_history_name;
+extern char *opt_incremental_history_uuid;
 
-extern char		*opt_user;
-extern char		*opt_password;
-extern char		*opt_host;
-extern char		*opt_defaults_group;
-extern char		*opt_socket;
-extern uint		opt_port;
-extern char		*opt_login_path;
-extern char		*opt_log_bin;
+extern char *opt_user;
+extern char *opt_password;
+extern char *opt_host;
+extern char *opt_defaults_group;
+extern char *opt_socket;
+extern uint opt_port;
+extern char *opt_login_path;
+extern char *opt_log_bin;
 
-extern const char 	*query_type_names[];
+extern const char *query_type_names[];
 
-enum query_type_t {QUERY_TYPE_ALL, QUERY_TYPE_UPDATE,
-			QUERY_TYPE_SELECT};
+enum query_type_t { QUERY_TYPE_ALL, QUERY_TYPE_UPDATE, QUERY_TYPE_SELECT };
 
-extern TYPELIB		query_type_typelib;
+extern TYPELIB query_type_typelib;
 
-extern ulong		opt_lock_wait_query_type;
-extern ulong		opt_kill_long_query_type;
+extern ulong opt_lock_wait_query_type;
+extern ulong opt_kill_long_query_type;
 
-extern ulong		opt_decrypt_algo;
+extern ulong opt_decrypt_algo;
 
-extern uint		opt_kill_long_queries_timeout;
-extern uint		opt_lock_wait_timeout;
-extern uint		opt_lock_wait_threshold;
-extern uint		opt_debug_sleep_before_unlock;
-extern uint		opt_safe_slave_backup_timeout;
+extern uint opt_kill_long_queries_timeout;
+extern uint opt_lock_wait_timeout;
+extern uint opt_lock_wait_threshold;
+extern uint opt_debug_sleep_before_unlock;
+extern uint opt_safe_slave_backup_timeout;
 
-extern const char	*opt_history;
-extern bool		opt_decrypt;
+extern const char *opt_history;
+extern bool opt_decrypt;
 
-extern uint		opt_read_buffer_size;
+extern uint opt_read_buffer_size;
 
-extern char		*opt_xtra_plugin_dir;
-extern char		*opt_transition_key;
-extern bool		opt_generate_new_master_key;
+extern char *opt_xtra_plugin_dir;
+extern char *opt_transition_key;
+extern bool opt_generate_new_master_key;
 
-enum binlog_info_enum { BINLOG_INFO_OFF, BINLOG_INFO_LOCKLESS, BINLOG_INFO_ON,
-			BINLOG_INFO_AUTO};
+enum binlog_info_enum {
+  BINLOG_INFO_OFF,
+  BINLOG_INFO_LOCKLESS,
+  BINLOG_INFO_ON,
+  BINLOG_INFO_AUTO
+};
 
 void xtrabackup_io_throttling(void);
-bool xb_write_delta_metadata(const char *filename,
-			     const xb_delta_info_t *info);
+bool xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info);
 
 datafiles_iter_t *datafiles_iter_new();
 fil_node_t *datafiles_iter_next(datafiles_iter_t *it);
@@ -207,95 +209,77 @@ or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
 the --tables or --tables-file options.
 
 @return TRUE if the table should be skipped. */
-bool
-check_if_skip_table(
-/******************/
-	const char*	name);	/*!< in: path to the table */
-
+bool check_if_skip_table(
+    /******************/
+    const char *name); /*!< in: path to the table */
 
 /************************************************************************
 Checks if a database specified by path should be skipped from backup based on
 the --databases, --databases_file or --databases_exclude options.
 
 @return TRUE if the table should be skipped. */
-bool
-check_if_skip_database_by_path(
-	const char* path /*!< in: path to the db directory. */
+bool check_if_skip_database_by_path(
+    const char *path /*!< in: path to the db directory. */
 );
 
 /************************************************************************
 Check if parameter is set in defaults file or via command line argument
 @return true if parameter is set. */
-bool
-check_if_param_set(const char *param);
+bool check_if_param_set(const char *param);
 
+void xtrabackup_backup_func(void);
 
-void
-xtrabackup_backup_func(void);
+bool xb_get_one_option(int optid,
+                       const struct my_option *opt __attribute__((unused)),
+                       char *argument);
 
-bool
-xb_get_one_option(int optid,
-		  const struct my_option *opt __attribute__((unused)),
-		  char *argument);
-
-const char*
-xb_get_copy_action(const char *dflt = "Copying");
+const char *xb_get_copy_action(const char *dflt = "Copying");
 
 struct datadir_entry_t {
-	std::string	datadir;		/*!<in: datadir */
-	std::string	path;			/*!<in: path */
-	std::string	db_name;		/*!<in: database name */
-	std::string	file_name;		/*!<in: file name with suffix */
-        bool		is_empty_dir;		/*!<in: is empty dir */
+  std::string datadir;   /*!<in: datadir */
+  std::string path;      /*!<in: path */
+  std::string db_name;   /*!<in: database name */
+  std::string file_name; /*!<in: file name with suffix */
+  bool is_empty_dir;     /*!<in: is empty dir */
 
-        datadir_entry_t() :
-        	datadir(),
-        	path(),
-        	db_name(),
-        	file_name(),
-        	is_empty_dir() { }
+  datadir_entry_t()
+      : datadir(), path(), db_name(), file_name(), is_empty_dir() {}
 
-        datadir_entry_t(const datadir_entry_t& o) :
-        	datadir(o.datadir),
-        	path(o.path),
-        	db_name(o.db_name),
-        	file_name(o.file_name),
-        	is_empty_dir(o.is_empty_dir) { }
+  datadir_entry_t(const datadir_entry_t &o)
+      : datadir(o.datadir),
+        path(o.path),
+        db_name(o.db_name),
+        file_name(o.file_name),
+        is_empty_dir(o.is_empty_dir) {}
 
-        datadir_entry_t(
-        	const char* datadir,
-        	const char* path,
-        	const char* db_name,
-		const char* file_name,
-        	bool is_empty_dir) :
-        	datadir(datadir),
-        	path(path),
-        	db_name(db_name),
-        	file_name(file_name),
-        	is_empty_dir(is_empty_dir) { }
+  datadir_entry_t(const char *datadir, const char *path, const char *db_name,
+                  const char *file_name, bool is_empty_dir)
+      : datadir(datadir),
+        path(path),
+        db_name(db_name),
+        file_name(file_name),
+        is_empty_dir(is_empty_dir) {}
 };
 
 /************************************************************************
 Callback to handle datadir entry. Function of this type will be called
 for each entry which matches the mask by xb_process_datadir.
 @return should return TRUE on success */
-typedef std::function<bool (
-/*=========================================*/
-	const datadir_entry_t&	entry,	/*!<in: datadir entry */
-	void*			arg)>	/*!<in: caller-provided data */
-	handle_datadir_entry_func_t;
+typedef std::function<bool(
+    /*=========================================*/
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg)>                   /*!<in: caller-provided data */
+    handle_datadir_entry_func_t;
 
 /************************************************************************
 Function enumerates files in datadir (provided by path) which are matched
 by provided suffix. For each entry callback is called.
 @return FALSE if callback for some entry returned FALSE */
-bool
-xb_process_datadir(
-	const char*			path,	/*!<in: datadir path */
-	const char*			suffix,	/*!<in: suffix to match
-						against */
-	handle_datadir_entry_func_t	func,	/*!<in: callback */
-	void*				data);	/*!<in: additional argument for
-						callback */
+bool xb_process_datadir(const char *path,   /*!<in: datadir path */
+                        const char *suffix, /*!<in: suffix to match
+                                            against */
+                        handle_datadir_entry_func_t func, /*!<in: callback */
+                        void *data); /*!<in: additional argument for
+                                     callback */
 
 #endif /* XB_XTRABACKUP_H */

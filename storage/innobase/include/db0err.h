@@ -148,7 +148,7 @@ enum dberr_t {
   DB_FTS_TOO_MANY_WORDS_IN_PHRASE,  /*!< Too many words in a phrase */
   DB_SERVER_VERSION_LOW, /* Server version is lower than tablespace version */
 
-  DB_PAGE_IS_BLANK,   /*!< page is blank */
+  DB_PAGE_IS_BLANK, /*!< page is blank */
 
   DB_IO_ERROR = 100, /*!< Generic IO error */
 

@@ -124,7 +124,7 @@ typedef int os_file_t;
 #endif /* _WIN32 */
 
 /** Umask for creating files */
-extern ulint  os_innodb_umask;
+extern ulint os_innodb_umask;
 
 /** Common file descriptor for file IO instrumentation with PFS
 on windows and other platforms */

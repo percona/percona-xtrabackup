@@ -19,21 +19,21 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #ifndef XTRABACKUP_SPACE_MAP_H
 #define XTRABACKUP_SPACE_MAP_H
 
-#include <map>
-#include <vector>
-#include <string>
 #include <rapidjson/fwd.h>
+#include <map>
+#include <string>
+#include <vector>
 
-#include "datasink.h"
 #include "backup_mysql.h"
+#include "datasink.h"
 
 /* Tablespace to file name mapping */
 class Tablespace_map {
-public:
+ public:
   typedef std::map<std::string, std::string> map_t;
   typedef std::vector<std::string> vector_t;
 
-private:
+ private:
   map_t file_by_space;
   map_t space_by_file;
 
@@ -41,12 +41,11 @@ private:
   @param[out]  buf output buffer */
   bool serialize(rapidjson::StringBuffer &buf) const;
 
-  Tablespace_map() { };
+  Tablespace_map(){};
 
   static Tablespace_map static_tablespace_map;
 
-public:
-
+ public:
   /** Scan I_S.FILES for extended tablespaces.
   @param[in]  connection MySQL connection object */
   void scan(MYSQL *connection);

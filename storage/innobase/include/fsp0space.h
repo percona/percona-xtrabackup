@@ -66,13 +66,9 @@ class Tablespace {
     ut_ad(m_space_id == SPACE_UNKNOWN);
   }
 
-  files_t::iterator files_begin() {
-    return m_files.begin();
-  }
+  files_t::iterator files_begin() { return m_files.begin(); }
 
-  files_t::iterator files_end() {
-    return m_files.end();
-  }
+  files_t::iterator files_end() { return m_files.end(); }
 
   // Disable copying
   Tablespace(const Tablespace &);

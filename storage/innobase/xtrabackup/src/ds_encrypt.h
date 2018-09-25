@@ -26,10 +26,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 extern datasink_t datasink_encrypt;
 
 /* Encryption options */
-extern uint		ds_encrypt_encrypt_threads;
-extern ulonglong	ds_encrypt_encrypt_chunk_size;
+extern uint ds_encrypt_encrypt_threads;
+extern ulonglong ds_encrypt_encrypt_chunk_size;
 /* Switch that controls if `.xbcrypt` extension is appended to the file name. */
-extern bool		ds_encrypt_modify_file_extension;
-
+extern bool ds_encrypt_modify_file_extension;
 
 #endif

@@ -25,8 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 /***********************************************************************
 Store Galera checkpoint info in the 'xtrabackup_galera_info' file, if that
 information is present in the trx system header. Otherwise, do nothing. */
-void
-xb_write_galera_info(bool incremental_prepare);
+void xb_write_galera_info(bool incremental_prepare);
 /*==================*/
 
 #endif

@@ -2341,8 +2341,8 @@ bool log_read_encryption() {
       return (true);
     }
 
-    /* check_keyring modifies keyring by generating new key and saving it.
-    XtraBackup must avoid touching keyring on backup. */
+      /* check_keyring modifies keyring by generating new key and saving it.
+      XtraBackup must avoid touching keyring on backup. */
 #if !defined(XTRABACKUP)
     /* Make sure the keyring is loaded. */
     if (!Encryption::check_keyring()) {

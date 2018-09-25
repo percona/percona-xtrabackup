@@ -13,8 +13,8 @@ const int XB_KDF_SALT_SIZE = 64;
 @param[in]	keysize		desired derived key length.
 @param[out]	keybuffer	buffer to store derived key.
 @return	true on success. */
-bool
-xb_derive_key(const char *passphrase, size_t passphraselen,
-	      const byte *salt, size_t saltlen, size_t keysize, byte *keybuffer);
+bool xb_derive_key(const char *passphrase, size_t passphraselen,
+                   const byte *salt, size_t saltlen, size_t keysize,
+                   byte *keybuffer);
 
 #endif

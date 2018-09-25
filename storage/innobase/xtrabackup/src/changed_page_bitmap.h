@@ -25,8 +25,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #ifndef XB_CHANGED_PAGE_BITMAP_H
 #define XB_CHANGED_PAGE_BITMAP_H
 
-#include <ut0rbt.h>
 #include <fil0fil.h>
+#include <ut0rbt.h>
 
 /* The changed page bitmap structure */
 typedef ib_rbt_t xb_page_bitmap;
@@ -36,50 +36,44 @@ struct xb_page_bitmap_range_struct;
 /* The bitmap range iterator over one space id */
 typedef struct xb_page_bitmap_range_struct xb_page_bitmap_range;
 
-/****************************************************************//**
-Read the disk bitmap and build the changed page bitmap tree for the
-LSN interval incremental_lsn to checkpoint_lsn_start.
+/****************************************************************/ /**
+ Read the disk bitmap and build the changed page bitmap tree for the
+ LSN interval incremental_lsn to checkpoint_lsn_start.
 
-@return the built bitmap tree */
-xb_page_bitmap*
-xb_page_bitmap_init(void);
+ @return the built bitmap tree */
+xb_page_bitmap *xb_page_bitmap_init(void);
 /*=====================*/
 
-/****************************************************************//**
-Free the bitmap tree. */
-void
-xb_page_bitmap_deinit(
-/*==================*/
-	xb_page_bitmap*	bitmap);	/*!<in/out: bitmap tree */
+/****************************************************************/ /**
+ Free the bitmap tree. */
+void xb_page_bitmap_deinit(
+    /*==================*/
+    xb_page_bitmap *bitmap); /*!<in/out: bitmap tree */
 
+/****************************************************************/ /**
+ Set up a new bitmap range iterator over a given space id changed
+ pages in a given bitmap.
 
-/****************************************************************//**
-Set up a new bitmap range iterator over a given space id changed
-pages in a given bitmap.
+ @return bitmap range iterator */
+xb_page_bitmap_range *xb_page_bitmap_range_init(
+    /*======================*/
+    xb_page_bitmap *bitmap, /*!< in: bitmap to iterate over */
+    ulint space_id);        /*!< in: space id */
 
-@return bitmap range iterator */
-xb_page_bitmap_range*
-xb_page_bitmap_range_init(
-/*======================*/
-	xb_page_bitmap*	bitmap,		/*!< in: bitmap to iterate over */
-	ulint		space_id);	/*!< in: space id */
+/****************************************************************/ /**
+ Get the next page id that has its bit set or cleared, i.e. equal to
+ bit_value.
 
-/****************************************************************//**
-Get the next page id that has its bit set or cleared, i.e. equal to
-bit_value.
+ @return page id */
+ulint xb_page_bitmap_range_get_next_bit(
+    /*==============================*/
+    xb_page_bitmap_range *bitmap_range, /*!< in/out: bitmap range */
+    ibool bit_value);                   /*!< in: bit value */
 
-@return page id */
-ulint
-xb_page_bitmap_range_get_next_bit(
-/*==============================*/
-	xb_page_bitmap_range*	bitmap_range,	/*!< in/out: bitmap range */
-	ibool			bit_value);	/*!< in: bit value */
-
-/****************************************************************//**
-Free the bitmap range iterator. */
-void
-xb_page_bitmap_range_deinit(
-/*========================*/
-	xb_page_bitmap_range*	bitmap_range);	/*! in/out: bitmap range */
+/****************************************************************/ /**
+ Free the bitmap range iterator. */
+void xb_page_bitmap_range_deinit(
+    /*========================*/
+    xb_page_bitmap_range *bitmap_range); /*! in/out: bitmap range */
 
 #endif

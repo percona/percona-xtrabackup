@@ -31,40 +31,34 @@ extern bool use_dumped_tablespace_keys;
 /******************************************************************************
 Callback used in buf_page_io_complete() to detect compacted pages.
 @return TRUE if the page is marked as compacted, FALSE otherwise. */
-ibool
-buf_page_is_compacted(
-/*==================*/
-	const byte*	page);	/*!< in: a database page */
+ibool buf_page_is_compacted(
+    /*==================*/
+    const byte *page); /*!< in: a database page */
 
 /** Fetch tablespace key from "xtrabackup_keys".
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
 @param[out]	key		fetched tablespace iv */
-void
-xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
+void xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
 
 /** Fetch tablespace key from "xtrabackup_keys" and set the encryption
 type for the tablespace.
 @param[in]	space		tablespace
 @return DB_SUCCESS or error code */
-dberr_t
-xb_set_encryption(fil_space_t *space);
+dberr_t xb_set_encryption(fil_space_t *space);
 
 /** Add file to tablespace map.
 @param[in]	file_name	file name
 @param[in]	tablespace_name	corresponding tablespace name */
-void
-xb_tablespace_map_add(const char *file_name, const char *tablespace_name);
+void xb_tablespace_map_add(const char *file_name, const char *tablespace_name);
 
 /** Delete tablespace from mapping.
 @param[in]	tablespace_name	tablespace name */
-void
-xb_tablespace_map_delete(const char *tablespace_name);
+void xb_tablespace_map_delete(const char *tablespace_name);
 
 /** Lookup backup file name for given file.
 @param[in]	file_name	file name
 @return		local file name */
-std::string
-xb_tablespace_backup_file_path(const std::string &file_name);
+std::string xb_tablespace_backup_file_path(const std::string &file_name);
 
 #endif

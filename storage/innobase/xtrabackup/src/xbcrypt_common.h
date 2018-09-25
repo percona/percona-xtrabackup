@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #if defined(GCC_VERSION) && (GCC_VERSION >= 4002)
 /* Workaround to avoid "gcry_ac_* is deprecated" warnings in gcrypt.h */
-#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
 #include <gcrypt.h>
@@ -31,43 +31,38 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 extern "C" {
 #endif
 
-extern char		*ds_encrypt_key;
-extern char		*ds_encrypt_key_file;
-extern ulong		ds_encrypt_algo;
+extern char *ds_encrypt_key;
+extern char *ds_encrypt_key_file;
+extern ulong ds_encrypt_algo;
 
 /******************************************************************************
 Utility interface */
-bool xb_crypt_read_key_file(const char *filename,
-			    void** key, uint *keylength);
+bool xb_crypt_read_key_file(const char *filename, void **key, uint *keylength);
 
-void xb_crypt_create_iv(void* ivbuf, size_t ivlen);
+void xb_crypt_create_iv(void *ivbuf, size_t ivlen);
 
 /* Initialize libgcrypt */
-gcry_error_t
-xb_libgcrypt_init();
+gcry_error_t xb_libgcrypt_init();
 
 /* Initialize gcrypt and setup encryption key and IV lengths */
-gcry_error_t
-xb_crypt_init(uint *iv_len);
+gcry_error_t xb_crypt_init(uint *iv_len);
 
 /* Setup gcrypt cipher */
-gcry_error_t
-xb_crypt_cipher_open(gcry_cipher_hd_t *cipher_handle);
+gcry_error_t xb_crypt_cipher_open(gcry_cipher_hd_t *cipher_handle);
 
 /* Close gcrypt cipher */
-void
-xb_crypt_cipher_close(gcry_cipher_hd_t cipher_handle);
+void xb_crypt_cipher_close(gcry_cipher_hd_t cipher_handle);
 
 /* Decrypt buffer */
-gcry_error_t
-xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
-		 size_t from_len, uchar *to, size_t *to_len, const uchar *iv,
-		 size_t iv_len, bool hash_appended);
+gcry_error_t xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
+                              size_t from_len, uchar *to, size_t *to_len,
+                              const uchar *iv, size_t iv_len,
+                              bool hash_appended);
 
 /* Encrypt buffer */
-gcry_error_t
-xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
-		 size_t from_len, uchar *to, size_t *to_len, uchar *iv);
+gcry_error_t xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
+                              size_t from_len, uchar *to, size_t *to_len,
+                              uchar *iv);
 
 #ifdef __cplusplus
 }
