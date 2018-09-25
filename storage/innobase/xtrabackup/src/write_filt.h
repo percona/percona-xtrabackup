@@ -25,29 +25,28 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #ifndef XB_WRITE_FILT_H
 #define XB_WRITE_FILT_H
 
-#include "fil_cur.h"
 #include "datasink.h"
+#include "fil_cur.h"
 
 /* Incremental page filter context */
 typedef struct {
-	byte		*delta_buf_base;
-	byte		*delta_buf;
-	ulint		 npages;
+  byte *delta_buf_base;
+  byte *delta_buf;
+  ulint npages;
 } xb_wf_incremental_ctxt_t;
 
 /* Page filter context used as an opaque structure by callers */
 typedef struct {
-	xb_fil_cur_t	*cursor;
-	xb_wf_incremental_ctxt_t	wf_incremental_ctxt;
+  xb_fil_cur_t *cursor;
+  xb_wf_incremental_ctxt_t wf_incremental_ctxt;
 } xb_write_filt_ctxt_t;
 
-
 typedef struct {
-	bool	(*init)(xb_write_filt_ctxt_t *ctxt, char *dst_name,
-			xb_fil_cur_t *cursor);
-	bool	(*process)(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile);
-	bool	(*finalize)(xb_write_filt_ctxt_t *, ds_file_t *dstfile);
-	void	(*deinit)(xb_write_filt_ctxt_t *);
+  bool (*init)(xb_write_filt_ctxt_t *ctxt, char *dst_name,
+               xb_fil_cur_t *cursor);
+  bool (*process)(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile);
+  bool (*finalize)(xb_write_filt_ctxt_t *, ds_file_t *dstfile);
+  void (*deinit)(xb_write_filt_ctxt_t *);
 } xb_write_filt_t;
 
 extern xb_write_filt_t wf_write_through;

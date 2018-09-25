@@ -1032,7 +1032,7 @@ bool fil_node_open_file(fil_node_t *file);
 
 /** Closes a file.
 @param[in] node file to close. */
-void fil_node_close_file(fil_node_t* node);
+void fil_node_close_file(fil_node_t *node);
 
 /** Opens all log files and system tablespace data files.
 They stay open until the database server shutdown. This should be called

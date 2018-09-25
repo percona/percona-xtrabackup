@@ -2218,7 +2218,7 @@ files_checked:
     /* We have gone through the redo log, now check if all the
     tablespaces were found and recovered. */
 
-    if(srv_force_recovery == 0 && fil_check_missing_tablespaces()) {
+    if (srv_force_recovery == 0 && fil_check_missing_tablespaces()) {
       // Missing tablespaces in the redo log are a valid possibility
       // with partial backups.
       // But keep them in the output for visibility

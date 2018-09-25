@@ -19,15 +19,15 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_rapidjson_size_t.h>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
-#include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 #include <fil0fil.h>
 
 #include <fstream>
 
-#include "space_map.h"
 #include "common.h"
+#include "space_map.h"
 #include "xb0xb.h"
 
 Tablespace_map Tablespace_map::static_tablespace_map;
@@ -38,40 +38,36 @@ const int XBTS_FILE_VERSION = 1;
 /** Add file to tablespace map.
 @param[in]  file_name file name
 @param[in]  tablespace_name corresponding tablespace name */
-void
-xb_tablespace_map_add(const char *file_name, const char *tablespace_name) {
+void xb_tablespace_map_add(const char *file_name, const char *tablespace_name) {
   Tablespace_map::instance().add(file_name, tablespace_name);
 }
 
 /** Delete tablespace mapping.
 @param[in]  tablespace_name tablespace name */
-void
-xb_tablespace_map_delete(const char *tablespace_name) {
+void xb_tablespace_map_delete(const char *tablespace_name) {
   Tablespace_map::instance().erase(tablespace_name);
 }
 
 /** Lookup backup file name for given file.
 @param[in]  file_name file name
 @return   local file name */
-std::string
-xb_tablespace_backup_file_path(const std::string &file_name) {
+std::string xb_tablespace_backup_file_path(const std::string &file_name) {
   return Tablespace_map::instance().backup_file_name(file_name);
 }
 
-Tablespace_map &Tablespace_map::instance() {
-  return (static_tablespace_map);
-}
+Tablespace_map &Tablespace_map::instance() { return (static_tablespace_map); }
 
 /** Scan I_S.FILES for extended tablespaces.
 @param[in]  connection MySQL connection object */
 void Tablespace_map::scan(MYSQL *connection) {
-  const char *query = "SELECT FILE_NAME, TABLESPACE_NAME"
-                      "  FROM INFORMATION_SCHEMA.FILES"
-                      "  WHERE ENGINE = 'InnoDB'"
-                      "    AND STATUS = 'NORMAL'"
-                      "    AND FILE_TYPE <> 'TEMPORARY'"
-                      "    AND FILE_TYPE <> 'UNDO LOG'"
-                      "    AND FILE_ID <> 0";
+  const char *query =
+      "SELECT FILE_NAME, TABLESPACE_NAME"
+      "  FROM INFORMATION_SCHEMA.FILES"
+      "  WHERE ENGINE = 'InnoDB'"
+      "    AND STATUS = 'NORMAL'"
+      "    AND FILE_TYPE <> 'TEMPORARY'"
+      "    AND FILE_TYPE <> 'UNDO LOG'"
+      "    AND FILE_ID <> 0";
   MYSQL_RES *mysql_result;
   MYSQL_ROW row;
 
@@ -114,7 +110,8 @@ void Tablespace_map::erase(const std::string &tablespace_name) {
 
 /** Return file name in the backup directory for given tablespace.
 @param[in]  file_name source tablespace file name */
-std::string Tablespace_map::backup_file_name(const std::string &file_name) const {
+std::string Tablespace_map::backup_file_name(
+    const std::string &file_name) const {
   auto i = space_by_file.find(file_name);
   if (i != space_by_file.end()) {
     return ("./" + i->second + ".ibd");
@@ -126,7 +123,7 @@ std::string Tablespace_map::backup_file_name(const std::string &file_name) const
 /** Return original file name for given tablespace.
 @param[in]  space_name source tablespace name */
 std::string Tablespace_map::external_file_name(
-  const std::string &space_name) const {
+    const std::string &space_name) const {
   auto i = file_by_space.find(space_name);
   if (i != file_by_space.end()) {
     return (i->second);
@@ -214,7 +211,7 @@ bool Tablespace_map::serialize(rapidjson::StringBuffer &buf) const {
   writer.String("external_tablespaces");
   writer.StartArray();
 
-  for (auto const& file : space_by_file) {
+  for (auto const &file : space_by_file) {
     writer.StartObject();
     writer.String("file_name");
     writer.String(file.first.c_str(), file.first.length());
@@ -237,7 +234,7 @@ bool Tablespace_map::deserialize(const std::string &dir) {
   std::ifstream f(path);
 
   if (f.fail()) {
-    msg("xtrabackup: Error: cannot open file '%s'" , path.c_str());
+    msg("xtrabackup: Error: cannot open file '%s'", path.c_str());
     return (false);
   }
 
@@ -255,7 +252,8 @@ bool Tablespace_map::deserialize(const std::string &dir) {
   int version = root["version"].GetInt();
   if (version > XBTS_FILE_VERSION) {
     msg("xtrabackup: Error: wrong '%s' file version %d, maximum version"
-        "supported is %d", XBTS_FILE_NAME, version, XBTS_FILE_VERSION);
+        "supported is %d",
+        XBTS_FILE_NAME, version, XBTS_FILE_VERSION);
     return (false);
   }
 

@@ -31,36 +31,36 @@ struct datasink_struct;
 typedef struct datasink_struct datasink_t;
 
 typedef struct ds_ctxt {
-	datasink_t	*datasink;
-	char 		*root;
-	void		*ptr;
-	struct ds_ctxt	*pipe_ctxt;
+  datasink_t *datasink;
+  char *root;
+  void *ptr;
+  struct ds_ctxt *pipe_ctxt;
 } ds_ctxt_t;
 
 typedef struct {
-	void		*ptr;
-	char		*path;
-	datasink_t	*datasink;
+  void *ptr;
+  char *path;
+  datasink_t *datasink;
 } ds_file_t;
 
 struct datasink_struct {
-	ds_ctxt_t *(*init)(const char *root);
-	ds_file_t *(*open)(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat);
-	int (*write)(ds_file_t *file, const void *buf, size_t len);
-	int (*close)(ds_file_t *file);
-	void (*deinit)(ds_ctxt_t *ctxt);
+  ds_ctxt_t *(*init)(const char *root);
+  ds_file_t *(*open)(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat);
+  int (*write)(ds_file_t *file, const void *buf, size_t len);
+  int (*close)(ds_file_t *file);
+  void (*deinit)(ds_ctxt_t *ctxt);
 };
 
 /* Supported datasink types */
 typedef enum {
-	DS_TYPE_STDOUT,
-	DS_TYPE_LOCAL,
-	DS_TYPE_XBSTREAM,
-	DS_TYPE_COMPRESS,
-	DS_TYPE_ENCRYPT,
-	DS_TYPE_DECRYPT,
-	DS_TYPE_TMPFILE,
-	DS_TYPE_BUFFER
+  DS_TYPE_STDOUT,
+  DS_TYPE_LOCAL,
+  DS_TYPE_XBSTREAM,
+  DS_TYPE_COMPRESS,
+  DS_TYPE_ENCRYPT,
+  DS_TYPE_DECRYPT,
+  DS_TYPE_TMPFILE,
+  DS_TYPE_BUFFER
 } ds_type_t;
 
 /************************************************************************

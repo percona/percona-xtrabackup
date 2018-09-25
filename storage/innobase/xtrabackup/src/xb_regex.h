@@ -31,14 +31,14 @@ typedef my_regmatch_t xb_regmatch_t;
 
 #define xb_regex_init() my_regex_init(&my_charset_latin1)
 
-#define xb_regexec(preg,string,nmatch,pmatch,eflags) \
-	my_regexec(preg, string, nmatch, pmatch, eflags)
+#define xb_regexec(preg, string, nmatch, pmatch, eflags) \
+  my_regexec(preg, string, nmatch, pmatch, eflags)
 
-#define xb_regerror(errcode,preg,errbuf,errbuf_size) \
-	my_regerror(errcode, preg, errbuf, errbuf_size)
+#define xb_regerror(errcode, preg, errbuf, errbuf_size) \
+  my_regerror(errcode, preg, errbuf, errbuf_size)
 
-#define xb_regcomp(preg,regex,cflags) \
-	my_regcomp(preg, regex, cflags, &my_charset_latin1)
+#define xb_regcomp(preg, regex, cflags) \
+  my_regcomp(preg, regex, cflags, &my_charset_latin1)
 
 #define xb_regfree(preg) my_regfree(preg)
 
@@ -51,20 +51,23 @@ typedef my_regmatch_t xb_regmatch_t;
 typedef regex_t xb_regex_t;
 typedef regmatch_t xb_regmatch_t;
 
-#define xb_regex_init() do { } while(0)
+#define xb_regex_init() \
+  do {                  \
+  } while (0)
 
-#define xb_regexec(preg,string,nmatch,pmatch,eflags)	\
-	regexec(preg, string, nmatch, pmatch, eflags)
+#define xb_regexec(preg, string, nmatch, pmatch, eflags) \
+  regexec(preg, string, nmatch, pmatch, eflags)
 
-#define xb_regerror(errcode,preg,errbuf,errbuf_size)	\
-	regerror(errcode, preg, errbuf, errbuf_size)
+#define xb_regerror(errcode, preg, errbuf, errbuf_size) \
+  regerror(errcode, preg, errbuf, errbuf_size)
 
-#define xb_regcomp(preg,regex,cflags)				\
-	regcomp(preg, regex, cflags)
+#define xb_regcomp(preg, regex, cflags) regcomp(preg, regex, cflags)
 
 #define xb_regfree(preg) regfree(preg)
 
-#define xb_regex_end() do { } while (0)
+#define xb_regex_end() \
+  do {                 \
+  } while (0)
 
 #endif /* _WIN32 */
 

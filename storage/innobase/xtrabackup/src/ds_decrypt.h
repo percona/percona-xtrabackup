@@ -23,10 +23,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "datasink.h"
 
-extern datasink_t	datasink_decrypt;
+extern datasink_t datasink_decrypt;
 
-extern uint		ds_decrypt_encrypt_threads;
+extern uint ds_decrypt_encrypt_threads;
 /* A switch that controls if `.xbcrypt` extension is removed from file name.*/
-extern bool		ds_decrypt_modify_file_extension;
+extern bool ds_decrypt_modify_file_extension;
 
 #endif

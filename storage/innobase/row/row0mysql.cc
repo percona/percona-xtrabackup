@@ -3072,9 +3072,9 @@ loop:
   if (drop == NULL) {
     /* All tables dropped */
     if (thd != nullptr) {
-      /* All these kind of table should not be
-      intrinsic ones, so this is no need later. */
-      /* xtrabackup does not bind MySQL sessions to InnoDB ones */
+    /* All these kind of table should not be
+    intrinsic ones, so this is no need later. */
+    /* xtrabackup does not bind MySQL sessions to InnoDB ones */
 #ifndef XTRABACKUP
       UT_DELETE(thd_to_innodb_session(thd));
       thd_to_innodb_session(thd) = NULL;

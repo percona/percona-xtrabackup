@@ -31,29 +31,28 @@ struct xb_fil_cur_t;
 
 /* The read filter context */
 struct xb_read_filt_ctxt_t {
-	ib_uint64_t		offset;		/*!< current file offset */
-	ib_uint64_t		data_file_size;	/*!< data file size */
-	ib_uint64_t		buffer_capacity;/*!< read buffer capacity */
-	ulint			space_id;	/*!< space id */
-	/* The following fields used only in bitmap filter */
-	/* Move these to union if any other filters are added in future */
-	xb_page_bitmap_range	*bitmap_range;	/*!< changed page bitmap range
-						iterator for space_id */
-	ulint			page_size;	/*!< page size */
-	ulint			filter_batch_end;/*!< the ending page id of the
-						 current changed page block in
-						 the bitmap */
+  ib_uint64_t offset;          /*!< current file offset */
+  ib_uint64_t data_file_size;  /*!< data file size */
+  ib_uint64_t buffer_capacity; /*!< read buffer capacity */
+  ulint space_id;              /*!< space id */
+  /* The following fields used only in bitmap filter */
+  /* Move these to union if any other filters are added in future */
+  xb_page_bitmap_range *bitmap_range; /*!< changed page bitmap range
+                                      iterator for space_id */
+  ulint page_size;                    /*!< page size */
+  ulint filter_batch_end;             /*!< the ending page id of the
+                                      current changed page block in
+                                      the bitmap */
 };
 
 /* The read filter */
 struct xb_read_filt_t {
-	void (*init)(xb_read_filt_ctxt_t* ctxt,
-		     const xb_fil_cur_t* cursor,
-		     ulint space_id);
-	void (*get_next_batch)(xb_read_filt_ctxt_t* ctxt,
-			       ib_uint64_t* read_batch_start,
-			       ib_uint64_t* read_batch_len);
-	void (*deinit)(xb_read_filt_ctxt_t* ctxt);
+  void (*init)(xb_read_filt_ctxt_t *ctxt, const xb_fil_cur_t *cursor,
+               ulint space_id);
+  void (*get_next_batch)(xb_read_filt_ctxt_t *ctxt,
+                         ib_uint64_t *read_batch_start,
+                         ib_uint64_t *read_batch_len);
+  void (*deinit)(xb_read_filt_ctxt_t *ctxt);
 };
 
 extern xb_read_filt_t rf_pass_through;

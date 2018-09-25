@@ -18,8 +18,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
-void
-crc32_intel_pclmul(uint32_t *pcrc, const uint8_t *inbuf, size_t inlen);
+void crc32_intel_pclmul(uint32_t *pcrc, const uint8_t *inbuf, size_t inlen);

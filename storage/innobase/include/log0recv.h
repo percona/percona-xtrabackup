@@ -602,16 +602,15 @@ bool log_block_checksum_is_ok(const byte *block);
 @param[in,out]  log   redo log
 @param[out] max_field LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
-MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    recv_find_max_checkpoint(log_t &log, ulint *max_field);
+MY_ATTRIBUTE((warn_unused_result))
+dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field);
 
 /** Reads a specified log segment to a buffer.
 @param[in,out]  log   redo log
 @param[in,out]  buf   buffer where to read
 @param[in]  start_lsn read area start
 @param[in]  end_lsn   read area end */
-void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                       lsn_t end_lsn);
+void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn, lsn_t end_lsn);
 
 /** Adds data from a new log block to the parsing buffer of recv_sys if
 recv_sys->parse_start_lsn is non-zero.
@@ -619,8 +618,7 @@ recv_sys->parse_start_lsn is non-zero.
 @param[in]  scanned_lsn   lsn of how far we were able
                                         to find data in this log block
 @return true if more data added */
-bool recv_sys_add_to_parsing_buf(const byte *log_block,
-                                        lsn_t scanned_lsn);
+bool recv_sys_add_to_parsing_buf(const byte *log_block, lsn_t scanned_lsn);
 
 /** Moves the parsing buffer data left to the buffer start. */
 void recv_reset_buffer();

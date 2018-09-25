@@ -25,101 +25,78 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "datasink.h"
 
 typedef struct {
-	File fd;
+  File fd;
 } ds_stdout_file_t;
 
 static ds_ctxt_t *stdout_init(const char *root);
 static ds_file_t *stdout_open(ds_ctxt_t *ctxt, const char *path,
-			     MY_STAT *mystat);
+                              MY_STAT *mystat);
 static int stdout_write(ds_file_t *file, const void *buf, size_t len);
 static int stdout_close(ds_file_t *file);
 static void stdout_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_stdout = {
-	&stdout_init,
-	&stdout_open,
-	&stdout_write,
-	&stdout_close,
-	&stdout_deinit
-};
+datasink_t datasink_stdout = {&stdout_init, &stdout_open, &stdout_write,
+                              &stdout_close, &stdout_deinit};
 
-static
-ds_ctxt_t *
-stdout_init(const char *root)
-{
-	ds_ctxt_t *ctxt;
+static ds_ctxt_t *stdout_init(const char *root) {
+  ds_ctxt_t *ctxt;
 
-	ctxt = static_cast<ds_ctxt_t *>(my_malloc(
-		PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t), MYF(MY_FAE)));
+  ctxt = static_cast<ds_ctxt_t *>(
+      my_malloc(PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t), MYF(MY_FAE)));
 
-	ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
+  ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
-	return ctxt;
+  return ctxt;
 }
 
-static
-ds_file_t *
-stdout_open(ds_ctxt_t *ctxt __attribute__((unused)),
-	    const char *path __attribute__((unused)),
-	    MY_STAT *mystat __attribute__((unused)))
-{
-	ds_stdout_file_t 	*stdout_file;
-	ds_file_t		*file;
-	size_t			pathlen;
-	const char		*fullpath = "<STDOUT>";
+static ds_file_t *stdout_open(ds_ctxt_t *ctxt __attribute__((unused)),
+                              const char *path __attribute__((unused)),
+                              MY_STAT *mystat __attribute__((unused))) {
+  ds_stdout_file_t *stdout_file;
+  ds_file_t *file;
+  size_t pathlen;
+  const char *fullpath = "<STDOUT>";
 
-	pathlen = strlen(fullpath) + 1;
+  pathlen = strlen(fullpath) + 1;
 
-	file = (ds_file_t *) my_malloc(PSI_NOT_INSTRUMENTED,
-				       sizeof(ds_file_t) +
-				       sizeof(ds_stdout_file_t) +
-				       pathlen,
-				       MYF(MY_FAE));
-	stdout_file = (ds_stdout_file_t *) (file + 1);
-
+  file = (ds_file_t *)my_malloc(
+      PSI_NOT_INSTRUMENTED,
+      sizeof(ds_file_t) + sizeof(ds_stdout_file_t) + pathlen, MYF(MY_FAE));
+  stdout_file = (ds_stdout_file_t *)(file + 1);
 
 #ifdef __WIN__
-	setmode(fileno(stdout), _O_BINARY);
+  setmode(fileno(stdout), _O_BINARY);
 #endif
 
-	stdout_file->fd = fileno(stdout);
+  stdout_file->fd = fileno(stdout);
 
-	file->path = (char *) stdout_file + sizeof(ds_stdout_file_t);
-	memcpy(file->path, fullpath, pathlen);
+  file->path = (char *)stdout_file + sizeof(ds_stdout_file_t);
+  memcpy(file->path, fullpath, pathlen);
 
-	file->ptr = stdout_file;
+  file->ptr = stdout_file;
 
-	return file;
+  return file;
 }
 
-static
-int
-stdout_write(ds_file_t *file, const void *buf, size_t len)
-{
-	File fd = ((ds_stdout_file_t *) file->ptr)->fd;
+static int stdout_write(ds_file_t *file, const void *buf, size_t len) {
+  File fd = ((ds_stdout_file_t *)file->ptr)->fd;
 
-	if (!my_write(fd, static_cast<const uchar *>(buf),
-			len, MYF(MY_WME | MY_NABP))) {
-		posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-		return 0;
-	}
+  if (!my_write(fd, static_cast<const uchar *>(buf), len,
+                MYF(MY_WME | MY_NABP))) {
+    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+    return 0;
+  }
 
-	return 1;
+  return 1;
 }
 
-static
-int
-stdout_close(ds_file_t *file)
-{
-	my_free(file);
+static int stdout_close(ds_file_t *file) {
+  my_free(file);
 
-	return 0;
+  return 0;
 }
 
-static
-void
-stdout_deinit(ds_ctxt_t *ctxt)
-{
-	my_free(ctxt->root);
-	my_free(ctxt);
+static void stdout_deinit(ds_ctxt_t *ctxt) {
+  my_free(ctxt->root);
+  my_free(ctxt);
 }
