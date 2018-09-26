@@ -73,9 +73,15 @@ ALTER INSTANCE ROTATE INNODB MASTER KEY;
 INSERT INTO t1 SELECT * FROM t1;
 EOF
 
+	$MYSQL $MYSQL_ARGS -e 'START TRANSACTION; INSERT INTO t1 SELECT * FROM t1; SELECT SLEEP(200000);' test &
+	uncommitted_id=$!
+
+	sleep 3
+
 	xtrabackup --backup --incremental-basedir=$topdir/inc1 \
 		   --target-dir=$topdir/inc2 $backup_options
 
+	kill -SIGKILL $uncommitted_id
 
 	xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
 		   $prepare_options
