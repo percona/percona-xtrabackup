@@ -5,11 +5,6 @@
 
 . inc/common.sh
 
-if [ ${ASAN_OPTIONS:-undefined} != "undefined" ]
-then
-    skip_test "Incompatible with AddressSanitizer"
-fi
-
 require_server_version_higher_than 5.6.0
 
 ################################################################################
