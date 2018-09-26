@@ -813,9 +813,12 @@ static bool have_queries_to_wait_for(MYSQL *connection, uint threshold) {
     if (info != NULL && duration >= (int)threshold &&
         ((all_queries && is_query(info)) || is_update_query(info))) {
       msg_ts("Waiting for query %s (duration %d sec): %s", id, duration, info);
+      mysql_free_result(result);
       return (true);
     }
   }
+
+  mysql_free_result(result);
 
   return (false);
 }
@@ -841,6 +844,8 @@ static void kill_long_queries(MYSQL *connection, uint timeout) {
       xb_mysql_query(connection, kill_stmt, false, false);
     }
   }
+
+  mysql_free_result(result);
 }
 
 static bool wait_for_no_updates(MYSQL *connection, uint timeout,
