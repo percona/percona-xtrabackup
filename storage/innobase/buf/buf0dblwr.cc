@@ -328,7 +328,6 @@ dberr_t buf_dblwr_init_or_load_pages(pfs_os_file_t file, const char *path,
   byte *doublewrite;
   byte *unaligned_read_buf;
   ibool reset_space_ids = FALSE;
-  recv_dblwr_t &recv_dblwr = recv_sys->dblwr;
 
   /* We do the file i/o past the buffer pool */
 
@@ -454,6 +453,8 @@ dberr_t buf_dblwr_init_or_load_pages(pfs_os_file_t file, const char *path,
       }
 
     } else if (load_corrupt_pages) {
+      ut_error;
+      recv_dblwr_t &recv_dblwr = recv_sys->dblwr;
       recv_dblwr.add(page);
     }
 
