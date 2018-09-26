@@ -1450,7 +1450,7 @@ static void usage(void) {
   puts(
       "Open source backup tool for InnoDB and XtraDB\n\
 \n\
-Copyright (C) 2009-2017 Percona LLC and/or its affiliates.\n\
+Copyright (C) 2009-2018 Percona LLC and/or its affiliates.\n\
 Portions Copyright (C) 2000, 2011, MySQL AB & Innobase Oy. All Rights Reserved.\n\
 \n\
 This program is free software; you can redistribute it and/or\n\
@@ -2835,8 +2835,7 @@ error:
     write_filter->deinit(&write_filt_ctxt);
     ;
   }
-  msg("[%02u] xtrabackup: Error: "
-      "xtrabackup_copy_datafile() failed.\n",
+  msg("[%02u] xtrabackup: Error: xtrabackup_copy_datafile() failed.\n",
       thread_n);
   return (TRUE); /*ERROR*/
 
@@ -2906,8 +2905,7 @@ static bool xtrabackup_scan_log_recs(
         break;
       }
 
-      msg("xtrabackup: error:"
-          " log block numbers mismatch:\n"
+      msg("xtrabackup: error: log block numbers mismatch:\n"
           "xtrabackup: error: expected log block no. %lu,"
           " but got no. %lu from the log file.\n",
           (ulong)scanned_no, (ulong)no);
@@ -2983,8 +2981,7 @@ static bool xtrabackup_scan_log_recs(
       non-zero */
 
       if (recv_sys->len + 4 * OS_FILE_LOG_BLOCK_SIZE >= RECV_PARSING_BUF_SIZE) {
-        ib::error() << "Log parsing buffer overflow."
-                       " Recovery may have failed!";
+        ib::error() << "Log parsing buffer overflow. Recovery may have failed!";
 
         recv_sys->found_corrupt_log = true;
 
@@ -3564,8 +3561,7 @@ static ulint xb_load_tablespaces(void)
   err = srv_sys_space.check_file_spec(false, 0);
 
   if (err != DB_SUCCESS) {
-    msg("xtrabackup: could not find data files at the "
-        "specified datadir\n");
+    msg("xtrabackup: could not find data files at the specified datadir\n");
     return (DB_ERROR);
   }
 
@@ -3657,8 +3653,7 @@ void xb_data_files_close(void)
 
   if (i == 1000) {
     ib::warn() << os_thread_count
-               << " threads created by InnoDB"
-                  " had not exited at shutdown!";
+               << " threads created by InnoDB had not exited at shutdown!";
   }
 
   undo_spaces_deinit();
@@ -4041,11 +4036,9 @@ static ulint open_or_create_log_file(
 
   if (size != srv_log_file_size) {
     fprintf(stderr,
-            "InnoDB: Error: log file %s is"
-            " of different size " UINT64PF
+            "InnoDB: Error: log file %s is of different size " UINT64PF
             " bytes\n"
-            "InnoDB: than specified in the .cnf"
-            " file %llu bytes!\n",
+            "InnoDB: than specified in the .cnf file %llu bytes!\n",
             name, size, srv_log_file_size * UNIV_PAGE_SIZE);
 
     return (DB_ERROR);
@@ -4472,8 +4465,7 @@ void xtrabackup_backup_func(void) {
     memset(&stat_info, 0, sizeof(MY_STAT));
     dst_log_file = ds_open(ds_redo, XB_LOG_FILENAME, &stat_info);
     if (dst_log_file == NULL) {
-      msg("xtrabackup: error: failed to open the target stream for "
-          "'%s'.\n",
+      msg("xtrabackup: error: failed to open the target stream for '%s'.\n",
           XB_LOG_FILENAME);
       ut_free(log_hdr_buf_);
       exit(EXIT_FAILURE);
@@ -4515,8 +4507,8 @@ void xtrabackup_backup_func(void) {
     /* Populate fil_system with tablespaces to copy */
     err = xb_load_tablespaces();
     if (err != DB_SUCCESS) {
-      msg("xtrabackup: error: xb_load_tablespaces() failed with"
-          "error code %lu\n",
+      msg("xtrabackup: error: xb_load_tablespaces() failed with error code "
+          "%lu\n",
           err);
       exit(EXIT_FAILURE);
     }
@@ -4532,8 +4524,7 @@ void xtrabackup_backup_func(void) {
         changed_page_bitmap = xb_page_bitmap_init();
       }
       if (!changed_page_bitmap) {
-        msg("xtrabackup: using the full scan for incremental "
-            "backup\n");
+        msg("xtrabackup: using the full scan for incremental backup\n");
       } else if (incremental_lsn != checkpoint_lsn_start) {
         /* Do not print that bitmaps are used when dummy bitmap
         is build for an empty LSN range. */
@@ -4544,8 +4535,7 @@ void xtrabackup_backup_func(void) {
     ut_a(xtrabackup_parallel > 0);
 
     if (xtrabackup_parallel > 1) {
-      msg("xtrabackup: Starting %u threads for parallel data "
-          "files transfer\n",
+      msg("xtrabackup: Starting %u threads for parallel data files transfer\n",
           xtrabackup_parallel);
     }
 
@@ -4615,8 +4605,7 @@ void xtrabackup_backup_func(void) {
 
     latest_cp = mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
 
-    msg("xtrabackup: The latest check point (for incremental): "
-        "'" LSN_PF "'\n",
+    msg("xtrabackup: The latest check point (for incremental): '" LSN_PF "'\n",
         latest_cp);
   }
 skip_last_cp:
@@ -4662,9 +4651,7 @@ skip_last_cp:
     sprintf(filename, "%s/%s", xtrabackup_extra_lsndir,
             XTRABACKUP_METADATA_FILENAME);
     if (!xtrabackup_write_metadata(filename)) {
-      msg("xtrabackup: Error: failed to write metadata "
-          "to '%s'.\n",
-          filename);
+      msg("xtrabackup: Error: failed to write metadata to '%s'.\n", filename);
       exit(EXIT_FAILURE);
     }
 
@@ -4687,8 +4674,7 @@ skip_last_cp:
     if (!xb_tablespace_keys_dump(
             ds_data, opt_transition_key,
             opt_transition_key != NULL ? strlen(opt_transition_key) : 0)) {
-      msg("xtrabackup: Error: failed to dump "
-          "tablespace keys.\n");
+      msg("xtrabackup: Error: failed to dump tablespace keys.\n");
       exit(EXIT_FAILURE);
     }
   }
@@ -4806,9 +4792,6 @@ loop:
   mtr_x_lock(&(index->lock), &mtr);
 
   right_page_no = btr_page_get_next(page, &mtr);
-
-  /*=================================*/
-  // fprintf(stdout, "%lu ", (ulint) buf_frame_get_page_no(page));
 
   n_pages++;
   sum_data += page_get_data_size(page);
@@ -5051,9 +5034,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
     if (!os_file_status(logname, &exists, &type) || !exists ||
         type != OS_FILE_TYPE_FILE) {
-      msg("xtrabackup: Error: "
-          "Cannot find log file %s.\n",
-          logname);
+      msg("xtrabackup: Error: Cannot find log file %s.\n", logname);
       msg("xtrabackup: Error: "
           "to use the statistics feature, you need a "
           "clean copy of the database including "
@@ -5186,6 +5167,7 @@ static bool xtrabackup_init_temp_log(void) {
   char src_path[FN_REFLEN];
   char dst_path[FN_REFLEN];
   bool success;
+  uint32_t log_format;
 
   ulint field;
   byte *log_buf;
@@ -5247,8 +5229,8 @@ retry:
 
     if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
                   (sizeof "xtrabkup") - 1) == 0) {
-      msg("  xtrabackup: 'ib_logfile0' seems to be "
-          "'xtrabackup_logfile'. will retry.\n");
+      msg("  xtrabackup: 'ib_logfile0' seems to be 'xtrabackup_logfile'. will "
+          "retry.\n");
 
       os_file_close(src_file);
       src_file = XB_FILE_UNDEFINED;
@@ -5286,6 +5268,18 @@ retry:
     msg("xtrabackup: notice: xtrabackup_logfile was already used "
         "to '--prepare'.\n");
     goto skip_modify;
+  }
+
+  log_format = mach_read_from_4(log_buf + LOG_HEADER_FORMAT);
+
+  if (log_format < LOG_HEADER_FORMAT_8_0_1) {
+    msg("xtrabackup: error: Unsupported redo log format " UINT32PF
+        "\n"
+        "This version of Percona XtraBackup can only perform backups and "
+        "restores against MySQL 8.0, please use Percona Xtrabackup 2.4 for "
+        "this database.\n",
+        log_format);
+    goto error;
   }
 
   checkpoint_found = false;
@@ -5384,8 +5378,7 @@ retry:
   }
 
   msg("xtrabackup: xtrabackup_logfile detected: size=" UINT64PF
-      ", "
-      "start_lsn=(" LSN_PF ")\n",
+      ", start_lsn=(" LSN_PF ")\n",
       file_size, max_lsn);
 
   os_file_close(src_file);
@@ -7660,6 +7653,7 @@ void handle_options(int argc, char **argv, int *argc_client,
     exit(ho_error);
 
   msg("xtrabackup: recognized server arguments: %s\n", param_str.str().c_str());
+  param_str.str("");
   param_str.clear();
 
   if (load_defaults(conf_file, xb_client_default_groups, argc_client,
@@ -7692,9 +7686,7 @@ void handle_options(int argc, char **argv, int *argc_client,
       }
 
       if (!server_option) {
-        msg("xtrabackup: Error:"
-            " unknown argument: '%s'\n",
-            opt);
+        msg("xtrabackup: Error: unknown argument: '%s'\n", opt);
         exit(EXIT_FAILURE);
       }
     }
