@@ -1604,7 +1604,7 @@ static byte *recv_parse_or_apply_log_rec_body(
                                        << " Status";
             }
 
-            ib::fatal(ER_IB_MSG_716) << "An optimized(without"
+            ib::error(ER_IB_MSG_716) << "An optimized (without"
                                      << " redo logging) DDL"
                                      << " operation has been"
                                      << " performed. All modified"
@@ -1614,6 +1614,7 @@ static byte *recv_parse_or_apply_log_rec_body(
                                      << " take a consistent backup."
                                      << " Retry the backup"
                                      << " operation";
+            exit(EXIT_FAILURE);
           }
           /** else the index is flushed to disk before
           backup started hence no error */

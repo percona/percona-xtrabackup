@@ -350,6 +350,8 @@ static bool check_server_version(unsigned long version_number,
                                  const char *version_comment,
                                  const char *innodb_version) {
   bool version_supported = false;
+  bool mysql51 = false;
+  bool pxb24 = false;
 
   mysql_server_version = version_number;
 
@@ -366,11 +368,25 @@ static bool check_server_version(unsigned long version_number,
   version_supported =
       version_supported || (version_number > 80000 && version_number < 90000);
 
+  mysql51 = version_number > 50100 && version_number < 50500;
+  pxb24 = pxb24 || (mysql51 && innodb_version != NULL);
+  pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
+  pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
+                    server_flavor == FLAVOR_MARIADB);
+
   if (!version_supported) {
-    msg("Error: Unsupported server version: '%s'. Please "
-        "report a bug at "
-        "https://jira.percona.com/projects/PXB\n",
+    msg("Error: Unsupported server version: '%s'.\n"
+        "This version of Percona XtraBackup can only perform backups and "
+        "restores against MySQL 8.0 and Percona Server 8.0\n",
         version_string);
+    if (mysql51 && innodb_version == NULL) {
+      msg("You can use Percona XtraBackup 2.0 for MySQL 5.1 with built-in "
+          "InnoDB, or upgrade to InnoDB plugin and use Percona XtraBackup "
+          "2.4.\n");
+    }
+    if (pxb24) {
+      msg("Please use Percona XtraBackup 2.4 for this database.\n");
+    }
   }
 
   return (version_supported);
