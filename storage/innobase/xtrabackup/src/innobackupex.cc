@@ -67,6 +67,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_copy.h"
 #include "xbcrypt_common.h"
 #include "ds_encrypt.h"
+#include "xtrabackup_config.h"
 
 using std::min;
 using std::max;
@@ -203,7 +204,9 @@ enum innobackupex_options
 	OPT_INCLUDE,
 	OPT_FORCE_NON_EMPTY_DIRS,
 	OPT_NO_TIMESTAMP,
+#ifdef HAVE_VERSION_CHECK
 	OPT_NO_VERSION_CHECK,
+#endif
 	OPT_NO_BACKUP_LOCKS,
 	OPT_DATABASES,
 	OPT_DECRYPT,
@@ -358,11 +361,13 @@ static struct my_option ibx_long_options[] =
 	 (uchar *) &opt_ibx_notimestamp,
 	 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+#ifdef HAVE_VERSION_CHECK
 	{"no-version-check", OPT_NO_VERSION_CHECK, "This option disables the "
 	 "version check which is enabled by the --version-check option.",
 	 (uchar *) &opt_ibx_noversioncheck,
 	 (uchar *) &opt_ibx_noversioncheck,
 	 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
 
 	{"no-backup-locks", OPT_NO_BACKUP_LOCKS, "This option controls if "
 	 "backup locks should be used instead of FLUSH TABLES WITH READ LOCK "
@@ -1014,7 +1019,9 @@ ibx_init()
 	opt_safe_slave_backup = opt_ibx_safe_slave_backup;
 	opt_rsync = opt_ibx_rsync;
 	opt_force_non_empty_dirs = opt_ibx_force_non_empty_dirs;
+#ifdef HAVE_VERSION_CHECK
 	opt_noversioncheck = opt_ibx_noversioncheck;
+#endif
 	opt_no_backup_locks = opt_ibx_no_backup_locks;
 	opt_decompress = opt_ibx_decompress;
 

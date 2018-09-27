@@ -42,8 +42,10 @@ bool
 copy_back(int argc, char **argv);
 bool
 decrypt_decompress();
+#ifdef HAVE_VERSION_CHECK
 void
 version_check();
+#endif
 bool
 is_path_separator(char);
 bool
