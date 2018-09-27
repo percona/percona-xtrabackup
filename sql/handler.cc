@@ -1968,7 +1968,14 @@ int ha_rollback_trans(THD *thd, bool all) {
     Notice, XA rollback has just invoked update_on_commit() through
     tc_log->*rollback* stack.
   */
-  if (is_real_trans && !is_xa_rollback) gtid_state->update_on_rollback(thd);
+  if (is_real_trans && !is_xa_rollback) {
+#ifndef XTRABACKUP
+    /* gtid_state is uninitialized in xtrabackup, and this call
+     would result in a no-op anyway, as the related thd var is
+     disabled */
+    gtid_state->update_on_rollback(thd);
+#endif
+  }
 
   /*
     If the transaction cannot be rolled back safely, warn; don't warn if this
