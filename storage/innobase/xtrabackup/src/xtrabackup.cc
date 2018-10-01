@@ -101,6 +101,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ds_encrypt.h"
 #include "xbcrypt_common.h"
 #include "crc_glue.h"
+#include "xtrabackup_config.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT	10
@@ -381,7 +382,9 @@ my_bool opt_no_lock = FALSE;
 my_bool opt_safe_slave_backup = FALSE;
 my_bool opt_rsync = FALSE;
 my_bool opt_force_non_empty_dirs = FALSE;
+#ifdef HAVE_VERSION_CHECK
 my_bool opt_noversioncheck = FALSE;
+#endif
 my_bool opt_no_backup_locks = FALSE;
 my_bool opt_decompress = FALSE;
 my_bool opt_remove_original = FALSE;
@@ -658,7 +661,9 @@ enum options_xtrabackup
   OPT_SAFE_SLAVE_BACKUP,
   OPT_RSYNC,
   OPT_FORCE_NON_EMPTY_DIRS,
+#ifdef HAVE_VERSION_CHECK
   OPT_NO_VERSION_CHECK,
+#endif
   OPT_NO_BACKUP_LOCKS,
   OPT_DECOMPRESS,
   OPT_INCREMENTAL_HISTORY_NAME,
@@ -948,11 +953,13 @@ struct my_option xb_client_options[] =
    (uchar *) &opt_force_non_empty_dirs,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+#ifdef HAVE_VERSION_CHECK
   {"no-version-check", OPT_NO_VERSION_CHECK, "This option disables the "
    "version check which is enabled by the --version-check option.",
    (uchar *) &opt_noversioncheck,
    (uchar *) &opt_noversioncheck,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
 
   {"tables-compatibility-check", OPT_XTRA_TABLES_COMPATIBILITY_CHECK,
    "This option enables engine compatibility warning.",
@@ -8236,9 +8243,11 @@ xb_init()
 
 	if (xtrabackup_backup) {
 
+#ifdef HAVE_VERSION_CHECK
 		if (!opt_noversioncheck) {
 			version_check();
 		}
+#endif
 
 		if ((mysql_connection = xb_mysql_connect()) == NULL) {
 			return(false);
