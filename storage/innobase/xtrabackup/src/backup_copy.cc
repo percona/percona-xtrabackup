@@ -48,13 +48,17 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <set>
 #include <string>
 #include <mysqld.h>
-#include <version_check_pl.h>
 #include <sstream>
 #include "fil_cur.h"
 #include "xtrabackup.h"
 #include "common.h"
 #include "backup_copy.h"
 #include "backup_mysql.h"
+#include "xtrabackup_version.h"
+#include "xtrabackup_config.h"
+#ifdef HAVE_VERSION_CHECK
+#include <version_check_pl.h>
+#endif
 
 
 /* list of files to sync for --rsync mode */
@@ -2059,6 +2063,7 @@ decrypt_decompress()
 	return(ret);
 }
 
+#ifdef HAVE_VERSION_CHECK
 void
 version_check()
 {
@@ -2079,6 +2084,7 @@ version_check()
 		snprintf(port, sizeof(port), "%u", opt_port);
 		setenv("option_mysql_port", port, 1);
 	}
+	setenv("XTRABACKUP_VERSION", XTRABACKUP_VERSION, 1);
 
 	FILE *pipe = popen("perl", "w");
 	if (pipe == NULL) {
@@ -2089,3 +2095,4 @@ version_check()
 
 	pclose(pipe);
 }
+#endif
