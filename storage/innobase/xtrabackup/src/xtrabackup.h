@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "changed_page_bitmap.h"
 #include "datasink.h"
 #include "xbstream.h"
+#include "xtrabackup_config.h"
 
 #ifdef __WIN__
 #define XB_FILE_UNDEFINED {NULL};
@@ -131,7 +132,9 @@ extern bool opt_no_lock;
 extern bool opt_safe_slave_backup;
 extern bool opt_rsync;
 extern bool opt_force_non_empty_dirs;
+#ifdef HAVE_VERSION_CHECK
 extern bool opt_noversioncheck;
+#endif
 extern bool opt_no_backup_locks;
 extern bool opt_decompress;
 extern bool opt_remove_original;

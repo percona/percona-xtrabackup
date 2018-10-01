@@ -3,6 +3,7 @@
 #define XTRABACKUP_BACKUP_COPY_H
 
 #include "datasink.h"
+#include "xtrabackup_config.h"
 
 /* special files */
 #define XTRABACKUP_SLAVE_INFO "xtrabackup_slave_info"
@@ -37,7 +38,9 @@ bool backup_finish();
 bool apply_log_finish();
 bool copy_back(int argc, char **argv);
 bool decrypt_decompress();
+#ifdef HAVE_VERSION_CHECK
 void version_check();
+#endif
 bool is_path_separator(char);
 bool directory_exists(const char *dir, bool create);
 
