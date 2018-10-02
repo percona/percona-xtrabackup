@@ -125,3 +125,8 @@ then
 fi
 
 vlog "Checksums are OK"
+
+if egrep -q "We scanned the log up to [0-9]+. A checkpoint was at [0-9]+" $OUTFILE
+then
+    die "PXB-1699 is present"
+fi
