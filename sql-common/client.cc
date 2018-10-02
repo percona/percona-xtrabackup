@@ -116,20 +116,8 @@
 #include "../libmysql/init_commands_array.h"
 #include "../libmysql/mysql_trace.h" /* MYSQL_TRACE() instrumentation */
 #include "sql_common.h"
-#ifdef MYSQL_SERVER
+#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
 #include "sql/client_settings.h"
-
-#ifdef XTRABACKUP
-MYSQL_FIELD *cli_list_fields(MYSQL *mysql);
-bool cli_read_prepare_result(MYSQL *mysql, MYSQL_STMT *stmt);
-MYSQL_DATA *cli_read_rows(MYSQL *mysql, MYSQL_FIELD *mysql_fields, uint fields);
-int cli_stmt_execute(MYSQL_STMT *stmt);
-int cli_read_binary_rows(MYSQL_STMT *stmt);
-int cli_unbuffered_fetch(MYSQL *mysql, char **row);
-const char *cli_read_statistics(MYSQL *mysql);
-int cli_read_change_user_result(MYSQL *mysql);
-#endif
-
 #else
 #include "libmysql/client_settings.h"
 #endif
@@ -1492,7 +1480,7 @@ void end_server(MYSQL *mysql) {
     char desc[VIO_DESCRIPTION_SIZE];
     vio_description(mysql->net.vio, desc);
     DBUG_PRINT("info", ("Net: %s", desc));
-#ifdef MYSQL_SERVER
+#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
     slave_io_thread_detach_vio();
 #endif
     vio_delete(mysql->net.vio);
