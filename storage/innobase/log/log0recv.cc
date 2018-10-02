@@ -3173,12 +3173,13 @@ bool meb_scan_log_recs(
       recv_sys->recovered_lsn = recv_sys->parse_start_lsn;
     }
 
-    scanned_lsn += data_len;
-
     /* clip redo log at the specified LSN */
-    if (scanned_lsn > to_lsn) {
-      scanned_lsn = to_lsn;
+    if (scanned_lsn + data_len > to_lsn) {
+      data_len = to_lsn - scanned_lsn;
+      recv_sys->scanned_lsn = scanned_lsn + data_len;
     }
+
+    scanned_lsn += data_len;
 
     if (scanned_lsn > recv_sys->scanned_lsn) {
 #ifndef UNIV_HOTBACKUP
@@ -3450,6 +3451,8 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
 
   checkpoint_no = mach_read_from_8(log.checkpoint_buf + LOG_CHECKPOINT_NO);
 
+  ut_ad(to_lsn >= checkpoint_lsn);
+
   /* Read the first log file header to print a note if this is
   a recovery from a restored InnoDB Hot Backup */
   byte log_hdr_buf[LOG_FILE_HDR_SIZE];
@@ -3571,7 +3574,8 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
   log.recovered_lsn = recovered_lsn;
 
   if (log.scanned_lsn < checkpoint_lsn || log.scanned_lsn < recv_max_page_lsn) {
-    ib::error(ER_IB_MSG_737, log.scanned_lsn, checkpoint_lsn);
+    ib::error(ER_IB_MSG_737, log.scanned_lsn, checkpoint_lsn,
+              recv_max_page_lsn);
   }
 
   if (recovered_lsn < checkpoint_lsn) {
