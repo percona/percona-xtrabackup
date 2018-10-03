@@ -128,7 +128,8 @@ MYSQL *mysql_connection;
 
 /* Whether LOCK TABLES FOR BACKUP / FLUSH TABLES WITH READ LOCK has been issued
 during backup */
-static bool tables_locked;
+static bool tables_locked = false;
+static bool instance_locked = false;
 
 MYSQL *xb_mysql_connect() {
   MYSQL *connection = mysql_init(NULL);
@@ -960,9 +961,11 @@ bool lock_tables_for_backup(MYSQL *connection, int timeout) {
     return (true);
   }
 
-  msg_ts("Error: LOCK TABLES FOR BACKUP is not supported.\n");
+  instance_locked = true;
+  msg_ts("Executing LOCK INSTANCE FOR BACKUP...\n");
+  xb_mysql_query(connection, "LOCK INSTANCE FOR BACKUP", true);
 
-  return (false);
+  return (true);
 }
 
 /*********************************************************************/ /**
@@ -1057,8 +1060,16 @@ void unlock_all(MYSQL *connection) {
     os_thread_sleep(opt_debug_sleep_before_unlock * 1000);
   }
 
-  msg_ts("Executing UNLOCK TABLES\n");
-  xb_mysql_query(connection, "UNLOCK TABLES", false);
+  if (instance_locked) {
+    msg_ts("Executing UNLOCK INSTANCE\n");
+    xb_mysql_query(connection, "UNLOCK INSTANCE", false);
+    instance_locked = false;
+  }
+
+  if (tables_locked) {
+    msg_ts("Executing UNLOCK TABLES\n");
+    xb_mysql_query(connection, "UNLOCK TABLES", false);
+  }
 
   msg_ts("All tables unlocked\n");
 }
