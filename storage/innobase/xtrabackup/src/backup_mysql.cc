@@ -604,9 +604,10 @@ detect_mysql_capabilities_for_backup()
 	}
 
 	if (opt_slave_info && have_multi_threaded_slave &&
-	    !have_gtid_slave) {
-	    	msg("The --slave-info option requires GTID enabled for a "
-			"multi-threaded slave.\n");
+	    !have_gtid_slave && !opt_safe_slave_backup) {
+		msg("The --slave-info option requires GTID enabled or "
+			"--safe-slave-backup option used for a multi-threaded "
+			"slave.\n");
 		return(false);
 	}
 
@@ -1194,6 +1195,7 @@ write_slave_info(MYSQL *connection)
 	char *gtid_slave_pos = NULL;
 	char *auto_position = NULL;
 	char *using_gtid = NULL;
+	char *slave_sql_running = NULL;
 	char *ptr;
 	bool result = false;
 
@@ -1204,6 +1206,7 @@ write_slave_info(MYSQL *connection)
 		{"Executed_Gtid_Set", &gtid_executed},
 		{"Auto_Position", &auto_position},
 		{"Using_Gtid", &using_gtid},
+		{"Slave_SQL_Running", &slave_sql_running},
 		{NULL, NULL}
 	};
 
@@ -1225,6 +1228,9 @@ write_slave_info(MYSQL *connection)
 		result = true;
 		goto cleanup;
 	}
+
+	ut_ad(!have_multi_threaded_slave || have_gtid_slave ||
+		strcasecmp(slave_sql_running, "No") == 0);
 
 	/* Print slave status to a file.
 	If GTID mode is used, construct a CHANGE MASTER statement with
