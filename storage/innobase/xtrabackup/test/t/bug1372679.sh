@@ -22,13 +22,16 @@ setup_slave $slave_id $master_id
 switch_server $slave_id
 
 xtrabackup --backup --slave-info --target-dir=$topdir/backup 2>&1 |
-    grep 'The --slave-info option requires GTID enabled for a multi-threaded slave' ||
+    grep 'The --slave-info option requires GTID enabled or --safe-slave-backup option used for a multi-threaded slave.' ||
     die "could not find the error message"
 
 if [[ ${PIPESTATUS[0]} == 0 ]]
 then
     die "xtrabackup did not fail as expected"
 fi
+
+# --slave-info allowed with --safe-slave-backup and MTS
+xtrabackup --backup --slave-info --safe-slave-backup --target-dir=$topdir/backup0
 
 stop_server_with_id $master_id
 stop_server_with_id $slave_id

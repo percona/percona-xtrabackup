@@ -20,9 +20,6 @@ OPTION(WITH_VERSION_CHECK "Build with version check" ON)
 
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
-ADD_SUBDIRECTORY(crc)
-ADD_SUBDIRECTORY(jsmn)
-
 FIND_GCRYPT()
 FIND_EV()
 
@@ -53,6 +50,9 @@ INCLUDE_DIRECTORIES(
   )
 
 ADD_DEFINITIONS(${SSL_DEFINES})
+
+ADD_SUBDIRECTORY(crc)
+ADD_SUBDIRECTORY(jsmn)
 
 ########################################################################
 # xtrabackup binary
