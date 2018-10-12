@@ -520,6 +520,7 @@ typedef struct {
   uint num;
   uint *count;
   ib_mutex_t *count_mutex;
+  bool *error;
   os_thread_id_t id;
 } data_thread_ctxt_t;
 
@@ -3183,10 +3184,7 @@ static void io_handler_thread(ulint segment) {
 
 /**************************************************************************
 Datafiles copying thread.*/
-static void data_copy_thread_func(
-    /*==================*/
-    data_thread_ctxt_t *ctxt) /* thread context */
-{
+static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
   uint num = ctxt->num;
   fil_node_t *node;
 
@@ -3198,13 +3196,13 @@ static void data_copy_thread_func(
 
   debug_sync_point("data_copy_thread_func");
 
-  while ((node = datafiles_iter_next(ctxt->it)) != NULL) {
+  while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
     /* copy the datafile */
     if (xtrabackup_copy_datafile(node, num)) {
       msg("[%02u] xtrabackup: Error: "
           "failed to copy datafile.\n",
           num);
-      exit(EXIT_FAILURE);
+      *(ctxt->error) = true;
     }
   }
 
@@ -4231,6 +4229,7 @@ void xtrabackup_backup_func(void) {
   lsn_t backup_lsn = 0;
 
   recv_is_making_a_backup = true;
+  bool data_copying_error = false;
 
   init_mysql_environment();
 
@@ -4576,6 +4575,7 @@ void xtrabackup_backup_func(void) {
       data_threads[i].num = i + 1;
       data_threads[i].count = &count;
       data_threads[i].count_mutex = &count_mutex;
+      data_threads[i].error = &data_copying_error;
       os_thread_create(PFS_NOT_INSTRUMENTED, data_copy_thread_func,
                        data_threads + i);
     }
@@ -4594,6 +4594,10 @@ void xtrabackup_backup_func(void) {
     mutex_free(&count_mutex);
     ut_free(data_threads);
     datafiles_iter_free(it);
+
+    if (data_copying_error) {
+      exit(EXIT_FAILURE);
+    }
 
     if (changed_page_bitmap) {
       xb_page_bitmap_deinit(changed_page_bitmap);
