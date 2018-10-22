@@ -13,7 +13,7 @@ such as the following:
 
   $ git clone https://github.com/percona/percona-xtrabackup.git
   $ cd percona-xtrabackup
-  $ git checkout 2.4
+  $ git checkout 8.0
 
 You should then have a directory named after the release you branched, such as
 ``percona-xtrabackup``.

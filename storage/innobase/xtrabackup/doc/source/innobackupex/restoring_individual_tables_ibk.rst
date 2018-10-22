@@ -4,7 +4,7 @@
  Restoring Individual Tables
 =============================
 
-In server versions prior to 5.6, it is not possible to copy tables between servers by copying the files, even with :term:`innodb_file_per_table`. However, with the |Percona XtraBackup|, you can export individual tables from any |InnoDB| database, and import them into |Percona Server| with |XtraDB| or |MySQL| 5.6 (The source doesn't have to be |XtraDB| or or |MySQL| 5.6, but the destination does). This only works on individual :term:`.ibd` files, and cannot export a table that is not contained in its own :term:`.ibd` file.
+In server versions prior to 5.6, it was not possible to copy tables between servers by copying the files, even with :term:`innodb_file_per_table`. However, with the |Percona XtraBackup|, you can export individual tables from any |InnoDB| database, and import them into |Percona Server| with |XtraDB| or |MySQL| 5.6 (The source doesn't have to be |XtraDB| or or |MySQL| 5.6, but the destination does). This only works on individual :term:`.ibd` files, and cannot export a table that is not contained in its own :term:`.ibd` file.
 
 .. note:: 
 
@@ -36,7 +36,7 @@ These three files are all you need to import the table into a server running |Pe
 
 .. note:: 
 
-  |MySQL| uses ``.cfg`` file which contains |InnoDB| dictionary dump in special format. This format is different from the ``.exp`` one which is used in |XtraDB| for the same purpose. Strictly speaking, a ``.cfg`` file is **not** required to import a tablespace to |MySQL| 5.6 or |Percona Server| 5.6. A tablespace will be imported successfully even if it is from another server, but |InnoDB| will do schema validation if the corresponding ``.cfg`` file is present in the same directory.
+  |MySQL| uses ``.cfg`` file which contains |InnoDB| dictionary dump in a special format. This format is different from the ``.exp`` format which is used in |XtraDB| for the same purpose. Strictly speaking, a ``.cfg`` file is **not** required to import a tablespace to |MySQL| 5.6 or |Percona Server| 5.6. A tablespace will be imported successfully even if it is from another server, but |InnoDB| will do schema validation if the corresponding ``.cfg`` file is present in the same directory.
 
 Each :term:`.exp` (or ``.cfg``)  file will be used for importing that table.
 

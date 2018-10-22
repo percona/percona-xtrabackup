@@ -4,9 +4,9 @@
 Encrypted InnoDB tablespace backups
 ===================================
 
-As of |MySQL| 5.7.11, InnoDB supports data `encryption for InnoDB tables <http://dev.mysql.com/doc/refman/5.7/en/innodb-tablespace-encryption.html>`_ stored in file-per-table tablespaces. This feature provides at-rest encryption for physical tablespace data files.
+Starting with |MySQL| 5.7, InnoDB supports data `encryption for InnoDB tables <http://dev.mysql.com/doc/refman/8.0/en/innodb-tablespace-encryption.html>`_ stored in file-per-table tablespaces. This feature provides at-rest encryption for physical tablespace data files.
 
-For authenticated user or application to access encrypted tablespace, InnoDB will use master encryption key to decrypt the tablespace key. The master encryption key is stored in a keyring. Two keyring plugins supported by |xtrabackup| are ``keyring_file`` and ``keyring_vault``. These plugins are installed into the plugin directory. 
+For an authenticated user or application to access an encrypted tablespace, InnoDB will use the master encryption key to decrypt the tablespace key. The master encryption key is stored in a keyring. |xtrabackup| supports two keyring plugins: ``keyring_file``, and ``keyring_vault``. These plugins are installed into the ``plugin`` directory. 
 
 .. contents::
    :local:
@@ -97,8 +97,8 @@ Preparing the Backup
 ********************
 
 In order to prepare the backup |xtrabackup| will need an access to the keyring.
-Since |xtrabackup| doesn't talk to MySQL server and doesn't read default
-``my.cnf`` configuration file during prepare, user will need to specify keyring
+Since |xtrabackup| doesn't talk to |MySQL| server and doesn't read the default
+``my.cnf`` configuration file during prepare, the user will need to specify keyring
 settings via the command line:
 
 .. code-block:: bash

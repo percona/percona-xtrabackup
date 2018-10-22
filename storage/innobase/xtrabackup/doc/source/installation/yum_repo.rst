@@ -25,6 +25,8 @@ Supported Releases:
 
  * *Amazon Linux AMI* (works the same as *CentOS* 6)
 
+ * Amazon Linux 2
+
 The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too,
 provided that :program:`yum` is installed on the server.
 
@@ -36,13 +38,13 @@ Supported Platforms:
 What's in each RPM package?
 ===========================
 
-The ``percona-xtrabackup-24`` package contains the latest |Percona XtraBackup|
+The ``percona-xtrabackup-80`` package contains the latest |Percona XtraBackup|
 GA binaries and associated files.
 
-The ``percona-xtrabackup-24-debuginfo`` package contains the debug symbols for
-binaries in ``percona-xtrabackup-24``.
+The ``percona-xtrabackup-80-debuginfo`` package contains the debug symbols for
+binaries in ``percona-xtrabackup``.
 
-The ``percona-xtrabackup-test-24`` package contains the test suite for |Percona
+The ``percona-xtrabackup-test-80`` package contains the test suite for |Percona
 XtraBackup|.
 
 The ``percona-xtrabackup`` package contains the older version of the
@@ -58,13 +60,13 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 
    .. code-block:: bash
 
-     yum install http://www.percona.com/downloads/percona-release/redhat/0.1-6/percona-release-0.1-6.noarch.rpm
+     $ sudo yum install https://repo.percona.com/centos/7/RPMS/noarch/percona-release-0.1-8.noarch.rpm
 
    You should see some output such as the following:
 
    .. code-block:: bash
 
-     Retrieving http://www.percona.com/downloads/percona-release/redhat/0.1-6/percona-release-0.1-6.noarch.rpm
+     Retrieving http://www.percona.com/downloads/percona-release/redhat/0.1-6/percona-release-0.1-8.noarch.rpm
      Preparing...                ########################################### [100%]
         1:percona-release        ########################################### [100%]
 
@@ -80,60 +82,25 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
     percona-release-0.1-6.noarch.rpm
     $ rpm -ivH percona-release-0.1-6.noarch.rpm
 
-2. Testing the repository
-
-   Make sure packages are now available from the repository, by executing the
-   following command:
+#. Enable the repository:
 
    .. code-block:: bash
 
-     yum list | grep percona
+      $ sudo percona-release enable tools testing
 
-   You should see output similar to the following:
-
-   .. code-block:: bash
-
-     ...
-     percona-xtrabackup-20.x86_64               2.0.8-587.rhel5             percona-release-x86_64
-     percona-xtrabackup-20-debuginfo.x86_64     2.0.8-587.rhel5             percona-release-x86_64
-     percona-xtrabackup-20-test.x86_64          2.0.8-587.rhel5             percona-release-x86_64
-     percona-xtrabackup-21.x86_64               2.1.9-746.rhel5             percona-release-x86_64
-     percona-xtrabackup-21-debuginfo.x86_64     2.1.9-746.rhel5             percona-release-x86_64
-     percona-xtrabackup-22.x86_64               2.2.13-1.el5                percona-release-x86_64
-     percona-xtrabackup-22-debuginfo.x86_64     2.2.13-1.el5                percona-release-x86_64
-     percona-xtrabackup-debuginfo.x86_64        2.3.5-1.el5                 percona-release-x86_64
-     percona-xtrabackup-test.x86_64             2.3.5-1.el5                 percona-release-x86_64
-     percona-xtrabackup-test-21.x86_64          2.1.9-746.rhel5             percona-release-x86_64
-     percona-xtrabackup-test-22.x86_64          2.2.13-1.el5                percona-release-x86_64
-     ...
-
-3. Install the packages
+#. Install the packages
 
    You can now install |Percona XtraBackup| by running:
 
    .. code-block:: bash
 
-     yum install percona-xtrabackup-24
+     yum install percona-xtrabackup
 
 .. warning::
 
    In order to sucessfully install |Percona XtraBackup| ``libev`` package will
    need to be installed first. ``libev`` package can be installed from the
    `EPEL <https://fedoraproject.org/wiki/EPEL>`_ repositories.
-
-.. _yum_testing:
-
-Percona `yum` Testing Repository
-================================
-
-Percona offers pre-release builds from our testing repository. To subscribe to
-the testing repository, you'll need to enable the testing repository in
-:file:`/etc/yum.repos.d/percona-release.repo`. To do so, set both
-``percona-testing-$basearch`` and ``percona-testing-noarch`` to
-``enabled = 1`` (Note that there are 3 sections in this file: release, testing
-and experimental - in this case it is the second section that requires
-updating). **NOTE:** You'll need to install the Percona repository first (ref
-above) if this hasn't been done already.
 
 .. _standalone_rpm:
 
@@ -142,19 +109,19 @@ Installing |Percona XtraBackup| using downloaded rpm packages
 
 Download the packages of the desired series for your architecture from the
 `download page <https://www.percona.com/downloads/XtraBackup/>`_. Following
-example will download |Percona XtraBackup| 2.4.4 release package for
+example will download |Percona XtraBackup| 8.0.12 release package for
 *CentOS* 7:
 
 .. code-block:: bash
 
-  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.4/\
-  binary/redhat/7/x86_64/percona-xtrabackup-24-2.4.4-1.el7.x86_64.rpm
+  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-8.0.12/\
+  binary/redhat/7/x86_64/percona-xtrabackup-80-8.0.12-1.el7.x86_64.rpm
 
 Now you can install |Percona XtraBackup| by running:
 
 .. code-block:: bash
 
- $ yum localinstall percona-xtrabackup-24-2.4.4-1.el7.x86_64.rpm
+ $ yum localinstall percona-xtrabackup-80-8.0.12-1.el7.x86_64.rpm
 
 .. note::
 

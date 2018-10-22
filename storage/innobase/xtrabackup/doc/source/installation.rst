@@ -1,7 +1,7 @@
 .. _installation:
 
 ===================================
-Installing |Percona XtraBackup| 2.4
+Installing |Percona XtraBackup| 8.0
 ===================================
 
 This page provides the information on how to install |Percona XtraBackup|.
@@ -36,6 +36,17 @@ Percona repositories for :file:`.deb` and :file:`.rpm` packages.
    installation/apt_repo
    installation/yum_repo
 
+.. note::
+
+   For experimental migrations from earlier database server versions,
+   you will need to backup and restore using XtraBackup 2.4 and
+   then use ``mysql_upgrade`` from MySQL 8.0.x
+
+   .. seealso::
+
+      About the support of MySQL and Percona Server versions in |Percona XtraBackup| 2.4 and 8.0
+         :ref:`intro`
+
 Compiling and Installing from Source Code
 =========================================
 
@@ -48,3 +59,4 @@ describes the compiling and installation process from source code.
    :titlesonly:
 
    installation/compiling_xtrabackup
+

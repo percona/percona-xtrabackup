@@ -15,7 +15,7 @@
    xbcloud/xbcloud
    how_xtrabackup_works
 
-|Percona XtraBackup| is a set of following tools:
+|Percona XtraBackup| is a set of the following tools:
 
 :doc:`innobackupex <innobackupex/innobackupex_script>`
     |innobackupex| is the symlink for |xtrabackup|. |innobackupex| still
@@ -37,6 +37,6 @@
    utility used for downloading and uploading full or part of |xbstream|
    archive from/to cloud.
 
-After |Percona XtraBackup| 2.3 release the recommend way to take the backup is
-using the |xtrabackup| script. More information on script options can be found
+After |Percona XtraBackup| 2.3 release, the recommend way to take the backup is
+by using the |xtrabackup| script. More information on script options can be found
 in :doc:`how to use xtrabackup <xtrabackup_bin/xtrabackup_binary>`.

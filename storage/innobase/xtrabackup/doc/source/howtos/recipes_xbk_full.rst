@@ -17,7 +17,7 @@ Prepare the backup twice:
   xtrabackup --prepare --target-dir=/data/backups/mysql/
   xtrabackup --prepare --target-dir=/data/backups/mysql/
 
-Success Criterion
+Success Criteria
 =================
 
 *  The exit status of xtrabackup is 0.

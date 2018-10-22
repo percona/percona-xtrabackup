@@ -8,7 +8,7 @@
 
   You can have almost real-time backups in 6 simple steps by setting up a replication environment with |Percona XtraBackup|. 
 
- |Percona XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs "hot backups" on unmodified versions of |MySQL| servers (5.1, 5.5 and 5.6), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
+ |Percona XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs *hot backups* on unmodified versions of |MySQL| servers (5.1, 5.5 and 5.6), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
 
 All the things you will need
 ============================
@@ -85,7 +85,7 @@ you can set it up in :file:`.mylogin.cnf` as follows::
 
  mysql_config_editor set --login-path=client --host=localhost --user=root --password
 
-For more information, see `MySQL Configuration Utility <https://dev.mysql.com/doc/refman/5.6/en/mysql-config-editor.html>`.
+For more information, see `MySQL Configuration Utility <https://dev.mysql.com/doc/refman/8.0/en/mysql-config-editor.html>`.
 
 This is will give you root access to MySQL. 
 

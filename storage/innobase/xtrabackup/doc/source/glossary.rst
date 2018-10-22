@@ -69,7 +69,7 @@
    InnoDB
       Storage engine which provides ACID-compliant transactions and foreign
       key support, among others improvements over :term:`MyISAM`. It is the
-      default engine for |MySQL| as of the 5.5 series.
+      default engine for |MySQL| as of the 8.0 series.
 
    MyISAM
      Previous default storage engine for |MySQL| for versions prior to 5.5. It
