@@ -101,7 +101,7 @@ backed up:
 
   * ``SUPER`` in order to start/stop the slave threads in a replication
     environment, use `XtraDB Changed Page Tracking
-    <https://www.percona.com/doc/percona-server/5.6/management/changed_page_tracking.html>`_
+    <https://www.percona.com/doc/percona-server/8.0/management/changed_page_tracking.html>`_
     for :ref:`xb_incremental` and for :ref:`improved_ftwrl`,
 
   * ``CREATE`` privilege in order to create the

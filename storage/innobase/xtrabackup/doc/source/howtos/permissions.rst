@@ -2,9 +2,9 @@
  Privileges and Permissions for Users
 ======================================
 
-We will be referring to "permissions" to the ability of a user to access and perform changes on the relevant parts of the host's filesystem, starting/stopping services and installing software.
+We will be referring to *permissions* to the ability of a user to access and perform changes on the relevant parts of the host's filesystem, starting/stopping services and installing software.
 
-By "privileges" we refer to the abilities of a database user to perform different kinds of actions on the database server.
+By *privileges* we refer to the abilities of a database user to perform different kinds of actions on the database server.
 
 
 At a system level
@@ -47,7 +47,7 @@ or for a particular user with: ::
 
   mysql> SHOW GRANTS FOR 'db-user'@'host';
 
-It will display the privileges using the same format as for the `GRANT statement <http://dev.mysql.com/doc/refman/5.1/en/show-grants.html>`_.
+It will display the privileges using the same format as for the `GRANT statement <http://dev.mysql.com/doc/refman/8.0/en/show-grants.html>`_.
 
 Note that privileges may vary across versions of the server. To list the exact list of privileges that your server support (and a brief description of them) execute: ::
 

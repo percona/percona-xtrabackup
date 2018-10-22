@@ -27,7 +27,7 @@ a while. |Percona XtraBackup| needs the transaction log records for every
 change to the data files since it began execution.
 
 |Percona XtraBackup| will use `Backup locks
-<https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
+<https://www.percona.com/doc/percona-server/8.0/management/backup_locks.html>`_
 where available as a lightweight alternative to ``FLUSH TABLES WITH READ
 LOCK``. This feature is available in |Percona Server| 5.6+. |Percona
 XtraBackup| uses this automatically to copy non-InnoDB data to avoid blocking
@@ -44,7 +44,7 @@ done, the backup of the files will begin. It will backup :term:`.frm`,
   Locking is done only for |MyISAM| and other non-InnoDB tables, and only
   **after** |Percona XtraBackup| is finished backing up all InnoDB/XtraDB data
   and logs. |Percona XtraBackup| will use `Backup locks
-  <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
+  <https://www.percona.com/doc/percona-server/8.0/management/backup_locks.html>`_
   where available as a lightweight alternative to ``FLUSH TABLES WITH READ
   LOCK``. This feature is available in |Percona Server| 5.6+. |Percona
   XtraBackup| uses this automatically to copy non-InnoDB data to avoid blocking

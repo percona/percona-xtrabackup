@@ -11,7 +11,7 @@
 servers that doesn't lock your database during the backup.
 
 It can back up data from |InnoDB|, |XtraDB|, and |MyISAM| tables on |MySQL| 5.1
-[#n-1]_, 5.5, 5.6 and 5.7 servers, as well as |Percona Server| with |XtraDB|.
+[#n-1]_, 5.5, 5.6, 5.7, and 8.0 servers, as well as |Percona Server| with |XtraDB|.
 For a high-level overview of many of its advanced features, including a feature
 comparison, please see :doc:`intro`.
 
