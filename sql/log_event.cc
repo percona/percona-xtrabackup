@@ -332,6 +332,9 @@ static void inline slave_rows_error_report(enum loglevel level, int ha_error,
                                            TABLE *table, const char *type,
                                            const char *log_name, ulong pos) {
   const char *handler_error = (ha_error ? HA_ERR(ha_error) : NULL);
+  bool is_group_replication_applier_channel =
+      channel_map.is_group_replication_channel_name(
+          (const_cast<Relay_log_info *>(rli))->get_channel(), true);
   char buff[MAX_SLAVE_ERRMSG], *slider;
   const char *buff_end = buff + sizeof(buff);
   size_t len;
@@ -345,23 +348,44 @@ static void inline slave_rows_error_report(enum loglevel level, int ha_error,
     len = snprintf(slider, buff_end - slider, " %s, Error_code: %d;",
                    err->message_text(), err->mysql_errno());
   }
-
-  if (ha_error != 0)
-    rli->report(
-        level,
-        thd->is_error() ? thd->get_stmt_da()->mysql_errno() : ER_UNKNOWN_ERROR,
-        "Could not execute %s event on table %s.%s;"
-        "%s handler error %s; "
-        "the event's master log %s, end_log_pos %lu",
-        type, table->s->db.str, table->s->table_name.str, buff,
-        handler_error == NULL ? "<unknown>" : handler_error, log_name, pos);
-  else
-    rli->report(
-        level,
-        thd->is_error() ? thd->get_stmt_da()->mysql_errno() : ER_UNKNOWN_ERROR,
-        "Could not execute %s event on table %s.%s;"
-        "%s the event's master log %s, end_log_pos %lu",
-        type, table->s->db.str, table->s->table_name.str, buff, log_name, pos);
+  if (is_group_replication_applier_channel) {
+    if (ha_error != 0) {
+      rli->report(level,
+                  thd->is_error() ? thd->get_stmt_da()->mysql_errno()
+                                  : ER_UNKNOWN_ERROR,
+                  "Could not execute %s event on table %s.%s;"
+                  "%s handler error %s",
+                  type, table->s->db.str, table->s->table_name.str, buff,
+                  handler_error == NULL ? "<unknown>" : handler_error);
+    } else {
+      rli->report(level,
+                  thd->is_error() ? thd->get_stmt_da()->mysql_errno()
+                                  : ER_UNKNOWN_ERROR,
+                  "Could not execute %s event on table %s.%s;"
+                  "%s",
+                  type, table->s->db.str, table->s->table_name.str, buff);
+    }
+  } else {
+    if (ha_error != 0) {
+      rli->report(level,
+                  thd->is_error() ? thd->get_stmt_da()->mysql_errno()
+                                  : ER_UNKNOWN_ERROR,
+                  "Could not execute %s event on table %s.%s;"
+                  "%s handler error %s; "
+                  "the event's master log %s, end_log_pos %lu",
+                  type, table->s->db.str, table->s->table_name.str, buff,
+                  handler_error == NULL ? "<unknown>" : handler_error, log_name,
+                  pos);
+    } else {
+      rli->report(level,
+                  thd->is_error() ? thd->get_stmt_da()->mysql_errno()
+                                  : ER_UNKNOWN_ERROR,
+                  "Could not execute %s event on table %s.%s;"
+                  "%s the event's master log %s, end_log_pos %lu",
+                  type, table->s->db.str, table->s->table_name.str, buff,
+                  log_name, pos);
+    }
+  }
 }
 
 /**
@@ -986,6 +1010,40 @@ void *Log_event::operator new(size_t size) {
 }
 
 #ifdef MYSQL_SERVER
+#define my_b_event_read my_b_read
+#else
+/**
+  Wrapper around my_b_read to skip over any binlog_magic numbers
+  we may see in the middle of stream. This can only happen if we
+  are reading from stdin and input stream contains multiple binlog
+  files. The first 4 bytes of an event are timestamp. It is possible
+  that by coincidence the timestamp is same as binlog magic number
+  (0xfe62696e i.e 4267862382) but that would only happen for one second
+  at Mon Mar 30 05:19:42 2105. We ignore that coincidence for now.
+ */
+int my_b_event_read(IO_CACHE *file, uchar *buf, int buflen) {
+  int read_status = 0;  // assume success
+  int nbytes_already_read = 0;
+  if (file->file == my_fileno(stdin)) {
+    read_status = my_b_read(file, buf, SIZEOF_BINLOG_MAGIC);
+    if (!read_status) {
+      // read succeeded
+      if (memcmp(buf, BINLOG_MAGIC, SIZEOF_BINLOG_MAGIC)) {
+        // does not match binlog magic number
+        nbytes_already_read = SIZEOF_BINLOG_MAGIC;
+      }
+      // else we got binlog magic number in middle of stream. Ignore.
+    }
+  }
+  if (!read_status) {
+    read_status = my_b_read(file, buf + nbytes_already_read,
+                            buflen - nbytes_already_read);
+  }
+  return read_status;
+}
+#endif
+
+#ifdef MYSQL_SERVER
 inline int Log_event::do_apply_event_worker(Slave_worker *w) {
   DBUG_EXECUTE_IF("crash_in_a_worker", {
     /* we will crash a worker after waiting for
@@ -1189,9 +1247,15 @@ bool Log_event::wrapper_my_b_safe_write(IO_CACHE *file, const uchar *buf,
                                         size_t size) {
   if (size == 0) return false;
 
+  DBUG_EXECUTE_IF("simulate_temp_file_write_error", {
+    file->write_pos = file->write_end;
+    DBUG_SET("+d,simulate_file_write_error");
+  });
   if (need_checksum() && size != 0) crc = checksum_crc32(crc, buf, size);
-
-  return my_b_safe_write(file, buf, size);
+  bool ret = my_b_safe_write(file, buf, size);
+  DBUG_EXECUTE_IF("simulate_temp_file_write_error",
+                  { DBUG_SET("-d,simulate_file_write_error"); });
+  return ret;
 }
 
 bool Log_event::write_footer(IO_CACHE *file) {
@@ -1501,10 +1565,11 @@ Log_event *Log_event::read_log_event(
 
   LOCK_MUTEX;
   DBUG_PRINT("info", ("my_b_tell: %lu", (ulong)my_b_tell(file)));
-  if (my_b_read(file, (uchar *)head, header_size)) {
-    DBUG_PRINT("info", ("Log_event::read_log_event(IO_CACHE*,Format_desc*) "
-                        "failed in my_b_read((IO_CACHE*)%p, (uchar*)%p, %u)",
-                        file, head, header_size));
+  if (my_b_event_read(file, (uchar *)head, header_size)) {
+    DBUG_PRINT("info",
+               ("Log_event::read_log_event(IO_CACHE*,Format_desc*) "
+                "failed in my_b_event_read((IO_CACHE*)%p, (uchar*)%p, %u)",
+                file, head, header_size));
     UNLOCK_MUTEX;
     /*
       No error here; it could be that we are at the file's end. However
@@ -8269,16 +8334,10 @@ static uint search_key_in_table(TABLE *table, MY_BITMAP *bi_cols,
       DBUG_RETURN(table->s->primary_key);
   }
 
-#if 0  // see bug#23311892
-  DBUG_PRINT("debug", ("Unique keys count: %u", table->s->uniques));
-
-  if (key_type & UNIQUE_KEY_FLAG && table->s->uniques)
-  {
+  if (key_type & UNIQUE_KEY_FLAG) {
     DBUG_PRINT("debug", ("Searching for UK"));
-    for (key=0,keyinfo= table->key_info ;
-         (key < table->s->keys) && (res == MAX_KEY);
-         key++,keyinfo++)
-    {
+    for (key = 0, keyinfo = table->key_info;
+         (key < table->s->keys) && (res == MAX_KEY); key++, keyinfo++) {
       /*
         - Unique keys cannot be disabled, thence we skip the check.
         - Skip unique keys with nullable parts
@@ -8287,15 +8346,12 @@ static uint search_key_in_table(TABLE *table, MY_BITMAP *bi_cols,
       if (!((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY)) == HA_NOSAME) ||
           (key == table->s->primary_key))
         continue;
-      res= are_all_columns_signaled_for_key(keyinfo, bi_cols) ?
-           key : MAX_KEY;
+      res = are_all_columns_signaled_for_key(keyinfo, bi_cols) ? key : MAX_KEY;
 
-      if (res < MAX_KEY)
-        DBUG_RETURN(res);
+      if (res < MAX_KEY) DBUG_RETURN(res);
     }
     DBUG_PRINT("debug", ("UK has NULLABLE parts or not all columns signaled."));
   }
-#endif
 
   if (key_type & MULTIPLE_KEY_FLAG && table->s->keys) {
     DBUG_PRINT("debug", ("Searching for K."));
@@ -10543,7 +10599,14 @@ enum enum_tbl_map_status {
   SAME_ID_MAPPING_DIFFERENT_TABLE = 2,
 
   /* a duplicate identifier was found mapping the same table */
-  SAME_ID_MAPPING_SAME_TABLE = 3
+  SAME_ID_MAPPING_SAME_TABLE = 3,
+
+  /*
+    this table must be filtered out but found an active XA transaction. XA
+    transactions shouldn't be used with replication filters, until disabling
+    the XA read only optimization is a supported feature.
+  */
+  FILTERED_WITH_XA_ACTIVE = 4
 };
 
 /*
@@ -10594,7 +10657,11 @@ static enum_tbl_map_status check_table_map(Relay_log_info const *rli,
       (!rli->rpl_filter->db_ok(table_list->db) ||
        (rli->rpl_filter->is_on() &&
         !rli->rpl_filter->tables_ok("", table_list))))
-    res = FILTERED_OUT;
+    if (rli->info_thd->get_transaction()->xid_state()->has_state(
+            XID_STATE::XA_ACTIVE))
+      res = FILTERED_WITH_XA_ACTIVE;
+    else
+      res = FILTERED_OUT;
   else {
     RPL_TABLE_LIST *ptr = static_cast<RPL_TABLE_LIST *>(rli->tables_to_lock);
     for (uint i = 0; ptr && (i < rli->tables_to_lock_count);
@@ -10692,6 +10759,18 @@ int Table_map_log_event::do_apply_event(Relay_log_info const *rli) {
     /* 'memory' is freed in clear_tables_to_lock */
   } else  // FILTERED_OUT, SAME_ID_MAPPING_*
   {
+    if (tblmap_status == FILTERED_WITH_XA_ACTIVE) {
+      if (thd->slave_thread)
+        rli->report(ERROR_LEVEL, ER_XA_REPLICATION_FILTERS, "%s",
+                    ER_THD(thd, ER_XA_REPLICATION_FILTERS));
+      else
+        /*
+          For the cases in which a 'BINLOG' statement is set to
+          execute in a user session
+         */
+        my_printf_error(ER_XA_REPLICATION_FILTERS, "%s", MYF(0),
+                        ER_THD(thd, ER_XA_REPLICATION_FILTERS));
+    }
     /*
       If mapped already but with different properties, we raise an
       error.
@@ -10701,7 +10780,7 @@ int Table_map_log_event::do_apply_event(Relay_log_info const *rli) {
       In all three cases, we need to free the memory previously
       allocated.
      */
-    if (tblmap_status == SAME_ID_MAPPING_DIFFERENT_TABLE) {
+    else if (tblmap_status == SAME_ID_MAPPING_DIFFERENT_TABLE) {
       /*
         Something bad has happened. We need to stop the slave as strange things
         could happen if we proceed: slave crash, wrong table being updated, ...
@@ -11837,12 +11916,6 @@ int Write_rows_log_event::write_row(const Relay_log_info *const rli,
       }
     } else {
       DBUG_PRINT("info", ("Locating offending record using index_read_idx()"));
-
-      if (table->file->extra(HA_EXTRA_FLUSH_CACHE)) {
-        DBUG_PRINT("info", ("Error when setting HA_EXTRA_FLUSH_CACHE"));
-        error = my_errno();
-        goto error;
-      }
 
       if (key == NULL) {
         key = static_cast<char *>(my_alloca(table->s->max_unique_length));

@@ -678,6 +678,7 @@ static void trx_resurrect_table_ids(trx_t *trx, const trx_undo_ptr_t *undo_ptr,
     table_id_t table_id;
     ulint cmpl_info;
     bool updated_extern;
+    type_cmpl_t type_cmpl;
 
     page_t *undo_rec_page = page_align(undo_rec);
 
@@ -687,7 +688,7 @@ static void trx_resurrect_table_ids(trx_t *trx, const trx_undo_ptr_t *undo_ptr,
     }
 
     trx_undo_rec_get_pars(undo_rec, &type, &cmpl_info, &updated_extern,
-                          &undo_no, &table_id);
+                          &undo_no, &table_id, type_cmpl);
     tables.insert(table_id);
 
     undo_rec = trx_undo_get_prev_rec(undo_rec, undo->hdr_page_no,
@@ -2443,7 +2444,6 @@ ibool trx_assert_started(const trx_t *trx) /*!< in: transaction */
   }
 
   ut_error;
-  return (FALSE);
 }
 #endif /* UNIV_DEBUG */
 
@@ -2485,8 +2485,6 @@ static lsn_t trx_prepare_low(
                               segment scheduled for prepare. */
     bool noredo_logging)      /*!< in: turn-off redo logging. */
 {
-  lsn_t lsn;
-
   if (undo_ptr->insert_undo != NULL || undo_ptr->update_undo != NULL) {
     mtr_t mtr;
     trx_rseg_t *rseg = undo_ptr->rseg;
@@ -2523,13 +2521,14 @@ static lsn_t trx_prepare_low(
     mtr_commit(&mtr);
     /*--------------*/
 
-    lsn = mtr.commit_lsn();
-    ut_ad(noredo_logging || lsn > 0);
-  } else {
-    lsn = 0;
+    if (!noredo_logging) {
+      const lsn_t lsn = mtr.commit_lsn();
+      ut_ad(lsn > 0);
+      return lsn;
+    }
   }
 
-  return (lsn);
+  return 0;
 }
 
 /** Prepares a transaction. */
@@ -2847,6 +2846,7 @@ void trx_set_rw_mode(trx_t *trx) /*!< in/out: transaction that is RW */
   ut_ad(trx->rsegs.m_redo.rseg == 0);
   ut_ad(!trx->in_rw_trx_list);
   ut_ad(!trx_is_autocommit_non_locking(trx));
+  ut_ad(!trx->read_only);
 
   if (srv_force_recovery >= SRV_FORCE_NO_TRX_UNDO) {
     return;
@@ -2883,11 +2883,9 @@ void trx_set_rw_mode(trx_t *trx) /*!< in/out: transaction that is RW */
   }
 #endif /* UNIV_DEBUG */
 
-  if (!trx->read_only) {
-    UT_LIST_ADD_FIRST(trx_sys->rw_trx_list, trx);
+  UT_LIST_ADD_FIRST(trx_sys->rw_trx_list, trx);
 
-    ut_d(trx->in_rw_trx_list = true);
-  }
+  ut_d(trx->in_rw_trx_list = true);
 
   mutex_exit(&trx_sys->mutex);
 }
@@ -2983,7 +2981,10 @@ void trx_kill_blocking(trx_t *trx) {
     /* Return back inside InnoDB */
     if (exited_innodb) {
       exited_innodb = false;
+      /* Exit transaction mutex before entering Innodb. */
+      trx_mutex_exit(victim_trx);
       srv_conc_force_enter_innodb(trx);
+      trx_mutex_enter(victim_trx);
     }
 
     /* Compare the version to check if the transaction has

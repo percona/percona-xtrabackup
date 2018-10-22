@@ -226,14 +226,13 @@ int yylex(void *yylval, void *yythd);
   @brief Bison callback to report a syntax/OOM error
 
   This function is invoked by the bison-generated parser
-  when a syntax error, a parse error or an out-of-memory
-  condition occurs. This function is not invoked when the
-  parser is requested to abort by semantic action code
-  by means of YYABORT or YYACCEPT macros. This is why these
-  macros should not be used (use MYSQL_YYABORT/MYSQL_YYACCEPT
-  instead).
+  when a syntax error or an out-of-memory
+  condition occurs, then the parser function MYSQLparse()
+  returns 1 to the caller.
 
-  The parser will abort immediately after invoking this callback.
+  This function is not invoked when the
+  parser is requested to abort by semantic action code
+  by means of YYABORT or YYACCEPT macros..
 
   This function is not for use in semantic actions and is internal to
   the parser, as it performs some pre-return cleanup.
@@ -251,8 +250,7 @@ static void MYSQLerror(YYLTYPE *, THD *thd, Parse_tree_root **, const char *s)
   */
   LEX::cleanup_lex_after_parse_error(thd);
 
-  /* "parse error" changed into "syntax error" between bison 1.75 and 1.875 */
-  if (strcmp(s,"parse error") == 0 || strcmp(s,"syntax error") == 0)
+  if (strcmp(s, "syntax error") == 0)
     s= ER_THD(thd, ER_SYNTAX_ERROR);
   thd->syntax_error("%s", s);
 }
@@ -1163,7 +1161,7 @@ void warn_about_deprecated_national(THD *thd)
 %token  JSON_UNQUOTED_SEPARATOR_SYM   /* MYSQL */
 %token  PERSIST_SYM
 %token<keyword> ROLE_SYM              /* SQL-1999-R */
-%token  ADMIN_SYM                     /* SQL-1999-R */
+%token<keyword> ADMIN_SYM             /* SQL-2003-N */
 %token<keyword> INVISIBLE_SYM
 %token<keyword> VISIBLE_SYM
 %token  EXCEPT_SYM                    /* SQL-1999-R */
@@ -1302,7 +1300,8 @@ void warn_about_deprecated_national(THD *thd)
         opt_num_buckets
 
 
-%type <order_direction> order_dir
+%type <order_direction>
+        ordering_direction opt_ordering_direction
 
 /*
   Bit field of MYSQL_START_TRANS_OPT_* flags.
@@ -1499,6 +1498,7 @@ void warn_about_deprecated_national(THD *thd)
         opt_cache_key_list
 
 %type <order_expr> order_expr alter_order_item
+        grouping_expr
 
 %type <order_list> order_list group_list gorder_list opt_gorder_clause
       alter_order_list opt_partition_clause opt_window_order_by_clause
@@ -1693,13 +1693,13 @@ void warn_about_deprecated_national(THD *thd)
 
 %type <index_option> index_option common_index_option fulltext_index_option
           spatial_index_option
+          index_type_clause
+          opt_index_type_clause
 
 %type <alter_table_algorithm> alter_algorithm_option_value
         alter_algorithm_option
 
 %type <alter_table_lock> alter_lock_option_value alter_lock_option
-
-%type <index_type> index_type_clause
 
 %type <table_constraint_def> table_constraint_def
 
@@ -2861,14 +2861,14 @@ default_role_clause:
         ;
 
 create_index_stmt:
-          CREATE opt_unique INDEX_SYM opt_index_name_and_type
+          CREATE opt_unique INDEX_SYM ident opt_index_type_clause
           ON_SYM table_ident '(' key_list ')' opt_index_options
           opt_index_lock_and_algorithm
           {
-            $$= NEW_PTN PT_create_index_stmt(YYMEM_ROOT, $2, $4.name, $4.type,
-                                             $6, $8, $10,
-                                             $11.algo.get_or_default(),
-                                             $11.lock.get_or_default());
+            $$= NEW_PTN PT_create_index_stmt(YYMEM_ROOT, $2, $4, $5,
+                                             $7, $9, $11,
+                                             $12.algo.get_or_default(),
+                                             $12.lock.get_or_default());
           }
         | CREATE FULLTEXT_SYM INDEX_SYM ident ON_SYM table_ident
           '(' key_list ')' opt_fulltext_index_options opt_index_lock_and_algorithm
@@ -6985,6 +6985,11 @@ opt_index_name_and_type:
         | ident TYPE_SYM index_type  { $$= {$1, NEW_PTN PT_index_type($3)}; }
         ;
 
+opt_index_type_clause:
+          /* empty */                { $$ = nullptr; }
+        | index_type_clause
+        ;
+
 index_type_clause:
           USING index_type    { $$= NEW_PTN PT_index_type($2); }
         | TYPE_SYM index_type { $$= NEW_PTN PT_index_type($2); }
@@ -7018,13 +7023,13 @@ key_list:
         ;
 
 key_part:
-          ident order_dir
+          ident opt_ordering_direction
           {
             $$= new (*THR_MALLOC) Key_part_spec(to_lex_cstring($1), 0, (enum_order) $2);
             if ($$ == NULL)
               MYSQL_YYABORT;
           }
-        | ident '(' NUM ')' order_dir
+        | ident '(' NUM ')' opt_ordering_direction
           {
             int key_part_len= atoi($3.str);
             if (!key_part_len)
@@ -7838,6 +7843,12 @@ alter_list_item:
           {
             $$= NEW_PTN PT_alter_table_convert_to_charset($4, $5);
           }
+        | CONVERT_SYM TO_SYM character_set DEFAULT_SYM opt_collate
+          {
+            $$ = NEW_PTN PT_alter_table_convert_to_charset(
+                YYTHD->variables.collation_database,
+                $5 ? $5 : YYTHD->variables.collation_database);
+          }
         | FORCE_SYM
           {
             $$= NEW_PTN PT_alter_table_force;
@@ -7905,6 +7916,8 @@ alter_algorithm_option_value:
           {
             if (is_identifier($1, "INPLACE"))
               $$= Alter_info::ALTER_TABLE_ALGORITHM_INPLACE;
+            else if (is_identifier($1, "INSTANT"))
+              $$= Alter_info::ALTER_TABLE_ALGORITHM_INSTANT;
             else if (is_identifier($1, "COPY"))
               $$= Alter_info::ALTER_TABLE_ALGORITHM_COPY;
             else
@@ -9705,7 +9718,7 @@ fulltext_options:
                             {
                               THD *thd= YYTHD;
                               if (thd->sp_runtime_ctx)
-                                MYSQLerror(NULL,thd,NULL,"syntax error");
+                                YYTHD->syntax_error();
                             });
           }
         ;
@@ -11107,12 +11120,12 @@ opt_group_clause:
         ;
 
 group_list:
-          group_list ',' order_expr
+          group_list ',' grouping_expr
           {
             $1->push_back($3);
             $$= $1;
           }
-        | order_expr
+        | grouping_expr
           {
             $$= NEW_PTN PT_order_list();
             if ($1 == NULL)
@@ -11153,7 +11166,7 @@ alter_order_list:
         ;
 
 alter_order_item:
-          simple_ident_nospvar order_dir
+          simple_ident_nospvar opt_ordering_direction
           {
             $$= NEW_PTN PT_order_expr($1, $2);
           }
@@ -11190,9 +11203,13 @@ order_list:
           }
         ;
 
-order_dir:
+opt_ordering_direction:
           /* empty */ { $$= ORDER_NOT_RELEVANT; }
-        | ASC         { $$= ORDER_ASC; }
+        | ordering_direction
+        ;
+
+ordering_direction:
+          ASC         { $$= ORDER_ASC; }
         | DESC        { $$= ORDER_DESC; }
         ;
 
@@ -13314,8 +13331,21 @@ table_wild:
         ;
 
 order_expr:
-          expr order_dir
+          expr opt_ordering_direction
           {
+            $$= NEW_PTN PT_order_expr($1, $2);
+          }
+        ;
+
+grouping_expr:
+          expr
+          {
+            $$= NEW_PTN PT_order_expr($1, ORDER_NOT_RELEVANT);
+          }
+        | expr ordering_direction
+          {
+            push_deprecated_warn(YYTHD, "GROUP BY with ASC/DESC",
+                                 "GROUP BY ... ORDER BY ... ASC/DESC");
             $$= NEW_PTN PT_order_expr($1, $2);
           }
         ;
@@ -13679,6 +13709,7 @@ label_keyword:
 role_or_label_keyword:
           ACTION
         | ADDDATE_SYM
+        | ADMIN_SYM
         | AFTER_SYM
         | AGAINST
         | AGGREGATE_SYM

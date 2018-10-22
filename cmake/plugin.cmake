@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -124,8 +124,6 @@ MACRO(MYSQL_ADD_PLUGIN)
     ADD_CONVENIENCE_LIBRARY(${target} STATIC ${SOURCES})
     SET_TARGET_PROPERTIES(${target}
       PROPERTIES COMPILE_DEFINITIONS "MYSQL_SERVER")
-    SET_TARGET_PROPERTIES(${target}
-      PROPERTIES COMPILE_FLAGS ${SSL_DEFINES})
 
     ADD_DEPENDENCIES(${target} GenError ${ARG_DEPENDENCIES})
     
@@ -263,7 +261,7 @@ ENDMACRO()
 MACRO(CONFIGURE_PLUGINS)
   FILE(GLOB dirs_storage ${CMAKE_SOURCE_DIR}/storage/*)
   LIST(REMOVE_ITEM dirs_storage ${CMAKE_SOURCE_DIR}/storage/example)
-  FOREACH(dir ${dirs_storage} ${dirs_plugin} ${dirs_rapid_plugin})
+  FOREACH(dir ${dirs_storage} ${dirs_plugin})
     IF (EXISTS ${dir}/CMakeLists.txt)
       ADD_SUBDIRECTORY(${dir})
     ENDIF()

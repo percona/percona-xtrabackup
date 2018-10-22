@@ -431,13 +431,15 @@ buf_block_t *buf_page_get_gen(const page_id_t &page_id,
 /** Initializes a page to the buffer buf_pool. The page is usually not read
 from a file even if it cannot be found in the buffer buf_pool. This is one
 of the functions which perform to a block a state transition NOT_USED =>
-FILE_PAGE (the other is buf_page_get_gen).
+FILE_PAGE (the other is buf_page_get_gen). The page is latched by passed mtr.
 @param[in]	page_id		page id
 @param[in]	page_size	page size
+@param[in]	rw_latch	RW_SX_LATCH, RW_X_LATCH
 @param[in]	mtr		mini-transaction
 @return pointer to the block, page bufferfixed */
 buf_block_t *buf_page_create(const page_id_t &page_id,
-                             const page_size_t &page_size, mtr_t *mtr);
+                             const page_size_t &page_size,
+                             rw_lock_type_t rw_latch, mtr_t *mtr);
 
 #else  /* !UNIV_HOTBACKUP */
 
@@ -1086,10 +1088,12 @@ ulint buf_pool_size_align(ulint size);
 
 /** Calculate the checksum of a page from compressed table and update the
 page.
-@param[in,out]	page	page to update
-@param[in]	size	compressed page size
-@param[in]	lsn	LSN to stamp on the page */
-void buf_flush_update_zip_checksum(buf_frame_t *page, ulint size, lsn_t lsn);
+@param[in,out]  page              page to update
+@param[in]      size              compressed page size
+@param[in]      lsn               LSN to stamp on the page
+@param[in]      skip_lsn_check    true to skip check for lsn (in DEBUG) */
+void buf_flush_update_zip_checksum(buf_frame_t *page, ulint size, lsn_t lsn,
+                                   bool skip_lsn_check);
 
 #endif /* !UNIV_HOTBACKUP */
 

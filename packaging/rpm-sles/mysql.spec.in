@@ -20,16 +20,11 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-%global milestone       dmr
-
 %global mysql_vendor    Oracle and/or its affiliates
 %global mysqldatadir    /var/lib/mysql
 
 # Pass --define 'with_cluster 1' to build with cluster support
 %{?with_cluster: %global cluster 1}
-
-# By default, a build will include the bundeled "yaSSL" library for SSL.
-%{?with_ssl: %global ssl_option -DWITH_SSL=%{with_ssl}}
 
 # Pass path to mecab lib
 %{?with_mecab: %global mecab_option -DWITH_MECAB=%{with_mecab}}
@@ -53,7 +48,7 @@
 %{!?compilation_comment_debug:   %global compilation_comment_debug MySQL Community Server - GPL - Debug}
 %{!?src_base:                    %global src_base mysql%{?cluster:-cluster-gpl}}
 
-%global src_dir               %{src_base}-%{version}
+%global src_dir               %{src_base}-@VERSION@
 
 # multiarch
 %global multiarchs            ppc %{power64} %{ix86} x86_64 %{sparc}
@@ -83,8 +78,14 @@
 %global sles12                1
 %endif
 
+%if 0%{?suse_version} == 1500
+%global dist                  .sles15
+%global sles15                1
+%endif
+
 # https://en.opensuse.org/openSUSE:Systemd_packaging_guidelines
 %{?sles12:                %global systemd 1}
+%{?sles15:                %global systemd 1}
 %{!?_tmpfilesdir:         %global _tmpfilesdir /usr/lib/tmpfiles.d}
 
 %global min                   8.0.0
@@ -93,7 +94,7 @@ Name:           mysql%{?cluster:-cluster}-%{product_suffix}
 Summary:        A very fast and reliable SQL database server
 Group:          Applications/Databases
 Version:        @MYSQL_NO_DASH_VERSION@
-Release:        1%{?commercial:.1}%{?dist}
+Release:        1@MYSQL_VERSION_EXTRA_DOT@%{?commercial:.1}%{?dist}
 License:        Copyright (c) 2000, @MYSQL_COPYRIGHT_YEAR@, %{mysql_vendor}. All rights reserved. Under %{?license_type} license as shown in the Description field.
 Source0:        https://cdn.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/%{src_dir}.tar.gz
 URL:            http://www.mysql.com/
@@ -568,7 +569,6 @@ mkdir debug
            -DMYSQLX_UNIX_ADDR="/var/run/mysql/mysqlx.sock" \
            -DFEATURE_SET="%{feature_set}" \
            -DWITH_NUMA=ON \
-           %{?ssl_option} \
            %{?mecab_option} \
            %{?aws_sdk_option} \
            %{?curl_lib_option} \
@@ -612,7 +612,6 @@ mkdir release
            -DMYSQLX_UNIX_ADDR="/var/run/mysql/mysqlx.sock" \
            -DFEATURE_SET="%{feature_set}" \
            -DWITH_NUMA=ON \
-           %{?ssl_option} \
            %{?mecab_option} \
            %{?aws_sdk_option} \
            %{?curl_lib_option} \
@@ -887,6 +886,7 @@ fi
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_sys_schema.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_system_tables.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_system_tables_data.sql
+%attr(644, root, root) %{_datadir}/mysql-*/mysql_system_users.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_test_data_timezone.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql-log-rotate
 %attr(644, root, root) %{_datadir}/mysql-*/dictionary.txt

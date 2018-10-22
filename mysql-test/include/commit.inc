@@ -894,18 +894,18 @@ alter table t3 add column (b int);
 
 if (!$have_debug)
 {
-  --replace_regex /17/X/
-  call p_verify_status_increment(17, 4, 2, 0);
-}
-
-if ($have_debug)
-{
   --replace_regex /19/X/
   call p_verify_status_increment(19, 4, 2, 0);
 }
 
+if ($have_debug)
+{
+  --replace_regex /20/X/
+  call p_verify_status_increment(20, 4, 2, 0);
+}
+
 alter table t3 rename t4;
-call p_verify_status_increment(20, 4, 3, 0);
+call p_verify_status_increment(19, 4, 3, 0);
 rename table t4 to t3;
 call p_verify_status_increment(23, 4, 5, 0);
 truncate table t3;
@@ -931,7 +931,7 @@ commit;
 call p_verify_status_increment(0, 0, 0, 0);
 check table t1, t2, t3;
 --echo # Extra transactions to load t3 into data-dictionary and table caches
-call p_verify_status_increment(12, 0, 6, 0);
+call p_verify_status_increment(9, 0, 6, 0);
 commit;
 call p_verify_status_increment(0, 0, 0, 0);
 drop view v1;

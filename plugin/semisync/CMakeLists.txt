@@ -24,9 +24,6 @@ SET(SEMISYNC_MASTER_SOURCES
  semisync.cc semisync_master.cc semisync_master_plugin.cc
  semisync.h semisync_master.h semisync_master_ack_receiver.cc)
 
-IF(SSL_DEFINES)
- ADD_DEFINITIONS(${SSL_DEFINES})
-ENDIF()
 ADD_DEFINITIONS(-DMYSQL_SERVER)
 ADD_DEFINITIONS(-DLOG_SUBSYS_TAG="Repl")
 ADD_DEFINITIONS(-DLOG_COMPONENT_TAG="semisync")

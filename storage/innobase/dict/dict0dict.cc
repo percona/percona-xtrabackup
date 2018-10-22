@@ -509,10 +509,9 @@ void dict_table_close(dict_table_t *table, /*!< in/out: table */
 #endif /* !UNIV_HOTBACKUP */
 
   if (!table->is_intrinsic()) {
-    /* Ask for mutex to prevent concurrent ha_innobase::open(),
+    /* Ask for lock to prevent concurrent table open,
     in case the race of n_ref_count and stat_initialized in
-    dict_stats_deinit(). As long as we protect change to
-    n_ref_count in ha_innobase:open() too, there should be no race.
+    dict_stats_deinit(). See dict_table_t::acquire_with_lock() too.
     We don't actually need dict_sys mutex any more here. */
     table->lock();
   }
@@ -2512,6 +2511,15 @@ dberr_t dict_index_add_to_cache_w_vcol(dict_table_t *table, dict_index_t *index,
     }
   }
 
+  if (new_index->table->has_instant_cols() && new_index->is_clustered()) {
+    new_index->instant_cols = true;
+    new_index->n_instant_nullable =
+        new_index->get_n_nullable_before(new_index->get_instant_fields());
+  } else {
+    new_index->instant_cols = false;
+    new_index->n_instant_nullable = new_index->n_nullable;
+  }
+
   dict_mem_index_free(index);
 
   return (DB_SUCCESS);
@@ -4216,16 +4224,8 @@ col_loop1:
       dict_foreign_find_index(table, NULL, column_names, i, NULL, TRUE, FALSE);
 
   if (!index) {
-    mutex_enter(&dict_foreign_err_mutex);
-    dict_foreign_error_report_low(ef, name);
-    fputs("There is no index in table ", ef);
-    ut_print_name(ef, NULL, name);
-    fprintf(ef,
-            " where the columns appear\n"
-            "as the first columns. Constraint:\n%s\n%s",
-            start_of_latest_foreign, FOREIGN_KEY_CONSTRAINTS_MSG);
-    mutex_exit(&dict_foreign_err_mutex);
-
+    /* SQL-layer already has checked that proper index exists.*/
+    ut_ad(0);
     return (DB_CHILD_NO_INDEX);
   }
   ptr = dict_accept(cs, ptr, "REFERENCES", &success);
@@ -4800,7 +4800,7 @@ dtuple_t *dict_index_build_node_ptr(
     contains the page number of the child page */
 
     ut_a(!dict_table_is_comp(index->table));
-    n_unique = rec_get_n_fields_old(rec);
+    n_unique = rec_get_n_fields_old_raw(rec);
 
     if (level > 0) {
       ut_a(n_unique > 1);
@@ -4858,7 +4858,7 @@ rec_t *dict_index_copy_rec_order_prefix(
 
   if (dict_index_is_ibuf(index)) {
     ut_a(!dict_table_is_comp(index->table));
-    n = rec_get_n_fields_old(rec);
+    n = rec_get_n_fields_old_raw(rec);
   } else {
     if (page_is_leaf(page_align(rec))) {
       n = dict_index_get_n_unique_in_tree(index);
@@ -4888,7 +4888,7 @@ dtuple_t *dict_index_build_data_tuple(
   dtuple_t *tuple;
 
   ut_ad(dict_table_is_comp(index->table) ||
-        n_fields <= rec_get_n_fields_old(rec));
+        n_fields <= rec_get_n_fields_old(rec, index));
 
   tuple = dtuple_create(heap, n_fields);
 
@@ -6258,7 +6258,6 @@ const char *dict_tf_to_row_format_string(
   }
 
   ut_error;
-  return (0);
 }
 
 /** Determine the extent size (in pages) for the given table
@@ -6381,6 +6380,7 @@ void DDTableBuffer::init() {
 
   m_heap = mem_heap_create(500);
   m_dynamic_heap = mem_heap_create(1000);
+  m_replace_heap = mem_heap_create(1000);
 
   create_tuples();
 }
@@ -6479,6 +6479,7 @@ void DDTableBuffer::init_tuple_with_id(dtuple_t *tuple, table_id_t id) {
 void DDTableBuffer::close() {
   mem_heap_free(m_heap);
   mem_heap_free(m_dynamic_heap);
+  mem_heap_free(m_replace_heap);
 
   m_search_tuple = NULL;
   m_replace_tuple = NULL;
@@ -6517,7 +6518,7 @@ upd_t *DDTableBuffer::update_set_metadata(const dtuple_t *entry,
     return (nullptr);
   }
 
-  update = upd_create(2, m_dynamic_heap);
+  update = upd_create(2, m_replace_heap);
 
   upd_field = upd_get_nth_field(update, 0);
   dfield_copy(&upd_field->new_val, version_field);
@@ -6559,7 +6560,7 @@ dberr_t DDTableBuffer::replace(table_id_t id, uint64_t version,
   dfield_set_data(dfield, metadata, len);
   /* Other system fields have been initialized */
 
-  entry = row_build_index_entry(m_replace_tuple, NULL, m_index, m_dynamic_heap);
+  entry = row_build_index_entry(m_replace_tuple, NULL, m_index, m_replace_heap);
 
   /* Start to search for the to-be-replaced tuple */
   mtr.start();
@@ -6582,6 +6583,7 @@ dberr_t DDTableBuffer::replace(table_id_t id, uint64_t version,
     ut_a(error == DB_SUCCESS);
 
     mem_heap_empty(m_dynamic_heap);
+    mem_heap_empty(m_replace_heap);
 
     return (DB_SUCCESS);
   }
@@ -6600,7 +6602,7 @@ dberr_t DDTableBuffer::replace(table_id_t id, uint64_t version,
 
     error = btr_cur_pessimistic_update(
         flags, btr_pcur_get_btr_cur(&pcur), &cur_offsets, &m_dynamic_heap,
-        m_dynamic_heap, &big_rec, update, 0, NULL, 0, 0, &mtr);
+        m_replace_heap, &big_rec, update, 0, NULL, 0, 0, &mtr);
     ut_a(error == DB_SUCCESS);
     /* We don't have big rec in this table */
     ut_ad(!big_rec);
@@ -6608,6 +6610,7 @@ dberr_t DDTableBuffer::replace(table_id_t id, uint64_t version,
 
   mtr.commit();
   mem_heap_empty(m_dynamic_heap);
+  mem_heap_empty(m_replace_heap);
 
   return (DB_SUCCESS);
 }
@@ -6661,7 +6664,7 @@ std::string *DDTableBuffer::get(table_id_t id, uint64 *version) {
   btr_cur_t cursor;
   mtr_t mtr;
   ulint len;
-  byte *field = NULL;
+  const byte *field = NULL;
 
   ut_ad(mutex_own(&dict_persist->mutex));
 

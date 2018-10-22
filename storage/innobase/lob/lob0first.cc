@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2016, 2018, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -32,6 +32,19 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 namespace lob {
 
+void first_page_t::replace_inline(trx_t *trx, ulint offset, const byte *&ptr,
+                                  ulint &want, mtr_t *mtr) {
+  byte *old_ptr = data_begin();
+  old_ptr += offset;
+
+  ulint data_avail = get_data_len() - offset;
+  ulint data_to_copy = (want > data_avail) ? data_avail : want;
+  mlog_write_string(old_ptr, ptr, data_to_copy, mtr);
+
+  ptr += data_to_copy;
+  want -= data_to_copy;
+}
+
 /** Replace data in the page by making a copy-on-write.
 @param[in]	trx	the current transaction.
 @param[in]	offset	the location where replace operation starts.
@@ -41,7 +54,8 @@ namespace lob {
                         after the call it will contain amount of
                         data yet to be replaced.
 @param[in]	mtr	the mini-transaction context.
-@return	the newly allocated buffer block. */
+@return	the newly allocated buffer block.
+@return	nullptr if new page could not be allocated (DB_OUT_OF_FILE_SPACE). */
 buf_block_t *first_page_t::replace(trx_t *trx, ulint offset, const byte *&ptr,
                                    ulint &want, mtr_t *mtr) {
   DBUG_ENTER("first_page_t::replace");
@@ -51,6 +65,12 @@ buf_block_t *first_page_t::replace(trx_t *trx, ulint offset, const byte *&ptr,
   /** Allocate a new data page. */
   data_page_t new_page(mtr, m_index);
   new_block = new_page.alloc(mtr, false);
+
+  DBUG_EXECUTE_IF("innodb_lob_first_page_replace_failed", new_block = nullptr;);
+
+  if (new_block == nullptr) {
+    DBUG_RETURN(nullptr);
+  }
 
   byte *new_ptr = new_page.data_begin();
   byte *old_ptr = data_begin();
@@ -203,11 +223,9 @@ buf_block_t *first_page_t::alloc(mtr_t *alloc_mtr, bool is_bulk) {
   page_no_t hint = FIL_NULL;
   m_block = alloc_lob_page(m_index, alloc_mtr, hint, is_bulk);
 
-#ifdef LOB_DEBUG
-  std::cout << "thread=" << std::this_thread::get_id()
-            << ", allocating first page of LOB=" << m_block->get_page_no()
-            << std::endl;
-#endif /* LOB_DEBUG */
+  if (m_block == nullptr) {
+    return (nullptr);
+  }
 
   ut_ad(rw_lock_get_x_lock_count(&m_block->lock) == 1);
 
@@ -247,7 +265,12 @@ flst_node_t *first_page_t::alloc_index_entry(bool bulk) {
   fil_addr_t node_addr = flst_get_first(f_list, m_mtr);
   if (fil_addr_is_null(node_addr)) {
     node_page_t node_page(m_mtr, m_index);
-    node_page.alloc(*this, bulk);
+    buf_block_t *block = node_page.alloc(*this, bulk);
+
+    if (block == nullptr) {
+      return (nullptr);
+    }
+
     node_addr = flst_get_first(f_list, m_mtr);
   }
   flst_node_t *node = addr2ptr_x(node_addr);
@@ -380,6 +403,14 @@ void first_page_t::import(trx_id_t trx_id) {
 
     cur += index_entry_t::SIZE;
   }
+}
+
+void first_page_t::dealloc() {
+  ut_ad(m_mtr != nullptr);
+  ut_ad(get_next_page() == FIL_NULL);
+
+  btr_page_free_low(m_index, m_block, ULINT_UNDEFINED, m_mtr);
+  m_block = nullptr;
 }
 
 };  // namespace lob

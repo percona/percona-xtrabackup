@@ -2023,17 +2023,6 @@ static int open_binary_frm(THD *thd, TABLE_SHARE *share,
               table_field->type() == MYSQL_TYPE_BLOB &&
               table_field->field_length == key_part[i].length)
             continue;
-          /*
-            If the key column is of NOT NULL GEOMETRY type, specifically POINT
-            type whose length is known internally (which is 25). And key part
-            prefix size is equal to the POINT column max size, then we can
-            promote it to primary key.
-          */
-          if (!table_field->real_maybe_null() &&
-              table_field->type() == MYSQL_TYPE_GEOMETRY &&
-              table_field->get_geometry_type() == Field::GEOM_POINT &&
-              key_part[i].length == MAX_LEN_GEOM_POINT_FIELD)
-            continue;
 
           if (table_field->real_maybe_null() ||
               table_field->key_length() != key_part[i].length)
@@ -2846,7 +2835,7 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
             Create a new field for the key part that matches the index
           */
           field = key_part->field = field->new_field(root, outparam, 0);
-          field->field_length = key_part->length;
+          field->set_field_length(key_part->length);
         }
       }
       /* Skip unused key parts if they exist */
@@ -6738,7 +6727,7 @@ void repoint_field_to_record(TABLE *table, uchar *old_rec, uchar *new_rec) {
 bool update_generated_read_fields(uchar *buf, TABLE *table, uint active_index) {
   DBUG_ENTER("update_generated_read_fields");
   DBUG_ASSERT(table && table->vfield);
-  DBUG_ASSERT(!table->in_use->is_error());
+  if (table->in_use->is_error()) DBUG_RETURN(true);
   if (active_index != MAX_KEY && table->key_read) {
     /*
       The covering index is providing all necessary columns, including
@@ -6833,7 +6822,8 @@ bool update_generated_write_fields(const MY_BITMAP *bitmap, TABLE *table) {
   int error = 0;
 
   DBUG_ASSERT(table->vfield);
-  DBUG_ASSERT(!table->in_use->is_error());
+  if (table->in_use->is_error()) DBUG_RETURN(true);
+
   /* Iterate over generated fields in the table */
   for (vfield_ptr = table->vfield; *vfield_ptr; vfield_ptr++) {
     Field *vfield;
@@ -7272,6 +7262,14 @@ const char *Binary_diff::new_data(Field *field) const {
   */
   auto fld = down_cast<Field_json *>(field);
   return fld->get_binary() + m_offset;
+}
+
+const char *Binary_diff::old_data(Field *field) const {
+  my_ptrdiff_t ptrdiff = field->table->record[1] - field->table->record[0];
+  field->move_field_offset(ptrdiff);
+  const char *data = new_data(field);
+  field->move_field_offset(-ptrdiff);
+  return data;
 }
 
 void TABLE::add_logical_diff(const Field_json *field,

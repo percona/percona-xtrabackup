@@ -705,6 +705,7 @@ CREATE TABLE t1 (a varchar(500));
 
 ALTER TABLE t1 ADD b GEOMETRY NOT NULL SRID 0, ADD SPATIAL INDEX(b);
 SHOW CREATE TABLE t1;
+--error ER_WRONG_SUB_KEY
 ALTER TABLE t1 ADD KEY(b(50));
 SHOW CREATE TABLE t1;
 
@@ -2049,6 +2050,7 @@ DROP TABLE t1;
 
 CREATE TABLE t1(a INT NOT NULL, b POINT NOT NULL) ENGINE=INNODB;
 SHOW CREATE TABLE t1;
+--error ER_SPATIAL_UNIQUE_INDEX
 ALTER TABLE t1 ADD UNIQUE INDEX (b);
 
 --echo # Note that SHOW CREATE TABLE does not list b as a primary key,
@@ -2091,9 +2093,10 @@ SET sql_mode= '';
 --echo # Test with '767' as index size limit.
 CREATE TABLE t1(fld1 VARCHAR(767), KEY a(fld1)) charset latin1 ENGINE= INNODB
 ROW_FORMAT=COMPACT;
---error ER_INDEX_COLUMN_TOO_LONG
+--echo # With patch for Bug#26848813, a warning is reported.
 ALTER TABLE t1 CHANGE fld1 fld1 VARCHAR(768), ALGORITHM= INPLACE;
 DROP TABLE t1;
+
 CREATE TABLE t1(fld1 VARCHAR(3072), KEY a(fld1)) charset latin1 ENGINE= INNODB,
 ROW_FORMAT=DYNAMIC;
 INSERT INTO t1 VALUES('a');
@@ -2327,16 +2330,18 @@ CREATE TABLE t0(a INT NOT NULL) ENGINE=INNODB;
 ALTER TABLE t0 ADD UNIQUE INDEX (a);
 
 --echo # Case a: Create table with virtual unique not null column
+--error ER_UNSUPPORTED_ACTION_ON_GENERATED_COLUMN
 CREATE TABLE t1(a POINT GENERATED ALWAYS AS (POINT(1,1)) VIRTUAL UNIQUE NOT NULL) ENGINE=INNODB;
-SELECT * FROM t1;
 
 --echo # Case b: Create table with index on virtual point column
+--error ER_UNSUPPORTED_ACTION_ON_GENERATED_COLUMN
 CREATE TABLE t2(a POINT GENERATED ALWAYS AS (POINT(1,1)) VIRTUAL NOT NULL, UNIQUE INDEX no_pk(a(1))) ENGINE=INNODB;
-SELECT * FROM t2;
 
 --echo # Case c: Add unique index on virtual point column
 CREATE TABLE t3(a POINT GENERATED ALWAYS AS (POINT(1,1)) VIRTUAL NOT NULL)
 ENGINE=INNODB;
+--echo # Case c: Add unique index on virtual point column
+--error ER_UNSUPPORTED_ACTION_ON_GENERATED_COLUMN
 ALTER TABLE t3 ADD UNIQUE INDEX (a(1));
 SELECT * FROM t3;
 
@@ -2360,8 +2365,6 @@ SELECT T.NAME AS TABLE_NAME, I.NAME AS INDEX_NAME,
 
 
 DROP TABLE t0;
-DROP TABLE t1;
-DROP TABLE t2;
 DROP TABLE t3;
 DROP TABLE t4;
 
@@ -2913,3 +2916,236 @@ ALTER TABLE t
 ADD COLUMN e DATE GENERATED ALWAYS AS (NULL) STORED NOT NULL;
 SELECT * FROM t;
 DROP TABLE t;
+
+--echo #
+--echo # Basic test coverage for ALGORITHM=INSTANT support on SQL-layer.
+--echo #
+
+--echo #
+--echo # 1) Syntax.
+--echo #
+CREATE TABLE t1 (i INT) ENGINE=InnoDB;
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 10, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+--echo # ALGORITHM=INSTANT doesn't make sense with LOCK clause.
+--error ER_WRONG_USAGE
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 11, ALGORITHM=INSTANT, LOCK=NONE;
+--error ER_WRONG_USAGE
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 12, ALGORITHM=INSTANT, LOCK=SHARED;
+--error ER_WRONG_USAGE
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 13, ALGORITHM=INSTANT, LOCK=EXCLUSIVE;
+--echo # ALGORITHM=INSTANT and LOCK=DEFAULT are OK though.
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 13, ALGORITHM=INSTANT, LOCK=DEFAULT;
+SHOW CREATE TABLE t1;
+
+--echo #
+--echo # 2) We support INSTANT algorithm for a few trivial metadata-only
+--echo #    changes for InnoDB.
+--echo #
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 14, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ALTER COLUMN i DROP DEFAULT, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ADD COLUMN j ENUM('a', 'b', 'c');
+ALTER TABLE t1 MODIFY COLUMN j ENUM('a', 'b', 'c', 'd', 'e'), ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 RENAME TO t2, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t2;
+
+--echo #
+--echo # 3) You can still use ALGORITHM=INPLACE for these operations
+--echo #    (even though INSTANT algorithm will be used internally).
+--echo #
+ALTER TABLE t2 RENAME TO t1, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 15, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ALTER COLUMN i DROP DEFAULT, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 MODIFY COLUMN j ENUM('a', 'b', 'c', 'd', 'e', 'f', 'g'), ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+
+--echo #
+--echo # 4) However, some operations are not supported as INSTANT.
+--echo #
+--error ER_ALTER_OPERATION_NOT_SUPPORTED
+ALTER TABLE t1 ADD KEY(j), ALGORITHM=INSTANT;
+--error ER_ALTER_OPERATION_NOT_SUPPORTED
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 15, DROP COLUMN j, ALGORITHM=INSTANT;
+
+--echo #
+--echo # 5) For MyISAM tables we support INSTANT algorithm for metadata-only
+--echo #    changes as well.
+--echo #
+DROP TABLE t1;
+CREATE TABLE t1 (i INT, j ENUM('a', 'b'), KEY(i)) ENGINE=MyISAM;
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 10, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ALTER COLUMN i DROP DEFAULT, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 MODIFY COLUMN j ENUM('a', 'b', 'c', 'd', 'e'), ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 CHANGE COLUMN i k INT, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 RENAME INDEX i TO k, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 RENAME TO t2, ALGORITHM=INSTANT;
+SHOW CREATE TABLE t2;
+
+--echo #
+--echo # 6) And you can still use ALGORITHM=INPLACE for the same operations
+--echo #    for MyISAM tables too.
+--echo #
+ALTER TABLE t2 RENAME TO t1, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ALTER COLUMN k SET DEFAULT 11, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 ALTER COLUMN k DROP DEFAULT, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 MODIFY COLUMN j ENUM('a', 'b', 'c', 'd', 'e', 'f', 'g'), ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 CHANGE COLUMN k i INT, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+ALTER TABLE t1 RENAME INDEX k TO i, ALGORITHM=INPLACE;
+SHOW CREATE TABLE t1;
+
+--echo #
+--echo # 7) Indeed, some options are not supported as INSTANT
+--echo #
+--error ER_ALTER_OPERATION_NOT_SUPPORTED
+ALTER TABLE t1 ADD COLUMN l INT, ALGORITHM=INSTANT;
+--error ER_ALTER_OPERATION_NOT_SUPPORTED
+ALTER TABLE t1 ALTER COLUMN i SET DEFAULT 12, DROP COLUMN j, ALGORITHM=INSTANT;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#27864226: ASSERTION `(CREATE_INFO->USED_FIELDS & (1L << 8)) == 0 ||
+--echo #
+
+CREATE TABLE t1 (a INT) ENGINE=INNODB;
+
+--echo # Verify that ALTER can have both a CONVERT clause and a
+--echo # DEFAULT CHARACTER SET clause with different charsets
+ALTER TABLE t1 CONVERT TO CHARACTER SET utf16 COLLATE utf16_turkish_ci,
+DEFAULT CHARACTER SET utf16 COLLATE utf16_slovak_ci;
+
+--echo # Verify that last default (utf16) overrides
+SHOW CREATE TABLE t1;
+
+DROP TABLE t1;
+
+--echo #  BUG#27909771 - [MYSQL 8.0 GA DEBUG BUILD] ASSERTION `(*IDX_EL_IT)->IS_PREFIX() == STATIC_CAST<B
+--echo #
+
+SET SQL_MODE='';
+CREATE TABLE t1 SELECT 100000000000000000000000000000000000000000000000000000000000000001 AS c1;
+ALTER TABLE t1 ADD INDEX (c1);
+DROP TABLE t1;
+SET SQL_MODE=default;
+
+--echo #
+--echo # BUG#26848813: INDEXED COLUMN CAN'T BE CHANGED FROM VARCHAR(15)
+--echo #               TO VARCHAR(40) INSTANTANEOUSLY
+
+SET @orig_sql_mode = @@sql_mode;
+
+--echo # Tests where an error is reported under strict mode when the index
+--echo # limit exceeds the maximum supported length by SE.
+
+--error ER_TOO_LONG_KEY
+CREATE TABLE t1 (fld1 VARCHAR(768), KEY(fld1)) CHARSET latin1 ENGINE =InnoDB
+ROW_FORMAT= COMPACT;
+
+--error ER_TOO_LONG_KEY
+CREATE TABLE t2 (fld1 VARCHAR(3073), KEY(fld1)) CHARSET latin1 ENGINE= InnoDB;
+
+--echo # Test with innodb prefix indexes where the index limit is 767 bytes
+CREATE TABLE t1 (fld1 VARCHAR(767), KEY(fld1)) CHARSET latin1 ENGINE=INNODB
+ROW_FORMAT=COMPACT;
+
+--error ER_TOO_LONG_KEY
+ALTER TABLE t1 MODIFY fld1 VARCHAR(768), ALGORITHM= INPLACE;
+
+--error ER_TOO_LONG_KEY
+ALTER TABLE t1 MODIFY fld1 VARCHAR(768), ALGORITHM= COPY;
+
+--echo # Test with innodb prefix indexes where the index limit is 3072 bytes
+CREATE TABLE t2 (fld1 VARCHAR(3072), KEY(fld1)) CHARSET latin1 ENGINE=INNODB
+ROW_FORMAT=DYNAMIC;
+
+--error ER_TOO_LONG_KEY
+ALTER TABLE t2 MODIFY fld1 VARCHAR(3073), ALGORITHM= INPLACE;
+
+--error ER_TOO_LONG_KEY
+ALTER TABLE t2 MODIFY fld1 VARCHAR(3073), ALGORITHM= COPY;
+
+DROP TABLE t1, t2;
+
+SET sql_mode= '';
+
+--enable_warnings
+
+--echo # Test where the indexes are truncated to fit the index limit and
+--echo # a warning is reported under non-strict mode when the index exceeds
+--echo # the SE limit.
+CREATE TABLE t1 (fld1 VARCHAR(768), KEY(fld1)) ENGINE= InnoDB
+ROW_FORMAT=COMPACT;
+CREATE TABLE t2 (fld1 VARCHAR(3073), KEY(fld1)) ENGINE= InnoDB;
+
+--echo # Test with innodb prefix indexes where the index limit is 767 bytes.
+CREATE TABLE t3 (fld1 VARCHAR(767), KEY(fld1))ENGINE=INNODB ROW_FORMAT=COMPACT;
+
+ALTER TABLE t3 MODIFY fld1 VARCHAR(768), ALGORITHM= INPLACE;
+
+ALTER TABLE t3 MODIFY fld1 VARCHAR(800), ALGORITHM= COPY;
+
+--echo # Test with innodb prefix indexes where the index limit is 3072 bytes.
+CREATE TABLE t4 (fld1 VARCHAR(3072), KEY(fld1))ENGINE=INNODB
+ROW_FORMAT=DYNAMIC;
+
+ALTER TABLE t4 MODIFY fld1 VARCHAR(3073), ALGORITHM= INPLACE;
+
+ALTER TABLE t4 MODIFY fld1 VARCHAR(3074), ALGORITHM= COPY;
+
+--echo # For unique and primary keys, an error is reported even in non-strict
+--echo # mode.
+
+--error ER_TOO_LONG_KEY
+CREATE TABLE t5(fld1 VARCHAR(768) PRIMARY KEY) ENGINE= InnoDB
+ROW_FORMAT=COMPACT;
+
+--error ER_TOO_LONG_KEY
+CREATE TABLE t5(fld1 VARCHAR(3073), UNIQUE KEY(fld1)) ENGINE= InnoDB;
+
+--disable_warnings
+DROP TABLE t1, t2, t3, t4;
+
+SET sql_mode= @orig_sql_mode;
+
+--echo # Tests added for coverage.
+CREATE TABLE t1(fld1 VARCHAR(3), KEY(fld1)) ENGINE=MYISAM;
+
+--echo # Conversion of unpacked keys to packed keys reports
+--echo # error for INPLACE Alter.
+--error ER_ALTER_OPERATION_NOT_SUPPORTED
+ALTER TABLE t1 MODIFY fld1 VARCHAR(10), ALGORITHM=INPLACE;
+
+--echo # Succeeds with index rebuild.
+ALTER TABLE t1 MODIFY fld1 VARCHAR(10), ALGORITHM=COPY;
+
+--echo # Succeeds since the row format is dynamic.
+CREATE TABLE t2(fld1 VARCHAR(768), KEY(fld1)) ENGINE= InnoDB ROW_FORMAT= DYNAMIC;
+
+--echo # An error is reported when the index exceeds the column size
+--echo # in both strict and non-strict mode.
+--error ER_WRONG_SUB_KEY
+ALTER TABLE t2 ADD INDEX idx1(fld1(769));
+
+SET sql_mode= '';
+
+--error ER_WRONG_SUB_KEY
+ALTER TABLE t2 ADD INDEX idx1(fld1(769));
+
+--echo # Cleanup.
+DROP TABLE t1, t2;
+SET sql_mode= @orig_sql_mode;

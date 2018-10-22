@@ -1103,7 +1103,7 @@ bool Rsa_authentication_keys::read_rsa_keys() {
 #endif /* HAVE_OPENSSL */
 
 void optimize_plugin_compare_by_pointer(LEX_CSTRING *plugin_name) {
-  g_cached_authentication_plugins->optimize_plugin_compare_by_pointer(
+  Cached_authentication_plugins::optimize_plugin_compare_by_pointer(
       plugin_name);
 }
 
@@ -3220,7 +3220,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         activate_all_granted_and_mandatory_roles(acl_user, sctx);
       } else {
         /* The server policy is to only activate default roles */
-        get_default_roles(authid, &default_roles);
+        get_default_roles(authid, default_roles);
         List_of_auth_id_refs::iterator it = default_roles.begin();
         for (; it != default_roles.end(); ++it) {
           if (sctx->activate_role(it->first, it->second, true)) {
@@ -4014,7 +4014,7 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
   /* A password was sent to an account without a password */
   if (info->auth_string_length == 0) DBUG_RETURN(CR_ERROR);
 
-  int is_error;
+  int is_error = 0;
   int result = compare_sha256_password_with_hash(
       info->auth_string, info->auth_string_length, (const char *)pkt,
       pkt_len - 1, &is_error);

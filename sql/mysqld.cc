@@ -430,6 +430,7 @@
 #include "mysql/psi/psi_socket.h"
 #include "mysql/psi/psi_stage.h"
 #include "mysql/psi/psi_statement.h"
+#include "mysql/psi/psi_system.h"
 #include "mysql/psi/psi_table.h"
 #include "mysql/psi/psi_thread.h"
 #include "mysql/psi/psi_transaction.h"
@@ -585,6 +586,9 @@
 #include <string.h>
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
+#endif
+#ifdef HAVE_SYS_PRCTL_H
+#include <sys/prctl.h>
 #endif
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
@@ -779,7 +783,8 @@ static bool socket_listener_active = false;
 static int pipe_write_fd = -1;
 static bool opt_daemonize = 0;
 #endif
-static bool opt_debugging = 0, opt_external_locking = 0, opt_console = 0;
+bool opt_debugging = false;
+static bool opt_external_locking = 0, opt_console = 0;
 static bool opt_short_log_format = 0;
 static char *mysqld_user, *mysqld_chroot;
 static char *default_character_set_name;
@@ -850,6 +855,7 @@ ulong log_error_verbosity = 3;  // have a non-zero value during early start-up
 
 #if defined(_WIN32)
 ulong slow_start_timeout;
+bool opt_no_monitor = false;
 #endif
 
 bool opt_no_dd_upgrade = false;
@@ -1468,7 +1474,7 @@ extern "C" void *signal_hand(void *arg);
 static bool pid_file_created = false;
 static void usage(void);
 static void clean_up_mutexes(void);
-static void create_pid_file();
+static bool create_pid_file();
 static void mysqld_exit(int exit_code) MY_ATTRIBUTE((noreturn));
 static void delete_pid_file(myf flags);
 static void clean_up(bool print_message);
@@ -1778,6 +1784,12 @@ static void close_connections(void) {
 }
 
 bool signal_restart_server() {
+  if (!is_mysqld_managed()) {
+    my_error(ER_RESTART_SERVER_FAILED, MYF(0),
+             "mysqld is not managed by supervisor process");
+    return true;
+  }
+
 #ifdef _WIN32
   if (!SetEvent(hEventRestart)) {
     sql_print_error("Got error: %ld from SetEvent", GetLastError());
@@ -1785,11 +1797,6 @@ bool signal_restart_server() {
     return true;
   }
 #else
-  if (!is_mysqld_managed()) {
-    my_error(ER_RESTART_SERVER_FAILED, MYF(0),
-             "mysqld is not managed by supervisor process");
-    return true;
-  }
 
   if (pthread_kill(signal_thread_id.thread, SIGUSR2)) {
     DBUG_PRINT("error", ("Got error %d from pthread_kill", errno));
@@ -2213,13 +2220,6 @@ err:
   LogErr(ERROR_LEVEL, ER_USER_WHAT_USER, user);
   unireg_abort(MYSQLD_ABORT_EXIT);
 
-#ifdef PR_SET_DUMPABLE
-  if (test_flags & TEST_CORE_ON_SIGNAL) {
-    /* inform kernel that process is dumpable */
-    (void)prctl(PR_SET_DUMPABLE, 1);
-  }
-#endif
-
   return NULL;
 }
 
@@ -2245,6 +2245,14 @@ static void set_user(const char *user, struct passwd *user_info_arg) {
     LogErr(ERROR_LEVEL, ER_FAIL_SETUID, strerror(errno));
     unireg_abort(MYSQLD_ABORT_EXIT);
   }
+
+#ifdef HAVE_SYS_PRCTL_H
+  if (test_flags & TEST_CORE_ON_SIGNAL) {
+    /* inform kernel that process is dumpable */
+    (void)prctl(PR_SET_DUMPABLE, 1);
+  }
+#endif
+
   /* purecov: end */
 }
 
@@ -2652,7 +2660,10 @@ static void start_signal_handler() {
   */
   guardize = my_thread_stack_size;
 #endif
-  (void)my_thread_attr_setstacksize(&thr_attr, my_thread_stack_size + guardize);
+  if (0 !=
+      my_thread_attr_setstacksize(&thr_attr, my_thread_stack_size + guardize)) {
+    DBUG_ASSERT(false);
+  }
 
   /*
     Set main_thread_id so that SIGTERM/SIGQUIT/SIGKILL/SIGUSR2 can interrupt
@@ -3817,7 +3828,7 @@ int init_common_variables() {
   if (opt_initialize || opt_initialize_insecure) {
     LogErr(SYSTEM_LEVEL, ER_STARTING_INIT, my_progname, server_version,
            (ulong)getpid());
-  } else {
+  } else if (!opt_help) {
     LogErr(SYSTEM_LEVEL, ER_STARTING_AS, my_progname, server_version,
            (ulong)getpid());
   }
@@ -4444,8 +4455,8 @@ static int generate_server_uuid() {
 
   strncpy(server_uuid, uuid.c_ptr(), UUID_LENGTH);
   DBUG_EXECUTE_IF("server_uuid_deterministic",
-                  strncpy(server_uuid, "00000000-1111-0000-1111-000000000000",
-                          UUID_LENGTH););
+                  memcpy(server_uuid, "00000000-1111-0000-1111-000000000000",
+                         UUID_LENGTH););
   server_uuid[UUID_LENGTH] = '\0';
   return 0;
 }
@@ -5261,28 +5272,32 @@ static int init_server_components() {
     mysql_mutex_unlock(log_lock);
   }
 
+  /*
+    When we pass non-zero values for both expire_logs_days and
+    binlog_expire_logs_seconds at the server start-up, the value of
+    expire_logs_days will be ignored and only binlog_expire_logs_seconds
+    will be used.
+  */
+  if (binlog_expire_logs_seconds_supplied && expire_logs_days_supplied) {
+    if (binlog_expire_logs_seconds != 0 && expire_logs_days != 0) {
+      LogErr(WARNING_LEVEL, ER_EXPIRE_LOGS_DAYS_IGNORED);
+      expire_logs_days = 0;
+    }
+  } else if (expire_logs_days_supplied)
+    binlog_expire_logs_seconds = 0;
+  DBUG_ASSERT(expire_logs_days == 0 || binlog_expire_logs_seconds == 0);
+
   if (opt_bin_log) {
-    time_t purge_time = 0;
-
-    /*
-      When we pass non zero value for both expire_logs_days and
-      binlog_expire_logs_seconds at the server start up in that case the
-      of expire_logs_days will be ignored and only binlog_expire_logs_seconds
-      will be used.
-    */
-    if (binlog_expire_logs_seconds_supplied && expire_logs_days_supplied) {
-      if (binlog_expire_logs_seconds != 0 && expire_logs_days != 0) {
-        LogErr(WARNING_LEVEL, ER_EXPIRE_LOGS_DAYS_IGNORED);
-        expire_logs_days = 0;
-      }
-    } else if (expire_logs_days_supplied)
-      binlog_expire_logs_seconds = 0;
-
-    if (expire_logs_days > 0 || binlog_expire_logs_seconds > 0)
-      purge_time = my_time(0) - binlog_expire_logs_seconds -
-                   expire_logs_days * 24 * 60 * 60;
-
-    if (purge_time >= 0) mysql_bin_log.purge_logs_before_date(purge_time, true);
+    if (expire_logs_days > 0 || binlog_expire_logs_seconds > 0) {
+      time_t purge_time = my_time(0) - binlog_expire_logs_seconds -
+                          expire_logs_days * 24 * 60 * 60;
+      mysql_bin_log.purge_logs_before_date(purge_time, true);
+    }
+  } else {
+    if (binlog_expire_logs_seconds_supplied)
+      LogErr(WARNING_LEVEL, ER_NEED_LOG_BIN, "--binlog-expire-logs-seconds");
+    if (expire_logs_days_supplied)
+      LogErr(WARNING_LEVEL, ER_NEED_LOG_BIN, "--expire_logs_days");
   }
 
   if (opt_myisam_log) (void)mi_log(1);
@@ -5506,7 +5521,7 @@ int mysqld_main(int argc, char **argv)
           &psi_cond_hook, &psi_file_hook, &psi_socket_hook, &psi_table_hook,
           &psi_mdl_hook, &psi_idle_hook, &psi_stage_hook, &psi_statement_hook,
           &psi_transaction_hook, &psi_memory_hook, &psi_error_hook,
-          &psi_data_lock_hook);
+          &psi_data_lock_hook, &psi_system_hook);
       if ((pfs_rc != 0) && pfs_param.m_enabled) {
         pfs_param.m_enabled = false;
         LogErr(WARNING_LEVEL, ER_PERFSCHEMA_INIT_FAILED);
@@ -5639,6 +5654,13 @@ int mysqld_main(int argc, char **argv)
     }
   }
 
+  if (psi_system_hook != NULL) {
+    service = psi_system_hook->get_interface(PSI_CURRENT_SYSTEM_VERSION);
+    if (service != NULL) {
+      set_psi_system_service(service);
+    }
+  }
+
   /*
     Now that we have parsed the command line arguments, and have initialized
     the performance schema itself, the next step is to register all the
@@ -5735,8 +5757,10 @@ int mysqld_main(int argc, char **argv)
   guardize = my_thread_stack_size;
 #endif
 
-  my_thread_attr_setstacksize(&connection_attrib,
-                              my_thread_stack_size + guardize);
+  if (0 != my_thread_attr_setstacksize(&connection_attrib,
+                                       my_thread_stack_size + guardize)) {
+    DBUG_ASSERT(false);
+  }
 
   {
     /* Retrieve used stack size;  Needed for checking stack overflows */
@@ -6057,13 +6081,16 @@ int mysqld_main(int argc, char **argv)
 
   error_handler_hook = my_message_sql;
 
+  bool abort = false;
+
   /* Save pid of this process in a file */
-  if (!opt_initialize) create_pid_file();
+  if (!opt_initialize) {
+    if (create_pid_file()) abort = true;
+  }
 
   /* Read the optimizer cost model configuration tables */
   if (!opt_initialize) reload_optimizer_cost_constants();
 
-  bool abort = false;
   if (
       /*
         Read components table to restore previously installed components. This
@@ -7157,6 +7184,8 @@ struct my_option my_long_options[] = {
 #ifdef _WIN32
     {"standalone", 0, "Dummy option to start as a standalone program (NT).", 0,
      0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"no-monitor", 0, "Disable monitor process.", &opt_no_monitor,
+     &opt_no_monitor, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
     {"symbolic-links", 's',
      "Enable symbolic link support (deprecated and will be  removed in a future"
@@ -8253,6 +8282,9 @@ static void usage(void) {
     exit(MYSQLD_ABORT_EXIT);
   if (!default_collation_name)
     default_collation_name = (char *)default_charset_info->name;
+  if (opt_help || opt_verbose) {
+    my_progname = my_progname + dirname_length(my_progname);
+  }
   print_server_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   puts("Starts the MySQL database server.\n");
@@ -9611,7 +9643,7 @@ static int test_if_case_insensitive(const char *dir_name) {
 /**
   Create file to store pid number.
 */
-static void create_pid_file() {
+static bool create_pid_file() {
   File file;
   bool check_parent_path = 1, is_path_accessible = 1;
   char pid_filepath[FN_REFLEN], *pos = NULL;
@@ -9653,12 +9685,12 @@ static void create_pid_file() {
                           MYF(MY_WME | MY_NABP))) {
       mysql_file_close(file, MYF(0));
       pid_file_created = true;
-      return;
+      return false;
     }
     mysql_file_close(file, MYF(0));
   }
   LogErr(ERROR_LEVEL, ER_CANT_CREATE_PID_FILE, strerror(errno));
-  unireg_abort(MYSQLD_ABORT_EXIT);
+  return true;
 }
 
 /**

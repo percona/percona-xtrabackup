@@ -338,7 +338,7 @@ CREATE TABLE t2 ( g GEOMETRY NOT NULL );
 INSERT INTO t2 VALUES ( POINT(1,2) );
 SELECT concat( regexp_like(g, g), 'x' ) FROM t2;
 concat( regexp_like(g, g), 'x' )
-1x
+0x
 SET sql_mode = DEFAULT;
 DROP TABLE t2;
 #
@@ -373,7 +373,7 @@ regexp_instr( _utf8mb4'aöb', _utf8mb4'ö' )
 2
 SET NAMES utf8;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT regexp_instr( 'aöb', 'ö' );
 regexp_instr( 'aöb', 'ö' )
 2
@@ -383,7 +383,7 @@ SET NAMES DEFAULT;
 #
 SET NAMES utf8;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT regexp_instr( 'אב רק', /*k*/'^[^ב]' );
 regexp_instr( 'אב רק', /*k*/'^[^ב]' )
 1
@@ -581,30 +581,40 @@ SELECT * FROM t1;
 a	b	c	d
 1	1	1	1
 DELETE FROM t1;
-INSERT INTO t1 VALUES ( regexp_replace('a', 'a', 'a'),
-regexp_replace('a', 'a', 'a'),
-regexp_replace('a', 'a', 'a'),
-regexp_replace('a', 'a', 'a') );
+INSERT INTO t1 ( a ) VALUES ( regexp_replace('a', 'a', 'a') );
+ERROR 01000: Data truncated for column 'a' at row 1
+INSERT INTO t1 ( b ) VALUES ( regexp_replace('a', 'a', 'a') );
+ERROR HY000: Incorrect integer value: 'a' for column 'b' at row 1
+INSERT INTO t1 ( c ) VALUES ( regexp_replace('a', 'a', 'a') );
+INSERT INTO t1 ( d ) VALUES ( regexp_replace('a', 'a', 'a') );
+ERROR HY000: Incorrect decimal value: 'a' for column 'd' at row 1
 SELECT * FROM t1;
 a	b	c	d
-0	0	0	0
+NULL	NULL	a	NULL
 DELETE FROM t1;
-INSERT INTO t1 VALUES ( regexp_substr('a', 'a'),
-regexp_substr('a', 'a'),
-regexp_substr('a', 'a'),
-regexp_substr('a', 'a') );
+INSERT INTO t1 ( a ) VALUES ( regexp_substr('a', 'a') );
+ERROR 01000: Data truncated for column 'a' at row 1
+INSERT INTO t1 ( b ) VALUES ( regexp_substr('a', 'a') );
+ERROR HY000: Incorrect integer value: 'a' for column 'b' at row 1
+INSERT INTO t1 ( c ) VALUES ( regexp_substr('a', 'a') );
+INSERT INTO t1 ( d ) VALUES ( regexp_substr('a', 'a') );
+ERROR HY000: Incorrect decimal value: 'a' for column 'd' at row 1
 SELECT * FROM t1;
 a	b	c	d
-0	0	0	0
+NULL	NULL	a	NULL
 DROP TABLE t1;
 # At the time of writing, val_int() is not called when inserting into an
 # INT column.
 SELECT cast( regexp_replace('a', 'a', 'a') AS SIGNED INTEGER );
 cast( regexp_replace('a', 'a', 'a') AS SIGNED INTEGER )
 0
+Warnings:
+Warning	1292	Truncated incorrect INTEGER value: 'a'
 SELECT cast( regexp_substr ('a', 'a')      AS SIGNED INTEGER );
 cast( regexp_substr ('a', 'a')      AS SIGNED INTEGER )
 0
+Warnings:
+Warning	1292	Truncated incorrect INTEGER value: 'a'
 # Casting to DATETIME/TIME
 # Due to the class hierarchy of function objects, these have to be
 # copy-pasted.
@@ -662,7 +672,7 @@ SELECT @buf_sz_utf16;
 512.000000000
 SELECT length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'b' ));
 length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'b' ))
-1022
+1024
 SELECT length(regexp_replace( repeat('a', @buf_sz_utf16 + 1), 'a', 'b' ));
 ERROR HY000: The result string is larger than the result buffer.
 SELECT length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'bb' ));
@@ -813,13 +823,68 @@ Warning	1292	Truncated incorrect INTEGER value: 'abc'
 #
 # Bug#27597980: ADD ERROR MESSAGE FOR INVALID CAPTURE GROUP NAME
 #
-SELECT regexp_replace((' F' ) ,'^ ','[,$' );
+SELECT regexp_replace( 'abc' , 'abc', '$abc' );
 ERROR HY000: A capture group has an invalid name.
-SELECT regexp_replace(24031 ,''*' ','$>$' );
+#
+# Bug#27595368: ASSERTION FAILED: 0 IN ITEM_PARAM::VAL_REAL WITH
+# PREPARED STATEMENT
+#
+SET @s := "SELECT regexp_like( '', '', ? / '' )";
+PREPARE stmt FROM @s;
+EXECUTE stmt;
+ERROR HY000: Incorrect arguments to EXECUTE
+EXECUTE stmt;
+ERROR HY000: Incorrect arguments to EXECUTE
+CREATE TABLE t1 ( match_parameter CHAR(1) );
+INSERT INTO t1 VALUES ( 'i' ), ( 'c' ), ( 'i' ), ( 'c' );
+SELECT match_parameter, regexp_like ( 'a', 'A', match_parameter ) FROM t1;
+match_parameter	regexp_like ( 'a', 'A', match_parameter )
+i	1
+c	0
+i	1
+c	0
+DROP TABLE t1;
+#
+# Bug#27612255: VALGRIND WARNING ON INVALID CAPTURE GROUP
+#
+SELECT regexp_replace( ' F' , '^ ', '[,$' );
 ERROR HY000: A capture group has an invalid name.
-SELECT regexp_replace('e C' ,'. ','$ ' );
-ERROR HY000: A capture group has an invalid name.
-SELECT regexp_replace('%* ' ,'. ',' A*#$?$@^-' );
-ERROR HY000: A capture group has an invalid name.
-SELECT regexp_replace(' 0(' ,'^ ','3$!' );
-ERROR HY000: A capture group has an invalid name.
+#
+# Bug#27751277: ASSERTION FALSE IN REGEXP::CHECK_ICU_STATUS
+#
+SELECT regexp_instr( 'abc', '(?-' );
+ERROR HY000: Invalid match mode flag in regular expression.
+#
+# Bug#27992118: REGEXP_REPLACE ACCUMULATING RESULT
+#
+CREATE TABLE t1 ( a VARCHAR(10) );
+INSERT INTO t1 VALUES ('a a a'), ('b b b'), ('c c c');
+SELECT regexp_replace(a, '^([[:alpha:]]+)[[:space:]].*$', '$1') FROM t1;
+regexp_replace(a, '^([[:alpha:]]+)[[:space:]].*$', '$1')
+a
+b
+c
+DROP TABLE t1;
+#
+# Bug#28027093: REGEXP_REPLACE TRUNCATE UPDATE
+#
+CREATE TABLE t1 ( a CHAR(3) );
+INSERT INTO t1 VALUES ( regexp_replace ('a', 'a', 'x') );
+SELECT * FROM t1;
+a
+x
+UPDATE t1 SET a = regexp_replace ( 'b', 'b', 'y' );
+SELECT * FROM t1;
+a
+y
+DROP TABLE t1;
+CREATE TABLE t1 ( a CHAR(3) );
+INSERT INTO t1 VALUES ( regexp_substr ('a', 'a', 1) );
+SELECT * FROM t1;
+a
+a
+UPDATE t1 SET a = regexp_substr ('b', 'b', 1);
+SELECT * FROM t1;
+a
+b
+DROP TABLE t1;

@@ -22,8 +22,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-#ifndef _NGS_CLIENT_INTERFACE_H_
-#define _NGS_CLIENT_INTERFACE_H_
+#ifndef PLUGIN_X_NGS_INCLUDE_NGS_INTERFACE_CLIENT_INTERFACE_H_
+#define PLUGIN_X_NGS_INCLUDE_NGS_INTERFACE_CLIENT_INTERFACE_H_
 
 #include "plugin/x/ngs/include/ngs/interface/session_interface.h"
 #include "plugin/x/ngs/include/ngs/interface/vio_interface.h"
@@ -67,6 +67,7 @@ class Client_interface {
  public:
   virtual const char *client_address() const = 0;
   virtual const char *client_hostname() const = 0;
+  virtual const char *client_hostname_or_address() const = 0;
   virtual const char *client_id() const = 0;
   virtual Client_id client_id_num() const = 0;
   virtual int client_port() const = 0;
@@ -96,4 +97,4 @@ class Client_interface {
 
 }  // namespace ngs
 
-#endif  // _NGS_CLIENT_INTERFACE_H_
+#endif  // PLUGIN_X_NGS_INCLUDE_NGS_INTERFACE_CLIENT_INTERFACE_H_

@@ -1000,7 +1000,9 @@ OPEN_TABLE_LIST *list_open_tables(THD *thd, const char *db, const char *wild) {
     /* Skip shares that are being opened */
     if (share->m_open_in_progress) continue;
     if (db && my_strcasecmp(system_charset_info, db, share->db.str)) continue;
-    if (wild && wild_compare(share->table_name.str, wild, 0)) continue;
+    if (wild && wild_compare(share->table_name.str, share->table_name.length,
+                             wild, strlen(wild), 0))
+      continue;
 
     if (!(*start_list = (OPEN_TABLE_LIST *)sql_alloc(
               sizeof(**start_list) + share->table_cache_key.length))) {
@@ -3373,13 +3375,23 @@ reset:
 
   table_list->table = table;
 
-  if (table->part_info) {
-    /* Set all [named] partitions as used. */
-    if (table->part_info->set_partition_bitmaps(table_list)) DBUG_RETURN(true);
-  } else if (table_list->partition_names) {
-    /* Don't allow PARTITION () clause on a nonpartitioned table */
-    my_error(ER_PARTITION_CLAUSE_ON_NONPARTITIONED, MYF(0));
-    DBUG_RETURN(true);
+  /*
+    Position for each partition in the bitmap is read from the Handler_share
+    instance of the table. In MYSQL_OPEN_NO_NEW_TABLE_IN_SE mode, table is not
+    opened in the SE and Handler_share instance for it is not created. Hence
+    skipping partitions bitmap setting in the MYSQL_OPEN_NO_NEW_TABLE_IN_SE
+    mode.
+  */
+  if (!(flags & MYSQL_OPEN_NO_NEW_TABLE_IN_SE)) {
+    if (table->part_info) {
+      /* Set all [named] partitions as used. */
+      if (table->part_info->set_partition_bitmaps(table_list))
+        DBUG_RETURN(true);
+    } else if (table_list->partition_names) {
+      /* Don't allow PARTITION () clause on a nonpartitioned table */
+      my_error(ER_PARTITION_CLAUSE_ON_NONPARTITIONED, MYF(0));
+      DBUG_RETURN(true);
+    }
   }
 
   table->init(thd, table_list);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -103,6 +103,15 @@ void Collection<T>::remove(typename Collection<T>::impl_type *item) {
 
     renumerate_items();
   }
+}
+
+template <typename T>
+typename Collection<T>::iterator Collection<T>::find(const impl_type *item) {
+  // Find the element and prepare iterator pointing to found element.
+  typename Collection<T>::iterator iterator(
+      &m_items, std::find(m_items.begin(), m_items.end(), item));
+
+  return iterator;
 }
 
 /**
@@ -494,6 +503,37 @@ template void Collection<Tablespace_file *>::remove(Tablespace_file_impl *);
 template void Collection<View_routine *>::remove(View_routine_impl *);
 template void Collection<View_table *>::remove(View_table_impl *);
 template void Collection<Trigger *>::remove(Trigger_impl *);
+
+template Collection<Column *>::iterator Collection<Column *>::find(
+    const Column_impl *);
+template Collection<Column_type_element *>::iterator
+Collection<Column_type_element *>::find(const Column_type_element_impl *);
+template Collection<Foreign_key *>::iterator Collection<Foreign_key *>::find(
+    const Foreign_key_impl *);
+template Collection<Index *>::iterator Collection<Index *>::find(
+    const Index_impl *);
+template Collection<Index_element *>::iterator
+Collection<Index_element *>::find(const Index_element_impl *);
+template Collection<Foreign_key_element *>::iterator
+Collection<Foreign_key_element *>::find(const Foreign_key_element_impl *);
+template Collection<Parameter *>::iterator Collection<Parameter *>::find(
+    const Parameter_impl *);
+template Collection<Parameter_type_element *>::iterator
+Collection<Parameter_type_element *>::find(const Parameter_type_element_impl *);
+template Collection<Partition *>::iterator Collection<Partition *>::find(
+    const Partition_impl *);
+template Collection<Partition_index *>::iterator
+Collection<Partition_index *>::find(const Partition_index_impl *);
+template Collection<Partition_value *>::iterator
+Collection<Partition_value *>::find(const Partition_value_impl *);
+template Collection<Tablespace_file *>::iterator
+Collection<Tablespace_file *>::find(const Tablespace_file_impl *);
+template Collection<View_routine *>::iterator Collection<View_routine *>::find(
+    const View_routine_impl *);
+template Collection<View_table *>::iterator Collection<View_table *>::find(
+    const View_table_impl *);
+template Collection<Trigger *>::iterator Collection<Trigger *>::find(
+    const Trigger_impl *);
 
 template const Collection<Column *>::abstract_type *Collection<Column *>::at(
     size_t n) const;

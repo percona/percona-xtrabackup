@@ -885,6 +885,12 @@ class THD : public MDL_context_owner,
   void rpl_detach_engine_ha_data();
 
   /**
+    When the thread is a binlog or slave applier it reattaches the engine
+    ha_data associated with it and memorizes the fact of that.
+  */
+  void rpl_reattach_engine_ha_data();
+
+  /**
     @return true   when the current binlog (rli_fake) or slave (rli_slave)
                    applier thread has detached the engine ha_data,
                    see @c rpl_detach_engine_ha_data.
@@ -4101,5 +4107,18 @@ void add_order_to_list(THD *thd, ORDER *order);
 */
 
 void reattach_engine_ha_data_to_thd(THD *thd, const struct handlerton *hton);
+
+/**
+  Check if engine substitution is allowed in the current thread context.
+
+  @param thd         thread context
+  @return
+  @retval            true if engine substitution is allowed
+  @retval            false otherwise
+*/
+
+static inline bool is_engine_substitution_allowed(THD *thd) {
+  return !(thd->variables.sql_mode & MODE_NO_ENGINE_SUBSTITUTION);
+}
 
 #endif /* SQL_CLASS_INCLUDED */

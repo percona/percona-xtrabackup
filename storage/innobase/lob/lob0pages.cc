@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2016, 2018, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -31,6 +31,22 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 namespace lob {
 
+void data_page_t::replace_inline(trx_t *trx, ulint offset, const byte *&ptr,
+                                 ulint &want, mtr_t *mtr) {
+  byte *old_ptr = data_begin() + offset;
+
+  ulint data_len = get_data_len();
+  ut_ad(data_len > offset);
+
+  /** Copy the new data to page. */
+  ulint data_avail = data_len - offset;
+  ulint data_to_copy = want > data_avail ? data_avail : want;
+  mlog_write_string(old_ptr, ptr, data_to_copy, mtr);
+
+  ptr += data_to_copy;
+  want -= data_to_copy;
+}
+
 /** Create a new data page and replace some or all parts of the old data
 with data.
 @param[in]	trx	the current transaction.
@@ -48,6 +64,10 @@ buf_block_t *data_page_t::replace(trx_t *trx, ulint offset, const byte *&ptr,
   /** Allocate a new data page. */
   data_page_t new_page(mtr, m_index);
   new_block = new_page.alloc(mtr, false);
+
+  if (new_block == nullptr) {
+    return (nullptr);
+  }
 
   byte *new_ptr = new_page.data_begin();
   byte *old_ptr = data_begin();
@@ -126,7 +146,16 @@ buf_block_t *data_page_t::alloc(mtr_t *alloc_mtr, bool is_bulk) {
   ut_ad(alloc_mtr != nullptr);
 
   page_no_t hint = FIL_NULL;
+
   m_block = alloc_lob_page(m_index, alloc_mtr, hint, is_bulk);
+
+  /* For testing purposes, pretend that the LOB page allocation failed.*/
+  DBUG_EXECUTE_IF("innodb_lob_data_page_alloc_failed", m_block = nullptr;);
+
+  if (m_block == nullptr) {
+    return (m_block);
+  }
+
   set_page_type();
   set_version_0();
   set_next_page_null();

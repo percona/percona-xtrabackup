@@ -3073,7 +3073,8 @@ static void do_remove_files_wildcard(struct st_command *command) {
     /* if (!MY_S_ISREG(file->mystat->st_mode)) */
     /* MY_S_ISREG does not work here on Windows, just skip directories */
     if (MY_S_ISDIR(file->mystat->st_mode)) continue;
-    if (wild_compare_full(file->name, ds_wild.str, false, 0, '?', '*'))
+    if (wild_compare_full(file->name, strlen(file->name), ds_wild.str,
+                          strlen(ds_wild.str), false, 0, '?', '*'))
       continue;
     /* Not required as the var ds_file_to_remove.length already has the
        length in canonnicalized form */
@@ -3429,7 +3430,8 @@ static void do_copy_files_wildcard(struct st_command *command) {
     if (MY_S_ISDIR(file->mystat->st_mode)) continue;
 
     /* Copy only those files which the pattern matches */
-    if (wild_compare_full(file->name, ds_wild.str, false, 0, '?', '*'))
+    if (wild_compare_full(file->name, strlen(file->name), ds_wild.str,
+                          strlen(ds_wild.str), false, 0, '?', '*'))
       continue;
 
     match_count++;
@@ -3696,8 +3698,9 @@ static void do_mkdir(struct st_command *command) {
 void do_force_rmdir(struct st_command *command, DYNAMIC_STRING *ds_dirname) {
   DBUG_ENTER("do_force_rmdir");
 
-  char dir_name[FN_REFLEN];
-  strncpy(dir_name, ds_dirname->str, sizeof(dir_name));
+  char dir_name[FN_REFLEN + 1];
+  strncpy(dir_name, ds_dirname->str, sizeof(dir_name) - 1);
+  dir_name[FN_REFLEN] = '\0';
 
   /* Note that my_dir sorts the list if not given any flags */
   MY_DIR *dir_info = my_dir(ds_dirname->str, MYF(MY_DONT_SORT | MY_WANT_STAT));
@@ -3796,7 +3799,8 @@ static int get_list_files(DYNAMIC_STRING *ds, const DYNAMIC_STRING *ds_dirname,
          (file->name[1] == '.' && file->name[2] == '\0')))
       continue; /* . or .. */
     if (ds_wild && ds_wild->length &&
-        wild_compare_full(file->name, ds_wild->str, false, 0, '?', '*'))
+        wild_compare_full(file->name, strlen(file->name), ds_wild->str,
+                          strlen(ds_wild->str), false, 0, '?', '*'))
       continue;
     replace_dynstr_append(ds, file->name);
     dynstr_append(ds, "\n");
@@ -4243,7 +4247,7 @@ static void do_perl(struct st_command *command) {
   int error;
   File fd;
   FILE *res_file;
-  char buf[FN_REFLEN];
+  char buf[FN_REFLEN + 10];
   char temp_file_path[FN_REFLEN];
   static DYNAMIC_STRING ds_script;
   static DYNAMIC_STRING ds_delimiter;
@@ -9319,8 +9323,8 @@ int main(int argc, char **argv) {
     log_file.flush();
 
     if (!result_file_name) {
-      temp_log_file.flush();
       temp_log_file.write(&ds_res);
+      temp_log_file.flush();
     }
     dynstr_set(&ds_res, 0);
   }

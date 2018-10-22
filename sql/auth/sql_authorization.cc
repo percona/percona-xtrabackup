@@ -316,7 +316,7 @@ bool revoke_role_helper(THD *thd MY_ATTRIBUTE((unused)),
 /**
   This utility function checks for the connecting vertices of the role
   descriptor(authid node) and updates the role flag of the corresponding
-  ACL user. If there are no edges connected to this authid node then this
+  ACL user. If there are no incoming edges to this authid node then this
   is not a role id anymore. It assumes that acl user and role descriptor
   are, valid and passed correctly.
 
@@ -324,12 +324,10 @@ bool revoke_role_helper(THD *thd MY_ATTRIBUTE((unused)),
   @param [in,out] acl_user The acl role
 
 */
-void update_role_flag_of_acl_user(const Role_vertex_descriptor &role_vert,
-                                  ACL_USER *acl_user) {
-  Role_adjacency_iterator vert_it, vert_end;
-  boost::tie(vert_it, vert_end) =
-      boost::adjacent_vertices(role_vert, *g_granted_roles);
-  acl_user->is_role = (vert_it != vert_end);
+void static update_role_flag_of_acl_user(
+    const Role_vertex_descriptor &role_vert, ACL_USER *acl_user) {
+  degree_s_t count = boost::in_degree(role_vert, *g_granted_roles);
+  acl_user->is_role = (count > 0) ? true : false;
 }
 
 /**
@@ -382,50 +380,58 @@ bool drop_role(THD *thd, TABLE *edge_table, TABLE *defaults_table,
                const Auth_id_ref &authid_user) {
   DBUG_ENTER("drop_role");
   bool error = false;
+  std::vector<ACL_USER> users;
   DBUG_ASSERT(assert_acl_cache_write_lock(thd));
   std::string authid_user_str = create_authid_str_from(authid_user);
   Role_index_map::iterator it;
 
   if ((it = g_authid_to_vertex->find(authid_user_str)) !=
       g_authid_to_vertex->end()) {
-    /* Drop all adjacent edges from the role_edges table */
-    boost::graph_traits<Granted_roles_graph>::edge_iterator eit, eit_end;
-    boost::tie(eit, eit_end) = boost::edges(*g_granted_roles);
-    // TODO why doesn't adjacent_iterator work here?
-    for (; eit != eit_end; ++eit) {
-      ACL_USER to_acl_user =
-          boost::get(boost::vertex_acl_user_t(),
-                     *g_granted_roles)[boost::source(*eit, *g_granted_roles)];
-      ACL_USER from_acl_user =
-          boost::get(boost::vertex_acl_user_t(),
-                     *g_granted_roles)[boost::target(*eit, *g_granted_roles)];
+    /* Fetch source vertex details */
+    ACL_USER source_acl_user = boost::get(
+        boost::vertex_acl_user_t(),
+        *g_granted_roles)[boost::vertex(it->second, *g_granted_roles)];
+    Auth_id_ref source_user = create_authid_from(&source_acl_user);
 
-      Auth_id_ref from_user = create_authid_from(&from_acl_user);
-      Auth_id_ref to_user = create_authid_from(&to_acl_user);
-      std::string from_user_str = create_authid_str_from(&from_acl_user);
-      std::string to_user_str = create_authid_str_from(&to_acl_user);
-      if (authid_user_str == to_user_str || authid_user_str == from_user_str) {
-        /* Remove all connecting edges */
-        error = modify_role_edges_in_table(thd, edge_table, from_user, to_user,
-                                           false, true);
-        error |= modify_role_edges_in_table(thd, edge_table, to_user, from_user,
-                                            false, true);
-      }
-      /*
-        if the role authid does not has any connecting edges then update
-        the role flag of corresponding ACL role.
-      */
-      Role_index_map::iterator role_it =
-          g_authid_to_vertex->find(from_user_str);
-      if (role_it != g_authid_to_vertex->end()) {
-        ACL_USER *acl_role = find_acl_user(from_acl_user.host.get_host(),
-                                           from_acl_user.user, true);
-        DBUG_ASSERT(acl_role != nullptr);
-        update_role_flag_of_acl_user(role_it->second, acl_role);
-      }
+    /*
+      Lambda function that drops all adjacent edges(if exists) from the
+      source_user present in the role_edges table and, keep track of
+      target acl user.
+      It assumes all the paramaters and captures, are valid and sane.
+    */
+    auto modify_role_edges = [&thd, &edge_table, &error,
+                              &source_user](const ACL_USER &target_acl_user) {
+      Auth_id_ref target_user = create_authid_from(&target_acl_user);
+      error = modify_role_edges_in_table(thd, edge_table, source_user,
+                                         target_user, false, true);
+      error |= modify_role_edges_in_table(thd, edge_table, target_user,
+                                          source_user, false, true);
+    };
+
+    /* Fetch the neighboring vertices from the outgoing edges */
+    out_edge_itr_t oute_itr, oute_end;
+    boost::tie(oute_itr, oute_end) =
+        boost::out_edges(it->second, *g_granted_roles);
+    for (; oute_itr != oute_end; ++oute_itr) {
+      ACL_USER target_acl_user = boost::get(
+          boost::vertex_acl_user_t(),
+          *g_granted_roles)[boost::target(*oute_itr, *g_granted_roles)];
+      modify_role_edges(target_acl_user);
+      users.push_back(target_acl_user);
     }
 
-    /* remove this vertex from the graph (along with its edges) */
+    /* Fetch the neighboring vertices from the incoming edges */
+    in_edge_itr_t ine_itr, ine_end;
+    boost::tie(ine_itr, ine_end) =
+        boost::in_edges(it->second, *g_granted_roles);
+    for (; ine_itr != ine_end; ++ine_itr) {
+      ACL_USER target_acl_user = boost::get(
+          boost::vertex_acl_user_t(),
+          *g_granted_roles)[boost::source(*ine_itr, *g_granted_roles)];
+      modify_role_edges(target_acl_user);
+    }
+
+    /* Remove this vertex from the graph (along with its edges) */
     DBUG_PRINT("info", ("Removing %s from graph and rebuild the index.",
                         authid_user_str.c_str()));
     /*
@@ -435,9 +441,22 @@ bool drop_role(THD *thd, TABLE *edge_table, TABLE *defaults_table,
       enough to remove the index entry. As the roles  are reloaded from the
       tables the dropped roles will disappear.
     */
-
     boost::clear_vertex(it->second, *g_granted_roles);
-    g_authid_to_vertex->erase(it);
+
+    /*
+      If the role authid does not have any incoming edges then update
+      the role flag of corresponding ACL role.
+    */
+    for (auto &&user_itr : users) {
+      Role_index_map::iterator role_it =
+          g_authid_to_vertex->find(create_authid_str_from(&user_itr));
+      if (role_it != g_authid_to_vertex->end()) {
+        ACL_USER *acl_role =
+            find_acl_user(user_itr.host.get_host(), user_itr.user, true);
+        DBUG_ASSERT(acl_role != nullptr);
+        update_role_flag_of_acl_user(role_it->second, acl_role);
+      }
+    }
   }
   // Remove all default role policies assigned to this authid.
   clear_default_roles(thd, defaults_table, authid_user, 0);
@@ -778,7 +797,8 @@ void make_database_privilege_statement(THD *thd, ACL_USER *role,
     db.append(STRING_WITH_LEN(" ON "));
     append_identifier(thd, &db, db_name.c_str(), db_name.length());
     db.append(STRING_WITH_LEN(".* TO "));
-    append_identifier(thd, &db, role->user, strlen(role->user));
+    append_identifier(thd, &db, role->user,
+                      role->user ? strlen(role->user) : 0);
     db.append('@');
     // host and lex_user->host are equal except for case
     append_identifier(thd, &db, role->host.get_host(),
@@ -817,7 +837,8 @@ void make_database_privilege_statement(THD *thd, ACL_USER *role,
     db.append(STRING_WITH_LEN(" ON "));
     append_identifier(thd, &db, db_name.c_str(), db_name.length());
     db.append(STRING_WITH_LEN(".* TO "));
-    append_identifier(thd, &db, role->user, strlen(role->user));
+    append_identifier(thd, &db, role->user,
+                      role->user ? strlen(role->user) : 0);
     db.append('@');
     // host and lex_user->host are equal except for case
     append_identifier(thd, &db, role->host.get_host(),
@@ -901,7 +922,8 @@ void make_sp_privilege_statement(THD *thd, ACL_USER *role, Protocol *protocol,
       db.append(STRING_WITH_LEN("FUNCTION "));
     db.append(sp_name.c_str(), sp_name.length());
     db.append(STRING_WITH_LEN(" TO "));
-    append_identifier(thd, &db, role->user, strlen(role->user));
+    append_identifier(thd, &db, role->user,
+                      role->user ? strlen(role->user) : 0);
     db.append(STRING_WITH_LEN("@"));
     // host and lex_user->host are equal except for case
     append_identifier(thd, &db, role->host.get_host(),
@@ -1058,7 +1080,8 @@ void make_roles_privilege_statement(THD *thd, ACL_USER *role,
   }  // end while
   if (found) {
     global.append(STRING_WITH_LEN(" TO "));
-    append_identifier(thd, &global, role->user, strlen(role->user));
+    append_identifier(thd, &global, role->user,
+                      role->user ? strlen(role->user) : 0);
     global.append('@');
     append_identifier(thd, &global, role->host.get_host(),
                       role->host.get_host_len());
@@ -1712,7 +1735,7 @@ bool check_routine_access(THD *thd, ulong want_access, const char *db,
   DBUG_ENTER("check_routine_access");
   TABLE_LIST tables[1];
 
-  memset(tables, 0, sizeof(TABLE_LIST));
+  new (&tables[0]) TABLE_LIST();
   tables->db = db;
   tables->db_length = strlen(db);
   tables->table_name = tables->alias = name;
@@ -4746,7 +4769,7 @@ bool sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
 found_acl:
   acl_cache_lock.unlock();
 
-  memset(tables, 0, sizeof(TABLE_LIST));
+  new (&tables[0]) TABLE_LIST();
   user_list.empty();
 
   tables->db = (char *)sp_db;
@@ -5599,18 +5622,21 @@ void func_current_role(THD *thd, String *active_role) {
   Shallow copy a list of default role authorization IDs from an Role_id storage
 
   @param acl_user A valid authID for which we want the default roles.
-  @param [out] authlist The target list to be populated. Optional if 0
-
+  @param [out] authlist The target list to be populated. The target list is set
+                        to empty if no default role is found.
 */
-
 void get_default_roles(const Auth_id_ref &acl_user,
-                       List_of_auth_id_refs *authlist) {
+                       List_of_auth_id_refs &authlist) {
+  if (g_default_roles == nullptr) return;
+
+  authlist.clear();  // Remove all items
+
   Role_id user(acl_user);
   Default_roles::iterator role_it, role_end;
   boost::tie(role_it, role_end) = g_default_roles->equal_range(user);
   for (; role_it != role_end; ++role_it) {
     Auth_id_ref ref = create_authid_from(role_it->second);
-    authlist->push_back(ref);
+    authlist.push_back(ref);
   }
 }
 
@@ -6024,7 +6050,7 @@ int mysql_set_role_default(THD *thd) {
     Search global structure for target user;
     authids have their own memory storage (Role_id)
   */
-  get_default_roles(current_user_authid, &authids);
+  get_default_roles(current_user_authid, authids);
   if (authids.size() > 0) {
     List_of_auth_id_refs::iterator it = authids.begin();
     for (; it != authids.end() && ret == 0; ++it) {
@@ -6380,6 +6406,55 @@ bool revoke_grant_option_for_all_dynamic_privileges(
 }
 
 /**
+  Grant nedded dynamic privielges to in memory internal auth id.
+
+  @param id            auth id to which privileges needs to be granted
+  @param priv_list     List of privileges to be added to internal auth id
+
+  @return
+    True    In case privilege is not registered
+    False   Success
+*/
+bool grant_dynamic_privileges_to_auth_id(
+    const Role_id &id, const std::vector<std::string> &priv_list) {
+  DBUG_ENTER("grant_dynamic_privileges_to_auth_id");
+  Update_dynamic_privilege_table update_table;
+
+  /* --skip-grants */
+  if (!initialized) DBUG_RETURN(false);
+  for (auto it : priv_list) {
+    LEX_CSTRING priv = {it.c_str(), it.length()};
+    LEX_CSTRING user = {id.user().c_str(), id.user().length()};
+    LEX_CSTRING host = {id.host().c_str(), id.host().length()};
+    if (grant_dynamic_privilege(priv, user, host, false, update_table))
+      DBUG_RETURN(true);
+  }
+  DBUG_RETURN(false);
+}
+
+/**
+  Revoke dynamic privielges from in memory internal auth id.
+
+  @param id            auth id from which privileges needs to be revoked
+  @param priv_list     List of privileges to be removed for internal auth id
+
+  @return None
+*/
+void revoke_dynamic_privileges_from_auth_id(
+    const Role_id &id, const std::vector<std::string> &priv_list) {
+  DBUG_ENTER("revoke_dynamic_privileges_from_auth_id");
+  if (!initialized) DBUG_VOID_RETURN;
+  Update_dynamic_privilege_table update_table;
+  for (auto priv_it : priv_list) {
+    LEX_CSTRING user = {id.user().c_str(), id.user().length()};
+    LEX_CSTRING host = {id.host().c_str(), id.host().length()};
+    LEX_CSTRING priv = {priv_it.c_str(), priv_it.length()};
+    revoke_dynamic_privilege(priv, user, host, update_table);
+  }
+  DBUG_VOID_RETURN;
+}
+
+/**
   Revoke one privilege from one user
   @param str_priv
   @param str_user
@@ -6645,6 +6720,97 @@ void update_mandatory_roles(void) {
   mysql_mutex_assert_owner(&LOCK_mandatory_roles);
   opt_mandatory_roles_cache = false;
   get_global_acl_cache()->increase_version();
+}
+
+Default_local_authid::Default_local_authid(const THD *thd) : m_thd(thd) {}
+
+/**
+ Check if the security context can be created as a local authid
+ @param[out] sctx The authid to be checked.
+ @return Success status
+  @retval true an error occurred
+  @retval false success
+*/
+bool Default_local_authid::precheck(
+    Security_context *sctx MY_ATTRIBUTE((unused))) {
+  return false;
+}
+
+/**
+ Create a local authid without modifying any tables.
+ @param[out] sctx The authid that will be extended with a user profile
+ @return Success status
+  @retval true an error occurred
+  @retval false success
+*/
+bool Default_local_authid::create(
+    Security_context *sctx MY_ATTRIBUTE((unused))) {
+  return false;
+}
+
+Grant_temporary_dynamic_privileges::Grant_temporary_dynamic_privileges(
+    const THD *thd, const std::vector<std::string> privs)
+    : m_thd(thd), m_privs(privs) {}
+
+bool Grant_temporary_dynamic_privileges::precheck(
+    Security_context *sctx MY_ATTRIBUTE((unused))) {
+  return false;
+}
+
+/**
+ Grant dynamic privileges to an in-memory global authid
+ @param sctx The authid to grant privileges to.
+ @return Success status
+  @retval true an error occurred
+  @retval false success
+ */
+bool Grant_temporary_dynamic_privileges::grant_privileges(
+    Security_context *sctx) {
+  return grant_dynamic_privileges_to_auth_id(
+      Role_id(sctx->priv_user(), sctx->priv_host()), m_privs);
+}
+
+void Drop_temporary_dynamic_privileges::operator()(Security_context *sctx) {
+  revoke_dynamic_privileges_from_auth_id(
+      Role_id(sctx->priv_user(), sctx->priv_host()), m_privs);
+}
+
+Sctx_ptr<Security_context> Security_context_factory::create() {
+  /* Setup default Security context */
+  Security_context *sctx = new Security_context();
+  sctx->init();
+  sctx->assign_user(m_user.c_str(), m_user.length());
+  sctx->assign_host(m_host.c_str(), m_host.length());
+  sctx->assign_priv_user(m_user.c_str(), m_user.length());
+  sctx->assign_priv_host(m_host.c_str(), m_host.length());
+
+  bool error = true;
+  while (error) {
+    // 1. Precheck conditions for creating the authid under current policy
+    if (m_user_profile(sctx, Security_context_policy::Precheck)) break;
+    // 2. Create the authid under the given policy
+    if (m_user_profile(sctx, Security_context_policy::Execute)) break;
+    // 3. Check preconditions for assigning privileges under the current policy
+    if (m_privileges(sctx, Security_context_policy::Precheck)) break;
+    // 4. Assign the privileges
+    if (m_privileges(sctx, Security_context_policy::Execute)) break;
+
+    error = false;
+  }
+
+  /* 5. check if policy still holds. */
+  if (error) {
+    /* Each specific policy must raise its own errors */
+    return nullptr;
+  }
+
+  sctx->set_drop_policy(m_drop_policy);
+  return Sctx_ptr<Security_context>(sctx, [](Security_context *sctx) {
+    if (sctx->has_drop_policy()) {
+      sctx->execute_drop_policy();
+      if (sctx->has_executed_drop_policy()) delete sctx;
+    }
+  });
 }
 
 bool operator==(const Role_id &a, const std::string &b) {

@@ -487,17 +487,24 @@ INSERT INTO t1 VALUES ( regexp_like('a', 'a'),
 SELECT * FROM t1;
 DELETE FROM t1;
 
-INSERT INTO t1 VALUES ( regexp_replace('a', 'a', 'a'),
-                        regexp_replace('a', 'a', 'a'),
-                        regexp_replace('a', 'a', 'a'),
-                        regexp_replace('a', 'a', 'a') );
+--error 1265
+INSERT INTO t1 ( a ) VALUES ( regexp_replace('a', 'a', 'a') );
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+INSERT INTO t1 ( b ) VALUES ( regexp_replace('a', 'a', 'a') );
+INSERT INTO t1 ( c ) VALUES ( regexp_replace('a', 'a', 'a') );
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+INSERT INTO t1 ( d ) VALUES ( regexp_replace('a', 'a', 'a') );
+
 SELECT * FROM t1;
 DELETE FROM t1;
 
-INSERT INTO t1 VALUES ( regexp_substr('a', 'a'),
-                        regexp_substr('a', 'a'),
-                        regexp_substr('a', 'a'),
-                        regexp_substr('a', 'a') );
+--error 1265
+INSERT INTO t1 ( a ) VALUES ( regexp_substr('a', 'a') );
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+INSERT INTO t1 ( b ) VALUES ( regexp_substr('a', 'a') );
+INSERT INTO t1 ( c ) VALUES ( regexp_substr('a', 'a') );
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+INSERT INTO t1 ( d ) VALUES ( regexp_substr('a', 'a') );
 SELECT * FROM t1;
 
 DROP TABLE t1;
@@ -691,14 +698,64 @@ SELECT regexp_like( repeat(@v1, 'abc'), 'abc' );
 --echo #
 
 --error ER_REGEXP_INVALID_CAPTURE_GROUP_NAME
-SELECT regexp_replace((' F' ) ,'^ ','[,$' );
+SELECT regexp_replace( 'abc' , 'abc', '$abc' );
+
+--echo #
+--echo # Bug#27595368: ASSERTION FAILED: 0 IN ITEM_PARAM::VAL_REAL WITH
+--echo # PREPARED STATEMENT
+--echo #
+
+SET @s := "SELECT regexp_like( '', '', ? / '' )";
+PREPARE stmt FROM @s;
+--error ER_WRONG_ARGUMENTS
+EXECUTE stmt;
+--error ER_WRONG_ARGUMENTS
+EXECUTE stmt;
+
+CREATE TABLE t1 ( match_parameter CHAR(1) );
+INSERT INTO t1 VALUES ( 'i' ), ( 'c' ), ( 'i' ), ( 'c' );
+SELECT match_parameter, regexp_like ( 'a', 'A', match_parameter ) FROM t1;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#27612255: VALGRIND WARNING ON INVALID CAPTURE GROUP
+--echo #
+
 --error ER_REGEXP_INVALID_CAPTURE_GROUP_NAME
-SELECT regexp_replace(24031 ,''*' ','$>$' );
---error ER_REGEXP_INVALID_CAPTURE_GROUP_NAME
-SELECT regexp_replace('e C' ,'. ','$ ' );
---error ER_REGEXP_INVALID_CAPTURE_GROUP_NAME
-SELECT regexp_replace('%* ' ,'. ',' A*#$?$@^-' );
---error ER_REGEXP_INVALID_CAPTURE_GROUP_NAME
-SELECT regexp_replace(' 0(' ,'^ ','3$!' );
+SELECT regexp_replace( ' F' , '^ ', '[,$' );
+
+--echo #
+--echo # Bug#27751277: ASSERTION FALSE IN REGEXP::CHECK_ICU_STATUS
+--echo #
+
+--error ER_REGEXP_INVALID_FLAG
+SELECT regexp_instr( 'abc', '(?-' );
+
+--echo #
+--echo # Bug#27992118: REGEXP_REPLACE ACCUMULATING RESULT
+--echo #
+
+CREATE TABLE t1 ( a VARCHAR(10) );
+INSERT INTO t1 VALUES ('a a a'), ('b b b'), ('c c c');
+SELECT regexp_replace(a, '^([[:alpha:]]+)[[:space:]].*$', '$1') FROM t1;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#28027093: REGEXP_REPLACE TRUNCATE UPDATE
+--echo #
+
+CREATE TABLE t1 ( a CHAR(3) );
+INSERT INTO t1 VALUES ( regexp_replace ('a', 'a', 'x') );
+SELECT * FROM t1;
+UPDATE t1 SET a = regexp_replace ( 'b', 'b', 'y' );
+SELECT * FROM t1;
+DROP TABLE t1;
+
+CREATE TABLE t1 ( a CHAR(3) );
+INSERT INTO t1 VALUES ( regexp_substr ('a', 'a', 1) );
+SELECT * FROM t1;
+UPDATE t1 SET a = regexp_substr ('b', 'b', 1);
+SELECT * FROM t1;
+DROP TABLE t1;
 
 --source ../mysql-test/include/cleanup_icu_utils.inc

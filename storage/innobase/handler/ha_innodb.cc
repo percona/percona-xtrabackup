@@ -2473,6 +2473,7 @@ additionally freed from all association with MYSQL.
 @param[in,out]	ptr_trx_arg	pointer to a buffer to store old trx_t */
 static void innodb_replace_trx_in_thd(THD *thd, void *new_trx_arg,
                                       void **ptr_trx_arg) {
+  DBUG_ENTER("innodb_replace_trx_in_thd");
   trx_t *&trx = thd_to_trx(thd);
 
   ut_ad(new_trx_arg == NULL || (((trx_t *)new_trx_arg)->mysql_thd == thd &&
@@ -2483,15 +2484,18 @@ static void innodb_replace_trx_in_thd(THD *thd, void *new_trx_arg,
 
     ut_ad(trx == NULL || (trx->mysql_thd == thd && !trx->is_recovered));
 
-  } else if (trx->state == TRX_STATE_NOT_STARTED) {
-    ut_ad(thd == trx->mysql_thd);
-    trx_free_for_mysql(trx);
-  } else {
-    ut_ad(thd == trx->mysql_thd);
-    ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
-    trx_disconnect_prepared(trx);
+  } else if (trx != nullptr) {
+    if (trx->state == TRX_STATE_NOT_STARTED) {
+      ut_ad(thd == trx->mysql_thd);
+      trx_free_for_mysql(trx);
+    } else {
+      ut_ad(thd == trx->mysql_thd);
+      ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
+      trx_disconnect_prepared(trx);
+    }
   }
   trx = static_cast<trx_t *>(new_trx_arg);
+  DBUG_VOID_RETURN;
 }
 
 /** Note that a transaction has been registered with MySQL 2PC coordinator. */
@@ -3566,7 +3570,8 @@ bool innobase_encryption_key_rotation() {
 
 /** Return partitioning flags. */
 static uint innobase_partition_flags() {
-  return (HA_CAN_EXCHANGE_PARTITION | HA_CANNOT_PARTITION_FK);
+  return (HA_CAN_EXCHANGE_PARTITION | HA_CANNOT_PARTITION_FK |
+          HA_TRUNCATE_PARTITION_PRECLOSE);
 }
 #endif /* !UNIV_HOTBACKUP */
 
@@ -4173,6 +4178,8 @@ static int innodb_init(void *p) {
   innobase_hton->clone_interface.clone_apply_begin = innodb_clone_apply_begin;
   innobase_hton->clone_interface.clone_apply = innodb_clone_apply;
   innobase_hton->clone_interface.clone_apply_end = innodb_clone_apply_end;
+
+  innobase_hton->foreign_keys_flags = HTON_FKS_WITH_PREFIX_PARENT_KEYS;
 
   ut_a(DATA_MYSQL_TRUE_VARCHAR == (ulint)MYSQL_TYPE_VARCHAR);
 
@@ -6078,9 +6085,7 @@ int ha_innobase::open(const char *name, int, uint open_flags,
         ib_table = nullptr;
         cached = true;
       } else if (ib_table->refresh_fk) {
-        ib_table->lock();
-        ib_table->acquire();
-        ib_table->unlock();
+        ib_table->acquire_with_lock();
 
         dict_names_t fk_tables;
         mutex_exit(&dict_sys->mutex);
@@ -6113,9 +6118,7 @@ int ha_innobase::open(const char *name, int, uint open_flags,
           dict_table_remove_from_cache(ib_table);
           ib_table = nullptr;
         } else {
-          ib_table->lock();
-          ib_table->acquire();
-          ib_table->unlock();
+          ib_table->acquire_with_lock();
         }
       }
 
@@ -6590,10 +6593,18 @@ handler *ha_innobase::clone(const char *name,   /*!< in: table name */
   DBUG_RETURN(new_handler);
 }
 
-uint ha_innobase::max_supported_key_part_length() const {
+uint ha_innobase::max_supported_key_part_length(
+    HA_CREATE_INFO *create_info) const {
   /* A table format specific index column length check will be performed
   at ha_innobase::add_index() and row_create_index_for_mysql() */
-  return (REC_VERSION_56_MAX_INDEX_COL_LEN);
+  switch (create_info->row_type) {
+    case ROW_TYPE_REDUNDANT:
+    case ROW_TYPE_COMPACT:
+      return (REC_ANTELOPE_MAX_INDEX_COL_LEN - 1);
+      break;
+    default:
+      return (REC_VERSION_56_MAX_INDEX_COL_LEN);
+  }
 }
 
 /** Closes a handle to an InnoDB table.
@@ -7457,7 +7468,7 @@ dberr_t ha_innobase::innobase_lock_autoinc(void) {
 
         /* We need to check that another transaction isn't
         already holding the AUTOINC lock on the table. */
-        if (ib_table->n_waiting_or_granted_auto_inc_locks) {
+        if (ib_table->count_by_mode[LOCK_AUTO_INC]) {
           /* Release the mutex to avoid deadlocks. */
           dict_table_autoinc_unlock(ib_table);
         } else {
@@ -12077,13 +12088,11 @@ template int innobase_basic_ddl::create_impl<dd::Partition>(
 @param[in,out]	thd		THD object
 @param[in]	name		table name
 @param[in]	dd_tab		dd::Table describing table to be dropped
-@param[in]	sqlcom		type of operation that the DROP is part of
 @return	error number
 @retval 0 on success */
 template <typename Table>
 int innobase_basic_ddl::delete_impl(THD *thd, const char *name,
-                                    const Table *dd_tab,
-                                    enum enum_sql_command sqlcom) {
+                                    const Table *dd_tab) {
   dberr_t error = DB_SUCCESS;
   char norm_name[FN_REFLEN];
 
@@ -12155,7 +12164,7 @@ int innobase_basic_ddl::delete_impl(THD *thd, const char *name,
     }
   }
 
-  error = row_drop_table_for_mysql(norm_name, trx, sqlcom, true, handler);
+  error = row_drop_table_for_mysql(norm_name, trx, true, handler);
 
   if (handler != nullptr && error == DB_SUCCESS) {
     priv->unregister_table_handler(norm_name);
@@ -12175,11 +12184,10 @@ int innobase_basic_ddl::delete_impl(THD *thd, const char *name,
 }
 
 template int innobase_basic_ddl::delete_impl<dd::Table>(THD *, const char *,
-                                                        const dd::Table *,
-                                                        enum enum_sql_command);
+                                                        const dd::Table *);
 
 template int innobase_basic_ddl::delete_impl<dd::Partition>(
-    THD *, const char *, const dd::Partition *, enum enum_sql_command);
+    THD *, const char *, const dd::Partition *);
 
 /** Renames an InnoDB table.
 @tparam		Table		dd::Table or dd::Partition
@@ -12388,6 +12396,10 @@ int innobase_truncate<Table>::prepare() {
     mutex_exit(&dict_sys->mutex);
   }
 
+  if (!dict_table_has_autoinc_col(m_table)) {
+    m_keep_autoinc = false;
+  }
+
   return (error);
 }
 
@@ -12395,6 +12407,8 @@ template <typename Table>
 int innobase_truncate<Table>::truncate() {
   int error = 0;
   bool reset = false;
+  uint64_t autoinc = 0;
+  uint64_t autoinc_persisted = 0;
 
   /* Rename tablespace file to avoid existing file in create. */
   if (m_file_per_table) {
@@ -12407,13 +12421,17 @@ int innobase_truncate<Table>::truncate() {
     return (error);
   }
 
+  if (m_keep_autoinc) {
+    autoinc_persisted = m_table->autoinc_persisted;
+    autoinc = m_table->autoinc;
+  }
+
   dd_table_close(m_table, m_thd, nullptr, false);
   m_table = nullptr;
 
   DBUG_EXECUTE_IF("ib_truncate_crash_after_rename", DBUG_SUICIDE(););
 
-  error = innobase_basic_ddl::delete_impl(m_thd, m_name, m_dd_table,
-                                          SQLCOM_TRUNCATE);
+  error = innobase_basic_ddl::delete_impl(m_thd, m_name, m_dd_table);
 
   DBUG_EXECUTE_IF("ib_truncate_fail_after_delete", error = HA_ERR_GENERIC;);
 
@@ -12455,6 +12473,12 @@ int innobase_truncate<Table>::truncate() {
     m_table = dict_table_check_if_in_cache_low(m_name);
     ut_ad(m_table != nullptr);
     m_table->acquire();
+
+    if (m_keep_autoinc) {
+      m_table->autoinc_persisted = autoinc_persisted;
+      m_table->autoinc = autoinc;
+    }
+
     mutex_exit(&dict_sys->mutex);
   }
 
@@ -12523,8 +12547,8 @@ void innobase_truncate<Table>::cleanup() {
     m_table = dd_table_open_on_name_in_mem(m_name, false);
   }
 
-  if (m_table != nullptr && !m_table->is_temporary()) {
-    m_table->discard_after_ddl = true;
+  if (m_table != nullptr) {
+    m_table->trunc_name.m_name = nullptr;
   }
 
   char *tablespace = const_cast<char *>(m_create_info.tablespace);
@@ -13063,82 +13087,6 @@ int ha_innobase::discard_or_import_tablespace(bool discard,
   DBUG_RETURN(convert_error_code_to_mysql(err, dict_table->flags, NULL));
 }
 
-/** Rename tablespace file name for truncate
-@param[in]	name	Table name
-@return	0 on success, error code on failure */
-int ha_innobase::truncate_rename_tablespace(const char *name) {
-  char norm_name[FN_REFLEN];
-  dict_table_t *table;
-
-  normalize_table_name(norm_name, name);
-  table = dd_table_open_on_name_in_mem(norm_name, false);
-
-  ut_ad(table != nullptr);
-  ut_ad(dict_table_is_file_per_table(table));
-  ut_ad(!table->is_temporary());
-  ut_ad(table->trunc_name.m_name == nullptr);
-
-  lint old_size = mem_heap_get_size(table->heap);
-
-  char *temp_name = nullptr;
-  temp_name = dict_mem_create_temporary_tablename(
-      table->heap, table->name.m_name, table->id);
-
-  lint new_size = mem_heap_get_size(table->heap);
-
-  mutex_enter(&dict_sys->mutex);
-  dict_sys->size += new_size - old_size;
-  mutex_exit(&dict_sys->mutex);
-
-  char *old_path = nullptr;
-
-  old_path = fil_space_get_first_path(table->space);
-
-  std::string new_path;
-
-  if (DICT_TF_HAS_DATA_DIR(table->flags)) {
-    new_path = Fil_path::make_new_ibd(old_path, temp_name);
-
-  } else {
-    char *ptr = Fil_path::make_ibd_from_table_name(temp_name);
-
-    new_path.assign(ptr);
-
-    ut_free(ptr);
-  }
-
-  /* New filepath must not exist. */
-  dberr_t err = fil_rename_tablespace_check(table->space, old_path,
-                                            new_path.c_str(), false);
-
-  if (err == DB_SUCCESS) {
-    mutex_enter(&dict_sys->mutex);
-
-    clone_mark_abort(true);
-
-    bool success = fil_rename_tablespace(table->space, old_path, temp_name,
-                                         new_path.c_str());
-
-    clone_mark_active();
-
-    mutex_exit(&dict_sys->mutex);
-
-    if (!success) {
-      err = DB_ERROR;
-    }
-  }
-
-  if (err == DB_SUCCESS) {
-    table->trunc_name.m_name = temp_name;
-  }
-
-  ut_free(old_path);
-
-  dd_table_close(table, nullptr, nullptr, false);
-
-  return (convert_error_code_to_mysql(err, table->flags, nullptr));
-}
-
 int ha_innobase::truncate_impl(const char *name, TABLE *form,
                                dd::Table *table_def) {
   DBUG_ENTER("ha_innobase::truncate_impl");
@@ -13163,7 +13111,8 @@ int ha_innobase::truncate_impl(const char *name, TABLE *form,
 
   normalize_table_name(norm_name, name);
 
-  innobase_truncate<dd::Table> truncator(thd, norm_name, form, table_def);
+  innobase_truncate<dd::Table> truncator(thd, norm_name, form, table_def,
+                                         false);
 
   error = truncator.open_table(innodb_table);
 
@@ -13185,8 +13134,14 @@ int ha_innobase::truncate_impl(const char *name, TABLE *form,
 
   error = truncator.exec();
 
-  if (error == 0 && has_autoinc) {
-    dd_set_autoinc(table_def->se_private_data(), 0);
+  if (error == 0) {
+    if (has_autoinc) {
+      dd_set_autoinc(table_def->se_private_data(), 0);
+    }
+
+    if (dd_table_has_instant_cols(*table_def)) {
+      dd_clear_instant_table(*table_def);
+    }
   }
 
   DBUG_RETURN(error);
@@ -13207,23 +13162,12 @@ int ha_innobase::delete_table(const char *name, const dd::Table *table_def) {
 
   THD *thd = ha_thd();
   trx_t *trx = check_trx_exists(thd);
-  enum enum_sql_command sqlcom =
-      static_cast<enum enum_sql_command>(thd_sql_command(thd));
-
-  if (sqlcom == SQLCOM_TRUNCATE && thd_killed(thd) &&
-      (m_prebuilt == NULL || m_prebuilt->table->is_temporary())) {
-    sqlcom = SQLCOM_DROP_TABLE;
-  }
-
-  /* SQLCOM_TRUNCATE will not drop FOREIGN KEY constraints
-  from the data dictionary tables. */
-  DBUG_ASSERT(sqlcom != SQLCOM_TRUNCATE);
 
   if (table_def != nullptr && table_def->is_persistent()) {
     innobase_register_trx(ht, thd, trx);
   }
 
-  return (innobase_basic_ddl::delete_impl(thd, name, table_def, sqlcom));
+  return (innobase_basic_ddl::delete_impl(thd, name, table_def));
 }
 
 /** Validate the parameters in st_alter_tablespace
@@ -14082,8 +14026,6 @@ static int innobase_get_mysql_key_number_for_index(
   }
 
   ut_error;
-
-  return (-1);
 }
 
 /** Calculate Record Per Key value. Excludes the NULL value if
@@ -18287,18 +18229,16 @@ exit:
 
 #ifdef _WIN32
 /** Validate if passed-in "value" is a valid value for
- innodb_buffer_pool_filename. On Windows, file names with colon (:)
- are not allowed.
-
- @return 0 for valid name */
-static int innodb_srv_buf_dump_filename_validate(
-    THD *thd,                     /*!< in: thread handle */
-    SYS_VAR *var,                 /*!< in: pointer to system
-                                                  variable */
-    void *save,                   /*!< out: immediate result
-                                  for update function */
-    struct st_mysql_value *value) /*!< in: incoming string */
-{
+innodb_buffer_pool_filename. On Windows, file names with colon (:)
+are not allowed.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[in]  save      immediate result from update function
+@param[in]  value     incoming string
+@return 0 for valid name */
+static int innodb_srv_buf_dump_filename_validate(THD *thd, SYS_VAR *var,
+                                                 void *save,
+                                                 struct st_mysql_value *value) {
   char buff[OS_FILE_MAX_PATH];
   int len = sizeof(buff);
 
@@ -18365,16 +18305,15 @@ static MY_ATTRIBUTE(
 }
 
 /** Called on SET GLOBAL innodb_buffer_pool_evict=...
- Handles some values specially, to evict pages from the buffer pool.
- SET GLOBAL innodb_buffer_pool_evict='uncompressed'
- evicts all uncompressed page frames of compressed tablespaces. */
-static void innodb_buffer_pool_evict_update(
-    THD *thd,         /*!< in: thread handle */
-    SYS_VAR *var,     /*!< in: pointer to system variable */
-    void *var_ptr,    /*!< out: ignored */
-    const void *save) /*!< in: immediate result
-                      from check function */
-{
+Handles some values specially, to evict pages from the buffer pool.
+SET GLOBAL innodb_buffer_pool_evict='uncompressed'
+evicts all uncompressed page frames of compressed tablespaces.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   ignored
+@param[in]  save      immediate result from check function */
+static void innodb_buffer_pool_evict_update(THD *thd, SYS_VAR *var,
+                                            void *var_ptr, const void *save) {
   if (const char *op = *static_cast<const char *const *>(save)) {
     if (!strcmp(op, "uncompressed")) {
       for (uint tries = 0; tries < 10000; tries++) {
@@ -18393,71 +18332,59 @@ static void innodb_buffer_pool_evict_update(
 #endif /* UNIV_DEBUG */
 
 /** Update the system variable innodb_monitor_enable and enable
- specified monitor counter.
- This function is registered as a callback with MySQL. */
-static void innodb_enable_monitor_update(
-    THD *thd,         /*!< in: thread handle */
-    SYS_VAR *var,     /*!< in: pointer to
-                                      system variable */
-    void *var_ptr,    /*!< out: where the
-                      formal string goes */
-    const void *save) /*!< in: immediate result
-                      from check function */
-{
+specified monitor counter.
+This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void innodb_enable_monitor_update(THD *thd, SYS_VAR *var, void *var_ptr,
+                                         const void *save) {
   innodb_monitor_update(thd, var_ptr, save, MONITOR_TURN_ON, TRUE);
 }
 
 /** Update the system variable innodb_monitor_disable and turn
- off specified monitor counter. */
-static void innodb_disable_monitor_update(
-    THD *thd,         /*!< in: thread handle */
-    SYS_VAR *var,     /*!< in: pointer to
-                                      system variable */
-    void *var_ptr,    /*!< out: where the
-                      formal string goes */
-    const void *save) /*!< in: immediate result
-                      from check function */
-{
+off specified monitor counter.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void innodb_disable_monitor_update(THD *thd, SYS_VAR *var, void *var_ptr,
+                                          const void *save) {
   innodb_monitor_update(thd, var_ptr, save, MONITOR_TURN_OFF, TRUE);
 }
 
 /** Update the system variable innodb_monitor_reset and reset
- specified monitor counter(s).
- This function is registered as a callback with MySQL. */
-static void innodb_reset_monitor_update(
-    THD *thd,         /*!< in: thread handle */
-    SYS_VAR *var,     /*!< in: pointer to
-                                      system variable */
-    void *var_ptr,    /*!< out: where the
-                      formal string goes */
-    const void *save) /*!< in: immediate result
-                      from check function */
-{
+specified monitor counter(s).
+This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void innodb_reset_monitor_update(THD *thd, SYS_VAR *var, void *var_ptr,
+                                        const void *save) {
   innodb_monitor_update(thd, var_ptr, save, MONITOR_RESET_VALUE, TRUE);
 }
 
 /** Update the system variable innodb_monitor_reset_all and reset
- all value related monitor counter.
- This function is registered as a callback with MySQL. */
-static void innodb_reset_all_monitor_update(
-    THD *thd,         /*!< in: thread handle */
-    SYS_VAR *var,     /*!< in: pointer to
-                                      system variable */
-    void *var_ptr,    /*!< out: where the
-                      formal string goes */
-    const void *save) /*!< in: immediate result
-                      from check function */
-{
+all value related monitor counter.
+This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void innodb_reset_all_monitor_update(THD *thd, SYS_VAR *var,
+                                            void *var_ptr, const void *save) {
   innodb_monitor_update(thd, var_ptr, save, MONITOR_RESET_ALL_VALUE, TRUE);
 }
 
 /** Update the number of undo tablespaces active when the system variable
 innodb_undo_tablespaces is changed.
 This function is registered as a callback with MySQL.
-@param[in]	thd		thread handle
-@param[in]	var		pointer to system variable
-@param[in]	var_ptr		where the formal string goes
-@param[in]	save		immediate result from check function */
+@param[in]	thd       thread handle
+@param[in]	var       pointer to system variable
+@param[in]	var_ptr   where the formal string goes
+@param[in]	save      immediate result from check function */
 static void innodb_undo_tablespaces_update(THD *thd, SYS_VAR *var,
                                            void *var_ptr, const void *save) {
   ulong target = *static_cast<const ulong *>(save);
@@ -18490,10 +18417,10 @@ static void innodb_undo_tablespaces_update(THD *thd, SYS_VAR *var,
 /** Update the number of rollback segments per tablespace when the
 system variable innodb_rollback_segments is changed.
 This function is registered as a callback with MySQL.
-@param[in]	thd		thread handle
-@param[in]	var		pointer to system variable
-@param[in]	var_ptr		where the formal string goes
-@param[in]	save		immediate result from check function */
+@param[in]	thd       thread handle
+@param[in]	var       pointer to system variable
+@param[in]	var_ptr   where the formal string goes
+@param[in]	save      immediate result from check function */
 static void innodb_rollback_segments_update(THD *thd, SYS_VAR *var,
                                             void *var_ptr, const void *save) {
   ulong target = *static_cast<const ulong *>(save);
@@ -18654,75 +18581,62 @@ static bool innodb_background_drop_list_empty = TRUE;
 static bool innodb_purge_run_now = TRUE;
 static bool innodb_purge_stop_now = TRUE;
 static bool innodb_log_checkpoint_now = TRUE;
+static bool innodb_log_checkpoint_fuzzy_now = TRUE;
 static bool innodb_buf_flush_list_now = TRUE;
 static uint innodb_merge_threshold_set_all_debug =
     DICT_INDEX_MERGE_THRESHOLD_DEFAULT;
 
-/** Wait for the background drop list to become empty. */
+/** Wait for the background drop list to become empty.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
 static void wait_background_drop_list_empty(
-    THD *thd /*!< in: thread handle */
-        MY_ATTRIBUTE((unused)),
-    SYS_VAR *var /*!< in: pointer to system
-                                 variable */
-        MY_ATTRIBUTE((unused)),
-    void *var_ptr /*!< out: where the formal
-                  string goes */
-
-        MY_ATTRIBUTE((unused)),
-    const void *save) /*!< in: immediate result from
-                      check function */
-{
+    THD *thd MY_ATTRIBUTE((unused)), SYS_VAR *var MY_ATTRIBUTE((unused)),
+    void *var_ptr MY_ATTRIBUTE((unused)), const void *save) {
   row_wait_for_background_drop_list_empty();
 }
 
 /** Set the purge state to RUN. If purge is disabled then it
- is a no-op. This function is registered as a callback with MySQL. */
-static void purge_run_now_set(THD *thd /*!< in: thread handle */
-                                  MY_ATTRIBUTE((unused)),
-                              SYS_VAR *var /*!< in: pointer to system
-                                                           variable */
-                                  MY_ATTRIBUTE((unused)),
-                              void *var_ptr /*!< out: where the formal
-                                            string goes */
-                                  MY_ATTRIBUTE((unused)),
-                              const void *save) /*!< in: immediate result from
-                                                check function */
-{
+is a no-op. This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void purge_run_now_set(THD *thd MY_ATTRIBUTE((unused)),
+                              SYS_VAR *var MY_ATTRIBUTE((unused)),
+                              void *var_ptr MY_ATTRIBUTE((unused)),
+                              const void *save) {
   if (*(bool *)save && trx_purge_state() != PURGE_STATE_DISABLED) {
     trx_purge_run();
   }
 }
 
 /** Set the purge state to STOP. If purge is disabled then it
- is a no-op. This function is registered as a callback with MySQL. */
-static void purge_stop_now_set(THD *thd /*!< in: thread handle */
-                                   MY_ATTRIBUTE((unused)),
-                               SYS_VAR *var /*!< in: pointer to system
-                                                            variable */
-                                   MY_ATTRIBUTE((unused)),
-                               void *var_ptr /*!< out: where the formal
-                                             string goes */
-                                   MY_ATTRIBUTE((unused)),
-                               const void *save) /*!< in: immediate result from
-                                                 check function */
-{
+is a no-op. This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void purge_stop_now_set(THD *thd MY_ATTRIBUTE((unused)),
+                               SYS_VAR *var MY_ATTRIBUTE((unused)),
+                               void *var_ptr MY_ATTRIBUTE((unused)),
+                               const void *save) {
   if (*(bool *)save && trx_purge_state() != PURGE_STATE_DISABLED) {
     trx_purge_stop();
   }
 }
 
-/** Force innodb to checkpoint. */
-static void checkpoint_now_set(THD *thd /*!< in: thread handle */
-                                   MY_ATTRIBUTE((unused)),
-                               SYS_VAR *var /*!< in: pointer to system
-                                                            variable */
-                                   MY_ATTRIBUTE((unused)),
-                               void *var_ptr /*!< out: where the formal
-                                             string goes */
-                                   MY_ATTRIBUTE((unused)),
-                               const void *save) /*!< in: immediate result from
-                                                 check function */
-{
+/** Force InnoDB to do sharp checkpoint. This forces a flush of all
+dirty pages.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void checkpoint_now_set(THD *thd MY_ATTRIBUTE((unused)),
+                               SYS_VAR *var MY_ATTRIBUTE((unused)),
+                               void *var_ptr MY_ATTRIBUTE((unused)),
+                               const void *save) {
   if (*(bool *)save && !srv_checkpoint_disabled) {
     /* Note that it's defined only when UNIV_DEBUG is defined.
     It seems to be very risky feature. Fortunately it is used
@@ -18740,14 +18654,36 @@ static void checkpoint_now_set(THD *thd /*!< in: thread handle */
   }
 }
 
+/** Force InnoDB to do fuzzy checkpoint. Fuzzy checkpoint does not
+force InnoDB to flush dirty pages. It only forces to write the new
+checkpoint_lsn to the header of ib_logfile0. This LSN is where the
+recovery starts. You can read more about the fuzzy checkpoints in
+the internet.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void checkpoint_fuzzy_now_set(THD *thd MY_ATTRIBUTE((unused)),
+                                     SYS_VAR *var MY_ATTRIBUTE((unused)),
+                                     void *var_ptr MY_ATTRIBUTE((unused)),
+                                     const void *save) {
+  if (*(bool *)save && !srv_checkpoint_disabled) {
+    /* Note that it's defined only when UNIV_DEBUG is defined.
+    It seems to be very risky feature. Fortunately it is used
+    only inside mtr tests. */
+
+    log_request_checkpoint(*log_sys, true);
+  }
+}
+
 /** Updates srv_checkpoint_disabled - allowing or disallowing checkpoints.
 This is called when user invokes SET GLOBAL innodb_checkpoints_disabled=0/1.
 After checkpoints are disabled, there will be no write of a checkpoint,
 until checkpoints are re-enabled (log_sys->checkpointer_mutex protects that)
-@param[in]	thd		thread handle
-@param[in]	var		pointer to system variable
-@param[out]	var_ptr		where the formal string goes
-@param[in]	save		immediate result from check function */
+@param[in]	thd		    thread handle
+@param[in]	var		    pointer to system variable
+@param[out]	var_ptr   where the formal string goes
+@param[in]	save		  immediate result from check function */
 static void checkpoint_disabled_update(THD *thd, SYS_VAR *var, void *var_ptr,
                                        const void *save) {
   /* We need to acquire the checkpointer_mutex, to ensure that
@@ -18764,19 +18700,15 @@ static void checkpoint_disabled_update(THD *thd, SYS_VAR *var, void *var_ptr,
   log_checkpointer_mutex_exit(*log_sys);
 }
 
-/** Force a dirty pages flush now. */
-static void buf_flush_list_now_set(
-    THD *thd /*!< in: thread handle */
-        MY_ATTRIBUTE((unused)),
-    SYS_VAR *var /*!< in: pointer to system
-                                 variable */
-        MY_ATTRIBUTE((unused)),
-    void *var_ptr /*!< out: where the formal
-                  string goes */
-        MY_ATTRIBUTE((unused)),
-    const void *save) /*!< in: immediate result from
-                      check function */
-{
+/** Force a dirty pages flush now.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void buf_flush_list_now_set(THD *thd MY_ATTRIBUTE((unused)),
+                                   SYS_VAR *var MY_ATTRIBUTE((unused)),
+                                   void *var_ptr MY_ATTRIBUTE((unused)),
+                                   const void *save) {
   if (*(bool *)save) {
     buf_flush_sync_all_buf_pools();
   }
@@ -18784,10 +18716,10 @@ static void buf_flush_list_now_set(
 
 /** Override current MERGE_THRESHOLD setting for all indexes at dictionary
 now.
-@param[in]	thd	thread handle
-@param[in]	var	pointer to system variable
-@param[out]	var_ptr	where the formal string goes
-@param[in]	save	immediate result from check function */
+@param[in]	thd       thread handle
+@param[in]	var       pointer to system variable
+@param[out]	var_ptr   where the formal string goes
+@param[in]	save      immediate result from check function */
 static void innodb_merge_threshold_set_all_debug_update(THD *thd, SYS_VAR *var,
                                                         void *var_ptr,
                                                         const void *save) {
@@ -18832,73 +18764,59 @@ static bool innodb_buffer_pool_load_now = FALSE;
 static bool innodb_buffer_pool_load_abort = FALSE;
 
 /** Trigger a dump of the buffer pool if innodb_buffer_pool_dump_now is set
- to ON. This function is registered as a callback with MySQL. */
-static void buffer_pool_dump_now(
-    THD *thd /*!< in: thread handle */
-        MY_ATTRIBUTE((unused)),
-    SYS_VAR *var /*!< in: pointer to system
-                                 variable */
-        MY_ATTRIBUTE((unused)),
-    void *var_ptr /*!< out: where the formal
-                  string goes */
-        MY_ATTRIBUTE((unused)),
-    const void *save) /*!< in: immediate result from
-                      check function */
-{
+to ON. This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void buffer_pool_dump_now(THD *thd MY_ATTRIBUTE((unused)),
+                                 SYS_VAR *var MY_ATTRIBUTE((unused)),
+                                 void *var_ptr MY_ATTRIBUTE((unused)),
+                                 const void *save) {
   if (*(bool *)save && !srv_read_only_mode) {
     buf_dump_start();
   }
 }
 
 /** Trigger a load of the buffer pool if innodb_buffer_pool_load_now is set
- to ON. This function is registered as a callback with MySQL. */
-static void buffer_pool_load_now(
-    THD *thd /*!< in: thread handle */
-        MY_ATTRIBUTE((unused)),
-    SYS_VAR *var /*!< in: pointer to system
-                                 variable */
-        MY_ATTRIBUTE((unused)),
-    void *var_ptr /*!< out: where the formal
-                  string goes */
-        MY_ATTRIBUTE((unused)),
-    const void *save) /*!< in: immediate result from
-                      check function */
-{
+to ON. This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void buffer_pool_load_now(THD *thd MY_ATTRIBUTE((unused)),
+                                 SYS_VAR *var MY_ATTRIBUTE((unused)),
+                                 void *var_ptr MY_ATTRIBUTE((unused)),
+                                 const void *save) {
   if (*(bool *)save) {
     buf_load_start();
   }
 }
 
 /** Abort a load of the buffer pool if innodb_buffer_pool_load_abort
- is set to ON. This function is registered as a callback with MySQL. */
-static void buffer_pool_load_abort(
-    THD *thd /*!< in: thread handle */
-        MY_ATTRIBUTE((unused)),
-    SYS_VAR *var /*!< in: pointer to system
-                                 variable */
-        MY_ATTRIBUTE((unused)),
-    void *var_ptr /*!< out: where the formal
-                  string goes */
-        MY_ATTRIBUTE((unused)),
-    const void *save) /*!< in: immediate result from
-                      check function */
-{
+is set to ON. This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void buffer_pool_load_abort(THD *thd MY_ATTRIBUTE((unused)),
+                                   SYS_VAR *var MY_ATTRIBUTE((unused)),
+                                   void *var_ptr MY_ATTRIBUTE((unused)),
+                                   const void *save) {
   if (*(bool *)save) {
     buf_load_abort();
   }
 }
 
 /** Update the system variable innodb_log_write_ahead_size using the "saved"
- value. This function is registered as a callback with MySQL. */
-static void innodb_log_write_ahead_size_update(
-    THD *thd,         /*!< in: thread handle */
-    SYS_VAR *var,     /*!< in: pointer to
-                                      system variable */
-    void *var_ptr,    /*!< out: where the
-                      formal string goes */
-    const void *save) /*!< in: immediate result
-                      from check function */
-{
+value. This function is registered as a callback with MySQL.
+@param[in]  thd       thread handle
+@param[in]  var       pointer to system variable
+@param[out] var_ptr   where the formal string goes
+@param[in]  save      immediate result from check function */
+static void innodb_log_write_ahead_size_update(THD *thd, SYS_VAR *var,
+                                               void *var_ptr,
+                                               const void *save) {
   ulong val = INNODB_LOG_WRITE_AHEAD_SIZE_MIN;
   ulong in_val = *static_cast<const ulong *>(save);
 
@@ -18934,10 +18852,10 @@ static void innodb_log_write_ahead_size_update(
 
 /** Update the system variable innodb_log_buffer_size using the "saved"
 value. This function is registered as a callback with MySQL.
-@param[in]	thd	thread handle
-@param[in]	var	pointer to system variable
-@param[out]	var_ptr	where the formal string goes
-@param[in]	save	immediate result from check function */
+@param[in]	thd       thread handle
+@param[in]	var       pointer to system variable
+@param[out]	var_ptr   where the formal string goes
+@param[in]	save      immediate result from check function */
 static void innodb_log_buffer_size_update(THD *thd, SYS_VAR *var, void *var_ptr,
                                           const void *save) {
   const ulong val = *static_cast<const ulong *>(save);
@@ -18961,10 +18879,10 @@ static void innodb_log_buffer_size_update(THD *thd, SYS_VAR *var, void *var_ptr,
 
 /** Update the system variable innodb_thread_concurrency using the "saved"
 value. This function is registered as a callback with MySQL.
-@param[in]	thd	thread handle
-@param[in]	var	pointer to system variable
-@param[out]	var_ptr	where the formal string goes
-@param[in]	save	immediate result from check function */
+@param[in]	thd       thread handle
+@param[in]	var       pointer to system variable
+@param[out]	var_ptr   where the formal string goes
+@param[in]	save      immediate result from check function */
 static void innodb_thread_concurrency_update(THD *thd, SYS_VAR *var,
                                              void *var_ptr, const void *save) {
   log_t &log = *log_sys;
@@ -18991,8 +18909,8 @@ static void innodb_thread_concurrency_update(THD *thd, SYS_VAR *var,
 
 /** Update innodb_status_output or innodb_status_output_locks,
 which control InnoDB "status monitor" output to the error log.
-@param[out]	var_ptr	current value
-@param[in]	save	to-be-assigned value */
+@param[out]	var_ptr   current value
+@param[in]	save      to-be-assigned value */
 static void innodb_status_output_update(THD *, SYS_VAR *, void *var_ptr,
                                         const void *save) {
   *static_cast<bool *>(var_ptr) = *static_cast<const bool *>(save);
@@ -19002,10 +18920,10 @@ static void innodb_status_output_update(THD *, SYS_VAR *, void *var_ptr,
 }
 
 /** Update the innodb_log_checksums parameter.
-@param[in]	thd	thread handle
-@param[in]	var	system variable
-@param[out]	var_ptr	current value
-@param[in]	save	immediate result from check function */
+@param[in]	thd       thread handle
+@param[in]	var       system variable
+@param[out]	var_ptr   current value
+@param[in]	save      immediate result from check function */
 static void innodb_log_checksums_update(THD *thd, SYS_VAR *var, void *var_ptr,
                                         const void *save) {
   bool check = *static_cast<bool *>(var_ptr) = *static_cast<const bool *>(save);
@@ -19097,8 +19015,13 @@ static MYSQL_SYSVAR_BOOL(purge_stop_now, innodb_purge_stop_now,
                          purge_stop_now_set, FALSE);
 
 static MYSQL_SYSVAR_BOOL(log_checkpoint_now, innodb_log_checkpoint_now,
-                         PLUGIN_VAR_OPCMDARG, "Force checkpoint now", NULL,
-                         checkpoint_now_set, FALSE);
+                         PLUGIN_VAR_OPCMDARG, "Force sharp checkpoint now",
+                         NULL, checkpoint_now_set, FALSE);
+
+static MYSQL_SYSVAR_BOOL(log_checkpoint_fuzzy_now,
+                         innodb_log_checkpoint_fuzzy_now, PLUGIN_VAR_OPCMDARG,
+                         "Force fuzzy checkpoint now", NULL,
+                         checkpoint_fuzzy_now_set, FALSE);
 
 static MYSQL_SYSVAR_BOOL(checkpoint_disabled, srv_checkpoint_disabled,
                          PLUGIN_VAR_OPCMDARG, "Disable checkpoints", NULL,
@@ -19240,7 +19163,7 @@ static MYSQL_SYSVAR_BOOL(rollback_on_timeout, innobase_rollback_on_timeout,
 
 static MYSQL_SYSVAR_BOOL(
     status_file, innobase_create_status_file,
-    PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_NOSYSVAR,
     "Enable SHOW ENGINE INNODB STATUS output in the innodb_status.<pid> file",
     NULL, NULL, FALSE);
 
@@ -19355,13 +19278,13 @@ static MYSQL_SYSVAR_LONGLONG(buffer_pool_size, srv_buf_pool_curr_size,
                              static_cast<longlong>(srv_buf_pool_min_size),
                              LLONG_MAX, 1024 * 1024L);
 
-static MYSQL_SYSVAR_ULONG(
+static MYSQL_SYSVAR_ULONGLONG(
     buffer_pool_chunk_size, srv_buf_pool_chunk_unit,
     PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
     "Size of a single memory chunk within each buffer pool instance"
     " for resizing buffer pool. Online buffer pool resizing happens"
     " at this granularity. 0 means disable resizing buffer pool.",
-    NULL, NULL, 128 * 1024 * 1024, 1024 * 1024, LONG_MAX, 1024 * 1024);
+    NULL, NULL, 128 * 1024 * 1024, 1024 * 1024, ULONG_MAX, 1024 * 1024);
 
 #if defined UNIV_DEBUG || defined UNIV_PERF_DEBUG
 static MYSQL_SYSVAR_ULONG(page_hash_locks, srv_n_page_hash_locks,
@@ -19454,7 +19377,7 @@ static MYSQL_SYSVAR_ULONG(concurrency_tickets, srv_n_free_tickets_to_enter,
                           "Number of times a thread is allowed to enter InnoDB "
                           "within the same SQL query after it has once got the "
                           "ticket",
-                          NULL, NULL, 5000L, 1L, ~0UL, 0);
+                          NULL, NULL, 5000L, 1L, UINT_MAX, 0);
 
 static MYSQL_SYSVAR_BOOL(
     deadlock_detect, innobase_deadlock_detect, PLUGIN_VAR_NOCMDARG,
@@ -19598,33 +19521,6 @@ static MYSQL_SYSVAR_ULONG(log_write_ahead_size, srv_log_write_ahead_size,
                           INNODB_LOG_WRITE_AHEAD_SIZE_MAX,
                           OS_FILE_LOG_BLOCK_SIZE);
 
-static MYSQL_SYSVAR_ULONG(
-    log_write_events, srv_log_write_events,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY | PLUGIN_VAR_EXPERIMENTAL,
-    "Number of events used for notifications about log write.", NULL, NULL,
-    INNODB_LOG_EVENTS_DEFAULT, INNODB_LOG_EVENTS_MIN, INNODB_LOG_EVENTS_MAX, 0);
-
-static MYSQL_SYSVAR_ULONG(
-    log_flush_events, srv_log_flush_events,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY | PLUGIN_VAR_EXPERIMENTAL,
-    "Number of events used for notifications about log flush.", NULL, NULL,
-    INNODB_LOG_EVENTS_DEFAULT, INNODB_LOG_EVENTS_MIN, INNODB_LOG_EVENTS_MAX, 0);
-
-static MYSQL_SYSVAR_ULONG(
-    log_recent_written_size, srv_log_recent_written_size,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY | PLUGIN_VAR_EXPERIMENTAL,
-    "Size of a small buffer, which allows concurrent writes to log buffer.",
-    NULL, NULL, INNODB_LOG_RECENT_WRITTEN_SIZE_DEFAULT,
-    INNODB_LOG_RECENT_WRITTEN_SIZE_MIN, INNODB_LOG_RECENT_WRITTEN_SIZE_MAX, 0);
-
-static MYSQL_SYSVAR_ULONG(
-    log_recent_closed_size, srv_log_recent_closed_size,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY | PLUGIN_VAR_EXPERIMENTAL,
-    "Size of a small buffer, which allows to break requirement for total order"
-    " of dirty pages, when they are added to flush lists.",
-    NULL, NULL, INNODB_LOG_RECENT_CLOSED_SIZE_DEFAULT,
-    INNODB_LOG_RECENT_CLOSED_SIZE_MIN, INNODB_LOG_RECENT_CLOSED_SIZE_MAX, 0);
-
 static MYSQL_SYSVAR_UINT(
     log_spin_cpu_abs_lwm, srv_log_spin_cpu_abs_lwm, PLUGIN_VAR_RQCMDARG,
     "Minimum value of cpu time for which spin-delay is used."
@@ -19638,26 +19534,6 @@ static MYSQL_SYSVAR_UINT(
     NULL, NULL, INNODB_LOG_SPIN_CPU_PCT_HWM_DEFAULT, 0, 100, 0);
 
 static MYSQL_SYSVAR_ULONG(
-    log_wait_for_write_spin_delay, srv_log_wait_for_write_spin_delay,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
-    "Number of spin iterations, when spinning and waiting for log buffer"
-    " written up to given LSN, before we fallback to loop with sleeps."
-    " This is not used when user thread has to wait for log flushed to disk.",
-    NULL, NULL, INNODB_LOG_WAIT_FOR_WRITE_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
-
-static MYSQL_SYSVAR_ULONG(
-    log_wait_for_write_timeout, srv_log_wait_for_write_timeout,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
-    "Timeout used when waiting for redo write (microseconds).", NULL, NULL,
-    INNODB_LOG_WAIT_FOR_WRITE_TIMEOUT_DEFAULT, 0, ULONG_MAX, 0);
-
-static MYSQL_SYSVAR_ULONG(
-    log_wait_for_flush_spin_delay, srv_log_wait_for_flush_spin_delay,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
-    "Number of spin iterations, when spinning and waiting for log flushed.",
-    NULL, NULL, INNODB_LOG_WAIT_FOR_FLUSH_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
-
-static MYSQL_SYSVAR_ULONG(
     log_wait_for_flush_spin_hwm, srv_log_wait_for_flush_spin_hwm,
     PLUGIN_VAR_RQCMDARG,
     "Maximum value of average log flush time for which spin-delay is used."
@@ -19665,48 +19541,92 @@ static MYSQL_SYSVAR_ULONG(
     "flushed redo. Expressed in microseconds.",
     NULL, NULL, INNODB_LOG_WAIT_FOR_FLUSH_SPIN_HWM_DEFAULT, 0, ULONG_MAX, 0);
 
+#ifdef ENABLE_EXPERIMENT_SYSVARS
+
+static MYSQL_SYSVAR_ULONG(
+    log_write_events, srv_log_write_events,
+    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+    "Number of events used for notifications about log write.", NULL, NULL,
+    INNODB_LOG_EVENTS_DEFAULT, INNODB_LOG_EVENTS_MIN, INNODB_LOG_EVENTS_MAX, 0);
+
+static MYSQL_SYSVAR_ULONG(
+    log_flush_events, srv_log_flush_events,
+    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+    "Number of events used for notifications about log flush.", NULL, NULL,
+    INNODB_LOG_EVENTS_DEFAULT, INNODB_LOG_EVENTS_MIN, INNODB_LOG_EVENTS_MAX, 0);
+
+static MYSQL_SYSVAR_ULONG(
+    log_recent_written_size, srv_log_recent_written_size,
+    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+    "Size of a small buffer, which allows concurrent writes to log buffer.",
+    NULL, NULL, INNODB_LOG_RECENT_WRITTEN_SIZE_DEFAULT,
+    INNODB_LOG_RECENT_WRITTEN_SIZE_MIN, INNODB_LOG_RECENT_WRITTEN_SIZE_MAX, 0);
+
+static MYSQL_SYSVAR_ULONG(
+    log_recent_closed_size, srv_log_recent_closed_size,
+    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+    "Size of a small buffer, which allows to break requirement for total order"
+    " of dirty pages, when they are added to flush lists.",
+    NULL, NULL, INNODB_LOG_RECENT_CLOSED_SIZE_DEFAULT,
+    INNODB_LOG_RECENT_CLOSED_SIZE_MIN, INNODB_LOG_RECENT_CLOSED_SIZE_MAX, 0);
+
+static MYSQL_SYSVAR_ULONG(
+    log_wait_for_write_spin_delay, srv_log_wait_for_write_spin_delay,
+    PLUGIN_VAR_RQCMDARG,
+    "Number of spin iterations, when spinning and waiting for log buffer"
+    " written up to given LSN, before we fallback to loop with sleeps."
+    " This is not used when user thread has to wait for log flushed to disk.",
+    NULL, NULL, INNODB_LOG_WAIT_FOR_WRITE_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
+
+static MYSQL_SYSVAR_ULONG(
+    log_wait_for_write_timeout, srv_log_wait_for_write_timeout,
+    PLUGIN_VAR_RQCMDARG,
+    "Timeout used when waiting for redo write (microseconds).", NULL, NULL,
+    INNODB_LOG_WAIT_FOR_WRITE_TIMEOUT_DEFAULT, 0, ULONG_MAX, 0);
+
+static MYSQL_SYSVAR_ULONG(
+    log_wait_for_flush_spin_delay, srv_log_wait_for_flush_spin_delay,
+    PLUGIN_VAR_RQCMDARG,
+    "Number of spin iterations, when spinning and waiting for log flushed.",
+    NULL, NULL, INNODB_LOG_WAIT_FOR_FLUSH_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
+
 static MYSQL_SYSVAR_ULONG(
     log_wait_for_flush_timeout, srv_log_wait_for_flush_timeout,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    PLUGIN_VAR_RQCMDARG,
     "Timeout used when waiting for redo flush (microseconds).", NULL, NULL,
     INNODB_LOG_WAIT_FOR_FLUSH_TIMEOUT_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
-    log_write_max_size, srv_log_write_max_size,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    log_write_max_size, srv_log_write_max_size, PLUGIN_VAR_RQCMDARG,
     "Size available for next write, which satisfies log_writer thread"
     " when it follows links in recent written buffer.",
     NULL, NULL, INNODB_LOG_WRITE_MAX_SIZE_DEFAULT, 0, ULONG_MAX,
     OS_FILE_LOG_BLOCK_SIZE);
 
 static MYSQL_SYSVAR_ULONG(
-    log_writer_spin_delay, srv_log_writer_spin_delay,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    log_writer_spin_delay, srv_log_writer_spin_delay, PLUGIN_VAR_RQCMDARG,
     "Number of spin iterations, for which log writer thread is waiting"
     " for new data to write without sleeping.",
     NULL, NULL, INNODB_LOG_WRITER_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
-    log_writer_timeout, srv_log_writer_timeout,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    log_writer_timeout, srv_log_writer_timeout, PLUGIN_VAR_RQCMDARG,
     "Initial timeout used to wait on event in log writer thread (microseconds)",
     NULL, NULL, INNODB_LOG_WRITER_TIMEOUT_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
-    log_checkpoint_every, srv_log_checkpoint_every,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    log_checkpoint_every, srv_log_checkpoint_every, PLUGIN_VAR_RQCMDARG,
     "Checkpoints are executed at least every that many milliseconds.", NULL,
     NULL, INNODB_LOG_CHECKPOINT_EVERY_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
-    log_flusher_spin_delay, srv_log_flusher_spin_delay,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    log_flusher_spin_delay, srv_log_flusher_spin_delay, PLUGIN_VAR_RQCMDARG,
     "Number of spin iterations, for which log flusher thread is waiting"
     " for new data to flush, without sleeping.",
     NULL, NULL, INNODB_LOG_FLUSHER_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(log_flusher_timeout, srv_log_flusher_timeout,
-                          PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+                          PLUGIN_VAR_RQCMDARG,
                           "Initial timeout used to wait on event in log "
                           "flusher thread (microseconds)",
                           NULL, NULL, INNODB_LOG_FLUSHER_TIMEOUT_DEFAULT, 0,
@@ -19714,44 +19634,44 @@ static MYSQL_SYSVAR_ULONG(log_flusher_timeout, srv_log_flusher_timeout,
 
 static MYSQL_SYSVAR_ULONG(
     log_write_notifier_spin_delay, srv_log_write_notifier_spin_delay,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    PLUGIN_VAR_RQCMDARG,
     "Number of spin iterations, for which log write notifier thread is waiting"
     " for advanced write_lsn, without sleeping.",
     NULL, NULL, INNODB_LOG_WRITE_NOTIFIER_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
     log_write_notifier_timeout, srv_log_write_notifier_timeout,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    PLUGIN_VAR_RQCMDARG,
     "Initial timeout used to wait on event in log write notifier thread"
     " (microseconds)",
     NULL, NULL, INNODB_LOG_WRITE_NOTIFIER_TIMEOUT_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
     log_flush_notifier_spin_delay, srv_log_flush_notifier_spin_delay,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    PLUGIN_VAR_RQCMDARG,
     "Number of spin iterations, for which log flush notifier thread is waiting"
     " for advanced flushed_to_disk_lsn, without sleeping.",
     NULL, NULL, INNODB_LOG_FLUSH_NOTIFIER_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
     log_flush_notifier_timeout, srv_log_flush_notifier_timeout,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    PLUGIN_VAR_RQCMDARG,
     "Initial timeout used to wait on event in log flush notifier thread"
     " (microseconds)",
     NULL, NULL, INNODB_LOG_FLUSH_NOTIFIER_TIMEOUT_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
-    log_closer_spin_delay, srv_log_closer_spin_delay,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    log_closer_spin_delay, srv_log_closer_spin_delay, PLUGIN_VAR_RQCMDARG,
     "Number of spin iterations, for which log closer thread is waiting"
     " for dirty pages added.",
     NULL, NULL, INNODB_LOG_CLOSER_SPIN_DELAY_DEFAULT, 0, ULONG_MAX, 0);
 
 static MYSQL_SYSVAR_ULONG(
-    log_closer_timeout, srv_log_closer_timeout,
-    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_EXPERIMENTAL,
+    log_closer_timeout, srv_log_closer_timeout, PLUGIN_VAR_RQCMDARG,
     "Initial sleep time in log closer thread (microseconds)", NULL, NULL,
     INNODB_LOG_CLOSER_TIMEOUT_DEFAULT, 0, ULONG_MAX, 0);
+
+#endif /* ENABLE_EXPERIMENT_SYSVARS */
 
 static MYSQL_SYSVAR_UINT(
     old_blocks_pct, innobase_old_blocks_pct, PLUGIN_VAR_RQCMDARG,
@@ -20183,16 +20103,17 @@ static SYS_VAR *innobase_system_variables[] = {
     MYSQL_SYSVAR(log_files_in_group),
     MYSQL_SYSVAR(log_write_ahead_size),
     MYSQL_SYSVAR(log_group_home_dir),
+    MYSQL_SYSVAR(log_spin_cpu_abs_lwm),
+    MYSQL_SYSVAR(log_spin_cpu_pct_hwm),
+    MYSQL_SYSVAR(log_wait_for_flush_spin_hwm),
+#ifdef ENABLE_EXPERIMENT_SYSVARS
     MYSQL_SYSVAR(log_write_events),
     MYSQL_SYSVAR(log_flush_events),
     MYSQL_SYSVAR(log_recent_written_size),
     MYSQL_SYSVAR(log_recent_closed_size),
-    MYSQL_SYSVAR(log_spin_cpu_abs_lwm),
-    MYSQL_SYSVAR(log_spin_cpu_pct_hwm),
     MYSQL_SYSVAR(log_wait_for_write_spin_delay),
     MYSQL_SYSVAR(log_wait_for_write_timeout),
     MYSQL_SYSVAR(log_wait_for_flush_spin_delay),
-    MYSQL_SYSVAR(log_wait_for_flush_spin_hwm),
     MYSQL_SYSVAR(log_wait_for_flush_timeout),
     MYSQL_SYSVAR(log_write_max_size),
     MYSQL_SYSVAR(log_writer_spin_delay),
@@ -20206,6 +20127,7 @@ static SYS_VAR *innobase_system_variables[] = {
     MYSQL_SYSVAR(log_flush_notifier_timeout),
     MYSQL_SYSVAR(log_closer_spin_delay),
     MYSQL_SYSVAR(log_closer_timeout),
+#endif /* ENABLE_EXPERIMENT_SYSVARS */
     MYSQL_SYSVAR(log_compressed_pages),
     MYSQL_SYSVAR(max_dirty_pages_pct),
     MYSQL_SYSVAR(max_dirty_pages_pct_lwm),
@@ -20276,6 +20198,7 @@ static SYS_VAR *innobase_system_variables[] = {
     MYSQL_SYSVAR(purge_run_now),
     MYSQL_SYSVAR(purge_stop_now),
     MYSQL_SYSVAR(log_checkpoint_now),
+    MYSQL_SYSVAR(log_checkpoint_fuzzy_now),
     MYSQL_SYSVAR(checkpoint_disabled),
     MYSQL_SYSVAR(buf_flush_list_now),
     MYSQL_SYSVAR(merge_threshold_set_all_debug),
@@ -20630,8 +20553,8 @@ dfield_t *innobase_get_computed_value(
       }
 
       data = lob::btr_copy_externally_stored_field(
-          clust_index, &len, data, page_size, dfield_get_len(row_field), false,
-          *local_heap);
+          clust_index, &len, nullptr, data, page_size,
+          dfield_get_len(row_field), false, *local_heap);
     }
 
     if (len == UNIV_SQL_NULL) {
@@ -21096,7 +21019,7 @@ debug_set:
   if (srv_buf_pool_size == requested_buf_pool_size) {
     push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
                         "InnoDB: Cannot resize buffer pool to lesser than"
-                        " chunk size of %lu bytes.",
+                        " chunk size of %llu bytes.",
                         srv_buf_pool_chunk_unit);
     /* nothing to do */
     return (0);

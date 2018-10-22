@@ -37,6 +37,7 @@
 #include "sql/dd/types/spatial_reference_system.h"
 #include "sql/derror.h"           // ER_THD
 #include "sql/gis/srid.h"         // gis::srid_t
+#include "sql/lock.h"             // acquire_shared_global...
 #include "sql/sql_backup_lock.h"  // acquire_shared_backup_lock
 #include "sql/sql_class.h"        // THD
 #include "sql/sql_prepare.h"      // Ed_connection
@@ -166,7 +167,8 @@ bool Sql_cmd_create_srs::execute(THD *thd) {
     return true;
   }
 
-  if (acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout))
+  if (acquire_shared_global_read_lock(thd, thd->variables.lock_wait_timeout) ||
+      acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout))
     return true;
 
   Disable_autocommit_guard dag(thd);
@@ -192,12 +194,16 @@ bool Sql_cmd_create_srs::execute(THD *thd) {
       my_error(ER_SRS_ID_ALREADY_EXISTS, MYF(0), m_srid);
       return true;
     }
-    if (srs_is_used(m_srid, thd)) {
+
+    if (fill_srs(srs)) return true;  // Error has already been flagged.
+
+    const dd::Spatial_reference_system *old_srs = nullptr;
+    if (fetcher.acquire(m_srid, &old_srs)) return true; /* purecov: inspected */
+    DBUG_ASSERT(old_srs != nullptr);
+    if (srs_is_used(m_srid, thd) && !old_srs->can_be_modified_to(*srs)) {
       my_error(ER_CANT_MODIFY_SRS_USED_BY_COLUMN, MYF(0), m_srid);
       return true;
     }
-
-    if (fill_srs(srs)) return true;  // Error has already been flagged.
 
     warn_if_in_reserved_range(m_srid, thd);
 
@@ -231,7 +237,8 @@ bool Sql_cmd_drop_srs::execute(THD *thd) {
     return true;
   }
 
-  if (acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout))
+  if (acquire_shared_global_read_lock(thd, thd->variables.lock_wait_timeout) ||
+      acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout))
     return true;
 
   Disable_autocommit_guard dag(thd);

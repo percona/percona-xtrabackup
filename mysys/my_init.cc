@@ -251,16 +251,27 @@ Voluntary context switches %ld, Involuntary context switches %ld\n",
   my_parameter_handler
 
   Invalid parameter handler we will use instead of the one "baked"
-  into the CRT for MSC v8.  This one just prints out what invalid
-  parameter was encountered.  By providing this routine, routines like
-  lseek will return -1 when we expect them to instead of crash.
+  into the CRT for Visual Studio.
+  The DBUG_ASSERT will catch things typically *not* caught by sanitizers,
+  e.g. iterator out-of-range, but pointing to valid memory.
 */
 
 void my_parameter_handler(const wchar_t *expression, const wchar_t *function,
                           const wchar_t *file, unsigned int line,
                           uintptr_t pReserved) {
-  DBUG_PRINT("my", ("Expression: %s  function: %s  file: %s, line: %d",
-                    expression, function, file, line));
+#ifndef DBUG_OFF
+  fprintf(stderr,
+          "my_parameter_handler errno %d "
+          "expression: %ws  function: %ws  file: %ws, line: %d\n",
+          errno, expression, function, file, line);
+  fflush(stderr);
+  // We have tests which do this kind of failure injection:
+  //   DBUG_EXECUTE_IF("ib_export_io_write_failure_1", close(fileno(file)););
+  // So ignore EBADF
+  if (errno != EBADF) {
+    DBUG_ASSERT(false);
+  }
+#endif
 }
 
 #ifdef __MSVC_RUNTIME_CHECKS

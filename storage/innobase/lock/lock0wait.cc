@@ -171,7 +171,6 @@ static srv_slot_t *lock_wait_table_reserve_slot(
   lock_wait_table_print();
 
   ut_error;
-  return (NULL);
 }
 
 /** Puts a user OS thread to wait for a lock to be released. If an error
@@ -443,9 +442,9 @@ static void lock_wait_check_and_cancel(
       lock_cancel_waiting_and_release(trx->lock.wait_lock, false);
     }
 
-    lock_mutex_exit();
-
     trx->owns_mutex = false;
+
+    lock_mutex_exit();
 
     trx_mutex_exit(trx);
   }

@@ -222,10 +222,6 @@ SET(DISABLE_PSI_OPTIONS
   "-DDISABLE_PSI_STAGE"
   )
 
-IF(SSL_DEFINES)
-  ADD_DEFINITIONS(${SSL_DEFINES})
-ENDIF()
-
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/libbinlogevents/include
   SYSTEM ${ICU_INCLUDE_DIRS}
@@ -316,6 +312,7 @@ SET(TESTS
   mysys_my_rdtsc
   mysys_my_symlink
   mysys_my_write
+  mysys_my_read
   mysys_pathfuncs
   nullable
   opt_recperkey
@@ -377,6 +374,7 @@ SET(SERVER_TESTS
   gis_isvalid
   gis_relops
   gis_wkb_parser
+  gis_wkb_writer
   handler
   histograms
   initialize_password
@@ -516,7 +514,7 @@ FOREACH(test ${SERVER_TESTS})
   TARGET_LINK_LIBRARIES(${test}-t sql_main sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(${test}-t gunit_large strings dbug mysys)
   TARGET_LINK_LIBRARIES(${test}-t
-    sql_main binlog rpl master slave sql_gis sql_main sql_dd)
+    sql_main binlog rpl master slave sql_gis sql_main sql_dd sql_gis)
   TARGET_LINK_LIBRARIES(${test}-t ${ICU_LIBRARIES})
 
   IF(WITH_PERFSCHEMA_STORAGE_ENGINE)

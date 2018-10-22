@@ -6,7 +6,7 @@
 # Innodb does not recognizes partition table created in linux from windows
 # due to difference in path format.
 --source include/not_windows.inc
---source include/not_valgrind.inc
+--source include/no_valgrind_without_big.inc
 
 --disable_query_log
 call mtr.add_suppression("Resizing redo log from");
@@ -51,12 +51,9 @@ call mtr.add_suppression("Failed to create or recover replication info repositor
 #########################
 #  how to record this test JSON result content mismatch
 #  If required fix regex patterns in mysql-test/include/ibd2sdi.pl
-#  and mysql-test/suite/innodb/include/ibd2sdi_replace_pattern.inc
-#  1) change the record value from 0 to 1. it should be "--let $RECORD=1"
-#  2) run the test, it will fail (this is expected). The zip files are updated
-#  3) change the line to "--let $RECORD=0" and run test
+#  and mysql-test/suite/innodb/include/ibd2sdi_replace_pattern.inc,
+#  then run the test with --record option.
 #########################
---let $RECORD=0
 
 --echo # Set different paths for --datadir
 let $MYSQLD_DATADIR1 = $MYSQL_TMP_DIR/data57_partition;
@@ -93,15 +90,7 @@ SHOW CREATE TABLE partitions.t1;
 
 --echo # Check if .ibds have SDI after upgrade
 
-# Extract saved JSON to tmp dir
---let $SRC_DIR=$MYSQL_TMP_DIR/sdi_src
---error 0,1
---force-rmdir $SRC_DIR
---mkdir $SRC_DIR
---copy_file $MYSQLTEST_VARDIR/std_data/dd_upgrade_partition_jsons.zip $SRC_DIR/dd_upgrade_partition_jsons.zip
-
-# Unzip the JSONs zip file
---exec unzip -qo $SRC_DIR/dd_upgrade_partition_jsons.zip -d $SRC_DIR
+--let $SRC_DIR=$MYSQL_TEST_DIR/std_data/dd/sdi/upgrade_partition
 
 # Create a directory to store json generated
 --let $DEST_DIR=$MYSQL_TMP_DIR/sdi_dest/
@@ -113,7 +102,7 @@ SHOW CREATE TABLE partitions.t1;
 --let JSON_FILE_PATH = $DEST_DIR/sys_config.json
 --exec $IBD2SDI $MYSQLD_DATADIR1/sys/sys_config.ibd -d $JSON_FILE_PATH 2>&1
 --source suite/innodb/include/ibd2sdi_replace.inc
-if ($RECORD == 0) {
+if ($MTR_RECORD == 0) {
 --diff_files $SRC_DIR/sys_config.json $JSON_FILE_PATH
 }
 
@@ -121,7 +110,7 @@ if ($RECORD == 0) {
 --let JSON_FILE_PATH = $DEST_DIR/t1#p#p1.json
 --exec $IBD2SDI $MYSQLD_DATADIR1/partitions/t1#P#p1.ibd -d $JSON_FILE_PATH 2>&1
 --source suite/innodb/include/ibd2sdi_replace.inc
-if ($RECORD == 0) {
+if ($MTR_RECORD == 0) {
 --diff_files $SRC_DIR/t1#p#p1.json $JSON_FILE_PATH
 }
 
@@ -129,30 +118,24 @@ if ($RECORD == 0) {
 --let JSON_FILE_PATH = $DEST_DIR/t1#p#p0.json
 --exec $IBD2SDI $MYSQLD_DATADIR1/partitions/t1#P#p0.ibd -d $JSON_FILE_PATH 2>&1
 --source suite/innodb/include/ibd2sdi_replace.inc
-if ($RECORD == 0) {
+if ($MTR_RECORD == 0) {
 --diff_files $SRC_DIR/t1#p#p0.json $JSON_FILE_PATH
 }
 
---force-rmdir $SRC_DIR
-
-if ($RECORD == 0) {
---force-rmdir $DEST_DIR
-}
-
+# If --record is used, save the json files created in the $DEST_DIR
+# back to the $SRC_DIR.
 if ($RECORD == 1) {
---exec zip -r -j $MYSQL_TMP_DIR/sdi.zip $DEST_DIR 2>&1 > /dev/null
---move_file $MYSQL_TMP_DIR/sdi.zip $MYSQL_TEST_DIR/std_data/dd_upgrade_partition_jsons.zip
---force-rmdir $DEST_DIR
+--copy_files_wildcard $DEST_DIR $SRC_DIR *.json
 }
+
+--echo # Remove json files
+--force-rmdir $DEST_DIR
 
 --echo # Remove copied files
 --remove_file $MYSQL_TMP_DIR/data57_partition.zip
 
 --force-rmdir $MYSQL_TMP_DIR/data57_partition
 
-if ($RECORD == 1) {
---echo "Recorded JSONs. Please remove the record mode inside test and re-run the test"
-}
-
 --echo # Restart the server with default options.
+--let $restart_parameters=
 --source include/start_mysqld.inc

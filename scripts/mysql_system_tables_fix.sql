@@ -47,7 +47,7 @@ SET @old_sql_mode = @@session.sql_mode, @@session.sql_mode = '';
 
 INSERT IGNORE INTO mysql.user
 (host, user, select_priv, plugin, authentication_string, ssl_cipher, x509_issuer, x509_subject)
-VALUES ('localhost','mysql.infoschema','Y','mysql_native_password','*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE','','','');
+VALUES ('localhost','mysql.infoschema','Y','caching_sha2_password','$A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED','','','');
 
 FLUSH PRIVILEGES;
 
@@ -628,7 +628,7 @@ SET GLOBAL automatic_sp_privileges = @global_automatic_sp_privileges;
 --
 
 ALTER TABLE user ADD password_last_changed timestamp NULL;
-UPDATE user SET password_last_changed = CURRENT_TIMESTAMP WHERE plugin in ('mysql_native_password','sha256_password') and password_last_changed is NULL;
+UPDATE user SET password_last_changed = CURRENT_TIMESTAMP WHERE plugin in ('caching_sha2_password','mysql_native_password','sha256_password') and password_last_changed is NULL;
 
 ALTER TABLE user ADD password_lifetime smallint unsigned NULL;
 
@@ -739,17 +739,6 @@ ALTER TABLE slave_master_info
 ALTER TABLE slave_master_info
   MODIFY COLUMN Get_public_key BOOLEAN NOT NULL COMMENT 'Preference to get public key from master.'
   AFTER Public_key_path;
-
-SET @have_innodb= (SELECT COUNT(engine) FROM information_schema.engines WHERE engine='InnoDB' AND support != 'NO');
-SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_table_stats STATS_PERSISTENT=0", "SET @dummy = 0");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_index_stats STATS_PERSISTENT=0", "SET @dummy = 0");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
 
 #
 # Alter mysql.ndb_binlog_index only if it exists already.
@@ -917,13 +906,42 @@ EXECUTE stmt;
 DROP PREPARE stmt;
 
 --
--- Change engine of the audit log tables to InnoDB
+-- Add a column that serves as a primary key of the table
 --
+SET @firewall_whitelist_id_column =
+  (SELECT COUNT(column_name) FROM information_schema.columns
+     WHERE table_schema = 'mysql' AND table_name = 'firewall_whitelist' AND column_name = 'ID');
+SET @cmd="ALTER TABLE mysql.firewall_whitelist ADD ID INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY";
+SET @str = IF(@had_firewall_whitelist > 0 AND @firewall_whitelist_id_column = 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- Change engine, size and charset for audit log tables.
+--
+
+SET @had_audit_log_user =
+  (SELECT COUNT(table_name) FROM information_schema.tables
+     WHERE table_schema = 'mysql' AND table_name = 'audit_log_user' AND
+           table_type = 'BASE TABLE');
+SET @cmd="ALTER TABLE mysql.audit_log_user DROP FOREIGN KEY audit_log_user_ibfk_1";
+SET @str = IF(@had_audit_log_user > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
 SET @had_audit_log_filter =
   (SELECT COUNT(table_name) FROM information_schema.tables
      WHERE table_schema = 'mysql' AND table_name = 'audit_log_filter' AND
            table_type = 'BASE TABLE');
 SET @cmd="ALTER TABLE mysql.audit_log_filter ENGINE=InnoDB";
+SET @str = IF(@had_audit_log_filter > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.audit_log_filter CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_as_ci";
 SET @str = IF(@had_audit_log_filter > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -939,6 +957,23 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
+SET @cmd="ALTER TABLE mysql.audit_log_user CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_as_ci";
+SET @str = IF(@had_audit_log_user > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.audit_log_user MODIFY COLUMN USER VARCHAR(32)";
+SET @str = IF(@had_audit_log_user > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.audit_log_user ADD FOREIGN KEY (FILTERNAME) REFERENCES mysql.audit_log_filter(NAME)";
+SET @str = IF(@had_audit_log_user > 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
 
 --
 -- Update default_value column for cost tables to new defaults
@@ -989,17 +1024,22 @@ DROP PREPARE stmt;
 # internal server session service
 # Notes:
 # This user is disabled for login
-# This user has super privileges and select privileges into performance schema
-# tables the mysql.user table.
+# This user has:
+# Select privileges into performance schema tables the mysql.user table.
+# SUPER, PERSIST_RO_VARIABLES_ADMIN, SYSTEM_VARIABLES_ADMIN privileges
 #
 
-INSERT IGNORE INTO mysql.user VALUES ('localhost','mysql.session','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','','','','',0,0,0,0,'mysql_native_password','*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE','N',CURRENT_TIMESTAMP,NULL,'Y', 'N', 'N', NULL, NULL);
+INSERT IGNORE INTO mysql.user VALUES ('localhost','mysql.session','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','','','','',0,0,0,0,'caching_sha2_password','$A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED','N',CURRENT_TIMESTAMP,NULL,'Y', 'N', 'N', NULL, NULL);
 
 UPDATE user SET Create_role_priv= 'N', Drop_role_priv= 'N' WHERE User= 'mysql.session';
 
 INSERT IGNORE INTO mysql.tables_priv VALUES ('localhost', 'mysql', 'mysql.session', 'user', 'root\@localhost', CURRENT_TIMESTAMP, 'Select', '');
 
 INSERT IGNORE INTO mysql.db VALUES ('localhost', 'performance_schema', 'mysql.session','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N');
+
+INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'PERSIST_RO_VARIABLES_ADMIN', 'N');
+
+INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'SYSTEM_VARIABLES_ADMIN', 'N');
 
 FLUSH PRIVILEGES;
 

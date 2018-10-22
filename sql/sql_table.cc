@@ -138,7 +138,8 @@
 #include "sql/sql_tablespace.h"  // validate_tablespace_name
 #include "sql/sql_time.h"        // make_truncated_value_warning
 #include "sql/sql_trigger.h"     // change_trigger_table_name
-#include "sql/strfunc.h"         // find_type2
+#include "sql/srs_fetcher.h"
+#include "sql/strfunc.h"  // find_type2
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/thd_raii.h"
@@ -167,6 +168,10 @@ const char *primary_key_name = "PRIMARY";
 static bool check_if_keyname_exists(const char *name, KEY *start, KEY *end);
 static const char *make_unique_key_name(const char *field_name, KEY *start,
                                         KEY *end);
+
+static const dd::Index *find_fk_parent_key(handlerton *hton,
+                                           const dd::Table *parent_table_def,
+                                           const dd::Foreign_key *fk);
 static int copy_data_between_tables(
     THD *thd, PSI_stage_progress *psi, TABLE *from, TABLE *to,
     List<Create_field> &create, ha_rows *copied, ha_rows *deleted,
@@ -1119,8 +1124,20 @@ static bool collect_fk_parents_for_all_fks(
   return false;
 }
 
-bool collect_fk_children(THD *thd, const dd::Table *table_def,
-                         MDL_request_list *mdl_requests) {
+/**
+  Add MDL requests for specified lock type on all tables referencing
+  the given table.
+
+  @param          thd           Thread handle.
+  @param          table_def     dd::Table object describing the table.
+  @param          lock_type     Type of MDL requests to add.
+  @param[in,out]  mdl_requests  List to which MDL requests are to be added.
+
+  @retval operation outcome, false if no error.
+*/
+static bool collect_fk_children(THD *thd, const dd::Table *table_def,
+                                enum_mdl_type lock_type,
+                                MDL_request_list *mdl_requests) {
   for (const dd::Foreign_key_parent *fk : table_def->foreign_key_parents()) {
     char buff_db[NAME_LEN + 1];
     char buff_table[NAME_LEN + 1];
@@ -1141,7 +1158,7 @@ bool collect_fk_children(THD *thd, const dd::Table *table_def,
     if (mdl_request == NULL) return true;
 
     MDL_REQUEST_INIT(mdl_request, MDL_key::TABLE, buff_db, buff_table,
-                     MDL_EXCLUSIVE, MDL_STATEMENT);
+                     lock_type, MDL_STATEMENT);
 
     mdl_requests->push_front(mdl_request);
 
@@ -1239,7 +1256,8 @@ bool rm_table_do_discovery_and_lock_fk_tables(THD *thd, TABLE_LIST *tables) {
                                        nullptr))
       return true;
 
-    if (collect_fk_children(thd, table_def, &mdl_requests)) return true;
+    if (collect_fk_children(thd, table_def, MDL_EXCLUSIVE, &mdl_requests))
+      return true;
 
     if (collect_fk_names(thd, table->db, table_def, &mdl_requests)) return true;
   }
@@ -1886,6 +1904,14 @@ static bool rm_table_sort_into_groups(THD *thd, Drop_tables_ctx *drop_ctx,
       handlerton *hton;
       if (dd::table_storage_engine(thd, table_def, &hton)) return true;
 
+      /*
+        We don't have SEs which support FKs and don't support atomic DDL.
+        If we ever to support such engines we need to adjust code that checks
+        if we can drop parent table to correctly handle such SEs.
+      */
+      DBUG_ASSERT(!(hton->flags & HTON_SUPPORTS_FOREIGN_KEYS) ||
+                  (hton->flags & HTON_SUPPORTS_ATOMIC_DDL));
+
       if (hton->flags & HTON_SUPPORTS_ATOMIC_DDL || thd->is_plugin_fake_ddl())
         drop_ctx->base_atomic_tables.push_back(table);
       else
@@ -2173,6 +2199,78 @@ static bool rm_table_eval_gtid_and_table_groups_state(
         */
         drop_ctx->gtid_and_table_groups_state =
             Drop_tables_ctx::NO_GTID_MANY_TABLE_GROUPS;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+  Check if DROP TABLES or DROP DATABASE statement going to violate
+  some foreign key constraint by dropping its parent table without
+  dropping child at the same time.
+*/
+static bool rm_table_check_fks(THD *thd, Drop_tables_ctx *drop_ctx) {
+  /*
+    In FOREIGN_KEY_CHECKS=0 mode it is allowed to drop parent without
+    dropping child at the same time, so we return early.
+    In FOREIGN_KEY_CHECKS=1 mode we need to check if we are about to
+    drop parent table without dropping child table.
+  */
+  if (thd->variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS) return false;
+
+  // Earlier we assert that only SEs supporting atomic DDL support FKs.
+  for (TABLE_LIST *table : drop_ctx->base_atomic_tables) {
+    const dd::Table *table_def = nullptr;
+    if (thd->dd_client()->acquire(table->db, table->table_name, &table_def))
+      return true;
+    DBUG_ASSERT(table_def != nullptr);
+
+    if (table_def && table_def->hidden() == dd::Abstract_table::HT_HIDDEN_SE) {
+      my_error(ER_NO_SUCH_TABLE, MYF(0), table->db, table->table_name);
+      DBUG_ASSERT(true);
+      return true;
+    }
+
+    for (const dd::Foreign_key_parent *fk : table_def->foreign_key_parents()) {
+      if (drop_ctx->drop_database) {
+        /*
+          In case of DROP DATABASE list of tables to be dropped can be huge.
+          We avoid scanning it by assuming that DROP DATABASE will drop all
+          tables in the database and no tables from other databases.
+        */
+        if (my_strcasecmp(table_alias_charset, fk->child_schema_name().c_str(),
+                          table->db) != 0) {
+          my_error(ER_FK_CANNOT_DROP_PARENT, MYF(0), table->table_name,
+                   fk->fk_name().c_str(), fk->child_table_name().c_str());
+          return true;
+        }
+      } else {
+        if (my_strcasecmp(table_alias_charset, fk->child_schema_name().c_str(),
+                          table->db) == 0 &&
+            my_strcasecmp(table_alias_charset, fk->child_table_name().c_str(),
+                          table->table_name) == 0)
+          continue;
+
+        bool child_dropped = false;
+
+        for (TABLE_LIST *dropped : drop_ctx->base_atomic_tables) {
+          if (my_strcasecmp(table_alias_charset,
+                            fk->child_schema_name().c_str(),
+                            dropped->db) == 0 &&
+              my_strcasecmp(table_alias_charset, fk->child_table_name().c_str(),
+                            dropped->table_name) == 0) {
+            child_dropped = true;
+            break;
+          }
+        }
+
+        if (!child_dropped) {
+          my_error(ER_FK_CANNOT_DROP_PARENT, MYF(0), table->table_name,
+                   fk->fk_name().c_str(), fk->child_table_name().c_str());
+          return true;
+        }
       }
     }
   }
@@ -2632,6 +2730,9 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
     my_error(ER_BAD_TABLE_ERROR, MYF(0), wrong_tables.c_ptr());
     DBUG_RETURN(true);
   }
+
+  /* Check if we are about to violate any foreign keys. */
+  if (rm_table_check_fks(thd, &drop_ctx)) DBUG_RETURN(true);
 
   if (drop_ctx.if_exists && drop_ctx.has_any_nonexistent_tables()) {
     for (TABLE_LIST *table : drop_ctx.nonexistent_tables) {
@@ -4018,6 +4119,21 @@ bool prepare_create_field(THD *thd, HA_CREATE_INFO *create_info,
                               ER_TOO_LONG_FIELD_COMMENT, sql_field->field_name))
     DBUG_RETURN(true);
 
+  // If this column has an SRID specified, check if the SRID actually exists
+  // in the data dictionary.
+  if (sql_field->m_srid.has_value() && sql_field->m_srid.value() != 0) {
+    bool exists = false;
+    if (Srs_fetcher::srs_exists(thd, sql_field->m_srid.value(), &exists)) {
+      // An error has already been raised
+      DBUG_RETURN(true); /* purecov: deadcode */
+    }
+
+    if (!exists) {
+      my_error(ER_SRS_NOT_FOUND, MYF(0), sql_field->m_srid.value());
+      DBUG_RETURN(true);
+    }
+  }
+
   /* Check if we have used the same field name before */
   Create_field *dup_field;
   List_iterator<Create_field> it(*create_list);
@@ -4227,7 +4343,8 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
     const char *errmsg = NULL;
     if (key->type == KEYTYPE_FULLTEXT)
       errmsg = "Fulltext index on virtual generated column";
-    else if (key->type == KEYTYPE_SPATIAL)
+    else if (key->type == KEYTYPE_SPATIAL ||
+             sql_field->sql_type == MYSQL_TYPE_GEOMETRY)
       errmsg = "Spatial index on virtual generated column";
     else if (key->type == KEYTYPE_PRIMARY)
       errmsg = "Defining a virtual generated column as primary key";
@@ -4290,11 +4407,28 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
     column_length = is_blob(sql_field->sql_type);
   } else {
     switch (sql_field->sql_type) {
+      case MYSQL_TYPE_GEOMETRY:
+        /* All indexes on geometry columns are R-tree indexes. */
+        if (key->columns.size() > 1) {
+          my_error(ER_TOO_MANY_KEY_PARTS, MYF(0), 1);
+          DBUG_RETURN(true);
+        }
+        key_info->flags |= HA_SPATIAL;
+        if (key->key_create_info.is_algorithm_explicit &&
+            key_info->algorithm != HA_KEY_ALG_RTREE) {
+          DBUG_ASSERT(key->key_create_info.algorithm == HA_KEY_ALG_HASH ||
+                      key->key_create_info.algorithm == HA_KEY_ALG_BTREE);
+          my_error(ER_INDEX_TYPE_NOT_SUPPORTED_FOR_SPATIAL_INDEX, MYF(0),
+                   key->key_create_info.algorithm == HA_KEY_ALG_HASH ? "HASH"
+                                                                     : "BTREE");
+          DBUG_RETURN(true);
+        }
+        key_info->algorithm = HA_KEY_ALG_RTREE;
+        /* fall through */
       case MYSQL_TYPE_TINY_BLOB:
       case MYSQL_TYPE_MEDIUM_BLOB:
       case MYSQL_TYPE_LONG_BLOB:
       case MYSQL_TYPE_BLOB:
-      case MYSQL_TYPE_GEOMETRY:
       case MYSQL_TYPE_JSON:
       case MYSQL_TYPE_VAR_STRING:
       case MYSQL_TYPE_STRING:
@@ -4307,13 +4441,24 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
         column_length = column->length;
     }
 
-    if (key->type == KEYTYPE_SPATIAL) {
+    if (key->type == KEYTYPE_SPATIAL ||
+        key_info->algorithm == HA_KEY_ALG_RTREE ||
+        sql_field->sql_type == MYSQL_TYPE_GEOMETRY) {
       if (column_length) {
         my_error(ER_WRONG_SUB_KEY, MYF(0));
         DBUG_RETURN(true);
       }
       if (sql_field->sql_type != MYSQL_TYPE_GEOMETRY) {
         my_error(ER_SPATIAL_MUST_HAVE_GEOM_COL, MYF(0));
+        DBUG_RETURN(true);
+      }
+      if (key_info->flags & HA_NOSAME) {
+        my_error(ER_SPATIAL_UNIQUE_INDEX, MYF(0));
+        DBUG_RETURN(true);
+      }
+      if (column->is_explicit) {
+        my_error(ER_WRONG_USAGE, MYF(0), "spatial/fulltext/hash index",
+                 "explicit index order");
         DBUG_RETURN(true);
       }
 
@@ -4344,16 +4489,11 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
       column_length = 4 * sizeof(double);
     }
 
-    if (is_blob(sql_field->sql_type) ||
-        (sql_field->sql_type == MYSQL_TYPE_GEOMETRY &&
-         key->type != KEYTYPE_SPATIAL)) {
+    if (is_blob(sql_field->sql_type)) {
       if (!(file->ha_table_flags() & HA_CAN_INDEX_BLOBS)) {
         my_error(ER_BLOB_USED_AS_KEY, MYF(0), column->field_name.str);
         DBUG_RETURN(true);
       }
-      if (sql_field->sql_type == MYSQL_TYPE_GEOMETRY &&
-          sql_field->geom_type == Field::GEOM_POINT)
-        column_length = MAX_LEN_GEOM_POINT_FIELD;
       if (!column_length) {
         my_error(ER_BLOB_KEY_WITHOUT_LENGTH, MYF(0), column->field_name.str);
         DBUG_RETURN(true);
@@ -4414,7 +4554,8 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
           my_error(ER_NULL_COLUMN_IN_INDEX, MYF(0), column->field_name.str);
           DBUG_RETURN(true);
         }
-        if (key->type == KEYTYPE_SPATIAL) {
+        if (key->type == KEYTYPE_SPATIAL ||
+            sql_field->sql_type == MYSQL_TYPE_GEOMETRY) {
           my_error(ER_SPATIAL_CANT_HAVE_NULL, MYF(0));
           DBUG_RETURN(true);
         }
@@ -4440,10 +4581,10 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
       size_t max_field_size = blob_length_by_type(sql_field->sql_type);
       if (key_part_length > max_field_size ||
           key_part_length > file->max_key_length() ||
-          key_part_length > file->max_key_part_length()) {
+          key_part_length > file->max_key_part_length(create_info)) {
         // Given prefix length is too large, adjust it.
         key_part_length =
-            min(file->max_key_length(), file->max_key_part_length());
+            min(file->max_key_length(), file->max_key_part_length(create_info));
         if (max_field_size)
           key_part_length = min(key_part_length, max_field_size);
         if (key->type == KEYTYPE_MULTIPLE) {
@@ -4484,9 +4625,9 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
     my_error(ER_WRONG_KEY_COLUMN, MYF(0), column->field_name.str);
     DBUG_RETURN(true);
   }
-  if (key_part_length > file->max_key_part_length() &&
+  if (key_part_length > file->max_key_part_length(create_info) &&
       key->type != KEYTYPE_FULLTEXT) {
-    key_part_length = file->max_key_part_length();
+    key_part_length = file->max_key_part_length(create_info);
     if (key->type == KEYTYPE_MULTIPLE) {
       /* not a critical problem */
       push_warning_printf(thd, Sql_condition::SL_WARNING, ER_TOO_LONG_KEY,
@@ -4514,7 +4655,8 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
     binary compatibility for MyISAM tables with indexes on such columns
     we mimic this buggy behavior here.
   */
-  if (!((create_info->table_options & HA_OPTION_NO_PACK_KEYS)) &&
+  if ((create_info->db_type->flags & HTON_SUPPORTS_PACKED_KEYS) &&
+      !((create_info->table_options & HA_OPTION_NO_PACK_KEYS)) &&
       (key_part_length >= KEY_DEFAULT_PACK_LENGTH &&
        (sql_field->sql_type == MYSQL_TYPE_STRING ||
         sql_field->sql_type == MYSQL_TYPE_VARCHAR ||
@@ -4531,15 +4673,10 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
 
   /*
     Check if the key segment is partial, set the key flag
-    accordingly. The key segment for a POINT column is NOT considered
-    partial if key_length==MAX_LEN_GEOM_POINT_FIELD.
-    Note that fulltext indexes ignores prefixes.
+    accordingly. Note that fulltext indexes ignores prefixes.
   */
   if (key->type != KEYTYPE_FULLTEXT &&
-      key_part_length != sql_field->key_length &&
-      !(sql_field->sql_type == MYSQL_TYPE_GEOMETRY &&
-        sql_field->geom_type == Field::GEOM_POINT &&
-        key_part_length == MAX_LEN_GEOM_POINT_FIELD)) {
+      key_part_length != sql_field->key_length) {
     key_info->flags |= HA_KEY_HAS_PART_KEY_SEG;
     key_part_info->key_part_flag |= HA_PART_KEY_SEG;
   }
@@ -4549,46 +4686,328 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
 }
 
 /**
-  Find name of unique constraint which is referenced by the foreign key.
+  Check if candidate parent/supporting key contains exactly the same
+  columns as the foreign key, possibly, in different order. Also check
+  that columns usage by key is acceptable, i.e. key is not over column
+  prefix.
 
-  @param  alter_info      Alter_info object describing parent table.
-  @param  key_info_buffer Array describing keys in parent table.
-  @param  key_count       Number of keys in parent table.
-  @param  fk              Object describing the foreign key.
+  @tparam F               Function class which returns foreign key's
+                          referenced or referencing (depending on whether
+                          we check candidate parent or supporting key)
+                          column name by its index.
+  @param  alter_info      Alter_info describing columns in parent or
+                          child table.
+  @param  fk_col_count    Number of columns in the foreign key.
+  @param  fk_columns      Object of F type bound to the specific foreign key
+                          for which parent/supporting key check is carried
+                          out.
+  @param  key             KEY object describing candidate parent/supporting
+                          key.
 
-  @retval non-nullptr - unique constraint name if matching constraint is found.
-  @retval nullptr     - if no matching unique constraint is found.
+  @sa fk_is_key_exact_match_any_order(uint, F, dd::Index).
+
+  @retval True  - Key is proper parent/supporting key for the foreign key.
+  @retval False - Key can't be parent/supporting key for the foreign key.
 */
-static const char *find_fk_parent_key(Alter_info *alter_info,
-                                      const KEY *key_info_buffer,
-                                      const uint key_count,
-                                      const FOREIGN_KEY *fk) {
+template <class F>
+static bool fk_is_key_exact_match_any_order(Alter_info *alter_info,
+                                            uint fk_col_count,
+                                            const F &fk_columns,
+                                            const KEY *key) {
+  if (fk_col_count != key->actual_key_parts) return false;
+
+  for (uint i = 0; i < key->actual_key_parts; i++) {
+    // Prefix parts are considered non-matching.
+    if (key->key_part[i].key_part_flag & HA_PART_KEY_SEG) return false;
+
+    const Create_field *col =
+        get_field_by_index(alter_info, key->key_part[i].fieldnr);
+
+    uint j = 0;
+    while (j < fk_col_count) {
+      if (my_strcasecmp(system_charset_info, col->field_name, fk_columns(j)) ==
+          0)
+        break;
+      j++;
+    }
+    if (j == fk_col_count) return false;
+
+    /*
+      Foreign keys over virtual columns are not allowed.
+      This is checked at earlier stage.
+    */
+    DBUG_ASSERT(!col->is_virtual_gcol());
+  }
+
+  return true;
+}
+
+/**
+  Count how many elements from the start of the candidate parent/supporting
+  key match elements at the start of the foreign key (prefix parts are
+  considered non-matching).
+
+  @tparam F               Function class which returns foreign key's
+                          referenced or referencing (depending on whether
+                          we check candidate parent or supporting key)
+                          column name by its index.
+  @param  alter_info      Alter_info describing columns in parent or
+                          child table.
+  @param  fk_col_count    Number of columns in the foreign key.
+  @param  fk_columns      Object of F type bound to the specific foreign key
+                          for which parent/supporting key check is carried
+                          out.
+  @param  key             KEY object describing candidate parent/supporting
+                          key.
+
+  @sa fk_key_prefix_match_count(uint, F, dd::Index).
+
+  @retval Number of matching columns.
+*/
+template <class F>
+static uint fk_key_prefix_match_count(Alter_info *alter_info, uint fk_col_count,
+                                      const F &fk_columns, const KEY *key) {
+  uint col_idx = 0;
+
+  for (; col_idx < key->actual_key_parts; ++col_idx) {
+    if (col_idx == fk_col_count) break;
+    // Prefix parts are considered non-matching.
+    if (key->key_part[col_idx].key_part_flag & HA_PART_KEY_SEG) break;
+    const Create_field *col =
+        get_field_by_index(alter_info, key->key_part[col_idx].fieldnr);
+
+    if (my_strcasecmp(system_charset_info, col->field_name,
+                      fk_columns(col_idx)) != 0)
+      break;
+
+    /*
+      Foreign keys over virtual columns are not allowed.
+      This is checked at earlier stage.
+    */
+    DBUG_ASSERT(!col->is_virtual_gcol());
+  }
+
+  return col_idx;
+}
+
+/**
+  Check if candidate parent/supporting key contains all colums from the
+  foreign key at its start and in the same order it is in the foreign key.
+  Also check that columns usage by key is acceptable, i.e. key is not over
+  column prefix.
+
+  @tparam F               Function class which returns foreign key's
+                          referenced or referencing (depending on whether
+                          we check candidate parent or supporting key)
+                          column name by its index.
+  @param  alter_info      Alter_info describing columns in parent or
+                          child table.
+  @param  fk_col_count    Number of columns in the foreign key.
+  @param  fk_columns      Object of F type bound to the specific foreign key
+                          for which parent/supporting key check is carried
+                          out.
+  @param  key             KEY object describing candidate parent/supporting
+                          key.
+
+  @sa fk_key_is_full_prefix_match(uint, F, dd::Index).
+
+  @retval True  - Key is proper parent/suporting key for the foreign key.
+  @retval False - Key can't be parent/supporting key for the foreign key.
+*/
+template <class F>
+static bool fk_key_is_full_prefix_match(Alter_info *alter_info,
+                                        uint fk_col_count, const F &fk_columns,
+                                        const KEY *key) {
+  /*
+    The index may have more elements, but must start with the same
+    elements as the FK.
+  */
+  if (fk_col_count > key->actual_key_parts) return false;
+
+  uint match_count =
+      fk_key_prefix_match_count(alter_info, fk_col_count, fk_columns, key);
+  return (match_count == fk_col_count);
+}
+
+/**
+  Check if parent key for self-referencing foreign key exists, set
+  foreign key's unique constraint name accordingly. Emit error if
+  no parent key found.
+
+  @note Prefer unique key if possible. If parent key is non-unique
+        unique constraint name is set to NULL.
+
+  @param          hton            Handlerton for table's storage engine.
+  @param          alter_info      Alter_info object describing parent table.
+  @param          key_info_buffer Array describing keys in parent table.
+  @param          key_count       Number of keys in parent table.
+  @param          old_fk_table    dd::Table object from which pre-existing
+                                  FK comes from. nullptr if this FK is newly
+                                  added.
+  @param[in,out]  fk              FOREIGN_KEY object describing the FK, its
+                                  unique_index_name member will be updated
+                                  if matching unique constraint is found.
+
+  @retval Operation result. False if success.
+*/
+static bool prepare_self_ref_fk_parent_key(
+    handlerton *hton, Alter_info *alter_info, const KEY *key_info_buffer,
+    const uint key_count, const dd::Table *old_fk_table, FOREIGN_KEY *fk) {
+  auto fk_columns_lambda = [fk](uint i) { return fk->fk_key_part[i].str; };
+
   for (const KEY *key = key_info_buffer; key < key_info_buffer + key_count;
        key++) {
-    if (!(key->flags & HA_NOSAME)) continue;
+    // We can't use FULLTEXT or SPATIAL indexes.
+    if (key->flags & (HA_FULLTEXT | HA_SPATIAL)) continue;
 
-    // The index may have more elements, but must start with the same
-    // elements as the FK.
-    if (fk->key_parts > key->actual_key_parts) continue;
+    if (hton->foreign_keys_flags & HTON_FKS_WITH_PREFIX_PARENT_KEYS) {
+      /*
+        Engine supports unique and non unique-parent keys which contain full
+        foreign key as its prefix. Example: InnoDB.
 
-    bool match = true;
-    for (uint i = 0; i < fk->key_parts && match; i++) {
-      // Indexes with prefix parts at the start cannot be parent keys.
-      if (key->key_part[i].key_part_flag & HA_PART_KEY_SEG) {
-        match = false;
-      } else {
-        const Create_field *col =
-            get_field_by_index(alter_info, key->key_part[i].fieldnr);
-        if (col->is_virtual_gcol())
-          match = false;
-        else if (my_strcasecmp(system_charset_info, col->field_name,
-                               fk->fk_key_part[i].str) != 0)
-          match = false;
+        Primary and unique keys are sorted before non-unique keys.
+        So if there is suitable unique parent key we will always find
+        it before encountering any non-unique keys.
+      */
+      if (fk_key_is_full_prefix_match(alter_info, fk->key_parts,
+                                      fk_columns_lambda, key)) {
+        /*
+          We only store names of PK or UNIQUE keys in UNIQUE_CONSTRAINT_NAME.
+          InnoDB allows non-unique indexes as parent keys for which NULL is
+          stored.
+        */
+        if (key->flags & HA_NOSAME)
+          fk->unique_index_name = key->name;
+        else
+          fk->unique_index_name = nullptr;
+        return false;
+      }
+    } else {
+      /*
+        Default case. Engine only supports unique parent keys which
+        contain exactly the same columns as foreign key, possibly
+        in different order. Example: NDB.
+      */
+      if ((key->flags & HA_NOSAME) &&
+          fk_is_key_exact_match_any_order(alter_info, fk->key_parts,
+                                          fk_columns_lambda, key)) {
+        fk->unique_index_name = key->name;
+        return false;
       }
     }
-    if (match) return key->name;
   }
-  return nullptr;
+
+  //  No matching parent key!
+  if (old_fk_table == nullptr) {
+    // This is new foreign key for which parent key is missing.
+    my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk->name, fk->ref_table.str);
+  } else {
+    /*
+      Old foreign key for which parent key must have been dropped by
+      this ALTER TABLE.
+
+      Find old foreign key definition first.
+    */
+    auto same_name = [fk](const dd::Foreign_key *el) {
+      return my_strcasecmp(system_charset_info, fk->name, el->name().c_str()) ==
+             0;
+    };
+
+    auto old_fk = std::find_if(old_fk_table->foreign_keys().begin(),
+                               old_fk_table->foreign_keys().end(), same_name);
+    DBUG_ASSERT(old_fk != old_fk_table->foreign_keys().end());
+
+    /*
+      And then try to find original parent key name. Just getting
+      unique constraint name won't work for non-unique parent key.
+      Ideally we should be using handlerton of old table version
+      below, however, in practice, new table version's handlerton
+      works just fine, since we do not allow changing of storage
+      engines for tables with foreign keys.
+    */
+    const dd::Index *old_pk = find_fk_parent_key(hton, old_fk_table, *old_fk);
+    my_error(ER_DROP_INDEX_FK, MYF(0),
+             old_pk ? old_pk->name().c_str() : "<unknown key name>");
+  }
+  return true;
+}
+
+/**
+  Find supporting key for the foreign key.
+
+  @param  hton              Handlerton for table's storage engine.
+  @param  alter_info        Alter_info object describing child table.
+  @param  key_info_buffer   Array describing keys in child table.
+  @param  key_count         Number of keys in child table.
+  @param  fk                FOREIGN_KEY object describing the FK.
+
+  @sa find_fk_supporting_key(handlerton*, const dd::Table*,
+                             const dd::Foreign_key*)
+
+  @retval non-nullptr - pointer to KEY object describing supporting key.
+  @retval nullptr     - if no supporting key were found.
+*/
+static const KEY *find_fk_supporting_key(handlerton *hton,
+                                         Alter_info *alter_info,
+                                         const KEY *key_info_buffer,
+                                         const uint key_count,
+                                         const FOREIGN_KEY *fk) {
+  uint best_match_count = 0;
+  const KEY *best_match_key = nullptr;
+
+  auto fk_columns_lambda = [fk](uint i) { return fk->key_part[i].str; };
+
+  for (const KEY *key = key_info_buffer; key < key_info_buffer + key_count;
+       key++) {
+    // We can't use FULLTEXT or SPATIAL indexes.
+    if (key->flags & (HA_FULLTEXT | HA_SPATIAL)) continue;
+
+    if (key->algorithm == HA_KEY_ALG_HASH) {
+      if (hton->foreign_keys_flags & HTON_FKS_WITH_SUPPORTING_HASH_KEYS) {
+        /*
+          Storage engine supports hash keys as supporting keys for foreign
+          keys. Hash key should contain all foreign key columns and only
+          them (altough in any order).
+          Example: NDB and unique/primary key with USING HASH clause.
+         */
+        if (fk_is_key_exact_match_any_order(alter_info, fk->key_parts,
+                                            fk_columns_lambda, key))
+          return key;
+      }
+    } else {
+      if (hton->foreign_keys_flags & HTON_FKS_WITH_ANY_PREFIX_SUPPORTING_KEYS) {
+        /*
+          Storage engine supports non-hash keys which have common prefix
+          with the foreign key as supporting keys for it. If there are
+          several such keys, one which shares biggest prefix with FK is
+          chosen.
+
+          Example: NDB and non-unique keys, or unique/primary keys without
+                   explicit USING HASH clause.
+         */
+        uint match_count = fk_key_prefix_match_count(alter_info, fk->key_parts,
+                                                     fk_columns_lambda, key);
+
+        if (match_count > best_match_count) {
+          best_match_count = match_count;
+          best_match_key = key;
+        }
+      } else {
+        /*
+          Default case. Storage engine supports non-hash keys which contain
+          full foreign key as prefix as supporting key for it.
+          Example: InnoDB.
+
+          SQL-layer tries to automatically create such generated key when
+          foreign key is created.
+        */
+        if (fk_key_is_full_prefix_match(alter_info, fk->key_parts,
+                                        fk_columns_lambda, key))
+          return key;
+      }
+    }
+  }
+  return best_match_key;
 }
 
 /**
@@ -4755,167 +5174,438 @@ static const char *generate_fk_name(const char *table_name,
   return sql_strdup(name);
 }
 
-/*
-  Find unique constraint name in the parent table which is referenced
-  by the foreign key.
+/**
+  Check if candidate parent/supporting key contains exactly the same
+  columns as the foreign key, possibly, in different order. Also check
+  that columns usage by key is acceptable, i.e. key is not over column
+  prefix.
 
-  @param  thd         Thread context.
-  @param  fk[in,out]  FOREIGN_KEY object describing the FK, its
-                      unique_index_name member will be updated
-                      if matching unique constraint is found.
+  @tparam F               Function class which returns foreign key's
+                          referenced or referencing (depending on whether
+                          we check candidate parent or supporting key)
+                          column name by its index.
+  @param  fk_col_count    Number of columns in the foreign key.
+  @param  fk_columns      Object of F type bound to the specific foreign key
+                          for which parent/supporting key check is carried
+                          out.
+  @param  idx             dd::Index object describing candidate parent/
+                          supporting key.
+
+  @sa fk_is_key_exact_match_any_order(Alter_info, uint, F, KEY).
+
+  @retval True  - Key is proper parent/supporting key for the foreign key.
+  @retval False - Key can't be parent/supporting key for the foreign key.
+*/
+template <class F>
+static bool fk_is_key_exact_match_any_order(uint fk_col_count,
+                                            const F &fk_columns,
+                                            const dd::Index *idx) {
+  /*
+    Skip keys which have less elements (including hidden ones)
+    than foreign key right away.
+  */
+  if (fk_col_count > idx->elements().size()) return false;
+
+  uint col_matched = 0;
+
+  for (const dd::Index_element *idx_el : idx->elements()) {
+    if (idx_el->is_hidden()) continue;
+
+    uint j = 0;
+    while (j < fk_col_count) {
+      if (my_strcasecmp(system_charset_info, idx_el->column().name().c_str(),
+                        fk_columns(j)) == 0)
+        break;
+      j++;
+    }
+    if (j == fk_col_count) return false;
+
+    /*
+      Foreign keys over virtual columns are not allowed.
+      This is checked at earlier stage.
+    */
+    DBUG_ASSERT(!idx_el->column().is_virtual());
+
+    /*
+      Prefix keys are not allowed/considered non-matching.
+
+      There is a special provision which allows to treat unique keys on
+      POINT and BLOB columns with prefix length equal to real column
+      length as candidate/primary keys. However, since InnoDB doesn't
+      allow columns of such types in FKs, we don't need similar provision
+      here. So we can simply use dd::Index_element::is_prefix().
+
+      Calling Index_element::is_prefix() can be a bit expensive so
+      we do this after checking if foreign key has matching column
+      (foreign key column list is likely to be small).
+    */
+    if (idx_el->is_prefix()) return false;
+
+    ++col_matched;
+  }
+
+  return (col_matched == fk_col_count);
+}
+
+/**
+  Count how many elements from the start of the candidate parent/supporting
+  key match elements at the start of the foreign key (prefix parts are
+  considered non-matching).
+
+  @tparam F               Function class which returns foreign key's
+                          referenced or referencing (depending on whether
+                          we check candidate parent or supporting key)
+                          column name by its index.
+  @param  fk_col_count    Number of columns in the foreign key.
+  @param  fk_columns      Object of F type bound to the specific foreign key
+                          for which parent/supporting key check is carried
+                          out.
+  @param  idx             dd::Index object describing candidate parent/
+                          supporting key.
+
+  @sa fk_key_prefix_match_count(Alter_info, uint, F, KEY).
+
+  @retval Number of matching columns.
+*/
+template <class F>
+static uint fk_key_prefix_match_count(uint fk_col_count, const F &fk_columns,
+                                      const dd::Index *idx) {
+  uint fk_col_idx = 0;
+
+  for (const dd::Index_element *idx_el : idx->elements()) {
+    if (fk_col_idx == fk_col_count) break;
+
+    if (idx_el->is_hidden()) continue;
+
+    if (my_strcasecmp(system_charset_info, idx_el->column().name().c_str(),
+                      fk_columns(fk_col_idx)) != 0)
+      break;
+
+    /*
+      Foreign keys over virtual columns are not allowed.
+      This is checked at earlier stage.
+    */
+    DBUG_ASSERT(!idx_el->column().is_virtual());
+
+    /*
+      Prefix parts are considered non-matching.
+
+      There is a special provision which allows to treat unique keys on
+      POINT and BLOB columns with prefix length equal to real column
+      length as candidate/primary keys. However, since InnoDB doesn't
+      allow columns of such types in FKs, we don't need similar provision
+      here. So we can simply use dd::Index_element::is_prefix().
+
+      Calling Index_element::is_prefix() can be a bit expensive so
+      we do this after checking column name.
+    */
+    if (idx_el->is_prefix()) break;
+
+    ++fk_col_idx;
+  }
+
+  return fk_col_idx;
+}
+
+/**
+  Check if candidate parent/supporting key contains all colums from the
+  foreign key at its start and in the same order it is in the foreign key.
+  Also check that columns usage by key is acceptable, i.e. key is not over
+  column prefix.
+
+  @tparam F               Function class which returns foreign key's
+                          referenced or referencing (depending on whether
+                          we check candidate parent or supporting key)
+                          column name by its index.
+  @param  fk_col_count    Number of columns in the foreign key.
+  @param  fk_columns      Object of F type bound to the specific foreign key
+                          for which parent/supporting key check is carried
+                          out.
+  @param  idx             dd::Index object describing candidate parent/
+                          supporting key.
+
+  @sa fk_key_is_full_prefix_match(Alter_info, uint, F, KEY).
+
+  @retval True  - Key is proper parent/supporting key for the foreign key.
+  @retval False - Key can't be parent/supporting key for the foreign key.
+*/
+template <class F>
+static bool fk_key_is_full_prefix_match(uint fk_col_count, const F &fk_columns,
+                                        const dd::Index *idx) {
+  // The index must have at least same amount of elements as the foreign key.
+  if (fk_col_count > idx->elements().size()) return false;
+
+  uint match_count = fk_key_prefix_match_count(fk_col_count, fk_columns, idx);
+
+  return (match_count == fk_col_count);
+}
+
+/**
+  Find parent key which matches the foreign key. Prefer unique key if possible.
+
+  @tparam F                 Function class which returns foreign key's column
+                            name by its index.
+  @param  hton              Handlerton for tables' storage engine. Used to
+                            figure out what kind of parent keys are supported
+                            by the storage engine..
+  @param  parent_table_def  dd::Table object describing the parent table.
+  @param  fk_col_count      Number of columns in the foreign key.
+  @param  fk_columns        Object of F type bound to the specific foreign key
+                            for which parent key check is carried out.
+
+  @retval non-nullptr - pointer to dd::Index object describing the parent key.
+  @retval nullptr     - if no parent key were found.
+*/
+template <class F>
+static const dd::Index *find_fk_parent_key(handlerton *hton,
+                                           const dd::Table *parent_table_def,
+                                           uint fk_col_count,
+                                           const F &fk_columns) {
+  for (const dd::Index *idx : parent_table_def->indexes()) {
+    // We can't use FULLTEXT or SPATIAL indexes.
+    if (idx->type() == dd::Index::IT_FULLTEXT ||
+        idx->type() == dd::Index::IT_SPATIAL)
+      continue;
+
+    // We also can't use hidden indexes.
+    if (idx->is_hidden()) continue;
+
+    if (hton->foreign_keys_flags & HTON_FKS_WITH_PREFIX_PARENT_KEYS) {
+      /*
+        Engine supports unique and non unique-parent keys which contain full
+        foreign key as its prefix. Example: InnoDB.
+
+        Primary and unique keys are sorted before non-unique keys.
+        So if there is suitable unique parent key we will always find
+        it before any non-unique key.
+      */
+      if (fk_key_is_full_prefix_match(fk_col_count, fk_columns, idx))
+        return idx;
+    } else {
+      /*
+        Default case. Engine only supports unique parent keys which
+        contain exactly the same columns as foreign key, possibly
+        in different order. Example: NDB.
+      */
+      if ((idx->type() == dd::Index::IT_PRIMARY ||
+           idx->type() == dd::Index::IT_UNIQUE) &&
+          fk_is_key_exact_match_any_order(fk_col_count, fk_columns, idx))
+        return idx;
+    }
+  }
+  return nullptr;
+}
+
+/**
+  Find supporting key for the foreign key.
+
+  @param  hton              Handlerton for tables' storage engine. Used to
+                            figure out what kind of supporting keys are
+                            allowed  by the storage engine.
+  @param  table_def         dd::Table object describing the child table.
+  @param  fk                dd::Foreign_key object describing the foreign
+                            key.
+
+  @sa find_fk_supporting_key(handlerton*, Alter_info*, const KEY*, uint,
+                             const FOREIGN_KEY*)
+
+  @retval non-nullptr - pointer to dd::Index object describing supporting key.
+  @retval nullptr     - if no supporting key were found.
+*/
+static const dd::Index *find_fk_supporting_key(handlerton *hton,
+                                               const dd::Table *table_def,
+                                               const dd::Foreign_key *fk) {
+  uint best_match_count = 0;
+  const dd::Index *best_match_idx = nullptr;
+
+  auto fk_columns_lambda = [fk](uint i) {
+    return fk->elements()[i]->column().name().c_str();
+  };
+
+  for (const dd::Index *idx : table_def->indexes()) {
+    // We can't use FULLTEXT or SPATIAL indexes.
+    if (idx->type() == dd::Index::IT_FULLTEXT ||
+        idx->type() == dd::Index::IT_SPATIAL)
+      continue;
+
+    // We also can't use hidden indexes.
+    if (idx->is_hidden()) continue;
+
+    if (idx->algorithm() == dd::Index::IA_HASH) {
+      if (hton->foreign_keys_flags & HTON_FKS_WITH_SUPPORTING_HASH_KEYS) {
+        /*
+          Storage engine supports hash keys as supporting keys for foreign
+          keys. Hash key should contain all foreign key columns and only
+          them (altough in any order).
+          Example: NDB and unique/primary key with USING HASH clause.
+         */
+        if (fk_is_key_exact_match_any_order(fk->elements().size(),
+                                            fk_columns_lambda, idx))
+          return idx;
+      }
+    } else {
+      if (hton->foreign_keys_flags & HTON_FKS_WITH_ANY_PREFIX_SUPPORTING_KEYS) {
+        /*
+          Storage engine supports non-hash keys which have common prefix
+          with the foreign key as supporting keys for it. If there are
+          several such keys, one which shares biggest prefix with FK is
+          chosen.
+
+          Example: NDB and non-unique keys, or unique/primary keys without
+                   explicit USING HASH clause.
+         */
+        uint match_count = fk_key_prefix_match_count(fk->elements().size(),
+                                                     fk_columns_lambda, idx);
+
+        if (match_count > best_match_count) {
+          best_match_count = match_count;
+          best_match_idx = idx;
+        }
+      } else {
+        /*
+          Default case. Storage engine supports non-hash keys which contain
+          full foreign key as prefix as supporting key for it.
+          Example: InnoDB.
+
+          SQL-layer tries to automatically create such generated key when
+          foreign key is created.
+        */
+        if (fk_key_is_full_prefix_match(fk->elements().size(),
+                                        fk_columns_lambda, idx))
+          return idx;
+      }
+    }
+  }
+  return best_match_idx;
+}
+
+/*
+  Check if parent key for foreign key exists, set foreign key's unique
+  constraint name accordingly. Emit error if no parent key found.
+
+  @note Prefer unique key if possible. If parent key is non-unique
+        unique constraint name is set to NULL.
+
+  @note CREATE TABLE and ALTER TABLE code use this function for
+        non-self-referencing foreign keys.
+
+  @sa prepare_fk_parent_key(handlerton, dd::Table, dd::Table, dd::Table,
+                            dd::Foreign_key)
+
+  @param  hton              Handlerton for tables' storage engine.
+  @param  parent_table_def  dd::Table object describing parent table.
+  @param  fk[in,out]        FOREIGN_KEY object describing the FK, its
+                            unique_index_name member will be updated
+                            if matching unique constraint is found.
 
   @retval Operation result. False if success.
 */
-static bool find_fk_parent_key(THD *thd, FOREIGN_KEY *fk) {
-  const dd::Table *parent_table_def = nullptr;
+static bool prepare_fk_parent_key(handlerton *hton,
+                                  const dd::Table *parent_table_def,
+                                  FOREIGN_KEY *fk) {
+  auto fk_columns_lambda = [fk](uint i) { return fk->fk_key_part[i].str; };
 
-  if (thd->dd_client()->acquire(fk->ref_db.str, fk->ref_table.str,
-                                &parent_table_def))
-    return true;
+  const dd::Index *parent_key = find_fk_parent_key(
+      hton, parent_table_def, fk->key_parts, fk_columns_lambda);
 
-  /*
-    Missing parent table is legitimate case in FOREIGN_KEY_CHECKS=0 mode.
-    If we are not in this mode and missing parent is disallowed then the
-    error will be reported by SE.
-  */
-  if (parent_table_def == nullptr) {
+  if (parent_key != nullptr) {
     /*
-      Caller should have already initialized unique_index_name to value which
-      corresponds to NULL value in FOREIGN_KEYS.UNIQUE_CONSTRAINT_NAME column.
+      We only store names of PRIMARY/UNIQUE keys in unique_index_name,
+      even though InnoDB allows non-unique indexes as parent keys.
     */
-    DBUG_ASSERT(fk->unique_index_name == nullptr);
+    if (parent_key->type() == dd::Index::IT_PRIMARY ||
+        parent_key->type() == dd::Index::IT_UNIQUE) {
+      fk->unique_index_name = parent_key->name().c_str();
+    } else {
+      DBUG_ASSERT(fk->unique_index_name == nullptr);
+    }
     return false;
   }
 
-  for (const dd::Index *idx : parent_table_def->indexes()) {
-    /*
-      We only store names of PRIMARY/UNIQUE keys in unique_index_name,
-      even though InnoDB allows non-unique indexes as parent keys.
-    */
-    if (idx->type() != dd::Index::IT_PRIMARY &&
-        idx->type() != dd::Index::IT_UNIQUE)
-      continue;
+  my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk->name, fk->ref_table.str);
+  return true;
+}
 
-    // We also can't use hidden indexes.
-    if (idx->is_hidden()) continue;
+/**
+  Find parent key which matches the foreign key. Prefer unique key if possible.
 
-    /*
-      The index may have more elements, but must start with the same
-      elements as the FK.
-    */
-    if (fk->key_parts > idx->elements().size()) continue;
+  @param  hton              Handlerton for tables' storage engine.
+  @param  parent_table_def  dd::Table object describing the parent table.
+  @param  fk                dd::Foreign_key object describing the foreign key.
 
-    uint fk_col_idx = 0;
-    bool match = true;
+  @retval non-nullptr - pointer to dd::Index object describing the parent key.
+  @retval nullptr     - if no parent key were found.
+*/
+static const dd::Index *find_fk_parent_key(handlerton *hton,
+                                           const dd::Table *parent_table_def,
+                                           const dd::Foreign_key *fk) {
+  auto fk_columns_lambda = [fk](uint i) {
+    return fk->elements()[i]->referenced_column_name().c_str();
+  };
+  return find_fk_parent_key(hton, parent_table_def, fk->elements().size(),
+                            fk_columns_lambda);
+}
 
-    for (const dd::Index_element *idx_el : idx->elements()) {
-      if (fk_col_idx == fk->key_parts) break;
+bool prepare_fk_parent_key(handlerton *hton, const dd::Table *parent_table_def,
+                           const dd::Table *old_parent_table_def,
+                           const dd::Table *old_child_table_def,
+                           dd::Foreign_key *fk) {
+  const dd::Index *parent_key = find_fk_parent_key(hton, parent_table_def, fk);
 
-      if (idx_el->is_hidden()) continue;
+  if (parent_key == nullptr) {
+    // No matching parent key in new table definition.
+    if (old_parent_table_def == nullptr) {
+      /*
+        No old version of parent table definition. This must be CREATE
+        TABLE or RENAME TABLE (or possibly ALTER TABLE RENAME).
+      */
+      my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk->name().c_str(),
+               fk->referenced_table_name().c_str());
+    } else {
+      /*
+        This is ALTER TABLE which dropped parent key.
 
-      // We do not allow parent keys with virtual columns at the start.
-      if (idx_el->column().is_virtual()) {
-        match = false;
-        break;
-      }
-
-      if (my_strcasecmp(system_charset_info, idx_el->column().name().c_str(),
-                        fk->fk_key_part[fk_col_idx].str) != 0) {
-        match = false;
-        break;
-      }
+        To report error we find original foreign key definition first.
+      */
+      DBUG_ASSERT(old_child_table_def != nullptr);
+      auto same_name = [fk](const dd::Foreign_key *el) {
+        return my_strcasecmp(system_charset_info, fk->name().c_str(),
+                             el->name().c_str()) == 0;
+      };
+      auto old_fk =
+          std::find_if(old_child_table_def->foreign_keys().begin(),
+                       old_child_table_def->foreign_keys().end(), same_name);
+      DBUG_ASSERT(old_fk != old_child_table_def->foreign_keys().end());
 
       /*
-        We also don't allow prefix keys as parent keys.
-
-        There is a special provision which allows to treat unique keys on
-        POINT and BLOB columns with prefix length equal to real column
-        length as candidate/primary keys. However, since InnoDB doesn't
-        allow columns of such types in FKs, we don't need similar provision
-        here. So we can simply use dd::Index_element::is_prefix().
+        And then try to find original parent key name. Just getting
+        unique constraint name won't work for non-unique parent key.
+        Ideally we should be using handlerton of old table version
+        below, however, in practice, new table version's handlerton
+        works just fine, since we do not allow changing of storage
+        engines for tables with foreign keys.
       */
-      if (idx_el->is_prefix()) {
-        match = false;
-        break;
-      }
-
-      ++fk_col_idx;
+      const dd::Index *old_pk =
+          find_fk_parent_key(hton, old_parent_table_def, *old_fk);
+      my_error(ER_DROP_INDEX_FK, MYF(0),
+               old_pk ? old_pk->name().c_str() : "<unknown key name>");
     }
+    return true;
+  }
 
-    if (match && fk_col_idx == fk->key_parts) {
-      fk->unique_index_name = idx->name().c_str();
-      return false;
-    }
+  /*
+    If parent key is not PRIMARY/UNIQUE set UNIQUE_CONSTRAINT_NAME to
+    NULL value. This is done by setting the name to "", which is
+    interpreted as NULL when it is stored to the DD tables.
+  */
+  if (parent_key->type() == dd::Index::IT_PRIMARY ||
+      parent_key->type() == dd::Index::IT_UNIQUE) {
+    fk->set_unique_constraint_name(parent_key->name().c_str());
+  } else {
+    fk->set_unique_constraint_name("");
   }
 
   return false;
-}
-
-const char *find_fk_parent_key(const dd::Table *parent_table_def,
-                               const dd::Foreign_key *fk) {
-  for (const dd::Index *idx : parent_table_def->indexes()) {
-    /*
-      We only store names of PRIMARY/UNIQUE keys in unique_index_name,
-      even though InnoDB allows non-unique indexes as parent keys.
-    */
-    if (idx->type() != dd::Index::IT_PRIMARY &&
-        idx->type() != dd::Index::IT_UNIQUE)
-      continue;
-
-    // We also can't use hidden indexes.
-    if (idx->is_hidden()) continue;
-
-    /*
-      The index may have more elements, but must start with the same
-      elements as the FK.
-    */
-    if (fk->elements().size() > idx->elements().size()) continue;
-
-    uint fk_col_idx = 0;
-    bool match = true;
-
-    for (const dd::Index_element *idx_el : idx->elements()) {
-      if (fk_col_idx == fk->elements().size()) break;
-
-      if (idx_el->is_hidden()) continue;
-
-      // We do not allow parent keys with virtual columns at the start.
-      if (idx_el->column().is_virtual()) {
-        match = false;
-        break;
-      }
-
-      if (my_strcasecmp(
-              system_charset_info, idx_el->column().name().c_str(),
-              fk->elements()[fk_col_idx]->referenced_column_name().c_str()) !=
-          0) {
-        match = false;
-        break;
-      }
-
-      /*
-        We also don't allow prefix keys as parent keys.
-
-        There is a special provision which allows to treat unique keys on
-        POINT and BLOB columns with prefix length equal to real column
-        length as candidate/primary keys. However, since InnoDB doesn't
-        allow columns of such types in FKs, we don't need similar provision
-        here. So we can simply use dd::Index_element::is_prefix().
-      */
-      if (idx_el->is_prefix()) {
-        match = false;
-        break;
-      }
-
-      ++fk_col_idx;
-    }
-
-    if (match && fk_col_idx == fk->elements().size()) {
-      return idx->name().c_str();
-    }
-  }
-
-  return "";
 }
 
 /**
@@ -5005,7 +5695,33 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
   for (size_t column_nr = 0; column_nr < fk_key->ref_columns.size();
        column_nr++) {
     const Key_part_spec *col = fk_key->columns[column_nr];
+    /* Check that referencing column exists and is not virtual. */
+    List_iterator<Create_field> find_it(alter_info->create_list);
+    Create_field *find;
+    while ((find = find_it++)) {
+      if (my_strcasecmp(system_charset_info, col->field_name.str,
+                        find->field_name) == 0) {
+        break;
+      }
+    }
+    if (find == nullptr) {
+      /*
+        In practice this should not happen as wrong column name is caught
+        during generated index processing and error with good enough message
+        is reported. So we don't fuss about error message here.
+      */
+      my_error(ER_CANNOT_ADD_FOREIGN, MYF(0));
+      DBUG_RETURN(true);
+    }
+
+    if (find->is_virtual_gcol()) {
+      my_error(ER_FK_CANNOT_USE_VIRTUAL_COLUMN, MYF(0), fk_info->name,
+               col->field_name.str);
+      DBUG_RETURN(true);
+    }
+
     fk_info->key_part[column_nr] = col->field_name;
+
     const Key_part_spec *fk_col = fk_key->ref_columns[column_nr];
 
     // Always store column names in lower case.
@@ -5017,14 +5733,110 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
   }
 
   if (find_parent_key) {
+    if (find_fk_supporting_key(create_info->db_type, alter_info,
+                               key_info_buffer, key_count,
+                               fk_info) == nullptr) {
+      /*
+        Since we always add generated supporting key when adding new
+        foreign key the failure to find key above is likely to mean
+        that generated key was auto-converted to spatial key or it is
+        some other corner case.
+      */
+      my_error(ER_FK_NO_INDEX_CHILD, MYF(0), fk_info->name, table_name);
+      DBUG_RETURN(true);
+    }
+
     if (my_strcasecmp(table_alias_charset, fk_info->ref_db.str, db) == 0 &&
         my_strcasecmp(table_alias_charset, fk_info->ref_table.str,
                       table_name) == 0) {
-      // FK which references the same table on which it is defined.
-      fk_info->unique_index_name =
-          find_fk_parent_key(alter_info, key_info_buffer, key_count, fk_info);
+      /*
+        FK which references the same table on which it is defined.
+
+        Check that referenced columns exist and are non-virtual as first step.
+      */
+      for (uint i = 0; i < fk_info->key_parts; i++) {
+        List_iterator_fast<Create_field> field_it(alter_info->create_list);
+        const Create_field *field;
+
+        while ((field = field_it++)) {
+          if (my_strcasecmp(system_charset_info, field->field_name,
+                            fk_info->fk_key_part[i].str) == 0)
+            break;
+        }
+        if (field == nullptr) {
+          my_error(ER_FK_NO_COLUMN_PARENT, MYF(0), fk_info->fk_key_part[i].str,
+                   fk_info->name, fk_info->ref_table.str);
+          DBUG_RETURN(true);
+        }
+
+        if (field->is_virtual_gcol()) {
+          my_error(ER_FK_CANNOT_USE_VIRTUAL_COLUMN, MYF(0), fk_info->name,
+                   fk_info->fk_key_part[i].str);
+          DBUG_RETURN(true);
+        }
+      }
+
+      if (prepare_self_ref_fk_parent_key(create_info->db_type, alter_info,
+                                         key_info_buffer, key_count, nullptr,
+                                         fk_info))
+        DBUG_RETURN(true);
     } else {
-      if (find_fk_parent_key(thd, fk_info)) DBUG_RETURN(true);
+      /*
+        FK which references other table than one on which it is defined.
+
+        Check that table exists as the first step.
+      */
+      const dd::Table *parent_table_def = nullptr;
+
+      if (thd->dd_client()->acquire(fk_info->ref_db.str, fk_info->ref_table.str,
+                                    &parent_table_def))
+        DBUG_RETURN(true);
+
+      if (parent_table_def == nullptr) {
+        if (!(thd->variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS)) {
+          my_error(ER_FK_CANNOT_OPEN_PARENT, MYF(0), fk_info->ref_table.str);
+          DBUG_RETURN(true);
+        }
+        /*
+          Missing parent table is legitimate case in FOREIGN_KEY_CHECKS=0 mode.
+
+          FOREIGN_KEY::unique_index_name should be already set to value which
+          corresponds to NULL value in FOREIGN_KEYS.UNIQUE_CONSTRAINT_NAME
+          column.
+        */
+        DBUG_ASSERT(fk_info->unique_index_name == nullptr);
+      } else {
+        /* Then check that referenced columns exist and are non-virtual. */
+
+        for (uint i = 0; i < fk_info->key_parts; i++) {
+          const char *ref_column_name = fk_info->fk_key_part[i].str;
+
+          auto same_column_name = [ref_column_name](const dd::Column *c) {
+            return my_strcasecmp(system_charset_info, c->name().c_str(),
+                                 ref_column_name) == 0;
+          };
+
+          auto ref_column =
+              std::find_if(parent_table_def->columns().begin(),
+                           parent_table_def->columns().end(), same_column_name);
+
+          if (ref_column == parent_table_def->columns().end()) {
+            my_error(ER_FK_NO_COLUMN_PARENT, MYF(0), ref_column_name,
+                     fk_info->name, fk_info->ref_table.str);
+            DBUG_RETURN(true);
+          }
+
+          if ((*ref_column)->is_virtual()) {
+            my_error(ER_FK_CANNOT_USE_VIRTUAL_COLUMN, MYF(0), fk_info->name,
+                     ref_column_name);
+            DBUG_RETURN(true);
+          }
+        }
+
+        if (prepare_fk_parent_key(create_info->db_type, parent_table_def,
+                                  fk_info))
+          DBUG_RETURN(true);
+      }
     }
   } else {
     DBUG_ASSERT(fk_info->unique_index_name == nullptr);
@@ -5165,15 +5977,7 @@ static bool prepare_key(THD *thd, HA_CREATE_INFO *create_info,
     key_info->algorithm = HA_KEY_ALG_FULLTEXT;
   } else {
     if (key->key_create_info.is_algorithm_explicit) {
-      if (key->key_create_info.algorithm == HA_KEY_ALG_RTREE) {
-        if ((key_info->user_defined_key_parts & 1) == 1) {
-          my_error(ER_TOO_MANY_KEY_PARTS, MYF(0), 1);
-          DBUG_RETURN(true);
-        }
-        /* TODO: To be deleted */
-        my_error(ER_NOT_SUPPORTED_YET, MYF(0), "RTREE INDEX");
-        DBUG_RETURN(true);
-      } else {
+      if (key->key_create_info.algorithm != HA_KEY_ALG_RTREE) {
         /*
           If key algorithm was specified explicitly check if it is
           supported by SE.
@@ -5304,8 +6108,8 @@ bool mysql_prepare_create_table(
     HA_CREATE_INFO *create_info, Alter_info *alter_info, handler *file,
     KEY **key_info_buffer, uint *key_count, FOREIGN_KEY **fk_key_info_buffer,
     uint *fk_key_count, FOREIGN_KEY *existing_fks, uint existing_fks_count,
-    uint fk_max_generated_name_number, int select_field_count,
-    bool find_parent_keys) {
+    const dd::Table *existing_fks_table, uint fk_max_generated_name_number,
+    int select_field_count, bool find_parent_keys) {
   DBUG_ENTER("mysql_prepare_create_table");
 
   /*
@@ -5483,63 +6287,6 @@ bool mysql_prepare_create_table(
     }
   }
 
-  // Normal keys are done, now prepare foreign keys.
-  bool se_supports_fks =
-      (create_info->db_type->flags & HTON_SUPPORTS_FOREIGN_KEYS);
-
-  DBUG_ASSERT(se_supports_fks || existing_fks_count == 0);
-
-  (*fk_key_count) += existing_fks_count;
-  FOREIGN_KEY *fk_key_info;
-  (*fk_key_info_buffer) = fk_key_info =
-      (FOREIGN_KEY *)sql_calloc(sizeof(FOREIGN_KEY) * (*fk_key_count));
-
-  if (!fk_key_info) DBUG_RETURN(true);  // Out of memory
-
-  // Copy pre-existing foreign keys.
-  if (existing_fks_count > 0)
-    memcpy(*fk_key_info_buffer, existing_fks,
-           existing_fks_count * sizeof(FOREIGN_KEY));
-  uint fk_number = existing_fks_count;
-  fk_key_info += existing_fks_count;
-
-  /*
-    Adjust DD.UNIQUE_CONSTRAINT_NAME for pre-existing foreign keys which
-    have same table as parent and child. For non-self-referencing FKs we
-    simply use values from old versions of FKs.
-  */
-  for (FOREIGN_KEY *fk = *fk_key_info_buffer;
-       fk < (*fk_key_info_buffer) + existing_fks_count; fk++) {
-    if (my_strcasecmp(table_alias_charset, fk->ref_db.str, error_schema_name) ==
-            0 &&
-        my_strcasecmp(table_alias_charset, fk->ref_table.str,
-                      error_table_name) == 0) {
-      fk->unique_index_name =
-          find_fk_parent_key(alter_info, *key_info_buffer, *key_count, fk);
-    }
-  }
-
-  // Prepare new foreign keys.
-  for (size_t i = 0; i < alter_info->key_list.size(); i++) {
-    if (redundant_keys[i]) continue;  // Skip redundant keys
-
-    const Key_spec *key = alter_info->key_list[i];
-
-    if (key->type == KEYTYPE_FOREIGN) {
-      if (prepare_foreign_key(thd, create_info, alter_info, error_schema_name,
-                              error_table_name, *key_info_buffer, *key_count,
-                              down_cast<const Foreign_key_spec *>(key),
-                              se_supports_fks, find_parent_keys,
-                              &fk_max_generated_name_number, fk_key_info))
-        DBUG_RETURN(true);
-
-      if (se_supports_fks) {
-        fk_key_info++;
-        fk_number++;
-      }
-    }
-  }
-
   /*
     At this point all KEY objects are for indexes are fully constructed.
     So we can check for duplicate indexes for keys for which it was requested.
@@ -5566,6 +6313,98 @@ bool mysql_prepare_create_table(
 
   /* Sort keys in optimized order */
   std::sort(*key_info_buffer, *key_info_buffer + *key_count, sort_keys());
+
+  /*
+    Normal keys are done, now prepare foreign keys.
+
+    We do this after sorting normal keys to get predictable behavior
+    when searching for parent keys for self-referencing foreign keys.
+  */
+  bool se_supports_fks =
+      (create_info->db_type->flags & HTON_SUPPORTS_FOREIGN_KEYS);
+
+  DBUG_ASSERT(se_supports_fks || existing_fks_count == 0);
+
+  (*fk_key_count) += existing_fks_count;
+  FOREIGN_KEY *fk_key_info;
+  (*fk_key_info_buffer) = fk_key_info =
+      (FOREIGN_KEY *)sql_calloc(sizeof(FOREIGN_KEY) * (*fk_key_count));
+
+  if (!fk_key_info) DBUG_RETURN(true);  // Out of memory
+
+  // Copy pre-existing foreign keys.
+  if (existing_fks_count > 0)
+    memcpy(*fk_key_info_buffer, existing_fks,
+           existing_fks_count * sizeof(FOREIGN_KEY));
+  uint fk_number = existing_fks_count;
+  fk_key_info += existing_fks_count;
+
+  for (FOREIGN_KEY *fk = *fk_key_info_buffer;
+       fk < (*fk_key_info_buffer) + existing_fks_count; fk++) {
+    /*
+      Check that for each pre-existing foreign key we still have supporting
+      index on child table.
+    */
+    if (find_fk_supporting_key(create_info->db_type, alter_info,
+                               *key_info_buffer, *key_count, fk) == nullptr) {
+      /*
+        If there is no supporting index, it must have been dropped by
+        this ALTER TABLE. Find old foreign key definition and supporting
+        index which matched it in old table definition in order to report
+        nice error.
+      */
+      auto same_name = [fk](const dd::Foreign_key *el) {
+        return my_strcasecmp(system_charset_info, fk->name,
+                             el->name().c_str()) == 0;
+      };
+      auto old_fk =
+          std::find_if(existing_fks_table->foreign_keys().begin(),
+                       existing_fks_table->foreign_keys().end(), same_name);
+      DBUG_ASSERT(old_fk != existing_fks_table->foreign_keys().end());
+
+      const dd::Index *old_key = find_fk_supporting_key(
+          create_info->db_type, existing_fks_table, *old_fk);
+      my_error(ER_DROP_INDEX_FK, MYF(0),
+               old_key ? old_key->name().c_str() : "???");
+      DBUG_RETURN(true);
+    }
+    /*
+      Check that pre-existing foreign keys which have same table as parent and
+      child still have matching parent keys and adjust DD.UNIQUE_CONSTRAINT_NAME
+      accordingly. For non-self-referencing FKs we simply use values from old
+      versions of FKs.
+    */
+    if (my_strcasecmp(table_alias_charset, fk->ref_db.str, error_schema_name) ==
+            0 &&
+        my_strcasecmp(table_alias_charset, fk->ref_table.str,
+                      error_table_name) == 0) {
+      if (prepare_self_ref_fk_parent_key(create_info->db_type, alter_info,
+                                         *key_info_buffer, *key_count,
+                                         existing_fks_table, fk))
+        DBUG_RETURN(true);
+    }
+  }
+
+  // Prepare new foreign keys.
+  for (size_t i = 0; i < alter_info->key_list.size(); i++) {
+    if (redundant_keys[i]) continue;  // Skip redundant keys
+
+    const Key_spec *key = alter_info->key_list[i];
+
+    if (key->type == KEYTYPE_FOREIGN) {
+      if (prepare_foreign_key(thd, create_info, alter_info, error_schema_name,
+                              error_table_name, *key_info_buffer, *key_count,
+                              down_cast<const Foreign_key_spec *>(key),
+                              se_supports_fks, find_parent_keys,
+                              &fk_max_generated_name_number, fk_key_info))
+        DBUG_RETURN(true);
+
+      if (se_supports_fks) {
+        fk_key_info++;
+        fk_number++;
+      }
+    }
+  }
 
   /*
     Check if  STRICT SQL mode is active and server is not started with
@@ -5693,6 +6532,7 @@ static bool set_table_default_charset(THD *thd, HA_CREATE_INFO *create_info,
       return true;
   } else {
     DBUG_ASSERT((create_info->used_fields & HA_CREATE_USED_CHARSET) == 0 ||
+                (create_info->used_fields & HA_CREATE_USED_DEFAULT_CHARSET) ||
                 create_info->default_table_charset ==
                     create_info->table_charset);
 
@@ -5804,6 +6644,9 @@ static bool prepare_blob_field(THD *thd, Create_field *sql_field) {
                              which already existed in the table
                              (in case of ALTER TABLE).
   @param[in] existing_fk_count Number of pre-existing foreign keys.
+  @param[in] existing_fk_table dd::Table object for table version from which
+                               pre-existing foreign keys come from. Needed
+                               for error reporting.
   @param[in] fk_max_generated_name_number  Max value of number component among
                                            existing generated foreign key names.
   @param[out] table_def      Data-dictionary object describing the table
@@ -5837,8 +6680,8 @@ static bool create_table_impl(
     bool *is_trans, KEY **key_info, uint *key_count,
     Alter_info::enum_enable_or_disable keys_onoff, FOREIGN_KEY **fk_key_info,
     uint *fk_key_count, FOREIGN_KEY *existing_fk_info, uint existing_fk_count,
-    uint fk_max_generated_name_number, std::unique_ptr<dd::Table> *table_def,
-    handlerton **post_ddl_ht) {
+    const dd::Table *existing_fk_table, uint fk_max_generated_name_number,
+    std::unique_ptr<dd::Table> *table_def, handlerton **post_ddl_ht) {
   DBUG_ENTER("create_table_impl");
   DBUG_PRINT("enter", ("db: '%s'  table: '%s'  tmp: %d", db, table_name,
                        internal_tmp_table));
@@ -5849,15 +6692,46 @@ static bool create_table_impl(
     DBUG_RETURN(true);
   }
 
+  if (check_engine(thd, db, table_name, create_info)) DBUG_RETURN(true);
+
   // Check if new table creation is disallowed by the storage engine.
   if (!internal_tmp_table &&
       ha_is_storage_engine_disabled(create_info->db_type)) {
-    my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
-             ha_resolve_storage_engine_name(create_info->db_type));
-    DBUG_RETURN(true);
-  }
+    /*
+      If table creation is disabled for the engine then substitute the engine
+      for the table with the default engine only if sql mode
+      NO_ENGINE_SUBSTITUTION is disabled.
+    */
+    handlerton *new_engine = nullptr;
+    if (is_engine_substitution_allowed(thd))
+      new_engine = ha_default_handlerton(thd);
 
-  if (check_engine(thd, db, table_name, create_info)) DBUG_RETURN(true);
+    /*
+      Proceed with the engine substitution only if,
+      1. The disabled engine and the default engine are not the same.
+      2. The default engine is not in the disabled engines list.
+      else report an error.
+    */
+    if (new_engine && create_info->db_type &&
+        new_engine != create_info->db_type &&
+        !ha_is_storage_engine_disabled(new_engine)) {
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_DISABLED_STORAGE_ENGINE,
+                          ER_THD(thd, ER_DISABLED_STORAGE_ENGINE),
+                          ha_resolve_storage_engine_name(create_info->db_type));
+
+      create_info->db_type = new_engine;
+
+      push_warning_printf(
+          thd, Sql_condition::SL_WARNING, ER_WARN_USING_OTHER_HANDLER,
+          ER_THD(thd, ER_WARN_USING_OTHER_HANDLER),
+          ha_resolve_storage_engine_name(create_info->db_type), table_name);
+    } else {
+      my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
+               ha_resolve_storage_engine_name(create_info->db_type));
+      DBUG_RETURN(true);
+    }
+  }
 
   if (set_table_default_charset(thd, create_info, schema)) DBUG_RETURN(true);
 
@@ -5989,7 +6863,8 @@ static bool create_table_impl(
   bool prepare_error = mysql_prepare_create_table(
       thd, db, error_table_name, create_info, alter_info, file.get(), key_info,
       key_count, fk_key_info, fk_key_count, existing_fk_info, existing_fk_count,
-      fk_max_generated_name_number, select_field_count, find_parent_keys);
+      existing_fk_table, fk_max_generated_name_number, select_field_count,
+      find_parent_keys);
 
   if (is_whitelisted_table) thd->pop_internal_handler();
 
@@ -6207,7 +7082,7 @@ bool mysql_create_table_no_lock(THD *thd, const char *db,
       thd, *schema, db, table_name, table_name, path, create_info, alter_info,
       false, select_field_count, find_parent_keys, no_ha_table, false, is_trans,
       &not_used_1, &not_used_2, Alter_info::ENABLE, &not_used_3, &not_used_4,
-      nullptr, 0, 0, &not_used_5, post_ddl_ht);
+      nullptr, 0, nullptr, 0, &not_used_5, post_ddl_ht);
 }
 
 typedef std::set<std::pair<dd::String_type, dd::String_type>>
@@ -6268,7 +7143,8 @@ static bool fetch_fk_children_uncached_uncommitted_normalized(
 }
 
 bool collect_fk_children(THD *thd, const char *db, const char *table_name,
-                         handlerton *hton, MDL_request_list *mdl_requests) {
+                         handlerton *hton, enum_mdl_type lock_type,
+                         MDL_request_list *mdl_requests) {
   Normalized_fk_children fk_children;
   if (fetch_fk_children_uncached_uncommitted_normalized(
           thd, db, table_name, ha_resolve_storage_engine_name(hton),
@@ -6283,7 +7159,7 @@ bool collect_fk_children(THD *thd, const char *db, const char *table_name,
     if (mdl_request == NULL) return true;
 
     MDL_REQUEST_INIT(mdl_request, MDL_key::TABLE, schema_name, table_name,
-                     MDL_EXCLUSIVE, MDL_STATEMENT);
+                     lock_type, MDL_STATEMENT);
     mdl_requests->push_front(mdl_request);
 
     mdl_request = new (thd->mem_root) MDL_request;
@@ -6387,6 +7263,168 @@ bool adjust_fk_parents(THD *thd, const char *db, const char *name,
   return false;
 }
 
+/**
+  Update the unique constraint name and referenced column names for
+  the foreign keys after referenced table definition change.
+
+  @param thd                  Thread handle.
+  @param check_only           Indicates that we only need to check parent key
+                              existence and do not do real update.
+  @param child_table_db       Child table schema name.
+  @param child_table_name     Child table name.
+  @param parent_table_db      Parent table schema name.
+  @param parent_table_name    Parent table name.
+  @param hton                 Handlerton for tables' storage engine.
+  @param parent_table_def     Table object representing the new version of
+                              referenced table.
+  @param parent_alter_info    Alter_info containing information about renames
+                              of parent columns. Can be nullptr if there are
+                              no such renames.
+  @param old_parent_table_def Table object representing the old version of
+                              referenced table. Can be nullptr if this is
+                              not ALTER TABLE. Used for error reporting.
+
+  @retval operation outcome, false if no error.
+*/
+static bool adjust_fk_child_after_parent_def_change(
+    THD *thd, bool check_only, const char *child_table_db,
+    const char *child_table_name, const char *parent_table_db,
+    const char *parent_table_name, handlerton *hton,
+    const dd::Table *parent_table_def, Alter_info *parent_alter_info,
+    const dd::Table *old_parent_table_def) {
+  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+
+  dd::Table *child_table_def = nullptr;
+  const dd::Table *old_child_table_def = nullptr;
+
+  if (thd->dd_client()->acquire_for_modification(
+          child_table_db, child_table_name, &child_table_def))
+    return true;
+
+  if (child_table_def == nullptr) {
+    // Safety.
+    return false;
+  }
+
+  if (old_parent_table_def != nullptr &&
+      thd->dd_client()->acquire(child_table_db, child_table_name,
+                                &old_child_table_def))
+    return true;
+
+  DBUG_ASSERT(old_parent_table_def == nullptr ||
+              old_child_table_def != nullptr);
+
+  for (dd::Foreign_key *fk : *(child_table_def->foreign_keys())) {
+    if (my_strcasecmp(table_alias_charset,
+                      fk->referenced_table_schema_name().c_str(),
+                      parent_table_db) == 0 &&
+        my_strcasecmp(table_alias_charset, fk->referenced_table_name().c_str(),
+                      parent_table_name) == 0) {
+      for (dd::Foreign_key_element *fk_el : *(fk->elements())) {
+        if (parent_alter_info) {
+          /*
+            The parent table is ALTERed. Check that referenced column was
+            not dropped and update foreign key definition with its new
+            name if it was renamed. The latter needs to be done before
+            searching for parent key.
+          */
+          List_iterator<Create_field> find_it(parent_alter_info->create_list);
+          const Create_field *find;
+
+          if (check_only) {
+            /*
+              This is early stage of ALTER TABLE, so Alter_info::create_list is
+              fully available and we can use it both to check that column exists
+              and to handle column renames.
+            */
+            while ((find = find_it++)) {
+              if (find->field &&
+                  my_strcasecmp(system_charset_info,
+                                fk_el->referenced_column_name().c_str(),
+                                find->field->field_name) == 0) {
+                break;
+              }
+            }
+
+            if (find == nullptr) {
+              my_error(ER_FK_COLUMN_CANNOT_DROP_CHILD, MYF(0),
+                       fk_el->referenced_column_name().c_str(),
+                       fk->name().c_str(), fk->table().name().c_str());
+              return true;
+            }
+
+            /*
+              Column can't be made virtual as we don't allow ALTERs which make
+              stored columns virtual.
+            */
+            DBUG_ASSERT(!find->is_virtual_gcol());
+
+            // Use new column name in foreign key definition if name was
+            // changed.
+            if (find->change != nullptr) {
+              fk_el->referenced_column_name(find->field_name);
+            }
+          } else {
+            /*
+              This is late stage of ALTER TABLE. Some elements in
+              Alter_info::create_list are not fully valid. However,
+              those which are related to renaming of columns are,
+              so we can use them to update foreign key definitions.
+              Luckily, thanks to check at early stage of ALTER TABLE
+              we don't need to do anything else here.
+            */
+            while ((find = find_it++)) {
+              if (find->change &&
+                  my_strcasecmp(system_charset_info,
+                                fk_el->referenced_column_name().c_str(),
+                                find->change) == 0) {
+                fk_el->referenced_column_name(find->field_name);
+                break;
+              }
+            }
+          }
+        } else {
+          /*
+            We add parent table for previously orphan foreign key by doing
+            CREATE or RENAME TABLE. We need to check that it has columns
+            which match referenced columns in foreign key.
+          */
+          auto same_column_name = [fk_el](const dd::Column *c) {
+            return my_strcasecmp(system_charset_info, c->name().c_str(),
+                                 fk_el->referenced_column_name().c_str()) == 0;
+          };
+
+          auto ref_column =
+              std::find_if(parent_table_def->columns().begin(),
+                           parent_table_def->columns().end(), same_column_name);
+
+          if (ref_column == parent_table_def->columns().end()) {
+            my_error(ER_FK_NO_COLUMN_PARENT, MYF(0),
+                     fk_el->referenced_column_name().c_str(),
+                     fk->name().c_str(), fk->referenced_table_name().c_str());
+            return true;
+          }
+
+          if ((*ref_column)->is_virtual()) {
+            my_error(ER_FK_CANNOT_USE_VIRTUAL_COLUMN, MYF(0),
+                     fk->name().c_str(),
+                     fk_el->referenced_column_name().c_str());
+            return true;
+          }
+        }
+      }
+
+      if (prepare_fk_parent_key(hton, parent_table_def, old_parent_table_def,
+                                old_child_table_def, fk))
+        return true;
+    }
+  }
+
+  if (!check_only && thd->dd_client()->update(child_table_def)) return true;
+
+  return false;
+}
+
 bool adjust_fk_children_after_parent_def_change(
     THD *thd, const char *parent_table_db, const char *parent_table_name,
     handlerton *hton, const dd::Table *parent_table_def,
@@ -6408,58 +7446,19 @@ bool adjust_fk_children_after_parent_def_change(
       continue;
     }
 
-    dd::Table *child_table_def = nullptr;
-
-    if (thd->dd_client()->acquire_for_modification(schema_name, table_name,
-                                                   &child_table_def))
+    /*
+      Since we always pass nullptr as old parent table definition pointer
+      to the below call, the error message reported by it might be not the
+      best one for the case when we call this function for ALTER TABLE
+      which drops parent key. But this does not matter as such errors
+      should have been normally detected and reported by earlier call
+      to check_fk_children_after_parent_def_change().
+    */
+    if (adjust_fk_child_after_parent_def_change(
+            thd, false,  // Update FKs.
+            schema_name, table_name, parent_table_db, parent_table_name, hton,
+            parent_table_def, parent_alter_info, nullptr))
       return true;
-
-    if (child_table_def == nullptr) {
-      // Safety.
-      continue;
-    }
-
-    for (dd::Foreign_key *fk : *(child_table_def->foreign_keys())) {
-      if (my_strcasecmp(table_alias_charset,
-                        fk->referenced_table_schema_name().c_str(),
-                        parent_table_db) == 0 &&
-          my_strcasecmp(table_alias_charset,
-                        fk->referenced_table_name().c_str(),
-                        parent_table_name) == 0) {
-        const char *parent_key_name = find_fk_parent_key(parent_table_def, fk);
-        /*
-          If we have not found suitable parent key set UNIQUE_CONSTRAINT_NAME
-          to NULL value. This is done by setting the name to "", which is
-          interpreted as NULL when it is stored to the DD tables.
-        */
-        fk->set_unique_constraint_name(parent_key_name);
-
-        /*
-          If foreign key columns in parent table were renamed we need
-          to update foreign key definition to reflect that.
-        */
-        if (parent_alter_info) {
-          List_iterator<Create_field> find_it(parent_alter_info->create_list);
-
-          for (dd::Foreign_key_element *fk_el : *(fk->elements())) {
-            find_it.rewind();
-            const Create_field *find;
-            while ((find = find_it++)) {
-              if (find->change &&
-                  my_strcasecmp(system_charset_info,
-                                fk_el->referenced_column_name().c_str(),
-                                find->change) == 0) {
-                // Use new name
-                fk_el->referenced_column_name(find->field_name);
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    if (thd->dd_client()->update(child_table_def)) return true;
 
     if (invalidate_tdc) {
       mysql_ha_flush_table(thd, schema_name, table_name);
@@ -6478,6 +7477,91 @@ bool adjust_fk_children_after_parent_def_change(
 #endif
   }
 
+  return false;
+}
+
+/**
+  Check if new definition of parent table is compatible with foreign keys which
+  reference it.
+
+  @param thd                  Thread handle.
+  @param parent_table_db      Parent table schema name.
+  @param parent_table_name    Parent table name.
+  @param hton                 Handlerton for tables' storage engine.
+  @param old_parent_table_def Table object representing the old version of
+                              parent table.
+  @param new_parent_table_def Table object representing the new version of
+                              parent table.
+  @param parent_alter_info    Alter_info containing information about renames
+                              of parent columns.
+
+  @retval operation outcome, false if no error.
+*/
+static bool check_fk_children_after_parent_def_change(
+    THD *thd, const char *parent_table_db, const char *parent_table_name,
+    handlerton *hton, const dd::Table *old_parent_table_def,
+    const dd::Table *new_parent_table_def, Alter_info *parent_alter_info) {
+  for (const dd::Foreign_key_parent *parent_fk :
+       old_parent_table_def->foreign_key_parents()) {
+    // Self-referencing FKs are handled separately.
+    if (my_strcasecmp(table_alias_charset,
+                      parent_fk->child_schema_name().c_str(),
+                      parent_table_db) == 0 &&
+        my_strcasecmp(table_alias_charset,
+                      parent_fk->child_table_name().c_str(),
+                      parent_table_name) == 0)
+      continue;
+
+    if (adjust_fk_child_after_parent_def_change(
+            thd, true,  // Check only.
+            parent_fk->child_schema_name().c_str(),
+            parent_fk->child_table_name().c_str(), parent_table_db,
+            parent_table_name, hton, new_parent_table_def, parent_alter_info,
+            old_parent_table_def))
+      return true;
+  }
+
+  return false;
+}
+
+/**
+  Check if new definition of parent table is compatible with foreign keys which
+  reference it and were previously orphan.
+
+  @param thd                  Thread handle.
+  @param parent_table_db      Parent table schema name.
+  @param parent_table_name    Parent table name.
+  @param hton                 Handlerton for table's storage engine.
+  @param parent_table_def     Table object representing the parent table.
+
+  @retval operation outcome, false if no error.
+*/
+static bool check_fk_children_after_parent_def_change(
+    THD *thd, const char *parent_table_db, const char *parent_table_name,
+    handlerton *hton, const dd::Table *parent_table_def) {
+  Normalized_fk_children fk_children;
+  if (fetch_fk_children_uncached_uncommitted_normalized(
+          thd, parent_table_db, parent_table_name,
+          ha_resolve_storage_engine_name(hton), &fk_children))
+    return true;
+
+  for (auto fk_children_it : fk_children) {
+    const char *schema_name = fk_children_it.first.c_str();
+    const char *table_name = fk_children_it.second.c_str();
+
+    if (my_strcasecmp(table_alias_charset, schema_name, parent_table_db) == 0 &&
+        my_strcasecmp(table_alias_charset, table_name, parent_table_name) ==
+            0) {
+      // Safety. Self-referencing FKs are handled separately.
+      continue;
+    }
+
+    if (adjust_fk_child_after_parent_def_change(
+            thd, true,  // Check only.
+            schema_name, table_name, parent_table_db, parent_table_name, hton,
+            parent_table_def, nullptr, nullptr))
+      return true;
+  }
   return false;
 }
 
@@ -6627,7 +7711,8 @@ bool collect_fk_names_for_new_fks(THD *thd, const char *db_name,
                          MDL_EXCLUSIVE, MDL_STATEMENT);
         mdl_requests->push_front(mdl_request);
       } else {
-        char fk_name[NAME_LEN + 1];
+        // The below buffer should be sufficient for any generated name.
+        char fk_name[NAME_LEN + sizeof(dd::FOREIGN_KEY_NAME_SUBSTR) + 10 + 1];
 
         /*
           Note that the below code is in sync with generate_fk_name().
@@ -6718,7 +7803,8 @@ bool mysql_create_table(THD *thd, TABLE_LIST *create_table,
         (!dd::get_dictionary()->is_dd_table_name(create_table->db,
                                                  create_table->table_name) &&
          collect_fk_children(thd, create_table->db, create_table->table_name,
-                             create_info->db_type, &mdl_requests)) ||
+                             create_info->db_type, MDL_EXCLUSIVE,
+                             &mdl_requests)) ||
         collect_fk_names_for_new_fks(thd, create_table->db,
                                      create_table->table_name, alter_info,
                                      0,  // No pre-existing FKs
@@ -7441,7 +8527,8 @@ bool mysql_create_like_table(THD *thd, TABLE_LIST *table, TABLE_LIST *src_table,
     if ((!dd::get_dictionary()->is_dd_table_name(table->db,
                                                  table->table_name) &&
          collect_fk_children(thd, table->db, table->table_name,
-                             local_create_info.db_type, &mdl_requests)) ||
+                             local_create_info.db_type, MDL_EXCLUSIVE,
+                             &mdl_requests)) ||
         (!mdl_requests.is_empty() &&
          thd->mdl_context.acquire_locks(&mdl_requests,
                                         thd->variables.lock_wait_timeout)))
@@ -7676,8 +8763,8 @@ bool Sql_cmd_discard_import_tablespace::mysql_discard_or_import_tablespace(
     DBUG_RETURN(true);
   } else if (m_alter_info->requested_algorithm !=
              Alter_info::ALTER_TABLE_ALGORITHM_DEFAULT) {
-    my_error(ER_ALTER_OPERATION_NOT_SUPPORTED, MYF(0), "ALGORITHM=COPY/INPLACE",
-             "ALGORITHM=DEFAULT");
+    my_error(ER_ALTER_OPERATION_NOT_SUPPORTED, MYF(0),
+             "ALGORITHM=COPY/INPLACE/INSTANT", "ALGORITHM=DEFAULT");
     DBUG_RETURN(true);
   }
 
@@ -7972,20 +9059,30 @@ static bool has_index_def_changed(Alter_inplace_info *ha_alter_info,
   end = table_key->key_part + table_key->user_defined_key_parts;
   for (key_part = table_key->key_part, new_part = new_key->key_part;
        key_part < end; key_part++, new_part++) {
-    /*
-      Key definition has changed if we are using a different field or
-      if the used key part length is different, or key part direction has
-      changed. It makes sense to check lengths first as in case when fields
-      differ it is likely that lengths differ too and checking fields is more
-      expensive in general case.
+    new_field = get_field_by_index(alter_info, new_part->fieldnr);
 
+    /*
+      If there is a change in index length due to column expansion
+      like varchar(X) changed to varchar(X + N) and has a compatible
+      packed data representation, we mark it for fast/INPLACE change
+      in index definition. Some engines like InnoDB supports INPLACE
+      alter for such cases.
+
+      In other cases, key definition has changed if we are using a
+      different field or if the used key part length is different, or
+      key part direction has changed.
     */
-    if (key_part->length != new_part->length ||
-        (key_part->key_part_flag & HA_REVERSE_SORT) !=
-            (new_part->key_part_flag & HA_REVERSE_SORT))
+    if (key_part->length != new_part->length &&
+        ha_alter_info->alter_info->flags == Alter_info::ALTER_CHANGE_COLUMN &&
+        (key_part->field->is_equal(new_field) == IS_EQUAL_PACK_LENGTH)) {
+      ha_alter_info->handler_flags |=
+          Alter_inplace_info::ALTER_COLUMN_INDEX_LENGTH;
+    } else if (key_part->length != new_part->length)
       return true;
 
-    new_field = get_field_by_index(alter_info, new_part->fieldnr);
+    if ((key_part->key_part_flag & HA_REVERSE_SORT) !=
+        (new_part->key_part_flag & HA_REVERSE_SORT))
+      return true;
 
     /*
       For prefix keys KEY_PART_INFO::field points to cloned Field
@@ -8621,7 +9718,7 @@ bool mysql_compare_tables(TABLE *table, Alter_info *alter_info,
                                  create_info, &tmp_alter_info, table->file,
                                  &key_info_buffer, &key_count,
                                  &fk_key_info_buffer, &fk_key_count, nullptr, 0,
-                                 0, 0, false))
+                                 nullptr, 0, 0, false))
     DBUG_RETURN(true);
 
   /* Some very basic checks. */
@@ -8996,11 +10093,12 @@ static bool collect_and_lock_fk_tables_for_complex_alter_table(
       return true;
   }
 
-  if (collect_fk_children(thd, old_table_def, &mdl_requests)) return true;
+  if (collect_fk_children(thd, old_table_def, MDL_EXCLUSIVE, &mdl_requests))
+    return true;
 
   if (alter_ctx->is_table_renamed()) {
     if (collect_fk_children(thd, alter_ctx->new_db, alter_ctx->new_alias,
-                            new_hton, &mdl_requests))
+                            new_hton, MDL_EXCLUSIVE, &mdl_requests))
       return true;
   }
 
@@ -9419,8 +10517,26 @@ static bool mysql_inplace_alter_table(
   if (lock_tables(thd, table_list, alter_ctx->tables_opened, 0)) goto cleanup;
 
   if (alter_ctx->error_if_not_empty) {
-    DBUG_ASSERT(table->mdl_ticket->get_type() == MDL_EXCLUSIVE);
+    /*
+      Storage engines should not suggest/support INSTANT algorithm if
+      error_if_not_empty flag is set.
+      The problem is that the below check if table is empty is not "instant",
+      as it might have to traverse through deleted versions of rows on SQL-layer
+      (e.g. MyISAM) or in SE (e.g. InnoDB).
 
+      OTOH for cases when table is empty difference between INSTANT and INPLACE
+      or COPY algorithms should be negligible.
+
+      This limitation might be raised in the future if we will implement support
+      for quick (i.e. non-traversing) check for table emptiness.
+    */
+    DBUG_ASSERT(inplace_supported != HA_ALTER_INPLACE_INSTANT);
+    /*
+      Operations which set error_if_not_empty flag typically request exclusive
+      lock during prepare phase, so we don't have to upgrade lock to prevent
+      concurrent table modifications here.
+    */
+    DBUG_ASSERT(table->mdl_ticket->get_type() == MDL_EXCLUSIVE);
     bool empty_table = false;
     if (table_is_empty(table_list->table, &empty_table)) goto cleanup;
     if (!empty_table) {
@@ -9471,6 +10587,7 @@ static bool mysql_inplace_alter_table(
     case HA_ALTER_INPLACE_EXCLUSIVE_LOCK:
     case HA_ALTER_INPLACE_SHARED_LOCK_AFTER_PREPARE:
     case HA_ALTER_INPLACE_SHARED_LOCK:
+    case HA_ALTER_INPLACE_INSTANT:
       break;
   }
 
@@ -10087,6 +11204,55 @@ static bool transfer_preexisting_foreign_keys(
     for (size_t j = 0; j < sql_fk->key_parts; j++) {
       const dd::Foreign_key_element *dd_fk_ele = dd_fk->elements()[j];
 
+      if (alter_info->flags & Alter_info::ALTER_DROP_COLUMN) {
+        /*
+          Check if column used in the foreign key was dropped.
+
+          Alter_info::drop_list no longer contains elements for dropped
+          columns at this point. So instead of looking up column in
+          this list, we check if list of columns for new version of table
+          still has the foreign key column (possibly under different name)
+          coming from the old version of table.
+        */
+        find_it.rewind();
+        const Create_field *find;
+        while ((find = find_it++)) {
+          if (find->field && my_strcasecmp(system_charset_info,
+                                           dd_fk_ele->column().name().c_str(),
+                                           find->field->field_name) == 0) {
+            break;
+          }
+        }
+        if (find == nullptr) {
+          my_error(ER_FK_COLUMN_CANNOT_DROP, MYF(0),
+                   dd_fk_ele->column().name().c_str(), dd_fk->name().c_str());
+          return true;
+        }
+
+        if (is_self_referencing) {
+          /*
+            Do the same check for referenced column if child and parent
+            table are the same.
+          */
+          find_it.rewind();
+          const Create_field *find;
+          while ((find = find_it++)) {
+            if (find->field &&
+                my_strcasecmp(system_charset_info,
+                              dd_fk_ele->referenced_column_name().c_str(),
+                              find->field->field_name) == 0) {
+              break;
+            }
+          }
+          if (find == nullptr) {
+            my_error(ER_FK_COLUMN_CANNOT_DROP_CHILD, MYF(0),
+                     dd_fk_ele->referenced_column_name().c_str(),
+                     dd_fk->name().c_str(), dd_fk->table().name().c_str());
+            return true;
+          }
+        }
+      }
+
       // Check if the column was renamed by the same statement.
       bool col_renamed = false;
       bool ref_col_renamed = false;
@@ -10131,56 +11297,49 @@ static bool transfer_preexisting_foreign_keys(
       if (!ref_col_renamed)
         to_lex_cstring(thd->mem_root, &sql_fk->fk_key_part[j],
                        dd_fk_ele->referenced_column_name());
+#ifndef DBUG_OFF
+      {
+        find_it.rewind();
+        Create_field *find;
+        while ((find = find_it++)) {
+          if (my_strcasecmp(system_charset_info, sql_fk->key_part[j].str,
+                            find->field_name) == 0) {
+            break;
+          }
+        }
+        /*
+          Thanks to the above code handling dropped columns referencing
+          column must exist.
+        */
+        DBUG_ASSERT(find != nullptr);
+        /*
+          Also due to facts a) that we don't allow virtual columns in
+          foreign keys and b) that existing generated columns can't be
+          changed to virtual, referencing column must be non-virtual.
+        */
+        DBUG_ASSERT(!find->is_virtual_gcol());
+        if (is_self_referencing) {
+          find_it.rewind();
+          while ((find = find_it++)) {
+            if (my_strcasecmp(system_charset_info, sql_fk->fk_key_part[j].str,
+                              find->field_name) == 0) {
+              break;
+            }
+          }
+          /*
+            The same applies to referenced columns if foreign key has
+            same table as child and parent.
+          */
+          DBUG_ASSERT(find != nullptr);
+          DBUG_ASSERT(!find->is_virtual_gcol());
+        }
+      }
+#endif
     }
   }
 
   alter_ctx->fk_max_generated_name_number =
       get_fk_max_generated_name_number(src_table_name, src_table);
-
-  return false;
-}
-
-/**
-  Check if any foreign keys are defined using the given column
-  which is about to be dropped. Report ER_FK_COLUMN_CANNOT_DROP
-  if any such foreign key exists.
-
-  @param src_table    Table with FKs to be checked.
-  @param alter_info   Info about ALTER TABLE statement.
-  @param field        Column to check.
-
-  @retval true   A foreign key is using the column, error reported.
-  @retval false  No foreign keys are using the column.
-*/
-
-static bool column_used_by_foreign_key(const dd::Table *src_table,
-                                       Alter_info *alter_info, Field *field) {
-  if (src_table == nullptr)
-    return false;  // Could be temporary table or during upgrade.
-
-  for (const dd::Foreign_key *dd_fk : src_table->foreign_keys()) {
-    // Skip foreign keys that are to be dropped
-    bool is_dropped = false;
-    for (const Alter_drop *drop : alter_info->drop_list) {
-      // Index names are always case insensitive
-      if (drop->type == Alter_drop::FOREIGN_KEY &&
-          my_strcasecmp(system_charset_info, drop->name,
-                        dd_fk->name().c_str()) == 0) {
-        is_dropped = true;
-        break;
-      }
-    }
-    if (is_dropped) continue;
-
-    for (const dd::Foreign_key_element *dd_fk_ele : dd_fk->elements()) {
-      if (my_strcasecmp(system_charset_info, dd_fk_ele->column().name().c_str(),
-                        field->field_name) == 0) {
-        my_error(ER_FK_COLUMN_CANNOT_DROP, MYF(0), field->field_name,
-                 dd_fk->name().c_str());
-        return true;
-      }
-    }
-  }
 
   return false;
 }
@@ -10298,7 +11457,16 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
 
   DBUG_ENTER("prepare_fields_and_keys");
 
-  restore_record(table, s->default_values);  // Empty record for DEFAULT
+  /*
+    During upgrade from 5.7, old tables are temporarily accessed to
+    get the keys and fields, and in this process, we assign
+    table->record[0] = table->s->default_values, hence, we make the
+    call to restore_record() below conditional to avoid valgrind errors
+    due to overlapping source and destination for memcpy.
+  */
+  if (table->record[0] != table->s->default_values)
+    restore_record(table, s->default_values);  // Empty record for DEFAULT
+
   Create_field *def;
 
   /*
@@ -10327,9 +11495,6 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
           my_error(ER_DEPENDENT_BY_GENERATED_COLUMN, MYF(0), field->field_name);
           DBUG_RETURN(true);
         }
-
-        if (column_used_by_foreign_key(src_table, alter_info, field))
-          DBUG_RETURN(true);
 
         /*
           Mark the drop_column operation is on virtual GC so that a non-rebuild
@@ -10608,9 +11773,19 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
           key_part_length = 0;  // Use whole field
       }
       key_part_length /= key_part->field->charset()->mbmaxlen;
+      // The Key_part_spec constructor differentiates between explicit ascending
+      // (ORDER_ASC) and implicit ascending order (ORDER_NOT_RELEVANT). However,
+      // here we only have HA_REVERSE_SORT to base our ordering decision on. The
+      // only known case where the difference matters is in case of indexes on
+      // geometry columns, which can't have explicit ordering. Therefore, in the
+      // case of a geometry column, we pass ORDER_NOT_RELEVANT.
       key_parts.push_back(new (*THR_MALLOC) Key_part_spec(
           to_lex_cstring(cfield->field_name), key_part_length,
-          key_part->key_part_flag & HA_REVERSE_SORT ? ORDER_DESC : ORDER_ASC));
+          key_part->key_part_flag & HA_REVERSE_SORT
+              ? ORDER_DESC
+              : (key_part->field->type() == MYSQL_TYPE_GEOMETRY
+                     ? ORDER_NOT_RELEVANT
+                     : ORDER_ASC)));
     }
     if (key_parts.elements) {
       KEY_CREATE_INFO key_create_info(key_info->is_visible);
@@ -11072,14 +12247,12 @@ static bool fk_check_copy_alter_table(THD *thd, TABLE *table,
                  ER_THD(thd, ER_ALTER_OPERATION_NOT_SUPPORTED_REASON_FK_RENAME),
                  "ALGORITHM=INPLACE");
         DBUG_RETURN(true);
-      case FK_COLUMN_DROPPED: {
-        char buff[NAME_LEN * 2 + 2];
-        strxnmov(buff, sizeof(buff) - 1, f_key->foreign_db->str, ".",
-                 f_key->foreign_table->str, NullS);
-        my_error(ER_FK_COLUMN_CANNOT_DROP_CHILD, MYF(0), bad_column_name,
-                 f_key->foreign_id->str, buff);
-        DBUG_RETURN(true);
-      }
+      case FK_COLUMN_DROPPED:
+        /*
+          Should already have been checked in
+          transfer_preexisting_foreign_keys().
+        */
+        DBUG_ASSERT(false);
       default:
         DBUG_ASSERT(0);
     }
@@ -11129,7 +12302,10 @@ static bool fk_check_copy_alter_table(THD *thd, TABLE *table,
                  "ALGORITHM=INPLACE");
         DBUG_RETURN(true);
       case FK_COLUMN_DROPPED:
-        // Should already have been checked in column_used_by_foreign_key().
+        /*
+          Should already have been checked in
+          transfer_preexisting_foreign_keys().
+        */
         DBUG_ASSERT(false);
       default:
         DBUG_ASSERT(0);
@@ -11145,8 +12321,10 @@ bool collect_and_lock_fk_tables_for_rename_table(
     handlerton *hton, Foreign_key_parents_invalidator *fk_invalidator) {
   MDL_request_list mdl_requests;
 
-  if (collect_fk_children(thd, db, table_name, hton, &mdl_requests) ||
-      collect_fk_children(thd, new_db, new_table_name, hton, &mdl_requests) ||
+  if (collect_fk_children(thd, db, table_name, hton, MDL_EXCLUSIVE,
+                          &mdl_requests) ||
+      collect_fk_children(thd, new_db, new_table_name, hton, MDL_EXCLUSIVE,
+                          &mdl_requests) ||
       collect_fk_parents_for_all_fks(thd, table_def, hton, &mdl_requests,
                                      fk_invalidator) ||
       collect_fk_names_for_rename_table(thd, db, table_name, table_def, new_db,
@@ -11185,6 +12363,20 @@ bool adjust_fks_for_rename_table(THD *thd, const char *db,
     return true;
 
   return false;
+}
+
+/**
+  Check if ALTER TABLE in question is a simple ALTER TABLE RENAME or
+  ALTER TABLE ENABLE/DISABLE KEYS.
+
+  @param alter_info   Alter_info describing ALTER.
+*/
+
+static bool is_simple_rename_or_index_change(const Alter_info *alter_info) {
+  return (!(alter_info->flags &
+            ~(Alter_info::ALTER_RENAME | Alter_info::ALTER_KEYS_ONOFF)) &&
+          alter_info->requested_algorithm !=
+              Alter_info::ALTER_TABLE_ALGORITHM_COPY);
 }
 
 /**
@@ -11613,6 +12805,15 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     DBUG_RETURN(true);
   }
 
+  // LOCK clause doesn't make any sense for ALGORITHM=INSTANT.
+  if (alter_info->requested_algorithm ==
+          Alter_info::ALTER_TABLE_ALGORITHM_INSTANT &&
+      alter_info->requested_lock != Alter_info::ALTER_TABLE_LOCK_DEFAULT) {
+    my_error(ER_WRONG_USAGE, MYF(0), "ALGORITHM=INSTANT",
+             "LOCK=NONE/SHARED/EXCLUSIVE");
+    DBUG_RETURN(true);
+  }
+
   THD_STAGE_INFO(thd, stage_init);
 
   // Reject invalid usage of the 'mysql' tablespace.
@@ -11725,14 +12926,29 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     DBUG_RETURN(true);
   }
 
-  // Check if ALTER TABLE ... ENGINE is disallowed by the storage engine.
+  /*
+    Check if ALTER TABLE ... ENGINE is disallowed by the desired storage
+    engine.
+  */
   if (table_list->table->s->db_type() != create_info->db_type &&
       (alter_info->flags & Alter_info::ALTER_OPTIONS) &&
       (create_info->used_fields & HA_CREATE_USED_ENGINE) &&
       ha_is_storage_engine_disabled(create_info->db_type)) {
-    my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
-             ha_resolve_storage_engine_name(create_info->db_type));
-    DBUG_RETURN(true);
+    /*
+      If NO_ENGINE_SUBSTITUTION is disabled, then report a warning and do not
+      alter the table.
+    */
+    if (is_engine_substitution_allowed(thd)) {
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_UNKNOWN_STORAGE_ENGINE,
+                          ER_THD(thd, ER_UNKNOWN_STORAGE_ENGINE),
+                          ha_resolve_storage_engine_name(create_info->db_type));
+      create_info->db_type = table_list->table->s->db_type();
+    } else {
+      my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
+               ha_resolve_storage_engine_name(create_info->db_type));
+      DBUG_RETURN(true);
+    }
   }
 
   TABLE *table = table_list->table;
@@ -11913,6 +13129,28 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       DBUG_RETURN(true);
 
     /*
+      Acquire SU locks on children tables so we can access their
+      definition while checking if this ALTER TABLE will break
+      any FKs in them.
+
+      TODO: Refine set of ALTER TABLE commands for which we do this.
+            This is obviously necessary for ADD/DROP KEY and COLUMN
+            RENAMES. But are there any other operations which might
+            affect indexes somehow?
+    */
+    if (!is_simple_rename_or_index_change(alter_info)) {
+      if (collect_fk_children(thd, old_table_def, MDL_SHARED_UPGRADABLE,
+                              &mdl_requests))
+        DBUG_RETURN(true);
+
+      if (alter_ctx.is_table_renamed() &&
+          collect_fk_children(thd, alter_ctx.new_db, alter_ctx.new_alias,
+                              create_info->db_type, MDL_SHARED_UPGRADABLE,
+                              &mdl_requests))
+        DBUG_RETURN(true);
+    }
+
+    /*
       Lock names of foreign keys to be dropped.
 
       Note that we can't lock names of foreign keys to be added yet
@@ -11973,7 +13211,8 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
         alter_ctx.is_table_renamed()) {
       MDL_request_list orphans_mdl_requests;
       if (collect_fk_children(thd, alter_ctx.new_db, alter_ctx.new_alias,
-                              create_info->db_type, &orphans_mdl_requests))
+                              create_info->db_type, MDL_EXCLUSIVE,
+                              &orphans_mdl_requests))
         DBUG_RETURN(true);
 
       MDL_request_list::Iterator it(orphans_mdl_requests);
@@ -12019,12 +13258,8 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   }
 
   THD_STAGE_INFO(thd, stage_setup);
-  if (!(alter_info->flags &
-        ~(Alter_info::ALTER_RENAME | Alter_info::ALTER_KEYS_ONOFF)) &&
-      alter_info->requested_algorithm !=
-          Alter_info::ALTER_TABLE_ALGORITHM_COPY &&
-      !table->s->tmp_table)  // no need to touch frm
-  {
+
+  if (is_simple_rename_or_index_change(alter_info) && !table->s->tmp_table) {
     // This requires X-lock, no other lock levels supported.
     if (alter_info->requested_lock != Alter_info::ALTER_TABLE_LOCK_DEFAULT &&
         alter_info->requested_lock != Alter_info::ALTER_TABLE_LOCK_EXCLUSIVE) {
@@ -12117,7 +13352,9 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   */
   if ((thd->variables.old_alter_table &&
        alter_info->requested_algorithm !=
-           Alter_info::ALTER_TABLE_ALGORITHM_INPLACE) ||
+           Alter_info::ALTER_TABLE_ALGORITHM_INPLACE &&
+       alter_info->requested_algorithm !=
+           Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) ||
       is_inplace_alter_impossible(table, create_info, alter_info) ||
       (partition_changed &&
        !(table->s->db_type()->partition_flags() & HA_USE_AUTO_PARTITION) &&
@@ -12125,6 +13362,12 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     if (alter_info->requested_algorithm ==
         Alter_info::ALTER_TABLE_ALGORITHM_INPLACE) {
       my_error(ER_ALTER_OPERATION_NOT_SUPPORTED, MYF(0), "ALGORITHM=INPLACE",
+               "ALGORITHM=COPY");
+      DBUG_RETURN(true);
+    }
+    if (alter_info->requested_algorithm ==
+        Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+      my_error(ER_ALTER_OPERATION_NOT_SUPPORTED, MYF(0), "ALGORITHM=INSTANT",
                "ALGORITHM=COPY");
       DBUG_RETURN(true);
     }
@@ -12287,8 +13530,8 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
          */
         (new_db_type->flags & HTON_SUPPORTS_ATOMIC_DDL), NULL, &key_info,
         &key_count, keys_onoff, &fk_key_info, &fk_key_count, alter_ctx.fk_info,
-        alter_ctx.fk_count, alter_ctx.fk_max_generated_name_number,
-        &non_dd_table_def, nullptr);
+        alter_ctx.fk_count, old_table_def,
+        alter_ctx.fk_max_generated_name_number, &non_dd_table_def, nullptr);
   }
 
   if (error) {
@@ -12337,9 +13580,26 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     DBUG_ASSERT(table_def);
   }
 
+  /*
+    Check if new table definition is compatible with foreign keys
+    on other tales which reference this one. We want to do this
+    before starting potentially expensive main phases of COPYing
+    or INPLACE ALTER TABLE.
+  */
+  if (!is_tmp_table &&
+      (check_fk_children_after_parent_def_change(
+           thd, table_list->db, table_list->table_name, new_db_type,
+           old_table_def, table_def, alter_info) ||
+       (alter_ctx.is_table_renamed() &&
+        check_fk_children_after_parent_def_change(thd, alter_ctx.new_db,
+                                                  alter_ctx.new_alias,
+                                                  new_db_type, table_def))))
+    goto err_new_table_cleanup;
+
   if (alter_info->requested_algorithm !=
       Alter_info::ALTER_TABLE_ALGORITHM_COPY) {
-    Alter_inplace_info ha_alter_info(create_info, alter_info, key_info,
+    Alter_inplace_info ha_alter_info(create_info, alter_info,
+                                     alter_ctx.error_if_not_empty, key_info,
                                      key_count, thd->work_part_info);
     TABLE *altered_table = NULL;
     bool use_inplace = true;
@@ -12415,6 +13675,17 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
         table->file->check_if_supported_inplace_alter(altered_table,
                                                       &ha_alter_info);
 
+    // If INSTANT was requested but it is not supported, report error.
+    if (alter_info->requested_algorithm ==
+            Alter_info::ALTER_TABLE_ALGORITHM_INSTANT &&
+        inplace_supported != HA_ALTER_INPLACE_INSTANT &&
+        inplace_supported != HA_ALTER_ERROR) {
+      ha_alter_info.report_unsupported_error("ALGORITHM=INSTANT",
+                                             "ALGORITHM=COPY/INPLACE");
+      close_temporary_table(thd, altered_table, true, false);
+      goto err_new_table_cleanup;
+    }
+
     switch (inplace_supported) {
       case HA_ALTER_INPLACE_EXCLUSIVE_LOCK:
         // If SHARED lock and no particular algorithm was requested, use COPY.
@@ -12445,6 +13716,21 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
         break;
       case HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE:
       case HA_ALTER_INPLACE_NO_LOCK:
+      case HA_ALTER_INPLACE_INSTANT:
+        /*
+          Note that any instant operation is also in fact in-place operation.
+
+          It is totally safe to execute operation using instant algorithm if it
+          has no drawbacks as compared to in-place algorithm even if user
+          explicitly asked for ALGORITHM=INPLACE. Doing so, also allows to
+          keep code in engines which support only limited subset of in-place
+          ALTER TABLE operations as instant metadata only changes simple.
+
+          If instant algorithm has some downsides to in-place algorithm and user
+          explicitly asks for ALGORITHM=INPLACE it is responsibility of storage
+          engine to fallback to in-place algorithm execution by returning
+          HA_ALTER_INPLACE_NO_LOCK or HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE.
+        */
         break;
       case HA_ALTER_INPLACE_NOT_SUPPORTED:
         // If INPLACE was requested, report error.
@@ -13451,7 +14737,7 @@ static int copy_data_between_tables(
 
   /* Tell handler that we have values for all columns in the to table */
   to->use_all_columns();
-  if (init_read_record(&info, thd, from, NULL, 1, 1, false)) {
+  if (init_read_record(&info, thd, from, NULL, 1, false)) {
     error = 1;
     goto err;
   }
@@ -13784,8 +15070,7 @@ static bool check_engine(THD *thd, const char *db_name, const char *table_name,
   DBUG_ENTER("check_engine");
   handlerton **new_engine = &create_info->db_type;
   handlerton *req_engine = *new_engine;
-  bool no_substitution =
-      (thd->variables.sql_mode & MODE_NO_ENGINE_SUBSTITUTION);
+  bool no_substitution = (!is_engine_substitution_allowed(thd));
   if (!(*new_engine =
             ha_checktype(thd, ha_legacy_type(req_engine), no_substitution, 1)))
     DBUG_RETURN(true);
