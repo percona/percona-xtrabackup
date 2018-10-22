@@ -121,7 +121,6 @@ SET(INNOBASE_SOURCES
         lob/lob0impl.cc
 	lob/lob0lob.cc
 	lob/lob0del.cc
-	lob/lob0undo.cc
 	lob/lob0util.cc
         lob/zlob0index.cc
         lob/zlob0ins.cc

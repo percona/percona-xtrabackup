@@ -678,7 +678,6 @@ static void trx_resurrect_table_ids(trx_t *trx, const trx_undo_ptr_t *undo_ptr,
     table_id_t table_id;
     ulint cmpl_info;
     bool updated_extern;
-    type_cmpl_t type_cmpl;
 
     page_t *undo_rec_page = page_align(undo_rec);
 
@@ -688,7 +687,7 @@ static void trx_resurrect_table_ids(trx_t *trx, const trx_undo_ptr_t *undo_ptr,
     }
 
     trx_undo_rec_get_pars(undo_rec, &type, &cmpl_info, &updated_extern,
-                          &undo_no, &table_id, type_cmpl);
+                          &undo_no, &table_id);
     tables.insert(table_id);
 
     undo_rec = trx_undo_get_prev_rec(undo_rec, undo->hdr_page_no,
