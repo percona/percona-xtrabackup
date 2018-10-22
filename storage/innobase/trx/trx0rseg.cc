@@ -128,9 +128,32 @@ void trx_rseg_mem_free(trx_rseg_t *rseg) {
 
   mutex_free(&rseg->mutex);
 
-  /* There can't be any active transactions. */
-  ut_a(UT_LIST_GET_LEN(rseg->update_undo_list) == 0);
-  ut_a(UT_LIST_GET_LEN(rseg->insert_undo_list) == 0);
+  if (!srv_apply_log_only) {
+    /* There can't be any active transactions. */
+    ut_a(UT_LIST_GET_LEN(rseg->update_undo_list) == 0);
+    ut_a(UT_LIST_GET_LEN(rseg->insert_undo_list) == 0);
+  } else {
+    for (undo = UT_LIST_GET_FIRST(rseg->update_undo_list); undo != NULL;
+         undo = next_undo) {
+      next_undo = UT_LIST_GET_NEXT(undo_list, undo);
+
+      UT_LIST_REMOVE(rseg->update_undo_list, undo);
+
+      MONITOR_DEC(MONITOR_NUM_UNDO_SLOT_CACHED);
+
+      trx_undo_mem_free(undo);
+    }
+    for (undo = UT_LIST_GET_FIRST(rseg->insert_undo_list); undo != NULL;
+         undo = next_undo) {
+      next_undo = UT_LIST_GET_NEXT(undo_list, undo);
+
+      UT_LIST_REMOVE(rseg->insert_undo_list, undo);
+
+      MONITOR_DEC(MONITOR_NUM_UNDO_SLOT_CACHED);
+
+      trx_undo_mem_free(undo);
+    }
+  }
 
   for (undo = UT_LIST_GET_FIRST(rseg->update_undo_cached); undo != NULL;
        undo = next_undo) {
