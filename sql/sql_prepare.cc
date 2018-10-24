@@ -837,22 +837,17 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING> &varnames,
   Item_param **begin = param_array;
   Item_param **end = begin + param_count;
   List_iterator<LEX_STRING> var_it(varnames);
-  String buf;
+  StringBuffer<STRING_BUFFER_USUAL_SIZE> buf;
   const String *val;
   size_t length = 0;
 
   DBUG_ENTER("insert_params_from_vars");
 
-  if (with_log && query->copy(m_query_string.str, m_query_string.length,
-                              default_charset_info))
-    DBUG_RETURN(1);
+  // Reserve an extra space of 32 bytes for each placeholder parameter.
+  if (with_log) query->reserve(m_query_string.length + 32 * param_count);
 
   /* Protects thd->user_vars */
   mysql_mutex_lock(&thd->LOCK_thd_data);
-
-  String new_query(query->length());
-
-  new_query.set_charset(query->charset());
 
   for (Item_param **it = begin; it < end; ++it) {
     Item_param *param = *it;
@@ -873,9 +868,13 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING> &varnames,
 
       if (param->convert_str_value(thd)) goto error;
 
-      if (new_query.append(query->ptr() + length,
-                           param->pos_in_query - length) ||
-          new_query.append(*val))
+      size_t num_bytes = param->pos_in_query - length;
+      if (query->length() + num_bytes + val->length() >
+          std::numeric_limits<uint32>::max())
+        goto error;
+
+      if (query->append(m_query_string.str + length, num_bytes) ||
+          query->append(*val))
         goto error;
 
       length = param->pos_in_query + 1;
@@ -889,9 +888,8 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING> &varnames,
   /*
     If logging, take care of tail.
   */
-  if (length) new_query.append(query->ptr() + length, query->length() - length);
-
-  query->swap(new_query);
+  if (with_log)
+    query->append(m_query_string.str + length, m_query_string.length - length);
 
   mysql_mutex_unlock(&thd->LOCK_thd_data);
   DBUG_RETURN(0);
@@ -2083,9 +2081,8 @@ void mysql_stmt_get_longdata(THD *thd, Prepared_statement *stmt,
   if (thd->get_stmt_da()->is_error()) {
     stmt->state = Query_arena::STMT_ERROR;
     stmt->last_errno = thd->get_stmt_da()->mysql_errno();
-    size_t len = sizeof(stmt->last_error);
-    strncpy(stmt->last_error, thd->get_stmt_da()->message_text(), len - 1);
-    stmt->last_error[len - 1] = '\0';
+    snprintf(stmt->last_error, sizeof(stmt->last_error), "%.*s",
+             MYSQL_ERRMSG_SIZE - 1, thd->get_stmt_da()->message_text());
   }
   thd->pop_diagnostics_area();
 

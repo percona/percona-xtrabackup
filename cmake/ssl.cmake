@@ -1,5 +1,5 @@
 # Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
@@ -18,7 +18,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA 
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # We support different versions of SSL:
 # - "system"  (typically) uses headers/libraries in /usr/lib and /usr/lib64
@@ -79,7 +79,7 @@ MACRO(FATAL_SSL_NOT_FOUND_ERROR string)
 ENDMACRO()
 
 MACRO (MYSQL_USE_WOLFSSL)
-  SET(WOLFSSL_VERSION "3.13.0")
+  SET(WOLFSSL_VERSION "3.14.0")
   SET(WOLFSSL_SOURCE_DIR "${CMAKE_SOURCE_DIR}/extra/wolfssl-${WOLFSSL_VERSION}")
   MESSAGE(STATUS "WOLFSSL_SOURCE_DIR = ${WOLFSSL_SOURCE_DIR}")
 
@@ -95,7 +95,26 @@ MACRO (MYSQL_USE_WOLFSSL)
   ENDIF()
   INCLUDE_DIRECTORIES(SYSTEM ${INC_DIRS})
   SET(SSL_INTERNAL_INCLUDE_DIRS ${WOLFSSL_SOURCE_DIR})
-  SET(SSL_DEFINES "-DWOLFSSL_MYSQL_COMPATIBLE -DHAVE_ECC -DBUILDING_WOLFSSL -DHAVE_WOLFSSL -DHAVE_OPENSSL -DOPENSSL_EXTRA -DMULTI_THREADED -DHAVE_HASHDRBG -DWOLFSSL_AES_DIRECT -DWOLFSSL_SHA384 -DWOLFSSL_SHA512 -DSESSION_CERT -DKEEP_OUR_CERT -DWOLFSSL_STATIC_RSA -DWOLFSSL_SHA224 -DWC_NO_HARDEN -DWOLFSSL_CERT_EXT -DWOLFSSL_ALLOW_TLSV10")
+  ADD_DEFINITIONS(
+    -DBUILDING_WOLFSSL
+    -DHAVE_ECC
+    -DHAVE_HASHDRBG
+    -DHAVE_WOLFSSL
+    -DKEEP_OUR_CERT
+    -DMULTI_THREADED
+    -DOPENSSL_EXTRA
+    -DSESSION_CERT
+    -DWC_NO_HARDEN
+    -DWOLFSSL_AES_DIRECT
+    -DWOLFSSL_ALLOW_TLSV10
+    -DWOLFSSL_CERT_EXT
+    -DWOLFSSL_MYSQL_COMPATIBLE
+    -DWOLFSSL_SHA224
+    -DWOLFSSL_SHA384
+    -DWOLFSSL_SHA512
+    -DWOLFSSL_STATIC_RSA
+    -DWOLFSSL_CERT_GEN
+    )
   CHANGE_SSL_SETTINGS("wolfssl")
   ADD_SUBDIRECTORY(${WOLFSSL_SOURCE_DIR})
   ADD_SUBDIRECTORY(${WOLFSSL_SOURCE_DIR}/wolfcrypt)
@@ -196,6 +215,26 @@ MACRO (MYSQL_CHECK_SSL)
       IF(APPLE AND NOT OPENSSL_ROOT_DIR)
         SET(OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
       ENDIF()
+      IF(WIN32 AND NOT OPENSSL_ROOT_DIR)
+        # We want to be able to support 32bit client-only builds
+        # FindOpenSSL.cmake will look for 32bit before 64bit ...
+        FILE(TO_CMAKE_PATH "$ENV{PROGRAMFILES}" _programfiles)
+        IF(SIZEOF_VOIDP EQUAL 8)
+          FIND_PATH(OPENSSL_WIN32
+            NAMES "include/openssl/ssl.h"
+            PATHS "${_programfiles}/OpenSSL-Win32" "C:/OpenSSL-Win32/")
+          FIND_PATH(OPENSSL_WIN64
+            NAMES  "include/openssl/ssl.h"
+            PATHS "${_programfiles}/OpenSSL-Win64" "C:/OpenSSL-Win64/")
+          MESSAGE(STATUS "OPENSSL_WIN32 ${OPENSSL_WIN32}")
+          MESSAGE(STATUS "OPENSSL_WIN64 ${OPENSSL_WIN64}")
+          IF(OPENSSL_WIN32 AND OPENSSL_WIN64)
+            MESSAGE(STATUS "Found both 32bit and 64bit")
+            SET(OPENSSL_ROOT_DIR ${OPENSSL_WIN64})
+            MESSAGE(STATUS "OPENSSL_ROOT_DIR ${OPENSSL_ROOT_DIR}")
+          ENDIF()
+        ENDIF()
+      ENDIF()
       FIND_PACKAGE(OpenSSL)
       IF(OPENSSL_FOUND)
         GET_FILENAME_COMPONENT(OPENSSL_ROOT_DIR ${OPENSSL_INCLUDE_DIR} PATH)
@@ -243,10 +282,10 @@ MACRO (MYSQL_CHECK_SSL)
       MESSAGE(STATUS "suffixes <${CMAKE_FIND_LIBRARY_SUFFIXES}>")
     ENDIF()
     FIND_LIBRARY(OPENSSL_LIBRARY
-                 NAMES ssl ssleay32 ssleay32MD
+                 NAMES ssl libssl ssleay32 ssleay32MD
                  HINTS ${OPENSSL_ROOT_DIR}/lib)
     FIND_LIBRARY(CRYPTO_LIBRARY
-                 NAMES crypto libeay32
+                 NAMES crypto libcrypto libeay32
                  HINTS ${OPENSSL_ROOT_DIR}/lib)
     IF (WITH_SSL_PATH AND NOT APPLE AND NOT LINUX_STANDALONE)
       LIST(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
@@ -263,6 +302,10 @@ MACRO (MYSQL_CHECK_SSL)
       STRING(REGEX REPLACE
         "^.*OPENSSL_VERSION_NUMBER[\t ]+0x([0-9]).*$" "\\1"
         OPENSSL_MAJOR_VERSION "${OPENSSL_VERSION_NUMBER}"
+        )
+      STRING(REGEX REPLACE
+        "^.*OPENSSL_VERSION_NUMBER[\t ]+0x[0-9]([0-9][0-9]).*$" "\\1"
+        OPENSSL_MINOR_VERSION "${OPENSSL_VERSION_NUMBER}"
         )
     ENDIF()
     IF(OPENSSL_INCLUDE_DIR AND
@@ -334,10 +377,15 @@ MACRO (MYSQL_CHECK_SSL)
     MESSAGE(STATUS "OPENSSL_LIBRARY = ${OPENSSL_LIBRARY}")
     MESSAGE(STATUS "CRYPTO_LIBRARY = ${CRYPTO_LIBRARY}")
     MESSAGE(STATUS "OPENSSL_MAJOR_VERSION = ${OPENSSL_MAJOR_VERSION}")
+    MESSAGE(STATUS "OPENSSL_MINOR_VERSION = ${OPENSSL_MINOR_VERSION}")
+    # The server hangs in OpenSSL_add_all_algorithms() in ssl_start()
+    IF(WIN32 AND OPENSSL_MINOR_VERSION VERSION_EQUAL 1)
+      MESSAGE(WARNING "OpenSSL 1.1 is experimental on Windows")
+    ENDIF()
 
     INCLUDE(CheckSymbolExists)
     SET(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
-    CHECK_SYMBOL_EXISTS(SHA512_DIGEST_LENGTH "openssl/sha.h" 
+    CHECK_SYMBOL_EXISTS(SHA512_DIGEST_LENGTH "openssl/sha.h"
                         HAVE_SHA512_DIGEST_LENGTH)
     IF(OPENSSL_FOUND AND HAVE_SHA512_DIGEST_LENGTH)
       SET(SSL_SOURCES "")
@@ -351,7 +399,6 @@ MACRO (MYSQL_CHECK_SSL)
       MESSAGE(STATUS "SSL_LIBRARIES = ${SSL_LIBRARIES}")
       INCLUDE_DIRECTORIES(SYSTEM ${OPENSSL_INCLUDE_DIR})
       SET(SSL_INTERNAL_INCLUDE_DIRS "")
-      SET(SSL_DEFINES "-DHAVE_OPENSSL")
     ELSE()
       RESET_SSL_VARIABLES()
       FATAL_SSL_NOT_FOUND_ERROR(
@@ -650,26 +697,50 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
     IF(WIN32)
       GET_FILENAME_COMPONENT(CRYPTO_NAME "${CRYPTO_LIBRARY}" NAME_WE)
       GET_FILENAME_COMPONENT(OPENSSL_NAME "${OPENSSL_LIBRARY}" NAME_WE)
-      FILE(GLOB HAVE_CRYPTO_DLL "${WITH_SSL_PATH}/bin/${CRYPTO_NAME}.dll")
-      FILE(GLOB HAVE_OPENSSL_DLL "${WITH_SSL_PATH}/bin/${OPENSSL_NAME}.dll")
+
+      # Different naming scheme for the matching .dll as of SSL 1.1
+      SET(SSL_MSVC_VERSION_SUFFIX)
+      SET(SSL_MSVC_ARCH_SUFFIX)
+      IF(OPENSSL_MINOR_VERSION VERSION_EQUAL 1)
+        SET(SSL_MSVC_VERSION_SUFFIX "-1_1")
+        SET(SSL_MSVC_ARCH_SUFFIX "-x64")
+      ENDIF()
+
+      # OpenSSL 1.1 Look for libcrypto-1_1-x64.dll or libcrypto-1_1.dll
+      # OpenSSL 1.0 Look for libeay32.dll
+      FIND_FILE(HAVE_CRYPTO_DLL
+        NAMES
+        "${CRYPTO_NAME}${SSL_MSVC_VERSION_SUFFIX}${SSL_MSVC_ARCH_SUFFIX}.dll"
+        "${CRYPTO_NAME}${SSL_MSVC_VERSION_SUFFIX}.dll"
+        PATHS "${WITH_SSL_PATH}/bin"
+        NO_DEFAULT_PATH
+        )
+      FIND_FILE(HAVE_OPENSSL_DLL
+        NAMES
+        "${OPENSSL_NAME}${SSL_MSVC_VERSION_SUFFIX}${SSL_MSVC_ARCH_SUFFIX}.dll"
+        "${OPENSSL_NAME}${SSL_MSVC_VERSION_SUFFIX}.dll"
+        PATHS "${WITH_SSL_PATH}/bin"
+        NO_DEFAULT_PATH
+        )
+
       MESSAGE(STATUS "HAVE_CRYPTO_DLL ${HAVE_CRYPTO_DLL}")
       MESSAGE(STATUS "HAVE_OPENSSL_DLL ${HAVE_OPENSSL_DLL}")
       IF(HAVE_CRYPTO_DLL AND HAVE_OPENSSL_DLL)
+        GET_FILENAME_COMPONENT(CRYPTO_DLL_NAME "${HAVE_CRYPTO_DLL}" NAME)
+        GET_FILENAME_COMPONENT(OPENSSL_DLL_NAME "${HAVE_OPENSSL_DLL}" NAME)
         ADD_CUSTOM_TARGET(copy_openssl_dlls ALL
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${WITH_SSL_PATH}/bin/${CRYPTO_NAME}.dll"
-          "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/${CRYPTO_NAME}.dll"
+          "${HAVE_CRYPTO_DLL}"
+          "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/${CRYPTO_DLL_NAME}"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${WITH_SSL_PATH}/bin/${OPENSSL_NAME}.dll"
-          "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/${OPENSSL_NAME}.dll"
+          "${HAVE_OPENSSL_DLL}"
+          "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/${OPENSSL_DLL_NAME}"
           )
-        MESSAGE(STATUS
-          "INSTALL ${WITH_SSL_PATH}/bin/${CRYPTO_NAME}.dll to ${INSTALL_BINDIR}")
-        MESSAGE(STATUS
-          "INSTALL ${WITH_SSL_PATH}/bin/${OPENSSL_NAME}.dll to ${INSTALL_BINDIR}")
+        MESSAGE(STATUS "INSTALL ${HAVE_CRYPTO_DLL} to ${INSTALL_BINDIR}")
+        MESSAGE(STATUS "INSTALL ${HAVE_OPENSSL_DLL} to ${INSTALL_BINDIR}")
         INSTALL(FILES
-          "${WITH_SSL_PATH}/bin/${CRYPTO_NAME}.dll"
-          "${WITH_SSL_PATH}/bin/${OPENSSL_NAME}.dll"
+          "${HAVE_CRYPTO_DLL}"
+          "${HAVE_OPENSSL_DLL}"
           DESTINATION "${INSTALL_BINDIR}" COMPONENT SharedLibraries)
       ELSE()
         MESSAGE(STATUS "Cannot find SSL dynamic libraries")

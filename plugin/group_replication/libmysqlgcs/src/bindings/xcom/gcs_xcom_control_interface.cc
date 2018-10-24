@@ -835,8 +835,14 @@ bool Gcs_xcom_control::xcom_receive_local_view(Gcs_xcom_nodes *xcom_nodes) {
       if (std::find(cv_members.begin(), cv_members.end(), member_id) !=
           cv_members.end()) {
         members.push_back(member_id);
+        MYSQL_GCS_LOG_DEBUG("Local view with member: %s",
+                            member_id.get_member_id().c_str());
 
-        if (!(*nodes_it).is_alive()) unreachable.push_back(member_id);
+        if (!(*nodes_it).is_alive()) {
+          unreachable.push_back(member_id);
+          MYSQL_GCS_LOG_DEBUG("Local view with suspected member: %s",
+                              member_id.get_member_id().c_str());
+        }
       }
     }
 
@@ -1224,11 +1230,13 @@ void Gcs_xcom_control::process_control_message(Gcs_message *msg) {
                                                    configuration_id.node)))
 
   if (!m_view_control->is_view_changing()) {
+    delete ms_info;
     delete msg;
     return;
   }
 
   Gcs_member_identifier pid(msg->get_origin());
+  // takes ownership of ms_info
   bool can_install_view = m_state_exchange->process_member_state(ms_info, pid);
 
   // If state exchange has finished

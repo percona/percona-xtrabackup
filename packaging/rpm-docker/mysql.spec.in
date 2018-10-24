@@ -23,8 +23,6 @@
 %global mysql_vendor Oracle and/or its affiliates
 %global mysqldatadir /var/lib/mysql
 
-%global milestone    dmr
-
 # Pass path to mecab lib
 %{?with_mecab: %global mecab_option -DWITH_MECAB=%{with_mecab}}
 %{?with_mecab: %global mecab 1}
@@ -38,7 +36,7 @@
 %{!?compilation_comment_debug:   %global compilation_comment_debug MySQL Community Server - GPL - Debug}
 %{!?src_base:                    %global src_base mysql%{?cluster:-cluster-gpl}}
 
-%global src_dir               %{src_base}-%{version}
+%global src_dir               %{src_base}-@VERSION@
 
 %global license_files_server  %{src_dir}/LICENSE %{src_dir}/README
 
@@ -52,7 +50,7 @@ Name:           mysql%{?cluster:-cluster}-%{product_suffix}-minimal
 Summary:        A very fast and reliable SQL database server
 Group:          Applications/Databases
 Version:        @MYSQL_NO_DASH_VERSION@
-Release:        1%{?commercial:.1}%{?dist}
+Release:        1@MYSQL_VERSION_EXTRA_DOT@%{?commercial:.1}%{?dist}
 License:        Copyright (c) 2000, @MYSQL_COPYRIGHT_YEAR@, %{mysql_vendor}. All rights reserved. Under %{?license_type} license as shown in the Description field.
 URL:            http://www.mysql.com/
 Packager:       MySQL Release Engineering <mysql-build@oss.oracle.com>
@@ -150,10 +148,7 @@ mkdir release
   cd release
   cmake ../%{src_dir} \
            -DBUILD_CONFIG=mysql_release \
-%ifarch aarch64
-           -DCMAKE_C_COMPILER=/usr/bin/gcc7  \
-           -DCMAKE_CXX_COMPILER=/usr/bin/g++7 \
-%endif
+           -DREPRODUCIBLE_BUILD=OFF \
            -DINSTALL_LAYOUT=RPM \
            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	   -DWITH_BOOST=.. \
@@ -166,7 +161,7 @@ mkdir release
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
            -DFEATURE_SET="%{feature_set}" \
-           -DWITH_NUMA=ON \
+           -DWITH_NUMA=OFF \
            %{?mecab_option} \
            -DWITH_SSL=system \
 %if 0%{?with_meb:1}
@@ -387,6 +382,7 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_datadir}/mysql-*/fill_help_tables.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_system_tables.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_system_tables_data.sql
+%attr(644, root, root) %{_datadir}/mysql-*/mysql_system_users.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_sys_schema.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql_test_data_timezone.sql
 %attr(644, root, root) %{_datadir}/mysql-*/dictionary.txt

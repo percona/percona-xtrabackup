@@ -71,7 +71,7 @@ static void rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
 
   ut_ad(ctx->m_rollback);
 
-  if (uf != nullptr && uf->lob_diffs.size() > 0) {
+  if (uf != nullptr && uf->lob_diffs != nullptr && uf->lob_diffs->size() > 0) {
     /* Undo log contains changes done to the LOB.  This must have
     been a small change done to LOB.  Apply the undo log on the
     LOB.*/
@@ -177,6 +177,11 @@ static void z_rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
     if (dict_index_is_online_ddl(index)) {
       row_log_table_blob_free(index, ref.page_no());
     }
+
+    /* Ensure that the btr mtr is not holding any x-latch on the first page of
+     * LOB. */
+    ut_ad(!mtr_is_block_fix(ctx->get_mtr(), first.get_block(),
+                            MTR_MEMO_PAGE_X_FIX, index->table));
 
     first.free_all_frag_node_pages();
     first.free_all_index_pages();
@@ -317,7 +322,8 @@ void purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
     DBUG_VOID_RETURN;
   }
 
-  if (!is_rollback && uf != nullptr && uf->lob_diffs.size() > 0) {
+  if (!is_rollback && uf != nullptr && uf->lob_diffs != nullptr &&
+      uf->lob_diffs->size() > 0) {
     /* Undo record contains LOB diffs.  So purge shouldn't look
     at the LOB. */
     DBUG_VOID_RETURN;
@@ -341,13 +347,13 @@ void purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
     DBUG_VOID_RETURN;
   }
 
-  first_page_t first(mtr, index);
-  first.load_x(page_id, page_size);
-
   if (page_type == FIL_PAGE_TYPE_ZLOB_FIRST) {
     z_purge(ctx, index, trxid, undo_no, ref, rec_type);
     DBUG_VOID_RETURN;
   }
+
+  first_page_t first(mtr, index);
+  first.load_x(page_id, page_size);
 
   ut_a(page_type == FIL_PAGE_TYPE_LOB_FIRST);
 

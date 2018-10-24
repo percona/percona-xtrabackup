@@ -231,7 +231,7 @@ class JOIN {
         group_fields_cache(),
         sum_funcs(NULL),
         sum_funcs_end(),
-        tmp_table_param(),
+        tmp_table_param(thd_arg->mem_root),
         lock(thd->lock),
         rollup(),
         // @todo Can this be substituted with select->is_implicitly_grouped()?
@@ -773,8 +773,10 @@ class JOIN {
   bool rollup_process_const_fields();
   bool rollup_make_fields(List<Item> &all_fields, List<Item> &fields,
                           Item_sum ***func);
+  bool switch_slice_for_rollup_fields(List<Item> &all_fields,
+                                      List<Item> &fields);
   bool rollup_send_data(uint idx);
-  bool rollup_write_data(uint idx, TABLE *table);
+  bool rollup_write_data(uint idx, QEP_TAB *qep_tab);
   void remove_subq_pushed_predicates();
   /**
     Release memory and, if possible, the open tables held by this execution

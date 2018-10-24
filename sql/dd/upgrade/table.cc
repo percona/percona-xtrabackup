@@ -781,7 +781,6 @@ static void create_alter_view_stmt(THD *thd, TABLE_LIST *view_ref, String *str,
   @param[in] view_ref                TABLE_LIST with view data.
   @param[in] db_name                 database name.
   @param[in] view_name               view name.
-  @param[in] mem_root                MEM_ROOT to handle memory allocations.
 
   @retval false  ON SUCCESS
   @retval true   ON FAILURE
@@ -1305,10 +1304,8 @@ static bool fix_fk_parent_key_names(THD *thd, const String_type &schema_name,
         is upgraded.
       */
     } else {
-      const char *parent_key_name = find_fk_parent_key(parent_table_def, fk);
-      // Note: If the key returned above is "", this is interpreted as NULL
-      // when storing the value to the DD tables.
-      fk->set_unique_constraint_name(parent_key_name);
+      if (prepare_fk_parent_key(hton, parent_table_def, nullptr, nullptr, fk))
+        return true;
     }
   }
 
@@ -1502,13 +1499,12 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
 
   // Foreign keys are handled at later stage by retrieving info from SE.
   FOREIGN_KEY *dummy_fk_key_info = NULL;
-  uint fk_key_count = 0;
+  uint dummy_fk_key_count = 0;
 
   if (mysql_prepare_create_table(
           thd, schema_name.c_str(), table_name.c_str(), &create_info,
           &alter_info, file, &key_info_buffer, &key_count, &dummy_fk_key_info,
-          &fk_key_count, alter_ctx.fk_info, alter_ctx.fk_count,
-          alter_ctx.fk_max_generated_name_number, 0,
+          &dummy_fk_key_count, nullptr, 0, nullptr, 0, 0,
           false /* No FKs here. */)) {
     return true;
   }

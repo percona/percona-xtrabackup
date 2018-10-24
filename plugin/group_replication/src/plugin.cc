@@ -187,6 +187,12 @@ ulong components_stop_timeout_var = LONG_TIMEOUT;
 /* The timeout before going to error when majority becomes unreachable */
 ulong timeout_on_unreachable_var = 0;
 
+/*
+ Exit state action that is executed when a server involuntarily leaves the
+ group.
+*/
+ulong exit_state_action_var = EXIT_STATE_ACTION_ABORT_SERVER;
+
 /**
   The default value for auto_increment_increment is choosen taking into
   account the maximum usable values for each possible auto_increment_increment
@@ -873,8 +879,6 @@ int leave_group() {
   // Destroy handlers and notifiers
   delete events_handler;
   events_handler = NULL;
-  delete view_change_notifier;
-  view_change_notifier = NULL;
 
   return 0;
 }
@@ -994,7 +998,7 @@ int terminate_plugin_modules(bool flag_stop_async_channel,
 
           *error_message =
               (char *)my_malloc(PSI_NOT_INSTRUMENTED, err_len + 1, MYF(0));
-          strncpy(*error_message, err_tmp_arr, err_len);
+          memcpy(*error_message, err_tmp_arr, err_len + 1);
         } else {
           char err_tmp_arr[] =
               "Error stopping all replication channels while"
@@ -1136,6 +1140,7 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   channel_observation_manager_list = new Channel_observation_manager_list(
       plugin_info, END_CHANNEL_OBSERVATION_MANAGER_POS);
 
+  view_change_notifier = new Plugin_gcs_view_modification_notifier();
   gcs_module = new Gcs_operations();
 
   initialize_asynchronous_channels_observer();
@@ -1214,6 +1219,8 @@ int plugin_group_replication_deinit(void *p) {
 
   delete gcs_module;
   gcs_module = NULL;
+  delete view_change_notifier;
+  view_change_notifier = NULL;
 
   if (auto_increment_handler != NULL) {
     delete auto_increment_handler;
@@ -1511,7 +1518,6 @@ int configure_group_communication(st_server_ssl_variables *ssl_variables) {
 int start_group_communication() {
   DBUG_ENTER("start_group_communication");
 
-  view_change_notifier = new Plugin_gcs_view_modification_notifier();
   events_handler = new Plugin_gcs_events_handler(
       applier_module, recovery_module, view_change_notifier, compatibility_mgr,
       components_stop_timeout_var);
@@ -1711,6 +1717,11 @@ static int check_if_server_properly_configured() {
 
   gr_lower_case_table_names = startup_pre_reqs.lower_case_table_names;
   DBUG_ASSERT(gr_lower_case_table_names <= 2);
+#ifndef DBUG_OFF
+  DBUG_EXECUTE_IF("group_replication_skip_encode_lower_case_table_names", {
+    gr_lower_case_table_names = SKIP_ENCODING_LOWER_CASE_TABLE_NAMES;
+  });
+#endif
 
   DBUG_RETURN(0);
 }
@@ -1931,6 +1942,11 @@ static int check_flow_control_max_quota(MYSQL_THD, SYS_VAR *, void *save,
 
   DBUG_RETURN(0);
 }
+
+const char *exit_state_actions[] = {"READ_ONLY", "ABORT_SERVER", (char *)0};
+TYPELIB exit_state_actions_typelib_t = {array_elements(exit_state_actions) - 1,
+                                        "exit_state_actions_typelib_t",
+                                        exit_state_actions, NULL};
 
 /*
  Recovery module's module variable update/validate methods
@@ -3116,6 +3132,19 @@ static MYSQL_SYSVAR_STR(
     "GCS_DEBUG_NONE"                   /* default */
 );
 
+static MYSQL_SYSVAR_ENUM(exit_state_action,     /* name */
+                         exit_state_action_var, /* var */
+                         PLUGIN_VAR_OPCMDARG |
+                             PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
+                         "The action that is taken when the server "
+                         "leaves the group. "
+                         "Possible values are READ_ONLY or "
+                         "ABORT_SERVER.",                /* values */
+                         NULL,                           /* check func. */
+                         NULL,                           /* update func. */
+                         EXIT_STATE_ACTION_ABORT_SERVER, /* default */
+                         &exit_state_actions_typelib_t); /* type lib */
+
 static MYSQL_SYSVAR_ULONG(
     unreachable_majority_timeout,                          /* name */
     timeout_on_unreachable_var,                            /* var */
@@ -3281,6 +3310,7 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(flow_control_applier_threshold),
     MYSQL_SYSVAR(transaction_size_limit),
     MYSQL_SYSVAR(communication_debug_options),
+    MYSQL_SYSVAR(exit_state_action),
     MYSQL_SYSVAR(unreachable_majority_timeout),
     MYSQL_SYSVAR(member_weight),
     MYSQL_SYSVAR(flow_control_min_quota),

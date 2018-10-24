@@ -267,18 +267,11 @@ dberr_t replace(InsertContext &ctx, trx_t *trx, dict_index_t *index, ref_t ref,
                 int count) {
   DBUG_ENTER("lob::replace");
 
+  dberr_t ret(DB_SUCCESS);
   mtr_t *mtr = ctx.get_mtr();
   uint32_t new_entries = 0;
   const undo_no_t undo_no = (trx == nullptr ? 0 : trx->undo_no - 1);
   const uint32_t lob_version = first_page.get_lob_version();
-
-#ifdef LOB_DEBUG
-  std::cout << "thread=" << std::this_thread::get_id()
-            << ", lob::replace(): table=" << index->table->name
-            << ", ref=" << ref << ", count=" << count << ", trx->id=" << trx->id
-            << ", trx->undo_no=" << trx->undo_no << ", undo_no=" << undo_no
-            << std::endl;
-#endif
 
   ut_ad(offset >= DICT_ANTELOPE_MAX_INDEX_COL_LEN ||
         dict_table_has_atomic_blobs(index->table));
@@ -337,6 +330,11 @@ dberr_t replace(InsertContext &ctx, trx_t *trx, dict_index_t *index, ref_t ref,
       first_page.set_block(tmp_block);
       new_block = first_page.replace(trx, page_offset, ptr, want, mtr);
 
+      if (new_block == nullptr) {
+        ret = DB_OUT_OF_FILE_SPACE;
+        goto error;
+      }
+
     } else {
       /* If current page number is NOT the same as first page
       number, then load first page here. */
@@ -344,6 +342,11 @@ dberr_t replace(InsertContext &ctx, trx_t *trx, dict_index_t *index, ref_t ref,
       data_page_t page(mtr, index);
       page.load_x(cur_page_no);
       new_block = page.replace(trx, page_offset, ptr, want, mtr);
+
+      if (new_block == nullptr) {
+        ret = DB_OUT_OF_FILE_SPACE;
+        goto error;
+      }
     }
     page_offset = 0;
 
@@ -351,6 +354,11 @@ dberr_t replace(InsertContext &ctx, trx_t *trx, dict_index_t *index, ref_t ref,
 
     /* Allocate a new index entry.  First page is loaded by now. */
     flst_node_t *new_node = first_page.alloc_index_entry(false);
+
+    if (new_node == nullptr) {
+      ret = DB_OUT_OF_FILE_SPACE;
+      goto error;
+    }
 
     new_entries++;
     index_entry_t new_entry(new_node, mtr, index);
@@ -396,11 +404,21 @@ dberr_t replace(InsertContext &ctx, trx_t *trx, dict_index_t *index, ref_t ref,
     /* Full data in data page is replaced.  So no need to
     read old page. */
     data_page_t new_page(mtr, index);
-    new_page.alloc(mtr, false);
+
+    if (new_page.alloc(mtr, false) == nullptr) {
+      ret = DB_OUT_OF_FILE_SPACE;
+      goto error;
+    }
+
     new_page.write(trx->id, ptr, want);
 
     /* Allocate a new index entry */
     flst_node_t *new_node = first_page.alloc_index_entry(false);
+
+    if (new_node == nullptr) {
+      ret = DB_OUT_OF_FILE_SPACE;
+      goto error;
+    }
 
     new_entries++;
     index_entry_t new_entry(new_node, mtr, index);
@@ -446,6 +464,11 @@ dberr_t replace(InsertContext &ctx, trx_t *trx, dict_index_t *index, ref_t ref,
     /* Allocate a new index entry */
     flst_node_t *new_node = first_page.alloc_index_entry(false);
 
+    if (new_node == nullptr) {
+      ret = DB_OUT_OF_FILE_SPACE;
+      goto error;
+    }
+
     new_entries++;
     index_entry_t new_entry(new_node, mtr, index);
     new_entry.set_lob_version(lob_version);
@@ -469,6 +492,11 @@ dberr_t replace(InsertContext &ctx, trx_t *trx, dict_index_t *index, ref_t ref,
 #endif /* LOB_DEBUG */
 
   DBUG_RETURN(DB_SUCCESS);
+
+error:
+  ut_ad(ret != DB_SUCCESS);
+
+  DBUG_RETURN(ret);
 }
 
 static dberr_t replace_inline(InsertContext &ctx, trx_t *trx,
@@ -574,7 +602,7 @@ dberr_t apply_undolog(mtr_t *mtr, trx_t *trx, dict_index_t *index, ref_t ref,
                       const upd_field_t *uf) {
   DBUG_ENTER("lob::apply_undolog");
 
-  const std::vector<Lob_diff> &lob_diffs = uf->lob_diffs;
+  const Lob_diff_vector &lob_diffs = *uf->lob_diffs;
 
   page_no_t first_page_no = ref.page_no();
   space_id_t space_id = ref.space_id();
@@ -675,11 +703,12 @@ dberr_t apply_undolog(mtr_t *mtr, trx_t *trx, dict_index_t *index, ref_t ref,
       /* Ensure that only 1 or 2 index entries will be modified.*/
       ut_ad(count <= 1);
 
-      trx_id_t t1 = lob_diff.m_idx_diffs[count].m_modifier_trxid;
+      lob_index_diff_t &tmp = lob_diff.m_idx_diffs->at(count);
+      trx_id_t t1 = tmp.m_modifier_trxid;
 
       cur_entry.set_trx_id_modifier(t1);
 
-      undo_no_t u1 = lob_diff.m_idx_diffs[count].m_modifier_undo_no;
+      undo_no_t u1 = tmp.m_modifier_undo_no;
 
       cur_entry.set_trx_undo_no_modifier(u1);
 

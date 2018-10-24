@@ -88,7 +88,16 @@ bool execute_query(THD *thd, const dd::String_type &q_buf) {
   Ed_connection con(thd);
   LEX_STRING str;
   thd->make_lex_string(&str, q_buf.c_str(), q_buf.length(), false);
-  return con.execute_direct(str);
+  if (con.execute_direct(str)) {
+    // Report error to log file during bootstrap.
+    if (dd::bootstrap::DD_bootstrap_ctx::instance().get_stage() <
+        dd::bootstrap::Stage::FINISHED) {
+      LogErr(ERROR_LEVEL, ER_DD_INITIALIZE_SQL_ERROR, q_buf.c_str(),
+             con.get_last_errno(), con.get_last_error());
+    }
+    return true;
+  }
+  return false;
 }
 
 using namespace dd;
@@ -1071,46 +1080,59 @@ bool sync_meta_data(THD *thd) {
   if (dd::end_transaction(thd, false) || execute_query(thd, "FLUSH TABLES"))
     return true;
 
+  // Get hold of the temporary actual and target schema names.
+  String_type target_schema_name;
+  bool target_schema_exists = false;
+  if (dd::tables::DD_properties::instance().get(thd, "UPGRADE_TARGET_SCHEMA",
+                                                &target_schema_name,
+                                                &target_schema_exists))
+    return true;
+
+  String_type actual_schema_name;
+  bool actual_schema_exists = false;
+  if (dd::tables::DD_properties::instance().get(thd, "UPGRADE_ACTUAL_SCHEMA",
+                                                &actual_schema_name,
+                                                &actual_schema_exists))
+    return true;
+
   // Reset the DDSE local dictionary cache.
   handlerton *ddse = ha_resolve_by_legacy_type(thd, DB_TYPE_INNODB);
   if (ddse->dict_cache_reset == nullptr) return true;
 
-  for (System_tables::Const_iterator it =
-           System_tables::instance()->begin(System_tables::Types::CORE);
-       it != System_tables::instance()->end();
-       it = System_tables::instance()->next(it, System_tables::Types::CORE)) {
+  for (System_tables::Const_iterator it = System_tables::instance()->begin();
+       it != System_tables::instance()->end(); ++it) {
     // Skip extraneous tables during minor downgrade.
     if ((*it)->entity() == nullptr) continue;
 
-    ddse->dict_cache_reset(MYSQL_SCHEMA_NAME.str,
-                           (*it)->entity()->name().c_str());
+    if ((*it)->property() == System_tables::Types::CORE ||
+        (*it)->property() == System_tables::Types::SECOND) {
+      ddse->dict_cache_reset(MYSQL_SCHEMA_NAME.str,
+                             (*it)->entity()->name().c_str());
+      if (target_schema_exists && !target_schema_name.empty())
+        ddse->dict_cache_reset(target_schema_name.c_str(),
+                               (*it)->entity()->name().c_str());
+      if (actual_schema_exists && !actual_schema_name.empty())
+        ddse->dict_cache_reset(actual_schema_name.c_str(),
+                               (*it)->entity()->name().c_str());
+    }
   }
 
   /*
     At this point, we're to a large extent open for business.
     If there are leftover schema names from upgrade, delete them.
   */
-  String_type schema_name;
-  bool schema_exists = false;
-  if (dd::tables::DD_properties::instance().get(thd, "UPGRADE_ACTUAL_SCHEMA",
-                                                &schema_name, &schema_exists))
-    return true;
-
-  if (schema_exists && !schema_name.empty()) {
+  if (target_schema_exists && !target_schema_name.empty()) {
     std::stringstream ss;
-    ss << "DROP SCHEMA IF EXISTS " << schema_name;
+    ss << "DROP SCHEMA IF EXISTS " << target_schema_name;
     if (execute_query(thd, ss.str().c_str())) return true;
   }
 
-  if (dd::tables::DD_properties::instance().get(thd, "UPGRADE_TARGET_SCHEMA",
-                                                &schema_name, &schema_exists))
-    return true;
-
-  if (schema_exists && !schema_name.empty()) {
+  if (actual_schema_exists && !actual_schema_name.empty()) {
     std::stringstream ss;
-    ss << "DROP SCHEMA IF EXISTS " << schema_name;
+    ss << "DROP SCHEMA IF EXISTS " << actual_schema_name;
     if (execute_query(thd, ss.str().c_str())) return true;
   }
+
   /*
    The statements above are auto committed, so there is nothing uncommitted
    at this stage.
@@ -1354,6 +1376,23 @@ bool migrate_meta_data(THD *thd, const std::set<String_type> &create_set,
   std::set<String_type> migrated_set{};
 
   /* Version dependent migration of meta data can be added here. */
+
+  /*
+    8.0.11 allowed entries with 0 timestamps to be created. These must
+    be updated, otherwise, upgrade will fail since 0 timstamps are not
+    allowed with the default SQL mode.
+  */
+  if (bootstrap::DD_bootstrap_ctx::instance().is_upgrade_from_before(
+          bootstrap::DD_VERSION_80012)) {
+    if (execute_query(thd,
+                      "UPDATE mysql.tables SET last_altered = "
+                      "CURRENT_TIMESTAMP WHERE last_altered = 0"))
+      return dd::end_transaction(thd, true);
+    if (execute_query(thd,
+                      "UPDATE mysql.tables SET created = CURRENT_TIMESTAMP "
+                      "WHERE created = 0"))
+      return dd::end_transaction(thd, true);
+  }
 
   /*
     Default handling: Copy all meta data for the tables that have been

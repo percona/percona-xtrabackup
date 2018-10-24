@@ -1774,9 +1774,8 @@ bool Fil_shard::reserve_open_slot(size_t shard_id) {
 void Fil_shard::release_open_slot(size_t shard_id) {
   size_t expected = shard_id;
 
-  bool success = s_open_slot.compare_exchange_weak(expected, EMPTY_OPEN_SLOT);
-
-  ut_a(success);
+  while (!s_open_slot.compare_exchange_weak(expected, EMPTY_OPEN_SLOT)) {
+  };
 }
 
 /** Map the space ID and name to the tablespace instance.
@@ -5056,7 +5055,8 @@ dberr_t fil_ibd_create(space_id_t space_id, const char *name, const char *path,
 
   if (!page_size.is_compressed()) {
     buf_flush_init_for_writing(nullptr, page, nullptr, 0,
-                               fsp_is_checksum_disabled(space_id));
+                               fsp_is_checksum_disabled(space_id),
+                               true /* skip_lsn_check */);
 
     err = os_file_write(request, path, file, page, 0, page_size.physical());
 
@@ -5073,7 +5073,8 @@ dberr_t fil_ibd_create(space_id_t space_id, const char *name, const char *path,
         page_zip.m_end = page_zip.m_nonempty = page_zip.n_blobs = 0;
 
     buf_flush_init_for_writing(nullptr, page, &page_zip, 0,
-                               fsp_is_checksum_disabled(space_id));
+                               fsp_is_checksum_disabled(space_id),
+                               true /* skip_lsn_check */);
 
     err = os_file_write(request, path, file, page_zip.data, 0,
                         page_size.physical());
@@ -6042,25 +6043,35 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
 
     int ret = posix_fallocate(file->handle.m_file, node_start, len);
 
-    /* We already pass the valid offset and len in, if EINVAL
-    is returned, it could only mean that the file system doesn't
-    support fallocate(), currently one known case is
-    ext3 FS with O_DIRECT. We ignore EINVAL here so that the
-    error message won't flood. */
-    if (ret != 0 && ret != EINVAL) {
-      ib::error(ER_IB_MSG_319)
-          << "posix_fallocate(): Failed to preallocate"
-             " data for file "
-          << file->name << ", desired size " << len
-          << " bytes."
-             " Operating system error number "
-          << ret
-          << ". Check"
-             " that the disk is not full or a disk quota"
-             " exceeded. Make sure the file system supports"
-             " this function. Some operating system error"
-             " numbers are described at " REFMAN
-             " operating-system-error-codes.html";
+    DBUG_EXECUTE_IF("ib_posix_fallocate_fail_eintr", ret = EINTR;);
+
+    DBUG_EXECUTE_IF("ib_posix_fallocate_fail_einval", ret = EINVAL;);
+
+    if (ret != 0) {
+      /* We already pass the valid offset and len in, if EINVAL
+      is returned, it could only mean that the file system doesn't
+      support fallocate(), currently one known case is ext3 with O_DIRECT.
+
+      Also because above call could be interrupted, in this case,
+      simply go to plan B by writing zeroes.
+
+      Both error messages for above two scenarios are skipped in case
+      of flooding error messages, because they can be ignored by users. */
+      if (ret != EINTR && ret != EINVAL) {
+        ib::error(ER_IB_MSG_319)
+            << "posix_fallocate(): Failed to preallocate"
+               " data for file "
+            << file->name << ", desired size " << len
+            << " bytes."
+               " Operating system error number "
+            << ret
+            << ". Check"
+               " that the disk is not full or a disk quota"
+               " exceeded. Make sure the file system supports"
+               " this function. Some operating system error"
+               " numbers are described at " REFMAN
+               "operating-system-error-codes.html";
+      }
 
       err = DB_IO_ERROR;
     }
@@ -6213,6 +6224,8 @@ void meb_extend_tablespaces_to_stored_len() {
   fil_system->meb_extend_tablespaces_to_stored_len();
 }
 
+bool meb_is_redo_log_only_restore = false;
+
 /** Determine if file is intermediate / temporary. These files are
 created during reorganize partition, rename tables, add / drop columns etc.
 @param[in]	filepath	absolute / relative or simply file name
@@ -6222,6 +6235,11 @@ bool meb_is_intermediate_file(const std::string &filepath) {
   std::string file_name = filepath;
 
   {
+    /** If its redo only restore, apply log needs to got through the
+        intermediate steps to apply a ddl.
+        Some of these operation might result in intermediate files.
+    */
+    if (meb_is_redo_log_only_restore) return false;
     /* extract file name from relative or absolute file name */
     auto pos = file_name.rfind(OS_PATH_SEPARATOR);
 
@@ -6898,8 +6916,6 @@ static void fil_report_invalid_page_access_low(page_no_t block_offset,
                            << ".";
 
   ut_error;
-
-  _exit(1);
 }
 
 #define fil_report_invalid_page_access(b, s, n, o, l, t) \
@@ -9404,10 +9420,10 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 
       snprintf(name, sizeof(name), "%.*s", (int)from_len, ptr);
 
-      ib::error(ER_IB_MSG_357) << "MLOG_FILE_RENAME: Invalid from file name."
-                               << " Length (" << from_len << ") must be >= 5"
-                               << " and end in '.ibd'. File name in the"
-                               << " redo log is '" << name << "'";
+      ib::info(ER_IB_MSG_357) << "MLOG_FILE_RENAME: Invalid from file name."
+                              << " Length (" << from_len << ") must be >= 5"
+                              << " and end in '.ibd'. File name in the"
+                              << " redo log is '" << name << "'";
     }
 
     return (nullptr);
@@ -9443,10 +9459,10 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 
       snprintf(name, sizeof(name), "%.*s", (int)to_len, ptr);
 
-      ib::error(ER_IB_MSG_359) << "MLOG_FILE_RENAME: Invalid to file name."
-                               << " Length (" << to_len << ") must be >= 5"
-                               << " and end in '.ibd'. File name in the"
-                               << " redo log is '" << name << "'";
+      ib::info(ER_IB_MSG_359) << "MLOG_FILE_RENAME: Invalid to file name."
+                              << " Length (" << to_len << ") must be >= 5"
+                              << " and end in '.ibd'. File name in the"
+                              << " redo log is '" << name << "'";
     }
 
     return (nullptr);
@@ -10486,6 +10502,13 @@ bool Fil_path::is_valid_location(const char *space_name,
 
   dirpath.resize(pos);
 
+  /* Get the subdir that the file is in. */
+  pos = dirpath.find_last_of(SEPARATOR);
+
+  std::string subdir = (pos == std::string::npos)
+                           ? dirpath
+                           : dirpath.substr(pos + 1, dirpath.length());
+
   pos = name.find_last_of(SEPARATOR);
 
   if (pos == std::string::npos) {
@@ -10502,8 +10525,6 @@ bool Fil_path::is_valid_location(const char *space_name,
     /* This is a file-per-table datafile.
     Reduce the name to just the db name. */
 
-    name.resize(pos);
-
     if (MySQL_datadir_path.is_same_as(dirpath)) {
       ib::error(ER_IB_MSG_389) << "A file-per-table tablespace cannot"
                                << " be located in the datadir."
@@ -10511,17 +10532,31 @@ bool Fil_path::is_valid_location(const char *space_name,
       return (false);
     }
 
-    /* Get the subdir that the file is in. */
-    pos = dirpath.find_last_of(SEPARATOR);
+    /* In case of space_name in system charset, there is a possibility
+    that the space_name contains more than one SEPARATOR character.
+    We cannot rely on finding the last SEPARATOR only once.
+    Search the space_name string backwards until we find the
+    db name that matches with the directory name in dirpath. */
 
-    std::string subdir = (pos == std::string::npos)
-                             ? dirpath
-                             : dirpath.substr(pos + 1, dirpath.length());
+    while (pos < std::string::npos) {
+      name.resize(pos);
+      std::string temp = name;
 
-    if (name != subdir) {
-      Fil_path::convert_to_filename_charset(name);
+      if (temp == subdir) {
+        break;
+      }
 
-      if (name != subdir) {
+      /* Convert to filename charset and compare again. */
+      Fil_path::convert_to_filename_charset(temp);
+      if (temp == subdir) {
+        break;
+      }
+
+      /* Still no match, iterate through the next SEPARATOR. */
+      pos = name.find_last_of(SEPARATOR);
+
+      /* If end of string is hit, there is no match. */
+      if (pos == std::string::npos) {
         return (false);
       }
     }
@@ -10539,8 +10574,6 @@ void Fil_path::convert_to_filename_charset(std::string &name) {
 
   strncpy(filename, name.c_str(), sizeof(filename) - 1);
   strncpy(old_name, filename, sizeof(old_name));
-
-  ut_ad(strchr(filename, '/') == nullptr);
 
   innobase_convert_to_filename_charset(filename, old_name, MAX_TABLE_NAME_LEN);
 

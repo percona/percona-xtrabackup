@@ -31,6 +31,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
  ***********************************************************************/
 
 #include <stdlib.h>
+#include "row0sel.h"
 
 #include "fts0ast.h"
 #include "fts0fts.h"
@@ -528,7 +529,7 @@ dberr_t fts_ast_visit(fts_ast_oper_t oper,      /*!< in: current operator */
   bool revisit = false;
   bool will_be_ignored = false;
   fts_ast_visit_pass_t visit_pass = FTS_PASS_FIRST;
-
+  trx_t *trx = node->trx;
   start_node = node->list.head;
 
   ut_a(node->type == FTS_AST_LIST || node->type == FTS_AST_SUBEXP_LIST);
@@ -617,6 +618,9 @@ dberr_t fts_ast_visit(fts_ast_oper_t oper,      /*!< in: current operator */
           node->visited = true;
         }
     }
+  }
+  if (trx_is_interrupted(trx)) {
+    return (DB_INTERRUPTED);
   }
 
   if (revisit) {

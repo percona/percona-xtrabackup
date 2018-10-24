@@ -5587,7 +5587,7 @@ static bool xb_space_create_file(
 
   if (!page_size.is_compressed()) {
     buf_flush_init_for_writing(NULL, page, NULL, 0,
-                               fsp_is_checksum_disabled(space_id));
+                               fsp_is_checksum_disabled(space_id), true);
     success = os_file_write(write_request, path, *file, page, 0,
                             page_size.physical());
   } else {
@@ -5601,7 +5601,7 @@ static bool xb_space_create_file(
         page_zip.m_end = page_zip.m_nonempty = page_zip.n_blobs = 0;
 
     buf_flush_init_for_writing(NULL, page, &page_zip, 0,
-                               fsp_is_checksum_disabled(space_id));
+                               fsp_is_checksum_disabled(space_id), true);
     success = os_file_write(write_request, path, *file, page_zip.data, 0,
                             page_size.physical());
   }

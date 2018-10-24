@@ -596,6 +596,9 @@ PFS_thread *create_thread(PFS_thread_class *klass,
     PFS_events_stages *child_stage = &pfs->m_stage_current;
     child_stage->m_nesting_event_id = 0;
 
+    /* No current stage. */
+    child_stage->m_class = NULL;
+
     pfs->m_events_statements_count = 0;
     pfs->m_transaction_current.m_event_id = 0;
 
@@ -619,7 +622,9 @@ PFS_thread *find_thread(ulonglong thread_id) {
   do {
     pfs = it.scan_next(&index);
     if (pfs != NULL) {
-      if (pfs->m_thread_internal_id == thread_id) return pfs;
+      if (pfs->m_thread_internal_id == thread_id) {
+        return pfs;
+      }
     }
   } while (pfs != NULL);
 
@@ -865,7 +870,7 @@ search:
     pfs->m_class = klass;
     pfs->m_enabled = klass->m_enabled && flag_global_instrumentation;
     pfs->m_timed = klass->m_timed;
-    strncpy(pfs->m_filename, normalized_filename, normalized_length);
+    memcpy(pfs->m_filename, normalized_filename, normalized_length);
     pfs->m_filename[normalized_length] = '\0';
     pfs->m_filename_length = normalized_length;
     pfs->m_file_stat.m_open_count = 1;
@@ -934,8 +939,9 @@ void find_and_rename_file(PFS_thread *thread, const char *old_filename,
     memcpy(safe_buffer, old_filename, FN_REFLEN - 1);
     safe_buffer[FN_REFLEN - 1] = 0;
     safe_filename = safe_buffer;
-  } else
+  } else {
     safe_filename = old_filename;
+  }
 
   char buffer[FN_REFLEN];
   char dirbuffer[FN_REFLEN];
@@ -961,8 +967,12 @@ void find_and_rename_file(PFS_thread *thread, const char *old_filename,
   /* Append the unresolved file name to the resolved path */
   char *ptr = buffer + strlen(buffer);
   char *buf_end = &buffer[sizeof(buffer) - 1];
-  if ((buf_end > ptr) && (*(ptr - 1) != FN_LIBCHAR)) *ptr++ = FN_LIBCHAR;
-  if (buf_end > ptr) strncpy(ptr, safe_filename + dirlen, buf_end - ptr);
+  if ((buf_end > ptr) && (*(ptr - 1) != FN_LIBCHAR)) {
+    *ptr++ = FN_LIBCHAR;
+  }
+  if (buf_end > ptr) {
+    strncpy(ptr, safe_filename + dirlen, buf_end - ptr);
+  }
   *buf_end = '\0';
 
   normalized_filename = buffer;
@@ -972,9 +982,9 @@ void find_and_rename_file(PFS_thread *thread, const char *old_filename,
   entry = reinterpret_cast<PFS_file **>(lf_hash_search(
       &filename_hash, pins, normalized_filename, normalized_length));
 
-  if (entry && (entry != MY_LF_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR)) {
     pfs = *entry;
-  else {
+  } else {
     lf_hash_search_unpin(pins);
     return;
   }
@@ -988,8 +998,9 @@ void find_and_rename_file(PFS_thread *thread, const char *old_filename,
     memcpy(safe_buffer, new_filename, FN_REFLEN - 1);
     safe_buffer[FN_REFLEN - 1] = 0;
     safe_filename = safe_buffer;
-  } else
+  } else {
     safe_filename = new_filename;
+  }
 
   dirlen = dirname_length(safe_filename);
   if (dirlen == 0) {
@@ -1009,23 +1020,27 @@ void find_and_rename_file(PFS_thread *thread, const char *old_filename,
   /* Append the unresolved file name to the resolved path */
   ptr = buffer + strlen(buffer);
   buf_end = &buffer[sizeof(buffer) - 1];
-  if ((buf_end > ptr) && (*(ptr - 1) != FN_LIBCHAR)) *ptr++ = FN_LIBCHAR;
-  if (buf_end > ptr) strncpy(ptr, safe_filename + dirlen, buf_end - ptr);
+  if ((buf_end > ptr) && (*(ptr - 1) != FN_LIBCHAR)) {
+    *ptr++ = FN_LIBCHAR;
+  }
+  if (buf_end > ptr) {
+    strncpy(ptr, safe_filename + dirlen, buf_end - ptr);
+  }
   *buf_end = '\0';
 
   normalized_filename = buffer;
   normalized_length = (uint)strlen(normalized_filename);
 
-  strncpy(pfs->m_filename, normalized_filename, normalized_length);
+  memcpy(pfs->m_filename, normalized_filename, normalized_length);
   pfs->m_filename[normalized_length] = '\0';
   pfs->m_filename_length = normalized_length;
 
   int res;
   res = lf_hash_insert(&filename_hash, pins, &pfs);
 
-  if (likely(res == 0))
+  if (likely(res == 0)) {
     return;
-  else {
+  } else {
     global_file_container.deallocate(pfs);
     global_file_container.m_lost++;
     return;
@@ -2247,6 +2262,10 @@ void update_socket_derived_flags() {
   global_socket_container.apply_all(fct_update_socket_derived_flags);
 }
 
+static void fct_reset_metadata_source_file_pointers(PFS_metadata_lock *pfs) {
+  pfs->m_src_file = nullptr;
+}
+
 static void fct_update_metadata_derived_flags(PFS_metadata_lock *pfs) {
   pfs->m_enabled =
       global_metadata_class.m_enabled && flag_global_instrumentation;
@@ -2274,6 +2293,110 @@ void update_instruments_derived_flags() {
   update_socket_derived_flags();
   update_metadata_derived_flags();
   /* nothing for stages, statements and transactions (no instances) */
+}
+
+/**
+  For each thread, clear the source file pointers from all waits, stages,
+  statements and transaction events.
+*/
+static void fct_reset_source_file_pointers(PFS_thread *pfs_thread) {
+  /* EVENTS_WAITS_CURRENT */
+  PFS_events_waits *wait = pfs_thread->m_events_waits_stack;
+  PFS_events_waits *wait_last = wait + WAIT_STACK_SIZE;
+  for (; wait < wait_last; wait++) {
+    wait->m_source_file = nullptr;
+  }
+
+  /* EVENTS_WAITS_HISTORY */
+  wait = pfs_thread->m_waits_history;
+  wait_last = wait + events_waits_history_per_thread;
+  for (; wait < wait_last; wait++) {
+    wait->m_source_file = nullptr;
+  }
+
+  /* EVENTS_STAGES_CURRENT */
+  pfs_thread->m_stage_current.m_source_file = nullptr;
+
+  /* EVENTS_STAGES_HISTORY */
+  PFS_events_stages *stage = pfs_thread->m_stages_history;
+  PFS_events_stages *stage_last = stage + events_stages_history_per_thread;
+  for (; stage < stage_last; stage++) {
+    stage->m_source_file = nullptr;
+  }
+
+  /* EVENTS_STATEMENTS_CURRENT */
+  PFS_events_statements *stmt = &pfs_thread->m_statement_stack[0];
+  PFS_events_statements *stmt_last = stmt + statement_stack_max;
+  for (; stmt < stmt_last; stmt++) {
+    stmt->m_source_file = nullptr;
+  }
+
+  /* EVENTS_STATEMENTS_HISTORY */
+  stmt = pfs_thread->m_statements_history;
+  stmt_last = stmt + events_statements_history_per_thread;
+  for (; stmt < stmt_last; stmt++) {
+    stmt->m_source_file = nullptr;
+  }
+
+  /* EVENTS_TRANSACTIONS_CURRENT */
+  pfs_thread->m_transaction_current.m_source_file = nullptr;
+
+  /* EVENTS_TRANSACTIONS_HISTORY */
+  PFS_events_transactions *trx = pfs_thread->m_transactions_history;
+  PFS_events_transactions *trx_last =
+      trx + events_transactions_history_per_thread;
+  for (; trx < trx_last; trx++) {
+    trx->m_source_file = nullptr;
+  }
+}
+
+/**
+  Clear the source file pointers from all waits, stages, statements and
+  transaction events. This function is called whenever a plugin or component
+  is unloaded.
+
+  The Performance Schema stores the source file and line number for wait,
+  stage, statement, transaction and metadata lock events. The source file
+  string pointer is taken from the __FILE__ macro. Source file pointers that
+  reference files within a shared library become invalid when the shared
+  library is unloaded, therefore all source file pointers are set to NULL
+  whenever a plugin or component is unloaded.
+*/
+void reset_source_file_pointers() {
+  /* Clear source file pointers from EVENTS_*_CURRENT and HISTORY tables. */
+  global_thread_container.apply(fct_reset_source_file_pointers);
+
+  /* Clear source file pointers from METADATA_LOCKS. */
+  global_mdl_container.apply_all(fct_reset_metadata_source_file_pointers);
+
+  /* EVENTS_WAITS_HISTORY_LONG */
+  PFS_events_waits *wait = events_waits_history_long_array;
+  PFS_events_waits *wait_last = wait + events_waits_history_long_size;
+  for (; wait < wait_last; wait++) {
+    wait->m_source_file = nullptr;
+  }
+
+  /* EVENTS_STAGES_HISTORY_LONG */
+  PFS_events_stages *stage = events_stages_history_long_array;
+  PFS_events_stages *stage_last = stage + events_stages_history_long_size;
+  for (; stage < stage_last; stage++) {
+    stage->m_source_file = nullptr;
+  }
+
+  /* EVENTS_STATEMENTS_HISTORY_LONG */
+  PFS_events_statements *stmt = events_statements_history_long_array;
+  PFS_events_statements *stmt_last = stmt + events_statements_history_long_size;
+  for (; stmt < stmt_last; stmt++) {
+    stmt->m_source_file = nullptr;
+  }
+
+  /* EVENTS_TRANSACTIONS_HISTORY_LONG */
+  PFS_events_transactions *trx = events_transactions_history_long_array;
+  PFS_events_transactions *trx_last =
+      trx + events_transactions_history_long_size;
+  for (; trx < trx_last; trx++) {
+    trx->m_source_file = nullptr;
+  }
 }
 
 /** @} */

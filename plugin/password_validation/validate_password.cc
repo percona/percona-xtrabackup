@@ -134,7 +134,7 @@ static bool check_user_name;
 static void dictionary_activate(set_type *dict_words) {
   time_t start_time;
   struct tm tm;
-  char timebuf[20]; /* "YYYY-MM-DD HH:MM:SS" */
+  char timebuf[20 * 2]; /* "YYYY-MM-DD HH:MM:SS" */
   char *new_ts;
 
   /* fetch the start time */

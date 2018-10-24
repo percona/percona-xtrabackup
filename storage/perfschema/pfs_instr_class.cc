@@ -63,6 +63,13 @@
 bool pfs_enabled = true;
 
 /**
+  Global performance schema reference count for plugin and component events.
+  Incremented when a shared library is being unloaded, decremented when
+  the performance schema is finished processing the event.
+*/
+std::atomic<uint32> pfs_unload_plugin_ref_count(0);
+
+/**
   PFS_INSTRUMENT option settings array
  */
 Pfs_instr_config_array *pfs_instr_config_array = NULL;
@@ -1182,8 +1189,10 @@ PFS_sync_key register_cond_class(const char *name, uint name_length,
   return 0;
 }
 
-#define FIND_CLASS_BODY(KEY, COUNT, ARRAY)      \
-  if ((KEY == 0) || (KEY > COUNT)) return NULL; \
+#define FIND_CLASS_BODY(KEY, COUNT, ARRAY) \
+  if ((KEY == 0) || (KEY > COUNT)) {       \
+    return NULL;                           \
+  }                                        \
   return &ARRAY[KEY - 1]
 
 /**
@@ -1982,7 +1991,9 @@ void update_program_share_derived_flags(PFS_thread *thread) {
 }
 
 ulonglong gtid_monitoring_getsystime() {
-  if (pfs_enabled) return my_getsystime();
+  if (pfs_enabled) {
+    return my_getsystime();
+  }
   return 0;
 }
 

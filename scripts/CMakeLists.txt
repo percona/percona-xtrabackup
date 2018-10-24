@@ -1,5 +1,5 @@
-# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
-# 
+# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
@@ -64,7 +64,7 @@ IF(NOT WIN32 OR CMAKE_CROSSCOMPILING)
 ENDIF()
 
 IF(CAT_EXECUTABLE)
-  SET(CAT_COMMAND COMMAND 
+  SET(CAT_COMMAND COMMAND
     ${CMAKE_COMMAND} -E chdir  ${CMAKE_CURRENT_SOURCE_DIR}
     ${CAT_EXECUTABLE} mysql_system_tables.sql mysql_system_tables_fix.sql >
     ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables.sql
@@ -171,6 +171,17 @@ ADD_CUSTOM_COMMAND(
 )
 
 ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_users.h
+  COMMAND comp_sql
+  mysql_system_users
+  ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_users.sql
+  sql_commands_system_users.h
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS comp_sql
+  ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_users.sql
+)
+
+ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_help_data.h
   COMMAND comp_sql
   fill_help_tables
@@ -187,13 +198,14 @@ IF(NOT WITHOUT_SERVER)
     ALL
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_data.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables.h
+    ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_users.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_help_data.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables_data_fix.h
   )
 ENDIF()
 
 IF(UNIX)
- FILE(WRITE ${CMAKE_CURRENT_BINARY_DIR}/make_binary_distribution 
+ FILE(WRITE ${CMAKE_CURRENT_BINARY_DIR}/make_binary_distribution
    "cd ${CMAKE_BINARY_DIR} && '${CMAKE_CPACK_COMMAND}' -G TGZ --config CPackConfig.cmake\n" )
  EXECUTE_PROCESS(
   COMMAND chmod +x ${CMAKE_CURRENT_BINARY_DIR}/make_binary_distribution
@@ -264,18 +276,18 @@ ELSE()
 ENDIF()
 
 IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  SET (FIND_PROC 
+  SET (FIND_PROC
     "ps wwwp $PID | grep -v mysqld_safe | grep -- $MYSQLD > /dev/null")
 ENDIF()
 IF(NOT FIND_PROC AND CMAKE_SYSTEM_NAME MATCHES "SunOS")
-  SET (FIND_PROC 
+  SET (FIND_PROC
     "ps -p $PID | grep -v mysqld_safe | grep -- $MYSQLD > /dev/null")
 ENDIF()
 
 IF(NOT FIND_PROC)
   # BSD styl
   EXECUTE_PROCESS(COMMAND ps -uaxww OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE result)
-  IF(result MATCHES 0) 
+  IF(result MATCHES 0)
      SET( FIND_PROC
        "ps -uaxww | grep -v mysqld_safe | grep -- $MYSQLD | grep $PID > /dev/null")
   ENDIF()
@@ -288,7 +300,7 @@ IF(NOT FIND_PROC)
     SET( FIND_PROC "ps -ef | grep -v mysqld_safe | grep -- $MYSQLD | grep $PID > /dev/null")
   ENDIF()
 ENDIF()
-  
+
 EXECUTE_PROCESS(COMMAND sh -c "kill -0 $$" OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE result)
 IF(result MATCHES 0)
   SET(CHECK_PID "kill -0 $PID > /dev/null 2> /dev/null")
@@ -339,7 +351,7 @@ ELSE()
   SET(TARGET_LINUX "false")
 ENDIF()
 
-# Use cmake variables to inspect dependencies for 
+# Use cmake variables to inspect dependencies for
 # mysqlclient library (add -l stuff)
 SET(CLIENT_LIBS "")
 SET(LIBS "")
@@ -354,14 +366,14 @@ MACRO(EXTRACT_LINK_LIBRARIES target var)
       # Filter out "general", it is not a library, just CMake hint
       IF(NOT lib STREQUAL "general" AND NOT ${var}  MATCHES "-l${lib} ")
         IF (lib MATCHES "^\\-l")
-          SET(${var} "${${var}} ${lib} ") 
+          SET(${var} "${${var}} ${lib} ")
         ELSEIF(lib MATCHES "^/")
           # Full path, convert to just filename, strip "lib" prefix and extension
           GET_FILENAME_COMPONENT(lib "${lib}" NAME_WE)
           STRING(REGEX REPLACE "^lib" "" lib "${lib}")
-          SET(${var} "${${var}}-l${lib} " ) 
+          SET(${var} "${${var}}-l${lib} " )
         ELSE()
-          SET(${var} "${${var}}-l${lib} " ) 
+          SET(${var} "${${var}}-l${lib} " )
         ENDIF()
       ENDIF()
     ENDFOREACH()
@@ -412,7 +424,7 @@ MESSAGE(STATUS "CONFIG_LIBS_PRIVATE ${CONFIG_LIBS_PRIVATE}")
 SET(mysql_config_COMPONENT COMPONENT Development)
 
 IF(WIN32)
-  # On Windows, some .sh and some .pl.in files are configured 
+  # On Windows, some .sh and some .pl.in files are configured
   # The resulting files will have .pl extension (those are perl scripts)
 
   # Input files with pl.in extension
@@ -472,7 +484,7 @@ ELSE()
       SET(${file}_COMPONENT Server)
     ENDIF()
     INSTALL_SCRIPT(
-      ${CMAKE_CURRENT_BINARY_DIR}/${file} 
+      ${CMAKE_CURRENT_BINARY_DIR}/${file}
       DESTINATION ${INSTALL_BINDIR}
       COMPONENT ${${file}_COMPONENT}
      )

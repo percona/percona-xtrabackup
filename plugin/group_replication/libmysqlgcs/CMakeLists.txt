@@ -109,8 +109,6 @@ SET(GCS_SOURCES
   src/bindings/xcom/gcs_message_stage_lz4.cc
   src/bindings/xcom/gcs_xcom_statistics_interface.cc)
 
-ADD_DEFINITIONS(${SSL_DEFINES})
-
 IF(WITH_SSL MATCHES "bundled")
     # add YASSL_MYSQL_COMPATIBLE when building XCom and GCS with SSL.
     # This needs to exist because XCom is implemented in pure C.
@@ -120,6 +118,12 @@ IF(WITH_SSL MATCHES "bundled")
                       "-DYASSL_MYSQL_COMPATIBLE")
     ADD_COMPILE_FLAGS(${GCS_SOURCES} COMPILE_FLAGS
                       "-DYASSL_MYSQL_COMPATIBLE")
+ENDIF()
+
+MY_CHECK_C_COMPILER_FLAG("-Wcast-function-type" HAVE_CAST_FUNCTION_TYPE)
+IF(HAVE_CAST_FUNCTION_TYPE)
+  ADD_COMPILE_FLAGS(src/bindings/xcom/xcom/xcom_transport.c
+                    COMPILE_FLAGS "-Wno-cast-function-type")
 ENDIF()
 
 # add the definition to build XCom with SSL support

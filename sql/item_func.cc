@@ -616,8 +616,11 @@ Item *Item_func::get_tmp_table_item(THD *thd) {
     For items with windowing functions, return the same
     object (temp table fields are not created for windowing
     functions if they are not evaluated at this stage).
+    For items which need to store ROLLUP NULLs, we need
+    the same object as we need to detect if ROLLUP NULL's
+    need to be written for this item (in has_rollup_result).
   */
-  if (!has_aggregation() && !const_item() && !has_wf()) {
+  if (!has_aggregation() && !const_item() && !has_wf() && !has_rollup_field()) {
     Item *result = new Item_field(result_field);
     DBUG_RETURN(result);
   }
@@ -2224,7 +2227,11 @@ double Item_func_cot::val_real() {
   DBUG_ASSERT(fixed == 1);
   double value = args[0]->val_real();
   if ((null_value = args[0]->null_value)) return 0.0;
-  return check_float_overflow(1.0 / tan(value));
+  double val2 = tan(value);
+  if (val2 == 0.0) {
+    return raise_float_overflow();
+  }
+  return check_float_overflow(1.0 / val2);
 }
 
 // Bitwise functions
@@ -6935,15 +6942,11 @@ bool Item_func_sp::itemize(Parse_context *pc, Item **res) {
   context = lex->current_context();
   lex->safe_to_cache_query = false;
 
-  if (m_name->m_db.str == NULL)  // use the default database name
-  {
-    /* Cannot match the function since no database is selected */
-    if (thd->db().str == NULL) {
+  if (m_name->m_db.str == NULL) {
+    if (thd->lex->copy_db_to(&m_name->m_db.str, &m_name->m_db.length)) {
       my_error(ER_NO_DB_ERROR, MYF(0));
       return true;
     }
-    m_name->m_db = thd->db();
-    m_name->m_db.str = thd->strmake(m_name->m_db.str, m_name->m_db.length);
   }
 
   m_name->init_qname(thd);

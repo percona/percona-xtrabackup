@@ -156,9 +156,9 @@ bool Table_impl::load_foreign_key_parents(Open_dictionary_tables_ctx *otx) {
   if (schema_rec == nullptr) return true;
 
   // 2. Build a key for searching the FK table.
-  const int index_no = 3;  // Key on tables::Foreign_keys.
   Table_reference_range_key parent_ref_key(
-      index_no, tables::Foreign_keys::FIELD_REFERENCED_TABLE_CATALOG,
+      tables::Foreign_keys::INDEX_K_REF_CATALOG_REF_SCHEMA_REF_TABLE,
+      tables::Foreign_keys::FIELD_REFERENCED_TABLE_CATALOG,
       String_type(Dictionary_impl::default_catalog_name()),
       tables::Foreign_keys::FIELD_REFERENCED_TABLE_SCHEMA,
       schema_rec->read_str(tables::Schemata::FIELD_NAME),
@@ -766,21 +766,22 @@ Trigger *Table_impl::add_trigger_following(const Trigger *trigger,
   DBUG_ASSERT(trigger != nullptr && trigger->action_timing() == at &&
               trigger->event_type() == et);
 
-  int new_pos = dynamic_cast<const Trigger_impl *>(trigger)->ordinal_position();
-
   // Allocate new Trigger object.
   Trigger_impl *new_trigger = create_trigger();
   if (new_trigger == nullptr) return nullptr;
 
-  m_triggers.push_back(new_trigger);
+  Trigger_collection::iterator it =
+      m_triggers.find(dynamic_cast<const Trigger_impl *>(trigger));
+
+  if (++it != m_triggers.end())
+    m_triggers.insert(it, new_trigger);
+  else
+    m_triggers.push_back(new_trigger);
+
   new_trigger->set_action_timing(at);
   new_trigger->set_event_type(et);
 
-  int last_pos = dynamic_cast<Trigger_impl *>(new_trigger)->ordinal_position();
-  if (last_pos > (new_pos + 1)) m_triggers.move(last_pos - 1, new_pos);
-
   reorder_action_order(at, et);
-
   return new_trigger;
 }
 
@@ -795,13 +796,12 @@ Trigger *Table_impl::add_trigger_preceding(const Trigger *trigger,
   Trigger_impl *new_trigger = create_trigger();
   if (new_trigger == nullptr) return nullptr;
 
-  int new_pos = dynamic_cast<const Trigger_impl *>(trigger)->ordinal_position();
-  m_triggers.push_back(new_trigger);
   new_trigger->set_action_timing(at);
   new_trigger->set_event_type(et);
 
-  int last_pos = dynamic_cast<Trigger_impl *>(new_trigger)->ordinal_position();
-  m_triggers.move(last_pos - 1, new_pos - 1);
+  Trigger_collection::iterator it =
+      m_triggers.find(dynamic_cast<const Trigger_impl *>(trigger));
+  m_triggers.insert(it, new_trigger);
 
   reorder_action_order(at, et);
 

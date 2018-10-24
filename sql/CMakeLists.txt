@@ -75,9 +75,6 @@ ADD_CUSTOM_COMMAND(
 )
 
 ADD_DEFINITIONS(-DMYSQL_SERVER)
-IF(SSL_DEFINES)
- ADD_DEFINITIONS(${SSL_DEFINES})
-ENDIF()
 
 SET(DD_SOURCES
   dd/collection.cc
@@ -249,7 +246,9 @@ SET(SQL_GIS_SOURCES
   gis/touches.cc
   gis/union.cc
   gis/within.cc
-  gis/wkb_parser.cc
+  gis/wkb.cc
+  gis/wkb_size_visitor.cc
+  gis/wkb_visitor.cc
   item_geofunc.cc
   item_geofunc_buffer.cc
   item_geofunc_internal.cc

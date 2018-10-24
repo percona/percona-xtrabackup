@@ -872,7 +872,7 @@ static const byte *trx_undo_read_blob_update(const byte *undo_ptr,
   uf->last_undo_no = mach_read_next_compressed(&undo_ptr);
 
   for (size_t i = 0; i < N; ++i) {
-    Lob_diff lob_diff;
+    Lob_diff lob_diff(uf->heap);
     lob::undo_seq_t *lob_seq = nullptr;
     lob::undo_data_t lob_undo_data;
 
@@ -919,10 +919,10 @@ static const byte *trx_undo_read_blob_update(const byte *undo_ptr,
       /* Write the modifier trx undo_no of the LOB index entry. */
       idx_diff.m_modifier_undo_no = mach_read_next_compressed(&undo_ptr);
 
-      lob_diff.m_idx_diffs.push_back(idx_diff);
+      lob_diff.m_idx_diffs->push_back(idx_diff);
     }
 
-    uf->lob_diffs.push_back(lob_diff);
+    uf->push_lob_diff(lob_diff);
     DBUG_LOG("lob", lob_diff);
   }
 
@@ -1231,6 +1231,7 @@ static ulint trx_undo_page_report_modify(
 
     /* The ordering columns must not be stored externally. */
     ut_ad(!rec_offs_nth_extern(offsets, i));
+    ut_ad(!rec_offs_nth_default(offsets, i));
     ut_ad(index->get_col(i)->ord_part);
 
     if (trx_undo_left(undo_page, ptr) < 5) {
@@ -1330,7 +1331,7 @@ static ulint trx_undo_page_report_modify(
           flen = ut_min(flen, max_v_log_len);
         }
       } else {
-        field = rec_get_nth_field(rec, offsets, pos, &flen);
+        field = rec_get_nth_field_instant(rec, offsets, pos, index, &flen);
       }
 
       if (trx_undo_left(undo_page, ptr) < 15) {
@@ -1458,7 +1459,7 @@ static ulint trx_undo_page_report_modify(
         ptr += mach_write_compressed(ptr, pos);
 
         /* Save the old value of field */
-        field = rec_get_nth_field(rec, offsets, pos, &flen);
+        field = rec_get_nth_field_instant(rec, offsets, pos, index, &flen);
 
         if (rec_offs_nth_extern(offsets, pos)) {
           const dict_col_t *col = index->get_col(pos);
@@ -2532,7 +2533,7 @@ bool trx_undo_prev_version_build(
   }
 
   if (update != nullptr) {
-    update->destroy();
+    update->reset();
   }
 
   DBUG_RETURN(true);

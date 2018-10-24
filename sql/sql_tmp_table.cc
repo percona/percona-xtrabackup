@@ -503,7 +503,7 @@ void Cache_temp_engine_properties::init(THD *thd) {
   db_plugin = ha_lock_engine(0, heap_hton);
   handler = get_new_handler((TABLE_SHARE *)0, false, thd->mem_root, heap_hton);
   HEAP_MAX_KEY_LENGTH = handler->max_key_length();
-  HEAP_MAX_KEY_PART_LENGTH = handler->max_key_part_length();
+  HEAP_MAX_KEY_PART_LENGTH = handler->max_key_part_length(nullptr);
   HEAP_MAX_KEY_PARTS = handler->max_key_parts();
   destroy(handler);
   plugin_unlock(0, db_plugin);
@@ -512,7 +512,7 @@ void Cache_temp_engine_properties::init(THD *thd) {
   handler =
       get_new_handler((TABLE_SHARE *)0, false, thd->mem_root, temptable_hton);
   TEMPTABLE_MAX_KEY_LENGTH = handler->max_key_length();
-  TEMPTABLE_MAX_KEY_PART_LENGTH = handler->max_key_part_length();
+  TEMPTABLE_MAX_KEY_PART_LENGTH = handler->max_key_part_length(nullptr);
   TEMPTABLE_MAX_KEY_PARTS = handler->max_key_parts();
   destroy(handler);
   plugin_unlock(0, db_plugin);
@@ -521,7 +521,7 @@ void Cache_temp_engine_properties::init(THD *thd) {
   handler =
       get_new_handler((TABLE_SHARE *)0, false, thd->mem_root, myisam_hton);
   MYISAM_MAX_KEY_LENGTH = handler->max_key_length();
-  MYISAM_MAX_KEY_PART_LENGTH = handler->max_key_part_length();
+  MYISAM_MAX_KEY_PART_LENGTH = handler->max_key_part_length(nullptr);
   MYISAM_MAX_KEY_PARTS = handler->max_key_parts();
   destroy(handler);
   plugin_unlock(0, db_plugin);
@@ -884,7 +884,6 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   uchar *null_flags;
   Field **reg_field, **from_field, **default_field;
   uint *blob_field;
-  Copy_field *copy = 0;
   KEY *keyinfo;
   KEY_PART_INFO *key_part_info;
   MI_COLUMNDEF *recinfo;
@@ -959,12 +958,13 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
           &bitmaps, bitmap_buffer_size(field_count + 1) * 3, NullS)) {
     DBUG_RETURN(NULL); /* purecov: inspected */
   }
-  /* Copy_field belongs to Temp_table_param, allocate it in THD mem_root */
-  if (!(param->copy_field = copy =
-            new (thd->mem_root) Copy_field[field_count])) {
-    free_root(&own_root, MYF(0)); /* purecov: inspected */
-    DBUG_RETURN(NULL);            /* purecov: inspected */
+
+  try {
+    param->copy_fields.reserve(field_count);
+  } catch (std::bad_alloc &) {
+    DBUG_RETURN(nullptr);
   }
+
   param->items_to_copy = copy_func;
   /* make table according to fields */
 
@@ -1295,7 +1295,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
     */
     DBUG_PRINT("info", ("hidden_field_count: %d", param->hidden_field_count));
     share->keys = 1;
-    table->distinct = 1;
+    table->is_distinct = true;
     if (!using_unique_constraint) {
       Field **reg_field;
       keyinfo->user_defined_key_parts = field_count - param->hidden_field_count;
@@ -1471,17 +1471,17 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
       f_in_record0->move_field_offset(-diff);  // Back to record[0]
     }
 
-    if (from_field[i]) { /* Not a table Item */
+    if (from_field[i]) {
+      /* This column is directly mapped to a column in the GROUP BY clause. */
       if (param->m_window && param->m_window->frame_buffer_param() &&
           field->flags & FIELD_IS_MARKED) {
         Temp_table_param *window_fb = param->m_window->frame_buffer_param();
         // Grep for FIELD_IS_MARKED in this file.
         field->flags ^= FIELD_IS_MARKED;
-        window_fb->copy_field_end->set(from_field[i], field, save_sum_fields);
-        window_fb->copy_field_end++;
+        window_fb->copy_fields.emplace_back(from_field[i], field,
+                                            save_sum_fields);
       } else {
-        copy->set(field, from_field[i], save_sum_fields);
-        copy++;
+        param->copy_fields.emplace_back(field, from_field[i], save_sum_fields);
       }
     }
     length = field->pack_length();
@@ -1506,7 +1506,6 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
     field->table_name = &table->alias;
   }
 
-  param->copy_field_end = copy;
   param->recinfo = recinfo;
   store_record(table, s->default_values);  // Make empty default record
 
@@ -2358,7 +2357,7 @@ static void trace_tmp_table(Opt_trace_context *trace, const TABLE *table) {
       .add("key_length", table->key_info ? table->key_info->key_length : 0)
       .add("unique_constraint", table->hash_field ? true : false)
       .add("makes_grouped_rows", table->group != nullptr)
-      .add("cannot_insert_duplicates", table->distinct);
+      .add("cannot_insert_duplicates", table->is_distinct);
 
   if (s->db_type() == myisam_hton) {
     trace_tmp.add_alnum("location", "disk (MyISAM)");
@@ -2505,6 +2504,7 @@ void free_tmp_table(THD *thd, TABLE *entry) {
       So we need a copy to free it.
     */
     MEM_ROOT own_root = std::move(entry->s->mem_root);
+    destroy(entry);
     free_root(&own_root, MYF(0));
   }
 
@@ -2667,7 +2667,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable,
     new_table.key_info = table->key_info;
     new_table.hash_field = table->hash_field;
     new_table.group = table->group;
-    new_table.distinct = table->distinct;
+    new_table.is_distinct = table->is_distinct;
     new_table.alias = table->alias;
     new_table.pos_in_table_list = table->pos_in_table_list;
     new_table.reginfo = table->reginfo;
@@ -2736,9 +2736,6 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable,
           new_table.file->extra(HA_EXTRA_NO_ROWS);
           new_table.no_rows = 1;
         }
-
-        /* HA_EXTRA_WRITE_CACHE can stay until close, no need to disable it */
-        new_table.file->extra(HA_EXTRA_WRITE_CACHE);
 
         /*
           copy all old rows from heap table to on-disk table

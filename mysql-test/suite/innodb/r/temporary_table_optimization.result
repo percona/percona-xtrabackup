@@ -259,13 +259,15 @@ b blob not null,
 index sk (b(3021))
 ) row_format = dynamic engine=innodb;
 drop table t;
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES';
 SET innodb_strict_mode=OFF;
 create temporary table t (
 a int not null,
 b blob not null,
 index sk (b(3021))
 ) row_format = compact engine=innodb;
-ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ERROR 42000: Specified key was too long; max key length is 767 bytes
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 create temporary table t (
 a int not null,
 b blob not null,
@@ -278,12 +280,14 @@ b blob not null,
 index sk (b(3021))
 ) row_format = compressed engine=innodb;
 drop table t;
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES';
 create temporary table t (
 a int not null,
 b blob not null,
 index sk (b(3021))
 ) row_format = compact engine=innodb;
-ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ERROR 42000: Specified key was too long; max key length is 767 bytes
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 create temporary table t (
 a int not null,
 b blob not null,
@@ -312,5 +316,5 @@ FILE_ID	FILE_NAME	FILE_TYPE	TABLESPACE_NAME	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAM
 SELECT * FROM information_schema.INNODB_DATAFILES WHERE PATH LIKE '%t6469%';
 SPACE	PATH
 SELECT * FROM information_schema.INNODB_TABLES WHERE NAME LIKE '%t6469%';
-TABLE_ID	NAME	FLAG	N_COLS	SPACE	ROW_FORMAT	ZIP_PAGE_SIZE	SPACE_TYPE
+TABLE_ID	NAME	FLAG	N_COLS	SPACE	ROW_FORMAT	ZIP_PAGE_SIZE	SPACE_TYPE	INSTANT_COLS
 SET sql_mode=default;

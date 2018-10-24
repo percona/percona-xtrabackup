@@ -352,7 +352,7 @@ static Sys_var_ulong Sys_pfs_max_cond_classes(
     "performance_schema_max_cond_classes",
     "Maximum number of condition instruments.",
     READ_ONLY GLOBAL_VAR(pfs_param.m_cond_class_sizing), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(0, 256), DEFAULT(PFS_MAX_COND_CLASS), BLOCK_SIZE(1),
+    VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_COND_CLASS), BLOCK_SIZE(1),
     PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_max_cond_instances(
@@ -383,7 +383,7 @@ static Sys_var_ulong Sys_pfs_max_file_classes(
     "performance_schema_max_file_classes",
     "Maximum number of file instruments.",
     READ_ONLY GLOBAL_VAR(pfs_param.m_file_class_sizing), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(0, 256), DEFAULT(PFS_MAX_FILE_CLASS), BLOCK_SIZE(1),
+    VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_FILE_CLASS), BLOCK_SIZE(1),
     PFS_TRAILING_PROPERTIES);
 
 static Sys_var_ulong Sys_pfs_max_file_handles(
@@ -413,14 +413,14 @@ static Sys_var_ulong Sys_pfs_max_socket_classes(
     "performance_schema_max_socket_classes",
     "Maximum number of socket instruments.",
     READ_ONLY GLOBAL_VAR(pfs_param.m_socket_class_sizing),
-    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 256), DEFAULT(PFS_MAX_SOCKET_CLASS),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_SOCKET_CLASS),
     BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_ulong Sys_pfs_max_mutex_classes(
     "performance_schema_max_mutex_classes",
     "Maximum number of mutex instruments.",
     READ_ONLY GLOBAL_VAR(pfs_param.m_mutex_class_sizing),
-    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 256), DEFAULT(PFS_MAX_MUTEX_CLASS),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_MUTEX_CLASS),
     BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_max_mutex_instances(
@@ -435,7 +435,7 @@ static Sys_var_ulong Sys_pfs_max_rwlock_classes(
     "performance_schema_max_rwlock_classes",
     "Maximum number of rwlock instruments.",
     READ_ONLY GLOBAL_VAR(pfs_param.m_rwlock_class_sizing),
-    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 256), DEFAULT(PFS_MAX_RWLOCK_CLASS),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_RWLOCK_CLASS),
     BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_max_rwlock_instances(
@@ -482,7 +482,7 @@ static Sys_var_ulong Sys_pfs_max_thread_classes(
     "performance_schema_max_thread_classes",
     "Maximum number of thread instruments.",
     READ_ONLY GLOBAL_VAR(pfs_param.m_thread_class_sizing),
-    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 256), DEFAULT(PFS_MAX_THREAD_CLASS),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_THREAD_CLASS),
     BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_max_thread_instances(
@@ -537,7 +537,7 @@ static Sys_var_ulong Sys_pfs_max_stage_classes(
     "performance_schema_max_stage_classes",
     "Maximum number of stage instruments.",
     READ_ONLY GLOBAL_VAR(pfs_param.m_stage_class_sizing),
-    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 256), DEFAULT(PFS_MAX_STAGE_CLASS),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_STAGE_CLASS),
     BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_events_stages_history_long_size(
@@ -2519,9 +2519,9 @@ static Sys_var_ulong Sys_max_relay_log_size(
 
 static Sys_var_ulong Sys_max_sort_length(
     "max_sort_length",
-    "The number of bytes to use when sorting BLOB or TEXT values (only "
-    "the first max_sort_length bytes of each value are used; the rest "
-    "are ignored)",
+    "The number of bytes to use when sorting long values with PAD SPACE "
+    "collations (only the first max_sort_length bytes of each value are "
+    "used; the rest are ignored)",
     HINT_UPDATEABLE SESSION_VAR(max_sort_length), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(4, 8192 * 1024L), DEFAULT(1024), BLOCK_SIZE(1));
 
@@ -5424,7 +5424,7 @@ static Sys_var_ulonglong Sys_mts_pending_jobs_size_max(
     "The least possible value must be not less than the master side "
     "max_allowed_packet.",
     GLOBAL_VAR(opt_mts_pending_jobs_size_max), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(1024, (ulonglong) ~(intptr)0), DEFAULT(16 * 1024 * 1024),
+    VALID_RANGE(1024, (ulonglong) ~(intptr)0), DEFAULT(128 * 1024 * 1024),
     BLOCK_SIZE(1024), ON_CHECK(0));
 
 static bool check_locale(sys_var *self, THD *thd, set_var *var) {
@@ -5651,6 +5651,15 @@ static Sys_var_gtid_executed Sys_gtid_executed(
 
 static bool check_gtid_purged(sys_var *self, THD *thd, set_var *var) {
   DBUG_ENTER("check_gtid_purged");
+
+  /*
+    GTID_PURGED must not be set / updated when GR is running (it goes against
+    the whole purpose of update everywhere replication).
+  */
+  if (is_group_replication_running()) {
+    my_error(ER_UPDATE_GTID_PURGED_WITH_GR, MYF(0));
+    DBUG_RETURN(true);
+  }
 
   if (!var->value ||
       check_super_outside_trx_outside_sf_outside_sp(self, thd, var))
@@ -6061,10 +6070,12 @@ static Sys_var_set Sys_binlog_row_value_options(
     ON_CHECK(check_binlog_row_value_options));
 
 static bool check_keyring_access(sys_var *, THD *thd, set_var *) {
-  if (!(thd->security_context()
+  if (!thd->security_context()->check_access(SUPER_ACL) &&
+      !(thd->security_context()
             ->has_global_grant(STRING_WITH_LEN("ENCRYPTION_KEY_ADMIN"))
             .first)) {
-    my_error(ER_KEYRING_ACCESS_DENIED_ERROR, MYF(0), "ENCRYPTION_KEY_ADMIN");
+    my_error(ER_KEYRING_ACCESS_DENIED_ERROR, MYF(0),
+             "SUPER or ENCRYPTION_KEY_ADMIN");
     return true;
   }
   return false;

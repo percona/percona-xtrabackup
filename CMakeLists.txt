@@ -46,6 +46,11 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
 CMAKE_POLICY(SET CMP0018 NEW)
 CMAKE_POLICY(SET CMP0022 NEW)
 
+# Disallow use of the LOCATION property for build targets.
+IF(POLICY CMP0026)
+  CMAKE_POLICY(SET CMP0026 NEW)
+ENDIF()
+
 # We use get_target_property() for non-existent targets (CMP0045)
 IF(CMAKE_VERSION VERSION_EQUAL "3.0.0" OR
    CMAKE_VERSION VERSION_GREATER "3.0.0")
@@ -164,6 +169,13 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
             FIND_PROGRAM(ALTERNATIVE_GPP g++
               NO_DEFAULT_PATH
               PATHS "/opt/rh/devtoolset-7/root/usr/bin")
+            # On ARM there is no /opt/rh/devtoolset-7/ look for /usr/bin/gcc7
+            FIND_PROGRAM(ALTERNATIVE_GCC gcc7
+              NO_DEFAULT_PATH
+              PATHS "/usr/bin")
+            FIND_PROGRAM(ALTERNATIVE_GPP g++7
+              NO_DEFAULT_PATH
+              PATHS "/usr/bin")
             IF(ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
               SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
               SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
@@ -259,6 +271,10 @@ ENDIF()
 INCLUDE(CheckTypeSize)
 CHECK_TYPE_SIZE("void *" SIZEOF_VOIDP)
 MESSAGE(STATUS "SIZEOF_VOIDP ${SIZEOF_VOIDP}")
+# On some platforms, cmake may think that CMAKE_SIZEOF_VOID_P == 4
+# even if we have configured for 64bit build....
+SET(CMAKE_SIZEOF_VOID_P ${SIZEOF_VOIDP})
+
 IF(WITH_DEFAULT_COMPILER_OPTIONS)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/compiler_options.cmake)
 ENDIF()
@@ -304,14 +320,6 @@ INCLUDE(mysql_add_executable)
 INCLUDE(mysqlgcs)
 INCLUDE(curl)
 
-# Handle options
-IF(EXISTS ${CMAKE_SOURCE_DIR}/rapid)
-  OPTION(WITH_RAPID
-    "Build additonal code(plugins) that is located in rapid directory" ON)
-ELSE()
-  OPTION(WITH_RAPID
-    "Build additonal code(plugins) that is located in rapid directory" OFF)
-ENDIF()
 OPTION(DISABLE_SHARED 
  "Don't build shared libraries, compile code as position-dependent" OFF)
 IF(DISABLE_SHARED)
@@ -561,8 +569,14 @@ IF(LINK_RANDOMIZE)
   SET(CMAKE_C_ARCHIVE_CREATE_APPEND ${CMAKE_CXX_ARCHIVE_CREATE_APPEND})
 ENDIF()
 
-IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  OPTION(REPRODUCIBLE_BUILD "Take extra pains to make build result independent of build location and time" OFF)
+IF(LINUX)
+  # May be set to ON in cmake/build_configurations/mysql_release.cmake
+  IF(DEFINED REPRODUCIBLE_BUILD)
+    SET(REPRODUCIBLE_BUILD_DEFAULT ${REPRODUCIBLE_BUILD})
+  ELSE()
+    SET(REPRODUCIBLE_BUILD_DEFAULT OFF)
+  ENDIF()
+  OPTION(REPRODUCIBLE_BUILD "Take extra pains to make build result independent of build location and time" ${REPRODUCIBLE_BUILD_DEFAULT})
 ENDIF()
 IF(REPRODUCIBLE_BUILD)
   SET(DEBUG_PREFIX_FLAGS
@@ -702,6 +716,7 @@ INCLUDE(configure.cmake)
 
 # Common defines and includes
 ADD_DEFINITIONS(-DHAVE_CONFIG_H)
+ADD_DEFINITIONS(-DHAVE_OPENSSL)            # TODO: remove #ifdef from C++ code
 ADD_DEFINITIONS(-DRAPIDJSON_NO_SIZETYPEDEFINE)
 ADD_DEFINITIONS(-D__STDC_LIMIT_MACROS)     # Enable C99 limit macros
 ADD_DEFINITIONS(-D__STDC_FORMAT_MACROS)    # Enable C99 printf format macros
@@ -719,10 +734,8 @@ ENDIF()
 INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/rapid
   ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/include
-  ${CMAKE_SOURCE_DIR}/rapid
   ${CMAKE_CURRENT_BINARY_DIR}/libbinlogevents/include
   ${CMAKE_SOURCE_DIR}/libbinlogevents/export)
 
@@ -863,8 +876,10 @@ IF(NOT WITHOUT_SERVER)
   # Add storage engines and plugins.
   CONFIGURE_PLUGINS()
 ELSE()
-  # We may still want Cluster client libraries, use -DWITH_NDBCLUSTER=1
-  ADD_SUBDIRECTORY(storage/ndb)
+  IF(EXISTS "${CMAKE_SOURCE_DIR}/storage/ndb")
+    # We may still want Cluster client libraries, use -DWITH_NDBCLUSTER=1
+    ADD_SUBDIRECTORY(storage/ndb)
+  ENDIF()
 ENDIF()
 
 IF(NOT WITHOUT_SERVER)
@@ -877,9 +892,6 @@ IF(WITH_UNIT_TESTS)
   ADD_SUBDIRECTORY(unittest/examples)
   ADD_SUBDIRECTORY(unittest/mytap)
   ADD_SUBDIRECTORY(unittest/mytap/t)
-  IF(WITH_RAPID AND EXISTS ${CMAKE_SOURCE_DIR}/rapid/unittest/gunit)
-    ADD_SUBDIRECTORY(rapid/unittest/gunit)
-  ENDIF()
 ENDIF()
 
 ADD_SUBDIRECTORY(utilities)
@@ -1025,8 +1037,18 @@ FIND_PACKAGE(Doxygen)
 IF(DOXYGEN_FOUND)
   CONFIGURE_FILE(Doxyfile.in Doxyfile @ONLY)
   ADD_CUSTOM_TARGET(
-    doxygen ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    doxygen
+    COMMAND ${CMAKE_COMMAND}
+    -DDOXYGEN_EXECUTABLE=${DOXYGEN_EXECUTABLE}
+    -DDOXYFILE=${CMAKE_BINARY_DIR}/Doxyfile
+    -DERROR_FILE=${CMAKE_BINARY_DIR}/doxyerror.log
+    -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/doxyoutput.log
+    -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DTOFIX_FILE=${CMAKE_BINARY_DIR}/tofix-all.log
+    -DREGRESSION_FILE=${CMAKE_BINARY_DIR}/tofix-regressions.log
+    -DIGNORE_FILE=${CMAKE_SOURCE_DIR}/Doxyfile-ignored
+    -P ${CMAKE_SOURCE_DIR}/run_doxygen.cmake
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Generating Doxygen documentation" VERBATIM
     )
   SET_PROPERTY(TARGET doxygen PROPERTY EXCLUDE_FROM_ALL TRUE)

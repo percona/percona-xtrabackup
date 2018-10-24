@@ -1298,8 +1298,7 @@ static dberr_t fts_drop_table(trx_t *trx, const char *table_name,
     /* Pass nonatomic=false (dont allow data dict unlock),
     because the transaction may hold locks on SYS_* tables from
     previous calls to fts_drop_table(). */
-    error =
-        row_drop_table_for_mysql(table_name, trx, SQLCOM_DROP_DB, false, NULL);
+    error = row_drop_table_for_mysql(table_name, trx, false, NULL);
 
     if (error != DB_SUCCESS) {
       ib::error(ER_IB_MSG_464) << "Unable to drop FTS index aux table "
@@ -3398,8 +3397,8 @@ static void fts_fetch_doc_from_rec(
           clust_pos, &doc->text.f_len, nullptr, false,
           static_cast<mem_heap_t *>(doc->self_heap->arg));
     } else {
-      doc->text.f_str = (byte *)rec_get_nth_field(clust_rec, offsets, clust_pos,
-                                                  &doc->text.f_len);
+      doc->text.f_str = const_cast<byte *>(rec_get_nth_field_instant(
+          clust_rec, offsets, clust_pos, clust_index, &doc->text.f_len));
     }
 
     doc->found = TRUE;

@@ -49,7 +49,7 @@ ulint btr_rec_get_field_ref_offs(const ulint *offsets, ulint n) {
 
   ut_a(rec_offs_nth_extern(offsets, n));
   field_ref_offs = rec_get_nth_field_offs(offsets, n, &local_len);
-  ut_a(local_len != UNIV_SQL_NULL);
+  ut_a(rec_field_not_null_not_add_col_def(local_len));
   ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
 
   return (field_ref_offs + local_len - BTR_EXTERN_FIELD_REF_SIZE);
@@ -447,6 +447,8 @@ dberr_t btr_store_big_rec_extern_fields(trx_t *trx, btr_pcur_t *pcur,
               break;
             case DB_FAIL:
               break;
+            case DB_OUT_OF_FILE_SPACE:
+              break;
             default:
               ut_error;
           }
@@ -820,7 +822,12 @@ byte *btr_copy_externally_stored_field_func(const dict_index_t *index,
 
   if (page_size.is_compressed()) {
     ut_ad(local_len == 0);
-    *len = lob::z_read(&rctx, rctx.m_blobref, 0, extern_len, buf + local_len);
+    *len = 0;
+
+    if (extern_len > 0) {
+      *len = lob::z_read(&rctx, rctx.m_blobref, 0, extern_len, buf + local_len);
+    }
+
     return (buf);
   } else {
     memcpy(buf, data, local_len);
@@ -839,8 +846,6 @@ byte *btr_copy_externally_stored_field_func(const dict_index_t *index,
     }
     return (buf);
   }
-
-  ut_error;
 }
 
 /** Frees the externally stored fields for a record, if the field

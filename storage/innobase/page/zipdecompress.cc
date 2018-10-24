@@ -322,6 +322,10 @@ static dict_index_t *page_zip_fields_decode(const byte *buf, const byte *end,
     index->type |= DICT_SPATIAL;
   }
 
+  index->n_instant_nullable = index->n_nullable;
+  index->instant_cols =
+      (index->is_clustered() && index->table->has_instant_cols());
+
   return (index);
 }
 
@@ -606,6 +610,11 @@ static ibool page_zip_decompress_heap_no(
   /* Set heap_no and the status bits. */
   mach_write_to_2(rec - REC_NEW_HEAP_NO, heap_status);
   heap_status += 1 << REC_HEAP_NO_SHIFT;
+
+  /* Clear the info bits, to make sure later assertion saying
+  that this record is not instant can pass in rec_init_offsets() */
+  rec[-REC_N_NEW_EXTRA_BYTES] = 0;
+
   return (TRUE);
 }
 

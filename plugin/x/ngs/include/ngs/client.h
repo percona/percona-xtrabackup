@@ -22,8 +22,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-#ifndef RAPID_PLUGIN_X_NGS_INCLUDE_NGS_CLIENT_H_
-#define RAPID_PLUGIN_X_NGS_INCLUDE_NGS_CLIENT_H_
+#ifndef PLUGIN_X_NGS_INCLUDE_NGS_CLIENT_H_
+#define PLUGIN_X_NGS_INCLUDE_NGS_CLIENT_H_
 
 #include <atomic>
 #include <string>
@@ -83,6 +83,7 @@ class Client : public Client_interface {
 
   const char *client_address() const override { return m_client_addr.c_str(); }
   const char *client_hostname() const override { return m_client_host.c_str(); }
+  const char *client_hostname_or_address() const override;
   const char *client_id() const override { return m_id; }
   Client_id client_id_num() const override { return m_client_id; }
   int client_port() const override { return m_client_port; }
@@ -172,9 +173,8 @@ class Client : public Client_interface {
 
   void on_client_addr(const bool skip_resolve_name);
   void on_accept();
-  void on_kill(Session_interface &session);
 };
 
 }  // namespace ngs
 
-#endif  // RAPID_PLUGIN_X_NGS_INCLUDE_NGS_CLIENT_H_
+#endif  // PLUGIN_X_NGS_INCLUDE_NGS_CLIENT_H_

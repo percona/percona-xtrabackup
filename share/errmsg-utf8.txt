@@ -6866,10 +6866,10 @@ ER_MUST_CHANGE_PASSWORD
   bgn "Трябва първо да си смените паролата със SET PASSWORD за да можете да изпълните тази команда"
 
 ER_FK_NO_INDEX_CHILD
-        eng "Failed to add the foreign key constaint. Missing index for constraint '%s' in the foreign table '%s'"
+        eng "Failed to add the foreign key constraint. Missing index for constraint '%s' in the foreign table '%s'"
 
 ER_FK_NO_INDEX_PARENT
-        eng "Failed to add the foreign key constaint. Missing index for constraint '%s' in the referenced table '%s'"
+        eng "Failed to add the foreign key constraint. Missing index for constraint '%s' in the referenced table '%s'"
 
 ER_FK_FAIL_ADD_SYSTEM
         eng "Failed to add the foreign key constraint '%s' to system tables"
@@ -7205,7 +7205,7 @@ ER_GIS_UNSUPPORTED_ARGUMENT
   eng "Calling geometry function %s with unsupported types of arguments."
 
 ER_GIS_UNKNOWN_ERROR
-  eng "Unknown GIS error occured in function %s."
+  eng "Unknown GIS error occurred in function %s."
 
 ER_GIS_UNKNOWN_EXCEPTION
   eng "Unknown exception caught in GIS function %s."
@@ -8481,7 +8481,7 @@ ER_SRS_ATTRIBUTE_STRING_TOO_LONG SR006
   eng "Attribute %s is too long. The maximum length is %u characters."
 
 ER_DEPRECATED_UTF8_ALIAS
-  eng "'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous."
+  eng "'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous."
 
 ER_DEPRECATED_NATIONAL
   eng "NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous."
@@ -8500,6 +8500,33 @@ ER_UNABLE_TO_SET_OPTION
 
 ER_SLAVE_POSSIBLY_DIVERGED_AFTER_DDL
   eng "A commit for an atomic DDL statement was unsuccessful on the master and the slave. The slave supports atomic DDL statements but the master does not, so the action taken by the slave and master might differ. Check that their states have not diverged before proceeding."
+
+ER_SRS_NOT_GEOGRAPHIC 22S00
+  eng "Function %s is only defined for geographic spatial reference systems, but one of its arguments is in SRID %u, which is not geographic."
+
+ER_POLYGON_TOO_LARGE 22023
+  eng "Function %s encountered a polygon that was too large. Polygons must cover less than half the planet."
+
+ER_SPATIAL_UNIQUE_INDEX
+  eng "Spatial indexes can't be primary or unique indexes."
+
+ER_INDEX_TYPE_NOT_SUPPORTED_FOR_SPATIAL_INDEX
+  eng "The index type %.20s is not supported for spatial indexes."
+
+ER_FK_CANNOT_DROP_PARENT
+  eng "Cannot drop table '%s' referenced by a foreign key constraint '%s' on table '%s'."
+
+ER_GEOMETRY_PARAM_LONGITUDE_OUT_OF_RANGE 22S02
+  eng "A parameter of function %.192s contains a geometry with longitude %f, which is out of range. It must be within (%f, %f]."
+
+ER_GEOMETRY_PARAM_LATITUDE_OUT_OF_RANGE 22S03
+  eng "A parameter of function %.192s contains a geometry with latitude %f, which is out of range. It must be within [%f, %f]."
+
+ER_FK_CANNOT_USE_VIRTUAL_COLUMN
+  eng "Foreign key '%s' uses virtual column '%s' which is not supported."
+
+ER_FK_NO_COLUMN_PARENT
+  eng "Failed to add the foreign key constraint. Missing column '%s' for constraint '%s' in the referenced table '%s'"
 
 #
 #  End of 8.0 error messages.
@@ -9224,13 +9251,13 @@ ER_TRX_GTID_COLLECT_REJECT
   eng "Failed to collect GTID to send in the response packet!"
 
 ER_SQL_AUTHOR_DEFAULT_ROLES_FAIL
-  eng "MYSQL.DEFAULT_ROLES couldn't be updated for authorizationidentifier %s"
+  eng "MYSQL.DEFAULT_ROLES couldn't be updated for authorization identifier %s"
 
 ER_SQL_USER_TABLE_CREATE_WARNING
-  eng "Following users were specified in CREATE USER IF NOT EXISTS but they already exist. Corresponding entry in binary log used default authentication plugin '%s' to rewrite authentication information(if any) for them: %s"
+  eng "Following users were specified in CREATE USER IF NOT EXISTS but they already exist. Corresponding entry in binary log used default authentication plugin '%s' to rewrite authentication information (if any) for them: %s"
 
 ER_SQL_USER_TABLE_ALTER_WARNING
-  eng "Following users were specified in ALTER USER IF EXISTS but they do not exist. Corresponding entry in binary log used default authentication plugin '%s' to rewrite authentication information(if any) for them: %s"
+  eng "Following users were specified in ALTER USER IF EXISTS but they do not exist. Corresponding entry in binary log used default authentication plugin '%s' to rewrite authentication information (if any) for them: %s"
 
 ER_ROW_IN_WRONG_PARTITION_PLEASE_REPAIR
   eng "Table '%-192s' corrupted: row in wrong partition: %s -- Please REPAIR the table!"
@@ -9307,7 +9334,7 @@ ER_CONN_TCP_CANT_RESET_V6ONLY
 ER_CONN_TCP_BIND_RETRY
   eng "Retrying bind on TCP/IP port %u"
 
-ER_CONN_TPC_BIND_FAIL
+ER_CONN_TCP_BIND_FAIL
   eng "Can't start server: Bind on TCP/IP port: %s"
 
 ER_CONN_TCP_IP_NOT_LOGGED
@@ -10607,7 +10634,7 @@ ER_NDB_BINLOG_CLUSTER_RESTARTED_RESET_MASTER_SUGGESTED
   eng "NDB Binlog: cluster has been restarted --initial or with older filesystem. ndb_latest_handled_binlog_epoch: %u/%u, while current epoch: %u/%u. RESET MASTER should be issued. Resetting ndb_latest_handled_binlog_epoch."
 
 ER_NDB_BINLOG_CLUSTER_HAS_RECONNECTED
-  eng "NDB Binlog: cluster has reconnected. Changes to the database that occured while disconnected will not be in the binlog"
+  eng "NDB Binlog: cluster has reconnected. Changes to the database that occurred while disconnected will not be in the binlog"
 
 ER_NDB_BINLOG_STARTING_LOG_AT_EPOCH
   eng "NDB Binlog: starting log at epoch %u/%u"
@@ -11342,7 +11369,7 @@ ER_FAILED_TO_GET_ABSOLUTE_PATH
   eng "Failed to get absolute path of program executable %s"
 
 ER_PERFSCHEMA_COMPONENTS_INFRASTRUCTURE_BOOTSTRAP
-  eng "Failed to bootstrap performace schema components infrastructure."
+  eng "Failed to bootstrap performance schema components infrastructure."
 
 ER_PERFSCHEMA_COMPONENTS_INFRASTRUCTURE_SHUTDOWN
   eng "Failed to deinit performance schema components infrastructure."
@@ -12328,7 +12355,7 @@ OBSOLETE_ER_SLAVE_POSSIBLY_DIVERGED_AFTER_DDL
 ER_PERSIST_OPTION_STATUS
   eng "Configuring persisted options failed: \"%s\"."
 
-ER_NOT_IMPLEMENTED_GET_TABLESPACE_STATISTICS 22S00
+ER_NOT_IMPLEMENTED_GET_TABLESPACE_STATISTICS
   eng "The storage engine '%-.192s' does not provide dynamic table statistics"
 
 OBSOLETE_ER_UNABLE_TO_SET_OPTION
@@ -12863,7 +12890,7 @@ ER_GRP_RPL_ERROR_GTID_EXECUTION_INFO
   eng "Error when extracting group GTID execution information, some recovery operations may face future issues."
 
 ER_GRP_RPL_CERTIFICATE_SIZE_ERROR
-  eng "An error occured when trying to reduce the Certification information size for transmission."
+  eng "An error occurred when trying to reduce the Certification information size for transmission."
 
 ER_GRP_RPL_CREATE_APPLIER_CACHE_ERROR
   eng "Failed to create group replication pipeline applier cache!"
@@ -12974,7 +13001,7 @@ ER_GRP_RPL_CANT_READ_WRITE_SET_ITEM
   eng "Error reading the write set item '%s' from the View_change_log_event."
 
 ER_GRP_RPL_INIT_CERTIFICATION_INFO_FAILURE
-  eng "Error during certfication_info initialization."
+  eng "Error during certification_info initialization."
 
 ER_GRP_RPL_CONFLICT_DETECTION_DISABLED
   eng "Primary had applied all relay logs, disabled conflict detection."
@@ -13229,7 +13256,7 @@ ER_GRP_RPL_KILLED_FAILED_ID
   eng "killed failed id: %d failed: %d"
 
 ER_GRP_RPL_INTERNAL_QUERY
-  eng "Internal query: %s result in error. Error number: %s"
+  eng "Internal query: %s result in error. Error number: %ld"
 
 ER_GRP_RPL_COPY_FROM_EMPTY_STRING
   eng "Error copying from empty string "
@@ -16166,7 +16193,7 @@ ER_IB_MSG_722
   eng "Log scan progressed past the checkpoint LSN %llu."
 
 ER_IB_MSG_723
-  eng "Log parsing buffer overflow. Recovery may have failed!"
+  eng "Log parsing buffer overflow. Recovery may have failed! Please set log_buffer_size to a value higher than %lu."
 
 ER_IB_MSG_724
   eng "Set innodb_force_recovery to ignore this error.";
@@ -16214,10 +16241,10 @@ ER_IB_MSG_738
   eng "Waiting for recv_writer to finish flushing of buffer pool"
 
 ER_IB_MSG_739
-  eng "%s"
+  eng "Recovery parsing buffer extended to %lu."
 
 ER_IB_MSG_740
-  eng "%s"
+  eng "Out of memory while resizing recovery parsing buffer."
 
 ER_IB_MSG_741
   eng "%s"
@@ -17444,7 +17471,7 @@ ER_IB_MSG_1148
   eng "Cannot start InnoDB. The tail of the system tablespace is missing. Have you edited innodb_data_file_path in my.cnf in an inappropriate way, removing ibdata files from there? You can set innodb_force_recovery=1 in my.cnf to force a startup if you are trying to recover a badly corrupt database."
 
 ER_IB_MSG_1149
-  eng "ablespace size stored in header is %lu pages, but the sum of data file sizes is only %lu pages"
+  eng "Tablespace size stored in header is %lu pages, but the sum of data file sizes is only %lu pages"
 
 ER_IB_MSG_1150
   eng "Cannot start InnoDB. The tail of the system tablespace is missing. Have you edited innodb_data_file_path in my.cnf in an InnoDB: inappropriate way, removing ibdata files from there? You can set innodb_force_recovery=1 in my.cnf to force InnoDB: a startup if you are trying to recover a badly corrupt database."
@@ -17846,7 +17873,7 @@ ER_GRP_RPL_LOWER_CASE_TABLE_NAMES_DIFF_FROM_GRP
   eng "The member is configured with a lower_case_table_names option value '%u' different from the group '%u'. The member will now exit the group. If there is existing data on member, it may be incompatible with group if it was created with a lower_case_table_names value different from the group."
 
 ER_OOM_SAVE_GTIDS
-  eng "An out-of-memory error occured while saving the set of GTIDs from the last binary log into the mysql.gtid_executed table"
+  eng "An out-of-memory error occurred while saving the set of GTIDs from the last binary log into the mysql.gtid_executed table"
 
 ER_LCTN_NOT_FOUND
   eng "The lower_case_table_names setting for the data dictionary was not found. Starting the server using lower_case_table_names = '%u'."
@@ -17879,7 +17906,7 @@ ER_SLAVE_HEARTBEAT_FAILURE
   eng "Unexpected master's heartbeat data: %s"
 
 ER_SLAVE_INCIDENT
-  eng "The incident %s occured on the master. Message: %s"
+  eng "The incident %s occurred on the master. Message: %s"
 
 ER_SLAVE_MASTER_COM_FAILURE
   eng "Master command %s failed: %s"
@@ -18040,6 +18067,28 @@ ER_ENDING_INIT
 
 ER_IB_MSG_1272
   eng "Cannot boot server version %lu on data directory built by version %lu. Downgrade is not supported"
+
+ER_SERVER_SHUTDOWN_INFO
+  eng "Received SHUTDOWN from user %s. Shutting down mysqld (Version: %s)."
+
+ER_GRP_RPL_PLUGIN_ABORT
+  eng "The plugin encountered a critical error and will abort: %s"
+
+ER_REGEXP_INVALID_FLAG
+  eng "Invalid match mode flag in regular expression."
+
+ER_XA_REPLICATION_FILTERS
+  eng "The use of replication filters with XA transactions is not supported, and can lead to an undefined state in the replication slave."
+
+ER_UPDATE_GTID_PURGED_WITH_GR
+  eng "Cannot update GTID_PURGED with the Group Replication plugin running"
+
+ER_AUDIT_LOG_TABLE_DEFINITION_NOT_UPDATED
+  eng "'%s.%s' table definition has not been upgraded; to upgrade it, run mysql_upgrade command."
+
+ER_DD_INITIALIZE_SQL_ERROR
+  eng "Execution of server-side SQL statement '%s' failed with error code = %d, error message = '%s'."
+
 #
 # End of 8.0 Server error messages.
 # (Please read comments from the header of this section before adding error
