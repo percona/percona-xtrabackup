@@ -65,19 +65,19 @@ $MYSQL $MYSQL_ARGS -Ns -e \
        "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
-       > $topdir/status1
+       > $topdir/status2
 
 if [ $backup_locks = "yes" ] ; then
-	diff -u - $topdir/status1 <<EOF
+	diff -u - $topdir/status2 <<EOF
 Com_lock_instance	0
 Com_lock_tables	0
 Com_lock_tables_for_backup	0
 Com_unlock_instance	0
-Com_unlock_tables	1
+Com_unlock_tables	0
 Com_flush	2
 EOF
 else
-diff -u $topdir/status1 - <<EOF
+diff -u $topdir/status2 - <<EOF
 Com_lock_instance	0
 Com_lock_tables	0
 Com_unlock_instance	0
@@ -125,23 +125,23 @@ $MYSQL $MYSQL_ARGS -Ns -e \
        "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
-       > $topdir/status1
+       > $topdir/status3
 
 if [ $backup_locks = "yes" ] ; then
-	diff -u - $topdir/status1 <<EOF
+	diff -u - $topdir/status3 <<EOF
 Com_lock_instance	0
 Com_lock_tables	0
 Com_lock_tables_for_backup	0
 Com_unlock_instance	0
-Com_unlock_tables	1
+Com_unlock_tables	0
 Com_flush	2
 EOF
 else
-	diff -u - $topdir/status1 <<EOF
+	diff -u - $topdir/status3 <<EOF
 Com_lock_instance	0
 Com_lock_tables	0
 Com_unlock_instance	0
-Com_unlock_tables	1
+Com_unlock_tables	0
 Com_flush	2
 EOF
 fi
