@@ -2179,6 +2179,7 @@ has_innodb_buffer_pool_dump()
 		return true;
 	}
 
+	msg_ts("Server has no support for innodb_buffer_pool_dump_now");
 	return false;
 }
 
@@ -2208,15 +2209,15 @@ dump_innodb_buffer_pool(MYSQL *connection)
 	{
 		innodb_buffer_pool_dump_start_time = (ssize_t)my_time(MY_WME);
 
-		char *innodb_buffer_pool_dump_pct;
-		char *change_bp_dump_pct_query;
+		char *buf_innodb_buffer_pool_dump_pct;
+		char change_bp_dump_pct_query[100];
 
 		/* Verify if we need to change innodb_buffer_pool_dump_pct */
 		if (opt_dump_innodb_buffer_pool_pct != 0 &&
 			innodb_buffer_pool_dump_pct) {
 				mysql_variable variables[] = {
 					{"innodb_buffer_pool_dump_pct",
-					&innodb_buffer_pool_dump_pct},
+					&buf_innodb_buffer_pool_dump_pct},
 					{NULL, NULL}
 				};
 				read_mysql_variables(connection,
@@ -2225,12 +2226,14 @@ dump_innodb_buffer_pool(MYSQL *connection)
 					variables, true);
 
 					original_innodb_buffer_pool_dump_pct = 
-					atoi(innodb_buffer_pool_dump_pct);
+					atoi(buf_innodb_buffer_pool_dump_pct);
 
 					free_mysql_variables(variables);
-					xb_a(asprintf(&change_bp_dump_pct_query,
+					ut_snprintf(change_bp_dump_pct_query,
+						sizeof(change_bp_dump_pct_query),
 						"SET GLOBAL innodb_buffer_pool_dump_pct = %u",
-						opt_dump_innodb_buffer_pool_pct));
+						opt_dump_innodb_buffer_pool_pct);
+					msg_ts("Executing %s \n", change_bp_dump_pct_query);
 					xb_mysql_query(mysql_connection,
 						change_bp_dump_pct_query, false);
 		}
@@ -2249,7 +2252,7 @@ check_dump_innodb_buffer_pool(MYSQL *connection)
 		const ssize_t timeout = opt_dump_innodb_buffer_pool_timeout;
 
 		char *innodb_buffer_pool_dump_status;
-		char *change_bp_dump_pct_query;
+		char change_bp_dump_pct_query[100];
 
 
 		mysql_variable status[] = {
@@ -2289,9 +2292,10 @@ check_dump_innodb_buffer_pool(MYSQL *connection)
 		/* restore original innodb_buffer_pool_dump_pct */
 		if(opt_dump_innodb_buffer_pool_pct != 0 && 
 				innodb_buffer_pool_dump_pct) {
-			xb_a(asprintf(&change_bp_dump_pct_query,
-							"SET GLOBAL innodb_buffer_pool_dump_pct = %u",
-							original_innodb_buffer_pool_dump_pct));
+			ut_snprintf(change_bp_dump_pct_query,
+				sizeof(change_bp_dump_pct_query),
+				"SET GLOBAL innodb_buffer_pool_dump_pct = %u",
+				original_innodb_buffer_pool_dump_pct);
 			xb_mysql_query(mysql_connection, 
 							change_bp_dump_pct_query, false);
 		}
