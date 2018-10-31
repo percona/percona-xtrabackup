@@ -12,26 +12,22 @@ Supported Releases:
 
 * Debian:
 
- * 8.0 (jessie)
  * 9.0 (stretch)
 
 * Ubuntu:
 
  * 16.04LTS (xenial)
- * 17.04 (zesty)
- * 17.10 (artful)
  * 18.04 (bionic)
 
 Supported Platforms:
 
-* x86
 * x86_64 (also known as ``amd64``)
 
 What's in each DEB package?
 ===========================
 
 The ``percona-xtrabackup-80`` package contains the latest |Percona XtraBackup|
-GA binaries and associated files.
+binaries and associated files.
 
 The ``percona-xtrabackup-dbg-80`` package contains the debug symbols for
 binaries in ``percona-xtrabackup-80``.
@@ -105,18 +101,17 @@ Installing |Percona XtraBackup| using downloaded deb packages
 Download the packages of the desired series for your architecture from the
 `download page <https://www.percona.com/downloads/XtraBackup/>`_. The following
 example will download |Percona XtraBackup| 8.0.12-1 release package for *Debian*
-8.0:
+9.0:
 
 .. code-block:: bash
 
-  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-8.0.12/\
-  binary/debian/jessie/x86_64/percona-xtrabackup-80_0.12-1.jessie_amd64.deb
+  $ wget https://www.percona.com/redir/downloads/TESTING/XtraBackup/rc1/binary/debian/stretch/x86_64/percona-xtrabackup-80_8.0.3-rc1.stretch_amd64.deb
 
 Now you can install |Percona XtraBackup| by running:
 
 .. code-block:: bash
 
-  $ sudo dpkg -i percona-xtrabackup-80_0.12-1.jessie_amd64.deb
+  $ sudo dpkg -i percona-xtrabackup-80_8.0.3-rc1.stretch_amd64.deb
 
 .. note::
 

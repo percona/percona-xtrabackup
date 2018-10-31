@@ -17,8 +17,6 @@ that configures :program:`yum` and installs the `Percona GPG key
 Supported Releases:
 
 
- * *CentOS* 5 and *RHEL* 5
-
  * *CentOS* 6 and *RHEL* 6 (Current Stable) [#f1]_
 
  * *CentOS* 7 and *RHEL* 7
@@ -32,14 +30,13 @@ provided that :program:`yum` is installed on the server.
 
 Supported Platforms:
 
- * x86
  * x86_64 (also known as ``amd64``)
 
 What's in each RPM package?
 ===========================
 
 The ``percona-xtrabackup-80`` package contains the latest |Percona XtraBackup|
-GA binaries and associated files.
+binaries and associated files.
 
 The ``percona-xtrabackup-80-debuginfo`` package contains the debug symbols for
 binaries in ``percona-xtrabackup``.
@@ -66,21 +63,9 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 
    .. code-block:: bash
 
-     Retrieving http://www.percona.com/downloads/percona-release/redhat/0.1-6/percona-release-0.1-8.noarch.rpm
+     Retrieving http://www.percona.com/downloads/percona-release/redhat/0.1-8/percona-release-0.1-8.noarch.rpm
      Preparing...                ########################################### [100%]
         1:percona-release        ########################################### [100%]
-
-.. note::
-
-  *RHEL*/*Centos* 5 doesn't support installing the packages directly from the
-  remote location so you'll need to download the package first and install it
-  manually with :program:`rpm`:
-
-  .. code-block:: bash
-
-    $ wget http://www.percona.com/downloads/percona-release/redhat/0.1-6/\
-    percona-release-0.1-6.noarch.rpm
-    $ rpm -ivH percona-release-0.1-6.noarch.rpm
 
 #. Enable the repository:
 
@@ -114,14 +99,13 @@ example will download |Percona XtraBackup| 8.0.12 release package for
 
 .. code-block:: bash
 
-  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-8.0.12/\
-  binary/redhat/7/x86_64/percona-xtrabackup-80-8.0.12-1.el7.x86_64.rpm
+  $ wget https://www.percona.com/redir/downloads/TESTING/XtraBackup/rc1/binary/redhat/7/x86_64/percona-xtrabackup-80-8.0.3-rc1.el7.x86_64.rpm
 
 Now you can install |Percona XtraBackup| by running:
 
 .. code-block:: bash
 
- $ yum localinstall percona-xtrabackup-80-8.0.12-1.el7.x86_64.rpm
+ $ yum localinstall percona-xtrabackup-80-8.0.3-rc1.el7.x86_64.rpm
 
 .. note::
 
@@ -138,7 +122,7 @@ Remove the packages
 
 .. code-block:: bash
 
-  yum remove percona-xtrabackup
+  yum remove percona-xtrabackup-80
 
 .. rubric:: Footnotes
 
