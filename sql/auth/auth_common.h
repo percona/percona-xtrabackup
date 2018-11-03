@@ -57,6 +57,7 @@ class Security_context;
 struct TABLE;
 struct TABLE_LIST;
 enum class role_enum;
+enum class Consumer_type;
 
 /** user, host tuple which reference either acl_cache or g_default_roles */
 typedef std::pair<LEX_CSTRING, LEX_CSTRING> Auth_id_ref;
@@ -260,6 +261,7 @@ enum mysql_user_table_field {
   MYSQL_USER_FIELD_DROP_ROLE_PRIV,
   MYSQL_USER_FIELD_PASSWORD_REUSE_HISTORY,
   MYSQL_USER_FIELD_PASSWORD_REUSE_TIME,
+  MYSQL_USER_FIELD_PASSWORD_REQUIRE_CURRENT,
   MYSQL_USER_FIELD_COUNT
 };
 
@@ -400,6 +402,8 @@ class Acl_load_user_table_schema {
   virtual uint account_locked_idx() = 0;
   virtual uint password_reuse_history_idx() = 0;
   virtual uint password_reuse_time_idx() = 0;
+  // Added in 8.0.13
+  virtual uint password_require_current_idx() = 0;
 
   virtual ~Acl_load_user_table_schema() {}
 };
@@ -478,6 +482,9 @@ class Acl_load_user_table_current_schema : public Acl_load_user_table_schema {
   }
   uint password_reuse_time_idx() {
     return MYSQL_USER_FIELD_PASSWORD_REUSE_TIME;
+  }
+  uint password_require_current_idx() {
+    return MYSQL_USER_FIELD_PASSWORD_REQUIRE_CURRENT;
   }
 };
 
@@ -597,6 +604,7 @@ class Acl_load_user_table_old_schema : public Acl_load_user_table_schema {
   uint drop_role_priv_idx() { return MYSQL_USER_FIELD_COUNT_56; }
   uint password_reuse_history_idx() { return MYSQL_USER_FIELD_COUNT_56; }
   uint password_reuse_time_idx() { return MYSQL_USER_FIELD_COUNT_56; }
+  uint password_require_current_idx() { return MYSQL_USER_FIELD_COUNT_56; }
 };
 
 class Acl_load_user_table_schema_factory {
@@ -625,6 +633,8 @@ extern bool validate_user_plugins;
 /* sql_authentication */
 
 int set_default_auth_plugin(char *plugin_name, size_t plugin_name_length);
+std::string get_default_autnetication_plugin_name();
+
 void acl_log_connect(const char *user, const char *host, const char *auth_as,
                      const char *db, THD *thd,
                      enum enum_server_command command);
@@ -648,22 +658,11 @@ bool acl_check_host(THD *thd, const char *host, const char *ip);
 #define DIFFERENT_PLUGIN_ATTR \
   (1L << 7) /* updated plugin with a different value */
 
-/* rewrite CREATE/ALTER/GRANT user */
-void mysql_rewrite_create_alter_user(
-    THD *thd, String *rlb, std::set<LEX_USER *> *users_not_to_log = NULL,
-    bool for_binlog = false, bool hide_password_hash = false);
-void mysql_rewrite_grant(THD *thd, String *rlb);
-void mysql_rewrite_set_password(THD *thd, String *rlb,
-                                std::set<LEX_USER *> *users,
-                                bool for_binlog = false);
-
 /* sql_user */
 void log_user(THD *thd, String *str, LEX_USER *user, bool comma);
-void append_user_new(THD *thd, String *str, LEX_USER *user, bool comma = true,
-                     bool hide_password_hash = false);
 int check_change_password(THD *thd, const char *host, const char *user);
-bool change_password(THD *thd, const char *host, const char *user,
-                     char *password);
+bool change_password(THD *thd, LEX_USER *user, char *password,
+                     const char *current_password);
 bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
                        bool is_role);
 bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists);
@@ -691,6 +690,7 @@ bool check_acl_tables_intact(THD *thd, TABLE_LIST *tables);
 void notify_flush_event(THD *thd);
 
 /* sql_authorization */
+bool skip_grant_tables();
 bool has_grant_role_privilege(THD *thd);
 bool has_revoke_role_privilege(THD *thd);
 int mysql_set_active_role_none(THD *thd);
@@ -781,6 +781,7 @@ void roles_graphml(THD *thd, String *);
 bool has_grant_role_privilege(THD *thd, const LEX_CSTRING &role_name,
                               const LEX_CSTRING &role_host);
 Auth_id_ref create_authid_from(const LEX_USER *user);
+std::string create_authid_str_from(const LEX_USER *user);
 void append_identifier(String *packet, const char *name, size_t length);
 void append_identifier_with_q(int q, String *packet, const char *name,
                               size_t length);
@@ -869,6 +870,7 @@ class Security_context_factory {
     @param extend_user_profile        The policy for creating the user profile
     @param priv                       The policy for authorizing the authid to
                                       use the server.
+    @param static_priv                Static privileges for authid.
     @param drop_policy                The policy for deleting the authid and
                                       revoke privileges
   */
@@ -876,12 +878,14 @@ class Security_context_factory {
       THD *thd, const std::string &user, const std::string &host,
       const Security_context_functor &extend_user_profile,
       const Security_context_functor &priv,
+      const Security_context_functor &static_priv,
       const std::function<void(Security_context *)> &drop_policy)
       : m_thd(thd),
         m_user(user),
         m_host(host),
         m_user_profile(extend_user_profile),
         m_privileges(priv),
+        m_static_privileges(static_priv),
         m_drop_policy(drop_policy) {}
 
   Sctx_ptr<Security_context> create();
@@ -892,6 +896,7 @@ class Security_context_factory {
   std::string m_host;
   Security_context_functor m_user_profile;
   Security_context_functor m_privileges;
+  Security_context_functor m_static_privileges;
   const std::function<void(Security_context *)> m_drop_policy;
 };
 
@@ -926,6 +931,18 @@ class Drop_temporary_dynamic_privileges {
 
  private:
   std::vector<std::string> m_privs;
+};
+
+class Grant_temporary_static_privileges
+    : public Grant_privileges<Grant_temporary_static_privileges> {
+ public:
+  Grant_temporary_static_privileges(const THD *thd, const ulong privs);
+  bool precheck(Security_context *sctx);
+  bool grant_privileges(Security_context *sctx);
+
+ private:
+  const THD *m_thd;
+  const ulong m_privs;
 };
 
 bool operator==(const LEX_CSTRING &a, const LEX_CSTRING &b);

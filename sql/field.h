@@ -28,6 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <algorithm>
+
+#include <string>
 
 #include "binary_log_funcs.h"  // my_time_binary_length
 #include "binary_log_types.h"
@@ -49,6 +52,7 @@
 #include "mysql_time.h"
 #include "mysqld_error.h"  // ER_*
 #include "nullable.h"
+#include "sql/dd/types/column.h"
 #include "sql/gis/srid.h"
 #include "sql/sql_bitmap.h"
 #include "sql/sql_const.h"
@@ -549,31 +553,23 @@ void copy_integer(uchar *to, size_t to_length, const uchar *from,
                   size_t from_length, bool is_unsigned) {
   if (to_length == 0) return;
   if (Is_big_endian) {
-    if (is_unsigned)
-      to[0] = from[0];
-    else
-      to[0] = (char)(from[0] ^ 128);  // Reverse the sign bit.
-    memcpy(to + 1, from + 1, to_length - 1);
+    std::copy(from, from + std::min(to_length, from_length), to);
+    if (!is_unsigned)
+      to[0] = static_cast<char>(to[0] ^ 128);  // Reverse the sign bit.
   } else {
-    const int sign_byte = from[from_length - 1];
-    if (is_unsigned)
-      to[0] = sign_byte;
-    else
-      to[0] = static_cast<char>(sign_byte ^ 128);  // Reverse the sign bit.
-    for (size_t i = 1, j = from_length - 2; i < to_length; ++i, --j)
-      to[i] = from[j];
+    const uchar *from_end = from + from_length;
+    const uchar *from_start = from_end - std::min(from_length, to_length);
+    std::reverse_copy(from_start, from_end, to);
+    if (!is_unsigned)
+      to[0] = static_cast<char>(to[0] ^ 128);  // Reverse the sign bit.
   }
 }
 
 /**
-  This class is used for recording the information of
-  generated column. It will be created during define a
-  generated column or the table is opened.
-
-  If one field contains such an object, it means the field
-  is a genereated one.
+  Used for storing information associated with generated column or default
+  values generated from expression.
 */
-class Generated_column {
+class Value_generator {
  public:
   /**
     Item representing the generation expression.
@@ -586,18 +582,28 @@ class Generated_column {
   Item *expr_item;
   /**
     Text of the expression. Used in only one case:
-    - the text read from the DD is put into the Generated_column::expr_str of
+    - the text read from the DD is put into the Value_generator::expr_str of
     the Field of the TABLE_SHARE; then this expr_str is used as source
     to produce expr_item for the Field of every TABLE derived from this
     TABLE_SHARE.
   */
   LEX_STRING expr_str;
+
+  /**
+    Bit field indicating the type of statement for binary logging.
+    It needs to be saved because this is determined only once when it is parsed
+    but it needs to be set on the lex for each statement that uses this
+    value generator. And since unpacking is done once on table open, it will
+    be set for the rest of the statements in refix_inner_value_generator_items.
+  */
+  uint32 m_backup_binlog_stmt_flags{0};
+
   /* It's used to free the items created in parsing generated expression */
   Item *item_free_list;
   /// Bitmap records base columns which a generated column depends on.
   MY_BITMAP base_columns_map;
 
-  Generated_column()
+  Value_generator()
       : expr_item(0),
         item_free_list(0),
         field_type(MYSQL_TYPE_LONG),
@@ -607,10 +613,24 @@ class Generated_column {
     expr_str.str = NULL;
     expr_str.length = 0;
   };
-  ~Generated_column() {}
+  ~Value_generator() {}
   enum_field_types get_real_type() const { return field_type; }
 
   void set_field_type(enum_field_types fld_type) { field_type = fld_type; }
+
+  /**
+     Set the binary log flags in m_backup_binlog_stmt_flags
+     @param backup_binlog_stmt_flags the falgs to be backed up
+  */
+  void backup_stmt_unsafe_flags(uint32 backup_binlog_stmt_flags) {
+    m_backup_binlog_stmt_flags = backup_binlog_stmt_flags;
+  }
+
+  /**
+    Get the binary log flags from m_backup_binlog_stmt_flags
+    @return the flags backed up by unpack_value_generator
+  */
+  uint32 get_stmt_unsafe_flags() { return m_backup_binlog_stmt_flags; }
 
   bool get_field_stored() const { return stored_in_db; }
   void set_field_stored(bool stored) { stored_in_db = stored; }
@@ -660,25 +680,56 @@ class Generated_column {
 
 class Proto_field {
  public:
-  virtual ~Proto_field() {}
+  virtual ~Proto_field() = default;
   virtual bool send_binary(Protocol *protocol) = 0;
   virtual bool send_text(Protocol *protocol) = 0;
 };
 
 class Field : public Proto_field {
-  Field(const Item &); /* Prevent use of these */
-  void operator=(Field &);
-
  public:
-  bool has_insert_default_function() const { return auto_flags & DEFAULT_NOW; }
+  Field(const Item &) = delete;
+  void operator=(Field &) = delete;
 
-  bool has_update_default_function() const {
+  /**
+    Checks if the field is marked as having a general expression to generate
+    default values.
+
+     @retval true  The field has general expression as default
+     @retval false The field doesn't have any general expression as default
+  */
+  bool has_insert_default_general_value_expression() const {
+    return auto_flags & GENERATED_FROM_EXPRESSION;
+  }
+
+  /**
+    Checks if the field is marked as having a datetime value expression to
+    generate default values on inserts.
+
+    @retval true  The field has datetime expression as default
+    @retval false The field doesn't have a datime value expression as default
+  */
+  bool has_insert_default_datetime_value_expression() const {
+    return auto_flags & DEFAULT_NOW;
+  }
+
+  /**
+    Checks if the field is marked as having a datetime value expression to
+    generate default values on updates.
+
+    @retval true  The field has datetime expression as default for on update
+    @retval false The field doesn't have a datime value expression as default
+                  for on update
+  */
+  bool has_update_default_datetime_value_expression() const {
     return auto_flags & ON_UPDATE_NOW;
   }
 
-  uchar *ptr;  // Position to field in record
+  /// Holds the position to the field in record
+  uchar *ptr;
 
  private:
+  dd::Column::enum_hidden_type m_hidden;
+
   /**
      Byte where the @c NULL bit is stored inside a record. If this Field is a
      @c NOT @c NULL field, this member is @c NULL.
@@ -735,15 +786,20 @@ class Field : public Proto_field {
   /**
     Flags for Proto_field::auto_flags / Create_field::auto_flags bitmaps.
 
-    @note NEXT_NUMBER and DEFAULT_NOW/ON_UPDATE_NOW flags are
-          never set at the same time.
+    @note NEXT_NUMBER and DEFAULT_NOW/ON_UPDATE_NOW/GENERATED flags should
+          never be set at the same time. Also DEFAULT_NOW and GENERATED
+          should not be set at the same time.
+
+    @warning The values of this enum are used as bit masks for uchar
+    Field::auto_flags.
   */
   enum enum_auto_flags {
     NONE = 0,
-    NEXT_NUMBER = 1,  // AUTO_INCREMENT
-    DEFAULT_NOW = 2,  // DEFAULT CURRENT_TIMESTAMP
-    ON_UPDATE_NOW = 4
-  };  // ON UPDATE CURRENT_TIMESTAMP
+    NEXT_NUMBER = 1,               ///<  AUTO_INCREMENT
+    DEFAULT_NOW = 2,               ///<  DEFAULT CURRENT_TIMESTAMP
+    ON_UPDATE_NOW = 4,             ///<  ON UPDATE CURRENT_TIMESTAMP
+    GENERATED_FROM_EXPRESSION = 8  ///<  DEFAULT (expression)
+  };
 
   enum geometry_type {
     GEOM_GEOMETRY = 0,
@@ -807,7 +863,7 @@ class Field : public Proto_field {
 
  public:
   /* Generated column data */
-  Generated_column *gcol_info;
+  Value_generator *gcol_info{nullptr};
   /*
     Indication that the field is phycically stored in tables
     rather than just generated on SQL queries.
@@ -816,6 +872,39 @@ class Field : public Proto_field {
   bool stored_in_db;
   bool is_gcol() const { return gcol_info; }
   bool is_virtual_gcol() const { return gcol_info && !stored_in_db; }
+
+  /// Holds the expression to be used to generate default values.
+  Value_generator *m_default_val_expr{nullptr};
+
+  /**
+    Sets the hidden type for this field.
+
+    @param hidden the new hidden type to set.
+  */
+  void set_hidden(dd::Column::enum_hidden_type hidden) { m_hidden = hidden; }
+
+  /// @returns the hidden type for this field.
+  dd::Column::enum_hidden_type hidden() const { return m_hidden; }
+
+  /**
+    @retval true if this field should be hidden away from users.
+    @retval false is this field is visible to the user.
+  */
+  bool is_hidden_from_user() const {
+    return hidden() != dd::Column::enum_hidden_type::HT_VISIBLE &&
+           DBUG_EVALUATE_IF("show_hidden_columns", false, true);
+  }
+
+  /**
+    @returns true if this is a hidden field that is used for implementing
+             functional indexes. Note that if we need different types of hidden
+             fields in the future (like invisible columns), this function needs
+             to be changed so it can distinguish between the different "types"
+             of hidden.
+  */
+  bool is_field_for_functional_index() const {
+    return hidden() == dd::Column::enum_hidden_type::HT_HIDDEN_SQL;
+  }
 
   Field(uchar *ptr_arg, uint32 length_arg, uchar *null_ptr_arg,
         uchar null_bit_arg, uchar auto_flags_arg, const char *field_name_arg);
@@ -1679,6 +1768,83 @@ class Field : public Proto_field {
 
   const uchar *unpack_int64(uchar *to, const uchar *from,
                             bool low_byte_first_from);
+};
+
+/**
+  This class is a substitute for the Field classes during CREATE TABLE
+
+  When adding a functional index at table creation, we need to resolve the
+  expression we are indexing. All functions that references one or more
+  columns expects a Field to be available. But during CREATE TABLE, we only
+  have access to Create_field. So this class acts as a subsitute for the
+  Field classes so that expressions can be properly resolved. Thus, trying
+  to call store or val_* on this class will cause an assertion.
+*/
+class Create_field_wrapper : public Field {
+  const Create_field *m_field;
+
+ public:
+  Create_field_wrapper(const Create_field *fld);
+  Item_result result_type() const override;
+  Item_result numeric_context_result_type() const override;
+  enum_field_types type() const override;
+  virtual uint32 max_display_length() override;
+
+  virtual const CHARSET_INFO *charset() const override;
+
+  virtual uint32 pack_length() const override;
+
+  // Since it's not a real field, functions below shouldn't be used.
+  /* purecov: begin deadcode */
+  virtual type_conversion_status store(const char *, size_t,
+                                       const CHARSET_INFO *) override {
+    DBUG_ASSERT(false);
+    return TYPE_ERR_BAD_VALUE;
+  }
+  virtual type_conversion_status store(double) override {
+    DBUG_ASSERT(false);
+    return TYPE_ERR_BAD_VALUE;
+  }
+  virtual type_conversion_status store(longlong, bool) override {
+    DBUG_ASSERT(false);
+    return TYPE_ERR_BAD_VALUE;
+  }
+  virtual type_conversion_status store_decimal(const my_decimal *) override {
+    DBUG_ASSERT(false);
+    return TYPE_ERR_BAD_VALUE;
+  }
+  virtual double val_real(void) override {
+    DBUG_ASSERT(false);
+    return 0.0;
+  }
+  virtual longlong val_int(void) override {
+    DBUG_ASSERT(false);
+    return 0;
+  }
+  virtual my_decimal *val_decimal(my_decimal *) override {
+    DBUG_ASSERT(false);
+    return nullptr;
+  }
+  virtual String *val_str(String *, String *) override {
+    DBUG_ASSERT(false);
+    return nullptr;
+  }
+  virtual int cmp(const uchar *, const uchar *) override {
+    DBUG_ASSERT(false);
+    return -1;
+  }
+  virtual void sql_type(String &) const override { DBUG_ASSERT(false); }
+  virtual size_t make_sort_key(uchar *, size_t) override {
+    DBUG_ASSERT(false);
+    return 0;
+  }
+  virtual Field *clone() const override {
+    return new (*THR_MALLOC) Create_field_wrapper(*this);
+  }
+  virtual Field *clone(MEM_ROOT *mem_root) const override {
+    return new (mem_root) Create_field_wrapper(*this);
+  }
+  /* purecov: end */
 };
 
 class Field_num : public Field {
@@ -4190,6 +4356,8 @@ class Field_bit_as_char : public Field_bit {
 
 class Create_field {
  public:
+  dd::Column::enum_hidden_type hidden;
+
   const char *field_name;
   /**
     Name of column modified by ALTER TABLE's CHANGE/MODIFY COLUMN clauses,
@@ -4207,7 +4375,7 @@ class Create_field {
 
      @see Create_field::auto_flags
   */
-  Item *def;
+  Item *constant_default;
   enum enum_field_types sql_type;
   /*
     At various stages in execution this can be length of field in bytes or
@@ -4227,7 +4395,7 @@ class Create_field {
 
     @sa Field::enum_auto_flags for possible options.
   */
-  uchar auto_flags;
+  uchar auto_flags{Field::NONE};
   TYPELIB *interval;  // Which interval to use
                       // Used only for UCS2 intervals
   List<String> interval_list;
@@ -4271,10 +4439,10 @@ class Create_field {
 
     Initialized at prepare_create_field()/init_for_tmp_table() stage.
   */
-  uint pack_length_override;
+  uint pack_length_override{0};
 
   /* Generated column expression information */
-  Generated_column *gcol_info;
+  Value_generator *gcol_info{nullptr};
   /*
     Indication that the field is phycically stored in tables
     rather than just generated on SQL queries.
@@ -4282,6 +4450,8 @@ class Create_field {
   */
   bool stored_in_db;
 
+  /// Holds the expression to be used to generate default values.
+  Value_generator *m_default_val_expr{nullptr};
   Nullable<gis::srid_t> m_srid;
 
   Create_field()
@@ -4297,8 +4467,11 @@ class Create_field {
           valgrind warnings in optimized builds.
         */
         treat_bit_as_char(false),
-        stored_in_db(false) {}
+        pack_length_override(0),
+        stored_in_db(false),
+        m_default_val_expr(nullptr) {}
   Create_field(Field *field, Field *orig_field);
+
   /* Used to make a clone of this object for ALTER/CREATE TABLE */
   Create_field *clone(MEM_ROOT *mem_root) const {
     return new (mem_root) Create_field(*this);
@@ -4320,8 +4493,9 @@ class Create_field {
             Item *default_value, Item *on_update_value, LEX_STRING *comment,
             const char *change, List<String> *interval_list,
             const CHARSET_INFO *cs, bool has_explicit_collation,
-            uint uint_geom_type, Generated_column *gcol_info,
-            Nullable<gis::srid_t> srid);
+            uint uint_geom_type, Value_generator *gcol_info,
+            Value_generator *default_val_expr, Nullable<gis::srid_t> srid,
+            dd::Column::enum_hidden_type hidden);
 
   ha_storage_media field_storage_type() const {
     return (ha_storage_media)((flags >> FIELD_FLAGS_STORAGE_MEDIA) & 3);
@@ -4331,6 +4505,52 @@ class Create_field {
     return (column_format_type)((flags >> FIELD_FLAGS_COLUMN_FORMAT) & 3);
   }
 };
+
+/// This function should only be called from legacy code.
+Field *make_field(TABLE_SHARE *share, uchar *ptr, size_t field_length,
+                  uchar *null_pos, uchar null_bit, enum_field_types field_type,
+                  const CHARSET_INFO *field_charset,
+                  Field::geometry_type geom_type, uchar auto_flags,
+                  TYPELIB *interval, const char *field_name, bool maybe_null,
+                  bool is_zerofill, bool is_unsigned, uint decimals,
+                  bool treat_bit_as_char, uint pack_length_override,
+                  Nullable<gis::srid_t> srid);
+
+/**
+  Instantiates a Field object with the given name and record buffer values.
+  @param create_field The column meta data.
+  @param share The table share object.
+
+  @param field_name Create_field::field_name is overridden with this value
+  when instantiating the Field object.
+
+  @param field_length Create_field::length is overridden with this value
+  when instantiating the Field object.
+
+  @param null_pos The address of the null bytes.
+*/
+Field *make_field(const Create_field &create_field, TABLE_SHARE *share,
+                  const char *field_name, size_t field_length, uchar *null_pos);
+
+/**
+  Instantiates a Field object with the given record buffer values.
+  @param create_field The column meta data.
+  @param share The table share object.
+  @param ptr The start of the record buffer.
+  @param null_pos The address of the null bytes.
+
+  @param null_bit The position of the column's null bit within the row's null
+  bytes.
+*/
+Field *make_field(const Create_field &create_field, TABLE_SHARE *share,
+                  uchar *ptr, uchar *null_pos, size_t null_bit);
+
+/**
+  Instantiates a Field object without a record buffer.
+  @param create_field The column meta data.
+  @param share The table share object.
+*/
+Field *make_field(const Create_field &create_field, TABLE_SHARE *share);
 
 /*
   A class for sending info to the client
@@ -4440,13 +4660,6 @@ class Copy_field {
   void swap_direction();
 };
 
-Field *make_field(TABLE_SHARE *share, uchar *ptr, size_t field_length,
-                  uchar *null_pos, uchar null_bit, enum_field_types field_type,
-                  const CHARSET_INFO *cs, Field::geometry_type geom_type,
-                  uchar auto_flags, TYPELIB *interval, const char *field_name,
-                  bool maybe_null, bool is_zerofill, bool is_unsigned,
-                  uint decimals, bool treat_bit_as_char,
-                  uint pack_length_override, Nullable<gis::srid_t> srid);
 enum_field_types get_blob_type_from_length(ulong length);
 size_t calc_pack_length(enum_field_types type, size_t length);
 uint32 calc_key_length(enum_field_types sql_type, uint32 length,
@@ -4458,9 +4671,47 @@ type_conversion_status store_internal_with_error_check(Field_new_decimal *field,
                                                        int conversion_err,
                                                        my_decimal *value);
 
+/**
+  Generate a Create_field, based on an Item.
+
+  This function will generate a Create_field based on an existing Item. This
+  is used for multiple purposes, including CREATE TABLE AS SELECT and creating
+  hidden generated columns for functional indexes.
+
+  @param thd Thread handler
+  @param item The Item to generate a Create_field from
+  @param tmp_table A temporary TABLE object that is used for holding Field
+                   objects that are created
+
+  @returns A Create_field allocated on the THDs MEM_ROOT.
+*/
+Create_field *generate_create_field(THD *thd, Item *item, TABLE *tmp_table);
+
 inline bool is_blob(enum_field_types sql_type) {
   return (sql_type == MYSQL_TYPE_BLOB || sql_type == MYSQL_TYPE_MEDIUM_BLOB ||
           sql_type == MYSQL_TYPE_TINY_BLOB || sql_type == MYSQL_TYPE_LONG_BLOB);
 }
+
+/**
+  @returns the expression if the input field is a hidden generated column that
+  represents a functional key part. If not, return the field name. In case of
+  a functional index; the expression is allocated on the THD's MEM_ROOT.
+*/
+const char *get_field_name_or_expression(THD *thd, const Field *field);
+
+/*
+  Perform per item-type checks to determine if the expression is
+  allowed for a generated column, default value expression or a functional
+  index. Note that validation of the specific function is done later in
+  procedures open_table_from_share and fix_value_generators_fields
+
+  @param expr         the expression to check for validity
+  @param column_name  used for error reporting
+  @param is_gen_col   weather it is a GCOL or a default value expression
+  @return  false if ok, true otherwise
+*/
+bool pre_validate_value_generator_expr(Item *expression,
+                                       const char *column_name,
+                                       bool is_gen_col);
 
 #endif /* FIELD_INCLUDED */

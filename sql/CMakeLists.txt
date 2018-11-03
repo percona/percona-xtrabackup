@@ -139,6 +139,8 @@ SET(DD_SOURCES
   dd/impl/system_views/tables.cc
   dd/impl/system_views/table_constraints.cc
   dd/impl/system_views/triggers.cc
+  dd/impl/system_views/view_routine_usage.cc
+  dd/impl/system_views/view_table_usage.cc
   dd/impl/system_views/views.cc
 
   dd/impl/tables/character_sets.cc
@@ -224,6 +226,7 @@ SET(DD_SOURCES
 
 SET(SQL_GIS_SOURCES
   geometry_rtree.cc
+  gis/area.cc
   gis/covered_by.cc
   gis/crosses.cc
   gis/difference.cc
@@ -241,9 +244,11 @@ SET(SQL_GIS_SOURCES
   gis/overlaps.cc
   gis/ring_flip_visitor.cc
   gis/rtree_support.cc
+  gis/simplify.cc
   gis/srs/srs.cc
   gis/srs/wkt_parser.cc
   gis/touches.cc
+  gis/transform.cc
   gis/union.cc
   gis/within.cc
   gis/wkb.cc
@@ -263,6 +268,7 @@ SET(MYSQL_SERVER_SUB_COMPONENT_SOURCES
   server_component/persistent_dynamic_loader.cc
   server_component/component_sys_var_service.cc
   server_component/component_status_var_service.cc
+  server_component/ongoing_transaction_query_service.cc
   server_component/system_variable_source_imp.cc
   server_component/security_context_imp.cc
   )
@@ -341,6 +347,7 @@ SET(SQL_SHARED_SOURCES
   locking_service.cc
   log.cc
   mdl.cc
+  mdl_context_backup.cc
   migrate_keyring.cc
   my_decimal.cc
   mysqld.cc
@@ -396,6 +403,7 @@ SET(SQL_SHARED_SOURCES
   sdi_utils.cc
   session_tracker.cc
   set_var.cc 
+  sorting_iterator.cc
   sp.cc
   sp_cache.cc
   sp_head.cc
@@ -587,7 +595,7 @@ ENDIF()
 # Segfault in boost::geometry code at high optimization levels
 IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
   STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
-  IF(CMAKEBT MATCHES "^REL")
+  IF(CMAKEBT MATCHES "REL")
     ADD_COMPILE_FLAGS(item_geofunc_buffer.cc COMPILE_FLAGS "-xO2")
   ENDIF()
 ENDIF()
@@ -617,6 +625,25 @@ IF(WIN32)
     item_geofunc_relchecks.cc
     item_geofunc_setops.cc
     COMPILE_FLAGS "/bigobj")
+ENDIF()
+
+# Force optimization of (large) MYSQLparse function in MSVC
+IF(WIN32)
+  IF (MSVC_VERSION GREATER_EQUAL 1910)
+    ADD_COMPILE_FLAGS(
+      ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+      COMPILE_FLAGS "/d2OptimizeHugeFunctions")
+  ELSE()
+      # The optimization _may_ be available in VS2015 if hotfix
+      # KB3207317 is installed
+      MY_CHECK_CXX_COMPILER_FLAG("/d2OptimizeHugeFunctions"
+                                 HAVE_OPTIMIZE_HUGE_FUNCTIONS)
+      IF(HAVE_OPTIMIZE_HUGE_FUNCTIONS)
+        ADD_COMPILE_FLAGS(
+          ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+          COMPILE_FLAGS "/d2OptimizeHugeFunctions")
+      ENDIF()
+  ENDIF()
 ENDIF()
 
 # Common for all versions of GCC/Clang
@@ -678,7 +705,9 @@ SET (BINLOG_SOURCE rpl_gtid_misc.cc
                    rpl_gtid_sid_map.cc rpl_gtid_set.cc rpl_gtid_specification.cc
                    rpl_gtid_state.cc rpl_gtid_owned.cc rpl_gtid_execution.cc
                    rpl_gtid_mutex_cond_array.cc rpl_gtid_persist.cc
-                   log_event.cc binlog.cc sql_binlog.cc
+                   log_event.cc binlog.cc sql_binlog.cc basic_ostream.cc
+                   binlog_ostream.cc basic_istream.cc binlog_istream.cc
+                   binlog_reader.cc
                    rpl_filter.cc rpl_record.cc rpl_trx_tracking.cc
                    rpl_utility.cc rpl_injector.cc rpl_table_access.cc)
 ADD_CONVENIENCE_LIBRARY(binlog ${BINLOG_SOURCE})
@@ -687,7 +716,7 @@ TARGET_LINK_LIBRARIES(binlog binlogevents_static)
 SET (RPL_SOURCE rpl_handler.cc rpl_tblmap.cc rpl_context.cc)
 ADD_DEPENDENCIES(binlog GenError)
 ADD_CONVENIENCE_LIBRARY(rpl ${RPL_SOURCE})
-SET (MASTER_SOURCE rpl_master.cc rpl_binlog_sender.cc)
+SET (MASTER_SOURCE rpl_master.cc rpl_binlog_sender.cc binlog_reader.cc)
 ADD_DEPENDENCIES(rpl GenError)
 ADD_CONVENIENCE_LIBRARY(master ${MASTER_SOURCE})
 ADD_DEPENDENCIES(master GenError)
@@ -698,7 +727,7 @@ SET (SLAVE_SOURCE rpl_slave.cc rpl_reporting.cc rpl_mi.cc rpl_rli.cc
                   rpl_rli_pdb.cc rpl_info_dummy.cc rpl_mts_submode.cc
                   rpl_slave_commit_order_manager.cc rpl_msr.cc
                   rpl_trx_boundary_parser.cc rpl_channel_service_interface.cc
-                  rpl_slave_until_options.cc)
+                  rpl_slave_until_options.cc rpl_applier_reader.cc)
 ADD_CONVENIENCE_LIBRARY(slave ${SLAVE_SOURCE})
 ADD_DEPENDENCIES(slave GenError)
 

@@ -48,16 +48,16 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0mem.h"
 #include "dict0priv.h"
 #include "dict0stats.h"
-#include "fil0fil.h"
 #include "fsp0file.h"
 #include "fsp0sysspace.h"
-#include "fts0fts.h"
 #include "fts0priv.h"
 #include "ha_prototypes.h"
 #include "mach0data.h"
-#include "my_compiler.h"
+
 #include "my_dbug.h"
-#include "my_inttypes.h"
+
+#include "fil0fil.h"
+#include "fts0fts.h"
 #include "mysql_version.h"
 #include "page0page.h"
 #include "rem0cmp.h"
@@ -1501,8 +1501,11 @@ space_id_t dict_check_sys_tables(bool validate) {
                          : dict_get_first_path(space_id);
 
     /* Check that the .ibd file exists. */
-    bool is_encrypted = flags2 & DICT_TF2_ENCRYPTION;
-    ulint fsp_flags = dict_tf_to_fsp_flags(flags, is_encrypted);
+    ulint fsp_flags = dict_tf_to_fsp_flags(flags);
+    /* Set tablespace encryption flag */
+    if (flags2 & DICT_TF2_ENCRYPTION_FILE_PER_TABLE) {
+      fsp_flags |= FSP_FLAGS_MASK_ENCRYPTION;
+    }
 
     dberr_t err =
         fil_ibd_open(validate, FIL_TYPE_TABLESPACE, space_id, fsp_flags,
@@ -2236,8 +2239,11 @@ void dict_load_tablespace(dict_table_t *table, mem_heap_t *heap,
 
   /* Try to open the tablespace.  We set the 2nd param (fix_dict) to
   false because we do not have an x-lock on dict_operation_lock */
-  bool is_encrypted = dict_table_is_encrypted(table);
-  ulint fsp_flags = dict_tf_to_fsp_flags(table->flags, is_encrypted);
+  ulint fsp_flags = dict_tf_to_fsp_flags(table->flags);
+  /* Set tablespace encryption flag */
+  if (DICT_TF2_FLAG_IS_SET(table, DICT_TF2_ENCRYPTION_FILE_PER_TABLE)) {
+    fsp_flags |= FSP_FLAGS_MASK_ENCRYPTION;
+  }
 
   /* This dict_load_tablespace() is only used on old 5.7 database during
   upgrade */

@@ -75,6 +75,7 @@ static const char *json_extra_tags[ET_total] = {
     "open_full_table",                // ET_OPEN_FULL_TABLE
     "scanned_databases",              // ET_SCANNED_DATABASES
     "using_index_for_group_by",       // ET_USING_INDEX_FOR_GROUP_BY
+    "using_index_for_skip_scan",      // ET_USING_INDEX_FOR_SKIP_SCAN
     "distinct",                       // ET_DISTINCT
     "loosescan",                      // ET_LOOSESCAN
     NULL,                             // ET_START_TEMPORARY
@@ -1227,8 +1228,6 @@ class window_ctx : public join_ctx {
                                 ord->used_alias);
           if (ord->direction == ORDER_DESC)
             str.append(STRING_WITH_LEN(" desc"));
-          else if (ord->is_explicit)
-            str.append(STRING_WITH_LEN(" asc"));
           sort_order.add_utf8(str.ptr(), str.length());
         }
       }

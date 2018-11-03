@@ -1112,3 +1112,97 @@ FROM INFORMATION_SCHEMA.COLUMN_STATISTICS,
              c double PATH '$[1]')) hist
 WHERE column_name = "col2";
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#27856835 JSON_TABLE RETURNS WRONG DATATYPE WHEN INT-VALUE IS GRATER
+--echo #              THAN (2^31-1)
+--echo #
+SELECT id FROM JSON_TABLE('[{"id":"9223372036854775807"}]', '$[*]' COLUMNS
+(id BIGINT PATH '$.id')) AS json;
+
+--echo # As we currently have no way of telling if a JSON string value is
+--echo # signed or unsigned, this value will overflow.
+SELECT id FROM JSON_TABLE('[{"id":"9223372036854775808"}]', '$[*]' COLUMNS
+(id BIGINT PATH '$.id')) AS json;
+
+--echo # Here the JSON value is a NUMERIC value, and we thus know if the value
+--echo # is signed or unsigned.
+SELECT id FROM JSON_TABLE('[{"id":9223372036854775808}]', '$[*]' COLUMNS
+(id BIGINT PATH '$.id')) AS json;
+
+--echo # If we tell the JSON table column to be unsigned, we get to store the
+--echo # full value correctly.
+SELECT id FROM JSON_TABLE('[{"id":"9223372036854775808"}]', '$[*]' COLUMNS
+(id BIGINT UNSIGNED PATH '$.id')) AS json;
+
+SELECT id FROM JSON_TABLE('[{"id":"2147483648"}]', '$[*]' COLUMNS
+(id INT UNSIGNED PATH '$.id')) AS json;
+
+--echo # Check that we preserve the signedness of the columns.
+CREATE TABLE t1 AS SELECT id, value FROM
+  JSON_TABLE('[{"id":9223372036854775808, "value":9223372036854775807}]',
+             '$[*]' COLUMNS (id BIGINT UNSIGNED PATH '$.id',
+                             value BIGINT PATH '$.value'))
+  AS json;
+SHOW CREATE TABLE t1;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#28255453: VIEW USING JSON_TABLE FAILS IF NO SCHEMA IS SELECTED
+--echo #
+connect (conn1,localhost,root,,*NO-ONE*);
+CREATE VIEW test.v AS SELECT * FROM JSON_TABLE('[1,2,3]', '$[*]' COLUMNS (num INT PATH '$[0]')) AS jt;
+SELECT * FROM test.v;
+DROP VIEW test.v;
+
+--echo # Check that a user without access to the schema 'foo' cannot query
+--echo # a JSON_TABLE view in that schema.
+CREATE SCHEMA foo;
+CREATE VIEW foo.v AS SELECT * FROM JSON_TABLE('[1,2,3]', '$[*]' COLUMNS (num INT PATH '$[0]')) AS jt;
+
+CREATE USER foo@localhost;
+connect (con1,localhost,foo,,);
+--error ER_TABLEACCESS_DENIED_ERROR
+SELECT * FROM foo.v;
+
+connection default;
+disconnect con1;
+DROP USER foo@localhost;
+DROP SCHEMA foo;
+
+--echo # Check that a user with access to the schema 'foo' can do a SELECT with
+--echo # a JSON_TABLE function.
+CREATE SCHEMA foo;
+CREATE USER foo@localhost;
+GRANT EXECUTE ON foo.* TO foo@localhost;
+connect (con1,localhost,foo,,foo);
+SELECT 1 FROM JSON_TABLE('[1,2,3]', '$[*]' COLUMNS (num INT PATH '$.a')) AS jt;
+connection default;
+disconnect con1;
+DROP USER foo@localhost;
+DROP SCHEMA foo;
+
+--echo #
+--echo # Bug#27923406 ERROR 1142 (42000) WHEN USING JSON_TABLE
+--echo #
+CREATE SCHEMA my_schema;
+
+CREATE USER foo@localhost;
+GRANT EXECUTE ON my_schema.* TO foo@localhost;
+connect (con1,localhost,foo,,my_schema);
+
+SELECT
+  *
+FROM
+  JSON_TABLE(
+    '[{"x":2,"y":"8"},{"x":"3","y":"7"},{"x":"4","y":6}]',
+    "$[*]" COLUMNS(
+      xval VARCHAR(100) PATH "$.x",
+      yval VARCHAR(100) PATH "$.y"
+    )
+  ) AS  jt1;
+
+connection default;
+disconnect con1;
+DROP USER foo@localhost;
+DROP SCHEMA my_schema;

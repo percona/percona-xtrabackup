@@ -62,6 +62,12 @@ db_collation char(32) collate utf8_bin, body_utf8 longblob,
 PRIMARY KEY (db,name,type)) engine=MyISAM character set utf8
 comment='Stored Procedures';
 Warnings:
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 Warning	1101	BLOB, TEXT, GEOMETRY or JSON column 'returns' can't have a default value
 # Remove data and index files manually.
@@ -341,6 +347,7 @@ user	CREATE TABLE `user` (
   `Drop_role_priv` enum('N','Y') CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT 'N',
   `Password_reuse_history` smallint(5) unsigned DEFAULT NULL,
   `Password_reuse_time` smallint(5) unsigned DEFAULT NULL,
+  `Password_require_current` enum('N','Y') CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
   PRIMARY KEY (`Host`,`User`)
 ) /*!50100 TABLESPACE `mysql` */ ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin STATS_PERSISTENT=0 COMMENT='Users and global privileges'
 SHOW CREATE TABLE mysql.innodb_table_stats;
@@ -852,4 +859,8 @@ t_set	CREATE TABLE `t_set` (
 # Check that the file exits after unzip
 # Stop DB server which was created by MTR default
 # Start the DB server
+# Stop the server
+# Remove copied files
+# Restart the server with default options.
+# restart
 # end of test

@@ -41,8 +41,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "data0data.h"
 #include "handler0alter.h"
 #include "lob0lob.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
 #include "que0que.h"
 #include "row0ext.h"
 #include "row0ins.h"
@@ -53,6 +51,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0rec.h"
 #include "ut0new.h"
 #include "ut0stage.h"
+
+#include "my_dbug.h"
 
 /** Table row modification operations during online table rebuild.
 Delete-marked records are not copied to the rebuilt table. */
@@ -676,7 +676,7 @@ new table, not latched */
   dtuple_set_n_fields_cmp(tuple, dict_index_get_n_unique(index));
 
   if (rec_get_1byte_offs_flag(rec)) {
-    for (ulint i = 0; i < index->n_fields; i++) {
+    for (uint16_t i = 0; i < index->n_fields; i++) {
       dfield_t *dfield;
       ulint len;
       const void *field;
@@ -687,7 +687,7 @@ new table, not latched */
       dfield_set_data(dfield, field, len);
     }
   } else {
-    for (ulint i = 0; i < index->n_fields; i++) {
+    for (uint16_t i = 0; i < index->n_fields; i++) {
       dfield_t *dfield;
       ulint len;
       const void *field;
@@ -1006,7 +1006,7 @@ static dberr_t row_log_table_get_pk_col(trx_t *trx, dict_index_t *index,
     blob_field = static_cast<byte *>(mem_heap_alloc(heap, field_len));
 
     len = lob::btr_copy_externally_stored_field_prefix(
-        index, blob_field, field_len, page_size, field, false, len);
+        nullptr, index, blob_field, field_len, page_size, field, false, len);
 
     if (len >= max_len + 1) {
       return (DB_TOO_BIG_INDEX_COL);
@@ -1360,8 +1360,8 @@ static MY_ATTRIBUTE((warn_unused_result))
       TABLE trx is not the owner of this LOB. So instead
       of passing current trx, a nullptr is passed for trx.*/
       data = lob::btr_rec_copy_externally_stored_field(
-          index, mrec, offsets, dict_table_page_size(index->table), i, &len,
-          nullptr, false, heap);
+          nullptr, index, mrec, offsets, dict_table_page_size(index->table), i,
+          &len, nullptr, false, heap);
 
       ut_a(data);
       dfield_set_data(dfield, data, len);
@@ -1472,6 +1472,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   }
 
   do {
+    n_index++;
     if (!(index = index->next())) {
       break;
     }
@@ -2013,11 +2014,14 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_log_table_apply_update(
   dtuple_t *old_row;
   row_ext_t *old_ext;
 
-  if (index->next()) {
+  if (dict_index_t *index_next = index->next()) {
     /* Construct the row corresponding to the old value of
     the record. */
     old_row = row_build(ROW_COPY_DATA, index, btr_pcur_get_rec(&pcur),
                         cur_offsets, NULL, NULL, NULL, &old_ext, heap);
+    if (dict_index_has_virtual(index_next)) {
+      dtuple_copy_v_fields(old_row, update->old_vrow);
+    }
     ut_ad(old_row);
 
     DBUG_PRINT("ib_alter_table",
@@ -2047,6 +2051,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_log_table_apply_update(
   }
 
   while ((index = index->next()) != NULL) {
+    n_index++;
     if (error != DB_SUCCESS) {
       break;
     }
@@ -2471,9 +2476,9 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   dict_index_t *index = const_cast<dict_index_t *>(dup->index);
   dict_table_t *new_table = index->online_log->table;
   dict_index_t *new_index = new_table->first_index();
-  const ulint i = 1 + REC_OFFS_HEADER_SIZE +
-                  ut_max(dict_index_get_n_fields(index),
-                         dict_index_get_n_unique(new_index) + 2);
+  ulint n_fields = dict_index_get_n_fields(index);
+  ulint n_unique = dict_index_get_n_unique(new_index) + 2;
+  const ulint i = 1 + REC_OFFS_HEADER_SIZE + ut_max(n_fields, n_unique);
   const ulint trx_id_col =
       dict_col_get_clust_pos(index->table->get_sys_col(DATA_TRX_ID), index);
   const ulint new_trx_id_col =

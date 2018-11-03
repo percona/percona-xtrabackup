@@ -34,7 +34,9 @@
 #include "my_sqlcommand.h"
 #include "mysql/psi/psi_base.h"
 #include "nullable.h"
+#include "sql/dd/types/column.h"
 #include "sql/gis/srid.h"
+#include "sql/mdl.h"                // MDL_request
 #include "sql/mem_root_array.h"     // Mem_root_array
 #include "sql/sql_cmd.h"            // Sql_cmd
 #include "sql/sql_cmd_ddl_table.h"  // Sql_cmd_ddl_table
@@ -43,6 +45,7 @@
 
 class Create_field;
 class FOREIGN_KEY;
+class Value_generator;
 class Item;
 class Key_spec;
 class String;
@@ -81,6 +84,9 @@ class Alter_column {
   /// The default value supplied.
   Item *def;
 
+  /// The expression to be used to generated the default value.
+  Value_generator *m_default_val_expr;
+
   /// The new colum name.
   const char *m_new_name;
 
@@ -90,14 +96,26 @@ class Alter_column {
   /// Type of change requested in ALTER TABLE.
   inline Type change_type() const { return m_type; }
 
-  /// Constructor used when changing field DEFAULT value.
+  /// Constructor used when altering the field's default value with a literal
+  /// constant or when dropping a field's default value.
   Alter_column(const char *par_name, Item *literal)
-      : name(par_name), def(literal), m_new_name(nullptr) {
+      : name(par_name),
+        def(literal),
+        m_default_val_expr(nullptr),
+        m_new_name(nullptr) {
     if (def)
       m_type = Type::SET_DEFAULT;
     else
       m_type = Type::DROP_DEFAULT;
   }
+
+  /// Constructor used when setting a field's DEFAULT value to an expression.
+  Alter_column(const char *par_name, Value_generator *gen_def)
+      : name(par_name),
+        def(nullptr),
+        m_default_val_expr(gen_def),
+        m_new_name(nullptr),
+        m_type(Type::SET_DEFAULT) {}
 
   /// Constructor used while renaming field name.
   Alter_column(const char *old_name, const char *new_name)
@@ -253,6 +271,12 @@ class Alter_info {
 
     /// Means that the visibility of an index is changed.
     ALTER_INDEX_VISIBILITY = 1UL << 29,
+
+    /// Set for SECONDARY LOAD
+    ALTER_SECONDARY_LOAD = 1UL << 30,
+
+    /// Set for SECONDARY UNLOAD
+    ALTER_SECONDARY_UNLOAD = 1UL << 31,
   };
 
   enum enum_enable_or_disable { LEAVE_AS_IS, ENABLE, DISABLE };
@@ -319,7 +343,7 @@ class Alter_info {
   Mem_root_array<const Alter_column *> alter_list;
   // List of keys, used by both CREATE and ALTER TABLE.
 
-  Mem_root_array<const Key_spec *> key_list;
+  Mem_root_array<Key_spec *> key_list;
   // Keys to be renamed.
   Mem_root_array<const Alter_rename_key *> alter_rename_key_list;
 
@@ -391,8 +415,9 @@ class Alter_info {
                  Item *on_update_value, LEX_STRING *comment, const char *change,
                  List<String> *interval_list, const CHARSET_INFO *cs,
                  bool has_explicit_collation, uint uint_geom_type,
-                 class Generated_column *gcol_info, const char *opt_after,
-                 Nullable<gis::srid_t> srid);
+                 Value_generator *gcol_info, Value_generator *default_val_expr,
+                 const char *opt_after, Nullable<gis::srid_t> srid,
+                 dd::Column::enum_hidden_type hidden);
 
  private:
   Alter_info &operator=(const Alter_info &rhs);  // not implemented
@@ -464,6 +489,14 @@ class Alter_table_ctx {
     old version of table.
   */
   uint fk_max_generated_name_number;
+
+  /**
+    Metadata lock request on table's new name when this name or database
+    are changed.
+  */
+  MDL_request target_mdl_request;
+  /** Metadata lock request on table's new database if it is changed. */
+  MDL_request target_db_mdl_request;
 
  private:
   char new_filename[FN_REFLEN + 1];

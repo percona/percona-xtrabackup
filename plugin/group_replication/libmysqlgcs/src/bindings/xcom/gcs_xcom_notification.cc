@@ -87,17 +87,19 @@ void Status_notification::do_execute() { (*m_functor)(m_status); }
 
 Global_view_notification::Global_view_notification(
     xcom_global_view_functor *functor, synode_no config_id,
-    synode_no message_id, Gcs_xcom_nodes *xcom_nodes)
+    synode_no message_id, Gcs_xcom_nodes *xcom_nodes,
+    xcom_event_horizon event_horizon)
 
     : m_functor(functor),
       m_config_id(config_id),
       m_message_id(message_id),
-      m_xcom_nodes(xcom_nodes) {}
+      m_xcom_nodes(xcom_nodes),
+      m_event_horizon(event_horizon) {}
 
 Global_view_notification::~Global_view_notification() {}
 
 void Global_view_notification::do_execute() {
-  (*m_functor)(m_config_id, m_message_id, m_xcom_nodes);
+  (*m_functor)(m_config_id, m_message_id, m_xcom_nodes, m_event_horizon);
 }
 
 Local_view_notification::Local_view_notification(
@@ -111,6 +113,13 @@ Local_view_notification::~Local_view_notification() {}
 void Local_view_notification::do_execute() {
   (*m_functor)(m_message_id, m_xcom_nodes);
 }
+
+Expel_notification::Expel_notification(xcom_expel_functor *functor)
+    : m_functor(functor) {}
+
+Expel_notification::~Expel_notification() {}
+
+void Expel_notification::do_execute() { (*m_functor)(); }
 
 Control_notification::Control_notification(xcom_control_functor *functor,
                                            Gcs_control_interface *control_if)
@@ -150,6 +159,7 @@ Gcs_xcom_engine::~Gcs_xcom_engine() {
 
 void Gcs_xcom_engine::initialize(
     xcom_initialize_functor *functor MY_ATTRIBUTE((unused))) {
+  MYSQL_GCS_LOG_DEBUG("Gcs_xcom_engine::initialize invoked!");
   assert(m_notification_queue.empty());
   assert(m_schedule);
   m_engine_thread.create(key_GCS_THD_Gcs_xcom_engine_m_engine_thread, NULL,
@@ -157,6 +167,7 @@ void Gcs_xcom_engine::initialize(
 }
 
 void Gcs_xcom_engine::finalize(xcom_finalize_functor *functor) {
+  MYSQL_GCS_LOG_DEBUG("Gcs_xcom_engine::finalize invoked!");
   push(new Finalize_notification(this, functor));
   m_engine_thread.join(NULL);
   assert(m_notification_queue.empty());

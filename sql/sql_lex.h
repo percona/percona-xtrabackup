@@ -110,6 +110,7 @@ class PT_create_table_option;
 class PT_ddl_table_option;
 class PT_item_list;
 class PT_json_table_column;
+class PT_key_part_specification;
 class PT_part_definition;
 class PT_part_value_item;
 class PT_part_value_item_list_paren;
@@ -2035,7 +2036,6 @@ union YYSTYPE {
   List<Item> *item_list;
   List<String> *string_list;
   String *string;
-  Key_part_spec *key_part;
   Mem_root_array<Table_ident *> *table_list;
   udf_func *udf;
   LEX_USER *lex_user;
@@ -2142,6 +2142,7 @@ union YYSTYPE {
   class PT_query_expression_body *query_expression_body;
   class PT_query_primary *query_primary;
   class PT_subquery *subquery;
+  class PT_key_part_specification *key_part;
 
   XID *xid;
   enum xa_option_words xa_option_type;
@@ -2174,7 +2175,7 @@ union YYSTYPE {
   enum alter_instance_action_enum alter_instance_action;
   class PT_create_index_stmt *create_index_stmt;
   class PT_table_constraint_def *table_constraint_def;
-  List<Key_part_spec> *index_column_list;
+  List<PT_key_part_specification> *index_column_list;
   struct {
     LEX_STRING name;
     class PT_base_index_option *type;
@@ -3368,6 +3369,38 @@ class Lex_input_stream {
 
   void reduce_digest_token(uint token_left, uint token_right);
 
+  /**
+    True if this scanner tokenizes a partial query (partition expression,
+    generated column expression etc.)
+
+    @return true if parsing a partial query, otherwise false.
+  */
+  bool is_partial_parser() const { return grammar_selector_token >= 0; }
+
+  /**
+    Outputs warnings on deprecated charsets in complete SQL statements
+
+    @param [in] cs    The character set/collation to check for a deprecation.
+    @param [in] alias The name/alias of @p cs.
+  */
+  void warn_on_deprecated_charset(const CHARSET_INFO *cs,
+                                  const char *alias) const {
+    if (!is_partial_parser()) {
+      ::warn_on_deprecated_charset(m_thd, cs, alias);
+    }
+  }
+
+  /**
+    Outputs warnings on deprecated collations in complete SQL statements
+
+    @param [in] collation     The collation to check for a deprecation.
+  */
+  void warn_on_deprecated_collation(const CHARSET_INFO *collation) const {
+    if (!is_partial_parser()) {
+      ::warn_on_deprecated_collation(m_thd, collation);
+    }
+  }
+
   const CHARSET_INFO *query_charset;
 
  private:
@@ -3490,8 +3523,15 @@ class Lex_input_stream {
     2. GRAMMAR_SELECTOR_GCOL for generated column stuff from DD,
     3. GRAMMAR_SELECTOR_EXPR for generic single expressions from DD/.frm.
     4. GRAMMAR_SELECTOR_CTE for generic subquery expressions from CTEs.
+    5. -1 when parsing with the main grammar (no grammar selector available).
+
+    @note yylex() is expected to return the value of type int:
+          0 is for EOF and everything else for real token numbers.
+          Bison, in its turn, generates positive token numbers.
+          So, the negative grammar_selector_token means "not a token".
+          In other words, -1 is "empty value".
   */
-  const uint grammar_selector_token;
+  const int grammar_selector_token;
 
   bool text_string_is_7bit() const { return !(tok_bitmap & 0x80); }
 };
@@ -3544,7 +3584,7 @@ struct LEX : public Query_tables_list {
   LEX_USER *grant_user;
   LEX_ALTER alter_password;
   THD *thd;
-  Generated_column *gcol_info;
+  Value_generator *gcol_info;
 
   /* Optimizer hints */
   Opt_hints_global *opt_hints_global;
@@ -4118,7 +4158,7 @@ class Parser_state {
 
     @param grammar_selector_token   See Lex_input_stream::grammar_selector_token
   */
-  explicit Parser_state(uint grammar_selector_token)
+  explicit Parser_state(int grammar_selector_token)
       : m_input(), m_lip(grammar_selector_token), m_yacc(), m_comment(false) {}
 
  public:
@@ -4174,7 +4214,7 @@ class Gcol_expr_parser_state : public Parser_state {
  public:
   Gcol_expr_parser_state();
 
-  Generated_column *result;
+  Value_generator *result;
 };
 
 /**

@@ -23,7 +23,6 @@
 
 let GREP_START=`SELECT DATE_FORMAT(CONVERT_TZ(SYSDATE(6),'SYSTEM','UTC'),'%Y%m%d%H%i%s%f');`;
 
-SET @orig_log_error_verbosity= @@GLOBAL.log_error_verbosity;
 SET @@global.log_error_verbosity=3;
 
 let $log_error_= `SELECT @@GLOBAL.log_error`;
@@ -47,66 +46,116 @@ SET @@session.debug="+d,parser_stmt_to_error_log_with_system_prio";
 SELECT @@global.log_error_services;
 --echo
 
+# Component not loaded, variable not present
+--error ER_UNKNOWN_SYSTEM_VARIABLE
+SELECT @@syseventlog.tag;
+
 SELECT "*** SWITCHING ERROR LOG TO SYSEVENTLOG ***";
 INSTALL COMPONENT "file://component_log_sink_syseventlog";
 
---error ER_WRONG_ARGUMENTS
-SET @@global.log_syslog_tag="wl9343";
+--echo # default value
+SELECT @@global.syseventlog.tag;
+
+--echo # change tag
+SET @@global.syseventlog.tag="wl9343";
+SELECT @@global.syseventlog.tag;
 
 SET @@global.log_error_services="log_filter_internal; log_sink_internal; log_sink_syseventlog";
-SET @@global.log_syslog_tag="wl9343";
 SELECT "logging to syslog";
-# need to unset this while service is still active.
-SET @@global.log_syslog_tag=DEFAULT;
-SET @@global.log_error_services="log_filter_internal; log_sink_internal";
 
-UNINSTALL COMPONENT "file://component_log_sink_syseventlog";
+--echo # change while component is active
+SET @@global.syseventlog.tag="wl9343_2";
+SELECT @@global.syseventlog.tag;
+
+SET @@global.log_error_services="log_filter_internal; log_sink_internal";
+--echo # change while component is loaded, but inactive
+SET @@global.syseventlog.tag=DEFAULT;
+SELECT @@global.syseventlog.tag;
+
+
+# Check that SET PERSIST retains variable values
+# ---------------------------------------------------------
+SET PERSIST syseventlog.include_pid = OFF;
+SET PERSIST syseventlog.facility = "local1";
+SET PERSIST syseventlog.tag = "wl11828";
+
+--let $log_services="log_filter_internal;log_sink_syseventlog;log_sink_internal"
+--let restart_parameters="restart: --no-console --log-error-services=$log_services "
+--source include/restart_mysqld.inc
+
+# Verify value of the persisted variable
+SELECT @@syseventlog.include_pid;
+SELECT @@syseventlog.facility;
+SELECT @@syseventlog.tag;
+
+RESET PERSIST `syseventlog.include_pid`;
+RESET PERSIST `syseventlog.facility`;
+RESET PERSIST `syseventlog.tag`;
+
+--echo
+
+
+# Verify that we accept arguments passed at start-up
+
+--let $log_services="log_filter_internal;log_sink_syseventlog;log_sink_internal"
+--let restart_parameters="restart: --no-console --log-error-services=$log_services --syseventlog.include_pid=OFF --syseventlog.facility=local2 --syseventlog.tag=wl11828_2 "
+--source include/restart_mysqld.inc
+
+# Verify value of the persisted variable
+SELECT @@syseventlog.include_pid;
+SELECT @@syseventlog.facility;
+SELECT @@syseventlog.tag;
+
+# Verify that we use default settings if invalid arguments are passed
+# at start-up
+
+--let LOG_FILE= $MYSQLTEST_VARDIR/tmp/wl11828.err
+--let $log_services="log_filter_internal;log_sink_syseventlog;log_sink_internal"
+--let restart_parameters="restart: --no-console --log-error=$LOG_FILE --log-error-services=$log_services --syseventlog.include_pid=PIKA --syseventlog.facility=localZ --syseventlog.tag=wl11828/2 "
+
+--replace_result $LOG_FILE LOG_FILE
+--source include/restart_mysqld.inc
+
+# Verify value of the persisted variable
+SELECT @@syseventlog.include_pid;
+SELECT @@syseventlog.facility;
+SELECT @@syseventlog.tag;
+
+# Cleanup
+SET GLOBAL log_error_services= default;
 --echo
 
 --echo # cleanup
+# UNINSTALL COMPONENT "file://component_log_syseventlog";
+
 SET @@session.debug="-d,parser_stmt_to_error_log_with_system_prio";
 SET @@session.debug="-d,parser_stmt_to_error_log";
 SET @@session.debug="-d,log_error_normalize";
-SET @@global.log_error_verbosity= @orig_log_error_verbosity;
 ## WL#9651
 # SET @@global.log_error_filter_rules=@save_filters;
 
 FLUSH ERROR LOGS;
 
-
---echo
---echo ###
---echo ### error log file
---echo ###
---echo
-
-let GREP_FILE=$log_error_;
-
-perl;
+--perl
    use strict;
-   use File::stat;
-   my $file= $ENV{'GREP_FILE'} or die("grep file not set");
-   my $pattern="^20";
-   my $stime= $ENV{'GREP_START'};
+   use JSON;
+
+   my $file= $ENV{'LOG_FILE'} or die("logfile not set");
+   my $result=0;
 
    open(FILE, "$file") or die("Unable to open $file: $!");
    while (<FILE>) {
      my $line = $_;
-     my $ts = 0;
 
-     if ($stime == 0) {
-       print "$line";
-     }
-     elsif ($line =~ /$pattern/) {
-       $line =~ /([0-9][0-9][0-9][0-9])-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]):([0-9][0-9]):([0-9][0-9])\.([0-9][0-9][0-9][0-9][0-9][0-9])[-+Z][0-9:]* *[0-9]* *?(\[.*)/;
-       $ts=$1.$2.$3.$4.$5.$6.$7;
-       if ($ts >= $stime) {
-         $stime= 0;
-       }
+     if ($line =~ /syseventlog\./) {
+       $line =~ s/.*\]//;
+       print $line;
      }
    }
    close(FILE);
 EOF
+
+--remove_file $LOG_FILE
 
 --echo
 --echo ###

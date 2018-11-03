@@ -7415,8 +7415,14 @@ t2	CREATE TABLE `t2` (
 set @a=0;
 create table t3 as select * from t2 limit 0;
 insert into t3 select @a:=@a+1, t2.a from t2, t0;
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 insert into t3 select @a:=@a+1, t2.a from t2, t0;
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 insert into t3 select @a:=@a+1, t2.a from t2, t0;
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 alter table t3 add primary key(id), add key(a);
 The following must use loose index scan over t3, key a:
 explain select count(a) from t2 where a in ( SELECT  a FROM t3);
@@ -11553,6 +11559,8 @@ KEY id2 (id2),
 KEY id3 (id3),
 KEY id5 (id5)
 ) ENGINE=InnoDB;
+Warnings:
+Warning	3778	'utf8_spanish_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 INSERT INTO t1 VALUES
 (123,1,1,'1',NULL),
 (124,1,1,'2',NULL),

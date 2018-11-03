@@ -29,15 +29,16 @@
 #include "sql/sql_delete.h"
 
 #include <limits.h>
-#include <string.h>
+#include <algorithm>
 #include <atomic>
+#include <memory>
+#include <new>
 
 #include "lex_string.h"
 #include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "mysql/service_mysql_alloc.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "sql/auth/auth_acls.h"
@@ -54,9 +55,10 @@
 #include "sql/opt_explain_format.h"
 #include "sql/opt_range.h"  // prune_partitions
 #include "sql/opt_trace.h"  // Opt_trace_object
-#include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
-#include "sql/records.h"   // READ_RECORD
+#include "sql/records.h"  // READ_RECORD
+#include "sql/row_iterator.h"
+#include "sql/sorting_iterator.h"
 #include "sql/sql_base.h"  // update_non_unique_table_error
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"
@@ -67,7 +69,6 @@
 #include "sql/sql_optimizer.h"  // optimize_cond, substitute_gc
 #include "sql/sql_resolver.h"   // setup_order
 #include "sql/sql_select.h"
-#include "sql/sql_sort.h"
 #include "sql/sql_view.h"  // check_key_in_view
 #include "sql/system_variables.h"
 #include "sql/table.h"
@@ -135,7 +136,6 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
     = -1: No more rows to process, or reached limit
   */
   int error = 0;
-  READ_RECORD info;
   ha_rows deleted_rows = 0;
   bool reverse = false;
   /// read_removal is only used by NDB storage engine
@@ -209,12 +209,6 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
   }
 
   const bool const_cond = (!conds || conds->const_item());
-  if (safe_update && const_cond) {
-    // Safe mode is a runtime check, so apply it in execution and not prepare
-    my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0));
-    DBUG_RETURN(true);
-  }
-
   const bool const_cond_result = const_cond && (!conds || conds->val_int());
   if (thd->is_error())  // Error during val_int()
     DBUG_RETURN(true);  /* purecov: inspected */
@@ -256,6 +250,13 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
     if (lex->is_explain()) {
       bool err = explain_single_table_modification(thd, &plan, select_lex);
       DBUG_RETURN(err);
+    }
+
+    /* Do not allow deletion of all records if safe_update is set. */
+    if (safe_update) {
+      my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0),
+               thd->get_stmt_da()->get_first_condition_message());
+      DBUG_RETURN(true);
     }
 
     DBUG_PRINT("debug", ("Trying to use delete_all_rows()"));
@@ -363,8 +364,18 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
   /* If running in safe sql mode, don't allow updates without keys */
   if (table->quick_keys.is_clear_all()) {
     thd->server_status |= SERVER_QUERY_NO_INDEX_USED;
-    if (safe_update && !using_limit) {
-      my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0));
+
+    /*
+      Safe update error isn't returned if:
+      1) It is  an EXPLAIN statement OR
+      2) LIMIT is present.
+
+      Append the first warning (if any) to the error message. This allows the
+      user to understand why index access couldn't be chosen.
+    */
+    if (!thd->lex->is_explain() && safe_update && !using_limit) {
+      my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0),
+               thd->get_stmt_da()->get_first_condition_message());
       DBUG_RETURN(true);
     }
   }
@@ -404,44 +415,36 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
     if (select_lex->active_options() & OPTION_QUICK)
       (void)table->file->extra(HA_EXTRA_QUICK);
 
+    unique_ptr_destroy_only<Filesort> fsort;
+    READ_RECORD info;
+    ha_rows examined_rows = 0;
+    if (usable_index == MAX_KEY || qep_tab.quick())
+      setup_read_record(&info, thd, NULL, &qep_tab, false,
+                        /*ignore_not_found_rows=*/false, &examined_rows);
+    else
+      setup_read_record_idx(&info, thd, table, usable_index, reverse, &qep_tab);
+
     if (need_sort) {
-      ha_rows examined_rows, found_rows, returned_rows;
-
-      Filesort fsort(&qep_tab, order, HA_POS_ERROR);
       DBUG_ASSERT(usable_index == MAX_KEY);
-      table->sort_result.io_cache =
-          (IO_CACHE *)my_malloc(key_memory_TABLE_sort_io_cache,
-                                sizeof(IO_CACHE), MYF(MY_FAE | MY_ZEROFILL));
 
-      if (filesort(thd, &fsort, true, &examined_rows, &found_rows,
-                   &returned_rows))
-        DBUG_RETURN(true);
-
-      table->sort_result.found_records = returned_rows;
+      fsort.reset(new (thd->mem_root) Filesort(&qep_tab, order, HA_POS_ERROR));
+      unique_ptr_destroy_only<RowIterator> sort(
+          new (&info.sort_holder)
+              SortingIterator(thd, fsort.get(), move(info.iterator),
+                              /*rows_examined=*/nullptr));
+      qep_tab.keep_current_rowid = true;  // Force filesort to sort by position.
+      if (sort->Init()) DBUG_RETURN(true);
+      info.iterator = move(sort);
       thd->inc_examined_row_count(examined_rows);
+
       /*
         Filesort has already found and selected the rows we want to delete,
         so we don't need the where clause
       */
-      qep_tab.set_quick(NULL);
       qep_tab.set_condition(NULL);
-      table->file->ha_index_or_rnd_end();
+    } else {
+      if (info.iterator->Init()) DBUG_RETURN(true);
     }
-
-    /* If quick select is used, initialize it before retrieving rows. */
-    if (qep_tab.quick() && (error = qep_tab.quick()->reset())) {
-      if (table->file->is_fatal_error(error)) error_flags |= ME_FATALERROR;
-
-      table->file->print_error(error, error_flags);
-      DBUG_RETURN(true);
-    }
-
-    if (usable_index == MAX_KEY || qep_tab.quick())
-      error = init_read_record(&info, thd, NULL, &qep_tab, 1, false);
-    else
-      error = init_read_record_idx(&info, thd, table, 1, usable_index, reverse);
-
-    if (error) DBUG_RETURN(true); /* purecov: inspected */
 
     if (select_lex->has_ft_funcs() && init_ftfuncs(thd, select_lex))
       DBUG_RETURN(true); /* purecov: inspected */
@@ -472,7 +475,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
 
     // The loop that reads rows and delete those that qualify
 
-    while (!(error = info.read_record(&info)) && !thd->killed) {
+    while (!(error = info->Read()) && !thd->killed) {
       DBUG_ASSERT(!thd->is_error());
       thd->inc_examined_row_count(1);
 
@@ -545,7 +548,6 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
       /* Only handler knows how many records were really written */
       deleted_rows = table->file->end_read_removal();
     }
-    end_read_record(&info);
     if (select_lex->active_options() & OPTION_QUICK)
       (void)table->file->extra(HA_EXTRA_NORMAL);
   }  // End of scope for Modification_plan
@@ -1112,14 +1114,15 @@ int Query_result_delete::do_table_deletes(TABLE *table) {
   READ_RECORD info;
   ha_rows last_deleted = deleted_rows;
   DBUG_ENTER("Query_result_delete::do_table_deletes");
-  if (init_read_record(&info, thd, table, NULL, 1, false)) DBUG_RETURN(1);
   /*
     Ignore any rows not found in reference tables as they may already have
     been deleted by foreign key handling
   */
-  info.ignore_not_found_rows = 1;
+  if (init_read_record(&info, thd, table, NULL, false,
+                       /*ignore_not_found_rows=*/true))
+    DBUG_RETURN(1);
   bool will_batch = !table->file->start_bulk_delete();
-  while (!(local_error = info.read_record(&info)) && !thd->killed) {
+  while (!(local_error = info->Read()) && !thd->killed) {
     if (table->triggers &&
         table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
                                           TRG_ACTION_BEFORE, false)) {
@@ -1171,8 +1174,6 @@ int Query_result_delete::do_table_deletes(TABLE *table) {
   if (last_deleted != deleted_rows && !table->file->has_transactions())
     thd->get_transaction()->mark_modified_non_trans_table(
         Transaction_ctx::STMT);
-
-  end_read_record(&info);
 
   DBUG_RETURN(local_error);
 }

@@ -95,6 +95,18 @@ if (!$tmp) {
   SHOW SLAVE STATUS;
 }
 
+# Check that the backup directory used for ndb tests have been
+# removed by test(and also that it does not exist before test).
+if ($NDB_BACKUP_DIR)
+{
+  #Include backup_restore_cleanup.inc at the end of test case
+  #to remove the backup directory inside test case.
+  let $backup_dir = $NDB_BACKUP_DIR/BACKUP;
+  echo Checking that $backup_dir directory does not exist;
+  --error 1
+  file_exists $backup_dir;
+}
+
 # There might be more than one server used by a test and check-testcase.test
 # will be run for each server. The file lists for each server needs to be
 # uniquely identified. This can be achieved by appending the @@server_id with
@@ -139,6 +151,8 @@ if ($proceed_with_check_of_files) {
   # "rpl.rpl_extra_row_data" will fail.
   SET @sql_log_bin_save = @@sql_log_bin;
   SET SESSION sql_log_bin = 0;
+  # Checking needs to create temporary tables without primary key
+  SET SESSION sql_require_primary_key = 0;
 
   USE test;
 
@@ -222,7 +236,12 @@ EOF
       AND filename NOT LIKE 'mysql%.sock%'
       AND filename NOT LIKE 'file_list_%.flist'
       AND filename NOT LIKE 'mysqld%.expect'
-      AND filename NOT LIKE 'bootstrap.log';
+      AND filename NOT LIKE 'bootstrap.log'
+      AND filename NOT LIKE 'ndb_testrun.log'
+      AND filename NOT LIKE 'run_ndbapitest_result.inc'
+      AND filename NOT LIKE 'test_%.log'
+      AND filename NOT LIKE 'clusterj.properties'
+      AND filename NOT LIKE 'have_clusterj_result.inc';
 
     DROP TABLE test.file_tbl;
     --remove_file $infile

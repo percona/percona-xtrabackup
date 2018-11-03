@@ -41,7 +41,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_prototypes.h"
 #include "lob0lob.h"
 #include "mach0data.h"
-#include "my_inttypes.h"
 #include "que0que.h"
 #include "read0read.h"
 #include "rem0cmp.h"
@@ -223,9 +222,9 @@ dtuple_t *row_build_index_entry_low(
           const dict_index_t *clust_index =
               (ext == nullptr ? index->table->first_index() : ext->index);
 
-          dptr = lob::btr_copy_externally_stored_field(clust_index, &dlen,
-                                                       nullptr, dptr, page_size,
-                                                       flen, false, temp_heap);
+          dptr = lob::btr_copy_externally_stored_field(
+              nullptr, clust_index, &dlen, nullptr, dptr, page_size, flen,
+              false, temp_heap);
         } else {
           dptr = static_cast<uchar *>(dfield_get_data(dfield2));
           dlen = dfield_get_len(dfield2);
@@ -275,7 +274,7 @@ dtuple_t *row_build_index_entry_low(
     indexed long columns may be stored off-page. */
     ut_ad(col->ord_part);
 
-    if (ext) {
+    if (ext && !col->is_virtual()) {
       /* See if the column is stored externally. */
       const byte *buf = row_ext_lookup(ext, col_no, &len);
       if (UNIV_LIKELY_NULL(buf)) {

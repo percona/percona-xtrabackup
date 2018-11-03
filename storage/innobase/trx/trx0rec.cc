@@ -37,8 +37,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fsp0fsp.h"
 #include "mach0data.h"
 #include "mtr0log.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
 #include "trx0undo.h"
 #ifndef UNIV_HOTBACKUP
 #include "dict0dict.h"
@@ -55,6 +53,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0purge.h"
 #include "trx0rseg.h"
 #include "ut0mem.h"
+
+#include "my_dbug.h"
 
 namespace dd {
 class Spatial_reference_system;
@@ -720,7 +720,7 @@ static byte *trx_undo_page_fetch_ext_func(trx_t *trx, dict_index_t *index,
                                           ulint *len) {
   /* Fetch the BLOB. */
   ulint ext_len = lob::btr_copy_externally_stored_field_prefix(
-      index, ext_buf, prefix_len, page_size, field, is_sdi, *len);
+      trx, index, ext_buf, prefix_len, page_size, field, is_sdi, *len);
 
 #ifdef UNIV_DEBUG
   if (ext_len == 0) {
@@ -829,8 +829,8 @@ static void trx_undo_get_mbr_from_ext(trx_t *trx, dict_index_t *index,
   ulint dlen;
   mem_heap_t *heap = mem_heap_create(100);
 
-  dptr = lob::btr_copy_externally_stored_field(index, &dlen, nullptr, field,
-                                               page_size, *len, false, heap);
+  dptr = lob::btr_copy_externally_stored_field(
+      trx, index, &dlen, nullptr, field, page_size, *len, false, heap);
 
   if (dlen <= GEO_DATA_HEADER_SIZE) {
     for (uint i = 0; i < SPDIMS; ++i) {
@@ -1001,7 +1001,7 @@ static byte *trx_undo_report_blob_update(page_t *undo_page, dict_index_t *index,
   trx_id_t last_trx_id;
   undo_no_t last_undo_no;
   ulint lob_version;
-  ulint f_page_type;
+  page_type_t f_page_type;
 
   /* Obtain LOB info. */
   lob::get_info(ref, index, lob_version, last_trx_id, last_undo_no, f_page_type,

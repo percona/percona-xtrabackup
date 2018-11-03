@@ -133,6 +133,7 @@ a	int(11)	YES		NULL
 b	varchar(255)	YES		NULL	
 c	int(11)	YES		NULL	
 drop table t1;
+ERROR 1059 (42000) at line 1: Identifier name 'verylongdatabasenamethatshouldblowthe256byteslongbufferincom_connectfunctionxkxkxkxkxkxkxkxkxkxkxkxk' is too long
 1
 1
 ERROR 1064 (42000) at line 3: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
@@ -520,8 +521,8 @@ ERROR 1243 (HY000) at line 15: Unknown prepared statement handler (x) given to E
 #
 # Bug #16102788: INDETERMINATE BEHAVIOR DUE TO EMPTY OPTION VALUES
 #
-mysql: [ERROR] mysql: Empty value for 'port' specified
-mysql: [ERROR] mysql: Empty value for 'port' specified
+mysql: [ERROR] mysql: Empty value for 'port' specified.
+mysql: [ERROR] mysql: Empty value for 'port' specified.
 #
 # Bug #21464621: MYSQL CLI SHOULD SUGGEST CONNECT-EXPIRED-PASSWORD WHEN ERROR 1862 OCCURS
 #

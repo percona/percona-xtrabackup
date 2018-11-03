@@ -10,9 +10,9 @@ xtrabackup --backup --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup
 
 # files that present in the backup directory, but not present in the datadir
-diff -u <( ( ( cd $topdir/backup; find . )
-             ( cd $mysql_datadir; find . )
-             ( cd $mysql_datadir; find . ) ) | sort | uniq -u ) - <<EOF
+diff -u <( ( ( cd $topdir/backup; find . | grep -v innodb_temp )
+             ( cd $mysql_datadir; find . | grep -v innodb_temp )
+             ( cd $mysql_datadir; find . | grep -v innodb_temp ) ) | sort | uniq -u ) - <<EOF
 ./backup-my.cnf
 ./test/db.opt
 ./xtrabackup_binlog_info
@@ -25,9 +25,9 @@ diff -u <( ( ( cd $topdir/backup; find . )
 EOF
 
 # files that present in the datadir, but not present in the backup
-diff -u <( ( ( cd $topdir/backup; find . )
-             ( cd $topdir/backup; find . )
-             ( cd $mysql_datadir; find . ) ) | sort | uniq -u ) - <<EOF
+diff -u <( ( ( cd $topdir/backup; find . | grep -v innodb_temp )
+             ( cd $topdir/backup; find . | grep -v innodb_temp )
+             ( cd $mysql_datadir; find . | grep -v innodb_temp ) ) | sort | uniq -u ) - <<EOF
 ./auto.cnf
 ./ca-key.pem
 ./ca.pem

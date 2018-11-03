@@ -84,11 +84,6 @@ bool Query_result_union::prepare(List<Item> &, SELECT_LEX_UNIT *u) {
 }
 
 bool Query_result_union::send_data(List<Item> &values) {
-  // Skip "offset" number of rows before producing rows
-  if (unit->offset_limit_cnt > 0) {
-    unit->offset_limit_cnt--;
-    return false;
-  }
   if (fill_record(thd, table, table->visible_field_ptr(), values, NULL, NULL))
     return true; /* purecov: inspected */
 
@@ -238,7 +233,9 @@ class Query_result_union_direct final : public Query_result_union {
         optimized(false),
         result_set_metadata_sent(false),
         execution_started(false),
-        current_found_rows(0) {}
+        current_found_rows(0) {
+    unit = last_select_lex->master_unit();
+  }
   bool change_query_result(Query_result *new_result) override;
   uint field_count(List<Item> &) const override {
     // Only called for top-level Query_results, usually Query_result_send

@@ -412,19 +412,19 @@
         this file.
 
         The format of a line in the <b>disabled.def</b> file looks
-        like this, where fields are separated by one or more spaces or
-        Tab characters:
+        like this, where fields are separated by one or more spaces.
 
         @verbatim
-  test_name : BUG#nnnnn YYYY-MM-DD disabler comment
+  suite_name.test_name : BUG#nnnnn YYYY-MM-DD disabler comment
         @endverbatim
 
         Example:
 
         @verbatim
-  rpl_row_blob_innodb : BUG#18980 2006-04-10 kent  Test fails randomly
+  rpl.rpl_row_blob_innodb : BUG#18980 2006-04-10 kent Test fails randomly
         @endverbatim
 
+        <b><em>suite_name</em></b> is the suite name.
         <b><em>test_name</em></b> is the test case name.
         <b>BUG#<em>nnnnn</em></b> indicates the bug related to the
         test that causes it to fail (and thus requires it to be
@@ -437,11 +437,11 @@
         "mysql-test-run.pl" will not actually care what is written
         here. However, it is a recommended standard.
 
-        An additional element: after the test name and before the
-        colon you may add one or more <b>\@<em>platform</em></b> to
-        have the test disabled only on specific platform(s). Basic OS
-        names as reported by <b>$^O</b> in Perl, or <b>'windows'</b>
-        are supported. Alternatively, <b>@!<em>platform</i></b> will
+        An additional element after the test name and before the
+        colon you may add a <b>\@<em>platform</em></b> to have the
+        test disabled only on a specific platform. Basic OS names as
+        reported by <b>$^O</b> in Perl, or <b>'windows'</b> are
+        supported. Alternatively, <b>@!<em>platform</i></b> will
         disable the test on all except the named platform.
 
         A comment line can be written in the file by beginning the
@@ -3119,6 +3119,22 @@
     </li>
 
     <li>
+      <tt>`--colored-diff`</tt>
+
+      Colorize the diff part of the output.
+
+      If enabled, @ref PAGE_MYSQLTEST "mysqltest" uses <b>diff</b>
+      command with <b>`--color`='always'</b> option to print the
+      colored diff. If the command fails or is not supported, @ref
+      PAGE_MYSQLTEST "mysqltest" will report an error and abort the
+      test run.
+
+      @note
+      <b>`--color`</b> option for <b>diff</b> command is available
+      from <b>GNU diffutils</b> version <b>3.4</b>.
+    </li>
+
+    <li>
       <tt>`--compress`, -C</tt>
 
       Compress all information sent between the client and the server
@@ -4050,6 +4066,22 @@
     </li>
 
     <li>
+      <tt>`--colored-diff`</tt>
+
+      Colorize the diff part of the output.
+
+      When this option is enabled, @ref PAGE_MYSQL_TEST_RUN_PL
+      "mysql-test-run.pl" passes <b>`--colored-diff`</b> option to
+      @ref PAGE_MYSQLTEST "mysqltest". If colored diff is enabled,
+      @ref PAGE_MYSQLTEST "mysqltest" uses <b>diff</b> command with
+      <b>`--color`='always'</b> option to print the colored diff.
+
+      @note
+      <b>`--color`</b> option for <b>diff</b> command is available
+      from <b>GNU diffutils</b> version <b>3.4</b>.
+    </li>
+
+    <li>
       <tt>`--combination`=<b>value</b></tt>
 
       Extra option to pass to <b>mysqld</b>. The value should consist
@@ -4177,26 +4209,25 @@
     </li>
 
     <li>
-      <tt>`--discover`</tt>
-
-      Attempt to preload <b>discover</b>, the Developer Studio
-      Memory Error Discovery Tool when starting <b>mysqld</b>. Reports
-      from <b>discover</b> may be found in
-      <b>log/mysqld.%p.txt</b> under the directory given by
-      <b>`--vardir`</b>. It is supported only on SPARC-M7 systems.
-    </li>
-
-    <li>
       <tt>`--do-suite`=<b>prefix or regex</b></tt>
 
       Run all test cases from suites having a name that begins with
       the given <b><em>prefix</em></b> value or matches the regular
-      expression. If the argument matches no existing suites, @ref
+      expression. If the argument matches no existing suite, @ref
       PAGE_MYSQL_TEST_RUN_PL "mysql-test-run.pl" aborts.
 
       The argument for the <b>`--do-suite`</b> option allows more
       flexible specification of which tests to perform. See the
       description of the <b>`--do-test`</b> option for details.
+
+      In case a suite or a list of suites is specified using the
+      <b>`--suite`</b> option along with a pattern or regular
+      expression given through <b>`--do-suite`</b>, only suite(s)
+      from the list which match the prefix or regular expression
+      are picked up.
+
+      When the <b>`--do-suite`</b> option is specified more than once
+      on the command line, only the last occurrence is considered.
     </li>
 
     <li>
@@ -4298,21 +4329,6 @@
       @note
       This option is enabled by default when test cases are specified
       on command line.
-    </li>
-
-    <li>
-      <tt>`--experimental`=<b>file_name</b></tt>
-
-      Specify a file that contains a list of test cases that should be
-      displayed with the <b>[ exp-fail ]</b> code rather than
-      <b>[ fail ]</b> if they fail.
-
-      For an example of a file that might be specified using this
-      option, see <b>mysql-test/collections/default.experimental</b>.
-
-      It is also possible to supply more than one
-      <b>`--experimental`</b>, test cases listed in all the files will
-      be treated as experimental.
     </li>
 
     <li>
@@ -4505,9 +4521,8 @@
 
       Stop execution after the specified number of tests have failed,
       to avoid using up resources (and time) in case of massive
-      failures. retries are noe counted, nor are failures of tests
-      marked experimental. Defaults to 10, set to 0 for no limit. May
-      also be set with the environment variable
+      failures. retries are noe counted. Defaults to 10, set to 0 for
+      no limit. May also be set with the environment variable
       <b>MTR_MAX_TEST_FAIL</b>.
     </li>
 
@@ -4577,24 +4592,6 @@
     </li>
 
     <li>
-      <tt>`--nocheck-testcases`</tt>
-
-      Disable the check for test case side effects. For additional
-      information, see the description of the
-      <b>`--check-testcases`</b> option.
-    </li>
-
-    <li>
-      <tt>`--noreorder`</tt>
-
-      Do not reorder tests to reduce number of restarts, but run them
-      in exactly the order given. If a whole suite is to be run, the
-      tests are run in alphabetic order, though similiar combinations
-      will be grouped together. If more than one suite is listed, the
-      tests are run one suite at a time, in the order listed.
-    </li>
-
-    <li>
       <tt>`--no-skip`</tt>
 
       This option forces all tests to run, ignoring any
@@ -4610,6 +4607,24 @@
       @verbatim
   shell> mysql-test-run.pl --suite=innodb --no-skip
       @endverbatim
+    </li>
+
+    <li>
+      <tt>`--nocheck-testcases`</tt>
+
+      Disable the check for test case side effects. For additional
+      information, see the description of the
+      <b>`--check-testcases`</b> option.
+    </li>
+
+    <li>
+      <tt>`--noreorder`</tt>
+
+      Do not reorder tests to reduce number of restarts, but run them
+      in exactly the order given. If a whole suite is to be run, the
+      tests are run in alphabetic order, though similiar combinations
+      will be grouped together. If more than one suite is listed, the
+      tests are run one suite at a time, in the order listed.
     </li>
 
     <li>
@@ -5002,11 +5017,33 @@
     </li>
 
     <li>
-      <tt>`--suite`=<b>suite_name</b></tt>
+      <tt>`--suite(s)`=<b>{suite_name|suite_list|suite_set}</b></tt>
 
-      Run the named test suite. The default name is <b>main</b> (the
-      regular test suite located in the <b>mysql-test</b>
-      directory).
+      Run a suite or a comma separated list of suites or those suites
+      which fall under the specified suite set. If the option is not
+      specified explicitly, MTR assumes that it needs to use the
+      default suite set for the test run.
+
+      The suite set's MTR can use are case insensitive and take the
+      below values:
+      @verbatim
+  default     - To run the default list of suites.
+  all         - To scan the mysql directory and run all available suites.
+  non-default - To scan the mysql directory for available suites and
+                collect only the non-default suites.
+      @endverbatim
+
+      The suite set 'all' is used implicitly if neither a suite nor a
+      suite list is specified and\n
+      (i)  There are tests given on the MTR command line <b>or</b>\n
+      (ii) Any of the following options are used: <b>--do-suite</b>,
+      <b>--do-test</b>, <b>--do-test-list</b>.
+
+      Note that suite sets 'all' and 'non-default' do not include ndb test
+      suites in case ndb cluster is not enabled.
+
+      If a suite set is specified in the suite list, MTR does not treat it
+      as a suite set and considers it as the name of a suite to be run.
     </li>
 
     <li>
@@ -5024,25 +5061,26 @@
     </li>
 
     <li>
-      <tt>`--test-progress`</tt>
+      <tt>`--test-progress`[={0|1}]</tt>
 
-      Print the percentage of tests completed. This option is disabled
-      by default.
+      Print the percentage of tests completed. This option is enabled
+      by default. The argument to <b>`--test-progress`</b> is
+      optional. To disable it, set the value to <b>0</b>.
 
       For example, consider a test suite <b>sample_test_suite</b>
-      containing  3 tests.
+      containing 3 tests.
 
       @verbatim
-  ./mysql-test-run.pl --suite=sample_test_suite --test-progress
+  ./mysql-test-run.pl --suite=sample_test_suite [--test-progress]
       @endverbatim
 
       Running the suite with <b>`--test-progress`</b> option enabled
       will print the percentage of tests completed.
 
       @verbatim
-  [ 34%] test_suite.1st                           [ pass ]      1
-  [ 67%] test_suite.2nd                           [ pass ]      1
-  [100%] test_suite.3rd                           [ pass ]      1
+  [ 33%] sample_test_suite.1st                           [ pass ]      1
+  [ 66%] sample_test_suite.2nd                           [ pass ]      1
+  [100%] sample_test_suite.3rd                           [ pass ]      1
       @endverbatim
     </li>
 
@@ -6195,21 +6233,6 @@
     </li>
 
     <li>
-      <tt>disable_parsing</tt>, <tt>enable_parsing</tt>
-
-      Disable or enable query parsing. This setting is enabled by
-      default. When disabled, @ref PAGE_MYSQLTEST "mysqltest" ignores
-      everything until <b>enable_parsing</b>. These commands are
-      useful for "commenting out" a section from a test case without
-      having to add a comment marker to every single line.
-
-      @verbatim
-  --disable_parsing
-  --enable_parsing
-      @endverbatim
-    </li>
-
-    <li>
       <tt>disable_ps_protocol</tt>, <tt>enable_ps_protocol</tt>
 
       Disable or enable prepared-statement protocol. This setting is
@@ -6288,6 +6311,27 @@
       @verbatim
   --disable_session_track_info
   --enable_session_track_info
+      @endverbatim
+    </li>
+
+    <li>
+      <tt>disable_testcase bug_number</tt>, <tt>enable_testcase</tt>
+
+      Disable or enable a section from a test case. This setting is
+      enabled by default. When disabled, @ref PAGE_MYSQLTEST
+      "mysqltest" ignores everything until <b>enable_testcase</b>.
+      These commands are useful for disabling a section inside a
+      <b>.test</b> file that fails due to a known bug, without having
+      to disable the entire test case.
+
+      Bug number is a mandatory argument to <b>disable_testcase</b>
+      command and it should be in <b>BUG\#XXXX</b> format where keyword
+      <b>BUG</b> is case-insensitive and <b>XXXX</b> should contain
+      only digits.
+
+      @verbatim
+  --disable_testcase BUG#XXXX
+  --enable_testcase
       @endverbatim
     </li>
 

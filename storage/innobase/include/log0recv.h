@@ -595,6 +595,10 @@ use these free frames to read in pages when we start applying the
 log records to the database. */
 extern ulint recv_n_pool_free_frames;
 
+/** A list of tablespaces for which (un)encryption process was not
+completed before crash. */
+extern std::list<space_id_t> recv_encr_ts_list;
+
 /** Check the 4-byte checksum to the trailer checksum field of a log
 block.
 @param[in]  block pointer to a log block
@@ -618,10 +622,12 @@ void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn, lsn_t end_lsn);
 /** Adds data from a new log block to the parsing buffer of recv_sys if
 recv_sys->parse_start_lsn is non-zero.
 @param[in]  log_block   log block
-@param[in]  scanned_lsn   lsn of how far we were able
-                                        to find data in this log block
+@param[in]  scanned_lsn  lsn of how far we were able
+                         to find data in this log block
+@param[in]  len          0 if full block or length of the data to add
 @return true if more data added */
-bool recv_sys_add_to_parsing_buf(const byte *log_block, lsn_t scanned_lsn);
+bool recv_sys_add_to_parsing_buf(const byte *log_block, lsn_t scanned_lsn,
+                                 ulint len);
 
 /** Moves the parsing buffer data left to the buffer start. */
 void recv_reset_buffer();

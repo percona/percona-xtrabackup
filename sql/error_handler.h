@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,15 +23,20 @@
 #ifndef ERROR_HANDLER_INCLUDED
 #define ERROR_HANDLER_INCLUDED
 
+#include <string>
+
 #include <stddef.h>
 #include <sys/types.h>
 
 #include "mysqld_error.h"   // ER_*
 #include "sql/sql_error.h"  // Sql_condition
 
+class Create_field;
+class Field;
 class String;
 class THD;
 struct TABLE_LIST;
+class handler;
 
 /**
   This class represents the interface for internal error handlers.
@@ -41,6 +46,10 @@ struct TABLE_LIST;
 class Internal_error_handler {
  protected:
   Internal_error_handler() : m_prev_internal_handler(NULL) {}
+
+  Internal_error_handler *prev_internal_handler() const {
+    return m_prev_internal_handler;
+  }
 
   virtual ~Internal_error_handler() {}
 
@@ -282,6 +291,44 @@ class Strict_error_handler : public Internal_error_handler {
   enum_set_select_behavior m_set_select_behavior;
 };
 
+/**
+  The purpose of this error handler is to print out more user friendly error
+  messages when an error regarding a functional index happens. Since functional
+  indexes are implemented as hidden generated columns with an auto-generated
+  name, we would end up printing errors like "Out of range value for column
+  '912ec803b2ce49e4a541068d495ab570' at row 0". With this error handler, we
+  end up printing something like "Out of range value for functional index
+  'functional_index_2' at row 0" instead.
+
+  The handler keeps track of the previous error handler that was in use, and
+  calls that error handler to get the correct severity among other things.
+*/
+class Functional_index_error_handler : public Internal_error_handler {
+ public:
+  Functional_index_error_handler(Field *field, THD *thd);
+
+  Functional_index_error_handler(Create_field *field,
+                                 const std::string &functional_index_name,
+                                 THD *thd);
+
+  Functional_index_error_handler(const std::string &functional_index_name,
+                                 THD *thd);
+
+  bool handle_condition(THD *thd, uint sql_errno, const char *,
+                        Sql_condition::enum_severity_level *level,
+                        const char *message) override;
+
+  ~Functional_index_error_handler();
+
+  void force_error_code(int error_code) { m_force_error_code = error_code; }
+
+ private:
+  std::string m_functional_index_name;
+  THD *m_thd;
+  bool m_pop_error_handler;
+  int m_force_error_code;
+};
+
 //////////////////////////////////////////////////////////////////////////
 
 /**
@@ -352,6 +399,26 @@ class Info_schema_error_handler : public Internal_error_handler {
 
   // Flag to indicate whether deadlock error is handled by the handler or not.
   bool m_error_handled = false;
+};
+
+/**
+   An Internal_error_handler that converts errors related to foreign key
+   constraint checks 'ER_NO_REFERENCED_ROW_2' and 'ER_ROW_IS_REFERENCED_2'
+   to ER_NO_REFERENCED_ROW and ER_ROW_IS_REFERENCED based on privilege checks.
+   This prevents from revealing parent and child tables information respectively
+   when the foreign key constraint check fails and user does not have privileges
+   to access those tables.
+*/
+class Foreign_key_error_handler : public Internal_error_handler {
+  handler *m_table_handler;
+  THD *m_thd;
+
+ public:
+  Foreign_key_error_handler(THD *thd, handler *table_handler)
+      : m_table_handler(table_handler), m_thd(thd) {}
+  virtual bool handle_condition(THD *, uint sql_errno, const char *,
+                                Sql_condition::enum_severity_level *level,
+                                const char *message);
 };
 
 #endif  // ERROR_HANDLER_INCLUDED

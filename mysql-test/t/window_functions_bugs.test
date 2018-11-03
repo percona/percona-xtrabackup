@@ -403,3 +403,36 @@ INSERT INTO t VALUES(0),(1),(2),(3);
 SELECT * FROM (SELECT IF(1, WEEKDAY('1'), ROW_NUMBER() OVER (PARTITION BY f1))
                FROM t) AS a;
 DROP TABLE t;
+
+--echo #
+--echo # Bug#27453155 W->FRAME_BUFFER()->S->DB_TYPE()->DB_TYPE ==
+--echo #              DB_TYPE_INNODB || CNT <= 1 || (W->LA
+--echo #
+CREATE TABLE t(a SMALLINT);
+INSERT INTO t(a) VALUES (-32768), (-1), (32767), (32767), (1);
+SELECT a, COUNT(a) OVER w, LAG(1,13) RESPECT NULLS OVER w
+  FROM t
+  WINDOW w AS (ORDER BY a RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING);
+DROP TABLE t;
+
+--echo #
+--echo # Bug#28105241: WINDOWS FUNC + AGGREGATES: ASSERTION FAILED:
+--echo #               HYBRID_TYPE == DECIMAL_RESULT
+--echo #
+
+DO ST_CROSSES(@g,SUM(SHA(@g))OVER());
+DO UNHEX(SUM(@g)OVER());
+DO BIT_LENGTH(AVG(@f)OVER());
+DO COMPRESS(SUM(' >')OVER());
+DO LTRIM(AVG(LOG2(@c))OVER());
+DO (~(SUM(@f)OVER()));
+DO IS_UUID(SUM(@e)OVER());
+DO TO_BASE64(AVG(@d)OVER());
+
+--echo #
+--echo # Bug#28080199 UBSAN: DECIMAL_ADD, LOAD OF VALUE 53,
+--echo #              WHICH IS NOT A VALID VALUE FOR TYPE
+--echo #
+
+SELECT bit_count(sum(cos(-66365726))over());
+SELECT bit_count(avg(cos(-66365726))over());

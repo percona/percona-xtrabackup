@@ -96,7 +96,8 @@ bool is_update_query(enum enum_sql_command command);
 bool is_explainable_query(enum enum_sql_command command);
 bool is_log_table_write_query(enum enum_sql_command command);
 bool alloc_query(THD *thd, const char *packet, size_t packet_length);
-void mysql_parse(THD *thd, Parser_state *parser_state);
+void mysql_parse(THD *thd, Parser_state *parser_state,
+                 bool force_primary_storage_engine);
 void mysql_reset_thd_for_next_command(THD *thd);
 bool create_select_for_variable(Parse_context *pc, const char *var_name);
 void create_table_set_open_action_and_adjust_tables(LEX *lex);
@@ -276,6 +277,12 @@ bool set_default_collation(HA_CREATE_INFO *create_info,
         with the of CF_NEEDS_AUTOCOMMIT_OFF.
 */
 #define CF_POTENTIAL_ATOMIC_DDL (1U << 19)
+
+/**
+  Statement is depending on the ACL cache, which can be disabled by the
+  --skip-grant-tables server option.
+*/
+#define CF_REQUIRE_ACL_CACHE (1U << 20)
 
 /* Bits in server_command_flags */
 

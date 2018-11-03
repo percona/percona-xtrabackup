@@ -48,6 +48,7 @@
 #include "sql/sql_exception_handler.h"
 #include "sql/sql_list.h"
 #include "sql/sql_show.h"
+#include "sql/sql_table.h"      // create_typelib
 #include "sql/sql_tmp_table.h"  // create_tmp_table_from_fields
 #include "sql/system_variables.h"
 #include "sql/table.h"
@@ -172,9 +173,22 @@ static bool save_json_to_column(THD *thd, Field *field, Json_table_column *col,
   thd->check_for_truncated_fields = warn;
   switch (field->result_type()) {
     case INT_RESULT: {
-      int value = w->coerce_int(col->field_name, &err, cr_error);
+      longlong value = w->coerce_int(col->field_name, &err, cr_error);
+
+      // If the Json_wrapper holds a numeric value, grab the signedness from it.
+      // If not, grab the signedness from the column where we are storing the
+      // value.
+      bool value_unsigned;
+      if (w->type() == enum_json_type::J_INT) {
+        value_unsigned = false;
+      } else if (w->type() == enum_json_type::J_UINT) {
+        value_unsigned = true;
+      } else {
+        value_unsigned = col->is_unsigned;
+      }
+
       if (!err &&
-          (field->store(value, col->is_unsigned) >= TYPE_WARN_OUT_OF_RANGE))
+          (field->store(value, value_unsigned) >= TYPE_WARN_OUT_OF_RANGE))
         err = true;
       break;
     }
@@ -280,6 +294,7 @@ bool Table_function_json::init_json_table_col_lists(THD *thd, uint *nest_idx,
 
   while ((col = li++)) {
     String path;
+    col->is_unsigned = (col->flags & UNSIGNED_FLAG);
     col->m_jds_elt = &m_jds[current_nest_idx];
     if (col->m_jtc_type != enum_jt_column::JTC_NESTED_PATH) {
       col->m_field_idx = m_vt_list.elements;
@@ -289,6 +304,10 @@ bool Table_function_json::init_json_table_col_lists(THD *thd, uint *nest_idx,
         my_error(ER_WRONG_COLUMN_NAME, MYF(0), col->field_name);
         return true;
       }
+      if ((col->sql_type == MYSQL_TYPE_ENUM ||
+           col->sql_type == MYSQL_TYPE_SET) &&
+          !col->interval)
+        col->interval = create_typelib(thd->mem_root, col);
     }
     m_all_columns.push_back(col);
 

@@ -226,11 +226,8 @@ size_t max_pack_length(const List<Create_field> &create_fields) {
 bool prepare_default_value(THD *thd, uchar *buf, const TABLE &table,
                            const Create_field &field, dd::Column *col_obj) {
   // Create a fake field with a real data buffer in which to store the value.
-  Field *regfield = make_field(
-      table.s, buf + 1, field.length, buf, 0, field.sql_type, field.charset,
-      field.geom_type, field.auto_flags, field.interval, field.field_name,
-      field.maybe_null, field.is_zerofill, field.is_unsigned, field.decimals,
-      field.treat_bit_as_char, field.pack_length_override, {field.m_srid});
+  Field *regfield = make_field(field, table.s, buf + 1, buf, 0 /* null_bit */);
+
   bool retval = true;
   if (!regfield) goto err;
 
@@ -240,10 +237,11 @@ bool prepare_default_value(THD *thd, uchar *buf, const TABLE &table,
   // Set if the field may be NULL.
   if (!(field.flags & NOT_NULL_FLAG)) regfield->set_null();
 
-  if (field.def) {
+  if (field.constant_default) {
     // Pointless to store the value of a function as it may not be constant.
-    DBUG_ASSERT(field.def->type() != Item::FUNC_ITEM);
-    type_conversion_status res = field.def->save_in_field(regfield, true);
+    DBUG_ASSERT(field.constant_default->type() != Item::FUNC_ITEM);
+    type_conversion_status res =
+        field.constant_default->save_in_field(regfield, true);
     if (res != TYPE_OK && res != TYPE_NOTE_TIME_TRUNCATED &&
         res != TYPE_NOTE_TRUNCATED) {
       // Clear current error and report ER_INVALID_DEFAULT.

@@ -34,18 +34,19 @@
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_sys.h"
-#include "mysqld_error.h"                         // ER_*
-#include "sql/current_thd.h"                      // current_thd
-#include "sql/dd/impl/dictionary_impl.h"          // Dictionary_impl
-#include "sql/dd/impl/properties_impl.h"          // Properties_impl
-#include "sql/dd/impl/raw/raw_record.h"           // Raw_record
-#include "sql/dd/impl/raw/raw_record_set.h"       // Raw_record_set
-#include "sql/dd/impl/raw/raw_table.h"            // Raw_table
-#include "sql/dd/impl/sdi_impl.h"                 // sdi read/write functions
-#include "sql/dd/impl/tables/columns.h"           // Columns
-#include "sql/dd/impl/tables/foreign_keys.h"      // Foreign_keys
-#include "sql/dd/impl/tables/indexes.h"           // Indexes
-#include "sql/dd/impl/tables/schemata.h"          // Schemata
+#include "mysqld_error.h"                     // ER_*
+#include "sql/current_thd.h"                  // current_thd
+#include "sql/dd/impl/bootstrap_ctx.h"        // dd::bootstrap::DD_bootstrap_ctx
+#include "sql/dd/impl/dictionary_impl.h"      // Dictionary_impl
+#include "sql/dd/impl/properties_impl.h"      // Properties_impl
+#include "sql/dd/impl/raw/raw_record.h"       // Raw_record
+#include "sql/dd/impl/raw/raw_record_set.h"   // Raw_record_set
+#include "sql/dd/impl/raw/raw_table.h"        // Raw_table
+#include "sql/dd/impl/sdi_impl.h"             // sdi read/write functions
+#include "sql/dd/impl/tables/columns.h"       // Columns
+#include "sql/dd/impl/tables/foreign_keys.h"  // Foreign_keys
+#include "sql/dd/impl/tables/indexes.h"       // Indexes
+#include "sql/dd/impl/tables/schemata.h"      // Schemata
 #include "sql/dd/impl/tables/table_partitions.h"  // Table_partitions
 #include "sql/dd/impl/tables/tables.h"            // Tables
 #include "sql/dd/impl/tables/triggers.h"          // Triggers
@@ -82,6 +83,7 @@ Table_impl::Table_impl()
     : m_se_private_id(INVALID_OBJECT_ID),
       m_se_private_data(new Properties_impl()),
       m_row_format(RF_FIXED),
+      m_is_temporary(false),
       m_partition_type(PT_NONE),
       m_default_partitioning(DP_NONE),
       m_subpartition_type(ST_NONE),
@@ -419,6 +421,14 @@ bool Table_impl::restore_attributes(const Raw_record &r) {
 
   m_engine = r.read_str(Tables::FIELD_ENGINE);
 
+  // m_last_checked_for_upgrade_version added in 80012
+  if (bootstrap::DD_bootstrap_ctx::instance().is_upgrade_from_before(
+          bootstrap::DD_VERSION_80013)) {
+    m_last_checked_for_upgrade_version_id = 0;
+  } else {
+    m_last_checked_for_upgrade_version_id =
+        r.read_int(Tables::FIELD_LAST_CHECKED_FOR_UPGRADE_VERSION_ID, 0);
+  }
   m_partition_expression = r.read_str(Tables::FIELD_PARTITION_EXPRESSION, "");
   m_partition_expression_utf8 =
       r.read_str(Tables::FIELD_PARTITION_EXPRESSION_UTF8, "");
@@ -452,6 +462,17 @@ bool Table_impl::store_attributes(Raw_record *r) {
   //   - Store NULL in subpartition expression if not set.
   //   - Store NULL in default subpartitioning if not set.
   //
+
+  // Temporary table definitions are never persisted.
+  DBUG_ASSERT(!m_is_temporary);
+
+  // Store last_checked_for_upgrade_version_id only if we're not upgrading
+  if (!bootstrap::DD_bootstrap_ctx::instance().is_upgrade_from_before(
+          bootstrap::DD_VERSION_80013) &&
+      r->store(Tables::FIELD_LAST_CHECKED_FOR_UPGRADE_VERSION_ID,
+               m_last_checked_for_upgrade_version_id)) {
+    return true;
+  }
 
   // Store field values
   return Abstract_table_impl::store_attributes(r) ||
@@ -488,10 +509,15 @@ bool Table_impl::store_attributes(Raw_record *r) {
 ///////////////////////////////////////////////////////////////////////////
 
 void Table_impl::serialize(Sdi_wcontext *wctx, Sdi_writer *w) const {
+  // Temporary table definitions are never persisted.
+  DBUG_ASSERT(!m_is_temporary);
+
   w->StartObject();
   Abstract_table_impl::serialize(wctx, w);
   write(w, m_se_private_id, STRING_WITH_LEN("se_private_id"));
   write(w, m_engine, STRING_WITH_LEN("engine"));
+  write(w, m_last_checked_for_upgrade_version_id,
+        STRING_WITH_LEN("last_checked_for_upgrade_version_id"));
   write(w, m_comment, STRING_WITH_LEN("comment"));
   write_properties(w, m_se_private_data, STRING_WITH_LEN("se_private_data"));
   write_enum(w, m_row_format, STRING_WITH_LEN("row_format"));
@@ -523,6 +549,8 @@ bool Table_impl::deserialize(Sdi_rcontext *rctx, const RJ_Value &val) {
   Abstract_table_impl::deserialize(rctx, val);
   read(&m_se_private_id, val, "se_private_id");
   read(&m_engine, val, "engine");
+  read(&m_last_checked_for_upgrade_version_id, val,
+       "last_checked_for_upgrade_version_id");
   read(&m_comment, val, "comment");
   read_properties(&m_se_private_data, val, "se_private_data");
   read_enum(&m_row_format, val, "row_format");
@@ -565,11 +593,14 @@ void Table_impl::debug_print(String_type &outb) const {
 
   dd::Stringstream_type ss;
   ss << "TABLE OBJECT: { " << s << "m_engine: " << m_engine << "; "
+     << "m_last_checked_for_upgrade_version_id: "
+     << m_last_checked_for_upgrade_version_id << "; "
      << "m_collation: {OID: " << m_collation_id << "}; "
      << "m_comment: " << m_comment << "; "
      << "m_se_private_data " << m_se_private_data->raw_string() << "; "
      << "m_se_private_id: {OID: " << m_se_private_id << "}; "
      << "m_row_format: " << m_row_format << "; "
+     << "m_is_temporary: " << m_is_temporary << "; "
      << "m_tablespace: {OID: " << m_tablespace_id << "}; "
      << "m_partition_type " << m_partition_type << "; "
      << "m_default_partitioning " << m_default_partitioning << "; "
@@ -915,9 +946,12 @@ Table_impl::Table_impl(const Table_impl &src)
       m_se_private_id(src.m_se_private_id),
       m_engine(src.m_engine),
       m_comment(src.m_comment),
+      m_last_checked_for_upgrade_version_id{
+          src.m_last_checked_for_upgrade_version_id},
       m_se_private_data(Properties_impl::parse_properties(
           src.m_se_private_data->raw_string())),
       m_row_format(src.m_row_format),
+      m_is_temporary(src.m_is_temporary),
       m_partition_type(src.m_partition_type),
       m_partition_expression(src.m_partition_expression),
       m_partition_expression_utf8(src.m_partition_expression_utf8),

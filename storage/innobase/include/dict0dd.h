@@ -489,6 +489,12 @@ inline void dd_copy_table(dd::Table &new_table, const dd::Table &old_table) {
   }
 }
 
+/** Adjust TABLE_ID for partitioned table after ALTER TABLE ... PARTITION.
+This makes sure that the TABLE_ID stored in dd::Column::se_private_data
+is correct if the first partition got changed
+@param[in,out]	new_table	New dd::Table */
+void dd_part_adjust_table_id(dd::Table *new_table);
+
 /** Add column default values for new instantly added columns
 @param[in]	old_table	MySQL table as it is before the ALTER operation
 @param[in]	altered_table	MySQL table that is being altered
@@ -710,14 +716,15 @@ bool dd_process_dd_indexes_rec_simple(mem_heap_t *heap, const rec_t *rec,
 @param[in,out]	space_id	space id
 @param[in,out]	name		space name
 @param[in,out]	flags		space flags
-@param[in]	server_version	space server version
-@param[in]	space_version	space server version
+@param[in,out]	server_version	space server version
+@param[in,out]	space_version	space server version
+@param[in,out]	is_encrypted	true if tablespace is encrypted
 @param[in]	dd_spaces	dict_table_t obj of mysql.tablespaces
 @retval true if index is filled */
 bool dd_process_dd_tablespaces_rec(mem_heap_t *heap, const rec_t *rec,
                                    space_id_t *space_id, char **name,
                                    uint *flags, uint32 *server_version,
-                                   uint32 *space_version,
+                                   uint32 *space_version, bool *is_encrypted,
                                    dict_table_t *dd_spaces);
 /** Make sure the data_dir_path is saved in dict_table_t if DATA DIRECTORY
 was used. Try to read it from the fil_system first, then from new dd.
@@ -1109,6 +1116,10 @@ void dd_tablespace_set_discard(dd::Tablespace *dd_space, bool discard);
 @retval		false		if attribute doesn't exist or if the
                                 tablespace is not discarded */
 bool dd_tablespace_get_discard(const dd::Tablespace *dd_space);
+
+/** Release the MDL held by the given ticket.
+@param[in]  mdl_ticket  tablespace MDL ticket */
+void dd_release_mdl(MDL_ticket *mdl_ticket);
 #endif /* !UNIV_HOTBACKUP */
 
 /** Update all InnoDB tablespace cache objects. This step is done post
@@ -1119,6 +1130,10 @@ Update the cached tablespace objects, if they differ from dictionary
 @retval	false	on success */
 MY_ATTRIBUTE((warn_unused_result))
 bool dd_tablespace_update_cache(THD *thd);
+
+/* Check if the table belongs to an encrypted tablespace.
+@return true if it does. */
+bool dd_is_table_in_encrypted_tablespace(const dict_table_t *table);
 
 #include "dict0dd.ic"
 #endif

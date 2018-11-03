@@ -34,6 +34,7 @@
 #include "sql/dd/info_schema/show.h"      // build_show_...
 #include "sql/dd/types/abstract_table.h"  // dd::enum_table_type::BASE_TABLE
 #include "sql/derror.h"                   // ER_THD
+#include "sql/error_handler.h"
 #include "sql/gis/srid.h"
 #include "sql/item_timefunc.h"
 #include "sql/key_spec.h"
@@ -145,6 +146,10 @@ bool PT_group::contextualize(Parse_context *pc) {
   DBUG_ASSERT(select == pc->select);
 
   select->group_list = group_list->value;
+
+  // group by does not have to provide ordering
+  ORDER *group = select->group_list.first;
+  for (; group; group = group->next) group->direction = ORDER_NOT_RELEVANT;
 
   // Ensure we're resetting parsing place of the right select
   DBUG_ASSERT(select->parsing_place == CTX_GROUP_BY);
@@ -405,6 +410,49 @@ bool PT_option_value_no_option_type_internal::contextualize(Parse_context *pc) {
   return false;
 }
 
+bool PT_option_value_no_option_type_password_for::contextualize(
+    Parse_context *pc) {
+  if (super::contextualize(pc)) return true;
+
+  THD *thd = pc->thd;
+  LEX *lex = thd->lex;
+  set_var_password *var;
+  lex->contains_plaintext_password = true;
+
+  /*
+    In case of anonymous user, user->user is set to empty string with
+    length 0. But there might be case when user->user.str could be NULL.
+    For Ex: "set password for current_user() = password('xyz');".
+    In this case, set user information as of the current user.
+  */
+  if (!user->user.str) {
+    LEX_CSTRING sctx_priv_user = thd->security_context()->priv_user();
+    DBUG_ASSERT(sctx_priv_user.str);
+    user->user.str = sctx_priv_user.str;
+    user->user.length = sctx_priv_user.length;
+  }
+  if (!user->host.str) {
+    LEX_CSTRING sctx_priv_host = thd->security_context()->priv_host();
+    DBUG_ASSERT(sctx_priv_host.str);
+    user->host.str = (char *)sctx_priv_host.str;
+    user->host.length = sctx_priv_host.length;
+  }
+
+  // Current password is specified through the REPLACE clause hence set the flag
+  if (current_password != nullptr) user->uses_replace_clause = true;
+
+  var = new (*THR_MALLOC) set_var_password(
+      user, const_cast<char *>(password), const_cast<char *>(current_password));
+
+  if (var == NULL || lex->var_list.push_back(var)) {
+    return true;  // Out of memory
+  }
+  lex->sql_command = SQLCOM_SET_PASSWORD;
+  if (lex->sphead) lex->sphead->m_flags |= sp_head::HAS_SET_AUTOCOMMIT_STMT;
+  if (sp_create_assignment_instr(pc->thd, expr_pos.raw.end)) return true;
+  return false;
+}
+
 bool PT_option_value_no_option_type_password::contextualize(Parse_context *pc) {
   if (super::contextualize(pc)) return true;
 
@@ -413,30 +461,26 @@ bool PT_option_value_no_option_type_password::contextualize(Parse_context *pc) {
   sp_head *sp = lex->sphead;
   sp_pcontext *pctx = lex->get_sp_current_parsing_ctx();
   LEX_STRING pw = {C_STRING_WITH_LEN("password")};
+  lex->contains_plaintext_password = true;
 
   if (pctx && pctx->find_variable(pw, false)) {
     my_error(ER_SP_BAD_VAR_SHADOW, MYF(0), pw.str);
     return true;
   }
 
-  LEX_USER *user = (LEX_USER *)thd->alloc(sizeof(LEX_USER));
-
-  if (!user) return true;
-
   LEX_CSTRING sctx_user = thd->security_context()->user();
-  user->user.str = (char *)sctx_user.str;
-  user->user.length = sctx_user.length;
-
   LEX_CSTRING sctx_priv_host = thd->security_context()->priv_host();
   DBUG_ASSERT(sctx_priv_host.str);
-  user->host.str = (char *)sctx_priv_host.str;
-  user->host.length = sctx_priv_host.length;
 
-  set_var_password *var =
-      new (*THR_MALLOC) set_var_password(user, const_cast<char *>(password));
-  if (var == NULL) return true;
+  LEX_USER *user = LEX_USER::alloc(thd, (LEX_STRING *)&sctx_user,
+                                   (LEX_STRING *)&sctx_priv_host);
+  if (!user) return true;
 
-  lex->var_list.push_back(var);
+  set_var_password *var = new (*THR_MALLOC) set_var_password(
+      user, const_cast<char *>(password), const_cast<char *>(current_password));
+  if (var == NULL || lex->var_list.push_back(var)) {
+    return true;  // Out of Memory
+  }
   lex->sql_command = SQLCOM_SET_PASSWORD;
 
   if (sp) sp->m_flags |= sp_head::HAS_SET_AUTOCOMMIT_STMT;
@@ -444,6 +488,21 @@ bool PT_option_value_no_option_type_password::contextualize(Parse_context *pc) {
   if (sp_create_assignment_instr(pc->thd, expr_pos.raw.end)) return true;
 
   return false;
+}
+
+PT_key_part_specification::PT_key_part_specification(Item *expression,
+                                                     enum_order order)
+    : m_expression(expression), m_order(order) {}
+
+PT_key_part_specification::PT_key_part_specification(
+    const LEX_CSTRING &column_name, enum_order order, int prefix_length)
+    : m_expression(nullptr),
+      m_order(order),
+      m_column_name(column_name),
+      m_prefix_length(prefix_length) {}
+
+bool PT_key_part_specification::contextualize(Parse_context *pc) {
+  return super::contextualize(pc) || itemize_safe(pc, &m_expression);
 }
 
 bool PT_select_sp_var::contextualize(Parse_context *pc) {
@@ -1046,20 +1105,21 @@ bool PT_union::contextualize(Parse_context *pc) {
 
 static bool setup_index(keytype key_type, const LEX_STRING name,
                         PT_base_index_option *type,
-                        List<Key_part_spec> *columns, Index_options options,
-                        Table_ddl_parse_context *pc) {
+                        List<PT_key_part_specification> *columns,
+                        Index_options options, Table_ddl_parse_context *pc) {
   *pc->key_create_info = default_key_create_info;
 
   if (type != NULL && type->contextualize(pc)) return true;
 
   if (contextualize_nodes(options, pc)) return true;
 
+  List_iterator<PT_key_part_specification> li(*columns);
+  PT_key_part_specification *kp;
+
   if ((key_type == KEYTYPE_FULLTEXT || key_type == KEYTYPE_SPATIAL ||
        pc->key_create_info->algorithm == HA_KEY_ALG_HASH)) {
-    List_iterator<Key_part_spec> li(*columns);
-    Key_part_spec *kp;
     while ((kp = li++)) {
-      if (kp->is_explicit) {
+      if (kp->is_explicit()) {
         my_error(ER_WRONG_USAGE, MYF(0), "spatial/fulltext/hash index",
                  "explicit index order");
         return true;
@@ -1067,9 +1127,26 @@ static bool setup_index(keytype key_type, const LEX_STRING name,
     }
   }
 
+  List<Key_part_spec> cols;
+  for (PT_key_part_specification &kp : *columns) {
+    if (kp.contextualize(pc)) return true;
+
+    Key_part_spec *spec;
+    if (kp.has_expression()) {
+      spec =
+          new (pc->mem_root) Key_part_spec(kp.get_expression(), kp.get_order());
+    } else {
+      spec = new (pc->mem_root) Key_part_spec(
+          kp.get_column_name(), kp.get_prefix_length(), kp.get_order());
+    }
+    if (spec == nullptr || cols.push_back(spec)) {
+      return true; /* purecov: deadcode */
+    }
+  }
+
   Key_spec *key =
-      new (*THR_MALLOC) Key_spec(pc->mem_root, key_type, to_lex_cstring(name),
-                                 pc->key_create_info, false, true, *columns);
+      new (pc->mem_root) Key_spec(pc->mem_root, key_type, to_lex_cstring(name),
+                                  pc->key_create_info, false, true, cols);
   if (key == NULL || pc->alter_info->key_list.push_back(key)) return true;
 
   return false;
@@ -1188,18 +1265,29 @@ bool PT_foreign_key_definition::contextualize(Table_ddl_parse_context *pc) {
     return true;
   }
 
-  Key_spec *foreign_key = new (*THR_MALLOC)
-      Foreign_key_spec(thd->mem_root, used_name, *m_columns, db, orig_db,
-                       table_name, m_referenced_table->table, m_ref_list,
-                       m_fk_delete_opt, m_fk_update_opt, m_fk_match_option);
+  List<Key_part_spec> cols;
+  for (PT_key_part_specification &kp : *m_columns) {
+    if (kp.contextualize(pc)) return true;
+
+    Key_part_spec *spec = new (pc->mem_root) Key_part_spec(
+        kp.get_column_name(), kp.get_prefix_length(), kp.get_order());
+    if (spec == nullptr || cols.push_back(spec)) {
+      return true; /* purecov: deadcode */
+    }
+  }
+
+  Key_spec *foreign_key = new (pc->mem_root)
+      Foreign_key_spec(pc->mem_root, used_name, cols, db, orig_db, table_name,
+                       m_referenced_table->table, m_ref_list, m_fk_delete_opt,
+                       m_fk_update_opt, m_fk_match_option);
   if (foreign_key == NULL || pc->alter_info->key_list.push_back(foreign_key))
     return true;
   /* Only used for ALTER TABLE. Ignored otherwise. */
   pc->alter_info->flags |= Alter_info::ADD_FOREIGN_KEY;
 
-  Key_spec *key = new (*THR_MALLOC)
-      Key_spec(thd->mem_root, KEYTYPE_MULTIPLE, used_name,
-               &default_key_create_info, true, true, *m_columns);
+  Key_spec *key =
+      new (pc->mem_root) Key_spec(thd->mem_root, KEYTYPE_MULTIPLE, used_name,
+                                  &default_key_create_info, true, true, cols);
   if (key == NULL || pc->alter_info->key_list.push_back(key)) return true;
 
   return false;
@@ -1295,6 +1383,15 @@ bool PT_create_table_engine_option::contextualize(Table_ddl_parse_context *pc) {
   const bool is_temp_table = pc->create_info->options & HA_LEX_CREATE_TMP_TABLE;
   return resolve_engine(pc->thd, engine, is_temp_table, false,
                         &pc->create_info->db_type);
+}
+
+bool PT_create_table_secondary_engine_option::contextualize(
+    Table_ddl_parse_context *pc) {
+  if (super::contextualize(pc)) return true;
+
+  pc->create_info->used_fields |= HA_CREATE_USED_SECONDARY_ENGINE;
+  pc->create_info->secondary_engine = m_secondary_engine;
+  return false;
 }
 
 bool PT_create_stats_auto_recalc_option::contextualize(
@@ -1447,7 +1544,8 @@ bool PT_column_def::contextualize(Table_ddl_parse_context *pc) {
       field_def->on_update_value, &field_def->comment, NULL,
       field_def->interval_list, field_def->charset,
       field_def->has_explicit_collation, field_def->uint_geom_type,
-      field_def->gcol_info, opt_place, field_def->m_srid);
+      field_def->gcol_info, field_def->default_val_info, opt_place,
+      field_def->m_srid, dd::Column::enum_hidden_type::HT_VISIBLE);
 }
 
 Sql_cmd *PT_create_table_stmt::make_cmd(THD *thd) {
@@ -1702,7 +1800,8 @@ bool PT_alter_table_change_column::contextualize(Table_ddl_parse_context *pc) {
       m_field_def->on_update_value, &m_field_def->comment, m_old_name.str,
       m_field_def->interval_list, m_field_def->charset,
       m_field_def->has_explicit_collation, m_field_def->uint_geom_type,
-      m_field_def->gcol_info, m_opt_place, m_field_def->m_srid);
+      m_field_def->gcol_info, m_field_def->default_val_info, m_opt_place,
+      m_field_def->m_srid, dd::Column::enum_hidden_type::HT_VISIBLE);
 }
 
 bool PT_alter_table_rename::contextualize(Table_ddl_parse_context *pc) {
@@ -2207,12 +2306,14 @@ bool PT_json_table_column_with_path::contextualize(Parse_context *pc) {
                 nullptr,                       // On update value
                 &EMPTY_STR,                    // Comment
                 nullptr,                       // Change
-                nullptr,                       // Interval list
+                m_type->get_interval_list(),   // Interval list
                 cs,                            // Charset
                 false,                         // No "COLLATE" clause
                 m_type->get_uint_geom_type(),  // Geom type
-                NULL,                          // Gcol_info
-                {});                           // SRID
+                nullptr,                       // Gcol_info
+                nullptr,                       // Default gen expression
+                {},                            // SRID
+                dd::Column::enum_hidden_type::HT_VISIBLE);  // Hidden
   return false;
 }
 

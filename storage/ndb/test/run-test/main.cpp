@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -78,6 +78,7 @@ const char *g_prefix = NULL;
 const char *g_prefix0 = NULL;
 const char *g_prefix1 = NULL;
 const char *g_clusters = 0;
+const char *g_config_type = NULL;  // "cnf" or "ini"
 const char *g_site = NULL;
 BaseString g_replicate;
 const char *save_file = 0;
@@ -112,6 +113,7 @@ static struct {
 const char *g_search_path[] = {"bin", "libexec",   "sbin", "scripts",
                                "lib", "lib/mysql", 0};
 static bool find_binaries();
+static bool find_config_ini_files();
 
 static struct my_option g_options[] = {
     {"help", '?', "Display this help and exit.", (uchar **)&g_help,
@@ -122,6 +124,8 @@ static struct my_option g_options[] = {
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"clusters", 256, "Cluster", (uchar **)&g_clusters, (uchar **)&g_clusters,
      0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"config-type", 256, "cnf (default) or ini", (uchar **)&g_config_type,
+     (uchar **)&g_config_type, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"mysqld", 256, "atrt mysqld", (uchar **)&g_mysqld_host,
      (uchar **)&g_mysqld_host, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"replicate", 1024, "replicate", (uchar **)&g_dummy, (uchar **)&g_dummy, 0,
@@ -198,7 +202,8 @@ int main(int argc, char **argv) {
     exit(check_testcase_file_main(argc, argv));
   }
 
-  if (!parse_args(argc, argv)) {
+  MEM_ROOT alloc = MEM_ROOT{PSI_NOT_INSTRUMENTED, 512};
+  if (!parse_args(argc, argv, &alloc)) {
     g_logger.critical("Failed to parse arguments");
     goto end;
   }
@@ -210,10 +215,26 @@ int main(int argc, char **argv) {
     goto end;
   }
 
+  g_config.m_config_type = atrt_config::CNF;
+  if (g_config_type != NULL && strcmp(g_config_type, "ini") == 0) {
+    g_logger.info("Using config.ini for cluster configuration");
+    g_config.m_config_type = atrt_config::INI;
+
+    if (!find_config_ini_files()) {
+      g_logger.critical("Failed to find required config.ini files");
+      goto end;
+    }
+  }
+
   g_config.m_generated = false;
   g_config.m_replication = g_replicate;
   if (!setup_config(g_config, g_mysqld_host)) {
     g_logger.critical("Failed to setup configuration");
+    goto end;
+  }
+
+  if (!g_config.m_processes.size()) {
+    g_logger.critical("Error: No processes defined in cluster configuration");
     goto end;
   }
 
@@ -419,19 +440,11 @@ int main(int argc, char **argv) {
         goto cleanup;
       }
 
-      if (is_running(g_config, p_ndb) != 2) {
-        g_logger.critical("Failure on data/mgmd node(s)");
-        result = ERR_NDB_FAILED;
+      if ((result = check_ndb_or_servers_failures(g_config))) {
         break;
       }
 
-      if (is_running(g_config, p_servers) != 2) {
-        g_logger.critical("Failure on server(s)");
-        result = ERR_SERVERS_FAILED;
-        break;
-      }
-
-      if (is_running(g_config, p_clients) == 0) {
+      if (!is_client_running(g_config)) {
         break;
       }
 
@@ -549,7 +562,7 @@ extern "C" bool get_one_option(int arg, const struct my_option *opt,
   return 0;
 }
 
-bool parse_args(int argc, char **argv) {
+bool parse_args(int argc, char **argv, MEM_ROOT *alloc) {
   bool fail_after_help = false;
   char buf[2048];
   if (getcwd(buf, sizeof(buf)) == 0) {
@@ -582,7 +595,6 @@ bool parse_args(int argc, char **argv) {
   g_logger.info("Bootstrapping using %s", mycnf.c_str());
 
   const char *groups[] = {"atrt", 0};
-  MEM_ROOT *alloc = new MEM_ROOT{PSI_NOT_INSTRUMENTED, 512};  // LEAK
   int ret = load_defaults(mycnf.c_str(), groups, &argc, &argv, alloc);
 
   if (ret) {
@@ -1082,7 +1094,8 @@ bool stop_process(atrt_process &proc) {
         BaseString msg;
         reply.get("errormessage", msg);
         g_logger.error(
-            "Unable to stop process id: %d host: %s cmd: %s, msg: %s, status: %d",
+            "Unable to stop process id: %d host: %s cmd: %s, "
+            "msg: %s, status: %d",
             proc.m_proc.m_id, proc.m_host->m_hostname.c_str(),
             proc.m_proc.m_path.c_str(), msg.c_str(), status);
         return false;
@@ -1166,25 +1179,39 @@ bool update_status(atrt_config &config, int types, bool fail_on_missing) {
   return true;
 }
 
-int is_running(atrt_config &config, int types) {
-  int found = 0, running = 0;
+int check_ndb_or_servers_failures(atrt_config &config) {
+  int failed_processes = 0;
+  const int types = p_ndb | p_servers;
   for (unsigned i = 0; i < config.m_processes.size(); i++) {
     atrt_process &proc = *config.m_processes[i];
-    if ((types & proc.m_type) != 0) {
-      found++;
-      if (proc.m_proc.m_status == "running")
-        running++;
-      else {
-        if (IF_WIN(proc.m_type & atrt_process::AP_MYSQLD, 0)) {
-          running++;
-        }
-      }
+    bool skip = IF_WIN(proc.m_type & atrt_process::AP_MYSQLD, 0);
+    bool isRunning = proc.m_proc.m_status == "running";
+    if ((types & proc.m_type) != 0 && !isRunning && !skip) {
+      g_logger.critical("%s #%d not running on %s", proc.m_name.c_str(),
+                        proc.m_index, proc.m_host->m_hostname.c_str());
+      failed_processes |= proc.m_type;
     }
   }
+  if ((failed_processes & p_ndb) && (failed_processes & p_servers)) {
+    return ERR_NDB_AND_SERVERS_FAILED;
+  }
+  if ((failed_processes & p_ndb) != 0) {
+    return ERR_NDB_FAILED;
+  }
+  if ((failed_processes & p_servers) != 0) {
+    return ERR_SERVERS_FAILED;
+  }
+  return 0;
+}
 
-  if (found == running) return 2;
-  if (running == 0) return 0;
-  return 1;
+bool is_client_running(atrt_config &config) {
+  for (unsigned i = 0; i < config.m_processes.size(); i++) {
+    atrt_process &proc = *config.m_processes[i];
+    if ((p_clients & proc.m_type) != 0 && proc.m_proc.m_status == "running") {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool wait_for_processes_to_stop(atrt_config &config, int types, int retries,
@@ -1654,6 +1681,29 @@ static bool find_binaries() {
     }
   }
   return ok;
+}
+
+static bool find_config_ini_files() {
+  g_logger.info("Locating config.ini files...");
+
+  BaseString tmp(g_clusters);
+  Vector<BaseString> clusters;
+  tmp.split(clusters, ",");
+
+  bool found = true;
+  for (unsigned int i = 0; i < clusters.size(); i++) {
+    BaseString config_ini_path(g_cwd);
+    const char *cluster_name = clusters[i].c_str();
+    config_ini_path.appfmt("%sconfig%s.ini", PATH_SEPARATOR, cluster_name);
+    to_native(config_ini_path);
+
+    if (!exists_file(config_ini_path.c_str())) {
+      g_logger.critical("Failed to locate '%s'", config_ini_path.c_str());
+      found = false;
+    }
+  }
+
+  return found;
 }
 
 template class Vector<Vector<SimpleCpcClient::Process> >;

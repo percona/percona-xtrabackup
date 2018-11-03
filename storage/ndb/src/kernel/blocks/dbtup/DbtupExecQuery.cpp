@@ -47,8 +47,11 @@
 #ifdef VM_TRACE
 //#define DEBUG_LCP 1
 //#define DEBUG_DELETE 1
+//#define DEBUG_DELETE_NR 1
 //#define DEBUG_LCP_LGMAN 1
+//#define DEBUG_LCP_SKIP_DELETE 1
 #endif
+
 #ifdef DEBUG_LCP
 #define DEB_LCP(arglist) do { g_eventLogger->info arglist ; } while (0)
 #else
@@ -59,6 +62,18 @@
 #define DEB_DELETE(arglist) do { g_eventLogger->info arglist ; } while (0)
 #else
 #define DEB_DELETE(arglist) do { } while (0)
+#endif
+
+#ifdef DEBUG_LCP_SKIP_DELETE
+#define DEB_LCP_SKIP_DELETE(arglist) do { g_eventLogger->info arglist ; } while (0)
+#else
+#define DEB_LCP_SKIP_DELETE(arglist) do { } while (0)
+#endif
+
+#ifdef DEBUG_DELETE_NR
+#define DEB_DELETE_NR(arglist) do { g_eventLogger->info arglist ; } while (0)
+#else
+#define DEB_DELETE_NR(arglist) do { } while (0)
 #endif
 
 #ifdef DEBUG_LCP_LGMAN
@@ -248,13 +263,25 @@ Dbtup::corruptedTupleDetected(KeyReqStruct *req_struct, Tablerec *regTabPtr)
 {
   Uint32 checksum = calculateChecksum(req_struct->m_tuple_ptr, regTabPtr);
   Uint32 header_bits = req_struct->m_tuple_ptr->m_header_bits;
+  Uint32 tableId = req_struct->fragPtrP->fragTableId;
+  Uint32 fragId = req_struct->fragPtrP->fragmentId;
+  Uint32 page_id = prepare_frag_page_id;
+  Uint32 page_idx = prepare_page_idx;
+
   ndbout_c("Tuple corruption detected, checksum: 0x%x, header_bits: 0x%x"
-           ", checksum word: 0x%x",
-           checksum, header_bits, req_struct->m_tuple_ptr->m_checksum); 
+           ", checksum word: 0x%x"
+           ", tab(%u,%u), page(%u,%u)",
+           checksum,
+           header_bits,
+           req_struct->m_tuple_ptr->m_checksum,
+           tableId,
+           fragId,
+           page_id,
+           page_idx);
   if (c_crashOnCorruptedTuple && !ERROR_INSERTED(4036))
   {
     ndbout_c(" Exiting."); 
-    ndbrequire(false);
+    ndbabort();
   }
   (void)ERROR_INSERTED_CLEAR(4036);
   terrorCode= ZTUPLE_CORRUPTED_ERROR;
@@ -668,16 +695,18 @@ void Dbtup::prepareTUPKEYREQ(Uint32 page_id,
 
   if (is_page_key)
   {
-    register Uint32 fixed_part_size_in_words =
+    Uint32 fixed_part_size_in_words =
       tabptr.p->m_offsets[MM].m_fix_header_size;
+    prepare_frag_page_id = page_id;
     page_id = getRealpid(fragptr.p, page_id);
     key.m_page_no = page_id;
     key.m_page_idx = page_idx;
-    register Uint32 *tuple_ptr = get_ptr(&pagePtr,
+    Uint32 *tuple_ptr = get_ptr(&pagePtr,
                                          &key,
                                          tabptr.p);
     jamDebug();
     prepare_pageptr = pagePtr;
+    prepare_page_idx = page_idx;
     prepare_tuple_ptr = tuple_ptr;
     prepare_page_no = page_id;
     for (Uint32 i = 0; i < fixed_part_size_in_words; i+= 16)
@@ -798,7 +827,7 @@ bool Dbtup::execTUPKEYREQ(Signal* signal)
  /* -----------    INITIATE THE OPERATION RECORD       -------------- */
  /* ----------------------------------------------------------------- */
    {
-     register Operationrec::OpStruct op_struct;
+     Operationrec::OpStruct op_struct;
      op_struct.op_bit_fields = regOperPtr->op_struct.op_bit_fields;
      const Uint32 TrequestInfo= tupKeyReq->request;
      const Uint32 disable_fk_checks = tupKeyReq->disable_fk_checks;
@@ -1190,7 +1219,7 @@ bool Dbtup::execTUPKEYREQ(Signal* signal)
      }
      else
      {
-       ndbrequire(false); // Invalid op type
+       ndbabort(); // Invalid op type
      }
    }
 
@@ -3088,11 +3117,11 @@ int Dbtup::interpreterNextLab(Signal* signal,
 			      Uint32 * tmpArea,
 			      Uint32 tmpAreaSz)
 {
-  register Uint32* TcurrentProgram= mainProgram;
-  register Uint32 TcurrentSize= TmainProgLen;
-  register Uint32 TprogramCounter= 0;
-  register Uint32 theInstruction;
-  register Uint32 theRegister;
+  Uint32 theRegister;
+  Uint32 theInstruction;
+  Uint32 TprogramCounter= 0;
+  Uint32* TcurrentProgram= mainProgram;
+  Uint32 TcurrentSize= TmainProgLen;
   Uint32 TdataWritten= 0;
   Uint32 RstackPtr= 0;
   union {
@@ -3183,7 +3212,7 @@ int Dbtup::interpreterNextLab(Signal* signal,
 	    // Any other return value from the read attribute here is not 
 	    // allowed and will lead to a system crash.
 	    /* ------------------------------------------------------------- */
-	    ndbrequire(false);
+	    ndbabort();
 	  }
 	  break;
 	}
@@ -4791,16 +4820,94 @@ Dbtup::nr_delete(Signal* signal, Uint32 senderData,
   Local_key disk;
   memcpy(&disk, ptr->get_disk_ref_ptr(tablePtr.p), sizeof(disk));
 
-  DEB_DELETE(("(%u)nr_delete, tab(%u,%u) row(%u,%u), gci: %u",
-               instance(),
-               fragPtr.p->fragTableId,
-               fragPtr.p->fragmentId,
-               key->m_page_no,
-               key->m_page_idx,
-               *ptr->get_mm_gci(tablePtr.p)));
+  Uint32 lcpScan_ptr_i= fragPtr.p->m_lcp_scan_op;
+  Uint32 bits = ptr->m_header_bits;
+  if (lcpScan_ptr_i != RNIL &&
+      ! (bits & (Tuple_header::LCP_SKIP |
+                 Tuple_header::LCP_DELETE |
+                 Tuple_header::ALLOC)))
+  {
+    /**
+     * We are performing a node restart currently, at the same time we
+     * are also running a LCP on the fragment. This can happen when the
+     * UNDO log level becomes too high. In this case we can start a full
+     * local LCP during the copy fragment process.
+     *
+     * Since we are about to delete a row now, we have to ensure that the
+     * lcp keep list gets this row before we delete it. This will ensure
+     * that the LCP becomes a consistent LCP based on what was there at the
+     * start of the LCP.
+     */
+    jam();
+    ScanOpPtr scanOp;
+    c_scanOpPool.getPtr(scanOp, lcpScan_ptr_i);
+    if (is_rowid_in_remaining_lcp_set(pagePtr.p,
+                                      fragPtr.p,
+                                      *key,
+                                      *scanOp.p,
+                                      0))
+    {
+      KeyReqStruct req_struct(jamBuffer());
+      Operationrec oprec;
+      Tuple_header *copy;
+      if ((copy = alloc_copy_tuple(tablePtr.p,
+                                   &oprec.m_copy_tuple_location)) == 0)
+      {
+        /**
+         * We failed to allocate the copy record, this is a critical error,
+         * we will fail with an error message instruction to increase
+         * SharedGlobalMemory.
+         */
+        char buf[256];
+        BaseString::snprintf(buf, sizeof(buf),
+                             "Out of memory when allocating copy tuple for"
+                             " LCP keep list, increase SharedGlobalMemory");
+        progError(__LINE__,
+                  NDBD_EXIT_RESOURCE_ALLOC_ERROR,
+                  buf);
+      }
+      req_struct.m_tuple_ptr = ptr;
+      oprec.m_tuple_location = tmp;
+      oprec.op_type = ZDELETE;
+      DEB_LCP_SKIP_DELETE(("(%u)nr_delete: tab(%u,%u), row(%u,%u),"
+                           " handle_lcp_keep_commit"
+                           ", set LCP_SKIP, bits: %x",
+                           instance(),
+                           fragPtr.p->fragTableId,
+                           fragPtr.p->fragmentId,
+                           key->m_page_no,
+                           key->m_page_idx,
+                           bits));
+      handle_lcp_keep_commit(key,
+                             &req_struct,
+                             &oprec,
+                             fragPtr.p,
+                             tablePtr.p);
+      ptr->m_header_bits |= Tuple_header::LCP_SKIP;
+      updateChecksum(ptr, tablePtr.p, bits, ptr->m_header_bits);
+    }
+  }
 
-  /* A row is deleted as part of Copy fragment or Restore */
+  /**
+   * A row is deleted as part of Copy fragment or Restore
+   * We need to keep track of the row count also during restore.
+   * We increment number of changed rows, for restore this variable
+   * will be cleared after completing the restore, but it is
+   * important to count it while performing a COPY fragment
+   * operation.
+   */
   fragPtr.p->m_row_count--;
+  fragPtr.p->m_lcp_changed_rows++;
+
+  DEB_DELETE_NR(("(%u)nr_delete, tab(%u,%u) row(%u,%u), gci: %u"
+                 ", row_count: %llu",
+                 instance(),
+                 fragPtr.p->fragTableId,
+                 fragPtr.p->fragmentId,
+                 key->m_page_no,
+                 key->m_page_idx,
+                 *ptr->get_mm_gci(tablePtr.p),
+                 fragPtr.p->m_row_count));
 
   if (tablePtr.p->m_attributes[MM].m_no_of_varsize +
       tablePtr.p->m_attributes[MM].m_no_of_dynamic)

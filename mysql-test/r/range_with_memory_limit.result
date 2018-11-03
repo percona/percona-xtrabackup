@@ -249,6 +249,8 @@ INSERT INTO t1 (art) VALUES ('j'),('J'),('j'),('J'),('j'),('J'),('j'),('J'),('j'
 select count(*) from t1 where upper(art) = 'J';
 count(*)
 213
+Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 select count(*) from t1 where art = 'J' or art = 'j';
 count(*)
 602
@@ -1317,6 +1319,8 @@ set @a="select * from t2 force index (a) where a NOT IN(0";
 select count(*) from (select @a:=concat(@a, ',', a) from t2 ) Z;
 count(*)
 1000
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 set @a=concat(@a, ')');
 insert into t2 values (11),(13),(15);
 set @b= concat("explain ", @a);
@@ -1571,7 +1575,11 @@ VALUES ( 1, 1), ( 2, 1), ( 3, 1), ( 4, 1), ( 5, 1),
 (11, 1), (12, 1), (13, 1), (14, 1), (15, 1),
 (16, 1), (17, 1), (18, 1), (19, 1), (20, 1);
 INSERT INTO t2 SELECT a, 2 FROM t2 WHERE b = 1;
+Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 INSERT INTO t2 SELECT a, 3 FROM t2 WHERE b = 1;
+Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 INSERT INTO t2 SELECT -1, -1 FROM t2;
 INSERT INTO t2 SELECT -1, -1 FROM t2;
 INSERT INTO t2 SELECT -1, -1 FROM t2;
@@ -2293,6 +2301,8 @@ insert into t2 select null,id*0.0009 from t1;
 select count(val) from t2 ignore index (val) where val > 0.1155;
 count(val)
 128
+Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 select count(val) from t2 force index (val)  where val > 0.1155;
 count(val)
 128
@@ -3457,6 +3467,7 @@ EXPLAIN SELECT a, b FROM t1 WHERE (a, b) IN ((f1(), 1));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	index	NULL	x	10	NULL	4098	1.00	Using where; Using index
 Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where ((`test`.`t1`.`b` = 1) and (`test`.`t1`.`a` = `f1`()))
 DROP FUNCTION f1;
 # The statement immediately below should not use range access.
@@ -3470,6 +3481,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 Warnings:
 Note	1276	Field or reference 'test.t1o.a' of SELECT #2 was resolved in SELECT #1
 Note	1276	Field or reference 'test.t1o.b' of SELECT #2 was resolved in SELECT #1
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 Note	1003	/* select#1 */ select `test`.`t1o`.`a` AS `a`,`test`.`t1o`.`b` AS `b` from `test`.`t1` `t1o` where exists(/* select#2 */ select 1 from `test`.`t1` where ((`test`.`t1`.`a` = `test`.`t1o`.`a`) and (`test`.`t1`.`b` = `test`.`t1o`.`b`)))
 #
 # Tests of dynamic range access
@@ -3809,6 +3821,7 @@ c
 1
 Warnings:
 Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 SELECT (SELECT 1
 FROM t1
 WHERE id > SUM(1)
@@ -3818,6 +3831,7 @@ GROUP BY col1;
 c
 1
 Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 SELECT (SELECT 1
 FROM t1
@@ -3829,6 +3843,7 @@ c
 1
 Warnings:
 Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 SELECT (SELECT 1
 FROM t1
 WHERE id BETWEEN SUM(1) AND SUM(5)
@@ -3839,6 +3854,7 @@ c
 1
 Warnings:
 Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 SELECT (SELECT 1
 FROM t1
 WHERE SUM(1) BETWEEN COUNT(*) AND id
@@ -3848,6 +3864,7 @@ GROUP BY col1;
 c
 1
 Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 DROP TABLE t1;
 #
@@ -3899,6 +3916,8 @@ INSERT INTO t1 VALUES (1, 1, 1), (1, 1, 2), (1, 1, 3),
 (1, 1, 4), (1, 1, 5);
 INSERT INTO t1 SELECT c1, 2, c3 FROM t1;
 INSERT INTO t1 SELECT c1, 3, c3 FROM t1 WHERE c2 = 1;
+Warnings:
+Warning	3170	Memory capacity of 10 bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -4118,7 +4137,9 @@ KEY `other_id` (`other_id`,`time_created`)
 ) ENGINE=InnoDB AUTO_INCREMENT=101651329
 DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci ;
 Warnings:
+Warning	3778	'utf8_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 CREATE TABLE t1 (c1 INT);
 INSERT INTO t1 VALUES (66136540), (68983250), (89627210), (77869520),
 (82543190), (67538270), (77282760), (77908170),

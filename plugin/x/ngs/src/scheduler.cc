@@ -57,7 +57,7 @@ void Scheduler_dynamic::launch() {
   int32 int_0 = 0;
   if (m_is_running.compare_exchange_strong(int_0, 1)) {
     create_min_num_workers();
-    log_info(ER_XPLUGIN_SCHEDULER_STARTED, m_name.c_str());
+    log_debug("Scheduler \"%s\" started.", m_name.c_str());
   }
 }
 
@@ -117,7 +117,7 @@ void Scheduler_dynamic::stop() {
       ngs::thread_join(&thread, NULL);
     }
 
-    log_info(ER_XPLUGIN_SCHEDULER_STOPPED, m_name.c_str());
+    log_debug("Scheduler \"%s\" stopped.", m_name.c_str());
   }
 }
 
@@ -157,26 +157,6 @@ bool Scheduler_dynamic::post(const Task &task) {
   ngs::free_object(copy_task);
 
   return false;
-}
-
-bool Scheduler_dynamic::post_and_wait(const Task &task_to_be_posted) {
-  Wait_for_signal future;
-
-  {
-    ngs::Scheduler_dynamic::Task task =
-        ngs::bind(&Wait_for_signal::Signal_when_done::execute,
-                  ngs::allocate_shared<ngs::Wait_for_signal::Signal_when_done>(
-                      ngs::ref(future), task_to_be_posted));
-
-    if (!post(task)) {
-      log_error(ER_XPLUGIN_TASK_SCHEDULING_FAILED);
-      return false;
-    }
-  }
-
-  future.wait();
-
-  return true;
 }
 
 // NOTE: Scheduler takes ownership of monitor.

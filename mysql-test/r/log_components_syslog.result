@@ -11,7 +11,6 @@
 # This test is therefore provided for convenience, but disabled by
 # default, and is not expect to pass on all platforms.
 #
-SET @orig_log_error_verbosity= @@GLOBAL.log_error_verbosity;
 SET @@global.log_error_verbosity=3;
 FLUSH LOGS;
 SET @@session.debug="+d,parser_stmt_to_error_log";
@@ -21,56 +20,83 @@ SELECT @@global.log_error_services;
 @@global.log_error_services
 log_filter_internal; log_sink_internal
 
+SELECT @@syseventlog.tag;
+ERROR HY000: Unknown system variable 'syseventlog.tag'
 SELECT "*** SWITCHING ERROR LOG TO SYSEVENTLOG ***";
 *** SWITCHING ERROR LOG TO SYSEVENTLOG ***
 *** SWITCHING ERROR LOG TO SYSEVENTLOG ***
 INSTALL COMPONENT "file://component_log_sink_syseventlog";
-SET @@global.log_syslog_tag="wl9343";
-ERROR HY000: Incorrect arguments to SET
+# default value
+SELECT @@global.syseventlog.tag;
+@@global.syseventlog.tag
+
+# change tag
+SET @@global.syseventlog.tag="wl9343";
+SELECT @@global.syseventlog.tag;
+@@global.syseventlog.tag
+wl9343
 SET @@global.log_error_services="log_filter_internal; log_sink_internal; log_sink_syseventlog";
-SET @@global.log_syslog_tag="wl9343";
 SELECT "logging to syslog";
 logging to syslog
 logging to syslog
-SET @@global.log_syslog_tag=DEFAULT;
+# change while component is active
+SET @@global.syseventlog.tag="wl9343_2";
+SELECT @@global.syseventlog.tag;
+@@global.syseventlog.tag
+wl9343_2
 SET @@global.log_error_services="log_filter_internal; log_sink_internal";
-UNINSTALL COMPONENT "file://component_log_sink_syseventlog";
+# change while component is loaded, but inactive
+SET @@global.syseventlog.tag=DEFAULT;
+SELECT @@global.syseventlog.tag;
+@@global.syseventlog.tag
+
+SET PERSIST syseventlog.include_pid = OFF;
+SET PERSIST syseventlog.facility = "local1";
+SET PERSIST syseventlog.tag = "wl11828";
+# restart: --no-console --log-error-services=log_filter_internal;log_sink_syseventlog;log_sink_internal 
+SELECT @@syseventlog.include_pid;
+@@syseventlog.include_pid
+0
+SELECT @@syseventlog.facility;
+@@syseventlog.facility
+local1
+SELECT @@syseventlog.tag;
+@@syseventlog.tag
+wl11828
+RESET PERSIST `syseventlog.include_pid`;
+RESET PERSIST `syseventlog.facility`;
+RESET PERSIST `syseventlog.tag`;
+
+# restart: --no-console --log-error-services=log_filter_internal;log_sink_syseventlog;log_sink_internal --syseventlog.include_pid=OFF --syseventlog.facility=local2 --syseventlog.tag=wl11828_2 
+SELECT @@syseventlog.include_pid;
+@@syseventlog.include_pid
+0
+SELECT @@syseventlog.facility;
+@@syseventlog.facility
+local2
+SELECT @@syseventlog.tag;
+@@syseventlog.tag
+wl11828_2
+# restart: --no-console --log-error=LOG_FILE --log-error-services=log_filter_internal;log_sink_syseventlog;log_sink_internal --syseventlog.include_pid=PIKA --syseventlog.facility=localZ --syseventlog.tag=wl11828/2 
+SELECT @@syseventlog.include_pid;
+@@syseventlog.include_pid
+0
+SELECT @@syseventlog.facility;
+@@syseventlog.facility
+daemon
+SELECT @@syseventlog.tag;
+@@syseventlog.tag
+
+SET GLOBAL log_error_services= default;
 
 # cleanup
 SET @@session.debug="-d,parser_stmt_to_error_log_with_system_prio";
 SET @@session.debug="-d,parser_stmt_to_error_log";
 SET @@session.debug="-d,log_error_normalize";
-SET @@global.log_error_verbosity= @orig_log_error_verbosity;
 FLUSH ERROR LOGS;
-
-###
-### error log file
-###
-
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@session.debug="+d,log_error_normalize"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@session.debug="+d,parser_stmt_to_error_log_with_system_prio"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SET @@session.debug="+d,parser_stmt_to_error_log_with_system_prio"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SELECT @@global.log_error_services
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SELECT @@global.log_error_services
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SELECT "*** SWITCHING ERROR LOG TO SYSEVENTLOG ***"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SELECT "*** SWITCHING ERROR LOG TO SYSEVENTLOG ***"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: INSTALL COMPONENT "file://component_log_sink_syseventlog"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: INSTALL COMPONENT "file://component_log_sink_syseventlog"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@global.log_syslog_tag="wl9343"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SET @@global.log_syslog_tag="wl9343"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@global.log_error_services="log_filter_internal; log_sink_internal; log_sink_syseventlog"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SET @@global.log_error_services="log_filter_internal; log_sink_internal; log_sink_syseventlog"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@global.log_syslog_tag="wl9343"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SET @@global.log_syslog_tag="wl9343"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SELECT "logging to syslog"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SELECT "logging to syslog"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@global.log_syslog_tag=DEFAULT
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SET @@global.log_syslog_tag=DEFAULT
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@global.log_error_services="log_filter_internal; log_sink_internal"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: SET @@global.log_error_services="log_filter_internal; log_sink_internal"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: UNINSTALL COMPONENT "file://component_log_sink_syseventlog"
-1970-01-01T00:00:00.000000Z 0 [System] [MY-010000] [Server] Parser saw: UNINSTALL COMPONENT "file://component_log_sink_syseventlog"
-1970-01-01T00:00:00.000000Z 0 [Note] [MY-010000] [Server] Parser saw: SET @@session.debug="-d,parser_stmt_to_error_log_with_system_prio"
+ Variable 'syseventlog.tag' can't be set to the value of 'wl11828/2'
+ Variable 'syseventlog.facility' can't be set to the value of 'localZ'
+ option 'syseventlog.include-pid': boolean value 'PIKA' was not recognized. Set to OFF.
 
 ###
 ### done

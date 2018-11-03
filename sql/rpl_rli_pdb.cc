@@ -55,6 +55,7 @@
 #include "mysql/thread_type.h"
 #include "mysqld_error.h"
 #include "sql/binlog.h"
+#include "sql/binlog_reader.h"
 #include "sql/current_thd.h"
 #include "sql/debug_sync.h"
 #include "sql/log.h"
@@ -1839,7 +1840,28 @@ bool Slave_worker::retry_transaction(uint start_relay_number,
       DBUG_RETURN(true);
     }
 
-    if (!silent) trans_retries++;
+    if (!silent) {
+      trans_retries++;
+      if (current_thd->rli_slave->is_processing_trx()) {
+        // if the error code is zero, we get the top of the error stack
+        uint transient_error =
+            (error == 0) ? thd->get_stmt_da()->mysql_errno() : error;
+        current_thd->rli_slave->retried_processing(
+            transient_error, ER_THD(thd, transient_error), trans_retries);
+#ifndef DBUG_OFF
+        if (trans_retries == 2 || trans_retries == 6)
+          DBUG_EXECUTE_IF("rpl_ps_tables_worker_retry", {
+            char const act[] =
+                "now SIGNAL signal.rpl_ps_tables_worker_retry_pause "
+                "WAIT_FOR signal.rpl_ps_tables_worker_retry_continue";
+            DBUG_ASSERT(opt_debug_sync_timeout > 0);
+            // we can't add the usual DBUG_ASSERT here because thd->is_error()
+            // is true (and that's OK)
+            debug_sync_set_action(thd, STRING_WITH_LEN(act));
+          });
+#endif
+      }
+    }
 
     mysql_mutex_lock(&c_rli->data_lock);
     c_rli->retried_trans++;
@@ -1874,42 +1896,38 @@ bool Slave_worker::read_and_apply_events(uint start_relay_number,
   DBUG_ENTER("Slave_worker::read_and_apply_events");
 
   Relay_log_info *rli = c_rli;
-  IO_CACHE relay_io;
   char file_name[FN_REFLEN + 1];
   uint file_number = start_relay_number;
   bool error = true;
   bool arrive_end = false;
+  Relaylog_file_reader relaylog_file_reader(opt_slave_sql_verify_checksum);
 
   relay_log_number_to_name(start_relay_number, file_name);
 
   while (!arrive_end) {
     Log_event *ev = NULL;
 
-    if (!my_b_inited(&relay_io)) {
-      const char *errmsg;
-
+    if (!relaylog_file_reader.is_open()) {
       DBUG_PRINT("info", ("Open relay log %s", file_name));
 
-      if (open_binlog_file(&relay_io, file_name, &errmsg) == -1) {
-        LogErr(ERROR_LEVEL, ER_RPL_FAILED_TO_OPEN_RELAY_LOG, file_name, errmsg);
+      if (relaylog_file_reader.open(file_name, start_relay_pos)) {
+        LogErr(ERROR_LEVEL, ER_RPL_FAILED_TO_OPEN_RELAY_LOG, file_name,
+               relaylog_file_reader.get_error_str());
         goto end;
       }
-      my_b_seek(&relay_io, start_relay_pos);
     }
 
     /* If it is the last event, then set arrive_end as true */
-    arrive_end = (my_b_tell(&relay_io) == end_relay_pos &&
+    arrive_end = (relaylog_file_reader.position() == end_relay_pos &&
                   file_number == end_relay_number);
 
-    ev = Log_event::read_log_event(&relay_io, NULL,
-                                   rli->get_rli_description_event(),
-                                   opt_slave_sql_verify_checksum);
+    ev = relaylog_file_reader.read_event_object();
     if (ev != NULL) {
       /* It is a event belongs to the transaction */
       if (!ev->is_mts_sequential_exec()) {
         int ret = 0;
 
-        ev->future_event_relay_log_pos = my_b_tell(&relay_io);
+        ev->future_event_relay_log_pos = relaylog_file_reader.position();
         ev->mts_group_idx = gaq_index;
 
         if (is_mts_db_partitioned(rli) && ev->contains_partition_info(true))
@@ -1932,12 +1950,14 @@ bool Slave_worker::read_and_apply_events(uint start_relay_number,
       }
     } else {
       /*
-        IO error happens if relay_io.error != 0, otherwise it arrives the
+        IO error happens if error_type is not READ_EOF, otherwise it arrives the
         end of the relay log
       */
-      if (relay_io.error != 0) {
+      if (relaylog_file_reader.get_error_type() !=
+          Binlog_read_error::READ_EOF) {
         LogErr(ERROR_LEVEL, ER_RPL_WORKER_CANT_READ_RELAY_LOG,
-               rli->get_event_relay_log_name(), my_b_tell(&relay_io));
+               rli->get_event_relay_log_name(),
+               relaylog_file_reader.position());
         goto end;
       }
 
@@ -1948,18 +1968,13 @@ bool Slave_worker::read_and_apply_events(uint start_relay_number,
 
       file_number = relay_log_name_to_number(file_name);
 
-      end_io_cache(&relay_io);
-      mysql_file_close(relay_io.file, MYF(0));
+      relaylog_file_reader.close();
       start_relay_pos = BIN_LOG_HEADER_SIZE;
     }
   }
 
   error = false;
 end:
-  if (my_b_inited(&relay_io)) {
-    end_io_cache(&relay_io);
-    mysql_file_close(relay_io.file, MYF(0));
-  }
   DBUG_RETURN(error);
 }
 

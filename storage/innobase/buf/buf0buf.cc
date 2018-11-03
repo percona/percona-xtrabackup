@@ -750,7 +750,6 @@ static void buf_block_init(
 
   block->index = NULL;
   block->made_dirty_with_no_latch = false;
-  block->skip_flush_check = false;
 
   ut_d(block->page.in_page_hash = FALSE);
   ut_d(block->page.in_zip_hash = FALSE);
@@ -797,7 +796,7 @@ static void buf_block_init(
 static buf_chunk_t *buf_chunk_init(
     buf_pool_t *buf_pool, /*!< in: buffer pool instance */
     buf_chunk_t *chunk,   /*!< out: chunk of buffers */
-    ulint mem_size,       /*!< in: requested size in bytes */
+    ulonglong mem_size,   /*!< in: requested size in bytes */
     std::mutex *mutex)    /*!< in,out: Mutex protecting chunk map. */
 {
   buf_block_t *block;
@@ -2100,7 +2099,7 @@ withdraw_retry:
       ulint n_chunks = buf_pool->n_chunks;
 
       while (chunk < echunk) {
-        ulong unit = srv_buf_pool_chunk_unit;
+        ulonglong unit = srv_buf_pool_chunk_unit;
 
         if (!buf_chunk_init(buf_pool, chunk, unit, nullptr)) {
           ib::error(ER_IB_MSG_65) << "buffer pool " << i
@@ -2966,7 +2965,6 @@ void buf_block_init_low(buf_block_t *block) /*!< in: block to init */
   assert_block_ahi_empty_on_init(block);
   block->index = NULL;
   block->made_dirty_with_no_latch = false;
-  block->skip_flush_check = false;
 
   block->n_hash_helps = 0;
   block->n_fields = 1;
@@ -5891,7 +5889,7 @@ std::ostream &operator<<(std::ostream &out, const buf_pool_t &buf_pool) {
 /** Get the page type as a string.
 @return the page type as a string. */
 const char *buf_block_t::get_page_type_str() const {
-  ulint type = get_page_type();
+  page_type_t type = get_page_type();
 
 #define PAGE_TYPE(x) \
   case x:            \

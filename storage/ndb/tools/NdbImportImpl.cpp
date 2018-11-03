@@ -367,6 +367,12 @@ NdbImportImpl::Job::Job(NdbImportImpl& impl, uint jobno) :
   for (uint i = 0; i < g_max_ndb_nodes; i++)
     m_rows_exec[i] = 0;
   m_rows_reject = 0;
+  m_old_rows = 0;
+  m_old_reject = 0;
+  m_old_runtime = 0;
+  m_new_rows = 0;
+  m_new_reject = 0;
+  m_new_runtime = 0;
   // stats
   Stats& stats = m_stats;
   {
@@ -558,7 +564,7 @@ NdbImportImpl::Job::do_start()
     m_state = JobState::State_running;
     while (m_state != JobState::State_stop)
     {
-      log2("running");
+      log_2("running");
       check_teams(false);
       check_userstop();
       NdbSleep_MilliSleep(opt.m_checkloop);
@@ -567,7 +573,7 @@ NdbImportImpl::Job::do_start()
   log1("stop");
   while (m_state != JobState::State_stopped)
   {
-    log2("stopping");
+    log_2("stopping");
     check_teams(true);
     if (m_state == JobState::State_stop)
       m_state = JobState::State_stopped;
@@ -602,11 +608,27 @@ NdbImportImpl::Job::start_diag_team()
 void
 NdbImportImpl::Job::start_resume()
 {
+  log1("start_resume jobno=" << m_jobno);
+  // verify old stats counts against old rowmap
+  {
+    uint64 old_rows;
+    uint64 old_reject;
+    m_rowmap_in.get_total(old_rows, old_reject);
+    if (m_old_rows != old_rows ||
+        m_old_reject != old_reject)
+    {
+      m_util.set_error_gen(m_error, __LINE__,
+                           "inconsistent counts from old state files"
+                           " (*.stt vs *.map)"
+                           " rows %llu vs %llu reject %llu vs %llu",
+                           m_old_rows, old_rows, m_old_reject, old_reject);
+      return;
+    }
+  }
   // copy entire old rowmap
   require(m_rowmap_out.empty());
   m_rowmap_out.add(m_rowmap_in);
   // input worker handles seek in do_init()
-  log1("range_in: " << m_range_in);
 }
 
 void
@@ -734,15 +756,21 @@ NdbImportImpl::Job::collect_stats()
   uint64 msec = m_timer.elapsed_msec();
   if (msec == 0)
     msec = 1;
+  // counts
   const RowMap& rowmap = m_rowmap_out;
-  uint64 rows;
-  uint64 reject;
-  rowmap.get_total(rows, reject);
-  uint64 rowssec = (rows * 1000) / msec;
-  m_stat_rows->add(rows);
-  m_stat_reject->add(reject);
-  m_stat_runtime->add(msec);
-  m_stat_rowssec->add(rowssec);
+  uint64 total_rows;
+  uint64 total_reject;
+  rowmap.get_total(total_rows, total_reject);
+  require(total_rows >= m_old_rows);
+  require(total_reject >= m_old_reject);
+  m_new_rows = total_rows - m_old_rows;
+  m_new_reject = total_reject - m_old_reject;
+  m_stat_rows->add(m_new_rows);
+  m_stat_reject->add(m_new_reject);
+  // times
+  m_new_runtime = msec;
+  m_stat_runtime->add(m_new_runtime);
+  m_stat_rowssec->add((m_new_rows * 1000) / msec);
   m_stat_rowmap_utime->add(m_timer.m_utime_msec);
 }
 
@@ -973,14 +1001,14 @@ NdbImportImpl::Team::run_worker(Worker* w)
 void
 NdbImportImpl::Team::check_workers()
 {
-  log2("check_workers");
+  log_2("check_workers");
   for (int k = 0; k < g_workerstatecnt; k++)
     m_workerstates[k] = 0;
   for (uint n = 0; n < m_workercnt; n++)
   {
     Worker* w = get_worker(n);
     w->lock();
-    log2("check_worker " << *w);
+    log_2("check_worker " << *w);
     int k = (int)w->m_state;
     require(k >= 0 && k < g_workerstatecnt);
     m_workerstates[k]++;
@@ -993,7 +1021,7 @@ NdbImportImpl::Team::check_workers()
       m_stat_rowmap->add(m_rowmap_out.size());
       w->m_rowmap_out.clear();
     }
-    log2("rowmap out: " << m_rowmap_out);
+    log_2("rowmap out: " << m_rowmap_out);
     w->unlock();
   }
   if (m_workerstates[WorkerState::State_stopped] == m_workercnt)
@@ -1006,7 +1034,7 @@ NdbImportImpl::Team::check_workers()
     if (m_state != TeamState::State_stopped)
       m_state = TeamState::State_stop;
   }
-  log2("check_workers done");
+  log_2("check_workers done");
 }
 
 void
@@ -1171,7 +1199,7 @@ NdbImportImpl::Worker::do_start()
   m_seed = (unsigned)(NdbHost_GetProcessId() ^ m_workerno);
   while (m_state != WorkerState::State_stopped)
   {
-    log2("slice: " << m_slice);
+    log_2("slice: " << m_slice);
     lock();
     m_idle = false;
     switch (m_state) {
@@ -1449,7 +1477,7 @@ NdbImportImpl::RandomInputWorker::do_init()
 void
 NdbImportImpl::RandomInputWorker::do_run()
 {
-  log2("do_run");
+  log_2("do_run");
   const Opt& opt = m_util.c_opt;
   const uint tabid = m_team.m_tabid;
   const Table& table = m_util.get_table(tabid);
@@ -1716,7 +1744,7 @@ NdbImportImpl::CsvInputWorker::do_init()
 void
 NdbImportImpl::CsvInputWorker::do_run()
 {
-  log2("do_run");
+  log_2("do_run");
   switch (m_inputstate) {
   case InputState::State_null:
     m_inputstate = InputState::State_lock;
@@ -1760,7 +1788,7 @@ NdbImportImpl::CsvInputWorker::do_end()
 void
 NdbImportImpl::CsvInputWorker::state_lock()
 {
-  log2("state_lock");
+  log_2("state_lock");
   if (m_dostop)
   {
     log1("stop by request");
@@ -1779,7 +1807,7 @@ NdbImportImpl::CsvInputWorker::state_lock()
 void
 NdbImportImpl::CsvInputWorker::state_read()
 {
-  log2("state_read");
+  log_2("state_read");
   if (m_dostop)
   {
     log1("stop by request");
@@ -1794,7 +1822,7 @@ NdbImportImpl::CsvInputWorker::state_read()
     require(has_error());
     return;
   }
-  log2("file: read: " << buf.m_len);
+  log_2("file: read: " << buf.m_len);
   if (buf.m_eof)
   {
     log1("eof");
@@ -1818,7 +1846,7 @@ NdbImportImpl::CsvInputWorker::state_read()
 void
 NdbImportImpl::CsvInputWorker::state_waittail()
 {
-  log2("state_waittail");
+  log_2("state_waittail");
   if (m_dostop)
   {
     log1("stop by request");
@@ -1833,16 +1861,16 @@ NdbImportImpl::CsvInputWorker::state_waittail()
 void
 NdbImportImpl::CsvInputWorker::state_parse()
 {
-  log2("state_parse");
+  log_2("state_parse");
   m_csvinput->do_parse();
-  log2("lines parsed:" << m_csvinput->m_line_list.cnt());
+  log_2("lines parsed:" << m_csvinput->m_line_list.cnt());
   m_inputstate = InputState::State_movetail;
 }
 
 void
 NdbImportImpl::CsvInputWorker::state_movetail()
 {
-  log2("state_movetail");
+  log_2("state_movetail");
   if (m_dostop)
   {
     log1("stop by request");
@@ -1852,7 +1880,7 @@ NdbImportImpl::CsvInputWorker::state_movetail()
   CsvInputTeam& team = static_cast<CsvInputTeam&>(m_team);
   CsvInputWorker* w2 = static_cast<CsvInputWorker*>(next_worker());
   w2->lock();
-  log2("next worker: " << *w2);
+  log_2("next worker: " << *w2);
   if (w2->m_inputstate == InputState::State_waittail)
   {
     m_csvinput->do_movetail(*w2->m_csvinput);
@@ -1876,7 +1904,7 @@ NdbImportImpl::CsvInputWorker::state_movetail()
 void
 NdbImportImpl::CsvInputWorker::state_eval()
 {
-  log2("state_eval");
+  log_2("state_eval");
   m_csvinput->do_eval();
   m_inputstate = InputState::State_send;
 }
@@ -1884,7 +1912,7 @@ NdbImportImpl::CsvInputWorker::state_eval()
 void
 NdbImportImpl::CsvInputWorker::state_send()
 {
-  log2("state_send");
+  log_2("state_send");
   const Opt& opt = m_util.c_opt;
   do
   {
@@ -1902,7 +1930,7 @@ NdbImportImpl::CsvInputWorker::state_send()
     uint curr = 0;
     uint left = 0;
     m_csvinput->do_send(curr, left);
-    log2("send: rows curr=" << curr << " left=" << left);
+    log_2("send: rows curr=" << curr << " left=" << left);
     if (m_csvinput->has_error())
     {
       m_util.copy_error(m_error, m_csvinput->m_error);
@@ -1910,13 +1938,13 @@ NdbImportImpl::CsvInputWorker::state_send()
     }
     if (left != 0)
     {
-      log2("send not ready");
+      log_2("send not ready");
       m_idle = true;
       break;
     }
     if (!m_eof)
     {
-      log2("send ready and not eof");
+      log_2("send ready and not eof");
       // stop if csv error
       if (m_csvinput->has_error())
       {
@@ -1932,7 +1960,7 @@ NdbImportImpl::CsvInputWorker::state_send()
       m_inputstate = InputState::State_lock;
       break;
     }
-    log2("send ready and eof");
+    log_2("send ready and eof");
     m_inputstate = InputState::State_eof;
   } while (0);
 }
@@ -2031,7 +2059,7 @@ NdbImportImpl::NullOutputWorker::do_init()
 void
 NdbImportImpl::NullOutputWorker::do_run()
 {
-  log2("do_run");
+  log_2("do_run");
   RowList& rows_in = *m_team.m_job.m_rows_relay;
   rows_in.lock();
   Row* row = rows_in.pop_front();
@@ -2173,7 +2201,7 @@ NdbImportImpl::DbWorker::free_op(Op* op)
 NdbImportImpl::Tx*
 NdbImportImpl::DbWorker::start_trans()
 {
-  log2("start_trans");
+  log_2("start_trans");
   TxList& tx_free = m_tx_free;
   TxList& tx_open = m_tx_open;
   require(m_ndb != 0);
@@ -2200,7 +2228,7 @@ NdbImportImpl::DbWorker::start_trans(const NdbRecord* keyrec,
                                      const char* keydata,
                                      uchar* xfrmbuf, uint xfrmbuflen)
 {
-  log2("start_trans");
+  log_2("start_trans");
   TxList& tx_free = m_tx_free;
   TxList& tx_open = m_tx_open;
   require(m_ndb != 0);
@@ -2226,7 +2254,7 @@ NdbImportImpl::DbWorker::start_trans(const NdbRecord* keyrec,
 NdbImportImpl::Tx*
 NdbImportImpl::DbWorker::start_trans(uint nodeid, uint instanceid)
 {
-  log2("start_trans");
+  log_2("start_trans");
   TxList& tx_free = m_tx_free;
   TxList& tx_open = m_tx_open;
   require(m_ndb != 0);
@@ -2251,7 +2279,7 @@ NdbImportImpl::DbWorker::start_trans(uint nodeid, uint instanceid)
 void
 NdbImportImpl::DbWorker::close_trans(Tx* tx)
 {
-  log2("close_trans");
+  log_2("close_trans");
   TxList& tx_free = m_tx_free;
   TxList& tx_open = m_tx_open;
   require(tx->m_trans != 0);
@@ -2358,7 +2386,7 @@ NdbImportImpl::RelayOpWorker::do_init()
 void
 NdbImportImpl::RelayOpWorker::do_run()
 {
-  log2("do_run");
+  log_2("do_run");
   switch (m_relaystate) {
   case RelayState::State_null:
     m_relaystate = RelayState::State_receive;
@@ -2381,7 +2409,7 @@ NdbImportImpl::RelayOpWorker::do_run()
 void
 NdbImportImpl::RelayOpWorker::state_receive()
 {
-  log2("state_receive");
+  log_2("state_receive");
   const Opt& opt = m_util.c_opt;
   RowList& rows_in = *m_team.m_job.m_rows_relay;
   rows_in.lock();
@@ -2405,7 +2433,7 @@ NdbImportImpl::RelayOpWorker::state_receive()
 void
 NdbImportImpl::RelayOpWorker::state_define()
 {
-  log2("state_define");
+  log_2("state_define");
   const Opt& opt = m_util.c_opt;
   Row* row;
   while ((row = m_rows.pop_front()) != 0)
@@ -2440,7 +2468,7 @@ NdbImportImpl::RelayOpWorker::state_define()
 void
 NdbImportImpl::RelayOpWorker::state_send()
 {
-  log2("state_send");
+  log_2("state_send");
   const Opt& opt = m_util.c_opt;
   uint nodecnt = m_impl.c_nodes.m_nodecnt;
   uint left = 0;
@@ -2600,7 +2628,7 @@ NdbImportImpl::ExecOpWorker::do_init()
 void
 NdbImportImpl::ExecOpWorker::do_run()
 {
-  log2("do_run");
+  log_2("do_run");
   switch (m_execstate) {
   case ExecState::State_null:
     m_execstate = ExecState::State_receive;
@@ -2637,7 +2665,7 @@ NdbImportImpl::ExecOpWorker::do_run()
 void
 NdbImportImpl::ExecOpWorker::state_receive()
 {
-  log2("state_receive");
+  log_2("state_receive");
   const Opt& opt = m_util.c_opt;
   RowList& rows_in = *m_team.m_job.m_rows_exec[m_nodeindex];
   rows_in.lock();
@@ -2649,21 +2677,21 @@ NdbImportImpl::ExecOpWorker::state_receive()
   {
     if (m_rows.full())
     {
-      log2("got full batch");
+      log_2("got full batch");
       break;
     }
     if (eof)
     {
       if (m_rows.cnt() != 0)
       {
-        log2("got partial last batch");
+        log_2("got partial last batch");
         break;
       }
-      log2("no more rows");
+      log_2("no more rows");
       m_execstate = ExecState::State_eof;
       return;
     }
-    log2("wait for more rows");
+    log_2("wait for more rows");
     m_idle = true;
     return;
   } while (0);
@@ -2736,7 +2764,7 @@ NdbImportImpl::ExecOpWorkerSynch::do_end()
 void
 NdbImportImpl::ExecOpWorkerSynch::state_define()
 {
-  log2("state_define/synch");
+  log_2("state_define/synch");
   TxList& tx_open = m_tx_open;
   // single trans
   require(tx_open.cnt() == 0);
@@ -2803,7 +2831,7 @@ NdbImportImpl::ExecOpWorkerSynch::state_define()
 void
 NdbImportImpl::ExecOpWorkerSynch::state_prepare()
 {
-  log2("state_prepare/synch");
+  log_2("state_prepare/synch");
   // nothing to do
   m_execstate = ExecState::State_send;
 }
@@ -2811,7 +2839,7 @@ NdbImportImpl::ExecOpWorkerSynch::state_prepare()
 void
 NdbImportImpl::ExecOpWorkerSynch::state_send()
 {
-  log2("state_send/synch");
+  log_2("state_send/synch");
   TxList& tx_open = m_tx_open;
   require(tx_open.cnt() == 1);
   Tx* tx = tx_open.front();
@@ -2830,7 +2858,7 @@ NdbImportImpl::ExecOpWorkerSynch::state_send()
 void
 NdbImportImpl::ExecOpWorkerSynch::state_poll()
 {
-  log2("state_poll/synch");
+  log_2("state_poll/synch");
   // nothing to poll
   m_opcnt = 0;
   m_opsize = 0;
@@ -2952,7 +2980,7 @@ NdbImportImpl::ExecOpWorkerAsynch::asynch_callback(Tx* tx)
 void
 NdbImportImpl::ExecOpWorkerAsynch::state_define()
 {
-  log2("state_define/asynch");
+  log_2("state_define/asynch");
   const Opt& opt = m_util.c_opt;
   TxList& tx_open = m_tx_open;
   // no transes yet
@@ -3114,7 +3142,7 @@ NdbImportImpl::ExecOpWorkerAsynch::state_prepare()
 void
 NdbImportImpl::ExecOpWorkerAsynch::state_send()
 {
-  log2("state_send/asynch");
+  log_2("state_send/asynch");
   require(m_tx_open.cnt() != 0);
   int forceSend = 0;
   m_ndb->sendPreparedTransactions(forceSend);
@@ -3124,17 +3152,17 @@ NdbImportImpl::ExecOpWorkerAsynch::state_send()
 void
 NdbImportImpl::ExecOpWorkerAsynch::state_poll()
 {
-  log2("state_poll/asynch");
+  log_2("state_poll/asynch");
   const Opt& opt = m_util.c_opt;
   int timeout = opt.m_polltimeout;
   require(m_tx_open.cnt() != 0);
   m_ndb->pollNdb(timeout, m_tx_open.cnt());
   if (m_tx_open.cnt() != 0)
   {
-    log2("poll not ready");
+    log_2("poll not ready");
     return;
   }
-  log2("poll ready");
+  log_2("poll ready");
   m_opcnt = 0;
   m_opsize = 0;
   if (m_errormap.size() != 0)
@@ -3443,6 +3471,59 @@ NdbImportImpl::DiagTeam::read_old_diags()
     }
     log1("old rowmap:" << rowmap_in);
   }
+  // old counts
+  {
+    const char* path = opt.m_stats_file;
+    const Table& table = m_util.c_stats_table;
+    RowList rows;
+    read_old_diags("old-stats", path, table, rows);
+    if (has_error())
+      return;
+    uint64 old_rows = 0;
+    uint64 old_reject = 0;
+    uint64 old_runtime = 0;
+    Row* row = 0;
+    while ((row = rows.pop_front()) != 0)
+    {
+      char name[200];
+      {
+        const Attr& attr = table.get_attr("name");
+        attr.get_value(row, name, sizeof(name));
+      }
+      // rows
+      if (strcmp(name, "job-rows") == 0)
+      {
+        const Attr& attr = table.get_attr("sum");
+        uint64 value;
+        attr.get_value(row, value);
+        old_rows += value;
+      }
+      // reject
+      if (strcmp(name, "job-reject") == 0)
+      {
+        const Attr& attr = table.get_attr("sum");
+        uint64 value;
+        attr.get_value(row, value);
+        old_reject += value;
+      }
+      // runtime
+      if (strcmp(name, "job-runtime") == 0)
+      {
+        const Attr& attr = table.get_attr("sum");
+        uint64 value;
+        attr.get_value(row, value);
+        old_runtime += value;
+      }
+      m_util.free_row(row);
+    }
+    job.m_old_rows = old_rows;
+    job.m_old_reject = old_reject;
+    job.m_old_runtime = old_runtime;
+    log1("old stats:" <<
+         " rows=" << old_rows <<
+         " reject=" << old_reject <<
+         " runtime=" << old_runtime);
+  }
 }
 
 void
@@ -3698,7 +3779,7 @@ NdbImportImpl::DiagWorker::do_init()
 void
 NdbImportImpl::DiagWorker::do_run()
 {
-  log2("do_run");
+  log_2("do_run");
   // reject
   write_reject();
   // stop by request
@@ -3827,7 +3908,7 @@ NdbImportImpl::DiagWorker::write_result()
 void
 NdbImportImpl::DiagWorker::write_reject()
 {
-  log2("write_reject");
+  log_2("write_reject");
   DiagTeam& team = static_cast<DiagTeam&>(m_team);
   Job& job = team.m_job;
   File& file = team.m_reject_file;
@@ -4055,7 +4136,7 @@ NdbImportImpl::wait_job(Job* job)
   const Opt& opt = m_util.c_opt;
   while (job->m_state != JobState::State_done)
   {
-    log2("wait for " << g_str_state(JobState::State_done));
+    log_2("wait for " << g_str_state(JobState::State_done));
     NdbSleep_MilliSleep(opt.m_checkloop);
   }
   log1("done");

@@ -537,6 +537,8 @@ let $instant_add_column = ALTER TABLE t1 ADD COLUMN c INT NOT NULL DEFAULT 100, 
 
 ALTER TABLE t1 ADD KEY(c);
 
+# Replace the numbers in the output with '#' to stablize the result, after all we only care about the index picked.
+--replace_column 8 # 10 #
 EXPLAIN SELECT c FROM t1;
 
 SELECT c FROM t1 WHERE c != 100;
@@ -549,6 +551,8 @@ UPDATE t1 SET e = 'Hello MySQL' WHERE a > 30;
 
 ALTER TABLE t1 ADD KEY(e);
 
+# Replace the numbers in the output with '#' to stablize the result, after all we only care about the index picked.
+--replace_column 8 # 10 #
 EXPLAIN SELECT e FROM t1;
 SELECT count(e) FROM t1 WHERE e LIKE '%MySQL%';
 SELECT count(e) FROM t1 WHERE e LIKE '%world%';
@@ -885,7 +889,7 @@ DROP TABLE t1;
 --echo # instant after ALTER PARTITION, will the metadata be copied correctly
 --echo #
 
---eval CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128) TABLESPACE innodb_system, PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE TABLESPACE innodb_system);
+--eval CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128), PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE);
 
 INSERT INTO t1 VALUES(1, 2, 3, 'abcdefg'), (100, 200, 300, 'qwerty'), (200, 300, 400, 'asdfg');
 

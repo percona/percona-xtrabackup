@@ -46,6 +46,12 @@ class mock_gcs_control_interface : public Gcs_control_interface {
   MOCK_METHOD0(get_current_view, Gcs_view *());
   MOCK_CONST_METHOD0(get_local_member_identifier,
                      const Gcs_member_identifier());
+  MOCK_METHOD0(get_minimum_write_concurrency, uint32_t());
+  MOCK_METHOD0(get_maximum_write_concurrency, uint32_t());
+  MOCK_METHOD1(get_write_concurrency,
+               enum_gcs_error(uint32_t &write_concurrency));
+  MOCK_METHOD1(set_write_concurrency,
+               enum_gcs_error(uint32_t write_concurrency));
   MOCK_METHOD1(add_event_listener,
                int(const Gcs_control_event_listener &event_listener));
   MOCK_METHOD1(remove_event_listener, void(int event_listener_handle));
@@ -59,11 +65,10 @@ class mock_gcs_xcom_communication_interface
   MOCK_METHOD1(add_event_listener,
                int(const Gcs_communication_event_listener &event_listener));
   MOCK_METHOD1(remove_event_listener, void(int event_listener_handle));
-  MOCK_METHOD3(
-      send_binding_message,
-      enum_gcs_error(const Gcs_message &message_to_send,
-                     unsigned long long *message_length,
-                     Gcs_internal_message_header::enum_cargo_type type));
+  MOCK_METHOD3(send_binding_message,
+               enum_gcs_error(const Gcs_message &message_to_send,
+                              unsigned long long *message_length,
+                              Gcs_internal_message_header::cargo_type type));
   MOCK_METHOD1(xcom_receive_data, bool(Gcs_message *message));
   MOCK_METHOD1(buffer_message, void(Gcs_message *message));
   MOCK_METHOD0(deliver_buffered_messages, void());
@@ -200,7 +205,7 @@ TEST_F(XComStateExchangeTest, StateExchangeProcessStatesPhase) {
     Simulate message received by member 1.
   */
   bool can_install =
-      state_exchange->process_member_state(state_1, *member_id_1);
+      state_exchange->process_member_state(state_1, *member_id_1, 1);
   ASSERT_FALSE(can_install);
   ASSERT_EQ(state_exchange->get_member_states()->size(), 1u);
 
@@ -210,7 +215,7 @@ TEST_F(XComStateExchangeTest, StateExchangeProcessStatesPhase) {
   const Gcs_xcom_view_identifier view_id_2(99999, 0);
   Xcom_member_state *state_2 =
       new Xcom_member_state(view_id_2, configuration_id, NULL, 0);
-  can_install = state_exchange->process_member_state(state_2, *member_id_2);
+  can_install = state_exchange->process_member_state(state_2, *member_id_2, 1);
   ASSERT_TRUE(can_install);
   ASSERT_EQ(state_exchange->get_member_states()->size(), 2u);
 
@@ -464,7 +469,7 @@ TEST_F(XComStateExchangeTest, StateExchangeDiscardSynodes) {
   Xcom_member_state *state_1 =
       new Xcom_member_state(view_id_1, invalid_configuration_id, NULL, 0);
   bool can_install =
-      state_exchange->process_member_state(state_1, *member_id_1);
+      state_exchange->process_member_state(state_1, *member_id_1, 1);
   ASSERT_FALSE(can_install);
   ASSERT_EQ(state_exchange->get_member_states()->size(), 0u);
 

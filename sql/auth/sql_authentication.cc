@@ -972,7 +972,7 @@ bool Rsa_authentication_keys::read_key_file(RSA **key_ptr, bool is_priv_key,
      Check for existance of private key/public key file.
   */
   if ((key_file = fopen(key_file_path.c_ptr(), "rb")) == NULL) {
-    LogErr(INFORMATION_LEVEL, ER_AUTH_RSA_CANT_FIND, key_type,
+    LogErr(WARNING_LEVEL, ER_AUTH_RSA_CANT_FIND, key_type,
            key_file_path.c_ptr());
   } else {
     *key_ptr = is_priv_key ? PEM_read_RSAPrivateKey(key_file, 0, 0, 0)
@@ -1131,6 +1131,18 @@ int set_default_auth_plugin(char *plugin_name, size_t plugin_name_length) {
 
   return 0;
 }
+/**
+  Return the default authentication plugin name
+
+  @retval
+    A string containing the default authentication plugin name
+*/
+std::string get_default_autnetication_plugin_name() {
+  if (default_auth_plugin_name.length > 0)
+    return default_auth_plugin_name.str;
+  else
+    return "";
+}
 
 bool auth_plugin_is_built_in(const char *plugin_name) {
   LEX_CSTRING plugin = {C_STRING_WITH_LEN(plugin_name)};
@@ -1162,7 +1174,15 @@ bool auth_plugin_supports_expiration(const char *plugin_name) {
   a helper function to report an access denied error in all the proper places
 */
 static void login_failed_error(THD *thd, MPVIO_EXT *mpvio, int passwd_used) {
-  if (passwd_used == 2) {
+  if (thd->is_error()) {
+    LogEvent()
+        .prio(INFORMATION_LEVEL)
+        .errcode(ER_ABORTING_USER_CONNECTION)
+        .subsys(LOG_SUBSYSTEM_TAG)
+        .verbatim(thd->get_stmt_da()->message_text());
+  }
+
+  else if (passwd_used == 2) {
     my_error(ER_ACCESS_DENIED_NO_PASSWORD_ERROR, MYF(0),
              mpvio->auth_info.user_name, mpvio->auth_info.host_or_ip);
     query_logger.general_log_print(
@@ -1660,6 +1680,8 @@ static ACL_USER *decoy_user(const LEX_STRING &username,
   user->password_reuse_interval = 0;
   user->use_default_password_history = true;
   user->password_history_length = 0;
+  user->password_require_current = Lex_acl_attrib_udyn::DEFAULT;
+
   /*
     For now the common default account is used. Improvements might involve
     mapping a consistent hash of a username to a range of plugins.
@@ -1685,17 +1707,21 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
   DBUG_PRINT("info", ("entry: %s", mpvio->auth_info.user_name));
   DBUG_ASSERT(mpvio->acl_user == 0);
 
-  if (likely(acl_users)) {
-    Acl_cache_lock_guard acl_cache_lock(thd, Acl_cache_lock_mode::READ_MODE);
-    if (!acl_cache_lock.lock(false)) DBUG_RETURN(true);
+  Acl_cache_lock_guard acl_cache_lock(thd, Acl_cache_lock_mode::READ_MODE);
+  if (!acl_cache_lock.lock(false)) DBUG_RETURN(true);
 
-    for (ACL_USER *acl_user_tmp = acl_users->begin();
-         acl_user_tmp != acl_users->end(); ++acl_user_tmp) {
+  Acl_user_ptr_list *list = nullptr;
+  if (likely(acl_users)) {
+    list = cached_acl_users_for_name(mpvio->auth_info.user_name);
+  }
+  if (list) {
+    for (auto it = list->begin(); it != list->end(); ++it) {
+      ACL_USER *acl_user_tmp = (*it);
+
       if ((!acl_user_tmp->user ||
            !strcmp(mpvio->auth_info.user_name, acl_user_tmp->user)) &&
           acl_user_tmp->host.compare_hostname(mpvio->host, mpvio->ip)) {
         mpvio->acl_user = acl_user_tmp->copy(mpvio->mem_root);
-
         /*
           When setting mpvio->acl_user_plugin we can save memory allocation if
           this is a built in plugin.
@@ -1709,8 +1735,8 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
         break;
       }
     }
-    acl_cache_lock.unlock();
   }
+  acl_cache_lock.unlock();
 
   if (!mpvio->acl_user) {
     /*
@@ -3035,8 +3061,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
 
     if (parse_com_change_user_packet(thd, &mpvio,
                                      mpvio.protocol->get_packet_length())) {
-      if (!thd->is_error())
-        login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
+      login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
       server_mpvio_update_thd(thd, &mpvio);
       DBUG_RETURN(1);
     }
@@ -3141,8 +3166,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
                       mpvio.auth_info.authenticated_as, mpvio.db.str, thd,
                       command);
     }
-    if (!thd->is_error())
-      login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
+    login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
     DBUG_RETURN(1);
   }
 
@@ -3179,8 +3203,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         Host_errors errors;
         errors.m_proxy_user = 1;
         inc_host_errors(mpvio.ip, &errors);
-        if (!thd->is_error())
-          login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
+        login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
         DBUG_RETURN(1);
       }
 
@@ -3198,8 +3221,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         Host_errors errors;
         errors.m_proxy_user_acl = 1;
         inc_host_errors(mpvio.ip, &errors);
-        if (!thd->is_error())
-          login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
+        login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
         DBUG_RETURN(1);
       }
       acl_user = acl_proxy_user->copy(thd->mem_root);
@@ -3258,7 +3280,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
       Host_errors errors;
       errors.m_ssl = 1;
       inc_host_errors(mpvio.ip, &errors);
-      if (!thd->is_error()) login_failed_error(thd, &mpvio, thd->password);
+      login_failed_error(thd, &mpvio, thd->password);
       DBUG_RETURN(1);
     }
 
@@ -3382,6 +3404,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
       Host_errors errors;
       errors.m_default_database = 1;
       inc_host_errors(mpvio.ip, &errors);
+      login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
       DBUG_RETURN(1);
     }
   }
@@ -3540,9 +3563,9 @@ static int compare_native_password_with_hash(const char *hash,
   char buffer[SCRAMBLED_PASSWORD_CHAR_LENGTH + 1];
 
   /** empty password results in an empty hash */
-  if (!hash_length && !cleartext_length) return 0;
+  if (!hash_length && !cleartext_length) DBUG_RETURN(0);
 
-  DBUG_ASSERT(hash_length == SCRAMBLED_PASSWORD_CHAR_LENGTH);
+  DBUG_ASSERT(hash_length <= SCRAMBLED_PASSWORD_CHAR_LENGTH);
 
   /* calculate the hash from the clear text */
   my_make_scrambled_password_sha1(buffer, cleartext, cleartext_length);

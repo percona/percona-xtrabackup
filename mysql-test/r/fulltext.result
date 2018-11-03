@@ -9,9 +9,9 @@ ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 SHOW INDEX FROM t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	NULL	5	NULL	NULL	YES	FULLTEXT			YES
-t1	1	a	2	b	NULL	5	NULL	NULL	YES	FULLTEXT			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	NULL	5	NULL	NULL	YES	FULLTEXT			YES	NULL
+t1	1	a	2	b	NULL	5	NULL	NULL	YES	FULLTEXT			YES	NULL
 select * from t1 where MATCH(a,b) AGAINST ("collections");
 a	b
 Only MyISAM tables	support collections
@@ -265,9 +265,9 @@ match(ttxt.inhalt) against ('foobar');
 id
 3
 show keys from t2;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t2	1	tig	1	ticket	A	NULL	NULL	NULL	YES	BTREE			YES
-t2	1	tix	1	inhalt	NULL	NULL	NULL	NULL	YES	FULLTEXT			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t2	1	tig	1	ticket	A	NULL	NULL	NULL	YES	BTREE			YES	NULL
+t2	1	tix	1	inhalt	NULL	NULL	NULL	NULL	YES	FULLTEXT			YES	NULL
 show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
@@ -456,6 +456,7 @@ drop table t1, t2;
 CREATE TABLE t1 (t VARCHAR(200) CHARACTER SET utf8 COLLATE utf8_unicode_ci, FULLTEXT (t));
 Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 SET NAMES latin1;
 INSERT INTO t1 VALUES('Mit freundlichem Grüß aus Osnabrück');
 SELECT COUNT(*) FROM t1 WHERE MATCH(t) AGAINST ('"osnabrück"' IN BOOLEAN MODE);

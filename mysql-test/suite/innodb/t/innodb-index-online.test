@@ -74,8 +74,9 @@ ALTER TABLE t1 ADD UNIQUE INDEX(c2);
 connection default;
 DELETE FROM t1 WHERE c1 = 7;
 connection con1;
-# ADD FOREIGN KEY is not supported in-place
---error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+# The new FOREIGN KEY will make a new supporting index be created, but there
+# is no additional index that can be used as parent index.
+--error ER_FK_NO_INDEX_PARENT
 ALTER TABLE t1 ADD FOREIGN KEY(c2) REFERENCES t1(c2), ALGORITHM = INPLACE;
 # The previous DEBUG_SYNC should be ignored, because an exclusive lock
 # has been requested and the online log is not being allocated.
@@ -345,7 +346,7 @@ reap;
 eval $innodb_metrics_select;
 SET GLOBAL innodb_monitor_reset = module_ddl;
 
---disable_parsing
+--disable_testcase BUG#0000
 # Temporarily disabled by fix for bug#14213236. Should be either
 # removed or updated to take into account that locking for IMPORT/
 # DISCARD TABLESPACE happens on MDL layer. New test case is added 
@@ -383,7 +384,7 @@ disconnect con2;
 connection default;
 --error ER_LOCK_WAIT_TIMEOUT
 reap;
---enable_parsing
+--enable_testcase
 #remove below con1 disconnect if above test case is enabled
 connection con1;
 disconnect con1;

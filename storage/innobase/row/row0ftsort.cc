@@ -39,13 +39,13 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fts0plugin.h"
 #include "ha_prototypes.h"
 #include "lob0lob.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
 #include "os0thread-create.h"
 #include "pars0pars.h"
 #include "row0ftsort.h"
 #include "row0merge.h"
 #include "row0row.h"
+
+#include "my_dbug.h"
 
 /** Read the next record to buffer N.
 @param N index into array of merge info structure */
@@ -755,8 +755,8 @@ loop:
       if (dfield_is_ext(dfield)) {
         dict_index_t *clust_index = old_table->first_index();
         doc.text.f_str = lob::btr_copy_externally_stored_field(
-            clust_index, &doc.text.f_len, nullptr, data, page_size, data_len,
-            false, blob_heap);
+            nullptr, clust_index, &doc.text.f_len, nullptr, data, page_size,
+            data_len, false, blob_heap);
       } else {
         doc.text.f_str = data;
         doc.text.f_len = data_len;
@@ -1490,7 +1490,13 @@ dberr_t row_fts_merge_insert(dict_index_t *index, dict_table_t *table,
 
   /* Create bulk load instance */
   ins_ctx.btr_bulk = UT_NEW_NOKEY(BtrBulk(aux_index, trx->id, observer));
-  ins_ctx.btr_bulk->init();
+  error = ins_ctx.btr_bulk->init();
+  if (error != DB_SUCCESS) {
+    /* delete immediately so finish() would not be called */
+    UT_DELETE(ins_ctx.btr_bulk);
+    ins_ctx.btr_bulk = nullptr;
+    goto exit;
+  }
 
   /* Create tuple for insert */
   ins_ctx.tuple = dtuple_create(heap, dict_index_get_n_fields(aux_index));
@@ -1600,8 +1606,10 @@ exit:
 
   mem_heap_free(tuple_heap);
 
-  error = ins_ctx.btr_bulk->finish(error);
-  UT_DELETE(ins_ctx.btr_bulk);
+  if (ins_ctx.btr_bulk) {
+    error = ins_ctx.btr_bulk->finish(error);
+    UT_DELETE(ins_ctx.btr_bulk);
+  }
 
   trx_free_for_background(trx);
 

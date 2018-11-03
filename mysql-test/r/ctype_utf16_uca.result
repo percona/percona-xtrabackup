@@ -2741,7 +2741,11 @@ USE test;
 SET character_set_server= @safe_character_set_server;
 SET collation_server= @safe_collation_server;
 SET character_set_client= @safe_character_set_client;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SET character_set_results= @safe_character_set_results;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SET collation_connection='utf16_unicode_ci';
 create table t1 select repeat('a',4000) a;
 delete from t1;
@@ -2784,6 +2788,9 @@ ii	4	ii	4	II	4
 İI	4	ii	4	İI	4
 İİ	4	ii	4	İİ	4
 II	4	ii	4	II	4
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 ALTER TABLE t1 MODIFY a VARCHAR(30) character set utf16 collate utf16_turkish_ci;
 SELECT a, length(a) la, @l:=lower(a) l, length(@l) ll, @u:=upper(a) u, length(@u) lu
 FROM t1 ORDER BY id;
@@ -2794,6 +2801,9 @@ ii	4	ii	4	İİ	4
 İI	4	iı	4	İI	4
 İİ	4	ii	4	İİ	4
 II	4	ıı	4	II	4
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 DROP TABLE t1;
 CREATE TABLE t1 (
 c1 text character set utf16 collate utf16_polish_ci NOT NULL

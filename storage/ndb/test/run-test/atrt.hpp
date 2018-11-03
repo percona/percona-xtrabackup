@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,8 @@ enum ErrorCodes {
   ERR_SERVERS_FAILED = 102,
   ERR_MAX_TIME_ELAPSED = 103,
   ERR_COMMAND_FAILED = 104,
-  ERR_FAILED_TO_START = 105
+  ERR_FAILED_TO_START = 105,
+  ERR_NDB_AND_SERVERS_FAILED = 106
 };
 
 struct atrt_host {
@@ -110,6 +111,7 @@ struct atrt_cluster {
 
 struct atrt_config {
   bool m_generated;
+  enum { CNF, INI } m_config_type;
   BaseString m_key;
   BaseString m_replication;
   BaseString m_site;
@@ -134,7 +136,7 @@ struct atrt_testcase {
 
 extern Logger g_logger;
 
-bool parse_args(int argc, char** argv);
+bool parse_args(int argc, char** argv, MEM_ROOT *alloc);
 bool setup_config(atrt_config&, const char* mysqld);
 bool load_deployment_options(atrt_config&);
 bool configure(atrt_config&, int setup);
@@ -146,6 +148,7 @@ bool sshx(atrt_config&, unsigned procmask);
 bool start(atrt_config&, unsigned procmask);
 
 bool remove_dir(const char*, bool incl = true);
+bool exists_file(const char* path);
 bool connect_hosts(atrt_config&);
 bool connect_ndb_mgm(atrt_config&);
 bool wait_ndb(atrt_config&, int ndb_mgm_node_status);
@@ -159,7 +162,8 @@ bool wait_for_processes_to_stop(atrt_config& config,
 bool wait_for_process_to_stop(atrt_config& config, atrt_process& proc,
                               int retries = 5, int wait_between_retries_s = 5);
 
-int is_running(atrt_config&, int);
+int check_ndb_or_servers_failures(atrt_config& config);
+bool is_client_running(atrt_config&);
 bool gather_result(atrt_config&, int* result);
 
 int read_test_case(FILE*, atrt_testcase&, int& line);

@@ -446,6 +446,7 @@
 #include "mysql/com_data.h"
 #include "mysql/psi/mysql_socket.h"
 #include "mysqld_error.h"
+#include "mysys_err.h"
 #include "sql/field.h"
 #include "sql/item.h"
 #include "sql/item_func.h"  // Item_func_set_user_var
@@ -1164,7 +1165,8 @@ static bool net_send_error_packet(NET *net, uint sql_errno, const char *err,
   if (net->vio == 0) {
     if (bootstrap) {
       /* In bootstrap it's ok to print on stderr */
-      my_message_local(ERROR_LEVEL, "%d  %s", sql_errno, err);
+      my_message_local(ERROR_LEVEL, EE_NET_SEND_ERROR_IN_BOOTSTRAP, sql_errno,
+                       err);
     }
     DBUG_RETURN(false);
   }
@@ -1359,19 +1361,16 @@ uint Protocol_classic::get_output_pkt_nr() { return m_thd->net.pkt_nr; }
 String *Protocol_classic::get_output_packet() { return &m_thd->packet; }
 
 int Protocol_classic::read_packet() {
-  int ret;
-  if ((input_packet_length = my_net_read(&m_thd->net)) &&
-      input_packet_length != packet_error) {
+  input_packet_length = my_net_read(&m_thd->net);
+  if (input_packet_length != packet_error) {
     DBUG_ASSERT(!m_thd->net.error);
     bad_packet = false;
     input_raw_packet = m_thd->net.read_pos;
     return 0;
-  } else if (m_thd->net.error == 3)
-    ret = 1;
-  else
-    ret = -1;
+  }
+
   bad_packet = true;
-  return ret;
+  return m_thd->net.error == 3 ? 1 : -1;
 }
 
 /* clang-format off */

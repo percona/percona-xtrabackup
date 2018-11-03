@@ -24,8 +24,9 @@ IF(WIN32)
   # CMake 3.8.0 is needed for Visual Studio 2017 and x64 toolset.
   CMAKE_MINIMUM_REQUIRED(VERSION 3.8.0)
 ELSEIF(APPLE)
-  # FindOpenSSL needs at least:
-  CMAKE_MINIMUM_REQUIRED(VERSION 3.1.2)
+  # Version 3.9.2 in needed because INCLUDE_DIRECTORIES(SYSTEM ...) wasn't
+  # handled properly by the cmake Xcode generator.
+  CMAKE_MINIMUM_REQUIRED(VERSION 3.9.2)
 ELSEIF(UNIX)
   # CMake 3.4.0 is needed for Solaris due to CMake bug 15673.
   # Cannot use CMAKE_SYSTEM_NAME until after PROJECT(), use uname directly.
@@ -51,10 +52,17 @@ IF(POLICY CMP0026)
   CMAKE_POLICY(SET CMP0026 NEW)
 ENDIF()
 
-# We use get_target_property() for non-existent targets (CMP0045)
-IF(CMAKE_VERSION VERSION_EQUAL "3.0.0" OR
-   CMAKE_VERSION VERSION_GREATER "3.0.0")
- CMAKE_POLICY(SET CMP0045 OLD)
+# In CMake 3.12 and above, the
+#
+# * ``check_include_file`` macro in the ``CheckIncludeFile`` module, the
+# * ``check_include_file_cxx`` macro in the
+#   ``CheckIncludeFileCXX`` module, and the
+# * ``check_include_files`` macro in the ``CheckIncludeFiles`` module
+#
+# now prefer to link the check executable to the libraries listed in the
+# ``CMAKE_REQUIRED_LIBRARIES`` variable.
+IF(POLICY CMP0075)
+  CMAKE_POLICY(SET CMP0075 OLD)
 ENDIF()
 
 MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
@@ -75,12 +83,6 @@ ENDIF()
 
 OPTION(WITH_DEBUG "Use dbug/safemutex" OFF)
 
-# Distinguish between community and non-community builds, with the
-# default being a community build. This does not impact the feature
-# set that will be compiled in; it's merely provided as a hint to
-# custom packaging steps.
-OPTION(COMMUNITY_BUILD "Set to true if this is a community build" ON) 
-
 # Use a default manufacturer if no manufacturer was identified.
 SET(MANUFACTURER_DOCSTRING
   "Set the entity that appears as the manufacturer of packages that support a manufacturer field.")
@@ -96,6 +98,7 @@ IF (NOT MAX_INDEXES)
 ELSEIF(MAX_INDEXES MATCHES "^[0-9]+[Uu]?$")
   # MAX_INDEXES should be unsigned, so add the U suffix if it's missing.
   STRING(REGEX REPLACE "^([0-9]+).*$" "\\1U" MAX_INDEXES "${MAX_INDEXES}")
+  MESSAGE(STATUS "Configuring with MAX_INDEXES = ${MAX_INDEXES}")
 ELSE()
   MESSAGE(FATAL_ERROR "MAX_INDEXES should be an unsigned integer.")
 ENDIF(NOT MAX_INDEXES)
@@ -107,7 +110,6 @@ ELSEIF(MAX_INDEXES LESS 64)
   MESSAGE(WARNING "MAX_INDEXES option ignored because it is less than 64.")
   SET(MAX_INDEXES 64U)
 ENDIF()
-MESSAGE(STATUS "Configuring with MAX_INDEXES = ${MAX_INDEXES}")
 
 # We choose to provide WITH_DEBUG as alias to standard CMAKE_BUILD_TYPE=Debug
 # which turns out to be not trivial, as this involves synchronization 
@@ -139,9 +141,11 @@ IF(CMAKE_GENERATOR MATCHES "Visual Studio [1-9][0-9].*" AND
 ENDIF()
 
 # On Linux el6/el7 the default gcc is too old, see if devtoolset is installed.
+# Same with SLES 12, look for gcc 7 there.
 # We need to look for gcc before calling PROJECT below.
 OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
 MARK_AS_ADVANCED(WITHOUT_SERVER DISABLE_SHARED FORCE_UNSUPPORTED_COMPILER)
+
 IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
     AND NOT CMAKE_C_COMPILER AND NOT CMAKE_CXX_COMPILER)
   # Cannot INCLUDE(CMakeDetermineSystem) prior to PROJECT initialization below.
@@ -154,38 +158,49 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
           MY_HOST_SYSTEM_VERSION MATCHES "\\.el[67](uek)?\\.")
         MESSAGE(STATUS
           "This is ${MY_HOST_SYSTEM_NAME} version ${MY_HOST_SYSTEM_VERSION}")
-        FIND_PROGRAM(MY_GCC_COMPILER gcc)
-        IF (MY_GCC_COMPILER)
-          MESSAGE(STATUS "gcc is ${MY_GCC_COMPILER}")
-          MESSAGE(STATUS
-            "We probably need /opt/rh/devtoolset-7/root/usr/bin/gcc")
-          EXECUTE_PROCESS(COMMAND ${MY_GCC_COMPILER} -dumpversion
-            OUTPUT_VARIABLE MY_GCC_VERSION)
-          IF(MY_GCC_VERSION VERSION_LESS 5.0)
-            MESSAGE(STATUS "${MY_GCC_COMPILER} is version ${MY_GCC_VERSION}")
-            FIND_PROGRAM(ALTERNATIVE_GCC gcc
-              NO_DEFAULT_PATH
-              PATHS "/opt/rh/devtoolset-7/root/usr/bin")
-            FIND_PROGRAM(ALTERNATIVE_GPP g++
-              NO_DEFAULT_PATH
-              PATHS "/opt/rh/devtoolset-7/root/usr/bin")
-            # On ARM there is no /opt/rh/devtoolset-7/ look for /usr/bin/gcc7
-            FIND_PROGRAM(ALTERNATIVE_GCC gcc7
-              NO_DEFAULT_PATH
-              PATHS "/usr/bin")
-            FIND_PROGRAM(ALTERNATIVE_GPP g++7
-              NO_DEFAULT_PATH
-              PATHS "/usr/bin")
-            IF(ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
-              SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
-              SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
-              MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
-              MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
-            ELSE()
-              MESSAGE(WARNING "Could not find devtoolset gcc")
-            ENDIF()
-          ENDIF()
+        MESSAGE(STATUS "We probably need some devtoolset compiler")
+
+        FIND_PROGRAM(ALTERNATIVE_GCC gcc
+          NO_DEFAULT_PATH
+          PATHS "/opt/rh/devtoolset-7/root/usr/bin")
+        FIND_PROGRAM(ALTERNATIVE_GPP g++
+          NO_DEFAULT_PATH
+          PATHS "/opt/rh/devtoolset-7/root/usr/bin")
+        FIND_PROGRAM(ALTERNATIVE_ENABLE enable
+          NO_DEFAULT_PATH
+          PATHS "/opt/rh/devtoolset-7/")
+        IF(ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
+          SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
+          SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
+          MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
+          MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
+        ELSE()
+          MESSAGE(WARNING "Could not find devtoolset gcc")
         ENDIF()
+      ELSEIF(MY_HOST_SYSTEM_NAME MATCHES "Linux" AND
+          EXISTS "/etc/os-release")
+        FILE(READ "/etc/os-release" MY_OS_RELEASE)
+        IF (MY_OS_RELEASE MATCHES "SUSE Linux Enterprise Server 12")
+          MESSAGE(STATUS "We need to look for a newer GCC on SLES 12")
+
+          FIND_PROGRAM(ALTERNATIVE_GCC gcc-7
+            NO_DEFAULT_PATH
+            PATHS "/usr/bin")
+          FIND_PROGRAM(ALTERNATIVE_GPP g++-7
+            NO_DEFAULT_PATH
+            PATHS "/usr/bin")
+          IF (ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
+            SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
+            SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
+            MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
+            MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
+            # Use the new ABI so that std::string can be used with allocators
+            # that are not default-constructible (e.g. Memroot_allocator)
+            ADD_DEFINITIONS(-D_GLIBCXX_USE_CXX11_ABI=1)
+          ELSE()
+            MESSAGE(WARNING "Could not find newer gcc")
+	  ENDIF()
+	ENDIF()
       ENDIF()
     ENDIF()
   ENDIF()
@@ -203,7 +218,72 @@ ELSE()
   MARK_AS_ADVANCED(MYSQL_PROJECT_NAME)
 ENDIF()
 
-PROJECT(${MYSQL_PROJECT_NAME})
+# Remember if WITH_NDBCLUSTER was specified by user
+IF(DEFINED WITH_NDBCLUSTER)
+  SET(HAVE_WITH_NDBCLUSTER 1)
+ENDIF()
+OPTION(WITH_NDBCLUSTER "Build MySQL Cluster" OFF)
+OPTION(WITH_NDBCLUSTER_STORAGE_ENGINE
+  "Legacy and deprecated alias for WITH_NDBCLUSTER" OFF)
+OPTION(WITH_PLUGIN_NDBCLUSTER
+  "Legacy and deprecated alias for WITH_NDBCLUSTER" OFF)
+MARK_AS_ADVANCED(WITH_NDBCLUSTER_STORAGE_ENGINE WITH_PLUGIN_NDBCLUSTER)
+IF(NOT HAVE_WITH_NDBCLUSTER)
+  # Unless user has used WITH_NDBCLUSTER also look at
+  # some of the legacy variables
+  IF(WITH_PLUGIN_NDBCLUSTER)
+    MESSAGE(WARNING "WITH_PLUGIN_NDBCLUSTER is deprecated and will be "
+      "removed in a future release. Please use WITH_NDBCLUSTER instead.")
+    SET(WITH_NDBCLUSTER ON)
+  ENDIF()
+  IF(WITH_NDBCLUSTER_STORAGE_ENGINE)
+    MESSAGE(WARNING "WITH_NDBCLUSTER_STORAGE_ENGINE is deprecated and "
+      "will be removed in a future release. Please use WITH_NDBCLUSTER "
+      "instead.")
+    SET(WITH_NDBCLUSTER ON)
+  ENDIF()
+ENDIF()
+IF(WITH_NDBCLUSTER)
+  MESSAGE(STATUS "Building MySQL Cluster")
+ENDIF()
+
+INCLUDE(mysql_version)
+IF(POLICY CMP0048)
+  CMAKE_POLICY(SET CMP0048 NEW)
+  PROJECT(${MYSQL_PROJECT_NAME}
+    VERSION ${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION})
+ELSE()
+  PROJECT(${MYSQL_PROJECT_NAME})
+ENDIF()
+
+MACRO(REPORT_CXX_FLAGS)
+  FOREACH(BUILD_TYPE "" _DEBUG _RELWITHDEBINFO _RELEASE _MINSIZEREL)
+    SET(flag "CMAKE_CXX_FLAGS${BUILD_TYPE}")
+    MESSAGE(STATUS "${flag}: ${${flag}}")
+  ENDFOREACH()
+ENDMACRO()
+
+# STRING(APPEND ...) from cmake VERSION 3.4
+MACRO(STRING_APPEND STRING_VAR INPUT)
+  SET(${STRING_VAR} "${${STRING_VAR}}${INPUT}")
+ENDMACRO()
+
+MACRO(STRING_PREPEND STRING_VAR INPUT)
+  SET(${STRING_VAR} "${INPUT}${${STRING_VAR}}")
+ENDMACRO()
+
+# Write content to file, using CONFIGURE_FILE
+# The advantage compared to FILE(WRITE) is that timestamp
+# does not change if file already has the same content
+SET(MYSQL_CMAKE_SCRIPT_DIR "${CMAKE_SOURCE_DIR}/cmake")
+MACRO(CONFIGURE_FILE_CONTENT content file)
+  SET(CMAKE_CONFIGURABLE_FILE_CONTENT
+    "${content}\n")
+  CONFIGURE_FILE(
+    ${MYSQL_CMAKE_SCRIPT_DIR}/configurable_file_content.in
+    ${file}
+    @ONLY)
+ENDMACRO()
 
 SET(BUILD_IS_SINGLE_CONFIG TRUE)
 MESSAGE(STATUS "CMAKE_GENERATOR: ${CMAKE_GENERATOR}")
@@ -282,6 +362,8 @@ IF(WITH_DEFAULT_FEATURE_SET)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/feature_set.cmake)
 ENDIF()
 
+INCLUDE(CMakePushCheckState)
+
 OPTION(WITH_XTRABACKUP "Build XtraBackup" ON)
 # Disallow WITH_XTRABACKUP=OFF builds
 IF(NOT WITH_XTRABACKUP)
@@ -308,9 +390,10 @@ INCLUDE(re2)
 INCLUDE(icu)
 INCLUDE(libevent)
 INCLUDE(ssl)
+INCLUDE(sasl)
 INCLUDE(readline)
 INCLUDE(protobuf)
-INCLUDE(mysql_version)
+INCLUDE(package_name)
 INCLUDE(libutils)
 INCLUDE(plugin)
 INCLUDE(component)
@@ -319,6 +402,7 @@ INCLUDE(install_layout)
 INCLUDE(mysql_add_executable)
 INCLUDE(mysqlgcs)
 INCLUDE(curl)
+INCLUDE(rapidjson)
 
 OPTION(DISABLE_SHARED 
  "Don't build shared libraries, compile code as position-dependent" OFF)
@@ -380,20 +464,20 @@ ENDMACRO()
 MACRO(MY_SANITIZER_CHECK SAN_OPT ADD_OPTIMIZATION RESULT)
   MY_CHECK_C_COMPILER_FLAG("${SAN_OPT}" C_RESULT)
   MY_CHECK_CXX_COMPILER_FLAG("${SAN_OPT}" CXX_RESULT)
-  IF(C_RESULT AND CXX_RESULT AND ${ADD_OPTIMIZATION})
-    # We switch on basic optimization also for debug builds.
-    # With optimization we may get some warnings, so we switch off -Werror
-    SET(OPT_FLAG " -O1 ")
-  ENDIF()
   IF(C_RESULT AND CXX_RESULT)
-    SET(CMAKE_C_FLAGS_DEBUG
-      "${CMAKE_C_FLAGS_DEBUG} ${SAN_OPT} ${OPT_FLAG} -Wno-error")
-    SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-      "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${SAN_OPT}")
-    SET(CMAKE_CXX_FLAGS_DEBUG
-      "${CMAKE_CXX_FLAGS_DEBUG} ${SAN_OPT} ${OPT_FLAG} -Wno-error")
-    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${SAN_OPT}")
+    STRING_APPEND(CMAKE_C_FLAGS   " ${SAN_OPT}")
+    STRING_APPEND(CMAKE_CXX_FLAGS " ${SAN_OPT}")
+    # We switch on basic optimization also for debug builds.
+    # We disable inlining for stack trace readability.
+    # With optimization we may get some warnings, so we switch off -Werror
+    IF(${ADD_OPTIMIZATION})
+      STRING_APPEND(CMAKE_C_FLAGS   " -O1 -fno-inline")
+      STRING_APPEND(CMAKE_CXX_FLAGS " -O1 -fno-inline")
+      IF(NOT SANITIZE_MAINTAINER_MODE)
+        SET(MYSQL_MAINTAINER_MODE OFF CACHE BOOL
+          "MySQL maintainer-specific development environment" FORCE)
+      ENDIF()
+    ENDIF()
     SET(${RESULT} 1)
   ELSE()
     SET(${RESULT} 0)
@@ -408,14 +492,10 @@ IF(WITH_ASAN)
     # default is /MD, and this code is run before the one in
     # cmake/os/Windows.cmake, which sets /MT for ASAN on Win32 Clang.
     # Just enable it unconditionally; we know it's working.
-    SET(CMAKE_C_FLAGS_DEBUG
-      "${CMAKE_C_FLAGS_DEBUG} -fsanitize=address -fsanitize-address-use-after-scope -Wno-error")
-    SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-      "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fsanitize=address -fsanitize-address-use-after-scope")
-    SET(CMAKE_CXX_FLAGS_DEBUG
-      "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address -fsanitize-address-use-after-scope -Wno-error")
-    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fsanitize=address -fsanitize-address-use-after-scope")
+    STRING_APPEND(CMAKE_C_FLAGS
+      " -fsanitize=address -fsanitize-address-use-after-scope")
+    STRING_APPEND(CMAKE_CXX_FLAGS
+      " -fsanitize=address -fsanitize-address-use-after-scope")
     SET(HAVE_ASAN 1)
 
     # Get the path to the ASAN support libraries.
@@ -432,14 +512,8 @@ IF(WITH_ASAN)
         "-fsanitize=address -fsanitize-address-use-after-scope"
         HAVE_SANITIZE_SCOPE)
       IF(WITH_ASAN_SCOPE AND HAVE_SANITIZE_SCOPE)
-        SET(CMAKE_C_FLAGS_DEBUG
-          "${CMAKE_C_FLAGS_DEBUG} -fsanitize-address-use-after-scope")
-        SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-          "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fsanitize-address-use-after-scope")
-        SET(CMAKE_CXX_FLAGS_DEBUG
-          "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize-address-use-after-scope")
-        SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-          "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fsanitize-address-use-after-scope")
+        STRING_APPEND(CMAKE_C_FLAGS   " -fsanitize-address-use-after-scope")
+        STRING_APPEND(CMAKE_CXX_FLAGS " -fsanitize-address-use-after-scope")
       ENDIF()
     ELSE()
       MESSAGE(FATAL_ERROR "Do not know how to enable address sanitizer")
@@ -460,7 +534,7 @@ ENDIF()
 
 OPTION(WITH_UBSAN "Enable undefined behavior sanitizer" OFF)
 IF(WITH_UBSAN)
-  MY_SANITIZER_CHECK("-fsanitize=undefined" FALSE WITH_UBSAN_OK)
+  MY_SANITIZER_CHECK("-fsanitize=undefined" TRUE WITH_UBSAN_OK)
   IF(NOT WITH_UBSAN_OK)
     MESSAGE(FATAL_ERROR
             "Do not know how to enable undefined behavior sanitizer")
@@ -485,30 +559,20 @@ IF(WITH_ASAN AND WITH_MSAN)
 ENDIF()
 
 
-# Always enable debug sync for debug builds.
-SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC")
-SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC")
- 
 # Older versions of ccache must be disabled: export CCACHE_DISABLE=1
 # See http://www.cmake.org/Wiki/CTest/Coverage
 OPTION(ENABLE_GCOV "Enable gcov (debug, Linux builds only)" OFF)
 IF (ENABLE_GCOV AND NOT WIN32 AND NOT APPLE)
-  SET(CMAKE_CXX_FLAGS_DEBUG
-    "${CMAKE_CXX_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage -DHAVE_GCOV")
-  SET(CMAKE_C_FLAGS_DEBUG
-    "${CMAKE_C_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage -DHAVE_GCOV")
-  SET(CMAKE_EXE_LINKER_FLAGS_DEBUG
-    "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage -lgcov")
+  STRING_APPEND(CMAKE_C_FLAGS   " -fprofile-arcs -ftest-coverage -DHAVE_GCOV")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -fprofile-arcs -ftest-coverage -DHAVE_GCOV")
+  STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -fprofile-arcs -ftest-coverage -lgcov")
 ENDIF()
 
 OPTION(ENABLE_GPROF "Enable gprof (optimized, Linux builds only)" OFF)
 IF (ENABLE_GPROF AND NOT WIN32 AND NOT APPLE)
-  SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-    "${CMAKE_C_FLAGS_RELWITHDEBINFO} -pg")
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-    "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -pg")
-  SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO
-    "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -pg")
+  STRING_APPEND(CMAKE_C_FLAGS " -pg")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -pg")
+  STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -pg")
 ENDIF()
 
 # Use gold if available and not explicitly disabled.
@@ -551,14 +615,8 @@ IF (USE_LD_GOLD)
 ENDIF()
 
 IF(LINK_RANDOMIZE)
-  SET(CMAKE_C_FLAGS_DEBUG
-    "${CMAKE_C_FLAGS_DEBUG} -ffunction-sections -fdata-sections")
-  SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-    "${CMAKE_C_FLAGS_RELWITHDEBINFO} -ffunction-sections -fdata-sections")
-  SET(CMAKE_CXX_FLAGS_DEBUG
-    "${CMAKE_CXX_FLAGS_DEBUG} -ffunction-sections -fdata-sections")
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-    "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -ffunction-sections -fdata-sections")
+  STRING_APPEND(CMAKE_C_FLAGS   " -ffunction-sections -fdata-sections")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -ffunction-sections -fdata-sections")
 
   SET(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--sort-section=name")
   SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -Wl,--sort-section=name")
@@ -591,12 +649,8 @@ IF(REPRODUCIBLE_BUILD)
     SET(DEBUG_PREFIX_FLAGS "${DEBUG_PREFIX_FLAGS} -gno-record-gcc-switches")
   ENDIF()
 
-  SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${DEBUG_PREFIX_FLAGS}")
-  SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-    "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${DEBUG_PREFIX_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${DEBUG_PREFIX_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-    "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${DEBUG_PREFIX_FLAGS}")
+  STRING_APPEND(CMAKE_C_FLAGS   " ${DEBUG_PREFIX_FLAGS}")
+  STRING_APPEND(CMAKE_CXX_FLAGS " ${DEBUG_PREFIX_FLAGS}")
 
   SET(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--build-id=none")
   SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--build-id=none")
@@ -631,11 +685,10 @@ IF(WITH_TEST_TRACE_PLUGIN AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
           Set WITH_TEST_TRACE_PLUGIN to OFF or WITH_DEBUG to ON.")
 ENDIF()
 
-# Set DBUG_OFF and other optional release-only flags for non-debug project types
+# Set DBUG_OFF for non-debug project types.
 FOREACH(BUILD_TYPE RELEASE RELWITHDEBINFO MINSIZEREL)
   FOREACH(LANG C CXX)
-    SET(CMAKE_${LANG}_FLAGS_${BUILD_TYPE} 
-     "${CMAKE_${LANG}_FLAGS_${BUILD_TYPE}} -DDBUG_OFF")
+    STRING_PREPEND(CMAKE_${LANG}_FLAGS_${BUILD_TYPE} "-DDBUG_OFF ")
   ENDFOREACH()
 ENDFOREACH()
 
@@ -649,9 +702,10 @@ IF(NOT CMAKE_BUILD_TYPE
 ENDIF()
 
 # Add safemutex for debug configurations
+# Enable debug sync for debug builds.
 FOREACH(LANG C CXX)
-  SET(CMAKE_${LANG}_FLAGS_DEBUG
-    "${CMAKE_${LANG}_FLAGS_DEBUG} -DSAFE_MUTEX")
+  STRING_PREPEND(CMAKE_${LANG}_FLAGS_DEBUG "-DENABLED_DEBUG_SYNC ")
+  STRING_PREPEND(CMAKE_${LANG}_FLAGS_DEBUG "-DSAFE_MUTEX ")
 ENDFOREACH()
 
 
@@ -717,7 +771,6 @@ INCLUDE(configure.cmake)
 # Common defines and includes
 ADD_DEFINITIONS(-DHAVE_CONFIG_H)
 ADD_DEFINITIONS(-DHAVE_OPENSSL)            # TODO: remove #ifdef from C++ code
-ADD_DEFINITIONS(-DRAPIDJSON_NO_SIZETYPEDEFINE)
 ADD_DEFINITIONS(-D__STDC_LIMIT_MACROS)     # Enable C99 limit macros
 ADD_DEFINITIONS(-D__STDC_FORMAT_MACROS)    # Enable C99 printf format macros
 ADD_DEFINITIONS(-D_USE_MATH_DEFINES)       # Get access to M_PI, M_E, etc. in math.h
@@ -739,6 +792,80 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}/libbinlogevents/include
   ${CMAKE_SOURCE_DIR}/libbinlogevents/export)
 
+
+SET(WITH_SYSTEM_LIBS_DEFAULT OFF)
+
+OPTION(WITH_LTO
+  "Enable the link-time optimizer. Currently works for gcc7/gcc8 only." OFF)
+IF(WITH_LTO)
+  MY_CHECK_CXX_COMPILER_FLAG("-flto" CXX_LTO_RESULT)
+  IF(NOT CXX_LTO_RESULT)
+    MESSAGE(FATAL_ERROR "Compiler does not support -flto")
+  ENDIF()
+  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
+
+  # Test for parallel linking.
+  SET(NUM_PROCESSING_UNITS 4)
+  MY_CHECK_CXX_COMPILER_FLAG(
+    "-flto=${NUM_PROCESSING_UNITS}" CXX_LTO_PARALLEL_RESULT)
+  IF(CXX_LTO_PARALLEL_RESULT)
+    FIND_PROGRAM(NPROC_EXECUTABLE nproc)
+    IF(NPROC_EXECUTABLE)
+      EXECUTE_PROCESS(COMMAND ${NPROC_EXECUTABLE}
+        OUTPUT_VARIABLE NPROC_NUM
+        RESULT_VARIABLE NPROC_RESULT
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+      IF(NOT NPROC_RESULT)
+        SET(NUM_PROCESSING_UNITS ${NPROC_NUM})
+      ENDIF()
+    ENDIF()
+    SET(CMAKE_CXX_LINK_FLAGS
+      "${CMAKE_CXX_LINK_FLAGS} -flto=${NUM_PROCESSING_UNITS}")
+    SET(CMAKE_SHARED_LINKER_FLAGS
+      "${CMAKE_SHARED_LINKER_FLAGS} -flto=${NUM_PROCESSING_UNITS}")
+  ELSE()
+    SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -flto")
+    SET(CMAKE_SHARED_LINKER_FLAGS
+      "${CMAKE_SHARED_LINKER_FLAGS} -flto")
+  ENDIF()
+
+  # On some platforms (Fedora) we *must* use gcc-ar / gcc-ranlib
+  # to get the right plugins for supporting -flto output from gcc.
+  IF(CMAKE_COMPILER_IS_GNUCC AND CMAKE_COMPILER_IS_GNUCXX)
+    IF(ALTERNATIVE_ENABLE)
+      GET_FILENAME_COMPONENT(ALTERNATIVE_ENABLE_DIR ${ALTERNATIVE_ENABLE} PATH)
+      SET(DEVTOOLSET_ROOT "${ALTERNATIVE_ENABLE_DIR}/root")
+      FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar
+        NO_DEFAULT_PATH
+        PATHS "${DEVTOOLSET_ROOT}/usr/bin")
+      FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib
+        NO_DEFAULT_PATH
+        PATHS "${DEVTOOLSET_ROOT}/usr/bin")
+    ELSEIF(ALTERNATIVE_GCC)
+      STRING(REGEX MATCH  "^([0-9])" ALTERNATIVE_GCC_MAJ_VER ${CMAKE_C_COMPILER_VERSION})
+      GET_FILENAME_COMPONENT(ALTERNATIVE_GCC_DIR ${ALTERNATIVE_GCC} PATH)
+      FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-${ALTERNATIVE_GCC_MAJ_VER}
+        NO_DEFAULT_PATH
+        PATHS "${ALTERNATIVE_GCC_DIR}")
+      FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-${ALTERNATIVE_GCC_MAJ_VER}
+        NO_DEFAULT_PATH
+        PATHS "${ALTERNATIVE_GCC_DIR}")
+    ELSE()
+      FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar)
+      FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib)
+    ENDIF()
+    IF(GCC_AR_EXECUTABLE AND GCC_RANLIB_EXECUTABLE)
+      SET(CMAKE_AR ${GCC_AR_EXECUTABLE})
+      SET(CMAKE_RANLIB ${GCC_RANLIB_EXECUTABLE})
+    ENDIF()
+  ENDIF()
+
+  # We must use -DWITH_PROTOBUF=system.
+  # There are also bugs exposed by LTO in the bundled ICU and editline sources.
+  SET(WITH_SYSTEM_LIBS_DEFAULT ON)
+ENDIF()
+
 # Explicit list of all -DWITH_XXX=system possibilities
 # *except* boost, which requires one specific version to be downloaded
 SET(SYSTEM_LIBRARIES
@@ -749,13 +876,14 @@ SET(SYSTEM_LIBRARIES
   LZ4
 # LZMA     use bundled by default here
   PROTOBUF
+  RAPIDJSON
   RE2
   SSL
   ZLIB
   )
 
 OPTION(WITH_SYSTEM_LIBS
-  "Use -DWITH_XXX=system for ${SYSTEM_LIBRARIES}" OFF)
+  "Use -DWITH_XXX=system for ${SYSTEM_LIBRARIES}" ${WITH_SYSTEM_LIBS_DEFAULT})
 
 GET_CMAKE_PROPERTY(CACHE_VARS CACHE_VARIABLES)
 UNSET(COMMAND_LINE_VARS)
@@ -808,6 +936,8 @@ MYSQL_CHECK_LZMA()
 MYSQL_CHECK_RE2()
 # Add icu library
 MYSQL_CHECK_ICU()
+# Add SASL library
+MYSQL_CHECK_SASL()
 # Add protoc and libprotobuf
 IF(NOT WITHOUT_SERVER)
   MYSQL_CHECK_PROTOBUF()
@@ -816,8 +946,7 @@ ENDIF()
 SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 MYSQL_CHECK_CURL()
 # Add RapidJSON library.
-# TODO: Support -DWITH_RAPIDJSON=system.
-INCLUDE_DIRECTORIES(SYSTEM ${CMAKE_SOURCE_DIR}/extra/rapidjson/include)
+MYSQL_CHECK_RAPIDJSON()
 
 IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
   # Check for pthread_setname_np
@@ -1059,40 +1188,34 @@ ENDIF(DOXYGEN_FOUND)
 
 INCLUDE(CPack)
 
-# C compiler flags consist of:
+# C/CXX compiler flags consist of:
 # CPPFLAGS        Taken from environment, see above.
 # ADD_DEFINITIONS In each individual CMakeLists.txt
-# CMAKE_C_FLAGS   From command line.
+# CMAKE_CXX_FLAGS From command line.
 #                 We extend these in maintainer.cmake
-# ENV{CFLAGS}     From environment, but environment is ignored if
-#                 CMAKE_C_FLAGS is also given on command line
-# CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}
 #                 We extend these in compiler_options.cmake
+# ENV{CXXFLAGS}   From environment, but environment is ignored if
+#                 CMAKE_CXX_FLAGS is also given on command line
+# CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}, typical initial cmake values:
+#      DEBUG          -g
+#      RELWITHDEBINFO -O2 -g -DNDEBUG
+#      RELEASE        -O3 -DNDEBUG
+#      MINSIZEREL     -Os -DNDEBUG
+#
+# The compiler command line is
+# g++ DEFINITIONS CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_<configuration>
+#
+# So, if you want to use '-O3' for a RELWITHDEBINFO build, you should do:
+# cmake -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O3 -g -DNDEBUG"
 #
 # Note that CMakeCache.txt contains cmake builtins for these variables,
-# *not* the values that will actually be used:
-
+# *not* the values that will actually be used, which we report here:
 
 IF(BUILD_IS_SINGLE_CONFIG)
   MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 ENDIF()
 GET_PROPERTY(cwd_definitions DIRECTORY PROPERTY COMPILE_DEFINITIONS)
 MESSAGE(STATUS "COMPILE_DEFINITIONS: ${cwd_definitions}")
-MESSAGE(STATUS "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
-MESSAGE(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
+REPORT_CXX_FLAGS()
 MESSAGE(STATUS "CMAKE_C_LINK_FLAGS: ${CMAKE_C_LINK_FLAGS}")
 MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS: ${CMAKE_CXX_LINK_FLAGS}")
-IF(CMAKE_BUILD_TYPE AND BUILD_IS_SINGLE_CONFIG)
-  STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
-  MESSAGE(STATUS "CMAKE_C_FLAGS_${CMAKEBT}: ${CMAKE_C_FLAGS_${CMAKEBT}}")
-  MESSAGE(STATUS "CMAKE_CXX_FLAGS_${CMAKEBT}: ${CMAKE_CXX_FLAGS_${CMAKEBT}}")
-ENDIF()
-IF(NOT BUILD_IS_SINGLE_CONFIG)
-  MESSAGE(STATUS "CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG}")
-  MESSAGE(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG}")
-  MESSAGE(STATUS
-    "CMAKE_C_FLAGS_RELWITHDEBINFO: ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
-  MESSAGE(STATUS
-    "CMAKE_CXX_FLAGS_RELWITHDEBINFO: ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-ENDIF()
-

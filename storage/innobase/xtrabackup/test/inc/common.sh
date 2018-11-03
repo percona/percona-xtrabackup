@@ -1048,6 +1048,21 @@ function innodb_flushed_lsn()
         grep "Log flushed up to" | awk '{ print $5 }'
 }
 
+# Grep mysql.general_log for statements executed by xtrabackup
+#######################################################################
+function grep_general_log()
+{
+    ${MYSQL} ${MYSQL_ARGS} -Ne \
+        "SELECT argument FROM mysql.general_log WHERE command_type = 'Query' \
+            AND argument IN ('FLUSH NO_WRITE_TO_BINLOG TABLES', \
+                             'FLUSH TABLES WITH READ LOCK', \
+                             'FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS', \
+                             'UNLOCK TABLES', \
+                             'LOCK TABLES FOR BACKUP', \
+                             'LOCK INSTANCE FOR BACKUP', \
+                             'UNLOCK INSTANCE')"
+}
+
 
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=

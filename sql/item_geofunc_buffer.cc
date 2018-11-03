@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,6 +44,7 @@
 #include <boost/geometry/strategies/cartesian/buffer_side_straight.hpp>
 #include <boost/geometry/strategies/strategies.hpp>
 #include <boost/iterator/iterator_facade.hpp>
+#include <memory>  // std::unique_ptr
 #include <vector>
 
 #include "m_ctype.h"
@@ -388,7 +389,8 @@ String *Item_func_buffer::val_str(String *str_value_arg) {
 
   if (geom->get_srid() != 0) {
     THD *thd = current_thd;
-    dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+    std::unique_ptr<dd::cache::Dictionary_client::Auto_releaser> releaser(
+        new dd::cache::Dictionary_client::Auto_releaser(thd->dd_client()));
     Srs_fetcher fetcher(thd);
     const dd::Spatial_reference_system *srs = nullptr;
     if (fetcher.acquire(geom->get_srid(), &srs))

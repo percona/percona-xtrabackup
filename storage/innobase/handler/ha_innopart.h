@@ -33,14 +33,17 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/types.h>
 
 #include "ha_innodb.h"
-#include "my_compiler.h"
-#include "my_inttypes.h"
 #include "partitioning/partition_handler.h"
 #include "row0mysql.h"
 
 /* Forward declarations */
 class Altered_partitions;
 class partition_info;
+
+/* Error Text */
+static constexpr auto PARTITION_IN_SHARED_TABLESPACE =
+    "InnoDB : A partitioned table"
+    " is not allowed in a shared tablespace.";
 
 /** HA_DUPLICATE_POS and HA_READ_BEFORE_WRITE_REMOVAL is not
 set from ha_innobase, but cannot yet be supported in ha_innopart.
@@ -479,8 +482,6 @@ class ha_innopart : public ha_innobase,
   @param[in]	repair_opt	Repair options.
   @return 0 or error code. */
   int repair(THD *thd, HA_CHECK_OPT *repair_opt);
-
-  bool can_switch_engines();
 
   uint referenced_by_foreign_key();
 

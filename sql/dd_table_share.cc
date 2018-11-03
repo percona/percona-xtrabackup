@@ -572,9 +572,25 @@ static row_type dd_get_old_row_format(dd::Table::enum_row_format new_format) {
 /** Fill TABLE_SHARE from dd::Table object */
 static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
                                const dd::Table *tab_obj) {
+  dd::Properties *table_options =
+      const_cast<dd::Properties *>(&tab_obj->options());
+
+  // Secondary storage engine.
+  if (table_options->exists("secondary_engine")) {
+    table_options->get("secondary_engine", share->secondary_engine,
+                       &share->mem_root);
+  } else {
+    // If no secondary storage engine is set, the share cannot
+    // represent a table in a secondary engine.
+    DBUG_ASSERT(!share->is_secondary());
+  }
+
   // Read table engine type
-  plugin_ref tmp_plugin =
-      ha_resolve_by_name_raw(thd, lex_cstring_handle(tab_obj->engine()));
+  LEX_CSTRING engine_name = lex_cstring_handle(tab_obj->engine());
+  if (share->is_secondary())
+    engine_name = {share->secondary_engine.str, share->secondary_engine.length};
+
+  plugin_ref tmp_plugin = ha_resolve_by_name_raw(thd, engine_name);
   if (tmp_plugin) {
 #ifndef DBUG_OFF
     handlerton *hton = plugin_data<handlerton *>(tmp_plugin);
@@ -586,7 +602,7 @@ static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
     plugin_unlock(NULL, share->db_plugin);
     share->db_plugin = my_plugin_lock(NULL, &tmp_plugin);
   } else {
-    my_error(ER_UNKNOWN_STORAGE_ENGINE, MYF(0), tab_obj->engine().c_str());
+    my_error(ER_UNKNOWN_STORAGE_ENGINE, MYF(0), engine_name.str);
     return true;
   }
 
@@ -595,9 +611,6 @@ static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
   share->db_low_byte_first = true;
 
   // Read other table options
-  dd::Properties *table_options =
-      const_cast<dd::Properties *>(&tab_obj->options());
-
   uint64 option_value;
   bool bool_opt;
 
@@ -747,6 +760,134 @@ static uint column_preamble_bits(const dd::Column *col_obj) {
   return result;
 }
 
+inline void get_auto_flags(const dd::Column &col_obj, uint &auto_flags) {
+  /*
+    For DEFAULT it is possible to have CURRENT_TIMESTAMP or a
+    generation expression.
+  */
+  if (!col_obj.default_option().empty()) {
+    // We're only matching the prefix because there may be parameters
+    // e.g. CURRENT_TIMESTAMP(6). Regular strings won't match as they
+    // are preceded by the charset and CURRENT_TIMESTAMP as a default
+    // expression gets converted to now().
+    if (col_obj.default_option().compare(0, 17, "CURRENT_TIMESTAMP") == 0) {
+      // The only allowed patterns are "CURRENT_TIMESTAMP" and
+      // "CURRENT_TIMESTAP(<integer>)". Stored functions with names
+      // starting with "CURRENT_TIMESTAMP" should be filtered out before
+      // we get here.
+      DBUG_ASSERT(
+          col_obj.default_option().size() == 17 ||
+          (col_obj.default_option().size() >= 20 &&
+           col_obj.default_option()[17] == '(' &&
+           col_obj.default_option()[col_obj.default_option().size() - 1] ==
+               ')'));
+
+      auto_flags |= Field::DEFAULT_NOW;
+    } else {
+      auto_flags |= Field::GENERATED_FROM_EXPRESSION;
+    }
+  }
+
+  /*
+    For ON UPDATE the only option which is supported
+    at this point is CURRENT_TIMESTAMP.
+  */
+  if (!col_obj.update_option().empty()) auto_flags |= Field::ON_UPDATE_NOW;
+
+  if (col_obj.is_auto_increment()) auto_flags |= Field::NEXT_NUMBER;
+
+  /*
+    Columns can't have AUTO_INCREMENT and DEFAULT/ON UPDATE CURRENT_TIMESTAMP at
+    the same time.
+  */
+  DBUG_ASSERT(!((auto_flags & (Field::DEFAULT_NOW | Field::ON_UPDATE_NOW |
+                               Field::GENERATED_FROM_EXPRESSION)) != 0 &&
+                (auto_flags & Field::NEXT_NUMBER) != 0));
+}
+
+static Field *make_field(const dd::Column &col_obj, const CHARSET_INFO *charset,
+                         TABLE_SHARE *share, uchar *ptr, uchar *null_pos,
+                         size_t null_bit) {
+  auto field_type = dd_get_old_field_type(col_obj.type());
+  auto field_length = col_obj.char_length();
+
+  auto column_options = const_cast<dd::Properties *>(&col_obj.options());
+
+  // Reconstruct auto_flags
+  auto auto_flags = static_cast<uint>(Field::NONE);
+  get_auto_flags(col_obj, auto_flags);
+
+  // Read Interval TYPELIB
+  TYPELIB *interval = nullptr;
+
+  if (field_type == MYSQL_TYPE_ENUM || field_type == MYSQL_TYPE_SET) {
+    //
+    // Allocate space for interval (column elements)
+    //
+    size_t interval_parts = col_obj.elements_count();
+
+    interval = (TYPELIB *)alloc_root(&share->mem_root, sizeof(TYPELIB));
+    interval->type_names = (const char **)alloc_root(
+        &share->mem_root, sizeof(char *) * (interval_parts + 1));
+    interval->type_names[interval_parts] = 0;
+
+    interval->type_lengths =
+        (uint *)alloc_root(&share->mem_root, sizeof(uint) * interval_parts);
+    interval->count = interval_parts;
+    interval->name = NULL;
+
+    //
+    // Iterate through all the column elements
+    //
+    for (const dd::Column_type_element *ce : col_obj.elements()) {
+      // Read the enum/set element name
+      dd::String_type element_name = ce->name();
+
+      uint pos = ce->index() - 1;
+      interval->type_lengths[pos] = static_cast<uint>(element_name.length());
+      interval->type_names[pos] = strmake_root(
+          &share->mem_root, element_name.c_str(), element_name.length());
+    }
+  }
+
+  // Column name
+  char *name = nullptr;
+  dd::String_type s = col_obj.name();
+  DBUG_ASSERT(!s.empty());
+  name = strmake_root(&share->mem_root, s.c_str(), s.length());
+  name[s.length()] = '\0';
+
+  uint decimals;
+  // Decimals
+  if (field_type == MYSQL_TYPE_DECIMAL || field_type == MYSQL_TYPE_NEWDECIMAL) {
+    DBUG_ASSERT(col_obj.is_numeric_scale_null() == false);
+    decimals = col_obj.numeric_scale();
+  } else if (field_type == MYSQL_TYPE_FLOAT ||
+             field_type == MYSQL_TYPE_DOUBLE) {
+    decimals = col_obj.is_numeric_scale_null() ? NOT_FIXED_DEC
+                                               : col_obj.numeric_scale();
+  } else
+    decimals = 0;
+
+  auto geom_type = Field::GEOM_GEOMETRY;
+  // Read geometry sub type
+  if (field_type == MYSQL_TYPE_GEOMETRY) {
+    uint32 sub_type;
+    column_options->get_uint32("geom_type", &sub_type);
+    geom_type = static_cast<Field::geometry_type>(sub_type);
+  }
+
+  bool treat_bit_as_char = false;
+  if (field_type == MYSQL_TYPE_BIT)
+    column_options->get_bool("treat_bit_as_char", &treat_bit_as_char);
+
+  return make_field(share, ptr, field_length, null_pos, null_bit, field_type,
+                    charset, geom_type, auto_flags, interval, name,
+                    col_obj.is_nullable(), col_obj.is_zerofill(),
+                    col_obj.is_unsigned(), decimals, treat_bit_as_char, 0,
+                    col_obj.srs_id());
+}
+
 /**
   Add Field constructed according to column metadata from dd::Column
   object to TABLE_SHARE.
@@ -757,13 +898,9 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
                                 uint null_bit_pos, uchar *rec_pos,
                                 uint field_nr) {
   char *name = NULL;
-  uchar auto_flags;
-  size_t field_length;
   enum_field_types field_type;
   const CHARSET_INFO *charset = NULL;
-  Field::geometry_type geom_type = Field::GEOM_GEOMETRY;
   Field *reg_field;
-  uint decimals;
   ha_storage_media field_storage;
   column_format_type field_column_format;
 
@@ -783,28 +920,9 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
   // Type
   field_type = dd_get_old_field_type(col_obj->type());
 
-  // Char length
-  field_length = col_obj->char_length();
-
   // Reconstruct auto_flags
-  auto_flags = Field::NONE;
-
-  /*
-    The only value for DEFAULT and ON UPDATE options which we support
-    at this point is CURRENT_TIMESTAMP.
-  */
-  if (!col_obj->default_option().empty()) auto_flags |= Field::DEFAULT_NOW;
-  if (!col_obj->update_option().empty()) auto_flags |= Field::ON_UPDATE_NOW;
-
-  if (col_obj->is_auto_increment()) auto_flags |= Field::NEXT_NUMBER;
-
-  /*
-    Columns can't have AUTO_INCREMENT and DEFAULT/ON UPDATE CURRENT_TIMESTAMP at
-    the same time.
-  */
-  DBUG_ASSERT(
-      !((auto_flags & (Field::DEFAULT_NOW | Field::ON_UPDATE_NOW)) != 0 &&
-        (auto_flags & Field::NEXT_NUMBER) != 0));
+  auto auto_flags = static_cast<uint>(Field::NONE);
+  get_auto_flags(*col_obj, auto_flags);
 
   bool treat_bit_as_char = false;
   if (field_type == MYSQL_TYPE_BIT)
@@ -817,24 +935,17 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
                     "invalid collation id %llu for table %s, column %s", MYF(0),
                     col_obj->collation_id(), share->table_name.str, name);
     if (thd->is_error()) return true;
+    charset = default_charset_info;
   }
 
   // Decimals
-  if (field_type == MYSQL_TYPE_DECIMAL || field_type == MYSQL_TYPE_NEWDECIMAL) {
+  if (field_type == MYSQL_TYPE_DECIMAL || field_type == MYSQL_TYPE_NEWDECIMAL)
     DBUG_ASSERT(col_obj->is_numeric_scale_null() == false);
-    decimals = col_obj->numeric_scale();
-  } else if (field_type == MYSQL_TYPE_FLOAT ||
-             field_type == MYSQL_TYPE_DOUBLE) {
-    decimals = col_obj->is_numeric_scale_null() ? NOT_FIXED_DEC
-                                                : col_obj->numeric_scale();
-  } else
-    decimals = 0;
 
   // Read geometry sub type
   if (field_type == MYSQL_TYPE_GEOMETRY) {
     uint32 sub_type;
     column_options->get_uint32("geom_type", &sub_type);
-    geom_type = (Field::geometry_type)sub_type;
   }
 
   // Read values of storage media and column format options
@@ -885,12 +996,19 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
     }
   }
 
-  // Handle generated columns;
-  Generated_column *gcol_info = NULL;
-  if (!col_obj->is_generation_expression_null()) {
-    gcol_info = new (&share->mem_root) Generated_column();
+  //
+  // Create FIELD
+  //
+  reg_field =
+      make_field(*col_obj, charset, share, rec_pos, null_pos, null_bit_pos);
+  reg_field->field_index = field_nr;
+  reg_field->stored_in_db = true;
 
-    // Is GC virtual or stored ?
+  // Handle generated columns
+  if (!col_obj->is_generation_expression_null()) {
+    Value_generator *gcol_info = new (&share->mem_root) Value_generator();
+
+    // Set if GC is virtual or stored
     gcol_info->set_field_stored(!col_obj->is_virtual());
 
     // Read generation expression.
@@ -905,22 +1023,33 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
     gcol_info->dup_expr_str(&share->mem_root, gc_expr.c_str(),
                             gc_expr.length());
     share->vfields++;
+    reg_field->gcol_info = gcol_info;
+    reg_field->stored_in_db = gcol_info->get_field_stored();
   }
 
-  //
-  // Create FIELD
-  //
-  reg_field = make_field(share, rec_pos, (uint32)field_length, null_pos,
-                         null_bit_pos, field_type, charset, geom_type,
-                         auto_flags, interval, name, col_obj->is_nullable(),
-                         col_obj->is_zerofill(), col_obj->is_unsigned(),
-                         decimals, treat_bit_as_char, 0, col_obj->srs_id());
+  // Handle default values generated from expression
+  if (auto_flags & Field::GENERATED_FROM_EXPRESSION) {
+    Value_generator *default_val_expr =
+        new (&share->mem_root) Value_generator();
 
-  reg_field->field_index = field_nr;
-  reg_field->gcol_info = gcol_info;
-  reg_field->stored_in_db = gcol_info ? gcol_info->get_field_stored() : true;
+    // DEFAULT GENERATED is always stored
+    default_val_expr->set_field_stored(true);
 
-  if (auto_flags & Field::NEXT_NUMBER)
+    // Read generation expression.
+    dd::String_type default_val_expr_str = col_obj->default_option();
+
+    // Copy the expression's text into reg_field which is stored on TABLE_SHARE.
+    default_val_expr->dup_expr_str(&share->mem_root,
+                                   default_val_expr_str.c_str(),
+                                   default_val_expr_str.length());
+    share->gen_def_field_count++;
+    reg_field->m_default_val_expr = default_val_expr;
+  }
+
+  // Auto-increment columns are maintained in the primary storage
+  // engine only. Treat the auto-increment column as a regular column
+  // in the secondary table.
+  if ((auto_flags & Field::NEXT_NUMBER) && share->is_primary())
     share->found_next_number_field = &share->field[field_nr];
 
   // Set field flags
@@ -960,6 +1089,8 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
     reg_field->comment.length = comment.length();
   }
 
+  reg_field->set_hidden(col_obj->hidden());
+
   // Field is prepared. Store it in 'share'
   share->field[field_nr] = reg_field;
 
@@ -978,6 +1109,7 @@ static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
   share->field = (Field **)alloc_root(&share->mem_root, (uint)fields_size);
   memset(share->field, 0, fields_size);
   share->vfields = 0;
+  share->gen_def_field_count = 0;
 
   // Iterate through all the columns.
   uchar *null_flags MY_ATTRIBUTE((unused));
@@ -1303,6 +1435,13 @@ static bool is_spatial_index_usable(const dd::Index &index) {
 
 static bool fill_indexes_from_dd(THD *thd, TABLE_SHARE *share,
                                  const dd::Table *tab_obj) {
+  share->keys_for_keyread.init(0);
+  share->keys_in_use.init();
+  share->visible_indexes.init();
+
+  // Indexes are not available in the secondary storage engine.
+  if (share->is_secondary()) return false;
+
   uint32 primary_key_parts = 0;
 
   bool use_extended_sk = ha_check_storage_engine_flag(
@@ -1329,10 +1468,6 @@ static bool fill_indexes_from_dd(THD *thd, TABLE_SHARE *share,
     // we will simply waste some memory.
     if (idx_obj->ordinal_position() == 1) primary_key_parts = key_parts;
   }
-
-  share->keys_for_keyread.init(0);
-  share->keys_in_use.init();
-  share->visible_indexes.init();
 
   // Allocate and fill KEY objects.
   if (share->keys) {
@@ -1749,6 +1884,11 @@ static bool set_field_list(MEM_ROOT *mem_root, dd::String_type &str,
 static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
                                       const dd::Table *tab_obj) {
   if (tab_obj->partition_type() == dd::Table::PT_NONE) return false;
+
+  // The DD only has information about how the table is partitioned in
+  // the primary storage engine, so don't use this information for
+  // tables in a secondary storage engine.
+  if (share->is_secondary()) return false;
 
   partition_info *part_info;
   part_info = new (&share->mem_root) partition_info;

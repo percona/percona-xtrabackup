@@ -43,10 +43,10 @@ override_dh_auto_configure:
 		-DINSTALL_MANDIR=share/man \
 		-DINSTALL_MYSQLTESTDIR=lib/mysql-test \
 		-DINSTALL_PLUGINDIR=lib/mysql/plugin \
+		-DROUTER_INSTALL_PLUGINDIR=lib/mysqlrouter/plugin \
 		-DINSTALL_SBINDIR=sbin \
 		-DSYSCONFDIR=/etc/mysql \
 		-DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
-		-DWITH_SSL=bundled \
 		-DWITH_INNODB_MEMCACHED=1 \
 		-DWITH_MECAB=system \
 		-DWITH_NUMA=ON \
@@ -86,20 +86,21 @@ override_dh_auto_install:
 	# add apparmor profile
 	@DEB_RULES_INSTALL_APPARMOR@
 	# add systemd script
-	@DEB_RULES_INSTALL_SYSTEMD@
+	install -m 0755 debian/extra/mysql-systemd-start debian/tmp/usr/share/mysql-@MYSQL_BASE_VERSION@/
 	touch $@
 
 override_dh_installinit:
 	@echo "RULES.$@"
 	@DEB_RULES_APPARMOR_LOAD@
-	@DEB_RULES_SYSTEMD_ENABLE@
+	dh_systemd_enable --name=mysql
 	dh_installinit --name=mysql -- defaults 19 21
 	dh_installinit --name=mysql@ -- disable
-	@DEB_RULES_SYSTEMD_START@
+	dh_installinit --name=mysqlrouter -- defaults 19 21
+	dh_systemd_start --restart-after-upgrade
 	touch $@
 
 override_dh_install:
-	dh_install --fail-missing \
+	dh_install --list-missing \
 		-Xusr/bin/i_mysql_client_test \
 		-Xusr/share/mysql-@MYSQL_BASE_VERSION@/mysql.server \
 		-Xusr/share/mysql-@MYSQL_BASE_VERSION@/LICENSE-test \

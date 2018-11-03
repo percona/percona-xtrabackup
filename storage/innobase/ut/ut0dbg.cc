@@ -49,11 +49,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 {
 #if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS) && \
     !defined(XTRABACKUP)
-  sql_print_error("InnoDB: Assertion failure: %s:" ULINTPF
-                  "%s%s\n"
-                  "InnoDB: thread " UINT64PF,
-                  innobase_basename(file), line, expr != nullptr ? ":" : "",
-                  expr != nullptr ? expr : "", os_thread_handle());
+  ib::error(ER_IB_MSG_1273)
+      << "Assertion failure: " << innobase_basename(file) << ":" << line
+      << ((expr != nullptr) ? ":" : "") << ((expr != nullptr) ? expr : "")
+      << " thread " << os_thread_handle();
+
 #else  /* !UNIV_HOTBACKUP && !defined(UNIV_NO_ERR_MSGS) */
   auto filename = base_name(file);
 
@@ -72,7 +72,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
   fputs(
       "InnoDB: We intentionally generate a memory trap.\n"
       "InnoDB: Submit a detailed bug report"
-      " to http://bugs.mysql.com.\n"
+      " to https://jira.percona.com/projects/PXB.\n"
       "InnoDB: If you get repeated assertion failures"
       " or crashes, even\n"
       "InnoDB: immediately after the mysqld startup, there may be\n"

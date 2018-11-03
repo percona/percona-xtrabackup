@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -342,12 +342,21 @@ function typeSetup(processTypeItem) {
             // Leave process type level datadir undefined
             waitCondition.resolve();
         } else if (processFamilyName == "data") {
+            // Get portbase, set default for ServerPort
+            var spbase = processFamilyItem.getValue("Portbase");
+            if (spbase === undefined) {
+                spbase = mcc.configuration.getPara(processFamilyName, null, 
+                        "ServerPort", "defaultValueType");
+            }
+            mcc.configuration.setPara(processFamilyName, null, "ServerPort",
+                    "defaultValueType", spbase);
 
             // Check parameters that depend on cluster defaults
             mcc.storage.clusterStorage().getItem(0).then(function (cluster) {
                 // Leave process type level datadir undefined
 
-                // Check real time or web mode
+                // Check real time or web mode.
+                // This is OK since all those values are "undefined" in parameters.ja.
                 if (cluster.getValue("apparea") != "realtime") {
                     mcc.configuration.setPara(processFamilyName, null, 
                             "HeartbeatIntervalDbDb", "defaultValueType", 15000);
@@ -361,6 +370,7 @@ function typeSetup(processTypeItem) {
                 }
 
                 // Check read/write load
+                // This is OK since all those values are "undefined" in parameters.ja.
                 if (cluster.getValue("writeload") == "high") {
                     mcc.configuration.setPara(processFamilyName, null, 
                             "SendBufferMemory", "defaultValueType", 8);
@@ -384,15 +394,17 @@ function typeSetup(processTypeItem) {
                             "RedoBuffer", "defaultValueType", 32);
                 }
 
-                // Get disk page buffer memory, assign shared global memory
+                // Get disk page buffer memory, assign shared global memory.
                 var diskBuf = processFamilyItem.getValue(
                         mcc.configuration.getPara(processFamilyName, null, 
                                 "DiskPageBufferMemory", "attribute"));
                 if (!diskBuf) {
+                    // If user didn't set it, read from parameters.js.
                     diskBuf = mcc.configuration.getPara(processFamilyName, null, 
                         "DiskPageBufferMemory", "defaultValueType");
                 }
-
+                
+                // If user didn't set it, calculate.
                 if (diskBuf > 8192) {
                     mcc.configuration.setPara(processFamilyName, null, 
                             "SharedGlobalMemory", "defaultValueType", 1024);
@@ -401,7 +413,7 @@ function typeSetup(processTypeItem) {
                             "SharedGlobalMemory", "defaultValueType", 384);
                 } else {
                     mcc.configuration.setPara(processFamilyName, null, 
-                            "SharedGlobalMemory", "defaultValueType", 20);
+                            "SharedGlobalMemory", "defaultValueType", 32);
                 }
 
                 // Restrict MaxNoOfTables
@@ -409,6 +421,7 @@ function typeSetup(processTypeItem) {
                         mcc.configuration.getPara(processFamilyName, null, 
                                 "MaxNoOfTables", "attribute"));
                 if (maxTab) {
+                    //IF user has set it THEN do check.
                     if (maxTab > 20320) {
                         processFamilyItem.setValue(
                             mcc.configuration.getPara(processFamilyName, null, 
@@ -556,6 +569,23 @@ function ndbd_setup(processItem, processFamilyItem, host, waitCondition) {
     mcc.configuration.setPara(processFamilyName, id, "DataDir",
             "defaultValueInstance", datadir +
             processItem.getValue("NodeId") + dirSep);
+
+    // Get colleague nodes, find own index on host
+    mcc.util.getColleagueNodes(processItem).then(function (colleagues) {
+        var myIdx = dojo.indexOf(colleagues, processItem.getId());
+
+        // Get type's overridden port base
+        var pbase = processFamilyItem.getValue("Portbase");
+
+        // If not overridden, use type default
+        if (pbase === undefined) {
+            pbase = mcc.configuration.getPara(processFamilyName, null, 
+                    "Portbase", "defaultValueType");
+        }
+        // Set port using retrieved portbase and node index on host
+        mcc.configuration.setPara(processFamilyName, id, "ServerPort",
+                "defaultValueInstance", myIdx + pbase);
+    });
 
     // Get cluster attributes
     mcc.storage.clusterStorage().getItem(0).then(function (cluster) {

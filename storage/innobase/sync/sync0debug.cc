@@ -402,6 +402,7 @@ LatchDebug::LatchDebug() {
   LEVEL_MAP_INSERT(SYNC_BUF_LRU_LIST);
   LEVEL_MAP_INSERT(SYNC_POOL);
   LEVEL_MAP_INSERT(SYNC_POOL_MANAGER);
+  LEVEL_MAP_INSERT(SYNC_TEMP_POOL_MANAGER);
   LEVEL_MAP_INSERT(SYNC_SEARCH_SYS);
   LEVEL_MAP_INSERT(SYNC_WORK_QUEUE);
   LEVEL_MAP_INSERT(SYNC_FTS_TOKENIZE);
@@ -704,6 +705,7 @@ Latches *LatchDebug::check_order(const latch_t *latch,
     case SYNC_STATS_AUTO_RECALC:
     case SYNC_POOL:
     case SYNC_POOL_MANAGER:
+    case SYNC_TEMP_POOL_MANAGER:
     case SYNC_RECV_WRITER:
     case SYNC_PARSER:
     case SYNC_DICT:
@@ -1344,6 +1346,9 @@ static void sync_latch_meta_init() UNIV_NOTHROW {
   LATCH_ADD_MUTEX(TRX_POOL_MANAGER, SYNC_POOL_MANAGER,
                   trx_pool_manager_mutex_key);
 
+  LATCH_ADD_MUTEX(TEMP_POOL_MANAGER, SYNC_TEMP_POOL_MANAGER,
+                  temp_pool_manager_mutex_key);
+
   LATCH_ADD_MUTEX(TRX, SYNC_TRX, trx_mutex_key);
 
   LATCH_ADD_MUTEX(LOCK_SYS, SYNC_LOCK_SYS, lock_mutex_key);
@@ -1368,8 +1373,6 @@ static void sync_latch_meta_init() UNIV_NOTHROW {
 #endif /* !PFS_SKIP_EVENT_MUTEX */
 
   LATCH_ADD_MUTEX(SYNC_ARRAY_MUTEX, SYNC_NO_ORDER_CHECK, sync_array_mutex_key);
-
-  LATCH_ADD_MUTEX(THREAD_MUTEX, SYNC_NO_ORDER_CHECK, thread_mutex_key);
 
   LATCH_ADD_MUTEX(ZIP_PAD_MUTEX, SYNC_NO_ORDER_CHECK, zip_pad_mutex_key);
 

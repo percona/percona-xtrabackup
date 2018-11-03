@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -2653,7 +2653,7 @@ bool simplify_multi_geometry(String *str, String *result_buffer) {
   } else if (gtype == Geometry::wkb_geometrycollection) {
     Singleton_extractor ex;
     uint32 wkb_len = str->length() - GEOM_HEADER_SIZE;
-    wkb_scanner(p + GEOM_HEADER_SIZE, &wkb_len,
+    wkb_scanner(current_thd, p + GEOM_HEADER_SIZE, &wkb_len,
                 Geometry::wkb_geometrycollection, false, &ex);
     if (ex.has_single_component()) {
       if (result_buffer) {
@@ -2719,7 +2719,8 @@ String *Item_func_spatial_operation::val_str(String *str_value_arg) {
 
   if (g1->get_srid() != 0) {
     THD *thd = current_thd;
-    dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+    std::unique_ptr<dd::cache::Dictionary_client::Auto_releaser> releaser(
+        new dd::cache::Dictionary_client::Auto_releaser(thd->dd_client()));
     Srs_fetcher fetcher(thd);
     const dd::Spatial_reference_system *srs = nullptr;
     if (fetcher.acquire(g1->get_srid(), &srs))

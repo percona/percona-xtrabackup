@@ -73,7 +73,7 @@ typedef NdbImport::Error Error;
   } while (0)
 
 #define log1(x) logN(x, 1)
-#define log2(x) logN(x, 2)
+#define log_2(x) logN(x, 2)
 
 #if defined(VM_TRACE) || defined(TEST_NDBIMPORT)
 #define log3(x) logN(x, 3)
@@ -216,15 +216,11 @@ public:
     void set_value(Row* row, const void* data, uint len) const;
     void set_blob(Row* row, const void* data, uint len) const;
     void set_null(Row* row, bool null) const;
-    // used only for pseudo-tables, attrs are non-nullable
-    const void* get_value(const Row* row) const;
-    // avoid alignment crash, add required methods here
-    void get_value(const Row* row, uint32& value) const {
-      memcpy(&value, get_value(row), sizeof(value));
-    }
-    void get_value(const Row* row, uint64& value) const {
-      memcpy(&value, get_value(row), sizeof(value));
-    }
+    // get_value() is used only for pseudo-columns
+    const uchar* get_value(const Row* row) const;
+    void get_value(const Row* row, uint32& value) const;
+    void get_value(const Row* row, uint64& value) const;
+    void get_value(const Row* row, char* buf, uint bufsz) const;
     bool get_null(const Row* row) const;
     uint get_blob_parts(uint len) const;
     void set_sqltype();
@@ -597,7 +593,7 @@ public:
   void free_range(Range* r);
   void free_ranges(RangeList& src);
 
-  RangeList* c_ranges_free;
+  RangeList c_ranges_free;
 
   // errormap
 

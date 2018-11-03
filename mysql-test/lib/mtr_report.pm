@@ -39,7 +39,7 @@ our @EXPORT = qw(report_option mtr_print_line mtr_print_thick_line
 
 use File::Spec;
 use IO::Handle qw[ flush ];
-use POSIX qw[ _exit ];
+use POSIX qw(_exit floor);
 
 use My::Platform;
 use mtr_match;
@@ -48,6 +48,7 @@ use mtr_results;
 require "mtr_io.pl";
 
 my $done_percentage = 0;
+my $tests_completed = 0;
 my $tot_real_time   = 0;
 
 our $name;
@@ -96,8 +97,10 @@ sub _name {
   return $name ? $name . " " : undef;
 }
 
-sub _mtr_report_test_name ($) {
-  my $tinfo = shift;
+sub _mtr_report_test_name ($$) {
+  my $tinfo           = shift;
+  my $done_percentage = shift;
+
   my $tname = $tinfo->{name};
 
   return unless defined $verbose;
@@ -147,9 +150,7 @@ sub mtr_report_test_passed ($) {
 }
 
 # Reports the result of a test to standard out. Gets the needed info
-# from the test result object given as argument. Also checks if the
-# test was on the experimental list (if it failed) so that "fail" can
-# be replaced with "exp-fail".
+# from the test result object given as argument.
 sub mtr_report_test ($) {
   my ($tinfo) = @_;
 
@@ -159,46 +160,17 @@ sub mtr_report_test ($) {
   my $retry    = $tinfo->{'retries'} ? "retry-" : "";
   my $warnings = $tinfo->{'warnings'};
 
-  if ($::opt_test_progress) {
-    if ($tinfo->{'name'} && !$retry) {
-      $::remaining = $::remaining - 1;
-      $done_percentage =
-        100 - int(($::remaining * 100) / ($::num_tests_for_report));
-    }
+  if ($::opt_test_progress and $tinfo->{'name'} and !$retry) {
+    $tests_completed = $tests_completed + 1;
+    $done_percentage =
+      floor(($tests_completed / $::num_tests_for_report) * 100);
   }
 
-  my $test_name = _mtr_report_test_name($tinfo);
+  my $test_name = _mtr_report_test_name($tinfo, $done_percentage);
 
   if ($result eq 'MTR_RES_FAILED') {
     my $fail   = "fail";
     my $timest = format_time();
-
-    if (@$::experimental_test_cases) {
-      # Find out if this test case is an experimental one, so we can
-      # treat the failure as an expected failure instead of a regression.
-      for my $exp (@$::experimental_test_cases) {
-        # Include pattern match for combinations
-        if ($exp ne $test_name && $test_name !~ /^$exp /) {
-          # If the expression is not the name of this test case, but has
-          # an asterisk at the end, determine if the characters up to but
-          # excluding the asterisk are the same.
-          if ($exp ne "" && substr($exp, -1, 1) eq "*") {
-            my $nexp = substr($exp, 0, length($exp) - 1);
-            if (substr($test_name, 0, length($nexp)) ne $nexp) {
-              # No match, try next entry
-              next;
-            }
-            # If yes, fall through to set the exp-fail status
-          } else {
-            # No match, try next entry
-            next;
-          }
-        }
-        $fail = "exp-fail";
-        $tinfo->{exp_fail} = 1;
-        last;
-      }
-    }
 
     if ($warnings) {
       mtr_report("[ $retry$fail ]  Found warnings/errors in server log file!");

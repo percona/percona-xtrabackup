@@ -606,6 +606,16 @@ class Item_func : public Item_result_field {
     @return true if the function item can have named parameters
   */
   virtual bool may_have_named_parameters() const { return false; }
+
+  bool check_function_as_value_generator(uchar *args) override {
+    if (is_deprecated()) {
+      Check_function_as_value_generator_parameters *func_arg =
+          pointer_cast<Check_function_as_value_generator_parameters *>(args);
+      func_arg->banned_function_name = func_name();
+      return true;
+    }
+    return false;
+  }
 };
 
 class Item_real_func : public Item_func {
@@ -636,7 +646,10 @@ class Item_real_func : public Item_func {
   my_decimal *val_decimal(my_decimal *decimal_value) override;
   longlong val_int() override {
     DBUG_ASSERT(fixed);
-    return (longlong)rint(val_real());
+    const double realval = val_real();
+    // Rounding error, llrint() may return LLONG_MIN.
+    const longlong retval = realval == LLONG_MAX ? LLONG_MAX : llrint(realval);
+    return retval;
   }
   bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
     return get_date_from_real(ltime, fuzzydate);
@@ -869,7 +882,12 @@ class Item_func_connection_id final : public Item_int_func {
     DBUG_ASSERT(fixed);
     return value;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return func_arg->is_gen_col;
+  }
 };
 
 class Item_func_signed : public Item_int_func {
@@ -932,7 +950,7 @@ class Item_func_additive_op : public Item_num_op {
 
   void result_precision() override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 class Item_func_plus final : public Item_func_additive_op {
@@ -977,7 +995,7 @@ class Item_func_mul final : public Item_num_op {
   my_decimal *decimal_op(my_decimal *) override;
   void result_precision() override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 class Item_func_div final : public Item_num_op {
@@ -1009,7 +1027,7 @@ class Item_func_int_div final : public Item_int_func {
   }
 
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 class Item_func_mod final : public Item_num_op {
@@ -1024,7 +1042,7 @@ class Item_func_mod final : public Item_num_op {
   void result_precision() override;
   bool resolve_type(THD *thd) override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 class Item_func_neg final : public Item_func_num1 {
@@ -1043,7 +1061,7 @@ class Item_func_neg final : public Item_func_num1 {
     return args[0]->decimal_precision();
   }
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 class Item_func_abs final : public Item_func_num1 {
@@ -1055,7 +1073,7 @@ class Item_func_abs final : public Item_func_num1 {
   const char *func_name() const override { return "abs"; }
   bool resolve_type(THD *) override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 // A class to handle logarithmic and trigonometric functions
@@ -1192,7 +1210,7 @@ class Item_func_ceiling final : public Item_func_int_val {
   double real_op() override;
   my_decimal *decimal_op(my_decimal *) override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 class Item_func_floor final : public Item_func_int_val {
@@ -1204,7 +1222,7 @@ class Item_func_floor final : public Item_func_int_val {
   double real_op() override;
   my_decimal *decimal_op(my_decimal *) override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 /* This handles round and truncate */
@@ -1254,6 +1272,12 @@ class Item_func_rand final : public Item_real_func {
   void cleanup() override {
     first_eval = true;
     Item_real_func::cleanup();
+  }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return func_arg->is_gen_col;
   }
 
  private:
@@ -1740,7 +1764,12 @@ class Item_func_last_insert_id final : public Item_int_func {
     if (arg_count) max_length = args[0]->max_length;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 class Item_func_benchmark final : public Item_int_func {
@@ -1764,7 +1793,12 @@ class Item_func_benchmark final : public Item_int_func {
     return false;
   }
   void print(String *str, enum_query_type query_type) override;
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 void item_func_sleep_init();
@@ -1786,6 +1820,12 @@ class Item_func_sleep final : public Item_int_func {
   */
   table_map get_initial_pseudo_tables() const override {
     return RAND_TABLE_BIT;
+  }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
   }
   longlong val_int() override;
 };
@@ -1861,6 +1901,13 @@ class Item_udf_func : public Item_func {
   Item_result result_type() const override { return udf.result_type(); }
   bool is_expensive() override { return true; }
   void print(String *str, enum_query_type query_type) override;
+
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 
  protected:
   bool may_have_named_parameters() const override { return true; }
@@ -1993,7 +2040,12 @@ class Item_func_get_lock final : public Item_int_func {
     maybe_null = true;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
   uint decimal_precision() const override { return max_length; }
 };
 
@@ -2013,7 +2065,12 @@ class Item_func_release_lock final : public Item_int_func {
     maybe_null = true;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
   uint decimal_precision() const override { return max_length; }
 };
 
@@ -2030,7 +2087,12 @@ class Item_func_release_all_locks final : public Item_int_func {
     unsigned_flag = true;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 /* replication functions */
@@ -2055,7 +2117,12 @@ class Item_master_pos_wait final : public Item_int_func {
     maybe_null = true;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 /**
@@ -2656,7 +2723,12 @@ class Item_var_func : public Item_func {
   bool get_time(MYSQL_TIME *ltime) override {
     return get_time_from_non_temporal(ltime);
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = ER_DEFAULT_VAL_GENERATED_VARIABLES;
+    return true;
+  }
 };
 
 /* Handling of user definable variables */
@@ -3181,9 +3253,10 @@ class Item_func_match final : public Item_real_func {
 
   bool fix_index(const THD *thd);
   bool init_search(THD *thd);
-  bool check_gcol_func_processor(uchar *) override
-  // TODO: consider adding in support for the MATCH-based generated columns
-  {
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
     return true;
   }
 
@@ -3388,7 +3461,12 @@ class Item_func_is_free_lock final : public Item_int_func {
     maybe_null = true;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 class Item_func_is_used_lock final : public Item_int_func {
@@ -3407,7 +3485,12 @@ class Item_func_is_used_lock final : public Item_int_func {
     maybe_null = true;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 class Item_func_row_count final : public Item_int_func {
@@ -3424,7 +3507,12 @@ class Item_func_row_count final : public Item_int_func {
     maybe_null = false;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 /*
@@ -3542,6 +3630,12 @@ class Item_func_sp final : public Item_func {
   bool is_expensive() override { return true; }
 
   inline Field *get_sp_result_field() { return sp_result_field; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 class Item_func_found_rows final : public Item_int_func {
@@ -3557,7 +3651,12 @@ class Item_func_found_rows final : public Item_int_func {
     maybe_null = false;
     return false;
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 void uuid_short_init();
@@ -3576,7 +3675,12 @@ class Item_func_uuid_short final : public Item_int_func {
     return false;
   }
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return func_arg->is_gen_col;
+  }
 };
 
 class Item_func_version final : public Item_static_string_func {

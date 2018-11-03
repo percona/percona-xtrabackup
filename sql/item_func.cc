@@ -34,7 +34,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cfloat>  // DBL_DIG
-#include <cmath>   // std::log2
+#include <climits>
+#include <cmath>  // std::log2
 #include <iosfwd>
 #include <memory>
 #include <new>
@@ -753,6 +754,26 @@ Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type) {
     return NULL;
 
   /*
+    In order to match expressions against a functional index's expression,
+    it's needed to skip CAST(.. AS .. ) and potentially COLLATE from the latter.
+    This can't be joined with striping json_unquote below, since we might need
+    to skip it too in expression like:
+      CAST(JSON_UNQUOTE(<expr>) AS CHAR(X))
+  */
+
+  if (expr->functype() == Item_func::COLLATE_FUNC &&
+      (*func)->functype() != Item_func::COLLATE_FUNC) {
+    if (!expr->arguments()[0]->can_be_substituted_for_gc()) return nullptr;
+    expr = down_cast<Item_func *>(expr->arguments()[0]);
+  }
+
+  if (expr->functype() == Item_func::TYPECAST_FUNC &&
+      (*func)->functype() != Item_func::TYPECAST_FUNC) {
+    if (!expr->arguments()[0]->can_be_substituted_for_gc()) return nullptr;
+    expr = down_cast<Item_func *>(expr->arguments()[0]);
+  }
+
+  /*
     Skip unquoting function. This is needed to address JSON string
     comparison issue. All JSON_* functions return quoted strings. In
     order to create usable index, GC column expression has to include
@@ -800,8 +821,19 @@ static bool substitute_gc_expression(Item_func **expr, List<Field> *gc_fields,
     Key_map tkm = field->part_of_key;
     tkm.merge(field->part_of_prefixkey);  // Include prefix keys.
     tkm.intersect(field->table->keys_in_use_for_query);
+    // If the field is a hidden field used by a functional index, we require
+    // that the collation of the field must match the collation of the
+    // expression. If not, we might end up with the wrong result when using
+    // the index (see bug#27337092). Ideally, this should be done for normal
+    // generated columns as well, but that is delayed to a later fix since the
+    // impact might be quite large.
+    const bool incompatible_collations =
+        field->is_field_for_functional_index() &&
+        field->result_type() == STRING_RESULT &&
+        (*expr)->result_type() == STRING_RESULT &&
+        (*expr)->collation.collation != field->charset();
 
-    if (!tkm.is_clear_all()) {
+    if (!tkm.is_clear_all() && !incompatible_collations) {
       item_field = get_gc_for_expr(expr, field, type);
       if (item_field != nullptr) break;
     }
@@ -1173,8 +1205,14 @@ longlong Item_func_numhybrid::val_int() {
     }
     case INT_RESULT:
       return int_op();
-    case REAL_RESULT:
-      return (longlong)rint(real_op());
+    case REAL_RESULT: {
+      double realval = real_op();
+      if (realval < LLONG_MIN || realval > LLONG_MAX) {
+        raise_integer_overflow();
+        return error_int();
+      }
+      return llrint(realval);
+    }
     case STRING_RESULT: {
       switch (data_type()) {
         case MYSQL_TYPE_DATE:
@@ -1702,7 +1740,7 @@ longlong Item_func_mul::int_op() {
   res = res1 + res0;
 
   if (a_negative != b_negative) {
-    if ((ulonglong)res > (ulonglong)LLONG_MIN + 1) goto err;
+    if ((ulonglong)res > (ulonglong)LLONG_MAX) goto err;
     res = -res;
   } else
     res_unsigned = true;
@@ -2165,7 +2203,8 @@ double Item_func_pow::val_real() {
   double val2 = args[1]->val_real();
   if ((null_value = (args[0]->null_value || args[1]->null_value)))
     return 0.0; /* purecov: inspected */
-  return check_float_overflow(pow(value, val2));
+  const double pow_result = pow(value, val2);
+  return check_float_overflow(pow_result);
 }
 
 // Trigonometric functions
@@ -6463,13 +6502,6 @@ bool Item_func_match::init_search(THD *thd) {
   TABLE *const table = table_ref->table;
   /* Check if init_search() has been called before */
   if (ft_handler && !master) {
-    /*
-      We should reset ft_handler as it is cleaned up
-      on destruction of FT_SELECT object
-      (necessary in case of re-execution of subquery).
-      TODO: FT_SELECT should not clean up ft_handler.
-    */
-    if (join_key) table->file->ft_handler = ft_handler;
     DBUG_RETURN(false);
   }
 
@@ -7872,9 +7904,32 @@ longlong Item_func_can_access_view::val_int() {
   if (view_options->get_bool("view_valid", &is_view_valid)) DBUG_RETURN(0);
 
   THD *thd = current_thd;
-  if (!is_view_valid)
-    push_view_warning_or_error(thd, schema_name_ptr->c_ptr_safe(),
-                               table_name_ptr->c_ptr_safe());
+  if (!is_view_valid) {
+    /*
+      Check if we have seen error already for this view.
+      Do that if this is not SHOW FIELDS commands and
+      max_error_count is > 0
+    */
+    bool found = false;
+    bool cache_error_message = (thd->lex->sql_command != SQLCOM_SHOW_FIELDS ||
+                                thd->variables.max_error_count > 0);
+
+    const String db_str(schema_name_ptr->c_ptr_safe(), system_charset_info);
+    const String name_str(table_name_ptr->c_ptr_safe(), system_charset_info);
+
+    if (cache_error_message)
+      found = thd->lex->m_IS_table_stats.check_error_for_key(db_str, name_str);
+
+    if (!cache_error_message || !found) {
+      push_view_warning_or_error(thd, schema_name_ptr->c_ptr_safe(),
+                                 table_name_ptr->c_ptr_safe());
+
+      if (cache_error_message)
+        thd->lex->m_IS_table_stats.store_error_message(
+            db_str, name_str, nullptr,
+            (thd->get_stmt_da()->sql_conditions()++)->message_text());
+    }
+  }
 
   //
   // Check if definer user/host has access.
@@ -8614,6 +8669,13 @@ longlong Item_func_get_dd_index_sub_part_length::val_int() {
   enum_field_types field_type = dd_get_old_field_type(col_type);
   if (!Field::type_can_have_key_part(field_type)) DBUG_RETURN(0);
 
+  // Calculate the key length for the column. Note that we pass inn dummy values
+  // for "decimals", "is_unsigned" and "elements" since none of those arguments
+  // will affect the key length for any of the data types that can have a prefix
+  // index (see Field::type_can_have_key_part above).
+  uint32 column_key_length =
+      calc_key_length(field_type, column_length, 0, false, 0);
+
   // Read column charset id from args[3]
   const CHARSET_INFO *column_charset = &my_charset_latin1;
   if (csid) {
@@ -8622,7 +8684,7 @@ longlong Item_func_get_dd_index_sub_part_length::val_int() {
   }
 
   if ((idx_type != dd::Index::IT_FULLTEXT) &&
-      (key_part_length != column_length)) {
+      (key_part_length != column_key_length)) {
     longlong sub_part_length = key_part_length / column_charset->mbmaxlen;
     null_value = false;
     DBUG_RETURN(sub_part_length);

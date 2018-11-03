@@ -30,12 +30,15 @@
 
 #include <string.h>
 #include <sys/types.h>
+#include <memory>
 
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_inttypes.h"
 #include "sql/item.h"
-#include "sql/records.h"    // READ_RECORD
+#include "sql/records.h"  // READ_RECORD
+#include "sql/row_iterator.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_lex.h"
 #include "sql/sql_opt_exec_shared.h"  // QEP_shared_owner
@@ -297,6 +300,7 @@ enum_nested_loop_state sub_select(JOIN *join, QEP_TAB *qep_tab,
                                   bool end_of_records);
 enum_nested_loop_state evaluate_join_record(JOIN *join, QEP_TAB *qep_tab,
                                             int error);
+enum_nested_loop_state end_send_count(JOIN *join, QEP_TAB *qep_tab);
 
 MY_ATTRIBUTE((warn_unused_result))
 bool copy_fields(Temp_table_param *param, const THD *thd);
@@ -361,20 +365,13 @@ int report_handler_error(TABLE *table, int error);
 int safe_index_read(QEP_TAB *tab);
 
 int join_read_const_table(JOIN_TAB *tab, POSITION *pos);
-void join_read_key_unlock_row(st_join_table *tab);
-int join_init_quick_read_record(QEP_TAB *tab);
-int read_first_record_seq(QEP_TAB *tab);
-int join_init_read_record(QEP_TAB *tab);
-int join_read_first(QEP_TAB *tab);
-int join_read_last(QEP_TAB *tab);
-int join_read_last_key(QEP_TAB *tab);
+void join_setup_read_record(QEP_TAB *tab);
 int join_materialize_derived(QEP_TAB *tab);
 int join_materialize_table_function(QEP_TAB *tab);
 int join_materialize_semijoin(QEP_TAB *tab);
-int join_read_prev_same(READ_RECORD *info);
 
 int do_sj_dups_weedout(THD *thd, SJ_TMP_TABLE *sjtbl);
-int test_if_item_cache_changed(List<Cached_item> &list);
+int update_item_cache_if_changed(List<Cached_item> &list);
 
 // Create list for using with tempory table
 bool change_to_use_tmp_fields(THD *thd, Ref_item_array ref_item_array,
@@ -412,11 +409,8 @@ class QEP_TAB : public QEP_shared_owner {
         first_unmatched(NO_PLAN_IDX),
         rematerialize(false),
         materialize_table(NULL),
-        read_first_record(NULL),
         next_select(NULL),
         read_record(),
-        save_read_first_record(NULL),
-        save_read_record(NULL),
         used_null_fields(false),
         used_uneven_bit_fields(false),
         keep_current_rowid(false),
@@ -427,9 +421,8 @@ class QEP_TAB : public QEP_shared_owner {
         op(NULL),
         tmp_table_param(NULL),
         filesort(NULL),
-        ref_item_slice(REF_SLICE_SAVE),
+        ref_item_slice(REF_SLICE_SAVED_BASE),
         send_records(0),
-        quick_traced_before(false),
         m_condition_optim(NULL),
         m_quick_optim(NULL),
         m_keyread_optim(false),
@@ -493,7 +486,7 @@ class QEP_TAB : public QEP_shared_owner {
   /// @returns whether this is doing QS_DYNAMIC_RANGE
   bool dynamic_range() const {
     if (!position()) return false;  // tmp table
-    return read_first_record == join_init_quick_read_record;
+    return using_dynamic_range;
   }
 
   bool use_order() const;  ///< Use ordering provided by chosen index?
@@ -588,23 +581,11 @@ class QEP_TAB : public QEP_shared_owner {
   /// Dependent table functions have to be materialized on each new scan
   bool rematerialize;
 
-  READ_RECORD::Setup_func materialize_table;
-  /**
-     Initialize table for reading and fetch the first row from the table. If
-     table is a materialized derived one, function must materialize it with
-     prepare_scan().
-  */
-  READ_RECORD::Setup_func read_first_record;
+  typedef int (*Setup_func)(QEP_TAB *);
+  Setup_func materialize_table;
+  bool using_dynamic_range = false;
   Next_select_func next_select;
   READ_RECORD read_record;
-  /*
-    The following two fields are used for a [NOT] IN subquery if it is
-    executed by an alternative full table scan when the left operand of
-    the subquery predicate is evaluated to NULL.
-  */
-  READ_RECORD::Setup_func
-      save_read_first_record;              /* to save read_first_record */
-  READ_RECORD::Read_func save_read_record; /* to save read_record.read_record */
 
   // join-cache-related members
   bool used_null_fields;
@@ -645,17 +626,6 @@ class QEP_TAB : public QEP_shared_owner {
 
   /** Number of records saved in tmp table */
   ha_rows send_records;
-
-  /**
-    Used for QS_DYNAMIC_RANGE, i.e., "Range checked for each record".
-    Used by optimizer tracing to decide whether or not dynamic range
-    analysis of this select has been traced already. If optimizer
-    trace option DYNAMIC_RANGE is enabled, range analysis will be
-    traced with different ranges for every record to the left of this
-    table in the join. If disabled, range analysis will only be traced
-    for the first range.
-  */
-  bool quick_traced_before;
 
   /// @see m_quick_optim
   Item *m_condition_optim;
@@ -719,5 +689,7 @@ class QEP_TAB_standalone {
   QEP_shared m_qs;
   QEP_TAB m_qt;
 };
+
+bool set_record_buffer(const QEP_TAB *tab);
 
 #endif /* SQL_EXECUTOR_INCLUDED */

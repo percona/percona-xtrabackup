@@ -38,6 +38,7 @@
 #include "mysqld_error.h"
 #include "prealloced_array.h"  // Prealloced_array
 #include "sql/current_thd.h"
+#include "sql/derror.h"
 #include "sql/item_func.h"
 #include "sql/mysqld.h"  // table_alias_charset
 #include "sql/nested_join.h"
@@ -1163,6 +1164,11 @@ static bool consume_comment(Lex_input_stream *lip,
 
     if (remaining_recursions_permitted > 0) {
       if ((c == '/') && (lip->yyPeek() == '*')) {
+        push_warning(
+            lip->m_thd, Sql_condition::SL_WARNING,
+            ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+            ER_THD(lip->m_thd, ER_WARN_DEPRECATED_NESTED_COMMENT_SYNTAX));
+
         lip->yySkip(); /* Eat asterisk */
         consume_comment(lip, remaining_recursions_permitted - 1);
         continue;
@@ -1426,12 +1432,10 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd) {
 
         if (yylval->lex_str.str[0] == '_') {
           auto charset_name = yylval->lex_str.str + 1;
-          if (native_strcasecmp(charset_name, "utf8") == 0)
-            push_warning(thd, ER_DEPRECATED_UTF8_ALIAS);
-
-          const CHARSET_INFO *cs = get_charset_by_csname(
-              yylval->lex_str.str + 1, MY_CS_PRIMARY, MYF(0));
+          const CHARSET_INFO *cs =
+              get_charset_by_csname(charset_name, MY_CS_PRIMARY, MYF(0));
           if (cs) {
+            lip->warn_on_deprecated_charset(cs, charset_name);
             if (cs == &my_charset_utf8mb4_0900_ai_ci) {
               /*
                 If cs is utf8mb4, and the collation of cs is the default
@@ -1774,6 +1778,12 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd) {
             break;
           }
         } else {
+          if (lip->in_comment != NO_COMMENT) {
+            push_warning(
+                lip->m_thd, Sql_condition::SL_WARNING,
+                ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+                ER_THD(lip->m_thd, ER_WARN_DEPRECATED_NESTED_COMMENT_SYNTAX));
+          }
           lip->in_comment = PRESERVE_COMMENT;
           lip->yySkip();  // Accept /
           lip->yySkip();  // Accept *
@@ -2385,15 +2395,58 @@ void SELECT_LEX_UNIT::set_explain_marker_from(const SELECT_LEX_UNIT *u) {
 }
 
 ha_rows SELECT_LEX::get_offset() {
-  DBUG_ASSERT(offset_limit == NULL || offset_limit->fixed);
+  ulonglong val = 0;
 
-  return ha_rows(offset_limit ? offset_limit->val_uint() : 0ULL);
+  if (offset_limit) {
+    // see comment for st_select_lex::get_limit()
+    bool fix_fields_successful = true;
+    if (!offset_limit->fixed) {
+      fix_fields_successful = !offset_limit->fix_fields(master->thd, NULL);
+      DBUG_ASSERT(fix_fields_successful);
+    }
+    val = fix_fields_successful ? offset_limit->val_uint() : HA_POS_ERROR;
+  }
+
+  return ha_rows(val);
 }
 
 ha_rows SELECT_LEX::get_limit() {
-  DBUG_ASSERT(select_limit == NULL || select_limit->fixed);
+  ulonglong val = HA_POS_ERROR;
 
-  return ha_rows(select_limit ? select_limit->val_uint() : HA_POS_ERROR);
+  if (select_limit) {
+    /*
+      fix_fields() has not been called for select_limit. That's due to the
+      historical reasons -- this item could be only of type Item_int, and
+      Item_int does not require fix_fields(). Thus, fix_fields() was never
+      called for select_limit.
+
+      Some time ago, Item_splocal was also allowed for LIMIT / OFFSET clauses.
+      However, the fix_fields() behavior was not updated, which led to a crash
+      in some cases.
+
+      There is no single place where to call fix_fields() for LIMIT / OFFSET
+      items during the fix-fields-phase. Thus, for the sake of readability,
+      it was decided to do it here, on the evaluation phase (which is a
+      violation of design, but we chose the lesser of two evils).
+
+      We can call fix_fields() here, because select_limit can be of two
+      types only: Item_int and Item_splocal. Item_int::fix_fields() is trivial,
+      and Item_splocal::fix_fields() (or rather Item_sp_variable::fix_fields())
+      has the following properties:
+        1) it does not affect other items;
+        2) it does not fail.
+      Nevertheless DBUG_ASSERT was added to catch future changes in
+      fix_fields() implementation. Also added runtime check against a result
+      of fix_fields() in order to handle error condition in non-debug build.
+    */
+    bool fix_fields_successful = true;
+    if (!select_limit->fixed) {
+      fix_fields_successful = !select_limit->fix_fields(master->thd, NULL);
+      DBUG_ASSERT(fix_fields_successful);
+    }
+    val = fix_fields_successful ? select_limit->val_uint() : HA_POS_ERROR;
+  }
+  return ha_rows(val);
 }
 
 void SELECT_LEX::add_order_to_list(ORDER *order) {
@@ -2517,10 +2570,7 @@ void SELECT_LEX::print_order(String *str, ORDER *order,
                              enum_query_type query_type) {
   for (; order; order = order->next) {
     (*order->item)->print_for_order(str, query_type, order->used_alias);
-    if (order->direction == ORDER_DESC)
-      str->append(STRING_WITH_LEN(" desc"));
-    else if (order->is_explicit)
-      str->append(STRING_WITH_LEN(" asc"));
+    if (order->direction == ORDER_DESC) str->append(STRING_WITH_LEN(" desc"));
     if (order->next) str->append(',');
   }
 }
@@ -3633,12 +3683,12 @@ bool SELECT_LEX_UNIT::set_limit(THD *thd_arg MY_ATTRIBUTE((unused)),
   /// @todo Remove THD from class SELECT_LEX_UNIT
   DBUG_ASSERT(this->thd == thd_arg);
   if (provider->offset_limit)
-    offset_limit_cnt = provider->offset_limit->val_uint();
+    offset_limit_cnt = provider->get_offset();
   else
     offset_limit_cnt = 0;
 
   if (provider->select_limit)
-    select_limit_cnt = provider->select_limit->val_uint();
+    select_limit_cnt = provider->get_limit();
   else
     select_limit_cnt = HA_POS_ERROR;
 

@@ -37,7 +37,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "buf0dblwr.h"
 #include "dict0dict.h"
 #include "log0recv.h"
-#include "my_inttypes.h"
 #endif /* !UNIV_HOTBACKUP */
 #include "page0page.h"
 
@@ -533,10 +532,11 @@ byte *mlog_parse_index(byte *ptr,            /*!< in: buffer */
                        ibool comp,           /*!< in: TRUE=compact row format */
                        dict_index_t **index) /*!< out, own: dummy index */
 {
-  ulint i, n, n_uniq;
+  ulint i;
   dict_table_t *table;
   dict_index_t *ind;
   bool instant = false;
+  uint16_t n, n_uniq;
   uint16_t instant_cols = 0;
 
   ut_ad(comp == FALSE || comp == TRUE);

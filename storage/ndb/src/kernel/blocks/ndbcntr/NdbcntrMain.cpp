@@ -90,6 +90,13 @@ extern EventLogger * g_eventLogger;
 //#define DEBUG_LOCAL_SYSFILE 1
 //#define DEBUG_LCP 1
 //#define DEBUG_UNDO 1
+//#define DEBUG_REDO_CONTROL 1
+#endif
+
+#ifdef DEBUG_REDO_CONTROL
+#define DEB_REDO_CONTROL(arglist) do { g_eventLogger->info arglist ; } while (0)
+#else
+#define DEB_REDO_CONTROL(arglist) do { } while (0)
 #endif
 
 #ifdef DEBUG_LOCAL_SYSFILE
@@ -1750,6 +1757,34 @@ void Ndbcntr::execDIH_RESTARTCONF(Signal* signal)
   c_start.m_lastGci = conf->latest_gci;
   c_start.m_lastLcpId = conf->latest_lcp_id;
 
+  /* Check for 'nothing read' values from local sysfile */
+  if (unlikely((c_local_sysfile.m_restorable_flag ==
+                ReadLocalSysfileReq::NODE_RESTORABLE_ON_ITS_OWN) &&
+               (c_local_sysfile.m_max_restorable_gci == 1)))
+  {
+    jam();
+    /**
+     * In this case, we were unable to read a local sysfile at all,
+     * but the distributed sysfile was readable.
+     * This looks like an upgrade scenario, and we require an
+     * explicit --initial for that.
+     * Tell user via a process exit code, they must decide
+     * themselves whether or not to use --initial.
+     */
+    if (!m_ctx.m_config.getInitialStart()) // TODO : Always?
+    {
+      jam();
+      g_eventLogger->error("Upgrading to a newer version with a newer "
+                           "LCP file format. Data node needs to be started "
+                           "with --initial");
+      // in debug mode crash rather than exit
+      CRASH_INSERTION(1007);
+      progError(__LINE__, NDBD_EXIT_UPGRADE_INITIAL_REQUIRED);
+      /* Never reach here */
+      return;
+    }
+  }
+
   if (unlikely(ctypeOfStart == NodeState::ST_SYSTEM_RESTART_NOT_RESTORABLE &&
                c_local_sysfile.m_max_restorable_gci < c_start.m_lastGci))
   {
@@ -1835,7 +1870,7 @@ Ndbcntr::execREAD_LOCAL_SYSFILE_CONF(Signal *signal)
   }
   else
   {
-    ndbrequire(false);
+    ndbabort();
   }
   sendSttorry(signal);
 }
@@ -1893,7 +1928,7 @@ Ndbcntr::execWRITE_LOCAL_SYSFILE_CONF(Signal *signal)
   }
   else
   {
-    ndbrequire(false);
+    ndbabort();
   }
   return;
 }
@@ -2026,7 +2061,7 @@ Ndbcntr::execCNTR_START_REF(Signal * signal)
     jam();
     progError(__LINE__, NDBD_EXIT_RESTART_DURING_SHUTDOWN);
   }
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -2097,8 +2132,7 @@ Ndbcntr::execCNTR_START_CONF(Signal * signal)
     }
     default:
     {
-      ndbrequire(false);
-      break;
+      ndbabort();
     }
   }
   ph2GLab(signal);
@@ -2187,7 +2221,7 @@ Ndbcntr::execCNTR_START_REQ(Signal * signal)
   case NodeState::SL_NOTHING:
   case NodeState::SL_CMVMI:
     jam();
-    ndbrequire(false);
+    ndbabort();
   case NodeState::SL_STARTING:
   case NodeState::SL_STARTED:
     jam();
@@ -2272,7 +2306,7 @@ Ndbcntr::execCNTR_START_REQ(Signal * signal)
   case NodeState::ST_NODE_RESTART:
   case NodeState::ST_INITIAL_NODE_RESTART:
   case NodeState::ST_ILLEGAL_TYPE:
-    ndbrequire(false);
+    ndbabort();
   }
 
   const bool startInProgress = !c_start.m_starting.isclear();
@@ -2510,7 +2544,7 @@ Ndbcntr::trySystemRestart(Signal* signal){
         }
         case CheckNodeGroups::Lose:
         {
-          ndbrequire(false); //Cannot happen
+          ndbabort(); //Cannot happen
         }
         case CheckNodeGroups::Partitioning:
         {
@@ -2539,14 +2573,14 @@ Ndbcntr::trySystemRestart(Signal* signal){
         }
         default:
         {
-          ndbrequire(false);
+          ndbabort();
         }
       }
       break;
     }
     default:
     {
-      ndbrequire(false);
+      ndbabort();
     }
     }
     
@@ -2907,7 +2941,7 @@ void Ndbcntr::ph5ALab(Signal* signal)
       jam();
       break;
     }
-    ndbrequire(false);
+    ndbabort();
   }
   
   /**
@@ -2957,7 +2991,7 @@ void Ndbcntr::ph5ALab(Signal* signal)
 	       GSN_CNTR_WAITREP, signal, 2, JBB);
     return;
   default:
-    ndbrequire(false);
+    ndbabort();
   }
 }//Ndbcntr::ph5ALab()
 
@@ -3588,7 +3622,6 @@ void Ndbcntr::execREAD_NODESREQ(Signal* signal)
 void Ndbcntr::systemErrorLab(Signal* signal, int line) 
 {
   progError(line, NDBD_EXIT_NDBREQUIRE); /* BUG INSERTION */
-  return;
 }//Ndbcntr::systemErrorLab()
 
 /*###########################################################################*/
@@ -3627,7 +3660,7 @@ void Ndbcntr::execSCHEMA_TRANS_BEGIN_CONF(Signal* signal)
 void Ndbcntr::execSCHEMA_TRANS_BEGIN_REF(Signal* signal)
 {
   jamEntry();
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -3650,7 +3683,7 @@ Ndbcntr::execCREATE_HASH_MAP_REF(Signal* signal)
 {
   jamEntry();
 
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -3699,7 +3732,6 @@ void Ndbcntr::execSCHEMA_TRANS_END_REF(Signal* signal)
                        "Failed to commit schema trans, err: %u",
                        ref->errorCode);
   progError(__LINE__, NDBD_EXIT_INVALID_CONFIG, buf);
-  ndbrequire(false);
 }
 
 void
@@ -4543,7 +4575,7 @@ Ndbcntr::StopRecord::checkTimeout(Signal* signal){
   case NodeState::SL_SINGLEUSER:
     break;
   default:
-    ndbrequire(false);
+    ndbabort();
   }
 }
 
@@ -4813,7 +4845,7 @@ Ndbcntr::execCHANGE_NODE_STATE_CONF(Signal* signal)
 void Ndbcntr::execSTOP_ME_REF(Signal* signal)
 {
   jamEntry();
-  ndbrequire(false);
+  ndbabort();
 }
 
 
@@ -5071,7 +5103,7 @@ Ndbcntr::clearFilesystem(Signal* signal)
   }
   else
   {
-    ndbrequire(false);
+    ndbabort();
   }
 
   sendSignal(NDBFS_REF, GSN_FSREMOVEREQ, signal, 
@@ -5318,6 +5350,7 @@ void Ndbcntr::Missra::sendNextSTTOR(Signal* signal){
               break;
             case NodeState::ST_INITIAL_START:
               g_eventLogger->info("Phase 5 Created the System Table");
+              // Fall through
             case NodeState::ST_SYSTEM_RESTART:
               g_eventLogger->info("Phase 5 waited for local checkpoint to"
                                   " complete");
@@ -5559,7 +5592,7 @@ Ndbcntr::execREAD_LOCAL_SYSFILE_REQ(Signal *signal)
      * same thing at the same time.
      */
     jam();
-    ndbrequire(false);
+    ndbabort();
     sendSignalWithDelay(reference(),
                         GSN_READ_LOCAL_SYSFILE_REQ,
                         signal,
@@ -5741,7 +5774,7 @@ Ndbcntr::execFSOPENREF(Signal *signal)
     return;
   }
   jamLine(c_local_sysfile.m_state);
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -5784,7 +5817,7 @@ Ndbcntr::execFSOPENCONF(Signal *signal)
     return;
   }
   jamLine(c_local_sysfile.m_state);
-  ndbrequire(false);
+  ndbabort();
 }
 
 #define ZLIST_OF_PAIRS 0
@@ -5829,7 +5862,7 @@ Ndbcntr::execFSREADREF(Signal *signal)
     handle_read_refuse(signal);
   }
   jamLine(c_local_sysfile.m_state);
-  ndbrequire(false);
+  ndbabort();
 }
 
 const char*
@@ -5877,7 +5910,7 @@ Ndbcntr::execFSREADCONF(Signal *signal)
     return;
   }
   jamLine(c_local_sysfile.m_state);
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -5885,7 +5918,7 @@ Ndbcntr::execFSWRITEREF(Signal *signal)
 {
   jamEntry();
   jamLine(c_local_sysfile.m_state);
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -5909,7 +5942,7 @@ Ndbcntr::execFSWRITECONF(Signal *signal)
     return;
   }
   jamLine(c_local_sysfile.m_state);
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -5927,7 +5960,7 @@ Ndbcntr::handle_read_refuse(Signal *signal)
   }
   else
   {
-    ndbrequire(false);
+    ndbabort();
   }
   close_local_sysfile(signal);
 }
@@ -5947,7 +5980,7 @@ void
 Ndbcntr::execFSCLOSEREF(Signal *signal)
 {
   jamEntry();
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -6058,7 +6091,7 @@ Ndbcntr::execFSCLOSECONF(Signal *signal)
     return;
   }
   jamLine(c_local_sysfile.m_state);
-  ndbrequire(false);
+  ndbabort();
 }
 
 void
@@ -6086,6 +6119,100 @@ Ndbcntr::sendWriteLocalSysfile_startLcp(Signal *signal, Uint32 type)
              JBB);
 }
 
+RedoStateRep::RedoAlertState
+Ndbcntr::get_node_redo_alert_state()
+{
+  RedoStateRep::RedoAlertState redo_alert_state = RedoStateRep::NO_REDO_ALERT;
+  for (Uint32 i = 0; i < MAX_NDBMT_LQH_THREADS; i++)
+  {
+    if (m_redo_alert_state[i] > redo_alert_state)
+    {
+      jamLine(i);
+      redo_alert_state = m_redo_alert_state[i];
+    }
+  }
+  return redo_alert_state;
+}
+
+void
+Ndbcntr::execREDO_STATE_REP(Signal *signal)
+{
+  RedoStateRep *rep = (RedoStateRep*)signal->getDataPtr();
+  BlockReference sender = signal->senderBlockRef();
+  Uint32 instance = refToInstance(sender);
+  Uint32 block = refToMain(sender);
+  bool any_changes = false;
+  if (block == DBDIH)
+  {
+    /**
+     * The DIH master informs us of a new global redo alert state.
+     * We will record this, DIH manages this information based on
+     * knowledge of all state's in all nodes.
+     */
+    ndbrequire(rep->receiverInfo == RedoStateRep::ToNdbcntr);
+    if (rep->redoState != (Uint32)m_global_redo_alert_state)
+    {
+      jam();
+      any_changes = true;
+      m_global_redo_alert_state = (RedoStateRep::RedoAlertState)rep->redoState;
+    }
+  }
+  else
+  {
+    /**
+     * The backup block in some LDM thread has changed the state of
+     * REDO alert state. We will update our view on this state and
+     * calculate the REDO alert state of this node.
+     */
+    RedoStateRep::RedoAlertState node_redo_alert_state;
+    ndbrequire(block == BACKUP);
+    ndbrequire(m_redo_alert_state[instance] !=
+               (RedoStateRep::RedoAlertState)rep->redoState);
+    m_redo_alert_state[instance] =
+      (RedoStateRep::RedoAlertState)rep->redoState;
+    node_redo_alert_state = get_node_redo_alert_state();
+    if (node_redo_alert_state != m_node_redo_alert_state)
+    {
+      any_changes = true;
+      m_node_redo_alert_state = node_redo_alert_state;
+      if (m_first_distributed_lcp_started)
+      {
+        jam();
+        rep->receiverInfo = RedoStateRep::ToLocalDih;
+        rep->redoState = (RedoStateRep::RedoAlertState)m_node_redo_alert_state;
+        sendSignal(DBDIH_REF, GSN_REDO_STATE_REP, signal, 2, JBB);
+      }
+    }
+  }
+  if (!any_changes)
+    return;
+  /**
+   * We update the REDO alert state in all LDM threads if there was any
+   * change of either global REDO alert state or the node REDO alert state.
+   * If the node state is on a higher alert level we use this since we
+   * could receive this information before the global state have been
+   * updated.
+   */
+  RedoStateRep::RedoAlertState redo_alert_state;
+  if (m_node_redo_alert_state > m_global_redo_alert_state)
+  {
+    jam();
+    redo_alert_state = m_node_redo_alert_state;
+  }
+  else
+  {
+    jam();
+    redo_alert_state = m_global_redo_alert_state;
+  }
+  DEB_REDO_CONTROL(("Set node REDO alert state to %u",
+                    redo_alert_state));
+  rep->receiverInfo = RedoStateRep::ToBackup;
+  rep->redoState = (RedoStateRep::RedoAlertState)redo_alert_state;
+  send_to_all_backup(signal,
+                     GSN_REDO_STATE_REP,
+                     2);
+}
+
 void Ndbcntr::execCOPY_FRAG_IN_PROGRESS_REP(Signal *signal)
 {
   jamEntry();
@@ -6093,9 +6220,36 @@ void Ndbcntr::execCOPY_FRAG_IN_PROGRESS_REP(Signal *signal)
   DEB_LCP(("m_copy_fragment_in_progress: %u", m_copy_fragment_in_progress));
 }
 
-Uint32 Ndbcntr::send_to_all_lqh(Signal *signal,
-                                Uint32 gsn,
-                                Uint32 sig_len)
+Uint32
+Ndbcntr::send_to_all_backup(Signal *signal,
+                            Uint32 gsn,
+                            Uint32 sig_len)
+{
+  Uint32 ldm_workers = globalData.ndbMtLqhWorkers == 0 ?
+                       1 : globalData.ndbMtLqhWorkers;
+  if (isNdbMtLqh())
+  {
+    jam();
+    for (Uint32 i = 1; i <= ldm_workers; i++)
+    {
+      jam();
+      BlockReference ref = numberToRef(BACKUP, i, getOwnNodeId());
+      sendSignal(ref, gsn, signal, sig_len, JBB);
+    }
+  }
+  else
+  {
+    jam();
+    sendSignal(BACKUP_REF, gsn, signal,
+               sig_len, JBB);
+  }
+  return ldm_workers;
+}
+
+Uint32
+Ndbcntr::send_to_all_lqh(Signal *signal,
+                         Uint32 gsn,
+                         Uint32 sig_len)
 {
   Uint32 ldm_workers = globalData.ndbMtLqhWorkers == 0 ?
                        1 : globalData.ndbMtLqhWorkers;
@@ -6157,7 +6311,11 @@ void Ndbcntr::execUNDO_LOG_LEVEL_REP(Signal *signal)
   DEB_UNDO(("UNDO log level = %u", levelUsed));
   if (m_copy_fragment_in_progress &&
       !c_local_sysfile.m_initial_write_local_sysfile_ongoing &&
-      levelUsed >= START_LCP_LEVEL)
+      (levelUsed >= START_LCP_LEVEL
+#ifdef ERROR_INSERT
+      || (ERROR_INSERTED(1011))
+#endif
+     ))
   {
     /**
      * If no local LCP is ongoing we need to start one.
@@ -6169,6 +6327,9 @@ void Ndbcntr::execUNDO_LOG_LEVEL_REP(Signal *signal)
      * are right now spinning up the first local LCP. We will be back
      * here within 2 seconds to start a full local LCP later.
      */
+#ifdef ERROR_INSERT
+    CLEAR_ERROR_INSERT_VALUE;
+#endif
     if (m_full_local_lcp_started)
     {
       jam();
@@ -6284,7 +6445,7 @@ void Ndbcntr::execSET_LOCAL_LCP_ID_REQ(Signal *signal)
     send_to_all_lqh(signal, GSN_SET_LOCAL_LCP_ID_CONF, 2);
     return;
   }
-  ndbrequire(false);
+  ndbabort();
 }
 
 void Ndbcntr::write_local_sysfile_start_lcp_done(Signal *signal)
@@ -6408,6 +6569,7 @@ void Ndbcntr::execSTART_DISTRIBUTED_LCP_ORD(Signal *signal)
     jam();
     DEB_LCP(("Start distributed LCP: lcpId = %u", lcpId));
     ndbrequire(m_outstanding_wait_lcp == 0);
+    m_first_distributed_lcp_started = true;
     m_distributed_lcp_started = true;
     m_outstanding_wait_lcp = ldm_workers;
     m_distributed_lcp_id = lcpId;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,6 +41,7 @@
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "sql/current_thd.h"
 #include "sql/dd/cache/dictionary_client.h"
 #include "sql/item_func.h"
 #include "sql/mdl.h"
@@ -96,7 +97,8 @@ bool Srs_fetcher::acquire_for_modification(gis::srid_t srid,
 
 bool Srs_fetcher::srs_exists(THD *thd, gis::srid_t srid, bool *exists) {
   DBUG_ASSERT(exists);
-  dd::cache::Dictionary_client::Auto_releaser m_releaser(thd->dd_client());
+  std::unique_ptr<dd::cache::Dictionary_client::Auto_releaser> releaser(
+      new dd::cache::Dictionary_client::Auto_releaser(thd->dd_client()));
   Srs_fetcher fetcher(thd);
   const dd::Spatial_reference_system *srs = nullptr;
   if (fetcher.acquire(srid, &srs)) return true; /* purecov: inspected */
@@ -578,8 +580,8 @@ bool is_empty_geocollection(const Geometry *g) {
 
   Is_empty_geometry checker;
   uint32 len = g->get_data_size();
-  wkb_scanner(g->get_cptr(), &len, Geometry::wkb_geometrycollection, false,
-              &checker);
+  wkb_scanner(current_thd, g->get_cptr(), &len,
+              Geometry::wkb_geometrycollection, false, &checker);
   return checker.is_empty;
 }
 
@@ -595,7 +597,7 @@ bool is_empty_geocollection(const String &wkbres) {
 
   Is_empty_geometry checker;
   uint32 len = static_cast<uint32>(wkbres.length()) - GEOM_HEADER_SIZE;
-  wkb_scanner(wkbres.ptr() + GEOM_HEADER_SIZE, &len,
+  wkb_scanner(current_thd, wkbres.ptr() + GEOM_HEADER_SIZE, &len,
               Geometry::wkb_geometrycollection, false, &checker);
   return checker.is_empty;
 }

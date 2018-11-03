@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -75,7 +75,6 @@ ConfigInfo::m_sectionNames[]={
   API_TOKEN,
 
   "TCP",
-  "SCI",
   "SHM"
 };
 const int ConfigInfo::m_noOfSectionNames = 
@@ -121,11 +120,9 @@ ConfigInfo::m_SectionRules[] = {
 
   { "TCP",  checkConnectionSupport, 0 },
   { "SHM",  checkConnectionSupport, 0 },
-  { "SCI",  checkConnectionSupport, 0 },
 
   { "TCP",  transformConnection, 0 },
   { "SHM",  transformConnection, 0 },
-  { "SCI",  transformConnection, 0 },
   
   { DB_TOKEN,   fixNodeHostname, 0 },
   { API_TOKEN,  fixNodeHostname, 0 },
@@ -135,25 +132,19 @@ ConfigInfo::m_SectionRules[] = {
   { "TCP",  fixNodeId, "NodeId2" },
   { "SHM",  fixNodeId, "NodeId1" },
   { "SHM",  fixNodeId, "NodeId2" },
-  { "SCI",  fixNodeId, "NodeId1" },
-  { "SCI",  fixNodeId, "NodeId2" },
   
   { "TCP",  uniqueConnection, "TCP" },
   { "SHM",  uniqueConnection, "SHM" },
-  { "SCI",  uniqueConnection, "SCI" },
 
   { "TCP",  fixHostname, "HostName1" },
   { "TCP",  fixHostname, "HostName2" },
   { "SHM",  fixHostname, "HostName1" },
   { "SHM",  fixHostname, "HostName2" },
-  { "SCI",  fixHostname, "HostName1" },
-  { "SCI",  fixHostname, "HostName2" },
   { "SHM",  fixHostname, "HostName1" },
   { "SHM",  fixHostname, "HostName2" },
 
   { "TCP",  fixPortNumber, 0 }, // has to come after fixHostName
   { "SHM",  fixPortNumber, 0 }, // has to come after fixHostName
-  { "SCI",  fixPortNumber, 0 }, // has to come after fixHostName
 
   { "*",    applyDefaultValues, "user" },
   { "*",    fixDeprecated, 0 },
@@ -176,12 +167,9 @@ ConfigInfo::m_SectionRules[] = {
 
   { "TCP",  checkConnectionConstraints, 0 },
   { "SHM",  checkConnectionConstraints, 0 },
-  { "SCI",  checkConnectionConstraints, 0 },
 
   { "TCP",  checkTCPConstraints, "HostName1" },
   { "TCP",  checkTCPConstraints, "HostName2" },
-  { "SCI",  checkTCPConstraints, "HostName1" },
-  { "SCI",  checkTCPConstraints, "HostName2" },
   { "SHM",  checkTCPConstraints, "HostName1" },
   { "SHM",  checkTCPConstraints, "HostName2" },
   
@@ -638,6 +626,18 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "true" },
 
   {
+    CFG_DB_USE_SHM,
+    "UseShm",
+    DB_TOKEN,
+    "Use shared memory transporter on same host",
+    ConfigInfo::CI_USED,
+    0,
+    ConfigInfo::CI_BOOL,
+    "false",
+    "false",
+    "true" },
+
+  {
     CFG_DB_MEMLOCK,
     "LockPagesInMainMemory",
     DB_TOKEN,
@@ -744,6 +744,18 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "6000",
     "70",
     STR_VALUE(MAX_INT_RNIL) },
+
+  {
+    CFG_DB_WATCHDOG_IMMEDIATE_KILL,
+    "WatchDogImmediateKill",
+    DB_TOKEN,
+    "Kill threads immediately at watchdog issue",
+    ConfigInfo::CI_USED,
+    0,
+    ConfigInfo::CI_BOOL,
+    "false",
+    "false",
+    "true"},
 
   {
     CFG_DB_STOP_ON_ERROR,
@@ -2257,6 +2269,19 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
   },
 
   {
+    CFG_DB_ENABLE_REDO_CONTROL,
+    "EnableRedoControl",
+    DB_TOKEN,
+    "Enable adaptive speed of checkpointing to control REDO log usage",
+    ConfigInfo::CI_USED,
+    0,
+    ConfigInfo::CI_BOOL,
+    "true",
+    "false",
+    "true"
+  },
+
+  {
     CFG_DB_ENABLE_PARTIAL_LCP,
     "EnablePartialLcp",
     DB_TOKEN,
@@ -2270,6 +2295,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "false",
     "true"
   },
+
   {
     CFG_DB_RECOVERY_WORK,
     "RecoveryWork",
@@ -2280,9 +2306,26 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     0,
     ConfigInfo::CI_INT,
-    "50",
+    "60",
     "25",
     "100"
+  },
+
+  {
+    CFG_DB_INSERT_RECOVERY_WORK,
+    "InsertRecoveryWork",
+    DB_TOKEN,
+    "Percentage of RecoveryWork used for inserted rows, setting this high"
+    " increases the writes during LCPs and decreases the total LCP size, "
+    "setting it lower means we are writing less during LCPs but will "
+    "eventually have a larger LCP size and thus also longer recovery"
+    " for a period of time.",
+    ConfigInfo::CI_USED,
+    0,
+    ConfigInfo::CI_INT,
+    "40",
+    "0",
+    "70"
   },
 
   {
@@ -3191,7 +3234,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "SHM",
     "SHM",
     "Connection section",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_SECTION,
     (const char *)CONNECTION_TYPE_SHM, 
@@ -3235,8 +3278,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_SHM_SIGNUM,
     "Signum",
     "SHM",
-    "Signum to be used for signalling",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "Signum ignored, deprecated",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     0,
@@ -3248,7 +3291,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "NodeId1",
     "SHM",
     "Id of node (" DB_TOKEN_PRINT ", " API_TOKEN_PRINT " or " MGM_TOKEN_PRINT ") on one side of the connection",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_STRING,
     MANDATORY,
@@ -3259,7 +3302,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "NodeId2",
     "SHM",
     "Id of node (" DB_TOKEN_PRINT ", " API_TOKEN_PRINT " or " MGM_TOKEN_PRINT ") on one side of the connection",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_STRING,
     MANDATORY,
@@ -3270,7 +3313,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "Group",
     "SHM",
     "",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
     "35",
@@ -3281,7 +3324,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "NodeIdServer",
     "SHM",
     "",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
     MANDATORY,
@@ -3292,7 +3335,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "SendSignalId",
     "SHM",
     "Sends id in each signal.  Used in trace files.",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_BOOL,
     "false",
@@ -3305,7 +3348,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "Checksum",
     "SHM",
     "If checksum is enabled, all signals between nodes are checked for errors",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_BOOL,
     "true",
@@ -3331,7 +3374,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "ShmKey",
     "SHM",
     "A shared memory key",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
     0,
@@ -3343,10 +3386,10 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "ShmSize",
     "SHM",
     "Size of shared memory segment",
-    ConfigInfo::CI_EXPERIMENTAL,
+    ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
-    "1M",
+    "4M",
     "64K",
     STR_VALUE(MAX_INT_RNIL) },
 
@@ -3386,27 +3429,53 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     STR_VALUE(MAX_INT_RNIL)
   },
 
+  {
+    CFG_SHM_SPINTIME,
+    "ShmSpintime",
+    "SHM",
+    "Number of microseconds to spin before going to sleep when receiving",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_INT,
+    "0",
+    "0",
+    "2000"
+  },
+
+  {
+    CFG_SHM_SEND_BUFFER_SIZE,
+    "SendBufferMemory",
+    "SHM",
+    "Bytes of buffer for signals sent from this node",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_INT,
+    "2M",
+    "64K",
+    STR_VALUE(MAX_INT_RNIL)
+  },
+
   /****************************************************************************
-   * SCI
+   * SCI (Deprecated now)
    ***************************************************************************/
   {
     CFG_SECTION_CONNECTION,
     "SCI",
     "SCI",
-    "Connection section",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_SECTION,
-    (const char *)CONNECTION_TYPE_SCI, 
-    0, 0 
+    (const char *)CONNECTION_TYPE_SCI,
+    0, 0
   },
 
   {
     CFG_CONNECTION_NODE_1,
     "NodeId1",
     "SCI",
-    "Id of node (" DB_TOKEN_PRINT ", " API_TOKEN_PRINT " or " MGM_TOKEN_PRINT ") on one side of the connection",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_STRING,
     MANDATORY,
@@ -3416,8 +3485,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_NODE_2,
     "NodeId2",
     "SCI",
-    "Id of node (" DB_TOKEN_PRINT ", " API_TOKEN_PRINT " or " MGM_TOKEN_PRINT ") on one side of the connection",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_STRING,
     MANDATORY,
@@ -3427,8 +3496,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_GROUP,
     "Group",
     "SCI",
-    "",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "15",
@@ -3438,8 +3507,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_NODE_ID_SERVER,
     "NodeIdServer",
     "SCI",
-    "",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     MANDATORY,
@@ -3449,8 +3518,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_HOSTNAME_1,
     "HostName1",
     "SCI",
-    "Name/IP of computer on one side of the connection",
-    ConfigInfo::CI_USED,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_STRING,
     0,
@@ -3460,8 +3529,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_HOSTNAME_2,
     "HostName2",
     "SCI",
-    "Name/IP of computer on one side of the connection",
-    ConfigInfo::CI_USED,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_STRING,
     0,
@@ -3476,15 +3545,15 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     false,
     ConfigInfo::CI_INT,
     "0",
-    "0", 
+    "0",
     STR_VALUE(MAX_PORT_NO) },
 
   {
     CFG_SCI_HOST1_ID_0,
     "Host1SciId0",
     "SCI",
-    "SCI-node id for adapter 0 on Host1 (a computer can have two adapters)",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     MANDATORY,
@@ -3495,8 +3564,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_SCI_HOST1_ID_1,
     "Host1SciId1",
     "SCI",
-    "SCI-node id for adapter 1 on Host1 (a computer can have two adapters)",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "0",
@@ -3507,8 +3576,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_SCI_HOST2_ID_0,
     "Host2SciId0",
     "SCI",
-    "SCI-node id for adapter 0 on Host2 (a computer can have two adapters)",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     MANDATORY,
@@ -3519,8 +3588,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_SCI_HOST2_ID_1,
     "Host2SciId1",
     "SCI",
-    "SCI-node id for adapter 1 on Host2 (a computer can have two adapters)",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "0",
@@ -3531,8 +3600,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_SEND_SIGNAL_ID,
     "SendSignalId",
     "SCI",
-    "Sends id in each signal.  Used in trace files.",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_BOOL,
     "true",
@@ -3543,8 +3612,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_CHECKSUM,
     "Checksum",
     "SCI",
-    "If checksum is enabled, all signals between nodes are checked for errors",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_BOOL,
     "false",
@@ -3555,10 +3624,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_PRESEND_CHECKSUM,
     "PreSendChecksum",
     "SCI",
-    "If PreSendChecksum AND Checksum are enabled,\n"
-    "pre-send checksum checks are done, and\n"
-    "all signals between nodes are checked for errors",
-    ConfigInfo::CI_USED,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_BOOL,
     "false",
@@ -3569,8 +3636,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_SCI_SEND_LIMIT,
     "SendLimit",
     "SCI",
-    "Transporter send buffer contents are sent when this no of bytes is buffered",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "8K",
@@ -3581,8 +3648,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_SCI_BUFFER_MEM,
     "SharedBufferSize",
     "SCI",
-    "Size of shared memory segment",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "1M",
@@ -3615,16 +3682,14 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_CONNECTION_OVERLOAD,
     "OverloadLimit",
     "SCI",
-    "Number of unsent bytes that must be in the send buffer before the\n"
-    "connection is considered overloaded",
-    ConfigInfo::CI_EXPERIMENTAL,
+    "SCI not supported",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "0",
     "0",
     STR_VALUE(MAX_INT_RNIL)
   }
-
 };
 
 const int ConfigInfo::m_NoOfParams = sizeof(m_ParamInfo) / sizeof(ParamInfo);
@@ -4093,9 +4158,6 @@ ConfigInfo::sectionName(Uint32 section_type, Uint32 type) const {
     case CONNECTION_TYPE_SHM:
       return "SHM";
       break;
-    case CONNECTION_TYPE_SCI:
-      return "SCI";
-      break;
     default:
       assert(false);
       break;
@@ -4116,7 +4178,6 @@ section2PrimaryKeys[]={
   {DB_TOKEN,  "NodeId"},
   {MGM_TOKEN, "NodeId"},
   {"TCP", "NodeId1,NodeId2"},
-  {"SCI", "NodeId1,NodeId2"},
   {"SHM", "NodeId1,NodeId2"},
   {0, 0}
 };
@@ -4733,15 +4794,7 @@ checkConnectionSupport(InitConfigFileParser::Context & ctx, const char * data)
   }
   else if (native_strcasecmp("SHM",ctx.fname) == 0)
   {
-#ifndef NDB_SHM_TRANSPORTER
-    error= 1;
-#endif
-  }
-  else if (native_strcasecmp("SCI",ctx.fname) == 0)
-  {
-#ifndef NDB_SCI_TRANSPORTER
-    error= 1;
-#endif
+    // always enabled
   }
 
   if (error)
@@ -5164,28 +5217,6 @@ bool
 fixShmKey(InitConfigFileParser::Context & ctx, const char *)
 {
   DBUG_ENTER("fixShmKey");
-  {
-    static int last_signum= -1;
-    Uint32 signum = 0;
-    if(!ctx.m_currentSection->get("Signum", &signum))
-    {
-      if (signum <= 0)
-      {
-	  ctx.reportError("Unable to set default parameter for [SHM]Signum"
-			  " please specify [SHM DEFAULT]Signum");
-          DBUG_RETURN(false);
-      }
-      ctx.m_currentSection->put("Signum", signum);
-      DBUG_PRINT("info",("Added Signum=%u", signum));
-    }
-    if ( last_signum != (int)signum && last_signum >= 0 )
-    {
-      ctx.reportError("All shared memory transporters must have same [SHM]Signum defined."
-		      " Use [SHM DEFAULT]Signum");
-      DBUG_RETURN(false);
-    }
-    last_signum= (int)signum;
-  }
   {
     Uint32 id1= 0, id2= 0, key= 0;
     require(ctx.m_currentSection->get("NodeId1", &id1));
@@ -5886,7 +5917,6 @@ add_node_connections(Vector<ConfigInfo::ConfigRuleSection>&sections,
   Uint32 i;
   Properties * props= ctx.m_config;
   Properties p_connections(true);
-  Properties p_connections2(true);
 
   for (i = 0;; i++){
     const Properties * tmp;
@@ -5895,12 +5925,9 @@ add_node_connections(Vector<ConfigInfo::ConfigRuleSection>&sections,
     if(!props->get("Connection", i, &tmp)) break;
 
     if(!tmp->get("NodeId1", &nodeId1)) continue;
-    p_connections.put("", nodeId1, nodeId1);
     if(!tmp->get("NodeId2", &nodeId2)) continue;
-    p_connections.put("", nodeId2, nodeId2);
-
-    p_connections2.put("", nodeId1 + (nodeId2<<16), nodeId1);
-    p_connections2.put("", nodeId2 + (nodeId1<<16), nodeId2);
+    p_connections.put("", nodeId1 + (nodeId2<<16), nodeId1);
+    p_connections.put("", nodeId2 + (nodeId1<<16), nodeId2);
   }
 
   Uint32 nNodes;
@@ -5920,7 +5947,9 @@ add_node_connections(Vector<ConfigInfo::ConfigRuleSection>&sections,
     if(!tmp->get("Type", &type)) continue;
 
     if (strcmp(type,DB_TOKEN) == 0)
+    {
       p_db_nodes.put("", i_db++, i);
+    }
     else if (strcmp(type,API_TOKEN) == 0)
       p_api_nodes.put("", i_api++, i);
     else if (strcmp(type,MGM_TOKEN) == 0)
@@ -5933,7 +5962,7 @@ add_node_connections(Vector<ConfigInfo::ConfigRuleSection>&sections,
   for (i= 0; p_db_nodes.get("", i, &nodeId1); i++){
     for (Uint32 j= i+1;; j++){
       if(!p_db_nodes.get("", j, &nodeId2)) break;
-      if(!p_connections2.get("", nodeId1+(nodeId2<<16), &dummy)) 
+      if(!p_connections.get("", nodeId1+(nodeId2<<16), &dummy)) 
       {
 	if (!add_a_connection(sections,ctx,nodeId1,nodeId2,false))
 	  goto err;
@@ -5942,21 +5971,37 @@ add_node_connections(Vector<ConfigInfo::ConfigRuleSection>&sections,
   }
 
   // API -> DB
-  for (i= 0; p_api_nodes.get("", i, &nodeId1); i++){
-    if(!p_connections.get("", nodeId1, &dummy)) {
-      for (Uint32 j= 0;; j++){
-	if(!p_db_nodes.get("", j, &nodeId2)) break;
-	if (!add_a_connection(sections,ctx,nodeId1,nodeId2,false))
+  for (i= 0; p_api_nodes.get("", i, &nodeId1); i++)
+  {
+    for (Uint32 j= 0; p_db_nodes.get("", j, &nodeId2); j++)
+    {
+      Uint32 use_shm = 0;
+      {
+        const Properties *shm_check;
+        if (props->get("Node", nodeId2, &shm_check))
+        {
+          shm_check->get("UseShm", &use_shm);
+        }
+      }
+      if(!p_connections.get("", nodeId1+(nodeId2<<16), &dummy))
+      {
+	if (!add_a_connection(sections,
+                              ctx,
+                              nodeId1,
+                              nodeId2,
+                              (bool)use_shm))
 	  goto err;
       }
     }
   }
 
   // MGM -> DB
-  for (i= 0; p_mgm_nodes.get("", i, &nodeId1); i++){
-    if(!p_connections.get("", nodeId1, &dummy)) {
-      for (Uint32 j= 0;; j++){
-	if(!p_db_nodes.get("", j, &nodeId2)) break;
+  for (i= 0; p_mgm_nodes.get("", i, &nodeId1); i++)
+  {
+    for (Uint32 j= 0; p_db_nodes.get("", j, &nodeId2); j++)
+    {
+      if(!p_connections.get("", nodeId1+(nodeId2<<16), &dummy))
+      {
 	if (!add_a_connection(sections,ctx,nodeId1,nodeId2,0))
 	  goto err;
       }
@@ -5967,7 +6012,7 @@ add_node_connections(Vector<ConfigInfo::ConfigRuleSection>&sections,
   for (i= 0; p_mgm_nodes.get("", i, &nodeId1); i++){
     for (Uint32 j= i+1;; j++){
       if(!p_mgm_nodes.get("", j, &nodeId2)) break;
-      if(!p_connections2.get("", nodeId1+(nodeId2<<16), &dummy))
+      if(!p_connections.get("", nodeId1+(nodeId2<<16), &dummy))
       {
 	if (!add_a_connection(sections,ctx,nodeId1,nodeId2,0))
 	  goto err;

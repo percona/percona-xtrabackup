@@ -36,7 +36,6 @@
 #ifndef STATEMENT_EVENT_INCLUDED
 #define STATEMENT_EVENT_INCLUDED
 
-#include "byteorder.h"
 #include "control_events.h"
 #include "mysql/udf_registration_types.h"
 
@@ -415,6 +414,12 @@ const uint64_t INVALID_XID = 0xffffffffffffffffULL;
         slave.
     </td>
   </tr>
+  <tr>
+    <td>sql_require_primary_key</td>
+    <td>Q_SQL_REQUIRE_PRIMARY_KEY</td>
+    <td>1 byte integer</td>
+    <td>Value of the config variable sql_require_primary_key</td>
+  </tr>
   </table>
 
   @subsection Query_event_notes_on_previous_versions Notes on Previous Versions
@@ -507,7 +512,12 @@ class Query_event : public Binary_log_event {
       This variable stores the default collation for the utf8mb4 character set.
       Used to support cross-version replication.
     */
-    Q_DEFAULT_COLLATION_FOR_UTF8MB4
+    Q_DEFAULT_COLLATION_FOR_UTF8MB4,
+
+    /*
+      Replicate sql_require_primary_key.
+    */
+    Q_SQL_REQUIRE_PRIMARY_KEY
   };
   const char *query;
   const char *db;
@@ -522,8 +532,6 @@ class Query_event : public Binary_log_event {
 
   /* Required by the MySQL server class Log_event::Query_event */
   unsigned long data_len;
-  /* Pointer to the end of the buffer shown below */
-  uint64_t query_data_written;
   /*
     Copies data into the buffer in the following fashion
     +--------+-----------+------+------+---------+----+-------+----+
@@ -623,6 +631,7 @@ class Query_event : public Binary_log_event {
   uint64_t ddl_xid;
   /* Default collation for the utf8mb4 set. Used in cross-version replication */
   uint16_t default_collation_for_utf8mb4_number;
+  uint8_t sql_require_primary_key;
   /**
     The constructor will be used while creating a Query_event, to be
     written to the binary log.
@@ -652,16 +661,12 @@ class Query_event : public Binary_log_event {
     +--------------------------------------------+
     </pre>
 
-    @param buf                Containing the event header and data
-    @param event_len          The length upto which buf contains Query event
-    data
-    @param description_event  FDE specific to the binlog version
-
-    @param event_type         Required to determine whether the event type is
-                              QUERY_EVENT or EXECUTE_LOAD_QUERY_EVENT
+    @param buf  Contains the serialized event.
+    @param fde  An FDE event (see Rotate_event constructor for more info).
+    @param event_type  Required to determine whether the event type is
+                       QUERY_EVENT or EXECUTE_LOAD_QUERY_EVENT
   */
-  Query_event(const char *buf, unsigned int event_len,
-              const Format_description_event *description_event,
+  Query_event(const char *buf, const Format_description_event *fde,
               Log_event_type event_type);
   /**
     The simplest constructor that could possibly work.  This is used for
@@ -825,19 +830,10 @@ class User_var_event : public Binary_log_event {
     +-------------------------------------------------------------------+
     </pre>
 
-    @param buf                Contains the serialized event.
-    @param event_len          Length of the serialized event.
-    @param description_event  An FDE event, used to get the
-                              following information
-                              -binlog_version
-                              -server_version
-                              -post_header_len
-                              -common_header_len
-                              The content of this object
-                              depends on the binlog-version currently in use.
+    @param buf  Contains the serialized event.
+    @param fde  An FDE event (see Rotate_event constructor for more info).
   */
-  User_var_event(const char *buf, unsigned int event_len,
-                 const Format_description_event *description_event);
+  User_var_event(const char *buf, const Format_description_event *fde);
   const char *name;
   unsigned int name_len;
   char *val;
@@ -952,16 +948,6 @@ class Intvar_event : public Binary_log_event {
     Constructor receives a packet from the MySQL master or the binary
     log and decodes it to create an Intvar_event.
 
-    @param buf                Contains the serialized event.
-    @param description_event  An FDE event, used to get the
-                              following information
-                              -binlog_version
-                              -server_version
-                              -post_header_len
-                              -common_header_len
-                              The content of this object
-                              depends on the binlog-version currently in use.
-
     The post header for the event is empty. Buffer layout for the variable
     data part is as follows:
     <pre>
@@ -969,9 +955,11 @@ class Intvar_event : public Binary_log_event {
       | type (4 bytes) | val (8 bytes) |
       +--------------------------------+
     </pre>
+
+    @param buf  Contains the serialized event.
+    @param fde  An FDE event (see Rotate_event constructor for more info).
   */
-  Intvar_event(const char *buf,
-               const Format_description_event *description_event);
+  Intvar_event(const char *buf, const Format_description_event *fde);
   /**
    The minimal constructor for Intvar_event it initializes the instance
    variables type & val and set the type_code as INTVAR_EVENT in the header
@@ -982,13 +970,6 @@ class Intvar_event : public Binary_log_event {
 
   ~Intvar_event() {}
 
-    /*
-      is_valid is event specific sanity checks to determine that the
-      object is correctly initialized. This is redundant here, because
-      no new allocation is done in the constructor of the event.
-      Else, they contain the value indicating whether the event was
-      correctly initialized.
-    */
 #ifndef HAVE_MYSYS
   void print_event_info(std::ostream &info);
   void print_long_info(std::ostream &info);
@@ -1061,18 +1042,11 @@ type_code as RAND_EVENT in the header object in Binary_log_event
     | value for first seed | value for second seed |
     +----------------------------------------------+
     </pre>
-    @param buf                Contains the serialized event.
-    @param description_event  An FDE event, used to get the
-                              following information
-                              -binlog_version
-                              -server_version
-                              -post_header_len
-                              -common_header_len
-                              The content of this object
-                              depends on the binlog-version currently in use.
+
+    @param buf  Contains the serialized event.
+    @param fde  An FDE event (see Rotate_event constructor for more info).
   */
-  Rand_event(const char *buf,
-             const Format_description_event *description_event);
+  Rand_event(const char *buf, const Format_description_event *fde);
 #ifndef HAVE_MYSYS
   void print_event_info(std::ostream &info);
   void print_long_info(std::ostream &info);

@@ -129,6 +129,15 @@ static inline uint32 char_to_byte_length_safe(uint32 char_length_arg,
   return (tmp > UINT_MAX32) ? (uint32)UINT_MAX32 : (uint32)tmp;
 }
 
+inline Item_result numeric_context_result_type(enum_field_types data_type,
+                                               Item_result result_type,
+                                               uint8 decimals) {
+  if (is_temporal_type(real_type_to_type(data_type)))
+    return decimals ? DECIMAL_RESULT : INT_RESULT;
+  if (result_type == STRING_RESULT) return REAL_RESULT;
+  return result_type;
+}
+
   /*
      "Declared Type Collation"
      A combination of collation and its derivation.
@@ -462,6 +471,31 @@ struct Name_resolution_context {
   }
 };
 
+/**
+  Struct used to pass around arguments to/from
+  check_function_as_value_generator
+*/
+struct Check_function_as_value_generator_parameters {
+  Check_function_as_value_generator_parameters(int default_error_code,
+                                               bool is_generated_column)
+      : err_code(default_error_code), is_gen_col(is_generated_column) {}
+  /// the order of the column in table
+  int col_index{-1};
+  /// the error code found during check(if any)
+  int err_code;
+  /// if it is a generated column
+  bool is_gen_col;
+  /// the name of the function which is not allowed
+  const char *banned_function_name{nullptr};
+
+  /// Return the correct error code, based on whether or not if we are checking
+  /// for disallowed functions in generated column expressions or in default
+  /// value expressions.
+  int get_unnamed_function_error_code() const {
+    return is_gen_col ? ER_GENERATED_COLUMN_FUNCTION_IS_NOT_ALLOWED
+                      : ER_DEFAULT_VAL_GENERATED_FUNCTION_IS_NOT_ALLOWED;
+  }
+};
 /*
   Store and restore the current state of a name resolution context.
 */
@@ -934,9 +968,7 @@ class Item : public Parse_tree_node {
     See Field::numeric_context_result_type() for more comments.
   */
   virtual enum Item_result numeric_context_result_type() const {
-    if (is_temporal()) return decimals ? DECIMAL_RESULT : INT_RESULT;
-    if (result_type() == STRING_RESULT) return REAL_RESULT;
-    return result_type();
+    return ::numeric_context_result_type(data_type(), result_type(), decimals);
   }
   /**
     Similar to result_type() but makes DATE, DATETIME, TIMESTAMP
@@ -991,6 +1023,14 @@ class Item : public Parse_tree_node {
   /// Set the data type of the Item to be double precision floating point.
   inline void set_data_type_double() {
     set_data_type(MYSQL_TYPE_DOUBLE);
+    decimals = NOT_FIXED_DEC;
+    max_length = float_length(decimals);
+    collation.set_numeric();
+  }
+
+  /// Set the data type of the Item to be single precision floating point.
+  inline void set_data_type_float() {
+    set_data_type(MYSQL_TYPE_FLOAT);
     decimals = NOT_FIXED_DEC;
     max_length = float_length(decimals);
     collation.set_numeric();
@@ -1143,6 +1183,24 @@ class Item : public Parse_tree_node {
   void set_data_type_json() {
     set_data_type(MYSQL_TYPE_JSON);
     collation.set(&my_charset_utf8mb4_bin, DERIVATION_IMPLICIT);
+    decimals = NOT_FIXED_DEC;
+    max_length = MAX_BLOB_WIDTH;
+  }
+
+  /**
+    Set the data type of the Item to be YEAR.
+  */
+  void set_data_type_year() {
+    set_data_type(MYSQL_TYPE_YEAR);
+    collation.set_numeric();
+    max_length = 4;
+  }
+
+  /**
+    Set the Item to be of GEOMETRY type.
+  */
+  inline void set_data_type_geometry() {
+    set_data_type(MYSQL_TYPE_GEOMETRY);
     decimals = NOT_FIXED_DEC;
     max_length = MAX_BLOB_WIDTH;
   }
@@ -2235,18 +2293,17 @@ class Item : public Parse_tree_node {
   virtual bool check_valid_arguments_processor(uchar *) { return false; }
 
   /**
-    Check if an expression/function is allowed for a virtual column
+    Check if this item is allowed for a virtual column or inside a
+    default expression. Should be overridden in child classes.
 
-    @param[in,out] int_arg  An array of two integers. Used only for
-    Item_field. The first cell passes the field's number in the table. The
-    second cell is an out parameter containing the error code.
+    @param[in,out] args  Due to the limitation of Item::walk()
+    it is declared as a pointer to uchar, underneath there's a actually a
+    structure of type Check_function_as_value_generator_parameters.
+    It is used mainly in Item_field.
 
     @returns true if function is not accepted
    */
-  virtual bool check_gcol_func_processor(
-      uchar *int_arg MY_ATTRIBUTE((unused))) {
-    return true;
-  }
+  virtual bool check_function_as_value_generator(uchar *args);
 
   /**
     Check if a generated expression depends on DEFAULT function.
@@ -2458,6 +2515,14 @@ class Item : public Parse_tree_node {
     Transformer function for GC substitution. @see substitute_gc()
   */
   virtual Item *gc_subst_transformer(uchar *) { return this; }
+
+  /**
+    A processor that replaces any Fields with a Create_field_wrapper. This
+    will allow us to resolve functions during CREATE TABLE, where we only have
+    Create_field available and not Field. Used for functional index
+    implementation.
+  */
+  virtual bool replace_field_processor(uchar *) { return false; }
   /**
     Check if this item is of a type that is eligible for GC
     substitution. All items that belong to subclasses of Item_func are
@@ -2661,7 +2726,7 @@ class Item_basic_constant : public Item {
 
   void set_used_tables(table_map map) { used_table_map = map; }
   table_map used_tables() const override { return used_table_map; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
   /* to prevent drop fixed flag (no need parent cleanup call) */
   void cleanup() override {
     /*
@@ -3248,7 +3313,7 @@ class Item_field : public Item_ident {
   bool find_field_processor(uchar *arg) override {
     return pointer_cast<Field *>(arg) == field;
   }
-  bool check_gcol_func_processor(uchar *int_arg) override;
+  bool check_function_as_value_generator(uchar *args) override;
   bool mark_field_in_map(uchar *arg) override {
     auto mark_field = pointer_cast<Mark_field *>(arg);
     bool rc = Item::mark_field_in_map(mark_field, field);
@@ -3340,7 +3405,7 @@ class Item_field : public Item_ident {
   bool alias_name_used() const override {
     return m_alias_of_expr ||
            // maybe the qualifying table was given an alias ("t1 AS foo"):
-           (field ? field->table->alias_name_used : false);
+           (field && field->table && field->table->alias_name_used);
   }
 
   bool repoint_const_outer_ref(uchar *arg) override;
@@ -3349,6 +3414,8 @@ class Item_field : public Item_ident {
     if (orig_field_arg) orig_field = orig_field_arg;
   }
   void set_can_use_prefix_key() override { can_use_prefix_key = true; }
+
+  bool replace_field_processor(uchar *arg) override;
 };
 
 class Item_null : public Item_basic_constant {
@@ -3431,7 +3498,14 @@ class Item_null_result final : public Item_null {
   }
   bool check_partition_func_processor(uchar *) override { return true; }
   Item_result result_type() const override { return res_type; }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = "NULL";
+    // This should not happen as SELECT statements are not allowed.
+    DBUG_ASSERT(false);
+    return true;
+  }
   enum Type type() const override { return NULL_RESULT_ITEM; }
 };
 
@@ -3601,6 +3675,13 @@ class Item_param final : public Item, private Settable_routine_parameter {
 
   void make_field(Send_field *field) override;
 
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = func_arg->get_unnamed_function_error_code();
+    return true;
+  }
+
  private:
   Send_field *m_out_param_info;
   /**
@@ -3722,7 +3803,7 @@ class Item_int : public Item_num {
   }
   bool eq(const Item *, bool) const override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 /**
@@ -4168,7 +4249,12 @@ class Item_static_string_func : public Item_string {
   }
 
   bool check_partition_func_processor(uchar *) override { return true; }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name.ptr();
+    return true;
+  }
 };
 
 /* for show tables */
@@ -4189,6 +4275,12 @@ class Item_blob final : public Item_partition_func_safe_string {
     set_data_type(MYSQL_TYPE_BLOB);
   }
   enum Type type() const override { return TYPE_HOLDER; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = func_arg->get_unnamed_function_error_code();
+    return true;
+  }
 };
 
 /**
@@ -4350,7 +4442,7 @@ class Item_result_field : public Item {
     Added here, to the parent class of both Item_func and Item_sum.
   */
   virtual const char *func_name() const = 0;
-  bool check_gcol_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
   bool mark_field_in_map(uchar *arg) override {
     bool rc = Item::mark_field_in_map(arg);
     if (result_field)  // most likely result_field will be read too
@@ -4540,6 +4632,12 @@ class Item_ref : public Item_ident {
 
   bool repoint_const_outer_ref(uchar *arg) override;
   bool contains_alias_of_expr(uchar *arg) override;
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = func_arg->get_unnamed_function_error_code();
+    return true;
+  }
 };
 
 /**
@@ -4958,6 +5056,12 @@ class Item_copy : public Item {
     return error_json();
   }
   /* purecov: end */
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = "values";
+    return true;
+  }
 };
 
 /**
@@ -5233,7 +5337,12 @@ class Item_insert_value final : public Item_field {
            arg->walk(processor, walk, args) ||
            ((walk & WALK_POSTFIX) && (this->*processor)(args));
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = "values";
+    return true;
+  }
 };
 
 /**
@@ -5298,6 +5407,13 @@ class Item_trigger_field final : public Item_field,
   Item *get_tmp_table_item(THD *thd) override { return copy_or_same(thd); }
   void cleanup() override;
   void set_required_privilege(bool rw) override;
+
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = func_arg->get_unnamed_function_error_code();
+    return true;
+  }
 
  private:
   bool set_value(THD *thd, sp_rcontext *ctx, Item **it) override;
@@ -5465,7 +5581,14 @@ class Item_cache : public Item_basic_constant {
   bool is_null() override {
     return value_cached ? null_value : example->is_null();
   }
-  bool check_gcol_func_processor(uchar *) override { return true; }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = "cached item";
+    // This should not happen as SELECT statements are not allowed.
+    DBUG_ASSERT(false);
+    return true;
+  }
   Item_result result_type() const override {
     if (!example) return INT_RESULT;
     return Field::result_merge_type(example->data_type());
@@ -5744,6 +5867,12 @@ class Item_type_holder final : public Item {
     Item::make_field(field);
     // Item_type_holder is used for unions and effectively sends Fields
     field->field = true;
+  }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = func_arg->get_unnamed_function_error_code();
+    return true;
   }
 };
 

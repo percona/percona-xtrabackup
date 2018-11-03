@@ -30,11 +30,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /* The InnoDB handler: the interface between MySQL and InnoDB. */
 
 #include <sys/types.h>
-
 #include "handler.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
 #include "trx0trx.h"
 
 /** "GEN_CLUST_INDEX" is the name reserved for InnoDB default
@@ -301,8 +298,6 @@ class ha_innobase : public handler {
 
   int get_cascade_foreign_key_table_list(
       THD *thd, List<st_handler_tablename> *fk_table_list);
-
-  bool can_switch_engines();
 
   uint referenced_by_foreign_key();
 
@@ -713,6 +708,18 @@ bool tablespace_is_general_space(const HA_CREATE_INFO *create_info) {
        strcmp(create_info->tablespace, dict_sys_t::s_file_per_table_name)) &&
       (0 != strcmp(create_info->tablespace, dict_sys_t::s_temp_space_name)) &&
       (0 != strcmp(create_info->tablespace, dict_sys_t::s_sys_space_name)));
+}
+
+/** Check if tablespace is shared tablespace.
+@param[in]	tablespace_name	Name of the tablespace
+@return true if tablespace is a shared tablespace. */
+UNIV_INLINE
+bool is_shared_tablespace(const char *tablespace_name) {
+  if (tablespace_name != NULL && tablespace_name[0] != '\0' &&
+      (strcmp(tablespace_name, dict_sys_t::s_file_per_table_name) != 0)) {
+    return true;
+  }
+  return false;
 }
 
 /** Parse hint for table and its indexes, and update the information

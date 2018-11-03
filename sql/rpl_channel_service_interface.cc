@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -869,6 +869,37 @@ int channel_wait_until_apply_queue_applied(const char *channel,
   DBUG_RETURN(error);
 }
 
+int channel_wait_until_transactions_applied(const char *channel,
+                                            const char *gtid_set,
+                                            double timeout,
+                                            bool update_THD_status) {
+  DBUG_ENTER(
+      "channel_wait_until_transactions_applied(channel, gtid_set, timeout)");
+
+  channel_map.rdlock();
+
+  Master_info *mi = channel_map.get_mi(channel);
+
+  if (mi == NULL) {
+    channel_map.unlock(); /* purecov: inspected */
+    DBUG_RETURN(
+        RPL_CHANNEL_SERVICE_CHANNEL_DOES_NOT_EXISTS_ERROR); /* purecov:
+                                                               inspected */
+  }
+
+  mi->inc_reference();
+  channel_map.unlock();
+
+  int error = mi->rli->wait_for_gtid_set(current_thd, gtid_set, timeout,
+                                         update_THD_status);
+  mi->dec_reference();
+
+  if (error == -1) DBUG_RETURN(REPLICATION_THREAD_WAIT_TIMEOUT_ERROR);
+  if (error == -2) DBUG_RETURN(REPLICATION_THREAD_WAIT_NO_INFO_ERROR);
+
+  DBUG_RETURN(error);
+}
+
 int channel_is_applier_waiting(const char *channel) {
   DBUG_ENTER("channel_is_applier_waiting(channel)");
   int result = RPL_CHANNEL_SERVICE_CHANNEL_DOES_NOT_EXISTS_ERROR;
@@ -1067,4 +1098,55 @@ bool is_any_slave_channel_running(int thread_mask) {
 
   channel_map.unlock();
   DBUG_RETURN(false);
+}
+
+enum_slave_channel_status
+has_any_slave_channel_open_temp_table_or_is_its_applier_running() {
+  DBUG_ENTER("has_any_slave_channel_open_temp_table_or_is_its_applier_running");
+  Master_info *mi = 0;
+  bool is_applier_running = false;
+  bool has_open_temp_tables = false;
+  mi_map::iterator it;
+
+  channel_map.rdlock();
+
+  mi_map::iterator it_end = channel_map.end();
+  for (it = channel_map.begin(); it != channel_map.end(); ++it) {
+    mi = it->second;
+
+    if (Master_info::is_configured(mi)) {
+      mysql_mutex_lock(&mi->rli->run_lock);
+      is_applier_running = mi->rli->slave_running;
+      if (mi->rli->atomic_channel_open_temp_tables > 0)
+        has_open_temp_tables = true;
+      if (is_applier_running || has_open_temp_tables) {
+        /*
+          Stop acquiring more run_locks and start to release the held
+          run_locks once finding that a slave channel applier thread
+          is running or a slave channel has open temporary table(s),
+          and record the stop position.
+        */
+        it_end = ++it;
+        break;
+      }
+    }
+  }
+
+  /*
+    Release the held run_locks until the stop position recorded in above
+    or the end of the channel_map.
+  */
+  for (it = channel_map.begin(); it != it_end; ++it) {
+    mi = it->second;
+    if (Master_info::is_configured(mi)) mysql_mutex_unlock(&mi->rli->run_lock);
+  }
+
+  channel_map.unlock();
+
+  if (is_applier_running)
+    DBUG_RETURN(SLAVE_CHANNEL_APPLIER_IS_RUNNING);
+  else if (has_open_temp_tables)
+    DBUG_RETURN(SLAVE_CHANNEL_HAS_OPEN_TEMPORARY_TABLE);
+
+  DBUG_RETURN(SLAVE_CHANNEL_NO_APPLIER_RUNNING_AND_NO_OPEN_TEMPORARY_TABLE);
 }

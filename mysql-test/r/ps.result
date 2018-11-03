@@ -587,7 +587,9 @@ primary key  (id), unique key code (code)
 );
 Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 create table t2 (
 id bigint(20) not null auto_increment,
 email varchar(250) character set utf8 collate utf8_bin default null,
@@ -601,8 +603,11 @@ constraint t2_fk1 foreign key (t1_id) references t1 (id)
 );
 Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 insert into t1 values
 (1, 'demo', 'demo s', 0, current_date()),
 (2, 'code2', 'name 2', 0, current_date()),
@@ -1243,13 +1248,13 @@ SET @aux= "SELECT COUNT(*)
 prepare my_stmt from @aux;
 execute my_stmt;
 COUNT(*)
-49
+50
 execute my_stmt;
 COUNT(*)
-49
+50
 execute my_stmt;
 COUNT(*)
-49
+50
 deallocate prepare my_stmt;
 drop procedure if exists p1|
 drop table if exists t1|
@@ -1720,6 +1725,8 @@ Database	Create Database
 mysqltest_1	CREATE DATABASE `mysqltest_1` /*!40100 DEFAULT CHARACTER SET latin1 */
 drop database mysqltest_1;
 set @@character_set_server= utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 execute stmt;
 show create database mysqltest_1;
 Database	Create Database
@@ -1895,9 +1902,9 @@ a	b
 drop view v1;
 prepare stmt from "create view v1 (a,b,c) as select * from t1";
 execute stmt;
-ERROR HY000: View's SELECT and view's field list have different column counts
+ERROR HY000: In definition of view, derived table or common table expression, SELECT list and column names list have different column counts
 execute stmt;
-ERROR HY000: View's SELECT and view's field list have different column counts
+ERROR HY000: In definition of view, derived table or common table expression, SELECT list and column names list have different column counts
 deallocate prepare stmt;
 drop table t1;
 create temporary table t1 (a int, b int);
@@ -3669,11 +3676,9 @@ FROM
   SELECT '2012-03-01 01:00:00',       2,       1       FROM dual
   ) AS t2
 WHERE t2.c2 = t1.c2
-GROUP BY c1 ASC, c2 ASC
+GROUP BY c1,c2
+ORDER BY c1,c2
 ";
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 
 SET @x = 1;
 SELECT c1, t2.c2, count(c3)
@@ -3691,14 +3696,12 @@ UNION
 SELECT '2012-03-01 01:00:00',       2,       1       FROM dual
 ) AS t2
 WHERE t2.c2 = t1.c2
-GROUP BY c1 ASC, c2 ASC;
+GROUP BY c1, c2
+ORDER BY c1, c2;
 c1	c2	count(c3)
 2012-03-01 01:00:00	2	1
 2012-03-01 01:00:00	3	1
 2012-03-01 02:00:00	3	1
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 
 EXECUTE s1;
 c1	c2	count(c3)
@@ -3722,12 +3725,10 @@ UNION
 SELECT '2012-03-01 01:00:00',       2,       1       FROM dual
 ) AS t2
 WHERE t2.c2 = t1.c2
-GROUP BY c1 ASC, c2 ASC;
+GROUP BY c1, c2
+ORDER BY c1, c2;
 c1	c2	count(c3)
 2012-03-01 01:00:00	2	1
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 
 EXECUTE s1;
 c1	c2	count(c3)
@@ -3749,14 +3750,12 @@ UNION
 SELECT '2012-03-01 01:00:00',       2,       1       FROM dual
 ) AS t2
 WHERE t2.c2 = t1.c2
-GROUP BY c1 ASC, c2 ASC;
+GROUP BY c1, c2
+ORDER BY c1, c2;
 c1	c2	count(c3)
 2012-03-01 01:00:00	2	1
 2012-03-01 01:00:00	3	1
 2012-03-01 02:00:00	3	1
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 
 EXECUTE s1;
 c1	c2	count(c3)

@@ -29,6 +29,7 @@
 #include <netdb.h>
 #endif
 #include <algorithm>
+#include <cinttypes>
 #include <climits>
 #include <iostream>
 #include <limits>
@@ -172,6 +173,35 @@ int Gcs_xcom_proxy_impl::xcom_client_remove_node(node_list *nl, uint32_t gid) {
   return res;
 }
 
+bool Gcs_xcom_proxy_impl::xcom_client_get_event_horizon(
+    uint32_t gid, xcom_event_horizon &event_horizon) {
+  int index = xcom_acquire_handler();
+  int res = false;
+
+  if (index != -1) {
+    connection_descriptor *fd = m_xcom_handlers[index]->get_fd();
+    if (fd != nullptr) {
+      res = ::xcom_client_get_event_horizon(fd, gid, &event_horizon) == 1;
+    }
+  }
+  xcom_release_handler(index);
+  return res;
+}
+
+bool Gcs_xcom_proxy_impl::xcom_client_set_event_horizon(
+    uint32_t gid, xcom_event_horizon event_horizon) {
+  int index = xcom_acquire_handler();
+  int res = false;
+
+  if (index != -1) {
+    connection_descriptor *fd = m_xcom_handlers[index]->get_fd();
+    if (fd != nullptr)
+      res = ::xcom_client_set_event_horizon(fd, gid, event_horizon);
+  }
+  xcom_release_handler(index);
+  return res;
+}
+
 int Gcs_xcom_proxy_impl::xcom_client_boot(node_list *nl, uint32_t gid) {
   int index = xcom_acquire_handler();
   int res = true;
@@ -220,6 +250,20 @@ int Gcs_xcom_proxy_impl::xcom_client_send_data(unsigned long long len,
         "The data is too big. Data length should not"
         << " exceed " << std::numeric_limits<unsigned int>::max() << " bytes.");
   }
+  return res;
+}
+
+int Gcs_xcom_proxy_impl::xcom_client_send_die() {
+  int res = true;
+
+  int index = xcom_acquire_handler();
+  if (index != -1) {
+    connection_descriptor *fd = m_xcom_handlers[index]->get_fd();
+    if (fd != NULL) {
+      res = !::xcom_client_send_die(fd);
+    }
+  }
+  xcom_release_handler(index);
   return res;
 }
 
@@ -758,7 +802,7 @@ int Gcs_xcom_proxy_impl::xcom_client_force_config(node_list *nl,
 
 int Gcs_xcom_proxy_base::xcom_remove_nodes(Gcs_xcom_nodes &nodes,
                                            uint32_t group_id_hash) {
-  node_list nl;
+  node_list nl{0, nullptr};
   int ret = 1;
 
   if (serialize_nodes_information(nodes, nl)) {
@@ -779,9 +823,29 @@ int Gcs_xcom_proxy_base::xcom_remove_node(const Gcs_xcom_node_information &node,
   return xcom_remove_nodes(nodes_to_remove, group_id_hash);
 }
 
+xcom_event_horizon Gcs_xcom_proxy_base::xcom_get_minimum_event_horizon() {
+  return ::xcom_get_minimum_event_horizon();
+}
+
+xcom_event_horizon Gcs_xcom_proxy_base::xcom_get_maximum_event_horizon() {
+  return ::xcom_get_maximum_event_horizon();
+}
+
+bool Gcs_xcom_proxy_base::xcom_get_event_horizon(
+    uint32_t group_id_hash, xcom_event_horizon &event_horizon) {
+  MYSQL_GCS_LOG_DEBUG("Retrieveing event horizon");
+  return xcom_client_get_event_horizon(group_id_hash, event_horizon);
+}
+
+bool Gcs_xcom_proxy_base::xcom_set_event_horizon(
+    uint32_t group_id_hash, xcom_event_horizon event_horizon) {
+  MYSQL_GCS_LOG_DEBUG("Reconfiguring event horizon to %" PRIu32, event_horizon);
+  return xcom_client_set_event_horizon(group_id_hash, event_horizon);
+}
+
 int Gcs_xcom_proxy_base::xcom_force_nodes(Gcs_xcom_nodes &nodes,
                                           uint32_t group_id_hash) {
-  node_list nl;
+  node_list nl{0, nullptr};
   int ret = 1;
 
   if (serialize_nodes_information(nodes, nl)) {
@@ -799,11 +863,11 @@ bool Gcs_xcom_proxy_base::serialize_nodes_information(Gcs_xcom_nodes &nodes,
   unsigned int len = 0;
   char **addrs = NULL;
   blob *uuids = NULL;
-  nl.node_list_len = 0;
+  nl = {0, nullptr};
 
   if (nodes.get_size() == 0) {
     MYSQL_GCS_LOG_DEBUG("There aren't nodes to be reported.");
-    return true;
+    return false;
   }
 
   if (!nodes.encode(&len, &addrs, &uuids)) {
@@ -868,6 +932,20 @@ int Gcs_xcom_proxy_base::xcom_add_node(connection_descriptor &con,
   return xcom_add_nodes(con, nodes_to_add, group_id_hash);
 }
 
+int Gcs_xcom_proxy_base::xcom_remove_nodes(connection_descriptor &con,
+                                           Gcs_xcom_nodes &nodes,
+                                           uint32_t group_id_hash) {
+  node_list nl;
+  int ret = 1;
+
+  if (serialize_nodes_information(nodes, nl)) {
+    ret = xcom_client_remove_node(&con, &nl, group_id_hash);
+  }
+  free_nodes_information(nl);
+
+  return ret;
+}
+
 bool is_valid_hostname(const std::string &server_and_port) {
   std::string::size_type delim_pos = server_and_port.find_last_of(":");
   std::string s_port =
@@ -903,6 +981,8 @@ void fix_parameters_syntax(Gcs_interface_parameters &interface_params) {
       const_cast<std::string *>(interface_params.get_parameter("wait_time"));
   std::string *ip_whitelist_str =
       const_cast<std::string *>(interface_params.get_parameter("ip_whitelist"));
+  std::string *ip_whitelist_reconfigure_str = const_cast<std::string *>(
+      interface_params.get_parameter("reconfigure_ip_whitelist"));
   std::string *join_attempts_str = const_cast<std::string *>(
       interface_params.get_parameter("join_attempts"));
   std::string *join_sleep_time_str = const_cast<std::string *>(
@@ -927,8 +1007,15 @@ void fix_parameters_syntax(Gcs_interface_parameters &interface_params) {
     interface_params.add_parameter("wait_time", ss.str());
   }
 
+  bool should_configure_whitelist = true;
+  if (ip_whitelist_reconfigure_str) {
+    should_configure_whitelist =
+        ip_whitelist_reconfigure_str->compare("on") == 0 ||
+        ip_whitelist_reconfigure_str->compare("true") == 0;
+  }
+
   // sets the default ip whitelist
-  if (!ip_whitelist_str) {
+  if (should_configure_whitelist && !ip_whitelist_str) {
     std::stringstream ss;
     std::string iplist;
     std::map<std::string, int> out;
@@ -1012,16 +1099,21 @@ bool is_parameters_syntax_correct(
       interface_params.get_parameter("join_attempts");
   const std::string *join_sleep_time_str =
       interface_params.get_parameter("join_sleep_time");
-  const std::string *suspicions_timeout_str =
-      interface_params.get_parameter("suspicions_timeout");
+  const std::string *non_member_expel_timeout_str =
+      interface_params.get_parameter("non_member_expel_timeout");
   const std::string *suspicions_processing_period_str =
       interface_params.get_parameter("suspicions_processing_period");
+  const std::string *member_expel_timeout_str =
+      interface_params.get_parameter("member_expel_timeout");
+  const std::string *reconfigure_ip_whitelist_str =
+      interface_params.get_parameter("reconfigure_ip_whitelist");
 
   /*
     -----------------------------------------------------
     Checks
     -----------------------------------------------------
    */
+
   // validate group name
   if (group_name_str != NULL && group_name_str->size() == 0) {
     MYSQL_GCS_LOG_ERROR("The group_name parameter (" << group_name_str << ")"
@@ -1165,10 +1257,11 @@ bool is_parameters_syntax_correct(
   }
 
   // validate suspicions parameters
-  if (suspicions_timeout_str && (suspicions_timeout_str->size() == 0 ||
-                                 !is_number(*suspicions_timeout_str))) {
-    MYSQL_GCS_LOG_ERROR("The suspicions_timeout parameter ("
-                        << suspicions_timeout_str << ") is not valid.")
+  if (non_member_expel_timeout_str &&
+      (non_member_expel_timeout_str->size() == 0 ||
+       !is_number(*non_member_expel_timeout_str))) {
+    MYSQL_GCS_LOG_ERROR("The non_member_expel_timeout parameter ("
+                        << non_member_expel_timeout_str << ") is not valid.")
     error = GCS_NOK;
     goto end;
   }
@@ -1189,6 +1282,22 @@ bool is_parameters_syntax_correct(
                         << ") is not valid.")
     error = GCS_NOK;
     goto end;
+  }
+
+  if (member_expel_timeout_str && (member_expel_timeout_str->size() == 0 ||
+                                   !is_number(*member_expel_timeout_str))) {
+    MYSQL_GCS_LOG_ERROR("The member_expel_timeout parameter ("
+                        << member_expel_timeout_str << ") is not valid.")
+    error = GCS_NOK;
+    goto end;
+  }
+
+  // Validate whitelist reconfiguration parameter
+  if (reconfigure_ip_whitelist_str != NULL) {
+    std::string &flag =
+        const_cast<std::string &>(*reconfigure_ip_whitelist_str);
+    error = is_valid_flag("reconfigure_ip_whitelist", flag);
+    if (error == GCS_NOK) goto end;
   }
 
 end:

@@ -75,6 +75,7 @@
 #include "mysql/service_mysql_alloc.h"
 #include "mysql_version.h"
 #include "mysqld_error.h"
+#include "mysys_err.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/current_thd.h"
@@ -201,11 +202,34 @@ static const TABLE_FIELD_DEF general_log_table_def = {GLT_FIELD_COUNT,
 
 class Query_log_table_intact : public Table_check_intact {
  protected:
-  void report_error(uint, const char *fmt, ...)
+  void report_error(uint ecode, const char *fmt, ...)
       MY_ATTRIBUTE((format(printf, 3, 4))) {
+    longlong log_ecode = 0;
+    switch (ecode) {
+      case 0:
+        log_ecode = ER_SERVER_TABLE_CHECK_FAILED;
+        break;
+      case ER_CANNOT_LOAD_FROM_TABLE_V2:
+        log_ecode = ER_SERVER_CANNOT_LOAD_FROM_TABLE_V2;
+        break;
+      case ER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE_V2:
+        log_ecode = ER_SERVER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE_V2;
+        break;
+      case ER_COL_COUNT_DOESNT_MATCH_CORRUPTED_V2:
+        log_ecode = ER_SERVER_COL_COUNT_DOESNT_MATCH_CORRUPTED_V2;
+        break;
+      default:
+        DBUG_ASSERT(false);
+        return;
+    }
+
     va_list args;
     va_start(args, fmt);
-    error_log_printf(ERROR_LEVEL, fmt, args);
+    LogEvent()
+        .type(LOG_TYPE_ERROR)
+        .prio(ERROR_LEVEL)
+        .errcode(log_ecode)
+        .messagev(fmt, args);
     va_end(args);
   }
 };
@@ -1748,7 +1772,7 @@ void init_error_log() {
   error_log_initialized = true;
 }
 
-bool open_error_log(const char *filename) {
+bool open_error_log(const char *filename, bool get_lock) {
   DBUG_ASSERT(filename);
   int retries = 2, errors = 0;
   MY_STAT f_stat;
@@ -1759,14 +1783,14 @@ bool open_error_log(const char *filename) {
   */
   if (my_stat(filename, &f_stat, MYF(0))) {
     if (my_access(filename, W_OK)) {
-      return true;
+      goto fail;
     }
   } else {
     char path[FN_REFLEN];
     size_t path_length;
 
     dirname_part(path, filename, &path_length);
-    if (path_length && my_access(path, (F_OK | W_OK))) return true;
+    if (path_length && my_access(path, (F_OK | W_OK))) goto fail;
   }
 
   do {
@@ -1775,7 +1799,7 @@ bool open_error_log(const char *filename) {
     if (!my_freopen(filename, "a", stdout)) errors++;
   } while (retries-- && errors);
 
-  if (errors) return true;
+  if (errors) goto fail;
 
   /* The error stream must be unbuffered. */
   setbuf(stderr, NULL);
@@ -1785,6 +1809,19 @@ bool open_error_log(const char *filename) {
   // Write any messages buffered while we were figuring out the filename
   flush_error_log_messages();
   return false;
+
+fail : {
+  char errbuf[MYSYS_STRERROR_SIZE];
+
+  if (get_lock) mysql_mutex_unlock(&LOCK_error_log);
+
+  LogErr(ERROR_LEVEL, ER_CANT_OPEN_ERROR_LOG, filename, ": ",
+         my_strerror(errbuf, sizeof(errbuf), errno));
+  flush_error_log_messages();
+
+  if (get_lock) mysql_mutex_lock(&LOCK_error_log);
+}
+  return true;
 }
 
 void destroy_error_log() {
@@ -1803,15 +1840,18 @@ void destroy_error_log() {
 bool reopen_error_log() {
   bool result = false;
 
+  DBUG_ASSERT(error_log_initialized);
+
   // reload all error logging services
   log_builtins_error_stack_flush();
 
   if (error_log_file) {
     mysql_mutex_lock(&LOCK_error_log);
-    result = open_error_log(error_log_file);
+    result = open_error_log(error_log_file, true);
     mysql_mutex_unlock(&LOCK_error_log);
 
-    if (result) my_error(ER_UNKNOWN_ERROR, MYF(0));
+    if (result)
+      my_error(ER_CANT_OPEN_ERROR_LOG, MYF(0), error_log_file, ".", "");
   }
 
   return result;
@@ -2139,20 +2179,18 @@ int log_vmessage(int log_type MY_ATTRIBUTE((unused)), va_list fili) {
    Table_check_intact::report_error, and others.
 
   @param level          The level of the msg significance
-  @param format         Printf style format of message
+  @param ecode          Error code of the error message.
   @param args           va_list list of arguments for the message
 
 */
-void error_log_printf(enum loglevel level, const char *format, va_list args) {
-  char buff[LOG_BUFF_MAX];
+void error_log_print(enum loglevel level, uint ecode, va_list args) {
   DBUG_ENTER("error_log_print");
 
-  vsnprintf(buff, sizeof(buff), format, args);
   LogEvent()
       .type(LOG_TYPE_ERROR)
-      .errcode(ER_LOG_PRINTF_MSG)
+      .errcode(ecode)
       .prio(level)
-      .verbatim(buff);
+      .messagev(EE(ecode), args);
 
   DBUG_VOID_RETURN;
 }

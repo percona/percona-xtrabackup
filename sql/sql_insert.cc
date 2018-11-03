@@ -45,6 +45,7 @@
 #include "my_sys.h"
 #include "my_table_map.h"
 #include "my_thread_local.h"
+#include "mysql/psi/mysql_table.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/udf_registration_types.h"
@@ -89,7 +90,6 @@
 #include "sql/sql_resolver.h"   // validate_gc_assignment
 #include "sql/sql_show.h"       // store_create_info
 #include "sql/sql_table.h"      // quick_rm_table
-#include "sql/sql_tmp_table.h"  // create_tmp_field
 #include "sql/sql_update.h"     // records_are_comparable
 #include "sql/sql_view.h"       // check_key_in_view
 #include "sql/system_variables.h"
@@ -616,8 +616,6 @@ bool Sql_cmd_insert_values::execute_inner(THD *thd) {
     }
   }  // Statement plan is available within these braces
 
-  DBUG_ASSERT(has_error == thd->get_stmt_da()->is_error());
-
   /*
     Now all rows are inserted.  Time to update logs and sends response to
     user
@@ -907,6 +905,66 @@ static void prepare_for_positional_update(TABLE *table, TABLE_LIST *tables) {
   return;
 }
 
+static bool allocate_column_bitmap(TABLE *table, MY_BITMAP **bitmap) {
+  DBUG_ENTER("allocate_column_bitmap");
+  const uint number_bits = table->s->fields;
+  MY_BITMAP *the_struct;
+  my_bitmap_map *the_bits;
+
+  DBUG_ASSERT(current_thd == table->in_use);
+  if (multi_alloc_root(table->in_use->mem_root, &the_struct, sizeof(MY_BITMAP),
+                       &the_bits, bitmap_buffer_size(number_bits),
+                       NULL) == NULL)
+    DBUG_RETURN(true);
+
+  if (bitmap_init(the_struct, the_bits, number_bits, false) != 0)
+    DBUG_RETURN(true);
+
+  *bitmap = the_struct;
+
+  DBUG_RETURN(false);
+}
+
+bool get_default_columns(TABLE *table, MY_BITMAP **m_function_default_columns) {
+  if (allocate_column_bitmap(table, m_function_default_columns)) return true;
+  /*
+    Find columns with function default on insert or update, mark them in
+    bitmap.
+  */
+  for (uint i = 0; i < table->s->fields; ++i) {
+    Field *f = table->field[i];
+    // if it's a default expression
+    if (f->has_insert_default_general_value_expression()) {
+      bitmap_set_bit(*m_function_default_columns, f->field_index);
+    }
+  }
+
+  // Remove from map the fields that are explicitly specified
+  bitmap_subtract(*m_function_default_columns, table->write_set);
+
+  // If no bit left exit
+  if (bitmap_is_clear_all(*m_function_default_columns)) return false;
+
+  // For each default function that is used restore the flags
+  for (uint i = 0; i < table->s->fields; ++i) {
+    Field *f = table->field[i];
+    if (bitmap_is_set(*m_function_default_columns, i)) {
+      DBUG_ASSERT(f->m_default_val_expr != nullptr);
+      // restore binlog safety flags
+      table->in_use->lex->set_stmt_unsafe_flags(
+          f->m_default_val_expr->get_stmt_unsafe_flags());
+      // Mark the columns the expression reads in the table's read_set
+      for (uint j = 0; j < table->s->fields; j++) {
+        if (bitmap_is_set(&f->m_default_val_expr->base_columns_map, j)) {
+          bitmap_set_bit(table->read_set, j);
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
   Prepare items in INSERT statement
 
@@ -1042,9 +1100,17 @@ bool Sql_cmd_insert_base::prepare_inner(THD *thd) {
 
   TABLE *const insert_table = lex->insert_table_leaf->table;
 
-  const uint field_count = insert_field_list.elements
-                               ? insert_field_list.elements
-                               : insert_table->s->fields;
+  uint field_count = insert_field_list.elements ? insert_field_list.elements
+                                                : insert_table->s->fields;
+
+  // If the SQL command was an INSERT without column list (like
+  //  "INSERT INTO foo VALUES (1, 2);", we ignore any columns that is hidden
+  // from the user.
+  if (insert_field_list.elements == 0) {
+    for (uint i = 0; i < insert_table->s->fields; ++i) {
+      if (insert_table->s->field[i]->is_hidden_from_user()) field_count--;
+    }
+  }
 
   table_map map = lex->insert_table_leaf->map();
 
@@ -1078,7 +1144,8 @@ bool Sql_cmd_insert_base::prepare_inner(THD *thd) {
     if (check_valid_table_refs(table_list, *values, map))
       DBUG_RETURN(true); /* purecov: inspected */
 
-    if (insert_table->has_gcol() &&
+    if ((insert_table->has_gcol() ||
+         insert_table->gen_def_fields_ptr != nullptr) &&
         validate_gc_assignment(&insert_field_list, values, insert_table))
       DBUG_RETURN(true);
   }
@@ -1098,6 +1165,9 @@ bool Sql_cmd_insert_base::prepare_inner(THD *thd) {
   if ((insert_into_view || insert_field_list.elements == 0) &&
       (select_insert || value_count > 0))
     bitmap_set_all(insert_table->write_set);
+
+  MY_BITMAP *function_default_columns = nullptr;
+  get_default_columns(insert_table, &function_default_columns);
 
   if (duplicates == DUP_UPDATE) {
     // Setup the columns to be updated
@@ -1232,7 +1302,7 @@ bool Sql_cmd_insert_base::prepare_inner(THD *thd) {
       DBUG_RETURN(true);
     }
 
-    if (insert_table->has_gcol() &&
+    if ((insert_table->has_gcol() || insert_table->gen_def_fields_ptr) &&
         validate_gc_assignment(&insert_field_list,
                                unit->get_unit_column_types(), insert_table))
       DBUG_RETURN(true);
@@ -1892,7 +1962,8 @@ bool check_that_all_fields_are_given_values(THD *thd, TABLE *entry,
 
   for (Field **field = entry->field; *field; field++) {
     if (!bitmap_is_set(write_set, (*field)->field_index) &&
-        ((*field)->flags & NO_DEFAULT_VALUE_FLAG) &&
+        (((*field)->flags & NO_DEFAULT_VALUE_FLAG) &&
+         ((*field)->m_default_val_expr == nullptr)) &&
         ((*field)->real_type() != MYSQL_TYPE_ENUM)) {
       bool view = false;
       if (table_list) {
@@ -2004,11 +2075,6 @@ void Query_result_insert::cleanup() {
 bool Query_result_insert::send_data(List<Item> &values) {
   DBUG_ENTER("Query_result_insert::send_data");
   bool error = 0;
-
-  if (unit->offset_limit_cnt) {  // using limit offset,count
-    unit->offset_limit_cnt--;
-    DBUG_RETURN(false);
-  }
 
   thd->check_for_truncated_fields = CHECK_FIELD_WARN;
   store_values(values);
@@ -2313,69 +2379,10 @@ static TABLE *create_table_from_items(THD *thd, HA_CREATE_INFO *create_info,
     promote_first_timestamp_column(&alter_info->create_list);
 
   while ((item = it++)) {
-    Field *tmp_table_field;
-    if (item->type() == Item::FUNC_ITEM) {
-      if (item->result_type() != STRING_RESULT)
-        tmp_table_field = item->tmp_table_field(&tmp_table);
-      else
-        tmp_table_field =
-            item->tmp_table_field_from_field_type(&tmp_table, false);
-    } else {
-      Field *from_field, *default_field;
-      tmp_table_field = create_tmp_field(thd, &tmp_table, item, item->type(),
-                                         NULL, &from_field, &default_field,
-                                         false, false, false, false);
+    Create_field *cr_field = generate_create_field(thd, item, &tmp_table);
+    if (cr_field == nullptr) {
+      DBUG_RETURN(nullptr); /* purecov: deadcode */
     }
-
-    if (!tmp_table_field) DBUG_RETURN(NULL);
-
-    Field *table_field;
-
-    switch (item->type()) {
-      /*
-        We have to take into account both the real table's fields and
-        pseudo-fields used in trigger's body. These fields are used
-        to copy defaults values later inside constructor of
-        the class Create_field.
-      */
-      case Item::FIELD_ITEM:
-      case Item::TRIGGER_FIELD_ITEM:
-        table_field = ((Item_field *)item)->field;
-        break;
-      default:
-        table_field = NULL;
-    }
-
-    DBUG_ASSERT(tmp_table_field->gcol_info == NULL &&
-                tmp_table_field->stored_in_db);
-    Create_field *cr_field =
-        new (*THR_MALLOC) Create_field(tmp_table_field, table_field);
-
-    if (!cr_field) DBUG_RETURN(NULL);
-
-    // Mark if collation was specified explicitly by user for the column.
-    if (item->type() == Item::FIELD_ITEM) {
-      TABLE *table = table_field->orig_table;
-      DBUG_ASSERT(table);
-      const dd::Table *table_obj =
-          table->s->tmp_table ? table->s->tmp_table_def : nullptr;
-
-      if (!table_obj && table->s->table_category != TABLE_UNKNOWN_CATEGORY) {
-        dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-
-        if (thd->dd_client()->acquire(table->s->db.str,
-                                      table->s->table_name.str, &table_obj))
-          DBUG_RETURN(NULL);
-      }
-
-      cr_field->is_explicit_collation = false;
-      if (table_obj) {
-        const dd::Column *c = table_obj->get_column(table_field->field_name);
-        if (c) cr_field->is_explicit_collation = c->is_explicit_collation();
-      }
-    }
-
-    if (item->maybe_null) cr_field->flags &= ~NOT_NULL_FLAG;
 
     alter_info->create_list.push_back(cr_field);
   }
@@ -2933,6 +2940,14 @@ void Query_result_create::drop_open_table() {
       quick_rm_table(thd, table_type, create_table->db,
                      create_table->table_name, 0);
     }
+#ifdef HAVE_PSI_TABLE_INTERFACE
+    else {
+      /* quick_rm_table() was not called, so remove the P_S table share here. */
+      PSI_TABLE_CALL(drop_table_share)
+      (false, create_table->db, strlen(create_table->db),
+       create_table->table_name, strlen(create_table->table_name));
+    }
+#endif
   }
   DBUG_VOID_RETURN;
 }

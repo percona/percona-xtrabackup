@@ -3,8 +3,6 @@
 ######################################################################################################
 SELECT ST_AREA(ST_GEOMFROMTEXT('POLYGON((0 0,5 5, 0 0))'));
 ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
-SELECT ST_AREA(ST_GEOMFROMTEXT('POLYGON((4 4,6 4,8 4,4 4))'));
-ERROR 22023: Invalid GIS data provided to function st_area.
 ######################################################################################################
 # BUG#18911154 : CENTROID() RETURNING ERROR MESSAGE FOR VALID GEOMETRY-COLLECTION GEOMETRY
 ######################################################################################################
@@ -2362,7 +2360,7 @@ ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 # BUG#20430521 : WL#8034 : CRASH WITH ST_SIMPLIFY() IN ITEM_FUNC_SIMPLIFY::VAL_STR
 ######################################################################################################
 SELECT ST_ASTEXT(ST_SIMPLIFY(0x000000000200000000000000000000000000000000, 1));
-ERROR HY000: Geometry byte string must be little endian.
+ERROR 22023: Invalid GIS data provided to function st_simplify.
 ######################################################################################################
 # BUG#20452274 : WL#8034 : SERVER IS HANGING WITH ST_VALIDATE() FUNCTION
 ######################################################################################################>>>>

@@ -28,7 +28,6 @@
 #include "sql/handler.h"             // enum_tx_isolation
 
 struct MYSQL;
-struct IO_CACHE;
 
 #ifdef __cplusplus
 class THD;
@@ -119,6 +118,7 @@ typedef struct Trans_gtid_info {
   long long int gno;  // transaction gno
 } Trans_gtid_info;
 
+class Binlog_cache_storage;
 /**
    Transaction observer parameter
 */
@@ -146,8 +146,8 @@ typedef struct Trans_param {
   /*
     Set on before_commit hook.
   */
-  IO_CACHE *trx_cache_log;
-  IO_CACHE *stmt_cache_log;
+  Binlog_cache_storage *trx_cache_log;
+  Binlog_cache_storage *stmt_cache_log;
   ulonglong cache_log_max_size;
   /*
     The flag designates the transaction is a DDL contained is

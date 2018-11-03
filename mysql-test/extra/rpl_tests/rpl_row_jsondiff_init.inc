@@ -116,7 +116,11 @@
 if ($replace_combination_from)
 {
   --let $replace_combination_on_all_servers= 1
+  # To avoid an error 'ER_RUNNING_APPLIER_PREVENTS_SWITCH_GLOBAL_BINLOG_FORMAT',
+  # which will be caused by the following include/begin_replace_combination.inc.
+  --source include/rpl_stop_slaves.inc
   --source include/begin_replace_combination.inc
+  --source include/rpl_start_slaves.inc
 }
 
 

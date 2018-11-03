@@ -53,7 +53,7 @@
 #include "sql/item.h"
 #include "sql/item_cmpfunc.h"      // Item_func_any_value
 #include "sql/item_func.h"         // Item_func_udf_str
-#include "sql/item_geofunc.h"      // Item_func_area
+#include "sql/item_geofunc.h"      // Item_func_st_area
 #include "sql/item_inetfunc.h"     // Item_func_inet_ntoa
 #include "sql/item_json_func.h"    // Item_func_json
 #include "sql/item_regexp_func.h"  // Item_func_regexp_xxx
@@ -1506,7 +1506,7 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"SQRT", SQL_FN(Item_func_sqrt, 1)},
     {"STRCMP", SQL_FN(Item_func_strcmp, 2)},
     {"STR_TO_DATE", SQL_FN(Item_func_str_to_date, 2)},
-    {"ST_AREA", SQL_FN(Item_func_area, 1)},
+    {"ST_AREA", SQL_FN(Item_func_st_area, 1)},
     {"ST_ASBINARY", SQL_FN_V(Item_func_as_wkb, 1, 2)},
     {"ST_ASGEOJSON", SQL_FN_V_THD(Item_func_as_geojson, 1, 3)},
     {"ST_ASTEXT", SQL_FN_V(Item_func_as_wkt, 1, 2)},
@@ -1586,12 +1586,13 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"ST_POLYFROMWKB", SQL_FACTORY(Polyfromwkb_instantiator)},
     {"ST_POLYGONFROMTEXT", SQL_FACTORY(Polygonfromtext_instantiator)},
     {"ST_POLYGONFROMWKB", SQL_FACTORY(Polygonfromwkb_instantiator)},
-    {"ST_SIMPLIFY", SQL_FN(Item_func_simplify, 2)},
+    {"ST_SIMPLIFY", SQL_FN(Item_func_st_simplify, 2)},
     {"ST_SRID", SQL_FACTORY(Srid_instantiator)},
     {"ST_STARTPOINT", SQL_FACTORY(Startpoint_instantiator)},
     {"ST_SYMDIFFERENCE", SQL_FN(Item_func_st_symdifference, 2)},
     {"ST_SWAPXY", SQL_FN(Item_func_swap_xy, 1)},
     {"ST_TOUCHES", SQL_FN(Item_func_st_touches, 2)},
+    {"ST_TRANSFORM", SQL_FN(Item_func_st_transform, 2)},
     {"ST_UNION", SQL_FN(Item_func_st_union, 2)},
     {"ST_VALIDATE", SQL_FN(Item_func_validate, 1)},
     {"ST_WITHIN", SQL_FN(Item_func_st_within, 2)},

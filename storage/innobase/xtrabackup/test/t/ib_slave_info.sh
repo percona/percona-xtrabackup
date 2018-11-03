@@ -27,62 +27,29 @@ multi_row_insert incremental_sample.test \({1..100},100\)
 
 switch_server $slave_id
 
+mysql -e "SET GLOBAL general_log=1; SET GLOBAL log_output='TABLE';"
+
 vlog "Check that --slave-info with --no-lock and no --safe-slave-backup fails"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --slave-info --no-lock \
   --target-dir=$topdir/backup
-
-$MYSQL $MYSQL_ARGS -Ns -e \
-       "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
-       SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
-       SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
-       > $topdir/status1
-
-if [ $backup_locks = "yes" ] ; then
-	diff -u - $topdir/status1 <<EOF
-Com_lock_instance	0
-Com_lock_tables	0
-Com_lock_tables_for_backup	0
-Com_unlock_instance	0
-Com_unlock_tables	0
-Com_flush	1
-EOF
-else
-diff -u $topdir/status1 - <<EOF
-Com_lock_instance	0
-Com_lock_tables	0
-Com_unlock_instance	0
-Com_unlock_tables	0
-Com_flush	1
-EOF
-fi
 
 vlog "Full backup of the slave server"
 xtrabackup --backup --target-dir=$topdir/backup \
     --no-timestamp --slave-info \
     2>&1 | tee $topdir/pxb.log
 
-$MYSQL $MYSQL_ARGS -Ns -e \
-       "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
-       SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
-       SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
-       > $topdir/status2
+grep_general_log > $topdir/log1
 
 if [ $backup_locks = "yes" ] ; then
-	diff -u - $topdir/status2 <<EOF
-Com_lock_instance	0
-Com_lock_tables	0
-Com_lock_tables_for_backup	0
-Com_unlock_instance	0
-Com_unlock_tables	0
-Com_flush	2
+  diff -u - $topdir/log1 <<EOF
+FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS
 EOF
 else
-diff -u $topdir/status2 - <<EOF
-Com_lock_instance	0
-Com_lock_tables	0
-Com_unlock_instance	0
-Com_unlock_tables	1
-Com_flush	4
+diff -u $topdir/log1 - <<EOF
+FLUSH NO_WRITE_TO_BINLOG TABLES
+FLUSH TABLES WITH READ LOCK
+FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS
+UNLOCK TABLES
 EOF
 fi
 
@@ -98,6 +65,8 @@ run_cmd egrep -q "$binlog_slave_info_pattern" \
 
 mkdir $topdir/xbstream_backup
 
+mysql -e "TRUNCATE TABLE mysql.general_log;"
+
 vlog "Full backup of the slave server to a xbstream stream"
 xtrabackup --backup --no-timestamp --slave-info --stream=xbstream \
     | xbstream -xv -C $topdir/xbstream_backup
@@ -105,6 +74,21 @@ xtrabackup --backup --no-timestamp --slave-info --stream=xbstream \
 vlog "Verifying that xtrabackup_slave_info is not corrupted"
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/xbstream_backup/xtrabackup_slave_info
+
+grep_general_log > $topdir/log2
+
+if [ $backup_locks = "yes" ] ; then
+  diff -u - $topdir/log2 <<EOF
+FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS
+EOF
+else
+diff -u $topdir/log2 - <<EOF
+FLUSH NO_WRITE_TO_BINLOG TABLES
+FLUSH TABLES WITH READ LOCK
+FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS
+UNLOCK TABLES
+EOF
+fi
 
 # GTID + auto position
 
@@ -118,31 +102,20 @@ enforce_gtid_consistency=on
 start_server_with_id $slave2_id
 setup_slave GTID $slave2_id $master_id
 
+mysql -e "SET GLOBAL general_log=1; SET GLOBAL log_output='TABLE';"
+
 vlog "Full backup of the GTID with AUTO_POSITION slave server"
 xtrabackup --backup --no-timestamp --slave-info --target-dir=$topdir/backup
 
-$MYSQL $MYSQL_ARGS -Ns -e \
-       "SHOW GLOBAL STATUS LIKE 'Com_lock%'; \
-       SHOW GLOBAL STATUS LIKE 'Com_unlock%'; \
-       SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
-       > $topdir/status3
+grep_general_log > $topdir/log3
 
 if [ $backup_locks = "yes" ] ; then
-	diff -u - $topdir/status3 <<EOF
-Com_lock_instance	0
-Com_lock_tables	0
-Com_lock_tables_for_backup	0
-Com_unlock_instance	0
-Com_unlock_tables	0
-Com_flush	2
+  diff -u - $topdir/log3 <<EOF
+FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS
 EOF
 else
-	diff -u - $topdir/status3 <<EOF
-Com_lock_instance	0
-Com_lock_tables	0
-Com_unlock_instance	0
-Com_unlock_tables	0
-Com_flush	2
+diff -u $topdir/log3 - <<EOF
+FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS
 EOF
 fi
 

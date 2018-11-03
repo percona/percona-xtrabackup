@@ -69,6 +69,7 @@
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_password_policy.h"
 #include "mysqld_error.h"
+#include "mysys_err.h"
 #include "password.h"  // my_make_scrambled_password
 #include "sha1.h"      // SHA1_HASH_SIZE
 #include "sha2.h"
@@ -1973,8 +1974,8 @@ MY_LOCALE *Item_func_format::get_locale(Item *) {
   THD *thd = current_thd;
   String tmp, *locale_name = args[2]->val_str_ascii(&tmp);
   MY_LOCALE *lc;
-  if (!locale_name ||
-      !(lc = my_locale_by_name(thd, locale_name->c_ptr_safe()))) {
+  if (!locale_name || !(lc = my_locale_by_name(thd, locale_name->ptr(),
+                                               locale_name->length()))) {
     push_warning_printf(thd, Sql_condition::SL_WARNING, ER_UNKNOWN_LOCALE,
                         ER_THD(thd, ER_UNKNOWN_LOCALE),
                         locale_name ? locale_name->c_ptr_safe() : "NULL");
@@ -2475,15 +2476,26 @@ String *Item_func_rpad::val_str(String *str) {
   char *to;
   /* must be longlong to avoid truncation */
   longlong count = args[1]->val_int();
+  /* Avoid modifying this string as it may affect args[0] */
   String *res = args[0]->val_str(str);
   String *rpad = args[2]->val_str(&rpad_str);
 
-  if (!res || args[1]->null_value || !rpad ||
-      ((count < 0) && !args[1]->unsigned_flag)) {
-    null_value = true;
-    return NULL;
+  if ((null_value =
+           (args[0]->null_value || args[1]->null_value || args[2]->null_value)))
+    return nullptr;
+
+  if ((count < 0) && !args[1]->unsigned_flag) {
+    return null_return_str();
   }
-  null_value = 0;
+
+  if (!res || !rpad) {
+    /* purecov: begin deadcode */
+    DBUG_ASSERT(false);
+    null_value = true;
+    return nullptr;
+    /* purecov: end */
+  }
+
   /* Assumes that the maximum length of a String is < INT_MAX32. */
   /* Set here so that rest of code sees out-of-bound value as such. */
   if ((ulonglong)count > INT_MAX32) count = INT_MAX32;
@@ -2507,8 +2519,8 @@ String *Item_func_rpad::val_str(String *str) {
                                           false,  // send warning
                                           true);  // truncate
     if (!well_formed_pad) {
-      null_value = true;
-      return NULL;
+      DBUG_ASSERT(current_thd->is_error());
+      return error_str();
     }
   }
 
@@ -2516,8 +2528,11 @@ String *Item_func_rpad::val_str(String *str) {
 
   if (count <=
       static_cast<longlong>(res_char_length)) {  // String to pad is big enough
-    res->length(res->charpos((int)count));       // Shorten result if longer
-    return (res);
+    int res_charpos = res->charpos((int)count);
+    if (tmp_value.alloc(res_charpos)) return nullptr;
+    (void)tmp_value.copy(*res);
+    tmp_value.length(res_charpos);  // Shorten result if longer
+    return &tmp_value;
   }
   const size_t pad_char_length = rpad->numchars();
 
@@ -2529,18 +2544,18 @@ String *Item_func_rpad::val_str(String *str) {
                         ER_THD(current_thd, ER_WARN_ALLOWED_PACKET_OVERFLOWED),
                         func_name(), current_thd->variables.max_allowed_packet);
     null_value = true;
-    return NULL;
+    return nullptr;
   }
-  if (args[2]->null_value || !pad_char_length) {
-    null_value = true;
-    return NULL;
-  }
+  if (!pad_char_length) return make_empty_result();
   /* Must be done before alloc_buffer */
   const size_t res_byte_length = res->length();
+  /*
+    alloc_buffer() doesn't modify 'res' because 'res' is guaranteed too short
+    at this stage.
+  */
   if (!(res = alloc_buffer(res, str, &tmp_value,
                            static_cast<size_t>(byte_count)))) {
-    null_value = true;
-    return NULL;
+    return error_str();
   }
 
   to = (char *)res->ptr() + res_byte_length;
@@ -2690,13 +2705,26 @@ String *Item_func_lpad::val_str(String *str) {
   /* must be longlong to avoid truncation */
   longlong count = args[1]->val_int();
   size_t byte_count;
+  /* Avoid modifying this string as it may affect args[0] */
   String *res = args[0]->val_str(&tmp_value);
   String *pad = args[2]->val_str(&lpad_str);
 
-  if (!res || args[1]->null_value || !pad ||
-      ((count < 0) && !args[1]->unsigned_flag))
-    goto err;
-  null_value = 0;
+  if ((null_value =
+           (args[0]->null_value || args[1]->null_value || args[2]->null_value)))
+    return nullptr;
+
+  if (count < 0 && !args[1]->unsigned_flag) {
+    return null_return_str();
+  }
+
+  if (!res || !pad) {
+    /* purecov: begind deadcode */
+    DBUG_ASSERT(false);
+    null_value = true;
+    return nullptr;
+    /* purecov: end */
+  }
+
   /* Assumes that the maximum length of a String is < INT_MAX32. */
   /* Set here so that rest of code sees out-of-bound value as such. */
   if ((ulonglong)count > INT_MAX32) count = INT_MAX32;
@@ -2720,14 +2748,20 @@ String *Item_func_lpad::val_str(String *str) {
         args[2]->check_well_formed_result(pad,
                                           false,  // send warning
                                           true);  // truncate
-    if (!well_formed_pad) goto err;
+    if (!well_formed_pad) {
+      DBUG_ASSERT(current_thd->is_error());
+      return error_str();
+    }
   }
 
   res_char_length = res->numchars();
 
   if (count <= static_cast<longlong>(res_char_length)) {
-    res->length(res->charpos((int)count));
-    return res;
+    int res_charpos = res->charpos((int)count);
+    if (tmp_value.alloc(res_charpos)) return nullptr;
+    (void)tmp_value.copy(*res);
+    tmp_value.length(res_charpos);  // Shorten result if longer
+    return &tmp_value;
   }
 
   pad_char_length = pad->numchars();
@@ -2738,11 +2772,15 @@ String *Item_func_lpad::val_str(String *str) {
                         ER_WARN_ALLOWED_PACKET_OVERFLOWED,
                         ER_THD(current_thd, ER_WARN_ALLOWED_PACKET_OVERFLOWED),
                         func_name(), current_thd->variables.max_allowed_packet);
-    goto err;
+    null_value = true;
+    return nullptr;
   }
 
-  if (args[2]->null_value || !pad_char_length || str->alloc(byte_count))
-    goto err;
+  if (!pad_char_length) return make_empty_result();
+  if (str->alloc(byte_count)) {
+    my_error(ER_OOM, MYF(0));
+    return error_str();
+  }
 
   str->length(0);
   str->set_charset(collation.collation);
@@ -2757,10 +2795,6 @@ String *Item_func_lpad::val_str(String *str) {
   str->append(*res);
   null_value = 0;
   return str;
-
-err:
-  null_value = 1;
-  return 0;
 }
 
 bool Item_func_conv::resolve_type(THD *) {
@@ -3243,8 +3277,7 @@ String *Item_char_typecast::val_str(String *str) {
         ER_THD(thd, ER_WARN_ALLOWED_PACKET_OVERFLOWED),
         cast_cs == &my_charset_bin ? "cast_as_binary" : func_name(),
         thd->variables.max_allowed_packet);
-    null_value = true;
-    return nullptr;
+    return error_str();
   }
 
   String *res = args[0]->val_str(str);
@@ -4554,13 +4587,16 @@ CHARSET_INFO *mysqld_collation_get_by_name(const char *name,
                                            CHARSET_INFO *name_cs) {
   CHARSET_INFO *cs;
   MY_CHARSET_LOADER loader;
+  char error[1024];
   my_charset_loader_init_mysys(&loader);
   if (!(cs = my_collation_get_by_name(&loader, name, MYF(0)))) {
     ErrConvString err(name, name_cs);
     my_error(ER_UNKNOWN_COLLATION, MYF(0), err.ptr());
-    if (loader.error[0])
+    if (loader.errcode) {
+      snprintf(error, sizeof(error) - 1, EE(loader.errcode), loader.errarg);
       push_warning_printf(current_thd, Sql_condition::SL_WARNING,
-                          ER_UNKNOWN_COLLATION, "%s", loader.error);
+                          ER_UNKNOWN_COLLATION, "%s", error);
+    }
   }
   return cs;
 }

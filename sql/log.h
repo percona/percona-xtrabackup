@@ -795,11 +795,10 @@ extern Slow_log_throttle log_throttle_qni;
   Table_check_intact::report_error, and others.
 
   @param level          The level of the msg significance
-  @param format         Printf style format of message
+  @param ecode          Error code of the error message.
   @param args           va_list list of arguments for the message
 */
-void error_log_printf(enum loglevel level, const char *format, va_list args)
-    MY_ATTRIBUTE((format(printf, 2, 0)));
+void error_log_print(enum loglevel level, uint ecode, va_list args);
 
 /**
   Initialize structures (e.g. mutex) needed by the error log.
@@ -825,8 +824,9 @@ void init_error_log();
   have been buffered by calling flush_error_log_messages().
 
   @param filename        Name of error log file
+  @param get_lock        Should we acquire LOCK_error_log?
 */
-bool open_error_log(const char *filename);
+bool open_error_log(const char *filename, bool get_lock);
 
 /**
   Free any error log resources.
@@ -1409,18 +1409,29 @@ int make_iso8601_timestamp(char *buf, ulonglong utime, int mode);
 /**
   Set up custom error logging stack.
 
-  @param   conf        The configuration string
-  @param   check_only  if true, report on whether configuration is valid
-                       (i.e. whether all requested services are available),
-                       but do not apply the new configuration.
-                       if false, set the configuration (acquire the necessary
-                       services, update the hash by adding/deleting entries
-                       as necessary)
+  @param        conf        The configuration string
+  @param        check_only  If true, report on whether configuration is valid
+                            (i.e. whether all requested services are available),
+                            but do not apply the new configuration.
+                            if false, set the configuration (acquire the
+                            necessary services, update the hash by
+                            adding/deleting entries as necessary)
+  @param[out]   pos         If an error occurs and this pointer is non-null,
+                            the position in the configuration string where
+                            the error occurred will be written to the
+                            pointed-to size_t.
 
-  @retval              <0   failure
-  @retval              >=0  success
+  @retval              0    success
+  @retval             -1    expected delimiter not found
+  @retval             -2    one or more services not found
+  @retval             -3    failed to create service cache entry
+  @retval             -4    tried to open multiple instances of a singleton
+  @retval             -5    failed to create service instance entry
+  @retval             -6    last element in pipeline should be a sink
+  @retval             -101  service name may not start with a delimiter
+  @retval             -102  delimiters ',' and ';' may not be mixed
 */
-int log_builtins_error_stack(const char *conf, bool check_only);
+int log_builtins_error_stack(const char *conf, bool check_only, size_t *pos);
 
 /**
   Call flush() on all log_services.
@@ -1456,29 +1467,5 @@ int log_builtins_exit();
   @param         length       number of bytes in buffer
 */
 void log_write_errstream(const char *buffer, size_t length);
-
-/**
-   Temporary helper class to implement services' system variables
-   handling against until the component framework supports
-   per-component variables.
-*/
-class LogVar {
- private:
-  log_item lv;
-  const char *service_group = "log_sink";
-
- public:
-  LogVar(LEX_CSTRING &s); /**< constructor with variable name */
-
-  LogVar &val(LEX_STRING &s); /**< set a  value from a lex string */
-  LogVar &val(const char *s); /**< set a  value from a C-string */
-  LogVar &val(longlong i);    /**< set an integer value */
-  LogVar &val(double d);      /**< set a  float value */
-
-  LogVar &group(const char *g); /**< set non-default service group */
-
-  int check();  /**< check value. true: failure */
-  int update(); /**< apply new value */
-};
 
 #endif /* LOG_H */

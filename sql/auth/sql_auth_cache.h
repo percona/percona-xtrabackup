@@ -155,6 +155,11 @@ class ACL_USER : public ACL_ACCESS {
   */
   bool use_default_password_reuse_interval;
 
+  /**
+    The current password needed to be specified while changing it.
+  */
+  Lex_acl_attrib_udyn password_require_current;
+
   ACL_USER *copy(MEM_ROOT *root);
 };
 
@@ -280,6 +285,36 @@ class GRANT_TABLE : public GRANT_NAME {
   ~GRANT_TABLE();
   bool ok() { return privs != 0 || cols != 0; }
 };
+
+/*
+ * A default/no-arg constructor is useful with containers-of-containers
+ * situations in which a two-allocator scoped_allocator_adapter is not enough.
+ * This custom allocator provides a Malloc_allocator with a no-arg constructor
+ * by hard-coding the key_memory_acl_cache constructor argument.
+ * This "solution" lacks beauty, yet is pragmatic.
+ */
+template <class T>
+class Acl_cache_allocator : public Malloc_allocator<T> {
+ public:
+  Acl_cache_allocator() : Malloc_allocator<T>(key_memory_acl_cache) {}
+  template <class U>
+  struct rebind {
+    typedef Acl_cache_allocator<U> other;
+  };
+
+  template <class U>
+  Acl_cache_allocator(
+      const Acl_cache_allocator<U> &other MY_ATTRIBUTE((unused)))
+      : Malloc_allocator<T>(key_memory_acl_cache) {}
+
+  template <class U>
+  Acl_cache_allocator &operator=(
+      const Acl_cache_allocator<U> &other MY_ATTRIBUTE((unused))) {}
+};
+typedef Acl_cache_allocator<ACL_USER *> Acl_user_ptr_allocator;
+typedef std::list<ACL_USER *, Acl_user_ptr_allocator> Acl_user_ptr_list;
+Acl_user_ptr_list *cached_acl_users_for_name(const char *name);
+void rebuild_cached_acl_users_for_name(void);
 
 /* Data Structures */
 

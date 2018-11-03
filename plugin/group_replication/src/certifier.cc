@@ -138,7 +138,6 @@ void Certifier_broadcast_thread::dispatcher() {
   mysql_cond_broadcast(&broadcast_run_cond);
   mysql_mutex_unlock(&broadcast_run_lock);
 
-  struct timespec abstime;
   while (!aborted) {
     // Broadcast Transaction identifiers every 30 seconds
     if (broadcast_counter % 30 == 0) {
@@ -156,17 +155,11 @@ void Certifier_broadcast_thread::dispatcher() {
       mysql_mutex_unlock(&broadcast_dispatcher_lock); /* purecov: inspected */
       break;                                          /* purecov: inspected */
     }
+    struct timespec abstime;
     set_timespec(&abstime, 1);
     mysql_cond_timedwait(&broadcast_dispatcher_cond, &broadcast_dispatcher_lock,
                          &abstime);
     mysql_mutex_unlock(&broadcast_dispatcher_lock);
-
-    /*
-      Clear server sessions open caches on transactions observer.
-      TODO: move this to a global scheduler.
-    */
-    if (broadcast_counter % 300 == 0)
-      observer_trans_clear_io_cache_unused_list(); /* purecov: inspected */
 
     broadcast_counter++;
   }
@@ -176,10 +169,10 @@ void Certifier_broadcast_thread::dispatcher() {
 
   thd->release_resources();
   global_thd_manager_remove_thd(thd);
-  delete thd;
 
   mysql_mutex_lock(&broadcast_run_lock);
   broadcast_thd_state.set_terminated();
+  delete thd;
   mysql_cond_broadcast(&broadcast_run_cond);
   mysql_mutex_unlock(&broadcast_run_lock);
 
@@ -1528,7 +1521,6 @@ size_t Certifier::get_local_certified_gtid(
 
 void Certifier::enable_conflict_detection() {
   DBUG_ENTER("Certifier::enable_conflict_detection");
-  DBUG_ASSERT(local_member_info->in_primary_mode());
 
   mysql_mutex_lock(&LOCK_certification_info);
   conflict_detection_enable = true;
