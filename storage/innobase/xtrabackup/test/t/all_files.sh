@@ -6,15 +6,19 @@ start_server
 
 load_sakila
 
-xtrabackup --backup --target-dir=$topdir/backup
-xtrabackup --prepare --target-dir=$topdir/backup
+mysql -e "CREATE TABLE t1 (a INT) ENGINE=MyISAM" test
+mysql -e "CREATE TABLE t2 (a INT) ENGINE=InnoDB" test
+
+function compare_files() {
+
+dir1=$1
+dir2=$2
 
 # files that present in the backup directory, but not present in the datadir
-diff -u <( ( ( cd $topdir/backup; find . | grep -v innodb_temp )
-             ( cd $mysql_datadir; find . | grep -v innodb_temp )
-             ( cd $mysql_datadir; find . | grep -v innodb_temp ) ) | sort | uniq -u ) - <<EOF
+diff -u <( ( ( cd $dir1; find . | grep -v innodb_temp )
+             ( cd $dir2; find . | grep -v innodb_temp )
+             ( cd $dir2; find . | grep -v innodb_temp ) ) | sort | uniq -u ) - <<EOF
 ./backup-my.cnf
-./test/db.opt
 ./xtrabackup_binlog_info
 ./xtrabackup_binlog_pos_innodb
 ./xtrabackup_checkpoints
@@ -25,9 +29,9 @@ diff -u <( ( ( cd $topdir/backup; find . | grep -v innodb_temp )
 EOF
 
 # files that present in the datadir, but not present in the backup
-diff -u <( ( ( cd $topdir/backup; find . | grep -v innodb_temp )
-             ( cd $topdir/backup; find . | grep -v innodb_temp )
-             ( cd $mysql_datadir; find . | grep -v innodb_temp ) ) | sort | uniq -u ) - <<EOF
+diff -u <( ( ( cd $dir1; find . | grep -v innodb_temp )
+             ( cd $dir1; find . | grep -v innodb_temp )
+             ( cd $dir2; find . | grep -v innodb_temp ) ) | sort | uniq -u ) - <<EOF
 ./auto.cnf
 ./ca-key.pem
 ./ca.pem
@@ -42,3 +46,19 @@ diff -u <( ( ( cd $topdir/backup; find . | grep -v innodb_temp )
 ./server-cert.pem
 ./server-key.pem
 EOF
+
+}
+
+xtrabackup --backup --target-dir=$topdir/backup
+cp -a $topdir/backup $topdir/full
+xtrabackup --prepare --target-dir=$topdir/backup
+compare_files $topdir/backup $mysql_datadir
+
+# PXB-1696: Incremental prepare removes .sdi files from the data dir
+mysql -e "CREATE TABLE t3 (a INT) ENGINE=MyISAM" test
+mysql -e "CREATE TABLE t4 (a INT) ENGINE=InnoDB" test
+
+xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full
+xtrabackup --prepare --target-dir=$topdir/full --apply-log-only
+xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
+compare_files $topdir/full $mysql_datadir

@@ -437,9 +437,8 @@ comparing its name to the list of known data file types and checking
 if passes the rules for partial backup.
 @return true if file backed up or skipped successfully. */
 static bool datafile_copy_backup(const char *filepath, uint thread_n) {
-  const char *ext_list[] = {"frm", "isl", "MYD", "MYI", "MAD", "MAI",
-                            "MRG", "TRG", "TRN", "ARM", "ARZ", "CSM",
-                            "CSV", "opt", "par", "sdi", NULL};
+  const char *ext_list[] = {"MYD", "MYI", "MAD", "MAI", "MRG", "ARM",
+                            "ARZ", "CSM", "CSV", "opt", "sdi", NULL};
 
   /* Get the name and the path for the tablespace. node->name always
   contains the path (which may be absolute for remote tablespaces in
@@ -467,9 +466,8 @@ Same as datafile_copy_backup, but put file name into the list for
 rsync command. */
 static bool datafile_rsync_backup(const char *filepath, bool save_to_list,
                                   FILE *f) {
-  const char *ext_list[] = {"frm", "isl", "MYD", "MYI", "MAD", "MAI",
-                            "MRG", "TRG", "TRN", "ARM", "ARZ", "CSM",
-                            "CSV", "opt", "par", "sdi", NULL};
+  const char *ext_list[] = {"MYD", "MYI", "MAD", "MAI", "MRG", "ARM",
+                            "ARZ", "CSM", "CSV", "opt", "sdi", NULL};
 
   /* Get the name and the path for the tablespace. node->name always
   contains the path (which may be absolute for remote tablespaces in
@@ -644,8 +642,7 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
 
   dstfile = ds_open(datasink, trim_dotslash(dst_file_path), &cursor.statinfo);
   if (dstfile == NULL) {
-    msg("[%02u] error: "
-        "cannot open the destination stream for %s\n",
+    msg("[%02u] error: cannot open the destination stream for %s\n",
         thread_n, dst_name);
     goto error;
   }
@@ -1168,9 +1165,8 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
 }
 
 bool copy_incremental_over_full() {
-  const char *ext_list[] = {"frm", "isl", "MYD", "MYI", "MAD", "MAI",
-                            "MRG", "TRG", "TRN", "ARM", "ARZ", "CSM",
-                            "CSV", "opt", "par", "sdi", NULL};
+  const char *ext_list[] = {"MYD", "MYI", "MAD", "MAI", "MRG", "ARM",
+                            "ARZ", "CSM", "CSV", "opt", "sdi", NULL};
   const char *sup_files[] = {"xtrabackup_binlog_info",
                              "xtrabackup_galera_info",
                              "xtrabackup_slave_info",
@@ -1504,15 +1500,13 @@ bool copy_back(int argc, char **argv) {
     fclose(f);
 
     if (!xb_keyring_init_for_copy_back(argc, argv)) {
-      msg("xtrabackup: Error: failed to init "
-          "keyring plugin\n");
+      msg("xtrabackup: Error: failed to init keyring plugin\n");
       return (false);
     }
     if (!xb_tablespace_keys_load(
             "./", opt_transition_key,
             opt_transition_key != NULL ? strlen(opt_transition_key) : 0)) {
-      msg("xtrabackup: Error: failed to load tablespace "
-          "keys\n");
+      msg("xtrabackup: Error: failed to load tablespace keys\n");
       return (false);
     }
 
