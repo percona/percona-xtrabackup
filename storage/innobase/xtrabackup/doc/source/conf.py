@@ -153,10 +153,10 @@ html_theme_path = ['.', './percona-theme']
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-html_title = 'Percona XtraBackup 2.4 Documentation'
+html_title = ' '.join([project, version, 'Documentation'])
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
-html_short_title = 'Percona XtraBackup 2.4 Documentation'
+html_short_title = ' '.join([project, version, 'Documentation'])
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
@@ -217,8 +217,9 @@ html_sidebars = {
 #html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'PerconaXtraBackupDocumentation'
-
+#htmlhelp_basename = 'PerconaXtraBackupDocumentation'
+htmlhelp_basename = ''.join([''.join(project.split()),
+                             'Documentation'])
 
 # -- Options for LaTeX output --------------------------------------------------
 
@@ -231,7 +232,9 @@ htmlhelp_basename = 'PerconaXtraBackupDocumentation'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-  ('index', 'PerconaXtraBackup-2.4.tex', u'Percona XtraBackup 2.4 Documentation',
+  ('index',
+   '.'.join(['-'.join([''.join(project.split()), version]), 'tex']),
+   ' '.join([project, version, 'Documentation']),
    u'Percona LLC and/or its affiliates', 'manual'),
 ]
 
@@ -269,7 +272,7 @@ latex_elements = {
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('xtrabackup_bin/xtrabackup_binary', 'xtrabackup', u'Percona XtraBackup 2.4 Documentation',
+    ('xtrabackup_bin/xtrabackup_binary', 'xtrabackup', ' '.join([project, version, 'Documentation']),
      [u'Percona LLC and/or its affiliates'], 1),
     ('innobackupex/innobackupex_script', 'innobackupex', u'innobackupex Documentation',
      [u'Percona LLC and/or its affiliates'], 1),
