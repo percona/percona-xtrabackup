@@ -155,7 +155,7 @@ static int agg_cmp_type(Item_result *type, Item **items, uint nitems) {
 
 static void write_histogram_to_trace(THD *thd, Item_func *item,
                                      const double selectivity) {
-  Opt_trace_object obj(&thd->opt_trace);
+  Opt_trace_object obj(&thd->opt_trace, "histogram_selectivity");
   obj.add("condition", item).add("histogram_selectivity", selectivity);
 }
 
@@ -1498,7 +1498,9 @@ int Arg_comparator::compare_binary_string() {
       if (set_null) owner->null_value = 0;
       size_t res1_length = res1->length();
       size_t res2_length = res2->length();
-      int cmp = memcmp(res1->ptr(), res2->ptr(), min(res1_length, res2_length));
+      size_t min_length = min(res1_length, res2_length);
+      int cmp =
+          min_length == 0 ? 0 : memcmp(res1->ptr(), res2->ptr(), min_length);
       return cmp ? cmp : (int)(res1_length - res2_length);
     }
   }
@@ -5812,27 +5814,6 @@ bool Item_equal::merge(THD *thd, Item_equal *item) {
   if (cond_false) used_tables_cache = 0;
 
   return false;
-}
-
-/**
-  Order field items in multiple equality according to a sorting criteria.
-
-  The function perform ordering of the field items in the Item_equal
-  object according to the criteria determined by the cmp callback parameter.
-  If cmp(item_field1,item_field2,arg)<0 than item_field1 must be
-  placed after item_fiel2.
-
-  The function sorts field items by the exchange sort algorithm.
-  The list of field items is looked through and whenever two neighboring
-  members follow in a wrong order they are swapped. This is performed
-  again and again until we get all members in a right order.
-
-  @param compare      function to compare field item
-  @param arg          context extra parameter for the cmp function
-*/
-
-void Item_equal::sort(Node_cmp_func compare, void *arg) {
-  fields.sort(compare, arg);
 }
 
 /**

@@ -33,6 +33,7 @@
 #include <functional>
 
 #include "binary_log_types.h"
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_dbug.h"
@@ -43,7 +44,6 @@
 #include "sql/item.h"
 #include "sql/item_cmpfunc.h"  // Item_cond_and
 #include "sql/opt_costmodel.h"
-#include "sql/set_var.h"
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"    // THD
 #include "sql/sql_cmd_dml.h"  // Sql_cmd_dml
@@ -659,6 +659,15 @@ class JOIN_TAB : public QEP_shared_owner {
   /** Keys with constant part. Subset of keys. */
   Key_map const_keys;
   Key_map checked_keys; /**< Keys checked */
+  /**
+    Keys which can be used for skip scan access. We store it
+    separately from tab->const_keys & join_tab->keys() to avoid
+    unnecessary printing of the prossible keys in EXPLAIN output
+    as some of these keys can be marked not usable for skip scan later.
+    More strict check for prossible keys is performed in
+    get_best_skip_scan() function.
+  */
+  Key_map skip_scan_keys;
   Key_map needed_reg;
 
   /**
@@ -738,6 +747,7 @@ inline JOIN_TAB::JOIN_TAB()
       worst_seeks(0.0),
       const_keys(),
       checked_keys(),
+      skip_scan_keys(),
       needed_reg(),
       quick_order_tested(),
       found_records(0),
@@ -876,7 +886,7 @@ uint find_shortest_key(TABLE *table, const Key_map *usable_keys);
 /* functions from opt_sum.cc */
 bool simple_pred(Item_func *func_item, Item **args, bool *inv_order);
 int opt_sum_query(THD *thd, TABLE_LIST *tables, List<Item> &all_fields,
-                  Item *conds);
+                  Item *conds, bool *select_count);
 
 /* from sql_delete.cc, used by opt_range.cc */
 extern "C" int refpos_order_cmp(const void *arg, const void *a, const void *b);

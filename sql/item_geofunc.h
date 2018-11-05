@@ -732,18 +732,15 @@ class Item_func_validate : public Item_geometry_func {
   String *val_str(String *) override;
 };
 
-class Item_func_simplify : public Item_geometry_func {
-  BG_result_buf_mgr bg_resbuf_mgr;
-  String arg_val;
-  template <typename Coordsys>
-  int simplify_basic(Geometry *geom, double max_dist, String *str,
-                     Gis_geometry_collection *gc = NULL, String *gcbuf = NULL);
-
+/// Item that implements function ST_Simplify, which simplifies a geometry using
+/// the Douglas-Peucker algorithm.
+class Item_func_st_simplify : public Item_geometry_func {
  public:
-  Item_func_simplify(const POS &pos, Item *a, Item *b)
+  Item_func_st_simplify(const POS &pos, Item *a, Item *b)
       : Item_geometry_func(pos, a, b) {}
-  const char *func_name() const override { return "st_simplify"; }
   String *val_str(String *) override;
+
+  const char *func_name() const override { return "st_simplify"; }
 };
 
 class Item_func_point : public Item_geometry_func {
@@ -1640,18 +1637,13 @@ class Item_func_numpoints : public Item_int_func {
   }
 };
 
-class Item_func_area : public Item_real_func {
-  String value;
-
-  template <typename Coordsys>
-  double bg_area(const Geometry *geom);
-
+class Item_func_st_area : public Item_real_func {
  public:
-  Item_func_area(const POS &pos, Item *a) : Item_real_func(pos, a) {}
+  Item_func_st_area(const POS &pos, Item *a) : Item_real_func(pos, a) {}
   double val_real() override;
   const char *func_name() const override { return "st_area"; }
-  bool resolve_type(THD *thd) override {
-    if (Item_real_func::resolve_type(thd)) return true;
+  bool resolve_type(THD *) override {
+    // ST_Area returns NULL if the geometry is empty.
     maybe_null = true;
     return false;
   }
@@ -1731,6 +1723,18 @@ class Item_func_st_distance_sphere : public Item_real_func {
       : Item_real_func(pos, ilist) {}
   double val_real() override;
   const char *func_name() const override { return "st_distance_sphere"; }
+};
+
+/// This class implements ST_Transform function that transforms a geometry from
+/// one SRS to another.
+class Item_func_st_transform final : public Item_geometry_func {
+ public:
+  Item_func_st_transform(const POS &pos, Item *a, Item *b)
+      : Item_geometry_func(pos, a, b) {}
+  String *val_str(String *str) override;
+
+ private:
+  const char *func_name() const override { return "st_transform"; }
 };
 
 #endif /*ITEM_GEOFUNC_INCLUDED*/

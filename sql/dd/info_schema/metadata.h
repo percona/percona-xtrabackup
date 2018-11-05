@@ -51,7 +51,7 @@ namespace info_schema {
   ------------------------
   Introduced in MySQL 8.0.0 by WL#6599. Never published in a GA version.
 
-  80011: Current. Published in 8.0 GA.
+  80011: Published in 8.0 GA.
   ------------------------------------
   Changes from version 1:
 
@@ -62,12 +62,23 @@ namespace info_schema {
     Changes the column I_S.STATISTICS.NON_UNIQUE type from VARCHAR
     to INT.
 
-  80012: Next I_S version number to use when there is change.
-  -----------------------------------------------------------
-  No changes yet, hence this number is not used yet.
+  80012: Current
+  ------------------------------------
+  Changes from version 80011:
+
+  - Bug#27945704 UNABLE TO JOIN TABLE_CONSTRAINTS AND REFERENTIAL_CONSTRAINTS
+    Changes the collation of I_S columns that project index name and
+    constraint name to use utf8_tolower_ci.
+
+  - WL#11864 Implement I_S.VIEW_TABLE_USAGE and I_S.VIEW_ROUTINE_USAGE
+
+  - WL#1075 adds one column to INFORMATION_SCHEMA.STATISTICS: "EXPRESSION".
+    This column prints out the expression for functional key parts, or SQL NULL
+    if it is a regular key part. For functional key parts, COLUMN_NAME is set to
+    SQL NULL.
 */
 
-static const uint IS_DD_VERSION = 80011;
+static const uint IS_DD_VERSION = 80012;
 
 /**
   Initialize INFORMATION_SCHEMA system views.

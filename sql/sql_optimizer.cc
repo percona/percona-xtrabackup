@@ -117,7 +117,8 @@ static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
                                 table_map normal_tables, SELECT_LEX *select_lex,
                                 SARGABLE_PARAM **sargables);
 static bool pull_out_semijoin_tables(JOIN *join);
-static void add_group_and_distinct_keys(JOIN *join, JOIN_TAB *join_tab);
+static void add_loose_index_scan_and_skip_scan_keys(JOIN *join,
+                                                    JOIN_TAB *join_tab);
 static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit);
 static Item *make_cond_for_table_from_pred(THD *thd, Item *root_cond,
                                            Item *cond, table_map tables,
@@ -252,7 +253,7 @@ int JOIN::optimize() {
   if (alloc_indirection_slices()) DBUG_RETURN(1);
 
   // The base ref items from query block are assigned as JOIN's ref items
-  ref_items[REF_SLICE_BASE] = select_lex->base_ref_items;
+  ref_items[REF_SLICE_ACTIVE] = select_lex->base_ref_items;
 
   /* dump_TABLE_LIST_graph(select_lex, select_lex->leaf_tables); */
   /*
@@ -342,11 +343,12 @@ int JOIN::optimize() {
       open any tables.
     */
     if ((res = opt_sum_query(thd, select_lex->leaf_tables, all_fields,
-                             where_cond))) {
+                             where_cond, &select_count))) {
       best_rowcount = 0;
       if (res == HA_ERR_KEY_NOT_FOUND) {
         DBUG_PRINT("info", ("No matching min/max row"));
         zero_result_cause = "No matching min/max row";
+
         goto setup_subq_exit;
       }
       if (res > 1) {
@@ -1142,35 +1144,8 @@ bool JOIN::optimize_distinct_group_order() {
                                    (void *)group_list)) {
       /*
         We have found that grouping can be removed since groups correspond to
-        only one row anyway, but we still have to guarantee correct result
-        order. The line below effectively rewrites the query from GROUP BY
-        <fields> to ORDER BY <fields>. There are three exceptions:
-        - if skip_sort_order is set (see above), then we can simply skip
-          GROUP BY;
-        - if IN(subquery), likewise (see remove_redundant_subquery_clauses())
-        - we can only rewrite ORDER BY if the ORDER BY fields are 'compatible'
-          with the GROUP BY ones, i.e. either one is a prefix of another.
-          We only check if the ORDER BY is a prefix of GROUP BY. In this case
-          test_if_subpart() copies the ASC/DESC attributes from the original
-          ORDER BY fields.
-          If GROUP BY is a prefix of ORDER BY, then it is safe to leave
-          'order' as is.
-       */
-      if (order && test_if_subpart(group_list, order)) {
-        order = group_list;
-        // Inform EXPLAIN that we sort for ORDER and care about ASC/DESC
-        order.src = ESC_ORDER_BY;
-        order.force_order();
-        trace_opt.add("group_by_is_on_unique", true)
-            .add("changed_group_by_to_order_by", true);
-      }
-
-      /*
-        If we have an IGNORE INDEX FOR GROUP BY(fields) clause, this must be
-        rewritten to IGNORE INDEX FOR ORDER BY(fields).
+        only one row anyway.
       */
-      best_ref[0]->table()->keys_in_use_for_order_by =
-          best_ref[0]->table()->keys_in_use_for_group_by;
       group_list = 0;
       grouped = false;
     }
@@ -1212,7 +1187,7 @@ bool JOIN::optimize_distinct_group_order() {
     }
     ORDER *o;
     bool all_order_fields_used;
-    if ((o = create_distinct_group(thd, ref_items[REF_SLICE_BASE], order,
+    if ((o = create_distinct_group(thd, ref_items[REF_SLICE_ACTIVE], order,
                                    fields_list, &all_order_fields_used))) {
       group_list = ORDER_with_src(o, ESC_DISTINCT);
       const bool skip_group =
@@ -1229,7 +1204,15 @@ bool JOIN::optimize_distinct_group_order() {
           m_select_limit == HA_POS_ERROR || (order && !skip_sort_order)) {
         /*  Change DISTINCT to GROUP BY */
         select_distinct = 0;
-        no_order = !order;
+        /*
+          group_list was created with ORDER BY clause as prefix and
+          replaces it. So it must respect ordering. If there is no
+          ORDER BY, GROUP BY need not have to provide order.
+        */
+        if (!order) {
+          for (ORDER *group = group_list; group; group = group->next)
+            group->direction = ORDER_NOT_RELEVANT;
+        }
         if (all_order_fields_used && skip_sort_order && order) {
           /*
             Force MySQL to read the table in sorted order to get result in
@@ -1270,20 +1253,19 @@ bool JOIN::optimize_distinct_group_order() {
   send_group_parts = tmp_table_param.group_parts; /* Save org parts */
 
   /*
-    Grouping orders row; so if windowing or ROLLUP doesn't change this
-    order, and ORDER BY is a prefix of GROUP BY, ORDER BY is useless.
-    Also true if the result is one row.
+     If ORDER BY is a prefix of GROUP BY and if windowing or ROLLUP
+     doesn't change this order, ORDER BY can be removed and we can
+     enforce GROUP BY to provide order.
+     Also true if the result is one row.
   */
   if ((test_if_subpart(group_list, order) && !m_windows_sort &&
        select_lex->olap != ROLLUP_TYPE) ||
       (!group_list && tmp_table_param.sum_func_count)) {
     if (order) {
       order = 0;
-      // now GROUP BY also should provide proper order
-      group_list.force_order();
       trace_opt.add("removed_order_by", true);
     }
-    if (is_indexed_agg_distinct(this, NULL)) sort_and_group = 0;
+    if (is_indexed_agg_distinct(this, NULL)) streaming_aggregation = false;
   }
 
   DBUG_RETURN(false);
@@ -1474,9 +1456,7 @@ int test_if_order_by_key(ORDER_with_src *order_src, TABLE *table, uint idx,
 
     if (key_part->field != field || !field->part_of_sortkey.is_set(idx))
       DBUG_RETURN(0);
-    // We need proper ordering when order is explicitly specified for GROUP
-    // BY and always for ORDER BY
-    if (order->is_explicit || !order_src->can_ignore_order()) {
+    if (order->direction != ORDER_NOT_RELEVANT) {
       const enum_order keypart_order =
           (key_part->key_part_flag & HA_REVERSE_SORT) ? ORDER_DESC : ORDER_ASC;
       /* set flag to 1 if we can use read-next on key, else to -1 */
@@ -2271,7 +2251,7 @@ check_reverse_order:
         tab->reversed_access = true;
 
         /*
-          The current implementation of join_read_prev_same() does not
+          The current implementation of the reverse RefIterator does not
           work well in combination with ICP and can lead to increased
           execution time. Setting changed_key to the current key
           (based on that we change the access order for the key) will
@@ -2903,9 +2883,10 @@ static bool setup_join_buffering(JOIN_TAB *tab, JOIN *join,
   DBUG_EXECUTE_IF("test_bka_unique", use_bka_unique = true;);
 
   // Set preliminary join cache setting based on decision from greedy search
-  tab->set_use_join_cache(tab->position()->use_join_buffer
-                              ? JOIN_CACHE::ALG_BNL
-                              : JOIN_CACHE::ALG_NONE);
+  if (!join->select_count)
+    tab->set_use_join_cache(tab->position()->use_join_buffer
+                                ? JOIN_CACHE::ALG_BNL
+                                : JOIN_CACHE::ALG_NONE);
 
   if (tableno == join->const_tables) {
     DBUG_ASSERT(tab->use_join_cache() == JOIN_CACHE::ALG_NONE);
@@ -3013,7 +2994,8 @@ static bool setup_join_buffering(JOIN_TAB *tab, JOIN *join,
         goto no_join_cache;
       }
 
-      tab->set_use_join_cache(JOIN_CACHE::ALG_BNL);
+      if (join->select_count == false)
+        tab->set_use_join_cache(JOIN_CACHE::ALG_BNL);
       return false;
     case JT_SYSTEM:
     case JT_CONST:
@@ -3631,7 +3613,7 @@ static bool build_equal_items_for_cond(THD *thd, Item *cond, Item **retcond,
          that are subject to substitution by multiple equality items and
          removing each such predicate from the conjunction after having
          found/created a multiple equality whose inference the predicate is.
-     */
+       */
       while ((item = li++)) {
         /*
           PS/SP note: we can safely remove a node from AND-OR
@@ -3894,8 +3876,8 @@ bool build_equal_items(THD *thd, Item *cond, Item **retcond,
     The function finds out what of two fields is better according
     this criteria.
 
-  @param v_field1        first field item to compare
-  @param v_field2        second field item to compare
+  @param field1          first field item to compare
+  @param field2          second field item to compare
   @param table_join_idx  index to tables determining table order
 
   @retval
@@ -3906,10 +3888,8 @@ bool build_equal_items(THD *thd, Item *cond, Item **retcond,
     0  otherwise
 */
 
-static int compare_fields_by_table_order(void *v_field1, void *v_field2,
-                                         void *table_join_idx) {
-  Item_field *field1 = static_cast<Item_field *>(v_field1);
-  Item_field *field2 = static_cast<Item_field *>(v_field2);
+static int compare_fields_by_table_order(Item_field *field1, Item_field *field2,
+                                         JOIN_TAB **table_join_idx) {
   int cmp = 0;
   bool outer_ref = 0;
   if (field1->used_tables() & OUTER_REF_TABLE_BIT) {
@@ -3921,19 +3901,18 @@ static int compare_fields_by_table_order(void *v_field1, void *v_field2,
     cmp++;
   }
   if (outer_ref) return cmp;
-  JOIN_TAB **idx = (JOIN_TAB **)table_join_idx;
 
   /*
-    idx is NULL if this function was not called from JOIN::optimize()
+    table_join_idx is NULL if this function was not called from JOIN::optimize()
     but from e.g. mysql_delete() or mysql_update(). In these cases
     there is only one table and both fields belong to it. Example
     condition where this is the case: t1.fld1=t1.fld2
   */
-  if (!idx) return 0;
+  if (!table_join_idx) return 0;
 
   // Locate JOIN_TABs thanks to table_join_idx, then compare their index.
-  cmp = idx[field1->table_ref->tableno()]->idx() -
-        idx[field2->table_ref->tableno()]->idx();
+  cmp = table_join_idx[field1->table_ref->tableno()]->idx() -
+        table_join_idx[field2->table_ref->tableno()]->idx();
   return cmp < 0 ? -1 : (cmp ? 1 : 0);
 }
 
@@ -4120,7 +4099,7 @@ static Item *eliminate_item_equal(Item *cond, COND_EQUAL *upper_levels,
 */
 
 Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
-                                      void *table_join_idx) {
+                                      JOIN_TAB **table_join_idx) {
   Item_equal *item_equal;
 
   if (cond->type() == Item::COND_ITEM) {
@@ -4133,8 +4112,11 @@ Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
       cond_list->disjoin((List<Item> *)&cond_equal->current_level);
 
       List_iterator_fast<Item_equal> it(cond_equal->current_level);
+      auto cmp = [table_join_idx](Item_field *f1, Item_field *f2) {
+        return compare_fields_by_table_order(f1, f2, table_join_idx);
+      };
       while ((item_equal = it++)) {
-        item_equal->sort(&compare_fields_by_table_order, table_join_idx);
+        item_equal->sort(cmp);
       }
     }
 
@@ -4170,7 +4152,9 @@ Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
              (down_cast<Item_func *>(cond))->functype() ==
                  Item_func::MULT_EQUAL_FUNC) {
     item_equal = (Item_equal *)cond;
-    item_equal->sort(&compare_fields_by_table_order, table_join_idx);
+    item_equal->sort([table_join_idx](Item_field *f1, Item_field *f2) {
+      return compare_fields_by_table_order(f1, f2, table_join_idx);
+    });
     if (cond_equal && cond_equal->current_level.head() == item_equal)
       cond_equal = cond_equal->upper_levels;
     return eliminate_item_equal(0, cond_equal, item_equal);
@@ -5258,10 +5242,12 @@ bool JOIN::estimate_rowcount() {
       tab->worst_seeks = min_worst_seek;
 
     /*
-      Add to tab->const_keys those indexes for which all group fields or
+      Add to tab->const_keys the indexes for which all group fields or
       all select distinct fields participate in one index.
+      Add to tab->skip_scan_keys indexes which can be used for skip
+      scan access if no aggregates are present.
     */
-    add_group_and_distinct_keys(this, tab);
+    add_loose_index_scan_and_skip_scan_keys(this, tab);
 
     /*
       Perform range analysis if there are keys it could use (1).
@@ -5269,7 +5255,8 @@ bool JOIN::estimate_rowcount() {
       Do range analysis if on the inner side of a semi-join (3).
     */
     TABLE_LIST *const tl = tab->table_ref;
-    if (!tab->const_keys.is_clear_all() &&              // (1)
+    if ((!tab->const_keys.is_clear_all() ||
+         !tab->skip_scan_keys.is_clear_all()) &&        // (1)
         (!tl->embedding ||                              // (2)
          (tl->embedding && tl->embedding->sj_cond())))  // (3)
     {
@@ -5528,8 +5515,10 @@ static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit) {
   // Derived tables aren't filled yet, so no stats are available.
   if (!tl->uses_materialization()) {
     QUICK_SELECT_I *qck;
+    Key_map keys_to_use = tab->const_keys;
+    keys_to_use.merge(tab->skip_scan_keys);
     int error = test_quick_select(
-        thd, tab->const_keys,
+        thd, keys_to_use,
         0,  // empty table_map
         limit,
         false,  // don't force quick range
@@ -5940,7 +5929,14 @@ static bool find_eq_ref_candidate(TABLE_LIST *tl, table_map sj_inner_tables) {
           /* Check if this is "t.keypart = expr(outer_tables) */
           if (!(keyuse->used_tables & sj_inner_tables) &&
               !(keyuse->optimize & KEY_OPTIMIZE_REF_OR_NULL)) {
-            bound_parts |= (key_part_map)1 << keyuse->keypart;
+            /*
+              Consider only if the resulting condition does not pass a NULL
+              value through. Especially needed for a UNIQUE index on NULLable
+              columns where a duplicate row is possible with NULL values.
+            */
+            if (keyuse->null_rejecting || !keyuse->val->maybe_null ||
+                !keyinfo->key_part[keyuse->keypart].field->maybe_null())
+              bound_parts |= (key_part_map)1 << keyuse->keypart;
           }
           keyuse++;
         } while (keyuse->key == key && keyuse->table_ref == tl);
@@ -6335,13 +6331,13 @@ static uint get_semi_join_select_list_index(Item_field *item_field) {
 
 /**
    @brief
-   If EXPLAIN EXTENDED, add warning that an index cannot be used for
-   ref access
+   If EXPLAIN or if the --safe-updates option is enabled, add a warning that an
+   index cannot be used for ref access.
 
    @details
-   If EXPLAIN EXTENDED, add a warning for each index that cannot be
-   used for ref access due to either type conversion or different
-   collations on the field used for comparison
+   If EXPLAIN or if the --safe-updates option is enabled, add a warning for each
+   index that cannot be used for ref access due to either type conversion or
+   different collations on the field used for comparison
 
    Example type conversion (char compared to int):
 
@@ -6359,7 +6355,8 @@ static uint get_semi_join_select_list_index(Item_field *item_field) {
  */
 static void warn_index_not_applicable(THD *thd, const Field *field,
                                       const Key_map cant_use_index) {
-  if (thd->lex->is_explain())
+  if (thd->lex->is_explain() ||
+      thd->variables.option_bits & OPTION_SAFE_UPDATES)
     for (uint j = 0; j < field->table->s->keys; j++)
       if (cant_use_index.is_set(j))
         push_warning_printf(thd, Sql_condition::SL_WARNING,
@@ -6557,7 +6554,7 @@ static void add_key_field(Key_field **key_fields, uint and_level,
     We use null_rejecting in add_not_null_conds() to add
     'othertbl.field IS NOT NULL' to tab->m_condition, if this is not an outer
     join. We also use it to shortcut reading "tbl" when othertbl.field is
-    found to be a NULL value (in join_read_always_key() and BKA).
+    found to be a NULL value (in RefIterator and BKA).
   */
   Item *const real = (*value)->real_item();
   const bool null_rejecting =
@@ -7363,7 +7360,8 @@ static void trace_indexes_added_group_distinct(Opt_trace_context *trace,
 }
 
 /**
-  Discover the indexes that might be used for GROUP BY or DISTINCT queries.
+  Discover the indexes that might be used for GROUP BY or DISTINCT queries or
+  indexes that might be used for SKIP SCAN.
 
   If the query has a GROUP BY clause, find all indexes that contain
   all GROUP BY fields, and add those indexes to join_tab->const_keys
@@ -7373,6 +7371,9 @@ static void trace_indexes_added_group_distinct(Opt_trace_context *trace,
   all SELECT fields, and add those indexes to join_tab->const_keys and
   join_tab->keys. This allows later on such queries to be processed by
   a QUICK_GROUP_MIN_MAX_SELECT.
+
+  If the query does not have GROUP BY clause or any aggregate function
+  the function collects possible keys to use for skip scan access.
 
   Note that indexes that are not usable for resolving GROUP
   BY/DISTINCT may also be added in some corner cases. For example, an
@@ -7389,7 +7390,8 @@ static void trace_indexes_added_group_distinct(Opt_trace_context *trace,
     None
 */
 
-static void add_group_and_distinct_keys(JOIN *join, JOIN_TAB *join_tab) {
+static void add_loose_index_scan_and_skip_scan_keys(JOIN *join,
+                                                    JOIN_TAB *join_tab) {
   DBUG_ASSERT(join_tab->const_keys.is_subset(join_tab->keys()));
 
   List<Item_field> indexed_fields;
@@ -7397,6 +7399,26 @@ static void add_group_and_distinct_keys(JOIN *join, JOIN_TAB *join_tab) {
   ORDER *cur_group;
   Item_field *cur_item;
   const char *cause;
+
+  /* Find the indexes that might be used for skip scan queries. */
+  if (hint_table_state(join->thd, join_tab->table_ref, SKIP_SCAN_HINT_ENUM,
+                       OPTIMIZER_SKIP_SCAN) &&
+      join->where_cond && join->primary_tables == 1 && !join->group_list &&
+      !is_indexed_agg_distinct(join, &indexed_fields) &&
+      !join->select_distinct) {
+    join->where_cond->walk(&Item::collect_item_field_processor,
+                           Item::WALK_POSTFIX, (uchar *)&indexed_fields);
+    Key_map possible_keys;
+    possible_keys.set_all();
+    join_tab->skip_scan_keys.clear_all();
+    while ((cur_item = indexed_fields_it++)) {
+      if (cur_item->used_tables() != join_tab->table_ref->map()) return;
+      possible_keys.intersect(cur_item->field->part_of_key);
+    }
+    join_tab->skip_scan_keys.merge(possible_keys);
+    cause = "skip_scan";
+    return;
+  }
 
   if (join->group_list) { /* Collect all query fields referenced in the GROUP
                              clause. */
@@ -7421,7 +7443,7 @@ static void add_group_and_distinct_keys(JOIN *join, JOIN_TAB *join_tab) {
       loose index scan, and is_indexed_agg_distinct() has already
       collected all referenced fields into indexed_fields.
     */
-    join->sort_and_group = 1;
+    join->streaming_aggregation = true;
     cause = "indexed_distinct_aggregate";
   } else
     return;
@@ -8715,7 +8737,6 @@ static bool make_join_select(JOIN *join, Item *cond) {
               */
               if (tab->quick() && tab->quick()->index != MAX_KEY) {
                 const uint ref_key = tab->quick()->index;
-                join->order.force_order();
                 bool skip_quick;
                 read_direction = test_if_order_by_key(
                     &join->order, tab->table(), ref_key, NULL, &skip_quick);
@@ -10207,7 +10228,7 @@ bool JOIN::compare_costs_of_subquery_strategies(
           - t1.prefix_rowcount==1 (due to firstmatch)
           - subq is attached to it1, and is evaluated for each row read from
             t1, potentially way more than 1.
-       */
+         */
         const uint idx = subs->in_cond_of_tab;
         DBUG_ASSERT((int)idx >= 0 && idx < parent_join->tables);
         trace_parent.add("subq_attached_to_table", true);
@@ -10397,7 +10418,7 @@ void JOIN::refine_best_rowcount() {
 
 List<Item> *JOIN::get_current_fields() {
   DBUG_ASSERT((int)current_ref_item_slice >= 0);
-  if (current_ref_item_slice == REF_SLICE_SAVE) return fields;
+  if (current_ref_item_slice == REF_SLICE_SAVED_BASE) return fields;
   return &tmp_fields_list[current_ref_item_slice];
 }
 

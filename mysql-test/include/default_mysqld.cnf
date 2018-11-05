@@ -12,11 +12,10 @@ connect-timeout=            60
 # stored function creation.
 log-bin-trust-function-creators=1
 
-# Set innodb_dedicated_serer=OFF, to make sure it doesn't autoscale
-# to use maximum available resources on system which might cause issue
-# with MTR suites run.
-innodb_dedicated_server=OFF
-
+# Running MTR with --mem causes var directories to be created in memory.
+# Set innodb-buffer-pool-size and innodb-log-file-size to a lower
+# value because running tests in parallel, on the ramdisk may consume
+# excessive memory.
 innodb-buffer-pool-size=24M
 innodb-log-file-size=5M
 # MAINTAINER:
@@ -63,5 +62,8 @@ loose-performance-schema-consumer-events-waits-history-long=ON
 loose-performance-schema-consumer-global-instrumentation=ON
 loose-performance-schema-consumer-thread-instrumentation=ON
 
-# Disable mysqlx plugin
-mysqlx=OFF
+# Set LOG_ERROR_VERBOSITY to 3 as default for MTR tests. This will
+# make sure that even note messeges are getting logged in mysqld error
+# log file. The note messages will contain important information and
+# will be useful while debugging an issue as well.
+log-error-verbosity=3

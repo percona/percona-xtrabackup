@@ -413,11 +413,12 @@ dberr_t row_drop_database_for_mysql(const char *name, trx_t *trx, ulint *found);
 @param[in]	new_name	new table name
 @param[in]	dd_table	dd::Table for new table
 @param[in,out]	trx		transaction
-@param[in]	log		whether to write rename table log
+@param[in]      replay          whether in replay stage
 @return error code or DB_SUCCESS */
 dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
                                    const dd::Table *dd_table, trx_t *trx,
-                                   bool log) MY_ATTRIBUTE((warn_unused_result));
+                                   bool replay)
+    MY_ATTRIBUTE((warn_unused_result));
 
 /** Scans an index for either COOUNT(*) or CHECK TABLE.
  If CHECK TABLE; Checks that the index contains entries in an ascending order,
@@ -647,25 +648,43 @@ struct row_prebuilt_t {
                                 This eliminates lock waits in some
                                 cases; note that this breaks
                                 serializability. */
-  ulint new_rec_locks;          /*!< normally 0; if session is using
-                                READ COMMITTED or READ UNCOMMITTED
-                                isolation level, set in
-                                row_search_for_mysql() if we set a new
-                                record lock on the secondary
-                                or clustered index; this is
-                                used in row_unlock_for_mysql()
-                                when releasing the lock under
-                                the cursor if we determine
-                                after retrieving the row that
-                                it does not need to be locked
-                                ('mini-rollback') */
-  ulint mysql_prefix_len;       /*!< byte offset of the end of
-                               the last requested column */
-  ulint mysql_row_len;          /*!< length in bytes of a row in the
-                                MySQL format */
-  ulint n_rows_fetched;         /*!< number of rows fetched after
-                                positioning the current cursor */
-  ulint fetch_direction;        /*!< ROW_SEL_NEXT or ROW_SEL_PREV */
+
+  enum {
+    LOCK_PCUR,
+    LOCK_CLUST_PCUR,
+    LOCK_COUNT,
+  };
+
+  bool new_rec_lock[LOCK_COUNT]; /*!< normally false; if
+                        session is using READ COMMITTED or READ UNCOMMITTED
+                        isolation level, set in row_search_for_mysql() if we set
+                        a new record lock on the secondary or clustered index;
+                        this is used in row_unlock_for_mysql() when releasing
+                        the lock under the cursor if we determine after
+                        retrieving the row that it does not need to be locked
+                        ('mini-rollback')
+                        [LOCK_PCUR] corresponds to pcur, the first index we
+                        looked up (can be secondary or clustered!)
+
+                        [LOCK_CLUST_PCUR] corresponds to clust_pcur, which if
+                        used at all, is always the clustered index.
+
+                        The meaning of these booleans is:
+                        true = we've created a rec lock, which we might
+                               release as we "own" it
+                        false = we should not release any lock for this
+                               index as we either reused some existing
+                               lock, or there is some other reason, we
+                               should keep it
+                        */
+  ulint mysql_prefix_len;        /*!< byte offset of the end of
+                                 the last requested column */
+  ulint mysql_row_len;           /*!< length in bytes of a row in the
+                                 MySQL format */
+  ulint n_rows_fetched;          /*!< number of rows fetched after
+                                 positioning the current cursor */
+  ulint fetch_direction;         /*!< ROW_SEL_NEXT or ROW_SEL_PREV */
+
   byte *fetch_cache[MYSQL_FETCH_CACHE_SIZE];
   /*!< a cache for fetched rows if we
   fetch many rows from the same cursor:
@@ -753,9 +772,8 @@ struct row_prebuilt_t {
   for this MySQL TABLE object */
   bool m_temp_read_shared;
 
-  /** Whether there is tree modifying operation happened on a
-  temprorary(intrinsic) table index tree. In this case, it could be split,
-  but no shrink. */
+  /** Whether tree modifying operation happened on a temporary (intrinsic)
+  table index tree. In this case, it could be split, but no shrink. */
   bool m_temp_tree_modified;
 
   /** The MySQL table object */

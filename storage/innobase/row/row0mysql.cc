@@ -42,7 +42,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <vector>
 
 #include "btr0sea.h"
-#include "current_thd.h"
 #include "dict0boot.h"
 #include "dict0crea.h"
 #include "dict0dd.h"
@@ -60,10 +59,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ibuf0ibuf.h"
 #include "lock0lock.h"
 #include "log0log.h"
-#include "my_compiler.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
-#include "my_io.h"
 #include "pars0pars.h"
 #include "que0que.h"
 #include "rem0cmp.h"
@@ -80,6 +75,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0roll.h"
 #include "trx0undo.h"
 #include "ut0new.h"
+
+#include "current_thd.h"
+#include "my_dbug.h"
+#include "my_io.h"
 
 static const char *MODIFICATIONS_NOT_ALLOWED_MSG_FORCE_RECOVERY =
     "innodb_force_recovery is on. We do not allow database modifications"
@@ -2394,7 +2393,8 @@ void row_unlock_for_mysql(row_prebuilt_t *prebuilt, ibool has_latches_on_recs) {
 
   trx->op_info = "unlock_row";
 
-  if (prebuilt->new_rec_locks >= 1) {
+  if (std::count(prebuilt->new_rec_lock,
+                 prebuilt->new_rec_lock + row_prebuilt_t::LOCK_COUNT, true)) {
     const rec_t *rec;
     dict_index_t *index;
     trx_id_t rec_trx_id;
@@ -2411,7 +2411,7 @@ void row_unlock_for_mysql(row_prebuilt_t *prebuilt, ibool has_latches_on_recs) {
     rec = btr_pcur_get_rec(pcur);
     index = btr_pcur_get_btr_cur(pcur)->index;
 
-    if (prebuilt->new_rec_locks >= 2) {
+    if (prebuilt->new_rec_lock[row_prebuilt_t::LOCK_CLUST_PCUR]) {
       /* Restore the cursor position and find the record
       in the clustered index. */
 
@@ -2452,12 +2452,15 @@ void row_unlock_for_mysql(row_prebuilt_t *prebuilt, ibool has_latches_on_recs) {
     if (rec_trx_id != trx->id) {
       /* We did not update the record: unlock it */
 
-      rec = btr_pcur_get_rec(pcur);
+      if (prebuilt->new_rec_lock[row_prebuilt_t::LOCK_PCUR]) {
+        rec = btr_pcur_get_rec(pcur);
 
-      lock_rec_unlock(trx, btr_pcur_get_block(pcur), rec,
-                      static_cast<enum lock_mode>(prebuilt->select_lock_type));
+        lock_rec_unlock(
+            trx, btr_pcur_get_block(pcur), rec,
+            static_cast<enum lock_mode>(prebuilt->select_lock_type));
+      }
 
-      if (prebuilt->new_rec_locks >= 2) {
+      if (prebuilt->new_rec_lock[row_prebuilt_t::LOCK_CLUST_PCUR]) {
         rec = btr_pcur_get_rec(clust_pcur);
 
         lock_rec_unlock(
@@ -3407,7 +3410,7 @@ static dberr_t row_discard_tablespace(trx_t *trx, dict_table_t *table,
   we need save the encryption information into table, otherwise,
   this information will be lost in fil_discard_tablespace along
   with fil_space_free(). */
-  if (dict_table_is_encrypted(table)) {
+  if (dd_is_table_in_encrypted_tablespace(table)) {
     ut_ad(table->encryption_key == NULL && table->encryption_iv == NULL);
 
     lint old_size = mem_heap_get_size(table->heap);
@@ -3992,20 +3995,16 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
 
   space_id_t space_id;
   bool is_temp;
-  bool ibd_file_missing;
   bool is_discarded;
   bool shared_tablespace;
   table_id_t table_id;
   char *table_name;
-  bool is_encrypted;
 
   space_id = table->space;
   table_id = table->id;
-  ibd_file_missing = table->ibd_file_missing;
   is_discarded = dict_table_is_discarded(table);
   is_temp = table->is_temporary();
   shared_tablespace = DICT_TF_HAS_SHARED_SPACE(table->flags);
-  is_encrypted = dict_table_is_encrypted(table);
 
   /* We do not allow temporary tables with a remote path. */
   ut_a(!(is_temp && DICT_TF_HAS_DATA_DIR(table->flags)));
@@ -4055,15 +4054,9 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
 
   /* Do not attempt to drop known-to-be-missing tablespaces,
   nor system or shared general tablespaces. */
-  if (is_discarded || ibd_file_missing || is_temp || shared_tablespace ||
+  if (is_discarded || is_temp || shared_tablespace ||
       fsp_is_system_or_temp_tablespace(space_id)) {
-    /* For encrypted table, if ibd file can not be decrypt,
-    we also set ibd_file_missing. We still need to try to
-    remove the ibd file for this. */
-
-    if (is_discarded || !is_encrypted || !ibd_file_missing) {
-      goto funct_exit;
-    }
+    goto funct_exit;
   }
 
   ut_ad(file_per_table);
@@ -4116,11 +4109,11 @@ bool row_is_mysql_tmp_table_name(
 @param[in]	new_name	new table name
 @param[in]	dd_table	dd::Table for new table
 @param[in,out]	trx		transaction
-@param[in]	log		whether to write rename table log
+@param[in]	replay		whether in replay stage
 @return error code or DB_SUCCESS */
 dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
                                    const dd::Table *dd_table, trx_t *trx,
-                                   bool log) {
+                                   bool replay) {
   dict_table_t *table = NULL;
   ibool dict_locked = FALSE;
   dberr_t err = DB_ERROR;
@@ -4200,7 +4193,7 @@ dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
 
   if (dict_table_has_fts_index(table) &&
       !dict_tables_have_same_db(old_name, new_name)) {
-    err = fts_rename_aux_tables(table, new_name, trx);
+    err = fts_rename_aux_tables(table, new_name, trx, replay);
   }
   if (err != DB_SUCCESS) {
     if (err == DB_DUPLICATE_KEY) {

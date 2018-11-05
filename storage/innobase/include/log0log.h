@@ -397,7 +397,7 @@ inline uint32_t log_block_get_data_len(const byte *log_block);
 /** Sets the log block data length.
 @param[in,out]	log_block	log block
 @param[in]	len		data length (@see log_block_get_data_len) */
-inline void log_block_set_data_len(byte *log_block, uint32_t len);
+inline void log_block_set_data_len(byte *log_block, ulint len);
 
 /** Gets an offset to the beginning of the first group of log records
 in a given log block.
@@ -480,11 +480,6 @@ inline lsn_t log_get_lsn(const log_t &log);
 inline lsn_t log_get_checkpoint_lsn(const log_t &log);
 
 #ifndef UNIV_HOTBACKUP
-
-/** Gets capacity of log files excluding headers of the log files.
-@return capacity for bytes addressed by lsn (including headers and footers
-of log blocks, excluding headers of log files) */
-inline lsn_t log_get_capacity();
 
 /** When the oldest dirty page age exceeds this value, we start
 an asynchronous preflush of dirty pages. This function does not
@@ -719,21 +714,27 @@ void log_wait_for_space_in_log_recent_closed(const log_t &log, lsn_t lsn);
 available for range of sn values ending at the provided sn.
 @see @ref sect_redo_log_waiting_for_writer
 @param[in]     log     redo log
-@param[in]     end_sn  inclusive end of the range of sn values */
+@param[in]     end_sn  end of the range of sn values */
 void log_wait_for_space_in_log_buf(log_t &log, sn_t end_sn);
-
-/** Waits until there is free space in the log files. The free space has to be
-available for range of sn values ending at the provided sn.
-@see @ref sect_redo_log_reclaim_space
-@param[in]	log	redo log
-@param[in]	end_sn	inclusive end of the range of sn values */
-void log_wait_for_space_in_log_file(log_t &log, sn_t end_sn);
 
 /** Waits until there is free space for range of sn values ending
 at the provided sn, in both the log buffer and in the log files.
-@param[in]	log	redo log
-@param[in]	end_sn	inclusive end of the range of sn values */
+@param[in]	log       redo log
+@param[in]	end_sn    end of the range of sn values */
 void log_wait_for_space(log_t &log, sn_t end_sn);
+
+/** Calculates margin which has to be used in log_free_check() call,
+when checking if user thread should wait for more space in redo log.
+@return size of the margin to use */
+sn_t log_free_check_margin(const log_t &log);
+
+/** Waits until there is free space in log files which includes
+concurrency margin required for all threads. You should rather
+use log_free_check().
+@see @ref sect_redo_log_reclaim_space
+@param[in]	log   redo log
+@param[in]	sn    sn for which there should be concurrency margin */
+void log_free_check_wait(log_t &log, sn_t sn);
 
 /** Updates sn limit values up to which user threads may consider the
 reserved space as available both in the log buffer and in the log files.
@@ -780,10 +781,17 @@ It will try to enable the redo log encryption and write the metadata to
 redo log file header if the innodb_undo_log_encrypt is ON. */
 void log_enable_encryption_if_set();
 
-/** Requests a new checkpoint write for lsn which is currently available
-for checkpointing (the lsn is updated in log checkpointer thread).
+/** Requests a sharp checkpoint write for provided or greater lsn.
 @param[in,out]	log	redo log
-@param[in]	sync	true -> wait until the write is finished */
+@param[in]	sync	true -> wait until it is finished
+@param[in]  lsn   lsn for which we need checkpoint (or greater chkp) */
+void log_request_checkpoint(log_t &log, bool sync, lsn_t lsn);
+
+/** Requests a fuzzy checkpoint write (for lsn currently available
+for checkpointing).
+@param[in,out]	log	redo log
+@param[in]	sync	true -> wait until it is finished
+pages */
 void log_request_checkpoint(log_t &log, bool sync);
 
 /** Make a checkpoint at the current lsn. Reads current lsn and waits
@@ -898,26 +906,8 @@ bool log_buffer_resize_low(log_t &log, size_t new_size, lsn_t end_lsn);
 @param[in]	new_size	new size (in bytes) */
 void log_write_ahead_resize(log_t &log, size_t new_size);
 
-/** Calculates required size of margin in the log files, based on
-thread concurrency limitations. Constant extra safety margin, not
-related to concurrency, is also added.
-@param[in]	log			redo log
-@param[in]	thread_concurrency	thread concurrency
-@return the required size of margin */
-uint64_t log_calc_safe_concurrency_margin(const log_t &log,
-                                          int thread_concurrency);
-
-/** Calculates required size of margin in the log files, based on
-thread concurrency limitations. Constant extra safety margin, not
-related to concurrency, is also added. The calculated margin is
-truncated to at most half of the available space in log files.
-@param[in]	log			redo log
-@param[in]	thread_concurrency	thread concurrency
-@param[out]	concurrency_margin	calculated and truncated margin
-@retval true	margin was NOT truncated (there was space in log files)
-@retval false	margin was truncated (log files had not enough space) */
-bool log_calc_concurrency_margin(const log_t &log, int thread_concurrency,
-                                 uint64_t &concurrency_margin);
+/** Increase concurrency_margin used inside log_free_check() calls. */
+void log_increase_concurrency_margin(log_t &log);
 
 /** Prints information about important lsn values used in the redo log,
 and some statistics about speed of writing and flushing of data.

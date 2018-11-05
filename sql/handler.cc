@@ -42,6 +42,7 @@
 #include <list>
 #include <random>  // std::uniform_real_distribution
 #include <string>
+#include <vector>
 
 #include "binary_log_types.h"
 #include "binlog_event.h"
@@ -687,6 +688,7 @@ int ha_init_errors(void) {
   SETMSG(HA_ERR_NOT_ALLOWED_COMMAND, ER_DEFAULT(ER_NOT_ALLOWED_COMMAND));
   SETMSG(HA_ERR_COMPUTE_FAILED, "Compute virtual column value failed");
   SETMSG(HA_ERR_DISK_FULL_NOWAIT, ER_DEFAULT(ER_DISK_FULL_NOWAIT));
+  SETMSG(HA_ERR_NO_SESSION_TEMP, ER_DEFAULT(ER_NO_SESSION_TEMP));
   /* Register the error messages for use with my_error(). */
   return my_error_register(get_handler_errmsg, HA_ERR_FIRST, HA_ERR_LAST);
 }
@@ -1526,6 +1528,9 @@ int commit_owned_gtid_by_partial_command(THD *thd) {
 
 int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
   int error = 0;
+  PSI_stage_info old_stage;
+  thd->enter_stage(&stage_waiting_for_handler_commit, &old_stage, __func__,
+                   __FILE__, __LINE__);
   bool need_clear_owned_gtid = false;
   bool run_slave_post_commit = false;
   /*
@@ -1601,6 +1606,8 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
       stored functions or triggers. So we simply do nothing now.
       TODO: This should be fixed in later ( >= 5.1) releases.
     */
+    thd->enter_stage(&old_stage, NULL, __func__, __FILE__, __LINE__);
+
     if (!all) DBUG_RETURN(0);
     /*
       We assume that all statements which commit or rollback main transaction
@@ -1651,6 +1658,7 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
       if (thd->mdl_context.acquire_lock(&mdl_request,
                                         thd->variables.lock_wait_timeout)) {
         ha_rollback_trans(thd, all);
+        thd->enter_stage(&old_stage, NULL, __func__, __FILE__, __LINE__);
         DBUG_RETURN(1);
       }
       release_mdl = true;
@@ -1700,6 +1708,7 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
                   if (!thd->is_operating_gtid_table_implicitly)
                       DBUG_SUICIDE(););
 end:
+  thd->enter_stage(&old_stage, NULL, __func__, __FILE__, __LINE__);
   if (release_mdl && mdl_request.ticket) {
     /*
       We do not always immediately release transactional locks
@@ -2258,6 +2267,10 @@ int ha_release_savepoint(THD *thd, SAVEPOINT *sv) {
       error = 1;
     }
   }
+  DBUG_EXECUTE_IF("fail_ha_release_savepoint", {
+    my_error(ER_UNKNOWN_ERROR, MYF(0));
+    error = 1;
+  });
 
 #ifdef HAVE_PSI_TRANSACTION_INTERFACE
   if (thd->m_transaction_psi != NULL)
@@ -2299,16 +2312,10 @@ static bool flush_handlerton(THD *, plugin_ref plugin, void *arg) {
   return false;
 }
 
-bool ha_flush_logs(handlerton *db_type, bool binlog_group_flush) {
-  if (db_type == NULL) {
-    if (plugin_foreach(NULL, flush_handlerton, MYSQL_STORAGE_ENGINE_PLUGIN,
-                       static_cast<void *>(&binlog_group_flush)))
-      return true;
-  } else {
-    if (db_type->state != SHOW_OPTION_YES ||
-        (db_type->flush_logs &&
-         db_type->flush_logs(db_type, binlog_group_flush)))
-      return true;
+bool ha_flush_logs(bool binlog_group_flush) {
+  if (plugin_foreach(NULL, flush_handlerton, MYSQL_STORAGE_ENGINE_PLUGIN,
+                     static_cast<void *>(&binlog_group_flush))) {
+    return true;
   }
   return false;
 }
@@ -2492,10 +2499,24 @@ void HA_CREATE_INFO::init_create_options_from_share(const TABLE_SHARE *share,
     compress = share->compress;
   }
 
-  if (!(used_fields & HA_CREATE_USED_ENCRYPT)) {
+  /*
+     encrypt_type on the table is only meaningful for implicit
+     tablespaces, since the encryption is really a tablespace
+     attribute. So whenever a table is moved to a different tablespace
+     the encrypt_type must not be propagated. When moving
+     the table to a (new) implicit tablespace the encrypt_type will
+     only be set if explicitly requested with HA_CREATE_USED_ENCRYPT (by the
+     parser).
+  */
+  if (!(used_fields & (HA_CREATE_USED_ENCRYPT | HA_CREATE_USED_TABLESPACE))) {
     // Assert to check that used_fields flag and encrypt_type are in sync
     DBUG_ASSERT(!encrypt_type.str);
     encrypt_type = share->encrypt_type;
+  }
+
+  if (!(used_fields & HA_CREATE_USED_SECONDARY_ENGINE)) {
+    DBUG_ASSERT(secondary_engine.str == nullptr);
+    secondary_engine = share->secondary_engine;
   }
 }
 
@@ -2536,7 +2557,7 @@ err:
 
 void handler::ha_statistic_increment(
     ulonglong System_status_var::*offset) const {
-  (table->in_use->status_var.*offset)++;
+  if (table && table->in_use) (table->in_use->status_var.*offset)++;
 }
 
 THD *handler::ha_thd(void) const {
@@ -2668,6 +2689,7 @@ int handler::ha_open(TABLE *table_arg, const char *name, int mode,
       dup_ref = ref + ALIGN_SIZE(ref_length);
     cached_table_flags = table_flags();
   }
+
   DBUG_RETURN(error);
 }
 
@@ -2919,6 +2941,109 @@ int handler::sample_next(uchar *buf) {
     res = rnd_next(buf);
 
   return res;
+}
+
+int handler::records(ha_rows *num_rows) {
+  if (MY_TEST((ha_table_flags() & HA_COUNT_ROWS_INSTANT))) {
+    *num_rows = stats.records;
+    return 0;
+  }
+
+  int error = 0;
+  ha_rows rows = 0;
+  start_psi_batch_mode();
+
+  if (!(error = ha_rnd_init(true))) {
+    while (!table->in_use->killed) {
+      DBUG_EXECUTE_IF("bug28079850", table->in_use->killed = THD::KILL_QUERY;);
+      if ((error = ha_rnd_next(table->record[0]))) {
+        if (error == HA_ERR_RECORD_DELETED)
+          continue;
+        else
+          break;
+      }
+      ++rows;
+    }
+  }
+
+  *num_rows = rows;
+  end_psi_batch_mode();
+  int ha_rnd_end_error = 0;
+  if (error != HA_ERR_END_OF_FILE) *num_rows = HA_POS_ERROR;
+
+  // Call ha_rnd_end() only if only if handler has been initialized.
+  if (inited && (ha_rnd_end_error = ha_rnd_end())) *num_rows = HA_POS_ERROR;
+
+  return (error != HA_ERR_END_OF_FILE) ? error : ha_rnd_end_error;
+}
+
+int handler::records_from_index(ha_rows *num_rows, uint index) {
+  if (MY_TEST((ha_table_flags() & HA_COUNT_ROWS_INSTANT))) {
+    *num_rows = stats.records;
+    return 0;
+  }
+
+  int error = 0;
+  ha_rows rows = 0;
+  uchar *buf = table->record[0];
+  start_psi_batch_mode();
+
+  if (!(error = ha_index_init(index, false))) {
+    if (!(error = ha_index_first(buf))) {
+      rows = 1;
+
+      while (!table->in_use->killed) {
+        DBUG_EXECUTE_IF("bug28079850",
+                        table->in_use->killed = THD::KILL_QUERY;);
+        if ((error = ha_index_next(buf))) {
+          if (error == HA_ERR_RECORD_DELETED)
+            continue;
+          else
+            break;
+        }
+        ++rows;
+      }
+    }
+  }
+
+  *num_rows = rows;
+  end_psi_batch_mode();
+  int ha_index_end_error = 0;
+  if (error != HA_ERR_END_OF_FILE) *num_rows = HA_POS_ERROR;
+
+  // Call ha_index_end() only if handler has been initialized.
+  if (inited && (ha_index_end_error = ha_index_end())) *num_rows = HA_POS_ERROR;
+
+  return (error != HA_ERR_END_OF_FILE) ? error : ha_index_end_error;
+}
+
+int handler::handle_records_error(int error, ha_rows *num_rows) {
+  // If query was killed set the error since not all storage engines do it.
+  if (table->in_use->killed) {
+    *num_rows = HA_POS_ERROR;
+    if (error == 0) error = HA_ERR_QUERY_INTERRUPTED;
+  }
+
+  if (error != 0) DBUG_ASSERT(*num_rows == HA_POS_ERROR);
+  if (*num_rows == HA_POS_ERROR) DBUG_ASSERT(error != 0);
+  if (error != 0) {
+    /*
+      ha_innobase::records may have rolled back internally.
+      In this case, thd_mark_transaction_to_rollback() will have been called.
+      For the errors below, we need to abort right away.
+    */
+    switch (error) {
+      case HA_ERR_LOCK_DEADLOCK:
+      case HA_ERR_LOCK_TABLE_FULL:
+      case HA_ERR_LOCK_WAIT_TIMEOUT:
+      case HA_ERR_QUERY_INTERRUPTED:
+        print_error(error, MYF(0));
+        return error;
+      default:
+        return error;
+    }
+  }
+  return 0;
 }
 
 /**
@@ -3832,6 +3957,9 @@ bool handler::is_fatal_error(int error) {
     - table->alias
 */
 void handler::print_error(int error, myf errflag) {
+  THD *thd = current_thd;
+  Foreign_key_error_handler foreign_key_error_handler(thd, this);
+
   DBUG_ENTER("handler::print_error");
   DBUG_PRINT("enter", ("error: %d", error));
 
@@ -3967,14 +4095,26 @@ void handler::print_error(int error, myf errflag) {
       break;
     case HA_ERR_ROW_IS_REFERENCED: {
       String str;
+      /*
+        Manipulate the error message while handling the error
+        condition based on the access check.
+      */
+      thd->push_internal_handler(&foreign_key_error_handler);
       get_error_message(error, &str);
       my_error(ER_ROW_IS_REFERENCED_2, errflag, str.c_ptr_safe());
+      thd->pop_internal_handler();
       DBUG_VOID_RETURN;
     }
     case HA_ERR_NO_REFERENCED_ROW: {
       String str;
+      /*
+        Manipulate the error message while handling the error
+        condition based on the access check.
+      */
+      thd->push_internal_handler(&foreign_key_error_handler);
       get_error_message(error, &str);
       my_error(ER_NO_REFERENCED_ROW_2, errflag, str.c_ptr_safe());
+      thd->pop_internal_handler();
       DBUG_VOID_RETURN;
     }
     case HA_ERR_TABLE_DEF_CHANGED:
@@ -4071,6 +4211,9 @@ void handler::print_error(int error, myf errflag) {
       DBUG_VOID_RETURN;
     case HA_ERR_NOT_ALLOWED_COMMAND:
       textno = ER_NOT_ALLOWED_COMMAND;
+      break;
+    case HA_ERR_NO_SESSION_TEMP:
+      textno = ER_NO_SESSION_TEMP;
       break;
     default: {
       /* The error was "unknown" to this function.
@@ -4596,7 +4739,8 @@ enum_alter_inplace_result handler::check_if_supported_inplace_alter(
       Alter_inplace_info::ALTER_RENAME | Alter_inplace_info::RENAME_INDEX |
       Alter_inplace_info::ALTER_INDEX_COMMENT |
       Alter_inplace_info::CHANGE_INDEX_OPTION |
-      Alter_inplace_info::ALTER_COLUMN_INDEX_LENGTH;
+      Alter_inplace_info::ALTER_COLUMN_INDEX_LENGTH |
+      Alter_inplace_info::SECONDARY_LOAD | Alter_inplace_info::SECONDARY_UNLOAD;
 
   /* Is there at least one operation that requires copy algorithm? */
   if (ha_alter_info->handler_flags & ~inplace_offline_operations)
@@ -4691,6 +4835,22 @@ int handler::ha_create(const char *name, TABLE *form, HA_CREATE_INFO *info,
   mark_trx_read_write();
 
   return create(name, form, info, table_def);
+}
+
+/**
+ * Loads a table into its defined secondary storage engine: public interface.
+ *
+ * @sa handler::load_table()
+ */
+int handler::ha_load_table(const TABLE &table) { return load_table(table); }
+
+/**
+ * Unloads a table from its defined secondary storage engine: public interface.
+ *
+ * @sa handler::unload_table()
+ */
+int handler::ha_unload_table(const char *db_name, const char *table_name) {
+  return unload_table(db_name, table_name);
 }
 
 /**
@@ -7391,6 +7551,7 @@ int binlog_log_row(TABLE *table, const uchar *before_record,
       error = (*log_func)(thd, table, has_trans, before_record, after_record);
     }
   }
+
   return error ? HA_ERR_RBR_LOGGING_FAILED : 0;
 }
 
@@ -8467,4 +8628,10 @@ static bool post_recover_handlerton(THD *, plugin_ref plugin, void *) {
 void ha_post_recover(void) {
   (void)plugin_foreach(nullptr, post_recover_handlerton,
                        MYSQL_STORAGE_ENGINE_PLUGIN, nullptr);
+}
+
+void handler::ha_set_primary_handler(handler *primary_handler) {
+  DBUG_ASSERT((ht->flags & HTON_SUPPORTS_SECONDARY) != 0);
+  DBUG_ASSERT(primary_handler->table->s->has_secondary());
+  m_primary_handler = primary_handler;
 }

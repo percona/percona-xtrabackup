@@ -1,3 +1,4 @@
+CALL mtr.add_suppression("Enabling keys got errno");
 drop table if exists t1,t2;
 SET SQL_WARNINGS=1;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
@@ -43,9 +44,9 @@ optimize table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	optimize	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	0	PRIMARY	1	a	A	5	NULL	NULL		BTREE			YES
-t1	1	b	1	b	A	2	NULL	NULL		BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	0	PRIMARY	1	a	A	5	NULL	NULL		BTREE			YES	NULL
+t1	1	b	1	b	A	2	NULL	NULL		BTREE			YES	NULL
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
@@ -53,9 +54,9 @@ optimize table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	optimize	status	Table is already up to date
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	0	PRIMARY	1	a	A	5	NULL	NULL		BTREE			YES
-t1	1	b	1	b	A	2	NULL	NULL		BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	0	PRIMARY	1	a	A	5	NULL	NULL		BTREE			YES	NULL
+t1	1	b	1	b	A	2	NULL	NULL		BTREE			YES	NULL
 drop table t1;
 create table t1 (a int not null, b int not null, c int not null, primary key (a),key(b)) engine=myisam;
 insert into t1 values (3,3,3),(1,1,1),(2,2,2),(4,4,4);
@@ -363,13 +364,13 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	b	1	b	A	5	NULL	NULL	YES	BTREE			YES
-t1	1	c	1	c	A	5	NULL	NULL	YES	BTREE			YES
-t1	1	a	1	a	A	2	NULL	NULL		BTREE			YES
-t1	1	a	2	b	A	5	NULL	NULL	YES	BTREE			YES
-t1	1	c_2	1	c	A	5	NULL	NULL	YES	BTREE			YES
-t1	1	c_2	2	a	A	5	NULL	NULL		BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	b	1	b	A	5	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	c	1	c	A	5	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	a	1	a	A	2	NULL	NULL		BTREE			YES	NULL
+t1	1	a	2	b	A	5	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	c_2	1	c	A	5	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	c_2	2	a	A	5	NULL	NULL		BTREE			YES	NULL
 explain select * from t1,t2 where t1.a=t2.a;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t2	NULL	ALL	a	NULL	NULL	NULL	2	100.00	NULL
@@ -628,15 +629,15 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
 show keys from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE			YES	NULL
 alter table t1 disable keys;
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show keys from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled		YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled		YES	NULL
 create table t2 (a int);
 set @@rand_seed1=31415926,@@rand_seed2=2718281828;
 insert t1 select * from t2;
@@ -644,15 +645,15 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show keys from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled		YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	BTREE	disabled		YES	NULL
 alter table t1 enable keys;
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
 show keys from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	1000	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	1000	NULL	NULL	YES	BTREE			YES	NULL
 alter table t1 engine=heap;
 alter table t1 disable keys;
 Warnings:
@@ -661,8 +662,8 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	note	The storage engine for the table doesn't support analyze
 show keys from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	NULL	500	NULL	NULL	YES	HASH			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	NULL	500	NULL	NULL	YES	HASH			YES	NULL
 drop table t1,t2;
 create table t1 ( a tinytext, b char(1), index idx (a(1),b) );
 insert into t1 values (null,''), (null,'');
@@ -709,8 +710,8 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES	NULL
 insert into t1 values (11);
 delete from t1 where a=11;
 check table t1;
@@ -720,8 +721,8 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES	NULL
 set myisam_stats_method=nulls_equal;
 show variables like 'myisam_stats_method';
 Variable_name	Value
@@ -732,8 +733,8 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	5	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	5	NULL	NULL	YES	BTREE			YES	NULL
 insert into t1 values (11);
 delete from t1 where a=11;
 check table t1;
@@ -743,8 +744,8 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	5	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	5	NULL	NULL	YES	BTREE			YES	NULL
 set myisam_stats_method=DEFAULT;
 show variables like 'myisam_stats_method';
 Variable_name	Value
@@ -755,8 +756,8 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES	NULL
 insert into t1 values (11);
 delete from t1 where a=11;
 check table t1;
@@ -766,8 +767,8 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	10	NULL	NULL	YES	BTREE			YES	NULL
 drop table t1;
 set myisam_stats_method=nulls_ignored;
 show variables like 'myisam_stats_method';
@@ -785,21 +786,21 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	2	NULL	NULL	YES	BTREE			YES
-t1	1	a	2	b	A	4	NULL	NULL	YES	BTREE			YES
-t1	1	a	3	c	A	4	NULL	NULL	YES	BTREE			YES
-t1	1	a	4	d	A	4	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	2	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	a	2	b	A	4	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	a	3	c	A	4	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	a	4	d	A	4	NULL	NULL	YES	BTREE			YES	NULL
 delete from t1;
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	0	NULL	NULL	YES	BTREE			YES
-t1	1	a	2	b	A	0	NULL	NULL	YES	BTREE			YES
-t1	1	a	3	c	A	0	NULL	NULL	YES	BTREE			YES
-t1	1	a	4	d	A	0	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	0	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	a	2	b	A	0	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	a	3	c	A	0	NULL	NULL	YES	BTREE			YES	NULL
+t1	1	a	4	d	A	0	NULL	NULL	YES	BTREE			YES	NULL
 set myisam_stats_method=DEFAULT;
 drop table t1;
 create table t1(
@@ -1343,7 +1344,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	t1	NULL	ref	v,v_2	#	13	const	#	100.00	NULL
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`v` AS `v`,`test`.`t1`.`c` AS `c`,`test`.`t1`.`t` AS `t` from `test`.`t1` where (`test`.`t1`.`v` = 'a')
-select TRIM(v),count(*) from t1 group by TRIM(v) asc limit 10;
+select TRIM(v),count(*) from t1 group by TRIM(v) order by TRIM(v) limit 10;
 TRIM(v)	count(*)
 a	1
 a	10
@@ -1355,9 +1356,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select TRIM(v),count(t) from t1 group by TRIM(v) asc limit 10;
+select TRIM(v),count(t) from t1 group by TRIM(v) order by TRIM(v) limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1369,9 +1368,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select TRIM(v),count(c) from t1 group by TRIM(v) asc limit 10;
+select TRIM(v),count(c) from t1 group by TRIM(v) order by TRIM(v) limit 10;
 TRIM(v)	count(c)
 a	1
 a	10
@@ -1383,9 +1380,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select sql_big_result TRIM(v),count(t) from t1 group by TRIM(v) asc limit 10;
+select sql_big_result TRIM(v),count(t) from t1 group by TRIM(v) order by TRIM(v) limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1397,9 +1392,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select sql_big_result TRIM(v),count(c) from t1 group by TRIM(v) asc limit 10;
+select sql_big_result TRIM(v),count(c) from t1 group by TRIM(v) order by TRIM(v) limit 10;
 TRIM(v)	count(c)
 a	1
 a	10
@@ -1411,9 +1404,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select c,count(*) from t1 group by c asc limit 10;
+select c,count(*) from t1 group by c order by c limit 10;
 c	count(*)
 a	1
 a	10
@@ -1425,9 +1416,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select c,count(t) from t1 group by c asc limit 10;
+select c,count(t) from t1 group by c order by c limit 10;
 c	count(t)
 a	1
 a	10
@@ -1439,8 +1428,6 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 select sql_big_result c,count(t) from t1 group by c limit 10;
 c	count(t)
 a	1
@@ -1453,7 +1440,7 @@ f	10
 g	10
 h	10
 i	10
-select t,count(*) from t1 group by t asc limit 10;
+select t,count(*) from t1 group by t order by t limit 10;
 t	count(*)
 a	1
 a	10
@@ -1465,9 +1452,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select t,count(t) from t1 group by t asc limit 10;
+select t,count(t) from t1 group by t order by t limit 10;
 t	count(t)
 a	1
 a	10
@@ -1479,9 +1464,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select sql_big_result t,count(t) from t1 group by t asc limit 10;
+select sql_big_result t,count(t) from t1 group by t order by t limit 10;
 t	count(t)
 a	1
 a	10
@@ -1493,8 +1476,6 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 alter table t1 modify v varchar(300), drop key v, drop key v_2, add key v (v);
 show create table t1;
 Table	Create Table
@@ -1549,7 +1530,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	t1	NULL	ref	v	v	303	const	#	100.00	NULL
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`v` AS `v`,`test`.`t1`.`c` AS `c`,`test`.`t1`.`t` AS `t` from `test`.`t1` where (`test`.`t1`.`v` = 'a')
-select v,count(*) from t1 group by v asc limit 10;
+select v,count(*) from t1 group by v order by v limit 10;
 v	count(*)
 a	1
 a	10
@@ -1561,9 +1542,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select TRIM(v),count(t) from t1 group by v asc limit 10;
+select TRIM(v),count(t) from t1 group by v order by v limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1575,9 +1554,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select sql_big_result TRIM(v),count(t) from t1 group by v asc limit 10;
+select sql_big_result TRIM(v),count(t) from t1 group by v order by v limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1589,8 +1566,6 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 alter table t1 drop key v, add key v (v(30));
 show create table t1;
 Table	Create Table
@@ -1645,7 +1620,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	t1	NULL	ref	v	v	33	const	#	100.00	Using where
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`v` AS `v`,`test`.`t1`.`c` AS `c`,`test`.`t1`.`t` AS `t` from `test`.`t1` where (`test`.`t1`.`v` = 'a')
-select TRIM(v),count(*) from t1 group by v asc limit 10;
+select TRIM(v),count(*) from t1 group by v order by v limit 10;
 TRIM(v)	count(*)
 a	1
 a	10
@@ -1657,9 +1632,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select TRIM(v),count(t) from t1 group by v asc limit 10;
+select TRIM(v),count(t) from t1 group by v order by v limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1671,9 +1644,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select sql_big_result TRIM(v),count(t) from t1 group by v asc limit 10;
+select sql_big_result TRIM(v),count(t) from t1 group by v order by v limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1685,8 +1656,6 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 alter table t1 modify v varchar(600), drop key v, add key v (v);
 show create table t1;
 Table	Create Table
@@ -1698,7 +1667,7 @@ t1	CREATE TABLE `t1` (
   KEY `t` (`t`(10)),
   KEY `v` (`v`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 STATS_PERSISTENT=0
-select TRIM(v),count(*) from t1 group by v asc limit 10;
+select TRIM(v),count(*) from t1 group by v order by v limit 10;
 TRIM(v)	count(*)
 a	1
 a	10
@@ -1710,9 +1679,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select TRIM(v),count(t) from t1 group by v asc limit 10;
+select TRIM(v),count(t) from t1 group by v order by v limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1724,9 +1691,7 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-select sql_big_result TRIM(v),count(t) from t1 group by v asc limit 10;
+select sql_big_result TRIM(v),count(t) from t1 group by v order by v limit 10;
 TRIM(v)	count(t)
 a	1
 a	10
@@ -1738,8 +1703,6 @@ f	10
 g	10
 h	10
 i	10
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 drop table t1;
 SET NAMES utf8mb4;
 create table t1 (a char(10), unique (a));
@@ -1913,16 +1876,16 @@ analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show keys from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	8	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	8	NULL	NULL	YES	BTREE			YES	NULL
 alter table t1 disable keys;
 alter table t1 enable keys;
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Table is already up to date
 show keys from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	1	a	1	a	A	8	NULL	NULL	YES	BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	a	1	a	A	8	NULL	NULL	YES	BTREE			YES	NULL
 drop table t1;
 create table t1 (c1 int) engine=myisam pack_keys=0;
 create table t2 (c1 int) engine=myisam pack_keys=1;

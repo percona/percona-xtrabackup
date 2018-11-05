@@ -44,7 +44,11 @@ The following options may be given as the first argument:
  resolved relative to this
  --big-tables        Allow big result sets by saving all temporary sets on
  file (Solves most 'table full' errors)
- --bind-address=name IP address to bind to.
+ --bind-address=name IP address(es) to bind to. Syntax: address[,address]...,
+ where address can be an IPv4 address, IPv6 address, host
+ name or one of the wildcard values *, ::, 0.0.0.0. In
+ case more than one address is specified in a
+ comma-separated list, wildcard values are not allowed.
  --binlog-cache-size=# 
  The size of the transactional cache for updates to
  transactional engines for the binary log. If you often
@@ -456,6 +460,14 @@ The following options may be given as the first argument:
  --log-error-services=name 
  Services that should be called when an error event is
  received
+ --log-error-suppression-list=name 
+ Comma-separated list of error-codes. Error messages
+ corresponding to these codes will not be included in the
+ error log. Only events with a severity of Warning or
+ Information can be suppressed; events with System or
+ Error severity will always be included. Requires the
+ filter 'log_filter_internal' to be set in
+ @@global.log_error_services, which is the default.
  --log-error-verbosity=# 
  How detailed the error log should be. 1, log errors only.
  2, log errors and warnings. 3, log errors, warnings, and
@@ -485,17 +497,6 @@ The following options may be given as the first argument:
  Log statements considered unsafe when using statement
  based binary logging.
  (Defaults to on; use --skip-log-statements-unsafe-for-binlog to disable.)
- --log-syslog        Errors, warnings, and similar issues eligible for MySQL's
- error log file may additionally be sent to the host
- operating system's system log ("syslog").
- (Defaults to on; use --skip-log-syslog to disable.)
- --log-syslog-tag=name 
- When logging issues using the host operating system's
- syslog, tag the entries from this particular MySQL server
- with this ident. This will help distinguish entries from
- MySQL servers co-existing on the same host machine. A
- non-empty tag will be appended to the default ident of
- 'mysqld', connected by a hyphen.
  --log-tc=name       Path to transaction coordinator log (used for
  transactions that affect more than one storage engine,
  when binary log is disabled).
@@ -600,10 +601,6 @@ The following options may be given as the first argument:
  After this many write locks, allow some read locks to run
  in between
  --memlock           Lock mysqld in memory.
- --metadata-locks-cache-size=# 
- Has no effect, deprecated
- --metadata-locks-hash-instances=# 
- Has no effect, deprecated
  --min-examined-row-limit=# 
  Don't write queries to slow log that examine fewer rows
  than that
@@ -690,10 +687,10 @@ The following options may be given as the first argument:
  engine_condition_pushdown, index_condition_pushdown, mrr,
  mrr_cost_based, materialization, semijoin, loosescan,
  firstmatch, duplicateweedout,
- subquery_materialization_cost_based, block_nested_loop,
- batched_key_access, use_index_extensions,
- condition_fanout_filter, derived_merge} and val is one of
- {on, off, default}
+ subquery_materialization_cost_based, skip_scan,
+ block_nested_loop, batched_key_access,
+ use_index_extensions, condition_fanout_filter,
+ derived_merge} and val is one of {on, off, default}
  --optimizer-trace=name 
  Controls tracing of the Optimizer:
  optimizer_trace=option=val[,option=val...], where option
@@ -717,6 +714,9 @@ The following options may be given as the first argument:
  --password-history=# 
  The number of old passwords to check in the history. Set
  to 0 (the default) to turn the checks off
+ --password-require-current 
+ Current password is needed to be specified in order to
+ change it
  --password-reuse-interval=# 
  The minimum number of days that need to pass before a
  password can be reused. Set to 0 (the default) to turn
@@ -1225,6 +1225,10 @@ The following options may be given as the first argument:
  replication.
  --sql-mode=name     Syntax: sql-mode=mode[,mode[,mode...]]. See the manual
  for the complete list of valid sql modes
+ --sql-require-primary-key 
+ When set, tables must be created with a primary key, and
+ an existing primary key cannot be removed with 'ALTER
+ TABLE'. Attempts to do so will result in an error.
  --standalone        Dummy option to start as a standalone program (NT).
  --stored-program-cache=# 
  The soft upper limit for number of cached stored routines
@@ -1431,6 +1435,7 @@ log-bin-trust-function-creators FALSE
 log-bin-use-v1-row-events FALSE
 log-error stderr
 log-error-services log_filter_internal; log_sink_internal
+log-error-suppression-list 
 log-error-verbosity 2
 log-isam myisam.log
 log-output FILE
@@ -1441,8 +1446,6 @@ log-slave-updates FALSE
 log-slow-admin-statements FALSE
 log-slow-slave-statements FALSE
 log-statements-unsafe-for-binlog TRUE
-log-syslog FALSE
-log-syslog-tag 
 log-tc tc.log
 log-tc-size #####
 log-throttle-queries-not-using-indexes 0
@@ -1478,8 +1481,6 @@ max-sp-recursion-depth 0
 max-user-connections 0
 max-write-lock-count 18446744073709551615
 memlock FALSE
-metadata-locks-cache-size 1024
-metadata-locks-hash-instances 8
 min-examined-row-limit 0
 myisam-block-size 1024
 myisam-data-pointer-size 6
@@ -1505,7 +1506,7 @@ old-alter-table FALSE
 old-style-user-limits FALSE
 optimizer-prune-level 1
 optimizer-search-depth 62
-optimizer-switch index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on
+optimizer-switch index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on
 optimizer-trace 
 optimizer-trace-features greedy_search=on,range_optimizer=on,dynamic_range=on,repeated_subselect=on
 optimizer-trace-limit 1
@@ -1513,6 +1514,7 @@ optimizer-trace-max-mem-size 1048576
 optimizer-trace-offset -1
 parser-max-mem-size 18446744073709551615
 password-history 0
+password-require-current FALSE
 password-reuse-interval 0
 performance-schema TRUE
 performance-schema-accounts-size -1
@@ -1543,7 +1545,7 @@ performance-schema-events-waits-history-long-size -1
 performance-schema-events-waits-history-size -1
 performance-schema-hosts-size -1
 performance-schema-instrument 
-performance-schema-max-cond-classes 80
+performance-schema-max-cond-classes 100
 performance-schema-max-cond-instances -1
 performance-schema-max-digest-length 1024
 performance-schema-max-digest-sample-age 60
@@ -1562,7 +1564,7 @@ performance-schema-max-rwlock-instances -1
 performance-schema-max-socket-classes 10
 performance-schema-max-socket-instances -1
 performance-schema-max-sql-text-length 1024
-performance-schema-max-stage-classes 150
+performance-schema-max-stage-classes 175
 performance-schema-max-statement-classes 212
 performance-schema-max-statement-stack 10
 performance-schema-max-table-handles -1
@@ -1645,6 +1647,7 @@ slow-start-timeout 15000
 sort-buffer-size 262144
 sporadic-binlog-dump-fail FALSE
 sql-mode ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+sql-require-primary-key FALSE
 stored-program-cache 256
 stored-program-definition-cache 256
 super-read-only FALSE

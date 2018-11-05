@@ -73,14 +73,15 @@
 #include "sql/auth/auth_common.h"
 #include "sql/field.h"
 #include "sql/handler.h"
-#include "sql/log.h"
-#include "sql/psi_memory_key.h"   // key_memory_servers
-#include "sql/records.h"          // init_read_record, end_read_record
+#include "sql/psi_memory_key.h"  // key_memory_servers
+#include "sql/records.h"         // init_read_record
+#include "sql/row_iterator.h"
 #include "sql/sql_backup_lock.h"  // acquire_shared_backup_lock
 #include "sql/sql_base.h"         // close_mysql_tables
 #include "sql/sql_class.h"
 #include "sql/sql_const.h"
 #include "sql/sql_error.h"
+#include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/thd_raii.h"
 #include "sql/thr_malloc.h"
@@ -212,8 +213,6 @@ end:
 */
 
 static bool servers_load(THD *thd, TABLE *table) {
-  READ_RECORD read_record_info;
-  bool return_val = true;
   DBUG_ENTER("servers_load");
 
   if (servers_cache != nullptr) {
@@ -222,19 +221,16 @@ static bool servers_load(THD *thd, TABLE *table) {
   free_root(&mem, MYF(0));
   init_sql_alloc(key_memory_servers, &mem, ACL_ALLOC_BLOCK_SIZE, 0);
 
-  if (init_read_record(&read_record_info, thd, table, NULL, 1, false))
+  READ_RECORD read_record_info;
+  if (init_read_record(&read_record_info, thd, table, NULL, false,
+                       /*ignore_not_found_rows=*/false))
     DBUG_RETURN(true);
 
-  while (!(read_record_info.read_record(&read_record_info))) {
-    /* return_val is already true, so no need to set */
-    if ((get_server_from_table_to_cache(table))) goto end;
+  while (!(read_record_info->Read())) {
+    if ((get_server_from_table_to_cache(table))) DBUG_RETURN(true);
   }
 
-  return_val = false;
-
-end:
-  end_read_record(&read_record_info);
-  DBUG_RETURN(return_val);
+  DBUG_RETURN(false);
 }
 
 /*
@@ -409,7 +405,7 @@ static bool close_cached_connection_tables(THD *thd,
     if (share->m_open_in_progress) continue;
 
     /* Ignore if table is not open or does not have a connect_string */
-    if (!share->connect_string.length || !share->ref_count) continue;
+    if (!share->connect_string.length || share->ref_count() == 0) continue;
 
     /* Compare the connection string */
     if (connection_string &&

@@ -89,6 +89,13 @@ enum enum_transaction_write_set_hashing_algorithm {
 // Values for session_track_gtids sysvar
 enum enum_session_track_gtids { OFF = 0, OWN_GTID = 1, ALL_GTIDS = 2 };
 
+/** Values for use_secondary_engine sysvar. */
+enum use_secondary_engine {
+  SECONDARY_ENGINE_OFF = 0,
+  SECONDARY_ENGINE_ON = 1,
+  SECONDARY_ENGINE_FORCED = 2
+};
+
 /* Bits for different SQL modes modes (including ANSI mode) */
 #define MODE_REAL_AS_FLOAT 1
 #define MODE_PIPES_AS_CONCAT 2
@@ -340,6 +347,11 @@ struct System_variables {
       internal_tmp_mem_storage_engine;  // enum_internal_tmp_mem_storage_engine
 
   const CHARSET_INFO *default_collation_for_utf8mb4;
+
+  /** Used for controlling preparation of queries against secondary engine. */
+  ulong use_secondary_engine;
+
+  bool sql_require_primary_key;
 };
 
 /**
@@ -409,6 +421,9 @@ struct System_status_var {
   /* Number of statements sent from the client. */
   ulonglong questions;
 
+  /// How many queries have been executed on a secondary storage engine.
+  ulonglong secondary_engine_execution_count;
+
   ulong com_other;
   ulong com_stat[(uint)SQLCOM_END];
 
@@ -426,7 +441,7 @@ struct System_status_var {
   used as a global counter. It marks the end of a contiguous block of counters
   that can be iteratively totaled. See add_to_status().
 */
-#define LAST_STATUS_VAR questions
+#define LAST_STATUS_VAR secondary_engine_execution_count
 
 /*
   This must reference the FIRST ulonglong variable in system_status_var that is

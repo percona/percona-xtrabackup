@@ -69,6 +69,9 @@ extern ulint os_n_pending_reads;
 /** Number of pending write operations */
 extern ulint os_n_pending_writes;
 
+/* Flush after each os_fsync_threshold bytes */
+extern unsigned long long os_fsync_threshold;
+
 /** File offset in bytes */
 typedef ib_uint64_t os_offset_t;
 
@@ -263,6 +266,16 @@ static const char ENCRYPTION_DEFAULT_MASTER_KEY[] = "DefaultMasterKey";
 /** Default master key id for bootstrap */
 static const ulint ENCRYPTION_DEFAULT_MASTER_KEY_ID = 0;
 
+/** (Un)Encryption Operation information size */
+static const uint ENCRYPTION_OPERATION_INFO_SIZE = 1;
+
+/** Encryption Progress information size */
+static const uint ENCRYPTION_PROGRESS_INFO_SIZE = sizeof(uint);
+
+/** Flag bit to indicate if Encryption/Decryption is in progress */
+#define ENCRYPTION_IN_PROGRESS (1 << 0)
+#define UNENCRYPTION_IN_PROGRESS (1 << 1)
+
 class IORequest;
 
 /** Encryption algorithm. */
@@ -393,7 +406,7 @@ struct Encryption {
   /** Decoding the encryption info from the first page of a tablespace.
   @param[in,out]	key		key
   @param[in,out]	iv		iv
-  @param[in]	encryption_info	encrytion info.
+  @param[in]		encryption_info	encryption info
   @return true if success */
   static bool decode_encryption_info(byte *key, byte *iv,
                                      byte *encryption_info);
@@ -1723,10 +1736,10 @@ void meb_free_block_cache();
 and allocates the memory in each block to hold BUFFER_BLOCK_SIZE
 of data.
 
-This function is called by InnoDB during AIO init (os_aio_init()).
-It is also by MEB while applying the redo logs on TDE tablespaces, the
-"Blocks" allocated in this block_cache are used to hold the decrypted page
-data. */
+This function is called by InnoDB during srv_start().
+It is also called by MEB while applying the redo logs on TDE tablespaces,
+the "Blocks" allocated in this block_cache are used to hold the decrypted
+page data. */
 void os_create_block_cache();
 
 /** Initializes the asynchronous io system. Creates one array each for ibuf
@@ -1839,6 +1852,9 @@ dberr_t os_file_get_status(const char *path, os_file_stat_t *stat_info,
                            bool check_rw_perm, bool read_only);
 
 #ifndef UNIV_HOTBACKUP
+
+/** return any of the tmpdir path */
+char *innobase_mysql_tmpdir();
 /** Creates a temporary file in the location specified by the parameter
 path. If the path is NULL then it will be created on --tmpdir location.
 This function is defined in ha_innodb.cc.
@@ -1914,13 +1930,16 @@ class Dir_Walker {
 
   /** Depth first traversal of the directory starting from basedir
   @param[in]	basedir		Start scanning from this directory
+  @param[in]    recursive       True if scan should be recursive
   @param[in]	f		Function to call for each entry */
   template <typename F>
-  static void walk(const Path &basedir, F &&f) {
+  static void walk(const Path &basedir, bool recursive, F &&f) {
 #ifdef _WIN32
-    walk_win32(basedir, [&](const Path &path, size_t depth) { f(path); });
+    walk_win32(basedir, recursive,
+               [&](const Path &path, size_t depth) { f(path); });
 #else
-    walk_posix(basedir, [&](const Path &path, size_t depth) { f(path); });
+    walk_posix(basedir, recursive,
+               [&](const Path &path, size_t depth) { f(path); });
 #endif /* _WIN32 */
   }
 
@@ -1944,11 +1963,12 @@ class Dir_Walker {
 
   /** Depth first traversal of the directory starting from basedir
   @param[in]	basedir		Start scanning from this directory
+  @param[in]    recursive       True if scan should be recursive
   @param[in]	f		Function to call for each entry */
 #ifdef _WIN32
-  static void walk_win32(const Path &basedir, Function &&f);
+  static void walk_win32(const Path &basedir, bool recursive, Function &&f);
 #else
-  static void walk_posix(const Path &basedir, Function &&f);
+  static void walk_posix(const Path &basedir, bool recursive, Function &&f);
 #endif /* _WIN32 */
 };
 

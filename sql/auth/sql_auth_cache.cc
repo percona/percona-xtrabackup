@@ -48,7 +48,6 @@
 #include "sql/auth/auth_common.h"    // ACL_internal_schema_access
 #include "sql/auth/auth_internal.h"  // auth_plugin_is_built_in
 #include "sql/auth/dynamic_privilege_table.h"
-#include "sql/auth/role_tables.h"
 #include "sql/auth/sql_authentication.h"  // g_cached_authentication_plugins
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/auth/sql_user_table.h"
@@ -63,7 +62,7 @@
 #include "sql/mysqld.h"          // my_localhost
 #include "sql/psi_memory_key.h"  // key_memory_acl_mem
 #include "sql/records.h"         // READ_RECORD
-#include "sql/set_var.h"
+#include "sql/row_iterator.h"
 #include "sql/sql_audit.h"
 #include "sql/sql_base.h"   // open_and_lock_tables
 #include "sql/sql_class.h"  // THD
@@ -85,6 +84,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -140,7 +140,18 @@ malloc_unordered_map<std::string, unique_ptr_my_free<acl_entry>> db_cache{
     key_memory_acl_cache};
 collation_unordered_map<std::string, ACL_USER *> *acl_check_hosts = nullptr;
 
-bool initialized = 0;
+/**
+  A hashmap on user part of account name for quick lookup.
+*/
+typedef std::unordered_map<
+    std::string, Acl_user_ptr_list, std::hash<std::string>,
+    std::equal_to<std::string>,
+    Acl_cache_allocator<std::pair<const std::string, Acl_user_ptr_list>>>
+    Name_to_userlist;
+Name_to_userlist *name_to_userlist = nullptr;
+
+bool initialized = false;
+bool skip_grant_tables(void) { return !initialized; }
 bool acl_cache_initialized = false;
 bool allow_all_hosts = 1;
 uint grant_version = 0; /* Version of priv tables */
@@ -271,6 +282,7 @@ ACL_USER *ACL_USER::copy(MEM_ROOT *root) {
   }
   dst->auth_string.str = safe_strdup_root(root, auth_string.str);
   dst->host.update_hostname(safe_strdup_root(root, host.get_host()));
+  dst->password_require_current = password_require_current;
   return dst;
 }
 
@@ -802,6 +814,97 @@ bool GRANT_TABLE::init(TABLE *col_privs) {
   return false;
 }
 
+namespace {
+
+class ACL_compare : public std::binary_function<ACL_ACCESS, ACL_ACCESS, bool> {
+ public:
+  bool operator()(const ACL_ACCESS &a, const ACL_ACCESS &b) {
+    return a.sort > b.sort;
+  }
+  bool operator()(const ACL_ACCESS *a, const ACL_ACCESS *b) {
+    return a->sort > b->sort;
+  }
+};
+
+}  // namespace
+
+/**
+  Build the lists of ACL_USERs which share name or have no name
+
+  All accounts with same name will be chained so that they can be
+  retrieved by a single lookup. These entries are sorted using
+  ACL_compare to make sure that most specific account is picked up
+  first. Anonymous user is added to each chain.
+*/
+
+void rebuild_cached_acl_users_for_name(void) {
+  DBUG_ENTER("rebuild_cached_acl_users_for_name");
+  DBUG_PRINT("enter", ("acl_users size: %zu", acl_users->size()));
+
+  DBUG_ASSERT(!current_thd || assert_acl_cache_write_lock(current_thd));
+
+  if (name_to_userlist) {
+    name_to_userlist->clear();
+  } else {
+    size_t size = sizeof(Name_to_userlist);
+    myf_t flags = MYF(MY_WME | ME_FATALERROR);
+    void *bytes = my_malloc(key_memory_acl_cache, size, flags);
+    name_to_userlist = new (bytes) Name_to_userlist();
+  }
+
+  std::list<ACL_USER *> anons;
+
+  /* first build each named list */
+  for (ACL_USER *acl_user = acl_users->begin(); acl_user != acl_users->end();
+       ++acl_user) {
+    std::string name = acl_user->user ? acl_user->user : "";
+    (*name_to_userlist)[name].push_back(acl_user);
+
+    /* keep track of anonymous acl_users */
+    if (!name.compare("")) anons.push_back(acl_user);
+  }
+
+  /* add the anonymous acl_users to each non-anon list */
+  for (auto it = name_to_userlist->begin(); it != name_to_userlist->end();
+       ++it) {
+    std::string name = it->first;
+    if (!name.compare("")) continue;
+
+    auto *list = &it->second;
+    for (auto it2 = anons.begin(); it2 != anons.end(); ++it2) {
+      list->push_back(*it2);
+    }
+
+    list->sort(ACL_compare());
+  }
+  DBUG_VOID_RETURN;
+}
+
+/**
+  Fetch the list of ACL_USERs which share name or have no name
+
+  @param [in] name User entry to be searched
+
+  @returns List of users that share same name
+*/
+
+Acl_user_ptr_list *cached_acl_users_for_name(const char *name) {
+  DBUG_ENTER("cached_acl_users_for_name");
+  DBUG_PRINT("enter", ("name: '%s'", name));
+
+  DBUG_ASSERT(!current_thd || assert_acl_cache_read_lock(current_thd));
+
+  std::string user_name = name ? name : "";
+
+  auto it = name_to_userlist->find(user_name);
+  if (it != name_to_userlist->end()) DBUG_RETURN(&it->second);
+
+  it = name_to_userlist->find("");
+  if (it != name_to_userlist->end()) DBUG_RETURN(&it->second);
+
+  DBUG_RETURN(NULL);
+}
+
 /*
   Find first entry that matches the current user
 */
@@ -813,14 +916,18 @@ ACL_USER *find_acl_user(const char *host, const char *user, bool exact) {
   DBUG_ASSERT(assert_acl_cache_read_lock(current_thd));
 
   if (likely(acl_users)) {
-    for (ACL_USER *acl_user = acl_users->begin(); acl_user != acl_users->end();
-         ++acl_user) {
+    Acl_user_ptr_list *list = cached_acl_users_for_name(user);
+    if (!list) {
+      DBUG_RETURN(0);
+    }
+
+    for (auto it = list->begin(); it != list->end(); ++it) {
+      ACL_USER *acl_user = (*it);
       DBUG_PRINT("info",
                  ("strcmp('%s','%s'), compare_hostname('%s','%s'),", user,
                   acl_user->user ? acl_user->user : "", host,
                   acl_user->host.get_host() ? acl_user->host.get_host() : ""));
-      if ((!acl_user->user && !user[0]) ||
-          (acl_user->user && !strcmp(user, acl_user->user))) {
+      if (acl_user->user || !user[0]) {
         if (exact ? !my_strcasecmp(system_charset_info, host,
                                    acl_user->host.get_host()
                                        ? acl_user->host.get_host()
@@ -1217,17 +1324,6 @@ bool acl_getroot(THD *thd, Security_context *sctx, char *user, char *host,
   DBUG_RETURN(res);
 }
 
-namespace {
-
-class ACL_compare : public std::binary_function<ACL_ACCESS, ACL_ACCESS, bool> {
- public:
-  bool operator()(const ACL_ACCESS &a, const ACL_ACCESS &b) {
-    return a.sort > b.sort;
-  }
-};
-
-}  // namespace
-
 /**
   Convert scrambled password to binary form, according to scramble type,
   Binary form is stored in user.salt.
@@ -1338,6 +1434,8 @@ void notify_flush_event(THD *thd) {
 static bool reload_roles_cache(THD *thd, TABLE_LIST *tablelst) {
   DBUG_ENTER("reload_roles_cache");
   DBUG_ASSERT(tablelst);
+  sql_mode_t old_sql_mode = thd->variables.sql_mode;
+  thd->variables.sql_mode &= ~MODE_PAD_CHAR_TO_FULL_LENGTH;
 
   /*
     Attempt to reload the role cache only if the role_edges and
@@ -1345,9 +1443,11 @@ static bool reload_roles_cache(THD *thd, TABLE_LIST *tablelst) {
   */
   if ((tablelst[0].table) && (tablelst[1].table) &&
       populate_roles_caches(thd, tablelst)) {
+    thd->variables.sql_mode = old_sql_mode;
     DBUG_RETURN(true);
   }
 
+  thd->variables.sql_mode = old_sql_mode;
   DBUG_RETURN(false);
 }
 
@@ -1479,10 +1579,11 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
   /*
     Prepare reading from the mysql.user table
   */
-  if (init_read_record(&read_record_info, thd, table = tables[0].table, NULL, 1,
-                       false))
+  if (init_read_record(&read_record_info, thd, table = tables[0].table, NULL,
+                       false, /*ignore_not_found_rows=*/false))
     goto end;
   table->use_all_columns();
+  if (name_to_userlist) name_to_userlist->clear();
   acl_users->clear();
   /*
    We need to check whether we are working with old database layout. This
@@ -1493,8 +1594,7 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
 
   allow_all_hosts = 0;
   int read_rec_errcode;
-  while (
-      !(read_rec_errcode = read_record_info.read_record(&read_record_info))) {
+  while (!(read_rec_errcode = read_record_info->Read())) {
     password_expired = false;
     /* Reading record from mysql.user */
     ACL_USER user;
@@ -1537,8 +1637,6 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
                     table->field[table_schema->authentication_string_idx()]);
     else {
       LogErr(ERROR_LEVEL, ER_AUTHCACHE_USER_TABLE_DODGY);
-
-      end_read_record(&read_record_info);
       goto end;
     }
     if (user.auth_string.str)
@@ -1838,6 +1936,19 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
         }
       }
 
+      /* Read password_require_current field */
+      if (table->s->fields > table_schema->password_require_current_idx()) {
+        char *value = get_field(
+            &global_acl_memory,
+            table->field[table_schema->password_require_current_idx()]);
+        if (value == nullptr)
+          user.password_require_current = Lex_acl_attrib_udyn::DEFAULT;
+        else if (value[0] == 'Y')
+          user.password_require_current = Lex_acl_attrib_udyn::YES;
+        else if (value[0] == 'N')
+          user.password_require_current = Lex_acl_attrib_udyn::NO;
+      }
+
       set_user_salt(&user);
       user.password_expired = password_expired;
 
@@ -1847,11 +1958,12 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
     }
   }  // END while reading records from the mysql.user table
 
-  end_read_record(&read_record_info);
+  read_record_info.iterator.reset();
   if (read_rec_errcode > 0) goto end;
 
   std::sort(acl_users->begin(), acl_users->end(), ACL_compare());
   acl_users->shrink_to_fit();
+  rebuild_cached_acl_users_for_name();
 
   if (super_users_with_empty_plugin) {
     LogErr(WARNING_LEVEL, ER_NO_SUPER_WITHOUT_USER_PLUGIN);
@@ -1860,14 +1972,13 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
   /*
     Prepare reading from the mysql.db table
   */
-  if (init_read_record(&read_record_info, thd, table = tables[1].table, NULL, 1,
-                       false))
+  if (init_read_record(&read_record_info, thd, table = tables[1].table, NULL,
+                       false, /*ignore_not_found_rows=*/false))
     goto end;
   table->use_all_columns();
   acl_dbs->clear();
 
-  while (
-      !(read_rec_errcode = read_record_info.read_record(&read_record_info))) {
+  while (!(read_rec_errcode = read_record_info->Read())) {
     /* Reading record in mysql.db */
     ACL_DB db;
     db.host.update_hostname(
@@ -1906,7 +2017,7 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
     acl_dbs->push_back(db);
   }  // END reading records from mysql.db tables
 
-  end_read_record(&read_record_info);
+  read_record_info.iterator.reset();
   if (read_rec_errcode > 0) goto end;
 
   std::sort(acl_dbs->begin(), acl_dbs->end(), ACL_compare());
@@ -1917,22 +2028,20 @@ static bool acl_load(THD *thd, TABLE_LIST *tables) {
 
   if (tables[2].table) {
     if (init_read_record(&read_record_info, thd, table = tables[2].table, NULL,
-                         1, false))
+                         false, /*ignore_not_found_rows=*/false))
       goto end;
     table->use_all_columns();
-    while (
-        !(read_rec_errcode = read_record_info.read_record(&read_record_info))) {
+    while (!(read_rec_errcode = read_record_info->Read())) {
       /* Reading record in mysql.proxies_priv */
       ACL_PROXY_USER proxy;
       proxy.init(table, &global_acl_memory);
       if (proxy.check_validity(check_no_resolve)) continue;
       if (acl_proxy_users->push_back(proxy)) {
-        end_read_record(&read_record_info);
         goto end;
       }
     }  // END reading records from the mysql.proxies_priv table
 
-    end_read_record(&read_record_info);
+    read_record_info.iterator.reset();
     if (read_rec_errcode > 0) goto end;
 
     std::sort(acl_proxy_users->begin(), acl_proxy_users->end(), ACL_compare());
@@ -1963,8 +2072,21 @@ end:
   DBUG_RETURN(return_val);
 }
 
+/**
+  Clear second level cache on account names.
+*/
+
+void free_name_to_userlist() {
+  if (!name_to_userlist) return;
+
+  name_to_userlist->~unordered_map();
+  my_free(name_to_userlist);
+  name_to_userlist = nullptr;
+}
+
 void acl_free(bool end /*= false*/) {
   free_root(&global_acl_memory, MYF(0));
+  free_name_to_userlist();
   delete acl_users;
   acl_users = NULL;
   delete acl_dbs;
@@ -2021,6 +2143,7 @@ class Acl_ignore_error_handler : public Internal_error_handler {
     switch (sql_errno) {
       case ER_CANNOT_LOAD_FROM_TABLE_V2:
       case ER_COL_COUNT_DOESNT_MATCH_CORRUPTED_V2:
+      case ER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE_V2:
         (*level) = Sql_condition::SL_WARNING;
         break;
       default:
@@ -2257,6 +2380,8 @@ bool acl_reload(THD *thd, bool locked) {
 
     init_check_host();
     delete swap_dynamic_privileges_map(old_dyn_priv_map);
+    if (!old_dyn_priv_map) dynamic_privileges_init();
+    rebuild_cached_acl_users_for_name();
   } else {
     free_root(&old_mem, MYF(0));
     delete old_acl_users;
@@ -2789,6 +2914,12 @@ void acl_update_user(const char *user, const char *host, enum SSL_type ssl_type,
                   ? 0
                   : password_life.password_reuse_interval;
         }
+        /* update current password field value */
+        if (password_life.update_password_require_current !=
+            Lex_acl_attrib_udyn::UNCHANGED) {
+          acl_user->password_require_current =
+              password_life.update_password_require_current;
+        }
         /* search complete: */
         break;
       }
@@ -2867,6 +2998,18 @@ void acl_insert_user(THD *thd MY_ATTRIBUTE((unused)), const char *user,
   acl_user.use_default_password_reuse_interval =
       password_life.use_default_password_reuse_interval;
 
+  /*
+    Assign the password_require_current field value to the ACL USER.
+    if it was not specified then assign the default value
+  */
+  if (password_life.update_password_require_current ==
+      Lex_acl_attrib_udyn::UNCHANGED) {
+    acl_user.password_require_current = Lex_acl_attrib_udyn::DEFAULT;
+  } else {
+    acl_user.password_require_current =
+        password_life.update_password_require_current;
+  }
+
   set_user_salt(&acl_user);
   /* New user is not a role by default. */
   acl_user.is_role = false;
@@ -2874,6 +3017,7 @@ void acl_insert_user(THD *thd MY_ATTRIBUTE((unused)), const char *user,
   if (acl_user.host.check_allow_all_hosts())
     allow_all_hosts = 1;  // Anyone can connect /* purecov: tested */
   std::sort(acl_users->begin(), acl_users->end(), ACL_compare());
+  rebuild_cached_acl_users_for_name();
 
   /* Rebuild 'acl_check_hosts' since 'acl_users' has been modified */
   rebuild_check_host();

@@ -628,7 +628,6 @@ END_SERVICE_DEFINITION(log_builtins_string)
 */
 BEGIN_SERVICE_DEFINITION(log_builtins_tmp)
 // Are we shutting down yet?  Windows EventLog needs to know.
-DECLARE_METHOD(bool, connection_loop_aborted, (void));
 DECLARE_METHOD(size_t, notify_client,
                (void *thd, uint severity, uint code, char *to, size_t n,
                 const char *format, ...))
@@ -1203,6 +1202,23 @@ class LogEvent {
     va_start(args, errcode);
     set_message_by_errcode(errcode, args);
     va_end(args);
+
+    return *this;
+  }
+
+  /**
+    Find an error message by its MySQL error code. Substitute the % in that
+    message with the given arguments list, then add the result as the event's
+    message.
+
+    @param  errcode  MySQL error code for the message in question,
+                     e.g. ER_STARTUP
+    @param  args     varargs to satisfy any % in the message
+
+    @retval          the LogEvent, for easy fluent-style chaining.
+  */
+  LogEvent &lookupv(longlong errcode, va_list args) {
+    set_message_by_errcode(errcode, args);
 
     return *this;
   }

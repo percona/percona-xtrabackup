@@ -246,7 +246,7 @@ select 1, max(1) from t1i where 1=99;
 1	NULL
 explain select count(*), min(7), max(7) from t1m, t1i;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
 Warnings:
 Note	1003	/* select#1 */ select count(0) AS `count(*)`,min(7) AS `min(7)`,max(7) AS `max(7)` from `test`.`t1m` join `test`.`t1i`
 select count(*), min(7), max(7) from t1m, t1i;
@@ -254,7 +254,7 @@ count(*)	min(7)	max(7)
 0	NULL	NULL
 explain select count(*), min(7), max(7) from t1m, t2i;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
 Warnings:
 Note	1003	/* select#1 */ select count(0) AS `count(*)`,min(7) AS `min(7)`,max(7) AS `max(7)` from `test`.`t1m` join `test`.`t2i`
 select count(*), min(7), max(7) from t1m, t2i;
@@ -262,9 +262,10 @@ count(*)	min(7)	max(7)
 0	NULL	NULL
 explain select count(*), min(7), max(7) from t2m, t1i;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+1	SIMPLE	t2m	NULL	system	NULL	NULL	NULL	NULL	1	100.00	NULL
+1	SIMPLE	t1i	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select count(0) AS `count(*)`,min(7) AS `min(7)`,max(7) AS `max(7)` from `test`.`t2m` join `test`.`t1i`
+Note	1003	/* select#1 */ select count(0) AS `count(*)`,min(7) AS `min(7)`,max(7) AS `max(7)` from `test`.`t1i`
 select count(*), min(7), max(7) from t2m, t1i;
 count(*)	min(7)	max(7)
 0	NULL	NULL
@@ -1304,7 +1305,7 @@ Extra	Using where; Using index
 Warnings:
 Level	Note
 Code	1003
-Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (`test`.`t1`.`b` = 2) order by `test`.`t1`.`a` asc
+Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (`test`.`t1`.`b` = 2) order by `test`.`t1`.`a`
 SELECT * FROM t1 WHERE b=2 ORDER BY a ASC;
 a	b
 2	2
@@ -1346,7 +1347,7 @@ Extra	Using index
 Warnings:
 Level	Note
 Code	1003
-Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` order by `test`.`t1`.`b` asc,`test`.`t1`.`a` asc
+Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` order by `test`.`t1`.`b`,`test`.`t1`.`a`
 SELECT * FROM t1 ORDER BY b ASC, a ASC;
 a	b
 1	1
@@ -1390,7 +1391,7 @@ Extra	Using index; Using filesort
 Warnings:
 Level	Note
 Code	1003
-Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` order by `test`.`t1`.`b` asc,`test`.`t1`.`a` desc
+Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` order by `test`.`t1`.`b`,`test`.`t1`.`a` desc
 SELECT * FROM t1 ORDER BY b ASC, a DESC;
 a	b
 1	1
@@ -1412,7 +1413,7 @@ Extra	Using index; Using filesort
 Warnings:
 Level	Note
 Code	1003
-Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` order by `test`.`t1`.`b` desc,`test`.`t1`.`a` asc
+Message	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` order by `test`.`t1`.`b` desc,`test`.`t1`.`a`
 SELECT * FROM t1 ORDER BY b DESC, a ASC;
 a	b
 2	2
@@ -1687,10 +1688,14 @@ insert into t1(f1) values(1);
 select @a:=f2 from t1;
 @a:=f2
 #
+Warnings:
+#	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 update t1 set f1=1;
 select @b:=f2 from t1;
 @b:=f2
 #
+Warnings:
+#	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 select if(@a=@b,"ok","wrong");
 if(@a=@b,"ok","wrong")
 ok
@@ -1698,6 +1703,8 @@ insert into t1(f1) values (1) on duplicate key update f1="1";
 select @b:=f2 from t1;
 @b:=f2
 #
+Warnings:
+#	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 select if(@a=@b,"ok","wrong");
 if(@a=@b,"ok","wrong")
 ok
@@ -1705,6 +1712,8 @@ insert into t1(f1) select f1 from t1 on duplicate key update f1="1";
 select @b:=f2 from t1;
 @b:=f2
 #
+Warnings:
+#	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 select if(@a=@b,"ok","wrong");
 if(@a=@b,"ok","wrong")
 ok
@@ -1984,6 +1993,8 @@ create table t1(a int);
 insert into t1 values (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
 create table t2 (a int, b int, pk int, key(a,b), primary key(pk)) engine=innodb;
 insert into t2 select @a:=A.a+10*(B.a + 10*C.a),@a, @a from t1 A, t1 B, t1 C;
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 # this must use key 'a', not PRIMARY:
 explain select a from t2 where a=b;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -2151,6 +2162,9 @@ Warnings:
 Level	Warning
 Code	1739
 Message	Cannot use range access on index 'PRIMARY' due to type or collation conversion on field 'c'
+Level	Warning
+Code	1739
+Message	Cannot use range access on index 'b' due to type or collation conversion on field 'c'
 Level	Note
 Code	1003
 Message	/* select#1 */ select `test`.`foo2`.`c` AS `c` from `test`.`foo2` where (`test`.`foo2`.`c` > 2)
@@ -2638,16 +2652,16 @@ test.t1	analyze	status	OK
 EXPLAIN SELECT COUNT(*) FROM t1;
 id	1
 select_type	SIMPLE
-table	NULL
+table	t1
 partitions	NULL
-type	NULL
+type	index
 possible_keys	NULL
-key	NULL
-key_len	NULL
+key	b
+key_len	10
 ref	NULL
-rows	NULL
-filtered	NULL
-Extra	Select tables optimized away
+rows	10
+filtered	100.00
+Extra	Using index
 Warnings:
 Level	Note
 Code	1003
@@ -2678,6 +2692,7 @@ Index_type	BTREE
 Comment	
 Index_comment	
 Visible	YES
+Expression	NULL
 Table	t1
 Non_unique	0
 Key_name	k
@@ -2692,6 +2707,7 @@ Index_type	BTREE
 Comment	
 Index_comment	
 Visible	YES
+Expression	NULL
 DROP TABLE t1;
 #
 # Bug #53334: wrong result for outer join with impossible ON condition
@@ -2838,16 +2854,16 @@ INSERT INTO t1 VALUES (1,1,1,1), (2,2,2,2), (3,3,3,3);
 EXPLAIN SELECT COUNT(*) FROM t1;
 id	1
 select_type	SIMPLE
-table	NULL
+table	t1
 partitions	NULL
-type	NULL
+type	index
 possible_keys	NULL
-key	NULL
-key_len	NULL
+key	b
+key_len	4
 ref	NULL
-rows	NULL
-filtered	NULL
-Extra	Select tables optimized away
+rows	3
+filtered	100.00
+Extra	Using index
 Warnings:
 Level	Note
 Code	1003
@@ -2857,16 +2873,16 @@ CREATE INDEX b ON t1(a,b);
 EXPLAIN SELECT COUNT(*) FROM t1;
 id	1
 select_type	SIMPLE
-table	NULL
+table	t1
 partitions	NULL
-type	NULL
+type	index
 possible_keys	NULL
-key	NULL
-key_len	NULL
+key	b
+key_len	8
 ref	NULL
-rows	NULL
-filtered	NULL
-Extra	Select tables optimized away
+rows	3
+filtered	100.00
+Extra	Using index
 Warnings:
 Level	Note
 Code	1003
@@ -2876,16 +2892,16 @@ CREATE INDEX b ON t1(a,b,c);
 EXPLAIN SELECT COUNT(*) FROM t1;
 id	1
 select_type	SIMPLE
-table	NULL
+table	t1
 partitions	NULL
-type	NULL
+type	index
 possible_keys	NULL
-key	NULL
-key_len	NULL
+key	b
+key_len	13
 ref	NULL
-rows	NULL
-filtered	NULL
-Extra	Select tables optimized away
+rows	3
+filtered	100.00
+Extra	Using index
 Warnings:
 Level	Note
 Code	1003
@@ -2895,16 +2911,16 @@ CREATE INDEX b ON t1(a,b,c,d);
 EXPLAIN SELECT COUNT(*) FROM t1;
 id	1
 select_type	SIMPLE
-table	NULL
+table	t1
 partitions	NULL
-type	NULL
+type	index
 possible_keys	NULL
-key	NULL
-key_len	NULL
+key	PRIMARY
+key_len	8
 ref	NULL
-rows	NULL
-filtered	NULL
-Extra	Select tables optimized away
+rows	3
+filtered	100.00
+Extra	Using index
 Warnings:
 Level	Note
 Code	1003

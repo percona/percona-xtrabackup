@@ -33,7 +33,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <new>
 
 #include "btr0pcur.h"
-#include "dict0dd.h"
 #include "dict0priv.h"
 #include "dict0stats.h"
 #include "dict0types.h"
@@ -45,9 +44,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fts0vlc.ic"
 #include "ha_prototypes.h"
 #include "lob0lob.h"
-#include "my_compiler.h"
+
 #include "my_dbug.h"
-#include "my_inttypes.h"
+
+#include "dict0dd.h"
+#include "lob0lob.h"
 #include "row0mysql.h"
 #include "row0sel.h"
 #include "row0upd.h"
@@ -1330,7 +1331,8 @@ static dberr_t fts_drop_table(trx_t *trx, const char *table_name,
 static MY_ATTRIBUTE((warn_unused_result)) dberr_t fts_rename_one_aux_table(
     const char *new_name,           /*!< in: new parent tbl name */
     const char *fts_table_old_name, /*!< in: old aux tbl name */
-    trx_t *trx)                     /*!< in: transaction */
+    trx_t *trx,                     /*!< in: transaction */
+    bool replay)                    /*!< Whether in replay stage */
 {
   char fts_table_new_name[MAX_TABLE_NAME_LEN];
   ulint new_db_name_len = dict_get_db_name_len(new_name);
@@ -1352,7 +1354,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t fts_rename_one_aux_table(
 
   dberr_t error;
   error = row_rename_table_for_mysql(fts_table_old_name, fts_table_new_name,
-                                     nullptr, trx, true);
+                                     nullptr, trx, replay);
 
   if (error == DB_SUCCESS) {
     /* Update dd tablespace filename. */
@@ -1364,7 +1366,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t fts_rename_one_aux_table(
     table->acquire();
     mutex_exit(&dict_sys->mutex);
 
-    if (!dd_rename_fts_table(table, fts_table_old_name)) {
+    if (!replay && !dd_rename_fts_table(table, fts_table_old_name)) {
       ut_ad(0);
     }
 
@@ -1380,7 +1382,9 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t fts_rename_one_aux_table(
  @return DB_SUCCESS or error code */
 dberr_t fts_rename_aux_tables(dict_table_t *table,  /*!< in: user Table */
                               const char *new_name, /*!< in: new table name */
-                              trx_t *trx)           /*!< in: transaction */
+                              trx_t *trx,           /*!< in: transaction */
+                              bool replay)          /*!< in: Whether in replay
+                                                        stage */
 {
   ulint i;
   fts_table_t fts_table;
@@ -1396,7 +1400,7 @@ dberr_t fts_rename_aux_tables(dict_table_t *table,  /*!< in: user Table */
 
     fts_get_table_name(&fts_table, old_table_name);
 
-    err = fts_rename_one_aux_table(new_name, old_table_name, trx);
+    err = fts_rename_one_aux_table(new_name, old_table_name, trx, replay);
 
     if (err != DB_SUCCESS) {
       return (err);
@@ -1421,7 +1425,7 @@ dberr_t fts_rename_aux_tables(dict_table_t *table,  /*!< in: user Table */
 
       fts_get_table_name(&fts_table, old_table_name);
 
-      err = fts_rename_one_aux_table(new_name, old_table_name, trx);
+      err = fts_rename_one_aux_table(new_name, old_table_name, trx, replay);
 
       DBUG_EXECUTE_IF("fts_rename_failure", err = DB_DEADLOCK;);
 
@@ -3364,7 +3368,7 @@ static void fts_fetch_doc_from_rec(
   ulint num_field;
   const dict_field_t *ifield;
   const dict_col_t *col;
-  ulint clust_pos;
+  uint16_t clust_pos;
   ulint i;
   ulint doc_len = 0;
   ulint processed_doc = 0;
@@ -3385,7 +3389,7 @@ static void fts_fetch_doc_from_rec(
   for (i = 0; i < num_field; i++) {
     ifield = index->get_field(i);
     col = ifield->col;
-    clust_pos = dict_col_get_clust_pos(col, clust_index);
+    clust_pos = static_cast<uint16_t>(dict_col_get_clust_pos(col, clust_index));
 
     if (!get_doc->index_cache->charset) {
       get_doc->index_cache->charset = fts_get_charset(ifield->col->prtype);
@@ -3393,7 +3397,7 @@ static void fts_fetch_doc_from_rec(
 
     if (rec_offs_nth_extern(offsets, clust_pos)) {
       doc->text.f_str = lob::btr_rec_copy_externally_stored_field(
-          clust_index, clust_rec, offsets, dict_table_page_size(table),
+          nullptr, clust_index, clust_rec, offsets, dict_table_page_size(table),
           clust_pos, &doc->text.f_len, nullptr, false,
           static_cast<mem_heap_t *>(doc->self_heap->arg));
     } else {
@@ -6097,7 +6101,7 @@ static ibool fts_init_recover_doc(void *row,      /*!< in: sel_node_t* */
       /** When a nullptr is passed for trx, it means we will
       fetch the latest LOB (and no MVCC will be done). */
       doc.text.f_str = lob::btr_copy_externally_stored_field(
-          get_doc->index_cache->index, &doc.text.f_len, nullptr,
+          nullptr, get_doc->index_cache->index, &doc.text.f_len, nullptr,
           static_cast<byte *>(dfield_get_data(dfield)),
           dict_table_page_size(table), len, false,
           static_cast<mem_heap_t *>(doc.self_heap->arg));

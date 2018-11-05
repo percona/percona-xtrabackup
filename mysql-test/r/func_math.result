@@ -712,6 +712,10 @@ SELECT ((@a:=@b:=1.0) div (@b:=@a:=get_format(datetime, 'usa')));
 ((@a:=@b:=1.0) div (@b:=@a:=get_format(datetime, 'usa')))
 NULL
 Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 Warning	1366	Incorrect DECIMAL value: '0' for column '' at row -1
 Warning	1365	Division by 0
 #
@@ -1370,3 +1374,26 @@ truncate(
 -9223372036854775808
 )
 0
+#
+# Bug#28401869 ARM BUILD ALLOWS NUMERIC VALUES OUT OF BOUNDS
+#
+select cast(pow(2,63) as signed) as pp;
+pp
+9223372036854775807
+select 1-cast(pow(2,63) as signed) as qq;
+qq
+-9223372036854775806
+#
+# Bug#17081376 ITEM_FUNC_MUL::INT_OP() MISHANDLES 9223372036854775809*-1
+#
+SELECT 9223372036854775809 * -1;
+ERROR 22003: BIGINT UNSIGNED value is out of range in '(9223372036854775809 * -(1))'
+SELECT -1 * 9223372036854775809;
+ERROR 22003: BIGINT UNSIGNED value is out of range in '(-(1) * 9223372036854775809)'
+#
+# Bug#28505423 UBSAN: SIGNED INTEGER OVERFLOW IN MY_STRNTOULL10RND_8BIT
+#
+CREATE TABLE t(a int);
+INSERT INTO t VALUES(hex(rtrim(1.040739e+308)));
+ERROR 22003: Out of range value for column 'a' at row 1
+DROP TABLE t;

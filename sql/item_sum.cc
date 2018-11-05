@@ -951,8 +951,9 @@ bool Aggregator_distinct::setup(THD *thd) {
     table->no_rows = 1;
     if (table->hash_field) table->file->ha_index_init(0, 0);
 
-    if (table->s->db_type() == temptable_hton ||
-        table->s->db_type() == heap_hton) {
+    if ((table->s->db_type() == temptable_hton ||
+         table->s->db_type() == heap_hton) &&
+        (table->s->blob_fields == 0)) {
       /*
         No blobs:
         set up a compare function and its arguments to use with Unique.
@@ -1046,8 +1047,12 @@ bool Aggregator_distinct::setup(THD *thd) {
     enum enum_field_types field_type =
         calc_tmp_field_type(arg->data_type(), arg->result_type());
 
-    field_def.init_for_tmp_table(field_type, arg->max_length, arg->decimals,
-                                 arg->maybe_null, arg->unsigned_flag, 0);
+    field_def.init_for_tmp_table(
+        field_type, arg->max_length,
+        field_type == MYSQL_TYPE_NEWDECIMAL
+            ? min<unsigned int>(arg->decimals, DECIMAL_MAX_SCALE)
+            : arg->decimals,
+        arg->maybe_null, arg->unsigned_flag, 0);
 
     if (!(table = create_tmp_table_from_fields(thd, field_list)))
       DBUG_RETURN(true);
@@ -1808,10 +1813,14 @@ longlong Item_sum_sum::val_int() {
   DBUG_ENTER("Item_sum_sum::val_int");
   DBUG_ASSERT(fixed == 1);
   if (m_window != nullptr) {
+    if (hybrid_type == REAL_RESULT) {
+      longlong result = llrint(val_real());
+      DBUG_RETURN(result);
+    }
     longlong result = 0;
     my_decimal tmp;
     my_decimal *r = Item_sum_sum::val_decimal(&tmp);
-    if (r != nullptr)
+    if (r != nullptr && !null_value)
       my_decimal2int(E_DEC_FATAL_ERROR, r, unsigned_flag, &result);
     DBUG_RETURN(result);
   }
@@ -1836,7 +1845,8 @@ double Item_sum_sum::val_real() {
     if (hybrid_type == DECIMAL_RESULT) {
       my_decimal tmp;
       my_decimal *r = Item_sum_sum::val_decimal(&tmp);
-      if (r != nullptr) my_decimal2double(E_DEC_FATAL_ERROR, r, &sum);
+      if (r != nullptr && !null_value)
+        my_decimal2double(E_DEC_FATAL_ERROR, r, &sum);
     } else {
       double d = args[0]->val_real();
 
@@ -1871,19 +1881,6 @@ double Item_sum_sum::val_real() {
 }
 
 String *Item_sum_sum::val_str(String *str) {
-  if (m_is_window_function) {
-    my_decimal tmp1;
-    DBUG_ASSERT(hybrid_type == DECIMAL_RESULT);
-    my_decimal *const argd = Item_sum_sum::val_decimal(&tmp1);
-
-    if (null_value) return nullptr;
-
-    my_decimal tmp2;
-    my_decimal_round(E_DEC_FATAL_ERROR, argd, decimals, false, &tmp2);
-    my_decimal2string(E_DEC_FATAL_ERROR, &tmp2, 0, 0, 0, str);
-    return str;
-  }
-
   if (aggr) aggr->endup();
   if (hybrid_type == DECIMAL_RESULT) return val_string_from_decimal(str);
   return val_string_from_real(str);
@@ -2239,19 +2236,6 @@ my_decimal *Item_sum_avg::val_decimal(my_decimal *val) {
 }
 
 String *Item_sum_avg::val_str(String *str) {
-  if (m_is_window_function) {
-    my_decimal tmp1;
-    DBUG_ASSERT(hybrid_type == DECIMAL_RESULT);
-    my_decimal *const argd = Item_sum_avg::val_decimal(&tmp1);
-
-    if (null_value) return nullptr;
-
-    my_decimal tmp2;
-    my_decimal_round(E_DEC_FATAL_ERROR, argd, decimals, false, &tmp2);
-    my_decimal2string(E_DEC_FATAL_ERROR, &tmp2, 0, 0, 0, str);
-    return str;
-  }
-
   if (aggr) aggr->endup();
   if (hybrid_type == DECIMAL_RESULT) return val_string_from_decimal(str);
   return val_string_from_real(str);

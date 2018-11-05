@@ -50,9 +50,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0log.h"
 #include "m_string.h"
 #include "mach0data.h"
-#include "my_compiler.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
 #include "que0que.h"
 #include "rem0cmp.h"
 #include "row0ins.h"
@@ -63,6 +60,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0rec.h"
 #include "trx0undo.h"
 #include "usr0sess.h"
+
+#include "my_dbug.h"
 
 /*************************************************************************
 IMPORTANT NOTE: Any operation that generates redo MUST check that there
@@ -922,8 +921,10 @@ func_exit:
 /** Perform referential actions or checks when a parent row is deleted or
  updated and the constraint had an ON DELETE or ON UPDATE condition which was
  not RESTRICT.
- @return DB_SUCCESS, DB_LOCK_WAIT, or error code */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
+ @return DB_SUCCESS, DB_LOCK_WAIT, or error code
+ Disable inlining because of a bug in gcc8 which may lead to stack exhaustion.
+*/
+static NO_INLINE MY_ATTRIBUTE((warn_unused_result)) dberr_t
     row_ins_foreign_check_on_constraint(
         que_thr_t *thr,          /*!< in: query thread whose run_node
                                  is an update node */
@@ -1702,6 +1703,11 @@ do_possible_lock_wait:
     trx_kill_blocking(trx);
 
     lock_wait_suspend_thread(thr);
+
+    if (trx->error_state != DB_SUCCESS) {
+      err = trx->error_state;
+      goto exit_func;
+    }
 
     thr->lock_state = QUE_THR_LOCK_NOLOCK;
 
@@ -2816,7 +2822,13 @@ dberr_t row_ins_sec_index_entry_low(ulint flags, ulint mode,
   This prevents a concurrent change of index->online_status.
   The memory object cannot be freed as long as we have an open
   reference to the table, or index->table->n_ref_count > 0. */
-  const bool check = !index->is_committed();
+  bool check = !index->is_committed();
+
+  DBUG_EXECUTE_IF("idx_mimic_not_committed", {
+    check = true;
+    mode = BTR_MODIFY_TREE;
+  });
+
   if (check) {
     DEBUG_SYNC_C("row_ins_sec_index_enter");
     if (mode == BTR_MODIFY_LEAF) {

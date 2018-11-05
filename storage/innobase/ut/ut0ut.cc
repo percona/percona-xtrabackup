@@ -58,12 +58,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mysql/components/services/log_builtins.h"
 #include "sql/derror.h"
 
-#ifndef UNIV_NO_ERR_MSGS
-#if defined(__SUNPRO_CC)
-const char *ib::logger::PREFIX = "InnoDB: ";
-#endif /*  __SUNPRO_CC */
-#endif /* !UNIV_NO_ERR_MSGS */
-
 #ifdef _WIN32
 using time_fn = VOID(WINAPI *)(_Out_ LPFILETIME);
 static time_fn ut_get_system_time_as_file_time = GetSystemTimeAsFileTime;
@@ -582,6 +576,9 @@ const char *ut_strerr(dberr_t num) {
           "Cannot boot server with lower version than that built the "
           "tablespace");
 
+    case DB_NO_SESSION_TEMP:
+      return ("No session temporary tablespace allocated");
+
     case DB_PAGE_IS_BLANK:
       return ("Page is blank");
 
@@ -597,53 +594,6 @@ const char *ut_strerr(dberr_t num) {
   variable has been overwritten with bogus data */
   ut_error;
 }
-
-#ifdef UNIV_PFS_MEMORY
-
-/** Extract the basename of a file without its extension.
-For example, extract "foo0bar" out of "/path/to/foo0bar.cc".
-@param[in]	file		file path, e.g. "/path/to/foo0bar.cc"
-@param[out]	base		result, e.g. "foo0bar"
-@param[in]	base_size	size of the output buffer 'base', if there
-is not enough space, then the result will be truncated, but always
-'\0'-terminated
-@return number of characters that would have been printed if the size
-were unlimited (not including the final ‘\0’) */
-size_t ut_basename_noext(const char *file, char *base, size_t base_size) {
-  /* Assuming 'file' contains something like the following,
-  extract the file name without the extenstion out of it by
-  setting 'beg' and 'len'.
-  ...mysql-trunk/storage/innobase/dict/dict0dict.cc:302
-                                       ^-- beg, len=9
-  */
-
-  std::string::size_type pos = std::string(file).find_last_of("/\\");
-  const char *beg;
-
-  if (pos == std::string::npos) {
-    beg = file;
-  } else {
-    beg = file + pos + 1;
-  }
-
-  size_t len = strlen(beg);
-
-  const char *end = strrchr(beg, '.');
-
-  if (end != NULL) {
-    len = end - beg;
-  }
-
-  const size_t copy_len = std::min(len, base_size - 1);
-
-  memcpy(base, beg, copy_len);
-
-  base[copy_len] = '\0';
-
-  return (len);
-}
-
-#endif /* UNIV_PFS_MEMORY */
 
 namespace ib {
 

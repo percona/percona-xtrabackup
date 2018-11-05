@@ -53,6 +53,7 @@ IF(LOCAL_GMOCK_ZIP
 ENDIF()
 
 IF (WITH_GMOCK)
+  FILE(TO_CMAKE_PATH "${WITH_GMOCK}" WITH_GMOCK)
   ## Did we get a full path name, including file name?
   IF (${WITH_GMOCK} MATCHES ".*\\.zip")
     GET_FILENAME_COMPONENT(GMOCK_DIR ${WITH_GMOCK} PATH)
@@ -205,6 +206,14 @@ ADD_LIBRARY(gmock STATIC ${GMOCK_SOURCE_DIR}/src/gmock-all.cc)
 ADD_LIBRARY(gtest STATIC ${GTEST_SOURCE_DIR}/src/gtest-all.cc)
 SET(GTEST_LIBRARIES gmock gtest)
 
+ADD_LIBRARY(gmock_main STATIC ${GMOCK_SOURCE_DIR}/src/gmock_main.cc)
+ADD_LIBRARY(gtest_main STATIC ${GTEST_SOURCE_DIR}/src/gtest_main.cc)
+IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  SET_TARGET_PROPERTIES(gtest_main gmock_main
+    PROPERTIES
+    COMPILE_FLAGS "-Wno-undef -Wno-conversion")
+ENDIF()
+
 SET(DISABLE_PSI_DEFINITIONS
   "DISABLE_PSI_COND"
   "DISABLE_PSI_FILE"
@@ -282,8 +291,7 @@ INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 # Add tests (link them with gunit/gmock libraries) 
 SET(TESTS
   alignment
-  bounded_queue
-#  bounds_checked_array
+  bounds_checked_array
   bitmap
   byteorder
   calloc
@@ -297,6 +305,7 @@ SET(TESTS
   inplace_vector
   key
   like_range
+  m_string
   mdl
   my_bitmap
   my_error
@@ -369,10 +378,12 @@ SET(SERVER_TESTS
   field
   get_diagnostics
   gis_algos
+  gis_area
   gis_geometries
   gis_is_simple
   gis_isvalid
   gis_relops
+  gis_srs
   gis_wkb_parser
   gis_wkb_writer
   handler
@@ -462,8 +473,7 @@ IF (MERGE_UNITTESTS)
   ENDIF()
   LIST(APPEND ALL_LARGE_TESTS ../../storage/example/ha_example.cc)
 
-  MYSQL_ADD_EXECUTABLE(merge_large_tests-t ${ALL_LARGE_TESTS}
-    ADD_TEST merge_large_tests)
+  MYSQL_ADD_EXECUTABLE(merge_large_tests-t ${ALL_LARGE_TESTS} SKIP_INSTALL)
   TARGET_LINK_LIBRARIES(merge_large_tests-t sql_main binlog rpl master slave)
   TARGET_LINK_LIBRARIES(merge_large_tests-t sql_main sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(merge_large_tests-t
@@ -474,6 +484,20 @@ IF (MERGE_UNITTESTS)
   IF(WITH_PERFSCHEMA_STORAGE_ENGINE)
     TARGET_LINK_LIBRARIES(merge_large_tests-t perfschema)
     TARGET_LINK_LIBRARIES(merge_small_tests-t perfschema)
+  ENDIF()
+
+  SET(ADD_MERGE_LARGE_TESTS 1)
+  IF(CMAKE_C_COMPILER_ID MATCHES "SunPro")
+    IF(${CC_MINOR_VERSION} EQUAL 15)
+      MESSAGE(WARNING
+        "Likely link failure for this compiler, skipping merge_large_tests-t")
+      SET_PROPERTY(TARGET merge_large_tests-t PROPERTY EXCLUDE_FROM_ALL TRUE)
+      UNSET(ADD_MERGE_LARGE_TESTS)
+    ENDIF()
+  ENDIF()
+  IF(ADD_MERGE_LARGE_TESTS)
+    ADD_TEST(merge_large_tests
+      ${CMAKE_BINARY_DIR}/runtime_output_directory/merge_large_tests-t)
   ENDIF()
 
 ENDIF(MERGE_UNITTESTS)
@@ -489,7 +513,7 @@ FOREACH(test ${TESTS})
   TARGET_LINK_LIBRARIES(${test}-t gunit_small sqlgunitlib strings dbug)
   TARGET_LINK_LIBRARIES(${test}-t ${ICU_LIBRARIES})
   IF(NOT MERGE_UNITTESTS)
-    ADD_TEST(${test} ${test}-t)
+    ADD_TEST(${test} ${CMAKE_BINARY_DIR}/runtime_output_directory/${test}-t)
   ENDIF()
 ENDFOREACH()
 
@@ -522,7 +546,7 @@ FOREACH(test ${SERVER_TESTS})
   ENDIF()
 
   IF(NOT MERGE_UNITTESTS)
-    ADD_TEST(${test} ${test}-t)
+    ADD_TEST(${test} ${CMAKE_BINARY_DIR}/runtime_output_directory/${test}-t)
   ENDIF()
 ENDFOREACH()
 
@@ -532,3 +556,5 @@ ADD_SUBDIRECTORY(components/mysql_server)
 ADD_SUBDIRECTORY(xplugin)
 ADD_SUBDIRECTORY(group_replication)
 ADD_SUBDIRECTORY(libmysqlgcs)
+ADD_SUBDIRECTORY(temptable)
+

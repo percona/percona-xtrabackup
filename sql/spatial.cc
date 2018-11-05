@@ -37,10 +37,13 @@
 #include "my_sys.h"
 #include "mysqld_error.h"
 #include "prealloced_array.h"
+#include "sql/check_stack.h"  // check_stack_overrun
+#include "sql/current_thd.h"
 #include "sql/gis/srid.h"
 #include "sql/gis_bg_traits.h"  // IWYU pragma: keep
 #include "sql/gstream.h"        // Gis_read_stream
 #include "sql/psi_memory_key.h"
+#include "sql/sql_const.h"   // STACK_MIN_SIZE
 #include "sql_string.h"      // String
 #include "template_utils.h"  // pointer_cast
 
@@ -754,8 +757,8 @@ bool Geometry::is_well_formed(const char *from, size_t length,
 
   if (length < GEOM_HEADER_SIZE) return false;
 
-  is_well_formed =
-      (wkb_scanner(from + SRID_SIZE, &len, 0, true, &checker) != NULL);
+  is_well_formed = (wkb_scanner(current_thd, from + SRID_SIZE, &len, 0, true,
+                                &checker) != NULL);
 
   return (is_well_formed && checker.is_well_formed() &&
           checker.get_last_position() == from + length);
@@ -853,6 +856,7 @@ static uint32 wkb_get_uint(const char *ptr, Geometry::wkbByteOrder bo) {
   Scan WKB byte string and notify WKB events by calling registered callbacks.
   @param wkb a little endian WKB byte string of 'len' bytes, with or
              without WKB header.
+  @param[in] thd Thread context.
   @param [in,out] len remaining number of bytes of the wkb string.
   @param geotype the type of the geometry to be scanned.
   @param has_hdr whether the 'wkb' point to a WKB header or right after
@@ -862,8 +866,10 @@ static uint32 wkb_get_uint(const char *ptr, Geometry::wkbByteOrder bo) {
   @param handler the registered WKB_scanner_event_handler object to be notified.
   @return the next byte after last valid geometry just scanned, or NULL on error
  */
-const char *wkb_scanner(const char *wkb, uint32 *len, uint32 geotype,
+const char *wkb_scanner(THD *thd, const char *wkb, uint32 *len, uint32 geotype,
                         bool has_hdr, WKB_scanner_event_handler *handler) {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr)) return nullptr;
+
   Geometry::wkbType gt;
   const char *q = NULL;
   uint32 ngeos = 0, comp_type = 0, gtype = 0;
@@ -940,7 +946,7 @@ const char *wkb_scanner(const char *wkb, uint32 *len, uint32 geotype,
 
   if (!done && q != NULL) {
     for (uint32 i = 0; i < ngeos; i++) {
-      q = wkb_scanner(q, len, comp_type, comp_hashdr, handler);
+      q = wkb_scanner(thd, q, len, comp_type, comp_hashdr, handler);
       if (q == NULL) return NULL;
     }
     handler->on_wkb_end(q);
@@ -956,6 +962,7 @@ const char *wkb_scanner(const char *wkb, uint32 *len, uint32 geotype,
   into 'res', and also create geometry object on 'buffer' and return it.
   The returned Geometry object points to bytes (without WKB HEADER) in 'res'.
 
+  @param thd Thread context.
   @param buffer the place to create the returned Geometry object at.
   @param wkb the input WKB buffer which contains WKB of either endianess.
   @param len the number of bytes of WKB in 'wkb'.
@@ -964,8 +971,9 @@ const char *wkb_scanner(const char *wkb, uint32 *len, uint32 geotype,
   object.
   @return the created Geometry object.
  */
-Geometry *Geometry::create_from_wkb(Geometry_buffer *buffer, const char *wkb,
-                                    uint32 len, String *res, bool init_stream) {
+Geometry *Geometry::create_from_wkb(THD *thd, Geometry_buffer *buffer,
+                                    const char *wkb, uint32 len, String *res,
+                                    bool init_stream) {
   uint32 geom_type;
   Geometry *geom;
 
@@ -981,8 +989,9 @@ Geometry *Geometry::create_from_wkb(Geometry_buffer *buffer, const char *wkb,
   res->q_append((char)wkb_ndr);
   res->q_append(geom_type);
 
-  uint tret = geom->init_from_wkb(wkb + WKB_HEADER_SIZE, len - WKB_HEADER_SIZE,
-                                  ::get_byte_order(wkb), res);
+  uint tret =
+      geom->init_from_wkb(thd, wkb + WKB_HEADER_SIZE, len - WKB_HEADER_SIZE,
+                          ::get_byte_order(wkb), res);
 
   // The WKB string is invalid if it has trailing trash bytes.
   if (tret != len - WKB_HEADER_SIZE) return NULL;
@@ -1036,8 +1045,8 @@ bool Geometry::envelope(String *result) const {
       GeomColl_component_counter counter;
       uint32 wkb_len = get_data_size();
 
-      wkb_scanner(get_cptr(), &wkb_len, Geometry::wkb_geometrycollection, false,
-                  &counter);
+      wkb_scanner(current_thd, get_cptr(), &wkb_len,
+                  Geometry::wkb_geometrycollection, false, &counter);
       // Non-empty nested geometry collections.
       if (counter.num > 0) return true;
     }
@@ -1369,6 +1378,8 @@ void Gis_point::set_ptr(void *ptr, size_t len) {
 }
 
 uint32 Gis_point::get_data_size() const {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr))
+    return GET_SIZE_ERROR;
   if (get_nbytes() != POINT_DATA_SIZE) return GET_SIZE_ERROR;
 
   return POINT_DATA_SIZE;
@@ -1376,6 +1387,8 @@ uint32 Gis_point::get_data_size() const {
 
 bool Gis_point::init_from_wkt(Gis_read_stream *trs, String *wkb,
                               const bool parens) {
+  if (check_stack_overrun(trs->thd(), STACK_MIN_SIZE, nullptr)) return true;
+
   double x, y;
   if ((parens && trs->check_next_symbol('(')) || trs->get_next_number(&x) ||
       trs->get_next_number(&y) || wkb->reserve(POINT_DATA_SIZE, 256) ||
@@ -1396,8 +1409,9 @@ bool Gis_point::init_from_wkt(Gis_read_stream *trs, String *wkb,
   function Items see portable little endian WKB data.
   This is true for all the init_from_wkb functions of all Geometry classes.
  */
-uint Gis_point::init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
-                              String *res) {
+uint Gis_point::init_from_wkb(THD *thd, const char *wkb, uint len,
+                              wkbByteOrder bo, String *res) {
+  if (check_stack_overrun(thd, STACK_MIN_SIZE, nullptr)) return 0;
   double x, y;
   if (len < POINT_DATA_SIZE || res->reserve(POINT_DATA_SIZE, 256)) return 0;
   x = wkb_get_double(wkb, bo);
@@ -1466,6 +1480,9 @@ const Geometry::Class_info *Gis_point::get_class_info() const {
 
 /***************************** LineString *******************************/
 uint32 Gis_line_string::get_data_size() const {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr))
+    return GET_SIZE_ERROR;
+
   if (is_length_verified()) return static_cast<uint32>(get_nbytes());
 
   uint32 n_points;
@@ -1489,6 +1506,8 @@ inline double coord_val(const char *p, int i, int x) {
 }
 
 bool Gis_line_string::init_from_wkt(Gis_read_stream *trs, String *wkb) {
+  if (check_stack_overrun(trs->thd(), STACK_MIN_SIZE, nullptr)) return true;
+
   uint32 n_points = 0;
   uint32 np_pos = wkb->length();
   Gis_point p(false);
@@ -1528,8 +1547,10 @@ out:
   return false;
 }
 
-uint Gis_line_string::init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
-                                    String *res) {
+uint Gis_line_string::init_from_wkb(THD *thd, const char *wkb, uint len,
+                                    wkbByteOrder bo, String *res) {
+  if (check_stack_overrun(thd, STACK_MIN_SIZE, nullptr)) return 0;
+
   uint32 n_points, proper_length;
   const char *wkb_end;
   Gis_point p(false);
@@ -1551,7 +1572,7 @@ uint Gis_line_string::init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
 
   res->q_append(n_points);
   for (wkb += 4; wkb < wkb_end; wkb += POINT_DATA_SIZE) {
-    if (!p.init_from_wkb(wkb, POINT_DATA_SIZE, bo, res)) return 0;
+    if (!p.init_from_wkb(thd, wkb, POINT_DATA_SIZE, bo, res)) return 0;
   }
 
   return proper_length;
@@ -2046,6 +2067,9 @@ void Gis_polygon::make_rings() {
 }
 
 uint32 Gis_polygon::get_data_size() const {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr))
+    return GET_SIZE_ERROR;
+
   uint32 n_linear_rings;
   uint32 len;
   wkb_parser wkb(get_cptr(), get_cptr() + get_nbytes());
@@ -2072,6 +2096,8 @@ uint32 Gis_polygon::get_data_size() const {
 }
 
 bool Gis_polygon::init_from_wkt(Gis_read_stream *trs, String *wkb) {
+  if (check_stack_overrun(trs->thd(), STACK_MIN_SIZE, nullptr)) return true;
+
   uint32 n_linear_rings = 0;
   uint32 lr_pos = wkb->length();
 
@@ -2096,8 +2122,10 @@ bool Gis_polygon::init_from_wkt(Gis_read_stream *trs, String *wkb) {
   return false;
 }
 
-uint Gis_polygon::init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
-                                String *res) {
+uint Gis_polygon::init_from_wkb(THD *thd, const char *wkb, uint len,
+                                wkbByteOrder bo, String *res) {
+  if (check_stack_overrun(thd, STACK_MIN_SIZE, nullptr)) return 0;
+
   uint32 n_linear_rings;
   const char *wkb_orig = wkb;
 
@@ -2117,7 +2145,7 @@ uint Gis_polygon::init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
 
     uint ls_len = 0;
 
-    if (!(ls_len = ls.init_from_wkb(wkb, len, bo, res))) return 0;
+    if (!(ls_len = ls.init_from_wkb(thd, wkb, len, bo, res))) return 0;
 
     wkb += ls_len;
     DBUG_ASSERT(len >= ls_len);
@@ -2390,6 +2418,9 @@ void own_rings(Geometry *geo0) {
 
 /***************************** MultiPoint *******************************/
 uint32 Gis_multi_point::get_data_size() const {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr))
+    return GET_SIZE_ERROR;
+
   uint32 n_points;
   uint32 len;
   wkb_parser wkb(get_cptr(), get_cptr() + get_nbytes());
@@ -2405,6 +2436,8 @@ uint32 Gis_multi_point::get_data_size() const {
 }
 
 bool Gis_multi_point::init_from_wkt(Gis_read_stream *trs, String *wkb) {
+  if (check_stack_overrun(trs->thd(), STACK_MIN_SIZE, nullptr)) return true;
+
   uint32 n_points = 0;
   uint32 np_pos = wkb->length();
   Gis_point p(false);
@@ -2445,8 +2478,10 @@ bool Gis_multi_point::init_from_wkt(Gis_read_stream *trs, String *wkb) {
   return false;
 }
 
-uint Gis_multi_point::init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
-                                    String *res) {
+uint Gis_multi_point::init_from_wkb(THD *thd, const char *wkb, uint len,
+                                    wkbByteOrder bo, String *res) {
+  if (check_stack_overrun(thd, STACK_MIN_SIZE, nullptr)) return 0;
+
   uint32 n_points;
   uint proper_size;
   Gis_point p(false);
@@ -2463,7 +2498,7 @@ uint Gis_multi_point::init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
     write_wkb_header(res, wkb_point);
     if ((*wkb != wkb_xdr && *wkb != wkb_ndr) ||
         wkb_point != uint4korr(wkb + 1) ||
-        !p.init_from_wkb(wkb + WKB_HEADER_SIZE, POINT_DATA_SIZE,
+        !p.init_from_wkb(thd, wkb + WKB_HEADER_SIZE, POINT_DATA_SIZE,
                          (wkbByteOrder)wkb[0], res))
       return 0;
   }
@@ -2579,6 +2614,9 @@ const Geometry::Class_info *Gis_multi_point::get_class_info() const {
 
 /***************************** MultiLineString *******************************/
 uint32 Gis_multi_line_string::get_data_size() const {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr))
+    return GET_SIZE_ERROR;
+
   uint32 n_line_strings;
   uint32 len;
   wkb_parser wkb(get_cptr(), get_cptr() + get_nbytes());
@@ -2602,6 +2640,8 @@ uint32 Gis_multi_line_string::get_data_size() const {
 }
 
 bool Gis_multi_line_string::init_from_wkt(Gis_read_stream *trs, String *wkb) {
+  if (check_stack_overrun(trs->thd(), STACK_MIN_SIZE, nullptr)) return true;
+
   uint32 n_line_strings = 0;
   uint32 ls_pos = wkb->length();
 
@@ -2626,8 +2666,10 @@ bool Gis_multi_line_string::init_from_wkt(Gis_read_stream *trs, String *wkb) {
   return false;
 }
 
-uint Gis_multi_line_string::init_from_wkb(const char *wkb, uint len,
+uint Gis_multi_line_string::init_from_wkb(THD *thd, const char *wkb, uint len,
                                           wkbByteOrder bo, String *res) {
+  if (check_stack_overrun(thd, STACK_MIN_SIZE, nullptr)) return 0;
+
   uint32 n_line_strings;
   const char *wkb_orig = wkb;
 
@@ -2649,9 +2691,9 @@ uint Gis_multi_line_string::init_from_wkb(const char *wkb, uint len,
       return 0;
 
     write_wkb_header(res, wkb_linestring);
-    if (!(ls_len =
-              ls.init_from_wkb(wkb + WKB_HEADER_SIZE, len - WKB_HEADER_SIZE,
-                               (wkbByteOrder)wkb[0], res)))
+    if (!(ls_len = ls.init_from_wkb(thd, wkb + WKB_HEADER_SIZE,
+                                    len - WKB_HEADER_SIZE, (wkbByteOrder)wkb[0],
+                                    res)))
       return 0;
     ls_len += WKB_HEADER_SIZE;
     ;
@@ -2837,6 +2879,9 @@ const Geometry::Class_info *Gis_multi_line_string::get_class_info() const {
 
 /***************************** MultiPolygon *******************************/
 uint32 Gis_multi_polygon::get_data_size() const {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr))
+    return GET_SIZE_ERROR;
+
   uint32 n_polygons;
   uint32 len;
   wkb_parser wkb(get_cptr(), get_cptr() + get_nbytes());
@@ -2865,6 +2910,8 @@ uint32 Gis_multi_polygon::get_data_size() const {
 }
 
 bool Gis_multi_polygon::init_from_wkt(Gis_read_stream *trs, String *wkb) {
+  if (check_stack_overrun(trs->thd(), STACK_MIN_SIZE, nullptr)) return true;
+
   uint32 n_polygons = 0;
   uint32 np_pos = wkb->length();
   Gis_polygon p(false);
@@ -2888,8 +2935,10 @@ bool Gis_multi_polygon::init_from_wkt(Gis_read_stream *trs, String *wkb) {
   return false;
 }
 
-uint Gis_multi_polygon::init_from_wkb(const char *wkb, uint len,
+uint Gis_multi_polygon::init_from_wkb(THD *thd, const char *wkb, uint len,
                                       wkbByteOrder bo, String *res) {
+  if (check_stack_overrun(thd, STACK_MIN_SIZE, nullptr)) return 0;
+
   uint32 n_poly;
   const char *wkb_orig = wkb;
 
@@ -2911,8 +2960,9 @@ uint Gis_multi_polygon::init_from_wkb(const char *wkb, uint len,
         res->reserve(WKB_HEADER_SIZE, 512))
       return 0;
     write_wkb_header(res, wkb_polygon);
-    if (!(p_len = p.init_from_wkb(wkb + WKB_HEADER_SIZE, len - WKB_HEADER_SIZE,
-                                  (wkbByteOrder)wkb[0], res)))
+    if (!(p_len =
+              p.init_from_wkb(thd, wkb + WKB_HEADER_SIZE, len - WKB_HEADER_SIZE,
+                              (wkbByteOrder)wkb[0], res)))
       return 0;
     p_len += WKB_HEADER_SIZE;
     wkb += p_len;
@@ -3298,6 +3348,9 @@ Gis_geometry_collection::Gis_geometry_collection(Geometry *geo, String *gcbuf)
 }
 
 uint32 Gis_geometry_collection::get_data_size() const {
+  if (check_stack_overrun(current_thd, STACK_MIN_SIZE, nullptr))
+    return GET_SIZE_ERROR;
+
   uint32 n_objects = 0;
   uint32 len;
   wkb_parser wkb(get_cptr(), get_cptr() + get_nbytes());
@@ -3342,6 +3395,8 @@ uint32 Gis_geometry_collection::get_data_size() const {
 }
 
 bool Gis_geometry_collection::init_from_wkt(Gis_read_stream *trs, String *wkb) {
+  if (check_stack_overrun(trs->thd(), STACK_MIN_SIZE, nullptr)) return true;
+
   uint32 n_objects = 0;
   uint32 no_pos = wkb->length();
   Geometry_buffer buffer;
@@ -3382,8 +3437,10 @@ bool Gis_geometry_collection::init_from_wkt(Gis_read_stream *trs, String *wkb) {
   return false;
 }
 
-uint Gis_geometry_collection::init_from_wkb(const char *wkb, uint len,
+uint Gis_geometry_collection::init_from_wkb(THD *thd, const char *wkb, uint len,
                                             wkbByteOrder bo, String *res) {
+  if (check_stack_overrun(thd, STACK_MIN_SIZE, nullptr)) return 0;
+
   uint32 n_geom = 0;
   const char *wkb_orig = wkb;
 
@@ -3411,9 +3468,9 @@ uint Gis_geometry_collection::init_from_wkb(const char *wkb, uint len,
     write_wkb_header(res, static_cast<wkbType>(wkb_type));
 
     if (!(geom = create_by_typeid(&buffer, wkb_type)) ||
-        !(g_len =
-              geom->init_from_wkb(wkb + WKB_HEADER_SIZE, len - WKB_HEADER_SIZE,
-                                  (wkbByteOrder)wkb[0], res)))
+        !(g_len = geom->init_from_wkb(thd, wkb + WKB_HEADER_SIZE,
+                                      len - WKB_HEADER_SIZE,
+                                      (wkbByteOrder)wkb[0], res)))
       return 0;
     g_len += WKB_HEADER_SIZE;
     wkb += g_len;

@@ -28,7 +28,6 @@
 #include <cstddef>  // std::nullptr_t
 #include <memory>   // std::unique_ptr
 #include <new>
-#include <string>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -40,9 +39,10 @@
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/spatial_reference_system.h"  // dd:Spatial_reference_system
 #include "sql/dd/types/weak_object.h"
-#include "sql/gis/srid.h"
-#include "sql/gis/srs/srs.h"  // gis::srs::Spatial_reference_...
-#include "sql/sql_time.h"     // gmt_time_to_local_time
+#include "sql/gis/geometries.h"  // gis::Coordinate_system
+#include "sql/gis/srid.h"        // srid_t
+#include "sql/gis/srs/srs.h"     // gis::srs::Spatial_reference_...
+#include "sql/sql_time.h"        // gmt_time_to_local_time
 
 class THD;
 
@@ -175,6 +175,23 @@ class Spatial_reference_system_impl : public Entity_object_impl,
     m_definition = definition;
   }
 
+  virtual gis::Coordinate_system cs_type() const override {
+    // Work around bugs in Developer Studio 12.5 on Solaris by casting the enum
+    // to int. Otherwise the default case, and only the default case, is always
+    // executed. This happens regardless of SRS type value.
+    switch (static_cast<int>(m_parsed_definition->srs_type())) {
+      case static_cast<int>(gis::srs::Srs_type::PROJECTED):
+        return gis::Coordinate_system::kCartesian;
+      case static_cast<int>(gis::srs::Srs_type::GEOGRAPHIC):
+        return gis::Coordinate_system::kGeographic;
+      default:
+        /* purecov: begin deadcode */
+        DBUG_ASSERT(false);
+        return gis::Coordinate_system::kCartesian;
+        /* purecov: end */
+    }
+  }
+
   virtual bool is_projected() const override {
     return (m_parsed_definition->srs_type() == gis::srs::Srs_type::PROJECTED);
   }
@@ -239,6 +256,11 @@ class Spatial_reference_system_impl : public Entity_object_impl,
     }
   }
 
+  virtual bool missing_towgs84() const override {
+    return (!m_parsed_definition->is_wgs84_based() &&
+            !m_parsed_definition->has_towgs84());
+  }
+
   virtual double to_radians(double d) const override {
     DBUG_ASSERT(is_geographic());
     DBUG_ASSERT(angular_unit() > 0.0);
@@ -283,6 +305,10 @@ class Spatial_reference_system_impl : public Entity_object_impl,
     return m_parsed_definition->can_be_modified_to(
         *static_cast<const Spatial_reference_system_impl &>(srs)
              .m_parsed_definition);
+  }
+
+  String_type proj4_parameters() const override {
+    return m_parsed_definition->proj4_parameters().c_str();
   }
 
   /////////////////////////////////////////////////////////////////////////

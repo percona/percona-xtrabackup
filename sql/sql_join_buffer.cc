@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,7 @@
 #include <limits.h>
 #include <algorithm>
 #include <atomic>
+#include <memory>
 
 #include "binary_log_types.h"
 #include "my_base.h"
@@ -1718,7 +1719,7 @@ enum_nested_loop_state JOIN_CACHE::join_records(bool skip_last) {
     records of our table; none of these can be a group-by/window tmp table, so
     we should still be on the join's first slice.
   */
-  DBUG_ASSERT(qep_tab->join()->get_ref_item_slice() == REF_SLICE_SAVE);
+  DBUG_ASSERT(qep_tab->join()->get_ref_item_slice() == REF_SLICE_SAVED_BASE);
 
   if (qep_tab->first_unmatched == NO_PLAN_IDX) {
     const bool pfs_batch_update = qep_tab->pfs_batch_update(join);
@@ -1859,7 +1860,8 @@ enum_nested_loop_state JOIN_CACHE_BNL::join_matching_records(bool skip_last) {
   DBUG_ASSERT(!(qep_tab->dynamic_range() && qep_tab->quick()));
 
   /* Start retrieving all records of the joined table */
-  if ((error = (*qep_tab->read_first_record)(qep_tab)))
+  if (qep_tab->read_record.iterator->Init()) return NESTED_LOOP_ERROR;
+  if ((error = qep_tab->read_record->Read()))
     return error < 0 ? NESTED_LOOP_OK : NESTED_LOOP_ERROR;
 
   READ_RECORD *info = &qep_tab->read_record;
@@ -1878,7 +1880,6 @@ enum_nested_loop_state JOIN_CACHE_BNL::join_matching_records(bool skip_last) {
       does not meet the conditions that have been pushed to this table
     */
     if (rc == NESTED_LOOP_OK) {
-      join->examined_rows++;
       if (const_cond) {
         const bool consider_record = const_cond->val_int() != false;
         if (join->thd->is_error())  // error in condition evaluation
@@ -1904,7 +1905,7 @@ enum_nested_loop_state JOIN_CACHE_BNL::join_matching_records(bool skip_last) {
         }
       }
     }
-  } while (!(error = info->read_record(info)));
+  } while (!(error = info->iterator->Read()));
 
   if (error > 0)  // Fatal error
     rc = NESTED_LOOP_ERROR;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,17 @@
 #include "my_inttypes.h"
 
 #define LIBLEN FN_REFLEN - FN_LEN /* Max l{ngd p} dev */
-/* extra 4+4 bytes for slave tmp tables */
+/**
+  The maximum length of a key in the table definition cache.
+
+  The key consists of the schema name, a '\0' character, the table
+  name and a '\0' character. Hence NAME_LEN * 2 + 1 + 1.
+
+  Additionally, the key can be suffixed with either 4 + 4 extra bytes
+  for slave tmp tables, or with a single extra byte for tables in a
+  secondary storage engine. Add 4 + 4 to account for either of these
+  suffixes.
+*/
 #define MAX_DBKEY_LENGTH (NAME_LEN * 2 + 1 + 1 + 4 + 4)
 #define MAX_ALIAS_NAME 256
 #define MAX_FIELD_NAME 34 /* Max colum name length +2 */
@@ -344,20 +354,22 @@ static const ulong EVENT_DEF_CACHE_MIN = 256;
 #define OPTIMIZER_SWITCH_COND_FANOUT_FILTER (1ULL << 17)
 #define OPTIMIZER_SWITCH_DERIVED_MERGE (1ULL << 18)
 #define OPTIMIZER_SWITCH_USE_INVISIBLE_INDEXES (1ULL << 19)
-#define OPTIMIZER_SWITCH_LAST (1ULL << 20)
+#define OPTIMIZER_SKIP_SCAN (1ULL << 20)
+#define OPTIMIZER_SWITCH_LAST (1ULL << 21)
 
-#define OPTIMIZER_SWITCH_DEFAULT                                         \
-  (OPTIMIZER_SWITCH_INDEX_MERGE | OPTIMIZER_SWITCH_INDEX_MERGE_UNION |   \
-   OPTIMIZER_SWITCH_INDEX_MERGE_SORT_UNION |                             \
-   OPTIMIZER_SWITCH_INDEX_MERGE_INTERSECT |                              \
-   OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN |                          \
-   OPTIMIZER_SWITCH_INDEX_CONDITION_PUSHDOWN | OPTIMIZER_SWITCH_MRR |    \
-   OPTIMIZER_SWITCH_MRR_COST_BASED | OPTIMIZER_SWITCH_BNL |              \
-   OPTIMIZER_SWITCH_MATERIALIZATION | OPTIMIZER_SWITCH_SEMIJOIN |        \
-   OPTIMIZER_SWITCH_LOOSE_SCAN | OPTIMIZER_SWITCH_FIRSTMATCH |           \
-   OPTIMIZER_SWITCH_DUPSWEEDOUT | OPTIMIZER_SWITCH_SUBQ_MAT_COST_BASED | \
-   OPTIMIZER_SWITCH_USE_INDEX_EXTENSIONS |                               \
-   OPTIMIZER_SWITCH_COND_FANOUT_FILTER | OPTIMIZER_SWITCH_DERIVED_MERGE)
+#define OPTIMIZER_SWITCH_DEFAULT                                          \
+  (OPTIMIZER_SWITCH_INDEX_MERGE | OPTIMIZER_SWITCH_INDEX_MERGE_UNION |    \
+   OPTIMIZER_SWITCH_INDEX_MERGE_SORT_UNION |                              \
+   OPTIMIZER_SWITCH_INDEX_MERGE_INTERSECT |                               \
+   OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN |                           \
+   OPTIMIZER_SWITCH_INDEX_CONDITION_PUSHDOWN | OPTIMIZER_SWITCH_MRR |     \
+   OPTIMIZER_SWITCH_MRR_COST_BASED | OPTIMIZER_SWITCH_BNL |               \
+   OPTIMIZER_SWITCH_MATERIALIZATION | OPTIMIZER_SWITCH_SEMIJOIN |         \
+   OPTIMIZER_SWITCH_LOOSE_SCAN | OPTIMIZER_SWITCH_FIRSTMATCH |            \
+   OPTIMIZER_SWITCH_DUPSWEEDOUT | OPTIMIZER_SWITCH_SUBQ_MAT_COST_BASED |  \
+   OPTIMIZER_SWITCH_USE_INDEX_EXTENSIONS |                                \
+   OPTIMIZER_SWITCH_COND_FANOUT_FILTER | OPTIMIZER_SWITCH_DERIVED_MERGE | \
+   OPTIMIZER_SKIP_SCAN)
 
 enum SHOW_COMP_OPTION { SHOW_OPTION_YES, SHOW_OPTION_NO, SHOW_OPTION_DISABLED };
 

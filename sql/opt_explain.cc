@@ -842,7 +842,8 @@ bool Explain_table_base::explain_possible_keys() {
 bool Explain_table_base::explain_key_parts(int key, uint key_parts) {
   KEY_PART_INFO *kp = table->key_info[key].key_part;
   for (uint i = 0; i < key_parts; i++, kp++)
-    if (fmt->entry()->col_key_parts.push_back(kp->field->field_name))
+    if (fmt->entry()->col_key_parts.push_back(
+            get_field_name_or_expression(table->in_use, kp->field)))
       return true;
   return false;
 }
@@ -1275,6 +1276,7 @@ bool Explain_join::explain_qep_tab(size_t tabnum) {
   if (!tab->position()) return false;
   table = tab->table();
   usable_keys = tab->keys();
+  usable_keys.merge(table->possible_quick_keys);
   quick_type = -1;
 
   if (tab->type() == JT_RANGE || tab->type() == JT_INDEX_MERGE) {
@@ -1426,15 +1428,6 @@ bool Explain_join::explain_ref() {
   return explain_ref_key(fmt, tab->ref().key_parts, tab->ref().key_copy);
 }
 
-static void human_readable_size(char *buf, int buf_len, double data_size) {
-  char size[] = " KMGTP";
-  int i;
-  for (i = 0; data_size > 1024 && i < 5; i++) data_size /= 1024;
-  const char mult = i == 0 ? 0 : size[i];
-  snprintf(buf, buf_len, "%llu%c", (ulonglong)data_size, mult);
-  buf[buf_len - 1] = 0;
-}
-
 bool Explain_join::explain_rows_and_filtered() {
   if (!tab || tab->table_ref->schema_table) return false;
 
@@ -1456,7 +1449,11 @@ bool Explain_join::explain_rows_and_filtered() {
 
     // Print cost-related info
     double prefix_rows = pos->prefix_rowcount;
-    fmt->entry()->col_prefix_rows.set(static_cast<ulonglong>(prefix_rows));
+    ulonglong prefix_rows_ull =
+        prefix_rows >= std::numeric_limits<ulonglong>::max()
+            ? std::numeric_limits<ulonglong>::max()
+            : static_cast<ulonglong>(prefix_rows);
+    fmt->entry()->col_prefix_rows.set(prefix_rows_ull);
     double const cond_cost = join->cost_model()->row_evaluate_cost(prefix_rows);
     fmt->entry()->col_cond_cost.set(cond_cost < 0 ? 0 : cond_cost);
     fmt->entry()->col_read_cost.set(pos->read_cost < 0.0 ? 0.0
@@ -1465,7 +1462,7 @@ bool Explain_join::explain_rows_and_filtered() {
     // Calculate amount of data from this table per query
     char data_size_str[32];
     double data_size = prefix_rows * tab->table()->s->rec_buff_length;
-    human_readable_size(data_size_str, sizeof(data_size_str), data_size);
+    human_readable_num_bytes(data_size_str, sizeof(data_size_str), data_size);
     fmt->entry()->col_data_size_query.set(data_size_str);
   }
 
@@ -1533,6 +1530,8 @@ bool Explain_join::explain_extra() {
         StringBuffer<64> buff(cs);
         qgs->append_loose_scan_type(&buff);
         if (push_extra(ET_USING_INDEX_FOR_GROUP_BY, buff)) return true;
+      } else if (quick_type == QUICK_SELECT_I::QS_TYPE_SKIP_SCAN) {
+        if (push_extra(ET_USING_INDEX_FOR_SKIP_SCAN)) return true;
       } else {
         if (push_extra(ET_USING_INDEX)) return true;
       }
@@ -1601,9 +1600,12 @@ bool Explain_join::explain_extra() {
       if (!bitmap_is_set(table->read_set, (*fld)->field_index) &&
           !bitmap_is_set(table->write_set, (*fld)->field_index))
         continue;
-      fmt->entry()->col_used_columns.push_back((*fld)->field_name);
+
+      const char *field_description =
+          get_field_name_or_expression(table->in_use, *fld);
+      fmt->entry()->col_used_columns.push_back(field_description);
       if (table->is_binary_diff_enabled(*fld))
-        fmt->entry()->col_partial_update_columns.push_back((*fld)->field_name);
+        fmt->entry()->col_partial_update_columns.push_back(field_description);
     }
   }
   return false;

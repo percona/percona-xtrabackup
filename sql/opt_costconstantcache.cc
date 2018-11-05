@@ -23,6 +23,8 @@
 
 #include "sql/opt_costconstantcache.h"
 
+#include <memory>
+
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
@@ -32,9 +34,9 @@
 #include "mysqld_error.h"
 #include "sql/current_thd.h"  // current_thd
 #include "sql/field.h"        // Field
-#include "sql/log.h"
-#include "sql/mysqld.h"     // key_LOCK_cost_const
-#include "sql/records.h"    // READ_RECORD
+#include "sql/mysqld.h"       // key_LOCK_cost_const
+#include "sql/records.h"      // READ_RECORD
+#include "sql/row_iterator.h"
 #include "sql/sql_base.h"   // open_and_lock_tables
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
@@ -254,13 +256,13 @@ static void read_server_cost_constants(THD *thd, TABLE *table,
   READ_RECORD read_record_info;
 
   // Prepare to read from the table
-  const bool ret =
-      init_read_record(&read_record_info, thd, table, NULL, true, false);
+  const bool ret = init_read_record(&read_record_info, thd, table, NULL, false,
+                                    /*ignore_not_found_rows=*/false);
   if (!ret) {
     table->use_all_columns();
 
     // Read one record
-    while (!read_record_info.read_record(&read_record_info)) {
+    while (!read_record_info->Read()) {
       /*
         Check if a non-default value has been configured for this cost
         constant.
@@ -286,8 +288,6 @@ static void read_server_cost_constants(THD *thd, TABLE *table,
           report_server_cost_warnings(cost_constant, value, err);
       }
     }
-
-    end_read_record(&read_record_info);
   } else {
     LogErr(WARNING_LEVEL, ER_SERVER_COST_FAILED_TO_READ);
   }
@@ -324,13 +324,13 @@ static void read_engine_cost_constants(THD *thd, TABLE *table,
   READ_RECORD read_record_info;
 
   // Prepare to read from the table
-  const bool ret =
-      init_read_record(&read_record_info, thd, table, NULL, true, false);
+  const bool ret = init_read_record(&read_record_info, thd, table, NULL, false,
+                                    /*ignore_not_found_rows=*/false);
   if (!ret) {
     table->use_all_columns();
 
     // Read one record
-    while (!read_record_info.read_record(&read_record_info)) {
+    while (!read_record_info->Read()) {
       /*
         Check if a non-default value has been configured for this cost
         constant.
@@ -368,8 +368,6 @@ static void read_engine_cost_constants(THD *thd, TABLE *table,
                                       err);
       }
     }
-
-    end_read_record(&read_record_info);
   } else {
     LogErr(WARNING_LEVEL, ER_ENGINE_COST_FAILED_TO_READ);
   }

@@ -2235,6 +2235,8 @@ BEGIN
 DO (SELECT  @next := IFNULL(max(bug_table_seq),0) + 1 FROM v1);
 INSERT INTO t1 VALUES (1);
 END //
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
 CALL p1();
 DROP PROCEDURE p1;
 DROP VIEW v1;
@@ -3919,7 +3921,7 @@ c1	c2
 2	2
 CREATE VIEW v1 AS SELECT c1, c2 FROM t1;
 SHOW INDEX FROM v1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 SELECT * FROM v1 USE INDEX (PRIMARY) WHERE c1=2;
 ERROR 42000: Key 'PRIMARY' doesn't exist in table 'v1'
 SELECT * FROM v1 FORCE INDEX (PRIMARY) WHERE c1=2;
@@ -4612,10 +4614,11 @@ a	b	a
 explain SELECT *
 FROM t1 JOIN vh_1 AS dt ON t1.a=dt.a;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	#	no matching row in const table
-2	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	#	Select tables optimized away
+1	PRIMARY	<derived2>	NULL	system	NULL	NULL	NULL	NULL	#	#	NULL
+1	PRIMARY	t1	NULL	ALL	NULL	NULL	NULL	NULL	#	#	Using where
+2	DERIVED	t2	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,NULL AS `a` from `test`.`t1` join `test`.`vh_1` `dt` where multiple equal(`test`.`t1`.`a`, NULL)
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,'1' AS `a` from `test`.`t1` where (`test`.`t1`.`a` = '1')
 SELECT *
 FROM t1 JOIN vl_1 AS dt ON t1.a=dt.a;
 a	b	a	b
@@ -4757,7 +4760,7 @@ COUNT(*)
 explain SELECT COUNT(*)
 FROM vo_1 AS dt;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
 Warnings:
 Note	1003	/* select#1 */ select count(0) AS `COUNT(*)` from `test`.`t2`
 SELECT COUNT(*)
@@ -4767,7 +4770,7 @@ COUNT(*)
 explain SELECT COUNT(*)
 FROM vo_2 AS dt;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
 Warnings:
 Note	1003	/* select#1 */ select count(0) AS `COUNT(*)` from `test`.`t2`
 SELECT DISTINCT *
@@ -5430,7 +5433,7 @@ a	b	c
 explain SELECT * FROM v1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
-3	SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	#	Select tables optimized away
+3	SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,(/* select#3 */ select count(0) from `test`.`t2`) AS `c` from `test`.`t1`
 explain SELECT a FROM v1;
@@ -5442,7 +5445,7 @@ explain SELECT a, b, (SELECT COUNT(*) FROM t2) AS c
 FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
-2	SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	#	Select tables optimized away
+2	SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,(/* select#2 */ select count(0) from `test`.`t2`) AS `c` from `test`.`t1`
 DROP VIEW v1;
@@ -5486,23 +5489,23 @@ explain SELECT * FROM v1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	<derived2>	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 2	DERIVED	t1	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
-3	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	#	Select tables optimized away
+3	SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 Warnings:
 Note	1003	/* select#1 */ select `v1`.`a` AS `a`,`v1`.`b` AS `b`,`v1`.`c` AS `c` from `test`.`v1`
 explain SELECT a FROM v1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	<derived2>	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 2	DERIVED	t1	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
-3	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	#	Select tables optimized away
+3	SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 Warnings:
 Note	1003	/* select#1 */ select `v1`.`a` AS `a` from `test`.`v1`
 explain SELECT a, b, a IN (SELECT COUNT(*) FROM t2) AS c
 FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
-2	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	#	Select tables optimized away
+2	SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	#	#	NULL
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,<in_optimizer>(`test`.`t1`.`a`,<exists>(/* select#2 */ select count(0) from `test`.`t2` having <if>(outer_field_is_not_null, (<cache>(`test`.`t1`.`a`) = <ref_null_helper>(count(0))), true))) AS `c` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,<in_optimizer>(`test`.`t1`.`a`,`test`.`t1`.`a` in ( <materialize> (/* select#2 */ select count(0) from `test`.`t2` having 1 ), <primary_index_lookup>(`test`.`t1`.`a` in <temporary table> on <auto_key> where ((`test`.`t1`.`a` = `materialized-subquery`.`COUNT(*)`))))) AS `c` from `test`.`t1`
 DROP VIEW v1;
 CREATE VIEW v1 AS SELECT a, b, (SELECT a*2 FROM t2 WHERE a=t1.a) AS s
 FROM t1;
@@ -6568,6 +6571,20 @@ DROP TABLE t1, t2;
 RENAME TABLE t3 TO t1, t4 TO t2;
 DROP VIEW v1;
 DROP TABLE t1, t2;
+CREATE TABLE t1(a INT) ENGINE=MyISAM;
+CREATE TABLE t2(b INT);
+CREATE TABLE t3(c INT);
+CREATE TABLE t4(d INT);
+CREATE VIEW v1 AS SELECT * FROM t2;
+RENAME TABLES t1 TO t5, v1 TO v2;
+SELECT * FROM v2;
+b
+RENAME TABLES t5 TO t1, v2 TO v1, t3 TO t4;
+ERROR 42S01: Table 't4' already exists
+SELECT * FROM v2;
+b
+DROP VIEW v2;
+DROP TABLES t2, t3, t4, t5;
 #
 # BUG#25634576: DATABASE NAME IN SHOW CREATE VIEW
 #

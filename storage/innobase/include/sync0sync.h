@@ -153,6 +153,7 @@ extern mysql_pfs_key_t trx_undo_mutex_key;
 extern mysql_pfs_key_t trx_mutex_key;
 extern mysql_pfs_key_t trx_pool_mutex_key;
 extern mysql_pfs_key_t trx_pool_manager_mutex_key;
+extern mysql_pfs_key_t temp_pool_manager_mutex_key;
 extern mysql_pfs_key_t lock_mutex_key;
 extern mysql_pfs_key_t lock_wait_mutex_key;
 extern mysql_pfs_key_t trx_sys_mutex_key;
@@ -163,7 +164,6 @@ extern mysql_pfs_key_t event_mutex_key;
 extern mysql_pfs_key_t event_manager_mutex_key;
 #endif /* !PFS_SKIP_EVENT_MUTEX */
 extern mysql_pfs_key_t sync_array_mutex_key;
-extern mysql_pfs_key_t thread_mutex_key;
 extern mysql_pfs_key_t zip_pad_mutex_key;
 extern mysql_pfs_key_t row_drop_list_mutex_key;
 extern mysql_pfs_key_t file_open_mutex_key;

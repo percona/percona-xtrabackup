@@ -35,6 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <math.h>
 #include <sys/types.h>
 
+#include <sql_class.h>
 #include "btr0bulk.h"
 #include "dict0crea.h"
 #include "fsp0sysspace.h"
@@ -42,9 +43,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "handler0alter.h"
 #include "lob0lob.h"
 #include "lock0lock.h"
-#include "my_compiler.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "pars0pars.h"
 #include "row0ext.h"
@@ -58,6 +56,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0new.h"
 #include "ut0sort.h"
 #include "ut0stage.h"
+
+#include "my_dbug.h"
 
 /* Ignore posix_fadvise() on those platforms where it does not exist */
 #if defined _WIN32
@@ -430,8 +430,8 @@ static void row_merge_buf_redundant_convert_func(
                 field_ref_zero, BTR_EXTERN_FIELD_REF_SIZE));
 
     byte *data = lob::btr_copy_externally_stored_field(
-        clust_index, &ext_len, nullptr, field_data, page_size, field_len,
-        is_sdi, heap);
+        nullptr, clust_index, &ext_len, nullptr, field_data, page_size,
+        field_len, is_sdi, heap);
 
     ut_ad(ext_len < len);
 
@@ -2083,7 +2083,12 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
           if (clust_btr_bulk == NULL) {
             clust_btr_bulk = UT_NEW_NOKEY(BtrBulk(index[i], trx->id, observer));
 
-            clust_btr_bulk->init();
+            err = clust_btr_bulk->init();
+            if (err != DB_SUCCESS) {
+              UT_DELETE(clust_btr_bulk);
+              clust_btr_bulk = NULL;
+              break;
+            }
           } else {
             clust_btr_bulk->latch();
           }
@@ -2176,12 +2181,13 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
                           trx->error_key_num = i; goto all_done;);
 
           BtrBulk btr_bulk(index[i], trx->id, observer);
-          btr_bulk.init();
+          err = btr_bulk.init();
+          if (err == DB_SUCCESS) {
+            err = row_merge_insert_index_tuples(trx, index[i], old_table, -1,
+                                                NULL, buf, &btr_bulk);
 
-          err = row_merge_insert_index_tuples(trx, index[i], old_table, -1,
-                                              NULL, buf, &btr_bulk);
-
-          err = btr_bulk.finish(err);
+            err = btr_bulk.finish(err);
+          }
 
           DBUG_EXECUTE_IF("row_merge_insert_big_row", err = DB_TOO_BIG_RECORD;);
 
@@ -2819,10 +2825,12 @@ static void row_merge_copy_blobs_func(trx_t *trx, const dict_index_t *index,
                   field_ref_zero, BTR_EXTERN_FIELD_REF_SIZE));
 
       data = lob::btr_copy_externally_stored_field(
-          index, &len, nullptr, field_data, page_size, field_len, is_sdi, heap);
+          nullptr, index, &len, nullptr, field_data, page_size, field_len,
+          is_sdi, heap);
     } else {
       data = lob::btr_rec_copy_externally_stored_field(
-          index, mrec, offsets, page_size, i, &len, nullptr, is_sdi, heap);
+          nullptr, index, mrec, offsets, page_size, i, &len, nullptr, is_sdi,
+          heap);
     }
 
     /* Because we have locked the table, any records
@@ -3198,16 +3206,22 @@ UNIV_PFS_IO defined, register the file descriptor with Performance Schema.
 @return File descriptor */
 int row_merge_file_create_low(const char *path) {
   int fd;
+  if (path == NULL) {
+    path = innobase_mysql_tmpdir();
+  }
 #ifdef UNIV_PFS_IO
   /* This temp file open does not go through normal
   file APIs, add instrumentation to register with
   performance schema */
+  Datafile df;
+  df.make_filepath(path, "Innodb Merge Temp File", NO_EXT);
+
   struct PSI_file_locker *locker = NULL;
   PSI_file_locker_state state;
 
   locker = PSI_FILE_CALL(get_thread_file_name_locker)(
-      &state, innodb_temp_file_key.m_value, PSI_FILE_OPEN,
-      "Innodb Merge Temp File", &locker);
+      &state, innodb_temp_file_key.m_value, PSI_FILE_OPEN, df.filepath(),
+      &locker);
 
   if (locker != NULL) {
     PSI_FILE_CALL(start_file_open_wait)(locker, __FILE__, __LINE__);
@@ -3579,9 +3593,15 @@ dberr_t row_merge_build_indexes(
     }
   }
 
-  /* Reset the MySQL row buffer that is used when reporting
-  duplicate keys. */
+  /* Reset the MySQL row buffer that is used when reporting duplicate keys.
+  Return needs to be checked since innobase_rec_reset tries to evaluate
+  set_default() which can also be a function and might return errors */
   innobase_rec_reset(table);
+
+  if (table->in_use->is_error()) {
+    error = DB_COMPUTE_VALUE_FAILED;
+    goto func_exit;
+  }
 
   /* Read clustered index of the table and create files for
   secondary index entries for merge sort */
@@ -3670,13 +3690,14 @@ dberr_t row_merge_build_indexes(
 
       if (error == DB_SUCCESS) {
         BtrBulk btr_bulk(sort_idx, trx->id, flush_observer);
-        btr_bulk.init();
+        error = btr_bulk.init();
+        if (error == DB_SUCCESS) {
+          error = row_merge_insert_index_tuples(trx, sort_idx, old_table,
+                                                merge_files[i].fd, block, NULL,
+                                                &btr_bulk, stage);
 
-        error = row_merge_insert_index_tuples(trx, sort_idx, old_table,
-                                              merge_files[i].fd, block, NULL,
-                                              &btr_bulk, stage);
-
-        error = btr_bulk.finish(error);
+          error = btr_bulk.finish(error);
+        }
       }
     }
 

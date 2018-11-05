@@ -3853,22 +3853,22 @@ OBSOLETE_ER_NO_RAID_COMPILED
         swe "Denna version av MySQL är inte kompilerad med RAID"
         ukr "Ця версія MySQL не зкомпільована з підтримкою RAID"
 ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE  
-        cze "Update tabulky bez WHERE s klíčem není v módu bezpečných update dovoleno"
-        dan "Du bruger sikker opdaterings modus ('safe update mode') og du forsøgte at opdatere en tabel uden en WHERE klausul, der gør brug af et KEY felt"
-        nla "U gebruikt 'safe update mode' en u probeerde een tabel te updaten zonder een WHERE met een KEY kolom"
-        eng "You are using safe update mode and you tried to update a table without a WHERE that uses a KEY column"
-        est "Katse muuta tabelit turvalises rezhiimis ilma WHERE klauslita"
-        fre "Vous êtes en mode 'safe update' et vous essayez de faire un UPDATE sans clause WHERE utilisant un index"
-        ger "MySQL läuft im sicheren Aktualisierungsmodus (safe update mode). Sie haben versucht, eine Tabelle zu aktualisieren, ohne in der WHERE-Klausel ein KEY-Feld anzugeben"
-        hun "On a biztonsagos update modot hasznalja, es        WHERE that uses a KEY column"
-        ita "In modalita` 'safe update' si e` cercato di aggiornare una tabella senza clausola WHERE su una chiave"
-        jpn "'safe update mode'で、索引を利用するWHERE句の無い更新処理を実行しようとしました。"
-        por "Você está usando modo de atualização seguro e tentou atualizar uma tabela sem uma cláusula WHERE que use uma coluna chave"
-        rus "Вы работаете в режиме безопасных обновлений (safe update mode) и попробовали изменить таблицу без использования ключевого столбца в части WHERE"
-        serbian "Vi koristite safe update mod servera, a probali ste da promenite podatke bez 'WHERE' komande koja koristi kolonu ključa"
-        spa "Tu estás usando modo de actualización segura y tentado actualizar una tabla sin un WHERE que usa una KEY columna"
-        swe "Du använder 'säker uppdateringsmod' och försökte uppdatera en tabell utan en WHERE-sats som använder sig av en nyckel"
-        ukr "Ви у режимі безпечного оновлення та намагаєтесь оновити таблицю без оператора WHERE, що використовує KEY стовбець"
+        cze "Update tabulky bez WHERE s klíčem není v módu bezpečných update dovoleno. %s"
+        dan "Du bruger sikker opdaterings modus ('safe update mode') og du forsøgte at opdatere en tabel uden en WHERE klausul, der gør brug af et KEY felt. %s"
+        nla "U gebruikt 'safe update mode' en u probeerde een tabel te updaten zonder een WHERE met een KEY kolom. %s"
+        eng "You are using safe update mode and you tried to update a table without a WHERE that uses a KEY column. %s"
+        est "Katse muuta tabelit turvalises rezhiimis ilma WHERE klauslita. %s"
+        fre "Vous êtes en mode 'safe update' et vous essayez de faire un UPDATE sans clause WHERE utilisant un index. %s"
+        ger "MySQL läuft im sicheren Aktualisierungsmodus (safe update mode). Sie haben versucht, eine Tabelle zu aktualisieren, ohne in der WHERE-Klausel ein KEY-Feld anzugeben. %s"
+        hun "On a biztonsagos update modot hasznalja, es        WHERE that uses a KEY column. %s"
+        ita "In modalita` 'safe update' si e` cercato di aggiornare una tabella senza clausola WHERE su una chiave. %s"
+        jpn "'safe update mode'で、索引を利用するWHERE句の無い更新処理を実行しようとしました。. %s"
+        por "Você está usando modo de atualização seguro e tentou atualizar uma tabela sem uma cláusula WHERE que use uma coluna chave. %s"
+        rus "Вы работаете в режиме безопасных обновлений (safe update mode) и попробовали изменить таблицу без использования ключевого столбца в части WHERE. %s"
+        serbian "Vi koristite safe update mod servera, a probali ste da promenite podatke bez 'WHERE' komande koja koristi kolonu ključa. %s"
+        spa "Tu estás usando modo de actualización segura y tentado actualizar una tabla sin un WHERE que usa una KEY columna. %s"
+        swe "Du använder 'säker uppdateringsmod' och försökte uppdatera en tabell utan en WHERE-sats som använder sig av en nyckel. %s"
+        ukr "Ви у режимі безпечного оновлення та намагаєтесь оновити таблицю без оператора WHERE, що використовує KEY стовбець. %s"
 ER_KEY_DOES_NOT_EXITS 42000 S1009
         cze "Klíč '%-.192s' v tabulce '%-.192s' neexistuje"
         dan "Nøglen '%-.192s' eksisterer ikke i tabellen '%-.192s'"
@@ -5320,7 +5320,7 @@ ER_VIEW_SELECT_TMPTABLE
         rus "View SELECT содержит ссылку на временную таблицу '%-.192s'"
         ukr "View SELECT використовує тимчасову таблицю '%-.192s'"
 ER_VIEW_WRONG_LIST  
-        eng "View's SELECT and view's field list have different column counts"
+        eng "In definition of view, derived table or common table expression, SELECT list and column names list have different column counts"
         ger "SELECT- und Feldliste der Views haben unterschiedliche Anzahlen von Spalten"
         rus "View SELECT и список полей view имеют разное количество столбцов"
         ukr "View SELECT і перелік стовбців view мають різну кількість сковбців"
@@ -6008,7 +6008,7 @@ ER_FOREIGN_DUPLICATE_KEY_OLD_UNUSED 23000 S1009
 ER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE
         eng "Column count of mysql.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please use mysql_upgrade to fix this error."
         ger "Spaltenanzahl von mysql.%s falsch. %d erwartet, aber %d erhalten. Erzeugt mit MySQL %d, jetzt unter %d. Bitte benutzen Sie mysql_upgrade, um den Fehler zu beheben"
-ER_TEMP_TABLE_PREVENTS_SWITCH_OUT_OF_RBR
+OBSOLETE_ER_TEMP_TABLE_PREVENTS_SWITCH_OUT_OF_RBR
         eng "Cannot switch out of the row-based binary log format when the session has open temporary tables"
         ger "Kann nicht aus dem zeilenbasierten Binärlog-Format herauswechseln, wenn die Sitzung offene temporäre Tabellen hat"
 ER_STORED_FUNCTION_PREVENTS_SWITCH_BINLOG_FORMAT
@@ -6759,7 +6759,7 @@ ER_GTID_UNSAFE_NON_TRANSACTIONAL_TABLE
 ER_GTID_UNSAFE_CREATE_SELECT
   eng "Statement violates GTID consistency: CREATE TABLE ... SELECT."
 
-ER_GTID_UNSAFE_CREATE_DROP_TEMPORARY_TABLE_IN_TRANSACTION
+OBSOLETE_ER_GTID_UNSAFE_CREATE_DROP_TEMP_TABLE_IN_TRANSACTION
   eng "Statement violates GTID consistency: CREATE TEMPORARY TABLE and DROP TEMPORARY TABLE can only be executed outside transactional context.  These statements are also not allowed in a function or trigger because functions and triggers are also considered to be multi-statement transactions."
 
 ER_GTID_MODE_CAN_ONLY_CHANGE_ONE_STEP_AT_A_TIME
@@ -7096,6 +7096,13 @@ ER_MISSING_KEY
 #
 #  End of 5.6 error messages.
 #
+
+################################################################################
+# Error numbers 2000 to 2999 are reserved for the client libraries (for
+# errors generated at the client side). Please do not use them for errors
+# generated at the server.
+################################################################################
+reserved-error-section 2000 2999
 
 start-error-number 3000
 
@@ -8105,7 +8112,7 @@ ER_WINDOW_NESTED_WINDOW_FUNC_USE_IN_WINDOW_SPEC
 ER_WINDOW_ROWS_INTERVAL_USE
   eng "Window '%s': INTERVAL can only be used with RANGE frames."
 
-ER_WINDOW_NO_GROUP_ORDER
+ER_WINDOW_NO_GROUP_ORDER_UNUSED
   eng "ASC or DESC with GROUP BY isn't allowed with window functions; put ASC or DESC in ORDER BY"
 
 ER_WINDOW_EXPLAIN_JSON
@@ -8528,20 +8535,163 @@ ER_FK_CANNOT_USE_VIRTUAL_COLUMN
 ER_FK_NO_COLUMN_PARENT
   eng "Failed to add the foreign key constraint. Missing column '%s' for constraint '%s' in the referenced table '%s'"
 
+ER_CANT_SET_ERROR_SUPPRESSION_LIST
+  eng "%s: Could not add suppression rule for code \"%s\". Rule-set may be full, or code may not correspond to an error-log message."
+
+ER_SRS_GEOGCS_INVALID_AXES SR002
+  eng "The spatial reference system definition for SRID %u specifies invalid geographic axes '%.20s' and '%.20s'. One axis must be NORTH or SOUTH and the other must be EAST or WEST."
+
+ER_SRS_INVALID_SEMI_MAJOR_AXIS SR002
+  eng "The length of the semi-major axis must be a positive number."
+
+ER_SRS_INVALID_INVERSE_FLATTENING SR002
+  eng "The inverse flattening must be larger than 1.0, or 0.0 if the ellipsoid is a sphere."
+
+ER_SRS_INVALID_ANGULAR_UNIT SR002
+  eng "The angular unit conversion factor must be a positive number."
+
+ER_SRS_INVALID_PRIME_MERIDIAN SR002
+  eng "The prime meridian must be within (-180, 180] degrees, specified in the SRS angular unit."
+
+ER_TRANSFORM_SOURCE_SRS_NOT_SUPPORTED 22S00
+  eng "Transformation from SRID %u is not supported."
+
+ER_TRANSFORM_TARGET_SRS_NOT_SUPPORTED 22S00
+  eng "Transformation to SRID %u is not supported."
+
+ER_TRANSFORM_SOURCE_SRS_MISSING_TOWGS84 22S00
+  eng "Transformation from SRID %u is not supported. The spatial reference system has no TOWGS84 clause."
+
+ER_TRANSFORM_TARGET_SRS_MISSING_TOWGS84 22S00
+  eng "Transformation to SRID %u is not supported. The spatial reference system has no TOWGS84 clause."
+
+ER_TEMP_TABLE_PREVENTS_SWITCH_SESSION_BINLOG_FORMAT
+  eng "Changing @@session.binlog_format is disallowed when the session has open temporary table(s). You could wait until these temporary table(s) are dropped and try again."
+
+ER_TEMP_TABLE_PREVENTS_SWITCH_GLOBAL_BINLOG_FORMAT
+  eng "Changing @@global.binlog_format or @@persist.binlog_format is disallowed when any replication channel has open temporary table(s). You could wait until Slave_open_temp_tables = 0 and try again"
+
+ER_RUNNING_APPLIER_PREVENTS_SWITCH_GLOBAL_BINLOG_FORMAT
+  eng "Changing @@global.binlog_format or @@persist.binlog_format is disallowed when any replication channel applier thread is running. You could execute STOP SLAVE SQL_THREAD and try again."
+
+ER_CLIENT_GTID_UNSAFE_CREATE_DROP_TEMP_TABLE_IN_TRX_IN_SBR
+  eng "Statement violates GTID consistency: CREATE TEMPORARY TABLE and DROP TEMPORARY TABLE are not allowed inside a transaction or inside a procedure in a transactional context when @@session.binlog_format=STATEMENT."
+
+ER_XA_CANT_CREATE_MDL_BACKUP
+  eng "XA: Failed to take MDL Lock backup of PREPARED XA transaction during client disconnect."
+
+ER_TABLE_WITHOUT_PK
+  eng "Unable to create a table without PK, when system variable 'sql_require_primary_key' is set. Add a PK to the table or unset this variable to avoid this message. Note that tables without PK can cause performance problems in row-based replication, so please consult your DBA before changing this setting."
+
+WARN_DATA_TRUNCATED_FUNCTIONAL_INDEX 01000
+  eng "Data truncated for functional index '%s' at row %ld"
+
+ER_WARN_DATA_OUT_OF_RANGE_FUNCTIONAL_INDEX 22003
+  eng "Value is out of range for functional index '%s' at row %ld"
+
+ER_FUNCTIONAL_INDEX_ON_JSON_OR_GEOMETRY_FUNCTION 42000
+  eng "Cannot create a functional index on a function that returns a JSON or GEOMETRY value."
+
+ER_FUNCTIONAL_INDEX_REF_AUTO_INCREMENT
+  eng "Functional index '%.64s' cannot refer to an auto-increment column."
+
+ER_CANNOT_DROP_COLUMN_FUNCTIONAL_INDEX
+  eng "Cannot drop column '%-.64s' because it is used by a functional index. In order to drop the column, you must remove the functional index."
+
+ER_FUNCTIONAL_INDEX_PRIMARY_KEY
+  eng "The primary key cannot be a functional index"
+
+ER_FUNCTIONAL_INDEX_ON_LOB
+  eng "Cannot create a functional index on an expression that returns a BLOB or TEXT. Please consider using CAST."
+
+ER_FUNCTIONAL_INDEX_FUNCTION_IS_NOT_ALLOWED
+  eng "Expression of functional index '%s' contains a disallowed function."
+
+ER_FULLTEXT_FUNCTIONAL_INDEX
+  eng "Fulltext functional index is not supported."
+
+ER_SPATIAL_FUNCTIONAL_INDEX
+  eng "Spatial functional index is not supported."
+
+ER_WRONG_KEY_COLUMN_FUNCTIONAL_INDEX
+  eng "The used storage engine cannot index the expression '%s'."
+
+ER_FUNCTIONAL_INDEX_ON_FIELD
+  eng "Functional index on a column is not supported. Consider using a regular index instead."
+ER_GENERATED_COLUMN_NAMED_FUNCTION_IS_NOT_ALLOWED
+  eng "Expression of generated column '%s' contains a disallowed function: %s."
+
+ER_GENERATED_COLUMN_ROW_VALUE
+  eng "Expression of generated column '%s' cannot refer to a row value."
+
+ER_GENERATED_COLUMN_VARIABLES
+  eng "Expression of generated column '%s' cannot refer user or system variables."
+
+ER_DEPENDENT_BY_DEFAULT_GENERATED_VALUE
+  eng "Column '%s' of table '%s' has a default value expression dependency and cannot be dropped."
+
+ER_DEFAULT_VAL_GENERATED_NON_PRIOR
+  eng "Default value expression of column '%s' can refer only to generated columns and columns with default value expressions defined prior to it."
+
+ER_DEFAULT_VAL_GENERATED_REF_AUTO_INC
+  eng "Default value expression of column '%s' cannot refer to an auto-increment column."
+
+ER_DEFAULT_VAL_GENERATED_FUNCTION_IS_NOT_ALLOWED
+  eng "Default value expression of column '%s' contains a disallowed function."
+
+ER_DEFAULT_VAL_GENERATED_NAMED_FUNCTION_IS_NOT_ALLOWED
+  eng "Default value expression of column '%s' contains a disallowed function: %s."
+
+ER_DEFAULT_VAL_GENERATED_ROW_VALUE
+  eng "Default value expression of column '%s' cannot refer to a row value."
+
+ER_DEFAULT_VAL_GENERATED_VARIABLES
+  eng "Default value expression of column '%s' cannot refer user or system variables."
+
+ER_DEFAULT_AS_VAL_GENERATED
+  eng "DEFAULT function cannot be used with default value expressions"
+
+ER_UNSUPPORTED_ACTION_ON_DEFAULT_VAL_GENERATED
+  eng "'%s' is not supported for default value expressions."
+
+ER_GTID_UNSAFE_ALTER_ADD_COL_WITH_DEFAULT_EXPRESSION
+  eng "Statement violates GTID consistency: ALTER TABLE ... ADD COLUMN .. with expression as DEFAULT."
+
+ER_FK_CANNOT_CHANGE_ENGINE
+  eng "Cannot change table's storage engine because the table participates in a foreign key constraint."
+
+# When using this error message, use the ER_WARN_DEPRECATED_SYNTAX error
+# code.
+ER_WARN_DEPRECATED_USER_SET_EXPR
+  eng "Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead."
+
+ER_WARN_DEPRECATED_UTF8MB3_COLLATION
+  eng "'%-.64s' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead."
+
+# When using this error message, use the ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT error code.
+ER_WARN_DEPRECATED_NESTED_COMMENT_SYNTAX
+  eng "Nested comment syntax is deprecated and will be removed in a future release."
+
 #
 #  End of 8.0 error messages.
 #
 
+################################################################################
+# Error numbers 5000 to 5999 are reserved for X Plugin. Please do not use
+# them for the other error messages.
+################################################################################
+reserved-error-section 5000 5999
+
 #
-# Start of 8.0 Server error messages
+# Start of 8.0 error messages intended to be logged to the server error log.
 #
-# Error codes used for the server error logging (using logging
-# APIs LogErr/LogEvent/...) should be added to this section.
-# Error codes used for client errors should *not* be added to this section
-# Please add them to the client error messages section.
-# Please note, if the same error message is required for the client and server
-# error logging then add separate error codes for each in their respective
-# sections.
+# Note:
+#     *) Error messages intended to be sent to client should *not* be added here.
+#        Please add them to "8.0 error messages" section.
+#
+#     *) If the same error message is intended to be logged to the server
+#        error log and also sent to the client, add separate error codes:
+#        One for the server error log and another to send to the client.
 #
 start-error-number 10000
 
@@ -8572,11 +8722,11 @@ ER_DD_VERSION_INSTALLED
 ER_DD_VERSION_UNSUPPORTED
   eng "Data Dictionary version '%d' not supported."
 
-ER_LOG_SYSLOG_FACILITY_FAIL
+OBSOLETE_ER_LOG_SYSLOG_FACILITY_FAIL
   eng "Failed to set syslog facility to \"%s\", setting to \"%s\" (%d) instead."
 
 ER_LOG_SYSLOG_CANNOT_OPEN
-  eng "Cannot open %s; check privileges, or start server with --log_syslog=0"
+  eng "Cannot open %s; check privileges, or remove syseventlog from --log-error-services!"
 
 ER_LOG_SLOW_CANNOT_OPEN
   eng " either restart the query logging by using \"SET GLOBAL SLOW_QUERY_LOG=ON\" or"
@@ -9108,7 +9258,7 @@ ER_DEFAULT_SE_UNAVAILABLE
   eng "Default%s storage engine (%s) is not available"
 
 ER_CANT_OPEN_ERROR_LOG
-  eng "Could not open %s file for error logging: %s."
+  eng "Could not open file '%s' for error logging%s%s"
 
 ER_INVALID_ERROR_LOG_NAME
   eng "Invalid log file name after expanding symlinks: '%s'"
@@ -10153,7 +10303,7 @@ ER_RPL_RECOVERY_NO_ROTATE_EVENT_FROM_MASTER
 ER_RPL_RECOVERY_ERROR_READ_RELAY_LOG
   eng "Error during --relay-log-recovery: Error reading events from relay log: %d"
 
-ER_RPL_RECOVERY_ERROR_FREEING_IO_CACHE
+OBSOLETE_ER_RPL_RECOVERY_ERROR_FREEING_IO_CACHE
   eng "Error during --relay-log-recovery: Error while freeing IO_CACHE object"
 
 ER_RPL_RECOVERY_SKIPPED_GROUP_REPLICATION_CHANNEL
@@ -10883,7 +11033,7 @@ ER_EVENT_CANT_OPEN_TABLE_MYSQL_EVENT
   eng "Failed to open mysql.event Table."
 
 ER_CANT_PARSE_STORED_ROUTINE_BODY
-  eng "Parsing '%s.%s' routine body failed. Creating routine without parsing routine body"
+  eng "Parsing '%s.%s' routine body failed.%s"
 
 ER_CANT_OPEN_TABLE_MYSQL_PROC
   eng "Failed to open mysql.proc Table."
@@ -10981,10 +11131,10 @@ ER_BINLOG_FILE_BEING_READ_NOT_PURGED
 ER_BINLOG_IO_ERROR_READING_HEADER
   eng "I/O error reading the header from the binary log, errno=%d, io cache code=%d"
 
-ER_BINLOG_CANT_OPEN_LOG
+OBSOLETE_ER_BINLOG_CANT_OPEN_LOG
   eng "Failed to open log (file '%s', errno %d)"
 
-ER_BINLOG_CANT_CREATE_CACHE_FOR_LOG
+OBSOLETE_ER_BINLOG_CANT_CREATE_CACHE_FOR_LOG
   eng "Failed to create a cache on log (file '%s')"
 
 ER_BINLOG_FILE_EXTENSION_NUMBER_EXHAUSTED
@@ -11050,7 +11200,7 @@ ER_BINLOG_CANT_SET_TMP_INDEX_NAME
 ER_BINLOG_FAILED_TO_OPEN_TEMPORARY_INDEX_FILE
   eng "MYSQL_BIN_LOG::open_crash_safe_index_file failed to open temporary index file."
 
-ER_BINLOG_ERROR_GETTING_NEXT_LOG_FROM_INDEX
+OBSOLETE_ER_BINLOG_ERROR_GETTING_NEXT_LOG_FROM_INDEX
   eng "next log error: %d  offset: %s  log: %s included: %d"
 
 ER_BINLOG_CANT_OPEN_TMP_INDEX
@@ -12262,10 +12412,10 @@ ER_REWRITER_QUERY_FAILED
 ER_XPLUGIN_STARTUP_FAILED
   eng "Startup failed with error \"%s\""
 
-ER_XPLUGIN_SERVER_EXITING
+OBSOLETE_ER_XPLUGIN_SERVER_EXITING
   eng "Exiting"
 
-ER_XPLUGIN_SERVER_EXITED
+OBSOLETE_ER_XPLUGIN_SERVER_EXITED
   eng "Exit done"
 
 ER_XPLUGIN_USING_SSL_CONF_FROM_SERVER
@@ -12457,10 +12607,10 @@ ER_XPLUING_NET_STARTUP_FAILED
 ER_XPLUGIN_FAILED_AT_SSL_CONF
   eng "Failed at SSL configuration: \"%s\""
 
-ER_XPLUGIN_CLIENT_SSL_HANDSHAKE_FAILED
+OBSOLETE_ER_XPLUGIN_CLIENT_SSL_HANDSHAKE_FAILED
   eng "Error during SSL handshake for client connection (%i)"
 
-ER_XPLUGIN_SSL_HANDSHAKE_WITH_SERVER_FAILED
+OBSOLETE_ER_XPLUGIN_SSL_HANDSHAKE_WITH_SERVER_FAILED
   eng "%s: Error during SSL handshake"
 
 ER_XPLUGIN_FAILED_TO_CREATE_SESSION_FOR_CONN
@@ -12484,10 +12634,10 @@ ER_XPLUGIN_UNABLE_TO_ACCEPT_CONNECTION
 ER_XPLUGIN_ALL_IO_INTERFACES_DISABLED
   eng "All I/O interfaces are disabled, X Protocol won't be accessible"
 
-ER_XPLUGIN_INVALID_MSG_DURING_CLIENT_INIT
+OBSOLETE_ER_XPLUGIN_INVALID_MSG_DURING_CLIENT_INIT
   eng "%s: Invalid message %i received during client initialization"
 
-ER_XPLUGIN_CLOSING_CLIENTS_ON_SHUTDOWN
+OBSOLETE_ER_XPLUGIN_CLOSING_CLIENTS_ON_SHUTDOWN
   eng "%s: closing client because of shutdown (state: %i)"
 
 ER_XPLUGIN_ERROR_READING_SOCKET
@@ -12499,55 +12649,55 @@ ER_XPLUGIN_PEER_DISCONNECTED_WHILE_READING_MSG_BODY
 ER_XPLUGIN_READ_FAILED_CLOSING_CONNECTION
   eng "client_id:%s - %s while reading from socket, closing connection"
 
-ER_XPLUGIN_INVALID_AUTH_METHOD
+OBSOLETE_ER_XPLUGIN_INVALID_AUTH_METHOD
   eng "%s.%u: Invalid authentication method %s"
 
-ER_XPLUGIN_UNEXPECTED_MSG_DURING_AUTHENTICATION
+OBSOLETE_ER_XPLUGIN_UNEXPECTED_MSG_DURING_AUTHENTICATION
   eng "%s: Unexpected message of type %i received during authentication"
 
-ER_XPLUGIN_ERROR_WRITING_TO_CLIENT
+OBSOLETE_ER_XPLUGIN_ERROR_WRITING_TO_CLIENT
   eng "Error writing to client: %s (%i)"
 
-ER_XPLUGIN_SCHEDULER_STARTED
+OBSOLETE_ER_XPLUGIN_SCHEDULER_STARTED
   eng "Scheduler \"%s\" started."
 
-ER_XPLUGIN_SCHEDULER_STOPPED
+OBSOLETE_ER_XPLUGIN_SCHEDULER_STOPPED
   eng "Scheduler \"%s\" stopped."
 
 ER_XPLUGIN_LISTENER_SYS_VARIABLE_ERROR
   eng "Please see the MySQL documentation for '%s' system variables to fix the error"
 
 ER_XPLUGIN_LISTENER_STATUS_MSG
-  eng "X Plugin listens on %s"
+  eng "X Plugin ready for connections. %s"
 
 ER_XPLUGIN_RETRYING_BIND_ON_PORT
   eng "Retrying `bind()` on TCP/IP port %i"
 
-ER_XPLUGIN_SHUTDOWN_TRIGGERED
+OBSOLETE_ER_XPLUGIN_SHUTDOWN_TRIGGERED
   eng "Shutdown triggered by mysqld abort flag"
 
-ER_XPLUGIN_USER_ACCOUNT_WITH_ALL_PERMISSIONS
+OBSOLETE_ER_XPLUGIN_USER_ACCOUNT_WITH_ALL_PERMISSIONS
   eng "Using %s account for authentication which has all required permissions"
 
 ER_XPLUGIN_EXISTING_USER_ACCOUNT_WITH_INCOMPLETE_GRANTS
   eng "Using existing %s account for authentication. Incomplete grants will be fixed"
 
-ER_XPLUGIN_SERVER_STARTS_HANDLING_CONNECTIONS
+OBSOLETE_ER_XPLUGIN_SERVER_STARTS_HANDLING_CONNECTIONS
   eng "Server starts handling incoming connections"
 
-ER_XPLUGIN_SERVER_STOPPED_HANDLING_CONNECTIONS
+OBSOLETE_ER_XPLUGIN_SERVER_STOPPED_HANDLING_CONNECTIONS
   eng "Stopped handling incoming connections"
 
-ER_XPLUGIN_FAILED_TO_INTERRUPT_SESSION
+OBSOLETE_ER_XPLUGIN_FAILED_TO_INTERRUPT_SESSION
   eng "%s: Could not interrupt client session"
 
-ER_XPLUGIN_CLIENT_RELEASE_TRIGGERED
+OBSOLETE_ER_XPLUGIN_CLIENT_RELEASE_TRIGGERED
   eng "%s: release triggered by timeout in state:%i"
 
 ER_XPLUGIN_IPv6_AVAILABLE
   eng "IPv6 is available"
 
-ER_XPLUGIN_UNIX_SOCKET_NOT_CONFIGURED
+OBSOLETE_ER_XPLUGIN_UNIX_SOCKET_NOT_CONFIGURED
   eng "UNIX socket not configured"
 
 ER_XPLUGIN_CLIENT_KILL_MSG
@@ -12556,7 +12706,7 @@ ER_XPLUGIN_CLIENT_KILL_MSG
 ER_XPLUGIN_FAILED_TO_GET_SECURITY_CTX
   eng "Could not get security context for session"
 
-ER_XPLUGIN_FAILED_TO_SWITCH_SECURITY_CTX_TO_ROOT
+OBSOLETE_ER_XPLUGIN_FAILED_TO_SWITCH_SECURITY_CTX_TO_ROOT
   eng "Unable to switch security context to root"
 
 ER_XPLUGIN_FAILED_TO_CLOSE_SQL_SESSION
@@ -12577,10 +12727,10 @@ ER_XPLUGIN_FAILED_TO_GET_CREATION_STMT
 ER_XPLUGIN_FAILED_TO_GET_ENGINE_INFO
   eng "Unable to get engine info for collection \'%s\'; creation stmt: %s"
 
-ER_XPLUGIN_FAIL_TO_GET_RESULT_DATA
+OBSOLETE_ER_XPLUGIN_FAIL_TO_GET_RESULT_DATA
   eng "Error getting result data: %s"
 
-ER_XPLUGIN_CAPABILITY_EXPIRED_PASSWORD
+OBSOLETE_ER_XPLUGIN_CAPABILITY_EXPIRED_PASSWORD
   eng "Capability expired password failed with error: %s"
 
 ER_XPLUGIN_FAILED_TO_SET_SO_REUSEADDR_FLAG
@@ -12595,10 +12745,10 @@ ER_XPLUGIN_FAILED_TO_SWITCH_CONTEXT
 ER_XPLUGIN_FAILED_TO_UNREGISTER_UDF
   eng "Can\'t unregister \'%s\' user defined function"
 
-ER_XPLUGIN_GET_PEER_ADDRESS_FAILED
+OBSOLETE_ER_XPLUGIN_GET_PEER_ADDRESS_FAILED
   eng "%s: get peer address failed, can't resolve IP to hostname"
 
-ER_XPLUGIN_CAPABILITY_CLIENT_INTERACTIVE_FAILED
+OBSOLETE_ER_XPLUGIN_CAPABILITY_CLIENT_INTERACTIVE_FAILED
   eng "Capability client interactive failed with error: %s"
 
 ER_XPLUGIN_FAILED_TO_RESET_IPV6_V6ONLY_FLAG
@@ -13070,7 +13220,7 @@ ER_GRP_RPL_SESSION_OPEN_FAILED
   eng "Unable to open session to (re)set read only mode. Skipping."
 
 ER_GRP_RPL_NEW_PRIMARY_ELECTED
-  eng "A new primary with address %s:%u was elected, enabling conflict detection until the new primary applies all relay logs."
+  eng "A new primary with address %s:%u was elected. %s"
 
 ER_GRP_RPL_DISABLE_READ_ONLY_FAILED
   eng "Unable to disable super read only flag. Try to disable it manually"
@@ -13375,14 +13525,14 @@ ER_GRP_RPL_FAILED_TO_GATHER_TRANS_WRITE_SET
 ER_GRP_RPL_TRANS_SIZE_EXCEEDS_LIMIT
   eng "Error on session %u. Transaction of size %llu exceeds specified limit %lu. To increase the limit please adjust group_replication_transaction_size_limit option."
 
-ER_GRP_RPL_REINIT_OF_INTERNAL_CACHE_FOR_READ_FAILED
+OBSOLETE_ER_GRP_RPL_REINIT_OF_INTERNAL_CACHE_FOR_READ_FAILED
   eng "Error while re-initializing an internal cache, for read operations, on session %u"
 
-ER_GRP_RPL_APPENDING_DATA_TO_INTERNAL_CACHE_FAILED
+OBSOLETE_ER_GRP_RPL_APPENDING_DATA_TO_INTERNAL_CACHE_FAILED
   eng "Error while appending data to an internal cache on session %u"
 
-ER_GRP_RPL_WRITE_TO_BINLOG_CACHE_FAILED
-  eng "Error while writing binary log cache on session %u"
+ER_GRP_RPL_WRITE_TO_TRANSACTION_MESSAGE_FAILED
+  eng "Error while writing to transaction message on session %u"
 
 ER_GRP_RPL_FAILED_TO_REGISTER_TRANS_OUTCOME_NOTIFICTION
   eng "Unable to register for getting notifications regarding the outcome of the transaction on session %u"
@@ -13396,13 +13546,13 @@ ER_GRP_RPL_BROADCASTING_TRANS_TO_GRP_FAILED
 ER_GRP_RPL_ERROR_WHILE_WAITING_FOR_CONFLICT_DETECTION
   eng "Error while waiting for conflict detection procedure to finish on session %u"
 
-ER_GRP_RPL_REINIT_OF_INTERNAL_CACHE_FOR_WRITE_FAILED
+OBSOLETE_ER_GRP_RPL_REINIT_OF_INTERNAL_CACHE_FOR_WRITE_FAILED
   eng "Error while re-initializing an internal cache, for write operations, on session %u"
 
-ER_GRP_RPL_FAILED_TO_CREATE_COMMIT_CACHE
+OBSOLETE_ER_GRP_RPL_FAILED_TO_CREATE_COMMIT_CACHE
   eng "Failed to create group replication commit cache on session %u"
 
-ER_GRP_RPL_REINIT_OF_COMMIT_CACHE_FOR_WRITE_FAILED
+OBSOLETE_ER_GRP_RPL_REINIT_OF_COMMIT_CACHE_FOR_WRITE_FAILED
   eng "Failed to reinit group replication commit cache for write on session %u"
 
 ER_GRP_RPL_PREV_REC_SESSION_RUNNING
@@ -13631,7 +13781,7 @@ ER_GRP_RPL_FORCE_MEMBERS_SET_UPDATE_NOT_ALLOWED
   eng "group_replication_force_members can only be updated when Group Replication is running and a majority of the members are unreachable"
 
 ER_GRP_RPL_GRP_COMMUNICATION_INIT_WITH_CONF
-  eng "Initialized group communication with configuration: group_replication_group_name: '%s'; group_replication_local_address: '%s'; group_replication_group_seeds: '%s'; group_replication_bootstrap_group: '%s'; group_replication_poll_spin_loops: %lu; group_replication_compression_threshold: %lu; group_replication_ip_whitelist: '%s'; group_replication_communication_debug_options: '%s'"
+  eng "Initialized group communication with configuration: group_replication_group_name: '%s'; group_replication_local_address: '%s'; group_replication_group_seeds: '%s'; group_replication_bootstrap_group: '%s'; group_replication_poll_spin_loops: %lu; group_replication_compression_threshold: %lu; group_replication_ip_whitelist: '%s'; group_replication_communication_debug_options: '%s'; group_replication_member_expel_timeout: '%lu'"
 
 ER_GRP_RPL_UNKNOWN_GRP_RPL_APPLIER_PIPELINE_REQUESTED
   eng "Unknown group replication applier pipeline requested"
@@ -17848,7 +17998,7 @@ ER_RPL_GTID_UNSAFE_STMT_ON_NON_TRANS_TABLE
 ER_RPL_GTID_UNSAFE_STMT_CREATE_SELECT
   eng "Statement violates GTID consistency: CREATE TABLE ... SELECT."
 
-ER_RPL_GTID_UNSAFE_STMT_ON_TEMPORARY_TABLE
+OBSOLETE_ER_RPL_GTID_UNSAFE_STMT_ON_TEMPORARY_TABLE
   eng "Statement violates GTID consistency: CREATE TEMPORARY TABLE and DROP TEMPORARY TABLE can only be executed outside transactional context.  These statements are also not allowed in a function or trigger because functions and triggers are also considered to be multi-statement transactions."
 
 ER_BINLOG_ROW_VALUE_OPTION_IGNORED
@@ -18089,8 +18239,215 @@ ER_AUDIT_LOG_TABLE_DEFINITION_NOT_UPDATED
 ER_DD_INITIALIZE_SQL_ERROR
   eng "Execution of server-side SQL statement '%s' failed with error code = %d, error message = '%s'."
 
+ER_NO_PATH_FOR_SHARED_LIBRARY
+  eng "No paths allowed for shared library."
+
+ER_UDF_ALREADY_EXISTS
+  eng "Function '%-.192s' already exists."
+
+ER_SET_EVENT_FAILED
+  eng "Got Error: %ld from SetEvent."
+
+ER_FAILED_TO_ALLOCATE_SSL_BIO
+  eng "Error allocating SSL BIO."
+
+ER_IB_MSG_1273
+  eng "%s"
+
+ER_PID_FILEPATH_LOCATIONS_INACCESSIBLE
+  eng "One or several locations were inaccessible while checking PID filepath."
+
+ER_UNKNOWN_VARIABLE_IN_PERSISTED_CONFIG_FILE
+  eng "Currently unknown variable '%s' was read from the persisted config file."
+
+ER_FAILED_TO_HANDLE_DEFAULTS_FILE
+  eng "Fatal error in defaults handling. Program aborted!"
+
+ER_DUPLICATE_SYS_VAR
+  eng "Duplicate variable name '%s'."
+
+ER_FAILED_TO_INIT_SYS_VAR
+  eng "Failed to initialize system variables."
+
+ER_SYS_VAR_NOT_FOUND
+  eng "Variable name '%s' not found."
+
+ER_IB_MSG_1274
+  eng "%s"
+
+ER_IB_MSG_1275
+  eng "%s"
+
+ER_TARGET_TS_UNENCRYPTED
+  eng "Source tablespace is encrypted but target tablespace is not."
+
+ER_IB_MSG_1276
+  eng "%s"
+
+ER_IB_MSG_1277
+  eng "%s"
+
+ER_IB_MSG_1278
+  eng "%s"
+
+ER_IB_MSG_1279
+  eng "%s"
+
+ER_IB_MSG_1280
+  eng "%s"
+
+ER_IB_MSG_1281
+  eng "%s"
+
+ER_IB_MSG_1282
+  eng "%s"
+
+ER_IB_MSG_1283
+  eng "%s"
+
+ER_IB_MSG_1284
+  eng "%s"
+
+ER_CANT_SET_ERROR_SUPPRESSION_LIST_FROM_COMMAND_LINE
+  eng "%s: Could not add suppression rule for code \"%s\". Rule-set may be full, or code may not correspond to an error-log message."
+
+ER_INVALID_VALUE_OF_BIND_ADDRESSES
+  eng "Invalid value for command line option bind-addresses: '%s'"
+
+ER_RELAY_LOG_SPACE_LIMIT_DISABLED
+  eng "Ignoring the @@global.relay_log_space_limit option because @@global.relay_log_purge is disabled."
+
+ER_GRP_RPL_ERROR_GTID_SET_EXTRACTION
+  eng "Error when extracting GTID execution information: %s"
+
+ER_GRP_RPL_MISSING_GRP_RPL_ACTION_COORDINATOR
+  eng "Message received without a proper group coordinator module."
+
+ER_GRP_RPL_JOIN_WHEN_GROUP_ACTION_RUNNING
+  eng "A member cannot join the group while a group configuration operation is running."
+
+ER_GRP_RPL_JOINER_EXIT_WHEN_GROUP_ACTION_RUNNING
+  eng "A member is joining the group while a group configuration operation is occurring. The member will now leave the group"
+
+ER_GRP_RPL_CHANNEL_THREAD_WHEN_GROUP_ACTION_RUNNING
+  eng "Can't start slave %s when group replication is running a group configuration operation."
+
+ER_GRP_RPL_APPOINTED_PRIMARY_NOT_PRESENT
+  eng "A primary election was invoked but the requested primary member is not in the group. Request ignored."
+
+ER_GRP_RPL_ERROR_ON_MESSAGE_SENDING
+  eng "Error while sending message. Context: %s"
+
+ER_GRP_RPL_CONFIGURATION_ACTION_ERROR
+  eng "Error while executing a group configuration operation: %s"
+
+ER_GRP_RPL_CONFIGURATION_ACTION_LOCAL_TERMINATION
+  eng "Configuration operation '%s' terminated. %s"
+
+ER_GRP_RPL_CONFIGURATION_ACTION_START
+  eng "Starting group operation local execution: %s"
+
+ER_GRP_RPL_CONFIGURATION_ACTION_END
+  eng "Termination of group operation local execution: %s"
+
+ER_GRP_RPL_CONFIGURATION_ACTION_KILLED_ERROR
+  eng "A configuration change was killed in this member. The member will now leave the group as its configuration may have diverged."
+
+ER_GRP_RPL_PRIMARY_ELECTION_PROCESS_ERROR
+  eng "There was an issue on the primary election process: %s The member will now leave the group."
+
+ER_GRP_RPL_PRIMARY_ELECTION_STOP_ERROR
+  eng "There was an issue when stopping a previous election process: %s"
+
+ER_GRP_RPL_NO_STAGE_SERVICE
+  eng "It was not possible to initialize stage logging for this task. The operation will still run without stage tracking."
+
+ER_GRP_RPL_UDF_REGISTER_ERROR
+  eng "Could not execute the installation of Group Replication UDF function: %s. Check if the function is already present, if so, try to remove it"
+
+ER_GRP_RPL_UDF_UNREGISTER_ERROR
+  eng "Could not uninstall Group Replication UDF functions. Try to remove them manually if present."
+
+ER_GRP_RPL_UDF_REGISTER_SERVICE_ERROR
+  eng "Could not execute the installation of Group Replication UDF functions. Check for other errors in the log and try to reinstall the plugin"
+
+ER_GRP_RPL_UDF_ERROR
+  eng "The function '%s' failed. %s"
+
+ER_CURRENT_PASSWORD_NOT_REQUIRED
+  eng "Do not specify the current password while changing it for other users."
+
+ER_INCORRECT_CURRENT_PASSWORD
+  eng "Incorrect current password. Specify the correct password which has to be replaced."
+
+ER_MISSING_CURRENT_PASSWORD
+  eng "Current password needs to be specified in the REPLACE clause in order to change it."
+
+ER_SERVER_WRONG_VALUE_FOR_VAR
+  eng "Variable '%-.64s' can't be set to the value of '%-.200s'"
+
+ER_COULD_NOT_CREATE_WINDOWS_REGISTRY_KEY
+  eng "%s was unable to create a new Windows registry key %s for %s; continuing to use the previous ident."
+
+ER_SERVER_GTID_UNSAFE_CREATE_DROP_TEMP_TABLE_IN_TRX_IN_SBR
+  eng "Statement violates GTID consistency: CREATE TEMPORARY TABLE and DROP TEMPORARY TABLE are not allowed inside a transaction or inside a procedure in a transactional context when @@session.binlog_format=STATEMENT."
+
+ER_SECONDARY_ENGINE
+  eng "Secondary engine operation failed. %s."
+
+ER_SECONDARY_ENGINE_DDL
+  eng "DDLs on a table with a secondary engine defined are not allowed."
+
+ER_NO_SESSION_TEMP
+  eng "Unable to allocate temporary tablespace for this session"
+
+ER_XPLUGIN_FAILED_TO_SWITCH_SECURITY_CTX
+  eng "Unable to switch security context to user: %s"
+
+ER_RPL_GTID_UNSAFE_ALTER_ADD_COL_WITH_DEFAULT_EXPRESSION
+  eng "Statement violates GTID consistency: ALTER TABLE ... ADD COLUMN .. with expression as DEFAULT."
+
+ER_UPGRADE_PARSE_ERROR
+  eng "Error in parsing %s '%s'.'%s' during upgrade. %s"
+
+ER_DATA_DIRECTORY_UNUSABLE
+  eng "Newly created data directory %s is unusable. You can safely remove it."
+  bg "Новосъздадената директория за базата %s е неизползваема. Можете да я изтриете."
+
+ER_LDAP_AUTH_USER_GROUP_SEARCH_ROOT_BIND
+  eng "Group search rebinding via root DN: %s "
+
+ER_PLUGIN_INSTALL_ERROR
+  eng "Error installing plugin '%s': %s"
+
+ER_PLUGIN_UNINSTALL_ERROR
+  eng "Error uninstalling plugin '%s': %s"
+
+ER_SHARED_TABLESPACE_USED_BY_PARTITIONED_TABLE
+  eng "Partitioned table '%s' is not allowed to use shared tablespace '%s'. Please move all partitions to file-per-table tablespaces before upgrade."
+
+ER_UNKNOWN_TABLESPACE_TYPE
+  eng "Cannot determine the type of the tablespace named '%s'."
+
+ER_WARN_DEPRECATED_UTF8_ALIAS_OPTION
+  eng "%s: 'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous."
+
+ER_WARN_DEPRECATED_UTF8MB3_CHARSET_OPTION
+  eng "%s: The character set UTF8MB3 is deprecated and will be removed in a future release. Please consider using UTF8MB4 instead."
+
+ER_WARN_DEPRECATED_UTF8MB3_COLLATION_OPTION
+  eng "%s: '%-.64s' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead."
+
+ER_SSL_MEMORY_INSTRUMENTATION_INIT_FAILED
+  eng "The SSL library function %s failed. This is typically caused by the SSL library already being used. As a result the SSL memory allocation will not be instrumented."
+  bg "Функцията от SSL библиотеката %s върна грешка. Това обикновено е защото SSL библиотеката вече е била използвана. Заради това SSL паметта няма да се инструментира."
+
 #
-# End of 8.0 Server error messages.
-# (Please read comments from the header of this section before adding error
-#  message here)
+# End of 8.0 error messages intended to be logged to the server error log.
 #
+
+################################################################################
+# Error numbers 50000 to 51999 are reserved. Please do not use them for the
+# other error messages.
+################################################################################
+reserved-error-section 50000 51999

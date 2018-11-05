@@ -3,7 +3,6 @@
 ############################################################################
 
 require_server_version_higher_than 5.7.19
-require_xtradb
 
 . inc/keyring_file.sh
 
@@ -52,35 +51,35 @@ mysql -e "CREATE TABLESPACE ts_encrypted ADD DATAFILE 'ts_encrypted.ibd' ENCRYPT
 mysql -e "CREATE TABLESPACE ts_unencrypted ADD DATAFILE 'ts_unencrypted.ibd' ENGINE='InnoDB'" test
 mysql -e "CREATE TABLESPACE ts_encrypted_new ADD DATAFILE 'ts_encrypted_new.ibd' ENCRYPTION='Y' ENGINE='InnoDB'" test
 
-mysql -e "CREATE TABLE t3 (a TEXT) TABLESPACE ts_encrypted ENCRYPTION='Y' ENGINE='InnoDB'" test
+mysql -e "CREATE TABLE t3 (a TEXT) TABLESPACE ts_encrypted ENGINE='InnoDB'" test
 insert_char t3
 
 mysql -e "CREATE TABLE pt2 (a INT NOT NULL, PRIMARY KEY(a)) \
-    ENGINE=InnoDB TABLESPACE ts_encrypted ENCRYPTION='y' \
+    ENGINE=InnoDB ENCRYPTION='y' \
     PARTITION BY RANGE (a) PARTITIONS 3 ( \
         PARTITION p1 VALUES LESS THAN (200), \
-        PARTITION p2 VALUES LESS THAN (600) TABLESPACE innodb_file_per_table, \
-        PARTITION p3 VALUES LESS THAN (1800) TABLESPACE ts_encrypted_new)" test
+        PARTITION p2 VALUES LESS THAN (600), \
+        PARTITION p3 VALUES LESS THAN (1800))" test
 
-mysql -e "ALTER TABLE pt2 ADD PARTITION (PARTITION p4 VALUES LESS THAN (80000) TABLESPACE ts_encrypted_new)" test
+mysql -e "ALTER TABLE pt2 ADD PARTITION (PARTITION p4 VALUES LESS THAN (80000))" test
 
 insert_int pt2
 
 mysql -e "CREATE TABLE spt2 (a INT NOT NULL, b INT) \
-    ENGINE=InnoDB TABLESPACE ts_encrypted ENCRYPTION='y' \
+    ENGINE=InnoDB ENCRYPTION='y' \
     PARTITION BY RANGE (a) PARTITIONS 3 SUBPARTITION BY KEY (b) ( \
         PARTITION p1 VALUES LESS THAN (200) ( \
-            SUBPARTITION p11 TABLESPACE ts_encrypted, \
-            SUBPARTITION p12 TABLESPACE innodb_file_per_table, \
-            SUBPARTITION p13 TABLESPACE ts_encrypted_new), \
-        PARTITION p2 VALUES LESS THAN (600) TABLESPACE innodb_file_per_table ( \
-            SUBPARTITION p21 TABLESPACE ts_encrypted, \
-            SUBPARTITION p22 TABLESPACE innodb_file_per_table, \
-            SUBPARTITION p23 TABLESPACE ts_encrypted_new), \
-        PARTITION p3 VALUES LESS THAN (1800) TABLESPACE ts_encrypted_new ( \
-            SUBPARTITION p31 TABLESPACE ts_encrypted, \
-            SUBPARTITION p32 TABLESPACE innodb_file_per_table, \
-            SUBPARTITION p33 TABLESPACE ts_encrypted_new))" test
+            SUBPARTITION p11, \
+            SUBPARTITION p12, \
+            SUBPARTITION p13), \
+        PARTITION p2 VALUES LESS THAN (600) ( \
+            SUBPARTITION p21, \
+            SUBPARTITION p22, \
+            SUBPARTITION p23), \
+        PARTITION p3 VALUES LESS THAN (1800) ( \
+            SUBPARTITION p31, \
+            SUBPARTITION p32, \
+            SUBPARTITION p33))" test
 
 
 insert_int2 spt2
@@ -133,14 +132,14 @@ xtrabackup --datadir=$mysql_datadir --backup \
 # Changing data
 insert_char t3
 mysql -e "ALTER TABLE spt2 ADD PARTITION (PARTITION p5 VALUES LESS THAN (2400) ( \
-            SUBPARTITION p51 TABLESPACE ts_encrypted, \
-            SUBPARTITION p52 TABLESPACE ts_encrypted_new, \
-            SUBPARTITION p53 TABLESPACE ts_encrypted_new))" test
+            SUBPARTITION p51, \
+            SUBPARTITION p52, \
+            SUBPARTITION p53))" test
 
-mysql -e "ALTER TABLE spt2 ADD PARTITION (PARTITION p6 VALUES LESS THAN (15000) TABLESPACE ts_unencrypted ( \
-            SUBPARTITION p61 TABLESPACE ts_encrypted, \
-            SUBPARTITION p62 TABLESPACE ts_encrypted_new, \
-            SUBPARTITION p63 TABLESPACE ts_encrypted_new))" test
+mysql -e "ALTER TABLE spt2 ADD PARTITION (PARTITION p6 VALUES LESS THAN (15000) ( \
+            SUBPARTITION p61, \
+            SUBPARTITION p62, \
+            SUBPARTITION p63))" test
 insert_int2 spt2
 
 
@@ -155,7 +154,7 @@ xtrabackup --datadir=$mysql_datadir --backup \
 vlog "Incremental backup created in directory $inc_backup_dir"
 
 # More changes
-mysql -e "CREATE TABLE t4 (a TEXT) TABLESPACE ts_encrypted ENCRYPTION='Y' ENGINE='InnoDB'" test
+mysql -e "CREATE TABLE t4 (a TEXT) TABLESPACE ts_encrypted ENGINE='InnoDB'" test
 insert_char t4
 
 mysql -e "DROP TABLE t3" test

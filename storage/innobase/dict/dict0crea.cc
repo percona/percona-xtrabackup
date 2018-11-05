@@ -37,15 +37,15 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0dict.h"
 #include "dict0priv.h"
 #include "dict0stats.h"
-#include "dict0upgrade.h"
 #include "fsp0space.h"
 #include "fsp0sysspace.h"
 #include "fts0priv.h"
 #include "ha_prototypes.h"
 #include "mach0data.h"
-#include "my_compiler.h"
+
 #include "my_dbug.h"
-#include "my_inttypes.h"
+
+#include "dict0upgrade.h"
 #include "page0page.h"
 #include "pars0pars.h"
 #include "que0que.h"
@@ -205,9 +205,12 @@ dberr_t dict_build_tablespace_for_table(dict_table_t *table, trx_t *trx) {
     table->space = space;
 
     /* Determine the tablespace flags. */
-    bool is_encrypted = dict_table_is_encrypted(table);
+    ulint fsp_flags = dict_tf_to_fsp_flags(table->flags);
 
-    ulint fsp_flags = dict_tf_to_fsp_flags(table->flags, is_encrypted);
+    /* For file-per-table tablespace, set encryption flag */
+    if (DICT_TF2_FLAG_IS_SET(table, DICT_TF2_ENCRYPTION_FILE_PER_TABLE)) {
+      fsp_flags |= FSP_FLAGS_MASK_ENCRYPTION;
+    }
 
     if (DICT_TF_HAS_DATA_DIR(table->flags)) {
       std::string path;
@@ -289,7 +292,27 @@ dberr_t dict_build_tablespace_for_table(dict_table_t *table, trx_t *trx) {
       row formats whereas the system tablespace only
       supports Redundant and Compact */
       ut_ad(dict_tf_get_rec_format(table->flags) != REC_FORMAT_COMPRESSED);
-      table->space = static_cast<uint32_t>(srv_tmp_space.space_id());
+
+      innodb_session_t *innodb_session = thd_to_innodb_session(trx->mysql_thd);
+      ibt::Tablespace *tblsp = nullptr;
+
+      bool is_slave_thd = thd_is_replication_slave_thread(trx->mysql_thd);
+      if (is_slave_thd) {
+        tblsp = ibt::get_rpl_slave_tblsp();
+      } else if (table->is_intrinsic()) {
+        tblsp = innodb_session->get_instrinsic_temp_tblsp();
+      } else {
+        tblsp = innodb_session->get_usr_temp_tblsp();
+      }
+
+      /* Session temporary tablespace couldn't be allocated. This means,
+      we have run out of disk space */
+      if (tblsp == nullptr) {
+        return (DB_NO_SESSION_TEMP);
+      }
+
+      table->space = tblsp->space_id();
+
     } else {
       /* Create in the system tablespace. */
       ut_ad(table->space == TRX_SYS_SPACE);

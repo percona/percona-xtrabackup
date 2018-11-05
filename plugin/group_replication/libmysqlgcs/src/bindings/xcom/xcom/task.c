@@ -111,9 +111,11 @@ typedef struct {
   task_env_p *task_env_p_array_val;
 } task_env_p_array;
 
-define_xdr_funcs(pollfd) define_xdr_funcs(task_env_p)
+init_xdr_array(pollfd) free_xdr_array(pollfd) set_xdr_array(pollfd)
+    get_xdr_array(pollfd) init_xdr_array(task_env_p) free_xdr_array(task_env_p)
+        set_xdr_array(task_env_p) get_xdr_array(task_env_p)
 
-    struct iotasks {
+            struct iotasks {
   int nwait;
   pollfd_array fd;
   task_env_p_array tasks;
@@ -780,19 +782,6 @@ static void iotasks_deinit(iotasks *iot) {
   free_pollfd_array(&iot->fd);
   free_task_env_p_array(&iot->tasks);
 }
-
-#if TASK_DBUG_ON
-static void poll_debug() {
-  int i = 0;
-  for (i = 0; i < iot.nwait; i++) {
-    NDBG(i, d);
-    PTREXP(iot.tasks[i]);
-    NDBG(iot.fd[i].fd, d);
-    NDBG(iot.fd[i].events, d);
-    NDBG(iot.fd[i].revents, d);
-  }
-}
-#endif
 
 static void poll_wakeup(int i) {
   activate(task_unref(get_task_env_p(&iot.tasks, i)));

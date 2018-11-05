@@ -142,6 +142,7 @@ bool Client::is_handler_thd(THD *thd) {
   // shared_pointer to be sure that the session is
   // not reseted (by Mysqlx::Session::Reset) in middle
   // of this operations.
+  MUTEX_LOCK(lock_session_exit, m_session_exit_mutex);
   auto session = this->session_smart_ptr();
 
   return thd && session && (session->get_thd() == thd);
@@ -163,7 +164,8 @@ std::string Client::resolve_hostname() {
       m_connection->peer_addr(socket_ip_string, socket_port);
 
   if (NULL == addr) {
-    log_error(ER_XPLUGIN_GET_PEER_ADDRESS_FAILED, m_id);
+    log_debug("%s: get peer address failed, can't resolve IP to hostname",
+              m_id);
     return "";
   }
 
@@ -214,6 +216,11 @@ void Protocol_monitor::on_notice_warning_send() {
 
 void Protocol_monitor::on_notice_other_send() {
   update_status<&ngs::Common_status_variables::m_notice_other_sent>(
+      m_client->session());
+}
+
+void Protocol_monitor::on_notice_global_send() {
+  update_status<&ngs::Common_status_variables::m_notice_global_sent>(
       m_client->session());
 }
 

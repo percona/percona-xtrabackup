@@ -1,3 +1,4 @@
+CALL mtr.add_suppression("Incorrect information in file");
 SET @@session.default_storage_engine = 'MyISAM';
 #
 # Section 1. Wrong column definition options
@@ -324,7 +325,7 @@ ERROR HY000: Generated column can refer only to generated columns defined prior 
 CREATE TABLE t1(a int);
 ALTER TABLE t1 ADD COLUMN z int GENERATED ALWAYS AS
 ( 1 NOT IN (SELECT 1 FROM t1 WHERE c0006) ) virtual;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(select 1 from `t1` where `c0006`))))' at line 1
+ERROR HY000: Expression of generated column 'z' contains a disallowed function.
 DROP TABLE t1;
 # Bug#20566243: ERROR WHILE DOING CREATE TABLE T1 SELECT (QUERY ON GC COLUMNS)
 CREATE TABLE t1(a int, b int as (a + 1),
@@ -411,11 +412,11 @@ DROP TABLE t1, t2;
 CREATE TABLE t1(a int);
 ALTER TABLE t1 ADD COLUMN z int GENERATED ALWAYS AS
 ( 1 NOT IN (SELECT 1 FROM t1 WHERE c0006) ) virtual;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(select 1 from `t1` where `c0006`))))' at line 1
+ERROR HY000: Expression of generated column 'z' contains a disallowed function.
 CREATE TABLE t2(a int, b int as (1 NOT IN (SELECT 1 FROM t1 WHERE not_exist_col)));
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(select 1 from `t1` where `not_exist_col`))))' at line 1
+ERROR HY000: Expression of generated column 'b' contains a disallowed function.
 CREATE TABLE t2(a int, b int as (1 NOT IN (SELECT 1 FROM dual)));
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(select 1))))' at line 1
+ERROR HY000: Expression of generated column 'b' contains a disallowed function.
 DROP TABLE t1;
 # Bug#21142905: PARTITIONED GENERATED COLS -
 #  !TABLE || (!TABLE->WRITE_SET || BITMAP_IS_SET
@@ -428,6 +429,7 @@ DROP TABLE t1;
 CREATE TABLE t1 (c CHAR(10) CHARACTER SET utf8 COLLATE utf8_bin GENERATED ALWAYS AS ("foo bar"));
 Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -438,6 +440,7 @@ CREATE TABLE t1 (i INT);
 ALTER TABLE t1 ADD COLUMN c CHAR(10) CHARACTER SET utf8 COLLATE utf8_bin GENERATED ALWAYS AS ("foo bar");
 Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -446,6 +449,9 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 CREATE TABLE t1 (i INT COLLATE utf8_bin, c INT COLLATE utf8_bin GENERATED ALWAYS AS (10));
+Warnings:
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
+Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (

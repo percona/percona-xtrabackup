@@ -27,13 +27,15 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <boost/variant/get.hpp>
 
-#include "m_ctype.h"  // my_strcasecmp
+#include "m_ctype.h"   // my_strcasecmp
+#include "m_string.h"  // my_fcvt_compact
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
@@ -218,16 +220,51 @@ static bool set_parameters(gis::srid_t srid,
   return false;
 }
 
+static const char *axis_direction_to_name(gis::srs::Axis_direction direction) {
+  // Work around bugs in Developer Studio 12.5 on Solaris by casting the enum to
+  // int. Otherwise the default case, and only the default case, is always
+  // executed. This happens regardless of direction value.
+  switch (static_cast<int>(direction)) {
+    case static_cast<int>(gis::srs::Axis_direction::UNSPECIFIED):
+      return "UNSPECIFIED";
+    case static_cast<int>(gis::srs::Axis_direction::NORTH):
+      return "NORTH";
+    case static_cast<int>(gis::srs::Axis_direction::SOUTH):
+      return "SOUTH";
+    case static_cast<int>(gis::srs::Axis_direction::EAST):
+      return "EAST";
+    case static_cast<int>(gis::srs::Axis_direction::WEST):
+      return "WEST";
+    case static_cast<int>(gis::srs::Axis_direction::OTHER):
+      return "OTHER";
+    default:
+      /* purecov: begin deadcode */
+      DBUG_ASSERT(false);
+      return "UNKNOWN";
+      /* purecov: end */
+  }
+}
+
 namespace gis {
 namespace srs {
 
-bool Geographic_srs::init(gis::srid_t, gis::srs::wkt_parser::Geographic_cs *g) {
+bool Geographic_srs::init(gis::srid_t srid,
+                          gis::srs::wkt_parser::Geographic_cs *g) {
+  // Semi-major axis is required by the parser.
   m_semi_major_axis = g->datum.spheroid.semi_major_axis;
-  m_inverse_flattening = g->datum.spheroid.inverse_flattening;
+  DBUG_ASSERT(std::isfinite(m_semi_major_axis));
+  if (m_semi_major_axis <= 0.0) {
+    my_error(ER_SRS_INVALID_SEMI_MAJOR_AXIS, MYF(0));
+    return true;
+  }
 
-  // Semi-major axis and inverse flattening are required by the parser.
-  DBUG_ASSERT(!std::isnan(m_semi_major_axis));
-  DBUG_ASSERT(!std::isnan(m_inverse_flattening));
+  // Inverse flattening is required by the parser.
+  m_inverse_flattening = g->datum.spheroid.inverse_flattening;
+  DBUG_ASSERT(std::isfinite(m_inverse_flattening));
+  if (m_inverse_flattening != 0.0 && m_inverse_flattening <= 1.0) {
+    my_error(ER_SRS_INVALID_INVERSE_FLATTENING, MYF(0));
+    return true;
+  }
 
   if (g->datum.towgs84.valid) {
     m_towgs84[0] = g->datum.towgs84.dx;
@@ -239,29 +276,50 @@ bool Geographic_srs::init(gis::srid_t, gis::srs::wkt_parser::Geographic_cs *g) {
     m_towgs84[6] = g->datum.towgs84.ppm;
 
     // If not all parameters are used, the parser sets the remaining ones to 0.
-    DBUG_ASSERT(!std::isnan(m_towgs84[0]));
-    DBUG_ASSERT(!std::isnan(m_towgs84[1]));
-    DBUG_ASSERT(!std::isnan(m_towgs84[2]));
-    DBUG_ASSERT(!std::isnan(m_towgs84[3]));
-    DBUG_ASSERT(!std::isnan(m_towgs84[4]));
-    DBUG_ASSERT(!std::isnan(m_towgs84[5]));
-    DBUG_ASSERT(!std::isnan(m_towgs84[6]));
+    DBUG_ASSERT(std::isfinite(m_towgs84[0]));
+    DBUG_ASSERT(std::isfinite(m_towgs84[1]));
+    DBUG_ASSERT(std::isfinite(m_towgs84[2]));
+    DBUG_ASSERT(std::isfinite(m_towgs84[3]));
+    DBUG_ASSERT(std::isfinite(m_towgs84[4]));
+    DBUG_ASSERT(std::isfinite(m_towgs84[5]));
+    DBUG_ASSERT(std::isfinite(m_towgs84[6]));
   }
 
-  m_prime_meridian = g->prime_meridian.longitude;
+  // Angular unit is required by the parser.
   m_angular_unit = g->angular_unit.conversion_factor;
+  DBUG_ASSERT(std::isfinite(m_angular_unit));
+  if (m_angular_unit <= 0) {
+    my_error(ER_SRS_INVALID_ANGULAR_UNIT, MYF(0));
+    return true;
+  }
 
-  // Prime meridian and angular unit are required by the parser.
-  DBUG_ASSERT(!std::isnan(m_prime_meridian));
-  DBUG_ASSERT(!std::isnan(m_angular_unit));
+  // Prime meridian is required by the parser.
+  m_prime_meridian = g->prime_meridian.longitude;
+  DBUG_ASSERT(std::isfinite(m_prime_meridian));
+  if (m_prime_meridian * m_angular_unit <= -M_PI ||
+      m_prime_meridian * m_angular_unit > M_PI) {
+    my_error(ER_SRS_INVALID_PRIME_MERIDIAN, MYF(0));
+    return true;
+  }
 
-  if (g->axes.valid) {
-    m_axes[0] = g->axes.x.direction;
-    m_axes[1] = g->axes.y.direction;
-
-    // The parser requires either both or none to be specified.
-    DBUG_ASSERT(m_axes[0] != Axis_direction::UNSPECIFIED);
-    DBUG_ASSERT(m_axes[1] != Axis_direction::UNSPECIFIED);
+  // The parser requires that both axes are specified.
+  DBUG_ASSERT(g->axes.valid);
+  m_axes[0] = g->axes.x.direction;
+  m_axes[1] = g->axes.y.direction;
+  if (!(((m_axes[0] == Axis_direction::NORTH ||
+          m_axes[0] == Axis_direction::SOUTH) &&
+         (m_axes[1] == Axis_direction::EAST ||
+          m_axes[1] == Axis_direction::WEST)) ||
+        ((m_axes[0] == Axis_direction::EAST ||
+          m_axes[0] == Axis_direction::WEST) &&
+         (m_axes[1] == Axis_direction::NORTH ||
+          m_axes[1] == Axis_direction::SOUTH)))) {
+    // Axes are neither lat-long nor long-lat, which doesn't make sense for
+    // geographic SRSs.
+    my_error(ER_SRS_GEOGCS_INVALID_AXES, MYF(0), srid,
+             axis_direction_to_name(m_axes[0]),
+             axis_direction_to_name(m_axes[1]));
+    return true;
   }
 
   // Check if this is a valid WGS 84 representation. The requirements are:
@@ -353,6 +411,55 @@ bool Projected_srs::common_proj_parameters_can_be_modified_to(
            m_axes[1] == that.m_axes[1];
   }
   return false;
+}
+
+std::string Geographic_srs::proj4_parameters() const {
+  char double_str[FLOATING_POINT_BUFFER];
+  bool error;
+  std::stringstream proj4;
+
+  if (!m_is_wgs84 && !has_towgs84())
+    return proj4.str();  // Can't convert if there's no path to WGS 84.
+
+  proj4 << "+proj=lonlat ";
+
+  my_fcvt_compact(semi_major_axis(), double_str, &error);
+  if (error) return std::string();
+  proj4 << "+a=" << double_str;
+
+  if (inverse_flattening() == 0.0) {
+    proj4 << " +b=" << double_str;
+  } else {
+    my_fcvt_compact(inverse_flattening(), double_str, &error);
+    if (error) return std::string();
+    proj4 << " +rf=" << double_str;
+  }
+
+  // Not setting prime meridian ("+pm="). The in-memory representation always
+  // uses Greenwich, which is default in BG.
+
+  // Not setting unit (not supported by proj4). The in-memory representation is
+  // always in radians, and BG retrieves the unit from type traits.
+
+  // Not setting axis order and direction (+axis). The in-memory representation
+  // is always East-North-up, and BG ignores the parameter.
+
+  proj4 << " +towgs84=";
+  if (has_towgs84()) {
+    for (int i = 0; i < 7; i++) {
+      if (i != 0) proj4 << ",";
+      my_fcvt_compact(m_towgs84[i], double_str, &error);
+      if (error) return std::string();
+      proj4 << double_str;
+    }
+  } else {
+    DBUG_ASSERT(m_is_wgs84);
+    proj4 << "0,0,0,0,0,0,0";
+  }
+
+  proj4 << " +no_defs";  // Don't set any defaults.
+
+  return proj4.str();
 }
 
 bool Projected_srs::init(gis::srid_t srid,

@@ -48,11 +48,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_prototypes.h"
 #include "lock0lock.h"
 #include "lock0priv.h"
-#include "my_compiler.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
-#include "my_psi_config.h"
-#include "mysql/psi/psi_thread.h"
 #include "pars0pars.h"
 #include "row0mysql.h"
 #include "row0sel.h"
@@ -62,6 +57,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "usr0sess.h"
 #include "ut0new.h"
 #include "ut0vec.h"
+
+#include "my_dbug.h"
+#include "my_psi_config.h"
+#include "mysql/psi/psi_thread.h"
 
 /* Flag to enable/disable deadlock detector. */
 bool innobase_deadlock_detect = true;
@@ -83,6 +82,19 @@ static const int LOCK_CATS_THRESHOLD = 32;
 
 using Locks = std::vector<std::pair<lock_t *, size_t>,
                           mem_heap_allocator<std::pair<lock_t *, size_t>>>;
+
+/** Used by lock_get_mode_str to build a lock mode description */
+static const std::map<uint, const char *> lock_constant_names{
+    {LOCK_GAP, "GAP"},
+    {LOCK_REC_NOT_GAP, "REC_NOT_GAP"},
+    {LOCK_INSERT_INTENTION, "INSERT_INTENTION"},
+    {LOCK_PREDICATE, "PREDICATE"},
+    {LOCK_PRDT_PAGE, "PRDT_PAGE"},
+};
+/** Used by lock_get_mode_str to cache results. Strings pointed by these
+pointers might be in use by performance schema and thus can not be freed
+until the very end */
+static std::unordered_map<uint, const char *> lock_cached_lock_mode_names;
 
 /** Deadlock checker. */
 class DeadlockChecker {
@@ -512,7 +524,10 @@ void lock_sys_close(void) {
       os_event_destroy(slot->event);
     }
   }
-
+  for (auto &cached_lock_mode_name : lock_cached_lock_mode_names) {
+    ut_free(const_cast<char *>(cached_lock_mode_name.second));
+  }
+  lock_cached_lock_mode_names.clear();
   ut_free(lock_sys);
 
   lock_sys = NULL;
@@ -1322,7 +1337,7 @@ static void lock_update_trx_age(trx_t *trx, int32_t age) {
   const auto wait_lock = trx->lock.wait_lock;
 
   /* could be table level lock like autoinc or predicate lock */
-  if (!lock_use_fcfs(wait_lock)) {
+  if (lock_use_fcfs(wait_lock)) {
     return;
   }
 
@@ -4234,7 +4249,10 @@ static void lock_rec_unlock_grant(lock_t *first_lock, lock_t *lock,
 
 /** Removes a granted record lock of a transaction from the queue and grants
  locks to other transactions waiting in the queue if they now are entitled
- to a lock. */
+ to a lock.
+ This function is meant to be used only by row_unlock_for_mysql, and it assumes
+ that the lock we are looking for has LOCK_REC_NOT_GAP flag.
+ */
 void lock_rec_unlock(
     trx_t *trx,               /*!< in/out: transaction that has
                               set a record lock */
@@ -4261,13 +4279,15 @@ void lock_rec_unlock(
 
   for (auto lock = first_lock; lock != nullptr;
        lock = lock_rec_get_next(heap_no, lock)) {
-    if (lock->trx == trx && lock_get_mode(lock) == lock_mode) {
+    if (lock->trx == trx && lock_get_mode(lock) == lock_mode &&
+        lock_rec_get_rec_not_gap(lock)) {
 #ifdef UNIV_DEBUG
       /* Since we actually found the first, not the last lock, lets check
          that it is also the last one */
       for (auto lock2 = lock_rec_get_next(heap_no, lock); lock2 != nullptr;
            lock2 = lock_rec_get_next(heap_no, lock2)) {
-        ut_ad(!(lock2->trx == trx && lock_get_mode(lock2) == lock_mode));
+        ut_ad(!(lock2->trx == trx && lock_get_mode(lock2) == lock_mode &&
+                lock_rec_get_rec_not_gap(lock2)));
       }
 #endif
       lock_rec_unlock_grant(first_lock, lock, heap_no);
@@ -4357,8 +4377,11 @@ void lock_trx_release_read_locks(trx_t *trx, bool only_gap) {
     /* Release GAP lock from Next Key lock */
     lock_remove_gap_lock(lock);
 
-    /* Grant locks */
-    lock_rec_grant(lock, false);
+    /* Grant locks. Current CATS implementation does not grant locks for records
+    for which the bit is already cleared in the bitmap, and lock_remove_gap_lock
+    might have reset the PAGE_HEAP_NO_SUPREMUM-th bit. So, to ensure that trxs
+    waiting for lock on supremum are properly woken up we need to use FCFS. */
+    lock_rec_grant(lock, true);
 
     lock = next_lock;
 
@@ -6280,43 +6303,69 @@ const lock_t *lock_get_next_trx_locks(const lock_t *lock) {
 
 /** Gets the mode of a lock in a human readable string.
  The string should not be free()'d or modified.
+ This functions is a bit complex for following reasons:
+  - the way it is used in performance schema requires that the memory pointed
+    by the return value is accessible for a long time
+  - the caller never frees the memory
+  - so, we need to maintain a pool of these strings or use string literals
+  - there are many possible combinations of flags and thus it is impractical
+    to maintain the list of all possible literals and if/else logic
+  - moreover, sometimes performance_schema.data_locks is used precisely to
+    investigate some unexpected situation, thus limiting output of this function
+    only to expected combinations of flags might be misleading
  @return lock mode */
 const char *lock_get_mode_str(const lock_t *lock) /*!< in: lock */
 {
-  ibool is_gap_lock;
+  /* We might need to modify lock_cached_lock_mode_names, so we need exclusive
+  access. Thankfully lock_get_mode_str is used only while holding the
+  lock_sys->mutex so we don't need dedicated mutex */
+  ut_ad(lock_mutex_own());
 
-  is_gap_lock = lock_get_type_low(lock) == LOCK_REC && lock_rec_get_gap(lock);
+  const auto type_mode = lock->type_mode;
+  const auto mode = lock->mode();
+  const auto type = lock->type();
+  /* type_mode is type + mode + flags actually.
+    We are interested in flags here.
+    And we are not interested in LOCK_WAIT. */
+  const auto flags = (type_mode & (~(uint)LOCK_WAIT)) - mode - type;
 
-  switch (lock_get_mode(lock)) {
-    case LOCK_S:
-      if (is_gap_lock) {
-        return ("S,GAP");
-      } else {
-        return ("S");
-      }
-    case LOCK_X:
-      if (is_gap_lock) {
-        return ("X,GAP");
-      } else {
-        return ("X");
-      }
-    case LOCK_IS:
-      if (is_gap_lock) {
-        return ("IS,GAP");
-      } else {
-        return ("IS");
-      }
-    case LOCK_IX:
-      if (is_gap_lock) {
-        return ("IX,GAP");
-      } else {
-        return ("IX");
-      }
-    case LOCK_AUTO_INC:
-      return ("AUTO_INC");
-    default:
-      return ("UNKNOWN");
+  /* Search for a cached string */
+  const auto key = flags | mode;
+  const auto found = lock_cached_lock_mode_names.find(key);
+  if (found != lock_cached_lock_mode_names.end()) {
+    return (found->second);
   }
+  /* A new, unseen yet, mode of lock. We need to create new string. */
+  std::stringstream name_stream;
+  /* lock_mode_string can be used to describe mode, however the LOCK_ prefix in
+  return mode name makes the string a bit too verbose for our purpose, as
+  performance_schema.data_locks LOCK_MODE is a varchar(32), so we strip the
+  prefix */
+  const char *mode_string = lock_mode_string(mode);
+  const char *LOCK_PREFIX = "LOCK_";
+  if (!strncmp(mode_string, LOCK_PREFIX, strlen(LOCK_PREFIX))) {
+    mode_string = mode_string + strlen(LOCK_PREFIX);
+  }
+  name_stream << mode_string;
+  /* We concatenate constants in ascending order. */
+  uint recognized_flags = 0;
+  for (const auto &lock_constant : lock_constant_names) {
+    const auto value = lock_constant.first;
+    /* Constants have to be single bit only for this algorithm to work */
+    ut_ad((value & (value - 1)) == 0);
+    if (flags & value) {
+      recognized_flags += value;
+      name_stream << ',' << lock_constant.second;
+    }
+  }
+  if (flags != recognized_flags) {
+    return "UNKNOWN";
+  }
+  std::string name_string = name_stream.str();
+  char *name_buffer = (char *)ut_malloc_nokey(name_string.length() + 1);
+  strcpy(name_buffer, name_string.c_str());
+  lock_cached_lock_mode_names[key] = name_buffer;
+  return (name_buffer);
 }
 
 /** Gets the type of a lock in a human readable string.

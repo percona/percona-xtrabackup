@@ -227,7 +227,7 @@ static Field *create_tmp_field_from_item(Item *item, TABLE *table,
     in the beginning of create_tmp_field().
    */
   if (copy_func && item->real_item()->is_result_field())
-    copy_func->push_back(item);
+    copy_func->push_back(Func_ptr(item));
   if (modify_item) item->set_result_field(new_field);
   if (item->type() == Item::NULL_ITEM)
     new_field->is_created_from_null_item = true;
@@ -371,7 +371,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
           DBUG_ASSERT(item_func_sp->result_field);
           *from_field = item_func_sp->result_field;
         } else {
-          copy_func->push_back(item);
+          copy_func->push_back(Func_ptr(item));
         }
 
         result = create_tmp_field_from_field(
@@ -702,13 +702,13 @@ void sort_copy_func(const SELECT_LEX *select, Func_ptr_array *copy_func) {
 
     Let's go through the process of writing to the tmp table
     (e.g. end_write(), end_write_group()). We also include here the
-    "pseudo-tmp table" embedded into REF_ITEM_SLICE3, used by
+    "pseudo-tmp table" embedded into REF_SLICE_ORDERED_GROUP_BY, used by
     end_send_group().
     (1) we switch to the REF_SLICE used to read from that tmp table
     (2.1) we (copy_fields() part 1) copy some columns from the
     output of the previous step of execution (e.g. the join's output) to the
     tmp table
-    (2.2) (specifically for REF_SLICE_TMP3 in end_send_group()) we
+    (2.2) (specifically for REF_SLICE_ORDERED_GROUP_BY in end_send_group()) we
     (copy_fields() part 2) evaluate some expressions from the same previous
     step of execution, with Item_copy::copy(). The mechanism of Item_copy is:
     * copy() evaluates the expression and caches its value in memory
@@ -1456,8 +1456,8 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
       Field *orig_field = default_field[i];
       /*
         Get the value from default_values. Note that orig_field->ptr might not
-        point into record[0] if previous step is REF_SLICE_TMP3 and we are
-        creating a tmp table to materialize the query's result.
+        point into record[0] if previous step is REF_SLICE_ORDERED_GROUP_BY and
+        we are creating a tmp table to materialize the query's result.
       */
       my_ptrdiff_t diff = orig_field->table->default_values_offset();
       Field *f_in_record0 = orig_field->table->field[orig_field->field_index];
@@ -1940,12 +1940,11 @@ TABLE *create_tmp_table_from_fields(THD *thd, List<Create_field> &field_list,
   List_iterator_fast<Create_field> it(field_list);
   uint idx = 0;
   while ((cdef = it++)) {
-    *reg_field = make_field(
-        share, 0, cdef->length, (uchar *)(cdef->maybe_null ? "" : 0),
-        cdef->maybe_null ? 1 : 0, cdef->sql_type, cdef->charset,
-        cdef->geom_type, cdef->auto_flags, cdef->interval, cdef->field_name,
-        cdef->maybe_null, cdef->is_zerofill, cdef->is_unsigned, cdef->decimals,
-        cdef->treat_bit_as_char, cdef->pack_length_override, cdef->m_srid);
+    *reg_field =
+        cdef->maybe_null
+            ? make_field(*cdef, share, nullptr,
+                         pointer_cast<uchar *>(const_cast<char *>("")), 1)
+            : make_field(*cdef, share, nullptr, nullptr, 0);
     if (!*reg_field) goto error;
     (*reg_field)->init(table);
     record_length += (*reg_field)->pack_length();
@@ -2013,6 +2012,53 @@ error:
 }
 
 /**
+  Checks if disk storage engine should be used for temporary table.
+
+  @param table            table to allocate SE for
+  @param select_options   current select's options
+  @param force_disk_table true <=> Use MyISAM or InnoDB
+  @param mem_engine       Selected in-memory storage engine.
+
+  @return
+    true if disk storage engine should be used
+    false if disk storage engine is not required
+ */
+static bool use_tmp_disk_storage_engine(
+    TABLE *table, ulonglong select_options, bool force_disk_table,
+    enum_internal_tmp_mem_storage_engine mem_engine) {
+  THD *thd = table->in_use;
+  TABLE_SHARE *share = table->s;
+
+  /* Caller needs SE to be disk-based (@see create_tmp_table()). */
+  if (force_disk_table) {
+    return true;
+  }
+
+  /* During bootstrap, the heap engine is not available, so we force using
+    disk storage engine. This is especially hit when creating a I_S system
+    view definition with a UNION in it. */
+  if (opt_initialize) {
+    return true;
+  }
+
+  if (mem_engine == TMP_TABLE_MEMORY) {
+    /* MEMORY do not support BLOBs */
+    if (share->blob_fields) {
+      return true;
+    }
+  } else {
+    DBUG_ASSERT(mem_engine == TMP_TABLE_TEMPTABLE);
+  }
+
+  /* User said the result would be big, so may not fit in memory */
+  if ((thd->variables.big_tables) && !(select_options & SELECT_SMALL_RESULT)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
   Helper function to create_tmp_table_* family for setting up table's SE
 
   @param table            table to allocate SE for
@@ -2024,29 +2070,29 @@ error:
     false on success
     true  otherwise
 */
-
 static bool setup_tmp_table_handler(TABLE *table, ulonglong select_options,
                                     bool force_disk_table, bool schema_table) {
   THD *thd = table->in_use;
-  TABLE_SHARE *share = table->s;
-  if (select_options & TMP_TABLE_FORCE_MYISAM)
-    share->db_plugin = ha_lock_engine(0, myisam_hton);
-  else if (share->blob_fields ||          // 1
-           (thd->variables.big_tables &&  // 2
-            !(select_options & SELECT_SMALL_RESULT)) ||
-           force_disk_table ||  // 3
-           opt_initialize)      // 4
-  {
-    /*
-      1: MEMORY and TempTable do not support BLOBs
-      2: User said the result would be big, so may not fit in memory
-      3: Caller needs SE to be disk-based (@see create_tmp_table())
-      4: During bootstrap, the heap engine is not available, so we force using
-      InnoDB. This is especially hit when creating a I_S system view
-      definition with a UNION in it.
 
-      Except for special conditions, tmp table engine will be chosen by user.
-    */
+  TABLE_SHARE *share = table->s;
+  enum_internal_tmp_mem_storage_engine mem_engine =
+      static_cast<enum_internal_tmp_mem_storage_engine>(
+          thd->variables.internal_tmp_mem_storage_engine);
+
+  /* Except for special conditions, tmp table engine will be chosen by user. */
+
+  /* For information_schema tables we use the Heap engine because we do
+  not allow user-created TempTable tables and even though information_schema
+  tables are not user-created, an ingenious user may execute:
+  CREATE TABLE myowntemptabletable LIKE information_schema.some; */
+  if (schema_table && (mem_engine == TMP_TABLE_TEMPTABLE)) {
+    mem_engine = TMP_TABLE_MEMORY;
+  }
+
+  if (select_options & TMP_TABLE_FORCE_MYISAM) {
+    share->db_plugin = ha_lock_engine(0, myisam_hton);
+  } else if (use_tmp_disk_storage_engine(table, select_options,
+                                         force_disk_table, mem_engine)) {
     switch (internal_tmp_disk_storage_engine) {
       case TMP_TABLE_MYISAM:
         share->db_plugin = ha_lock_engine(0, myisam_hton);
@@ -2060,19 +2106,10 @@ static bool setup_tmp_table_handler(TABLE *table, ulonglong select_options,
     }
   } else {
     share->db_plugin = nullptr;
-    switch ((enum_internal_tmp_mem_storage_engine)
-                thd->variables.internal_tmp_mem_storage_engine) {
+    switch (mem_engine) {
       case TMP_TABLE_TEMPTABLE:
-        if (!schema_table) {
-          share->db_plugin = ha_lock_engine(0, temptable_hton);
-          break;
-        }
-        /* For information_schema tables we use the Heap engine because we do
-        not allow user-created TempTable tables and even though
-        information_schema tables are not user-created, an ingenious user may
-        execute: CREATE TABLE myowntemptabletable LIKE information_schema.some;
-      */
-        /* Fall-through. */
+        share->db_plugin = ha_lock_engine(0, temptable_hton);
+        break;
       case TMP_TABLE_MEMORY:
         share->db_plugin = ha_lock_engine(0, heap_hton);
         break;
@@ -2083,6 +2120,7 @@ static bool setup_tmp_table_handler(TABLE *table, ulonglong select_options,
   if (!(table->file =
             get_new_handler(share, false, &share->mem_root, share->db_type())))
     return true;
+
   // Update the handler with information about the table object
   table->file->change_table_ptr(table, share);
   if (table->file->set_ha_share_ref(&share->ha_share)) {
@@ -2145,7 +2183,7 @@ static bool alloc_record_buffers(TABLE *table) {
 }
 
 bool open_tmp_table(TABLE *table) {
-  DBUG_ASSERT(table->s->ref_count == 1 ||          // not shared, or:
+  DBUG_ASSERT(table->s->ref_count() == 1 ||        // not shared, or:
               table->s->db_type() == heap_hton ||  // using right engines
               table->s->db_type() == temptable_hton ||
               table->s->db_type() == innodb_hton);
@@ -2472,7 +2510,7 @@ void free_tmp_table(THD *thd, TABLE *entry) {
 
   filesort_free_buffers(entry, true);
 
-  DBUG_ASSERT(entry->s->tmp_handler_count <= entry->s->ref_count);
+  DBUG_ASSERT(entry->s->tmp_handler_count <= entry->s->ref_count());
 
   if (entry->is_created()) {
     DBUG_ASSERT(entry->s->tmp_handler_count >= 1);
@@ -2493,8 +2531,8 @@ void free_tmp_table(THD *thd, TABLE *entry) {
 
   DBUG_ASSERT(entry->mem_root.allocated_size() == 0);
 
-  DBUG_ASSERT(entry->s->ref_count >= 1);
-  if (--entry->s->ref_count == 0)  // no more TABLE objects
+  DBUG_ASSERT(entry->s->ref_count() >= 1);
+  if (entry->s->decrement_ref_count() == 0)  // no more TABLE objects
   {
     plugin_unlock(0, entry->s->db_plugin);
     /*

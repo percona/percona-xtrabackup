@@ -228,4 +228,3 @@ drop table t1_min;
 drop table t1_max;
 drop table t1_part;
 drop table t1_subpart;
-

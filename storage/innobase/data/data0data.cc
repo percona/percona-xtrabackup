@@ -35,8 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "data0data.h"
 #include "ha_prototypes.h"
-#include "my_compiler.h"
-#include "my_inttypes.h"
+
 #ifndef UNIV_HOTBACKUP
 #include "btr0cur.h"
 #include "dict0dict.h"
@@ -756,7 +755,7 @@ byte *dfield_t::blobref() const {
   return (static_cast<byte *>(data) + len - BTR_EXTERN_FIELD_REF_SIZE);
 }
 
-ulint dfield_t::lob_version() const {
+uint32_t dfield_t::lob_version() const {
   ut_ad(ext);
   byte *field_ref = blobref();
 

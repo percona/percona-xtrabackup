@@ -47,9 +47,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "lob0impl.h"
 #include "lob0lob.h"
 #include "lob0pages.h"
-#include "my_compiler.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
 #include "pars0pars.h"
 #include "que0que.h"
 #include "row0import.h"
@@ -63,7 +60,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <vector>
 
-#include <my_aes.h>
+#include "my_aes.h"
+#include "my_dbug.h"
 
 /** The size of the buffer to use for IO. Note: os_file_read() doesn't expect
 reads to fail. If you set the buffer size to be greater than a multiple of the
@@ -3563,7 +3561,7 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
 
     /* If table is not set to encrypted, but the fsp flag
     is not, then return error. */
-    if (!dict_table_is_encrypted(table) && space_flags != 0 &&
+    if (!dd_is_table_in_encrypted_tablespace(table) && space_flags != 0 &&
         FSP_FLAGS_GET_ENCRYPTION(space_flags)) {
       ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
               "Table is not marked as encrypted, but"
@@ -3577,7 +3575,7 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
     cfp file, then return error. */
     if (cfg.m_cfp_missing == true &&
         ((space_flags != 0 && FSP_FLAGS_GET_ENCRYPTION(space_flags)) ||
-         dict_table_is_encrypted(table))) {
+         dd_is_table_in_encrypted_tablespace(table))) {
       ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
               "Table is in an encrypted tablespace, but"
               " can't find the encryption meta-data file"
@@ -3658,7 +3656,7 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
     return (row_import_cleanup(prebuilt, trx, DB_OUT_OF_MEMORY));
   }
 
-  /* Open the etablespace so that we can access via the buffer pool.
+  /* Open the tablespace so that we can access via the buffer pool.
   The tablespace is initially opened as a temporary one, because
   we will not be writing any redo log for it before we have invoked
   fil_space_set_imported() to declare it a persistent tablespace. */
@@ -3689,8 +3687,8 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
     return (row_import_cleanup(prebuilt, trx, err));
   }
 
-  /* For encrypted table, set encryption information. */
-  if (dict_table_is_encrypted(table)) {
+  /* For encrypted tablespace, set encryption information. */
+  if (FSP_FLAGS_GET_ENCRYPTION(fsp_flags)) {
     err = fil_set_encryption(table->space, Encryption::AES,
                              table->encryption_key, table->encryption_iv);
   }
@@ -3836,7 +3834,7 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
     ut_ad(space->flags == space_flags_from_disk);
   }
 
-  if (dict_table_is_encrypted(table)) {
+  if (dd_is_table_in_encrypted_tablespace(table)) {
     mtr_t mtr;
     byte encrypt_info[ENCRYPTION_INFO_SIZE];
 

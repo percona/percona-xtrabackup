@@ -24,8 +24,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 *****************************************************************************/
 
-#include "my_compiler.h"
-
 /** @file include/rem0rec.h
  Record manager
 
@@ -38,13 +36,14 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <ostream>
 #include <sstream>
 
+#include "univ.i"
+
 #include "data0data.h"
 #include "mtr0types.h"
 #include "page0types.h"
 #include "rem/rec.h"
 #include "rem0types.h"
 #include "trx0types.h"
-#include "univ.i"
 
 /** The following function is used to get the pointer of the next chained record
  on the same page.
@@ -611,7 +610,7 @@ void rec_copy_prefix_to_dtuple(
 @param[in]	n_fields	number of fields in the record
 @return	length of specified number of fields */
 UNIV_INLINE
-uint8_t rec_get_n_fields_length(uint16_t n_fields);
+uint8_t rec_get_n_fields_length(ulint n_fields);
 
 /** Set the number of fields for one new style leaf page record.
 This is only needed for table after instant ADD COLUMN.

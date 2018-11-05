@@ -674,7 +674,7 @@ if ($MTR_RECORD == 0) {
 
 # If --record is used, save the json files created in the $DEST_DIR
 # back to the $SRC_DIR.
-if ($RECORD == 1) {
+if ($MTR_RECORD == 1) {
 --copy_files_wildcard $DEST_DIR $SRC_DIR *.json
 }
 
@@ -758,5 +758,13 @@ let $MYSQLD_DATADIR2 = $MYSQL_TMP_DIR/data57_upgrade_default_timezone_bug/data;
 --disable_query_log
 call mtr.add_suppression("You need to use --log-bin to make --binlog-format work");
 --enable_query_log
+
+--echo # Stop the server
+--source include/shutdown_mysqld.inc
+--echo # Remove copied files
+--remove_file $MYSQL_TMP_DIR/data57_upgrade_default_timezone_bug.zip
+--force-rmdir $MYSQL_TMP_DIR/data57_upgrade_default_timezone_bug
+--echo # Restart the server with default options.
+--source include/start_mysqld.inc
 
 --echo # end of test

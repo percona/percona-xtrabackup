@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
-
 
 #define DBTUP_C
 #define DBTUP_TRIGGER_CPP
@@ -395,7 +394,19 @@ Dbtup::createTrigger(Tablerec* table,
     ndbrequire(tmp[i].list != NULL);
 
     TriggerPtr tptr;
-    if (!tmp[i].list->seizeFirst(tptr))
+    bool inserted;
+    /**
+     * FK constraints has to be checked after any SECONDARY_INDEX triggers
+     * which updates the indexes possible referred by the constraints. So
+     * we always insert the FK-constraint last in the list of triggers.
+     */
+    if (ttype == TriggerType::FK_CHILD ||
+        ttype == TriggerType::FK_PARENT)
+      inserted = tmp[i].list->seizeLast(tptr);
+    else
+      inserted = tmp[i].list->seizeFirst(tptr);
+
+    if (!inserted)
     {
       jam();
       goto err;
@@ -912,12 +923,10 @@ void Dbtup::checkDeferredTriggers(KeyReqStruct *req_struct,
     constraint_list = &regTablePtr->afterUpdateTriggers;
     break;
   default:
-    ndbrequire(false);
-    break;
+    ndbabort();
   }
 
-  if (deferred_list->isEmpty() &&
-      (constraint_list == 0 || constraint_list->isEmpty()))
+  if (deferred_list->isEmpty() && constraint_list->isEmpty())
   {
     jam();
     goto end;
@@ -933,7 +942,7 @@ void Dbtup::checkDeferredTriggers(KeyReqStruct *req_struct,
     fireDeferredTriggers(req_struct, * deferred_list, regOperPtr, disk);
   }
 
-  if (constraint_list && !constraint_list->isEmpty())
+  if (!constraint_list->isEmpty())
   {
     jam();
     fireDeferredConstraints(req_struct, * constraint_list, regOperPtr, disk);
@@ -1066,12 +1075,11 @@ void Dbtup::checkDetachedTriggers(KeyReqStruct *req_struct,
                            diskPagePtrI);
       break;
     default:
-      ndbrequire(false);
+      ndbabort();
     }
     break;
   default:
-    ndbrequire(false);
-    break;
+    ndbabort();
   }
 
 end:
@@ -1171,8 +1179,7 @@ Dbtup::fireDeferredConstraints(KeyReqStruct *req_struct,
         jam();
         break;
       default:
-        ndbrequire(false);
-        break;
+        ndbabort();
       }
     }//if
     triggerList.next(trigPtr);
@@ -1289,7 +1296,6 @@ Dbtup::check_fire_fully_replicated(const KeyReqStruct *req_struct,
        * for fully replicated tables.
        */
       return true;
-      jam();
     case Fragrecord::FS_REORG_COMMIT_NEW:
     case Fragrecord::FS_REORG_COMPLETE_NEW:
       jam();
@@ -1299,12 +1305,12 @@ Dbtup::check_fire_fully_replicated(const KeyReqStruct *req_struct,
        * trigger firing from the main fragment from here and
        * onwards.
        */
-      ndbrequire(false);
+      ndbabort();
       return true;
     default:
       break;
   }
-  ndbrequire(false);
+  ndbabort();
   return false;
 }
 
@@ -1395,7 +1401,7 @@ Dbtup::getOldTriggerId(const TupTriggerData* trigPtrP,
   case ZDELETE:
     return trigPtrP->oldTriggerIds[2];
   }
-  ndbrequire(false);
+  ndbabort();
   return RNIL;
 }
 
@@ -1532,8 +1538,8 @@ out:
       triggerId = getOldTriggerId(trigPtr, regOperPtr->op_type);
       trigAttrInfo->setTriggerId(triggerId);
     }
-    // fall-through
   }
+  // Fall through
   case (TriggerType::REORG_TRIGGER):
   case (TriggerType::FK_PARENT):
   case (TriggerType::FK_CHILD):
@@ -1561,7 +1567,7 @@ out:
     // XXX should return status and abort the rest
     return;
   default:
-    ndbrequire(false);
+    ndbabort();
     executeDirect= false; // remove warning
   }//switch
 
@@ -1591,7 +1597,7 @@ out:
       case ZDELETE:
         break;
       default:
-        ndbrequire(false);
+        ndbabort();
       }
     }
     else if (req_struct->m_when == KRS_UK_PRE_COMMIT1)
@@ -1605,7 +1611,7 @@ out:
       case ZDELETE:
         return;
       default:
-        ndbrequire(false);
+        ndbabort();
       }
     }
     else
@@ -1666,19 +1672,21 @@ out:
       switch(regOperPtr->m_copy_tuple_location.m_file_no){
       case Operationrec::RF_SINGLE_NOT_EXIST:
         jam();
+        // Fall through
       case Operationrec::RF_MULTI_NOT_EXIST:
         jam();
         goto is_delete;
       case Operationrec::RF_SINGLE_EXIST:
         jam();
+        // Fall through
       case Operationrec::RF_MULTI_EXIST:
         jam();
         goto is_insert;
       default:
-        ndbrequire(false);
+        ndbabort();
       }
     default:
-      ndbrequire(false);
+      ndbabort();
     }
   }
 
@@ -1710,23 +1718,24 @@ out:
     switch(regOperPtr->m_copy_tuple_location.m_file_no){
     case Operationrec::RF_SINGLE_NOT_EXIST:
       jam();
+      // Fall through
     case Operationrec::RF_MULTI_NOT_EXIST:
       jam();
       fireTrigOrd->m_triggerEvent = TriggerEvent::TE_DELETE;
       break;
     case Operationrec::RF_SINGLE_EXIST:
       jam();
+      // Fall through
     case Operationrec::RF_MULTI_EXIST:
       jam();
       fireTrigOrd->m_triggerEvent = TriggerEvent::TE_INSERT;
       break;
     default:
-      ndbrequire(false);
+      ndbabort();
     }
     break;
   default:
-    ndbrequire(false);
-    break;
+    ndbabort();
   }
 
   fireTrigOrd->setNoOfPrimaryKeyWords(noPrimKey);
@@ -1844,8 +1853,7 @@ out:
     }
     break;
   default:
-    ndbrequire(false);
-    break;
+    ndbabort();
   }
 }
 
@@ -1996,7 +2004,7 @@ bool Dbtup::readTriggerInfo(TupTriggerData* const trigPtr,
                                   &readBuffer[0]);
       break;
     default:
-      ndbrequire(false);
+      ndbabort();
       return false; // Never reached
     }
   }
@@ -2248,7 +2256,7 @@ Dbtup::executeTuxCommitTriggers(Signal* signal,
     /* Refresh should not affect TUX */
     return;
   } else {
-    ndbrequire(false);
+    ndbabort();
     tupVersion= 0; // remove warning
   }
   // fill in constant part
@@ -2284,7 +2292,7 @@ Dbtup::executeTuxAbortTriggers(Signal* signal,
     /* Refresh should not affect TUX */
     return;
   } else {
-    ndbrequire(false);
+    ndbabort();
     tupVersion= 0; // remove warning
   }
   // fill in constant part

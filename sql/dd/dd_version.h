@@ -122,7 +122,7 @@
     MEDIUMBLOB.
 
 
-  80012: Current.
+  80012: Published in 8.0.12
   ----------------------------------------------------------------------------
   Changes from version 80011:
 
@@ -130,11 +130,25 @@
     in sync with WL#6379.
 
 
-  80013: Next DD version number after the previous is public.
+  80013: Published in 8.0.13
   ----------------------------------------------------------------------------
   Changes from version 80012:
 
+  - Bug#24741307: add last_checked_for_upgrade column to msyql.tables table
+
+
+  80014: Current
+  ----------------------------------------------------------------------------
+  Changes from version 80013:
+
   - No changes yet, hence this number is not used yet.
+
+
+  80015: Next DD version number after the previous is public.
+  ----------------------------------------------------------------------------
+  Changes from version 80014:
+
+  - No changes, this version number is not active yet.
 
 
   If a new DD version is published in a MRU, that version may or may not
@@ -146,9 +160,9 @@
 */
 namespace dd {
 
-static const uint DD_VERSION = 80012;
+static const uint DD_VERSION = 80013;
 
-static const uint DD_VERSION_MINOR_DOWNGRADE_THRESHOLD = 80012;
+static const uint DD_VERSION_MINOR_DOWNGRADE_THRESHOLD = 80013;
 
 }  // namespace dd
 

@@ -151,9 +151,13 @@ sub fix_server_id {
 }
 
 sub fix_x_socket {
-  my $result = fix_socket(@_);
-  $result =~ s/mysqld\.([0-9]+)\.sock$/mysqlx\.$1\.sock/;
-  return $result;
+  my ($self, $config, $group_name, $group) = @_;
+
+  # Replace the mysqld prefix with mysqlx in order
+  # to generate a socket named mysqlx*.sock
+  $group_name =~ s/^mysqld/mysqlx/ or die;
+
+  return fix_socket($self, $config, $group_name, $group);
 }
 
 sub fix_socket {
@@ -168,7 +172,8 @@ sub fix_socket {
   if (length($socket) > length("$dir/mysql_testsocket.sock")) {
     # Too long socket path, generate shorter based on port
     my $port = $group->value('port');
-    $socket = "$dir/mysqld-$port.sock";
+    my $group_prefix = substr($group_name, 0, index($group_name, '.'));
+    $socket = "$dir/$group_prefix-$port.sock";
   }
 
   return $socket;
@@ -218,8 +223,7 @@ sub fix_std_data {
 }
 
 sub ssl_supported {
-  my ($self) = @_;
-  return $self->{ARGS}->{ssl};
+  return $::ssl_supported;
 }
 
 sub fix_ssl_disabled {
@@ -259,7 +263,8 @@ sub fix_rsa_public_key {
 }
 
 # Rules to run for each mysqld in the config
-#  - will be run in order listed here
+#  - some rules depend on each other and thus need to be run
+#    in the order listed here
 my @mysqld_rules = (
   { '#abs_datadir'                                 => \&fix_abs_datadir },
   { '#host'                                        => \&fix_host },
@@ -268,12 +273,16 @@ my @mysqld_rules = (
   { 'caching_sha2_password_public_key_path'        => \&fix_rsa_public_key },
   { 'character-sets-dir'                           => \&fix_charset_dir },
   { 'datadir'                                      => \&fix_datadir },
+  { 'port'                                         => \&fix_port },
   { 'general_log'                                  => 1 },
   { 'general_log_file'                             => \&fix_log },
   { 'loose-mysqlx-port'                            => \&fix_x_port },
   { 'loose-mysqlx-socket'                          => \&fix_x_socket },
+  { 'loose-mysqlx-ssl'                             => \&fix_ssl_disabled },
+  { 'loose-mysqlx-ssl-ca'                          => "" },
+  { 'loose-mysqlx-ssl-cert'                        => "" },
+  { 'loose-mysqlx-ssl-key'                         => "" },
   { 'pid-file'                                     => \&fix_pidfile },
-  { 'port'                                         => \&fix_port },
   { 'server-id'                                    => \&fix_server_id, },
   { 'slow_query_log'                               => 1 },
   { 'slow_query_log_file'                          => \&fix_log_slow_queries },

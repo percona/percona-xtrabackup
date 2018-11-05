@@ -749,9 +749,19 @@ static Sys_var_uint Sys_default_password_lifetime(
     &Plock_default_password_lifetime);
 
 static Sys_var_charptr Sys_my_bind_addr(
-    "bind_address", "IP address to bind to.",
+    "bind_address",
+    "IP address(es) to bind to. Syntax: address[,address]...,"
+    " where address can be an IPv4 address, IPv6 address,"
+    " host name or one of the wildcard values *, ::, 0.0.0.0."
+    " In case more than one address is specified in a"
+    " comma-separated list, wildcard values are not allowed.",
     READ_ONLY NON_PERSIST GLOBAL_VAR(my_bind_addr_str), CMD_LINE(REQUIRED_ARG),
     IN_FS_CHARSET, DEFAULT(MY_BIND_ALL_ADDRESSES));
+
+static Sys_var_bool Sys_password_require_current(
+    "password_require_current",
+    "Current password is needed to be specified in order to change it",
+    GLOBAL_VAR(password_require_current), CMD_LINE(OPT_ARG), DEFAULT(false));
 
 static bool fix_binlog_cache_size(sys_var *, THD *thd, enum_var_type) {
   check_binlog_cache_size(thd);
@@ -793,9 +803,9 @@ static Sys_var_int32 Sys_binlog_max_flush_queue_time(
     GLOBAL_VAR(opt_binlog_max_flush_queue_time),
     CMD_LINE(REQUIRED_ARG, OPT_BINLOG_MAX_FLUSH_QUEUE_TIME),
     VALID_RANGE(0, 100000), DEFAULT(0), BLOCK_SIZE(1), NO_MUTEX_GUARD,
-    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED(""));
+    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED_VAR(""));
 
-static Sys_var_ulong Sys_binlog_group_commit_sync_delay(
+static Sys_var_long Sys_binlog_group_commit_sync_delay(
     "binlog_group_commit_sync_delay",
     "The number of microseconds the server waits for the "
     "binary log group commit sync queue to fill before "
@@ -925,17 +935,63 @@ static bool check_super_outside_trx_outside_sf_outside_sp(sys_var *self,
 static bool binlog_format_check(sys_var *self, THD *thd, set_var *var) {
   if (check_has_super(self, thd, var)) return true;
 
+  if (var->type == OPT_GLOBAL || var->type == OPT_PERSIST) {
+    /*
+      SET @@global.binlog_format and SET @@persist.binlog_format must be
+      disallowed if any replication channel has open temporary table(s).
+      Otherwise DROP TEMPORARY TABLE is written into binary log on slave
+      (which disobeys the simple rule: When @@session.binlog_format=
+       ROW/MIXED, the server must not write CREATE/DROP TEMPORARY TABLE
+      to the binary log) in the following case:
+        slave> SET @@global.binlog_format=STATEMENT;
+        slave> START SLAVE;
+        master> CREATE TEMPORARY TABLE t1(a INT);
+        slave> [wait for t1 to replicate]
+        slave> STOP SLAVE;
+        slave> SET @@global.binlog_format=ROW / SET @@persist.binlog_format=ROW
+        master> DROP TEMPORARY TABLE t1;
+        slave> START SLAVE;
+      Note: SET @@persist_only.binlog_format is not disallowed if any
+      replication channel has temporary table(s), since unlike PERSIST,
+      PERSIST_ONLY does not modify the runtime global system variable value.
+
+      SET @@global.binlog_format and SET @@persist.binlog_format must be
+      disallowed if any replication channel applier is running, because
+      SET @@global.binlog_format does not take effect when any replication
+      channel applier is running. SET @@global.binlog_format takes effect
+      on the channel until its applier is (re)starting.
+      Note: SET @@persist_only.binlog_format is not disallowed if any
+      replication channel applier is running, since unlike PERSIST,
+      PERSIST_ONLY does not modify the runtime global system variable value.
+    */
+    enum_slave_channel_status slave_channel_status =
+        has_any_slave_channel_open_temp_table_or_is_its_applier_running();
+    if (slave_channel_status == SLAVE_CHANNEL_APPLIER_IS_RUNNING) {
+      my_error(ER_RUNNING_APPLIER_PREVENTS_SWITCH_GLOBAL_BINLOG_FORMAT, MYF(0));
+      return true;
+    } else if (slave_channel_status == SLAVE_CHANNEL_HAS_OPEN_TEMPORARY_TABLE) {
+      my_error(ER_TEMP_TABLE_PREVENTS_SWITCH_GLOBAL_BINLOG_FORMAT, MYF(0));
+      return true;
+    }
+  }
+
   if (!var->is_global_persist()) {
     /*
-      If binlog_format='ROW' or 'MIXED' and there are open temporary tables,
-      their CREATE TABLE will not be in the binlog, so we can't toggle to
-      'STATEMENT' in this connection.
+      SET @@session.binlog_format must be disallowed if the session has open
+      temporary table(s). Otherwise DROP TEMPORARY TABLE is written into
+      binary log (which disobeys the simple rule: When
+      @@session.binlog_format=ROW/MIXED, the server must not write
+      CREATE/DROP TEMPORARY TABLE to the binary log) in the following case:
+        SET @@session.binlog_format=STATEMENT;
+        CREATE TEMPORARY TABLE t1 (a INT);
+        SET @@session.binlog_format=ROW;
+        DROP TEMPORARY TABLE t1;
+      And more, if binlog_format=ROW/MIXED and the session has open temporary
+      table(s), these CREATE TEMPORARY TABLE are not written into the binlog,
+      so we can not switch to STATEMENT.
     */
-    if (thd->temporary_tables &&
-        var->save_result.ulonglong_value == BINLOG_FORMAT_STMT &&
-        (thd->variables.binlog_format == BINLOG_FORMAT_MIXED ||
-         thd->variables.binlog_format == BINLOG_FORMAT_ROW)) {
-      my_error(ER_TEMP_TABLE_PREVENTS_SWITCH_OUT_OF_RBR, MYF(0));
+    if (thd->temporary_tables) {
+      my_error(ER_TEMP_TABLE_PREVENTS_SWITCH_SESSION_BINLOG_FORMAT, MYF(0));
       return true;
     }
 
@@ -1334,7 +1390,7 @@ static bool check_storage_engine(sys_var *self, THD *thd, set_var *var) {
   return false;
 }
 
-static bool check_charset(sys_var *, THD *, set_var *var) {
+static bool check_charset(sys_var *, THD *thd, set_var *var) {
   if (!var->value) return false;
 
   char buff[STRING_BUFFER_USUAL_SIZE];
@@ -1350,6 +1406,9 @@ static bool check_charset(sys_var *, THD *, set_var *var) {
         my_error(ER_UNKNOWN_CHARACTER_SET, MYF(0), err.ptr());
         return true;
       }
+      warn_on_deprecated_charset(
+          thd, static_cast<const CHARSET_INFO *>(var->save_result.ptr),
+          err.ptr());
     }
   } else  // INT_RESULT
   {
@@ -1358,6 +1417,9 @@ static bool check_charset(sys_var *, THD *, set_var *var) {
       my_error(ER_UNKNOWN_CHARACTER_SET, MYF(0), llstr(csno, buff));
       return true;
     }
+    warn_on_deprecated_charset(
+        thd, static_cast<const CHARSET_INFO *>(var->save_result.ptr),
+        static_cast<const CHARSET_INFO *>(var->save_result.ptr)->name);
   }
   return false;
 }
@@ -1489,6 +1551,11 @@ static bool check_collation_not_null(sys_var *self, THD *thd, set_var *var) {
       return true;
     }
   }
+  if (var->save_result.ptr) {
+    warn_on_deprecated_collation(
+        thd, static_cast<const CHARSET_INFO *>(var->save_result.ptr));
+  }
+
   return check_not_null(self, thd, var);
 }
 static Sys_var_struct<CHARSET_INFO, Get_name> Sys_collation_connection(
@@ -1588,7 +1655,8 @@ static Sys_var_ulong Sys_delayed_insert_limit(
     "This variable is deprecated along with INSERT DELAYED.",
     GLOBAL_VAR(delayed_insert_limit), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(1, ULONG_MAX), DEFAULT(DELAYED_LIMIT), BLOCK_SIZE(1),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED(""));
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0),
+    DEPRECATED_VAR(""));
 
 static Sys_var_ulong Sys_delayed_insert_timeout(
     "delayed_insert_timeout",
@@ -1597,7 +1665,8 @@ static Sys_var_ulong Sys_delayed_insert_timeout(
     "This variable is deprecated along with INSERT DELAYED.",
     GLOBAL_VAR(delayed_insert_timeout), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(1, LONG_TIMEOUT), DEFAULT(DELAYED_WAIT_TIMEOUT), BLOCK_SIZE(1),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED(""));
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0),
+    DEPRECATED_VAR(""));
 
 static Sys_var_ulong Sys_delayed_queue_size(
     "delayed_queue_size",
@@ -1607,7 +1676,8 @@ static Sys_var_ulong Sys_delayed_queue_size(
     "This variable is deprecated along with INSERT DELAYED.",
     GLOBAL_VAR(delayed_queue_size), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(1, ULONG_MAX), DEFAULT(DELAYED_QUEUE_SIZE), BLOCK_SIZE(1),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED(""));
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0),
+    DEPRECATED_VAR(""));
 
 static const char *event_scheduler_names[] = {"OFF", "ON", "DISABLED", NullS};
 static bool event_scheduler_check(sys_var *, THD *, set_var *var) {
@@ -1692,7 +1762,7 @@ static Sys_var_ulong Sys_expire_logs_days(
     GLOBAL_VAR(expire_logs_days), CMD_LINE(REQUIRED_ARG, OPT_EXPIRE_LOGS_DAYS),
     VALID_RANGE(0, 99), DEFAULT(0), BLOCK_SIZE(1), NO_MUTEX_GUARD,
     NOT_IN_BINLOG, ON_CHECK(check_expire_logs_days), ON_UPDATE(NULL),
-    DEPRECATED("binlog_expire_logs_seconds"));
+    DEPRECATED_VAR("binlog_expire_logs_seconds"));
 
 static Sys_var_ulong Sys_binlog_expire_logs_seconds(
     "binlog_expire_logs_seconds",
@@ -2030,16 +2100,16 @@ static Sys_var_charptr Sys_log_error(
 
 static bool check_log_error_services(sys_var *self, THD *thd, set_var *var) {
   // test whether syntax is OK and services exist
-  int i;
+  size_t pos;
 
   if (var->save_result.string_value.str == nullptr) return true;
 
-  if ((i = log_builtins_error_stack(var->save_result.string_value.str, true)) <
+  if (log_builtins_error_stack(var->save_result.string_value.str, true, &pos) <
       0) {
     push_warning_printf(
         thd, Sql_condition::SL_WARNING, ER_CANT_SET_ERROR_LOG_SERVICE,
         ER_THD(thd, ER_CANT_SET_ERROR_LOG_SERVICE), self->name.str,
-        &((char *)var->save_result.string_value.str)[-(i + 1)]);
+        &((char *)var->save_result.string_value.str)[pos]);
     return true;
   } else if (strlen(var->save_result.string_value.str) < 1) {
     push_warning_printf(
@@ -2054,15 +2124,14 @@ static bool fix_log_error_services(sys_var *self MY_ATTRIBUTE((unused)),
                                    THD *thd,
                                    enum_var_type type MY_ATTRIBUTE((unused))) {
   // syntax is OK and services exist; try to initialize them!
-  int rr = log_builtins_error_stack(opt_log_error_services, false);
-  if (rr < 0) {
-    rr = -(rr + 1);
-    if (((size_t)rr) < strlen(opt_log_error_services))
+  size_t pos;
+  if (log_builtins_error_stack(opt_log_error_services, false, &pos) < 0) {
+    if (pos < strlen(opt_log_error_services)) /* purecov: begin inspected */
       push_warning_printf(
           thd, Sql_condition::SL_WARNING, ER_CANT_START_ERROR_LOG_SERVICE,
           ER_THD(thd, ER_CANT_START_ERROR_LOG_SERVICE), self->name.str,
-          &((char *)opt_log_error_services)[rr]);
-    return true;
+          &((char *)opt_log_error_services)[pos]);
+    return true; /* purecov: end */
   }
 
   return false;
@@ -2075,6 +2144,46 @@ static Sys_var_charptr Sys_log_error_services(
     IN_SYSTEM_CHARSET, DEFAULT("log_filter_internal; log_sink_internal"),
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_log_error_services),
     ON_UPDATE(fix_log_error_services));
+
+static bool check_log_error_suppression_list(sys_var *self, THD *thd,
+                                             set_var *var) {
+  int i;
+
+  if (var->save_result.string_value.str == nullptr) return true;
+
+  if ((i = log_builtins_filter_parse_suppression_list(
+           var->save_result.string_value.str, false)) < 0) {
+    push_warning_printf(
+        thd, Sql_condition::SL_WARNING, ER_CANT_SET_ERROR_SUPPRESSION_LIST,
+        ER_THD(thd, ER_CANT_SET_ERROR_SUPPRESSION_LIST), self->name.str,
+        &((char *)var->save_result.string_value.str)[-(i + 1)]);
+    return true;
+  }
+
+  return false;
+}
+
+static bool fix_log_error_suppression_list(
+    sys_var *self MY_ATTRIBUTE((unused)), THD *thd MY_ATTRIBUTE((unused)),
+    enum_var_type type MY_ATTRIBUTE((unused))) {
+  // syntax is OK and errcodes have messages; try to make filter rules for them!
+  int rr = log_builtins_filter_parse_suppression_list(
+      opt_log_error_suppression_list, true);
+  return (rr < 0) ? true : false;
+}
+
+static Sys_var_charptr Sys_log_error_suppression_list(
+    "log_error_suppression_list",
+    "Comma-separated list of error-codes. Error messages corresponding to "
+    "these codes will not be included in the error log. Only events with a "
+    "severity of Warning or Information can be suppressed; events with System "
+    "or Error severity will always be included. Requires the filter "
+    "\'log_filter_internal\' to be set in @@global.log_error_services, which "
+    "is the default.",
+    GLOBAL_VAR(opt_log_error_suppression_list), CMD_LINE(REQUIRED_ARG),
+    IN_SYSTEM_CHARSET, DEFAULT(""), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+    ON_CHECK(check_log_error_suppression_list),
+    ON_UPDATE(fix_log_error_suppression_list));
 
 static Sys_var_bool Sys_log_queries_not_using_indexes(
     "log_queries_not_using_indexes",
@@ -2146,83 +2255,6 @@ static Sys_var_bool Sys_log_statements_unsafe_for_binlog(
     "Log statements considered unsafe when using statement based binary "
     "logging.",
     GLOBAL_VAR(opt_log_unsafe_statements), CMD_LINE(OPT_ARG), DEFAULT(true));
-
-/* logging to host OS's syslog */
-
-static bool fix_syslog_enable(sys_var *self, THD *thd MY_ATTRIBUTE((unused)),
-                              enum_var_type type MY_ATTRIBUTE((unused))) {
-  return LogVar(self->name).val((longlong)opt_log_syslog_enable).update();
-}
-
-static Sys_var_bool Sys_log_syslog_enable(
-    "log_syslog",
-    "Errors, warnings, and similar issues eligible for MySQL's error log "
-    "file may additionally be sent to the host operating system's system "
-    "log (\"syslog\").",
-    GLOBAL_VAR(opt_log_syslog_enable), CMD_LINE(OPT_ARG),
-    DEFAULT(true),  // true-when-loaded on either platform
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(fix_syslog_enable),
-    DEPRECATED("--log_error_services"));
-
-static bool fix_syslog_tag(sys_var *self, THD *thd MY_ATTRIBUTE((unused)),
-                           enum_var_type type MY_ATTRIBUTE((unused))) {
-  return LogVar(self->name).val(opt_log_syslog_tag).update();
-}
-
-static bool check_syslog_tag(sys_var *self, THD *THD MY_ATTRIBUTE((unused)),
-                             set_var *var) {
-  if (var->value != nullptr)
-    return LogVar(self->name).val(var->save_result.string_value).check();
-
-  return false;
-}
-
-static Sys_var_charptr Sys_log_syslog_tag(
-    "log_syslog_tag",
-    "When logging issues using the host operating system's syslog, "
-    "tag the entries from this particular MySQL server with this ident. "
-    "This will help distinguish entries from MySQL servers co-existing "
-    "on the same host machine. A non-empty tag will be appended to the "
-    "default ident of 'mysqld', connected by a hyphen.",
-    GLOBAL_VAR(opt_log_syslog_tag), CMD_LINE(REQUIRED_ARG), IN_SYSTEM_CHARSET,
-    DEFAULT(""), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_syslog_tag),
-    ON_UPDATE(fix_syslog_tag));
-
-#ifndef _WIN32
-
-static bool check_syslog_facility(sys_var *self, THD *, set_var *var) {
-  if (var->value != nullptr)
-    return LogVar(self->name).val(var->save_result.string_value).check();
-  return false;
-}
-
-static bool fix_syslog_facility(sys_var *self, THD *thd MY_ATTRIBUTE((unused)),
-                                enum_var_type type MY_ATTRIBUTE((unused))) {
-  return LogVar(self->name).val(opt_log_syslog_facility).update();
-}
-
-static Sys_var_charptr Sys_log_syslog_facility(
-    "log_syslog_facility",
-    "When logging issues using the host operating system's syslog, "
-    "identify as a facility of the given type (to aid in log filtering).",
-    GLOBAL_VAR(opt_log_syslog_facility), CMD_LINE(REQUIRED_ARG),
-    IN_SYSTEM_CHARSET, DEFAULT("daemon"), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-    ON_CHECK(check_syslog_facility), ON_UPDATE(fix_syslog_facility));
-
-static bool fix_syslog_pid(sys_var *self, THD *thd MY_ATTRIBUTE((unused)),
-                           enum_var_type type MY_ATTRIBUTE((unused))) {
-  return LogVar(self->name).val((longlong)opt_log_syslog_include_pid).update();
-}
-
-static Sys_var_bool Sys_log_syslog_log_pid(
-    "log_syslog_include_pid",
-    "When logging issues using the host operating system's syslog, "
-    "include this MySQL server's process ID (PID). This setting does "
-    "not affect MySQL's own error log file.",
-    GLOBAL_VAR(opt_log_syslog_include_pid), CMD_LINE(OPT_ARG), DEFAULT(true),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(fix_syslog_pid));
-
-#endif
 
 static bool update_cached_long_query_time(sys_var *, THD *thd,
                                           enum_var_type type) {
@@ -2397,7 +2429,7 @@ static Sys_var_ulong Sys_max_insert_delayed_threads(
     "This variable is deprecated along with INSERT DELAYED.",
     SESSION_VAR(max_insert_delayed_threads), NO_CMD_LINE, VALID_RANGE(0, 16384),
     DEFAULT(20), BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-    ON_CHECK(check_max_delayed_threads), ON_UPDATE(0), DEPRECATED(""));
+    ON_CHECK(check_max_delayed_threads), ON_UPDATE(0), DEPRECATED_VAR(""));
 
 static Sys_var_ulong Sys_max_delayed_threads(
     "max_delayed_threads",
@@ -2407,7 +2439,7 @@ static Sys_var_ulong Sys_max_delayed_threads(
     SESSION_VAR(max_insert_delayed_threads), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(0, 16384), DEFAULT(20), BLOCK_SIZE(1), NO_MUTEX_GUARD,
     NOT_IN_BINLOG, ON_CHECK(check_max_delayed_threads), ON_UPDATE(0),
-    DEPRECATED(""));
+    DEPRECATED_VAR(""));
 
 static Sys_var_ulong Sys_max_error_count(
     "max_error_count", "Max number of errors/warnings to store for a statement",
@@ -2420,22 +2452,6 @@ static Sys_var_ulonglong Sys_max_heap_table_size(
     HINT_UPDATEABLE SESSION_VAR(max_heap_table_size), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(16384, (ulonglong) ~(intptr)0), DEFAULT(16 * 1024 * 1024),
     BLOCK_SIZE(1024));
-
-static ulong mdl_locks_cache_size_unused;
-static Sys_var_ulong Sys_metadata_locks_cache_size(
-    "metadata_locks_cache_size", "Has no effect, deprecated",
-    READ_ONLY GLOBAL_VAR(mdl_locks_cache_size_unused),
-    CMD_LINE(REQUIRED_ARG, OPT_MDL_CACHE_SIZE), VALID_RANGE(1, 1024 * 1024),
-    DEFAULT(1024), BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
-    ON_UPDATE(0), DEPRECATED(""));
-
-static ulong mdl_locks_hash_partitions_unused;
-static Sys_var_ulong Sys_metadata_locks_hash_instances(
-    "metadata_locks_hash_instances", "Has no effect, deprecated",
-    READ_ONLY GLOBAL_VAR(mdl_locks_hash_partitions_unused),
-    CMD_LINE(REQUIRED_ARG, OPT_MDL_HASH_INSTANCES), VALID_RANGE(1, 1024),
-    DEFAULT(8), BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
-    ON_UPDATE(0), DEPRECATED(""));
 
 // relies on DBUG_ASSERT(sizeof(my_thread_id) == 4);
 static Sys_var_uint Sys_pseudo_thread_id(
@@ -2777,6 +2793,7 @@ static const char *optimizer_switch_names[] = {
     "condition_fanout_filter",
     "derived_merge",
     "use_invisible_indexes",
+    "skip_scan",
     "default",
     NullS};
 static Sys_var_flagset Sys_optimizer_switch(
@@ -2786,7 +2803,7 @@ static Sys_var_flagset Sys_optimizer_switch(
     "index_merge_intersection, engine_condition_pushdown, "
     "index_condition_pushdown, mrr, mrr_cost_based"
     ", materialization, semijoin, loosescan, firstmatch, duplicateweedout,"
-    " subquery_materialization_cost_based"
+    " subquery_materialization_cost_based, skip_scan"
     ", block_nested_loop, batched_key_access, use_index_extensions,"
     " condition_fanout_filter, derived_merge} and val is one of "
     "{on, off, default}",
@@ -3187,8 +3204,14 @@ static Sys_var_charptr Sys_socket(
 static Sys_var_ulong Sys_thread_stack(
     "thread_stack", "The stack size for each thread",
     READ_ONLY GLOBAL_VAR(my_thread_stack_size), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(128 * 1024, ULONG_MAX), DEFAULT(DEFAULT_THREAD_STACK),
-    BLOCK_SIZE(1024));
+#if defined(__clang__) && defined(HAVE_UBSAN)
+    // DEFAULT_THREAD_STACK is multiplied by 3 for clang/UBSAN
+    // We need to increase the minimum value as well.
+    VALID_RANGE(DEFAULT_THREAD_STACK / 2, ULONG_MAX),
+#else
+    VALID_RANGE(128 * 1024, ULONG_MAX),
+#endif
+    DEFAULT(DEFAULT_THREAD_STACK), BLOCK_SIZE(1024));
 
 static Sys_var_charptr Sys_tmpdir(
     "tmpdir",
@@ -3987,10 +4010,12 @@ static bool check_sql_mode(sys_var *, THD *thd, set_var *var) {
   var->save_result.ulonglong_value = candidate_mode;
 
   if (candidate_mode & ~MODE_ALLOWED_MASK) {
-    push_warning_printf(thd, Sql_condition::SL_WARNING,
-                        ER_WARN_DEPRECATED_SQLMODE,
-                        ER_THD(thd, ER_WARN_DEPRECATED_SQLMODE), "HEI HEI");
     return true;
+  }
+  if (candidate_mode & MODE_PAD_CHAR_TO_FULL_LENGTH) {
+    push_warning_printf(
+        thd, Sql_condition::SL_WARNING, ER_WARN_DEPRECATED_SQLMODE,
+        ER_THD(thd, ER_WARN_DEPRECATED_SQLMODE), "PAD_CHAR_TO_FULL_LENGTH");
   }
 
   return false;
@@ -4102,6 +4127,7 @@ static Sys_var_charptr Sys_tls_version(
 static bool update_fips_mode(sys_var *, THD *, enum_var_type) {
   char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
   if (set_fips_mode(opt_ssl_fips_mode, ssl_err_string) != 1) {
+    opt_ssl_fips_mode = get_fips_mode();
     my_error(ER_SSL_FIPS_MODE_ERROR, MYF(0), "Openssl is not fips enabled");
     return true;
   } else {
@@ -4117,7 +4143,12 @@ static const char *ssl_fips_mode_names[] = {"OFF", "ON", "STRICT", 0};
 #endif
 static Sys_var_enum Sys_ssl_fips_mode(
     "ssl_fips_mode",
-    "ssl fips mode, permitted values are OFF, ON, STRICT (Only for openssl)",
+    "SSL FIPS mode (applies only for OpenSSL); "
+#ifndef HAVE_WOLFSSL
+    "permitted values are: OFF, ON, STRICT",
+#else
+    "permitted values are: OFF",
+#endif
     GLOBAL_VAR(opt_ssl_fips_mode), SSL_OPT(OPT_SSL_FIPS_MODE),
     ssl_fips_mode_names, DEFAULT(0), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(NULL),
@@ -4669,13 +4700,13 @@ static Sys_var_bit Sys_profiling("profiling", "profiling",
                                  SESSION_VAR(option_bits), NO_CMD_LINE,
                                  OPTION_PROFILING, DEFAULT(false),
                                  NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
-                                 ON_UPDATE(0), DEPRECATED(""));
+                                 ON_UPDATE(0), DEPRECATED_VAR(""));
 
 static Sys_var_ulong Sys_profiling_history_size(
     "profiling_history_size", "Limit of query profiling memory",
     SESSION_VAR(profiling_history_size), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(0, 100), DEFAULT(15), BLOCK_SIZE(1), NO_MUTEX_GUARD,
-    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED(""));
+    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED_VAR(""));
 #endif
 
 static Sys_var_harows Sys_select_limit(
@@ -5065,7 +5096,8 @@ static Sys_var_have Sys_have_openssl("have_openssl", "have_openssl",
 static Sys_var_have Sys_have_profiling(
     "have_profiling", "have_profiling",
     READ_ONLY NON_PERSIST GLOBAL_VAR(have_profiling), NO_CMD_LINE,
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED(""));
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0),
+    DEPRECATED_VAR(""));
 
 static Sys_var_have Sys_have_query_cache(
     "have_query_cache",
@@ -5073,7 +5105,7 @@ static Sys_var_have Sys_have_query_cache(
     "This variable is deprecated and will be removed in a future release.",
     READ_ONLY NON_PERSIST GLOBAL_VAR(have_query_cache), NO_CMD_LINE,
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr),
-    DEPRECATED(""));
+    DEPRECATED_VAR(""));
 
 static Sys_var_have Sys_have_rtree_keys(
     "have_rtree_keys", "have_rtree_keys",
@@ -5444,7 +5476,7 @@ static bool check_locale(sys_var *self, THD *thd, set_var *var) {
     String str(buff, sizeof(buff), system_charset_info), *res;
     if (!(res = var->value->val_str(&str)))
       return true;
-    else if (!(locale = my_locale_by_name(thd, res->c_ptr_safe()))) {
+    else if (!(locale = my_locale_by_name(thd, res->ptr(), res->length()))) {
       ErrConvString err(res);
       my_error(ER_UNKNOWN_LOCALE, MYF(0), err.ptr());
       return true;
@@ -5885,7 +5917,8 @@ static Sys_var_bool Sys_avoid_temporal_upgrade(
     "This variable is deprecated and will be removed in a future release.",
     GLOBAL_VAR(avoid_temporal_upgrade),
     CMD_LINE(OPT_ARG, OPT_AVOID_TEMPORAL_UPGRADE), DEFAULT(false),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED(""));
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0),
+    DEPRECATED_VAR(""));
 
 static Sys_var_bool Sys_show_old_temporals(
     "show_old_temporals",
@@ -5895,7 +5928,7 @@ static Sys_var_bool Sys_show_old_temporals(
     "This variable is deprecated and will be removed in a future release.",
     SESSION_VAR(show_old_temporals), CMD_LINE(OPT_ARG, OPT_SHOW_OLD_TEMPORALS),
     DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0),
-    DEPRECATED(""));
+    DEPRECATED_VAR(""));
 
 static Sys_var_charptr Sys_disabled_storage_engines(
     "disabled_storage_engines",
@@ -6137,3 +6170,29 @@ static Sys_var_bool Sys_show_create_table_verbosity(
     "'SHOW CREATE TABLE'.",
     SESSION_VAR(show_create_table_verbosity), CMD_LINE(OPT_ARG), DEFAULT(false),
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0));
+
+static const char *use_secondary_engine_values[] = {"OFF", "ON", "FORCED",
+                                                    nullptr};
+static Sys_var_enum Sys_use_secondary_engine(
+    "use_secondary_engine",
+    "Controls preparation of SELECT statements against secondary storage "
+    "engine. Valid values: OFF/ON/FORCED. OFF = Prepare only against primary "
+    "storage engine. ON = First prepare against secondary storage engine, "
+    "reprepare against primary storage engine if error. FORCED = Prepare all "
+    "SELECT statements referencing one or more base tables only against "
+    "secondary storage engine.",
+    HINT_UPDATEABLE SESSION_ONLY(use_secondary_engine), NO_CMD_LINE,
+    use_secondary_engine_values, DEFAULT(SECONDARY_ENGINE_ON), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));
+
+static Sys_var_bool Sys_sql_require_primary_key{
+    "sql_require_primary_key",
+    "When set, tables must be created with a primary key, and an existing "
+    "primary key cannot be removed with 'ALTER TABLE'. Attempts to do so "
+    "will result in an error.",
+    HINT_UPDATEABLE SESSION_VAR(sql_require_primary_key),
+    CMD_LINE(OPT_ARG),
+    DEFAULT(false),
+    NO_MUTEX_GUARD,
+    IN_BINLOG,
+    ON_CHECK(check_has_super)};

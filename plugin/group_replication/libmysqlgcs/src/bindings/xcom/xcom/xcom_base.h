@@ -171,7 +171,8 @@ typedef void (*xcom_local_view_receiver)(synode_no message_id, node_set nodes);
 void set_xcom_local_view_receiver(xcom_local_view_receiver x);
 
 typedef void (*xcom_global_view_receiver)(synode_no config_id,
-                                          synode_no message_id, node_set nodes);
+                                          synode_no message_id, node_set nodes,
+                                          xcom_event_horizon);
 void set_xcom_global_view_receiver(xcom_global_view_receiver x);
 
 void set_xcom_logger(xcom_logger x);
@@ -188,12 +189,15 @@ typedef void (*xcom_state_change_cb)(int status);
 void set_xcom_run_cb(xcom_state_change_cb x);
 void set_xcom_terminate_cb(xcom_state_change_cb x);
 void set_xcom_exit_cb(xcom_state_change_cb x);
+void set_xcom_expel_cb(xcom_state_change_cb x);
 
 typedef int (*should_exit_getter)();
 void set_should_exit_getter(should_exit_getter x);
 
 app_data_ptr init_config_with_group(app_data *a, node_list *nl, cargo_type type,
                                     uint32_t group_id);
+app_data_ptr init_set_event_horizon_msg(app_data *a, uint32_t group_id,
+                                        xcom_event_horizon event_horizon);
 
 /*
  Registers a callback that is called right after
@@ -220,8 +224,15 @@ int xcom_client_force_remove_node(connection_descriptor *fd, node_list *nl,
                                   uint32_t group_id);
 int xcom_client_remove_node(connection_descriptor *fd, node_list *nl,
                             uint32_t group_id);
+int64_t xcom_client_send_die(connection_descriptor *fd);
 int64_t xcom_client_send_data(uint32_t size, char *data,
                               connection_descriptor *fd);
+xcom_event_horizon xcom_get_minimum_event_horizon();
+xcom_event_horizon xcom_get_maximum_event_horizon();
+int xcom_client_get_event_horizon(connection_descriptor *fd, uint32_t group_id,
+                                  xcom_event_horizon *event_horizon);
+int xcom_client_set_event_horizon(connection_descriptor *fd, uint32_t group_id,
+                                  xcom_event_horizon event_horizon);
 int xcom_client_terminate_and_exit(connection_descriptor *fd);
 int xcom_client_set_cache_limit(connection_descriptor *fd,
                                 uint64_t cache_limit);

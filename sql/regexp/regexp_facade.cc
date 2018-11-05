@@ -24,6 +24,7 @@
 
 #include <string>
 
+#include "my_pointer_arithmetic.h"
 #include "sql/mysqld.h"  // make_unique_destroy_only
 #include "sql/regexp/regexp_engine.h"
 #include "sql_string.h"
@@ -32,8 +33,9 @@
 namespace regexp {
 
 bool EvalExprToCharset(Item *expr, std::u16string *out) {
-  StringBuffer<MAX_FIELD_WIDTH> pre_conversion_buffer;
-  String *s = expr->val_str(&pre_conversion_buffer);
+  alignas(sizeof(UChar)) char aligned_buff[MAX_FIELD_WIDTH];
+  String aligned_str(aligned_buff, sizeof(aligned_buff), &my_charset_bin);
+  String *s = expr->val_str(&aligned_str);
   if (s == nullptr) return true;
 
   if (s->length() == 0) {
@@ -54,6 +56,13 @@ bool EvalExprToCharset(Item *expr, std::u16string *out) {
     return false;
   }
   // No conversion needed; just copy into the u16string.
+  // However: val_str() may ignore the input argument,
+  // and return a pointer to some other buffer.
+  if (!is_aligned_to(s->ptr(), alignof(UChar))) {
+    DBUG_ASSERT(s != &aligned_str);
+    aligned_str.copy(*s);
+    s = &aligned_str;
+  }
   out->clear();
   out->insert(out->end(), pointer_cast<const UChar *>(s->ptr()),
               pointer_cast<const UChar *>(s->ptr() + s->length()));

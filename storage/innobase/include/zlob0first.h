@@ -108,6 +108,13 @@ struct z_first_page_t {
     return (flst_get_len(flst) == 0);
   }
 
+  /** Get the length of the index list.
+  @return length of the index list. */
+  ulint get_index_list_length() const {
+    flst_base_node_t *flst = index_list();
+    return (flst_get_len(flst));
+  }
+
   void set_version_0() {
     mlog_write_ulint(frame() + OFFSET_VERSION, 0, MLOG_1BYTE, m_mtr);
   }
@@ -135,7 +142,7 @@ struct z_first_page_t {
 
   void import(trx_id_t trx_id);
 
-  ulint get_page_type() const {
+  page_type_t get_page_type() const {
     return (mach_read_from_2(frame() + FIL_PAGE_TYPE));
   }
 
@@ -211,8 +218,8 @@ struct z_first_page_t {
   }
 
   /** Get the page number. */
-  ulint get_page_no() const {
-    return (mach_read_from_4(frame() + FIL_PAGE_OFFSET));
+  page_no_t get_page_no() const {
+    return static_cast<page_no_t>(mach_read_from_4(frame() + FIL_PAGE_OFFSET));
   }
 
   /** Get the page id of the first page of compressed LOB.
@@ -225,7 +232,7 @@ struct z_first_page_t {
 
   fil_addr_t get_self_addr() const {
     page_no_t page_no = get_page_no();
-    ulint offset = begin_data();
+    uint32_t offset = static_cast<uint32_t>(begin_data());
     return (fil_addr_t(page_no, offset));
   }
 

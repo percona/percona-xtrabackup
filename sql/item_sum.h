@@ -1091,6 +1091,12 @@ class Item_sum_hybrid_field : public Item_result_field {
     */
     return Item::mark_field_in_map(pointer_cast<Mark_field *>(arg), field);
   }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->banned_function_name = func_name();
+    return true;
+  }
 };
 
 /**
@@ -1258,7 +1264,7 @@ class Item_sum_avg final : public Item_sum_sum {
   bool add() override;
   double val_real() override;
   // In SPs we might force the "wrong" type with select into a declare variable
-  longlong val_int() override { return (longlong)rint(val_real()); }
+  longlong val_int() override { return llrint(val_real()); }
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *str) override;
   void reset_field() override;
@@ -1295,6 +1301,12 @@ class Item_variance_field : public Item_sum_num_field {
   const char *func_name() const override {
     DBUG_ASSERT(0);
     return "variance_field";
+  }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = func_arg->get_unnamed_function_error_code();
+    return true;
   }
 };
 
@@ -1419,6 +1431,12 @@ class Item_std_field final : public Item_variance_field {
   const char *func_name() const override {
     DBUG_ASSERT(0);
     return "std_field";
+  }
+  bool check_function_as_value_generator(uchar *args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(args);
+    func_arg->err_code = func_arg->get_unnamed_function_error_code();
+    return true;
   }
 };
 

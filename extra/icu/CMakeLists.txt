@@ -1,4 +1,4 @@
-# Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -52,6 +52,27 @@ IF(LINUX)
   )
 ENDIF()
 
+IF(CMAKE_COMPILER_IS_GNUCXX)
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "-Wno-stringop-overflow")
+ENDIF()
+
+MY_CHECK_CXX_COMPILER_FLAG("-Wunused-but-set-variable"
+  HAVE_UNUSED_BUT_SET_VARIABLE)
+IF(HAVE_UNUSED_BUT_SET_VARIABLE)
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "-Wno-unused-but-set-variable")
+ENDIF()
+
+MY_CHECK_CXX_COMPILER_FLAG("-Wmisleading-indentation"
+  HAVE_MISLEADING_INDENTATION)
+IF(HAVE_MISLEADING_INDENTATION)
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "-Wno-misleading-indentation")
+ENDIF()
+
+MY_CHECK_CXX_COMPILER_FLAG("-Wmaybe-uninitialized" HAVE_MAYBE_UNINITIALIZED)
+IF(HAVE_MAYBE_UNINITIALIZED)
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "-Wno-maybe-uninitialized")
+ENDIF()
+
 IF(WIN32)
   ADD_DEFINITIONS(
     -DU_STATIC_IMPLEMENTATION=1
@@ -59,6 +80,9 @@ IF(WIN32)
     -DU_EXPORT=
   )
 ENDIF()
+
+STRING(REPLACE "-flto" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+STRING(REPLACE "-flto" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 ADD_SUBDIRECTORY(source/common)
 ADD_SUBDIRECTORY(source/i18n)

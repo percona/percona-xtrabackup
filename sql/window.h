@@ -158,7 +158,7 @@ class Window {
 
   /**
     Can be true if first window after a join: we may need to restore the input
-    record after buffered window processing if join_read_key's caching logic
+    record after buffered window processing if EQRefIterator's caching logic
     presumes the record hasn't been modified (when last qep_tab uses JT_EQ_REF).
   */
   bool m_needs_restore_input_row;
@@ -1228,19 +1228,6 @@ class Window {
   */
   void set_row_has_fields_in_out_table(int64 rowno) {
     m_row_has_fields_in_out_table = rowno;
-  }
-
-  /**
-    Set the current row number for diagnostics. This should be the
-    absolute row number across all partitions in the windowing step, i.e.
-    after ordering the row if applicable.
-
-    @param da                   Diagnostics_area to store row number
-    @param rowno_in_partition   The logical row number within the partition
-  */
-  void set_diagnostics_rowno(Diagnostics_area *da, int64 rowno_in_partition) {
-    da->set_current_row_for_condition(rowno_in_partition +
-                                      m_frame_buffer_partition_offset - 1);
   }
 
   /**

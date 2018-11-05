@@ -171,12 +171,12 @@ attr2 INT,
 attr3 VARCHAR(10)
 ) ENGINE=ndbcluster;
 SHOW INDEX FROM t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	0	PRIMARY	1	pk1	A	0	NULL	NULL		BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	0	PRIMARY	1	pk1	A	0	NULL	NULL		BTREE			YES	NULL
 INSERT INTO t1 VALUES (9410,9412, NULL, '9412'), (9411,9413, 17, '9413');
 SHOW INDEX FROM t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
-t1	0	PRIMARY	1	pk1	A	0	NULL	NULL		BTREE			YES
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	0	PRIMARY	1	pk1	A	0	NULL	NULL		BTREE			YES	NULL
 SELECT pk1 FROM t1 ORDER BY pk1;
 pk1
 9410
@@ -633,6 +633,8 @@ ERROR HY000: Got error 851 'Maximum 8052 bytes of FIXED columns supported, use v
 show warnings;
 Level	Code	Message
 Warning	1296	Got error 851 'Maximum 8052 bytes of FIXED columns supported, use varchar or COLUMN_FORMAT DYNAMIC instead' from NDB
+Warning	1296	Failed to commit NDB schema transaction
+Warning	1296	Got error 851 'Maximum 8052 bytes of FIXED columns supported, use varchar or COLUMN_FORMAT DYNAMIC instead' from NDB
 Error	1296	Got error 851 'Maximum 8052 bytes of FIXED columns supported, use varchar or COLUMN_FORMAT DYNAMIC instead' from NDBCLUSTER
 create table `t1` (`a` int, b int, primary key (a,b)) engine=ndb partition by key(`a`,`b`,`a`);
 ERROR HY000: Duplicate partition field name 'a'
@@ -862,8 +864,6 @@ f1	f2	f3
 111111	aaaaaa	1
 222222	bbbbbb	2
 drop table t1;
-Warning: using '--ndb' with 'perror' is deprecated and this functionality may not be available in the future versions, please use 'ndb_perror' instead
-Illegal ndb error code: 123456
 CREATE TABLE t1 (
 a VARBINARY(40) NOT NULL,
 b VARCHAR (256) CHARACTER SET UTF8 NOT NULL,
@@ -1080,6 +1080,8 @@ ENGINE=ndb PARTITION BY KEY(a) PARTITIONS 144;
 ERROR HY000: Table storage engine for 't1' doesn't have this option
 show warnings;
 Level	Code	Message
+Warning	1296	Got error 1224 'Too many fragments' from NDB
+Warning	1296	Failed to commit NDB schema transaction
 Warning	1296	Got error 1224 'Too many fragments' from NDB
 Error	1031	Table storage engine for 't1' doesn't have this option
 CREATE TABLE t1 (a INT PRIMARY KEY, b TEXT)

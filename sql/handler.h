@@ -43,6 +43,7 @@
 #include "map_helpers.h"
 #include "my_alloc.h"
 #include "my_base.h"
+#include "my_bitmap.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_double2ulonglong.h"
@@ -93,6 +94,7 @@ struct Tablespace_options;
 struct handlerton;
 
 typedef struct xid_t XID;
+typedef struct st_xarecover_txn XA_recover_txn;
 struct MDL_key;
 
 namespace dd {
@@ -306,7 +308,7 @@ enum enum_alter_inplace_result {
 #define HA_CAN_BIT_FIELD (1 << 28)
 #define HA_ANY_INDEX_MAY_BE_UNIQUE (1 << 30)
 #define HA_NO_COPY_ON_ALTER (1LL << 31)
-#define HA_HAS_RECORDS (1LL << 32) /* records() gives exact count*/
+#define HA_COUNT_ROWS_INSTANT (1LL << 32) /* records() gives exact count*/
 /* Has it's own method of binlog logging */
 #define HA_HAS_OWN_BINLOGGING (1LL << 33)
 /*
@@ -464,6 +466,11 @@ enum enum_alter_inplace_result {
   restriction is also supported if this isn't defined.
 */
 #define HA_SUPPORTS_GEOGRAPHIC_GEOMETRY_COLUMN (1LL << 50)
+
+/**
+  Handler supports expressions as DEFAULT for a column.
+*/
+#define HA_SUPPORTS_DEFAULT_EXPRESSION (1LL << 51)
 
 /*
   Bits in index_flags(index_number) for what you can do with index.
@@ -714,6 +721,9 @@ given at all. */
 */
 #define HA_CREATE_USED_DEFAULT_COLLATE (1L << 28)
 
+/** SECONDARY_ENGINE used during table create. */
+#define HA_CREATE_USED_SECONDARY_ENGINE (1L << 29)
+
 /*
   End of bits used in used_fields
 */
@@ -757,7 +767,8 @@ enum ts_alter_tablespace_type {
   TS_ALTER_TABLESPACE_TYPE_NOT_DEFINED = -1,
   ALTER_TABLESPACE_ADD_FILE = 1,
   ALTER_TABLESPACE_DROP_FILE = 2,
-  ALTER_TABLESPACE_RENAME = 3
+  ALTER_TABLESPACE_RENAME = 3,
+  ALTER_TABLESPACE_OPTIONS = 4
 };
 
 /**
@@ -1069,7 +1080,8 @@ typedef int (*rollback_t)(handlerton *hton, THD *thd, bool all);
 
 typedef int (*prepare_t)(handlerton *hton, THD *thd, bool all);
 
-typedef int (*recover_t)(handlerton *hton, XID *xid_list, uint len);
+typedef int (*recover_t)(handlerton *hton, XA_recover_txn *xid_list, uint len,
+                         MEM_ROOT *mem_root);
 
 /** X/Open XA distributed transaction status codes */
 enum xa_status_code {
@@ -1266,6 +1278,28 @@ typedef int (*finish_upgrade_t)(THD *thd, bool failed_upgrade);
   @retval != 0  Error (handler error code returned)
 */
 typedef int (*upgrade_logs_t)(THD *thd);
+
+enum class Tablespace_type {
+  SPACE_TYPE_DICTIONARY,
+  SPACE_TYPE_SYSTEM,
+  SPACE_TYPE_UNDO,
+  SPACE_TYPE_TEMPORARY,
+  SPACE_TYPE_SHARED,
+  SPACE_TYPE_IMPLICIT
+};
+
+/**
+  Get the tablespace type from the SE.
+
+  @param[in]  space          tablespace object
+  @param[out] space_type     type of space
+
+  @return Operation status.
+  @retval == 0  Success.
+  @retval != 0  Error (unknown space type, no error code returned)
+*/
+typedef bool (*get_tablespace_type_t)(const dd::Tablespace &space,
+                                      Tablespace_type *space_type);
 
 typedef int (*fill_is_table_t)(handlerton *hton, THD *thd, TABLE_LIST *tables,
                                class Item *cond, enum enum_schema_tables);
@@ -1840,6 +1874,7 @@ struct handlerton {
   alter_tablespace_t alter_tablespace;
   upgrade_tablespace_t upgrade_tablespace;
   upgrade_space_version_t upgrade_space_version;
+  get_tablespace_type_t get_tablespace_type;
   upgrade_logs_t upgrade_logs;
   finish_upgrade_t finish_upgrade;
   fill_is_table_t fill_is_table;
@@ -1990,6 +2025,9 @@ struct handlerton {
 /* Engine supports packed keys. */
 #define HTON_SUPPORTS_PACKED_KEYS (1 << 13)
 
+/** Engine supports being set as secondary storage engine. */
+#define HTON_SUPPORTS_SECONDARY (1 << 14)
+
 inline bool ddl_is_atomic(const handlerton *hton) {
   return (hton->flags & HTON_SUPPORTS_ATOMIC_DDL) != 0;
 }
@@ -2032,6 +2070,14 @@ static const uint32 HTON_FKS_WITH_SUPPORTING_HASH_KEYS = (1 << 1);
 
 static const uint32 HTON_FKS_WITH_ANY_PREFIX_SUPPORTING_KEYS = (1 << 2);
 
+/**
+  Storage engine does not support using the same key for both parent
+  and supporting key, but requires the two to be different.
+*/
+
+static const uint32 HTON_FKS_NEED_DIFFERENT_PARENT_AND_SUPPORTING_KEYS =
+    (1 << 3);
+
 enum enum_tx_isolation : int {
   ISO_READ_UNCOMMITTED,
   ISO_READ_COMMITTED,
@@ -2069,6 +2115,12 @@ struct HA_CREATE_INFO {
   and ignored by the Server layer. */
 
   LEX_STRING encrypt_type;
+
+  /**
+   * Secondary engine of the table.
+   * Is nullptr if no secondary engine defined.
+   */
+  LEX_STRING secondary_engine{nullptr, 0};
 
   const char *data_file_name, *index_file_name;
   const char *alias;
@@ -2331,6 +2383,12 @@ class Alter_inplace_info {
 
   // Rebuild partition
   static const HA_ALTER_FLAGS ALTER_REBUILD_PARTITION = 1ULL << 42;
+
+  // Load into secondary engine.
+  static const HA_ALTER_FLAGS SECONDARY_LOAD = 1ULL << 43;
+
+  // Unload from secondary engine.
+  static const HA_ALTER_FLAGS SECONDARY_UNLOAD = 1ULL << 44;
 
   /**
     Change in index length such that it does not require index rebuild.
@@ -3309,8 +3367,6 @@ class Ft_hints {
   description of how the CREATE TABLE part to define FOREIGN KEY's is done.
   free_foreign_key_create_info is used to free the memory area that provided
   this description.
-  can_switch_engines checks if it is ok to switch to a new engine based on
-  the foreign key info in the table.
 
   Methods:
     get_parent_foreign_key_list()
@@ -3318,7 +3374,6 @@ class Ft_hints {
     free_foreign_key_create_info()
     get_foreign_key_list()
     referenced_by_foreign_key()
-    can_switch_engines()
 
   -------------------------------------------------------------------------
   MODULE fulltext index
@@ -3440,6 +3495,12 @@ class handler {
   key_range save_end_range;
   enum_range_scan_direction range_scan_direction;
   int key_compare_result_on_equal;
+
+  /**
+    Pointer to the handler of the table in the primary storage engine,
+    if this handler represents a table in a secondary storage engine.
+  */
+  handler *m_primary_handler{nullptr};
 
  protected:
   KEY_PART_INFO *range_key_part;
@@ -3635,6 +3696,7 @@ class handler {
     DBUG_PRINT("info", ("handler created F_UNLCK %d F_RDLCK %d F_WRLCK %d",
                         F_UNLCK, F_RDLCK, F_WRLCK));
   }
+
   virtual ~handler(void) {
     DBUG_ASSERT(m_psi == NULL);
     DBUG_ASSERT(m_psi_batch_mode == PSI_BATCH_MODE_NONE);
@@ -3642,6 +3704,7 @@ class handler {
     DBUG_ASSERT(m_lock_type == F_UNLCK);
     DBUG_ASSERT(inited == NONE);
   }
+
   /*
     @todo reorganize functions, make proper public/protected/private qualifiers
   */
@@ -3757,6 +3820,10 @@ class handler {
 
   int ha_create(const char *name, TABLE *form, HA_CREATE_INFO *info,
                 dd::Table *table_def);
+
+  int ha_load_table(const TABLE &table);
+
+  int ha_unload_table(const char *db_name, const char *table_name);
 
   /**
     Submit a dd::Table object representing a core DD table having
@@ -4025,45 +4092,60 @@ class handler {
   virtual int multi_range_read_next(char **range_info);
 
   /**
-    Number of rows in table. It will only be called if
-    (table_flags() & (HA_HAS_RECORDS | HA_STATS_RECORDS_IS_EXACT)) != 0
-    @param[out]  num_rows number of rows in table.
+    Number of rows in table. If HA_COUNT_ROWS_INSTANT is set, count is
+    available instantly. Else do a table scan.
+
+    @param num_rows [out]  num_rows number of rows in table.
+
     @retval 0 for OK, one of the HA_xxx values in case of error.
   */
-  virtual int records(ha_rows *num_rows) {
-    *num_rows = stats.records;
-    return 0;
-  }
+  virtual int records(ha_rows *num_rows);
+
+  /**
+    Number of rows in table counted using the secondary index chosen by
+    optimizer. See comments in opt_sum_query(...) .
+
+      @param num_rows [out]  Number of rows in table.
+      @param index           Index chosen by optimizer for counting.
+
+      @retval 0 for OK, one of the HA_xxx values in case of error.
+  */
+  virtual int records_from_index(ha_rows *num_rows, uint index);
+
+ private:
+  /**
+    Function will handle the error code from call to records() and
+    records_from_index().
+
+      @param error     return code from records() and records_from_index().
+      @param num_rows  Check if it contains HA_POS_ERROR in case error < 0.
+
+      @retval 0 for OK, one of the HA_xxx values in case of error.
+  */
+  int handle_records_error(int error, ha_rows *num_rows);
 
  public:
   /**
-    Public function wrapping the actual handler call, and doing error checking.
-     @param[out]  num_rows number of rows in table.
-     @retval 0 for OK, one of the HA_xxx values in case of error.
+    Wrapper function to call records() in storage engine.
+
+      @param num_rows [out]  Number of rows in table.
+
+      @retval 0 for OK, one of the HA_xxx values in case of error.
   */
   int ha_records(ha_rows *num_rows) {
-    int error = records(num_rows);
-    // A return value of HA_POS_ERROR was previously used to indicate error.
-    if (error != 0) DBUG_ASSERT(*num_rows == HA_POS_ERROR);
-    if (*num_rows == HA_POS_ERROR) DBUG_ASSERT(error != 0);
-    if (error != 0) {
-      /*
-        ha_innobase::records may have rolled back internally.
-        In this case, thd_mark_transaction_to_rollback() will have been called.
-        For the errors below, we need to abort right away.
-      */
-      switch (error) {
-        case HA_ERR_LOCK_DEADLOCK:
-        case HA_ERR_LOCK_TABLE_FULL:
-        case HA_ERR_LOCK_WAIT_TIMEOUT:
-        case HA_ERR_QUERY_INTERRUPTED:
-          print_error(error, MYF(0));
-          return error;
-        default:
-          return error;
-      }
-    }
-    return 0;
+    return handle_records_error(records(num_rows), num_rows);
+  }
+
+  /**
+    Wrapper function to call records_from_index() in storage engine.
+
+      @param num_rows [out]  Number of rows in table.
+      @param index           Index chosen by optimizer for counting.
+
+      @retval 0 for OK, one of the HA_xxx values in case of error.
+  */
+  int ha_records(ha_rows *num_rows, uint index) {
+    return handle_records_error(records_from_index(num_rows, index), num_rows);
   }
 
   /**
@@ -4478,15 +4560,6 @@ class handler {
   virtual char *get_foreign_key_create_info() {
     return (NULL);
   } /* gets foreign key create string from InnoDB */
-  /**
-    Used in ALTER TABLE to check if changing storage engine is allowed.
-
-    @note Called without holding thr_lock.c lock.
-
-    @retval true   Changing storage engine is allowed.
-    @retval false  Changing storage engine not allowed.
-  */
-  virtual bool can_switch_engines() { return true; }
   /**
     Get the list of foreign keys in this table.
 
@@ -5381,6 +5454,36 @@ class handler {
   virtual int sample_next(uchar *buf);
   virtual int sample_end();
 
+  /**
+   * Loads a table into its defined secondary storage engine.
+   *
+   * @param table Table opened in primary storage engine.
+   *
+   * @return 0 if success, error code otherwise.
+   */
+  virtual int load_table(const TABLE &table MY_ATTRIBUTE((unused))) {
+    /* purecov: begin inspected */
+    DBUG_ASSERT(false);
+    return HA_ERR_WRONG_COMMAND;
+    /* purecov: end */
+  }
+
+  /**
+   * Unloads a table from its defined secondary storage engine.
+   *
+   * @param db_name    Database name.
+   * @param table_name Table name.
+   *
+   * @return 0 if success, error code otherwise.
+   */
+  virtual int unload_table(const char *db_name MY_ATTRIBUTE((unused)),
+                           const char *table_name MY_ATTRIBUTE((unused))) {
+    /* purecov: begin inspected */
+    DBUG_ASSERT(false);
+    return HA_ERR_WRONG_COMMAND;
+    /* purecov: end */
+  }
+
  protected:
   virtual int index_read(uchar *buf MY_ATTRIBUTE((unused)),
                          const uchar *key MY_ATTRIBUTE((unused)),
@@ -5658,6 +5761,19 @@ class handler {
   bool ha_upgrade_table(THD *thd, const char *dbname, const char *table_name,
                         dd::Table *dd_table, TABLE *table_arg);
 
+  /**
+    Store a pointer to the handler of the primary table that
+    corresponds to the secondary table in this handler.
+  */
+  void ha_set_primary_handler(handler *primary_handler);
+
+  /**
+    Get a pointer to a handler for the table in the primary storage
+    engine, if this handler is for a table in a secondary storage
+    engine.
+  */
+  handler *ha_get_primary_handler() const { return m_primary_handler; }
+
  protected:
   Handler_share *get_ha_share_ptr();
   void set_ha_share_ptr(Handler_share *arg_ha_share);
@@ -5828,16 +5944,16 @@ void ha_close_connection(THD *thd);
 void ha_kill_connection(THD *thd);
 /** Invoke handlerton::pre_dd_shutdown() on every storage engine plugin. */
 void ha_pre_dd_shutdown(void);
+
 /**
   Flush the log(s) of storage engine(s).
 
-  @param db_type Handlerton of storage engine.
   @param binlog_group_flush true if we got invoked by binlog group
   commit during flush stage, false in other cases.
   @retval false Succeed
   @retval true Error
 */
-bool ha_flush_logs(handlerton *db_type, bool binlog_group_flush = false);
+bool ha_flush_logs(bool binlog_group_flush = false);
 void ha_drop_database(char *path);
 int ha_create_table(THD *thd, const char *path, const char *db,
                     const char *table_name, HA_CREATE_INFO *create_info,

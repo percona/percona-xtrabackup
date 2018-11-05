@@ -2369,7 +2369,7 @@ Level	Code	Message
 Field	Type	Null	Key	Default	Extra
 id	char(16)	NO			
 data	int(11)	NO		NULL	
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 Database	Table	In_use	Name_locked
 Variable_name	Value
 Tables_in_test (foo)
@@ -2390,7 +2390,7 @@ Level	Code	Message
 Field	Type	Null	Key	Default	Extra
 id	char(16)	NO			
 data	int(11)	NO		NULL	
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 Database	Table	In_use	Name_locked
 Variable_name	Value
 Tables_in_test (foo)
@@ -6879,6 +6879,8 @@ DROP FUNCTION f1;
 drop procedure if exists p;
 set @old_mode= @@sql_mode;
 set @@sql_mode= cast(pow(2,33)-1 as unsigned integer) & ~0x1003ff00;
+Warnings:
+Warning	3090	Changing sql mode 'PAD_CHAR_TO_FULL_LENGTH' is deprecated. It will be removed in a future release.
 select @@sql_mode into @full_mode;
 create procedure p() begin end;
 call p();
@@ -7583,12 +7585,10 @@ UNION
 SELECT '2012-03-01 01:00:00',       2,       1       FROM dual
 ) AS t2
 WHERE t2.c2 = t1.c2
-GROUP BY c1 ASC, c2 ASC
+GROUP BY c1 , c2
+ORDER BY c1 , c2
 ;
 END|
-Warnings:
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
-Warning	1287	'GROUP BY with ASC/DESC' is deprecated and will be removed in a future release. Please use GROUP BY ... ORDER BY ... ASC/DESC instead
 
 CALL p1(1);
 c1	c2	count(c3)
@@ -8325,3 +8325,20 @@ DROP DATABASE test1;
 DROP USER user_name_len_16@localhost;
 DROP USER user_name_len_22_01234@localhost;
 DROP USER user_name_len_32_012345678901234@localhost;
+#
+# BUG#28156802 - MYSQL 8 SERVICE GOES DOWN ON EXECUTING ONE PROCEDURE.
+#
+CREATE TABLE t1(y INT);
+INSERT INTO t1 VALUES (5),(7),(9),(11),(15);
+CREATE PROCEDURE `v1`(_limit_val BIGINT, _offset_val BIGINT)
+BEGIN
+CREATE TEMPORARY TABLE n1 AS (SELECT * FROM t1 LIMIT _limit_val OFFSET _offset_val);
+SELECT * FROM n1;
+END $$
+CALL v1(3,2);
+y
+9
+11
+15
+DROP PROCEDURE v1;
+DROP TABLE t1;

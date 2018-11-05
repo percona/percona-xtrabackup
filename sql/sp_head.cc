@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1914,26 +1914,21 @@ sp_head::~sp_head() {
 }
 
 Field *sp_head::create_result_field(size_t field_max_length,
-                                    const char *field_name, TABLE *table) {
+                                    const char *field_name_or_null,
+                                    TABLE *table) {
   size_t field_length =
       !m_return_field_def.length ? field_max_length : m_return_field_def.length;
 
-  Field *field = ::make_field(
-      table->s,     /* TABLE_SHARE ptr */
-      (uchar *)0,   /* field ptr */
-      field_length, /* field [max] length */
-      (uchar *)"",  /* null ptr */
-      0,            /* null bit */
-      m_return_field_def.sql_type, m_return_field_def.charset,
-      m_return_field_def.geom_type, Field::NONE, /* unreg check */
-      m_return_field_def.interval,
-      field_name ? field_name : (const char *)m_name.str,
-      m_return_field_def.maybe_null, m_return_field_def.is_zerofill,
-      m_return_field_def.is_unsigned, m_return_field_def.decimals,
-      m_return_field_def.treat_bit_as_char,
-      m_return_field_def.pack_length_override, m_return_field_def.m_srid);
+  auto field_name =
+      field_name_or_null != nullptr ? field_name_or_null : m_name.str;
+
+  DBUG_ASSERT(m_return_field_def.auto_flags == Field::NONE);
+  Field *field =
+      make_field(m_return_field_def, table->s, field_name, field_length,
+                 pointer_cast<uchar *>(const_cast<char *>("")));
 
   field->gcol_info = m_return_field_def.gcol_info;
+  field->m_default_val_expr = m_return_field_def.m_default_val_expr;
   field->stored_in_db = m_return_field_def.stored_in_db;
   if (field) field->init(table);
 
@@ -1981,11 +1976,14 @@ bool sp_head::execute(THD *thd, bool merge_da_on_success) {
     Stack size depends on the platform:
       - for most platforms (8 * STACK_MIN_SIZE) is enough;
       - for Solaris SPARC 64 (10 * STACK_MIN_SIZE) is required.
+      - for clang and UBSAN we need even more stack space.
   */
 
   {
 #if defined(__sparc) && defined(__SUNPRO_CC)
     const int sp_stack_size = 10 * STACK_MIN_SIZE;
+#elif defined(__clang__) && defined(HAVE_UBSAN)
+    const int sp_stack_size = 16 * STACK_MIN_SIZE;
 #else
     const int sp_stack_size = 8 * STACK_MIN_SIZE;
 #endif
@@ -3405,6 +3403,9 @@ void sp_parser_data::start_parsing_sp_body(THD *thd, sp_head *sp) {
   m_saved_free_list = thd->free_list;
 
   thd->mem_root = sp->get_persistent_mem_root();
+  thd->mem_root->set_max_capacity(m_saved_memroot->get_max_capacity());
+  thd->mem_root->set_error_for_capacity_exceeded(
+      m_saved_memroot->get_error_for_capacity_exceeded());
   thd->free_list = NULL;
 }
 

@@ -73,6 +73,7 @@ class COND_EQUAL;
 class Field_json;
 /* Structs that defines the TABLE */
 class File_parser;
+class Value_generator;
 class GRANT_TABLE;
 class Handler_share;
 class Index_hint;
@@ -120,18 +121,14 @@ typedef int64 query_id_t;
 
 enum class enum_json_diff_operation;
 
+bool assert_ref_count_is_locked(const TABLE_SHARE *);
+
 #define store_record(A, B) \
   memcpy((A)->B, (A)->record[0], (size_t)(A)->s->reclength)
 #define restore_record(A, B) \
   memcpy((A)->record[0], (A)->B, (size_t)(A)->s->reclength)
 #define cmp_record(A, B) \
   memcmp((A)->record[0], (A)->B, (size_t)(A)->s->reclength)
-#define empty_record(A)                                 \
-  {                                                     \
-    restore_record((A), s->default_values);             \
-    if ((A)->s->null_bytes > 0)                         \
-      memset((A)->null_flags, 255, (A)->s->null_bytes); \
-  }
 
 #define tmp_file_prefix "#sql" /**< Prefix for tmp tables */
 #define tmp_file_prefix_length 4
@@ -262,7 +259,12 @@ class View_creation_ctx : public Default_object_creation_ctx {
 
 struct ORDER {
   ORDER *next;
-  Item **item;    /* Point at item in select fields */
+  /**
+    Points at the item in the select fields. Note that this means that
+    after resolving, it points into a slice (see JOIN::ref_items),
+    even though the item is not of type Item_ref!
+   */
+  Item **item;
   Item *item_ptr; /* Storage for initial item */
 
   enum_order direction; /* Requested direction of ordering */
@@ -633,7 +635,16 @@ typedef struct Table_share_foreign_key_parent_info {
 */
 
 struct TABLE_SHARE {
-  TABLE_SHARE();
+  TABLE_SHARE() = default;
+
+  /**
+    Create a new TABLE_SHARE with the given version number.
+    @param version the version of the TABLE_SHARE
+    @param secondary set to true if the TABLE_SHARE represents a table
+                     in a secondary storage engine
+  */
+  TABLE_SHARE(unsigned long version, bool secondary)
+      : m_version(version), m_secondary(secondary) {}
 
   /*
     A map of [uint, Histogram] values, where the key is the field index. The
@@ -682,6 +693,10 @@ struct TABLE_SHARE {
   LEX_STRING comment{nullptr, 0};      /* Comment about table */
   LEX_STRING compress{nullptr, 0};     /* Compression algorithm */
   LEX_STRING encrypt_type{nullptr, 0}; /* encryption algorithm */
+
+  /** Secondary storage engine. */
+  LEX_STRING secondary_engine{nullptr, 0};
+
   const CHARSET_INFO *table_charset{
       nullptr}; /* Default charset of string fields */
 
@@ -715,16 +730,10 @@ struct TABLE_SHARE {
   Key_map keys_for_keyread;
   ha_rows min_rows{0}, max_rows{0}; /* create information */
   ulong avg_row_length{0};          /* create information */
-  /**
-    TABLE_SHARE version, if changed the TABLE_SHARE must be reopened.
-    NOTE: The TABLE_SHARE will not be reopened during LOCK TABLES in
-    close_thread_tables!!!
-  */
-  ulong version{0};
-  ulong mysql_version{0};     /* 0 if .frm is created before 5.0 */
-  ulong reclength{0};         /* Recordlength */
-  ulong stored_rec_length{0}; /* Stored record length
-                              (no generated-only generated fields) */
+  ulong mysql_version{0};           /* 0 if .frm is created before 5.0 */
+  ulong reclength{0};               /* Recordlength */
+  ulong stored_rec_length{0};       /* Stored record length
+                                    (no generated-only generated fields) */
 
   plugin_ref db_plugin{nullptr};     /* storage engine plugin */
   inline handlerton *db_type() const /* table_type for handler */
@@ -738,13 +747,11 @@ struct TABLE_SHARE {
     engine. ROW_TYPE_DEFAULT value indicates that no explicit
     ROW_FORMAT was specified for the table. @sa real_row_type.
   */
-  enum row_type row_type;  // Initialized in the constructor.
+  enum row_type row_type = {};  // Zero-initialized to ROW_TYPE_DEFAULT
   /** Real row format used for the table by the storage engine. */
-  enum row_type real_row_type;  // Initialized in the constructor.
+  enum row_type real_row_type = {};  // Zero-initialized to ROW_TYPE_DEFAULT
   tmp_table_type tmp_table{NO_TMP_TABLE};
 
-  /// How many TABLE objects use this.
-  uint ref_count{0};
   /**
     Only for internal temporary tables.
     Count of TABLEs (having this TABLE_SHARE) which have a "handler"
@@ -752,12 +759,13 @@ struct TABLE_SHARE {
   */
   uint tmp_handler_count{0};
 
-  uint key_block_size{0};                   /* create key_block_size, if used */
-  uint stats_sample_pages{0};               /* number of pages to sample during
-                                            stats estimation, if used, otherwise 0. */
-  enum_stats_auto_recalc stats_auto_recalc; /* Automatic recalc of stats.
-                                               Initialized in the constructor.
-                                             */
+  uint key_block_size{0};     /* create key_block_size, if used */
+  uint stats_sample_pages{0}; /* number of pages to sample during
+                              stats estimation, if used, otherwise 0. */
+  enum_stats_auto_recalc
+      stats_auto_recalc{}; /* Automatic recalc of stats.
+                              Zero-initialized to HA_STATS_AUTO_RECALC_DEFAULT
+                            */
   uint null_bytes{0}, last_null_bit_pos{0};
   uint fields{0};            /* Number of fields */
   uint rec_buff_length{0};   /* Size of table->record[] buffer */
@@ -808,7 +816,10 @@ struct TABLE_SHARE {
   uint next_number_keypart{0};    /* autoinc keypart number in a key */
   bool error{false};              /* error during open_table_def() */
   uint column_bitmap_size{0};
-  uint vfields{0};               /* Number of generated fields */
+  /// Number of generated fields
+  uint vfields{0};
+  /// Number of fields having the default value generated
+  uint gen_def_field_count{0};
   bool system{false};            /* Set if system table (one record) */
   bool db_low_byte_first{false}; /* Portable row format */
   bool crashed{false};
@@ -967,8 +978,19 @@ struct TABLE_SHARE {
 
   ulonglong get_table_def_version() const { return table_map_id; }
 
+  /** Returns the version of this TABLE_SHARE. */
+  unsigned long version() const { return m_version; }
+
+  /**
+    Set the version of this TABLE_SHARE to zero. This marks the
+    TABLE_SHARE for automatic removal from the table definition cache
+    once it is no longer referenced.
+  */
+  void clear_version();
+
   /** Is this table share being expelled from the table definition cache?  */
-  bool has_old_version() const { return version != refresh_version; }
+  bool has_old_version() const { return version() != refresh_version; }
+
   /**
     Convert unrelated members of TABLE_SHARE to one enum
     representing its type.
@@ -1068,6 +1090,64 @@ struct TABLE_SHARE {
 
   /** Release resources and free memory occupied by the table share. */
   void destroy();
+
+  /**
+    How many TABLE objects use this TABLE_SHARE.
+    @return the reference count
+  */
+  unsigned int ref_count() const {
+    DBUG_ASSERT(assert_ref_count_is_locked(this));
+    return m_ref_count;
+  }
+
+  /**
+    Increment the reference count by one.
+    @return the new reference count
+  */
+  unsigned int increment_ref_count() {
+    DBUG_ASSERT(assert_ref_count_is_locked(this));
+    DBUG_ASSERT(!m_open_in_progress);
+    return ++m_ref_count;
+  }
+
+  /**
+    Decrement the reference count by one.
+    @return the new reference count
+  */
+  unsigned int decrement_ref_count() {
+    DBUG_ASSERT(assert_ref_count_is_locked(this));
+    DBUG_ASSERT(!m_open_in_progress);
+    DBUG_ASSERT(m_ref_count > 0);
+    return --m_ref_count;
+  }
+
+  /// Does this TABLE_SHARE represent a table in a primary storage engine?
+  bool is_primary() const { return !m_secondary; }
+
+  /// Does this TABLE_SHARE represent a table in a secondary storage engine?
+  bool is_secondary() const { return m_secondary; }
+
+  /**
+    Does this TABLE_SHARE represent a primary table that has a shadow
+    copy in a secondary storage engine?
+  */
+  bool has_secondary() const {
+    return is_primary() && secondary_engine.str != nullptr;
+  }
+
+ private:
+  /// How many TABLE objects use this TABLE_SHARE.
+  unsigned int m_ref_count{0};
+
+  /**
+    TABLE_SHARE version, if changed the TABLE_SHARE must be reopened.
+    NOTE: The TABLE_SHARE will not be reopened during LOCK TABLES in
+    close_thread_tables!!!
+  */
+  unsigned long m_version{0};
+
+  /// Does this TABLE_SHARE represent a table in a secondary storage engine?
+  bool m_secondary{false};
 };
 
 /**
@@ -1221,6 +1301,12 @@ struct TABLE {
   friend class Table_cache_element;
 
  public:
+  /**
+    A bitmap marking the hidden generated columns that exists for functional
+    indexes.
+  */
+  MY_BITMAP fields_for_functional_indexes;
+
   THD *in_use{nullptr};   /* Which thread uses this */
   Field **field{nullptr}; /* Pointer to fields */
   /// Count of hidden fields, if internal temporary table; 0 otherwise.
@@ -1273,8 +1359,12 @@ struct TABLE {
 
   Field *next_number_field{nullptr};       /* Set if next_number is activated */
   Field *found_next_number_field{nullptr}; /* Set on open */
-  Field **vfield{nullptr};                 /* Pointer to generated fields*/
-  Field *hash_field{nullptr};              /* Field used by unique constraint */
+  /// Pointer to generated columns
+  Field **vfield{nullptr};
+  /// Pointer to fields having the default value generated
+  Field **gen_def_fields_ptr{nullptr};
+  /// Field used by unique constraint
+  Field *hash_field{nullptr};
   Field *fts_doc_id_field{nullptr}; /* Set if FTS_DOC_ID field is present */
 
   /* Table's triggers, 0 if there are no of them */
@@ -1287,7 +1377,9 @@ struct TABLE {
   uchar *null_flags{nullptr};  ///< Pointer to the null flags of record[0]
   uchar *null_flags_saved{
       nullptr};  ///< Saved null_flags while null_row is true
-  MY_BITMAP def_read_set, def_write_set, tmp_set; /* containers */
+
+  /* containers */
+  MY_BITMAP def_read_set, def_write_set, tmp_set, pack_row_tmp_set;
   /*
     Bitmap of fields that one or more query condition refers to. Only
     used if optimizer_condition_fanout_filter is turned 'on'.
@@ -1492,8 +1584,6 @@ struct TABLE {
     In particular, this is done in some forms of index merge.
   */
   Sort_result unique_result;
-  /// The result of sorting the table, if done.
-  Sort_result sort_result;
   partition_info *part_info{nullptr}; /* Partition related information */
   /* If true, all partitions have been pruned away */
   bool all_partitions_pruned_away{false};
@@ -1530,7 +1620,7 @@ struct TABLE {
   void mark_columns_needed_for_insert(THD *thd);
   void mark_columns_per_binlog_row_image(THD *thd);
   void mark_generated_columns(bool is_update);
-  bool is_field_used_by_generated_columns(uint field_index);
+  bool is_field_used_by_generated_columns(uint field_index, int *error_no);
   void mark_gcol_in_maps(Field *field);
   void column_bitmaps_set(MY_BITMAP *read_set_arg, MY_BITMAP *write_set_arg);
   inline void column_bitmaps_set_no_signal(MY_BITMAP *read_set_arg,
@@ -1729,24 +1819,41 @@ struct TABLE {
   const Cost_model_table *cost_model() const { return &m_cost_model; }
 
   /**
-    Fix table's generated columns' (GC) expressions
+    Fix table's generated columns' (GC) and/or default expressions
 
-    @details When a table is opened from the dictionary, the GCs' expressions
-    are fixed during opening (see fix_fields_gcol_func()). After query
-    execution, Item::cleanup() is called on them (see cleanup_gc_items()). When
-    the table is opened from the table cache, the GCs need to be fixed again
-    and this function does that.
+    @details When a table is opened from the dictionary, the Value Generator
+    expressions are fixed during opening (see fix_value_generators_fields()).
+    After query execution, Item::cleanup() is called on them
+    (see cleanup_value_generator_items()). When the table is opened from the
+    table cache, the Value Generetor(s) need to be fixed again and this
+    function does that.
 
     @param[in] thd     the current thread
     @return true if error, else false
   */
-  bool refix_gc_items(THD *thd);
+  bool refix_value_generator_items(THD *thd);
+
+  /**
+    Helper function for refix_value_generator_items() that fixes one column's
+    expression (be it GC or default expression).
+
+    @param[in] thd           current thread
+    @param[in,out] g_expr    the expression who's items needs to be fixed
+    @param[in] table         the table it blongs to
+    @param[in] field         the column it blongs to
+    @param[in] is_gen_col    if it is a generated column or default expression
+
+    @return true if error, else false
+  */
+  bool refix_inner_value_generator_items(THD *thd, Value_generator *g_expr,
+                                         Field *field, TABLE *table,
+                                         bool is_gen_col);
 
   /**
     Clean any state in items associated with generated columns to be ready for
     the next statement.
   */
-  void cleanup_gc_items();
+  void cleanup_value_generator_items();
 
 #ifndef DBUG_OFF
   void set_tmp_table_seq_id(uint arg) { tmp_table_seq_id = arg; }
@@ -2004,6 +2111,12 @@ struct TABLE {
   bool should_binlog_drop_if_temp(void) const;
 };
 
+static inline void empty_record(TABLE *table) {
+  restore_record(table, s->default_values);
+  if (table->s->null_bytes > 0)
+    memset(table->null_flags, 255, table->s->null_bytes);
+}
+
 enum enum_schema_table_state {
   NOT_PROCESSED = 0,
   PROCESSED_BY_CREATE_SORT_INDEX,
@@ -2155,6 +2268,17 @@ class Natural_join_column {
   GRANT_INFO *grant();
 };
 
+/**
+  This is generic enum. It may be reused in the ACL statements
+  for clauses that can map to the values defined in this enum.
+*/
+enum class Lex_acl_attrib_udyn {
+  UNCHANGED, /* The clause is not specified */
+  DEFAULT,   /* Default value of clause is specified */
+  YES,       /* Value that maps to True is specified */
+  NO         /* Value that maps to False is specified */
+};
+
 /*
   This structure holds the specifications relating to
   ALTER user ... PASSWORD EXPIRE ...
@@ -2172,7 +2296,8 @@ struct LEX_ALTER {
   uint32 password_reuse_interval;
   bool use_default_password_reuse_interval;
   bool update_password_reuse_interval;
-
+  /* Holds the specification of 'PASSWORD REQUIRE CURRENT' clause. */
+  Lex_acl_attrib_udyn update_password_require_current;
   void cleanup() {
     update_password_expired_fields = false;
     update_password_expired_column = false;
@@ -2184,22 +2309,39 @@ struct LEX_ALTER {
     update_password_history = false;
     use_default_password_reuse_interval = true;
     update_password_reuse_interval = false;
+    update_password_require_current = Lex_acl_attrib_udyn::UNCHANGED;
     password_history_length = 0;
     password_reuse_interval = 0;
   }
 };
 
+/*
+  This structure holds the specifications related to
+  mysql user and the associated auth details.
+*/
 struct LEX_USER {
   LEX_CSTRING user;
   LEX_CSTRING host;
   LEX_CSTRING plugin;
   LEX_CSTRING auth;
-  /* Below attributes defines the context in which this token parsed */
+  LEX_CSTRING current_auth;
+  /*
+    The following flags are indicators for the SQL syntax used while
+    parsing CREATE/ALTER user. While other members are self-explanatory,
+    'uses_authentication_string_clause' signifies if the password is in
+    hash form (if the var was set to true) or not.
+  */
   bool uses_identified_by_clause;
   bool uses_identified_with_clause;
   bool uses_authentication_string_clause;
+  bool uses_replace_clause;
   LEX_ALTER alter_status;
-
+  /*
+    Allocates the memory in the THD mem pool and initialize the members of
+    this struct. It is prefererable to use this method to create a LEX_USER
+    rather allocating the memory in the THD and initilizing the members
+    explicitiyly.
+  */
   static LEX_USER *alloc(THD *thd, LEX_STRING *user, LEX_STRING *host);
 };
 
@@ -3509,14 +3651,17 @@ static inline void dbug_tmp_restore_column_maps(
 void init_mdl_requests(TABLE_LIST *table_list);
 
 /**
-   Unpack the definition of a virtual column. Parses the text obtained from
-   TABLE_SHARE and produces an Item.
+   Unpacks the definition of a generated column or default expression passed as
+   argument. Parses the text obtained from TABLE_SHARE and produces an Item.
 
   @param thd                  Thread handler
   @param table                Table with the checked field
   @param field                Pointer to Field object
+  @param val_generator        The virtual column or default expr to be parsed.
   @param is_create_table      Indicates that table is opened as part
                               of CREATE or ALTER and does not yet exist in SE
+  @param is_gen_col           Indicates if the expression is a column or just
+                              an expression for the default value.
   @param error_reported       updated flag for the caller that no other error
                               messages are to be generated.
 
@@ -3524,8 +3669,10 @@ void init_mdl_requests(TABLE_LIST *table_list);
   @retval false Success.
 */
 
-bool unpack_gcol_info(THD *thd, TABLE *table, Field *field,
-                      bool is_create_table, bool *error_reported);
+bool unpack_value_generator(THD *thd, TABLE *table, Field *field,
+                            Value_generator **val_generator,
+                            bool is_create_table, bool is_gen_col,
+                            bool *error_reported);
 
 /**
    Unpack the partition expression. Parse the partition expression
@@ -3550,7 +3697,8 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
                           TABLE *outparam, bool is_create_table,
                           const dd::Table *table_def_param);
 TABLE_SHARE *alloc_table_share(const char *db, const char *table_name,
-                               const char *key, size_t key_length);
+                               const char *key, size_t key_length,
+                               bool open_secondary);
 void init_tmp_table_share(THD *thd, TABLE_SHARE *share, const char *key,
                           size_t key_length, const char *table_name,
                           const char *path, MEM_ROOT *mem_root);

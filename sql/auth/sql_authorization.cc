@@ -1699,6 +1699,12 @@ bool check_one_table_access(THD *thd, ulong privilege, TABLE_LIST *all_tables) {
 
 bool check_single_table_access(THD *thd, ulong privilege,
                                TABLE_LIST *all_tables, bool no_errors) {
+  if (all_tables->is_internal()) {
+    // Optimizer internal tables does not need any privilege checking.
+    all_tables->set_privileges(privilege);
+    return false;
+  }
+
   Security_context *backup_ctx = thd->security_context();
 
   /* we need to switch to the saved context (if any) */
@@ -2290,11 +2296,7 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
 
   DBUG_ENTER("mysql_table_grant");
 
-  if (!initialized) {
-    my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0),
-             "--skip-grant-tables"); /* purecov: inspected */
-    DBUG_RETURN(true);               /* purecov: inspected */
-  }
+  DBUG_ASSERT(initialized);
 
   if (rights & ~TABLE_ACLS) {
     my_error(ER_ILLEGAL_GRANT_FOR_TABLE, MYF(0));
@@ -2561,10 +2563,7 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
 
   DBUG_ENTER("mysql_routine_grant");
 
-  if (!initialized) {
-    my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--skip-grant-tables");
-    DBUG_RETURN(true);
-  }
+  DBUG_ASSERT(initialized);
 
   if (rights & ~PROC_ACLS) {
     my_error(ER_ILLEGAL_GRANT_FOR_TABLE, MYF(0));
@@ -2925,11 +2924,7 @@ bool mysql_grant(THD *thd, const char *db, List<LEX_USER> &list, ulong rights,
   std::set<LEX_USER *> existing_users;
 
   DBUG_ENTER("mysql_grant");
-  if (!initialized) {
-    my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0),
-             "--skip-grant-tables"); /* purecov: tested */
-    DBUG_RETURN(true);               /* purecov: tested */
-  }
+  DBUG_ASSERT(initialized);
 
   if (lower_case_table_names && db) {
     my_stpnmov(tmp_db, db, NAME_LEN);
@@ -3220,7 +3215,7 @@ bool check_grant(THD *thd, ulong want_access, TABLE_LIST *tables,
     want_access &= ~sctx->master_access();
     if (!want_access) continue;  // ok
 
-    if (!(~t_ref->grant.privilege & want_access) || t_ref->is_derived() ||
+    if (!(~t_ref->grant.privilege & want_access) || t_ref->is_internal() ||
         t_ref->schema_table)
       continue;
 
@@ -3461,9 +3456,9 @@ bool check_column_grant_in_table_ref(THD *thd, TABLE_LIST *table_ref,
 
   DBUG_ASSERT(want_privilege);
 
-  if (is_temporary_table(table_ref) || table_ref->is_derived() ||
-      table_ref->is_table_function()) {
-    // Tmp table,table function or derived table: no need to evaluate privileges
+  if (is_temporary_table(table_ref) || table_ref->is_internal()) {
+    // Temporary table or optimizer internal table: no need to evaluate
+    // privileges
     DBUG_RETURN(false);
   } else if (table_ref->is_view() || table_ref->field_translation) {
     /* View or derived information schema table. */
@@ -4202,10 +4197,7 @@ bool mysql_show_grants(THD *thd, LEX_USER *lex_user,
   char buff[1024];
   DBUG_ENTER("mysql_show_grants");
 
-  if (!initialized) {
-    my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--skip-grant-tables");
-    DBUG_RETURN(true);
-  }
+  DBUG_ASSERT(initialized);
   Acl_cache_lock_guard acl_cache_lock(thd, Acl_cache_lock_mode::READ_MODE);
   if (!acl_cache_lock.lock()) DBUG_RETURN(true);
 
@@ -4745,28 +4737,28 @@ bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
 
 bool sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
                          bool is_proc) {
-  Security_context *sctx = thd->security_context();
-  LEX_USER *combo;
   TABLE_LIST tables[1];
   List<LEX_USER> user_list;
-  bool result;
-  ACL_USER *au;
+  bool result = true;
   Dummy_error_handler error_handler;
+
   DBUG_ENTER("sp_grant_privileges");
 
-  if (!(combo = (LEX_USER *)thd->alloc(sizeof(LEX_USER)))) DBUG_RETURN(true);
+  LEX_CSTRING sctx_user = thd->security_context()->priv_user();
+  LEX_CSTRING sctx_host = thd->security_context()->priv_host();
+  LEX_USER *combo =
+      LEX_USER::alloc(thd, (LEX_STRING *)&sctx_user, (LEX_STRING *)&sctx_host);
+  if (combo == nullptr) DBUG_RETURN(true);
 
-  combo->user.str = (char *)sctx->priv_user().str;
   Acl_cache_lock_guard acl_cache_lock(thd, Acl_cache_lock_mode::READ_MODE);
   if (!acl_cache_lock.lock()) DBUG_RETURN(true);
 
-  if ((au = find_acl_user(combo->host.str = (char *)sctx->priv_host().str,
-                          combo->user.str, false)))
-    goto found_acl;
-  acl_cache_lock.unlock();
-  DBUG_RETURN(true);
+  ACL_USER *au = find_acl_user(combo->host.str, combo->user.str, false);
+  if (au == nullptr) {
+    result = true;
+    goto end;
+  }
 
-found_acl:
   acl_cache_lock.unlock();
 
   new (&tables[0]) TABLE_LIST();
@@ -4779,12 +4771,6 @@ found_acl:
                        0);
   thd->make_lex_string(&combo->host, combo->host.str, strlen(combo->host.str),
                        0);
-
-  combo->plugin = EMPTY_CSTR;
-  combo->auth = EMPTY_CSTR;
-  combo->uses_identified_by_clause = false;
-  combo->uses_identified_with_clause = false;
-  combo->uses_authentication_string_clause = false;
 
   if (user_list.push_back(combo)) DBUG_RETURN(true);
 
@@ -4804,6 +4790,7 @@ found_acl:
   result = mysql_routine_grant(thd, tables, is_proc, user_list,
                                DEFAULT_CREATE_PROC_ACLS, false, false);
   thd->pop_internal_handler();
+end:
   DBUG_RETURN(result);
 }
 
@@ -4909,11 +4896,7 @@ bool acl_check_proxy_grant_access(THD *thd, const char *host, const char *user,
   DBUG_ENTER("acl_check_proxy_grant_access");
   DBUG_PRINT("info",
              ("user=%s host=%s with_grant=%d", user, host, (int)with_grant));
-  if (!initialized) {
-    my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--skip-grant-tables");
-    DBUG_RETURN(1);
-  }
-
+  DBUG_ASSERT(initialized);
   /* replication slave thread can do anything */
   if (thd->slave_thread) {
     DBUG_PRINT("info", ("replication slave"));
@@ -6775,6 +6758,21 @@ void Drop_temporary_dynamic_privileges::operator()(Security_context *sctx) {
       Role_id(sctx->priv_user(), sctx->priv_host()), m_privs);
 }
 
+Grant_temporary_static_privileges::Grant_temporary_static_privileges(
+    const THD *thd, ulong privs)
+    : m_thd(thd), m_privs(privs) {}
+
+bool Grant_temporary_static_privileges::precheck(
+    Security_context *sctx MY_ATTRIBUTE((unused))) {
+  return false;
+}
+
+bool Grant_temporary_static_privileges::grant_privileges(
+    Security_context *sctx) {
+  sctx->set_master_access(m_privs);
+  return false;
+}
+
 Sctx_ptr<Security_context> Security_context_factory::create() {
   /* Setup default Security context */
   Security_context *sctx = new Security_context();
@@ -6794,6 +6792,10 @@ Sctx_ptr<Security_context> Security_context_factory::create() {
     if (m_privileges(sctx, Security_context_policy::Precheck)) break;
     // 4. Assign the privileges
     if (m_privileges(sctx, Security_context_policy::Execute)) break;
+    // 5. Check preconditions for assigning privileges under the current policy
+    if (m_static_privileges(sctx, Security_context_policy::Precheck)) break;
+    // 6. Assign static privileges
+    if (m_static_privileges(sctx, Security_context_policy::Execute)) break;
 
     error = false;
   }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -298,6 +298,25 @@ int channel_queue_packet(const char *channel, const char *buf,
 int channel_wait_until_apply_queue_applied(const char *channel, double timeout);
 
 /**
+  Checks if all the transactions in the given set were executed.
+
+  @param channel  the channel name
+  @param gtid_set the set in string format of transaction to wait for
+  @param timeout  the time (seconds) after which the method returns if the
+                  above condition was not satisfied
+  @param update_THD_status     Shall the method update the THD stage
+
+  @return the operation status
+    @retval 0   All transactions were executed
+    @retval REPLICATION_THREAD_WAIT_TIMEOUT_ERROR     A timeout occurred
+    @retval REPLICATION_THREAD_WAIT_NO_INFO_ERROR     An error occurred
+*/
+int channel_wait_until_transactions_applied(const char *channel,
+                                            const char *gtid_set,
+                                            double timeout,
+                                            bool update_THD_status = true);
+
+/**
   Checks if the applier, and its workers when parallel applier is
   enabled, has already consumed all relay log, that is, applier is
   waiting for transactions to be queued.
@@ -392,5 +411,34 @@ bool is_partial_transaction_on_channel_relay_log(const char *channel);
     @retval          false              none of the the channels are running.
 */
 bool is_any_slave_channel_running(int thread_mask);
+
+/**
+  Return type for function
+  has_any_slave_channel_open_temp_table_or_is_its_applier_running()
+*/
+enum enum_slave_channel_status {
+  /*
+    None of all slave channel appliers are running and none
+    of all slave channels have open temporary table(s).
+  */
+  SLAVE_CHANNEL_NO_APPLIER_RUNNING_AND_NO_OPEN_TEMPORARY_TABLE = 0,
+  /* At least one slave channel applier is running. */
+  SLAVE_CHANNEL_APPLIER_IS_RUNNING,
+  /* At least one slave channel has open temporary table(s). */
+  SLAVE_CHANNEL_HAS_OPEN_TEMPORARY_TABLE
+};
+
+/**
+  Checks if any slave channel applier is running or any slave channel has open
+  temporary table(s). This holds handled appliers' run_locks until finding a
+  running slave channel applier or a slave channel which has open temporary
+  table(s), or handling all slave channels.
+
+  @return SLAVE_CHANNEL_NO_APPLIER_RUNNING_AND_NO_OPEN_TEMPORARY_TABLE,
+          SLAVE_CHANNEL_APPLIER_IS_RUNNING or
+          SLAVE_CHANNEL_HAS_OPEN_TEMPORARY_TABLE.
+*/
+enum_slave_channel_status
+has_any_slave_channel_open_temp_table_or_is_its_applier_running();
 
 #endif  // RPL_SERVICE_INTERFACE_INCLUDE

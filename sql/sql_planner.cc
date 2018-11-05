@@ -852,7 +852,10 @@ double Optimize_table_order::calculate_scan_cost(
                                        tab->records() - *rows_after_filtering));
 
       trace_access_scan->add("using_join_cache", true);
-      trace_access_scan->add("buffers_needed", (ulong)buffer_count);
+      trace_access_scan->add("buffers_needed",
+                             buffer_count >= std::numeric_limits<ulong>::max()
+                                 ? std::numeric_limits<ulong>::max()
+                                 : static_cast<ulong>(buffer_count));
     }
   }
 
@@ -997,7 +1000,9 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
              (used_key_parts >=
               table->quick_key_parts[best_ref->key]) &&  // (2)
              (tab->quick()->get_type() !=
-              QUICK_SELECT_I::QS_TYPE_GROUP_MIN_MAX))  // (2)
+              QUICK_SELECT_I::QS_TYPE_GROUP_MIN_MAX) &&
+             (tab->quick()->get_type() !=
+              QUICK_SELECT_I::QS_TYPE_SKIP_SCAN))  // (2)
   {
     trace_access_scan.add_alnum("access_type", "range");
     tab->quick()->trace_quick_description(trace);
@@ -2311,7 +2316,10 @@ void Optimize_table_order::consider_plan(uint idx,
       (Similar code in best_extension_by_li...)
     */
     join->best_read = cost - 0.001;
-    join->best_rowcount = (ha_rows)join->positions[idx].prefix_rowcount;
+    join->best_rowcount = join->positions[idx].prefix_rowcount >=
+                                  std::numeric_limits<ha_rows>::max()
+                              ? std::numeric_limits<ha_rows>::max()
+                              : (ha_rows)join->positions[idx].prefix_rowcount;
     join->sort_cost = sort_cost;
     join->windowing_cost = windowing_cost;
     found_plan_with_allowed_sj = plan_uses_allowed_sj;

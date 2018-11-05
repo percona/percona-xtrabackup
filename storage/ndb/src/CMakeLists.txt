@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,12 +30,8 @@ IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
           "unused-but-set-variable"
           "strict-aliasing"
           "unused-parameter"
-          # Missing falltrough in switch/case/break statements
-          "implicit-fallthrough"
           # Downgrade -Werror to warning for "may be used uninitialized"
-          # and "is used uninitialized in this function"
           "error=maybe-uninitialized"
-          "error=uninitialized"
           # Downgrade placement-new as part of Bug #24822203
           "error=placement-new")
     STRING(REPLACE "-" "_" warning_ ${warning})
@@ -82,8 +78,33 @@ SET(NDBCLIENT_LIBS
   ndbgeneral
   ndbconf)
 
+SET(LIBS_TO_MERGE
+  mysys dbug strings mysys_ssl
+  ndbapi
+  ndbtransport
+  ndbtrace
+  ndbsignaldata
+  ndbmgmapi
+  ndbmgmcommon
+  ndblogger
+  ndbportlib
+  ndbgeneral
+  ndbconf)
+
+IF(WITH_ZLIB STREQUAL "bundled")
+  LIST(APPEND LIBS_TO_MERGE ${ZLIB_LIBRARY})
+ENDIF()
+IF(WITH_SSL STREQUAL "wolfssl")
+  LIST(APPEND LIBS_TO_MERGE wolfssl wolfcrypt)
+ENDIF()
+
+
+MESSAGE(STATUS "LIBS_TO_MERGE ${LIBS_TO_MERGE}")
+MESSAGE(STATUS "NDBCLIENT_LIBS ${NDBCLIENT_LIBS}")
+
 MERGE_CONVENIENCE_LIBRARIES(
-  ndbclient_static ${NDBCLIENT_LIBS} COMPONENT Development)
+  ndbclient_static ${LIBS_TO_MERGE} COMPONENT Development)
+TARGET_LINK_LIBRARIES(ndbclient_static ${SSL_LIBRARIES})
 
 # Build test program to check linking against ndclient_static
 ADD_EXECUTABLE(ndbclient_static_link_test ndbclient_link_test.cpp)
@@ -92,14 +113,8 @@ TARGET_LINK_LIBRARIES(ndbclient_static_link_test ndbclient_static)
 #
 # Build shared ndbclient library
 #
-SET(NDBCLIENT_SO_LIBS ${NDBCLIENT_LIBS} ${NDBJTIE_LIB})
-
-# Extract version from storage/ndb/VERSION
-INCLUDE(ndb_get_config_value)
-NDB_GET_CONFIG_VALUE(NDB_SHARED_LIB_VERSION_MAJOR major)
-NDB_GET_CONFIG_VALUE(NDB_SHARED_LIB_VERSION_MINOR minor)
-NDB_GET_CONFIG_VALUE(NDB_SHARED_LIB_VERSION_BUILD build)
-SET(NDB_SHARED_LIB_VERSION "${major}.${minor}.${build}")
+SET(NDBCLIENT_SO_LIBS ${LIBS_TO_MERGE} ${NDBJTIE_LIB})
+SET(NDB_SHARED_LIB_VERSION "6.1.0")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/libndbclient.ver.in
                ${CMAKE_CURRENT_BINARY_DIR}/libndbclient.ver)
@@ -145,15 +160,6 @@ ELSE()
          dep_lib MATCHES "debug" OR
          dep_lib MATCHES "optimized")
         # MESSAGE(STATUS "Ignoring keyword ${dep_lib}")
-        SET(ignore_dep_lib 1)
-      ENDIF()
-
-      # Ignore libs already in NDBCLIENT_SO_LIBS list, manily used
-      # to ignore mysys, strings etc. since those targets have not
-      # been added yet
-      LIST(FIND NDBCLIENT_SO_LIBS ${dep_lib} dep_lib_found)
-      IF(dep_lib_found GREATER -1)
-        # MESSAGE(STATUS "Ignoring lib ${dep_lib} since it's already in NDBCLIENT_SO_LIBS")
         SET(ignore_dep_lib 1)
       ENDIF()
 

@@ -42,7 +42,7 @@
 %global compatsrc             https://cdn.mysql.com/Downloads/MySQL-5.6/mysql-%{compatver}.tar.gz
 %endif
 
-%global src_dir               %{src_base}-@VERSION@
+%global src_dir               %{src_base}-@VERSION_SRC@
 
 # No debuginfo for now
 %if 0%{?nodebuginfo}
@@ -108,6 +108,11 @@ BuildRequires:  perl(Time::localtime)
 %if 0%{?fedora} > 24
 BuildRequires:  perl-generators
 %endif
+%if 0%{?fedora} > 28
+BuildRequires:  compat-openssl10-devel
+%else
+BuildRequires:  openssl-devel
+%endif
 BuildRequires:  time
 BuildRequires:  cyrus-sasl-devel
 BuildRequires:  libaio-devel
@@ -116,7 +121,6 @@ BuildRequires:  multilib-rpm-config
 BuildRequires:  ncurses-devel
 BuildRequires:  numactl-devel
 BuildRequires:  openldap-devel
-BuildRequires:  openssl-devel
 BuildRequires:  zlib-devel
 BuildRequires:  systemd
 BuildRequires:  pkgconfig(systemd)
@@ -169,6 +173,7 @@ Obsoletes:      community-mysql-bench
 Obsoletes:      mysql-bench
 Obsoletes:      mariadb-backup
 Obsoletes:      mariadb-bench
+Obsoletes:      mariadb-connector-c-config
 Obsoletes:      mariadb-cracklib-password-check
 Obsoletes:      mariadb-gssapi-server
 Obsoletes:      mariadb-rocksdb-engine
@@ -385,6 +390,47 @@ This package contains the MySQL server as an embedded library with
 compatibility for applications using version %{compatlib} of the library.
 %endif # compatlib
 
+%package  -n   mysql-router-%{product_suffix}
+Summary:       MySQL Router
+Group:         Applications/Databases
+Provides:      mysql-router = %{version}-%{release}
+Obsoletes:     mysql-router < %{version}-%{release}
+%if 0%{?commercial}
+Obsoletes:     mysql-router-community < %{version}-%{release}
+%endif
+
+%description -n mysql-router-%{product_suffix}
+The MySQL(TM) Router software delivers a fast, multi-threaded way of
+routing connections from MySQL Clients to MySQL Servers. MySQL is a
+trademark of Oracle.
+
+The MySQL software has Dual Licensing, which means you can use the
+MySQL software free of charge under the GNU General Public License
+(http://www.gnu.org/licenses/). You can also purchase commercial MySQL
+licenses from Oracle and/or its affiliates if you do not wish to be
+bound by the terms of the GPL. See the chapter "Licensing and Support"
+in the manual for further info.
+
+The MySQL web site (http://www.mysql.com/) provides the latest news
+and information about the MySQL software. Also please see the
+documentation and the manual for more information.
+
+
+%package   -n   mysql-router-%{product_suffix}-devel
+Summary:        Development header files and libraries for MySQL Router
+Group:          Applications/Databases
+Provides:       mysql-router-devel = %{version}-%{release}
+Obsoletes:      mysql-router-devel < %{version}-%{release}
+%if 0%{?commercial}
+Obsoletes:      mysql-router-community-devel < %{version}-%{release}
+Requires:       mysql-router-commercial = %{version}-%{release}
+%else
+Requires:       mysql-router-community = %{version}-%{release}
+%endif
+%description -n mysql-router-%{product_suffix}-devel
+This package contains the development header files and libraries
+necessary to develop MySQL Router applications.
+
 %prep
 %if 0%{?compatlib}
 %setup -q -T -a 0 -a 1 -a 2 -c -n %{src_dir}
@@ -449,6 +495,9 @@ mkdir debug
            -DCMAKE_C_FLAGS="$optflags" \
            -DCMAKE_CXX_FLAGS="$optflags" \
            -DWITH_SYSTEMD=1 \
+%if 0%{?with_cluster:1}
+           -DWITH_NDBCLUSTER=1 \
+%endif
 %if 0%{?ndb_nodejs_path:1}
            -DNDB_NODEJS_PATH=%{ndb_nodejs_path} \
 %endif
@@ -461,6 +510,8 @@ mkdir debug
            -DWITH_INNODB_MEMCACHED=1 \
            -DINSTALL_LIBDIR="%{_lib}/mysql" \
            -DINSTALL_PLUGINDIR="%{_lib}/mysql/plugin/debug" \
+           -DROUTER_INSTALL_LIBDIR="%{_lib}" \
+           -DROUTER_INSTALL_PLUGINDIR="%{_lib}/mysqlrouter" \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
            -DFEATURE_SET="%{feature_set}" \
@@ -485,6 +536,9 @@ mkdir release
            -DCMAKE_C_FLAGS="%{optflags}" \
            -DCMAKE_CXX_FLAGS="%{optflags}" \
            -DWITH_SYSTEMD=1 \
+%if 0%{?with_cluster:1}
+           -DWITH_NDBCLUSTER=1 \
+%endif
 %if 0%{?ndb_nodejs_path:1}
            -DNDB_NODEJS_PATH=%{ndb_nodejs_path} \
 %endif
@@ -497,6 +551,8 @@ mkdir release
            -DWITH_INNODB_MEMCACHED=1 \
            -DINSTALL_LIBDIR="%{_lib}/mysql" \
            -DINSTALL_PLUGINDIR="%{_lib}/mysql/plugin" \
+           -DROUTER_INSTALL_LIBDIR="%{_lib}" \
+           -DROUTER_INSTALL_PLUGINDIR="%{_lib}/mysqlrouter" \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
            -DFEATURE_SET="%{feature_set}" \
@@ -527,6 +583,10 @@ install -d -m 0755 %{buildroot}/var/run/mysqld
 install -d -m 0750 %{buildroot}/var/lib/mysql-files
 install -d -m 0750 %{buildroot}/var/lib/mysql-keyring
 
+# Router directories
+install -d -m 0755 %{buildroot}/var/log/mysqlrouter
+install -d -m 0755 %{buildroot}/var/run/mysqlrouter
+
 # Install all binaries
 pushd $MBD/release
 make DESTDIR=%{buildroot} install
@@ -546,6 +606,10 @@ if %multilib_capable ; then
     install -p -m 0755 packaging/rpm-common/mysql_config.sh %{buildroot}%{_bindir}/mysql_config
 fi
 
+install -D -p -m 0644 packaging/rpm-common/mysqlrouter.service %{buildroot}%{_unitdir}/mysqlrouter.service
+install -D -p -m 0644 packaging/rpm-common/mysqlrouter.tmpfiles.d %{buildroot}%{_tmpfilesdir}/mysqlrouter.conf
+install -D -p -m 0644 packaging/rpm-common/mysqlrouter.conf %{buildroot}%{_sysconfdir}/mysqlrouter/mysqlrouter.conf
+
 # Remove files pages we explicitly do not want to package
 rm -rf %{buildroot}%{_infodir}/mysql.info*
 rm -rf %{buildroot}%{_datadir}/mysql-*/mysql.server
@@ -556,6 +620,10 @@ rm -rf %{buildroot}%{_datadir}/mysql-*/mysqld_multi.server
 # rm -f %{buildroot}%{_mandir}/man1/<manpage>.1
 
 # Remove removed manpages here until they are removed from the docs repo
+
+# remove some unwanted router files
+rm -rf %{buildroot}/%{_libdir}/libmysqlharness.{a,so}
+rm -rf %{buildroot}/%{_libdir}/libmysqlrouter.so
 
 %check
 %if 0%{?runselftest} || 0%{?with_unittests}
@@ -603,6 +671,22 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 
 %postun embedded-compat -p /sbin/ldconfig
 %endif
+
+%pre -n mysql-router-%{product_suffix}
+/usr/sbin/groupadd -r mysqlrouter >/dev/null 2>&1 || :
+/usr/sbin/useradd -M -N -g mysqlrouter -r -d /var/lib/mysqlrouter -s /bin/false \
+    -c "MySQL Router" mysqlrouter >/dev/null 2>&1 || :
+
+%post -n mysql-router-%{product_suffix}
+/sbin/ldconfig
+%systemd_post mysqlrouter.service
+
+%preun -n mysql-router-%{product_suffix}
+%systemd_preun mysqlrouter.service
+
+%postun -n mysql-router-%{product_suffix}
+/sbin/ldconfig
+%systemd_postun_with_restart mysqlrouter.service
 
 %files server
 %defattr(-, root, root, -)
@@ -667,6 +751,7 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/ha_example.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/ha_mock.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/innodb_engine.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_udf.so
@@ -692,6 +777,7 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/ha_example.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/ha_mock.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_udf.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/innodb_engine.so
@@ -707,12 +793,6 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/version_token.so
 
-%attr(644, root, root) %{_datadir}/mysql-*/fill_help_tables.sql
-%attr(644, root, root) %{_datadir}/mysql-*/mysql_sys_schema.sql
-%attr(644, root, root) %{_datadir}/mysql-*/mysql_system_tables.sql
-%attr(644, root, root) %{_datadir}/mysql-*/mysql_system_tables_data.sql
-%attr(644, root, root) %{_datadir}/mysql-*/mysql_system_users.sql
-%attr(644, root, root) %{_datadir}/mysql-*/mysql_test_data_timezone.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql-log-rotate
 %attr(644, root, root) %{_datadir}/mysql-*/dictionary.txt
 %attr(644, root, root) %{_datadir}/mysql-*/innodb_memcached_config.sql
@@ -998,18 +1078,30 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %exclude %{_datadir}/mysql/dictionary.txt
 %endif # compatlib
 
+%files -n mysql-router-%{product_suffix}
+%defattr(-, root, root, -)
+%doc %{src_dir}/router/README.router  %{src_dir}/router/LICENSE.router
+%dir %{_sysconfdir}/mysqlrouter
+%config(noreplace) %{_sysconfdir}/mysqlrouter/mysqlrouter.conf
+%{_bindir}/mysqlrouter
+%{_bindir}/mysqlrouter_plugin_info
+%{_unitdir}/mysqlrouter.service
+%{_tmpfilesdir}/mysqlrouter.conf
+%{_libdir}/libmysqlharness.so.*
+%{_libdir}/libmysqlrouter.so.*
+%dir %{_libdir}/mysqlrouter
+%{_libdir}/mysqlrouter/*.so
+%dir %attr(755, mysqlrouter, mysqlrouter) /var/log/mysqlrouter
+%dir %attr(755, mysqlrouter, mysqlrouter) /var/run/mysqlrouter
+
 %changelog
-* Mon Mar 12 2018 Erlend Dahl <erlend.dahl@oracle.com> - 8.0.11-1
-- Removed milestone marker
+* Mon Aug 20 2018 Bjorn Munch <bjorn.munch@oracle.com> - 8.0.13-1
+- Add Router
+
+* Mon Mar 12 2018 Bjorn Munch <bjorn.munch@oracle.com> - 8.0.12-0.1
 - Move mysqlx to default plugin
 - Add component_mysqlx_global_reset.so
-- No longer need to remove obsoleted mysqltest man pages
-- Add perl modules for test subpackage
-- Fixed the package names for GA release
-
-* Thu Dec 07 2017 Bjorn Munch <bjorn.munch@oracle.com> - 8.0.4-0.1
-- Remove obsoleted mysqltest man pages
-- Do not pass SSL option to 5.6 compat build, just use bundled
+- Change the global milestone to 'dmr'
 - Add component_validate_password component
 - Include udf_example.so in test package
 - Remove obsoleted mysqltest man pages
@@ -1017,6 +1109,7 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 - Add License Book, remove COPYING
 - No longer need to remove obsoleted mysqltest man pages
 - Add perl modules for test subpackage
+- Add router as subpackage
 
 * Fri Jul 28 2017 Horst Hunger <horst.hunger@oracle.com> - 8.0.3-0.1
 - Add component_test_status_var_service plugin

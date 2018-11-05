@@ -360,6 +360,8 @@ static long innobase_log_files_in_group_save;
 static char *srv_log_group_home_dir_save;
 static longlong innobase_log_file_size_save;
 
+static char *srv_temp_dir = nullptr;
+
 /* set true if corresponding variable set as option config file or
 command argument */
 bool innodb_log_checksums_specified = false;
@@ -621,6 +623,7 @@ enum options_xtrabackup {
   OPT_XTRA_REBUILD_THREADS,
   OPT_INNODB_CHECKSUM_ALGORITHM,
   OPT_INNODB_UNDO_DIRECTORY,
+  OPT_INNODB_TEMP_TABLESPACE_DIRECTORY,
   OPT_INNODB_UNDO_TABLESPACES,
   OPT_INNODB_LOG_CHECKSUMS,
   OPT_XTRA_INCREMENTAL_FORCE_SCAN,
@@ -1342,6 +1345,10 @@ Disable with --skip-innodb-doublewrite.",
      "Directory where undo tablespace files live, this path can be absolute.",
      &srv_undo_dir, &srv_undo_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0,
      0, 0},
+    {"temp_tablespaces_dir", OPT_INNODB_TEMP_TABLESPACE_DIRECTORY,
+     "Directory where temp tablespace files live, this path can be absolute.",
+     &srv_temp_dir, &srv_temp_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
+     0, 0, 0, 0, 0},
 
     {"innodb_undo_tablespaces", OPT_INNODB_UNDO_TABLESPACES,
      "Number of undo tablespaces to use.", (G_PTR *)&srv_undo_tablespaces,
@@ -2012,6 +2019,16 @@ static bool innodb_init_param(void) {
     my_free(srv_undo_dir);
     srv_undo_dir = my_strdup(PSI_NOT_INSTRUMENTED, ".", MYF(MY_FAE));
   }
+
+  /* We want to save original value of srv_temp_dir because InnoDB will
+  modify ibt::srv_temp_dir. */
+  ibt::srv_temp_dir = srv_temp_dir;
+
+  if (ibt::srv_temp_dir == nullptr) {
+    ibt::srv_temp_dir = default_path;
+  }
+
+  Fil_path::normalize(ibt::srv_temp_dir);
 
   return (FALSE);
 
@@ -2907,7 +2924,7 @@ static bool xtrabackup_scan_log_recs(
     if (no != scanned_no && checksum_is_ok) {
       ulint blocks_in_group;
 
-      blocks_in_group = log_block_convert_lsn_to_no(log_get_capacity()) - 1;
+      blocks_in_group = log_block_convert_lsn_to_no(log.lsn_real_capacity) - 1;
 
       if ((no < scanned_no && ((scanned_no - no) % blocks_in_group) == 0) ||
           no == 0 ||
@@ -2999,7 +3016,7 @@ static bool xtrabackup_scan_log_recs(
         recv_sys->found_corrupt_log = true;
 
       } else if (!recv_sys->found_corrupt_log) {
-        more_data = recv_sys_add_to_parsing_buf(log_block, scanned_lsn);
+        more_data = recv_sys_add_to_parsing_buf(log_block, scanned_lsn, 0);
       }
 
       recv_sys->scanned_lsn = scanned_lsn;
@@ -6685,7 +6702,7 @@ static __attribute__((nonnull, warn_unused_result)) dberr_t xb_export_cfp_write(
   char name[OS_FILE_MAX_PATH];
 
   /* If table is not encrypted, return. */
-  if (!dict_table_is_encrypted(table)) {
+  if (!dd_is_table_in_encrypted_tablespace(table)) {
     return (DB_SUCCESS);
   }
 
@@ -6755,6 +6772,7 @@ static void innodb_free_param() {
   free(internal_innobase_data_file_path);
   internal_innobase_data_file_path = NULL;
   free_tmpdir(&mysql_tmpdir_list);
+  ibt::srv_temp_dir = srv_temp_dir;
 }
 
 /**************************************************************************

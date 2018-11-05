@@ -26,6 +26,7 @@
 #include <set>
 
 #include "my_inttypes.h"        // uint
+#include "mysql_version.h"      // MYSQL_VERSION_ID
 #include "sql/dd/dd_version.h"  // DD_VERSION
 #include "sql/mysqld.h"         // opt_initialize
 
@@ -49,9 +50,13 @@ enum class Stage {
   FINISHED              // Completed.
 };
 
-// Individual version labels that we can refer to.
+// Individual DD version labels that we can refer to.
 static constexpr uint DD_VERSION_80011 = 80011;
 static constexpr uint DD_VERSION_80012 = 80012;
+static constexpr uint DD_VERSION_80013 = 80013;
+
+// Individual server version labels that we can refer to.
+static constexpr uint SERVER_VERSION_80013 = 80013;
 
 /*
   Set of supported DD version labels. A supported DD version is a version
@@ -61,12 +66,13 @@ static constexpr uint DD_VERSION_80012 = 80012;
   downgrade, we instead have to check the MINOR_DOWNGRADE_THRESHOLD, which is
   stored in the 'dd_properties' table by the server from which we downgrade.
 */
-static std::set<uint> supported_dd_versions = {DD_VERSION_80011,
-                                               DD_VERSION_80012};
+static std::set<uint> supported_dd_versions = {
+    DD_VERSION_80011, DD_VERSION_80012, DD_VERSION_80013};
 
 class DD_bootstrap_ctx {
  private:
   uint m_actual_dd_version = 0;
+  uint m_actual_server_version = 0;
   Stage m_stage = Stage::NOT_STARTED;
 
  public:
@@ -89,6 +95,12 @@ class DD_bootstrap_ctx {
 
   uint get_actual_dd_version() const { return m_actual_dd_version; }
 
+  void set_actual_server_version(uint actual_server_version) {
+    m_actual_server_version = actual_server_version;
+  }
+
+  uint get_actual_server_version() const { return m_actual_server_version; }
+
   bool actual_dd_version_is(uint compare_actual_dd_version) const {
     return (m_actual_dd_version == compare_actual_dd_version);
   }
@@ -101,8 +113,17 @@ class DD_bootstrap_ctx {
     return !opt_initialize && (m_actual_dd_version < dd::DD_VERSION);
   }
 
+  bool is_server_upgrade() const {
+    return !opt_initialize && (m_actual_server_version < MYSQL_VERSION_ID);
+  }
+
   bool is_upgrade_from_before(uint compare_actual_dd_version) const {
     return (is_upgrade() && m_actual_dd_version < compare_actual_dd_version);
+  }
+
+  bool is_server_upgrade_from_before(uint compare_actual_server_version) const {
+    return (is_server_upgrade() &&
+            m_actual_server_version < compare_actual_server_version);
   }
 
   bool is_minor_downgrade() const {

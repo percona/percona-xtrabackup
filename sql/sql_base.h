@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,11 +33,12 @@
 #include "my_base.h"  // ha_extra_function
 #include "my_inttypes.h"
 #include "mysql/components/services/mysql_mutex_bits.h"
-#include "sql/mdl.h"          // MDL_savepoint
-#include "sql/sql_array.h"    // Bounds_checked_array
-#include "sql/sql_const.h"    // enum_resolution_type
-#include "sql/trigger_def.h"  // enum_trigger_event_type
-#include "thr_lock.h"         // thr_lock_type
+#include "prealloced_array.h"  // Prealloced_array
+#include "sql/mdl.h"           // MDL_savepoint
+#include "sql/sql_array.h"     // Bounds_checked_array
+#include "sql/sql_const.h"     // enum_resolution_type
+#include "sql/trigger_def.h"   // enum_trigger_event_type
+#include "thr_lock.h"          // thr_lock_type
 
 class COPY_INFO;
 class Field;
@@ -125,8 +126,8 @@ void assign_new_table_id(TABLE_SHARE *share);
 uint cached_table_definitions(void);
 size_t get_table_def_key(const TABLE_LIST *table_list, const char **key);
 TABLE_SHARE *get_table_share(THD *thd, const char *db, const char *table_name,
-                             const char *key, size_t key_length,
-                             bool open_view);
+                             const char *key, size_t key_length, bool open_view,
+                             bool open_secondary = false);
 void release_table_share(TABLE_SHARE *share);
 
 TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type update,
@@ -184,6 +185,8 @@ TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type update,
   which represents table open in storage engines can still be used.
 */
 #define MYSQL_OPEN_NO_NEW_TABLE_IN_SE 0x8000
+/** Open a shadow copy of a table from a secondary storage engine. */
+#define MYSQL_OPEN_SECONDARY_ENGINE 0x10000
 
 /** Please refer to the internals manual. */
 #define MYSQL_OPEN_REOPEN                                           \
@@ -266,9 +269,10 @@ int run_before_dml_hook(THD *thd);
 bool get_and_lock_tablespace_names(THD *thd, TABLE_LIST *tables_start,
                                    TABLE_LIST *tables_end,
                                    ulong lock_wait_timeout, uint flags);
-bool lock_table_names(THD *thd, TABLE_LIST *table_list,
-                      TABLE_LIST *table_list_end, ulong lock_wait_timeout,
-                      uint flags);
+bool lock_table_names(
+    THD *thd, TABLE_LIST *table_list, TABLE_LIST *table_list_end,
+    ulong lock_wait_timeout, uint flags,
+    Prealloced_array<MDL_request *, 1> *schema_reqs = nullptr);
 bool open_tables(THD *thd, TABLE_LIST **tables, uint *counter, uint flags,
                  Prelocking_strategy *prelocking_strategy);
 /* open_and_lock_tables */

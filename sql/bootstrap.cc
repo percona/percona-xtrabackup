@@ -275,7 +275,7 @@ static bool handle_bootstrap_impl(THD *thd) {
 
     // Ignore ER_TOO_LONG_KEY for system tables.
     thd->push_internal_handler(&error_handler);
-    mysql_parse(thd, &parser_state);
+    mysql_parse(thd, &parser_state, true);
     thd->pop_internal_handler();
 
     bootstrap_error = thd->is_error();
@@ -333,6 +333,7 @@ static void *handle_bootstrap(void *arg) {
     thd->fatal_error();
     bootstrap_error = true;
     thd->get_protocol_classic()->end_net();
+    thd->release_resources();
   } else {
     Global_THD_manager *thd_manager = Global_THD_manager::get_instance();
     thd_manager->add_thd(thd);
@@ -406,7 +407,8 @@ bool run_bootstrap_thread(MYSQL_FILE *file, bootstrap_functor boot_handler,
   if (error) {
     /* purecov: begin inspected */
     LogErr(WARNING_LEVEL, ER_BOOTSTRAP_CANT_THREAD, errno).os_errno(errno);
-
+    thd->release_resources();
+    delete thd;
     DBUG_RETURN(true);
     /* purecov: end */
   }

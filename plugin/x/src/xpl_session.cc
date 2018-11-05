@@ -40,6 +40,7 @@ xpl::Session::Session(ngs::Client_interface &client,
                       const Session_id session_id)
     : ngs::Session(client, proto, session_id),
       m_sql(proto),
+      m_notice_output_queue(proto, &m_notice_configuration),
       m_was_authenticated(false) {}
 
 xpl::Session::~Session() {
@@ -94,7 +95,7 @@ ngs::Error_code xpl::Session::init() {
 void xpl::Session::on_kill() {
   if (!m_sql.is_killed()) {
     if (!m_sql.kill())
-      log_info(ER_XPLUGIN_FAILED_TO_INTERRUPT_SESSION, m_client.client_id());
+      log_debug("%s: Could not interrupt client session", m_client.client_id());
   }
 
   on_close(true);

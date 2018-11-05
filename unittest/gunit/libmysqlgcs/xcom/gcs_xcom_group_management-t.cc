@@ -51,12 +51,20 @@ class mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
                                          node_list *nl, uint32_t group_id));
   MOCK_METHOD3(xcom_client_remove_node, int(connection_descriptor *fd,
                                             node_list *nl, uint32_t group_id));
+  MOCK_METHOD3(xcom_remove_self,
+               int(connection_descriptor &con,
+                   const Gcs_xcom_node_information &node, uint32_t group_id));
   MOCK_METHOD2(xcom_client_remove_node, int(node_list *nl, uint32_t group_id));
+  MOCK_METHOD2(xcom_client_get_event_horizon,
+               bool(uint32_t group_id, xcom_event_horizon &event_horizon));
+  MOCK_METHOD2(xcom_client_set_event_horizon,
+               bool(uint32_t group_id, xcom_event_horizon event_horizon));
   MOCK_METHOD2(xcom_client_boot, int(node_list *nl, uint32_t group_id));
   MOCK_METHOD2(xcom_client_open_connection,
                connection_descriptor *(std::string, xcom_port port));
   MOCK_METHOD1(xcom_client_close_connection, int(connection_descriptor *fd));
   MOCK_METHOD2(xcom_client_send_data, int(unsigned long long size, char *data));
+  MOCK_METHOD0(xcom_client_send_die, int());
   MOCK_METHOD1(xcom_init, int(xcom_port listen_port));
   MOCK_METHOD1(xcom_exit, int(bool xcom_handlers_open));
   MOCK_METHOD0(xcom_set_cleanup, void());

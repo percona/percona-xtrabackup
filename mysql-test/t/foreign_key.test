@@ -3367,3 +3367,440 @@ SHOW CREATE TABLE self;
 ALTER TABLE child DROP KEY fk_s, ADD COLUMN j INT, ADD KEY (fk, j);
 ALTER TABLE self DROP KEY fk_s, ADD COLUMN j INT, ADD KEY(fk, j);
 DROP TABLES self, child, parent;
+
+--echo #
+--echo # 4) Check how foreign keys involving partitioned tables are handled.
+--echo #
+
+--echo #
+--echo # 4.a) Creation of partitioned child table, addition of foreign key to
+--echo #      partitioned table and attempt to partition child table in a
+--echo #      foreign key should all lead to errors (since InnoDB doesn't
+--echo #      support foreign keys involving partitioned tables yet).
+CREATE TABLE parent (pk INT PRIMARY KEY);
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+CREATE TABLE child (pk INT PRIMARY KEY, fk INT, FOREIGN KEY (fk) REFERENCES parent(pk))
+  PARTITION BY KEY (pk) PARTITIONS 20;
+
+CREATE TABLE child (pk INT PRIMARY KEY, fk INT) PARTITION BY KEY (pk) PARTITIONS 20;
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+ALTER TABLE child ADD FOREIGN KEY (fk) REFERENCES parent(pk);
+DROP TABLE child;
+
+CREATE TABLE child (pk INT PRIMARY KEY, fk INT, FOREIGN KEY (fk) REFERENCES parent(pk));
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+ALTER TABLE child PARTITION BY KEY (pk) PARTITIONS 20;
+
+--echo #
+--echo # 4.b) Attempt to partition parent table in a foreign key,
+--echo #      attempt to create table with foreign key referencing
+--echo #      partitioned table and addition of foreign key with
+--echo #      partitioned parent should all lead to errors as well.
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+ALTER TABLE parent PARTITION BY KEY (pk) PARTITIONS 20;
+DROP TABLES child, parent;
+
+CREATE TABLE parent (pk INT PRIMARY KEY) PARTITION BY KEY (pk) PARTITIONS 20;
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+CREATE TABLE child (fk INT, FOREIGN KEY (fk) REFERENCES parent(pk));
+
+CREATE TABLE child (fk INT);
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+ALTER TABLE child ADD FOREIGN KEY (fk) REFERENCES parent(pk);
+DROP TABLES child, parent;
+
+--echo #
+--echo # 4.c) Addition of partitioned parent for previously orphan foreign key
+--echo #      should result in error as well.
+SET FOREIGN_KEY_CHECKS=0;
+CREATE TABLE orphan (fk INT, FOREIGN KEY (fk) REFERENCES parent(pk));
+SET FOREIGN_KEY_CHECKS=1;
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+CREATE TABLE parent (pk INT PRIMARY KEY) PARTITION BY KEY (pk) PARTITIONS 20;
+
+CREATE TABLE parent0 (pk INT PRIMARY KEY) PARTITION BY KEY (pk) PARTITIONS 20;
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+RENAME TABLE parent0 TO parent;
+
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+ALTER TABLE parent0 RENAME TO parent;
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+ALTER TABLE parent0 RENAME TO parent, ADD COLUMN j INT, ALGORITHM=COPY;
+--error ER_FOREIGN_KEY_ON_PARTITIONED
+ALTER TABLE parent0 RENAME TO parent, ADD COLUMN j INT, ALGORITHM=INPLACE;
+DROP TABLES orphan, parent0;
+
+--echo #
+--echo # 4.d) ALTER TABLE which ADD/DROP FOREIGN KEY and change table's
+--echo #      partitioning status at the same time.
+CREATE TABLE parent (pk INT PRIMARY KEY);
+CREATE TABLE child (pk INT PRIMARY KEY, fk INT,
+                    CONSTRAINT c FOREIGN KEY (fk) REFERENCES parent(pk));
+--echo # Dropping foreign key and adding partitioning is OK.
+ALTER TABLE child DROP FOREIGN KEY c PARTITION BY KEY (pk) PARTITIONS 20;
+--echo # Adding foreign key and removing partitioning is OK.
+ALTER TABLE child ADD FOREIGN KEY (fk) REFERENCES parent(pk) REMOVE PARTITIONING;
+DROP TABLES child, parent;
+CREATE TABLE self (pk INT PRIMARY KEY, fk INT,
+                   CONSTRAINT c FOREIGN KEY (fk) REFERENCES self(pk));
+--echo # Dropping foreign key and adding partitioning is OK.
+ALTER TABLE self DROP FOREIGN KEY c PARTITION BY KEY (pk) PARTITIONS 20;
+--echo # Adding foreign key and removing partitioning should be OK.
+--echo # However, the below statement fails due to bug#28486106 in InnoDB code.
+--error ER_CANNOT_ADD_FOREIGN
+ALTER TABLE self ADD FOREIGN KEY (fk) REFERENCES self(pk) REMOVE PARTITIONING;
+DROP TABLES self;
+
+--echo #
+--echo # 5) Check how parent table in different storage engine is handled.
+--echo #
+--echo # We handle it in the same way as if table was missing to be compatible
+--echo # with pre-8.0 versions.
+
+--echo #
+--echo # 5.a) Attempt to create table with a foreign key or to add foreign key
+--echo #      to already xisting table which reference parent in different SE
+--echo #      should fail in FOREIGN_KEY_CHECKS=1 mode.
+CREATE TABLE bad_parent (pk INT PRIMARY KEY) ENGINE=MyISAM;
+--error ER_FK_CANNOT_OPEN_PARENT
+CREATE TABLE child (fk INT, FOREIGN KEY (fk) REFERENCES bad_parent(pk));
+
+CREATE TABLE child (fk INT);
+--error ER_FK_CANNOT_OPEN_PARENT
+ALTER TABLE child ADD FOREIGN KEY (fk) REFERENCES bad_parent(pk);
+
+--echo #
+--echo # 5.b) However, in FOREIGN_KEY_CHECKS=0 mode this is allowed.
+--echo #      Referenced table is considered missing and existing table
+--echo #      in a wrong SE is not considered as real parent.
+SET FOREIGN_KEY_CHECKS = 0;
+ALTER TABLE child ADD FOREIGN KEY (fk) REFERENCES bad_parent(pk);
+DROP TABLE child;
+CREATE TABLE child (fk INT, FOREIGN KEY (fk) REFERENCES bad_parent(pk));
+SET FOREIGN_KEY_CHECKS = 1;
+--echo # Bad parent can be dropped just fine even in FOREIGN_KEY_CHECKS=1 mode.
+DROP TABLE bad_parent;
+DROP TABLE child;
+
+--echo #
+--echo # 5.c) Attempt to change SE for table participating in foreign key
+--echo #      should lead to error.
+CREATE TABLE parent (pk INT PRIMARY KEY);
+CREATE TABLE child (fk INT, FOREIGN KEY (fk) REFERENCES parent(pk));
+--error ER_FK_CANNOT_CHANGE_ENGINE
+ALTER TABLE child ENGINE=MyISAM;
+--error ER_FK_CANNOT_CHANGE_ENGINE
+ALTER TABLE parent ENGINE=MyISAM;
+DROP TABLES child, parent;
+
+--echo #
+--echo # 5.d) It is possible to add "parent" in wrong SE to orphan foreign key.
+--echo #      However, it won't be considered as real parent.
+SET FOREIGN_KEY_CHECKS = 0;
+CREATE TABLE child (fk INT, FOREIGN KEY (fk) REFERENCES bad_parent(pk));
+SET FOREIGN_KEY_CHECKS = 1;
+CREATE TABLE bad_parent (pk INT PRIMARY KEY) ENGINE=MyISAM;
+--echo # It is possible to break bad parent even in FOREIGN_KEY_CHECKS=1 mode.
+ALTER TABLE bad_parent DROP COLUMN pk, ADD COLUMN i INT;
+DROP TABLE bad_parent;
+DROP TABLE child;
+
+--echo #
+--echo # 6) Check that we prohibit foreign keys with SET NULL action with
+--echo #    non-nullable referencing columns.
+--echo #
+
+--echo #
+--echo # 6.1) Attempt to add foreign key with SET NULL action and
+--echo #      non-nullable column should lead to error.
+CREATE TABLE parent (pk INT PRIMARY KEY);
+--error ER_FK_COLUMN_NOT_NULL
+CREATE TABLE child (fk INT NOT NULL, CONSTRAINT c FOREIGN KEY (fk) REFERENCES parent(pk) ON DELETE SET NULL);
+--error ER_FK_COLUMN_NOT_NULL
+CREATE TABLE child (fk INT NOT NULL, CONSTRAINT c FOREIGN KEY (fk) REFERENCES parent(pk) ON UPDATE SET NULL);
+CREATE TABLE child (fk INT NOT NULL);
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child ADD FOREIGN KEY (fk) REFERENCES parent(pk) ON DELETE SET NULL;
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child ADD FOREIGN KEY (fk) REFERENCES parent(pk) ON UPDATE SET NULL;
+DROP TABLE child;
+
+--echo # Case of when column is implicitly made non-nullable due to PRIMARY
+--echo # KEY should be handled in the same way.
+--error ER_FK_COLUMN_NOT_NULL
+CREATE TABLE child (fk INT, PRIMARY KEY(fk), CONSTRAINT c FOREIGN KEY (fk) REFERENCES parent(pk) ON DELETE SET NULL);
+--error ER_FK_COLUMN_NOT_NULL
+CREATE TABLE child (fk INT, PRIMARY KEY(fk), CONSTRAINT c FOREIGN KEY (fk) REFERENCES parent(pk) ON UPDATE SET NULL);
+CREATE TABLE child (fk INT);
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child ADD PRIMARY KEY (fk), ADD FOREIGN KEY (fk) REFERENCES parent(pk) ON DELETE SET NULL;
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child ADD PRIMARY KEY (fk), ADD FOREIGN KEY (fk) REFERENCES parent(pk) ON UPDATE SET NULL;
+DROP TABLE child;
+
+--echo #
+--echo # 6.2) Attempt to make referencing column non-nullable in existing
+--echo #      foreign key with SET NULL action should lead to error as well.
+CREATE TABLE child_one (fk INT, CONSTRAINT c FOREIGN KEY (fk) REFERENCES parent(pk) ON DELETE SET NULL);
+CREATE TABLE child_two (fk INT, FOREIGN KEY (fk) REFERENCES parent(pk) ON DELETE SET NULL);
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child_one MODIFY COLUMN fk INT NOT NULL;
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child_two CHANGE COLUMN fk fk1 INT NOT NULL;
+
+--echo # Case of when column is implicitly made non-nullable due addition
+--echo # of PRIMARY KEY should be handled in the same way.
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child_one ADD PRIMARY KEY(fk);
+--error ER_FK_COLUMN_NOT_NULL
+ALTER TABLE child_two ADD PRIMARY KEY(fk);
+DROP TABLES child_one, child_two, parent;
+
+
+--echo #
+--echo # WL#8910: Ensure foreign key error does not reveal information about
+--echo #          parent table for which user has no access privileges.
+--echo #
+
+--echo #Set up tables.
+CREATE TABLE t1(fld1 INT PRIMARY KEY, fld2 INT) ENGINE=INNODB;
+CREATE TABLE t2(fld1 INT PRIMARY KEY, fld2 INT, CONSTRAINT fk2
+FOREIGN KEY (fld1) REFERENCES t1 (fld1)) ENGINE=InnoDB;
+CREATE TABLE t3(fld1 INT PRIMARY KEY, fld2 INT) ENGINE=InnoDB;
+
+--echo # Set up stored routines
+CREATE PROCEDURE p1() SQL SECURITY INVOKER INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+CREATE PROCEDURE p2() SQL SECURITY DEFINER INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+DELIMITER |;
+CREATE FUNCTION f1() RETURNS INT SQL SECURITY INVOKER
+BEGIN
+  INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+  RETURN 0;
+END|
+
+CREATE FUNCTION f2() RETURNS INT SQL SECURITY DEFINER
+BEGIN
+  INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+  RETURN 0;
+END|
+
+DELIMITER ;|
+
+--echo # Set up views.
+CREATE SQL SECURITY INVOKER VIEW v1 AS SELECT * FROM t2;
+CREATE SQL SECURITY DEFINER VIEW v2 AS SELECT * FROM t2;
+
+--echo # Set up users and permissions.
+CREATE USER user1@localhost;
+CREATE USER user2@localhost;
+CREATE USER user3@localhost;
+GRANT INSERT (fld1, fld2) ON t2 TO user1@localhost;
+GRANT INSERT ON v1 TO user2@localhost;
+GRANT INSERT ON v2 TO user2@localhost;
+GRANT SET_USER_ID ON *.* TO user2@localhost;
+GRANT EXECUTE ON PROCEDURE p1 TO user2@localhost;
+GRANT EXECUTE ON PROCEDURE p2 TO user2@localhost;
+GRANT EXECUTE ON FUNCTION f1 TO user2@localhost;
+GRANT EXECUTE ON FUNCTION f2 TO user2@localhost;
+
+--enable_connect_log
+
+connect (con1, localhost, user1,,test);
+--echo # Without patch, reveals parent table's information.
+--error ER_NO_REFERENCED_ROW
+INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+
+--echo # Warning displayed does not reveal parent table information.
+INSERT IGNORE INTO t2 (fld1, fld2) VALUES (1, 2);
+SHOW WARNINGS;
+
+connection default;
+GRANT SELECT ON t1 TO user1@localhost;
+
+connection con1;
+--error ER_NO_REFERENCED_ROW_2
+INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+
+connection default;
+ALTER TABLE t2 ADD CONSTRAINT fk3 FOREIGN KEY (fld2) REFERENCES t3(fld1);
+
+connection con1;
+--echo # Without patch, reveals parent table's information.
+--error ER_NO_REFERENCED_ROW
+INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+
+--echo # Warning displayed does not reveal parent table information.
+INSERT IGNORE INTO t2 (fld1, fld2) VALUES (1, 2);
+SHOW WARNINGS;
+
+connection default;
+GRANT SELECT ON t3 TO user1@localhost;
+
+connection con1;
+--error ER_NO_REFERENCED_ROW_2
+INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+
+connection default;
+GRANT INSERT (fld1, fld2) ON t2 TO user2@localhost;
+GRANT CREATE ROUTINE ON test.* TO user2@localhost;
+GRANT CREATE VIEW ON test.* TO user2@localhost;
+
+--echo # Tests where DML reports FK constraint failure within Stored Routines.
+connect (con2, localhost, user2,,test);
+
+--echo # The SQL security for p1 is invoker where invoker lacks permission
+--echo # to parent table, hence parent table information is not displayed.
+--error ER_NO_REFERENCED_ROW
+CALL p1();
+
+--echo # The SQL security p2 is definer, where the definer has access privilege
+--echo # to the parent table, hence parent table information is displayed.
+--error ER_NO_REFERENCED_ROW_2
+CALL p2();
+
+--echo # The SQL security for f1 is invoker where invoker lacks permission
+--echo # to parent table, hence parent table information is not displayed.
+--error ER_NO_REFERENCED_ROW
+SELECT f1();
+
+--echo # The SQL security f2 is definer, where the definer has access privilege
+--echo # to the parent table, hence parent table information is displayed.
+--error ER_NO_REFERENCED_ROW_2
+SELECT f2();
+
+--echo # Test for DMLs on VIEWS.
+
+--echo # The invoker does not have access to the parent table, hence the parent
+--echo # table information is not displayed.
+--error ER_NO_REFERENCED_ROW
+INSERT INTO v1 VALUES (1, 2);
+
+--echo # DML on view executed within the definer context where the invoker does
+--echo # not have access to the parent table, hence the parent table information
+--echo # is not displayed.
+--error ER_NO_REFERENCED_ROW
+INSERT INTO v2 VALUES (1, 2);
+
+connection default;
+GRANT SELECT ON t1 TO user2@localhost;
+GRANT SELECT ON t3 TO user2@localhost;
+
+connection con2;
+--echo # DML on view executed within the definer context where the invoker
+--echo # has access to the parent table, hence the parent table information
+--echo # is displayed.
+--error ER_NO_REFERENCED_ROW_2
+INSERT INTO v2 VALUES (1, 2);
+
+--echo # Tests with SET_USER_ID
+
+--echo # Set up stored routines and views by user with SET_USER_ID
+--echo # privilege.
+
+CREATE DEFINER=root@localhost PROCEDURE p3() SQL SECURITY DEFINER
+INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+
+DELIMITER |;
+CREATE DEFINER=root@localhost FUNCTION f3() RETURNS
+INT SQL SECURITY DEFINER
+BEGIN
+  INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
+  RETURN 0;
+END|
+
+DELIMITER ;|
+
+CREATE DEFINER=root@localhost SQL SECURITY DEFINER VIEW v3 AS
+SELECT * FROM t2;
+
+--echo # Grant privileges for user3.
+connection default;
+GRANT EXECUTE ON PROCEDURE p3 TO user3@localhost;
+GRANT EXECUTE ON FUNCTION f3 TO user3@localhost;
+GRANT INSERT ON v3 TO user3@localhost;
+GRANT SELECT ON t1 TO user3@localhost;
+GRANT SELECT ON t3 TO user3@localhost;
+
+connect (con3, localhost, user3,,test);
+
+--echo # Since the execution happens in the definer 'root' user
+--echo # context, the parent table informaton is exposed.
+--error ER_NO_REFERENCED_ROW_2
+CALL p3();
+
+--error ER_NO_REFERENCED_ROW_2
+SELECT f3();
+
+--error ER_NO_REFERENCED_ROW_2
+INSERT INTO v3 VALUES(4, 5);
+
+--echo # Cleanup
+connection default;
+disconnect con1;
+disconnect con2;
+disconnect con3;
+DROP VIEW v1, v2, v3;
+DROP TABLE t2, t3, t1;
+DROP USER user1@localhost;
+DROP USER user2@localhost;
+DROP USER user3@localhost;
+DROP PROCEDURE p1;
+DROP PROCEDURE p2;
+DROP PROCEDURE p3;
+DROP FUNCTION f1;
+DROP FUNCTION f2;
+DROP FUNCTION f3;
+
+--disable_connect_log
+--echo #
+--echo # Bug #28122781  FOREIGN KEY REFERENCE OPTION RESTRICT IGNORED AFTER MYSQLDUMP AND RELOAD.
+--echo #
+
+CREATE TABLE t1 (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY
+);
+
+CREATE TABLE t2 (
+  t1_id INT NOT NULL,
+  FOREIGN KEY t2_fk(t1_id)
+  REFERENCES t1(id) ON UPDATE RESTRICT
+);
+
+CREATE TABLE t3 (
+  t1_id INT NOT NULL,
+  FOREIGN KEY t3_fk(t1_id)
+  REFERENCES t1(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE t4 (
+  t1_id INT NOT NULL,
+  FOREIGN KEY t4_fk(t1_id)
+  REFERENCES t1(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+SHOW CREATE TABLE t1;
+SHOW CREATE TABLE t2;
+SHOW CREATE TABLE t3;
+SHOW CREATE TABLE t4;
+
+SELECT *  FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE
+TABLE_NAME IN ('t1', 't2', 't3', 't4');
+
+--echo # dump tables t1, t2, t3, t3
+--exec $MYSQL_DUMP test t1 t2 t3 t4 > $MYSQLTEST_VARDIR/tmp/testing.sql
+
+DROP TABLE t1, t2, t3, t4;
+
+--echo # reload dump
+--exec $MYSQL test < $MYSQLTEST_VARDIR/tmp/testing.sql
+
+SHOW CREATE TABLE t1;
+SHOW CREATE TABLE t2;
+SHOW CREATE TABLE t3;
+SHOW CREATE TABLE t4;
+
+SELECT *  FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE
+TABLE_NAME IN ('t1', 't2', 't3', 't4');
+
+DROP TABLE t1, t2, t3, t4;
+--remove_file $MYSQLTEST_VARDIR/tmp/testing.sql

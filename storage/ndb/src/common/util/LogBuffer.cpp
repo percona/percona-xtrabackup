@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,13 +26,28 @@
 #include <portlib/NdbCondition.h>
 #include <portlib/NdbThread.h>
 #include <BaseString.hpp>
-#include <basestring_vsnprintf.h>
 
-LogBuffer::LogBuffer(size_t size) :
+size_t
+ByteStreamLostMsgHandler::getSizeOfLostMsg(size_t lost_bytes, size_t lost_msgs)
+{
+  size_t lost_msg_len = snprintf(NULL, 0, m_lost_msg_fmt, lost_bytes);
+  return lost_msg_len;
+}
+
+bool
+ByteStreamLostMsgHandler::writeLostMsg(char* buf, size_t buf_size, size_t lost_bytes, size_t lost_msgs)
+{
+  snprintf(buf, buf_size, m_lost_msg_fmt, lost_bytes);
+  return true;
+}
+
+LogBuffer::LogBuffer(size_t size, LostMsgHandler* lost_msg_handler) :
     m_log_buf(0),
     m_max_size(size),
     m_size(0),
-    m_lost_count(0)
+    m_lost_bytes(0),
+    m_lost_messages(0),
+    m_lost_msg_handler(lost_msg_handler)
 {
   m_log_buf = (char*)malloc(size+1);
   assert(m_log_buf != NULL);
@@ -51,6 +66,7 @@ LogBuffer::~LogBuffer()
 {
   assert(checkInvariants());
   free(m_log_buf);
+  delete m_lost_msg_handler;
   NdbCondition_Destroy(m_cond);
   NdbMutex_Destroy(m_mutex);
 }
@@ -151,18 +167,20 @@ LogBuffer::checkForBufferSpace(size_t write_bytes)
 {
   bool ret = true;
   assert(checkInvariants());
-  if(m_lost_count)// there are lost bytes
+  if(m_lost_bytes)// there are lost bytes
   {
+    assert(m_lost_messages != 0);
     char* write_ptr = NULL;
-    const char* lost_msg = "\n*** %u BYTES LOST ***\n";
-    int lost_msg_len = basestring_snprintf(NULL, 0, lost_msg, m_lost_count);
+    int lost_msg_len = m_lost_msg_handler->getSizeOfLostMsg(m_lost_bytes, m_lost_messages);
     assert(lost_msg_len > 0);
 
     // append the lost msg
     if((write_ptr = getWritePtr(write_bytes + lost_msg_len + 1)))
     {
-      basestring_snprintf(write_ptr, lost_msg_len + 1, lost_msg, m_lost_count);
-      m_lost_count = 0; // make lost count 0
+      m_lost_msg_handler->writeLostMsg(write_ptr, lost_msg_len + 1, m_lost_bytes, m_lost_messages);
+      // make lost counts 0
+      m_lost_bytes = 0;
+      m_lost_messages = 0;
       if(write_ptr == m_log_buf && m_write_ptr != m_log_buf)
       {
         // need to wrap the write ptr
@@ -173,7 +191,8 @@ LogBuffer::checkForBufferSpace(size_t write_bytes)
     else
     {
       // no space for lost msg and write_bytes
-      m_lost_count += write_bytes;
+      m_lost_bytes += write_bytes;
+      m_lost_messages += 1;
       ret = false;
     }
   }
@@ -191,30 +210,30 @@ LogBuffer::append(void* buf, size_t write_bytes)
   size_t ret = 0;
   bool buffer_was_empty = (m_size == 0);
 
-  if(write_bytes == 0)
+  if (write_bytes == 0)
   {
     // nothing to be appended
     return ret;
   }
   // preliminary check for space availability
-  if(!checkForBufferSpace(write_bytes))
+  if (!checkForBufferSpace(write_bytes))
   {
     // this append is not possible since there's no space for log message
     return ret;
   }
 
   write_ptr = getWritePtr(write_bytes);
-  if(write_ptr)
+  if (write_ptr)
   {
     memcpy(write_ptr, buf, write_bytes);
-    if(write_ptr == m_log_buf && m_write_ptr != m_log_buf)
+    if (write_ptr == m_log_buf && m_write_ptr != m_log_buf)
     {
       //need to wrap the write ptr
       wrapWritePtr();
     }
     updateWritePtr(write_bytes);
     ret = write_bytes;
-    if(buffer_was_empty)
+    if (buffer_was_empty)
     {
       // signal consumers if log buf was empty previously
       NdbCondition_Signal(m_cond);
@@ -223,7 +242,8 @@ LogBuffer::append(void* buf, size_t write_bytes)
   else
   {
     // insufficient space to write
-    m_lost_count += write_bytes;
+    m_lost_bytes += write_bytes;
+    m_lost_messages += 1;
     ret = 0;
   }
   assert(checkInvariants());
@@ -263,7 +283,7 @@ LogBuffer::append(const char* fmt, va_list ap, size_t len, bool append_ln)
 
     if(write_ptr)
     {
-      res = basestring_vsnprintf(write_ptr, write_bytes, fmt, ap);
+      res = vsnprintf(write_ptr, write_bytes, fmt, ap);
       assert(res >= 0);
 
       if(append_ln)
@@ -289,7 +309,8 @@ LogBuffer::append(const char* fmt, va_list ap, size_t len, bool append_ln)
        * Insufficient space to write, lost count doesn't include
        * the null byte at the end of string.
        */
-      m_lost_count += write_bytes - 1;
+      m_lost_bytes += write_bytes - 1;
+      m_lost_messages += 1;
       ret = 0;
     }
   }
@@ -404,7 +425,7 @@ LogBuffer::getSize() const
 size_t
 LogBuffer::getLostCount() const
 {
-  return m_lost_count;
+  return m_lost_bytes;
 }
 
 bool
@@ -466,7 +487,7 @@ void fun(const char* fmt, ...)
   va_list arguments;
 
   va_start(arguments, fmt);
-  int len = basestring_vsnprintf(NULL, 0, fmt, arguments);
+  int len = vsnprintf(NULL, 0, fmt, arguments);
   va_end(arguments);
 
   va_start(arguments, fmt);
@@ -561,6 +582,7 @@ void* thread_consumer1(void* dummy)
   char* flush = (char*)malloc(buf_t2->getSize());
   bytes = buf_t2->get(flush, buf_t2->getSize());
   fwrite(flush, bytes, 1, stdout);
+  free(flush);
 
   // print lost bytes if any
   size_t lost_count = buf_t2->getLostCount();
@@ -592,6 +614,7 @@ void* thread_consumer2(void* dummy)
   char* flush = (char*)malloc(buf_t3->getSize());
   bytes_flushed = buf_t3->get(flush, buf_t3->getSize());
   total_bytes_read_t3 += bytes_flushed;
+  free(flush);
 
   NdbThread_Exit(NULL);
   return NULL;
@@ -806,6 +829,10 @@ TAPTEST(LogBuffer)
   stop_t2 = true;
   NdbThread_WaitFor(log_threadvar1, NULL);
 
+  NdbThread_Destroy(&log_threadvar1);
+  NdbThread_Destroy(&prod_threadvar1);
+  NdbThread_Destroy(&prod_threadvar2);
+
   printf("\n--------TESTCASE 2 COMPLETE--------\n\n");
 
   printf("--------TESTCASE 3- RANDOM READS & WRITES--------\n\n");
@@ -835,6 +862,10 @@ TAPTEST(LogBuffer)
   {
     assert(total_to_write_t3 == bytes_written_t3);
   }
+
+  NdbThread_Destroy(&log_threadvar2);
+  NdbThread_Destroy(&prod_threadvar3);
+
   printf("\n--------TESTCASE 3 COMPLETE--------\n\n");
 
   delete buf_t1;

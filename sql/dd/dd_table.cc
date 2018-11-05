@@ -53,6 +53,7 @@
                                                //   set_PS_version_for_table
 #include "sql/dd/dd_version.h"                 // DD_VERSION
 #include "sql/dd/properties.h"                 // dd::Properties
+#include "sql/dd/string_type.h"
 #include "sql/dd/types/abstract_table.h"
 #include "sql/dd/types/column.h"               // dd::Column
 #include "sql/dd/types/column_type_element.h"  // dd::Column_type_element
@@ -62,6 +63,7 @@
 #include "sql/dd/types/index_element.h"        // dd::Index_element
 #include "sql/dd/types/object_table.h"         // dd::Object_table
 #include "sql/dd/types/partition.h"            // dd::Partition
+#include "sql/dd/types/partition_index.h"      // dd::Partition_index
 #include "sql/dd/types/partition_value.h"      // dd::Partition_value
 #include "sql/dd/types/schema.h"               // dd::Schema
 #include "sql/dd/types/table.h"                // dd::Table
@@ -219,12 +221,7 @@ dd::String_type get_sql_type_by_create_field(TABLE *table,
                                              Create_field *field) {
   DBUG_ENTER("get_sql_type_by_create_field");
 
-  // Create Field object from Create_field
-  std::unique_ptr<Field, Destroy_only<Field>> fld(make_field(
-      table->s, 0, field->length, NULL, 0, field->sql_type, field->charset,
-      field->geom_type, field->auto_flags, field->interval, field->field_name,
-      field->maybe_null, field->is_zerofill, field->is_unsigned,
-      field->decimals, field->treat_bit_as_char, 0, field->m_srid));
+  unique_ptr_destroy_only<Field> fld(make_field(*field, table->s));
   fld->init(table);
 
   // Read column display type.
@@ -261,11 +258,8 @@ static void prepare_default_value_string(uchar *buf, TABLE *table,
                                          dd::Column *col_obj,
                                          String *def_value) {
   // Create a fake field with the default value buffer 'buf'.
-  std::unique_ptr<Field, Destroy_only<Field>> f(make_field(
-      table->s, buf + 1, field.length, buf, 0, field.sql_type, field.charset,
-      field.geom_type, field.auto_flags, field.interval, field.field_name,
-      field.maybe_null, field.is_zerofill, field.is_unsigned, field.decimals,
-      field.treat_bit_as_char, 0, field.m_srid));
+  unique_ptr_destroy_only<Field> f(
+      make_field(field, table->s, buf + 1, buf, 0));
   f->init(table);
 
   if (col_obj->has_no_default()) f->flags |= NO_DEFAULT_VALUE_FLAG;
@@ -276,8 +270,19 @@ static void prepare_default_value_string(uchar *buf, TABLE *table,
 
   if (f->gcol_info || !has_default) return;
 
+  // If we have DEFAULT (expression)
+  if (field.m_default_val_expr) {
+    // Convert from Basic_string to String
+    String default_val_expr(col_obj->default_option().c_str(),
+                            col_obj->default_option().length(),
+                            &my_charset_bin);
+    // convert the expression stored in default_option to UTF8
+    convert_and_print(&default_val_expr, def_value, system_charset_info);
+    return;
+  }
+
   // If we have DEFAULT NOW()
-  if (f->has_insert_default_function()) {
+  if (f->has_insert_default_datetime_value_expression()) {
     def_value->copy(STRING_WITH_LEN("CURRENT_TIMESTAMP"), system_charset_info);
     if (f->decimals() > 0) def_value->append_parenthesized(f->decimals());
 
@@ -558,6 +563,11 @@ bool fill_dd_columns_from_create_fields(THD *thd, dd::Abstract_table *tab_obj,
 
     col_obj->set_srs_id(field->m_srid);
 
+    // Check that the hidden type isn't the type that is used internally by
+    // storage engines.
+    DBUG_ASSERT(field->hidden != dd::Column::enum_hidden_type::HT_HIDDEN_SE);
+    col_obj->set_hidden(field->hidden);
+
     /*
       AUTO_INCREMENT, DEFAULT/ON UPDATE CURRENT_TIMESTAMP properties are
       stored in Create_field::auto_flags.
@@ -570,9 +580,18 @@ bool fill_dd_columns_from_create_fields(THD *thd, dd::Abstract_table *tab_obj,
 
     col_obj->set_auto_increment((field->auto_flags & Field::NEXT_NUMBER) != 0);
 
+    // Handle generated default
+    if (field->m_default_val_expr) {
+      char buffer[128];
+      String default_val_expr(buffer, sizeof(buffer), &my_charset_bin);
+      // Convert the expression from Item* to text
+      field->m_default_val_expr->print_expr(thd, &default_val_expr);
+      col_obj->set_default_option(
+          dd::String_type(default_val_expr.ptr(), default_val_expr.length()));
+    }
+
     // Handle generated columns
     if (field->gcol_info) {
-      col_obj->set_virtual(!field->stored_in_db);
       /*
         It is important to normalize the expression's text into the DD, to
         make it independent from sql_mode. For example, 'a||b' means 'a OR b'
@@ -582,6 +601,7 @@ bool fill_dd_columns_from_create_fields(THD *thd, dd::Abstract_table *tab_obj,
        */
       char buffer[128];
       String gc_expr(buffer, sizeof(buffer), &my_charset_bin);
+      col_obj->set_virtual(!field->stored_in_db);
       field->gcol_info->print_expr(thd, &gc_expr);
       col_obj->set_generation_expression(
           dd::String_type(gc_expr.ptr(), gc_expr.length()));
@@ -906,12 +926,7 @@ static bool is_candidate_primary_key(THD *thd, KEY *key,
 
     /* Prepare Field* object from Create_field */
 
-    std::unique_ptr<Field, Destroy_only<Field>> table_field(
-        make_field(table.s, 0, cfield->length, nullptr, 0, cfield->sql_type,
-                   cfield->charset, cfield->geom_type, cfield->auto_flags,
-                   cfield->interval, cfield->field_name, cfield->maybe_null,
-                   cfield->is_zerofill, cfield->is_unsigned, cfield->decimals,
-                   cfield->treat_bit_as_char, 0, cfield->m_srid));
+    unique_ptr_destroy_only<Field> table_field(make_field(*cfield, table.s));
     table_field->init(&table);
 
     if (is_suitable_for_primary_key(key_part, table_field.get()) == false)
@@ -2032,6 +2047,11 @@ static bool fill_dd_table_from_create_info(
   DBUG_ASSERT(create_info->default_table_charset);
   tab_obj->set_collation_id(create_info->default_table_charset->number);
 
+  // Secondary engine.
+  if (create_info->secondary_engine.str != nullptr)
+    table_options->set("secondary_engine",
+                       make_string_type(create_info->secondary_engine));
+
   // TODO-MYSQL_VERSION: We decided not to store MYSQL_VERSION_ID ?
   //
   //       If we are to introduce this version we need to explain when
@@ -2273,6 +2293,8 @@ std::unique_ptr<dd::Table> create_tmp_table(
     Alter_info::enum_enable_or_disable keys_onoff, handler *file) {
   // Create dd::Table object.
   std::unique_ptr<dd::Table> tab_obj(sch_obj.create_table(thd));
+
+  tab_obj->set_is_temporary(true);
 
   if (fill_dd_table_from_create_info(thd, tab_obj.get(), table_name,
                                      sch_obj.name(), create_info, create_fields,
@@ -2531,4 +2553,87 @@ bool fix_row_type(THD *thd, dd::Table *table_def, row_type correct_row_type) {
   return thd->dd_client()->update(table_def);
 }
 
+// Helper function which copies all tablespace ids referenced by
+// table to an (output) iterator
+template <typename IT>
+static void copy_tablespace_ids(const Table &t, IT it) {
+  *it = t.tablespace_id();
+  ++it;
+  for (const dd::Index *ix : t.indexes()) {
+    *it = ix->tablespace_id();
+    ++it;
+  }
+
+  for (const dd::Partition *part : t.partitions()) {
+    for (const dd::Partition_index *part_ix : part->indexes()) {
+      *it = part_ix->tablespace_id();
+      ++it;
+    }
+  }
+}
+
+/**
+   Predicate to determine if a table resides in an encrypted
+   tablespace.  First checks if the option "encrypt_type" is set on
+   the table itself (implicit tablespace), then proceeds to acquire
+   and check the "ecryption" option in table's tablespaces.
+
+   @param thd
+   @param t table to check
+
+   @retval {true, *} in case of errors
+   @retval {false, true} if at least one tablespace is encrypted
+   @retval {false, false} if no tablespace is encrypted
+ */
+Encrypt_result is_tablespace_encrypted(THD *thd, const Table &t) {
+  if (t.options().exists("encrypt_type")) {
+    const String_type &et = t.options().value("encrypt_type");
+    DBUG_ASSERT(et.empty() == false);
+    if (et == "Y" || et == "y") {
+      return {false, true};
+    }
+    return {false, false};
+  }
+  std::vector<Object_id> tspids;
+  copy_tablespace_ids(t, std::back_inserter(tspids));
+  auto valid_end =
+      std::partition(tspids.begin(), tspids.end(),
+                     [](Object_id id) { return id != INVALID_OBJECT_ID; });
+  std::sort(tspids.begin(), valid_end);
+  auto unique_end = std::unique(tspids.begin(), valid_end);
+
+  bool error = false;
+  bool encrypted =
+      std::any_of(tspids.begin(), unique_end, [&](const Object_id id) {
+        cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+        const Tablespace *tsp = nullptr;
+        if (thd->dd_client()->acquire(id, &tsp)) {
+          error = true;
+          return false;  // or true to stop execution?
+        }
+        DBUG_ASSERT(tsp != nullptr);
+        if (tsp == nullptr) {
+          return false;
+        }
+
+        if (!tsp->options().exists("encryption")) {
+          return false;
+        }
+
+        const String_type &e = tsp->options().value("encryption");
+        DBUG_ASSERT(e.empty() == false);
+        if (e == "Y" || e == "y") {
+          return true;
+        }
+        return false;
+      });
+  return {error, encrypted};
+}
+
+bool has_primary_key(const Table &t) {
+  auto &ic = t.indexes();
+  return std::any_of(ic.begin(), ic.end(), [](const Index *ix) {
+    return ix->type() == Index::IT_PRIMARY && !ix->is_hidden();
+  });
+}
 }  // namespace dd

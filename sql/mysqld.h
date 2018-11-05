@@ -245,6 +245,7 @@ extern char *opt_general_logname, *opt_slow_logname, *opt_bin_logname,
 extern char *mysql_home_ptr, *pidfile_name_ptr;
 extern char *default_auth_plugin;
 extern uint default_password_lifetime;
+extern volatile bool password_require_current;
 extern char *my_bind_addr_str;
 extern char glob_hostname[FN_REFLEN];
 extern char system_time_zone[30], *opt_init_file;
@@ -280,7 +281,7 @@ extern ulong open_files_limit;
 extern ulong binlog_cache_size, binlog_stmt_cache_size;
 extern ulonglong max_binlog_cache_size, max_binlog_stmt_cache_size;
 extern int32 opt_binlog_max_flush_queue_time;
-extern ulong opt_binlog_group_commit_sync_delay;
+extern long opt_binlog_group_commit_sync_delay;
 extern ulong opt_binlog_group_commit_sync_no_delay_count;
 extern ulong max_binlog_size, max_relay_log_size;
 extern ulong slave_max_allowed_packet;
@@ -334,14 +335,8 @@ extern bool avoid_temporal_upgrade;
 extern LEX_STRING opt_init_connect, opt_init_slave;
 extern ulong connection_errors_internal;
 extern ulong connection_errors_peer_addr;
-extern char *opt_log_error_filter_rules;
+extern char *opt_log_error_suppression_list;
 extern char *opt_log_error_services;
-extern bool opt_log_syslog_enable;
-extern char *opt_log_syslog_tag;
-#ifndef _WIN32
-extern bool opt_log_syslog_include_pid;
-extern char *opt_log_syslog_facility;
-#endif
 /** The size of the host_cache. */
 extern uint host_cache_size;
 extern ulong log_error_verbosity;
@@ -573,6 +568,7 @@ extern PSI_stage_info stage_upgrading_lock;
 extern PSI_stage_info stage_user_sleep;
 extern PSI_stage_info stage_verifying_table;
 extern PSI_stage_info stage_waiting_for_gtid_to_be_committed;
+extern PSI_stage_info stage_waiting_for_handler_commit;
 extern PSI_stage_info stage_waiting_for_handler_insert;
 extern PSI_stage_info stage_waiting_for_handler_lock;
 extern PSI_stage_info stage_waiting_for_handler_open;

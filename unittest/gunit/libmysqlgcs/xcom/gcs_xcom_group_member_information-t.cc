@@ -232,11 +232,11 @@ TEST_F(GcsNodeInformationTest, TestGcsNodeInformation) {
 
   /*
     Set the timestamp and check whether it has timed out:
-    (m_timestamp + timeout) < now_ts
+    (m_suspicion_creation_timestamp + suspicion_timeout) < now_ts
   */
-  node_1.set_timestamp(1 /* Set the m_timestamp */);
+  node_1.set_suspicion_creation_timestamp(1 /* Set the m_timestamp */);
   ASSERT_TRUE(node_1.has_timed_out(3 /* now_ts */, 1 /* timeout */));
-  ASSERT_EQ(node_1.get_timestamp(), 1);
+  ASSERT_EQ(node_1.get_suspicion_creation_timestamp(), 1);
 
   /*
     Check whether the constructor:
@@ -504,6 +504,7 @@ TEST_F(GcsNodesTest, TestGcsNodesConstructor) {
   site_def *site_config = new_site_def();
   init_site_def(2, node_addrs, site_config);
   site_config->nodeno = 0;
+  site_config->x_proto = static_cast<xcom_proto>(1);
 
   node_set nodes;
   alloc_node_set(&nodes, 2);

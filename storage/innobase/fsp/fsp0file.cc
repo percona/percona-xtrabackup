@@ -413,6 +413,19 @@ dberr_t Datafile::validate_to_dd(space_id_t space_id, ulint flags,
     return (DB_SUCCESS);
   }
 
+  /* It is possible for a space flag to be updated for encryption in the
+  ibd file, but the server crashed before DD flags are updated. Exclude
+  encryption flags for that scenario.
+
+  This is safe because m_encryption_op_in_progress will always be set to
+  NONE unless there is a crash before Encryption is finished. */
+  if (m_encryption_op_in_progress == ENCRYPTION &&
+      !((m_flags ^ flags) &
+        ~(FSP_FLAGS_MASK_ENCRYPTION | FSP_FLAGS_MASK_DATA_DIR |
+          FSP_FLAGS_MASK_SHARED | FSP_FLAGS_MASK_SDI))) {
+    return (DB_SUCCESS);
+  }
+
   /* else do not use this tablespace. */
   m_is_valid = false;
 
@@ -668,6 +681,12 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       m_encryption_iv = NULL;
     }
   }
+#ifndef UNIV_HOTBACKUP
+  /* Set encryption operation in progress based on operation type
+  at page 0. */
+  m_encryption_op_in_progress =
+      fsp_header_encryption_op_type_in_progress(m_first_page, page_size);
+#endif /* UNIV_HOTBACKUP */
 
   if (FSP_FLAGS_GET_ENCRYPTION(m_flags) && !srv_backup_mode &&
       use_dumped_tablespace_keys) {

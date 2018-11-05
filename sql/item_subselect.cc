@@ -30,12 +30,11 @@
 
 #include "sql/item_subselect.h"
 
-#include "my_config.h"
-
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <atomic>
+#include <memory>
 #include <utility>
 
 #include "decimal.h"
@@ -50,6 +49,7 @@
 #include "my_sys.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
+#include "sql/basic_row_iterators.h"
 #include "sql/check_stack.h"
 #include "sql/current_thd.h"  // current_thd
 #include "sql/debug_sync.h"   // DEBUG_SYNC
@@ -70,6 +70,7 @@
 #include "sql/query_options.h"
 #include "sql/query_result.h"
 #include "sql/records.h"
+#include "sql/row_iterator.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
 #include "sql/sql_error.h"
@@ -865,7 +866,7 @@ bool Item_in_subselect::exec() {
     DBUG_RETURN(true);
 
   if (left_expr_cache != NULL) {
-    const int result = test_if_item_cache_changed(*left_expr_cache);
+    const int result = update_item_cache_if_changed(*left_expr_cache);
     if (left_expr_cache_filled &&  // cache was previously filled
         result < 0)  // new value is identical to previous cached value
     {
@@ -930,10 +931,6 @@ bool Query_result_scalar_subquery::send_data(List<Item> &items) {
   if (it->assigned()) {
     my_error(ER_SUBQUERY_NO_1_ROW, MYF(0));
     DBUG_RETURN(true);
-  }
-  if (unit->offset_limit_cnt) {  // Using limit offset,count
-    unit->offset_limit_cnt--;
-    DBUG_RETURN(false);
   }
   List_iterator_fast<Item> li(items);
   Item *val_item;
@@ -1390,10 +1387,6 @@ class Query_result_exists_subquery : public Query_result_subquery {
 bool Query_result_exists_subquery::send_data(List<Item> &) {
   DBUG_ENTER("Query_result_exists_subquery::send_data");
   Item_exists_subselect *it = (Item_exists_subselect *)item;
-  if (unit->offset_limit_cnt) {  // Using limit offset,count
-    unit->offset_limit_cnt--;
-    DBUG_RETURN(0);
-  }
   /*
     A subquery may be evaluated 1) by executing the JOIN 2) by optimized
     functions (index_subquery, subquery materialization).
@@ -2901,67 +2894,10 @@ bool subselect_single_select_engine::exec() {
   }
   if (!unit->is_executed()) {
     item->reset_value_registration();
-    QEP_TAB *changed_tabs[MAX_TABLES];
-    QEP_TAB **last_changed_tab = changed_tabs;
 
     if (unit->set_limit(thd, unit->global_parameters()))
       DBUG_RETURN(true); /* purecov: inspected */
-
-    if (item->have_guarded_conds()) {
-      /*
-        For at least one of the pushed predicates the following is true:
-        We should not apply optimizations based on the condition that was
-        pushed down into the subquery. Those optimizations are ref[_or_null]
-        acceses. Change them to be full table scans.
-      */
-      for (uint j = join->const_tables; j < join->tables; j++) {
-        QEP_TAB *tab = join->qep_tab + j;
-        if (tab->ref().key_parts) {
-          for (uint i = 0; i < tab->ref().key_parts; i++) {
-            bool *cond_guard = tab->ref().cond_guards[i];
-            if (cond_guard && !*cond_guard) {
-              /*
-                Can't use BKA if switching from ref to "full scan on
-                NULL key"
-
-                @see Item_in_optimizer::val_int()
-                @see TABLE_REF::cond_guards
-                @see push_index_cond()
-                @see setup_join_buffering()
-              */
-              DBUG_ASSERT(
-                  !(tab->op && tab->op->type() == QEP_operation::OT_CACHE &&
-                    static_cast<JOIN_CACHE *>(tab->op)->is_key_access()));
-
-              TABLE *table = tab->table();
-              /* Change the access method to full table scan */
-              tab->save_read_first_record = tab->read_first_record;
-              tab->save_read_record = tab->read_record.read_record;
-              tab->read_record.read_record = rr_sequential;
-              tab->read_first_record = read_first_record_seq;
-              tab->read_record.record = table->record[0];
-              tab->read_record.thd = join->thd;
-              tab->read_record.ref_length = table->file->ref_length;
-              tab->read_record.unlock_row = rr_unlock_row;
-              *(last_changed_tab++) = tab;
-              break;
-            }
-          }
-        }
-      }
-    }
-
     join->exec();
-
-    /* Enable the optimizations back */
-    for (QEP_TAB **ptab = changed_tabs; ptab != last_changed_tab; ptab++) {
-      QEP_TAB *const tab = *ptab;
-      tab->read_record.record = 0;
-      tab->read_record.ref_length = 0;
-      tab->read_first_record = tab->save_read_first_record;
-      tab->read_record.read_record = tab->save_read_record;
-      tab->save_read_first_record = NULL;
-    }
     unit->set_executed();
 
     rc = join->error || thd->is_fatal_error;

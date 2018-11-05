@@ -97,6 +97,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include <data0type.h>
 #endif /* UNIV_HOTBACKUP */
 
+/* Flush after each os_fsync_threshold bytes */
+unsigned long long os_fsync_threshold = 0;
+
 /** Insert buffer segment id */
 static const ulint IO_IBUF_SEGMENT = 0;
 
@@ -801,9 +804,7 @@ bool os_has_said_disk_full = false;
 /** Default Zip compression level */
 extern uint page_zip_level;
 
-#if DATA_TRX_ID_LEN > 6
-#error "COMPRESSION_ALGORITHM will not fit"
-#endif /* DATA_TRX_ID_LEN */
+static_assert(DATA_TRX_ID_LEN <= 6, "COMPRESSION_ALGORITHM will not fit!");
 
 /** Validates the consistency of the aio system.
 @return true if ok */
@@ -3566,8 +3567,9 @@ void os_aio_simulated_put_read_threads_to_sleep() { /* No op on non Windows */
 
 /** Depth first traversal of the directory starting from basedir
 @param[in]	basedir		Start scanning from this directory
+@param[in]      recursive       True if scan should be recursive
 @param[in]	f		Function to call for each entry */
-void Dir_Walker::walk_posix(const Path &basedir, Function &&f) {
+void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
   using Stack = std::stack<Entry>;
 
   Stack directories;
@@ -3614,7 +3616,7 @@ void Dir_Walker::walk_posix(const Path &basedir, Function &&f) {
 
       path.append(dirent->d_name);
 
-      if (is_directory(path)) {
+      if (is_directory(path) && recursive) {
         directories.push(Entry(path, current.m_depth + 1));
 
       } else {
@@ -4745,9 +4747,10 @@ void AIO::simulated_put_read_threads_to_sleep() {
 
 /** Depth first traversal of the directory starting from basedir
 @param[in]	basedir		Start scanning from this directory
+@param[in]      recursive       true if scan should be recursive
 @param[in]	f		Callback for each entry found
 @param[in,out]	args		Optional arguments for f */
-void Dir_Walker::walk_win32(const Path &basedir, Function &&f) {
+void Dir_Walker::walk_win32(const Path &basedir, bool recursive, Function &&f) {
   using Stack = std::stack<Entry>;
 
   HRESULT res;
@@ -4814,7 +4817,7 @@ void Dir_Walker::walk_win32(const Path &basedir, Function &&f) {
       path.resize(path.size() - 1);
       path.append(dirent.cFileName);
 
-      if (dirent.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+      if ((dirent.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && recursive) {
         path.append("\\*");
 
         using value_type = Stack::value_type;
@@ -5379,6 +5382,24 @@ bool os_file_set_size(const char *name, pfs_os_file_t file, os_offset_t offset,
     if ((current_size + n_bytes) / (100 << 20) != current_size / (100 << 20)) {
       fprintf(stderr, " %lu00",
               (ulong)((current_size + n_bytes) / (100 << 20)));
+    }
+
+    /* Flush after each os_fsync_threhold bytes */
+    if (flush && os_fsync_threshold != 0) {
+      if ((current_size + n_bytes) / os_fsync_threshold !=
+          current_size / os_fsync_threshold) {
+        DBUG_EXECUTE_IF("flush_after_reaching_threshold",
+                        std::cerr << os_fsync_threshold
+                                  << " bytes being flushed at once"
+                                  << std::endl;);
+
+        bool ret = os_file_flush(file);
+
+        if (!ret) {
+          ut_free(buf2);
+          return (false);
+        }
+      }
     }
 
     current_size += n_bytes;
@@ -6217,10 +6238,10 @@ void os_fusionio_get_sector_size() {
 and allocates the memory in each block to hold BUFFER_BLOCK_SIZE
 of data.
 
-This function is called by InnoDB during AIO init (os_aio_init()).
-It is also by MEB while applying the redo logs on TDE tablespaces, the
-"Blocks" allocated in this block_cache are used to hold the decrypted page
-data. */
+This function is called by InnoDB during srv_start().
+It is also called by MEB while applying the redo logs on TDE tablespaces,
+the "Blocks" allocated in this block_cache are used to hold the decrypted
+page data. */
 void os_create_block_cache() {
   ut_a(block_cache == NULL);
 
@@ -7233,7 +7254,7 @@ class SimulatedAIOHandler {
     ut_a(err == DB_SUCCESS);
   }
 
-  /** Do the file read
+  /** Do the file write
   @param[in,out]	slot		Slot that has the IO context */
   void write(Slot *slot) {
     dberr_t err = os_file_write_func(slot->type, slot->name, slot->file.m_file,
@@ -8034,7 +8055,7 @@ void Encryption::get_master_key(ulint *master_key_id, byte **master_key) {
 @return true if success */
 bool Encryption::fill_encryption_info(byte *key, byte *iv, byte *encrypt_info,
                                       bool is_boot) {
-  byte *master_key;
+  byte *master_key = nullptr;
   ulint master_key_id;
 
   /* Get master key from key ring. For bootstrap, we use a default
@@ -8204,7 +8225,7 @@ byte *Encryption::get_master_key_from_info(byte *encrypt_info, Version version,
 /** Decoding the encryption info from the first page of a tablespace.
 @param[in,out]	key		key
 @param[in,out]	iv		iv
-@param[in]	encryption_info	encrytion info.
+@param[in]	encryption_info	encryption info
 @return true if success */
 bool Encryption::decode_encryption_info(byte *key, byte *iv,
                                         byte *encryption_info) {
@@ -8657,6 +8678,7 @@ byte *Encryption::encrypt(const IORequest &type, byte *src, ulint src_len,
   }
   ut_free(buf2);
   ut_free(check_buf);
+
   fprintf(stderr, "Encrypted page:%lu.%lu\n", space_id, page_no);
 #endif /* UNIV_ENCRYPT_DEBUG */
 
@@ -8863,15 +8885,15 @@ dberr_t Encryption::decrypt(const IORequest &type, byte *src, ulint src_len,
 
     std::ostringstream msg;
 
-    msg << "key={" ut_print_buf(msg, m_key, 32);
+    msg << "key={";
+    ut_print_buf(msg, m_key, 32);
     msg << "}" << std::endl << "iv= {";
     ut_print_buf(msg, m_iv, 32);
     msg << "}";
 
-    ib::info(ER_IB_MSG_848)
-        << "Decrypting page: " << space_id << "." << page_no,
-        << " len: " << src_len << std::endl
-        << msg.str();
+    ib::info(ER_IB_MSG_848) << "Decrypting page: " << space_id << "." << page_no
+                            << " len: " << src_len << "\n"
+                            << msg.str();
   }
 #endif /* UNIV_ENCRYPT_DEBUG */
 

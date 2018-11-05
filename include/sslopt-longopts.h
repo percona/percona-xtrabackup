@@ -173,14 +173,19 @@
      0},
     {"ssl-fips-mode",
      OPT_SSL_FIPS_MODE,
-     "SSL FIPS mode to use, "
+     "SSL FIPS mode (applies only for OpenSSL); "
 #ifndef HAVE_WOLFSSL
      "permitted values are: OFF, ON, STRICT",
 #else
      "permitted values are: OFF",
 #endif
+#ifdef MYSQL_SERVER
      0,
      0,
+#else
+     &opt_ssl_fips_mode,
+     &opt_ssl_fips_mode,
+#endif
      0,
      GET_STR,
      REQUIRED_ARG,

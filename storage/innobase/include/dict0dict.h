@@ -629,10 +629,8 @@ dict_table_t::flags |     0     |    1    |     1      |    1
 fil_space_t::flags  |     0     |    0    |     1      |    1
 ==================================================================
 @param[in]	table_flags	dict_table_t::flags
-@param[in]	is_encrypted	if it's an encrypted table
 @return tablespace flags (fil_space_t::flags) */
-ulint dict_tf_to_fsp_flags(ulint table_flags, bool is_encrypted = false)
-    MY_ATTRIBUTE((const));
+ulint dict_tf_to_fsp_flags(ulint table_flags) MY_ATTRIBUTE((const));
 
 /** Extract the page size from table flags.
 @param[in]	flags	flags
@@ -791,7 +789,7 @@ include page no field.
 @param[in]	index	index
 @return number of fields */
 UNIV_INLINE
-ulint dict_index_get_n_unique_in_tree_nonleaf(const dict_index_t *index)
+uint16_t dict_index_get_n_unique_in_tree_nonleaf(const dict_index_t *index)
     MY_ATTRIBUTE((warn_unused_result));
 /** Gets the number of user-defined ordering fields in the index. In the
  internal representation we add the row id to the ordering fields to make all
@@ -1163,7 +1161,8 @@ struct dict_sys_t {
   @param[in]	space	tablespace id to check
   @return true if a reserved tablespace id, otherwise false */
   static bool is_reserved(space_id_t space) {
-    return (space >= dict_sys_t::s_reserved_space_id);
+    return (space >= dict_sys_t::s_reserved_space_id ||
+            fsp_is_session_temporary(space));
   }
 
   /** Set of ids of DD tables */
@@ -1200,6 +1199,14 @@ struct dict_sys_t {
 
   /** The first reserved tablespace ID */
   static constexpr space_id_t s_reserved_space_id = s_min_undo_space_id;
+
+  /** Leave 1K space_ids and start space_ids for temporary
+  general tablespaces (total 400K space_ids)*/
+  static constexpr space_id_t s_max_temp_space_id = s_reserved_space_id - 1000;
+
+  /** Lowest temporary general space id */
+  static constexpr space_id_t s_min_temp_space_id =
+      s_reserved_space_id - 1000 - 400000;
 
   /** The dd::Tablespace::id of the dictionary tablespace. */
   static constexpr dd::Object_id s_dd_space_id = 1;
@@ -1482,13 +1489,6 @@ bool dict_tf2_is_valid(ulint flags, ulint flags2);
  @return true if the tablespace has been discarded. */
 UNIV_INLINE
 bool dict_table_is_discarded(
-    const dict_table_t *table) /*!< in: table to check */
-    MY_ATTRIBUTE((warn_unused_result));
-
-/** Check if it is a encrypted table.
- @return true if table encryption flag is set. */
-UNIV_INLINE
-bool dict_table_is_encrypted(
     const dict_table_t *table) /*!< in: table to check */
     MY_ATTRIBUTE((warn_unused_result));
 

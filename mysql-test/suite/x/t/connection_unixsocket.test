@@ -7,6 +7,7 @@
 --source include/xplugin_create_user.inc
 
 call mtr.add_suppression("Maximum number of authentication attempts reached");
+call mtr.add_suppression("Access denied for user .*");
 
 CREATE USER user_127_0_0_1@127.0.0.1 IDENTIFIED WITH 'mysql_native_password' BY '';
 CREATE USER user_8_8_8_8@8.8.8.8 IDENTIFIED WITH 'mysql_native_password' BY '';
@@ -192,7 +193,7 @@ EOF
 # Command line option --mysqlx-socket
 --replace_regex /mysqlx-socket=.*sock/mysqlx-socket=SOCKET/
 let $restart_parameters = restart: --mysqlx-socket=$MYSQL_TMP_DIR/valid_mysqlx.sock;
---source ../include/restart_mysqld_and_wait_for_xplugin.inc
+--source include/restart_mysqld.inc
 
 # MySQL Server was started with new UNIX socket file for X Plugin
 # Check if old UNIX socket file was removed and lockfile

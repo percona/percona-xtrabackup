@@ -469,7 +469,7 @@ static bool datafile_rsync_backup(const char *filepath, bool save_to_list,
                                   FILE *f) {
   const char *ext_list[] = {"frm", "isl", "MYD", "MYI", "MAD", "MAI",
                             "MRG", "TRG", "TRN", "ARM", "ARZ", "CSM",
-                            "CSV", "opt", "par", NULL};
+                            "CSV", "opt", "par", "sdi", NULL};
 
   /* Get the name and the path for the tablespace. node->name always
   contains the path (which may be absolute for remote tablespaces in
@@ -1170,7 +1170,7 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
 bool copy_incremental_over_full() {
   const char *ext_list[] = {"frm", "isl", "MYD", "MYI", "MAD", "MAI",
                             "MRG", "TRG", "TRN", "ARM", "ARZ", "CSM",
-                            "CSV", "opt", "par", NULL};
+                            "CSV", "opt", "par", "sdi", NULL};
   const char *sup_files[] = {"xtrabackup_binlog_info",
                              "xtrabackup_galera_info",
                              "xtrabackup_slave_info",

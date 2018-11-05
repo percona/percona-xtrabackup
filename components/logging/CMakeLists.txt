@@ -1,4 +1,4 @@
-# Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,18 @@ INCLUDE_DIRECTORIES(
 )
 
 REMOVE_DEFINITIONS(-DMYSQL_SERVER)
+
+# TODO: fix
+# Bug#28259639 FIX BAD USAGE OF ASSERT() IN COMPONENTS/LOGGING
+REMOVE_DEFINITIONS(-DNDEBUG)
+FOREACH(flag
+    CMAKE_CXX_FLAGS_DEBUG
+    CMAKE_CXX_FLAGS_RELWITHDEBINFO
+    CMAKE_CXX_FLAGS_RELEASE
+    CMAKE_CXX_FLAGS_MINSIZEREL
+    )
+  STRING(REPLACE "-DNDEBUG"  "" "${flag}" "${${flag}}")
+ENDFOREACH()
 
 MYSQL_ADD_COMPONENT(log_sink_syseventlog
   log_sink_syseventlog.cc
@@ -53,4 +65,4 @@ MYSQL_ADD_COMPONENT(log_filter_dragnet
 
 MYSQL_ADD_COMPONENT(log_sink_test
   log_sink_test.cc
-  MODULE)
+  TEST MODULE)

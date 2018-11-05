@@ -31,9 +31,9 @@
 #include "my_systime.h"
 #include "plugin/group_replication/include/applier.h"
 #include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_messages/single_primary_message.h"
 #include "plugin/group_replication/include/plugin_server_include.h"
 #include "plugin/group_replication/include/services/notification/notification.h"
-#include "plugin/group_replication/include/single_primary_message.h"
 
 char applier_module_channel_name[] = "group_replication_applier";
 bool applier_thread_is_exiting = false;
@@ -201,6 +201,12 @@ void Applier_module::set_applier_thread_context() {
 #ifndef _WIN32
   THD_STAGE_INFO(thd, stage_executing);
 #endif
+
+  DBUG_EXECUTE_IF("group_replication_applier_thread_init_wait", {
+    const char act[] = "now wait_for signal.gr_applier_init_signal";
+    DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+  });
+
   applier_thd = thd;
 }
 
@@ -234,13 +240,19 @@ bool Applier_module::apply_action_packet(Action_packet *action_packet) {
     suspend_applier_module();
     return false;
   }
+
+  if (action == CHECKPOINT_PACKET) {
+    Queue_checkpoint_packet *packet = (Queue_checkpoint_packet *)action_packet;
+    packet->signal_checkpoint_reached();
+    return false;
+  }
+
   return false; /* purecov: inspected */
 }
 
 int Applier_module::apply_view_change_packet(
     View_change_packet *view_change_packet,
-    Format_description_log_event *fde_evt, IO_CACHE *cache,
-    Continuation *cont) {
+    Format_description_log_event *fde_evt, Continuation *cont) {
   int error = 0;
 
   Gtid_set *group_executed_set = NULL;
@@ -273,8 +285,7 @@ int Applier_module::apply_view_change_packet(
   View_change_log_event *view_change_event =
       new View_change_log_event((char *)view_change_packet->view_id.c_str());
 
-  Pipeline_event *pevent =
-      new Pipeline_event(view_change_event, fde_evt, cache);
+  Pipeline_event *pevent = new Pipeline_event(view_change_event, fde_evt);
   pevent->mark_event(SINGLE_VIEW_EVENT);
   error = inject_event_into_pipeline(pevent, cont);
   delete pevent;
@@ -284,7 +295,7 @@ int Applier_module::apply_view_change_packet(
 
 int Applier_module::apply_data_packet(Data_packet *data_packet,
                                       Format_description_log_event *fde_evt,
-                                      IO_CACHE *cache, Continuation *cont) {
+                                      Continuation *cont) {
   int error = 0;
   uchar *payload = data_packet->payload;
   uchar *payload_end = data_packet->payload + data_packet->len;
@@ -294,15 +305,13 @@ int Applier_module::apply_data_packet(Data_packet *data_packet,
     DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
 
-  if (check_single_primary_queue_status()) return 1; /* purecov: inspected */
-
   while ((payload != payload_end) && !error) {
     uint event_len = uint4korr(((uchar *)payload) + EVENT_LEN_OFFSET);
 
     Data_packet *new_packet = new Data_packet(payload, event_len);
     payload = payload + event_len;
 
-    Pipeline_event *pevent = new Pipeline_event(new_packet, fde_evt, cache);
+    Pipeline_event *pevent = new Pipeline_event(new_packet, fde_evt);
     error = inject_event_into_pipeline(pevent, cont);
 
     delete pevent;
@@ -340,6 +349,9 @@ int Applier_module::applier_thread_handle() {
 
   // set the thread context
   set_applier_thread_context();
+  mysql_mutex_lock(&run_lock);
+  applier_thd_state.set_initialized();
+  mysql_mutex_unlock(&run_lock);
 
   Handler_THD_setup_action *thd_conf_action = NULL;
   Format_description_log_event *fde_evt = NULL;
@@ -347,21 +359,6 @@ int Applier_module::applier_thread_handle() {
   Packet *packet = NULL;
   bool loop_termination = false;
   int packet_application_error = 0;
-
-  IO_CACHE *cache = (IO_CACHE *)my_malloc(PSI_NOT_INSTRUMENTED,
-                                          sizeof(IO_CACHE), MYF(MY_ZEROFILL));
-  if (!cache || (!my_b_inited(cache) &&
-                 open_cached_file(cache, mysql_tmpdir,
-                                  "group_replication_pipeline_applier_cache",
-                                  SHARED_EVENT_IO_CACHE_SIZE, MYF(MY_WME)))) {
-    my_free(cache); /* purecov: inspected */
-    cache = NULL;   /* purecov: inspected */
-    LogPluginErr(
-        ERROR_LEVEL,
-        ER_GRP_RPL_CREATE_APPLIER_CACHE_ERROR); /* purecov: inspected */
-    applier_error = 1;                          /* purecov: inspected */
-    goto end;                                   /* purecov: inspected */
-  }
 
   applier_error = setup_pipeline_handlers();
 
@@ -408,12 +405,12 @@ int Applier_module::applier_thread_handle() {
         break;
       case VIEW_CHANGE_PACKET_TYPE:
         packet_application_error = apply_view_change_packet(
-            (View_change_packet *)packet, fde_evt, cache, cont);
+            (View_change_packet *)packet, fde_evt, cont);
         this->incoming->pop();
         break;
       case DATA_PACKET_TYPE:
         packet_application_error =
-            apply_data_packet((Data_packet *)packet, fde_evt, cache, cont);
+            apply_data_packet((Data_packet *)packet, fde_evt, cont);
         // Remove from queue here, so the size only decreases after packet
         // handling
         this->incoming->pop();
@@ -459,15 +456,9 @@ end:
     DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
 
-  if (cache != NULL) {
-    close_cached_file(cache);
-    my_free(cache);
-  }
-
   clean_applier_thread_context();
 
   mysql_mutex_lock(&run_lock);
-  delete applier_thd;
 
   /*
     Don't overwrite applier_error when stop_applier_thread() doesn't return
@@ -484,6 +475,7 @@ end:
 
   applier_killed_status = false;
   applier_thd_state.set_terminated();
+  delete applier_thd;
   mysql_cond_broadcast(&run_cond);
   mysql_mutex_unlock(&run_lock);
 
@@ -496,9 +488,6 @@ end:
 
 int Applier_module::initialize_applier_thread() {
   DBUG_ENTER("Applier_module::initialize_applier_thd");
-
-  struct timespec abstime;
-  set_timespec(&abstime, 1);
 
   // avoid concurrency calls against stop invocations
   mysql_mutex_lock(&run_lock);
@@ -524,6 +513,10 @@ int Applier_module::initialize_applier_thread() {
       LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_UNBLOCK_WAITING_THD);
       break;
     }
+
+    struct timespec abstime;
+    set_timespec(&abstime, 1);
+
     mysql_cond_timedwait(&run_cond, &run_lock, &abstime);
   }
 
@@ -561,20 +554,22 @@ int Applier_module::terminate_applier_thread() {
   while (applier_thd_state.is_thread_alive()) {
     DBUG_PRINT("loop", ("killing group replication applier thread"));
 
-    mysql_mutex_lock(&applier_thd->LOCK_thd_data);
+    if (applier_thd_state.is_initialized()) {
+      mysql_mutex_lock(&applier_thd->LOCK_thd_data);
 
-    if (applier_killed_status)
-      applier_thd->awake(THD::KILL_CONNECTION);
-    else
-      applier_thd->awake(THD::NOT_KILLED);
+      if (applier_killed_status)
+        applier_thd->awake(THD::KILL_CONNECTION);
+      else
+        applier_thd->awake(THD::NOT_KILLED);
 
-    mysql_mutex_unlock(&applier_thd->LOCK_thd_data);
+      mysql_mutex_unlock(&applier_thd->LOCK_thd_data);
 
-    // before waiting for termination, signal the queue to unlock.
-    add_termination_packet();
+      // before waiting for termination, signal the queue to unlock.
+      add_termination_packet();
 
-    // also awake the applier in case it is suspended
-    awake_applier_module();
+      // also awake the applier in case it is suspended
+      awake_applier_module();
+    }
 
     /*
       There is a small chance that thread might miss the first
@@ -846,6 +841,56 @@ int Applier_module::wait_for_applier_event_execution(
   DBUG_RETURN(error);
 }
 
+bool Applier_module::get_retrieved_gtid_set(std::string &retrieved_set) {
+  Replication_thread_api applier_channel(applier_module_channel_name);
+  if (applier_channel.get_retrieved_gtid_set(retrieved_set)) {
+    /* purecov: begin inspected */
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_ERROR_GTID_SET_EXTRACTION,
+                 " cannot extract the applier module's retrieved set.");
+    return true;
+    /* purecov: end */
+  }
+  return false;
+}
+
+int Applier_module::wait_for_applier_event_execution(std::string &retrieved_set,
+                                                     double timeout,
+                                                     bool update_THD_status) {
+  DBUG_ENTER("Applier_module::wait_for_applier_event_execution");
+  int error = 0;
+  Event_handler *event_applier = NULL;
+  Event_handler::get_handler_by_role(pipeline, APPLIER, &event_applier);
+
+  if (event_applier) {
+    error = ((Applier_handler *)event_applier)
+                ->wait_for_gtid_execution(retrieved_set, timeout,
+                                          update_THD_status);
+  }
+
+  DBUG_RETURN(error);
+}
+
+bool Applier_module::wait_for_current_events_execution(
+    std::shared_ptr<Continuation> checkpoint_condition, bool *abort_flag,
+    bool update_THD_status) {
+  applier_module->queue_and_wait_on_queue_checkpoint(checkpoint_condition);
+  std::string current_retrieve_set;
+  if (applier_module->get_retrieved_gtid_set(current_retrieve_set)) return true;
+
+  int error = 1;
+  while (!*abort_flag && error != 0) {
+    error = applier_module->wait_for_applier_event_execution(
+        current_retrieve_set, 1, update_THD_status);
+
+    /* purecov: begin inspected */
+    if (error == -2) {  // error when waiting
+      return true;
+    }
+    /* purecov: end */
+  }
+  return false;
+}
+
 Certification_handler *Applier_module::get_certification_handler() {
   Event_handler *event_applier = NULL;
   Event_handler::get_handler_by_role(pipeline, CERTIFIER, &event_applier);
@@ -908,30 +953,13 @@ int Applier_module::intersect_group_executed_sets(
   return 0;
 }
 
-int Applier_module::check_single_primary_queue_status() {
-  /*
-    If the 1) group is on single primary mode, 2) this member is the
-    primary one, and 3) the group replication applier did apply all
-    previous primary transactions, we can switch off conflict
-    detection since all transactions will originate from the same
-    primary.
-  */
-  if (get_certification_handler()
-          ->get_certifier()
-          ->is_conflict_detection_enable() &&
-      local_member_info->in_primary_mode() &&
-      local_member_info->get_role() == Group_member_info::MEMBER_ROLE_PRIMARY &&
-      is_applier_thread_waiting()) {
-    Single_primary_message single_primary_message(
-        Single_primary_message::SINGLE_PRIMARY_QUEUE_APPLIED_MESSAGE);
-    if (gcs_module->send_message(single_primary_message)) {
-      LogPluginErr(ERROR_LEVEL,
-                   ER_GRP_RPL_ERROR_SENDING_SINGLE_PRIMARY_MSSG); /* purecov:
-                                                                     inspected
-                                                                   */
-      return 1; /* purecov: inspected */
-    }
-  }
+void Applier_module::queue_certification_enabling_packet() {
+  incoming->push(new Single_primary_action_packet(
+      Single_primary_action_packet::NEW_PRIMARY));
+}
 
-  return 0;
+bool Applier_module::queue_and_wait_on_queue_checkpoint(
+    std::shared_ptr<Continuation> checkpoint_condition) {
+  incoming->push(new Queue_checkpoint_packet(checkpoint_condition));
+  return checkpoint_condition->wait() != 0;
 }

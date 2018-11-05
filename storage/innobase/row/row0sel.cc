@@ -57,8 +57,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "lob0undo.h"
 #include "lock0lock.h"
 #include "mach0data.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
 #include "pars0pars.h"
 #include "pars0sym.h"
 #include "que0que.h"
@@ -74,19 +72,21 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0undo.h"
 #include "ut0new.h"
 
-/* Maximum number of rows to prefetch; MySQL interface has another parameter */
+#include "my_dbug.h"
+
+/** Maximum number of rows to prefetch; MySQL interface has another parameter */
 #define SEL_MAX_N_PREFETCH 16
 
-/* Number of rows fetched, after which to start prefetching; MySQL interface
+/** Number of rows fetched, after which to start prefetching; MySQL interface
 has another parameter */
 #define SEL_PREFETCH_LIMIT 1
 
-/* When a select has accessed about this many pages, it returns control back
+/** When a select has accessed about this many pages, it returns control back
 to que_run_threads: this is to allow canceling runaway queries */
 
 #define SEL_COST_LIMIT 100
 
-/* Flags for search shortcut */
+/** Flags for search shortcut */
 #define SEL_FOUND 0
 #define SEL_EXHAUSTED 1
 #define SEL_RETRY 2
@@ -138,7 +138,7 @@ static ibool row_sel_sec_rec_is_for_blob(
   }
 
   len = lob::btr_copy_externally_stored_field_prefix(
-      table->first_index(), buf, prefix_len,
+      trx, table->first_index(), buf, prefix_len,
       dict_tf_get_page_size(table->flags), clust_field,
       dict_table_is_sdi(table->id), clust_len);
 
@@ -306,7 +306,7 @@ static dberr_t row_sel_sec_rec_is_for_clust_rec(
       geo data to generate the MBR for comparing. */
       if (rec_offs_nth_extern(clust_offs, clust_pos)) {
         dptr = lob::btr_copy_externally_stored_field(
-            clust_index, &clust_len, nullptr, dptr,
+            trx, clust_index, &clust_len, nullptr, dptr,
             dict_tf_get_page_size(sec_index->table->flags), len,
             dict_index_is_sdi(sec_index), heap);
       }
@@ -489,8 +489,8 @@ static void row_sel_fetch_columns(
         heap = mem_heap_create(1);
 
         data = lob::btr_rec_copy_externally_stored_field(
-            index, rec, offsets, dict_table_page_size(index->table), field_no,
-            &len, nullptr, dict_index_is_sdi(index), heap);
+            trx, index, rec, offsets, dict_table_page_size(index->table),
+            field_no, &len, nullptr, dict_index_is_sdi(index), heap);
 
         /* data == NULL means that the
         externally stored field was not
@@ -2815,8 +2815,8 @@ static MY_ATTRIBUTE((warn_unused_result)) ibool
     size_t lob_version = 0;
 
     data = lob::btr_rec_copy_externally_stored_field(
-        clust_index, rec, offsets, page_size, field_no, &len, &lob_version,
-        dict_index_is_sdi(index), heap);
+        prebuilt->trx, clust_index, rec, offsets, page_size, field_no, &len,
+        &lob_version, dict_index_is_sdi(index), heap);
 
     if (UNIV_UNLIKELY(!data)) {
       /* The externally stored field was not written
@@ -2960,7 +2960,7 @@ static MY_ATTRIBUTE((warn_unused_result)) ibool
   ut_ad(!rec_clust || index->is_clustered());
 
   if (UNIV_LIKELY_NULL(prebuilt->blob_heap)) {
-    row_mysql_prebuilt_free_blob_heap(prebuilt);
+    mem_heap_empty(prebuilt->blob_heap);
   }
 
   if (clust_templ_for_sec) {
@@ -3124,37 +3124,51 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   DBUG_RETURN(err);
 }
 
-/*********************************************************************/ /**
- Retrieves the clustered index record corresponding to a record in a
- non-clustered index. Does the necessary locking. Used in the MySQL
- interface.
- @return DB_SUCCESS, DB_SUCCESS_LOCKED_REC, or error code */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_sel_get_clust_rec_for_mysql(
-        /*============================*/
-        row_prebuilt_t *prebuilt, /*!< in: prebuilt struct in the handle */
-        dict_index_t *sec_index,  /*!< in: secondary index where rec resides */
-        const rec_t *rec,         /*!< in: record in a non-clustered index; if
-                                  this is a locking read, then rec is not
-                                  allowed to be delete-marked, and that would
-                                  not make sense either */
-        que_thr_t *thr,           /*!< in: query thread */
-        const rec_t **out_rec, /*!< out: clustered record or an old version of
-                               it, NULL if the old version did not exist
-                               in the read view, i.e., it was a fresh
-                               inserted version */
-        ulint **offsets,       /*!< in: offsets returned by
-                               rec_get_offsets(rec, sec_index);
-                               out: offsets returned by
-                               rec_get_offsets(out_rec, clust_index) */
-        mem_heap_t **offset_heap,   /*!< in/out: memory heap from which
-                                the offsets are allocated */
-        const dtuple_t **vrow,      /*!< out: virtual column to fill */
-        mtr_t *mtr,                 /*!< in: mtr used to get access to the
-                                    non-clustered record; the same mtr is used to
-                                    access the clustered index */
-        lob::undo_vers_t *lob_undo) /*!< in: the LOB undo information. */
-{
+/** Helper class to cache clust_rec and old_ver */
+class Row_sel_get_clust_rec_for_mysql {
+  const rec_t *cached_clust_rec;
+  rec_t *cached_old_vers;
+
+ public:
+  /** Constructor */
+  Row_sel_get_clust_rec_for_mysql()
+      : cached_clust_rec(NULL), cached_old_vers(NULL) {}
+
+  /** Retrieve the clustered index record corresponding to a record in a
+  non-clustered index. Does the necessary locking.
+  @param[in]     prebuilt    prebuilt struct in the handle
+  @param[in]     sec_index   secondary index where rec resides
+  @param[in]     rec         record in a non-clustered index
+  @param[in]     thr         query thread
+  @param[out]    out_rec     clustered record or an old version of it,
+                             NULL if the old version did not exist in the
+                             read view, i.e., it was a fresh inserted version
+  @param[in,out] offsets     in: offsets returned by
+                                 rec_get_offsets(rec, sec_index);
+                             out: offsets returned by
+                                 rec_get_offsets(out_rec, clust_index)
+  @param[in,out] offset_heap memory heap from which the offsets are allocated
+  @param[out]    vrow        virtual column to fill
+  @param[in]     mtr         mtr used to get access to the non-clustered record;
+                             the same mtr is used to access the clustered index
+  @param[in]     lob_undo    the LOB undo information.
+  @return DB_SUCCESS, DB_SUCCESS_LOCKED_REC, or error code */
+  dberr_t operator()(row_prebuilt_t *prebuilt, dict_index_t *sec_index,
+                     const rec_t *rec, que_thr_t *thr, const rec_t **out_rec,
+                     ulint **offsets, mem_heap_t **offset_heap,
+                     const dtuple_t **vrow, mtr_t *mtr,
+                     lob::undo_vers_t *lob_undo);
+};
+
+/** Retrieve the clustered index record corresponding to a record in a
+non-clustered index. Does the necessary locking.
+  @return DB_SUCCESS, DB_SUCCESS_LOCKED_REC, or error code */
+MY_ATTRIBUTE((warn_unused_result))
+dberr_t Row_sel_get_clust_rec_for_mysql::operator()(
+    row_prebuilt_t *prebuilt, dict_index_t *sec_index, const rec_t *rec,
+    que_thr_t *thr, const rec_t **out_rec, ulint **offsets,
+    mem_heap_t **offset_heap, const dtuple_t **vrow, mtr_t *mtr,
+    lob::undo_vers_t *lob_undo) {
   DBUG_ENTER("row_sel_get_clust_rec_for_mysql");
 
   dict_index_t *clust_index;
@@ -3319,13 +3333,28 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
     if (trx->isolation_level > TRX_ISO_READ_UNCOMMITTED &&
         !lock_clust_rec_cons_read_sees(clust_rec, clust_index, *offsets,
                                        trx_get_read_view(trx))) {
-      /* The following call returns 'offsets' associated with
-      'old_vers' */
-      err = row_sel_build_prev_vers_for_mysql(
-          trx->read_view, clust_index, prebuilt, clust_rec, offsets,
-          offset_heap, &old_vers, vrow, mtr, lob_undo);
+      if (clust_rec != cached_clust_rec) {
+        /* The following call returns 'offsets' associated with 'old_vers' */
+        err = row_sel_build_prev_vers_for_mysql(
+            trx->read_view, clust_index, prebuilt, clust_rec, offsets,
+            offset_heap, &old_vers, vrow, mtr, lob_undo);
 
-      if (err != DB_SUCCESS || old_vers == NULL) {
+        if (err != DB_SUCCESS) {
+          goto err_exit;
+        }
+        cached_clust_rec = clust_rec;
+        cached_old_vers = old_vers;
+      } else {
+        err = DB_SUCCESS;
+        old_vers = cached_old_vers;
+
+        /* Avoid a debug assertion in rec_offs_validate(). */
+        if (old_vers != nullptr) {
+          rec_offs_make_valid(old_vers, clust_index, *offsets);
+        }
+      }
+
+      if (old_vers == NULL) {
         goto err_exit;
       }
 
@@ -3937,8 +3966,11 @@ dberr_t row_search_no_mvcc(byte *buf, page_cur_mode_t mode,
                            row_prebuilt_t *prebuilt, ulint match_mode,
                            ulint direction) {
   dict_index_t *index = prebuilt->index;
+  ut_ad(index->table->is_intrinsic());
+
   const dtuple_t *search_tuple = prebuilt->search_tuple;
   btr_pcur_t *pcur = prebuilt->pcur;
+  Row_sel_get_clust_rec_for_mysql row_sel_get_clust_rec_for_mysql;
 
   const rec_t *result_rec = NULL;
   const rec_t *clust_rec = NULL;
@@ -4002,28 +4034,24 @@ dberr_t row_search_no_mvcc(byte *buf, page_cur_mode_t mode,
       if (err != DB_SUCCESS) {
         return (err); /* purecov: inspected */
       }
-    } else if (index->last_sel_cur->invalid || prebuilt->m_temp_tree_modified) {
-      /* Index tree has changed and so active cached cursor
-      is no more valid. Re-set it based on the last selected
-      position. */
-      index->last_sel_cur->release();
-      /* FIXME: this could come from a rnd_pos(), we will
-      need to adjust the search mode */
-      if (prebuilt->m_temp_tree_modified) {
-        if (direction == ROW_SEL_NEXT && pcur->search_mode == PAGE_CUR_GE) {
-          pcur->search_mode = PAGE_CUR_G;
-        }
-        prebuilt->m_temp_tree_modified = false;
-      }
-      mtr_start(mtr);
 
-      dict_disable_redo_if_temporary(index->table, mtr);
+    } else if (index->last_sel_cur->invalid || prebuilt->m_temp_tree_modified) {
+      /* Index tree has changed and so active cached cursor is no more valid.
+      Re-set it based on the last selected position. */
+      index->last_sel_cur->release();
+      prebuilt->m_temp_tree_modified = false;
+
+      if (direction == ROW_SEL_NEXT && pcur->search_mode == PAGE_CUR_GE) {
+        pcur->search_mode = PAGE_CUR_G;
+      }
+
+      mtr_start(mtr);
+      mtr_set_log_mode(mtr, MTR_LOG_NO_REDO);
 
       mem_heap_t *heap = mem_heap_create(256);
-      dtuple_t *tuple;
 
-      tuple = dict_index_build_data_tuple(index, pcur->old_rec,
-                                          pcur->old_n_fields, heap);
+      dtuple_t *tuple = dict_index_build_data_tuple(index, pcur->old_rec,
+                                                    pcur->old_n_fields, heap);
 
       btr_pcur_open_with_no_init(index, tuple, pcur->search_mode,
                                  BTR_SEARCH_LEAF, pcur, 0, mtr);
@@ -4258,6 +4286,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
   const dtuple_t *vrow = NULL;
   const rec_t *result_rec = NULL;
   const rec_t *clust_rec;
+  Row_sel_get_clust_rec_for_mysql row_sel_get_clust_rec_for_mysql;
   dberr_t err = DB_SUCCESS;
   ibool unique_search = FALSE;
   ibool mtr_has_extra_clust_latch = FALSE;
@@ -4326,8 +4355,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
   /* Reset the new record lock info if trx_t::allow_semi_consistent().
   Then we are able to remove the record locks set here on an
   individual row. */
-  prebuilt->new_rec_locks = 0;
-
+  std::fill_n(prebuilt->new_rec_lock, row_prebuilt_t::LOCK_COUNT, false);
   /*-------------------------------------------------------------*/
   /* PHASE 1: Try to pop the row from the record buffer or from
   the prefetch cache */
@@ -4778,7 +4806,8 @@ rec_loop:
     passed to InnoDB when there is no ICP and number of
     loops in row_search_mvcc for rows found but not
     reporting due to search views etc. */
-    if (prev_rec != NULL && prebuilt->m_mysql_handler->end_range != NULL &&
+    if (prev_rec != NULL && !prebuilt->innodb_api &&
+        prebuilt->m_mysql_handler->end_range != NULL &&
         prebuilt->idx_cond == false && end_loop >= 100) {
       dict_index_t *key_index = prebuilt->index;
 
@@ -5050,7 +5079,8 @@ rec_loop:
         if (trx->allow_semi_consistent()) {
           /* Note that a record of
           prebuilt->index was locked. */
-          prebuilt->new_rec_locks = 1;
+          ut_ad(!prebuilt->new_rec_lock[row_prebuilt_t::LOCK_PCUR]);
+          prebuilt->new_rec_lock[row_prebuilt_t::LOCK_PCUR] = true;
         }
         err = DB_SUCCESS;
         // Fall through
@@ -5063,7 +5093,7 @@ rec_loop:
         be handled in sel_set_rtr_rec_lock() */
         ut_ad(!dict_index_is_spatial(index));
         /* Never unlock rows that were part of a conflict. */
-        prebuilt->new_rec_locks = 0;
+        std::fill_n(prebuilt->new_rec_lock, row_prebuilt_t::LOCK_COUNT, false);
 
         if (UNIV_LIKELY(prebuilt->row_read_type !=
                         ROW_READ_TRY_SEMI_CONSISTENT) ||
@@ -5071,8 +5101,7 @@ rec_loop:
           goto lock_wait_or_error;
         }
 
-        /* The following call returns 'offsets'
-        associated with 'old_vers' */
+        /* The following call returns 'offsets' associated with 'old_vers' */
         row_sel_build_committed_vers_for_mysql(clust_index, prebuilt, rec,
                                                &offsets, &heap, &old_vers,
                                                need_vrow ? &vrow : NULL, &mtr);
@@ -5141,8 +5170,7 @@ rec_loop:
           !lock_clust_rec_cons_read_sees(rec, index, offsets,
                                          trx_get_read_view(trx))) {
         rec_t *old_vers;
-        /* The following call returns 'offsets'
-        associated with 'old_vers' */
+        /* The following call returns 'offsets' associated with 'old_vers' */
         err = row_sel_build_prev_vers_for_mysql(
             trx->read_view, clust_index, prebuilt, rec, &offsets, &heap,
             &old_vers, need_vrow ? &vrow : NULL, &mtr,
@@ -5264,10 +5292,10 @@ locks_ok:
     mtr_has_extra_clust_latch = TRUE;
 
     ut_ad(!vrow);
+
     /* The following call returns 'offsets' associated with
     'clust_rec'. Note that 'clust_rec' can be an old version
     built for a consistent read. */
-
     err = row_sel_get_clust_rec_for_mysql(
         prebuilt, index, rec, thr, &clust_rec, &offsets, &heap,
         need_vrow ? &vrow : NULL, &mtr, prebuilt->get_lob_undo());
@@ -5288,7 +5316,8 @@ locks_ok:
         if (trx->allow_semi_consistent()) {
           /* Note that the clustered index record
           was locked. */
-          prebuilt->new_rec_locks = 2;
+          ut_ad(!prebuilt->new_rec_lock[row_prebuilt_t::LOCK_CLUST_PCUR]);
+          prebuilt->new_rec_lock[row_prebuilt_t::LOCK_CLUST_PCUR] = true;
         }
         err = DB_SUCCESS;
         break;
@@ -5594,7 +5623,8 @@ next_rec:
     prebuilt->row_read_type = ROW_READ_TRY_SEMI_CONSISTENT;
   }
   did_semi_consistent_read = FALSE;
-  prebuilt->new_rec_locks = 0;
+  std::fill_n(prebuilt->new_rec_lock, row_prebuilt_t::LOCK_COUNT, false);
+
   vrow = NULL;
 
   /*-------------------------------------------------------------*/
@@ -5732,7 +5762,7 @@ lock_table_wait:
       rec_loop we will again try to set a lock, and
       new_rec_lock_info in trx will be right at the end. */
 
-      prebuilt->new_rec_locks = 0;
+      std::fill_n(prebuilt->new_rec_lock, row_prebuilt_t::LOCK_COUNT, false);
     }
 
     mode = pcur->search_mode;

@@ -868,7 +868,7 @@ test.t1	check	status	OK
 ALTER TABLE t1 ADD KEY(c);
 EXPLAIN SELECT c FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	c	4	NULL	5	100.00	Using index
+1	SIMPLE	t1	NULL	index	NULL	c	#	NULL	#	100.00	Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`c` AS `c` from `test`.`t1`
 SELECT c FROM t1 WHERE c != 100;
@@ -880,7 +880,7 @@ UPDATE t1 SET e = 'Hello MySQL' WHERE a > 30;
 ALTER TABLE t1 ADD KEY(e);
 EXPLAIN SELECT e FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	e	403	NULL	40	100.00	Using index
+1	SIMPLE	t1	NULL	index	NULL	e	#	NULL	#	100.00	Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`e` AS `e` from `test`.`t1`
 SELECT count(e) FROM t1 WHERE e LIKE '%MySQL%';
@@ -1305,7 +1305,7 @@ DROP TABLE t1;
 # Mix ALTER PARTITION and ALTER TABLE ... INPLACE. This is to check if first partition is not
 # instant after ALTER PARTITION, will the metadata be copied correctly
 #
-CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128) TABLESPACE innodb_system, PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE TABLESPACE innodb_system);;
+CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128), PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE);;
 INSERT INTO t1 VALUES(1, 2, 3, 'abcdefg'), (100, 200, 300, 'qwerty'), (200, 300, 400, 'asdfg');
 ALTER TABLE t1 ALGORITHM DEFAULT, ADD COLUMN col5 VARCHAR(500), ADD COLUMN col6 TEXT;
 Table id did not change
@@ -2874,7 +2874,7 @@ test.t1	check	status	OK
 ALTER TABLE t1 ADD KEY(c);
 EXPLAIN SELECT c FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	c	4	NULL	5	100.00	Using index
+1	SIMPLE	t1	NULL	index	NULL	c	#	NULL	#	100.00	Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`c` AS `c` from `test`.`t1`
 SELECT c FROM t1 WHERE c != 100;
@@ -2886,7 +2886,7 @@ UPDATE t1 SET e = 'Hello MySQL' WHERE a > 30;
 ALTER TABLE t1 ADD KEY(e);
 EXPLAIN SELECT e FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	e	403	NULL	40	100.00	Using index
+1	SIMPLE	t1	NULL	index	NULL	e	#	NULL	#	100.00	Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`e` AS `e` from `test`.`t1`
 SELECT count(e) FROM t1 WHERE e LIKE '%MySQL%';
@@ -3311,7 +3311,7 @@ DROP TABLE t1;
 # Mix ALTER PARTITION and ALTER TABLE ... INPLACE. This is to check if first partition is not
 # instant after ALTER PARTITION, will the metadata be copied correctly
 #
-CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128) TABLESPACE innodb_system, PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE TABLESPACE innodb_system);;
+CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128), PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE);;
 INSERT INTO t1 VALUES(1, 2, 3, 'abcdefg'), (100, 200, 300, 'qwerty'), (200, 300, 400, 'asdfg');
 ALTER TABLE t1 ALGORITHM DEFAULT, ADD COLUMN col5 VARCHAR(500), ADD COLUMN col6 TEXT;
 Table id did not change
@@ -4880,7 +4880,7 @@ test.t1	check	status	OK
 ALTER TABLE t1 ADD KEY(c);
 EXPLAIN SELECT c FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	c	4	NULL	5	100.00	Using index
+1	SIMPLE	t1	NULL	index	NULL	c	#	NULL	#	100.00	Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`c` AS `c` from `test`.`t1`
 SELECT c FROM t1 WHERE c != 100;
@@ -4892,7 +4892,7 @@ UPDATE t1 SET e = 'Hello MySQL' WHERE a > 30;
 ALTER TABLE t1 ADD KEY(e);
 EXPLAIN SELECT e FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	e	403	NULL	40	100.00	Using index
+1	SIMPLE	t1	NULL	index	NULL	e	#	NULL	#	100.00	Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`e` AS `e` from `test`.`t1`
 SELECT count(e) FROM t1 WHERE e LIKE '%MySQL%';
@@ -5317,7 +5317,7 @@ DROP TABLE t1;
 # Mix ALTER PARTITION and ALTER TABLE ... INPLACE. This is to check if first partition is not
 # instant after ALTER PARTITION, will the metadata be copied correctly
 #
-CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128) TABLESPACE innodb_system, PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE TABLESPACE innodb_system);;
+CREATE TABLE t1 (col1 INT, col2 INT, col3 INT, col4 TEXT) ENGINE = InnoDB PARTITION BY RANGE(col1 * 2) ( PARTITION p0 VALUES LESS THAN (128), PARTITION p1 VALUES LESS THAN (256) , PARTITION p2 VALUES LESS THAN (384) , PARTITION p3 VALUES LESS THAN MAXVALUE);;
 INSERT INTO t1 VALUES(1, 2, 3, 'abcdefg'), (100, 200, 300, 'qwerty'), (200, 300, 400, 'asdfg');
 ALTER TABLE t1 ALGORITHM DEFAULT, ADD COLUMN col5 VARCHAR(500), ADD COLUMN col6 TEXT;
 Table id did not change
@@ -6031,4 +6031,11 @@ t1	CREATE TABLE `t1` (
   `a` text GENERATED ALWAYS AS (lpad(1,1,1)) VIRTUAL,
   `b` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+#
+# BUG#27784462 - DD::COLUMN::SE_PRIVATE_DATA[TABLE_ID] IS NOT MAINTAINED PROPERLY
+#
+CREATE TABLE t1 (a INT NOT NULL AUTO_INCREMENT PRIMARY KEY, b INT, c INT NOT NULL DEFAULT 5, e INT GENERATED ALWAYS AS ((c + 2)) VIRTUAL) PARTITION BY RANGE (a) (PARTITION p1 VALUES LESS THAN (10), PARTITION p2 VALUES LESS THAN (20), PARTITION p3 VALUES LESS THAN (30));
+ALTER TABLE t1 REORGANIZE PARTITION p1 INTO (PARTITION p1_a VALUES LESS THAN (5), PARTITION p1_b VALUES LESS THAN (10));
+ALTER TABLE t1 ADD COLUMN d INT GENERATED ALWAYS AS ((b * 2)) VIRTUAL, ALGORITHM = INSTANT;
 DROP TABLE t1;

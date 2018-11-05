@@ -142,7 +142,7 @@ class Addon_fields {
   Sort_addon_field *end() { return m_field_descriptors.end(); }
   size_t num_field_descriptors() const { return m_field_descriptors.size(); }
 
-  /// rr_unpack_from_tempfile needs an extra buffer when unpacking.
+  /// SortFileIterator needs an extra buffer when unpacking.
   uchar *allocate_addon_buf(uint sz) {
     if (m_addon_buf != NULL) {
       DBUG_ASSERT(m_addon_buf_length == sz);
@@ -225,7 +225,7 @@ class Addon_fields {
   All the record formats consist of a (possibly composite) key,
   followed by a (possibly composite) payload.
   The key is used for sorting data. Once sorting is done, the payload is
-  stored in some buffer, and read by some rr_from or rr_unpack routine.
+  stored in some buffer, and read by some RowIterator.
 
   For fixed-size keys, with @<rowid@> payload, the @<rowid@> is also
   considered to be part of the key.
@@ -272,15 +272,14 @@ class Sort_param {
   uint m_fixed_rec_length;   ///< Maximum length of a record, see above.
   uint m_fixed_sort_length;  ///< Maximum number of bytes used for sorting.
  public:
-  uint ref_length;            // Length of record ref.
-  uint m_addon_length;        // Length of added packed fields.
-  uint fixed_res_length;      // Length of records in final sorted file/buffer.
-  uint max_rows_per_buffer;   // Max (unpacked) rows / buffer.
-  ha_rows max_rows;           // Select limit, or HA_POS_ERROR if unlimited.
-  ha_rows num_examined_rows;  // Number of examined rows.
-  TABLE *sort_form;           // For quicker make_sortkey.
-  bool use_hash;              // Whether to use hash to distinguish cut JSON
-  bool m_force_stable_sort;   // Keep relative order of equal elements
+  uint ref_length;           // Length of record ref.
+  uint m_addon_length;       // Length of added packed fields.
+  uint fixed_res_length;     // Length of records in final sorted file/buffer.
+  uint max_rows_per_buffer;  // Max (unpacked) rows / buffer.
+  ha_rows max_rows;          // Select limit, or HA_POS_ERROR if unlimited.
+  TABLE *sort_form;          // For quicker make_sortkey.
+  bool use_hash;             // Whether to use hash to distinguish cut JSON
+  bool m_force_stable_sort;  // Keep relative order of equal elements
 
   /**
     ORDER BY list with some precalculated info for filesort.
@@ -359,7 +358,7 @@ class Sort_param {
 
   /**
     Skips the key part, and returns address of payload.
-    For rr_unpack_from_buffer, which does not have access to Sort_param.
+    For SortBufferIterator, which does not have access to Sort_param.
    */
   static uchar *get_start_of_payload(uint default_val, bool is_varlen,
                                      uchar *p) {

@@ -29,7 +29,10 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <algorithm>
 #include <atomic>
+#include <memory>
+#include <new>
 
 #include "binary_log_types.h"
 #include "lex_string.h"
@@ -49,16 +52,18 @@
 #include "prealloced_array.h"  // Prealloced_array
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_grant, check_access
-#include "sql/binlog.h"            // mysql_bin_log
-#include "sql/debug_sync.h"        // DEBUG_SYNC
-#include "sql/derror.h"            // ER_THD
-#include "sql/field.h"             // Field
-#include "sql/filesort.h"          // Filesort
+#include "sql/basic_row_iterators.h"
+#include "sql/binlog.h"      // mysql_bin_log
+#include "sql/debug_sync.h"  // DEBUG_SYNC
+#include "sql/derror.h"      // ER_THD
+#include "sql/field.h"       // Field
+#include "sql/filesort.h"    // Filesort
 #include "sql/handler.h"
 #include "sql/item.h"            // Item
 #include "sql/item_json_func.h"  // Item_json_func
 #include "sql/key.h"             // is_key_used
 #include "sql/key_spec.h"
+#include "sql/locked_tables_list.h"
 #include "sql/mem_root_array.h"
 #include "sql/mysqld.h"       // stage_... mysql_tmpdir
 #include "sql/opt_explain.h"  // Modification_plan
@@ -71,6 +76,8 @@
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
 #include "sql/records.h"  // READ_RECORD
+#include "sql/row_iterator.h"
+#include "sql/sorting_iterator.h"
 #include "sql/sql_array.h"
 #include "sql/sql_base.h"  // check_record, fill_record
 #include "sql/sql_bitmap.h"
@@ -85,7 +92,6 @@
 #include "sql/sql_partition.h"  // partition_key_modified
 #include "sql/sql_resolver.h"   // setup_order
 #include "sql/sql_select.h"
-#include "sql/sql_sort.h"
 #include "sql/sql_tmp_table.h"  // create_tmp_table
 #include "sql/sql_view.h"       // check_key_in_view
 #include "sql/system_variables.h"
@@ -462,8 +468,18 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   /* If running in safe sql mode, don't allow updates without keys */
   if (table->quick_keys.is_clear_all()) {
     thd->server_status |= SERVER_QUERY_NO_INDEX_USED;
-    if (safe_update && !using_limit) {
-      my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0));
+
+    /*
+      No safe update error will be returned if:
+      1) Statement is an EXPLAIN OR
+      2) LIMIT is present.
+
+      Append the first warning (if any) to the error message. Allows the user
+      to understand why index access couldn't be chosen.
+    */
+    if (!lex->is_explain() && safe_update && !using_limit) {
+      my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0),
+               thd->get_stmt_da()->get_first_condition_message());
       DBUG_RETURN(true);
     }
   }
@@ -510,6 +526,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   ha_rows updated_rows = 0;
   ha_rows found_rows = 0;
 
+  unique_ptr_destroy_only<Filesort> fsort;
   READ_RECORD info;
 
   {  // Start of scope for Modification_plan
@@ -534,15 +551,14 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
       DBUG_RETURN(err);
     }
 
+    if (thd->lex->is_ignore()) table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+    table->file->try_semi_consistent_read(1);
+
     if (used_key_is_modified || order) {
       /*
         We can't update table directly;  We must first search after all
         matching rows before updating the table!
       */
-
-      Key_map covering_keys_for_cond;  // @todo - move this
-      if (used_index < MAX_KEY && covering_keys_for_cond.is_set(used_index))
-        table->set_keyread(true);
 
       /* note: We avoid sorting if we sort on the used index */
       if (using_filesort) {
@@ -551,20 +567,21 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           to update
           NOTE: filesort will call table->prepare_for_position()
         */
-        ha_rows sort_examined_rows, sort_found_rows, sort_returned_rows;
-        Filesort fsort(&qep_tab, order, limit);
+        ha_rows examined_rows = 0;
+        setup_read_record(&info, thd, NULL, &qep_tab, false,
+                          /*ignore_not_found_rows=*/false, &examined_rows);
 
-        DBUG_ASSERT(table->sort_result.io_cache == NULL);
-        table->sort_result.io_cache =
-            (IO_CACHE *)my_malloc(key_memory_TABLE_sort_io_cache,
-                                  sizeof(IO_CACHE), MYF(MY_FAE | MY_ZEROFILL));
+        // Force filesort to sort by position.
+        qep_tab.keep_current_rowid = true;
+        fsort.reset(new (thd->mem_root) Filesort(&qep_tab, order, limit));
+        unique_ptr_destroy_only<RowIterator> sort(
+            new (&info.sort_holder)
+                SortingIterator(thd, fsort.get(), move(info.iterator),
+                                /*examined_rows=*/nullptr));
+        if (sort->Init()) DBUG_RETURN(true);
+        info.iterator = move(sort);
+        thd->inc_examined_row_count(examined_rows);
 
-        if (filesort(thd, &fsort, true, &sort_examined_rows, &sort_found_rows,
-                     &sort_returned_rows))
-          DBUG_RETURN(true);
-
-        table->sort_result.found_records = sort_returned_rows;
-        thd->inc_examined_row_count(sort_examined_rows);
         /*
           Filesort has already found and selected the rows we want to update,
           so we don't need the where clause
@@ -575,8 +592,17 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         /*
           We are doing a search on a key that is updated. In this case
           we go trough the matching rows, save a pointer to them and
-          update these in a separate loop based on the pointer.
-        */
+          update these in a separate loop based on the pointer. In the end,
+          we get a result file that looks exactly like what filesort uses
+          internally, which allows us to read from it
+          using SortFileIndirectIterator.
+
+          TODO: Find something less ugly.
+         */
+        Key_map covering_keys_for_cond;  // @todo - move this
+        if (used_index < MAX_KEY && covering_keys_for_cond.is_set(used_index))
+          table->set_keyread(true);
+
         table->prepare_for_position();
 
         /* If quick select is used, initialize it before retrieving rows. */
@@ -599,11 +625,18 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           Full index scan must be started with init_read_record_idx
         */
 
-        if (used_index == MAX_KEY || qep_tab.quick()
-                ? init_read_record(&info, thd, NULL, &qep_tab, true, false)
-                : init_read_record_idx(&info, thd, table, true, used_index,
-                                       reverse))
-          DBUG_RETURN(true); /* purecov: inspected */
+        if (used_index == MAX_KEY || qep_tab.quick()) {
+          setup_read_record(&info, thd, NULL, &qep_tab, false,
+                            /*ignore_not_found_rows=*/false,
+                            /*examined_rows=*/nullptr);
+        } else {
+          setup_read_record_idx(&info, thd, table, used_index, reverse,
+                                &qep_tab);
+        }
+
+        if (info.iterator->Init()) {
+          DBUG_RETURN(true);
+        }
 
         THD_STAGE_INFO(thd, stage_searching_rows_for_update);
         ha_rows tmp_limit = limit;
@@ -618,7 +651,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           DBUG_RETURN(true);
         }
 
-        while (!(error = info.read_record(&info)) && !thd->killed) {
+        while (!(error = info->Read()) && !thd->killed) {
           DBUG_ASSERT(!thd->is_error());
           thd->inc_examined_row_count(1);
 
@@ -653,40 +686,39 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           error = 1;                /* purecov: inspected */
         limit = tmp_limit;
         table->file->try_semi_consistent_read(0);
-        end_read_record(&info);
+        if (used_index < MAX_KEY && covering_keys_for_cond.is_set(used_index))
+          table->set_keyread(false);
+        table->file->ha_index_or_rnd_end();
+        info.iterator.reset();
 
         // Change reader to use tempfile
         if (reinit_io_cache(tempfile, READ_CACHE, 0L, 0, 0))
           error = 1; /* purecov: inspected */
 
-        DBUG_ASSERT(table->sort_result.io_cache == NULL);
-        /*
-          After this assignment, init_read_record() will run, and decide to
-          read from sort_result.io_cache. This cache will be freed when qep_tab
-          is destroyed.
-         */
-        table->sort_result.io_cache = tempfile;
+        if (error >= 0) {
+          close_cached_file(tempfile);
+          my_free(tempfile);
+          DBUG_RETURN(error > 0);
+        }
+
+        info.iterator.reset(
+            new (&info.iterator_holder.sort_file_indirect)
+                SortFileIndirectIterator(thd, table, tempfile,
+                                         /*request_cache=*/false,
+                                         /*ignore_not_found_rows=*/false,
+                                         qep_tab.condition(),
+                                         /*examined_rows=*/nullptr));
+        if (info.iterator->Init()) DBUG_RETURN(true);
+
         qep_tab.set_quick(NULL);
         qep_tab.set_condition(NULL);
-        if (error >= 0) DBUG_RETURN(error > 0);
       }
-      if (used_index < MAX_KEY && covering_keys_for_cond.is_set(used_index))
-        table->set_keyread(false);
-      table->file->ha_index_or_rnd_end();
+    } else {
+      // No ORDER BY or updated key underway, so we can use a regular read.
+      if (init_read_record(&info, thd, NULL, &qep_tab, false,
+                           /*ignore_not_found_rows=*/false))
+        DBUG_RETURN(true); /* purecov: inspected */
     }
-
-    if (thd->lex->is_ignore()) table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
-
-    if (qep_tab.quick() && (error = qep_tab.quick()->reset())) {
-      if (table->file->is_fatal_error(error)) error_flags |= ME_FATALERROR;
-
-      table->file->print_error(error, error_flags);
-      DBUG_RETURN(true);
-    }
-
-    table->file->try_semi_consistent_read(1);
-    if (init_read_record(&info, thd, NULL, &qep_tab, true, false))
-      DBUG_RETURN(true); /* purecov: inspected */
 
     /*
       Generate an error (in TRADITIONAL mode) or warning
@@ -724,7 +756,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
     uint dup_key_found;
 
     while (true) {
-      error = info.read_record(&info);
+      error = info->Read();
       if (error || thd->killed) break;
       thd->inc_examined_row_count(1);
       bool skip_record;
@@ -930,7 +962,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
     thd->get_transaction()->mark_modified_non_trans_table(
         Transaction_ctx::STMT);
 
-  end_read_record(&info);
+  info.iterator.reset();
 
   /*
     error < 0 means really no error at all: we processed all rows until the
@@ -1384,7 +1416,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   for (TABLE_LIST *tl = select->leaf_tables; tl; tl = tl->next_leaf) {
     tl->updating = tl->map() & tables_for_update;
     if (tl->updating) {
-      if (tl->table->vfield &&
+      if ((tl->table->vfield || tl->table->gen_def_fields_ptr != nullptr) &&
           validate_gc_assignment(update_fields, update_value_list, tl->table))
         DBUG_RETURN(true); /* purecov: inspected */
 
@@ -1819,11 +1851,11 @@ bool Query_result_update::optimize() {
             before-update value;
             consider this flow of a nested loop join:
             read a row from main_table and:
-            - init ref access (cp_buffer_from_ref() in join_read_always_key()):
+            - init ref access (cp_buffer_from_ref() in RefIterator):
               copy referenced value from main_table into 2nd table's ref buffer
-            - look up a first row in 2nd table (join_read_always_key)
+            - look up a first row in 2nd table (RefIterator::Read())
               - if it joins, update row of main_table on the fly
-            - look up a second row in 2nd table (join_read_next_same).
+            - look up a second row in 2nd table (again RefIterator::Read()).
             Because cp_buffer_from_ref() is not called again, the before-update
             value of the row of main_table is still in the 2nd table's ref
             buffer. So the lookup is not influenced by the just-done update of

@@ -78,7 +78,8 @@
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 /* trans_commit_implicit */
-#include "sql/sql_parse.h"  /* stmt_causes_implicit_commit */
+#include "sql/sql_parse.h" /* stmt_causes_implicit_commit */
+#include "sql/sql_rewrite.h"
 #include "sql/sql_table.h"  /* write_bin_log */
 #include "sql/sql_update.h" /* compare_records */
 #include "sql/system_variables.h"
@@ -299,7 +300,10 @@ static const TABLE_FIELD_TYPE mysql_user_table_fields[MYSQL_USER_FIELD_COUNT] =
       {NULL, 0}},
      {{C_STRING_WITH_LEN("Password_reuse_time")},
       {C_STRING_WITH_LEN("smallint(5)")},
-      {NULL, 0}}};
+      {NULL, 0}},
+     {{C_STRING_WITH_LEN("Password_require_current")},
+      {C_STRING_WITH_LEN("enum('N','Y')")},
+      {C_STRING_WITH_LEN("utf8")}}};
 
 static const TABLE_FIELD_TYPE
     mysql_proxies_priv_table_fields[MYSQL_PROXIES_PRIV_FIELD_COUNT] = {
@@ -640,75 +644,6 @@ static bool acl_end_trans_and_close_tables(THD *thd, bool rollback_transaction,
 }
 
 /*
-  Helper function for rewriting query
-
-  @param thd          Handle to THD object
-  @param extra_user   Users which were not proccessed by ddl
-  @param for_binlog   Purpose of rewriting the query
-*/
-
-static void rewrite_acl_ddl(THD *thd, std::set<LEX_USER *> *extra_users,
-                            bool for_binlog) {
-  DBUG_ENTER("rewrite_acl_ddl");
-  DBUG_ASSERT(thd);
-  String *rlb = NULL;
-  bool rewrite = false;
-
-  enum_sql_command command = thd->lex->sql_command;
-  /* Rewrite the query */
-  rlb = &thd->rewritten_query;
-
-  switch (command) {
-    case SQLCOM_CREATE_USER:
-    case SQLCOM_ALTER_USER:
-      rlb->mem_free();
-      mysql_rewrite_create_alter_user(thd, rlb, extra_users, for_binlog);
-      rewrite = true;
-      break;
-    case SQLCOM_GRANT:
-      rlb->mem_free();
-      mysql_rewrite_grant(thd, rlb);
-      rewrite = true;
-      break;
-    case SQLCOM_SET_PASSWORD:
-      rlb->mem_free();
-      mysql_rewrite_set_password(thd, rlb, extra_users, for_binlog);
-      rewrite = true;
-      break;
-    /*
-      We don't attempt to rewrite any of the following because they do
-      not contain credential information.
-    */
-    case SQLCOM_DROP_USER:
-    case SQLCOM_REVOKE_ALL:
-    case SQLCOM_REVOKE:
-    case SQLCOM_RENAME_USER:
-    case SQLCOM_CREATE_ROLE:
-    case SQLCOM_DROP_ROLE:
-    case SQLCOM_GRANT_ROLE:
-    case SQLCOM_REVOKE_ROLE:
-    case SQLCOM_ALTER_USER_DEFAULT_ROLE:
-    case SQLCOM_CREATE_SPFUNCTION:
-    case SQLCOM_CREATE_PROCEDURE:
-    case SQLCOM_CREATE_FUNCTION:
-    case SQLCOM_DROP_PROCEDURE:
-    case SQLCOM_DROP_FUNCTION:
-      break;
-    default:
-      DBUG_ASSERT(false);
-      break;
-  }
-
-  if (rewrite && thd->rewritten_query.length()) {
-    MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi,
-                             thd->rewritten_query.c_ptr_safe(),
-                             thd->rewritten_query.length());
-  }
-
-  DBUG_VOID_RETURN;
-}
-
-/*
   Function to handle rewriting and bin logging of ACL ddl.
   Assumption : Error if any has already been raised.
 
@@ -734,74 +669,74 @@ bool log_and_commit_acl_ddl(THD *thd, bool transactional_tables,
                             std::set<LEX_USER *> *extra_users, /* = NULL */
                             bool extra_error,                  /* = true */
                             bool write_to_binlog,              /* = true */
-                            bool notify_htons)                 /* = true */
-{
+                            bool notify_htons) {
   bool result = false;
-  LEX_CSTRING query;
-  enum_sql_command command;
-  size_t num_extra_users = extra_users ? extra_users->size() : 0;
   DBUG_ENTER("logn_ddl_to_binlog");
-
   DBUG_ASSERT(thd);
   result = thd->is_error() || extra_error || thd->transaction_rollback_request;
+  /* Write to binlog and textlogs only if there is no error */
+  if (!result) {
+    User_params user_params(extra_users);
+    mysql_rewrite_acl_query(thd, Consumer_type::BINLOG, &user_params);
+    if (write_to_binlog) {
+      LEX_CSTRING query;
+      enum_sql_command command;
+      size_t num_extra_users = extra_users ? extra_users->size() : 0;
+      command = thd->lex->sql_command;
+      if (mysql_bin_log.is_open()) {
+        query.str = thd->rewritten_query.length()
+                        ? thd->rewritten_query.c_ptr_safe()
+                        : thd->query().str;
 
-  if (!result) rewrite_acl_ddl(thd, extra_users, true);
+        query.length = thd->rewritten_query.length()
+                           ? thd->rewritten_query.length()
+                           : thd->query().length;
 
-  /* Write to binlog only if there is no error */
-  if (write_to_binlog && !result) {
-    command = thd->lex->sql_command;
-    if (mysql_bin_log.is_open()) {
-      query.str = thd->rewritten_query.length()
-                      ? thd->rewritten_query.c_ptr_safe()
-                      : thd->query().str;
-
-      query.length = thd->rewritten_query.length()
-                         ? thd->rewritten_query.length()
-                         : thd->query().length;
-
-      /* Write to binary log */
-      result = (write_bin_log(thd, false, query.str, query.length,
-                              transactional_tables) != 0)
-                   ? true
-                   : false;
-
-      /*
-        Log warning about extra users in case of
-        CREATE USER IF NOT EXISTS/ALTER USER IF EXISTS
-      */
-      if ((command == SQLCOM_CREATE_USER || command == SQLCOM_ALTER_USER) &&
-          !result && num_extra_users) {
-        String warn_user;
-        bool comma = false;
-        bool log_warning = false;
-        for (LEX_USER *extra_user : *extra_users) {
-          /*
-            Consider for warning if one of the following is true:
-            1. If SQLCOM_CREATE_USER, IDENTIFIED WITH clause is not used
-            2. If SQLCOM_ALTER_USER, IDENTIFIED WITH clause is not used
-            but IDENTIFIED BY is used.
-          */
-          if (!extra_user->uses_identified_with_clause &&
-              (command == SQLCOM_CREATE_USER ||
-               extra_user->uses_identified_by_clause)) {
-            log_user(thd, &warn_user, extra_user, comma);
-            comma = true;
-            log_warning = true;
+        /* Write to binary log */
+        result = (write_bin_log(thd, false, query.str, query.length,
+                                transactional_tables) != 0)
+                     ? true
+                     : false;
+        /*
+          Log warning about extra users in case of
+          CREATE USER IF NOT EXISTS/ALTER USER IF EXISTS
+        */
+        if ((command == SQLCOM_CREATE_USER || command == SQLCOM_ALTER_USER) &&
+            !result && num_extra_users) {
+          String warn_user;
+          bool comma = false;
+          bool log_warning = false;
+          for (LEX_USER *extra_user : *extra_users) {
+            /*
+              Consider for warning if one of the following is true:
+              1. If SQLCOM_CREATE_USER, IDENTIFIED WITH clause is not used
+              2. If SQLCOM_ALTER_USER, IDENTIFIED WITH clause is not used
+              but IDENTIFIED BY is used.
+            */
+            if (!extra_user->uses_identified_with_clause &&
+                (command == SQLCOM_CREATE_USER ||
+                 extra_user->uses_identified_by_clause)) {
+              log_user(thd, &warn_user, extra_user, comma);
+              comma = true;
+              log_warning = true;
+            }
           }
-        }
-        if (log_warning)
-          LogErr(WARNING_LEVEL,
-                 (command == SQLCOM_CREATE_USER)
-                     ? ER_SQL_USER_TABLE_CREATE_WARNING
-                     : ER_SQL_USER_TABLE_ALTER_WARNING,
-                 default_auth_plugin_name.str, warn_user.c_ptr_safe());
+          if (log_warning)
+            LogErr(WARNING_LEVEL,
+                   (command == SQLCOM_CREATE_USER)
+                       ? ER_SQL_USER_TABLE_CREATE_WARNING
+                       : ER_SQL_USER_TABLE_ALTER_WARNING,
+                   default_auth_plugin_name.str, warn_user.c_ptr_safe());
 
-        warn_user.mem_free();
+          warn_user.mem_free();
+        }
       }
     }
-
-    /* rewrite for general log only if there were extra users */
-    if (num_extra_users) rewrite_acl_ddl(thd, extra_users, false);
+    /*
+      Rewrite query in the thd again for the consistent logging for all consumer
+      type TEXTLOG later on. For instance: Audit logs.
+    */
+    mysql_rewrite_acl_query(thd, Consumer_type::TEXTLOG, &user_params);
   }
 
   if (acl_end_trans_and_close_tables(thd, result, notify_htons)) result = 1;
@@ -1234,6 +1169,33 @@ int replace_user_table(THD *thd, TABLE *table, LEX_USER *combo, ulong rights,
     }
   }
 
+  /* ALTER USER .. PASSWORD REQUIRE CURRENT */
+  if (table->s->fields > MYSQL_USER_FIELD_PASSWORD_REQUIRE_CURRENT) {
+    Field *fld = table->field[MYSQL_USER_FIELD_PASSWORD_REQUIRE_CURRENT];
+    switch (combo->alter_status.update_password_require_current) {
+      case Lex_acl_attrib_udyn::DEFAULT:
+        fld->set_null();
+        break;
+      case Lex_acl_attrib_udyn::NO:
+        fld->store("N", 1, system_charset_info);
+        fld->set_notnull();
+        break;
+      case Lex_acl_attrib_udyn::YES:
+        fld->store("Y", 1, system_charset_info);
+        fld->set_notnull();
+        break;
+      case Lex_acl_attrib_udyn::UNCHANGED:
+        if (!old_row_exists) fld->set_null();
+        break;
+      default:
+        DBUG_ASSERT(false);
+    }
+  } else {
+    my_error(ER_BAD_FIELD_ERROR, MYF(0), "password_require_current",
+             "mysql.user");
+    DBUG_RETURN(-1);
+  }
+
   if (what_to_replace & ACCOUNT_LOCK_ATTR) {
     if (!old_row_exists ||
         (old_row_exists && combo->alter_status.update_account_locked_column)) {
@@ -1254,7 +1216,7 @@ int replace_user_table(THD *thd, TABLE *table, LEX_USER *combo, ulong rights,
 
   if (old_row_exists) {
     /*
-      We should NEVER delete from the user table, as a uses can still
+      We should NEVER delete from the user table, as an user can still
       use mysqld even if he doesn't have any privileges in the user table!
     */
     if (compare_records(table)) {
@@ -1350,12 +1312,7 @@ int replace_db_table(THD *thd, TABLE *table, const char *db,
   uchar user_key[MAX_KEY_LENGTH];
   Acl_table_intact table_intact(thd);
   DBUG_ENTER("replace_db_table");
-
-  if (!initialized) {
-    my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--skip-grant-tables");
-    DBUG_RETURN(-1);
-  }
-
+  DBUG_ASSERT(initialized);
   if (table_intact.check(table, ACL_TABLES::TABLE_DB)) DBUG_RETURN(-1);
 
   /* Check if there is such a user in user table in memory? */
@@ -1492,12 +1449,7 @@ int replace_proxies_priv_table(THD *thd, TABLE *table, const LEX_USER *user,
   Acl_table_intact table_intact(thd);
 
   DBUG_ENTER("replace_proxies_priv_table");
-
-  if (!initialized) {
-    my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--skip-grant-tables");
-    DBUG_RETURN(-1);
-  }
-
+  DBUG_ASSERT(initialized);
   if (table_intact.check(table, ACL_TABLES::TABLE_PROXIES_PRIV))
     DBUG_RETURN(-1);
 

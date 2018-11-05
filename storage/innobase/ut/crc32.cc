@@ -89,12 +89,11 @@ Copyright (c) 2011, 2018, Oracle and/or its affiliates. All Rights Reserved.
 other files in library. The code in this file is used to make a library for
 external tools. */
 
+#include "my_compiler.h"
 #include "my_config.h"
+#include "my_inttypes.h"
 
 #include <string.h>
-
-#include "my_compiler.h"
-#include "my_inttypes.h"
 
 #if defined(__GNUC__) && defined(__x86_64__)
 #define gnuc64
@@ -112,12 +111,12 @@ external tools. */
 #else
 // GCC 4.8 without -msse4.2.
 MY_ATTRIBUTE((target("sse4.2")))
-ALWAYS_INLINE uint32 _mm_crc32_u8(uint32 __C, uint32 __V) {
+ALWAYS_INLINE uint32_t _mm_crc32_u8(uint32_t __C, uint32_t __V) {
   return __builtin_ia32_crc32qi(__C, __V);
 }
 
 MY_ATTRIBUTE((target("sse4.2")))
-ALWAYS_INLINE uint64 _mm_crc32_u64(uint64 __C, uint64 __V) {
+ALWAYS_INLINE uint64_t _mm_crc32_u64(uint64_t __C, uint64_t __V) {
   return __builtin_ia32_crc32di(__C, __V);
 }
 #endif
@@ -289,7 +288,7 @@ MY_ATTRIBUTE((target("sse4.2")))
 static uint32_t ut_crc32_hw(const byte *buf, ulint len) {
   uint64_t crc = 0xFFFFFFFFU;
 
-  ut_a(ut_crc32_cpu_enabled);
+  ut_ad(ut_crc32_cpu_enabled);
 
   /* Calculate byte-by-byte up to an 8-byte aligned address. After
   this consume the input 8-bytes at a time. */
@@ -376,7 +375,7 @@ integers.
 static uint32_t ut_crc32_legacy_big_endian_hw(const byte *buf, ulint len) {
   uint64_t crc = 0xFFFFFFFFU;
 
-  ut_a(ut_crc32_cpu_enabled);
+  ut_ad(ut_crc32_cpu_enabled);
 
   /* Calculate byte-by-byte up to an 8-byte aligned address. After
   this consume the input 8-bytes at a time. */
@@ -424,7 +423,7 @@ not depend on the byte order of the machine.
 static uint32_t ut_crc32_byte_by_byte_hw(const byte *buf, ulint len) {
   uint64_t crc = 0xFFFFFFFFU;
 
-  ut_a(ut_crc32_cpu_enabled);
+  ut_ad(ut_crc32_cpu_enabled);
 
   while (len > 0) {
     ut_crc32_8_hw(&crc, &buf, &len);
@@ -439,7 +438,10 @@ static uint32_t ut_crc32_byte_by_byte_hw(const byte *buf, ulint len) {
 /* Precalculated table used to generate the CRC32 if the CPU does not
 have support for it */
 static uint32_t ut_crc32_slice8_table[8][256];
+
+#ifdef UNIV_DEBUG
 static bool ut_crc32_slice8_table_initialized = false;
+#endif /* UNIV_DEBUG */
 
 /** Initializes the table that is used to generate the CRC32 if the CPU does
  not have support for it. */
@@ -466,7 +468,9 @@ static void ut_crc32_slice8_table_init() {
     }
   }
 
+#ifdef UNIV_DEBUG
   ut_crc32_slice8_table_initialized = true;
+#endif /* UNIV_DEBUG */
 }
 
 /** Calculate CRC32 over 8-bit data using a software implementation.
@@ -548,7 +552,7 @@ inline void ut_crc32_64_legacy_big_endian_sw(uint32_t *crc, const byte **data,
 static uint32_t ut_crc32_sw(const byte *buf, ulint len) {
   uint32_t crc = 0xFFFFFFFFU;
 
-  ut_a(ut_crc32_slice8_table_initialized);
+  ut_ad(ut_crc32_slice8_table_initialized);
 
   /* Calculate byte-by-byte up to an 8-byte aligned address. After
   this consume the input 8-bytes at a time. */
@@ -596,7 +600,7 @@ integers.
 static uint32_t ut_crc32_legacy_big_endian_sw(const byte *buf, ulint len) {
   uint32_t crc = 0xFFFFFFFFU;
 
-  ut_a(ut_crc32_slice8_table_initialized);
+  ut_ad(ut_crc32_slice8_table_initialized);
 
   /* Calculate byte-by-byte up to an 8-byte aligned address. After
   this consume the input 8-bytes at a time. */
@@ -644,7 +648,7 @@ not depend on the byte order of the machine.
 static uint32_t ut_crc32_byte_by_byte_sw(const byte *buf, ulint len) {
   uint32_t crc = 0xFFFFFFFFU;
 
-  ut_a(ut_crc32_slice8_table_initialized);
+  ut_ad(ut_crc32_slice8_table_initialized);
 
   while (len > 0) {
     ut_crc32_8_sw(&crc, &buf, &len);

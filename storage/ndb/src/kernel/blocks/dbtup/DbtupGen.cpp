@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
-
 
 #define DBTUP_C
 #define DBTUP_GEN_CPP
@@ -66,6 +65,8 @@ void Dbtup::initData()
   cCopyLastSeg = RNIL;
   cCopyOverwrite = 0;
   cCopyOverwriteLen = 0;
+
+  c_debug_count = 0;
 
   // Records with constant sizes
   init_list_sizes();
@@ -346,8 +347,7 @@ void Dbtup::execCONTINUEB(Signal* signal)
   }
 
   default:
-    ndbrequire(false);
-    break;
+    ndbabort();
   }//switch
 }//Dbtup::execTUP_CONTINUEB()
 
@@ -529,7 +529,7 @@ void Dbtup::execREAD_CONFIG_REQ(Signal* signal)
    */
   NewVARIABLE *bat = allocateBat(1);
   bat[0].WA = &m_read_ctl_file_data[0];
-  bat[0].nrr = BackupFormat::NDB_LCP_CTL_FILE_SIZE;
+  bat[0].nrr = BackupFormat::NDB_LCP_CTL_FILE_SIZE_BIG;
 }
 
 void Dbtup::initRecords() 
@@ -647,8 +647,7 @@ void Dbtup::initialiseRecordsLab(Signal* signal, Uint32 switchData,
     }
     return;
   default:
-    ndbrequire(false);
-    break;
+    ndbabort();
   }//switch
   signal->theData[0] = ZINITIALISE_RECORDS;
   signal->theData[1] = switchData + 1;

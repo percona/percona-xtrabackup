@@ -139,6 +139,7 @@ mysql_get_option
 mysql_session_track_get_first
 mysql_session_track_get_next
 mysql_reset_server_public_key
+mysql_result_metadata
 
 CACHE INTERNAL "Functions exported by client API"
 
@@ -201,7 +202,27 @@ ENDIF (WITH_CLIENT_PROTOCOL_TRACING)
 ADD_CONVENIENCE_LIBRARY(clientlib ${CLIENT_SOURCES})
 ADD_DEPENDENCIES(clientlib GenError)
 
-SET(LIBS clientlib dbug strings vio mysys mysys_ssl ${ZLIB_LIBRARY} ${SSL_LIBRARIES} ${LIBDL})
+SET(LIBS_TO_MERGE
+  clientlib dbug strings vio mysys mysys_ssl
+  )
+SET(LIBS_TO_LINK ${LIBDL})
+
+IF(WITH_ZLIB STREQUAL "bundled")
+  LIST(APPEND LIBS_TO_MERGE ${ZLIB_LIBRARY})
+ELSE()
+  LIST(APPEND LIBS_TO_LINK ${ZLIB_LIBRARY})
+ENDIF()
+
+IF(WITH_SSL STREQUAL "wolfssl")
+  LIST(APPEND LIBS_TO_MERGE wolfssl wolfcrypt)
+ELSE()
+  IF(WIN32)
+    # SSL_LIBRARIES are IMPORTED, and must be merged.
+    LIST(APPEND LIBS_TO_MERGE ${SSL_LIBRARIES})
+  ELSE()
+    LIST(APPEND LIBS_TO_LINK ${SSL_LIBRARIES})
+  ENDIF()
+ENDIF()
 
 #
 # On Windows platform client library includes the client-side 
@@ -210,11 +231,12 @@ SET(LIBS clientlib dbug strings vio mysys mysys_ssl ${ZLIB_LIBRARY} ${SSL_LIBRAR
 IF(WIN32)
   ADD_DEFINITIONS(-DAUTHENTICATION_WIN)
   ADD_SUBDIRECTORY(authentication_win)
-  LIST(APPEND LIBS auth_win_client)
+  LIST(APPEND LIBS_TO_MERGE auth_win_client)
 ENDIF()
 
 # Merge several convenience libraries into one big mysqlclient
-MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS} COMPONENT Development SKIP_INSTALL)
+MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS_TO_MERGE} COMPONENT Development SKIP_INSTALL)
+TARGET_LINK_LIBRARIES(mysqlclient ${LIBS_TO_LINK})
 
 # Visual Studio users need debug  static library for debug projects
 IF(MSVC)
@@ -252,9 +274,19 @@ ENDIF()
 IF(NOT DISABLE_SHARED)
   # Merge several convenience libraries into one big mysqlclient
   # and link them together into shared library.
-  MERGE_LIBRARIES_SHARED(libmysql ${LIBS}
+  MERGE_LIBRARIES_SHARED(libmysql ${LIBS_TO_MERGE}
     EXPORTS ${CLIENT_API_FUNCTIONS} ${CLIENT_API_FUNCTIONS_UNDOCUMENTED}
     COMPONENT SharedLibraries SKIP_INSTALL)
+  TARGET_LINK_LIBRARIES(libmysql ${LIBS_TO_LINK})
+
+  IF(WIN32)
+    # So that libmysql_api_test below can find the .dll
+    ADD_CUSTOM_COMMAND(TARGET libmysql POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_BINARY_DIR}/library_output_directory/${CMAKE_CFG_INTDIR}/libmysql.dll"
+      "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/libmysql.dll"
+      )
+  ENDIF()
   IF(UNIX)
     # libtool compatability
     IF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR APPLE)
@@ -331,9 +363,8 @@ IF(CMAKE_COMPILER_IS_GNUCXX)
     )
 ENDIF()
 
-# We need to find both SSL .dlls and libmysql.dll, link statically on WIN32
-IF(DISABLE_SHARED OR WIN32)
-  TARGET_LINK_LIBRARIES(libmysql_api_test ${LIBS})
+IF(DISABLE_SHARED)
+  TARGET_LINK_LIBRARIES(libmysql_api_test ${LIBS_TO_MERGE})
 ELSE()
   TARGET_LINK_LIBRARIES(libmysql_api_test libmysql)
 ENDIF()

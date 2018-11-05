@@ -286,11 +286,16 @@ bool initialize_dd_properties(THD *thd) {
     initialize the DD_bootstrap_ctx with the relevant version number.
   */
   uint actual_version = dd::DD_VERSION;
+  uint actual_server_version = MYSQL_VERSION_ID;
 
   bootstrap::DD_bootstrap_ctx::instance().set_actual_dd_version(actual_version);
+  bootstrap::DD_bootstrap_ctx::instance().set_actual_server_version(
+      actual_server_version);
 
   if (!opt_initialize) {
     bool exists = false;
+    bool exists_server = false;
+
     // Check 'DD_version' too in order to catch an upgrade from 8.0.3.
     if (dd::tables::DD_properties::instance().get(thd, "DD_VERSION",
                                                   &actual_version, &exists) ||
@@ -331,6 +336,15 @@ bool initialize_dd_properties(THD *thd) {
       }
     }
     /* purecov: end */
+
+    if (dd::tables::DD_properties::instance().get(
+            thd, "MYSQLD_VERSION", &actual_server_version, &exists_server) ||
+        !exists_server)
+      return true;
+
+    if (actual_server_version != MYSQL_VERSION_ID)
+      bootstrap::DD_bootstrap_ctx::instance().set_actual_server_version(
+          actual_server_version);
 
     /*
       Reject restarting with a changed LCTN setting, since the collation
@@ -1377,6 +1391,16 @@ bool migrate_meta_data(THD *thd, const std::set<String_type> &create_set,
 
   /* Version dependent migration of meta data can be added here. */
 
+  /* Upgrade from 80012. */
+  if (bootstrap::DD_bootstrap_ctx::instance().is_upgrade_from_before(
+          bootstrap::DD_VERSION_80013)) {
+    migrated_set.insert("tables");
+    if (execute_query(thd,
+                      "INSERT INTO tables SELECT *, 0 FROM mysql.tables")) {
+      return dd::end_transaction(thd, true);
+    }
+  }
+
   /*
     8.0.11 allowed entries with 0 timestamps to be created. These must
     be updated, otherwise, upgrade will fail since 0 timstamps are not
@@ -2278,8 +2302,9 @@ bool restart(THD *thd) {
       create_tables(thd, nullptr) || sync_meta_data(thd) ||
       DDSE_dict_recover(thd, DICT_RECOVERY_RESTART_SERVER,
                         d->get_actual_dd_version(thd)) ||
-      upgrade_tables(thd) || repopulate_charsets_and_collations(thd) ||
-      verify_contents(thd) || update_versions(thd)) {
+      bootstrap::do_server_upgrade_checks(thd) || upgrade_tables(thd) ||
+      repopulate_charsets_and_collations(thd) || verify_contents(thd) ||
+      update_versions(thd)) {
     return true;
   }
 

@@ -1113,7 +1113,7 @@ static void append_directory(THD *thd, String *packet, const char *dir_type,
 static bool print_on_update_clause(Field *field, String *val, bool lcase) {
   DBUG_ASSERT(val->charset()->mbminlen == 1);
   val->length(0);
-  if (field->has_update_default_function()) {
+  if (field->has_update_default_datetime_value_expression()) {
     if (lcase)
       val->copy(STRING_WITH_LEN("on update "), val->charset());
     else
@@ -1125,28 +1125,33 @@ static bool print_on_update_clause(Field *field, String *val, bool lcase) {
   return false;
 }
 
-static bool print_default_clause(Field *field, String *def_value, bool quoted) {
+static bool print_default_clause(THD *thd, Field *field, String *def_value,
+                                 bool quoted) {
   enum enum_field_types field_type = field->type();
-
-  const bool has_now_default = field->has_insert_default_function();
-  const bool has_default = (field_type != FIELD_TYPE_BLOB &&
-                            !(field->flags & NO_DEFAULT_VALUE_FLAG) &&
+  const bool has_default = (!(field->flags & NO_DEFAULT_VALUE_FLAG) &&
                             !(field->auto_flags & Field::NEXT_NUMBER));
 
   if (field->gcol_info) return false;
 
   def_value->length(0);
   if (has_default) {
-    if (has_now_default)
-    /*
-      We are using CURRENT_TIMESTAMP instead of NOW because it is the SQL
-      standard.
-    */
-    {
+    if (field->has_insert_default_general_value_expression()) {
+      def_value->append("(");
+      char buffer[128];
+      String s(buffer, sizeof(buffer), system_charset_info);
+      field->m_default_val_expr->print_expr(thd, &s);
+      def_value->append(s);
+      def_value->append(")");
+    } else if (field->has_insert_default_datetime_value_expression()) {
+      /*
+        We are using CURRENT_TIMESTAMP instead of NOW because it is the SQL
+        standard.
+      */
       def_value->append(STRING_WITH_LEN("CURRENT_TIMESTAMP"));
       if (field->decimals() > 0)
         def_value->append_parenthesized(field->decimals());
-    } else if (!field->is_null()) {  // Not null by default
+      // Not null by default and not a BLOB
+    } else if (!field->is_null() && field_type != FIELD_TYPE_BLOB) {
       char tmp[MAX_FIELD_WIDTH];
       String type(tmp, sizeof(tmp), field->charset());
       if (field_type == MYSQL_TYPE_BIT) {
@@ -1172,10 +1177,10 @@ static bool print_default_clause(Field *field, String *def_value, bool quoted) {
           def_value->append(def_val.ptr(), def_val.length());
       } else if (quoted)
         def_value->append(STRING_WITH_LEN("''"));
-    } else if (field->maybe_null() && quoted)
+    } else if (field->maybe_null() && quoted && field_type != FIELD_TYPE_BLOB)
       def_value->append(STRING_WITH_LEN("NULL"));  // Null as default
     else
-      return 0;
+      return false;
   }
   return has_default;
 }
@@ -1282,6 +1287,9 @@ int store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
   }
 
   for (ptr = table->field; (field = *ptr); ptr++) {
+    // Skip fields that are hidden from the user.
+    if (field->is_hidden_from_user()) continue;
+
     uint flags = field->flags;
     enum_field_types field_type = field->real_type();
 
@@ -1398,7 +1406,7 @@ int store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
         break;
     }
 
-    if (print_default_clause(field, &def_value, true)) {
+    if (print_default_clause(thd, field, &def_value, true)) {
       packet->append(STRING_WITH_LEN(" DEFAULT "));
       packet->append(def_value.ptr(), def_value.length(), system_charset_info);
     }
@@ -1452,9 +1460,24 @@ int store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
     for (uint j = 0; j < key_info->user_defined_key_parts; j++, key_part++) {
       if (j) packet->append(',');
 
-      if (key_part->field)
-        append_identifier(thd, packet, key_part->field->field_name,
-                          strlen(key_part->field->field_name));
+      if (key_part->field) {
+        // If this fields represents a functional index, print the expression
+        // instead of the column name.
+        if (key_part->field->is_field_for_functional_index()) {
+          DBUG_ASSERT(key_part->field->gcol_info);
+
+          StringBuffer<STRING_BUFFER_USUAL_SIZE> s;
+          s.set_charset(system_charset_info);
+          key_part->field->gcol_info->print_expr(thd, &s);
+          packet->append("(");
+          packet->append(s);
+          packet->append(")");
+        } else {
+          append_identifier(thd, packet, key_part->field->field_name,
+                            strlen(key_part->field->field_name));
+        }
+      }
+
       if (key_part->field &&
           (key_part->length !=
                table->field[key_part->fieldnr - 1]->key_length() &&
@@ -1659,6 +1682,11 @@ int store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
       packet->append(STRING_WITH_LEN(" CONNECTION="));
       append_unescaped(packet, share->connect_string.str,
                        share->connect_string.length);
+    }
+    if (share->has_secondary()) {
+      packet->append(" SECONDARY_ENGINE=");
+      packet->append(share->secondary_engine.str,
+                     share->secondary_engine.length);
     }
     append_directory(thd, packet, "DATA", create_info.data_file_name);
     append_directory(thd, packet, "INDEX", create_info.index_file_name);
@@ -2407,6 +2435,7 @@ void remove_status_vars(SHOW_VAR *list) {
   @param [out] charset  Character set of the value.
   @param [in,out] buff  Buffer to store the value.
   @param [out] length   Length of the value.
+  @param [out] is_null  Is variable value NULL or not.
 
   @returns              Pointer to the value buffer.
 */
@@ -2415,9 +2444,9 @@ const char *get_one_variable(THD *thd, const SHOW_VAR *variable,
                              enum_var_type value_type, SHOW_TYPE show_type,
                              System_status_var *status_var,
                              const CHARSET_INFO **charset, char *buff,
-                             size_t *length) {
+                             size_t *length, bool *is_null) {
   return get_one_variable_ext(thd, thd, variable, value_type, show_type,
-                              status_var, charset, buff, length);
+                              status_var, charset, buff, length, is_null);
 }
 
 /**
@@ -2432,6 +2461,8 @@ const char *get_one_variable(THD *thd, const SHOW_VAR *variable,
   @param [out] charset   Character set of the value.
   @param [in,out] buff   Buffer to store the value.
   @param [out] length    Length of the value.
+  @param [out] is_null   Is variable value NULL or not. This parameter is set
+                         only for variables of string type.
 
   @returns               Pointer to the value buffer.
 */
@@ -2441,7 +2472,7 @@ const char *get_one_variable_ext(THD *running_thd, THD *target_thd,
                                  enum_var_type value_type, SHOW_TYPE show_type,
                                  System_status_var *status_var,
                                  const CHARSET_INFO **charset, char *buff,
-                                 size_t *length) {
+                                 size_t *length, bool *is_null) {
   const char *value;
   const CHARSET_INFO *value_charset;
 
@@ -2543,8 +2574,12 @@ const char *get_one_variable_ext(THD *running_thd, THD *target_thd,
     }
 
     case SHOW_CHAR_PTR: {
-      if (!(pos = *(char **)value)) pos = "";
-
+      if (!(pos = *(char **)value)) {
+        pos = "";
+        if (is_null) *is_null = true;
+      } else {
+        if (is_null) *is_null = false;
+      }
       end = strend(pos);
       break;
     }
@@ -3838,7 +3873,7 @@ static int get_schema_tmp_table_columns_record(THD *thd, TABLE_LIST *tables,
         (const char *)pos, strlen((const char *)pos), cs);
 
     // COLUMN_DEFAULT
-    if (print_default_clause(field, &type, false)) {
+    if (print_default_clause(thd, field, &type, false)) {
       table->field[TMP_TABLE_COLUMNS_COLUMN_DEFAULT]->store(type.ptr(),
                                                             type.length(), cs);
       table->field[TMP_TABLE_COLUMNS_COLUMN_DEFAULT]->set_notnull();
@@ -4018,7 +4053,13 @@ static int get_schema_tmp_table_keys_record(THD *thd, TABLE_LIST *tables,
 
       // COLUMN_NAME
       str = (key_part->field ? key_part->field->field_name : "?unknown field?");
-      table->field[TMP_TABLE_KEYS_COLUMN_NAME]->store(str, strlen(str), cs);
+
+      if (key_part->field && key_part->field->is_hidden_from_user()) {
+        table->field[TMP_TABLE_KEYS_COLUMN_NAME]->set_null();
+      } else {
+        table->field[TMP_TABLE_KEYS_COLUMN_NAME]->store(str, strlen(str), cs);
+        table->field[TMP_TABLE_KEYS_COLUMN_NAME]->set_notnull();
+      }
 
       if (show_table->file) {
         // COLLATION
@@ -4103,6 +4144,17 @@ static int get_schema_tmp_table_keys_record(THD *thd, TABLE_LIST *tables,
       table->field[TMP_TABLE_KEYS_IS_VISIBLE]->store(is_visible,
                                                      strlen(is_visible), cs);
       table->field[TMP_TABLE_KEYS_IS_VISIBLE]->set_notnull();
+
+      // Expression for functional key parts
+      if (key_info->key_part->field->is_hidden_from_user()) {
+        Value_generator *gcol = key_info->key_part->field->gcol_info;
+
+        table->field[TMP_TABLE_KEYS_EXPRESSION]->store(
+            gcol->expr_str.str, gcol->expr_str.length, cs);
+        table->field[TMP_TABLE_KEYS_EXPRESSION]->set_notnull();
+      } else {
+        table->field[TMP_TABLE_KEYS_EXPRESSION]->set_null();
+      }
 
       if (schema_table_store_record(thd, table)) DBUG_RETURN(1);
     }
@@ -4809,6 +4861,8 @@ ST_FIELD_INFO tmp_table_keys_fields_info[] = {
     {"INDEX_COMMENT", INDEX_COMMENT_MAXLEN, MYSQL_TYPE_STRING, 0, 0,
      "Index_comment", OPEN_FRM_ONLY},
     {"IS_VISIBLE", 4, MYSQL_TYPE_STRING, 0, 1, "Visible", OPEN_FULL_TABLE},
+    {"EXPRESSION", MAX_FIELD_BLOBLENGTH, MYSQL_TYPE_STRING, 0, 1, "Expression",
+     OPEN_FULL_TABLE},
     {0, 0, MYSQL_TYPE_STRING, 0, 0, 0, SKIP_OPEN_TABLE}};
 
 ST_FIELD_INFO user_privileges_fields_info[] = {

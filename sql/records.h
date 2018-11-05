@@ -23,77 +23,69 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <sys/types.h>
+#include <memory>
 
-#include "my_base.h"
-#include "my_inttypes.h"
+#include "my_alloc.h"
+#include "sql/basic_row_iterators.h"
+#include "sql/ref_row_iterators.h"
+#include "sql/row_iterator.h"
+#include "sql/sorting_iterator.h"
 
-struct IO_CACHE;
 class QEP_TAB;
 class THD;
 struct TABLE;
 
-/**
-  A context for reading through a single table using a chosen access method:
-  index read, scan, etc, use of cache, etc.
-
-  Use by:
-@code
-  READ_RECORD read_record;
-  if (init_read_record(&read_record, ...))
-    return true;
-  while (read_record.read_record())
-  {
-    ...
-  }
-  end_read_record();
-@endcode
-*/
-
-class QUICK_SELECT_I;
-
 struct READ_RECORD {
-  typedef int (*Read_func)(READ_RECORD *);
-  typedef void (*Unlock_row_func)(QEP_TAB *);
-  typedef int (*Setup_func)(QEP_TAB *);
-  typedef void (*Cleanup_func)(READ_RECORD *);
+  RowIterator *operator->() { return iterator.get(); }
 
-  TABLE *table{nullptr};  /* Head-form */
-  TABLE **forms{nullptr}; /* head and ref forms */
-  Unlock_row_func unlock_row{nullptr};
-  Read_func read_record{nullptr};
-  Cleanup_func cleanup{nullptr};
-  THD *thd{nullptr};
-  QUICK_SELECT_I *quick{nullptr};
-  uint cache_records{0};
-  uint ref_length{0}, struct_length{0}, reclength{0}, rec_cache_size{0},
-      error_offset{0};
+  unique_ptr_destroy_only<RowIterator> iterator;
 
-  /**
-    Counting records when reading result from filesort().
-    Used when filesort leaves the result in the filesort buffer.
-   */
-  ha_rows unpack_counter{0};
+  // Holds one out of all RowIterator implementations (except the ones used
+  // for filesort, which are in sort_holder), so that it is possible to
+  // initialize a RowIterator without heap allocations. (The iterator
+  // member typically points to this union, and is responsible for
+  // running the right destructor.)
+  union IteratorHolder {
+    IteratorHolder() {}
+    ~IteratorHolder() {}
 
-  uchar *ref_pos{nullptr}; /* pointer to form->refpos */
-  uchar *record{nullptr};
-  uchar *rec_buf{nullptr}; /* to read field values  after filesort */
-  uchar *cache{nullptr}, *cache_pos{nullptr}, *cache_end{nullptr},
-      *read_positions{nullptr};
-  IO_CACHE *io_cache{nullptr};
-  bool print_error{false}, ignore_not_found_rows{false};
+    TableScanIterator table_scan;
+    IndexScanIterator<true> index_scan_reverse;
+    IndexScanIterator<false> index_scan;
+    IndexRangeScanIterator index_range_scan;
+    RefIterator<false> ref;
+    RefIterator<true> ref_reverse;
+    RefOrNullIterator ref_or_null;
+    EQRefIterator eq_ref;
+    ConstIterator const_table;
+    FullTextSearchIterator fts;
+    DynamicRangeIterator dynamic_range_scan;
+    PushedJoinRefIterator pushed_join_ref;
 
- public:
-  READ_RECORD() {}
+    // Used for unique, for now.
+    SortBufferIndirectIterator sort_buffer_indirect;
+    SortFileIndirectIterator sort_file_indirect;
+  } iterator_holder;
+
+  // Same, when we have sorting. If we sort, SortingIterator will be
+  // responsible for destroying the inner object, but the memory will still be
+  // held in iterator_holder, so we can't put this in the union.
+  char sort_holder[sizeof(SortingIterator)];
+
+  // Same technique as sort_holder, when we have an AlternativeIterator.
+  char alternative_holder[sizeof(AlternativeIterator)];
 };
 
-bool init_read_record(READ_RECORD *info, THD *thd, TABLE *table,
-                      QEP_TAB *qep_tab, bool print_errors,
-                      bool disable_rr_cache);
-bool init_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table,
-                          bool print_error, uint idx, bool reverse);
-void end_read_record(READ_RECORD *info);
+void setup_read_record(READ_RECORD *info, THD *thd, TABLE *table,
+                       QEP_TAB *qep_tab, bool disable_rr_cache,
+                       bool ignore_not_found_rows, ha_rows *examined_rows);
 
-void rr_unlock_row(QEP_TAB *tab);
-int rr_sequential(READ_RECORD *info);
+/** Calls setup_read_record(), then calls Init() on the resulting iterator. */
+bool init_read_record(READ_RECORD *info, THD *thd, TABLE *table,
+                      QEP_TAB *qep_tab, bool disable_rr_cache,
+                      bool ignore_not_found_rows);
+
+void setup_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table, uint idx,
+                           bool reverse, QEP_TAB *qep_tab);
 
 #endif /* SQL_RECORDS_H */

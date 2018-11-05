@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,7 @@
 #include <pc.hpp>
 #include <SimulatedBlock.hpp>
 #include <ndb_limits.h>
+#include <signaldata/RedoStateRep.hpp>
 #include <signaldata/StopReq.hpp>
 #include <signaldata/ResumeReq.hpp>
 #include <signaldata/DictTabInfo.hpp>
@@ -49,7 +50,7 @@
 */
 /*
 2.2 LOCAL SYMBOLS
------------------ 
+-----------------
 */
 #define ZNO_NDB_BLOCKS 6           /* ACC, DICT, DIH, LQH, TC, TUP         */
 
@@ -262,6 +263,8 @@ private:
   void execWAIT_GCP_REF(Signal* signal);
   void execWAIT_GCP_CONF(Signal* signal);
 
+  void execREDO_STATE_REP(Signal* signal);
+
   void execSTOP_REQ(Signal* signal);
   void execSTOP_CONF(Signal* signal);
   void execRESUME_REQ(Signal* signal);
@@ -288,7 +291,7 @@ private:
   CheckNodeGroups::Output checkNodeGroups(Signal*, const NdbNodeBitmask &);
   
   // Generated statement blocks
-  void systemErrorLab(Signal* signal, int line);
+  [[noreturn]] void systemErrorLab(Signal* signal, int line);
 
   void createHashMap(Signal*, Uint32 index);
   void createSystableLab(Signal* signal, unsigned index);
@@ -448,7 +451,11 @@ public:
     
     BlockNumber number() const { return cntr.number(); }
     EmulatedJamBuffer *jamBuffer() const { return cntr.jamBuffer(); }
-    void progError(int line, int cause, const char * extra, const char * check) {
+    [[noreturn]] void progError(int line,
+                                int cause,
+                                const char * extra,
+                                const char * check)
+    {
       cntr.progError(line, cause, extra, check);
     }
 
@@ -481,7 +488,10 @@ private:
     
     BlockNumber number() const { return cntr.number(); }
     EmulatedJamBuffer *jamBuffer() const { return cntr.jamBuffer(); }
-    void progError(int line, int cause, const char * extra, const char * check)
+    [[noreturn]] void progError(int line,
+                                int cause,
+                                const char * extra,
+                                const char * check)
     {
       cntr.progError(line, cause, extra, check);
     }
@@ -504,6 +514,7 @@ private:
   bool m_local_lcp_completed;
   bool m_full_local_lcp_started;
   bool m_distributed_lcp_started;
+  bool m_first_distributed_lcp_started;
   bool m_ready_to_cut_log_tail;
   bool m_wait_cut_undo_log_tail;
   bool m_copy_fragment_in_progress;
@@ -517,8 +528,13 @@ private:
 
   Uint32 m_lcp_id;
   Uint32 m_local_lcp_id;
+  RedoStateRep::RedoAlertState m_global_redo_alert_state;
+  RedoStateRep::RedoAlertState m_node_redo_alert_state;
+  RedoStateRep::RedoAlertState m_redo_alert_state[MAX_NDBMT_LQH_THREADS];
 
+  RedoStateRep::RedoAlertState get_node_redo_alert_state();
   Uint32 send_to_all_lqh(Signal*, Uint32 gsn, Uint32 sig_len);
+  Uint32 send_to_all_backup(Signal*, Uint32 gsn, Uint32 sig_len);
   void send_cut_log_tail(Signal*);
   void check_cut_log_tail_completed(Signal*);
   bool is_ready_to_cut_log_tail();

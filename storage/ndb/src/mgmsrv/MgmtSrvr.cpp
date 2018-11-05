@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -74,6 +74,9 @@
 #include <mgmapi_config_parameters.h>
 
 #include <SignalSender.hpp>
+
+#include <LogBuffer.hpp>
+#include <BufferedLogHandler.hpp>
 
 int g_errorInsert = 0;
 #define ERROR_INSERTED(x) (g_errorInsert == x)
@@ -251,7 +254,8 @@ MgmtSrvr::MgmtSrvr(const MgmtOpts& opts) :
   m_event_listner(this),
   m_master_node(0),
   _logLevelThread(NULL),
-  m_version_string(ndbGetOwnVersionString())
+  m_version_string(ndbGetOwnVersionString()),
+  m_async_cluster_logging(false)
 {
   DBUG_ENTER("MgmtSrvr::MgmtSrvr");
 
@@ -572,6 +576,7 @@ MgmtSrvr::start()
     DBUG_RETURN(false);
   }
 
+  set_async_cluster_logging(true);
   /* Start config manager */
   if (!m_config_manager->start())
   {
@@ -590,6 +595,11 @@ MgmtSrvr::start()
   DBUG_RETURN(true);
 }
 
+void
+MgmtSrvr::set_async_cluster_logging(bool async_cluster_logging)
+{
+  m_async_cluster_logging = true;
+}
 
 void
 MgmtSrvr::configure_eventlogger(const BaseString& logdestination) const
@@ -616,8 +626,30 @@ MgmtSrvr::configure_eventlogger(const BaseString& logdestination) const
     if(type == "FILE")
     {
       char *default_file_name= NdbConfig_ClusterLogFileName(_ownNodeId);
-      handler = new FileLogHandler(default_file_name);
+      FileLogHandler* file_handler = new FileLogHandler(default_file_name);
       free(default_file_name);
+
+      if(m_async_cluster_logging)
+      {
+        /**
+         *  Log to a buffered log handler, and pass the file log handler
+         *  as the destination log handler.
+         */
+        file_handler->parseParams(params);
+        if (!file_handler->is_open() &&
+            !file_handler->open())
+        {
+          ndbout_c("INTERNAL ERROR: Could not create log handler for: '%s'",
+                   logdestinations[i].c_str());
+          continue;
+        }
+
+        handler = new BufferedLogHandler(file_handler);
+      }
+      else
+      {
+        handler = file_handler;
+      }
     }
     else if(type == "CONSOLE")
     {
@@ -3646,12 +3678,28 @@ MgmtSrvr::alloc_node_id_req(NodeId free_node_id,
           refToNode(ref->masterRef) == 0xFFFF)
       {
         /*
-          The data nodes haven't decided who is the president (yet)
-          and thus can't allocate nodeids -> return "no contact"
+          This data node is not aware of who is the president (yet)
+          and thus cannot allocate nodeids.
+          If all data nodes are in the same state, then there's
+          effectively 'no contact'.
+          However, some other data nodes might be 'up' (node(s) in
+          NOT_STARTED state).
         */
-        g_eventLogger->info("Alloc node id %u failed, no new president yet",
-                            free_node_id);
-        return NO_CONTACT_WITH_DB_NODES;
+        bool next;
+        while((next = getNextNodeId(&nodeId, NDB_MGM_NODE_TYPE_NDB)) == true &&
+              getNodeInfo(nodeId).is_confirmed() == false)
+          ;
+        if (!next)
+        {
+          /* No viable node(s) */
+          g_eventLogger->info("Alloc node id %u failed, no new president yet",
+                              free_node_id);
+          return NO_CONTACT_WITH_DB_NODES;
+        }
+
+        /* Found another node, try to allocate a nodeid from it */
+        do_send = 1;
+        continue;
       }
 
       if (ref->errorCode == AllocNodeIdRef::NotMaster ||

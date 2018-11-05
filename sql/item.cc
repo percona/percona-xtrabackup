@@ -735,6 +735,18 @@ bool Item_ident::itemize(Parse_context *pc, Item **res) {
   return false;
 }
 
+bool Item::check_function_as_value_generator(uchar *args) {
+  Check_function_as_value_generator_parameters *func_arg =
+      pointer_cast<Check_function_as_value_generator_parameters *>(args);
+  Item_func *func_item = nullptr;
+  if (type() == Item::FUNC_ITEM &&
+      ((func_item = down_cast<Item_func *>(this)))) {
+    func_arg->banned_function_name = func_item->func_name();
+  }
+  func_arg->err_code = func_arg->get_unnamed_function_error_code();
+  return true;
+}
+
 void Item_ident::cleanup() {
   DBUG_ENTER("Item_ident::cleanup");
   Item::cleanup();
@@ -824,25 +836,42 @@ bool Item_field::find_item_in_field_list_processor(uchar *arg) {
   return false;
 }
 
-bool Item_field::check_gcol_func_processor(uchar *int_arg) {
-  int *args = reinterpret_cast<int *>(int_arg);
-  int fld_idx = args[0];
-  DBUG_ASSERT(field);
-  // Don't allow GC to refer itself or another GC that is defined after it.
-  if (field->gcol_info && field->field_index >= fld_idx) {
-    args[1] = ER_GENERATED_COLUMN_NON_PRIOR;
+bool Item_field::check_function_as_value_generator(uchar *args) {
+  Check_function_as_value_generator_parameters *func_args =
+      pointer_cast<Check_function_as_value_generator_parameters *>(args);
+  // We walk through the Item tree twice to check for disallowed functions;
+  // once before resolving is done and once after resolving is done. Before
+  // resolving is done, we don't have the field object available, and hence
+  // the nullptr check.
+  if (field == nullptr) {
+    return false;
+  }
+
+  int fld_idx = func_args->col_index;
+  bool is_gen_col = func_args->is_gen_col;
+  DBUG_ASSERT(fld_idx > -1);
+  /*
+    Don't allow the GC (or default expression) to refer itself or another GC
+    (or default expressions) that is defined after it.
+  */
+  if ((field->is_gcol() ||
+       field->has_insert_default_general_value_expression()) &&
+      field->field_index >= fld_idx) {
+    func_args->err_code = is_gen_col ? ER_GENERATED_COLUMN_NON_PRIOR
+                                     : ER_DEFAULT_VAL_GENERATED_NON_PRIOR;
     return true;
   }
   /*
-    If a generated column depends on an auto_increment column:
-    - calculation of the generated column's value is done before
-    write_row(),
+    If a generated column or default expression depends on an auto_increment
+    column:
+    - calculation of the generated value is done before write_row(),
     - but the auto_increment value is determined in write_row() by the
     engine.
     So this case is forbidden.
   */
   if (field->flags & AUTO_INCREMENT_FLAG) {
-    args[1] = ER_GENERATED_COLUMN_REF_AUTO_INC;
+    func_args->err_code = is_gen_col ? ER_GENERATED_COLUMN_REF_AUTO_INC
+                                     : ER_DEFAULT_VAL_GENERATED_REF_AUTO_INC;
     return true;
   }
 
@@ -2294,7 +2323,6 @@ bool Item_ident_for_show::fix_fields(THD *, Item **) {
 }
 
 /**********************************************/
-
 Item_field::Item_field(Field *f)
     : Item_ident(0, NullS, *f->table_name, f->field_name),
       orig_field(NULL),
@@ -2302,9 +2330,10 @@ Item_field::Item_field(Field *f)
       no_const_subst(false),
       have_privileges(0),
       any_privileges(false) {
-  if (f->table->pos_in_table_list != NULL)
+  if (f->table->pos_in_table_list != NULL) {
+    DBUG_ASSERT(f->table->pos_in_table_list->select_lex != nullptr);
     context = &(f->table->pos_in_table_list->select_lex->context);
-
+  }
   set_field(f);
   /*
     field_name and table_name should not point to garbage
@@ -5232,6 +5261,12 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
       return false;
     }
 
+    if (from_field->is_hidden_from_user()) {
+      // This field is hidden from users, so report it as "not found".
+      my_error(ER_BAD_FIELD_ERROR, MYF(0), from_field->field_name, thd->where);
+      return true;
+    }
+
     // Not view reference, not outer reference; need to set properties:
     set_field(from_field);
   } else if (thd->mark_used_columns != MARK_COLUMNS_NONE) {
@@ -5837,6 +5872,13 @@ type_conversion_status Item_null::save_in_field_inner(Field *field,
 
 type_conversion_status Item::save_in_field(Field *field, bool no_conversions) {
   DBUG_ENTER("Item::save_in_field");
+  // In case this is a hidden column used for a functional index, insert
+  // an error handler that catches any errors that tries to print out the
+  // name of the hidden column. It will instead print out the functional
+  // index name.
+  Functional_index_error_handler functional_index_error_handler(
+      field, (field->table ? field->table->in_use : current_thd));
+
   const type_conversion_status ret = save_in_field_inner(field, no_conversions);
 
   /*
@@ -6937,7 +6979,12 @@ Item *Item_field::update_value_transformer(uchar *select_arg) {
 }
 
 void Item_field::print(String *str, enum_query_type query_type) {
-  if (field && field->table->const_table &&
+  if (field && field->is_field_for_functional_index()) {
+    field->gcol_info->expr_item->print(str, query_type);
+    return;
+  }
+
+  if (field && field->table && field->table->const_table &&
       !(query_type & QT_NO_DATA_EXPANSION)) {
     char buff[MAX_FIELD_WIDTH];
     String tmp(buff, sizeof(buff), str->charset());
@@ -7724,22 +7771,27 @@ bool Item_default_value::fix_fields(THD *thd, Item **) {
     fixed = 1;
     return false;
   }
-  if (!arg->fixed && arg->fix_fields(thd, &arg)) goto error;
+  if (!arg->fixed && arg->fix_fields(thd, &arg)) return true;
 
   real_arg = arg->real_item();
   if (real_arg->type() != FIELD_ITEM) {
     my_error(ER_NO_DEFAULT_FOR_FIELD, MYF(0), arg->item_name.ptr());
-    goto error;
+    return true;
   }
 
   field_arg = (Item_field *)real_arg;
   if (field_arg->field->flags & NO_DEFAULT_VALUE_FLAG) {
     my_error(ER_NO_DEFAULT_FOR_FIELD, MYF(0), field_arg->field->field_name);
-    goto error;
+    return true;
+  }
+
+  if (field_arg->field->has_insert_default_general_value_expression()) {
+    my_error(ER_DEFAULT_AS_VAL_GENERATED, MYF(0));
+    return true;
   }
 
   def_field = field_arg->field->clone();
-  if (def_field == NULL) goto error;
+  if (def_field == nullptr) return true;
 
   def_field->move_field_offset(def_field->table->default_values_offset());
   set_field(def_field);
@@ -7748,9 +7800,6 @@ bool Item_default_value::fix_fields(THD *thd, Item **) {
   cached_table = table_ref;
 
   return false;
-
-error:
-  return true;
 }
 
 void Item_default_value::print(String *str, enum_query_type query_type) {
@@ -7766,7 +7815,8 @@ void Item_default_value::print(String *str, enum_query_type query_type) {
 type_conversion_status Item_default_value::save_in_field_inner(
     Field *field_arg, bool no_conversions) {
   if (!arg) {
-    if (field_arg->flags & NO_DEFAULT_VALUE_FLAG &&
+    if ((field_arg->flags & NO_DEFAULT_VALUE_FLAG &&
+         field_arg->m_default_val_expr == nullptr) &&
         field_arg->real_type() != MYSQL_TYPE_ENUM) {
       if (field_arg->reset()) {
         my_error(ER_CANT_CREATE_GEOMETRY_OBJECT, MYF(0));
@@ -7789,6 +7839,19 @@ type_conversion_status Item_default_value::save_in_field_inner(
       }
       return TYPE_ERR_BAD_VALUE;
     }
+
+    // If this DEFAULT's value is actually an expression, mark the columns
+    // it uses for reading. For inserts where the name is not explicitly
+    // mentioned, this is set in COPY_INFO::get_function_default_columns
+    if (field_arg->has_insert_default_general_value_expression()) {
+      for (uint j = 0; j < field_arg->table->s->fields; j++) {
+        if (bitmap_is_set(&field_arg->m_default_val_expr->base_columns_map,
+                          j)) {
+          bitmap_set_bit(field_arg->table->read_set, j);
+        }
+      }
+    }
+
     field_arg->set_default();
     return field_arg->validate_stored_val(current_thd);
   }
@@ -8993,6 +9056,7 @@ enum_field_types Item_type_holder::real_data_type(Item *item) {
   Find field type which can carry current Item_type_holder type and
   type of given Item.
 
+  @param thd     the thread/connection descriptor
   @param item    given item to join its parameters with this item ones
 
   @retval
@@ -9001,7 +9065,7 @@ enum_field_types Item_type_holder::real_data_type(Item *item) {
     false  OK
 */
 
-bool Item_type_holder::join_types(THD *, Item *item) {
+bool Item_type_holder::join_types(THD *thd, Item *item) {
   DBUG_ENTER("Item_type_holder::join_types");
   DBUG_PRINT("info:",
              ("was type %d len %d, dec %d name %s", data_type(), max_length,
@@ -9014,7 +9078,29 @@ bool Item_type_holder::join_types(THD *, Item *item) {
     correct conversion from existing item types to aggregated type.
   */
   Item *item_copy = Item_copy::create(this);
-  Item *args[] = {item_copy, item};
+
+  /*
+    Down the call stack when calling aggregate_string_properties(), we might
+    end up in THD::change_item_tree() if we for instance need to convert the
+    character set on one side of a union:
+
+      SELECT "foo" UNION SELECT CONVERT("foo" USING utf8mb3);
+    might be converted into:
+      SELECT CONVERT("foo" USING utf8mb3) UNION
+      SELECT CONVERT("foo" USING utf8mb3);
+
+    If we are in a prepared statement or a stored routine (any non-conventional
+    query that needs rollback of any item tree modifications), we neeed to
+    remember what Item we changed ("foo" in this case) and where that Item is
+    located (in the "args" array in this case) so we can roll back the changes
+    done to the Item tree when the execution is done. When we enter the rollback
+    code (THD::rollback_item_tree_changes()), the location of the Item need to
+    be accessible, so that is why the "args" array must be allocated on a
+    MEM_ROOT and not on the stack. Note that THD::change_item_tree() isn't
+    necessary, since the Item array we are modifying isn't a part of the
+    original Item tree.
+  */
+  Item **args = new (thd->mem_root) Item *[2]{item_copy, item};
   aggregate_type(make_array(&args[0], 2));
   // UNION with ENUM/SET fields requires type information from real_data_type()
   set_data_type(real_type_to_type(Field::field_type_merge(
@@ -9022,7 +9108,7 @@ bool Item_type_holder::join_types(THD *, Item *item) {
 
   Item_result merge_type = Field::result_merge_type(data_type());
   if (merge_type == STRING_RESULT) {
-    aggregate_string_properties("UNION", args, 2);
+    if (aggregate_string_properties("UNION", args, 2)) DBUG_RETURN(true);
     /*
       For geometry columns, we must also merge subtypes. If the
       subtypes are different, use GEOMETRY.

@@ -356,7 +356,7 @@ MACRO (MYSQL_CHECK_SSL)
     # If we are invoked with -DWITH_SSL=/path/to/custom/openssl
     # and we have found static libraries, then link them statically
     # into our executables and libraries.
-    # Adding IMPORTED_LOCATION allows MERGE_STATIC_LIBS
+    # Adding IMPORTED_LOCATION allows MERGE_CONVENIENCE_LIBRARIES
     # to merge imported libraries as well as our own libraries.
     SET(MY_CRYPTO_LIBRARY "${CRYPTO_LIBRARY}")
     SET(MY_OPENSSL_LIBRARY "${OPENSSL_LIBRARY}")
@@ -603,8 +603,12 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
         )
       MESSAGE(STATUS "SSL_LIBRARIES = ${SSL_LIBRARIES}")
 
-      # Do copying and dependency patching in a sub-process,
-      # so that we can skip it if already done.
+      # Do copying and dependency patching in a sub-process, so that we can
+      # skip it if already done.  The BYPRODUCTS argument appears to be
+      # necessary to allow Ninja (on MacOS) to resolve dependencies on the dll
+      # files directly, even if there is an explicit dependency on this target.
+      # The BYPRODUCTS option is ignored on non-Ninja generators except to mark
+      # byproducts GENERATED.
       ADD_CUSTOM_TARGET(copy_openssl_dlls ALL
         COMMAND ${CMAKE_COMMAND}
         -DCRYPTO_FULL_NAME="${CRYPTO_FULL_NAME}"
@@ -615,6 +619,10 @@ MACRO(MYSQL_CHECK_SSL_DLLS)
         -DOPENSSL_NAME="${OPENSSL_NAME}"
         -DOPENSSL_VERSION="${OPENSSL_VERSION}"
         -P ${CMAKE_SOURCE_DIR}/cmake/install_name_tool.cmake
+
+        BYPRODUCTS
+        "${CMAKE_BINARY_DIR}/library_output_directory/${CRYPTO_NAME}"
+        "${CMAKE_BINARY_DIR}/library_output_directory/${OPENSSL_NAME}"
 
         WORKING_DIRECTORY
         "${CMAKE_BINARY_DIR}/library_output_directory/${CMAKE_CFG_INTDIR}"

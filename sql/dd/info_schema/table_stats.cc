@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -69,7 +69,7 @@ inline bool can_persist_I_S_dynamic_statistics(THD *thd,
 
   return (thd->variables.information_schema_stats_expiry &&
           !thd->variables.transaction_read_only && !super_read_only &&
-          !read_only && !partition_name &&
+          !thd->in_sub_stmt && !read_only && !partition_name &&
           (strcmp(schema_name, "performance_schema") != 0));
 }
 
@@ -655,6 +655,7 @@ ulonglong Table_statistics::read_stat_by_open_table(
   LEX temp_lex, *lex;
   LEX *old_lex = thd->lex;
   thd->lex = lex = &temp_lex;
+  thd->lex->m_IS_table_stats.set_read_stats_by_open(true);
 
   lex_start(thd);
   lex->context_analysis_only = CONTEXT_ANALYSIS_ONLY_VIEW;

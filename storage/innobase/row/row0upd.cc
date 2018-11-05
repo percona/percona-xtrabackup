@@ -34,9 +34,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "dict0dict.h"
 #include "ha_prototypes.h"
-#include "my_compiler.h"
+
 #include "my_dbug.h"
-#include "my_inttypes.h"
+
 #include "rem0rec.h"
 #include "row0upd.h"
 #include "trx0undo.h"
@@ -129,6 +129,8 @@ that we MUST not hold any synchonization objects when performing the
 check.
 If you make a change in this module make sure that no codepath is
 introduced where a call to log_free_check() is bypassed. */
+
+static_assert(DATA_TRX_ID + 1 == DATA_ROLL_PTR, "DATA_TRX_ID invalid value!");
 
 /** Checks if an update vector changes some of the first ordering fields of an
  index record. This is only used in foreign key checks and we can assume
@@ -317,9 +319,6 @@ void row_upd_rec_sys_fields_in_recovery(
 
     field = const_cast<byte *>(rec_get_nth_field(rec, offsets, pos, &len));
     ut_ad(len == DATA_TRX_ID_LEN);
-#if DATA_TRX_ID + 1 != DATA_ROLL_PTR
-#error "DATA_TRX_ID + 1 != DATA_ROLL_PTR"
-#endif
     trx_write_trx_id(field, trx_id);
     trx_write_roll_ptr(field + DATA_TRX_ID_LEN, roll_ptr);
   }
@@ -1001,7 +1000,7 @@ static byte *row_upd_ext_fetch_func(dict_index_t *clust_index, const byte *data,
   byte *buf = static_cast<byte *>(mem_heap_alloc(heap, *len));
 
   *len = lob::btr_copy_externally_stored_field_prefix(
-      clust_index, buf, *len, page_size, data, is_sdi, local_len);
+      nullptr, clust_index, buf, *len, page_size, data, is_sdi, local_len);
 
   /* We should never update records containing a half-deleted BLOB. */
   ut_a(*len);
@@ -1534,9 +1533,9 @@ ibool row_upd_changes_ord_field_binary_func(
 
         const dict_index_t *clust_index =
             (ext == nullptr ? index->table->first_index() : ext->index);
-        dptr = lob::btr_copy_externally_stored_field(clust_index, &dlen,
-                                                     nullptr, dptr, page_size,
-                                                     flen, false, temp_heap);
+        dptr = lob::btr_copy_externally_stored_field(
+            nullptr, clust_index, &dlen, nullptr, dptr, page_size, flen, false,
+            temp_heap);
       } else {
         dptr = static_cast<uchar *>(dfield->data);
         dlen = dfield->len;
@@ -1571,7 +1570,7 @@ ibool row_upd_changes_ord_field_binary_func(
         const dict_index_t *clust_index =
             (ext == nullptr ? index->table->first_index() : ext->index);
         dptr = lob::btr_copy_externally_stored_field(
-            clust_index, &dlen, nullptr, dptr, page_size, flen,
+            nullptr, clust_index, &dlen, nullptr, dptr, page_size, flen,
             dict_table_is_sdi(index->table->id), temp_heap);
       } else {
         dptr = static_cast<uchar *>(upd_field->new_val.data);
@@ -1847,6 +1846,7 @@ static void row_upd_store_v_row(upd_node_t *node, const upd_t *update, THD *thd,
         }
 
         dfield_copy_data(dfield, upd_field->old_v_val);
+        dfield_dup(dfield, node->heap);
         break;
       }
 
@@ -1864,6 +1864,7 @@ static void row_upd_store_v_row(upd_node_t *node, const upd_t *update, THD *thd,
           } else {
             dfield_t *vfield = dtuple_get_nth_v_field(update->old_vrow, col_no);
             dfield_copy_data(dfield, vfield);
+            dfield_dup(dfield, node->heap);
           }
         } else {
           /* Need to compute, this happens when
