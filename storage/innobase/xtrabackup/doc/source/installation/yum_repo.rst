@@ -94,7 +94,7 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 
    .. code-block:: bash
 
-     yum install percona-xtrabackup
+     yum install percona-xtrabackup-80
 
 .. warning::
 

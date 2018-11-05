@@ -78,7 +78,7 @@ Installing |Percona XtraBackup| from Percona ``apt`` repository
 
    .. code-block:: bash
 
-     $ sudo apt-get install percona-xtrabackup
+     $ sudo apt-get install percona-xtrabackup-80
 
 Apt-Pinning the packages
 ------------------------
