@@ -2463,7 +2463,7 @@ static bool xtrabackup_write_info(const char *filepath) {
 
 /* ================= backup ================= */
 void xtrabackup_io_throttling(void) {
-  if (xtrabackup_throttle && (io_ticket--) < 0) {
+  if (xtrabackup_throttle && (--io_ticket) < 0) {
     os_event_reset(wait_throttle);
     os_event_wait(wait_throttle);
   }
