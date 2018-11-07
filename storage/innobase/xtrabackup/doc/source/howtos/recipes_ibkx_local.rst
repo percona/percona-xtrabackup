@@ -16,9 +16,11 @@ There is a lot of output, but you need to make sure you see this at the end of t
 Prepare the Backup
 ==================
 
-To prepare the backup use the :option:`--apply-log` option and specify the timestamped subdirectory of the backup. To speed up the apply-log process, we using the :option:`--use-memory` option is recommended: ::
+To prepare the backup use the ``--apply-log`` option and specify the timestamped subdirectory of the backup. To speed up the apply-log process, it is recommended to use the :option:`--use-memory` option:
 
-  $ innobackupex --use-memory=4G --apply-log /data/backups/2010-03-13_02-42-44/
+.. code-block:: bash
+
+   $ innobackupex --use-memory=4G --apply-log /data/backups/2010-03-13_02-42-44/
 
 You should check for a confirmation message: ::
 

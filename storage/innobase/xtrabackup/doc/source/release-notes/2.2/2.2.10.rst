@@ -14,8 +14,8 @@ Bugs Fixed
 
  Decrypting backup with the wrong key would make the backup unusable and
  unrecoverable. |innobackupex| doesn't automatically delete the :file:`*.qp`
- and :file:`.xbcrypt` files anymore, after :option:`innobackupex --decrypt`
- and :option:`innobackupex --decompress` are used. Bug fixed :bug:`1413044`.
+ and :file:`.xbcrypt` files anymore, after :option:`--decrypt`
+ and :option:`--decompress` are used. Bug fixed :bug:`1413044`.
 
  `XtraDB Changed Page Tracking
  <http://www.percona.com/doc/percona-server/5.6/management/changed_page_tracking.html>`_
@@ -29,11 +29,11 @@ Bugs Fixed
  Previously this was showing only as a warning. Bug fixed :bug:`1414221`.
 
  New status ``log-applied`` is introduced for backup prepared with
- :option:`innobackupex --redo-only` to avoid making the backup unusable by
- preparing full or incremental backup without :option:`--redo-only` and then
- applying next incremental on top of it. Incremental backup now can be applied
- only to backup in ``log-applied`` state, but not to ``full-prepared`` as it
- was earlier. Bug fixed :bug:`1436790`.
+ ``--redo-only`` to avoid making the backup unusable by preparing full or
+ incremental backup without ``--redo-only`` and then applying next incremental
+ on top of it. Incremental backup now can be applied only to backup in
+ ``log-applied`` state, but not to ``full-prepared`` as it was earlier. Bug
+ fixed :bug:`1436790`.
 
 All of Percona's software is open-source and free, all the details of the
 release can be found in the `2.2.10 milestone

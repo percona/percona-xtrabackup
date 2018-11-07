@@ -8,7 +8,6 @@
    :maxdepth: 1
    :hidden:
 
-   innobackupex/innobackupex_script
    xtrabackup_bin/xtrabackup_binary
    xbstream/xbstream
    xbcrypt/xbcrypt
@@ -16,11 +15,6 @@
    how_xtrabackup_works
 
 |Percona XtraBackup| is a set of the following tools:
-
-:doc:`innobackupex <innobackupex/innobackupex_script>`
-    |innobackupex| is the symlink for |xtrabackup|. |innobackupex| still
-    supports all features and syntax as 2.2 version did, but is now
-    deprecated and will be removed in next major release.
 
 :doc:`xtrabackup <xtrabackup_bin/xtrabackup_binary>`
     a compiled *C* binary that provides functionality to backup a whole |MySQL|

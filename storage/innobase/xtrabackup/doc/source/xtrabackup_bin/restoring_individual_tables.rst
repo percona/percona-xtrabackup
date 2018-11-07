@@ -30,7 +30,7 @@ Exporting the Table
 ===================
 
 This table should have been created in :term:`innodb_file_per_table` mode, so
-after taking a backup as usual with :option:`xtrabackup --backup`, the
+after taking a backup as usual with :option:`--backup`, the
 :term:`.ibd` file should exist in the target directory:
 
 .. code-block:: bash
@@ -39,7 +39,7 @@ after taking a backup as usual with :option:`xtrabackup --backup`, the
   /data/backups/mysql/test/export_test.ibd
 
 when you prepare the backup, add the extra parameter
-:option:`xtrabackup --export` to the command. Here is an example:
+:option:`--export` to the command. Here is an example:
 
 .. code-block:: bash
 

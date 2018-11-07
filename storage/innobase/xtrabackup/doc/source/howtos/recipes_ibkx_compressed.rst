@@ -5,69 +5,106 @@
 ============================
 
 
-In order to make a compressed backup you'll need to use :option:`--compress` option :: 
+In order to make a compressed backup, use :option:`--compress` option
+along with the :option:`--backup` and :option:`--target-dir` options:
 
-  $ innobackupex --compress /data/backup
+.. code-block:: bash
 
-If you want to speed up the compression you can use the parallel compression, which can be enabled with :option:`--compress-threads=#` option. Following example will use four threads for compression: :: 
+   $ xtrabackup --backup --compress --target-dir=/data/backup
 
-  $ innobackupex --compress --compress-threads=4 /data/backup
+If you want to speed up the compression you can use the parallel
+compression, which can be enabled with :option:`--compress-threads=#`
+option. The following example uses four threads for compression:
+
+.. code-block:: bash
+
+   $ xtrabackup --backup --compress --compress-threads=4 --target-dir=/data/backup
 
 Output should look like this :: 
 
-  ...
-  [01] Compressing ./imdb/comp_cast_type.ibd to /data/backup/2013-08-01_11-24-04/./imdb/comp_cast_type.ibd.qp
-  [01]        ...done
-  [01] Compressing ./imdb/aka_name.ibd to /data/backup/2013-08-01_11-24-04/./imdb/aka_name.ibd.qp
-  [01]        ...done
-  ...
-  130801 11:50:24  innobackupex: completed OK
+   ...
+   [01] Compressing ./imdb/comp_cast_type.ibd to /data/backup/2013-08-01_11-24-04/./imdb/comp_cast_type.ibd.qp
+   [01]        ...done
+   [01] Compressing ./imdb/aka_name.ibd to /data/backup/2013-08-01_11-24-04/./imdb/aka_name.ibd.qp
+   [01]        ...done
+   ...
+   130801 11:50:24  xtrabackup: completed OK
+
+.. _recipe.xtrabackup.backup.preparing:
 
 Preparing the backup
---------------------
+--------------------------------------------------------------------------------
 
-Before you can prepare the backup you'll need to uncompress all the files with `qpress <http://www.quicklz.com/>`_ (which is available from `Percona Software repositories <http://www.percona.com/doc/percona-xtrabackup/2.1/installation.html#using-percona-software-repositories>`_). You can use following one-liner to uncompress all the files:  :: 
+Before you can prepare the backup you'll need to uncompress all the files with
+`qpress <http://www.quicklz.com/>`_ (which is available from `Percona Software
+repositories
+<http://www.percona.com/doc/percona-xtrabackup/8.0/installation.html#using-percona-software-repositories>`_).
+You can use the following one-liner to uncompress all the files:
 
-  $ for bf in `find . -iname "*\.qp"`; do qpress -d $bf $(dirname $bf) && rm $bf; done
+.. code-block:: bash
 
-In |Percona XtraBackup| 2.1.4 new :option:`innobackupex --decompress` option has been implemented that can be used to decompress the backup: ::
+   $ for bf in `find . -iname "*\.qp"`; do qpress -d $bf $(dirname $bf) && rm $bf; done
 
-  $ innobackupex --decompress /data/backup/2013-08-01_11-24-04/
+Since |Percona XtraBackup| 2.1.4, you can decompress the backup by using the new
+:option:`--decompress` option:
+
+.. code-block:: bash
+
+   $ xtrabackup --decompress --target-dir=/data/backup/
 
 .. note:: 
 
-  In order to successfully use the :option:`innobackupex --decompress` option, qpress binary needs to installed and within the path.
-  :option:`innobackupex --parallel` can be used with :option:`innobackupex --decompress` option to decompress multiple files simultaneously. 
+   In order to use the :option:`--decompress` option, the :program:`qpress`
+   binary needs to be installed and within the path.  The :option:`--parallel`
+   option can be used with the :option:`--decompress` option to decompress
+   multiple files simultaneously.
 
-When the files are uncompressed you can prepare the backup with the :option:`--apply-log` option: :: 
+When the files are uncompressed you can prepare the backup with the :option:`--apply-log` option:
 
-  $ innobackupex --apply-log /data/backup/2013-08-01_11-24-04/
+.. code-block:: bash
+
+   $ xtrabackup --apply-log --target-dir=/data/backup/
 
 You should check for a confirmation message: ::
 
-  130802 02:51:02  innobackupex: completed OK!
+   130802 02:51:02  xtrabackup: completed OK!
 
-Now the files in :file:`/data/backups/2013-08-01_11-24-04` is ready to be used by the server.
+Now the files in :file:`/data/backup/` is ready to be used by the server.
 
 .. note::
 
-   |Percona XtraBackup| doesn't automatically remove the compressed files. In order to clean up the backup directory users should remove the :file:`*.qp` files.
+   |Percona XtraBackup| doesn't automatically remove the compressed files. In
+   order to clean up the backup directory users should remove the :file:`*.qp`
+   files.
+
+.. _recipe.xtrabackup.backup.restoring:
 
 Restoring the backup
---------------------
+--------------------------------------------------------------------------------
 
-Once the backup has been prepared you can use the :option:`--copy-back` to restore the backup. :: 
+Once the backup has been prepared you can use the :option:`--copy-back` to
+restore the backup.
 
-  $ innobackupex --copy-back /data/backups/2013-08-01_11-24-04/
+.. code-block:: bash
 
-This will copy the prepared data back to its original location as defined by the ``datadir`` in your :term:`my.cnf`.
+  $ xtrabackup --copy-back --target-dir=/data/backup/
 
-After the confirmation message::
+This will copy the prepared data back to its original location as defined by the
+``datadir`` variable in your :term:`my.cnf`.
 
-  130802 02:58:44  innobackupex: completed OK!
+After the confirmation message, you should check the file permissions after
+copying the data back.
 
-you should check the file permissions after copying the data back. You may need to adjust them with something like::
+.. code-block:: guess
 
-  $ chown -R mysql:mysql /var/lib/mysql
+   130802 02:58:44  xtrabackup: completed OK!
 
-Now the :term:`datadir` contains the restored data. You are ready to start the server.
+You may need to adjust the file permissions. The following example demonstrates
+how to do it recursively by using :program:`chown`:
+
+.. code-block:: bash
+
+   $ chown -R mysql:mysql /var/lib/mysql
+
+Now, your :term:`data directory <datadir>` contains the restored data. You are
+ready to start the server.

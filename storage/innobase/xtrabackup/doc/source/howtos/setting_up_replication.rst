@@ -123,7 +123,7 @@ STEP 3: Configure The Master's MySQL server
 
 Add the appropriate grant in order for slave to be able to connect to master: 
 
-.. code-block:: mysql
+.. code-block:: guess
 
    TheMaster|mysql> GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$slaveip'
     IDENTIFIED BY '$slavepass';
@@ -168,7 +168,7 @@ Look at the content of the file :file:`xtrabackup_binlog_info`, it will be somet
 
 Execute the ``CHANGE MASTER`` statement on a MySQL console and use the username and password you've set up in STEP 3: 
 
-.. code-block:: mysql
+.. code-block:: guess
 
    TheSlave|mysql> CHANGE MASTER TO 
                    MASTER_HOST='$masterip',	
@@ -179,7 +179,7 @@ Execute the ``CHANGE MASTER`` statement on a MySQL console and use the username 
 
 and start the slave:
 
-.. code-block:: mysql
+.. code-block:: guess
 
    TheSlave|mysql> START SLAVE;
 
@@ -188,7 +188,7 @@ STEP 6: Check
 
 You should check that everything went OK with:
 
-.. code-block:: mysql
+.. code-block:: guess
 
    TheSlave|mysql> SHOW SLAVE STATUS \G
             ...
@@ -228,7 +228,7 @@ Copy the directory from the ``TheSlave`` to ``TheNewSlave`` (**NOTE**: Make sure
 
 Add additional grant on the master:
 
-.. code-block:: mysql
+.. code-block:: guess
 
 	TheMaster|mysql> GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$newslaveip'
                      IDENTIFIED BY '$slavepass';
@@ -250,7 +250,7 @@ After setting ``server_id``, start :command:`mysqld`.
 
 Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_slave_info`, execute the statement for setting up the master and the log file for ``The NEW Slave``:
 
-.. code-block:: mysql
+.. code-block:: guess
 
    TheNEWSlave|mysql> CHANGE MASTER TO 
                       MASTER_HOST='$masterip',
@@ -261,7 +261,7 @@ Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_sla
 
 and start the slave:
 
-.. code-block:: mysql
+.. code-block:: guess
 
    TheNEWSlave|mysql> START SLAVE;
 

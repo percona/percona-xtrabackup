@@ -18,7 +18,7 @@ Bugs Fixed
 
   |innobackupex| error messages referencing the data directory have been extended to show the path of the data directory mentioned in the error message. Bug fixed :bug:`1089375` (*Hartmut Holzgraefe*).
 
-  Partitioned tables were not correctly handled by the :option:`--databases`, :option:`--include`, :option:`--tables-file` options of |innobackupex|, and by the :option:`--tables` and :option:`--tables-file` options of |Percona XtraBackup|. Fixed by removing the partition suffix (#P#...) before doing filtering. Bug fixed :bug:`711166` (*Sergei Glushchenko*).
+  Partitioned tables were not correctly handled by the :option:`--databases`, ``--include``, :option:`--tables-file` options of |innobackupex|, and by the :option:`--tables` and :option:`--tables-file` options of |Percona XtraBackup|. Fixed by removing the partition suffix (#P#...) before doing filtering. Bug fixed :bug:`711166` (*Sergei Glushchenko*).
 
   When built-in compression was used, |Percona XtraBackup| was doing unbuffered writes to the destination file or stream in very small chunks which in return caused inefficient I/O. Fixed by using a 1M buffer for output similar to the uncompressed backups. Bug fixed :bug:`1095249` (*Alexey Kopytov*).
 

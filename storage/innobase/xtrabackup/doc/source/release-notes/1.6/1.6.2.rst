@@ -19,14 +19,14 @@ New Options
 Changes
 -------
 
-  * As exporting tables should only be used with :term:`innodb_file_per_table` set in the server, the variable is checked by |xtrabackup| when using the :option:`--export <innobackupex --export>` option. It will fail before applying the archived log without producing a potentially unusable backup. Bug Fixed: `#758888 <https://bugs.launchpad.net/bugs/758888>`_ (Alexey Kopytov).
+  * As exporting tables should only be used with :term:`innodb_file_per_table` set in the server, the variable is checked by |xtrabackup| when using the :option:`--export` option. It will fail before applying the archived log without producing a potentially unusable backup. Bug Fixed: `#758888 <https://bugs.launchpad.net/bugs/758888>`_ (Alexey Kopytov).
 
 Bugs Fixed
 ----------
 
   * When creating an :term:`InnoDB` with its own tablespace after taking a full backup, if the log files have been flushed, taking an incremental backup based on that full one would not contain the added table. This has been corrected by explicitly creating the tablespace before applying the delta files in such cases. Bug Fixed: `#766607 <https://bugs.launchpad.net/bugs/766607>`_ (Alexey Kopytov).
 
-  * In some cases, |innobackupex| ignored the specified |xtrabackup| binary with the :option:`--ibbackup` option. Bug Fixed: `#729497 <https://bugs.launchpad.net/bugs/729497>`_ (Stewart Smith).
+  * In some cases, |innobackupex| ignored the specified |xtrabackup| binary with the ``--ibbackup`` option. Bug Fixed: `#729497 <https://bugs.launchpad.net/bugs/729497>`_ (Stewart Smith).
 
   * Minor file descriptors leaks in error cases were fixed. Bug Fixed: `#803718 <https://bugs.launchpad.net/bugs/803718>`_ (Stewart Smith).
 

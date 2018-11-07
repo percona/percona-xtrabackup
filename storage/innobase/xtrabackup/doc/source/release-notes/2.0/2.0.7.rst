@@ -13,11 +13,11 @@ New Features
 
  |Percona XtraBackup| has implemented support for the `InnoDB Buffer Pool Preloading <http://dev.mysql.com/doc/refman/5.6/en/innodb-performance.html#innodb-preload-buffer-pool>`_ introduced in |MySQL| 5.6. Starting with |MySQL| 5.6 buffer pool dumps can be produced and loaded for faster server warmup after the start. This feature is similar to the `Dump/Restore of the Buffer Pool <http://www.percona.com/doc/percona-server/5.5/management/innodb_lru_dump_restore.html>`_ in |Percona Server|. |MySQL| 5.6 buffer pool dump is copied into backup directory during the backup stage. During the copy back stage (restore) it is copied back to data directory. After the backup is restored buffer pool dump can be loaded by the server either automatically on startup or on demand.
 
- Time interval between checks done by log copying thread is now configurable by :option:`innobackupex --log-copy-interval`. Making the interval configurable allows to reduce the time between checks which can prevent |Percona XtraBackup| failures that are caused by the log records in the transactional log being overwritten before they are copied by the log copying thread.
+ Time interval between checks done by log copying thread is now configurable by :option:`--log-copy-interval`. Making the interval configurable allows to reduce the time between checks which can prevent |Percona XtraBackup| failures that are caused by the log records in the transactional log being overwritten before they are copied by the log copying thread.
  
  |Percona XtraBackup| now stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona Server| 5.6 with the ``GTID`` mode enabled. Example of how this information can be used to create/restore a slave can be found in `this blogpost <http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
 
- |Percona XtraBackup| option :option:`xtrabackup --export` now supports transportable tablespaces introduced in |MySQL| 5.6. This option can be used to produce 5.6-style metadata files, that can be imported by ``ALTER TABLE IMPORT TABLESPACE`` on |MySQL| and |Percona Server| 5.6 as described in :ref:`export_import_tables` guide.
+ |Percona XtraBackup| option :option:`--export` now supports transportable tablespaces introduced in |MySQL| 5.6. This option can be used to produce 5.6-style metadata files, that can be imported by ``ALTER TABLE IMPORT TABLESPACE`` on |MySQL| and |Percona Server| 5.6 as described in :ref:`export_import_tables` guide.
 
 Bugs Fixed
 ==========
@@ -54,7 +54,7 @@ Bugs Fixed
 
  When building from source ``innodb56`` target didn't have an option to disable DTrace like ``innodb55`` has. Fixed by adding ``-DENABLE_DTRACE=OFF`` build option for ``innodb56`` as well. Bug fixed :bug:`1169509`.
 
- |innobackupex| wasn't handling the :option:`innodb_data_file_path` option which could cause backup to fail. Bug fixed :bug:`1169726`.
+ |innobackupex| wasn't handling the ``innodb_data_file_path`` option which could cause backup to fail. Bug fixed :bug:`1169726`.
 
  For the *Debian* and the *Linux* binaries, the :option:`--version` message which should include the revision was showing "undefined". Bug fixed :bug:`1171721`.
 

@@ -9,7 +9,7 @@ This release is purely composed of bug fixes and is the current stable release o
 Bugs Fixed
 ----------
 
-  ``xtrabackup_binary`` was not included in tar archive when streaming, instead it was written to the current directory. This could lead to a wrong xtrabackup binary being used when preparing backups created with the :option:`--stream` or :option:`--remote-host` options. Bugs fixed :bug:`723318` and :bug:`787988` (*Stewart Smith*).
+  ``xtrabackup_binary`` was not included in tar archive when streaming, instead it was written to the current directory. This could lead to a wrong xtrabackup binary being used when preparing backups created with the :option:`--stream` or ``--remote-host`` options. Bugs fixed :bug:`723318` and :bug:`787988` (*Stewart Smith*).
 
   ``FLUSH TABLES WITH READ LOCK`` was not used when creating incremental backups, which could lead to inconsistent backups when updates to non-InnoDB tables or DDL statements on any tables occurred during the backup process. Bug fixed :bug:`771981` (*Alexey Kopytov*).
 
@@ -19,7 +19,7 @@ Bugs Fixed
 
   Fixed spurious test suite failures with grep 2.10. Bug fixed :bug:`996483` (*Alexey Kopytov*).
 
-  When |innobackupex| was running with :option:`--apply-log`, it was reading configuration from the server configuration file instead of :file:`backup-my.cnf` in backup directory. Bug fixed :bug:`996493` (*Sergei Glushchenko*).
+  When |innobackupex| was running with ``--apply-log``, it was reading configuration from the server configuration file instead of :file:`backup-my.cnf` in backup directory. Bug fixed :bug:`996493` (*Sergei Glushchenko*).
 
   |innobackupex| could copy files to a wrong directory when merging an incremental backup to a full one. Bug fixed :bug:`1002688` (*Alexey Kopytov*).
 

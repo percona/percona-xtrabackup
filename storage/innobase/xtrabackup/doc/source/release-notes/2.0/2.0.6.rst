@@ -18,13 +18,13 @@ Bugs Fixed
 
  Fixed the issue that caused databases corresponding to inaccessible :term:`datadir` subdirectories to be ignored by |Percona XtraBackup| without warning or error messages. This was happening because |InnoDB| code silently ignored :term:`datadir` subdirectories it could not open. Bug fixed :bug:`664986` (*Alexey Kopytov*).
 
- Under some circumstances |Percona XtraBackup| could fail to copy a tablespace with a high :option:`--parallel` option value and a low :option:`innodb_open_files` value. Bug fixed :bug:`870119` (*Alexey Kopytov*).
+ Under some circumstances |Percona XtraBackup| could fail to copy a tablespace with a high :option:`--parallel` option value and a low ``innodb_open_files`` value. Bug fixed :bug:`870119` (*Alexey Kopytov*).
 
  Fix for the bug :bug:`711166` introduced a regression that caused individual partition backups to fail when used with :option:`--include` option in |innobackupex| or the :option:`--tables` option in xtrabackup. Bug fixed :bug:`1130627` (*Alexey Kopytov*).
 
- |innobackupex| didn't add the :option:`file-per-table` setting for table-independent backups. Fixed by making |Percona XtraBackup| auto-enable :option:`innodb_file_per_table` when the :option:`--export` option is used. Bug fixed :bug:`930062` (*Alexey Kopytov*).
+ |innobackupex| didn't add the ``file-per-table`` setting for table-independent backups. Fixed by making |Percona XtraBackup| auto-enable :option:`innodb_file_per_table` when the :option:`--export` option is used. Bug fixed :bug:`930062` (*Alexey Kopytov*).
 
- Under some circumstances |Percona XtraBackup| could fail on a backup prepare with :option:`innodb_flush_method=O_DIRECT`. Bug fixed :bug:`1055547` (*Alexey Kopytov*).
+ Under some circumstances |Percona XtraBackup| could fail on a backup prepare with ``innodb_flush_method=O_DIRECT``. Bug fixed :bug:`1055547` (*Alexey Kopytov*).
 
  |innobackupex| did not pass the :option:`--tmpdir` option to the xtrabackup binary resulting in the server's ``tmpdir`` always being used for temporary files. Bug fixed :bug:`1085099` (*Alexey Kopytov*).
 
@@ -32,7 +32,7 @@ Bugs Fixed
 
  Fixed the missing ``rpm`` dependency for Perl ``Time::HiRes`` package that caused |innobackupex| to fail on minimal CentOS installations. Bug fixed :bug:`1121573` (*Alexey Bychko*).
 
- |innobackupex| would fail when :option:`--no-lock` and :option:`--rsync` were used in conjunction. Bug fixed :bug:`1123335` (*Sergei Glushchenko*).
+ |innobackupex| would fail when ``--no-lock`` and ``--rsync`` were used in conjunction. Bug fixed :bug:`1123335` (*Sergei Glushchenko*).
 
  Fix for the bug :bug:`1055989` introduced a regression that caused :file:`xtrabackup_pid` file to remain in the temporary dir after execution. Bug fixed :bug:`1114955` (*Alexey Kopytov*).
 

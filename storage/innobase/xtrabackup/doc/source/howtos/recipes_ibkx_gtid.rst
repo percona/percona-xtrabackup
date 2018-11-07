@@ -54,7 +54,7 @@ STEP 4: Configure and start replication
 
 Following command will tell the new slave what was the last ``GTID`` executed on the master when backup was taken.
 
-.. code-block:: mysql
+.. code-block:: guess
 
    NewSlave > SET GLOBAL gtid_purged="c777888a-b6df-11e2-a604-080027635ef5:1-4";
    NewSlave > CHANGE MASTER TO 
@@ -68,7 +68,7 @@ STEP 5: Check the replication status
 
 Following command will show the slave status:
 
-.. code-block:: mysql
+.. code-block:: guess
 
    NewSlave > show slave status\G
             [..]

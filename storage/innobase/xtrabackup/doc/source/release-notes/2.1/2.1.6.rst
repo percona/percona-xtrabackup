@@ -11,16 +11,16 @@ New Features
 
  |Percona XtraBackup| now supports logs created with the new log block checksums option `innodb_log_checksum_algorithm <http://www.percona.com/doc/percona-server/5.6/scalability/innodb_io.html#innodb_log_checksum_algorithm>`_ in |Percona Server| 5.6
 
- New :option:`innobackupex --force-non-empty-directories` option has been implemented. When specified, it makes :option:`innobackupex --copy-back` option or :option:`innobackupex --move-back` option transfer files to non-empty directories. No existing files will be overwritten. If :option:`--copy-back` or :option:`--move-back` has to copy a file from the backup directory which already exists in the destination directory, it will still fail with an error.
+ A new :option:`--force-non-empty-directories` option has been implemented. When specified, it makes :option:`--copy-back` option or :option:`--move-back` option transfer files to non-empty directories. No existing files will be overwritten. If :option:`--copy-back` or :option:`--move-back` has to copy a file from the backup directory which already exists in the destination directory, it will still fail with an error.
 
 Bugs Fixed
 ----------
 
- :option:`innobackupex --copy-back` would fail if :option:`innodb_data_home_dir` is empty. Bug fixed :bug:`1049291`. 
+ :option:`--copy-back` would fail if :option:`innodb_data_home_dir` is empty. Bug fixed :bug:`1049291`. 
 
  A fixed initialization vector (constant string) was used while encrypting the data. This opened the encrypted stream/data to plaintext attacks among others. Bug fixed :bug:`1185343`.
 
- :option:`innobackupex --version-check` is now on by default. Bug fixed :bug:`1227988`.
+ ``--version-check`` is now on by default. Bug fixed :bug:`1227988`.
 
  :file:`xtrabackup_slave_info` didn't contain any ``GTID`` information, which could cause ``master_auto_position`` not to work properly. Bug fixed :bug:`1239670`.
 
@@ -30,7 +30,7 @@ Bugs Fixed
  
  Since Version Check is enabled by default in |Percona XtraBackup| 2.1.6, new :option:`innobackupex --no-version-check` option has been introduced to disable it. Bug fixed :bug:`1248900`.
 
- |Percona XtraBackup| now supports absolute paths in :option:`innodb_data_file_path` variable. Bug fixed :bug:`382742`.
+ |Percona XtraBackup| now supports absolute paths in ``innodb_data_file_path`` variable. Bug fixed :bug:`382742`.
 
  |innobackupex| wasn't able to perform backups to the ``NFS`` mount in some ``NFS`` configurations, because it was trying to preserve file ownership. Bug fixed :bug:`943750`.
 

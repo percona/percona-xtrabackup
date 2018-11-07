@@ -24,7 +24,7 @@
    innodb_expand_import
      This feature of |Percona Server| implements the ability to import
      arbitrary :term:`.ibd` files exported using the |Percona XtraBackup|
-     :option:`xtrabackup --export` option.
+     :option:`--export` option.
 
      See the `the full documentation
      <http://www.percona.com/doc/percona-server/5.5/management/innodb_expand_import.html>`_
@@ -132,7 +132,7 @@
 
    .exp
      Files with the ``.exp`` extension are created by |Percona XtraBackup| per
-     each |InnoDB| tablespace when the :option:`xtrabackup --export` option is
+     each |InnoDB| tablespace when the :option:`--export` option is
      used on prepare. These files can be used to import those tablespaces on
      |Percona Server| 5.5 or lower versions, see :doc:`restoring individual
      tables <xtrabackup_bin/restoring_individual_tables>`".

@@ -10,8 +10,8 @@ Creating a backup
 =================
 
 To create a backup, run :program:`xtrabackup` with the
-:option:`xtrabackup --backup` option. You also need to specify a
-:option:`xtrabackup --target-dir` option, which is where the backup will be
+:option:`--backup` option. You also need to specify a
+:option:`--target-dir` option, which is where the backup will be
 stored, if the |InnoDB| data or log files aren't stored in the same directory,
 you might need to specify the location of those, too. If the target directory
 does not exist, |xtrabackup| creates it. If the directory does exist and is
@@ -96,13 +96,13 @@ The next step is getting your backup ready to be restored.
 Preparing a backup
 ==================
 
-After you made a backup with the :option:`xtrabackup --backup` option, you'll
+After you made a backup with the :option:`--backup` option, you'll
 first need to prepare it in order to restore it. Data files are not
 point-in-time consistent until they've been prepared, because they were copied
 at different times as the program ran, and they might have been changed while
 this was happening. If you try to start InnoDB with these data files, it will
 detect corruption and crash itself to prevent you from running on damaged data.
-The :option:`xtrabackup --prepare` step makes the files perfectly consistent at
+The :option:`--prepare` step makes the files perfectly consistent at
 a single instant in time, so you can run |InnoDB| on them.
 
 You can run the prepare operation on any machine; it does not need to be on the
@@ -131,7 +131,7 @@ backups.
 The prepare step uses this "embedded InnoDB" to perform crash recovery on the
 copied data files, using the copied log file. The ``prepare`` step is very
 simple to use: you simply run |xtrabackup| with the
-:option:`xtrabackup --prepare` option and tell it which directory to prepare,
+:option:`--prepare` option and tell it which directory to prepare,
 for example, to prepare the previously taken backup run:
 
 .. code-block:: bash
@@ -162,7 +162,7 @@ Backup validity is not guaranteed if prepare process was interrupted.
 .. note::
 
   If you intend the backup to be the basis for further incremental backups, you
-  should use the :option:`xtrabackup --apply-log-only` option when preparing
+  should use the :option:`--apply-log-only` option when preparing
   the backup,  or you will not be able to apply incremental backups to it. See
   the documentation on preparing :ref:`incremental backups
   <incremental_backup>` for more details.
@@ -177,7 +177,7 @@ Restoring a Backup
   Backup needs to be :ref:`prepared <preparing_a_backup>` before it can be
   restored.
 
-For convenience |xtrabackup| binary has an :option:`xtrabackup --copy-back`
+For convenience |xtrabackup| binary has an :option:`--copy-back`
 option, which will copy the backup to the server's :term:`datadir`:
 
 .. code-block:: bash
@@ -185,7 +185,7 @@ option, which will copy the backup to the server's :term:`datadir`:
   $ xtrabackup --copy-back --target-dir=/data/backups/
 
 If you don't want to save your backup, you can use the
-:option:`xtrabackup --move-back` option which will move the backed up data to
+:option:`--move-back` option which will move the backed up data to
 the :term:`datadir`.
 
 If you don't want to use any of the above options, you can additionally use

@@ -26,8 +26,8 @@ Version specific information
  * 2.3.1-beta1 - Implemented support different :ref:`authentication options
    <swift_auth>` for Swift
  * 2.3.1-beta1 - Implemented support for partial download of the cloud backups
- * 2.3.1-beta1 - :option:`--swift-url` option has been renamed to
-   :option:`--swift-auth-url`
+ * 2.3.1-beta1 - ``--swift-url`` option has been renamed to
+   ``--swift-auth-url``
 
 Usage
 -----

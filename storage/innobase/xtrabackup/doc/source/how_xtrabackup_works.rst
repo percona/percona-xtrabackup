@@ -91,7 +91,7 @@ Restoring a backup
 ------------------
 
 To restore a backup with |xtrabackup| you can use the
-:option:`xtrabackup --copy-back` or :option:`xtrabackup --move-back` options.
+:option:`--copy-back` or :option:`--move-back` options.
 
 |xtrabackup| will read from the :file:`my.cnf` the variables :term:`datadir`,
 :term:`innodb_data_home_dir`, :term:`innodb_data_file_path`,
@@ -105,8 +105,8 @@ preserve file's attributes when copying them, you may have to change the files'
 ownership to ``mysql`` before starting the database server, as they will be
 owned by the user who created the backup.
 
-Alternatively, the :option:`xtrabackup --move-back` option may be used to
-restore a backup. This option is similar to :option:`xtrabackup --copy-back`
+Alternatively, the :option:`--move-back` option may be used to
+restore a backup. This option is similar to :option:`--copy-back`
 with the only difference that instead of copying files it moves them to their
 target locations. As this option removes backup files, it must be used with
 caution. It is useful in cases when there is not enough free disk space to hold

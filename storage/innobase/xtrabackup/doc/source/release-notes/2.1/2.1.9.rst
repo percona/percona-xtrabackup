@@ -18,7 +18,7 @@ Bugs Fixed
 
  |Percona XtraBackup| couldn't be built with *Bison* 3.0. Bug fixed :bug:`1262439`.
 
- The xtrabackup binaries now recognize a new :file:`my.cnf` option, :option:`open_files_limit`. The effect is the same as for the server: it changes the maximum number of file descriptors available to the xtrabackup process. The actual limit depends on the platform and ``ulimit`` settings. Bug fixed :bug:`1183793`.
+ The xtrabackup binaries now recognize a new :file:`my.cnf` option, ``open_files_limit``. The effect is the same as for the server: it changes the maximum number of file descriptors available to the xtrabackup process. The actual limit depends on the platform and ``ulimit`` settings. Bug fixed :bug:`1183793`.
 
  If a remote |InnoDB| tablespace got CREATEd or ALTERed during the backup, an attempt to prepare such a backup later would lead to |Percona XtraBackup| crash. Bug fixed :bug:`1291299`.
 

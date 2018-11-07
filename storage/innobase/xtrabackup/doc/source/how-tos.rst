@@ -14,7 +14,7 @@ Recipes for |innobackupex|
    howtos/recipes_ibkx_stream
    howtos/recipes_ibkx_inc
    howtos/recipes_ibkx_compressed
-   howtos/recipes_ibkx_partition
+..   howtos/recipes_ibkx_partition
 
 
 .. _recipes-xbk:
@@ -28,7 +28,7 @@ Recipes for |xtrabackup|
    howtos/recipes_xbk_full
    howtos/recipes_xbk_inc
    howtos/recipes_xbk_restore
-
+ 
 .. _howtos:
 
 How-Tos

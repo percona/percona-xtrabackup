@@ -32,17 +32,17 @@ Bugs Fixed
 
  **xbcrypt** could sometimes fail when reading encrypted stream from a pipe or network. Bug fixed :bug:`1190610`.
 
- |innobackupex| could not prepare the backup if there was no :file:`xtrabackup_binary` file in the backup directory and the xtrabackup binary was not specified explicitly with :option:`innobackupex --ibbackup` option. Bug fixed :bug:`1199190`.
+ |innobackupex| could not prepare the backup if there was no :file:`xtrabackup_binary` file in the backup directory and the xtrabackup binary was not specified explicitly with ``--ibbackup`` option. Bug fixed :bug:`1199190`.
 
  Debug builds would fail due to compiler errors on *Ubuntu* Quantal/Raring builds. Fixed compiler warnings by backporting the corresponding changes from upstream. Bug fixed :bug:`1192454`.
 
- |innobackupex| would terminate with an error if :option:`innobackupex --safe-slave-backup` option was used for backing up the master server. Bug fixed :bug:`1190716`.
+ |innobackupex| would terminate with an error if :option:`--safe-slave-backup` option was used for backing up the master server. Bug fixed :bug:`1190716`.
 
  Under some circumstances |Percona XtraBackup| could fail on a backup prepare with ``innodb_flush_method=O_DIRECT`` when ``XFS`` filesystem was being used. Bug fixed :bug:`1190779`.
 
- |Percona XtraBackup| didn't recognize checkpoint ``#0`` as a valid checkpoint on :option:`xtrabackup --prepare` which would cause an error. Bug fixed :bug:`1196475`.
+ |Percona XtraBackup| didn't recognize checkpoint ``#0`` as a valid checkpoint on :option:`--prepare` which would cause an error. Bug fixed :bug:`1196475`.
  
- |Percona XtraBackup| didn't recognize the ``O_DIRECT_NO_FSYNC`` value for :option:`innodb_flush_method` which was introduced in |MySQL| 5.6.7. Fixed by adding the value to the list of supported values for :option:`innodb_flush_method` in ``xtrabackup_56``. Bug fixed :bug:`1206363`. 
+ |Percona XtraBackup| didn't recognize the ``O_DIRECT_NO_FSYNC`` value for ``innodb_flush_method`` which was introduced in |MySQL| 5.6.7. Fixed by adding the value to the list of supported values for ``innodb_flush_method`` in ``xtrabackup_56``. Bug fixed :bug:`1206363`. 
 
  |innobackupex| would terminate if :option:`innobackupex --galera-info` option was specified when backing up non-galera server. Bug fixed :bug:`1192347`.
 

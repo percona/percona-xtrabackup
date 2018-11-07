@@ -3,18 +3,19 @@ Frequently Asked Questions
 ==========================
 
 Do I need an InnoDB Hot Backup license to use Percona XtraBackup?
-=================================================================
+================================================================================
 
 No. Although ``innobackupex`` is derived from the same GPL and open-source
 wrapper script that InnoDB Hot Backup uses, it does not execute ``ibbackup``,
-and the ``xtrabackup`` binary does not execute or link to ``ibbackup``. You
-can use |Percona XtraBackup| without any license; it is completely separate
-from InnoDB Hot Backup.
+and the ``xtrabackup`` binary does not execute or link to ``ibbackup``. You can
+use |Percona XtraBackup| without any license; it is completely separate from
+InnoDB Hot Backup.
 
-What's the difference between :program:`innobackupex` and
-=========================================================
-:program:`innobackup`?
-======================
+What's the difference between :program:`innobackupex` and :program:`innobackup`?
+================================================================================
+
+:Availability: :program:`innobackupex` has been removed from |Percona
+               XtraBackup| |version| in favor of :program:`xtrabackup`.
 
 Because :program:`innobackupex` is a patched version of *Oracle* ’s
 :program:`innobackup` script (now renamed to :program:`mysqlbackup`), it is
@@ -32,12 +33,10 @@ differences are:
 
   * and defaults to |xtrabackup| as binary to use in the :option:`--ibbackup`.
 
-See :doc:`innobackupex/innobackupex_option_reference` for more details.
+.. See :doc:`innobackupex/innobackupex_option_reference` for more details.
 
-Are you aware of any web-based backup management tools (commercial or not)
-==========================================================================
-built around |Percona XtraBackup|?
-==================================
+Are you aware of any web-based backup management tools (commercial or not) built around |Percona XtraBackup|?
+========================================================================================================================
 
 `Zmanda Recovery Manager <http://www.zmanda.com/zrm-mysql-enterprise.html>`_ is
 a commercial tool that uses |Percona XtraBackup| for Non-Blocking Backups:
@@ -57,10 +56,9 @@ In most of the cases this is due to not having install the required libraries
 libraries and recompiling |xtrabackup| will solve the issue. See
 :doc:`installation/compiling_xtrabackup` for instructions on the procedure.
 
-How xtrabackup handles the ibdata/ib_log files on restore if they aren't in
-===========================================================================
-mysql datadir?
-==============
+How xtrabackup handles the ibdata/ib_log files on restore if they aren't in mysql datadir?
+====================================================================================================
+
 
 In case the :file:`ibdata` and :file:`ib_log` files are located in different
 directories outside of the datadir, you will have to put them in their proper
@@ -103,3 +101,4 @@ Percona XtraBackup can use metadata locks on tables while they are copied:
   and until the backup is completed
   using the :option:`--lock-ddl-per-table` option.
 
+.. |version| replace:: '8.0'

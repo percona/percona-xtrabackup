@@ -18,9 +18,9 @@ Bugs Fixed
 
   * |Percona XtraBackup| failed when ``innodb_flush_method`` in the server configuration file was set to ``ALL_O_DIRECT``. Bug Fixed: :bug:`759225` (*Alexey Kopytov*).
 
-  * Due to a regression introduced in |Percona XtraBackup| 1.6.2, :command:`innobackupex --copy-back` did not work if the :command:`xtrabackup` binary was not specified explicitly with the :option:`--ibbackup` option. Bug Fixed: :bug:`817132` (*Alexey Kopytov*).
+  * Due to a regression introduced in |Percona XtraBackup| 1.6.2, :command:`innobackupex --copy-back` did not work if the :command:`xtrabackup` binary was not specified explicitly with the ``--ibbackup`` option. Bug Fixed: :bug:`817132` (*Alexey Kopytov*).
 
-  * The :option:`--slave-info` option now works correctly with :option:`--safe-slave-backup` when either :option:`--no-lock` or :option:`--incremental` is also specified. Bug Fixed: :bug:`834657` (*Alexey Kopytov*).
+  * The :option:`--slave-info` option now works correctly with :option:`--safe-slave-backup` when either ``--no-lock`` or :option:``--incremental`` is also specified. Bug Fixed: :bug:`834657` (*Alexey Kopytov*).
 
   * :program:`tar4ibd` could fail with an error when processing doublewrite pages. Bug Fixed: :bug:`810269` (*Alexey Kopytov*).
 

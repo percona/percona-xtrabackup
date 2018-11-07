@@ -14,7 +14,7 @@ finalizing the ``REDO`` log copy) under a number of circumstances:
 * when the server is not a GTID-enabled Galera cluster node
 
 * when the replication I/O thread information should not be stored as a part of
-  the backup (i.e. when the :option:`xtrabackup --slave-info` option is not
+  the backup (i.e. when the :option:`--slave-info` option is not
   specified)
 
 If all of the above conditions hold, |Percona XtraBackup| does not execute the
@@ -26,7 +26,7 @@ exactly the same information as in :file:`xtrabackup_binlog_info` and is thus
 redundant.
 
 To make this new functionality configurable, there is now a new |Percona
-XtraBackup| option, :option:`xtrabackup --binlog-info`, which can accept the
+XtraBackup| option, :option:`--binlog-info`, which can accept the
 following values:
 
 * ``OFF`` - This means that |Percona XtraBackup| will not attempt to retrieve
@@ -49,7 +49,7 @@ following values:
   :file:`xtrabackup_binlog_info` file will not be created. The file will be
   created after preparing the backup using the information stored in the InnoDB
   system header. If the required server-side functionality is not provided by
-  the server, specifying this :option:`xtrabackup --binlog-info` value will
+  the server, specifying this :option:`--binlog-info` value will
   result in an error. If one of the above mentioned conditions does not hold,
   ``LOCK BINLOG FOR BACKUP`` will still be executed to ensure consistency of
   other meta data.
@@ -66,4 +66,4 @@ following values:
   This feature is exclusive to |Percona Server| starting with version
   5.6.26-74.0. It is also used in |Percona XtraDB Cluster| starting with
   version 5.6.26-25.12 when the node is being backed up without
-  :option:`xtrabackup --galera-info`.
+  :option:`--galera-info`.

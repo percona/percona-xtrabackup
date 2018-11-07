@@ -110,7 +110,6 @@ References
    :glob:
 
    xtrabackup_bin/xbk_option_reference
-   innobackupex/innobackupex_option_reference
    xbcloud/xbcloud
    xbcrypt/xbcrypt
    xbstream/xbstream

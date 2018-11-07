@@ -5,8 +5,8 @@
 Percona is glad to announce the release of |Percona XtraBackup| 2.2.2-beta1 on
 May 8th 2014. Downloads are available from our download site `here
 <http://www.percona.com/downloads/XtraBackup/2.2.2/>`_. This **BETA** release
-will be available in :ref:`Debian experimental <debian_testing>` and
-:ref:`CentOS testing <yum_testing>` repositories.
+will be available in ``Debian experimental`` and
+``CentOS testing`` repositories.
 
 This is a **BETA** quality release and it is not intended for production. If
 you want a high quality, Generally Available release, the current Stable
@@ -27,7 +27,7 @@ Bugs Fixed
  :bug:`1262439`.
 
  The |xtrabackup| binaries now recognize a new :file:`my.cnf` option,
- :option:`open_files_limit`. The effect is the same as for the server: it
+ ``open_files_limit``. The effect is the same as for the server: it
  changes the maximum number of file descriptors available to the xtrabackup
  process. The actual limit depends on the platform and ``ulimit`` settings.
  Bug fixed :bug:`1183793`.
