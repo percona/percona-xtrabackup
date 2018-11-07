@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2014 Percona LLC and/or its affiliates.
+Copyright (c) 2014-2018 Percona LLC and/or its affiliates.
 
 The xbstream utility: serialize/deserialize files in the XBSTREAM format.
 
@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <map>
 #include <string>
 #include "xbstream.h"
+#include "xtrabackup_version.h"
 
 using std::map;
 using std::max;
@@ -47,7 +48,7 @@ using std::string;
 
 static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
 
-#define XBCLOUD_VERSION "1.0"
+#define XBCLOUD_VERSION XTRABACKUP_VERSION
 
 #define SWIFT_MAX_URL_SIZE 8192
 #define SWIFT_MAX_HDR_SIZE 8192
@@ -307,7 +308,7 @@ static void print_version() {
 
 static void usage() {
   print_version();
-  puts("Copyright (C) 2015 Percona LLC and/or its affiliates.");
+  puts("Copyright (C) 2015-2018 Percona LLC and/or its affiliates.");
   puts(
       "This software comes with ABSOLUTELY NO WARRANTY. "
       "This is free software,\nand you are welcome to modify and "

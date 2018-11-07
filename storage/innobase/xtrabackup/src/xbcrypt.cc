@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2013 Percona LLC and/or its affiliates.
+Copyright (c) 2013-2018 Percona LLC and/or its affiliates.
 
 The xbcrypt utility: decrypt files in the XBCRYPT format.
 
@@ -30,8 +30,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ds_decrypt.h"
 #include "ds_encrypt.h"
 #include "xbcrypt_common.h"
+#include "xtrabackup_version.h"
 
-#define XBCRYPT_VERSION "1.1"
+#define XBCRYPT_VERSION XTRABACKUP_VERSION
 
 typedef enum { RUN_MODE_NONE, RUN_MODE_ENCRYPT, RUN_MODE_DECRYPT } run_mode_t;
 
@@ -314,7 +315,7 @@ static void print_version(void) {
 
 static void usage(void) {
   print_version();
-  puts("Copyright (C) 2011 Percona Inc.");
+  puts("Copyright (C) 2011-2018 Percona Inc.");
   puts(
       "This software comes with ABSOLUTELY NO WARRANTY. "
       "This is free software,\nand you are welcome to modify and "
