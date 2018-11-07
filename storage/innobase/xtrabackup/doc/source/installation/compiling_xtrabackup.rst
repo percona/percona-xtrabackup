@@ -66,20 +66,20 @@ be used.
 Installation
 ------------
 
-The following command:
+The following command will install all |Percona XtraBackup| binaries,
+|xtrabackup| and tests to :file:`/usr/local/xtrabackup`.
 
 .. code-block:: bash
 
   $ make install
 
-will install all |Percona XtraBackup| binaries, the |innobackupex| script and
-tests to :file:`/usr/local/xtrabackup`. You can override this either with:
+ You can override this default by using the `DESTDIR` parameter.
 
 .. code-block:: bash
 
   $ make DESTDIR=... install
 
-or by changing the installation layout with:
+Alternatively, you can change the installation layout:
 
 .. code-block:: bash
 

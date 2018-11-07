@@ -26,7 +26,7 @@ Bugs Fixed
  stored in :file:`backup-my.cnf`. Bug fixed :bug:`1527081`.
 
  If server would run out of space while backups were taken with
- :option:`innobackupex --rsync` option backup process would fail but
+ `innobackupex --rsync` option backup process would fail but
  |innobackupex| would still complete with ``completed OK!`` message. Bug fixed
  :bug:`1537256`.
 

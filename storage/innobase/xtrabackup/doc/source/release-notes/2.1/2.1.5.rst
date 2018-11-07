@@ -21,7 +21,7 @@ Bugs Fixed
 
  Depending on the subroutine |innobackupex| could sometimes leave the child processes running in case of the error. |innobackupex| now makes sure that all child processes are killed if an error occurs in the script. Bug fixed :bug:`1135441`.
  
- The 5.6-based binary ( ``xtrabackup_56``), which is used to backup both |MySQL| 5.6 and |Percona Server| 5.6 servers, did not support Percona Server-specific :option:`innodb_log_block_size` option in Percona Server 5.6.11+ and would fail when trying to backup a server with a non-default :option:`innodb_log_block_size` value. Bug fixed :bug:`1194828`.
+ The 5.6-based binary ( ``xtrabackup_56``), which is used to backup both |MySQL| 5.6 and |Percona Server| 5.6 servers, did not support Percona Server-specific `innodb_log_block_size` option in Percona Server 5.6.11+ and would fail when trying to backup a server with a non-default `innodb_log_block_size` value. Bug fixed :bug:`1194828`.
 
  |Percona XtraBackup| would stop in case log block numbers had to wrap around, which only happens once per 1 GB of log writes, and the wrap-around point was between the last checkpoint and the current log tail at the time the backup starts. Bug fixed :bug:`1206309`.
  

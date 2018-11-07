@@ -48,14 +48,13 @@ that can be used to decompress the backup.
 
 .. note::
 
-  Before proceeding you'll need to make sure that `qpress
-  <http://www.quicklz.com/>`_ has been installed. It's availabe from
-  :ref:`Percona Software repositories <installing_from_binaries>`
-
+   Before proceeding make sure that `qpress <http://www.quicklz.com/>`_ is
+   installed. It's available from :ref:`Percona Software repositories
+   <installing_from_binaries>`
 
 .. code-block:: bash
 
- $ xtrabackup --decompress --target-dir=/data/compressed/
+   $ xtrabackup --decompress --target-dir=/data/compressed/
 
 .. note::
 

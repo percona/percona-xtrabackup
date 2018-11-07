@@ -30,24 +30,24 @@ Bugs Fixed
  fixed :bug:`936934`.
 
  |innobackupex| will now fail with an error when
- :option:`--slave-info` is used on  a multi-threaded non-GTID
+ `--slave-info` is used on  a multi-threaded non-GTID
  slave, because ``Exec_Master_Log_Pos`` cannot be trusted for a multi-threaded
  slave. Bug fixed :bug:`1372679`.
 
  |InnoDB| log scanning failure (bug :mysqlbug:`60788`) would cause backups to
  fail. Fixed by porting the fix from |MySQL| 5.7. Bug fixed :bug:`1375383`.
 
- Options ``--apply-log`` and :option:`--decompress` weren't marked as mutually
- exclusive, ie.  if they were both specified, only :option:`--decompress` would
+ Options ``--apply-log`` and `--decompress` weren't marked as mutually
+ exclusive, ie.  if they were both specified, only `--decompress` would
  work, which could lead to |MySQL| instance being started with an unprepared
  backup. Fixed by making mutually exclusive categories of options: 1.
- :option:`--decompress`, :option:`--decrypt`; 2.
- :option:`--copy-back`; 3. :option:`--move-back`; 4. :option:`--apply-log`. Bug
+ `--decompress`, `--decrypt`; 2.
+ `--copy-back`; 3. `--move-back`; 4. `--apply-log`. Bug
  fixed :bug:`1376874`.
 
  |innobackupex| wasn't creating directories specified in
  ``innodb_data_home_dir`` and ``innodb_log_group_home_dir`` when
- :option:`--copy-back` option was used. Bug fixed :bug:`1382347`.
+ `--copy-back` option was used. Bug fixed :bug:`1382347`.
 
  |Percona XtraBackup| now supports all option modifiers supported by upstream
  MySQL: skip, disable, enable, maximum, loose. Bug fixed :bug:`664128`.

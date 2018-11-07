@@ -4,19 +4,26 @@
  How to setup a slave for replication in 6 simple steps with Percona XtraBackup
 ================================================================================
 
-  Data is, by far, the most valuable part of a system. Having a backup done systematically and available for a rapid recovery in case of failure is admittedly essential to a system. However, it is not common practice because of its costs, infrastructure needed or even the boredom associated to the task. |Percona XtraBackup| is designed to solve this problem.
+Data is, by far, the most valuable part of a system. Having a backup done
+systematically and available for a rapid recovery in case of failure is
+admittedly essential to a system. However, it is not common practice because of
+its costs, infrastructure needed or even the boredom associated to the
+task. |Percona XtraBackup| is designed to solve this problem.
 
-  You can have almost real-time backups in 6 simple steps by setting up a replication environment with |Percona XtraBackup|. 
-
- |Percona XtraBackup| is a tool for backing up your data extremely easy and without interruption. It performs *hot backups* on unmodified versions of |MySQL| servers (5.1, 5.5 and 5.6), as well as |MariaDB| and *Percona Servers*. It is a totally free and open source software distributed only under the *GPLv2* license.
+You can have almost real-time backups in 6 simple steps by setting up a
+replication environment with |Percona XtraBackup|.
 
 All the things you will need
 ============================
 
-Setting up a slave for replication with |Percona XtraBackup| is really a very straightforward procedure. In order to keep it simple, here is a list of the things you need to follow the steps without hassles:
+Setting up a slave for replication with |Percona XtraBackup| is really a very
+straightforward procedure. In order to keep it simple, here is a list of the
+things you need to follow the steps without hassles:
 
-* ``TheMaster`` 
-  A system with a |MySQL|-based server installed, configured and running. This system will be called ``TheMaster``, as it is where your data is stored and the one to be replicated. We will assume the following about this system:
+``TheMaster``
+  A system with a |MySQL|-based server installed, configured and running. This
+  system will be called ``TheMaster``, as it is where your data is stored and
+  the one to be replicated. We will assume the following about this system:
 
   * the |MySQL| server is able to communicate with others by the standard TCP/IP port;
 
@@ -29,16 +36,19 @@ Setting up a slave for replication with |Percona XtraBackup| is really a very st
   * server has binlogs enabled and server-id set up to 1.
 
 
-* ``TheSlave`` 
-  Another system, with a |MySQL|-based server installed on it. We will refer to this machine as ``TheSlave`` and we will assume the same things we did about ``TheMaster``, except that the server-id on ``TheSlave`` is 2.
+``TheSlave``
+  Another system, with a |MySQL|-based server installed on it. We
+  will refer to this machine as ``TheSlave`` and we will assume the same things
+  we did about ``TheMaster``, except that the server-id on ``TheSlave`` is 2.
 
-* ``Percona XtraBackup``
+``Percona XtraBackup``
   The backup tool we will use. It should be installed in both computers for convenience.
 
-.. note:: It is not recommended to mix MySQL variants
-   (Percona Server, MySQL, MariaDB) in your replication setup.
-   This may produce incorrect :file:`xtrabackup_slave_info` file
-   when adding a new slave.
+.. note::
+
+   It is not recommended to mix MySQL variants (Percona Server, MySQL) in your
+   replication setup.  This may produce incorrect :file:`xtrabackup_slave_info`
+   file when adding a new slave.
 
 STEP 1: Make a backup on ``TheMaster`` and prepare it
 =====================================================

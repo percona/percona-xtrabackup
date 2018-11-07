@@ -1,8 +1,10 @@
-==============================
+================================================================================
  Making an Incremental Backup
-==============================
+================================================================================
 
-Backup all the InnoDB data and log files - located in ``/var/lib/mysql/`` - **once**, then make two daily incremental backups in ``/data/backups/mysql/`` (destination). Finally, prepare the backup files to be ready to restore or use.
+Backup all InnoDB data and log files - located in ``/var/lib/mysql/`` -
+**once**, then make two daily incremental backups in ``/data/backups/mysql/``
+(destination). Finally, prepare the backup files to be ready to restore or use.
 
 Create one full backup
 ======================

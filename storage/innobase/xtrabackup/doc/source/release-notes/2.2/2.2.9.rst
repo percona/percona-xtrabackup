@@ -29,7 +29,7 @@ Bugs Fixed
  ``lock_wait_timeout`` to prevent unnecessary timeouts when the global
  value is changed from the default. Bug fixed :bug:`1410339`.
 
- New option :option:`--backup-locks`, enabled by default, has been
+ New option `--backup-locks`, enabled by default, has been
  implemented to control if `backup locks
  <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
  will be used even if they are supported by the server. To disable backup locks

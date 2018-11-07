@@ -3,12 +3,23 @@
 Working with Binary Logs
 ========================
 
-The ``xtrabackup`` binary integrates with information that |InnoDB| stores in its transaction log about the corresponding binary log position for committed transactions. This enables it to print out the binary log position to which a backup corresponds, so you can use it to set up new replication slaves or perform point-in-time recovery.
+The ``xtrabackup`` binary integrates with information that |InnoDB|
+stores in its transaction log about the corresponding binary log
+position for committed transactions. This enables it to print out the
+binary log position to which a backup corresponds, so you can use it
+to set up new replication slaves or perform point-in-time recovery.
 
 Finding the Binary Log Position
 -------------------------------
 
-You can find the binary log position corresponding to a backup once the backup has been prepared. This can be done by either running the |xtrabackup| with :option:`--prepare` or |innobackupex| with :option:`--apply-log` option. If your backup is from a server with binary logging enabled, |xtrabackup| will create a file named :file:`xtrabackup_binlog_info` in the target directory. This file contains the binary log file name and position of the exact point in the binary log to which the prepared backup corresponds.
+You can find the binary log position corresponding to a backup once
+the backup has been prepared. This can be done by either running the
+|xtrabackup| with the :option:`--prepare` or
+:option:`--apply-log-only` option. If your backup is from a server
+with binary logging enabled, |xtrabackup| will create a file named
+:file:`xtrabackup_binlog_info` in the target directory. This file
+contains the binary log file name and position of the exact point in
+the binary log to which the prepared backup corresponds.
 
 You will also see output similar to the following during the prepare stage: ::
 
@@ -30,7 +41,7 @@ Point-In-Time Recovery
 
 To perform a point-in-time recovery from an ``xtrabackup`` backup, you should prepare and restore the backup, and then replay binary logs from the point shown in the :file:`xtrabackup_binlog_info` file. 
 
-A more detailed procedure is found :doc:`here <../innobackupex/pit_recovery_ibk>` (with |innobackupex|).
+A more detailed procedure is found :ref:`here <pxb.xtrabackup.point-in-time-recovery>`.
 
 
 Setting Up a New Replication Slave

@@ -28,7 +28,7 @@ Bugs fixed
  more likely the entire OpenStack deploy for which keystone is providing the
  identity service. Bug fixed :bug:`1447610`.
 
- |Percona XtraBackup| 2.3 didn't set :option:`wait_timeout` session variable in
+ |Percona XtraBackup| 2.3 didn't set `wait_timeout` session variable in
  order to prevent server to kill the connection while it is copying data files.
  Bug fixed :bug:`1495367`.
 
@@ -50,5 +50,5 @@ Bugs fixed
 
  Fixed broken out-of-source tree builds in 2.3 trunk. Bug fixed :bug:`1457016`.
 
- |Percona XtraBackup| now supports :option:`--datadir` as a command line
+ |Percona XtraBackup| now supports `--datadir` as a command line
  option. Bug fixed :bug:`1042887`.

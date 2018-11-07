@@ -16,11 +16,11 @@ Bugs Fixed
  
 After being rebased on |MySQL| 5.6.11 |Percona XtraBackup| has been affected by the upstream bug :mysqlbug:`69780`. Fixed by rebasing |Percona XtraBackup| on |MySQL| 5.6.15 which contains a fix for the upstream bug. Bug fixed :bug:`1203669`.
 
-Backup directory would need to be specified even for running the |innobackupex| with :option:`--help` and :option:`innobackupex --version` options. Bug fixed :bug:`1223716`.
+Backup directory would need to be specified even for running the |innobackupex| with `--help` and `innobackupex --version` options. Bug fixed :bug:`1223716`.
 
 When creating an incremental backup with the changed page tracking feature available in |Percona Server|, |innobackupex| would fail if the server had the ``ANSI_QUOTES`` SQL mode enabled. Bug fixed :bug:`1248331`.
 
-When :option:`--galera-info` is specified and |Percona XtraDB Cluster| is using ``GTID`` replication (version 5.6 only), |innobackupex| will execute ``FLUSH BINARY LOGS`` and then carry the current binary log as indicated in ``SHOW MASTER STATUS`` into the backup set. Bug fixed :bug:`1250375`.
+When `--galera-info` is specified and |Percona XtraDB Cluster| is using ``GTID`` replication (version 5.6 only), |innobackupex| will execute ``FLUSH BINARY LOGS`` and then carry the current binary log as indicated in ``SHOW MASTER STATUS`` into the backup set. Bug fixed :bug:`1250375`.
 
 |Percona XtraBackup| did not roll back prepared XA transactions when applying the log. Which was a regression introduced with the original port of |Percona XtraBackup| patches to 5.6. Fixed by restoring code that has been lost in the port. Bug fixed :bug:`1254227`.
  

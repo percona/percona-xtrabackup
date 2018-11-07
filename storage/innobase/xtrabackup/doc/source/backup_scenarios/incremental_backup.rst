@@ -4,9 +4,8 @@
 Incremental Backup
 ==================
 
-Both |xtrabackup| and |innobackupex| tools supports incremental backups,
-which means that they can copy only the data that has changed since the last
-backup.
+|xtrabackup| supports incremental backups, which means that they can copy only
+the data that has changed since the last backup.
 
 You can perform many incremental backups between each full backup, so you can
 set up a backup process such as a full backup once a week and an incremental

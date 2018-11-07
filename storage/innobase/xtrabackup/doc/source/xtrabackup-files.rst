@@ -10,7 +10,7 @@ Index of files created by Percona XtraBackup
        This file contains information to start the mini instance of InnoDB
        during the :option:`--prepare`. This is **NOT** a backup of
        original :file:`my.cnf`. The InnoDB configuration is read from the file
-       :file:`backup-my.cnf` created by |innobackupex| when the backup was
+       :file:`backup-my.cnf` created by |xtrabackup| when the backup was
        made. :option:`--prepare` uses InnoDB configuration from
        ``backup-my.cnf`` by default, or from
        :option:`--defaults-file`, if specified. InnoDB

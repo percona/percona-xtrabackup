@@ -1,15 +1,14 @@
 .. _xbcloud_binary:
 
-======================
- The xbcloud Binary
-======================
+================================================================================
+The xbcloud Binary
+================================================================================
 
 .. note::
 
    This feature implementation is considered **ALPHA** quality.
 
-|xbcloud| is a new tool which is part of the |Percona XtraBackup| 2.3.2
-release. The purpose of |xbcloud| is to download and upload full or part of
+The purpose of |xbcloud| is to download and upload full or part of
 |xbstream| archive from/to cloud. |xbcloud| will refuse to overwrite the backup
 with the same name.
 
@@ -18,28 +17,17 @@ with the same name.
 0-padded serial number of chunk within file. Size of chunk produced by
 |xtrabackup| and |xbstream| changed to 10M.
 
-Version specific information
-----------------------------
- * 2.3.0-alpha1 - Initial implementation
- * 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a
-   :file:`.cnf` file
- * 2.3.1-beta1 - Implemented support different :ref:`authentication options
-   <swift_auth>` for Swift
- * 2.3.1-beta1 - Implemented support for partial download of the cloud backups
- * 2.3.1-beta1 - ``--swift-url`` option has been renamed to
-   ``--swift-auth-url``
-
 Usage
------
+================================================================================
 
-Backup:
+.. rubric:: Backup:
 
 .. code-block:: bash
 
- xtrabackup --backup --stream=xbstream --target-dir=/tmp | xbcloud \
- put [options] <name>
+   $ xtrabackup --backup --stream=xbstream --target-dir=/tmp | xbcloud \
+   put [options] <name>
 
-Following example shows how to make a full backup and upload it to Swift:
+The following example shows how to make a full backup and upload it to Swift:
 
 .. code-block:: bash
 
@@ -52,13 +40,13 @@ Following example shows how to make a full backup and upload it to Swift:
  --parallel=10 \
  full_backup
 
-Restore:
+.. rubric:: Restore:
 
 .. code-block:: bash
 
- xbcloud get [options] <name> [<list-of-files>] | xbstream -x
+   $ xbcloud get [options] <name> [<list-of-files>] | xbstream -x
 
-Following example shows how to fetch and restore the backup from Swift:
+The following example shows how to fetch and restore the backup from Swift:
 
 .. code-block:: bash
 
@@ -72,8 +60,19 @@ Following example shows how to fetch and restore the backup from Swift:
   xtrabackup --prepare --target-dir=/tmp/downloaded_full
   xtrabackup --copy-back --target-dir=/tmp/downloaded_full
 
+.. rubric:: Delete:
+
+Use :program:`xbcloud delete` command to delete a backup from Swift.
+
+.. code-block:: bash
+
+   $ xbcloud delete --storage=swift --swift-user=xtrabackup \
+   --swift-password=xtrabackup123! --swift-auth-version=3 \
+   --swift-auth-url=http://openstack.ci.percona.com:5000/ \
+   --swift-container=mybackup1 --swift-domain=Default
+
 Incremental backups
--------------------
+--------------------------------------------------------------------------------
 
 Taking incremental backups:
 
@@ -94,13 +93,13 @@ Then you can make the incremental backup:
 
 .. code-block:: bash
 
-  xtrabackup --backup --incremental-basedir=/storage/backups \
-  --stream=xbstream --target-dir=/storage/inc_backup | xbcloud put \
-  --storage=swift --swift-container=test_backup \
-  --swift-auth-version=2.0 --swift-user=admin \
-  --swift-tenant=admin --swift-password=xoxoxoxo \
-  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
-  inc_backup
+   $ xtrabackup --backup --incremental-basedir=/storage/backups \
+   --stream=xbstream --target-dir=/storage/inc_backup | xbcloud put \
+   --storage=swift --swift-container=test_backup \
+   --swift-auth-version=2.0 --swift-user=admin \
+   --swift-tenant=admin --swift-password=xoxoxoxo \
+   --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+   inc_backup
 
 Preparing incremental backups:
 
@@ -108,63 +107,63 @@ To prepare the backup you first need to download the full backup:
 
 .. code-block:: bash
 
-  xbcloud get --swift-container=test_backup \
-  --swift-auth-version=2.0 --swift-user=admin \
-  --swift-tenant=admin --swift-password=xoxoxoxo \
-  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
-  full_backup | xbstream -xv -C /storage/downloaded_full
+   $ xbcloud get --swift-container=test_backup \
+   --swift-auth-version=2.0 --swift-user=admin \
+   --swift-tenant=admin --swift-password=xoxoxoxo \
+   --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+   full_backup | xbstream -xv -C /storage/downloaded_full
 
-Once you download full backup it should be prepared:
+Once you download the full backup it should be prepared:
 
 .. code-block:: bash
 
-  xtrabackup --prepare --apply-log-only --target-dir=/storage/downloaded_full
+   $ xtrabackup --prepare --apply-log-only --target-dir=/storage/downloaded_full
 
 After the full backup has been prepared you can download the incremental
 backup:
 
 .. code-block:: bash
 
-  xbcloud get --swift-container=test_backup \
-  --swift-auth-version=2.0 --swift-user=admin \
-  --swift-tenant=admin --swift-password=xoxoxoxo \
-  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
-  inc_backup | xbstream -xv -C /storage/downloaded_inc
+   $ xbcloud get --swift-container=test_backup \
+   --swift-auth-version=2.0 --swift-user=admin \
+   --swift-tenant=admin --swift-password=xoxoxoxo \
+   --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+   inc_backup | xbstream -xv -C /storage/downloaded_inc
 
 Once the incremental backup has been downloaded you can prepare it by running:
 
 .. code-block:: bash
 
-  xtrabackup --prepare --apply-log-only \
-  --target-dir=/storage/downloaded_full \
-  --incremental-dir=/storage/downloaded_inc
+   $ xtrabackup --prepare --apply-log-only \
+   --target-dir=/storage/downloaded_full \
+   --incremental-dir=/storage/downloaded_inc
 
-  xtrabackup --prepare --target-dir=/storage/downloaded_full
+   $ xtrabackup --prepare --target-dir=/storage/downloaded_full
 
 Partial download of the cloud backup
-------------------------------------
+--------------------------------------------------------------------------------
 
-If you don't want to download entire backup to restore the specific database
-you can specify only tables you want to restore:
+If you do not want to download the entire backup to restore the specific
+database you can specify only tables you want to restore:
 
 .. code-block:: bash
 
-  xbcloud get --swift-container=test_backup
-  --swift-auth-version=2.0 --swift-user=admin \
-  --swift-tenant=admin --swift-password=xoxoxoxo \
-  --swift-auth-url=http://127.0.0.1:35357/ full_backup \
-  ibdata1 sakila/payment.ibd \
-  > /storage/partial/partial.xbs
-
-  xbstream -xv -C /storage/partial < /storage/partial/partial.xbs
-
+   $ xbcloud get --swift-container=test_backup
+   --swift-auth-version=2.0 --swift-user=admin \
+   --swift-tenant=admin --swift-password=xoxoxoxo \
+   --swift-auth-url=http://127.0.0.1:35357/ full_backup \
+   ibdata1 sakila/payment.ibd \
+   > /storage/partial/partial.xbs
+ 
+   $ xbstream -xv -C /storage/partial < /storage/partial/partial.xbs
+ 
 This command will download just ``ibdata1`` and ``sakila/payment.ibd`` table
 from the full backup.
 
 Command-line options
---------------------
+--------------------------------------------------------------------------------
 
-|xbcloud| has following command line options:
+|xbcloud| has the following command line options:
 
 .. option:: --storage
 
@@ -210,7 +209,7 @@ Command-line options
 Swift authentication options
 ----------------------------
 
-Swift specification describe several `authentication options
+Swift specification describes several `authentication options
 <http://docs.openstack.org/developer/swift/overview_auth.html>`_. |xbcloud| can
 authenticate against keystone with API version 2 and 3.
 

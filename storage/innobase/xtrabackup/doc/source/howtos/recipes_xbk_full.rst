@@ -1,18 +1,20 @@
-======================
- Making a Full Backup
-======================
+.. _xtrabackup.full:
 
-Backup the InnoDB data and log files - located in ``/var/lib/mysql/`` - to
+================================================================================
+ Making a Full Backup
+================================================================================
+
+Backup the InnoDB data and log files located in ``/var/lib/mysql/`` to
 ``/data/backups/mysql/`` (destination). Then, prepare the backup files to be
 ready to restore or use (make the data files consistent).
 
-.. rubric:: Make a backup
+.. rubric:: Making a backup
 
 .. code-block:: bash
 
-  $ xtrabackup --backup --target-dir=/data/backup/mysql/
+   $ xtrabackup --backup --target-dir=/data/backup/mysql/
 
-.. rubric:: Prepare the backup twice
+.. rubric:: Preparing the backup twice
 
 .. code-block:: bash
 
@@ -29,7 +31,8 @@ ready to restore or use (make the data files consistent).
 
 .. note::
 
-   * You might want to set the :option:`--use-memory` option to something
-     similar to the size of your buffer pool, if you are on a dedicated server that
-     has enough free memory. More details :doc:`here <../xtrabackup_bin/xbk_option_reference>`.
-   * A more detailed explanation is :doc:`here <../xtrabackup_bin/creating_a_backup>`
+   You might want to set the :option:`--use-memory` option to a value close
+   to the size of your buffer pool, if you are on a dedicated server that has
+   enough free memory. More details :ref:`here <xbk_option_reference>`.
+   
+   A more detailed explanation is :ref:`here <creating_a_backup>`.

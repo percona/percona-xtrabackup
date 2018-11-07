@@ -18,7 +18,7 @@ Bugs fixed
  ``--defaults-file=backup-my.cnf`` for options to be respected. Bug fixed
  :bug:`1527081`.
 
- |Percona XtraBackup| didn't abort the backup if :option:`innobackupex --rsync`
+ |Percona XtraBackup| didn't abort the backup if `innobackupex --rsync`
  completed with error. Bug fixed :bug:`1537256`.
 
  When backup was taken on *MariaDB* 10 with GTID enabled, |Percona XtraBackup|
@@ -31,5 +31,5 @@ Bugs fixed
  |Percona XtraBackup| refuses client connecting to server if it uses old
  (pre-4.1.1) protocol. To disable this check in order to allow backing up
  servers with legacy passwords still set, new
- :option:`xtrabackup --skip-secure-auth` option has been implemented. Bug fixed
+ `xtrabackup --skip-secure-auth` option has been implemented. Bug fixed
  :bug:`1508450`.

@@ -1,19 +1,18 @@
 .. _recipes_ibkx_compressed:
 
-============================
- Making a Compressed Backup 
-============================
+================================================================================
+Making a Compressed Backup 
+================================================================================
 
-
-In order to make a compressed backup, use :option:`--compress` option
-along with the :option:`--backup` and :option:`--target-dir` options:
+In order to make a compressed backup, use the :option:`--compress` option along
+with the :option:`--backup` and :option:`--target-dir` options:
 
 .. code-block:: bash
 
    $ xtrabackup --backup --compress --target-dir=/data/backup
 
 If you want to speed up the compression you can use the parallel
-compression, which can be enabled with :option:`--compress-threads=#`
+compression, which can be enabled with :option:`--compress-threads`
 option. The following example uses four threads for compression:
 
 .. code-block:: bash
@@ -23,9 +22,8 @@ option. The following example uses four threads for compression:
 Output should look like this :: 
 
    ...
-   [01] Compressing ./imdb/comp_cast_type.ibd to /data/backup/2013-08-01_11-24-04/./imdb/comp_cast_type.ibd.qp
-   [01]        ...done
-   [01] Compressing ./imdb/aka_name.ibd to /data/backup/2013-08-01_11-24-04/./imdb/aka_name.ibd.qp
+        
+   [01] Compressing ./imdb/comp_cast_type.ibd to /data/backup/imdb/comp_cast_type.ibd.qp
    [01]        ...done
    ...
    130801 11:50:24  xtrabackup: completed OK
@@ -45,25 +43,23 @@ You can use the following one-liner to uncompress all the files:
 
    $ for bf in `find . -iname "*\.qp"`; do qpress -d $bf $(dirname $bf) && rm $bf; done
 
-Since |Percona XtraBackup| 2.1.4, you can decompress the backup by using the new
-:option:`--decompress` option:
+You can decompress the backup by using the ``--decompress`` option:
 
 .. code-block:: bash
 
    $ xtrabackup --decompress --target-dir=/data/backup/
 
-.. note:: 
+.. seealso::
 
-   In order to use the :option:`--decompress` option, the :program:`qpress`
-   binary needs to be installed and within the path.  The :option:`--parallel`
-   option can be used with the :option:`--decompress` option to decompress
-   multiple files simultaneously.
+   What is required to use the `--decompress` option effectively?
+      :option:`--decompress`
 
-When the files are uncompressed you can prepare the backup with the :option:`--apply-log` option:
+When the files are uncompressed you can prepare the backup with the
+:option:`--apply-log-only` option:
 
 .. code-block:: bash
 
-   $ xtrabackup --apply-log --target-dir=/data/backup/
+   $ xtrabackup --apply-log-only --target-dir=/data/backup/
 
 You should check for a confirmation message: ::
 

@@ -7,19 +7,25 @@
  Percona XtraBackup - Documentation
 ====================================
 
-|Percona XtraBackup| is an open-source hot backup utility for |MySQL| - based
-servers that doesn't lock your database during the backup.
-
-It can back up data from |InnoDB|, |XtraDB|, and |MyISAM| tables on |MySQL| 5.1
-[#n-1]_, 5.5, 5.6, 5.7, and 8.0 servers, as well as |Percona Server| with |XtraDB|.
-For a high-level overview of many of its advanced features, including a feature
-comparison, please see :doc:`intro`.
+|Percona XtraBackup| is an open-source hot backup utility for
+|MySQL| - based servers that doesn't lock your database during the
+backup.
 
 Whether it is a 24x7 highly loaded server or a low-transaction-volume
 environment, |Percona XtraBackup| is designed to make backups a seamless
 procedure without disrupting the performance of the server in a production
 environment. `Commercial support contracts are available
 <http://www.percona.com/mysql-support/>`_.
+
+|Percona XtraBackup| can back up data from |InnoDB|, |XtraDB|, and
+|MyISAM| tables on |MySQL| 8.0 servers as well as |Percona Server|
+with |XtraDB|, |Percona Server| 8.0, and |Percona XtraDB Cluster| 8.0.
+
+.. include:: .res/contents/text.pxb.8-0.txt	     
+
+For a high-level overview of many of its advanced features, including
+a feature comparison, please see :doc:`intro`.
+
 
 
 Introduction
@@ -63,7 +69,6 @@ Backup Scenarios
    backup_scenarios/full_backup
    backup_scenarios/incremental_backup
    backup_scenarios/compressed_backup
-   backup_scenarios/encrypted_backup
 
 User's Manual
 =============
@@ -77,16 +82,19 @@ User's Manual
 Advanced Features
 =================
 
+..    advanced/lockless_bin-log
+
 .. toctree::
    :maxdepth: 1
    :glob:
 
    advanced/throttling_backups
-   advanced/lockless_bin-log
    advanced/encrypted_innodb_tablespace_backups
 
 Tutorials, Recipes, How-tos
 ===========================
+
+.. * :ref:`recipes-ibk`
 
 .. toctree::
    :maxdepth: 2
@@ -95,15 +103,13 @@ Tutorials, Recipes, How-tos
    how-tos
 
 * :ref:`recipes-xbk`
-
-* :ref:`recipes-ibk`
-
 * :ref:`howtos`
-
 * :ref:`aux-guides`
 
 References
 ==========
+
+..   known_issues
 
 .. toctree::
    :maxdepth: 1
@@ -113,7 +119,6 @@ References
    xbcloud/xbcloud
    xbcrypt/xbcrypt
    xbstream/xbstream
-   known_issues
    faq
    release-notes
    glossary
@@ -129,7 +134,4 @@ Indices and tables
 
 .. rubric:: Footnotes
 
-.. [#n-1]
-
-  Support for InnoDB 5.1 builtin has been removed in |Percona XtraBackup| 2.1
 

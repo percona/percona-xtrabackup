@@ -1,39 +1,24 @@
-==========================
+================================================================================
 Frequently Asked Questions
-==========================
-
-Do I need an InnoDB Hot Backup license to use Percona XtraBackup?
 ================================================================================
 
-No. Although ``innobackupex`` is derived from the same GPL and open-source
-wrapper script that InnoDB Hot Backup uses, it does not execute ``ibbackup``,
-and the ``xtrabackup`` binary does not execute or link to ``ibbackup``. You can
-use |Percona XtraBackup| without any license; it is completely separate from
-InnoDB Hot Backup.
+Does |Percona XtraBackup| 8.0 Support making backups of databases in versions prior to 8.0?
+====================================================================================================
 
-What's the difference between :program:`innobackupex` and :program:`innobackup`?
+.. include:: .res/contents/text.pxb.8-0.txt
+
+.. _pxb.faq.innobackupex.8-0:
+
+Why will ``innobackupex`` not run in |Percona Xtrabackup| 8.0?
 ================================================================================
 
-:Availability: :program:`innobackupex` has been removed from |Percona
-               XtraBackup| |version| in favor of :program:`xtrabackup`.
+:program:`innobackupex` has been removed from |Percona XtraBackup|
+|version| in favor of :program:`xtrabackup`.
 
-Because :program:`innobackupex` is a patched version of *Oracle* ’s
-:program:`innobackup` script (now renamed to :program:`mysqlbackup`), it is
-quite similar in some ways, and familiarity with innobackup might be helpful.
+What's the difference between :program:`innobackupex` and :program:`xtrabackup`?
+================================================================================
 
-Aside from the options for specific features of |innobackupex|, the main
-differences are:
-
-  * printing to ``STDERR`` instead of ``STDOUT`` (which enables the
-    :option:`--stream` option),
-
-  * the configuration file - :term:`my.cnf` - is detected automatically (or
-    set with :option:`innobackupex --defaults-file`) instead of the mandotory
-    first argument,
-
-  * and defaults to |xtrabackup| as binary to use in the :option:`--ibbackup`.
-
-.. See :doc:`innobackupex/innobackupex_option_reference` for more details.
+See :ref:`pxb.faq.innobackupex.8-0`
 
 Are you aware of any web-based backup management tools (commercial or not) built around |Percona XtraBackup|?
 ========================================================================================================================
@@ -49,7 +34,7 @@ a commercial tool that uses |Percona XtraBackup| for Non-Blocking Backups:
  database server to be |Percona Server| with XtraDB)."*
 
 |xtrabackup| binary fails with a floating point exception
-=========================================================
+================================================================================
 
 In most of the cases this is due to not having install the required libraries
 (and version) by |xtrabackup|. Installing the *GCC* suite with the supporting
@@ -58,7 +43,6 @@ libraries and recompiling |xtrabackup| will solve the issue. See
 
 How xtrabackup handles the ibdata/ib_log files on restore if they aren't in mysql datadir?
 ====================================================================================================
-
 
 In case the :file:`ibdata` and :file:`ib_log` files are located in different
 directories outside of the datadir, you will have to put them in their proper

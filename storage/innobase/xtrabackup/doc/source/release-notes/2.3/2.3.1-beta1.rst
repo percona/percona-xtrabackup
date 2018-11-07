@@ -1,12 +1,12 @@
-==================================
- |Percona XtraBackup| 2.3.1-beta1
-==================================
+================================================================================
+|Percona XtraBackup| 2.3.1-beta1
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.3.1-beta1 on
 May 20th 2015. Downloads are available from our download site `here
 <http://www.percona.com/downloads/TESTING/XtraBackup/xtrabackup-2.3.1beta1/>`_.
 This **BETA** release, will be available in :ref:`Debian testing
-<debian_testing>` and :ref:`CentOS testing <yum_testing>` repositories.
+<apt_repo>` and :ref:`CentOS testing <yum_repo>` repositories.
 
 This is an **BETA** quality release and it is not intended for production. If
 you want a high quality, Generally Available release, the current Stable
@@ -32,18 +32,18 @@ New features
  from the :file:`.my.cnf` file in the users home directory or alternatively
  from the global configuration file:`/etc/my.cnf`. This makes it more
  convenient to use and avoids passing the sensitive data, such as
- :option:`--swift-key`, on the command line.
+ `--swift-key`, on the command line.
 
  |Percona XtraBackup| now supports different :ref:`authentication options
  <swift_auth>` for Swift.
 
  |Percona XtraBackup| now supports partial download of the cloud backup.
 
- Options: :option:`--lock-wait-query-type`, :option:`--lock-wait-threshold` and
- :option:`--lock-wait-timeout` have been renamed to
- :option:`innobackupex --ftwrl-wait-query-type`,
- :option:`innobackupex --ftwrl-wait-threshold` and
- :option:`innobackupex --ftwrl-wait-timeout` respectively.
+ Options: `--lock-wait-query-type`, `--lock-wait-threshold` and
+ `--lock-wait-timeout` have been renamed to
+ `innobackupex --ftwrl-wait-query-type`,
+ `innobackupex --ftwrl-wait-threshold` and
+ `innobackupex --ftwrl-wait-timeout` respectively.
 
 Bugs fixed
 ----------
@@ -51,7 +51,7 @@ Bugs fixed
  |innobackupex| didn't work correctly when credentials were specified in
  :file:`.mylogin.cnf`. Bug fixed :bug:`1388122`.
 
- :option:`--decrypt` and :option:`--decompress` options didn't work with
+ `--decrypt` and `--decompress` options didn't work with
  |xtrabackup| binary. Bug fixed :bug:`1452307`.
 
  |Percona XtraBackup| now executes an extra ``FLUSH TABLES`` before executing
