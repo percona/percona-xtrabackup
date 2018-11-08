@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2013 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2018 Percona LLC and/or its affiliates.
 
 The xbstream utility: serialize/deserialize files in the XBSTREAM format.
 
@@ -33,8 +33,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ds_decrypt.h"
 #include "xbcrypt_common.h"
 #include "xbstream.h"
+#include "xtrabackup_version.h"
 
-#define XBSTREAM_VERSION "1.0"
+#define XBSTREAM_VERSION XTRABACKUP_VERSION
 #define XBSTREAM_BUFFER_SIZE (10 * 1024 * 1024UL)
 
 typedef enum { RUN_MODE_NONE, RUN_MODE_CREATE, RUN_MODE_EXTRACT } run_mode_t;
@@ -128,8 +129,6 @@ int main(int argc, char **argv) {
     goto err;
   }
 
-  xb_libgcrypt_init();
-
   crc_init();
 
   if (opt_mode == RUN_MODE_NONE) {
@@ -140,6 +139,10 @@ int main(int argc, char **argv) {
   /* Change the current directory if -C is specified */
   if (opt_directory && my_setwd(opt_directory, MYF(MY_WME))) {
     goto err;
+  }
+
+  if (opt_encrypt_algo || opt_encrypt_key) {
+    xb_libgcrypt_init();
   }
 
   if (opt_mode == RUN_MODE_CREATE && mode_create(argc, argv)) {
@@ -180,7 +183,7 @@ static void print_version(void) {
 
 static void usage(void) {
   print_version();
-  puts("Copyright (C) 2011-2013 Percona LLC and/or its affiliates.");
+  puts("Copyright (C) 2011-2018 Percona LLC and/or its affiliates.");
   puts(
       "This software comes with ABSOLUTELY NO WARRANTY. "
       "This is free software,\nand you are welcome to modify and "
