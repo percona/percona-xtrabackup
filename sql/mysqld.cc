@@ -1528,11 +1528,13 @@ static bool dynamic_plugins_are_initialized = false;
 static const char *default_dbug_option;
 #endif
 
+#ifndef XTRABACKUP
 bool opt_use_ssl = 1;
 char *opt_ssl_ca = NULL, *opt_ssl_capath = NULL, *opt_ssl_cert = NULL,
      *opt_ssl_cipher = NULL, *opt_ssl_key = NULL, *opt_ssl_crl = NULL,
      *opt_ssl_crlpath = NULL, *opt_tls_version = NULL;
 ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
+#endif
 
 #ifdef HAVE_OPENSSL
 struct st_VioSSLFd *ssl_acceptor_fd;
@@ -4368,6 +4370,7 @@ static int init_thread_environment() {
   return 0;
 }
 
+#if !defined(XTRABACKUP)
 static ssl_artifacts_status auto_detect_ssl() {
   MY_STAT cert_stat, cert_key, ca_stat;
   uint result = 1;
@@ -4487,6 +4490,7 @@ static int warn_self_signed_ca() {
   }
   return ret_val;
 }
+#endif
 
 #if !defined(HAVE_WOLFSSL) && defined(HAVE_OPENSSL) && !defined(__sun)
 /* TODO: remove the !defined(__sun) when bug 23285559 is out of the picture */
@@ -4529,7 +4533,7 @@ static void init_ssl() {
 }
 
 static int init_ssl_communication() {
-#ifdef HAVE_OPENSSL
+#if defined(HAVE_OPENSSL) && !defined(XTRABACKUP)
 #ifndef HAVE_WOLFSSL
   char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
   int ret_fips_mode = set_fips_mode(opt_ssl_fips_mode, ssl_err_string);
@@ -7413,7 +7417,7 @@ struct my_option my_long_options[] = {
      "Option used by mysql-test for debugging and testing of replication.",
      &opt_sporadic_binlog_dump_fail, &opt_sporadic_binlog_dump_fail, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef HAVE_OPENSSL
+#if defined(HAVE_OPENSSL) && !defined(XTRABACKUP)
     {"ssl", 0,
      "Enable SSL for connection (automatically enabled with other flags).",
      &opt_use_ssl, &opt_use_ssl, 0, GET_BOOL, OPT_ARG, 1, 0, 0, 0, 0, 0},
@@ -8905,7 +8909,7 @@ bool mysqld_get_one_option(int optid,
     case OPT_BINLOG_EXPIRE_LOGS_SECONDS:
       binlog_expire_logs_seconds_supplied = true;
       break;
-#if defined(HAVE_OPENSSL)
+#if defined(HAVE_OPENSSL) && !defined(XTRABACKUP)
     case OPT_SSL_KEY:
     case OPT_SSL_CERT:
     case OPT_SSL_CA:
