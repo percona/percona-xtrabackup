@@ -54,6 +54,8 @@ struct xb_read_filt_t {
 			       ib_uint64_t* read_batch_start,
 			       ib_uint64_t* read_batch_len);
 	void (*deinit)(xb_read_filt_ctxt_t* ctxt);
+	void (*update)(xb_read_filt_ctxt_t* ctxt, ib_uint64_t len,
+		       const xb_fil_cur_t* cursor);
 };
 
 extern xb_read_filt_t rf_pass_through;
