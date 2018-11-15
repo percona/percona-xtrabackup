@@ -1439,7 +1439,7 @@ reopen:
     } else {
       mutex_exit(&dict_sys->mutex);
 
-      ib_table = dd_table_open_on_id_low(thd, mdl, table_id);
+      ib_table = nullptr;
 
       if (dict_locked) {
         mutex_enter(&dict_sys->mutex);
