@@ -2284,7 +2284,9 @@ files_checked:
 			respective file pages, for the last batch of
 			recv_group_scan_log_recs(). */
 
+			log_mutex_enter();
 			recv_apply_hashed_log_recs(FALSE);
+			log_mutex_exit();
 			DBUG_PRINT("ib_log", ("apply completed"));
 
 			if (recv_needed_recovery) {

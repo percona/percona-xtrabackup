@@ -1575,7 +1575,7 @@ log_preflush_pool_modified_pages(
 		and we could not make a new checkpoint on the basis of the
 		info on the buffer pool only. */
 
-		recv_apply_hashed_log_recs(FALSE);
+		recv_apply_hashed_log_recs(TRUE);
 	}
 
 	if (new_oldest == LSN_MAX
@@ -1929,7 +1929,7 @@ log_checkpoint(
 	ut_ad(!srv_read_only_mode);
 
 	if (recv_recovery_is_on()) {
-		recv_apply_hashed_log_recs(FALSE);
+		recv_apply_hashed_log_recs(TRUE);
 	}
 
 #ifndef _WIN32
