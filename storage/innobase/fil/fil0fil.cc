@@ -9701,7 +9701,7 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
     success = fil_tablespace_open_for_recovery(page_id.space());
 
     if (!success) {
-      ib::info() << "Rename failed. Cannot find'" << from_name << "'!";
+      ib::info() << "Rename failed. Cannot find '" << from_name << "'!";
       return (ptr);
     }
 
@@ -10173,9 +10173,15 @@ static bool fil_op_replay_rename(const page_id_t &page_id,
       ib::info(ER_IB_MSG_371) << "Tablespace ID mismatch in '" << name << "'";
     }
 
-    df.close();
-
-    return (err == DB_SUCCESS);
+    if (err == DB_WRONG_FILE_NAME) {
+      df.close();
+      os_file_delete(innodb_data_file_key, df.filepath());
+      bool success = fil_system->erase(df.space_id());
+      ut_a(success);
+    } else {
+      df.close();
+      return (err == DB_SUCCESS);
+    }
   }
 
   auto path_sep_pos = name.find_last_of(Fil_path::SEPARATOR);

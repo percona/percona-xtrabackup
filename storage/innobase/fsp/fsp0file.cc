@@ -498,10 +498,13 @@ dberr_t Datafile::validate_for_recovery(space_id_t space_id) {
         return (err);
       }
 
+      /* xtrabackup does not copy doublewrite buffer pages */
+#if !defined(XTRABACKUP)
       err = restore_from_doublewrite(0);
       if (err != DB_SUCCESS) {
         return (err);
       }
+#endif
 
       /* Free the previously read first page and then re-validate. */
       free_first_page();
