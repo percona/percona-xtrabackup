@@ -228,7 +228,7 @@ xb_fil_cur_result_t xb_fil_cur_read(
     /*============*/
     xb_fil_cur_t *cursor) /*!< in/out: source file cursor */
 {
-  ibool success;
+  dberr_t err;
   byte *page;
   ulint i;
   ulint npages;
@@ -236,6 +236,7 @@ xb_fil_cur_result_t xb_fil_cur_read(
   xb_fil_cur_result_t ret;
   ib_uint64_t offset;
   ib_uint64_t to_read;
+  ulong n_read;
   page_size_t page_size(
       cursor->zip_size != 0 ? cursor->zip_size : cursor->page_size,
       cursor->page_size, cursor->zip_size != 0);
@@ -277,8 +278,6 @@ xb_fil_cur_result_t xb_fil_cur_read(
 
   xb_a(to_read % cursor->page_size == 0);
 
-  npages = (ulint)(to_read >> cursor->page_size_shift);
-
   retry_count = 10;
   ret = XB_FIL_CUR_SUCCESS;
 
@@ -290,11 +289,27 @@ read_retry:
   cursor->buf_offset = offset;
   cursor->buf_page_no = (ulint)(offset >> cursor->page_size_shift);
 
-  success =
-      os_file_read(read_request, cursor->file, cursor->buf, offset, to_read);
-  if (!success) {
+  err = os_file_read_no_error_handling(read_request, cursor->file, cursor->buf,
+                                       offset, to_read, &n_read);
+  if (err != DB_SUCCESS) {
+    if (err == DB_IO_ERROR) {
+      /* If the file is truncated by MySQL, os_file_read will
+      fail with DB_IO_ERROR, but XtraBackup must treat this
+      error as non critical. */
+      if (my_fstat(cursor->file.m_file, &cursor->statinfo)) {
+        msg("[%02u] xtrabackup: error: cannot stat %s\n", cursor->thread_n,
+            cursor->abs_path);
+        return (XB_FIL_CUR_ERROR);
+      }
+      /* Check if we reached EOF */
+      if ((ulonglong)cursor->statinfo.st_size > offset + n_read) {
+        return (XB_FIL_CUR_ERROR);
+      }
+    }
     return (XB_FIL_CUR_ERROR);
   }
+
+  npages = n_read >> cursor->page_size_shift;
 
   /* check pages for corruption and re-read if necessary. i.e. in case of
   partially written pages */
@@ -367,6 +382,8 @@ read_retry:
     cursor->buf_read += cursor->page_size;
     cursor->buf_npages++;
   }
+
+  cursor->read_filter->update(&cursor->read_filter_ctxt, n_read, cursor);
 
   posix_fadvise(cursor->file.m_file, offset, to_read, POSIX_FADV_DONTNEED);
 
