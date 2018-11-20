@@ -2194,10 +2194,10 @@ files_checked:
       respective file pages, for the last batch of
       recv_group_scan_log_recs(). */
 
-      /* Don't allow IBUF operations for cloned database
+      /* Don't allow IBUF operations for crash
       recovery as it would add extra redo log and we may
       not have enough margin. */
-      if (recv_sys->is_cloned_db) {
+      if (!srv_read_only_mode) {
         recv_apply_hashed_log_recs(*log_sys, false);
 
       } else {
