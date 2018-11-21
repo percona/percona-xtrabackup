@@ -168,19 +168,19 @@ ulint log_online_calc_checksum(
  Read one bitmap data page and check it for corruption.
 
  @return TRUE if page read OK, FALSE if I/O error */
-static ibool log_online_read_bitmap_page(
+static bool log_online_read_bitmap_page(
     /*========================*/
     log_online_bitmap_file_t *bitmap_file, /*!<in/out: bitmap
                                            file */
     byte *page,                            /*!<out: read page.  Must be at
                                            least MODIFIED_PAGE_BLOCK_SIZE
                                            bytes long */
-    ibool *checksum_ok)                    /*!<out: TRUE if page
+    bool *checksum_ok)                     /*!<out: TRUE if page
                                            checksum OK */
 {
   ulint checksum;
   ulint actual_checksum;
-  ibool success;
+  bool success;
   IORequest read_request(IORequest::READ);
 
   ut_a(bitmap_file->size >= MODIFIED_PAGE_BLOCK_SIZE);
@@ -215,7 +215,7 @@ static ibool log_online_read_bitmap_page(
  the values of output parameters are undefined.
 
  @return TRUE if a given file is a changed page bitmap file.  */
-static ibool log_online_is_bitmap_file(
+static bool log_online_is_bitmap_file(
     /*======================*/
     const struct stat *file_info, /*!<in: file to
                                   check */
@@ -230,10 +230,11 @@ static ibool log_online_is_bitmap_file(
 
   ut_ad(strlen(file_name) < OS_FILE_MAX_PATH);
 
-  return (S_ISREG(file_info->st_mode) &&
-          (sscanf(file_name, "%[a-z_]%lu_" LSN_PF ".xdb", stem,
-                  bitmap_file_seq_num, bitmap_file_start_lsn) == 3) &&
-          (!strcmp(stem, bmp_file_name_stem)));
+  bool res = (S_ISREG(file_info->st_mode) &&
+              (sscanf(file_name, "%[a-z_]%lu_" LSN_PF ".xdb", stem,
+                      bitmap_file_seq_num, bitmap_file_start_lsn) == 3) &&
+              (!strcmp(stem, bmp_file_name_stem)));
+  return res;
 }
 
 /*********************************************************************/ /**
@@ -268,12 +269,16 @@ static bool log_online_setup_bitmap_file_range(
 
   bool ret = os_file_scan_directory(
       srv_data_home,
-      [=](const char *path, const char *name) mutable -> void {
+      [&](const char *path, const char *name) mutable -> void {
         ulong file_seq_num;
         lsn_t file_start_lsn;
         struct stat statinfo;
+        char full_path[OS_FILE_MAX_PATH];
 
-        if (stat(path, &statinfo) != 0) {
+        snprintf(full_path, OS_FILE_MAX_PATH, "%s%c%s", path, OS_PATH_SEPARATOR,
+                 name);
+
+        if (stat(full_path, &statinfo) != 0) {
           return;
         }
 
@@ -332,13 +337,17 @@ static bool log_online_setup_bitmap_file_range(
 
   ret = os_file_scan_directory(
       srv_data_home,
-      [=](const char *path, const char *name) mutable -> void {
+      [&](const char *path, const char *name) mutable -> void {
         ulong file_seq_num;
         lsn_t file_start_lsn;
         size_t array_pos;
         struct stat statinfo;
+        char full_path[OS_FILE_MAX_PATH];
 
-        if (stat(path, &statinfo) != 0) {
+        snprintf(full_path, OS_FILE_MAX_PATH, "%s%c%s", path, OS_PATH_SEPARATOR,
+                 name);
+
+        if (stat(full_path, &statinfo) != 0) {
           return;
         }
 
@@ -353,7 +362,7 @@ static bool log_online_setup_bitmap_file_range(
         if (UNIV_UNLIKELY(array_pos >= bitmap_files->count)) {
           msg("InnoDB: Error: inconsistent bitmap file "
               "directory\n");
-          free(bitmap_files->files);
+          ut_free(bitmap_files->files);
           error = true;
           return;
         }
@@ -397,7 +406,7 @@ static bool log_online_setup_bitmap_file_range(
  Open a bitmap file for reading.
 
  @return TRUE if opened successfully */
-static ibool log_online_open_bitmap_file_read_only(
+static bool log_online_open_bitmap_file_read_only(
     /*==================================*/
     const char *name,                      /*!<in: bitmap file
                                            name without directory,
@@ -444,12 +453,12 @@ static ibool log_online_open_bitmap_file_read_only(
  did not have the last-in-run flag set.
 
  @return FALSE for the error */
-static ibool log_online_diagnose_bitmap_eof(
+static bool log_online_diagnose_bitmap_eof(
     /*===========================*/
     const log_online_bitmap_file_t *bitmap_file, /*!< in: bitmap file */
-    ibool last_page_in_run)                      /*!< in: "last page in
-                                                run" flag value in the
-                                                last read page */
+    bool last_page_in_run)                       /*!< in: "last page in
+                                                 run" flag value in the
+                                                 last read page */
 {
   /* Check if we are too close to EOF to read a full page */
   if ((bitmap_file->size < MODIFIED_PAGE_BLOCK_SIZE) ||
@@ -514,7 +523,7 @@ static void xb_msg_missing_lsn_data(
 
  @return TRUE if the scan successful without corruption detected
  */
-static ibool xb_find_lsn_in_bitmap_file(
+static bool xb_find_lsn_in_bitmap_file(
     /*=======================*/
     log_online_bitmap_file_t *bitmap_file, /*!<in/out: bitmap
                                            file */
@@ -524,8 +533,8 @@ static ibool xb_find_lsn_in_bitmap_file(
                                            last read page */
     lsn_t lsn)                             /*!<in: LSN to find */
 {
-  ibool last_page_ok = TRUE;
-  ibool next_to_last_page_ok = TRUE;
+  bool last_page_ok = true;
+  bool next_to_last_page_ok = true;
 
   xb_ad(bitmap_file->size >= MODIFIED_PAGE_BLOCK_SIZE);
 
@@ -564,10 +573,10 @@ xb_page_bitmap *xb_page_bitmap_init(void)
   byte page[MODIFIED_PAGE_BLOCK_SIZE];
   lsn_t current_page_end_lsn;
   xb_page_bitmap *result;
-  ibool last_page_in_run = FALSE;
+  bool last_page_in_run = FALSE;
   log_online_bitmap_file_range_t bitmap_files;
   size_t bmp_i;
-  ibool last_page_ok = TRUE;
+  bool last_page_ok = TRUE;
 
   if (UNIV_UNLIKELY(bmp_start_lsn > bmp_end_lsn)) {
     msg("xtrabackup: incremental backup LSN " LSN_PF
@@ -599,7 +608,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
     /* The 1st file does not have the starting LSN data */
     xb_msg_missing_lsn_data(bmp_start_lsn, bitmap_files.files[bmp_i].start_lsn);
     rbt_free(result);
-    free(bitmap_files.files);
+    ut_free(bitmap_files.files);
     return NULL;
   }
 
@@ -615,7 +624,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
     /* TODO: this is not the exact missing range */
     xb_msg_missing_lsn_data(bmp_start_lsn, bmp_end_lsn);
     rbt_free(result);
-    free(bitmap_files.files);
+    ut_free(bitmap_files.files);
     return NULL;
   }
 
@@ -623,7 +632,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
   if (UNIV_UNLIKELY(!log_online_open_bitmap_file_read_only(
           bitmap_files.files[bmp_i].name, &bitmap_file))) {
     rbt_free(result);
-    free(bitmap_files.files);
+    ut_free(bitmap_files.files);
     return NULL;
   }
 
@@ -633,7 +642,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
   if (UNIV_UNLIKELY(bitmap_file.size < MODIFIED_PAGE_BLOCK_SIZE)) {
     xb_msg_missing_lsn_data(bmp_start_lsn, bmp_end_lsn);
     rbt_free(result);
-    free(bitmap_files.files);
+    ut_free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -645,7 +654,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
         "\'%s\' corrupted\n",
         bitmap_file.name);
     rbt_free(result);
-    free(bitmap_files.files);
+    ut_free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -655,7 +664,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
   if (UNIV_UNLIKELY(
           !log_online_diagnose_bitmap_eof(&bitmap_file, last_page_in_run))) {
     rbt_free(result);
-    free(bitmap_files.files);
+    ut_free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -663,7 +672,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
   if (UNIV_UNLIKELY(current_page_end_lsn < bmp_start_lsn)) {
     xb_msg_missing_lsn_data(current_page_end_lsn, bmp_start_lsn);
     rbt_free(result);
-    free(bitmap_files.files);
+    ut_free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -685,7 +694,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
       if (UNIV_UNLIKELY(!log_online_diagnose_bitmap_eof(&bitmap_file,
                                                         last_page_in_run))) {
         rbt_free(result);
-        free(bitmap_files.files);
+        ut_free(bitmap_files.files);
         return NULL;
       }
 
@@ -695,7 +704,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
                         (bitmap_files.files[bmp_i].seq_num == 0))) {
         xb_msg_missing_lsn_data(current_page_end_lsn, bmp_end_lsn);
         rbt_free(result);
-        free(bitmap_files.files);
+        ut_free(bitmap_files.files);
         return NULL;
       }
 
@@ -705,14 +714,14 @@ xb_page_bitmap *xb_page_bitmap_init(void)
         xb_msg_missing_lsn_data(bitmap_files.files[bmp_i - 1].start_lsn,
                                 bmp_end_lsn);
         rbt_free(result);
-        free(bitmap_files.files);
+        ut_free(bitmap_files.files);
         return NULL;
       }
 
       if (UNIV_UNLIKELY(!log_online_open_bitmap_file_read_only(
               bitmap_files.files[bmp_i].name, &bitmap_file))) {
         rbt_free(result);
-        free(bitmap_files.files);
+        ut_free(bitmap_files.files);
         return NULL;
       }
     }
@@ -720,7 +729,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
     if (UNIV_UNLIKELY(
             !log_online_read_bitmap_page(&bitmap_file, page, &last_page_ok))) {
       rbt_free(result);
-      free(bitmap_files.files);
+      ut_free(bitmap_files.files);
       os_file_close(bitmap_file.file);
       return NULL;
     }
@@ -730,7 +739,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
           "\'%s\' corrupted.\n",
           bitmap_file.name);
       rbt_free(result);
-      free(bitmap_files.files);
+      ut_free(bitmap_files.files);
       os_file_close(bitmap_file.file);
       return NULL;
     }
@@ -762,7 +771,7 @@ xb_page_bitmap *xb_page_bitmap_init(void)
 
   xb_a(current_page_end_lsn >= bmp_end_lsn);
 
-  free(bitmap_files.files);
+  ut_free(bitmap_files.files);
   os_file_close(bitmap_file.file);
 
   return result;
@@ -785,7 +794,7 @@ void xb_page_bitmap_deinit(
  already found/bumped by rbt_search()/rbt_next().
 
  @return FALSE if no more bitmap data for the range space ID */
-static ibool xb_page_bitmap_setup_next_page(
+static bool xb_page_bitmap_setup_next_page(
     /*===========================*/
     xb_page_bitmap_range *bitmap_range) /*!<in/out: the bitmap range */
 {
@@ -855,7 +864,7 @@ xb_page_bitmap_range *xb_page_bitmap_range_init(
  Get the value of the bitmap->range->bit_i bitmap bit
 
  @return the current bit value */
-static inline ibool is_bit_set(
+static inline bool is_bit_set(
     /*=======*/
     const xb_page_bitmap_range *bitmap_range) /*!< in: bitmap
                                               range */
@@ -876,7 +885,7 @@ static inline ibool is_bit_set(
 ulint xb_page_bitmap_range_get_next_bit(
     /*==============================*/
     xb_page_bitmap_range *bitmap_range, /*!< in/out: bitmap range */
-    ibool bit_value)                    /*!< in: bit value */
+    bool bit_value)                     /*!< in: bit value */
 {
   if (UNIV_UNLIKELY(bitmap_range->current_page_id == ULINT_UNDEFINED)) {
     return ULINT_UNDEFINED;

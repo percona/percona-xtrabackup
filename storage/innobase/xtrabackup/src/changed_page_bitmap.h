@@ -68,7 +68,7 @@ xb_page_bitmap_range *xb_page_bitmap_range_init(
 ulint xb_page_bitmap_range_get_next_bit(
     /*==============================*/
     xb_page_bitmap_range *bitmap_range, /*!< in/out: bitmap range */
-    ibool bit_value);                   /*!< in: bit value */
+    bool bit_value);                    /*!< in: bit value */
 
 /****************************************************************/ /**
  Free the bitmap range iterator. */
