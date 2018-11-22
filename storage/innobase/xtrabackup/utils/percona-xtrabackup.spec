@@ -4,18 +4,19 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%define pxb_release	  %{xb_version_patch}.%{xb_rpm_version_extra}
 %global mysqldatadir /var/lib/mysql
 
 #####################################
 Name:           percona-xtrabackup-%{xb_version_major}%{xb_version_minor}
-Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
-Release:        %{xb_rpm_version_extra}%{?dist}
+Version:        %{xb_version_major}.%{xb_version_minor}
+Release:        %{pxb_release}%{?dist}
 Summary:        XtraBackup online backup for MySQL / InnoDB
 
 Group:          Applications/Databases
 License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
-Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
+Source:         percona-xtrabackup-%{version}-%{xb_version_patch}%{xb_version_extra}.tar.gz
 
 BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
@@ -25,7 +26,8 @@ BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24
 Requires:       perl(DBD::mysql), rsync
 Requires:	perl(Digest::MD5)
-BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
+BuildRoot:      %{_tmppath}/%{name}-%{version}-%{xb_version_patch}%{xb_version_extra}-root
+Epoch:		1
 
 
 %description
@@ -42,7 +44,7 @@ AutoReqProv:    no
 This package contains the test suite for Percona XtraBackup %{version}%{xb_version_extra}
 
 %prep
-%setup -q -n percona-xtrabackup-%{version}%{xb_version_extra}
+%setup -q -n percona-xtrabackup-%{version}-%{xb_version_patch}%{xb_version_extra}
 
 %bcond_with dummy
 
