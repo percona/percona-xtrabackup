@@ -5292,8 +5292,8 @@ retry:
     msg("xtrabackup: error: Unsupported redo log format " UINT32PF
         "\n"
         "This version of Percona XtraBackup can only perform backups and "
-        "restores against MySQL 8.0, please use Percona Xtrabackup 2.4 for "
-        "this database.\n",
+        "restores against MySQL 8.0 and Percona Server 8.0, please use Percona "
+        "Xtrabackup 2.4 for this database.\n",
         log_format);
     goto error;
   }
@@ -5437,7 +5437,6 @@ error:
     ut_free(log_buf);
   }
   if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
-  msg("xtrabackup: Error: xtrabackup_init_temp_log() failed.\n");
   return (TRUE); /*ERROR*/
 }
 

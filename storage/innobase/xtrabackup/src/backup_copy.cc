@@ -1481,7 +1481,12 @@ bool copy_back(int argc, char **argv) {
     return (false);
   }
 
-  Tablespace_map::instance().deserialize("./");
+  if (!Tablespace_map::instance().deserialize("./")) {
+    msg("xtrabackup: Error: failed to load tablespaces list.\nIt is possible "
+        "that the backup was created by Percona XtraBackup 2.4 or earlier "
+        "version. Please use the same XtraBackup version to restore.\n");
+    return(false);
+  }
 
   if (opt_generate_new_master_key && !xb_tablespace_keys_exist()) {
     msg("xtrabackup: Error: option --generate_new_master_key "
