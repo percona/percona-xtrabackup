@@ -20,22 +20,23 @@ my $prefix = "version_check";
 # ###########################################################################
 # HTTPMicro package
 # This package is a copy without comments from the original.  The original
-# with comments and its test file can be found in the Bazaar repository at,
+# with comments and its test file can be found in the git repository at,
 #   lib/HTTPMicro.pm
 #   t/lib/HTTPMicro.t
-# See https://launchpad.net/percona-toolkit for more information.
+# See https://github.com/percona/percona-toolkit/ for more information.
 # ###########################################################################
 {
+# Package: HTTP::Micro
+# A stripped down version of HTTP::Tiny; but not a correct HTTP/1.1
+# implementation.
+package HTTP::Micro;
 
-package HTTPMicro;
-BEGIN {
-  $HTTPMicro::VERSION = '0.001';
-}
+our $VERSION = '0.01';
+
 use strict;
-use warnings;
-
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
 use Carp ();
-
 
 my @attributes;
 BEGIN {
@@ -72,6 +73,7 @@ sub request {
       or Carp::croak(q/Usage: $http->request(METHOD, URL, [HASHREF])/);
     $args ||= {}; # we keep some state in this during _request
 
+    # RFC 2616 Section 8.1.4 mandates a single retry on broken socket
     my $response;
     for ( 0 .. 1 ) {
         $response = eval { $self->_request($method, $url, $args) };
@@ -107,7 +109,7 @@ sub _request {
         headers   => {},
     };
 
-    my $handle  = HTTPMicro::Handle->new(timeout => $self->{timeout});
+    my $handle  = HTTP::Micro::Handle->new(timeout => $self->{timeout});
 
     $handle->connect($scheme, $host, $port);
 
@@ -155,6 +157,7 @@ sub _prepare_headers_and_cb {
 sub _split_url {
     my $url = pop;
 
+    # URI regex adapted from the URI module
     my ($scheme, $authority, $path_query) = $url =~ m<\A([^:/?#]+)://([^/?#]*)([^#]*)>
       or Carp::croak(qq/Cannot parse URL: '$url'/);
 
@@ -172,322 +175,331 @@ sub _split_url {
     return ($scheme, $host, $port, $path_query);
 }
 
-package
-    HTTPMicro::Handle; # hide from PAUSE/indexers
-use strict;
-use warnings;
+} # HTTP::Micro
 
-use Carp       qw[croak];
-use Errno      qw[EINTR EPIPE];
-use IO::Socket qw[SOCK_STREAM];
+{
+   package HTTP::Micro::Handle;
 
-sub BUFSIZE () { 32768 }
+   use strict;
+   use warnings FATAL => 'all';
+   use English qw(-no_match_vars);
 
-my $Printable = sub {
-    local $_ = shift;
-    s/\r/\\r/g;
-    s/\n/\\n/g;
-    s/\t/\\t/g;
-    s/([^\x20-\x7E])/sprintf('\\x%.2X', ord($1))/ge;
-    $_;
-};
+   use Carp       qw(croak);
+   use Errno      qw(EINTR EPIPE);
+   use IO::Socket qw(SOCK_STREAM);
 
-sub new {
-    my ($class, %args) = @_;
-    return bless {
-        rbuf             => '',
-        timeout          => 60,
-        max_line_size    => 16384,
-        %args
-    }, $class;
-}
+   sub BUFSIZE () { 32768 }
 
-my $ssl_verify_args = {
-    check_cn => "when_only",
-    wildcards_in_alt => "anywhere",
-    wildcards_in_cn => "anywhere"
-};
+   my $Printable = sub {
+       local $_ = shift;
+       s/\r/\\r/g;
+       s/\n/\\n/g;
+       s/\t/\\t/g;
+       s/([^\x20-\x7E])/sprintf('\\x%.2X', ord($1))/ge;
+       $_;
+   };
 
-sub connect {
-    @_ == 4 || croak(q/Usage: $handle->connect(scheme, host, port)/);
-    my ($self, $scheme, $host, $port) = @_;
+   sub new {
+       my ($class, %args) = @_;
+       return bless {
+           rbuf          => '',
+           timeout       => 60,
+           max_line_size => 16384,
+           %args
+       }, $class;
+   }
 
-    if ( $scheme eq 'https' ) {
-        eval "require IO::Socket::SSL"
-            unless exists $INC{'IO/Socket/SSL.pm'};
-        croak(qq/IO::Socket::SSL must be installed for https support\n/)
-            unless $INC{'IO/Socket/SSL.pm'};
-    }
-    elsif ( $scheme ne 'http' ) {
-      croak(qq/Unsupported URL scheme '$scheme'\n/);
-    }
+   my $ssl_verify_args = {
+       check_cn         => "when_only",
+       wildcards_in_alt => "anywhere",
+       wildcards_in_cn  => "anywhere"
+   };
 
-    $self->{fh} = 'IO::Socket::INET'->new(
-        PeerHost  => $host,
-        PeerPort  => $port,
-        Proto     => 'tcp',
-        Type      => SOCK_STREAM,
-        Timeout   => $self->{timeout}
-    ) or croak(qq/Could not connect to '$host:$port': $@/);
+   sub connect {
+       @_ == 4 || croak(q/Usage: $handle->connect(scheme, host, port)/);
+       my ($self, $scheme, $host, $port) = @_;
 
-    binmode($self->{fh})
-      or croak(qq/Could not binmode() socket: '$!'/);
+       if ( $scheme eq 'https' ) {
+           eval "require IO::Socket::SSL"
+               unless exists $INC{'IO/Socket/SSL.pm'};
+           croak(qq/IO::Socket::SSL must be installed for https support\n/)
+               unless $INC{'IO/Socket/SSL.pm'};
+       }
+       elsif ( $scheme ne 'http' ) {
+         croak(qq/Unsupported URL scheme '$scheme'\n/);
+       }
 
-    if ( $scheme eq 'https') {
-        IO::Socket::SSL->start_SSL($self->{fh});
-        ref($self->{fh}) eq 'IO::Socket::SSL'
-            or die(qq/SSL connection failed for $host\n/);
-        if ( $self->{fh}->can("verify_hostname") ) {
-            $self->{fh}->verify_hostname( $host, $ssl_verify_args )
-                or die(qq/SSL certificate not valid for $host\n/);
-        }
-        else {
-         my $fh = $self->{fh};
-         _verify_hostname_of_cert($host, _peer_certificate($fh), $ssl_verify_args)
-               or die(qq/SSL certificate not valid for $host\n/);
-         }
-    }
-      
-    $self->{host} = $host;
-    $self->{port} = $port;
+       $self->{fh} = IO::Socket::INET->new(
+           PeerHost  => $host,
+           PeerPort  => $port,
+           Proto     => 'tcp',
+           Type      => SOCK_STREAM,
+           Timeout   => $self->{timeout}
+       ) or croak(qq/Could not connect to '$host:$port': $@/);
 
-    return $self;
-}
+       binmode($self->{fh})
+         or croak(qq/Could not binmode() socket: '$!'/);
 
-sub close {
-    @_ == 1 || croak(q/Usage: $handle->close()/);
-    my ($self) = @_;
-    CORE::close($self->{fh})
-      or croak(qq/Could not close socket: '$!'/);
-}
+       if ( $scheme eq 'https') {
+           IO::Socket::SSL->start_SSL($self->{fh});
+           ref($self->{fh}) eq 'IO::Socket::SSL'
+               or die(qq/SSL connection failed for $host\n/);
+           if ( $self->{fh}->can("verify_hostname") ) {
+               $self->{fh}->verify_hostname( $host, $ssl_verify_args )
+                  or die(qq/SSL certificate not valid for $host\n/);
+           }
+           else {
+            # Can't use $self->{fh}->verify_hostname because the IO::Socket::SSL
+            # that comes from yum doesn't have it, so use our inlined version.
+            my $fh = $self->{fh};
+            _verify_hostname_of_cert($host, _peer_certificate($fh), $ssl_verify_args)
+                  or die(qq/SSL certificate not valid for $host\n/);
+            }
+       }
+         
+       $self->{host} = $host;
+       $self->{port} = $port;
 
-sub write {
-    @_ == 2 || croak(q/Usage: $handle->write(buf)/);
-    my ($self, $buf) = @_;
+       return $self;
+   }
 
-    my $len = length $buf;
-    my $off = 0;
+   sub close {
+       @_ == 1 || croak(q/Usage: $handle->close()/);
+       my ($self) = @_;
+       CORE::close($self->{fh})
+         or croak(qq/Could not close socket: '$!'/);
+   }
 
-    local $SIG{PIPE} = 'IGNORE';
+   sub write {
+       @_ == 2 || croak(q/Usage: $handle->write(buf)/);
+       my ($self, $buf) = @_;
 
-    while () {
-        $self->can_write
-          or croak(q/Timed out while waiting for socket to become ready for writing/);
-        my $r = syswrite($self->{fh}, $buf, $len, $off);
-        if (defined $r) {
-            $len -= $r;
-            $off += $r;
-            last unless $len > 0;
-        }
-        elsif ($! == EPIPE) {
-            croak(qq/Socket closed by remote server: $!/);
-        }
-        elsif ($! != EINTR) {
-            croak(qq/Could not write to socket: '$!'/);
-        }
-    }
-    return $off;
-}
+       my $len = length $buf;
+       my $off = 0;
 
-sub read {
-    @_ == 2 || @_ == 3 || croak(q/Usage: $handle->read(len)/);
-    my ($self, $len) = @_;
+       local $SIG{PIPE} = 'IGNORE';
 
-    my $buf  = '';
-    my $got = length $self->{rbuf};
+       while () {
+           $self->can_write
+             or croak(q/Timed out while waiting for socket to become ready for writing/);
+           my $r = syswrite($self->{fh}, $buf, $len, $off);
+           if (defined $r) {
+               $len -= $r;
+               $off += $r;
+               last unless $len > 0;
+           }
+           elsif ($! == EPIPE) {
+               croak(qq/Socket closed by remote server: $!/);
+           }
+           elsif ($! != EINTR) {
+               croak(qq/Could not write to socket: '$!'/);
+           }
+       }
+       return $off;
+   }
 
-    if ($got) {
-        my $take = ($got < $len) ? $got : $len;
-        $buf  = substr($self->{rbuf}, 0, $take, '');
-        $len -= $take;
-    }
+   sub read {
+       @_ == 2 || @_ == 3 || croak(q/Usage: $handle->read(len)/);
+       my ($self, $len) = @_;
 
-    while ($len > 0) {
-        $self->can_read
-          or croak(q/Timed out while waiting for socket to become ready for reading/);
-        my $r = sysread($self->{fh}, $buf, $len, length $buf);
-        if (defined $r) {
-            last unless $r;
-            $len -= $r;
-        }
-        elsif ($! != EINTR) {
-            croak(qq/Could not read from socket: '$!'/);
-        }
-    }
-    if ($len) {
-        croak(q/Unexpected end of stream/);
-    }
-    return $buf;
-}
+       my $buf  = '';
+       my $got = length $self->{rbuf};
 
-sub readline {
-    @_ == 1 || croak(q/Usage: $handle->readline()/);
-    my ($self) = @_;
+       if ($got) {
+           my $take = ($got < $len) ? $got : $len;
+           $buf  = substr($self->{rbuf}, 0, $take, '');
+           $len -= $take;
+       }
 
-    while () {
-        if ($self->{rbuf} =~ s/\A ([^\x0D\x0A]* \x0D?\x0A)//x) {
-            return $1;
-        }
-        $self->can_read
-          or croak(q/Timed out while waiting for socket to become ready for reading/);
-        my $r = sysread($self->{fh}, $self->{rbuf}, BUFSIZE, length $self->{rbuf});
-        if (defined $r) {
-            last unless $r;
-        }
-        elsif ($! != EINTR) {
-            croak(qq/Could not read from socket: '$!'/);
-        }
-    }
-    croak(q/Unexpected end of stream while looking for line/);
-}
+       while ($len > 0) {
+           $self->can_read
+             or croak(q/Timed out while waiting for socket to become ready for reading/);
+           my $r = sysread($self->{fh}, $buf, $len, length $buf);
+           if (defined $r) {
+               last unless $r;
+               $len -= $r;
+           }
+           elsif ($! != EINTR) {
+               croak(qq/Could not read from socket: '$!'/);
+           }
+       }
+       if ($len) {
+           croak(q/Unexpected end of stream/);
+       }
+       return $buf;
+   }
 
-sub read_header_lines {
-    @_ == 1 || @_ == 2 || croak(q/Usage: $handle->read_header_lines([headers])/);
-    my ($self, $headers) = @_;
-    $headers ||= {};
-    my $lines   = 0;
-    my $val;
+   sub readline {
+       @_ == 1 || croak(q/Usage: $handle->readline()/);
+       my ($self) = @_;
 
-    while () {
-         my $line = $self->readline;
+       while () {
+           if ($self->{rbuf} =~ s/\A ([^\x0D\x0A]* \x0D?\x0A)//x) {
+               return $1;
+           }
+           $self->can_read
+             or croak(q/Timed out while waiting for socket to become ready for reading/);
+           my $r = sysread($self->{fh}, $self->{rbuf}, BUFSIZE, length $self->{rbuf});
+           if (defined $r) {
+               last unless $r;
+           }
+           elsif ($! != EINTR) {
+               croak(qq/Could not read from socket: '$!'/);
+           }
+       }
+       croak(q/Unexpected end of stream while looking for line/);
+   }
 
-         if ($line =~ /\A ([^\x00-\x1F\x7F:]+) : [\x09\x20]* ([^\x0D\x0A]*)/x) {
-             my ($field_name) = lc $1;
-             $val = \($headers->{$field_name} = $2);
-         }
-         elsif ($line =~ /\A [\x09\x20]+ ([^\x0D\x0A]*)/x) {
-             $val
-               or croak(q/Unexpected header continuation line/);
-             next unless length $1;
-             $$val .= ' ' if length $$val;
-             $$val .= $1;
-         }
-         elsif ($line =~ /\A \x0D?\x0A \z/x) {
-            last;
-         }
-         else {
-            croak(q/Malformed header line: / . $Printable->($line));
-         }
-    }
-    return $headers;
-}
+   sub read_header_lines {
+       @_ == 1 || @_ == 2 || croak(q/Usage: $handle->read_header_lines([headers])/);
+       my ($self, $headers) = @_;
+       $headers ||= {};
+       my $lines   = 0;
+       my $val;
 
-sub write_header_lines {
-    (@_ == 2 && ref $_[1] eq 'HASH') || croak(q/Usage: $handle->write_header_lines(headers)/);
-    my($self, $headers) = @_;
+       while () {
+            my $line = $self->readline;
 
-    my $buf = '';
-    while (my ($k, $v) = each %$headers) {
-        my $field_name = lc $k;
-         $field_name =~ /\A [\x21\x23-\x27\x2A\x2B\x2D\x2E\x30-\x39\x41-\x5A\x5E-\x7A\x7C\x7E]+ \z/x
-            or croak(q/Invalid HTTP header field name: / . $Printable->($field_name));
-         $field_name =~ s/\b(\w)/\u$1/g;
-         $buf .= "$field_name: $v\x0D\x0A";
-    }
-    $buf .= "\x0D\x0A";
-    return $self->write($buf);
-}
+            if ($line =~ /\A ([^\x00-\x1F\x7F:]+) : [\x09\x20]* ([^\x0D\x0A]*)/x) {
+                my ($field_name) = lc $1;
+                $val = \($headers->{$field_name} = $2);
+            }
+            elsif ($line =~ /\A [\x09\x20]+ ([^\x0D\x0A]*)/x) {
+                $val
+                  or croak(q/Unexpected header continuation line/);
+                next unless length $1;
+                $$val .= ' ' if length $$val;
+                $$val .= $1;
+            }
+            elsif ($line =~ /\A \x0D?\x0A \z/x) {
+               last;
+            }
+            else {
+               croak(q/Malformed header line: / . $Printable->($line));
+            }
+       }
+       return $headers;
+   }
 
-sub read_content_body {
-    @_ == 3 || @_ == 4 || croak(q/Usage: $handle->read_content_body(callback, response, [read_length])/);
-    my ($self, $cb, $response, $len) = @_;
-    $len ||= $response->{headers}{'content-length'};
+   sub write_header_lines {
+       (@_ == 2 && ref $_[1] eq 'HASH') || croak(q/Usage: $handle->write_header_lines(headers)/);
+       my($self, $headers) = @_;
 
-    croak("No content-length in the returned response, and this "
-        . "UA doesn't implement chunking") unless defined $len;
+       my $buf = '';
+       while (my ($k, $v) = each %$headers) {
+           my $field_name = lc $k;
+            $field_name =~ /\A [\x21\x23-\x27\x2A\x2B\x2D\x2E\x30-\x39\x41-\x5A\x5E-\x7A\x7C\x7E]+ \z/x
+               or croak(q/Invalid HTTP header field name: / . $Printable->($field_name));
+            $field_name =~ s/\b(\w)/\u$1/g;
+            $buf .= "$field_name: $v\x0D\x0A";
+       }
+       $buf .= "\x0D\x0A";
+       return $self->write($buf);
+   }
 
-    while ($len > 0) {
-        my $read = ($len > BUFSIZE) ? BUFSIZE : $len;
-        $cb->($self->read($read), $response);
-        $len -= $read;
-    }
+   sub read_content_body {
+       @_ == 3 || @_ == 4 || croak(q/Usage: $handle->read_content_body(callback, response, [read_length])/);
+       my ($self, $cb, $response, $len) = @_;
+       $len ||= $response->{headers}{'content-length'};
 
-    return;
-}
+       croak("No content-length in the returned response, and this "
+           . "UA doesn't implement chunking") unless defined $len;
 
-sub write_content_body {
-    @_ == 2 || croak(q/Usage: $handle->write_content_body(request)/);
-    my ($self, $request) = @_;
-    my ($len, $content_length) = (0, $request->{headers}{'content-length'});
+       while ($len > 0) {
+           my $read = ($len > BUFSIZE) ? BUFSIZE : $len;
+           $cb->($self->read($read), $response);
+           $len -= $read;
+       }
 
-    $len += $self->write($request->{content});
+       return;
+   }
 
-    $len == $content_length
-      or croak(qq/Content-Length missmatch (got: $len expected: $content_length)/);
+   sub write_content_body {
+       @_ == 2 || croak(q/Usage: $handle->write_content_body(request)/);
+       my ($self, $request) = @_;
+       my ($len, $content_length) = (0, $request->{headers}{'content-length'});
 
-    return $len;
-}
+       $len += $self->write($request->{content});
 
-sub read_response_header {
-    @_ == 1 || croak(q/Usage: $handle->read_response_header()/);
-    my ($self) = @_;
+       $len == $content_length
+         or croak(qq/Content-Length missmatch (got: $len expected: $content_length)/);
 
-    my $line = $self->readline;
+       return $len;
+   }
 
-    $line =~ /\A (HTTP\/(0*\d+\.0*\d+)) [\x09\x20]+ ([0-9]{3}) [\x09\x20]+ ([^\x0D\x0A]*) \x0D?\x0A/x
-      or croak(q/Malformed Status-Line: / . $Printable->($line));
+   sub read_response_header {
+       @_ == 1 || croak(q/Usage: $handle->read_response_header()/);
+       my ($self) = @_;
 
-    my ($protocol, $version, $status, $reason) = ($1, $2, $3, $4);
+       my $line = $self->readline;
 
-    return {
-        status   => $status,
-        reason   => $reason,
-        headers  => $self->read_header_lines,
-        protocol => $protocol,
-    };
-}
+       $line =~ /\A (HTTP\/(0*\d+\.0*\d+)) [\x09\x20]+ ([0-9]{3}) [\x09\x20]+ ([^\x0D\x0A]*) \x0D?\x0A/x
+         or croak(q/Malformed Status-Line: / . $Printable->($line));
 
-sub write_request_header {
-    @_ == 4 || croak(q/Usage: $handle->write_request_header(method, request_uri, headers)/);
-    my ($self, $method, $request_uri, $headers) = @_;
+       my ($protocol, $version, $status, $reason) = ($1, $2, $3, $4);
 
-    return $self->write("$method $request_uri HTTP/1.1\x0D\x0A")
-         + $self->write_header_lines($headers);
-}
+       return {
+           status   => $status,
+           reason   => $reason,
+           headers  => $self->read_header_lines,
+           protocol => $protocol,
+       };
+   }
 
-sub _do_timeout {
-    my ($self, $type, $timeout) = @_;
-    $timeout = $self->{timeout}
-        unless defined $timeout && $timeout >= 0;
+   sub write_request_header {
+       @_ == 4 || croak(q/Usage: $handle->write_request_header(method, request_uri, headers)/);
+       my ($self, $method, $request_uri, $headers) = @_;
 
-    my $fd = fileno $self->{fh};
-    defined $fd && $fd >= 0
-      or croak(q/select(2): 'Bad file descriptor'/);
+       return $self->write("$method $request_uri HTTP/1.1\x0D\x0A")
+            + $self->write_header_lines($headers);
+   }
 
-    my $initial = time;
-    my $pending = $timeout;
-    my $nfound;
+   sub _do_timeout {
+       my ($self, $type, $timeout) = @_;
+       $timeout = $self->{timeout}
+           unless defined $timeout && $timeout >= 0;
 
-    vec(my $fdset = '', $fd, 1) = 1;
+       my $fd = fileno $self->{fh};
+       defined $fd && $fd >= 0
+         or croak(q/select(2): 'Bad file descriptor'/);
 
-    while () {
-        $nfound = ($type eq 'read')
-            ? select($fdset, undef, undef, $pending)
-            : select(undef, $fdset, undef, $pending) ;
-        if ($nfound == -1) {
-            $! == EINTR
-              or croak(qq/select(2): '$!'/);
-            redo if !$timeout || ($pending = $timeout - (time - $initial)) > 0;
-            $nfound = 0;
-        }
-        last;
-    }
-    $! = 0;
-    return $nfound;
-}
+       my $initial = time;
+       my $pending = $timeout;
+       my $nfound;
 
-sub can_read {
-    @_ == 1 || @_ == 2 || croak(q/Usage: $handle->can_read([timeout])/);
-    my $self = shift;
-    return $self->_do_timeout('read', @_)
-}
+       vec(my $fdset = '', $fd, 1) = 1;
 
-sub can_write {
-    @_ == 1 || @_ == 2 || croak(q/Usage: $handle->can_write([timeout])/);
-    my $self = shift;
-    return $self->_do_timeout('write', @_)
-}
+       while () {
+           $nfound = ($type eq 'read')
+               ? select($fdset, undef, undef, $pending)
+               : select(undef, $fdset, undef, $pending) ;
+           if ($nfound == -1) {
+               $! == EINTR
+                 or croak(qq/select(2): '$!'/);
+               redo if !$timeout || ($pending = $timeout - (time - $initial)) > 0;
+               $nfound = 0;
+           }
+           last;
+       }
+       $! = 0;
+       return $nfound;
+   }
 
+   sub can_read {
+       @_ == 1 || @_ == 2 || croak(q/Usage: $handle->can_read([timeout])/);
+       my $self = shift;
+       return $self->_do_timeout('read', @_)
+   }
+
+   sub can_write {
+       @_ == 1 || @_ == 2 || croak(q/Usage: $handle->can_write([timeout])/);
+       my $self = shift;
+       return $self->_do_timeout('write', @_)
+   }
+}  # HTTP::Micro::Handle
+
+# Partially copy-pasted from IO::Socket::SSL 1.76, with some changes because
+# we're forced to use IO::Socket::SSL version 1.01 in yum-based distros
 my $prog = <<'EOP';
 BEGIN {
    if ( defined &IO::Socket::SSL::CAN_IPV6 ) {
@@ -507,11 +519,13 @@ BEGIN {
    }
 }
 {
+   use Carp qw(croak);
    my %dispatcher = (
       issuer =>  sub { Net::SSLeay::X509_NAME_oneline( Net::SSLeay::X509_get_issuer_name( shift )) },
       subject => sub { Net::SSLeay::X509_NAME_oneline( Net::SSLeay::X509_get_subject_name( shift )) },
    );
    if ( $Net::SSLeay::VERSION >= 1.30 ) {
+      # I think X509_NAME_get_text_by_NID got added in 1.30
       $dispatcher{commonName} = sub {
          my $cn = Net::SSLeay::X509_NAME_get_text_by_NID(
             Net::SSLeay::X509_get_subject_name( shift ), NID_CommonName);
@@ -525,13 +539,19 @@ BEGIN {
    }
 
    if ( $Net::SSLeay::VERSION >= 1.33 ) {
+      # X509_get_subjectAltNames did not really work before
       $dispatcher{subjectAltNames} = sub { Net::SSLeay::X509_get_subjectAltNames( shift ) };
    } else {
       $dispatcher{subjectAltNames} = sub {
+         # In the original, this croaked, but yum's Net::SSLeay doesn't have
+         # X509_get_subjectAltNames -- which is mostly okay, because we don't
+         # really need it.
          return;
+         #croak "you need at least Net::SSLeay version 1.33 for getting subjectAltNames"
       };
    }
 
+   # alternative names
    $dispatcher{authority} = $dispatcher{issuer};
    $dispatcher{owner}     = $dispatcher{subject};
    $dispatcher{cn}        = $dispatcher{commonName};
@@ -554,18 +574,32 @@ BEGIN {
       }
    }
 
+   # known schemes, possible attributes are:
+   #  - wildcards_in_alt (0, 'leftmost', 'anywhere')
+   #  - wildcards_in_cn (0, 'leftmost', 'anywhere')
+   #  - check_cn (0, 'always', 'when_only')
 
    my %scheme = (
+      # rfc 4513
       ldap => {
          wildcards_in_cn    => 0,
          wildcards_in_alt => 'leftmost',
          check_cn         => 'always',
       },
+      # rfc 2818
       http => {
          wildcards_in_cn    => 'anywhere',
          wildcards_in_alt => 'anywhere',
          check_cn         => 'when_only',
       },
+      # rfc 3207
+      # This is just a dumb guess
+      # RFC3207 itself just says, that the client should expect the
+      # domain name of the server in the certificate. It doesn't say
+      # anything about wildcards, so I forbid them. It doesn't say
+      # anything about alt names, but other documents show, that alt
+      # names should be possible. The check_cn value again is a guess.
+      # Fix the spec!
       smtp => {
          wildcards_in_cn    => 0,
          wildcards_in_alt => 0,
@@ -582,6 +616,11 @@ BEGIN {
    $scheme{nntp} = $scheme{ldap}; # rfc 4642
    $scheme{ftp}  = $scheme{http}; # rfc 4217
 
+   # function to verify the hostname
+   #
+   # as every application protocol has its own rules to do this
+   # we provide some default rules as well as a user-defined
+   # callback
 
    sub _verify_hostname_of_cert {
       my $identity = shift;
@@ -593,21 +632,27 @@ BEGIN {
 
       return 1 if ! %$scheme; # 'none'
 
+      # get data from certificate
       my $commonName = $dispatcher{cn}->($cert);
       my @altNames   = $dispatcher{subjectAltNames}->($cert);
 
       if ( my $sub = $scheme->{callback} ) {
+         # use custom callback
          return $sub->($identity,$commonName,@altNames);
       }
 
+      # is the given hostname an IP address? Then we have to convert to network byte order [RFC791][RFC2460]
 
       my $ipn;
       if ( CAN_IPV6 and $identity =~m{:} ) {
+         # no IPv4 or hostname have ':'   in it, try IPv6.
          $ipn = IO::Socket::SSL::inet_pton(IO::Socket::SSL::AF_INET6,$identity)
             or croak "'$identity' is not IPv6, but neither IPv4 nor hostname";
       } elsif ( $identity =~m{^\d+\.\d+\.\d+\.\d+$} ) {
+          # definitly no hostname, try IPv4
          $ipn = IO::Socket::SSL::inet_aton( $identity ) or croak "'$identity' is not IPv4, but neither IPv6 nor hostname";
       } else {
+         # assume hostname, check for umlauts etc
          if ( $identity =~m{[^a-zA-Z0-9_.\-]} ) {
             $identity =~m{\0} and croak("name '$identity' has \\0 byte");
             $identity = IO::Socket::SSL::idn_to_ascii($identity) or
@@ -615,10 +660,17 @@ BEGIN {
          }
       }
 
+      # do the actual verification
       my $check_name = sub {
          my ($name,$identity,$wtyp) = @_;
          $wtyp ||= '';
          my $pattern;
+         ### IMPORTANT!
+         # we accept only a single wildcard and only for a single part of the FQDN
+         # e.g *.example.org does match www.example.org but not bla.www.example.org
+         # The RFCs are in this regard unspecific but we don't want to have to
+         # deal with certificates like *.com, *.co.uk or even *
+         # see also http://nils.toedtmann.net/pub/subjectAltName.txt
          if ( $wtyp eq 'anywhere' and $name =~m{^([a-zA-Z0-9_\-]*)\*(.+)} ) {
             $pattern = qr{^\Q$1\E[a-zA-Z0-9_\-]*\Q$2\E$}i;
          } elsif ( $wtyp eq 'leftmost' and $name =~m{^\*(\..+)$} ) {
@@ -633,6 +685,8 @@ BEGIN {
       while (@altNames) {
          my ($type, $name) = splice (@altNames, 0, 2);
          if ( $ipn and $type == GEN_IPADD ) {
+            # exakt match needed for IP
+            # $name is already packed format (inet_xton)
             return 1 if $ipn eq $name;
 
          } elsif ( ! $ipn and $type == GEN_DNS ) {
@@ -662,22 +716,29 @@ if ( $INC{"IO/Socket/SSL.pm"} ) {
 }
 
 1;
-}
 # ###########################################################################
-# End HTTPMicro package
+# End HTTP::Micro package
 # ###########################################################################
 
 # ###########################################################################
 # VersionCheck package
 # This package is a copy without comments from the original.  The original
-# with comments and its test file can be found in the Bazaar repository at,
+# with comments and its test file can be found in the git repository at,
 #   lib/VersionCheck.pm
 #   t/lib/VersionCheck.t
-# See https://launchpad.net/percona-toolkit for more information.
+# See https://github.com/percona/percona-toolkit/ for more information.
+# ###########################################################################
+# ###########################################################################
+# VersionCheck package
 # ###########################################################################
 {
 package VersionCheck;
 
+# NOTE: VersionCheck 2.2 is not compatible with 2.1.
+# In 2.1, the vc file did not have a special system
+# instance with ID 0, and it used the file's mtime.
+# In 2.2, the system and MySQL instances are all saved
+# in the vc file, and the file's mtime doesn't matter.
 
 use strict;
 use warnings FATAL => 'all';
@@ -698,22 +759,28 @@ use FindBin qw();
 
 eval {
    require Percona::Toolkit;
-   require HTTPMicro;
+   require HTTP::Micro;
 };
 
+my $home    = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
+my @vc_dirs = (
+   '/etc/percona',
+   '/etc/percona-toolkit',
+   '/tmp',
+   "$home",
+);
+
+if ($ENV{PTDEBUG_VERSION_CHECK_HOME}) {
+    @vc_dirs = ( $ENV{PTDEBUG_VERSION_CHECK_HOME} );
+}
+
+# Return the version check file used to keep track of
+# MySQL instance that have been checked and when.  Some
+# systems use random tmp dirs; we don't want that else
+# every user will have their own vc file.  One vc file
+# per system is the goal, so prefer global sys dirs first.
 {
    my $file    = 'percona-version-check';
-   my $home    = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '.';
-   my @vc_dirs = (
-      '/etc/percona',
-      '/etc/percona-toolkit',
-      '/tmp',
-      "$home",
-   );
-
-   if ($ENV{PTDEBUG_VERSION_CHECK_HOME}) {
-       @vc_dirs = ( $ENV{PTDEBUG_VERSION_CHECK_HOME} );
-   }
 
    sub version_check_file {
       foreach my $dir ( @vc_dirs ) {
@@ -727,35 +794,66 @@ eval {
    } 
 }
 
+# Return time limit between checks.
 sub version_check_time_limit {
    return 60 * 60 * 24;  # one day
 }
 
+# #############################################################################
+# Version check handlers
+# #############################################################################
 
+# Do a version check.  This is only sub a caller/tool needs to call.
+# Pass in an arrayref of hashrefs for each MySQL instance to check.
+# Each hashref should have a dbh and a dsn.
+#
+# This sub fails silently, so you must use PTDEBUG to diagnose.  Use
+# PTDEBUG_VERSION_CHECK=1 and this sub will exit 255 when it's done
+# (helpful in combination with PTDEBUG=1 so you don't get the tool's
+# full debug output).
+#
+# Use PERCONA_VERSION_CHECK_URL to set the version check API url,
+# e.g. https://stage.v.percona.com for testing.
 sub version_check {
    my (%args) = @_;
 
    my $instances = $args{instances} || [];
    my $instances_to_check;
 
+   # This sub should only be called if $o->get('version-check') is true,
+   # and it is by default because the option is on by default in PT 2.2.
+   # However, we do not want dev and testing to v-c, so even though this
+   # sub is called, force should be false because $o->got('version-check')
+   # is false, then check for a .bzr or .git dir which indicates dev or testing.
+   # ../.bzr is when a tool is ran from /bin/; ../../.bzr is when a tool
+   # is ran as a module from /t/<tool>/.
    PTDEBUG && _d('FindBin::Bin:', $FindBin::Bin);
    if ( !$args{force} ) {
       if ( $FindBin::Bin
-           && (-d "$FindBin::Bin/../.bzr" || -d "$FindBin::Bin/../../.bzr") ) {
+           && (-d "$FindBin::Bin/../.bzr"    || 
+               -d "$FindBin::Bin/../../.bzr" ||
+               -d "$FindBin::Bin/../.git"    || 
+               -d "$FindBin::Bin/../../.git" 
+              ) 
+         ) {
          PTDEBUG && _d("$FindBin::Bin/../.bzr disables --version-check");
          return;
       }
    }
 
    eval {
+      # Name and ID the instances.  The name is for debugging,
+      # and the ID is what the code uses to prevent double-checking.
       foreach my $instance ( @$instances ) {
          my ($name, $id) = get_instance_id($instance);
          $instance->{name} = $name;
          $instance->{id}   = $id;
       }
 
+      # Push a special instance for the system itself.
       push @$instances, { name => 'system', id => 0 };
 
+      # Get the instances which haven't been checked in the 24 hours.
       $instances_to_check = get_instances_to_check(
          instances => $instances,
          vc_file   => $args{vc_file},  # testing
@@ -764,21 +862,25 @@ sub version_check {
       PTDEBUG && _d(scalar @$instances_to_check, 'instances to check');
       return unless @$instances_to_check;
 
-      my $protocol = 'https';
+      # Skip Version Check altogether if SSL not available
+      my $protocol = 'https';  
       eval { require IO::Socket::SSL; };
       if ( $EVAL_ERROR ) {
-          PTDEBUG && _d($EVAL_ERROR);
-          PTDEBUG && _d("SSL not available, won't run version_check");
-          return;
+         PTDEBUG && _d($EVAL_ERROR);
+         PTDEBUG && _d("SSL not available, won't run version_check");
+         return;
       }
       PTDEBUG && _d('Using', $protocol);
+      my $url = $args{url}                       # testing
+                || $ENV{PERCONA_VERSION_CHECK_URL}  # testing
+                || "$protocol://v.percona.com";
+      PTDEBUG && _d('API URL:', $url);
 
+      # Get list of programs to check from Percona.
       my $advice = pingback(
          instances => $instances_to_check,
          protocol  => $protocol,
-         url       => $args{url}                       # testing
-                   || $ENV{PERCONA_VERSION_CHECK_URL}  # testing
-                   || "$protocol://v.percona.com",
+         url       => $url,
       );
       if ( $advice ) {
          PTDEBUG && _d('Advice:', Dumper($advice));
@@ -796,8 +898,11 @@ sub version_check {
       PTDEBUG && _d('Version check failed:', $EVAL_ERROR);
    }
 
+   # Always update the vc file, even if the version check fails.
    if ( @$instances_to_check ) {
       eval {
+         # Update the check time for things we checked.  I.e. if we
+         # didn't check it, do _not_ update its time.
          update_check_times(
             instances => $instances_to_check,
             vc_file   => $args{vc_file},  # testing
@@ -831,12 +936,18 @@ sub get_instances_to_check {
       return $instances;
    }
 
+   # The version check file contains "ID,time" lines for each MySQL instance
+   # and a special "0,time" instance for the system.  Another tool may have
+   # seen fewer or more instances than the current tool, but we'll read them
+   # all and check only the instances for the current tool.
    open my $fh, '<', $vc_file or die "Cannot open $vc_file: $OS_ERROR";
    chomp(my $file_contents = do { local $/ = undef; <$fh> });
    PTDEBUG && _d('Version check file', $vc_file, 'contents:', $file_contents);
    close $fh;
    my %last_check_time_for = $file_contents =~ /^([^,]+),(.+)$/mg;
 
+   # Check the instances that have either 1) never been checked
+   # (or seen) before, or 2) were checked > check time limit ago.
    my $check_time_limit = version_check_time_limit();
    my @instances_to_check;
    foreach my $instance ( @$instances ) {
@@ -864,10 +975,14 @@ sub update_check_times {
    my $vc_file   = $args{vc_file} || version_check_file();
    PTDEBUG && _d('Updating last check time:', $now);
 
+   # We need to write back all instances to the file.  The given
+   # instances are the ones updated, so use the current ts (now).
    my %all_instances = map {
       $_->{id} => { name => $_->{name}, ts => $now }
    } @$instances;
 
+   # If the file exists, read the instances in it, and if they're
+   # not one of the updated ones, save them with their original ts.
    if ( -f $vc_file ) {
       open my $fh, '<', $vc_file or die "Cannot read $vc_file: $OS_ERROR";
       my $contents = do { local $/ = undef; <$fh> };
@@ -881,6 +996,8 @@ sub update_check_times {
       }
    }
 
+   # Write back all instances, some with updated ts, others with their
+   # original ts.
    open my $fh, '>', $vc_file or die "Cannot write to $vc_file: $OS_ERROR";
    foreach my $id ( sort keys %all_instances ) {
       PTDEBUG && _d('Updated:', $id, Dumper($all_instances{$id}));
@@ -897,19 +1014,25 @@ sub get_instance_id {
    my $dbh = $instance->{dbh};
    my $dsn = $instance->{dsn};
 
+   # MySQL 5.1+ has @@hostname and @@port
+   # MySQL 5.0  has @@hostname but port only in SHOW VARS
+   # MySQL 4.x  has nothing, so we use the dsn
    my $sql = q{SELECT CONCAT(@@hostname, @@port)};
    PTDEBUG && _d($sql);
    my ($name) = eval { $dbh->selectrow_array($sql) };
    if ( $EVAL_ERROR ) {
+      # MySQL 4.x or 5.0
       PTDEBUG && _d($EVAL_ERROR);
       $sql = q{SELECT @@hostname};
       PTDEBUG && _d($sql);
       ($name) = eval { $dbh->selectrow_array($sql) };
       if ( $EVAL_ERROR ) {
+         # MySQL 4.x
          PTDEBUG && _d($EVAL_ERROR);
          $name = ($dsn->{h} || 'localhost') . ($dsn->{P} || 3306);
       }
       else {
+         # MySQL 5.0
          $sql = q{SHOW VARIABLES LIKE 'port'};
          PTDEBUG && _d($sql);
          my (undef, $port) = eval { $dbh->selectrow_array($sql) };
@@ -925,6 +1048,57 @@ sub get_instance_id {
 }
 
 
+# This function has been implemented solely to be able to count individual 
+# Toolkit users for statistics. It uses a random UUID, no client info is
+# being gathered nor stored
+sub get_uuid {
+    my $uuid_file = '/.percona-toolkit.uuid';
+    foreach my $dir (@vc_dirs) {
+        my $filename = $dir.$uuid_file;
+        my $uuid=_read_uuid($filename);
+        return $uuid if $uuid;
+    }
+
+    my $filename = $ENV{"HOME"} . $uuid_file;
+    my $uuid = _generate_uuid();
+
+    my $fh;
+    eval {
+        open($fh, '>', $filename);
+    };
+    if (!$EVAL_ERROR) {
+        print $fh $uuid;
+        close $fh;
+    }
+
+    return $uuid;
+}   
+
+sub _generate_uuid {
+    return sprintf+($}="%04x")."$}-$}-$}-$}-".$}x3,map rand 65537,0..7;
+}
+
+sub _read_uuid {
+    my $filename = shift;
+    my $fh;
+
+    eval {
+        open($fh, '<:encoding(UTF-8)', $filename);
+    };
+    return if ($EVAL_ERROR);
+
+    my $uuid;
+    eval { $uuid = <$fh>; };
+    return if ($EVAL_ERROR);
+
+    chomp $uuid;
+    return $uuid;
+}
+
+# #############################################################################
+# Protocol handlers
+# #############################################################################
+
 sub pingback {
    my (%args) = @_;
    my @required_args = qw(url instances);
@@ -934,8 +1108,16 @@ sub pingback {
    my $url       = $args{url};
    my $instances = $args{instances};
 
-   my $ua = $args{ua} || HTTPMicro->new( timeout => 3 );
+   # Optional args
+   my $ua = $args{ua} || HTTP::Micro->new( timeout => 3 );
 
+   # GET https://upgrade.percona.com, the server will return
+   # a plaintext list of items/programs it wants the tool
+   # to get, one item per line with the format ITEM;TYPE[;VARS]
+   # ITEM is the pretty name of the item/program; TYPE is
+   # the type of ITEM that helps the tool determine how to
+   # get the item's version; and VARS is optional for certain
+   # items/types that need extra hints.
    my $response = $ua->request('GET', $url);
    PTDEBUG && _d('Server response:', Dumper($response));
    die "No response from GET $url"
@@ -945,12 +1127,22 @@ sub pingback {
    die("GET on $url did not return any programs to check")
       if !$response->{content};
 
+   # Parse the plaintext server response into a hashref keyed on
+   # the items like:
+   #    "MySQL" => {
+   #      item => "MySQL",
+   #      type => "mysql_variables",
+   #      vars => ["version", "version_comment"],
+   #    }
    my $items = parse_server_response(
       response => $response->{content}
    );
    die "Failed to parse server requested programs: $response->{content}"
       if !scalar keys %$items;
       
+   # Get the versions for those items in another hashref also keyed on
+   # the items like:
+   #    "MySQL" => "MySQL Community Server 5.1.49-log",
    my $versions = get_versions(
       items     => $items,
       instances => $instances,
@@ -958,14 +1150,18 @@ sub pingback {
    die "Failed to get any program versions; should have at least gotten Perl"
       if !scalar keys %$versions;
 
+   # Join the items and whatever versions are available and re-encode
+   # them in same simple plaintext item-per-line protocol, and send
+   # it back to Percona.
    my $client_content = encode_client_response(
       items      => $items,
       versions   => $versions,
-      general_id => md5_hex( hostname() ),
+      general_id => get_uuid(),
    );
 
+   my $tool_name = $ENV{XTRABACKUP_VERSION} ? "Percona XtraBackup" : File::Basename::basename($0);
    my $client_response = {
-      headers => { "X-Percona-Toolkit-Tool" => File::Basename::basename($0) },
+      headers => { "X-Percona-Toolkit-Tool" => $tool_name },
       content => $client_content,
    };
    PTDEBUG && _d('Client response:', Dumper($client_response));
@@ -977,8 +1173,12 @@ sub pingback {
    die "POST $url returned HTTP status $response->{status}; expected 200"
       if $response->{status} != 200;
 
+   # Response contents is empty if the server doesn't have any suggestions.
    return unless $response->{content};
 
+   # If the server has suggestions for items, it sends them back in
+   # the same format: ITEM:TYPE:SUGGESTION\n.  ITEM:TYPE is mostly for
+   # debugging; the tool just repports the suggestions.
    $items = parse_server_response(
       response   => $response->{content},
       split_vars => 0,
@@ -1000,6 +1200,11 @@ sub encode_client_response {
    }
    my ($items, $versions, $general_id) = @args{@required_args};
 
+   # There may not be a version for each item.  For example, the server
+   # may have requested the "MySQL" (version) item, but if the tool
+   # didn't connect to MySQL, there won't be a $versions->{MySQL}.
+   # That's ok; just use what we've got.
+   # NOTE: the sort is only need to make testing deterministic.
    my @lines;
    foreach my $item ( sort keys %$items ) {
       next unless exists $versions->{$item};
@@ -1043,11 +1248,13 @@ sub parse_server_response {
    return \%items;
 }
 
+# Safety check: only these types of items are valid/official.
 my %sub_for_type = (
    os_version          => \&get_os_version,
    perl_version        => \&get_perl_version,
    perl_module_version => \&get_perl_module_version,
    mysql_variable      => \&get_mysql_variable,
+   xtrabackup          => \&get_xtrabackup_version,
 );
 
 sub valid_item {
@@ -1089,6 +1296,9 @@ sub get_versions {
    return \%versions;
 }
 
+# #############################################################################
+# Version getters
+# #############################################################################
 
 sub get_os_version {
    if ( $OSNAME eq 'MSWin32' ) {
@@ -1159,6 +1369,7 @@ sub get_os_version {
    }
    chomp($release);
 
+   # For Gentoo, which returns a value in quotes
    $release =~ s/^"|"$//g;
 
    PTDEBUG && _d('OS version =', $release);
@@ -1175,11 +1386,18 @@ sub get_perl_version {
    return $version;
 }
 
+sub get_xtrabackup_version {
+    return $ENV{XTRABACKUP_VERSION};
+}
+
 sub get_perl_module_version {
    my (%args) = @_;
    my $item = $args{item};
    return unless $item;
 
+   # If there's a var, then its an explicit Perl variable name to get,
+   # else the item name is an implicity Perl module name to which we
+   # append ::VERSION to get the module's version.
    my $var     = '$' . $item->{item} . '::VERSION';
    my $version = eval "use $item->{item}; $var;";
    PTDEBUG && _d('Perl version for', $var, '=', $version);
@@ -1206,9 +1424,12 @@ sub get_from_mysql {
       return;
    }
 
+   # Only allow version variables to be reported 
+   # So in case of MITM attack, we don't report sensitive data
    if ($item->{item} eq 'MySQL' && $item->{type} eq 'mysql_variable') {
-       $item->{vars} = ['version_comment', 'version'];
+      @{$item->{vars}} = grep { $_ eq 'version' || $_ eq 'version_comment' } @{$item->{vars}};
    }
+ 
 
    my @versions;
    my %version_for;
