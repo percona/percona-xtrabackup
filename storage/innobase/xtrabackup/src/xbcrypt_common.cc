@@ -133,7 +133,6 @@ gcry_error_t xb_crypt_init(uint *iv_len) {
 
   /* Set up the iv length */
   encrypt_iv_len = gcry_cipher_get_algo_blklen(encrypt_algo);
-  xb_a(encrypt_iv_len > 0);
   if (iv_len != NULL) {
     *iv_len = encrypt_iv_len;
   }
@@ -251,6 +250,9 @@ gcry_error_t xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
 
   } else {
     memcpy(to, from, *to_len);
+    if (hash_appended) {
+      *to_len -= XB_CRYPT_HASH_LEN;
+    }
   }
 
   return 0;
