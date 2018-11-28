@@ -1,22 +1,40 @@
-============================
- |Percona XtraBackup| 2.1.2
-============================
+================================================================================
+|Percona XtraBackup| 2.1.2
+================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.2 on May 17th 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.2/>`_ and :doc:`Percona Software Repositories </installation>`. 
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.2 on May
+17th 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.2/>`_ and
+:doc:`Percona Software Repositories </installation>`.
 
-This release fixes number of high priority bugs since 2.1 became GA. It's advised to upgrade your latest 2.1 version to 2.1.2. This release is the latest stable release in the 2.1 series.
+This release fixes number of high priority bugs since 2.1 became GA. It's
+advised to upgrade your latest 2.1 version to 2.1.2. This release is the latest
+stable release in the 2.1 series.
 
 Bugs Fixed
-----------
+================================================================================
 
- Using Perl's ``DBD::MySQL`` package for server communication instead of spawning the mysql command line client introduced a regression which caused :option:`innobackupex --galera-info` to fail. Bug fixed :bug:`1180672`.
+Using Perl's ``DBD::MySQL`` package for server communication instead of spawning
+the mysql command line client introduced a regression which caused
+:option:`innobackupex --galera-info` to fail. Bug fixed :bug:`1180672`.
 
- The format of :file:`xtrabackup_galera_info` was missing the ':' separator between the values of :option:`wsrep_local_state_uuid` and :option:`wsrep_last_committed`. Bug fixed :bug:`1181222`.
+The format of :file:`xtrabackup_galera_info` was missing the ':' separator
+between the values of ``wsrep_local_state_uuid`` and
+``wsrep_last_committed``. Bug fixed :bug:`1181222`.
 
- |innobackupex| automatic version detection did not work correctly for latest |Percona Server| and |MySQL| 5.1 releases which could cause innobackupex to fail. Bugs fixed :bug:`1181092`, :bug:`1181099` and :bug:`1180905`.
+|innobackupex| automatic version detection did not work correctly for latest
+|Percona Server| and |MySQL| 5.1 releases which could cause innobackupex to
+fail. Bugs fixed :bug:`1181092`, :bug:`1181099` and :bug:`1180905`.
 
- When backing up a server that is not a replication slave with the :option:`innobackupex --slave-info` option, |innobackupex| failed with a fatal error. Replaced the fatal error with a diagnostic message about :option:`innobackupex --slave-info` being ignored in such a case. Bug fixed :bug:`1180662`.
+When backing up a server that is not a replication slave with the
+:option:`innobackupex --slave-info` option, |innobackupex| failed with a fatal
+error. Replaced the fatal error with a diagnostic message about
+:option:`innobackupex --slave-info` being ignored in such a case. Bug fixed
+:bug:`1180662`.
 
- Low values for ``wait_timeout`` on the server could cause server to close the connection while backup is being taken. Fixed by setting the bigger value for ``wait_timeout`` option on the server to prevent server from closing connections if the global ``wait_timeout`` value is set too low. Bug fixed :bug:`1180922`.
+Low values for ``wait_timeout`` on the server could cause server to close the
+connection while backup is being taken. Fixed by setting the bigger value for
+``wait_timeout`` option on the server to prevent server from closing connections
+if the global ``wait_timeout`` value is set too low. Bug fixed :bug:`1180922`.
 
 Other bug fixes: bug fixed :bug:`1177182`.

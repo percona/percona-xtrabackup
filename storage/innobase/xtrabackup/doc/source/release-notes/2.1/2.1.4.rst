@@ -1,54 +1,108 @@
-============================
- |Percona XtraBackup| 2.1.4 
-============================
+================================================================================
+|Percona XtraBackup| 2.1.4 
+================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.4 on August 8th 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.4/>`_ and :doc:`Percona Software Repositories </installation>`.
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.4 on August
+8th 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.4/>`_ and
+:doc:`Percona Software Repositories </installation>`.
 
 New Features
-------------
+================================================================================
 
- |Percona XtraBackup| has introduced :ref:`additional options <improved_ftwrl>` to handle the locking during the ``FLUSH TABLES WITH READ LOCK``. These options can be used to minimize the amount of the time when |MySQL| operates in the read-only mode.
+|Percona XtraBackup| has introduced :ref:`additional options <improved_ftwrl>`
+to handle the locking during the ``FLUSH TABLES WITH READ LOCK``. These options
+can be used to minimize the amount of the time when |MySQL| operates in the
+read-only mode.
 
- |Percona XtraBackup| has now been rebased on |MySQL| versions 5.1.70, 5.5.30, 5.6.11 and |Percona Server| versions 5.1.70-rel14.8 and 5.5.31-rel30.3 server versions.
+|Percona XtraBackup| has now been rebased on |MySQL| versions 5.1.70, 5.5.30,
+5.6.11 and |Percona Server| versions 5.1.70-rel14.8 and 5.5.31-rel30.3 server
+versions.
 
- In order to speed up the backup process, slave thread is not stopped during copying non-InnoDB data when :option:`innobackupex --no-lock` option is used as using this option requires absence of ``DDL`` or ``DML`` to non-transaction tables during backup.
+In order to speed up the backup process, slave thread is not stopped during
+copying non-InnoDB data when :option:`innobackupex --no-lock` option is used as
+using this option requires absence of ``DDL`` or ``DML`` to non-transaction
+tables during backup.
 
- Source tarball (and Debian source) now include all |MySQL| source trees required for the build. This means internet connection during package build isn't required anymore.
+Source tarball (and Debian source) now include all |MySQL| source trees required
+for the build. This means internet connection during package build isn't
+required anymore.
 
- Two new options options, :option:`innobackupex --decrypt` and :option:`innobackupex --decompress`, have been implemented to make :ref:`decryption <encrypted_backups_ibk>` and :ref:`decompression <recipes_ibkx_compressed>` process more user friendly.
+Two new options options, :option:`innobackupex --decrypt` and
+:option:`innobackupex --decompress`, have been implemented to make
+:ref:`decryption <encrypted_backups_ibk>` and :ref:`decompression
+<recipes_ibkx_compressed>` process more user friendly.
 
 Bugs Fixed
-----------
+================================================================================
 
- There were no 2.1.x release packages available for *Ubuntu Raring*. Bug fixed :bug:`1199257`.
+There were no 2.1.x release packages available for *Ubuntu Raring*. Bug fixed
+:bug:`1199257`.
 
- During the backup process loading tablespaces was started before the log copying, this could lead to a race between the datafiles state in the resulting backup and xtrabackup_logfile. Tablespace created at a sensitive time would be missing in both the backup itself and as the corresponding log record in :file:`xtrabackup_logfile`, so it would not be created on :option:`innobackupex --apply-log` either. Bug fixed :bug:`1177206`.
+During the backup process loading tablespaces was started before the log
+copying, this could lead to a race between the datafiles state in the resulting
+backup and xtrabackup_logfile. Tablespace created at a sensitive time would be
+missing in both the backup itself and as the corresponding log record in
+:file:`xtrabackup_logfile`, so it would not be created on :option:`innobackupex
+--apply-log` either. Bug fixed :bug:`1177206`.
 
- Fixed the ``libssl.so.6`` dependency issues in binary tarballs releases. Bug fixed :bug:`1172916`.
+Fixed the ``libssl.so.6`` dependency issues in binary tarballs releases. Bug
+fixed :bug:`1172916`.
 
- |innobackupex| did not encrypt non-InnoDB files when doing local (i.e. non-streaming) backups. Bug fixed :bug:`1160778`.
+|innobackupex| did not encrypt non-InnoDB files when doing local
+(i.e. non-streaming) backups. Bug fixed :bug:`1160778`.
 
- Difference in behavior between |InnoDB| 5.5 and 5.6 codebases in cases when a newly created tablespace has uninitialized first page at the time when |Percona XtraBackup| opens it while creating a list of tablespaces to backup would cause assertion error. Bug fixed :bug:`1187071`. 
+Difference in behavior between |InnoDB| 5.5 and 5.6 codebases in cases when a
+newly created tablespace has uninitialized first page at the time when |Percona
+XtraBackup| opens it while creating a list of tablespaces to backup would cause
+assertion error. Bug fixed :bug:`1187071`.
 
- **xbcrypt** could sometimes fail when reading encrypted stream from a pipe or network. Bug fixed :bug:`1190610`.
+**xbcrypt** could sometimes fail when reading encrypted stream from a pipe or
+network. Bug fixed :bug:`1190610`.
 
- |innobackupex| could not prepare the backup if there was no :file:`xtrabackup_binary` file in the backup directory and the xtrabackup binary was not specified explicitly with :option:`innobackupex --ibbackup` option. Bug fixed :bug:`1199190`.
+|innobackupex| could not prepare the backup if there was no
+:file:`xtrabackup_binary` file in the backup directory and the xtrabackup binary
+was not specified explicitly with :option:`innobackupex --ibbackup` option. Bug
+fixed :bug:`1199190`.
 
- Debug builds would fail due to compiler errors on *Ubuntu* Quantal/Raring builds. Fixed compiler warnings by backporting the corresponding changes from upstream. Bug fixed :bug:`1192454`.
+Debug builds would fail due to compiler errors on *Ubuntu* Quantal/Raring
+builds. Fixed compiler warnings by backporting the corresponding changes from
+upstream. Bug fixed :bug:`1192454`.
 
- |innobackupex| would terminate with an error if :option:`innobackupex --safe-slave-backup` option was used for backing up the master server. Bug fixed :bug:`1190716`.
+|innobackupex| would terminate with an error if :option:`innobackupex
+--safe-slave-backup` option was used for backing up the master server. Bug fixed
+:bug:`1190716`.
 
- Under some circumstances |Percona XtraBackup| could fail on a backup prepare with ``innodb_flush_method=O_DIRECT`` when ``XFS`` filesystem was being used. Bug fixed :bug:`1190779`.
+Under some circumstances |Percona XtraBackup| could fail on a backup prepare
+with ``innodb_flush_method=O_DIRECT`` when ``XFS`` filesystem was being
+used. Bug fixed :bug:`1190779`.
 
- |Percona XtraBackup| didn't recognize checkpoint ``#0`` as a valid checkpoint on :option:`xtrabackup --prepare` which would cause an error. Bug fixed :bug:`1196475`.
- 
- |Percona XtraBackup| didn't recognize the ``O_DIRECT_NO_FSYNC`` value for :option:`innodb_flush_method` which was introduced in |MySQL| 5.6.7. Fixed by adding the value to the list of supported values for :option:`innodb_flush_method` in ``xtrabackup_56``. Bug fixed :bug:`1206363`. 
+|Percona XtraBackup| didn't recognize checkpoint ``#0`` as a valid checkpoint on
+:option:`xtrabackup --prepare` which would cause an error. Bug fixed
+:bug:`1196475`.
 
- |innobackupex| would terminate if :option:`innobackupex --galera-info` option was specified when backing up non-galera server. Bug fixed :bug:`1192347`.
+|Percona XtraBackup| didn't recognize the ``O_DIRECT_NO_FSYNC`` value for
+``innodb_flush_method`` which was introduced in |MySQL| 5.6.7. Fixed by
+adding the value to the list of supported values for
+``innodb_flush_method`` in ``xtrabackup_56``. Bug fixed :bug:`1206363`.
 
-Other bug fixes: bug fixed :bug:`1097434`, bug fixed :bug:`1201599`, bug fixed :bug:`1198220`, bug fixed :bug:`1097444`, bug fixed :bug:`1042796`, bug fixed :bug:`1204463`, bug fixed :bug:`1197644`, bug fixed :bug:`1197249`, bug fixed :bug:`1196894`, bug fixed :bug:`1194813`, bug fixed :bug:`1183500`, bug fixed :bug:`1181432`, bug fixed :bug:`1201686`, bug fixed :bug:`1182995`, bug fixed :bug:`1204085`, bug fixed :bug:`1204083`, bug fixed :bug:`1204075`, bug fixed :bug:`1203672`, bug fixed :bug:`1190876`, bug fixed :bug:`1194879`, bug fixed :bug:`1194837`.
+|innobackupex| would terminate if :option:`innobackupex --galera-info` option
+was specified when backing up non-galera server. Bug fixed :bug:`1192347`.
+
+Other bug fixes: bug fixed :bug:`1097434`, bug fixed :bug:`1201599`, bug fixed
+:bug:`1198220`, bug fixed :bug:`1097444`, bug fixed :bug:`1042796`, bug fixed
+:bug:`1204463`, bug fixed :bug:`1197644`, bug fixed :bug:`1197249`, bug fixed
+:bug:`1196894`, bug fixed :bug:`1194813`, bug fixed :bug:`1183500`, bug fixed
+:bug:`1181432`, bug fixed :bug:`1201686`, bug fixed :bug:`1182995`, bug fixed
+:bug:`1204085`, bug fixed :bug:`1204083`, bug fixed :bug:`1204075`, bug fixed
+:bug:`1203672`, bug fixed :bug:`1190876`, bug fixed :bug:`1194879`, bug fixed
+:bug:`1194837`.
 
 Known Issues
-------------
+================================================================================
 
- Backups of |MySQL| / |Percona Server| 5.6 versions prior to 5.6.11 cannot be prepared with |Percona XtraBackup| 2.1.4. Until the upstream bug :mysqlbug:`69780` is fixed and merged into |Percona XtraBackup|, |Percona XtraBackup| 2.1.3 should be used to prepare and restore such backups. This issue is reported as bug :bug:`1203669`.
+Backups of |MySQL| / |Percona Server| 5.6 versions prior to 5.6.11 cannot be
+prepared with |Percona XtraBackup| 2.1.4. Until the upstream bug
+:mysqlbug:`69780` is fixed and merged into |Percona XtraBackup|, |Percona
+XtraBackup| 2.1.3 should be used to prepare and restore such backups. This issue
+is reported as bug :bug:`1203669`.

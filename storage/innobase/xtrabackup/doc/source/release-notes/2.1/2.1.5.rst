@@ -1,32 +1,58 @@
-============================
- |Percona XtraBackup| 2.1.5 
-============================
+================================================================================
+|Percona XtraBackup| 2.1.5 
+================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.5 on September 19th 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.5/>`_ and :doc:`Percona Software Repositories </installation>`.
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.5 on
+September 19th 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.5/>`_ and
+:doc:`Percona Software Repositories </installation>`.
 
-This release is the current GA (Generally Available) stable release in the 2.1 series.
+This release is the current GA (Generally Available) stable release in the 2.1
+series.
 
 New Features
-------------
+================================================================================
 
- |Percona XtraBackup| now supports new form of incremental backups for |Percona Server| 5.6 that uses `Log Archiving for XtraDB <http://www.percona.com/doc/percona-server/5.6/management/log_archiving.html>`_ feature.
+|Percona XtraBackup| now supports new form of incremental backups for |Percona
+Server| 5.6 that uses `Log Archiving for XtraDB
+<http://www.percona.com/doc/percona-server/5.6/management/log_archiving.html>`_
+feature.
 
- |Percona XtraBackup| now supports new :option:`innobackupex --version-check` option. When specified, |innobackupex| will perform a version check against the server on the backup stage after creating a server connection.
+|Percona XtraBackup| now supports new ``--version-check`` option. When
+specified, |innobackupex| will perform a version check against the server on the
+backup stage after creating a server connection.
 
 
 Bugs Fixed
-----------
+================================================================================
 
- |Percona XtraBackup| did not close temporary files created when preparing a compact backup, which would lead to excessive disk space usage until the prepare process finished. Bug fixed :bug:`1111380`.
+|Percona XtraBackup| did not close temporary files created when preparing a
+compact backup, which would lead to excessive disk space usage until the prepare
+process finished. Bug fixed :bug:`1111380`.
 
- Depending on the subroutine |innobackupex| could sometimes leave the child processes running in case of the error. |innobackupex| now makes sure that all child processes are killed if an error occurs in the script. Bug fixed :bug:`1135441`.
+Depending on the subroutine |innobackupex| could sometimes leave the child
+processes running in case of the error. |innobackupex| now makes sure that all
+child processes are killed if an error occurs in the script. Bug fixed
+:bug:`1135441`.
  
- The 5.6-based binary ( ``xtrabackup_56``), which is used to backup both |MySQL| 5.6 and |Percona Server| 5.6 servers, did not support Percona Server-specific :option:`innodb_log_block_size` option in Percona Server 5.6.11+ and would fail when trying to backup a server with a non-default :option:`innodb_log_block_size` value. Bug fixed :bug:`1194828`.
+The 5.6-based binary ( ``xtrabackup_56``), which is used to backup both |MySQL|
+5.6 and |Percona Server| 5.6 servers, did not support Percona Server-specific
+``innodb_log_block_size`` option in Percona Server 5.6.11+ and would fail
+when trying to backup a server with a non-default
+``innodb_log_block_size`` value. Bug fixed :bug:`1194828`.
 
- |Percona XtraBackup| would stop in case log block numbers had to wrap around, which only happens once per 1 GB of log writes, and the wrap-around point was between the last checkpoint and the current log tail at the time the backup starts. Bug fixed :bug:`1206309`.
+|Percona XtraBackup| would stop in case log block numbers had to wrap around,
+which only happens once per 1 GB of log writes, and the wrap-around point was
+between the last checkpoint and the current log tail at the time the backup
+starts. Bug fixed :bug:`1206309`.
  
- ``xtrabackup_56`` binary would fail to create a suspend file, which would result in an error. Bug fixed :bug:`1210266`.
+``xtrabackup_56`` binary would fail to create a suspend file, which would result
+in an error. Bug fixed :bug:`1210266`.
 
- Regression was introduced in |Percona XtraBackup| 2.1.4 which lead to ``cp`` utility being used to copy metadata files even if the :option:`innobackupex --rsync` option was used. Bug fixed :bug:`1211263`.
+Regression was introduced in |Percona XtraBackup| 2.1.4 which lead to ``cp``
+utility being used to copy metadata files even if the :option:`innobackupex
+--rsync` option was used. Bug fixed :bug:`1211263`.
 
-Other bugs fixed: bug fixed :bug:`1214272`, bug fixed :bug:`1214730`, bug fixed :bug:`1213102`, bug fixed :bug:`1213036`, bug fixed :bug:`1204045`, bug fixed :bug:`1154476`, bug fixed :bug:`1195402`, bug fixed :bug:`1195055`.
+Other bugs fixed: bug fixed :bug:`1214272`, bug fixed :bug:`1214730`, bug fixed
+:bug:`1213102`, bug fixed :bug:`1213036`, bug fixed :bug:`1204045`, bug fixed
+:bug:`1154476`, bug fixed :bug:`1195402`, bug fixed :bug:`1195055`.

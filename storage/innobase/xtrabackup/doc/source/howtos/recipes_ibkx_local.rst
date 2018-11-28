@@ -16,9 +16,11 @@ There is a lot of output, but you need to make sure you see this at the end of t
 Prepare the Backup
 ==================
 
-To prepare the backup use the :option:`--apply-log` option and specify the timestamped subdirectory of the backup. To speed up the apply-log process, we using the :option:`--use-memory` option is recommended: ::
+To prepare the backup use the :option:`innobackupex --apply-log` option and specify the timestamped subdirectory of the backup. To speed up the apply-log process, use the :option:`innobackupex --use-memory`:
 
-  $ innobackupex --use-memory=4G --apply-log /data/backups/2010-03-13_02-42-44/
+.. code-block:: bash
+
+   $ innobackupex --use-memory=4G --apply-log /data/backups/2010-03-13_02-42-44/
 
 You should check for a confirmation message: ::
 
@@ -29,7 +31,7 @@ Now the files in :file:`/data/backups/2010-03-13_02-42-44` is ready to be used b
 Restore the Backup
 ==================
 
-To restore the already-prepared backup, first stop the server and then use the :option:`--copy-back` function of |innobackupex|:: 
+To restore the already-prepared backup, first stop the server and then use the :option:`innobackupex --copy-back` function of |innobackupex|:: 
 
   innobackupex --copy-back /data/backups/2010-03-13_02-42-44/
   ## Use chmod to correct the permissions, if necessary!

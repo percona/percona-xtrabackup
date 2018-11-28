@@ -1,6 +1,6 @@
-==================================
- |Percona XtraBackup| 2.3.1-beta1
-==================================
+================================================================================
+|Percona XtraBackup| 2.3.1-beta1
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.3.1-beta1 on
 May 20th 2015. Downloads are available from our download site `here
@@ -9,58 +9,56 @@ This **BETA** release, will be available in :ref:`Debian testing
 <debian_testing>` and :ref:`CentOS testing <yum_testing>` repositories.
 
 This is an **BETA** quality release and it is not intended for production. If
-you want a high quality, Generally Available release, the current Stable
-version should be used (currently 2.2.10 in the 2.2 series at the time of
-writing).
+you want a high quality, Generally Available release, the current Stable version
+should be used (currently 2.2.10 in the 2.2 series at the time of writing).
 
 This release contains all of the features and bug fixes in :doc:`Percona
 XtraBackup 2.2.10 </release-notes/2.2/2.2.10>`, plus the following:
 
 New features
-------------
+================================================================================
 
- |innobackupex| script has been rewritten in C and it's set as the symlink for
- |xtrabackup|. |innobackupex| still supports all features and syntax as 2.2
- version did, but it is now deprecated and will be removed in next major
- release. Syntax for new features will not be added to the |innobackupex|, only
- to the |xtrabackup|. |xtrabackup| now also copies *MyISAM* tables and supports
- every feature of |innobackupex|. Syntax for features previously unique to
- |innobackupex| (option names and allowed values) remains the same for
- |xtrabackup|.
+|innobackupex| script has been rewritten in C and it's set as the symlink for
+|xtrabackup|. |innobackupex| still supports all features and syntax as 2.2
+version did, but it is now deprecated and will be removed in next major
+release. Syntax for new features will not be added to the |innobackupex|, only
+to the |xtrabackup|. |xtrabackup| now also copies *MyISAM* tables and supports
+every feature of |innobackupex|. Syntax for features previously unique to
+|innobackupex| (option names and allowed values) remains the same for
+|xtrabackup|.
 
- |Percona XtraBackup| can now read swift parameters from a `[xbcloud]` section
- from the :file:`.my.cnf` file in the users home directory or alternatively
- from the global configuration file:`/etc/my.cnf`. This makes it more
- convenient to use and avoids passing the sensitive data, such as
- :option:`--swift-key`, on the command line.
+|Percona XtraBackup| can now read swift parameters from a `[xbcloud]` section
+from the :file:`.my.cnf` file in the users home directory or alternatively
+from the global configuration file:`/etc/my.cnf`. This makes it more
+convenient to use and avoids passing the sensitive data, such as
+:option:`xbcloud --swift-key`, on the command line.
 
- |Percona XtraBackup| now supports different :ref:`authentication options
- <swift_auth>` for Swift.
+|Percona XtraBackup| now supports different :ref:`authentication options
+<swift_auth>` for Swift.
 
- |Percona XtraBackup| now supports partial download of the cloud backup.
+|Percona XtraBackup| now supports partial download of the cloud backup.
 
- Options: :option:`--lock-wait-query-type`, :option:`--lock-wait-threshold` and
- :option:`--lock-wait-timeout` have been renamed to
- :option:`innobackupex --ftwrl-wait-query-type`,
- :option:`innobackupex --ftwrl-wait-threshold` and
- :option:`innobackupex --ftwrl-wait-timeout` respectively.
+Options: ``--lock-wait-query-type``, ``--lock-wait-threshold`` and
+``--lock-wait-timeout`` have been renamed to :option:`innobackupex
+--ftwrl-wait-query-type`, :option:`innobackupex --ftwrl-wait-threshold` and
+:option:`innobackupex --ftwrl-wait-timeout` respectively.
 
 Bugs fixed
-----------
+================================================================================
 
- |innobackupex| didn't work correctly when credentials were specified in
- :file:`.mylogin.cnf`. Bug fixed :bug:`1388122`.
+|innobackupex| didn't work correctly when credentials were specified in
+:file:`.mylogin.cnf`. Bug fixed :bug:`1388122`.
 
- :option:`--decrypt` and :option:`--decompress` options didn't work with
- |xtrabackup| binary. Bug fixed :bug:`1452307`.
+:option:`xtrabackup --decrypt` and :option:`xtrabackup --decompress` options
+didn't work with |xtrabackup| binary. Bug fixed :bug:`1452307`.
 
- |Percona XtraBackup| now executes an extra ``FLUSH TABLES`` before executing
- ``FLUSH TABLES WITH READ LOCK`` to potentially lower the impact from ``FLUSH
- TABLES WITH READ LOCK``. Bug fixed :bug:`1277403`.
+|Percona XtraBackup| now executes an extra ``FLUSH TABLES`` before executing
+``FLUSH TABLES WITH READ LOCK`` to potentially lower the impact from ``FLUSH
+TABLES WITH READ LOCK``. Bug fixed :bug:`1277403`.
 
- |innobackupex| didn't read user, password options from :file:`~/.my.cnf` file.
- Bug fixed :bug:`1092235`.
+|innobackupex| didn't read user, password options from :file:`~/.my.cnf` file.
+Bug fixed :bug:`1092235`.
 
- |innobackupex| was always reporting the original version of the ``innobackup``
- script from *InnoDB Hot Backup*. Bug fixed :bug:`1092380`.
+|innobackupex| was always reporting the original version of the ``innobackup``
+script from *InnoDB Hot Backup*. Bug fixed :bug:`1092380`.
 
