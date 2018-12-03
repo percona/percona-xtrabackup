@@ -25,7 +25,9 @@ load_sakila
 start_uncomitted_transaction &
 job_master=$!
 
-sleep 5;
+while ! mysql -e 'SHOW PROCESSLIST' | grep 'SELECT SLEEP' ; do
+    sleep 1;
+done
 
 xtrabackup --backup --include="sakila.actor" --target-dir=$topdir/backup
 

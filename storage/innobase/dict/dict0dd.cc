@@ -437,6 +437,27 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     table->flags |= DICT_TF_MASK_DATA_DIR;
   }
 
+  /* If the table has instantly added columns, it's necessary to read
+  the number of instant columns for either normal table(from dd::Table),
+  or partitioned table(from dd::Partition). One partition may have no
+  instant columns, which is fine. */
+  if (dd_table_has_instant_cols(*dd_table)) {
+    uint32_t instant_cols;
+
+    if (dd_part == nullptr) {
+      dd_table->se_private_data().get_uint32(
+          dd_table_key_strings[DD_TABLE_INSTANT_COLS], &instant_cols);
+      table->set_instant_cols(instant_cols);
+      ut_ad(table->has_instant_cols());
+    } else if (dd_part_has_instant_cols(*dd_part)) {
+      dd_part->se_private_data().get_uint32(
+          dd_partition_key_strings[DD_PARTITION_INSTANT_COLS], &instant_cols);
+
+      table->set_instant_cols(instant_cols);
+      ut_ad(table->has_instant_cols());
+    }
+  }
+
   /* Check if this table is FTS AUX table, if so, set DICT_TF2_AUX flag */
   fts_aux_table_t aux_table;
   if (fts_is_aux_table_name(&aux_table, table_name, strlen(table_name))) {
