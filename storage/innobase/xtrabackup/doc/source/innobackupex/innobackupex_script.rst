@@ -1,16 +1,21 @@
-=========================
+================================================================================
  The innobackupex Program
-=========================
+================================================================================
 
-The |innobackupex| program is a symlink to the :doc:`xtrabackup <../xtrabackup_bin/xtrabackup_binary>` *C* program. It lets you perform point-in-time backups of |InnoDB| / |XtraDB| tables together with the schema definitions, |MyISAM| tables, and other portions of the server. In previous versions |innobackupex| was implemented as a *Perl* script.
+The |innobackupex| program is a symlink to the :ref:`xtrabackup
+<xtrabackup-binary>` *C* program. It lets you perform
+point-in-time backups of |InnoDB| / |XtraDB| tables together with the schema
+definitions, |MyISAM| tables, and other portions of the server. In previous
+versions |innobackupex| was implemented as a *Perl* script.
 
 This manual section explains how to use |innobackupex| in detail.
 
 .. warning::
+   
    The |innobackupex| program is deprecated. Please switch to |xtrabackup|.
 
 The Backup Cycle - Full Backups
-===============================
+================================================================================
 
 .. toctree::
    :maxdepth: 1
@@ -19,8 +24,8 @@ The Backup Cycle - Full Backups
    preparing_a_backup_ibk
    restoring_a_backup_ibk
 
-Other Types of Backups
-======================
+Other Types of Backup
+================================================================================
 
 .. toctree::
    :maxdepth: 1
@@ -31,7 +36,7 @@ Other Types of Backups
    encrypted_backups_innobackupex
 
 Advanced Features
-=================
+================================================================================
 
 .. toctree::
    :maxdepth: 1
@@ -47,7 +52,7 @@ Advanced Features
 
 
 Implementation
-==============
+================================================================================
 
 .. toctree::
    :maxdepth: 1
@@ -56,7 +61,7 @@ Implementation
 
 
 References
-==========
+================================================================================
 
 .. toctree::
    :maxdepth: 1

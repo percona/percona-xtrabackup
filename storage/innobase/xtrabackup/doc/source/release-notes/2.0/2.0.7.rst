@@ -1,63 +1,120 @@
-============================
+================================================================================
 |Percona XtraBackup| 2.0.7
-============================
+================================================================================
 
-Percona is glad to announce the release of Percona XtraBackup 2.0.7 on May 6, 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.7/>`_ and :doc:`Percona Software Repositories </installation>`.
+Percona is glad to announce the release of Percona XtraBackup 2.0.7 on May
+6, 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.7/>`_ and
+:doc:`Percona Software Repositories </installation>`.
 
-This release is the current GA (Generally Available) stable release in the 2.0 series. 
+This release is the current GA (Generally Available) stable release in the 2.0
+series.
 
 New Features
-=============
+================================================================================
 
- This version of |Percona XtraBackup| has implemented full support for new |MySQL| 5.6 features (``GTID``, remote/transportable tablespaces, separate undo tablespace, 5.6-style buffer pool dump files).
+This version of |Percona XtraBackup| has implemented full support for new
+|MySQL| 5.6 features (``GTID``, remote/transportable tablespaces, separate undo
+tablespace, 5.6-style buffer pool dump files).
 
- |Percona XtraBackup| has implemented support for the `InnoDB Buffer Pool Preloading <http://dev.mysql.com/doc/refman/5.6/en/innodb-performance.html#innodb-preload-buffer-pool>`_ introduced in |MySQL| 5.6. Starting with |MySQL| 5.6 buffer pool dumps can be produced and loaded for faster server warmup after the start. This feature is similar to the `Dump/Restore of the Buffer Pool <http://www.percona.com/doc/percona-server/5.5/management/innodb_lru_dump_restore.html>`_ in |Percona Server|. |MySQL| 5.6 buffer pool dump is copied into backup directory during the backup stage. During the copy back stage (restore) it is copied back to data directory. After the backup is restored buffer pool dump can be loaded by the server either automatically on startup or on demand.
+|Percona XtraBackup| has implemented support for the `InnoDB Buffer Pool
+Preloading
+<http://dev.mysql.com/doc/refman/5.6/en/innodb-performance.html#innodb-preload-buffer-pool>`_
+introduced in |MySQL| 5.6. Starting with |MySQL| 5.6 buffer pool dumps can be
+produced and loaded for faster server warmup after the start. This feature is
+similar to the `Dump/Restore of the Buffer Pool
+<http://www.percona.com/doc/percona-server/5.5/management/innodb_lru_dump_restore.html>`_
+in |Percona Server|. |MySQL| 5.6 buffer pool dump is copied into backup
+directory during the backup stage. During the copy back stage (restore) it is
+copied back to data directory. After the backup is restored buffer pool dump can
+be loaded by the server either automatically on startup or on demand.
 
- Time interval between checks done by log copying thread is now configurable by :option:`innobackupex --log-copy-interval`. Making the interval configurable allows to reduce the time between checks which can prevent |Percona XtraBackup| failures that are caused by the log records in the transactional log being overwritten before they are copied by the log copying thread.
- 
- |Percona XtraBackup| now stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona Server| 5.6 with the ``GTID`` mode enabled. Example of how this information can be used to create/restore a slave can be found in `this blogpost <http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
+Time interval between checks done by log copying thread is now configurable by
+:option:`innobackupex --log-copy-interval`. Making the interval configurable
+allows to reduce the time between checks which can prevent |Percona XtraBackup|
+failures that are caused by the log records in the transactional log being
+overwritten before they are copied by the log copying thread.
 
- |Percona XtraBackup| option :option:`xtrabackup --export` now supports transportable tablespaces introduced in |MySQL| 5.6. This option can be used to produce 5.6-style metadata files, that can be imported by ``ALTER TABLE IMPORT TABLESPACE`` on |MySQL| and |Percona Server| 5.6 as described in :ref:`export_import_tables` guide.
+|Percona XtraBackup| now stores the ``GTID`` value in the
+:file:`xtrabackup_binlog_info` when doing the backup of |MySQL| and |Percona
+Server| 5.6 with the ``GTID`` mode enabled. Example of how this information can
+be used to create/restore a slave can be found in `this blogpost
+<http://www.mysqlperformanceblog.com/2013/02/08/how-to-createrestore-a-slave-using-gtid-replication-in-mysql-5-6/>`_.
+
+|Percona XtraBackup| option :option:`xtrabackup --export` now supports
+transportable tablespaces introduced in |MySQL| 5.6. This option can be used to
+produce 5.6-style metadata files, that can be imported by ``ALTER TABLE IMPORT
+TABLESPACE`` on |MySQL| and |Percona Server| 5.6 as described in
+:ref:`export_import_tables` guide.
 
 Bugs Fixed
-==========
+================================================================================
 
- ``xtrabackup_56`` binary was present in ``rpm`` and ``deb`` packages, but it was missing from the source ``.tar.gz`` package. Fixed by adding the missing binary to ``.tar.gz`` as well. Bug fixed :bug:`1158948`.
+``xtrabackup_56`` binary was present in ``rpm`` and ``deb`` packages, but it
+was missing from the source ``.tar.gz`` package. Fixed by adding the missing
+binary to ``.tar.gz`` as well. Bug fixed :bug:`1158948`.
 
- |innobackupex| could crash when taking the 5.6 backup due to linking the wrong ``SSL`` library. Bug fixed :bug:`1168540`.
+|innobackupex| could crash when taking the 5.6 backup due to linking the wrong
+``SSL`` library. Bug fixed :bug:`1168540`.
 
- |Percona XtraBackup| would crash when preparing the 5.6 backup with partitioned tables. Bug fixed :bug:`1169169`.
+|Percona XtraBackup| would crash when preparing the 5.6 backup with partitioned
+tables. Bug fixed :bug:`1169169`.
 
- Tables that were dropped between taking a full backup and an incremental one were present in the full backup directory, and were not removed when incremental backups has been merged. Fixed by removing files corresponding to tables that are missing in the incremental backup directory. Bug fixed :bug:`856400`.
+Tables that were dropped between taking a full backup and an incremental one
+were present in the full backup directory, and were not removed when incremental
+backups has been merged. Fixed by removing files corresponding to tables that
+are missing in the incremental backup directory. Bug fixed :bug:`856400`.
 
- |Percona XtraBackup| would leave stale ``xtrabackup_tmp*`` files in the :term:`datadir` after applying incremental backups. Bug fixed :bug:`1079135`.
+|Percona XtraBackup| would leave stale ``xtrabackup_tmp*`` files in the
+:term:`datadir` after applying incremental backups. Bug fixed :bug:`1079135`.
 
- Fixed couple of warnings found in |innobackupex| when all warnings have been made ``FATAL``. Bug fixed :bug:`1116177`.
+Fixed couple of warnings found in |innobackupex| when all warnings have been
+made ``FATAL``. Bug fixed :bug:`1116177`.
 
- If there are thousands of tables and slow IO then |xtrabackup| can spend a lot of time opening all the tablespaces. Optimization has been implemented and |Percona XtraBackup| now avoids loading non-relevant tablespaces when partial backup is being taken which speeds up the backup process. Bug fixed :bug:`1130145`.
+If there are thousands of tables and slow IO then |xtrabackup| can spend a lot
+of time opening all the tablespaces. Optimization has been implemented and
+|Percona XtraBackup| now avoids loading non-relevant tablespaces when partial
+backup is being taken which speeds up the backup process. Bug fixed
+:bug:`1130145`.
 
- |Percona XtraBackup| didn't initialize per-thread data in the log copying thread which could cause |Percona XtraBackup| to crash. Bug fixed :bug:`1166888`.
+|Percona XtraBackup| didn't initialize per-thread data in the log copying thread
+which could cause |Percona XtraBackup| to crash. Bug fixed :bug:`1166888`.
 
- Package dependency has been changed from abstract ``mysql`` to real ``/usr/bin/mysql`` file, because ``rpm`` packages from *Oracle* no longer satisfied ``mysql`` dependency which is required by the |Percona XtraBackup| ``rpms``. Bug fixed :bug:`1095972`.
+Package dependency has been changed from abstract ``mysql`` to real
+``/usr/bin/mysql`` file, because ``rpm`` packages from *Oracle* no longer
+satisfied ``mysql`` dependency which is required by the |Percona XtraBackup|
+``rpms``. Bug fixed :bug:`1095972`.
 
- |Percona XtraBackup| would fail when preparing the |MySQL| 5.6 backup if the log files were bigger than 4G on the source server. Bug fixed :bug:`1164979`.
+|Percona XtraBackup| would fail when preparing the |MySQL| 5.6 backup if the log
+files were bigger than 4G on the source server. Bug fixed :bug:`1164979`.
 
- Due to different implementation in |MySQL| 5.6 error messages were not printed to ``stderr`` directly. Because of that all InnoDB error or diagnostic messages are never printed by xtrabackup_56. Bug fixed :bug:`1169971`.
+Due to different implementation in |MySQL| 5.6 error messages were not printed
+to ``stderr`` directly. Because of that all InnoDB error or diagnostic messages
+are never printed by xtrabackup_56. Bug fixed :bug:`1169971`.
 
- |innobackupex| would still run with ``FLUSH TABLES WITH READ LOCK`` even if |xtrabackup| would fail when copying logs. Fixed by terminating |xtrabackup| process immediately on log copying failure. Bug fixed :bug:`1170806`.
+|innobackupex| would still run with ``FLUSH TABLES WITH READ LOCK`` even if
+|xtrabackup| would fail when copying logs. Fixed by terminating |xtrabackup|
+process immediately on log copying failure. Bug fixed :bug:`1170806`.
 
- |innobackupex| would fail if the ``SQL_MODE`` was set to ``ANSI_QUOTES``.  Bug fixed :bug:`945161`.
+|innobackupex| would fail if the ``SQL_MODE`` was set to ``ANSI_QUOTES``.  Bug
+fixed :bug:`945161`.
 
- Missing space_id from ``*.ibd.meta`` would lead to assertion. Fixed by replacing the assertion with the error message. Bug fixed :bug:`1112224`.
+Missing space_id from ``*.ibd.meta`` would lead to assertion. Fixed by replacing
+the assertion with the error message. Bug fixed :bug:`1112224`.
 
- Fixed the typo in the |innobackupex| error output. Bug fixed :bug:`1157225`.
+Fixed the typo in the |innobackupex| error output. Bug fixed :bug:`1157225`.
 
- When building from source ``innodb56`` target didn't have an option to disable DTrace like ``innodb55`` has. Fixed by adding ``-DENABLE_DTRACE=OFF`` build option for ``innodb56`` as well. Bug fixed :bug:`1169509`.
+When building from source ``innodb56`` target didn't have an option to disable
+DTrace like ``innodb55`` has. Fixed by adding ``-DENABLE_DTRACE=OFF`` build
+option for ``innodb56`` as well. Bug fixed :bug:`1169509`.
 
- |innobackupex| wasn't handling the :option:`innodb_data_file_path` option which could cause backup to fail. Bug fixed :bug:`1169726`.
+|innobackupex| wasn't handling the ``innodb_data_file_path`` option which
+could cause backup to fail. Bug fixed :bug:`1169726`.
 
- For the *Debian* and the *Linux* binaries, the :option:`--version` message which should include the revision was showing "undefined". Bug fixed :bug:`1171721`.
+For the *Debian* and the *Linux* binaries, the ``--version`` message which
+should include the revision was showing "undefined". Bug fixed :bug:`1171721`.
 
- Redundant code has been removed from ``xtrabackup.cc``. Bug fixed :bug:`1162765`.
+Redundant code has been removed from ``xtrabackup.cc``. Bug fixed :bug:`1162765`.
 
-Other bug fixes: bug fixed :bug:`1158154`, bug fixed :bug:`1170340`, bug fixed :bug:`1088309`, bug fixed :bug:`1088307`.
+Other bug fixes: bug fixed :bug:`1158154`, bug fixed :bug:`1170340`, bug fixed
+:bug:`1088309`, bug fixed :bug:`1088307`.

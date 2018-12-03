@@ -349,6 +349,8 @@ Options
    Don't read default options from any option file. Must be given as the first
    option on the command-line.
 
+.. include:: ../.res/contents/option.no-version-check.txt
+
 .. option:: --parallel=#
 
    This option specifies the number of threads to use to copy multiple data
@@ -379,16 +381,6 @@ Options
    Makes :program:`xtrabackup` print out parameters that can be used for
    copying the data files back to their original locations to restore them. See
    :ref:`scripting-xtrabackup`.
-
-.. option:: --rebuild_indexes
-
-   Rebuild secondary indexes in InnoDB tables after applying the log. Only has
-   effect with --prepare.
-
-.. option::  --rebuild_threads=#
-
-   Use this number of threads to rebuild indexes in a compact backup. Only has
-   effect with --prepare and --rebuild-indexes.
 
 .. option:: --reencrypt-for-server-id=<new_server_id>
 
@@ -554,9 +546,14 @@ Options
 
 .. option:: --throttle=#
 
-   This option limits :option:`xtrabackup --backup` to the specified number of
-   read+write pairs of operations per second. See :doc:`throttling a backup
-   <throttling_backups>`.
+   This option limits the number of chunks copied per second. The chunk size is
+   *10 MB*. To limit the bandwidth to *10 MB/s*, set the option to *1*:
+   `--throttle=1`.
+
+   .. seealso::
+
+      More information about how to throttle a backup
+         :ref:`throttling_backups`
 
 .. option:: --tmpdir=name
 
@@ -568,6 +565,17 @@ Options
    This option is used to specify the LSN to which the logs should be applied
    when backups are being prepared. It can only be used with the
    :option:`xtrabackup --prepare` option.
+
+.. option:: --transition-key
+
+   This option is used to enable processing the backup without accessing the
+   keyring vault server. In this case, :program:`xtrabackup` derives the AES
+   encryption key from the specified passphrase and uses it to encrypt
+   tablespace keys of tablespaces being backed up.
+
+   If :option:`--transition-key <xtrabackup --transition-key>` does not have any
+   value, :program:`xtrabackup` will ask for it. The same passphrase should be
+   specified for the :option:`xtrabackup --prepare` command.
 
 .. option:: --use-memory=#
 
@@ -589,3 +597,5 @@ Options
 .. option:: --version
 
    This option prints |xtrabackup| version and exits.
+
+.. |program| replace:: :program:`xtrabackup`
