@@ -1,43 +1,79 @@
-============================
- |Percona XtraBackup| 2.1.6 
-============================
+================================================================================
+|Percona XtraBackup| 2.1.6 
+================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.6 on November 25th 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.6/>`_ and :doc:`Percona Software Repositories </installation>`.
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.6 on
+November 25th 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/XtraBackup-2.1.6/>`_ and
+:doc:`Percona Software Repositories </installation>`.
 
-This release is the current GA (Generally Available) stable release in the 2.1 series.
+This release is the current GA (Generally Available) stable release in the 2.1
+series.
 
 New Features
-------------
+================================================================================
 
- |Percona XtraBackup| now supports logs created with the new log block checksums option `innodb_log_checksum_algorithm <http://www.percona.com/doc/percona-server/5.6/scalability/innodb_io.html#innodb_log_checksum_algorithm>`_ in |Percona Server| 5.6
+|Percona XtraBackup| now supports logs created with the new log block checksums
+option `innodb_log_checksum_algorithm
+<http://www.percona.com/doc/percona-server/5.6/scalability/innodb_io.html#innodb_log_checksum_algorithm>`_
+in |Percona Server| 5.6
 
- New :option:`innobackupex --force-non-empty-directories` option has been implemented. When specified, it makes :option:`innobackupex --copy-back` option or :option:`innobackupex --move-back` option transfer files to non-empty directories. No existing files will be overwritten. If :option:`--copy-back` or :option:`--move-back` has to copy a file from the backup directory which already exists in the destination directory, it will still fail with an error.
+New :option:`innobackupex --force-non-empty-directories` option has been
+implemented. When specified, it makes :option:`innobackupex --copy-back` option
+or :option:`innobackupex --move-back` option transfer files to non-empty
+directories. No existing files will be overwritten. If :option:`innobackupex
+--copy-back` or :option:`innobackupex --move-back` has to copy a file from the
+backup directory which already exists in the destination directory, it will
+still fail with an error.
 
 Bugs Fixed
-----------
+================================================================================
 
- :option:`innobackupex --copy-back` would fail if :option:`innodb_data_home_dir` is empty. Bug fixed :bug:`1049291`. 
+:option:`innobackupex --copy-back` would fail if ``innodb_data_home_dir``
+is empty. Bug fixed :bug:`1049291`.
 
- A fixed initialization vector (constant string) was used while encrypting the data. This opened the encrypted stream/data to plaintext attacks among others. Bug fixed :bug:`1185343`.
+A fixed initialization vector (constant string) was used while encrypting the
+data. This opened the encrypted stream/data to plaintext attacks among
+others. Bug fixed :bug:`1185343`.
 
- :option:`innobackupex --version-check` is now on by default. Bug fixed :bug:`1227988`.
+The option ``--version-check`` is now on by default. Bug fixed :bug:`1227988`.
 
- :file:`xtrabackup_slave_info` didn't contain any ``GTID`` information, which could cause ``master_auto_position`` not to work properly. Bug fixed :bug:`1239670`.
+:file:`xtrabackup_slave_info` didn't contain any ``GTID`` information, which
+could cause ``master_auto_position`` not to work properly. Bug fixed
+:bug:`1239670`.
 
- ``xtrabackup_56`` was using ``CRC32`` as the default checksum algorithm. This could cause error if the `innodb_checksum_algorithm <http://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html#sysvar_innodb_checksum_algorithm>`_ value was changed to ``strict_innodb`` value after a restore. Bug fixed :bug:`1247586`.
+``xtrabackup_56`` was using ``CRC32`` as the default checksum algorithm. This
+could cause error if the `innodb_checksum_algorithm
+<http://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html#sysvar_innodb_checksum_algorithm>`_
+value was changed to ``strict_innodb`` value after a restore. Bug fixed
+:bug:`1247586`.
 
- ``xtrabackup_56`` binary didn't store the server's `innodb_checksum_algorithm <http://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html#sysvar_innodb_checksum_algorithm>`_ value to :file:`backup-my.cnf`. This value is needed because it affects the on-disk data format. Bug fixed :bug:`1248065`.
- 
- Since Version Check is enabled by default in |Percona XtraBackup| 2.1.6, new :option:`innobackupex --no-version-check` option has been introduced to disable it. Bug fixed :bug:`1248900`.
+``xtrabackup_56`` binary didn't store the server's `innodb_checksum_algorithm
+<http://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html#sysvar_innodb_checksum_algorithm>`_
+value to :file:`backup-my.cnf`. This value is needed because it affects the
+on-disk data format. Bug fixed :bug:`1248065`.
 
- |Percona XtraBackup| now supports absolute paths in :option:`innodb_data_file_path` variable. Bug fixed :bug:`382742`.
+Since Version Check is enabled by default in |Percona XtraBackup| 2.1.6, new
+:option:`innobackupex --no-version-check` option has been introduced to disable
+it. Bug fixed :bug:`1248900`.
 
- |innobackupex| wasn't able to perform backups to the ``NFS`` mount in some ``NFS`` configurations, because it was trying to preserve file ownership. Bug fixed :bug:`943750`.
+|Percona XtraBackup| now supports absolute paths in
+``innodb_data_file_path`` variable. Bug fixed :bug:`382742`.
 
- |Percona XtraBackup| wouldn't back up the empty directory created with ``mkdir`` (i.e. ``test``) outside of the server which could lead to inconsistencies during the |Percona XtraDB Cluster| State Snapshot Transfer. Bug fixed :bug:`1217426`.
+|innobackupex| wasn't able to perform backups to the ``NFS`` mount in some
+``NFS`` configurations, because it was trying to preserve file ownership. Bug
+fixed :bug:`943750`.
 
- If the `innodb_log_arch_dir <http://www.percona.com/doc/percona-server/5.6/management/log_archiving.html#innodb_log_arch_dir>`_ variable was specified in the |Percona Server| configuration file :file:`my.cnf` |Percona XtraBackup| was unable to perform the backup. Bug fixed :bug:`1227240`.
- 
- Race condition in ``start_query_killer`` child code could cause parent |MySQL| connection to close. Bug fixed :bug:`1239728`.
+|Percona XtraBackup| wouldn't back up the empty directory created with ``mkdir``
+(i.e. ``test``) outside of the server which could lead to inconsistencies during
+the |Percona XtraDB Cluster| State Snapshot Transfer. Bug fixed :bug:`1217426`.
+
+If the `innodb_log_arch_dir
+<http://www.percona.com/doc/percona-server/5.6/management/log_archiving.html#innodb_log_arch_dir>`_
+variable was specified in the |Percona Server| configuration file :file:`my.cnf`
+|Percona XtraBackup| was unable to perform the backup. Bug fixed :bug:`1227240`.
+
+Race condition in ``start_query_killer`` child code could cause parent |MySQL|
+connection to close. Bug fixed :bug:`1239728`.
 
 Other bugs fixed: :bug:`1248488`, :bug:`1247057`, :bug:`1250738`, :bug:`1214274`.

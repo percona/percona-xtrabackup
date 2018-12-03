@@ -1,27 +1,42 @@
-=======================================
+================================================================================
 |Percona XtraBackup| 2.1.0-alpha1
-=======================================
+================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.0-alpha1 on April 2nd 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/2.1.0/>`_. For this ALPHA release, we will not be making APT and YUM repositories available, just base deb and RPM packages
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.0-alpha1 on
+April 2nd 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/2.1.0/>`_. For this ALPHA release,
+we will not be making APT and YUM repositories available, just base deb and RPM
+packages
 
-This is an *ALPHA* quality release and is not intended for production. If you want a high quality, Generally Available release, the current Stable version should be used (currently 2.0.6 in the 2.0 series at the time of writing).
+This is an *ALPHA* quality release and is not intended for production. If you
+want a high quality, Generally Available release, the current Stable version
+should be used (currently 2.0.6 in the 2.0 series at the time of writing).
 
-This release contains all of the features and bug fixes in :doc:`Percona XtraBackup 2.0.6 </release-notes/2.0/2.0.6>`, plus the following:
+This release contains all of the features and bug fixes in :doc:`Percona
+XtraBackup 2.0.6 </release-notes/2.0/2.0.6>`, plus the following:
 
 New features
-------------
+================================================================================
 
- |Percona XtraBackup| now has support for :ref:`compact_backups_ibk`. This feature can be used for taking the backups that will take less amount of disk space.
+|Percona XtraBackup| now has support for :ref:`compact_backups_ibk`. This
+feature can be used for taking the backups that will take less amount of disk
+space.
 
- |Percona XtraBackup| has implemented :ref:`encrypted_backups_ibk`. This feature can be used to encrypt/decrypt both local and streamed backups in order to add another layer of protection to the backups.
+|Percona XtraBackup| has implemented :ref:`encrypted_backups_ibk`. This feature
+can be used to encrypt/decrypt both local and streamed backups in order to add
+another layer of protection to the backups.
 
- |innobackupex| now uses Perl's ``DBD::MySQL`` package for server communication instead of spawning the mysql command line client.
+|innobackupex| now uses Perl's ``DBD::MySQL`` package for server communication
+instead of spawning the mysql command line client.
 
- Support for |InnoDB| 5.0 and |InnoDB| 5.1 builtin has been removed from |Percona XtraBackup|.
+Support for |InnoDB| 5.0 and |InnoDB| 5.1 builtin has been removed from |Percona
+XtraBackup|.
 
- After being deprecated in previous version, option :option:`--remote-host` has been completely removed in |Percona XtraBackup| 2.1.
+After being deprecated in previous version, option ``--remote-host`` has
+been completely removed in |Percona XtraBackup| 2.1.
 
 Bugs Fixed
-----------
+================================================================================
 
- |innobackupex| now supports empty arguments in the :option:`--password` option. Bug fixed :bug:`1032667` (*Andrew Gaul*).
+|innobackupex| now supports empty arguments in :option:`innobackupex
+--password`. Bug fixed :bug:`1032667` (*Andrew Gaul*).

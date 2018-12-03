@@ -382,16 +382,6 @@ Options
    copying the data files back to their original locations to restore them. See
    :ref:`scripting-xtrabackup`.
 
-.. option:: --rebuild_indexes
-
-   Rebuild secondary indexes in InnoDB tables after applying the log. Only has
-   effect with --prepare.
-
-.. option::  --rebuild_threads=#
-
-   Use this number of threads to rebuild indexes in a compact backup. Only has
-   effect with --prepare and --rebuild-indexes.
-
 .. option:: --reencrypt-for-server-id=<new_server_id>
 
    Use this option to start the server instance with different server_id from
@@ -575,6 +565,17 @@ Options
    This option is used to specify the LSN to which the logs should be applied
    when backups are being prepared. It can only be used with the
    :option:`xtrabackup --prepare` option.
+
+.. option:: --transition-key
+
+   This option is used to enable processing the backup without accessing the
+   keyring vault server. In this case, :program:`xtrabackup` derives the AES
+   encryption key from the specified passphrase and uses it to encrypt
+   tablespace keys of tablespaces being backed up.
+
+   If :option:`--transition-key <xtrabackup --transition-key>` does not have any
+   value, :program:`xtrabackup` will ask for it. The same passphrase should be
+   specified for the :option:`xtrabackup --prepare` command.
 
 .. option:: --use-memory=#
 
