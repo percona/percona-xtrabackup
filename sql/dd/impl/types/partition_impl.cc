@@ -320,8 +320,12 @@ bool Partition_impl::deserialize(Sdi_rcontext *rctx, const RJ_Value &val) {
   deserialize_each(rctx, [this]() { return add_index(nullptr); }, val,
                    "indexes");
 
+#ifndef XTRABACKUP
   return deserialize_tablespace_ref(rctx, &m_tablespace_id, val,
                                     "tablespace_ref");
+#else
+  return false;
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////

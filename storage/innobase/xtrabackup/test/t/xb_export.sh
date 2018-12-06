@@ -6,48 +6,58 @@ then
 fi
 
 function init_schema() {
-	local database_name=$1
-	local table_name=$2
-	local columns_count=$3
+    local database_name=$1
+    local table_name=$2
+    local columns_count=$3
+    local part=$4
 
-	local cmd="create database if not exists $database_name; "
-	cmd+="create table $database_name.$table_name ("
-	for ((c=1; c<=$columns_count; ++c ))
-	do
-		cmd+="\`c$c\` int,"
-	done
-	for ((c=1; c<=$columns_count; ++c ))
-	do
-		cmd+="index \`c$c\` (\`c$c\`),"
-	done
-	cmd=${cmd%?}
-	cmd+=") engine=InnoDB;"
+    local cmd="create database if not exists $database_name; "
+    cmd+="create table $database_name.$table_name ("
+    for ((c=1; c<=$columns_count; ++c ))
+    do
+        cmd+="\`c$c\` int,"
+    done
+    for ((c=1; c<=$columns_count; ++c ))
+    do
+        cmd+="index \`c$c\` (\`c$c\`),"
+    done
+    cmd=${cmd%?}
+    cmd+=")"
+    cmd+=" engine=InnoDB"
+    if [ "$part" == "y" ] ; then
+        cmd+=" PARTITION BY RANGE (c1)"
+        cmd+=" (PARTITION p0 VALUES LESS THAN (10) ENGINE = InnoDB,"
+        cmd+=" PARTITION p1 VALUES LESS THAN (50) ENGINE = InnoDB,"
+        cmd+=" PARTITION p2 VALUES LESS THAN MAXVALUE ENGINE = InnoDB)"
+    fi
 
-	echo "$cmd" | run_cmd $MYSQL $MYSQL_ARGS
+    echo $cmd
+
+    echo "$cmd" | run_cmd $MYSQL $MYSQL_ARGS
 }
 
 function insert_data() {
-	local database_name=$1
-	local table_name=$2
-	local columns_count=$3
-	local rows_count=$4
+    local database_name=$1
+    local table_name=$2
+    local columns_count=$3
+    local rows_count=$4
 
-	local cmd="INSERT INTO $database_name.$table_name VALUES"
-	local val=0
-	for ((r=1; r<=$rows_count; ++r ))
-	do
-		cmd+="("
-		for ((c=1; c<=$columns_count; ++c ))
-		do
-			cmd+="$val,"
-			((++val))
-		done
-		cmd=${cmd%?}
-		cmd+="),"
-	done
-	cmd=${cmd%?}
-	cmd+=";"
-	echo "$cmd" | run_cmd $MYSQL $MYSQL_ARGS
+    local cmd="INSERT INTO $database_name.$table_name VALUES"
+    local val=0
+    for ((r=1; r<=$rows_count; ++r ))
+    do
+        cmd+="("
+        for ((c=1; c<=$columns_count; ++c ))
+        do
+            cmd+="$val,"
+            ((++val))
+        done
+        cmd=${cmd%?}
+        cmd+="),"
+    done
+    cmd=${cmd%?}
+    cmd+=";"
+    echo "$cmd" | run_cmd $MYSQL $MYSQL_ARGS
 }
 
 import_option=""
@@ -84,15 +94,16 @@ exp_files_count=2
 
 if is_server_version_higher_than 5.6.0
 then
-	# Post-5.6.0 scenario: many indexes, only one .exp file is generated.
-	# Despite that both .cfg are generated and both tables can be imported.
-	max_indices_count=64
-	exp_files_count=1
+    # Post-5.6.0 scenario: many indexes, only one .exp file is generated.
+    # Despite that both .cfg are generated and both tables can be imported.
+    max_indices_count=64
+    exp_files_count=1
 fi
 
 # Loading table schema
-init_schema incremental_sample test $max_indices_count
-init_schema incremental_sample test2 $indices_count
+init_schema incremental_sample test $max_indices_count "n"
+init_schema incremental_sample test2 $indices_count "n"
+init_schema incremental_sample test3 $indices_count "y"
 
 # Adding some data to database
 insert_data incremental_sample test $max_indices_count $rows_count
@@ -112,21 +123,26 @@ vlog "Re-initializing database server"
 stop_server
 rm -rf ${MYSQLD_DATADIR}
 start_server $mysql_extra_args
-init_schema incremental_sample test $max_indices_count
+init_schema incremental_sample test $max_indices_count "n"
+init_schema incremental_sample test2 $indices_count "n"
+init_schema incremental_sample test3 $indices_count "y"
 vlog "Database was re-initialized"
 
-run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test discard tablespace;" incremental_sample
+mysql -e "alter table test discard tablespace;" incremental_sample
+mysql -e "alter table test2 discard tablespace;" incremental_sample
+mysql -e "alter table test3 discard tablespace;" incremental_sample
 
 xtrabackup --datadir=$mysql_datadir --prepare --export \
     --target-dir=$backup_dir
 
 cfg_count=`find $backup_dir/incremental_sample -name '*.cfg' | wc -l`
-vlog "Verifying .cfg files in backup, expecting 2."
-test "$cfg_count" -eq 2
+vlog "Verifying .cfg files in backup, expecting 5."
+test "$cfg_count" -eq 5
 
 run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
-run_cmd ls -lah $mysql_datadir/incremental_sample/
-run_cmd ${MYSQL} ${MYSQL_ARGS} -e "alter table test import tablespace" incremental_sample
+mysql -e "alter table test import tablespace" incremental_sample
+mysql -e "alter table test2 import tablespace" incremental_sample
+mysql -e "alter table test3 import tablespace" incremental_sample
 vlog "Table has been imported"
 
 vlog "Cheking checksums"
@@ -137,8 +153,8 @@ vlog "rowsnum_1 is $rowsnum_1"
 
 if [ "$checksum_1" != "$checksum_2"  ]
 then 
-	vlog "Checksums are not equal"
-	exit -1
+    vlog "Checksums are not equal"
+    exit -1
 fi
 
 vlog "Checksums are OK"
@@ -151,8 +167,8 @@ shutdown_server
 start_server $mysql_extra_args
 
 # Some testing queries
-run_cmd ${MYSQL} ${MYSQL_ARGS} -e "select count(*) from test;" incremental_sample
-run_cmd ${MYSQL} ${MYSQL_ARGS} -e "show create table test;" incremental_sample
+mysql -e "select count(*) from test;" incremental_sample
+mysql -e "show create table test;" incremental_sample
 
 # Performing full backup of imported table
 mkdir -p $topdir/backup/full
@@ -165,7 +181,7 @@ xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
 xtrabackup --datadir=$mysql_datadir --prepare \
     --target-dir=$topdir/backup/full
 
-run_cmd ${MYSQL} ${MYSQL_ARGS} -e "delete from test;" incremental_sample
+mysql -e "delete from test;" incremental_sample
 
 stop_server
 
@@ -181,8 +197,8 @@ vlog "checksum_3 is $checksum_3"
 
 if [ "$checksum_3" != "$checksum_2"  ]
 then
-        vlog "Checksums are not equal"
-        exit -1
+    vlog "Checksums are not equal"
+    exit -1
 fi
 
 vlog "Checksums are OK"
