@@ -201,8 +201,12 @@ bool Partition_index_impl::deserialize(Sdi_rcontext *rctx,
   read_properties(&m_se_private_data, val, "se_private_data");
   read_opx_reference(rctx, &m_index, val, "index_opx");
 
+#ifndef XTRABACKUP
   return deserialize_tablespace_ref(rctx, &m_tablespace_id, val,
                                     "tablespace_ref");
+#else
+  return false;
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////

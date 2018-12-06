@@ -284,10 +284,12 @@ bool Index_impl::deserialize(Sdi_rcontext *rctx, const RJ_Value &val) {
   deserialize_each(rctx, [this]() { return add_element(nullptr); }, val,
                    "elements");
 
+#ifndef XTRABACKUP
   if (deserialize_tablespace_ref(rctx, &m_tablespace_id, val,
                                  "tablespace_name")) {
     return true;
   }
+#endif
 
   track_object(rctx, this);
 
