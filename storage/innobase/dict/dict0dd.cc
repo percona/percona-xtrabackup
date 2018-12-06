@@ -369,7 +369,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
                                         bool is_implicit) {
   mem_heap_t *heap = mem_heap_create(1000);
 
-  char table_name[MAX_FULL_NAME_LEN + 1];
+  char table_name[MAX_SPACE_NAME_LEN + 1];
   char tmp_schema[MAX_DATABASE_NAME_LEN + 1];
   char tmp_tablename[MAX_TABLE_NAME_LEN + 1];
 
@@ -378,8 +378,14 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
   tablename_to_filename(dd_table->name().c_str(), tmp_tablename,
                         MAX_TABLE_NAME_LEN + 1);
   if (dd_part) {
-    snprintf(table_name, sizeof table_name, "%s/%s.%s", tmp_schema,
-             tmp_tablename, dd_part->name().c_str());
+    if (dd_part->parent_partition() == nullptr) {
+      snprintf(table_name, sizeof table_name, "%s/%s#P#%s", tmp_schema,
+               tmp_tablename, dd_part->name().c_str());
+    } else {
+      snprintf(table_name, sizeof table_name, "%s/%s#P#%s#SP#%s", tmp_schema,
+               tmp_tablename, dd_part->name().c_str(),
+               dd_part->parent_partition()->name().c_str());
+    }
   } else {
     snprintf(table_name, sizeof table_name, "%s/%s", tmp_schema, tmp_tablename);
   }

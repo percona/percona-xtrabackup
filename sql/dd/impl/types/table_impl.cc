@@ -581,8 +581,12 @@ bool Table_impl::deserialize(Sdi_rcontext *rctx, const RJ_Value &val) {
   deserialize_each(rctx, [this]() { return add_partition(); }, val,
                    "partitions");
   read(&m_collation_id, val, "collation_id");
+#ifndef XTRABACKUP
   return deserialize_tablespace_ref(rctx, &m_tablespace_id, val,
                                     "tablespace_id");
+#else
+  return false;
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
