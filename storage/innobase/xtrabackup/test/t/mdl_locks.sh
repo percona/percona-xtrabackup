@@ -6,6 +6,8 @@ start_server
 
 load_sakila
 
+mysql -e 'CREATE TABLE t_hello_你好(id INT, PRIMARY KEY(id)) ENGINE=InnoDB' test
+
 function start_transaction() {
 	run_cmd_expect_failure $MYSQL $MYSQL_ARGS <<EOF
 BEGIN;
@@ -79,6 +81,9 @@ then
 	xtrabackup --backup --lock-ddl --target-dir=$topdir/backup6
 	xtrabackup --prepare --target-dir=$topdir/backup6
 fi
+
+# PXB-1539: lock-ddl-per-table reports error for table name with special characters
+run_cmd_expect_failure grep 'failed to execute query SELECT \* FROM test.t_hello' $OUTFILE
 
 kill -USR1 $job_id
 wait $job_id
