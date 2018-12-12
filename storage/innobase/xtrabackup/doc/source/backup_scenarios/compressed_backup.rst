@@ -11,14 +11,14 @@ Creating Compressed Backups
 ===========================
 
 In order to make a compressed backup you'll need to use
-:option:`xtrabackup --compress` option:
+:option:`--compress` option:
 
 .. code-block:: bash
 
   $ xtrabackup --backup --compress --target-dir=/data/compressed/
 
 If you want to speed up the compression you can use the parallel compression,
-which can be enabled with :option:`xtrabackup --compress-threads` option.
+which can be enabled with :option:`--compress-threads` option.
 Following example will use four threads for compression:
 
 .. code-block:: bash
@@ -43,34 +43,33 @@ Preparing the backup
 --------------------
 
 Before you can prepare the backup you'll need to uncompress all the files.
-|Percona XtraBackup| has implemented :option:`xtrabackup --decompress` option
+|Percona XtraBackup| has implemented :option:`--decompress` option
 that can be used to decompress the backup.
 
 .. note::
 
-  Before proceeding you'll need to make sure that `qpress
-  <http://www.quicklz.com/>`_ has been installed. It's availabe from
-  :ref:`Percona Software repositories <installing_from_binaries>`
-
+   Before proceeding make sure that `qpress <http://www.quicklz.com/>`_ is
+   installed. It's available from :ref:`Percona Software repositories
+   <installing_from_binaries>`
 
 .. code-block:: bash
 
- $ xtrabackup --decompress --target-dir=/data/compressed/
+   $ xtrabackup --decompress --target-dir=/data/compressed/
 
 .. note::
 
-  :option:`xtrabackup --parallel` can be used with
-  :option:`xtrabackup --decompress` option to decompress multiple files
+  :option:`--parallel` can be used with
+  :option:`--decompress` option to decompress multiple files
   simultaneously.
 
 |Percona XtraBackup| doesn't automatically remove the compressed files. In
 order to clean up the backup directory you should use
-:option:`xtrabackup --remove-original` option. Even if they're not removed
+:option:`--remove-original` option. Even if they're not removed
 these files will not be copied/moved over to the datadir if
-:option:`xtrabackup --copy-back` or :option:`xtrabackup --move-back` are used.
+:option:`--copy-back` or :option:`--move-back` are used.
 
 When the files are uncompressed you can prepare the backup with the
-:option:`xtrabackup --prepare` option:
+:option:`--prepare` option:
 
 .. code-block:: bash
 
@@ -87,7 +86,7 @@ Now the files in :file:`/data/compressed/` are ready to be used by the server.
 Restoring the backup
 --------------------
 
-|xtrabackup| has a :option:`xtrabackup --copy-back` option, which performs the
+|xtrabackup| has a :option:`--copy-back` option, which performs the
 restoration of a backup to the server's :term:`datadir`:
 
 .. code-block:: bash

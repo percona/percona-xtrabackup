@@ -8,17 +8,17 @@ Index of files created by Percona XtraBackup
 
     * :file:`backup-my.cnf`
        This file contains information to start the mini instance of InnoDB
-       during the :option:`xtrabackup --prepare`. This is **NOT** a backup of
+       during the :option:`--prepare`. This is **NOT** a backup of
        original :file:`my.cnf`. The InnoDB configuration is read from the file
-       :file:`backup-my.cnf` created by |innobackupex| when the backup was
-       made. :option:`xtrabackup --prepare` uses InnoDB configuration from
+       :file:`backup-my.cnf` created by |xtrabackup| when the backup was
+       made. :option:`--prepare` uses InnoDB configuration from
        ``backup-my.cnf`` by default, or from
-       :option:`xtrabackup --defaults-file`, if specified. InnoDB
+       :option:`--defaults-file`, if specified. InnoDB
        configuration in this context means server variables that affect data
        format, i.e. ``innodb_page_size`` option,
        ``innodb_log_block_size``, etc. Location-related variables, like
        ``innodb_log_group_home_dir`` or ``innodb_data_file_path``
-       are always ignored by :option:`xtrabackup --prepare`, so preparing
+       are always ignored by :option:`--prepare`, so preparing
        a backup always works with data files from the backup directory, rather
        than any external ones.
 
@@ -58,8 +58,8 @@ Index of files created by Percona XtraBackup
        The |xtrabackup| binary used in the process.
 
     * :file:`xtrabackup_logfile`
-       Contains data needed for running the: :option:`xtrabackup --prepare`.
-       The bigger this file is the :option:`xtrabackup --prepare` process
+       Contains data needed for running the: :option:`--prepare`.
+       The bigger this file is the :option:`--prepare` process
        will take longer to finish.
 
     * :file:`<table_name>.delta.meta`
@@ -82,13 +82,13 @@ Index of files created by Percona XtraBackup
        respectively.
 
 * Information related to the replication environment (if using the
-  :option:`xtrabackup --slave-info` option):
+  :option:`--slave-info` option):
 
     * :file:`xtrabackup_slave_info`
        The ``CHANGE MASTER`` statement needed for setting up a slave.
 
 * Information related to the *Galera* and *Percona XtraDB Cluster* (if using
-  the :option:`xtrabackup --galera-info` option):
+  the :option:`--galera-info` option):
 
     * :file:`xtrabackup_galera_info`
        Contains the values of ``wsrep_local_state_uuid`` and

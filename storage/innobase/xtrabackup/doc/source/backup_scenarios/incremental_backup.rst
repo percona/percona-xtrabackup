@@ -4,9 +4,8 @@
 Incremental Backup
 ==================
 
-Both |xtrabackup| and |innobackupex| tools supports incremental backups,
-which means that they can copy only the data that has changed since the last
-backup.
+|xtrabackup| supports incremental backups, which means that they can copy only
+the data that has changed since the last backup.
 
 You can perform many incremental backups between each full backup, so you can
 set up a backup process such as a full backup once a week and an incremental
@@ -29,12 +28,12 @@ bitmap file. The |xtrabackup| binary will use that file to read only the data
 pages it needs for the incremental backup, potentially saving many read
 requests. The latter algorithm is enabled by default if the |xtrabackup| binary
 finds the bitmap file. It is possible to specify
-:option:`xtrabackup --incremental-force-scan` to read all the pages even if the
+:option:`--incremental-force-scan` to read all the pages even if the
 bitmap data is available.
 
 Incremental backups do not actually compare the data files to the previous
 backup's data files. In fact, you can use
-:option:`xtrabackup --incremental-lsn` to perform an incremental backup without
+:option:`--incremental-lsn` to perform an incremental backup without
 even having the previous backup, if you know its :term:`LSN`. Incremental
 backups simply read the pages and compare their :term:`LSN` to the last
 backup's :term:`LSN`. You still need a full backup to recover the incremental
@@ -123,7 +122,7 @@ This folder also contains the :file:`xtrabackup_checkpoints`:
 Preparing the Incremental Backups
 =================================
 
-The :option:`xtrabackup --prepare` step for incremental backups is not the same
+The :option:`--prepare` step for incremental backups is not the same
 as for full backups. In full backups, two types of operations are performed to
 make the database consistent: committed transactions are replayed from the log
 file against the data files, and uncommitted transactions are rolled back. You
@@ -131,11 +130,11 @@ must skip the rollback of uncommitted transactions when preparing an
 incremental backup, because transactions that were uncommitted at the time of
 your backup may be in progress, and it's likely that they will be committed in
 the next incremental backup. You should use the
-:option:`xtrabackup --apply-log-only` option to prevent the rollback phase.
+:option:`--apply-log-only` option to prevent the rollback phase.
 
 .. warning::
 
-  **If you do not use the** :option:`xtrabackup --apply-log-only` **option to
+  **If you do not use the** :option:`--apply-log-only` **option to
   prevent the rollback phase, then your incremental backups will be useless**.
   After transactions have been rolled back, further incremental backups cannot
   be applied.
@@ -149,7 +148,7 @@ the incremental differences to it. Recall that you have the following backups:
   /data/backups/inc1
   /data/backups/inc2
 
-To prepare the base backup, you need to run :option:`xtrabackup --prepare` as
+To prepare the base backup, you need to run :option:`--prepare` as
 usual, but prevent the rollback phase:
 
 .. code-block:: bash
@@ -217,10 +216,10 @@ the point of the second incremental backup:
 
 .. note::
 
- :option:`xtrabackup --apply-log-only` should be used when merging all
+ :option:`--apply-log-only` should be used when merging all
  incrementals except the last one. That's why the previous line doesn't contain
- the :option:`xtrabackup --apply-log-only` option. Even if the
- :option:`xtrabackup --apply-log-only` was used on the last step, backup would
+ the :option:`--apply-log-only` option. Even if the
+ :option:`--apply-log-only` was used on the last step, backup would
  still be consistent but in that case server would perform the rollback phase.
 
 Once prepared incremental backups are the same as the :ref:`full backups

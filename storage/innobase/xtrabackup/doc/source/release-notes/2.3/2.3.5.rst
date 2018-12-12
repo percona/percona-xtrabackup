@@ -13,18 +13,18 @@ series.
 Bugs fixed
 ==========
 
- Backup process would fail if :option:`xtrabackup --throttle` option was used.
+ Backup process would fail if `xtrabackup --throttle` option was used.
  Bug fixed :bug:`1554235`.
 
  :file:`.ibd` files for remote tablespaces were not copied back to original
  location pointed by the :file:`.isl` files. Bug fixed :bug:`1555423`.
 
  When called with insufficient parameters, like specifying the empty
- :option:`xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
+ `xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
  Bug fixed :bug:`1566228`.
 
  Documentation states that the default value for
- :option:`xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
+ `xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
  ``update``. Changed the default value to reflect the documentation. Bug fixed
  :bug:`1566315`.
 
@@ -40,7 +40,7 @@ Bugs fixed
  Backup process would fail on |MariaDB| if binary logs were in non-standard
  directory. Bug fixed :bug:`1517629`.
 
- Output of :option:`xtrabackup --slave-info` option was missing an apostrophe.
+ Output of `xtrabackup --slave-info` option was missing an apostrophe.
  Bug fixed :bug:`1573371`.
 
 Other bugs fixed: :bug:`1599397`.

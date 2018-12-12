@@ -28,14 +28,14 @@ Bugs Fixed
  ``apt-get source`` was downloading older version of |Percona XtraBackup|. Bug
  fixed :bug:`1363259`.
 
- |innobackupex| would ignore the :option:`innobackupex --databases` without
- :option:`innobackupex --stream` option and back up all the databases. Bug
+ |innobackupex| would ignore the :option:`--databases` without
+ :option:`--stream` option and back up all the databases. Bug
  fixed :bug:`569387`.
 
  ``rsync`` package wasn't a dependency although it is required for the
- :option:`innobackupex --rsync` option. Bug fixed :bug:`1259436`.
+ ``--rsync`` option. Bug fixed :bug:`1259436`.
 
- :option:`innobackupex --galera-info` was checking only for non-capitalized
+ :option:`--galera-info` was checking only for non-capitalized
  ``wsrep_*`` status variables which was incompatible with *MariaDB Galera
  Cluster* 10.0. Bug fixed :bug:`1306875`.
 

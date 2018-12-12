@@ -1,10 +1,12 @@
-============================================
- Taking Backups in Replication Environments
-============================================
+.. _pxb.xtrabackup.relication:
+
+================================================================================
+Making Backups in Replication Environments
+================================================================================
 
 There are options specific to back up from a replication slave.
 
-:option:`innobackupex --slave-info`
+The :option:`--slave-info` Option
 ================================================================================
 
 This option is useful when backing up a replication slave server. It prints the
@@ -17,7 +19,7 @@ starting a slave server on this backup and issuing the statement saved in the
 :file:`xtrabackup_slave_info` file. More details of this procedure can be found
 in :ref:`replication_howto`.
 
-:option:`innobackupex --safe-slave-backup`
+The :option:`--safe-slave-backup` Option
 ================================================================================
 
 In order to assure a consistent replication state, this option stops the slave
@@ -25,7 +27,7 @@ SQL thread and wait to start backing up until ``Slave_open_temp_tables`` in
 ``SHOW STATUS`` is zero. If there are no open temporary tables, the backup will
 take place, otherwise the SQL thread will be started and stopped until there are
 no open temporary tables. The backup will fail if ``Slave_open_temp_tables``
-does not become zero after :option:`innobackupex --safe-slave-backup-timeout`
+does not become zero after :option:`--safe-slave-backup-timeout`
 seconds (defaults to 300 seconds). The slave SQL thread will be restarted when
 the backup finishes.
 

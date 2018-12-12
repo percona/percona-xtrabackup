@@ -1,13 +1,13 @@
 .. option:: --no-version-check
 
    This option disables the version check. If you do not pass this option, the
-   automatic version check is enabled implicitly when |program| runs
+   automatic version check is enabled implicitly when |xtrabackup| runs
    in the ``--backup`` mode. To disable the version check, you should pass
-   explicitly the ``--no-version-check`` option when envoking |program|.
+   explicitly the ``--no-version-check`` option when envoking |xtrabackup|.
 
-   When the automatic version check is enabled, |program| performs a
+   When the automatic version check is enabled, |xtrabackup| performs a
    version check against the server on the backup stage after creating a server
-   connection. |program| sends the following information to the server:
+   connection. |xtrabackup| sends the following information to the server:
 
    - MySQL flavour and version
    - Operating system name
