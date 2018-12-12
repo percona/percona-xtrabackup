@@ -1,15 +1,14 @@
 .. _xb_incremental:
 
 ================================================================================
- Incremental Backups
+Incremental Backups
 ================================================================================
 
-Both |xtrabackup| and |innobackupex| tools supports incremental backups, which
-means that it can copy only the data that has changed since the last full
-backup. You can perform many incremental backups between each full backup, so
-you can set up a backup process such as a full backup once a week and an
-incremental backup every day, or full backups every day and incremental backups
-every hour.
+|xtrabackup| supports incremental backups. It copies only the data that has
+changed since the last full backup. You can perform many incremental backups
+between each full backup, so you can set up a backup process such as a full
+backup once a week and an incremental backup every day, or full backups every
+day and incremental backups every hour.
 
 Incremental backups work because each InnoDB page (usually 16kb in size)
 contains a log sequence number, or :term:`LSN`. The :term:`LSN` is the system
@@ -26,16 +25,15 @@ information will be then written out in a compact separate so-called bitmap
 file. The |xtrabackup| binary will use that file to read only the data pages it
 needs for the incremental backup, potentially saving many read requests. The
 latter algorithm is enabled by default if the |xtrabackup| binary finds the
-bitmap file. It is possible to specify :option:`xtrabackup
---incremental-force-scan` to read all the pages even if the bitmap data is
-available.
+bitmap file. It is possible to specify :option:`--incremental-force-scan` to
+read all the pages even if the bitmap data is available.
 
 Incremental backups do not actually compare the data files to the previous
-backup's data files. In fact, you can use :option:`xtrabackup --incremental-lsn`
-to perform an incremental backup without even having the previous backup, if you
-know its :term:`LSN`. Incremental backups simply read the pages and compare
-their :term:`LSN` to the last backup's :term:`LSN`. You still need a full backup
-to recover the incremental changes, however; without a full backup to act as a
+backup's data files. In fact, you can use :option:`--incremental-lsn` to perform
+an incremental backup without even having the previous backup, if you know its
+:term:`LSN`. Incremental backups simply read the pages and compare their
+:term:`LSN` to the last backup's :term:`LSN`. You still need a full backup to
+recover the incremental changes, however; without a full backup to act as a
 base, the incremental backups are useless.
 
 Creating an Incremental Backup
@@ -45,26 +43,26 @@ To make an incremental backup, begin with a full backup as usual. The
 |xtrabackup| binary writes a file called :file:`xtrabackup_checkpoints` into the
 backup's target directory. This file contains a line showing the ``to_lsn``,
 which is the database's :term:`LSN` at the end of the backup. :ref:`Create the
-full backup <creating_a_backup>` with a command such as the following: ::
+full backup <creating_a_backup>` with a command such as the following:
 
-  xtrabackup --backup --target-dir=/data/backups/base --datadir=/var/lib/mysql/
+.. code-block:: bash
 
-If you want a usable full backup, use :doc:`innobackupex
-<../innobackupex/innobackupex_script>` since `xtrabackup` itself won't copy
-table definitions, triggers, or anything else that's not .ibd.
+   $ xtrabackup --backup --target-dir=/data/backups/base --datadir=/var/lib/mysql/
 
-If you look at the :file:`xtrabackup_checkpoints` file, you should see some
-contents similar to the following: ::
+If you look at the :file:`xtrabackup_checkpoints` file, you should see contents
+similar to the following: ::
 
   backup_type = full-backuped
   from_lsn = 0
   to_lsn = 1291135
 
 Now that you have a full backup, you can make an incremental backup based on
-it. Use a command such as the following: ::
+it. Use a command such as the following: 
 
-  xtrabackup --backup --target-dir=/data/backups/inc1 \
-  --incremental-basedir=/data/backups/base --datadir=/var/lib/mysql/
+.. code-block:: bash
+
+   $ xtrabackup --backup --target-dir=/data/backups/inc1 \
+   --incremental-basedir=/data/backups/base --datadir=/var/lib/mysql/
 
 The :file:`/data/backups/inc1/` directory should now contain delta files, such
 as :file:`ibdata1.delta` and :file:`test/table1.ibd.delta`. These represent the
@@ -77,30 +75,32 @@ similar to the following: ::
   to_lsn = 1291340
 
 The meaning should be self-evident. It's now possible to use this directory as
-the base for yet another incremental backup: ::
+the base for yet another incremental backup:
 
-  xtrabackup --backup --target-dir=/data/backups/inc2 \
-  --incremental-basedir=/data/backups/inc1 --datadir=/var/lib/mysql/
+.. code-block:: bash
+
+   $ xtrabackup --backup --target-dir=/data/backups/inc2 \
+   --incremental-basedir=/data/backups/inc1 --datadir=/var/lib/mysql/
 
 Preparing the Incremental Backups
 ================================================================================
 
-The :option:`xtrabackup --prepare` step for incremental backups is not the same
-as for normal backups. In normal backups, two types of operations are performed
-to make the database consistent: committed transactions are replayed from the
-log file against the data files, and uncommitted transactions are rolled
-back. You must skip the rollback of uncommitted transactions when preparing a
-backup, because transactions that were uncommitted at the time of your backup
-may be in progress, and it's likely that they will be committed in the next
-incremental backup. You should use the :option:`xtrabackup --apply-log-only`
-option to prevent the rollback phase.
+The :option:`--prepare` step for incremental backups is not the same as for
+normal backups. In normal backups, two types of operations are performed to make
+the database consistent: committed transactions are replayed from the log file
+against the data files, and uncommitted transactions are rolled back. You must
+skip the rollback of uncommitted transactions when preparing a backup, because
+transactions that were uncommitted at the time of your backup may be in
+progress, and it is likely that they will be committed in the next incremental
+backup. You should use the :option:`--apply-log-only` option to prevent the
+rollback phase.
 
-.. warning::
+.. note::
 
-   If you do not use the :option:`xtrabackup --apply-log-only` option to
-   prevent the rollback phase, then your incremental backups will be
-   useless. After transactions have been rolled back, further incremental
-   backups cannot be applied.
+   If you do not use the :option:`--apply-log-only` option to prevent the
+   rollback phase, then your incremental backups will be useless. After
+   transactions have been rolled back, further incremental backups cannot be
+   applied.
 
 Beginning with the full backup you created, you can prepare it, and then apply
 the incremental differences to it. Recall that you have the following backups:
@@ -110,8 +110,8 @@ the incremental differences to it. Recall that you have the following backups:
   /data/backups/inc1
   /data/backups/inc2
 
-To prepare the base backup, you need to run :option:`xtrabackup --prepare` as
-usual, but prevent the rollback phase: ::
+To prepare the base backup, you need to run :option:`--prepare` as usual, but
+prevent the rollback phase: ::
 
   xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base
 
@@ -163,12 +163,54 @@ point of the second incremental backup: ::
 
 .. note::
  
-   :option:`xtrabackup --apply-log-only` should be used when merging all
-   incrementals except the last one. That's why the previous line doesn't
-   contain the :option:`xtrabackup --apply-log-only` option. Even if the
-   :option:`xtrabackup --apply-log-only` was used on the last step, backup would
-   still be consistent but in that case server would perform the rollback phase.
+   :option:`--apply-log-only` should be used when merging all incrementals
+   except the last one. That's why the previous line doesn't contain the
+   :option:`--apply-log-only` option. Even if the :option:`--apply-log-only` was
+   used on the last step, backup would still be consistent but in that case
+   server would perform the rollback phase.
 
 If you wish to avoid the notice that |InnoDB| was not shut down normally, when
-xoyou applied the desired deltas to the base backup, you can run
-:option:`xtrabackup --prepare` again without disabling the rollback phase.
+you applied the desired deltas to the base backup, you can run
+:option:`--prepare` again without disabling the rollback phase.
+
+Restoring Incremental Backups
+================================================================================
+
+After preparing the incremental backups, the base directory contains the same
+data as the full backup. To restoring this backup, you can use this command:
+:bash:`xtrabackup --copy-back --target-dir=BASE-DIR`
+
+You may have to change the ownership as detailed on
+:ref:`restoring_a_backup`.
+
+Incremental Streaming Backups Using xbstream
+================================================================================
+
+Incremental streaming backups can be performed with the |xbstream| streaming
+option. Currently backups are packed in custom **xbstream** format. With this
+feature, you need to take a BASE backup as well.
+
+.. rubric:: Making a base backup
+ 
+.. code-block:: bash
+
+   $ xtrabackup --backup --target-dir=/data/backups
+
+.. rubric:: Taking a local backup
+
+.. code-block:: bash
+     
+   $ xtrabackup --backup --incremental-lsn=LSN-number --stream=xbstream --target-dir=./ > incremental.xbstream
+
+.. rubric:: Unpacking the backup
+
+.. code-block:: bash
+
+   $ xbstream -x < incremental.xbstream 
+
+.. rubric:: Taking a local backup and streaming it to the remote server and unpacking it
+
+.. code-block:: bash	    
+     
+   $ xtrabackup --backup --incremental-lsn=LSN-number --stream=xbstream --target-dir=./
+   $ ssh user@hostname " cat - | xbstream -x -C > /backup-dir/"

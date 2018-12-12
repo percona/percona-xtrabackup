@@ -15,12 +15,12 @@ New Features
 
  To avoid issues with |MySQL| 5.7 skipping redo log for DDL |Percona
  XtraBackup| has implemented three new options
- (:option:`xtrabackup --lock-ddl`,
- :option:`xtrabackup --lock-ddl-timeout`,
- :option:`xtrabackup --lock-ddl-per-table`) that can be used to place MDL locks
+ (`xtrabackup --lock-ddl`,
+ `xtrabackup --lock-ddl-timeout`,
+ `xtrabackup --lock-ddl-per-table`) that can be used to place MDL locks
  on tables while they are copied.
 
- New :option:`xtrabackup --check-privileges` option has been implemented that
+ New `xtrabackup --check-privileges` option has been implemented that
  can be used to check if |Percona XtraBackup| has all
  :ref:`required privileges <privileges>` to perform the backup.
 
@@ -52,13 +52,13 @@ Bugs fixed
  |Percona XtraBackup| would crash while backing up MariaDB 10.2.x with
  ``--ftwrl-*`` options. Bug fixed :bug:`1704636`.
 
- :option:`xtrabackup --slave-info` didn't write the correct information into
+ `xtrabackup --slave-info` didn't write the correct information into
  :file:`xtrabackup_slave_info` file when multi-source replication was used.
  Bug fixed :bug:`1551634`.
 
  Along with :file:`xtrabackup_checkpints` file, |xtrabackup| now copies
  :file:`xtrabackup_info` file into directory specified by
- :option:`xtrabackup --extra-lsndir` option. Bug fixed :bug:`1600656`.
+ `xtrabackup --extra-lsndir` option. Bug fixed :bug:`1600656`.
 
- GTID position was not recorded when :option:`xtrabackup --binlog-info` option
+ GTID position was not recorded when `xtrabackup --binlog-info` option
  was set to ``AUTO``. Bug fixed :bug:`1651505`.

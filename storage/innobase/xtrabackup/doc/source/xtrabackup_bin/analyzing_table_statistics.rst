@@ -1,18 +1,19 @@
+.. _pxb.xtrabackup.table-statistics.analyzing:
+
 ================================================================================
  Analyzing Table Statistics
 ================================================================================
 
 The |xtrabackup| binary can analyze InnoDB data files in read-only mode to give
-statistics about them. To do this, you should use the :option:`xtrabackup
---stats` option. You can combine this with the :option:`xtrabackup --tables`
-option to limit the files to examine. It also uses the :option:`xtrabackup
---use-memory` option.
+statistics about them. To do this, you should use the :option:`--stats`
+option. You can combine this with the :option:`--tables` option to limit the
+files to examine. It also uses the :option:`--use-memory` option.
 
 You can perform the analysis on a running server, with some chance of errors due
 to the data being changed during analysis. Or, you can analyze a backup copy of
 the database. Either way, to use the statistics feature, you need a clean copy
 of the database including correctly sized log files, so you need to execute with
-:option:`xtrabackup --prepare` twice to use this functionality on a backup.
+:option:`--prepare` twice to use this functionality on a backup.
 
 The result of running on a backup might look like the following: ::
 
@@ -27,34 +28,32 @@ The result of running on a backup might look like the following: ::
 
 This can be interpreted as follows:
 
-- The first line simply shows the table and index name and its internal
+* The first line simply shows the table and index name and its internal
   identifiers. If you see an index named ``GEN_CLUST_INDEX``, that is the
   table's clustered index, automatically created because you did not explicitly
   create a ``PRIMARY KEY``.
-- The estimated statistics in dictionary information is similar to the data
+* The estimated statistics in dictionary information is similar to the data
   that's gathered through ``ANALYZE TABLE`` inside of |InnoDB| to be stored as
   estimated cardinality statistics and passed to the query optimizer.
-- The real statistics information is the result of scanning the data pages and
+* The real statistics information is the result of scanning the data pages and
   computing exact information about the index.
-- ``The level <X> pages``: output means that the line shows information about
+* ``The level <X> pages``: output means that the line shows information about
   pages at that level in the index tree. The larger ``<X>`` is, the farther it
   is from the leaf pages, which are level 0. The first line is the root page.
-- The ``leaf pages`` output shows the leaf pages, of course. This is where the
+* The ``leaf pages`` output shows the leaf pages, of course. This is where the
   table's data is stored.
-- The ``external pages``: output (not shown) shows large external pages that
+* The ``external pages``: output (not shown) shows large external pages that
   hold values too long to fit in the row itself, such as long ``BLOB`` and
   ``TEXT`` values.
-- The ``recs`` is the real number of records (rows) in leaf pages.
-- The ``pages`` is the page count.
-- The ``data`` is the total size of the data in the pages, in bytes.
-- The ``data/pages`` is calculated as (``data`` / (``pages`` * ``PAGE_SIZE``)) *
+* The ``recs`` is the real number of records (rows) in leaf pages.
+* The ``pages`` is the page count.
+* The ``data`` is the total size of the data in the pages, in bytes.
+* The ``data/pages`` is calculated as (``data`` / (``pages`` * ``PAGE_SIZE``)) *
   100%. It will never reach 100% because of space reserved for page headers and
   footers.
 
-.. seealso::
-
-   A more detailed example as a MySQL Performance blog post
-      http://www.mysqlperformanceblog.com/2009/09/14/statistics-of-innodb-tables-and-indexes-available-in-xtrabackup/
+A more detailed example is posted as a MySQL Performance Blog `post
+<http://www.mysqlperformanceblog.com/2009/09/14/statistics-of-innodb-tables-and-indexes-available-in-xtrabackup/>`_.
 
 Script to Format Output
 ================================================================================

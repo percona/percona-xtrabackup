@@ -14,7 +14,7 @@ New features
 ------------
 
  |Percona XtraBackup| has implemented new
- :option:`xtrabackup --remove-original` option that can be used to remove the
+ `xtrabackup --remove-original` option that can be used to remove the
  encrypted and compressed files once they've been decrypted/decompressed.
 
 Bugs Fixed
@@ -30,7 +30,7 @@ Bugs Fixed
  In case a warning was written to stout instead of stderr during the streaming
  backup, it could cause assertion in the |xbstream|. Bug fixed :bug:`1647340`.
 
- :option:`xtrabackup --move-back` did not always restore out-of-datadir
+ `xtrabackup --move-back` did not always restore out-of-datadir
  tablespaces to their original directories. Bug fixed :bug:`1648322`.
 
  |innobackupex| and |xtrabackup| scripts were showing the password in the

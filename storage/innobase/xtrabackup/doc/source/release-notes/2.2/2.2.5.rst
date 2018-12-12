@@ -20,7 +20,7 @@ Bugs Fixed
  The fix for bug :bug:`1079700` introduced a problem for users with huge
  numbers of |InnoDB| tablespaces, and the workaround of raising the open files
  limits didn't work in all cases due to a limitation in the Linux kernel. A new
- :option:`innobackupex --close-files` option has been implemented to close the
+ :option:`--close-files` option has been implemented to close the
  file handles once they are no longer accessed. **NOTE:** Using this option may
  result in a broken backup if DDL is performed on |InnoDB| tables during the
  backup procedure. Bug fixed :bug:`1222062`.
@@ -29,7 +29,7 @@ Bugs Fixed
  2.2.0 which caused |Percona XtraBackup| to fail to copy redo logs in random
  cases. Bug fixed :bug:`1365835`.
 
- :option:`innobackupex --galera-info` didn't copy the last binary log file when
+ :option:`--galera-info` didn't copy the last binary log file when
  it was taking a backup from server where `backup locks
  <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
  are supported. Bug fixed :bug:`1368577`.
@@ -50,11 +50,11 @@ Bugs Fixed
  failure. Bug fixed :bug:`766305`.
 
  Attempt to use any of the following options without the
- :option:`innobackupex --incremental` option now fails with an error message
- rather than creates a full backup: :option:`innobackupex --incremental-lsn`,
- :option:`innobackupex --incremental-basedir`,
- :option:`innobackupex --incremental-history-name`,
- :option:`innobackupex --incremental-history-uuid`. Bug fixed :bug:`1213778`.
+ ``--incremental`` option now fails with an error message
+ rather than creates a full backup: :option:`--incremental-lsn`,
+ :option:`--incremental-basedir`,
+ ``--incremental-history-name``,
+ ``--incremental-history-uuid``. Bug fixed :bug:`1213778`.
 
 Other bugs fixed: :bug:`1367613`, :bug:`1368574`, :bug:`1370462`,
 :bug:`1371441`, :bug:`1373429`, :bug:`1373984`, and :bug:`1265070`.

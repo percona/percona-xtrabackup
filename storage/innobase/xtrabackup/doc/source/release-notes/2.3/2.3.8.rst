@@ -17,10 +17,10 @@ New Features
  where it is supported.
 
  |Percona XtraBackup| has implemented new options:
- :option:`xtrabackup --tables-exclude` and
- :option:`xtrabackup --databases-exclude`
- that work similar to :option:`xtrabackup --tables` and
- :option:`xtrabackup --databases`
+ `xtrabackup --tables-exclude` and
+ `xtrabackup --databases-exclude`
+ that work similar to `xtrabackup --tables` and
+ `xtrabackup --databases`
  options, but exclude given names/paths from backup.
 
  :ref:`xbstream_binary` now supports parallel extraction with the
@@ -40,7 +40,7 @@ Bugs fixed
  |xtrabackup| would not create fresh |InnoDB| redo logs when preparing
  incremental backup. Bug fixed :bug:`1669592`.
 
- :option:`xtrabackup --export` can now export tables that have more than 31
+ `xtrabackup --export` can now export tables that have more than 31
  index. Bug fixed :bug:`1089681`.
 
  ``Unrecognized character \x01; marked by <-- HERE`` message could be seen if

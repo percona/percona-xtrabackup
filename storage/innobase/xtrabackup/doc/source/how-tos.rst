@@ -2,21 +2,6 @@
 How-tos and Recipes
 ===================
 
-.. _recipes-ibk:
-
-Recipes for |innobackupex|
-==========================
-
-.. toctree::
-   :maxdepth: 1
-
-   howtos/recipes_ibkx_local
-   howtos/recipes_ibkx_stream
-   howtos/recipes_ibkx_inc
-   howtos/recipes_ibkx_compressed
-   howtos/recipes_ibkx_partition
-
-
 .. _recipes-xbk:
 
 Recipes for |xtrabackup|
@@ -27,7 +12,8 @@ Recipes for |xtrabackup|
 
    howtos/recipes_xbk_full
    howtos/recipes_xbk_inc
-   howtos/recipes_xbk_restore
+   howtos/recipes_xbk_stream
+   howtos/recipes_xbk_compressed
 
 .. _howtos:
 

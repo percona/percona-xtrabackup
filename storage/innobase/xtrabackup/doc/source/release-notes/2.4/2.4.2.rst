@@ -25,5 +25,5 @@ Bugs Fixed
  didn't store ``gtid_slave_pos`` in :file:`xtrabackup_slave_info` but logged it
  only to ``STDERR``. Bug fixed :bug:`1404484`.
 
- Backup process would fail if :option:`xtrabackup --throttle` option was used.
+ Backup process would fail if `xtrabackup --throttle` option was used.
  Bug fixed :bug:`1554235`.

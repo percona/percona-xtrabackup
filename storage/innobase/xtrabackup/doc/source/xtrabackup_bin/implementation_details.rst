@@ -1,8 +1,10 @@
+.. _pxb.xtrabackup.implementation:
+
 ================================================================================
  Implementation Details
 ================================================================================
 
-This page contains notes on various internal aspects of the |xtrabackup| tool's
+This page contains notes on various internal aspects of the |xtrabackup| tool\'s
 operation.
 
 File Permissions
@@ -38,7 +40,7 @@ Copying Data Files
 ================================================================================
 
 When copying the data files to the target directory, |xtrabackup| reads and
-writes 1MB of data at a time. This is not configurable. When copying the log
+writes 1 MB of data at a time. This is not configurable. When copying the log
 file, |xtrabackup| reads and writes 512 bytes at a time. This is also not
 possible to configure, and matches InnoDB's behavior (workaround exists in
 |Percona Server| because it has an option to tune

@@ -14,7 +14,7 @@ New features
 ------------
 
  |Percona XtraBackup| has implemented new
- :option:`xtrabackup --reencrypt-for-server-id` option. Using this option
+ `xtrabackup --reencrypt-for-server-id` option. Using this option
  allows users to start the server instance with different ``server_id``
  from the one the encrypted backup was taken from, like a replication slave
  or a galera node. When this option is used, |xtrabackup| will, as a prepare
@@ -39,25 +39,25 @@ Bugs Fixed
  location pointed by the :file:`.isl` files. Bug fixed :bug:`1555423`.
 
  When called with insufficient parameters, like specifying the empty
- :option:`xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
+ `xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
  Bug fixed :bug:`1566228`.
 
  Documentation states that the default value for
- :option:`xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
+ `xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
  ``update``. Changed the default value to reflect the documentation. Bug fixed
  :bug:`1566315`.
 
- When :option:`xtrabackup --keyring-file-data` option was specified, but no
+ When `xtrabackup --keyring-file-data` option was specified, but no
  keyring file was found, |xtrabackup| would create an empty one instead of
  reporting an error. Bug fixed :bug:`1578607`.
 
  If ``ALTER INSTANCE ROTATE INNODB MASTER KEY`` was run at same time when
- :option:`xtrabackup --backup` was bootstrapping it could catch a moment when
+ `xtrabackup --backup` was bootstrapping it could catch a moment when
  the key was not written into the keyring file yet and |xtrabackup| would
  overwrite the keyring with the old copy of a keyring, so the new key would be
  lost. Bug fixed :bug:`1582601`.
 
- Output of :option:`xtrabackup --slave-info` option was missing an apostrophe.
+ Output of `xtrabackup --slave-info` option was missing an apostrophe.
  Bug fixed :bug:`1573371`.
 
 

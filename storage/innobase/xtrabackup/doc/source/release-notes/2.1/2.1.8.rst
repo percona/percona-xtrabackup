@@ -21,7 +21,7 @@ Bugs Fixed
 
  Preparing backups of |MySQL| or |Percona Server| 5.6 could raise an assertion failure in |Percona XtraBackup|. Bug fixed :bug:`1273468`.
 
- The downtime is decreased when the :option:`innobackupex --safe-slave-backup` option is used to backup a replication slave. The SQL thread is now started before a temporary copy of redo log is streamed into the final location. Bug fixed :bug:`1284778`.
+ The downtime is decreased when the :option:`--safe-slave-backup` option is used to backup a replication slave. The SQL thread is now started before a temporary copy of redo log is streamed into the final location. Bug fixed :bug:`1284778`.
 
  Disabled the "binary version check" functionality in the VersionCheck  module due to security concerns. Bug fixed :bug:`1285166`.
 

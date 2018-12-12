@@ -16,10 +16,10 @@ New Features
  |Percona XtraBackup| packages are now available for *Ubuntu 17.10 (Artful)*.
 
  |xbcrypt| now has an ability to decrypt files in parallel by specifying the
- number of threads with the :option:`xtrabackup --encrypt-threads` option.
+ number of threads with the `xtrabackup --encrypt-threads` option.
 
- :option:`xtrabackup --copy-back` option can now be used with
- :option:`xtrabackup --parallel` option to copy the user data files in
+ `xtrabackup --copy-back` option can now be used with
+ `xtrabackup --parallel` option to copy the user data files in
  parallel (redo logs and system tablespaces are copied in the main thread).
 
 Bugs fixed
@@ -35,26 +35,26 @@ Bugs fixed
  of the crash recovery process. Bug fixed :bug:`1705383`.
 
  When backup was streamed in tar format with with the
- :option:`xtrabackup --slave-info` option
+ `xtrabackup --slave-info` option
  output file :file:`xtrabackup_slave_info` did not contain the slave
  information. Bug fixed :bug:`1707918`.
 
- If :option:`xtrabackup --slave-info` was used while backing up 5.7 instances,
+ If `xtrabackup --slave-info` was used while backing up 5.7 instances,
  the master binary log coordinates were not properly displayed in the logs.
  Bug fixed :bug:`1711010`.
 
- :option:`innobackupex --slave-info` would report a single ``m`` instead of
+ `innobackupex --slave-info` would report a single ``m`` instead of
  ``slave info`` in the standard output. Bug fixed :bug:`1727920`.
 
  |Percona XtraBackup| would crash while preparing the 5.5 backup with
  ``utf8_general50_ci`` collation. Bug fixed :bug:`1533722` (*Fungo Wang*).
 
- |Percona XtraBackup| would crash if :option:`xtrabackup --throttle` was used
+ |Percona XtraBackup| would crash if `xtrabackup --throttle` was used
  while preparing backups. Fixed by making this option available only during the
  backup process. Bug fixed :bug:`1691093`.
 
  |Percona XtraBackup| could get stuck if backups are taken with
- :option:`xtrabackup --safe-slave-backup` option, while there were long
+ `xtrabackup --safe-slave-backup` option, while there were long
  running queries. Bug fixed :bug:`1717158`.
 
 Other bugs fixed: :bug:`1678838`, :bug:`1727922`, and :bug:`1729241`.
