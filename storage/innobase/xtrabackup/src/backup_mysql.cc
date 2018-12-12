@@ -178,6 +178,9 @@ xb_mysql_connect()
 	xb_mysql_query(connection, "SET SESSION autocommit=1",
 		       false, true);
 
+	xb_mysql_query(connection, "SET NAMES utf8",
+		       false, true);
+
 	return(connection);
 }
 
@@ -2132,13 +2135,10 @@ mdl_lock_table(ulint space_id)
 	mysql_result = xb_mysql_query(mdl_con, query, true);
 
 	while ((row = mysql_fetch_row(mysql_result))) {
-		char *table_name = strdup(row[0]);
-		char *separator = strchr(table_name, '/');
 		char *lock_query;
+		char table_name[MAX_FULL_NAME_LEN + 1];
 
-		if (separator != NULL) {
-			*separator = '.';
-		}
+		innobase_format_name(table_name, sizeof(table_name), row[0]);
 
 		msg_ts("Locking MDL for %s\n", table_name);
 
@@ -2149,7 +2149,6 @@ mdl_lock_table(ulint space_id)
 		xb_mysql_query(mdl_con, lock_query, false, false);
 
 		free(lock_query);
-		free(table_name);
 	}
 
 	mysql_free_result(mysql_result);
