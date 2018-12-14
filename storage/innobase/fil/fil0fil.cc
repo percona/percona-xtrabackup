@@ -4080,6 +4080,7 @@ statement to update the dictionary tables if they are incorrect.
 @param[in]	space_name	tablespace name of the datafile
 If file-per-table, it is the table name in the databasename/tablename format
 @param[in]	path_in		expected filepath, usually read from dictionary
+@param[in]	report_missing	report missing tablespaces
 @return DB_SUCCESS or error code */
 dberr_t
 fil_ibd_open(
@@ -4089,7 +4090,8 @@ fil_ibd_open(
 	ulint		id,
 	ulint		flags,
 	const char*	space_name,
-	const char*	path_in)
+	const char*	path_in,
+	bool		report_missing)
 {
 	dberr_t		err = DB_SUCCESS;
 	bool		dict_filepath_same_as_default = false;
@@ -4181,7 +4183,7 @@ fil_ibd_open(
 	/* Always look for a file at the default location. But don't log
 	an error if the tablespace is already open in remote or dict. */
 	ut_a(df_default.filepath());
-	const bool	strict = (tablespaces_found == 0);
+	const bool	strict = (tablespaces_found == 0) && report_missing;
 	if (df_default.open_read_only(strict) == DB_SUCCESS) {
 		ut_ad(df_default.is_open());
 		++tablespaces_found;
@@ -4250,9 +4252,13 @@ fil_ibd_open(
 			/* The following call prints an error message.
 			For encrypted tablespace we skip print, since it should
 			be keyring plugin issues. */
-			os_file_get_last_error(true);
-			ib::error() << "Could not find a valid tablespace file for `"
-				<< space_name << "`. " << TROUBLESHOOT_DATADICT_MSG;
+			if (report_missing || errno != ENOENT) {
+				os_file_get_last_error(true);
+				ib::error() << "Could not find a valid "
+					    << "tablespace file for `"
+					    << space_name << "`. "
+					    << TROUBLESHOOT_DATADICT_MSG;
+			}
 		}
 
 		return(DB_CORRUPTION);
