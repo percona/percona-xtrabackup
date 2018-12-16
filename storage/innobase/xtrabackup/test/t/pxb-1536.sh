@@ -18,15 +18,13 @@ mysql -e 'INSERT INTO t VALUES (1), (1), (3)' db2
 mysql -e 'CREATE TABLE t (a INT)' db3
 mysql -e 'INSERT INTO t VALUES (1), (1), (3)' db3
 
-if is_server_version_higher_than 5.7.0 ; then
-  mysql -e 'CREATE TABLESPACE q ADD DATAFILE "q.ibd"'
-  mysql -e 'CREATE TABLE qt (a INT) TABLESPACE q' db4
-  mysql -e 'INSERT INTO qt VALUES (1), (1), (3)' db4
+mysql -e 'CREATE TABLESPACE q ADD DATAFILE "q.ibd"'
+mysql -e 'CREATE TABLE qt (a INT) TABLESPACE q' db4
+mysql -e 'INSERT INTO qt VALUES (1), (1), (3)' db4
 
-  mysql -e 'CREATE TABLESPACE p ADD DATAFILE "p.ibd"'
-  mysql -e 'CREATE TABLE pt (a INT) TABLESPACE p' db4
-  mysql -e 'INSERT INTO pt VALUES (1), (1), (3)' db4
-fi
+mysql -e 'CREATE TABLESPACE p ADD DATAFILE "p.ibd"'
+mysql -e 'CREATE TABLE pt (a INT) TABLESPACE p' db4
+mysql -e 'INSERT INTO pt VALUES (1), (1), (3)' db4
 
 innodb_wait_for_flush_all
 
