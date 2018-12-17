@@ -2217,7 +2217,8 @@ static bool innodb_end(void) {
   srv_fast_shutdown = (ulint)innobase_fast_shutdown;
   innodb_inited = 0;
 
-  while (trx_rollback_or_clean_is_active) {
+  while (trx_rollback_or_clean_is_active ||
+         !(srv_read_only_mode || srv_threads.m_master_thread_active)) {
     os_thread_sleep(1000);
   }
 

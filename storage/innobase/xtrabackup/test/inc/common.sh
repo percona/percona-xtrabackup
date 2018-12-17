@@ -1048,6 +1048,14 @@ function innodb_flushed_lsn()
         grep "Log flushed up to" | awk '{ print $5 }'
 }
 
+# Return checkpoint LSN
+########################################################################
+function innodb_checkpoint_lsn()
+{
+    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
+        grep "Last checkpoint at" | awk '{ print $4 }'
+}
+
 # Grep mysql.general_log for statements executed by xtrabackup
 #######################################################################
 function grep_general_log()
@@ -1062,7 +1070,6 @@ function grep_general_log()
                              'LOCK INSTANCE FOR BACKUP', \
                              'UNLOCK INSTANCE')"
 }
-
 
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
