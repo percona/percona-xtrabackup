@@ -3412,6 +3412,34 @@ fil_remove_invalid_table_from_data_dict(const char *name)
 
 	trx->op_info = "removing invalid table from data dictionary";
 
+	/* SYS_DATAFILES and SYS_TABLESPACES do not necessarily exist
+	on XtraBackup recovery. See comments around
+	dict_create_or_check_foreign_constraint_tables() in
+	innobase_start_or_create_for_mysql(). */
+	if (dict_table_get_low("SYS_DATAFILES") != NULL) {
+		info = pars_info_create();
+
+		pars_info_add_str_literal(info, "table_name", name);
+
+		que_eval_sql(info,
+			     "PROCEDURE DROP_TABLE_PROC () IS\n"
+			     "space_id INT;\n"
+
+			     "BEGIN\n"
+			     "SELECT SPACE INTO space_id\n"
+			     "FROM SYS_TABLES\n"
+			     "WHERE NAME = :table_name;\n"
+			     "IF (SQL % NOTFOUND) THEN\n"
+			     "       RETURN;\n"
+			     "END IF;\n"
+			     "DELETE FROM SYS_TABLESPACES\n"
+			     "WHERE SPACE = space_id;\n"
+			     "DELETE FROM SYS_DATAFILES\n"
+			     "WHERE SPACE = space_id;\n"
+			     "END;\n"
+			     , FALSE, trx);
+	}
+
 	info = pars_info_create();
 
 	pars_info_add_str_literal(info, "table_name", name);
@@ -3492,34 +3520,6 @@ fil_remove_invalid_table_from_data_dict(const char *name)
 		     "WHERE NAME = :table_name;\n"
 		     "END;\n"
 		     , FALSE, trx);
-
-	/* SYS_DATAFILES and SYS_TABLESPACES do not necessarily exist
-	on XtraBackup recovery. See comments around
-	dict_create_or_check_foreign_constraint_tables() in
-	innobase_start_or_create_for_mysql(). */
-	if (dict_table_get_low("SYS_DATAFILES") != NULL) {
-		info = pars_info_create();
-
-		pars_info_add_str_literal(info, "table_name", name);
-
-		que_eval_sql(info,
-			     "PROCEDURE DROP_TABLE_PROC () IS\n"
-			     "space_id INT;\n"
-
-			     "BEGIN\n"
-			     "SELECT SPACE INTO space_id\n"
-			     "FROM SYS_TABLES\n"
-			     "WHERE NAME = :table_name;\n"
-			     "IF (SQL % NOTFOUND) THEN\n"
-			     "       RETURN;\n"
-			     "END IF;\n"
-			     "DELETE FROM SYS_TABLESPACES\n"
-			     "WHERE SPACE = space_id;\n"
-			     "DELETE FROM SYS_DATAFILES\n"
-			     "WHERE SPACE = space_id;\n"
-			     "END;\n"
-			     , FALSE, trx);
-	}
 
 	trx_commit_for_mysql(trx);
 
