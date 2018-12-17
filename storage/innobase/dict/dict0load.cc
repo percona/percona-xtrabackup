@@ -987,6 +987,174 @@ dict_update_filepath(
 	return(err);
 }
 
+static
+void
+remove_invalid_tablespace_from_data_dict(ulint space_id)
+{
+	trx_t*		trx;
+	pars_info_t*	info = NULL;
+
+	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
+	ut_ad(mutex_own(&dict_sys->mutex));
+
+	trx = trx_allocate_for_background();
+	trx->dict_operation_lock_mode = RW_X_LATCH;
+	trx_start_for_ddl(trx, TRX_DICT_OP_TABLE);
+
+	ut_ad(mutex_own(&dict_sys->mutex));
+
+	trx->op_info = "removing invalid tablespace from data dictionary";
+
+	if (dict_table_get_low("SYS_DATAFILES") != NULL) {
+		info = pars_info_create();
+
+		pars_info_add_int4_literal(info, "space", space_id);
+
+		que_eval_sql(info,
+			     "PROCEDURE DROP_TABLESPACE_PROC () IS\n"
+
+			     "BEGIN\n"
+			     "DELETE FROM SYS_TABLESPACES\n"
+			     "WHERE SPACE = :space;\n"
+			     "DELETE FROM SYS_DATAFILES\n"
+			     "WHERE SPACE = :space;\n"
+			     "END;\n"
+			     , FALSE, trx);
+	}
+
+	trx_commit_for_mysql(trx);
+	trx->dict_operation_lock_mode = 0;
+	trx_free_for_background(trx);
+}
+
+static
+void
+remove_invalid_table_from_data_dict(const char *name)
+{
+	trx_t*		trx;
+	pars_info_t*	info = NULL;
+
+	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
+	ut_ad(mutex_own(&dict_sys->mutex));
+
+	trx = trx_allocate_for_background();
+	trx->dict_operation_lock_mode = RW_X_LATCH;
+	trx_start_for_ddl(trx, TRX_DICT_OP_TABLE);
+
+	ut_ad(mutex_own(&dict_sys->mutex));
+
+	trx->op_info = "removing invalid table from data dictionary";
+
+	if (dict_table_get_low("SYS_DATAFILES") != NULL) {
+		info = pars_info_create();
+
+		pars_info_add_str_literal(info, "table_name", name);
+
+		que_eval_sql(info,
+			     "PROCEDURE DROP_TABLESPACE_PROC () IS\n"
+			     "space_id INT;\n"
+
+			     "BEGIN\n"
+			     "SELECT SPACE INTO space_id\n"
+			     "FROM SYS_TABLES\n"
+			     "WHERE NAME = :table_name;\n"
+			     "IF (SQL % NOTFOUND) THEN\n"
+			     "       RETURN;\n"
+			     "END IF;\n"
+			     "DELETE FROM SYS_TABLESPACES\n"
+			     "WHERE SPACE = space_id;\n"
+			     "DELETE FROM SYS_DATAFILES\n"
+			     "WHERE SPACE = space_id;\n"
+			     "END;\n"
+			     , FALSE, trx);
+	}
+
+	info = pars_info_create();
+
+	pars_info_add_str_literal(info, "table_name", name);
+
+	que_eval_sql(info,
+		     "PROCEDURE DROP_TABLE_PROC () IS\n"
+		     "sys_foreign_id CHAR;\n"
+		     "table_id CHAR;\n"
+		     "index_id CHAR;\n"
+		     "foreign_id CHAR;\n"
+		     "found INT;\n"
+
+		     "DECLARE CURSOR cur_fk IS\n"
+		     "SELECT ID FROM SYS_FOREIGN\n"
+		     "WHERE FOR_NAME = :table_name\n"
+		     "AND TO_BINARY(FOR_NAME)\n"
+		     "  = TO_BINARY(:table_name)\n"
+		     "LOCK IN SHARE MODE;\n"
+
+		     "DECLARE CURSOR cur_idx IS\n"
+		     "SELECT ID FROM SYS_INDEXES\n"
+		     "WHERE TABLE_ID = table_id\n"
+		     "LOCK IN SHARE MODE;\n"
+
+		     "BEGIN\n"
+		     "SELECT ID INTO table_id\n"
+		     "FROM SYS_TABLES\n"
+		     "WHERE NAME = :table_name\n"
+		     "LOCK IN SHARE MODE;\n"
+		     "IF (SQL % NOTFOUND) THEN\n"
+		     "       RETURN;\n"
+		     "END IF;\n"
+		     "found := 1;\n"
+		     "SELECT ID INTO sys_foreign_id\n"
+		     "FROM SYS_TABLES\n"
+		     "WHERE NAME = 'SYS_FOREIGN'\n"
+		     "LOCK IN SHARE MODE;\n"
+		     "IF (SQL % NOTFOUND) THEN\n"
+		     "       found := 0;\n"
+		     "END IF;\n"
+		     "IF (:table_name = 'SYS_FOREIGN') THEN\n"
+		     "       found := 0;\n"
+		     "END IF;\n"
+		     "IF (:table_name = 'SYS_FOREIGN_COLS') THEN\n"
+		     "       found := 0;\n"
+		     "END IF;\n"
+		     "OPEN cur_fk;\n"
+		     "WHILE found = 1 LOOP\n"
+		     "       FETCH cur_fk INTO foreign_id;\n"
+		     "       IF (SQL % NOTFOUND) THEN\n"
+		     "               found := 0;\n"
+		     "       ELSE\n"
+		     "               DELETE FROM SYS_FOREIGN_COLS\n"
+		     "               WHERE ID = foreign_id;\n"
+		     "               DELETE FROM SYS_FOREIGN\n"
+		     "               WHERE ID = foreign_id;\n"
+		     "       END IF;\n"
+		     "END LOOP;\n"
+		     "CLOSE cur_fk;\n"
+		     "found := 1;\n"
+		     "OPEN cur_idx;\n"
+		     "WHILE found = 1 LOOP\n"
+		     "       FETCH cur_idx INTO index_id;\n"
+		     "       IF (SQL % NOTFOUND) THEN\n"
+		     "               found := 0;\n"
+		     "       ELSE\n"
+		     "               DELETE FROM SYS_FIELDS\n"
+		     "               WHERE INDEX_ID = index_id;\n"
+		     "               DELETE FROM SYS_INDEXES\n"
+		     "               WHERE ID = index_id\n"
+		     "               AND TABLE_ID = table_id;\n"
+		     "       END IF;\n"
+		     "END LOOP;\n"
+		     "CLOSE cur_idx;\n"
+		     "DELETE FROM SYS_COLUMNS\n"
+		     "WHERE TABLE_ID = table_id;\n"
+		     "DELETE FROM SYS_TABLES\n"
+		     "WHERE NAME = :table_name;\n"
+		     "END;\n"
+		     , FALSE, trx);
+
+	trx_commit_for_mysql(trx);
+	trx->dict_operation_lock_mode = 0;
+	trx_free_for_background(trx);
+}
+
 /** Replace records in SYS_TABLESPACES and SYS_DATAFILES associated with
 the given space_id using an independent transaction.
 @param[in]	space_id	Tablespace ID
@@ -1188,8 +1356,12 @@ dict_check_sys_tablespaces(
 
 	/* Before traversing it, let's make sure we have
 	SYS_TABLESPACES and SYS_DATAFILES loaded. */
-	dict_table_get_low("SYS_TABLESPACES");
-	dict_table_get_low("SYS_DATAFILES");
+	if (dict_table_get_low("SYS_TABLESPACES") == NULL) {
+		DBUG_RETURN(max_space_id);
+	}
+	if (dict_table_get_low("SYS_DATAFILES") == NULL) {
+		DBUG_RETURN(max_space_id);
+	}
 
 	mtr_start(&mtr);
 
@@ -1245,12 +1417,16 @@ dict_check_sys_tablespaces(
 			space_id,
 			fsp_flags,
 			space_name,
-			filepath);
+			filepath,
+			false /* do not report missing tablespaces */);
 
-		if (err != DB_SUCCESS) {
-			ib::warn() << "Ignoring tablespace "
-				<< id_name_t(space_name)
-				<< " because it could not be opened.";
+		if (err != DB_SUCCESS && !srv_read_only_mode) {
+			mtr_commit(&mtr);
+			ib::info() << "Removing missing tablespace `"
+				   << space_name
+				   << "` from InnoDB data dictionary.";
+			remove_invalid_tablespace_from_data_dict(space_id);
+			mtr_start(&mtr);
 		}
 
 		max_space_id = ut_max(max_space_id, space_id);
@@ -1369,14 +1545,7 @@ dict_check_sys_tables(
 
 	mtr_start(&mtr);
 
-	/* Before traversing SYS_TABLES, let's make sure we have
-	SYS_TABLESPACES and SYS_DATAFILES loaded. */
-	dict_table_t*	sys_tablespaces;
-	dict_table_t*	sys_datafiles;
-	sys_tablespaces = dict_table_get_low("SYS_TABLESPACES");
-	ut_a(sys_tablespaces != NULL);
-	sys_datafiles = dict_table_get_low("SYS_DATAFILES");
-	ut_a(sys_datafiles != NULL);
+	bool have_sys_spaces = (dict_table_get_low("SYS_TABLESPACES") != NULL);
 
 	for (rec = dict_startscan_system(&pcur, &mtr, SYS_TABLES);
 	     rec != NULL;
@@ -1440,7 +1609,10 @@ dict_check_sys_tables(
 		location. If so, then dict_space_get_name() will return NULL,
 		the space name must be the table_name, and the filepath can be
 		discovered in the default location.*/
-		char*	shared_space_name = dict_space_get_name(space_id, NULL);
+		char*	shared_space_name = NULL;
+		if (have_sys_spaces) {
+			shared_space_name = dict_space_get_name(space_id, NULL);
+		}
 		space_name = shared_space_name == NULL
 			? table_name.m_name
 			: shared_space_name;
@@ -1454,7 +1626,10 @@ dict_check_sys_tables(
 			/* Recovery can open a datafile that does not
 			match SYS_DATAFILES.  If they don't match, update
 			SYS_DATAFILES. */
-			char *dict_path = dict_get_first_path(space_id);
+			char *dict_path = NULL;
+			if (have_sys_spaces) {
+				dict_path = dict_get_first_path(space_id);
+			}
 			char *fil_path = fil_space_get_first_path(space_id);
 			if (dict_path && fil_path
 			    && strcmp(dict_path, fil_path)) {
@@ -1472,7 +1647,11 @@ dict_check_sys_tables(
 		location) or this path is the same file but looks different,
 		fil_ibd_open() will update the dictionary with what is
 		opened. */
-		char*	filepath = dict_get_first_path(space_id);
+		char*	filepath = NULL;
+
+		if (have_sys_spaces) {
+			filepath = dict_get_first_path(space_id);
+		}
 
 		/* Check that the .ibd file exists. */
 		bool	is_temp = flags2 & DICT_TF2_TEMPORARY;
@@ -1483,17 +1662,21 @@ dict_check_sys_tables(
 
 		dberr_t	err = fil_ibd_open(
 			validate,
-			!srv_read_only_mode && srv_log_file_size != 0,
+			false /* do not fix .isl files */,
 			FIL_TYPE_TABLESPACE,
 			space_id,
 			fsp_flags,
 			space_name,
-			filepath);
+			filepath,
+			false /* do not report missing tablespaces */);
 
-		if (err != DB_SUCCESS) {
-			ib::warn() << "Ignoring tablespace "
-				<< id_name_t(space_name)
-				<< " because it could not be opened.";
+		if (err != DB_SUCCESS && !srv_read_only_mode) {
+			mtr_commit(&mtr);
+			ib::info() << "Removing missing table `"
+				   << table_name.m_name
+				   << "` from InnoDB data dictionary.";
+			remove_invalid_table_from_data_dict(table_name.m_name);
+			mtr_start(&mtr);
 		}
 
 		max_space_id = ut_max(max_space_id, space_id);

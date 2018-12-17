@@ -1226,6 +1226,7 @@ statement to update the dictionary tables if they are incorrect.
 @param[in]	space_name	tablespace name of the datafile
 If file-per-table, it is the table name in the databasename/tablename format
 @param[in]	path_in		expected filepath, usually read from dictionary
+@param[in]	report_missing	report missing tablespaces
 @return DB_SUCCESS or error code */
 dberr_t
 fil_ibd_open(
@@ -1235,7 +1236,8 @@ fil_ibd_open(
 	ulint		id,
 	ulint		flags,
 	const char*	tablename,
-	const char*	path_in)
+	const char*	path_in,
+	bool		report_missing = false)
 	MY_ATTRIBUTE((warn_unused_result));
 
 enum fil_load_status {
