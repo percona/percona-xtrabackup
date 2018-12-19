@@ -2042,7 +2042,9 @@ xtrabackup_print_metadata(char *buf, size_t buf_len)
 		 xtrabackup_compact ?
 			(xtrabackup_backup ||
 				xtrabackup_compact_need_expand ? 1 : 2) : 0,
-		 MY_TEST(opt_binlog_info == BINLOG_INFO_LOCKLESS));
+		 MY_TEST((xtrabackup_backup &&
+			  (opt_binlog_info == BINLOG_INFO_LOCKLESS)) ||
+			 (xtrabackup_prepare && recover_binlog_info)));
 }
 
 /***********************************************************************
