@@ -554,6 +554,7 @@ typedef struct {
 	uint			num;
 	uint			*count;
 	ib_mutex_t		*count_mutex;
+	bool			*error;
 	os_thread_id_t		id;
 } data_thread_ctxt_t;
 
@@ -1753,7 +1754,7 @@ xb_init_log_block_size(void)
 {
 	srv_log_block_size = 0;
 	if (innobase_log_block_size != 512) {
-		uint	n_shift = get_bit_shift(innobase_log_block_size);;
+		uint	n_shift = get_bit_shift(innobase_log_block_size);
 
 		if (n_shift > 0) {
 			srv_log_block_size = (1 << n_shift);
@@ -2863,7 +2864,7 @@ error:
 		ds_close(dstfile);
 	}
 	if (write_filter && write_filter->deinit) {
-		write_filter->deinit(&write_filt_ctxt);;
+		write_filter->deinit(&write_filt_ctxt);
 	}
 	msg("[%02u] xtrabackup: Error: "
 	    "xtrabackup_copy_datafile() failed.\n", thread_n);
@@ -3367,13 +3368,14 @@ data_copy_thread_func(
 
 	debug_sync_point("data_copy_thread_func");
 
-	while ((node = datafiles_iter_next(ctxt->it)) != NULL) {
+	while ((node = datafiles_iter_next(ctxt->it)) != NULL &&
+		!*(ctxt->error)) {
 
 		/* copy the datafile */
 		if(xtrabackup_copy_datafile(node, num)) {
 			msg("[%02u] xtrabackup: Error: "
 			    "failed to copy datafile.\n", num);
-			exit(EXIT_FAILURE);
+			*(ctxt->error) = true;
 		}
 	}
 
@@ -4780,6 +4782,7 @@ xtrabackup_backup_func(void)
 	byte*		log_hdr_buf_;
 	byte*		log_hdr_buf;
 	ulint		err;
+	bool		data_copying_error = false;
 
 	/* start back ground thread to copy newer log */
 	os_thread_id_t log_copying_thread_id;
@@ -4955,6 +4958,7 @@ reread_log_header:
 		data_threads[i].num = i+1;
 		data_threads[i].count = &count;
 		data_threads[i].count_mutex = &count_mutex;
+		data_threads[i].error = &data_copying_error;
 		os_thread_create(data_copy_thread_func, data_threads + i,
 				 &data_threads[i].id);
 	}
@@ -4973,6 +4977,10 @@ reread_log_header:
 	mutex_free(&count_mutex);
 	ut_free(data_threads);
 	datafiles_iter_free(it);
+
+	if (data_copying_error) {
+		exit(EXIT_FAILURE);
+	}
 
 	if (changed_page_bitmap) {
 		xb_page_bitmap_deinit(changed_page_bitmap);
