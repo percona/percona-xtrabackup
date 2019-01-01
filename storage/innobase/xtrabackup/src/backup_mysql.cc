@@ -1323,20 +1323,20 @@ bool write_slave_info(MYSQL *connection) {
                              << "', channel name: '" << channel.channel_name
                              << "'\n";
     } else {
-      slave_info << "CHANGE MASTER TO MASTER_LOG_FILE='" << ch->second.filename
-                 << "', MASTER_LOG_POS=" << channel.relay_log_position
+      const auto filename = channel.relay_master_log_file.empty()
+                                ? ch->second.filename
+                                : channel.relay_master_log_file;
+      const auto position = channel.relay_master_log_file.empty()
+                                ? ch->second.position
+                                : channel.exec_master_log_position;
+      slave_info << "CHANGE MASTER TO MASTER_LOG_FILE='" << filename
+                 << "', MASTER_LOG_POS=" << position
                  << for_channel << ";\n";
 
-      mysql_slave_position_s
-          << "master host '" << ch->second.master << "', filename '"
-          << (channel.relay_master_log_file.empty()
-                  ? ch->second.filename
-                  : channel.relay_master_log_file)
-          << "', position '"
-          << (channel.relay_master_log_file.empty()
-                  ? ch->second.position
-                  : channel.exec_master_log_position)
-          << "', channel name: '" << channel.channel_name << "'\n";
+      mysql_slave_position_s << "master host '" << ch->second.master
+                             << "', filename '" << filename << "', position '"
+                             << position << "', channel name: '"
+                             << channel.channel_name << "'\n";
     }
   }
 
