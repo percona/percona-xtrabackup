@@ -143,8 +143,10 @@ MYSQL_ADD_EXECUTABLE(xbstream
   ds_buffer.cc
   ds_local.cc
   ds_stdout.cc
+  ds_decompress.cc
   ds_decrypt.cc
   datasink.cc
+  quicklz/quicklz.c
   xbstream.cc
   xbstream_read.cc
   xbstream_write.cc

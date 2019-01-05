@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "crc_glue.h"
 #include "datasink.h"
+#include "ds_decompress.h"
 #include "ds_decrypt.h"
 #include "xbcrypt_common.h"
 #include "xbstream.h"
@@ -62,14 +63,23 @@ static ulong opt_encrypt_algo;
 static char *opt_encrypt_key_file = NULL;
 static char *opt_encrypt_key = NULL;
 static int opt_encrypt_threads = 1;
+static bool opt_decompress = 0;
+static uint opt_decompress_threads = 1;
 
-enum { OPT_ENCRYPT_THREADS = 256 };
+enum { OPT_DECOMPRESS = 256, OPT_DECOMPRESS_THREADS, OPT_ENCRYPT_THREADS };
 
 static struct my_option my_long_options[] = {
     {"help", '?', "Display this help and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
      0, 0, 0, 0, 0},
     {"create", 'c', "Stream the specified files to the standard output.", 0, 0,
      0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"decompress", OPT_DECOMPRESS, "Decompress individual backup files.",
+     &opt_decompress, &opt_decompress, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"decompress-threads", OPT_DECOMPRESS_THREADS,
+     "Number of threads for parallel data decompression. The default value is "
+     "1.",
+     &opt_decompress_threads, &opt_decompress_threads, 0, GET_UINT,
+     REQUIRED_ARG, 1, 1, UINT_MAX, 0, 0, 0},
     {"extract", 'x',
      "Extract to disk files from the stream on the "
      "standard input.",
@@ -112,6 +122,7 @@ typedef struct {
   std::unordered_map<std::string, file_entry_t *> filehash;
   xb_rstream_t *stream;
   ds_ctxt_t *ds_ctxt;
+  ds_ctxt_t *ds_decompress_ctxt;
   ds_ctxt_t *ds_decrypt_ctxt;
   pthread_mutex_t *mutex;
 } extract_ctxt_t;
@@ -355,6 +366,8 @@ static file_entry_t *file_entry_new(extract_ctxt_t *ctxt, const char *path,
 
   if (ctxt->ds_decrypt_ctxt && ends_with(path, ".xbcrypt")) {
     file = ds_open(ctxt->ds_decrypt_ctxt, path, NULL);
+  } else if (ctxt->ds_decompress_ctxt && ends_with(path, ".qp")) {
+    file = ds_open(ctxt->ds_decompress_ctxt, path, NULL);
   } else {
     file = ds_open(ctxt->ds_ctxt, path, NULL);
   }
@@ -483,6 +496,7 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
   xb_rstream_t *stream = NULL;
   ds_ctxt_t *ds_ctxt = NULL;
   ds_ctxt_t *ds_decrypt_ctxt = NULL;
+  ds_ctxt_t *ds_decompress_ctxt = NULL;
   extract_ctxt_t ctxt;
   int i;
   pthread_t *tids = NULL;
@@ -502,6 +516,16 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
     goto exit;
   }
 
+  if (opt_decompress) {
+    ds_compress_decompress_threads = opt_decompress_threads;
+    ds_decompress_ctxt = ds_create(".", DS_TYPE_DECOMPRESS);
+    if (ds_decompress_ctxt == NULL) {
+      ret = 1;
+      goto exit;
+    }
+    ds_set_pipe(ds_decompress_ctxt, ds_ctxt);
+  }
+
   if (opt_encrypt_algo) {
     ds_encrypt_algo = opt_encrypt_algo;
     ds_encrypt_key = opt_encrypt_key;
@@ -512,7 +536,11 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
       ret = 1;
       goto exit;
     }
-    ds_set_pipe(ds_decrypt_ctxt, ds_ctxt);
+    if (ds_decompress_ctxt) {
+      ds_set_pipe(ds_decrypt_ctxt, ds_decompress_ctxt);
+    } else {
+      ds_set_pipe(ds_decrypt_ctxt, ds_ctxt);
+    }
   }
 
   stream = xb_stream_read_new();
@@ -526,6 +554,7 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
   ctxt.stream = stream;
   ctxt.ds_ctxt = ds_ctxt;
   ctxt.ds_decrypt_ctxt = ds_decrypt_ctxt;
+  ctxt.ds_decompress_ctxt = ds_decompress_ctxt;
   ctxt.mutex = &mutex;
 
   tids = new pthread_t[n_threads];
@@ -554,6 +583,9 @@ exit:
   }
   if (ds_decrypt_ctxt) {
     ds_destroy(ds_decrypt_ctxt);
+  }
+  if (ds_decompress_ctxt) {
+    ds_destroy(ds_decompress_ctxt);
   }
   xb_stream_read_done(stream);
 
