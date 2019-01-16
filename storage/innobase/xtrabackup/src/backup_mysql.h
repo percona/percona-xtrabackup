@@ -100,4 +100,19 @@ void mdl_lock_table(ulint space_id);
 
 void mdl_unlock_all();
 
+void
+check_dump_innodb_buffer_pool(MYSQL *connection);
+
+void
+restart_slave_sql_threads(MYSQL *connection, unsigned short vendor_dialect,
+                          std::map<std::string, bool> &sql_thread_running_map);
+
+void
+get_channel_name_and_status_position(MYSQL_RES *res, const std::string &sql_thread_status_field_name,
+                                     const std::string &channel_field_name, unsigned short &channel_name_position,
+                                     unsigned short &sql_thread_status_position);
+
+std::map<std::string, bool> &
+build_channel_name_status_map(MYSQL_RES *res, std::map<std::string, bool> &sql_thread_running_map,
+                              unsigned short channel_name_position, unsigned short sql_thread_status_position);
 #endif
