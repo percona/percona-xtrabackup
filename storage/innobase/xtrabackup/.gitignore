@@ -1,2 +1,3 @@
 doc/source/CMakeCache.txt
-doc/source/build/
+doc/build/
+doc/source/percona-theme/
