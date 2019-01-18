@@ -14,7 +14,7 @@ Improvements and New Features
 
 - :jirabug:`1548`: |Percona Xtrabackup| enables updating the
   ib_buffer_pool file with the latest pages present in the buffer pool
-  by setting the :option:`--dump-innodb-buffer-pool` option to
+  by setting the :option:`xtrabackup --dump-innodb-buffer-pool` option to
   `ON`. Thanks to Marcelo Altmann for contribution.
 
 Bus Fixed
