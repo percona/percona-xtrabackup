@@ -1389,6 +1389,10 @@ Disable with --skip-innodb-doublewrite.",
 
 uint xb_server_options_count = array_elements(xb_server_options);
 
+/* Following definitions are to avoid linking with unused datasinks
+   and their link dependencies */
+datasink_t datasink_decompress;
+
 #ifndef __WIN__
 static int debug_sync_resumed;
 
