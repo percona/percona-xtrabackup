@@ -33,9 +33,10 @@
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_communication_interface.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_message.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_view.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_cond.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_mutex.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_internal_message.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_member_information.h"
-#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_view_identifier.h"
 #include "plugin/group_replication/libmysqlgcs/xdr_gen/xcom_vp.h"
 
@@ -180,7 +181,7 @@ class Xcom_member_state {
 };
 
 /**
-  @interface gcs_xcom_state_exchange_interface
+  @class gcs_xcom_state_exchange_interface
 
   Interface that defines the operations that state exchange will provide.
   In what follows, we describe how the state exchange algorithm works and
@@ -248,7 +249,7 @@ class Xcom_member_state {
 */
 class Gcs_xcom_state_exchange_interface {
  public:
-  virtual ~Gcs_xcom_state_exchange_interface(){};
+  virtual ~Gcs_xcom_state_exchange_interface() {}
 
   /**
     Accomplishes all necessary initialization steps.

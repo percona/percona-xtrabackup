@@ -59,6 +59,8 @@ SET(TESTS
   test_resolver.cc
   test_random_generator.cc
   test_mysql_router_thread.cc
+  test_mpmc_queue.cc
+  test_dynamic_state.cc
 )
 
 FOREACH(TEST ${TESTS})

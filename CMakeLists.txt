@@ -256,7 +256,43 @@ ELSE()
   PROJECT(${MYSQL_PROJECT_NAME})
 ENDIF()
 
+GET_FILENAME_COMPONENT(REALPATH_CMAKE_SOURCE_DIR ${CMAKE_SOURCE_DIR} REALPATH)
+GET_FILENAME_COMPONENT(REALPATH_CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR} REALPATH)
+
+MESSAGE(STATUS "Source directory ${REALPATH_CMAKE_SOURCE_DIR}")
+MESSAGE(STATUS "Binary directory ${REALPATH_CMAKE_BINARY_DIR}")
+
+# IN PB2 we have a few configurations which are built in-source (e.g. doxygen).
+IF(DEFINED ENV{PB2WORKDIR})
+  OPTION(FORCE_INSOURCE_BUILD "Allow in-source build" ON)
+ELSE()
+  OPTION(FORCE_INSOURCE_BUILD "Allow in-source build" OFF)
+ENDIF()
+
+# https://gitlab.kitware.com/cmake/community/wikis/FAQ
+# cmake-does-not-generate-a-make-distclean-target-why
+# Why disallow in-source build?
+# Basically because 'make clean' or 'make distclean' do not work.
+# So if you do a 'git pull' you may end up with a developer sandbox
+# that no longer works as expected (CMakeCache.txt and other
+# generated/configured files may contain data which is no longer valid)
+IF(${REALPATH_CMAKE_SOURCE_DIR} STREQUAL ${REALPATH_CMAKE_BINARY_DIR})
+  IF(FORCE_INSOURCE_BUILD)
+    MESSAGE(WARNING "This is an in-source build")
+  ELSE()
+    MESSAGE(FATAL_ERROR
+      "Please do not build in-source. "
+      "Out-of source builds are highly recommended: "
+      "you can have multiple builds for the same source, "
+      "and there is an easy way to do cleanup, "
+      "simply remove the build directory "
+      "(note that 'make clean' or 'make distclean' does *not* work) "
+      "\nYou *can* force in-source build by invoking cmake with -DFORCE_INSOURCE_BUILD=1")
+  ENDIF()
+ENDIF()
+
 MACRO(REPORT_CXX_FLAGS)
+  MESSAGE(STATUS "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
   FOREACH(BUILD_TYPE "" _DEBUG _RELWITHDEBINFO _RELEASE _MINSIZEREL)
     SET(flag "CMAKE_CXX_FLAGS${BUILD_TYPE}")
     MESSAGE(STATUS "${flag}: ${${flag}}")
@@ -487,15 +523,12 @@ ENDMACRO()
 OPTION(WITH_ASAN "Enable address sanitizer" OFF)
 IF(WITH_ASAN)
   IF(WIN32_CLANG)
-    # Feature detection of -faddress=sanitize is problematic with Clang on
-    # Windows, since Clang (at least as of 5.0.0) requires /MT, but CMake
-    # default is /MD, and this code is run before the one in
-    # cmake/os/Windows.cmake, which sets /MT for ASAN on Win32 Clang.
-    # Just enable it unconditionally; we know it's working.
-    STRING_APPEND(CMAKE_C_FLAGS
-      " -fsanitize=address -fsanitize-address-use-after-scope")
-    STRING_APPEND(CMAKE_CXX_FLAGS
-      " -fsanitize=address -fsanitize-address-use-after-scope")
+    # NOTE: We do _not_ modify CMAKE_C_FLAGS / CMAKE_CXX_FLAGS to add
+    # -fsanitize=address here yet; Clang (at least of 5.0.0) requires /MT,
+    # but CMake adds /MDd to all feature checks almost no matter what we do.
+    # For the same reason, we have to enable it unconditionalyl without
+    # doing a feature test; we know it's working. Modifying the flags happens
+    # below, near the end.
     SET(HAVE_ASAN 1)
 
     # Get the path to the ASAN support libraries.
@@ -550,6 +583,7 @@ IF(WITH_TSAN)
     MESSAGE(FATAL_ERROR "Do not know how to enable thread sanitizer")
   ELSE()
     MESSAGE(WARNING "Thread sanitizer support is currently experimental.")
+    SET(HAVE_TSAN 1)
   ENDIF()
 ENDIF()
 
@@ -1122,6 +1156,15 @@ ENDIF()
 # RPM installs documentation directly from the source tree
 #
 IF(NOT INSTALL_LAYOUT MATCHES "RPM")
+ENDIF()
+
+# Now that we're done with all ADD_SUBDIRECTORY and thus all feature tests,
+# we can safely enable ASan on Clang/Win32 if needed.
+IF(HAVE_ASAN AND WIN32_CLANG)
+  STRING_APPEND(CMAKE_C_FLAGS
+    " -fsanitize=address -fsanitize-address-use-after-scope")
+  STRING_APPEND(CMAKE_CXX_FLAGS
+    " -fsanitize=address -fsanitize-address-use-after-scope")
 ENDIF()
 
 IF(UNIX)

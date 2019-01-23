@@ -497,8 +497,19 @@ ulint lock_number_of_tables_locked(
 uint32_t lock_get_type(const lock_t *lock); /*!< in: lock */
 
 /** Gets the id of the transaction owning a lock.
- @return transaction id */
-trx_id_t lock_get_trx_id(const lock_t *lock); /*!< in: lock */
+@param[in]  lock  A lock of the transaction we are interested in
+@return the transaction's id */
+trx_id_t lock_get_trx_id(const lock_t *lock);
+
+/** Gets the immutable id of the transaction owning a lock
+@param[in]  lock   A lock of the transaction we are interested in
+@return the transaction's immutable id */
+uint64_t lock_get_trx_immutable_id(const lock_t *lock);
+
+/** Gets the immutable id of this lock.
+@param[in]  lock   The lock we are interested in
+@return The lock's immutable id */
+uint64_t lock_get_immutable_id(const lock_t *lock);
 
 /** Get the performance schema event (thread_id, event_id)
 that created the lock.
@@ -565,12 +576,6 @@ bool lock_table_has_locks(
 
 /** A thread which wakes up threads whose lock wait may have lasted too long. */
 void lock_wait_timeout_thread();
-
-/** Releases a user OS thread waiting for a lock to be released, if the
- thread is already suspended. */
-void lock_wait_release_thread_if_suspended(
-    que_thr_t *thr); /*!< in: query thread associated with the
-                     user OS thread	 */
 
 /** Puts a user OS thread to wait for a lock to be released. If an error
  occurs during the wait trx->error_state associated with thr is

@@ -315,6 +315,7 @@ SET(TESTS
   mysys_base64
   mysys_lf
   mysys_my_b_vprintf
+  mysys_my_getopt
   mysys_my_loadpath
   mysys_my_malloc
   mysys_my_pwrite
@@ -330,6 +331,7 @@ SET(TESTS
   prealloced_array
   priority_queue
   record_buffer
+  rpl_cipher
   sql_class_header
   sql_list
   sql_plist
@@ -379,6 +381,7 @@ SET(SERVER_TESTS
   get_diagnostics
   gis_algos
   gis_area
+  gis_distance
   gis_geometries
   gis_is_simple
   gis_isvalid
@@ -406,6 +409,7 @@ SET(SERVER_TESTS
   json_path
   locking_clause_syntax
   locking_service
+  log_timestamp
   log_throttle
   make_sortkey
   mdl_sync
@@ -444,6 +448,7 @@ ENDFOREACH()
 SET(SQL_GUNIT_LIB_SOURCE 
   ${CMAKE_SOURCE_DIR}/sql/filesort_utils.cc 
   ${CMAKE_SOURCE_DIR}/sql/mdl.cc
+  ${CMAKE_SOURCE_DIR}/sql/rpl_cipher.cc
   ${CMAKE_SOURCE_DIR}/sql/sql_list.cc
   ${CMAKE_SOURCE_DIR}/sql/stateless_allocator.cc
   ${CMAKE_SOURCE_DIR}/sql-common/sql_string.cc

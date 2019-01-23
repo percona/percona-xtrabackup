@@ -45,11 +45,13 @@
 #include "my_inttypes.h"
 #include "my_loglevel.h"
 #include "my_sys.h"
+#include "my_thread_local.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysys/my_handler_errors.h"
 #include "mysys/mysys_priv.h"
 #include "mysys_err.h"
 #include "strings/mb_wc.h"
+#include "template_utils.h"
 
 /* Max length of a error message. Should be kept in sync with MYSQL_ERRMSG_SIZE.
  */
@@ -188,7 +190,7 @@ const char *my_get_err_msg(int nr) {
 
   /*
     If we found the range this error number is in, get the format string.
-    If the string is empty, or a NULL pointer, or if we're out of return,
+    If the string is empty, or a NULL pointer, or if we're out of ranges,
     we return NULL.
   */
   if (!(format = (meh_p && (nr >= meh_p->meh_first)) ? meh_p->get_errmsg(nr)

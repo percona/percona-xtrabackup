@@ -71,8 +71,9 @@
 #include "prealloced_array.h"
 #include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
-#include "sql/auth/auth_common.h"            // check_fk_parent_table_access
-#include "sql/binlog.h"                      // mysql_bin_log
+#include "sql/auth/auth_common.h"  // check_fk_parent_table_access
+#include "sql/binlog.h"            // mysql_bin_log
+#include "sql/create_field.h"
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
 #include "sql/dd/collection.h"
 #include "sql/dd/dd.h"          // dd::get_dictionary
@@ -188,7 +189,8 @@ static int copy_data_between_tables(
     List<Create_field> &create, ha_rows *copied, ha_rows *deleted,
     Alter_info::enum_enable_or_disable keys_onoff, Alter_table_ctx *alter_ctx);
 
-static bool prepare_blob_field(THD *thd, Create_field *sql_field);
+static bool prepare_blob_field(THD *thd, Create_field *sql_field,
+                               bool convert_character_set);
 static bool check_engine(THD *thd, const char *db_name, const char *table_name,
                          HA_CREATE_INFO *create_info);
 
@@ -224,7 +226,7 @@ class Disable_slave_info_update_guard {
                  ->has_ddl_committed;
     static_cast<Query_log_event *>(m_rli->current_event)->has_ddl_committed =
         true;
-  };
+  }
 
   ~Disable_slave_info_update_guard() {
     if (m_rli) {
@@ -1079,13 +1081,14 @@ bool lock_trigger_names(THD *thd, TABLE_LIST *tables) {
 }
 
 /**
-  Add MDL requests for exclusive lock on all tables referenced by the given
-  dd::Table object to the list.  Also add the referenced table names to the
-  foreign key invalidator, to be used at a later stage to invalidate the
+  Add MDL requests for specified lock type on all tables referenced by the
+  given dd::Table object to the list. Also add the referenced table names to
+  the foreign key invalidator, to be used at a later stage to invalidate the
   dd::Table objects.
 
   @param          thd            Thread handle.
   @param          table_def      dd::Table object.
+  @param          lock_type      Type of MDL requests to add.
   @param          hton           Handlerton for table's storage engine.
   @param[in,out]  mdl_requests   List to which MDL requests are to be added.
   @param[in,out]  fk_invalidator Object keeping track of which dd::Table
@@ -1095,7 +1098,7 @@ bool lock_trigger_names(THD *thd, TABLE_LIST *tables) {
 */
 static bool collect_fk_parents_for_all_fks(
     THD *thd, const dd::Table *table_def, handlerton *hton,
-    MDL_request_list *mdl_requests,
+    enum_mdl_type lock_type, MDL_request_list *mdl_requests,
     Foreign_key_parents_invalidator *fk_invalidator) {
   for (const dd::Foreign_key *fk : table_def->foreign_keys()) {
     char buff_db[NAME_LEN + 1];
@@ -1118,7 +1121,7 @@ static bool collect_fk_parents_for_all_fks(
     if (mdl_request == NULL) return true;
 
     MDL_REQUEST_INIT(mdl_request, MDL_key::TABLE, buff_db, buff_table,
-                     MDL_EXCLUSIVE, MDL_STATEMENT);
+                     lock_type, MDL_STATEMENT);
 
     mdl_requests->push_front(mdl_request);
 
@@ -1263,8 +1266,8 @@ bool rm_table_do_discovery_and_lock_fk_tables(THD *thd, TABLE_LIST *tables) {
     const dd::Table *table_def =
         dynamic_cast<const dd::Table *>(abstract_table_def);
 
-    if (collect_fk_parents_for_all_fks(thd, table_def, nullptr, &mdl_requests,
-                                       nullptr))
+    if (collect_fk_parents_for_all_fks(thd, table_def, nullptr, MDL_EXCLUSIVE,
+                                       &mdl_requests, nullptr))
       return true;
 
     if (collect_fk_children(thd, table_def, MDL_EXCLUSIVE, &mdl_requests))
@@ -2400,22 +2403,11 @@ static bool adjust_fk_children_for_parent_drop(
 static bool validate_secondary_engine_option(const Alter_info &alter_info,
                                              const HA_CREATE_INFO &create_info,
                                              const TABLE &table) {
-  constexpr uint64_t load_or_unload =
-      Alter_info::ALTER_SECONDARY_LOAD | Alter_info::ALTER_SECONDARY_UNLOAD;
-
-  // SECONDARY_LOAD and SECONDARY_UNLOAD operations require the table to have a
-  // secondary engine defined.
-  if (alter_info.flags & load_or_unload && !table.s->has_secondary()) {
-    my_error(ER_SECONDARY_ENGINE, MYF(0), "No secondary engine defined");
-    return true;
-  }
-
-  // Remaining validation checks apply only to tables with a secondary engine.
+  // Validation necessary only for tables with a secondary engine defined.
   if (!table.s->has_secondary()) return false;
 
-  // These are the only supported ALTER TABLE operations.
-  constexpr uint64_t supported_alter_operations =
-      load_or_unload | Alter_info::ALTER_OPTIONS;
+  // Changing table option is the only valid ALTER TABLE operation.
+  constexpr uint64_t supported_alter_operations = Alter_info::ALTER_OPTIONS;
 
   // The only table option that may be changed is SECONDARY_ENGINE.
   constexpr uint64_t supported_table_options = HA_CREATE_USED_SECONDARY_ENGINE;
@@ -2439,28 +2431,20 @@ static bool validate_secondary_engine_option(const Alter_info &alter_info,
 /**
  * Loads a table from its primary engine into its secondary engine.
  *
- * @note An MDL_SHARED_READ or stronger lock on the table must have been
- * acquired prior to calling this function.
+ * @note An MDL_SHARED_NO_WRITE or stronger lock on the table must have been
+ * acquired prior to calling this function to prevent writes into the table
+ * while it's being loaded.
  *
  * @param thd        Thread handler.
  * @param table      Table in primary storage engine.
- * @param alter_info Alter table operations.
  *
  * @return True if error, false otherwise.
  */
-static bool secondary_engine_load_table(THD *thd, const TABLE &table,
-                                        const Alter_info &alter_info) {
+static bool secondary_engine_load_table(THD *thd, const TABLE &table) {
   DBUG_ASSERT(thd->mdl_context.owns_equal_or_stronger_lock(
       MDL_key::TABLE, table.s->db.str, table.s->table_name.str,
-      MDL_SHARED_READ));
+      MDL_SHARED_NO_WRITE));
   DBUG_ASSERT(table.s->has_secondary());
-
-  // SECONDARY_LOAD cannot be used in conjunction with other DDLs.
-  if (alter_info.flags & ~Alter_info::ALTER_SECONDARY_LOAD) {
-    my_error(ER_SECONDARY_ENGINE, MYF(0),
-             "SECONDARY_LOAD must be a standalone action");
-    return true;
-  }
 
   // The defined secondary engine must be the name of a valid storage engine.
   plugin_ref plugin =
@@ -2472,7 +2456,7 @@ static bool secondary_engine_load_table(THD *thd, const TABLE &table,
 
   // The engine must support being used as a secondary engine.
   handlerton *hton = plugin_data<handlerton *>(plugin);
-  if (!(hton->flags & HTON_SUPPORTS_SECONDARY)) {
+  if (!(hton->flags & HTON_IS_SECONDARY_ENGINE)) {
     my_error(ER_SECONDARY_ENGINE, MYF(0),
              "Unsupported secondary storage engine");
     return true;
@@ -2491,8 +2475,8 @@ static bool secondary_engine_load_table(THD *thd, const TABLE &table,
  * Unloads a table from its secondary engine.
  *
  * @note An MDL_EXCLUSIVE or stronger lock on the table must have been acquired
- * prior to calling this function to ensure that the table is not being used by
- * other clients.
+ * prior to calling this function to ensure that queries already offloaded to
+ * the secondary engine finished execution before unloading the table.
  *
  * @param thd        Thread handler.
  * @param db_name    Database name.
@@ -2509,7 +2493,8 @@ static bool secondary_engine_unload_table(THD *thd, const char *db_name,
 
   // Nothing to unload if table has no secondary engine defined.
   LEX_STRING secondary_engine;
-  if (table_def.options().get("secondary_engine", secondary_engine,
+  if (!table_def.options().exists("secondary_engine") ||
+      table_def.options().get("secondary_engine", &secondary_engine,
                               thd->mem_root))
     return false;
 
@@ -2526,7 +2511,7 @@ static bool secondary_engine_unload_table(THD *thd, const char *db_name,
   // The defined secondary engine is a valid storage engine. However, if the
   // engine is not a valid secondary engine, no tables have been loaded and
   // there is nothing to be done.
-  if (!(hton->flags & HTON_SUPPORTS_SECONDARY)) return false;
+  if (!(hton->flags & HTON_IS_SECONDARY_ENGINE)) return false;
 
   // Get handler for table in secondary engine.
   const bool is_partitioned = table_def.partition_type() != dd::Table::PT_NONE;
@@ -3750,17 +3735,14 @@ bool prepare_pack_create_field(THD *thd, Create_field *sql_field,
     case MYSQL_TYPE_TINY_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_JSON:
-      sql_field->length = 8;  // Unireg field length
       DBUG_ASSERT(sql_field->auto_flags == Field::NONE ||
                   sql_field->auto_flags == Field::GENERATED_FROM_EXPRESSION);
       break;
     case MYSQL_TYPE_VARCHAR:
       if (table_flags & HA_NO_VARCHAR) {
-        /* convert VARCHAR to CHAR because handler is not yet up to date */
+        /* Convert VARCHAR to CHAR because handler is not yet up to date */
         sql_field->sql_type = MYSQL_TYPE_VAR_STRING;
-        sql_field->pack_length =
-            calc_pack_length(sql_field->sql_type, (uint)sql_field->length);
-        if ((sql_field->length / sql_field->charset->mbmaxlen) >
+        if (sql_field->max_display_width_in_codepoints() >
             MAX_FIELD_CHARLENGTH) {
           my_error(ER_TOO_BIG_FIELDLENGTH, MYF(0), sql_field->field_name,
                    static_cast<ulong>(MAX_FIELD_CHARLENGTH));
@@ -3886,8 +3868,7 @@ bool prepare_sp_create_field(THD *thd, Create_field *field_def) {
   } else if (field_def->sql_type == MYSQL_TYPE_BIT)
     field_def->treat_bit_as_char = true;
 
-  field_def->create_length_to_internal_length();
-  if (prepare_blob_field(thd, field_def)) return true;
+  if (prepare_blob_field(thd, field_def, false)) return true;
 
   return prepare_pack_create_field(thd, field_def, HA_CAN_GEOMETRY);
 }
@@ -4138,19 +4119,6 @@ static bool prepare_set_field(THD *thd, Create_field *sql_field) {
     }
   }
 
-  sql_field->length = 0;
-  const char **pos;
-  uint *len;
-  for (pos = sql_field->interval->type_names,
-      len = sql_field->interval->type_lengths;
-       *pos; pos++, len++) {
-    // SET uses tot_length
-    sql_field->length += sql_field->charset->cset->numchars(sql_field->charset,
-                                                            *pos, *pos + *len);
-  }
-  sql_field->length += (sql_field->interval->count - 1);
-  sql_field->length = min<size_t>(sql_field->length, MAX_FIELD_WIDTH - 1);
-
   DBUG_RETURN(false);
 }
 
@@ -4196,19 +4164,6 @@ static bool prepare_enum_field(THD *thd, Create_field *sql_field) {
     }
   }
 
-  sql_field->length = 0;
-  const char **pos;
-  uint *len;
-  for (pos = sql_field->interval->type_names,
-      len = sql_field->interval->type_lengths;
-       *pos; pos++, len++) {
-    // ENUM uses max_length
-    sql_field->length =
-        max(sql_field->length, sql_field->charset->cset->numchars(
-                                   sql_field->charset, *pos, *pos + *len));
-  }
-  sql_field->length = min<size_t>(sql_field->length, MAX_FIELD_WIDTH - 1);
-
   DBUG_RETURN(false);
 }
 
@@ -4220,14 +4175,9 @@ bool prepare_create_field(THD *thd, HA_CREATE_INFO *create_info,
   DBUG_ASSERT(create_list);
   const CHARSET_INFO *save_cs;
 
-  /*
-    Initialize length from its original value (number of characters),
-    which was set in the parser. This is necessary if we're
-    executing a prepared statement for the second time.
-  */
-  sql_field->length = sql_field->char_length;
   /* Set field charset. */
   save_cs = sql_field->charset = get_sql_field_charset(sql_field, create_info);
+
   if (sql_field->flags & BINCMP_FLAG) {
     // e.g. CREATE TABLE t1 (a CHAR(1) BINARY);
     if (!(sql_field->charset = get_charset_by_csname(sql_field->charset->csname,
@@ -4281,14 +4231,18 @@ bool prepare_create_field(THD *thd, HA_CREATE_INFO *create_info,
     if (prepare_enum_field(thd, sql_field)) DBUG_RETURN(true);
   } else if (sql_field->sql_type == MYSQL_TYPE_BIT) {
     if (file->ha_table_flags() & HA_CAN_BIT_FIELD) {
-      create_info->null_bits += sql_field->length & 7;
+      create_info->null_bits +=
+          sql_field->max_display_width_in_codepoints() & 7;
       sql_field->treat_bit_as_char = false;
     } else
       sql_field->treat_bit_as_char = true;
   }
 
-  sql_field->create_length_to_internal_length();
-  if (prepare_blob_field(thd, sql_field)) DBUG_RETURN(true);
+  bool convert_to_character_set =
+      (create_info->used_fields & HA_CREATE_USED_CHARSET);
+  if (prepare_blob_field(thd, sql_field, convert_to_character_set)) {
+    DBUG_RETURN(true);
+  }
 
   if (!(sql_field->flags & NOT_NULL_FLAG)) create_info->null_bits++;
 
@@ -4347,8 +4301,10 @@ bool prepare_create_field(THD *thd, HA_CREATE_INFO *create_info,
           of null_bits that was done above.
         */
         if (sql_field->sql_type == MYSQL_TYPE_BIT &&
-            file->ha_table_flags() & HA_CAN_BIT_FIELD)
-          create_info->null_bits -= sql_field->length & 7;
+            file->ha_table_flags() & HA_CAN_BIT_FIELD) {
+          create_info->null_bits -=
+              sql_field->max_display_width_in_codepoints() & 7;
+        }
 
         sql_field->constant_default = dup_field->constant_default;
         sql_field->sql_type = dup_field->sql_type;
@@ -4367,9 +4323,7 @@ bool prepare_create_field(THD *thd, HA_CREATE_INFO *create_info,
         sql_field->charset =
             (dup_field->charset ? dup_field->charset
                                 : create_info->default_table_charset);
-        sql_field->length = dup_field->char_length;
-        sql_field->pack_length = dup_field->pack_length;
-        sql_field->key_length = dup_field->key_length;
+        sql_field->set_max_display_width_from_create_field(*dup_field);
         sql_field->decimals = dup_field->decimals;
         sql_field->auto_flags = dup_field->auto_flags;
         /*
@@ -4378,8 +4332,8 @@ bool prepare_create_field(THD *thd, HA_CREATE_INFO *create_info,
            because of sql_field->flags, decrement it back.
         */
         if (!(sql_field->flags & NOT_NULL_FLAG)) create_info->null_bits--;
+
         sql_field->flags = dup_field->flags;
-        sql_field->create_length_to_internal_length();
         sql_field->interval = dup_field->interval;
         sql_field->gcol_info = dup_field->gcol_info;
         sql_field->m_default_val_expr = dup_field->m_default_val_expr;
@@ -4416,7 +4370,7 @@ static void calculate_field_offsets(List<Create_field> *create_list) {
       (generated fields) and update their offset later (see the next loop).
     */
     if (sql_field->stored_in_db)
-      record_offset += sql_field->pack_length;
+      record_offset += sql_field->pack_length();
     else
       has_vgc = true;
   }
@@ -4426,7 +4380,7 @@ static void calculate_field_offsets(List<Create_field> *create_list) {
     while ((sql_field = it++)) {
       if (!sql_field->stored_in_db) {
         sql_field->offset = record_offset;
-        record_offset += sql_field->pack_length;
+        record_offset += sql_field->pack_length();
       }
     }
   }
@@ -4779,7 +4733,7 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
   key_part_info->offset = static_cast<uint16>(sql_field->offset);
   key_part_info->key_part_flag |= column->is_ascending() ? 0 : HA_REVERSE_SORT;
 
-  size_t key_part_length = sql_field->key_length;
+  size_t key_part_length = sql_field->key_length();
 
   if (column_length) {
     if (is_blob(sql_field->sql_type)) {
@@ -4852,6 +4806,7 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
     }
     DBUG_RETURN(true);
   }
+
   if (key_part_length > file->max_key_part_length(create_info) &&
       key->type != KEYTYPE_FULLTEXT) {
     key_part_length = file->max_key_part_length(create_info);
@@ -4866,6 +4821,12 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
         and continue execution.
       */
       if (thd->is_error()) DBUG_RETURN(true);
+    } else if ((thd->lex->alter_info->flags & Alter_info::ALTER_OPTIONS) &&
+               (create_info->used_fields & HA_CREATE_USED_CHARSET)) {
+      my_error(ER_COLUMN_CHANGE_SIZE, MYF(0), sql_field->field_name,
+               sql_field->field->table->s->table_name.str, key->name.str,
+               key_part_length);
+      DBUG_RETURN(true);
     } else {
       my_error(ER_TOO_LONG_KEY, MYF(0), key_part_length);
       DBUG_RETURN(true);
@@ -4903,7 +4864,7 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
     accordingly. Note that fulltext indexes ignores prefixes.
   */
   if (key->type != KEYTYPE_FULLTEXT &&
-      key_part_length != sql_field->key_length) {
+      key_part_length != sql_field->key_length()) {
     key_info->flags |= HA_KEY_HAS_PART_KEY_SEG;
     key_part_info->key_part_flag |= HA_PART_KEY_SEG;
   }
@@ -5949,6 +5910,47 @@ bool prepare_fk_parent_key(handlerton *hton, const dd::Table *parent_table_def,
 }
 
 /**
+  Helper which builds Ha_fk_column_type describing column type from
+  its Create_field object.
+
+  @sa fill_dd_columns_from_create_fields().
+*/
+
+static void fill_ha_fk_column_type(Ha_fk_column_type *fk_column_type,
+                                   const Create_field *field) {
+  fk_column_type->type = dd::get_new_field_type(field->sql_type);
+  fk_column_type->char_length = field->max_display_width_in_bytes();
+  fk_column_type->field_charset = field->charset;
+  fk_column_type->elements_count = field->interval ? field->interval->count : 0;
+  fk_column_type->numeric_scale = 0;
+  dd::get_field_numeric_scale(field, &fk_column_type->numeric_scale);
+  fk_column_type->is_unsigned = field->is_unsigned;
+}
+
+/**
+  Helper which builds Ha_fk_column_type describing column type from
+  its dd::Column object.
+*/
+
+static bool fill_ha_fk_column_type(Ha_fk_column_type *fk_column_type,
+                                   const dd::Column *column) {
+  fk_column_type->type = column->type();
+  fk_column_type->char_length = column->char_length();
+  fk_column_type->field_charset = dd_get_mysql_charset(column->collation_id());
+  if (fk_column_type->field_charset == nullptr) {
+    my_printf_error(ER_UNKNOWN_COLLATION,
+                    "invalid collation id %llu for table %s, column %s", MYF(0),
+                    column->collation_id(), column->table().name().c_str(),
+                    column->name().c_str());
+    return true;
+  }
+  fk_column_type->elements_count = column->elements_count();
+  fk_column_type->numeric_scale = column->numeric_scale();
+  fk_column_type->is_unsigned = column->is_unsigned();
+  return false;
+}
+
+/**
   Prepare FOREIGN_KEY struct with info about a foreign key.
 
   @param thd                 Thread handle.
@@ -6034,6 +6036,9 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
       thd->mem_calloc(sizeof(LEX_CSTRING) * fk_key->columns.size()));
   fk_info->fk_key_part = reinterpret_cast<LEX_CSTRING *>(
       thd->mem_calloc(sizeof(LEX_CSTRING) * fk_key->columns.size()));
+
+  Prealloced_array<Create_field *, 1> referencing_fields(PSI_INSTRUMENT_ME);
+
   for (size_t column_nr = 0; column_nr < fk_key->ref_columns.size();
        column_nr++) {
     const Key_part_spec *col = fk_key->columns[column_nr];
@@ -6076,16 +6081,28 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
       DBUG_RETURN(true);
     }
 
+    referencing_fields.push_back(find);
+
+    /*
+      Unlike for referenced columns, for referencing columns it doesn't matter
+      which version of column name (i.e. coming from FOREIGN KEY clause or
+      coming from table definition, they can differ in case) is stored in
+      FOREIGN_KEY structure. Information about referencing columns is stored
+      as their IDs in the data dictionary and as pointer to dd::Column object
+      in in-memory representation.
+    */
     fk_info->key_part[column_nr].str = col->get_field_name();
     fk_info->key_part[column_nr].length = std::strlen(col->get_field_name());
-    const Key_part_spec *fk_col = fk_key->ref_columns[column_nr];
 
-    // Always store column names in lower case.
-    char buff[NAME_LEN + 1];
-    my_stpncpy(buff, fk_col->get_field_name(), NAME_LEN);
-    my_casedn_str(system_charset_info, buff);
-    fk_info->fk_key_part[column_nr].str = sql_strdup(buff);
-    fk_info->fk_key_part[column_nr].length = strlen(buff);
+    /*
+      Save version of referenced column name coming from FOREIGN KEY clause.
+      Later we will replace it with version of name coming from parent table
+      definition if possible (these versions can differ in case).
+    */
+    const Key_part_spec *fk_col = fk_key->ref_columns[column_nr];
+    fk_info->fk_key_part[column_nr].str = fk_col->get_field_name();
+    fk_info->fk_key_part[column_nr].length =
+        std::strlen(fk_col->get_field_name());
   }
 
   if (find_parent_key) {
@@ -6118,15 +6135,12 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
     if (my_strcasecmp(table_alias_charset, fk_info->ref_db.str, db) == 0 &&
         my_strcasecmp(table_alias_charset, fk_info->ref_table.str,
                       table_name) == 0) {
-      /*
-        FK which references the same table on which it is defined.
-
-        Check that referenced columns exist and are non-virtual as first step.
-      */
+      // FK which references the same table on which it is defined.
       for (uint i = 0; i < fk_info->key_parts; i++) {
         List_iterator_fast<Create_field> field_it(alter_info->create_list);
         const Create_field *field;
 
+        // Check that referenced column exists and is non-virtual.
         while ((field = field_it++)) {
           if (my_strcasecmp(system_charset_info, field->field_name,
                             fk_info->fk_key_part[i].str) == 0)
@@ -6143,6 +6157,31 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
                    fk_info->fk_key_part[i].str);
           DBUG_RETURN(true);
         }
+
+        // Check that types of referencing and referenced columns are
+        // compatible.
+        if (create_info->db_type->check_fk_column_compat) {
+          Ha_fk_column_type child_column_type, parent_column_type;
+
+          fill_ha_fk_column_type(&child_column_type, referencing_fields[i]);
+          fill_ha_fk_column_type(&parent_column_type, field);
+
+          if (!create_info->db_type->check_fk_column_compat(
+                  &child_column_type, &parent_column_type, true)) {
+            my_error(ER_FK_INCOMPATIBLE_COLUMNS, MYF(0),
+                     fk_info->key_part[i].str, fk_info->fk_key_part[i].str,
+                     fk_info->name);
+            DBUG_RETURN(true);
+          }
+        }
+
+        /*
+          Be compatible with 5.7. Use version of referenced column name
+          coming from parent table definition and not the one that was
+          used in FOREIGN KEY clause.
+        */
+        fk_info->fk_key_part[i].str = field->field_name;
+        fk_info->fk_key_part[i].length = std::strlen(field->field_name);
       }
 
       if (prepare_self_ref_fk_parent_key(create_info->db_type, alter_info,
@@ -6218,6 +6257,32 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
                      ref_column_name);
             DBUG_RETURN(true);
           }
+
+          // Check that types of referencing and referenced columns are
+          // compatible.
+          if (create_info->db_type->check_fk_column_compat) {
+            Ha_fk_column_type child_column_type, parent_column_type;
+
+            fill_ha_fk_column_type(&child_column_type, referencing_fields[i]);
+            if (fill_ha_fk_column_type(&parent_column_type, *ref_column))
+              DBUG_RETURN(true);
+
+            if (!create_info->db_type->check_fk_column_compat(
+                    &child_column_type, &parent_column_type, true)) {
+              my_error(ER_FK_INCOMPATIBLE_COLUMNS, MYF(0),
+                       fk_info->key_part[i].str, ref_column_name,
+                       fk_info->name);
+              DBUG_RETURN(true);
+            }
+          }
+
+          /*
+            Be compatible with 5.7. Use version of referenced column name
+            coming from parent table definition and not the one that was
+            used in FOREIGN KEY clause.
+          */
+          fk_info->fk_key_part[i].str = (*ref_column)->name().c_str();
+          fk_info->fk_key_part[i].length = (*ref_column)->name().length();
         }
 
         if (prepare_fk_parent_key(create_info->db_type, parent_table_def,
@@ -6230,6 +6295,206 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
   }
 
   DBUG_RETURN(false);
+}
+
+/**
+  Check that pre-existing foreign key will be still valid after ALTER TABLE,
+  i.e. that table still has supporting index and types of child and parent
+  columns are still compatible. Also if necessary check that there is parent
+  index and update DD.UNIQUE_CONSTRAINT_NAME accordingly.
+
+  @param          thd                 Thread context..
+  @param          create_info         HA_CREATE_INFO describing table.
+  @param          alter_info          Alter_info structure describing
+                                      ALTER TABLE.
+  @param          schema_name         Table schema name.
+  @param          table_name          Table name.
+  @param          key_info            Array of indexes.
+  @param          key_count           Number of indexes.
+  @param          existing_fks_table  dd::Table object for table version from
+                                      which pre-existing foreign keys come
+                                      from. Needed for error reporting.
+  @param[in,out]  fk                  FOREIGN_KEY object describing
+                                      pre-existing foreign key.
+
+  @retval true if error (error reported), false otherwise.
+*/
+static bool prepare_preexisting_foreign_key(
+    THD *thd, HA_CREATE_INFO *create_info, Alter_info *alter_info,
+    const char *schema_name, const char *table_name, KEY *key_info,
+    uint key_count, const dd::Table *existing_fks_table, FOREIGN_KEY *fk) {
+  Create_field *sql_field;
+  List_iterator<Create_field> it(alter_info->create_list);
+  Prealloced_array<Create_field *, 1> referencing_fields(PSI_INSTRUMENT_ME);
+
+  for (size_t j = 0; j < fk->key_parts; j++) {
+    it.rewind();
+    while ((sql_field = it++)) {
+      if (my_strcasecmp(system_charset_info, fk->key_part[j].str,
+                        sql_field->field_name) == 0)
+        break;
+    }
+    // We already have checked that referencing column exists.
+    DBUG_ASSERT(sql_field != nullptr);
+    // Save Create_field to be used in type compatibility check later.
+    referencing_fields.push_back(sql_field);
+
+    /*
+      Check if this foreign key has SET NULL as one of referential actions
+      and one of its referencing columns became non-nullable.
+
+      We do this check here rather than in transfer_preexisting_foreign_keys()
+      in order to avoid complicated handling of case when column becomes
+      non-nullable implicitly because it is part of PRIMARY KEY added.
+    */
+    if ((fk->delete_opt == FK_OPTION_SET_NULL ||
+         fk->update_opt == FK_OPTION_SET_NULL) &&
+        (sql_field->flags & NOT_NULL_FLAG)) {
+      my_error(ER_FK_COLUMN_NOT_NULL, MYF(0), fk->key_part[j].str, fk->name);
+      return true;
+    }
+  }
+
+  // Check that we still have supporting index on child table.
+  const KEY *supporting_key = find_fk_supporting_key(
+      create_info->db_type, alter_info, key_info, key_count, fk);
+  if (supporting_key == nullptr) {
+    /*
+      If there is no supporting index, it must have been dropped by
+      this ALTER TABLE. Find old foreign key definition and supporting
+      index which matched it in old table definition in order to report
+      nice error.
+    */
+    auto same_name = [fk](const dd::Foreign_key *el) {
+      return my_strcasecmp(system_charset_info, fk->name, el->name().c_str()) ==
+             0;
+    };
+    auto old_fk =
+        std::find_if(existing_fks_table->foreign_keys().begin(),
+                     existing_fks_table->foreign_keys().end(), same_name);
+    DBUG_ASSERT(old_fk != existing_fks_table->foreign_keys().end());
+
+    const dd::Index *old_key = find_fk_supporting_key(
+        create_info->db_type, existing_fks_table, *old_fk);
+    my_error(ER_DROP_INDEX_FK, MYF(0),
+             old_key ? old_key->name().c_str() : "<unknown key name>");
+    return true;
+  }
+
+  if (my_strcasecmp(table_alias_charset, fk->ref_db.str, schema_name) == 0 &&
+      my_strcasecmp(table_alias_charset, fk->ref_table.str, table_name) == 0) {
+    // Pre-existing foreign key which has same table as parent and child.
+
+    // Check that types of child and parent columns are still compatible.
+
+    // TODO: Run this check only in cases when column type is really
+    //       changed in order to avoid unnecessary work.
+    if (create_info->db_type->check_fk_column_compat) {
+      for (size_t j = 0; j < fk->key_parts; j++) {
+        it.rewind();
+        while ((sql_field = it++)) {
+          if (my_strcasecmp(system_charset_info, fk->fk_key_part[j].str,
+                            sql_field->field_name) == 0)
+            break;
+        }
+        // We already have checked that referenced column exists.
+        DBUG_ASSERT(sql_field != nullptr);
+
+        Ha_fk_column_type child_column_type, parent_column_type;
+
+        fill_ha_fk_column_type(&child_column_type, referencing_fields[j]);
+        fill_ha_fk_column_type(&parent_column_type, sql_field);
+
+        /*
+          Allow charset discrepancies between child and parent columns
+          in FOREIGN_KEY_CHECKS=0 mode. This provides a way to change
+          charset of column which participates in a foreign key without
+          dropping the latter.
+          We allow such discrepancies even for foreign keys that has same
+          table as child and parent in order to be consistent with general
+          case, in which there is no way to change charset of both child
+          and parent columns simultaneously.
+
+          We do not allow creation of same discrepancies when adding
+          new foreign key using CREATE/ALTER TABLE or adding new parent
+          for existing orphan foreign key using CREATE/RENAME TABLE.
+        */
+        if (!create_info->db_type->check_fk_column_compat(
+                &child_column_type, &parent_column_type,
+                !(thd->variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS))) {
+          my_error(ER_FK_INCOMPATIBLE_COLUMNS, MYF(0), fk->key_part[j].str,
+                   fk->fk_key_part[j].str, fk->name);
+          return true;
+        }
+      }
+    }
+
+    /*
+      Check that foreign key still has matching parent key and adjust
+      DD.UNIQUE_CONSTRAINT_NAME accordingly.
+    */
+    if (prepare_self_ref_fk_parent_key(create_info->db_type, alter_info,
+                                       key_info, key_count, supporting_key,
+                                       existing_fks_table, fk))
+      return true;
+  } else {
+    /*
+      Pre-existing foreign key with different tables as child and parent.
+
+      There is no need to update DD.UNIQUE_CONSTRAINT_NAME.
+
+      Parent table definition is needed to check column types compatibility.
+
+      Skip check if parent table doesn't exist or uses wrong engine.
+    */
+    if (create_info->db_type->check_fk_column_compat) {
+      const dd::Table *parent_table_def = nullptr;
+      if (thd->dd_client()->acquire(fk->ref_db.str, fk->ref_table.str,
+                                    &parent_table_def))
+        return true;
+
+      handlerton *parent_hton = nullptr;
+      if (parent_table_def != nullptr &&
+          dd::table_storage_engine(thd, parent_table_def, &parent_hton))
+        return true;
+
+      if (parent_table_def != nullptr && create_info->db_type == parent_hton) {
+        for (size_t j = 0; j < fk->key_parts; j++) {
+          const char *ref_column_name = fk->fk_key_part[j].str;
+
+          auto same_column_name = [ref_column_name](const dd::Column *c) {
+            return my_strcasecmp(system_charset_info, c->name().c_str(),
+                                 ref_column_name) == 0;
+          };
+
+          auto ref_column =
+              std::find_if(parent_table_def->columns().begin(),
+                           parent_table_def->columns().end(), same_column_name);
+          DBUG_ASSERT(ref_column != parent_table_def->columns().end());
+
+          Ha_fk_column_type child_column_type, parent_column_type;
+
+          fill_ha_fk_column_type(&child_column_type, referencing_fields[j]);
+          if (fill_ha_fk_column_type(&parent_column_type, *ref_column))
+            return true;
+
+          /*
+            See above comment about allowing charset discrepancies between
+            child and parent columns in FOREIGN_KEY_CHECKS=0 mode.
+          */
+          if (!create_info->db_type->check_fk_column_compat(
+                  &child_column_type, &parent_column_type,
+                  !(thd->variables.option_bits &
+                    OPTION_NO_FOREIGN_KEY_CHECKS))) {
+            my_error(ER_FK_INCOMPATIBLE_COLUMNS, MYF(0), fk->key_part[j].str,
+                     ref_column_name, fk->name);
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
 }
 
 static bool prepare_key(THD *thd, HA_CREATE_INFO *create_info,
@@ -6554,40 +6819,22 @@ bool Item_field::replace_field_processor(uchar *arg) {
       case MYSQL_TYPE_MEDIUM_BLOB:
       case MYSQL_TYPE_LONG_BLOB:
       case MYSQL_TYPE_BLOB: {
-        const CHARSET_INFO *charset =
-            get_sql_field_charset(create_field, targ->create_info());
+        DBUG_ASSERT(create_field->charset != nullptr);
         set_data_type_string(blob_length_by_type(create_field->sql_type),
-                             charset);
-
-        if (create_field->charset == nullptr) {
-          // We have code in a later stage that expects a character set to be
-          // present in the Create_field object, so assign it now if it isn't
-          // already assigned.
-          Create_field *create_field_nonconst =
-              const_cast<Create_field *>(create_field);
-          create_field_nonconst->charset = charset;
-        }
+                             create_field->charset);
         break;
       }
       case MYSQL_TYPE_STRING:
       case MYSQL_TYPE_VARCHAR: {
-        const CHARSET_INFO *charset =
-            get_sql_field_charset(create_field, targ->create_info());
-        set_data_type_string(create_field->char_length, charset);
-        if (create_field->charset == nullptr) {
-          // We have code in a later stage that expects a character set to be
-          // present in the Create_field object, so assign it now if it isn't
-          // already assigned.
-          Create_field *create_field_nonconst =
-              const_cast<Create_field *>(create_field);
-          create_field_nonconst->charset = charset;
-        }
+        DBUG_ASSERT(create_field->charset != nullptr);
+        set_data_type_string(create_field->max_display_width_in_codepoints(),
+                             create_field->charset);
         break;
       }
       case MYSQL_TYPE_NEWDECIMAL: {
         uint precision = my_decimal_length_to_precision(
-            create_field->char_length, create_field->decimals,
-            create_field->is_unsigned);
+            create_field->max_display_width_in_codepoints(),
+            create_field->decimals, create_field->is_unsigned);
         set_data_type_decimal(precision, create_field->decimals);
         break;
       }
@@ -6617,7 +6864,7 @@ bool Item_field::replace_field_processor(uchar *arg) {
       case MYSQL_TYPE_LONG:
       case MYSQL_TYPE_LONGLONG:
       case MYSQL_TYPE_BIT: {
-        fix_char_length(create_field->char_length);
+        fix_char_length(create_field->max_display_width_in_codepoints());
         set_data_type(create_field->sql_type);
         collation.set_numeric();
         break;
@@ -6642,33 +6889,14 @@ bool Item_field::replace_field_processor(uchar *arg) {
       }
       case MYSQL_TYPE_ENUM: {
         set_data_type(create_field->sql_type);
-        const CHARSET_INFO *charset =
-            get_sql_field_charset(create_field, targ->create_info());
-        collation.collation = charset;
-
-        size_t max_length = 0;
-        for (const String &it : create_field->interval_list) {
-          max_length = std::max(max_length, it.length());
-        }
-        fix_char_length(
-            std::min(max_length, static_cast<size_t>(MAX_FIELD_WIDTH)));
+        collation.collation = create_field->charset;
+        fix_char_length(create_field->max_display_width_in_codepoints());
         break;
       }
       case MYSQL_TYPE_SET: {
         set_data_type(create_field->sql_type);
-        const CHARSET_INFO *charset =
-            get_sql_field_charset(create_field, targ->create_info());
-        collation.collation = charset;
-
-        size_t total_length = 0;
-        for (const String &it : create_field->interval_list) {
-          total_length += it.length();
-        }
-
-        // Add space for one comma between each element
-        total_length += (create_field->interval_list.elements - 1);
-        fix_char_length(
-            std::min(total_length, static_cast<size_t>(MAX_FIELD_WIDTH)));
+        collation.collation = create_field->charset;
+        fix_char_length(create_field->max_display_width_in_codepoints());
         break;
       }
       default: { DBUG_ASSERT(false); /* purecov: deadcode */ }
@@ -6699,7 +6927,7 @@ bool Item_field::replace_field_processor(uchar *arg) {
          is used when checking for duplicate functional index names.
 
   @retval true if the key name exists in the array
-  @retval false if the key name doesn't exist in the array
+  @retval false if the key name doesn't exist in the array
 */
 static bool key_name_exists(const Mem_root_array<Key_spec *> &keys,
                             const std::string &key_name,
@@ -6989,6 +7217,26 @@ bool mysql_prepare_create_table(
   if (create_info->row_type == ROW_TYPE_DYNAMIC)
     create_info->table_options |= HA_OPTION_PACK_RECORD;
 
+  /*
+    Prepare fields, which must be done before calling
+    add_functional_index_to_create_list(). The reason is that
+    prepare_create_field() sets several properties of all Create_fields, such as
+    character set. We need the character set in order to get the correct
+    display width for each Create_field, which is in turn needed to resolve the
+    correct data type/length for each hidden generated column added by
+    add_functional_index_to_create_list().
+  */
+  int select_field_pos = alter_info->create_list.elements - select_field_count;
+  create_info->null_bits = 0;
+  int field_no = 0;
+  Create_field *sql_field;
+  List_iterator<Create_field> it(alter_info->create_list);
+  for (; (sql_field = it++); field_no++) {
+    if (prepare_create_field(thd, create_info, &alter_info->create_list,
+                             &select_field_pos, file, sql_field, field_no))
+      DBUG_RETURN(true);
+  }
+
   // Go through all functional key parts. For each functional key part, resolve
   // the expression and add a hidden generated column to the create list.
   for (Key_spec *key : alter_info->key_list) {
@@ -7010,21 +7258,23 @@ bool mysql_prepare_create_table(
                                               key_part_spec, j, create_info)) {
         DBUG_RETURN(true);
       }
+
+      // Call prepare_create_field on the Create_field that was added by
+      // add_functional_index_to_create_list().
+      Create_field *new_create_field =
+          alter_info->create_list[alter_info->create_list.elements - 1];
+      DBUG_ASSERT(new_create_field->hidden ==
+                  dd::Column::enum_hidden_type::HT_HIDDEN_SQL);
+      if (prepare_create_field(thd, create_info, &alter_info->create_list,
+                               &select_field_pos, file, new_create_field,
+                               ++field_no)) {
+        DBUG_RETURN(true);
+      }
     }
   }
 
-  /*
-    Prepare fields.
-  */
-  int select_field_pos = alter_info->create_list.elements - select_field_count;
-  create_info->null_bits = 0;
-  Create_field *sql_field;
-  List_iterator<Create_field> it(alter_info->create_list);
-  for (int field_no = 0; (sql_field = it++); field_no++) {
-    if (prepare_create_field(thd, create_info, &alter_info->create_list,
-                             &select_field_pos, file, sql_field, field_no))
-      DBUG_RETURN(true);
-  }
+  // Now that we have all the Create_fields available, calculate the offsets
+  // for each column.
   calculate_field_offsets(&alter_info->create_list);
 
   /*
@@ -7198,80 +7448,16 @@ bool mysql_prepare_create_table(
     DBUG_RETURN(true);
   }
 
+  /*
+    Check that definitions of existing foreign keys are not broken by this
+    ALTER TABLE. Update FOREIGN_KEY::unique_constraint_name if necessary.
+  */
   for (FOREIGN_KEY *fk = *fk_key_info_buffer;
        fk < (*fk_key_info_buffer) + existing_fks_count; fk++) {
-    /*
-      Check if this foreign key has SET NULL as one of referential actions
-      and one of its referencing columns became non-nullable.
-
-      We do this check here rather than in transfer_preexisting_foreign_keys()
-      in order to avoid complicated handling of case when column becomes
-      non-nullable implicitly because it is part of PRIMARY KEY added.
-    */
-    if (fk->delete_opt == FK_OPTION_SET_NULL ||
-        fk->update_opt == FK_OPTION_SET_NULL) {
-      for (size_t j = 0; j < fk->key_parts; j++) {
-        it.rewind();
-        while ((sql_field = it++)) {
-          if (my_strcasecmp(system_charset_info, fk->key_part[j].str,
-                            sql_field->field_name) == 0)
-            break;
-        }
-        // We already have checked that referencing column exists.
-        DBUG_ASSERT(sql_field != nullptr);
-
-        if (sql_field->flags & NOT_NULL_FLAG) {
-          my_error(ER_FK_COLUMN_NOT_NULL, MYF(0), fk->key_part[j].str,
-                   fk->name);
-          DBUG_RETURN(true);
-        }
-      }
-    }
-
-    /*
-      Check that for each pre-existing foreign key we still have supporting
-      index on child table.
-    */
-    const KEY *supporting_key = find_fk_supporting_key(
-        create_info->db_type, alter_info, *key_info_buffer, *key_count, fk);
-
-    if (supporting_key == nullptr) {
-      /*
-        If there is no supporting index, it must have been dropped by
-        this ALTER TABLE. Find old foreign key definition and supporting
-        index which matched it in old table definition in order to report
-        nice error.
-      */
-      auto same_name = [fk](const dd::Foreign_key *el) {
-        return my_strcasecmp(system_charset_info, fk->name,
-                             el->name().c_str()) == 0;
-      };
-      auto old_fk =
-          std::find_if(existing_fks_table->foreign_keys().begin(),
-                       existing_fks_table->foreign_keys().end(), same_name);
-      DBUG_ASSERT(old_fk != existing_fks_table->foreign_keys().end());
-
-      const dd::Index *old_key = find_fk_supporting_key(
-          create_info->db_type, existing_fks_table, *old_fk);
-      my_error(ER_DROP_INDEX_FK, MYF(0),
-               old_key ? old_key->name().c_str() : "???");
+    if (prepare_preexisting_foreign_key(
+            thd, create_info, alter_info, error_schema_name, error_table_name,
+            *key_info_buffer, *key_count, existing_fks_table, fk))
       DBUG_RETURN(true);
-    }
-    /*
-      Check that pre-existing foreign keys which have same table as parent and
-      child still have matching parent keys and adjust DD.UNIQUE_CONSTRAINT_NAME
-      accordingly. For non-self-referencing FKs we simply use values from old
-      versions of FKs.
-    */
-    if (my_strcasecmp(table_alias_charset, fk->ref_db.str, error_schema_name) ==
-            0 &&
-        my_strcasecmp(table_alias_charset, fk->ref_table.str,
-                      error_table_name) == 0) {
-      if (prepare_self_ref_fk_parent_key(
-              create_info->db_type, alter_info, *key_info_buffer, *key_count,
-              supporting_key, existing_fks_table, fk))
-        DBUG_RETURN(true);
-    }
   }
 
   // Prepare new foreign keys.
@@ -7341,7 +7527,7 @@ bool mysql_prepare_create_table(
   size_t reclength = data_offset;
   it.rewind();
   while ((sql_field = it++)) {
-    size_t length = sql_field->pack_length;
+    size_t length = sql_field->pack_length();
     if (sql_field->offset + data_offset + length > reclength)
       reclength = sql_field->offset + data_offset + length;
   }
@@ -7457,10 +7643,11 @@ static bool set_table_default_charset(THD *thd, HA_CREATE_INFO *create_info,
         In this case the error is given
 */
 
-static bool prepare_blob_field(THD *thd, Create_field *sql_field) {
+static bool prepare_blob_field(THD *thd, Create_field *sql_field,
+                               bool convert_character_set) {
   DBUG_ENTER("prepare_blob_field");
 
-  if (sql_field->length > MAX_FIELD_VARCHARLENGTH &&
+  if (sql_field->max_display_width_in_bytes() > MAX_FIELD_VARCHARLENGTH &&
       !(sql_field->flags & BLOB_FLAG)) {
     /* Convert long VARCHAR columns to TEXT or BLOB */
     char warn_buff[MYSQL_ERRMSG_SIZE];
@@ -7471,7 +7658,8 @@ static bool prepare_blob_field(THD *thd, Create_field *sql_field) {
                                   sql_field->charset->mbmaxlen));
       DBUG_RETURN(1);
     }
-    sql_field->sql_type = MYSQL_TYPE_BLOB;
+    sql_field->sql_type =
+        get_blob_type_from_length(sql_field->max_display_width_in_bytes());
     sql_field->flags |= BLOB_FLAG;
     snprintf(warn_buff, sizeof(warn_buff), ER_THD(thd, ER_AUTO_CONVERT),
              sql_field->field_name,
@@ -7480,16 +7668,48 @@ static bool prepare_blob_field(THD *thd, Create_field *sql_field) {
     push_warning(thd, Sql_condition::SL_NOTE, ER_AUTO_CONVERT, warn_buff);
   }
 
-  if ((sql_field->flags & BLOB_FLAG) && sql_field->length) {
+  /*
+    If the user has given a length to the BLOB/TEXT column explicitly, we make
+    sure that we choose the most appropriate data type. For instance, "TEXT(63)
+    CHARACTER SET utf8mb4" is automatically converted to TINYTEXT since TINYTEXT
+    can hold 255 _bytes_ of data (which is enough for 63 _characters_ of
+    utf8mb4).
+
+    Also, if we are changing the character set to a character set that requires
+    more storage per character, we might need to change the column to a bigger
+    type in order to not loose any data. Consider the following example:
+
+      CREATE TABLE t1 (a TINYTEXT CHARACTER SET latin1);
+      ALTER TABLE t1 CONVERT TO CHARACTER SET utf8mb4;
+
+    TINYTEXT can store up to 255 _bytes_ of data, and since "latin1" requires
+    one byte per character the user can store 255 _characters_ into this column.
+    If we are changing the character set to utf8mb4, each character suddenly
+    requires 4 bytes of storage. So an existing string in the column "a" that
+    is 255 characters long now suddenly requires 1020 _bytes_ of storage. This
+    does not fit into TINYTEXT, so we need to switch the data type to TEXT in
+    order not to loose any existing data (TEXT can store up to 65536 _bytes_ of
+    data, which is 16384 _characters_ of utf8mb4 data).
+  */
+  if ((sql_field->flags & BLOB_FLAG) &&
+      (sql_field->explicit_display_width() || convert_character_set)) {
     if (sql_field->sql_type == FIELD_TYPE_BLOB ||
         sql_field->sql_type == FIELD_TYPE_TINY_BLOB ||
         sql_field->sql_type == FIELD_TYPE_MEDIUM_BLOB) {
-      /* The user has given a length to the blob column */
-      sql_field->sql_type = get_blob_type_from_length(sql_field->length);
-      sql_field->pack_length = calc_pack_length(sql_field->sql_type, 0);
+      if (sql_field->explicit_display_width()) {
+        sql_field->sql_type =
+            get_blob_type_from_length(sql_field->max_display_width_in_bytes());
+      } else if (convert_character_set) {
+        const size_t max_codepoints_old_field =
+            sql_field->field->char_length() /
+            sql_field->field->charset()->mbmaxlen;
+        const size_t max_bytes_new_field =
+            max_codepoints_old_field * sql_field->charset->mbmaxlen;
+        sql_field->sql_type = get_blob_type_from_length(max_bytes_new_field);
+      }
     }
-    sql_field->length = 0;
   }
+
   DBUG_RETURN(0);
 }
 
@@ -8167,12 +8387,15 @@ bool adjust_fk_parents(THD *thd, const char *db, const char *name,
 }
 
 /**
-  Update the unique constraint name and referenced column names for
-  the foreign keys after referenced table definition change.
+  Check if new definition of parent table is compatible with foreign keys
+  on child table which reference it. Update the unique constraint names and
+  referenced column names for the foreign keys accordingly.
 
   @param thd                  Thread handle.
   @param check_only           Indicates that we only need to check parent key
                               existence and do not do real update.
+  @param check_charsets       Indicates whether we need to check charsets of
+                              columns participating in foreign keys.
   @param child_table_db       Child table schema name.
   @param child_table_name     Child table name.
   @param parent_table_db      Parent table schema name.
@@ -8190,7 +8413,7 @@ bool adjust_fk_parents(THD *thd, const char *db, const char *name,
   @retval operation outcome, false if no error.
 */
 static bool adjust_fk_child_after_parent_def_change(
-    THD *thd, bool check_only, const char *child_table_db,
+    THD *thd, bool check_only, bool check_charsets, const char *child_table_db,
     const char *child_table_name, const char *parent_table_db,
     const char *parent_table_name, handlerton *hton,
     const dd::Table *parent_table_def, Alter_info *parent_alter_info,
@@ -8279,6 +8502,27 @@ static bool adjust_fk_child_after_parent_def_change(
             if (find->change != nullptr) {
               fk_el->referenced_column_name(find->field_name);
             }
+
+            /*
+              Check that types of child and parent columns are compatible.
+            */
+            if (hton->check_fk_column_compat) {
+              Ha_fk_column_type child_column_type, parent_column_type;
+
+              if (fill_ha_fk_column_type(&child_column_type, &fk_el->column()))
+                return true;
+              fill_ha_fk_column_type(&parent_column_type, find);
+
+              if (!hton->check_fk_column_compat(&child_column_type,
+                                                &parent_column_type,
+                                                check_charsets)) {
+                my_error(ER_FK_INCOMPATIBLE_COLUMNS, MYF(0),
+                         fk_el->column().name().c_str(),
+                         fk_el->referenced_column_name().c_str(),
+                         fk->name().c_str());
+                return true;
+              }
+            }
           } else {
             /*
               This is late stage of ALTER TABLE. Some elements in
@@ -8326,6 +8570,23 @@ static bool adjust_fk_child_after_parent_def_change(
                      fk_el->referenced_column_name().c_str());
             return true;
           }
+
+          if (hton->check_fk_column_compat) {
+            Ha_fk_column_type child_column_type, parent_column_type;
+
+            if (fill_ha_fk_column_type(&child_column_type, &fk_el->column()) ||
+                fill_ha_fk_column_type(&parent_column_type, *ref_column))
+              return true;
+
+            if (!hton->check_fk_column_compat(
+                    &child_column_type, &parent_column_type, check_charsets)) {
+              my_error(ER_FK_INCOMPATIBLE_COLUMNS, MYF(0),
+                       fk_el->column().name().c_str(),
+                       fk_el->referenced_column_name().c_str(),
+                       fk->name().c_str());
+              return true;
+            }
+          }
         }
       }
 
@@ -8353,9 +8614,10 @@ static bool adjust_fk_child_after_parent_def_change(
 }
 
 bool adjust_fk_children_after_parent_def_change(
-    THD *thd, const char *parent_table_db, const char *parent_table_name,
-    handlerton *hton, const dd::Table *parent_table_def,
-    Alter_info *parent_alter_info, bool invalidate_tdc) {
+    THD *thd, bool check_charsets, const char *parent_table_db,
+    const char *parent_table_name, handlerton *hton,
+    const dd::Table *parent_table_def, Alter_info *parent_alter_info,
+    bool invalidate_tdc) {
   Normalized_fk_children fk_children;
   if (fetch_fk_children_uncached_uncommitted_normalized(
           thd, parent_table_db, parent_table_name,
@@ -8382,8 +8644,8 @@ bool adjust_fk_children_after_parent_def_change(
       to check_fk_children_after_parent_def_change().
     */
     if (adjust_fk_child_after_parent_def_change(
-            thd, false,  // Update FKs.
-            schema_name, table_name, parent_table_db, parent_table_name, hton,
+            thd, false /* Update FKs. */, check_charsets, schema_name,
+            table_name, parent_table_db, parent_table_name, hton,
             parent_table_def, parent_alter_info, nullptr))
       return true;
 
@@ -8441,6 +8703,18 @@ static bool check_fk_children_after_parent_def_change(
 
     if (adjust_fk_child_after_parent_def_change(
             thd, true,  // Check only.
+            /*
+              Allow charset discrepancies between child and parent columns
+              in FOREIGN_KEY_CHECKS=0 mode. This provides a way to change
+              charset of column which participates in a foreign key without
+              dropping the latter (Note that in general case there is no way
+              to change charset of both child and parent columns
+              simultaneously).
+              We do not allow creation of same discrepancies when adding
+              new foreign key using CREATE/ALTER TABLE or adding new parent
+              for existing orphan foreign key using CREATE/RENAME TABLE.
+            */
+            !(thd->variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS),
             parent_fk->child_schema_name().c_str(),
             parent_fk->child_table_name().c_str(), parent_table_db,
             parent_table_name, hton, new_parent_table_def, parent_alter_info,
@@ -8485,6 +8759,7 @@ static bool check_fk_children_after_parent_def_change(
 
     if (adjust_fk_child_after_parent_def_change(
             thd, true,  // Check only.
+            true,       // Check that charsets match.
             schema_name, table_name, parent_table_db, parent_table_name, hton,
             parent_table_def, nullptr, nullptr))
       return true;
@@ -8977,10 +9252,11 @@ static bool alter_table_drop_histograms(THD *thd, TABLE_LIST *table,
 
   bool encryption_enabled = false;
   if (altered_table_def->options().exists("encrypt_type")) {
+    dd::String_type str;
+    (void)altered_table_def->options().get("encrypt_type", &str);
+
     encryption_enabled =
-        0 != my_strcasecmp(
-                 system_charset_info, "n",
-                 altered_table_def->options().value("encrypt_type").c_str());
+        0 != my_strcasecmp(system_charset_info, "n", str.c_str());
   }
 
   bool single_part_unique_index = false;
@@ -9857,6 +10133,127 @@ bool Sql_cmd_discard_import_tablespace::mysql_discard_or_import_tablespace(
 }
 
 /**
+ * Loads a table into a secondary engine if SECONDARY_LOAD, unloads from
+ * secondary engine if SECONDARY_UNLOAD.
+ *
+ * @param thd        Thread handler.
+ * @param table_list Table to load.
+ *
+ * @return True if error, false otherwise.
+ */
+bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
+    THD *thd, TABLE_LIST *table_list) {
+  Alter_table_prelocking_strategy alter_prelocking_strategy;
+
+  // Because SECONDARY_LOAD and SECONDARY_UNLOAD are standalone alter table
+  // actions, it should be impossible to set ALGORITHM and LOCK.
+  DBUG_ASSERT(m_alter_info->requested_lock ==
+              Alter_info::ALTER_TABLE_LOCK_DEFAULT);
+  DBUG_ASSERT(m_alter_info->requested_algorithm ==
+              Alter_info::ALTER_TABLE_ALGORITHM_DEFAULT);
+
+  // Load if SECONDARY_LOAD, unload if SECONDARY_UNLOAD
+  const bool is_load = m_alter_info->flags & Alter_info::ALTER_SECONDARY_LOAD;
+
+  // If load, open table with MDL_SHARED_NO_WRITE lock to allow concurrent reads
+  // but no concurrent writes while table is being loaded into the secondary
+  // engine. If unload, open with EXCLUSIVE lock to ensure that queries already
+  // offloaded to the secondary engine finish execution before unloading the
+  // table.
+  const enum_mdl_type mdl_lock_type =
+      is_load ? MDL_SHARED_NO_WRITE : MDL_EXCLUSIVE;
+  table_list->mdl_request.set_type(mdl_lock_type);
+
+  // Open base table.
+  table_list->required_type = dd::enum_table_type::BASE_TABLE;
+  if (open_and_lock_tables(thd, table_list, 0, &alter_prelocking_strategy))
+    return true;
+
+  // Allow the secondary engine to load all columns.
+  table_list->table->use_all_columns();
+
+  // SECONDARY_LOAD/SECONDARY_UNLOAD requires a secondary engine.
+  if (!table_list->table->s->has_secondary()) {
+    my_error(ER_SECONDARY_ENGINE, MYF(0), "No secondary engine defined");
+    return true;
+  }
+
+  // It should not have been possible to define a temporary table with a
+  // secondary engine.
+  DBUG_ASSERT(table_list->table->s->tmp_table == NO_TMP_TABLE);
+
+  handlerton *hton = table_list->table->s->db_type();
+  DBUG_ASSERT(hton->flags & HTON_SUPPORTS_ATOMIC_DDL &&
+              hton->flags & HTON_SUPPORTS_SECONDARY_ENGINE &&
+              hton->post_ddl != nullptr);
+
+  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  const dd::Table *table_def = nullptr;
+  if (thd->dd_client()->acquire(table_list->db, table_list->table_name,
+                                &table_def))
+    return true;
+
+  MDL_ticket *mdl_ticket = table_list->table->mdl_ticket;
+
+  // Under LOCK TABLES, upgrade to MDL_EXCLUSIVE, and downgrade back to
+  // MDL_SHARED_NO_READ_WRITE after all operations have completed.
+  const bool upgrade_lock =
+      thd->locked_tables_mode == LTM_LOCK_TABLES ||
+      thd->locked_tables_mode == LTM_PRELOCKED_UNDER_LOCK_TABLES;
+  auto downgrade_guard = create_scope_guard([mdl_ticket, upgrade_lock] {
+    if (upgrade_lock) mdl_ticket->downgrade_lock(MDL_SHARED_NO_READ_WRITE);
+  });
+  if (upgrade_lock &&
+      thd->mdl_context.upgrade_shared_lock(mdl_ticket, MDL_EXCLUSIVE,
+                                           thd->variables.lock_wait_timeout))
+    return true;
+
+  // Cleanup that must be done regardless of commit or rollback.
+  auto cleanup = [thd, hton]() {
+    hton->post_ddl(thd);
+    return thd->locked_tables_mode &&
+           thd->locked_tables_list.reopen_tables(thd);
+  };
+
+  // This scope guard is responsible for rolling back the transaction in case of
+  // any errors.
+  auto rollback_guard = create_scope_guard([thd, cleanup] {
+    trans_rollback_stmt(thd);
+    trans_rollback_implicit(thd);
+    cleanup();
+  });
+
+  // Initiate loading into or unloading from secondary engine.
+  const bool error =
+      is_load ? secondary_engine_load_table(thd, *table_list->table)
+              : secondary_engine_unload_table(
+                    thd, table_list->db, table_list->table_name, *table_def);
+  if (error) return true;
+
+  // Close base table. This requires an exclusive lock on the table.
+  if (thd->mdl_context.upgrade_shared_lock(mdl_ticket, MDL_EXCLUSIVE,
+                                           thd->variables.lock_wait_timeout))
+    return true;
+  close_all_tables_for_name(thd, table_list->table->s, false, nullptr);
+  table_list->table = nullptr;
+
+  // Write SECONDARY_LOAD/SECONDARY_UNLOAD statement to binlog.
+  if (write_bin_log(thd, false, thd->query().str, thd->query().length, true))
+    return true;
+
+  // Commit transaction if no errors.
+  if (trans_commit_stmt(thd) || trans_commit_implicit(thd)) return true;
+
+  // Transaction committed successfully, no rollback will be necessary.
+  rollback_guard.commit();
+
+  if (cleanup()) return true;
+
+  my_ok(thd);
+  return false;
+}
+
+/**
   Check if key is a candidate key, i.e. a unique index with no index
   fields partial, nullable or virtual generated.
 */
@@ -10042,7 +10439,7 @@ static bool has_index_def_changed(Alter_inplace_info *ha_alter_info,
     if (!(new_field->flags & BLOB_FLAG) &&
         (table_key->algorithm != HA_KEY_ALG_FULLTEXT)) {
       bool old_part_key_seg = (key_part->key_part_flag & HA_PART_KEY_SEG);
-      bool new_part_key_seg = (new_field->key_length != new_part->length);
+      bool new_part_key_seg = (new_field->key_length() != new_part->length);
 
       if (old_part_key_seg ^ new_part_key_seg) return true;
     }
@@ -10098,6 +10495,9 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
   Create_field *new_field;
   uint candidate_key_count = 0;
   Alter_info *alter_info = ha_alter_info->alter_info;
+  Prealloced_array<Field *, 1> gcols_with_unchanged_expr(PSI_INSTRUMENT_ME);
+  // Names of columns which default might have changed.
+  Prealloced_array<const char *, 1> cols_with_default_change(PSI_INSTRUMENT_ME);
   DBUG_ENTER("fill_alter_inplace_info");
 
   /* Allocate result buffers. */
@@ -10156,10 +10556,6 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
     ha_alter_info->handler_flags |= Alter_inplace_info::RECREATE_TABLE;
   if (alter_info->with_validation == Alter_info::ALTER_WITH_VALIDATION)
     ha_alter_info->handler_flags |= Alter_inplace_info::VALIDATE_VIRTUAL_COLUMN;
-  if (alter_info->flags & Alter_info::ALTER_SECONDARY_LOAD)
-    ha_alter_info->handler_flags |= Alter_inplace_info::SECONDARY_LOAD;
-  if (alter_info->flags & Alter_info::ALTER_SECONDARY_UNLOAD)
-    ha_alter_info->handler_flags |= Alter_inplace_info::SECONDARY_UNLOAD;
 
   /*
     Go through fields in old version of table and detect changes to them.
@@ -10242,10 +10638,12 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
         if (!field->gcol_expr_is_equal(new_field)) {
           if (field->is_virtual_gcol())
             ha_alter_info->handler_flags |=
-                Alter_inplace_info::ALTER_VIRTUAL_COLUMN_TYPE;
+                Alter_inplace_info::ALTER_VIRTUAL_GCOL_EXPR;
           else
             ha_alter_info->handler_flags |=
-                Alter_inplace_info::ALTER_STORED_COLUMN_TYPE;
+                Alter_inplace_info::ALTER_STORED_GCOL_EXPR;
+        } else {
+          gcols_with_unchanged_expr.push_back(field);
         }
       }
 
@@ -10311,18 +10709,11 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
             Alter_inplace_info::ALTER_COLUMN_COLUMN_FORMAT;
 
       /*
-        We don't have easy way to detect change in generation expression.
-        So we always assume that it has changed if generated column was
-        mentioned in CHANGE/MODIFY COLUMN clause of ALTER TABLE.
+        Columns which were mentioned in CHANGE/MODIFY COLUMN clause might
+        have changed their default, add their name to corresponding array.
       */
-      if (new_field->change) {
-        if (new_field->is_virtual_gcol())
-          ha_alter_info->handler_flags |=
-              Alter_inplace_info::ALTER_VIRTUAL_GCOL_EXPR;
-        else if (new_field->gcol_info)
-          ha_alter_info->handler_flags |=
-              Alter_inplace_info::ALTER_STORED_GCOL_EXPR;
-      }
+      if (new_field->change)
+        cols_with_default_change.push_back(new_field->change);
     } else {
       /*
         Field is not present in new version of table and therefore was dropped.
@@ -10360,6 +10751,50 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
                 (Alter_inplace_info::ADD_VIRTUAL_COLUMN |
                  Alter_inplace_info::ADD_STORED_BASE_COLUMN |
                  Alter_inplace_info::ADD_STORED_GENERATED_COLUMN));
+  }
+
+  /*
+    Add columns mentioned in SET/DROP DEFAULT clause to array of column names
+    which might have changed default.
+  */
+  for (const Alter_column *alter : alter_info->alter_list) {
+    if (alter->change_type() == Alter_column::Type::SET_DEFAULT ||
+        alter->change_type() == Alter_column::Type::DROP_DEFAULT) {
+      cols_with_default_change.push_back(alter->name);
+    }
+  }
+
+  /*
+    Detect cases when we have generated columns that depend on the DEFAULT
+    function on a column and column default might have changed.
+    Storage engine might be unable to do such operation inplace as indexes
+    or value of stored generated columns might become invalid and require
+    re-evaluation by SQL-layer.
+  */
+  for (Field *vfield : gcols_with_unchanged_expr) {
+    for (const char *col_name : cols_with_default_change) {
+      if (vfield->gcol_info->expr_item->walk(
+              &Item::check_gcol_depend_default_processor, Item::WALK_POSTFIX,
+              reinterpret_cast<uchar *>(const_cast<char *>(col_name)))) {
+        if (vfield->is_virtual_gcol())
+          ha_alter_info->handler_flags |=
+              Alter_inplace_info::VIRTUAL_GCOL_REEVAL;
+        else
+          ha_alter_info->handler_flags |=
+              Alter_inplace_info::STORED_GCOL_REEVAL;
+        break;
+      }
+    }
+    /*
+      Stop our search early if flags indicating re-evaluation of both
+      virtual and stored generated columns are already set.
+    */
+    if ((ha_alter_info->handler_flags &
+         (Alter_inplace_info::VIRTUAL_GCOL_REEVAL |
+          Alter_inplace_info::STORED_GCOL_REEVAL)) ==
+        (Alter_inplace_info::VIRTUAL_GCOL_REEVAL |
+         Alter_inplace_info::STORED_GCOL_REEVAL))
+      break;
   }
 
   /*
@@ -10674,6 +11109,13 @@ bool mysql_compare_tables(TABLE *table, Alter_info *alter_info,
     Field *field = *f_ptr;
     const Create_field *tmp_new_field = tmp_new_field_it++;
 
+    /* Check to see if both fields are alike. */
+    if (tmp_new_field->is_virtual_gcol() != field->is_virtual_gcol()) {
+      my_error(ER_UNSUPPORTED_ACTION_ON_GENERATED_COLUMN, MYF(0),
+               "Exchanging partitions for non-generated columns");
+      DBUG_RETURN(false);
+    }
+
     /* Check that NULL behavior is the same. */
     if ((tmp_new_field->flags & NOT_NULL_FLAG) !=
         (uint)(field->flags & NOT_NULL_FLAG))
@@ -10884,22 +11326,6 @@ static bool is_inplace_alter_impossible(TABLE *table,
   if (!table->s->mysql_version) DBUG_RETURN(true);
 
   /*
-    If default value is changed and the table includes or will include
-    generated columns that depend on the DEFAULT function, we cannot
-    do the operation inplace as indexes or value of stored generated
-    columns might become invalid.
-  */
-  if ((alter_info->flags & Alter_info::ALTER_CHANGE_COLUMN_DEFAULT) &&
-      table->has_gcol()) {
-    for (Field **vfield = table->vfield; *vfield; vfield++) {
-      if ((*vfield)->gcol_info->expr_item->walk(
-              &Item::check_gcol_depend_default_processor, Item::WALK_POSTFIX,
-              NULL))
-        DBUG_RETURN(true);
-    }
-  }
-
-  /*
     If we are changing the SRID modifier of a column, we must do a COPY.
     But not if we are changing to the NULL SRID. In that case, we can do it
     inplace (only metadata change, and no verification needed).
@@ -11025,7 +11451,8 @@ static bool collect_and_lock_fk_tables_for_complex_alter_table(
 
   if (alter_ctx->is_table_renamed()) {
     if (collect_fk_parents_for_all_fks(thd, old_table_def, old_hton,
-                                       &mdl_requests, fk_invalidator))
+                                       MDL_EXCLUSIVE, &mdl_requests,
+                                       fk_invalidator))
       return true;
   } else {
     if (collect_fk_parents_for_dropped_fks(thd, alter_info, old_table_def,
@@ -11034,8 +11461,23 @@ static bool collect_and_lock_fk_tables_for_complex_alter_table(
       return true;
   }
 
-  if (collect_fk_children(thd, old_table_def, MDL_EXCLUSIVE, &mdl_requests))
-    return true;
+  if (new_hton != old_hton) {
+    /*
+      By changing table's storage engine we might be introducing parent
+      table for previously orphan foreign keys in the new SE. We need
+      to lock child tables of such orphan foreign keys. OTOH it is safe
+      to assume that if SE is changed table can't be parent in any
+      foreign keys in old SE.
+    */
+    DBUG_ASSERT(old_table_def->foreign_key_parents().size() == 0);
+
+    if (collect_fk_children(thd, table_list->db, table_list->table_name,
+                            new_hton, MDL_EXCLUSIVE, &mdl_requests))
+      return true;
+  } else {
+    if (collect_fk_children(thd, old_table_def, MDL_EXCLUSIVE, &mdl_requests))
+      return true;
+  }
 
   if (alter_ctx->is_table_renamed()) {
     if (collect_fk_children(thd, alter_ctx->new_db, alter_ctx->new_alias,
@@ -11060,7 +11502,6 @@ static bool collect_and_lock_fk_tables_for_complex_alter_table(
   @param  alter_ctx       ALTER TABLE operation context.
   @param  alter_info      Alter_info describing ALTER TABLE, specifically
                           containing informaton about columns being renamed.
-  @param  old_hton        Table's old SE.
   @param  new_hton        Table's new SE.
   @param  fk_invalidator  Object keeping track of which dd::Table
                           objects to invalidate. Used to filter out
@@ -11071,7 +11512,7 @@ static bool collect_and_lock_fk_tables_for_complex_alter_table(
 */
 static bool adjust_fks_for_complex_alter_table(
     THD *thd, TABLE_LIST *table_list, Alter_table_ctx *alter_ctx,
-    Alter_info *alter_info, handlerton *old_hton, handlerton *new_hton,
+    Alter_info *alter_info, handlerton *new_hton,
     const Foreign_key_parents_invalidator *fk_invalidator) {
   if (!(new_hton->flags & HTON_SUPPORTS_FOREIGN_KEYS)) return false;
 
@@ -11083,8 +11524,15 @@ static bool adjust_fks_for_complex_alter_table(
   DBUG_ASSERT(new_table != nullptr);
 
   if (adjust_fk_children_after_parent_def_change(
-          thd, table_list->db, table_list->table_name, old_hton, new_table,
-          alter_info))
+          thd,
+          /*
+            For consistency with check_fk_children_after_parent_def_change(),
+            allow charset discrepancies between child and parent columns in
+            FOREIGN_KEY_CHECKS=0 mode.
+          */
+          !(thd->variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS),
+          table_list->db, table_list->table_name, new_hton, new_table,
+          alter_info, true))
     return true;
 
   if (alter_ctx->is_table_renamed()) {
@@ -11290,53 +11738,42 @@ static bool table_is_empty(TABLE *table, bool *is_empty) {
 }
 
 /**
- * Handles table alterations related to secondary engine.
+ * Removes secondary engine definition of a table if SECONDARY_ENGINE = NULL.
  *
- * Loads a table into its secondary engine if SECONDARY_LOAD, or unloads a table
- * from its secondary engine if SECONDARY_UNLOAD or SECONDARY_ENGINE = NULL.
+ * Will also attempt to unload the table from its existing secondary engine.
  *
  * @param thd               Thread handler.
  * @param table             Table opened in primary storage engine.
- * @param alter_info        Alter table information.
  * @param create_info       Information from the parsing phase about new
  *                          table properties.
- * @param table_def         Table definition for the original table.
- * @param altered_table_def Table definition for the new version of the table.
+ * @param altered_table_def Table definition of the table.
  *
  * @return True if error, false otherwise.
  */
-static bool alter_secondary_engine(THD *thd, const TABLE_LIST &table,
-                                   const Alter_info &alter_info,
-                                   const HA_CREATE_INFO &create_info,
-                                   const dd::Table *table_def,
-                                   dd::Table *altered_table_def) {
+static bool remove_secondary_engine(THD *thd, const TABLE_LIST &table,
+                                    const HA_CREATE_INFO &create_info,
+                                    dd::Table *altered_table_def) {
   // Nothing to do if no secondary engine defined for the table.
   if (table.table->s->secondary_engine.str == nullptr) return false;
 
-  // Attempt to load table into secondary engine if SECONDARY_LOAD.
-  if (alter_info.flags & Alter_info::ALTER_SECONDARY_LOAD)
-    return secondary_engine_load_table(thd, *table.table, alter_info);
-
-  // Attempt to unload table if SECONDARY_UNLOAD or SECONDARY_ENGINE = NULL.
-  const bool is_unload = alter_info.flags & Alter_info::ALTER_SECONDARY_UNLOAD;
+  // Check if SECONDARY_ENGINE = NULL has been set in ALTER TABLE.
   const bool is_null =
       create_info.used_fields & HA_CREATE_USED_SECONDARY_ENGINE &&
       create_info.secondary_engine.str == nullptr;
 
-  // Nothing to do if not unloading.
-  if (!is_unload && !is_null) return false;
+  if (!is_null) return false;
 
-  // The metadata lock on the table must be upgraded to at least MDL_EXCLUSIVE
-  // to ensure it's not used by other clients at the time it is unloaded from
-  // the secondary engine.
-  MDL_ticket *mdl_ticket = table.table->mdl_ticket;
-  if (thd->mdl_context.upgrade_shared_lock(mdl_ticket, MDL_EXCLUSIVE,
+  if (thd->mdl_context.upgrade_shared_lock(table.table->mdl_ticket,
+                                           MDL_EXCLUSIVE,
                                            thd->variables.lock_wait_timeout))
     return true;
-  const bool err = secondary_engine_unload_table(thd, table.db,
-                                                 table.table_name, *table_def);
-  if (is_null && !err) altered_table_def->options().remove("secondary_engine");
-  return err;
+
+  if (secondary_engine_unload_table(thd, table.db, table.table_name,
+                                    *altered_table_def))
+    return true;
+
+  altered_table_def->options().remove("secondary_engine");
+  return false;
 }
 
 /**
@@ -11793,7 +12230,7 @@ static bool mysql_inplace_alter_table(
               (db_type->flags & HTON_SUPPORTS_ATOMIC_DDL));
 
   if (adjust_fks_for_complex_alter_table(thd, table_list, alter_ctx, alter_info,
-                                         db_type, db_type, fk_invalidator))
+                                         db_type, fk_invalidator))
     goto cleanup2;
 
   THD_STAGE_INFO(thd, stage_end);
@@ -12337,22 +12774,22 @@ static bool transfer_preexisting_foreign_keys(
 }
 
 /// Set column default, drop default or rename column name.
-static bool alter_column_name_or_default(Alter_info *alter_info,
-                                         Create_field *def) {
+static bool alter_column_name_or_default(
+    Prealloced_array<const Alter_column *, 1> *alter_list, Create_field *def) {
   DBUG_ENTER("alter_column_name_or_default");
 
   // Check if ALTER TABLE has requested of such a change.
   size_t i = 0;
   const Alter_column *alter = nullptr;
-  while (i < alter_info->alter_list.size()) {
-    alter = alter_info->alter_list[i];
+  while (i < alter_list->size()) {
+    alter = (*alter_list)[i];
     if (!my_strcasecmp(system_charset_info, def->field_name, alter->name))
       break;
     i++;
   }
 
   // Nothing changed.
-  if (i == alter_info->alter_list.size()) DBUG_RETURN(false);
+  if (i == alter_list->size()) DBUG_RETURN(false);
 
   // Setup the field.
   switch (alter->change_type()) {
@@ -12414,7 +12851,7 @@ static bool alter_column_name_or_default(Alter_info *alter_info,
   }
 
   // Remove the element from to be altered column list.
-  alter_info->alter_list.erase(i);
+  alter_list->erase(i);
 
   DBUG_RETURN(false);
 }
@@ -12488,6 +12925,15 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
   Prealloced_array<const Alter_index_visibility *, 1> index_visibility_list(
       PSI_INSTRUMENT_ME, alter_info->alter_index_visibility_list.cbegin(),
       alter_info->alter_index_visibility_list.cend());
+
+  /*
+    Alter_info::alter_list is used by fill_alter_inplace_info() call as well.
+    So this function works on its copy rather than original list.
+  */
+  Prealloced_array<const Alter_column *, 1> alter_list(
+      PSI_INSTRUMENT_ME, alter_info->alter_list.cbegin(),
+      alter_info->alter_list.cend());
+
   List_iterator<Create_field> def_it(alter_info->create_list);
   List_iterator<Create_field> find_it(new_create_list);
   List_iterator<Create_field> field_it(new_create_list);
@@ -12565,6 +13011,8 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
     }
     if (def) {  // Field is changed
       def->field = field;
+      def->charset = get_sql_field_charset(def, create_info);
+
       if (field->stored_in_db != def->stored_in_db) {
         my_error(ER_UNSUPPORTED_ACTION_ON_GENERATED_COLUMN, MYF(0),
                  "Changing the STORED status");
@@ -12623,7 +13071,7 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
       new_create_list.push_back(def);
 
       // Change the column default OR rename just the column name.
-      if (alter_column_name_or_default(alter_info, def)) DBUG_RETURN(true);
+      if (alter_column_name_or_default(&alter_list, def)) DBUG_RETURN(true);
     }
   }
   def_it.rewind();
@@ -12728,8 +13176,8 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
       }
     }
   }
-  if (alter_info->alter_list.size() > 0) {
-    my_error(ER_BAD_FIELD_ERROR, MYF(0), alter_info->alter_list[0]->name,
+  if (alter_list.size() > 0) {
+    my_error(ER_BAD_FIELD_ERROR, MYF(0), alter_list[0]->name,
              table->s->table_name.str);
     DBUG_RETURN(true);
   }
@@ -12811,11 +13259,11 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
             (key_info->flags & HA_SPATIAL) ||
             (cfield->field->field_length == key_part_length &&
              key_part->field->type() != MYSQL_TYPE_BLOB) ||
-            (cfield->length &&
+            (cfield->max_display_width_in_codepoints() &&
              (((cfield->sql_type >= MYSQL_TYPE_TINY_BLOB &&
                 cfield->sql_type <= MYSQL_TYPE_BLOB)
                    ? blob_length_by_type(cfield->sql_type)
-                   : cfield->length) <
+                   : cfield->max_display_width_in_codepoints()) <
               key_part_length / key_part->field->charset()->mbmaxlen)))
           key_part_length = 0;  // Use whole field
       }
@@ -13377,8 +13825,8 @@ bool collect_and_lock_fk_tables_for_rename_table(
                           &mdl_requests) ||
       collect_fk_children(thd, new_db, new_table_name, hton, MDL_EXCLUSIVE,
                           &mdl_requests) ||
-      collect_fk_parents_for_all_fks(thd, table_def, hton, &mdl_requests,
-                                     fk_invalidator) ||
+      collect_fk_parents_for_all_fks(thd, table_def, hton, MDL_EXCLUSIVE,
+                                     &mdl_requests, fk_invalidator) ||
       collect_fk_names_for_rename_table(thd, db, table_name, table_def, new_db,
                                         new_table_name, &mdl_requests))
     return true;
@@ -13493,8 +13941,8 @@ static bool simple_rename_or_index_change(
       else {
         DBUG_ASSERT(tab_obj != nullptr);
 
-        tab_obj->options().set_uint32(
-            "keys_disabled", (keys_onoff == Alter_info::DISABLE ? 1 : 0));
+        tab_obj->options().set("keys_disabled",
+                               (keys_onoff == Alter_info::DISABLE ? 1 : 0));
 
         // Update the changes
         bool result = thd->dd_client()->update(tab_obj);
@@ -13997,9 +14445,9 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     if (validate_tablespace_name_length(create_info->tablespace))
       DBUG_RETURN(true);
 
-    if (!thd->make_lex_string(&table_list->target_tablespace_name,
-                              create_info->tablespace,
-                              strlen(create_info->tablespace), false)) {
+    if (lex_string_strmake(thd->mem_root, &table_list->target_tablespace_name,
+                           create_info->tablespace,
+                           strlen(create_info->tablespace))) {
       my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATALERROR));
       DBUG_RETURN(true);
     }
@@ -14084,7 +14532,8 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       // Check the tablespace/engine combination.
       DBUG_ASSERT(target_handlerton);
       if (target_tablespace != nullptr &&
-          validate_tablespace_name(false, target_tablespace, target_handlerton))
+          validate_tablespace_name(TS_CMD_NOT_DEFINED, target_tablespace,
+                                   target_handlerton))
         DBUG_RETURN(true);
     }
 
@@ -14310,19 +14759,47 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       DBUG_RETURN(true);
 
     /*
-      Acquire SU locks on children tables so we can access their
-      definition while checking if this ALTER TABLE will break
-      any FKs in them.
+      Acquire SU locks on parent and child tables so we can access
+      their definition while checking if this ALTER TABLE will break
+      any FKs involving them.
 
       TODO: Refine set of ALTER TABLE commands for which we do this.
             This is obviously necessary for ADD/DROP KEY and COLUMN
-            RENAMES. But are there any other operations which might
-            affect indexes somehow?
+            modifications. But are there any other operations which
+            might affect indexes somehow?
     */
     if (!is_simple_rename_or_index_change(alter_info)) {
-      if (collect_fk_children(thd, old_table_def, MDL_SHARED_UPGRADABLE,
-                              &mdl_requests))
+      if (collect_fk_parents_for_all_fks(thd, old_table_def, nullptr,
+                                         MDL_SHARED_UPGRADABLE, &mdl_requests,
+                                         nullptr))
         DBUG_RETURN(true);
+
+      if (create_info->db_type != table->s->db_type()) {
+        /*
+          By changing table's storage engine we might be introducing parent
+          table for previously orphan foreign keys in the new SE. We need
+          to lock child tables of such orphan foreign keys. OTOH it is safe
+          to assume that if SE is changed table can't be parent in any
+          foreign keys in old SE.
+
+          Note that here and in other similar places we assume that ALTER
+          TABLE which combines change of SE and renaming of table is executed
+          by changing SE first and then performing rename (this is closer to
+          ALTER TABLE real implementation). Because of this such ALTER TABLEs
+          need to pick up orphan foreign keys associated with old table names
+          as well. Thus we use old table name to get list of orphans.
+        */
+        DBUG_ASSERT(old_table_def->foreign_key_parents().size() == 0);
+
+        if (collect_fk_children(thd, table_list->db, table_list->table_name,
+                                create_info->db_type, MDL_SHARED_UPGRADABLE,
+                                &mdl_requests))
+          DBUG_RETURN(true);
+      } else {
+        if (collect_fk_children(thd, old_table_def, MDL_SHARED_UPGRADABLE,
+                                &mdl_requests))
+          DBUG_RETURN(true);
+      }
 
       if (alter_ctx.is_table_renamed() &&
           collect_fk_children(thd, alter_ctx.new_db, alter_ctx.new_alias,
@@ -14379,6 +14856,9 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       some of previously orphan FKs have referential actions which update
       child table.
 
+      The same should be done when we are going to add parent table to
+      previously orphan foreign keys by changing table storage engine.
+
       In theory, we can reduce chance of MDL deadlocks by also checking at
       this stage that all child and parent tables for FKs in which this
       table participates are locked for WRITE (as we will have to acquire
@@ -14387,27 +14867,37 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       TABLE RENAME under LOCK TABLES and are unaware of it.
     */
 
-    if ((thd->locked_tables_mode == LTM_LOCK_TABLES ||
-         thd->locked_tables_mode == LTM_PRELOCKED_UNDER_LOCK_TABLES) &&
-        alter_ctx.is_table_renamed()) {
+    if (thd->locked_tables_mode == LTM_LOCK_TABLES ||
+        thd->locked_tables_mode == LTM_PRELOCKED_UNDER_LOCK_TABLES) {
       MDL_request_list orphans_mdl_requests;
-      if (collect_fk_children(thd, alter_ctx.new_db, alter_ctx.new_alias,
+
+      if (create_info->db_type != table->s->db_type()) {
+        DBUG_ASSERT(old_table_def->foreign_key_parents().size() == 0);
+        if (collect_fk_children(thd, table_list->db, table_list->table_name,
+                                create_info->db_type, MDL_EXCLUSIVE,
+                                &orphans_mdl_requests))
+          DBUG_RETURN(true);
+      }
+      if (alter_ctx.is_table_renamed() &&
+          collect_fk_children(thd, alter_ctx.new_db, alter_ctx.new_alias,
                               create_info->db_type, MDL_EXCLUSIVE,
                               &orphans_mdl_requests))
         DBUG_RETURN(true);
 
-      MDL_request_list::Iterator it(orphans_mdl_requests);
-      MDL_request *mdl_request;
+      if (!orphans_mdl_requests.is_empty()) {
+        MDL_request_list::Iterator it(orphans_mdl_requests);
+        MDL_request *mdl_request;
 
-      while ((mdl_request = it++) != nullptr) {
-        if (mdl_request->key.mdl_namespace() != MDL_key::TABLE) continue;
+        while ((mdl_request = it++) != nullptr) {
+          if (mdl_request->key.mdl_namespace() != MDL_key::TABLE) continue;
 
-        if (!thd->mdl_context.owns_equal_or_stronger_lock(
-                MDL_key::TABLE, mdl_request->key.db_name(),
-                mdl_request->key.name(), MDL_SHARED_NO_READ_WRITE)) {
-          my_error(ER_TABLE_NOT_LOCKED_FOR_WRITE, MYF(0),
-                   mdl_request->key.name());
-          DBUG_RETURN(true);
+          if (!thd->mdl_context.owns_equal_or_stronger_lock(
+                  MDL_key::TABLE, mdl_request->key.db_name(),
+                  mdl_request->key.name(), MDL_SHARED_NO_READ_WRITE)) {
+            my_error(ER_TABLE_NOT_LOCKED_FOR_WRITE, MYF(0),
+                     mdl_request->key.name());
+            DBUG_RETURN(true);
+          }
         }
       }
     }
@@ -14745,8 +15235,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     DBUG_ASSERT(table_def);
   }
 
-  if (alter_secondary_engine(thd, *table_list, *alter_info, *create_info,
-                             old_table_def, table_def))
+  if (remove_secondary_engine(thd, *table_list, *create_info, table_def))
     goto err_new_table_cleanup;
 
   if (  // Tablespace specified in ALTER
@@ -14789,15 +15278,39 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     before starting potentially expensive main phases of COPYing
     or INPLACE ALTER TABLE.
   */
-  if (!is_tmp_table &&
-      (check_fk_children_after_parent_def_change(
-           thd, table_list->db, table_list->table_name, new_db_type,
-           old_table_def, table_def, alter_info) ||
-       (alter_ctx.is_table_renamed() &&
-        check_fk_children_after_parent_def_change(thd, alter_ctx.new_db,
-                                                  alter_ctx.new_alias,
-                                                  new_db_type, table_def))))
-    goto err_new_table_cleanup;
+  if (!is_tmp_table) {
+    if (new_db_type != old_db_type) {
+      /*
+        By changing table's storage engine we might be introducing parent
+        table for previously orphan foreign keys in the new SE. We need
+        to lock child tables of such orphan foreign keys. OTOH it is safe
+        to assume that if SE is changed table can't be parent in any
+        foreign keys in old SE.
+
+        We assume that ALTER TABLE which combines change of SE and renaming
+        of table is executed by changing SE first and then performing rename
+        (this is closer to ALTER TABLE real implementation). So such ALTER
+        TABLEs  need to pick up orphan foreign keys associated with old table
+        names as well. Thus we use old table name in the below check.
+      */
+      DBUG_ASSERT(old_table_def->foreign_key_parents().size() == 0);
+
+      if (check_fk_children_after_parent_def_change(thd, table_list->db,
+                                                    table_list->table_name,
+                                                    new_db_type, table_def))
+        goto err_new_table_cleanup;
+    } else {
+      if (check_fk_children_after_parent_def_change(
+              thd, table_list->db, table_list->table_name, new_db_type,
+              old_table_def, table_def, alter_info))
+        goto err_new_table_cleanup;
+    }
+
+    if (alter_ctx.is_table_renamed() &&
+        check_fk_children_after_parent_def_change(
+            thd, alter_ctx.new_db, alter_ctx.new_alias, new_db_type, table_def))
+      goto err_new_table_cleanup;
+  }
 
   if (alter_info->requested_algorithm !=
       Alter_info::ALTER_TABLE_ALGORITHM_COPY) {
@@ -15428,7 +15941,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
            (alter_ctx.is_table_renamed() ? 0 : NO_FK_RENAME))) ||
       ((new_db_type->flags & HTON_SUPPORTS_FOREIGN_KEYS) &&
        adjust_fks_for_complex_alter_table(thd, table_list, &alter_ctx,
-                                          alter_info, old_db_type, new_db_type,
+                                          alter_info, new_db_type,
                                           &fk_invalidator)) ||
       /*
         Try commit changes if ALTER TABLE as whole is not atomic and we have
@@ -16355,9 +16868,9 @@ static bool check_engine(THD *thd, const char *db_name, const char *table_name,
     DBUG_RETURN(true);
   }
 
-  // InnoDB is the only supported engine for a table with a secondary engine.
+  // The storage engine must support secondary engines.
   if (create_info->used_fields & HA_CREATE_USED_SECONDARY_ENGINE &&
-      (*new_engine)->db_type != DB_TYPE_INNODB) {
+      !((*new_engine)->flags & HTON_SUPPORTS_SECONDARY_ENGINE)) {
     my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "SECONDARY_ENGINE");
     DBUG_RETURN(true);
   }

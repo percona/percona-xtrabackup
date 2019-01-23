@@ -33,6 +33,8 @@
 #include <sys/types.h>
 #include <time.h>
 #include <algorithm>
+#include <bitset>
+#include <functional>
 #include <random>  // std::mt19937
 #include <set>
 #include <string>
@@ -52,12 +54,10 @@
 #include "my_sys.h"
 #include "my_thread_local.h"  // my_errno
 #include "mysql/components/services/psi_table_bits.h"
-#include "sql/dd/object_id.h"   // dd::Object_id
-#include "sql/dd/properties.h"  // dd::Properties
+#include "sql/dd/object_id.h"  // dd::Object_id
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/object_table.h"  // dd::Object_table
 #include "sql/discrete_interval.h"      // Discrete_interval
-#include "sql/json_dom.h"
 #include "sql/key.h"
 #include "sql/sql_const.h"       // SHOW_COMP_OPTION
 #include "sql/sql_list.h"        // SQL_I_List
@@ -69,6 +69,7 @@ class Alter_info;
 class Create_field;
 class Field;
 class Item;
+class Json_dom;
 class Partition_handler;
 class Plugin_table;
 class Plugin_tablespace;
@@ -98,6 +99,7 @@ typedef struct st_xarecover_txn XA_recover_txn;
 struct MDL_key;
 
 namespace dd {
+enum class enum_column_types;
 class Table;
 class Tablespace;
 struct sdi_key;
@@ -472,6 +474,16 @@ enum enum_alter_inplace_result {
 */
 #define HA_SUPPORTS_DEFAULT_EXPRESSION (1LL << 51)
 
+/**
+  Handlers with this flag set do not support UPDATE operations.
+*/
+#define HA_UPDATE_NOT_SUPPORTED (1LL << 52)
+
+/**
+  Handlers with this flag set do not support DELETE operations.
+*/
+#define HA_DELETE_NOT_SUPPORTED (1LL << 53)
+
 /*
   Bits in index_flags(index_number) for what you can do with index.
   If you do not implement indexes, just return zero here.
@@ -758,9 +770,11 @@ enum ts_command_type {
   ALTER_LOGFILE_GROUP = 3,
   DROP_TABLESPACE = 4,
   DROP_LOGFILE_GROUP = 5,
-  // FUTURE: Remove these as they are never used, execpt as case labels in SE
   CHANGE_FILE_TABLESPACE = 6,
-  ALTER_ACCESS_MODE_TABLESPACE = 7
+  ALTER_ACCESS_MODE_TABLESPACE = 7,
+  CREATE_UNDO_TABLESPACE = 8,
+  ALTER_UNDO_TABLESPACE = 9,
+  DROP_UNDO_TABLESPACE = 10
 };
 
 enum ts_alter_tablespace_type {
@@ -768,7 +782,9 @@ enum ts_alter_tablespace_type {
   ALTER_TABLESPACE_ADD_FILE = 1,
   ALTER_TABLESPACE_DROP_FILE = 2,
   ALTER_TABLESPACE_RENAME = 3,
-  ALTER_TABLESPACE_OPTIONS = 4
+  ALTER_TABLESPACE_OPTIONS = 4,
+  ALTER_UNDO_TABLESPACE_SET_ACTIVE = 5,
+  ALTER_UNDO_TABLESPACE_SET_INACTIVE = 6
 };
 
 /**
@@ -849,10 +865,28 @@ enum enum_schema_tables {
 enum ha_stat_type { HA_ENGINE_STATUS, HA_ENGINE_LOGS, HA_ENGINE_MUTEX };
 enum ha_notification_type : int { HA_NOTIFY_PRE_EVENT, HA_NOTIFY_POST_EVENT };
 
+/** Clone start operation mode */
+enum Ha_clone_mode {
+  /** Start a new clone operation */
+  HA_CLONE_MODE_START,
+
+  /** Re-start a clone operation after failure */
+  HA_CLONE_MODE_RESTART,
+
+  /** Add a new task to a running clone operation */
+  HA_CLONE_MODE_ADD_TASK,
+
+  /** Get version for transfer data format */
+  HA_CLONE_MODE_VERSION,
+
+  /** Max value for clone mode */
+  HA_CLONE_MODE_MAX
+};
+
 /** Clone operation types. */
-enum Ha_clone_type {
+enum Ha_clone_type : size_t {
   /** Caller must block all write operation to the SE. */
-  HA_CLONE_BLOCKING = 1,
+  HA_CLONE_BLOCKING,
 
   /** For transactional SE, archive redo to support concurrent dml */
   HA_CLONE_REDO,
@@ -862,8 +896,19 @@ enum Ha_clone_type {
 
   /** For transactional SE, use both page tracking and redo to optimize
   clone with concurrent dml. Currently supported by Innodb. */
-  HA_CLONE_HYBRID
+  HA_CLONE_HYBRID,
+
+  /** SE supports multiple threads for clone */
+  HA_CLONE_MULTI_TASK,
+
+  /** SE supports restarting clone after network failure */
+  HA_CLONE_RESTART,
+
+  /** Maximum value of clone type */
+  HA_CLONE_TYPE_MAX
 };
+
+using Ha_clone_flagset = std::bitset<HA_CLONE_TYPE_MAX>;
 
 /** File reference for clone */
 struct Ha_clone_file {
@@ -889,6 +934,18 @@ struct Ha_clone_file {
 
 /* Abstract callback interface to stream data back to the caller. */
 class Ha_clone_cbk {
+ protected:
+  /** Constructor to initialize members. */
+  Ha_clone_cbk()
+      : m_hton(),
+        m_loc_idx(),
+        m_client_buff_size(),
+        m_data_desc(),
+        m_desc_len(),
+        m_src_name(),
+        m_dest_name(),
+        m_flag() {}
+
  public:
   /** Callback providing data from current position of a
   file descriptor of specific length.
@@ -941,7 +998,7 @@ class Ha_clone_cbk {
   data transferred by the callbacks.
   @param[in]  desc  serialized data descriptor
   @param[in]  len   length of the descriptor byte stream  */
-  void set_data_desc(uchar *desc, uint len) {
+  void set_data_desc(const uchar *desc, uint len) {
     m_data_desc = desc;
     m_desc_len = len;
   }
@@ -950,7 +1007,7 @@ class Ha_clone_cbk {
   data transferred by the callbacks.
   @param[out]  lenp  length of the descriptor byte stream
   @return pointer to the serialized data descriptor */
-  uchar *get_data_desc(uint *lenp) {
+  const uchar *get_data_desc(uint *lenp) {
     if (lenp != nullptr) {
       *lenp = m_desc_len;
     }
@@ -977,7 +1034,7 @@ class Ha_clone_cbk {
   /** Clear all flags set by SE */
   void clear_flags() { m_flag = 0; }
 
-  /* Mark that ACK is needed for the data transfer before returning
+  /** Mark that ACK is needed for the data transfer before returning
   from callback. Set by SE. */
   void set_ack() { m_flag |= HA_CLONE_ACK; }
 
@@ -985,7 +1042,7 @@ class Ha_clone_cbk {
   @return true if ACK is needed */
   bool is_ack_needed() { return (m_flag & HA_CLONE_ACK); }
 
-  /* Mark that the file descriptor is opened for read/write
+  /** Mark that the file descriptor is opened for read/write
   with OS buffer cache. For O_DIRECT, the flag is not set. */
   void set_os_buffer_cache() { m_flag |= HA_CLONE_FILE_CACHE; }
 
@@ -994,6 +1051,12 @@ class Ha_clone_cbk {
   if SE is using O_DIRECT. This improves data copy performance.
   @return true if O_DIRECT is not used */
   bool is_os_buffer_cache() { return (m_flag & HA_CLONE_FILE_CACHE); }
+
+  /** Mark that the file can be transferred with zero copy. */
+  void set_zero_copy() { m_flag |= HA_CLONE_ZERO_COPY; }
+
+  /** Check if zero copy optimization is suggested. */
+  bool is_zero_copy() { return (m_flag & HA_CLONE_ZERO_COPY); }
 
  private:
   /** Handlerton for the SE */
@@ -1006,7 +1069,7 @@ class Ha_clone_cbk {
   uint m_client_buff_size;
 
   /** SE's Serialized data descriptor */
-  uchar *m_data_desc;
+  const uchar *m_data_desc;
   uint m_desc_len;
 
   /** Current source file name */
@@ -1023,6 +1086,30 @@ class Ha_clone_cbk {
 
   /** Data file is opened for read/write with OS buffer cache. */
   const int HA_CLONE_FILE_CACHE = 0x02;
+
+  /** Data file can be transferred with zero copy. */
+  const int HA_CLONE_ZERO_COPY = 0x04;
+};
+
+/**
+  Column type description for foreign key columns compatibility check.
+
+  Contains subset of information from dd::Column class. It is inconvenient
+  to use dd::Column class directly for such checks because it requires valid
+  dd::Table object and in some cases we want to produce Ha_fk_column_type
+  right from column description in Create_field format.
+*/
+struct Ha_fk_column_type {
+  dd::enum_column_types type;
+  /*
+    Note that both dd::Column::char_length() and length here are really
+    in bytes.
+  */
+  size_t char_length;
+  const CHARSET_INFO *field_charset;
+  size_t elements_count;
+  uint numeric_scale;
+  bool is_unsigned;
 };
 
 /* handlerton methods */
@@ -1183,14 +1270,14 @@ typedef uint (*partition_flags_t)();
   This function will ask the relevant SE whether the submitted tablespace
   name is valid.
 
-  @param tablespace_ddl     Purpose of usage - is this tablespace DDL?
+  @param ts_cmd             Purpose of usage - is this tablespace DDL?
   @param tablespace_name    Name of the tablespace.
 
   @return Tablespace name validity.
     @retval == false: The tablespace name is invalid.
     @retval == true:  The tablespace name is valid.
 */
-typedef bool (*is_valid_tablespace_name_t)(bool tablespace_ddl,
+typedef bool (*is_valid_tablespace_name_t)(ts_command_type ts_cmd,
                                            const char *tablespace_name);
 
 /**
@@ -1231,6 +1318,12 @@ typedef int (*alter_tablespace_t)(handlerton *hton, THD *thd,
                                   st_alter_tablespace *ts_info,
                                   const dd::Tablespace *old_ts_def,
                                   dd::Tablespace *new_ts_def);
+
+/**
+  SE interface for getting tablespace extension.
+  @return Extension of tablespace datafile name.
+*/
+typedef const char *(*get_tablespace_filename_ext_t)();
 
 /**
   Get the tablespace data from SE and insert it into Data dictionary
@@ -1496,10 +1589,10 @@ typedef void (*replace_native_transaction_in_thd_t)(THD *thd, void *new_trx_arg,
 
 /** Mode for initializing the data dictionary. */
 enum dict_init_mode_t {
-  DICT_INIT_CREATE_FILES,      //< Create all required SE files
-  DICT_INIT_CHECK_FILES,       //< Verify existence of expected files
-  DICT_INIT_UPGRADE_57_FILES,  //< Used for upgrade from mysql-5.7
-  DICT_INIT_IGNORE_FILES       //< Don't care about files at all
+  DICT_INIT_CREATE_FILES,      ///< Create all required SE files
+  DICT_INIT_CHECK_FILES,       ///< Verify existence of expected files
+  DICT_INIT_UPGRADE_57_FILES,  ///< Used for upgrade from mysql-5.7
+  DICT_INIT_IGNORE_FILES       ///< Don't care about files at all
 };
 
 /**
@@ -1540,8 +1633,6 @@ typedef bool (*ddse_dict_init_t)(
 
 /**
   Initialize the set of hard coded DD table ids.
-
-  @param dd_table_id  SE_private_id of DD table..
 */
 typedef void (*dict_register_dd_table_id_t)(dd::Object_id hard_coded_tables);
 
@@ -1552,7 +1643,7 @@ typedef void (*dict_register_dd_table_id_t)(dd::Object_id hard_coded_tables);
   dictionary cache is in sync with the global DD.
 
   @param   schema_name    Schema name.
-  @param   table name     Table name.
+  @param   table_name     Table name.
  */
 
 typedef void (*dict_cache_reset_t)(const char *schema_name,
@@ -1568,9 +1659,9 @@ typedef void (*dict_cache_reset_tables_and_tablespaces_t)();
 
 /** Mode for data dictionary recovery. */
 enum dict_recovery_mode_t {
-  DICT_RECOVERY_INITIALIZE_SERVER,       //< First start of a new server
-  DICT_RECOVERY_INITIALIZE_TABLESPACES,  //< First start, create tablespaces
-  DICT_RECOVERY_RESTART_SERVER           //< Restart of an existing server
+  DICT_RECOVERY_INITIALIZE_SERVER,       ///< First start of a new server
+  DICT_RECOVERY_INITIALIZE_TABLESPACES,  ///< First start, create tablespaces
+  DICT_RECOVERY_RESTART_SERVER           ///< Restart of an existing server
 };
 
 /**
@@ -1590,6 +1681,25 @@ enum dict_recovery_mode_t {
 
 typedef bool (*dict_recover_t)(dict_recovery_mode_t dict_recovery_mode,
                                uint version);
+
+/**
+  Get the server version id stored in the header of the
+  dictionary tablespace.
+
+  @param [out] version  Version number from the DD
+                        tablespace header.
+
+  @retval Operation outcome, false if no error, otherwise true.
+*/
+typedef bool (*dict_get_server_version_t)(uint *version);
+
+/**
+  Store the current server version number into the
+  header of the dictionary tablespace.
+
+  @retval Operation outcome, false if no error, otherwise true.
+*/
+typedef bool (*dict_set_server_version_t)();
 
 /**
   Notify/get permission from storage engine before acquisition or after
@@ -1735,26 +1845,105 @@ typedef bool (*get_tablespace_statistics_t)(
     const dd::Properties &ts_se_private_data, ha_tablespace_statistics *stats);
 
 /* Database physical clone interfaces */
-using Clone_begin_t = int (*)(handlerton *hton, THD *thd, uchar *&loc,
-                              uint &loc_len, Ha_clone_type type);
 
-using Clone_copy_t = int (*)(handlerton *hton, THD *thd, uchar *loc,
-                             Ha_clone_cbk *desc);
+/** Get capability flags for clone operation
+@param[out]     flags   capability flag */
+using Clone_capability_t = void (*)(Ha_clone_flagset &flags);
 
-using Clone_end_t = int (*)(handlerton *hton, THD *thd, uchar *loc);
+/** Begin copy from source database
+@param[in]      hton    handlerton for SE
+@param[in]      thd     server thread handle
+@param[in,out]  loc     locator
+@param[in,out]  loc_len locator length
+@param[out]     task_id task identifier
+@param[in]      type    clone type
+@param[in]      mode    mode for starting clone
+@return error code */
+using Clone_begin_t = int (*)(handlerton *hton, THD *thd, const uchar *&loc,
+                              uint &loc_len, uint &task_id, Ha_clone_type type,
+                              Ha_clone_mode mode);
 
-using Clone_apply_begin_t = int (*)(handlerton *hton, THD *thd, uchar *&loc,
-                                    uint &loc_len, const char *data_dir);
+/** Copy data from source database in chunks via callback
+@param[in]      hton    handlerton for SE
+@param[in]      thd     server thread handle
+@param[in]      loc     locator
+@param[in]      loc_len locator length in bytes
+@param[in]      task_id task identifier
+@param[in]      cbk     callback interface for sending data
+@return error code */
+using Clone_copy_t = int (*)(handlerton *hton, THD *thd, const uchar *loc,
+                             uint loc_len, uint task_id, Ha_clone_cbk *cbk);
 
-using Clone_apply_t = int (*)(handlerton *hton, THD *thd, uchar *loc,
-                              Ha_clone_cbk *desc);
+/** Acknowledge data transfer to source database
+@param[in]      hton    handlerton for SE
+@param[in]      thd     server thread handle
+@param[in]      loc     locator
+@param[in]      loc_len locator length in bytes
+@param[in]      task_id task identifier
+@param[in]      in_err  inform any error occurred
+@param[in]      cbk     callback interface
+@return error code */
+using Clone_ack_t = int (*)(handlerton *hton, THD *thd, const uchar *loc,
+                            uint loc_len, uint task_id, int in_err,
+                            Ha_clone_cbk *cbk);
 
-using Clone_apply_end_t = int (*)(handlerton *hton, THD *thd, uchar *loc);
+/** End copy from source database
+@param[in]      hton    handlerton for SE
+@param[in]      thd     server thread handle
+@param[in]      loc     locator
+@param[in]	loc_len	locator length in bytes
+@param[in]      task_id task identifier
+@param[in]      in_err  error code when ending after error
+@return error code */
+using Clone_end_t = int (*)(handlerton *hton, THD *thd, const uchar *loc,
+                            uint loc_len, uint task_id, int in_err);
+
+/** Begin apply to destination database
+@param[in]      hton            handlerton for SE
+@param[in]      thd             server thread handle
+@param[in,out]  loc             locator
+@param[in,out]  loc_len         locator length
+@param[in]      task_id         task identifier
+@param[in]      mode            mode for starting clone
+@param[in]      data_dir        target data directory
+@return error code */
+using Clone_apply_begin_t = int (*)(handlerton *hton, THD *thd,
+                                    const uchar *&loc, uint &loc_len,
+                                    uint &task_id, Ha_clone_mode mode,
+                                    const char *data_dir);
+
+/** Apply data to destination database in chunks via callback
+@param[in]      hton    handlerton for SE
+@param[in]      thd     server thread handle
+@param[in]      loc     locator
+@param[in]	loc_len	locator length in bytes
+@param[in]      task_id task identifier
+@param[in]      in_err  inform any error occurred
+@param[in]      cbk     callback interface for receiving data
+@return error code */
+using Clone_apply_t = int (*)(handlerton *hton, THD *thd, const uchar *loc,
+                              uint loc_len, uint task_id, int in_err,
+                              Ha_clone_cbk *cbk);
+
+/** End apply to destination database
+@param[in]      hton    handlerton for SE
+@param[in]      thd     server thread handle
+@param[in]      loc     locator
+@param[in]	loc_len	locator length in bytes
+@param[in]      task_id task identifier
+@param[in]      in_err  error code when ending after error
+@return error code */
+using Clone_apply_end_t = int (*)(handlerton *hton, THD *thd, const uchar *loc,
+                                  uint loc_len, uint task_id, int in_err);
 
 struct Clone_interface_t {
+  /* Get clone capabilities of an SE */
+  Clone_capability_t clone_capability;
+
   /* Interfaces to copy data. */
   Clone_begin_t clone_begin;
   Clone_copy_t clone_copy;
+  Clone_ack_t clone_ack;
   Clone_end_t clone_end;
 
   /* Interfaces to apply data. */
@@ -1803,6 +1992,25 @@ typedef bool (*unlock_hton_log_t)(handlerton *hton);
 */
 
 typedef bool (*collect_hton_log_info_t)(handlerton *hton, Json_dom *json);
+
+/**
+  Check SE considers types of child and parent columns in foreign key
+  to be compatible.
+
+  @param  child_column_type   Child column type description.
+  @param  parent_column_type  Parent column type description.
+  @param  check_charsets      Indicates whether we need to check
+                              that charsets of string columns
+                              match. Which is true in most cases.
+
+  @returns True if types are compatible, False if not.
+*/
+
+typedef bool (*check_fk_column_compat_t)(
+    const Ha_fk_column_type *child_column_type,
+    const Ha_fk_column_type *parent_column_type, bool check_charsets);
+
+typedef bool (*is_reserved_db_name_t)(handlerton *hton, const char *name);
 
 /**
   handlerton is a singleton structure - one instance per storage engine -
@@ -1872,6 +2080,7 @@ struct handlerton {
   is_valid_tablespace_name_t is_valid_tablespace_name;
   get_tablespace_t get_tablespace;
   alter_tablespace_t alter_tablespace;
+  get_tablespace_filename_ext_t get_tablespace_filename_ext;
   upgrade_tablespace_t upgrade_tablespace;
   upgrade_space_version_t upgrade_space_version;
   get_tablespace_type_t get_tablespace_type;
@@ -1885,6 +2094,9 @@ struct handlerton {
   dict_cache_reset_tables_and_tablespaces_t
       dict_cache_reset_tables_and_tablespaces;
   dict_recover_t dict_recover;
+  dict_get_server_version_t dict_get_server_version;
+  dict_set_server_version_t dict_set_server_version;
+  is_reserved_db_name_t is_reserved_db_name;
 
   /** Global handler flags. */
   uint32 flags;
@@ -1967,6 +2179,8 @@ struct handlerton {
 
   /** Flags describing details of foreign key support by storage engine. */
   uint32 foreign_keys_flags;
+
+  check_fk_column_compat_t check_fk_column_compat;
 };
 
 /* Possible flags of a handlerton (there can be 32 of them) */
@@ -2025,8 +2239,11 @@ struct handlerton {
 /* Engine supports packed keys. */
 #define HTON_SUPPORTS_PACKED_KEYS (1 << 13)
 
-/** Engine supports being set as secondary storage engine. */
-#define HTON_SUPPORTS_SECONDARY (1 << 14)
+/** Engine is a secondary storage engine. */
+#define HTON_IS_SECONDARY_ENGINE (1 << 14)
+
+/** Engine supports secondary storage engines. */
+#define HTON_SUPPORTS_SECONDARY_ENGINE (1 << 15)
 
 inline bool ddl_is_atomic(const handlerton *hton) {
   return (hton->flags & HTON_SUPPORTS_ATOMIC_DDL) != 0;
@@ -2384,18 +2601,24 @@ class Alter_inplace_info {
   // Rebuild partition
   static const HA_ALTER_FLAGS ALTER_REBUILD_PARTITION = 1ULL << 42;
 
-  // Load into secondary engine.
-  static const HA_ALTER_FLAGS SECONDARY_LOAD = 1ULL << 43;
-
-  // Unload from secondary engine.
-  static const HA_ALTER_FLAGS SECONDARY_UNLOAD = 1ULL << 44;
-
   /**
     Change in index length such that it does not require index rebuild.
     For example, change in index length due to column expansion like
     varchar(X) changed to varchar(X + N).
   */
   static const HA_ALTER_FLAGS ALTER_COLUMN_INDEX_LENGTH = 1ULL << 43;
+
+  /**
+    Change to one of columns on which virtual generated column depends,
+    so its values require re-evaluation.
+  */
+  static const HA_ALTER_FLAGS VIRTUAL_GCOL_REEVAL = 1ULL << 44;
+
+  /**
+    Change to one of columns on which stored generated column depends,
+    so its values require re-evaluation.
+  */
+  static const HA_ALTER_FLAGS STORED_GCOL_REEVAL = 1ULL << 45;
 
   /**
     Create options (like MAX_ROWS) for the new version of table.
@@ -3826,6 +4049,71 @@ class handler {
   int ha_unload_table(const char *db_name, const char *table_name);
 
   /**
+    Get number of threads that would be spawned for parallel read.
+    @return error code
+    @retval 0 on success
+   */
+  virtual int pread_adapter_scan_get_num_threads(size_t & /* num_threads */) {
+    return 0;
+  }
+
+  /**
+    This callback is called by each parallel load thread at the beginning of
+    the parallel load for the adapter scan.
+    @param cookie      The cookie for this thread
+    @param ncols       Number of columns in each row
+    @param row_len     The size of a row in bytes
+    @param col_offsets An array of size ncols, where each element represents
+                       the offset of a column in the row data. The memory of
+                       this array belongs to the caller and will be free-ed
+                       after the pload_end_cbk call.
+    @param null_byte_offsets An array of size ncols, where each element
+                       represents the offset of a column in the row data. The
+                       memory of this array belongs to the caller and will be
+                       free-ed after the pload_end_cbk call.
+    @param null_bitmasks An array of size ncols, where each element
+                       represents the bitmask required to get the null bit. The
+                       memory of this array belongs to the caller and will be
+                     free-ed after the pload_end_cbk call.
+   */
+  using pread_adapter_pload_init_cbk = std::function<void(
+      void *cookie, ulong ncols, ulong row_len, ulong *col_offsets,
+      ulong *null_byte_offsets, ulong *null_bitmasks)>;
+
+  /**
+    This callback is called by each parallel load thread when processing
+    of rows is required for the adapter scan.
+    @param[in] cookie    The cookie for this thread
+    @param[in] nrows     The nrows that are available
+    @param[in] rowdata   The mysql-in-memory row data buffer. This is a memory
+                         buffer for nrows records. The length of each record
+                         is fixed and communicated via
+                         pread_adapter_pload_init_cbk.
+   */
+  using pread_adapter_pload_row_cbk =
+      std::function<bool(void *cookie, uint nrows, void *rowdata)>;
+
+  /**
+    This callback is called by each parallel load thread when processing
+    of rows has ended for the adapter scan.
+    @param[in] cookie    The cookie for this thread
+   */
+  using pread_adapter_pload_end_cbk = std::function<void(void *cookie)>;
+
+  /**
+    Start parallel read of data.
+    @return error code
+    @retval 0 on success
+   */
+  virtual int pread_adapter_scan_parallel_load(
+      void ** /* thread_contexts */,
+      pread_adapter_pload_init_cbk /* load_init_fn */,
+      pread_adapter_pload_row_cbk /* load_rows_fn */,
+      pread_adapter_pload_end_cbk /* load_end_fn */) {
+    return (0);
+  }
+
+  /**
     Submit a dd::Table object representing a core DD table having
     hardcoded data to be filled in by the DDSE. This function can be
     used for retrieving the hard coded SE private data for the
@@ -4770,7 +5058,7 @@ class handler {
     Calls to rnd_init/rnd_end, index_init/index_end etc do not affect the
     condition stack.
   */
-  virtual const Item *cond_push(const Item *cond) { return cond; };
+  virtual const Item *cond_push(const Item *cond) { return cond; }
   /**
     Pop the top condition from the condition stack of the handler instance.
 
@@ -5222,7 +5510,7 @@ class handler {
            has to use ha_alter_info object to figure it out.
   */
   virtual void notify_table_changed(
-      Alter_inplace_info *ha_alter_info MY_ATTRIBUTE((unused))){};
+      Alter_inplace_info *ha_alter_info MY_ATTRIBUTE((unused))) {}
 
  public:
   /* End of On-line/in-place ALTER TABLE interface. */
@@ -5404,7 +5692,7 @@ class handler {
                             int lock_type MY_ATTRIBUTE((unused))) {
     return 0;
   }
-  virtual void release_auto_increment() { return; };
+  virtual void release_auto_increment() { return; }
   /** admin commands - called from mysql_admin_table */
   virtual int check_for_upgrade(HA_CHECK_OPT *) { return 0; }
   virtual int check(THD *, HA_CHECK_OPT *) { return HA_ADMIN_NOT_IMPLEMENTED; }
@@ -5963,6 +6251,7 @@ int ha_create_table(THD *thd, const char *path, const char *db,
 int ha_delete_table(THD *thd, handlerton *db_type, const char *path,
                     const char *db, const char *alias,
                     const dd::Table *table_def, bool generate_warning);
+bool ha_check_reserved_db_name(const char *name);
 
 /* statistics and info */
 bool ha_show_status(THD *thd, handlerton *db_type, enum ha_stat_type stat);

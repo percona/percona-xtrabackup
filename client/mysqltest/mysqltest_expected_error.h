@@ -80,8 +80,8 @@ class Expected_errors {
  public:
   typedef std::vector<std::unique_ptr<Error>>::iterator iterator;
 
-  Expected_errors(){};
-  ~Expected_errors(){};
+  Expected_errors() {}
+  ~Expected_errors() {}
 
   iterator begin() { return m_errors.begin(); }
   iterator end() { return m_errors.end(); }

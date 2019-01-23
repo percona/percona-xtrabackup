@@ -99,7 +99,7 @@
                 "is_virtual": false,
                 "hidden": 1,
                 "ordinal_position": 3,
-                "char_length": 8,
+                "char_length": 65535,
                 "numeric_precision": 0,
                 "numeric_scale": 0,
                 "numeric_scale_null": true,
@@ -382,7 +382,7 @@
         "name": "sakila/film_text",
         "comment": "",
         "options": "",
-        "se_private_data": "flags=X;id=Y;server_version=Z;space_version=M;",
+        "se_private_data": "flags=X;id=Y;server_version=Z;space_version=M;state=normal;",
         "engine": "InnoDB",
         "files": [
             {

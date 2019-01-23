@@ -262,7 +262,7 @@ Slave_worker::Slave_worker(Relay_log_info *rli
       id(param_id),
       checkpoint_relay_log_pos(0),
       checkpoint_master_log_pos(0),
-      checkpoint_seqno(0),
+      worker_checkpoint_seqno(0),
       running_status(NOT_RUNNING),
       exit_incremented(false) {
   /*
@@ -289,9 +289,14 @@ Slave_worker::~Slave_worker() {
   mysql_cond_destroy(&jobs_cond);
   mysql_cond_destroy(&logical_clock_cond);
   mysql_mutex_lock(&info_thd_lock);
-  info_thd = NULL;
+  info_thd = nullptr;
   mysql_mutex_unlock(&info_thd_lock);
-  set_rli_description_event(NULL);
+  if (set_rli_description_event(nullptr)) {
+#ifndef DBUG_OFF
+    bool set_rli_description_event_failed = false;
+#endif
+    DBUG_ASSERT(set_rli_description_event_failed);
+  }
 }
 
 /**
@@ -340,7 +345,7 @@ int Slave_worker::init_worker(Relay_log_info *rli, ulong i) {
   jobs.waited_overfill = 0;
   jobs.entry = jobs.size = c_rli->mts_slave_worker_queue_len_max;
   jobs.inited_queue = true;
-  curr_group_seen_begin = curr_group_seen_gtid = false;
+  curr_group_seen_gtid = false;
 #ifndef DBUG_OFF
   curr_group_seen_sequence_number = false;
 #endif
@@ -514,7 +519,7 @@ bool Slave_worker::read_info(Rpl_info_handler *from) {
   group_master_log_pos = temp_group_master_log_pos;
   checkpoint_relay_log_pos = temp_checkpoint_relay_log_pos;
   checkpoint_master_log_pos = temp_checkpoint_master_log_pos;
-  checkpoint_seqno = temp_checkpoint_seqno;
+  worker_checkpoint_seqno = temp_checkpoint_seqno;
 
   DBUG_RETURN(false);
 }
@@ -563,7 +568,7 @@ bool Slave_worker::write_info(Rpl_info_handler *to) {
       to->set_info((ulong)checkpoint_relay_log_pos) ||
       to->set_info(checkpoint_master_log_name) ||
       to->set_info((ulong)checkpoint_master_log_pos) ||
-      to->set_info((ulong)checkpoint_seqno) || to->set_info(nbytes) ||
+      to->set_info(worker_checkpoint_seqno) || to->set_info(nbytes) ||
       to->set_info(buffer, (size_t)nbytes) || to->set_info(channel))
     DBUG_RETURN(true);
 
@@ -651,7 +656,7 @@ bool Slave_worker::commit_positions(Log_event *ev, Slave_job_group *ptr_g,
   DBUG_ASSERT(ptr_g->checkpoint_seqno <= (c_rli->checkpoint_group - 1));
 
   bitmap_set_bit(&group_executed, ptr_g->checkpoint_seqno);
-  checkpoint_seqno = ptr_g->checkpoint_seqno;
+  worker_checkpoint_seqno = ptr_g->checkpoint_seqno;
   group_relay_log_pos = ev->future_event_relay_log_pos;
   group_master_log_pos = ev->common_header->log_pos;
 
@@ -666,7 +671,7 @@ bool Slave_worker::commit_positions(Log_event *ev, Slave_job_group *ptr_g,
   DBUG_PRINT("mts", ("Committing worker-id %lu group master log pos %llu "
                      "group master log name %s checkpoint sequence number %lu.",
                      id, group_master_log_pos, group_master_log_name,
-                     checkpoint_seqno));
+                     worker_checkpoint_seqno));
 
   DBUG_EXECUTE_IF("mts_debug_concurrent_access",
                   { mts_debug_concurrent_access++; };);
@@ -1248,7 +1253,7 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
     curr_group_seen_sequence_number = false;
 #endif
   }
-  curr_group_seen_gtid = curr_group_seen_begin = false;
+  curr_group_seen_gtid = false;
 
   DBUG_VOID_RETURN;
 }
@@ -1831,7 +1836,7 @@ bool Slave_worker::retry_transaction(uint start_relay_number,
       DBUG_RETURN(true);
 
     if (trans_retries >= slave_trans_retries) {
-      thd->is_fatal_error = 1;
+      thd->fatal_error();
       c_rli->report(ERROR_LEVEL, thd->get_stmt_da()->mysql_errno(),
                     "worker thread retried transaction %lu time(s) "
                     "in vain, giving up. Consider raising the value of "
@@ -2457,7 +2462,8 @@ int slave_worker_exec_job_group(Slave_worker *worker, Relay_log_info *rli) {
     /* Adapting to possible new Format_description_log_event */
     ptr_g = rli->gaq->get_job_group(ev->mts_group_idx);
     if (ptr_g->new_fd_event) {
-      worker->set_rli_description_event(ptr_g->new_fd_event);
+      error = worker->set_rli_description_event(ptr_g->new_fd_event);
+      if (unlikely(error)) goto err;
       ptr_g->new_fd_event = NULL;
     }
 

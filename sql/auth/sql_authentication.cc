@@ -20,9 +20,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#if defined(HAVE_OPENSSL)
-#define LOG_COMPONENT_TAG "sha256_password"
-#endif
+#define LOG_COMPONENT_TAG "mysql_native_password"
 
 #include "sql/auth/sql_authentication.h"
 
@@ -87,6 +85,7 @@
 #include "sql/sql_lex.h"
 #include "sql/sql_plugin.h"  // my_plugin_lock_by_name
 #include "sql/sql_time.h"    // Interval
+#include "sql/strfunc.h"
 #include "sql/system_variables.h"
 #include "sql/tztime.h"  // Time_zone
 #include "sql_common.h"  // mpvio_info
@@ -1667,11 +1666,9 @@ static ACL_USER *decoy_user(const LEX_STRING &username,
   user->user = strdup_root(mem, username.str);
   user->user[username.length] = '\0';
   user->host.update_hostname(strdup_root(mem, hostname.str));
-  user->auth_string = empty_lex_str;
   user->ssl_cipher = empty_c_string;
   user->x509_issuer = empty_c_string;
   user->x509_subject = empty_c_string;
-  user->salt_len = 0;
   user->password_last_changed.time_type = MYSQL_TIMESTAMP_ERROR;
   user->password_lifetime = 0;
   user->use_default_password_lifetime = true;
@@ -1687,6 +1684,9 @@ static ACL_USER *decoy_user(const LEX_STRING &username,
     mapping a consistent hash of a username to a range of plugins.
   */
   user->plugin = default_auth_plugin_name;
+  for (int i = 0; i < NUM_CREDENTIALS; ++i) {
+    user->credentials[i].m_auth_string = empty_lex_str;
+  }
   return user;
 }
 
@@ -1729,9 +1729,9 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
         if (auth_plugin_is_built_in(acl_user_tmp->plugin.str))
           mpvio->acl_user_plugin = mpvio->acl_user->plugin;
         else
-          make_lex_string_root(mpvio->mem_root, &mpvio->acl_user_plugin,
-                               acl_user_tmp->plugin.str,
-                               acl_user_tmp->plugin.length, 0);
+          lex_string_strmake(mpvio->mem_root, &mpvio->acl_user_plugin,
+                             acl_user_tmp->plugin.str,
+                             acl_user_tmp->plugin.length);
         break;
       }
     }
@@ -1763,9 +1763,21 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
     DBUG_RETURN(1);
   }
 
-  mpvio->auth_info.auth_string = mpvio->acl_user->auth_string.str;
+  mpvio->auth_info.auth_string =
+      mpvio->acl_user->credentials[PRIMARY_CRED].m_auth_string.str;
   mpvio->auth_info.auth_string_length =
-      (unsigned long)mpvio->acl_user->auth_string.length;
+      (unsigned long)mpvio->acl_user->credentials[PRIMARY_CRED]
+          .m_auth_string.length;
+  if (mpvio->acl_user->credentials[SECOND_CRED].m_auth_string.length) {
+    mpvio->auth_info.additional_auth_string =
+        mpvio->acl_user->credentials[SECOND_CRED].m_auth_string.str;
+    mpvio->auth_info.additional_auth_string_length =
+        (unsigned long)mpvio->acl_user->credentials[SECOND_CRED]
+            .m_auth_string.length;
+  } else {
+    mpvio->auth_info.additional_auth_string = NULL;
+    mpvio->auth_info.additional_auth_string_length = 0;
+  }
   strmake(mpvio->auth_info.authenticated_as,
           mpvio->acl_user->user ? mpvio->acl_user->user : "", USERNAME_LENGTH);
   DBUG_PRINT("info",
@@ -2072,8 +2084,7 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
     DBUG_RETURN(true);
   mpvio->auth_info.user_name_length = user_len;
 
-  if (make_lex_string_root(mpvio->mem_root, &mpvio->db, db_buff, db_len, 0) ==
-      0)
+  if (lex_string_strmake(mpvio->mem_root, &mpvio->db, db_buff, db_len))
     DBUG_RETURN(true); /* The error is set by make_lex_string(). */
 
   if (!initialized) {
@@ -2577,7 +2588,7 @@ skip_to_ssl:
     user_len -= 2;
   }
 
-  if (make_lex_string_root(mpvio->mem_root, &mpvio->db, db, db_len, 0) == 0)
+  if (lex_string_strmake(mpvio->mem_root, &mpvio->db, db, db_len))
     return packet_error; /* The error is set by make_lex_string(). */
   if (mpvio->auth_info.user_name) my_free(mpvio->auth_info.user_name);
   if (!(mpvio->auth_info.user_name = my_strndup(key_memory_MPVIO_EXT_auth_info,
@@ -3017,6 +3028,53 @@ inline void assign_priv_user_host(Security_context *sctx, ACL_USER *user) {
 }
 
 /**
+  Check that for command COM_CONNECT, either restriction on max number of
+  concurrent connections  not violated or in case the connection is admin
+  connection the user has required privilege.
+
+  @param thd  Thread context
+
+  @return Error status
+    @retval false  success
+    @retval true   error
+
+  @note if connection is admin connection and a user doesn't have
+  the privilege SERVICE_CONNECTION_ADMIN, the error
+  ER_SPECIFIC_ACCESS_DENIED_ERROR is set in Diagnostics_area.
+
+  @note if a user doesn't have any of the privileges SUPER_ACL,
+  CONNECTION_ADMIN, SERVICE_CONNECTION_ADMIN and a number of concurrent
+  connections exceeds the limit max_connections the error ER_CON_COUNT_ERROR
+  is set in Diagnostics_area.
+*/
+static inline bool check_restrictions_for_com_connect_command(THD *thd) {
+  if (thd->is_admin_connection() &&
+      !thd->m_main_security_ctx
+           .has_global_grant(STRING_WITH_LEN("SERVICE_CONNECTION_ADMIN"))
+           .first) {
+    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
+             "SERVICE_CONNECTION_ADMIN");
+    return true;
+  }
+
+  if (!(thd->m_main_security_ctx.check_access(SUPER_ACL) ||
+        thd->m_main_security_ctx
+            .has_global_grant(STRING_WITH_LEN("CONNECTION_ADMIN"))
+            .first ||
+        thd->m_main_security_ctx
+            .has_global_grant(STRING_WITH_LEN("SERVICE_CONNECTION_ADMIN"))
+            .first)) {
+    if (!Connection_handler_manager::get_instance()
+             ->valid_connection_count()) {  // too many connections
+      my_error(ER_CON_COUNT_ERROR, MYF(0));
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
   Perform the handshake, authorize the client and update thd sctx variables.
 
   @param thd                     thread handle
@@ -3261,11 +3319,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
     if (!thd->is_error() &&
         !(sctx->check_access(SUPER_ACL) ||
           sctx->has_global_grant(STRING_WITH_LEN("CONNECTION_ADMIN")).first)) {
-      mysql_mutex_lock(&LOCK_offline_mode);
-      bool tmp_offline_mode = offline_mode;
-      mysql_mutex_unlock(&LOCK_offline_mode);
-
-      if (tmp_offline_mode) {
+      if (mysqld_offline_mode()) {
         my_error(ER_SERVER_OFFLINE_MODE, MYF(0));
         DBUG_RETURN(1);
       }
@@ -3377,16 +3431,9 @@ int acl_authenticate(THD *thd, enum_server_command command) {
                       mpvio.db.str));
 
   if (command == COM_CONNECT &&
-      !(thd->m_main_security_ctx.check_access(SUPER_ACL) ||
-        thd->m_main_security_ctx
-            .has_global_grant(STRING_WITH_LEN("CONNECTION_ADMIN"))
-            .first)) {
-    if (!Connection_handler_manager::get_instance()
-             ->valid_connection_count()) {  // too many connections
-      release_user_connection(thd);
-      my_error(ER_CON_COUNT_ERROR, MYF(0));
-      DBUG_RETURN(1);
-    }
+      check_restrictions_for_com_connect_command(thd)) {
+    release_user_connection(thd);
+    DBUG_RETURN(1);
   }
 
   /*
@@ -3704,16 +3751,37 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
                         "setting authenticated_as to NULL"));
   }
   if (pkt_len == 0) /* no password */
-    DBUG_RETURN(mpvio->acl_user->salt_len != 0 ? CR_AUTH_USER_CREDENTIALS
-                                               : CR_OK);
-
-  info->password_used = PASSWORD_USED_YES;
-  if (pkt_len == SCRAMBLE_LENGTH) {
-    if (!mpvio->acl_user->salt_len) DBUG_RETURN(CR_AUTH_USER_CREDENTIALS);
-
-    DBUG_RETURN(check_scramble(pkt, mpvio->scramble, mpvio->acl_user->salt)
+    DBUG_RETURN(mpvio->acl_user->credentials[PRIMARY_CRED].m_salt_len != 0
                     ? CR_AUTH_USER_CREDENTIALS
                     : CR_OK);
+
+  info->password_used = PASSWORD_USED_YES;
+  bool second = false;
+  if (pkt_len == SCRAMBLE_LENGTH) {
+    if (!mpvio->acl_user->credentials[PRIMARY_CRED].m_salt_len ||
+        check_scramble(pkt, mpvio->scramble,
+                       mpvio->acl_user->credentials[PRIMARY_CRED].m_salt)) {
+      second = true;
+      if (!mpvio->acl_user->credentials[SECOND_CRED].m_salt_len ||
+          check_scramble(pkt, mpvio->scramble,
+                         mpvio->acl_user->credentials[SECOND_CRED].m_salt)) {
+        DBUG_RETURN(CR_AUTH_USER_CREDENTIALS);
+      } else {
+        if (second) {
+          MPVIO_EXT *mpvio = (MPVIO_EXT *)vio;
+          const char *username =
+              *info->authenticated_as ? info->authenticated_as : "";
+          const char *hostname = mpvio->acl_user->host.get_host();
+          LogPluginErr(
+              INFORMATION_LEVEL,
+              ER_MYSQL_NATIVE_PASSWORD_SECOND_PASSWORD_USED_INFORMATION,
+              username, hostname ? hostname : "");
+        }
+        DBUG_RETURN(CR_OK);
+      }
+    } else {
+      DBUG_RETURN(CR_OK);
+    }
   }
 
   my_error(ER_HANDSHAKE_ERROR, MYF(0));
@@ -3884,6 +3952,9 @@ static int compare_sha256_password_with_hash(const char *hash,
   DBUG_RETURN(result);
 }
 
+#undef LOG_COMPONENT_TAG
+#define LOG_COMPONENT_TAG "sha256_password"
+
 /**
 
  @param vio Virtual input-, output interface
@@ -4035,7 +4106,8 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
   if (pkt_len > SHA256_PASSWORD_MAX_PASSWORD_LENGTH + 1) DBUG_RETURN(CR_ERROR);
 
   /* A password was sent to an account without a password */
-  if (info->auth_string_length == 0) DBUG_RETURN(CR_ERROR);
+  if (info->auth_string_length == 0 && info->additional_auth_string_length == 0)
+    DBUG_RETURN(CR_ERROR);
 
   int is_error = 0;
   int result = compare_sha256_password_with_hash(
@@ -4047,6 +4119,27 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
     LogPluginErr(ERROR_LEVEL, ER_SHA_PWD_SALT_FOR_USER_CORRUPT,
                  info->user_name);
     DBUG_RETURN(CR_ERROR);
+  }
+
+  if (result && info->additional_auth_string_length) {
+    result = compare_sha256_password_with_hash(
+        info->additional_auth_string, info->additional_auth_string_length,
+        (const char *)pkt, pkt_len - 1, &is_error);
+    if (is_error) {
+      /* User salt is not correct */
+      LogPluginErr(ERROR_LEVEL, ER_SHA_PWD_SALT_FOR_USER_CORRUPT,
+                   info->user_name);
+      DBUG_RETURN(CR_ERROR);
+    }
+    if (result == 0) {
+      MPVIO_EXT *mpvio = (MPVIO_EXT *)vio;
+      const char *username =
+          *info->authenticated_as ? info->authenticated_as : "";
+      const char *hostname = mpvio->acl_user->host.get_host();
+      LogPluginErr(INFORMATION_LEVEL,
+                   ER_SHA256_PASSWORD_SECOND_PASSWORD_USED_INFORMATION,
+                   username, hostname ? hostname : "");
+    }
   }
 
   if (result == 0) {
@@ -4171,7 +4264,7 @@ class File_IO {
   File_IO &operator<<(const Sql_string_t &output_string);
 
  protected:
-  File_IO(){};
+  File_IO() {}
   File_IO(const Sql_string_t filename, bool read)
       : m_file_name(filename), m_read(read), m_error_state(false), m_file(-1) {
     file_open();
@@ -4260,7 +4353,7 @@ File_IO &File_IO::operator<<(const Sql_string_t &output_string) {
 */
 class File_creator {
  public:
-  File_creator(){};
+  File_creator() {}
 
   ~File_creator() {
     for (std::vector<File_IO *>::iterator it = m_file_vector.begin();
@@ -4302,9 +4395,9 @@ class File_creator {
 class RSA_gen {
  public:
   RSA_gen(uint32_t key_size = 2048, uint32_t exponent = RSA_F4)
-      : m_key_size(key_size), m_exponent(exponent){};
+      : m_key_size(key_size), m_exponent(exponent) {}
 
-  ~RSA_gen(){};
+  ~RSA_gen() {}
 
   /**
     Passing key type is a violation against the principle of generic

@@ -40,6 +40,7 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "sql/current_thd.h"
+#include "sql/sql_class.h"
 
 static MYSQL_PLUGIN plugin_info_ptr;
 static SERVICE_TYPE(registry) *reg_srv = nullptr;
@@ -156,6 +157,7 @@ static int trans_before_commit_call = 0;
 static int trans_before_rollback_call = 0;
 static int trans_after_commit_call = 0;
 static int trans_after_rollback_call = 0;
+static int trans_begin_call = 0;
 
 static void dump_transaction_calls() {
   if (trans_before_dml_call) {
@@ -323,11 +325,18 @@ static int trans_after_rollback(Trans_param *param MY_ATTRIBUTE((unused))) {
   return 0;
 }
 
+static int trans_begin(Trans_param *param MY_ATTRIBUTE((unused)),
+                       int &out_val MY_ATTRIBUTE((unused))) {
+  trans_begin_call++;
+
+  return 0;
+}
+
 Trans_observer trans_observer = {
     sizeof(Trans_observer),
 
     trans_before_dml,       trans_before_commit,  trans_before_rollback,
-    trans_after_commit,     trans_after_rollback,
+    trans_after_commit,     trans_after_rollback, trans_begin,
 };
 
 /*
@@ -481,7 +490,8 @@ int validate_plugin_server_requirements(Trans_param *param) {
   Gtid gtid = {fake_sidno, fake_gno};
   Gtid_specification gtid_spec = {ASSIGNED_GTID, gtid};
   Gtid_log_event *gle =
-      new Gtid_log_event(param->server_id, true, 0, 1, true, 0, 0, gtid_spec);
+      new Gtid_log_event(param->server_id, true, 0, 1, true, 0, 0, gtid_spec,
+                         UNKNOWN_SERVER_VERSION, UNKNOWN_SERVER_VERSION);
 
   if (gle->is_valid())
     success++;
@@ -497,7 +507,8 @@ int validate_plugin_server_requirements(Trans_param *param) {
   */
   Gtid_specification anonymous_gtid_spec = {ANONYMOUS_GTID, gtid};
   gle = new Gtid_log_event(param->server_id, true, 0, 1, true, 0, 0,
-                           anonymous_gtid_spec);
+                           anonymous_gtid_spec, UNKNOWN_SERVER_VERSION,
+                           UNKNOWN_SERVER_VERSION);
 
   if (gle->is_valid())
     success++;

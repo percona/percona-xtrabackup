@@ -61,6 +61,7 @@
 #include "m_string.h"
 #include "my_aes.h"
 #include "my_alloc.h"
+#include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_default.h"
@@ -1442,8 +1443,6 @@ void update_variable_source(const char *opt_name, const char *value) {
    @param [in] opt_name       Pointer to option name.
    @param [out] value         Pointer to struct holding config file path
                               and variable source
-
-   @return void
 */
 void set_variable_source(const char *opt_name, void *value) {
   string src_name = opt_name;

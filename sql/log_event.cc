@@ -467,6 +467,12 @@ static inline void pretty_print_str(IO_CACHE *cache, const char *str,
       case 0:
         my_b_printf(cache, "\\0");
         break;
+      case '`':
+        if (identifier)
+          my_b_printf(cache, "``");
+        else
+          my_b_printf(cache, "`");
+        break;
       default:
         my_b_printf(cache, "%c", c);
         break;
@@ -1069,6 +1075,8 @@ int Log_event::pack_info(Protocol *protocol) {
   protocol->store("", &my_charset_bin);
   return 0;
 }
+
+const char *Log_event::get_db() { return thd ? thd->db().str : NULL; }
 
 /**
   Only called by SHOW BINLOG EVENTS
@@ -2938,10 +2946,10 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
       ret_worker->bitmap_shifted = 0;
       ret_worker->checkpoint_notified = true;
     }
-    ptr_group->checkpoint_seqno = rli->checkpoint_seqno;
+    ptr_group->checkpoint_seqno = rli->rli_checkpoint_seqno;
     ptr_group->ts = common_header->when.tv_sec +
                     (time_t)exec_time;  // Seconds_behind_master related
-    rli->checkpoint_seqno++;
+    rli->rli_checkpoint_seqno++;
     /*
       Coordinator should not use the main memroot however its not
       reset elsewhere either, so let's do it safe way.
@@ -3521,7 +3529,7 @@ bool Query_log_event::write(Basic_ostream *ostream) {
     start += 2;
   }
 
-  if (thd) {
+  if (thd && need_sql_require_primary_key) {
     *start++ = Q_SQL_REQUIRE_PRIMARY_KEY;
     *start++ = thd->variables.sql_require_primary_key;
   }
@@ -3589,6 +3597,22 @@ inline bool is_sql_command_atomic_ddl(const LEX *lex) {
          (lex->sql_command == SQLCOM_CREATE_TABLE &&
           !(lex->create_info->options & HA_LEX_CREATE_TMP_TABLE)) ||
          (lex->sql_command == SQLCOM_DROP_TABLE && !lex->drop_temporary);
+}
+
+/**
+  Returns whether or not the statement held by the `LEX` object parameter
+  requires `Q_SQL_REQUIRE_PRIMARY_KEY` to be logged together with the statement.
+ */
+static bool is_sql_require_primary_key_needed(const LEX *lex) {
+  enum enum_sql_command cmd = lex->sql_command;
+  switch (cmd) {
+    case SQLCOM_CREATE_TABLE:
+    case SQLCOM_ALTER_TABLE:
+      return true;
+    default:
+      break;
+  }
+  return false;
 }
 
 bool is_atomic_ddl(THD *thd, bool using_trans_arg) {
@@ -3932,6 +3956,8 @@ Query_log_event::Query_log_event(THD *thd_arg, const char *query_arg,
 
     if (thd->rli_slave) thd->rli_slave->ddl_not_atomic = true;
   }
+
+  need_sql_require_primary_key = is_sql_require_primary_key_needed(lex);
 
   DBUG_ASSERT(event_cache_type != Log_event::EVENT_INVALID_CACHE);
   DBUG_ASSERT(event_logging_type != Log_event::EVENT_INVALID_LOGGING);
@@ -4570,6 +4596,13 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
         if (thd->m_digest != NULL)
           thd->m_digest->reset(thd->m_token_array, max_digest_length);
 
+        struct System_status_var query_start_status;
+        struct System_status_var *query_start_status_ptr = nullptr;
+        if (opt_log_slow_extra) {
+          query_start_status_ptr = &query_start_status;
+          query_start_status = thd->status_var;
+        }
+
         mysql_parse(thd, &parser_state, true);
 
         enum_sql_command command = thd->lex->sql_command;
@@ -4617,7 +4650,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
         }
         /* Finalize server status flags after executing a statement. */
         thd->update_slow_query_status();
-        log_slow_statement(thd);
+        log_slow_statement(thd, query_start_status_ptr);
       }
 
       thd->variables.option_bits &= ~OPTION_MASTER_SQL_ERROR;
@@ -4776,7 +4809,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
     /*
       Other cases: mostly we expected no error and get one.
     */
-    else if (thd->is_slave_error || thd->is_fatal_error) {
+    else if (thd->is_slave_error || thd->is_fatal_error()) {
       if (!is_silent_error(thd)) {
         rli->report(ERROR_LEVEL, actual_error,
                     "Error '%s' on query. Default database: '%s'. Query: '%s'",
@@ -5203,7 +5236,7 @@ int Format_description_log_event::do_apply_event(Relay_log_info const *rli) {
 
   if (!ret) {
     /* Save the information describing this binlog */
-    const_cast<Relay_log_info *>(rli)->set_rli_description_event(this);
+    ret = const_cast<Relay_log_info *>(rli)->set_rli_description_event(this);
   }
 
   DBUG_RETURN(ret);
@@ -6176,7 +6209,8 @@ bool XA_prepare_log_event::do_commit(THD *thd) {
         new (*THR_MALLOC) Sql_cmd_xa_commit(&xid, XA_ONE_PHASE);
     error = thd->lex->m_sql_cmd->execute(thd);
   }
-  error |= mysql_bin_log.gtid_end_transaction(thd);
+
+  if (!error) error = mysql_bin_log.gtid_end_transaction(thd);
 
   return error;
 }
@@ -8065,6 +8099,12 @@ err:
   DBUG_RETURN(error);
 }
 
+bool Rows_log_event::is_auto_inc_in_extra_columns() {
+  DBUG_ASSERT(m_table);
+  return (m_table->next_number_field &&
+          m_table->next_number_field->field_index >= m_width);
+}
+
 /*
   Compares table->record[0] and table->record[1]
 
@@ -9126,7 +9166,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
 
     if (open_and_lock_tables(thd, rli->tables_to_lock, 0)) {
       uint actual_error = thd->get_stmt_da()->mysql_errno();
-      if (thd->is_slave_error || thd->is_fatal_error) {
+      if (thd->is_slave_error || thd->is_fatal_error()) {
         if (ignored_error_code(actual_error)) {
           if (log_error_verbosity > 2)
             rli->report(WARNING_LEVEL, actual_error,
@@ -10446,6 +10486,10 @@ static inline bool is_character_type(uint type) {
   }
 }
 
+static inline bool is_enum_or_set_type(uint type) {
+  return type == MYSQL_TYPE_ENUM || type == MYSQL_TYPE_SET;
+}
+
 #ifdef MYSQL_SERVER
 static inline bool is_numeric_field(const Field *field) {
   return is_numeric_type(field->binlog_type());
@@ -10463,26 +10507,36 @@ static inline bool is_set_field(const Field *field) {
   return field->real_type() == MYSQL_TYPE_SET;
 }
 
+static inline bool is_enum_or_set_field(const Field *field) {
+  return is_enum_or_set_type(field->real_type());
+}
+
 static inline bool is_geometry_field(const Field *field) {
   return field->real_type() == MYSQL_TYPE_GEOMETRY;
 }
 
 void Table_map_log_event::init_metadata_fields() {
-  DBUG_EXECUTE_IF("simulate_no_optional_metadata", return;);
+  DBUG_ENTER("init_metadata_fields");
+  DBUG_EXECUTE_IF("simulate_no_optional_metadata", DBUG_VOID_RETURN;);
 
-  if (init_signedness_field() || init_charset_field() ||
+  if (init_signedness_field() ||
+      init_charset_field(&is_character_field, DEFAULT_CHARSET,
+                         COLUMN_CHARSET) ||
       init_geometry_type_field()) {
     m_metadata_buf.length(0);
-    return;
+    DBUG_VOID_RETURN;
   }
 
   if (binlog_row_metadata == BINLOG_ROW_METADATA_FULL) {
     if (DBUG_EVALUATE_IF("dont_log_column_name", 0, init_column_name_field()) ||
+        init_charset_field(&is_enum_or_set_field, ENUM_AND_SET_DEFAULT_CHARSET,
+                           ENUM_AND_SET_COLUMN_CHARSET) ||
         init_set_str_value_field() || init_enum_str_value_field() ||
         init_primary_key_field()) {
       m_metadata_buf.length(0);
     }
   }
+  DBUG_VOID_RETURN;
 }
 
 bool Table_map_log_event::init_signedness_field() {
@@ -10517,7 +10571,10 @@ bool Table_map_log_event::init_signedness_field() {
   return write_tlv_field(m_metadata_buf, SIGNEDNESS, buf);
 }
 
-bool Table_map_log_event::init_charset_field() {
+bool Table_map_log_event::init_charset_field(
+    std::function<bool(const Field *)> include_type,
+    Optional_metadata_field_type default_charset_type,
+    Optional_metadata_field_type column_charset_type) {
   DBUG_EXECUTE_IF("simulate_init_charset_field_error", return true;);
 
   std::map<uint, uint> collation_map;
@@ -10526,7 +10583,7 @@ bool Table_map_log_event::init_charset_field() {
 
   /* Find the collation number used by most fields */
   for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-    if (is_character_field(m_table->field[i])) {
+    if (include_type(m_table->field[i])) {
       Field_str *field = dynamic_cast<Field_str *>(m_table->field[i]);
 
       collation_map[field->charset()->number]++;
@@ -10569,13 +10626,13 @@ bool Table_map_log_event::init_charset_field() {
       -----------------------------------------
     */
     for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-      if (is_character_field(m_table->field[i])) {
+      if (include_type(m_table->field[i])) {
         Field_str *field = dynamic_cast<Field_str *>(m_table->field[i]);
 
         store_compressed_length(buf, field->charset()->number);
       }
     }
-    return write_tlv_field(m_metadata_buf, COLUMN_CHARSET, buf);
+    return write_tlv_field(m_metadata_buf, column_charset_type, buf);
   } else {
     StringBuffer<512> buf;
     uint char_column_index = 0;
@@ -10594,7 +10651,7 @@ bool Table_map_log_event::init_charset_field() {
     store_compressed_length(buf, default_collation);
 
     for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-      if (is_character_field(m_table->field[i])) {
+      if (include_type(m_table->field[i])) {
         Field_str *field = dynamic_cast<Field_str *>(m_table->field[i]);
 
         if (field->charset()->number != default_collation) {
@@ -10604,7 +10661,7 @@ bool Table_map_log_event::init_charset_field() {
         char_column_index++;
       }
     }
-    return write_tlv_field(m_metadata_buf, DEFAULT_CHARSET, buf);
+    return write_tlv_field(m_metadata_buf, default_charset_type, buf);
   }
 }
 
@@ -10915,15 +10972,99 @@ static void get_type_name(uint type, unsigned char **meta_ptr,
   }
 }
 
+/**
+  Interface for iterator over charset columns.
+*/
+class Table_map_log_event::Charset_iterator {
+ public:
+  typedef Table_map_event::Optional_metadata_fields::Default_charset
+      Default_charset;
+  virtual const CHARSET_INFO *next() = 0;
+
+  /**
+    Factory method to create an instance of the appropriate subclass.
+  */
+  static std::unique_ptr<Charset_iterator> create_charset_iterator(
+      const Default_charset &default_charset,
+      const std::vector<uint> &column_charset);
+};
+
+/**
+  Implementation of charset iterator for the DEFAULT_CHARSET type.
+*/
+class Table_map_log_event::Default_charset_iterator : public Charset_iterator {
+ public:
+  Default_charset_iterator(const Default_charset &default_charset)
+      : m_iterator(default_charset.charset_pairs.begin()),
+        m_end(default_charset.charset_pairs.end()),
+        m_column_index(0),
+        m_default_charset_info(
+            get_charset(default_charset.default_charset, 0)) {}
+
+  const CHARSET_INFO *next() override {
+    const CHARSET_INFO *ret;
+    if (m_iterator != m_end && m_iterator->first == m_column_index) {
+      ret = get_charset(m_iterator->second, 0);
+      m_iterator++;
+    } else
+      ret = m_default_charset_info;
+    m_column_index++;
+    return ret;
+  }
+
+ private:
+  std::vector<Optional_metadata_fields::uint_pair>::const_iterator m_iterator,
+      m_end;
+  uint m_column_index;
+  const CHARSET_INFO *m_default_charset_info;
+};
+
+/**
+  Implementation of charset iterator for the COLUMNT_CHARSET type.
+*/
+class Table_map_log_event::Column_charset_iterator : public Charset_iterator {
+ public:
+  Column_charset_iterator(const std::vector<uint> &column_charset)
+      : m_iterator(column_charset.begin()), m_end(column_charset.end()) {}
+
+  const CHARSET_INFO *next() override {
+    const CHARSET_INFO *ret = nullptr;
+    if (m_iterator != m_end) {
+      ret = get_charset(*m_iterator, 0);
+      m_iterator++;
+    }
+    return ret;
+  }
+
+ private:
+  std::vector<uint>::const_iterator m_iterator;
+  std::vector<uint>::const_iterator m_end;
+};
+
+std::unique_ptr<Table_map_log_event::Charset_iterator>
+Table_map_log_event::Charset_iterator::create_charset_iterator(
+    const Default_charset &default_charset,
+    const std::vector<uint> &column_charset) {
+  if (!default_charset.empty())
+    return std::unique_ptr<Charset_iterator>(
+        new Default_charset_iterator(default_charset));
+  else
+    return std::unique_ptr<Charset_iterator>(
+        new Column_charset_iterator(column_charset));
+}
+
 void Table_map_log_event::print_columns(
     IO_CACHE *file, const Optional_metadata_fields &fields) const {
-  uint char_col_index = 0;
   unsigned char *field_metadata_ptr = m_field_metadata;
   std::vector<bool>::const_iterator signedness_it = fields.m_signedness.begin();
-  std::vector<Optional_metadata_fields::uint_pair>::const_iterator
-      charset_pairs_it = fields.m_default_charset.charset_pairs.begin();
-  std::vector<uint>::const_iterator col_charsets_it =
-      fields.m_column_charset.begin();
+
+  std::unique_ptr<Charset_iterator> charset_it =
+      Charset_iterator::create_charset_iterator(fields.m_default_charset,
+                                                fields.m_column_charset);
+  std::unique_ptr<Charset_iterator> enum_and_set_charset_it =
+      Charset_iterator::create_charset_iterator(
+          fields.m_enum_and_set_default_charset,
+          fields.m_enum_and_set_column_charset);
   std::vector<std::string>::const_iterator col_names_it =
       fields.m_column_name.begin();
   std::vector<Optional_metadata_fields::str_vector>::const_iterator
@@ -10932,40 +11073,24 @@ void Table_map_log_event::print_columns(
       enum_str_values_it = fields.m_enum_str_value.begin();
   std::vector<unsigned int>::const_iterator geometry_type_it =
       fields.m_geometry_type.begin();
-
   uint geometry_type = 0;
 
   my_b_printf(file, "# Columns(");
 
   for (unsigned long i = 0; i < m_colcnt; i++) {
-    CHARSET_INFO *cs = NULL;
-    uint real_type = 0;
-    const uint TYPE_NAME_LEN = 100;
-    char type_name[TYPE_NAME_LEN];
-    bool is_default_cs = false;
-
-    real_type = m_coltype[i];
+    uint real_type = m_coltype[i];
     if (real_type == MYSQL_TYPE_STRING &&
         (*field_metadata_ptr == MYSQL_TYPE_ENUM ||
          *field_metadata_ptr == MYSQL_TYPE_SET))
       real_type = *field_metadata_ptr;
 
-    // Get current column's collation id if it is a character column
-    if (is_character_type(real_type)) {
-      if (!fields.m_default_charset.empty()) {
-        if (charset_pairs_it != fields.m_default_charset.charset_pairs.end() &&
-            charset_pairs_it->first == char_col_index) {
-          cs = get_charset(charset_pairs_it->second, 0);
-          charset_pairs_it++;
-        } else {
-          is_default_cs = true;
-          cs = get_charset(fields.m_default_charset.default_charset, 0);
-        }
-        char_col_index++;
-      } else if (col_charsets_it != fields.m_column_charset.end()) {
-        cs = get_charset(*col_charsets_it++, 0);
-      }
-    }
+    // Get current column's collation id if it is a character, enum,
+    // or set column
+    const CHARSET_INFO *cs = NULL;
+    if (is_character_type(real_type))
+      cs = charset_it->next();
+    else if (is_enum_or_set_type(real_type))
+      cs = enum_and_set_charset_it->next();
 
     // Print column name
     if (col_names_it != fields.m_column_name.end()) {
@@ -10983,6 +11108,8 @@ void Table_map_log_event::print_columns(
     }
 
     // print column type
+    const uint TYPE_NAME_LEN = 100;
+    char type_name[TYPE_NAME_LEN];
     get_type_name(real_type, &field_metadata_ptr, cs, type_name, TYPE_NAME_LEN,
                   geometry_type);
 
@@ -11002,10 +11129,6 @@ void Table_map_log_event::print_columns(
     // if the column is not marked as 'null', print 'not null'
     if (!(m_null_bits[(i / 8)] & (1 << (i % 8))))
       my_b_printf(file, " NOT NULL");
-
-    // Print column character set
-    if (cs != NULL && cs->number != my_charset_bin.number && !is_default_cs)
-      my_b_printf(file, " CHARSET %s COLLATE %s", cs->csname, cs->name);
 
     // Print string values of SET and ENUM column
     const Optional_metadata_fields::str_vector *str_values = NULL;
@@ -11031,15 +11154,14 @@ void Table_map_log_event::print_columns(
       my_b_printf(file, ")");
     }
 
-    if (i != m_colcnt - 1) my_b_printf(file, ", ");
+    // Print column character set, except in text columns with binary collation
+    if (cs != NULL &&
+        (is_enum_or_set_type(real_type) || cs->number != my_charset_bin.number))
+      my_b_printf(file, " CHARSET %s COLLATE %s", cs->csname, cs->name);
+
+    if (i != m_colcnt - 1) my_b_printf(file, ",\n#         ");
   }
   my_b_printf(file, ")");
-
-  if (!fields.m_default_charset.empty() &&
-      fields.m_default_charset.default_charset != my_charset_bin.number) {
-    CHARSET_INFO *cs = get_charset(fields.m_default_charset.default_charset, 0);
-    my_b_printf(file, " DEFAULT CHARSET %s COLLATE %s", cs->csname, cs->name);
-  }
   my_b_printf(file, "\n");
 }
 
@@ -11090,6 +11212,13 @@ Write_rows_log_event::Write_rows_log_event(THD *thd_arg, TABLE *tbl_arg,
                                                : binary_log::WRITE_ROWS_EVENT,
                      extra_row_info) {
   common_header->type_code = m_type;
+}
+
+bool Write_rows_log_event::binlog_row_logging_function(
+    THD *thd, TABLE *table, bool is_transactional,
+    const uchar *before_record MY_ATTRIBUTE((unused)),
+    const uchar *after_record) {
+  return thd->binlog_write_row(table, is_transactional, after_record, NULL);
 }
 #endif
 
@@ -11556,6 +11685,13 @@ Delete_rows_log_event::Delete_rows_log_event(THD *thd_arg, TABLE *tbl_arg,
       binary_log::Delete_rows_event() {
   common_header->type_code = m_type;
 }
+
+bool Delete_rows_log_event::binlog_row_logging_function(
+    THD *thd, TABLE *table, bool is_transactional, const uchar *before_record,
+    const uchar *after_record MY_ATTRIBUTE((unused))) {
+  return thd->binlog_delete_row(table, is_transactional, before_record, NULL);
+}
+
 #endif /* #if defined(MYSQL_SERVER) */
 
 /*
@@ -11654,6 +11790,13 @@ Update_rows_log_event::Update_rows_log_event(THD *thd_arg, TABLE *tbl_arg,
   init(tbl_arg->write_set, tbl_arg->fields_for_functional_indexes);
   common_header->set_is_valid(Rows_log_event::is_valid() && m_cols_ai.bitmap);
   DBUG_VOID_RETURN;
+}
+
+bool Update_rows_log_event::binlog_row_logging_function(
+    THD *thd, TABLE *table, bool is_transactional, const uchar *before_record,
+    const uchar *after_record) {
+  return thd->binlog_update_row(table, is_transactional, before_record,
+                                after_record, NULL);
 }
 
 void Update_rows_log_event::init(MY_BITMAP const *cols,
@@ -12054,10 +12197,13 @@ Gtid_log_event::Gtid_log_event(THD *thd_arg, bool using_trans,
                                int64 sequence_number_arg,
                                bool may_have_sbr_stmts_arg,
                                ulonglong original_commit_timestamp_arg,
-                               ulonglong immediate_commit_timestamp_arg)
+                               ulonglong immediate_commit_timestamp_arg,
+                               uint32_t original_server_version_arg,
+                               uint32_t immediate_server_version_arg)
     : binary_log::Gtid_event(
           last_committed_arg, sequence_number_arg, may_have_sbr_stmts_arg,
-          original_commit_timestamp_arg, immediate_commit_timestamp_arg),
+          original_commit_timestamp_arg, immediate_commit_timestamp_arg,
+          original_server_version_arg, immediate_server_version_arg),
       Log_event(thd_arg,
                 thd_arg->variables.gtid_next.type == ANONYMOUS_GTID
                     ? LOG_EVENT_IGNORABLE_F
@@ -12090,16 +12236,16 @@ Gtid_log_event::Gtid_log_event(THD *thd_arg, bool using_trans,
   DBUG_VOID_RETURN;
 }
 
-Gtid_log_event::Gtid_log_event(uint32 server_id_arg, bool using_trans,
-                               int64 last_committed_arg,
-                               int64 sequence_number_arg,
-                               bool may_have_sbr_stmts_arg,
-                               ulonglong original_commit_timestamp_arg,
-                               ulonglong immediate_commit_timestamp_arg,
-                               const Gtid_specification spec_arg)
+Gtid_log_event::Gtid_log_event(
+    uint32 server_id_arg, bool using_trans, int64 last_committed_arg,
+    int64 sequence_number_arg, bool may_have_sbr_stmts_arg,
+    ulonglong original_commit_timestamp_arg,
+    ulonglong immediate_commit_timestamp_arg, const Gtid_specification spec_arg,
+    uint32_t original_server_version_arg, uint32_t immediate_server_version_arg)
     : binary_log::Gtid_event(
           last_committed_arg, sequence_number_arg, may_have_sbr_stmts_arg,
-          original_commit_timestamp_arg, immediate_commit_timestamp_arg),
+          original_commit_timestamp_arg, immediate_commit_timestamp_arg,
+          original_server_version_arg, immediate_server_version_arg),
       Log_event(header(), footer(),
                 using_trans ? Log_event::EVENT_TRANSACTIONAL_CACHE
                             : Log_event::EVENT_STMT_CACHE,
@@ -12220,6 +12366,12 @@ void Gtid_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info) const {
         llstr(original_commit_timestamp, llbuf), print_event_info->delimiter);
   }
 
+  my_b_printf(head, "/*!80014 SET @@session.original_server_version=%u*/%s\n",
+              original_server_version, print_event_info->delimiter);
+
+  my_b_printf(head, "/*!80014 SET @@session.immediate_server_version=%u*/%s\n",
+              immediate_server_version, print_event_info->delimiter);
+
   to_string(buffer);
   my_b_printf(head, "%s%s\n", buffer, print_event_info->delimiter);
 }
@@ -12314,6 +12466,28 @@ uint32 Gtid_log_event::write_body_to_memory(uchar *buffer) {
   uchar *ptr_after_length = net_store_length(ptr_buffer, transaction_length);
   ptr_buffer = ptr_after_length;
 
+  /*
+    We want to modify immediate_server_version with the flag written to its MSB.
+    At the same time, we also want to have the original value to be able to use
+    it in if() later, so we use a temporary variable here.
+  */
+  uint32_t immediate_server_version_with_flag = immediate_server_version;
+
+  if (immediate_server_version != original_server_version)
+    immediate_server_version_with_flag |=
+        (1ULL << ENCODED_SERVER_VERSION_LENGTH);
+  else  // Clear MSB
+    immediate_server_version_with_flag &=
+        ~(1ULL << ENCODED_SERVER_VERSION_LENGTH);
+
+  int4store(ptr_buffer, immediate_server_version_with_flag);
+  ptr_buffer += IMMEDIATE_SERVER_VERSION_LENGTH;
+
+  if (immediate_server_version != original_server_version) {
+    int4store(ptr_buffer, original_server_version);
+    ptr_buffer += ORIGINAL_SERVER_VERSION_LENGTH;
+  }
+
   DBUG_RETURN(ptr_buffer - buffer);
 }
 
@@ -12392,6 +12566,13 @@ int Gtid_log_event::do_apply_event(Relay_log_info const *rli) {
   enum_gtid_statement_status state = gtid_pre_statement_checks(thd);
   thd->variables.original_commit_timestamp = original_commit_timestamp;
   thd->set_original_commit_timestamp_for_slave_thread();
+  /**
+    Set the original/immediate server version.
+    It will be set to UNKNOWN_SERVER_VERSION if the event does not contain such
+    information.
+   */
+  thd->variables.original_server_version = original_server_version;
+  thd->variables.immediate_server_version = immediate_server_version;
   const_cast<Relay_log_info *>(rli)->started_processing(
       thd->variables.gtid_next.gtid, original_commit_timestamp,
       immediate_commit_timestamp, state == GTID_STATEMENT_SKIP);
@@ -12461,6 +12642,7 @@ void Gtid_log_event::set_trx_length_by_cache_size(ulonglong cache_size,
   transaction_length += LOG_EVENT_HEADER_LEN;
   transaction_length += POST_HEADER_LENGTH;
   transaction_length += get_commit_timestamp_length();
+  transaction_length += get_server_version_length();
   transaction_length += is_checksum_enabled ? BINLOG_CHECKSUM_LEN : 0;
   /*
     Notice that it is not possible to determine the transaction_length field
@@ -12494,6 +12676,18 @@ void Gtid_log_event::set_trx_length_by_cache_size(ulonglong cache_size,
       }
     }
   }
+}
+
+rpl_sidno Gtid_log_event::get_sidno(bool need_lock) {
+  if (spec.gtid.sidno < 0) {
+    if (need_lock)
+      global_sid_lock->rdlock();
+    else
+      global_sid_lock->assert_some_lock();
+    spec.gtid.sidno = global_sid_map->add_sid(sid);
+    if (need_lock) global_sid_lock->unlock();
+  }
+  return spec.gtid.sidno;
 }
 
 Previous_gtids_log_event::Previous_gtids_log_event(
@@ -13037,16 +13231,21 @@ bool View_change_log_event::write_data_map(
   Updates the certification info map.
 */
 void View_change_log_event::set_certification_info(
-    std::map<std::string, std::string> *info) {
+    std::map<std::string, std::string> *info, size_t *event_size) {
   DBUG_ENTER("View_change_log_event::set_certification_database_snapshot");
   certification_info.clear();
 
+  *event_size = Binary_log_event::VIEW_CHANGE_HEADER_LEN;
   std::map<std::string, std::string>::iterator it;
   for (it = info->begin(); it != info->end(); ++it) {
     std::string key = it->first;
     std::string value = it->second;
     certification_info[key] = value;
+    *event_size += it->first.length() + it->second.length();
   }
+  *event_size +=
+      (ENCODED_CERT_INFO_KEY_SIZE_LEN + ENCODED_CERT_INFO_VALUE_LEN) *
+      certification_info.size();
 
   DBUG_VOID_RETURN;
 }

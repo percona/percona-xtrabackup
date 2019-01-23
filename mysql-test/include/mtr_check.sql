@@ -57,7 +57,8 @@ BEGIN
     SELECT * from performance_schema.prepared_statements_instances;
 
     -- Leave the user defined functions in the same state
-    SELECT * from performance_schema.user_defined_functions;
+    SELECT * from performance_schema.user_defined_functions
+      ORDER BY UDF_NAME;
   END;
   END IF;
 END||
@@ -153,10 +154,11 @@ BEGIN
 
   -- mysql.session is used internally by plugins to access the server. We may
   -- not find consistent result in information_schema.processlist, hence
-  -- excluding it from check-testcase.
+  -- excluding it from check-testcase. Similar reasoning applies to the event
+  -- scheduler.
   SELECT USER, HOST, DB, COMMAND, INFO FROM INFORMATION_SCHEMA.PROCESSLIST
     WHERE COMMAND NOT IN ('Binlog Dump','Binlog Dump GTID','Sleep')
-      AND USER <> 'mysql.session'
+      AND USER NOT IN ('mysql.session', 'event_scheduler')
         ORDER BY COMMAND;
 
   -- Checksum system tables to make sure they have been properly

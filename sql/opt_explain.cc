@@ -843,7 +843,7 @@ bool Explain_table_base::explain_key_parts(int key, uint key_parts) {
   KEY_PART_INFO *kp = table->key_info[key].key_part;
   for (uint i = 0; i < key_parts; i++, kp++)
     if (fmt->entry()->col_key_parts.push_back(
-            get_field_name_or_expression(table->in_use, kp->field)))
+            get_field_name_or_expression(thd, kp->field)))
       return true;
   return false;
 }
@@ -1340,17 +1340,35 @@ bool Explain_join::explain_qep_tab(size_t tabnum) {
   return false;
 }
 
-bool Explain_join::explain_table_name() {
-  if (table->pos_in_table_list->is_view_or_derived() &&
+/**
+  Generates either usual table name or <derived#N>, and passes it to
+  any given function for showing to the user.
+  @param tr   Table reference
+  @param fmt  EXPLAIN's format
+  @param func Function receiving the name
+  @returns true if error.
+*/
+static bool store_table_name(
+    TABLE_LIST *tr, Explain_format *fmt,
+    std::function<bool(const char *name, size_t len)> func) {
+  char namebuf[NAME_LEN];
+  size_t len = sizeof(namebuf);
+  if (tr->query_block_id() && tr->is_view_or_derived() &&
       !fmt->is_hierarchical()) {
     /* Derived table name generation */
-    char table_name_buffer[NAME_LEN];
-    const size_t len = snprintf(
-        table_name_buffer, sizeof(table_name_buffer) - 1, "<derived%u>",
-        table->pos_in_table_list->query_block_id_for_explain());
-    return fmt->entry()->col_table_name.set(table_name_buffer, len);
-  } else
-    return fmt->entry()->col_table_name.set(table->pos_in_table_list->alias);
+    len = snprintf(namebuf, len - 1, "<derived%u>",
+                   tr->query_block_id_for_explain());
+    return func(namebuf, len);
+  } else {
+    return func(tr->alias, strlen(tr->alias));
+  }
+}
+
+bool Explain_join::explain_table_name() {
+  return store_table_name(table->pos_in_table_list, fmt,
+                          [&](const char *name, size_t len) {
+                            return fmt->entry()->col_table_name.set(name, len);
+                          });
 }
 
 bool Explain_join::explain_select_type() {
@@ -1439,7 +1457,7 @@ bool Explain_join::explain_rows_and_filtered() {
     fmt->entry()->col_cond_cost.set(0);
     fmt->entry()->col_read_cost.set(0.0);
     fmt->entry()->col_prefix_cost.set(0);
-    fmt->entry()->col_data_size_query.set('0');
+    fmt->entry()->col_data_size_query.set("0");
   } else {
     fmt->entry()->col_rows.set(static_cast<ulonglong>(pos->rows_fetched));
     fmt->entry()->col_filtered.set(
@@ -1559,20 +1577,32 @@ bool Explain_join::explain_extra() {
         if (push_extra(ET_FIRST_MATCH)) return true;
       } else {
         StringBuffer<64> buff(cs);
-        TABLE *prev_table = join->qep_tab[tab->firstmatch_return].table();
-        if (prev_table->pos_in_table_list->query_block_id() &&
-            !fmt->is_hierarchical() &&
-            prev_table->pos_in_table_list->is_derived()) {
-          char namebuf[NAME_LEN];
-          /* Derived table name generation */
-          size_t len = snprintf(
-              namebuf, sizeof(namebuf) - 1, "<derived%u>",
-              prev_table->pos_in_table_list->query_block_id_for_explain());
-          buff.append(namebuf, len);
-        } else
-          buff.append(prev_table->pos_in_table_list->alias);
-        if (push_extra(ET_FIRST_MATCH, buff)) return true;
+        if (store_table_name(join->qep_tab[tab->firstmatch_return].table_ref,
+                             fmt,
+                             [&](const char *name, size_t len) {
+                               return buff.append(name, len);
+                             }) ||
+            push_extra(ET_FIRST_MATCH, buff))
+          return true;
       }
+    }
+
+    if (tab->lateral_derived_tables_depend_on_me) {
+      auto deps = tab->lateral_derived_tables_depend_on_me;
+      StringBuffer<64> buff(cs);
+      bool first = true;
+      for (QEP_TAB **tab2 = join->map2qep_tab; deps; tab2++, deps >>= 1) {
+        if (deps & 1) {
+          if (!first) buff.append(",");
+          first = false;
+          if (store_table_name((*tab2)->table_ref, fmt,
+                               [&](const char *name, size_t len) {
+                                 return buff.append(name, len);
+                               }))
+            return true;
+        }
+      }
+      if (push_extra(ET_REMATERIALIZE, buff)) return true;
     }
 
     if (tab->has_guarded_conds() && push_extra(ET_FULL_SCAN_ON_NULL_KEY))
@@ -1601,13 +1631,17 @@ bool Explain_join::explain_extra() {
           !bitmap_is_set(table->write_set, (*fld)->field_index))
         continue;
 
-      const char *field_description =
-          get_field_name_or_expression(table->in_use, *fld);
+      const char *field_description = get_field_name_or_expression(thd, *fld);
       fmt->entry()->col_used_columns.push_back(field_description);
       if (table->is_binary_diff_enabled(*fld))
         fmt->entry()->col_partial_update_columns.push_back(field_description);
     }
   }
+
+  if (table->s->is_secondary() &&
+      push_extra(ET_USING_SECONDARY_ENGINE, table->file->table_type()))
+    return true;
+
   return false;
 }
 
@@ -1814,7 +1848,7 @@ static bool check_acl_for_explain(const TABLE_LIST *table_list) {
 bool explain_single_table_modification(THD *ethd, const Modification_plan *plan,
                                        SELECT_LEX *select) {
   DBUG_ENTER("explain_single_table_modification");
-  Query_result_send result(ethd);
+  Query_result_send result;
   const THD *const query_thd = select->master_unit()->thd;
   const bool other = (query_thd != ethd);
   bool ret;
@@ -1831,7 +1865,7 @@ bool explain_single_table_modification(THD *ethd, const Modification_plan *plan,
     prepare/initialize Query_result_send object manually.
   */
   List<Item> dummy;
-  if (result.prepare(dummy, ethd->lex->unit))
+  if (result.prepare(ethd, dummy, ethd->lex->unit))
     DBUG_RETURN(true); /* purecov: inspected */
 
   ethd->lex->explain_format->send_headers(&result);
@@ -1870,7 +1904,7 @@ bool explain_single_table_modification(THD *ethd, const Modification_plan *plan,
             ethd->is_error();
   }
   if (ret)
-    result.abort_result_set();
+    result.abort_result_set(ethd);
   else {
     if (!other) {
       StringBuffer<1024> str;
@@ -1881,7 +1915,7 @@ bool explain_single_table_modification(THD *ethd, const Modification_plan *plan,
       push_warning(ethd, Sql_condition::SL_NOTE, ER_YES, str.ptr());
     }
 
-    result.send_eof();
+    result.send_eof(ethd);
   }
   DBUG_RETURN(ret);
 }
@@ -2017,13 +2051,13 @@ bool explain_query(THD *ethd, SELECT_LEX_UNIT *unit) {
                          ? unit->query_result()
                          : unit->first_select()->query_result();
 
-  Query_result_explain explain_wrapper(ethd, unit, explain_result);
+  Query_result_explain explain_wrapper(unit, explain_result);
 
   if (other) {
-    if (!((explain_result = new (*THR_MALLOC) Query_result_send(ethd))))
+    if (!((explain_result = new (*THR_MALLOC) Query_result_send())))
       DBUG_RETURN(true); /* purecov: inspected */
     List<Item> dummy;
-    if (explain_result->prepare(dummy, ethd->lex->unit))
+    if (explain_result->prepare(ethd, dummy, ethd->lex->unit))
       DBUG_RETURN(true); /* purecov: inspected */
   } else {
     DBUG_ASSERT(unit->is_optimized());
@@ -2077,9 +2111,9 @@ bool explain_query(THD *ethd, SELECT_LEX_UNIT *unit) {
   }
 
   if (res)
-    explain_result->abort_result_set();
+    explain_result->abort_result_set(ethd);
   else
-    explain_result->send_eof();
+    explain_result->send_eof(ethd);
 
   if (other) destroy(explain_result);
 

@@ -25,7 +25,6 @@
 #include "mysql/harness/loader.h"
 #include "nt_servc.h"
 
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winsock2.h>
 #include <fstream>
@@ -159,24 +158,6 @@ void do_windows_cleanup() {
   }
 }
 
-BOOL CtrlC_handler(DWORD ctrl_type) {
-  if (ctrl_type == CTRL_C_EVENT) {
-    // user presed Ctrl+C
-    request_application_shutdown();
-    return TRUE;  // don't pass this event to further handlers
-  } else {
-    // some other event
-    return FALSE;  // let the default Windows handler deal with it
-  }
-}
-
-void register_CtrlC_handler() {
-  if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE)CtrlC_handler, TRUE)) {
-    std::cerr << "Could not install Ctrl+C handler, exiting.\n";
-    exit(1);
-  }
-}
-
 }  // unnamed namespace
 
 int proxy_main(int (*real_main)(int, char **), int argc, char **argv) {
@@ -203,7 +184,7 @@ int proxy_main(int (*real_main)(int, char **), int argc, char **argv) {
       }
     case ServiceStatus::StartNormal:  // case when Router runs from "DOS"
                                       // console
-      register_CtrlC_handler();
+      register_ctrl_c_handler();
       g_service.SetRunning();
       result = real_main(argc, argv);
       break;

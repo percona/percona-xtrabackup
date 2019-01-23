@@ -225,7 +225,7 @@ err:
   (void)unit->cleanup(false);
 
   // Abort the result set (if it has been prepared).
-  result->abort_result_set();
+  result->abort_result_set(thd);
 
   DBUG_RETURN(thd->is_error());
 }
@@ -432,15 +432,15 @@ bool Sql_cmd_select::prepare_inner(THD *thd) {
       redirects the output.
     */
     Prepared_stmt_arena_holder ps_arena_holder(thd);
-    result = new (thd->mem_root) Query_result_send(thd);
+    result = new (thd->mem_root) Query_result_send();
     if (!result) return true; /* purecov: inspected */
   } else {
     Prepared_stmt_arena_holder ps_arena_holder(thd);
     if (lex->result == NULL) {
       if (sql_command_code() == SQLCOM_SELECT)
-        lex->result = new (thd->mem_root) Query_result_send(thd);
+        lex->result = new (thd->mem_root) Query_result_send();
       else if (sql_command_code() == SQLCOM_DO)
-        lex->result = new (thd->mem_root) Query_result_do(thd);
+        lex->result = new (thd->mem_root) Query_result_do();
       if (lex->result == NULL) return true; /* purecov: inspected */
     }
     result = lex->result;
@@ -556,8 +556,6 @@ bool Sql_cmd_dml::execute(THD *thd) {
 
   thd->clear_current_query_costs();
 
-  thd->current_changed_rows = 0;
-
   if (is_data_change_stmt()) {
     // Replication may require extra check of data change statements
     if (run_before_dml_hook(thd)) goto err;
@@ -614,7 +612,7 @@ bool Sql_cmd_dml::execute(THD *thd) {
   lex->clear_values_map();
 
   // Perform statement-specific cleanup for Query_result
-  if (result != NULL) result->cleanup();
+  if (result != NULL) result->cleanup(thd);
 
   thd->save_current_query_costs();
 
@@ -648,8 +646,8 @@ err:
 
   // Abort and cleanup the result set (if it has been prepared).
   if (result != NULL) {
-    result->abort_result_set();
-    result->cleanup();
+    result->abort_result_set(thd);
+    result->cleanup(thd);
   }
   if (error_handler_active) thd->pop_internal_handler();
 
@@ -721,7 +719,6 @@ bool Sql_cmd_dml::execute_inner(THD *thd) {
 static bool check_locking_clause_access(THD *thd, Global_tables_list tables) {
   for (TABLE_LIST *table_ref : tables)
     if (table_ref->lock_descriptor().action != THR_DEFAULT) {
-      bool access_is_granted = false;
       /*
         If either of these privileges is present along with SELECT, access is
         granted.
@@ -729,18 +726,16 @@ static bool check_locking_clause_access(THD *thd, Global_tables_list tables) {
       for (uint allowed_priv : {UPDATE_ACL, DELETE_ACL, LOCK_TABLES_ACL}) {
         ulong priv = SELECT_ACL | allowed_priv;
         if (!check_table_access(thd, priv, table_ref, false, 1, true))
-          access_is_granted = true;
+          return false;
       }
 
-      if (!access_is_granted) {
-        const Security_context *sctx = thd->security_context();
+      const Security_context *sctx = thd->security_context();
 
-        my_error(ER_TABLEACCESS_DENIED_ERROR, MYF(0),
-                 "SELECT with locking clause", sctx->priv_user().str,
-                 sctx->host_or_ip().str, table_ref->get_table_name());
+      my_error(ER_TABLEACCESS_DENIED_ERROR, MYF(0),
+               "SELECT with locking clause", sctx->priv_user().str,
+               sctx->host_or_ip().str, table_ref->get_table_name());
 
-        return true;
-      }
+      return true;
     }
 
   return false;
@@ -1311,26 +1306,27 @@ static int clear_sj_tmp_tables(JOIN *join) {
   List_iterator<TABLE> it(join->sj_tmp_tables);
   TABLE *table;
   while ((table = it++)) {
-    if ((res = table->file->ha_delete_all_rows()))
+    if ((res = table->empty_result_table()))
       return res; /* purecov: inspected */
   }
-  if (join->qep_tab) {
-    Semijoin_mat_exec *sjm;
-    List_iterator<Semijoin_mat_exec> it2(join->sjm_exec_list);
-    while ((sjm = it2++)) {
-      {
-        QEP_TAB *const tab = &join->qep_tab[sjm->mat_table_index];
-        /*
-          If zero_result_cause is set, we have not gone through
-          pick_table_access_method() which sets materialize_table, so the
-          assertion is disabled in this case.
-        */
-        DBUG_ASSERT(join->zero_result_cause || tab->materialize_table);
-        tab->table()->materialized = false;
-      }
+  return 0;
+}
+
+/// Empties all correlated materialized derived tables
+bool JOIN::clear_corr_derived_tmp_tables() {
+  for (uint i = const_tables; i < tables; i++) {
+    auto tl = qep_tab[i].table_ref;
+    if (tl && tl->is_derived() && !tl->common_table_expr() &&
+        (tl->derived_unit()->uncacheable & UNCACHEABLE_DEPENDENT) &&
+        tl->table) {
+      /*
+        Applied only to non-CTE derived tables, as CTEs are reset in
+        SELECT_LEX_UNIT::clear_corr_ctes()
+      */
+      if (tl->derived_unit()->query_result()->reset()) return true;
     }
   }
-  return 0;
+  return false;
 }
 
 /**
@@ -1359,19 +1355,15 @@ void JOIN::reset() {
 
   if (tmp_tables) {
     for (uint tmp = primary_tables; tmp < primary_tables + tmp_tables; tmp++) {
-      TABLE *const tmp_table = qep_tab[tmp].table();
-      if (!tmp_table->is_created()) continue;
-      tmp_table->file->extra(HA_EXTRA_RESET_STATE);
-      tmp_table->file->ha_delete_all_rows();
-      free_io_cache(tmp_table);
-      filesort_free_buffers(tmp_table, 0);
+      (void)qep_tab[tmp].table()->empty_result_table();
     }
   }
   clear_sj_tmp_tables(this);
   set_ref_item_slice(REF_SLICE_SAVED_BASE);
 
-  /* need to reset ref access state (see EQRefIterator) */
   if (qep_tab) {
+    if (select_lex->derived_table_count) clear_corr_derived_tmp_tables();
+    /* need to reset ref access state (see EQRefIterator) */
     for (uint i = 0; i < tables; i++) {
       QEP_TAB *const tab = &qep_tab[i];
       /*
@@ -1430,7 +1422,7 @@ bool JOIN::prepare_result() {
     }
   }
 
-  if (select_lex->query_result()->start_execution()) goto err;
+  if (select_lex->query_result()->start_execution(thd)) goto err;
 
   if ((select_lex->active_options() & OPTION_SCHEMA_TABLE) &&
       get_schema_tables_result(this, PROCESSED_BY_JOIN_EXEC))
@@ -1794,7 +1786,7 @@ bool create_ref_for_key(JOIN *join, JOIN_TAB *j, Key_use *org_keyuse,
       store_key *s_key =
           get_store_key(thd, keyuse, join->const_table_map,
                         &keyinfo->key_part[part_no], key_buff, maybe_null);
-      if (unlikely(!s_key || thd->is_fatal_error)) DBUG_RETURN(true);
+      if (unlikely(!s_key || thd->is_fatal_error())) DBUG_RETURN(true);
 
       if (keyuse->used_tables) /* Comparing against a non-constant. */
         j->ref().key_copy[part_no] = s_key;
@@ -2518,6 +2510,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
 
     JOIN_TAB *const tab = join->best_ref[i];
     TABLE *const table = qep_tab->table();
+    TABLE_LIST *const table_ref = qep_tab->table_ref;
     /*
      Need to tell handlers that to play it safe, it should fetch all
      columns of the primary key of the tables: this is because MySQL may
@@ -2530,7 +2523,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
     qep_tab->cache_idx_cond = NULL;
 
     Opt_trace_object trace_refine_table(trace);
-    trace_refine_table.add_utf8_table(qep_tab->table_ref);
+    trace_refine_table.add_utf8_table(table_ref);
 
     if (qep_tab->do_loosescan()) {
       if (!(qep_tab->loosescan_buf =
@@ -2540,6 +2533,32 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
 
     if (tab->use_join_cache() != JOIN_CACHE::ALG_NONE)
       qep_tab->init_join_cache(tab);
+
+    /*
+      If supported by handler, (parts of) the table condition may
+      by pushed down to the SE-engine for evaluation.
+    */
+    if (qep_tab->condition()) {
+      THD *thd = join->thd;
+      Item *cond = qep_tab->condition();
+      /*
+        Push condition to storage engine if this is enabled
+        and the condition is not guarded.
+      */
+      if (thd->optimizer_switch_flag(
+              OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN) &&
+          !qep_tab->is_inner_table_of_outer_join()) {
+        Item *push_cond =
+            make_cond_for_table(thd, cond, qep_tab->table_ref->map(),
+                                qep_tab->table_ref->map(), false);
+
+        if (push_cond != NULL && !table->file->cond_push(push_cond)) {
+          /* Condition pushed to handler */
+          table->file->pushed_cond = push_cond;
+          trace_refine_table.add("pushed_handler_condition", push_cond);
+        }
+      }
+    }
 
     switch (qep_tab->type()) {
       case JT_EQ_REF:
@@ -2569,7 +2588,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
             condition's filter to filter_effect.
           */
           double rows_w_const_cond = qep_tab->position()->rows_fetched;
-          table->pos_in_table_list->fetch_number_of_rows();
+          table_ref->fetch_number_of_rows();
           tab->position()->rows_fetched =
               static_cast<double>(table->file->stats.records);
           if (tab->position()->filter_effect != COND_FILTER_STALE) {
@@ -2648,28 +2667,47 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
           join->thd->lex->is_explain()
               ? calculate_condition_filter(
                     tab, (tab->ref().key != -1) ? tab->position()->key : NULL,
-                    tab->prefix_tables() & ~tab->table_ref->map(),
+                    tab->prefix_tables() & ~table_ref->map(),
                     tab->position()->rows_fetched, false, false,
                     trace_refine_table)
               : COND_FILTER_ALLPASS;
     }
 
-    DBUG_ASSERT(!qep_tab->table_ref->is_recursive_reference() ||
+    DBUG_ASSERT(!table_ref->is_recursive_reference() ||
                 qep_tab->type() == JT_ALL);
 
     qep_tab->pick_table_access_method(tab);
 
     // Materialize derived tables prior to accessing them.
-    if (tab->table_ref->is_table_function()) {
+    if (table_ref->is_table_function()) {
       qep_tab->materialize_table = join_materialize_table_function;
       if (tab->dependent) qep_tab->rematerialize = true;
-    } else if (tab->table_ref->uses_materialization())
+    } else if (table_ref->uses_materialization()) {
       qep_tab->materialize_table = join_materialize_derived;
+    }
 
     if (qep_tab->sj_mat_exec())
       qep_tab->materialize_table = join_materialize_semijoin;
 
     qep_tab->set_reversed_access(tab->reversed_access);
+
+    if (table_ref->is_derived() && table_ref->derived_unit()->m_lateral_deps) {
+      auto deps = table_ref->derived_unit()->m_lateral_deps;
+      plan_idx last = NO_PLAN_IDX;
+      for (JOIN_TAB **tab2 = join->map2table; deps; tab2++, deps >>= 1) {
+        if (deps & 1) last = std::max(last, (*tab2)->idx());
+      }
+      /*
+        We identified the last dependency of table_ref in the plan, and it's
+        the table whose reading must trigger rematerialization of table_ref.
+      */
+      if (last != NO_PLAN_IDX) {
+        QEP_TAB &t = join->qep_tab[last];
+        t.lateral_derived_tables_depend_on_me |= table_ref->map();
+        trace_refine_table.add_utf8("rematerialized_for_each_row_of",
+                                    t.table()->alias);
+      }
+    }
   }
 
   DBUG_RETURN(false);
@@ -3660,6 +3698,7 @@ bool JOIN::switch_slice_for_rollup_fields(List<Item> &curr_all_fields,
 
   Call prepare() on the new Query_result if we decide to use it.
 
+  @param thd        Thread handle
   @param new_result New Query_result object
   @param old_result Old Query_result object (NULL to force change)
 
@@ -3667,16 +3706,17 @@ bool JOIN::switch_slice_for_rollup_fields(List<Item> &curr_all_fields,
   @retval true  Error
 */
 
-bool SELECT_LEX::change_query_result(Query_result_interceptor *new_result,
+bool SELECT_LEX::change_query_result(THD *thd,
+                                     Query_result_interceptor *new_result,
                                      Query_result_interceptor *old_result) {
   DBUG_ENTER("SELECT_LEX::change_query_result");
   if (old_result == NULL || query_result() == old_result) {
     set_query_result(new_result);
-    if (query_result()->prepare(fields_list, master_unit()))
+    if (query_result()->prepare(thd, fields_list, master_unit()))
       DBUG_RETURN(true); /* purecov: inspected */
     DBUG_RETURN(false);
   } else {
-    const bool ret = query_result()->change_query_result(new_result);
+    const bool ret = query_result()->change_query_result(thd, new_result);
     DBUG_RETURN(ret);
   }
 }
@@ -4178,7 +4218,7 @@ bool JOIN::make_tmp_tables_info() {
     const bool need_distinct = !(qep_tab && qep_tab[0].quick() &&
                                  qep_tab[0].quick()->is_agg_loose_index_scan());
     if (prepare_sum_aggregators(sum_funcs, need_distinct)) DBUG_RETURN(true);
-    if (setup_sum_funcs(thd, sum_funcs) || thd->is_fatal_error)
+    if (setup_sum_funcs(thd, sum_funcs) || thd->is_fatal_error())
       DBUG_RETURN(true);
     // And now set it as input for next phases:
     set_ref_item_slice(REF_SLICE_ORDERED_GROUP_BY);
@@ -4428,6 +4468,22 @@ bool JOIN::make_tmp_tables_info() {
 
 void JOIN::unplug_join_tabs() {
   ASSERT_BEST_REF_IN_JOIN_ORDER(this);
+
+  /*
+    During execution we will need to access QEP_TABs by map.
+    map2table points to JOIN_TABs which are to be trashed a few lines down; so
+    we won't use map2table, but build a similar map2qep_tab; no need to
+    allocate new space for this array, we can reuse that of map2table.
+  */
+  static_assert(sizeof(QEP_TAB *) == sizeof(JOIN_TAB *), "");
+  void *storage = reinterpret_cast<void *>(map2table);
+  map2qep_tab = reinterpret_cast<QEP_TAB **>(storage);
+  for (uint i = 0; i < tables; ++i)
+    if (best_ref[i]->table_ref)
+      map2qep_tab[best_ref[i]->table_ref->tableno()] = &qep_tab[i];
+
+  map2table = nullptr;
+
   for (uint i = 0; i < tables; ++i) best_ref[i]->cleanup();
 
   best_ref = NULL;

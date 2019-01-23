@@ -381,6 +381,9 @@ void init_thread_mask(int *mask, Master_info *mi, bool inverse) {
 void lock_slave_threads(Master_info *mi) {
   DBUG_ENTER("lock_slave_threads");
 
+  // protection against mixed locking order (see header)
+  mi->channel_assert_some_wrlock();
+
   // TODO: see if we can do this without dual mutex
   mysql_mutex_lock(&mi->run_lock);
   mysql_mutex_lock(&mi->rli->run_lock);
@@ -1159,7 +1162,8 @@ err:
 }
 
 int load_mi_and_rli_from_repositories(Master_info *mi, bool ignore_if_no_info,
-                                      int thread_mask) {
+                                      int thread_mask,
+                                      bool skip_received_gtid_set_recovery) {
   DBUG_ENTER("init_info");
   DBUG_ASSERT(mi != NULL && mi->rli != NULL);
   int init_error = 0;
@@ -1209,7 +1213,7 @@ int load_mi_and_rli_from_repositories(Master_info *mi, bool ignore_if_no_info,
   }
   if (!(ignore_if_no_info && check_return == REPOSITORY_DOES_NOT_EXIST)) {
     if (((thread_mask & SLAVE_SQL) != 0 || !(mi->rli->inited)) &&
-        mi->rli->rli_init_info())
+        mi->rli->rli_init_info(skip_received_gtid_set_recovery))
       init_error = 1;
     else {
       /*
@@ -2913,7 +2917,7 @@ static bool wait_for_relay_log_space(Relay_log_info *rli) {
     }
 #endif
     if (rli->sql_force_rotate_relay) {
-      rotate_relay_log(mi);
+      rotate_relay_log(mi, true, true, false);
       rli->sql_force_rotate_relay = false;
     }
 
@@ -3849,14 +3853,12 @@ static int init_slave_thread(THD *thd, SLAVE_THD_TYPE thd_type) {
                   simulate_error |= (1 << SLAVE_THD_IO););
   DBUG_EXECUTE_IF("simulate_sql_slave_error_on_init",
                   simulate_error |= (1 << SLAVE_THD_SQL););
+  thd->store_globals();
 #if !defined(DBUG_OFF)
-  if (thd->store_globals() || simulate_error & (1 << thd_type))
-#else
-  if (thd->store_globals())
-#endif
-  {
+  if (simulate_error & (1 << thd_type)) {
     DBUG_RETURN(-1);
   }
+#endif
 
   if (thd_type == SLAVE_THD_SQL) {
     THD_STAGE_INFO(thd, stage_waiting_for_the_next_event_in_relay_log);
@@ -4671,7 +4673,7 @@ static int exec_relay_log_event(THD *thd, Relay_log_info *rli,
       To avoid assigned event groups exceeding rli->checkpoint_group, it
       need force to compute checkpoint.
     */
-    bool force = rli->checkpoint_seqno >= rli->checkpoint_group;
+    bool force = rli->rli_checkpoint_seqno >= rli->checkpoint_group;
     if (force || rli->is_time_for_mts_checkpoint()) {
       mysql_mutex_unlock(&rli->data_lock);
       if (mts_checkpoint_routine(rli, force)) {
@@ -4925,7 +4927,7 @@ static int exec_relay_log_event(THD *thd, Relay_log_info *rli,
                                 rli->trans_retries));
           }
         } else {
-          thd->is_fatal_error = 1;
+          thd->fatal_error();
           rli->report(ERROR_LEVEL, thd->get_stmt_da()->mysql_errno(),
                       "Slave SQL thread retried transaction %lu time(s) "
                       "in vain, giving up. Consider raising the value of "
@@ -4975,10 +4977,11 @@ static int exec_relay_log_event(THD *thd, Relay_log_info *rli,
 Could not parse relay log event entry. The possible reasons are: the master's \
 binary log is corrupted (you can check this by running 'mysqlbinlog' on the \
 binary log), the slave's relay log is corrupted (you can check this by running \
-'mysqlbinlog' on the relay log), a network problem, or a bug in the master's \
-or slave's MySQL code. If you want to check the master's binary log or slave's \
-relay log, you will be able to know their names by issuing 'SHOW SLAVE STATUS' \
-on this slave.\
+'mysqlbinlog' on the relay log), a network problem, the server was unable to \
+fetch a keyring key required to open an encrypted relay log file, or a bug in \
+the master's or slave's MySQL code. If you want to check the master's binary \
+log or slave's relay log, you will be able to know their names by issuing \
+'SHOW SLAVE STATUS' on this slave.\
 ");
   DBUG_RETURN(1);
 }
@@ -5681,6 +5684,17 @@ static void *handle_slave_worker(void *arg) {
   thd->rli_slave = w;
   thd->init_query_mem_roots();
 
+  if (channel_map.is_group_replication_channel_name(rli->get_channel())) {
+    if (channel_map.is_group_replication_channel_name(rli->get_channel(),
+                                                      true)) {
+      thd->rpl_thd_ctx.set_rpl_channel_type(GR_APPLIER_CHANNEL);
+    } else {
+      thd->rpl_thd_ctx.set_rpl_channel_type(GR_RECOVERY_CHANNEL);
+    }
+  } else {
+    thd->rpl_thd_ctx.set_rpl_channel_type(RPL_STANDARD_CHANNEL);
+  }
+
   w->set_filter(rli->rpl_filter);
 
   if ((w->deferred_events_collecting = w->rpl_filter->is_on()))
@@ -6012,19 +6026,21 @@ bool mts_recovery_groups(Relay_log_info *rli) {
                  rli->get_group_master_log_name(), ev->common_header->log_pos);
           if ((ret = mts_event_coord_cmp(&ev_coord, &w_last)) == 0) {
 #ifndef DBUG_OFF
-            for (uint i = 0; i <= w->checkpoint_seqno; i++) {
+            for (uint i = 0; i <= w->worker_checkpoint_seqno; i++) {
               if (bitmap_is_set(&w->group_executed, i))
                 DBUG_PRINT("mts", ("Bit %u is set.", i));
               else
                 DBUG_PRINT("mts", ("Bit %u is not set.", i));
             }
 #endif
-            DBUG_PRINT("mts", ("Doing a shift ini(%lu) end(%lu).",
-                               (w->checkpoint_seqno + 1) - recovery_group_cnt,
-                               w->checkpoint_seqno));
+            DBUG_PRINT("mts",
+                       ("Doing a shift ini(%lu) end(%lu).",
+                        (w->worker_checkpoint_seqno + 1) - recovery_group_cnt,
+                        w->worker_checkpoint_seqno));
 
-            for (uint i = (w->checkpoint_seqno + 1) - recovery_group_cnt, j = 0;
-                 i <= w->checkpoint_seqno; i++, j++) {
+            for (uint i = (w->worker_checkpoint_seqno + 1) - recovery_group_cnt,
+                      j = 0;
+                 i <= w->worker_checkpoint_seqno; i++, j++) {
               if (bitmap_is_set(&w->group_executed, i)) {
                 DBUG_PRINT("mts", ("Setting bit %u.", j));
                 bitmap_fast_test_and_set(groups, j);
@@ -6093,10 +6109,10 @@ bool mts_checkpoint_routine(Relay_log_info *rli, bool force) {
     two possible status of the last (being scheduled) group.
   */
   DBUG_ASSERT(!rli->gaq->full() ||
-              ((rli->checkpoint_seqno == rli->checkpoint_group - 1 &&
+              ((rli->rli_checkpoint_seqno == rli->checkpoint_group - 1 &&
                 (rli->mts_group_status == Relay_log_info::MTS_IN_GROUP ||
                  rli->mts_group_status == Relay_log_info::MTS_KILLED_GROUP)) ||
-               rli->checkpoint_seqno == rli->checkpoint_group));
+               rli->rli_checkpoint_seqno == rli->checkpoint_group));
 
   do {
     if (!is_mts_db_partitioned(rli)) mysql_mutex_lock(&rli->mts_gaq_LOCK);
@@ -6342,7 +6358,7 @@ static int slave_start_workers(Relay_log_info *rli, ulong n, bool *mts_inited) {
   rli->mts_worker_underrun_level = mts_worker_underrun_level;
   rli->curr_group_seen_begin = rli->curr_group_seen_gtid = false;
   rli->curr_group_isolated = false;
-  rli->checkpoint_seqno = 0;
+  rli->rli_checkpoint_seqno = 0;
   rli->mts_last_online_stat = my_time(0);
   rli->mts_group_status = Relay_log_info::MTS_NOT_IN_GROUP;
   clear_gtid_monitoring_info = true;
@@ -6592,6 +6608,17 @@ extern "C" void *handle_slave_sql(void *arg) {
         new Commit_order_manager(rli->opt_slave_parallel_workers);
 
   rli->set_commit_order_manager(commit_order_mngr);
+
+  if (channel_map.is_group_replication_channel_name(rli->get_channel())) {
+    if (channel_map.is_group_replication_channel_name(rli->get_channel(),
+                                                      true)) {
+      thd->rpl_thd_ctx.set_rpl_channel_type(GR_APPLIER_CHANNEL);
+    } else {
+      thd->rpl_thd_ctx.set_rpl_channel_type(GR_RECOVERY_CHANNEL);
+    }
+  } else {
+    thd->rpl_thd_ctx.set_rpl_channel_type(RPL_STANDARD_CHANNEL);
+  }
 
   mysql_mutex_unlock(&rli->info_thd_lock);
 
@@ -6899,7 +6926,12 @@ err:
   rli->slave_running = 0;
   rli->atomic_is_stopping = false;
   /* Forget the relay log's format */
-  rli->set_rli_description_event(NULL);
+  if (rli->set_rli_description_event(nullptr)) {
+#ifndef DBUG_OFF
+    bool set_rli_description_event_failed = false;
+#endif
+    DBUG_ASSERT(set_rli_description_event_failed);
+  }
   /* Wake up master_pos_wait() */
   mysql_mutex_unlock(&rli->data_lock);
   DBUG_PRINT("info",
@@ -7000,7 +7032,7 @@ static int process_io_rotate(Master_info *mi, Rotate_log_event *rev) {
     Master will send a FD event immediately after the Roate event, so don't log
     the current FD event.
   */
-  int ret = rotate_relay_log(mi, false, false);
+  int ret = rotate_relay_log(mi, false, false, true);
 
   mysql_mutex_lock(&mi->data_lock);
   /* Safe copy as 'rev' has been "sanitized" in Rotate_log_event's ctor */
@@ -7935,7 +7967,8 @@ static int safe_reconnect(THD *thd, MYSQL *mysql, Master_info *mi,
   is void).
 */
 
-int rotate_relay_log(Master_info *mi, bool log_master_fd, bool need_lock) {
+int rotate_relay_log(Master_info *mi, bool log_master_fd, bool need_lock,
+                     bool need_log_space_lock) {
   DBUG_ENTER("rotate_relay_log");
 
   Relay_log_info *rli = mi->rli;
@@ -7978,7 +8011,7 @@ int rotate_relay_log(Master_info *mi, bool log_master_fd, bool need_lock) {
     If the log is closed, then this will just harvest the last writes, probably
     0 as they probably have been harvested.
   */
-  rli->relay_log.harvest_bytes_written(&rli->log_space_total);
+  rli->relay_log.harvest_bytes_written(rli, need_log_space_lock);
 end:
   if (need_lock) mysql_mutex_unlock(rli->relay_log.get_log_lock());
   DBUG_RETURN(error);
@@ -9267,8 +9300,8 @@ int change_master(THD *thd, Master_info *mi, LEX_MASTER_INFO *lex_mi,
 
   init_thread_mask(&thread_mask_stopped_threads, mi, 1);
 
-  if (load_mi_and_rli_from_repositories(mi, false,
-                                        thread_mask_stopped_threads)) {
+  if (load_mi_and_rli_from_repositories(mi, false, thread_mask_stopped_threads,
+                                        need_relay_log_purge)) {
     error = ER_MASTER_INFO;
     my_error(ER_MASTER_INFO, MYF(0));
     goto err;

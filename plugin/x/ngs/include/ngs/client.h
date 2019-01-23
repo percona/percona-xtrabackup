@@ -54,11 +54,11 @@ class Client : public Client_interface {
   Client(std::shared_ptr<Vio_interface> connection, Server_interface &server,
          Client_id client_id, Protocol_monitor_interface *pmon,
          const Global_timeouts &timeouts);
-  virtual ~Client();
+  ~Client() override;
 
   xpl::Mutex &get_session_exit_mutex() override { return m_session_exit_mutex; }
   Session_interface *session() override { return m_session.get(); }
-  ngs::shared_ptr<Session_interface> session_smart_ptr() override {
+  ngs::shared_ptr<Session_interface> session_smart_ptr() const override {
     return m_session;
   }
 
@@ -74,13 +74,14 @@ class Client : public Client_interface {
 
   Server_interface &server() const override { return m_server; }
   Protocol_encoder_interface &protocol() const override { return *m_encoder; }
-  Vio_interface &connection() override { return *m_connection; };
+  Vio_interface &connection() override { return *m_connection; }
 
   void on_session_auth_success(Session_interface &s) override;
   void on_session_close(Session_interface &s) override;
   void on_session_reset(Session_interface &s) override;
 
   void disconnect_and_trigger_close() override;
+  bool is_handler_thd(const THD *) const override { return false; }
 
   const char *client_address() const override { return m_client_addr.c_str(); }
   const char *client_hostname() const override { return m_client_host.c_str(); }
@@ -89,7 +90,7 @@ class Client : public Client_interface {
   Client_id client_id_num() const override { return m_client_id; }
   int client_port() const override { return m_client_port; }
 
-  Client_state get_state() const override { return m_state.load(); };
+  Client_state get_state() const override { return m_state.load(); }
   chrono::time_point get_accept_time() const override;
 
   void set_supports_expired_passwords(bool flag) {

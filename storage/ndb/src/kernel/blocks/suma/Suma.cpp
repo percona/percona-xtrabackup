@@ -1276,13 +1276,10 @@ Suma::api_fail_subscriber_list(Signal* signal, Uint32 nodeId)
   jam();
   Ptr<SubOpRecord> subOpPtr;
 
-  if (c_outstanding_drop_trig_req > 9)
+  if (c_outstanding_drop_trig_req > NDB_MAX_SUMA_DROP_TRIG_REQ_APIFAIL)
   {
+    /* Avoid overflowing DbtupProxy with too many GSN_DROP_TRIG_IMPL_REQs */
     jam();
-    /**
-     * Make sure not to overflow DbtupProxy with too many GSN_DROP_TRIG_IMPL_REQ
-     *   9 is arbitrary number...
-     */
     sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 100,
                         signal->getLength());
     return;
@@ -3044,8 +3041,7 @@ Suma::Table::parseTable(SegmentedSectionPtr ptr,
   DictTabInfo::Table tableDesc; tableDesc.init();
   s = SimpleProperties::unpack(it, &tableDesc, 
 			       DictTabInfo::TableMapping, 
-			       DictTabInfo::TableMappingSize, 
-			       true, true);
+			       DictTabInfo::TableMappingSize);
 
   jamBlock(&suma);
   suma.suma_ndbrequire(s == SimpleProperties::Break);
@@ -3907,8 +3903,17 @@ Suma::drop_triggers(Signal* signal, SubscriptionPtr subPtr)
         req->receiverRef = SUMA_REF;
 
         c_outstanding_drop_trig_req++;
-        sendSignal(DBTUP_REF, GSN_DROP_TRIG_IMPL_REQ,
-                   signal, DropTrigImplReq::SignalLength, JBB);
+        if (ERROR_INSERTED(13051))
+        {
+          /* Delay the DROP_TRIG_IMPL_REQ */
+          sendSignalWithDelay(DBTUP_REF, GSN_DROP_TRIG_IMPL_REQ,
+                              signal, 99, DropTrigImplReq::SignalLength);
+        }
+        else
+        {
+          sendSignal(DBTUP_REF, GSN_DROP_TRIG_IMPL_REQ,
+                     signal, DropTrigImplReq::SignalLength, JBB);
+        }
       }
     }
   }
@@ -4130,6 +4135,15 @@ void
 Suma::sub_stop_req(Signal* signal)
 {
   jam();
+  if (c_outstanding_drop_trig_req >= NDB_MAX_SUMA_DROP_TRIG_REQ_SUBSTOP)
+  {
+    jam();
+    /* Further sub stop requests execution might flood the Short time queue by
+     * sending too many drop trigger requests. So they are delayed until the
+     * previous requests are processed. */
+    sendSignalWithDelay(SUMA_REF, GSN_CONTINUEB, signal, 10, 3);
+    return;
+  }
 
   Ptr<SubOpRecord> subOpPtr;
   c_subOpPool.getPtr(subOpPtr, signal->theData[1]);
@@ -6722,7 +6736,7 @@ loop:
   ptr.p->m_size = count;
   ptr.p->m_free = count;
 
-  Buffer_page* page;
+  Buffer_page* page = nullptr;
   for(Uint32 i = 0; i<count; i++)
   {
     page = c_page_pool.getPtr(ref);

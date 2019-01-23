@@ -2,13 +2,20 @@
    Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -126,12 +133,12 @@ Ndb_metadata::create_table_def(dd::Table* table_def)
     switch (type)
     {
       case NdbDictionary::Column::StorageTypeDisk:
-        table_def->options().set_uint32(key_storage,
-                                        HA_SM_DISK);
+        table_def->options().set(key_storage,
+                                 HA_SM_DISK);
         break;
       case NdbDictionary::Column::StorageTypeMemory:
-         table_def->options().set_uint32(key_storage,
-                                         HA_SM_MEMORY);
+         table_def->options().set(key_storage,
+                                  HA_SM_MEMORY);
          break;
       case NdbDictionary::Column::StorageTypeDefault:
         // Not set
@@ -203,7 +210,7 @@ Ndb_metadata::lookup_tablespace_id(THD* thd, dd::Table* table_def)
 
   // Set magic flag telling SHOW CREATE and CREATE LIKE that tablespace
   // was specified for this table
-  table_def->options().set_bool(magic_key_explicit_tablespace, true);
+  table_def->options().set(magic_key_explicit_tablespace, true);
 
   // Lookup tablespace_by name if name is available
   const char* tablespace_name = ndb_table_tablespace_name(m_ndbtab);
@@ -317,11 +324,11 @@ bool Ndb_metadata::compare_table_def(const dd::Table* t1, const dd::Table* t2)
     bool t2_explicit= false;
     if (t1->options().exists(magic_key_explicit_tablespace))
     {
-      t1->options().get_bool(magic_key_explicit_tablespace, &t1_explicit);
+      t1->options().get(magic_key_explicit_tablespace, &t1_explicit);
     }
     if (t2->options().exists(magic_key_explicit_tablespace))
     {
-      t2->options().get_bool(magic_key_explicit_tablespace, &t2_explicit);
+      t2->options().get(magic_key_explicit_tablespace, &t2_explicit);
     }
     ctx.compare("options.explicit_tablespace", t1_explicit, t2_explicit);
   }
@@ -352,11 +359,11 @@ bool Ndb_metadata::compare_table_def(const dd::Table* t1, const dd::Table* t2)
     uint32 t2_storage = UINT_MAX32;
     if (t1->options().exists(key_storage))
     {
-      t1->options().get_uint32(key_storage, &t1_storage);
+      t1->options().get(key_storage, &t1_storage);
     }
     if (t2->options().exists(key_storage))
     {
-      t2->options().get_uint32(key_storage, &t2_storage);
+      t2->options().get(key_storage, &t2_storage);
     }
     ctx.compare("options.storage", t1_storage, t2_storage);
   }

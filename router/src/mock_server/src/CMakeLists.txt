@@ -25,15 +25,13 @@
 # (server mock dependency) from mysql_server_mock_schema.js
 ################################################################################
 
-# build JSON schema embedder
-ADD_EXECUTABLE(json_schema_embedder json_schema_embedder.cc)
-
 # generate mysql_server_mock_schema.cc, which embeds mysql_server_mock_schema.js
 # as a c-string. Server mock build will trigger this as its dependency [_HERE_]
 ADD_CUSTOM_COMMAND(OUTPUT mysql_server_mock_schema.cc
                    COMMAND json_schema_embedder
                      ${CMAKE_CURRENT_SOURCE_DIR}/mysql_server_mock_schema.js
-                     ${CMAKE_CURRENT_BINARY_DIR}/mysql_server_mock_schema.cc)
+                     ${CMAKE_CURRENT_BINARY_DIR}/mysql_server_mock_schema.cc
+                     "kSqlQueryJsonSchema")
 
 
 SET(common_libraries)
@@ -55,6 +53,9 @@ SET(DUKTAPE_SRCS
   ${DUKTAPE_SOURCE_DIR}/src/duktape.c
   ${DUKTAPE_SOURCE_DIR}/extras/logging/duk_logging.c
   ${DUKTAPE_SOURCE_DIR}/extras/module-node/duk_module_node.c)
+
+SET(MOCK_SERVER_HTTP_CLIENT_SRCS
+    mock_server_rest_client.cc)
 
 CHECK_CXX_COMPILER_FLAG("-Werror" HAVE_ERROR)
 IF(HAVE_ERROR)
@@ -104,6 +105,10 @@ SET_TARGET_PROPERTIES(duktape PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
 
 IF(WIN32)
+  # LNK4049: locally defined symbol 'symbol' imported
+  # LNK4217: locally defined symbol 'symbol' imported in function 'function'
+  STRING_APPEND(CMAKE_SHARED_LINKER_FLAGS " /ignore:4049 /ignore:4217")
+
   ADD_CUSTOM_COMMAND(TARGET duktape POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_BINARY_DIR}/library_output_directory/${CMAKE_CFG_INTDIR}/duktape.dll"
@@ -150,6 +155,17 @@ TARGET_INCLUDE_DIRECTORIES(rest_mock_server PUBLIC
 ADD_EXECUTABLE(mysql_server_mock
   main.cc
   )
+
+ADD_LIBRARY(mock_server_rest_client ${MOCK_SERVER_HTTP_CLIENT_SRCS})
+TARGET_INCLUDE_DIRECTORIES(mock_server_rest_client PUBLIC
+    ${PROJECT_SOURCE_DIR}/src/mock_server/include/
+    ${PROJECT_SOURCE_DIR}/src/http/include/
+    )
+
+# add all targets to the build-all target
+ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET}
+        mysql_server_mock mock_server_rest_client)
+
 
 TARGET_LINK_LIBRARIES(mysql_server_mock ${common_libraries} harness-library)
 SET_TARGET_PROPERTIES(mysql_server_mock PROPERTIES

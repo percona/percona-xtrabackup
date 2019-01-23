@@ -167,6 +167,7 @@ purge_resume_count	disabled
 log_lsn_last_flush	disabled
 log_lsn_last_checkpoint	disabled
 log_lsn_current	disabled
+log_lsn_archived	disabled
 log_lsn_checkpoint_age	disabled
 log_lsn_buf_dirty_pages_added	disabled
 log_lsn_buf_pool_oldest_approx	disabled
@@ -201,6 +202,7 @@ log_write_notifier_wait_loops	disabled
 log_flush_notifier_no_waits	disabled
 log_flush_notifier_waits	disabled
 log_flush_notifier_wait_loops	disabled
+log_write_to_file_requests_interval	disabled
 log_on_write_no_waits	disabled
 log_on_write_waits	disabled
 log_on_write_wait_loops	disabled

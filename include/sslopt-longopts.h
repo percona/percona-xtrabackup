@@ -179,13 +179,8 @@
 #else
      "permitted values are: OFF",
 #endif
-#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
      0,
      0,
-#else
-     &opt_ssl_fips_mode,
-     &opt_ssl_fips_mode,
-#endif
      0,
      GET_STR,
      REQUIRED_ARG,

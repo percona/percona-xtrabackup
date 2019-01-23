@@ -28,8 +28,6 @@
 #include <sstream>
 
 #include "m_string.h"
-#include "my_sys.h"
-#include "sql/field.h"
 #include "sql/ndb_conflict.h"
 #include "sql/ndb_dist_priv_util.h"
 #include "sql/ndb_event_data.h"
@@ -37,6 +35,7 @@
 #include "sql/ndb_name_util.h"
 #include "sql/ndb_table_map.h"
 #include "sql/sql_class.h"
+#include "sql/strfunc.h"
 #include "sql/table.h"
 #include "storage/ndb/include/ndbapi/NdbEventOperation.hpp"
 
@@ -276,8 +275,7 @@ NDB_SHARE::create_and_acquire_reference(const char *key,
   NDB_SHARE* share = NDB_SHARE::create(key);
   if (share == nullptr)
   {
-    DBUG_PRINT("error", ("failed to alloc share"));
-    my_error(ER_OUTOFMEMORY, MYF(0), static_cast<int>(sizeof(*share)));
+    DBUG_PRINT("error", ("failed to create NDB_SHARE"));
     DBUG_RETURN(nullptr);
   }
 
@@ -611,12 +609,14 @@ NDB_SHARE::rename_share(NDB_SHARE *share, NDB_SHARE_KEY* new_key)
         // NOTE! This causes a slight memory leak since the already existing
         // strings are not release until the mem_root is eventually
         // released.
-        lex_string_copy(&event_data->mem_root,
-                        &event_data->shadow_table->s->db,
-                        share->db);
-        lex_string_copy(&event_data->mem_root,
-                        &event_data->shadow_table->s->table_name,
-                        share->table_name);
+        lex_string_strmake(&event_data->mem_root,
+                           &event_data->shadow_table->s->db,
+                           share->db,
+                           strlen(share->db));
+        lex_string_strmake(&event_data->mem_root,
+                           &event_data->shadow_table->s->table_name,
+                           share->table_name,
+                           strlen(share->table_name));
       }
       else
       {

@@ -325,7 +325,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
 {
   const rec_t *rec;
   upd_t *update;
-  dberr_t err;
+  dberr_t err = DB_SUCCESS;
   btr_cur_t *cursor = btr_pcur_get_btr_cur(pcur);
   TABLE *mysql_table = NULL;
   ut_ad(cursor->index->is_clustered());
@@ -342,9 +342,12 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
     ut_ad(thr->prebuilt->trx == thr_get_trx(thr));
   }
 
-  update =
-      row_upd_build_difference_binary(cursor->index, entry, rec, NULL, true,
-                                      thr_get_trx(thr), heap, mysql_table);
+  update = row_upd_build_difference_binary(cursor->index, entry, rec, NULL,
+                                           true, thr_get_trx(thr), heap,
+                                           mysql_table, &err);
+  if (err != DB_SUCCESS) {
+    return (err);
+  }
   if (mode != BTR_MODIFY_TREE) {
     ut_ad((mode & ~BTR_ALREADY_S_LATCHED) == BTR_MODIFY_LEAF);
 
@@ -1124,6 +1127,10 @@ static NO_INLINE MY_ATTRIBUTE((warn_unused_result)) dberr_t
   if (table->fts) {
     doc_id = fts_get_doc_id_from_rec(table, clust_rec, clust_index, tmp_heap);
   }
+  if (cascade->is_delete && foreign->v_cols != NULL &&
+      foreign->v_cols->size() > 0 && table->vc_templ == NULL) {
+    innobase_init_vc_templ(table);
+  }
 
   if (node->is_delete ? (foreign->type & DICT_FOREIGN_ON_DELETE_SET_NULL)
                       : (foreign->type & DICT_FOREIGN_ON_UPDATE_SET_NULL)) {
@@ -1246,7 +1253,7 @@ static NO_INLINE MY_ATTRIBUTE((warn_unused_result)) dberr_t
 
   mtr_commit(mtr);
 
-  ut_a(cascade->pcur->rel_pos == BTR_PCUR_ON);
+  ut_a(cascade->pcur->m_rel_pos == BTR_PCUR_ON);
 
   cascade->state = UPD_NODE_UPDATE_CLUSTERED;
 
@@ -1761,6 +1768,9 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
 
   trx = thr_get_trx(thr);
 
+  if (trx->check_foreigns == FALSE) {
+    return (DB_SUCCESS);
+  }
   DEBUG_SYNC_C_IF_THD(thr_get_trx(thr)->mysql_thd,
                       "foreign_constraint_check_for_ins");
 

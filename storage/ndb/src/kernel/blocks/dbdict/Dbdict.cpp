@@ -864,14 +864,40 @@ void Dbdict::packTableIntoPages(Signal* signal)
   ndbabort();
 }//packTableIntoPages()
 
+bool
+packRopeData(SimpleProperties::Writer & w, ConstRope & rope) {
+  const int bufsize = ROPE_COPY_BUFFER_SIZE;
+  char buffer[bufsize];
+  Uint32 offset = 0;
+  int nread;
+  int status = 0;
+
+  while((nread = rope.readBuffered(buffer, bufsize, offset)) != 0) {
+    status = w.append(buffer, nread);
+  }
+  return (status != -1);  // Return true on success
+}
+
+bool
+unpackDataToRope(SimpleProperties::Reader &it, LocalRope & rope) {
+  const int bufsize = ROPE_COPY_BUFFER_SIZE;
+  char buffer[bufsize];
+  int nread;
+
+  rope.erase();
+  while((nread = it.getBuffered(buffer, bufsize)) > 0)
+    if(! rope.appendBuffer(buffer, nread))
+      return false;
+  return true;
+}
+
 void
 Dbdict::packTableIntoPages(SimpleProperties::Writer & w,
-			       TableRecordPtr tablePtr,
-			       Signal* signal){
+                           TableRecordPtr tablePtr,
+                           Signal* signal){
 
   union {
     char tableName[MAX_TAB_NAME_SIZE];
-    char frmData[MAX_FRM_DATA_SIZE];
     char rangeData[16*MAX_NDB_PARTITIONS];
     char ngData[2*MAX_NDB_PARTITIONS];
     char defaultValue[MAX_ATTR_DEFAULT_VALUE_SIZE];
@@ -993,9 +1019,8 @@ Dbdict::packTableIntoPages(SimpleProperties::Writer & w,
   }
 
   ConstRope frm(c_rope_pool, tablePtr.p->frmData);
-  frm.copy(frmData);
-  w.add(DictTabInfo::FrmLen, frm.size());
-  w.add(DictTabInfo::FrmData, frmData, frm.size());
+  w.addKey(DictTabInfo::FrmData, SimpleProperties::BinaryValue, frm.size());
+  ndbrequire(packRopeData(w, frm));
 
   {
     jam();
@@ -1134,7 +1159,7 @@ Dbdict::packFilegroupIntoPages(SimpleProperties::Writer & w,
   s = SimpleProperties::pack(w,
 			     &fg,
 			     DictFilegroupInfo::Mapping,
-			     DictFilegroupInfo::MappingSize, true);
+			     DictFilegroupInfo::MappingSize);
 
   ndbrequire(s == SimpleProperties::Eof);
 }
@@ -1163,7 +1188,7 @@ Dbdict::packFileIntoPages(SimpleProperties::Writer & w,
   s = SimpleProperties::pack(w,
 			     &f,
 			     DictFilegroupInfo::FileMapping,
-			     DictFilegroupInfo::FileMappingSize, true);
+			     DictFilegroupInfo::FileMappingSize);
 
   ndbrequire(s == SimpleProperties::Eof);
 }
@@ -3119,8 +3144,8 @@ void Dbdict::execREAD_CONFIG_REQ(Signal* signal)
     (SchemaFile*)c_schemaPageRecordArray.getPtr(1 * NDB_SF_MAX_PAGES);
   c_schemaFile[1].noOfPages = 0;
 
-  Uint32 rps = 0;
-  rps += c_noOfMetaTables * (MAX_TAB_NAME_SIZE + MAX_FRM_DATA_SIZE);
+  Uint32 rps = 0;  // Roughly calculate rope pool size:
+  rps += c_noOfMetaTables * (MAX_TAB_NAME_SIZE + ROPE_COPY_BUFFER_SIZE);
   rps += attributesize * (MAX_ATTR_NAME_SIZE + MAX_ATTR_DEFAULT_VALUE_SIZE);
   rps += c_maxNoOfTriggers * MAX_TAB_NAME_SIZE;
   rps += (10 + 10) * MAX_TAB_NAME_SIZE;
@@ -3140,7 +3165,7 @@ void Dbdict::execREAD_CONFIG_REQ(Signal* signal)
     sb = sm;
   }
 
-  sb /= (LocalRope::getSegmentSize() * sizeof(Uint32));
+  sb /= LocalRope::getSegmentSizeInBytes();
   sb += 100; // more safty
   ndbrequire(sb < (Uint64(1) << 32));
   c_rope_pool.setSize(Uint32(sb));
@@ -5602,6 +5627,35 @@ Dbdict::decrease_ref_count(Uint32 obj_ptr_i)
   ptr->m_ref_count--;
 }
 
+/* TabInfoLongData provides temporary storage to unpack the data
+ * that is external to DictTabInfo.
+ */
+class TabInfoLongData {
+public:
+  TabInfoLongData(RopePool &pool, RopeHandle & handle) :
+    m_frm(pool, handle), m_valid(true)
+  {}
+
+  bool isValid() { return m_valid; }
+
+  void unpackData(SimpleProperties::Reader & it) {
+    if(it.getKey() == DictTabInfo::FrmData)
+      m_valid &= unpackDataToRope(it, m_frm);
+  }
+
+  static SimpleProperties::IndirectReader IndirectReader;
+
+public:
+  LocalRope m_frm;
+  bool m_valid;
+};
+
+void TabInfoLongData::IndirectReader(SimpleProperties::Reader & it,
+                                     void * dest) {
+  TabInfoLongData * info = static_cast<TabInfoLongData *>(dest);
+  info->unpackData(it);
+}
+
 void Dbdict::handleTabInfoInit(Signal * signal, SchemaTransPtr & trans_ptr,
                                SimpleProperties::Reader & it,
 			       ParseDictTabInfoRecord * parseP,
@@ -5615,19 +5669,35 @@ void Dbdict::handleTabInfoInit(Signal * signal, SchemaTransPtr & trans_ptr,
 
   it.first();
 
-  SimpleProperties::UnpackStatus status;
+  RopeHandle frmData;
   c_tableDesc.init();
-  status = SimpleProperties::unpack(it, &c_tableDesc,
-				    DictTabInfo::TableMapping,
-				    DictTabInfo::TableMappingSize,
-				    true, true);
 
-  if(status != SimpleProperties::Break){
-    parseP->errorCode = CreateTableRef::InvalidFormat;
-    parseP->status    = status;
-    parseP->errorKey  = it.getKey();
-    parseP->errorLine = __LINE__;
-    return;
+  /* Create a scope over the LocalRope in TabInfoLongData */
+  {
+    TabInfoLongData tabInfoLongData(c_rope_pool, frmData);
+    SimpleProperties::UnpackStatus status;
+    status = SimpleProperties::unpack(it, &c_tableDesc,
+                                      DictTabInfo::TableMapping,
+                                      DictTabInfo::TableMappingSize,
+                                      TabInfoLongData::IndirectReader,
+                                      & tabInfoLongData);
+    if(status != SimpleProperties::Break){
+      jam();
+      parseP->errorCode = CreateTableRef::InvalidFormat;
+      parseP->status    = status;
+      parseP->errorKey  = it.getKey();
+      parseP->errorLine = __LINE__;
+      return;
+    }
+
+    if(! tabInfoLongData.isValid())
+    {
+      jam();
+      parseP->errorCode = CreateTableRef::OutOfStringBuffer;
+      parseP->errorLine = __LINE__;
+      parseP->errorKey = DictTabInfo::FrmData;
+      return;
+    }
   }
 
   if(parseP->requestType == DictTabInfo::AlterTableFromAPI)
@@ -5662,7 +5732,8 @@ void Dbdict::handleTabInfoInit(Signal * signal, SchemaTransPtr & trans_ptr,
   TableRecordPtr tablePtr;
   Uint32 schemaFileId;
   switch (parseP->requestType) {
-  case DictTabInfo::CreateTableFromAPI: {
+  case DictTabInfo::CreateTableFromAPI:
+  {
     jam();
   }
   // Fall through
@@ -5779,12 +5850,13 @@ void Dbdict::handleTabInfoInit(Signal * signal, SchemaTransPtr & trans_ptr,
         strcpy(buf_ptr, rb_str);
         buf_ptr+= strlen(rb_str);
       }
-      g_eventLogger->info("Dbdict: %u: create name=%s,id=%u,obj_ptr_i=%d%s",
+      g_eventLogger->info("Dbdict: %u: create name=%s,id=%u,obj_ptr_i=%d%s frm=%d",
                           __LINE__,
                           c_tableDesc.TableName,
                           schemaFileId,
                           tablePtr.p->m_obj_ptr_i,
-                          buf);
+                          buf,
+                          frmData.m_length);
     }
     send_event(signal, trans_ptr,
                NDB_LE_CreateSchemaObject,
@@ -5992,10 +6064,8 @@ void Dbdict::handleTabInfoInit(Signal * signal, SchemaTransPtr & trans_ptr,
       tablePtr.p->partitionCount = mapptr.p->m_fragments;
     }
   }
+  tablePtr.p->frmData = frmData;
   {
-    LocalRope frm(c_rope_pool, tablePtr.p->frmData);
-    tabRequire(frm.assign(c_tableDesc.FrmData, c_tableDesc.FrmLen),
-	       CreateTableRef::OutOfStringBuffer);
     LocalRope range(c_rope_pool, tablePtr.p->rangeData);
     tabRequire(range.assign((const char*)c_tableDesc.RangeListData,
                c_tableDesc.RangeListDataLen),
@@ -6310,8 +6380,7 @@ void Dbdict::handleTabInfo(SimpleProperties::Reader & it,
     DictTabInfo::Attribute attrDesc; attrDesc.init();
     status = SimpleProperties::unpack(it, &attrDesc,
 				      DictTabInfo::AttributeMapping,
-				      DictTabInfo::AttributeMappingSize,
-				      true, true);
+				      DictTabInfo::AttributeMappingSize);
 
     if(status != SimpleProperties::Break){
       parseP->errorCode = CreateTableRef::InvalidFormat;
@@ -7470,7 +7539,8 @@ Dbdict::createTab_local(Signal* signal,
   req->forceVarPartFlag = !!(tabPtr.p->m_bits& TableRecord::TR_ForceVarPart);
   req->noOfNullAttributes = tabPtr.p->noOfNullBits;
   req->noOfKeyAttr = tabPtr.p->noOfPrimkey;
-  req->checksumIndicator = 1;
+  req->checksumIndicator =
+    ((tabPtr.p->m_bits & TableRecord::TR_RowChecksum) == 0) ? 0 : 1;
   req->GCPIndicator = 1 + tabPtr.p->m_extra_row_gci_bits;
   req->noOfAttributes = tabPtr.p->noOfAttributes;
   req->extraRowAuthorBits = tabPtr.p->m_extra_row_author_bits;
@@ -11367,11 +11437,16 @@ Dbdict::alterTable_commit(Signal* signal, SchemaOpPtr op_ptr)
     {
       jam();
       // save old frm and replace it by new
-      const Uint32 sz = MAX_FRM_DATA_SIZE;
-      bool ok =
-        copyRope<sz>(alterTabPtr.p->m_oldFrmData, tablePtr.p->frmData) &&
-        copyRope<sz>(tablePtr.p->frmData, newTablePtr.p->frmData);
-      ndbrequire(ok);
+      {
+        ConstRope r_frm(c_rope_pool, tablePtr.p->frmData);
+        LocalRope r_old(c_rope_pool, alterTabPtr.p->m_oldFrmData);
+        ndbrequire(r_frm.copy(r_old));
+      }
+      {
+        ConstRope r_new(c_rope_pool, newTablePtr.p->frmData);
+        LocalRope r_frm(c_rope_pool, tablePtr.p->frmData);
+        ndbrequire(r_new.copy(r_frm));
+      }
     }
 
     if (AlterTableReq::getAddAttrFlag(changeMask))
@@ -13222,7 +13297,7 @@ Dbdict::createIndex_parse(Signal* signal, bool master,
 
   // save name and some index table properties
   Uint32& bits = createIndexPtr.p->m_bits;
-  bits = TableRecord::TR_RowChecksum;
+  bits = 0;
   {
     SegmentedSectionPtr ss_ptr;
     handle.getSection(ss_ptr, CreateIndxReq::INDEX_NAME_SECTION);
@@ -13232,8 +13307,7 @@ Dbdict::createIndex_parse(Signal* signal, bool master,
     SimpleProperties::UnpackStatus status =
       SimpleProperties::unpack(
           r, &tableDesc,
-          DictTabInfo::TableMapping, DictTabInfo::TableMappingSize,
-          true, true);
+          DictTabInfo::TableMapping, DictTabInfo::TableMappingSize);
     if (status != SimpleProperties::Eof ||
         tableDesc.TableName[0] == 0)
     {
@@ -13243,6 +13317,11 @@ Dbdict::createIndex_parse(Signal* signal, bool master,
     }
     const Uint32 bytesize = sizeof(createIndexPtr.p->m_indexName);
     memcpy(createIndexPtr.p->m_indexName, tableDesc.TableName, bytesize);
+    if (tableDesc.RowChecksumFlag)
+    {
+      jam();
+      bits |= TableRecord::TR_RowChecksum;
+    }
     if (tableDesc.TableLoggedFlag) {
       jam();
       bits |= TableRecord::TR_Logged;
@@ -20386,8 +20465,7 @@ Dbdict::createTrigger_parse(Signal* signal, bool master,
   SimpleProperties::UnpackStatus status =
     SimpleProperties::unpack(r, &tableDesc,
 			     DictTabInfo::TableMapping,
-			     DictTabInfo::TableMappingSize,
-			     true, true);
+			     DictTabInfo::TableMappingSize);
 
   if (status != SimpleProperties::Eof ||
       tableDesc.TableName[0] == 0)
@@ -21393,8 +21471,7 @@ Dbdict::dropTrigger_parse(Signal* signal, bool master,
     SimpleProperties::UnpackStatus status =
       SimpleProperties::unpack(
           r, &tableDesc,
-          DictTabInfo::TableMapping, DictTabInfo::TableMappingSize,
-          true, true);
+          DictTabInfo::TableMapping, DictTabInfo::TableMappingSize);
 
     if (status != SimpleProperties::Eof ||
         tableDesc.TableName[0] == 0)
@@ -23685,8 +23762,7 @@ Dbdict::createFile_parse(Signal* signal, bool master,
   SimpleProperties::UnpackStatus status;
   status = SimpleProperties::unpack(it, &f,
 				    DictFilegroupInfo::FileMapping,
-				    DictFilegroupInfo::FileMappingSize,
-				    true, true);
+				    DictFilegroupInfo::FileMappingSize);
 
   if (status != SimpleProperties::Eof)
   {
@@ -24418,8 +24494,7 @@ Dbdict::createFilegroup_parse(Signal* signal, bool master,
   SimpleProperties::UnpackStatus status =
     SimpleProperties::unpack(it, &fg,
                              DictFilegroupInfo::Mapping,
-                             DictFilegroupInfo::MappingSize,
-                             true, true);
+                             DictFilegroupInfo::MappingSize);
 
   if(status != SimpleProperties::Eof)
   {
@@ -26943,8 +27018,7 @@ Dbdict::createFK_parse(Signal* signal, bool master,
   SimpleProperties::UnpackStatus status =
     SimpleProperties::unpack(it, &fk,
                              DictForeignKeyInfo::Mapping,
-                             DictForeignKeyInfo::MappingSize,
-                             true, true);
+                             DictForeignKeyInfo::MappingSize);
 
   if(status != SimpleProperties::Eof)
   {
@@ -27436,7 +27510,7 @@ Dbdict::packFKIntoPages(SimpleProperties::Writer & w,
   s = SimpleProperties::pack(w,
 			     &fk,
 			     DictForeignKeyInfo::Mapping,
-			     DictForeignKeyInfo::MappingSize, true);
+			     DictForeignKeyInfo::MappingSize);
   ndbrequire(s == SimpleProperties::Eof);
 }
 
@@ -33690,8 +33764,7 @@ Dbdict::createHashMap_parse(Signal* signal, bool master,
     SimplePropertiesSectionReader it(objInfoPtr, getSectionSegmentPool());
     status = SimpleProperties::unpack(it, &hm,
 				      DictHashMapInfo::Mapping,
-				      DictHashMapInfo::MappingSize,
-				      true, true);
+				      DictHashMapInfo::MappingSize);
 
     if (ERROR_INSERTED(6204))
     {
@@ -33826,7 +33899,7 @@ Dbdict::createHashMap_parse(Signal* signal, bool master,
     s = SimpleProperties::pack(w,
                                &hm,
                                DictHashMapInfo::Mapping,
-                               DictHashMapInfo::MappingSize, true);
+                               DictHashMapInfo::MappingSize);
     ndbrequire(s == SimpleProperties::Eof);
     w.getPtr(objInfoPtr);
 
@@ -34276,7 +34349,7 @@ Dbdict::packHashMapIntoPages(SimpleProperties::Writer & w,
   s = SimpleProperties::pack(w,
 			     &hm,
 			     DictHashMapInfo::Mapping,
-			     DictHashMapInfo::MappingSize, true);
+			     DictHashMapInfo::MappingSize);
 
   ndbrequire(s == SimpleProperties::Eof);
 }

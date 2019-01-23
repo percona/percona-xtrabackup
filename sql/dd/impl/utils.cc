@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,10 @@
 
 #include <string>
 
+#include "m_ctype.h"  // CHARSET_INFO
+#include "m_string.h"
+#include "my_time.h"            // TIME_to_ulonglong_datetime
+#include "mysql_com.h"          // NAME_LEN
 #include "sql/dd/properties.h"  // dd::Properties
 #include "sql/stateless_allocator.h"
 
@@ -125,9 +129,27 @@ bool eat_pairs(String_type::const_iterator &it, String_type::const_iterator end,
   // Empty keys are rejected, empty values are ok
   if (key == "") return true;
 
-  props->set(key, val);
+  // Silently skip invalid keys.
+  if (props->valid_key(key)) props->set(key, val);
 
   return eat_pairs(it, end, props);
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+ulonglong my_time_t_to_ull_datetime(my_time_t seconds_since_epoch) {
+  MYSQL_TIME curtime;
+  my_tz_OFFSET0->gmt_sec_to_TIME(&curtime, seconds_since_epoch);
+  return TIME_to_ulonglong_datetime(&curtime);
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+bool is_string_in_lowercase(const String_type &str, const CHARSET_INFO *cs) {
+  char lowercase_str_buf[NAME_LEN + 1];
+  my_stpcpy(lowercase_str_buf, str.c_str());
+  my_casedn_str(cs, lowercase_str_buf);
+  return (memcmp(str.c_str(), lowercase_str_buf, str.length()) == 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////

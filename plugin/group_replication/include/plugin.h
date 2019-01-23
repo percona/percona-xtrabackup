@@ -48,6 +48,10 @@
 #include "plugin/group_replication/include/services/registry.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_interface.h"
 
+// Forward declarations
+class Hold_transactions;
+class Transaction_consistency_manager;
+
 // Definition of system var structures
 
 // Definition of system vars structure for access their information in the
@@ -84,9 +88,11 @@ extern char *communication_debug_file_var;
 extern bool plugin_is_setting_read_mode;
 // Flag to register server rest master command invocations
 extern bool known_server_reset;
-// Certification latch
-extern Wait_ticket<my_thread_id> *certification_latch;
+// Latch used as the control point of the event driven
+// management of the transactions.
+extern Wait_ticket<my_thread_id> *transactions_latch;
 extern ulong exit_state_action_var;
+extern std::atomic<bool> plugin_is_stopping;
 
 // The modules
 extern Gcs_operations *gcs_module;
@@ -98,6 +104,7 @@ extern Group_events_observation_manager *group_events_observation_manager;
 extern Channel_observation_manager_list *channel_observation_manager_list;
 extern Asynchronous_channels_state_observer
     *asynchronous_channels_state_observer;
+extern Transaction_consistency_manager *transaction_consistency_manager;
 // Lock for the applier and recovery module to prevent the race between STOP
 // Group replication and ongoing transactions.
 extern Group_transaction_observation_manager
@@ -106,10 +113,10 @@ extern Shared_writelock *shared_plugin_stop_lock;
 extern Delayed_initialization_thread *delayed_initialization_thread;
 extern Group_action_coordinator *group_action_coordinator;
 extern Primary_election_handler *primary_election_handler;
+extern Hold_transactions *hold_transactions;
 
 // Auxiliary Functionality
 extern Plugin_gcs_events_handler *events_handler;
-extern Plugin_gcs_view_modification_notifier *view_change_notifier;
 extern Group_member_info *local_member_info;
 extern Compatibility_module *compatibility_mgr;
 extern Group_partition_handling *group_partition_handler;
@@ -131,6 +138,8 @@ void set_enforce_update_everywhere_checks(bool option);
 void set_single_primary_mode_var(bool option);
 void set_auto_increment_handler_values();
 void reset_auto_increment_handler_values(bool force_reset = false);
+SERVICE_TYPE(registry) * get_plugin_registry();
+rpl_sidno get_group_sidno();
 
 // Plugin public methods
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info);
@@ -151,6 +160,7 @@ bool plugin_get_group_member_stats(
     uint index,
     const GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS &callbacks);
 uint plugin_get_group_members_number();
+
 /**
   Method to set retrieved certification info from a recovery channel extracted
   from a given View_change event

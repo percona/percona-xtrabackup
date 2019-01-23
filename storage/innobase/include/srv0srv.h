@@ -265,6 +265,9 @@ extern ulong srv_sort_buf_size;
 /** Maximum modification log file size for online index creation */
 extern unsigned long long srv_online_max_size;
 
+/** Number of threads to use for parallel reads. */
+extern ulong srv_parallel_read_threads;
+
 /* If this flag is TRUE, then we will use the native aio of the
 OS (provided we compiled Innobase with it in), otherwise we will
 use simulated aio we build below with threads.
@@ -304,6 +307,10 @@ extern bool srv_redo_log_encrypt;
 /** Maximum number of srv_n_log_files, or innodb_log_files_in_group */
 #define SRV_N_LOG_FILES_MAX 100
 extern ulong srv_n_log_files;
+
+#ifdef UNIV_DEBUG_DEDICATED
+extern ulong srv_debug_system_mem_size;
+#endif /* UNIV_DEBUG_DEDICATED */
 
 /** At startup, this is the current redo log file size.
 During startup, if this is different from srv_log_file_size_requested
@@ -648,11 +655,11 @@ extern mysql_pfs_key_t srv_ts_alter_encrypt_thread_key;
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
 /** Performance schema stage event for monitoring ALTER TABLE progress
-everything after flush log_make_checkpoint_at(). */
+everything after flush log_make_latest_checkpoint(). */
 extern PSI_stage_info srv_stage_alter_table_end;
 
 /** Performance schema stage event for monitoring ALTER TABLE progress
-log_make_checkpoint_at(). */
+log_make_latest_checkpoint(). */
 extern PSI_stage_info srv_stage_alter_table_flush;
 
 /** Performance schema stage event for monitoring ALTER TABLE progress
@@ -681,6 +688,7 @@ extern PSI_stage_info srv_stage_alter_tablespace_encryption;
 
 /** Performance schema stage event for monitoring buffer pool load progress. */
 extern PSI_stage_info srv_stage_buffer_pool_load;
+#endif /* HAVE_PSI_STAGE_INTERFACE */
 
 /** Performance schema stage event for monitoring clone file copy progress. */
 extern PSI_stage_info srv_stage_clone_file_copy;
@@ -690,7 +698,6 @@ extern PSI_stage_info srv_stage_clone_redo_copy;
 
 /** Performance schema stage event for monitoring clone page copy progress. */
 extern PSI_stage_info srv_stage_clone_page_copy;
-#endif /* HAVE_PSI_STAGE_INTERFACE */
 
 #ifndef _WIN32
 /** Alternatives for the file flush option in Unix.
@@ -868,6 +875,11 @@ void srv_purge_coordinator_thread();
 /** Worker thread that reads tasks from the work queue and executes them. */
 void srv_worker_thread();
 
+/** Enable the undo log encryption if needed.  If innodb_undo_log_encrypt
+is ON, this will try to enable the undo log encryption and write the metadata
+to the undo log file header. */
+void srv_enable_undo_encryption_if_set();
+
 /** Get count of tasks in the queue.
  @return number of tasks in queue */
 ulint srv_get_task_queue_length(void);
@@ -910,6 +922,22 @@ bool srv_purge_threads_active();
 /** Initializes the synchronization primitives, memory system, and the thread
  local storage. */
 void srv_general_init();
+
+/** Create an undo tablespace with an explicit file name
+@param[in]	space_name	tablespace name
+@param[in]	file_name	file name
+@param[out]	space_id	Tablespace ID chosen
+@return DB_SUCCESS or error code */
+dberr_t srv_undo_tablespace_create(const char *space_name,
+                                   const char *file_name, space_id_t space_id);
+
+/** Initialize undo::spaces and trx_sys_undo_spaces,
+called once during srv_start(). */
+void undo_spaces_init();
+
+/** Free the resources occupied by undo::spaces and trx_sys_undo_spaces,
+called once during thread de-initialization. */
+void undo_spaces_deinit();
 
 #ifdef UNIV_DEBUG
 struct SYS_VAR;
@@ -968,24 +996,32 @@ struct export_var_t {
   ulint innodb_os_log_pending_writes;          /*!< srv_os_log_pending_writes */
   ulint innodb_os_log_pending_fsyncs;          /*!< fil_n_pending_log_flushes */
   ulint innodb_page_size;                      /*!< UNIV_PAGE_SIZE */
-  ulint innodb_pages_created;           /*!< buf_pool->stat.n_pages_created */
-  ulint innodb_pages_read;              /*!< buf_pool->stat.n_pages_read */
-  ulint innodb_pages_written;           /*!< buf_pool->stat.n_pages_written */
-  ulint innodb_row_lock_waits;          /*!< srv_n_lock_wait_count */
-  ulint innodb_row_lock_current_waits;  /*!< srv_n_lock_wait_current_count */
-  int64_t innodb_row_lock_time;         /*!< srv_n_lock_wait_time
-                                        / 1000 */
-  ulint innodb_row_lock_time_avg;       /*!< srv_n_lock_wait_time
-                                        / 1000
-                                        / srv_n_lock_wait_count */
-  ulint innodb_row_lock_time_max;       /*!< srv_n_lock_max_wait_time
-                                        / 1000 */
-  ulint innodb_rows_read;               /*!< srv_n_rows_read */
-  ulint innodb_rows_inserted;           /*!< srv_n_rows_inserted */
-  ulint innodb_rows_updated;            /*!< srv_n_rows_updated */
-  ulint innodb_rows_deleted;            /*!< srv_n_rows_deleted */
-  ulint innodb_num_open_files;          /*!< fil_n_file_opened */
-  ulint innodb_truncated_status_writes; /*!< srv_truncated_status_writes */
+  ulint innodb_pages_created;             /*!< buf_pool->stat.n_pages_created */
+  ulint innodb_pages_read;                /*!< buf_pool->stat.n_pages_read */
+  ulint innodb_pages_written;             /*!< buf_pool->stat.n_pages_written */
+  ulint innodb_row_lock_waits;            /*!< srv_n_lock_wait_count */
+  ulint innodb_row_lock_current_waits;    /*!< srv_n_lock_wait_current_count */
+  int64_t innodb_row_lock_time;           /*!< srv_n_lock_wait_time
+                                          / 1000 */
+  ulint innodb_row_lock_time_avg;         /*!< srv_n_lock_wait_time
+                                          / 1000
+                                          / srv_n_lock_wait_count */
+  ulint innodb_row_lock_time_max;         /*!< srv_n_lock_max_wait_time
+                                          / 1000 */
+  ulint innodb_rows_read;                 /*!< srv_n_rows_read */
+  ulint innodb_rows_inserted;             /*!< srv_n_rows_inserted */
+  ulint innodb_rows_updated;              /*!< srv_n_rows_updated */
+  ulint innodb_rows_deleted;              /*!< srv_n_rows_deleted */
+  ulint innodb_num_open_files;            /*!< fil_n_file_opened */
+  ulint innodb_truncated_status_writes;   /*!< srv_truncated_status_writes */
+  ulint innodb_undo_tablespaces_total;    /*!< total number of undo tablespaces
+                                          innoDB is tracking. */
+  ulint innodb_undo_tablespaces_implicit; /*!< number of undo tablespaces
+                                          innoDB created implicitly. */
+  ulint innodb_undo_tablespaces_explicit; /*!< number of undo tablespaces
+                                          the dba created explicitly. */
+  ulint innodb_undo_tablespaces_active;   /*!< number of active undo
+                                          tablespaces */
 #ifdef UNIV_DEBUG
   ulint innodb_purge_trx_id_age;      /*!< rw_max_trx_id - purged trx_id */
   ulint innodb_purge_view_trx_id_age; /*!< rw_max_trx_id

@@ -73,6 +73,7 @@
 #include "sql/transaction_info.h"
 #include "sql/trigger.h"  // Trigger
 #include "sql/trigger_def.h"
+#include "unsafe_string_append.h"
 
 class Cmp_splocal_locations
     : public std::binary_function<const Item_splocal *, const Item_splocal *,
@@ -177,7 +178,7 @@ class Cmp_splocal_locations
 
   @param thd        Current thread.
   @param instr      Instruction (we look for Item_splocal instances in
-                    instr->free_list)
+                    instr->item_list)
   @param query_str  Original query string
 
   @retval false on success.
@@ -191,7 +192,7 @@ static bool subst_spvars(THD *thd, sp_instr *instr, LEX_STRING *query_str) {
   Prealloced_array<Item_splocal *, 16> sp_vars_uses(PSI_NOT_INSTRUMENTED);
 
   /* Find all instances of Item_splocal used in this statement */
-  for (Item *item = instr->free_list; item; item = item->next) {
+  for (Item *item = instr->m_arena.item_list(); item; item = item->next_free) {
     if (item->is_splocal()) {
       Item_splocal *item_spl = (Item_splocal *)item;
       if (item_spl->pos_in_query) sp_vars_uses.push_back(item_spl);
@@ -501,9 +502,9 @@ bool sp_lex_instr::reset_lex_and_exec_core(THD *thd, uint *nextp,
   DBUG_ASSERT(error || m_lex->is_exec_started());
 
   if (reprepare_error || sp_instr_error_handler.cts_table_exists_error)
-    thd->stmt_arena->state = Query_arena::STMT_INITIALIZED_FOR_SP;
+    thd->stmt_arena->set_state(Query_arena::STMT_INITIALIZED_FOR_SP);
   else if (m_lex->is_exec_started())
-    thd->stmt_arena->state = Query_arena::STMT_EXECUTED;
+    thd->stmt_arena->set_state(Query_arena::STMT_EXECUTED);
 
   /*
     Merge here with the saved parent's values
@@ -571,10 +572,10 @@ LEX *sp_lex_instr::parse_expr(THD *thd, sp_head *sp) {
     initiated. Also set the statement query arena to the lex mem_root.
   */
   MEM_ROOT *execution_mem_root = thd->mem_root;
-  Query_arena parse_arena(&m_lex_mem_root, thd->stmt_arena->state);
+  Query_arena parse_arena(&m_lex_mem_root, thd->stmt_arena->get_state());
 
   thd->mem_root = &m_lex_mem_root;
-  thd->stmt_arena->set_query_arena(&parse_arena);
+  thd->stmt_arena->set_query_arena(parse_arena);
 
   // Prepare parser state. It can be done just before parse_sql(), do it here
   // only to simplify exit in case of failure (out-of-memory error).
@@ -584,11 +585,11 @@ LEX *sp_lex_instr::parse_expr(THD *thd, sp_head *sp) {
   if (parser_state.init(thd, sql_query.c_ptr(), sql_query.length()))
     return NULL;
 
-  // Switch THD::free_list. It's used to remember the newly created set of Items
-  // during parsing. We should clean those items after each execution.
+  // Switch THD's item list. It is used to remember the newly created set
+  // of Items during parsing. We should clean those items after each execution.
 
-  Item *execution_free_list = thd->free_list;
-  thd->free_list = NULL;
+  Item *execution_item_list = thd->item_list();
+  thd->reset_item_list();
 
   // Create a new LEX and intialize it.
 
@@ -648,7 +649,7 @@ LEX *sp_lex_instr::parse_expr(THD *thd, sp_head *sp) {
 
     // Append newly created Items to the list of Items, owned by this
     // instruction.
-    free_list = thd->free_list;
+    m_arena.set_item_list(thd->item_list());
   }
 
   // Restore THD::lex.
@@ -659,10 +660,10 @@ LEX *sp_lex_instr::parse_expr(THD *thd, sp_head *sp) {
   LEX *expr_lex = thd->lex;
   thd->lex = lex_saved;
 
-  // Restore execution mem-root and THD::free_list.
+  // Restore execution mem-root and item list.
 
   thd->mem_root = execution_mem_root;
-  thd->free_list = execution_free_list;
+  thd->set_item_list(execution_item_list);
 
   // That's it.
 
@@ -673,6 +674,7 @@ bool sp_lex_instr::validate_lex_and_execute_core(THD *thd, uint *nextp,
                                                  bool open_tables) {
   Reprepare_observer reprepare_observer;
   int reprepare_attempt = 0;
+  const int MAX_REPREPARE_ATTEMPTS = 3;
 
   while (true) {
     DBUG_EXECUTE_IF("simulate_bug18831513", { invalidate(); });
@@ -731,19 +733,33 @@ bool sp_lex_instr::validate_lex_and_execute_core(THD *thd, uint *nextp,
           to the user;
         - if we've got an error, different from ER_NEED_REPREPARE, we need to
           raise it to the user;
-        - we take only 3 attempts to reprepare the query, otherwise we might end
-          up in the endless loop.
     */
-    if (stmt_reprepare_observer && !thd->is_fatal_error && !thd->killed &&
-        thd->get_stmt_da()->mysql_errno() == ER_NEED_REPREPARE &&
-        reprepare_attempt++ < 3) {
-      DBUG_ASSERT(stmt_reprepare_observer->is_invalidated());
-
-      thd->clear_error();
-      free_lex();
-      invalidate();
-    } else
+    if (stmt_reprepare_observer == nullptr || thd->is_fatal_error() ||
+        thd->killed || thd->get_stmt_da()->mysql_errno() != ER_NEED_REPREPARE)
       return true;
+
+    /*
+      We take only 3 attempts to reprepare the query, otherwise we might end
+      up in the endless loop.
+    */
+    DBUG_ASSERT(stmt_reprepare_observer->is_invalidated());
+    if ((reprepare_attempt++ >= MAX_REPREPARE_ATTEMPTS) ||
+        DBUG_EVALUATE_IF("simulate_max_reprepare_attempts_hit_case", true,
+                         false)) {
+      /*
+        Reprepare_observer sets error status in DA but Sql_condition is not
+        added. Please check Reprepare_observer::report_error(). Pushing
+        Sql_condition for ER_NEED_REPREPARE here.
+      */
+      Diagnostics_area *da = thd->get_stmt_da();
+      da->push_warning(thd, da->mysql_errno(), da->returned_sqlstate(),
+                       Sql_condition::SL_ERROR, da->message_text());
+      return true;
+    }
+
+    thd->clear_error();
+    free_lex();
+    invalidate();
   }
 }
 
@@ -775,7 +791,7 @@ void sp_lex_instr::cleanup_before_parsing(THD *thd) {
     Destroy items in the instruction's free list before re-parsing the
     statement query string (and thus, creating new items).
   */
-  free_items();
+  m_arena.free_items();
 
   // Remove previously stored trigger-field items.
   sp_head *sp = thd->sp_runtime_ctx->sp;
@@ -883,7 +899,12 @@ bool sp_instr_stmt::execute(THD *thd, uint *nextp) {
       the unmodified statement instead.
     */
     if (!need_subst) rc = subst_spvars(thd, this, &m_query);
-    log_slow_do(thd);
+    /*
+      We currently do not support --log-slow-extra for this case,
+      and therefore pass in a null-pointer instead of a pointer to
+      state at the beginning of execution.
+    */
+    log_slow_do(thd, nullptr);
   }
 
   /*
@@ -905,8 +926,8 @@ bool sp_instr_stmt::execute(THD *thd, uint *nextp) {
 void sp_instr_stmt::print(String *str) {
   /* stmt CMD "..." */
   if (str->reserve(SP_STMT_PRINT_MAXLEN + SP_INSTR_UINT_MAXLEN + 8)) return;
-  str->qs_append(STRING_WITH_LEN("stmt"));
-  str->qs_append(STRING_WITH_LEN(" \""));
+  qs_append(STRING_WITH_LEN("stmt"), str);
+  qs_append(STRING_WITH_LEN(" \""), str);
 
   /*
     Print the query string (but not too much of it), just to indicate which
@@ -919,11 +940,11 @@ void sp_instr_stmt::print(String *str) {
   for (size_t i = 0; i < len; i++) {
     char c = m_query.str[i];
     if (c == '\n') c = ' ';
-    str->qs_append(c);
+    qs_append(c, str);
   }
   if (m_query.length > SP_STMT_PRINT_MAXLEN)
-    str->qs_append(STRING_WITH_LEN("...")); /* Indicate truncated string */
-  str->qs_append(STRING_WITH_LEN("\""));
+    qs_append(STRING_WITH_LEN("..."), str); /* Indicate truncated string */
+  qs_append(STRING_WITH_LEN("\""), str);
 }
 
 bool sp_instr_stmt::exec_core(THD *thd, uint *nextp) {
@@ -975,13 +996,13 @@ void sp_instr_set::print(String *str) {
   /* 'var' should always be non-null, but just in case... */
   if (var) rsrv += var->name.length;
   if (str->reserve(rsrv)) return;
-  str->qs_append(STRING_WITH_LEN("set "));
+  qs_append(STRING_WITH_LEN("set "), str);
   if (var) {
-    str->qs_append(var->name.str, var->name.length);
-    str->qs_append('@');
+    qs_append(var->name.str, var->name.length, str);
+    qs_append('@', str);
   }
-  str->qs_append(m_offset);
-  str->qs_append(' ');
+  qs_append(m_offset, str);
+  qs_append(' ', str);
   m_value_item->print(str, QT_TO_ARGUMENT_CHARSET);
 }
 
@@ -1058,8 +1079,8 @@ PSI_statement_info sp_instr_jump::psi_info = {0, "jump", 0, PSI_DOCUMENT_ME};
 void sp_instr_jump::print(String *str) {
   /* jump dest */
   if (str->reserve(SP_INSTR_UINT_MAXLEN + 5)) return;
-  str->qs_append(STRING_WITH_LEN("jump "));
-  str->qs_append(m_dest);
+  qs_append(STRING_WITH_LEN("jump "), str);
+  qs_append(m_dest, str);
 }
 
 uint sp_instr_jump::opt_mark(sp_head *sp, List<sp_instr> *) {
@@ -1119,11 +1140,11 @@ void sp_instr_jump_if_not::print(String *str) {
   if (str->reserve(2 * SP_INSTR_UINT_MAXLEN + 14 +
                    32))  // Add some for the expr. too
     return;
-  str->qs_append(STRING_WITH_LEN("jump_if_not "));
-  str->qs_append(m_dest);
-  str->qs_append('(');
-  str->qs_append(m_cont_dest);
-  str->qs_append(STRING_WITH_LEN(") "));
+  qs_append(STRING_WITH_LEN("jump_if_not "), str);
+  qs_append(m_dest, str);
+  qs_append('(', str);
+  qs_append(m_cont_dest, str);
+  qs_append(STRING_WITH_LEN(") "), str);
   m_expr_item->print(str, QT_ORDINARY);
 }
 
@@ -1201,11 +1222,11 @@ void sp_instr_jump_case_when::print(String *str) {
   if (str->reserve(2 * SP_INSTR_UINT_MAXLEN + 14 +
                    32))  // Add some for the expr. too
     return;
-  str->qs_append(STRING_WITH_LEN("jump_if_not_case_when "));
-  str->qs_append(m_dest);
-  str->qs_append('(');
-  str->qs_append(m_cont_dest);
-  str->qs_append(STRING_WITH_LEN(") "));
+  qs_append(STRING_WITH_LEN("jump_if_not_case_when "), str);
+  qs_append(m_dest, str);
+  qs_append('(', str);
+  qs_append(m_cont_dest, str);
+  qs_append(STRING_WITH_LEN(") "), str);
   m_eq_item->print(str, QT_ORDINARY);
 }
 
@@ -1279,9 +1300,9 @@ void sp_instr_freturn::print(String *str) {
   /* freturn type expr... */
   if (str->reserve(1024 + 8 + 32))  // Add some for the expr. too
     return;
-  str->qs_append(STRING_WITH_LEN("freturn "));
-  str->qs_append((uint)m_return_field_type);
-  str->qs_append(' ');
+  qs_append(STRING_WITH_LEN("freturn "), str);
+  qs_append((uint)m_return_field_type, str);
+  qs_append(' ', str);
   m_expr_item->print(str, QT_ORDINARY);
 }
 
@@ -1322,10 +1343,10 @@ void sp_instr_hpush_jump::print(String *str) {
   /* hpush_jump dest fsize type */
   if (str->reserve(SP_INSTR_UINT_MAXLEN * 2 + 21)) return;
 
-  str->qs_append(STRING_WITH_LEN("hpush_jump "));
-  str->qs_append(m_dest);
-  str->qs_append(' ');
-  str->qs_append(m_frame);
+  qs_append(STRING_WITH_LEN("hpush_jump "), str);
+  qs_append(m_dest, str);
+  qs_append(' ', str);
+  qs_append(m_frame, str);
 
   m_handler->print(str);
 }
@@ -1410,14 +1431,14 @@ bool sp_instr_hreturn::execute(THD *thd, uint *nextp) {
 void sp_instr_hreturn::print(String *str) {
   /* hreturn framesize dest */
   if (str->reserve(SP_INSTR_UINT_MAXLEN * 2 + 9)) return;
-  str->qs_append(STRING_WITH_LEN("hreturn "));
+  qs_append(STRING_WITH_LEN("hreturn "), str);
   if (m_dest) {
     // NOTE: this is legacy: hreturn instruction for EXIT handler
     // should print out 0 as frame index.
-    str->qs_append(STRING_WITH_LEN("0 "));
-    str->qs_append(m_dest);
+    qs_append(STRING_WITH_LEN("0 "), str);
+    qs_append(m_dest, str);
   } else {
-    str->qs_append(m_frame);
+    qs_append(m_frame, str);
   }
 }
 
@@ -1451,7 +1472,7 @@ bool sp_instr_cpush::execute(THD *thd, uint *nextp) {
 
   // sp_instr_cpush::execute() just registers the cursor in the runtime context.
 
-  return thd->sp_runtime_ctx->push_cursor(thd, this);
+  return thd->sp_runtime_ctx->push_cursor(this);
 }
 
 bool sp_instr_cpush::exec_core(THD *thd, uint *) {
@@ -1470,15 +1491,15 @@ void sp_instr_cpush::print(String *str) {
 
   if (cursor_name) rsrv += cursor_name->length;
   if (str->reserve(rsrv)) return;
-  str->qs_append(STRING_WITH_LEN("cpush "));
+  qs_append(STRING_WITH_LEN("cpush "), str);
   if (cursor_name) {
-    str->qs_append(cursor_name->str, cursor_name->length);
-    str->qs_append('@');
+    qs_append(cursor_name->str, cursor_name->length, str);
+    qs_append('@', str);
   }
-  str->qs_append(m_cursor_idx);
+  qs_append(m_cursor_idx, str);
 
-  str->qs_append(':');
-  str->qs_append(m_cursor_query.str, m_cursor_query.length);
+  qs_append(':', str);
+  qs_append(m_cursor_query.str, m_cursor_query.length, str);
 }
 
   ///////////////////////////////////////////////////////////////////////////
@@ -1499,8 +1520,8 @@ bool sp_instr_cpop::execute(THD *thd, uint *nextp) {
 void sp_instr_cpop::print(String *str) {
   /* cpop count */
   if (str->reserve(SP_INSTR_UINT_MAXLEN + 5)) return;
-  str->qs_append(STRING_WITH_LEN("cpop "));
-  str->qs_append(m_count);
+  qs_append(STRING_WITH_LEN("cpop "), str);
+  qs_append(m_count, str);
 }
 
   ///////////////////////////////////////////////////////////////////////////
@@ -1528,11 +1549,11 @@ bool sp_instr_copen::execute(THD *thd, uint *nextp) {
   sp_instr_cpush *push_instr = c->get_push_instr();
 
   // Switch Statement Arena to the sp_instr_cpush object. It contains the
-  // free_list of the query, so new items (if any) are stored in the right
-  // free_list, and we can cleanup after each open.
+  // item list of the query, so new items (if any) are stored in the right
+  // item list, and we can cleanup after each open.
 
   Query_arena *stmt_arena_saved = thd->stmt_arena;
-  thd->stmt_arena = push_instr;
+  thd->stmt_arena = &push_instr->m_arena;
 
   // Switch to the cursor's lex and execute sp_instr_cpush::exec_core().
   // sp_instr_cpush::exec_core() is *not* executed during
@@ -1543,7 +1564,7 @@ bool sp_instr_copen::execute(THD *thd, uint *nextp) {
 
   // Cleanup the query's items.
 
-  if (push_instr->free_list) cleanup_items(push_instr->free_list);
+  cleanup_items(push_instr->m_arena.item_list());
 
   // Restore Statement Arena.
 
@@ -1560,12 +1581,12 @@ void sp_instr_copen::print(String *str) {
 
   if (cursor_name) rsrv += cursor_name->length;
   if (str->reserve(rsrv)) return;
-  str->qs_append(STRING_WITH_LEN("copen "));
+  qs_append(STRING_WITH_LEN("copen "), str);
   if (cursor_name) {
-    str->qs_append(cursor_name->str, cursor_name->length);
-    str->qs_append('@');
+    qs_append(cursor_name->str, cursor_name->length, str);
+    qs_append('@', str);
   }
-  str->qs_append(m_cursor_idx);
+  qs_append(m_cursor_idx, str);
 }
 
   ///////////////////////////////////////////////////////////////////////////
@@ -1596,12 +1617,12 @@ void sp_instr_cclose::print(String *str) {
 
   if (cursor_name) rsrv += cursor_name->length;
   if (str->reserve(rsrv)) return;
-  str->qs_append(STRING_WITH_LEN("cclose "));
+  qs_append(STRING_WITH_LEN("cclose "), str);
   if (cursor_name) {
-    str->qs_append(cursor_name->str, cursor_name->length);
-    str->qs_append('@');
+    qs_append(cursor_name->str, cursor_name->length, str);
+    qs_append('@', str);
   }
-  str->qs_append(m_cursor_idx);
+  qs_append(m_cursor_idx, str);
 }
 
   ///////////////////////////////////////////////////////////////////////////
@@ -1634,18 +1655,18 @@ void sp_instr_cfetch::print(String *str) {
 
   if (cursor_name) rsrv += cursor_name->length;
   if (str->reserve(rsrv)) return;
-  str->qs_append(STRING_WITH_LEN("cfetch "));
+  qs_append(STRING_WITH_LEN("cfetch "), str);
   if (cursor_name) {
-    str->qs_append(cursor_name->str, cursor_name->length);
-    str->qs_append('@');
+    qs_append(cursor_name->str, cursor_name->length, str);
+    qs_append('@', str);
   }
-  str->qs_append(m_cursor_idx);
+  qs_append(m_cursor_idx, str);
   while ((pv = li++)) {
     if (str->reserve(pv->name.length + SP_INSTR_UINT_MAXLEN + 2)) return;
-    str->qs_append(' ');
-    str->qs_append(pv->name.str, pv->name.length);
-    str->qs_append('@');
-    str->qs_append(pv->offset);
+    qs_append(' ', str);
+    qs_append(pv->name.str, pv->name.length, str);
+    qs_append('@', str);
+    qs_append(pv->offset, str);
   }
 }
 
@@ -1660,8 +1681,8 @@ PSI_statement_info sp_instr_error::psi_info = {0, "error", 0, PSI_DOCUMENT_ME};
 void sp_instr_error::print(String *str) {
   /* error code */
   if (str->reserve(SP_INSTR_UINT_MAXLEN + 6)) return;
-  str->qs_append(STRING_WITH_LEN("error "));
-  str->qs_append(m_errcode);
+  qs_append(STRING_WITH_LEN("error "), str);
+  qs_append(m_errcode, str);
 }
 
   ///////////////////////////////////////////////////////////////////////////
@@ -1700,11 +1721,11 @@ void sp_instr_set_case_expr::print(String *str) {
   /* set_case_expr (cont) id ... */
   str->reserve(2 * SP_INSTR_UINT_MAXLEN + 18 +
                32);  // Add some extra for expr too
-  str->qs_append(STRING_WITH_LEN("set_case_expr ("));
-  str->qs_append(m_cont_dest);
-  str->qs_append(STRING_WITH_LEN(") "));
-  str->qs_append(m_case_expr_id);
-  str->qs_append(' ');
+  qs_append(STRING_WITH_LEN("set_case_expr ("), str);
+  qs_append(m_cont_dest, str);
+  qs_append(STRING_WITH_LEN(") "), str);
+  qs_append(m_case_expr_id, str);
+  qs_append(' ', str);
   m_expr_item->print(str, QT_ORDINARY);
 }
 

@@ -30,6 +30,7 @@
 #include "map_helpers.h"
 #include "my_dbug.h"
 #include "my_thread_local.h"
+#include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_rwlock.h"  // mysql_rwlock_t
 #include "prealloced_array.h"        // Prealloced_array
 #include "sql/rpl_reporting.h"       // MAX_SLAVE_ERRMSG
@@ -1044,6 +1045,8 @@ struct Trx_monitoring_info {
   Trx_monitoring_info();
   /// Copy constructor
   Trx_monitoring_info(const Trx_monitoring_info &info);
+
+  Trx_monitoring_info &operator=(const Trx_monitoring_info &) = default;
 
   /// Clear all fields of the structure.
   void clear();

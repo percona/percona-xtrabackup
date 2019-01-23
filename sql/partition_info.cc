@@ -20,8 +20,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/* Some general useful functions */
-
 #include "sql/partition_info.h"  // LIST_PART_ENTRY
 
 #include <limits.h>
@@ -46,7 +44,8 @@
 #include "mysqld_error.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // *_ACL
-#include "sql/derror.h"            // ER_THD
+#include "sql/create_field.h"
+#include "sql/derror.h"  // ER_THD
 #include "sql/error_handler.h"
 #include "sql/field.h"
 #include "sql/handler.h"
@@ -2341,7 +2340,6 @@ bool partition_info::fix_column_value_functions(THD *thd, part_elem_value *val,
         uchar *val_ptr;
         uint len = field->pack_length();
         sql_mode_t save_sql_mode;
-        bool save_got_warning;
 
         if (!(column_item = get_column_item(column_item, field))) {
           result = true;
@@ -2349,10 +2347,9 @@ bool partition_info::fix_column_value_functions(THD *thd, part_elem_value *val,
         }
         save_sql_mode = thd->variables.sql_mode;
         thd->variables.sql_mode = 0;
-        save_got_warning = thd->got_warning;
-        thd->got_warning = 0;
-        result = (column_item->save_in_field(field, true) || thd->got_warning);
-        thd->got_warning = save_got_warning;
+        uint cond_count = thd->get_stmt_da()->cond_count();
+        result = (column_item->save_in_field(field, true) ||
+                  (cond_count != thd->get_stmt_da()->cond_count()));
         thd->variables.sql_mode = save_sql_mode;
         if (result) {
           my_error(ER_WRONG_TYPE_COLUMN_VALUE_ERROR, MYF(0));
@@ -2856,7 +2853,7 @@ bool validate_partition_tablespace_names(partition_info *part_info,
 
     // Check tablespace names from partition elements, if used.
     if (part_elem->tablespace_name &&
-        validate_tablespace_name(false, part_elem->tablespace_name,
+        validate_tablespace_name(TS_CMD_NOT_DEFINED, part_elem->tablespace_name,
                                  part_elem_engine))
       return true;
 
@@ -2870,8 +2867,8 @@ bool validate_partition_tablespace_names(partition_info *part_info,
 
       // Check tablespace name from sub-partition elements, if used.
       if (sub_elem->tablespace_name &&
-          validate_tablespace_name(false, sub_elem->tablespace_name,
-                                   sub_elem_engine))
+          validate_tablespace_name(TS_CMD_NOT_DEFINED,
+                                   sub_elem->tablespace_name, sub_elem_engine))
         return true;
     }
   }

@@ -456,7 +456,9 @@ struct Name_resolution_context {
         table_list(NULL),
         select_lex(NULL),
         view_error_handler_arg(NULL),
-        security_ctx(NULL) {}
+        security_ctx(NULL) {
+    DBUG_PRINT("outer_field", ("creating ctx %p", this));
+  }
 
   void init() {
     resolve_in_select_list = false;
@@ -617,7 +619,7 @@ class Settable_routine_parameter {
   */
   Settable_routine_parameter() {}
   virtual ~Settable_routine_parameter() {}
-  virtual void set_required_privilege(bool rw MY_ATTRIBUTE((unused))){};
+  virtual void set_required_privilege(bool rw MY_ATTRIBUTE((unused))) {}
 
   /*
     Set parameter value.
@@ -676,10 +678,10 @@ class Item : public Parse_tree_node {
  public:
   Item(const Item &) = delete;
   void operator=(Item &) = delete;
-  static void *operator new(size_t size) throw() { return sql_alloc(size); }
-  static void *operator new(
-      size_t size, MEM_ROOT *mem_root,
-      const std::nothrow_t &arg MY_ATTRIBUTE((unused)) = std::nothrow) throw() {
+  static void *operator new(size_t size) noexcept { return sql_alloc(size); }
+  static void *operator new(size_t size, MEM_ROOT *mem_root,
+                            const std::nothrow_t &arg MY_ATTRIBUTE((unused)) =
+                                std::nothrow) noexcept {
     return alloc_root(mem_root, size);
   }
 
@@ -688,7 +690,7 @@ class Item : public Parse_tree_node {
     TRASH(ptr, size);
   }
   static void operator delete(void *, MEM_ROOT *,
-                              const std::nothrow_t &)throw() {}
+                              const std::nothrow_t &)noexcept {}
 
   enum Type {
     INVALID_ITEM = 0,
@@ -817,7 +819,7 @@ class Item : public Parse_tree_node {
   */
   explicit Item(const POS &);
 
-  virtual ~Item() {
+  virtual ~Item() override {
 #ifdef EXTRA_DEBUG
     item_name.set(0);
 #endif
@@ -900,7 +902,7 @@ class Item : public Parse_tree_node {
   */
   virtual void fix_after_pullout(
       SELECT_LEX *parent_select MY_ATTRIBUTE((unused)),
-      SELECT_LEX *removed_select MY_ATTRIBUTE((unused))){};
+      SELECT_LEX *removed_select MY_ATTRIBUTE((unused))) {}
   /*
     should be used in case where we are sure that we do not need
     complete fix_fields() procedure.
@@ -994,6 +996,12 @@ class Item : public Parse_tree_node {
     m_data_type = static_cast<uint8>(data_type);
   }
 
+  inline void set_data_type_bool() {
+    set_data_type(MYSQL_TYPE_LONG);
+    collation.set_numeric();
+    max_length = 1;
+  }
+
   /**
     Set the data type of the Item to be longlong.
     Maximum display width is set to be the maximum of a 64-bit integer,
@@ -1082,7 +1090,7 @@ class Item : public Parse_tree_node {
     @param max_l  Maximum number of characters in string
     @param cs     Pointer to character set and collation struct
   */
-  inline void set_data_type_string(uint32 max_l, const CHARSET_INFO *cs) {
+  inline void set_data_type_string(ulonglong max_l, const CHARSET_INFO *cs) {
     collation.collation = cs;
     set_data_type_string(max_l);
   }
@@ -1502,35 +1510,6 @@ class Item : public Parse_tree_node {
       true value is true (not equal to 0)
   */
   virtual bool val_bool();
-  /**
-    Evaluate an XPath function.
-
-    @details
-    The SQL interface consists of extractvalue() and updatexml().
-    Both of them ensure that none of the arguments are NULL, before
-    invoking parse_xml(). So, we should never see any NULL SQL input
-    and never return NULL from the overridden member functions in
-    item_xmlfunc.cc.
-
-    @see Item_xml_str_func::parse_xpath()
-    @see Item_func_xml_update::val_str()
-
-    @param nodeset   the nodeset
-    @return the extracted nodeset (never NULL in overridden member functions)
-      @retval NULL   always in the base member function
-  */
-  virtual String *val_nodeset(String *nodeset MY_ATTRIBUTE((unused))) {
-    /*
-      If the first argument of updatexml() is not an XML document,
-      this base member function may be called. Because we will return
-      nullptr here, updatexml() will evaluate to NULL.
-
-      Outside Item_func_xml_update::val_str(), only the overridden
-      member functions defined in item_xmlfunc.cc should be invoked,
-      by Item_xml_str_func::parse_xpath().
-    */
-    return nullptr;
-  }
 
   /**
     Get a JSON value from an Item.
@@ -1780,6 +1759,9 @@ class Item : public Parse_tree_node {
   /*
     Returns true if this is a simple constant item like an integer, not
     a constant expression. Used in the optimizer to propagate basic constants.
+    It is assumed that val_xxx() does not modify the item's state for
+    such items. It is also assumed that val_str() can be called with nullptr
+    as argument as val_str() will return an internally cached const string.
   */
   virtual bool basic_const_item() const { return false; }
   /**
@@ -1946,7 +1928,7 @@ class Item : public Parse_tree_node {
   virtual const CHARSET_INFO *charset_for_protocol() const {
     return result_type() == STRING_RESULT ? collation.collation
                                           : &my_charset_bin;
-  };
+  }
 
   /**
     Traverses a tree of Items in prefix and/or postfix order.
@@ -2095,6 +2077,9 @@ class Item : public Parse_tree_node {
   virtual bool find_item_in_field_list_processor(uchar *) { return false; }
   virtual bool change_context_processor(uchar *) { return false; }
   virtual bool find_item_processor(uchar *arg) { return this == (void *)arg; }
+  virtual bool is_non_const_over_literals(uchar *) {
+    return !basic_const_item();
+  }
   /// Is this an Item_field which references the given Field argument?
   virtual bool find_field_processor(uchar *) { return false; }
   /**
@@ -2169,11 +2154,30 @@ class Item : public Parse_tree_node {
     return false;
   }
   virtual bool inform_item_in_cond_of_tab(uchar *) { return false; }
+
+  struct Cleanup_after_removal_context {
+    /**
+      Pointer to Cleanup_after_removal_context containing from which
+      select the walk started, i.e., the SELECT_LEX that contained the clause
+      that was removed.
+    */
+    SELECT_LEX *m_root;
+    /**
+      True if we are eliminating constant predicates (i.e. always TRUE or FALSE
+      predicates) in Item_cond::fix_fields. Referenced subqueries via an alias
+      from the SELECT list will not be removed in such a case, cf.
+      Item_subselect::clean_up_after_removal.
+    */
+    bool m_removing_const_preds;
+
+    Cleanup_after_removal_context(SELECT_LEX *root,
+                                  bool removing_const_preds = false)
+        : m_root(root), m_removing_const_preds(removing_const_preds) {}
+  };
   /**
      Clean up after removing the item from the item tree.
 
-     @param arg Pointer to the SELECT_LEX from which the walk started, i.e.,
-                the SELECT_LEX that contained the clause that was removed.
+     @param arg pointer to a Cleanup_after_removal_context object
   */
   virtual bool clean_up_after_removal(uchar *arg MY_ATTRIBUTE((unused))) {
     return false;
@@ -2306,11 +2310,17 @@ class Item : public Parse_tree_node {
   virtual bool check_function_as_value_generator(uchar *args);
 
   /**
-    Check if a generated expression depends on DEFAULT function.
+    Check if a generated expression depends on DEFAULT function with
+    specific column name as argument.
 
-    @returns false if the function is not DEFAULT(), otherwise true.
+    @param[in] args Name of column used as DEFAULT function argument.
+
+    @returns false if the function is not DEFAULT(args), otherwise true.
   */
-  virtual bool check_gcol_depend_default_processor(uchar *) { return false; }
+  virtual bool check_gcol_depend_default_processor(
+      uchar *args MY_ATTRIBUTE((unused))) {
+    return false;
+  }
 
   /*
     For SP local variable returns pointer to Item representing its
@@ -2391,7 +2401,7 @@ class Item : public Parse_tree_node {
   }
   virtual Field::geometry_type get_geometry_type() const {
     return Field::GEOM_GEOMETRY;
-  };
+  }
   String *check_well_formed_result(String *str, bool send_error, bool truncate);
   bool eq_by_collation(Item *item, bool binary_cmp, const CHARSET_INFO *cs);
 
@@ -2550,7 +2560,7 @@ class Item : public Parse_tree_node {
     return false;
   }
   virtual Field *get_orig_field() { return NULL; }
-  virtual void set_orig_field(Field *){};
+  virtual void set_orig_field(Field *) {}
   void set_has_rollup_field() {
     m_has_rollup_field = true;
     return;
@@ -2572,10 +2582,13 @@ class Item : public Parse_tree_node {
 
     @see Query_arena::free_list
   */
-  Item *next;
+  Item *next_free;
+
+ protected:
   /// str_values's main purpose is to cache the value in save_in_field
   String str_value;
 
+ public:
   /**
     Character set and collation properties assigned for this Item.
     Used if Item represents a character string expression.
@@ -2602,8 +2615,6 @@ class Item : public Parse_tree_node {
   enum item_marker    ///< Values for member 'marker'
   { MARKER_NONE = 0,
     MARKER_CONST_PROPAG = 1,
-    MARKER_COND_ATTACH_APPLY = 2,
-    MARKER_COND_ATTACH_OMIT = 3,
     MARKER_BIT = 4,
     MARKER_FUNC_DEP_NOT_NULL = 5,
     MARKER_DISTINCT_GROUP = 6,
@@ -2613,9 +2624,6 @@ class Item : public Parse_tree_node {
     in:
     - when doing constant propagation (e.g. change_cond_ref_to_const(), to
       remember that we have already processed the item).
-    - when attaching conditions to tables: it says whether some condition
-      needs to be attached or can be omitted (for example because it is already
-      implemented by 'ref' access).
     - when creating an internal temporary table: says how to store BIT fields
     - when analyzing functional dependencies for only_full_group_by (says
       whether a nullable column can be treated at not nullable)
@@ -2718,8 +2726,8 @@ class Item_basic_constant : public Item {
   table_map used_table_map;
 
  public:
-  Item_basic_constant() : Item(), used_table_map(0){};
-  explicit Item_basic_constant(const POS &pos) : Item(pos), used_table_map(0){};
+  Item_basic_constant() : Item(), used_table_map(0) {}
+  explicit Item_basic_constant(const POS &pos) : Item(pos), used_table_map(0) {}
 
   /// @todo add implementation of basic_const_item
   ///       and remove from subclasses as appropriate.
@@ -2737,6 +2745,7 @@ class Item_basic_constant : public Item {
     if (orig_name.is_set()) item_name = orig_name;
   }
   bool basic_const_item() const override { return true; }
+  void set_str_value(String *str) { str_value = *str; }
 };
 
 /*****************************************************************************
@@ -3654,6 +3663,7 @@ class Item_param final : public Item, private Settable_routine_parameter {
   /** Item is a argument to a limit clause. */
   bool limit_clause_param;
   void set_param_type_and_swap_value(Item_param *from);
+  bool is_non_const_over_literals(uchar *) override { return true; }
   /**
     This should be called after any modification done to this Item, to
     propagate the said modification to all its clones.
@@ -3936,7 +3946,7 @@ class Item_decimal : public Item_num {
   }
   uint decimal_precision() const override { return decimal_value.precision(); }
   bool eq(const Item *, bool binary_cmp) const override;
-  void set_decimal_value(my_decimal *value_par);
+  void set_decimal_value(const my_decimal *value_par);
   bool check_partition_func_processor(uchar *) override { return false; }
 };
 
@@ -4173,7 +4183,7 @@ class Item_string : public Item_basic_constant {
                            str_value.length(), collation.collation);
   }
   Item *safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) override;
-  Item *charset_converter(const CHARSET_INFO *tocs, bool lossless);
+  Item *charset_converter(THD *thd, const CHARSET_INFO *tocs, bool lossless);
   inline void append(char *str, size_t length) {
     str_value.append(str, length);
     max_length = static_cast<uint32>(str_value.numchars() *
@@ -4216,6 +4226,8 @@ class Item_string : public Item_basic_constant {
   inline void set_cs_specified(bool cs_specified) {
     m_cs_specified = cs_specified;
   }
+
+  void mark_result_as_const() { str_value.mark_as_const(); }
 
  private:
   bool m_cs_specified;
@@ -4405,7 +4417,7 @@ class Item_result_field : public Item {
   // Constructor used for Item_sum/Item_cond_and/or (see Item comment)
   Item_result_field(THD *thd, Item_result_field *item)
       : Item(thd, item), result_field(item->result_field) {}
-  ~Item_result_field() {} /* Required with gcc 2.95 */
+  ~Item_result_field() override {} /* Required with gcc 2.95 */
   Field *get_tmp_table_field() override { return result_field; }
   Field *tmp_table_field(TABLE *) override { return result_field; }
   table_map used_tables() const override { return 1; }
@@ -4632,6 +4644,7 @@ class Item_ref : public Item_ident {
 
   bool repoint_const_outer_ref(uchar *arg) override;
   bool contains_alias_of_expr(uchar *arg) override;
+  bool is_non_const_over_literals(uchar *) override { return true; }
   bool check_function_as_value_generator(uchar *args) override {
     Check_function_as_value_generator_parameters *func_arg =
         pointer_cast<Check_function_as_value_generator_parameters *>(args);
@@ -4689,7 +4702,7 @@ class Item_view_ref final : public Item_ref {
           "!(inner_map & ~INNER_TABLE_BIT)" to avoid multiple and recursive
           calls to used_tables. This can create a problem when Views are
           created using other views
- */
+*/
   table_map used_tables() const override {
     if (depended_from != NULL) return OUTER_REF_TABLE_BIT;
 
@@ -5095,7 +5108,7 @@ class Item_copy_json final : public Item_copy {
 
  public:
   explicit Item_copy_json(Item *item);
-  virtual ~Item_copy_json();
+  virtual ~Item_copy_json() override;
   bool copy(const THD *thd) override;
   bool val_json(Json_wrapper *) override;
   String *val_str(String *) override;
@@ -5215,7 +5228,7 @@ class Cached_item_str : public Cached_item {
  public:
   Cached_item_str(THD *thd, Item *arg);
   bool cmp() override;
-  ~Cached_item_str();  // Deallocate String:s
+  ~Cached_item_str() override;  // Deallocate String:s
   void copy_to_Item_cache(Item_cache *i_c) override;
 };
 
@@ -5224,7 +5237,7 @@ class Cached_item_json : public Cached_item {
   Json_wrapper *m_value;  ///< The cached JSON value.
  public:
   explicit Cached_item_json(Item *item);
-  ~Cached_item_json();
+  ~Cached_item_json() override;
   bool cmp() override;
   void copy_to_Item_cache(Item_cache *i_c) override;
 };
@@ -5290,7 +5303,10 @@ class Item_default_value final : public Item_field {
            ((walk & WALK_POSTFIX) && (this->*processor)(args));
   }
 
-  bool check_gcol_depend_default_processor(uchar *) override { return true; }
+  bool check_gcol_depend_default_processor(uchar *args) override {
+    return !my_strcasecmp(system_charset_info, field_name,
+                          reinterpret_cast<char *>(args));
+  }
 
   Item *transform(Item_transformer transformer, uchar *args) override;
 };
@@ -5523,7 +5539,7 @@ class Item_cache : public Item_basic_constant {
       used_table_map = item->used_tables();
     }
     return 0;
-  };
+  }
   enum Type type() const override { return CACHE_ITEM; }
   static Item_cache *get_cache(const Item *item);
   static Item_cache *get_cache(const Item *item, const Item_result type);
@@ -5581,6 +5597,7 @@ class Item_cache : public Item_basic_constant {
   bool is_null() override {
     return value_cached ? null_value : example->is_null();
   }
+  bool is_non_const_over_literals(uchar *) override { return true; }
   bool check_function_as_value_generator(uchar *args) override {
     Check_function_as_value_generator_parameters *func_arg =
         pointer_cast<Check_function_as_value_generator_parameters *>(args);
@@ -5695,7 +5712,7 @@ class Item_cache_str final : public Item_cache {
     return get_time_from_string(ltime);
   }
   enum Item_result result_type() const override { return STRING_RESULT; }
-  const CHARSET_INFO *charset() const { return value->charset(); };
+  const CHARSET_INFO *charset() const { return value->charset(); }
   bool cache_value() override;
   void store_value(Item *expr, String &s);
 };
@@ -5720,23 +5737,23 @@ class Item_cache_row final : public Item_cache {
   bool setup(Item *item) override;
   void store(Item *item) override;
   void illegal_method_call(const char *) const MY_ATTRIBUTE((cold));
-  void make_field(Send_field *) override { illegal_method_call("make_field"); };
+  void make_field(Send_field *) override { illegal_method_call("make_field"); }
   double val_real() override {
     illegal_method_call("val_real");
     return 0;
-  };
+  }
   longlong val_int() override {
     illegal_method_call("val_int");
     return 0;
-  };
+  }
   String *val_str(String *) override {
     illegal_method_call("val_str");
     return 0;
-  };
+  }
   my_decimal *val_decimal(my_decimal *) override {
     illegal_method_call("val_decimal");
     return 0;
-  };
+  }
   bool get_date(MYSQL_TIME *, my_time_flags_t) override {
     illegal_method_call("get_date");
     return true;
@@ -5768,8 +5785,9 @@ class Item_cache_row final : public Item_cache {
 };
 
 class Item_cache_datetime : public Item_cache {
+  String cached_string;
+
  protected:
-  String str_value;
   longlong int_value;
   bool str_value_cached;
 
@@ -5811,7 +5829,7 @@ class Item_cache_json : public Item_cache {
 
  public:
   Item_cache_json();
-  ~Item_cache_json();
+  ~Item_cache_json() override;
   bool cache_value() override;
   void store_value(Item *expr, Json_wrapper *wr);
   bool val_json(Json_wrapper *wr) override;
@@ -5862,7 +5880,7 @@ class Item_type_holder final : public Item {
   static enum_field_types real_data_type(Item *);
   Field::geometry_type get_geometry_type() const override {
     return geometry_type;
-  };
+  }
   void make_field(Send_field *field) override {
     Item::make_field(field);
     // Item_type_holder is used for unions and effectively sends Fields

@@ -22,7 +22,9 @@ enum enum_mysql_show_type {
   SHOW_LONG_NOFLUSH,
   SHOW_LONGLONG_STATUS,
   SHOW_LEX_STRING,
-  SHOW_SIGNED_LONG
+  SHOW_SIGNED_INT,
+  SHOW_SIGNED_LONG,
+  SHOW_SIGNED_LONGLONG
 };
 enum enum_mysql_show_scope {
   SHOW_SCOPE_UNDEF,
@@ -145,6 +147,8 @@ struct MYSQL_SERVER_AUTH_INFO {
   int password_used;
   const char *host_or_ip;
   unsigned int host_or_ip_length;
+  const char *additional_auth_string;
+  unsigned long additional_auth_string_length;
 };
 typedef int (*authenticate_user_t)(MYSQL_PLUGIN_VIO *vio,
                                    MYSQL_SERVER_AUTH_INFO *info);

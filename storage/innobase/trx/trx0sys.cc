@@ -67,8 +67,8 @@ ib_uint64_t trx_sys_mysql_bin_log_pos = -1;
 trx_sys_t *trx_sys = NULL;
 
 /** Check whether transaction id is valid.
-@param[in]	id              transaction id to check
-@param[in]      name            table name */
+@param[in]	id	transaction id to check
+@param[in]	name	table name */
 void ReadView::check_trx_id_sanity(trx_id_t id, const table_name_t &name) {
   if (&name == &dict_sys->dynamic_metadata->name) {
     /* The table mysql.innodb_dynamic_metadata uses a
@@ -456,8 +456,10 @@ void trx_sys_create(void) {
   new (&trx_sys->rw_trx_set) TrxIdSet();
 
   new (&trx_sys->rsegs) Rsegs();
+  trx_sys->rsegs.set_empty();
 
   new (&trx_sys->tmp_rsegs) Rsegs();
+  trx_sys->tmp_rsegs.set_empty();
 }
 
 /** Creates and initializes the transaction system at the database creation. */
@@ -531,8 +533,6 @@ void trx_sys_close(void) {
   for (trx_t *trx = UT_LIST_GET_FIRST(trx_sys->rw_trx_list); trx != NULL;
        trx = UT_LIST_GET_FIRST(trx_sys->rw_trx_list)) {
     trx_free_prepared(trx);
-
-    UT_LIST_REMOVE(trx_sys->rw_trx_list, trx);
   }
 
   /* There can't be any active transactions. */
@@ -672,9 +672,9 @@ void trx_sys_undo_spaces_init() {
 /** Free the resources occupied by trx_sys_undo_spaces,
 called once during thread de-initialization. */
 void trx_sys_undo_spaces_deinit() {
-  trx_sys_undo_spaces->clear();
-
-  UT_DELETE(trx_sys_undo_spaces);
-
-  trx_sys_undo_spaces = nullptr;
+  if (trx_sys_undo_spaces != nullptr) {
+    trx_sys_undo_spaces->clear();
+    UT_DELETE(trx_sys_undo_spaces);
+    trx_sys_undo_spaces = nullptr;
+  }
 }

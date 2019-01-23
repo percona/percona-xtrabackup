@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -186,8 +186,9 @@ public:
   {
     switch(type) {
     case(NDB_VALUE):
-      if(qualification.value_type == Item::STRING_ITEM)
-        return value.item->str_value.length();
+      if(qualification.value_type == Item::STRING_ITEM && value.item->type() == Item::STRING_ITEM)
+        // const_cast is safe for Item_string.
+        return const_cast<Item*>(value.item)->val_str(nullptr)->length();
       break;
     case(NDB_FIELD):
       return value.field_value->field->pack_length();
@@ -211,14 +212,16 @@ public:
   {
     switch(type) {
     case(NDB_VALUE):
-      if(qualification.value_type == Item::STRING_ITEM)
-        return value.item->str_value.ptr();
+      if(qualification.value_type == Item::STRING_ITEM && value.item->type() == Item::STRING_ITEM)
+        // const_cast is safe for Item_string.
+        return const_cast<Item*>(value.item)->val_str(nullptr)->ptr();
       break;
     case(NDB_FIELD):
       return (char*) value.field_value->field->ptr;
     case(NDB_FUNCTION):
-      if(qualification.value_type == Item::STRING_ITEM)
-        return value.item->str_value.ptr();
+      if(qualification.value_type == Item::STRING_ITEM && value.item->type() == Item::STRING_ITEM)
+        // const_cast is safe for Item_string.
+        return const_cast<Item*>(value.item)->val_str(nullptr)->ptr();
     default:
       break;
     }
@@ -386,7 +389,7 @@ class Ndb_expect_stack
   static const uint MAX_EXPECT_FIELD_TYPES = MYSQL_TYPE_GEOMETRY + 1;
   static const uint MAX_EXPECT_FIELD_RESULTS = DECIMAL_RESULT + 1;
  public:
-Ndb_expect_stack(): collation(NULL), length(0), max_length(0), next(NULL)
+  Ndb_expect_stack(): collation(NULL), length(0), max_length(0), next(NULL)
   {
     // Allocate type checking bitmaps using fixed size buffers
     // since max size is known at compile time
@@ -459,6 +462,10 @@ Ndb_expect_stack(): collation(NULL), length(0), max_length(0), next(NULL)
   void expect_field_type(enum_field_types type)
   {
     bitmap_set_bit(&expect_field_type_mask, (uint) type);
+  }
+  void dont_expect_field_type(enum_field_types type)
+  {
+    bitmap_clear_bit(&expect_field_type_mask, (uint) type);
   }
   void expect_all_field_types()
   {
@@ -630,6 +637,10 @@ class Ndb_cond_traverse_context
   inline void expect_field_type(enum_field_types type)
   {
     expect_stack.expect_field_type(type);
+  }
+  inline void dont_expect_field_type(enum_field_types type)
+  {
+    expect_stack.dont_expect_field_type(type);
   }
   inline void expect_all_field_types()
   {
@@ -811,7 +822,6 @@ ndb_serialize_cond(const Item *item, void *arg)
               DBUG_PRINT("info", ("Found unsupported functional expression in BETWEEN|IN"));
               context->supported= false;
               DBUG_VOID_RETURN;
-              
             }
           }
         }
@@ -845,6 +855,16 @@ ndb_serialize_cond(const Item *item, void *arg)
       {
         Ndb_rewrite_context *rewrite_context= context->rewrite_stack;
         const Item_func *func_item= rewrite_context->func_item;
+        context->expect_only(Item::FIELD_ITEM);
+        context->expect_field_result(STRING_RESULT);
+        context->expect_field_result(REAL_RESULT);
+        context->expect_field_result(INT_RESULT);
+        context->expect_field_result(DECIMAL_RESULT);
+        context->expect(Item::INT_ITEM);
+        context->expect(Item::STRING_ITEM);
+        context->expect(Item::VARBIN_ITEM);
+        context->expect(Item::FUNC_ITEM);
+        context->expect(Item::CACHE_ITEM);
         switch (func_item->functype()) {
         case Item_func::BETWEEN:
         {
@@ -876,6 +896,8 @@ ndb_serialize_cond(const Item *item, void *arg)
             context->supported= false;
             DBUG_VOID_RETURN;
           }
+          // Enum comparison can not be pushed
+          context->dont_expect_field_type(MYSQL_TYPE_ENUM);
           break;
         }
         case Item_func::IN_FUNC:
@@ -900,17 +922,7 @@ ndb_serialize_cond(const Item *item, void *arg)
         }
         // Handle left hand <field>|<const>
         context->rewrite_stack= NULL; // Disable rewrite mode
-        context->expect_only(Item::FIELD_ITEM);
-        context->expect_field_result(STRING_RESULT);
-        context->expect_field_result(REAL_RESULT);
-        context->expect_field_result(INT_RESULT);
-        context->expect_field_result(DECIMAL_RESULT);
-        context->expect(Item::INT_ITEM);
-        context->expect(Item::STRING_ITEM);
-        context->expect(Item::VARBIN_ITEM);
-        context->expect(Item::FUNC_ITEM);
-        context->expect(Item::CACHE_ITEM);
-        ndb_serialize_cond(rewrite_context->left_hand_item, arg);
+        ndb_serialize_cond(rewrite_context->left_hand_item, context);
         context->skip= 0; // Any FUNC_ITEM expression has already been parsed
         context->rewrite_stack= rewrite_context; // Enable rewrite mode
         if (!context->supported)
@@ -1140,6 +1152,8 @@ ndb_serialize_cond(const Item *item, void *arg)
             context->expect_field_result(REAL_RESULT);
             context->expect_field_result(INT_RESULT);
             context->expect_field_result(DECIMAL_RESULT);
+            // Enum can only be compared by equality.
+            context->dont_expect_field_type(MYSQL_TYPE_ENUM);
             break;
           }
           case Item_func::LE_FUNC:
@@ -1157,6 +1171,8 @@ ndb_serialize_cond(const Item *item, void *arg)
             context->expect_field_result(REAL_RESULT);
             context->expect_field_result(INT_RESULT);
             context->expect_field_result(DECIMAL_RESULT);
+            // Enum can only be compared by equality.
+            context->dont_expect_field_type(MYSQL_TYPE_ENUM);
             break;
           }
           case Item_func::GE_FUNC:
@@ -1174,6 +1190,8 @@ ndb_serialize_cond(const Item *item, void *arg)
             context->expect_field_result(REAL_RESULT);
             context->expect_field_result(INT_RESULT);
             context->expect_field_result(DECIMAL_RESULT);
+            // Enum can only be compared by equality.
+            context->dont_expect_field_type(MYSQL_TYPE_ENUM);
             break;
           }
           case Item_func::GT_FUNC:
@@ -1191,6 +1209,8 @@ ndb_serialize_cond(const Item *item, void *arg)
             context->expect_field_result(REAL_RESULT);
             context->expect_field_result(INT_RESULT);
             context->expect_field_result(DECIMAL_RESULT);
+            // Enum can only be compared by equality.
+            context->dont_expect_field_type(MYSQL_TYPE_ENUM);
             break;
           }
           case Item_func::LIKE_FUNC:
@@ -1785,7 +1805,7 @@ ndb_serialize_cond(const Item *item, void *arg)
         if (rewrite_context->count == 
             rewrite_context->func_item->argument_count())
         {
-          // Rewrite is done, wrap an END() at the en
+          // Rewrite is done, wrap an END() at the end
           DBUG_PRINT("info", ("End of condition group"));
           prev_cond= curr_cond;
           curr_cond= context->cond_ptr= new (*THR_MALLOC) Ndb_cond();
@@ -1908,9 +1928,14 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
     Ndb_item *a= cond->next->ndb_item;
     Ndb_item *b, *field, *value= NULL;
 
+    const enum ndb_func_type function_type = (negated)
+       ? Ndb_item::negate(cond->ndb_item->qualification.function_type)
+       : cond->ndb_item->qualification.function_type;
+
     switch (cond->ndb_item->argument_count()) {
     case 1:
       field= (a->type == NDB_FIELD)? a : NULL;
+      cond= cond->next->next;
       break;
     case 2:
       if (!cond->next->next)
@@ -1925,18 +1950,75 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
       field= ((a->type == NDB_FIELD) ? a :
               (b->type == NDB_FIELD) ? b :
               NULL);
+      if (!value)
+      {
+        DBUG_PRINT("info", ("condition missing 'value' argument"));
+        DBUG_RETURN(1);
+      }
+      cond= cond->next->next->next;
       break;
     default:
-      field= NULL; //Keep compiler happy
-      DBUG_ASSERT(0);
-      break;
+      DBUG_PRINT("info", ("condition had unexpected number of arguments"));
+      DBUG_RETURN(1);
     }
-    switch ((negated) ? 
-            Ndb_item::negate(cond->ndb_item->qualification.function_type)
-            : cond->ndb_item->qualification.function_type) {
+    if (!field)
+    {
+      DBUG_PRINT("info", ("condition missing 'field' argument"));
+      DBUG_RETURN(1);
+    }
+
+    bool need_explicit_null_check = field->get_field()->maybe_null();
+    if (unlikely(need_explicit_null_check))
+    {
+      switch (function_type) {
+      /*
+        The NdbInterpreter handles a NULL value as being less than any
+        non-NULL value. Thus any NULL value columns will evaluate to
+        'TRUE' (and pass the filter) in the predicate expression:
+            <column> </ <= / <> <non-NULL value>
+
+        This is not according to how the server expect NULL valued
+        predicates to be evaluated: Any NULL values in a comparison
+        predicate should result in an UNKNOWN boolean result
+        and the row being eliminated.
+
+        This is mitigated by adding an extra isnotnull-check to
+        eliminate NULL valued rows which otherwise would have passed
+        the ScanFilter.
+      */
+      case NDB_NE_FUNC:
+      case NDB_LT_FUNC:
+      case NDB_LE_FUNC:
+      /*
+        The NdbInterpreter will also let any null valued columns
+        in *both* a LIKE / NOT LIKE predicate pass the filter.
+      */
+      case NDB_LIKE_FUNC:
+      case NDB_NOTLIKE_FUNC:
+      {
+        DBUG_PRINT("info", ("Appending extra ISNOTNULL filter"));
+        if (filter->begin(NdbScanFilter::AND) == -1 ||
+	    filter->isnotnull(field->get_field_no()) == -1)
+          DBUG_RETURN(1);
+	break;
+      }
+      /*
+        As the NULL value is less than any non-NULL values, they are
+        correctly eliminated from a '>', '>=' and '=' comparison.
+        Thus, no notnull-check needed here.
+      */
+      case NDB_EQ_FUNC:
+      case NDB_GE_FUNC:
+      case NDB_GT_FUNC:
+      default:
+        need_explicit_null_check = false;
+        break;
+      }
+    }
+
+    switch (function_type) {
     case NDB_EQ_FUNC:
     {
-      if (!value || !field) break;
       // Save value in right format for the field type
       value->save_in_field(field);
       DBUG_PRINT("info", ("Generating EQ filter"));
@@ -1945,12 +2027,10 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                       field->get_val(),
                       field->pack_length()) == -1)
         DBUG_RETURN(1);
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_NE_FUNC:
     {
-      if (!value || !field) break;
       // Save value in right format for the field type
       value->save_in_field(field);
       DBUG_PRINT("info", ("Generating NE filter"));
@@ -1959,12 +2039,10 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                       field->get_val(),
                       field->pack_length()) == -1)
         DBUG_RETURN(1);
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_LT_FUNC:
     {
-      if (!value || !field) break;
       // Save value in right format for the field type
       value->save_in_field(field);
       if (a == field)
@@ -1985,12 +2063,10 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                         field->pack_length()) == -1)
           DBUG_RETURN(1);
       }
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_LE_FUNC:
     {
-      if (!value || !field) break;
       // Save value in right format for the field type
       value->save_in_field(field);
       if (a == field)
@@ -2011,12 +2087,10 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                         field->pack_length()) == -1)
           DBUG_RETURN(1);
       }
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_GE_FUNC:
     {
-      if (!value || !field) break;
       // Save value in right format for the field type
       value->save_in_field(field);
       if (a == field)
@@ -2037,12 +2111,10 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                         field->pack_length()) == -1)
           DBUG_RETURN(1);
       }
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_GT_FUNC:
     {
-      if (!value || !field) break;
       // Save value in right format for the field type
       value->save_in_field(field);
       if (a == field)
@@ -2063,12 +2135,10 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                         field->pack_length()) == -1)
           DBUG_RETURN(1);
       }
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_LIKE_FUNC:
     {
-      if (!value || !field) break;
       bool is_string= (value->qualification.value_type == Item::STRING_ITEM);
       // Save value in right format for the field type
       uint32 val_len= value->save_in_field(field);
@@ -2095,12 +2165,10 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                       val,
                       len) == -1)
         DBUG_RETURN(1);
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_NOTLIKE_FUNC:
     {
-      if (!value || !field) break;
       bool is_string= (value->qualification.value_type == Item::STRING_ITEM);
       // Save value in right format for the field type
       uint32 val_len= value->save_in_field(field);
@@ -2127,31 +2195,27 @@ ha_ndbcluster_cond::build_scan_filter_predicate(Ndb_cond * &cond,
                       (value->pack_length() > len)?value->get_val():val,
                       (value->pack_length() > len)?value->pack_length():len) == -1)
         DBUG_RETURN(1);
-      cond= cond->next->next->next;
-      DBUG_RETURN(0);
+      break;
     }
     case NDB_ISNULL_FUNC:
-      if (!field)
-        break;
       DBUG_PRINT("info", ("Generating ISNULL filter"));
       if (filter->isnull(field->get_field_no()) == -1)
         DBUG_RETURN(1);
-      cond= cond->next->next;
-      DBUG_RETURN(0);
+      break;
     case NDB_ISNOTNULL_FUNC:
     {
-      if (!field)
-        break;
       DBUG_PRINT("info", ("Generating ISNOTNULL filter"));
       if (filter->isnotnull(field->get_field_no()) == -1)
         DBUG_RETURN(1);         
-      cond= cond->next->next;
-      DBUG_RETURN(0);
-    }
-    default:
       break;
     }
-    break;
+    default:
+      DBUG_ASSERT(false);
+      break;
+    }
+    if (need_explicit_null_check && filter->end() == -1) //Local AND group
+      DBUG_RETURN(1);
+    DBUG_RETURN(0);
   }
   default:
     break;

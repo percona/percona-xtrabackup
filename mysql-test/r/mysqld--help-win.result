@@ -14,6 +14,12 @@ The following options may be given as the first argument:
  --activate-all-roles-on-login 
  Automatically set all granted roles as active after the
  user has authenticated successfully.
+ --admin-address=name 
+ IP address to bind to for service connection. Address can
+ be an IPv4 address, IPv6 address, or host name. Wildcard
+ values *, ::, 0.0.0.0 are not allowed.
+ --admin-port=#      Port number to use for service connection, built-in
+ default (33062)
  --allow-suspicious-udfs 
  Allows use of UDFs consisting of only one symbol xxx()
  without corresponding xxx_init() or xxx_deinit(). That
@@ -69,6 +75,7 @@ The following options may be given as the first argument:
  --binlog-do-db=name Tells the master it should log updates for the specified
  database, and exclude all others not explicitly
  mentioned.
+ --binlog-encryption Enable/disable binary and relay logs encryption.
  --binlog-error-action=name 
  When statements cannot be written to the binary log due
  to a fatal error, the server can either ignore the error
@@ -132,6 +139,8 @@ The following options may be given as the first argument:
  transactions are written to the binary log. Default is to
  order commits.
  (Defaults to on; use --skip-binlog-order-commits to disable.)
+ --binlog-rotate-encryption-master-key-at-startup 
+ Force binlog encryption master key rotation at startup
  --binlog-row-event-max-size=# 
  The maximum size of a row-based binary log event in
  bytes. Rows will be grouped into events smaller than this
@@ -215,6 +224,9 @@ The following options may be given as the first argument:
  --console           Write error output on screen; don't remove the console
  window on windows.
  --core-file         Write core on errors.
+ --create-admin-listener-thread 
+ Use a dedicated thread for listening incoming connections
+ on admin interface
  --cte-max-recursion-depth=# 
  Abort a recursive common table expression if it does more
  than this number of iterations.
@@ -334,6 +346,10 @@ The following options may be given as the first argument:
  --group-concat-max-len=# 
  The maximum length of the result of function 
  GROUP_CONCAT()
+ --group-replication-consistency[=name] 
+ Transaction consistency guarantee, possible values:
+ EVENTUAL, BEFORE_ON_PRIMARY_FAILOVER, BEFORE, AFTER,
+ BEFORE_AND_AFTER
  --gtid-executed-compression-period[=#] 
  When binlog is disabled, a background thread wakes up to
  compress the gtid_executed table every
@@ -490,6 +506,8 @@ The following options may be given as the first argument:
  --log-slow-admin-statements 
  Log slow OPTIMIZE, ANALYZE, ALTER and other
  administrative statements to the slow log if it is open.
+ --log-slow-extra    Print more attributes to the slow query log file. Has no
+ effect on logging to table.
  --log-slow-slave-statements 
  Log slow statements executed by slave thread to the slow
  log if it is open.
@@ -639,6 +657,9 @@ The following options may be given as the first argument:
  authenticated accounts to be mapped to proxy users when
  the server option check_proxy_users is enabled.
  --named-pipe        Enable the named pipe (NT)
+ --named-pipe-full-access-group=name 
+ Name of Windows group granted full access to the named
+ pipe
  --net-buffer-length=# 
  Buffer length for TCP/IP and socket communication
  --net-read-timeout=# 
@@ -897,6 +918,9 @@ The following options may be given as the first argument:
  --performance-schema-users-size=# 
  Maximum number of instrumented users. Use 0 to disable,
  -1 for automated scaling.
+ --persist-only-admin-x509-subject[=name] 
+ The client peer certificate name required to enable
+ setting all system variables via SET PERSIST[_ONLY]
  --persisted-globals-load 
  When this option is enabled, config file mysqld-auto.cnf
  is read and applied to server, else this file is ignored
@@ -1325,6 +1349,8 @@ The following options may be given as the first argument:
 Variables (--variable-name=value)
 abort-slave-event-count 0
 activate-all-roles-on-login FALSE
+admin-address (No default value)
+admin-port 33062
 allow-suspicious-udfs FALSE
 auto-increment-increment 1
 auto-increment-offset 1
@@ -1337,6 +1363,7 @@ bind-address *
 binlog-cache-size 32768
 binlog-checksum CRC32
 binlog-direct-non-transactional-updates FALSE
+binlog-encryption FALSE
 binlog-error-action ABORT_SERVER
 binlog-expire-logs-seconds 2592000
 binlog-format ROW
@@ -1345,6 +1372,7 @@ binlog-group-commit-sync-no-delay-count 0
 binlog-gtid-simple-recovery TRUE
 binlog-max-flush-queue-time 0
 binlog-order-commits TRUE
+binlog-rotate-encryption-master-key-at-startup FALSE
 binlog-row-event-max-size 8192
 binlog-row-image FULL
 binlog-row-metadata MINIMAL
@@ -1368,6 +1396,7 @@ completion-type NO_CHAIN
 concurrent-insert AUTO
 connect-timeout 10
 console FALSE
+create-admin-listener-thread FALSE
 cte-max-recursion-depth 1000
 default-authentication-plugin caching_sha2_password
 default-password-lifetime 0
@@ -1400,6 +1429,7 @@ ft-stopword-file (No default value)
 gdb FALSE
 general-log FALSE
 group-concat-max-len 1024
+group-replication-consistency EVENTUAL
 gtid-executed-compression-period 1000
 gtid-mode OFF
 help TRUE
@@ -1444,6 +1474,7 @@ log-raw FALSE
 log-short-format FALSE
 log-slave-updates FALSE
 log-slow-admin-statements FALSE
+log-slow-extra FALSE
 log-slow-slave-statements FALSE
 log-statements-unsafe-for-binlog TRUE
 log-tc tc.log
@@ -1493,6 +1524,7 @@ myisam-stats-method nulls_unequal
 myisam-use-mmap FALSE
 mysql-native-password-proxy-users FALSE
 named-pipe FALSE
+named-pipe-full-access-group *everyone*
 net-buffer-length 16384
 net-read-timeout 30
 net-retry-count 10
@@ -1565,7 +1597,7 @@ performance-schema-max-socket-classes 10
 performance-schema-max-socket-instances -1
 performance-schema-max-sql-text-length 1024
 performance-schema-max-stage-classes 175
-performance-schema-max-statement-classes 212
+performance-schema-max-statement-classes 218
 performance-schema-max-statement-stack 10
 performance-schema-max-table-handles -1
 performance-schema-max-table-instances -1
@@ -1576,6 +1608,7 @@ performance-schema-session-connect-attrs-size -1
 performance-schema-setup-actors-size -1
 performance-schema-setup-objects-size -1
 performance-schema-users-size -1
+persist-only-admin-x509-subject 
 persisted-globals-load TRUE
 port ####
 port-open-timeout 0

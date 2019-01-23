@@ -23,7 +23,8 @@
 /** @file sql/handler.cc
 
     @brief
-  Handler-calling-functions
+    Implements functions in the handler interface that are shared between all
+    storage engines.
 */
 
 #include "sql/handler.h"
@@ -689,6 +690,7 @@ int ha_init_errors(void) {
   SETMSG(HA_ERR_COMPUTE_FAILED, "Compute virtual column value failed");
   SETMSG(HA_ERR_DISK_FULL_NOWAIT, ER_DEFAULT(ER_DISK_FULL_NOWAIT));
   SETMSG(HA_ERR_NO_SESSION_TEMP, ER_DEFAULT(ER_NO_SESSION_TEMP));
+  SETMSG(HA_ERR_WRONG_TABLE_NAME, ER_DEFAULT(ER_WRONG_TABLE_NAME));
   /* Register the error messages for use with my_error(). */
   return my_error_register(get_handler_errmsg, HA_ERR_FIRST, HA_ERR_LAST);
 }
@@ -1528,9 +1530,7 @@ int commit_owned_gtid_by_partial_command(THD *thd) {
 
 int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
   int error = 0;
-  PSI_stage_info old_stage;
-  thd->enter_stage(&stage_waiting_for_handler_commit, &old_stage, __func__,
-                   __FILE__, __LINE__);
+  THD_STAGE_INFO(thd, stage_waiting_for_handler_commit);
   bool need_clear_owned_gtid = false;
   bool run_slave_post_commit = false;
   /*
@@ -1606,8 +1606,6 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
       stored functions or triggers. So we simply do nothing now.
       TODO: This should be fixed in later ( >= 5.1) releases.
     */
-    thd->enter_stage(&old_stage, NULL, __func__, __FILE__, __LINE__);
-
     if (!all) DBUG_RETURN(0);
     /*
       We assume that all statements which commit or rollback main transaction
@@ -1658,7 +1656,6 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
       if (thd->mdl_context.acquire_lock(&mdl_request,
                                         thd->variables.lock_wait_timeout)) {
         ha_rollback_trans(thd, all);
-        thd->enter_stage(&old_stage, NULL, __func__, __FILE__, __LINE__);
         DBUG_RETURN(1);
       }
       release_mdl = true;
@@ -1708,7 +1705,6 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
                   if (!thd->is_operating_gtid_table_implicitly)
                       DBUG_SUICIDE(););
 end:
-  thd->enter_stage(&old_stage, NULL, __func__, __FILE__, __LINE__);
   if (release_mdl && mdl_request.ticket) {
     /*
       We do not always immediately release transactional locks
@@ -4215,6 +4211,9 @@ void handler::print_error(int error, myf errflag) {
     case HA_ERR_NO_SESSION_TEMP:
       textno = ER_NO_SESSION_TEMP;
       break;
+    case HA_ERR_WRONG_TABLE_NAME:
+      textno = ER_WRONG_TABLE_NAME;
+      break;
     default: {
       /* The error was "unknown" to this function.
          Ask handler if it has got a message for this error */
@@ -4739,8 +4738,7 @@ enum_alter_inplace_result handler::check_if_supported_inplace_alter(
       Alter_inplace_info::ALTER_RENAME | Alter_inplace_info::RENAME_INDEX |
       Alter_inplace_info::ALTER_INDEX_COMMENT |
       Alter_inplace_info::CHANGE_INDEX_OPTION |
-      Alter_inplace_info::ALTER_COLUMN_INDEX_LENGTH |
-      Alter_inplace_info::SECONDARY_LOAD | Alter_inplace_info::SECONDARY_UNLOAD;
+      Alter_inplace_info::ALTER_COLUMN_INDEX_LENGTH;
 
   /* Is there at least one operation that requires copy algorithm? */
   if (ha_alter_info->handler_flags & ~inplace_offline_operations)
@@ -8357,7 +8355,7 @@ std::string table_definition(const char *table_name, const TABLE *mysql_table) {
 }
 
 #ifndef DBUG_OFF
-/** Covert a binary buffer to a raw string, replacing non-printable characters
+/** Convert a binary buffer to a raw string, replacing non-printable characters
  * with a dot.
  * @param[in] buf buffer to convert
  * @param[in] buf_size_bytes length of the buffer in bytes
@@ -8372,7 +8370,7 @@ static std::string buf_to_raw(const uchar *buf, uint buf_size_bytes) {
   return r;
 }
 
-/** Covert a binary buffer to a hex string, replacing each character with its
+/** Convert a binary buffer to a hex string, replacing each character with its
  * hex number.
  * @param[in] buf buffer to convert
  * @param[in] buf_size_bytes length of the buffer in bytes
@@ -8522,6 +8520,10 @@ std::string indexed_cells_to_string(const uchar *indexed_cells,
     const KEY_PART_INFO &key_part = mysql_index.key_part[i];
     Field *field = key_part.field;
 
+    // Check if this field should be included
+    if (!bitmap_is_set(mysql_index.table->read_set, field->field_index)) {
+      continue;
+    }
     if (key_len_so_far == indexed_cells_len) {
       break;
     }
@@ -8631,7 +8633,38 @@ void ha_post_recover(void) {
 }
 
 void handler::ha_set_primary_handler(handler *primary_handler) {
-  DBUG_ASSERT((ht->flags & HTON_SUPPORTS_SECONDARY) != 0);
+  DBUG_ASSERT((ht->flags & HTON_IS_SECONDARY_ENGINE) != 0);
   DBUG_ASSERT(primary_handler->table->s->has_secondary());
   m_primary_handler = primary_handler;
+}
+
+/**
+  Checks if the database name is reserved word used by SE by invoking
+  the handlerton method.
+
+  @param  plugin        SE plugin.
+  @param  name          Database name.
+
+  @retval true          If the name is reserved word.
+  @retval false         If the name is not reserved word.
+*/
+static bool is_reserved_db_name_handlerton(THD *, plugin_ref plugin,
+                                           void *name) {
+  handlerton *hton = plugin_data<handlerton *>(plugin);
+  if (hton->state == SHOW_OPTION_YES && hton->is_reserved_db_name)
+    return (hton->is_reserved_db_name(hton, (const char *)name));
+  return false;
+}
+
+/**
+   Check if the database name is reserved word used by SE.
+
+   @param  name    Database name.
+
+   @retval true    If the name is a reserved word.
+   @retval false   If the name is not a reserved word.
+*/
+bool ha_check_reserved_db_name(const char *name) {
+  return (plugin_foreach(NULL, is_reserved_db_name_handlerton,
+                         MYSQL_STORAGE_ENGINE_PLUGIN, (char *)name));
 }

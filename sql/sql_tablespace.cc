@@ -40,12 +40,14 @@
 #include "sql/dd/cache/dictionary_client.h"  // dd::Dictionary_client
 #include "sql/dd/dd.h"                       // dd::create_object
 #include "sql/dd/impl/sdi_utils.h"           // dd::sdi_utils::make_guard
+#include "sql/dd/properties.h"
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/tablespace.h"       // dd::fetch_tablespace_table_refs
 #include "sql/dd/types/tablespace_file.h"  // dd::Tablespace_file
 #include "sql/debug_sync.h"                // DBUG_SYNC
 #include "sql/derror.h"                    // ER_THD
 #include "sql/handler.h"                   // st_alter_tablespace
+#include "sql/item_strfunc.h"              // mysql_generate_uuid
 #include "sql/mdl.h"
 #include "sql/parse_tree_helpers.h"  // resolve_engine
 #include "sql/sql_base.h"            // TDC_RT_REMOVE_ALL
@@ -60,9 +62,6 @@
 #include "sql/transaction.h"  // trans_commit_stmt
 
 namespace {
-
-// TODO WL#9536: Remove (or set to true) when wl#9536 is implemented.
-const bool have_crash_safe_ddl = false;
 
 template <typename LEXSTR>
 bool validate_tspnamelen(const LEXSTR &name) {
@@ -113,20 +112,21 @@ bool validate_tablespace_name_length(const char *tablespace_name) {
   return validate_tspnamelen(tspname);
 }
 
-bool validate_tablespace_name(bool tablespace_ddl, const char *tablespace_name,
+bool validate_tablespace_name(ts_command_type ts_cmd,
+                              const char *tablespace_name,
                               const handlerton *engine) {
   DBUG_ASSERT(tablespace_name != nullptr);
   DBUG_ASSERT(engine != nullptr);
 
-  // Length must be > 0.
-  if (tablespace_name[0] == '\0') {
+  // Length must be valid.
+  if (validate_tablespace_name_length(tablespace_name)) {
     my_error(ER_WRONG_TABLESPACE_NAME, MYF(0), tablespace_name);
     return true;
   }
 
   // Invoke SE specific validation of the name.
   if (engine->is_valid_tablespace_name != nullptr &&
-      !engine->is_valid_tablespace_name(tablespace_ddl, tablespace_name)) {
+      !engine->is_valid_tablespace_name(ts_cmd, tablespace_name)) {
     my_error(ER_WRONG_TABLESPACE_NAME, MYF(0), tablespace_name);
     return true;
   }
@@ -161,11 +161,12 @@ class Rollback_guard {
 
 template <typename DISABLE_ROLLBACK>
 bool complete_stmt(THD *thd, handlerton *hton, DISABLE_ROLLBACK &&dr,
-                   bool using_trans = true) {
-  if (write_bin_log(thd, false, thd->query().str, thd->query().length,
-                    using_trans && ddl_is_atomic(hton))) {
-    return true;
-  }
+                   bool using_trans = true, bool dont_write_to_binlog = false) {
+  if (!dont_write_to_binlog)
+    if (write_bin_log(thd, false, thd->query().str, thd->query().length,
+                      using_trans && ddl_is_atomic(hton))) {
+      return true;
+    }
 
   dr();
 
@@ -375,6 +376,10 @@ bool map_errors(int se_error, const char *statement_txt,
     case HA_ERR_TABLESPACE_EXISTS:
       my_error(ER_TABLESPACE_EXISTS, MYF(0), ts_info->tablespace_name);
       break;
+    case HA_ERR_NOT_ALLOWED_COMMAND:
+      my_error(ER_DISALLOWED_OPERATION, MYF(0), statement_txt,
+               ts_info->tablespace_name);
+      break;
     default:
       char errbuf[MYSQL_ERRMSG_SIZE];
       my_error(ER_GET_ERRNO, MYF(0), se_error,
@@ -401,7 +406,8 @@ Sql_cmd_create_tablespace::Sql_cmd_create_tablespace(
     const LEX_STRING &lfgname, const Tablespace_options *options)
     : Sql_cmd_tablespace{tsname, options},
       m_datafile_name(dfname),
-      m_logfile_group_name(lfgname) {}
+      m_logfile_group_name(lfgname),
+      m_auto_generate_datafile_name(dfname.str == nullptr) {}
 
 bool Sql_cmd_create_tablespace::execute(THD *thd) {
   Rollback_guard rollback_on_return{thd};
@@ -417,10 +423,10 @@ bool Sql_cmd_create_tablespace::execute(THD *thd) {
   }
   rollback_on_return.m_hton = hton;  // Allow rollback to call hton->post_ddl
 
-  // Check the tablespace name
-  // and acquire an MDL X lock on it.
-  if (lock_tablespace_names(thd, m_tablespace_name) ||
-      validate_tablespace_name(true, m_tablespace_name.str, hton)) {
+  // Check the tablespace name and acquire an MDL X lock.
+  if (validate_tablespace_name(CREATE_TABLESPACE, m_tablespace_name.str,
+                               hton) ||
+      lock_tablespace_names(thd, m_tablespace_name)) {
     return true;
   }
 
@@ -463,13 +469,28 @@ bool Sql_cmd_create_tablespace::execute(THD *thd) {
 
   tablespace->set_comment(dd::String_type{m_options->ts_comment.str, cl});
 
-  if (m_datafile_name.length > FN_REFLEN) {
+  LEX_STRING tblspc_datafile_name = {m_datafile_name.str,
+                                     m_datafile_name.length};
+  if (m_auto_generate_datafile_name) {
+    char tmp_buf[40];
+    String str(tmp_buf, sizeof(tmp_buf), &my_charset_bin);
+    String *uuid = mysql_generate_uuid(&str);
+    if (hton->get_tablespace_filename_ext)
+      uuid->append(hton->get_tablespace_filename_ext());
+
+    tblspc_datafile_name.str =
+        thd->strmake(uuid->c_ptr_quick(), uuid->length());
+    tblspc_datafile_name.length = uuid->length();
+  }
+
+  if (tblspc_datafile_name.length > FN_REFLEN) {
     my_error(ER_PATH_LENGTH, MYF(0), "DATAFILE");
     return true;
   }
 
   // Add datafile
-  tablespace->add_file()->set_filename(dd::make_string_type(m_datafile_name));
+  tablespace->add_file()->set_filename(
+      dd::make_string_type(tblspc_datafile_name));
 
   // Write changes to dictionary.
   if (dc.store(tablespace.get())) {
@@ -497,7 +518,7 @@ bool Sql_cmd_create_tablespace::execute(THD *thd) {
                               m_logfile_group_name.str,
                               CREATE_TABLESPACE,
                               TS_ALTER_TABLESPACE_TYPE_NOT_DEFINED,
-                              m_datafile_name.str,
+                              tblspc_datafile_name.str,
                               nullptr,
                               *m_options};
 
@@ -571,7 +592,12 @@ bool Sql_cmd_drop_tablespace::execute(THD *thd) {
   }
   rollback_on_return.m_hton = hton;
 
-  if (validate_tablespace_name(true, m_tablespace_name.str, hton)) {
+  /*
+    Even if the tablespace already exists in the DD we still need to
+    validate the name, since we are not allowed to modify
+    tablespaces created by the system.
+  */
+  if (validate_tablespace_name(DROP_TABLESPACE, m_tablespace_name.str, hton)) {
     return true;
   }
 
@@ -581,15 +607,6 @@ bool Sql_cmd_drop_tablespace::execute(THD *thd) {
   }
   if (!is_empty) {
     my_error(ER_TABLESPACE_IS_NOT_EMPTY, MYF(0), m_tablespace_name.str);
-    return true;
-  }
-
-  /*
-    Even if the tablespace already exists in the DD we still need to
-    validate the name, since we are not allowed to modify
-    tablepspaces created by the system.
-  */
-  if (validate_tablespace_name(true, m_tablespace_name.str, hton)) {
     return true;
   }
 
@@ -604,8 +621,7 @@ bool Sql_cmd_drop_tablespace::execute(THD *thd) {
   int ha_error =
       hton->alter_tablespace(hton, thd, &ts_info, old_ts_def, nullptr);
   if (map_errors(ha_error, "DROP TABLEPSPACE", &ts_info)) {
-    if (ha_error == HA_ERR_TABLESPACE_MISSING &&
-        (!ddl_is_atomic(hton) || !have_crash_safe_ddl)) {
+    if (ha_error == HA_ERR_TABLESPACE_MISSING && !ddl_is_atomic(hton)) {
       /*
         For engines which don't support atomic DDL we might have
         orphan tablespace entries in the data-dictionary which do not
@@ -692,7 +708,7 @@ bool Sql_cmd_alter_tablespace::execute(THD *thd) {
     FUTURE: Would be better if this was made into a
     property/attribute of dd::Tablespace
   */
-  if (validate_tablespace_name(true, m_tablespace_name.str, hton)) {
+  if (validate_tablespace_name(ALTER_TABLESPACE, m_tablespace_name.str, hton)) {
     return true;
   }
 
@@ -779,12 +795,12 @@ bool Sql_cmd_alter_tablespace_add_datafile::execute(THD *thd) {
   /*
     Even if the tablespace already exists in the DD we still need to
     validate the name, since we are not allowed to modify
-    tablepspaces created by the system.
+    tablespaces created by the system.
 
     FUTURE: Would be better if this was made into a
     property/attribute of dd::Tablespace
   */
-  if (validate_tablespace_name(true, m_tablespace_name.str, hton)) {
+  if (validate_tablespace_name(ALTER_TABLESPACE, m_tablespace_name.str, hton)) {
     return true;
   }
 
@@ -866,10 +882,10 @@ bool Sql_cmd_alter_tablespace_drop_datafile::execute(THD *thd) {
 
   /*
     Even if the tablespace already exists in the DD we still need to
-    validate the name, since we are not allowed to modify tablepspaces
+    validate the name, since we are not allowed to modify tablespaces
     created by the system.
   */
-  if (validate_tablespace_name(true, m_tablespace_name.str, hton)) {
+  if (validate_tablespace_name(ALTER_TABLESPACE, m_tablespace_name.str, hton)) {
     return true;
   }
   st_alter_tablespace ts_info{m_tablespace_name.str,
@@ -961,12 +977,12 @@ bool Sql_cmd_alter_tablespace_rename::execute(THD *thd) {
     name - since we are not allowed to rename reserved names
     FUTURE - Could be a property/attribute of dd::Tablespace
   */
-  if (validate_tablespace_name(true, m_tablespace_name.str, hton)) {
+  if (validate_tablespace_name(DROP_TABLESPACE, m_tablespace_name.str, hton)) {
     return true;
   }
 
-  // Also valdate the new tablespace name in the SE
-  if (validate_tablespace_name(true, m_new_name.str, hton)) {
+  // Also validate the new tablespace name in the SE
+  if (validate_tablespace_name(CREATE_TABLESPACE, m_new_name.str, hton)) {
     return true;
   }
 
@@ -1046,6 +1062,338 @@ bool Sql_cmd_alter_tablespace_rename::execute(THD *thd) {
     return true;
   }
   return false;
+}
+
+Sql_cmd_create_undo_tablespace::Sql_cmd_create_undo_tablespace(
+    ts_command_type cmd_type, const LEX_STRING &utsname,
+    const LEX_STRING &dfname, const Tablespace_options *options)
+    : m_cmd(cmd_type),
+      m_undo_tablespace_name(utsname),
+      m_datafile_name(dfname),
+      m_options(options) {}
+
+bool Sql_cmd_create_undo_tablespace::execute(THD *thd) {
+  Rollback_guard rollback_on_return{thd};
+
+  if (check_global_access(thd, CREATE_TABLESPACE_ACL)) {
+    return true;
+  }
+
+  handlerton *hton = nullptr;
+  if (get_stmt_hton(thd, m_options->engine_name, m_undo_tablespace_name.str,
+                    "CREATE UNDO TABLESPACE", &hton)) {
+    return true;
+  }
+
+  rollback_on_return.m_hton = hton;  // Allow rollback to call hton->post_ddl
+
+  // Check the tablespace name and acquire an MDL X lock.
+  if (validate_tablespace_name(CREATE_UNDO_TABLESPACE,
+                               m_undo_tablespace_name.str, hton) ||
+      lock_tablespace_names(thd, m_undo_tablespace_name)) {
+    return true;
+  }
+
+  auto &dc = *thd->dd_client();
+  dd::cache::Dictionary_client::Auto_releaser releaser{&dc};
+
+  // Check if same tablespace already exists.
+  auto tsn = dd::make_string_type(m_undo_tablespace_name);
+  const dd::Tablespace *ts = nullptr;
+
+  if (dc.acquire(tsn, &ts)) {
+    return true;
+  }
+
+  if (ts != nullptr) {
+    my_error(ER_TABLESPACE_EXISTS, MYF(0), tsn.c_str());
+    return true;
+  }
+
+  // Create new tablespace.
+  std::unique_ptr<dd::Tablespace> tablespace(
+      dd::create_object<dd::Tablespace>());
+
+  // Set tablespace name
+  tablespace->set_name(tsn);
+
+  // Engine type
+  tablespace->set_engine(ha_resolve_storage_engine_name(hton));
+
+  if (m_datafile_name.length > FN_REFLEN) {
+    my_error(ER_PATH_LENGTH, MYF(0), "DATAFILE");
+    return true;
+  }
+
+  // Add datafile
+  tablespace->add_file()->set_filename(dd::make_string_type(m_datafile_name));
+
+  // Write changes to dictionary.
+  if (dc.store(tablespace.get())) {
+    return true;
+  }
+
+  /*
+    Commit after creation of tablespace in the data-dictionary for
+    storage engines which don't support atomic DDL. We do this to
+    avoid being left with tablespace in SE but not in data-dictionary
+    in case of crash. Indeed, in this case, we can end-up with tablespace
+    present in the data-dictionary and not present in SE. But this can be
+    easily fixed by doing DROP TABLESPACE.
+  */
+  if (intermediate_commit_unless_atomic_ddl(thd, hton)) {
+    return true;
+  }
+
+  auto tsmp = get_ts_mod_pair(&dc, m_undo_tablespace_name.str);
+  if (tsmp.first == nullptr) {
+    return true;
+  }
+  st_alter_tablespace ts_info{m_undo_tablespace_name.str,
+                              nullptr,
+                              CREATE_UNDO_TABLESPACE,
+                              TS_ALTER_TABLESPACE_TYPE_NOT_DEFINED,
+                              m_datafile_name.str,
+                              nullptr,
+                              *m_options};
+
+  int ha_error =
+      hton->alter_tablespace(hton, thd, &ts_info, tsmp.first, tsmp.second);
+  if (map_errors(ha_error, "CREATE UNDO TABLEPSPACE", &ts_info)) {
+    if (!ddl_is_atomic(hton)) {
+      /*
+        For engines which don't support atomic DDL addition of tablespace to
+        data-dictionary has been committed already so we need to revert it.
+      */
+      if (dc.drop(tsmp.second)) {
+        return true;
+      }
+
+      Disable_gtid_state_update_guard disabler{thd};
+      (void)trans_commit_stmt(thd);
+      (void)trans_commit(thd);
+    }
+    return true;
+  }  // if (map_errors
+
+  /*
+    Per convention only engines supporting atomic DDL are allowed to
+    modify data-dictionary objects in handler::create() and other
+    similar calls.
+  */
+  if (ddl_is_atomic(hton) && dc.update(tsmp.second)) {
+    return true;
+  }
+
+  if (complete_stmt(thd, hton, [&]() { rollback_on_return.disable(); }, true,
+                    true)) {
+    return true;
+  }
+
+  return false;
+}
+
+enum_sql_command Sql_cmd_create_undo_tablespace::sql_command_code() const {
+  return SQLCOM_ALTER_TABLESPACE;
+}
+
+Sql_cmd_alter_undo_tablespace::Sql_cmd_alter_undo_tablespace(
+    ts_command_type cmd_type, const LEX_STRING &utsname,
+    const LEX_STRING &dfname, const Tablespace_options *options,
+    ts_alter_tablespace_type at_type)
+    : m_cmd(cmd_type),
+      m_undo_tablespace_name(utsname),
+      m_datafile_name(dfname),
+      m_at_type(at_type),
+      m_options(options) {
+  // These only at_type values that the syntax currently accepts
+  DBUG_ASSERT(at_type == TS_ALTER_TABLESPACE_TYPE_NOT_DEFINED ||
+              at_type == ALTER_UNDO_TABLESPACE_SET_ACTIVE ||
+              at_type == ALTER_UNDO_TABLESPACE_SET_INACTIVE);
+}
+
+bool Sql_cmd_alter_undo_tablespace::execute(THD *thd) {
+  Rollback_guard rollback_on_return{thd};
+
+  if (check_global_access(thd, CREATE_TABLESPACE_ACL)) {
+    return true;
+  }
+
+  handlerton *hton = nullptr;
+  if (get_stmt_hton(thd, m_options->engine_name, m_undo_tablespace_name.str,
+                    "ALTER UNDO TABLESPACE", &hton)) {
+    return true;
+  }
+
+  // Check the tablespace name and acquire an MDL X lock.
+  if (validate_tablespace_name(ALTER_UNDO_TABLESPACE,
+                               m_undo_tablespace_name.str, hton) ||
+      lock_tablespace_names(thd, m_undo_tablespace_name)) {
+    return true;
+  }
+
+  auto &dc = *thd->dd_client();
+  dd::cache::Dictionary_client::Auto_releaser releaser{&dc};
+
+  // Get the existing dd::Tablespace for this tablespace name.
+  auto tsn = dd::make_string_type(m_undo_tablespace_name);
+  const dd::Tablespace *ts = nullptr;
+
+  if (dc.acquire(tsn, &ts)) {
+    return true;
+  }
+
+  // Must already exist
+  if (ts == nullptr) {
+    my_error(ER_TABLESPACE_MISSING_WITH_NAME, MYF(0), tsn.c_str());
+    return true;
+  }
+
+  auto tsmp = get_ts_mod_pair(&dc, m_undo_tablespace_name.str);
+  if (tsmp.first == nullptr) {
+    return true;
+  }
+  st_alter_tablespace ts_info{m_undo_tablespace_name.str,
+                              nullptr,
+                              ALTER_UNDO_TABLESPACE,
+                              m_at_type,
+                              nullptr,
+                              nullptr,
+                              *m_options};
+
+  int ha_error =
+      hton->alter_tablespace(hton, thd, &ts_info, tsmp.first, tsmp.second);
+  if (map_errors(ha_error, "ALTER UNDO TABLEPSPACE", &ts_info)) {
+    if (!ddl_is_atomic(hton)) {
+      Disable_gtid_state_update_guard disabler{thd};
+      (void)trans_commit_stmt(thd);
+      (void)trans_commit(thd);
+    }
+    return true;
+  }  // if (map_errors
+
+  /*
+    Per convention only engines supporting atomic DDL are allowed to
+    modify data-dictionary objects in handler::create() and other
+    similar calls.
+  */
+  if (ddl_is_atomic(hton) && dc.update(tsmp.second)) {
+    return true;
+  }
+
+  if (complete_stmt(thd, hton, [&]() { rollback_on_return.disable(); }, true,
+                    true)) {
+    return true;
+  }
+
+  return false;
+}
+
+enum_sql_command Sql_cmd_alter_undo_tablespace::sql_command_code() const {
+  return SQLCOM_ALTER_TABLESPACE;
+}
+
+Sql_cmd_drop_undo_tablespace::Sql_cmd_drop_undo_tablespace(
+    ts_command_type cmd_type, const LEX_STRING &utsname,
+    const LEX_STRING &dfname, const Tablespace_options *options)
+    : m_cmd(cmd_type),
+      m_undo_tablespace_name(utsname),
+      m_datafile_name(dfname),
+      m_options(options) {}
+
+bool Sql_cmd_drop_undo_tablespace::execute(THD *thd) {
+  Rollback_guard rollback_on_return{thd};
+
+  if (check_global_access(thd, CREATE_TABLESPACE_ACL)) {
+    return true;
+  }
+
+  handlerton *hton = nullptr;
+  if (get_stmt_hton(thd, m_options->engine_name, m_undo_tablespace_name.str,
+                    "DROP UNDO TABLESPACE", &hton)) {
+    return true;
+  }
+  rollback_on_return.m_hton = hton;
+
+  /*
+    Check the tablespace name and acquire an MDL X lock.
+    Even if the tablespace already exists in the DD we still need to
+    validate the name, since we are not allowed to modify
+    tablespaces created by the system.
+  */
+  if (validate_tablespace_name(DROP_UNDO_TABLESPACE, m_undo_tablespace_name.str,
+                               hton) ||
+      lock_tablespace_names(thd, m_undo_tablespace_name)) {
+    return true;
+  }
+
+  auto &dc = *thd->dd_client();
+  dd::cache::Dictionary_client::Auto_releaser releaser{&dc};
+
+  // Get the existing dd::Tablespace for this tablespace name.
+  auto tsn = dd::make_string_type(m_undo_tablespace_name);
+  const dd::Tablespace *ts = nullptr;
+
+  if (dc.acquire(tsn, &ts)) {
+    return true;
+  }
+
+  if (ts == nullptr) {
+    my_error(ER_TABLESPACE_MISSING_WITH_NAME, MYF(0), tsn.c_str());
+    return true;
+  }
+
+  st_alter_tablespace ts_info{m_undo_tablespace_name.str,
+                              nullptr,
+                              DROP_UNDO_TABLESPACE,
+                              TS_ALTER_TABLESPACE_TYPE_NOT_DEFINED,
+                              nullptr,
+                              nullptr,
+                              *m_options};
+
+  int ha_error = hton->alter_tablespace(hton, thd, &ts_info, ts, nullptr);
+  if (map_errors(ha_error, "DROP UNDO TABLEPSPACE", &ts_info)) {
+    if (!ddl_is_atomic(hton)) {
+      /*
+        For engines which don't support atomic DDL we might have
+        orphan tablespace entries in the data-dictionary which do not
+        correspond to tablespaces in SEs.  To allow user to do manual
+        clean-up we drop tablespace from the dictionary even if SE
+        says it is missing (but still report error).
+      */
+      if (dc.drop(ts)) {
+        return true;
+      }
+
+      Disable_gtid_state_update_guard disabler{thd};
+      (void)trans_commit_stmt(thd);
+      (void)trans_commit(thd);
+    }
+    return true;
+  }  // if (map_errors
+
+  if (dc.drop(ts)) {
+    return true;
+  }
+
+  /*
+    DROP for engines which don't support atomic DDL still needs to be
+    handled by doing commit right after updating data-dictionary.
+  */
+  if (intermediate_commit_unless_atomic_ddl(thd, hton)) {
+    return true; /* purecov: inspected */
+  }
+
+  if (complete_stmt(thd, hton, [&]() { rollback_on_return.disable(); }, true,
+                    true)) {
+    return true;
+  }
+
+  return false;
+}
+
+enum_sql_command Sql_cmd_drop_undo_tablespace::sql_command_code() const {
+  return SQLCOM_ALTER_TABLESPACE;
 }
 
 Sql_cmd_logfile_group::Sql_cmd_logfile_group(

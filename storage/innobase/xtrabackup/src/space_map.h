@@ -41,7 +41,7 @@ class Tablespace_map {
   @param[out]  buf output buffer */
   bool serialize(rapidjson::StringBuffer &buf) const;
 
-  Tablespace_map(){};
+  Tablespace_map(){}
 
   static Tablespace_map static_tablespace_map;
 

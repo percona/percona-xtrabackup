@@ -31,14 +31,13 @@
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_mutex.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_thread.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_member_information.h"
-#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"
 #include "plugin/group_replication/libmysqlgcs/xdr_gen/xcom_vp.h"
 
 /**
   Abstract class that defines a notification that will be sent from XCOM
   to MySQL GCS or from an user thread to MySQL GCS.
 
-  This is a very simple implementation that chooses simplicity over flexibilty.
+  This is a very simple implementation that chooses simplicity over flexibility.
   For example, it does not support notifications on member functions (i.e.
   methods) and a new notification generates some duplicated code. Note that
   these limitations could be eliminated with the use of generalized functors.

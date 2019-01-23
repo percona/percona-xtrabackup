@@ -22,6 +22,7 @@
 
 #include <stddef.h>
 #include <algorithm>
+#include <list>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -29,21 +30,23 @@
 #include <mysql/components/services/log_builtins.h>
 #include "my_dbug.h"
 #include "plugin/group_replication/include/gcs_event_handlers.h"
+#include "plugin/group_replication/include/observer_trans.h"
 #include "plugin/group_replication/include/pipeline_stats.h"
 #include "plugin/group_replication/include/plugin.h"
 #include "plugin/group_replication/include/plugin_handlers/primary_election_invocation_handler.h"
 #include "plugin/group_replication/include/plugin_messages/group_action_message.h"
 #include "plugin/group_replication/include/plugin_messages/group_validation_message.h"
+#include "plugin/group_replication/include/plugin_messages/sync_before_execution_message.h"
+#include "plugin/group_replication/include/plugin_messages/transaction_prepared_message.h"
+#include "plugin/group_replication/include/plugin_messages/transaction_with_guarantee_message.h"
 
 using std::vector;
 
 Plugin_gcs_events_handler::Plugin_gcs_events_handler(
     Applier_module_interface *applier_module, Recovery_module *recovery_module,
-    Plugin_gcs_view_modification_notifier *vc_notifier,
     Compatibility_module *compatibility_module, ulong components_stop_timeout)
     : applier_module(applier_module),
       recovery_module(recovery_module),
-      view_change_notifier(vc_notifier),
       compatibility_manager(compatibility_module),
       stop_wait_timeout(components_stop_timeout) {
   this->temporary_states =
@@ -75,6 +78,18 @@ void Plugin_gcs_events_handler::on_message_received(
   switch (message_type) {
     case Plugin_gcs_message::CT_TRANSACTION_MESSAGE:
       handle_transactional_message(message);
+      break;
+
+    case Plugin_gcs_message::CT_TRANSACTION_WITH_GUARANTEE_MESSAGE:
+      handle_transactional_with_guarantee_message(message);
+      break;
+
+    case Plugin_gcs_message::CT_TRANSACTION_PREPARED_MESSAGE:
+      handle_transaction_prepared_message(message);
+      break;
+
+    case Plugin_gcs_message::CT_SYNC_BEFORE_EXECUTION_MESSAGE:
+      handle_sync_before_execution_message(message);
       break;
 
     case Plugin_gcs_message::CT_CERTIFICATION_MESSAGE:
@@ -142,21 +157,105 @@ bool Plugin_gcs_events_handler::pre_process_message(
 
 void Plugin_gcs_events_handler::handle_transactional_message(
     const Gcs_message &message) const {
-  if ((local_member_info->get_recovery_status() ==
-           Group_member_info::MEMBER_IN_RECOVERY ||
-       local_member_info->get_recovery_status() ==
-           Group_member_info::MEMBER_ONLINE) &&
+  const Group_member_info::Group_member_status member_status =
+      local_member_info->get_recovery_status();
+  if ((member_status == Group_member_info::MEMBER_IN_RECOVERY ||
+       member_status == Group_member_info::MEMBER_ONLINE) &&
       this->applier_module) {
+    if (member_status == Group_member_info::MEMBER_IN_RECOVERY) {
+      applier_module->get_pipeline_stats_member_collector()
+          ->increment_transactions_delivered_during_recovery();
+    }
+
     const unsigned char *payload_data = NULL;
     size_t payload_size = 0;
     Plugin_gcs_message::get_first_payload_item_raw_data(
         message.get_message_data().get_payload(), &payload_data, &payload_size);
 
-    this->applier_module->handle(payload_data,
-                                 static_cast<ulong>(payload_size));
+    this->applier_module->handle(payload_data, static_cast<ulong>(payload_size),
+                                 GROUP_REPLICATION_CONSISTENCY_EVENTUAL, NULL);
   } else {
+    /* purecov: begin inspected */
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MSG_DISCARDED);
+    /* purecov: end */
   }
+}
+
+void Plugin_gcs_events_handler::handle_transactional_with_guarantee_message(
+    const Gcs_message &message) const {
+  const Group_member_info::Group_member_status member_status =
+      local_member_info->get_recovery_status();
+  if ((member_status == Group_member_info::MEMBER_IN_RECOVERY ||
+       member_status == Group_member_info::MEMBER_ONLINE) &&
+      this->applier_module) {
+    if (member_status == Group_member_info::MEMBER_IN_RECOVERY) {
+      applier_module->get_pipeline_stats_member_collector()
+          ->increment_transactions_delivered_during_recovery();
+    }
+
+    const unsigned char *payload_data = NULL;
+    size_t payload_size = 0;
+    Plugin_gcs_message::get_first_payload_item_raw_data(
+        message.get_message_data().get_payload(), &payload_data, &payload_size);
+
+    enum_group_replication_consistency_level consistency_level =
+        Transaction_with_guarantee_message::decode_and_get_consistency_level(
+            message.get_message_data().get_payload(),
+            message.get_message_data().get_payload_length());
+
+    // Get ONLINE members that did receive this message.
+    std::list<Gcs_member_identifier> *online_members =
+        group_member_mgr->get_online_members_with_guarantees(
+            message.get_origin());
+
+    this->applier_module->handle(payload_data, static_cast<ulong>(payload_size),
+                                 consistency_level, online_members);
+  } else {
+    /* purecov: begin inspected */
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MSG_DISCARDED);
+    /* purecov: end */
+  }
+}
+
+void Plugin_gcs_events_handler::handle_transaction_prepared_message(
+    const Gcs_message &message) const {
+  if (this->applier_module == NULL) {
+    /* purecov: begin inspected */
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MISSING_GRP_RPL_APPLIER);
+    return;
+    /* purecov: end */
+  }
+
+  Transaction_prepared_message transaction_prepared_message(
+      message.get_message_data().get_payload(),
+      message.get_message_data().get_payload_length());
+
+  Transaction_prepared_action_packet *transaction_prepared_action =
+      new Transaction_prepared_action_packet(
+          transaction_prepared_message.get_sid(),
+          transaction_prepared_message.get_gno(), message.get_origin());
+  this->applier_module->add_transaction_prepared_action_packet(
+      transaction_prepared_action);
+}
+
+void Plugin_gcs_events_handler::handle_sync_before_execution_message(
+    const Gcs_message &message) const {
+  if (this->applier_module == NULL) {
+    /* purecov: begin inspected */
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MISSING_GRP_RPL_APPLIER);
+    return;
+    /* purecov: end */
+  }
+
+  Sync_before_execution_message sync_before_execution_message(
+      message.get_message_data().get_payload(),
+      message.get_message_data().get_payload_length());
+
+  Sync_before_execution_action_packet *sync_before_execution_action =
+      new Sync_before_execution_action_packet(
+          sync_before_execution_message.get_thread_id(), message.get_origin());
+  this->applier_module->add_sync_before_execution_action_packet(
+      sync_before_execution_action);
 }
 
 void Plugin_gcs_events_handler::handle_certifier_message(
@@ -523,7 +622,7 @@ void Plugin_gcs_events_handler::on_view_changed(
   if (is_joining && local_member_info->get_recovery_status() ==
                         Group_member_info::MEMBER_ERROR) {
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MEMBER_EXIT_PLUGIN_ERROR);
-    view_change_notifier->cancel_view_modification(
+    gcs_module->notify_of_view_change_cancellation(
         GROUP_REPLICATION_CONFIGURATION_ERROR);
   } else {
     /*
@@ -556,7 +655,7 @@ void Plugin_gcs_events_handler::on_view_changed(
     if (update_group_info_manager(new_view, exchanged_data, is_joining,
                                   is_leaving) &&
         is_joining) {
-      view_change_notifier->cancel_view_modification();
+      gcs_module->notify_of_view_change_cancellation();
       return;
     }
 
@@ -587,8 +686,8 @@ void Plugin_gcs_events_handler::on_view_changed(
     if (is_leaving) gcs_module->leave_coordination_member_left();
 
     // Signal that the injected view was delivered
-    if (view_change_notifier->is_injected_view_modification())
-      view_change_notifier->end_view_modification();
+    if (gcs_module->is_injected_view_modification())
+      gcs_module->notify_of_view_change_end();
 
     group_events_observation_manager->after_view_change(
         new_view.get_joined_members(), new_view.get_leaving_members(),
@@ -679,7 +778,9 @@ bool Plugin_gcs_events_handler::was_member_expelled_from_group(
       We do not need to kill ongoing transactions when the applier
       is already stopping.
     */
-    if (!error) applier_module->kill_pending_transactions(true, true);
+    if (!error)
+      applier_module->kill_pending_transactions(
+          true, true, Gcs_operations::ALREADY_LEFT, nullptr);
   }
 
   DBUG_RETURN(result);
@@ -762,10 +863,10 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view &new_view,
   if (is_joining) {
     int error = 0;
     if ((error = check_group_compatibility(number_of_members))) {
-      view_change_notifier->cancel_view_modification(error);
+      gcs_module->notify_of_view_change_cancellation(error);
       return;
     }
-    view_change_notifier->end_view_modification();
+    gcs_module->notify_of_view_change_end();
 
     /**
      On the joining list there can be 2 types of members: online/recovering
@@ -933,10 +1034,17 @@ void Plugin_gcs_events_handler::handle_leaving_members(const Gcs_view &new_view,
     update_member_status(
         new_view.get_leaving_members(), Group_member_info::MEMBER_OFFLINE,
         Group_member_info::MEMBER_END, Group_member_info::MEMBER_ERROR);
+
+    if (!is_leaving) {
+      Leaving_members_action_packet *leaving_members_action =
+          new Leaving_members_action_packet(new_view.get_leaving_members());
+      this->applier_module->add_leaving_members_action_packet(
+          leaving_members_action);
+    }
   }
 
   if (is_leaving) {
-    view_change_notifier->end_view_modification();
+    gcs_module->notify_of_view_change_end();
   }
 }
 
@@ -1456,27 +1564,10 @@ bool Plugin_gcs_events_handler::is_group_running_a_primary_election() const {
 }
 
 void Plugin_gcs_events_handler::leave_group_on_error() const {
-  Gcs_operations::enum_leave_state state = gcs_module->leave();
-  char **error_message = NULL;
+  Gcs_operations::enum_leave_state state = gcs_module->leave(nullptr);
 
-  int error = channel_stop_all(CHANNEL_APPLIER_THREAD | CHANNEL_RECEIVER_THREAD,
-                               stop_wait_timeout, error_message);
-  if (error) {
-    if (error_message != NULL && *error_message != NULL) {
-      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MEMBER_STOP_RPL_CHANNELS_ERROR,
-                   *error_message);
-      my_free(error_message);
-    } else {
-      char buff[MYSQL_ERRMSG_SIZE];
-      size_t len = 0;
-      len = snprintf(buff, sizeof(buff), "Got error: ");
-      len += snprintf((buff + len), sizeof(buff) - len, "%d", error);
-      snprintf((buff + len), sizeof(buff) - len,
-               "Please check the error log for more details.");
-      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MEMBER_STOP_RPL_CHANNELS_ERROR,
-                   buff);
-    }
-  }
+  Replication_thread_api::rpl_channel_stop_all(
+      CHANNEL_APPLIER_THREAD | CHANNEL_RECEIVER_THREAD, stop_wait_timeout);
 
   longlong errcode = 0;
   longlong log_severity = WARNING_LEVEL;

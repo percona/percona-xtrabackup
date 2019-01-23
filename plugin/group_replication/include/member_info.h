@@ -33,6 +33,7 @@
   not through plugin_server_include.h.
 */
 
+#include <list>
 #include <map>
 #include <set>
 #include <sstream>
@@ -43,6 +44,7 @@
 #include "my_sys.h"
 #include "plugin/group_replication/include/gcs_plugin_messages.h"
 #include "plugin/group_replication/include/member_version.h"
+#include "plugin/group_replication/include/plugin_psi.h"
 #include "plugin/group_replication/include/services/notification/notification.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_member_identifier.h"
 
@@ -286,7 +288,8 @@ class Group_member_info : public Plugin_gcs_message {
 
   /**
     Set the enforces_update_everywhere_checks flag
-    @param enforce_everywhere are the update everywhere checks active or not
+    @param enforce_everywhere_checks are the update everywhere checks active or
+    not
   */
   void set_enforces_update_everywhere_checks_flag(
       bool enforce_everywhere_checks);
@@ -437,7 +440,7 @@ class Group_member_info : public Plugin_gcs_message {
 
   /**
     Sets if the member is currently running a group action
-    @param is_runnning is an action running
+    @param is_running is an action running
   */
   void set_is_group_action_running(bool is_running);
 
@@ -486,7 +489,7 @@ class Group_member_info : public Plugin_gcs_message {
  */
 class Group_member_info_manager_interface {
  public:
-  virtual ~Group_member_info_manager_interface(){};
+  virtual ~Group_member_info_manager_interface() {}
 
   virtual size_t get_number_of_members() = 0;
 
@@ -535,11 +538,33 @@ class Group_member_info_manager_interface {
   virtual std::vector<Group_member_info *> *get_all_members() = 0;
 
   /**
+    Retrieves all ONLINE Group members managed by this site, or
+    NULL if any group member version is from a version lower than
+    #TRANSACTION_WITH_GUARANTEES_VERSION.
+
+    @return  list of all ONLINE members, if all members have version
+             equal or greater than #TRANSACTION_WITH_GUARANTEES_VERSION
+             otherwise  NULL
+
+    @note the memory allocated for the list ownership belongs to the
+          caller
+   */
+  virtual std::list<Gcs_member_identifier> *get_online_members_with_guarantees(
+      const Gcs_member_identifier &exclude_member) = 0;
+
+  /**
     Adds a new member to be managed by this Group manager
 
     @param[in] new_member new group member
    */
   virtual void add(Group_member_info *new_member) = 0;
+
+  /**
+    Removes all members of the group and update new local member.
+
+    @param[in] update_local_member new Group member
+   */
+  virtual void update(Group_member_info *update_local_member) = 0;
 
   /**
     Updates all members of the group. Typically used after a view change.
@@ -597,7 +622,7 @@ class Group_member_info_manager_interface {
 
   @param[in] uuid        member uuid
   @param[in] member_weight  the new weight
- */
+*/
   virtual void update_member_weight(const std::string &uuid,
                                     uint member_weight) = 0;
 
@@ -660,15 +685,34 @@ class Group_member_info_manager_interface {
   */
   virtual Group_member_info *get_primary_member_info() = 0;
 
-  /**¬
-  Check if majority of the group is unreachable
+  /**
+    Check if majority of the group is unreachable
 
-  This approach is optimistic, right after return the majority can be
-  reestablish or go away.
+    This approach is optimistic, right after return the majority can be
+    reestablish or go away.
 
-  @return true if majority of the group is unreachable
+    @return true if majority of the group is unreachable
   */
   virtual bool is_majority_unreachable() = 0;
+
+  /**
+    Check if an unreachable member exists
+
+    This approach is optimistic, right after return a member can be marked as
+    rechable/unreachable
+
+    @return true if an unreachable member exists
+  */
+  virtual bool is_unreachable_member_present() = 0;
+
+  /**
+    Check if a member in recovery exists in the group
+
+    This approach is optimistic, right after return a member can enter the group
+
+    @return true if a member in recovery exists
+  */
+  virtual bool is_recovering_member_present() = 0;
 
   /**
     This method returns all ONLINE and RECOVERING members comma separated
@@ -686,7 +730,10 @@ class Group_member_info_manager_interface {
  */
 class Group_member_info_manager : public Group_member_info_manager_interface {
  public:
-  Group_member_info_manager(Group_member_info *local_member_info);
+  Group_member_info_manager(
+      Group_member_info *local_member_info,
+      PSI_mutex_key psi_mutex_key =
+          key_GR_LOCK_group_member_info_manager_update_lock);
 
   virtual ~Group_member_info_manager();
 
@@ -703,7 +750,12 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
 
   std::vector<Group_member_info *> *get_all_members();
 
+  std::list<Gcs_member_identifier> *get_online_members_with_guarantees(
+      const Gcs_member_identifier &exclude_member);
+
   void add(Group_member_info *new_member);
+
+  void update(Group_member_info *update_local_member);
 
   void update(std::vector<Group_member_info *> *new_members);
 
@@ -739,6 +791,10 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
   Group_member_info *get_primary_member_info();
 
   bool is_majority_unreachable();
+
+  bool is_unreachable_member_present();
+
+  bool is_recovering_member_present();
 
   std::string get_string_current_view_active_hosts() const;
 

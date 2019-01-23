@@ -26,6 +26,7 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <stdexcept>
 
 // needed for ip_to_hostname(), should probably be turned into a service
 #include "my_inttypes.h"
@@ -46,9 +47,8 @@ namespace xpl {
 Client::Client(std::shared_ptr<ngs::Vio_interface> connection,
                ngs::Server_interface &server, Client_id client_id,
                Protocol_monitor *pmon, const Global_timeouts &timeouts)
-    : ngs::Client(connection, server, client_id, pmon, timeouts),
-      m_protocol_monitor(pmon) {
-  if (m_protocol_monitor) m_protocol_monitor->init(this);
+    : ngs::Client(connection, server, client_id, pmon, timeouts) {
+  if (pmon) pmon->init(this);
 }
 
 Client::~Client() { ngs::free_object(m_protocol_monitor); }
@@ -137,7 +137,7 @@ void Client::on_auth_timeout() {
 
    The method can be called from different thread/xpl_client.
  */
-bool Client::is_handler_thd(THD *thd) {
+bool Client::is_handler_thd(const THD *thd) const {
   // When accessing the session we need to hold it in
   // shared_pointer to be sure that the session is
   // not reseted (by Mysqlx::Session::Reset) in middle

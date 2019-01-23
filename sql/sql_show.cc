@@ -20,7 +20,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/* Function with list databases, tables or fields */
+// SHOW TABLE, SHOW DATABASES, etc.
 
 #include "sql/sql_show.h"
 
@@ -117,6 +117,7 @@
 #include "sql/sql_table.h"      // filename_to_tablename
 #include "sql/sql_tmp_table.h"  // create_tmp_table
 #include "sql/sql_trigger.h"    // acquire_shared_mdl_for_trigger
+#include "sql/strfunc.h"
 #include "sql/system_variables.h"
 #include "sql/table_trigger_dispatcher.h"  // Table_trigger_dispatcher
 #include "sql/temp_table_param.h"
@@ -384,20 +385,20 @@ bool mysqld_show_privileges(THD *thd) {
     protocol->store(privilege->comment, system_charset_info);
     if (protocol->end_row()) DBUG_RETURN(true);
   }
-  if (iterate_all_dynamic_privileges(
-          thd,
-          /*
-            For each registered dynamic privilege send a strz to
-            this lambda function.
-          */
-          [&](const char *c) -> bool {
-            protocol->start_row();
-            protocol->store(c, system_charset_info);
-            protocol->store("Server Admin", system_charset_info);
-            protocol->store("", system_charset_info);
-            if (protocol->end_row()) return true;
-            return false;
-          })) {
+  if (iterate_all_dynamic_privileges(thd,
+                                     /*
+                                       For each registered dynamic privilege
+                                       send a strz to this lambda function.
+                                     */
+                                     [&](const char *c) -> bool {
+                                       protocol->start_row();
+                                       protocol->store(c, system_charset_info);
+                                       protocol->store("Server Admin",
+                                                       system_charset_info);
+                                       protocol->store("", system_charset_info);
+                                       if (protocol->end_row()) return true;
+                                       return false;
+                                     })) {
     DBUG_RETURN(true);
   }
   my_eof(thd);
@@ -505,11 +506,10 @@ find_files_result find_files(THD *thd, List<LEX_STRING> *files, const char *db,
       if (check_grant(thd, TABLE_ACLS, &table_list, true, 1, true)) continue;
     }
 
-    if (!(file_name = tmp_mem_root
-                          ? make_lex_string_root(tmp_mem_root, file_name, uname,
-                                                 file_name_len, true)
-                          : thd->make_lex_string(file_name, uname,
-                                                 file_name_len, true)) ||
+    if (!(file_name = tmp_mem_root ? make_lex_string_root(tmp_mem_root, uname,
+                                                          file_name_len)
+                                   : make_lex_string_root(thd->mem_root, uname,
+                                                          file_name_len)) ||
         files->push_back(file_name)) {
       my_dirend(dirp);
       DBUG_RETURN(FIND_FILES_OOM);
@@ -2539,6 +2539,11 @@ const char *get_one_variable_ext(THD *running_thd, THD *target_thd,
       value_charset = system_charset_info;
       break;
 
+    case SHOW_SIGNED_LONGLONG:
+      end = longlong10_to_str(*(longlong *)value, buff, -10);
+      value_charset = system_charset_info;
+      break;
+
     case SHOW_HA_ROWS:
       end = longlong10_to_str((longlong) * (ha_rows *)value, buff, 10);
       value_charset = system_charset_info;
@@ -2556,6 +2561,11 @@ const char *get_one_variable_ext(THD *running_thd, THD *target_thd,
 
     case SHOW_INT:
       end = int10_to_str((long)*(uint32 *)value, buff, 10);
+      value_charset = system_charset_info;
+      break;
+
+    case SHOW_SIGNED_INT:
+      end = int10_to_str((long)*(int32 *)value, buff, -10);
       value_charset = system_charset_info;
       break;
 
@@ -2829,16 +2839,16 @@ static bool get_lookup_value(THD *thd, Item_func *item_func, TABLE_LIST *table,
     if (!cs->coll->strnncollsp(cs, (uchar *)field_name1, strlen(field_name1),
                                (uchar *)item_field->field_name,
                                strlen(item_field->field_name))) {
-      thd->make_lex_string(&lookup_field_vals->db_value, tmp_str->ptr(),
-                           tmp_str->length(), false);
+      lex_string_strmake(thd->mem_root, &lookup_field_vals->db_value,
+                         tmp_str->ptr(), tmp_str->length());
     }
     /* Lookup value is table name */
     else if (!cs->coll->strnncollsp(cs, (uchar *)field_name2,
                                     strlen(field_name2),
                                     (uchar *)item_field->field_name,
                                     strlen(item_field->field_name))) {
-      thd->make_lex_string(&lookup_field_vals->table_value, tmp_str->ptr(),
-                           tmp_str->length(), false);
+      lex_string_strmake(thd->mem_root, &lookup_field_vals->table_value,
+                         tmp_str->ptr(), tmp_str->length());
     }
   }
   return 0;
@@ -2994,8 +3004,8 @@ static bool get_lookup_field_values(THD *thd, Item *cond, TABLE_LIST *tables,
   switch (lex->sql_command) {
     case SQLCOM_SHOW_DATABASES:
       if (wild) {
-        thd->make_lex_string(&lookup_field_values->db_value, wild, strlen(wild),
-                             0);
+        lex_string_strmake(thd->mem_root, &lookup_field_values->db_value, wild,
+                           strlen(wild));
         lookup_field_values->wild_db_value = 1;
       }
       break;
@@ -3003,11 +3013,11 @@ static bool get_lookup_field_values(THD *thd, Item *cond, TABLE_LIST *tables,
     case SQLCOM_SHOW_TABLE_STATUS:
     case SQLCOM_SHOW_TRIGGERS:
     case SQLCOM_SHOW_EVENTS:
-      thd->make_lex_string(&lookup_field_values->db_value, lex->select_lex->db,
-                           strlen(lex->select_lex->db), 0);
+      lex_string_strmake(thd->mem_root, &lookup_field_values->db_value,
+                         lex->select_lex->db, strlen(lex->select_lex->db));
       if (wild) {
-        thd->make_lex_string(&lookup_field_values->table_value, wild,
-                             strlen(wild), 0);
+        lex_string_strmake(thd->mem_root, &lookup_field_values->table_value,
+                           wild, strlen(wild));
         lookup_field_values->wild_table_value = 1;
       }
       break;
@@ -3061,10 +3071,9 @@ enum enum_schema_tables get_schema_table_idx(ST_SCHEMA_TABLE *schema_table) {
 static int make_db_list(THD *thd, List<LEX_STRING> *files,
                         LOOKUP_FIELD_VALUES *lookup_field_vals,
                         bool *with_i_schema, MEM_ROOT *tmp_mem_root) {
-  LEX_STRING *i_s_name_copy = 0;
-  i_s_name_copy =
-      thd->make_lex_string(i_s_name_copy, INFORMATION_SCHEMA_NAME.str,
-                           INFORMATION_SCHEMA_NAME.length, true);
+  LEX_STRING *i_s_name_copy =
+      make_lex_string_root(thd->mem_root, INFORMATION_SCHEMA_NAME.str,
+                           INFORMATION_SCHEMA_NAME.length);
   *with_i_schema = 0;
   if (lookup_field_vals->wild_db_value) {
     /*
@@ -3142,9 +3151,8 @@ static bool add_schema_table(THD *thd, plugin_ref plugin, void *p_data) {
       DBUG_RETURN(0);
   }
 
-  if ((file_name =
-           thd->make_lex_string(file_name, schema_table->table_name,
-                                strlen(schema_table->table_name), true)) &&
+  if ((file_name = make_lex_string_root(thd->mem_root, schema_table->table_name,
+                                        strlen(schema_table->table_name))) &&
       !file_list->push_back(file_name))
     DBUG_RETURN(0);
   DBUG_RETURN(1);
@@ -3169,9 +3177,9 @@ static int schema_tables_add(THD *thd, List<LEX_STRING> *files,
                               strlen(wild), 0))
         continue;
     }
-    if ((file_name = thd->make_lex_string(
-             file_name, tmp_schema_table->table_name,
-             strlen(tmp_schema_table->table_name), true)) &&
+    if ((file_name =
+             make_lex_string_root(thd->mem_root, tmp_schema_table->table_name,
+                                  strlen(tmp_schema_table->table_name))) &&
         !files->push_back(file_name))
       continue;
     DBUG_RETURN(1);
@@ -3230,9 +3238,9 @@ static int make_table_name_list(THD *thd, List<LEX_STRING> *table_names,
       ST_SCHEMA_TABLE *schema_table =
           find_schema_table(thd, lookup_field_vals->table_value.str);
       if (schema_table && !schema_table->hidden) {
-        if (!(name = thd->make_lex_string(name, schema_table->table_name,
-                                          strlen(schema_table->table_name),
-                                          true)) ||
+        if (!(name =
+                  make_lex_string_root(thd->mem_root, schema_table->table_name,
+                                       strlen(schema_table->table_name))) ||
             table_names->push_back(name))
           return 1;
       }
@@ -3307,10 +3315,8 @@ static int make_table_name_list(THD *thd, List<LEX_STRING> *table_names,
         if (check_grant(thd, TABLE_ACLS, &table_list, true, 1, true)) continue;
       }
 
-      LEX_STRING *table_name = NULL;
-      table_name =
-          thd->make_lex_string(table_name, name->c_str(), name->length(), true);
-      table_names->push_back(table_name);
+      table_names->push_back(
+          make_lex_string_root(thd->mem_root, name->c_str(), name->length()));
     }
   }
 
@@ -3344,7 +3350,7 @@ static bool fill_schema_table_by_open(
     ST_SCHEMA_TABLE *schema_table, LEX_STRING *orig_db_name,
     LEX_STRING *orig_table_name, Open_tables_backup *open_tables_state_backup,
     bool can_deadlock) {
-  Query_arena i_s_arena(mem_root, Query_arena::STMT_CONVENTIONAL_EXECUTION),
+  Query_arena i_s_arena(mem_root, Query_arena::STMT_REGULAR_EXECUTION),
       backup_arena, *old_arena;
   LEX *old_lex = thd->lex, temp_lex, *lex;
   LEX_CSTRING db_name_lex_cstr, table_name_lex_cstr;
@@ -3367,7 +3373,7 @@ static bool fill_schema_table_by_open(
   */
   old_arena = thd->stmt_arena;
   thd->stmt_arena = &i_s_arena;
-  thd->set_n_backup_active_arena(&i_s_arena, &backup_arena);
+  thd->swap_query_arena(i_s_arena, &backup_arena);
 
   /* Prepare temporary LEX. */
   thd->lex = lex = &temp_lex;
@@ -3388,10 +3394,10 @@ static bool fill_schema_table_by_open(
     These copies are used for make_table_list() while unaltered values
     are passed to process_table() functions.
   */
-  if (!thd->make_lex_string(&db_name_lex_cstr, orig_db_name->str,
-                            orig_db_name->length, false) ||
-      !thd->make_lex_string(&table_name_lex_cstr, orig_table_name->str,
-                            orig_table_name->length, false))
+  if (lex_string_strmake(thd->mem_root, &db_name_lex_cstr, orig_db_name->str,
+                         orig_db_name->length) ||
+      lex_string_strmake(thd->mem_root, &table_name_lex_cstr,
+                         orig_table_name->str, orig_table_name->length))
     goto end;
 
   /*
@@ -3473,7 +3479,7 @@ end:
   lex_end(thd->lex);
 
   // Free items, before restoring backup_arena below.
-  DBUG_ASSERT(i_s_arena.free_list == NULL);
+  DBUG_ASSERT(i_s_arena.item_list() == NULL);
   thd->free_items();
 
   /*
@@ -3505,7 +3511,7 @@ end:
   thd->lex = old_lex;
 
   thd->stmt_arena = old_arena;
-  thd->restore_active_arena(&i_s_arena, &backup_arena);
+  thd->swap_query_arena(backup_arena, &i_s_arena);
 
   DBUG_RETURN(result);
 }
@@ -4211,7 +4217,7 @@ static int fill_open_tables(THD *thd, TABLE_LIST *tables, Item *) {
   CHARSET_INFO *cs = system_charset_info;
   OPEN_TABLE_LIST *open_list;
   if (!(open_list = list_open_tables(thd, thd->lex->select_lex->db, wild)) &&
-      thd->is_fatal_error)
+      thd->is_fatal_error())
     DBUG_RETURN(1);
 
   for (; open_list; open_list = open_list->next) {
@@ -4589,10 +4595,10 @@ int make_schema_select(THD *thd, SELECT_LEX *sel,
      We have to make non const db_name & table_name
      because of lower_case_table_names
   */
-  thd->make_lex_string(&db, INFORMATION_SCHEMA_NAME.str,
-                       INFORMATION_SCHEMA_NAME.length, 0);
-  thd->make_lex_string(&table, schema_table->table_name,
-                       strlen(schema_table->table_name), 0);
+  lex_string_strmake(thd->mem_root, &db, INFORMATION_SCHEMA_NAME.str,
+                     INFORMATION_SCHEMA_NAME.length);
+  lex_string_strmake(thd->mem_root, &table, schema_table->table_name,
+                     strlen(schema_table->table_name));
 
   if (schema_table->old_format(thd, schema_table) || /* Handle old syntax */
       !sel->add_table_to_list(
@@ -5437,7 +5443,13 @@ static void get_cs_converted_string_value(THD *thd, String *input_str,
     output_str->append("''");
     return;
   }
-  if (!use_hex) {
+  // Note that since the String charset conversion functions used below, are
+  // created to be used as (potentially unsafe) "casts" for user data, they
+  // perform conversion from binary to UTF-8 by simply copying bytes. By
+  // forcing a hex string when cs is binary, we avoid creating strings that are
+  // invalid. Such invalid strings looks strange and will cause asserts when
+  // they are stored in TEXT columns in the DD.
+  if (!use_hex && cs != &my_charset_bin) {
     String try_val;
     uint try_conv_error = 0;
 

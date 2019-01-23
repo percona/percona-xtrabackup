@@ -155,6 +155,10 @@ const char *dict_sys_t::s_temp_space_file_name = "ibtmp1";
 /** The hard-coded tablespace name innodb_file_per_table. */
 const char *dict_sys_t::s_file_per_table_name = "innodb_file_per_table";
 
+/** These two undo tablespaces cannot be dropped. */
+const char *dict_sys_t::s_default_undo_space_name_1 = "innodb_undo_001";
+const char *dict_sys_t::s_default_undo_space_name_2 = "innodb_undo_002";
+
 /** the dictionary persisting structure */
 dict_persist_t *dict_persist = NULL;
 
@@ -1565,6 +1569,16 @@ dberr_t dict_table_rename_in_cache(
 
       new_path = mem_strdup(new_ibd.c_str());
 
+      /* InnoDB adds the db directory to the data directory.
+      If the RENAME changes database, then it is possible that
+      the a directory named for the new db does not exist
+      in this remote location. */
+      err = os_file_create_subdirs_if_needed(new_path);
+      if (err != DB_SUCCESS) {
+        ut_free(old_path);
+        ut_free(new_path);
+        return (err);
+      }
     } else {
       new_path = Fil_path::make_ibd_from_table_name(new_name);
     }
@@ -4819,18 +4833,10 @@ dtuple_t *dict_index_build_node_ptr(
   return (tuple);
 }
 
-/** Copies an initial segment of a physical record, long enough to specify an
- index entry uniquely.
- @return pointer to the prefix record */
-rec_t *dict_index_copy_rec_order_prefix(
-    const dict_index_t *index, /*!< in: index */
-    const rec_t *rec,          /*!< in: record for which to
-                               copy prefix */
-    ulint *n_fields,           /*!< out: number of fields copied */
-    byte **buf,                /*!< in/out: memory buffer for the
-                               copied prefix, or NULL */
-    ulint *buf_size)           /*!< in/out: buffer size */
-{
+rec_t *dict_index_copy_rec_order_prefix(const dict_index_t *index,
+                                        const rec_t *rec, ulint *n_fields,
+
+                                        byte **buf, size_t *buf_size) {
   ulint n;
 
   UNIV_PREFETCH_R(rec);
@@ -7192,7 +7198,7 @@ Acquistion order of SDI MDL and SDI table has to be in same
 order:
 
 1. dd_sdi_acquire_exclusive_mdl
-2. row_drop_table_from_cache()/innobase_drop_tablespace()
+2. row_drop_table_from_cache()/innodb_drop_tablespace()
    ->dict_sdi_remove_from_cache()->dd_table_open_on_id()
 
 In purge:
@@ -7221,7 +7227,7 @@ dberr_t dd_sdi_acquire_exclusive_mdl(THD *thd, space_id_t space_id,
   snprintf(tbl_buf, sizeof(tbl_buf), "SDI_" SPACE_ID_PF, space_id);
 
   /* Submit a higher than default lock wait timeout */
-  unsigned long int lock_wait_timeout = thd_lock_wait_timeout(thd);
+  auto lock_wait_timeout = thd_lock_wait_timeout(thd);
   if (lock_wait_timeout < 100000) {
     lock_wait_timeout += 100000;
   }
@@ -7249,7 +7255,7 @@ Acquistion order of SDI MDL and SDI table has to be in same
 order:
 
 1. dd_sdi_acquire_exclusive_mdl
-2. row_drop_table_from_cache()/innobase_drop_tablespace()
+2. row_drop_table_from_cache()/innodb_drop_tablespace()
    ->dict_sdi_remove_from_cache()->dd_table_open_on_id()
 
 In purge:

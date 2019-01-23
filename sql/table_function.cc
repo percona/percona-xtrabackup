@@ -82,7 +82,7 @@ bool Table_function::write_row() {
 
 void Table_function::empty_table() {
   DBUG_ASSERT(table->is_created());
-  table->file->ha_delete_all_rows();
+  (void)table->empty_result_table();
 }
 
 bool Table_function::init_args() {
@@ -299,7 +299,6 @@ bool Table_function_json::init_json_table_col_lists(THD *thd, uint *nest_idx,
     if (col->m_jtc_type != enum_jt_column::JTC_NESTED_PATH) {
       col->m_field_idx = m_vt_list.elements;
       m_vt_list.push_back(col);
-      col->create_length_to_internal_length();
       if (check_column_name(col->field_name)) {
         my_error(ER_WRONG_COLUMN_NAME, MYF(0), col->field_name);
         return true;
@@ -665,8 +664,6 @@ bool Json_table_column::fill_column(Field *fld, jt_skip_reason *skip) {
 }
 
 void Json_table_column::cleanup() {
-  // Restore original length as it was adjusted according to charset
-  length = char_length;
   // Reset paths and wrappers to free allocated memory.
   m_path_json = Json_path();
   if (m_on_empty == enum_jtc_on::JTO_DEFAULT)
@@ -788,6 +785,7 @@ bool Table_function_json::fill_json_table() {
 
 bool Table_function_json::fill_result_table() {
   String buf;
+  DBUG_ASSERT(!table->materialized);
   // reset table
   empty_table();
 
@@ -924,7 +922,7 @@ bool Table_function_json::print(String *str, enum_query_type query_type) {
           str->append(')'));
 }
 
-table_map Table_function_json::used_tables() { return source->used_tables(); };
+table_map Table_function_json::used_tables() { return source->used_tables(); }
 
 void Table_function_json::do_cleanup() {
   source->cleanup();

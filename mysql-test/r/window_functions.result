@@ -6,10 +6,6 @@ Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but wil
 
 Flag unsupported aggregates as window functions
 
-select json_objectagg('a','3') over ();
-ERROR 42000: This version of MySQL doesn't yet support 'json_objectagg as window function'
-select json_arrayagg('3') over ();
-ERROR 42000: This version of MySQL doesn't yet support 'json_arrayagg as window function'
 select group_concat('3') over ();
 ERROR 42000: This version of MySQL doesn't yet support 'group_concat as window function'
 Single window function (plus ORDER BY).
@@ -9232,6 +9228,7 @@ SELECT ((MAKETIME(((QUARTER('| !*c>*{/'))<=>
 )OVER())),'9236-05-27',0xe2a7d4))^(0x1109))
 NULL
 Warnings:
+Warning	1292	Incorrect datetime value: '| !*c>*{/'
 Warning	1292	Incorrect datetime value: '| !*c>*{/'
 Warning	1292	Truncated incorrect INTEGER value: '9236-05-27'
 SELECT ((FIRST_VALUE(JSON_MERGE_PATCH(1.755913e+308,'{ }'))OVER())<=(1));

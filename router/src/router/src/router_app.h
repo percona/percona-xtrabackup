@@ -39,6 +39,7 @@
 #include "router_config.h"
 
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 using std::make_tuple;
@@ -405,6 +406,8 @@ class MySQLRouter {
   uint32_t get_router_id(mysql_harness::Config &config);
 
   void init_keyring(mysql_harness::Config &config);
+
+  void init_dynamic_state(mysql_harness::Config &config);
 
   /**
    * @brief Initializes keyring using master-key-reader and master-key-writer.

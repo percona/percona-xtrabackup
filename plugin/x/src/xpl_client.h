@@ -62,7 +62,7 @@ class Client : public ngs::Client {
   Client(std::shared_ptr<ngs::Vio_interface> connection,
          ngs::Server_interface &server, Client_id client_id,
          Protocol_monitor *pmon, const Global_timeouts &timeouts);
-  virtual ~Client();
+  ~Client() override;
 
  public:  // impl ngs::Client_interface
   void on_session_close(ngs::Session_interface &s) override;
@@ -79,7 +79,7 @@ class Client : public ngs::Client {
   void set_is_interactive(const bool flag) override;
 
  public:
-  bool is_handler_thd(THD *thd);
+  bool is_handler_thd(const THD *thd) const override;
 
   void get_status_ssl_cipher_list(SHOW_VAR *var);
 
@@ -87,8 +87,6 @@ class Client : public ngs::Client {
 
  private:
   bool is_localhost(const char *hostname);
-
-  Protocol_monitor *m_protocol_monitor;
 };
 
 typedef ngs::shared_ptr<Client> Client_ptr;

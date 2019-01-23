@@ -65,7 +65,7 @@ class Field;
 
 namespace histograms {
 class Histogram;
-};
+}
 
 class ACL_internal_schema_access;
 class ACL_internal_table_access;
@@ -1802,6 +1802,9 @@ struct TABLE {
     if (s->null_bytes > 0) memcpy(null_flags, null_flags_saved, s->null_bytes);
   }
 
+  /// Empties internal temporary table (deletes rows, closes scan)
+  bool empty_result_table();
+
   /**
     Initialize the optimizer cost model.
 
@@ -2335,6 +2338,8 @@ struct LEX_USER {
   bool uses_identified_with_clause;
   bool uses_authentication_string_clause;
   bool uses_replace_clause;
+  bool retain_current_password;
+  bool discard_old_password;
   LEX_ALTER alter_status;
   /*
     Allocates the memory in the THD mem pool and initialize the members of

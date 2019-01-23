@@ -150,6 +150,7 @@ extern bool opt_general_log, opt_slow_log, opt_general_log_raw;
 extern ulonglong log_output_options;
 extern bool opt_log_queries_not_using_indexes;
 extern ulong opt_log_throttle_queries_not_using_indexes;
+extern bool opt_log_slow_extra;
 extern bool opt_disable_networking, opt_skip_show_db;
 extern bool opt_skip_name_resolve;
 extern bool opt_help;
@@ -199,7 +200,9 @@ extern uint slave_rows_last_search_algorithm_used;
 extern ulong mts_parallel_option;
 #ifdef _WIN32
 extern bool opt_enable_named_pipe;
+extern char *named_pipe_full_access_group;
 extern bool opt_enable_shared_memory;
+extern mysql_rwlock_t LOCK_named_pipe_full_access_group;
 #endif
 extern bool opt_allow_suspicious_udfs;
 extern char *opt_secure_file_priv;
@@ -208,7 +211,10 @@ extern bool sp_automatic_privileges, opt_noacl;
 extern bool opt_old_style_user_limits, trust_function_creators;
 extern bool check_proxy_users, mysql_native_password_proxy_users,
     sha256_password_proxy_users;
-extern char *shared_memory_base_name, *mysqld_unix_port;
+#ifdef _WIN32
+extern const char *shared_memory_base_name;
+#endif
+extern char *mysqld_unix_port;
 extern char *default_tz_name;
 extern Time_zone *default_tz;
 extern char *default_storage_engine;
@@ -227,7 +233,7 @@ extern ulong opt_tc_log_size, tc_log_max_pages_used, tc_log_page_size;
 extern ulong tc_log_page_waits;
 extern bool relay_log_purge;
 extern bool relay_log_recovery;
-extern bool offline_mode;
+extern std::atomic<bool> offline_mode;
 extern uint test_flags, select_errors, ha_open_options;
 extern uint protocol_version, mysqld_port;
 
@@ -247,6 +253,9 @@ extern char *default_auth_plugin;
 extern uint default_password_lifetime;
 extern volatile bool password_require_current;
 extern char *my_bind_addr_str;
+extern char *my_admin_bind_addr_str;
+extern uint mysqld_admin_port;
+extern bool listen_admin_interface_in_separate_thread;
 extern char glob_hostname[FN_REFLEN];
 extern char system_time_zone[30], *opt_init_file;
 extern char *opt_tc_log_file;
@@ -285,7 +294,7 @@ extern long opt_binlog_group_commit_sync_delay;
 extern ulong opt_binlog_group_commit_sync_no_delay_count;
 extern ulong max_binlog_size, max_relay_log_size;
 extern ulong slave_max_allowed_packet;
-extern ulong opt_binlog_rows_event_max_size;
+extern ulong binlog_row_event_max_size;
 extern ulong binlog_checksum_options;
 extern ulong binlog_row_metadata;
 extern const char *binlog_checksum_type_names[];
@@ -446,6 +455,7 @@ extern PSI_thread_key key_thread_handle_manager;
 extern PSI_thread_key key_thread_one_connection;
 extern PSI_thread_key key_thread_compress_gtid_table;
 extern PSI_thread_key key_thread_parser_service;
+extern PSI_thread_key key_thread_handle_con_admin_sockets;
 
 extern PSI_file_key key_file_binlog;
 extern PSI_file_key key_file_binlog_index;
@@ -587,6 +597,7 @@ extern PSI_stage_info stage_worker_waiting_for_commit_parent;
 extern PSI_stage_info stage_suspending;
 extern PSI_stage_info stage_starting;
 extern PSI_stage_info stage_waiting_for_no_channel_reference;
+extern PSI_stage_info stage_hook_begin_trans;
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
 /**
   Statement instrumentation keys (sql).
@@ -632,6 +643,7 @@ extern MYSQL_PLUGIN_IMPORT struct System_variables global_system_variables;
 extern char default_logfile_name[FN_REFLEN];
 extern bool log_bin_supplied;
 extern char default_binlogfile_name[FN_REFLEN];
+extern MYSQL_PLUGIN_IMPORT char pidfile_name[];
 
 #define mysql_tmpdir (my_tmpdir(&mysql_tmpdir_list))
 
@@ -649,7 +661,7 @@ extern mysql_mutex_t LOCK_prepared_stmt_count;
 extern mysql_mutex_t LOCK_error_messages;
 extern mysql_mutex_t LOCK_sql_slave_skip_counter;
 extern mysql_mutex_t LOCK_slave_net_timeout;
-extern mysql_mutex_t LOCK_offline_mode;
+extern mysql_mutex_t LOCK_slave_trans_dep_tracker;
 extern mysql_mutex_t LOCK_mandatory_roles;
 extern mysql_mutex_t LOCK_password_history;
 extern mysql_mutex_t LOCK_password_reuse_interval;
@@ -701,10 +713,25 @@ static inline void set_connection_events_loop_aborted(bool value) {
   connection_events_loop_aborted_flag.store(value);
 }
 
+/**
+  Get mysqld offline mode.
+
+  @return a bool indicating the offline mode status of the server.
+*/
+inline bool mysqld_offline_mode() { return offline_mode.load(); }
+
+/**
+  Set offline mode with a given value
+
+  @param value true or false indicating the offline mode status of server.
+*/
+inline void set_mysqld_offline_mode(bool value) { offline_mode.store(value); }
+
 #ifdef _WIN32
 
 bool is_windows_service();
 NTService *get_win_service_ptr();
+bool update_named_pipe_full_access_group(const char *new_group_name);
 
 #endif
 

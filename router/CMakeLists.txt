@@ -66,6 +66,11 @@ IF(SOLARIS)
   ENDIF()
 ENDIF()
 
+IF(WIN32)
+  # 'identifier' : class 'type' needs to have dll-interface to be used by clients of class 'type2'
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4251")
+ENDIF()
+
 INCLUDE(${CMAKE_SOURCE_DIR}/cmake/rapidjson.cmake)
 
 SET(ROUTER_LICENSE_FILE "${CMAKE_SOURCE_DIR}/router/LICENSE.router")
@@ -102,6 +107,16 @@ LIST(APPEND MySQL_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/libbinlogevents/export)
 LIST(APPEND MySQL_INCLUDE_DIRS ${CMAKE_BINARY_DIR}/include)
 
 INCLUDE_DIRECTORIES(${PROJECT_BINARY_DIR}/include)
+
+# a meta-target to allow build everything router related, but nothing that
+# it doesn't depend on
+#
+# each target needs to add itself via
+#
+#   ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET} ...)
+#
+SET(MYSQL_ROUTER_BUILD_ALL_TARGET mysqlrouter_all)
+ADD_CUSTOM_TARGET(${MYSQL_ROUTER_BUILD_ALL_TARGET})
 
 # Load all modules, including plugins
 ADD_SUBDIRECTORY(src)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -95,6 +95,7 @@ enum_return_status Gtid_state::acquire_ownership(THD *thd, const Gtid &gtid) {
     thd->owned_gtid = gtid;
     thd->owned_gtid.dbug_print(NULL, "set owned_gtid in acquire_ownership");
     thd->owned_sid = sid_map->sidno_to_sid(gtid.sidno);
+    thd->rpl_thd_ctx.last_used_gtid_tracker_ctx().set_last_used_gtid(gtid);
   }
   RETURN_OK;
 err:

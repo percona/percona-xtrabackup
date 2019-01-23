@@ -38,9 +38,9 @@
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_management.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_member_information.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_interface.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_networking.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_notification.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_state_exchange.h"
-#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_list.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_set.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/server_struct.h"
@@ -335,6 +335,8 @@ class Gcs_suspicions_manager {
 */
 class Gcs_xcom_control : public Gcs_control_interface {
  public:
+  static constexpr int s_connection_attempts = 10;
+
   /**
     Gcs_xcom_control_interface constructor.
 
@@ -615,8 +617,44 @@ class Gcs_xcom_control : public Gcs_control_interface {
     @return connection descriptor to a peer
   */
   connection_descriptor *get_connection_to_node(
-      std::string local_node_ip,
       std::vector<Gcs_xcom_node_address *> *peers_list);
+
+  /**
+    Attempts to send an add_node request to some initial peer from @c
+    m_initial_peers.
+    Performs up to @c s_connection_attempts attempts.
+
+    @param my_addresses The addresses of this node, used to filter our own
+    address from the initial peers.
+    @returns true if the add_node request was successfully sent, false
+    otherwise.
+  */
+  bool send_add_node_request(std::map<std::string, int> const &my_addresses);
+
+  /**
+    Attempts to send an add_node request to some initial peer from @c
+    m_initial_peers.
+
+    @param my_addresses The addresses of this node, used to filter our own
+    address from the initial peers.
+    @returns true if the add_node request was successfully sent, false
+    otherwise.
+  */
+  bool try_send_add_node_request_to_seeds(
+      std::map<std::string, int> const &my_addresses);
+
+  /**
+    Connects to the given peer's XCom.
+
+    @param peer Peer to connect to.
+    @param my_addresses The addresses of this node, used to filter our own
+    address from the initial peers.
+    @retval {true, connection_descriptor*} If we connected successfully.
+    @retval {false, _} If we could not connect.
+  */
+  std::pair<bool, connection_descriptor *> connect_to_peer(
+      Gcs_xcom_node_address &peer,
+      std::map<std::string, int> const &my_addresses);
 
   // The group that this interface pertains
   Gcs_group_identifier *m_gid;
@@ -662,6 +700,9 @@ class Gcs_xcom_control : public Gcs_control_interface {
 
   // Suspicions processing task
   My_xp_thread_impl m_suspicions_processing_thread;
+
+  // Proxy to GCS Sock Probe
+  Gcs_sock_probe_interface *m_sock_probe_interface;
 
  protected:
   /*

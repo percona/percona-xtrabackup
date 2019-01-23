@@ -26,11 +26,7 @@
   @file sql/item_strfunc.cc
 
   @brief
-  This file defines all string functions
-
-  @warning
-    Some string functions don't always put and end-null on a String.
-    (This shouldn't be needed)
+  This file defines all string Items (e.g. CONCAT).
 */
 
 #include "sql/item_strfunc.h"
@@ -727,7 +723,7 @@ class Thd_parse_modifier {
  public:
   Thd_parse_modifier(THD *thd)
       : m_thd(thd),
-        m_arena(&m_mem_root, Query_arena::STMT_CONVENTIONAL_EXECUTION),
+        m_arena(&m_mem_root, Query_arena::STMT_REGULAR_EXECUTION),
         m_backed_up_lex(thd->lex),
         m_saved_parser_state(thd->m_parser_state),
         m_saved_digest(thd->m_digest) {
@@ -737,8 +733,7 @@ class Thd_parse_modifier {
     // remainder of the execution of the statement the buffer should be free
     // to use.
     m_digest_state.reset(thd->m_token_array, get_max_digest_length());
-    m_arena.set_query_arena(thd);
-    thd->set_query_arena(&m_arena);
+    m_arena.set_query_arena(*thd);
     thd->lex = &m_lex;
     lex_start(thd);
   }
@@ -746,7 +741,7 @@ class Thd_parse_modifier {
   ~Thd_parse_modifier() {
     lex_end(&m_lex);
     m_thd->lex = m_backed_up_lex;
-    m_thd->set_query_arena(&m_arena);
+    m_thd->set_query_arena(m_arena);
     m_thd->m_parser_state = m_saved_parser_state;
     m_thd->m_digest = m_saved_digest;
   }
@@ -814,7 +809,7 @@ class Parse_error_anonymizer : public Internal_error_handler {
     return true;
   }
 
-  ~Parse_error_anonymizer() { m_thd->pop_internal_handler(); }
+  ~Parse_error_anonymizer() override { m_thd->pop_internal_handler(); }
 
  private:
   THD *m_thd;
@@ -1729,7 +1724,7 @@ void Item_func_trim::print(String *str, enum_query_type query_type) {
   str->append(')');
 }
 
-Item *Item_func_sysconst::safe_charset_converter(THD *,
+Item *Item_func_sysconst::safe_charset_converter(THD *thd,
                                                  const CHARSET_INFO *tocs) {
   uint conv_errors;
   String tmp, cstr, *ostr = val_str(&tmp);
@@ -1741,13 +1736,13 @@ Item *Item_func_sysconst::safe_charset_converter(THD *,
   cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
   if (conv_errors != 0) return nullptr;
 
-  auto conv = new Item_static_string_func(fully_qualified_func_name(),
-                                          cstr.ptr(), cstr.length(),
-                                          cstr.charset(), collation.derivation);
+  char *ptr = thd->strmake(cstr.ptr(), cstr.length());
+  if (ptr == nullptr) return nullptr;
+  auto conv = new Item_static_string_func(fully_qualified_func_name(), ptr,
+                                          cstr.length(), cstr.charset(),
+                                          collation.derivation);
   if (conv == nullptr) return nullptr;
-
-  conv->str_value.copy();
-  conv->str_value.mark_as_const();
+  conv->mark_result_as_const();
   return conv;
 }
 
@@ -2963,7 +2958,8 @@ void Item_func_set_collation::print(String *str, enum_query_type query_type) {
   str->append(STRING_WITH_LEN(" collate "));
   DBUG_ASSERT(args[1]->basic_const_item() &&
               args[1]->type() == Item::STRING_ITEM);
-  args[1]->str_value.print(str);
+  String tmp;
+  args[1]->val_str(&tmp)->print(str);
   str->append(')');
 }
 
@@ -3899,8 +3895,7 @@ bool Item_func_uuid::itemize(Parse_context *pc, Item **res) {
   return false;
 }
 
-String *Item_func_uuid::val_str(String *str) {
-  DBUG_ASSERT(fixed == 1);
+String *mysql_generate_uuid(String *str) {
   char *s;
   THD *thd = current_thd;
 
@@ -4004,6 +3999,11 @@ String *Item_func_uuid::val_str(String *str) {
   DBUG_EXECUTE_IF("force_fake_uuid",
                   my_stpcpy(s, "a2d00942-b69c-11e4-a696-0020ff6fcbe6"););
   return str;
+}
+
+String *Item_func_uuid::val_str(String *str) {
+  DBUG_ASSERT(fixed == 1);
+  return mysql_generate_uuid(str);
 }
 
 bool Item_func_gtid_subtract::resolve_type(THD *) {
@@ -4153,127 +4153,140 @@ String *Item_func_get_dd_create_options::val_str(String *str) {
   String option;
   String *option_ptr;
   std::ostringstream oss("");
-  if ((option_ptr = args[0]->val_str(&option)) != nullptr) {
-    bool is_partitioned = args[1]->val_int();
 
-    // Read required values from properties
-    std::unique_ptr<dd::Properties> p(
-        dd::Properties::parse_properties(option_ptr->c_ptr_safe()));
+  if ((option_ptr = args[0]->val_str(&option)) == nullptr) {
+    str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+    DBUG_RETURN(str);
+  }
 
-    // Read used_flags
-    uint opt_value = 0;
-    char option_buff[350], *ptr;
-    ptr = option_buff;
+  // Read required values from properties
+  std::unique_ptr<dd::Properties> p(
+      dd::Properties::parse_properties(option_ptr->c_ptr_safe()));
 
-    if (p->exists("max_rows")) {
-      p->get_uint32("max_rows", &opt_value);
-      if (opt_value != 0) {
-        ptr = my_stpcpy(ptr, " max_rows=");
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
+  // Warn if the property string is corrupt.
+  if (!p.get()) {
+    LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+           option_ptr->c_ptr_safe());
+    if (DBUG_EVALUATE_IF("continue_on_property_string_parse_failure", 0, 1))
+      DBUG_ASSERT(false);
+    str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+    DBUG_RETURN(str);
+  }
 
-    if (p->exists("min_rows")) {
-      p->get_uint32("min_rows", &opt_value);
-      if (opt_value != 0) {
-        ptr = my_stpcpy(ptr, " min_rows=");
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
+  // Read used_flags
+  uint opt_value = 0;
+  char option_buff[350], *ptr;
+  ptr = option_buff;
 
-    if (p->exists("avg_row_length")) {
-      p->get_uint32("avg_row_length", &opt_value);
-      if (opt_value != 0) {
-        ptr = my_stpcpy(ptr, " avg_row_length=");
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
-
-    if (p->exists("row_type")) {
-      p->get_uint32("row_type", &opt_value);
-      ptr = strxmov(ptr, " row_format=", ha_row_type[(uint)opt_value], NullS);
-    }
-
-    if (p->exists("stats_sample_pages")) {
-      p->get_uint32("stats_sample_pages", &opt_value);
-      if (opt_value != 0) {
-        ptr = my_stpcpy(ptr, " stats_sample_pages=");
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
-
-    if (p->exists("stats_auto_recalc")) {
-      p->get_uint32("stats_auto_recalc", &opt_value);
-      enum_stats_auto_recalc sar = (enum_stats_auto_recalc)opt_value;
-
-      if (sar == HA_STATS_AUTO_RECALC_ON)
-        ptr = my_stpcpy(ptr, " stats_auto_recalc=1");
-      else if (sar == HA_STATS_AUTO_RECALC_OFF)
-        ptr = my_stpcpy(ptr, " stats_auto_recalc=0");
-    }
-
-    if (p->exists("key_block_size"))
-      p->get_uint32("key_block_size", &opt_value);
-
+  if (p->exists("max_rows")) {
+    p->get("max_rows", &opt_value);
     if (opt_value != 0) {
-      ptr = my_stpcpy(ptr, " KEY_BLOCK_SIZE=");
+      ptr = my_stpcpy(ptr, " max_rows=");
       ptr = longlong10_to_str(opt_value, ptr, 10);
     }
-
-    if (p->exists("compress")) {
-      dd::String_type opt_value;
-      p->get("compress", opt_value);
-      if (!opt_value.empty()) {
-        if (opt_value.size() > 7) opt_value.erase(7, dd::String_type::npos);
-        ptr = my_stpcpy(ptr, " COMPRESSION=\"");
-        ptr = my_stpcpy(ptr, opt_value.c_str());
-        ptr = my_stpcpy(ptr, "\"");
-      }
-    }
-
-    if (p->exists("encrypt_type")) {
-      dd::String_type opt_value;
-      p->get("encrypt_type", opt_value);
-      if (!opt_value.empty()) {
-        ptr = my_stpcpy(ptr, " ENCRYPTION=\"");
-        ptr = my_stpcpy(ptr, opt_value.c_str());
-        ptr = my_stpcpy(ptr, "\"");
-      }
-    }
-
-    if (p->exists("stats_persistent")) {
-      p->get_uint32("stats_persistent", &opt_value);
-      if (opt_value)
-        ptr = my_stpcpy(ptr, " stats_persistent=1");
-      else
-        ptr = my_stpcpy(ptr, " stats_persistent=0");
-    }
-
-    if (p->exists("pack_keys")) {
-      p->get_uint32("pack_keys", &opt_value);
-      if (opt_value)
-        ptr = my_stpcpy(ptr, " pack_keys=1");
-      else
-        ptr = my_stpcpy(ptr, " pack_keys=0");
-    }
-
-    if (p->exists("checksum")) {
-      p->get_uint32("checksum", &opt_value);
-      if (opt_value) ptr = my_stpcpy(ptr, " checksum=1");
-    }
-
-    if (p->exists("delay_key_write")) {
-      p->get_uint32("delay_key_write", &opt_value);
-      if (opt_value) ptr = my_stpcpy(ptr, " delay_key_write=1");
-    }
-
-    if (is_partitioned) ptr = my_stpcpy(ptr, " partitioned");
-
-    if (ptr == option_buff)
-      oss << "";
-    else
-      oss << option_buff + 1;
   }
+
+  if (p->exists("min_rows")) {
+    p->get("min_rows", &opt_value);
+    if (opt_value != 0) {
+      ptr = my_stpcpy(ptr, " min_rows=");
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (p->exists("avg_row_length")) {
+    p->get("avg_row_length", &opt_value);
+    if (opt_value != 0) {
+      ptr = my_stpcpy(ptr, " avg_row_length=");
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (p->exists("row_type")) {
+    p->get("row_type", &opt_value);
+    ptr = strxmov(ptr, " row_format=", ha_row_type[(uint)opt_value], NullS);
+  }
+
+  if (p->exists("stats_sample_pages")) {
+    p->get("stats_sample_pages", &opt_value);
+    if (opt_value != 0) {
+      ptr = my_stpcpy(ptr, " stats_sample_pages=");
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (p->exists("stats_auto_recalc")) {
+    p->get("stats_auto_recalc", &opt_value);
+    enum_stats_auto_recalc sar = (enum_stats_auto_recalc)opt_value;
+
+    if (sar == HA_STATS_AUTO_RECALC_ON)
+      ptr = my_stpcpy(ptr, " stats_auto_recalc=1");
+    else if (sar == HA_STATS_AUTO_RECALC_OFF)
+      ptr = my_stpcpy(ptr, " stats_auto_recalc=0");
+  }
+
+  if (p->exists("key_block_size")) p->get("key_block_size", &opt_value);
+
+  if (opt_value != 0) {
+    ptr = my_stpcpy(ptr, " KEY_BLOCK_SIZE=");
+    ptr = longlong10_to_str(opt_value, ptr, 10);
+  }
+
+  if (p->exists("compress")) {
+    dd::String_type opt_value;
+    p->get("compress", &opt_value);
+    if (!opt_value.empty()) {
+      if (opt_value.size() > 7) opt_value.erase(7, dd::String_type::npos);
+      ptr = my_stpcpy(ptr, " COMPRESSION=\"");
+      ptr = my_stpcpy(ptr, opt_value.c_str());
+      ptr = my_stpcpy(ptr, "\"");
+    }
+  }
+
+  if (p->exists("encrypt_type")) {
+    dd::String_type opt_value;
+    p->get("encrypt_type", &opt_value);
+    if (!opt_value.empty()) {
+      ptr = my_stpcpy(ptr, " ENCRYPTION=\"");
+      ptr = my_stpcpy(ptr, opt_value.c_str());
+      ptr = my_stpcpy(ptr, "\"");
+    }
+  }
+
+  if (p->exists("stats_persistent")) {
+    p->get("stats_persistent", &opt_value);
+    if (opt_value)
+      ptr = my_stpcpy(ptr, " stats_persistent=1");
+    else
+      ptr = my_stpcpy(ptr, " stats_persistent=0");
+  }
+
+  if (p->exists("pack_keys")) {
+    p->get("pack_keys", &opt_value);
+    if (opt_value)
+      ptr = my_stpcpy(ptr, " pack_keys=1");
+    else
+      ptr = my_stpcpy(ptr, " pack_keys=0");
+  }
+
+  if (p->exists("checksum")) {
+    p->get("checksum", &opt_value);
+    if (opt_value) ptr = my_stpcpy(ptr, " checksum=1");
+  }
+
+  if (p->exists("delay_key_write")) {
+    p->get("delay_key_write", &opt_value);
+    if (opt_value) ptr = my_stpcpy(ptr, " delay_key_write=1");
+  }
+
+  bool is_partitioned = args[1]->val_int();
+  if (is_partitioned) ptr = my_stpcpy(ptr, " partitioned");
+
+  if (ptr == option_buff)
+    oss << "";
+  else
+    oss << option_buff + 1;
+
   str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
 
   DBUG_RETURN(str);
@@ -4309,8 +4322,15 @@ String *Item_func_internal_get_comment_or_error::val_str(String *str) {
     std::unique_ptr<dd::Properties> view_options(
         dd::Properties::parse_properties(options_ptr->c_ptr_safe()));
 
-    if (view_options->get_bool("view_valid", &is_view_valid))
+    // Warn if the property string is corrupt.
+    if (!view_options.get()) {
+      LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+             options_ptr->c_ptr_safe());
+      DBUG_ASSERT(false);
       DBUG_RETURN(nullptr);
+    }
+
+    if (view_options->get("view_valid", &is_view_valid)) DBUG_RETURN(nullptr);
 
     if (is_view_valid == false && thd->lex->sql_command != SQLCOM_SHOW_TABLES) {
       push_view_warning_or_error(current_thd, schema_ptr->c_ptr_safe(),
@@ -4363,12 +4383,20 @@ String *Item_func_get_partition_nodegroup::val_str(String *str) {
     std::unique_ptr<dd::Properties> view_options(
         dd::Properties::parse_properties(options_ptr->c_ptr_safe()));
 
-    // Do we have nodegroup id ?
+    // Warn if the property string is corrupt.
+    if (!view_options.get()) {
+      LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+             options_ptr->c_ptr_safe());
+      DBUG_ASSERT(false);
+      str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+      DBUG_RETURN(str);
+    }
+
     if (view_options->exists("nodegroup_id")) {
       uint32 value;
 
       // Fetch nodegroup id.
-      view_options->get_uint32("nodegroup_id", &value);
+      view_options->get("nodegroup_id", &value);
       oss << value;
     } else
       oss << "default";
@@ -4479,35 +4507,47 @@ String *Item_func_get_dd_tablespace_private_data::val_str(String *str) {
   String option;
   String *option_ptr;
   std::ostringstream oss("");
-  if ((option_ptr = args[0]->val_str(&option)) != nullptr) {
-    // Read required values from properties
-    std::unique_ptr<dd::Properties> p(
-        dd::Properties::parse_properties(option_ptr->c_ptr_safe()));
-
-    // Read used_flags
-    uint opt_value = 0;
-    char option_buff[350], *ptr;
-    ptr = option_buff;
-
-    if (strcmp(args[1]->val_str(&option)->ptr(), "id") == 0) {
-      if (p->exists("id")) {
-        p->get_uint32("id", &opt_value);
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
-
-    if (strcmp(args[1]->val_str(&option)->ptr(), "flags") == 0) {
-      if (p->exists("flags")) {
-        p->get_uint32("flags", &opt_value);
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
-
-    if (ptr == option_buff)
-      oss << "";
-    else
-      oss << option_buff;
+  if ((option_ptr = args[0]->val_str(&option)) == nullptr) {
+    str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+    DBUG_RETURN(str);
   }
+
+  // Read required values from properties
+  std::unique_ptr<dd::Properties> p(
+      dd::Properties::parse_properties(option_ptr->c_ptr_safe()));
+
+  // Warn if the property string is corrupt.
+  if (!p.get()) {
+    LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+           option_ptr->c_ptr_safe());
+    DBUG_ASSERT(false);
+    str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+    DBUG_RETURN(str);
+  }
+
+  // Read used_flags
+  uint opt_value = 0;
+  char option_buff[350], *ptr;
+  ptr = option_buff;
+
+  if (strcmp(args[1]->val_str(&option)->ptr(), "id") == 0) {
+    if (p->exists("id")) {
+      p->get("id", &opt_value);
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (strcmp(args[1]->val_str(&option)->ptr(), "flags") == 0) {
+    if (p->exists("flags")) {
+      p->get("flags", &opt_value);
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (ptr == option_buff)
+    oss << "";
+  else
+    oss << option_buff;
 
   str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
 
@@ -4533,42 +4573,54 @@ String *Item_func_get_dd_index_private_data::val_str(String *str) {
   String option;
   String *option_ptr;
   std::ostringstream oss("");
-  if ((option_ptr = args[0]->val_str(&option)) != nullptr) {
-    // Read required values from properties
-    std::unique_ptr<dd::Properties> p(
-        dd::Properties::parse_properties(option_ptr->c_ptr_safe()));
-
-    // Read used_flags
-    uint opt_value = 0;
-    char option_buff[350], *ptr;
-    ptr = option_buff;
-
-    if (strcmp(args[1]->val_str(&option)->ptr(), "id") == 0) {
-      if (p->exists("id")) {
-        p->get_uint32("id", &opt_value);
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
-
-    if (strcmp(args[1]->val_str(&option)->ptr(), "root") == 0) {
-      if (p->exists("root")) {
-        p->get_uint32("root", &opt_value);
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
-
-    if (strcmp(args[1]->val_str(&option)->ptr(), "trx_id") == 0) {
-      if (p->exists("trx_id")) {
-        p->get_uint32("trx_id", &opt_value);
-        ptr = longlong10_to_str(opt_value, ptr, 10);
-      }
-    }
-
-    if (ptr == option_buff)
-      oss << "";
-    else
-      oss << option_buff;
+  if ((option_ptr = args[0]->val_str(&option)) == nullptr) {
+    str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+    DBUG_RETURN(str);
   }
+
+  // Read required values from properties
+  std::unique_ptr<dd::Properties> p(
+      dd::Properties::parse_properties(option_ptr->c_ptr_safe()));
+
+  // Warn if the property string is corrupt.
+  if (!p.get()) {
+    LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+           option_ptr->c_ptr_safe());
+    DBUG_ASSERT(false);
+    str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
+    DBUG_RETURN(str);
+  }
+
+  // Read used_flags
+  uint opt_value = 0;
+  char option_buff[350], *ptr;
+  ptr = option_buff;
+
+  if (strcmp(args[1]->val_str(&option)->ptr(), "id") == 0) {
+    if (p->exists("id")) {
+      p->get("id", &opt_value);
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (strcmp(args[1]->val_str(&option)->ptr(), "root") == 0) {
+    if (p->exists("root")) {
+      p->get("root", &opt_value);
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (strcmp(args[1]->val_str(&option)->ptr(), "trx_id") == 0) {
+    if (p->exists("trx_id")) {
+      p->get("trx_id", &opt_value);
+      ptr = longlong10_to_str(opt_value, ptr, 10);
+    }
+  }
+
+  if (ptr == option_buff)
+    oss << "";
+  else
+    oss << option_buff;
 
   str->copy(oss.str().c_str(), oss.str().length(), system_charset_info);
 

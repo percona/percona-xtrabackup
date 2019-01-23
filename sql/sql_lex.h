@@ -707,7 +707,7 @@ class SELECT_LEX_UNIT {
     else if (saved_fake_select_lex != NULL)
       return saved_fake_select_lex;
     return first_select();
-  };
+  }
   /* LIMIT clause runtime counters */
   ha_rows select_limit_cnt, offset_limit_cnt;
   /// Points to subquery if this query expression is used in one, otherwise NULL
@@ -747,6 +747,15 @@ class SELECT_LEX_UNIT {
   */
   SELECT_LEX *first_recursive;
 
+  /**
+    If 'this' is body of lateral derived table:
+    map of tables in the same FROM clause as this derived table, and to which
+    the derived table's body makes references.
+    In pre-resolution stages, this is OUTER_REF_TABLE_BIT, just to indicate
+    that this has LATERAL; after resolution, which has found references in the
+    body, this is the proper map (with no PSEUDO_TABLE_BITS anymore).
+  */
+  table_map m_lateral_deps;
   /**
     True if the with-recursive algorithm has produced the complete result.
     In a recursive CTE, a JOIN is executed several times in a loop, and
@@ -853,6 +862,33 @@ class SELECT_LEX_UNIT {
 
   bool check_materialized_derived_query_blocks(THD *thd);
 
+  bool clear_corr_ctes();
+
+  void fix_after_pullout(SELECT_LEX *parent_select, SELECT_LEX *removed_select);
+
+  /**
+    If unit is a subquery, which forms an object of the upper level (an
+    Item_subselect, a derived TABLE_LIST), adds to this object a map
+    of tables of the upper level which the unit references.
+  */
+  void accumulate_used_tables(table_map map) {
+    DBUG_ASSERT(outer_select());
+    if (item)
+      item->accumulate_used_tables(map);
+    else if (m_lateral_deps)
+      m_lateral_deps |= map;
+  }
+
+  /**
+    If unit is a subquery, which forms an object of the upper level (an
+    Item_subselect, a derived TABLE_LIST), returns the place of this object
+    in the upper level query block.
+  */
+  enum_parsing_context place() const {
+    DBUG_ASSERT(outer_select());
+    return item ? item->place() : CTX_DERIVED;
+  }
+
   /*
     An exception: this is the only function that needs to adjust
     explain_marker.
@@ -892,7 +928,7 @@ class SELECT_LEX {
   void set_having_cond(Item *cond) { m_having_cond = cond; }
   void set_query_result(Query_result *result) { m_query_result = result; }
   Query_result *query_result() const { return m_query_result; }
-  bool change_query_result(Query_result_interceptor *new_result,
+  bool change_query_result(THD *thd, Query_result_interceptor *new_result,
                            Query_result_interceptor *old_result);
 
   /// Set base options for a query block (and active options too)
@@ -1741,6 +1777,10 @@ class SELECT_LEX {
   /// Merge derived table into query block
  public:
   bool merge_derived(THD *thd, TABLE_LIST *derived_table);
+  /// Remove semijoin condition for this query block
+  void clear_sj_expressions(NESTED_JOIN *nested_join);
+  ///  Build semijoin condition for th query block
+  bool build_sj_cond(THD *thd, NESTED_JOIN *nested_join, Item **sj_cond);
 
  private:
   bool convert_subquery_to_semijoin(Item_exists_subselect *subq_pred);
@@ -1758,6 +1798,7 @@ class SELECT_LEX {
   bool has_sj_candidates() const {
     return sj_candidates != NULL && !sj_candidates->empty();
   }
+  bool is_in_select_list(Item *i);
 
  private:
   bool setup_wild(THD *thd);
@@ -1829,6 +1870,7 @@ class SELECT_LEX {
                 Used to access optimizer_switch
   */
   void update_semijoin_strategies(THD *thd);
+  void remove_semijoin_candidate(Item_exists_subselect *sub_query);
 
   /**
     Add item to the hidden part of select list
@@ -2360,6 +2402,7 @@ union YYSTYPE {
     PT_item_list *set_expr_list;
     List<String> *set_expr_str_list;
   } load_set_list;
+  ts_alter_tablespace_type alter_tablespace_type;
   Sql_cmd_srs_attributes *sql_cmd_srs_attributes;
 };
 
@@ -3806,7 +3849,24 @@ struct LEX : public Query_tables_list {
   /// @see also sp_head::m_root_parsing_ctx.
   sp_pcontext *sp_current_parsing_ctx;
 
+  /**
+    Statement context for SELECT_LEX::make_active_options.
+  */
+  ulonglong m_statement_options{0};
+
  public:
+  /// @return a bit set of options set for this statement
+  ulonglong statement_options() { return m_statement_options; }
+  /**
+    Add options to values of m_statement_options. options is an ORed
+    bit set of options defined in query_options.h
+
+    @param options Add this set of options to the set already in
+                   m_statement_options
+  */
+  void add_statement_options(ulonglong options) {
+    m_statement_options |= options;
+  }
   bool is_broken() const { return m_broken; }
   /**
      Certain permanent transformations (like in2exists), if they fail, may
@@ -3938,6 +3998,10 @@ struct LEX : public Query_tables_list {
   inline bool is_ps_or_view_context_analysis() {
     return (context_analysis_only &
             (CONTEXT_ANALYSIS_ONLY_PREPARE | CONTEXT_ANALYSIS_ONLY_VIEW));
+  }
+
+  inline bool is_view_context_analysis() {
+    return (context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW);
   }
 
   /**
@@ -4244,10 +4308,10 @@ extern sql_digest_state *digest_reduce_token(sql_digest_state *state,
                                              uint token_left, uint token_right);
 
 struct st_lex_local : public LEX {
-  static void *operator new(size_t size) throw() { return sql_alloc(size); }
-  static void *operator new(
-      size_t size, MEM_ROOT *mem_root,
-      const std::nothrow_t &arg MY_ATTRIBUTE((unused)) = std::nothrow) throw() {
+  static void *operator new(size_t size) noexcept { return sql_alloc(size); }
+  static void *operator new(size_t size, MEM_ROOT *mem_root,
+                            const std::nothrow_t &arg MY_ATTRIBUTE((unused)) =
+                                std::nothrow) noexcept {
     return alloc_root(mem_root, size);
   }
   static void operator delete(void *ptr MY_ATTRIBUTE((unused)),
@@ -4255,7 +4319,7 @@ struct st_lex_local : public LEX {
     TRASH(ptr, size);
   }
   static void operator delete(
-      void *, MEM_ROOT *, const std::nothrow_t &)throw() { /* Never called */
+      void *, MEM_ROOT *, const std::nothrow_t &)noexcept { /* Never called */
   }
 };
 
@@ -4297,9 +4361,8 @@ inline bool is_invalid_string(const LEX_CSTRING &string_val,
   size_t valid_len;
   bool len_error;
 
-  if (validate_string(charset_info, string_val.str,
-                      static_cast<uint32>(string_val.length), &valid_len,
-                      &len_error)) {
+  if (validate_string(charset_info, string_val.str, string_val.length,
+                      &valid_len, &len_error)) {
     char hexbuf[7];
     octet2hex(
         hexbuf, string_val.str + valid_len,

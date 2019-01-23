@@ -24,8 +24,8 @@
   @file
 
   @brief
-  subselect Item
-
+  Implements the subselect Item, used when there is a subselect in a
+  SELECT list, WHERE, etc.
 */
 
 #include "sql/item_subselect.h"
@@ -391,7 +391,7 @@ bool Item_in_subselect::finalize_exists_transform(SELECT_LEX *select_lex) {
     avoid this constraint, we change the SELECT list only if this is not a
     prepared statement.
   */
-  if (unit->thd->stmt_arena->is_conventional())  // not prepared stmt
+  if (unit->thd->stmt_arena->is_regular())  // not prepared stmt
   {
     uint cnt = select_lex->item_list.elements;
     select_lex->item_list.empty();
@@ -569,8 +569,6 @@ bool Item_subselect::fix_fields(THD *thd, Item **ref) {
   // Engine accesses THD via its 'item' pointer, check it:
   DBUG_ASSERT(engine->get_item() == this);
 #endif
-
-  engine->set_thd_for_result();
 
   if (check_stack_overrun(thd, STACK_MIN_SIZE, (uchar *)&res)) return true;
 
@@ -775,19 +773,7 @@ bool Item_subselect::exec() {
   DBUG_RETURN(res);
 }
 
-/**
-  Fix used tables information for a subquery after query transformations.
-  Common actions for all predicates involving subqueries.
-  Most actions here involve re-resolving information for conditions
-  and items belonging to the subquery.
-  Notice that the usage information from underlying expressions is not
-  propagated to the subquery predicate, as it belongs to inner layers
-  of the query operator structure.
-  However, when underlying expressions contain outer references into
-  a select_lex on this level, the relevant information must be updated
-  when these expressions are resolved.
-*/
-
+/// @see SELECT_LEX_UNIT::fix_after_pullout()
 void Item_subselect::fix_after_pullout(SELECT_LEX *parent_select,
                                        SELECT_LEX *removed_select)
 
@@ -795,35 +781,8 @@ void Item_subselect::fix_after_pullout(SELECT_LEX *parent_select,
   /* Clear usage information for this subquery predicate object */
   used_tables_cache = 0;
 
-  /*
-    Go through all query specification objects of the subquery and re-resolve
-    all relevant expressions belonging to them.
-  */
-  for (SELECT_LEX *sel = unit->first_select(); sel; sel = sel->next_select()) {
-    if (sel->where_cond())
-      sel->where_cond()->fix_after_pullout(parent_select, removed_select);
+  unit->fix_after_pullout(parent_select, removed_select);
 
-    if (sel->having_cond())
-      sel->having_cond()->fix_after_pullout(parent_select, removed_select);
-
-    List_iterator<Item> li(sel->item_list);
-    Item *item;
-    while ((item = li++))
-      item->fix_after_pullout(parent_select, removed_select);
-
-    /*
-      No need to call fix_after_pullout() for outer-join conditions, as these
-      cannot have outer references.
-    */
-
-    /* Re-resolve ORDER BY and GROUP BY fields */
-
-    for (ORDER *order = sel->order_list.first; order; order = order->next)
-      (*order->item)->fix_after_pullout(parent_select, removed_select);
-
-    for (ORDER *group = sel->group_list.first; group; group = group->next)
-      (*group->item)->fix_after_pullout(parent_select, removed_select);
-  }
   // Accumulate properties like INNER_TABLE_BIT
   accumulate_properties();
 }
@@ -920,12 +879,12 @@ void Item_subselect::print(String *str, enum_query_type query_type) {
 /* Single value subselect interface class */
 class Query_result_scalar_subquery : public Query_result_subquery {
  public:
-  Query_result_scalar_subquery(THD *thd, Item_subselect *item_arg)
-      : Query_result_subquery(thd, item_arg) {}
-  bool send_data(List<Item> &items);
+  explicit Query_result_scalar_subquery(Item_subselect *item_arg)
+      : Query_result_subquery(item_arg) {}
+  bool send_data(THD *thd, List<Item> &items);
 };
 
-bool Query_result_scalar_subquery::send_data(List<Item> &items) {
+bool Query_result_scalar_subquery::send_data(THD *thd, List<Item> &items) {
   DBUG_ENTER("Query_result_scalar_subquery::send_data");
   Item_singlerow_subselect *it = (Item_singlerow_subselect *)item;
   if (it->assigned()) {
@@ -944,8 +903,8 @@ bool Query_result_scalar_subquery::send_data(List<Item> &items) {
 Item_singlerow_subselect::Item_singlerow_subselect(SELECT_LEX *select_lex)
     : Item_subselect(), value(0), no_rows(false) {
   DBUG_ENTER("Item_singlerow_subselect::Item_singlerow_subselect");
-  init(select_lex,
-       new (*THR_MALLOC) Query_result_scalar_subquery(current_thd, this));
+  init(select_lex, new (select_lex->master_unit()->thd->mem_root)
+                       Query_result_scalar_subquery(this));
   maybe_null = 1;  // if the subquery is empty, value is NULL
   max_columns = UINT_MAX;
   DBUG_VOID_RETURN;
@@ -982,14 +941,14 @@ class Query_result_max_min_subquery final : public Query_result_subquery {
   bool ignore_nulls;
 
  public:
-  Query_result_max_min_subquery(THD *thd, Item_subselect *item_arg, bool mx,
+  Query_result_max_min_subquery(Item_subselect *item_arg, bool mx,
                                 bool ignore_nulls)
-      : Query_result_subquery(thd, item_arg),
+      : Query_result_subquery(item_arg),
         cache(0),
         fmax(mx),
         ignore_nulls(ignore_nulls) {}
-  void cleanup() override;
-  bool send_data(List<Item> &items) override;
+  void cleanup(THD *thd) override;
+  bool send_data(THD *thd, List<Item> &items) override;
 
  private:
   bool cmp_real();
@@ -998,13 +957,13 @@ class Query_result_max_min_subquery final : public Query_result_subquery {
   bool cmp_str();
 };
 
-void Query_result_max_min_subquery::cleanup() {
+void Query_result_max_min_subquery::cleanup(THD *) {
   DBUG_ENTER("Query_result_max_min_subquery::cleanup");
   cache = 0;
   DBUG_VOID_RETURN;
 }
 
-bool Query_result_max_min_subquery::send_data(List<Item> &items) {
+bool Query_result_max_min_subquery::send_data(THD *, List<Item> &items) {
   DBUG_ENTER("Query_result_max_min_subquery::send_data");
   Item_maxmin_subselect *it = (Item_maxmin_subselect *)item;
   List_iterator_fast<Item> li(items);
@@ -1130,15 +1089,15 @@ bool Query_result_max_min_subquery::cmp_str() {
                 : (sortcmp(val1, val2, cache->collation.collation) < 0);
 }
 
-Item_maxmin_subselect::Item_maxmin_subselect(THD *thd_param,
-                                             Item_subselect *parent,
+Item_maxmin_subselect::Item_maxmin_subselect(Item_subselect *parent,
                                              SELECT_LEX *select_lex,
                                              bool max_arg, bool ignore_nulls)
     : Item_singlerow_subselect(), was_values(false) {
   DBUG_ENTER("Item_maxmin_subselect::Item_maxmin_subselect");
   max = max_arg;
-  init(select_lex, new (*THR_MALLOC) Query_result_max_min_subquery(
-                       thd_param, this, max_arg, ignore_nulls));
+  init(select_lex,
+       new (select_lex->master_unit()->thd->mem_root)
+           Query_result_max_min_subquery(this, max_arg, ignore_nulls));
   max_columns = 1;
   maybe_null = 1;
   max_columns = 1;
@@ -1379,12 +1338,12 @@ bool Item_singlerow_subselect::val_bool() {
 /* EXISTS subselect interface class */
 class Query_result_exists_subquery : public Query_result_subquery {
  public:
-  Query_result_exists_subquery(THD *thd, Item_subselect *item_arg)
-      : Query_result_subquery(thd, item_arg) {}
-  bool send_data(List<Item> &items);
+  explicit Query_result_exists_subquery(Item_subselect *item_arg)
+      : Query_result_subquery(item_arg) {}
+  bool send_data(THD *thd, List<Item> &items);
 };
 
-bool Query_result_exists_subquery::send_data(List<Item> &) {
+bool Query_result_exists_subquery::send_data(THD *, List<Item> &) {
   DBUG_ENTER("Query_result_exists_subquery::send_data");
   Item_exists_subselect *it = (Item_exists_subselect *)item;
   /*
@@ -1405,8 +1364,8 @@ Item_exists_subselect::Item_exists_subselect(SELECT_LEX *select)
       sj_convert_priority(0),
       embedding_join_nest(NULL) {
   DBUG_ENTER("Item_exists_subselect::Item_exists_subselect");
-  init(select,
-       new (*THR_MALLOC) Query_result_exists_subquery(current_thd, this));
+  init(select, new (select->master_unit()->thd->mem_root)
+                   Query_result_exists_subquery(this));
   max_columns = UINT_MAX;
   null_value = false;  // can't be NULL
   maybe_null = 0;      // can't be NULL
@@ -1441,8 +1400,8 @@ Item_in_subselect::Item_in_subselect(Item *left_exp, SELECT_LEX *select)
       pushed_cond_guards(NULL),
       upper_item(NULL) {
   DBUG_ENTER("Item_in_subselect::Item_in_subselect");
-  init(select,
-       new (*THR_MALLOC) Query_result_exists_subquery(current_thd, this));
+  init(select, new (select->master_unit()->thd->mem_root)
+                   Query_result_exists_subquery(this));
   max_columns = UINT_MAX;
   maybe_null = 1;
   reset();
@@ -1479,8 +1438,8 @@ bool Item_in_subselect::itemize(Parse_context *pc, Item **res) {
       pt_subselect->contextualize(pc))
     return true;
   SELECT_LEX *select_lex = pt_subselect->value();
-  init(select_lex,
-       new (*THR_MALLOC) Query_result_exists_subquery(pc->thd, this));
+  init(select_lex, new (select_lex->master_unit()->thd->mem_root)
+                       Query_result_exists_subquery(this));
   if (test_limit()) return true;
   return false;
 }
@@ -1492,8 +1451,7 @@ Item_allany_subselect::Item_allany_subselect(Item *left_exp,
   DBUG_ENTER("Item_allany_subselect::Item_allany_subselect");
   left_expr = left_exp;
   func = func_creator(all_arg);
-  init(select,
-       new (*THR_MALLOC) Query_result_exists_subquery(current_thd, this));
+  init(select, new (*THR_MALLOC) Query_result_exists_subquery(this));
   max_columns = 1;
   abort_on_null = 0;
   reset();
@@ -1799,7 +1757,7 @@ Item_subselect::trans_res Item_in_subselect::single_value_transformer(
                           "> ALL/ANY (SELECT)", "MIN (SELECT)");
       oto1.add("chosen", true);
       Item_maxmin_subselect *item;
-      subs = item = new Item_maxmin_subselect(thd, this, select, func->l_op(),
+      subs = item = new Item_maxmin_subselect(this, select, func->l_op(),
                                               substype() == ANY_SUBS);
       if (upper_item) upper_item->set_sub_test(item);
     }
@@ -2650,18 +2608,26 @@ bool Item_subselect::subq_opt_away_processor(uchar *) {
  */
 bool Item_subselect::clean_up_after_removal(uchar *arg) {
   /*
-    Some commands still execute subqueries during resolving.
-    Make sure they are cleaned up properly.
-    @todo: Remove this code when SET is also refactored.
+    When removing a constant condition in a HAVING clause the condition
+    may reference a subselect in the SELECT list via an alias.
+    (Such use is not allowed in a WHERE clause or in the JOIN condition.)
+    In that case, do not remove this subselect.
   */
-  if (unit->is_executed()) {
-    DBUG_ASSERT(unit->first_select()->parent_lex->sql_command ==
-                SQLCOM_SET_OPTION);
-    unit->cleanup(true);
-  }
+  auto *ctx = pointer_cast<Cleanup_after_removal_context *>(arg);
+  SELECT_LEX *root = nullptr;
 
-  SELECT_LEX *root = static_cast<SELECT_LEX *>(static_cast<void *>(arg));
+  if (ctx != nullptr && ctx->m_removing_const_preds) {
+    if (ctx->m_root->is_in_select_list(this)) return false;
+  } else if (ctx != nullptr) {
+    root = ctx->m_root;
+  }
   SELECT_LEX *sl = unit->outer_select();
+
+  /* Remove the pointer to this sub query stored in sj_candidates array */
+  if (sl != NULL) {
+    if (substype() != SINGLEROW_SUBS)
+      sl->remove_semijoin_candidate(down_cast<Item_exists_subselect *>(this));
+  }
 
   /*
     While traversing the item tree with Item::walk(), Item_refs may
@@ -2674,7 +2640,10 @@ bool Item_subselect::clean_up_after_removal(uchar *arg) {
     2) sl == NULL: unit is not a descendant of the starting point
   */
   while (sl != root && sl != NULL) sl = sl->outer_select();
-  if (sl == root) unit->exclude_tree();
+  if (sl == root) {
+    unit->exclude_tree();
+    unit->cleanup(true);
+  }
   return false;
 }
 
@@ -2700,14 +2669,6 @@ void Item_allany_subselect::print(String *str, enum_query_type query_type) {
   Item_subselect::print(str, query_type);
 }
 
-void subselect_engine::set_thd_for_result() {
-  /*
-    Query_result's constructor sets neither Query_result::thd nor
-    Query_result::unit.
-  */
-  if (result) result->set_thd(item->unit->thd);
-}
-
 subselect_single_select_engine::subselect_single_select_engine(
     SELECT_LEX *select, Query_result_interceptor *result_arg,
     Item_subselect *item_arg)
@@ -2718,14 +2679,14 @@ subselect_single_select_engine::subselect_single_select_engine(
 void subselect_single_select_engine::cleanup() {
   DBUG_ENTER("subselect_single_select_engine::cleanup");
   item->unit->reset_executed();
-  result->cleanup();
+  result->cleanup(item->unit->thd);
   DBUG_VOID_RETURN;
 }
 
 void subselect_union_engine::cleanup() {
   DBUG_ENTER("subselect_union_engine::cleanup");
   item->unit->reset_executed();
-  result->cleanup();
+  result->cleanup(item->unit->thd);
   DBUG_VOID_RETURN;
 }
 
@@ -2890,6 +2851,7 @@ bool subselect_single_select_engine::exec() {
     join->reset();
     item->reset();
     unit->reset_executed();
+    unit->clear_corr_ctes();
     item->assigned(false);
   }
   if (!unit->is_executed()) {
@@ -2900,7 +2862,7 @@ bool subselect_single_select_engine::exec() {
     join->exec();
     unit->set_executed();
 
-    rc = join->error || thd->is_fatal_error;
+    rc = join->error || thd->is_fatal_error();
   }
 
   thd->where = save_where;
@@ -3145,18 +3107,29 @@ bool subselect_indexsubquery_engine::exec() {
   Item_in_subselect *const item_in = static_cast<Item_in_subselect *>(item);
   item_in->value = false;
 
-  if (tl && tl->uses_materialization() && !table->materialized) {
-    THD *const thd = table->in_use;
-    bool err = tl->create_materialized_table(thd);
-    if (!err) {
-      if (tl->is_table_function())
-        err = tl->table_function->fill_result_table();
-      else {
-        err = tl->materialize_derived(thd);
-        err |= tl->cleanup_derived();
+  if (tl && tl->uses_materialization())  // A derived table with index
+  {
+    /*
+      Table cannot have lateral references (as it's the only table in this
+      query block) but it may have refs to outer queries. As execution of
+      subquery doesn't go through unit::execute() or JOIN::reset(), we have to
+      do manual clearing:
+    */
+    item->unit->clear_corr_ctes();
+    tab->join()->clear_corr_derived_tmp_tables();
+    if (!table->materialized) {
+      THD *const thd = table->in_use;
+      bool err = tl->create_materialized_table(thd);
+      if (!err) {
+        if (tl->is_table_function())
+          err = tl->table_function->fill_result_table();
+        else {
+          err = tl->materialize_derived(thd);
+          err |= tl->cleanup_derived();
+        }
       }
+      if (err) DBUG_RETURN(true); /* purecov: inspected */
     }
-    if (err) DBUG_RETURN(true); /* purecov: inspected */
   }
 
   if (check_null) {
@@ -3374,7 +3347,7 @@ bool subselect_single_select_engine::change_query_result(
     Item_subselect *si, Query_result_subquery *res) {
   item = si;
   result = res;
-  return select_lex->change_query_result(result, NULL);
+  return select_lex->change_query_result(item->unit->thd, result, NULL);
 }
 
 /**
@@ -3463,7 +3436,7 @@ bool subselect_hash_sj_engine::setup(List<Item> *tmp_columns) {
     managed (created/filled/etc) internally by the interceptor.
   */
   THD *const thd = item->unit->thd;
-  if (!(tmp_result_sink = new (*THR_MALLOC) Query_result_union(thd)))
+  if (!(tmp_result_sink = new (thd->mem_root) Query_result_union()))
     DBUG_RETURN(true);
   if (tmp_result_sink->create_result_table(
           thd, tmp_columns,
@@ -3613,7 +3586,7 @@ bool subselect_hash_sj_engine::setup(List<Item> *tmp_columns) {
   */
   materialize_engine->prepare();
   /* Let our engine reuse this query plan for materialization. */
-  materialize_engine->select_lex->change_query_result(result, NULL);
+  materialize_engine->select_lex->change_query_result(thd, result, NULL);
 
   DBUG_RETURN(false);
 }
@@ -3636,8 +3609,9 @@ subselect_hash_sj_engine::~subselect_hash_sj_engine() {
 void subselect_hash_sj_engine::cleanup() {
   DBUG_ENTER("subselect_hash_sj_engine::cleanup");
   is_materialized = false;
-  if (result != nullptr) result->cleanup(); /* Resets the temp table as well. */
   THD *const thd = item->unit->thd;
+  if (result != nullptr)
+    result->cleanup(thd); /* Resets the temp table as well. */
   DEBUG_SYNC(thd, "before_index_end_in_subselect");
   if (tab != nullptr) {
     TABLE *const table = tab->table();
@@ -3680,7 +3654,7 @@ bool subselect_hash_sj_engine::exec() {
     JOIN *join = materialize_engine->select_lex->join;
 
     join->exec();
-    if ((res = join->error || thd->is_fatal_error)) goto err;
+    if ((res = join->error || thd->is_fatal_error())) goto err;
 
     /*
       TODO:

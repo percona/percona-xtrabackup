@@ -261,6 +261,7 @@ drop table test.t1;
 --exec $NDB_RESTORE --core-file=0 -b $the_backup_id -n 1 --rebuild-indexes $NDB_BACKUPS-$the_backup_id > $dump_file
 --source suite/ndb/include/ndb_restore_check_warn.inc
 
+--remove_file $dump_file
 drop table test.t1;
 --echo Restore table with largest possible descriptor
 
@@ -789,3 +790,4 @@ drop table grp_hssesmusersstoredbytenant;
 
 drop table grp_hssesmusersstoredbytenant;
 --source suite/ndb/include/backup_restore_cleanup.inc
+--remove_file $NDB_TOOLS_OUTPUT
