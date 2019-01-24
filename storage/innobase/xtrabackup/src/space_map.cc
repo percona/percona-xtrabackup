@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <rapidjson/writer.h>
 
 #include <fil0fil.h>
+#include <srv0srv.h>
 
 #include <fstream>
 
@@ -33,13 +34,15 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 Tablespace_map Tablespace_map::static_tablespace_map;
 
 const char *XBTS_FILE_NAME = "xtrabackup_tablespaces";
-const int XBTS_FILE_VERSION = 1;
+const int XBTS_FILE_VERSION = 2;
 
 /** Add file to tablespace map.
 @param[in]  file_name file name
 @param[in]  tablespace_name corresponding tablespace name */
 void xb_tablespace_map_add(const char *file_name, const char *tablespace_name) {
-  Tablespace_map::instance().add(file_name, tablespace_name);
+  const Tablespace_map::tablespace_t tablespace(file_name, tablespace_name,
+                                                Tablespace_map::TABLESPACE);
+  Tablespace_map::instance().add(tablespace);
 }
 
 /** Delete tablespace mapping.
@@ -61,12 +64,11 @@ Tablespace_map &Tablespace_map::instance() { return (static_tablespace_map); }
 @param[in]  connection MySQL connection object */
 void Tablespace_map::scan(MYSQL *connection) {
   const char *query =
-      "SELECT FILE_NAME, TABLESPACE_NAME"
+      "SELECT FILE_NAME, TABLESPACE_NAME, FILE_TYPE"
       "  FROM INFORMATION_SCHEMA.FILES"
       "  WHERE ENGINE = 'InnoDB'"
       "    AND STATUS = 'NORMAL'"
       "    AND FILE_TYPE <> 'TEMPORARY'"
-      "    AND FILE_TYPE <> 'UNDO LOG'"
       "    AND FILE_ID <> 0";
   MYSQL_RES *mysql_result;
   MYSQL_ROW row;
@@ -74,27 +76,35 @@ void Tablespace_map::scan(MYSQL *connection) {
   mysql_result = xb_mysql_query(connection, query, true);
 
   while ((row = mysql_fetch_row(mysql_result)) != nullptr) {
-    std::string file_name = row[0];
-    std::string tablespace_name = row[1];
-
-    add(file_name, tablespace_name);
+    const tablespace_type_t file_type =
+        strcmp(row[2], "UNDO LOG") == 0 ? UNDO_LOG : TABLESPACE;
+    const tablespace_t tablespace(row[0], row[1], file_type);
+    add(tablespace);
   }
 
   mysql_free_result(mysql_result);
 }
 
 /** Add tablespace to the list.
-@param[in]  file_name tablespace file name
-@param[in]  tablespace_name tablespace name */
-void Tablespace_map::add(const std::string &file_name,
-                         const std::string &tablespace_name) {
+@param[in]  tablespace tablespace object */
+void Tablespace_map::add(const tablespace_t &tablespace) {
   char full_path[FN_REFLEN];
 
-  fn_format(full_path, file_name.c_str(), "", "", MY_RETURN_REAL_PATH);
+  if (tablespace.type == UNDO_LOG &&
+      Fil_path(tablespace.file_name, true).is_relative_path() &&
+      srv_undo_dir != nullptr && srv_undo_dir[0] != 0) {
+    fn_format(full_path,
+              (std::string(srv_undo_dir) + "/" + tablespace.file_name).c_str(),
+              "", "", MY_RETURN_REAL_PATH);
+  } else {
+    fn_format(full_path, tablespace.file_name.c_str(), "", "",
+              MY_RETURN_REAL_PATH);
+  }
 
-  if (!MySQL_datadir_path.is_ancestor(full_path)) {
-    space_by_file[full_path] = tablespace_name;
-    file_by_space[tablespace_name] = full_path;
+  if (!MySQL_datadir_path.is_ancestor(full_path) ||
+      tablespace.type == UNDO_LOG) {
+    space_by_file[full_path] = tablespace;
+    file_by_space[tablespace.name] = tablespace;
   }
 }
 
@@ -103,7 +113,7 @@ void Tablespace_map::add(const std::string &file_name,
 void Tablespace_map::erase(const std::string &tablespace_name) {
   auto i = space_by_file.find(tablespace_name);
   if (i != space_by_file.end()) {
-    file_by_space.erase(i->second);
+    file_by_space.erase(i->second.name);
     space_by_file.erase(i);
   }
 }
@@ -114,7 +124,15 @@ std::string Tablespace_map::backup_file_name(
     const std::string &file_name) const {
   auto i = space_by_file.find(file_name);
   if (i != space_by_file.end()) {
-    return ("./" + i->second + ".ibd");
+    if (i->second.type == TABLESPACE) {
+      std::string res = "./" + i->second.name + DOT_IBD;
+      Fil_path::normalize(res);
+      return (res);
+    } else {
+      std::string res = "./" + i->second.name + DOT_IBU;
+      Fil_path::normalize(res);
+      return (res);
+    }
   }
 
   return (file_name);
@@ -126,7 +144,7 @@ std::string Tablespace_map::external_file_name(
     const std::string &space_name) const {
   auto i = file_by_space.find(space_name);
   if (i != file_by_space.end()) {
-    return (i->second);
+    return (i->second.file_name);
   }
 
   return std::string();
@@ -136,7 +154,7 @@ std::string Tablespace_map::external_file_name(
 Tablespace_map::vector_t Tablespace_map::external_files() const {
   Tablespace_map::vector_t result;
   for (auto i : space_by_file) {
-    result.push_back(i.first);
+    result.push_back(i.second);
   }
   return (result);
 }
@@ -216,7 +234,9 @@ bool Tablespace_map::serialize(rapidjson::StringBuffer &buf) const {
     writer.String("file_name");
     writer.String(file.first.c_str(), file.first.length());
     writer.String("tablespace_name");
-    writer.String(file.second.c_str(), file.second.length());
+    writer.String(file.second.name.c_str(), file.second.name.length());
+    writer.String("tablespace_type");
+    writer.String(file.second.type == TABLESPACE ? "TABLESPACE" : "UNDO_LOG");
     writer.EndObject();
   }
   writer.EndArray();
@@ -261,7 +281,15 @@ bool Tablespace_map::deserialize(const std::string &dir) {
 
   for (auto &entry : list) {
     const auto &object = entry.GetObject();
-    add(object["file_name"].GetString(), object["tablespace_name"].GetString());
+    tablespace_type_t type = TABLESPACE;
+    if (object.HasMember("tablespace_type")) {
+      type = strcmp(object["tablespace_type"].GetString(), "TABLESPACE") == 0
+                 ? TABLESPACE
+                 : UNDO_LOG;
+    }
+    const tablespace_t tablespace(object["file_name"].GetString(),
+                                  object["tablespace_name"].GetString(), type);
+    add(tablespace);
   }
 
   return (true);

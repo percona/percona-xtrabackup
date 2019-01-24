@@ -49,18 +49,19 @@ For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
 and "./ibdata1" yield "ibdata1" in the output. */
 const char *xb_get_relative_path(
     /*=================*/
-    ulint flags,      /*!< in: tablespace flags */
-    const char *path, /*!< in: tablespace path (either
-                      relative or absolute) */
-    bool is_system)   /*!< in: TRUE for system tablespaces,
-                      i.e. when only the filename must be
-                      returned. */
+    fil_space_t *space, /*!< in: tablespace */
+    const char *path)   /*!< in: tablespace path (either
+                        relative or absolute) */
 {
   const char *next;
   const char *cur;
   const char *prev;
 
-  bool is_shared = FSP_FLAGS_GET_SHARED(flags);
+  bool is_shared =
+      space != nullptr ? FSP_FLAGS_GET_SHARED(space->flags) : false;
+  bool is_system =
+      space != nullptr ? fsp_is_system_or_temp_tablespace(space->id) : false;
+  bool is_undo = space != nullptr ? fsp_is_undo_tablespace(space->id) : false;
 
   prev = NULL;
   cur = path;
@@ -73,7 +74,7 @@ const char *xb_get_relative_path(
   if (is_system) {
     return (cur);
   } else {
-    return ((prev == NULL || is_shared) ? cur : prev);
+    return ((prev == NULL || is_shared || is_undo) ? cur : prev);
   }
 }
 
@@ -108,9 +109,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   one that can be appended to the backup root directory. Non-system
   tablespaces may have absolute paths for remote tablespaces in MySQL
   5.6+. We want to make "local" copies for the backup. */
-  strncpy(cursor->rel_path,
-          xb_get_relative_path(node->space->flags, cursor->abs_path,
-                               cursor->is_system),
+  strncpy(cursor->rel_path, xb_get_relative_path(node->space, cursor->abs_path),
           sizeof(cursor->rel_path));
 
   /* In the backup mode we should already have a tablespace handle created

@@ -409,6 +409,9 @@ class Tablespace_files {
     m_undo_paths.clear();
   }
 
+  /** Open all known tablespaces. */
+  void open_ibds() const;
+
   /** @return m_dir */
   const Fil_path &root() const { return (m_dir); }
 
@@ -453,7 +456,7 @@ class Tablespace_dirs {
   /** Discover tablespaces by reading the header from .ibd files.
   @param[in]	in_directories	Directories to scan
   @return DB_SUCCESS if all goes well */
-  dberr_t scan(const std::string &in_directories)
+  dberr_t scan(const std::string &in_directories, bool populate_fil_cache)
       MY_ATTRIBUTE((warn_unused_result));
 
   /** Clear all the tablespace file data but leave the list of
@@ -553,6 +556,9 @@ class Tablespace_dirs {
     return (dirs);
   }
 
+  /** Open all known tablespaces. */
+  void open_ibds() const;
+
  private:
   /** Print the duplicate filenames for a tablespce ID to the log
   @param[in]	duplicates	Duplicate tablespace IDs*/
@@ -581,6 +587,13 @@ class Tablespace_dirs {
   void duplicate_check(const Const_iter &start, const Const_iter &end,
                        size_t thread_id, std::mutex *mutex,
                        Space_id_set *unique, Space_id_set *duplicates);
+
+  /** Open IBD tablespaces.
+  @param[in]  start   Start of slice
+  @param[in]  end   End of slice
+  @param[in]  thread_id Thread ID */
+  void open_ibd(const Const_iter &start, const Const_iter &end,
+                size_t thread_id);
 
  private:
   /** Directories scanned and the files discovered under them. */
@@ -1425,9 +1438,12 @@ class Fil_system {
 
   /** Scan the directories to build the tablespace ID to file name
   mapping table. */
-  dberr_t scan(const std::string &directories) {
-    return (m_dirs.scan(directories));
+  dberr_t scan(const std::string &directories, bool populate_fil_cache) {
+    return (m_dirs.scan(directories, populate_fil_cache));
   }
+
+  /** Open all known tablespaces. */
+  void open_ibds() const { m_dirs.open_ibds(); }
 
   /** Insert a file with given space ID to filename mapping.
   @param[in]  space_id  Tablespace ID to insert
@@ -1961,6 +1977,16 @@ size_t Tablespace_files::add(space_id_t space_id, const std::string &name) {
   names->push_back(name);
 
   return (names->size());
+}
+
+/** Open all known tablespaces. */
+void Tablespace_files::open_ibds() const {
+  for (auto path : m_ibd_paths) {
+    for (auto name : path.second) {
+      fil_open_for_xtrabackup(m_dir.path() + name,
+                              name.substr(0, name.length() - 4));
+    }
+  }
 }
 
 /** Reads data from a space to a buffer. Remember that the possible incomplete
@@ -10575,6 +10601,113 @@ space_id_t Fil_system::get_tablespace_id(const std::string &filename) {
   return (space_id);
 }
 
+/** Open tablespace file for backup.
+@param[in]  path  file path.
+@param[in]  name  space name.
+@return DB_SUCCESS if all OK */
+dberr_t fil_open_for_xtrabackup(const std::string &path,
+                                const std::string &name) {
+  Datafile file;
+  file.set_name(name.c_str());
+  file.set_filepath(path.c_str());
+
+  dberr_t err = file.open_read_only(true);
+  if (err != DB_SUCCESS) {
+    return (err);
+  }
+
+  lsn_t flush_lsn;
+  err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
+
+  if (err == DB_PAGE_IS_BLANK) {
+    /* allow corrupted first page for xtrabackup, it could be just
+    zero-filled page, which we'll restore from redo log later */
+    return (DB_SUCCESS);
+  } else if (err != DB_SUCCESS) {
+    return (err);
+  }
+
+  if (fil_space_get(file.space_id())) {
+    /* space already exists */
+    return (DB_TABLESPACE_EXISTS);
+  }
+
+  os_offset_t node_size = os_file_get_size(file.handle());
+  bool is_tmp = FSP_FLAGS_GET_TEMPORARY(file.flags());
+  os_offset_t n_pages;
+
+  ut_a(node_size != (os_offset_t)-1);
+
+  n_pages = node_size / page_size_t(file.flags()).physical();
+
+  fil_space_t *space =
+      fil_space_create(name.c_str(), file.space_id(), file.flags(),
+                       is_tmp ? FIL_TYPE_TEMPORARY : FIL_TYPE_TABLESPACE);
+
+  ut_a(space != NULL);
+
+  /* For encrypted tablespace, initialize encryption
+  information.*/
+  if (FSP_FLAGS_GET_ENCRYPTION(file.flags())) {
+    if (srv_backup_mode || !use_dumped_tablespace_keys) {
+      byte *key = file.m_encryption_key;
+      byte *iv = file.m_encryption_iv;
+      ut_ad(key && iv);
+
+      FSP_FLAGS_SET_ENCRYPTION(space->flags);
+      err = fil_set_encryption(space->id, Encryption::AES, key, iv);
+    } else {
+      err = xb_set_encryption(space);
+    }
+
+    ut_ad(err == DB_SUCCESS);
+  }
+
+  char *fn = fil_node_create(file.filepath(), n_pages, space, false, false);
+  if (fn == nullptr) {
+    return (DB_ERROR);
+  }
+
+  /* by opening the tablespace we forcing node and space objects
+  in the cache to be populated with fields from space header */
+  if (!fil_space_open(space->id)) {
+    ib::error() << "Failed to open tablespace " << space->name;
+  }
+
+  if (!srv_backup_mode || srv_close_files) {
+    fil_space_close(space->id);
+  }
+
+  return (DB_SUCCESS);
+}
+
+/** Open IBD tablespaces.
+@param[in]  start   Start of slice
+@param[in]  end   End of slice
+@param[in]  thread_id Thread ID */
+void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
+                               size_t thread_id) {
+  for (auto it = start; it != end; ++it) {
+    const std::string filename = it->second;
+    const auto &files = m_dirs[it->first];
+    const std::string phy_filename = files.path() + filename;
+
+    if (check_if_skip_table(filename.c_str())) {
+      continue;
+    }
+
+    fil_open_for_xtrabackup(phy_filename,
+                            filename.substr(0, filename.length() - 4));
+  }
+}
+
+/** Open all known tablespaces. */
+void Tablespace_dirs::open_ibds() const {
+  for (auto dir : m_dirs) {
+    dir.open_ibds();
+  }
+}
+
 /** Check for duplicate tablespace IDs.
 @param[in]	start		Slice start
 @param[in]	end		Slice end
@@ -10683,7 +10816,8 @@ void Tablespace_dirs::print_duplicates(const Space_id_set &duplicates) {
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in]	in_directories	Directories to scan
 @return DB_SUCCESS if all goes well */
-dberr_t Tablespace_dirs::scan(const std::string &in_directories) {
+dberr_t Tablespace_dirs::scan(const std::string &in_directories,
+                              bool populate_fil_cache) {
   std::string directories(in_directories);
 
   Fil_path::normalize(directories);
@@ -10787,13 +10921,13 @@ dberr_t Tablespace_dirs::scan(const std::string &in_directories) {
       check = std::bind(&Tablespace_dirs::duplicate_check, this, _1, _2, _3, _4,
                         _5, _6);
 
-  par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, check, &m, &unique,
-          &duplicates);
+  if (!populate_fil_cache) {
+    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, check, &m, &unique,
+            &duplicates);
+  }
 
   duplicate_check(undo_files.begin(), undo_files.end(), n_threads, &m, &unique,
                   &duplicates);
-
-  ut_a(m_checked == ibd_files.size() + undo_files.size());
 
   ib::info(ER_IB_MSG_383) << "Completed space ID check of " << m_checked.load()
                           << " files.";
@@ -10811,15 +10945,27 @@ dberr_t Tablespace_dirs::scan(const std::string &in_directories) {
     err = DB_SUCCESS;
   }
 
+  if (err == DB_SUCCESS && populate_fil_cache) {
+    std::function<void(const Const_iter &, const Const_iter &, size_t)> open =
+        std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3);
+
+    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open);
+  }
+
   return (err);
 }
 
 /** Discover tablespaces by reading the header from .ibd files.
-@param[in]	directories	Directories to scan
+@param[in]  directories Directories to scan
+@param[in]  populate_fil_cache Whether to load tablespaces into fil cache
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(const std::string &directories) {
-  return (fil_system->scan(directories));
+dberr_t fil_scan_for_tablespaces(const std::string &directories,
+                                 bool populate_fil_cache) {
+  return (fil_system->scan(directories, populate_fil_cache));
 }
+
+/** Open all known tablespaces. */
+void fil_open_ibds() { fil_system->open_ibds(); }
 
 /** Callback to check tablespace size with space header size and extend.
 Caller must own the Fil_shard mutex that the file belongs to.

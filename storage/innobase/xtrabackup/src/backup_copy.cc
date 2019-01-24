@@ -194,7 +194,7 @@ static bool datafile_open(const char *file, datafile_cur_t *cursor,
   one that can be appended to the backup root directory. Non-system
   tablespaces may have absolute paths for remote tablespaces in MySQL
   5.6+. We want to make "local" copies for the backup. */
-  strncpy(cursor->rel_path, xb_get_relative_path(0, cursor->abs_path, FALSE),
+  strncpy(cursor->rel_path, xb_get_relative_path(nullptr, cursor->abs_path),
           sizeof(cursor->rel_path));
 
   cursor->fd = my_open(cursor->abs_path, O_RDONLY, MYF(MY_WME));
@@ -843,9 +843,10 @@ static bool copy_or_move_file(const char *src_file_path,
   char external_dir[FN_REFLEN];
   bool ret;
 
-  if (ends_with(src_file_path, ".ibd")) {
+  if (Fil_path::has_suffix(IBD, src_file_path) ||
+      Fil_path::has_suffix(IBU, src_file_path)) {
     std::string tablespace_name = src_file_path;
-    /* Remove starting ./ and trailing .ibd from tablespace name */
+    /* Remove starting ./ and trailing .ibd/.ibu from tablespace name */
     tablespace_name = tablespace_name.substr(2, tablespace_name.length() - 6);
     external_file_name =
         Tablespace_map::instance().external_file_name(tablespace_name);
@@ -1361,7 +1362,7 @@ void copy_back_thread_func(datadir_thread_ctxt_t *ctx) {
         goto cleanup;
       }
 
-      msg_ts("[%02u] ...done.", 1);
+      msg_ts("[%02u] ...done.\n", 1);
       continue;
     }
 
@@ -1567,6 +1568,7 @@ bool copy_back(int argc, char **argv) {
     for (i = 1; i <= srv_undo_tablespaces; i++) {
       char filename[20];
       sprintf(filename, "undo_%03lu", i);
+      if (!Fil_path(filename).is_file_and_exists()) continue;
       if (!(ret = copy_or_move_file(filename, filename, dst_dir, 1,
                                     FILE_PURPOSE_UNDO_LOG))) {
         goto cleanup;

@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2018 Percona LLC and/or its affiliates.
+Copyright (c) 2018-2019 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,8 +30,20 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 /* Tablespace to file name mapping */
 class Tablespace_map {
  public:
-  typedef std::map<std::string, std::string> map_t;
-  typedef std::vector<std::string> vector_t;
+  enum tablespace_type_t { TABLESPACE = 1, UNDO_LOG };
+  struct tablespace_t {
+    std::string file_name;
+    std::string name;
+    tablespace_type_t type;
+    tablespace_t() : file_name(), name(), type() {}
+    tablespace_t(const tablespace_t &) = default;
+    tablespace_t(std::string file_name, std::string name,
+                 tablespace_type_t type)
+        : file_name(file_name), name(name), type(type) {}
+    tablespace_t &operator=(const tablespace_t &) = default;
+  };
+  typedef std::unordered_map<std::string, tablespace_t> map_t;
+  typedef std::vector<tablespace_t> vector_t;
 
  private:
   map_t file_by_space;
@@ -62,9 +74,8 @@ class Tablespace_map {
   bool deserialize(const std::string &dir);
 
   /** Add tablespace to the list.
-  @param[in]  file_name tablespace file name
-  @param[in]  tablespace_name tablespace name */
-  void add(const std::string &file_name, const std::string &tablespace_name);
+  @param[in]  tablespace tablespace object */
+  void add(const tablespace_t &tablespace);
 
   /** Remove tablepsace from the list.
   @param[in]  tablespace_name tablespace name */

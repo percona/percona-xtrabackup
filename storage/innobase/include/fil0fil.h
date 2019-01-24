@@ -1794,10 +1794,22 @@ or MLOG_FILE_RENAME record. These could not be recovered
 ignore redo log records during the apply phase */
 bool fil_check_missing_tablespaces() MY_ATTRIBUTE((warn_unused_result));
 
+/** Open tablespace file for backup.
+@param[in]  path  file path.
+@param[in]  name  space name.
+@return DB_SUCCESS if all OK */
+dberr_t fil_open_for_xtrabackup(const std::string &path,
+                                const std::string &name);
+
+/** Open all known tablespaces. */
+void fil_open_ibds();
+
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in]	directories	Directories to scan
+@param[in]  populate_fil_cache Whether to load tablespaces into fil cache
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(const std::string &directories);
+dberr_t fil_scan_for_tablespaces(const std::string &directories,
+                                 bool populate_fil_cache);
 
 /** Open the tabelspace and also get the tablespace filenames, space_id must
 already be known.

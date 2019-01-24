@@ -60,6 +60,7 @@ extern char *xtrabackup_incremental_dir;
 extern char *xtrabackup_incremental_basedir;
 extern char *innobase_data_home_dir;
 extern char *innobase_buffer_pool_filename;
+extern char *innobase_directories;
 extern ds_ctxt_t *ds_meta;
 extern ds_ctxt_t *ds_data;
 
@@ -207,16 +208,6 @@ page size, or 0 if the space is not compressed. */
 const page_size_t xb_get_zip_size(pfs_os_file_t file, bool *success);
 
 /************************************************************************
-Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
-or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
-the --tables or --tables-file options.
-
-@return TRUE if the table should be skipped. */
-bool check_if_skip_table(
-    /******************/
-    const char *name); /*!< in: path to the table */
-
-/************************************************************************
 Checks if a database specified by path should be skipped from backup based on
 the --databases, --databases_file or --databases_exclude options.
 
@@ -248,12 +239,9 @@ struct datadir_entry_t {
   datadir_entry_t()
       : datadir(), path(), db_name(), file_name(), is_empty_dir() {}
 
-  datadir_entry_t(const datadir_entry_t &o)
-      : datadir(o.datadir),
-        path(o.path),
-        db_name(o.db_name),
-        file_name(o.file_name),
-        is_empty_dir(o.is_empty_dir) {}
+  datadir_entry_t(const datadir_entry_t &) = default;
+
+  datadir_entry_t & operator=(const datadir_entry_t &) = default;
 
   datadir_entry_t(const char *datadir, const char *path, const char *db_name,
                   const char *file_name, bool is_empty_dir)
