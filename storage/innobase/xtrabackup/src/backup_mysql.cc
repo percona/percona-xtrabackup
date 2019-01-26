@@ -1043,8 +1043,8 @@ bool build_channel_name_status_set(MYSQL_RES *res, short channel_name_position, 
   sql_threads_running = false;
   short n_running_sql_threads = 0;
   while ((row = mysql_fetch_row(res))) {
-    if (std::__cxx11::string(row[sql_thread_status_position]) == std::__cxx11::string("Yes")) {
-      sql_thread_running_set.insert(std::__cxx11::string(row[channel_name_position]));
+    if (std::string(row[sql_thread_status_position]) == std::string("Yes")) {
+      sql_thread_running_set.insert(std::string(row[channel_name_position]));
       sql_threads_running = true;
       n_running_sql_threads++;
     }
@@ -1065,12 +1065,12 @@ void get_channel_name_and_status_position(MYSQL_RES *res, const std::string &sql
   bool found_thread_status = false;
   MYSQL_FIELD *field;  // Helper for query results' rows
   while ((field = mysql_fetch_field(res))) {
-    if (std::__cxx11::string(field->name) == channel_field_name) {
+    if (std::string(field->name) == channel_field_name) {
       channel_name_position = i;
       found_name = true;
       continue;
     }
-    if (std::__cxx11::string(field->name) == sql_thread_status_field_name) {
+    if (std::string(field->name) == sql_thread_status_field_name) {
       sql_thread_status_position = i;
       found_thread_status = true;
       continue;
@@ -1088,7 +1088,7 @@ Start all the SQL threads of replication channels/connections that were
 void restart_slave_sql_threads(MYSQL *connection, unsigned short vendor_dialect) {
   for (std::set<std::string>::iterator it = sql_thread_running_set.begin(); it != sql_thread_running_set.end();
   ++it) {
-    std::__cxx11::string query;  // To hold the query for the specific SQL dialect.
+    std::string query;  // To hold the query for the specific SQL dialect.
     switch (vendor_dialect) {
       case FLAVOR_MARIADB: // MariaDB
         query = "START SLAVE '" + *it + "' SQL_THREAD";
