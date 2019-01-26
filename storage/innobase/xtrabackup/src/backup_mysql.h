@@ -104,9 +104,6 @@ void mdl_lock_table(ulint space_id);
 void mdl_unlock_all();
 
 void
-check_dump_innodb_buffer_pool(MYSQL *connection);
-
-void
 restart_slave_sql_threads(MYSQL *connection, unsigned short vendor_dialect);
 
 void
