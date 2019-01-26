@@ -116,6 +116,7 @@ std::string mysql_binlog_position;
 char *buffer_pool_filename = NULL;
 static char *backup_uuid = NULL;
 
+std::set<std::string> sql_thread_running_set;
 /* History on server */
 time_t history_start_time;
 time_t history_end_time;
@@ -976,11 +977,6 @@ bool lock_tables_for_backup(MYSQL *connection, int timeout) {
  @returns true if lock acquired */
 bool lock_tables_ftwrl(MYSQL *connection) {
 
-  MYSQL_RES * mysql_result; // Helper for holding query results
-  bool is_slave = FALSE; // Is the server configured as a slave?
-  // Here we store whether the SQL thread is running or not for a given replication channel/connection
-  std::map<std::string, bool > sql_thread_running_map;
-
   if (have_lock_wait_timeout) {
     /* Set the maximum supported session value for
     lock_wait_timeout to prevent unnecessary timeouts when the
@@ -1023,50 +1019,7 @@ bool lock_tables_ftwrl(MYSQL *connection) {
     xb_mysql_query(connection, "SET SESSION wsrep_causal_reads=0", false);
   }
 
-  // Find out whether the server is a slave and, if so, stop SQL threads before flushing tables.
-  mysql_result = xb_mysql_query(connection, "SHOW SLAVE STATUS", true);  // Is there any replica configuration?
-  // Which DB vendor are we talking to?
-
-  if (mysql_num_rows(mysql_result) > 0) {  // Yes, there is replication setup. Find per-channel SQL thread status and store
-    is_slave = true;  // Store somewhere that we are, indeed, a slave
-    msg_ts("Found slave configuration for %llu channels, storing status of SQL thread before flushing tables\n",
-            mysql_num_rows(mysql_result));
-
-    std::string channel_field_name;  // To store name of the replication channel/connection
-    unsigned short channel_name_position = 0;  // Which column of SHOW SLAVE STATUS holds the channel name?
-    unsigned short sql_thread_status_position = 0; // Which column of SHOW SLAVE STATUS holds the SQL thread status?
-    const char *stop_slave_query;  // A query to stop all SQL threads. DB vendor dependant.
-
-    switch(server_flavor){
-      case FLAVOR_MARIADB: // MariaDB compatible
-        free(mysql_result);  // Free the result, as we are re-running a query to get info on all slave channels
-        mysql_result = xb_mysql_query(connection, "SHOW ALL SLAVES STATUS", true); // Fetch info for all slave channels
-        channel_field_name = "Connection_name";  // Set the right name of the channel name field
-        stop_slave_query = "STOP ALL SLAVES SQL_THREAD";  // Set query to stop all slave SQL threads.
-        break;
-      default: // Oracle MySQL compatible (Vanilla MySQL)
-        channel_field_name = "Channel_Name";  // Set the right name of the channel name field
-        stop_slave_query = "STOP SLAVE SQL_THREAD";  // Set query to stop all slave SQL threads.
-         break;
-    }
-    // Find the indexes for columns holding channel name and SQL thread status
-    get_channel_name_and_status_position(mysql_result, "Slave_SQL_Running", channel_field_name,
-            channel_name_position, sql_thread_status_position);
-    // Get the actual values for channel name and SQL thread status of each channel, put them on map
-    sql_thread_running_map = build_channel_name_status_map(mysql_result, sql_thread_running_map, channel_name_position,
-            sql_thread_status_position);
-    msg_ts("Stopping slave SQL threads with %s\n", stop_slave_query);
-    xb_mysql_query(connection, stop_slave_query, false);  // Stop all the slave SQL threads
-
-    }
-  free(mysql_result);  // Free any outstanding resources
-
   xb_mysql_query(connection, "FLUSH TABLES WITH READ LOCK", false);
-
-  // Start slave SQL threads if required
-  if (is_slave) { // If it is a slave, start SQL threads for all channels that were running before we stopped them
-    restart_slave_sql_threads(connection, server_flavor, sql_thread_running_map);
-  }
 
   if (opt_kill_long_queries_timeout) {
     stop_query_killer();
@@ -1078,27 +1031,33 @@ bool lock_tables_ftwrl(MYSQL *connection) {
 }
 
 /*********************************************************************//**
-Build a map with information on which replication channels/connections
- have a running SQL thread.
- @returns a map of channel names (std::string) -> SQL thread running (bool)
+Build a set whose elements are the names of replication channels/connections
+ with running SQL threads.
+ @returns a set of channel names (std::string)
  */
-std::map<std::string, bool> &build_channel_name_status_map(MYSQL_RES *res,
-        std::map<std::string, bool> &sql_thread_running_map, unsigned short channel_name_position,
-        unsigned short sql_thread_status_position) {
+bool build_channel_name_status_set(MYSQL_RES *res, short channel_name_position, short sql_thread_status_position) {
   MYSQL_ROW row;  // Helper for query results' rows
+  bool sql_threads_running;
+  sql_threads_running = false;
+  short n_running_sql_threads = 0;
   while ((row = mysql_fetch_row(res))) {
-    sql_thread_running_map[std::__cxx11::string(row[channel_name_position])] =
-            (std::__cxx11::string(row[sql_thread_status_position]) == std::__cxx11::string("Yes"));
+    if (std::__cxx11::string(row[sql_thread_status_position]) == std::__cxx11::string("Yes")) {
+      sql_thread_running_set.insert(std::__cxx11::string(row[channel_name_position]));
+      sql_threads_running = true;
+      n_running_sql_threads++;
     }
-  return sql_thread_running_map;
+
+  }
+  msg_ts("Found %d SQL threads running\n", n_running_sql_threads);
+  return sql_threads_running;
 }
 
 /*********************************************************************//**
 Find the indexes (in a row) of the values holding the replication channel/
  connection name and SQL thread status */
 void get_channel_name_and_status_position(MYSQL_RES *res, const std::string &sql_thread_status_field_name,
-        const std::string &channel_field_name, unsigned short &channel_name_position,
-        unsigned short &sql_thread_status_position) {
+        const std::string &channel_field_name, short &channel_name_position,
+        short &sql_thread_status_position) {
   unsigned short i = 0;
   bool found_name = false;
   bool found_thread_status = false;
@@ -1124,19 +1083,16 @@ void get_channel_name_and_status_position(MYSQL_RES *res, const std::string &sql
 /*********************************************************************//**
 Start all the SQL threads of replication channels/connections that were
  running before we stopped them */
-void restart_slave_sql_threads(MYSQL *connection, unsigned short vendor_dialect,
-        std::map<std::string, bool> &sql_thread_running_map) {
-  for (std::map<std::string, bool>::iterator it = sql_thread_running_map.begin(); it != sql_thread_running_map.end();
+void restart_slave_sql_threads(MYSQL *connection, unsigned short vendor_dialect) {
+  for (std::set<std::string>::iterator it = sql_thread_running_set.begin(); it != sql_thread_running_set.end();
   ++it) {
-    if (!it->second) // If it was not running, skip to next.
-      continue;
     std::__cxx11::string query;  // To hold the query for the specific SQL dialect.
     switch (vendor_dialect) {
       case FLAVOR_MARIADB: // MariaDB
-        query = "START SLAVE '" + it->first + "' SQL_THREAD";
+        query = "START SLAVE '" + *it + "' SQL_THREAD";
         break;;
       default: // Vanilla MySQL
-        query = "START SLAVE SQL_THREAD FOR CHANNEL '" + it->first + "'";
+        query = "START SLAVE SQL_THREAD FOR CHANNEL '" + *it + "'";
         break;
     }
     msg_ts("Starting SQL thread with statement: %s\n", query.c_str());
@@ -1243,6 +1199,10 @@ bool wait_for_safe_slave(MYSQL *connection) {
   int open_temp_tables = 0;
   bool result = true;
 
+  std::string channel_field_name;  // To store name of the replication channel/connection
+  short channel_name_position = -1;  // Which column of SHOW SLAVE STATUS holds the channel name?
+  short sql_thread_status_position = -1; // Which column of SHOW SLAVE STATUS holds the SQL thread status?
+
   mysql_variable status[] = {{"Read_Master_Log_Pos", &read_master_log_pos},
                              {"Slave_SQL_Running", &slave_sql_running},
                              {NULL, NULL}};
@@ -1257,12 +1217,74 @@ bool wait_for_safe_slave(MYSQL *connection) {
     goto cleanup;
   }
 
-  if (strcmp(slave_sql_running, "Yes") == 0) {
+
+
+  const char *stop_slave_query;  // A query to stop all SQL threads. DB vendor dependant.
+  const char *get_all_slaves_status_query;  // A query to stop all SQL threads. DB vendor dependant.
+
+  /* Set right queries and variables to use depending on vendor */
+  switch(server_flavor){
+    case FLAVOR_MARIADB: // MariaDB compatible
+      get_all_slaves_status_query ="SHOW ALL SLAVES STATUS";
+      channel_field_name = "Connection_name";  // Set the right name of the channel name field
+      stop_slave_query = "STOP ALL SLAVES SQL_THREAD";  // Set query to stop all slave SQL threads.
+      break;
+    default: // Oracle MySQL compatible (Vanilla MySQL)
+      get_all_slaves_status_query ="SHOW SLAVE STATUS";
+      channel_field_name = "Channel_Name";  // Set the right name of the channel name field
+      stop_slave_query = "STOP SLAVE SQL_THREAD";  // Set query to stop all slave SQL threads.
+      break;
+  }
+
+  MYSQL_RES * mysql_result; // Helper for holding query results
+
+
+  mysql_result = xb_mysql_query(connection, get_all_slaves_status_query, true, false); // Fetch info for all slave channels
+  // If this query failed, it may be because server is MariaDB prior to 10.0.0, which does not support
+  // SHOW ALL SLAVE STATUS. Re-try with single connection name syntax, die if it fails.
+  if(mysql_result == NULL) {
+      switch (server_flavor) {
+        case FLAVOR_MARIADB:
+          mysql_free_result(mysql_result);
+          get_all_slaves_status_query = "SHOW SLAVE STATUS";
+          stop_slave_query = "STOP SLAVE SQL_THREAD";
+          mysql_result = xb_mysql_query(connection, get_all_slaves_status_query, true); // Re-try for single channel syntax
+          break;
+        default:  // If failure was caused by something else, just retry and die if it fails.
+          mysql_result = xb_mysql_query(connection, get_all_slaves_status_query, true); // Fetch info for all slave channels
+          break;
+      }
+  }
+  get_channel_name_and_status_position(mysql_result, "Slave_SQL_Running", channel_field_name, channel_name_position,
+          sql_thread_status_position);
+
+  bool supports_multiple_replication_channels;  // Does the server support multiple replication channels/connections?
+
+
+  if(channel_name_position == -1) { // Channel name column not found, server does not support multi-source replication
+    supports_multiple_replication_channels = false;
+    msg_ts("Server does not seem to support multiple replication channels\n");
+  } else {
+    supports_multiple_replication_channels = true;
+    msg_ts("Server supports multiple replication channels\n");
+  }
+
+  if(supports_multiple_replication_channels)
+    sql_thread_started = build_channel_name_status_set(mysql_result, channel_name_position,
+            sql_thread_status_position);
+  else {
+    sql_thread_started  = strcmp(slave_sql_running, "Yes") == 0;
+  }
+
+  mysql_free_result(mysql_result);
+
+
+  if (sql_thread_started ) {
     /* Stopping slave may take significant amount of time,
     take that into account as part of total timeout.
     */
-    sql_thread_started = true;
-    xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+    msg_ts("Server has running SQL thread(s), stopping them for safe slave backup\n");
+    xb_mysql_query(connection, stop_slave_query, false);
   }
 
 retry:
@@ -1282,7 +1304,13 @@ retry:
     prev_slave_coordinates = curr_slave_coordinates;
     curr_slave_coordinates = NULL;
 
-    xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
+
+    if(sql_thread_started) {
+      if(supports_multiple_replication_channels)
+        restart_slave_sql_threads(connection, server_flavor);
+      else
+        xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
+    }
     os_thread_sleep(sleep_time * 1000000);
 
     curr_slave_coordinates = get_slave_coordinates(connection);
@@ -1295,7 +1323,7 @@ retry:
           "not stopping the SQL thread.\n");
     } else {
       msg_ts("Stopping SQL thread.\n");
-      xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+      xb_mysql_query(connection, stop_slave_query, false);
     }
 
     open_temp_tables = get_open_temp_tables(connection);
@@ -1306,7 +1334,7 @@ retry:
     /* We are in a race here, slave might open other temp tables
     inbetween last check and stop. So we have to re-check
     and potentially retry after stopping SQL thread. */
-    xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+    xb_mysql_query(connection, stop_slave_query, false);
     open_temp_tables = get_open_temp_tables(connection);
     if (open_temp_tables != 0) {
       goto retry;
@@ -1326,9 +1354,12 @@ retry:
   msg_ts("Restoring SQL thread state to %s\n",
          sql_thread_started ? "STARTED" : "STOPPED");
   if (sql_thread_started) {
-    xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
+    if(supports_multiple_replication_channels)
+      restart_slave_sql_threads(connection, server_flavor);
+    else
+      xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
   } else {
-    xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+      xb_mysql_query(connection, stop_slave_query, false);
   }
 
 cleanup:
