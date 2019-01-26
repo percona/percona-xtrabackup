@@ -31,6 +31,9 @@ extern std::string mysql_slave_position;
 extern char *mysql_binlog_position;
 extern char *buffer_pool_filename;
 
+extern bool supports_multiple_replication_channels;
+extern std::set<std::string> sql_thread_running_set;
+
 /** connection to mysql server */
 extern MYSQL *mysql_connection;
 
@@ -125,4 +128,13 @@ dump_innodb_buffer_pool(MYSQL *connection);
 void
 check_dump_innodb_buffer_pool(MYSQL *connection);
 
+void
+restart_slave_sql_threads(MYSQL *connection, unsigned short vendor_dialect);
+
+void
+get_channel_name_and_status_position(MYSQL_RES *res, const std::string &channel_field_name,
+                                     short &channel_name_position, short &sql_thread_status_position);
+
+bool
+build_channel_name_status_set(MYSQL_RES *res, short channel_name_position, short sql_thread_status_position);
 #endif
