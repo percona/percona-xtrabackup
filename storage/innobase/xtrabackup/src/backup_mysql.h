@@ -35,6 +35,7 @@ extern std::string mysql_slave_position;
 extern std::string mysql_binlog_position;
 extern char *buffer_pool_filename;
 
+extern bool supports_multiple_replication_channels;
 extern std::set<std::string> sql_thread_running_set;
 
 /** connection to mysql server */

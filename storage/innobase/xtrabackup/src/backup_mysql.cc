@@ -116,7 +116,9 @@ std::string mysql_binlog_position;
 char *buffer_pool_filename = NULL;
 static char *backup_uuid = NULL;
 
-std::set<std::string> sql_thread_running_set;
+bool supports_multiple_replication_channels;  // Does the server support multiple replication channels/connections?
+std::set<std::string> sql_thread_running_set; // Names of replication channels/connections with running SQL thread
+
 /* History on server */
 time_t history_start_time;
 time_t history_end_time;
@@ -1257,9 +1259,6 @@ bool wait_for_safe_slave(MYSQL *connection) {
   }
   get_channel_name_and_status_position(mysql_result, "Slave_SQL_Running", channel_field_name, channel_name_position,
           sql_thread_status_position);
-
-  bool supports_multiple_replication_channels;  // Does the server support multiple replication channels/connections?
-
 
   if(channel_name_position == -1) { // Channel name column not found, server does not support multi-source replication
     supports_multiple_replication_channels = false;

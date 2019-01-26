@@ -1102,8 +1102,10 @@ bool backup_finish() {
 
   if (opt_safe_slave_backup && sql_thread_started) {
     msg("Starting slave SQL thread\n");
-    restart_slave_sql_threads(mysql_connection, server_flavor);
-    xb_mysql_query(mysql_connection, "START SLAVE SQL_THREAD", false);
+    if(supports_multiple_replication_channels)
+      restart_slave_sql_threads(mysql_connection, server_flavor);
+    else
+      xb_mysql_query(mysql_connection, "START SLAVE SQL_THREAD", false);
   }
 
   /* Copy buffer pool dump or LRU dump */
