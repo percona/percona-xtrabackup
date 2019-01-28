@@ -35,6 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0dict.h"
 #include "ha_prototypes.h"
 
+#include "my_byteorder.h"
 #include "my_dbug.h"
 
 #include "rem0rec.h"
@@ -75,7 +76,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef UNIV_HOTBACKUP
 #include "current_thd.h"
 #include "dict0dd.h"
-#include "field.h"
 #endif /* !UNIV_HOTBACKUP */
 
 #ifndef UNIV_HOTBACKUP
@@ -730,22 +730,6 @@ byte *row_upd_index_parse(
   return (const_cast<byte *>(ptr));
 }
 
-/** Get field by field number.
-@param[in]	field_no	the field number.
-@return the updated field information. */
-upd_field_t *upd_t::get_upd_field(ulint field_no) const {
-  ulint i;
-  for (i = 0; i < n_fields; i++) {
-    upd_field_t *uf = upd_get_nth_field(this, i);
-
-    if (uf->field_no == field_no) {
-      return (uf);
-    }
-  }
-
-  return (nullptr);
-}
-
 #ifndef UNIV_HOTBACKUP
 /** Builds an update vector from those fields which in a secondary index entry
  differ from a record that has the equal ordering fields. NOTE: we compare
@@ -823,13 +807,14 @@ the equal ordering fields. NOTE: we compare the fields as binary strings!
 @param[in]	heap		memory heap from which allocated
 @param[in]	mysql_table	NULL, or mysql table object when
                                 user thread invokes dml
+@param[out]	error		error number in case of failure
 @return own: update vector of differing fields, excluding roll ptr and
 trx id */
 upd_t *row_upd_build_difference_binary(dict_index_t *index,
                                        const dtuple_t *entry, const rec_t *rec,
                                        const ulint *offsets, bool no_sys,
                                        trx_t *trx, mem_heap_t *heap,
-                                       TABLE *mysql_table) {
+                                       TABLE *mysql_table, dberr_t *error) {
   upd_field_t *upd_field;
   dfield_t *dfield;
   const byte *data;
@@ -927,6 +912,11 @@ upd_t *row_upd_build_difference_binary(dict_index_t *index,
       dfield_t *vfield = innobase_get_computed_value(
           update->old_vrow, col, index, &v_heap, heap, NULL, thd, mysql_table,
           NULL, NULL, NULL);
+
+      if (vfield == nullptr) {
+        *error = DB_COMPUTE_VALUE_FAILED;
+        return nullptr;
+      }
 
       if (!dfield_data_is_binary_equal(dfield, vfield->len,
                                        static_cast<byte *>(vfield->data))) {
@@ -1897,7 +1887,7 @@ void row_upd_store_row(trx_t *trx, upd_node_t *node, THD *thd,
   const ulint *offsets;
   rec_offs_init(offsets_);
 
-  ut_ad(node->pcur->latch_mode != BTR_NO_LATCHES);
+  ut_ad(node->pcur->m_latch_mode != BTR_NO_LATCHES);
 
   if (node->row != NULL) {
     mem_heap_empty(node->heap);
@@ -2732,7 +2722,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   that case we know that the transaction has at least an
   implicit x-lock on the record. */
 
-  ut_a(pcur->rel_pos == BTR_PCUR_ON);
+  ut_a(pcur->m_rel_pos == BTR_PCUR_ON);
 
   ulint mode;
 

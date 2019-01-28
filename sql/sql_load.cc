@@ -21,8 +21,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/* Copy data from a textfile to table */
-/* 2006-12 Erik Wetterberg : LOAD XML added */
+/* Copy data from a text file to table */
 
 #include "sql/sql_load.h"
 
@@ -432,7 +431,7 @@ bool Sql_cmd_load_table::execute_inner(THD *thd,
           MY_RELATIVE_PATH | MY_UNPACK_FILENAME | MY_RETURN_REAL_PATH);
     }
 
-    if ((thd->slave_thread &
+    if ((thd->system_thread &
          (SYSTEM_THREAD_SLAVE_SQL | SYSTEM_THREAD_SLAVE_WORKER)) != 0) {
       Relay_log_info *rli = thd->rli_slave->get_c_rli();
 
@@ -561,7 +560,7 @@ bool Sql_cmd_load_table::execute_inner(THD *thd,
           the destructor of read_info will call end_io_cache() which will flush
           read_info, so we will finally have this in the binlog:
 
-          Append_block # The last successfull block
+          Append_block # The last successful block
           Delete_file
           Append_block # The failing block
           which is nonsense.

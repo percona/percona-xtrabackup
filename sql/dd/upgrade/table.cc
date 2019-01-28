@@ -94,17 +94,42 @@
 #include "sql/thr_malloc.h"
 #include "sql/transaction.h"  // trans_commit
 #include "sql/trigger.h"      // Trigger
+#include "sql/trigger_chain.h"
 #include "sql/trigger_def.h"
 #include "sql_string.h"
 #include "thr_lock.h"
 
 class Sroutine_hash_entry;
+
+bool Table_trigger_dispatcher::reorder_57_list(MEM_ROOT *mem_root,
+                                               List<Trigger> *triggers) {
+  // Iterate over the trigger list, create trigger chains, and add triggers.
+  for (auto &t : *triggers) {
+    Trigger_chain *tc =
+        create_trigger_chain(mem_root, t.get_event(), t.get_action_time());
+
+    if (!tc || tc->add_trigger(mem_root, &t)) return true;
+  }
+
+  // The individual triggers are mem_root-allocated. We can now empty the list.
+  triggers->empty();
+
+  // And then, we iterate over the chains and re-add the triggers to the list.
+  for (int i = 0; i < (int)TRG_EVENT_MAX; i++)
+    for (int j = 0; j < (int)TRG_ACTION_MAX; j++) {
+      Trigger_chain *tc = get_triggers(i, j);
+      if (tc != nullptr)
+        for (auto &t : tc->get_trigger_list())
+          triggers->push_back(&t, mem_root);
+    }
+
+  return false;
+}
+
 namespace dd {
 class Schema;
 class Table;
-}  // namespace dd
 
-namespace dd {
 namespace bootstrap {
 
 /**
@@ -242,7 +267,7 @@ class Handle_old_incorrect_sql_modes_hook : public Unknown_key_hook {
   char *m_path;
 
  public:
-  Handle_old_incorrect_sql_modes_hook(char *file_path) : m_path(file_path){};
+  Handle_old_incorrect_sql_modes_hook(char *file_path) : m_path(file_path) {}
   virtual bool process_unknown_string(const char *&unknown_key, uchar *base,
                                       MEM_ROOT *mem_root, const char *end);
 };
@@ -581,7 +606,7 @@ class Table_upgrade_guard {
   handler *m_handler;
   bool m_is_table_open;
   LEX *m_lex_saved;
-  Item *m_free_list_saved;
+  Item *m_item_list_saved;
 
  public:
   void update_handler(handler *handler) { m_handler = handler; }
@@ -603,8 +628,8 @@ class Table_upgrade_guard {
       objects stored in THD::free_list during table upgrade are deallocated in
       the destructor of the class.
     */
-    m_free_list_saved = thd->free_list;
-    m_thd->free_list = nullptr;
+    m_item_list_saved = thd->item_list();
+    m_thd->reset_item_list();
   }
 
   ~Table_upgrade_guard() {
@@ -612,12 +637,11 @@ class Table_upgrade_guard {
     m_thd->work_part_info = 0;
 
     // Free item list for partitions
-    if (m_table->s->m_part_info)
-      free_items(m_table->s->m_part_info->item_free_list);
+    if (m_table->s->m_part_info) free_items(m_table->s->m_part_info->item_list);
 
     // Free items allocated during table upgrade and restore old free list.
     m_thd->free_items();
-    m_thd->free_list = m_free_list_saved;
+    m_thd->set_item_list(m_item_list_saved);
 
     // Restore thread lex
     if (m_lex_saved != nullptr) {
@@ -633,7 +657,7 @@ class Table_upgrade_guard {
     */
     if (m_table->s->field) {
       for (Field **ptr = m_table->s->field; *ptr; ptr++) {
-        if ((*ptr)->gcol_info) free_items((*ptr)->gcol_info->item_free_list);
+        if ((*ptr)->gcol_info) free_items((*ptr)->gcol_info->item_list);
       }
     }
 
@@ -1044,7 +1068,7 @@ static bool fill_partition_info_for_upgrade(THD *thd, TABLE_SHARE *share,
       For this scenario, free_items() will be called by destructor of
       Table_upgrade_guard.
     */
-    share->m_part_info->item_free_list = table->part_info->item_free_list;
+    share->m_part_info->item_list = table->part_info->item_list;
   }
   return false;
 }
@@ -1091,6 +1115,15 @@ static bool add_triggers_to_table(THD *thd, TABLE *table,
     }
     error_handler.set_log_error(true);
 
+    /*
+      At this point, we know the triggers are parseable, but they might not
+      be listed in the correct order, due to bugs in previous MySQL versions,
+      or due to manual editing. Hence, we rectify the trigger order here, in
+      the same way as the trigger dispatcher did on 5.7 when loading triggers
+      from file for a table.
+    */
+    d->reorder_57_list(thd->mem_root, &m_triggers);
+
     List_iterator<::Trigger> it(m_triggers);
     /*
       Fix the order column for the execution of Triggers with
@@ -1119,11 +1152,19 @@ static bool add_triggers_to_table(THD *thd, TABLE *table,
       if (!t) break;
 
       /*
-        events of the same type and timing always go in one group according
-        to their action order.
+        Events of the same type and timing always go in one group according
+        to their action order. This order is maintained in the trigger file
+        in 5.7, and is corrected above in case of errors. Thus, at this point,
+        the order should be correct.
       */
-      assert(t->get_event() >= t_type &&
-             (t->get_event() > t_type || t->get_action_time() >= t_time));
+      if (t->get_event() < t_type ||
+          (t->get_event() == t_type && t->get_action_time() < t_time)) {
+        DBUG_ASSERT(false);
+        LogErr(ERROR_LEVEL, ER_TRG_WRONG_ORDER, t->get_db_name().str,
+               t->get_trigger_name().str, schema_name.c_str(),
+               table_name.c_str());
+        return true;
+      }
 
       // We found next trigger with same action event and same action time.
       if (t->get_event() == t_type && t->get_action_time() == t_time) {
@@ -1369,13 +1410,16 @@ static bool fix_fk_parent_key_names(THD *thd, const String_type &schema_name,
     which reference the table being upgraded here. Also adjust the
     foreign key parent collection, both for this table and for other
     tables being referenced by this one.
+    Check that charsets of child and parent columns in foreign keys
+    match. If there is discrepancy in charsets between these columns
+    it is supposed to be fixed before upgrade is attempted.
   */
-  if (adjust_fk_children_after_parent_def_change(thd, schema_name.c_str(),
-                                                 table_name.c_str(), hton,
-                                                 table_def, nullptr,
-                                                 false) ||  // Don't invalidate
-                                                            // TDC we don't have
-                                                            // proper MDL.
+  if (adjust_fk_children_after_parent_def_change(
+          thd, true,  // Check charsets.
+          schema_name.c_str(), table_name.c_str(), hton, table_def, nullptr,
+          false) ||  // Don't invalidate
+                     // TDC we don't have
+                     // proper MDL.
       adjust_fk_parents(thd, schema_name.c_str(), table_name.c_str(), true,
                         nullptr)) {
     trans_rollback_stmt(thd);

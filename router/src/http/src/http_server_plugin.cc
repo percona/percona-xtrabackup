@@ -27,7 +27,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 
 #include <sys/types.h>
@@ -39,7 +41,9 @@
 #include <event2/util.h>
 
 // Harness interface include files
+#include "common.h"  // rename_thread()
 #include "mysql/harness/config_parser.h"
+#include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/plugin.h"
 
@@ -57,7 +61,8 @@ using mysql_harness::PLUGIN_ABI_VERSION;
 using mysql_harness::Plugin;
 using mysql_harness::PluginFuncEnv;
 
-std::atomic<int> g_shutdown_pending{0};
+std::promise<void> stopper;
+std::future<void> stopped = stopper.get_future();
 
 /**
  * request router
@@ -122,7 +127,7 @@ void HttpRequestRouter::route(HttpRequest req) {
 void stop_eventloop(evutil_socket_t, short, void *cb_arg) {
   auto *ev_base = static_cast<event_base *>(cb_arg);
 
-  if (g_shutdown_pending != 0) {
+  if (stopped.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     event_base_loopexit(ev_base, nullptr);
   }
 }
@@ -147,7 +152,7 @@ void HttpRequestThread::set_request_router(HttpRequestRouter &router) {
 
 void HttpRequestThread::wait_and_dispatch() {
   struct timeval tv {
-    0, 100 * 1000
+    0, 10 * 1000
   };
   event_add(ev_shutdown_timer.get(), &tv);
   event_base_dispatch(ev_base.get());
@@ -178,25 +183,27 @@ class HttpRequestWorkerThread : public HttpRequestThread {
 };
 
 void HttpServer::join_all() {
-  while (!sys_threads.empty()) {
-    auto &thr = sys_threads.back();
+  while (!sys_threads_.empty()) {
+    auto &thr = sys_threads_.back();
     thr.join();
-    sys_threads.pop_back();
+    sys_threads_.pop_back();
   }
 }
 
 void HttpServer::start(size_t max_threads) {
-  thread_contexts.emplace_back(HttpRequestMainThread(address_.c_str(), port_));
+  thread_contexts_.emplace_back(HttpRequestMainThread(address_.c_str(), port_));
 
-  harness_socket_t accept_fd = thread_contexts[0].get_socket_fd();
+  harness_socket_t accept_fd = thread_contexts_[0].get_socket_fd();
   for (size_t ndx = 1; ndx < max_threads; ndx++) {
-    thread_contexts.emplace_back(HttpRequestWorkerThread(accept_fd));
+    thread_contexts_.emplace_back(HttpRequestWorkerThread(accept_fd));
   }
 
   for (size_t ndx = 0; ndx < max_threads; ndx++) {
-    auto &thr = thread_contexts[ndx];
+    auto &thr = thread_contexts_[ndx];
 
-    sys_threads.emplace_back([&]() {
+    sys_threads_.emplace_back([&]() {
+      mysql_harness::rename_thread("HttpSrv Worker");
+
       thr.set_request_router(request_router_);
       thr.accept_socket();
       thr.wait_and_dispatch();
@@ -288,7 +295,7 @@ static void init(PluginFuncEnv *env) {
                              config.srv_address.c_str(), config.srv_port)));
 
       auto srv = http_servers.at(section->name);
-      HttpServerComponent::getInstance().init(srv);
+      HttpServerComponent::get_instance().init(srv);
 
       if (!config.static_basedir.empty()) {
         srv->add_route("",
@@ -325,6 +332,9 @@ static void start(PluginFuncEnv *env) {
   //   - log group member changes
   // - important log messages
   // - mismatch between group-membership and metadata
+
+  mysql_harness::rename_thread("HttpSrv Main");
+
   try {
     auto srv = http_servers.at(get_config_section(env)->name);
 
@@ -332,11 +342,11 @@ static void start(PluginFuncEnv *env) {
 
     srv->start(8);
 
-    // we are supposed to block
-    while (is_running(env)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    g_shutdown_pending = 1;
+    // wait until we got asked to shutdown.
+    //
+    // 0 == wait-forever
+    wait_for_stop(env, 0);
+    stopper.set_value();
 
     srv->join_all();
   } catch (const std::invalid_argument &exc) {

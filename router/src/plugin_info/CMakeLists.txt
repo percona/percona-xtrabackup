@@ -23,6 +23,7 @@
 FILE(GLOB_RECURSE sources ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc)
 INCLUDE_DIRECTORIES(${CMAKE_BINARY_DIR}/include)
 MYSQL_ADD_EXECUTABLE(mysqlrouter_plugin_info ${sources} COMPONENT Router)
+ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET} mysqlrouter_plugin_info)
 
 SET(common_libraries)
 IF(WIN32)
@@ -30,7 +31,7 @@ IF(WIN32)
   LIST(APPEND common_libraries harness-library)
 ENDIF()
 
-TARGET_LINK_LIBRARIES(mysqlrouter_plugin_info ${common_libraries}
+TARGET_LINK_LIBRARIES(mysqlrouter_plugin_info mysys ${common_libraries}
                       ${CMAKE_DL_LIBS})
 
 SET_TARGET_PROPERTIES(mysqlrouter_plugin_info PROPERTIES

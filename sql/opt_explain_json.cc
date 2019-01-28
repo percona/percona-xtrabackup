@@ -94,7 +94,9 @@ static const char *json_extra_tags[ET_total] = {
     "backward_index_scan",            // ET_BACKWARD_SCAN
     "recursive",                      // ET_RECURSIVE
     "table_function",                 // ET_TABLE_FUNCTION
-    "skip_records_in_range_due_to_force"  // ET_SKIP_RECORDS_IN_RANGE
+    "skip_records_in_range_due_to_force",  // ET_SKIP_RECORDS_IN_RANGE
+    "using_secondary_engine",              // ET_USING_SECONDARY_ENGINE
+    "rematerialize"                        // ET_REMATERIALIZE
 };
 
 // JSON key names
@@ -2010,7 +2012,7 @@ bool Explain_format_JSON::end_context(enum_parsing_context ctx) {
 
     List<Item> field_list;
     ret = (item == NULL || field_list.push_back(item) ||
-           output->send_data(field_list));
+           output->send_data(current_thd, field_list));
   } else if (ctx == CTX_DERIVED) {
     if (!current_context->parent->find_and_set_derived(current_context)) {
       DBUG_ASSERT(!"No derived table found!");
@@ -2023,14 +2025,13 @@ bool Explain_format_JSON::end_context(enum_parsing_context ctx) {
 }
 
 bool Explain_format_JSON::send_headers(Query_result *result) {
-  output = result;
   if (Explain_format::send_headers(result)) return true;
 
   List<Item> field_list;
   Item *item = new Item_empty_string("EXPLAIN", 78, system_charset_info);
   if (item == NULL || field_list.push_back(item)) return true;
   return result->send_result_set_metadata(
-      field_list, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF);
+      current_thd, field_list, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF);
 }
 
 void qep_row::format_extra(Opt_trace_object *obj) {

@@ -351,6 +351,7 @@ CHECK_SYMBOL_EXISTS(lrand48 "stdlib.h" HAVE_LRAND48)
 CHECK_SYMBOL_EXISTS(TIOCGWINSZ "sys/ioctl.h" GWINSZ_IN_SYS_IOCTL)
 CHECK_SYMBOL_EXISTS(FIONREAD "sys/ioctl.h" FIONREAD_IN_SYS_IOCTL)
 CHECK_SYMBOL_EXISTS(FIONREAD "sys/filio.h" FIONREAD_IN_SYS_FILIO)
+CHECK_SYMBOL_EXISTS(MADV_DONTDUMP "sys/mman.h" HAVE_MADV_DONTDUMP)
 
 # On Solaris, it is only visible in C99 mode
 CHECK_SYMBOL_EXISTS(isinf "math.h" HAVE_C_ISINF)
@@ -416,6 +417,9 @@ CHECK_TYPE_SIZE("long long" SIZEOF_LONG_LONG)
 CHECK_TYPE_SIZE("off_t"     SIZEOF_OFF_T)
 CHECK_TYPE_SIZE("time_t"    SIZEOF_TIME_T)
 
+CHECK_STRUCT_HAS_MEMBER("struct tm"
+ tm_gmtoff "time.h" HAVE_TM_GMTOFF)
+
 # If finds the size of a type, set SIZEOF_<type> and HAVE_<type>
 FUNCTION(MY_CHECK_TYPE_SIZE type defbase)
   CHECK_TYPE_SIZE("${type}" SIZEOF_${defbase})
@@ -459,9 +463,6 @@ int main()
   struct timespec ts;
   return clock_gettime(CLOCK_REALTIME, &ts);
 }" HAVE_CLOCK_REALTIME)
-
-# For libevent
-SET(DNS_USE_CPU_CLOCK_FOR_ID CACHE ${HAVE_CLOCK_GETTIME} INTERNAL "")
 
 IF(NOT STACK_DIRECTION)
   IF(CMAKE_CROSSCOMPILING)
@@ -687,32 +688,6 @@ int main(int ac, char **av)
 HAVE_INTEGER_PTHREAD_SELF
 FAIL_REGEX "warning: incompatible pointer to integer conversion"
 )
-
-CHECK_CXX_SOURCE_COMPILES(
-  "
-  #include <vector>
-  template<typename T>
-  class ct2
-  {
-  public:
-    typedef T type;
-    void func();
-  };
-
-  template<typename T>
-  void ct2<T>::func()
-  {
-    std::vector<T> vec;
-    std::vector<T>::iterator itr = vec.begin();
-  }
-
-  int main(int argc, char **argv)
-  {
-    ct2<double> o2;
-    o2.func();
-    return 0;
-  }
-  " HAVE_IMPLICIT_DEPENDENT_NAME_TYPING)
 
 #--------------------------------------------------------------------
 # Check for IPv6 support

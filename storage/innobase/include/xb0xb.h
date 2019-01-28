@@ -67,4 +67,13 @@ void xb_tablespace_map_delete(const char *tablespace_name);
 @return		local file name */
 std::string xb_tablespace_backup_file_path(const std::string &file_name);
 
+/************************************************************************
+Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
+or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
+the --tables or --tables-file options.
+@return TRUE if the table should be skipped. */
+bool check_if_skip_table(
+    /******************/
+    const char *name); /*!< in: path to the table */
+
 #endif

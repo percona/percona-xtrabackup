@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 
+#include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_double2ulonglong.h"
@@ -6625,8 +6626,7 @@ static void test_field_misc() {
 }
 
 /*
-  Test SET feature with prepare stmts
-  bug #85 (reported by mark@mysql.com)
+  Test SET feature with prepare stmts, bug #85
 */
 
 static void test_set_option() {
@@ -6695,8 +6695,7 @@ static void test_set_option() {
 }
 
 /*
-  Test a misc GRANT option
-  bug #89 (reported by mark@mysql.com)
+  Test a misc GRANT option, bug #89
 */
 
 static void test_prepare_grant() {
@@ -6894,7 +6893,7 @@ static void test_decimal_bug() {
   mysql_stmt_close(stmt);
 }
 
-/* Test EXPLAIN bug (#115, reported by mark@mysql.com & georg@php.net). */
+/* Test EXPLAIN bug, bug #115 */
 
 static void test_explain_bug() {
   MYSQL_STMT *stmt;
@@ -7035,135 +7034,6 @@ static void test_explain_bug() {
   mysql_free_result(result);
   mysql_stmt_close(stmt);
 }
-
-#ifdef NOT_YET_WORKING
-
-  /*
-    Test math functions.
-    Bug #148 (reported by salle@mysql.com).
-  */
-
-#define myerrno(n) check_errcode(n)
-
-static void check_errcode(const unsigned int err) {
-  if (!opt_silent || mysql_errno(mysql) != err) {
-    if (mysql->server_version)
-      fprintf(stdout, "\n [MySQL-%s]", mysql->server_version);
-    else
-      fprintf(stdout, "\n [MySQL]");
-    fprintf(stdout, "[%d] %s\n", mysql_errno(mysql), mysql_error(mysql));
-  }
-  DIE_UNLESS(mysql_errno(mysql) == err);
-}
-
-static void test_drop_temp() {
-  int rc;
-
-  myheader("test_drop_temp");
-
-  rc = mysql_query(mysql, "DROP DATABASE IF EXISTS test_drop_temp_db");
-  myquery(rc);
-
-  rc = mysql_query(mysql, "CREATE DATABASE test_drop_temp_db");
-  myquery(rc);
-
-  rc = mysql_query(mysql,
-                   "CREATE TABLE test_drop_temp_db.t1(c1 int, c2 char(1))");
-  myquery(rc);
-
-  rc = mysql_query(mysql, "delete from mysql.db where Db='test_drop_temp_db'");
-  myquery(rc);
-
-  rc = mysql_query(mysql, "delete from mysql.db where Db='test_drop_temp_db'");
-  myquery(rc);
-
-  strxmov(query, "CREATE USER test_temp@", opt_host ? opt_host : "localhost");
-  rc = mysql_query(mysql, query);
-  myquery(rc);
-
-  strxmov(query,
-          "GRANT SELECT, USAGE, DROP ON test_drop_temp_db.* TO test_temp@",
-          opt_host ? opt_host : "localhost", NullS);
-
-  if (mysql_query(mysql, query)) {
-    myerror("GRANT failed");
-
-    /*
-       If server started with --skip-grant-tables, skip this test, else
-       exit to indicate an error
-
-       ER_UNKNOWN_COM_ERROR= 1047
-     */
-    if (mysql_errno(mysql) != 1047) exit(1);
-  } else {
-    MYSQL *org_mysql = mysql, *lmysql;
-
-    if (!opt_silent) fprintf(stdout, "\n Establishing a test connection ...");
-    if (!(lmysql = mysql_client_init(NULL))) {
-      myerror("mysql_client_init() failed");
-      exit(1);
-    }
-
-    rc = mysql_query(mysql, "flush privileges");
-    myquery(rc);
-
-    if (!(mysql_real_connect(lmysql, opt_host ? opt_host : "localhost",
-                             "test_temp", "", "test_drop_temp_db", opt_port,
-                             opt_unix_socket, 0))) {
-      mysql = lmysql;
-      myerror("connection failed");
-      mysql_close(lmysql);
-      exit(1);
-    }
-    lmysql->reconnect = 1;
-    if (!opt_silent) fprintf(stdout, "OK");
-
-    mysql = lmysql;
-    rc = mysql_query(mysql, "INSERT INTO t1 VALUES(10, 'C')");
-    myerrno((uint)1142);
-
-    rc = mysql_query(mysql, "DROP TABLE t1");
-    myerrno((uint)1142);
-
-    mysql = org_mysql;
-    rc = mysql_query(mysql,
-                     "CREATE TEMPORARY TABLE test_drop_temp_db.t1(c1 int)");
-    myquery(rc);
-
-    rc = mysql_query(mysql,
-                     "CREATE TEMPORARY TABLE test_drop_temp_db.t2 LIKE "
-                     "test_drop_temp_db.t1");
-    myquery(rc);
-
-    mysql = lmysql;
-
-    rc = mysql_query(mysql, "DROP TABLE t1, t2");
-    myquery_r(rc);
-
-    rc = mysql_query(mysql, "DROP TEMPORARY TABLE t1");
-    myquery_r(rc);
-
-    rc = mysql_query(mysql, "DROP TEMPORARY TABLE t2");
-    myquery_r(rc);
-
-    mysql_close(lmysql);
-    mysql = org_mysql;
-
-    rc = mysql_query(mysql, "drop database test_drop_temp_db");
-    myquery(rc);
-    DIE_UNLESS(1 == mysql_affected_rows(mysql));
-
-    rc = mysql_query(mysql, "delete from mysql.user where User='test_temp'");
-    myquery(rc);
-    DIE_UNLESS(1 == mysql_affected_rows(mysql));
-
-    rc = mysql_query(mysql,
-                     "delete from mysql.tables_priv where User='test_temp'");
-    myquery(rc);
-    DIE_UNLESS(1 == mysql_affected_rows(mysql));
-  }
-}
-#endif
 
 /* Test warnings for truncated rows */
 
@@ -14135,12 +14005,12 @@ static void test_bug15510() {
 
   rc = mysql_stmt_prepare(stmt, query, (ulong)strlen(query));
   check_execute(stmt, rc);
+  DIE_UNLESS(mysql_warning_count(mysql));
 
   rc = mysql_stmt_execute(stmt);
   check_execute(stmt, rc);
 
   rc = mysql_stmt_fetch(stmt);
-  DIE_UNLESS(mysql_warning_count(mysql));
 
   /* Cleanup */
   mysql_stmt_close(stmt);
@@ -20153,14 +20023,131 @@ static void test_bug25701141() {
   myquery(mysql_query(mysql, "DROP TABLE t1"));
 }
 
+static void test_bug27443252() {
+  MYSQL_STMT *stmt;
+  MYSQL_BIND my_bind[1];
+  int rc;
+  int32 a;
+  int row_count = 0;
+  int column_count = 0;
+  MYSQL_RES *metadata = NULL;
+
+  myheader("test_bug27443252");
+
+  rc = mysql_query(mysql, "drop procedure if exists p1");
+  myquery(rc);
+  rc = mysql_query(mysql, "drop table if exists p1");
+  myquery(rc);
+  rc = mysql_query(mysql, "create table t1 (id int)");
+  myquery(rc);
+  rc = mysql_query(mysql, "create procedure p1() begin select * from t1; end");
+  myquery(rc);
+
+  /* Case 1 - Procedure call with empty result set */
+  stmt = open_cursor("call p1");
+  /* This should not result in hang */
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  metadata = mysql_stmt_result_metadata(stmt);
+  if (metadata) {
+    column_count = mysql_num_fields(metadata);
+    DIE_UNLESS(column_count == 1);
+  }
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type = MYSQL_TYPE_LONG;
+  my_bind[0].buffer = (void *)&a;
+  my_bind[0].buffer_length = (ulong)sizeof(a);
+  rc = mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt)) row_count++;
+  DIE_UNLESS(row_count == 0);
+
+  rc = mysql_stmt_next_result(stmt);
+  check_execute(stmt, rc);
+  rc = mysql_stmt_free_result(stmt);
+  check_execute(stmt, rc);
+  mysql_free_result(metadata);
+  mysql_stmt_close(stmt);
+
+  /* Case 2 - SELECT with empty result set */
+  row_count = 0;
+  stmt = open_cursor("select * from t1");
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type = MYSQL_TYPE_LONG;
+  my_bind[0].buffer = (void *)&a;
+  my_bind[0].buffer_length = (ulong)sizeof(a);
+
+  rc = mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt)) row_count++;
+  DIE_UNLESS(row_count == 0);
+  mysql_stmt_close(stmt);
+
+  /* Case 3 - Procedure call with non-empty result set */
+  rc = mysql_query(mysql,
+                   "insert into t1 (id) values "
+                   " (1), (2), (3)");
+  myquery(rc);
+  row_count = 0;
+  stmt = open_cursor("call p1");
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type = MYSQL_TYPE_LONG;
+  my_bind[0].buffer = (void *)&a;
+  my_bind[0].buffer_length = (ulong)sizeof(a);
+  rc = mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt)) row_count++;
+  DIE_UNLESS(row_count == 3);
+
+  rc = mysql_stmt_next_result(stmt);
+  check_execute(stmt, rc);
+  rc = mysql_stmt_free_result(stmt);
+  check_execute(stmt, rc);
+  mysql_stmt_close(stmt);
+
+  /* Case 4 - SELECT with Non-empty result set */
+  row_count = 0;
+  stmt = open_cursor("select * from t1");
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type = MYSQL_TYPE_LONG;
+  my_bind[0].buffer = (void *)&a;
+  my_bind[0].buffer_length = (ulong)sizeof(a);
+  rc = mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt)) row_count++;
+  DIE_UNLESS(row_count == 3);
+
+  rc = mysql_stmt_free_result(stmt);
+  check_execute(stmt, rc);
+  mysql_stmt_close(stmt);
+
+  /* Cleanup */
+  rc = mysql_query(mysql, "drop table t1");
+  myquery(rc);
+  rc = mysql_query(mysql, "drop procedure p1");
+  myquery(rc);
+}
+
 static struct my_tests_st my_tests[] = {
     {"disable_query_logs", disable_query_logs},
     {"test_view_sp_list_fields", test_view_sp_list_fields},
     {"client_query", client_query},
     {"test_prepare_insert_update", test_prepare_insert_update},
-#ifdef NOT_YET_WORKING
-    {"test_drop_temp", test_drop_temp},
-#endif
     {"test_fetch_seek", test_fetch_seek},
     {"test_fetch_nobuffs", test_fetch_nobuffs},
     {"test_open_direct", test_open_direct},
@@ -20435,6 +20422,7 @@ static struct my_tests_st my_tests[] = {
     {"test_bug22028117", test_bug22028117},
     {"test_skip_metadata", test_skip_metadata},
     {"test_bug25701141", test_bug25701141},
+    {"test_bug27443252", test_bug27443252},
     {0, 0}};
 
 static struct my_tests_st *get_my_tests() { return my_tests; }

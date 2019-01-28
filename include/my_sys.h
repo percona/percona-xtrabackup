@@ -51,14 +51,15 @@
 #include "my_compiler.h"
 #include "my_inttypes.h"
 #include "my_loglevel.h"
-#include "my_macros.h"
 #include "my_psi_config.h" /* IWYU pragma: keep */
 #include "my_sharedlib.h"
+#include "mysql/components/services/my_io_bits.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_file_bits.h"
 #include "mysql/components/services/psi_memory_bits.h"
-#include "mysql/psi/mysql_cond.h"  /* mysql_cond_t */
-#include "mysql/psi/mysql_mutex.h" /* mysql_mutex_t */
-#include "mysql/psi/psi_file.h"    /* PSI_file_service_t */
-#include "mysql/psi/psi_stage.h"
+#include "mysql/components/services/psi_stage_bits.h"
+#include "mysql/psi/psi_base.h"
 
 struct CHARSET_INFO;
 struct MY_CHARSET_LOADER;
@@ -607,9 +608,10 @@ void memset_s(void *dest, size_t dest_max, int c, size_t n);
 /* Platform-independent SysLog support */
 enum my_syslog_options { MY_SYSLOG_PIDS = 1 };
 
-int my_openlog(const char *eventSourceName, int option, int facility);
-int my_closelog();
-int my_syslog(const CHARSET_INFO *cs, enum loglevel level, const char *msg);
+extern int my_openlog(const char *eventSourceName, int option, int facility);
+extern int my_closelog();
+extern int my_syslog(const CHARSET_INFO *cs, enum loglevel level,
+                     const char *msg);
 
 #ifdef _WIN32
 extern int my_access(const char *path, int amode);

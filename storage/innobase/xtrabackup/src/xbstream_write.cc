@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_base.h>
 #include <my_byteorder.h>
 #include <my_io.h>
+#include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <zlib.h>
 #include "common.h"

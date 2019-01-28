@@ -43,10 +43,12 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <sql_thd_internal_api.h>
 
 #include "btr0sea.h"
+#include "dict0dd.h"
 #include "dict0mem.h"
 #include "dict0stats.h"
 #include "ha_innodb.h"
 #include "log0ddl.h"
+#include "mysql/plugin.h"
 #include "pars0pars.h"
 #include "que0que.h"
 #include "row0ins.h"
@@ -1520,10 +1522,25 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
                                       const char *file_path) {
   THD *thd = current_thd;
 
-  /* Require the mutex to block key rotation. Please note that
-  here we don't know if this tablespace is encrypted or not,
-  so just acquire the mutex unconditionally. */
-  mutex_enter(&master_key_id_mutex);
+  if (fsp_is_undo_tablespace(space_id)) {
+    /* If this is called during DROP UNDO TABLESPACE, then the undo_space
+    is already gone. But if this is called at startup after a crash, that
+    memory object might exist. If the crash occurred just before the file
+    was deleted, then at startup it was opened in srv_undo_tablespaces_open().
+    Then in trx_rsegs_init(), any explicit undo tablespace that did not
+    contain any undo logs was set to empty.  That prevented any new undo
+    logs to be added during the startup process up till now.  So whether
+    we are at runtime or startup, we assert that the undo tablespace is
+    empty and delete the undo::Tablespace object if it exists. */
+    undo::spaces->x_lock();
+    space_id_t space_num = undo::id2num(space_id);
+    undo::Tablespace *undo_space = undo::spaces->find(space_num);
+    if (undo_space != nullptr) {
+      ut_a(undo_space->is_empty());
+      undo::spaces->drop(undo_space);
+    }
+    undo::spaces->x_unlock();
+  }
 
   if (thd != nullptr) {
     /* For general tablespace, MDL on SDI tables is already
@@ -1534,7 +1551,23 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
     mutex_exit(&dict_sys->mutex);
   }
 
-  row_drop_single_table_tablespace(space_id, NULL, file_path);
+  /* Require the mutex to block key rotation. Please note that
+  here we don't know if this tablespace is encrypted or not,
+  so just acquire the mutex unconditionally. */
+  mutex_enter(&master_key_id_mutex);
+
+  DBUG_EXECUTE_IF("ddl_log_replay_delete_space_crash_before_drop",
+                  DBUG_SUICIDE(););
+
+  row_drop_tablespace(space_id, file_path);
+
+  /* If this is an undo space_id, allow the undo number for it
+  to be reused. */
+  if (fsp_is_undo_tablespace(space_id)) {
+    undo::spaces->x_lock();
+    undo::unuse_space_id(space_id);
+    undo::spaces->x_unlock();
+  }
 
   mutex_exit(&master_key_id_mutex);
 

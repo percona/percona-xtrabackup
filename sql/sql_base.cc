@@ -84,6 +84,8 @@
 #include "sql/dd/types/column.h"
 #include "sql/dd/types/column_statistics.h"
 #include "sql/dd/types/foreign_key.h"  // dd::Foreign_key
+#include "sql/dd/types/function.h"
+#include "sql/dd/types/procedure.h"
 #include "sql/dd/types/schema.h"
 #include "sql/dd/types/table.h"  // dd::Table
 #include "sql/dd/types/view.h"
@@ -130,6 +132,7 @@
 #include "sql/sql_table.h"   // build_table_filename
 #include "sql/sql_update.h"  // records_are_comparable
 #include "sql/sql_view.h"    // mysql_make_view
+#include "sql/strfunc.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"                     // TABLE_LIST
 #include "sql/table_cache.h"               // table_cache_manager
@@ -894,6 +897,7 @@ static TABLE_SHARE *get_table_share_with_discover(
   if (ha_check_if_table_exists(thd, table_list->db, table_list->table_name,
                                &exists)) {
     thd->clear_error();
+    thd->get_stmt_da()->reset_condition_info(thd);
     /* Conventionally, the storage engine API does not report errors. */
     my_error(ER_OUT_OF_RESOURCES, MYF(0));
   } else if (!exists) {
@@ -907,17 +911,20 @@ static TABLE_SHARE *get_table_share_with_discover(
     if (thd->is_error()) {
       if (table_list->parent_l) {
         thd->clear_error();
+        thd->get_stmt_da()->reset_condition_info(thd);
         my_error(ER_WRONG_MRG_TABLE, MYF(0));
       } else if (table_list->belong_to_view) {
         // Mention the top view in message, to not reveal underlying views.
         TABLE_LIST *view = table_list->belong_to_view;
         thd->clear_error();
+        thd->get_stmt_da()->reset_condition_info(thd);
         my_error(ER_VIEW_INVALID, MYF(0), view->view_db.str,
                  view->view_name.str);
       }
     }
   } else {
     thd->clear_error();
+    thd->get_stmt_da()->reset_condition_info(thd);
     *error = 7; /* Run auto-discover. */
   }
   DBUG_RETURN(NULL);
@@ -3576,20 +3583,6 @@ void assign_new_table_id(TABLE_SHARE *share) {
   DBUG_VOID_RETURN;
 }
 
-#ifndef DBUG_OFF
-/* Cause a spurious statement reprepare for debug purposes. */
-static bool inject_reprepare(THD *thd) {
-  Reprepare_observer *reprepare_observer = thd->get_reprepare_observer();
-
-  if (reprepare_observer && !thd->stmt_arena->is_reprepared) {
-    (void)reprepare_observer->report_error(thd);
-    return true;
-  }
-
-  return false;
-}
-#endif
-
 /**
   Compare metadata versions of an element obtained from the table
   definition cache and its corresponding node in the parse tree.
@@ -3639,8 +3632,6 @@ static bool check_and_update_table_version(THD *thd, TABLE_LIST *tables,
     /* Always maintain the latest version and type */
     tables->set_table_ref_id(table_share);
   }
-
-  DBUG_EXECUTE_IF("reprepare_each_statement", return inject_reprepare(thd););
   return false;
 }
 
@@ -4387,7 +4378,10 @@ static void process_table_fks(THD *thd, Query_tables_list *prelocking_ctx,
     Therefore we need to normalize/lowercase these names while prelocking
     set key is constructing from them.
   */
-  bool normalize_names = (lower_case_table_names == 2);
+  bool normalize_db_names = (lower_case_table_names == 2);
+  Sp_name_normalize_type name_normalize_type =
+      (lower_case_table_names == 2) ? Sp_name_normalize_type::LOWERCASE_NAME
+                                    : Sp_name_normalize_type::LEAVE_AS_IS;
 
   if (is_insert || is_update) {
     for (TABLE_SHARE_FOREIGN_KEY_INFO *fk = share->foreign_key;
@@ -4397,7 +4391,7 @@ static void process_table_fks(THD *thd, Query_tables_list *prelocking_ctx,
           Sroutine_hash_entry::FK_TABLE_ROLE_PARENT_CHECK,
           fk->referenced_table_db.str, fk->referenced_table_db.length,
           fk->referenced_table_name.str, fk->referenced_table_name.length,
-          normalize_names, normalize_names, false, belong_to_view);
+          normalize_db_names, name_normalize_type, false, belong_to_view);
     }
   }
 
@@ -4416,8 +4410,8 @@ static void process_table_fks(THD *thd, Query_tables_list *prelocking_ctx,
             Sroutine_hash_entry::FK_TABLE_ROLE_CHILD_CHECK,
             fk_p->referencing_table_db.str, fk_p->referencing_table_db.length,
             fk_p->referencing_table_name.str,
-            fk_p->referencing_table_name.length, normalize_names,
-            normalize_names, false, belong_to_view);
+            fk_p->referencing_table_name.length, normalize_db_names,
+            name_normalize_type, false, belong_to_view);
       }
 
       if ((is_update &&
@@ -4432,8 +4426,8 @@ static void process_table_fks(THD *thd, Query_tables_list *prelocking_ctx,
             Sroutine_hash_entry::FK_TABLE_ROLE_CHILD_UPDATE,
             fk_p->referencing_table_db.str, fk_p->referencing_table_db.length,
             fk_p->referencing_table_name.str,
-            fk_p->referencing_table_name.length, normalize_names,
-            normalize_names, false, belong_to_view);
+            fk_p->referencing_table_name.length, normalize_db_names,
+            name_normalize_type, false, belong_to_view);
       }
 
       if (is_delete && fk_p->delete_rule == dd::Foreign_key::RULE_CASCADE) {
@@ -4442,8 +4436,8 @@ static void process_table_fks(THD *thd, Query_tables_list *prelocking_ctx,
             Sroutine_hash_entry::FK_TABLE_ROLE_CHILD_DELETE,
             fk_p->referencing_table_db.str, fk_p->referencing_table_db.length,
             fk_p->referencing_table_name.str,
-            fk_p->referencing_table_name.length, normalize_names,
-            normalize_names, false, belong_to_view);
+            fk_p->referencing_table_name.length, normalize_db_names,
+            name_normalize_type, false, belong_to_view);
       }
     }
   }
@@ -4496,13 +4490,15 @@ static bool open_and_process_routine(
       if (rt != prelocking_ctx->sroutines_list.first ||
           rt->type() != Sroutine_hash_entry::PROCEDURE) {
         MDL_request mdl_request;
+        MDL_key mdl_key;
 
-        MDL_REQUEST_INIT_BY_PART_KEY(
-            &mdl_request,
-            (rt->type() == Sroutine_hash_entry::FUNCTION) ? MDL_key::FUNCTION
-                                                          : MDL_key::PROCEDURE,
-            rt->part_mdl_key(), rt->part_mdl_key_length(), rt->db_length(),
-            MDL_SHARED, MDL_TRANSACTION);
+        if (rt->type() == Sroutine_hash_entry::FUNCTION)
+          dd::Function::create_mdl_key(rt->db(), rt->name(), &mdl_key);
+        else
+          dd::Procedure::create_mdl_key(rt->db(), rt->name(), &mdl_key);
+
+        MDL_REQUEST_INIT_BY_KEY(&mdl_request, &mdl_key, MDL_SHARED,
+                                MDL_TRANSACTION);
 
         /*
           Waiting for a conflicting metadata lock to go away may
@@ -6411,7 +6407,7 @@ static bool open_secondary_engine_tables(THD *thd, TABLE_LIST *tables,
                                          uint flags) {
   if (thd->variables.use_secondary_engine == SECONDARY_ENGINE_OFF) return false;
 
-  const LEX *const lex = thd->lex;
+  LEX *const lex = thd->lex;
   Sql_cmd *const sql_cmd = lex->m_sql_cmd;
 
   // Only attempt to use a secondary engine if all of these conditions
@@ -6466,13 +6462,15 @@ static bool open_secondary_engine_tables(THD *thd, TABLE_LIST *tables,
     secondary_engine = &tl->table->s->secondary_engine;
   }
 
-  if (secondary_engine == nullptr) {
+  if (secondary_engine == nullptr ||
+      ha_resolve_by_name(thd, secondary_engine, false) == nullptr) {
     // Didn't find a secondary storage engine to use for the query.
     sql_cmd->disable_secondary_storage_engine();
     return false;
   }
 
   lex->m_sql_cmd->use_secondary_storage_engine();
+  lex->add_statement_options(OPTION_NO_CONST_TABLES);
 
   // Replace the TABLE objects in the TABLE_LIST with secondary tables.
   Open_table_context ot_ctx(thd, flags | MYSQL_OPEN_SECONDARY_ENGINE);
@@ -7615,7 +7613,6 @@ Field *find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *first_table,
   const char *name = item->field_name;
   size_t length = strlen(name);
   char name_buff[NAME_LEN + 1];
-  TABLE_LIST *cur_table = first_table;
   TABLE_LIST *actual_table;
   bool allow_rowid;
 
@@ -7624,7 +7621,7 @@ Field *find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *first_table,
     db = 0;
   }
 
-  allow_rowid = table_name || (cur_table && !cur_table->next_local);
+  allow_rowid = table_name || (first_table && !first_table->next_local);
 
   if (item->cached_table) {
     /*
@@ -7675,13 +7672,37 @@ Field *find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *first_table,
     db = name_buff;
   }
 
+  /*
+    @todo after WL#6570 which doesn't re-resolve, remove comment and simplify
+    code (probably back to how it was before WL#8652).
+    It can happen that end_lateral_table is NOT somewhere in the list between
+    first_table and last_table. Indeed, consider:
+    SELECT COUNT(*) FROM t1 GROUP BY t1.a
+    HAVING t1.a IN (SELECT t3.a FROM t1 AS t3
+    WHERE t3.b IN (SELECT b FROM t2, lateral (select t1.a) dt));
+    We resolve the body of 'dt' then we do semijoin transformation:
+    ... HAVING t1.a IN (SELECT FROM t3 SEMIJOIN (t2, dt) ON ...)
+    We save that as prepared statement.
+    Then we execute the statement: when we resolve the body of 'dt' again, we
+    look up the outer reference (t1.a of dt's body) into the FROM clause of
+    the immediate outer query block, which starts at t3. As semijoin
+    transformation doesn't update TABLE_LIST::next_name_resolution_context
+    (see comment in convert_subquery_to_semijoin()), the name resolution
+    context of this FROM is {t3} only.
+    When loop starts, 'last_table' is supposed to mean "stop loop when you
+    meet this table". But the loop will not meet end_lateral_table (dt) so
+    will go wrong.
+    So we refined the condition to "stop loop when you meet this or that
+    table". And added testcase to derived_correlated.test in -ps mode.
+  */
+  TABLE_LIST *last_table2 = nullptr;
   if (first_table && first_table->select_lex &&
       first_table->select_lex->end_lateral_table)
-    last_table = first_table->select_lex->end_lateral_table;
-  else if (last_table)
-    last_table = last_table->next_name_resolution_table;
+    last_table2 = first_table->select_lex->end_lateral_table;
+  if (last_table) last_table = last_table->next_name_resolution_table;
 
-  for (; cur_table != last_table;
+  auto cur_table = first_table;
+  for (; cur_table != last_table && cur_table != last_table2;
        cur_table = cur_table->next_name_resolution_table) {
     Field *cur_field = find_field_in_table_ref(
         thd, cur_table, name, length, item->item_name.ptr(), db, table_name,
@@ -9481,8 +9502,7 @@ bool mysql_rm_tmp_tables(void) {
           !memcmp(file->name, tmp_file_prefix, tmp_file_prefix_length)) {
         size_t filePath_len = snprintf(filePath, sizeof(filePath), "%s%c%s",
                                        tmpdir, FN_LIBCHAR, file->name);
-        file_str = make_lex_string_root(&files_root, (LEX_STRING *)NULL,
-                                        filePath, filePath_len, true);
+        file_str = make_lex_string_root(&files_root, filePath, filePath_len);
 
         if (file_str == NULL || files.push_back(file_str, &files_root)) {
           /* purecov: begin inspected */

@@ -4646,6 +4646,11 @@
       <tt>`--nowarnings`</tt>
 
       Do not look for and report errors and warning in the server logs.
+
+      @note
+      In addition to being passed as a command-line option,
+      <b>`--nowarnings`</b> can also be passed in the <b>.opt</b> file of
+      a test case.
     </li>
 
     <li>
@@ -4718,6 +4723,18 @@
 
       Pass the <b>`--ps-protocol`</b> option to @ref PAGE_MYSQLTEST
       "mysqltest".
+    </li>
+
+    <li>
+      <tt>`--quiet`</tt>
+
+      Reuse the output buffer and maintain a single line for reporting
+      successful tests, skipped tests and disabled tests. Failed tests
+      and the necessary information about the failure will be printed
+      on a separate line.
+
+      When <b>`--quiet`</b> option is enabled, MTR prints only the
+      test name and result of the test run.
     </li>
 
     <li>

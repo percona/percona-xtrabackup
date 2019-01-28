@@ -68,7 +68,7 @@ class Table : virtual public Abstract_table {
                              Object_id se_private_id);
 
  public:
-  virtual ~Table(){};
+  virtual ~Table() {}
 
  public:
   enum enum_row_format {
@@ -167,9 +167,8 @@ class Table : virtual public Abstract_table {
   virtual const Properties &se_private_data() const = 0;
 
   virtual Properties &se_private_data() = 0;
-  virtual bool set_se_private_data_raw(
-      const String_type &se_private_data_raw) = 0;
-  virtual void set_se_private_data(const Properties &se_private_data) = 0;
+  virtual bool set_se_private_data(const String_type &se_private_data_raw) = 0;
+  virtual bool set_se_private_data(const Properties &se_private_data) = 0;
 
   /////////////////////////////////////////////////////////////////////////
   // se_private_id.
@@ -307,8 +306,7 @@ class Table : virtual public Abstract_table {
   /**
     Copy all the triggers from another dd::Table object.
 
-    @param tab_obj* - Pointer to Table from which the triggers
-                      are copied.
+    @param tab_obj Pointer to Table from which the triggers are copied.
   */
 
   virtual void copy_triggers(const Table *tab_obj) = 0;

@@ -112,9 +112,11 @@ extern PSI_mutex_key key_GR_LOCK_applier_module_run,
     key_GR_LOCK_stage_monitor_handler,
     key_GR_LOCK_synchronized_queue,
     key_GR_LOCK_trx_unlocking,
+    key_GR_LOCK_group_member_info_manager_update_lock,
     key_GR_LOCK_view_modification_wait,
     key_GR_LOCK_wait_ticket,
-    key_GR_LOCK_write_lock_protection;
+    key_GR_LOCK_write_lock_protection,
+    key_GR_LOCK_primary_promotion_policy;
 
 extern PSI_cond_key key_GR_COND_applier_module_run,
     key_GR_COND_applier_module_suspend,
@@ -144,7 +146,8 @@ extern PSI_cond_key key_GR_COND_applier_module_run,
     key_GR_COND_synchronized_queue,
     key_GR_COND_view_modification_wait,
     key_GR_COND_wait_ticket,
-    key_GR_COND_write_lock_protection;
+    key_GR_COND_write_lock_protection,
+    key_GR_COND_primary_promotion_policy;
 
 extern PSI_thread_key key_GR_THD_applier_module_receiver,
     key_GR_THD_cert_broadcast,
@@ -160,10 +163,13 @@ extern PSI_rwlock_key key_GR_RWLOCK_cert_stable_gtid_set,
     key_GR_RWLOCK_channel_observation_list,
     key_GR_RWLOCK_gcs_operations,
     key_GR_RWLOCK_gcs_operations_finalize_ongoing,
+    key_GR_RWLOCK_gcs_operations_view_change_observers,
     key_GR_RWLOCK_group_event_observation_list,
     key_GR_RWLOCK_io_cache_unused_list,
     key_GR_RWLOCK_plugin_stop,
-    key_GR_RWLOCK_transaction_observation_list;
+    key_GR_RWLOCK_transaction_observation_list,
+    key_GR_RWLOCK_transaction_consistency_manager_map,
+    key_GR_RWLOCK_transaction_consistency_manager_prepared_transactions_on_my_applier;
 
 extern PSI_stage_info info_GR_STAGE_multi_primary_mode_switch_pending_transactions,
     info_GR_STAGE_multi_primary_mode_switch_step_completion,

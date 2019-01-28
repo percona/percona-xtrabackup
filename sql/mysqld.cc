@@ -225,6 +225,41 @@ MySQL clients support the protocol:
 
 -  MySQL Connector/Node.js
 
+@section xprotocol_community_connector How to build a Community Connector
+
+MySQL provides a set of official MySQL Connectors for several popular
+development frameworks and languages like Node.js, .Net, Python, Java, C,
+C++ and more. At the same time, we also encourage community developers to
+create native connectors for their favorite languages. To improve the process
+and encourage creating a community connector going forward, and allow for more
+rapid new feature support within the MySQL communications protocol, we created
+a new protocol called the MySQL X Protocol.
+
+The new X Protocol leverages current industry standards. One of those standards
+in use is protobuf (more formally know as Google Protobuffers).
+The .proto formatted files provide the complete message definitions of the
+X Protocol. Another feature of protobuf is the automatic code generation based
+on those .proto files across a variety of languages for use in community
+developed connectors for MySQL.
+
+These language specific generated files can be used with no restrictions under
+your own terms.
+
+The X Protocol use of .proto makes our protocol design clear and concise,
+no longer requiring the efforts previously required – no longer will you need
+to directly analyze our message format. In addition to the layout of
+the message format, the .proto also defines and documents message sequence
+and flow between the connectors and the MySQL server. The information defined
+in the .proto file makes it easy to implement X protocol support in connector
+code. As those who have written a MySQL connector know, coding the protocol
+is only a small part of the effort required.
+
+Finally, you can focus on the big task of creating a MySQL community
+connector - designing apis, coding, testing, selecting your license, packaging,
+documentation. And, promoting and speaking about your work.
+
+@section xprotocol_mysqlxshell_example X Protocol example
+
 The following figure shows usage of the X %Protocol between MYSQLXSHELL and
 MySQL Server 5.7.12 or higher with the X %Plugin enabled.
 The object _X %Protocol_ on this figure represents rather some concept
@@ -597,7 +632,8 @@ The documentation is based on the source files such as:
 #include "sql/rpl_info_factory.h"
 #include "sql/rpl_info_handler.h"
 #include "sql/rpl_injector.h"  // injector
-#include "sql/rpl_master.h"    // max_binlog_dump_events
+#include "sql/rpl_log_encryption.h"
+#include "sql/rpl_master.h"  // max_binlog_dump_events
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h"    // Multisource_info
 #include "sql/rpl_rli.h"    // Relay_log_info
@@ -793,12 +829,12 @@ static get_opt_arg_source source_autocommit;
 */
 bool opt_help = false, opt_verbose = false;
 
-arg_cmp_func Arg_comparator::comparator_matrix[5][2] = {
-    {&Arg_comparator::compare_string, &Arg_comparator::compare_e_string},
-    {&Arg_comparator::compare_real, &Arg_comparator::compare_e_real},
-    {&Arg_comparator::compare_int_signed, &Arg_comparator::compare_e_int},
-    {&Arg_comparator::compare_row, &Arg_comparator::compare_e_row},
-    {&Arg_comparator::compare_decimal, &Arg_comparator::compare_e_decimal}};
+arg_cmp_func Arg_comparator::comparator_matrix[5] = {
+    &Arg_comparator::compare_string,      // Compare strings
+    &Arg_comparator::compare_real,        // Compare float values
+    &Arg_comparator::compare_int_signed,  // Compare signed int values
+    &Arg_comparator::compare_row,         // Compare row values
+    &Arg_comparator::compare_decimal};    // Compare decimal values
 
 PSI_file_key key_file_binlog_cache;
 PSI_file_key key_file_binlog_index_cache;
@@ -812,6 +848,7 @@ static PSI_mutex_key key_LOCK_global_system_variables;
 static PSI_mutex_key key_LOCK_prepared_stmt_count;
 static PSI_mutex_key key_LOCK_sql_slave_skip_counter;
 static PSI_mutex_key key_LOCK_slave_net_timeout;
+static PSI_mutex_key key_LOCK_slave_trans_dep_tracker;
 static PSI_mutex_key key_LOCK_uuid_generator;
 static PSI_mutex_key key_LOCK_error_messages;
 static PSI_mutex_key key_LOCK_default_password_lifetime;
@@ -821,7 +858,6 @@ static PSI_mutex_key key_LOCK_password_reuse_interval;
 static PSI_mutex_key key_LOCK_sql_rand;
 static PSI_mutex_key key_LOCK_log_throttle_qni;
 static PSI_mutex_key key_LOCK_reset_gtid_table;
-static PSI_mutex_key key_LOCK_offline_mode;
 static PSI_mutex_key key_LOCK_compress_gtid_table;
 static PSI_mutex_key key_LOCK_collect_instance_log;
 static PSI_mutex_key key_BINLOG_LOCK_commit;
@@ -855,6 +891,7 @@ static PSI_thread_key key_thread_handle_con_sockets;
 static PSI_mutex_key key_LOCK_handler_count;
 static PSI_cond_key key_COND_handler_count;
 static PSI_thread_key key_thread_handle_shutdown_restart;
+static PSI_rwlock_key key_rwlock_LOCK_named_pipe_full_access_group;
 #else
 static PSI_mutex_key key_LOCK_socket_listener_active;
 static PSI_cond_key key_COND_socket_listener_active;
@@ -889,6 +926,9 @@ static char *character_set_filesystem_name;
 static char *lc_messages;
 static char *lc_time_names_name;
 char *my_bind_addr_str;
+char *my_admin_bind_addr_str;
+uint mysqld_admin_port;
+bool listen_admin_interface_in_separate_thread;
 static char *default_collation_name;
 char *default_storage_engine;
 char *default_tmp_storage_engine;
@@ -913,6 +953,7 @@ bool opt_general_log, opt_slow_log, opt_general_log_raw;
 ulonglong log_output_options;
 bool opt_log_queries_not_using_indexes = 0;
 ulong opt_log_throttle_queries_not_using_indexes = 0;
+bool opt_log_slow_extra = false;
 bool opt_disable_networking = 0, opt_skip_show_db = 0;
 bool opt_skip_name_resolve = 0;
 bool opt_character_set_client_handshake = 1;
@@ -923,7 +964,8 @@ bool locked_in_memory;
 bool opt_using_transactions;
 ulong opt_tc_log_size;
 std::atomic<int32> connection_events_loop_aborted_flag;
-static enum_server_operational_state server_operational_state = SERVER_BOOTING;
+static std::atomic<enum_server_operational_state> server_operational_state{
+    SERVER_BOOTING};
 char *opt_log_error_suppression_list;
 char *opt_log_error_services;
 char *opt_keyring_migration_user = NULL;
@@ -989,7 +1031,7 @@ bool lower_case_file_system = 0;
 bool opt_large_pages = 0;
 bool opt_super_large_pages = 0;
 bool opt_myisam_use_mmap = 0;
-bool offline_mode = 0;
+std::atomic<bool> offline_mode;
 uint opt_large_page_size = 0;
 uint default_password_lifetime = 0;
 volatile bool password_require_current = false;
@@ -1017,7 +1059,7 @@ bool sp_automatic_privileges = 1;
 int32_t opt_regexp_time_limit;
 int32_t opt_regexp_stack_limit;
 
-ulong opt_binlog_rows_event_max_size;
+ulong binlog_row_event_max_size;
 ulong binlog_checksum_options;
 ulong binlog_row_metadata;
 bool opt_master_verify_checksum = 0;
@@ -1264,8 +1306,8 @@ mysql_mutex_t LOCK_prepared_stmt_count;
 */
 mysql_mutex_t LOCK_sql_slave_skip_counter;
 mysql_mutex_t LOCK_slave_net_timeout;
+mysql_mutex_t LOCK_slave_trans_dep_tracker;
 mysql_mutex_t LOCK_log_throttle_qni;
-mysql_mutex_t LOCK_offline_mode;
 mysql_rwlock_t LOCK_sys_init_connect, LOCK_sys_init_slave;
 mysql_rwlock_t LOCK_system_variables_hash;
 my_thread_handle signal_thread_id;
@@ -1291,6 +1333,16 @@ mysql_cond_t COND_start_signal_handler;
 mysql_mutex_t LOCK_keyring_operations;
 
 bool mysqld_server_started = false;
+/**
+  Set to true to signal at startup if the process must die.
+
+  Needed because kill_mysql() will not do anything before
+  the server is fully initialized. Thus it now just sets this
+  flag to on and exits. And then mysqld_main() will check if
+  the flag is on at the right place and exit the process if it
+  is.
+*/
+static bool mysqld_process_must_end_at_startup = false;
 
 /* replication parameters, if master_host is not NULL, we are a slave */
 uint report_port = 0;
@@ -1423,8 +1475,11 @@ void substitute_progpath(char **argv) {
 static Connection_acceptor<Mysqld_socket_listener> *mysqld_socket_acceptor =
     NULL;
 #ifdef _WIN32
+static Named_pipe_listener *named_pipe_listener = NULL;
 Connection_acceptor<Named_pipe_listener> *named_pipe_acceptor = NULL;
 Connection_acceptor<Shared_mem_listener> *shared_mem_acceptor = NULL;
+mysql_rwlock_t LOCK_named_pipe_full_access_group;
+char *named_pipe_full_access_group;
 #endif
 
 Checkable_rwlock *global_sid_lock = NULL;
@@ -1515,7 +1570,7 @@ static mysql_mutex_t LOCK_handler_count;
 static mysql_cond_t COND_handler_count;
 static HANDLE hEventShutdown;
 static HANDLE hEventRestart;
-char *shared_memory_base_name = default_shared_memory_base_name;
+const char *shared_memory_base_name = default_shared_memory_base_name;
 bool opt_enable_shared_memory;
 static char shutdown_event_name[40];
 static char restart_event_name[40];
@@ -1619,8 +1674,11 @@ static void server_component_init() {
   mysql_comp_status_var_services_init();
   mysql_comp_system_variable_source_init();
   mysql_backup_lock_service_init();
+  clone_protocol_service_init();
   mysql_security_context_init();
   mysql_server_ongoing_transactions_query_init();
+  host_application_signal_imp_init();
+  mysql_audit_api_service_init();
 }
 
 /**
@@ -1896,6 +1954,10 @@ bool signal_restart_server() {
 void kill_mysql(void) {
   DBUG_ENTER("kill_mysql");
 
+  if (!mysqld_server_started) {
+    mysqld_process_must_end_at_startup = true;
+    DBUG_VOID_RETURN;
+  }
 #if defined(_WIN32)
   {
     if (!SetEvent(hEventShutdown)) {
@@ -2128,7 +2190,7 @@ static void clean_up(bool print_message) {
 
   if (print_message && my_default_lc_messages && server_start_time)
     LogErr(SYSTEM_LEVEL, ER_SERVER_SHUTDOWN_COMPLETE, my_progname,
-           server_version, MYSQL_COMPILATION_COMMENT);
+           server_version, MYSQL_COMPILATION_COMMENT_SERVER);
   cleanup_errmsgs();
 
   free_connection_acceptors();
@@ -2203,8 +2265,8 @@ static void clean_up_mutexes() {
   mysql_mutex_destroy(&LOCK_prepared_stmt_count);
   mysql_mutex_destroy(&LOCK_sql_slave_skip_counter);
   mysql_mutex_destroy(&LOCK_slave_net_timeout);
+  mysql_mutex_destroy(&LOCK_slave_trans_dep_tracker);
   mysql_mutex_destroy(&LOCK_error_messages);
-  mysql_mutex_destroy(&LOCK_offline_mode);
   mysql_mutex_destroy(&LOCK_default_password_lifetime);
   mysql_mutex_destroy(&LOCK_mandatory_roles);
   mysql_mutex_destroy(&LOCK_server_started);
@@ -2219,6 +2281,7 @@ static void clean_up_mutexes() {
 #ifdef _WIN32
   mysql_cond_destroy(&COND_handler_count);
   mysql_mutex_destroy(&LOCK_handler_count);
+  mysql_rwlock_destroy(&LOCK_named_pipe_full_access_group);
 #endif
 #ifndef _WIN32
   mysql_cond_destroy(&COND_socket_listener_active);
@@ -2371,6 +2434,33 @@ static void set_root(const char *path) {
 #endif  // !_WIN32
 
 /**
+  Check that an address value is a wildcard IP value,
+  that is it has either the value 0.0.0.0 for IPv4 or the value ::1 in
+  case IPv6, or has the specially treated symbol * as its value.
+
+  @param address_value   Address value to check
+  @param address_length  Address length
+
+  @return true in case the address value is a wildcard value, else false.
+*/
+static bool check_address_is_wildcard(const char *address_value,
+                                      size_t address_length) {
+  return
+      // Wildcard is not allowed in case a comma separated list of
+      // addresses is specified
+      native_strncasecmp(address_value, MY_BIND_ALL_ADDRESSES,
+                         address_length) == 0 ||
+      // The specially treated address :: is not allowed in case
+      // a comma separated list of addresses is specified
+      native_strncasecmp(address_value, ipv6_all_addresses, address_length) ==
+          0 ||
+      // The specially treated address 0.0.0.0 is not allowed in case
+      // a comma separated list of addresses is specified
+      native_strncasecmp(address_value, ipv4_all_addresses, address_length) ==
+          0;
+}
+
+/**
   Check acceptable value of parameter bind_address
 
   @param      bind_address          Value of the parameter bind-address
@@ -2387,34 +2477,14 @@ static bool check_bind_address_has_valid_value(
   const char *comma_separator = strchr(bind_address, ',');
   const char *begin_of_value = bind_address;
   const bool multiple_bind_addresses = (comma_separator != nullptr);
-  /*
-    The following lambda is to check that an address value is a wildcard IP
-    value, that is it has either the value 0.0.0.0 for IPv4 or the value ::1 in
-    case IPv6, or has the specially treated symbol * as its value.
-  */
-  auto address_is_wildcard = [](const char *address_value,
-                                size_t address_length) {
-    return
-        // Wildcard is not allowed in case a comma separated list of
-        // addresses is specified
-        native_strncasecmp(address_value, MY_BIND_ALL_ADDRESSES,
-                           address_length) == 0 ||
-        // The specially treated address :: is not allowed in case
-        // a comma separated list of addresses is specified
-        native_strncasecmp(address_value, ipv6_all_addresses, address_length) ==
-            0 ||
-        // The specially treated address 0.0.0.0 is not allowed in case
-        // a comma separated list of addresses is specified
-        native_strncasecmp(address_value, ipv4_all_addresses, address_length) ==
-            0;
-  };
 
   if (comma_separator == begin_of_value)
     // Return an error if a value of bind_address begins with comma
     return true;
 
   while (comma_separator != nullptr) {
-    if (address_is_wildcard(begin_of_value, comma_separator - begin_of_value))
+    if (check_address_is_wildcard(begin_of_value,
+                                  comma_separator - begin_of_value))
       return true;
 
     valid_bind_addresses->emplace_back(
@@ -2427,7 +2497,7 @@ static bool check_bind_address_has_valid_value(
   }
 
   if (multiple_bind_addresses &&
-      (address_is_wildcard(begin_of_value, strlen(begin_of_value)) ||
+      (check_address_is_wildcard(begin_of_value, strlen(begin_of_value)) ||
        strlen(begin_of_value) == 0))
     return true;
 
@@ -2454,9 +2524,30 @@ static bool network_init(void) {
       return true;
     }
 
-    Mysqld_socket_listener *mysqld_socket_listener = new (std::nothrow)
-        Mysqld_socket_listener(bind_addresses, mysqld_port, back_log,
-                               mysqld_port_timeout, unix_sock_name);
+    if (!opt_disable_networking) {
+      if (my_admin_bind_addr_str != nullptr &&
+          check_address_is_wildcard(my_admin_bind_addr_str,
+                                    strlen(my_admin_bind_addr_str))) {
+        LogErr(ERROR_LEVEL, ER_INVALID_ADMIN_ADDRESS, my_admin_bind_addr_str);
+        return true;
+      }
+      /*
+        Port 0 is interpreted by implementations of TCP protocol
+        as a hint to find a first free port value to use and bind to it.
+        On the other hand, the option mysqld_admin_port can be assigned
+        the value 0 if a user specified a value that is out of allowable
+        range of values. Therefore, to avoid a case when an operating
+        system binds admin interface to am arbitrary selected port value,
+        set it explicitly to the value MYSQL_ADMIN_PORT in case it has value 0.
+      */
+      if (mysqld_admin_port == 0) mysqld_admin_port = MYSQL_ADMIN_PORT;
+    }
+    Mysqld_socket_listener *mysqld_socket_listener =
+        new (std::nothrow) Mysqld_socket_listener(
+            bind_addresses, mysqld_port,
+            (opt_disable_networking ? nullptr : my_admin_bind_addr_str),
+            mysqld_admin_port, listen_admin_interface_in_separate_thread,
+            back_log, mysqld_port_timeout, unix_sock_name);
     if (mysqld_socket_listener == NULL) return true;
 
     mysqld_socket_acceptor = new (std::nothrow)
@@ -2479,8 +2570,7 @@ static bool network_init(void) {
   if (opt_enable_named_pipe) {
     std::string pipe_name = mysqld_unix_port ? mysqld_unix_port : "";
 
-    Named_pipe_listener *named_pipe_listener =
-        new (std::nothrow) Named_pipe_listener(&pipe_name);
+    named_pipe_listener = new (std::nothrow) Named_pipe_listener(&pipe_name);
     if (named_pipe_listener == NULL) return true;
 
     named_pipe_acceptor = new (std::nothrow)
@@ -2876,16 +2966,27 @@ extern "C" void *signal_hand(void *arg MY_ATTRIBUTE((unused))) {
   server_components_init_wait();
   for (;;) {
     int sig;
+    int rc;
+    bool error;
 #ifdef __APPLE__
-    while (sigwait(&set, &sig) == EINTR) {
+    while ((rc = sigwait(&set, &sig)) == EINTR) {
     }
+    error = rc != 0;
 #else
     siginfo_t sig_info;
-    while (sigwaitinfo(&set, &sig_info) == EINTR) {
+    while ((rc = sigwaitinfo(&set, &sig_info)) == -1 && errno == EINTR) {
     }
-    sig = sig_info.si_signo;
+    error = rc == -1;
+    if (!error) sig = sig_info.si_signo;
 #endif             // __APPLE__
-    if (cleanup_done) {
+    if (error)
+      sql_print_error(
+          "Fatal error in signal handling thread. sigwait/sigwaitinfo returned "
+          "error  %d\n. Exiting signal handler "
+          "thread.",
+          errno);
+
+    if (error || cleanup_done) {
       my_thread_end();
       my_thread_exit(0);  // Safety
       return NULL;        // Avoid compiler warnings
@@ -2993,30 +3094,8 @@ void my_message_sql(uint error, const char *str, myf MyFlags) {
   }
 
   if (thd) {
-    Sql_condition::enum_severity_level level = Sql_condition::SL_ERROR;
-
-    /**
-      Reporting an error invokes audit API call that notifies the error
-      to the plugin. Audit API that generate the error adds a protection
-      (condition handler) that prevents entering infinite recursion, when
-      a plugin signals error, when already handling the error.
-
-      handle_condition is normally invoked from within raise_condition,
-      but we need to prevent recursion befere notifying error to the plugin.
-
-      Additionaly, handle_condition must be called once during reporting
-      an error, so the raise_condition is called depending on the result of
-      the handle_condition call.
-    */
-    bool handle = thd->handle_condition(error, mysql_errno_to_sqlstate(error),
-                                        &level, str ? str : ER_DEFAULT(error));
-    if (!handle)
-      mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_GENERAL_ERROR), error,
-                         str, strlen(str));
-
-    if (MyFlags & ME_FATALERROR) thd->is_fatal_error = 1;
-
-    if (!handle) (void)thd->raise_condition(error, NULL, level, str, false);
+    (void)thd->raise_condition(error, NULL, Sql_condition::SL_ERROR, str,
+                               MyFlags & ME_FATALERROR);
 
     /*
       Only error-codes from the client range should be seen here.
@@ -3749,6 +3828,9 @@ static void init_sql_statement_info() {
   sql_statement_info[(uint)SQLCOM_END].m_flags = 0;
   sql_statement_info[(uint)SQLCOM_END].m_documentation =
       "Invalid SQL queries (syntax error).";
+
+  /* "statement/sql/clone" will mutate to clone plugin statement */
+  sql_statement_info[(uint)SQLCOM_CLONE].m_flags = PSI_FLAG_MUTABLE;
 }
 
 static void init_com_statement_info() {
@@ -3766,6 +3848,9 @@ static void init_com_statement_info() {
       "SQL query just received from the network. "
       "At this point, the real statement type is unknown, "
       "the type will be refined after SQL parsing.";
+
+  /* "statement/com/clone" will mutate to clone plugin statement */
+  com_statement_info[(uint)COM_CLONE].m_flags = PSI_FLAG_MUTABLE;
 }
 #endif
 
@@ -4314,14 +4399,14 @@ static int init_thread_environment() {
                    &LOCK_sql_slave_skip_counter, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_slave_net_timeout, &LOCK_slave_net_timeout,
                    MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(key_LOCK_slave_trans_dep_tracker,
+                   &LOCK_slave_trans_dep_tracker, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_error_messages, &LOCK_error_messages,
                    MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_uuid_generator, &LOCK_uuid_generator,
                    MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_sql_rand, &LOCK_sql_rand, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_log_throttle_qni, &LOCK_log_throttle_qni,
-                   MY_MUTEX_INIT_FAST);
-  mysql_mutex_init(key_LOCK_offline_mode, &LOCK_offline_mode,
                    MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_default_password_lifetime,
                    &LOCK_default_password_lifetime, MY_MUTEX_INIT_FAST);
@@ -4349,6 +4434,8 @@ static int init_thread_environment() {
   mysql_mutex_init(key_LOCK_handler_count, &LOCK_handler_count,
                    MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_COND_handler_count, &COND_handler_count);
+  mysql_rwlock_init(key_rwlock_LOCK_named_pipe_full_access_group,
+                    &LOCK_named_pipe_full_access_group);
 #else
   mysql_mutex_init(key_LOCK_socket_listener_active,
                    &LOCK_socket_listener_active, MY_MUTEX_INIT_FAST);
@@ -4891,8 +4978,6 @@ static void setup_error_log() {
   } else {
     // We are logging to stderr and SHOW VARIABLES should reflect that.
     log_error_dest = "stderr";
-    // Flush messages buffered so far.
-    flush_error_log_messages();
   }
 }
 
@@ -5480,6 +5565,21 @@ static int init_server_components() {
     unireg_abort(MYSQLD_ABORT_EXIT);
   }
 
+  /*
+    Each server should have one UUID. We will create it automatically, if it
+    does not exist. It should be initialized before opening binlog file. Because
+    server's uuid will be stored into the new binlog file.
+  */
+  if (init_server_auto_options()) {
+    LogErr(ERROR_LEVEL, ER_CANT_CREATE_UUID);
+    unireg_abort(MYSQLD_ABORT_EXIT);
+  }
+
+  if (rpl_encryption.initialize()) {
+    LogErr(ERROR_LEVEL, ER_SERVER_RPL_ENCRYPTION_UNABLE_TO_INITIALIZE);
+    unireg_abort(MYSQLD_ABORT_EXIT);
+  }
+
   if (opt_bin_log) {
     /*
       Configures what object is used by the current log to store processed
@@ -5593,6 +5693,11 @@ static void create_shutdown_and_restart_thread() {
 
   my_security_attr_create(&shutdown_sec_attr, &errmsg, GENERIC_ALL,
                           SYNCHRONIZE | EVENT_MODIFY_STATE);
+
+  if (!opt_no_monitor) {
+    snprintf(shutdown_event_name, sizeof(shutdown_event_name),
+             "mysqld%s_shutdown", get_monitor_pid());
+  }
 
   hEventShutdown =
       CreateEvent(shutdown_sec_attr, FALSE, FALSE, shutdown_event_name);
@@ -5729,7 +5834,7 @@ int mysqld_main(int argc, char **argv)
   init_sql_statement_names();
   sys_var_init();
   ulong requested_open_files;
-  init_error_log();
+  if (init_error_log()) unireg_abort(MYSQLD_ABORT_EXIT);
   adjust_related_options(&requested_open_files);
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
@@ -6123,8 +6228,12 @@ int mysqld_main(int argc, char **argv)
   /*
    We have enough space for fiddling with the argv, continue
   */
-  if (!opt_help && my_setwd(mysql_real_data_home, MYF(MY_WME))) {
-    LogErr(ERROR_LEVEL, ER_CANT_SET_DATADIR, mysql_real_data_home);
+  if (!opt_help && my_setwd(mysql_real_data_home, MYF(0))) {
+    char errbuf[MYSYS_STRERROR_SIZE];
+
+    LogErr(ERROR_LEVEL, ER_CANT_SET_DATA_DIR, mysql_real_data_home, errno,
+           my_strerror(errbuf, sizeof(errbuf), errno));
+
     unireg_abort(MYSQLD_ABORT_EXIT); /* purecov: inspected */
   }
 
@@ -6145,15 +6254,6 @@ int mysqld_main(int argc, char **argv)
 #endif
 
   if (init_server_components()) unireg_abort(MYSQLD_ABORT_EXIT);
-
-  /*
-    Each server should have one UUID. We will create it automatically, if it
-    does not exist.
-   */
-  if (init_server_auto_options()) {
-    LogErr(ERROR_LEVEL, ER_CANT_CREATE_UUID);
-    unireg_abort(MYSQLD_ABORT_EXIT);
-  }
 
   if (!server_id_supplied)
     LogErr(INFORMATION_LEVEL, ER_WARN_NO_SERVERID_SPECIFIED);
@@ -6373,71 +6473,6 @@ int mysqld_main(int argc, char **argv)
   }
 
   /*
-    Activate loadable error logging components, if any.
-  */
-  if (log_builtins_error_stack(opt_log_error_services, true, nullptr) == 0) {
-    // Syntax is OK and services exist; let's try to initialize them:
-    size_t pos;
-
-    if (log_builtins_error_stack(opt_log_error_services, false, &pos) < 0) {
-      char *problem = opt_log_error_services; /* purecov: begin inspected */
-      const char *var_name = "log_error_services";
-
-      if (pos < strlen(opt_log_error_services))
-        problem = &((char *)opt_log_error_services)[pos];
-
-      /*
-        Try to fall back to default error logging stack.
-        If that's possible, print diagnostics there, then exit.
-      */
-      sys_var *var = intern_find_sys_var(var_name, strlen(var_name));
-
-      if (var != nullptr) {
-        opt_log_error_services = (char *)var->get_default();
-        if (log_builtins_error_stack(opt_log_error_services, false, nullptr) >=
-            0) {
-          // We found the sys_var, but somehow couldn't set the default!?
-          LogErr(ERROR_LEVEL, ER_CANT_START_ERROR_LOG_SERVICE, var_name,
-                 problem);
-          unireg_abort(MYSQLD_ABORT_EXIT);
-        }
-      }
-
-      /*
-        We failed to set the default error logging stack. At this point,
-        we don't know whether ANY of the requested sinks work,
-        so our best bet is to write directly to the error stream.
-        Then, we abort.
-      */
-      {
-        char buff[512];
-        size_t len;
-
-        len = snprintf(buff, sizeof(buff),
-                       ER_DEFAULT(ER_CANT_START_ERROR_LOG_SERVICE), var_name,
-                       problem);
-        len = std::min(len, sizeof(buff) - 1);
-
-        log_write_errstream(buff, len);
-
-        unireg_abort(MYSQLD_ABORT_EXIT);
-      } /* purecov: end */
-    }
-  } else {
-    LogErr(INFORMATION_LEVEL, ER_CANNOT_SET_LOG_ERROR_SERVICES,
-           opt_log_error_services);
-    /*
-      We were given an illegal value at start-up, so the default was
-      used instead. We have reported the problem (and the dodgy value);
-      let's now point our variable back at the default (i.e. the value
-      actually used) so SELECT @@GLOBAL.log_error_services will render
-      correct results.
-    */
-    sys_var *var = intern_find_sys_var(STRING_WITH_LEN("log_error_services"));
-    if (var != nullptr) opt_log_error_services = (char *)var->get_default();
-  }
-
-  /*
     Bootstrap the dynamic privilege service implementation
   */
   if (dynamic_privilege_init()) {
@@ -6510,8 +6545,89 @@ int mysqld_main(int argc, char **argv)
   /* set all persistent options */
   if (persisted_variables_cache.set_persist_options()) {
     LogErr(ERROR_LEVEL, ER_CANT_SET_UP_PERSISTED_VALUES);
+    flush_error_log_messages();
     return 1;
   }
+
+  /*
+    Activate loadable error logging components, if any.
+  */
+  if (log_builtins_error_stack(opt_log_error_services, true, nullptr) == 0) {
+    // Syntax is OK and services exist; let's try to initialize them:
+    size_t pos;
+
+    if (log_builtins_error_stack(opt_log_error_services, false, &pos) < 0) {
+      char *problem = opt_log_error_services; /* purecov: begin inspected */
+      const char *var_name = "log_error_services";
+
+      if (pos < strlen(opt_log_error_services))
+        problem = &((char *)opt_log_error_services)[pos];
+
+      flush_error_log_messages();
+
+      /*
+        Try to fall back to default error logging stack.
+        If that's possible, print diagnostics there, then exit.
+      */
+      sys_var *var = intern_find_sys_var(var_name, strlen(var_name));
+
+      if (var != nullptr) {
+        opt_log_error_services = (char *)var->get_default();
+        if (log_builtins_error_stack(opt_log_error_services, false, nullptr) >=
+            0) {
+          // We found the sys_var, but somehow couldn't set the default!?
+          LogErr(ERROR_LEVEL, ER_CANT_START_ERROR_LOG_SERVICE, var_name,
+                 problem);
+          unireg_abort(MYSQLD_ABORT_EXIT);
+        }
+      }
+
+      /*
+        We failed to set the default error logging stack. At this point,
+        we don't know whether ANY of the requested sinks work,
+        so our best bet is to write directly to the error stream.
+        Then, we abort.
+      */
+      {
+        char buff[512];
+        size_t len;
+
+        len = snprintf(buff, sizeof(buff),
+                       ER_DEFAULT(ER_CANT_START_ERROR_LOG_SERVICE), var_name,
+                       problem);
+        len = std::min(len, sizeof(buff) - 1);
+
+        log_write_errstream(buff, len);
+
+        unireg_abort(MYSQLD_ABORT_EXIT);
+      } /* purecov: end */
+    }
+  } else {
+    /*
+      We were given an illegal value at start-up, so the default was
+      used instead. We have reported the problem (and the dodgy value);
+      let's now point our variable back at the default (i.e. the value
+      actually used) so SELECT @@GLOBAL.log_error_services will render
+      correct results.
+    */
+    sys_var *var = intern_find_sys_var(STRING_WITH_LEN("log_error_services"));
+    char *default_services = nullptr;
+
+    if ((var != nullptr) &&
+        ((default_services = (char *)var->get_default()) != nullptr))
+      log_builtins_error_stack(default_services, false, nullptr);
+
+    LogErr(WARNING_LEVEL, ER_CANNOT_SET_LOG_ERROR_SERVICES,
+           opt_log_error_services);
+
+    if (default_services != nullptr) opt_log_error_services = default_services;
+  }
+
+  /*
+    Now that the error-logging stack is fully set up, loadable components
+    and all, flush any buffered log-events!
+  */
+  flush_error_log_messages();
 
   if (opt_initialize) {
     // Make sure we can process SIGHUP during bootstrap.
@@ -6540,6 +6656,13 @@ int mysqld_main(int argc, char **argv)
 #ifdef _WIN32
   create_shutdown_and_restart_thread();
 #endif
+  if (mysqld_process_must_end_at_startup) {
+#if !defined(_WIN32)
+    if (opt_daemonize) mysqld::runtime::signal_parent(pipe_write_fd, 1);
+#endif
+    unireg_abort(MYSQLD_SUCCESS_EXIT);
+  }
+
   start_handle_manager();
 
   create_compress_gtid_table_thread();
@@ -6554,7 +6677,15 @@ int mysqld_main(int argc, char **argv)
 #else
               (char *)"",
 #endif
-              mysqld_port, MYSQL_COMPILATION_COMMENT);
+              mysqld_port, MYSQL_COMPILATION_COMMENT_SERVER);
+
+  if (!opt_disable_networking && my_admin_bind_addr_str)
+    LogEvent()
+        .type(LOG_TYPE_ERROR)
+        .subsys(LOG_SUBSYSTEM_TAG)
+        .prio(SYSTEM_LEVEL)
+        .lookup(ER_SERVER_STARTUP_ADMIN_INTERFACE, my_admin_bind_addr_str,
+                mysqld_admin_port, MYSQL_COMPILATION_COMMENT);
 
 #if defined(_WIN32)
   if (windows_service) {
@@ -6787,8 +6918,8 @@ int mysqld_main(int argc, char **argv) {
       application PID e.g.: MySQLShutdown1890; MySQLShutdown2342
     */
 
-    snprintf(shutdown_event_name, sizeof(shutdown_event_name),
-             "mysqld%s_shutdown", get_monitor_pid());
+    int10_to_str((int)GetCurrentProcessId(),
+                 my_stpcpy(shutdown_event_name, "MYSQLShutdown"), 10);
     int10_to_str((int)GetCurrentProcessId(),
                  my_stpcpy(restart_event_name, "MYSQLRestart"), 10);
   }
@@ -7186,15 +7317,6 @@ struct my_option my_long_options[] = {
      "Tells the master that updates to the given database should not be logged "
      "to the binary log.",
      0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-    {"binlog-row-event-max-size", 0,
-     "The maximum size of a row-based binary log event in bytes. Rows will be "
-     "grouped into events smaller than this size if possible. "
-     "The value has to be a multiple of 256.",
-     &opt_binlog_rows_event_max_size, &opt_binlog_rows_event_max_size, 0,
-     GET_ULONG, REQUIRED_ARG,
-     /* def_value */ 8192, /* min_value */ 256, /* max_value */ ULONG_MAX,
-     /* sub_size */ 0, /* block_size */ 256,
-     /* app_type */ 0},
     {"character-set-client-handshake", 0,
      "Don't ignore client side character set value sent during handshake.",
      &opt_character_set_client_handshake, &opt_character_set_client_handshake,
@@ -7585,8 +7707,7 @@ static int show_connection_errors_select(THD *, SHOW_VAR *var, char *buff) {
   var->type = SHOW_LONG;
   var->value = buff;
   long *value = reinterpret_cast<long *>(buff);
-  *value =
-      static_cast<long>(Mysqld_socket_listener::get_connection_errors_select());
+  *value = static_cast<long>(get_connection_errors_select());
   return 0;
 }
 
@@ -7594,8 +7715,7 @@ static int show_connection_errors_accept(THD *, SHOW_VAR *var, char *buff) {
   var->type = SHOW_LONG;
   var->value = buff;
   long *value = reinterpret_cast<long *>(buff);
-  *value =
-      static_cast<long>(Mysqld_socket_listener::get_connection_errors_accept());
+  *value = static_cast<long>(get_connection_errors_accept());
   return 0;
 }
 
@@ -7603,8 +7723,7 @@ static int show_connection_errors_tcpwrap(THD *, SHOW_VAR *var, char *buff) {
   var->type = SHOW_LONG;
   var->value = buff;
   long *value = reinterpret_cast<long *>(buff);
-  *value = static_cast<long>(
-      Mysqld_socket_listener::get_connection_errors_tcpwrap());
+  *value = static_cast<long>(get_connection_errors_tcpwrap());
   return 0;
 }
 
@@ -8605,6 +8724,7 @@ static int mysql_init_variables() {
   opt_endinfo = using_udf_functions = 0;
   opt_using_transactions = 0;
   set_connection_events_loop_aborted(false);
+  set_mysqld_offline_mode(false);
   server_operational_state = SERVER_BOOTING;
   aborted_threads = 0;
   delayed_insert_threads = delayed_insert_writes = delayed_rows_in_use = 0;
@@ -8877,7 +8997,7 @@ bool mysqld_get_one_option(int optid,
         LogErr(WARNING_LEVEL, ER_THE_USER_ABIDES, argument, mysqld_user);
       break;
     case 's':
-      if (argument[0] == '0') {
+      if (argument && argument[0] == '0') {
         LogErr(WARNING_LEVEL, ER_DEPRECATE_MSG_NO_REPLACEMENT,
                "Disabling symbolic links using --skip-symbolic-links"
                " (or equivalent) is the default. Consider not using"
@@ -9293,7 +9413,15 @@ bool mysqld_get_one_option(int optid,
       if (wrong_value != NULL)
         LogErr(WARNING_LEVEL, ER_INVALID_VALUE_FOR_ENFORCE_GTID_CONSISTENCY,
                wrong_value);
-    }
+    } break;
+    case OPT_NAMED_PIPE_FULL_ACCESS_GROUP:
+#ifdef _WIN32
+      if (!is_valid_named_pipe_full_access_group(argument)) {
+        LogErr(ERROR_LEVEL, ER_INVALID_NAMED_PIPE_FULL_ACCESS_GROUP);
+        return 1;
+      }
+#endif  // _WIN32
+      break;
   }
   return 0;
 }
@@ -9591,6 +9719,11 @@ static void set_server_version(void) {
   if (SERVER_VERSION_LENGTH - (end - server_version) >
       static_cast<int>(sizeof("-ubsan")))
     end = my_stpcpy(end, "-ubsan");
+#endif
+#ifdef HAVE_TSAN
+  if (SERVER_VERSION_LENGTH - (end - server_version) >
+      static_cast<int>(sizeof("-tsan")))
+    end = my_stpcpy(end, "-tsan");
 #endif
 }
 
@@ -10159,6 +10292,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_prepared_stmt_count, "LOCK_prepared_stmt_count", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_sql_slave_skip_counter, "LOCK_sql_slave_skip_counter", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_slave_net_timeout, "LOCK_slave_net_timeout", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
+  { &key_LOCK_slave_trans_dep_tracker, "LOCK_slave_trans_dep_tracker", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_server_started, "LOCK_server_started", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
 #if !defined(_WIN32)
   { &key_LOCK_socket_listener_active, "LOCK_socket_listener_active", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
@@ -10201,7 +10335,6 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_thd_timer_mutex, "thd_timer_mutex", 0, 0, PSI_DOCUMENT_ME},
   { &key_commit_order_manager_mutex, "Commit_order_manager::m_mutex", 0, 0, PSI_DOCUMENT_ME},
   { &key_mutex_slave_worker_hash, "Relay_log_info::slave_worker_hash_lock", 0, 0, PSI_DOCUMENT_ME},
-  { &key_LOCK_offline_mode, "LOCK_offline_mode", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_default_password_lifetime, "LOCK_default_password_lifetime", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_mandatory_roles, "LOCK_mandatory_roles", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_password_history, "LOCK_password_history", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
@@ -10243,7 +10376,12 @@ static PSI_rwlock_info all_server_rwlocks[]=
   { &key_rwlock_receiver_sid_lock, "gtid_retrieved", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_rwlock_rpl_filter_lock, "rpl_filter_lock", 0, 0, PSI_DOCUMENT_ME},
   { &key_rwlock_channel_to_filter_lock, "channel_to_filter_lock", 0, 0, PSI_DOCUMENT_ME},
-  { &key_rwlock_resource_group_mgr_map_lock, "Resource_group_mgr::m_map_rwlock", 0, 0, PSI_DOCUMENT_ME}
+  { &key_rwlock_resource_group_mgr_map_lock, "Resource_group_mgr::m_map_rwlock", 0, 0, PSI_DOCUMENT_ME},
+#ifdef _WIN32
+  { &key_rwlock_LOCK_named_pipe_full_access_group, "LOCK_named_pipe_full_access_group", PSI_FLAG_SINGLETON, 0,
+     "This lock protects named pipe security attributes, preventing their "
+     "simultaneous application and modification."},
+#endif // _WIN32
 };
 /* clang-format on */
 
@@ -10319,6 +10457,7 @@ PSI_thread_key key_thread_handle_manager;
 PSI_thread_key key_thread_one_connection;
 PSI_thread_key key_thread_compress_gtid_table;
 PSI_thread_key key_thread_parser_service;
+PSI_thread_key key_thread_handle_con_admin_sockets;
 
 /* clang-format off */
 static PSI_thread_info all_server_threads[]=
@@ -10336,6 +10475,7 @@ static PSI_thread_info all_server_threads[]=
   { &key_thread_signal_hand, "signal_handler", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_thread_compress_gtid_table, "compress_gtid_table", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_thread_parser_service, "parser_service", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
+  { &key_thread_handle_con_admin_sockets, "admin_interface", PSI_FLAG_USER, 0, PSI_DOCUMENT_ME},
 };
 /* clang-format on */
 
@@ -10504,6 +10644,7 @@ PSI_stage_info stage_worker_waiting_for_commit_parent= { 0, "Waiting for depende
 PSI_stage_info stage_suspending= { 0, "Suspending", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_starting= { 0, "starting", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_waiting_for_no_channel_reference= { 0, "Waiting for no channel reference.", 0, PSI_DOCUMENT_ME};
+PSI_stage_info stage_hook_begin_trans= { 0, "Executing hook on transaction begin.", 0, PSI_DOCUMENT_ME};
 /* clang-format on */
 
 extern PSI_stage_info stage_waiting_for_disk_space;
@@ -10616,6 +10757,7 @@ PSI_stage_info *all_server_stages[] = {
     &stage_suspending,
     &stage_starting,
     &stage_waiting_for_no_channel_reference,
+    &stage_hook_begin_trans,
     &stage_waiting_for_disk_space};
 
 PSI_socket_key key_socket_tcpip;
@@ -10667,8 +10809,17 @@ static void init_server_psi_keys(void) {
 
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
   init_sql_statement_info();
-  count = static_cast<int>(array_elements(sql_statement_info));
+
+  /* Register [0 .. SQLCOM_CLONE - 1] as "statement/sql/..." */
+  count = (int)SQLCOM_CLONE;
   mysql_statement_register(category, sql_statement_info, count);
+
+  /* Exclude SQLCOM_CLONE as it mutates and is registered as abstract. */
+  count = (int)SQLCOM_END - (int)SQLCOM_CLONE;
+  mysql_statement_register(category, &sql_statement_info[(int)SQLCOM_CLONE + 1],
+                           count);
+  category = "abstract";
+  mysql_statement_register(category, &sql_statement_info[(int)SQLCOM_CLONE], 1);
 
   init_sp_psi_keys();
 
@@ -10683,18 +10834,22 @@ static void init_server_psi_keys(void) {
   count = (int)COM_QUERY;
   mysql_statement_register(category, com_statement_info, count);
 
-  /*
-    Register [COM_QUERY + 1 .. COM_END] as "statement/com/..."
-  */
-  count = (int)COM_END - (int)COM_QUERY;
+  /* Exclude COM_CLONE as it would mutate */
+  count = (int)COM_CLONE - (int)COM_QUERY - 1;
   mysql_statement_register(category, &com_statement_info[(int)COM_QUERY + 1],
                            count);
-
+  /*
+    Register [COM_CLONE + 1 .. COM_END] as "statement/com/..."
+  */
+  count = (int)COM_END - (int)COM_CLONE;
+  mysql_statement_register(category, &com_statement_info[(int)COM_CLONE + 1],
+                           count);
   category = "abstract";
   /*
     Register [COM_QUERY] as "statement/abstract/com_query"
   */
   mysql_statement_register(category, &com_statement_info[(int)COM_QUERY], 1);
+  mysql_statement_register(category, &com_statement_info[(int)COM_CLONE], 1);
 
   /*
     When a new packet is received,
@@ -10805,3 +10960,15 @@ bool drop_native_table_for_pfs(const char *schema_name,
   DBUG_ASSERT(thd);
   return do_drop_native_table_for_pfs(thd, schema_name, table_name);
 }
+
+#ifdef _WIN32
+// update_named_pipe_full_access_group returns false on success, true on failure
+bool update_named_pipe_full_access_group(const char *new_group_name) {
+  if (named_pipe_acceptor) {
+    return named_pipe_listener->update_named_pipe_full_access_group(
+        new_group_name);
+  }
+  return true;
+}
+
+#endif  // _WIN32

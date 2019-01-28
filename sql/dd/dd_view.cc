@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,6 +48,7 @@
 #include "sql/dd/dd_table.h"                 // fill_dd_columns_from_create_*
 #include "sql/dd/dictionary.h"               // dd::Dictionary
 #include "sql/dd/impl/dictionary_impl.h"     // default_catalog_name
+#include "sql/dd/impl/utils.h"               // dd::my_time_t_to_ull_datetime()
 #include "sql/dd/properties.h"               // dd::Properties
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/abstract_table.h"  // dd::enum_table_type
@@ -338,9 +339,12 @@ static bool fill_dd_view_columns(THD *thd, View *view_obj,
     if (!names_dict.empty())  // Explicit names were provided
     {
       std::string i_s = std::to_string(i);
-      String_type value = names_dict.value(String_type(i_s.begin(), i_s.end()));
-      char *name = static_cast<char *>(
-          strmake_root(thd->mem_root, value.c_str(), value.length()));
+      String_type value;
+      char *name = nullptr;
+      if (!names_dict.get(String_type(i_s.begin(), i_s.end()), &value)) {
+        name = static_cast<char *>(
+            strmake_root(thd->mem_root, value.c_str(), value.length()));
+      }
       if (!name) DBUG_RETURN(true); /* purecov: inspected */
       cr_field->field_name = name;
     }
@@ -348,7 +352,6 @@ static bool fill_dd_view_columns(THD *thd, View *view_obj,
     cr_field->after = nullptr;
     cr_field->offset = 0;
     cr_field->pack_length_override = 0;
-    cr_field->create_length_to_internal_length();
     cr_field->maybe_null = !(tmp_field->flags & NOT_NULL_FLAG);
     cr_field->is_zerofill = (tmp_field->flags & ZEROFILL_FLAG);
     cr_field->is_unsigned = (tmp_field->flags & UNSIGNED_FLAG);
@@ -564,7 +567,7 @@ static bool fill_dd_view_definition(THD *thd, View *view_obj,
   dd::Properties *view_options = &view_obj->options();
   view_options->set("timestamp",
                     String_type(view->timestamp.str, view->timestamp.length));
-  view_options->set_bool("view_valid", true);
+  view_options->set("view_valid", true);
 
   // Fill view columns information in View object.
   if (fill_dd_view_columns(thd, view_obj, view)) return true;
@@ -587,12 +590,9 @@ bool update_view(THD *thd, dd::View *new_view, TABLE_LIST *view) {
   new_view->remove_children();
 
   // Get statement start time.
-  MYSQL_TIME curtime;
-  thd->variables.time_zone->gmt_sec_to_TIME(&curtime,
-                                            thd->query_start_in_secs());
-  ulonglong ull_curtime = TIME_to_ulonglong_datetime(&curtime);
   // Set last altered time.
-  new_view->set_last_altered(ull_curtime);
+  new_view->set_last_altered(
+      dd::my_time_t_to_ull_datetime(thd->query_start_in_secs()));
 
   if (fill_dd_view_definition(thd, new_view, view)) return true;
 
@@ -689,7 +689,8 @@ bool read_view(TABLE_LIST *view, const dd::View &view_obj, MEM_ROOT *mem_root) {
       std::string i_s = std::to_string(++i);
       String_type key(i_s.begin(), i_s.end());
       if (!names_dict.exists(key)) break;
-      String_type value = names_dict.value(key);
+      String_type value;
+      names_dict.get(key, &value);
       char *name = static_cast<char *>(
           strmake_root(mem_root, value.c_str(), value.length()));
       if (!name || (names_array->push_back({name, value.length()})))
@@ -712,7 +713,7 @@ bool update_view_status(THD *thd, const char *schema_name,
 
   // Update view error status.
   dd::Properties *view_options = &new_view->options();
-  view_options->set_bool("view_valid", status);
+  view_options->set("view_valid", status);
 
   Disable_gtid_state_update_guard disabler(thd);
 

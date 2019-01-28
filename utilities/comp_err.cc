@@ -28,10 +28,6 @@
 */
 
 /*
-  Written by Anjuta Widenius
-*/
-
-/*
   Creates one include file and multiple language-error message files from one
   multi-language text file.
 */
@@ -48,6 +44,7 @@
 
 #include "m_ctype.h"
 #include "m_string.h"
+#include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_dir.h"

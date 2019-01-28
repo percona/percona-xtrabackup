@@ -20,6 +20,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include <list>
+
 #include <assert.h>
 #include <errno.h>
 #include <mysql/group_replication_priv.h>
@@ -27,6 +29,7 @@
 #include <time.h>
 
 #include <mysql/components/services/log_builtins.h>
+#include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_systime.h"
 #include "plugin/group_replication/include/applier.h"
@@ -34,6 +37,7 @@
 #include "plugin/group_replication/include/plugin_messages/single_primary_message.h"
 #include "plugin/group_replication/include/plugin_server_include.h"
 #include "plugin/group_replication/include/services/notification/notification.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_member_identifier.h"
 
 char applier_module_channel_name[] = "group_replication_applier";
 bool applier_thread_is_exiting = false;
@@ -287,6 +291,21 @@ int Applier_module::apply_view_change_packet(
 
   Pipeline_event *pevent = new Pipeline_event(view_change_event, fde_evt);
   pevent->mark_event(SINGLE_VIEW_EVENT);
+
+  /*
+    If there are prepared consistent transactions waiting for the
+    prepare acknowledge, the View_change_log_event must be delayed
+    to after those transactions are committed, since they belong to
+    the previous view.
+  */
+  if (transaction_consistency_manager->has_local_prepared_transactions()) {
+    DBUG_PRINT("info", ("Delaying the log of the view '%s' to after local "
+                        "prepared transactions",
+                        view_change_packet->view_id.c_str()));
+    transaction_consistency_manager->schedule_view_change_event(pevent);
+    return error;
+  }
+
   error = inject_event_into_pipeline(pevent, cont);
   delete pevent;
 
@@ -311,7 +330,15 @@ int Applier_module::apply_data_packet(Data_packet *data_packet,
     Data_packet *new_packet = new Data_packet(payload, event_len);
     payload = payload + event_len;
 
-    Pipeline_event *pevent = new Pipeline_event(new_packet, fde_evt);
+    std::list<Gcs_member_identifier> *online_members = NULL;
+    if (NULL != data_packet->m_online_members) {
+      online_members =
+          new std::list<Gcs_member_identifier>(*data_packet->m_online_members);
+    }
+
+    Pipeline_event *pevent =
+        new Pipeline_event(new_packet, fde_evt, UNDEFINED_EVENT_MODIFIER,
+                           data_packet->m_consistency_level, online_members);
     error = inject_event_into_pipeline(pevent, cont);
 
     delete pevent;
@@ -344,6 +371,24 @@ int Applier_module::apply_single_primary_action_packet(
   return error;
 }
 
+int Applier_module::apply_transaction_prepared_action_packet(
+    Transaction_prepared_action_packet *packet) {
+  return transaction_consistency_manager->handle_remote_prepare(
+      packet->get_sid(), packet->m_gno, packet->m_gcs_member_id);
+}
+
+int Applier_module::apply_sync_before_execution_action_packet(
+    Sync_before_execution_action_packet *packet) {
+  return transaction_consistency_manager->handle_sync_before_execution_message(
+      packet->m_thread_id, packet->m_gcs_member_id);
+}
+
+int Applier_module::apply_leaving_members_action_packet(
+    Leaving_members_action_packet *packet) {
+  return transaction_consistency_manager->handle_member_leave(
+      packet->m_leaving_members);
+}
+
 int Applier_module::applier_thread_handle() {
   DBUG_ENTER("ApplierModule::applier_thread_handle()");
 
@@ -369,7 +414,7 @@ int Applier_module::applier_thread_handle() {
 
   if (!applier_error) {
     Pipeline_action *start_action = new Handler_start_action();
-    applier_error = pipeline->handle_action(start_action);
+    applier_error += pipeline->handle_action(start_action);
     delete start_action;
   }
 
@@ -418,6 +463,21 @@ int Applier_module::applier_thread_handle() {
       case SINGLE_PRIMARY_PACKET_TYPE:
         packet_application_error = apply_single_primary_action_packet(
             (Single_primary_action_packet *)packet);
+        this->incoming->pop();
+        break;
+      case TRANSACTION_PREPARED_PACKET_TYPE:
+        packet_application_error = apply_transaction_prepared_action_packet(
+            static_cast<Transaction_prepared_action_packet *>(packet));
+        this->incoming->pop();
+        break;
+      case SYNC_BEFORE_EXECUTION_PACKET_TYPE:
+        packet_application_error = apply_sync_before_execution_action_packet(
+            static_cast<Sync_before_execution_action_packet *>(packet));
+        this->incoming->pop();
+        break;
+      case LEAVING_MEMBERS_PACKET_TYPE:
+        packet_application_error = apply_leaving_members_action_packet(
+            static_cast<Leaving_members_action_packet *>(packet));
         this->incoming->pop();
         break;
       default:
@@ -653,34 +713,19 @@ void Applier_module::leave_group_on_failure() {
   notify_and_reset_ctx(ctx);
 
   bool set_read_mode = false;
-  if (view_change_notifier != NULL &&
-      !view_change_notifier->is_view_modification_ongoing()) {
-    view_change_notifier->start_view_modification();
-  }
-  Gcs_operations::enum_leave_state state = gcs_module->leave();
+  Plugin_gcs_view_modification_notifier view_change_notifier;
 
-  char **error_message = NULL;
-  int error = channel_stop_all(CHANNEL_APPLIER_THREAD | CHANNEL_RECEIVER_THREAD,
-                               stop_wait_timeout, error_message);
-  if (error) {
-    if (error_message != NULL && *error_message != NULL) {
-      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_ERROR_STOPPING_CHANNELS,
-                   *error_message);
-      my_free(error_message);
-    } else {
-      char buff[MYSQL_ERRMSG_SIZE];
-      size_t len = 0;
-      len = snprintf(buff, sizeof(buff), "Got error: ");
-      len += snprintf((buff + len), sizeof(buff) - len, "%d", error);
-      snprintf((buff + len), sizeof(buff) - len,
-               "Please check the error log for more details.");
-      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_ERROR_STOPPING_CHANNELS, buff);
-    }
-  }
+  view_change_notifier.start_view_modification();
+
+  Gcs_operations::enum_leave_state leave_state =
+      gcs_module->leave(&view_change_notifier);
+
+  Replication_thread_api::rpl_channel_stop_all(
+      CHANNEL_APPLIER_THREAD | CHANNEL_RECEIVER_THREAD, stop_wait_timeout);
 
   longlong errcode = 0;
   enum loglevel log_severity = WARNING_LEVEL;
-  switch (state) {
+  switch (leave_state) {
     case Gcs_operations::ERROR_WHEN_LEAVING:
       errcode = ER_GRP_RPL_FAILED_TO_CONFIRM_IF_SERVER_LEFT_GRP;
       log_severity = ERROR_LEVEL;
@@ -699,13 +744,16 @@ void Applier_module::leave_group_on_failure() {
   }
   LogPluginErr(log_severity, errcode);
 
-  kill_pending_transactions(set_read_mode, false);
+  kill_pending_transactions(set_read_mode, false, leave_state,
+                            &view_change_notifier);
 
   DBUG_VOID_RETURN;
 }
 
-void Applier_module::kill_pending_transactions(bool set_read_mode,
-                                               bool threaded_sql_session) {
+void Applier_module::kill_pending_transactions(
+    bool set_read_mode, bool threaded_sql_session,
+    Gcs_operations::enum_leave_state leave_state,
+    Plugin_gcs_view_modification_notifier *view_notifier) {
   DBUG_ENTER("Applier_module::kill_pending_transactions");
 
   // Stop any more transactions from waiting
@@ -729,13 +777,15 @@ void Applier_module::kill_pending_transactions(bool set_read_mode,
       enable_server_read_mode(PSESSION_USE_THREAD);
   }
 
-  if (view_change_notifier != NULL) {
+  if (Gcs_operations::ERROR_WHEN_LEAVING != leave_state &&
+      Gcs_operations::ALREADY_LEFT != leave_state) {
     LogPluginErr(INFORMATION_LEVEL, ER_GRP_RPL_WAITING_FOR_VIEW_UPDATE);
-    if (view_change_notifier->wait_for_view_modification()) {
+    if (view_notifier->wait_for_view_modification()) {
       LogPluginErr(WARNING_LEVEL,
                    ER_GRP_RPL_TIMEOUT_RECEIVING_VIEW_CHANGE_ON_SHUTDOWN);
     }
   }
+  gcs_module->remove_view_notifer(view_notifier);
 
   /*
     Only execute abort if we were already inside a group. We may happen to come

@@ -441,8 +441,9 @@ bool PT_option_value_no_option_type_password_for::contextualize(
   // Current password is specified through the REPLACE clause hence set the flag
   if (current_password != nullptr) user->uses_replace_clause = true;
 
-  var = new (*THR_MALLOC) set_var_password(
-      user, const_cast<char *>(password), const_cast<char *>(current_password));
+  var = new (*THR_MALLOC) set_var_password(user, const_cast<char *>(password),
+                                           const_cast<char *>(current_password),
+                                           retain_current_password);
 
   if (var == NULL || lex->var_list.push_back(var)) {
     return true;  // Out of memory
@@ -477,7 +478,8 @@ bool PT_option_value_no_option_type_password::contextualize(Parse_context *pc) {
   if (!user) return true;
 
   set_var_password *var = new (*THR_MALLOC) set_var_password(
-      user, const_cast<char *>(password), const_cast<char *>(current_password));
+      user, const_cast<char *>(password), const_cast<char *>(current_password),
+      retain_current_password);
   if (var == NULL || lex->var_list.push_back(var)) {
     return true;  // Out of Memory
   }
@@ -1010,10 +1012,11 @@ bool PT_table_factor_function::contextualize(Parse_context *pc) {
   return false;
 }
 
-PT_derived_table::PT_derived_table(PT_subquery *subquery,
+PT_derived_table::PT_derived_table(bool lateral, PT_subquery *subquery,
                                    const LEX_CSTRING &table_alias,
                                    Create_col_name_list *column_names)
-    : m_subquery(subquery),
+    : m_lateral(lateral),
+      m_subquery(subquery),
       m_table_alias(table_alias.str),
       column_names(*column_names) {
   m_subquery->m_is_derived_table = true;
@@ -1025,7 +1028,23 @@ bool PT_derived_table::contextualize(Parse_context *pc) {
   outer_select->parsing_place = CTX_DERIVED;
   DBUG_ASSERT(outer_select->linkage != GLOBAL_OPTIONS_TYPE);
 
+  /*
+    Determine the first outer context to try for the derived table:
+    - if lateral: context of query which owns the FROM i.e. outer_select
+    - if not lateral: context of query outer to query which owns the FROM.
+    This is just a preliminary decision. Name resolution
+    {Item_field,Item_ref}::fix_fields() may use or ignore this outer context
+    depending on where the derived table is placed in it.
+  */
+  if (!m_lateral)
+    pc->thd->lex->push_context(
+        outer_select->master_unit()->outer_select()
+            ? &outer_select->master_unit()->outer_select()->context
+            : nullptr);
+
   if (m_subquery->contextualize(pc)) return true;
+
+  if (!m_lateral) pc->thd->lex->pop_context();
 
   outer_select->parsing_place = CTX_NONE;
 
@@ -1040,6 +1059,10 @@ bool PT_derived_table::contextualize(Parse_context *pc) {
                                         MDL_SHARED_READ);
   if (value == NULL) return true;
   if (column_names.size()) value->set_derived_column_names(&column_names);
+  if (m_lateral) {
+    // Mark the unit as LATERAL, by turning on one bit in the map:
+    value->derived_unit()->m_lateral_deps = OUTER_REF_TABLE_BIT;
+  }
   if (pc->select->add_joined_table(value)) return true;
 
   return false;
@@ -1791,8 +1814,6 @@ Sql_cmd *PT_show_keys::make_cmd(THD *thd) {
 
 bool PT_alter_table_change_column::contextualize(Table_ddl_parse_context *pc) {
   if (super::contextualize(pc) || m_field_def->contextualize(pc)) return true;
-  if (m_field_def->default_value)
-    pc->alter_info->flags |= Alter_info::ALTER_CHANGE_COLUMN_DEFAULT;
   pc->alter_info->flags |= m_field_def->alter_info_flags;
   return pc->alter_info->add_field(
       pc->thd, &m_new_name, m_field_def->type, m_field_def->length,
@@ -2292,9 +2313,18 @@ Sql_cmd *PT_show_tables::make_cmd(THD *thd) {
 bool PT_json_table_column_with_path::contextualize(Parse_context *pc) {
   if (super::contextualize(pc) || m_type->contextualize(pc)) return true;
 
-  const CHARSET_INFO *cs = m_type->get_charset()
-                               ? m_type->get_charset()
-                               : global_system_variables.character_set_results;
+  const CHARSET_INFO *cs = m_type->get_charset();
+  if (cs == nullptr) {
+    if (m_collation != nullptr)
+      cs = m_collation;
+    else
+      cs = pc->thd->variables.collation_connection;
+  } else {
+    cs = merge_charset_and_collation(cs, m_collation);
+    if (cs == nullptr) {
+      return true;
+    }
+  }
 
   m_column.init(pc->thd,
                 m_name,                        // Alias
@@ -2307,8 +2337,8 @@ bool PT_json_table_column_with_path::contextualize(Parse_context *pc) {
                 &EMPTY_STR,                    // Comment
                 nullptr,                       // Change
                 m_type->get_interval_list(),   // Interval list
-                cs,                            // Charset
-                false,                         // No "COLLATE" clause
+                cs,                            // Charset & collation
+                m_collation != nullptr,        // Has "COLLATE" clause
                 m_type->get_uint_geom_type(),  // Geom type
                 nullptr,                       // Gcol_info
                 nullptr,                       // Default gen expression

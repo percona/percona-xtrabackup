@@ -20,13 +20,13 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/*
+/**
   @file json_path.cc
 
   This file contains implementation support for the JSON path abstraction.
   The path abstraction is described by the functional spec
   attached to WL#7909.
- */
+*/
 
 #include "sql/json_path.h"
 
@@ -49,7 +49,7 @@
 #include "sql_string.h"          // String
 #include "template_utils.h"      // down_cast
 
-// For use in Json_path::parse_path
+// For use in parse_path().
 #define PARSER_RETURN(retval) \
   {                           \
     *status = retval;         \
@@ -71,6 +71,16 @@ constexpr char LAST[] = "last";
 
 static bool is_ecmascript_identifier(const std::string &name);
 static bool is_digit(unsigned codepoint);
+
+static const char *parse_path(size_t, const char *, Json_path *, bool *);
+static const char *parse_path_leg(const char *, const char *, Json_path *,
+                                  bool *);
+static const char *parse_ellipsis_leg(const char *, const char *, Json_path *,
+                                      bool *);
+static const char *parse_array_leg(const char *, const char *, Json_path *,
+                                   bool *);
+static const char *parse_member_leg(const char *, const char *, Json_path *,
+                                    bool *);
 
 static bool append_array_index(String *buf, size_t index, bool from_end) {
   if (!from_end) return buf->append_ulonglong(index);
@@ -163,17 +173,6 @@ Json_seekable_path::Json_seekable_path() : m_path_legs(key_memory_JSON) {}
 Json_path::Json_path() : m_mem_root(key_memory_JSON, 256) {}
 
 bool Json_path::to_string(String *buf) const {
-  /*
-    3-part scope prefixes are not needed by wl7909.
-    There is no way to test them at the SQL level right now
-    since they would raise errors in all possible use-cases.
-    Support for them can be added in some follow-on worklog
-    which actually needs them.
-
-    This is where we would put pretty-printing support
-    for 3-part scope prefixes.
-  */
-
   if (buf->append(SCOPE)) return true;
 
   for (const Json_path_leg *leg : *this) {
@@ -200,13 +199,12 @@ bool Json_path::can_match_many() const {
 // Json_path parsing
 
 /** Top level parsing factory method */
-bool parse_path(const bool begins_with_column_id, const size_t path_length,
-                const char *path_expression, Json_path *path,
-                size_t *bad_index) {
+bool parse_path(size_t path_length, const char *path_expression,
+                Json_path *path, size_t *bad_index) {
   bool status = false;
 
-  const char *end_of_parsed_path = path->parse_path(
-      begins_with_column_id, path_length, path_expression, &status);
+  const char *end_of_parsed_path =
+      parse_path(path_length, path_expression, path, &status);
 
   if (status) {
     *bad_index = 0;
@@ -232,33 +230,26 @@ static inline const char *purge_whitespace(const char *str, const char *end) {
   return std::find_if_not(str, end, [](char c) { return is_whitespace(c); });
 }
 
-const char *Json_path::parse_path(const bool begins_with_column_id,
-                                  const size_t path_length,
-                                  const char *path_expression, bool *status) {
-  clear();
+/**
+   Fills in a Json_path from a path expression.
+
+   @param[in] path_length The length of the path expression.
+   @param[in] path_expression The string form of the path expression.
+   @param[in,out] path The Json_path object to fill.
+   @param[out] status True if the path parsed successfully. False otherwise.
+
+   @return The pointer advanced to around where the error, if any, occurred.
+*/
+static const char *parse_path(size_t path_length, const char *path_expression,
+                              Json_path *path, bool *status) {
+  path->clear();
 
   const char *charptr = path_expression;
   const char *endptr = path_expression + path_length;
 
-  if (begins_with_column_id) {
-    /*
-      3-part scope prefixes are not needed by wl7909.
-      There is no way to test them at the SQL level right now
-      since they would raise errors in all possible use-cases.
-      Support for them can be added in some follow-on worklog
-      which actually needs them.
-
-      This is where we would add parsing support
-      for 3-part scope prefixes.
-    */
-
-    // not supported yet
-    PARSER_RETURN(false);
-  } else {
-    // the first non-whitespace character must be $
-    charptr = purge_whitespace(charptr, endptr);
-    if ((charptr >= endptr) || (*charptr++ != SCOPE)) PARSER_RETURN(false);
-  }
+  // the first non-whitespace character must be $
+  charptr = purge_whitespace(charptr, endptr);
+  if ((charptr >= endptr) || (*charptr++ != SCOPE)) PARSER_RETURN(false);
 
   // now add the legs
   *status = true;
@@ -266,34 +257,53 @@ const char *Json_path::parse_path(const bool begins_with_column_id,
     charptr = purge_whitespace(charptr, endptr);
     if (charptr >= endptr) break;  // input exhausted
 
-    charptr = parse_path_leg(charptr, endptr, status);
+    charptr = parse_path_leg(charptr, endptr, path, status);
   }
 
   // a path may not end with an ellipsis
-  if (m_path_legs.size() > 0 &&
-      m_path_legs.back()->get_type() == jpl_ellipsis) {
+  if (path->leg_count() > 0 && path->last_leg()->get_type() == jpl_ellipsis) {
     *status = false;
   }
 
   return charptr;
 }
 
-const char *Json_path::parse_path_leg(const char *charptr, const char *endptr,
-                                      bool *status) {
+/**
+   Parses a single path leg and appends it to a Json_path object.
+
+   @param[in] charptr The current pointer into the path expression.
+   @param[in] endptr  The end of the path expression.
+   @param[in,out] path The Json_path object to fill.
+   @param[out] status The status variable to be filled in.
+
+   @return The pointer advanced past the consumed leg.
+*/
+static const char *parse_path_leg(const char *charptr, const char *endptr,
+                                  Json_path *path, bool *status) {
   switch (*charptr) {
     case BEGIN_ARRAY:
-      return parse_array_leg(charptr, endptr, status);
+      return parse_array_leg(charptr, endptr, path, status);
     case BEGIN_MEMBER:
-      return parse_member_leg(charptr, endptr, status);
+      return parse_member_leg(charptr, endptr, path, status);
     case WILDCARD:
-      return parse_ellipsis_leg(charptr, endptr, status);
+      return parse_ellipsis_leg(charptr, endptr, path, status);
     default:
       PARSER_RETURN(false);
   }
 }
 
-const char *Json_path::parse_ellipsis_leg(const char *charptr,
-                                          const char *endptr, bool *status) {
+/**
+   Parses a single ellipsis leg and appends it to a Json_path object.
+
+   @param[in] charptr The current pointer into the path expression.
+   @param[in] endptr  The end of the path expression.
+   @param[in,out] path The Json_path object to fill.
+   @param[out] status The status variable to be filled in.
+
+   @return The pointer advanced past the consumed leg.
+*/
+static const char *parse_ellipsis_leg(const char *charptr, const char *endptr,
+                                      Json_path *path, bool *status) {
   // assume the worst
   *status = false;
 
@@ -315,7 +325,7 @@ const char *Json_path::parse_ellipsis_leg(const char *charptr,
     PARSER_RETURN(false);
   }
 
-  PARSER_RETURN(!append(Json_path_leg(jpl_ellipsis)));
+  PARSER_RETURN(!path->append(Json_path_leg(jpl_ellipsis)));
 }
 
 /**
@@ -378,8 +388,18 @@ static const char *parse_array_index(const char *charptr, const char *endptr,
   return endp;
 }
 
-const char *Json_path::parse_array_leg(const char *charptr, const char *endptr,
-                                       bool *status) {
+/**
+   Parses a single array leg and appends it to a Json_path object.
+
+   @param[in] charptr The current pointer into the path expression.
+   @param[in] endptr  The end of the path expression.
+   @param[in,out] path The Json_path object to fill.
+   @param[out] status The status variable to be filled in.
+
+   @return The pointer advanced past the consumed leg.
+*/
+static const char *parse_array_leg(const char *charptr, const char *endptr,
+                                   Json_path *path, bool *status) {
   // assume the worst
   *status = false;
 
@@ -392,7 +412,7 @@ const char *Json_path::parse_array_leg(const char *charptr, const char *endptr,
   if (*charptr == WILDCARD) {
     charptr++;
 
-    if (append(Json_path_leg(jpl_array_cell_wildcard)))
+    if (path->append(Json_path_leg(jpl_array_cell_wildcard)))
       PARSER_RETURN(false); /* purecov: inspected */
   } else {
     /*
@@ -433,11 +453,12 @@ const char *Json_path::parse_array_leg(const char *charptr, const char *endptr,
                                      (!from_end1 && cell_index2 < cell_index1)))
         PARSER_RETURN(false);
 
-      if (append(Json_path_leg(cell_index1, from_end1, cell_index2, from_end2)))
+      if (path->append(
+              Json_path_leg(cell_index1, from_end1, cell_index2, from_end2)))
         PARSER_RETURN(false); /* purecov: inspected */
     } else {
       // A single array cell.
-      if (append(Json_path_leg(cell_index1, from_end1)))
+      if (path->append(Json_path_leg(cell_index1, from_end1)))
         PARSER_RETURN(false); /* purecov: inspected */
     }
   }
@@ -530,8 +551,18 @@ static std::unique_ptr<Json_string> parse_name_with_rapidjson(const char *str,
   return std::unique_ptr<Json_string>(down_cast<Json_string *>(dom.release()));
 }
 
-const char *Json_path::parse_member_leg(const char *charptr, const char *endptr,
-                                        bool *status) {
+/**
+   Parses a single member leg and appends it to a Json_path object.
+
+   @param[in] charptr The current pointer into the path expression.
+   @param[in] endptr  The end of the path expression.
+   @param[in,out] path The Json_path object to fill.
+   @param[out] status The status variable to be filled in.
+
+   @return The pointer advanced past the consumed leg.
+*/
+static const char *parse_member_leg(const char *charptr, const char *endptr,
+                                    Json_path *path, bool *status) {
   // advance past the .
   charptr++;
 
@@ -541,7 +572,7 @@ const char *Json_path::parse_member_leg(const char *charptr, const char *endptr,
   if (*charptr == WILDCARD) {
     charptr++;
 
-    if (append(Json_path_leg(jpl_member_wildcard)))
+    if (path->append(Json_path_leg(jpl_member_wildcard)))
       PARSER_RETURN(false); /* purecov: inspected */
   } else {
     const char *key_start = charptr;
@@ -581,7 +612,7 @@ const char *Json_path::parse_member_leg(const char *charptr, const char *endptr,
       PARSER_RETURN(false);
 
     // Looking good.
-    if (append(Json_path_leg(jstr->value())))
+    if (path->append(Json_path_leg(jstr->value())))
       PARSER_RETURN(false); /* purecov: inspected */
   }
 

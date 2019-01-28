@@ -20,15 +20,32 @@ EOF
 }
 
 undo_directory=$TEST_VAR_ROOT/var1/undo_dir
+undo_directory_ext=$TEST_VAR_ROOT/var1/undo_dir_ext
+
+mkdir -p $undo_directory
+mkdir -p $undo_directory_ext
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table=1
 innodb_undo_directory=$undo_directory
 innodb_undo_tablespaces=4
+innodb_directories=$undo_directory_ext
 "
 
 start_server
+
+# create some undo tablespaces
+mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE '$undo_directory_ext/undo1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE '$undo_directory_ext/undo2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo3 ADD DATAFILE 'undo1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo4 ADD DATAFILE 'undo2.ibu'"
+
+mysql -e "ALTER UNDO TABLESPACE innodb_undo_001 SET INACTIVE"
+mysql -e "ALTER UNDO TABLESPACE innodb_undo_002 SET INACTIVE"
+
 load_sakila
+
+ls -al $undo_directory_ext
 
 checksum1=`checksum_table sakila payment`
 test -n "$checksum1" || die "Failed to checksum table sakila.payment"
@@ -47,11 +64,20 @@ stop_server
 
 rm -rf $MYSQLD_DATADIR/*
 rm -rf $undo_directory/*
+rm -rf $undo_directory_ext/*
 
 xtrabackup --prepare --target-dir=$topdir/backup
 
 xtrabackup --copy-back --target-dir=$topdir/backup
 
+
+for file in $undo_directory_ext/undo1.ibu $undo_directory_ext/undo2.ibu \
+        $undo_directory/undo1.ibu $undo_directory/undo2.ibu ; do
+    if [ ! -f $file ] ; then
+        vlog "Tablepace $file is missing!"
+        exit -1
+    fi
+done
 
 
 start_server

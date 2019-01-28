@@ -924,6 +924,11 @@ sub process_opts_file {
         next;
       }
 
+      if ($opt eq "--nowarnings") {
+        $tinfo->{'skip_check_warnings'} = 1;
+        next;
+      }
+
       # Ok, this was a real option, add it
       push(@{ $tinfo->{$opt_name} }, $opt);
     }
@@ -983,6 +988,14 @@ sub collect_one_test_case {
       # be saved in case of --record.
       $tinfo->{record_file} = $result_file;
     }
+  }
+
+  # Disable quiet output when a test file doesn't contain a result file
+  # and --record option is disabled.
+  if ($::opt_quiet and defined $tinfo->{record_file} and !$::opt_record) {
+    $::opt_quiet = 0;
+    mtr_report("Turning off '--quiet' option since the MTR run contains " .
+               "a test without a result file.");
   }
 
   # Skip some tests but include in list, just mark them as skipped
@@ -1093,7 +1106,8 @@ sub collect_one_test_case {
   # include file), other normal/non-big tests shouldn't run with
   # only-big-test option.
   if ($::opt_only_big_test) {
-    if (!$tinfo->{'no_valgrind_without_big'} and !$tinfo->{'big_test'}) {
+    if ((!$tinfo->{'no_valgrind_without_big'} and !$tinfo->{'big_test'}) or
+        ($tinfo->{'no_valgrind_without_big'} and !$::opt_valgrind)) {
       skip_test($tinfo, "Not a big test");
       return $tinfo;
     }
@@ -1337,9 +1351,14 @@ sub unspace {
 sub opts_from_file ($) {
   my $file = shift;
 
-  open(FILE, "<", $file) or mtr_error("can't open file \"$file\": $!");
+  my $file_handle =
+    IO::File->new($file, '<') or mtr_error("Can't open file '$file': $!");
+
   my @args;
-  while (<FILE>) {
+  while (<$file_handle>) {
+    # Skip a line if it starts with '#' (i.e comments)
+    next if /^\s*#/;
+
     chomp;
     s/^\s+//;    # Remove leading space
     s/\s+$//;    # Remove ending space
@@ -1364,12 +1383,11 @@ sub opts_from_file ($) {
 
       # Do not pass empty string since my_getopt is not capable to
       # handle it.
-      if (length($arg)) {
-        push(@args, $arg);
-      }
+      push(@args, $arg) if (length($arg));
     }
   }
-  close FILE;
+
+  $file_handle->close();
   return \@args;
 }
 

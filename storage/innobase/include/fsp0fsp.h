@@ -38,6 +38,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fsp0space.h"
 #include "fut0lst.h"
 #include "mtr0mtr.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
 #include "page0types.h"
 #include "rem0types.h"
 #include "ut0byte.h"
@@ -151,22 +153,22 @@ descriptor page, but used only in the first. */
                     FSP_FREE_FRAG list */
 #define FSP_FREE 24 /* list of free extents */
 #define FSP_FREE_FRAG (24 + FLST_BASE_NODE_SIZE)
-  /* list of partially free extents not
-  belonging to any segment */
+/* list of partially free extents not
+belonging to any segment */
 #define FSP_FULL_FRAG (24 + 2 * FLST_BASE_NODE_SIZE)
-  /* list of full extents not belonging
-  to any segment */
+/* list of full extents not belonging
+to any segment */
 #define FSP_SEG_ID (24 + 3 * FLST_BASE_NODE_SIZE)
-  /* 8 bytes which give the first unused
-  segment id */
+/* 8 bytes which give the first unused
+segment id */
 #define FSP_SEG_INODES_FULL (32 + 3 * FLST_BASE_NODE_SIZE)
-  /* list of pages containing segment
-  headers, where all the segment inode
-  slots are reserved */
+/* list of pages containing segment
+headers, where all the segment inode
+slots are reserved */
 #define FSP_SEG_INODES_FREE (32 + 4 * FLST_BASE_NODE_SIZE)
-  /* list of pages containing segment
-  headers, where not all the segment
-  header slots are reserved */
+/* list of pages containing segment
+headers, where not all the segment
+header slots are reserved */
 /*-------------------------------------*/
 /* File space header size */
 #define FSP_HEADER_SIZE (32 + 5 * FLST_BASE_NODE_SIZE)
@@ -371,6 +373,11 @@ page_no_t fsp_get_extent_size_in_pages(const page_size_t &page_size) {
  @return space id, ULINT UNDEFINED if error */
 space_id_t fsp_header_get_space_id(
     const page_t *page); /*!< in: first page of a tablespace */
+
+/** Read the server version number from the DD tablespace header.
+@param[out]	version	server version from tablespace header
+@return false if success. */
+bool fsp_header_dict_get_server_version(uint *version);
 
 /** Read a tablespace header field.
 @param[in]	page	first page of a tablespace

@@ -37,7 +37,7 @@ namespace gcs_member_info_unittest {
 
 class ClusterMemberInfoTest : public ::testing::Test {
  protected:
-  ClusterMemberInfoTest(){};
+  ClusterMemberInfoTest() {}
 
   virtual void SetUp() {
     string hostname("pc_hostname");
@@ -110,7 +110,7 @@ TEST_F(ClusterMemberInfoTest, EncodeDecodeIdempotencyTest) {
 
 class ClusterMemberInfoManagerTest : public ::testing::Test {
  protected:
-  ClusterMemberInfoManagerTest(){};
+  ClusterMemberInfoManagerTest() {}
 
   virtual void SetUp() {
     string hostname("pc_hostname");
@@ -137,7 +137,8 @@ class ClusterMemberInfoManagerTest : public ::testing::Test {
         has_enforces_update_everywhere_checks, member_weight,
         lower_case_table_names);
 
-    cluster_member_mgr = new Group_member_info_manager(local_node);
+    cluster_member_mgr =
+        new Group_member_info_manager(local_node, PSI_NOT_INSTRUMENTED);
   }
 
   virtual void TearDown() {

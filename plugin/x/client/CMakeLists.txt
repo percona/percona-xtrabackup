@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2018 Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -47,10 +47,6 @@ INCLUDE_DIRECTORIES(SYSTEM
 )
 
 SET(XCLIENT_FLAGS "")
-
-IF(HAVE_VISIBILITY_HIDDEN)
-  SET(XCLIENT_FLAGS "${XCLIENT_FLAGS} -fvisibility=hidden")
-ENDIF(HAVE_VISIBILITY_HIDDEN)
 
 ADD_COMPILE_FLAGS(${CLIENT_SRC}
   COMPILE_FLAGS

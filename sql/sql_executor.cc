@@ -226,7 +226,7 @@ void JOIN::exec() {
     if (select_lex->cond_value != Item::COND_FALSE &&
         (!where_cond || where_cond->val_int())) {
       if (query_result->send_result_set_metadata(
-              *columns_list, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
+              thd, *columns_list, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
         DBUG_VOID_RETURN;
 
       /*
@@ -237,10 +237,11 @@ void JOIN::exec() {
       */
       if (((select_lex->having_value != Item::COND_FALSE) &&
            having_is_true(having_cond)) &&
-          should_send_current_row() && query_result->send_data(fields_list))
+          should_send_current_row() &&
+          query_result->send_data(thd, fields_list))
         error = 1;
       else {
-        error = (int)query_result->send_eof();
+        error = (int)query_result->send_eof(thd);
         send_records = calc_found_rows ? 1 : thd->get_sent_row_count();
       }
       /* Query block (without union) always returns 0 or 1 row */
@@ -272,7 +273,7 @@ void JOIN::exec() {
   THD_STAGE_INFO(thd, stage_sending_data);
   DBUG_PRINT("info", ("%s", thd->proc_info));
   if (query_result->send_result_set_metadata(
-          *fields, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF)) {
+          thd, *fields, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF)) {
     /* purecov: begin inspected */
     error = 1;
     DBUG_VOID_RETURN;
@@ -422,7 +423,7 @@ bool JOIN::rollup_send_data(uint idx) {
     current_ref_item_slice = -1;  // as we switched to a not-numbered slice
     if (having_is_true(having_cond)) {
       if (send_records < unit->select_limit_cnt && should_send_current_row() &&
-          select_lex->query_result()->send_data(rollup.fields_list[i]))
+          select_lex->query_result()->send_data(thd, rollup.fields_list[i]))
         return true;
       send_records++;
     }
@@ -444,18 +445,6 @@ bool JOIN::rollup_send_data(uint idx) {
 */
 
 bool has_rollup_result(Item *item) {
-  /*
-    Do not save rollup result for expressions having window functions.
-    Window functions will be evaluated after ROLLUP processing.
-    So we cannot store the result of the expression yet.
-    However, all the expressions having window functions would have
-    called spilt_sum_func(). As a result, rollup fields that are part
-    of this expression would have the ROLLUP NULLs stored. These
-    are later used to evaulate the expressions when window functions
-    get evaulated.
-  */
-  if (item->has_wf()) return false;
-
   if (item->type() == Item::NULL_RESULT_ITEM) return true;
 
   if (item->type() == Item::FUNC_ITEM) {
@@ -500,7 +489,14 @@ bool JOIN::rollup_write_data(uint idx, QEP_TAB *qep_tab) {
     if (having_is_true(qep_tab->having)) {
       int write_error;
       for (Item &item : rollup.all_fields[i]) {
-        if (has_rollup_result(&item)) item.save_in_result_field(1);
+        /*
+          Save the values of rollup expressions in the temporary table.
+          Unless it is a literal NULL value, make sure there is actually
+          a temporary table field created for it.
+        */
+        if ((item.type() == Item::NULL_RESULT_ITEM) ||
+            (has_rollup_result(&item) && item.get_tmp_table_field() != nullptr))
+          item.save_in_result_field(1);
       }
       copy_sum_funcs(sum_funcs_end[i + 1], sum_funcs_end[i]);
       TABLE *table_arg = qep_tab->table();
@@ -828,9 +824,10 @@ static void return_zero_rows(JOIN *join, List<Item> &fields) {
   }
 
   SELECT_LEX *const select = join->select_lex;
+  THD *thd = join->thd;
 
   if (!(select->query_result()->send_result_set_metadata(
-          fields, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))) {
+          thd, fields, Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))) {
     bool send_error = false;
     if (join->send_row_on_empty_set()) {
       // Mark tables as containing only NULL values
@@ -850,9 +847,9 @@ static void return_zero_rows(JOIN *join, List<Item> &fields) {
       }
 
       if (having_is_true(join->having_cond) && join->should_send_current_row())
-        send_error = select->query_result()->send_data(fields);
+        send_error = select->query_result()->send_data(thd, fields);
     }
-    if (!send_error) select->query_result()->send_eof();  // Should be safe
+    if (!send_error) select->query_result()->send_eof(thd);  // Should be safe
   }
   DBUG_VOID_RETURN;
 }
@@ -1109,6 +1106,7 @@ static int do_select(JOIN *join) {
   DBUG_ENTER("do_select");
 
   join->send_records = 0;
+  THD *thd = join->thd;
 
   if (join->plan_is_const() && !join->need_tmp_before_win) {
     Next_select_func end_select = join->get_end_select_func();
@@ -1147,7 +1145,7 @@ static int do_select(JOIN *join) {
       else {
         if (having_is_true(join->having_cond) &&
             join->should_send_current_row())
-          rc = join->select_lex->query_result()->send_data(*join->fields);
+          rc = join->select_lex->query_result()->send_data(thd, *join->fields);
 
         // Restore NULL values if needed.
         if (save_nullinfo) join->restore_fields(save_nullinfo);
@@ -1158,7 +1156,7 @@ static int do_select(JOIN *join) {
       (the join condition and piece of where clause
       relevant to this join table).
     */
-    if (join->thd->is_error()) error = NESTED_LOOP_ERROR;
+    if (thd->is_error()) error = NESTED_LOOP_ERROR;
   } else if (join->select_count) {
     QEP_TAB *qep_tab = join->qep_tab;
     error = end_send_count(join, qep_tab);
@@ -1169,7 +1167,7 @@ static int do_select(JOIN *join) {
     if (error >= NESTED_LOOP_OK) error = join->first_select(join, qep_tab, 1);
   }
 
-  join->thd->current_found_rows = join->send_records;
+  thd->current_found_rows = join->send_records;
   /*
     For "order by with limit", we cannot rely on send_records, but need
     to use the rowcount read originally into the join_tab applying the
@@ -1192,7 +1190,7 @@ static int do_select(JOIN *join) {
     if (sort_tab->filesort && join->calc_found_rows &&
         sort_tab->filesort->sortorder &&
         sort_tab->filesort->limit != HA_POS_ERROR) {
-      join->thd->current_found_rows = sort_tab->records();
+      thd->current_found_rows = sort_tab->records();
     }
   }
 
@@ -1210,13 +1208,13 @@ static int do_select(JOIN *join) {
         Sic: this branch works even if rc != 0, e.g. when
         send_data above returns an error.
       */
-      if (join->select_lex->query_result()->send_eof())
+      if (join->select_lex->query_result()->send_eof(thd))
         rc = 1;  // Don't send error
       DBUG_PRINT("info", ("%ld records output", (long)join->send_records));
     }
   }
 
-  rc = join->thd->is_error() ? -1 : rc;
+  rc = thd->is_error() ? -1 : rc;
 #ifndef DBUG_OFF
   if (rc) {
     DBUG_PRINT("error", ("Error: do_select() failed"));
@@ -1373,24 +1371,43 @@ enum_nested_loop_state sub_select_op(JOIN *join, QEP_TAB *qep_tab,
     When the value of the guard variable is true the value of the object
     is the same as the value of the predicate, otherwise it's just returns
     true.
-    To carry out a return to a nested loop level of join table t the pointer
-    to t is remembered in the field 'return_tab' of the join structure.
-    Consider the following query:
+
+    Testing predicates at the optimal time can be tricky, especially for
+    outer joins. Consider the following query:
+
     @code
-        SELECT * FROM t1,
+        SELECT * FROM t1
+                      LEFT JOIN
+                      (t2 JOIN t3 ON t2.a=t3.a)
+                      ON t1.a=t2.a
+           WHERE t2.b=5 OR t2.b IS NULL
+    @endcode
+
+    (The OR ... IS NULL is solely so that the outer join can not be rewritten
+    to an inner join.)
+
+    Suppose the chosen execution plan dictates the order t1,t2,t3,
+    and suppose that we have found a row t1 and are scanning t2.
+    We cannot filter rows from t2 as we see them, as the LEFT JOIN needs
+    to know that there existed at least one (t2,t3) tuple matching t1,
+    so that it should not synthesize a NULL-complemented row.
+
+    However, once we have a matching t3, we can activate the predicate
+    (t2.b=5 OR t2.b IS NULL). (Note that it does not refer to t3 at all.)
+    If it fails, we should immediately stop scanning t3 and go back to
+    scanning t2 (or in general, arbitrarily early), which is done by setting
+    the field 'return_tab' of the JOIN.
+
+    Now consider a similar but more complex case:
+
+    @code
+        SELECT * FROM t1
                       LEFT JOIN
                       (t2, t3 LEFT JOIN (t4,t5) ON t5.a=t3.a)
                       ON t4.a=t2.a
            WHERE (t2.b=5 OR t2.b IS NULL) AND (t4.b=2 OR t4.b IS NULL)
     @endcode
-    Suppose the chosen execution plan dictates the order t1,t2,t3,t4,t5
-    and suppose for a given joined rows from tables t1,t2,t3 there are
-    no rows in the result set yet.
-    When first row from t5 that satisfies the on condition
-    t5.a=t3.a is found, the pushed down predicate t4.b=2 OR t4.b IS NULL
-    becomes 'activated', as well the predicate t4.a=t2.a. But
-    the predicate (t2.b=5 OR t2.b IS NULL) can not be checked until
-    t4.a=t2.a becomes true.
+
     In order not to re-evaluate the predicates that were already evaluated
     as attached pushed down predicates, a pointer to the the first
     most inner unmatched table is maintained in join_tab->first_unmatched.
@@ -1556,6 +1573,25 @@ enum_nested_loop_state sub_select(JOIN *join, QEP_TAB *const qep_tab,
   DBUG_RETURN(rc);
 }
 
+void QEP_TAB::refresh_lateral() {
+  /*
+    See if some lateral derived table further down on the execution path,
+    depends on us. If so, mark it for rematerialization.
+    Note that if this lateral DT depends on only const tables, the function
+    does nothing as it's not called for const tables; however, the lateral DT
+    is materialized once in its prepare_scan() like for a non-lateral DT.
+    todo: could this dependency-map idea be reused to decrease the amount of
+    execution for JSON_TABLE too? For now, JSON_TABLE is rematerialized every
+    time we're about to read it.
+  */
+  JOIN *j = join();
+  DBUG_ASSERT(j->has_lateral && lateral_derived_tables_depend_on_me);
+  auto deps = lateral_derived_tables_depend_on_me;
+  for (QEP_TAB **tab2 = j->map2qep_tab; deps; tab2++, deps >>= 1) {
+    if (deps & 1) (*tab2)->rematerialize = true;
+  }
+}
+
 /**
   @brief Prepare table to be scanned.
 
@@ -1569,11 +1605,20 @@ enum_nested_loop_state sub_select(JOIN *join, QEP_TAB *const qep_tab,
 
 bool QEP_TAB::prepare_scan() {
   // Check whether materialization is required.
-  if (!materialize_table || (table()->materialized && !rematerialize))
-    return false;
+  if (!materialize_table) return false;
+
+  if (table()->materialized) {
+    if (!rematerialize) return false;
+    if (table()->empty_result_table()) return true;
+  }
 
   // Materialize table prior to reading it
   if ((*materialize_table)(this)) return true;
+
+  if (table_ref && table_ref->is_derived() &&
+      table_ref->derived_unit()->m_lateral_deps)
+    // no further materialization, unless dependencies change
+    rematerialize = false;
 
   // Bind to the rowid buffer managed by the TABLE object.
   if (copy_current_rowid) copy_current_rowid->bind_buffer(table()->file->ref);
@@ -1677,7 +1722,9 @@ int do_sj_dups_weedout(THD *thd, SJ_TMP_TABLE *sjtbl) {
 static int do_sj_reset(SJ_TMP_TABLE *sj_tbl) {
   DBUG_ENTER("do_sj_reset");
   if (sj_tbl->tmp_table) {
-    int rc = sj_tbl->tmp_table->file->ha_delete_all_rows();
+    int rc = sj_tbl->tmp_table->empty_result_table();
+    if (sj_tbl->tmp_table->hash_field)
+      sj_tbl->tmp_table->file->ha_index_init(0, false);
     DBUG_RETURN(rc);
   }
   sj_tbl->have_confluent_row = false;
@@ -1848,6 +1895,8 @@ static enum_nested_loop_state evaluate_join_record(JOIN *join,
       enum enum_nested_loop_state rc;
       // A match is found for the current partial join prefix.
       qep_tab->found_match = true;
+      if (unlikely(qep_tab->lateral_derived_tables_depend_on_me))
+        qep_tab->refresh_lateral();
 
       rc = (*qep_tab->next_select)(join, qep_tab + 1, 0);
 
@@ -2560,13 +2609,13 @@ bool DynamicRangeIterator::Init() {
   QUICK_SELECT_I *old_qck = m_qep_tab->quick();
   QUICK_SELECT_I *qck;
   DEBUG_SYNC(thd(), "quick_not_created");
-  const int rc =
-      test_quick_select(thd(), m_qep_tab->keys(),
-                        0,  // empty table map
-                        HA_POS_ERROR,
-                        false,  // don't force quick range
-                        ORDER_NOT_RELEVANT, m_qep_tab, m_qep_tab->condition(),
-                        &needed_reg_dummy, &qck);
+  const int rc = test_quick_select(thd(), m_qep_tab->keys(),
+                                   0,  // empty table map
+                                   HA_POS_ERROR,
+                                   false,  // don't force quick range
+                                   ORDER_NOT_RELEVANT, m_qep_tab,
+                                   m_qep_tab->condition(), &needed_reg_dummy,
+                                   &qck, m_qep_tab->table()->force_index);
   if (thd()->is_error())  // @todo consolidate error reporting of
                           // test_quick_select
     return true;
@@ -3102,6 +3151,7 @@ static enum_nested_loop_state end_send(JOIN *join, QEP_TAB *qep_tab,
     pointed content. But you can read qep_tab[-1] then.
   */
   DBUG_ASSERT(qep_tab == NULL || qep_tab > join->qep_tab);
+  THD *thd = join->thd;
 
   if (!end_of_records) {
     int error;
@@ -3124,7 +3174,7 @@ static enum_nested_loop_state end_send(JOIN *join, QEP_TAB *qep_tab,
         (join->qep_tab[0].quick_optim() &&
          join->qep_tab[0].quick_optim()->is_loose_index_scan())) {
       // Copy non-aggregated fields when loose index scan is used.
-      if (copy_fields(&join->tmp_table_param, join->thd))
+      if (copy_fields(&join->tmp_table_param, thd))
         DBUG_RETURN(NESTED_LOOP_ERROR); /* purecov: inspected */
     }
     // Filter HAVING if not done earlier
@@ -3132,11 +3182,11 @@ static enum_nested_loop_state end_send(JOIN *join, QEP_TAB *qep_tab,
       DBUG_RETURN(NESTED_LOOP_OK);  // Didn't match having
     error = 0;
     if (join->should_send_current_row())
-      error = join->select_lex->query_result()->send_data(*fields);
+      error = join->select_lex->query_result()->send_data(thd, *fields);
     if (error) DBUG_RETURN(NESTED_LOOP_ERROR); /* purecov: inspected */
 
     ++join->send_records;
-    join->thd->get_stmt_da()->inc_current_row_for_condition();
+    thd->get_stmt_da()->inc_current_row_for_condition();
     if (join->send_records >= join->unit->select_limit_cnt &&
         !join->do_send_rows) {
       /*
@@ -3219,6 +3269,7 @@ enum_nested_loop_state end_send_count(JOIN *join, QEP_TAB *qep_tab) {
   List_iterator_fast<Item> it(join->all_fields);
   Item *item;
   int error = 0;
+  THD *thd = join->thd;
 
   while ((item = it++)) {
     if (item->type() == Item::SUM_FUNC_ITEM &&
@@ -3237,10 +3288,10 @@ enum_nested_loop_state end_send_count(JOIN *join, QEP_TAB *qep_tab) {
     SET @s =1;
     SELECT @s, COUNT(*) FROM t1;
   */
-  if (copy_fields(&join->tmp_table_param, join->thd)) return NESTED_LOOP_ERROR;
+  if (copy_fields(&join->tmp_table_param, thd)) return NESTED_LOOP_ERROR;
 
   if (having_is_true(join->having_cond)) {
-    if (join->select_lex->query_result()->send_data(*join->fields))
+    if (join->select_lex->query_result()->send_data(thd, *join->fields))
       return NESTED_LOOP_ERROR;
     join->send_records++;
   }
@@ -3254,6 +3305,7 @@ enum_nested_loop_state end_send_group(JOIN *join, QEP_TAB *qep_tab,
   int idx = -1;
   enum_nested_loop_state ok_code = NESTED_LOOP_OK;
   DBUG_ENTER("end_send_group");
+  THD *thd = join->thd;
 
   List<Item> *fields;
   if (qep_tab) {
@@ -3318,9 +3370,9 @@ enum_nested_loop_state end_send_group(JOIN *join, QEP_TAB *qep_tab,
             error = -1;  // Didn't satisfy having
           else {
             if (join->should_send_current_row())
-              error = join->select_lex->query_result()->send_data(*fields);
+              error = join->select_lex->query_result()->send_data(thd, *fields);
             join->send_records++;
-            join->thd->get_stmt_da()->inc_current_row_for_condition();
+            thd->get_stmt_da()->inc_current_row_for_condition();
             join->group_sent = true;
           }
           if (join->rollup.state != ROLLUP::STATE_NONE && error <= 0) {
@@ -3378,7 +3430,7 @@ enum_nested_loop_state end_send_group(JOIN *join, QEP_TAB *qep_tab,
         slice.
       */
       Switch_ref_item_slice slice_switch(join, REF_SLICE_ORDERED_GROUP_BY);
-      if (copy_fields(&join->tmp_table_param, join->thd))  // (1)
+      if (copy_fields(&join->tmp_table_param, thd))  // (1)
         DBUG_RETURN(NESTED_LOOP_ERROR);
       if (init_sum_functions(join->sum_funcs,
                              join->sum_funcs_end[idx + 1]))  //(2)
@@ -4318,6 +4370,11 @@ static bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
   */
   bool needs_peerset = w.needs_peerset();
 
+  /**
+    needs the last peer of the current row within a frame.
+  */
+  const bool needs_last_peer_in_frame = w.needs_last_peer_in_frame();
+
   DBUG_PRINT("enter", ("current_row: %lld, new_partition_or_eof: %d",
                        current_row, new_partition_or_eof));
 
@@ -4333,23 +4390,34 @@ static bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
     upper_limit = INT64_MAX;
   } else {
     DBUG_ASSERT(f->m_unit == WFU_ROWS);
-    int sign = 1;
+    bool lower_within_limits = true;
     /* Determine lower border */
+    int64 border =
+        f->m_from->border() != nullptr ? f->m_from->border()->val_int() : 0;
     switch (f->m_from->m_border_type) {
       case WBT_CURRENT_ROW:
         lower_limit = current_row;
         break;
-      case WBT_VALUE_FOLLOWING:
-        sign = -1;
-        /* fall through */
       case WBT_VALUE_PRECEDING:
         /*
           Example: 1 PRECEDING and current row== 2 => 1
                                    current row== 1 => 1
                                    current row== 3 => 2
         */
-        lower_limit =
-            max(current_row - f->m_from->border()->val_int() * sign, 1ll);
+        lower_limit = std::max(current_row - border, 1ll);
+        break;
+      case WBT_VALUE_FOLLOWING:
+        /*
+          Example: 1 FOLLOWING and current row== 2 => 3
+                                   current row== 1 => 2
+                                   current row== 3 => 4
+        */
+        if (border <= (std::numeric_limits<int64>::max() - current_row))
+          lower_limit = current_row + border;
+        else {
+          lower_within_limits = false;
+          lower_limit = INT64_MAX;
+        }
         break;
       case WBT_UNBOUNDED_PRECEDING:
         lower_limit = 1;
@@ -4360,18 +4428,31 @@ static bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
     }
 
     /* Determine upper border */
+    border = f->m_to->border() != nullptr ? f->m_to->border()->val_int() : 0;
     {
-      int64 sign = 1;
       switch (f->m_to->m_border_type) {
         case WBT_CURRENT_ROW:
           // we always have enough cache
           upper_limit = current_row;
           break;
         case WBT_VALUE_PRECEDING:
-          sign = -1;
-          /* fall through */
+          upper_limit = current_row - border;
+          break;
         case WBT_VALUE_FOLLOWING:
-          upper_limit = current_row + f->m_to->border()->val_int() * sign;
+          if (border <= (std::numeric_limits<longlong>::max() - current_row))
+            upper_limit = current_row + border;
+          else {
+            upper_limit = INT64_MAX;
+            /*
+              If both the border specifications are beyond numeric limits,
+              the window frame is empty.
+            */
+            if (f->m_from->m_border_type == WBT_VALUE_FOLLOWING &&
+                !lower_within_limits) {
+              lower_limit = INT64_MAX;
+              upper_limit = INT64_MAX - 1;
+            }
+          }
           break;
         case WBT_UNBOUNDED_FOLLOWING:
           unbounded_following = true;
@@ -4626,6 +4707,41 @@ static bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
 
     /* possibly subtract: early in partition there may not be any */
     if (remove_previous_first_row) {
+      /*
+        Check if the row leaving the frame is the last row in the peerset
+        within a frame. If true, set is_last_row_in_peerset_within_frame
+        to true.
+        Used by JSON_OBJECTAGG to remove the key/value pair only
+        when it is the last row having that key value.
+      */
+      if (needs_last_peer_in_frame) {
+        int64 rowno = lower_limit - 1;
+        bool is_last_row_in_peerset = true;
+        if (rowno < upper) {
+          if (bring_back_frame_row(thd, w, param, rowno,
+                                   Window::REA_LAST_IN_PEERSET))
+            DBUG_RETURN(true);
+          // Establish current row as base-line for peer set.
+          w.reset_order_by_peer_set();
+          /*
+            Check if the next row is a peer to this row. If not
+            set current row as the last row in peerset within
+            frame.
+          */
+          rowno++;
+          if (rowno < upper) {
+            if (bring_back_frame_row(thd, w, param, rowno,
+                                     Window::REA_LAST_IN_PEERSET))
+              DBUG_RETURN(true);
+            // Compare only the first order by item.
+            if (!w.in_new_order_by_peer_set(false))
+              is_last_row_in_peerset = false;
+          }
+        }
+        if (is_last_row_in_peerset)
+          w.set_is_last_row_in_peerset_within_frame(true);
+      }
+
       if (bring_back_frame_row(thd, w, param, lower_limit - 1,
                                Window::REA_FIRST_IN_FRAME))
         DBUG_RETURN(true);
@@ -4643,6 +4759,7 @@ static bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
         if (copy_funcs(param, thd, CFT_WF_FRAMING)) DBUG_RETURN(true);
       }
 
+      w.set_is_last_row_in_peerset_within_frame(false);
       w.set_inverse(false);
     }
 
@@ -4770,6 +4887,9 @@ static bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
                                    prev_first_rowno_in_frame + 1 - ++inverted)
                 .set_is_last_row_in_frame(true);  // pessimistic assumption
 
+            // Set the current row as the last row in the peerset.
+            w.set_is_last_row_in_peerset_within_frame(true);
+
             /*
               It may be that rowno is not in previous frame; for example if
               column id contains 1, 3, 4 and 5 and frame is RANGE BETWEEN 2
@@ -4784,6 +4904,7 @@ static bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
             }
 
             w.set_inverse(false).set_is_last_row_in_frame(false);
+            w.set_is_last_row_in_peerset_within_frame(false);
             found_first = false;
           } else {
             if (w.after_frame()) {
@@ -6215,7 +6336,7 @@ bool change_refs_to_tmp_fields(THD *thd, Ref_item_array ref_item_array,
   for (uint i = 0; i < border; i++) itr++;
   itr.sublist(res_selected_fields, elements);
 
-  DBUG_RETURN(thd->is_fatal_error);
+  DBUG_RETURN(thd->is_fatal_error());
 }
 
 /**

@@ -417,6 +417,7 @@ bool get_mysql_vars(MYSQL *connection) {
   char *innodb_data_file_path_var = NULL;
   char *innodb_data_home_dir_var = NULL;
   char *innodb_undo_directory_var = NULL;
+  char *innodb_directories_var = NULL;
   char *innodb_page_size_var = NULL;
   char *innodb_log_checksums_var = NULL;
   char *innodb_checksum_algorithm_var = NULL;
@@ -447,6 +448,7 @@ bool get_mysql_vars(MYSQL *connection) {
       {"innodb_data_file_path", &innodb_data_file_path_var},
       {"innodb_data_home_dir", &innodb_data_home_dir_var},
       {"innodb_undo_directory", &innodb_undo_directory_var},
+      {"innodb_directories", &innodb_directories_var},
       {"innodb_page_size", &innodb_page_size_var},
       {"innodb_log_checksums", &innodb_log_checksums_var},
       {"innodb_redo_log_encrypt", &innodb_redo_log_encrypt_var},
@@ -548,6 +550,12 @@ bool get_mysql_vars(MYSQL *connection) {
       innodb_undo_directory_var && *innodb_undo_directory_var) {
     srv_undo_dir =
         my_strdup(PSI_NOT_INSTRUMENTED, innodb_undo_directory_var, MYF(MY_FAE));
+  }
+
+  if (!check_if_param_set("innodb_directories") && innodb_directories_var &&
+      *innodb_directories_var) {
+    innobase_directories =
+        my_strdup(PSI_NOT_INSTRUMENTED, innodb_directories_var, MYF(MY_FAE));
   }
 
   if (!check_if_param_set("innodb_log_files_in_group") &&

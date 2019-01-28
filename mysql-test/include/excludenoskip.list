@@ -12,6 +12,10 @@
 # 1.0 OS dependent files
 # Below files are OS specific and tests will run only on selective platform
 # where conditions are met and skip on others.
+have_mac_os.inc
+not_mac_os.inc
+freebsd.inc
+not_freebsd.inc
 have_32bit.inc
 have_64bit.inc
 have_little_endian.inc
@@ -21,8 +25,12 @@ have_lowercase0.inc
 have_lowercase1.inc
 have_lowercase2.inc
 linux.inc
+linux_core_pattern.inc
+linux-version.inc
 windows.inc
+not_debian.inc
 not_windows.inc
+not_ubuntu.inc
 have_open_file_limit_more_than_5000.inc
 have_partition_open_file_limit.inc
 table_compress_2.test
@@ -125,6 +133,11 @@ have_lo0_local_scope.inc
 # html#sysvar_have_statement_timeout
 have_statement_timeout.inc
 
+# 4.8 Tests which include this will always fail if it uses a database that
+# contains more than 2 InnoDB undo tablespaces.  That can be done using
+# --bootstrap=--init-file=std_data/explicit_undo_32.sql
+have_innodb_default_undo_tablespaces.inc
+
 # 5.0 Different protocols
 # Reason for inclusion: Tests should run only with supported protocols and
 # skip on others.
@@ -156,8 +169,12 @@ have_blackhole_plugin.inc
 # is fixed.
 partition_value_innodb.test
 
-# 10.0 GNU grep not supported on Solaris and Windows
+# 10 Utilities
+# 10.1 GNU grep not supported on Solaris and Windows
 have_grep.inc
+# 10.2 Make sure we have sed. Note that MacOS and FreeBSD do not support
+# replacement patterns containing escape sequences, e.g. newline.
+have_util_sed.inc
 
 # 11.0
 # In mysql source, all the plugins might not be in the same location. Some MTR
@@ -176,6 +193,10 @@ not_group_replication_plugin.inc
 # 13.0 Memcached plugin is not available on all PB2 builds. Only supported by
 # Linux, Solaris and OS X platforms.
 have_memcached_plugin.inc
+
+# 13.1 NDB Memcached is not available on all PB2 builds. The ndb_memcache
+# suite should only be run if all required components have been found.
+have_memcache.inc
 
 # 14.0 MTR tests that runs only with specific rpl modes:
 
@@ -212,7 +233,6 @@ is_local_machine.inc
 have_thread_prio.inc
 have_not_thread_prio.inc
 resource_group_init.inc
-have_mac_os.inc
 
 # 20.0 Library dependent tests
 # This file skips test for certain features in versions of the library where

@@ -131,6 +131,8 @@ enum use_secondary_engine {
 */
 #define MODE_TIME_TRUNCATE_FRACTIONAL (1ULL << 32)
 
+#define MODE_LAST (1ULL << 33)
+
 #define MODE_ALLOWED_MASK                                                      \
   (MODE_REAL_AS_FLOAT | MODE_PIPES_AS_CONCAT | MODE_ANSI_QUOTES |              \
    MODE_IGNORE_SPACE | MODE_NOT_USED | MODE_ONLY_FULL_GROUP_BY |               \
@@ -351,7 +353,22 @@ struct System_variables {
   /** Used for controlling preparation of queries against secondary engine. */
   ulong use_secondary_engine;
 
+  /** Used for controlling Group Replication consistency guarantees */
+  ulong group_replication_consistency;
+
   bool sql_require_primary_key;
+
+  /**
+    Used in replication to determine the server version of the original server
+    where the transaction was executed.
+  */
+  uint32_t original_server_version;
+
+  /**
+    Used in replication to determine the server version of the immediate server
+    in the replication topology.
+  */
+  uint32_t immediate_server_version;
 };
 
 /**

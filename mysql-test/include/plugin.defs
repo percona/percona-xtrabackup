@@ -108,6 +108,7 @@ pfs_example_plugin_employee    plugin_output_directory  PFS_EXAMPLE_PLUGIN_EMPLO
 component_pfs_example_component_population    plugin_output_directory PFS_EXAMPLE_COMPONENT_POPULATION
 
 component_test_udf_registration    plugin_output_directory  TEST_UDF_REGISTRATION
+component_audit_api_message_emit    plugin_output_directory  AUDIT_API_MESSAGE_EMIT component_audit_api_message_emit
 component_udf_reg_3_func   plugin_output_directory  UDF_REG_3_FUNC       component_udf_reg_3_func
 component_udf_reg_only_3_func plugin_output_directory UDF_REG_ONLY_3_FUNC component_udf_reg_only_3_func
 component_udf_unreg_3_func   plugin_output_directory  UDF_UNREG_3_FUNC component_udf_unreg_3_func
@@ -124,3 +125,7 @@ component_test_system_variable_source plugin_output_directory TEST_SYSTEM_VARIAB
 
 # password validation component
 component_validate_password     plugin_output_directory  VALIDATE_PASSWORD_COMPONENT
+
+# test application signal
+component_test_host_application_signal  plugin_output_directory  TEST_HOST_APPLICATION_SIGNAL_COMPONENT
+test_services_host_application_signal  plugin_output_directory  TEST_SERVICES_HOST_APPLICATION_SIGNAL_PLUGIN

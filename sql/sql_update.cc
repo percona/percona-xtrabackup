@@ -20,10 +20,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/*
-  Single table and multi table updates of tables.
-  Multi-table updates were introduced by Sinisa & Monty
-*/
+// Handle UPDATE queries (both single- and multi-table).
 
 #include "sql/sql_update.h"
 
@@ -443,7 +440,8 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
       QUICK_SELECT_I *qck;
       no_rows = test_quick_select(thd, keys_to_use, 0, limit, safe_update,
                                   ORDER_NOT_RELEVANT, &qep_tab, conds,
-                                  &needed_reg_dummy, &qck) < 0;
+                                  &needed_reg_dummy, &qck,
+                                  qep_tab.table()->force_index) < 0;
       qep_tab.set_quick(qck);
       if (thd->is_error()) DBUG_RETURN(true);
     }
@@ -1012,7 +1010,6 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   }
   thd->check_for_truncated_fields = CHECK_FIELD_IGNORE;
   thd->current_found_rows = found_rows;
-  thd->current_changed_rows = updated_rows;
   // Following test is disabled, as we get RQG errors that are hard to debug
   // DBUG_ASSERT((error >= 0) == thd->is_error());
   DBUG_RETURN(error >= 0 || thd->is_error());
@@ -1338,8 +1335,8 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
                                 OPTION_BUFFER_RESULT);
 
     Prepared_stmt_arena_holder ps_holder(thd);
-    result = new (*THR_MALLOC)
-        Query_result_update(thd, update_fields, update_value_list);
+    result = new (thd->mem_root)
+        Query_result_update(update_fields, update_value_list);
     if (result == NULL) DBUG_RETURN(true); /* purecov: inspected */
 
     select->set_query_result(result);
@@ -1416,6 +1413,12 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   for (TABLE_LIST *tl = select->leaf_tables; tl; tl = tl->next_leaf) {
     tl->updating = tl->map() & tables_for_update;
     if (tl->updating) {
+      // Cannot update a table if the storage engine does not support update.
+      if (tl->table->file->ha_table_flags() & HA_UPDATE_NOT_SUPPORTED) {
+        my_error(ER_ILLEGAL_HA, MYF(0), tl->table_name);
+        DBUG_RETURN(true);
+      }
+
       if ((tl->table->vfield || tl->table->gen_def_fields_ptr != nullptr) &&
           validate_gc_assignment(update_fields, update_value_list, tl->table))
         DBUG_RETURN(true); /* purecov: inspected */
@@ -1524,7 +1527,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
     DBUG_RETURN(true); /* purecov: inspected */
 
   if (select->query_result() &&
-      select->query_result()->prepare(select->fields_list, lex->unit))
+      select->query_result()->prepare(thd, select->fields_list, lex->unit))
     DBUG_RETURN(true); /* purecov: inspected */
 
   Opt_trace_array trace_steps(trace, "steps");
@@ -1552,7 +1555,7 @@ bool Sql_cmd_update::execute_inner(THD *thd) {
   Connect fields with tables and create list of tables that are updated
 */
 
-bool Query_result_update::prepare(List<Item> &, SELECT_LEX_UNIT *u) {
+bool Query_result_update::prepare(THD *thd, List<Item> &, SELECT_LEX_UNIT *u) {
   SQL_I_List<TABLE_LIST> update;
   List_iterator_fast<Item> field_it(*fields);
   List_iterator_fast<Item> value_it(*values);
@@ -1790,6 +1793,7 @@ bool Query_result_update::optimize() {
 
   SELECT_LEX *const select = unit->first_select();
   JOIN *const join = select->join;
+  THD *thd = join->thd;
 
   ASSERT_BEST_REF_IN_JOIN_ORDER(join);
 
@@ -1911,6 +1915,7 @@ bool Query_result_update::optimize() {
            tmp_unit = tmp_unit->next_unit()) {
         for (sl = tmp_unit->first_select(); sl; sl = sl->next_select()) {
           if (sl->master_unit()->item) {
+            // Prevent early freeing in JOIN::join_free()
             select->uncacheable |= UNCACHEABLE_CHECKOPTION;
             goto loop_end;
           }
@@ -1992,7 +1997,7 @@ bool Query_result_update::optimize() {
   DBUG_RETURN(0);
 }
 
-void Query_result_update::cleanup() {
+void Query_result_update::cleanup(THD *thd) {
   TABLE_LIST *table;
   for (table = update_tables; table; table = table->next_local) {
     table->table->no_cache = 0;
@@ -2016,7 +2021,7 @@ void Query_result_update::cleanup() {
     for (uint i = 0; i < update_table_count; i++) destroy(update_operations[i]);
 }
 
-bool Query_result_update::send_data(List<Item> &) {
+bool Query_result_update::send_data(THD *thd, List<Item> &) {
   TABLE_LIST *cur_table;
   DBUG_ENTER("Query_result_update::send_data");
 
@@ -2160,12 +2165,12 @@ bool Query_result_update::send_data(List<Item> &) {
   DBUG_RETURN(false);
 }
 
-void Query_result_update::send_error(uint errcode, const char *err) {
+void Query_result_update::send_error(THD *, uint errcode, const char *err) {
   /* First send error what ever it is ... */
   my_error(errcode, MYF(0), err);
 }
 
-void Query_result_update::abort_result_set() {
+void Query_result_update::abort_result_set(THD *thd) {
   /* the error was handled or nothing deleted and no side effects return */
   if (error_handled ||
       (!thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::STMT) &&
@@ -2182,7 +2187,7 @@ void Query_result_update::abort_result_set() {
         thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::STMT));
     if (!update_completed && update_table_count > 1) {
       /* @todo: Add warning here */
-      (void)do_updates();
+      (void)do_updates(thd);
     }
   }
   if (thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::STMT)) {
@@ -2208,7 +2213,7 @@ void Query_result_update::abort_result_set() {
       thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::STMT));
 }
 
-bool Query_result_update::do_updates() {
+bool Query_result_update::do_updates(THD *thd) {
   TABLE_LIST *cur_table;
   int local_error = 0;
   ha_rows org_updated;
@@ -2335,7 +2340,7 @@ bool Query_result_update::do_updates() {
            copy_field_ptr++)
         copy_field_ptr->invoke_do_copy(copy_field_ptr);
 
-      if (table->in_use->is_error()) goto err;
+      if (thd->is_error()) goto err;
 
       // The above didn't update generated columns
       if (table->vfield &&
@@ -2422,7 +2427,7 @@ err:
   DBUG_RETURN(true);
 }
 
-bool Query_result_update::send_eof() {
+bool Query_result_update::send_eof(THD *thd) {
   char buff[STRING_BUFFER_USUAL_SIZE];
   ulonglong id;
   THD::killed_state killed_status = THD::NOT_KILLED;
@@ -2434,7 +2439,7 @@ bool Query_result_update::send_eof() {
      error takes into account killed status gained in do_updates()
   */
   int local_error = thd->is_error();
-  if (!local_error) local_error = (update_table_count) ? do_updates() : 0;
+  if (!local_error) local_error = (update_table_count) ? do_updates(thd) : 0;
   /*
     if local_error is not set ON until after do_updates() then
     later carried out killing should not affect binlogging.
@@ -2483,7 +2488,6 @@ bool Query_result_update::send_eof() {
   id = thd->arg_of_last_insert_id_function
            ? thd->first_successful_insert_id_in_prev_stmt
            : 0;
-  thd->current_changed_rows = updated_rows;
 
   snprintf(buff, sizeof(buff), ER_THD(thd, ER_UPDATE_INFO), (long)found_rows,
            (long)updated_rows,

@@ -174,7 +174,7 @@ class MDL_map {
   void lock_object_unused(MDL_context *ctx, LF_PINS *pins) {
     /*
       Use thread local copy of unused locks counter for performance/
-      scalability reasons. It is updated on both successfull and failed
+      scalability reasons. It is updated on both successful and failed
       attempts to delete unused MDL_lock objects in order to avoid infinite
       loops,
     */
@@ -796,6 +796,29 @@ class MDL_lock {
   inline static void destroy(MDL_lock *lock);
 
   inline MDL_context *get_lock_owner() const;
+
+  /**
+    Get MDL lock strategy corresponding to MDL key.
+
+    @param key Reference to MDL_key object
+
+    @return the type of strategy scoped or object corresponding to MDL key.
+  */
+
+  inline static const MDL_lock_strategy *get_strategy(const MDL_key &key) {
+    switch (key.mdl_namespace()) {
+      case MDL_key::GLOBAL:
+      case MDL_key::TABLESPACE:
+      case MDL_key::SCHEMA:
+      case MDL_key::COMMIT:
+      case MDL_key::BACKUP_LOCK:
+      case MDL_key::RESOURCE_GROUPS:
+      case MDL_key::FOREIGN_KEY:
+        return &m_scoped_lock_strategy;
+      default:
+        return &m_object_lock_strategy;
+    }
+  }
 
  public:
   /**
@@ -1566,20 +1589,7 @@ void MDL_lock::destroy(MDL_lock *lock) { delete lock; }
 
 inline void MDL_lock::reinit(const MDL_key *mdl_key) {
   key.mdl_key_init(mdl_key);
-  switch (mdl_key->mdl_namespace()) {
-    case MDL_key::GLOBAL:
-    case MDL_key::TABLESPACE:
-    case MDL_key::SCHEMA:
-    case MDL_key::COMMIT:
-    case MDL_key::BACKUP_LOCK:
-    case MDL_key::RESOURCE_GROUPS:
-    case MDL_key::FOREIGN_KEY:
-      m_strategy = &m_scoped_lock_strategy;
-      break;
-    default:
-      m_strategy = &m_object_lock_strategy;
-      break;
-  }
+  m_strategy = MDL_lock::get_strategy(*mdl_key);
   m_hog_lock_count = 0;
   m_piglet_lock_count = 0;
   m_current_waiting_incompatible_idx = 0;
@@ -1603,17 +1613,8 @@ inline void MDL_lock::reinit(const MDL_key *mdl_key) {
 
 MDL_lock::fast_path_state_t MDL_lock::get_unobtrusive_lock_increment(
     const MDL_request *request) {
-  switch (request->key.mdl_namespace()) {
-    case MDL_key::GLOBAL:
-    case MDL_key::TABLESPACE:
-    case MDL_key::SCHEMA:
-    case MDL_key::COMMIT:
-    case MDL_key::BACKUP_LOCK:
-    case MDL_key::FOREIGN_KEY:
-      return m_scoped_lock_strategy.m_unobtrusive_lock_increment[request->type];
-    default:
-      return m_object_lock_strategy.m_unobtrusive_lock_increment[request->type];
-  }
+  return MDL_lock::get_strategy(request->key)
+      ->m_unobtrusive_lock_increment[request->type];
 }
 
 /**
@@ -3339,6 +3340,29 @@ void MDL_lock::object_lock_notify_conflicting_locks(MDL_context *ctx,
 
 bool MDL_context::acquire_lock(MDL_request *mdl_request,
                                ulong lock_wait_timeout) {
+  if (lock_wait_timeout == 0) {
+    /*
+      Resort to try_acquire_lock() in case of zero timeout.
+
+      This allows to avoid unnecessary deadlock detection attempt and "fake"
+      deadlocks which might result from it.
+      In case of failure to acquire lock, try_acquire_lock() preserves
+      invariants by updating MDL_lock::fast_path_state and obtrusive locks
+      count. It also performs SE notification if needed.
+    */
+    if (try_acquire_lock(mdl_request)) return true;
+
+    if (!mdl_request->ticket) {
+      /* We have failed to acquire lock instantly. */
+      DEBUG_SYNC(get_thd(), "mdl_acquire_lock_wait");
+      my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
+      return true;
+    }
+    return false;
+  }
+
+  /* Normal, non-zero timeout case. */
+
   MDL_lock *lock;
   MDL_ticket *ticket;
   struct timespec abs_timeout;
@@ -3355,32 +3379,6 @@ bool MDL_context::acquire_lock(MDL_request *mdl_request,
       accordingly, so we can simply return success.
     */
     return false;
-  }
-
-  /*
-    Return early if we did not get the lock and are not willing to wait.
-    This way we avoid reporting "fake" deadlock for lock_wait_timeout == 0.
-  */
-  if (lock_wait_timeout == 0) {
-    /*
-      Lock acquired inside try_acquire_lock_impl(). Release before
-      leaving scope.
-    */
-    mysql_prlock_unlock(&ticket->m_lock->m_rwlock);
-
-    /*
-      If SEs were notified about impending lock acquisition, the failure
-      to acquire it requires the same notification as lock release.
-    */
-    if (ticket->m_hton_notified) {
-      mysql_mdl_set_status(ticket->m_psi, MDL_ticket::POST_RELEASE_NOTIFY);
-      m_owner->notify_hton_post_release_exclusive(&mdl_request->key);
-    }
-    DEBUG_SYNC(get_thd(), "mdl_acquire_lock_wait");
-
-    MDL_ticket::destroy(ticket);
-    my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
-    return true;
   }
 
   /*

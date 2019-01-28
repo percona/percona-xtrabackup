@@ -75,6 +75,7 @@
 #include "sql/sql_time.h"  // Date_time_format
 #include "sql/sql_view.h"  // VIEW_ANY_ACL
 #include "template_utils.h"
+#include "unsafe_string_append.h"
 
 using std::max;
 using std::min;
@@ -108,7 +109,7 @@ void item_init(void) {
 }
 
 Item::Item()
-    : next(NULL),
+    : next_free(nullptr),
       str_value(),
       collation(&my_charset_bin, DERIVATION_COERCIBLE),
       item_name(),
@@ -133,14 +134,12 @@ Item::Item()
   contextualized = true;
 #endif  // DBUG_OFF
 
-  // Put item in free list so that we can free all items at end
-  THD *const thd = current_thd;
-  next = thd->free_list;
-  thd->free_list = this;
+  // Put item into global list so that we can free all items at end
+  current_thd->add_item(this);
 }
 
 Item::Item(THD *thd, Item *item)
-    : next(NULL),
+    : next_free(nullptr),
       str_value(item->str_value),
       collation(item->collation),
       item_name(item->item_name),
@@ -166,12 +165,12 @@ Item::Item(THD *thd, Item *item)
   contextualized = true;
 #endif  // DBUG_OFF
 
-  next = thd->free_list;  // Put in free list
-  thd->free_list = this;
+  // Add item to global list
+  thd->add_item(this);
 }
 
 Item::Item(const POS &)
-    : next(NULL),
+    : next_free(nullptr),
       str_value(),
       collation(&my_charset_bin, DERIVATION_COERCIBLE),
       item_name(),
@@ -580,9 +579,8 @@ bool Item::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::contextualize(pc)) return true;
 
-  /* Put item in free list so that we can free all items at end */
-  next = pc->thd->free_list;
-  pc->thd->free_list = this;
+  // Add item to global list
+  pc->thd->add_item(this);
   /*
     Item constructor can be called during execution other then SQL_COM
     command => we should check pc->select on zero
@@ -1025,141 +1023,148 @@ Item *Item_num::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
   */
   if (!(tocs->state & MY_CS_NONASCII)) return this;
 
-  Item_string *conv;
   uint conv_errors;
   char buf[64], buf2[64];
   String tmp(buf, sizeof(buf), &my_charset_bin);
   String cstr(buf2, sizeof(buf2), &my_charset_bin);
   String *ostr = val_str(&tmp);
-  char *ptr;
   cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
-  if (conv_errors ||
-      !(conv = new Item_string(cstr.ptr(), cstr.length(), cstr.charset(),
-                               collation.derivation))) {
+  if (conv_errors > 0) {
     /*
-      Safe conversion is not possible (or EOM).
+      Safe conversion is not possible.
       We could not convert a string into the requested character set
       without data loss. The target charset does not cover all the
       characters from the string. Operation cannot be done correctly.
     */
-    return NULL;
+    return nullptr;
   }
-  if (!(ptr = thd->strmake(cstr.ptr(), cstr.length()))) return NULL;
-  conv->str_value.set(ptr, cstr.length(), cstr.charset());
+
+  char *ptr = thd->strmake(cstr.ptr(), cstr.length());
+  if (ptr == nullptr) return nullptr;
+  auto conv =
+      new Item_string(ptr, cstr.length(), cstr.charset(), collation.derivation);
+  if (conv == nullptr) return nullptr;
+
   /* Ensure that no one is going to change the result string */
-  conv->str_value.mark_as_const();
+  conv->mark_result_as_const();
   conv->fix_char_length(max_char_length());
   return conv;
 }
 
-Item *Item_func_pi::safe_charset_converter(THD *, const CHARSET_INFO *) {
-  Item_string *conv;
+Item *Item_func_pi::safe_charset_converter(THD *thd, const CHARSET_INFO *) {
   char buf[64];
-  String *s, tmp(buf, sizeof(buf), &my_charset_bin);
-  s = val_str(&tmp);
-  if ((conv = new Item_static_string_func(func_name, s->ptr(), s->length(),
-                                          s->charset()))) {
-    conv->str_value.copy();
-    conv->str_value.mark_as_const();
-  }
+  String tmp(buf, sizeof(buf), &my_charset_bin);
+  String *s = val_str(&tmp);
+  char *ptr = thd->strmake(s->ptr(), s->length());
+  if (ptr == nullptr) return nullptr;
+  auto conv =
+      new Item_static_string_func(func_name, ptr, s->length(), s->charset());
+  if (conv == nullptr) return nullptr;
+  conv->mark_result_as_const();
   return conv;
 }
 
-Item *Item_string::safe_charset_converter(THD *, const CHARSET_INFO *tocs) {
-  return charset_converter(tocs, true);
+Item *Item_string::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
+  return charset_converter(thd, tocs, true);
 }
 
 /**
   Convert a string item into the requested character set.
 
+  @param thd        Thread handle.
   @param tocs       Character set to to convert the string to.
   @param lossless   Whether data loss is acceptable.
 
   @return A new item representing the converted string.
 */
-Item *Item_string::charset_converter(const CHARSET_INFO *tocs, bool lossless) {
-  Item_string *conv;
+Item *Item_string::charset_converter(THD *thd, const CHARSET_INFO *tocs,
+                                     bool lossless) {
   uint conv_errors;
-  char *ptr;
   String tmp, cstr, *ostr = val_str(&tmp);
   cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
-  conv_errors = lossless && conv_errors;
-  if (conv_errors ||
-      !(conv = new Item_string(cstr.ptr(), cstr.length(), cstr.charset(),
-                               collation.derivation))) {
+  if (lossless && conv_errors > 0) {
     /*
-      Safe conversion is not possible (or EOM).
+      Safe conversion is not possible.
       We could not convert a string into the requested character set
       without data loss. The target charset does not cover all the
       characters from the string. Operation cannot be done correctly.
     */
-    return NULL;
+    return nullptr;
   }
-  if (!(ptr = current_thd->strmake(cstr.ptr(), cstr.length()))) return NULL;
-  conv->str_value.set(ptr, cstr.length(), cstr.charset());
+
+  char *ptr = thd->strmake(cstr.ptr(), cstr.length());
+  if (ptr == nullptr) return nullptr;
+  auto conv =
+      new Item_string(ptr, cstr.length(), cstr.charset(), collation.derivation);
+  if (conv == nullptr) return nullptr;
   /* Ensure that no one is going to change the result string */
-  conv->str_value.mark_as_const();
+  conv->mark_result_as_const();
   return conv;
 }
 
 Item *Item_param::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
   if (may_evaluate_const(thd)) {
-    Item *cnvitem;
     String tmp, cstr, *ostr = val_str(&tmp);
 
     if (null_value) {
-      cnvitem = new Item_null();
-      if (cnvitem == NULL) return NULL;
-
+      auto cnvitem = new Item_null();
+      if (cnvitem == nullptr) return nullptr;
       cnvitem->collation.set(tocs);
+      return cnvitem;
     } else {
       uint conv_errors;
       cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs,
                 &conv_errors);
 
-      if (conv_errors ||
-          !(cnvitem = new Item_string(cstr.ptr(), cstr.length(), cstr.charset(),
-                                      collation.derivation)))
-        return NULL;
+      if (conv_errors > 0) return nullptr;
 
-      cnvitem->str_value.copy();
-      cnvitem->str_value.mark_as_const();
+      char *ptr = thd->strmake(cstr.ptr(), cstr.length());
+      if (ptr == nullptr) return nullptr;
+      auto cnvitem = new Item_string(ptr, cstr.length(), cstr.charset(),
+                                     collation.derivation);
+      if (cnvitem == nullptr) return nullptr;
+      cnvitem->mark_result_as_const();
+      return cnvitem;
     }
-    return cnvitem;
   }
   return Item::safe_charset_converter(thd, tocs);
 }
 
 Item *Item_static_string_func::safe_charset_converter(
-    THD *, const CHARSET_INFO *tocs) {
-  Item_string *conv;
+    THD *thd, const CHARSET_INFO *tocs) {
   uint conv_errors;
   String tmp, cstr, *ostr = val_str(&tmp);
   cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
-  if (conv_errors || !(conv = new Item_static_string_func(
-                           func_name, cstr.ptr(), cstr.length(), cstr.charset(),
-                           collation.derivation))) {
+  if (conv_errors > 0) {
     /*
-      Safe conversion is not possible (or EOM).
+      Safe conversion is not possible.
       We could not convert a string into the requested character set
       without data loss. The target charset does not cover all the
       characters from the string. Operation cannot be done correctly.
     */
-    return NULL;
+    return nullptr;
   }
-  conv->str_value.copy();
+
+  char *ptr = thd->strmake(cstr.ptr(), cstr.length());
+  if (ptr == nullptr) return nullptr;
+  auto conv = new Item_static_string_func(func_name, ptr, cstr.length(),
+                                          cstr.charset(), collation.derivation);
+  if (conv == nullptr) return nullptr;
   /* Ensure that no one is going to change the result string */
-  conv->str_value.mark_as_const();
+  conv->mark_result_as_const();
   return conv;
 }
 
 bool Item_string::eq(const Item *item, bool binary_cmp) const {
   if (type() == item->type() && item->basic_const_item()) {
-    if (binary_cmp) return !stringcmp(&str_value, &item->str_value);
-    return (collation.collation == item->collation.collation &&
-            !sortcmp(&str_value, &item->str_value, collation.collation));
+    // Should be OK for a basic constant.
+    Item *arg = const_cast<Item *>(item);
+    String str;
+    if (binary_cmp) return !stringcmp(&str_value, arg->val_str(&str));
+    return (collation.collation == arg->collation.collation &&
+            !sortcmp(&str_value, arg->val_str(&str), collation.collation));
   }
-  return 0;
+  return false;
 }
 
 bool Item::get_date_from_string(MYSQL_TIME *ltime, my_time_flags_t flags) {
@@ -1571,7 +1576,7 @@ void Item_splocal::print(String *str, enum_query_type) {
   str->reserve(m_name.length() + 8);
   str->append(m_name);
   str->append('@');
-  str->qs_append(m_var_idx);
+  qs_append(m_var_idx, str);
 }
 
 bool Item_splocal::set_value(THD *thd, sp_rcontext *ctx, Item **it) {
@@ -1608,7 +1613,7 @@ void Item_case_expr::print(String *str, enum_query_type) {
   if (str->reserve(MAX_INT_WIDTH + sizeof("case_expr@")))
     return; /* purecov: inspected */
   (void)str->append(STRING_WITH_LEN("case_expr@"));
-  str->qs_append(m_case_expr_id);
+  qs_append(m_case_expr_id, str);
 }
 
 /*****************************************************************************
@@ -2779,9 +2784,7 @@ void Item_ident::fix_after_pullout(SELECT_LEX *parent_select,
       /*
         The subquery on this level is outer-correlated with respect to the field
       */
-      Item_subselect *subq_predicate = child_select->master_unit()->item;
-
-      subq_predicate->used_tables_cache |= OUTER_REF_TABLE_BIT;
+      child_select->master_unit()->accumulate_used_tables(OUTER_REF_TABLE_BIT);
       child_select = child_select->outer_select();
     }
 
@@ -2790,13 +2793,11 @@ void Item_ident::fix_after_pullout(SELECT_LEX *parent_select,
       Now, locate the subquery predicate that contains this select_lex and
       update used tables information.
     */
-    Item_subselect *subq_predicate = child_select->master_unit()->item;
-
     Used_tables ut(depended_from);
     (void)walk(&Item::used_tables_for_level,
                Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
                pointer_cast<uchar *>(&ut));
-    subq_predicate->used_tables_cache |= ut.used_tables;
+    child_select->master_unit()->accumulate_used_tables(ut.used_tables);
   }
 }
 
@@ -2979,7 +2980,7 @@ bool Item_decimal::eq(const Item *item, bool) const {
   return 0;
 }
 
-void Item_decimal::set_decimal_value(my_decimal *value_par) {
+void Item_decimal::set_decimal_value(const my_decimal *value_par) {
   my_decimal2decimal(value_par, &decimal_value);
   decimals = (uint8)decimal_value.frac;
   unsigned_flag = !decimal_value.sign();
@@ -3820,14 +3821,14 @@ Item *Item_param::clone_item() const {
 }
 
 bool Item_param::eq(const Item *arg, bool binary_cmp) const {
-  Item *item;
   if (!basic_const_item() || !arg->basic_const_item() || arg->type() != type())
     return false;
   /*
     We need to cast off const to call val_int(). This should be OK for
     a basic constant.
   */
-  item = (Item *)arg;
+  Item *item = const_cast<Item *>(arg);
+  String str;
 
   switch (state) {
     case NULL_VALUE:
@@ -3839,8 +3840,8 @@ bool Item_param::eq(const Item *arg, bool binary_cmp) const {
       return value.real == item->val_real();
     case STRING_VALUE:
     case LONG_DATA_VALUE:
-      if (binary_cmp) return !stringcmp(&str_value, &item->str_value);
-      return !sortcmp(&str_value, &item->str_value, collation.collation);
+      if (binary_cmp) return !stringcmp(&str_value, item->val_str(&str));
+      return !sortcmp(&str_value, item->val_str(&str), collation.collation);
     default:
       break;
   }
@@ -4447,64 +4448,6 @@ static void mark_as_dependent(THD *thd, SELECT_LEX *last, SELECT_LEX *current,
 }
 
 /**
-  Mark range of selects and resolved identifier (field/reference)
-  item as dependent.
-
-  @param thd             Current session.
-  @param last_select     select where resolved_item was resolved
-  @param current_sel     current select (select where resolved_item was placed)
-  @param found_field     field which was found during resolving
-  @param found_item      Item which was found during resolving (if resolved
-                         identifier belongs to VIEW)
-  @param resolved_item   Identifier which was resolved
-
-  @note
-    We have to mark all items between current_sel (including) and
-    last_select (excluding) as dependend (select before last_select should
-    be marked with actual table mask used by resolved item, all other with
-    OUTER_REF_TABLE_BIT) and also write dependence information to Item of
-    resolved identifier.
-*/
-
-void mark_select_range_as_dependent(THD *thd, SELECT_LEX *last_select,
-                                    SELECT_LEX *current_sel, Field *found_field,
-                                    Item *found_item,
-                                    Item_ident *resolved_item) {
-  /*
-    Go from current SELECT to SELECT where field was resolved (it
-    have to be reachable from current SELECT, because it was already
-    done once when we resolved this field and cached result of
-    resolving)
-  */
-  SELECT_LEX *previous_select = current_sel;
-  for (; previous_select->outer_select() != last_select;
-       previous_select = previous_select->outer_select()) {
-    Item_subselect *prev_subselect_item = previous_select->master_unit()->item;
-    prev_subselect_item->used_tables_cache |= OUTER_REF_TABLE_BIT;
-  }
-  {
-    Item_subselect *prev_subselect_item = previous_select->master_unit()->item;
-    Item_ident *dependent = resolved_item;
-    if (found_field == view_ref_found) {
-      Item::Type type = found_item->type();
-      Used_tables ut(last_select);
-      (void)found_item->walk(
-          &Item::used_tables_for_level,
-          Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
-          pointer_cast<uchar *>(&ut));
-      prev_subselect_item->used_tables_cache |= ut.used_tables;
-      dependent = ((type == Item::REF_ITEM || type == Item::FIELD_ITEM)
-                       ? (Item_ident *)found_item
-                       : 0);
-    } else
-      prev_subselect_item->used_tables_cache |=
-          found_field->table->pos_in_table_list->map();
-
-    mark_as_dependent(thd, last_select, current_sel, resolved_item, dependent);
-  }
-}
-
-/**
   Search a GROUP BY clause for a field with a certain name.
 
   Search the GROUP BY list for a column named as find_item. When searching
@@ -4773,7 +4716,6 @@ static Item **resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
 
 int Item_field::fix_outer_field(THD *thd, Field **from_field,
                                 Item **reference) {
-  enum_parsing_context place = CTX_NONE;
   bool field_found = (*from_field != not_found_field);
   bool upward_lookup = false;
 
@@ -4788,26 +4730,117 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
   */
   Name_resolution_context *last_checked_context = context;
   Item **ref = not_found_item;
-  SELECT_LEX *current_sel = thd->lex->current_select();
-  Name_resolution_context *outer_context = NULL;
+  Name_resolution_context *outer_context = context->outer_context;
   SELECT_LEX *select = NULL;
-  /* Currently derived tables cannot be correlated */
-  if (current_sel->master_unit()->first_select()->linkage != DERIVED_TABLE_TYPE)
-    outer_context = context->outer_context;
+  SELECT_LEX_UNIT *cur_unit = nullptr;
+  enum_parsing_context place = CTX_NONE;
+  SELECT_LEX *cur_select = context->select_lex;
   for (; outer_context; outer_context = outer_context->outer_context) {
     select = outer_context->select_lex;
-    Item_subselect *prev_subselect_item =
-        last_checked_context->select_lex->master_unit()->item;
+
     last_checked_context = outer_context;
     upward_lookup = true;
 
-    place = prev_subselect_item->parsing_place;
     /*
-      If outer_field is set, field was already found by first call
-      to find_field_in_tables(). Only need to find appropriate context.
+      We want to locate the qualifying query of our Item_field 'this'.
+      'this' is simply contained in a subquery (SELECT_LEX_UNIT) which is
+      immediately contained
+      - in a scalar/row subquery (Item_subselect), or
+      - in a table subquery itself immediately contained in a quantified
+      predicate (Item_subselect) or a derived table (TABLE_LIST).
+      'this' has an 'outer_context' where it should be searched first.
+      'outer_context' is the context of a query block or sometimes
+      of a specific part of a query block (e.g. JOIN... ON condition).
+      We go up from 'context' to 'outer_context', from inner to outer
+      subqueries. On that bottom-up path, we stop at the subquery unit which
+      is simply contained in 'outer_context': it belongs to an
+      Item_subselect/TABLE_LIST object which we note OUTER_CONTEXT_OBJECT.
+      Then the search of 'this' in 'outer_context' is influenced by
+      where OUTER_CONTEXT_OBJECT is in 'outer_context'. For example, if
+      OUTER_CONTEXT_OBJECT is in WHERE, a search by alias is not done.
+      Thus, given an 'outer_context' to search in, the first step is
+      to determine OUTER_CONTEXT_OBJECT. Then we search for 'this' in
+      'outer_context'. Then, if search is successful, we mark objects, from
+      'context' up to 'outer_context', as follows:
+      - OUTER_CONTEXT_OBJECT is marked as "using table map this->map()";
+      - more inner subqueries are marked as "dependent on outer reference"
+      (correlated, UNCACHEABLE_DEPENDENT bit)
+      If search is not successful, retry with the yet-more-outer context
+      (determine the new OUTER_CONTEXT_OBJECT, etc).
+
+      Note that any change here must be duplicated in Item_ref::fix_fields.
     */
-    if (field_found && outer_context->select_lex != cached_table->select_lex)
+    DBUG_PRINT("outer_field",
+               ("must reach target ctx (having SL#%d)", select->select_number));
+    /*
+      Walk from the innermost query block to the outermost until we find
+      OUTER_CONTEXT_OBJECT; cur_select and cur_unit track where the walk
+      currently is.
+    */
+    while (true) {
+      if (!cur_select) goto loop;
+      DBUG_PRINT("outer_field",
+                 ("in loop, in ctx of SL#%d", cur_select->select_number));
+      if (cur_select == select) {
+        /*
+          @todo after WL#6570 we won't re-resolve so this if() should be
+          removed.
+          In such prep stmt (main.subquery_sj_firstmatch_bkaunique):
+          SELECT COUNT(*) FROM t1 GROUP BY t1.a
+          HAVING t1.a IN (SELECT t3.a FROM t3
+               WHERE t3.b IN (SELECT b FROM t2 WHERE t2.a=t1.a))
+          In PREPARE we do semijoin on subq of WHERE. We get
+          SELECT ... HAVING EXISTS (SELECT FROM t3 SJ t2 WHERE t2.a=t1.a AND
+          ...) In EXECUTE, when we resolve t1.a we come here; context of t1.a is
+          the context of now-gone SELECT#3 but which has been repointed to
+          SELECT#2. The outer context of this context is the original context
+          of SELECT#2. I.e. both context and outer_context belong to same
+          SELECT#2.
+          So, when we resolve t1.a we are not able to determine 'E', a
+          subquery expression containing t1.a and contained in the owner of
+          outer_context, as the innermost such subquery is SELECT#2, and the
+          said owner is SELECT#2 too.
+          So we have this special branch to make sure our loop doesn't go
+          crazy and crashing. After "goto loop", outer_context becomes that
+          of SELECT#1 and so we are able to determine 'E' (Item_subselect of
+          SELECT#2) containing t1.a and contained in the owner of outer_context
+          (SELECT#1) so things work as expected. And anyway, cached_table
+          provides the right table to use.
+        */
+        DBUG_ASSERT(!cur_select->first_execution);
+        goto loop;  // we're misplaced
+      }
+      cur_unit = cur_select->master_unit();
+      if (cur_unit->outer_select() == select)
+        break;  // the immediate container of cur_unit is OUTER_CONTEXT_OBJECT
+      DBUG_PRINT("outer_field",
+                 ("in loop, in ctx of SL#%d, not yet immediate child of target",
+                  cur_select->select_number));
+      // cur_unit belongs to an object inside OUTER_CONTEXT_OBJECT, mark it and
+      // go up:
+      cur_unit->accumulate_used_tables(OUTER_REF_TABLE_BIT);
+      cur_select = cur_unit->outer_select();
+    }
+
+    DBUG_PRINT("outer_field", ("out of loop, reached target ctx (having SL#%d)",
+                               cur_select->select_number));
+
+    // Place of OUTER_CONTEXT_OBJECT in 'outer_context' e.g. WHERE :
+    place = cur_unit->place();
+
+    // A non-lateral derived table cannot see tables of its owning query
+    if (place == CTX_DERIVED && select->end_lateral_table == nullptr) continue;
+
+    /*
+      If field was already found by first call
+      to find_field_in_tables(), we only need to find appropriate context.
+    */
+    if (field_found && outer_context->select_lex != cached_table->select_lex) {
+      DBUG_PRINT("outer_field", ("but cached is of SL#%d, continue",
+                                 cached_table->select_lex->select_number));
       continue;
+    }
+
     /*
       In case of a view, find_field_in_tables() writes the pointer to
       the found view field into '*reference', in other words, it
@@ -4821,8 +4854,8 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
             not_found_field) {
       if (*from_field) {
         if (*from_field != view_ref_found) {
-          prev_subselect_item->used_tables_cache |=
-              (*from_field)->table->pos_in_table_list->map();
+          cur_unit->accumulate_used_tables(
+              (*from_field)->table->pos_in_table_list->map());
           set_field(*from_field);
 
           if (!last_checked_context->select_lex->having_fix_field &&
@@ -4870,7 +4903,7 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
               ->walk(&Item::used_tables_for_level,
                      Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
                      pointer_cast<uchar *>(&ut));
-          prev_subselect_item->used_tables_cache |= ut.used_tables;
+          cur_unit->accumulate_used_tables(ut.used_tables);
 
           if (select->group_list.elements && place == CTX_HAVING) {
             /*
@@ -4925,7 +4958,7 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
           reference that will be fixed later in fix_inner_refs().
         */
         DBUG_ASSERT(is_fixed_or_outer_ref(*ref));
-        prev_subselect_item->used_tables_cache |= (*ref)->used_tables();
+        cur_unit->accumulate_used_tables((*ref)->used_tables());
         break;
       }
     }
@@ -4935,7 +4968,10 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
       outer select (or we just trying to find wrong identifier, in this
       case it does not matter which used tables bits we set)
     */
-    prev_subselect_item->used_tables_cache |= OUTER_REF_TABLE_BIT;
+    DBUG_PRINT("outer_field",
+               ("out of loop, reached end of big block, continue"));
+    cur_unit->accumulate_used_tables(OUTER_REF_TABLE_BIT);
+  loop:;
   }
 
   DBUG_ASSERT(ref != 0);
@@ -5209,7 +5245,16 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
                                         resolution == RESOLVED_AGAINST_ALIAS);
             if (!rf) return 1;
 
-            if (thd->lex->current_select()->group_fix_field && m_alias_of_expr)
+            const bool group_fix_field =
+                thd->lex->current_select()->group_fix_field;
+            if (!rf->fixed) {
+              // No need for recursive resolving of aliases.
+              thd->lex->current_select()->group_fix_field = false;
+              bool ret = rf->fix_fields(thd, (Item **)&rf) || rf->check_cols(1);
+              thd->lex->current_select()->group_fix_field = group_fix_field;
+              if (ret) return true;
+            }
+            if (group_fix_field && m_alias_of_expr)
               thd->change_item_tree(reference, *rf->ref);
             else
               thd->change_item_tree(reference, rf);
@@ -6371,21 +6416,23 @@ void Item_hex_string::print(String *str, enum_query_type query_type) {
   }
 }
 
-bool Item_hex_string::eq(const Item *arg, bool binary_cmp) const {
-  if (arg->basic_const_item() && arg->type() == type()) {
-    if (binary_cmp) return !stringcmp(&str_value, &arg->str_value);
-    return !sortcmp(&str_value, &arg->str_value, collation.collation);
+bool Item_hex_string::eq(const Item *item, bool binary_cmp) const {
+  if (item->basic_const_item() && item->type() == type()) {
+    // Should be OK for a basic constant.
+    Item *arg = const_cast<Item *>(item);
+    String str;
+    if (binary_cmp) return !stringcmp(&str_value, arg->val_str(&str));
+    return !sortcmp(&str_value, arg->val_str(&str), collation.collation);
   }
   return false;
 }
 
 Item *Item_hex_string::safe_charset_converter(THD *, const CHARSET_INFO *tocs) {
-  Item_string *conv;
   String tmp, *str = val_str(&tmp);
 
-  if (!(conv = new Item_string(str->ptr(), str->length(), tocs))) return NULL;
-  conv->str_value.copy();
-  conv->str_value.mark_as_const();
+  auto conv = new Item_string(str->ptr(), str->length(), tocs);
+  if (conv == nullptr) return nullptr;
+  conv->mark_result_as_const();
   return conv;
 }
 
@@ -7129,12 +7176,12 @@ Item_ref::Item_ref(Name_resolution_context *context_arg, Item **item,
 bool Item_ref::fix_fields(THD *thd, Item **reference) {
   DBUG_ENTER("Item_ref::fix_fields");
   DBUG_ASSERT(fixed == 0);
-  SELECT_LEX *current_sel = thd->lex->current_select();
 
   Internal_error_handler_holder<View_error_handler, TABLE_LIST> view_handler(
       thd, context->view_error_handler, context->view_error_handler_arg);
 
   if (!ref || ref == not_found_item) {
+    DBUG_ASSERT(context->select_lex == thd->lex->current_select());
     if (!(ref =
               resolve_ref_in_select_and_group(thd, this, context->select_lex)))
       goto error; /* Some error occurred (e.g. ambiguous names). */
@@ -7154,8 +7201,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
       }
 
       /*
-        If there is an outer context (select), and it is not a derived table
-        (which do not support the use of outer fields for now), try to
+        If there is an outer context (select), try to
         resolve this reference in the outer select(s).
 
         We treat each subselect as a separate namespace, so that different
@@ -7164,12 +7210,31 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
       */
       from_field = not_found_field;
 
+      SELECT_LEX *cur_select = context->select_lex;
+
       do {
         SELECT_LEX *select = outer_context->select_lex;
-        Item_subselect *prev_subselect_item =
-            last_checked_context->select_lex->master_unit()->item;
         last_checked_context = outer_context;
-        const enum_parsing_context place = prev_subselect_item->parsing_place;
+        SELECT_LEX_UNIT *cur_unit = nullptr;
+        enum_parsing_context place = CTX_NONE;
+
+        // See comments and similar loop in Item_field::fix_outer_field()
+        while (true) {
+          if (!cur_select) goto loop;
+          if (cur_select == select) {
+            DBUG_ASSERT(!cur_select->first_execution);
+            goto loop;  // we're misplaced; @todo remove in WL#6570
+          }
+          cur_unit = cur_select->master_unit();
+          if (cur_unit->outer_select() == select) break;
+          cur_unit->accumulate_used_tables(OUTER_REF_TABLE_BIT);
+          cur_select = cur_unit->outer_select();
+        }
+
+        place = cur_unit->place();
+
+        if (place == CTX_DERIVED && select->end_lateral_table == nullptr)
+          goto loop;
 
         /* Search in the SELECT and GROUP lists of the outer select. */
         if (select_alias_referencable(place) &&
@@ -7178,7 +7243,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
             goto error; /* Some error occurred (e.g. ambiguous names). */
           if (ref != not_found_item) {
             DBUG_ASSERT(is_fixed_or_outer_ref(*ref));
-            prev_subselect_item->used_tables_cache |= (*ref)->used_tables();
+            cur_unit->accumulate_used_tables((*ref)->used_tables());
             break;
           }
           /*
@@ -7213,8 +7278,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
           if (!from_field) goto error;
           if (from_field == view_ref_found) {
             Item::Type refer_type = (*reference)->type();
-            prev_subselect_item->used_tables_cache |=
-                (*reference)->used_tables();
+            cur_unit->accumulate_used_tables((*reference)->used_tables());
             DBUG_ASSERT((*reference)->type() == REF_ITEM);
             mark_as_dependent(
                 thd, last_checked_context->select_lex, context->select_lex,
@@ -7240,22 +7304,23 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
               do {
                 outer_context = outer_context->outer_context;
                 select = outer_context->select_lex;
-                prev_subselect_item =
-                    last_checked_context->select_lex->master_unit()->item;
+                cur_unit = last_checked_context->select_lex->master_unit();
                 last_checked_context = outer_context;
               } while (outer_context && outer_context->select_lex &&
                        cached_table->select_lex != outer_context->select_lex);
+              place = cur_unit->place();
             }
-            prev_subselect_item->used_tables_cache |=
-                from_field->table->pos_in_table_list->map();
+            cur_unit->accumulate_used_tables(
+                from_field->table->pos_in_table_list->map());
             break;
           }
         }
         DBUG_ASSERT(from_field == not_found_field);
 
         /* Reference is not found => depend on outer (or just error). */
-        prev_subselect_item->used_tables_cache |= OUTER_REF_TABLE_BIT;
+        cur_unit->accumulate_used_tables(OUTER_REF_TABLE_BIT);
 
+      loop:
         outer_context = outer_context->outer_context;
       } while (outer_context);
 
@@ -7270,8 +7335,8 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
         }
 
         thd->change_item_tree(reference, fld);
-        mark_as_dependent(thd, last_checked_context->select_lex, current_sel,
-                          this, fld);
+        mark_as_dependent(thd, last_checked_context->select_lex,
+                          context->select_lex, this, fld);
         /*
           A reference is resolved to a nest level that's outer or the same as
           the nest level of the enclosing set function : adjust the value of
@@ -7327,8 +7392,9 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
     the query block where the aggregation happens, since grouping
     happens before aggregation.
   */
-  if (((*ref)->has_aggregation() && !current_sel->having_fix_field) ||  // 1
-      walk(&Item::has_aggregate_ref_in_group_by,                        // 2
+  if (((*ref)->has_aggregation() &&
+       !thd->lex->current_select()->having_fix_field) ||  // 1
+      walk(&Item::has_aggregate_ref_in_group_by,          // 2
            enum_walk(WALK_POSTFIX | WALK_SUBQUERY), nullptr)) {
     my_error(ER_ILLEGAL_REFERENCE, MYF(0), full_name(),
              "reference to group function");
@@ -8435,8 +8501,8 @@ bool Item_cache_datetime::cache_value() {
   // Mark cached int value obsolete
   value_cached = false;
   /* Assume here that the underlying item will do correct conversion.*/
-  String *res = example->val_str(&str_value);
-  if (res && res != &str_value) str_value.copy(*res);
+  String *res = example->val_str(&cached_string);
+  if (res && res != &cached_string) cached_string.copy(*res);
   null_value = example->null_value;
   unsigned_flag = example->unsigned_flag;
   return true;
@@ -8472,14 +8538,15 @@ String *Item_cache_datetime::val_str(String *) {
     if (value_cached) {
       MYSQL_TIME ltime;
       TIME_from_longlong_packed(&ltime, data_type(), int_value);
-      if ((null_value = my_TIME_to_str(
-               &ltime, &str_value, MY_MIN(decimals, DATETIME_MAX_DECIMALS))))
+      if ((null_value =
+               my_TIME_to_str(&ltime, &cached_string,
+                              MY_MIN(decimals, DATETIME_MAX_DECIMALS))))
         return NULL;
       str_value_cached = true;
     } else if (!cache_value() || null_value)
       return NULL;
   }
-  return &str_value;
+  return &cached_string;
 }
 
 my_decimal *Item_cache_datetime::val_decimal(my_decimal *decimal_val) {

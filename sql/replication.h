@@ -25,7 +25,8 @@
 
 #include "my_thread_local.h"         // my_thread_id
 #include "mysql/psi/mysql_thread.h"  // mysql_mutex_t
-#include "sql/handler.h"             // enum_tx_isolation
+#include "rpl_context.h"
+#include "sql/handler.h"  // enum_tx_isolation
 
 struct MYSQL;
 
@@ -170,6 +171,20 @@ typedef struct Trans_param {
   /// pointer to the status var original_commit_timestamp
   uint64 *original_commit_timestamp;
 
+  /** Replication channel info associated to this transaction/THD */
+  enum_rpl_channel_type rpl_channel_type;
+
+  /** contains the session value of group_replication_consistency */
+  ulong group_replication_consistency;
+
+  /** value of session wait_timeout, timeout to hold transaction */
+  ulong hold_timeout;
+
+  /// pointer to original_server_version
+  uint32_t *original_server_version;
+
+  /// pointer to immediate_server_version
+  uint32_t *immediate_server_version;
 } Trans_param;
 
 /**
@@ -244,6 +259,17 @@ typedef int (*after_commit_t)(Trans_param *param);
 typedef int (*after_rollback_t)(Trans_param *param);
 
 /**
+  This callback is called before a sql command is executed.
+
+  @param param   The parameter for transaction observers
+  @param out_val Return value from observer execution
+
+  @retval 0 Success
+  @retval 1 Failure
+*/
+typedef int (*begin_t)(Trans_param *param, int &out_val);
+
+/**
    Observes and extends transaction execution
 */
 typedef struct Trans_observer {
@@ -254,6 +280,7 @@ typedef struct Trans_observer {
   before_rollback_t before_rollback;
   after_commit_t after_commit;
   after_rollback_t after_rollback;
+  begin_t begin;
 } Trans_observer;
 
 /**

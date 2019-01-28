@@ -93,10 +93,11 @@ static NDB_TICKS startTime;
 //#define DEBUG_LCP_DEL_FILES 1
 //#define DEBUG_LCP_DEL 1
 //#define DEBUG_EXTRA_LCP 1
-//#define DEBUG_LCP_STAT 1
-//#define DEBUG_EXTENDED_LCP_STAT 1
 //#define DEBUG_REDO_CONTROL 1
 //#define DEBUG_REDO_CONTROL_DETAIL 1
+//#define DEBUG_LCP_DD 1
+//#define DEBUG_LCP_STAT 1
+//#define DEBUG_EXTENDED_LCP_STAT 1
 #endif
 
 #ifdef DEBUG_REDO_CONTROL
@@ -115,6 +116,12 @@ static NDB_TICKS startTime;
 #define DEB_LCP(arglist) do { g_eventLogger->info arglist ; } while (0)
 #else
 #define DEB_LCP(arglist) do { } while (0)
+#endif
+
+#ifdef DEBUG_LCP_DD
+#define DEB_LCP_DD(arglist) do { g_eventLogger->info arglist ; } while (0)
+#else
+#define DEB_LCP_DD(arglist) do { } while (0)
 #endif
 
 #ifdef DEBUG_LCP_DEL_FILES
@@ -6734,8 +6741,7 @@ Backup::parseTableDescription(Signal* signal,
   SimpleProperties::UnpackStatus stat;
   stat = SimpleProperties::unpack(it, &tmpTab, 
 				  DictTabInfo::TableMapping, 
-				  DictTabInfo::TableMappingSize, 
-				  true, true);
+				  DictTabInfo::TableMappingSize);
   ndbrequire(stat == SimpleProperties::Break);
 
   bool lcp = ptr.p->is_lcp();
@@ -6783,8 +6789,7 @@ Backup::parseTableDescription(Signal* signal,
     DictTabInfo::Attribute tmp; tmp.init();
     stat = SimpleProperties::unpack(it, &tmp, 
 				    DictTabInfo::AttributeMapping, 
-				    DictTabInfo::AttributeMappingSize,
-				    true, true);
+				    DictTabInfo::AttributeMappingSize);
     
     ndbrequire(stat == SimpleProperties::Break);
     it.next(); // Move Past EndOfAttribute
@@ -12840,8 +12845,7 @@ Backup::lcp_read_ctl_file_done(Signal* signal, BackupRecordPtr ptr)
 
   Uint32 maxGci = MAX(maxGciCompleted, maxGciWritten);
   if ((maxGci < fragPtr.p->createGci &&
-       maxGci != 0 &&
-       createTableVersion < lqhCreateTableVersion) ||
+       maxGci != 0) ||
        (c_initial_start_lcp_not_done_yet &&
         (ptr.p->preparePrevLocalLcpId != 0 ||
          ptr.p->preparePrevLcpId != 0)))
@@ -14766,12 +14770,12 @@ Backup::execSYNC_PAGE_CACHE_CONF(Signal *signal)
   ndbrequire(conf->tableId == tabPtr.p->tableId);
   ndbrequire(conf->fragmentId == fragPtr.p->fragmentId);
 
-  DEB_LCP(("(%u)Completed SYNC_PAGE_CACHE_CONF for tab(%u,%u)"
-                      ", diskDataExistFlag: %u",
-                      instance(),
-                      tabPtr.p->tableId,
-                      fragPtr.p->fragmentId,
-                      conf->diskDataExistFlag));
+  DEB_LCP_DD(("(%u)Completed SYNC_PAGE_CACHE_CONF for tab(%u,%u)"
+              ", diskDataExistFlag: %u",
+             instance(),
+             tabPtr.p->tableId,
+             fragPtr.p->fragmentId,
+             conf->diskDataExistFlag));
 
   ptr.p->m_wait_disk_data_sync = false;
   if (!conf->diskDataExistFlag)
@@ -15972,7 +15976,7 @@ Backup::openFilesReplyLCP(Signal* signal,
   }
   TablePtr tabPtr;
   bool prepare_phase;
-  Uint32 index;
+  Uint32 index = 0;
   if (filePtr.i == ptr.p->prepareDataFilePtr[0])
   {
     jam();

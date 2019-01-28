@@ -179,4 +179,21 @@ void global_thd_manager_remove_thd(THD *thd);
 */
 const char *get_write_set_algorithm_string(unsigned int algorithm);
 
+/**
+  Returns true if the given transaction is committed.
+
+  @param[in] gtid  The transaction identifier
+
+  @return true   the transaction is committed
+          false  otherwise
+*/
+bool is_gtid_committed(const Gtid &gtid);
+
+/**
+  Returns the value of slave_max_allowed_packet.
+
+  @return slave_max_allowed_packet
+*/
+unsigned long get_slave_max_allowed_packet();
+
 #endif /* GROUP_REPLICATION_PRIV_INCLUDE */

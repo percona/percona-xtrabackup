@@ -46,7 +46,8 @@
 #include "mysql/udf_registration_types.h"
 #include "mysql_com.h"  // Item_result
 #include "sql/rpl_trx_tracking.h"
-#include "sql/tc_log.h"  // TC_LOG
+#include "sql/tc_log.h"            // TC_LOG
+#include "sql/transaction_info.h"  // Transaction_ctx
 #include "thr_mutex.h"
 
 class Format_description_log_event;
@@ -301,12 +302,14 @@ struct LOG_INFO {
   my_off_t pos;
   bool fatal;       // if the purge happens to give us a negative offset
   int entry_index;  // used in purge_logs(), calculatd in find_log_pos().
+  int encrypted_header_size;
   LOG_INFO()
       : index_file_offset(0),
         index_file_start_offset(0),
         pos(0),
         fatal(0),
-        entry_index(0) {
+        entry_index(0),
+        encrypted_header_size(0) {
     memset(log_file_name, 0, FN_REFLEN);
   }
 };
@@ -664,17 +667,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
 #endif /* defined(MYSQL_SERVER) */
   void add_bytes_written(ulonglong inc) { bytes_written += inc; }
   void reset_bytes_written() { bytes_written = 0; }
-  void harvest_bytes_written(ulonglong *counter) {
-#ifndef DBUG_OFF
-    char buf1[22], buf2[22];
-#endif
-    DBUG_ENTER("harvest_bytes_written");
-    (*counter) += bytes_written;
-    DBUG_PRINT("info", ("counter: %s  bytes_written: %s", llstr(*counter, buf1),
-                        llstr(bytes_written, buf2)));
-    bytes_written = 0;
-    DBUG_VOID_RETURN;
-  }
+  void harvest_bytes_written(Relay_log_info *rli, bool need_log_space_lock);
   void set_max_size(ulong max_size_arg);
   void signal_update() {
     DBUG_ENTER("MYSQL_BIN_LOG::signal_update");
@@ -683,7 +676,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
   }
 
   void update_binlog_end_pos(bool need_lock = true);
-  void update_binlog_end_pos(my_off_t pos);
+  void update_binlog_end_pos(const char *file, my_off_t pos);
 
   int wait_for_update(const struct timespec *timeout);
 
@@ -834,7 +827,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
   inline void unlock_index() { mysql_mutex_unlock(&LOCK_index); }
   inline IO_CACHE *get_index_file() { return &index_file; }
   inline uint32 get_open_count() { return open_count; }
-
+  static const int MAX_RETRIES_FOR_DELETE_RENAME_FAILURE = 5;
   /*
     It is called by the threads (e.g. dump thread, applier thread) which want
     to read hot log without LOCK_log protection.
@@ -876,6 +869,26 @@ struct LOAD_FILE_INFO {
 };
 
 extern MYSQL_PLUGIN_IMPORT MYSQL_BIN_LOG mysql_bin_log;
+
+/**
+  Check if the the transaction is empty.
+
+  @param thd The client thread that executed the current statement.
+
+  @retval true No changes found in any storage engine
+  @retval false Otherwise.
+
+**/
+bool is_transaction_empty(THD *thd);
+/**
+  Check if the transaction has no rw flag set for any of the storage engines.
+
+  @param thd The client thread that executed the current statement.
+  @param trx_scope The transaction scope to look into.
+
+  @retval the number of engines which have actual changes.
+ */
+int check_trx_rw_engines(THD *thd, Transaction_ctx::enum_trx_scope trx_scope);
 
 /**
   Check if at least one of transacaction and statement binlog caches contains

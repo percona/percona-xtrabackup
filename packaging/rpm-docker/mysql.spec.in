@@ -32,8 +32,10 @@
 
 %{!?product_suffix:              %global product_suffix community}
 %{!?feature_set:                 %global feature_set community}
-%{!?compilation_comment_release: %global compilation_comment_release MySQL Community Server - GPL}
-%{!?compilation_comment_debug:   %global compilation_comment_debug MySQL Community Server - GPL - Debug}
+%{!?compilation_comment_release: %global compilation_comment_release MySQL Community - GPL}
+%{!?compilation_comment_debug:   %global compilation_comment_debug MySQL Community - GPL - Debug}
+%{!?compilation_comment_server_release: %global compilation_comment_release MySQL Community Server - GPL}
+%{!?compilation_comment_server_debug:   %global compilation_comment_debug MySQL Community Server - GPL - Debug}
 %{!?src_base:                    %global src_base mysql%{?cluster:-cluster-gpl}}
 
 %global src_dir               %{src_base}-@VERSION_SRC@
@@ -50,11 +52,7 @@ Name:           mysql%{?cluster:-cluster}-%{product_suffix}-minimal
 Summary:        A very fast and reliable SQL database server
 Group:          Applications/Databases
 Version:        @MYSQL_NO_DASH_VERSION@
-%if 0%{?cluster}
-Release:        0.1@MYSQL_VERSION_EXTRA_DOT@%{?commercial:.1}%{?dist}
-%else
-Release:        1@MYSQL_VERSION_EXTRA_DOT@%{?commercial:.1}%{?dist}
-%endif
+Release:        %{?cluster:0.}1@MYSQL_VERSION_EXTRA_DOT@%{?commercial:.1}%{?dist}
 License:        Copyright (c) 2000, @MYSQL_COPYRIGHT_YEAR@, %{mysql_vendor}. All rights reserved. Under %{?license_type} license as shown in the Description field.
 URL:            http://www.mysql.com/
 Packager:       MySQL Release Engineering <mysql-build@oss.oracle.com>
@@ -172,6 +170,7 @@ mkdir release
            -DWITH_MEB=1 \
 %endif
            -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
+           -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
            -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
   echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
@@ -205,7 +204,7 @@ for f in innochecksum ibd2sdi myisamchk myisam_ftdump myisamlog myisampack \
          my_safe_process mysqlbinlog mysqlcheck mysql_client_test \
          mysql_config_editor mysqld_multi mysqld_safe mysqldumpslow mysqlimport \
          mysql_secure_installation mysqlshow mysqlslap mysqltest mysqlxtest \
-         perror resolveip  resolve_stack_dump lz4_decompress \
+         perror lz4_decompress \
          zlib_decompress mysqlrouter mysqlrouter_plugin_info ; do
     rm -f %{buildroot}%{_bindir}/$f
 done
@@ -225,13 +224,14 @@ for p in auth.so auth_test_plugin.so authentication_ldap_sasl.so \
          authentication_ldap_simple.so component_example_component1.so \
          component_example_component2.so component_example_component3.so \
          component_log_sink_test.so component_pfs_example.so \
-         component_pfs_example_component_population.so \
+         component_pfs_example_component_population.so component_test_host_application_signal.so \
          component_test_pfs_notification.so component_test_pfs_resource_group.so \
          component_test_string_service_charset.so component_test_string_service.so \
          component_test_string_service_long.so component_udf_reg_3_func.so \
          component_udf_reg_int_same_func.so component_udf_reg_avg_func.so \
          component_udf_reg_only_3_func.so component_udf_reg_int_func.so \
          component_udf_reg_real_func.so component_test_udf_registration.so \
+         component_test_host_application_signal \
          component_udf_unreg_3_func.so component_udf_unreg_int_func.so \
          component_udf_unreg_real_func.so component_test_component_sys_var_service.so \
          component_test_sys_var_service_int.so component_test_sys_var_service.so \
@@ -242,10 +242,12 @@ for p in auth.so auth_test_plugin.so authentication_ldap_sasl.so \
          component_test_status_var_service_str.so\
          component_test_status_var_service_unreg_only.so\
          component_test_system_variable_source.so\
+         component_test_audit_api_message.so\
          daemon_example.ini ha_example.so ha_mock.so libdaemon_example.so \
          pfs_example_plugin_employee.so qa_auth_client.so qa_auth_interface.so \
          qa_auth_server.so replication_observers_example_plugin.so \
          test_security_context.so test_services_plugin_registry.so \
+         test_services_host_application_signal.so \
          udf_example.so  component_mysqlx_global_reset.so \
          test_udf_services.so component_test_backup_lock_service.so ; do
     rm -f %{buildroot}%{_libdir}/mysql/plugin/$p
@@ -342,6 +344,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_log_sink_json.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_log_filter_dragnet.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_validate_password.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_audit_api_message_emit.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/innodb_engine.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_file.so
@@ -414,6 +417,14 @@ rm -r $(readlink var) var
 %dir %attr(750, mysql, mysql) /var/lib/mysql-keyring
 
 %changelog
+* Wed Nov 21 2018 Erlend Dahl <erlend.dahl@oracle.com> - 8.0.14-1
+- Add specific compilation comment for the server
+- Remove resolveip
+- Remove resolve_stack_dump
+
+* Tue Aug 21 2018 Georgi Kodinov <georgi.kodinov@oracle.com> - 8.0.13-1
+- No need to ship test plugins and components in docker image
+
 * Mon Mar 12 2018 Erlend Dahl <erlend.dahl@oracle.com> - 8.0.12-0.1
 - Change the global milestone to 'dmr'
 - Move mysqlx to default plugin

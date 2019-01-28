@@ -92,9 +92,8 @@
 #include "sql/mdl.h"
 #include "sql/opt_costmodel.h"
 #include "sql/opt_trace_context.h"  // Opt_trace_context
-#include "sql/parse_location.h"
-#include "sql/protocol.h"          // Protocol
-#include "sql/protocol_classic.h"  // Protocol_text
+#include "sql/protocol.h"           // Protocol
+#include "sql/protocol_classic.h"   // Protocol_text
 #include "sql/query_options.h"
 #include "sql/rpl_context.h"  // Rpl_thd_context
 #include "sql/rpl_gtid.h"
@@ -131,6 +130,7 @@ struct ORDER;
 struct TABLE;
 struct TABLE_LIST;
 struct User_level_lock;
+struct YYLTYPE;
 
 namespace dd {
 namespace cache {
@@ -223,39 +223,28 @@ typedef struct rpl_event_coordinates {
 
 #define THD_CHECK_SENTRY(thd) DBUG_ASSERT(thd->dbug_sentry == THD_SENTRY_MAGIC)
 
-/* The following macro is to make init of Query_arena simpler */
-#ifndef DBUG_OFF
-#define INIT_ARENA_DBUG_INFO \
-  is_backup_arena = 0;       \
-  is_reprepared = false;
-#else
-#define INIT_ARENA_DBUG_INFO
-#endif
-
 class Query_arena {
- public:
+ private:
   /*
-    List of items created in the parser for this query. Every item puts
-    itself to the list on creation (see Item::Item() for details))
+    List of items created for this query. Every item adds itself to the list
+    on creation (see Item::Item() for details)
   */
-  Item *free_list;
+  Item *m_item_list;
+
+ public:
   MEM_ROOT *mem_root;  // Pointer to current memroot
-#ifndef DBUG_OFF
-  bool is_backup_arena; /* True if this arena is used for backup. */
-  bool is_reprepared;
-#endif
   /*
-    The states relfects three diffrent life cycles for three
+    The states reflects three different life cycles for three
     different types of statements:
     Prepared statement: STMT_INITIALIZED -> STMT_PREPARED -> STMT_EXECUTED.
     Stored procedure:   STMT_INITIALIZED_FOR_SP -> STMT_EXECUTED.
-    Other statements:   STMT_CONVENTIONAL_EXECUTION never changes.
+    Other statements:   STMT_REGULAR_EXECUTION never changes.
   */
   enum enum_state {
     STMT_INITIALIZED = 0,
     STMT_INITIALIZED_FOR_SP = 1,
     STMT_PREPARED = 2,
-    STMT_CONVENTIONAL_EXECUTION = 3,
+    STMT_REGULAR_EXECUTION = 3,
     STMT_EXECUTED = 4,
     STMT_ERROR = -1
   };
@@ -273,33 +262,41 @@ class Query_arena {
        statement memroot. At the end of this execution, state should change to
        STMT_EXECUTED.
   */
+ private:
   enum_state state;
 
+ public:
   Query_arena(MEM_ROOT *mem_root_arg, enum enum_state state_arg)
-      : free_list(0), mem_root(mem_root_arg), state(state_arg) {
-    INIT_ARENA_DBUG_INFO;
-  }
+      : m_item_list(nullptr), mem_root(mem_root_arg), state(state_arg) {}
+
   /*
     This constructor is used only when Query_arena is created as
     backup storage for another instance of Query_arena.
   */
-  Query_arena() { INIT_ARENA_DBUG_INFO; }
+  Query_arena()
+      : m_item_list(nullptr), mem_root(nullptr), state(STMT_INITIALIZED) {}
 
-  virtual ~Query_arena(){};
+  virtual ~Query_arena() = default;
 
-  inline bool is_stmt_prepare() const { return state == STMT_INITIALIZED; }
-  inline bool is_stmt_prepare_or_first_sp_execute() const {
+  Item *item_list() const { return m_item_list; }
+  void reset_item_list() { m_item_list = nullptr; }
+  void set_item_list(Item *item) { m_item_list = item; }
+  void add_item(Item *item);
+  void free_items();
+  void set_state(enum_state state_arg) { state = state_arg; }
+  enum_state get_state() const { return state; }
+  bool is_stmt_prepare() const { return state == STMT_INITIALIZED; }
+  bool is_stmt_prepare_or_first_sp_execute() const {
     return (int)state < (int)STMT_PREPARED;
   }
-  inline bool is_stmt_prepare_or_first_stmt_execute() const {
+  bool is_stmt_prepare_or_first_stmt_execute() const {
     return (int)state <= (int)STMT_PREPARED;
   }
-  inline bool is_conventional() const {
-    return state == STMT_CONVENTIONAL_EXECUTION;
-  }
+  /// @returns true if a regular statement, ie not prepared and not stored proc
+  bool is_regular() const { return state == STMT_REGULAR_EXECUTION; }
 
-  inline void *alloc(size_t size) { return alloc_root(mem_root, size); }
-  inline void *mem_calloc(size_t size) {
+  void *alloc(size_t size) { return alloc_root(mem_root, size); }
+  void *mem_calloc(size_t size) {
     void *ptr;
     if ((ptr = alloc_root(mem_root, size))) memset(ptr, 0, size);
     return ptr;
@@ -307,19 +304,17 @@ class Query_arena {
   template <typename T>
   T *alloc_typed() {
     void *m = alloc(sizeof(T));
-    return m == NULL ? NULL : new (m) T;
+    return m == nullptr ? nullptr : new (m) T;
   }
   template <typename T>
   T *memdup_typed(const T *mem) {
     return static_cast<T *>(memdup_root(mem_root, mem, sizeof(T)));
   }
-  inline char *mem_strdup(const char *str) {
-    return strdup_root(mem_root, str);
-  }
-  inline char *strmake(const char *str, size_t size) const {
+  char *mem_strdup(const char *str) { return strdup_root(mem_root, str); }
+  char *strmake(const char *str, size_t size) const {
     return strmake_root(mem_root, str, size);
   }
-  inline void *memdup(const void *str, size_t size) {
+  void *memdup(const void *str, size_t size) {
     return memdup_root(mem_root, str, size);
   }
 
@@ -328,11 +323,16 @@ class Query_arena {
 
     @param set A Query_arena from which members are copied.
   */
-  void set_query_arena(const Query_arena *set);
+  void set_query_arena(const Query_arena &set);
 
-  void free_items();
-  /* Close the active state associated with execution of this statement */
-  virtual void cleanup_stmt();
+  /**
+    Copy the current arena to `backup` and set the current
+    arena to match `source`
+
+    @param source A Query_arena from which members are copied.
+    @param backup A Query_arena to which members are first saved.
+  */
+  void swap_query_arena(const Query_arena &source, Query_arena *backup);
 };
 
 class Prepared_statement;
@@ -763,9 +763,9 @@ class THD : public MDL_context_owner,
     return Query_arena::is_stmt_prepare_or_first_stmt_execute();
   }
 
-  inline bool is_conventional() const {
+  inline bool is_regular() const {
     DBUG_ASSERT(0);
-    return Query_arena::is_conventional();
+    return Query_arena::is_regular();
   }
 
  public:
@@ -869,6 +869,9 @@ class THD : public MDL_context_owner,
   Relay_log_info *rli_fake;
   /* Slave applier execution context */
   Relay_log_info *rli_slave;
+
+  /* Is transaction commit still pending */
+  bool tx_commit_pending;
 
   /**
     The function checks whether the thread is processing queries from binlog,
@@ -1183,9 +1186,10 @@ class THD : public MDL_context_owner,
   unsigned int m_current_stage_key;
 
  public:
+  // See comment in THD::enter_cond about why SUPPRESS_TSAN is needed.
   void enter_stage(const PSI_stage_info *stage, PSI_stage_info *old_stage,
                    const char *calling_func, const char *calling_file,
-                   const unsigned int calling_line);
+                   const unsigned int calling_line) SUPPRESS_TSAN;
   const char *get_proc_info() const { return proc_info; }
 
   /*
@@ -1242,7 +1246,13 @@ class THD : public MDL_context_owner,
   */
   enum enum_server_command m_command;
 
+ private:
+  bool m_is_admin_conn;
+
  public:
+  void set_admin_connection(bool admin) { m_is_admin_conn = admin; }
+  bool is_admin_connection() const { return m_is_admin_conn; }
+
   uint32 unmasked_server_id;
   uint32 server_id;
   uint32 file_id;  // for LOAD DATA INFILE
@@ -1600,15 +1610,11 @@ class THD : public MDL_context_owner,
   class Attachable_trx {
    public:
     Attachable_trx(THD *thd, Attachable_trx *prev_trx);
-    Attachable_trx(THD *thd, Attachable_trx *prev_trx,
-                   enum_reset_lex reset_lex);
     virtual ~Attachable_trx();
     Attachable_trx *get_prev_attachable_trx() const {
       return m_prev_attachable_trx;
-    };
+    }
     virtual bool is_read_only() const { return true; }
-
-    void init();
 
    protected:
     /// THD instance.
@@ -1647,10 +1653,9 @@ class THD : public MDL_context_owner,
   class Attachable_trx_rw : public Attachable_trx {
    public:
     bool is_read_only() const { return false; }
-    Attachable_trx_rw(THD *thd, Attachable_trx *prev_trx = NULL);
+    explicit Attachable_trx_rw(THD *thd);
 
    private:
-    XID_STATE::xa_states m_xa_state_saved;
     Attachable_trx_rw(const Attachable_trx_rw &);
     Attachable_trx_rw &operator=(const Attachable_trx_rw &);
   };
@@ -1677,6 +1682,9 @@ class THD : public MDL_context_owner,
   Field *dup_field;
 
   Vio *active_vio = {nullptr};
+
+  /* Active network vio for clone remote connection. */
+  Vio *clone_vio = {nullptr};
 
   /*
     This is to track items changed during execution of a prepared
@@ -1860,11 +1868,6 @@ class THD : public MDL_context_owner,
   */
   ulonglong current_found_rows;
 
-  /**
-    Number of rows changed in currently executing statement.
-    Applicable for UPDATE statements only.
-  */
-  ulonglong current_changed_rows;
   /*
     Indicate if the gtid_executed table is being operated implicitly
     within current transaction. This happens because we are inserting
@@ -2258,6 +2261,8 @@ class THD : public MDL_context_owner,
   bool slave_thread;
 
   uchar password;
+
+ private:
   /**
     Set to true if execution of the current compound statement
     can not continue. In particular, disables activation of
@@ -2265,7 +2270,9 @@ class THD : public MDL_context_owner,
     Reset in the end of processing of the current user request, in
     @see mysql_reset_thd_for_next_command().
   */
-  bool is_fatal_error;
+  bool m_is_fatal_error;
+
+ public:
   /**
     Set by a storage engine to request the entire
     transaction (that possibly spans multiple engines) to
@@ -2306,7 +2313,6 @@ class THD : public MDL_context_owner,
   bool charset_is_system_charset, charset_is_collation_connection;
   bool charset_is_character_set_filesystem;
   bool enable_slow_log; /* enable slow log for current statement */
-  bool got_warning;     /* Set on call to push_warning() */
   /* set during loop of derived table processing */
   bool derived_tables_processing;
   // Set while parsing INFORMATION_SCHEMA system views.
@@ -2430,7 +2436,7 @@ class THD : public MDL_context_owner,
   void init_query_mem_roots();
   void cleanup_connection(void);
   void cleanup_after_query();
-  bool store_globals();
+  void store_globals();
   void restore_globals();
 
   inline void set_active_vio(Vio *vio) {
@@ -2455,6 +2461,24 @@ class THD : public MDL_context_owner,
     m_SSL = NULL;
     mysql_mutex_unlock(&LOCK_thd_data);
   }
+
+  /** Set active clone network Vio for remote clone.
+  @param[in] vio network vio */
+  inline void set_clone_vio(Vio *vio) {
+    mysql_mutex_lock(&LOCK_thd_data);
+    clone_vio = vio;
+    mysql_mutex_unlock(&LOCK_thd_data);
+  }
+
+  /** Clear clone network Vio for remote clone. */
+  inline void clear_clone_vio() {
+    mysql_mutex_lock(&LOCK_thd_data);
+    clone_vio = nullptr;
+    mysql_mutex_unlock(&LOCK_thd_data);
+  }
+
+  /** Shutdown clone vio, if active. */
+  void shutdown_clone_vio();
 
   enum_vio_type get_vio_type();
 
@@ -2683,11 +2707,6 @@ class THD : public MDL_context_owner,
     return !stmt_arena->is_stmt_prepare();
   }
 
-  LEX_CSTRING *make_lex_string(LEX_CSTRING *lex_str, const char *str,
-                               size_t length, bool allocate_lex_string);
-  LEX_STRING *make_lex_string(LEX_STRING *lex_str, const char *str,
-                              size_t length, bool allocate_lex_string);
-
   bool convert_string(LEX_STRING *to, const CHARSET_INFO *to_cs,
                       const char *from, size_t from_length,
                       const CHARSET_INFO *from_cs);
@@ -2744,11 +2763,8 @@ class THD : public MDL_context_owner,
     set any error, it sets a property of the error, so must be
     followed or prefixed with my_error().
   */
-  inline void fatal_error() {
-    DBUG_ASSERT(get_stmt_da()->is_error() || killed);
-    is_fatal_error = 1;
-    DBUG_PRINT("error", ("Fatal error set"));
-  }
+  void fatal_error() { m_is_fatal_error = true; }
+  bool is_fatal_error() const { return m_is_fatal_error; }
   /**
     true if there is an error in the error stack.
 
@@ -2898,8 +2914,6 @@ class THD : public MDL_context_owner,
   void restore_backup_open_tables_state(Open_tables_backup *backup);
   void reset_sub_statement_state(Sub_statement_state *backup, uint new_state);
   void restore_sub_statement_state(Sub_statement_state *backup);
-  void set_n_backup_active_arena(Query_arena *set, Query_arena *backup);
-  void restore_active_arena(Query_arena *set, Query_arena *backup);
 
  public:
   /**
@@ -2909,8 +2923,6 @@ class THD : public MDL_context_owner,
   */
   void begin_attachable_ro_transaction();
 
-  void begin_attachable_transaction(enum_reset_lex reset_lex);
-
   /**
     Start a read-write attachable transaction.
     All the read-only class' requirements apply.
@@ -2918,15 +2930,6 @@ class THD : public MDL_context_owner,
     declaration.
   */
   void begin_attachable_rw_transaction();
-
-  /**
-    Start a read-write attachable transaction to write
-    to  mysql.table_stats and mysql.index_stats. All the
-    requirements and restrictions to Attachable_trx apply.
-    Additional requirements are documented along the class
-    declaration.
-  */
-  void begin_attachable_rw_i_s_transaction();
 
   /**
     End an active attachable transaction. Applies to both the read-only
@@ -2941,20 +2944,22 @@ class THD : public MDL_context_owner,
     @return true if there is an active attachable transaction.
   */
   bool is_attachable_ro_transaction_active() const {
-    return m_attachable_trx != NULL && m_attachable_trx->is_read_only();
+    return m_attachable_trx != nullptr && m_attachable_trx->is_read_only();
   }
 
   /**
     @return true if there is an active attachable transaction.
   */
   bool is_attachable_transaction_active() const {
-    return m_attachable_trx != NULL;
+    return m_attachable_trx != nullptr;
   }
 
   /**
     @return true if there is an active rw attachable transaction.
   */
-  bool is_attachable_rw_transaction_active() const;
+  bool is_attachable_rw_transaction_active() const {
+    return m_attachable_trx != nullptr && !m_attachable_trx->is_read_only();
+  }
 
  public:
   /*
@@ -3451,6 +3456,7 @@ class THD : public MDL_context_owner,
   */
   void push_internal_handler(Internal_error_handler *handler);
 
+ private:
   /**
     Handle a sql condition.
     @param sql_errno the condition error number
@@ -3463,6 +3469,7 @@ class THD : public MDL_context_owner,
                         Sql_condition::enum_severity_level *level,
                         const char *msg);
 
+ public:
   /**
     Remove the error handler last pushed.
   */
@@ -3522,18 +3529,19 @@ class THD : public MDL_context_owner,
   friend void my_message_sql(uint, const char *, myf);
 
   /**
-    Raise a generic SQL condition.
+    Raise a generic SQL condition. Also calls mysql_audit_notify() unless
+    the condition is handled by a SQL condition handler.
+
     @param sql_errno the condition error number
     @param sqlstate the condition SQLSTATE
     @param level the condition level
     @param msg the condition message text
-    @param use_condition_handler Invoke the handle_condition.
+    @param fatal_error should the fatal_error flag be set?
     @return The condition raised, or NULL
   */
   Sql_condition *raise_condition(uint sql_errno, const char *sqlstate,
                                  Sql_condition::enum_severity_level level,
-                                 const char *msg,
-                                 bool use_condition_handler = true);
+                                 const char *msg, bool fatal_error = false);
 
  public:
   void set_command(enum enum_server_command command);
@@ -3600,6 +3608,7 @@ class THD : public MDL_context_owner,
     mysql_mutex_lock(&LOCK_thd_data);
     query_id = new_query_id;
     mysql_mutex_unlock(&LOCK_thd_data);
+    MYSQL_SET_STATEMENT_QUERY_ID(m_statement_psi, new_query_id);
   }
 
   /**
@@ -3970,11 +3979,6 @@ class THD : public MDL_context_owner,
   bool sql_parser();
 };
 
-inline void THD::vsyntax_error_at(const YYLTYPE &location, const char *format,
-                                  va_list args) {
-  vsyntax_error_at(location.raw.start, format, args);
-}
-
 /**
   A simple holder for Internal_error_handler.
   The class utilizes RAII technique to not forget to pop the handler.
@@ -4015,9 +4019,9 @@ class Prepared_stmt_arena_holder {
   */
   Prepared_stmt_arena_holder(THD *thd, bool activate_now_if_needed = true)
       : m_thd(thd), m_arena(NULL) {
-    if (activate_now_if_needed && !m_thd->stmt_arena->is_conventional() &&
+    if (activate_now_if_needed && !m_thd->stmt_arena->is_regular() &&
         m_thd->mem_root != m_thd->stmt_arena->mem_root) {
-      m_thd->set_n_backup_active_arena(m_thd->stmt_arena, &m_backup);
+      m_thd->swap_query_arena(*m_thd->stmt_arena, &m_backup);
       m_arena = m_thd->stmt_arena;
     }
   }
@@ -4027,7 +4031,7 @@ class Prepared_stmt_arena_holder {
     been activated.
   */
   ~Prepared_stmt_arena_holder() {
-    if (is_activated()) m_thd->restore_active_arena(m_arena, &m_backup);
+    if (is_activated()) m_thd->swap_query_arena(m_backup, m_arena);
   }
 
   bool is_activated() const { return m_arena != NULL; }
@@ -4077,28 +4081,6 @@ inline void my_eof(THD *thd) {
          TRANSACTION_INFO_TRACKER))
         ->add_trx_state(thd, TX_RESULT_SET);
   }
-}
-
-LEX_STRING *make_lex_string_root(MEM_ROOT *mem_root, LEX_STRING *lex_str,
-                                 const char *str, size_t length,
-                                 bool allocate_lex_string);
-LEX_CSTRING *make_lex_string_root(MEM_ROOT *mem_root, LEX_CSTRING *lex_str,
-                                  const char *str, size_t length,
-                                  bool allocate_lex_string);
-
-inline LEX_STRING *lex_string_copy(MEM_ROOT *root, LEX_STRING *dst,
-                                   const char *src, size_t src_len) {
-  return make_lex_string_root(root, dst, src, src_len, false);
-}
-
-inline LEX_STRING *lex_string_copy(MEM_ROOT *root, LEX_STRING *dst,
-                                   const LEX_STRING &src) {
-  return make_lex_string_root(root, dst, src.str, src.length, false);
-}
-
-inline LEX_STRING *lex_string_copy(MEM_ROOT *root, LEX_STRING *dst,
-                                   const char *src) {
-  return make_lex_string_root(root, dst, src, strlen(src), false);
 }
 
 bool add_item_to_list(THD *thd, Item *item);

@@ -24,7 +24,7 @@
   @file
 
   @brief
-  This file defines all numerical functions
+  This file defines all numerical Items
 */
 
 #include "sql/item_func.h"
@@ -151,7 +151,7 @@ bool check_reserved_words(LEX_STRING *name) {
 bool eval_const_cond(THD *thd, Item *cond, bool *value) {
   // Function may be used both during resolving and during optimization:
   DBUG_ASSERT(cond->may_evaluate_const(thd));
-  *value = cond->val_int();
+  *value = cond->val_bool();
   return thd->is_error();
 }
 
@@ -3592,8 +3592,6 @@ longlong Item_func_bit_count::val_int() {
 
 /****************************************************************************
 ** Functions to handle dynamic loadable functions
-** Original source by: Alexis Mikhailov <root@medinf.chuvashia.su>
-** Rewritten by monty.
 ****************************************************************************/
 
 void udf_handler::cleanup() {
@@ -3700,6 +3698,7 @@ bool udf_handler::fix_fields(THD *thd, Item_result_field *func, uint arg_count,
 
   if (u_d->func_init) {
     char init_msg_buff[MYSQL_ERRMSG_SIZE];
+    *init_msg_buff = '\0';
     char *to = num_buffer;
     for (uint i = 0; i < arg_count; i++) {
       /*
@@ -3817,9 +3816,7 @@ String *udf_handler::val_str(String *str, String *save_str) {
   DBUG_ENTER("udf_handler::val_str");
 
   if (get_arguments()) DBUG_RETURN(0);
-  char *(*func)(UDF_INIT *, UDF_ARGS *, char *, ulong *, uchar *, uchar *) =
-      (char *(*)(UDF_INIT *, UDF_ARGS *, char *, ulong *, uchar *,
-                 uchar *))u_d->func;
+  Udf_func_string func = reinterpret_cast<Udf_func_string>(u_d->func);
 
   if ((res_length = str->alloced_length()) <
       MAX_FIELD_WIDTH) {  // This happens VERY seldom
@@ -3858,9 +3855,7 @@ my_decimal *udf_handler::val_decimal(bool *null_value, my_decimal *dec_buf) {
     *null_value = 1;
     return 0;
   }
-  char *(*func)(UDF_INIT *, UDF_ARGS *, char *, ulong *, uchar *, uchar *) =
-      (char *(*)(UDF_INIT *, UDF_ARGS *, char *, ulong *, uchar *,
-                 uchar *))u_d->func;
+  Udf_func_string func = reinterpret_cast<Udf_func_string>(u_d->func);
 
   char *res = func(&initid, &f_args, buf, &res_length, &is_null, &error);
   if (is_null || error) {
@@ -6069,7 +6064,9 @@ bool Item_func_get_system_var::resolve_type(THD *thd) {
       max_length = MY_INT64_NUM_DECIMAL_DIGITS;
       unsigned_flag = true;
       break;
+    case SHOW_SIGNED_INT:
     case SHOW_SIGNED_LONG:
+    case SHOW_SIGNED_LONGLONG:
       collation.set_numeric();
       set_data_type(MYSQL_TYPE_LONGLONG);
       max_length = MY_INT64_NUM_DECIMAL_DIGITS;
@@ -6135,8 +6132,10 @@ enum Item_result Item_func_get_system_var::result_type() const {
     case SHOW_MY_BOOL:
     case SHOW_INT:
     case SHOW_LONG:
-    case SHOW_SIGNED_LONG:
     case SHOW_LONGLONG:
+    case SHOW_SIGNED_INT:
+    case SHOW_SIGNED_LONG:
+    case SHOW_SIGNED_LONGLONG:
     case SHOW_HA_ROWS:
       return INT_RESULT;
     case SHOW_CHAR:
@@ -6245,10 +6244,14 @@ longlong Item_func_get_system_var::val_int() {
       return get_sys_var_safe<uint>(thd);
     case SHOW_LONG:
       return get_sys_var_safe<ulong>(thd);
-    case SHOW_SIGNED_LONG:
-      return get_sys_var_safe<long>(thd);
     case SHOW_LONGLONG:
       return get_sys_var_safe<ulonglong>(thd);
+    case SHOW_SIGNED_INT:
+      return get_sys_var_safe<int>(thd);
+    case SHOW_SIGNED_LONG:
+      return get_sys_var_safe<long>(thd);
+    case SHOW_SIGNED_LONGLONG:
+      return get_sys_var_safe<longlong>(thd);
     case SHOW_HA_ROWS:
       return get_sys_var_safe<ha_rows>(thd);
     case SHOW_BOOL:
@@ -6341,8 +6344,10 @@ String *Item_func_get_system_var::val_str(String *str) {
 
     case SHOW_INT:
     case SHOW_LONG:
-    case SHOW_SIGNED_LONG:
     case SHOW_LONGLONG:
+    case SHOW_SIGNED_INT:
+    case SHOW_SIGNED_LONG:
+    case SHOW_SIGNED_LONGLONG:
     case SHOW_HA_ROWS:
     case SHOW_BOOL:
     case SHOW_MY_BOOL:
@@ -6428,8 +6433,10 @@ double Item_func_get_system_var::val_real() {
     }
     case SHOW_INT:
     case SHOW_LONG:
-    case SHOW_SIGNED_LONG:
     case SHOW_LONGLONG:
+    case SHOW_SIGNED_INT:
+    case SHOW_SIGNED_LONG:
+    case SHOW_SIGNED_LONGLONG:
     case SHOW_HA_ROWS:
     case SHOW_BOOL:
     case SHOW_MY_BOOL:
@@ -7215,6 +7222,29 @@ bool Item_func_sp::execute_impl(THD *thd) {
     my_error(ER_BINLOG_UNSAFE_ROUTINE, MYF(0));
     goto error;
   }
+
+  /*
+    The 'function call' top statement can not distinguish if its sub
+    statements (function) have 'CREATE/DROP TEMPORARY TABLE' or not
+    before executing its sub statements, It is too late to set the
+    binlog format to row in mixed mode when executing the 'CREATE/DROP
+    TEMPORARY TABLE' in sub statement, because the binlog format is not
+    consistent before and after 'CREATE/DROP TEMPORARY TABLE'. Which
+    implies that we have to write the 'function call' top statement
+    into binlog if the function contains 'CREATE/DROP TEMPORARY TABLE'
+    in mixed mode. Because of that constrain we have to write the
+    'function call' top statement into binlog if the function contains
+    the DMLs on temporary table in mixed mode, another reason is that
+    the DMLs on temporary table might be in the same function as
+    'CREATE/DROP TEMPORARY TABLE'. Which requires to set binlog format
+    to statement if the function contains DML statement(s) on temporary
+    table in mixed mode.
+  */
+  if (thd->variables.binlog_format == BINLOG_FORMAT_MIXED &&
+      (thd->lex->stmt_accessed_table(LEX::STMT_READS_TEMP_TRANS_TABLE) ||
+       thd->lex->stmt_accessed_table(LEX::STMT_READS_TEMP_NON_TRANS_TABLE)))
+    thd->clear_current_stmt_binlog_format_row();
+
   /*
     Disable the binlogging if this is not a SELECT statement. If this is a
     SELECT, leave binlogging on, so execute_function() code writes the
@@ -7300,7 +7330,7 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
     Checking privileges to execute the function while creating view and
     executing the function of select.
    */
-  if (!(thd->lex->context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW) ||
+  if (!thd->lex->is_view_context_analysis() ||
       (thd->lex->sql_command == SQLCOM_CREATE_VIEW)) {
     if (context->security_ctx) {
       /* Set view definer security context */
@@ -7335,7 +7365,7 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
   res = Item_func::fix_fields(thd, ref);
   if (res) DBUG_RETURN(res);
 
-  if (thd->lex->context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW) {
+  if (thd->lex->is_view_context_analysis()) {
     /*
       Here we check privileges of the stored routine only during view
       creation, in order to validate the view.  A runtime check is
@@ -7901,7 +7931,16 @@ longlong Item_func_can_access_view::val_int() {
   bool is_view_valid = true;
   std::unique_ptr<dd::Properties> view_options(
       dd::Properties::parse_properties(options_ptr->c_ptr_safe()));
-  if (view_options->get_bool("view_valid", &is_view_valid)) DBUG_RETURN(0);
+
+  // Warn if the property string is corrupt.
+  if (!view_options.get()) {
+    LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+           options_ptr->c_ptr_safe());
+    DBUG_ASSERT(false);
+    DBUG_RETURN(0);
+  }
+
+  if (view_options->get("view_valid", &is_view_valid)) DBUG_RETURN(0);
 
   THD *thd = current_thd;
   if (!is_view_valid) {
@@ -8223,9 +8262,17 @@ longlong Item_func_internal_keys_disabled::val_int() {
   std::unique_ptr<dd::Properties> p(
       dd::Properties::parse_properties(options_ptr->c_ptr_safe()));
 
+  // Warn if the property string is corrupt.
+  if (!p.get()) {
+    LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+           options_ptr->c_ptr_safe());
+    DBUG_ASSERT(false);
+    DBUG_RETURN(0);
+  }
+
   // Read keys_disabled sub type.
   uint keys_disabled = 0;
-  p->get_uint32("keys_disabled", &keys_disabled);
+  p->get("keys_disabled", &keys_disabled);
 
   DBUG_RETURN(keys_disabled);
 }
@@ -8620,8 +8667,16 @@ longlong Item_func_internal_get_view_warning_or_error::val_int() {
     std::unique_ptr<dd::Properties> view_options(
         dd::Properties::parse_properties(options_ptr->c_ptr_safe()));
 
+    // Warn if the property string is corrupt.
+    if (!view_options.get()) {
+      LogErr(WARNING_LEVEL, ER_WARN_PROPERTY_STRING_PARSE_FAILED,
+             options_ptr->c_ptr_safe());
+      DBUG_ASSERT(false);
+      DBUG_RETURN(0);
+    }
+
     // Return 0 if get_bool() or push_view_warning_or_error() fails
-    if (view_options->get_bool("view_valid", &is_view_valid)) DBUG_RETURN(0);
+    if (view_options->get("view_valid", &is_view_valid)) DBUG_RETURN(0);
 
     if (is_view_valid == false) {
       push_view_warning_or_error(current_thd, schema_name_ptr->c_ptr_safe(),

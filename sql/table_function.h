@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@
 #include "my_inttypes.h"
 #include "my_table_map.h"
 #include "psi_memory_key.h"  // key_memory_JSON
+#include "sql/create_field.h"
 #include "sql/enum_query_type.h"
 #include "sql/mem_root_array.h"
 #include "sql_list.h"  // List
@@ -100,7 +101,7 @@ class Table_function {
   /**
     Set the default row
   */
-  void default_row(){};
+  void default_row() {}
   /**
     Initialize table function
     @returns
@@ -218,7 +219,7 @@ class JT_data_source {
   bool producing_records;
 
   JT_data_source() : v(key_memory_JSON), producing_records(false) {}
-  ~JT_data_source(){};
+  ~JT_data_source() {}
 
   void cleanup();
 };

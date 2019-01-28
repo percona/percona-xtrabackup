@@ -78,7 +78,9 @@ static const char *traditional_extra_tags[ET_total] = {
     "Backward index scan",                // ET_BACKWARD_SCAN
     "Recursive",                          // ET_RECURSIVE
     "Table function:",                    // ET_TABLE_FUNCTION
-    "Index dive skipped due to FORCE"     // ET_SKIP_RECORDS_IN_RANGE
+    "Index dive skipped due to FORCE",    // ET_SKIP_RECORDS_IN_RANGE
+    "Using secondary engine",             // ET_USING_SECONDARY_ENGINE
+    "Rematerialize"                       // ET_REMATERIALIZE
 };
 
 static const char *mod_type_name[] = {"NONE", "INSERT", "UPDATE", "DELETE",
@@ -207,6 +209,7 @@ bool Explain_format_traditional::flush_entry() {
           case ET_USING_INDEX_FOR_GROUP_BY:
           case ET_USING_JOIN_BUFFER:
           case ET_FIRST_MATCH:
+          case ET_REMATERIALIZE:
             brackets = true;  // for backward compatibility
             break;
           default:
@@ -231,6 +234,6 @@ bool Explain_format_traditional::flush_entry() {
     if (push(&items, column_buffer.col_message, nil)) return true;
   }
 
-  if (output->send_data(items)) return true;
+  if (output->send_data(current_thd, items)) return true;
   return false;
 }

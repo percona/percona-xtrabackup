@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2018 Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2017, 2018, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -466,8 +466,8 @@ void Arch_File_Ctx::build_dir_name(lsn_t dir_lsn, char *buffer, uint length) {
 }
 
 /** Start archiver background thread.
-@return true if successful */
-bool start_archiver_background() {
+@return error code */
+int start_archiver_background() {
   bool ret;
   char errbuf[MYSYS_STRERROR_SIZE];
 
@@ -480,9 +480,11 @@ bool start_archiver_background() {
   } else {
     my_error(ER_CANT_CREATE_FILE, MYF(0), ARCH_DIR, errno,
              my_strerror(errbuf, sizeof(errbuf), errno));
+
+    return (ER_CANT_CREATE_FILE);
   }
 
-  return (ret);
+  return (0);
 }
 
 /** Archiver background thread */

@@ -1141,7 +1141,7 @@ select count(*) from (select @a:=concat(@a, ',', a) from t2 ) Z;
 count(*)
 1000
 Warnings:
-Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Please set variables in separate statements instead.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
 set @a=concat(@a, ')');
 insert into t2 values (11),(13),(15);
 set @b= concat("explain ", @a);
@@ -1825,7 +1825,7 @@ SELECT * FROM t1 WHERE i4 BETWEEN 10 AND 10;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	const	i4_uq	i4_uq	5	const	1	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select '1' AS `pk`,'10' AS `i4` from `test`.`t1` where ('10' between 10 and 10)
+Note	1003	/* select#1 */ select '1' AS `pk`,'10' AS `i4` from `test`.`t1` where 1
 SELECT * FROM t1 WHERE i4 BETWEEN 10 AND 10;
 pk	i4
 1	10
@@ -1834,7 +1834,7 @@ SELECT * FROM t1 WHERE 10 BETWEEN i4 AND i4;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	const	i4_uq	i4_uq	5	const	1	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select '1' AS `pk`,'10' AS `i4` from `test`.`t1` where (10 between '10' and '10')
+Note	1003	/* select#1 */ select '1' AS `pk`,'10' AS `i4` from `test`.`t1` where 1
 SELECT * FROM t1 WHERE 10 BETWEEN i4 AND i4;
 pk	i4
 1	10
@@ -1863,7 +1863,7 @@ SELECT * FROM t1 WHERE 10 BETWEEN 10 AND 10;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`pk` AS `pk`,`test`.`t1`.`i4` AS `i4` from `test`.`t1` where 1
+Note	1003	/* select#1 */ select `test`.`t1`.`pk` AS `pk`,`test`.`t1`.`i4` AS `i4` from `test`.`t1`
 SELECT * FROM t1 WHERE 10 BETWEEN 10 AND 10;
 pk	i4
 1	10
@@ -3776,4 +3776,53 @@ SELECT @trace RLIKE "range_uses_more_keyparts";
 SET optimizer_trace="enabled=off";
 DROP PROCEDURE p;
 DROP TABLE t1, transactions;
+#
+# Bug #28086754: OPTIMIZER SKIP THE RANG SCAN ON SECOND COLUMN IN A
+#                 COMPOSITE INDEX
+#
+CREATE TABLE test_ref (
+a INT PRIMARY KEY,
+b VARCHAR(20),
+c VARCHAR(20) DEFAULT NULL,
+d VARCHAR(3) DEFAULT NULL,
+id INT DEFAULT NULL,
+KEY idx1 (id, c),
+KEY idx2 (id, d)) ENGINE=INNODB ;
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	Error	Table 'test.t1' doesn't exist
+test.t1	analyze	status	Operation failed
+EXPLAIN SELECT *
+FROM test_ref
+WHERE id=3 AND c LIKE 'gh%'
+ORDER BY c
+LIMIT 1;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	test_ref	NULL	range	idx1,idx2	idx1	88	NULL	25	100.00	Using where
+Warnings:
+Note	1003	/* select#1 */ select `test`.`test_ref`.`a` AS `a`,`test`.`test_ref`.`b` AS `b`,`test`.`test_ref`.`c` AS `c`,`test`.`test_ref`.`d` AS `d`,`test`.`test_ref`.`id` AS `id` from `test`.`test_ref` where ((`test`.`test_ref`.`id` = 3) and (`test`.`test_ref`.`c` like 'gh%')) order by `test`.`test_ref`.`c` limit 1
+SELECT *
+FROM test_ref
+WHERE id=3 AND c LIKE 'gh%'
+ORDER BY c
+LIMIT 1;
+a	b	c	d	id
+34876	D003	gheennse	S	3
+EXPLAIN SELECT *
+FROM test_ref
+WHERE id=3 AND c LIKE 'gh%'
+ORDER BY c DESC
+LIMIT 1;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	test_ref	NULL	range	idx1,idx2	idx1	88	NULL	25	100.00	Using where; Backward index scan
+Warnings:
+Note	1003	/* select#1 */ select `test`.`test_ref`.`a` AS `a`,`test`.`test_ref`.`b` AS `b`,`test`.`test_ref`.`c` AS `c`,`test`.`test_ref`.`d` AS `d`,`test`.`test_ref`.`id` AS `id` from `test`.`test_ref` where ((`test`.`test_ref`.`id` = 3) and (`test`.`test_ref`.`c` like 'gh%')) order by `test`.`test_ref`.`c` desc limit 1
+SELECT *
+FROM test_ref
+WHERE id=3 AND c LIKE 'gh%'
+ORDER BY c DESC
+LIMIT 1;
+a	b	c	d	id
+1770649	D003	gheennse	S	3
+DROP TABLE test_ref;
 set optimizer_switch=default;

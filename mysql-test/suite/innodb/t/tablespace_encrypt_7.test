@@ -20,7 +20,7 @@
 --source include/not_valgrind.inc
 
 --disable_query_log
-call mtr.add_suppression("ibd can't be decrypted , please confirm the keyfile is match and keyring plugin is loaded.");
+call mtr.add_suppression("ibd can't be decrypted, please confirm the keyfile is match and keyring plugin is loaded.");
 call mtr.add_suppression("\\[Error\\] \\[[^]]*\\] \\[[^]]*\\] Encryption can't find master key, please check the keyring plugin is loaded.");
 call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] \\[[^]]*\\] Check keyring plugin fail, please check the keyring plugin is loaded.");
 --enable_query_log
@@ -395,6 +395,6 @@ let $restart_parameters = restart: --early-plugin-load=keyring_file=$KEYRING_PLU
 --echo ###########
 DROP TABLE t1;
 DROP TABLESPACE encrypt_ts;
-SET SESSION debug= '-d,alter_encrypt_tablespace_page_6';
-SET SESSION debug= '-d,flush_each_dirtied_page';
+let $restart_parameters = restart:;
+--source include/restart_mysqld_no_echo.inc
 remove_file $MYSQL_TMP_DIR/mysecret_keyring;

@@ -26,7 +26,7 @@
 
 #include "my_byteorder.h"
 #include "my_dbug.h"
-#include "plugin/group_replication/include/plugin_psi.h"
+#include "plugin/group_replication/include/plugin_constants.h"
 
 using std::map;
 using std::string;
@@ -536,11 +536,11 @@ bool Group_member_info::has_greater_weight(Group_member_info *other) {
 }
 
 Group_member_info_manager::Group_member_info_manager(
-    Group_member_info *local_member_info) {
+    Group_member_info *local_member_info, PSI_mutex_key psi_mutex_key) {
   members = new map<string, Group_member_info *>();
   this->local_member_info = local_member_info;
 
-  mysql_mutex_init(PSI_NOT_INSTRUMENTED, &update_lock, MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(psi_mutex_key, &update_lock, MY_MUTEX_INIT_FAST);
 
   add(local_member_info);
 }
@@ -648,10 +648,50 @@ vector<Group_member_info *> *Group_member_info_manager::get_all_members() {
   return all_members;
 }
 
+std::list<Gcs_member_identifier>
+    *Group_member_info_manager::get_online_members_with_guarantees(
+        const Gcs_member_identifier &exclude_member) {
+  std::list<Gcs_member_identifier> *online_members = NULL;
+  mysql_mutex_lock(&update_lock);
+
+  for (map<string, Group_member_info *>::iterator it = members->begin();
+       it != members->end(); it++) {
+    if ((*it).second->get_member_version().get_version() <
+        TRANSACTION_WITH_GUARANTEES_VERSION) {
+      goto end; /* purecov: inspected */
+    }
+  }
+
+  online_members = new std::list<Gcs_member_identifier>();
+  for (map<string, Group_member_info *>::iterator it = members->begin();
+       it != members->end(); it++) {
+    if ((*it).second->get_recovery_status() ==
+            Group_member_info::MEMBER_ONLINE &&
+        !((*it).second->get_gcs_member_id() == exclude_member)) {
+      online_members->push_back((*it).second->get_gcs_member_id());
+    }
+  }
+
+end:
+  mysql_mutex_unlock(&update_lock);
+  return online_members;
+}
+
 void Group_member_info_manager::add(Group_member_info *new_member) {
   mysql_mutex_lock(&update_lock);
 
   (*members)[new_member->get_uuid()] = new_member;
+
+  mysql_mutex_unlock(&update_lock);
+}
+
+void Group_member_info_manager::update(Group_member_info *update_local_member) {
+  mysql_mutex_lock(&update_lock);
+
+  this->clear_members();
+  members->clear();
+  this->local_member_info = update_local_member;
+  (*members)[update_local_member->get_uuid()] = update_local_member;
 
   mysql_mutex_unlock(&update_lock);
 }
@@ -901,6 +941,40 @@ bool Group_member_info_manager::is_majority_unreachable() {
     if (info->is_unreachable()) unreachables++;
   }
   ret = (members->size() - unreachables) <= (members->size() / 2);
+  mysql_mutex_unlock(&update_lock);
+
+  return ret;
+}
+
+bool Group_member_info_manager::is_unreachable_member_present() {
+  bool ret = false;
+
+  mysql_mutex_lock(&update_lock);
+  map<string, Group_member_info *>::iterator it = members->begin();
+
+  for (it = members->begin(); it != members->end() && !ret; it++) {
+    Group_member_info *info = (*it).second;
+    if (info->is_unreachable()) {
+      ret = true;
+    }
+  }
+  mysql_mutex_unlock(&update_lock);
+
+  return ret;
+}
+
+bool Group_member_info_manager::is_recovering_member_present() {
+  bool ret = false;
+
+  mysql_mutex_lock(&update_lock);
+  map<string, Group_member_info *>::iterator it = members->begin();
+
+  for (it = members->begin(); it != members->end() && !ret; it++) {
+    Group_member_info *info = (*it).second;
+    if (info->get_recovery_status() == Group_member_info::MEMBER_IN_RECOVERY) {
+      ret = true;
+    }
+  }
   mysql_mutex_unlock(&update_lock);
 
   return ret;

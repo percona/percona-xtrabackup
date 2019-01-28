@@ -1,7 +1,7 @@
 #ifndef ITEM_JSON_FUNC_INCLUDED
 #define ITEM_JSON_FUNC_INCLUDED
 
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -269,7 +269,7 @@ bool get_json_atom_wrapper(Item **args, uint arg_idx,
 /**
   Check a non-empty val for character set. If it has character set
   my_charset_binary, signal error and return false. Else, try to convert to
-  my_charset_utf8mb4_binary. If this fails, signal error and return true, else
+  my_charset_utf8mb4_bin. If this fails, signal error and return true, else
   return false.
 
   @param[in]     val       the string to be checked
@@ -702,7 +702,7 @@ class Item_func_json_quote : public Item_str_func {
     uint32 max_char_length = (6 * args[0]->max_char_length()) + 2;
     set_data_type_string(max_char_length, &my_charset_utf8mb4_bin);
     return false;
-  };
+  }
 
   String *val_str(String *tmpspace) override;
 };
@@ -725,7 +725,7 @@ class Item_func_json_unquote : public Item_str_func {
     maybe_null = true;
     set_data_type_string(args[0]->max_char_length(), &my_charset_utf8mb4_bin);
     return false;
-  };
+  }
 
   String *val_str(String *str) override;
 };

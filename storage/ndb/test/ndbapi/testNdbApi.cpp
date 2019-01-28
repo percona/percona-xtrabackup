@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2018 Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -5313,7 +5313,7 @@ int runNdbClusterConnectionConnect(NDBT_Context* ctx, NDBT_Step* step)
 class SectionStore
 {
 public:
-  virtual ~SectionStore() {};
+  virtual ~SectionStore() {}
   virtual int appendToSection(Uint32 secId, LinearSectionPtr ptr) = 0;
 };
 
@@ -5328,12 +5328,12 @@ public:
   BasicSectionStore()
   {
     init();
-  };
+  }
 
   ~BasicSectionStore()
   {
     freeStorage();
-  };
+  }
 
   void init()
   {

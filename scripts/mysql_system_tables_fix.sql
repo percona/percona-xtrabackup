@@ -301,6 +301,8 @@ ALTER TABLE func
 
 SET @old_log_state = @@global.general_log;
 SET GLOBAL general_log = 'OFF';
+SET @old_sql_require_primary_key = @@session.sql_require_primary_key;
+SET @@session.sql_require_primary_key = 0;
 ALTER TABLE general_log
   MODIFY event_time TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   MODIFY user_host MEDIUMTEXT NOT NULL,
@@ -332,6 +334,7 @@ ALTER TABLE slow_log
   MODIFY thread_id BIGINT(21) UNSIGNED NOT NULL;
 SET GLOBAL slow_query_log = @old_log_state;
 
+SET @@session.sql_require_primary_key = @old_sql_require_primary_key;
 ALTER TABLE plugin
   MODIFY name varchar(64) COLLATE utf8_general_ci NOT NULL DEFAULT '',
   MODIFY dl varchar(128) COLLATE utf8_general_ci NOT NULL DEFAULT '',
@@ -684,6 +687,20 @@ INSERT INTO global_grants SELECT user, host, 'RESOURCE_GROUP_ADMIN',
 IF(grant_priv = 'Y', 'Y', 'N') FROM mysql.user WHERE super_priv = 'Y' AND @hadResourceGroupAdminPriv = 0;
 COMMIT;
 
+-- Add the privilege SERVICE_CONNECTION_ADMIN for every user who has the privilege SUPER
+-- provided that there isn't a user who already has the privilege SERVICE_CONNECTION_ADMIN.
+SET @hadServiceConnectionAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'SERVICE_CONNECTION_ADMIN');
+INSERT INTO global_grants SELECT user, host, 'SERVICE_CONNECTION_ADMIN', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user WHERE super_priv = 'Y' AND @hadServiceConnectionAdminPriv = 0;
+
+-- Add the privilege APPLICATION_PASSWORD_ADMIN for every user who has the
+-- privilege CREATE USER provided that there isn't a user who already has
+-- privilege APPLICATION_PASSWORD_ADMIN
+SET @hadApplicationPasswordAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'APPLICATION_PASSWORD_ADMIN');
+INSERT INTO global_grants SELECT user, host, 'APPLICATION_PASSWORD_ADMIN', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user WHERE Create_user_priv = 'Y' AND @hadApplicationPasswordAdminPriv = 0;
+COMMIT;
+
 # Activate the new, possible modified privilege tables
 # This should not be needed, but gives us some extra testing that the above
 # changes was correct
@@ -883,6 +900,7 @@ ALTER TABLE user ADD Password_reuse_history smallint unsigned NULL DEFAULT NULL 
 ALTER TABLE user ADD Password_reuse_time smallint unsigned NULL DEFAULT NULL AFTER Password_reuse_history;
 ALTER TABLE user ADD Password_require_current enum('N', 'Y') COLLATE utf8_general_ci DEFAULT NULL AFTER Password_reuse_time;
 ALTER TABLE user MODIFY Password_require_current enum('N','Y') COLLATE utf8_general_ci DEFAULT NULL AFTER Password_reuse_time;
+ALTER TABLE user ADD User_attributes JSON DEFAULT NULL AFTER Password_require_current;
 
 --
 -- Change engine of the firewall tables to InnoDB
@@ -1031,7 +1049,7 @@ DROP PREPARE stmt;
 # SUPER, PERSIST_RO_VARIABLES_ADMIN, SYSTEM_VARIABLES_ADMIN privileges
 #
 
-INSERT IGNORE INTO mysql.user VALUES ('localhost','mysql.session','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','','','','',0,0,0,0,'caching_sha2_password','$A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED','N',CURRENT_TIMESTAMP,NULL,'Y', 'N', 'N', NULL, NULL,NULL);
+INSERT IGNORE INTO mysql.user VALUES ('localhost','mysql.session','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','','','','',0,0,0,0,'caching_sha2_password','$A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED','N',CURRENT_TIMESTAMP,NULL,'Y', 'N', 'N', NULL, NULL, NULL, NULL);
 
 UPDATE user SET Create_role_priv= 'N', Drop_role_priv= 'N' WHERE User= 'mysql.session';
 
@@ -1042,6 +1060,8 @@ INSERT IGNORE INTO mysql.db VALUES ('localhost', 'performance_schema', 'mysql.se
 INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'PERSIST_RO_VARIABLES_ADMIN', 'N');
 
 INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'SYSTEM_VARIABLES_ADMIN', 'N');
+
+INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'SESSION_VARIABLES_ADMIN', 'N');
 
 FLUSH PRIVILEGES;
 

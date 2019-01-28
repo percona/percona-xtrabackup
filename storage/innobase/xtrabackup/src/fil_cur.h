@@ -123,11 +123,8 @@ For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
 and "./ibdata1" yield "ibdata1" in the output. */
 const char *xb_get_relative_path(
     /*=================*/
-    ulint flags,      /*!< in: tablespace flags */
-    const char *path, /*!< in: tablespace path (either
-                      relative or absolute) */
-    bool is_system);  /*!< in: TRUE for system tablespaces,
-                      i.e. when only the filename must be
-                      returned. */
+    fil_space_t *space, /*!< in: tablespace */
+    const char *path);  /*!< in: tablespace path (either
+                        relative or absolute) */
 
 #endif

@@ -304,7 +304,7 @@ struct Encryption {
   };
 
   /** Default constructor */
-  Encryption() : m_type(NONE){};
+  Encryption() : m_type(NONE) {}
 
   /** Specific constructor
   @param[in]	type		Algorithm type */
@@ -325,7 +325,9 @@ struct Encryption {
       : m_type(other.m_type),
         m_key(other.m_key),
         m_klen(other.m_klen),
-        m_iv(other.m_iv){};
+        m_iv(other.m_iv) {}
+
+  Encryption &operator=(const Encryption &) = default;
 
   /** Check if page is encrypted page or not
   @param[in]	page	page which need to check
@@ -575,9 +577,6 @@ class IORequest {
       clear_punch_hole();
     }
   }
-
-  /** Destructor */
-  ~IORequest() {}
 
   /** @return true if ignore missing flag is set */
   static bool ignore_missing(ulint type) MY_ATTRIBUTE((warn_unused_result)) {

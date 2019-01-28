@@ -46,7 +46,6 @@
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_networking.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_state_exchange.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_statistics_interface.h"
-#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"
 
 /**
  * Keep track of the most recent XCom configuration the node will deliver
@@ -389,7 +388,7 @@ class Gcs_xcom_interface : public Gcs_interface {
 
   /**
     Indicates whether SSL has been initialized and if that initialization was
-    successfull.
+    successful.
   */
   int m_ssl_init_state;
 

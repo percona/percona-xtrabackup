@@ -717,9 +717,9 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
-    "6",
+    "16",
     "1",
-    "6" },
+    "16" },
 
   {
     CFG_DB_DISK_DATA_FORMAT,
@@ -4265,7 +4265,7 @@ public:
   ConfigPrinter(FILE* out = stdout) :
     m_out(out)
     {}
-  virtual ~ConfigPrinter() {};
+  virtual ~ConfigPrinter() {}
 
   virtual void start() {}
   virtual void end() {}

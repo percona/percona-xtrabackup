@@ -517,6 +517,8 @@ const char *ut_strerr(dberr_t num) {
       return ("Undo record too big");
     case DB_END_OF_INDEX:
       return ("End of index");
+    case DB_END_OF_BLOCK:
+      return ("End of block");
     case DB_IO_ERROR:
       return ("I/O error");
     case DB_TABLE_IN_FK_CHECK:
@@ -570,6 +572,9 @@ const char *ut_strerr(dberr_t num) {
 
     case DB_INVALID_ENCRYPTION_META:
       return ("Invalid encryption meta-data information");
+
+    case DB_ABORT_INCOMPLETE_CLONE:
+      return ("Incomplete cloned data directory");
 
     case DB_SERVER_VERSION_LOW:
       return (

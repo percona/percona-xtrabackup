@@ -86,6 +86,8 @@ SET(MYSQLBINLOG_LIB_SOURCES
   ${CMAKE_SOURCE_DIR}/sql/basic_istream.cc
   ${CMAKE_SOURCE_DIR}/sql/binlog_istream.cc
   ${CMAKE_SOURCE_DIR}/sql/binlog_reader.cc
+  ${CMAKE_SOURCE_DIR}/sql/rpl_cipher.cc
+  ${CMAKE_SOURCE_DIR}/sql/rpl_log_encryption.cc
 )
 ADD_LIBRARY(mysqlbinlog_lib STATIC ${MYSQLBINLOG_LIB_SOURCES})
 ADD_DEPENDENCIES(mysqlbinlog_lib GenError)
@@ -114,7 +116,10 @@ TARGET_LINK_LIBRARIES(mysql_secure_installation mysqlclient)
 
 MYSQL_ADD_EXECUTABLE(mysql_ssl_rsa_setup mysql_ssl_rsa_setup.cc path.cc logger.cc)
 TARGET_LINK_LIBRARIES(mysql_ssl_rsa_setup mysys mysys_ssl)
-SET_TARGET_PROPERTIES(mysql_ssl_rsa_setup PROPERTIES LINKER_LANGUAGE CXX)
+# Bug in /usr/lib/gcc-snapshot/lib/libstdc++.so ??
+IF(CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "9.0.0")
+  TARGET_LINK_LIBRARIES(mysql_ssl_rsa_setup -static-libstdc++)
+ENDIF()
 
 # "WIN32" also covers 64 bit. "echo" is used in some files below "mysql-test/".
 IF(WIN32)

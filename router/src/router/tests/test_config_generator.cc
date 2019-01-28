@@ -26,6 +26,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "cluster_metadata.h"
+#include "common.h"
 #include "config_generator.h"
 #include "dim.h"
 #include "gtest_consoleoutput.h"
@@ -43,6 +44,7 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <streambuf>
 #include "keyring/keyring_manager.h"
 #ifndef _WIN32
@@ -68,6 +70,11 @@
 std::string g_cwd;
 mysql_harness::Path g_origin;
 TmpDir tmp_dir;
+
+const std::string kDefaultConnectTimeout =
+    std::to_string(mysqlrouter::MySQLSession::kDefaultConnectTimeout);
+const std::string kDefaultReadTimeout =
+    std::to_string(mysqlrouter::MySQLSession::kDefaultReadTimeout);
 
 class ReplayerWithMockSSL : public MySQLSessionReplayer {
  public:
@@ -126,6 +133,10 @@ class ConfigGeneratorTest : public ConsoleOutputTest {
         [](mysqlrouter::MySQLSession *) {}  // don't try to delete it
     );
 
+    mysql_harness::DIM::instance().set_Ofstream(
+        []() { return new mysqlrouter::RealOfstream(); },
+        std::default_delete<mysqlrouter::Ofstream>());
+
     set_origin(g_origin);
     ConsoleOutputTest::SetUp();
     config_path.reset(new Path(g_cwd));
@@ -182,6 +193,11 @@ static void common_pass_group_has_quorum(MySQLSessionReplayer *m) {
                      {m->string_or_null("3"), m->string_or_null("3")}});
 }
 
+static void common_pass_group_name(MySQLSessionReplayer *m) {
+  m->expect_query_one("select @@group_replication_group_name");
+  m->then_return(1, {{m->string_or_null("replication-1")}});
+}
+
 #if 0
 static void common_pass_member_is_primary(MySQLSessionReplayer *m) {
   m->expect_query_one("SELECT @@group_replication_single_primary_mode=1 as single_primary_mode,        (SELECT variable_value FROM performance_schema.global_status WHERE variable_name='group_replication_primary_member') as primary_member,         @@server_uuid as my_uuid");
@@ -198,12 +214,13 @@ static void common_pass_metadata_checks(MySQLSessionReplayer *m) {
   common_pass_metadata_supported(m);
   common_pass_group_replication_online(m);
   common_pass_group_has_quorum(m);
+  common_pass_group_name(m);
   // common_pass_member_is_primary(m);
 }
 
 TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_one) {
   std::string primary_cluster_name_;
-  std::string primary_replicaset_servers_;
+  std::vector<std::string> primary_replicaset_servers_;
   std::string primary_replicaset_name_;
   bool multi_master_ = false;
 
@@ -215,11 +232,12 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_one) {
     mock_mysql->expect_query("").then_return(
         4, {{"mycluster", "myreplicaset", "pm", "somehost:3306"}});
 
-    config_gen.fetch_bootstrap_servers(primary_replicaset_servers_,
-                                       primary_cluster_name_,
-                                       primary_replicaset_name_, multi_master_);
+    config_gen.fetch_metadata_servers(primary_replicaset_servers_,
+                                      primary_cluster_name_,
+                                      primary_replicaset_name_, multi_master_);
 
-    ASSERT_THAT(primary_replicaset_servers_, Eq("mysql://somehost:3306"));
+    ASSERT_THAT(mysql_harness::list_elements(primary_replicaset_servers_),
+                Eq("mysql://somehost:3306"));
     ASSERT_THAT(primary_cluster_name_, Eq("mycluster"));
     ASSERT_THAT(primary_replicaset_name_, Eq("myreplicaset"));
     ASSERT_THAT(multi_master_, Eq(false));
@@ -233,11 +251,12 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_one) {
     mock_mysql->expect_query("").then_return(
         4, {{"mycluster", "myreplicaset", "mm", "somehost:3306"}});
 
-    config_gen.fetch_bootstrap_servers(primary_replicaset_servers_,
-                                       primary_cluster_name_,
-                                       primary_replicaset_name_, multi_master_);
+    config_gen.fetch_metadata_servers(primary_replicaset_servers_,
+                                      primary_cluster_name_,
+                                      primary_replicaset_name_, multi_master_);
 
-    ASSERT_THAT(primary_replicaset_servers_, Eq("mysql://somehost:3306"));
+    ASSERT_THAT(mysql_harness::list_elements(primary_replicaset_servers_),
+                Eq("mysql://somehost:3306"));
     ASSERT_THAT(primary_cluster_name_, Eq("mycluster"));
     ASSERT_THAT(primary_replicaset_name_, Eq("myreplicaset"));
     ASSERT_THAT(multi_master_, Eq(true));
@@ -251,7 +270,7 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_one) {
     mock_mysql->expect_query("").then_return(
         4, {{"mycluster", "myreplicaset", "xxx", "somehost:3306"}});
 
-    ASSERT_THROW(config_gen.fetch_bootstrap_servers(
+    ASSERT_THROW(config_gen.fetch_metadata_servers(
                      primary_replicaset_servers_, primary_cluster_name_,
                      primary_replicaset_name_, multi_master_),
                  std::runtime_error);
@@ -260,7 +279,7 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_one) {
 
 TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_three) {
   std::string primary_cluster_name_;
-  std::string primary_replicaset_servers_;
+  std::vector<std::string> primary_replicaset_servers_;
   std::string primary_replicaset_name_;
   bool multi_master_ = false;
 
@@ -278,11 +297,11 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_three) {
             {"mycluster", "myreplicaset", "pm", "otherhost:3306"},
             {"mycluster", "myreplicaset", "pm", "sumhost:3306"}});
 
-    config_gen.fetch_bootstrap_servers(primary_replicaset_servers_,
-                                       primary_cluster_name_,
-                                       primary_replicaset_name_, multi_master_);
+    config_gen.fetch_metadata_servers(primary_replicaset_servers_,
+                                      primary_cluster_name_,
+                                      primary_replicaset_name_, multi_master_);
 
-    ASSERT_THAT(primary_replicaset_servers_,
+    ASSERT_THAT(mysql_harness::list_elements(primary_replicaset_servers_),
                 Eq("mysql://somehost:3306,mysql://otherhost:3306,mysql://"
                    "sumhost:3306"));
     ASSERT_THAT(primary_cluster_name_, Eq("mycluster"));
@@ -293,7 +312,7 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_three) {
 
 TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_multiple_replicasets) {
   std::string primary_cluster_name_;
-  std::string primary_replicaset_servers_;
+  std::vector<std::string> primary_replicaset_servers_;
   std::string primary_replicaset_name_;
   bool multi_master_ = false;
 
@@ -305,7 +324,7 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_multiple_replicasets) {
         4, {{"mycluster", "myreplicaset", "pm", "somehost:3306"},
             {"mycluster", "anotherreplicaset", "pm", "otherhost:3306"}});
 
-    ASSERT_THROW(config_gen.fetch_bootstrap_servers(
+    ASSERT_THROW(config_gen.fetch_metadata_servers(
                      primary_replicaset_servers_, primary_cluster_name_,
                      primary_replicaset_name_, multi_master_),
                  std::runtime_error);
@@ -319,7 +338,7 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_multiple_replicasets) {
         4, {{"mycluster", "myreplicaset", "pm", "somehost:3306"},
             {"anothercluster", "anotherreplicaset", "pm", "otherhost:3306"}});
 
-    ASSERT_THROW(config_gen.fetch_bootstrap_servers(
+    ASSERT_THROW(config_gen.fetch_metadata_servers(
                      primary_replicaset_servers_, primary_cluster_name_,
                      primary_replicaset_name_, multi_master_),
                  std::runtime_error);
@@ -328,7 +347,7 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_multiple_replicasets) {
 
 TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_invalid) {
   std::string primary_cluster_name_;
-  std::string primary_replicaset_servers_;
+  std::vector<std::string> primary_replicaset_servers_;
   std::string primary_replicaset_name_;
   bool multi_master_ = false;
 
@@ -339,7 +358,7 @@ TEST_F(ConfigGeneratorTest, fetch_bootstrap_servers_invalid) {
 
     mock_mysql->expect_query("").then_return(4, {});
     // no replicasets/clusters defined
-    ASSERT_THROW(config_gen.fetch_bootstrap_servers(
+    ASSERT_THROW(config_gen.fetch_metadata_servers(
                      primary_replicaset_servers_, primary_cluster_name_,
                      primary_replicaset_name_, multi_master_),
                  std::runtime_error);
@@ -736,25 +755,27 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
       config_gen.fill_options(false, user_options);
 
   {
-    std::stringstream output;
-    config_gen.create_config(output, 123, "myrouter", "mysqlrouter",
-                             "server1,server2,server3", "mycluster",
-                             "myreplicaset", "cluster_user", options);
+    std::stringstream conf_output, state_output;
+    config_gen.create_config(conf_output, state_output, 123, "myrouter",
+                             "mysqlrouter", {"server1", "server2", "server3"},
+                             "mycluster", "myreplicaset", "cluster_user",
+                             options, false, "state_file_name.json");
     ASSERT_THAT(
-        output.str(),
+        conf_output.str(),
         Eq("# File automatically generated during MySQL Router bootstrap\n"
            "[DEFAULT]\n"
            "name=myrouter\n"
            "user=mysqlrouter\n"
-           "connect_timeout=30\n"
-           "read_timeout=30\n"
+           "connect_timeout=" +
+           kDefaultConnectTimeout + "\n" +
+           "read_timeout=" + kDefaultReadTimeout + "\n" +
+           "dynamic_state=state_file_name.json\n"
            "\n"
            "[logger]\n"
            "level = INFO\n"
            "\n"
            "[metadata_cache:mycluster]\n"
            "router_id=123\n"
-           "bootstrap_server_addresses=server1,server2,server3\n"
            "user=cluster_user\n"
            "metadata_cluster=mycluster\n"
            "ttl=0.5\n"
@@ -789,26 +810,41 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
            "routing_strategy=round-robin\n"
            "protocol=x\n"
            "\n"));
+
+    ASSERT_THAT(state_output.str(),
+                Eq("{\n"
+                   "    \"metadata-cache\": {\n"
+                   "        \"group-replication-id\": \"replication-1\",\n"
+                   "        \"cluster-metadata-servers\": [\n"
+                   "            \"server1\",\n"
+                   "            \"server2\",\n"
+                   "            \"server3\"\n"
+                   "        ]\n"
+                   "    },\n"
+                   "    \"version\": \"1.0.0\"\n"
+                   "}"));
   }
   {
-    std::stringstream output;
+    std::stringstream conf_output, state_output;
     // system instance (no key)
-    config_gen.create_config(output, 123, "", "", "server1,server2,server3",
-                             "mycluster", "myreplicaset", "cluster_user",
-                             options);
+    config_gen.create_config(conf_output, state_output, 123, "", "",
+                             {"server1", "server2", "server3"}, "mycluster",
+                             "myreplicaset", "cluster_user", options, false,
+                             "state_file_name.json");
     ASSERT_THAT(
-        output.str(),
+        conf_output.str(),
         Eq("# File automatically generated during MySQL Router bootstrap\n"
            "[DEFAULT]\n"
-           "connect_timeout=30\n"
-           "read_timeout=30\n"
+           "connect_timeout=" +
+           kDefaultConnectTimeout + "\n" +
+           "read_timeout=" + kDefaultReadTimeout + "\n" +
+           "dynamic_state=state_file_name.json\n"
            "\n"
            "[logger]\n"
            "level = INFO\n"
            "\n"
            "[metadata_cache:mycluster]\n"
            "router_id=123\n"
-           "bootstrap_server_addresses=server1,server2,server3\n"
            "user=cluster_user\n"
            "metadata_cluster=mycluster\n"
            "ttl=0.5\n"
@@ -843,29 +879,44 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
            "routing_strategy=round-robin\n"
            "protocol=x\n"
            "\n"));
+
+    ASSERT_THAT(state_output.str(),
+                Eq("{\n"
+                   "    \"metadata-cache\": {\n"
+                   "        \"group-replication-id\": \"replication-1\",\n"
+                   "        \"cluster-metadata-servers\": [\n"
+                   "            \"server1\",\n"
+                   "            \"server2\",\n"
+                   "            \"server3\"\n"
+                   "        ]\n"
+                   "    },\n"
+                   "    \"version\": \"1.0.0\"\n"
+                   "}"));
   }
   {
-    std::stringstream output;
+    std::stringstream conf_output, state_output;
     auto opts = user_options;
     opts["base-port"] = "1234";
     options = config_gen.fill_options(false, opts);
 
-    config_gen.create_config(output, 123, "", "", "server1,server2,server3",
-                             "mycluster", "myreplicaset", "cluster_user",
-                             options);
+    config_gen.create_config(conf_output, state_output, 123, "", "",
+                             {"server1", "server2", "server3"}, "mycluster",
+                             "myreplicaset", "cluster_user", options, false,
+                             "state_file_name.json");
     ASSERT_THAT(
-        output.str(),
+        conf_output.str(),
         Eq("# File automatically generated during MySQL Router bootstrap\n"
            "[DEFAULT]\n"
-           "connect_timeout=30\n"
-           "read_timeout=30\n"
+           "connect_timeout=" +
+           kDefaultConnectTimeout + "\n" +
+           "read_timeout=" + kDefaultReadTimeout + "\n" +
+           "dynamic_state=state_file_name.json\n"
            "\n"
            "[logger]\n"
            "level = INFO\n"
            "\n"
            "[metadata_cache:mycluster]\n"
            "router_id=123\n"
-           "bootstrap_server_addresses=server1,server2,server3\n"
            "user=cluster_user\n"
            "metadata_cluster=mycluster\n"
            "ttl=0.5\n"
@@ -900,9 +951,22 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
            "routing_strategy=round-robin\n"
            "protocol=x\n"
            "\n"));
+
+    ASSERT_THAT(state_output.str(),
+                Eq("{\n"
+                   "    \"metadata-cache\": {\n"
+                   "        \"group-replication-id\": \"replication-1\",\n"
+                   "        \"cluster-metadata-servers\": [\n"
+                   "            \"server1\",\n"
+                   "            \"server2\",\n"
+                   "            \"server3\"\n"
+                   "        ]\n"
+                   "    },\n"
+                   "    \"version\": \"1.0.0\"\n"
+                   "}"));
   }
   {
-    std::stringstream output;
+    std::stringstream conf_output, state_output;
     auto opts = user_options;
     opts["base-port"] = "123";
     opts["use-sockets"] = "1";
@@ -910,22 +974,24 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
     opts["socketsdir"] = tmp_dir();
     options = config_gen.fill_options(false, opts);
 
-    config_gen.create_config(output, 123, "", "", "server1,server2,server3",
-                             "mycluster", "myreplicaset", "cluster_user",
-                             options);
+    config_gen.create_config(conf_output, state_output, 123, "", "",
+                             {"server1", "server2", "server3"}, "mycluster",
+                             "myreplicaset", "cluster_user", options, false,
+                             "state_file_name.json");
     ASSERT_THAT(
-        output.str(),
+        conf_output.str(),
         Eq("# File automatically generated during MySQL Router bootstrap\n"
            "[DEFAULT]\n"
-           "connect_timeout=30\n"
-           "read_timeout=30\n"
+           "connect_timeout=" +
+           kDefaultConnectTimeout + "\n" +
+           "read_timeout=" + kDefaultReadTimeout + "\n" +
+           "dynamic_state=state_file_name.json\n"
            "\n"
            "[logger]\n"
            "level = INFO\n"
            "\n"
            "[metadata_cache:mycluster]\n"
            "router_id=123\n"
-           "bootstrap_server_addresses=server1,server2,server3\n"
            "user=cluster_user\n"
            "metadata_cluster=mycluster\n"
            "ttl=0.5\n"
@@ -964,30 +1030,45 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
            "routing_strategy=round-robin\n"
            "protocol=x\n"
            "\n"));
+
+    ASSERT_THAT(state_output.str(),
+                Eq("{\n"
+                   "    \"metadata-cache\": {\n"
+                   "        \"group-replication-id\": \"replication-1\",\n"
+                   "        \"cluster-metadata-servers\": [\n"
+                   "            \"server1\",\n"
+                   "            \"server2\",\n"
+                   "            \"server3\"\n"
+                   "        ]\n"
+                   "    },\n"
+                   "    \"version\": \"1.0.0\"\n"
+                   "}"));
   }
   {
-    std::stringstream output;
+    std::stringstream conf_output, state_output;
     auto opts = user_options;
     opts["use-sockets"] = "1";
     opts["socketsdir"] = tmp_dir();
     options = config_gen.fill_options(false, opts);
 
-    config_gen.create_config(output, 123, "", "", "server1,server2,server3",
-                             "mycluster", "myreplicaset", "cluster_user",
-                             options);
+    config_gen.create_config(conf_output, state_output, 123, "", "",
+                             {"server1", "server2", "server3"}, "mycluster",
+                             "myreplicaset", "cluster_user", options, false,
+                             "state_file_name.json");
     ASSERT_THAT(
-        output.str(),
+        conf_output.str(),
         Eq("# File automatically generated during MySQL Router bootstrap\n"
            "[DEFAULT]\n"
-           "connect_timeout=30\n"
-           "read_timeout=30\n"
+           "connect_timeout=" +
+           kDefaultConnectTimeout + "\n" +
+           "read_timeout=" + kDefaultReadTimeout + "\n" +
+           "dynamic_state=state_file_name.json\n"
            "\n"
            "[logger]\n"
            "level = INFO\n"
            "\n"
            "[metadata_cache:mycluster]\n"
            "router_id=123\n"
-           "bootstrap_server_addresses=server1,server2,server3\n"
            "user=cluster_user\n"
            "metadata_cluster=mycluster\n"
            "ttl=0.5\n"
@@ -1034,31 +1115,46 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
            "routing_strategy=round-robin\n"
            "protocol=x\n"
            "\n"));
+
+    ASSERT_THAT(state_output.str(),
+                Eq("{\n"
+                   "    \"metadata-cache\": {\n"
+                   "        \"group-replication-id\": \"replication-1\",\n"
+                   "        \"cluster-metadata-servers\": [\n"
+                   "            \"server1\",\n"
+                   "            \"server2\",\n"
+                   "            \"server3\"\n"
+                   "        ]\n"
+                   "    },\n"
+                   "    \"version\": \"1.0.0\"\n"
+                   "}"));
   }
   {
-    std::stringstream output;
+    std::stringstream conf_output, state_output;
     auto opts = user_options;
     opts["bind-address"] = "127.0.0.1";
     options = config_gen.fill_options(false, opts);
 
-    config_gen.create_config(output, 123, "myrouter", "mysqlrouter",
-                             "server1,server2,server3", "mycluster",
-                             "myreplicaset", "cluster_user", options);
+    config_gen.create_config(conf_output, state_output, 123, "myrouter",
+                             "mysqlrouter", {"server1", "server2", "server3"},
+                             "mycluster", "myreplicaset", "cluster_user",
+                             options, false, +"state_file_name.json");
     ASSERT_THAT(
-        output.str(),
+        conf_output.str(),
         Eq("# File automatically generated during MySQL Router bootstrap\n"
            "[DEFAULT]\n"
            "name=myrouter\n"
            "user=mysqlrouter\n"
-           "connect_timeout=30\n"
-           "read_timeout=30\n"
+           "connect_timeout=" +
+           kDefaultConnectTimeout + "\n" +
+           "read_timeout=" + kDefaultReadTimeout + "\n" +
+           "dynamic_state=state_file_name.json\n"
            "\n"
            "[logger]\n"
            "level = INFO\n"
            "\n"
            "[metadata_cache:mycluster]\n"
            "router_id=123\n"
-           "bootstrap_server_addresses=server1,server2,server3\n"
            "user=cluster_user\n"
            "metadata_cluster=mycluster\n"
            "ttl=0.5\n"
@@ -1093,11 +1189,24 @@ TEST_F(ConfigGeneratorTest, create_config_single_master) {
            "routing_strategy=round-robin\n"
            "protocol=x\n"
            "\n"));
+
+    ASSERT_THAT(state_output.str(),
+                Eq("{\n"
+                   "    \"metadata-cache\": {\n"
+                   "        \"group-replication-id\": \"replication-1\",\n"
+                   "        \"cluster-metadata-servers\": [\n"
+                   "            \"server1\",\n"
+                   "            \"server2\",\n"
+                   "            \"server3\"\n"
+                   "        ]\n"
+                   "    },\n"
+                   "    \"version\": \"1.0.0\"\n"
+                   "}"));
   }
 }
 
 TEST_F(ConfigGeneratorTest, create_config_multi_master) {
-  std::stringstream output;
+  std::stringstream conf_output, state_output;
 
   std::map<std::string, std::string> user_options;
 
@@ -1106,23 +1215,25 @@ TEST_F(ConfigGeneratorTest, create_config_multi_master) {
   config_gen.init(kServerUrl, {});
   ConfigGenerator::Options options =
       config_gen.fill_options(true, user_options);
-  config_gen.create_config(output, 123, "myrouter", "",
-                           "server1,server2,server3", "mycluster",
-                           "myreplicaset", "cluster_user", options);
+  config_gen.create_config(conf_output, state_output, 123, "myrouter", "",
+                           {"server1", "server2", "server3"}, "mycluster",
+                           "myreplicaset", "cluster_user", options, false,
+                           "state_file_name.json");
   ASSERT_THAT(
-      output.str(),
+      conf_output.str(),
       Eq("# File automatically generated during MySQL Router bootstrap\n"
          "[DEFAULT]\n"
          "name=myrouter\n"
-         "connect_timeout=30\n"
-         "read_timeout=30\n"
+         "connect_timeout=" +
+         kDefaultConnectTimeout + "\n" + "read_timeout=" + kDefaultReadTimeout +
+         "\n" +
+         "dynamic_state=state_file_name.json\n"
          "\n"
          "[logger]\n"
          "level = INFO\n"
          "\n"
          "[metadata_cache:mycluster]\n"
          "router_id=123\n"
-         "bootstrap_server_addresses=server1,server2,server3\n"
          "user=cluster_user\n"
          "metadata_cluster=mycluster\n"
          "ttl=0.5\n"
@@ -1141,6 +1252,19 @@ TEST_F(ConfigGeneratorTest, create_config_multi_master) {
          "routing_strategy=round-robin\n"
          "protocol=x\n"
          "\n"));
+
+  ASSERT_THAT(state_output.str(),
+              Eq("{\n"
+                 "    \"metadata-cache\": {\n"
+                 "        \"group-replication-id\": \"replication-1\",\n"
+                 "        \"cluster-metadata-servers\": [\n"
+                 "            \"server1\",\n"
+                 "            \"server2\",\n"
+                 "            \"server3\"\n"
+                 "        ]\n"
+                 "    },\n"
+                 "    \"version\": \"1.0.0\"\n"
+                 "}"));
 }
 
 TEST_F(ConfigGeneratorTest, fill_options) {
@@ -2259,11 +2383,12 @@ TEST_F(ConfigGeneratorTest, ssl_stage3_create_config) {
                     const char *result) {
         ConfigGenerator::Options options =
             config_gen.fill_options(false, user_options);
-        std::stringstream output;
-        config_gen.create_config(output, 123, "myrouter", "user",
-                                 "server1,server2,server3", "mycluster",
-                                 "myreplicaset", "cluster_user", options);
-        EXPECT_THAT(output.str(), HasSubstr(result));
+        std::stringstream conf_output, state_output;
+        config_gen.create_config(conf_output, state_output, 123, "myrouter",
+                                 "user", {"server1", "server2", "server3"},
+                                 "mycluster", "myreplicaset", "cluster_user",
+                                 options);
+        EXPECT_THAT(conf_output.str(), HasSubstr(result));
       };
 
   test_config_output({{"ssl_mode", "DISABLED"}},
@@ -2878,7 +3003,7 @@ class TestConfigGenerator : public ConfigGenerator {
   // we disable this method by overriding - calling it requires sudo access
   void set_script_permissions(
       const std::string &,
-      const std::map<std::string, std::string> &) override{};
+      const std::map<std::string, std::string> &) override {}
 };
 
 // TODO This is very ugly, it should not be a global. It's defined in

@@ -212,6 +212,7 @@ int PFS_system_variable_cache::do_materialize_all(THD *unsafe_thd) {
 
   /* Get and lock a validated THD from the thread manager. */
   if ((m_safe_thd = get_THD(unsafe_thd)) != NULL) {
+    DEBUG_SYNC(m_current_thd, "materialize_session_variable_array_THD_locked");
     for (Show_var_array::iterator show_var = m_show_var_array.begin();
          show_var->value && (show_var != m_show_var_array.end()); show_var++) {
       /* Resolve value, convert to text, add to cache. */
@@ -930,6 +931,9 @@ bool PFS_status_variable_cache::can_aggregate(
     case SHOW_INT:
     case SHOW_LONG:
     case SHOW_LONGLONG:
+    case SHOW_SIGNED_INT:
+    case SHOW_SIGNED_LONG:
+    case SHOW_SIGNED_LONGLONG:
     case SHOW_DOUBLE:
     /* Server only */
     case SHOW_HAVE:
@@ -941,7 +945,6 @@ bool PFS_status_variable_cache::can_aggregate(
     case SHOW_DOUBLE_STATUS:
     case SHOW_HA_ROWS:
     case SHOW_LONG_NOFLUSH:
-    case SHOW_SIGNED_LONG:
     default:
       return false;
       break;

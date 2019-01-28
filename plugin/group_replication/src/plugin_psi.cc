@@ -21,6 +21,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "plugin/group_replication/include/plugin_psi.h"
+#include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_rwlock.h"
 #include "mysql/psi/mysql_stage.h"
 #include "mysql/psi/mysql_thread.h"
@@ -55,6 +56,7 @@ PSI_mutex_key key_GR_LOCK_applier_module_run,
     key_GR_LOCK_primary_election_running_flag,
     key_GR_LOCK_primary_election_secondary_process_run,
     key_GR_LOCK_primary_election_validation_notification,
+    key_GR_LOCK_primary_promotion_policy,
     key_GR_LOCK_recovery,
     key_GR_LOCK_recovery_donor_selection,
     key_GR_LOCK_recovery_module_run,
@@ -64,6 +66,7 @@ PSI_mutex_key key_GR_LOCK_applier_module_run,
     key_GR_LOCK_stage_monitor_handler,
     key_GR_LOCK_synchronized_queue,
     key_GR_LOCK_trx_unlocking,
+    key_GR_LOCK_group_member_info_manager_update_lock,
     key_GR_LOCK_view_modification_wait,
     key_GR_LOCK_wait_ticket,
     key_GR_LOCK_write_lock_protection;
@@ -89,6 +92,7 @@ PSI_cond_key key_GR_COND_applier_module_run,
     key_GR_COND_primary_election_primary_process_run,
     key_GR_COND_primary_election_secondary_process_run,
     key_GR_COND_primary_election_validation_notification,
+    key_GR_COND_primary_promotion_policy,
     key_GR_COND_recovery,
     key_GR_COND_recovery_module_run,
     key_GR_COND_session_thread_method_exec,
@@ -112,10 +116,13 @@ PSI_rwlock_key key_GR_RWLOCK_cert_stable_gtid_set,
     key_GR_RWLOCK_channel_observation_list,
     key_GR_RWLOCK_gcs_operations,
     key_GR_RWLOCK_gcs_operations_finalize_ongoing,
+    key_GR_RWLOCK_gcs_operations_view_change_observers,
     key_GR_RWLOCK_group_event_observation_list,
     key_GR_RWLOCK_io_cache_unused_list,
     key_GR_RWLOCK_plugin_stop,
-    key_GR_RWLOCK_transaction_observation_list;
+    key_GR_RWLOCK_transaction_observation_list,
+    key_GR_RWLOCK_transaction_consistency_manager_map,
+    key_GR_RWLOCK_transaction_consistency_manager_prepared_transactions_on_my_applier;
 /* clang-format on */
 
 #ifdef HAVE_PSI_INTERFACE
@@ -246,6 +253,8 @@ static PSI_mutex_info all_group_replication_psi_mutex_keys[] = {
     {&key_GR_LOCK_primary_election_validation_notification,
      "LOCK_primary_election_validation_notification", PSI_FLAG_SINGLETON, 0,
      PSI_DOCUMENT_ME},
+    {&key_GR_LOCK_primary_promotion_policy, "LOCK_primary_promotion_policy",
+     PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
     {&key_GR_LOCK_recovery, "LOCK_recovery", PSI_FLAG_SINGLETON, 0,
      PSI_DOCUMENT_ME},
     {&key_GR_LOCK_recovery_donor_selection, "LOCK_recovery_donor_selection",
@@ -265,6 +274,9 @@ static PSI_mutex_info all_group_replication_psi_mutex_keys[] = {
      PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
     {&key_GR_LOCK_trx_unlocking, "LOCK_transaction_unblocking",
      PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
+    {&key_GR_LOCK_group_member_info_manager_update_lock,
+     "LOCK_group_member_info_manager_update_lock", PSI_FLAG_SINGLETON, 0,
+     PSI_DOCUMENT_ME},
     {&key_GR_LOCK_view_modification_wait, "LOCK_view_modification_wait",
      PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
     {&key_GR_LOCK_wait_ticket, "LOCK_wait_ticket", PSI_FLAG_SINGLETON, 0,
@@ -341,6 +353,8 @@ static PSI_cond_info all_group_replication_psi_condition_keys[] = {
      PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
     {&key_GR_COND_plugin_online, "COND_plugin_online", PSI_FLAG_SINGLETON, 0,
      PSI_DOCUMENT_ME},
+    {&key_GR_COND_primary_promotion_policy, "COND_primary_promotion_policy",
+     PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
 };
 
 static PSI_thread_info all_group_replication_psi_thread_keys[] = {
@@ -375,6 +389,9 @@ static PSI_rwlock_info all_group_replication_psi_rwlock_keys[] = {
     {&key_GR_RWLOCK_gcs_operations_finalize_ongoing,
      "RWLOCK_gcs_operations_finalize_ongoing", PSI_FLAG_SINGLETON, 0,
      PSI_DOCUMENT_ME},
+    {&key_GR_RWLOCK_gcs_operations_view_change_observers,
+     "RWLOCK_gcs_operations_view_change_observers", PSI_FLAG_SINGLETON, 0,
+     PSI_DOCUMENT_ME},
     {&key_GR_RWLOCK_group_event_observation_list,
      "RWLOCK_group_event_observation_list", PSI_FLAG_SINGLETON, 0,
      PSI_DOCUMENT_ME},
@@ -384,7 +401,14 @@ static PSI_rwlock_info all_group_replication_psi_rwlock_keys[] = {
      PSI_DOCUMENT_ME},
     {&key_GR_RWLOCK_transaction_observation_list,
      "RWLOCK_transaction_observation_list", PSI_FLAG_SINGLETON, 0,
-     PSI_DOCUMENT_ME}};
+     PSI_DOCUMENT_ME},
+    {&key_GR_RWLOCK_transaction_consistency_manager_map,
+     "RWLOCK_transaction_consistency_manager_map", PSI_FLAG_SINGLETON, 0,
+     PSI_DOCUMENT_ME},
+    {&key_GR_RWLOCK_transaction_consistency_manager_prepared_transactions_on_my_applier,
+     "RWLOCK_transaction_consistency_manager_prepared_transactions_on_my_"
+     "applier",
+     PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}};
 
 static PSI_stage_info *all_group_replication_stages_keys[] = {
     &info_GR_STAGE_multi_primary_mode_switch_pending_transactions,

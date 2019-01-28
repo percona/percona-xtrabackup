@@ -23,6 +23,7 @@
 #ifndef _PROCESS_LAUNCHER_H_
 #define _PROCESS_LAUNCHER_H_
 
+#include <system_error>
 #include <utility>
 #include "harness_export.h"
 
@@ -36,6 +37,7 @@
 #include <unistd.h>
 #endif
 #include <stdint.h>
+#include <stdexcept>
 #include <string>
 
 namespace mysql_harness {
@@ -71,6 +73,8 @@ class HARNESS_EXPORT SpawnedProcess {
 #endif
         redirect_stderr{predirect_stderr} {
   }
+
+  SpawnedProcess(const SpawnedProcess &) = default;
 
   virtual ~SpawnedProcess() {}
 
@@ -193,6 +197,19 @@ class HARNESS_EXPORT ProcessLauncher : public SpawnedProcess {
    * data was sent.
    */
   void end_of_write();
+
+  enum class ShutdownEvent {
+    TERM,  // clean shutdown (ie. SIGTERM on Unix)
+    KILL   // immediate (and abrupt) shutdown (ie. SIGKILL on Unix)
+  };
+  /**
+   * Sends a shutdown event to child process (SIGTERM on Unix, Ctrl+C on Win)
+   *
+   * @param event type of shutdown event
+   * @return std::error_code indicating success/failure
+   */
+  std::error_code send_shutdown_event(
+      ShutdownEvent event = ShutdownEvent::TERM) const noexcept;
 
  private:
   /**

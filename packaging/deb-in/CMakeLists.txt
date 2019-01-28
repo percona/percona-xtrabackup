@@ -55,7 +55,6 @@ IF (NOT DEFINED DEB_CHANGELOG_TIMESTAMP)
 ENDIF()
 # Commercial or community
 IF (DEB_PRODUCT STREQUAL "commercial")
-  INCLUDE (deb_commercial.cmake)
   SET (DEB_COPYRIGHT_UPSTREAMNAME "MySQL Commercial Server ${MYSQL_BASE_VERSION}")
   SET (DEB_PRODUCTNAME "${DEB_BASE_PRODUCT}commercial")
   SET (DEB_PRODUCTNAMEC "${DEB_BASE_PRODUCTC}Enterprise")
@@ -127,6 +126,7 @@ usr/lib/mysql/plugin/debug/keyring_aws.so
     SET (DEB_CMAKE_EXTRAS "${DEB_CMAKE_EXTRAS} -DWITH_CURL=${WITH_CURL}")
   ENDIF()
   SET (DEB_REMOVEPATTERN "gpl.in")
+  INCLUDE (deb_commercial.cmake)
 ELSE()
   SET (DEB_PRODUCT "${DEB_BASE_PRODUCT}community")
   SET (DEB_COPYRIGHT_UPSTREAMNAME "MySQL Server ${MYSQL_BASE_VERSION}")
@@ -138,6 +138,8 @@ ELSE()
   SET (DEB_REMOVEPATTERN "com.in")
 ENDIF()
 
+# Build with default ssl. May be overridden if we don't support default ssl version
+SET (DEB_CONTROL_BDEPS_SSL ",libssl-dev")
 # Generate debug symbol packages (this is done automatically in Debian9+)
 SET (DEB_RULES_STRIP_DEFAULT
 "
@@ -256,6 +258,8 @@ ELSEIF(DEB_CODENAME STREQUAL "bionic")
   SET (DEB_CONTROL_DBGSYM "")
   SET (DEB_RULES_STRIP "")
 ELSEIF(DEB_CODENAME STREQUAL "cosmic")
+  # Ubuntu 18.10 has OpenSSL 1.1.1, which we don't support yet
+  SET (DEB_CONTROL_BDEPS_SSL ",libssl1.0-dev")
   SET (DEB_PLATFORMRELEASE "ubuntu18.10")
   SET (DEB_CONTROL_BDEPS ", dh-apparmor, dh-systemd (>=1.5)")
   SET (DEB_INSTALL_SOURCE_XZ "../*.tar.xz usr/src/mysql/")

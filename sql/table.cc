@@ -76,6 +76,7 @@
 #include "sql/derror.h"          // ER_THD
 #include "sql/error_handler.h"   // Strict_error_handler
 #include "sql/field.h"
+#include "sql/filesort.h"  // filesort_free_buffers
 #include "sql/gis/srid.h"
 #include "sql/item.h"
 #include "sql/item_cmpfunc.h"  // and_conds
@@ -2284,13 +2285,10 @@ static bool validate_value_generator_expr(Item *expr, const char *column_name,
     my_error(err_code, MYF(0), column_name);
     DBUG_RETURN(true);
   }
-  // ROW values are not allowed
-  else if (expr->cols() != 1) {
-    err_code = is_gen_col ? ER_GENERATED_COLUMN_ROW_VALUE
-                          : ER_DEFAULT_VAL_GENERATED_ROW_VALUE;
-    my_error(err_code, MYF(0), column_name);
-    DBUG_RETURN(true);
-  }
+
+  // Assert that we aren't dealing with ROW values (rejected in
+  // pre_validate_value_generator_expr()).
+  DBUG_ASSERT(expr->cols() == 1);
 
   // Sub-queries are not allowed (already checked by parser, hence the assert)
   DBUG_ASSERT(!expr->has_subquery());
@@ -2554,9 +2552,8 @@ bool unpack_value_generator(THD *thd, TABLE *table, Field *field,
   */
   Query_arena *backup_stmt_arena_ptr = thd->stmt_arena;
   Query_arena backup_arena;
-  Query_arena gcol_arena(&table->mem_root,
-                         Query_arena::STMT_CONVENTIONAL_EXECUTION);
-  thd->set_n_backup_active_arena(&gcol_arena, &backup_arena);
+  Query_arena gcol_arena(&table->mem_root, Query_arena::STMT_REGULAR_EXECUTION);
+  thd->swap_query_arena(gcol_arena, &backup_arena);
   thd->stmt_arena = &gcol_arena;
   ulong save_old_privilege = thd->want_privilege;
   thd->want_privilege = 0;
@@ -2622,8 +2619,8 @@ bool unpack_value_generator(THD *thd, TABLE *table, Field *field,
   thd->lex = old_lex;
   (*val_generator)->backup_stmt_unsafe_flags(new_lex.get_stmt_unsafe_flags());
   thd->stmt_arena = backup_stmt_arena_ptr;
-  thd->restore_active_arena(&gcol_arena, &backup_arena);
-  (*val_generator)->item_free_list = gcol_arena.free_list;
+  thd->swap_query_arena(backup_arena, &gcol_arena);
+  (*val_generator)->item_list = gcol_arena.item_list();
   thd->want_privilege = save_old_privilege;
   thd->lex->expr_allows_subselect = save_allow_subselects;
 
@@ -2636,7 +2633,7 @@ parse_err:
   lex_end(thd->lex);
   thd->lex = old_lex;
   thd->stmt_arena = backup_stmt_arena_ptr;
-  thd->restore_active_arena(&gcol_arena, &backup_arena);
+  thd->swap_query_arena(backup_arena, &gcol_arena);
   thd->variables.character_set_client = old_character_set_client;
   thd->want_privilege = save_old_privilege;
   thd->lex->expr_allows_subselect = save_allow_subselects;
@@ -2677,7 +2674,7 @@ bool unpack_partition_info(THD *thd, TABLE *outparam, TABLE_SHARE *share,
     set the memory root to be the memory root of the table since we
     call the parser and fix_fields which both can allocate memory for
     item objects. We keep the arena to ensure that we can release the
-    free_list when closing the table object.
+    item list when closing the table object.
     SEE Bug #21658
   */
 
@@ -2688,7 +2685,7 @@ bool unpack_partition_info(THD *thd, TABLE *outparam, TABLE_SHARE *share,
   Query_arena backup_arena;
   Query_arena part_func_arena(&outparam->mem_root,
                               Query_arena::STMT_INITIALIZED);
-  thd->set_n_backup_active_arena(&part_func_arena, &backup_arena);
+  thd->swap_query_arena(part_func_arena, &backup_arena);
   thd->stmt_arena = &part_func_arena;
   bool tmp;
   bool work_part_info_used;
@@ -2698,7 +2695,7 @@ bool unpack_partition_info(THD *thd, TABLE *outparam, TABLE_SHARE *share,
       is_create_table, engine_type, &work_part_info_used);
   if (tmp) {
     thd->stmt_arena = backup_stmt_arena_ptr;
-    thd->restore_active_arena(&part_func_arena, &backup_arena);
+    thd->swap_query_arena(backup_arena, &part_func_arena);
     return true;
   }
   outparam->part_info->is_auto_partitioned = share->auto_partitioned;
@@ -2710,12 +2707,12 @@ bool unpack_partition_info(THD *thd, TABLE *outparam, TABLE_SHARE *share,
   if (!work_part_info_used)
     tmp = fix_partition_func(thd, outparam, is_create_table);
   thd->stmt_arena = backup_stmt_arena_ptr;
-  thd->restore_active_arena(&part_func_arena, &backup_arena);
+  thd->swap_query_arena(backup_arena, &part_func_arena);
   if (!tmp) {
     if (work_part_info_used)
       tmp = fix_partition_func(thd, outparam, is_create_table);
   }
-  outparam->part_info->item_free_list = part_func_arena.free_list;
+  outparam->part_info->item_list = part_func_arena.item_list();
   // TODO: Compare with share->part_info for validation of code!
   DBUG_ASSERT(!share->m_part_info || share->m_part_info->column_list ==
                                          outparam->part_info->column_list);
@@ -3139,14 +3136,14 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
 err:
   if (!error_reported) open_table_error(thd, share, error, my_errno());
   destroy(outparam->file);
-  if (outparam->part_info) free_items(outparam->part_info->item_free_list);
+  if (outparam->part_info) free_items(outparam->part_info->item_list);
   if (outparam->vfield) {
     for (Field **vfield = outparam->vfield; *vfield; vfield++)
-      free_items((*vfield)->gcol_info->item_free_list);
+      free_items((*vfield)->gcol_info->item_list);
   }
   if (outparam->gen_def_fields_ptr) {
     for (Field **gen_def = outparam->gen_def_fields_ptr; *gen_def; gen_def++)
-      free_items((*gen_def)->m_default_val_expr->item_free_list);
+      free_items((*gen_def)->m_default_val_expr->item_list);
   }
   outparam->file = 0;  // For easier error checking
   outparam->db_stat = 0;
@@ -3172,9 +3169,9 @@ int closefrm(TABLE *table, bool free_share) {
   table->alias = 0;
   if (table->field) {
     for (Field **ptr = table->field; *ptr; ptr++) {
-      if ((*ptr)->gcol_info) free_items((*ptr)->gcol_info->item_free_list);
+      if ((*ptr)->gcol_info) free_items((*ptr)->gcol_info->item_list);
       if ((*ptr)->m_default_val_expr)
-        free_items((*ptr)->m_default_val_expr->item_free_list);
+        free_items((*ptr)->m_default_val_expr->item_list);
       destroy(*ptr);
     }
     table->field = 0;
@@ -3183,9 +3180,9 @@ int closefrm(TABLE *table, bool free_share) {
   table->file = 0; /* For easier errorchecking */
   if (table->part_info) {
     /* Allocated through table->mem_root, freed below */
-    free_items(table->part_info->item_free_list);
-    table->part_info->item_free_list = 0;
-    table->part_info = 0;
+    free_items(table->part_info->item_list);
+    table->part_info->item_list = nullptr;
+    table->part_info = nullptr;
   }
   if (free_share) {
     if (table->s->tmp_table == NO_TMP_TABLE)
@@ -4119,10 +4116,10 @@ bool TABLE::refix_inner_value_generator_items(THD *thd, Value_generator *g_expr,
     */
     Query_arena *backup_stmt_arena_ptr = thd->stmt_arena;
     Query_arena backup_arena;
-    Query_arena gcol_arena(&mem_root, Query_arena::STMT_CONVENTIONAL_EXECUTION);
+    Query_arena gcol_arena(&mem_root, Query_arena::STMT_REGULAR_EXECUTION);
     if (!g_expr->permanent_changes_completed &&
         !thd->lex->is_ps_or_view_context_analysis()) {
-      thd->set_n_backup_active_arena(&gcol_arena, &backup_arena);
+      thd->swap_query_arena(gcol_arena, &backup_arena);
       thd->stmt_arena = &gcol_arena;
     }
 
@@ -4141,12 +4138,12 @@ bool TABLE::refix_inner_value_generator_items(THD *thd, Value_generator *g_expr,
         !thd->lex->is_ps_or_view_context_analysis()) {
       // Switch back to the original stmt_arena.
       thd->stmt_arena = backup_stmt_arena_ptr;
-      thd->restore_active_arena(&gcol_arena, &backup_arena);
+      thd->swap_query_arena(backup_arena, &gcol_arena);
 
       // Append the new items to the original item_free_list.
-      Item *item = g_expr->item_free_list;
-      while (item->next) item = item->next;
-      item->next = gcol_arena.free_list;
+      Item *item = g_expr->item_list;
+      while (item->next_free) item = item->next_free;
+      item->next_free = gcol_arena.item_list();
 
       // Permanent changes to the item_tree are completed.
       g_expr->permanent_changes_completed = true;
@@ -4165,12 +4162,12 @@ bool TABLE::refix_inner_value_generator_items(THD *thd, Value_generator *g_expr,
 void TABLE::cleanup_value_generator_items() {
   if (gen_def_fields_ptr)
     for (Field **vfield_ptr = gen_def_fields_ptr; *vfield_ptr; vfield_ptr++)
-      cleanup_items((*vfield_ptr)->m_default_val_expr->item_free_list);
+      cleanup_items((*vfield_ptr)->m_default_val_expr->item_list);
 
   if (!has_gcol()) return;
 
   for (Field **vfield_ptr = vfield; *vfield_ptr; vfield_ptr++)
-    cleanup_items((*vfield_ptr)->gcol_info->item_free_list);
+    cleanup_items((*vfield_ptr)->gcol_info->item_list);
 }
 
 /**
@@ -5111,14 +5108,16 @@ const char *Field_iterator_table_ref::get_db_name() {
   /*
     Test that TABLE_LIST::db is the same as TABLE_SHARE::db to
     ensure consistency. An exception are I_S schema tables, which
-    are inconsistent in this respect.
+    are inconsistent in this respect and any_db (used in the handler
+    interface to manage aliases).
   */
   DBUG_ASSERT(!strcmp(table_ref->db, table_ref->table->s->db.str) ||
+              table_ref->db == any_db ||
               (table_ref->schema_table &&
                is_infoschema_db(table_ref->table->s->db.str,
                                 table_ref->table->s->db.length)));
 
-  return table_ref->db;
+  return table_ref->db == any_db ? table_ref->table->s->db.str : table_ref->db;
 }
 
 GRANT_INFO *Field_iterator_table_ref::grant() {
@@ -7082,6 +7081,9 @@ bool TABLE_LIST::set_recursive_reference() {
 /**
   Propagate table map of a table up by nested join tree. Used to check
   dependencies for LATERAL JOIN of table functions.
+  simplify_joins() calculates the same information but also does
+  transformations, and we need this semantic check to be earlier than
+  simplify_joins() and before transformations.
 
   @param map_arg  table map to propagate
 */
@@ -7118,6 +7120,8 @@ LEX_USER *LEX_USER::alloc(THD *thd, LEX_STRING *user_arg,
   ret->uses_identified_by_clause = false;
   ret->uses_identified_with_clause = false;
   ret->uses_authentication_string_clause = false;
+  ret->retain_current_password = false;
+  ret->discard_old_password = false;
   ret->alter_status.account_locked = false;
   ret->alter_status.expire_after_days = 0;
   ret->alter_status.update_account_locked_column = false;
@@ -7679,6 +7683,18 @@ void TABLE::set_binlog_drop_if_temp(bool should_binlog) {
 
 bool TABLE::should_binlog_drop_if_temp(void) const {
   return should_binlog_drop_if_temp_flag;
+}
+
+bool TABLE::empty_result_table() {
+  materialized = false;
+  set_not_started();
+  if (!is_created()) return false;
+  if (file->ha_index_or_rnd_end() || file->extra(HA_EXTRA_RESET_STATE) ||
+      file->ha_delete_all_rows())
+    return true;
+  free_io_cache(this);
+  filesort_free_buffers(this, 0);
+  return false;
 }
 
 void TABLE::update_covering_prefix_keys(Field *field, uint16 key_read_length,

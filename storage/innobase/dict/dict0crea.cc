@@ -34,6 +34,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "btr0btr.h"
 #include "btr0pcur.h"
 #include "dict0boot.h"
+#include "dict0dd.h"
 #include "dict0dict.h"
 #include "dict0priv.h"
 #include "dict0stats.h"
@@ -209,7 +210,7 @@ dberr_t dict_build_tablespace_for_table(dict_table_t *table, trx_t *trx) {
 
     /* For file-per-table tablespace, set encryption flag */
     if (DICT_TF2_FLAG_IS_SET(table, DICT_TF2_ENCRYPTION_FILE_PER_TABLE)) {
-      fsp_flags |= FSP_FLAGS_MASK_ENCRYPTION;
+      FSP_FLAGS_SET_ENCRYPTION(fsp_flags);
     }
 
     if (DICT_TF_HAS_DATA_DIR(table->flags)) {

@@ -843,9 +843,10 @@ class Relay_log_info : public Rpl_info {
       exit_counter;  // Number of workers contributed to max updated group index
   ulonglong max_updated_index;
   ulong recovery_parallel_workers;  // number of workers while recovering
-  uint checkpoint_seqno;  // counter of groups executed after the most recent CP
-  uint checkpoint_group;  // cache for ::opt_mts_checkpoint_group
-  MY_BITMAP recovery_groups;  // bitmap used during recovery
+  uint rli_checkpoint_seqno;        // counter of groups executed after the most
+                                    // recent CP
+  uint checkpoint_group;            // cache for ::opt_mts_checkpoint_group
+  MY_BITMAP recovery_groups;        // bitmap used during recovery
   bool recovery_groups_inited;
   ulong mts_recovery_group_cnt;  // number of groups to execute at recovery
   ulong mts_recovery_index;      // running index of recoverable groups
@@ -1037,11 +1038,11 @@ class Relay_log_info : public Rpl_info {
   /* The general cleanup that slave applier may need at the end of query. */
   inline void cleanup_after_query() {
     if (deferred_events) deferred_events->rewind();
-  };
+  }
   /* The general cleanup that slave applier may need at the end of session. */
   void cleanup_after_session() {
     if (deferred_events) delete deferred_events;
-  };
+  }
 
   /**
     Helper function to do after statement completion.
@@ -1148,7 +1149,29 @@ class Relay_log_info : public Rpl_info {
 
   int count_relay_log_space();
 
-  int rli_init_info();
+  /**
+    Initialize the relay log info. This function does a set of operations
+    on the rli object like initializing variables, loading information from
+    repository, setting up name for relay log files and index, MTS recovery
+    (if necessary), calculating the received GTID set for the channel and
+    storing the updated rli object configuration into the repository.
+
+    When this function is called in a change master process and the change
+    master procedure will purge all the relay log files later, there is no
+    reason to try to calculate the received GTID set of the channel based on
+    existing relay log files (they will be purged). Allowing reads to existing
+    relay log files at this point may lead to put the server in a state where
+    it will be no possible to configure it if it was reset when encryption of
+    replication log files was ON and the keyring plugin is not available
+    anymore.
+
+    @param skip_received_gtid_set_recovery When true, skips the received GTID
+                                           set recovery.
+
+    @retval 0 Success.
+    @retval 1 Error.
+  */
+  int rli_init_info(bool skip_received_gtid_set_recovery = false);
   void end_info();
   int flush_info(bool force = false);
   int flush_current_log();
@@ -1291,8 +1314,10 @@ class Relay_log_info : public Rpl_info {
   /**
     Delete the existing event and set a new one.  This class is
     responsible for freeing the event, the caller should not do that.
+
+    @return 1 if an error was encountered, 0 otherwise.
   */
-  virtual void set_rli_description_event(Format_description_log_event *fdle);
+  virtual int set_rli_description_event(Format_description_log_event *fdle);
 
   /**
     Return the current Format_description_log_event.

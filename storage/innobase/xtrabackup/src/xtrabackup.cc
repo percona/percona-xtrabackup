@@ -289,6 +289,7 @@ longlong innobase_page_size = (1LL << 14); /* 16KB */
 static ulong innobase_log_block_size = 512;
 char *innobase_doublewrite_file = NULL;
 char *innobase_buffer_pool_filename = NULL;
+char *innobase_directories = NULL;
 
 longlong innobase_buffer_pool_size = 8 * 1024 * 1024L;
 longlong innobase_log_file_size = 48 * 1024 * 1024L;
@@ -610,6 +611,7 @@ enum options_xtrabackup {
   OPT_XTRA_REBUILD_THREADS,
   OPT_INNODB_CHECKSUM_ALGORITHM,
   OPT_INNODB_UNDO_DIRECTORY,
+  OPT_INNODB_DIRECTORIES,
   OPT_INNODB_TEMP_TABLESPACE_DIRECTORY,
   OPT_INNODB_UNDO_TABLESPACES,
   OPT_INNODB_LOG_CHECKSUMS,
@@ -1332,6 +1334,11 @@ Disable with --skip-innodb-doublewrite.",
      "Directory where undo tablespace files live, this path can be absolute.",
      &srv_undo_dir, &srv_undo_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0,
      0, 0},
+    {"innodb_directories", OPT_INNODB_DIRECTORIES,
+     "List of directories 'dir1;dir2;..;dirN' to scan for tablespace files. "
+     "Default is to scan 'innodb-data-home-dir;innodb-undo-directory;datadir'",
+     &innobase_directories, &innobase_directories, 0, GET_STR_ALLOC,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"temp_tablespaces_dir", OPT_INNODB_TEMP_TABLESPACE_DIRECTORY,
      "Directory where temp tablespace files live, this path can be absolute.",
      &srv_temp_dir, &srv_temp_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
@@ -2028,9 +2035,6 @@ error:
   return (TRUE);
 }
 
-typedef bool (*load_table_predicate_t)(const char *, const char *);
-dberr_t xb_load_single_table_tablespaces(load_table_predicate_t pred);
-
 dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
                                        ib_trx_t trx) {
   dd::sdi_vector sdi_vector;
@@ -2131,10 +2135,33 @@ error:
   return (err);
 }
 
-static void dict_load_from_spaces_sdi() {
-  msg("Populating InnoDB table cache.\n");
+static void xb_scan_for_tablespaces() {
+  std::string directories;
 
-  xb_load_single_table_tablespaces(NULL);
+  if (innobase_directories != nullptr && *innobase_directories != 0) {
+    Fil_path::normalize(innobase_directories);
+    directories.append(Fil_path::parse(innobase_directories));
+    directories.push_back(FIL_PATH_SEPARATOR);
+  }
+
+  directories.append(srv_data_home);
+
+  if (srv_undo_dir != nullptr && *srv_undo_dir != 0) {
+    directories.push_back(FIL_PATH_SEPARATOR);
+    directories.append(srv_undo_dir);
+  }
+
+  /* This is the default directory for .ibd files. */
+  directories.push_back(FIL_PATH_SEPARATOR);
+  directories.append(MySQL_datadir_path.path());
+
+  msg("xtrabackup: Generating a list of tablespaces\n");
+
+  fil_scan_for_tablespaces(directories, true);
+}
+
+static void dict_load_from_spaces_sdi() {
+  fil_open_ibds();
 
   my_thread_init();
 
@@ -2780,9 +2807,9 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     goto error;
   }
 
-  if (is_undo) {
-    /* copy undo spaces into the backup root */
-    fn_format(dst_name, cursor.abs_path, "", "", MY_REPLACE_DIR);
+  if (is_undo && Fil_path::has_suffix(IBU, cursor.rel_path)) {
+    strncpy(dst_name, xb_tablespace_backup_file_path(cursor.abs_path).c_str(),
+            sizeof(dst_name));
   } else {
     strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
   }
@@ -2799,16 +2826,14 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
 
   if (write_filter->init != NULL &&
       !write_filter->init(&write_filt_ctxt, dst_name, &cursor)) {
-    msg("[%02u] xtrabackup: error: "
-        "failed to initialize page write filter.\n",
+    msg("[%02u] xtrabackup: error: failed to initialize page write filter.\n",
         thread_n);
     goto error;
   }
 
   dstfile = ds_open(ds_data, dst_name, &cursor.statinfo);
   if (dstfile == NULL) {
-    msg("[%02u] xtrabackup: error: "
-        "cannot open the destination stream for %s\n",
+    msg("[%02u] xtrabackup: error: cannot open the destination stream for %s\n",
         thread_n, dst_name);
     goto error;
   }
@@ -3204,9 +3229,7 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
   while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
     /* copy the datafile */
     if (xtrabackup_copy_datafile(node, num)) {
-      msg("[%02u] xtrabackup: Error: "
-          "failed to copy datafile.\n",
-          num);
+      msg("[%02u] xtrabackup: Error: failed to copy datafile.\n", num);
       *(ctxt->error) = true;
     }
   }
@@ -3346,16 +3369,6 @@ static void xtrabackup_destroy_datasinks(void) {
 #define SRV_MAX_N_PENDING_SYNC_IOS 100
 
 /************************************************************************
-@return TRUE if table should be opened. */
-static bool xb_check_if_open_tablespace(const char *db, const char *table) {
-  char buf[FN_REFLEN];
-
-  snprintf(buf, sizeof(buf), "%s/%s", db, table);
-
-  return !check_if_skip_table(buf);
-}
-
-/************************************************************************
 Initializes the I/O and tablespace cache subsystems. */
 static void xb_fil_io_init(void)
 /*================*/
@@ -3368,197 +3381,6 @@ static void xb_fil_io_init(void)
   fil_init(LONG_MAX);
 
   fsp_init();
-}
-
-void xb_load_single_table_tablespace(const char *dirname, const char *filname,
-                                     const char *tablespace_name) {
-  /* The name ends in .ibd or .isl;
-  try opening the file */
-  char *name;
-  size_t dirlen = dirname == NULL ? 0 : strlen(dirname);
-  size_t namelen = strlen(filname);
-  ulint pathlen = dirname == NULL ? namelen + 1 : dirlen + namelen + 2;
-  lsn_t flush_lsn;
-  dberr_t err;
-  fil_space_t *space;
-
-  name = static_cast<char *>(ut_malloc_nokey(pathlen));
-
-  if (dirname != NULL) {
-    snprintf(name, pathlen, "%s/%s", dirname, filname);
-    name[pathlen - 5] = 0;
-  } else {
-    snprintf(name, pathlen, "%s", filname);
-    name[pathlen - 5] = 0;
-  }
-
-  Datafile file;
-  file.set_name(name);
-  file.make_filepath(".", name, IBD);
-
-  if (file.open_read_only(true) != DB_SUCCESS) {
-    ut_free(name);
-    exit(EXIT_FAILURE);
-  }
-
-  err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
-
-  if (err == DB_SUCCESS) {
-    if (fil_space_get(file.space_id())) {
-      /* space already exists */
-      ut_free(name);
-      return;
-    }
-
-    os_offset_t node_size = os_file_get_size(file.handle());
-    bool is_tmp = FSP_FLAGS_GET_TEMPORARY(file.flags());
-    os_offset_t n_pages;
-
-    ut_a(node_size != (os_offset_t)-1);
-
-    n_pages = node_size / page_size_t(file.flags()).physical();
-
-    space = fil_space_create(tablespace_name ? tablespace_name : name,
-                             file.space_id(), file.flags(),
-                             is_tmp ? FIL_TYPE_TEMPORARY : FIL_TYPE_TABLESPACE);
-
-    ut_a(space != NULL);
-
-    /* For encrypted tablespace, initialize encryption
-    information.*/
-    if (FSP_FLAGS_GET_ENCRYPTION(file.flags())) {
-      if (srv_backup_mode || !use_dumped_tablespace_keys) {
-        byte *key = file.m_encryption_key;
-        byte *iv = file.m_encryption_iv;
-        ut_ad(key && iv);
-
-        space->flags |= FSP_FLAGS_MASK_ENCRYPTION;
-        err = fil_set_encryption(space->id, Encryption::AES, key, iv);
-      } else {
-        err = xb_set_encryption(space);
-      }
-
-      ut_ad(err == DB_SUCCESS);
-    }
-
-    if (!fil_node_create(file.filepath(), n_pages, space, false, false)) {
-      ut_error;
-    }
-
-    /* by opening the tablespace we forcing node and space objects
-    in the cache to be populated with fields from space header */
-    if (!fil_space_open(space->id)) {
-      msg("Failed to open tablespace %s.\n", space->name);
-    };
-
-    if (!srv_backup_mode || srv_close_files) {
-      fil_space_close(space->id);
-    }
-  } else {
-    /* allow corrupted first page for xtrabackup, it could be just
-    zero-filled page, which we'll restore from redo log later */
-    if (xtrabackup_backup && err != DB_PAGE_IS_BLANK) {
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  ut_free(name);
-}
-
-static bool is_tablespace_name(const char *path) {
-  size_t len = strlen(path);
-  return len > 4 && strcmp(path + len - 4, ".ibd") == 0;
-}
-
-typedef bool (*load_table_predicate_t)(const char *, const char *);
-
-/** Process single second level datadir entry for
-xb_load_single_table_tablespaces
-@param[in]	pred	predicate to filter entries
-@param[in]	dbname	database name (the name of the top level entry)
-@param[in]	path	path to the file
-@param[in]	name	name of the file */
-void readdir_l2cbk(load_table_predicate_t pred, const char *dbname,
-                   const char *path, const char *name) {
-  struct stat statinfo;
-
-  if (stat(path, &statinfo) != 0) {
-    return;
-  }
-
-  if (S_ISREG(statinfo.st_mode) && is_tablespace_name(name) &&
-      !(pred && !pred(".", name))) {
-    xb_load_single_table_tablespace(dbname, name, nullptr);
-  }
-}
-
-/** Process single top level datadir entry for xb_load_single_table_tablespaces
-@param[in]	pred	predicate to filter entries
-@param[in]	path	path to the file
-@param[in]	name	name of the file */
-void readdir_l1cbk(load_table_predicate_t pred, const char *path,
-                   const char *name) {
-  struct stat statinfo;
-
-  if (stat(path, &statinfo) != 0) {
-    return;
-  }
-
-  if (S_ISDIR(statinfo.st_mode)) {
-    os_file_scan_directory(path,
-                           [=](const char *l2path, const char *l2name) -> void {
-                             readdir_l2cbk(pred, name, l2path, l2name);
-                           },
-                           false);
-  }
-
-  if (S_ISREG(statinfo.st_mode) && is_tablespace_name(name) &&
-      !(pred && !pred(".", name))) {
-    xb_load_single_table_tablespace(nullptr, name, nullptr);
-  }
-}
-
-/********************************************************************/ /**
- At the server startup, if we need crash recovery, scans the database
- directories under the MySQL datadir, looking for .ibd files. Those files are
- single-table tablespaces. We need to know the space id in each of them so that
- we know into which file we should look to check the contents of a page stored
- in the doublewrite buffer, also to know where to apply log records where the
- space id is != 0.
- @return	DB_SUCCESS or error number */
-dberr_t xb_load_single_table_tablespaces(load_table_predicate_t pred)
-/*===================================*/
-{
-  bool ret = xb_process_datadir(
-      MySQL_datadir_path, ".ibd",
-      [=](const datadir_entry_t &entry, void *arg) mutable -> bool {
-        if (entry.is_empty_dir) {
-          return true;
-        }
-        xb_load_single_table_tablespace(
-            entry.db_name.empty() ? nullptr : entry.db_name.c_str(),
-            entry.file_name.c_str(), nullptr);
-        return true;
-      },
-      nullptr);
-
-  if (!srv_backup_mode) {
-    return (ret ? DB_SUCCESS : DB_ERROR);
-  }
-
-  if (!ret) {
-    return (DB_ERROR);
-  }
-
-  const auto &map = Tablespace_map::instance();
-
-  for (auto file_path : map.external_files()) {
-    std::string name = map.backup_file_name(file_path);
-    name = name.substr(0, name.length() - 4);
-    xb_load_single_table_tablespace(nullptr, file_path.c_str(), name.c_str());
-  }
-
-  return (ret ? DB_SUCCESS : DB_ERROR);
 }
 
 /****************************************************************************
@@ -3604,6 +3426,8 @@ static ulint xb_load_tablespaces(void)
     return (err);
   }
 
+  xb_scan_for_tablespaces();
+
   /* Add separate undo tablespaces to fil_system */
 
   err = srv_undo_tablespaces_init(false, true);
@@ -3611,15 +3435,9 @@ static ulint xb_load_tablespaces(void)
     return (err);
   }
 
-  /* It is important to call fil_load_single_table_tablespace() after
-  srv_undo_tablespaces_init(), because fsp_is_ibd_tablespace() *
-  relies on srv_undo_tablespaces_open to be properly initialized */
-
-  msg("xtrabackup: Generating a list of tablespaces\n");
-
-  err = xb_load_single_table_tablespaces(xb_check_if_open_tablespace);
-  if (err != DB_SUCCESS) {
-    return (err);
+  for (auto tablespace : Tablespace_map::instance().external_files()) {
+    if (tablespace.type != Tablespace_map::TABLESPACE) continue;
+    fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
   }
 
   debug_sync_point("xtrabackup_load_tablespaces_pause");
@@ -3636,6 +3454,7 @@ ulint xb_data_files_init(void)
 {
   os_create_block_cache();
   xb_fil_io_init();
+  undo_spaces_init();
 
   return (xb_load_tablespaces());
 }
