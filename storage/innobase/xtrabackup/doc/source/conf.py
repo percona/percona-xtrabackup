@@ -285,8 +285,6 @@ latex_elements = {
 man_pages = [
     ('xtrabackup_bin/xtrabackup_binary', 'xtrabackup', ' '.join([project, version, 'Documentation']),
      [u'Percona LLC and/or its affiliates'], 1),
-    ('innobackupex/innobackupex_script', 'innobackupex', u'innobackupex Documentation',
-     [u'Percona LLC and/or its affiliates'], 1),
     ('xbcrypt/xbcrypt', 'xbcrypt', u'Percona xbcrypt Documentation',
      [u'Percona LLC and/or its affiliates'], 1),
     ('xbstream/xbstream', 'xbstream', u'Percona xbstream Documentation',
