@@ -1785,11 +1785,12 @@ bool should_skip_file_on_copy_back(const char *filepath) {
 
 os_thread_ret_t
 copy_back_thread_func(void* data) {
-	bool ret = false;
+	bool ret = true;
 	datadir_thread_ctxt_t* ctx = (datadir_thread_ctxt_t*)data;
-	datadir_node_t node;
+	datadir_node_t node = datadir_node_t();
 
 	if (my_thread_init()) {
+		ret = false;
 		goto cleanup;
 	}
 
