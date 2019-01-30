@@ -91,17 +91,20 @@ void Tablespace_map::add(const tablespace_t &tablespace) {
   char full_path[FN_REFLEN];
 
   if (tablespace.type == UNDO_LOG &&
-      Fil_path(tablespace.file_name, true).is_relative_path() &&
+      Fil_path::type_of_path(tablespace.file_name) == Fil_path::relative &&
       srv_undo_dir != nullptr && srv_undo_dir[0] != 0) {
-    fn_format(full_path,
-              (std::string(srv_undo_dir) + "/" + tablespace.file_name).c_str(),
-              "", "", MY_RETURN_REAL_PATH);
+    fn_format(
+        full_path,
+        (std::string(srv_undo_dir) + FN_LIBCHAR + tablespace.file_name).c_str(),
+        "", "", MY_RETURN_REAL_PATH);
   } else {
     fn_format(full_path, tablespace.file_name.c_str(), "", "",
               MY_RETURN_REAL_PATH);
   }
 
-  if (!MySQL_datadir_path.is_ancestor(full_path) ||
+  Fil_path::normalize(full_path);
+
+  if (!Fil_path::is_ancestor(MySQL_datadir_path.abs_path(), full_path) ||
       tablespace.type == UNDO_LOG) {
     space_by_file[full_path] = tablespace;
     file_by_space[tablespace.name] = tablespace;

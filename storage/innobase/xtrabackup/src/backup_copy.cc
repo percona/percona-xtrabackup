@@ -1569,7 +1569,7 @@ bool copy_back(int argc, char **argv) {
     for (i = 1; i <= srv_undo_tablespaces; i++) {
       char filename[20];
       sprintf(filename, "undo_%03lu", i);
-      if (!Fil_path(filename).is_file_and_exists()) continue;
+      if (Fil_path::get_file_type(filename) != OS_FILE_TYPE_FILE) continue;
       if (!(ret = copy_or_move_file(filename, filename, dst_dir, 1,
                                     FILE_PURPOSE_UNDO_LOG))) {
         goto cleanup;
