@@ -5,12 +5,12 @@
    * - Task
      - Command
    * - Stream the backup into an archive named :file:`backup.xbstream`
-     - :bash:`xtrabackup --backup --stream=xbstream ./ > backup.tar`
+     - :bash:`xtrabackup --backup --stream=xbstream --target-dir=./ > backup.xbstream`
    * - Stream the backup into a `compressed` archive named :file:`backup.xbstream`
-     - :bash:`xtrabackup --backup --stream=xbstream --compress ./ | gzip - > backup.tar.gz`
+     - :bash:`xtrabackup --backup --stream=xbstream --compress --target-dir=./ > backup.xbstream`
    * - Unpack the backup to the current directory
      - :bash:`xbstream -x <  backup.xbstream`
    * - Send the backup compressed directly to another host and unpack it
-     - :bash:`xtrabackup --backup --compress --stream=xbstream ./ | ssh user@otherhost "xbstream -x"`
+     - :bash:`xtrabackup --backup --compress --stream=xbstream --target-dir=./ | ssh user@otherhost "xbstream -x"`
    * - Parallel compression with parallel copying backup
-     - :bash:`xtrabackup --backup --compress --compress-threads=8 --stream=xbstream --parallel=4 ./ > backup.xbstream`
+     - :bash:`xtrabackup --backup --compress --compress-threads=8 --stream=xbstream --parallel=4 --target-dir=./ > backup.xbstream`
