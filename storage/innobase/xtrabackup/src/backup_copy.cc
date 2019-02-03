@@ -52,6 +52,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <ut0mem.h>
 #include <ut0new.h>
 #include <algorithm>
+#include <fstream>
 #include <functional>
 #include <queue>
 #include <set>
@@ -89,6 +90,9 @@ extern TYPELIB innodb_flush_method_typelib;
 
 /* list of files to sync for --rsync mode */
 static std::set<std::string> rsync_list;
+
+/* skip these files on copy-back */
+static std::set<std::string> skip_copy_back_list;
 
 /* the purpose of file copied */
 enum file_purpose_t {
@@ -285,8 +289,7 @@ static const char *trim_dotslash(const char *path) {
   return (path);
 }
 
-/************************************************************************
-Check if string ends with given suffix.
+/** Check if string ends with given suffix.
 @return true if string ends with given suffix. */
 static bool ends_with(const char *str, const char *suffix) {
   size_t suffix_len = strlen(suffix);
@@ -295,8 +298,7 @@ static bool ends_with(const char *str, const char *suffix) {
           strcmp(str + str_len - suffix_len, suffix) == 0);
 }
 
-/************************************************************************
-Create directories recursively.
+/** Create directories recursively.
 @return 0 if directories created successfully. */
 static int mkdirp(const char *pathname, int Flags, myf MyFlags) {
   char parent[PATH_MAX], *p;
@@ -628,7 +630,7 @@ static bool run_data_threads(const char *dir, data_thread_func_t func, uint n,
 Copy file for backup/restore.
 @return true in case of success. */
 bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
-               const char *dst_file_path, uint thread_n) {
+               const char *dst_file_path, uint thread_n, ssize_t pos) {
   char dst_name[FN_REFLEN];
   ds_file_t *dstfile = NULL;
   datafile_cur_t cursor;
@@ -639,12 +641,21 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
     goto error;
   }
 
+  if (pos >= 0) {
+    if ((ssize_t)cursor.statinfo.st_size < pos) {
+      msg("xtrabackup: Error file '%s' is smaller than %zd\n", src_file_path,
+          pos);
+      goto error;
+    }
+    cursor.statinfo.st_size = pos;
+  }
+
   strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
 
   dstfile = ds_open(datasink, trim_dotslash(dst_file_path), &cursor.statinfo);
   if (dstfile == NULL) {
-    msg("[%02u] error: cannot open the destination stream for %s\n",
-        thread_n, dst_name);
+    msg("[%02u] error: cannot open the destination stream for %s\n", thread_n,
+        dst_name);
     goto error;
   }
 
@@ -798,10 +809,8 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
     return (true);
   }
 
-  msg_ts(
-      "[%02u] Encrypting %s tablespace header with new "
-      "master key.\n",
-      thread_n, fullpath);
+  msg_ts("[%02u] Encrypting %s tablespace header with new master key.\n",
+         thread_n, fullpath);
 
   memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE);
 
@@ -839,36 +848,25 @@ static bool copy_or_move_file(const char *src_file_path,
                               const char *dst_file_path, const char *dst_dir,
                               uint thread_n, file_purpose_t file_purpose) {
   ds_ctxt_t *datasink = ds_data; /* copy to datadir by default */
-  std::string external_file_name;
-  char external_dir[FN_REFLEN];
   bool ret;
 
-  if (Fil_path::has_suffix(IBD, src_file_path) ||
-      Fil_path::has_suffix(IBU, src_file_path)) {
-    std::string tablespace_name = src_file_path;
-    /* Remove starting ./ and trailing .ibd/.ibu from tablespace name */
-    tablespace_name = tablespace_name.substr(2, tablespace_name.length() - 6);
-    external_file_name =
-        Tablespace_map::instance().external_file_name(tablespace_name);
-    if (!external_file_name.empty()) {
-      /* This is external tablespace. Copy it to it's original
-      location */
-      dst_file_path = external_file_name.c_str();
+  if (Fil_path::type_of_path(dst_file_path) == Fil_path::absolute) {
+    /* File is located outsude of the datadir */
+    char external_dir[FN_REFLEN];
 
-      /* Make sure that destination directory exists */
-      size_t dirname_length;
+    /* Make sure that destination directory exists */
+    size_t dirname_length;
 
-      dirname_part(external_dir, dst_file_path, &dirname_length);
+    dirname_part(external_dir, dst_file_path, &dirname_length);
 
-      if (!directory_exists(external_dir, true)) {
-        return (false);
-      }
-
-      datasink = ds_create(external_dir, DS_TYPE_LOCAL);
-
-      dst_file_path = external_file_name.c_str() + dirname_length;
-      dst_dir = external_dir;
+    if (!directory_exists(external_dir, true)) {
+      return (false);
     }
+
+    datasink = ds_create(external_dir, DS_TYPE_LOCAL);
+
+    dst_file_path = dst_file_path + dirname_length;
+    dst_dir = external_dir;
   }
 
   ret = (xtrabackup_copy_back
@@ -1050,34 +1048,29 @@ bool backup_start(lsn_t &backup_lsn) {
     return (false);
   }
 
-  // There is no need to stop slave thread before copying non-Innodb data when
-  // --no-lock option is used because --no-lock option requires that no DDL or
-  // DML to non-transaction tables can occur.
+  /* There is no need to stop slave thread before copying non-Innodb data when
+  --no-lock option is used because --no-lock option requires that no DDL or
+  DML to non-transaction tables can occur. */
   if (opt_no_lock && opt_safe_slave_backup) {
     if (!wait_for_safe_slave(mysql_connection)) {
       return (false);
     }
   }
 
+  msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG BINARY LOGS\n");
+  xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS",
+                 false);
+
   log_status_get(mysql_connection);
+
+  if (!write_current_binlog_file(mysql_connection)) {
+    return (false);
+  }
 
   if (opt_slave_info) {
     if (!write_slave_info(mysql_connection)) {
       return (false);
     }
-  }
-
-  /* The only reason why Galera/binlog info is written before
-  wait_for_ibbackup_log_copy_finish() is that after that call the xtrabackup
-  binary will start streamig a temporary copy of REDO log to stdout and
-  thus, any streaming from innobackupex would interfere. The only way to
-  avoid that is to have a single process, i.e. merge innobackupex and
-  xtrabackup. */
-  if (opt_galera_info) {
-    if (!write_galera_info(mysql_connection)) {
-      return (false);
-    }
-    write_current_binlog_file(mysql_connection);
   }
 
   write_binlog_info(mysql_connection, backup_lsn);
@@ -1166,6 +1159,67 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
   return true;
 }
 
+/** Find binary log file and index in the backup directory
+@param[in]   dir                backup directory
+@param[out]  binlog_fn          binlog file name
+@param[out]  binlog_path        original binlog path
+                                (absolute or relative to dir)
+@param[out]  binlog_index_fn    binlog index file name
+@param[out]  binlog_index_path  original index binlog path
+                                (absolute or relative to dir)
+@param[out]  error              true if error
+@return      true if found */
+static bool find_binlog_file(const std::string &dir, std::string &binlog_fn,
+                             std::string &binlog_path,
+                             std::string &binlog_index_fn,
+                             std::string &binlog_index_path, bool &error) {
+  binlog_fn = binlog_path = binlog_index_fn = binlog_index_path = "";
+  error = false;
+
+  Dir_Walker::walk(dir, false, [&](const std::string &path) mutable {
+    if (ends_with(path.c_str(), ".index") && !Dir_Walker::is_directory(path)) {
+      std::ifstream f_index(path);
+      if (f_index.fail()) {
+        msg("xtrabackup: Error cannot read '%s'\n", path.c_str());
+        error = true;
+        return (false);
+      }
+
+      char dirname[FN_REFLEN];
+      size_t dirname_length;
+      std::string binlog_dir;
+
+      for (std::string line; std::getline(f_index, line);) {
+        dirname_part(dirname, line.c_str(), &dirname_length);
+        binlog_fn = line.substr(dirname_length, std::string::npos);
+        binlog_dir = dirname;
+        binlog_path = line;
+      }
+
+      std::string binlog_basename = binlog_fn;
+      binlog_basename.replace(binlog_basename.find_last_of("."),
+                              std::string::npos, ".index");
+
+      if (opt_binlog_index_name != nullptr && opt_binlog_index_name[0] != 0) {
+        binlog_index_path = opt_binlog_index_name;
+        if (!ends_with(binlog_index_path.c_str(), ".index")) {
+          binlog_index_path.append(".index");
+        }
+      } else {
+        binlog_index_path = path;
+      }
+
+      dirname_part(dirname, binlog_index_path.c_str(), &dirname_length);
+      binlog_index_fn =
+          binlog_index_path.substr(dirname_length, std::string::npos);
+    }
+
+    return (true);
+  });
+
+  return (!binlog_fn.empty());
+}
+
 bool copy_incremental_over_full() {
   const char *ext_list[] = {"MYD", "MYI", "MAD", "MAI", "MRG", "ARM",
                             "ARZ", "CSM", "CSV", "opt", "sdi", NULL};
@@ -1174,6 +1228,7 @@ bool copy_incremental_over_full() {
                              "xtrabackup_slave_info",
                              "xtrabackup_info",
                              "xtrabackup_keys",
+                             "xtrabackup_tablespaces",
                              "ib_lru_dump",
                              NULL};
   bool ret = true;
@@ -1205,8 +1260,12 @@ bool copy_incremental_over_full() {
                src_name);
 
       if (file_exists(path)) {
-        copy_file(ds_data, path, innobase_buffer_pool_filename, 0);
+        ret = copy_file(ds_data, path, innobase_buffer_pool_filename, 0);
       }
+    }
+
+    if (!ret) {
+      goto cleanup;
     }
 
     /* copy supplementary files */
@@ -1219,8 +1278,49 @@ bool copy_incremental_over_full() {
         if (file_exists(sup_files[i])) {
           unlink(sup_files[i]);
         }
-        copy_file(ds_data, path, sup_files[i], 0);
+        ret = copy_file(ds_data, path, sup_files[i], 0);
+        if (!ret) {
+          goto cleanup;
+        }
       }
+    }
+
+    std::string binlog_fn, binlog_path;
+    std::string binlog_index_fn, binlog_index_path;
+    char fullpath[FN_REFLEN];
+    bool err;
+
+    if (find_binlog_file(".", binlog_fn, binlog_path, binlog_index_fn,
+                         binlog_index_path, err)) {
+      unlink(binlog_fn.c_str());
+      unlink(binlog_index_fn.c_str());
+    }
+
+    if (err) {
+      ret = false;
+      goto cleanup;
+    }
+
+    if (find_binlog_file(xtrabackup_incremental_dir, binlog_fn, binlog_path,
+                         binlog_index_fn, binlog_index_path, err)) {
+      fn_format(fullpath, binlog_fn.c_str(), xtrabackup_incremental_dir, "",
+                MYF(MY_RELATIVE_PATH));
+      ret = copy_file(ds_data, fullpath, binlog_fn.c_str(), 0);
+      if (!ret) {
+        goto cleanup;
+      }
+
+      fn_format(fullpath, binlog_index_fn.c_str(), xtrabackup_incremental_dir,
+                "", MYF(MY_RELATIVE_PATH));
+      ret = copy_file(ds_data, fullpath, binlog_index_fn.c_str(), 0);
+      if (!ret) {
+        goto cleanup;
+      }
+    }
+
+    if (err) {
+      ret = false;
+      goto cleanup;
     }
   }
 
@@ -1304,6 +1404,7 @@ bool should_skip_file_on_copy_back(const char *filepath) {
                             "xtrabackup_binary",
                             "xtrabackup_binlog_info",
                             "xtrabackup_checkpoints",
+                            "xtrabackup_tablespaces",
                             ".qp",
                             ".pmap",
                             ".tmp",
@@ -1333,6 +1434,10 @@ bool should_skip_file_on_copy_back(const char *filepath) {
     if (strcmp(iter->name(), filename) == 0) {
       return true;
     }
+  }
+
+  if (skip_copy_back_list.count(filepath) > 0) {
+    return true;
   }
 
   return false;
@@ -1372,7 +1477,8 @@ void copy_back_thread_func(datadir_thread_ctxt_t *ctx) {
     }
 
     file_purpose_t file_purpose;
-    if (ends_with(entry.path.c_str(), ".ibd")) {
+    if (Fil_path::has_suffix(IBD, entry.path) ||
+        Fil_path::has_suffix(IBU, entry.path)) {
       file_purpose = FILE_PURPOSE_DATAFILE;
     } else {
       file_purpose = FILE_PURPOSE_OTHER;
@@ -1387,8 +1493,24 @@ void copy_back_thread_func(datadir_thread_ctxt_t *ctx) {
                entry.file_name.c_str());
     }
 
-    if (!(ret = copy_or_move_file(entry.path.c_str(), rel_path, mysql_data_home,
-                                  ctx->n_thread, file_purpose))) {
+    std::string dst_path = rel_path;
+
+    if (file_purpose == FILE_PURPOSE_DATAFILE) {
+      std::string tablespace_name = entry.path;
+      /* Remove starting ./ and trailing .ibd/.ibu from tablespace name */
+      tablespace_name = tablespace_name.substr(2, tablespace_name.length() - 6);
+      std::string external_file_name =
+          Tablespace_map::instance().external_file_name(tablespace_name);
+      if (!external_file_name.empty()) {
+        /* This is external tablespace. Copy it to it's original
+        location */
+        dst_path = external_file_name;
+      }
+    }
+
+    if (!(ret = copy_or_move_file(entry.path.c_str(), dst_path.c_str(),
+                                  mysql_data_home, ctx->n_thread,
+                                  file_purpose))) {
       goto cleanup;
     }
   }
@@ -1447,8 +1569,10 @@ static bool load_backup_my_cnf() {
 bool copy_back(int argc, char **argv) {
   char *innobase_data_file_path_copy;
   ulint i;
-  bool ret;
+  bool ret = true, err;
   char *dst_dir;
+  std::string binlog_fn, binlog_path;
+  std::string binlog_index_fn, binlog_index_path;
 
   ut_crc32_init();
 
@@ -1488,7 +1612,7 @@ bool copy_back(int argc, char **argv) {
     msg("xtrabackup: Error: failed to load tablespaces list.\nIt is possible "
         "that the backup was created by Percona XtraBackup 2.4 or earlier "
         "version. Please use the same XtraBackup version to restore.\n");
-    return(false);
+    return (false);
   }
 
   if (opt_generate_new_master_key && !xb_tablespace_keys_exist()) {
@@ -1629,10 +1753,30 @@ bool copy_back(int argc, char **argv) {
   /* copy the rest of tablespaces */
   ds_data = ds_create(mysql_data_home, DS_TYPE_LOCAL);
 
+  /* copy binary log and .index files */
+  if (find_binlog_file(".", binlog_fn, binlog_path, binlog_index_fn,
+                       binlog_index_path, err)) {
+    if (!(ret = copy_or_move_file(binlog_fn.c_str(), binlog_path.c_str(),
+                                  mysql_data_home, 1, FILE_PURPOSE_OTHER))) {
+      goto cleanup;
+    }
+    if (!(ret = copy_or_move_file(binlog_index_fn.c_str(),
+                                  binlog_index_path.c_str(), mysql_data_home, 1,
+                                  FILE_PURPOSE_OTHER))) {
+      goto cleanup;
+    }
+    /* make sure we don't copy binary log and .index files twice */
+    skip_copy_back_list.insert(binlog_index_fn);
+    skip_copy_back_list.insert(binlog_fn);
+  }
+
+  if (err) {
+    goto cleanup;
+  }
+
   ut_a(xtrabackup_parallel >= 0);
   if (xtrabackup_parallel > 1) {
-    msg("xtrabackup: Starting %u threads for parallel data "
-        "files transfer\n",
+    msg("xtrabackup: Starting %u threads for parallel data files transfer\n",
         xtrabackup_parallel);
   }
 
@@ -1652,8 +1796,7 @@ bool copy_back(int argc, char **argv) {
 
     snprintf(path, sizeof(path), "%s/%s", mysql_data_home, src_name);
 
-    /* could be already copied with other files
-    from data directory */
+    /* could be already copied with other files from data directory */
     if (file_exists(src_name) && !file_exists(innobase_buffer_pool_filename)) {
       copy_or_move_file(src_name, innobase_buffer_pool_filename,
                         mysql_data_home, 0, FILE_PURPOSE_OTHER);

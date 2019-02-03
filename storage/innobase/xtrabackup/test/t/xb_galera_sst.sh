@@ -42,7 +42,7 @@ load_sakila
 
 vlog "Setting password to 'password'"
 run_cmd ${MYSQL} ${MYSQL_ARGS} <<EOF
- SET PASSWORD FOR 'root'@'localhost' = PASSWORD('password');
+ SET PASSWORD FOR 'root'@'localhost' = 'password';
 EOF
 
 vlog "Starting server $node2"
