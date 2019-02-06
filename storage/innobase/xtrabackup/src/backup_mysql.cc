@@ -132,6 +132,12 @@ during backup */
 static bool tables_locked = false;
 static bool instance_locked = false;
 
+/* buffer pool dump */
+ssize_t innodb_buffer_pool_dump_start_time;
+static int original_innodb_buffer_pool_dump_pct;
+static bool innodb_buffer_pool_dump;
+static bool innodb_buffer_pool_dump_pct;
+
 MYSQL *xb_mysql_connect() {
   MYSQL *connection = mysql_init(NULL);
   char mysql_port_str[std::numeric_limits<int>::digits10 + 3];
@@ -2102,4 +2108,121 @@ void mdl_unlock_all() {
   xb_mysql_query(mdl_con, "COMMIT", false, true);
 
   mutex_free(&mdl_lock_con_mutex);
+}
+
+bool has_innodb_buffer_pool_dump() {
+  if ((server_flavor == FLAVOR_PERCONA_SERVER ||
+       server_flavor == FLAVOR_MYSQL) &&
+      mysql_server_version >= 50603) {
+    return (true);
+  }
+
+  if (server_flavor == FLAVOR_MARIADB && mysql_server_version >= 10000) {
+    return (true);
+  }
+
+  msg_ts("Server has no support for innodb_buffer_pool_dump_now");
+  return (false);
+}
+
+bool has_innodb_buffer_pool_dump_pct() {
+  if ((server_flavor == FLAVOR_PERCONA_SERVER ||
+       server_flavor == FLAVOR_MYSQL) &&
+      mysql_server_version >= 50702) {
+    return (true);
+  }
+
+  if (server_flavor == FLAVOR_MARIADB && mysql_server_version >= 10110) {
+    return (true);
+  }
+
+  return (false);
+}
+
+void dump_innodb_buffer_pool(MYSQL *connection) {
+  innodb_buffer_pool_dump = has_innodb_buffer_pool_dump();
+  innodb_buffer_pool_dump_pct = has_innodb_buffer_pool_dump_pct();
+  if (!innodb_buffer_pool_dump) {
+    return;
+  }
+
+  innodb_buffer_pool_dump_start_time = (ssize_t)my_time(MY_WME);
+
+  char *buf_innodb_buffer_pool_dump_pct;
+  char change_bp_dump_pct_query[100];
+
+  /* Verify if we need to change innodb_buffer_pool_dump_pct */
+  if (opt_dump_innodb_buffer_pool_pct != 0 && innodb_buffer_pool_dump_pct) {
+    mysql_variable variables[] = {
+        {"innodb_buffer_pool_dump_pct", &buf_innodb_buffer_pool_dump_pct},
+        {NULL, NULL}};
+    read_mysql_variables(connection,
+                         "SHOW GLOBAL VARIABLES "
+                         "LIKE 'innodb_buffer_pool_dump_pct'",
+                         variables, true);
+
+    original_innodb_buffer_pool_dump_pct =
+        atoi(buf_innodb_buffer_pool_dump_pct);
+
+    free_mysql_variables(variables);
+    snprintf(change_bp_dump_pct_query, sizeof(change_bp_dump_pct_query),
+             "SET GLOBAL innodb_buffer_pool_dump_pct = %u",
+             opt_dump_innodb_buffer_pool_pct);
+    msg_ts("Executing %s \n", change_bp_dump_pct_query);
+    xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
+  }
+
+  msg_ts("Executing SET GLOBAL innodb_buffer_pool_dump_now=ON...\n");
+  xb_mysql_query(mysql_connection, "SET GLOBAL innodb_buffer_pool_dump_now=ON;",
+                 false);
+}
+
+void check_dump_innodb_buffer_pool(MYSQL *connection) {
+  if (!innodb_buffer_pool_dump) {
+    return;
+  }
+  const ssize_t timeout = opt_dump_innodb_buffer_pool_timeout;
+
+  char *innodb_buffer_pool_dump_status;
+  char change_bp_dump_pct_query[100];
+
+  mysql_variable status[] = {
+      {"Innodb_buffer_pool_dump_status", &innodb_buffer_pool_dump_status},
+      {NULL, NULL}};
+
+  read_mysql_variables(connection,
+                       "SHOW STATUS LIKE "
+                       "'Innodb_buffer_pool_dump_status'",
+                       status, true);
+
+  /* check if dump has been completed */
+  msg_ts("Checking if InnoDB buffer pool dump has completed\n");
+  while (!strstr(innodb_buffer_pool_dump_status, "dump completed at")) {
+    if (innodb_buffer_pool_dump_start_time + timeout <
+        (ssize_t)my_time(MY_WME)) {
+      msg_ts(
+          "InnoDB Buffer Pool Dump was not completed "
+          "after %d seconds... Adjust "
+          "--dump-innodb-buffer-pool-timeout if you "
+          "need higher wait time before copying %s.\n",
+          opt_dump_innodb_buffer_pool_timeout, buffer_pool_filename);
+      break;
+    }
+
+    read_mysql_variables(connection,
+                         "SHOW STATUS LIKE 'Innodb_buffer_pool_dump_status'",
+                         status, true);
+
+    os_thread_sleep(1000000);
+  }
+
+  free_mysql_variables(status);
+
+  /* restore original innodb_buffer_pool_dump_pct */
+  if (opt_dump_innodb_buffer_pool_pct != 0 && innodb_buffer_pool_dump_pct) {
+    snprintf(change_bp_dump_pct_query, sizeof(change_bp_dump_pct_query),
+             "SET GLOBAL innodb_buffer_pool_dump_pct = %u",
+             original_innodb_buffer_pool_dump_pct);
+    xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
+  }
 }

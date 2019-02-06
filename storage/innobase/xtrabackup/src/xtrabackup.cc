@@ -432,6 +432,9 @@ uint opt_lock_wait_timeout = 0;
 uint opt_lock_wait_threshold = 0;
 uint opt_debug_sleep_before_unlock = 0;
 uint opt_safe_slave_backup_timeout = 0;
+uint opt_dump_innodb_buffer_pool_timeout = 10;
+uint opt_dump_innodb_buffer_pool_pct = 0;
+bool opt_dump_innodb_buffer_pool = FALSE;
 
 bool opt_lock_ddl = FALSE;
 bool opt_lock_ddl_per_table = FALSE;
@@ -630,6 +633,9 @@ enum options_xtrabackup {
   OPT_LOCK_DDL,
   OPT_LOCK_DDL_TIMEOUT,
   OPT_LOCK_DDL_PER_TABLE,
+  OPT_DUMP_INNODB_BUFFER,
+  OPT_DUMP_INNODB_BUFFER_TIMEOUT,
+  OPT_DUMP_INNODB_BUFFER_PCT,
   OPT_SAFE_SLAVE_BACKUP,
   OPT_RSYNC,
   OPT_FORCE_NON_EMPTY_DIRS,
@@ -939,6 +945,27 @@ struct my_option xb_client_options[] = {
      "before xtrabackup starts to copy it and until the backup is completed.",
      (uchar *)&opt_lock_ddl_per_table, (uchar *)&opt_lock_ddl_per_table, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"dump-innodb-buffer-pool", OPT_DUMP_INNODB_BUFFER,
+     "Instruct MySQL server to dump innodb buffer pool by issuing a "
+     "SET GLOBAL innodb_buffer_pool_dump_now=ON ",
+     (uchar *)&opt_dump_innodb_buffer_pool,
+     (uchar *)&opt_dump_innodb_buffer_pool, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
+     0},
+
+    {"dump-innodb-buffer-pool-timeout", OPT_DUMP_INNODB_BUFFER_TIMEOUT,
+     "This option specifies the number of seconds xtrabackup waits "
+     "for innodb buffer pool dump to complete",
+     (uchar *)&opt_dump_innodb_buffer_pool_timeout,
+     (uchar *)&opt_dump_innodb_buffer_pool_timeout, 0, GET_UINT, REQUIRED_ARG,
+     10, 0, 0, 0, 0, 0},
+
+    {"dump-innodb-buffer-pool-pct", OPT_DUMP_INNODB_BUFFER_PCT,
+     "This option specifies the percentage of buffer pool "
+     "to be dumped ",
+     (uchar *)&opt_dump_innodb_buffer_pool_pct,
+     (uchar *)&opt_dump_innodb_buffer_pool_pct, 0, GET_UINT, REQUIRED_ARG, 0, 0,
+     100, 0, 1, 0},
 
     {"safe-slave-backup", OPT_SAFE_SLAVE_BACKUP,
      "Stop slave SQL thread "
@@ -4065,6 +4092,10 @@ void xtrabackup_backup_func(void) {
 
   recv_is_making_a_backup = true;
   bool data_copying_error = false;
+
+  if (opt_dump_innodb_buffer_pool) {
+    dump_innodb_buffer_pool(mysql_connection);
+  }
 
   init_mysql_environment();
 

@@ -149,6 +149,65 @@ Options
    :option:`--defaults-group` option. It is needed for
    ``mysqld_multi`` deployments.
 
+.. option::  --dump-innodb-buffer-pool
+
+   This option controls whether or not a new dump of buffer pool
+   content should be done.
+
+   With ``--dump-innodb-buffer-pool``, |xtrabackup|
+   makes a request to the server to start the buffer pool dump (it
+   takes some time to complete and is done in background) at the
+   beginning of a backup provided the status variable
+   ``innodb_buffer_pool_dump_status`` reports that the dump has been
+   completed.
+
+   .. code-block:: bash
+
+      $ xtrabackup --backup --dump-innodb-buffer-pool --target-dir=/home/user/backup
+
+   By default, this option is set to `OFF`.
+
+   If ``innodb_buffer_pool_dump_status`` reports that there is running
+   dump of buffer pool, |xtrabackup| waits for the dump to complete
+   using the value of :option:`--dump-innodb-buffer-pool-timeout`
+
+   The file :file:`ib_buffer_pool` stores tablespace ID and page ID
+   data used to warm up the buffer pool sooner.
+
+   .. seealso::
+
+      |MySQL| Documentation: Saving and Restoring the Buffer Pool State
+         https://dev.mysql.com/doc/refman/5.7/en/innodb-preload-buffer-pool.html
+
+.. option:: --dump-innodb-buffer-pool-timeout
+
+   This option contains the number of seconds that |xtrabackup| should
+   monitor the value of ``innodb_buffer_pool_dump_status`` to
+   determine if buffer pool dump has completed.
+      
+   This option is used in combination with
+   :option:`--dump-innodb-buffer-pool`. By default, it is set to `10`
+   seconds.
+
+.. option:: --dump-innodb-buffer-pool-pct
+
+   This option contains the percentage of the most recently used buffer pool
+   pages to dump.
+
+   This option is effective if :option:`--dump-innodb-buffer-pool` option is set
+   to `ON`. If this option contains a value, |xtrabackup| sets the |MySQL|
+   system variable ``innodb_buffer_pool_dump_pct``. As soon as the buffer pool
+   dump completes or it is stopped (see
+   :option:`--dump-innodb-buffer-pool-timeout`), the value of the |MySQL| system
+   variable is restored.
+
+   .. seealso::
+
+      Changing the timeout for buffer pool dump
+         :option:`--dump-innodb-buffer-pool-timeout`
+      |MySQL| Documentation: innodb_buffer_pool_dump_pct system variable
+         https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_buffer_pool_dump_pct
+
 .. option:: --encrypt=ENCRYPTION_ALGORITHM
 
    This option instructs xtrabackup to encrypt backup copies of InnoDB data

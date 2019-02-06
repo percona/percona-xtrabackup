@@ -180,6 +180,10 @@ extern char *opt_xtra_plugin_dir;
 extern char *opt_transition_key;
 extern bool opt_generate_new_master_key;
 
+extern uint opt_dump_innodb_buffer_pool_timeout;
+extern uint opt_dump_innodb_buffer_pool_pct;
+extern bool opt_dump_innodb_buffer_pool;
+
 enum binlog_info_enum {
   BINLOG_INFO_OFF,
   BINLOG_INFO_LOCKLESS,
