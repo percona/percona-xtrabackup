@@ -24,7 +24,7 @@ bool equal_paths(const char *first, const char *second);
 Copy file for backup/restore.
 @return true in case of success. */
 bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
-               const char *dst_file_path, uint thread_n);
+               const char *dst_file_path, uint thread_n, ssize_t pos = -1);
 
 /* Backup non-InnoDB data.
 @param  backup_lsn   backup LSN

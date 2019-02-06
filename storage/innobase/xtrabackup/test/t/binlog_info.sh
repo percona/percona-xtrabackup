@@ -26,9 +26,6 @@ EOF
     INSERT INTO t VALUES (1), (2), (3);
 EOF
 
-    binlog_file=`get_binlog_file`
-    binlog_pos=`get_binlog_pos`
-
     if [ $gtid = 1 ] ; then
         gtid_executed=`get_gtid_executed`
     fi
@@ -37,6 +34,10 @@ EOF
     xb_binlog_info_innodb=$topdir/backup/xtrabackup_binlog_pos_innodb
 
     xtrabackup --backup --target-dir=$topdir/backup
+
+    binlog_file=`get_binlog_file`
+    binlog_pos=`get_binlog_pos`
+
     verify_binlog_info_on
 
     rm -rf $topdir/backup
@@ -86,7 +87,5 @@ EOF
 
 test_binlog_info
 
-if is_server_version_higher_than 5.6.0 ; then
-    test_binlog_info --gtid-mode=ON --enforce-gtid-consistency=ON \
-                     --log-bin --log-slave-updates
-fi
+test_binlog_info --gtid-mode=ON --enforce-gtid-consistency=ON \
+                 --log-bin --log-slave-updates

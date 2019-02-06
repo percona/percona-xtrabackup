@@ -56,6 +56,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "typelib.h"
 #include "xb0xb.h"
 #include "xtrabackup.h"
+#include "space_map.h"
 #include "xtrabackup_version.h"
 
 #include "backup_mysql.h"
@@ -1403,74 +1404,101 @@ cleanup:
 }
 
 /*********************************************************************/ /**
- Flush and copy the current binary log file into the backup,
- if GTID is enabled */
+ Copy the current binary log file into the backup */
 bool write_current_binlog_file(MYSQL *connection) {
-  char *executed_gtid_set = NULL;
-  char *gtid_binlog_state = NULL;
-  char *log_bin_file = NULL;
-  char *log_bin_dir = NULL;
-  bool gtid_exists;
+  char *log_bin_dir = nullptr;
+  char *log_bin_index = nullptr;
+  char *log_bin_index_filename = nullptr;
+  FILE *f_index = nullptr;
   bool result = true;
   char filepath[FN_REFLEN];
+  size_t log_bin_dir_length;
 
-  mysql_variable status[] = {{"Executed_Gtid_Set", &executed_gtid_set},
-                             {NULL, NULL}};
-
-  mysql_variable status_after_flush[] = {{"File", &log_bin_file}, {NULL, NULL}};
-
-  mysql_variable vars[] = {{"gtid_binlog_state", &gtid_binlog_state},
+  mysql_variable vars[] = {{"log_bin_index", &log_bin_index},
                            {"log_bin_basename", &log_bin_dir},
-                           {NULL, NULL}};
+                           {nullptr, nullptr}};
 
-  read_mysql_variables(connection, "SHOW MASTER STATUS", status, false);
+  if (log_status.filename.empty()) {
+    goto cleanup;
+  }
+
   read_mysql_variables(connection, "SHOW VARIABLES", vars, true);
 
-  gtid_exists = (executed_gtid_set && *executed_gtid_set) ||
-                (gtid_binlog_state && *gtid_binlog_state);
+  if (opt_log_bin != nullptr && strchr(opt_log_bin, FN_LIBCHAR)) {
+    /* If log_bin is set, it has priority */
+    free(log_bin_dir);
+    log_bin_dir = strdup(opt_log_bin);
+  } else if (log_bin_dir == nullptr) {
+    /* Default location is MySQL datadir */
+    log_bin_dir = strdup("./");
+  }
 
-  if (gtid_exists) {
-    size_t log_bin_dir_length;
+  if (opt_binlog_index_name != nullptr) {
+    free(log_bin_index);
+    log_bin_index = strdup(opt_binlog_index_name);
+  } else if (log_bin_index == nullptr) {
+    /* if index file name is not set, compose it from the current log file name
+    by replacing its number with ".index" */
+    std::string index = log_status.filename;
+    size_t dot_pos = index.find_last_of(".");
+    if (dot_pos != std::string::npos) {
+      index.replace(dot_pos, std::string::npos, ".index");
+    } else {
+      index.append(".index");
+    }
+    log_bin_index = strdup(index.c_str());
+  }
 
-    xb_mysql_query(connection, "FLUSH BINARY LOGS", false);
+  dirname_part(log_bin_dir, log_bin_dir, &log_bin_dir_length);
 
-    read_mysql_variables(connection, "SHOW MASTER STATUS", status_after_flush,
-                         false);
+  /* strip final slash if it is not the only path component */
+  if (log_bin_dir_length > 1 &&
+      log_bin_dir[log_bin_dir_length - 1] == FN_LIBCHAR) {
+    log_bin_dir[log_bin_dir_length - 1] = 0;
+  }
 
-    if (opt_log_bin != NULL && strchr(opt_log_bin, FN_LIBCHAR)) {
-      /* If log_bin is set, it has priority */
-      if (log_bin_dir) {
-        free(log_bin_dir);
+  snprintf(filepath, sizeof(filepath), "%s%c%s", log_bin_dir, FN_LIBCHAR,
+           log_status.filename.c_str());
+  result = copy_file(ds_data, filepath, log_status.filename.c_str(), 0,
+                     log_status.position);
+  if (!result) {
+    goto cleanup;
+  }
+
+  log_bin_index_filename = strrchr(log_bin_index, FN_LIBCHAR);
+  if (log_bin_index_filename == nullptr) {
+    log_bin_index_filename = log_bin_index;
+  } else {
+    ++log_bin_index_filename;
+  }
+
+  f_index = fopen(log_bin_index, "r");
+  if (f_index == nullptr) {
+    msg("xtrabackup: Error cannot open binlog index file '%s'\n",
+        log_bin_index);
+    result = false;
+    goto cleanup;
+  }
+
+  /* only write current log file into .index in the backup directory */
+  result = false;
+  while (!feof(f_index)) {
+    char line[FN_REFLEN];
+    if (fgets(line, sizeof(line), f_index) != nullptr) {
+      if (strstr(line, log_status.filename.c_str()) != nullptr) {
+        backup_file_printf(log_bin_index_filename, line, strlen(line));
+        result = true;
       }
-      log_bin_dir = strdup(opt_log_bin);
-    } else if (log_bin_dir == NULL) {
-      /* Default location is MySQL datadir */
-      log_bin_dir = strdup("./");
     }
+  }
+  fclose(f_index);
 
-    dirname_part(log_bin_dir, log_bin_dir, &log_bin_dir_length);
-
-    /* strip final slash if it is not the only path component */
-    if (log_bin_dir_length > 1 &&
-        log_bin_dir[log_bin_dir_length - 1] == FN_LIBCHAR) {
-      log_bin_dir[log_bin_dir_length - 1] = 0;
-    }
-
-    if (log_bin_dir == NULL || log_bin_file == NULL) {
-      msg("Failed to get master binlog coordinates from "
-          "SHOW MASTER STATUS");
-      result = false;
-      goto cleanup;
-    }
-
-    snprintf(filepath, sizeof(filepath), "%s%c%s", log_bin_dir, FN_LIBCHAR,
-             log_bin_file);
-    result = copy_file(ds_data, filepath, log_bin_file, 0);
+  if (!result) {
+    msg("xtrabackup: Error cannot find current log file in the '%s'\n",
+        log_bin_index);
   }
 
 cleanup:
-  free_mysql_variables(status_after_flush);
-  free_mysql_variables(status);
   free_mysql_variables(vars);
 
   return (result);

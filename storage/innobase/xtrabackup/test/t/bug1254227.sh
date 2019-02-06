@@ -32,7 +32,11 @@ echo "exit" >&3
 exec 3>&-
 wait $client_pid
 
-xtrabackup --prepare --target-dir=$topdir/full
+xtrabackup --prepare --target-dir=$topdir/full --rollback-prepared-trx
+
+if ! egrep -q "Rollback of trx with id [0-9]+ completed" $OUTFILE ; then
+  die "XA prepared transaction was not rolled back!"
+fi
 
 stop_server
 
