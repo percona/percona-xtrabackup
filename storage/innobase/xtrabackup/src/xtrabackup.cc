@@ -5490,6 +5490,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   xb_filter_entry_t *table;
   const fil_space_t *fil_space;
   space_id_t f_space_id;
+  os_file_create_t create_option = OS_FILE_OPEN;
 
   *success = false;
 
@@ -5518,6 +5519,17 @@ static pfs_os_file_t xb_delta_open_matching_space(
   }
 
   if (space_id != SPACE_UNKNOWN && !fsp_is_ibd_tablespace(space_id)) {
+    /* since undo tablespaces cannot be renamed, we must either open existing
+    with the same name or create new one */
+    if (fsp_is_undo_tablespace(space_id)) {
+      bool exists;
+      os_file_type_t type;
+
+      os_file_status(real_name, &exists, &type);
+      if (!exists) {
+        create_option = OS_FILE_CREATE;
+      }
+    }
     goto found;
   }
 
@@ -5572,8 +5584,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   }
 
   if (space_id == SPACE_UNKNOWN) {
-    msg("xtrabackup: Error: Cannot handle DDL operation on tablespace "
-        "%s\n",
+    msg("xtrabackup: Error: Cannot handle DDL operation on tablespace %s\n",
         dest_space_name);
     exit(EXIT_FAILURE);
   }
@@ -5636,7 +5647,8 @@ found:
   /* open the file and return it's handle */
 
   file = os_file_create_simple_no_error_handling(
-      0, real_name, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode, &ok);
+      0, real_name, create_option, OS_FILE_READ_WRITE,
+      srv_read_only_mode, &ok);
 
   if (ok) {
     *success = true;
