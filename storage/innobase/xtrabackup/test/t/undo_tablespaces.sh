@@ -59,6 +59,13 @@ job_master=$!
 
 xtrabackup --backup --target-dir=$topdir/backup
 
+mysql -e "CREATE UNDO TABLESPACE undo5 ADD DATAFILE '$undo_directory_ext/undo3.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo6 ADD DATAFILE '$undo_directory_ext/undo4.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo7 ADD DATAFILE 'undo3.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo8 ADD DATAFILE 'undo4.ibu'"
+
+xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/backup
+
 kill -SIGKILL $job_master
 stop_server
 
@@ -66,19 +73,21 @@ rm -rf $MYSQLD_DATADIR/*
 rm -rf $undo_directory/*
 rm -rf $undo_directory_ext/*
 
-xtrabackup --prepare --target-dir=$topdir/backup
+xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc
 
 xtrabackup --copy-back --target-dir=$topdir/backup
 
 
 for file in $undo_directory_ext/undo1.ibu $undo_directory_ext/undo2.ibu \
-        $undo_directory/undo1.ibu $undo_directory/undo2.ibu ; do
+        $undo_directory/undo1.ibu $undo_directory/undo2.ibu \
+        $undo_directory_ext/undo3.ibu $undo_directory_ext/undo4.ibu \
+        $undo_directory/undo3.ibu $undo_directory/undo4.ibu ; do
     if [ ! -f $file ] ; then
         vlog "Tablepace $file is missing!"
         exit -1
     fi
 done
-
 
 start_server
 
