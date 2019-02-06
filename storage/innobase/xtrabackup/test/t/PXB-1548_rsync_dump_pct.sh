@@ -20,11 +20,15 @@ mkdir $topdir/backup
 
 xtrabackup --backup --dump-innodb-buffer-pool --dump-innodb-buffer-pool-pct=100 --rsync --target-dir=$topdir/backup
 
-$MYSQL $MYSQL_ARGS -e \
-       "SHOW ENGINE INNODB STATUS\G" | grep "Database pages" \
-       | head -1 | awk '{print $3}' > $topdir/status1
-       
-cat $topdir/backup/ib_buffer_pool | wc -l > $topdir/status2
+status=$($MYSQL $MYSQL_ARGS -N -e "SHOW STATUS LIKE 'Innodb_buffer_pool_load_status'")
 
-diff -q $topdir/status1 $topdir/status2 \
-|| die "Not all pages were dumped"
+echo $status
+
+if [[ ! $status =~ "completed at" ]] ; then
+    die "Not all pages were dumped"
+fi
+
+diff -u $mysql_datadir/ib_buffer_pool $topdir/backup/ib_buffer_pool
+
+diff -q $mysql_datadir/ib_buffer_pool $topdir/backup/ib_buffer_pool || \
+   die "xtrabackup copied incomplete buffer pool"
