@@ -929,8 +929,10 @@ srv_undo_tablespaces_init(
 		for (uint i = 0; i < dir->number_off_files; ++i) {
 			const fileinfo& file = dir->dir_entry[i];
 			ulint id = 0;
+			int pos;
 			if (MY_S_ISREG(file.mystat->st_mode) &&
-			    sscanf(file.name, "undo%03lu", &id) == 1) {
+			    sscanf(file.name, "undo%03lu%n", &id, &pos) == 1 &&
+			    pos == (int) strlen(file.name)) {
 				undo_tablespace_ids[j++] = id;
 			}
 		}
