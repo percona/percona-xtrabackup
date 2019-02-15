@@ -5711,7 +5711,7 @@ static bool xtrabackup_apply_delta(
   pfs_os_file_t src_file = XB_FILE_UNDEFINED;
   pfs_os_file_t dst_file = XB_FILE_UNDEFINED;
   char src_path[FN_REFLEN];
-  char dst_path[FN_REFLEN];
+  char dst_path[FN_REFLEN * 2 + 1];
   char meta_path[FN_REFLEN];
   char space_name[FN_REFLEN];
   bool success;

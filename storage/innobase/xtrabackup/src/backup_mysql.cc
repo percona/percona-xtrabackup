@@ -39,24 +39,28 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
+#include <binlog_event.h>
 #include <ha_prototypes.h>
 #include <my_rapidjson_size_t.h>
 #include <my_sys.h>
 #include <mysql.h>
 #include <os0thread-create.h>
 #include <rapidjson/document.h>
+#include <rpl_log_encryption.h>
 #include <sql_list.h>
 #include <sql_plugin.h>
 #include <srv0srv.h>
 #include <string.h>
+#include <fstream>
 #include <limits>
 #include "backup_copy.h"
 #include "common.h"
+#include "keyring_plugins.h"
 #include "mysqld.h"
+#include "space_map.h"
 #include "typelib.h"
 #include "xb0xb.h"
 #include "xtrabackup.h"
-#include "space_map.h"
 #include "xtrabackup_version.h"
 
 #include "backup_mysql.h"
@@ -1409,8 +1413,29 @@ cleanup:
   return (result);
 }
 
-/*********************************************************************/ /**
- Copy the current binary log file into the backup */
+/**
+ Get encryption header size for given file by reading its magic header
+
+ @param filepath[in] binlog file size
+ @return encryption header size
+*/
+size_t binlog_encryption_header_size(const char *filepath) {
+  std::ifstream fstr(filepath);
+  char magic[Rpl_encryption_header::ENCRYPTION_MAGIC_SIZE];
+  fstr.read(magic, Rpl_encryption_header::ENCRYPTION_MAGIC_SIZE);
+  if (memcmp(magic, Rpl_encryption_header::ENCRYPTION_MAGIC,
+             Rpl_encryption_header::ENCRYPTION_MAGIC_SIZE) == 0) {
+    return (Rpl_encryption_header_v1::HEADER_SIZE);
+  }
+  return (0);
+}
+
+/**
+ Copy the current binary log file into the backup
+
+ @param      connection  mysql connection
+ @return     true if success
+*/
 bool write_current_binlog_file(MYSQL *connection) {
   char *log_bin_dir = nullptr;
   char *log_bin_index = nullptr;
@@ -1465,10 +1490,19 @@ bool write_current_binlog_file(MYSQL *connection) {
 
   snprintf(filepath, sizeof(filepath), "%s%c%s", log_bin_dir, FN_LIBCHAR,
            log_status.filename.c_str());
-  result = copy_file(ds_data, filepath, log_status.filename.c_str(), 0,
-                     log_status.position);
+  result =
+      copy_file(ds_data, filepath, log_status.filename.c_str(), 0,
+                log_status.position + binlog_encryption_header_size(filepath));
   if (!result) {
     goto cleanup;
+  }
+
+  if (opt_transition_key != NULL || opt_generate_transition_key) {
+    result = xb_binlog_password_store(log_status.filename.c_str());
+    if (!result) {
+      msg("xtrabackup: Error: failed to dump binary log password.\n");
+      goto cleanup;
+    }
   }
 
   log_bin_index_filename = strrchr(log_bin_index, FN_LIBCHAR);

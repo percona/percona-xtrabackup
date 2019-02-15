@@ -99,6 +99,7 @@ enum file_purpose_t {
   FILE_PURPOSE_DATAFILE,
   FILE_PURPOSE_REDO_LOG,
   FILE_PURPOSE_UNDO_LOG,
+  FILE_PURPOSE_BINLOG,
   FILE_PURPOSE_OTHER
 };
 
@@ -815,7 +816,9 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
   memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE);
 
   space.id = page_get_space_id(page);
-  xb_fetch_tablespace_key(space.id, space.encryption_key, space.encryption_iv);
+  bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
+                                       space.encryption_iv);
+  ut_a(found);
   space.encryption_type = Encryption::AES;
   space.encryption_klen = ENCRYPTION_KEY_LEN;
 
@@ -936,7 +939,7 @@ bool backup_files(const char *from, bool prep_mode) {
               }
             } else if (!prep_mode) {
               /* backup fake file into empty directory */
-              char opath[FN_REFLEN];
+              char opath[FN_REFLEN + 10];
               snprintf(opath, sizeof(opath), "%s/db.opt", path);
               if (!(ret = backup_file_printf(trim_dotslash(opath), "%s", ""))) {
                 msg("Failed to create file %s\n", opath);
@@ -984,7 +987,7 @@ bool backup_files(const char *from, bool prep_mode) {
 
     if (!prep_mode && !opt_no_lock) {
       char path[FN_REFLEN];
-      char dst_path[FN_REFLEN];
+      char dst_path[FN_REFLEN * 2 + 1];
       char *newline;
 
       /* Remove files that have been removed between first and
@@ -1168,21 +1171,57 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
   return true;
 }
 
-/** Find binary log file and index in the backup directory
-@param[in]   dir                backup directory
-@param[out]  binlog_fn          binlog file name
-@param[out]  binlog_path        original binlog path
-                                (absolute or relative to dir)
-@param[out]  binlog_index_fn    binlog index file name
-@param[out]  binlog_index_path  original index binlog path
-                                (absolute or relative to dir)
-@param[out]  error              true if error
-@return      true if found */
-static bool find_binlog_file(const std::string &dir, std::string &binlog_fn,
-                             std::string &binlog_path,
-                             std::string &binlog_index_fn,
-                             std::string &binlog_index_path, bool &error) {
-  binlog_fn = binlog_path = binlog_index_fn = binlog_index_path = "";
+struct binlog_file_location {
+  /* binlog file path */
+  std::string path;
+
+  /* binlog file name */
+  std::string name;
+
+  /* binlog index path */
+  std::string index_path;
+
+  /* binlog index name */
+  std::string index_name;
+
+  /**
+    Find binary log file and index in the backup directory
+
+    @param[in]  dir     backup directory
+    @param[out] binlog  binlog location
+    @param[out] error   true if error
+    @return     true if found
+  */
+  static bool find_binlog(const std::string &dir, binlog_file_location &binlog,
+                          bool &error);
+
+  std::vector<std::string> files() const {
+    std::vector<std::string> result;
+    if (!name.empty()) {
+      result.push_back(name);
+    }
+    if (!index_name.empty()) {
+      result.push_back(index_name);
+    }
+    return (result);
+  }
+
+  std::vector<std::pair<std::string, std::string>> target_files() const {
+    std::vector<std::pair<std::string, std::string>> result;
+    if (!name.empty()) {
+      result.push_back(std::make_pair(name, path));
+    }
+    if (!index_name.empty()) {
+      result.push_back(std::make_pair(index_name, index_path));
+    }
+    return (result);
+  }
+};
+
+bool binlog_file_location::find_binlog(const std::string &dir,
+                                       binlog_file_location &binlog,
+                                       bool &error) {
+  binlog = binlog_file_location();
   error = false;
 
   Dir_Walker::walk(dir, false, [&](const std::string &path) mutable {
@@ -1200,33 +1239,33 @@ static bool find_binlog_file(const std::string &dir, std::string &binlog_fn,
 
       for (std::string line; std::getline(f_index, line);) {
         dirname_part(dirname, line.c_str(), &dirname_length);
-        binlog_fn = line.substr(dirname_length, std::string::npos);
+        binlog.name = line.substr(dirname_length, std::string::npos);
         binlog_dir = dirname;
-        binlog_path = line;
+        binlog.path = line;
       }
 
-      std::string binlog_basename = binlog_fn;
+      std::string binlog_basename = binlog.name;
       binlog_basename.replace(binlog_basename.find_last_of("."),
                               std::string::npos, ".index");
 
       if (opt_binlog_index_name != nullptr && opt_binlog_index_name[0] != 0) {
-        binlog_index_path = opt_binlog_index_name;
-        if (!ends_with(binlog_index_path.c_str(), ".index")) {
-          binlog_index_path.append(".index");
+        binlog.index_path = opt_binlog_index_name;
+        if (!ends_with(binlog.index_path.c_str(), ".index")) {
+          binlog.index_path.append(".index");
         }
       } else {
-        binlog_index_path = path;
+        binlog.index_path = path;
       }
 
-      dirname_part(dirname, binlog_index_path.c_str(), &dirname_length);
-      binlog_index_fn =
-          binlog_index_path.substr(dirname_length, std::string::npos);
+      dirname_part(dirname, binlog.index_path.c_str(), &dirname_length);
+      binlog.index_name =
+          binlog.index_path.substr(dirname_length, std::string::npos);
     }
 
     return (true);
   });
 
-  return (!binlog_fn.empty());
+  return (!binlog.name.empty());
 }
 
 bool copy_incremental_over_full() {
@@ -1294,15 +1333,14 @@ bool copy_incremental_over_full() {
       }
     }
 
-    std::string binlog_fn, binlog_path;
-    std::string binlog_index_fn, binlog_index_path;
+    binlog_file_location binlog;
     char fullpath[FN_REFLEN];
     bool err;
 
-    if (find_binlog_file(".", binlog_fn, binlog_path, binlog_index_fn,
-                         binlog_index_path, err)) {
-      unlink(binlog_fn.c_str());
-      unlink(binlog_index_fn.c_str());
+    if (binlog_file_location::find_binlog(".", binlog, err)) {
+      for (auto file : binlog.files()) {
+        unlink(file.c_str());
+      }
     }
 
     if (err) {
@@ -1310,20 +1348,15 @@ bool copy_incremental_over_full() {
       goto cleanup;
     }
 
-    if (find_binlog_file(xtrabackup_incremental_dir, binlog_fn, binlog_path,
-                         binlog_index_fn, binlog_index_path, err)) {
-      fn_format(fullpath, binlog_fn.c_str(), xtrabackup_incremental_dir, "",
-                MYF(MY_RELATIVE_PATH));
-      ret = copy_file(ds_data, fullpath, binlog_fn.c_str(), 0);
-      if (!ret) {
-        goto cleanup;
-      }
-
-      fn_format(fullpath, binlog_index_fn.c_str(), xtrabackup_incremental_dir,
-                "", MYF(MY_RELATIVE_PATH));
-      ret = copy_file(ds_data, fullpath, binlog_index_fn.c_str(), 0);
-      if (!ret) {
-        goto cleanup;
+    if (binlog_file_location::find_binlog(xtrabackup_incremental_dir, binlog,
+                                          err)) {
+      for (auto file : binlog.files()) {
+        fn_format(fullpath, file.c_str(), xtrabackup_incremental_dir, "",
+                  MYF(MY_RELATIVE_PATH));
+        ret = copy_file(ds_data, fullpath, file.c_str(), 0);
+        if (!ret) {
+          goto cleanup;
+        }
       }
     }
 
@@ -1580,8 +1613,7 @@ bool copy_back(int argc, char **argv) {
   ulint i;
   bool ret = true, err;
   char *dst_dir;
-  std::string binlog_fn, binlog_path;
-  std::string binlog_index_fn, binlog_index_path;
+  binlog_file_location binlog;
 
   ut_crc32_init();
 
@@ -1763,20 +1795,25 @@ bool copy_back(int argc, char **argv) {
   ds_data = ds_create(mysql_data_home, DS_TYPE_LOCAL);
 
   /* copy binary log and .index files */
-  if (find_binlog_file(".", binlog_fn, binlog_path, binlog_index_fn,
-                       binlog_index_path, err)) {
-    if (!(ret = copy_or_move_file(binlog_fn.c_str(), binlog_path.c_str(),
-                                  mysql_data_home, 1, FILE_PURPOSE_OTHER))) {
-      goto cleanup;
+  if (binlog_file_location::find_binlog(".", binlog, err)) {
+    for (auto file : binlog.target_files()) {
+      if (!(ret = copy_or_move_file(file.first.c_str(), file.second.c_str(),
+                                    mysql_data_home, 1, FILE_PURPOSE_BINLOG))) {
+        goto cleanup;
+      }
+      /* make sure we don't copy binary log and .index files twice */
+      skip_copy_back_list.insert(file.first);
     }
-    if (!(ret = copy_or_move_file(binlog_index_fn.c_str(),
-                                  binlog_index_path.c_str(), mysql_data_home, 1,
-                                  FILE_PURPOSE_OTHER))) {
-      goto cleanup;
+    if (opt_generate_new_master_key) {
+      /* reencrypt binlog password with new master key */
+      char binlog_fullpath[FN_REFLEN];
+      fn_format(binlog_fullpath, binlog.path.c_str(), mysql_data_home, "",
+                MYF(MY_RELATIVE_PATH));
+      ret = xb_binlog_password_reencrypt(binlog_fullpath);
+      if (!ret) {
+        msg("xtrabackup: Error: failed to reencrypt binary log file header.\n");
+      }
     }
-    /* make sure we don't copy binary log and .index files twice */
-    skip_copy_back_list.insert(binlog_index_fn);
-    skip_copy_back_list.insert(binlog_fn);
   }
 
   if (err) {
