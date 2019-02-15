@@ -17,12 +17,15 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 *******************************************************/
 
 #include <base64.h>
+#include <dict0dict.h>
 #include <my_aes.h>
 #include <my_default.h>
 #include <my_rnd.h>
 #include <mysql/components/services/log_builtins.h>
 #include <mysql/service_mysql_keyring.h>
 #include <mysqld.h>
+#include <sql/log_event.h>
+#include <sql/rpl_log_encryption.h>
 #include <sql/sql_list.h>
 #include <sql/sql_plugin.h>
 #include <sql_plugin.h>
@@ -49,7 +52,10 @@ extern st_mysql_plugin *mysql_mandatory_plugins[];
 
 const char *XTRABACKUP_KEYS_FILE = "xtrabackup_keys";
 const char *XTRABACKUP_KEYS_MAGIC = "KEYSV01";
-const size_t XTRABACKUP_KEYS_MAGIC_SIZE = 7;
+constexpr size_t XTRABACKUP_KEYS_MAGIC_SIZE = 7;
+
+const char *BINLOG_KEY_MAGIC = "MYSQL-BINARY-LOG";
+constexpr size_t BINLOG_KEY_MAGIC_SIZE = sizeof("MYSQL-BINARY-LOG");
 
 static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
 
@@ -82,22 +88,26 @@ static void init_plugins(int argc, char **argv) {
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
 @param[out]	key		fetched tablespace iv */
-void xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv) {
+bool xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv) {
   std::map<ulint, tablespace_encryption_info>::iterator it;
 
   it = encryption_info.find(space_id);
 
-  ut_a(it != encryption_info.end());
+  if (it == encryption_info.end()) {
+    return (false);
+  }
 
   memcpy(key, it->second.key, ENCRYPTION_KEY_LEN);
   memcpy(iv, it->second.iv, ENCRYPTION_KEY_LEN);
+
+  return (true);
 }
 
 /** Save tablespace key for later use.
 @param[in]	space_id	tablespace id
 @param[in]	key		tablespace key
 @param[in]	key		tablespace iv */
-void xb_insert_tablespace_key(ulint space_id, byte *key, byte *iv) {
+void xb_insert_tablespace_key(ulint space_id, const byte *key, const byte *iv) {
   tablespace_encryption_info info;
 
   memcpy(info.key, key, ENCRYPTION_KEY_LEN);
@@ -113,7 +123,8 @@ dberr_t xb_set_encryption(fil_space_t *space) {
   byte key[ENCRYPTION_KEY_LEN];
   byte iv[ENCRYPTION_KEY_LEN];
 
-  xb_fetch_tablespace_key(space->id, key, iv);
+  bool found = xb_fetch_tablespace_key(space->id, key, iv);
+  ut_a(found);
 
   space->flags |= FSP_FLAGS_MASK_ENCRYPTION;
   return (fil_set_encryption(space->id, Encryption::AES, key, iv));
@@ -506,10 +517,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
 
   if (fread(transition_key_name, 1, sizeof(transition_key_name), f) !=
       sizeof(transition_key_name)) {
-    msg_ts(
-        "Error reading %s: failed to read "
-        "transition key name.\n",
-        XTRABACKUP_KEYS_FILE);
+    msg_ts("Error reading %s: failed to read transition key name.\n",
+           XTRABACKUP_KEYS_FILE);
     goto error;
   }
 
@@ -540,10 +549,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
                        sizeof(derived_key), my_aes_256_ecb, NULL, false);
 
     if (olen == MY_AES_BAD_DATA) {
-      msg_ts(
-          "Error reading %s: failed to decrypt key for "
-          "tablespace %lu.\n",
-          XTRABACKUP_KEYS_FILE, space_id);
+      msg_ts("Error reading %s: failed to decrypt key for tablespace %lu.\n",
+             XTRABACKUP_KEYS_FILE, space_id);
       goto error;
     }
 
@@ -552,10 +559,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
                           my_aes_256_ecb, NULL, false);
 
     if (olen == MY_AES_BAD_DATA) {
-      msg_ts(
-          "Error reading %s: failed to decrypt iv for "
-          "tablespace %lu.\n",
-          XTRABACKUP_KEYS_FILE, space_id);
+      msg_ts("Error reading %s: failed to decrypt iv for tablespace %lu.\n",
+             XTRABACKUP_KEYS_FILE, space_id);
       goto error;
     }
 
@@ -566,8 +571,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
 
     if (crc1 != crc2) {
       msg_ts(
-          "Error reading %s: failed to decrypt key and iv "
-          "for tablespace %lu. Wrong transition key?\n",
+          "Error reading %s: failed to decrypt key and iv for tablespace %lu. "
+          "Wrong transition key?\n",
           XTRABACKUP_KEYS_FILE, space_id);
       goto error;
     }
@@ -719,10 +724,8 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     if (!xb_tablespace_keys_write_single(stream, derived_key, space->id,
                                          space->encryption_key,
                                          space->encryption_iv)) {
-      msg_ts(
-          "Error writing %s: failed to save "
-          "tablespace key.\n",
-          XTRABACKUP_KEYS_FILE);
+      msg_ts("Error writing %s: failed to save tablespace key.\n",
+             XTRABACKUP_KEYS_FILE);
       return (DB_ERROR);
     }
     return (DB_SUCCESS);
@@ -736,12 +739,19 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     for (auto &key : *recv_sys->keys) {
       if (!xb_tablespace_keys_write_single(stream, derived_key, key.space_id,
                                            key.ptr, key.iv)) {
-        msg_ts(
-            "Error writing %s: failed to save "
-            "tablespace key.\n",
-            XTRABACKUP_KEYS_FILE);
+        msg_ts("Error writing %s: failed to save tablespace key.\n",
+               XTRABACKUP_KEYS_FILE);
         goto error;
       }
+    }
+  }
+
+  for (const auto entry : encryption_info) {
+    if (!xb_tablespace_keys_write_single(stream, derived_key, entry.first,
+                                         entry.second.key, entry.second.iv)) {
+      msg_ts("Error writing %s: failed to save tablespace key.\n",
+             XTRABACKUP_KEYS_FILE);
+      goto error;
     }
   }
 
@@ -751,6 +761,110 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
 error:
   ds_close(stream);
   return (false);
+}
+
+/**
+  Read encrypted binlog file header
+
+  @param[in]  istream  input stream
+  @return     encrypted binlog file header or nullptr
+*/
+static std::unique_ptr<Rpl_encryption_header> binlog_header_read(
+    Basic_istream *istream) {
+  std::unique_ptr<Rpl_encryption_header> header;
+  unsigned char magic[BINLOG_MAGIC_SIZE];
+
+  /* Open a simple istream to read the magic from the file */
+  if (istream->read(magic, BINLOG_MAGIC_SIZE) != BINLOG_MAGIC_SIZE)
+    return (nullptr);
+
+  ut_ad(Rpl_encryption_header::ENCRYPTION_MAGIC_SIZE == BINLOG_MAGIC_SIZE);
+  /* Identify the file type by the magic to get the encryption header */
+  if (memcmp(magic, Rpl_encryption_header::ENCRYPTION_MAGIC,
+             BINLOG_MAGIC_SIZE) == 0) {
+    header = Rpl_encryption_header::get_header(istream);
+    if (header == nullptr) return (nullptr);
+  } else if (memcmp(magic, BINLOG_MAGIC, BINLOG_MAGIC_SIZE) != 0) {
+    return (nullptr);
+  }
+
+  return (header);
+}
+
+/**
+  Read encrypted binlog file header
+
+  @param[in]  binlog_file_path  binlog file path
+  @return     encrypted binlog file header or nullptr
+*/
+static std::unique_ptr<Rpl_encryption_header> binlog_header_read(
+    const char *binlog_file_path) {
+  /* Open a simple istream to read the magic from the file */
+  IO_CACHE_istream istream;
+  if (istream.open(key_file_binlog, key_file_binlog_cache, binlog_file_path,
+                   MYF(MY_WME | MY_DONT_CHECK_FILESIZE), IO_SIZE * 2))
+    return (nullptr);
+
+  return binlog_header_read(&istream);
+}
+
+bool xb_binlog_password_store(const char *binlog_file_path) {
+  auto header = binlog_header_read(binlog_file_path);
+  if (header == nullptr) {
+    return (true);
+  }
+
+  Key_string file_password = header->decrypt_file_password();
+
+  unsigned char iv[ENCRYPTION_KEY_LEN]{0};
+  memcpy(iv, BINLOG_KEY_MAGIC, BINLOG_KEY_MAGIC_SIZE);
+
+  xb_insert_tablespace_key(dict_sys_t::s_invalid_space_id, file_password.data(),
+                           iv);
+
+  return (true);
+}
+
+bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
+  unsigned char key[ENCRYPTION_KEY_LEN];
+  unsigned char iv[ENCRYPTION_KEY_LEN];
+
+  bool found = xb_fetch_tablespace_key(dict_sys_t::s_invalid_space_id, key, iv);
+  if (!found) {
+    return (true);
+  }
+
+  rpl_encryption.initialize();
+  if (rpl_encryption.enable_for_xtrabackup()) {
+    msg_ts("Error: cannot generate master key for binlog encryption.\n");
+    return (false);
+  }
+
+  if (memcmp(iv, BINLOG_KEY_MAGIC, BINLOG_KEY_MAGIC_SIZE) != 0) {
+    msg_ts("Error: key entry for mysql binary log is corrupt.\n");
+    return (false);
+  }
+
+  auto header = binlog_header_read(binlog_file_path);
+
+  Key_string file_password(key, ENCRYPTION_KEY_LEN);
+  header->reset_file_password(file_password);
+
+  IO_CACHE_ostream ostream;
+  if (ostream.open(key_file_binlog, binlog_file_path,
+                   MYF(MY_WME | MY_DONT_CHECK_FILESIZE)))
+    return (false);
+
+  ostream.seek(0);
+
+  if (header->serialize(&ostream)) {
+    msg_ts(
+        "Error writing to %s. Cannot update binlog file encryption header.\n",
+        binlog_file_path);
+    return (false);
+  }
+
+  return (true);
 }
 
 /** Shutdown keyring plugins. */

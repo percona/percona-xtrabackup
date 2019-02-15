@@ -178,6 +178,7 @@ extern uint opt_read_buffer_size;
 
 extern char *opt_xtra_plugin_dir;
 extern char *opt_transition_key;
+extern bool opt_generate_transition_key;
 extern bool opt_generate_new_master_key;
 
 extern uint opt_dump_innodb_buffer_pool_timeout;

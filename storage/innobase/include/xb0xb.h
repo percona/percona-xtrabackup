@@ -28,30 +28,25 @@ extern bool opt_lock_ddl_per_table;
 
 extern bool use_dumped_tablespace_keys;
 
-/******************************************************************************
-Callback used in buf_page_io_complete() to detect compacted pages.
-@return TRUE if the page is marked as compacted, FALSE otherwise. */
-ibool buf_page_is_compacted(
-    /*==================*/
-    const byte *page); /*!< in: a database page */
-
 /** Fetch tablespace key from "xtrabackup_keys".
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
 @param[out]	key		fetched tablespace iv */
-void xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
+bool xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv)
+    MY_ATTRIBUTE((warn_unused_result));
 
 /** Save tablespace key for later use.
 @param[in]  space_id    tablespace id
 @param[in]  key     tablespace key
 @param[in]  key     tablespace iv */
-void xb_insert_tablespace_key(ulint space_id, byte *key, byte *iv);
+void xb_insert_tablespace_key(ulint space_id, const byte *key, const byte *iv);
 
 /** Fetch tablespace key from "xtrabackup_keys" and set the encryption
 type for the tablespace.
 @param[in]	space		tablespace
 @return DB_SUCCESS or error code */
-dberr_t xb_set_encryption(fil_space_t *space);
+dberr_t xb_set_encryption(fil_space_t *space)
+    MY_ATTRIBUTE((warn_unused_result));
 
 /** Add file to tablespace map.
 @param[in]	file_name	file name

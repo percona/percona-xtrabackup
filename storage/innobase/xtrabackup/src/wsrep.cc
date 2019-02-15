@@ -154,7 +154,7 @@ void xb_write_galera_info(bool incremental_prepare)
 /*==================*/
 {
   FILE *fp;
-  XID xid;
+  XID xid = XID();
   char uuid_str[40];
   wsrep_seqno_t seqno;
   MY_STAT statinfo;
@@ -166,7 +166,6 @@ void xb_write_galera_info(bool incremental_prepare)
     return;
   }
 
-  memset(&xid, 0, sizeof(xid));
   xid.set_format_id(-1);
 
   if (!trx_sys_read_wsrep_checkpoint(&xid)) {
