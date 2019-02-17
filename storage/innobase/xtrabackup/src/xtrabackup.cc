@@ -4401,7 +4401,7 @@ void xtrabackup_backup_func(void) {
     debug_sync_point("xtrabackup_suspend_at_start");
 
     if (xtrabackup_incremental) {
-      if (!xtrabackup_incremental_force_scan) {
+      if (!xtrabackup_incremental_force_scan && have_changed_page_bitmaps) {
         changed_page_bitmap = xb_page_bitmap_init();
       }
       if (!changed_page_bitmap) {
