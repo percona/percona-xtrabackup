@@ -537,7 +537,8 @@ bool trx_rseg_add_rollback_segments(space_id_t space_id, ulong target_rsegs,
 
     if (page_no == FIL_NULL) {
       /* Create the missing rollback segment if allowed. */
-      if (type == TEMP || (!srv_read_only_mode && srv_force_recovery == 0)) {
+      if (type == TEMP || (!srv_read_only_mode && srv_force_recovery == 0 &&
+                           !srv_apply_log_only)) {
         page_no = trx_rseg_create(space_id, rseg_id);
         if (page_no == FIL_NULL) {
           /* There may not be enough space in
@@ -594,8 +595,9 @@ bool trx_rseg_add_rollback_segments(space_id_t space_id, ulong target_rsegs,
 
   ulint n_known = rsegs->size();
   if (n_known < target_rsegs) {
-    if (srv_read_only_mode || srv_force_recovery > 0) {
+    if (srv_read_only_mode || srv_force_recovery > 0 || srv_apply_log_only) {
       bool use_and = srv_read_only_mode && srv_force_recovery > 0;
+      bool use_and_second = srv_read_only_mode || srv_force_recovery > 0;
 
       ib::info(ER_IB_MSG_1191)
           << "Could not create all " << target_rsegs << " rollback segments in "
@@ -603,6 +605,8 @@ bool trx_rseg_add_rollback_segments(space_id_t space_id, ulong target_rsegs,
           << (srv_read_only_mode ? " read-only mode is set" : "")
           << (use_and ? " and" : "")
           << (srv_force_recovery > 0 ? " innodb_force_recovery is set" : "")
+          << (use_and_second ? " and" : "")
+          << (srv_apply_log_only ? " --apply-log-only is set" : "")
           << ". Only " << n_known << " are active.";
 
       srv_rollback_segments =
