@@ -241,10 +241,6 @@ xb_fil_cur_result_t xb_fil_cur_read(
       cursor->page_size, cursor->zip_size != 0);
   IORequest read_request(IORequest::READ);
 
-  read_request.encryption_algorithm(Encryption::AES);
-  read_request.encryption_key(cursor->encryption_key, cursor->encryption_klen,
-                              cursor->encryption_iv);
-
   cursor->read_filter->get_next_batch(&cursor->read_filter_ctxt, &offset,
                                       &to_read);
 
@@ -307,6 +303,10 @@ read_retry:
     }
     return (XB_FIL_CUR_ERROR);
   }
+
+  read_request.encryption_algorithm(Encryption::AES);
+  read_request.encryption_key(cursor->encryption_key, cursor->encryption_klen,
+                              cursor->encryption_iv);
 
   npages = n_read >> cursor->page_size_shift;
 
