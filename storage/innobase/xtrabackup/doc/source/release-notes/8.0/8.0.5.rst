@@ -1,0 +1,87 @@
+.. _rn.8-0-5:
+
+================================================================================
+|pxb.name| |release|
+================================================================================
+
+|percona| is glad to announce the release of |pxb.name| |release| on |date|.
+Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-8.0.5/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+|Percona XtraBackup| enables MySQL backups without blocking user queries, making
+it ideal for companies with large data sets and mission-critical applications
+that cannot tolerate long periods of downtime. Offered free as an open source
+solution, it drives down backup costs while providing unique features for
+|MySQL| backups.
+
+|pxb.name| |release| introduces the support of undo tablespaces created using
+the new syntax (``CREATE UNDO TABLESPACE``) `available since MySQL 8.0.14
+<https://dev.mysql.com/doc/refman/8.0/en/create-tablespace.html>`_. |pxb.name|
+also supports the binary log encryption introduced in |MySQL| 8.0.14.
+
+Two new options were added to |xbstream|. Use the
+:option:`--decompress` option with |xbstream| to decompress individual qpress
+files. With the :option:`--decompress-threads` option, specify the
+number of threads to apply when decompressing. Thanks to `Rauli Ikonen
+<https://github.com/rikonen>`_ for this contribution.
+
+
+
+This release of |pxb.name| is a **General Availability** release ready for use
+in a production environment.
+
+All Percona software is open-source and free.
+
+.. rubric:: Please note the following about this release:
+
+- The deprecated innobackupex has been removed. Use the xtrabackup command to
+  back up your instances: ``$ xtrabackup --backup --target-dir=/data/backup``
+- When migrating from earlier database server versions, `backup and restore and
+  using Percona XtraBackup 2.4
+  <https://www.percona.com/doc/percona-xtrabackup/2.4/how-tos.html#recipes-for-xtrabackup>`_
+  and then use ``mysql_upgrade`` from |MySQL| 8.0.x
+- If using ``yum`` or ``apt`` repositories to install |Percona Xtrabackup| |release|, ensure
+  that you have enabled the new `tools` repository. You can do this with the
+  :program:`percona-release enable tools release` command and then install the
+  `percona-xtrabackup-80` package.
+
+
+New Features
+================================================================================
+
+- :jirabug:`1548`: |pxb.name| enables updating the :file:`ib_buffer_pool` file
+  with the latest pages present in the buffer pool using the
+  :option:`--dump-innodb-buffer-pool` option. Thanks to Marcelo Altmann for
+  contribution.
+- :jirabug:`1768`: Added support for undo tablespaces created with the new
+  |MySQL| 8.0.14 syntax.
+- :jirabug:`1781`: Added support for binary log encryption introduced
+  in |MySQL| 8.0.14.
+- :jirabug:`1797`: For |xbstream|, two new options were added. The
+  :option:`--decompress` option enables |xbstream| to decompress
+  individual qpress files. The :option:`--decompress-threads` option
+  controls the number of threads to apply when decompressing. Thanks to
+  `Rauli Ikonen <https://github.com/rikonen>`_ for this contribution.
+
+Bugs Fixed
+================================================================================
+
+- Using ``--lock-ddl-per-table`` caused the server to scan all records of
+  partitioned tables which could lead to the "out of memory" error. Bugs fixed
+  :jirabug:`1691` and :jirabug:`1698`.
+- When |pxb.name| was started run with the :option:`--slave-info`, incorrect
+  coordinates were written to the xtrabackup_slave_info file.. Bug fixed :jirabug:`1737`
+- |pxb.name| could crash at the prepare stage when making an
+  incremental backup if the variable ``innodb-rollback-segments`` was
+  changed after starting the |MySQL| Server. Bug fixed
+  :jirabug:`1785`.
+- The full backup could fail when |Percona Server| was started with the ``--innodb-encrypt-tables``
+  parameter. Bug fixed :jirabug:`1793`.
+
+Other bugs fixed: :jirabug:`1632`, :jirabug:`1715`, :jirabug:`1770`, :jirabug:`1771`, :jirabug:`1773`.
+
+.. |percona| replace:: Percona
+.. |pxb.name| replace:: Percona XtraBackup
+.. |date| replace:: March 4, 2019
+.. |release| replace:: 8.0.5
