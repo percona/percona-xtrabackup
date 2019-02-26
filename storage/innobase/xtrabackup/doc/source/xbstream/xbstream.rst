@@ -58,5 +58,10 @@ extracted and uncompressed by the `qpress file archiver
 <http://www.quicklz.com/>`_. This means that there is no need to decompress
 entire backup to restore a single table as with :file:`tar.gz`.
 
-Files can be decompressed using the **qpress** tool that can be downloaded from
+To decompress individual files, run |xbstream| with the
+:option:`--decompress` option. You may control the number of threads
+used for decompressing by passing the :option:`--decompress-threads`
+option.
+
+Also, files can be decompressed using the **qpress** tool that can be downloaded from
 `here <http://www.quicklz.com/>`_. Qpress supports multi-threaded decompression.
