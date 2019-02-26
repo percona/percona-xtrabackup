@@ -2047,7 +2047,7 @@ String *Item_func_format::val_str_ascii(String *str) {
     char *start_dst = dst;
 
     /* Put the fractional part */
-    if (dec) {
+    if (dec > 0) {
       dst -= (dec + 1);
       *dst = lc->decimal_point;
       memcpy(dst + 1, src + 2, dec);
