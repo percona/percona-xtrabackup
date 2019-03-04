@@ -127,7 +127,7 @@ to full backups would be:
 
 .. code-block:: mysql
 
-  mysql> CREATE USER 'bkpuser'@'localhost' IDENTIFIED BY 's3cret';
-  mysql> GRANT RELOAD, LOCK TABLES, PROCESS, REPLICATION CLIENT ON *.* TO
-         'bkpuser'@'localhost';
-  mysql> FLUSH PRIVILEGES;
+   mysql> CREATE USER 'bkpuser'@'localhost' IDENTIFIED BY 's3cr%T'; 
+   mysql> GRANT BACKUP_ADMIN, PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'bkpuser'@'localhost';
+   mysql> GRANT SELECT ON performance_schema.log_status TO 'bkpuser'@'localhost';
+   mysql> FLUSH PRIVILEGES;
