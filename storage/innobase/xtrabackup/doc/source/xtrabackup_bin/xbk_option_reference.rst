@@ -122,6 +122,14 @@ Options
    automatically remove the compressed files. In order to clean up the backup
    directory users should use :option:`--remove-original` option.
 
+   The :option:`--decompress` option may be used with |xbstream| to
+   decompress individual qpress files.
+
+.. option:: --decompress-threads=#
+
+   Force |xbstream| to use the specified number of threads for
+   decompressing.
+
 .. option:: --decrypt=ENCRYPTION-ALGORITHM
 
    Decrypts all files with the :file:`.xbcrypt` extension in a backup
