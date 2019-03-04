@@ -6,7 +6,7 @@
 
 |percona| is glad to announce the release of |pxb.name| |release| on |date|.
 Downloads are available from our `download site
-<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-8.0.5/>`_ and
+<https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and
 from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
 |Percona XtraBackup| enables MySQL backups without blocking user queries, making
