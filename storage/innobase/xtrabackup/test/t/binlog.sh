@@ -48,29 +48,110 @@ function backup_restore() {
   rm -rf $topdir/backup1
 }
 
+vlog "------- TEST 1 -------"
 FILES=""
 backup_restore --skip-log-bin
 
+vlog "------- TEST 2 -------"
 FILES="mysql-bin.index mysql-bin.000004"
 backup_restore --log-bin
 
+vlog "------- TEST 3 -------"
 FILES="binlog123.index binlog123.000003"
 backup_restore --log-bin=binlog123
 
+vlog "------- TEST 4 -------"
 FILES="binlog898.index binlog123.000003"
 backup_restore --log-bin=binlog123 --log-bin-index=binlog898
 
+vlog "------- TEST 5 -------"
 FILES="binlog898.index binlog123.000003"
 backup_restore --log-bin=binlog123 --log-bin-index=binlog898.index
 
+vlog "------- TEST 6 -------"
 FILES="log.index $topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin --log-bin-index=log
 
+vlog "------- TEST 7 -------"
 FILES="$topdir/binlog-dir1/idx.index binlog-abcd.000003"
 backup_restore --log-bin=binlog-abcd --log-bin-index=$topdir/binlog-dir1/idx
 
+vlog "------- TEST 8 -------"
 FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin --log-bin-index=$topdir/binlog-dir2/idx
 
+vlog "------- TEST 9 -------"
 FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin --log-bin-index=$topdir/binlog-dir2/idx.index
+
+
+# do the same, but with updating my.cnf
+
+vlog "------- TEST 10 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+skip-log-bin
+"
+FILES=""
+backup_restore
+
+vlog "------- TEST 11 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin
+"
+FILES="mysql-bin.index mysql-bin.000004"
+backup_restore
+
+vlog "------- TEST 12 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=binlog123
+"
+FILES="binlog123.index binlog123.000004"
+backup_restore
+
+vlog "------- TEST 13 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=binlog123
+log-bin-index=binlog898
+"
+FILES="binlog898.index binlog123.000004"
+backup_restore
+
+vlog "------- TEST 14 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=binlog123
+log-bin-index=binlog898.index
+"
+FILES="binlog898.index binlog123.000004"
+backup_restore
+
+vlog "------- TEST 15 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=$topdir/binlog-dir1/bin
+log-bin-index=log
+"
+FILES="log.index $topdir/binlog-dir1/bin.000004"
+backup_restore
+
+vlog "------- TEST 16 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=binlog-abcd
+log-bin-index=$topdir/binlog-dir1/idx
+"
+FILES="$topdir/binlog-dir1/idx.index binlog-abcd.000004"
+backup_restore
+
+vlog "------- TEST 17 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=$topdir/binlog-dir1/bin
+log-bin-index=$topdir/binlog-dir2/idx
+"
+FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000004"
+backup_restore
+
+vlog "------- TEST 18 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=$topdir/binlog-dir1/bin
+log-bin-index=$topdir/binlog-dir2/idx.index
+"
+FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000004"
+backup_restore

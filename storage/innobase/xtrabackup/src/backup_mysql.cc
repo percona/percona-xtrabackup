@@ -1457,7 +1457,13 @@ bool write_current_binlog_file(MYSQL *connection) {
 
   if (opt_binlog_index_name != nullptr) {
     free(log_bin_index);
-    log_bin_index = strdup(opt_binlog_index_name);
+    std::string index = opt_binlog_index_name;
+    if (index.length() < 6 ||
+        index.compare(index.length() - 6, index.length(), ".index") != 0) {
+      /* doesn't end with .index */
+      index.append(".index");
+    }
+    log_bin_index = strdup(index.c_str());
   } else if (log_bin_index == nullptr) {
     /* if index file name is not set, compose it from the current log file name
     by replacing its number with ".index" */
