@@ -87,11 +87,6 @@ Options
    unless :option:`xtrabackup --force-non-empty-directories` option is
    specified.
 
-.. option:: --create-ib-logfile
-
-   This option is not currently implemented. To create the InnoDB log files,
-   you must prepare the backup twice at present.
-
 .. option:: --databases=#
 
    This option specifies the list of databases and tables that should be backed
