@@ -19,9 +19,6 @@ Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
 BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
-%if 0%{?rhel} > 6 
-BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6 
-%endif
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24
 Requires:       perl(DBD::mysql), rsync
 Requires:	perl(Digest::MD5)
