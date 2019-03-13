@@ -59,6 +59,13 @@ export CXX=${CXX-"g++"}
 export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
+%if 0%{?rhel} == 8
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/subunit2junitxml
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-two-script.py
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-script.py
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/run.py
+%endif
+#
 cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
   -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
   -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1 .
