@@ -117,6 +117,10 @@ Options
    for your |MySQL| server, so it should be read from :file:`my.cnf` if that
    exists; otherwise you must specify it on the command line.
 
+   When combined with the :option:`xtrabackup --copy-back` or
+   :option:`xtrabackup --move-back` option, :option:`xtrabackup --datadir`
+   refers to the destination directory.
+
 .. option:: --decompress
 
    Decompresses all files with the :file:`.qp` extension in a backup previously
