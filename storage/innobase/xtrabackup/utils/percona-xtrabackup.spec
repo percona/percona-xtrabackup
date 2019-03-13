@@ -112,7 +112,7 @@ rm -rf $RPM_BUILD_ROOT
 * Thu Oct 30 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.3.0alpha1
 
-* Wed Sep 29 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
+* Mon Sep 29 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Update to new release Percona XtraBackup 2.2.6
 
 * Fri Sep 26 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
@@ -121,7 +121,7 @@ rm -rf $RPM_BUILD_ROOT
 * Thu Sep 11 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - Changed options to build with system zlib
 
-* Mon Jun 10 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
+* Tue Jun 10 2014 Tomislav Plavcic <tomislav.plavcic@percona.com>
 - renamed package from percona-xtrabackup-22 to percona-xtrabackup
 
 * Wed Mar 26 2014 Alexey Bychko <alexey.bychko@percona.com>
