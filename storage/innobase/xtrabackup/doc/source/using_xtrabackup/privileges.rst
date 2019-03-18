@@ -77,7 +77,7 @@ Permissions and Privileges Needed
 =================================
 
 Once connected to the server, in order to perform a backup you will need
-``READ``, ``WRITE`` and ``EXECUTE`` permissions at a filesystem level in the
+``READ`` and ``EXECUTE`` permissions at a filesystem level in the
 server's :term:`datadir`.
 
 The database user needs the following privileges on the tables/databases to be
