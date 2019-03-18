@@ -375,7 +375,8 @@ Options
 
 .. option:: --keyring-file-data=FILENAME
 
-   The path to the keyring file.
+   The path to the keyring file. Combine this option with
+   :option:`xtrabackup --xtrabackup-plugin-dir`.
 
 .. option:: --lock-ddl
 
@@ -656,5 +657,16 @@ Options
 .. option:: --version
 
    This option prints |xtrabackup| version and exits.
+
+.. option:: --xtrabackup-plugin-dir=DIRNAME
+
+   The absolute path to the directory that contains the ``keyring`` plugin.
+
+   .. seealso::
+
+      |Percona Server| Documentation: keyring_vault plugin with Data at Rest Encryption
+         https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html#keyring-vault-plugin
+      |MySQL| Documentation: Using the keyring_file File-Based Plugin
+         https://dev.mysql.com/doc/refman/5.7/en/keyring-file-plugin.html
 
 .. |program| replace:: :program:`xtrabackup`
