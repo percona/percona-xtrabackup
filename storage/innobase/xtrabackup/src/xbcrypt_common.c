@@ -96,8 +96,6 @@ xb_libgcrypt_init()
 		if (!gcrypt_version) {
 			msg("encryption: failed to initialize libgcrypt\n");
 			return 1;
-		} else {
-			msg("encryption: using gcrypt %s\n", gcrypt_version);
 		}
 	}
 

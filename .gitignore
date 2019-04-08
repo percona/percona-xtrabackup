@@ -3124,7 +3124,7 @@ client/mysql_ssl_rsa_setup
 storage/innobase/xtrabackup/test/var/*
 storage/innobase/xtrabackup/test/results/*
 storage/innobase/xtrabackup/test/test_results.subunit
-storage/innobase/xtrabackup/src/xbcloud
+storage/innobase/xtrabackup/src/xbcloud/xbcloud
 storage/innobase/xtrabackup/src/xbcrypt
 storage/innobase/xtrabackup/src/xbstream
 storage/innobase/xtrabackup/innobackupex

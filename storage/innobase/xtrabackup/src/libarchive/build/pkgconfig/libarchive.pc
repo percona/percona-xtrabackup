@@ -8,4 +8,4 @@ Description: library that can create and read several streaming archive formats
 Version: 3.3.1
 Cflags: -I${includedir}
 Libs: -L${libdir} -larchive
-Libs.private:  -lz
+Libs.private:  -lz -lacl
