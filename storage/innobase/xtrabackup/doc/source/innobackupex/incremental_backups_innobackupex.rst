@@ -185,12 +185,23 @@ directory. Otherwise, the files will be created by the server once started.
 Restoring Incremental Backups with |innobackupex|
 ================================================================================
 
-After preparing the incremental backups, the base directory contains the same data
-as the full backup. For restoring it, you can use:
+After preparing the incremental backups, the base directory contains the same
+data as the full backup. For restoring it, you can use the :option:`xtrabackup
+--copy-back` parameter:
 
 .. code-block:: bash
 
-   $ innobackupex --copy-back BASE-DIR
+   $ xtrabackup --copy-back --target-dir=BASE-DIR
+
+If the incremental backup was created using the :option:`xtrabackup --compress`
+option, then you need to run :option:`xtrabackup --decompress` followed by
+:option:`xtrabackup --copy-back`.
+
+.. code-block:: bash
+
+
+   $ xtrabackup --decompress --target-dir=BASE-DIR
+   $ xtrabackup --copy-back --target-dir=BASE-DIR
 
 You may have to change the ownership as detailed on :doc:`restoring_a_backup_ibk`.
 
