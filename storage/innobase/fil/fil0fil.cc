@@ -7292,47 +7292,9 @@ dberr_t Fil_shard::get_file_for_io(const IORequest &req_type,
   } else if (!space->files.empty()) {
     fil_node_t &f = space->files.front();
 
-    if ((fsp_is_ibd_tablespace(space->id) && f.size == 0) ||
-        f.size > *page_no) {
-      /* We do not know the size of a single-table tablespace
-      before we open the file */
+    file = &f;
 
-      file = &f;
-
-      return (DB_SUCCESS);
-
-    } else {
-      /* Extend the file if the page_no does not fall inside its bounds;
-      because xtrabackup may have copied it when it was smaller */
-      if (f.size > 0 && f.size <= *page_no) {
-        auto shard = fil_system->shard_by_id(space->id);
-
-        shard->mutex_release();
-        bool success = shard->space_extend(space, *page_no + 1);
-        shard->mutex_acquire();
-
-        if (!success) {
-          file = nullptr;
-          return (DB_ERROR);
-        }
-
-        file = &f;
-        return (DB_SUCCESS);
-      }
-#ifndef UNIV_HOTBACKUP
-      if (space->id != TRX_SYS_SPACE && req_type.is_read() &&
-          !undo::is_active(space->id)) {
-        file = nullptr;
-
-        /* Page access request for a page that is
-        outside the truncated UNDO tablespace bounds. */
-
-        return (DB_TABLE_NOT_FOUND);
-      }
-#else  /* !UNIV_HOTBACKUP */
-    /* In backup, is_under_construction() is always false */
-#endif /* !UNIV_HOTBACKUP */
-    }
+    return (DB_SUCCESS);
   }
 
   file = nullptr;
@@ -7539,6 +7501,10 @@ dberr_t Fil_shard::do_io(const IORequest &type, bool sync,
   dberr_t err = get_file_for_io(req_type, space, &page_no, file);
 
   if (err == DB_TABLE_NOT_FOUND) {
+    if (slot) {
+      release_open_slot(m_id);
+    }
+
     mutex_release();
 
     return (err);
@@ -7607,13 +7573,18 @@ dberr_t Fil_shard::do_io(const IORequest &type, bool sync,
       return (DB_ERROR);
     }
 
-    /* This is a hard error. */
-    fil_report_invalid_page_access(page_id.page_no(), page_id.space(),
-                                   space->name, byte_offset, len,
-                                   req_type.is_read());
-  }
+    /* Extend the file if the page_no does not fall inside its bounds;
+       because xtrabackup may have copied it when it was smaller */
+      mutex_release();
 
-  mutex_release();
+      bool success = space_extend(space, page_no + 1);
+
+      if (!success) {
+        return (DB_ERROR);
+      }
+    } else {
+      mutex_release();
+  }
 
   ut_a(page_size.is_compressed() ||
        page_size.physical() == page_size.logical());
