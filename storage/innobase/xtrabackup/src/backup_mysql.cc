@@ -448,6 +448,7 @@ get_mysql_vars(MYSQL *connection)
 	char *innodb_log_checksums_var = NULL;
 	char *innodb_log_checksum_algorithm_var = NULL;
 	char *innodb_checksum_algorithm_var = NULL;
+	char *innodb_track_changed_pages_var = NULL;
 	char *server_uuid_var = NULL;
 
 	unsigned long server_version = mysql_get_server_version(connection);
@@ -481,6 +482,7 @@ get_mysql_vars(MYSQL *connection)
 		{"innodb_log_checksum_algorithm",
 			&innodb_log_checksum_algorithm_var},
 		{"innodb_checksum_algorithm", &innodb_checksum_algorithm_var},
+		{"innodb_track_changed_pages", &innodb_track_changed_pages_var},
 		{"server_uuid", &server_uuid_var},
 		{NULL, NULL}
 	};
@@ -670,6 +672,11 @@ get_mysql_vars(MYSQL *connection)
 			ENCRYPTION_SERVER_UUID_LEN);
 	}
 
+	if (innodb_track_changed_pages_var != NULL &&
+	    strcasecmp(innodb_track_changed_pages_var, "ON") == 0) {
+	  have_changed_page_bitmaps = true;
+	}
+
 out:
 	free_mysql_variables(mysql_vars);
 
@@ -682,21 +689,7 @@ Query the server to find out what backup capabilities it supports.
 bool
 detect_mysql_capabilities_for_backup()
 {
-	const char *query = "SELECT 'INNODB_CHANGED_PAGES', COUNT(*) FROM "
-				"INFORMATION_SCHEMA.PLUGINS "
-			    "WHERE PLUGIN_NAME LIKE 'INNODB_CHANGED_PAGES'";
-	char *innodb_changed_pages = NULL;
-	mysql_variable vars[] = {
-		{"INNODB_CHANGED_PAGES", &innodb_changed_pages}, {NULL, NULL}};
-
 	if (xtrabackup_incremental) {
-
-		read_mysql_variables(mysql_connection, query, vars, true);
-
-		ut_ad(innodb_changed_pages != NULL);
-
-		have_changed_page_bitmaps = (atoi(innodb_changed_pages) == 1);
-
 		/* INNODB_CHANGED_PAGES are listed in
 		INFORMATION_SCHEMA.PLUGINS in MariaDB, but
 		FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS
@@ -706,8 +699,6 @@ detect_mysql_capabilities_for_backup()
 		    mysql_server_version < 100106) {
 			have_changed_page_bitmaps = false;
 		}
-
-		free_mysql_variables(vars);
 	}
 
 	/* do some sanity checks */

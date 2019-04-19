@@ -150,6 +150,7 @@ char *xtrabackup_incremental = NULL;
 lsn_t incremental_lsn;
 lsn_t incremental_to_lsn;
 lsn_t incremental_last_lsn;
+lsn_t incremental_flushed_lsn;
 xb_page_bitmap *changed_page_bitmap = NULL;
 
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
@@ -2196,19 +2197,17 @@ xtrabackup_read_metadata(char *filename)
 		r = FALSE;
 		goto end;
 	}
-	/* Use UINT64PF instead of LSN_PF here, as we have to maintain the file
-	format. */
-	if (fscanf(fp, "from_lsn = " UINT64PF "\n", &metadata_from_lsn)
+	if (fscanf(fp, "from_lsn = " LSN_PF "\n", &metadata_from_lsn)
 			!= 1) {
 		r = FALSE;
 		goto end;
 	}
-	if (fscanf(fp, "to_lsn = " UINT64PF "\n", &metadata_to_lsn)
+	if (fscanf(fp, "to_lsn = " LSN_PF "\n", &metadata_to_lsn)
 			!= 1) {
 		r = FALSE;
 		goto end;
 	}
-	if (fscanf(fp, "last_lsn = " UINT64PF "\n", &metadata_last_lsn)
+	if (fscanf(fp, "last_lsn = " LSN_PF "\n", &metadata_last_lsn)
 			!= 1) {
 		metadata_last_lsn = 0;
 	}
@@ -2223,6 +2222,11 @@ xtrabackup_read_metadata(char *filename)
 	if (fscanf(fp, "recover_binlog_info = %d\n", &t) == 1) {
 		recover_binlog_info = (t == 1);
 	}
+
+	if (fscanf(fp, "flushed_lsn = " LSN_PF "\n",
+		   &backup_redo_log_flushed_lsn) != 1) {
+		backup_redo_log_flushed_lsn = 0;
+	}
 end:
 	fclose(fp);
 
@@ -2235,15 +2239,14 @@ static
 void
 xtrabackup_print_metadata(char *buf, size_t buf_len)
 {
-	/* Use UINT64PF instead of LSN_PF here, as we have to maintain the file
-	format. */
 	snprintf(buf, buf_len,
 		 "backup_type = %s\n"
-		 "from_lsn = " UINT64PF "\n"
-		 "to_lsn = " UINT64PF "\n"
-		 "last_lsn = " UINT64PF "\n"
+		 "from_lsn = " LSN_PF "\n"
+		 "to_lsn = " LSN_PF "\n"
+		 "last_lsn = " LSN_PF "\n"
 		 "compact = %d\n"
-		 "recover_binlog_info = %d\n",
+		 "recover_binlog_info = %d\n"
+		 "flushed_lsn = " LSN_PF "\n",
 		 metadata_type,
 		 metadata_from_lsn,
 		 metadata_to_lsn,
@@ -2251,7 +2254,8 @@ xtrabackup_print_metadata(char *buf, size_t buf_len)
 		 MY_TEST(xtrabackup_compact == TRUE),
 		 MY_TEST((xtrabackup_backup &&
 			  (opt_binlog_info == BINLOG_INFO_LOCKLESS)) ||
-			 (xtrabackup_prepare && recover_binlog_info)));
+			 (xtrabackup_prepare && recover_binlog_info)),
+		 backup_redo_log_flushed_lsn);
 }
 
 /***********************************************************************
@@ -4918,7 +4922,8 @@ reread_log_header:
 	debug_sync_point("xtrabackup_suspend_at_start");
 
 	if (xtrabackup_incremental) {
-		if (!xtrabackup_incremental_force_scan) {
+		if (!xtrabackup_incremental_force_scan &&
+		    have_changed_page_bitmaps) {
 			changed_page_bitmap = xb_page_bitmap_init();
 		}
 		if (!changed_page_bitmap) {
@@ -6295,8 +6300,8 @@ xb_delta_open_matching_space(
 
 	if (space_id == ULINT_UNDEFINED)
 	{
-		msg("xtrabackup: Error: Cannot handle DDL operation on tablespace "
-		    "%s\n", dest_space_name);
+		msg("xtrabackup: Error: Cannot handle DDL operation on "
+		    "tablespace %s\n", dest_space_name);
 		exit(EXIT_FAILURE);
 	}
 	mutex_enter(&fil_system->mutex);
@@ -6443,8 +6448,8 @@ xtrabackup_apply_delta(
 
 	page_size = info.page_size;
 	page_size_shift = get_bit_shift(page_size);
-	msg("xtrabackup: page size for %s is %lu bytes\n",
-	    src_path, page_size);
+	msg("xtrabackup: page size for %s is %lu bytes space id is %lu\n",
+	    src_path, page_size, info.space_id);
 	if (page_size_shift < 10 ||
 	    page_size_shift > UNIV_PAGE_SIZE_SHIFT_MAX) {
 		msg("xtrabackup: error: invalid value of page_size "
@@ -6516,7 +6521,8 @@ xtrabackup_apply_delta(
 
 		for (page_in_buffer = 1; page_in_buffer < page_size / 4;
 		     page_in_buffer++) {
-			if (mach_read_from_4(incremental_buffer + page_in_buffer * 4)
+			if (mach_read_from_4(incremental_buffer +
+					     page_in_buffer * 4)
 			    == 0xFFFFFFFFUL)
 				break;
 		}
@@ -6539,7 +6545,8 @@ xtrabackup_apply_delta(
 		     page_in_buffer++) {
 			ulint offset_on_page;
 
-			offset_on_page = mach_read_from_4(incremental_buffer + page_in_buffer * 4);
+			offset_on_page = mach_read_from_4(incremental_buffer +
+							  page_in_buffer * 4);
 
 			if (offset_on_page == 0xFFFFFFFFUL)
 				break;
@@ -7658,7 +7665,11 @@ skip_check:
 		}
 	}
 
-	/* Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB */
+        if (xtrabackup_incremental) {
+		backup_redo_log_flushed_lsn = incremental_flushed_lsn;
+        }
+
+        /* Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB */
 	srv_max_n_threads = 1000;
 	/* temporally dummy value to avoid crash */
 	srv_page_size_shift = 14;
@@ -8862,7 +8873,8 @@ int main(int argc, char **argv)
 	} else if (xtrabackup_backup && xtrabackup_incremental_basedir) {
 		char	filename[FN_REFLEN];
 
-		sprintf(filename, "%s/%s", xtrabackup_incremental_basedir, XTRABACKUP_METADATA_FILENAME);
+		sprintf(filename, "%s/%s", xtrabackup_incremental_basedir,
+			XTRABACKUP_METADATA_FILENAME);
 
 		if (!xtrabackup_read_metadata(filename)) {
 			msg("xtrabackup: error: failed to read metadata from "
@@ -8875,7 +8887,8 @@ int main(int argc, char **argv)
 	} else if (xtrabackup_prepare && xtrabackup_incremental_dir) {
 		char	filename[FN_REFLEN];
 
-		sprintf(filename, "%s/%s", xtrabackup_incremental_dir, XTRABACKUP_METADATA_FILENAME);
+		sprintf(filename, "%s/%s", xtrabackup_incremental_dir,
+			XTRABACKUP_METADATA_FILENAME);
 
 		if (!xtrabackup_read_metadata(filename)) {
 			msg("xtrabackup: error: failed to read metadata from "
@@ -8886,6 +8899,7 @@ int main(int argc, char **argv)
 		incremental_lsn = metadata_from_lsn;
 		incremental_to_lsn = metadata_to_lsn;
 		incremental_last_lsn = metadata_last_lsn;
+		incremental_flushed_lsn = backup_redo_log_flushed_lsn;
 		xtrabackup_incremental = xtrabackup_incremental_dir; //dummy
 
 	} else if (opt_incremental_history_name) {

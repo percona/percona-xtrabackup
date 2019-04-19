@@ -26,7 +26,7 @@ $MYSQL $MYSQL_ARGS -Ns -e \
 
 binlog_stmts=$lock_binlog_used
 
-diff $topdir/status1 - <<EOF
+run_cmd diff -u $topdir/status1 - <<EOF
 Com_lock_tables	0
 Com_lock_tables_for_backup	1
 Com_lock_binlog_for_backup	$binlog_stmts
@@ -47,13 +47,13 @@ $MYSQL $MYSQL_ARGS -Ns -e \
 
 ((binlog_stmts+=lock_binlog_used)) || true
 
-diff $topdir/status2 - <<EOF
+run_cmd diff -u $topdir/status2 - <<EOF
 Com_lock_tables	0
 Com_lock_tables_for_backup	2
 Com_lock_binlog_for_backup	$binlog_stmts
 Com_unlock_binlog	$binlog_stmts
 Com_unlock_tables	2
-Com_flush	3
+Com_flush	2
 EOF
 
 ########################################################################
@@ -72,11 +72,11 @@ $MYSQL $MYSQL_ARGS -Ns -e \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status3
 
-diff $topdir/status3 - <<EOF
+run_cmd diff -u $topdir/status3 - <<EOF
 Com_lock_tables	0
 Com_lock_tables_for_backup	2
 Com_lock_binlog_for_backup	$binlog_stmts
 Com_unlock_binlog	$binlog_stmts
 Com_unlock_tables	3
-Com_flush	6
+Com_flush	5
 EOF
