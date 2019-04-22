@@ -526,7 +526,8 @@ trx_sys_init_at_db_start(void)
 	purge_queue = UT_NEW_NOKEY(purge_pq_t());
 	ut_a(purge_queue != NULL);
 
-	if (srv_force_recovery < SRV_FORCE_NO_UNDO_LOG_SCAN) {
+	if (srv_force_recovery < SRV_FORCE_NO_UNDO_LOG_SCAN
+	    && !srv_apply_log_only) {
 		trx_rseg_array_init(purge_queue);
 	}
 

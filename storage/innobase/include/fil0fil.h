@@ -1044,8 +1044,9 @@ fil_op_log_parse_or_replay(
 	ulint	space_id,	/*!< in: the space id of the tablespace in
 				question, or 0 if the log record should
 				only be parsed but not replayed */
-	ulint	log_flags);	/*!< in: redo log flags
+	ulint	log_flags,	/*!< in: redo log flags
 				(stored in the page number parameter) */
+	bool	apply);		/*!< in: whether to apply the record */
 
 /** Replay a file rename operation if possible.
 @param[in]	space_id	tablespace identifier

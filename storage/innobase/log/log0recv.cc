@@ -609,6 +609,7 @@ fil_name_process(
 @param[in]	first_page_no	first page number in the file
 @param[in]	type		MLOG_FILE_NAME or MLOG_FILE_DELETE
 or MLOG_FILE_CREATE2 or MLOG_FILE_RENAME2
+@param[in]	apply		whether to apply the record
 @retval	pointer to next redo log record
 @retval	NULL if this log record was truncated */
 static
@@ -618,7 +619,8 @@ fil_name_parse(
 	const byte*	end,
 	ulint		space_id,
 	ulint		first_page_no,
-	mlog_id_t	type)
+	mlog_id_t	type,
+	bool		apply)
 {
 
 	ulint flags = mach_read_from_4(ptr);
@@ -691,20 +693,21 @@ fil_name_parse(
 		if (recv_is_making_a_backup)
 			break;
 
-		if (recv_replay_file_ops
+		if (recv_replay_file_ops && apply
 			&& fil_space_get(space_id)) {
 			dberr_t	err = fil_delete_tablespace(
 				space_id, BUF_REMOVE_FLUSH_NO_WRITE);
 			ut_a(err == DB_SUCCESS);
-		}
 
-		fil_name_process(
-			name, len, space_id, true);
+			fil_name_process(
+				name, len, space_id, true);
+		}
 
 		break;
 	case MLOG_FILE_CREATE2:
 		if (recv_is_making_a_backup
 		    || (!recv_replay_file_ops)
+		    || (!apply)
 #if 0
 		    || (is_intermediate_file(abs_file_path.c_str()))
 #endif
@@ -797,13 +800,15 @@ fil_name_parse(
 		fil_name_process(name, len, space_id, false);
 		fil_name_process( new_name, new_len, space_id, false);
 
-		if (!fil_op_replay_rename(
-			space_id, first_page_no,
-			name,
-			new_name)) {
+                if (apply) {
+			if (!fil_op_replay_rename(
+				space_id, first_page_no,
+				name,
+				new_name)) {
 #if 0
-			recv_sys->found_corrupt_fs = true;
+				recv_sys->found_corrupt_fs = true;
 #endif
+			}
 		}
 	}
 
@@ -1734,6 +1739,7 @@ specified.
 @param[in]	end_ptr		end of buffer
 @param[in]	space_id	tablespace identifier
 @param[in]	page_no		page number
+@param[in]	apply		whether to apply the record
 @param[in,out]	block		buffer block, or NULL if
 a page log record should not be applied
 or if it is a MLOG_FILE_ operation
@@ -1748,6 +1754,7 @@ recv_parse_or_apply_log_rec_body(
 	byte*		end_ptr,
 	ulint		space_id,
 	ulint		page_no,
+	bool		apply,
 	buf_block_t*	block,
 	mtr_t*		mtr)
 {
@@ -1761,7 +1768,8 @@ recv_parse_or_apply_log_rec_body(
 		ut_ad(block == NULL);
 		/* Collect the file names when parsing the log,
 		before applying any log records. */
-		return(fil_name_parse(ptr, end_ptr, space_id, page_no, type));
+		return(fil_name_parse(ptr, end_ptr, space_id, page_no, type,
+				      apply));
 	case MLOG_INDEX_LOAD:
 #if 1
 		/* While scaning redo logs during  backup phase a
@@ -1797,12 +1805,12 @@ recv_parse_or_apply_log_rec_body(
 							"InnoDB Engine Status";
 
 					ib::error() << "An optimized (without"
-						" redo logging) DDLoperation"
+						" redo logging) DDL operation"
 						" has been performed. All"
 						" modified pages may not have"
 						" been flushed to the disk yet."
-						" \nPXB will not be able"
-						" take a consistent backup."
+						" \nPXB will not be able to"
+						" make a consistent backup."
 						" Retry the backup operation";
 					exit(EXIT_FAILURE);
 				}
@@ -2193,7 +2201,7 @@ recv_parse_or_apply_log_rec_body(
 		IO completion from a page read. */
 		if (page == NULL) {
 			ptr = fil_op_log_parse_or_replay(ptr, end_ptr,
-					type, space_id, 0);
+					type, space_id, 0, apply);
 		}
 		break;
 	case MLOG_FILE_DELETE:
@@ -2203,7 +2211,7 @@ recv_parse_or_apply_log_rec_body(
 		IO completion from a page read. */
 		if (page == NULL) {
 			ptr = fil_op_log_parse_or_replay(ptr, end_ptr,
-					type, 0, 0);
+					type, 0, 0, apply);
 		}
 		break;
 	default:
@@ -2595,9 +2603,10 @@ recv_recover_page_func(
 				    recv_addr->space,
 				    recv_addr->page_no));
 
-			recv_parse_or_apply_log_rec_body(
+			  recv_parse_or_apply_log_rec_body(
 				recv->type, buf, buf + recv->len,
 				recv_addr->space, recv_addr->page_no,
+				recv->start_lsn >= backup_redo_log_flushed_lsn,
 				block, &mtr);
 
 			end_lsn = recv->start_lsn + recv->len;
@@ -3149,7 +3158,7 @@ recv_parse_log_rec(
 	}
 
 	new_ptr = recv_parse_or_apply_log_rec_body(
-		*type, new_ptr, end_ptr, *space, *page_no, NULL, NULL);
+		*type, new_ptr, end_ptr, *space, *page_no, apply, NULL, NULL);
 
 	if (UNIV_UNLIKELY(new_ptr == NULL)) {
 
@@ -3298,7 +3307,8 @@ loop:
 		page no, and a pointer to the body of the log record */
 
 		len = recv_parse_log_rec(&type, ptr, end_ptr, &space,
-					 &page_no, true, &body);
+					 &page_no, recv_sys->recovered_lsn >=
+					 backup_redo_log_flushed_lsn, &body);
 
 		if (len == 0) {
 			return(false);
@@ -3387,7 +3397,9 @@ loop:
 
 				if (NULL == fil_op_log_parse_or_replay(
 					    body, end_ptr, type,
-					    space, page_no)) {
+					    space, page_no,
+					    recv_sys->recovered_lsn >=
+					    backup_redo_log_flushed_lsn)) {
 					fprintf(stderr,
 						"InnoDB: Error: file op"
 						" log record of type %lu"
@@ -3447,7 +3459,8 @@ loop:
 		for (;;) {
 			len = recv_parse_log_rec(
 				&type, ptr, end_ptr, &space, &page_no,
-				false, &body);
+				recv_sys->recovered_lsn >=
+				backup_redo_log_flushed_lsn, &body);
 
 			if (len == 0) {
 				return(false);
@@ -3535,7 +3548,8 @@ loop:
 			completely recovered (until MLOG_MULTI_REC_END). */
 			len = recv_parse_log_rec(
 				&type, ptr, end_ptr, &space, &page_no,
-				true, &body);
+				recv_sys->recovered_lsn >=
+				backup_redo_log_flushed_lsn, &body);
 
 			if (recv_sys->found_corrupt_log
 			    && !recv_report_corrupt_log(

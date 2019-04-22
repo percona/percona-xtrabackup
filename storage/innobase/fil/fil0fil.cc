@@ -2512,8 +2512,9 @@ fil_op_log_parse_or_replay(
 	ulint	space_id,	/*!< in: the space id of the tablespace in
 				question, or 0 if the log record should
 				only be parsed but not replayed */
-	ulint	log_flags)	/*!< in: redo log flags
+	ulint	log_flags,	/*!< in: redo log flags
 				(stored in the page number parameter) */
+	bool	apply)		/*!< in: whether to apply the record */
 {
 	ulint		name_len;
 	ulint		new_name_len;
@@ -2578,7 +2579,7 @@ fil_op_log_parse_or_replay(
 	printf("new name %s\n", new_name);
 	}
 	*/
-	if (!space_id || recv_is_making_a_backup) {
+	if (!space_id || recv_is_making_a_backup || !apply) {
 		return(ptr);
 	}
 
