@@ -3936,13 +3936,13 @@ dberr_t fsp_has_sdi(space_id_t space_id) {
     return (DB_TABLESPACE_NOT_FOUND);
   }
 
-#ifdef UNIV_DEBUG
+#if defined(UNIV_DEBUG) && !defined(XTRABACKUP)
   mtr_t mtr;
   mtr.start();
   ut_ad(fsp_sdi_get_root_page_num(space_id, page_size_t(space->flags), &mtr) !=
         0);
   mtr.commit();
-#endif /* UNIV_DEBUG */
+#endif /* UNIV_DEBUG && !XTRABACKUP */
 
   fil_space_release(space);
   DBUG_EXECUTE_IF("ib_sdi", if (!FSP_FLAGS_HAS_SDI(space->flags)) {
