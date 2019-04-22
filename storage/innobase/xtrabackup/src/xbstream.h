@@ -85,9 +85,11 @@ typedef struct {
   uint pathlen;
   char path[FN_REFLEN];
   size_t length;
+  size_t raw_length;
   my_off_t offset;
   my_off_t checksum_offset;
   void *data;
+  void *raw_data;
   ulong checksum;
   size_t buflen;
 } xb_rstream_chunk_t;
