@@ -164,6 +164,7 @@ char *xtrabackup_incremental = NULL;
 lsn_t incremental_lsn;
 lsn_t incremental_to_lsn;
 lsn_t incremental_last_lsn;
+lsn_t incremental_flushed_lsn;
 xb_page_bitmap *changed_page_bitmap = NULL;
 
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
@@ -2326,16 +2327,20 @@ static bool xtrabackup_read_metadata(char *filename) {
   }
   /* Use UINT64PF instead of LSN_PF here, as we have to maintain the file
   format. */
-  if (fscanf(fp, "from_lsn = " UINT64PF "\n", &metadata_from_lsn) != 1) {
+  if (fscanf(fp, "from_lsn = " LSN_PF "\n", &metadata_from_lsn) != 1) {
     r = FALSE;
     goto end;
   }
-  if (fscanf(fp, "to_lsn = " UINT64PF "\n", &metadata_to_lsn) != 1) {
+  if (fscanf(fp, "to_lsn = " LSN_PF "\n", &metadata_to_lsn) != 1) {
     r = FALSE;
     goto end;
   }
-  if (fscanf(fp, "last_lsn = " UINT64PF "\n", &metadata_last_lsn) != 1) {
+  if (fscanf(fp, "last_lsn = " LSN_PF "\n", &metadata_last_lsn) != 1) {
     metadata_last_lsn = 0;
+  }
+  if (fscanf(fp, "flushed_lsn = " LSN_PF "\n", &backup_redo_log_flushed_lsn) !=
+      1) {
+    backup_redo_log_flushed_lsn = 0;
   }
 
 end:
@@ -2351,13 +2356,15 @@ static void xtrabackup_print_metadata(char *buf, size_t buf_len) {
   format. */
   snprintf(buf, buf_len,
            "backup_type = %s\n"
-           "from_lsn = " UINT64PF
+           "from_lsn = " LSN_PF
            "\n"
-           "to_lsn = " UINT64PF
+           "to_lsn = " LSN_PF
            "\n"
-           "last_lsn = " UINT64PF "\n",
+           "last_lsn = " LSN_PF
+           "\n"
+           "flushed_lsn = " LSN_PF "\n",
            metadata_type_str, metadata_from_lsn, metadata_to_lsn,
-           metadata_last_lsn);
+           metadata_last_lsn, opt_lock_ddl ? backup_redo_log_flushed_lsn : 0);
 }
 
 /***********************************************************************
@@ -6754,6 +6761,10 @@ skip_check:
     exit(EXIT_FAILURE);
   }
 
+  if (xtrabackup_incremental) {
+    backup_redo_log_flushed_lsn = incremental_flushed_lsn;
+  }
+
   init_mysql_environment();
 
   /* Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB
@@ -7735,6 +7746,7 @@ int main(int argc, char **argv) {
     incremental_lsn = metadata_from_lsn;
     incremental_to_lsn = metadata_to_lsn;
     incremental_last_lsn = metadata_last_lsn;
+    incremental_flushed_lsn = backup_redo_log_flushed_lsn;
     xtrabackup_incremental = xtrabackup_incremental_dir;  // dummy
 
   } else if (opt_incremental_history_name) {

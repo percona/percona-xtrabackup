@@ -108,7 +108,7 @@ static bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
 
   for (i = 0, page = cursor->buf; i < cursor->buf_npages;
        i++, page += page_size) {
-    if (incremental_lsn >= mach_read_from_8(page + FIL_PAGE_LSN)) {
+    if (incremental_lsn > mach_read_from_8(page + FIL_PAGE_LSN)) {
       continue;
     }
 

@@ -1600,19 +1600,25 @@ static byte *recv_parse_or_apply_log_rec_body(
 
       return (fil_tablespace_redo_delete(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0));
+          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
+              recv_sys->recovered_lsn + parsed_bytes <
+                  backup_redo_log_flushed_lsn));
 
     case MLOG_FILE_CREATE:
 
       return (fil_tablespace_redo_create(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0));
+          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
+              recv_sys->recovered_lsn + parsed_bytes <
+                  backup_redo_log_flushed_lsn));
 
     case MLOG_FILE_RENAME:
 
       return (fil_tablespace_redo_rename(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0));
+          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
+              recv_sys->recovered_lsn + parsed_bytes <
+                  backup_redo_log_flushed_lsn));
 
     case MLOG_INDEX_LOAD:
 #if defined(UNIV_HOTBACKUP) || defined(XTRABACKUP)
