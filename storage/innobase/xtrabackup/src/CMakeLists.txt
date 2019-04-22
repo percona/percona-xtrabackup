@@ -14,14 +14,12 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 INCLUDE(gcrypt)
-INCLUDE(libev)
 
 OPTION(WITH_VERSION_CHECK "Build with version check" ON)
 
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 FIND_GCRYPT()
-FIND_EV()
 
 IF(WITH_VERSION_CHECK)
 # xxd is needed to embed version_check script
@@ -41,11 +39,9 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/storage/innobase/include
   ${CMAKE_SOURCE_DIR}/sql
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/quicklz
-  ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/jsmn
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/crc
   ${GCRYPT_INCLUDE_DIR}
   ${CURL_INCLUDE_DIRS}
-  ${LIBEV_INCLUDE_DIRS}
   ${CMAKE_CURRENT_BINARY_DIR}
   )
 
@@ -53,6 +49,7 @@ ADD_DEFINITIONS(${SSL_DEFINES})
 
 ADD_SUBDIRECTORY(crc)
 ADD_SUBDIRECTORY(jsmn)
+ADD_SUBDIRECTORY(xbcloud)
 
 ########################################################################
 # xtrabackup binary
@@ -189,29 +186,4 @@ TARGET_LINK_LIBRARIES(xbcrypt
   mysys
   mysys_ssl
   crc
-  )
-
-########################################################################
-# xbcloud binary
-########################################################################
-MY_CHECK_C_COMPILER_FLAG("-Werror=format-truncation=0" HAVE_WFORMAT_TRUNCATION)
-IF(HAVE_WFORMAT_TRUNCATION)
-  SET(WARNING_FLAGS "-Werror=format-truncation=0")
-ENDIF()
-MYSQL_ADD_EXECUTABLE(xbcloud
-  xbcloud.cc
-  )
-
-SET_TARGET_PROPERTIES(xbcloud
-        PROPERTIES LINKER_LANGUAGE CXX
-        COMPILE_FLAGS "${WARNING_FLAGS}"
-        )
-
-TARGET_LINK_LIBRARIES(xbcloud
-  ${GCRYPT_LIBS}
-  ${LIBEV_LIBRARIES}
-  ${CURL_LIBRARY}
-  mysys
-  mysys_ssl
-  jsmn
   )
