@@ -491,7 +491,9 @@ extract_worker_thread_func(void *arg)
 
 		pthread_mutex_unlock(ctxt->mutex);
 
-		res = xb_stream_validate_checksum(&chunk);
+		if (chunk.type == XB_CHUNK_TYPE_PAYLOAD) {
+			res = xb_stream_validate_checksum(&chunk);
+		}
 
 		if (res != XB_STREAM_READ_CHUNK) {
 			pthread_mutex_unlock(&entry->mutex);
@@ -528,8 +530,8 @@ extract_worker_thread_func(void *arg)
 		pthread_mutex_unlock(&entry->mutex);
 	}
 
-	if (chunk.data)
-		my_free(chunk.data);
+	if (chunk.raw_data)
+		my_free(chunk.raw_data);
 
 	my_thread_end();
 

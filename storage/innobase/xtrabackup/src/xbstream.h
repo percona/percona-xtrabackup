@@ -24,6 +24,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_base.h>
 #include <my_dir.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Magic value in a chunk header */
 #define XB_STREAM_CHUNK_MAGIC "XBSTCK01"
 
@@ -89,9 +93,11 @@ typedef struct {
 	uint		pathlen;
 	char		path[FN_REFLEN];
 	size_t		length;
+	size_t		raw_length;
 	my_off_t	offset;
 	my_off_t	checksum_offset;
 	void		*data;
+	void		*raw_data;
 	ulong		checksum;
 	size_t		buflen;
 } xb_rstream_chunk_t;
@@ -104,5 +110,9 @@ xb_rstream_result_t xb_stream_read_chunk(xb_rstream_t *stream,
 int xb_stream_read_done(xb_rstream_t *stream);
 
 int xb_stream_validate_checksum(xb_rstream_chunk_t *chunk);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif

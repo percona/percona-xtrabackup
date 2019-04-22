@@ -96,14 +96,29 @@ xb_stream_validate_checksum(xb_rstream_chunk_t *chunk)
 xb_rstream_result_t
 xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 {
-	uchar		tmpbuf[16];
-	uchar		*ptr = tmpbuf;
 	uint		pathlen;
 	size_t		tbytes;
 	ulonglong	ullval;
 	File		fd = stream->fd;
+	uchar		*ptr;
 
-	xb_ad(sizeof(tmpbuf) >= CHUNK_HEADER_CONSTANT_LEN);
+	const uint chunk_length_min =
+		CHUNK_HEADER_CONSTANT_LEN + FN_REFLEN + 8 + 8 + 4;
+
+	/* Reallocate the buffer if needed */
+	if (chunk_length_min > chunk->buflen) {
+		chunk->raw_data =
+		my_realloc(PSI_NOT_INSTRUMENTED, chunk->raw_data,
+			chunk_length_min, MYF(MY_WME | MY_ALLOW_ZERO_PTR));
+		if (chunk->raw_data == NULL) {
+			msg("xb_stream_read_chunk(): failed to increase buffer"
+				" to %lu bytes.\n", (ulong)chunk_length_min);
+			goto err;
+		}
+		chunk->buflen = chunk_length_min;
+	}
+
+	ptr = (uchar *)(chunk->raw_data);
 
 	/* This is the only place where we expect EOF, so read with
 	xb_read_full() rather than F_READ() */
@@ -116,10 +131,8 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 		goto err;
 	}
 
-	ptr = tmpbuf;
-
 	/* Chunk magic value */
-	if (memcmp(tmpbuf, XB_STREAM_CHUNK_MAGIC, 8)) {
+	if (memcmp(ptr, XB_STREAM_CHUNK_MAGIC, 8)) {
 		msg("xb_stream_read_chunk(): wrong chunk magic at offset "
 		    "0x%llx.\n", (ulonglong) stream->offset);
 		goto err;
@@ -151,25 +164,30 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 		goto err;
 	}
 	chunk->pathlen = pathlen;
-	stream->offset +=4;
+	stream->offset += 4;
+	ptr += 4;
 
-	xb_ad((ptr + 4 - tmpbuf) == CHUNK_HEADER_CONSTANT_LEN);
+	xb_ad((ptr - (uchar *)(chunk->raw_data)) ==
+	      CHUNK_HEADER_CONSTANT_LEN);
 
 	/* Path */
 	if (chunk->pathlen > 0) {
-		F_READ((uchar *) chunk->path, pathlen);
+		F_READ(ptr, pathlen);
+		memcpy(chunk->path, ptr, pathlen);
 		stream->offset += pathlen;
+		ptr += pathlen;
 	}
 	chunk->path[pathlen] = '\0';
 
 	if (chunk->type == XB_CHUNK_TYPE_EOF) {
+		chunk->raw_length = ptr - (uchar*)(chunk->raw_data);
 		return XB_STREAM_READ_CHUNK;
 	}
 
 	/* Payload length */
-	F_READ(tmpbuf, 16);
-	ullval = uint8korr(tmpbuf);
-	if (ullval > (ulonglong) SIZE_T_MAX) {
+	F_READ(ptr, 16);
+	ullval = uint8korr(ptr);
+	if (ullval > (ulonglong)SIZE_T_MAX) {
 		msg("xb_stream_read_chunk(): chunk length is too large at "
 		    "offset 0x%llx: 0x%llx.\n", (ulonglong) stream->offset,
 		    ullval);
@@ -177,43 +195,52 @@ xb_stream_read_chunk(xb_rstream_t *stream, xb_rstream_chunk_t *chunk)
 	}
 	chunk->length = (size_t) ullval;
 	stream->offset += 8;
+	ptr += 8;
 
 	/* Payload offset */
-	ullval = uint8korr(tmpbuf + 8);
-	if (ullval > (ulonglong) MY_OFF_T_MAX) {
+	ullval = uint8korr(ptr);
+	if (ullval > (ulonglong)MY_OFF_T_MAX) {
 		msg("xb_stream_read_chunk(): chunk offset is too large at "
 		    "offset 0x%llx: 0x%llx.\n", (ulonglong) stream->offset,
 		    ullval);
 		goto err;
 	}
-	chunk->offset = (my_off_t) ullval;
+	chunk->offset = (my_off_t)ullval;
 	stream->offset += 8;
-
-	/* Reallocate the buffer if needed */
-	if (chunk->length > chunk->buflen) {
-		chunk->data = my_realloc(PSI_NOT_INSTRUMENTED,
-						chunk->data, chunk->length,
-						MYF(MY_WME | MY_ALLOW_ZERO_PTR));
-		if (chunk->data == NULL) {
-			msg("xb_stream_read_chunk(): failed to increase buffer "
-			    "to %lu bytes.\n", (ulong) chunk->length);
-			goto err;
-		}
-		chunk->buflen = chunk->length;
-	}
+	ptr += 8;
 
 	/* Checksum */
-	F_READ(tmpbuf, 4);
-	chunk->checksum = uint4korr(tmpbuf);
+	F_READ(ptr, 4);
+	chunk->checksum = uint4korr(ptr);
 	chunk->checksum_offset = stream->offset;
+	stream->offset += 4;
+	ptr += 4;
+
+	chunk->raw_length =
+		chunk->length + (ptr - (uchar *)(chunk->raw_data));
+
+	/* Reallocate the buffer if needed */
+	if (chunk->raw_length > chunk->buflen) {
+		size_t ptr_offs = ptr - (uchar *)(chunk->raw_data);
+		chunk->raw_data =
+			my_realloc(PSI_NOT_INSTRUMENTED, chunk->raw_data,
+				chunk->raw_length,
+				MYF(MY_WME | MY_ALLOW_ZERO_PTR));
+		if (chunk->raw_data == NULL) {
+			msg("xb_stream_read_chunk(): failed to increase "
+			    "buffer to %lu bytes.\n", (ulong)chunk->raw_length);
+			goto err;
+		}
+		chunk->buflen = chunk->raw_length;
+		ptr = (uchar *)(chunk->raw_data) + ptr_offs;
+	}
 
 	/* Payload */
 	if (chunk->length > 0) {
-		F_READ(chunk->data, chunk->length);
+		F_READ(ptr, chunk->length);
 		stream->offset += chunk->length;
+		chunk->data = ptr;
 	}
-
-	stream->offset += 4;
 
 	return XB_STREAM_READ_CHUNK;
 

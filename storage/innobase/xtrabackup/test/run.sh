@@ -281,7 +281,7 @@ function set_vars()
     # appropriately
     if test -d $PWD/../src
     then
-        PATH="$PWD/..:$PWD/../src:$PATH"
+        PATH="$PWD/..:$PWD/../src:$PWD/../src/xbcloud:$PATH"
         XTRABACKUP_BASEDIR="$PWD/../src"
     fi
 
