@@ -1,6 +1,5 @@
 
-function backup_restore() {
-
+function backup() {
   mkdir $topdir/binlog-dir1
   mkdir $topdir/binlog-dir2
 
@@ -24,7 +23,9 @@ function backup_restore() {
   rm -rf $mysql_datadir
   rm -rf $topdir/binlog-dir1
   rm -rf $topdir/binlog-dir2
+}
 
+function restore() {
   xtrabackup --copy-back --target-dir=$topdir/backup $*
 
   cd $mysql_datadir
@@ -46,6 +47,11 @@ function backup_restore() {
   rm -rf $topdir/binlog-dir2
   rm -rf $topdir/backup
   rm -rf $topdir/backup1
+}
+
+function backup_restore() {
+    backup $*
+    restore $*
 }
 
 vlog "------- TEST 1 -------"
@@ -84,31 +90,35 @@ vlog "------- TEST 9 -------"
 FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin --log-bin-index=$topdir/binlog-dir2/idx.index
 
+vlog "------- TEST 10 -------"
+FILES="$topdir/binlog-dir1/bin.index $topdir/binlog-dir1/bin.000003"
+backup_restore --log-bin=$topdir/binlog-dir1/bin
+
 
 # do the same, but with updating my.cnf
 
-vlog "------- TEST 10 -------"
+vlog "------- TEST 101 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 skip-log-bin
 "
 FILES=""
 backup_restore
 
-vlog "------- TEST 11 -------"
+vlog "------- TEST 102 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin
 "
 FILES="mysql-bin.index mysql-bin.000004"
 backup_restore
 
-vlog "------- TEST 12 -------"
+vlog "------- TEST 103 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog123
 "
 FILES="binlog123.index binlog123.000004"
 backup_restore
 
-vlog "------- TEST 13 -------"
+vlog "------- TEST 104 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog123
 log-bin-index=binlog898
@@ -116,7 +126,7 @@ log-bin-index=binlog898
 FILES="binlog898.index binlog123.000004"
 backup_restore
 
-vlog "------- TEST 14 -------"
+vlog "------- TEST 105 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog123
 log-bin-index=binlog898.index
@@ -124,7 +134,7 @@ log-bin-index=binlog898.index
 FILES="binlog898.index binlog123.000004"
 backup_restore
 
-vlog "------- TEST 15 -------"
+vlog "------- TEST 106 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=log
@@ -132,7 +142,7 @@ log-bin-index=log
 FILES="log.index $topdir/binlog-dir1/bin.000004"
 backup_restore
 
-vlog "------- TEST 16 -------"
+vlog "------- TEST 107 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog-abcd
 log-bin-index=$topdir/binlog-dir1/idx
@@ -140,7 +150,7 @@ log-bin-index=$topdir/binlog-dir1/idx
 FILES="$topdir/binlog-dir1/idx.index binlog-abcd.000004"
 backup_restore
 
-vlog "------- TEST 17 -------"
+vlog "------- TEST 108 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=$topdir/binlog-dir2/idx
@@ -148,10 +158,47 @@ log-bin-index=$topdir/binlog-dir2/idx
 FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000004"
 backup_restore
 
-vlog "------- TEST 18 -------"
+vlog "------- TEST 109 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=$topdir/binlog-dir2/idx.index
 "
 FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000004"
 backup_restore
+
+vlog "------- TEST 110 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=$topdir/binlog-dir1/bin
+"
+FILES="$topdir/binlog-dir1/bin.index $topdir/binlog-dir1/bin.000004"
+backup_restore --log-bin=$topdir/binlog-dir1/bin
+
+
+# PXB-1810 - restore binlog to the different location
+
+vlog "------- TEST 201 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=$topdir/binlog-dir1/bin
+log-bin-index=$topdir/binlog-dir1/idx
+"
+FILES="idx.index bin.000004"
+backup
+restore --log-bin=bin --log-bin-index=idx
+
+vlog "------- TEST 202 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=bin
+log-bin-index=idx
+"
+FILES="logidx.index logbin.000004"
+backup
+restore --log-bin=logbin --log-bin-index=logidx
+
+vlog "------- TEST 203 -------"
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=$topdir/binlog-dir1/bin
+log-bin-index=$topdir/binlog-dir1/bin
+"
+FILES="$topdir/binlog-dir2/bin.index $topdir/binlog-dir1/logbin.000004"
+backup
+restore --log-bin=$topdir/binlog-dir1/logbin --log-bin-index=$topdir/binlog-dir2/bin.index

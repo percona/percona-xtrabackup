@@ -1455,15 +1455,63 @@ struct binlog_file_location {
     return (result);
   }
 
-  std::vector<std::pair<std::string, std::string>> target_files() const {
-    std::vector<std::pair<std::string, std::string>> result;
+  binlog_file_location target_location(const std::string &datadir) const {
+    binlog_file_location r;
+
     if (!name.empty()) {
-      result.push_back(std::make_pair(name, path));
+      std::string suffix = fn_ext(name.c_str());
+
+      if (opt_log_bin != nullptr) {
+        if (Fil_path::is_absolute_path(opt_log_bin)) {
+          r.name =
+              std::string(opt_log_bin).substr(0, dirname_length(opt_log_bin)) +
+              suffix;
+          r.path = opt_log_bin + suffix;
+        } else {
+          char buf[FN_REFLEN];
+          fn_format(buf, opt_log_bin, datadir.c_str(), "", MY_UNPACK_FILENAME);
+          r.name = opt_log_bin + suffix;
+          r.path = buf + suffix;
+        }
+      } else {
+        r.name = name;
+        r.path = path;
+      }
     }
+
     if (!index_name.empty()) {
-      result.push_back(std::make_pair(index_name, index_path));
+      if (opt_binlog_index_name != nullptr) {
+        r.index_path = opt_binlog_index_name;
+        if (!ends_with(opt_binlog_index_name, ".index")) {
+          r.index_path.append(".index");
+        }
+        r.index_name =
+            r.index_path.substr(dirname_length(r.index_path.c_str()));
+        if (!Fil_path::is_absolute_path(r.index_path)) {
+          char buf[FN_REFLEN];
+          fn_format(buf, r.index_path.c_str(), datadir.c_str(), "",
+                    MY_UNPACK_FILENAME);
+          r.index_path = buf;
+        }
+      } else if (opt_log_bin != nullptr) {
+        char buf[FN_REFLEN];
+
+        fn_format(buf, r.name.c_str(), "", ".index", MY_REPLACE_EXT);
+        r.index_name = buf;
+
+        fn_format(buf, r.path.c_str(), "", ".index", MY_REPLACE_EXT);
+        r.index_path = buf;
+      } else {
+        r.index_name = index_name;
+
+        char buf[FN_REFLEN];
+        fn_format(buf, index_name.c_str(), datadir.c_str(), "",
+                  MY_UNPACK_FILENAME);
+        r.index_path = buf;
+      }
     }
-    return (result);
+
+    return (r);
   }
 };
 
@@ -1493,18 +1541,7 @@ bool binlog_file_location::find_binlog(const std::string &dir,
         binlog.path = line;
       }
 
-      std::string binlog_basename = binlog.name;
-      binlog_basename.replace(binlog_basename.find_last_of("."),
-                              std::string::npos, ".index");
-
-      if (opt_binlog_index_name != nullptr && opt_binlog_index_name[0] != 0) {
-        binlog.index_path = opt_binlog_index_name;
-        if (!ends_with(binlog.index_path.c_str(), ".index")) {
-          binlog.index_path.append(".index");
-        }
-      } else {
-        binlog.index_path = path;
-      }
+      binlog.index_path = path;
 
       dirname_part(dirname, binlog.index_path.c_str(), &dirname_length);
       binlog.index_name =
@@ -2075,22 +2112,35 @@ bool copy_back(int argc, char **argv) {
 
   /* copy binary log and .index files */
   if (binlog_file_location::find_binlog(".", binlog, err)) {
-    for (auto file : binlog.target_files()) {
-      if (!(ret = copy_or_move_file(file.first.c_str(), file.second.c_str(),
+    const auto target = binlog.target_location(mysql_data_home);
+
+    if (!target.name.empty()) {
+      if (!(ret = copy_or_move_file(binlog.name.c_str(), target.path.c_str(),
                                     mysql_data_home, 1, FILE_PURPOSE_BINLOG))) {
         goto cleanup;
       }
-      /* make sure we don't copy binary log and .index files twice */
-      skip_copy_back_list.insert(file.first);
-    }
-    if (opt_generate_new_master_key) {
-      /* reencrypt binlog password with new master key */
-      char binlog_fullpath[FN_REFLEN];
-      fn_format(binlog_fullpath, binlog.path.c_str(), mysql_data_home, "",
-                MYF(MY_RELATIVE_PATH));
-      ret = xb_binlog_password_reencrypt(binlog_fullpath);
+      ret = xb_binlog_password_reencrypt(target.path.c_str());
       if (!ret) {
         msg("xtrabackup: Error: failed to reencrypt binary log file header.\n");
+      }
+      /* make sure we don't copy binary log and .index files twice */
+      skip_copy_back_list.insert(binlog.name.c_str());
+    }
+    if (!target.index_name.empty()) {
+      if (!(ret = copy_or_move_file(binlog.index_name.c_str(),
+                                    target.index_path.c_str(), mysql_data_home,
+                                    1, FILE_PURPOSE_BINLOG))) {
+        goto cleanup;
+      }
+      /* make sure we don't copy binary log and .index files twice */
+      skip_copy_back_list.insert(binlog.index_name.c_str());
+      /* fixup binlog index */
+      if (Fil_path(mysql_data_home).is_ancestor(target.path)) {
+        std::ofstream f_index(target.index_path.c_str());
+        f_index << target.name.c_str() << std::endl;
+      } else {
+        std::ofstream f_index(target.index_path.c_str());
+        f_index << target.path.c_str() << std::endl;
       }
     }
   }
