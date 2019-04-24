@@ -112,6 +112,10 @@ Options
    for your |MySQL| server, so it should be read from :file:`my.cnf` if that
    exists; otherwise you must specify it on the command line.
 
+   When combined with the :option:`xtrabackup --copy-back` or
+   :option:`xtrabackup --move-back` option, :option:`xtrabackup --datadir`
+   refers to the destination directory.
+
 .. option:: --decompress
 
    Decompresses all files with the :file:`.qp` extension in a backup previously
@@ -433,6 +437,11 @@ Options
       - `--innodb-read-io-threads`
       - `--innodb-write-io-threads`
 
+.. option:: --keyring-file-data=FILENAME
+
+   The path to the keyring file. Combine this option with
+   :option:`xtrabackup --xtrabackup-plugin-dir`.
+
 .. option:: --kill-long-queries-timeout=SECONDS
 
    This option specifies the number of seconds |xtrabackup| waits between
@@ -752,4 +761,15 @@ Options
 
    This option prints |xtrabackup| version and exits.
 
+.. option:: --xtrabackup-plugin-dir=DIRNAME
 
+   The absolute path to the directory that contains the ``keyring`` plugin.
+
+   .. seealso::
+
+      |Percona Server| Documentation: keyring_vault plugin with Data at Rest Encryption
+         https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html#keyring-vault-plugin
+      |MySQL| Documentation: Using the keyring_file File-Based Plugin
+         https://dev.mysql.com/doc/refman/5.7/en/keyring-file-plugin.html
+
+.. |program| replace:: :program:`xtrabackup`

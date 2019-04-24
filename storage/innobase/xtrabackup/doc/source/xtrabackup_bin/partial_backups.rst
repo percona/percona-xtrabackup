@@ -4,8 +4,11 @@ Partial Backups
 
 |xtrabackup| supports taking partial backups when the
 :term:`innodb_file_per_table` option is enabled. There are three ways to create
-partial backups: matching the tables' names with a regular expression, providing
-a list of them in a file or providing a list of databases.
+partial backups:
+
+1. matching the tables names with a regular expression
+2. providing a list of table names in a file
+3. providing a list of databases
 
 .. important::
 
@@ -33,10 +36,9 @@ of databases (:option:`--databases`).
 
 The :option:`--tables` Option
 ================================================================================
-
-The first method is with the :option:`--tables` option. The option's value is a
-regular expression that is matched against the fully qualified tablename,
-including the database name, in the form ``databasename.tablename``.
+The first method involves the :option:`xtrabackup --tables` option. The option's
+value is a regular expression that is matched against the fully qualified
+tablename, including the database name, in the form ``databasename.tablename``.
 
 To back up only tables in the ``test`` database, you can use the following
 command: ::
@@ -66,9 +68,17 @@ regular expression matching. The table names must be fully qualified, in
 The :option:`--databases` and :option:`--databases-file` options
 ================================================================================
 
-The :option:`--databases` option accepts a space-separated list of the databases
-and tables to backup - in the ``databasename[.tablename]`` form. The
-:option:`--databases-file` option specifies a file that can contain multiple
+:option:`xtrabackup --databases` accepts a space-separated list of the databases
+and tables to backup in the format ``databasename[.tablename]``. In addition to
+this list make sure to specify the ``mysql``, ``sys``, and
+``performance_schema`` databases. These databases are required when restoring
+the databases using :option:`xtrabackup --copy-back`.
+
+.. code-block:: bash
+
+   $ xtrabackup --databases='mysql sys performance_schema ...'
+
+:option:`xtrabackup --databases-file` specifies a file that can contain multiple
 databases and tables in the ``databasename[.tablename]`` form, one element name
 per line in the file. Only named databases and tables will be backed up. Names
 are matched exactly, case-sensitive, with no pattern or regular expression
@@ -86,13 +96,13 @@ The procedure is analogous to :ref:`restoring individual tables
    $ xtrabackup --prepare --export --target-dir=/path/to/partial/backup
 
 
-When you use the :option:`--prepare` option on a partial backup, you will see
-warnings about tables that don't exist. That is because these tables exist in
-the data dictionary inside InnoDB, but the corresponding :term:`.ibd` files
-don't exist. They were not copied into the backup directory. These tables will
-be removed from the data dictionary, and when you restore the backup and start
-InnoDB, they will no longer exist and will not cause any errors or warnings to
-be printed to the log file.
+When you use the :option:`xtrabackup --prepare` option on a partial backup, you
+will see warnings about tables that don't exist. This is because these tables
+exist in the data dictionary inside InnoDB, but the corresponding :term:`.ibd`
+files don't exist. They were not copied into the backup directory. These tables
+will be removed from the data dictionary, and when you restore the backup and
+start InnoDB, they will no longer exist and will not cause any errors or
+warnings to be printed to the log file.
 
 An example of the error message you will see during the prepare phase follows. ::
 
