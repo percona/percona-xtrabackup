@@ -21,7 +21,7 @@ require_server_version_higher_than 5.7.0
 is_galera && skip_test "skipping"
 
 [ "${XBCLOUD_CREDENTIALS:-unset}" == "unset" ] && \
-	skip_test "Requires XBCLOUD_CREDENTIALS"
+    skip_test "Requires XBCLOUD_CREDENTIALS"
 
 start_server --innodb_file_per_table
 
@@ -97,6 +97,16 @@ diff -u $topdir/partial/partial.list - <<EOF
 ibdata1
 sakila/payment.ibd
 EOF
+
+# PXB-1832: Xbcloud does not exit when a piped command fails
+xbcloud --defaults-file=$topdir/xbcloud.cnf get 2>$topdir/pxb-1832.log | true
+if [ "${PIPESTATUS[0]}" == "0" ] ; then
+    die 'xbcloud did not exit with error'
+fi
+
+if [ ! grep failed 2>$topdir/pxb-1832.log ] ; then
+    die 'xbcloud did not exit with error'
+fi
 
 # cleanup
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \

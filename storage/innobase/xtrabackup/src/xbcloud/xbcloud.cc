@@ -816,6 +816,13 @@ bool xbcloud_download(Object_store *store, Event_handler *h,
                 std::cout.write(&contents[0], contents.size());
                 std::cout.flush();
                 download_state->complete_chunk(basename);
+                if (std::cout.fail()) {
+                  msg_ts(
+                      "%s: Download failed. Cannot write to the standard "
+                      "output.\n",
+                      my_progname);
+                  *error = true;
+                }
               },
               std::placeholders::_1, std::placeholders::_2, object_name,
               it->first, &download_state, &error));
@@ -832,7 +839,9 @@ bool xbcloud_download(Object_store *store, Event_handler *h,
 
 struct main_exit_hook {
   ~main_exit_hook() {
-    free_defaults(defaults_argv);
+    if (defaults_argv != nullptr) {
+      free_defaults(defaults_argv);
+    }
     my_end(0);
   }
 };
