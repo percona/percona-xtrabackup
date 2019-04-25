@@ -732,7 +732,6 @@ bool Swift_client::upload_object(const std::string &container,
   Http_request req(Http_request::PUT, protocol, host,
                    path + container + "/" + name);
   req.append_payload(contents);
-  req.add_header("Content-Length", std::to_string(contents.size()));
   req.add_header("Content-Type", "application/octet-stream");
   req.add_header("X-Auth-Token", token);
   req.add_header("ETag", hex_encode(req.payload().md5()));
@@ -770,7 +769,6 @@ bool Swift_client::async_upload_object(const std::string &container,
     return false;
   }
   req->append_payload(contents);
-  req->add_header("Content-Length", std::to_string(contents.size()));
   req->add_header("Content-Type", "application/octet-stream");
   req->add_header("X-Auth-Token", token);
   req->add_header("ETag", hex_encode(req->payload().md5()));
