@@ -45,7 +45,7 @@ vlog "take full backup"
 
 xtrabackup --backup --stream=xbstream --extra-lsndir=$full_backup_dir \
 	   --target-dir=$full_backup_dir | \
-    xbcloud --defaults-file=$topdir/xbcloud.cnf put \
+    run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf put \
 	    --parallel=4 \
 	    ${full_backup_name}
 
@@ -54,7 +54,7 @@ vlog "take incremental backup"
 xtrabackup --backup --incremental-basedir=$full_backup_dir \
 	   --stream=xbstream --target-dir=inc_backup_dir \
 	   --parallel=4 | \
-    xbcloud --defaults-file=$topdir/xbcloud.cnf put \
+    run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf put \
             --parallel=4 \
 	    ${inc_backup_name}
 
@@ -92,6 +92,8 @@ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
 
 xbstream -xv -C $topdir/partial < $topdir/partial/partial.xbs \
 	 2> $topdir/partial/partial.list
+
+sort -o $topdir/partial/partial.list $topdir/partial/partial.list
 
 diff -u $topdir/partial/partial.list - <<EOF
 ibdata1
