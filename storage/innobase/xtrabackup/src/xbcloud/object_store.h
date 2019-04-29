@@ -57,6 +57,7 @@ class Object_store {
   virtual Http_buffer download_object(const std::string &container,
                                       const std::string &name,
                                       bool &success) = 0;
+  virtual ~Object_store(){};
 };
 
 }  // namespace xbcloud

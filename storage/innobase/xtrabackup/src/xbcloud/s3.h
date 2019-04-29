@@ -51,6 +51,7 @@ class S3_signer {
   virtual void sign_request(const std::string &hostname,
                             const std::string &bucket, Http_request &req,
                             time_t t) = 0;
+  virtual ~S3_signer(){};
 };
 
 class S3_signerV4 : public S3_signer {

@@ -533,9 +533,8 @@ static bool parse_args(int argc, char **argv) {
   return (0);
 }
 
-bool xbcloud_put(Object_store *store, Event_handler *h,
-                 const std::string &container, const std::string &backup_name,
-                 bool upload_md5) {
+bool xbcloud_put(Object_store *store, const std::string &container,
+                 const std::string &backup_name, bool upload_md5) {
   bool exists;
 
   if (!store->container_exists(container, exists)) {
@@ -580,6 +579,13 @@ bool xbcloud_put(Object_store *store, Event_handler *h,
   memset(&chunk, 0, sizeof(chunk));
 
   Http_buffer buf_md5;
+
+  Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
+  if (!h.init()) {
+    msg_ts("%s: Failed to initialize event handler.\n", my_progname);
+    return false;
+  }
+  auto thread = h.run();
 
   while (!has_errors) {
     res = xb_stream_read_chunk(stream, &chunk);
@@ -633,7 +639,7 @@ bool xbcloud_put(Object_store *store, Event_handler *h,
     }
 
     store->async_upload_object(
-        container, object_name, buf, h,
+        container, object_name, buf, &h,
         std::bind(
             [](bool ok, std::string path, size_t length, bool *err) {
               if (ok) {
@@ -657,6 +663,9 @@ bool xbcloud_put(Object_store *store, Event_handler *h,
     memset(&chunk, 0, sizeof(chunk));
   }
 
+  h.stop();
+  thread.join();
+
   xb_stream_read_done(stream);
 
   bool ret = (res != XB_STREAM_READ_ERROR) && (!has_errors);
@@ -664,6 +673,12 @@ bool xbcloud_put(Object_store *store, Event_handler *h,
   if (ret && upload_md5) {
     msg_ts("%s: Uploading md5\n", my_progname);
     ret = store->upload_object(container, backup_name + ".md5", buf_md5);
+  }
+
+  if (!ret) {
+    msg_ts("%s: Upload failed.\n", my_progname);
+  } else {
+    msg_ts("%s: Upload completed.\n", my_progname);
   }
 
   return ret;
@@ -680,8 +695,7 @@ bool chunk_name_to_file_name(const std::string &chunk_name,
   return true;
 }
 
-bool xbcloud_delete(Object_store *store, Event_handler *h,
-                    const std::string &container,
+bool xbcloud_delete(Object_store *store, const std::string &container,
                     const std::string &backup_name) {
   std::vector<std::string> object_list;
 
@@ -690,6 +704,13 @@ bool xbcloud_delete(Object_store *store, Event_handler *h,
            backup_name.c_str());
     return false;
   }
+
+  Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
+  if (!h.init()) {
+    msg_ts("%s: Failed to initialize event handler.\n", my_progname);
+    return false;
+  }
+  auto thread = h.run();
 
   bool error = false;
   for (const auto &obj : object_list) {
@@ -705,7 +726,7 @@ bool xbcloud_delete(Object_store *store, Event_handler *h,
     }
     msg_ts("%s: Deleting %s.\n", my_progname, obj.c_str());
     if (!store->async_delete_object(
-            container, obj, h,
+            container, obj, &h,
             std::bind(
                 [](bool success, std::string obj, bool *error) {
                   if (!success) {
@@ -719,11 +740,19 @@ bool xbcloud_delete(Object_store *store, Event_handler *h,
     }
   }
 
+  h.stop();
+  thread.join();
+
+  if (error) {
+    msg_ts("%s: Delete failed.\n", my_progname);
+  } else {
+    msg_ts("%s: Delete completed.\n", my_progname);
+  }
+
   return !error;
 }
 
-bool xbcloud_download(Object_store *store, Event_handler *h,
-                      const std::string &container,
+bool xbcloud_download(Object_store *store, const std::string &container,
                       const std::string &backup_name) {
   std::vector<std::string> object_list;
 
@@ -778,6 +807,13 @@ bool xbcloud_download(Object_store *store, Event_handler *h,
     chunks[file_name] = {0, idx};
   }
 
+  Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
+  if (!h.init()) {
+    msg_ts("%s: Failed to initialize event handler.\n", my_progname);
+    return false;
+  }
+  auto thread = h.run();
+
   bool error{false};
 
   while (true) {
@@ -799,7 +835,7 @@ bool xbcloud_download(Object_store *store, Event_handler *h,
       std::string object_name = s_object_name.str();
       msg_ts("%s: Downloading %s.\n", my_progname, object_name.c_str());
       store->async_download_object(
-          container, object_name, h,
+          container, object_name, &h,
           std::bind(
               [](bool success, const Http_buffer &contents, std::string name,
                  std::string basename, struct download_state *download_state,
@@ -834,6 +870,15 @@ bool xbcloud_download(Object_store *store, Event_handler *h,
     }
   }
 
+  h.stop();
+  thread.join();
+
+  if (error) {
+    msg_ts("%s: Download failed.\n", my_progname);
+  } else {
+    msg_ts("%s: Download completed.\n", my_progname);
+  }
+
   return !error;
 }
 
@@ -842,6 +887,7 @@ struct main_exit_hook {
     if (defaults_argv != nullptr) {
       free_defaults(defaults_argv);
     }
+    http_cleanup();
     my_end(0);
   }
 };
@@ -849,16 +895,15 @@ struct main_exit_hook {
 int main(int argc, char **argv) {
   MY_INIT(argv[0]);
 
+  http_init();
+  crc_init();
+
   /* trick to automatically release some globally alocated resources */
   main_exit_hook exit_hook;
 
   if (parse_args(argc, argv)) {
     return EXIT_FAILURE;
   }
-
-  curl_global_init(CURL_GLOBAL_ALL);
-
-  crc_init();
 
   std::unique_ptr<Object_store> object_store = nullptr;
   Http_client http_client;
@@ -1032,61 +1077,18 @@ int main(int argc, char **argv) {
   }
 
   if (opt_mode == MODE_PUT) {
-    Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
-    if (!h.init()) {
-      msg_ts("%s: Failed to initialize event handler.\n", my_progname);
-      return EXIT_FAILURE;
-    }
-
-    auto thread = h.run();
-
-    if (!xbcloud_put(object_store.get(), &h, container_name, backup_name,
+    if (!xbcloud_put(object_store.get(), container_name, backup_name,
                      opt_md5)) {
-      h.stop();
-      thread.join();
-      msg_ts("%s: Upload failed.\n", my_progname);
       return EXIT_FAILURE;
     }
-    h.stop();
-    thread.join();
-    msg_ts("%s: Upload completed.\n", my_progname);
   } else if (opt_mode == MODE_GET) {
-    Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
-    if (!h.init()) {
-      msg_ts("%s: Failed to initialize event handler.\n", my_progname);
+    if (!xbcloud_download(object_store.get(), container_name, backup_name)) {
       return EXIT_FAILURE;
     }
-
-    auto thread = h.run();
-
-    if (!xbcloud_download(object_store.get(), &h, container_name,
-                          backup_name)) {
-      h.stop();
-      thread.join();
-      msg_ts("%s: Download failed.\n", my_progname);
-      return EXIT_FAILURE;
-    }
-    h.stop();
-    thread.join();
-    msg_ts("%s: Download completed.\n", my_progname);
   } else if (opt_mode == MODE_DELETE) {
-    Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
-    if (!h.init()) {
-      msg_ts("%s: Failed to initialize event handler.\n", my_progname);
+    if (!xbcloud_delete(object_store.get(), container_name, backup_name)) {
       return EXIT_FAILURE;
     }
-
-    auto thread = h.run();
-
-    if (!xbcloud_delete(object_store.get(), &h, container_name, backup_name)) {
-      h.stop();
-      thread.join();
-      msg_ts("%s: Delete failed.\n", my_progname);
-      return EXIT_FAILURE;
-    }
-    h.stop();
-    thread.join();
-    msg_ts("%s: Delete completed.\n", my_progname);
   } else {
     msg_ts("Unknown command supplied.\n");
     return EXIT_FAILURE;
