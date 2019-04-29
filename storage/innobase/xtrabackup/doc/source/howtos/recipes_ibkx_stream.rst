@@ -2,79 +2,78 @@
  Make a Streaming Backup
 =========================
 
-Stream mode sends the backup to ``STDOUT`` in tar format instead of copying it to the directory named by the first argument. You can pipe the output to :command:`gzip`, or across the network to another server.
+Stream mode sends the backup to ``STDOUT`` in the xbstream format instead of copying it to the directory named by the first argument. You can pipe the output to :command:`gzip`, or across the network, to another server.
 
-To extract the resulting tar file, you **must** use the ``-i`` option, such as ``tar -ixvf backup.tar``.
+To extract the resulting xbstream file, you **must** use the |xbstream| utility: ``xbstream -x <  backup.xbstream``.
 
-.. warning:: Remember to use the ``-i`` option for extracting a tarred backup. For more information, see :doc:`../innobackupex/streaming_backups_innobackupex`.
+Here are some examples of using the ``xbstream`` option for streaming:
 
-Here are some examples using ``tar`` option for streaming:
+.. list-table::
 
-  * Stream the backup into a tar archived named 'backup.tar' :: 
+   * - Action
+     - Command
+   * - Stream the backup into a xbstream archived named 'backup.xbstream'
+     - $ xtrabackup --backup --stream=xbstream ./ > backup.xbstream
+   * - Stream the backup into a xbstream archived named 'backup.xbstream' and compress it
+     - $ xtrabackup --backup --stream=xbstream --compress ./ > backup.xbstream
+   * - Encrypt the backup
+     - $ xtrabackup --backup \
+       --stream=xbstream ./ > backup.xbstream \
+       gzip -  | openssl des3 -salt -k "password" > backup.xbstream.gz.des3
+   * - Send the backup to another server and unpack it
+     - $ xtrabackup --backup --compress --stream=xbstream ./ | ssh user@otherhost "xbstream -x"
+   * - Send the backup to another server using ``netcat``.
+     - On the destination host:
 
-      $ innobackupex --stream=tar ./ > backup.tar
+       .. code-block:: bash
 
-  * The same, but compress it ::
+	  $ nc -l 9999 | cat - > /data/backups/backup.xbstream
 
-      $ innobackupex --stream=tar ./ | gzip - > backup.tar.gz
+       On the source host:
+      
+       .. code-block:: bash
 
-  * Encrypt the backup ::
+	  $ xtrabackup --backup --stream=xbstream ./ | nc desthost 9999
 
-      $ innobackupex --stream=tar . | gzip - | openssl des3 -salt -k "password" > backup.tar.gz.des3
+   * - Send the backup to another server using a one-liner:
+     - $ ssh user@desthost "( nc -l 9999 > /data/backups/backup.xbstream & )" \
+       && xtrabackup --backup --stream=xbstream ./ |  nc desthost 9999
+          
+   * - Throttle the throughput to 10MB/sec using the ``pipe viewer`` tool [#f1]_
+     - $ xtrabackup --backup --stream=xbstream ./ | pv -q -L10m \
+       ssh user@desthost "cat - > /data/backups/backup.xbstream"
 
-  * Send it to another server instead of storing it locally ::
+   * - Checksumming the backup during the streaming:
+     - On the destination host:
 
-      $ innobackupex --stream=tar ./ | ssh user@desthost "cat - > /data/backups/backup.tar"
+       .. code-block:: bash
 
-  * The same thing with can be done with the ''netcat''.  ::
+	  $ nc -l 9999 | tee >(sha1sum > destination_checksum) > /data/backups/backup.xbstream
 
-      ## On the destination host:
-      $ nc -l 9999 | cat - > /data/backups/backup.tar
-      ## On the source host:
-      $ innobackupex --stream=tar ./ | nc desthost 9999
+       On the source host:
+      
+       .. code-block:: bash
 
-  * The same thing, but done as a one-liner: ::
+	  $ xtrabackup --backup --stream=xbstream ./ | tee >(sha1sum > source_checksum) | nc desthost 9999
 
-      $ ssh user@desthost "( nc -l 9999 > /data/backups/backup.tar & )" \
-      && innobackupex --stream=tar ./  |  nc desthost 9999
+       Compare the checksums on the source host:
 
-  * Throttling the throughput to 10MB/sec. This requires the 'pv' tools; you can find them at the `official site <http://www.ivarch.com/programs/quickref/pv.shtml>`_ or install it from the distribution package ("apt-get install pv") :: 
+       .. code-block:: bash
 
-      $ innobackupex --stream=tar ./ | pv -q -L10m \
-      | ssh user@desthost "cat - > /data/backups/backup.tar"
+	  $ cat source_checksum 
+	  65e4f916a49c1f216e0887ce54cf59bf3934dbad  -
 
-  * Checksumming the backup during the streaming ::
+       Compare the checksums on the destination host:
+
+       .. code-block:: bash
+
+	  $ cat destination_checksum 
+	  65e4f916a49c1f216e0887ce54cf59bf3934dbad  -
  
-      ## On the destination host:
-      $ nc -l 9999 | tee >(sha1sum > destination_checksum) > /data/backups/backup.tar
-      ## On the source host:
-      $ innobackupex --stream=tar ./ | tee >(sha1sum > source_checksum) | nc desthost 9999
-      ## compare the checksums
-      ## On the source host:
-      $ cat source_checksum 
-      65e4f916a49c1f216e0887ce54cf59bf3934dbad  -
-      ## On the destination host:
-      $ destination_checksum 
-      65e4f916a49c1f216e0887ce54cf59bf3934dbad  -
- 
-Examples using |xbstream| option for streaming:
+   * - Parallel compression with parallel copying backup:
+     - $ xtrabackup --backup --compress --compress-threads=8 \
+       --stream=xbstream --parallel=4 ./ > backup.xbstream
 
-  * Stream the backup into a tar archived named 'backup.xbstream :: 
+.. rubric:: Footnotes
 
-      innobackupex --stream=xbstream ./ > backup.xbstream
-  
-  * The same but with compression :: 
-  
-      innobackupex --stream=xbstream --compress ./ > backup.xbstream
-  
-  * To unpack the backup to the current directory: :: 
-
-      xbstream -x <  backup.xbstream 
-
-  * Sending backup compressed directly to another host and unpacking it: ::
-
-      innobackupex --compress --stream=xbstream ./ | ssh user@otherhost "xbstream -x"
-  
-  * Parallel compression with parallel copying backup :: 
- 
-      innobackupex --compress --compress-threads=8 --stream=xbstream --parallel=4 ./ > backup.xbstream
+.. [#f1] Install from the `official site <http://www.ivarch.com/programs/quickref/pv.shtml>`_ or from the distribution package (``apt install pv``)
