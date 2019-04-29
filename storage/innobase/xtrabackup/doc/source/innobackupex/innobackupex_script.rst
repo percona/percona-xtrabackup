@@ -32,7 +32,6 @@ Other Types of Backup
 
    incremental_backups_innobackupex
    partial_backups_innobackupex
-   compact_backups_innobackupex
    encrypted_backups_innobackupex
 
 Advanced Features

@@ -73,8 +73,6 @@ This table contains the information about the previous server backups. Informati
      - Is this an incremental backup
    * - format
      - Description of result format (``file``, ``tar``, ``xbstream``) 
-   * - compact
-     - Is this a compact backup
    * - compressed
      - Is this a compressed backup
    * - encrypted

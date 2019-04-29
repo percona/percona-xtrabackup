@@ -46,12 +46,6 @@ Options
    can produce inconsistent backups with this option enabled. Use at your own
    risk.
 
-.. option:: --compact
-
-   Create a compact backup with all secondary index pages omitted. This option
-   is passed directly to xtrabackup.  See the :program:`xtrabackup`
-   :doc:`documentation <../xtrabackup_bin/xtrabackup_binary>` for details.
-
 .. option:: --compress
 
    This option instructs xtrabackup to compress backup copies of InnoDB data
