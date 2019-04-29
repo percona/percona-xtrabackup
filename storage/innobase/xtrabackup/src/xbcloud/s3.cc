@@ -489,7 +489,6 @@ bool S3_client::upload_object(const std::string &bucket,
                               const Http_buffer &contents) {
   Http_request req(Http_request::PUT, protocol, hostname(bucket),
                    bucketname(bucket) + "/" + name);
-  req.add_header("Content-Length", std::to_string(contents.size()));
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload(contents);
   signer->sign_request(hostname(bucket), bucket, req, time(0));
@@ -588,7 +587,6 @@ bool S3_client::async_upload_object(
            bucket.c_str(), name.c_str());
     return false;
   }
-  req->add_header("Content-Length", std::to_string(contents.size()));
   req->add_header("Content-Type", "application/octet-stream");
   for (const auto &h : extra_http_headers) {
     req->add_header(h.first, h.second);
