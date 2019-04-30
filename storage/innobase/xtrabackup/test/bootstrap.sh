@@ -62,7 +62,7 @@ case "$1" in
 
     innodb80)
         url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
-        tarball="mysql-8.0.15-linux-glibc2.12-$arch.tar.xz"
+        tarball="mysql-8.0.16-linux-glibc2.12-$arch.tar.xz"
         ;;
 
     xtradb51)
