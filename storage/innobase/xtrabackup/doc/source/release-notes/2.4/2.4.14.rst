@@ -1,0 +1,50 @@
+================================================================================
+|Percona XtraBackup| |release|
+================================================================================
+
+Percona is glad to announce the release of |Percona XtraBackup| |release| on
+|date|. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.14/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories. 
+
+|Percona XtraBackup| |release| enables saving backups to an Amazon S3 storage
+when using |xbcloud|. The following example demonstrates how to use an Amazon S3
+storage to make a full backup.
+
+.. code-block:: bash
+
+   $ xtrabackup --backup --stream=xbstream --extra-lsndir=/tmp --target-dir=/tmp | \
+   xbcloud put --storage=s3 \
+   --s3-endpoint='s3.amazonaws.com' \
+   --s3-access-key='YOUR-ACCESSKEYID' \
+   --s3-secret-key='YOUR-SECRETACCESSKEY' \
+   --s3-bucket='mysql_backups'
+   --parallel=10 \
+   ${date -I}-full_backup
+
+All Percona software is open-source and free.
+
+New Features
+================================================================================
+
+- Amazon S3 is now supported in |xbcloud|. More information in
+  :jirabug:`PXB-1813`.
+
+Bugs Fixed
+================================================================================
+
+- When the row format was changed during the backup, |xtrabackup| could crash
+  during the incremental prepare stage. Bug fixed :jirabug:`PXB-1824`.
+- If compressed InnoDB undo tablespaces were not removed beforehand, the
+  incremental backup could crash at the prepare stage. Bug fixed
+  :jirabug:`PXB-1552`.
+
+**Other bugs fixed**:
+:jirabug:`PXB-1771`,
+:jirabug:`PXB-1809`,
+:jirabug:`PXB-1837`.
+
+
+.. |release| replace:: 2.4.14
+.. |date| replace:: May 1, 2019
+
