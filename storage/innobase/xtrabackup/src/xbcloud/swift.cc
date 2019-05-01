@@ -322,14 +322,6 @@ bool Keystone_client::auth_v3(const std::string &swift_region,
           }
         }
 
-    or
-
-        "scope": {
-          "domain": {
-            "id": "default"
-          }
-        }
-
       }
     }
   */
@@ -422,10 +414,6 @@ bool Keystone_client::auth_v3(const std::string &swift_region,
       write_domain(writer, project_domain, project_domain_id);
     }
     writer.EndObject();  // project
-    writer.EndObject();  // scope
-  } else if (!domain.empty() || domain_id.empty()) {
-    writer.Key("scope");
-    write_domain(writer, domain, domain_id);
     writer.EndObject();  // scope
   }
   writer.EndObject();  // auth
