@@ -150,9 +150,9 @@ static ds_file_t *decompress_open(ds_ctxt_t *ctxt, const char *path,
     /* Compressed files always have .qp extension. If that is missing assume
     this particular file isn't compressed for some reason and skip the
     decompression phase */
-    msg("decompress: File %s passed to decompress but missing .qp extension",
+    msg("decompress: File %s passed to decompress but missing .qp extension\n",
         path);
-    return ds_open(dest_ctxt, path, mystat);
+    return NULL;
   }
 
   dest_file = ds_open(dest_ctxt, new_name, mystat);

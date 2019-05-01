@@ -257,7 +257,7 @@ bool Tablespace_map::deserialize(const std::string &dir) {
   std::ifstream f(path);
 
   if (f.fail()) {
-    msg("xtrabackup: Error: cannot open file '%s'", path.c_str());
+    msg("xtrabackup: Error: cannot open file '%s'\n", path.c_str());
     return (false);
   }
 

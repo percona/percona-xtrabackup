@@ -72,5 +72,5 @@ Com_lock_tables	0
 Com_lock_tables_for_backup	2
 Com_unlock_instance	0
 Com_unlock_tables	3
-Com_flush	7
+Com_flush	9
 EOF

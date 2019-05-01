@@ -109,31 +109,31 @@ function run_cmd_expect_failure()
 
 function load_sakila()
 {
-vlog "Loading sakila"
-${MYSQL} ${MYSQL_ARGS} -e "create database sakila"
-vlog "Loading sakila scheme"
-${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-schema.sql
-vlog "Loading sakila data"
-${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-data.sql
+    vlog "Loading sakila"
+    ${MYSQL} ${MYSQL_ARGS} -e "create database sakila"
+    vlog "Loading sakila scheme"
+    ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-schema.sql
+    vlog "Loading sakila data"
+    ${MYSQL} ${MYSQL_ARGS} sakila < inc/sakila-db/sakila-data.sql
 }
 
 function load_dbase_schema()
 {
-vlog "Loading $1 database schema"
-${MYSQL} ${MYSQL_ARGS} -e "create database $1"
-${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-schema.sql
+    vlog "Loading $1 database schema"
+    ${MYSQL} ${MYSQL_ARGS} -e "create database $1"
+    ${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-schema.sql
 }
 
 function load_dbase_data()
 {
-vlog "Loading $1 database data"
-${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-data.sql
+    vlog "Loading $1 database data"
+    ${MYSQL} ${MYSQL_ARGS} $1 < inc/$1-db/$1-data.sql
 }
 
 function drop_dbase()
 {
-  vlog "Dropping database $1"
-  run_cmd ${MYSQL} ${MYSQL_ARGS} -e "DROP DATABASE $1"
+    vlog "Dropping database $1"
+    run_cmd ${MYSQL} ${MYSQL_ARGS} -e "DROP DATABASE $1"
 }
 
 ########################################################################
@@ -316,6 +316,8 @@ user=root
 [xtrabackup]
 ${XB_EXTRA_MY_CNF_OPTS:-}
 EOF
+
+        local new_instance
 
         # Create datadir and call mysql_install_db if it doesn't exist
         if [ ! -d "$MYSQLD_DATADIR" ]
@@ -620,6 +622,34 @@ function checksum_table()
     $MYSQL $MYSQL_ARGS -Ns -e "CHECKSUM TABLE $2 EXTENDED" $1 | awk {'print $2'}
 }
 
+########################################################################
+# Prints checksum for a given table.
+# Takes database, table name and the list of columns
+########################################################################
+function checksum_table_columns()
+{
+    local db_name=$1
+    local table_name=$2
+    local old_ifs="$IFS"
+    local col_list
+
+    shift ; shift ; IFS="," ; col_list="$*" ; IFS="$old_ifs"
+
+    $MYSQL $MYSQL_ARGS -Ns ${db_name} <<EOF | sed -n 2p
+set @crc := '', @cnt := 0;
+
+select min(least(
+      length(@crc := sha1(concat(
+         @crc,
+         sha1(concat_ws('#', ${col_list}))))),
+      @cnt := @cnt + 1
+   )) as discard
+from ${table_name} use index(PRIMARY);
+
+select concat_ws(":", @cnt, @crc);
+EOF
+}
+
 ##########################################################################
 # Dumps a given database using mysqldump                                 #
 ##########################################################################
@@ -876,6 +906,39 @@ tokudb_trx=ha_tokudb.so:\
 tokudb_locks=ha_tokudb.so:\
 tokudb_lock_waits=ha_tokudb.so:\
 tokudb_background_job_status=ha_tokudb.so"
+}
+
+function require_rocksdb()
+{
+   if ! test -a $(dirname ${MYSQLD})/../lib/mysql/plugin/ha_rocksdb.so ; then
+        skip_test "Requires RocksDB"
+   fi
+}
+
+function init_rocksdb()
+{
+    mysql <<EOF
+INSTALL PLUGIN ROCKSDB SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_CFSTATS SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_DBSTATS SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_PERF_CONTEXT SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_PERF_CONTEXT_GLOBAL SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_CF_OPTIONS SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_GLOBAL_INFO SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_COMPACTION_STATS SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_DDL SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_INDEX_FILE_MAP SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_LOCKS SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_TRX SONAME 'ha_rocksdb.so';
+INSTALL PLUGIN ROCKSDB_DEADLOCK SONAME 'ha_rocksdb.so';
+EOF
+}
+
+function require_debug_sync()
+{
+    if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
+        skip_test "Requires --debug-sync support"
+    fi
 }
 
 ##############################################################################

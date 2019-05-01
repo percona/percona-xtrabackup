@@ -63,6 +63,7 @@ extern char *innobase_buffer_pool_filename;
 extern char *innobase_directories;
 extern ds_ctxt_t *ds_meta;
 extern ds_ctxt_t *ds_data;
+extern ds_ctxt_t *ds_uncompressed_data;
 
 /* The last checkpoint LSN at the backup startup time */
 extern lsn_t checkpoint_lsn_start;
@@ -154,6 +155,9 @@ extern char *opt_login_path;
 extern char *opt_log_bin;
 extern char *opt_binlog_index_name;
 
+extern char *opt_rocksdb_datadir;
+extern char *opt_rocksdb_wal_dir;
+
 extern const char *query_type_names[];
 
 enum query_type_t { QUERY_TYPE_ALL, QUERY_TYPE_UPDATE, QUERY_TYPE_SELECT };
@@ -222,6 +226,9 @@ bool check_if_skip_database_by_path(
     const char *path /*!< in: path to the db directory. */
 );
 
+/* pause xtrabackup and wait for resume */
+void debug_sync_point(const char *name);
+
 /************************************************************************
 Check if parameter is set in defaults file or via command line argument
 @return true if parameter is set. */
@@ -236,26 +243,37 @@ bool xb_get_one_option(int optid,
 const char *xb_get_copy_action(const char *dflt = "Copying");
 
 struct datadir_entry_t {
-  std::string datadir;   /*!<in: datadir */
-  std::string path;      /*!<in: path */
-  std::string db_name;   /*!<in: database name */
-  std::string file_name; /*!<in: file name with suffix */
-  bool is_empty_dir;     /*!<in: is empty dir */
+  std::string datadir;
+  std::string path;
+  std::string db_name;
+  std::string file_name;
+  std::string rel_path;
+  bool is_empty_dir;
+  ssize_t file_size;
 
   datadir_entry_t()
-      : datadir(), path(), db_name(), file_name(), is_empty_dir() {}
+      : datadir(), path(), db_name(), file_name(), rel_path(), is_empty_dir() {}
 
   datadir_entry_t(const datadir_entry_t &) = default;
 
-  datadir_entry_t & operator=(const datadir_entry_t &) = default;
+  datadir_entry_t &operator=(const datadir_entry_t &) = default;
 
   datadir_entry_t(const char *datadir, const char *path, const char *db_name,
-                  const char *file_name, bool is_empty_dir)
+                  const char *file_name, bool is_empty_dir,
+                  ssize_t file_size = -1)
       : datadir(datadir),
         path(path),
         db_name(db_name),
         file_name(file_name),
-        is_empty_dir(is_empty_dir) {}
+        is_empty_dir(is_empty_dir),
+        file_size(file_size) {
+    if (db_name != nullptr && *db_name != 0) {
+      rel_path =
+          std::string(db_name) + std::string("/") + std::string(file_name);
+    } else {
+      rel_path = std::string(file_name);
+    }
+  }
 };
 
 /************************************************************************
