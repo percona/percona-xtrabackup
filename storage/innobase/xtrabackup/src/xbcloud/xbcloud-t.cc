@@ -3,6 +3,7 @@
 
 #include "http.h"
 #include "s3.h"
+#include "swift.h"
 
 using namespace xbcloud;
 using namespace ::testing;
@@ -27,7 +28,13 @@ MATCHER(IsGet, "") { return arg.method() == Http_request::GET; }
 
 MATCHER(IsPut, "") { return arg.method() == Http_request::PUT; }
 
+MATCHER(IsPost, "") { return arg.method() == Http_request::POST; }
+
 MATCHER(IsHead, "") { return arg.method() == Http_request::HEAD; }
+
+MATCHER_P(PayloadEq, payload, "") {
+  return (std::string(&arg.payload()[0], arg.payload().size()) == payload);
+}
 
 TEST(s3_client, basicDNSv4) {
   Mock_http_client http_client;
@@ -214,4 +221,227 @@ TEST(s3v2_signer, basicPATH) {
 
   ASSERT_STREQ(req.headers().at("Authorization").c_str(),
                "AWS access_key:VQ+0g9rlqRH9SMeRubHF2FW9jeI=");
+}
+
+const char *keystone_v3_resp =
+    "{"
+    "   \"token\":{"
+    "      \"is_domain\":false,"
+    "      \"methods\":["
+    "         \"password\""
+    "      ],"
+    "      \"roles\":["
+    "         {"
+    "            \"id\":\"xxxxxxxxxxxxxxxx\","
+    "            \"name\":\"user\""
+    "         }"
+    "      ],"
+    "      \"expires_at\":\"2019-05-01T22:47:55.000000Z\","
+    "      \"project\":{"
+    "         \"domain\":{"
+    "            \"id\":\"default\","
+    "            \"name\":\"Default\""
+    "         },"
+    "         \"id\":\"cccccccccccccccccccccccccccc\","
+    "         \"name\":\"jenkins-test\""
+    "      },"
+    "      \"catalog\":["
+    "         {"
+    "            \"endpoints\":["
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  \"url\":\"https://example.com:9696\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"public\","
+    "                  \"id\":\"3658503dc5f54bb7a1f5c3877469ec7d\""
+    "               },"
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  \"url\":\"https://example.com:9696\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"admin\","
+    "                  \"id\":\"9ab4964231ea4f259a8bbd0220f5ea6d\""
+    "               },"
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  \"url\":\"https://example.com:9696\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"internal\","
+    "                  \"id\":\"cc192a46b63146cfa07b81ccabd4ce28\""
+    "               }"
+    "            ],"
+    "            \"type\":\"network\","
+    "            \"id\":\"07f1221740784c5c9f8f04e2d16b48d3\","
+    "            \"name\":\"neutron\""
+    "         },"
+    "         {"
+    "            \"endpoints\":["
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  "
+    "\"url\":\"https://example.com:8080/v1/"
+    "AUTH_67a0195262ec4452bd2af48e75bcb687\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"internal\","
+    "                  \"id\":\"476e37810fb7485e812856bb4a7e477e\""
+    "               },"
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  "
+    "\"url\":\"https://example.com:8080/v1/"
+    "AUTH_67a0195262ec4452bd2af48e75bcb687\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"public\","
+    "                  \"id\":\"7122b0327b8a4ab396c29b547359d0db\""
+    "               },"
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  "
+    "\"url\":\"https://example.com:8080/v1/"
+    "AUTH_67a0195262ec4452bd2af48e75bcb687\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"admin\","
+    "                  \"id\":\"d92fe3eaa1bc4be297c34ae7f042b27b\""
+    "               }"
+    "            ],"
+    "            \"type\":\"object-store\","
+    "            \"id\":\"78a8ab157b9447ceb8d771f8422cbd98\","
+    "            \"name\":\"swift\""
+    "         },"
+    "         {"
+    "            \"endpoints\":["
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  \"url\":\"https://example.com:5000/v3/\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"internal\","
+    "                  \"id\":\"2a9c09ad4be04d66b3ed09e561d756b1\""
+    "               },"
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  \"url\":\"https://example.com:5000/v3/\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"public\","
+    "                  \"id\":\"ae2e556c56c34e48a8de4d5da9addc63\""
+    "               },"
+    "               {"
+    "                  \"region_id\":\"RegionOne\","
+    "                  \"url\":\"https://example.com:35357/v3/\","
+    "                  \"region\":\"RegionOne\","
+    "                  \"interface\":\"admin\","
+    "                  \"id\":\"b52a04b9059741dcb989ba1dae513b24\""
+    "               }"
+    "            ],"
+    "            \"type\":\"identity\","
+    "            \"id\":\"zzzzzzzzzzzzzzzzzzzzzz\","
+    "            \"name\":\"keystone\""
+    "         }"
+    "      ],"
+    "      \"user\":{"
+    "         \"password_expires_at\":null,"
+    "         \"domain\":{"
+    "            \"id\":\"default\","
+    "            \"name\":\"Default\""
+    "         },"
+    "         \"id\":\"xxxxxxxxxxxxxxxxxxxxxxx\","
+    "         \"name\":\"batman\""
+    "      },"
+    "      \"audit_ids\":["
+    "         \"xxxxxxxxxxxxxxxxx\""
+    "      ],"
+    "      \"issued_at\":\"2019-05-01T21:47:55.000000Z\""
+    "   }"
+    "}";
+
+TEST(keystone_v3, unscoped_keystone_v3_success) {
+  Mock_http_client http_client;
+  Keystone_client k(&http_client, "https://example.com/");
+  k.set_user("batman");
+  k.set_password("swordfish");
+  k.set_domain("user-domain");
+  Keystone_client::auth_info_t auth_info;
+
+  EXPECT_CALL(
+      http_client,
+      make_request(
+          AllOf(IsPost(),
+                Property(&Http_request::url,
+                         StrEq("https://example.com/auth/tokens/")),
+                PayloadEq("{\"auth\":{\"identity\":{\"methods\":[\"password\"],"
+                          "\"password\":{\"user\":{\"name\":\"batman\","
+                          "\"domain\":{\"name\":\"user-domain\"},\"password\":"
+                          "\"swordfish\"}}}}}")),
+          Response(
+              201, keystone_v3_resp,
+              std::vector<const char *>{"x-subject-token: test-auth-token"})))
+      .WillOnce(Return(true));
+  k.auth_v3("", auth_info);
+  EXPECT_EQ(auth_info.token, "test-auth-token");
+  EXPECT_EQ(
+      auth_info.url,
+      "https://example.com:8080/v1/AUTH_67a0195262ec4452bd2af48e75bcb687");
+}
+
+TEST(keystone_v3, project_scoped_keystone_v3_success) {
+  Mock_http_client http_client;
+  Keystone_client k(&http_client, "https://example.com/");
+  k.set_user("batman");
+  k.set_password("swordfish");
+  k.set_domain("user-domain");
+  k.set_project("example-project");
+  Keystone_client::auth_info_t auth_info;
+
+  EXPECT_CALL(
+      http_client,
+      make_request(
+          AllOf(IsPost(),
+                Property(&Http_request::url,
+                         StrEq("https://example.com/auth/tokens/")),
+                PayloadEq("{\"auth\":{\"identity\":{\"methods\":[\"password\"],"
+                          "\"password\":{\"user\":{\"name\":\"batman\","
+                          "\"domain\":{\"name\":\"user-domain\"},\"password\":"
+                          "\"swordfish\"}}},\"scope\":{\"project\":{\"name\":"
+                          "\"example-project\"}}}}")),
+          Response(
+              201, keystone_v3_resp,
+              std::vector<const char *>{"x-subject-token: test-auth-token"})))
+      .WillOnce(Return(true));
+  k.auth_v3("", auth_info);
+  EXPECT_EQ(auth_info.token, "test-auth-token");
+  EXPECT_EQ(
+      auth_info.url,
+      "https://example.com:8080/v1/AUTH_67a0195262ec4452bd2af48e75bcb687");
+}
+
+TEST(keystone_v3, project_scoped_with_project_domain_keystone_v3_success) {
+  Mock_http_client http_client;
+  Keystone_client k(&http_client, "https://example.com/");
+  k.set_user("batman");
+  k.set_password("swordfish");
+  k.set_domain("user-domain");
+  k.set_project("example-project");
+  k.set_project_domain("project-domain-example");
+  Keystone_client::auth_info_t auth_info;
+
+  EXPECT_CALL(
+      http_client,
+      make_request(
+          AllOf(IsPost(),
+                Property(&Http_request::url,
+                         StrEq("https://example.com/auth/tokens/")),
+                PayloadEq("{\"auth\":{\"identity\":{\"methods\":[\"password\"],"
+                          "\"password\":{\"user\":{\"name\":\"batman\","
+                          "\"domain\":{\"name\":\"user-domain\"},\"password\":"
+                          "\"swordfish\"}}},\"scope\":{\"project\":{\"name\":"
+                          "\"example-project\",\"domain\":{\"name\":\"project-"
+                          "domain-example\"}}}}}")),
+          Response(
+              201, keystone_v3_resp,
+              std::vector<const char *>{"x-subject-token: test-auth-token"})))
+      .WillOnce(Return(true));
+  k.auth_v3("", auth_info);
+  EXPECT_EQ(auth_info.token, "test-auth-token");
+  EXPECT_EQ(
+      auth_info.url,
+      "https://example.com:8080/v1/AUTH_67a0195262ec4452bd2af48e75bcb687");
 }
