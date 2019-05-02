@@ -105,7 +105,8 @@ bool have_galera_enabled = false;
 bool have_flush_engine_logs = false;
 bool have_multi_threaded_slave = false;
 bool have_gtid_slave = false;
-bool have_myisam_tables = false;
+bool have_unsafe_ddl_tables = false;
+bool have_rocksdb = false;
 
 bool slave_auto_position = false;
 
@@ -410,32 +411,35 @@ static bool check_server_version(unsigned long version_number,
  Receive options important for XtraBackup from MySQL server.
  @return	true on success. */
 bool get_mysql_vars(MYSQL *connection) {
-  char *gtid_mode_var = NULL;
-  char *version_var = NULL;
-  char *version_comment_var = NULL;
-  char *innodb_version_var = NULL;
-  char *have_backup_locks_var = NULL;
-  char *log_bin_var = NULL;
-  char *lock_wait_timeout_var = NULL;
-  char *wsrep_on_var = NULL;
-  char *slave_parallel_workers_var = NULL;
-  char *gtid_slave_pos_var = NULL;
-  char *innodb_buffer_pool_filename_var = NULL;
-  char *datadir_var = NULL;
-  char *innodb_log_group_home_dir_var = NULL;
-  char *innodb_log_file_size_var = NULL;
-  char *innodb_log_files_in_group_var = NULL;
-  char *innodb_data_file_path_var = NULL;
-  char *innodb_data_home_dir_var = NULL;
-  char *innodb_undo_directory_var = NULL;
-  char *innodb_directories_var = NULL;
-  char *innodb_page_size_var = NULL;
-  char *innodb_log_checksums_var = NULL;
-  char *innodb_checksum_algorithm_var = NULL;
-  char *innodb_redo_log_encrypt_var = NULL;
-  char *innodb_undo_log_encrypt_var = NULL;
-  char *innodb_track_changed_pages_var = NULL;
-  char *server_uuid_var = NULL;
+  char *gtid_mode_var = nullptr;
+  char *version_var = nullptr;
+  char *version_comment_var = nullptr;
+  char *innodb_version_var = nullptr;
+  char *have_backup_locks_var = nullptr;
+  char *log_bin_var = nullptr;
+  char *lock_wait_timeout_var = nullptr;
+  char *wsrep_on_var = nullptr;
+  char *slave_parallel_workers_var = nullptr;
+  char *gtid_slave_pos_var = nullptr;
+  char *innodb_buffer_pool_filename_var = nullptr;
+  char *datadir_var = nullptr;
+  char *innodb_log_group_home_dir_var = nullptr;
+  char *innodb_log_file_size_var = nullptr;
+  char *innodb_log_files_in_group_var = nullptr;
+  char *innodb_data_file_path_var = nullptr;
+  char *innodb_data_home_dir_var = nullptr;
+  char *innodb_undo_directory_var = nullptr;
+  char *innodb_directories_var = nullptr;
+  char *innodb_page_size_var = nullptr;
+  char *innodb_log_checksums_var = nullptr;
+  char *innodb_checksum_algorithm_var = nullptr;
+  char *innodb_redo_log_encrypt_var = nullptr;
+  char *innodb_undo_log_encrypt_var = nullptr;
+  char *innodb_track_changed_pages_var = nullptr;
+  char *server_uuid_var = nullptr;
+  char *rocksdb_datadir_var = nullptr;
+  char *rocksdb_wal_dir_var = nullptr;
+  char *rocksdb_disable_file_deletions_var = nullptr;
 
   unsigned long server_version = mysql_get_server_version(connection);
 
@@ -467,7 +471,10 @@ bool get_mysql_vars(MYSQL *connection) {
       {"innodb_undo_log_encrypt", &innodb_undo_log_encrypt_var},
       {"innodb_track_changed_pages", &innodb_track_changed_pages_var},
       {"server_uuid", &server_uuid_var},
-      {NULL, NULL}};
+      {"rocksdb_datadir", &rocksdb_datadir_var},
+      {"rocksdb_wal_dir", &rocksdb_wal_dir_var},
+      {"rocksdb_disable_file_deletions", &rocksdb_disable_file_deletions_var},
+      {nullptr, nullptr}};
 
   read_mysql_variables(connection, "SHOW VARIABLES", mysql_vars, true);
 
@@ -639,6 +646,41 @@ bool get_mysql_vars(MYSQL *connection) {
     have_changed_page_bitmaps = true;
   }
 
+  if (!check_if_param_set("rocksdb_datadir") && rocksdb_datadir_var &&
+      *rocksdb_datadir_var) {
+    opt_rocksdb_datadir =
+        my_strdup(PSI_NOT_INSTRUMENTED, rocksdb_datadir_var, MYF(MY_FAE));
+  }
+
+  if (!check_if_param_set("rocksdb_wal_dir") && rocksdb_wal_dir_var &&
+      *rocksdb_wal_dir_var) {
+    opt_rocksdb_wal_dir =
+        my_strdup(PSI_NOT_INSTRUMENTED, rocksdb_wal_dir_var, MYF(MY_FAE));
+  }
+
+  if (rocksdb_disable_file_deletions_var != nullptr) {
+    /* rocksdb backup extensions are supported */
+    have_rocksdb = true;
+  } else {
+    char *engine = nullptr;
+
+    mysql_variable vars[] = {{"Engine", &engine}, {nullptr, nullptr}};
+
+    MYSQL_RES *res =
+        xb_mysql_query(mysql_connection, "SHOW ENGINES", true, true);
+
+    while (read_mysql_variables_from_result(res, vars, false)) {
+      if (strcasecmp(engine, "ROCKSDB") == 0) {
+        msg_ts(
+            "WARNING: ROCKSB storage engine is enabled, but ROCKSB backup "
+            "extensions are not supported by server. Please upgrade "
+            "Percona Server to enable ROCKSDB backups.\n");
+      }
+      free_mysql_variables(vars);
+    }
+    mysql_free_result(res);
+  }
+
 out:
   free_mysql_variables(mysql_vars);
 
@@ -678,9 +720,9 @@ bool detect_mysql_capabilities_for_backup() {
   char *count_str =
       read_mysql_one_value(mysql_connection,
                            "SELECT COUNT(*) FROM information_schema.tables "
-                           "WHERE engine = 'MyISAM'");
-  unsigned long long count = strtoull(count_str, NULL, 10);
-  have_myisam_tables = (count > 0);
+                           "WHERE engine = 'MyISAM' OR engine = 'RocksDB'");
+  unsigned long long count = strtoull(count_str, nullptr, 10);
+  have_unsafe_ddl_tables = (count > 0);
   free(count_str);
 
   if (opt_slave_info) {
@@ -1053,7 +1095,7 @@ bool lock_tables_maybe(MYSQL *connection) {
     return (true);
   }
 
-  if (!have_myisam_tables && !force_ftwrl) {
+  if (!have_unsafe_ddl_tables && !force_ftwrl) {
     return (true);
   }
 
@@ -1233,23 +1275,6 @@ cleanup:
   return (result);
 }
 
-typedef struct {
-  std::string channel_name;
-  std::string relay_log_file;
-  uint64_t relay_log_position;
-  std::string relay_master_log_file;
-  uint64_t exec_master_log_position;
-} replication_channel_status_t;
-
-typedef struct {
-  std::string filename;
-  uint64_t position;
-  std::string gtid_executed;
-  lsn_t lsn;
-  lsn_t lsn_checkpoint;
-  std::vector<replication_channel_status_t> channels;
-} log_status_t;
-
 static log_status_t log_status;
 
 /*********************************************************************/ /**
@@ -1340,8 +1365,7 @@ bool write_slave_info(MYSQL *connection) {
                                 ? ch->second.position
                                 : channel.exec_master_log_position;
       slave_info << "CHANGE MASTER TO MASTER_LOG_FILE='" << filename
-                 << "', MASTER_LOG_POS=" << position
-                 << for_channel << ";\n";
+                 << "', MASTER_LOG_POS=" << position << for_channel << ";\n";
 
       mysql_slave_position_s << "master host '" << ch->second.master
                              << "', filename '" << filename << "', position '"
@@ -1523,8 +1547,9 @@ bool write_current_binlog_file(MYSQL *connection) {
     char line[FN_REFLEN];
     if (fgets(line, sizeof(line), f_index) != nullptr) {
       if (strstr(line, log_status.filename.c_str()) != nullptr) {
-        backup_file_printf(log_bin_index_filename, line, strlen(line));
+        backup_file_print(log_bin_index_filename, line, strlen(line));
         result = true;
+        break;
       }
     }
   }
@@ -1583,6 +1608,17 @@ static void log_status_storage_engines_parse(const char *s,
   auto innodb = root["InnoDB"].GetObject();
   log_status.lsn = innodb["LSN"].GetUint64();
   log_status.lsn_checkpoint = innodb["LSN_checkpoint"].GetUint64();
+
+  if (root.HasMember("RocksDB")) {
+    auto rocksdb = root["RocksDB"].GetObject();
+    for (auto &wal : rocksdb["wal_files"].GetArray()) {
+      rocksdb_wal_t rdb_wal;
+      rdb_wal.file_size_bytes = wal["size_file_bytes"].GetUint64();
+      rdb_wal.log_number = wal["log_number"].GetUint();
+      rdb_wal.path_name = wal["path_name"].GetString();
+      log_status.rocksdb_wal_files.push_back(rdb_wal);
+    }
+  }
 }
 
 /** Parse binaty log position from JSON.
@@ -1616,8 +1652,13 @@ static void log_status_local_parse(const char *s, log_status_t &log_status) {
 
 /** Read binaty log position and InnoDB LSN from p_s.log_status.
 @param[in]   conn         mysql connection handle */
-void log_status_get(MYSQL *conn) {
+const log_status_t &log_status_get(MYSQL *conn) {
   msg_ts("Selecting LSN and binary log position from p_s.log_status\n");
+
+  debug_sync_point("log_status_get");
+
+  ut_ad(!have_unsafe_ddl_tables || tables_locked || instance_locked ||
+        opt_no_lock || opt_lock_ddl_per_table);
 
   const char *query =
       "SELECT server_uuid, local, replication, "
@@ -1634,23 +1675,22 @@ void log_status_get(MYSQL *conn) {
     log_status_replication_parse(replication, log_status);
   }
   mysql_free_result(result);
+
+  return log_status;
 }
 
 /*********************************************************************/ /**
  Retrieves MySQL binlog position and
  saves it in a file. It also prints it to stdout.
  @param[in]   connection  MySQL connection handler
- @param[out]  lsn         InnoDB's current LN
  @return true if success. */
-bool write_binlog_info(MYSQL *connection, lsn_t &lsn) {
+bool write_binlog_info(MYSQL *connection) {
   std::ostringstream s;
   char *gtid_mode = NULL;
   bool result, gtid;
 
   mysql_variable vars[] = {{"gtid_mode", &gtid_mode}, {NULL, NULL}};
   read_mysql_variables(connection, "SHOW VARIABLES", vars, true);
-
-  lsn = log_status.lsn;
 
   if (log_status.filename.empty() && log_status.gtid_executed.empty()) {
     /* Do not create xtrabackup_binlog_info if binary

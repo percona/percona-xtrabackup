@@ -3,6 +3,7 @@
 
 #include <mysql.h>
 #include <string>
+#include <vector>
 
 #include "xtrabackup.h"
 
@@ -16,6 +17,96 @@ enum mysql_flavor_t {
 extern mysql_flavor_t server_flavor;
 extern unsigned long mysql_server_version;
 
+struct replication_channel_status_t {
+  std::string channel_name;
+  std::string relay_log_file;
+  uint64_t relay_log_position;
+  std::string relay_master_log_file;
+  uint64_t exec_master_log_position;
+};
+
+struct rocksdb_wal_t {
+  size_t log_number;
+  std::string path_name;
+  size_t file_size_bytes;
+};
+
+struct log_status_t {
+  std::string filename;
+  uint64_t position;
+  std::string gtid_executed;
+  lsn_t lsn;
+  lsn_t lsn_checkpoint;
+  std::vector<replication_channel_status_t> channels;
+  std::vector<rocksdb_wal_t> rocksdb_wal_files;
+};
+
+#define ROCKSDB_SUBDIR ".rocksdb"
+
+class Myrocks_datadir {
+ public:
+  using file_list = std::vector<datadir_entry_t>;
+
+  using const_iterator = file_list::const_iterator;
+
+  Myrocks_datadir(const std::string &datadir,
+                  const std::string &wal_dir = std::string()) {
+    rocksdb_datadir = datadir;
+    rocksdb_wal_dir = wal_dir;
+  }
+
+  file_list files(const char *dest_data_dir = ROCKSDB_SUBDIR,
+                  const char *dest_wal_dir = ROCKSDB_SUBDIR) const;
+
+  file_list data_files(const char *dest_datadir = ROCKSDB_SUBDIR) const;
+
+  file_list wal_files(const char *dest_wal_dir = ROCKSDB_SUBDIR) const;
+
+ private:
+  std::string rocksdb_datadir;
+  std::string rocksdb_wal_dir;
+
+  enum scan_type_t { SCAN_ALL, SCAN_WAL, SCAN_DATA };
+
+  void scan_dir(const std::string &dir, const char *dest_data_dir,
+                const char *dest_wal_dir, scan_type_t scan_type,
+                file_list &result) const;
+};
+
+class Myrocks_checkpoint {
+ private:
+  std::string checkpoint_dir;
+  std::string rocksdb_datadir;
+  std::string rocksdb_wal_dir;
+
+  MYSQL *con;
+
+ public:
+  using file_list = Myrocks_datadir::file_list;
+
+  Myrocks_checkpoint() {}
+
+  /* disable file deletions and create checkpoint */
+  void create(MYSQL *con);
+
+  /* remove checkpoint */
+  void remove() const;
+
+  /* enable file deletions */
+  void enable_file_deletions() const;
+
+  /* get the list of live WAL files */
+  file_list wal_files(const log_status_t &log_status) const;
+
+  /* get the list of checkpoint files */
+  file_list checkpoint_files(const log_status_t &log_status) const;
+};
+
+struct Backup_context {
+  log_status_t log_status;
+  Myrocks_checkpoint myrocks_checkpoint;
+};
+
 /* server capabilities */
 extern bool have_changed_page_bitmaps;
 extern bool have_backup_locks;
@@ -24,6 +115,7 @@ extern bool have_galera_enabled;
 extern bool have_flush_engine_logs;
 extern bool have_multi_threaded_slave;
 extern bool have_gtid_slave;
+extern bool have_rocksdb;
 
 /* History on server */
 extern time_t history_start_time;
@@ -66,15 +158,14 @@ bool write_current_binlog_file(MYSQL *connection);
 
 /** Read binaty log position and InnoDB LSN from p_s.log_status.
 @param[in]   conn         mysql connection handle */
-void log_status_get(MYSQL *conn);
+const log_status_t &log_status_get(MYSQL *conn);
 
 /*********************************************************************/ /**
  Retrieves MySQL binlog position and
  saves it in a file. It also prints it to stdout.
  @param[in]   connection  MySQL connection handler
- @param[out]  lsn         InnoDB's current LN
  @return true if success. */
-bool write_binlog_info(MYSQL *connection, lsn_t &lsn);
+bool write_binlog_info(MYSQL *connection);
 
 char *get_xtrabackup_info(MYSQL *connection);
 

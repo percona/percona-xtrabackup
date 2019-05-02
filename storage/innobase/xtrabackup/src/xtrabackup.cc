@@ -354,9 +354,10 @@ ulong xb_open_files_limit = 0;
 bool xb_close_files = FALSE;
 
 /* Datasinks */
-ds_ctxt_t *ds_data = NULL;
-ds_ctxt_t *ds_meta = NULL;
-ds_ctxt_t *ds_redo = NULL;
+ds_ctxt_t *ds_data = nullptr;
+ds_ctxt_t *ds_meta = nullptr;
+ds_ctxt_t *ds_redo = nullptr;
+ds_ctxt_t *ds_uncompressed_data = nullptr;
 
 static long innobase_log_files_in_group_save;
 static char *srv_log_group_home_dir_save;
@@ -444,6 +445,9 @@ uint opt_lock_ddl_timeout = 0;
 const char *opt_history = NULL;
 bool opt_decrypt = FALSE;
 uint opt_read_buffer_size = 0;
+
+char *opt_rocksdb_datadir = nullptr;
+char *opt_rocksdb_wal_dir = nullptr;
 
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
@@ -625,6 +629,9 @@ enum options_xtrabackup {
   OPT_OPEN_FILES_LIMIT,
   OPT_CLOSE_FILES,
   OPT_CORE_FILE,
+
+  OPT_ROCKSDB_DATADIR,
+  OPT_ROCKSDB_WAL_DIR,
 
   OPT_COPY_BACK,
   OPT_MOVE_BACK,
@@ -1188,6 +1195,32 @@ struct my_option xb_client_options[] = {
      0, 0, 0, 0, 0, 0},
 #endif
 
+    {"transition-key", OPT_TRANSITION_KEY,
+     "Transition key to encrypt "
+     "tablespace keys with.",
+     &opt_transition_key, &opt_transition_key, 0, GET_STR, OPT_ARG, 0, 0, 0, 0,
+     0, 0},
+
+    {"xtrabackup-plugin-dir", OPT_XTRA_PLUGIN_DIR,
+     "Directory for xtrabackup plugins.", &opt_xtra_plugin_dir,
+     &opt_xtra_plugin_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"generate-new-master-key", OPT_GENERATE_NEW_MASTER_KEY,
+     "Generate new master key when doing copy-back.",
+     &opt_generate_new_master_key, &opt_generate_new_master_key, 0, GET_BOOL,
+     NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"generate-transition-key", OPT_GENERATE_TRANSITION_KEY,
+     "Generate transition key and store it into keyring.",
+     &opt_generate_transition_key, &opt_generate_transition_key, 0, GET_BOOL,
+     NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"parallel", OPT_XTRA_PARALLEL,
+     "Number of threads to use for parallel datafiles transfer. "
+     "The default value is 1.",
+     (G_PTR *)&xtrabackup_parallel, (G_PTR *)&xtrabackup_parallel, 0, GET_INT,
+     REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
+
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 uint xb_client_options_count = array_elements(xb_client_options);
@@ -1205,11 +1238,6 @@ struct my_option xb_server_options[] = {
      ", in this case they are used in a round-robin fashion.",
      (G_PTR *)&opt_mysql_tmpdir, (G_PTR *)&opt_mysql_tmpdir, 0, GET_STR,
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-    {"parallel", OPT_XTRA_PARALLEL,
-     "Number of threads to use for parallel datafiles transfer. "
-     "The default value is 1.",
-     (G_PTR *)&xtrabackup_parallel, (G_PTR *)&xtrabackup_parallel, 0, GET_INT,
-     REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
 
     {"log", OPT_LOG, "Ignored option for MySQL option compatibility",
      (G_PTR *)&log_ignored_opt, (G_PTR *)&log_ignored_opt, 0, GET_STR, OPT_ARG,
@@ -1412,25 +1440,13 @@ Disable with --skip-innodb-doublewrite.",
      &server_id, &server_id, 0, GET_UINT, REQUIRED_ARG, 0, 0, UINT_MAX32, 0, 0,
      0},
 
-    {"transition-key", OPT_TRANSITION_KEY,
-     "Transition key to encrypt "
-     "tablespace keys with.",
-     &opt_transition_key, &opt_transition_key, 0, GET_STR, OPT_ARG, 0, 0, 0, 0,
-     0, 0},
+    {"rocksdb_datadir", OPT_ROCKSDB_DATADIR, "RocksDB data directory",
+     &opt_rocksdb_datadir, &opt_rocksdb_datadir, 0, GET_STR_ALLOC, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
 
-    {"xtrabackup-plugin-dir", OPT_XTRA_PLUGIN_DIR,
-     "Directory for xtrabackup plugins.", &opt_xtra_plugin_dir,
-     &opt_xtra_plugin_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-
-    {"generate-new-master-key", OPT_GENERATE_NEW_MASTER_KEY,
-     "Generate new master key when doing copy-back.",
-     &opt_generate_new_master_key, &opt_generate_new_master_key, 0, GET_BOOL,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
-
-    {"generate-transition-key", OPT_GENERATE_TRANSITION_KEY,
-     "Generate transition key and store it into keyring.",
-     &opt_generate_transition_key, &opt_generate_transition_key, 0, GET_BOOL,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"rocksdb_wal_dir", OPT_ROCKSDB_WAL_DIR, "RocksDB WAL directory",
+     &opt_rocksdb_wal_dir, &opt_rocksdb_wal_dir, 0, GET_STR_ALLOC, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
 
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
@@ -1450,7 +1466,7 @@ static void sigcont_handler(int sig __attribute__((unused))) {
 }
 #endif
 
-static inline void debug_sync_point(const char *name) {
+void debug_sync_point(const char *name) {
 #ifndef __WIN__
   FILE *fp;
   pid_t pid;
@@ -2252,7 +2268,8 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
   directories.append(MySQL_datadir_path.path());
 
   lsn_t to_lsn = ULLONG_MAX;
-  if (for_apply_log && metadata_type == METADATA_FULL_BACKUP) {
+  if (for_apply_log && (metadata_type == METADATA_FULL_BACKUP ||
+                        xtrabackup_incremental_dir != nullptr)) {
     to_lsn = (xtrabackup_incremental_dir == nullptr) ? metadata_last_lsn
                                                      : incremental_last_lsn;
   }
@@ -3360,6 +3377,8 @@ static void xtrabackup_init_datasinks(void) {
     }
   }
 
+  ds_uncompressed_data = ds_data;
+
   /* Compression for ds_data and ds_redo */
   if (xtrabackup_compress) {
     ds_ctxt_t *ds;
@@ -4016,7 +4035,7 @@ static void xb_tables_compatibility_check() {
       "  CONCAT(table_schema, '/', table_name), engine "
       "FROM information_schema.tables "
       "WHERE engine NOT IN ("
-      "'MyISAM', 'InnoDB', 'CSV', 'MRG_MYISAM') "
+      "'MyISAM', 'InnoDB', 'CSV', 'MRG_MYISAM', 'ROCKSDB') "
       "AND table_schema NOT IN ("
       "  'performance_schema', 'information_schema', "
       "  'mysql');";
@@ -4095,7 +4114,6 @@ void xtrabackup_backup_func(void) {
   uint count;
   ib_mutex_t count_mutex;
   data_thread_ctxt_t *data_threads;
-  lsn_t backup_lsn = 0;
 
   recv_is_making_a_backup = true;
   bool data_copying_error = false;
@@ -4477,7 +4495,8 @@ void xtrabackup_backup_func(void) {
     }
   }
 
-  if (!backup_start(backup_lsn)) {
+  Backup_context backup_ctxt;
+  if (!backup_start(backup_ctxt)) {
     exit(EXIT_FAILURE);
   }
 
@@ -4504,10 +4523,10 @@ void xtrabackup_backup_func(void) {
 skip_last_cp:
   /* stop log_copying_thread */
   log_copying = FALSE;
-  log_copying_stop_lsn = backup_lsn;
+  log_copying_stop_lsn = backup_ctxt.log_status.lsn;
   os_event_set(log_copying_stop);
   msg("xtrabackup: Stopping log copying thread at LSN " LSN_PF ".\n",
-      backup_lsn);
+      backup_ctxt.log_status.lsn);
   while (log_copying_running) {
     msg(".");
     os_thread_sleep(200000); /*0.2 sec*/
@@ -4534,7 +4553,7 @@ skip_last_cp:
     exit(EXIT_FAILURE);
   }
 
-  if (!backup_finish()) {
+  if (!backup_finish(backup_ctxt)) {
     exit(EXIT_FAILURE);
   }
 
@@ -5530,8 +5549,8 @@ static pfs_os_file_t xb_delta_open_matching_space(
     size_t real_name_len, /* out: buffer size for real_name */
     bool *success)        /* out: indicates error. TRUE = success */
 {
-  char dest_dir[FN_REFLEN];
-  char dest_space_name[FN_REFLEN];
+  char dest_dir[FN_REFLEN * 2 + 1];
+  char dest_space_name[FN_REFLEN * 2 + 1];
   bool ok;
   pfs_os_file_t file = XB_FILE_UNDEFINED;
   ulint tablespace_flags;
@@ -5543,15 +5562,16 @@ static pfs_os_file_t xb_delta_open_matching_space(
   *success = false;
 
   if (dbname) {
-    snprintf(dest_dir, FN_REFLEN, "%s/%s", xtrabackup_target_dir, dbname);
+    snprintf(dest_dir, sizeof(dest_dir), "%s/%s", xtrabackup_target_dir,
+             dbname);
     Fil_path::normalize(dest_dir);
 
-    snprintf(dest_space_name, FN_REFLEN, "%s/%s", dbname, name);
+    snprintf(dest_space_name, sizeof(dest_space_name), "%s/%s", dbname, name);
   } else {
-    snprintf(dest_dir, FN_REFLEN, "%s", xtrabackup_target_dir);
+    snprintf(dest_dir, sizeof(dest_dir), "%s", xtrabackup_target_dir);
     Fil_path::normalize(dest_dir);
 
-    snprintf(dest_space_name, FN_REFLEN, "%s", name);
+    snprintf(dest_space_name, sizeof(dest_space_name), "%s", name);
   }
 
   snprintf(real_name, real_name_len, "%s/%s", xtrabackup_target_dir,
@@ -5999,10 +6019,7 @@ void process_datadir_l1cbk(const char *datadir, const char *path,
     os_file_scan_directory(
         path,
         [&](const char *l2path, const char *l2name) mutable -> void {
-          if (strcmp(l2name, ".") == 0) {
-            return;
-          }
-          if (strcmp(l2name, "..") == 0) {
+          if (strcmp(l2name, ".") == 0 || strcmp(l2name, "..") == 0) {
             return;
           }
           is_empty_dir = false;
@@ -6039,10 +6056,7 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
   bool ret = os_file_scan_directory(
       path,
       [&](const char *l1path, const char *l1name) -> void {
-        if (strcmp(l1name, ".") == 0) {
-          return;
-        }
-        if (strcmp(l1name, "..") == 0) {
+        if (strcmp(l1name, ".") == 0 || strcmp(l1name, "..") == 0) {
           return;
         }
         char fullpath[FN_REFLEN];

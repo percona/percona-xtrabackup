@@ -377,9 +377,9 @@ bool generic_deserialize(
   }
 
   if (doc.HasMember("mysqld_version_id")) {
+#if !defined(XTRABACKUP)
     RJ_Value &mysqld_version_id = doc["mysqld_version_id"];
     DBUG_ASSERT(mysqld_version_id.IsUint64());
-#if !defined(XTRABACKUP)
     if (mysqld_version_id.GetUint64() > std::uint64_t(MYSQL_VERSION_ID)) {
       // Cannot deserialize SDIs from newer versions. Required?
       my_error(ER_IMP_INCOMPATIBLE_MYSQLD_VERSION, MYF(0),

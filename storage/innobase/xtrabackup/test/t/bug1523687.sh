@@ -30,11 +30,3 @@ do
 		diff -u $topdir/full/$i $topdir/inc/$i
 	fi
 done
-
-#
-# PXB-1711: Incremental backups do not create/update xtrabackup_binlog_info
-#
-
-if has_backup_safe_binlog_info ; then
-	diff -u $topdir/full/xtrabackup_binlog_info $topdir/full/xtrabackup_binlog_pos_innodb
-fi

@@ -7,9 +7,7 @@
 
 . inc/common.sh
 
-if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
-    skip_test "Requires --debug-sync support"
-fi
+require_debug_sync
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table
@@ -17,7 +15,7 @@ innodb_file_per_table
 
 start_server
 
-run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+mysql test <<EOF
 
 CREATE TABLE t1(a INT) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (1), (2), (3);
@@ -67,7 +65,7 @@ xb_pid=`cat $pid_file`
 
 # Modify the original tables, then change spaces ids by running DDL
 
-run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+mysql test <<EOF
 
 INSERT INTO t1 VALUES (4), (5), (6);
 DROP TABLE t1;
@@ -104,8 +102,6 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 
 run_cmd wait $job_pid
-
-# exit 1
 
 # Prepare
 xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup

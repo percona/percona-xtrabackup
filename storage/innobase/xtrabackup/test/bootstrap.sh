@@ -32,82 +32,36 @@ then
     arch="i686"
 fi
 
-if [ "$arch" = "i686" ]
-then
-    maria_arch_path=x86
-else
-    maria_arch_path=amd64
-fi
+function ssl_version()
+{
+    sslv=$(ls -la {/,/usr/}{lib64,lib,lib/x86_64-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
+
+    case $sslv in
+        100|101|102)
+        ;;
+        *)
+            if ! test -r "$1"
+            then
+                >&2 echo "tarball for your openssl version ($sslv) is not available"
+                exit 1
+            fi
+            ;;
+    esac
+
+    echo $sslv
+}
 
 case "$1" in
-    innodb51)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.1.73-linux-$arch-glibc23.tar.gz"
-        ;;
-
-    innodb55)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.5.42-linux2.6-$arch.tar.gz"
-        ;;
-
-    innodb56)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.6.23-linux-glibc2.5-$arch.tar.gz"
-        ;;
-
-    innodb57)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.7.21-linux-glibc2.12-$arch.tar.gz"
-        ;;
-
     innodb80)
         url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
-        tarball="mysql-8.0.16-linux-glibc2.12-$arch.tar.xz"
+        tarball="mysql-8.0.16-linux-glibc2.12-${arch}.tar.xz"
         ;;
 
-    xtradb51)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.1.73-rel14.12-625.Linux.$arch.tar.gz"
-        ;;
-
-    xtradb55)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.5.41-rel37.0-727.Linux.$arch.tar.gz"
-        ;;
-
-    xtradb56)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.6.22-rel72.0-.Linux.$arch.tar.gz"
-        ;;
-
-    xtradb57)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.7.21-20-Linux.$arch.tar.gz"
-        ;;
-
-    mariadb51)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.1.67-Linux-$arch.tar.gz"
-        ;;
-
-    mariadb52)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.2.14-Linux-$arch.tar.gz"
-        ;;
-
-    mariadb53)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.3.12-Linux-$arch.tar.gz"
-        ;;
-
-    mariadb55)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.5.40-linux-$arch.tar.gz"
-        ;;
-
-    mariadb100)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-10.0.14-linux-$arch.tar.gz"
+    xtradb80)
+        # url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-8.0.13-4/binary/tarball"
+        # tarball="Percona-Server-8.0.13-4-Linux.${arch}.ssl$(ssl_version).tar.gz"
+        url="https://pxb.sgp1.digitaloceanspaces.com"
+        tarball="Percona-Server-8.0.15-5-Linux.x86_64.ssl100.tar.gz"
         ;;
 
     *)
