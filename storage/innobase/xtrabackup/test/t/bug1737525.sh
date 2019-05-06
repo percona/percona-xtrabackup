@@ -2,7 +2,7 @@
 # Full and Incremental backup of encrypted tablespaces
 ############################################################################
 
-require_server_version_higher_than 5.7.19
+require_server_version_higher_than 8.0.15
 
 . inc/keyring_file.sh
 
@@ -51,7 +51,7 @@ mysql -e "CREATE TABLESPACE ts_encrypted ADD DATAFILE 'ts_encrypted.ibd' ENCRYPT
 mysql -e "CREATE TABLESPACE ts_unencrypted ADD DATAFILE 'ts_unencrypted.ibd' ENGINE='InnoDB'" test
 mysql -e "CREATE TABLESPACE ts_encrypted_new ADD DATAFILE 'ts_encrypted_new.ibd' ENCRYPTION='Y' ENGINE='InnoDB'" test
 
-mysql -e "CREATE TABLE t3 (a TEXT) TABLESPACE ts_encrypted ENGINE='InnoDB'" test
+mysql -e "CREATE TABLE t3 (a TEXT) TABLESPACE ts_encrypted ENGINE='InnoDB' ENCRYPTION='y'" test
 insert_char t3
 
 mysql -e "CREATE TABLE pt2 (a INT NOT NULL, PRIMARY KEY(a)) \
@@ -154,7 +154,7 @@ xtrabackup --datadir=$mysql_datadir --backup \
 vlog "Incremental backup created in directory $inc_backup_dir"
 
 # More changes
-mysql -e "CREATE TABLE t4 (a TEXT) TABLESPACE ts_encrypted ENGINE='InnoDB'" test
+mysql -e "CREATE TABLE t4 (a TEXT) TABLESPACE ts_encrypted ENGINE='InnoDB' ENCRYPTION='y'" test
 insert_char t4
 
 mysql -e "DROP TABLE t3" test
