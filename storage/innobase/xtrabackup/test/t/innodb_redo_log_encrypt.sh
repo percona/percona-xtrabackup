@@ -21,7 +21,7 @@ function start_workload()
 {
 	mysql -e 'INSERT INTO t (a) VALUES (1), (2), (3), (4)' test
 	( while true ; do
-		echo 'INSERT INTO t (a) SELECT a FROM t;'
+		echo 'INSERT INTO t (a) SELECT a FROM t LIMIT 200;'
 		sleep 1
 	done ) | mysql test
 }
