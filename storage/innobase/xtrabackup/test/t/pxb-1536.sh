@@ -46,7 +46,7 @@ stop_server
 
 rm -rf $mysql_datadir
 
-xtrabackup --prepare --target-dir=$topdir/backup
+xtrabackup --prepare --rollback-prepared-trx --target-dir=$topdir/backup
 
 xtrabackup --copy-back --target-dir=$topdir/backup
 
