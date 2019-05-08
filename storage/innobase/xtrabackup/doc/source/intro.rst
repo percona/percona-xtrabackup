@@ -28,7 +28,7 @@ incremental |MySQL| backups.
    MySQL 8.0.x
 
 |Percona XtraBackup| works with |MySQL| and |Percona Server|. It supports
-completely non-blocking backups of |InnoDB|, |XtraDB| storage engines. In
+completely non-blocking backups of |InnoDB|, |XtraDB|, and MyRocks storage engines. In
 addition, it can back up the following storage engines by briefly pausing writes
 at the end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and :term:`Archive
 <.ARM>`, including partitioned tables, triggers, and database options.
