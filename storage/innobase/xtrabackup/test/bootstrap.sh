@@ -58,10 +58,8 @@ case "$1" in
         ;;
 
     xtradb80)
-        # url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-8.0.13-4/binary/tarball"
-        # tarball="Percona-Server-8.0.13-4-Linux.${arch}.ssl$(ssl_version).tar.gz"
-        url="https://pxb.sgp1.digitaloceanspaces.com"
-        tarball="Percona-Server-8.0.15-5-Linux.x86_64.ssl100.tar.gz"
+        url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-8.0.15-6/binary/tarball"
+        tarball="Percona-Server-8.0.15-6-Linux.${arch}.ssl$(ssl_version).tar.gz"
         ;;
 
     *)
