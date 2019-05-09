@@ -82,7 +82,7 @@ The following example shows how to make a full backup and upload it to Swift
    --s3-secret-key='YOUR-SECRETACCESSKEY' \
    --s3-bucket='mysql_backups'
    --parallel=10 \
-   ${date}-full_backup
+   ${date -I}-full_backup
 
 The following options are available when using Amazon S3:
 
@@ -116,7 +116,7 @@ The following options are available when using Amazon S3:
    --s3-secret-key='YOUR-SECRETACCESSKEY' \
    --s3-bucket='mysql_backups'
    --parallel=10 \
-   ${date}-full_backup
+   ${date -I}-full_backup
 
 .. rubric:: |gcs|
 
@@ -138,7 +138,7 @@ compatible with Amazon S3.
    --google-secret-key='YOUR-SECRETACCESSKEY' \
    --google-bucket='mysql_backups'
    --parallel=10 \
-   ${date}-full_backup
+   ${date -I}-full_backup
 
 The following options are available when using |gcs|:
 
@@ -191,7 +191,7 @@ automatically to corresponding parameters applicable to the selected storage.
    - AWS_ENDPOINT (or ENDPOINT)
    - AWS_CA_BUNDLE
 
-.. node::
+.. note::
 
    If you explicitly use a parameter on the command line, in a configuration
    file, and the corresponding environment variable contains a value, |xbcloud|
