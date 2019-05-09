@@ -1,0 +1,71 @@
+.. _rn.8-0-5:
+
+================================================================================
+|pxb.name| |release|
+================================================================================
+
+|percona| is glad to announce the release of |pxb.name| |release| on |date|.
+Downloads are available from our `download site
+<https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+|Percona XtraBackup| enables MySQL backups without blocking user queries, making
+it ideal for companies with large data sets and mission-critical applications
+that cannot tolerate long periods of downtime. Offered free as an open source
+solution, it drives down backup costs while providing unique features for
+|MySQL| backups.
+
+In version |release|, |pxb.name| introduces the support of the MyRocks
+storage engine with Percona Server for MySQL version 8.0.15-6 or
+higher.
+
+|pxb.name| |release| enables saving backups to an Amazon S3,
+MinIO, and Google Cloud Storage (using interoperability mode) when
+using xbcloud. The following example demonstrates how to use an Amazon
+S3 storage to make a full backup:
+
+.. code-block:: bash
+
+   $ xtrabackup --backup --stream=xbstream --extra-lsndir=/tmp --target-dir=/tmp | \
+   xbcloud put --storage=s3 \
+   --s3-endpoint='s3.amazonaws.com' \
+   --s3-access-key='YOUR-ACCESSKEYID' \
+   --s3-secret-key='YOUR-SECRETACCESSKEY' \
+   --s3-bucket='mysql_backups'
+   --parallel=10 \
+   ${date -I}-full_backup
+
+ All |percona| software is open-source and free
+
+New Features
+================================================================================
+
+- The MyRocks storage engine is now supported with |pxb.name|. More
+  information in :jirabug:`1754`.
+- Amazon S3 is now supported in xbcloud. More information in :jirabug:`1813`.
+
+Bugs Fixed
+================================================================================
+
+- |pxb.name| could fail to restore the undo tablespace created during or before
+  incremental backup. Bug fixed :jirabug:`1780`.
+- A backup could fail if ``log_bin_index`` was defined in :file:`my.cnf`. Bug
+  fixed :jirabug:`1801`.
+- When the row format was changed during the backup, xtrabackup could crash
+  during the incremental prepare stage. Bug fixed :jirabug:`1824`.
+- During the ``prepare`` phase, |PXB| could freeze and never finish
+  execution. Bug fixed :jirabug:`1819`.
+- |pxb.name| could crash during the ``prepare`` stage when making a backup of a
+  host running MySQL Server v8.0.16. Bug fixed :jirabug:`1839`.
+
+Other bugs fixed:
+:jirabug:`1809`,
+:jirabug:`1810`,
+:jirabug:`1832`,
+:jirabug:`1837`.
+
+
+.. |percona| replace:: Percona
+.. |pxb.name| replace:: Percona XtraBackup
+.. |date| replace:: May 9, 2019
+.. |release| replace:: 8.0.6
