@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -283,6 +283,13 @@ void Sasl_client::set_user_info(std::string name, std::string pwd) {
   m_user_pwd[sizeof(m_user_pwd) - 1] = '\0';
 }
 
+#ifdef __clang__
+// Clang UBSAN false positive?
+// Call to function through pointer to incorrect function type
+static int sasl_authenticate(MYSQL_PLUGIN_VIO *vio,
+                             MYSQL *mysql) SUPPRESS_UBSAN;
+#endif  // __clang__
+
 static int sasl_authenticate(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql) {
   int rc_sasl = SASL_FAIL;
   int rc_auth = CR_ERROR;
@@ -360,4 +367,4 @@ EXIT:
 mysql_declare_client_plugin(AUTHENTICATION) "authentication_ldap_sasl_client",
     "Yashwant Sahu", "LDAP SASL Client Authentication Plugin", {0, 1, 0},
     "PROPRIETARY", NULL, NULL, NULL, NULL,
-    sasl_authenticate mysql_end_client_plugin;
+    sasl_authenticate, NULL mysql_end_client_plugin;

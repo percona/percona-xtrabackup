@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -184,7 +184,7 @@ static dd::Tablespace *dd_upgrade_get_tablespace(
     strncpy(name, tablespace_name.c_str(), MAX_FULL_NAME_LEN);
   } else {
     ut_ad(DICT_TF_HAS_SHARED_SPACE(ib_table->flags));
-    ut_ad(ib_table->tablespace != NULL);
+    if (ib_table->tablespace == NULL) return (ts_obj);
     strncpy(name, ib_table->tablespace(), MAX_FULL_NAME_LEN);
   }
 
@@ -803,7 +803,7 @@ static bool dd_upgrade_partitions(THD *thd, const char *norm_name,
 static void dd_upgrade_set_row_type(dict_table_t *ib_table,
                                     dd::Table *dd_table) {
   if (ib_table) {
-    const ulint flags = ib_table->flags;
+    const uint32_t flags = ib_table->flags;
 
     switch (dict_tf_get_rec_format(flags)) {
       case REC_FORMAT_REDUNDANT:
@@ -887,7 +887,6 @@ bool dd_upgrade_table(THD *thd, const char *db_name, const char *table_name,
     dd::cache::Dictionary_client::Auto_releaser releaser(dd_client);
     dd::Tablespace *dd_space =
         dd_upgrade_get_tablespace(thd, dd_client, ib_table);
-    ut_ad(dd_space != nullptr);
 
     if (dd_space == nullptr) {
       dict_table_close(ib_table, false, false);
@@ -1018,7 +1017,7 @@ typedef struct {
   /** Tablespace name */
   const char *name;
   /** Tablespace flags */
-  ulint flags;
+  uint32_t flags;
   /** Path of the tablespace file */
   const char *path;
 } upgrade_space_t;
@@ -1054,6 +1053,15 @@ static uint32_t dd_upgrade_register_tablespace(
 
   dd_file->set_filename(upgrade_space->path);
 
+  if (!FSP_FLAGS_GET_ENCRYPTION(upgrade_space->flags)) {
+    /* Update DD Option value, for Unencryption */
+    dd_space->options().set("encryption", "N");
+
+  } else {
+    /* Update DD Option value, for Encryption */
+    dd_space->options().set("encryption", "Y");
+  }
+
   if (dd_client->store(dd_space)) {
     /* It would be better to return thd->get_stmt_da()->mysql_errno(),
     however, server doesn't fill in the errno during bootstrap. */
@@ -1087,7 +1095,7 @@ int dd_upgrade_tablespace(THD *thd) {
     const char *err_msg;
     space_id_t space;
     const char *name;
-    ulint flags;
+    uint32_t flags;
     std::string new_tablespace_name;
 
     /* Extract necessary information from a SYS_TABLESPACES row */
@@ -1141,6 +1149,26 @@ int dd_upgrade_tablespace(THD *thd) {
           (tablespace_name.find("mysql/innodb_index_stats") == 0)) {
         orig_name.erase(orig_name.end() - 4, orig_name.end());
         orig_name.append("_backup57.ibd");
+      } else if (is_file_per_table) {
+        /* Validate whether the tablespace file exists before making
+        the entry in dd::tablespaces*/
+
+        mutex_enter(&dict_sys->mutex);
+        fil_space_t *fil_space = fil_space_get(space);
+        mutex_exit(&dict_sys->mutex);
+
+        /* If the file is not already opened, check for its existence
+        by opening it in read-only mode. */
+        if (fil_space == nullptr) {
+          Datafile df;
+          df.set_filepath(orig_name.c_str());
+          if (df.open_read_only(false) != DB_SUCCESS) {
+            mem_heap_free(heap);
+            btr_pcur_close(&pcur);
+            DBUG_RETURN(HA_ERR_TABLESPACE_MISSING);
+          }
+          df.close();
+        }
       }
 
       ut_ad(filename != NULL);

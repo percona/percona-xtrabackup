@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -20,6 +20,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include <components/mysql_server/mysql_page_track.h>
 #include <gtest/gtest.h>
 #include <mysql.h>
 #include <mysql/components/component_implementation.h>
@@ -40,6 +41,7 @@
 #include <mysql/components/services/clone_protocol_service.h>
 #include <mysql/components/services/component_sys_var_service.h>
 #include <mysql/components/services/ongoing_transaction_query_service.h>
+#include <mysql/components/services/page_track_service.h>
 #include <mysql/components/services/persistent_dynamic_loader.h>
 #include <mysql_ongoing_transaction_query.h>
 #include <persistent_dynamic_loader.h>
@@ -258,6 +260,37 @@ DEFINE_BOOL_METHOD(
   return true;
 }
 
+DEFINE_METHOD(int, Page_track_implementation::start,
+              (MYSQL_THD, Page_Track_SE, uint64_t *)) {
+  return (0);
+}
+
+DEFINE_METHOD(int, Page_track_implementation::stop,
+              (MYSQL_THD, Page_Track_SE, uint64_t *)) {
+  return (0);
+}
+
+DEFINE_METHOD(int, Page_track_implementation::get_page_ids,
+              (MYSQL_THD, Page_Track_SE, uint64_t *, uint64_t *,
+               unsigned char *, size_t, Page_Track_Callback, void *)) {
+  return (0);
+}
+
+DEFINE_METHOD(int, Page_track_implementation::get_num_page_ids,
+              (MYSQL_THD, Page_Track_SE, uint64_t *, uint64_t *, uint64_t *)) {
+  return (0);
+}
+
+DEFINE_METHOD(int, Page_track_implementation::purge,
+              (MYSQL_THD, Page_Track_SE, uint64_t *)) {
+  return (0);
+}
+
+DEFINE_METHOD(int, Page_track_implementation::get_status,
+              (MYSQL_THD, Page_Track_SE, uint64_t *, uint64_t *)) {
+  return (0);
+}
+
 /* TODO following code resembles symbols used in sql library, these should be
   some day extracted to be reused both in sql library and server component unit
   tests. */
@@ -286,6 +319,7 @@ class registry : public ::testing::Test {
 
   virtual void TearDown() {
     ASSERT_FALSE(reg->release((my_h_service)reg));
+    shutdown_dynamic_loader();
     ASSERT_FALSE(mysql_services_shutdown());
   }
   SERVICE_TYPE(registry) * reg;

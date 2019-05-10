@@ -64,17 +64,9 @@ class Client : public ngs::Client {
          Protocol_monitor *pmon, const Global_timeouts &timeouts);
   ~Client() override;
 
- public:  // impl ngs::Client_interface
-  void on_session_close(ngs::Session_interface &s) override;
-  void on_session_reset(ngs::Session_interface &s) override;
-
-  void on_server_shutdown() override;
-  void on_auth_timeout() override;
-
  public:  // impl ngs::Client
-  void on_network_error(int error) override;
   std::string resolve_hostname() override;
-  ngs::Capabilities_configurator *capabilities_configurator() override;
+  Capabilities_configurator *capabilities_configurator() override;
 
   void set_is_interactive(const bool flag) override;
 
@@ -89,7 +81,7 @@ class Client : public ngs::Client {
   bool is_localhost(const char *hostname);
 };
 
-typedef ngs::shared_ptr<Client> Client_ptr;
+typedef std::shared_ptr<Client> Client_ptr;
 
 }  // namespace xpl
 

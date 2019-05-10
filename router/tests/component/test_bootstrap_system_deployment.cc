@@ -69,9 +69,6 @@ class RouterBootstrapSystemDeploymentTest : public RouterComponentTest,
   }
 
   TcpPortPool port_pool_;
-#ifdef __APPLE__
-  std::string library_link_file_;
-#endif
   uint16_t server_port_;
 };
 
@@ -97,7 +94,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest, BootstrapPass) {
       << router.get_full_output();
 
   EXPECT_TRUE(
-      router.expect_output("MySQL Router  has now been configured for the "
+      router.expect_output("MySQL Router configured for the "
                            "InnoDB cluster 'mycluster'"))
       << "router: " << router.get_full_output() << std::endl
       << "server: " << server_mock.get_full_output();
@@ -114,7 +111,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
    * Create directory with the same name as mysql router's config file to force
    * bootstrap to fail.
    */
-  mysqlrouter::mkdir(config_file_, 0700);
+  mysql_harness::mkdir(config_file_, 0700);
   auto server_mock = run_server_mock();
 
   // launch the router in bootstrap mode
@@ -150,7 +147,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
    * Create directory with the same name as mysql router's config file to force
    * bootstrap to fail.
    */
-  mysqlrouter::mkdir(config_file_, 0700);
+  mysql_harness::mkdir(config_file_, 0700);
   auto server_mock = run_server_mock();
 
   // launch the router in bootstrap mode
@@ -197,7 +194,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
    * Create directory with the same name as mysql router's config file to force
    * bootstrap to fail.
    */
-  mysqlrouter::mkdir(config_file_, 0700);
+  mysql_harness::mkdir(config_file_, 0700);
   auto server_mock = run_server_mock();
 
   // launch the router in bootstrap mode
@@ -240,7 +237,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
    * Create directory with the same name as mysql router's config file to force
    * bootstrap to fail.
    */
-  mysqlrouter::mkdir(config_file_, 0700);
+  mysql_harness::mkdir(config_file_, 0700);
   auto server_mock = run_server_mock();
 
   // launch the router in bootstrap mode

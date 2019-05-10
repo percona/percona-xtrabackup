@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -89,9 +89,8 @@ const char *info_rli_fields[] = {
     "number_of_workers",    "id",
     "channel_name"};
 
-Relay_log_info::Relay_log_info(bool is_slave_recovery
+Relay_log_info::Relay_log_info(bool is_slave_recovery,
 #ifdef HAVE_PSI_INTERFACE
-                               ,
                                PSI_mutex_key *param_key_info_run_lock,
                                PSI_mutex_key *param_key_info_data_lock,
                                PSI_mutex_key *param_key_info_sleep_lock,
@@ -99,20 +98,17 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery
                                PSI_mutex_key *param_key_info_data_cond,
                                PSI_mutex_key *param_key_info_start_cond,
                                PSI_mutex_key *param_key_info_stop_cond,
-                               PSI_mutex_key *param_key_info_sleep_cond
+                               PSI_mutex_key *param_key_info_sleep_cond,
 #endif
-                               ,
                                uint param_id, const char *param_channel,
                                bool is_rli_fake)
-    : Rpl_info("SQL"
+    : Rpl_info("SQL",
 #ifdef HAVE_PSI_INTERFACE
-               ,
                param_key_info_run_lock, param_key_info_data_lock,
                param_key_info_sleep_lock, param_key_info_thd_lock,
                param_key_info_data_cond, param_key_info_start_cond,
-               param_key_info_stop_cond, param_key_info_sleep_cond
+               param_key_info_stop_cond, param_key_info_sleep_cond,
 #endif
-               ,
                param_id, param_channel),
       replicate_same_server_id(::replicate_same_server_id),
       relay_log(&sync_relaylog_period),
@@ -577,7 +573,7 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
 
   DEBUG_SYNC(thd, "begin_master_pos_wait");
 
-  set_timespec_nsec(&abstime, (ulonglong)timeout * 1000000000ULL);
+  set_timespec_nsec(&abstime, static_cast<ulonglong>(timeout * 1000000000ULL));
   mysql_mutex_lock(&data_lock);
   thd->ENTER_COND(&data_cond, &data_lock,
                   &stage_waiting_for_the_slave_thread_to_advance_position,
@@ -609,7 +605,7 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
   strmake(log_name_tmp, log_name->ptr(),
           min<uint32>(log_name->length(), FN_REFLEN - 1));
 
-  char *p = fn_ext(log_name_tmp);
+  const char *p = fn_ext(log_name_tmp);
   char *p_end;
   if (!*p || log_pos < 0) {
     error = -2;  // means improper arguments
@@ -665,7 +661,7 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
         and protect against user's input error :
         if the names do not match up to '.' included, return error
       */
-      char *q = (fn_ext(basename) + 1);
+      const char *q = fn_ext(basename) + 1;
       if (strncmp(basename, log_name_tmp, (int)(q - basename))) {
         error = -2;
         break;
@@ -787,7 +783,7 @@ int Relay_log_info::wait_for_gtid_set(THD *thd, const Gtid_set *wait_gtid_set,
 
   DEBUG_SYNC(thd, "begin_wait_for_gtid_set");
 
-  set_timespec_nsec(&abstime, (ulonglong)timeout * 1000000000ULL);
+  set_timespec_nsec(&abstime, static_cast<ulonglong>(timeout * 1000000000ULL));
 
   mysql_mutex_lock(&data_lock);
   if (update_THD_status)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 #include "my_dbug.h"
 
 #include "plugin/x/ngs/include/ngs/protocol/page_output_stream.h"
-#include "plugin/x/ngs/include/ngs_common/protocol_protobuf.h"
+#include "plugin/x/ngs/include/ngs/protocol/protocol_protobuf.h"
 
 namespace ngs {
 
@@ -43,6 +43,8 @@ Message_builder::Message_builder(const bool memory_managed)
 Message_builder::~Message_builder() {
   if (m_memory_managed) Stream_allocator().deallocate(m_out_stream, 1);
 }
+
+void Message_builder::skip_field() { ++m_field_number; }
 
 void Message_builder::encode_uint32(const uint32 value, const bool write) {
   ++m_field_number;

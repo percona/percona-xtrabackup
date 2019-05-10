@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -20,26 +20,39 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
+
 IF(WIN32)
   # CMake 3.8.0 is needed for Visual Studio 2017 and x64 toolset.
   CMAKE_MINIMUM_REQUIRED(VERSION 3.8.0)
 ELSEIF(APPLE)
-  # Version 3.9.2 in needed because INCLUDE_DIRECTORIES(SYSTEM ...) wasn't
+  # Version 3.12.4 is needed because the new build system of Xcode is not
+  # supported by cmake. 3.12.4 will force using the legacy build system.
+  # Version 3.9.2 is needed because INCLUDE_DIRECTORIES(SYSTEM ...) wasn't
   # handled properly by the cmake Xcode generator.
-  CMAKE_MINIMUM_REQUIRED(VERSION 3.9.2)
+  IF(CMAKE_GENERATOR STREQUAL "Xcode")
+    CMAKE_MINIMUM_REQUIRED(VERSION 3.12.4)
+  ELSE()
+    CMAKE_MINIMUM_REQUIRED(VERSION 3.9.2)
+  ENDIF()
 ELSEIF(UNIX)
-  # CMake 3.4.0 is needed for Solaris due to CMake bug 15673.
-  # Cannot use CMAKE_SYSTEM_NAME until after PROJECT(), use uname directly.
-  FIND_PROGRAM(MY_UNAME uname /bin /usr/bin /usr/local/bin /sbin)
-  IF(MY_UNAME)
-    EXEC_PROGRAM(uname ARGS -s OUTPUT_VARIABLE MY_HOST_SYSTEM_NAME)
-    IF(MY_HOST_SYSTEM_NAME MATCHES "SunOS")
-      CMAKE_MINIMUM_REQUIRED(VERSION 3.4.0)
+  # This is currently minimum version on all supported platforms.
+  IF(CMAKE_VERSION VERSION_LESS 3.4.3)
+    # Default cmake is 2.8.12.2 on RedHat
+    IF(EXISTS "/etc/redhat-release")
+      MESSAGE(WARNING "Please use cmake3 rather than cmake on this platform")
+      FIND_PROGRAM(MY_CMAKE3 cmake3 /bin /usr/bin /usr/local/bin)
+      IF(MY_CMAKE3)
+        MESSAGE(STATUS "Found ${MY_CMAKE3}")
+      ELSE()
+        MESSAGE(STATUS "Please install cmake3 (yum install cmake3)")
+      ENDIF()
     ENDIF()
   ENDIF()
 ENDIF()
-# 2.8.12 as minimum unless higher is checked above.
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
+# CMake 3.4.3 is needed for Solaris due to CMake bug 15673.
+# 3.4.3 as minimum unless higher is checked above.
+CMAKE_MINIMUM_REQUIRED(VERSION 3.4.3)
 
 # Explicitly set CMP0018 and CMP0022 = NEW since newer versions of
 # CMake has OLD as default even if OLD is deprecated.
@@ -64,8 +77,6 @@ ENDIF()
 IF(POLICY CMP0075)
   CMAKE_POLICY(SET CMP0075 OLD)
 ENDIF()
-
-MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
 
 # Will set GIT_EXECUTABLE and GIT_FOUND
 FIND_PACKAGE(Git)
@@ -146,6 +157,13 @@ ENDIF()
 OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
 MARK_AS_ADVANCED(WITHOUT_SERVER DISABLE_SHARED FORCE_UNSUPPORTED_COMPILER)
 
+IF(UNIX)
+  FIND_PROGRAM(MY_UNAME uname /bin /usr/bin /usr/local/bin /sbin)
+  IF(MY_UNAME)
+    EXEC_PROGRAM(uname ARGS -s OUTPUT_VARIABLE MY_HOST_SYSTEM_NAME)
+  ENDIF()
+ENDIF()
+
 IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
     AND NOT CMAKE_C_COMPILER AND NOT CMAKE_CXX_COMPILER)
   # Cannot INCLUDE(CMakeDetermineSystem) prior to PROJECT initialization below.
@@ -162,13 +180,13 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
 
         FIND_PROGRAM(ALTERNATIVE_GCC gcc
           NO_DEFAULT_PATH
-          PATHS "/opt/rh/devtoolset-7/root/usr/bin")
+          PATHS "/opt/rh/devtoolset-8/root/usr/bin")
         FIND_PROGRAM(ALTERNATIVE_GPP g++
           NO_DEFAULT_PATH
-          PATHS "/opt/rh/devtoolset-7/root/usr/bin")
+          PATHS "/opt/rh/devtoolset-8/root/usr/bin")
         FIND_PROGRAM(ALTERNATIVE_ENABLE enable
           NO_DEFAULT_PATH
-          PATHS "/opt/rh/devtoolset-7/")
+          PATHS "/opt/rh/devtoolset-8/")
         IF(ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
           SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
           SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
@@ -417,16 +435,18 @@ IF(NOT WITH_EMBEDDED_SERVER)
 ENDIF()
 
 # Add macros
+INCLUDE(pkg-config)
 INCLUDE(character_sets)
+INCLUDE(compile_flags)
 INCLUDE(cpu_info)
 INCLUDE(zlib)
 INCLUDE(lz4)
-INCLUDE(lzma)
 INCLUDE(re2)
 INCLUDE(icu)
 INCLUDE(libevent)
 INCLUDE(ssl)
 INCLUDE(sasl)
+INCLUDE(rpc)
 INCLUDE(readline)
 INCLUDE(protobuf)
 INCLUDE(package_name)
@@ -439,6 +459,21 @@ INCLUDE(mysql_add_executable)
 INCLUDE(mysqlgcs)
 INCLUDE(curl)
 INCLUDE(rapidjson)
+
+OPTION(WITH_JEMALLOC "Use jemalloc rather than builtin malloc/free etc." OFF)
+IF(WITH_JEMALLOC)
+  FIND_LIBRARY(JEMALLOC_LIBRARY NAMES jemalloc)
+  IF(NOT JEMALLOC_LIBRARY)
+    MESSAGE(FATAL_ERROR "Could not find jemalloc library")
+  ENDIF()
+  STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -ljemalloc")
+  STRING_APPEND(CMAKE_MODULE_LINKER_FLAGS " -ljemalloc")
+  STRING_APPEND(CMAKE_SHARED_LINKER_FLAGS " -ljemalloc")
+  STRING_APPEND(CMAKE_C_FLAGS " -fno-builtin-malloc -fno-builtin-calloc")
+  STRING_APPEND(CMAKE_C_FLAGS " -fno-builtin-realloc -fno-builtin-free")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -fno-builtin-malloc -fno-builtin-calloc")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -fno-builtin-realloc -fno-builtin-free")
+ENDIF()
 
 OPTION(DISABLE_SHARED 
  "Don't build shared libraries, compile code as position-dependent" OFF)
@@ -554,6 +589,17 @@ IF(WITH_ASAN)
   ENDIF()
 ENDIF()
 
+OPTION(WITH_LSAN "Enable leak sanitizer" OFF)
+IF(WITH_LSAN)
+  MY_SANITIZER_CHECK("-fsanitize=leak"
+    TRUE WITH_LSAN_OK)
+  IF(NOT WITH_LSAN_OK)
+    MESSAGE(FATAL_ERROR "Do not know how to enable leak sanitizer")
+  ELSE()
+    SET(HAVE_LSAN 1)
+  ENDIF()
+ENDIF()
+
 OPTION(WITH_MSAN "Enable memory sanitizer" OFF)
 IF(WITH_MSAN)
   MY_SANITIZER_CHECK("-fsanitize=memory -fsanitize-memory-track-origins"
@@ -609,6 +655,26 @@ IF (ENABLE_GPROF AND NOT WIN32 AND NOT APPLE)
   STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -pg")
 ENDIF()
 
+# Use lld for Clang if available and not explicitly disabled.
+# Also works for gcc on Debian/Ubuntu. Do 'apt install lld'.
+IF(LINUX)
+  OPTION(USE_LD_LLD "Use llvm lld linker" ON)
+ELSE()
+  OPTION(USE_LD_LLD "Use llvm lld linker" OFF)
+ENDIF()
+
+IF(USE_LD_LLD)
+  CMAKE_PUSH_CHECK_STATE(RESET)
+  SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=lld")
+  CHECK_C_SOURCE_COMPILES("int main() {}" C_LD_LLD_RESULT)
+  CHECK_CXX_SOURCE_COMPILES("int main() {}" CXX_LD_LLD_RESULT)
+  IF(C_LD_LLD_RESULT AND CXX_LD_LLD_RESULT)
+    STRING_APPEND(CMAKE_C_LINK_FLAGS " -fuse-ld=lld")
+    STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -fuse-ld=lld")
+  ENDIF()
+  CMAKE_POP_CHECK_STATE()
+ENDIF()
+
 # Use gold if available and not explicitly disabled.
 IF(WIN32)
   # Feature tests are expensive on Windows, and we only support MSVC,
@@ -626,26 +692,23 @@ ELSE()
   SET(LINK_RANDOMIZE OFF)
 ENDIF()
 
-IF (USE_LD_GOLD)
-  # These tests will give a false negative on some Clang versions,
-  # since there is no easy way in CMake to check for a linker flag
-  # without reimplementing CheckCXXSourceCompiles, and
-  # CheckCXXSourceCompiles tends to compile and link in two steps
-  # (which causes warning output about unused flags, which we interpret
-  # as the flag not existing).
-  MY_CHECK_C_COMPILER_FLAG("-fuse-ld=gold" C_LD_GOLD_RESULT)
-  MY_CHECK_CXX_COMPILER_FLAG("-fuse-ld=gold" CXX_LD_GOLD_RESULT)
+IF (USE_LD_GOLD AND NOT (C_LD_LLD_RESULT AND CXX_LD_LLD_RESULT))
+  CMAKE_PUSH_CHECK_STATE(RESET)
+  SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=gold")
+  CHECK_C_SOURCE_COMPILES("int main() {}" C_LD_GOLD_RESULT)
+  CHECK_CXX_SOURCE_COMPILES("int main() {}" CXX_LD_GOLD_RESULT)
   IF (C_LD_GOLD_RESULT AND CXX_LD_GOLD_RESULT AND NOT SOLARIS)
-    SET(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -fuse-ld=gold")
-    SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -fuse-ld=gold")
+    STRING_APPEND(CMAKE_C_LINK_FLAGS " -fuse-ld=gold")
+    STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -fuse-ld=gold")
 
     # Seemingly --gc-sections causes problems with randomization, so only
     # turn it on if we are not making a randomized build.
     IF (NOT LINK_RANDOMIZE)
-      SET(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--gc-sections")
-      SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -Wl,--gc-sections")
+      STRING_APPEND(CMAKE_C_LINK_FLAGS " -Wl,--gc-sections")
+      STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--gc-sections")
     ENDIF()
   ENDIF()
+  CMAKE_POP_CHECK_STATE()
 ENDIF()
 
 IF(LINK_RANDOMIZE)
@@ -808,6 +871,7 @@ ADD_DEFINITIONS(-DHAVE_OPENSSL)            # TODO: remove #ifdef from C++ code
 ADD_DEFINITIONS(-D__STDC_LIMIT_MACROS)     # Enable C99 limit macros
 ADD_DEFINITIONS(-D__STDC_FORMAT_MACROS)    # Enable C99 printf format macros
 ADD_DEFINITIONS(-D_USE_MATH_DEFINES)       # Get access to M_PI, M_E, etc. in math.h
+ADD_DEFINITIONS(-DLZ4_DISABLE_DEPRECATE_WARNINGS) # C++14 deprecation warnings in LZ4.
 IF(APPLE)
   ADD_DEFINITIONS(-D__STDC_WANT_LIB_EXT1__=1) # Get access to memset_s
 ENDIF()
@@ -908,7 +972,6 @@ SET(SYSTEM_LIBRARIES
   ICU
   LIBEVENT
   LZ4
-# LZMA     use bundled by default here
   PROTOBUF
   RAPIDJSON
   RE2
@@ -964,8 +1027,6 @@ MYSQL_CHECK_EDITLINE()
 MYSQL_CHECK_LIBEVENT()
 # Add lz4 library
 MYSQL_CHECK_LZ4()
-# Add lzma library
-MYSQL_CHECK_LZMA()
 # Add re2 library
 MYSQL_CHECK_RE2()
 # Add icu library
@@ -982,6 +1043,41 @@ MYSQL_CHECK_CURL()
 # Add RapidJSON library.
 MYSQL_CHECK_RAPIDJSON()
 
+MACRO(MY_INCLUDE_SYSTEM_DIRECTORIES LIBRARY)
+  IF(${WITH_${LIBRARY}} STREQUAL "bundled")
+    SET(BEFORE_OR_AFTER "BEFORE")
+  ELSE()
+    SET(BEFORE_OR_AFTER "AFTER")
+  ENDIF()
+
+  IF(DEFINED ${LIBRARY}_INCLUDE_DIRS)
+    INCLUDE_DIRECTORIES(${BEFORE_OR_AFTER} SYSTEM ${${LIBRARY}_INCLUDE_DIRS})
+  ELSEIF(DEFINED ${LIBRARY}_INCLUDE_DIR)
+    INCLUDE_DIRECTORIES(${BEFORE_OR_AFTER} SYSTEM ${${LIBRARY}_INCLUDE_DIR})
+  ENDIF()
+  IF("${${LIBRARY}_INCLUDE_DIR}" STREQUAL "")
+    IF("${${LIBRARY}_INCLUDE_DIRS}" STREQUAL "")
+      MESSAGE(WARNING "${LIBRARY} is unknown")
+    ENDIF()
+  ENDIF()
+  IF(DEFINED ${LIBRARY}_INCLUDE_DIRS AND DEFINED ${LIBRARY}_INCLUDE_DIR)
+    IF(NOT "${${LIBRARY}_INCLUDE_DIR}" STREQUAL "${${LIBRARY}_INCLUDE_DIRS}")
+      MESSAGE(WARNING
+        "NOT ${${LIBRARY}_INCLUDE_DIR} STREQUAL ${${LIBRARY}_INCLUDE_DIRS}")
+    ENDIF()
+  ENDIF()
+ENDMACRO()
+
+MACRO(MY_TARGET_INCLUDE_SYSTEM_DIRECTORIES TARGET LIBRARY)
+  IF(${WITH_${LIBRARY}} STREQUAL "bundled")
+    TARGET_INCLUDE_DIRECTORIES(${TARGET} SYSTEM BEFORE PRIVATE
+      ${${LIBRARY}_INCLUDE_DIR})
+  ELSE()
+    TARGET_INCLUDE_DIRECTORIES(${TARGET} SYSTEM PRIVATE
+      ${${LIBRARY}_INCLUDE_DIR})
+  ENDIF()
+ENDMACRO()
+
 IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
   # Check for pthread_setname_np
   CHECK_C_SOURCE_COMPILES("
@@ -994,10 +1090,6 @@ IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
     return ret;
   }"
   HAVE_PTHREAD_SETNAME_NP)
-ENDIF()
-
-IF (BUILD_BUNDLED_LZMA)
-  ADD_SUBDIRECTORY(extra/lzma)
 ENDIF()
 
 IF (BUILD_BUNDLED_RE2)
@@ -1029,7 +1121,6 @@ ADD_SUBDIRECTORY(strings)
 ADD_SUBDIRECTORY(vio)
 ADD_SUBDIRECTORY(mysys)
 ADD_SUBDIRECTORY(mysys_ssl)
-ADD_SUBDIRECTORY(extra/regex)
 ADD_SUBDIRECTORY(libmysql)
 ADD_SUBDIRECTORY(libbinlogevents)
 ADD_SUBDIRECTORY(libbinlogstandalone)
@@ -1262,3 +1353,6 @@ MESSAGE(STATUS "COMPILE_DEFINITIONS: ${cwd_definitions}")
 REPORT_CXX_FLAGS()
 MESSAGE(STATUS "CMAKE_C_LINK_FLAGS: ${CMAKE_C_LINK_FLAGS}")
 MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS: ${CMAKE_CXX_LINK_FLAGS}")
+MESSAGE(STATUS "CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS}")
+MESSAGE(STATUS "CMAKE_MODULE_LINKER_FLAGS ${CMAKE_MODULE_LINKER_FLAGS}")
+MESSAGE(STATUS "CMAKE_SHARED_LINKER_FLAGS ${CMAKE_SHARED_LINKER_FLAGS}")

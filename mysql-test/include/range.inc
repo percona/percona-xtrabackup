@@ -32,6 +32,8 @@ INSERT INTO t1 VALUES ('1999-07-10',100100,24), ('1999-07-11',100100,25),
 ('1999-08-31',100600,33), ('1999-09-17',100100,37), ('1999-09-18',100100,37),
 ('1999-09-19',100100,37), ('2000-12-18',100700,38);
 
+explain select event_date,type,event_id from t1 WHERE event_date >= "1999-07-01" AND event_date < "1999-07-15" AND (type=100600 OR type=100100) ORDER BY event_date;
+explain format=tree select event_date,type,event_id from t1 WHERE event_date >= "1999-07-01" AND event_date < "1999-07-15" AND (type=100600 OR type=100100) ORDER BY event_date;
 select event_date,type,event_id from t1 WHERE event_date >= "1999-07-01" AND event_date < "1999-07-15" AND (type=100600 OR type=100100) ORDER BY event_date;
 explain select event_date,type,event_id from t1 WHERE type = 100601 and event_date >= "1999-07-01" AND event_date < "1999-07-15" AND (type=100600 OR type=100100) ORDER BY event_date;
 select event_date,type,event_id from t1 WHERE event_date >= "1999-07-01" AND event_date <= "1999-07-15" AND (type=100600 OR type=100100) or event_date >= "1999-07-01" AND event_date <= "1999-07-15" AND type=100099;
@@ -905,13 +907,16 @@ SELECT * FROM t1 WHERE 0 NOT BETWEEN b AND c;
 
 EXPLAIN SELECT * FROM t1 WHERE 0 < b OR 0 > c;
 EXPLAIN SELECT * FROM t1 WHERE 0 NOT BETWEEN b AND c;
+EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE 0 NOT BETWEEN b AND c;  # Tests printing of sort_union.
 
 DROP TABLE t1;
 
 #
-# Bug #16249: different results for a range with an without index 
-#             when a range condition use an invalid datetime constant 
-#
+# Bug #16249: different results for a range with and without index
+#             when a range condition use an invalid datetime constant
+# This case was made obsolete after the changes applied by
+# Bug#28940878 WRONG RESULT WHEN COMPARING DATE[TIME] WITH STRING
+# as we don't fallback anymore to string comparison if the date is invalid.
 
 CREATE TABLE t1 (                                      
   item char(20) NOT NULL default '',                          
@@ -926,13 +931,17 @@ INSERT INTO t1 VALUES
 ('A1','2005-12-12 08:00:00',3000),
 ('A2','2005-12-01 08:00:00',1000);
 
+--error ER_WRONG_VALUE
 EXPLAIN SELECT * FROM t1 WHERE item='A1' AND started<='2005-12-01 24:00:00';
+--error ER_WRONG_VALUE
 SELECT * FROM t1 WHERE item='A1' AND started<='2005-12-01 24:00:00';
 SELECT * FROM t1 WHERE item='A1' AND started<='2005-12-02 00:00:00';
 
 DROP INDEX `PRIMARY` ON t1;
 
+--error ER_WRONG_VALUE
 EXPLAIN SELECT * FROM t1 WHERE item='A1' AND started<='2005-12-01 24:00:00';
+--error ER_WRONG_VALUE
 SELECT * FROM t1 WHERE item='A1' AND started<='2005-12-01 24:00:00';
 SELECT * FROM t1 WHERE item='A1' AND started<='2005-12-02 00:00:00';
 
@@ -1251,9 +1260,14 @@ SELECT * FROM t1 WHERE a >= '2009:09:23 00:00:00';
 --echo # The former may give errors for the truncated values, while the latter
 --echo # gives warnings. The purpose of this test is not to interfere, and only
 --echo # preserve existing behavior.
+--echo # This case was made obsolete after the changes applied by
+--echo # Bug#28940878 WRONG RESULT WHEN COMPARING DATE[TIME] WITH STRING
+--echo # as we don't fallback anymore to string comparison if the date is invalid.
+--error ER_WRONG_VALUE
 SELECT str_to_date('2007-10-00', '%Y-%m-%d') >= '' AND 
        str_to_date('2007-10-00', '%Y-%m-%d') <= '2007/10/20';
 
+--error ER_WRONG_VALUE
 SELECT str_to_date('2007-20-00', '%Y-%m-%d') >= '2007/10/20' AND 
        str_to_date('2007-20-00', '%Y-%m-%d') <= '';
 
@@ -1385,8 +1399,11 @@ EXPLAIN
 SELECT * FROM t1 WHERE i4 BETWEEN 10 AND '20';
 SELECT * FROM t1 WHERE i4 BETWEEN 10 AND '20';
 
-#Should detect the EQ_REF 't2.pk=t1.i4'
+# Should detect the EQ_REF 't2.pk=t1.i4'.
+# Also tests printing of index condition pushdown on EQRefIterator.
 EXPLAIN
+SELECT * FROM t1, t1 as t2 WHERE t2.pk BETWEEN t1.i4 AND t1.i4;
+EXPLAIN FORMAT=tree
 SELECT * FROM t1, t1 as t2 WHERE t2.pk BETWEEN t1.i4 AND t1.i4;
 SELECT * FROM t1, t1 as t2 WHERE t2.pk BETWEEN t1.i4 AND t1.i4;
 
@@ -1619,10 +1636,12 @@ let $query=SELECT t1.*,t2.* FROM t1 straight_join t2
 ON t2.col_int_key = t1.col_int WHERE t2.pk < t1.pk;
 
 eval EXPLAIN $query;
+eval EXPLAIN FORMAT=tree $query;
 eval $query;
 --echo # need FLUSH so that InnoDB statistics change and thus plan changes
 FLUSH TABLES;
 eval EXPLAIN $query;
+eval EXPLAIN FORMAT=tree $query;  # Tests printing of DynamicRangeIterator.
 eval $query;
 
 DROP TABLE t1,t2;
@@ -1957,7 +1976,9 @@ DROP FUNCTION f1;
 EXPLAIN
 SELECT a, b
 FROM t1 AS t1o
-WHERE EXISTS ( SELECT 1 FROM t1 WHERE (a, b) IN ((t1o.a, t1o.b)) );
+WHERE EXISTS (SELECT /*+ NO_SEMIJOIN() */ 1
+              FROM t1
+              WHERE (a, b) IN ((t1o.a, t1o.b)) );
 
 --echo #
 --echo # Tests of dynamic range access

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,8 +38,10 @@
 #include <atomic>
 #include <memory>
 #include <new>
+#include <vector>
 
 #include "lex_string.h"
+#include "limits.h"
 #include "my_alloc.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -52,6 +54,7 @@
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // *_ACL
 #include "sql/auth/sql_security_ctx.h"
+#include "sql/composite_iterators.h"
 #include "sql/current_thd.h"
 #include "sql/debug_sync.h"  // DEBUG_SYNC
 #include "sql/enum_query_type.h"
@@ -62,7 +65,8 @@
 #include "sql/item_subselect.h"
 #include "sql/item_sum.h"  // Item_sum
 #include "sql/key.h"       // key_copy, key_cmp, key_cmp_if_same
-#include "sql/lock.h"      // mysql_unlock_some_tables,
+#include "sql/key_spec.h"
+#include "sql/lock.h"  // mysql_unlock_some_tables,
 #include "sql/my_decimal.h"
 #include "sql/mysqld.h"  // stage_init
 #include "sql/nested_join.h"
@@ -78,6 +82,7 @@
 #include "sql/set_var.h"
 #include "sql/sorting_iterator.h"
 #include "sql/sql_base.h"
+#include "sql/sql_cmd.h"
 #include "sql/sql_do.h"
 #include "sql/sql_executor.h"
 #include "sql/sql_join_buffer.h"  // JOIN_CACHE
@@ -97,6 +102,7 @@ class Opt_trace_context;
 
 using std::max;
 using std::min;
+using std::vector;
 
 const char store_key_const_item::static_name[] = "const";
 
@@ -142,14 +148,10 @@ bool handle_query(THD *thd, LEX *lex, Query_result *result,
   SELECT_LEX *const select = unit->first_select();
   bool res;
 
-  DBUG_ASSERT(thd == unit->thd);
-
   DBUG_ASSERT(!unit->is_prepared() && !unit->is_optimized() &&
               !unit->is_executed());
 
   const bool single_query = unit->is_simple();
-
-  lex->used_tables = 0;  // Updated by setup_fields
 
   THD_STAGE_INFO(thd, stage_init);
 
@@ -196,7 +198,7 @@ bool handle_query(THD *thd, LEX *lex, Query_result *result,
   }
 
   if (lex->is_explain()) {
-    if (explain_query(thd, unit)) goto err; /* purecov: inspected */
+    if (explain_query(thd, thd, unit)) goto err; /* purecov: inspected */
   } else {
     if (single_query) {
       select->join->exec();
@@ -213,7 +215,7 @@ bool handle_query(THD *thd, LEX *lex, Query_result *result,
   THD_STAGE_INFO(thd, stage_end);
 
   // Do partial cleanup (preserve plans for EXPLAIN).
-  res = unit->cleanup(false);
+  res = unit->cleanup(thd, false);
 
   DBUG_RETURN(res);
 
@@ -222,7 +224,7 @@ err:
   DBUG_PRINT("info", ("report_error: %d", thd->is_error()));
   THD_STAGE_INFO(thd, stage_end);
 
-  (void)unit->cleanup(false);
+  (void)unit->cleanup(thd, false);
 
   // Abort the result set (if it has been prepared).
   result->abort_result_set(thd);
@@ -313,8 +315,35 @@ void reset_statement_timer(THD *thd) {
 }
 
 /**
- * Validates a command with respect to the use_secondary_engine system
- * variable.
+ * Checks if a query reads a column that is _not_ available in the secondary
+ * engine (i.e. a column defined with NOT SECONDARY).
+ *
+ * @param lex Parse tree descriptor.
+ *
+ * @return True if at least one of the read columns is not in the secondary
+ * engine, false otherwise.
+ */
+static bool reads_not_secondary_columns(const LEX *lex) {
+  // Check all read base tables.
+  for (const TABLE_LIST *tl = lex->query_tables; tl != nullptr;
+       tl = tl->next_global) {
+    if (tl->is_placeholder()) continue;
+
+    // Check all read columns of table.
+    for (unsigned int i = bitmap_get_first_set(tl->table->read_set);
+         i != MY_BIT_NONE; i = bitmap_get_next_set(tl->table->read_set, i)) {
+      if (tl->table->field[i]->flags & NOT_SECONDARY_FLAG) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Validates a query that uses the secondary engine
+ *
+ * No validations are done if query has not been prepared against the secondary
+ * engine.
  *
  * @param lex Parse tree descriptor.
  *
@@ -324,9 +353,16 @@ static bool validate_use_secondary_engine(const LEX *lex) {
   const THD *thd = lex->thd;
   const Sql_cmd *sql_cmd = lex->m_sql_cmd;
 
-  // Statement will use secondary engine, no further validations required.
+  // Validation can only be done after statement has been prepared.
+  DBUG_ASSERT(sql_cmd->is_prepared());
+
+  // Ensure that all read columns are in the secondary engine.
   if (sql_cmd->using_secondary_storage_engine()) {
-    DBUG_ASSERT(thd->variables.use_secondary_engine != SECONDARY_ENGINE_OFF);
+    if (reads_not_secondary_columns(lex)) {
+      my_error(ER_SECONDARY_ENGINE, MYF(0),
+               "One or more read columns are marked as NOT SECONDARY");
+      return true;
+    }
     return false;
   }
 
@@ -345,6 +381,7 @@ static bool validate_use_secondary_engine(const LEX *lex) {
         "secondary engine");
     return true;
   }
+
   return false;
 }
 
@@ -358,16 +395,36 @@ static bool validate_use_secondary_engine(const LEX *lex) {
 bool Sql_cmd_dml::prepare(THD *thd) {
   DBUG_ENTER("Sql_cmd_dml::prepare");
 
+  bool error_handler_active = false;
+
+  Ignore_error_handler ignore_handler;
+  Strict_error_handler strict_handler;
+
   // @todo: Move this to constructor?
   lex = thd->lex;
   result = lex->result;
 
   SELECT_LEX_UNIT *const unit = lex->unit;
 
-  DBUG_ASSERT(thd == unit->thd && !is_prepared());
+  DBUG_ASSERT(!is_prepared());
 
   DBUG_ASSERT(!unit->is_prepared() && !unit->is_optimized() &&
               !unit->is_executed());
+
+  /*
+    Constant folding could cause warnings during preparation. Make
+    sure they are promoted to errors when strict mode is enabled.
+  */
+  if (is_data_change_stmt()) {
+    // Push ignore / strict error handler
+    if (lex->is_ignore()) {
+      thd->push_internal_handler(&ignore_handler);
+      error_handler_active = true;
+    } else if (thd->is_strict_mode()) {
+      thd->push_internal_handler(&strict_handler);
+      error_handler_active = true;
+    }
+  }
 
   // Perform a coarse statement-specific privilege check.
   if (precheck(thd)) goto err;
@@ -386,7 +443,8 @@ bool Sql_cmd_dml::prepare(THD *thd) {
           needs_explicit_preparation() ? MYSQL_OPEN_FORCE_SHARED_MDL : 0)) {
     if (thd->is_error())  // @todo - dictionary code should be fixed
       goto err;
-    (void)unit->cleanup(false);
+    if (error_handler_active) thd->pop_internal_handler();
+    (void)unit->cleanup(thd, false);
     DBUG_RETURN(true);
   }
 #ifndef DBUG_OFF
@@ -406,15 +464,66 @@ bool Sql_cmd_dml::prepare(THD *thd) {
 
   set_prepared();
 
+  // Pop ignore / strict error handler
+  if (error_handler_active) thd->pop_internal_handler();
+
   DBUG_RETURN(false);
 
 err:
   DBUG_ASSERT(thd->is_error());
   DBUG_PRINT("info", ("report_error: %d", thd->is_error()));
 
-  (void)unit->cleanup(false);
+  if (error_handler_active) thd->pop_internal_handler();
+
+  (void)unit->cleanup(thd, false);
 
   DBUG_RETURN(true);
+}
+
+const MYSQL_LEX_STRING *Sql_cmd_select::eligible_secondary_storage_engine()
+    const {
+  // Don't use secondary storage engines for statements that call stored
+  // routines.
+  if (lex->uses_stored_routines()) return nullptr;
+
+  // Now check if the opened tables are available in a secondary
+  // storage engine. Only use the secondary tables if all the tables
+  // have a secondary tables, and they are all in the same secondary
+  // storage engine.
+  const LEX_STRING *secondary_engine = nullptr;
+  for (const TABLE_LIST *tl = lex->query_tables; tl != nullptr;
+       tl = tl->next_global) {
+    // Schema tables are not available in secondary engines.
+    if (tl->schema_table != nullptr) return nullptr;
+
+    // We're only interested in base tables.
+    if (tl->is_placeholder()) continue;
+
+    DBUG_ASSERT(!tl->table->s->is_secondary_engine());
+
+    if (!tl->table->s->has_secondary_engine()) {
+      // Not in a secondary engine.
+      return nullptr;
+    }
+
+    // Compare two engine names using the system collation.
+    auto equal = [](const LEX_STRING &s1, const LEX_STRING &s2) {
+      return system_charset_info->coll->strnncollsp(
+                 system_charset_info, pointer_cast<unsigned char *>(s1.str),
+                 s1.length, pointer_cast<unsigned char *>(s2.str),
+                 s2.length) == 0;
+    };
+
+    if (secondary_engine == nullptr) {
+      // First base table. Save its secondary engine name for later.
+      secondary_engine = &tl->table->s->secondary_engine;
+    } else if (!equal(*secondary_engine, tl->table->s->secondary_engine)) {
+      // In a different secondary engine than the previous base tables.
+      return nullptr;
+    }
+  }
+
+  return secondary_engine;
 }
 
 /**
@@ -422,8 +531,6 @@ err:
 */
 
 bool Sql_cmd_select::prepare_inner(THD *thd) {
-  lex->used_tables = 0;  // Updated by setup_fields
-
   if (lex->is_explain()) {
     /*
       Always use Query_result_send for EXPLAIN, even if it's an EXPLAIN for
@@ -520,7 +627,6 @@ bool Sql_cmd_dml::execute(THD *thd) {
   Ignore_error_handler ignore_handler;
   Strict_error_handler strict_handler;
 
-  DBUG_ASSERT(thd == unit->thd);
   // @todo - enable when needs_explicit_preparation is changed
   // DBUG_ASSERT(!needs_explicit_preparation() || is_prepared());
 
@@ -608,8 +714,9 @@ bool Sql_cmd_dml::execute(THD *thd) {
   THD_STAGE_INFO(thd, stage_end);
 
   // Do partial cleanup (preserve plans for EXPLAIN).
-  res = unit->cleanup(false);
+  res = unit->cleanup(thd, false);
   lex->clear_values_map();
+  lex->set_secondary_engine_execution_context(nullptr);
 
   // Perform statement-specific cleanup for Query_result
   if (result != NULL) result->cleanup(thd);
@@ -641,8 +748,9 @@ err:
   THD_STAGE_INFO(thd, stage_end);
   prepare_only = true;
 
-  (void)unit->cleanup(false);
+  (void)unit->cleanup(thd, false);
   lex->clear_values_map();
+  lex->set_secondary_engine_execution_context(nullptr);
 
   // Abort and cleanup the result set (if it has been prepared).
   if (result != NULL) {
@@ -667,6 +775,99 @@ err:
 }
 
 /**
+  Calculates the cost of executing a statement, including all its
+  subqueries.
+
+  @param lex the statement
+  @return the estimated cost of executing the statement
+*/
+static double accumulate_statement_cost(const LEX *lex) {
+  Opt_trace_context *trace = &lex->thd->opt_trace;
+  Opt_trace_disable_I_S disable_trace(trace, true);
+
+  double total_cost = 0.0;
+  for (const SELECT_LEX *select_lex = lex->all_selects_list;
+       select_lex != nullptr; select_lex = select_lex->next_select_in_list()) {
+    if (select_lex->join == nullptr) continue;
+
+    // Get the cost of this query block.
+    double query_block_cost = select_lex->join->best_read;
+
+    // If it is a non-cacheable subquery, estimate how many times it
+    // needs to be executed, and adjust the cost accordingly.
+    const Item_subselect *item = select_lex->master_unit()->item;
+    if (item != nullptr && !select_lex->is_cacheable())
+      query_block_cost *= calculate_subquery_executions(item, trace);
+
+    total_cost += query_block_cost;
+  }
+
+  return total_cost;
+}
+
+/**
+  Checks if a query should be retried using a secondary storage engine.
+
+  @param thd      the current session
+
+  @retval true   if the statement should be retried in a secondary engine
+  @retval false  if the statement should not be retried
+*/
+static bool retry_with_secondary_engine(const THD *thd) {
+  // Only retry if the current statement is being tentatively
+  // optimized for the primary engine.
+  if (thd->secondary_engine_optimization() !=
+      Secondary_engine_optimization::PRIMARY_TENTATIVELY)
+    return false;
+
+  Sql_cmd *const sql_cmd = thd->lex->m_sql_cmd;
+  DBUG_ASSERT(!sql_cmd->using_secondary_storage_engine());
+
+  // Only attempt to use the secondary engine if the estimated cost of the query
+  // is higher than the specified cost threshold.
+  if (thd->m_current_query_cost <=
+      thd->variables.secondary_engine_cost_threshold)
+    return false;
+
+  // Don't retry if it's already determined that the statement should not be
+  // executed by a secondary engine.
+  if (sql_cmd->secondary_storage_engine_disabled()) return false;
+
+  // Don't retry if there is a property of the statement that prevents use of
+  // secondary engines.
+  if (sql_cmd->eligible_secondary_storage_engine() == nullptr) {
+    sql_cmd->disable_secondary_storage_engine();
+    return false;
+  }
+
+  // Don't retry if there is a property of the environment that prevents use of
+  // secondary engines.
+  if (!thd->secondary_storage_engine_eligible()) return false;
+
+  return true;
+}
+
+/**
+  Perform query optimizations that are specific to a secondary storage
+  engine.
+
+  @param thd      the current session
+  @return true on error, false on success
+*/
+static bool optimize_secondary_engine(THD *thd) {
+  if (retry_with_secondary_engine(thd)) {
+    thd->get_stmt_da()->reset_diagnostics_area();
+    thd->get_stmt_da()->set_error_status(thd, ER_PREPARE_FOR_SECONDARY_ENGINE);
+    return true;
+  }
+
+  const handlerton *secondary_engine = thd->lex->m_sql_cmd->secondary_engine();
+  return secondary_engine != nullptr &&
+         secondary_engine->optimize_secondary_engine != nullptr &&
+         secondary_engine->optimize_secondary_engine(thd, thd->lex);
+}
+
+/**
   Execute a DML statement.
   This is the default implementation for a DML statement and uses a
   nested-loop join processor per outer-most query block.
@@ -688,8 +889,15 @@ bool Sql_cmd_dml::execute_inner(THD *thd) {
     if (unit->optimize(thd)) return true;
   }
 
+  // Calculate the current statement cost. It will be made available in
+  // the Last_query_cost status variable.
+  thd->m_current_query_cost = accumulate_statement_cost(lex);
+
+  // Perform secondary engine optimizations, if needed.
+  if (optimize_secondary_engine(thd)) return true;
+
   if (lex->is_explain()) {
-    if (explain_query(thd, unit)) return true; /* purecov: inspected */
+    if (explain_query(thd, thd, unit)) return true; /* purecov: inspected */
   } else {
     if (unit->is_simple()) {
       unit->first_select()->join->exec();
@@ -1448,6 +1656,10 @@ bool JOIN::destroy() {
 
   set_plan_state(NO_PLAN);
 
+  // Clear iterators that may refer to table objects before we start
+  // deleting said objects (e.g. temporary tables).
+  m_root_iterator.reset();
+
   if (qep_tab) {
     DBUG_ASSERT(!join_tab);
     for (uint i = 0; i < tables; i++) qep_tab[i].cleanup();
@@ -1510,10 +1722,16 @@ bool SELECT_LEX::optimize(THD *thd) {
   DBUG_ENTER("SELECT_LEX::optimize");
 
   DBUG_ASSERT(join == NULL);
-  JOIN *const join_local = new (*THR_MALLOC) JOIN(thd, this);
+  JOIN *const join_local = new (thd->mem_root) JOIN(thd, this);
   if (!join_local) DBUG_RETURN(true); /* purecov: inspected */
 
-  set_join(join_local);
+  /*
+    Updating SELECT_LEX::join requires acquiring THD::LOCK_query_plan
+    to avoid races when EXPLAIN FOR CONNECTION is used.
+  */
+  thd->lock_query_plan();
+  join = join_local;
+  thd->unlock_query_plan();
 
   if (join->optimize()) DBUG_RETURN(true);
 
@@ -1800,7 +2018,7 @@ bool create_ref_for_key(JOIN *join, JOIN_TAB *j, Key_use *org_keyuse,
            there is no need to create a column for this value.
         */
         bool dummy_value = false;
-        keyuse->val->walk(&Item::repoint_const_outer_ref, Item::WALK_PREFIX,
+        keyuse->val->walk(&Item::repoint_const_outer_ref, enum_walk::PREFIX,
                           pointer_cast<uchar *>(&dummy_value));
         /*
           key is const, copy value now and possibly skip it while ::exec().
@@ -1871,7 +2089,7 @@ static store_key *get_store_key(THD *thd, Key_use *keyuse,
                                 uchar *key_buff, uint maybe_null) {
   if (!((~used_tables) & keyuse->used_tables))  // if const item
   {
-    return new (*THR_MALLOC) store_key_const_item(
+    return new (thd->mem_root) store_key_const_item(
         thd, key_part->field, key_buff + maybe_null, maybe_null ? key_buff : 0,
         key_part->length, keyuse->val);
   }
@@ -1887,11 +2105,11 @@ static store_key *get_store_key(THD *thd, Key_use *keyuse,
     }
   }
   if (field_item)
-    return new (*THR_MALLOC) store_key_field(
+    return new (thd->mem_root) store_key_field(
         thd, key_part->field, key_buff + maybe_null, maybe_null ? key_buff : 0,
         key_part->length, field_item->field, keyuse->val->full_name());
 
-  return new (*THR_MALLOC)
+  return new (thd->mem_root)
       store_key_item(thd, key_part->field, key_buff + maybe_null,
                      maybe_null ? key_buff : 0, key_part->length, keyuse->val);
 }
@@ -2097,8 +2315,7 @@ void QEP_TAB::push_index_cond(const JOIN_TAB *join_tab, uint keyno,
   TABLE *const tbl = table();
 
   // Disable ICP for Innodb intrinsic temp table because of performance
-  if (internal_tmp_disk_storage_engine == TMP_TABLE_INNODB &&
-      tbl->s->db_type() == innodb_hton && tbl->s->tmp_table != NO_TMP_TABLE &&
+  if (tbl->s->db_type() == innodb_hton && tbl->s->tmp_table != NO_TMP_TABLE &&
       tbl->s->tmp_table != TRANSACTIONAL_TMP_TABLE)
     DBUG_VOID_RETURN;
 
@@ -2269,6 +2486,7 @@ bool JOIN::setup_semijoin_materialized_table(JOIN_TAB *tab, uint tableno,
   Semijoin_mat_exec *const sjm_exec = tab->sj_mat_exec();
   const uint field_count = emb_sj_nest->nested_join->sj_inner_exprs.elements;
 
+  DBUG_ASSERT(field_count > 0);
   DBUG_ASSERT(inner_pos->sj_strategy == SJ_OPT_MATERIALIZE_LOOKUP ||
               inner_pos->sj_strategy == SJ_OPT_MATERIALIZE_SCAN);
 
@@ -2505,7 +2723,6 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
 
   for (uint i = join->const_tables; i < join->tables; i++) {
     QEP_TAB *const qep_tab = &join->qep_tab[i];
-
     if (!qep_tab->position()) continue;
 
     JOIN_TAB *const tab = join->best_ref[i];
@@ -2533,32 +2750,6 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
 
     if (tab->use_join_cache() != JOIN_CACHE::ALG_NONE)
       qep_tab->init_join_cache(tab);
-
-    /*
-      If supported by handler, (parts of) the table condition may
-      by pushed down to the SE-engine for evaluation.
-    */
-    if (qep_tab->condition()) {
-      THD *thd = join->thd;
-      Item *cond = qep_tab->condition();
-      /*
-        Push condition to storage engine if this is enabled
-        and the condition is not guarded.
-      */
-      if (thd->optimizer_switch_flag(
-              OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN) &&
-          !qep_tab->is_inner_table_of_outer_join()) {
-        Item *push_cond =
-            make_cond_for_table(thd, cond, qep_tab->table_ref->map(),
-                                qep_tab->table_ref->map(), false);
-
-        if (push_cond != NULL && !table->file->cond_push(push_cond)) {
-          /* Condition pushed to handler */
-          table->file->pushed_cond = push_cond;
-          trace_refine_table.add("pushed_handler_condition", push_cond);
-        }
-      }
-    }
 
     switch (qep_tab->type()) {
       case JT_EQ_REF:
@@ -3037,7 +3228,7 @@ ORDER *simple_remove_const(ORDER *order, Item *where) {
 static bool test_if_equality_guarantees_uniqueness(Item *l, Item *r) {
   return r->const_item() &&
          /* elements must be compared as dates */
-         (Arg_comparator::can_compare_as_dates(l, r, 0) ||
+         (Arg_comparator::can_compare_as_dates(l, r) ||
           /* or of the same result type */
           (r->result_type() == l->result_type() &&
            /* and must have the same collation if compared as strings */
@@ -3411,16 +3602,17 @@ bool JOIN::make_sum_func_list(List<Item> &field_list,
 /**
   Free joins of subselect of this select.
 
+  @param thd      thread handle
   @param select   pointer to SELECT_LEX which subselects joins we will free
 
   @todo when the final use of this function (from SET statements) is removed,
   this function can be deleted.
 */
 
-void free_underlaid_joins(SELECT_LEX *select) {
+void free_underlaid_joins(THD *thd, SELECT_LEX *select) {
   for (SELECT_LEX_UNIT *unit = select->first_inner_unit(); unit;
        unit = unit->next_unit())
-    unit->cleanup(false);
+    unit->cleanup(thd, false);
 }
 
 /****************************************************************************
@@ -3459,7 +3651,7 @@ bool JOIN::rollup_process_const_fields() {
       if (*group_tmp->item == item) {
         Item *new_item = new Item_func_rollup_const(item);
         if (!new_item) return 1;
-        new_item->fix_fields(thd, (Item **)0);
+        if (new_item->fix_fields(thd, (Item **)0)) return true;
         thd->change_item_tree(it.ref(), new_item);
         for (ORDER *tmp = group_tmp; tmp; tmp = tmp->next) {
           if (*tmp->item == item) thd->change_item_tree(tmp->item, new_item);
@@ -3555,6 +3747,7 @@ bool JOIN::rollup_make_fields(List<Item> &fields_arg, List<Item> &sel_fields,
           sub selects.
         */
         item = item->copy_or_same(thd);
+        if (item == nullptr) return true;
         ((Item_sum *)item)->make_unique();
         *(*func) = (Item_sum *)item;
         (*func)++;
@@ -3629,7 +3822,6 @@ bool JOIN::rollup_make_fields(List<Item> &fields_arg, List<Item> &sel_fields,
   @retval  0    if ok
   @retval  1    if error
 */
-
 bool JOIN::switch_slice_for_rollup_fields(List<Item> &curr_all_fields,
                                           List<Item> &curr_sel_fields) {
   List_iterator_fast<Item> it(curr_all_fields);
@@ -3662,7 +3854,7 @@ bool JOIN::switch_slice_for_rollup_fields(List<Item> &curr_all_fields,
       */
       Item *ref_array_item = ref_array_start[ref_array_ix];
       if (ref_array_item->type() == Item::NULL_RESULT_ITEM ||
-          ref_array_item->has_rollup_field() ||
+          ref_array_item->has_rollup_expr() ||
           (ref_array_item->type() == Item::SUM_FUNC_ITEM &&
            !ref_array_item->m_is_window_function)) {
         has_rollup_fields = true;
@@ -3670,7 +3862,9 @@ bool JOIN::switch_slice_for_rollup_fields(List<Item> &curr_all_fields,
       if (real_fields) {
         (void)new_it_fields_list++;  // Point to next item
         (void)new_it_all_fields++;
-        // Replace all the items which do not need ROLLUP nulls for evaluation
+        /*
+          Replace all the items which do not need ROLLUP nulls for evaluation
+        */
         if (!has_rollup_fields) {
           ref_array_start[ref_array_ix] = item;
           new_it_fields_list.replace(item);  // Replace previous
@@ -3678,7 +3872,9 @@ bool JOIN::switch_slice_for_rollup_fields(List<Item> &curr_all_fields,
         }
         ref_array_ix++;
       } else {
-        // Replace all the items which do not need ROLLUP nulls for evaluation
+        /*
+          Replace all the items which do not need ROLLUP nulls for evaluation
+        */
         if (!has_rollup_fields) {
           ref_array_start[ref_array_ix] = item;
           rollup.all_fields[pos].replace(ref_array_ix, item);
@@ -4286,13 +4482,14 @@ bool JOIN::make_tmp_tables_info() {
         filesort_limit:	 Return only this many rows from filesort().
         We can use select_limit_cnt only if we have no group_by and 1 table.
         This allows us to use Bounded_queue for queries like:
-          "select SQL_CALC_FOUND_ROWS * from t1 order by b desc limit 1;"
+          "select * from t1 order by b desc limit 1;"
         m_select_limit == HA_POS_ERROR (we need a full table scan)
         unit->select_limit_cnt == 1 (we only need one row in the result set)
       */
       if (sort_tab->filesort)
         sort_tab->filesort->limit =
-            (has_group_by || (primary_tables > curr_tmp_table + 1))
+            (has_group_by || (primary_tables > curr_tmp_table + 1) ||
+             calc_found_rows)
                 ? m_select_limit
                 : unit->select_limit_cnt;
     }
@@ -4360,8 +4557,7 @@ bool JOIN::make_tmp_tables_info() {
         */
         Temp_table_param *par =
             new (thd->mem_root) Temp_table_param(tmp_table_param);
-        par->m_window = nullptr;  // Only OUT table needs access to Window
-
+        par->m_window_frame_buffer = true;
         List<Item> tmplist(*curr_all_fields, thd->mem_root);
         TABLE *table =
             create_tmp_table(thd, par, tmplist, nullptr, false, false,
@@ -4523,12 +4719,26 @@ bool JOIN::add_sorting_to_table(uint idx, ORDER_with_src *sort_order,
   Opt_trace_object trace_tmp(&thd->opt_trace, "filesort");
   trace_tmp.add("adding_sort_to_table_in_plan_at_position", idx);
 
+  unique_ptr_destroy_only<RowIterator> iterator =
+      move(tab->read_record.iterator);
+
+  if (tab->condition()) {
+    vector<Item *> predicates_below_join;
+    vector<PendingCondition> predicates_above_join;
+    SplitConditions(tab->condition(), &predicates_below_join,
+                    &predicates_above_join);
+
+    iterator = PossiblyAttachFilterIterator(move(iterator),
+                                            predicates_below_join, thd);
+    tab->mark_condition_as_pushed_to_sort();
+  }
+
   // Wrap the chosen RowIterator in a SortingIterator, so that we get
   // sorted results out.
   unique_ptr_destroy_only<RowIterator> sort(
-      new (&tab->read_record.sort_holder) SortingIterator(
-          tab->join()->thd, tab->filesort, move(tab->read_record.iterator),
-          &tab->join()->examined_rows));
+      new (&tab->read_record.sort_holder)
+          SortingIterator(tab->join()->thd, tab->filesort, move(iterator),
+                          &tab->join()->examined_rows));
   tab->read_record.iterator = move(sort);
 
   DBUG_RETURN(false);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,6 +49,7 @@
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_interface.h"
 
 // Forward declarations
+class Autorejoin_thread;
 class Hold_transactions;
 class Transaction_consistency_manager;
 
@@ -76,6 +77,38 @@ enum enum_exit_state_action {
   EXIT_STATE_ACTION_ABORT_SERVER
 };
 
+/**
+  This struct provides a namespace for the GR layer components.
+*/
+struct gr_modules {
+  /**
+    @enum gr_modules_enum
+    @brief Represents the GR layer modules that can be initialized
+    and/or terminated at will while the plugin is running.
+    @see terminate_plugin_modules
+  */
+  enum gr_modules_enum {
+    RECOVERY_MODULE = 0,
+    GROUP_ACTION_COORDINATOR,
+    PRIMARY_ELECTION_HANDLER,
+    AUTO_INCREMENT_HANDLER,
+    APPLIER_MODULE,
+    ASYNC_REPL_CHANNELS,
+    GROUP_PARTITION_HANDLER,
+    AUTOREJOIN_THREAD,
+    BLOCKED_TRANSACTION_HANDLER,
+    CERTIFICATION_LATCH,
+    GROUP_MEMBER_MANAGER,
+    REGISTRY_MODULE,
+    WAIT_ON_START,
+    COMPATIBILITY_MANAGER,
+    GCS_EVENTS_HANDLER,
+    NUM_MODULES
+  };
+  using mask = std::bitset<NUM_MODULES>;
+  static constexpr mask all_modules = (1 << NUM_MODULES) - 1;
+};
+
 extern const char *group_replication_plugin_name;
 extern char *group_name_var;
 extern rpl_sidno group_sidno;
@@ -94,7 +127,13 @@ extern Wait_ticket<my_thread_id> *transactions_latch;
 extern ulong exit_state_action_var;
 extern std::atomic<bool> plugin_is_stopping;
 
-// The modules
+/**
+  The plugin modules.
+
+  @note Whenever you want to create a new plugin module, be sure to add it to
+  the gr_modules enum (@sa gr_modules) and see if it's part of the rejoin
+  process.
+*/
 extern Gcs_operations *gcs_module;
 extern Applier_module *applier_module;
 extern Recovery_module *recovery_module;
@@ -114,6 +153,7 @@ extern Delayed_initialization_thread *delayed_initialization_thread;
 extern Group_action_coordinator *group_action_coordinator;
 extern Primary_election_handler *primary_election_handler;
 extern Hold_transactions *hold_transactions;
+extern Autorejoin_thread *autorejoin_module;
 
 // Auxiliary Functionality
 extern Plugin_gcs_events_handler *events_handler;
@@ -129,6 +169,9 @@ mysql_mutex_t *get_plugin_running_lock();
 Plugin_waitlock *get_plugin_online_lock();
 int initialize_plugin_and_join(enum_plugin_con_isolation sql_api_isolation,
                                Delayed_initialization_thread *delayed_init_thd);
+int initialize_plugin_modules(gr_modules::mask modules_to_init);
+int terminate_plugin_modules(gr_modules::mask modules_to_terminate,
+                             char **error_message = nullptr);
 void register_server_reset_master();
 bool get_allow_local_lower_version_join();
 ulong get_transaction_size_limit();
@@ -140,6 +183,21 @@ void set_auto_increment_handler_values();
 void reset_auto_increment_handler_values(bool force_reset = false);
 SERVICE_TYPE(registry) * get_plugin_registry();
 rpl_sidno get_group_sidno();
+bool is_autorejoin_enabled();
+uint get_number_of_autorejoin_tries();
+ulonglong get_rejoin_timeout();
+
+/**
+  Encapsulates the logic necessary to attempt a rejoin, i.e. gracefully leave
+  the group, terminate GCS infrastructure, terminate auto-rejoin relevant plugin
+  modules, reinitialize auto-rejoin relevant plugin modules, reinitialize GCS
+  infrastructure and attempt to join the group again.
+
+  @returns a flag indicating success or failure.
+  @retval true the rejoin failed.
+  @retval false the rejoin succeeded.
+*/
+bool attempt_rejoin();
 
 // Plugin public methods
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info);

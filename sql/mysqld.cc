@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -664,6 +664,7 @@ The documentation is based on the source files such as:
 #include "sql/sql_table.h"  // build_table_filename
 #include "sql/sql_test.h"   // mysql_print_status
 #include "sql/sql_udf.h"
+#include "sql/ssl_acceptor_context.h"
 #include "sql/sys_vars.h"         // fixup_enforce_gtid_consistency_...
 #include "sql/sys_vars_shared.h"  // intern_find_sys_var
 #include "sql/table_cache.h"      // table_cache_manager
@@ -750,7 +751,8 @@ The documentation is based on the source files such as:
 #include "sql/dd/dd_kill_immunizer.h"        // dd::DD_kill_immunizer
 #include "sql/dd/dictionary.h"               // dd::get_dictionary
 #include "sql/dd/performance_schema/init.h"  // performance_schema::init
-#include "sql/dd/upgrade/upgrade.h"          // dd::upgrade::in_progress
+#include "sql/dd/upgrade/server.h"      // dd::upgrade::upgrade_system_schemas
+#include "sql/dd/upgrade_57/upgrade.h"  // dd::upgrade_57::in_progress
 #include "sql/srv_session.h"
 
 using std::max;
@@ -827,7 +829,7 @@ static get_opt_arg_source source_autocommit;
 /*
   Used with --help for detailed option
 */
-bool opt_help = false, opt_verbose = false;
+bool opt_help = false, opt_verbose = false, opt_validate_config = false;
 
 arg_cmp_func Arg_comparator::comparator_matrix[5] = {
     &Arg_comparator::compare_string,      // Compare strings
@@ -901,6 +903,8 @@ static PSI_cond_key key_COND_start_signal_handler;
 static PSI_mutex_key key_LOCK_server_started;
 static PSI_cond_key key_COND_server_started;
 static PSI_mutex_key key_LOCK_keyring_operations;
+static PSI_mutex_key key_LOCK_tls_ctx_options;
+static PSI_mutex_key key_LOCK_rotate_binlog_master_key;
 #endif /* HAVE_PSI_INTERFACE */
 
 /**
@@ -932,12 +936,8 @@ bool listen_admin_interface_in_separate_thread;
 static char *default_collation_name;
 char *default_storage_engine;
 char *default_tmp_storage_engine;
-/**
-   Use to mark which engine should be chosen to create internal
-   temp table
- */
-ulong internal_tmp_disk_storage_engine;
 ulonglong temptable_max_ram;
+bool temptable_use_mmap;
 static char compiled_default_collation_name[] = MYSQL_DEFAULT_COLLATION_NAME;
 static bool binlog_format_used = false;
 
@@ -991,6 +991,7 @@ bool opt_no_monitor = false;
 #endif
 
 bool opt_no_dd_upgrade = false;
+long opt_upgrade_mode = UPGRADE_AUTO;
 bool opt_initialize = 0;
 bool opt_skip_slave_start = 0;  ///< If set, slave is not autostarted
 bool opt_enable_named_pipe = 0;
@@ -1035,11 +1036,14 @@ std::atomic<bool> offline_mode;
 uint opt_large_page_size = 0;
 uint default_password_lifetime = 0;
 volatile bool password_require_current = false;
+std::atomic<bool> partial_revokes;
+bool opt_partial_revokes;
 
 mysql_mutex_t LOCK_default_password_lifetime;
 mysql_mutex_t LOCK_mandatory_roles;
 mysql_mutex_t LOCK_password_history;
 mysql_mutex_t LOCK_password_reuse_interval;
+mysql_mutex_t LOCK_tls_ctx_options;
 
 #if defined(ENABLED_DEBUG_SYNC)
 MYSQL_PLUGIN_IMPORT uint opt_debug_sync_timeout = 0;
@@ -1072,9 +1076,6 @@ const char *binlog_error_action_list[] = {"IGNORE_ERROR", "ABORT_SERVER",
 uint32 gtid_executed_compression_period = 0;
 bool opt_log_unsafe_statements;
 
-#ifdef HAVE_INITGROUPS
-volatile sig_atomic_t calling_initgroups = 0; /**< Used in SIGSEGV handler. */
-#endif
 const char *timestamp_type_names[] = {"UTC", "SYSTEM", NullS};
 ulong opt_log_timestamps;
 uint mysqld_port, test_flags, select_errors, ha_open_options;
@@ -1168,6 +1169,8 @@ bool avoid_temporal_upgrade;
 bool persisted_globals_load = true;
 
 bool opt_keyring_operations = true;
+
+bool opt_table_encryption_privilege_check = false;
 
 const double log_10[] = {
     1e000, 1e001, 1e002, 1e003, 1e004, 1e005, 1e006, 1e007, 1e008, 1e009, 1e010,
@@ -1275,7 +1278,7 @@ CHARSET_INFO *character_set_filesystem;
 MY_LOCALE *my_default_lc_messages;
 MY_LOCALE *my_default_lc_time_names;
 
-SHOW_COMP_OPTION have_ssl, have_symlink, have_dlopen, have_query_cache;
+SHOW_COMP_OPTION have_symlink, have_dlopen, have_query_cache;
 SHOW_COMP_OPTION have_geometry, have_rtree_keys;
 SHOW_COMP_OPTION have_compress;
 SHOW_COMP_OPTION have_profiling;
@@ -1331,6 +1334,11 @@ mysql_cond_t COND_start_signal_handler;
   keyring_operations.
 */
 mysql_mutex_t LOCK_keyring_operations;
+/*
+  The below lock protects to execute commands 'ALTER INSTANCE ROTATE BINLOG
+  MASTER KEY' and 'SET @@GLOBAL.binlog_encryption=ON/OFF' in parallel.
+*/
+mysql_mutex_t LOCK_rotate_binlog_master_key;
 
 bool mysqld_server_started = false;
 /**
@@ -1513,7 +1521,8 @@ ulong sql_rnd_with_mutex() {
   return tmp;
 }
 
-struct System_status_var *get_thd_status_var(THD *thd) {
+struct System_status_var *get_thd_status_var(THD *thd, bool *aggregated) {
+  *aggregated = thd->status_var_aggregated;
   return &thd->status_var;
 }
 
@@ -1584,17 +1593,9 @@ static const char *default_dbug_option;
 #endif
 
 #ifndef XTRABACKUP
-bool opt_use_ssl = 1;
-char *opt_ssl_ca = NULL, *opt_ssl_capath = NULL, *opt_ssl_cert = NULL,
-     *opt_ssl_cipher = NULL, *opt_ssl_key = NULL, *opt_ssl_crl = NULL,
-     *opt_ssl_crlpath = NULL, *opt_tls_version = NULL;
+bool opt_use_ssl = true;
 ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
 #endif
-
-#ifdef HAVE_OPENSSL
-struct st_VioSSLFd *ssl_acceptor_fd;
-SSL *ssl_acceptor;
-#endif /* HAVE_OPENSSL */
 
 /* Function declarations */
 
@@ -1675,6 +1676,7 @@ static void server_component_init() {
   mysql_comp_system_variable_source_init();
   mysql_backup_lock_service_init();
   clone_protocol_service_init();
+  page_track_service_init();
   mysql_security_context_init();
   mysql_server_ongoing_transactions_query_init();
   host_application_signal_imp_init();
@@ -1987,7 +1989,7 @@ static void unireg_abort(int exit_code) {
     sysd::notify("ERRNO=", errno, "\n");
   }
 
-  if (opt_initialize && exit_code)
+  if (opt_initialize && exit_code && !opt_validate_config)
     LogErr(ERROR_LEVEL, ER_DATA_DIRECTORY_UNUSABLE, mysql_real_data_home);
 
   // At this point it does not make sense to buffer more messages.
@@ -1996,8 +1998,9 @@ static void unireg_abort(int exit_code) {
 
   if (opt_help) usage();
 
-  bool daemon_launcher_quiet = (IF_WIN(false, opt_daemonize) &&
-                                !mysqld::runtime::is_daemon() && !opt_help);
+  bool daemon_launcher_quiet =
+      (IF_WIN(false, opt_daemonize) && !mysqld::runtime::is_daemon() &&
+       !is_help_or_validate_option());
 
   if (!daemon_launcher_quiet && exit_code) LogErr(ERROR_LEVEL, ER_ABORTING);
 
@@ -2017,7 +2020,7 @@ static void unireg_abort(int exit_code) {
     mysqld::runtime::signal_parent(pipe_write_fd, 0);
   }
 #endif
-  clean_up(!opt_help && !daemon_launcher_quiet &&
+  clean_up(!is_help_or_validate_option() && !daemon_launcher_quiet &&
            (exit_code || !opt_initialize)); /* purecov: inspected */
   DBUG_PRINT("quit", ("done with cleanup in unireg_abort"));
   mysqld_exit(exit_code);
@@ -2132,7 +2135,7 @@ static void clean_up(bool print_message) {
     make sure that handlers finish up
     what they have that is dependent on the binlog
   */
-  if (print_message && ((!opt_help) || (opt_verbose)))
+  if (print_message && (!is_help_or_validate_option() || opt_verbose))
     LogErr(INFORMATION_LEVEL, ER_BINLOG_END);
   ha_binlog_end(current_thd);
 
@@ -2196,7 +2199,7 @@ static void clean_up(bool print_message) {
   free_connection_acceptors();
   Connection_handler_manager::destroy_instance();
 
-  if (!opt_help && !opt_initialize)
+  if (!is_help_or_validate_option() && !opt_initialize)
     resourcegroups::Resource_group_mgr::destroy_instance();
   mysql_client_plugin_deinit();
   finish_client_errs();
@@ -2220,7 +2223,7 @@ static void clean_up(bool print_message) {
   log_builtins_error_stack("log_filter_internal; log_sink_internal", false,
                            nullptr);
 #ifdef HAVE_PSI_THREAD_INTERFACE
-  if (!opt_help && !opt_initialize) {
+  if (!is_help_or_validate_option() && !opt_initialize) {
     unregister_pfs_notification_service();
     unregister_pfs_resource_group_service();
   }
@@ -2290,6 +2293,8 @@ static void clean_up_mutexes() {
   mysql_mutex_destroy(&LOCK_start_signal_handler);
 #endif
   mysql_mutex_destroy(&LOCK_keyring_operations);
+  mysql_mutex_destroy(&LOCK_tls_ctx_options);
+  mysql_mutex_destroy(&LOCK_rotate_binlog_master_key);
 }
 
 /****************************************************************************
@@ -2349,7 +2354,7 @@ static struct passwd *check_user(const char *user) {
     return NULL;
   }
   if (!user) {
-    if (!opt_initialize && !opt_help) {
+    if (!opt_initialize && !is_help_or_validate_option()) {
       LogErr(ERROR_LEVEL, ER_REALLY_RUN_AS_ROOT);
       unireg_abort(MYSQLD_ABORT_EXIT);
     }
@@ -2382,15 +2387,7 @@ static void set_user(const char *user, struct passwd *user_info_arg) {
   /* purecov: begin tested */
   DBUG_ASSERT(user_info_arg != 0);
 #ifdef HAVE_INITGROUPS
-  /*
-    We can get a SIGSEGV when calling initgroups() on some systems when NSS
-    is configured to use LDAP and the server is statically linked.  We set
-    calling_initgroups as a flag to the SIGSEGV handler that is then used to
-    output a specific message to help the user resolve this problem.
-  */
-  calling_initgroups = 1;
   initgroups((char *)user, user_info_arg->pw_gid);
-  calling_initgroups = 0;
 #endif
   if (setgid(user_info_arg->pw_gid) == -1) {
     LogErr(ERROR_LEVEL, ER_FAIL_SETGID, strerror(errno));
@@ -2443,8 +2440,8 @@ static void set_root(const char *path) {
 
   @return true in case the address value is a wildcard value, else false.
 */
-static bool check_address_is_wildcard(const char *address_value,
-                                      size_t address_length) {
+bool check_address_is_wildcard(const char *address_value,
+                               size_t address_length) {
   return
       // Wildcard is not allowed in case a comma separated list of
       // addresses is specified
@@ -2461,15 +2458,138 @@ static bool check_address_is_wildcard(const char *address_value,
 }
 
 /**
-  Check acceptable value of parameter bind_address
+  Take a string representing host or ip address followed by
+  optional delimiter '/' and namespace name and put address part
+  and namespace part into corresponding output parameters.
+
+  @param begin_address_value  start of a string containing an address value
+  @param end_address_value  pointer to an end of string containing
+                            an address value. Has the value nullptr in case
+                            address value not continue
+  @param [out] address_value  address value extracted from address string
+  @param [out] network_namespace  network namespace extracted from
+                                  the address string value if any
+
+  @return false on success, true on address format error
+*/
+static bool parse_address_string(const char *begin_address_value,
+                                 const char *end_address_value,
+                                 std::string *address_value,
+                                 std::string *network_namespace) {
+  const char *namespace_separator = strchr(begin_address_value, '/');
+
+  if (namespace_separator != nullptr) {
+    if (begin_address_value == namespace_separator)
+      /*
+        Parse error: there is no character before '/',
+        that is missed address value
+      */
+      return true;
+
+    if (namespace_separator < end_address_value) {
+      if (end_address_value - namespace_separator == 1)
+        /*
+          Parse error: there is no character immediately after '/',
+          that is missed namespace name.
+        */
+        return true;
+
+      /*
+        Found namespace delimiter. Extract namespace and address values
+      */
+      *address_value = std::string(begin_address_value, namespace_separator);
+      *network_namespace =
+          std::string(namespace_separator + 1, end_address_value);
+    } else if (end_address_value != nullptr)
+      /*
+        This branch corresponds to the case when namespace separator is located
+        after the last character of the address subvalue being processed.
+        For example, if the following string '192.168.1.1,172.1.1.1/red'
+        passed into the function create_bind_address_info_from_string(),
+        then during handling of the address 192.168.1.1 search of '/'
+        will return a position after the end of the sub string 192.168.1.1
+        (in the next sub string 172.1.1.1/red) that should be ignored.
+      */
+      *address_value = std::string(begin_address_value, end_address_value);
+    else {
+      /*
+        This branch corresponds to the case when namespace separator is located
+        at the last part of address values. For example,
+        this branch is executed during handling of the following value
+        192.168.1.1,::1,::1/greeen for the option --bind-address.
+      */
+      *address_value = std::string(begin_address_value, namespace_separator);
+      *network_namespace = std::string(namespace_separator + 1);
+      if (*(namespace_separator + 1) == 0)
+        /*
+          Parse error: there is no character immediately
+          after '/' - a namespace name missed.
+        */
+        return true;
+    }
+  } else {
+    /*
+      Regular address without network namespace found.
+    */
+    *address_value = end_address_value != nullptr
+                         ? std::string(begin_address_value, end_address_value)
+                         : std::string(begin_address_value);
+  }
+
+  return false;
+}
+
+/**
+  Parse a value of address sub string with checking of address string format,
+  extract address part and namespace part of the address value, and store
+  their values into the argument valid_bind_addresses.
+
+  @return false on success, true on address format error
+*/
+static bool create_bind_address_info_from_string(
+    const char *begin_address_value, const char *end_address_value,
+    std::list<Bind_address_info> *valid_bind_addresses) {
+  Bind_address_info bind_address_info;
+  std::string address_value, network_namespace;
+
+  if (parse_address_string(begin_address_value, end_address_value,
+                           &address_value, &network_namespace))
+    return true;
+
+  if (network_namespace.empty())
+    bind_address_info = Bind_address_info(address_value);
+  else {
+    /*
+      Wildcard value is not allowed in case network namespace specified
+      for address value in the option bind-address.
+    */
+    if (check_address_is_wildcard(address_value.c_str(),
+                                  address_value.length())) {
+      LogErr(ERROR_LEVEL,
+             ER_NETWORK_NAMESPACE_NOT_ALLOWED_FOR_WILDCARD_ADDRESS);
+      return true;
+    }
+
+    bind_address_info = Bind_address_info(address_value, network_namespace);
+  }
+
+  valid_bind_addresses->emplace_back(bind_address_info);
+
+  return false;
+}
+
+/**
+  Check acceptable value(s) of parameter bind-address
 
   @param      bind_address          Value of the parameter bind-address
-  @param[out] valid_bind_addresses  List of addresses to listen
+  @param[out] valid_bind_addresses  List of addresses to listen and their
+                                    corresponding network namespaces if set.
 
   @return false on success, true on failure
 */
 static bool check_bind_address_has_valid_value(
-    const char *bind_address, std::list<std::string> *valid_bind_addresses) {
+    const char *bind_address,
+    std::list<Bind_address_info> *valid_bind_addresses) {
   if (strlen(bind_address) == 0)
     // Empty value for bind_address is an error
     return true;
@@ -2483,12 +2603,23 @@ static bool check_bind_address_has_valid_value(
     return true;
 
   while (comma_separator != nullptr) {
+    Bind_address_info bind_address_info;
+    std::string address_value, network_namespace;
+    /*
+      Wildcard value is not allowed in case multi-addresses value specified
+      for the option bind-address.
+    */
     if (check_address_is_wildcard(begin_of_value,
-                                  comma_separator - begin_of_value))
+                                  comma_separator - begin_of_value)) {
+      LogErr(ERROR_LEVEL, ER_WILDCARD_NOT_ALLOWED_FOR_MULTIADDRESS_BIND);
+
+      return true;
+    }
+
+    if (create_bind_address_info_from_string(begin_of_value, comma_separator,
+                                             valid_bind_addresses))
       return true;
 
-    valid_bind_addresses->emplace_back(
-        std::string(begin_of_value, comma_separator));
     begin_of_value = comma_separator + 1;
     comma_separator = strchr(begin_of_value, ',');
     if (comma_separator == begin_of_value)
@@ -2496,12 +2627,53 @@ static bool check_bind_address_has_valid_value(
       return true;
   }
 
+  /*
+    Wildcard value is not allowed in case multi-addresses value specified
+    for the option bind-address.
+  */
   if (multiple_bind_addresses &&
       (check_address_is_wildcard(begin_of_value, strlen(begin_of_value)) ||
        strlen(begin_of_value) == 0))
     return true;
 
-  valid_bind_addresses->emplace_back(begin_of_value);
+  if (create_bind_address_info_from_string(begin_of_value, comma_separator,
+                                           valid_bind_addresses))
+    return true;
+
+  return false;
+}
+
+/**
+  Check acceptable value(s) of the parameter admin-address
+
+  @param      admin_bind_addr_str   Value of the parameter admin-address
+  @param[out] admin_address_info    List of addresses to listen and their
+                                    corresponding network namespaces if set.
+
+  @return false on success, true on failure
+*/
+static bool check_admin_address_has_valid_value(
+    const char *admin_bind_addr_str, Bind_address_info *admin_address_info) {
+  std::string address_value, network_namespace;
+
+  if (parse_address_string(admin_bind_addr_str, nullptr, &address_value,
+                           &network_namespace))
+    return true;
+
+  if (check_address_is_wildcard(address_value.c_str(),
+                                address_value.length())) {
+    if (!network_namespace.empty())
+      LogErr(ERROR_LEVEL,
+             ER_NETWORK_NAMESPACE_NOT_ALLOWED_FOR_WILDCARD_ADDRESS);
+
+    return true;
+  }
+
+  if (network_namespace.empty())
+    *admin_address_info = Bind_address_info(address_value);
+  else
+    *admin_address_info = Bind_address_info(address_value, network_namespace);
+
   return false;
 }
 
@@ -2516,18 +2688,21 @@ static bool network_init(void) {
   std::string const unix_sock_name("");
 #endif
 
-  std::list<std::string> bind_addresses;
+  std::list<Bind_address_info> bind_addresses_info;
+
   if (!opt_disable_networking || unix_sock_name != "") {
     if (my_bind_addr_str != nullptr &&
-        check_bind_address_has_valid_value(my_bind_addr_str, &bind_addresses)) {
+        check_bind_address_has_valid_value(my_bind_addr_str,
+                                           &bind_addresses_info)) {
       LogErr(ERROR_LEVEL, ER_INVALID_VALUE_OF_BIND_ADDRESSES, my_bind_addr_str);
       return true;
     }
 
+    Bind_address_info admin_address_info;
     if (!opt_disable_networking) {
       if (my_admin_bind_addr_str != nullptr &&
-          check_address_is_wildcard(my_admin_bind_addr_str,
-                                    strlen(my_admin_bind_addr_str))) {
+          check_admin_address_has_valid_value(my_admin_bind_addr_str,
+                                              &admin_address_info)) {
         LogErr(ERROR_LEVEL, ER_INVALID_ADMIN_ADDRESS, my_admin_bind_addr_str);
         return true;
       }
@@ -2542,12 +2717,11 @@ static bool network_init(void) {
       */
       if (mysqld_admin_port == 0) mysqld_admin_port = MYSQL_ADMIN_PORT;
     }
-    Mysqld_socket_listener *mysqld_socket_listener =
-        new (std::nothrow) Mysqld_socket_listener(
-            bind_addresses, mysqld_port,
-            (opt_disable_networking ? nullptr : my_admin_bind_addr_str),
-            mysqld_admin_port, listen_admin_interface_in_separate_thread,
-            back_log, mysqld_port_timeout, unix_sock_name);
+    Mysqld_socket_listener *mysqld_socket_listener = new (std::nothrow)
+        Mysqld_socket_listener(bind_addresses_info, mysqld_port,
+                               admin_address_info, mysqld_admin_port,
+                               listen_admin_interface_in_separate_thread,
+                               back_log, mysqld_port_timeout, unix_sock_name);
     if (mysqld_socket_listener == NULL) return true;
 
     mysqld_socket_acceptor = new (std::nothrow)
@@ -2965,7 +3139,7 @@ extern "C" void *signal_hand(void *arg MY_ATTRIBUTE((unused))) {
   */
   server_components_init_wait();
   for (;;) {
-    int sig;
+    int sig = 0;
     int rc;
     bool error;
 #ifdef __APPLE__
@@ -3222,7 +3396,7 @@ static int check_enough_stack_size(int recurse_level) {
 
   THD *my_thd = current_thd;
   if (my_thd != NULL)
-    return check_stack_overrun(my_thd, STACK_MIN_SIZE * 2, &stack_top);
+    return check_stack_overrun(my_thd, STACK_MIN_SIZE * 4, &stack_top);
   return 0;
 }
 }  // extern "C"
@@ -3958,7 +4132,7 @@ int init_common_variables() {
   mysql_bin_log.init_pthread_objects();
 
   /* TODO: remove this when my_time_t is 64 bit compatible */
-  if (!IS_TIME_T_VALID_FOR_TIMESTAMP(server_start_time)) {
+  if (!is_time_t_valid_for_timestamp(server_start_time)) {
     LogErr(ERROR_LEVEL, ER_UNSUPPORTED_DATE);
     return 1;
   }
@@ -4068,14 +4242,14 @@ int init_common_variables() {
   }
   set_server_version();
 
-  if (!opt_help) {
+  if (!is_help_or_validate_option()) {
     LogErr(INFORMATION_LEVEL, ER_BASEDIR_SET_TO, mysql_home);
   }
 
-  if (opt_initialize || opt_initialize_insecure) {
+  if (!opt_validate_config && (opt_initialize || opt_initialize_insecure)) {
     LogErr(SYSTEM_LEVEL, ER_STARTING_INIT, my_progname, server_version,
            (ulong)getpid());
-  } else if (!opt_help) {
+  } else if (!is_help_or_validate_option()) {
     LogErr(SYSTEM_LEVEL, ER_STARTING_AS, my_progname, server_version,
            (ulong)getpid());
   }
@@ -4323,6 +4497,8 @@ int init_common_variables() {
   if (debug_sync_init()) return 1; /* purecov: tested */
 #endif                             /* defined(ENABLED_DEBUG_SYNC) */
 
+  if (opt_validate_config) return 0;
+
   /* create the data directory if requested */
   if (unlikely(opt_initialize) &&
       initialize_create_data_directory(mysql_real_data_home))
@@ -4454,130 +4630,12 @@ static int init_thread_environment() {
 
   mysql_mutex_init(key_LOCK_keyring_operations, &LOCK_keyring_operations,
                    MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(key_LOCK_tls_ctx_options, &LOCK_tls_ctx_options,
+                   MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(key_LOCK_rotate_binlog_master_key,
+                   &LOCK_rotate_binlog_master_key, MY_MUTEX_INIT_FAST);
   return 0;
 }
-
-#if !defined(XTRABACKUP)
-static ssl_artifacts_status auto_detect_ssl() {
-  MY_STAT cert_stat, cert_key, ca_stat;
-  uint result = 1;
-  ssl_artifacts_status ret_status = SSL_ARTIFACTS_VIA_OPTIONS;
-
-  if ((!opt_ssl_cert || !opt_ssl_cert[0]) &&
-      (!opt_ssl_key || !opt_ssl_key[0]) && (!opt_ssl_ca || !opt_ssl_ca[0]) &&
-      (!opt_ssl_capath || !opt_ssl_capath[0]) &&
-      (!opt_ssl_crl || !opt_ssl_crl[0]) &&
-      (!opt_ssl_crlpath || !opt_ssl_crlpath[0])) {
-    result =
-        result << (my_stat(DEFAULT_SSL_SERVER_CERT, &cert_stat, MYF(0)) ? 1 : 0)
-               << (my_stat(DEFAULT_SSL_SERVER_KEY, &cert_key, MYF(0)) ? 1 : 0)
-               << (my_stat(DEFAULT_SSL_CA_CERT, &ca_stat, MYF(0)) ? 1 : 0);
-
-    switch (result) {
-      case 8:
-        opt_ssl_ca = (char *)DEFAULT_SSL_CA_CERT;
-        opt_ssl_cert = (char *)DEFAULT_SSL_SERVER_CERT;
-        opt_ssl_key = (char *)DEFAULT_SSL_SERVER_KEY;
-        ret_status = SSL_ARTIFACTS_AUTO_DETECTED;
-        break;
-      case 4:
-      case 2:
-        ret_status = SSL_ARTIFACT_TRACES_FOUND;
-        break;
-      default:
-        ret_status = SSL_ARTIFACTS_NOT_FOUND;
-        break;
-    };
-  }
-
-  return ret_status;
-}
-
-static int warn_one(const char *file_name) {
-  char *issuer = NULL;
-  char *subject = NULL;
-  X509 *ca_cert;
-  BIO *bio;
-  FILE *fp;
-
-  if (!(fp = my_fopen(file_name, O_RDONLY | MY_FOPEN_BINARY, MYF(MY_WME)))) {
-    LogErr(ERROR_LEVEL, ER_CANT_OPEN_CA);
-    return 1;
-  }
-
-  bio = BIO_new(BIO_s_file());
-  if (!bio) {
-    LogErr(ERROR_LEVEL, ER_FAILED_TO_ALLOCATE_SSL_BIO);
-    my_fclose(fp, MYF(0));
-    return 1;
-  }
-  BIO_set_fp(bio, fp, BIO_NOCLOSE);
-  ca_cert = PEM_read_bio_X509(bio, 0, 0, 0);
-  BIO_free(bio);
-
-  if (!ca_cert) {
-    /* We are not interested in anything other than X509 certificates */
-    my_fclose(fp, MYF(MY_WME));
-    return 0;
-  }
-
-  issuer = X509_NAME_oneline(X509_get_issuer_name(ca_cert), 0, 0);
-  subject = X509_NAME_oneline(X509_get_subject_name(ca_cert), 0, 0);
-
-  /* Suppressing warning which is not relevant during initialization */
-  if (!strcmp(issuer, subject) &&
-      !(opt_initialize || opt_initialize_insecure)) {
-    LogErr(WARNING_LEVEL, ER_CA_SELF_SIGNED, file_name);
-  }
-
-  OPENSSL_free(issuer);
-  OPENSSL_free(subject);
-  X509_free(ca_cert);
-  my_fclose(fp, MYF(MY_WME));
-  return 0;
-}
-
-static int warn_self_signed_ca() {
-  int ret_val = 0;
-  if (opt_ssl_ca && opt_ssl_ca[0]) {
-    if (warn_one(opt_ssl_ca)) return 1;
-  }
-  if (opt_ssl_capath && opt_ssl_capath[0]) {
-    /* We have ssl-capath. So search all files in the dir */
-    MY_DIR *ca_dir;
-    uint file_count;
-    DYNAMIC_STRING file_path;
-    char dir_separator[FN_REFLEN];
-    size_t dir_path_length;
-
-    init_dynamic_string(&file_path, opt_ssl_capath, FN_REFLEN, FN_REFLEN);
-    dir_separator[0] = FN_LIBCHAR;
-    dir_separator[1] = 0;
-    dynstr_append(&file_path, dir_separator);
-    dir_path_length = file_path.length;
-
-    if (!(ca_dir =
-              my_dir(opt_ssl_capath, MY_WANT_STAT | MY_DONT_SORT | MY_WME))) {
-      LogErr(ERROR_LEVEL, ER_CANT_ACCESS_CAPATH);
-      return 1;
-    }
-
-    for (file_count = 0; file_count < ca_dir->number_off_files; file_count++) {
-      if (!MY_S_ISDIR(ca_dir->dir_entry[file_count].mystat->st_mode)) {
-        file_path.length = dir_path_length;
-        dynstr_append(&file_path, ca_dir->dir_entry[file_count].name);
-        if ((ret_val = warn_one(file_path.str))) break;
-      }
-    }
-    my_dirend(ca_dir);
-    dynstr_free(&file_path);
-
-    ca_dir = 0;
-    memset(&file_path, 0, sizeof(file_path));
-  }
-  return ret_val;
-}
-#endif
 
 #if !defined(HAVE_WOLFSSL) && defined(HAVE_OPENSSL) && !defined(__sun)
 /* TODO: remove the !defined(__sun) when bug 23285559 is out of the picture */
@@ -4607,7 +4665,7 @@ static void init_ssl() {
       {&key_memory_openssl, "openssl_malloc", 0, 0,
        "All memory used by openSSL"}};
   mysql_memory_register("mysqld_openssl", all_openssl_memory,
-                        array_elements(all_openssl_memory));
+                        (int)array_elements(all_openssl_memory));
 #endif /* defined(HAVE_PSI_MEMORY_INTERFACE) */
   int ret = CRYPTO_set_mem_functions(my_openssl_malloc, my_openssl_realloc,
                                      my_openssl_free);
@@ -4620,85 +4678,29 @@ static void init_ssl() {
 }
 
 static int init_ssl_communication() {
-#if defined(HAVE_OPENSSL) && !defined(XTRABACKUP)
-#ifndef HAVE_WOLFSSL
+#if !defined(HAVE_WOLFSSL) && !defined(XTRABACKUP)
   char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
   int ret_fips_mode = set_fips_mode(opt_ssl_fips_mode, ssl_err_string);
   if (ret_fips_mode != 1) {
     LogErr(ERROR_LEVEL, ER_SSL_FIPS_MODE_ERROR, ssl_err_string);
     return 1;
   }
-#endif
-  if (opt_use_ssl) {
-    ssl_artifacts_status auto_detection_status = auto_detect_ssl();
-    if (auto_detection_status == SSL_ARTIFACTS_AUTO_DETECTED)
-      LogErr(INFORMATION_LEVEL, ER_SSL_TRYING_DATADIR_DEFAULTS,
-             DEFAULT_SSL_CA_CERT, DEFAULT_SSL_SERVER_CERT,
-             DEFAULT_SSL_SERVER_KEY);
-#ifndef HAVE_WOLFSSL
-    if (do_auto_cert_generation(auto_detection_status) == false) return 1;
+  if (SslAcceptorContext::singleton_init(opt_use_ssl)) return 1;
 #endif
 
-    enum enum_ssl_init_error error = SSL_INITERR_NOERROR;
-    long ssl_ctx_flags = process_tls_version(opt_tls_version);
-    /* having ssl_acceptor_fd != 0 signals the use of SSL */
-    ssl_acceptor_fd = new_VioSSLAcceptorFd(
-        opt_ssl_key, opt_ssl_cert, opt_ssl_ca, opt_ssl_capath, opt_ssl_cipher,
-        &error, opt_ssl_crl, opt_ssl_crlpath, ssl_ctx_flags);
-    DBUG_PRINT("info", ("ssl_acceptor_fd: %p", ssl_acceptor_fd));
 #ifndef HAVE_WOLFSSL
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-    ERR_remove_thread_state(0);
+  ERR_remove_thread_state(0);
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 #endif
-    if (!ssl_acceptor_fd) {
-    /*
-      No real need for opt_use_ssl to be enabled in bootstrap mode,
-      but we want the SSL materal generation and/or validation (if supplied).
-      So we keep it on.
 
-      For wolfSSL (since it can't auto-generate the certs from inside the
-      server) we need to hush the warning if in bootstrap mode, as in
-      that mode the server won't be listening for connections and thus
-      the lack of SSL material makes no real difference.
-      However if the user specified any of the --ssl options we keep the
-      warning as it's showing problems with the values supplied.
-
-      For openssl, we don't hush the option since it would indicate a failure
-      in auto-generation, bad key material explicitly specified or
-      auto-generation disabled explcitly while SSL is still on.
-    */
-#ifdef HAVE_WOLFSSL
-      if (!opt_initialize || SSL_ARTIFACTS_NOT_FOUND != auto_detection_status)
-#endif
-      {
-        LogErr(WARNING_LEVEL, ER_SSL_LIBRARY_ERROR, sslGetErrString(error));
-      }
-      opt_use_ssl = 0;
-      have_ssl = SHOW_OPTION_DISABLED;
-    } else {
-      /* Check if CA certificate is self signed */
-      if (warn_self_signed_ca()) return 1;
-      /* create one SSL that we can use to read information from */
-      if (!(ssl_acceptor = SSL_new(ssl_acceptor_fd->ssl_context))) return 1;
-    }
-  } else {
-    have_ssl = SHOW_OPTION_DISABLED;
-  }
   if (init_rsa_keys()) return 1;
-#endif /* HAVE_OPENSSL */
   return 0;
 }
 
 static void end_ssl() {
-#ifdef HAVE_OPENSSL
-  if (ssl_acceptor_fd) {
-    if (ssl_acceptor) SSL_free(ssl_acceptor);
-    free_vio_ssl_acceptor_fd(ssl_acceptor_fd);
-    ssl_acceptor_fd = 0;
-  }
+  SslAcceptorContext::singleton_deinit();
   deinit_rsa_keys();
-#endif /* HAVE_OPENSSL */
 }
 
 /**
@@ -4926,13 +4928,14 @@ static void setup_error_log() {
     Enable the error log file only if console option is not specified
     and --help is not used.
   */
-  bool log_errors_to_file = !opt_help && !opt_console;
+  bool log_errors_to_file = !is_help_or_validate_option() && !opt_console;
 #else
   /*
     Enable the error log file only if --log-error=filename or --log-error
     was used. Logging to file is disabled by default unlike on Windows.
   */
-  bool log_errors_to_file = !opt_help && (log_error_dest != disabled_my_option);
+  bool log_errors_to_file =
+      !is_help_or_validate_option() && (log_error_dest != disabled_my_option);
 #endif
 
   if (log_errors_to_file) {
@@ -4995,7 +4998,7 @@ static int init_server_components() {
   /*
     Timers not needed if only starting with --help.
   */
-  if (!opt_help) {
+  if (!is_help_or_validate_option()) {
     if (my_timer_initialize())
       LogErr(ERROR_LEVEL, ER_CANT_INIT_TIMER, errno);
     else
@@ -5113,7 +5116,7 @@ static int init_server_components() {
       to avoid creating the file in an otherwise empty datadir, which will
       cause a succeeding 'mysqld --initialize' to fail.
     */
-    if (!opt_help &&
+    if (!is_help_or_validate_option() &&
         mysql_bin_log.open_index_file(opt_binlog_index_name, ln, true)) {
       unireg_abort(MYSQLD_ABORT_EXIT);
     }
@@ -5295,9 +5298,10 @@ static int init_server_components() {
   init_ssl();
 
   /*Load early plugins */
-  if (plugin_register_early_plugins(
-          &remaining_argc, remaining_argv,
-          opt_help ? PLUGIN_INIT_SKIP_INITIALIZATION : 0)) {
+  if (plugin_register_early_plugins(&remaining_argc, remaining_argv,
+                                    (is_help_or_validate_option())
+                                        ? PLUGIN_INIT_SKIP_INITIALIZATION
+                                        : 0)) {
     LogErr(ERROR_LEVEL, ER_CANT_INITIALIZE_EARLY_PLUGINS);
     unireg_abort(1);
   }
@@ -5305,7 +5309,8 @@ static int init_server_components() {
   /* Load builtin plugins, initialize MyISAM, CSV and InnoDB */
   if (plugin_register_builtin_and_init_core_se(&remaining_argc,
                                                remaining_argv)) {
-    LogErr(ERROR_LEVEL, ER_CANT_INITIALIZE_BUILTIN_PLUGINS);
+    if (!opt_validate_config)
+      LogErr(ERROR_LEVEL, ER_CANT_INITIALIZE_BUILTIN_PLUGINS);
     unireg_abort(1);
   }
 
@@ -5320,7 +5325,7 @@ static int init_server_components() {
     Initialize DD to create data directory using current server.
   */
   if (opt_initialize) {
-    if (!opt_help) {
+    if (!is_help_or_validate_option()) {
       if (dd::init(dd::enum_dd_init_type::DD_INITIALIZE)) {
         LogErr(ERROR_LEVEL, ER_DD_INIT_FAILED);
         unireg_abort(1);
@@ -5338,7 +5343,8 @@ static int init_server_components() {
       data directory. If it is old data directory, DD tables are created.
       If server is starting on data directory with DD tables, DD is initialized.
     */
-    if (!opt_help && dd::init(dd::enum_dd_init_type::DD_RESTART_OR_UPGRADE)) {
+    if (!is_help_or_validate_option() &&
+        dd::init(dd::enum_dd_init_type::DD_RESTART_OR_UPGRADE)) {
       LogErr(ERROR_LEVEL, ER_DD_INIT_FAILED);
       unireg_abort(1);
     }
@@ -5354,14 +5360,16 @@ static int init_server_components() {
   if (plugin_register_dynamic_and_init_all(
           &remaining_argc, remaining_argv,
           (opt_noacl ? PLUGIN_INIT_SKIP_PLUGIN_TABLE : 0) |
-              (opt_help ? (PLUGIN_INIT_SKIP_INITIALIZATION |
-                           PLUGIN_INIT_SKIP_PLUGIN_TABLE)
-                        : 0))) {
+              ((is_help_or_validate_option())
+                   ? (PLUGIN_INIT_SKIP_INITIALIZATION |
+                      PLUGIN_INIT_SKIP_PLUGIN_TABLE)
+                   : 0))) {
     // Delete all DD tables in case of error in initializing plugins.
     if (dd::upgrade_57::in_progress())
       (void)dd::init(dd::enum_dd_init_type::DD_DELETE);
 
-    LogErr(ERROR_LEVEL, ER_CANT_INITIALIZE_DYNAMIC_PLUGINS);
+    if (!opt_validate_config)
+      LogErr(ERROR_LEVEL, ER_CANT_INITIALIZE_DYNAMIC_PLUGINS);
     unireg_abort(MYSQLD_ABORT_EXIT);
   }
   dynamic_plugins_are_initialized =
@@ -5385,7 +5393,7 @@ static int init_server_components() {
   bool dd_upgrade_was_initiated = dd::upgrade_57::in_progress();
 #endif
   // Populate DD tables with meta data from 5.7 in case of upgrade
-  if (!opt_help && dd::upgrade_57::in_progress() &&
+  if (!is_help_or_validate_option() && dd::upgrade_57::in_progress() &&
       dd::init(dd::enum_dd_init_type::DD_POPULATE_UPGRADE)) {
     LogErr(ERROR_LEVEL, ER_DD_POPULATING_TABLES_FAILED);
     unireg_abort(1);
@@ -5395,14 +5403,22 @@ static int init_server_components() {
     Store server and plugin IS tables metadata into new DD.
     This is done after all the plugins are registered.
   */
-  if (!opt_help && !opt_initialize && !dd::upgrade_57::in_progress() &&
+  if (!is_help_or_validate_option() && !opt_initialize &&
+      !dd::upgrade_57::in_progress() &&
       dd::init(dd::enum_dd_init_type::DD_UPDATE_I_S_METADATA)) {
     LogErr(ERROR_LEVEL, ER_DD_UPDATING_PLUGIN_MD_FAILED);
     unireg_abort(MYSQLD_ABORT_EXIT);
   }
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
-  if (!opt_help) {
+  if (!is_help_or_validate_option()) {
+    /*
+      Initialize the cost model, but delete it after the pfs is initialized.
+      Cost model is needed while dropping and creating pfs tables to
+      update metadata of referencing views (if there are any).
+    */
+    init_optimizer_cost_module(true);
+
     bool st;
     if (opt_initialize || dd_upgrade_was_initiated)
       st = dd::performance_schema::init_pfs_tables(
@@ -5411,6 +5427,9 @@ static int init_server_components() {
       st = dd::performance_schema::init_pfs_tables(
           dd::enum_dd_init_type::DD_RESTART_OR_UPGRADE);
 
+    /* Now that the pfs is initialized, delete the cost model. */
+    delete_optimizer_cost_module();
+
     if (st) {
       LogErr(ERROR_LEVEL, ER_PERFSCHEMA_TABLES_INIT_FAILED);
       unireg_abort(1);
@@ -5418,9 +5437,25 @@ static int init_server_components() {
   }
 #endif
 
+  if (!is_help_or_validate_option() && !opt_initialize &&
+      !dd::upgrade::no_server_upgrade_required()) {
+    if (opt_upgrade_mode == UPGRADE_MINIMAL)
+      LogErr(WARNING_LEVEL, ER_SERVER_UPGRADE_SKIP);
+    else {
+      init_optimizer_cost_module(true);
+      if (bootstrap::run_bootstrap_thread(NULL,
+                                          &dd::upgrade::upgrade_system_schemas,
+                                          SYSTEM_THREAD_SERVER_UPGRADE)) {
+        LogErr(ERROR_LEVEL, ER_SERVER_UPGRADE_FAILED);
+        unireg_abort(1);
+      }
+      delete_optimizer_cost_module();
+    }
+  }
+
   auto res_grp_mgr = resourcegroups::Resource_group_mgr::instance();
   // Initialize the Resource group subsystem.
-  if (!opt_help && !opt_initialize) {
+  if (!is_help_or_validate_option() && !opt_initialize) {
     if (res_grp_mgr->post_init()) {
       LogErr(ERROR_LEVEL, ER_RESOURCE_GROUP_POST_INIT_FAILED);
       unireg_abort(MYSQLD_ABORT_EXIT);
@@ -5444,7 +5479,21 @@ static int init_server_components() {
   }
   if (tmp_str) my_free(tmp_str);
 
-  if (opt_help) unireg_abort(MYSQLD_SUCCESS_EXIT);
+  // Validate the configuration if --validate-config was specified.
+  if (opt_validate_config && (remaining_argc > 1)) {
+    bool saved_getopt_skip_unknown = my_getopt_skip_unknown;
+    struct my_option no_opts[] = {
+        {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
+
+    my_getopt_skip_unknown = false;
+
+    if (handle_options(&remaining_argc, &remaining_argv, no_opts,
+                       mysqld_get_one_option))
+      unireg_abort(MYSQLD_ABORT_EXIT);
+    my_getopt_skip_unknown = saved_getopt_skip_unknown;
+  }
+
+  if (is_help_or_validate_option()) unireg_abort(MYSQLD_SUCCESS_EXIT);
 
   /* if the errmsg.sys is not loaded, terminate to maintain behaviour */
   if (!my_default_lc_messages->errmsgs->is_loaded()) {
@@ -5618,6 +5667,8 @@ static int init_server_components() {
     if (expire_logs_days > 0 || binlog_expire_logs_seconds > 0) {
       time_t purge_time = my_time(0) - binlog_expire_logs_seconds -
                           expire_logs_days * 24 * 60 * 60;
+      DBUG_EXECUTE_IF("expire_logs_always_at_start",
+                      { purge_time = my_time(0); });
       mysql_bin_log.purge_logs_before_date(purge_time, true);
     }
   } else {
@@ -5833,13 +5884,13 @@ int mysqld_main(int argc, char **argv)
 
   init_sql_statement_names();
   sys_var_init();
-  ulong requested_open_files;
+  ulong requested_open_files = 0;
   if (init_error_log()) unireg_abort(MYSQLD_ABORT_EXIT);
-  adjust_related_options(&requested_open_files);
+  if (!opt_validate_config) adjust_related_options(&requested_open_files);
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
   if (ho_error == 0) {
-    if (!opt_help && !opt_initialize) {
+    if (!is_help_or_validate_option() && !opt_initialize) {
       int pfs_rc;
       /* Add sizing hints from the server sizing parameters. */
       pfs_param.m_hints.m_table_definition_cache = table_def_size;
@@ -5861,15 +5912,15 @@ int mysqld_main(int argc, char **argv)
     }
   }
 #else
-  /*
-    Other provider of the instrumentation interface should
-    initialize PSI_hook here:
-    - HAVE_PSI_INTERFACE is for the instrumentation interface
-    - WITH_PERFSCHEMA_STORAGE_ENGINE is for one implementation
-      of the interface,
-    but there could be alternate implementations, which is why
-    these two defines are kept separate.
-  */
+    /*
+      Other provider of the instrumentation interface should
+      initialize PSI_hook here:
+      - HAVE_PSI_INTERFACE is for the instrumentation interface
+      - WITH_PERFSCHEMA_STORAGE_ENGINE is for one implementation
+        of the interface,
+      but there could be alternate implementations, which is why
+      these two defines are kept separate.
+    */
 #endif /* WITH_PERFSCHEMA_STORAGE_ENGINE */
 
 #ifdef HAVE_PSI_INTERFACE
@@ -6019,7 +6070,7 @@ int mysqld_main(int argc, char **argv)
       Initialize Performance Schema component services.
     */
 #ifdef HAVE_PSI_THREAD_INTERFACE
-  if (!opt_help && !opt_initialize) {
+  if (!is_help_or_validate_option() && !opt_initialize) {
     register_pfs_notification_service();
     register_pfs_resource_group_service();
   }
@@ -6027,7 +6078,7 @@ int mysqld_main(int argc, char **argv)
 
   // Initialize the resource group subsystem.
   auto res_grp_mgr = resourcegroups::Resource_group_mgr::instance();
-  if (!opt_help && !opt_initialize) {
+  if (!is_help_or_validate_option() && !opt_initialize) {
     if (res_grp_mgr->init()) {
       LogErr(ERROR_LEVEL, ER_RESOURCE_GROUP_SUBSYSTEM_INIT_FAILED);
       unireg_abort(MYSQLD_ABORT_EXIT);
@@ -6132,7 +6183,7 @@ int mysqld_main(int argc, char **argv)
     log_error_dest = "";
   }
 
-  if (opt_daemonize) {
+  if (opt_daemonize && !opt_validate_config) {
     if (chdir("/") < 0) {
       LogErr(ERROR_LEVEL, ER_CANNOT_CHANGE_TO_ROOT_DIR, strerror(errno));
       unireg_abort(MYSQLD_ABORT_EXIT);
@@ -6228,12 +6279,12 @@ int mysqld_main(int argc, char **argv)
   /*
    We have enough space for fiddling with the argv, continue
   */
-  if (!opt_help && my_setwd(mysql_real_data_home, MYF(0))) {
+  if (!(is_help_or_validate_option()) &&
+      my_setwd(mysql_real_data_home, MYF(0))) {
     char errbuf[MYSYS_STRERROR_SIZE];
 
     LogErr(ERROR_LEVEL, ER_CANT_SET_DATA_DIR, mysql_real_data_home, errno,
            my_strerror(errbuf, sizeof(errbuf), errno));
-
     unireg_abort(MYSQLD_ABORT_EXIT); /* purecov: inspected */
   }
 
@@ -6390,7 +6441,7 @@ int mysqld_main(int argc, char **argv)
 
 #ifdef _WIN32
   if (opt_require_secure_transport && !opt_enable_shared_memory &&
-      !opt_use_ssl && !opt_initialize) {
+      !SslAcceptorContext::have_ssl() && !opt_initialize) {
     LogErr(ERROR_LEVEL, ER_TRANSPORTS_WHAT_TRANSPORTS);
     unireg_abort(MYSQLD_ABORT_EXIT);
   }
@@ -6454,15 +6505,26 @@ int mysqld_main(int argc, char **argv)
   }
 
   if (abort || acl_init(opt_noacl)) {
-    /*
-      During upgrade we might be missing the mysql.global_grants table
-      which is opened during acl_reload along with all the other core privilege
-      tables. If this operation fails we simply disable the privilege system
-      and issue a warning.
-    */
+    if (!abort) LogErr(ERROR_LEVEL, ER_PRIVILEGE_SYSTEM_INIT_FAILED);
+    abort = true;
     opt_noacl = true;
-    LogErr(WARNING_LEVEL, ER_PRIVILEGE_SYSTEM_INIT_FAILED);
   }
+
+  /*
+   if running with --initialize, explicitly allocate the memory
+   to be used by ACL objects.
+  */
+  if (opt_initialize) init_acl_memory();
+
+  /*
+    Turn ON the system variable '@@partial_revokes' during server
+    start in case there exist at least one restrictions instance.
+  */
+  if (mysqld_partial_revokes() == false && is_partial_revoke_exists(nullptr)) {
+    set_mysqld_partial_revokes(true);
+    LogErr(WARNING_LEVEL, ER_TURNING_ON_PARTIAL_REVOKES);
+  }
+
   if (abort || my_tz_init((THD *)0, default_tz_name, opt_initialize) ||
       grant_init(opt_noacl)) {
     set_connection_events_loop_aborted(true);
@@ -7274,9 +7336,13 @@ struct my_option my_long_early_options[] = {
      &opt_keyring_migration_port, 0, GET_ULONG, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"no-dd-upgrade", 0,
      "Abort restart if automatic upgrade or downgrade of the data dictionary "
-     "is needed.",
+     "is needed. Deprecated option. Use --upgrade=NONE instead.",
      &opt_no_dd_upgrade, &opt_no_dd_upgrade, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
      0},
+    {"validate-config", 0,
+     "Validate the server configuration specified by the user.",
+     &opt_validate_config, &opt_validate_config, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+     0, 0, 0},
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 /**
@@ -7539,11 +7605,11 @@ struct my_option my_long_options[] = {
      "Option used by mysql-test for debugging and testing of replication.",
      &opt_sporadic_binlog_dump_fail, &opt_sporadic_binlog_dump_fail, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-#if defined(HAVE_OPENSSL) && !defined(XTRABACKUP)
+#ifndef XTRABACKUP
     {"ssl", 0,
      "Enable SSL for connection (automatically enabled with other flags).",
      &opt_use_ssl, &opt_use_ssl, 0, GET_BOOL, OPT_ARG, 1, 0, 0, 0, 0, 0},
-#endif
+#endif /* XTRABACKUP */
 #ifdef _WIN32
     {"standalone", 0, "Dummy option to start as a standalone program (NT).", 0,
      0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -7615,6 +7681,14 @@ struct my_option my_long_options[] = {
      "The option will be removed in a future release.",
      0, 0, 0, GET_BOOL, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
+    {"upgrade", 0,
+     "Set server upgrade mode. NONE to abort server if automatic upgrade of "
+     "the server is needed; MINIMAL to start the server, but skip upgrade "
+     "steps that are not absolutely necessary; AUTO (default) to upgrade the "
+     "server if required; FORCE to force upgrade server.",
+     &opt_upgrade_mode, &opt_upgrade_mode, &upgrade_mode_typelib, GET_ENUM,
+     REQUIRED_ARG, UPGRADE_AUTO, 0, 0, 0, 0, 0},
+
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 static int show_queries(THD *thd, SHOW_VAR *var, char *) {
@@ -7645,7 +7719,7 @@ static int show_max_used_connections_time(THD *thd, SHOW_VAR *var, char *buff) {
   thd->variables.time_zone->gmt_sec_to_TIME(
       &max_used_connections_time,
       Connection_handler_manager::max_used_connections_time);
-  my_datetime_to_str(&max_used_connections_time, buff, 0);
+  my_datetime_to_str(max_used_connections_time, buff, 0);
   return 0;
 }
 
@@ -7820,7 +7894,7 @@ static int show_slave_last_heartbeat(THD *thd, SHOW_VAR *var, char *buff) {
       thd->variables.time_zone->gmt_sec_to_TIME(
           &received_heartbeat_time,
           static_cast<my_time_t>(mi->last_heartbeat / 1000000));
-      my_datetime_to_str(&received_heartbeat_time, buff, 0);
+      my_datetime_to_str(received_heartbeat_time, buff, 0);
     }
   } else
     var->type = SHOW_UNDEF;
@@ -7915,183 +7989,6 @@ static int show_table_definitions(THD *, SHOW_VAR *var, char *buff) {
   return 0;
 }
 
-#if defined(HAVE_OPENSSL)
-/* Functions relying on CTX */
-static int show_ssl_ctx_sess_accept(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd ? 0
-                        : SSL_CTX_sess_accept(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_accept_good(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_sess_accept_good(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_connect_good(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_sess_connect_good(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_accept_renegotiate(THD *, SHOW_VAR *var,
-                                                char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_sess_accept_renegotiate(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_connect_renegotiate(THD *, SHOW_VAR *var,
-                                                 char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_sess_connect_renegotiate(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_cb_hits(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd ? 0
-                        : SSL_CTX_sess_cb_hits(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_hits(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd ? 0 : SSL_CTX_sess_hits(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_cache_full(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_sess_cache_full(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_misses(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd ? 0
-                        : SSL_CTX_sess_misses(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_timeouts(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd ? 0
-                        : SSL_CTX_sess_timeouts(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_number(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd ? 0
-                        : SSL_CTX_sess_number(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_connect(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd ? 0
-                        : SSL_CTX_sess_connect(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_sess_get_cache_size(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_sess_get_cache_size(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_get_verify_mode(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_get_verify_mode(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_get_verify_depth(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_LONG;
-  var->value = buff;
-  *((long *)buff) =
-      (!ssl_acceptor_fd
-           ? 0
-           : SSL_CTX_get_verify_depth(ssl_acceptor_fd->ssl_context));
-  return 0;
-}
-
-static int show_ssl_ctx_get_session_cache_mode(THD *, SHOW_VAR *var, char *) {
-  var->type = SHOW_CHAR;
-  if (!ssl_acceptor_fd)
-    var->value = const_cast<char *>("NONE");
-  else
-    switch (SSL_CTX_get_session_cache_mode(ssl_acceptor_fd->ssl_context)) {
-      case SSL_SESS_CACHE_OFF:
-        var->value = const_cast<char *>("OFF");
-        break;
-      case SSL_SESS_CACHE_CLIENT:
-        var->value = const_cast<char *>("CLIENT");
-        break;
-      case SSL_SESS_CACHE_SERVER:
-        var->value = const_cast<char *>("SERVER");
-        break;
-      case SSL_SESS_CACHE_BOTH:
-        var->value = const_cast<char *>("BOTH");
-        break;
-      case SSL_SESS_CACHE_NO_AUTO_CLEAR:
-        var->value = const_cast<char *>("NO_AUTO_CLEAR");
-        break;
-      case SSL_SESS_CACHE_NO_INTERNAL_LOOKUP:
-        var->value = const_cast<char *>("NO_INTERNAL_LOOKUP");
-        break;
-      default:
-        var->value = const_cast<char *>("Unknown");
-        break;
-    }
-  return 0;
-}
-
 /*
    Functions relying on SSL
    Note: In the show_ssl_* functions, we need to check if we have a
@@ -8180,93 +8077,6 @@ static int show_ssl_get_cipher_list(THD *thd, SHOW_VAR *var, char *buff) {
   *buff = 0;
   return 0;
 }
-
-static char *my_asn1_time_to_string(ASN1_TIME *time, char *buf, int len) {
-  int n_read;
-  char *res = NULL;
-  BIO *bio = BIO_new(BIO_s_mem());
-
-  if (bio == NULL) return NULL;
-
-  if (!ASN1_TIME_print(bio, time)) goto end;
-
-  n_read = BIO_read(bio, buf, len - 1);
-
-  if (n_read > 0) {
-    buf[n_read] = 0;
-    res = buf;
-  }
-
-end:
-  BIO_free(bio);
-  return res;
-}
-
-/**
-  Handler function for the 'ssl_get_server_not_before' variable
-
-  @param      var  the data for the variable
-  @param[out] buf  the string to put the value of the variable into
-
-  @return          status
-  @retval     0    success
-*/
-
-static int show_ssl_get_server_not_before(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_CHAR;
-  if (ssl_acceptor_fd) {
-    X509 *cert = SSL_get_certificate(ssl_acceptor);
-    ASN1_TIME *not_before = X509_get_notBefore(cert);
-
-    if (not_before == NULL) {
-      var->value = empty_c_string;
-      return 0;
-    }
-
-    var->value =
-        my_asn1_time_to_string(not_before, buff, SHOW_VAR_FUNC_BUFF_SIZE);
-    if (var->value == NULL) {
-      var->value = empty_c_string;
-      return 1;
-    }
-  } else
-    var->value = empty_c_string;
-  return 0;
-}
-
-/**
-  Handler function for the 'ssl_get_server_not_after' variable
-
-  @param      var  the data for the variable
-  @param[out] buf  the string to put the value of the variable into
-
-  @return          status
-  @retval     0    success
-*/
-
-static int show_ssl_get_server_not_after(THD *, SHOW_VAR *var, char *buff) {
-  var->type = SHOW_CHAR;
-  if (ssl_acceptor_fd) {
-    X509 *cert = SSL_get_certificate(ssl_acceptor);
-    ASN1_TIME *not_after = X509_get_notAfter(cert);
-
-    if (not_after == NULL) {
-      var->value = empty_c_string;
-      return 0;
-    }
-
-    var->value =
-        my_asn1_time_to_string(not_after, buff, SHOW_VAR_FUNC_BUFF_SIZE);
-    if (var->value == NULL) {
-      var->value = empty_c_string;
-      return 1;
-    }
-  } else
-    var->value = empty_c_string;
-  return 0;
-}
-
-#endif /* HAVE_OPENSSL */
 
 static int show_slave_open_temp_tables(THD *, SHOW_VAR *var, char *buf) {
   var->type = SHOW_INT;
@@ -8497,54 +8307,92 @@ SHOW_VAR status_vars[] = {
     {"Sort_scan", (char *)offsetof(System_status_var, filesort_scan_count),
      SHOW_LONGLONG_STATUS, SHOW_SCOPE_ALL},
 #ifdef HAVE_OPENSSL
-    {"Ssl_accept_renegotiates", (char *)&show_ssl_ctx_sess_accept_renegotiate,
+    {"Ssl_accept_renegotiates",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_accept_renegotiate,
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {"Ssl_accepts", (char *)&show_ssl_ctx_sess_accept, SHOW_FUNC,
-     SHOW_SCOPE_GLOBAL},
-    {"Ssl_callback_cache_hits", (char *)&show_ssl_ctx_sess_cb_hits, SHOW_FUNC,
+    {"Ssl_accepts", (char *)&SslAcceptorContext::show_ssl_ctx_sess_accept,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Ssl_callback_cache_hits",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_cb_hits, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
     {"Ssl_cipher", (char *)&show_ssl_get_cipher, SHOW_FUNC, SHOW_SCOPE_ALL},
     {"Ssl_cipher_list", (char *)&show_ssl_get_cipher_list, SHOW_FUNC,
      SHOW_SCOPE_ALL},
-    {"Ssl_client_connects", (char *)&show_ssl_ctx_sess_connect, SHOW_FUNC,
+    {"Ssl_client_connects",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_connect, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
-    {"Ssl_connect_renegotiates", (char *)&show_ssl_ctx_sess_connect_renegotiate,
+    {"Ssl_connect_renegotiates",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_connect_renegotiate,
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {"Ssl_ctx_verify_depth", (char *)&show_ssl_ctx_get_verify_depth, SHOW_FUNC,
+    {"Ssl_ctx_verify_depth",
+     (char *)&SslAcceptorContext::show_ssl_ctx_get_verify_depth, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
-    {"Ssl_ctx_verify_mode", (char *)&show_ssl_ctx_get_verify_mode, SHOW_FUNC,
+    {"Ssl_ctx_verify_mode",
+     (char *)&SslAcceptorContext::show_ssl_ctx_get_verify_mode, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
     {"Ssl_default_timeout", (char *)&show_ssl_get_default_timeout, SHOW_FUNC,
      SHOW_SCOPE_ALL},
-    {"Ssl_finished_accepts", (char *)&show_ssl_ctx_sess_accept_good, SHOW_FUNC,
+    {"Ssl_finished_accepts",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_accept_good, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
-    {"Ssl_finished_connects", (char *)&show_ssl_ctx_sess_connect_good,
-     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {"Ssl_session_cache_hits", (char *)&show_ssl_ctx_sess_hits, SHOW_FUNC,
+    {"Ssl_finished_connects",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_connect_good, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
-    {"Ssl_session_cache_misses", (char *)&show_ssl_ctx_sess_misses, SHOW_FUNC,
+    {"Ssl_session_cache_hits",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_hits, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
-    {"Ssl_session_cache_mode", (char *)&show_ssl_ctx_get_session_cache_mode,
+    {"Ssl_session_cache_misses",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_misses, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Ssl_session_cache_mode",
+     (char *)&SslAcceptorContext::show_ssl_ctx_get_session_cache_mode,
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {"Ssl_session_cache_overflows", (char *)&show_ssl_ctx_sess_cache_full,
-     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {"Ssl_session_cache_size", (char *)&show_ssl_ctx_sess_get_cache_size,
-     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
-    {"Ssl_session_cache_timeouts", (char *)&show_ssl_ctx_sess_timeouts,
-     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Ssl_session_cache_overflows",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_cache_full, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Ssl_session_cache_size",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_get_cache_size, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Ssl_session_cache_timeouts",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_timeouts, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
     {"Ssl_sessions_reused", (char *)&show_ssl_session_reused, SHOW_FUNC,
      SHOW_SCOPE_ALL},
-    {"Ssl_used_session_cache_entries", (char *)&show_ssl_ctx_sess_number,
-     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Ssl_used_session_cache_entries",
+     (char *)&SslAcceptorContext::show_ssl_ctx_sess_number, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
     {"Ssl_verify_depth", (char *)&show_ssl_get_verify_depth, SHOW_FUNC,
      SHOW_SCOPE_ALL},
     {"Ssl_verify_mode", (char *)&show_ssl_get_verify_mode, SHOW_FUNC,
      SHOW_SCOPE_ALL},
     {"Ssl_version", (char *)&show_ssl_get_version, SHOW_FUNC, SHOW_SCOPE_ALL},
-    {"Ssl_server_not_before", (char *)&show_ssl_get_server_not_before,
-     SHOW_FUNC, SHOW_SCOPE_ALL},
-    {"Ssl_server_not_after", (char *)&show_ssl_get_server_not_after, SHOW_FUNC,
+    {"Ssl_server_not_before",
+     (char *)&SslAcceptorContext::show_ssl_get_server_not_before, SHOW_FUNC,
      SHOW_SCOPE_ALL},
+    {"Ssl_server_not_after",
+     (char *)&SslAcceptorContext::show_ssl_get_server_not_after, SHOW_FUNC,
+     SHOW_SCOPE_ALL},
+    {"Current_tls_ca", (char *)&SslAcceptorContext::show_ssl_get_ssl_ca,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Current_tls_capath", (char *)&SslAcceptorContext::show_ssl_get_ssl_capath,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Current_tls_cert", (char *)&SslAcceptorContext::show_ssl_get_ssl_cert,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Current_tls_key", (char *)&SslAcceptorContext::show_ssl_get_ssl_key,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Current_tls_version",
+     (char *)&SslAcceptorContext::show_ssl_get_tls_version, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Current_tls_cipher", (char *)&SslAcceptorContext::show_ssl_get_ssl_cipher,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Current_tls_ciphersuites",
+     (char *)&SslAcceptorContext::show_ssl_get_tls_ciphersuites, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Current_tls_crl", (char *)&SslAcceptorContext::show_ssl_get_ssl_crl,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Current_tls_crlpath",
+     (char *)&SslAcceptorContext::show_ssl_get_ssl_crlpath, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
 #ifndef HAVE_WOLFSSL
     {"Rsa_public_key", (char *)&show_rsa_public_key, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
@@ -8645,7 +8493,7 @@ static void usage(void) {
     exit(MYSQLD_ABORT_EXIT);
   if (!default_collation_name)
     default_collation_name = (char *)default_charset_info->name;
-  if (opt_help || opt_verbose) {
+  if (is_help_or_validate_option() || opt_verbose) {
     my_progname = my_progname + dirname_length(my_progname);
   }
   print_server_version();
@@ -8725,6 +8573,7 @@ static int mysql_init_variables() {
   opt_using_transactions = 0;
   set_connection_events_loop_aborted(false);
   set_mysqld_offline_mode(false);
+  set_mysqld_partial_revokes(opt_partial_revokes);
   server_operational_state = SERVER_BOOTING;
   aborted_threads = 0;
   delayed_insert_threads = delayed_insert_writes = delayed_rows_in_use = 0;
@@ -8798,12 +8647,6 @@ static int mysql_init_variables() {
   have_profiling = SHOW_OPTION_NO;
 #endif
 
-#ifdef HAVE_OPENSSL
-  have_ssl = SHOW_OPTION_YES;
-#else
-  have_ssl = SHOW_OPTION_NO;
-#endif
-
   have_symlink = SHOW_OPTION_YES;
 
   have_dlopen = SHOW_OPTION_YES;
@@ -8816,9 +8659,6 @@ static int mysql_init_variables() {
 
   /* Always true */
   have_compress = SHOW_OPTION_YES;
-#ifdef HAVE_OPENSSL
-  ssl_acceptor_fd = 0;
-#endif /* HAVE_OPENSSL */
 #if defined(_WIN32)
   shared_memory_base_name = default_shared_memory_base_name;
 #endif
@@ -9029,12 +8869,13 @@ bool mysqld_get_one_option(int optid,
     case OPT_BINLOG_EXPIRE_LOGS_SECONDS:
       binlog_expire_logs_seconds_supplied = true;
       break;
-#if defined(HAVE_OPENSSL) && !defined(XTRABACKUP)
+#ifndef XTRABACKUP
     case OPT_SSL_KEY:
     case OPT_SSL_CERT:
     case OPT_SSL_CA:
     case OPT_SSL_CAPATH:
     case OPT_SSL_CIPHER:
+    case OPT_TLS_CIPHERSUITES:
     case OPT_SSL_CRL:
     case OPT_SSL_CRLPATH:
     case OPT_TLS_VERSION:
@@ -9043,14 +8884,8 @@ bool mysqld_get_one_option(int optid,
         One can disable SSL later by using --skip-ssl or --ssl=0.
       */
       opt_use_ssl = true;
-#ifdef HAVE_WOLFSSL
-      /* crl has no effect in wolfSSL. */
-      opt_ssl_crl = NULL;
-      opt_ssl_crlpath = NULL;
-      opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
-#endif /* HAVE_WOLFSSL */
       break;
-#endif /* HAVE_OPENSSL */
+#endif /* XTRABACKUP */
     case 'V':
       print_server_version();
       exit(MYSQLD_SUCCESS_EXIT);
@@ -9225,8 +9060,12 @@ bool mysqld_get_one_option(int optid,
       opt_specialflag |= SPECIAL_NO_HOST_CACHE;
       break;
     case (int)OPT_SKIP_RESOLVE:
-      opt_skip_name_resolve = 1;
-      opt_specialflag |= SPECIAL_NO_RESOLVE;
+      if (argument && argument[0] == '0')
+        opt_skip_name_resolve = 0;
+      else {
+        opt_skip_name_resolve = 1;
+        opt_specialflag |= SPECIAL_NO_RESOLVE;
+      }
       break;
     case (int)OPT_WANT_CORE:
       test_flags |= TEST_CORE_ON_SIGNAL;
@@ -9484,7 +9323,7 @@ static int get_options(int *argc_ptr, char ***argv_ptr) {
   sys_var_add_options(&all_options, sys_var::PARSE_NORMAL);
   add_terminator(&all_options);
 
-  if (opt_help || opt_initialize) {
+  if (is_help_or_validate_option() || opt_initialize) {
     /*
       Show errors during --help, but mute everything else so the info the
       user actually wants isn't lost in the spam.  (For --help --verbose,
@@ -9549,7 +9388,7 @@ static int get_options(int *argc_ptr, char ***argv_ptr) {
     }
   }
 
-  if (!opt_help)
+  if (!is_help_or_validate_option())
     vector<my_option>().swap(all_options);  // Deletes the vector contents.
 
   /* Add back the program name handle_options removes */
@@ -9582,14 +9421,17 @@ static int get_options(int *argc_ptr, char ***argv_ptr) {
     --explicit_defaults_for_timestamp is not set.
     This behavior is deprecated now.
   */
-  if (!opt_help && !global_system_variables.explicit_defaults_for_timestamp)
+  if (!is_help_or_validate_option() &&
+      !global_system_variables.explicit_defaults_for_timestamp)
     LogErr(WARNING_LEVEL, ER_DEPRECATED_TIMESTAMP_IMPLICIT_DEFAULTS);
 
-  if (!opt_help && opt_mi_repository_id == INFO_REPOSITORY_FILE)
+  if (!is_help_or_validate_option() &&
+      opt_mi_repository_id == INFO_REPOSITORY_FILE)
     push_deprecated_warn(NULL, "--master-info-repository=FILE",
                          "'--master-info-repository=TABLE'");
 
-  if (!opt_help && opt_rli_repository_id == INFO_REPOSITORY_FILE)
+  if (!is_help_or_validate_option() &&
+      opt_rli_repository_id == INFO_REPOSITORY_FILE)
     push_deprecated_warn(NULL, "--relay-log-info-repository=FILE",
                          "'--relay-log-info-repository=TABLE'");
 
@@ -9605,7 +9447,7 @@ static int get_options(int *argc_ptr, char ***argv_ptr) {
     return 1;
   }
 
-  if (opt_noacl && !opt_help) opt_disable_networking = true;
+  if (opt_noacl && !is_help_or_validate_option()) opt_disable_networking = true;
 
   if (opt_disable_networking) mysqld_port = 0;
 
@@ -9714,6 +9556,11 @@ static void set_server_version(void) {
   if (SERVER_VERSION_LENGTH - (end - server_version) >
       static_cast<int>(sizeof("-asan")))
     end = my_stpcpy(end, "-asan");
+#endif
+#ifdef HAVE_LSAN
+  if (SERVER_VERSION_LENGTH - (end - server_version) >
+      static_cast<int>(sizeof("-lsan")))
+    end = my_stpcpy(end, "-lsan");
 #endif
 #ifdef HAVE_UBSAN
   if (SERVER_VERSION_LENGTH - (end - server_version) >
@@ -10167,11 +10014,11 @@ class Reset_thd_status : public Do_THD_Impl {
  public:
   Reset_thd_status() {}
   virtual void operator()(THD *thd) {
-    /*
-      Add thread's status variabes to global status
-      and reset thread's status variables.
-    */
-    add_to_status(&global_status_var, &thd->status_var, true);
+    /* Update the global status if not done so already. */
+    if (!thd->status_var_aggregated) {
+      add_to_status(&global_status_var, &thd->status_var);
+    }
+    reset_system_status_vars(&thd->status_var);
   }
 };
 
@@ -10222,6 +10069,7 @@ PSI_mutex_key key_master_info_data_lock;
 PSI_mutex_key key_master_info_run_lock;
 PSI_mutex_key key_master_info_sleep_lock;
 PSI_mutex_key key_master_info_thd_lock;
+PSI_mutex_key key_master_info_rotate_lock;
 PSI_mutex_key key_mutex_slave_reporting_capability_err_lock;
 PSI_mutex_key key_relay_log_info_data_lock;
 PSI_mutex_key key_relay_log_info_sleep_lock;
@@ -10311,6 +10159,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_master_info_run_lock, "Master_info::run_lock", 0, 0, PSI_DOCUMENT_ME},
   { &key_master_info_sleep_lock, "Master_info::sleep_lock", 0, 0, PSI_DOCUMENT_ME},
   { &key_master_info_thd_lock, "Master_info::info_thd_lock", 0, 0, PSI_DOCUMENT_ME},
+  { &key_master_info_rotate_lock, "Master_info::rotate_lock", 0, 0, PSI_DOCUMENT_ME},
   { &key_mutex_slave_reporting_capability_err_lock, "Slave_reporting_capability::err_lock", 0, 0, PSI_DOCUMENT_ME},
   { &key_relay_log_info_data_lock, "Relay_log_info::data_lock", 0, 0, PSI_DOCUMENT_ME},
   { &key_relay_log_info_sleep_lock, "Relay_log_info::sleep_lock", 0, 0, PSI_DOCUMENT_ME},
@@ -10339,7 +10188,9 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_mandatory_roles, "LOCK_mandatory_roles", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_password_history, "LOCK_password_history", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_password_reuse_interval, "LOCK_password_reuse_interval", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
-  { &key_LOCK_keyring_operations, "LOCK_keyring_operations", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
+  { &key_LOCK_keyring_operations, "LOCK_keyring_operations", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
+  { &key_LOCK_tls_ctx_options, "LOCK_tls_ctx_options", 0, 0, "A lock to control all of the --ssl-* CTX related command line options"},
+  { &key_LOCK_rotate_binlog_master_key, "LOCK_rotate_binlog_master_key", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 /* clang-format on */
 
@@ -10394,6 +10245,7 @@ PSI_cond_key key_master_info_data_cond;
 PSI_cond_key key_master_info_start_cond;
 PSI_cond_key key_master_info_stop_cond;
 PSI_cond_key key_master_info_sleep_cond;
+PSI_cond_key key_master_info_rotate_cond;
 PSI_cond_key key_relay_log_info_data_cond;
 PSI_cond_key key_relay_log_info_log_space_cond;
 PSI_cond_key key_relay_log_info_start_cond;
@@ -10437,6 +10289,7 @@ static PSI_cond_info all_server_conds[]=
   { &key_master_info_start_cond, "Master_info::start_cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_master_info_stop_cond, "Master_info::stop_cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_master_info_sleep_cond, "Master_info::sleep_cond", 0, 0, PSI_DOCUMENT_ME},
+  { &key_master_info_rotate_cond, "Master_info::rotate_cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_relay_log_info_data_cond, "Relay_log_info::data_cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_relay_log_info_log_space_cond, "Relay_log_info::log_space_cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_relay_log_info_start_cond, "Relay_log_info::start_cond", 0, 0, PSI_DOCUMENT_ME},
@@ -10540,21 +10393,17 @@ static PSI_file_info all_server_files[]=
 
 /* clang-format off */
 PSI_stage_info stage_after_create= { 0, "After create", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_allocating_local_table= { 0, "allocating local table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_alter_inplace_prepare= { 0, "preparing for alter table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_alter_inplace= { 0, "altering table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_alter_inplace_commit= { 0, "committing alter table to storage engine", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_changing_master= { 0, "Changing master", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_checking_master_version= { 0, "Checking master version", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_checking_permissions= { 0, "checking permissions", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_checking_privileges_on_cached_query= { 0, "checking privileges on cached query", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_cleaning_up= { 0, "cleaning up", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_closing_tables= { 0, "closing tables", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_compressing_gtid_table= { 0, "Compressing gtid_executed table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_connecting_to_master= { 0, "Connecting to master", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_converting_heap_to_ondisk= { 0, "converting HEAP to ondisk", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_copying_to_group_table= { 0, "Copying to group table", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_copying_to_tmp_table= { 0, "Copying to tmp table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_copy_to_tmp_table= { 0, "copy to tmp table", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 PSI_stage_info stage_creating_sort_index= { 0, "Creating sort index", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_creating_table= { 0, "creating table", 0, PSI_DOCUMENT_ME};
@@ -10571,14 +10420,10 @@ PSI_stage_info stage_flushing_relay_log_and_master_info_repository= { 0, "Flushi
 PSI_stage_info stage_flushing_relay_log_info_file= { 0, "Flushing relay-log info file.", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_freeing_items= { 0, "freeing items", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_fulltext_initialization= { 0, "FULLTEXT initialization", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_got_handler_lock= { 0, "got handler lock", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_got_old_table= { 0, "got old table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_init= { 0, "init", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_insert= { 0, "insert", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_killing_slave= { 0, "Killing slave", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_logging_slow_query= { 0, "logging slow query", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_making_temp_file_append_before_load_data= { 0, "Making temporary file (append) before replaying LOAD DATA INFILE", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_making_temp_file_create_before_load_data= { 0, "Making temporary file (create) before replaying LOAD DATA INFILE", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_manage_keys= { 0, "manage keys", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_master_has_sent_all_binlog_to_slave= { 0, "Master has sent all binlog to slave; waiting for more updates", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_opening_tables= { 0, "Opening tables", 0, PSI_DOCUMENT_ME};
@@ -10594,10 +10439,8 @@ PSI_stage_info stage_removing_tmp_table= { 0, "removing tmp table", 0, PSI_DOCUM
 PSI_stage_info stage_rename= { 0, "rename", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_rename_result_table= { 0, "rename result table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_requesting_binlog_dump= { 0, "Requesting binlog dump", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_reschedule= { 0, "reschedule", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_searching_rows_for_update= { 0, "Searching rows for update", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_sending_binlog_event_to_slave= { 0, "Sending binlog event to slave", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_sending_cached_result_to_client= { 0, "sending cached result to client", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_sending_data= { 0, "Sending data", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_setup= { 0, "setup", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_slave_has_read_all_relay_log= { 0, "Slave has read all relay log; waiting for more updates", 0, PSI_DOCUMENT_ME};
@@ -10615,21 +10458,15 @@ PSI_stage_info stage_sorting_for_order= { 0, "Sorting for order", 0, PSI_DOCUMEN
 PSI_stage_info stage_sorting_result= { 0, "Sorting result", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_statistics= { 0, "statistics", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_sql_thd_waiting_until_delay= { 0, "Waiting until MASTER_DELAY seconds after master executed event", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_storing_row_into_queue= { 0, "storing row into queue", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_system_lock= { 0, "System lock", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_update= { 0, "update", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_updating= { 0, "updating", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_updating_main_table= { 0, "updating main table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_updating_reference_tables= { 0, "updating reference tables", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_upgrading_lock= { 0, "upgrading lock", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_user_sleep= { 0, "User sleep", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_verifying_table= { 0, "verifying table", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_waiting_for_gtid_to_be_committed= { 0, "Waiting for GTID to be committed", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_waiting_for_handler_commit= { 0, "waiting for handler commit", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_waiting_for_handler_insert= { 0, "waiting for handler insert", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_waiting_for_handler_lock= { 0, "waiting for handler lock", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_waiting_for_handler_open= { 0, "waiting for handler open", 0, PSI_DOCUMENT_ME};
-PSI_stage_info stage_waiting_for_insert= { 0, "Waiting for INSERT", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_waiting_for_master_to_send_event= { 0, "Waiting for master to send event", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_waiting_for_master_update= { 0, "Waiting for master update", 0, PSI_DOCUMENT_ME};
 PSI_stage_info stage_waiting_for_relay_log_space= { 0, "Waiting for the slave SQL thread to free enough relay log space", 0, PSI_DOCUMENT_ME};
@@ -10653,21 +10490,17 @@ extern PSI_stage_info stage_waiting_for_disk_space;
 
 PSI_stage_info *all_server_stages[] = {
     &stage_after_create,
-    &stage_allocating_local_table,
     &stage_alter_inplace_prepare,
     &stage_alter_inplace,
     &stage_alter_inplace_commit,
     &stage_changing_master,
     &stage_checking_master_version,
     &stage_checking_permissions,
-    &stage_checking_privileges_on_cached_query,
     &stage_cleaning_up,
     &stage_closing_tables,
     &stage_compressing_gtid_table,
     &stage_connecting_to_master,
     &stage_converting_heap_to_ondisk,
-    &stage_copying_to_group_table,
-    &stage_copying_to_tmp_table,
     &stage_copy_to_tmp_table,
     &stage_creating_sort_index,
     &stage_creating_table,
@@ -10684,14 +10517,10 @@ PSI_stage_info *all_server_stages[] = {
     &stage_flushing_relay_log_info_file,
     &stage_freeing_items,
     &stage_fulltext_initialization,
-    &stage_got_handler_lock,
-    &stage_got_old_table,
     &stage_init,
-    &stage_insert,
     &stage_killing_slave,
     &stage_logging_slow_query,
     &stage_making_temp_file_append_before_load_data,
-    &stage_making_temp_file_create_before_load_data,
     &stage_manage_keys,
     &stage_master_has_sent_all_binlog_to_slave,
     &stage_opening_tables,
@@ -10707,10 +10536,8 @@ PSI_stage_info *all_server_stages[] = {
     &stage_rename,
     &stage_rename_result_table,
     &stage_requesting_binlog_dump,
-    &stage_reschedule,
     &stage_searching_rows_for_update,
     &stage_sending_binlog_event_to_slave,
-    &stage_sending_cached_result_to_client,
     &stage_sending_data,
     &stage_setup,
     &stage_slave_has_read_all_relay_log,
@@ -10728,21 +10555,15 @@ PSI_stage_info *all_server_stages[] = {
     &stage_sorting_result,
     &stage_sql_thd_waiting_until_delay,
     &stage_statistics,
-    &stage_storing_row_into_queue,
     &stage_system_lock,
     &stage_update,
     &stage_updating,
     &stage_updating_main_table,
     &stage_updating_reference_tables,
-    &stage_upgrading_lock,
     &stage_user_sleep,
     &stage_verifying_table,
     &stage_waiting_for_gtid_to_be_committed,
     &stage_waiting_for_handler_commit,
-    &stage_waiting_for_handler_insert,
-    &stage_waiting_for_handler_lock,
-    &stage_waiting_for_handler_open,
-    &stage_waiting_for_insert,
     &stage_waiting_for_master_to_send_event,
     &stage_waiting_for_master_update,
     &stage_waiting_for_relay_log_space,
@@ -10972,3 +10793,24 @@ bool update_named_pipe_full_access_group(const char *new_group_name) {
 }
 
 #endif  // _WIN32
+
+/**
+  Get status partial_revokes on server
+
+  @return a bool indicating partial_revokes status of the server.
+    @retval true  Parital revokes is ON
+    @retval flase Partial revokes is OFF
+*/
+bool mysqld_partial_revokes() {
+  return partial_revokes.load(std::memory_order_relaxed);
+}
+
+/**
+  Set partial_revokes with a given value
+
+  @param value true or false indicating the status of partial revokes
+               turned ON/OFF on server.
+*/
+void set_mysqld_partial_revokes(bool value) {
+  partial_revokes.store(value, std::memory_order_relaxed);
+}

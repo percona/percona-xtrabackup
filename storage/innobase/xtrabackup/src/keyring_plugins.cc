@@ -848,7 +848,7 @@ bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
   auto header = binlog_header_read(binlog_file_path);
 
   Key_string file_password(key, ENCRYPTION_KEY_LEN);
-  header->reset_file_password(file_password);
+  header->encrypt_file_password(file_password);
 
   IO_CACHE_ostream ostream;
   if (ostream.open(key_file_binlog, binlog_file_path,

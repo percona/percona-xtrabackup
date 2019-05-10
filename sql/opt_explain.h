@@ -53,18 +53,28 @@ launches the EXPLAIN process for "inner units" (==subqueries of this
 SELECT_LEX), by calling explain_unit() for each of them.
 */
 
+#include <string>
+#include <vector>
+
 #include "my_base.h"
 #include "my_sqlcommand.h"
 #include "my_thread_local.h"
 #include "sql/opt_explain_format.h"
 #include "sql/parse_tree_node_base.h"
 #include "sql/query_result.h"  // Query_result_send
-#include "sql/sql_cmd.h"       // Sql_cmd
+#include "sql/row_iterator.h"
+#include "sql/sql_cmd.h"  // Sql_cmd
 #include "sql/sql_lex.h"
 #include "sys/types.h"
 
+#include <functional>
+#include <string>
+
 class Item;
+class JOIN;
 class QEP_TAB;
+class SELECT_LEX;
+class SELECT_LEX_UNIT;
 class THD;
 struct TABLE;
 template <class T>
@@ -159,12 +169,16 @@ class Query_result_explain final : public Query_result_send {
   }
 };
 
-bool explain_no_table(THD *thd, SELECT_LEX *select_lex, const char *message,
+bool explain_no_table(THD *explain_thd, const THD *query_thd,
+                      SELECT_LEX *select_lex, const char *message,
                       enum_parsing_context ctx);
-bool explain_single_table_modification(THD *ethd, const Modification_plan *plan,
+bool explain_single_table_modification(THD *explain_thd, const THD *query_thd,
+                                       const Modification_plan *plan,
                                        SELECT_LEX *select);
-bool explain_query(THD *thd, SELECT_LEX_UNIT *unit);
-bool explain_query_specification(THD *ethd, SELECT_LEX *select_lex,
+bool explain_query(THD *explain_thd, const THD *query_thd,
+                   SELECT_LEX_UNIT *unit);
+bool explain_query_specification(THD *explain_thd, const THD *query_thd,
+                                 SELECT_LEX *select_lex,
                                  enum_parsing_context ctx);
 
 class Sql_cmd_explain_other_thread final : public Sql_cmd {
@@ -182,5 +196,23 @@ class Sql_cmd_explain_other_thread final : public Sql_cmd {
   /// connection_id in EXPLAIN FOR CONNECTION \<connection_id\>
   my_thread_id m_thread_id;
 };
+
+// Print out an iterator and all of its children (if any) in a tree.
+// "level" is the current indenting level, as this is called recursively.
+std::string PrintQueryPlan(int level, RowIterator *iterator);
+
+// For each subselect within the given item, call the given functor
+// with its SELECT number, dependent/cacheable status and an iterator
+// (or nullptr if none; this may happen if the query is not executable
+// by the iterator executor).
+void ForEachSubselect(
+    Item *parent_item,
+    const std::function<void(int select_number, bool is_dependent,
+                             bool is_cacheable, RowIterator *iterator)>
+        &callback);
+
+// For the given join, return a list of pseudo-children corresponding to
+// subselects in the SELECT list (if any).
+std::vector<RowIterator::Child> GetIteratorsFromSelectList(JOIN *join);
 
 #endif /* OPT_EXPLAIN_INCLUDED */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,7 +49,7 @@
 #include <string.h>
 #include <algorithm>
 
-#include "binary_log_types.h"
+#include "field_types.h"  // enum_field_types
 #include "m_string.h"
 #include "my_bitmap.h"
 #include "my_byteorder.h"
@@ -98,7 +98,6 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/thd_raii.h"
-#include "sql/thr_malloc.h"
 #include "sql_string.h"
 
 struct MEM_ROOT;
@@ -311,7 +310,7 @@ static bool partition_default_handling(TABLE *table, partition_info *part_info,
 */
 
 int get_parts_for_update(const uchar *old_data,
-                         uchar *new_data MY_ATTRIBUTE((unused)),
+                         const uchar *new_data MY_ATTRIBUTE((unused)),
                          const uchar *rec0, partition_info *part_info,
                          uint32 *old_part_id, uint32 *new_part_id,
                          longlong *new_func_value) {
@@ -843,9 +842,9 @@ static bool init_lex_with_single_table(THD *thd, TABLE *table, LEX *lex) {
     we're working with to the Name_resolution_context.
   */
   thd->lex = lex;
-  auto table_ident = new (*THR_MALLOC)
-      Table_ident(thd->get_protocol(), to_lex_cstring(table->s->table_name),
-                  to_lex_cstring(table->s->db), true);
+  auto table_ident = new (thd->mem_root)
+      Table_ident(thd->get_protocol(), to_lex_cstring(table->s->db),
+                  to_lex_cstring(table->s->table_name), true);
   if (table_ident == nullptr) return true;
 
   TABLE_LIST *table_list =
@@ -934,7 +933,7 @@ static bool fix_fields_part_func(THD *thd, Item *func_expr, TABLE *table,
 
   if (init_lex_with_single_table(thd, table, &lex)) goto end;
 
-  func_expr->walk(&Item::change_context_processor, Item::WALK_POSTFIX,
+  func_expr->walk(&Item::change_context_processor, enum_walk::POSTFIX,
                   (uchar *)&lex.select_lex->context);
   thd->where = "partition function";
   /*
@@ -983,7 +982,7 @@ static bool fix_fields_part_func(THD *thd, Item *func_expr, TABLE *table,
     in future so that we always throw an error.
   */
   if (func_expr->walk(&Item::check_valid_arguments_processor,
-                      Item::WALK_POSTFIX, NULL)) {
+                      enum_walk::POSTFIX, NULL)) {
     if (is_create_table_ind) {
       my_error(ER_WRONG_EXPR_IN_PARTITION_FUNC_ERROR, MYF(0));
       goto end;
@@ -998,7 +997,7 @@ static bool fix_fields_part_func(THD *thd, Item *func_expr, TABLE *table,
 end:
   end_lex_with_single_table(thd, table, old_lex);
 #if !defined(DBUG_OFF)
-  func_expr->walk(&Item::change_context_processor, Item::WALK_POSTFIX, NULL);
+  func_expr->walk(&Item::change_context_processor, enum_walk::POSTFIX, NULL);
 #endif
   DBUG_RETURN(result);
 }
@@ -1760,8 +1759,7 @@ static int add_part_field_list(File fptr, List<char> field_list) {
 
 static int add_ident_string(File fptr, const char *name) {
   String name_string("", 0, system_charset_info);
-  THD *thd = current_thd;
-  append_identifier(thd, &name_string, name, strlen(name));
+  append_identifier(current_thd, &name_string, name, strlen(name));
   return add_string_object(fptr, &name_string);
 }
 
@@ -2357,7 +2355,8 @@ char *generate_partition_syntax(partition_info *part_info, uint *buf_length,
       // No point in including schema and table name for identifiers
       // since any columns must be in this table.
       part_info->part_expr->print(
-          &tmp, enum_query_type(QT_TO_SYSTEM_CHARSET | QT_NO_DB | QT_NO_TABLE));
+          current_thd, &tmp,
+          enum_query_type(QT_TO_SYSTEM_CHARSET | QT_NO_DB | QT_NO_TABLE));
       err += add_string_len(fptr, tmp.ptr(), tmp.length());
     } else {
       err += add_string_len(fptr, part_info->part_func_string,
@@ -2396,7 +2395,7 @@ char *generate_partition_syntax(partition_info *part_info, uint *buf_length,
         // No point in including schema and table name for identifiers
         // since any columns must be in this table.
         part_info->subpart_expr->print(
-            &tmp,
+            current_thd, &tmp,
             enum_query_type(QT_TO_SYSTEM_CHARSET | QT_NO_DB | QT_NO_TABLE));
         err += add_string_len(fptr, tmp.ptr(), tmp.length());
       } else {

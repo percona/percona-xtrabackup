@@ -146,7 +146,7 @@ def			TABLES	Check_time	Check_time	12	19	0	Y	128	0	63
 def	mysql	collations	TABLES	Collation	Collation	253	256	0	Y	4096	0	255
 def			TABLES	Checksum	Checksum	8	21	0	Y	32768	0	63
 def			TABLES	Create_options	Create_options	253	1024	0	Y	0	0	255
-def			TABLES	Comment	Comment	253	1024	0	Y	0	0	255
+def			TABLES	Comment	Comment	252	24576	0	Y	16	0	255
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
 show databases;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
@@ -272,6 +272,7 @@ create table t1(n int);
 insert into t1 values (1);
 show open tables;
 Database	Table	In_use	Name_locked
+mysql	check_constraints	0	0
 mysql	column_statistics	0	0
 mysql	column_type_elements	0	0
 mysql	columns	0	0
@@ -582,7 +583,7 @@ drop table t1, t2, t3;
 create database mysqltest;
 show create database mysqltest;
 Database	Create Database
-mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
+mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */
 create table mysqltest.t1(a int);
 insert into mysqltest.t1 values(1);
 create user mysqltest_1@localhost, mysqltest_2@localhost, mysqltest_3@localhost;
@@ -594,7 +595,7 @@ a
 1
 show create database mysqltest;
 Database	Create Database
-mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
+mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */
 drop table t1;
 ERROR 42000: DROP command denied to user 'mysqltest_1'@'localhost' for table 't1'
 drop database mysqltest;
@@ -611,7 +612,7 @@ select * from mysqltest.t1;
 ERROR 42000: SELECT command denied to user 'mysqltest_3'@'localhost' for table 't1'
 show create database mysqltest;
 Database	Create Database
-mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
+mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */
 drop table mysqltest.t1;
 drop database mysqltest;
 set names binary;
@@ -893,9 +894,9 @@ latin1_bin	latin1	47		Yes	1	PAD SPACE
 SHOW CREATE DATABASE mysqltest1;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
 def					Database	253	192	10	N	1	31	33
-def					Create Database	253	3072	97	N	1	31	33
+def					Create Database	253	3072	132	N	1	31	33
 Database	Create Database
-mysqltest1	CREATE DATABASE `mysqltest1` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
+mysqltest1	CREATE DATABASE `mysqltest1` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */
 ----------------------------------------------------------------
 SHOW DATABASES LIKE 'mysqltest1';
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
@@ -954,7 +955,7 @@ def		TABLES	TABLES	ENGINE	ENGINE	253	192	6	Y	0	31	33
 def	mysql	TABLES	TABLES	ROW_FORMAT	ROW_FORMAT	254	30	7	Y	384	0	33
 def	mysql	TABLES	TABLES	TABLE_COLLATION	TABLE_COLLATION	253	192	18	Y	20484	0	33
 def		TABLES	TABLES	CREATE_OPTIONS	CREATE_OPTIONS	253	768	0	Y	0	31	33
-def		TABLES	TABLES	TABLE_COMMENT	TABLE_COMMENT	253	768	0	Y	0	31	33
+def		TABLES	TABLES	TABLE_COMMENT	TABLE_COMMENT	253	6144	0	Y	0	31	33
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	TABLE_TYPE	ENGINE	ROW_FORMAT	TABLE_COLLATION	CREATE_OPTIONS	TABLE_COMMENT
 def	test	t1	BASE TABLE	InnoDB	Dynamic	utf8mb4_0900_ai_ci		
 ----------------------------------------------------------------
@@ -1319,14 +1320,14 @@ End of 5.0 tests
 create database mysqltest;
 show create database mysqltest;
 Database	Create Database
-mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
+mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */
 create table mysqltest.t1(a int);
 insert into mysqltest.t1 values(1);
 create user mysqltest_4@localhost;
 grant select on `mysqltest`.`t1` to mysqltest_4@localhost;
 show create database mysqltest;
 Database	Create Database
-mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
+mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */
 delete from mysql.user where user='mysqltest_4';
 delete from mysql.db where user='mysqltest_4';
 delete from mysql.tables_priv where user='mysqltest_4';
@@ -1738,8 +1739,8 @@ TABLE_SCHEMA	TABLE_NAME	INDEX_NAME	COLUMN_NAME
 test	t1	c2d	c2
 test	t1	PRIMARY	c1
 SELECT * FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE table_name='t1';
-CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_SCHEMA	TABLE_NAME	CONSTRAINT_TYPE
-def	test	PRIMARY	test	t1	PRIMARY KEY
+CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_SCHEMA	TABLE_NAME	CONSTRAINT_TYPE	ENFORCED
+def	test	PRIMARY	test	t1	PRIMARY KEY	YES
 SELECT constraint_schema, constraint_name, table_name, column_name FROM
 INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE table_name='t1';
 constraint_schema	constraint_name	table_name	column_name

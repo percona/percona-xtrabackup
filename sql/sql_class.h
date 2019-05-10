@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -149,6 +149,7 @@ class Time_zone;
 class sp_cache;
 struct Binlog_user_var_event;
 struct LOG_INFO;
+class Check_constraints_adjusted_names_map;
 
 typedef struct user_conn USER_CONN;
 struct MYSQL_LOCK;
@@ -572,6 +573,34 @@ class Open_tables_backup : public Open_tables_state {
 };
 
 /**
+  Enum that represents which phase of secondary engine optimization
+  the current statement is in.
+*/
+enum class Secondary_engine_optimization {
+  /**
+    The current statement should only use tables from primary storage
+    engines. Use of secondary storage engines is disabled.
+  */
+  PRIMARY_ONLY,
+
+  /**
+    The current statement should only use tables from the primary
+    storage engine. However, use of secondary storage engines is not
+    disabled, so the optimizer may choose to trigger a repreparation
+    against the secondary storage engine if it believes that use of a
+    secondary storage engine is beneficial.
+  */
+  PRIMARY_TENTATIVELY,
+
+  /**
+    The current statement should use tables from a secondary storage
+    engine if possible. Otherwise, fall back to using tables from
+    primary storage engine only.
+  */
+  SECONDARY,
+};
+
+/**
   @class Sub_statement_state
   @brief Used to save context when executing a function or trigger
 */
@@ -779,9 +808,7 @@ class THD : public MDL_context_owner,
                         and merge_keys too.
     MARK_COLUMNS_WRITE: Means a bit is set in write set to inform handler
                         that it needs to update this field in write_row
-                        and update_row. If field list contains duplicates,
-                        then thd->dup_field is set to point to the last
-                        found duplicate.
+                        and update_row.
     MARK_COLUMNS_TEMP:  Mark bit in read set, but ignore key sets.
                         Used by filesort().
   */
@@ -879,7 +906,9 @@ class THD : public MDL_context_owner,
 
     @return true  when the thread is a binlog applier
   */
-  bool is_binlog_applier() { return rli_fake && variables.pseudo_slave_mode; }
+  bool is_binlog_applier() const {
+    return rli_fake && variables.pseudo_slave_mode;
+  }
 
   /**
     When the thread is a binlog or slave applier it detaches the engine
@@ -900,7 +929,7 @@ class THD : public MDL_context_owner,
     @note The detached transaction applier resets a memo
           mark at once with this check.
   */
-  bool rpl_unflag_detached_engine_ha_data();
+  bool rpl_unflag_detached_engine_ha_data() const;
 
   void reset_for_next_command();
   /*
@@ -922,10 +951,9 @@ class THD : public MDL_context_owner,
   */
   collation_unordered_map<std::string, unique_ptr_with_deleter<user_var_entry>>
       user_vars{system_charset_info, key_memory_user_var_entry};
-  String convert_buffer;                // buffer for charset conversions
-  struct rand_struct rand;              // used for authentication
-  struct System_variables variables;    // Changeable local variables
-  struct System_status_var status_var;  // Per thread statistic vars
+  struct rand_struct rand;                      // used for authentication
+  struct System_variables variables;            // Changeable local variables
+  struct System_status_var status_var;          // Per thread statistic vars
   struct System_status_var *initial_status_var; /* used by show status */
   // has status_var already been added to global_status_var?
   bool status_var_aggregated;
@@ -960,6 +988,7 @@ class THD : public MDL_context_owner,
     actually reports the previous query, not itself.
   */
   void save_current_query_costs() {
+    DBUG_ASSERT(!status_var_aggregated);
     status_var.last_query_cost = m_current_query_cost;
     status_var.last_query_partial_plans = m_current_query_partial_plans;
   }
@@ -1067,6 +1096,8 @@ class THD : public MDL_context_owner,
   Protocol_text protocol_text;      // Normal protocol
   Protocol_binary protocol_binary;  // Binary protocol
 
+  const Protocol *get_protocol() const { return m_protocol; }
+
   Protocol *get_protocol() { return m_protocol; }
 
   SSL_handle get_ssl() const {
@@ -1088,11 +1119,14 @@ class THD : public MDL_context_owner,
     returns the m_protocol casted to Protocol_classic. This method
     is needed to prevent misuse of pluggable protocols by legacy code
   */
-  Protocol_classic *get_protocol_classic() const {
-    DBUG_ASSERT(m_protocol->type() == Protocol::PROTOCOL_TEXT ||
-                m_protocol->type() == Protocol::PROTOCOL_BINARY);
+  const Protocol_classic *get_protocol_classic() const {
+    DBUG_ASSERT(is_classic_protocol());
+    return down_cast<const Protocol_classic *>(m_protocol);
+  }
 
-    return (Protocol_classic *)m_protocol;
+  Protocol_classic *get_protocol_classic() {
+    DBUG_ASSERT(is_classic_protocol());
+    return down_cast<Protocol_classic *>(m_protocol);
   }
 
  private:
@@ -1343,7 +1377,6 @@ class THD : public MDL_context_owner,
 
    */
   uchar *binlog_row_event_extra_data;
-  static bool binlog_row_event_extra_data_eq(const uchar *a, const uchar *b);
 
   int binlog_setup_trx_data();
 
@@ -1353,14 +1386,14 @@ class THD : public MDL_context_owner,
   int binlog_write_table_map(TABLE *table, bool is_transactional,
                              bool binlog_rows_query);
   int binlog_write_row(TABLE *table, bool is_transactional,
-                       const uchar *new_data, const uchar *extra_row_info);
+                       const uchar *new_data,
+                       const unsigned char *extra_row_info);
   int binlog_delete_row(TABLE *table, bool is_transactional,
-                        const uchar *old_data, const uchar *extra_row_info);
+                        const uchar *old_data,
+                        const unsigned char *extra_row_info);
   int binlog_update_row(TABLE *table, bool is_transactional,
                         const uchar *old_data, const uchar *new_data,
                         const uchar *extra_row_info);
-  void binlog_prepare_row_images(TABLE *table);
-
   void set_server_id(uint32 sid) { server_id = sid; }
 
   /*
@@ -1369,7 +1402,7 @@ class THD : public MDL_context_owner,
   template <class RowsEventT>
   Rows_log_event *binlog_prepare_pending_rows_event(
       TABLE *table, uint32 serv_id, size_t needed, bool is_transactional,
-      RowsEventT *hint, const uchar *extra_row_info);
+      const unsigned char *extra_row_info, uint32 source_part_id = INT_MAX);
   Rows_log_event *binlog_get_pending_rows_event(bool is_transactional) const;
   inline int binlog_flush_pending_rows_event(bool stmt_end) {
     return (binlog_flush_pending_rows_event(stmt_end, false) ||
@@ -1426,7 +1459,7 @@ class THD : public MDL_context_owner,
     m_binlog_filter_state = BINLOG_FILTER_SET;
   }
 
-  inline binlog_filter_state get_binlog_local_stmt_filter() {
+  binlog_filter_state get_binlog_local_stmt_filter() const {
     return m_binlog_filter_state;
   }
 
@@ -1508,7 +1541,7 @@ class THD : public MDL_context_owner,
  public:
   void set_skip_readonly_check() { skip_readonly_check = true; }
 
-  bool is_cmd_skip_readonly() { return skip_readonly_check; }
+  bool is_cmd_skip_readonly() const { return skip_readonly_check; }
 
   void reset_skip_readonly_check() {
     if (skip_readonly_check) skip_readonly_check = false;
@@ -1522,7 +1555,7 @@ class THD : public MDL_context_owner,
   /*
     MTS: accessor to binlog_accessed_db_names list
   */
-  List<char> *get_binlog_accessed_db_names() {
+  List<char> *get_binlog_accessed_db_names() const {
     return binlog_accessed_db_names;
   }
 
@@ -1679,7 +1712,6 @@ class THD : public MDL_context_owner,
   void set_transaction(Transaction_ctx *transaction_ctx);
 
   Global_read_lock global_read_lock;
-  Field *dup_field;
 
   Vio *active_vio = {nullptr};
 
@@ -1958,7 +1990,7 @@ class THD : public MDL_context_owner,
 
  public:
   void set_user_connect(USER_CONN *uc);
-  const USER_CONN *get_user_connect() { return m_user_connect; }
+  const USER_CONN *get_user_connect() const { return m_user_connect; }
 
   void increment_user_connections_counter();
   void decrement_user_connections_counter();
@@ -2094,6 +2126,12 @@ class THD : public MDL_context_owner,
            system_thread == SYSTEM_THREAD_INIT_FILE;
   }
 
+  // Check if this THD belongs to a server upgrade thread. Server upgrade
+  // threads execute statements that are compiled into the server.
+  bool is_server_upgrade_thread() const {
+    return system_thread == SYSTEM_THREAD_SERVER_UPGRADE;
+  }
+
   /*
     Current or next transaction isolation level.
     When a connection is established, the value is taken from
@@ -2209,7 +2247,6 @@ class THD : public MDL_context_owner,
     DBUG_VOID_RETURN;
   }
 
-  my_off_t get_trans_pos() { return m_trans_end_pos; }
   /**@}*/
 
   /*
@@ -2293,8 +2330,6 @@ class THD : public MDL_context_owner,
   bool is_fatal_sub_stmt_error;
   bool query_start_usec_used;
   bool rand_used, time_zone_used;
-  /* for IS NULL => = last_insert_id() fix in remove_eq_conds() */
-  bool substitute_null_with_insert_id;
   bool in_lock_tables;
   /**
     True if a slave error. Causes the slave to stop. Not the same
@@ -2480,7 +2515,7 @@ class THD : public MDL_context_owner,
   /** Shutdown clone vio, if active. */
   void shutdown_clone_vio();
 
-  enum_vio_type get_vio_type();
+  enum_vio_type get_vio_type() const;
 
   void shutdown_active_vio();
   void awake(THD::killed_state state_to_set);
@@ -2577,7 +2612,7 @@ class THD : public MDL_context_owner,
     gives more randomness and thus better coverage in tests as opposed to
     using thread_id for the same purpose.
   */
-  virtual uint get_rand_seed() { return (uint)start_utime; }
+  virtual uint get_rand_seed() const { return (uint)start_utime; }
 
   // End implementation of MDL_context_owner interface.
 
@@ -2611,6 +2646,14 @@ class THD : public MDL_context_owner,
     set_time();
   }
   void set_time_after_lock() {
+    /*
+      If mysql_lock_tables() is called multiple times,
+      we stick with the first timestamp. This prevents
+      anomalities with things like CREATE INDEX, where
+      otherwise, we'll get the lock timestamp for the
+      data dictionary update.
+    */
+    if (utime_after_lock != start_utime) return;
     utime_after_lock = my_micro_time();
     MYSQL_SET_STATEMENT_LOCK_TIME(m_statement_psi,
                                   (utime_after_lock - start_utime));
@@ -2627,7 +2670,7 @@ class THD : public MDL_context_owner,
     if (my_micro_time() > utime_after_lock + variables.long_query_time)
       server_status |= SERVER_QUERY_WAS_SLOW;
   }
-  inline ulonglong found_rows(void) { return previous_found_rows; }
+  ulonglong found_rows() const { return previous_found_rows; }
 
   /*
     Call when it is clear that the query is ended and we have collected the
@@ -2703,16 +2746,13 @@ class THD : public MDL_context_owner,
   inline bool in_active_multi_stmt_transaction() const {
     return server_status & SERVER_STATUS_IN_TRANS;
   }
-  inline bool fill_information_schema_tables() {
+  bool fill_information_schema_tables() const {
     return !stmt_arena->is_stmt_prepare();
   }
 
   bool convert_string(LEX_STRING *to, const CHARSET_INFO *to_cs,
                       const char *from, size_t from_length,
                       const CHARSET_INFO *from_cs);
-
-  bool convert_string(String *s, const CHARSET_INFO *from_cs,
-                      const CHARSET_INFO *to_cs);
 
   int send_explain_fields(Query_result *result);
 
@@ -2730,17 +2770,9 @@ class THD : public MDL_context_owner,
     DBUG_VOID_RETURN;
   }
 
-  inline bool is_classic_protocol() {
-    DBUG_ENTER("THD::is_classic_protocol");
-    DBUG_PRINT("info", ("type=%d", get_protocol()->type()));
-    switch (get_protocol()->type()) {
-      case Protocol::PROTOCOL_BINARY:
-      case Protocol::PROTOCOL_TEXT:
-        DBUG_RETURN(true);
-      default:
-        break;
-    }
-    DBUG_RETURN(false);
+  bool is_classic_protocol() const {
+    return get_protocol()->type() == Protocol::PROTOCOL_BINARY ||
+           get_protocol()->type() == Protocol::PROTOCOL_TEXT;
   }
 
   /** Return false if connection to client is broken. */
@@ -3039,7 +3071,7 @@ class THD : public MDL_context_owner,
     @param is_transactional if true, check the transaction cache.
     If false, check the statement cache.
   */
-  bool is_binlog_cache_empty(bool is_transactional);
+  bool is_binlog_cache_empty(bool is_transactional) const;
 
   /**
     The GTID of the currently owned transaction.
@@ -3433,7 +3465,7 @@ class THD : public MDL_context_owner,
     associated with this user session.
     This method is safe to use from a different thread.
   */
-  PSI_thread *get_psi() { return m_psi; }
+  PSI_thread *get_psi() const { return m_psi; }
 
  private:
   /**
@@ -3446,7 +3478,7 @@ class THD : public MDL_context_owner,
   std::atomic<PSI_thread *> m_psi;
 
  public:
-  inline Internal_error_handler *get_internal_handler() {
+  const Internal_error_handler *get_internal_handler() const {
     return m_internal_handler;
   }
 
@@ -3711,7 +3743,7 @@ class THD : public MDL_context_owner,
                               bool non_transactional_tables_are_tmp);
   bool is_ddl_gtid_compatible();
   void binlog_invoker() { m_binlog_invoker = true; }
-  bool need_binlog_invoker() { return m_binlog_invoker; }
+  bool need_binlog_invoker() const { return m_binlog_invoker; }
   void get_definer(LEX_USER *definer);
   void set_invoker(const LEX_STRING *user, const LEX_STRING *host) {
     m_invoker_user.str = user->str;
@@ -3721,7 +3753,7 @@ class THD : public MDL_context_owner,
   }
   LEX_CSTRING get_invoker_user() const { return m_invoker_user; }
   LEX_CSTRING get_invoker_host() const { return m_invoker_host; }
-  bool has_invoker() { return m_invoker_user.str != NULL; }
+  bool has_invoker() const { return m_invoker_user.str != nullptr; }
 
   void mark_transaction_to_rollback(bool all);
 
@@ -3764,6 +3796,7 @@ class THD : public MDL_context_owner,
    */
   LEX_CSTRING m_invoker_user;
   LEX_CSTRING m_invoker_host;
+
   friend class Protocol_classic;
 
  private:
@@ -3909,6 +3942,17 @@ class THD : public MDL_context_owner,
 
   bool is_a_srv_session() const { return is_a_srv_session_thd; }
   void mark_as_srv_session() { is_a_srv_session_thd = true; }
+
+  /**
+    Returns the plugin, the thd belongs to.
+    @return pointer to the plugin id
+   */
+  const st_plugin_int *get_plugin() const { return m_plugin; }
+  /**
+    Sets the plugin id to the value provided as parameter
+    @param plugin the id of the plugin the thd belongs to
+   */
+  void set_plugin(const st_plugin_int *plugin) { m_plugin = plugin; }
 #ifndef DBUG_OFF
   uint get_tmp_table_seq_id() { return tmp_table_seq_id++; }
   void set_tmp_table_seq_id(uint arg) { tmp_table_seq_id = arg; }
@@ -3923,6 +3967,9 @@ class THD : public MDL_context_owner,
     aggregates THD.
   */
   bool is_a_srv_session_thd;
+
+  /// Stores the plugin id it is attached to (if any).
+  const st_plugin_int *m_plugin{nullptr};
 
   /**
     Creating or dropping plugin native table through a plugin service.
@@ -3977,7 +4024,65 @@ class THD : public MDL_context_owner,
   bool is_waiting_for_disk_space() const { return waiting_for_disk_space; }
 
   bool sql_parser();
+
+  /// Enables or disables use of secondary storage engines in this session.
+  void set_secondary_engine_optimization(Secondary_engine_optimization state) {
+    m_secondary_engine_optimization = state;
+  }
+
+  /**
+    Can secondary storage engines be used for query execution in
+    this session?
+  */
+  Secondary_engine_optimization secondary_engine_optimization() const {
+    return m_secondary_engine_optimization;
+  }
+
+  /**
+    Checks if queries in this session can use a secondary storage engine for
+    execution. A secondary engine cannot be used if any of the following
+    conditions is true:
+
+    - Secondary engines are disabled in the session
+    - The user has disabled secondary engines
+    - LOCK TABLES mode is active
+    - Multi-statement transaction mode is active
+    - It is a sub-statement of a stored procedure
+
+    @return true if secondary storage engines can be used in this
+    session, or false otherwise
+  */
+  bool secondary_storage_engine_eligible() const;
+
+ private:
+  /**
+    This flag tells if a secondary storage engine can be used to
+    execute a query in this session.
+  */
+  Secondary_engine_optimization m_secondary_engine_optimization =
+      Secondary_engine_optimization::PRIMARY_ONLY;
+
+  void cleanup_after_parse_error();
+  /**
+    Flag that indicates if the user of current session has SYSTEM_USER privilege
+  */
+  std::atomic<bool> m_is_system_user;
+
+ public:
+  bool is_system_user();
+  void set_system_user(bool system_user_flag);
 };
+
+/**
+   Return lock_tables_mode for secondary engine.
+   @param cthd thread context
+   @retval true if lock_tables_mode is on
+   @retval false, otherwise
+ */
+inline bool secondary_engine_lock_tables_mode(const THD &cthd) {
+  return (cthd.locked_tables_mode == LTM_LOCK_TABLES ||
+          cthd.locked_tables_mode == LTM_PRELOCKED_UNDER_LOCK_TABLES);
+}
 
 /**
   A simple holder for Internal_error_handler.
@@ -4109,8 +4214,28 @@ void reattach_engine_ha_data_to_thd(THD *thd, const struct handlerton *hton);
   @retval            false otherwise
 */
 
-static inline bool is_engine_substitution_allowed(THD *thd) {
+static inline bool is_engine_substitution_allowed(const THD *thd) {
   return !(thd->variables.sql_mode & MODE_NO_ENGINE_SUBSTITUTION);
+}
+
+/**
+  Returns if the user of the session has the SYSTEM_USER privilege or not.
+
+  @returns
+    @retval true  User has SYSTEM_USER privilege
+    @retval false Otherwise
+*/
+inline bool THD::is_system_user() {
+  return m_is_system_user.load(std::memory_order_seq_cst);
+}
+
+/**
+  Sets the system_user flag atomically for the current session.
+
+  @param [in] system_user_flag  boolean flag that indicates value to set.
+*/
+inline void THD::set_system_user(bool system_user_flag) {
+  m_is_system_user.store(system_user_flag, std::memory_order_seq_cst);
 }
 
 #endif /* SQL_CLASS_INCLUDED */

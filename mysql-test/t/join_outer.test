@@ -267,6 +267,8 @@ create table t1 (id int not null, str char(10), index(str));
 insert into t1 values (1, null), (2, null), (3, "foo"), (4, "bar");
 select * from t1 where str is not null order by id;
 select * from t1 where str is null;
+explain select * from t1 where str is null;
+explain format=tree select * from t1 where str is null;  # Tests printing of index condition pushdown on RefIterator.
 drop table t1;
 
 #
@@ -1340,7 +1342,20 @@ SELECT t1.col_int
 FROM t1
   LEFT JOIN t2
     LEFT JOIN t3
-      JOIN t4  
+      JOIN t4
+      ON t3.col_int  = t4.pk
+    ON t2.col_varchar_10 = t3.col_varchar_10
+  ON t2.col_int = t1.pk
+WHERE   t1.col_int_key IS NULL OR t4.pk < t3.col_int;
+
+# Demonstrates the case where we put a condition on the top level above
+# an outer join with const tables on the left side. The found_match test
+# is redundant and should probably be removed if we can.
+EXPLAIN FORMAT=tree SELECT t1.col_int
+FROM t1
+  LEFT JOIN t2
+    LEFT JOIN t3
+      JOIN t4
       ON t3.col_int  = t4.pk
     ON t2.col_varchar_10 = t3.col_varchar_10
   ON t2.col_int = t1.pk
@@ -2285,3 +2300,48 @@ EXECUTE prep_stmt ;
 EXECUTE prep_stmt ;
 
 DROP TABLE t1,t2;
+
+
+--echo #
+--echo # Bug#29402481: INCORRECT RESULT FROM OUTER JOIN QUERIES
+--echo #
+
+CREATE TABLE t1 (
+  pk int primary key auto_increment,
+  col_int_unique int unique
+) ENGINE=InnoDB;
+
+INSERT INTO t1(col_int_unique) values (6),(7);
+
+CREATE TABLE t2 (
+  pk int primary key auto_increment,
+  col_int_key int(11) DEFAULT NULL,
+  col_int_unique int(11) DEFAULT NULL,
+  UNIQUE KEY `ix2` (col_int_key,col_int_unique),
+  KEY col_int_key (col_int_key)
+) ENGINE=InnoDB;
+
+# t2 intentionally left empty. Insert of values not matching
+# join-cond would have had the same effect.
+
+CREATE TABLE t3 (
+  pk int NOT NULL
+) ENGINE=InnoDB;
+
+INSERT INTO t3(pk) values (6),(7);
+
+# Test case check that last predicate term in join condition for t3
+# 't1.col_int_unique = t2.col_int_key', is not eliminated in optimizer
+# by test_if_ref(), even if it is 'covered' by the REF join condition
+# used by t2: t2 rows may be NULL-complimented when t3 join-cond
+# is evaluated, thus it is needed to exclude match on 't2.col_int_key'
+# being NULL.
+
+SELECT STRAIGHT_JOIN t1.col_int_unique, t2.col_int_key, t3.pk
+  FROM
+    (t1 LEFT JOIN t2 ON t1.col_int_unique = t2.col_int_key)
+        LEFT JOIN t3 ON t3.pk = t1.col_int_unique AND
+	                t1.col_int_unique = t2.col_int_key;
+
+
+DROP TABLE t1,t2,t3;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -202,9 +202,7 @@ void Applier_module::set_applier_thread_context() {
 
   thd->init_query_mem_roots();
   set_slave_thread_options(thd);
-#ifndef _WIN32
-  THD_STAGE_INFO(thd, stage_executing);
-#endif
+  thd->set_query(C_STRING_WITH_LEN("Group replication applier module"));
 
   DBUG_EXECUTE_IF("group_replication_applier_thread_init_wait", {
     const char act[] = "now wait_for signal.gr_applier_init_signal";
@@ -307,7 +305,7 @@ int Applier_module::apply_view_change_packet(
   }
 
   error = inject_event_into_pipeline(pevent, cont);
-  delete pevent;
+  if (!cont->is_transaction_discarded()) delete pevent;
 
   return error;
 }
@@ -425,6 +423,10 @@ int Applier_module::applier_thread_handle() {
   mysql_mutex_lock(&run_lock);
   applier_thread_is_exiting = false;
   applier_thd_state.set_running();
+  if (stage_handler.initialize_stage_monitor())
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_NO_STAGE_SERVICE);
+  stage_handler.set_stage(info_GR_STAGE_module_executing.m_key, __FILE__,
+                          __LINE__, 0, 0);
   mysql_cond_broadcast(&run_cond);
   mysql_mutex_unlock(&run_lock);
 
@@ -515,6 +517,9 @@ end:
     const char act[] = "now wait_for signal.applier_continue";
     DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
+
+  stage_handler.end_stage();
+  stage_handler.terminate_stage_monitor();
 
   clean_applier_thread_context();
 
@@ -793,9 +798,20 @@ void Applier_module::kill_pending_transactions(
     of the START GROUP_REPLICATION command). We must not abort if the command
     fails. set_read_mode indicates that we were part of a group and as such our
     START GROUP_REPLICATION command already executed in the past.
+
+    Also, we will only consider group_replication_exit_state_action if the
+    auto-rejoin process is not enabled. If it is enabled, GR will first attempt
+    to auto-rejoin.
+
+    Also, we should only consider group_replication_exit_state_action if we are
+    not supposed to continue the auto-rejoin process. In this case, we shouldn't
+    continue the auto-rejoin process if it isn't enabled or if it is but we
+    have arrived here due to an applier error, and not due to a member expel.
   */
+  bool should_continue_autorejoin = is_autorejoin_enabled() && !applier_error;
   if (set_read_mode &&
-      exit_state_action_var == EXIT_STATE_ACTION_ABORT_SERVER) {
+      exit_state_action_var == EXIT_STATE_ACTION_ABORT_SERVER &&
+      !should_continue_autorejoin) {
     abort_plugin_process("Fatal error during execution of Group Replication");
   }
 
@@ -923,6 +939,7 @@ int Applier_module::wait_for_applier_event_execution(std::string &retrieved_set,
 bool Applier_module::wait_for_current_events_execution(
     std::shared_ptr<Continuation> checkpoint_condition, bool *abort_flag,
     bool update_THD_status) {
+  DBUG_ENTER("Applier_module::wait_for_current_events_execution");
   applier_module->queue_and_wait_on_queue_checkpoint(checkpoint_condition);
   std::string current_retrieve_set;
   if (applier_module->get_retrieved_gtid_set(current_retrieve_set)) return true;
@@ -934,11 +951,11 @@ bool Applier_module::wait_for_current_events_execution(
 
     /* purecov: begin inspected */
     if (error == -2) {  // error when waiting
-      return true;
+      DBUG_RETURN(true);
     }
     /* purecov: end */
   }
-  return false;
+  DBUG_RETURN(false);
 }
 
 Certification_handler *Applier_module::get_certification_handler() {

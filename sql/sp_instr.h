@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "binary_log_types.h"
+#include "field_types.h"
 #include "lex_string.h"
 #include "m_string.h"
 #include "my_alloc.h"
@@ -63,7 +63,7 @@ struct TABLE_LIST;
 */
 class sp_printable {
  public:
-  virtual void print(String *str) = 0;
+  virtual void print(const THD *thd, String *str) = 0;
 
   virtual ~sp_printable() {}
 };
@@ -479,7 +479,7 @@ class sp_instr_stmt : public sp_lex_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_lex_instr implementation.
@@ -533,7 +533,7 @@ class sp_instr_set : public sp_lex_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_lex_instr implementation.
@@ -593,7 +593,7 @@ class sp_instr_set_trigger_field : public sp_lex_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_lex_instr implementation.
@@ -650,7 +650,7 @@ class sp_instr_freturn : public sp_lex_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -726,7 +726,7 @@ class sp_instr_jump : public sp_instr, public sp_branch_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -879,7 +879,7 @@ class sp_instr_jump_if_not : public sp_lex_branch_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_lex_instr implementation.
@@ -923,7 +923,7 @@ class sp_instr_set_case_expr : public sp_lex_branch_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1003,7 +1003,7 @@ class sp_instr_jump_case_when : public sp_lex_branch_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_lex_instr implementation.
@@ -1080,7 +1080,7 @@ class sp_instr_hpush_jump : public sp_instr_jump {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1134,7 +1134,9 @@ class sp_instr_hpop : public sp_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str) { str->append(STRING_WITH_LEN("hpop")); }
+  virtual void print(const THD *, String *str) {
+    str->append(STRING_WITH_LEN("hpop"));
+  }
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1160,7 +1162,7 @@ class sp_instr_hreturn : public sp_instr_jump {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1226,7 +1228,7 @@ class sp_instr_cpush : public sp_lex_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1287,7 +1289,7 @@ class sp_instr_cpop : public sp_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1321,7 +1323,7 @@ class sp_instr_copen : public sp_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1357,7 +1359,7 @@ class sp_instr_cclose : public sp_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1393,7 +1395,7 @@ class sp_instr_cfetch : public sp_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.
@@ -1435,7 +1437,7 @@ class sp_instr_error : public sp_instr {
   // sp_printable implementation.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual void print(String *str);
+  virtual void print(const THD *thd, String *str);
 
   /////////////////////////////////////////////////////////////////////////
   // sp_instr implementation.

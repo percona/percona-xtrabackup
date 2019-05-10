@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,9 @@
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"
 
 #include <algorithm>
+#include <cerrno>     // errno
+#include <cinttypes>  // std::strtoumax
+#include <cstdlib>
 #include <sstream>
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/task_net.h"
 #ifndef _WIN32
@@ -31,6 +34,7 @@
 #endif
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_message_stage_lz4.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_message_stage_split.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_networking.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_transport.h"
 
@@ -49,11 +53,18 @@ static const unsigned int JOIN_ATTEMPTS = 0;
 */
 static const uint64_t JOIN_SLEEP_TIME = 5;
 
+/*
+  Default and Min value for the maximum size of the XCom cache.
+*/
+static const uint64_t DEFAULT_XCOM_MAX_CACHE_SIZE = 1073741824;
+
 Gcs_xcom_utils::~Gcs_xcom_utils() {}
 
 u_long Gcs_xcom_utils::build_xcom_group_id(Gcs_group_identifier &group_id) {
   std::string group_id_str = group_id.get_group_id();
-  return mhash((unsigned char *)group_id_str.c_str(), group_id_str.size());
+  return mhash(static_cast<const unsigned char *>(
+                   static_cast<const void *>(group_id_str.c_str())),
+               group_id_str.size());
 }
 
 void Gcs_xcom_utils::process_peer_nodes(
@@ -97,7 +108,7 @@ void Gcs_xcom_utils::validate_peer_nodes(
   }
 }
 
-uint32_t Gcs_xcom_utils::mhash(unsigned char *buf, size_t length) {
+uint32_t Gcs_xcom_utils::mhash(const unsigned char *buf, size_t length) {
   size_t i = 0;
   uint32_t sum = 0;
   for (i = 0; i < length; i++) {
@@ -146,6 +157,12 @@ void fix_parameters_syntax(Gcs_interface_parameters &interface_params) {
       interface_params.get_parameter("join_attempts"));
   std::string *join_sleep_time_str = const_cast<std::string *>(
       interface_params.get_parameter("join_sleep_time"));
+  std::string *fragmentation_str = const_cast<std::string *>(
+      interface_params.get_parameter("fragmentation"));
+  std::string *fragmentation_threshold_str = const_cast<std::string *>(
+      interface_params.get_parameter("fragmentation_threshold"));
+  std::string *xcom_cache_size_str = const_cast<std::string *>(
+      interface_params.get_parameter("xcom_cache_size"));
 
   // sets the default value for compression (ON by default)
   if (!compression_str) {
@@ -213,6 +230,24 @@ void fix_parameters_syntax(Gcs_interface_parameters &interface_params) {
     ss << JOIN_SLEEP_TIME;
     interface_params.add_parameter("join_sleep_time", ss.str());
   }
+
+  // sets the default value for fragmentation (ON by default)
+  if (!fragmentation_str) {
+    interface_params.add_parameter("fragmentation", "on");
+  }
+
+  // sets the default threshold if no threshold has been set
+  if (!fragmentation_threshold_str) {
+    std::stringstream ss;
+    ss << Gcs_message_stage_split_v2::DEFAULT_THRESHOLD;
+    interface_params.add_parameter("fragmentation_threshold", ss.str());
+  }
+
+  // sets the default XCom cache size
+  if (!xcom_cache_size_str) {
+    interface_params.add_parameter("xcom_cache_size",
+                                   std::to_string(DEFAULT_XCOM_MAX_CACHE_SIZE));
+  }
 }
 
 static enum_gcs_error is_valid_flag(const std::string param,
@@ -231,6 +266,42 @@ static enum_gcs_error is_valid_flag(const std::string param,
     error = GCS_NOK;
   }
   return error;
+}
+
+bool is_valid_protocol(std::string const &protocol_string) {
+  int constexpr BASE_10 = 10;
+  bool constexpr VALID = true;
+  bool constexpr INVALID = false;
+  bool result = INVALID;
+  char const *protocol_c_str = protocol_string.c_str();
+  std::uintmax_t protocol_number = 0;
+  bool couldnt_convert = true;
+  bool out_of_range = true;
+  char *end = nullptr;
+  Gcs_protocol_version protocol = Gcs_protocol_version::UNKNOWN;
+
+  if (!is_number(protocol_string)) goto end;
+
+  // Try to convert.
+  errno = 0;
+  protocol_number = std::strtoumax(protocol_c_str, &end, BASE_10);
+  couldnt_convert = (protocol_c_str == end);
+  out_of_range = (errno == ERANGE);
+  if (couldnt_convert || out_of_range) {
+    if (out_of_range) errno = 0;
+    goto end;
+  }
+
+  // Confirm protocol is within the domain [1; max-protocol-known].
+  protocol = static_cast<Gcs_protocol_version>(protocol_number);
+  if (protocol < Gcs_protocol_version::V1 ||
+      protocol > Gcs_protocol_version::HIGHEST_KNOWN) {
+    goto end;
+  }
+
+  result = VALID;
+end:
+  return result;
 }
 
 bool is_parameters_syntax_correct(
@@ -268,6 +339,12 @@ bool is_parameters_syntax_correct(
       interface_params.get_parameter("member_expel_timeout");
   const std::string *reconfigure_ip_whitelist_str =
       interface_params.get_parameter("reconfigure_ip_whitelist");
+  const std::string *fragmentation_threshold_str =
+      interface_params.get_parameter("fragmentation_threshold");
+  const std::string *fragmentation_str =
+      interface_params.get_parameter("fragmentation");
+  const std::string *xcom_cache_size_str =
+      interface_params.get_parameter("xcom_cache_size");
 
   /*
     -----------------------------------------------------
@@ -481,7 +558,61 @@ bool is_parameters_syntax_correct(
     if (error == GCS_NOK) goto end;
   }
 
+  // validate fragmentation
+  if (fragmentation_str != nullptr) {
+    std::string &flag = const_cast<std::string &>(*fragmentation_str);
+    error = is_valid_flag("fragmentation", flag);
+    if (error == GCS_NOK) goto end;
+  }
+
+  if (fragmentation_threshold_str &&
+      (fragmentation_threshold_str->size() == 0 ||
+       !is_number(*fragmentation_threshold_str))) {
+    MYSQL_GCS_LOG_ERROR("The fragmentation_threshold parameter ("
+                        << fragmentation_threshold_str << ") is not valid.")
+    error = GCS_NOK;
+    goto end;
+  }
+
+  // Validate XCom cache size
+  errno = 0;
+  if (xcom_cache_size_str != NULL &&
+      // Verify if the input value is a valid number
+      (xcom_cache_size_str->size() == 0 || !is_number(*xcom_cache_size_str) ||
+       // Check that it is not lower than the min value allowed for the var
+       strtoull(xcom_cache_size_str->c_str(), nullptr, 10) <
+           DEFAULT_XCOM_MAX_CACHE_SIZE ||
+       // Check that it is not higher than the max value allowed
+       strtoull(xcom_cache_size_str->c_str(), nullptr, 10) > ULONG_MAX ||
+       // Check that it is within the range of values allowed for the var type.
+       // This is need in addition to the check above because of overflows.
+       errno == ERANGE)) {
+    MYSQL_GCS_LOG_ERROR("The xcom_cache_size parameter ("
+                        << xcom_cache_size_str->c_str() << ") is not valid.")
+    error = GCS_NOK;
+    goto end;
+  }
+
 end:
   delete sock_probe_interface;
   return error == GCS_NOK ? false : true;
+}
+
+std::string gcs_protocol_to_mysql_version(Gcs_protocol_version protocol) {
+  std::string version;
+  switch (protocol) {
+    case Gcs_protocol_version::V1:
+      version = "5.7.14";
+      break;
+    case Gcs_protocol_version::V2:
+      version = "8.0.16";
+      break;
+    case Gcs_protocol_version::UNKNOWN:
+    case Gcs_protocol_version::V3:
+    case Gcs_protocol_version::V4:
+    case Gcs_protocol_version::V5:
+      /* This should not happen... */
+      break;
+  }
+  return version;
 }

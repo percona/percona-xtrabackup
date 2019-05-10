@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,12 +29,14 @@ INCLUDE_DIRECTORIES(helpers
   )
 
 SET(helper_sources
-  helpers/router_test_helpers.cc
+  helpers/filesystem_utils.cc
+  helpers/gtest_testname.cc
   helpers/mysql_session_replayer.cc
   helpers/router_component_test.cc
   helpers/router_component_system_layout.cc
-  helpers/tcp_port_pool.cc
+  helpers/router_test_helpers.cc
   helpers/script_generator.cc
+  helpers/tcp_port_pool.cc
 )
 
 IF(WIN32)

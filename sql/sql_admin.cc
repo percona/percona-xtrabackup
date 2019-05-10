@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,7 @@
 #include <string>
 #include <utility>
 
+#include <sql/ssl_acceptor_context.h>
 #include "keycache.h"
 #include "m_string.h"
 #include "my_base.h"
@@ -876,7 +877,13 @@ static bool mysql_admin_table(
 
     if (operator_func == &handler::ha_repair &&
         !(check_opt->sql_flags & TT_USEFRM)) {
-      if ((check_table_for_old_types(table->table) == HA_ADMIN_NEEDS_ALTER) ||
+      // Check for old temporal format if avoid_temporal_upgrade is disabled.
+      mysql_mutex_lock(&LOCK_global_system_variables);
+      const bool check_temporal_upgrade = !avoid_temporal_upgrade;
+      mysql_mutex_unlock(&LOCK_global_system_variables);
+
+      if ((check_table_for_old_types(table->table, check_temporal_upgrade) ==
+           HA_ADMIN_NEEDS_ALTER) ||
           (table->table->file->ha_check_for_upgrade(check_opt) ==
            HA_ADMIN_NEEDS_ALTER)) {
         DBUG_PRINT("admin", ("recreating table"));
@@ -1585,12 +1592,58 @@ bool Sql_cmd_shutdown::execute(THD *thd) {
   DBUG_RETURN(res);
 }
 
+class Alter_instance_reload_tls : public Alter_instance {
+ public:
+  explicit Alter_instance_reload_tls(THD *thd, bool force = false)
+      : Alter_instance(thd), force_(force) {}
+
+  bool execute() {
+    Security_context *sctx = m_thd->security_context();
+    if (!sctx->has_global_grant(STRING_WITH_LEN("CONNECTION_ADMIN")).first) {
+      my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "CONNECTION_ADMIN");
+      return true;
+    }
+
+    bool res = false;
+    enum enum_ssl_init_error error = SSL_INITERR_NOERROR;
+    SslAcceptorContext::singleton_flush(&error, force_);
+    if (error != SSL_INITERR_NOERROR) {
+      const char *error_text = sslGetErrString(error);
+      if (force_) {
+        push_warning_printf(m_thd, Sql_condition::SL_WARNING,
+                            ER_SSL_LIBRARY_ERROR,
+                            ER_THD(m_thd, ER_SSL_LIBRARY_ERROR), error_text);
+        LogErr(WARNING_LEVEL, ER_SSL_LIBRARY_ERROR, sslGetErrString(error));
+      } else {
+        my_error(ER_SSL_LIBRARY_ERROR, MYF(0), error_text);
+        res = true;
+      }
+    }
+
+    if (!res) my_ok(m_thd);
+    return res;
+  }
+  ~Alter_instance_reload_tls() {}
+
+ protected:
+  bool force_;
+};
+
 bool Sql_cmd_alter_instance::execute(THD *thd) {
   bool res = true;
   DBUG_ENTER("Sql_cmd_alter_instance::execute");
   switch (alter_instance_action) {
     case ROTATE_INNODB_MASTER_KEY:
       alter_instance = new Rotate_innodb_master_key(thd);
+      break;
+    case ALTER_INSTANCE_RELOAD_TLS:
+      alter_instance = new Alter_instance_reload_tls(thd, true);
+      break;
+    case ALTER_INSTANCE_RELOAD_TLS_ROLLBACK_ON_ERROR:
+      alter_instance = new Alter_instance_reload_tls(thd);
+      break;
+    case ROTATE_BINLOG_MASTER_KEY:
+      alter_instance = new Rotate_binlog_master_key(thd);
       break;
     default:
       DBUG_ASSERT(false);
@@ -1862,9 +1915,22 @@ bool Sql_cmd_create_role::execute(THD *thd) {
 
 bool Sql_cmd_drop_role::execute(THD *thd) {
   DBUG_ENTER("Sql_cmd_drop_role::execute");
+  /*
+    We want to do extra checks (if user login is disabled) when golding a
+    using DROP_ROLE privilege.
+    To do that we record if CREATE USER was granted.
+    Then if one of DROP ROLE or CREATE USER was granted (the original
+    requirement) and CREATE USER was not granted we know that it was DROP ROLE
+    that caused the check to pass.
+
+    Thus we raise the flag (drop_role) in this case.
+  */
+  bool on_create_user_priv =
+      thd->security_context()->check_access(CREATE_USER_ACL, "", true);
   if (check_global_access(thd, DROP_ROLE_ACL | CREATE_USER_ACL))
     DBUG_RETURN(true);
-  if (mysql_drop_user(thd, const_cast<List<LEX_USER> &>(*roles), ignore_errors))
+  if (mysql_drop_user(thd, const_cast<List<LEX_USER> &>(*roles), ignore_errors,
+                      !on_create_user_priv))
     DBUG_RETURN(true);
   my_ok(thd);
   DBUG_RETURN(false);
@@ -1872,7 +1938,7 @@ bool Sql_cmd_drop_role::execute(THD *thd) {
 
 bool Sql_cmd_set_role::execute(THD *thd) {
   DBUG_ENTER("Sql_cmd_set_role::execute");
-  int ret = 0;
+  bool ret = 0;
   switch (role_type) {
     case role_enum::ROLE_NONE:
       ret = mysql_set_active_role_none(thd);
@@ -1887,7 +1953,22 @@ bool Sql_cmd_set_role::execute(THD *thd) {
       ret = mysql_set_active_role(thd, role_list);
       break;
   }
-  DBUG_RETURN(ret != 0);
+
+  /*
+    1. In case of role_enum::ROLE_NONE -
+       User might have SYSTEM_USER privilege granted explicitly using GRANT
+       statement.
+    2. For other cases -
+       User may have got SYSTEM_USER privilege either through one of the roles
+       OR, privilege may have been granted explicitly using GRANT statement.
+    Therefore, update the THD accordingly.
+
+    Update the flag in THD if invoker has SYSTEM_USER privilege not if the
+    definer user has that privilege.
+  */
+  if (!ret) set_system_user_flag(thd, true);
+
+  DBUG_RETURN(ret);
 }
 
 bool Sql_cmd_grant_roles::execute(THD *thd) {
@@ -1935,7 +2016,7 @@ bool Sql_cmd_show_grants::execute(THD *thd) {
     LEX_USER current_user;
     get_default_definer(thd, &current_user);
     if (using_users == 0 || using_users->elements == 0) {
-      List_of_auth_id_refs *active_list =
+      const List_of_auth_id_refs *active_list =
           thd->security_context()->get_active_roles();
       DBUG_RETURN(mysql_show_grants(thd, &current_user, *active_list,
                                     show_mandatory_roles));

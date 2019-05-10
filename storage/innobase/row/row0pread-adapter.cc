@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -51,21 +51,26 @@ dberr_t Parallel_reader_adapter::worker(size_t id, Queue &ctxq, Function &f) {
     mysql_null_bit_mask[i] = m_prebuilt->mysql_template[i].mysql_null_bit_mask;
   }
 
-  m_load_init(m_thread_contexts[id], m_prebuilt->n_template,
-              m_prebuilt->mysql_row_len, mysql_row_offsets,
-              mysql_nullbit_offsets, mysql_null_bit_mask);
+  dberr_t err = DB_SUCCESS;
+  bool initError = m_load_init(m_thread_contexts[id], m_prebuilt->n_template,
+                               m_prebuilt->mysql_row_len, mysql_row_offsets,
+                               mysql_nullbit_offsets, mysql_null_bit_mask);
+  if (initError) {
+    err = DB_INTERRUPTED;
+  } else {
+    err = Key_reader::worker(id, ctxq, f);
 
-  dberr_t err = Key_reader::worker(id, ctxq, f);
-
-  /** It's possible that we might not have sent the records in the buffer when
-  we have reached the end of records and the buffer is not full. Send them
-  now. */
-  if (n_recs[id] % m_send_num_recs != 0 && err == DB_SUCCESS) {
-    m_load_rows(m_thread_contexts[id], n_recs[id] % m_send_num_recs,
-                (void *)m_bufs[id]);
-    n_total_recs_sent.add(id, n_recs[id] % m_send_num_recs);
+    /** It's possible that we might not have sent the records in the buffer when
+    we have reached the end of records and the buffer is not full. Send them
+    now. */
+    if (n_recs[id] % m_send_num_recs != 0 && err == DB_SUCCESS) {
+      if (m_load_rows(m_thread_contexts[id], n_recs[id] % m_send_num_recs,
+                      (void *)m_bufs[id])) {
+        err = DB_INTERRUPTED;
+      }
+      n_total_recs_sent.add(id, n_recs[id] % m_send_num_recs);
+    }
   }
-
   m_load_end(m_thread_contexts[id]);
 
   return (err);
@@ -128,6 +133,16 @@ size_t Parallel_partition_reader_adapter::calc_num_threads() {
     return (0);
   }
 
+  /** If partitions have already been created just return the number of threads
+   that needs to be spawned */
+  if (!m_partitions.empty()) {
+    for (uint i = 0; i < m_num_parts; ++i) {
+      num_threads += m_partitions[i].size();
+    }
+
+    return (std::min(num_threads, m_n_threads));
+  }
+
   for (uint i = 0; i < m_num_parts; ++i) {
     Parallel_reader_adapter::set_info(m_table[i], m_index[i], m_trx[i],
                                       m_prebuilt[i]);
@@ -171,6 +186,16 @@ dberr_t Parallel_partition_reader_adapter::read(Function &&f) {
   }
 
   if (err != DB_SUCCESS) {
+    uint part_first_ctx = 0;
+
+    for (uint i = 0; i < m_num_parts && part_first_ctx < m_ctxs.size(); ++i) {
+      if (m_partitions[i].size()) {
+        auto &ctx = m_ctxs[part_first_ctx];
+        ctx->destroy(ctx->m_range.first);
+        part_first_ctx += m_partitions[i].size();
+      }
+    }
+
     for (auto &ctx : m_ctxs) {
       UT_DELETE(ctx);
     }
@@ -179,6 +204,16 @@ dberr_t Parallel_partition_reader_adapter::read(Function &&f) {
   }
 
   start_parallel_load(f);
+
+  uint part_first_ctx = 0;
+
+  for (uint i = 0; i < m_num_parts && part_first_ctx < m_ctxs.size(); ++i) {
+    if (m_partitions[i].size()) {
+      auto &ctx = m_ctxs[part_first_ctx];
+      ctx->destroy(ctx->m_range.first);
+      part_first_ctx += m_partitions[i].size();
+    }
+  }
 
   for (auto &ctx : m_ctxs) {
     if (ctx->m_err != DB_SUCCESS) {

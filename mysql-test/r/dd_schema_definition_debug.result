@@ -141,8 +141,8 @@ SET debug = '+d,skip_dd_table_access_check';
 ########################################################################
 # The number of hidden DD/DDSE tables must be as expected.
 ########################################################################
-include/assert.inc [There are 31 hidden DD/DDSE tables.]
-include/assert.inc [There are 33 DD/DDSE tables in total.]
+include/assert.inc [There are 32 hidden DD/DDSE tables.]
+include/assert.inc [There are 34 DD/DDSE tables in total.]
 ########################################################################
 # No unexpected DD tables must be present.
 ########################################################################
@@ -165,7 +165,7 @@ SET debug = '+d,skip_dd_table_access_check';
 ########################################################################
 # The actual DD version stored on disk.
 ########################################################################
-DD_VERSION=80014
+DD_VERSION=80016
 ########################################################################
 # List the CREATE TABLE statements for the DD tables.
 # Mask the AUTO INCREMENT counter, which is not
@@ -521,6 +521,7 @@ schemata	CREATE TABLE `schemata` (
   `created` timestamp NOT NULL,
   `last_altered` timestamp NOT NULL,
   `options` mediumtext COLLATE utf8_bin,
+  `default_encryption` enum('NO','YES') COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `catalog_id` (`catalog_id`,`name`),
   KEY `default_collation_id` (`default_collation_id`),
@@ -654,7 +655,7 @@ tablespace_files	CREATE TABLE `tablespace_files` (
 ) /*!50100 TABLESPACE `mysql` */ ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC
 tablespaces	CREATE TABLE `tablespaces` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(259) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL,
+  `name` varchar(268) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL,
   `options` mediumtext COLLATE utf8_bin,
   `se_private_data` mediumtext COLLATE utf8_bin,
   `comment` varchar(2048) COLLATE utf8_bin NOT NULL,
@@ -719,5 +720,5 @@ SET debug = '-d,skip_dd_table_access_check';
 SET debug = '+d,skip_dd_table_access_check';
 include/assert.inc [The group concat max length is sufficient.]
 CHECK_STATUS
-The schema checksum corresponds to DD version 80014.
+The schema checksum corresponds to DD version 80016.
 include/assert.inc [The schema checksum corresponds to a known DD version.]

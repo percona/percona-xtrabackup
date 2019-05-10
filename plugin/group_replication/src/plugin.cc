@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,11 +24,14 @@
 #include <sstream>
 
 #include <mysql/components/services/log_builtins.h>
+#include "mutex_lock.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
+#include "plugin/group_replication/include/autorejoin.h"
 #include "plugin/group_replication/include/consistency_manager.h"
 #include "plugin/group_replication/include/hold_transactions.h"
+#include "plugin/group_replication/include/mysql_version_gcs_protocol_map.h"
 #include "plugin/group_replication/include/observer_server_actions.h"
 #include "plugin/group_replication/include/observer_server_state.h"
 #include "plugin/group_replication/include/observer_trans.h"
@@ -62,6 +65,12 @@ static bool plugin_is_waiting_to_set_server_read_mode = false;
 static bool plugin_is_being_uninstalled = false;
 bool plugin_is_setting_read_mode = false;
 std::atomic<bool> plugin_is_stopping(false);
+static mysql_mutex_t plugin_modules_termination_mutex;
+constexpr gr_modules::mask gr_modules::all_modules;
+static const uint MAX_AUTOREJOIN_TRIES =
+    2016;  // (60min / 5min) * 24 * 7, i.e. a week.
+static ulonglong rejoin_timeout =
+    300ULL;  // the default is 5 minutes (300 secs).
 
 static SERVICE_TYPE(registry) *reg_srv = nullptr;
 SERVICE_TYPE(log_builtins) *log_bi = nullptr;
@@ -105,6 +114,8 @@ Group_action_coordinator *group_action_coordinator = NULL;
 Primary_election_handler *primary_election_handler = NULL;
 // Hold transaction mechanism
 Hold_transactions *hold_transactions = NULL;
+// The thread that handles the auto-rejoin process
+Autorejoin_thread *autorejoin_module = NULL;
 
 /* Group communication options */
 char *local_address_var = NULL;
@@ -135,6 +146,12 @@ static TYPELIB plugin_bool_typelib = {
 #define IP_WHITELIST_STR_BUFFER_LENGTH 1024
 char *ip_whitelist_var = NULL;
 const char *IP_WHITELIST_DEFAULT = "AUTOMATIC";
+
+// XCom cache size options
+#define DEFAULT_MESSAGE_CACHE_SIZE 1073741824
+#define MIN_MESSAGE_CACHE_SIZE DEFAULT_MESSAGE_CACHE_SIZE
+#define MAX_MESSAGE_CACHE_SIZE ULONG_MAX
+ulong message_cache_size_var = DEFAULT_MESSAGE_CACHE_SIZE;
 
 // The plugin auto increment handler
 Plugin_group_replication_auto_increment *auto_increment_handler = NULL;
@@ -198,6 +215,9 @@ int write_set_extraction_algorithm = HASH_ALGORITHM_OFF;
 /* Lower case table name */
 uint gr_lower_case_table_names = 0;
 
+/* Default table encryption option */
+bool gr_default_table_encryption = false;
+
 /* Generic components variables */
 ulong components_stop_timeout_var = LONG_TIMEOUT;
 
@@ -208,7 +228,10 @@ ulong timeout_on_unreachable_var = 0;
  Exit state action that is executed when a server involuntarily leaves the
  group.
 */
-ulong exit_state_action_var = EXIT_STATE_ACTION_ABORT_SERVER;
+ulong exit_state_action_var = EXIT_STATE_ACTION_READ_ONLY;
+
+/* The number of retries attempted during the auto-rejoin process. */
+uint autorejoin_tries_var = 0U;
 
 /**
   The default value for auto_increment_increment is choosen taking into
@@ -225,6 +248,13 @@ ulong auto_increment_increment_var = DEFAULT_AUTO_INCREMENT_INCREMENT;
 #define MAX_COMPRESSION_THRESHOLD UINT_MAX32
 #define MIN_COMPRESSION_THRESHOLD 0
 ulong compression_threshold_var = DEFAULT_COMPRESSION_THRESHOLD;
+
+/* fragmentation options */
+#define DEFAULT_COMMUNICATION_MAX_MESSAGE_SIZE 10485760
+#define MAX_COMMUNICATION_MAX_MESSAGE_SIZE get_max_slave_max_allowed_packet()
+#define MIN_COMMUNICATION_MAX_MESSAGE_SIZE 0
+ulong communication_max_message_size_var =
+    DEFAULT_COMMUNICATION_MAX_MESSAGE_SIZE;
 
 /* GTID assignment block size options */
 #define DEFAULT_GTID_ASSIGNMENT_BLOCK_SIZE 1000000
@@ -301,7 +331,11 @@ static int check_flow_control_min_recovery_quota_long(
 static int check_flow_control_max_quota_long(longlong value,
                                              bool is_var_update = false);
 
-int configure_group_communication(st_server_ssl_variables *ssl_variables);
+int configure_group_communication(st_server_ssl_variables *ssl_variables,
+                                  unsigned int server_version);
+int build_gcs_parameters(Gcs_interface_parameters &params,
+                         st_server_ssl_variables *ssl_variables,
+                         unsigned int server_version);
 int configure_group_member_manager(char *hostname, char *uuid, uint port,
                                    unsigned int server_version);
 bool check_async_channel_running_on_secondary();
@@ -312,9 +346,9 @@ void initialize_asynchronous_channels_observer();
 void initialize_group_partition_handler();
 int start_group_communication();
 void declare_plugin_running();
+int leave_group_and_terminate_plugin_modules(
+    gr_modules::mask modules_to_terminate, char **error_message);
 int leave_group();
-int terminate_plugin_modules(bool flag_stop_async_channel = false,
-                             char **error_message = NULL);
 int terminate_applier_module();
 int terminate_recovery_module();
 void terminate_asynchronous_channels_observer();
@@ -343,6 +377,12 @@ rpl_sidno get_group_sidno() {
   DBUG_ASSERT(group_sidno > 0);
   return group_sidno;
 }
+
+bool is_autorejoin_enabled() { return autorejoin_tries_var > 0U; }
+
+uint get_number_of_autorejoin_tries() { return autorejoin_tries_var; }
+
+ulonglong get_rejoin_timeout() { return rejoin_timeout; }
 
 /**
   Set condition to block or unblock the calling threads
@@ -425,8 +465,18 @@ bool plugin_get_group_members(
                                 channel_name);
 }
 
+/*
+  If the local member is already OFFLINE but still has the previous
+  membership because is waiting for the leave view, do not report
+  the other members.
+*/
 uint plugin_get_group_members_number() {
-  return group_member_mgr == NULL
+  bool unitialized_or_offline = group_member_mgr == NULL ||
+                                local_member_info == NULL ||
+                                local_member_info->get_recovery_status() ==
+                                    Group_member_info::MEMBER_OFFLINE;
+
+  return unitialized_or_offline
              ? 1
              : (uint)group_member_mgr->get_number_of_members();
 }
@@ -443,7 +493,7 @@ bool plugin_get_group_member_stats(
 int plugin_group_replication_start(char **) {
   DBUG_ENTER("plugin_group_replication_start");
 
-  Mutex_autolock auto_lock_mutex(&plugin_running_mutex);
+  MUTEX_LOCK(lock, &plugin_running_mutex);
   int error = 0;
 
   std::string debug_options;
@@ -594,9 +644,6 @@ int initialize_plugin_and_join(
   Sql_service_command_interface *sql_command_interface =
       new Sql_service_command_interface();
 
-  // Registry module.
-  if ((error = initialize_registry_module())) goto err; /* purecov: inspected */
-
   // GCS interface.
   if ((error = gcs_module->initialize())) goto err; /* purecov: inspected */
 
@@ -652,79 +699,13 @@ int initialize_plugin_and_join(
                         &server_ssl_variables);
 
   // Setup GCS.
-  if ((error = configure_group_communication(&server_ssl_variables))) {
+  if ((error = configure_group_communication(&server_ssl_variables,
+                                             server_version))) {
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_INIT_COMMUNICATION_ENGINE);
     goto err;
   }
 
-  // Setup Group Member Manager.
-  if ((error = configure_group_member_manager(hostname, uuid, port,
-                                              server_version)))
-    goto err; /* purecov: inspected */
-
-  if (check_async_channel_running_on_secondary()) {
-    error = 1;
-    LogPluginErr(ERROR_LEVEL,
-                 ER_GRP_RPL_FAILED_TO_START_ON_SECONDARY_WITH_ASYNC_CHANNELS);
-    goto err; /* purecov: inspected */
-  }
-
-  configure_compatibility_manager();
-  DBUG_EXECUTE_IF("group_replication_compatibility_rule_error", {
-    // Mark this member as being another version
-    Member_version other_version = plugin_version + (0x000001);
-    compatibility_mgr->set_local_version(other_version);
-    Member_version local_member_version(plugin_version);
-    // Add an incompatibility with the real plugin version
-    compatibility_mgr->add_incompatibility(other_version, local_member_version);
-  };);
-  DBUG_EXECUTE_IF("group_replication_compatibility_higher_minor_version", {
-    Member_version higher_version = plugin_version + (0x000100);
-    compatibility_mgr->set_local_version(higher_version);
-  };);
-  DBUG_EXECUTE_IF("group_replication_compatibility_higher_major_version", {
-    Member_version higher_version = plugin_version + (0x010000);
-    compatibility_mgr->set_local_version(higher_version);
-  };);
-  DBUG_EXECUTE_IF("group_replication_compatibility_minor_minor_version", {
-    Member_version higher_version = plugin_version - (0x000001);
-    compatibility_mgr->set_local_version(higher_version);
-  };);
-  DBUG_EXECUTE_IF("group_replication_compatibility_restore_version", {
-    Member_version current_version = plugin_version;
-    compatibility_mgr->set_local_version(current_version);
-  };);
-
-  // need to be initialized before applier, is called on
-  // kill_pending_transactions
-  blocked_transaction_handler = new Blocked_transaction_handler();
-
-  if ((error = initialize_recovery_module())) goto err; /* purecov: inspected */
-
-  // we can only start the applier if the log has been initialized
-  if (configure_and_start_applier_module()) {
-    /*
-      We must signal listeners of the group_join_waiting signal because an early
-      applier error can be caught here or just before the join (asynchronously).
-
-      This means that tests that need to trigger an early applier error and wait
-      until the applier errored out should wait on group_join_waiting.
-
-      If we didn't duplicate this signal here, these tests would timeout,
-      because the flow from here on goes to error handling and it doesn't signal
-      the original group_join_waiting signal where it was supposed to be
-      signalled.
-    */
-    DBUG_EXECUTE_IF("group_replication_before_joining_the_group", {
-      const char act[] = "now signal signal.group_join_waiting";
-      DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
-    });
-    error = GROUP_REPLICATION_REPLICATION_APPLIER_INIT_ERROR;
-    goto err;
-  }
-
-  initialize_group_partition_handler();
-  set_auto_increment_handler_values();
+  if ((error = initialize_plugin_modules(gr_modules::all_modules))) goto err;
 
   DBUG_EXECUTE_IF("group_replication_before_joining_the_group", {
     const char act[] =
@@ -732,9 +713,6 @@ int initialize_plugin_and_join(
         "wait_for signal.continue_group_join";
     DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
-
-  primary_election_handler =
-      new Primary_election_handler(components_stop_timeout_var);
 
   if ((error = start_group_communication())) {
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_START_COMMUNICATION_ENGINE);
@@ -768,12 +746,15 @@ err:
     if (delayed_init_thd) delayed_init_thd->signal_read_mode_ready();
 
     DBUG_EXECUTE_IF("group_replication_wait_before_leave_on_error", {
-      const char act[] = "now wait_for signal.continue_leave_process";
+      const char act[] =
+          "now signal signal.wait_leave_process "
+          "wait_for signal.continue_leave_process";
       DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
     });
 
-    leave_group();
-    terminate_plugin_modules();
+    auto modules_to_terminate = gr_modules::all_modules;
+    modules_to_terminate.reset(gr_modules::ASYNC_REPL_CHANNELS);
+    leave_group_and_terminate_plugin_modules(modules_to_terminate, nullptr);
 
     if (!server_shutdown_status && server_engine_initialized() &&
         enabled_super_read_only) {
@@ -791,6 +772,15 @@ err:
       primary_election_handler = NULL;
     }
   }
+
+  my_free(server_ssl_variables.ssl_ca);
+  my_free(server_ssl_variables.ssl_capath);
+  my_free(server_ssl_variables.tls_version);
+  my_free(server_ssl_variables.ssl_cert);
+  my_free(server_ssl_variables.ssl_cipher);
+  my_free(server_ssl_variables.ssl_key);
+  my_free(server_ssl_variables.ssl_crl);
+  my_free(server_ssl_variables.ssl_crlpath);
 
   delete sql_command_interface;
   plugin_is_auto_starting_on_install = false;
@@ -842,34 +832,42 @@ int configure_group_member_manager(char *hostname, char *uuid, uint port,
     uuid = const_cast<char *>("cccccccc-cccc-cccc-cccc-cccccccccccc");
   };);
 
-  /*
-    To avoid leaving a invalid pointer on Group_member_info_manager,
-    first we update the local member information on group_member_mgr,
-    and only then we delete and update the local_member_info.
-  */
-  Group_member_info *local_member_info_tmp = new Group_member_info(
-      hostname, port, uuid, write_set_extraction_algorithm,
-      gcs_local_member_identifier, Group_member_info::MEMBER_OFFLINE,
-      local_member_plugin_version, gtid_assignment_block_size_var,
-      Group_member_info::MEMBER_ROLE_SECONDARY, single_primary_mode_var,
-      enforce_update_everywhere_checks_var, member_weight_var,
-      gr_lower_case_table_names);
+  // Initialize or update local_member_info.
+  if (local_member_info != NULL) {
+    local_member_info->update(
+        hostname, port, uuid, write_set_extraction_algorithm,
+        gcs_local_member_identifier, Group_member_info::MEMBER_OFFLINE,
+        local_member_plugin_version, gtid_assignment_block_size_var,
+        Group_member_info::MEMBER_ROLE_SECONDARY, single_primary_mode_var,
+        enforce_update_everywhere_checks_var, member_weight_var,
+        gr_lower_case_table_names, gr_default_table_encryption);
+  } else {
+    local_member_info = new Group_member_info(
+        hostname, port, uuid, write_set_extraction_algorithm,
+        gcs_local_member_identifier, Group_member_info::MEMBER_OFFLINE,
+        local_member_plugin_version, gtid_assignment_block_size_var,
+        Group_member_info::MEMBER_ROLE_SECONDARY, single_primary_mode_var,
+        enforce_update_everywhere_checks_var, member_weight_var,
+        gr_lower_case_table_names, gr_default_table_encryption);
+  }
+
+#ifndef DBUG_OFF
+  DBUG_EXECUTE_IF("group_replication_skip_encode_default_table_encryption", {
+    local_member_info->skip_encode_default_table_encryption = true;
+  });
+#endif
 
   // Update membership info of member itself
-  if (group_member_mgr != NULL) group_member_mgr->update(local_member_info_tmp);
+  if (group_member_mgr != NULL) group_member_mgr->update(local_member_info);
   // Create the membership info visible for the group
   else
-    group_member_mgr = new Group_member_info_manager(local_member_info_tmp);
-  // Update local_member_info
-  delete local_member_info;
-  local_member_info = local_member_info_tmp;
+    group_member_mgr = new Group_member_info_manager(local_member_info);
   group_member_mgr_configured = true;
 
-  LogPluginErr(
-      INFORMATION_LEVEL, ER_GRP_RPL_MEMBER_CONF_INFO, get_server_id(),
-      (local_member_info != NULL) ? local_member_info->get_uuid().c_str()
-                                  : "NULL",
-      single_primary_mode_var ? "true" : "false", auto_increment_increment_var);
+  LogPluginErr(INFORMATION_LEVEL, ER_GRP_RPL_MEMBER_CONF_INFO, get_server_id(),
+               local_member_info->get_uuid().c_str(),
+               single_primary_mode_var ? "true" : "false",
+               auto_increment_increment_var);
 
   DBUG_RETURN(0);
 }
@@ -902,8 +900,68 @@ int configure_compatibility_manager() {
                                             remote_member_min_version,
                                             remote_member_max_version);
    */
+  DBUG_EXECUTE_IF("group_replication_compatibility_rule_error", {
+    // Mark this member as being another version
+    Member_version other_version = plugin_version + (0x000001);
+    compatibility_mgr->set_local_version(other_version);
+    Member_version local_member_version(plugin_version);
+    // Add an incompatibility with the real plugin version
+    compatibility_mgr->add_incompatibility(other_version, local_member_version);
+  };);
+  DBUG_EXECUTE_IF("group_replication_compatibility_higher_minor_version", {
+    Member_version higher_version = plugin_version + (0x000100);
+    compatibility_mgr->set_local_version(higher_version);
+  };);
+  DBUG_EXECUTE_IF("group_replication_compatibility_higher_major_version", {
+    Member_version higher_version = plugin_version + (0x010000);
+    compatibility_mgr->set_local_version(higher_version);
+  };);
+  DBUG_EXECUTE_IF("group_replication_compatibility_minor_minor_version", {
+    Member_version higher_version = plugin_version - (0x000001);
+    compatibility_mgr->set_local_version(higher_version);
+  };);
+  DBUG_EXECUTE_IF("group_replication_compatibility_restore_version", {
+    Member_version current_version = plugin_version;
+    compatibility_mgr->set_local_version(current_version);
+  };);
 
   return 0;
+}
+
+int leave_group_and_terminate_plugin_modules(
+    gr_modules::mask modules_to_terminate, char **error_message) {
+  /*
+    We acquire the plugin_modules_termination_mutex lock at this point in time,
+    before attempting to leave the group or terminate the plugin modules.
+
+    This warrants a more in-depth explanation of the life-cycle of
+    plugin_modules_termination_mutex.
+
+    By calling terminate_plugin_modules() with gr_modules::all_modules, you will
+    terminate all plugin modules. One of those modules happens to be the
+    Autorejoin_thread. The termination of the Autorejoin_thread plugin module
+    will first terminate the thread.
+    The auto-rejoin process could already be undergoing. During the auto-rejoin
+    process, in attempt_rejoin(), there will be a call to
+    terminate_plugin_modules() as well (albeit with a different bitmask). Since
+    we can't terminate the thread during attempt_rejoin(), only after it, we
+    could have concurrent calls to terminate_plugin_modules(). Thus the need for
+    a critical section around it.
+
+    Also note that we are locking even before we call leave_group(). This is
+    just to make sure that we don't start an auto-rejoin just before we
+    call leave_group() (as you can see, we only call it if there isn't an
+    auto-rejoin undergoing).
+  */
+  int error = 0;
+  mysql_mutex_lock(&plugin_modules_termination_mutex);
+
+  if (!autorejoin_module->is_autorejoin_ongoing()) leave_group();
+
+  error = terminate_plugin_modules(modules_to_terminate, error_message);
+  mysql_mutex_unlock(&plugin_modules_termination_mutex);
+
+  return error;
 }
 
 int leave_group() {
@@ -972,7 +1030,7 @@ int leave_group() {
 int plugin_group_replication_stop(char **error_message) {
   DBUG_ENTER("plugin_group_replication_stop");
 
-  Mutex_autolock auto_lock_mutex(&plugin_running_mutex);
+  MUTEX_LOCK(lock, &plugin_running_mutex);
 
   plugin_is_stopping = true;
 
@@ -1019,10 +1077,8 @@ int plugin_group_replication_stop(char **error_message) {
     blocked_transaction_handler->unblock_waiting_transactions();
   }
 
-  /* first leave all joined groups (currently one) */
-  leave_group();
-
-  int error = terminate_plugin_modules(true, error_message);
+  int error = leave_group_and_terminate_plugin_modules(gr_modules::all_modules,
+                                                       error_message);
 
   group_replication_running = false;
   group_member_mgr_configured = false;
@@ -1064,17 +1120,188 @@ int plugin_group_replication_stop(char **error_message) {
   DBUG_RETURN(error);
 }
 
-int terminate_plugin_modules(bool flag_stop_async_channel,
-                             char **error_message) {
-  // end wait for thread waiting for server to start
-  terminate_wait_on_start_process();
+int initialize_plugin_modules(gr_modules::mask modules_to_init) {
+  DBUG_ENTER("initialize_plugin_modules");
+  int ret = 0;
 
-  if (terminate_recovery_module()) {
-    // Do not throw an error since recovery is not vital, but warn either way
-    /* purecov: begin inspected */
-    LogPluginErr(WARNING_LEVEL,
-                 ER_GRP_RPL_RECOVERY_MODULE_TERMINATION_TIMED_OUT_ON_SHUTDOWN);
-    /* purecov: end */
+  DBUG_EXECUTE_IF("group_replication_rejoin_short_retry",
+                  { rejoin_timeout = 1ULL; };);
+  DBUG_EXECUTE_IF("group_replication_rejoin_long_retry",
+                  { rejoin_timeout = 60ULL; };);
+
+  /*
+    Registry module.
+  */
+  if (modules_to_init[gr_modules::REGISTRY_MODULE]) {
+    if ((ret = initialize_registry_module())) DBUG_RETURN(ret);
+  }
+
+  /*
+    Group Member Manager module.
+  */
+  if (modules_to_init[gr_modules::GROUP_MEMBER_MANAGER]) {
+    char *hostname = NULL;
+    char *uuid = NULL;
+    uint port = 0U;
+    uint server_version = 0U;
+    st_server_ssl_variables sv;
+
+    get_server_parameters(&hostname, &port, &uuid, &server_version, &sv);
+    my_free(sv.ssl_ca);
+    my_free(sv.ssl_capath);
+    my_free(sv.tls_version);
+    my_free(sv.ssl_cert);
+    my_free(sv.ssl_cipher);
+    my_free(sv.ssl_key);
+    my_free(sv.ssl_crl);
+    my_free(sv.ssl_crlpath);
+
+    if ((ret = configure_group_member_manager(hostname, uuid, port,
+                                              server_version)))
+      DBUG_RETURN(ret);
+  }
+
+  /*
+    Asynchronous Replication Channels.
+  */
+  if (modules_to_init[gr_modules::ASYNC_REPL_CHANNELS]) {
+    if (check_async_channel_running_on_secondary()) {
+      LogPluginErr(ERROR_LEVEL,
+                   ER_GRP_RPL_FAILED_TO_START_ON_SECONDARY_WITH_ASYNC_CHANNELS);
+      DBUG_RETURN(1);
+    }
+  }
+
+  /*
+    Blocked Transaction Handler module.
+  */
+  if (modules_to_init[gr_modules::BLOCKED_TRANSACTION_HANDLER]) {
+    // need to be initialized before applier, is called on
+    // kill_pending_transactions
+    blocked_transaction_handler = new Blocked_transaction_handler();
+  }
+
+  /*
+    Recovery module.
+  */
+  if (modules_to_init[gr_modules::RECOVERY_MODULE]) {
+    if ((ret = initialize_recovery_module())) DBUG_RETURN(ret);
+  }
+
+  /*
+    Applier module.
+  */
+  if (modules_to_init[gr_modules::APPLIER_MODULE]) {
+    // we can only start the applier if the log has been initialized
+    if (configure_and_start_applier_module())
+      DBUG_RETURN(GROUP_REPLICATION_REPLICATION_APPLIER_INIT_ERROR);
+  }
+
+  /*
+    Group Partition Handler module.
+  */
+  if (modules_to_init[gr_modules::GROUP_PARTITION_HANDLER]) {
+    initialize_group_partition_handler();
+  }
+
+  /*
+    Auto Increment Handler module.
+  */
+  if (modules_to_init[gr_modules::AUTO_INCREMENT_HANDLER]) {
+    set_auto_increment_handler_values();
+  }
+
+  /*
+    Primary Election Handler module.
+  */
+  if (modules_to_init[gr_modules::PRIMARY_ELECTION_HANDLER]) {
+    primary_election_handler =
+        new Primary_election_handler(components_stop_timeout_var);
+  }
+
+  /*
+    The Compatibility Manager module.
+  */
+  if (modules_to_init[gr_modules::COMPATIBILITY_MANAGER]) {
+    configure_compatibility_manager();
+  }
+
+  /*
+    The Auto-rejoin thread.
+  */
+  if (modules_to_init[gr_modules::AUTOREJOIN_THREAD]) {
+    autorejoin_module->init();
+  }
+
+  /*
+    The Group coordinator module.
+  */
+  if (modules_to_init[gr_modules::GROUP_ACTION_COORDINATOR]) {
+    group_action_coordinator->reset_coordinator_process();
+  }
+
+  /*
+    The GCS events handler module.
+  */
+  if (modules_to_init[gr_modules::GCS_EVENTS_HANDLER]) {
+    events_handler = new Plugin_gcs_events_handler(
+        applier_module, recovery_module, compatibility_mgr,
+        components_stop_timeout_var);
+  }
+
+  DBUG_RETURN(ret);
+}
+
+int terminate_plugin_modules(gr_modules::mask modules_to_terminate,
+                             char **error_message) {
+  /*
+    Wait On Start module.
+  */
+  if (modules_to_terminate[gr_modules::WAIT_ON_START])
+    terminate_wait_on_start_process();
+
+  /*
+    Autorejoin Thread module.
+  */
+  if (modules_to_terminate[gr_modules::AUTOREJOIN_THREAD]) {
+    autorejoin_module->abort_rejoin();
+
+    /*
+      We could be in a situation where the auto-rejoin process terminated
+      successfully even after we terminated the auto-rejoin thread. If this
+      happens we should leave the group forcefully.
+
+      If we don't leave then we rely on the other members to create a
+      suspicion of us and eventually (after the expel timeout ellapses) expel
+      us from the group.
+
+      There is no need for such overhead, so we gracefully leave the group.
+    */
+    if (gcs_module->belongs_to_group()) {
+      view_change_notifier->start_view_modification();
+      auto state = gcs_module->leave(view_change_notifier);
+      if (state != Gcs_operations::ERROR_WHEN_LEAVING &&
+          state != Gcs_operations::ALREADY_LEFT)
+        view_change_notifier->wait_for_view_modification();
+      gcs_module->remove_view_notifer(view_change_notifier);
+    }
+
+    // Also, we must terminate the GCS infrastructure completly.
+    if (gcs_module->is_initialized()) gcs_module->finalize();
+  }
+
+  /*
+    Recovery module.
+  */
+  if (modules_to_terminate[gr_modules::RECOVERY_MODULE]) {
+    if (terminate_recovery_module()) {
+      // Do not throw an error since recovery is not vital, but warn either way
+      /* purecov: begin inspected */
+      LogPluginErr(
+          WARNING_LEVEL,
+          ER_GRP_RPL_RECOVERY_MODULE_TERMINATION_TIMED_OUT_ON_SHUTDOWN);
+      /* purecov: end */
+    }
   }
 
   DBUG_EXECUTE_IF("group_replication_after_recovery_module_terminated", {
@@ -1082,30 +1309,49 @@ int terminate_plugin_modules(bool flag_stop_async_channel,
     DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
 
-  group_action_coordinator->stop_coordinator_process(true, true);
+  /*
+    Group Action Coordinator module.
+  */
+  if (modules_to_terminate[gr_modules::GROUP_ACTION_COORDINATOR]) {
+    group_action_coordinator->stop_coordinator_process(true, true);
+  }
 
   while (!UDF_counter::is_zero()) {
     /* Give 50 ms to udf terminate*/
     my_sleep(50000);
   }
 
-  if (primary_election_handler != NULL) {
-    primary_election_handler->terminate_election_process();
+  /*
+    Primary Election Handler module.
+  */
+  if (modules_to_terminate[gr_modules::PRIMARY_ELECTION_HANDLER]) {
+    if (primary_election_handler != NULL) {
+      primary_election_handler->terminate_election_process();
+    }
   }
 
-  reset_auto_increment_handler_values();
+  /*
+    Auto Increment Handler module.
+  */
+  if (modules_to_terminate[gr_modules::AUTO_INCREMENT_HANDLER])
+    reset_auto_increment_handler_values();
 
   /*
     The applier is only shutdown after the communication layer to avoid
     messages being delivered in the current view, but not applied
   */
   int error = 0;
-  if ((error = terminate_applier_module())) {
-    LogPluginErr(ERROR_LEVEL,
-                 ER_GRP_RPL_APPLIER_TERMINATION_TIMED_OUT_ON_SHUTDOWN);
+  if (modules_to_terminate[gr_modules::APPLIER_MODULE]) {
+    if ((error = terminate_applier_module())) {
+      LogPluginErr(ERROR_LEVEL,
+                   ER_GRP_RPL_APPLIER_TERMINATION_TIMED_OUT_ON_SHUTDOWN);
+    }
   }
 
-  if (flag_stop_async_channel) {
+  /*
+    Asynchronous Replication Channels.
+  */
+  if (modules_to_terminate[gr_modules::ASYNC_REPL_CHANNELS]) {
     std::string stop_error_message;
     int channel_err =
         channel_stop_all(CHANNEL_APPLIER_THREAD | CHANNEL_RECEIVER_THREAD,
@@ -1137,32 +1383,195 @@ int terminate_plugin_modules(bool flag_stop_async_channel,
     }
   }
 
-  delete group_partition_handler;
-  group_partition_handler = NULL;
-
-  delete blocked_transaction_handler;
-  blocked_transaction_handler = NULL;
-
-  DBUG_ASSERT(transactions_latch->empty());
-
-  if (group_member_mgr != NULL && local_member_info != NULL) {
-    Notification_context ctx;
-    group_member_mgr->update_member_status(
-        local_member_info->get_uuid(), Group_member_info::MEMBER_OFFLINE, ctx);
-    notify_and_reset_ctx(ctx);
+  /*
+    Group Partition Handler module.
+  */
+  if (modules_to_terminate[gr_modules::GROUP_PARTITION_HANDLER]) {
+    if (group_partition_handler != nullptr)
+      group_partition_handler->terminate_partition_handler_thread();
+    delete group_partition_handler;
+    group_partition_handler = nullptr;
   }
 
-  if (finalize_registry_module()) {
-    /* purecov: begin inspected */
-    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_SHUTDOWN_REGISTRY_MODULE);
-    if (!error) error = 1;
-    /* purecov: end */
+  /*
+    Blocked Transaction Handler module.
+  */
+  if (modules_to_terminate[gr_modules::BLOCKED_TRANSACTION_HANDLER]) {
+    delete blocked_transaction_handler;
+    blocked_transaction_handler = NULL;
+  }
+
+#if !defined(DBUG_OFF)
+  if (modules_to_terminate[gr_modules::CERTIFICATION_LATCH])
+    DBUG_ASSERT(transactions_latch->empty());
+#endif
+
+  /*
+    Group member manager module.
+  */
+  if (modules_to_terminate[gr_modules::GROUP_MEMBER_MANAGER]) {
+    if (group_member_mgr != NULL && local_member_info != NULL) {
+      Notification_context ctx;
+      group_member_mgr->update_member_status(local_member_info->get_uuid(),
+                                             Group_member_info::MEMBER_OFFLINE,
+                                             ctx);
+      notify_and_reset_ctx(ctx);
+    }
+  }
+
+  /*
+    Registry module.
+  */
+  if (modules_to_terminate[gr_modules::REGISTRY_MODULE]) {
+    if (finalize_registry_module()) {
+      /* purecov: begin inspected */
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_SHUTDOWN_REGISTRY_MODULE);
+      if (!error) error = 1;
+      /* purecov: end */
+    }
+  }
+
+  /*
+    The GCS events handler module.
+  */
+  if (modules_to_terminate[gr_modules::GCS_EVENTS_HANDLER]) {
+    if (events_handler) {
+      delete events_handler;
+      events_handler = nullptr;
+    }
   }
 
   return error;
 }
 
+bool attempt_rejoin() {
+  DBUG_ENTER("attempt_rejoin");
+  bool ret = true;
+  Gcs_operations::enum_leave_state state = Gcs_operations::ERROR_WHEN_LEAVING;
+  int error = 0;
+  enum enum_gcs_error join_state = GCS_OK;
+  Gcs_interface_parameters gcs_params;
+
+  gr_modules::mask modules_mask;
+  modules_mask.set(gr_modules::BLOCKED_TRANSACTION_HANDLER, true);
+  modules_mask.set(gr_modules::GROUP_PARTITION_HANDLER, true);
+  modules_mask.set(gr_modules::APPLIER_MODULE, true);
+  modules_mask.set(gr_modules::ASYNC_REPL_CHANNELS, true);
+  modules_mask.set(gr_modules::GROUP_ACTION_COORDINATOR, true);
+  modules_mask.set(gr_modules::GCS_EVENTS_HANDLER, true);
+
+  /*
+    The first step is to issue a GCS leave() operation. This is done because
+    the join() operation will assume that the GCS layer is not initiated and
+    will try to reinitialize everything. Thus, we will simply teardown and setup
+    both the GCS layer and the group membership dependent components on the GR
+    side between each retry.
+  */
+  Plugin_gcs_view_modification_notifier vc_notifier;
+  vc_notifier.start_view_modification();
+
+  state = gcs_module->leave(&vc_notifier);
+  if (state == Gcs_operations::ERROR_WHEN_LEAVING)
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_CONFIRM_IF_SERVER_LEFT_GRP);
+  if ((state == Gcs_operations::NOW_LEAVING ||
+       state == Gcs_operations::ALREADY_LEAVING) &&
+      vc_notifier.wait_for_view_modification())
+    LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_TIMEOUT_RECEIVED_VC_ON_REJOIN);
+
+  gcs_module->remove_view_notifer(&vc_notifier);
+  gcs_module->finalize();
+  group_member_mgr->update(local_member_info);
+
+  /*
+    Then we terminate the GR layer components.
+
+    We verify if the plugin_modules_termination_mutex is held. If it is, it
+    means that there is an ongoing STOP GROUP_REPLICATION command and that
+    command will abort the auto-rejoin thread. So, in that scenario, we
+    shouldn't terminate the plugin modules since they are already being
+    terminated in the STOP GROUP_REPLICATION command handling thread and we
+    leave gracefully.
+  */
+  error = mysql_mutex_trylock(&plugin_modules_termination_mutex);
+  if (!error) {
+    error = terminate_plugin_modules(modules_mask, nullptr);
+    mysql_mutex_unlock(&plugin_modules_termination_mutex);
+    if (error) goto end;
+  } else {
+    goto end;
+  }
+
+  /*
+    The next step is to prepare the new member for the join.
+  */
+  if (gcs_module->initialize()) goto end;
+
+  /*
+    If the member was the boot node, we rejoin without bootstrapping, because
+    the join operation will try to boot the group if the joining member is
+    the boot node.
+  */
+  if (build_gcs_parameters(gcs_params, nullptr, -1U)) {
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_UNABLE_TO_INIT_COMMUNICATION_ENGINE);
+    goto end;
+  }
+  gcs_params.add_parameter("bootstrap_group", "false");
+  if (gcs_module->configure(gcs_params) != GCS_OK) {
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_UNABLE_TO_INIT_COMMUNICATION_ENGINE);
+    goto end;
+  }
+
+  /*
+    We try to reinitialize everything again, so that the GCS infrastructure is
+    at the same state as before the join() in the START GROUP_REPLICATION
+    command.
+  */
+  if (initialize_plugin_modules(modules_mask)) goto end;
+
+  /*
+    Finally we attempt the join itself.
+  */
+  view_change_notifier->start_view_modification();
+  join_state =
+      gcs_module->join(*events_handler, *events_handler, view_change_notifier);
+  if (join_state == GCS_OK) {
+    if (view_change_notifier->wait_for_view_modification()) {
+      if (view_change_notifier->is_cancelled()) {
+        /*
+          Member may have become incompatible with the group while was
+          disconnected, for instance, if the group mode did change.
+        */
+        Notification_context ctx;
+        group_member_mgr->update_member_status(local_member_info->get_uuid(),
+                                               Group_member_info::MEMBER_ERROR,
+                                               ctx);
+        notify_and_reset_ctx(ctx);
+
+        view_change_notifier->start_view_modification();
+        Gcs_operations::enum_leave_state state =
+            gcs_module->leave(view_change_notifier);
+        if (state != Gcs_operations::ERROR_WHEN_LEAVING &&
+            state != Gcs_operations::ALREADY_LEFT) {
+          view_change_notifier->wait_for_view_modification();
+        }
+      } else {
+        // Only log a error when a view modification was not cancelled.
+        LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_TIMEOUT_RECEIVED_VC_ON_REJOIN);
+      }
+    } else {
+      ret = false;
+    }
+  }
+
+end:
+  gcs_module->remove_view_notifer(view_change_notifier);
+  DBUG_RETURN(ret);
+}
+
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
+  plugin_is_waiting_to_set_server_read_mode = false;
+  plugin_is_being_uninstalled = false;
+
   // Initialize error logging service.
   if (init_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs)) return 1;
 
@@ -1197,6 +1606,9 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   hold_transactions = new Hold_transactions();
 
   plugin_info_ptr = plugin_info;
+
+  mysql_mutex_init(key_GR_LOCK_plugin_modules_termination,
+                   &plugin_modules_termination_mutex, MY_MUTEX_INIT_FAST);
 
   if (group_replication_init()) {
     /* purecov: begin inspected */
@@ -1257,6 +1669,12 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   // Initialize the compatibility module before starting
   init_compatibility_manager();
 
+  /*
+    Initialize the auto-rejoin thread.
+    This will only initialize the thread, not start it.
+  */
+  autorejoin_module = new Autorejoin_thread();
+
   plugin_is_auto_starting_on_install = start_group_replication_at_boot_var;
   plugin_is_auto_starting_on_boot = start_group_replication_at_boot_var;
 
@@ -1296,6 +1714,11 @@ int plugin_group_replication_deinit(void *p) {
   if (compatibility_mgr != NULL) {
     delete compatibility_mgr;
     compatibility_mgr = NULL;
+  }
+
+  if (autorejoin_module != nullptr) {
+    delete autorejoin_module;
+    autorejoin_module = nullptr;
   }
 
   if (group_action_coordinator) {
@@ -1364,6 +1787,7 @@ int plugin_group_replication_deinit(void *p) {
 
   mysql_mutex_destroy(&plugin_running_mutex);
   mysql_mutex_destroy(&force_members_running_mutex);
+  mysql_mutex_destroy(&plugin_modules_termination_mutex);
 
   delete shared_plugin_stop_lock;
   shared_plugin_stop_lock = NULL;
@@ -1508,11 +1932,25 @@ int terminate_applier_module() {
   return error;
 }
 
-int configure_group_communication(st_server_ssl_variables *ssl_variables) {
-  DBUG_ENTER("configure_group_communication");
+int build_gcs_parameters(Gcs_interface_parameters &gcs_module_parameters,
+                         st_server_ssl_variables *ssl_variables,
+                         unsigned int server_version) {
+  DBUG_ENTER("build_gcs_parameters");
+  int result = 0;
+  st_server_ssl_variables sv;
+  bool need_to_free_st_server_ssl_variables = false;
 
-  // GCS interface parameters.
-  Gcs_interface_parameters gcs_module_parameters;
+  if (ssl_variables == nullptr) {
+    char *hostname = nullptr;
+    char *uuid = nullptr;
+    uint port = 0U;
+
+    get_server_parameters(&hostname, &port, &uuid, &server_version, &sv);
+    need_to_free_st_server_ssl_variables = true;
+  } else {
+    sv = *ssl_variables;
+  }
+
   gcs_module_parameters.add_parameter("group_name",
                                       std::string(group_name_var));
   if (local_address_var != NULL)
@@ -1533,6 +1971,8 @@ int configure_group_communication(st_server_ssl_variables *ssl_variables) {
   member_expel_timeout_stream_buffer << member_expel_timeout_var;
   gcs_module_parameters.add_parameter("member_expel_timeout",
                                       member_expel_timeout_stream_buffer.str());
+  gcs_module_parameters.add_parameter("xcom_cache_size",
+                                      std::to_string(message_cache_size_var));
 
   // Compression parameter
   if (compression_threshold_var > 0) {
@@ -1545,27 +1985,31 @@ int configure_group_communication(st_server_ssl_variables *ssl_variables) {
         "compression", std::string("off")); /* purecov: inspected */
   }
 
+  // Fragmentation parameter
+  if (communication_max_message_size_var > 0) {
+    std::stringstream ss;
+    ss << communication_max_message_size_var;
+    gcs_module_parameters.add_parameter("fragmentation", std::string("on"));
+    gcs_module_parameters.add_parameter("fragmentation_threshold", ss.str());
+  } else {
+    gcs_module_parameters.add_parameter("fragmentation", std::string("off"));
+  }
+
   // SSL parameters.
   std::string ssl_mode(ssl_mode_values[ssl_mode_var]);
   if (ssl_mode_var > 0) {
-    std::string ssl_key(ssl_variables->ssl_key ? ssl_variables->ssl_key : "");
-    std::string ssl_cert(ssl_variables->ssl_cert ? ssl_variables->ssl_cert
-                                                 : "");
-    std::string ssl_ca(ssl_variables->ssl_ca ? ssl_variables->ssl_ca : "");
-    std::string ssl_capath(ssl_variables->ssl_capath ? ssl_variables->ssl_capath
-                                                     : "");
-    std::string ssl_cipher(ssl_variables->ssl_cipher ? ssl_variables->ssl_cipher
-                                                     : "");
-    std::string ssl_crl(ssl_variables->ssl_crl ? ssl_variables->ssl_crl : "");
-    std::string ssl_crlpath(
-        ssl_variables->ssl_crlpath ? ssl_variables->ssl_crlpath : "");
-    std::string tls_version(
-        ssl_variables->tls_version ? ssl_variables->tls_version : "");
-    std::string ssl_fips_mode(
-        ssl_fips_mode_values[ssl_variables->ssl_fips_mode]);
+    std::string ssl_key(sv.ssl_key ? sv.ssl_key : "");
+    std::string ssl_cert(sv.ssl_cert ? sv.ssl_cert : "");
+    std::string ssl_ca(sv.ssl_ca ? sv.ssl_ca : "");
+    std::string ssl_capath(sv.ssl_capath ? sv.ssl_capath : "");
+    std::string ssl_cipher(sv.ssl_cipher ? sv.ssl_cipher : "");
+    std::string ssl_crl(sv.ssl_crl ? sv.ssl_crl : "");
+    std::string ssl_crlpath(sv.ssl_crlpath ? sv.ssl_crlpath : "");
+    std::string tls_version(sv.tls_version ? sv.tls_version : "");
+    std::string ssl_fips_mode(ssl_fips_mode_values[sv.ssl_fips_mode]);
 
     // SSL support on server.
-    if (ssl_variables->have_ssl_opt) {
+    if (sv.have_ssl_opt) {
       gcs_module_parameters.add_parameter("ssl_mode", ssl_mode);
       gcs_module_parameters.add_parameter("server_key_file", ssl_key);
       gcs_module_parameters.add_parameter("server_cert_file", ssl_cert);
@@ -1603,7 +2047,8 @@ int configure_group_communication(st_server_ssl_variables *ssl_variables) {
       LogPluginErr(ERROR_LEVEL,
                    ER_GRP_RPL_ABORTS_AS_SSL_NOT_SUPPORTED_BY_MYSQLD,
                    ssl_mode.c_str());
-      DBUG_RETURN(GROUP_REPLICATION_COMMUNICATION_LAYER_SESSION_ERROR);
+      result = GROUP_REPLICATION_COMMUNICATION_LAYER_SESSION_ERROR;
+      goto end;
       /* purecov: end */
     }
   }
@@ -1641,6 +2086,32 @@ int configure_group_communication(st_server_ssl_variables *ssl_variables) {
   gcs_module_parameters.add_parameter("communication_debug_path",
                                       mysql_real_data_home);
 
+end:
+  if (need_to_free_st_server_ssl_variables) {
+    my_free(sv.ssl_ca);
+    my_free(sv.ssl_capath);
+    my_free(sv.tls_version);
+    my_free(sv.ssl_cert);
+    my_free(sv.ssl_cipher);
+    my_free(sv.ssl_key);
+    my_free(sv.ssl_crl);
+    my_free(sv.ssl_crlpath);
+  }
+
+  DBUG_RETURN(result);
+}
+
+int configure_group_communication(st_server_ssl_variables *ssl_variables,
+                                  unsigned int server_version) {
+  DBUG_ENTER("configure_group_communication");
+
+  // GCS interface parameters.
+  Gcs_interface_parameters gcs_module_parameters;
+  int err = 0;
+  if ((err = build_gcs_parameters(gcs_module_parameters, ssl_variables,
+                                  server_version)))
+    goto end;
+
   // Configure GCS.
   if (gcs_module->configure(gcs_module_parameters)) {
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_UNABLE_TO_INIT_COMMUNICATION_ENGINE);
@@ -1650,17 +2121,15 @@ int configure_group_communication(st_server_ssl_variables *ssl_variables) {
                group_name_var, local_address_var, group_seeds_var,
                bootstrap_group_var ? "true" : "false", poll_spin_loops_var,
                compression_threshold_var, ip_whitelist_var,
-               communication_debug_options_var, member_expel_timeout_var);
+               communication_debug_options_var, member_expel_timeout_var,
+               communication_max_message_size_var, message_cache_size_var);
 
-  DBUG_RETURN(0);
+end:
+  DBUG_RETURN(err);
 }
 
 int start_group_communication() {
   DBUG_ENTER("start_group_communication");
-
-  events_handler = new Plugin_gcs_events_handler(
-      applier_module, recovery_module, compatibility_mgr,
-      components_stop_timeout_var);
 
   view_change_notifier->start_view_modification();
 
@@ -1872,6 +2341,8 @@ static int check_if_server_properly_configured() {
     gr_lower_case_table_names = SKIP_ENCODING_LOWER_CASE_TABLE_NAMES;
   });
 #endif
+
+  gr_default_table_encryption = startup_pre_reqs.default_table_encryption;
 
   DBUG_RETURN(0);
 }
@@ -2527,6 +2998,45 @@ static int check_compression_threshold(MYSQL_THD, SYS_VAR *, void *save,
   DBUG_RETURN(0);
 }
 
+static int check_communication_max_message_size(MYSQL_THD, SYS_VAR *,
+                                                void *save,
+                                                struct st_mysql_value *value) {
+  DBUG_ENTER("check_communication_max_message_size");
+
+  if (plugin_running_mutex_trylock()) DBUG_RETURN(1);
+
+  longlong in_val;
+  value->val_int(value, &in_val);
+
+  if (plugin_is_group_replication_running()) {
+    mysql_mutex_unlock(&plugin_running_mutex);
+    my_message(
+        ER_GROUP_REPLICATION_RUNNING,
+        "The communication_max_message_size option cannot be set while Group "
+        "Replication is running",
+        MYF(0));
+    DBUG_RETURN(1);
+  }
+
+  if (in_val > static_cast<longlong>(MAX_COMMUNICATION_MAX_MESSAGE_SIZE) ||
+      in_val < MIN_COMMUNICATION_MAX_MESSAGE_SIZE) {
+    mysql_mutex_unlock(&plugin_running_mutex);
+    std::stringstream ss;
+    ss << "The value " << in_val
+       << " is not within the range of accepted values for the "
+          "communication_max_message_size option. Use 0 to disable message "
+          "fragmentation, or specify a value up to "
+       << MAX_COMMUNICATION_MAX_MESSAGE_SIZE << ".";
+    my_message(ER_WRONG_VALUE_FOR_VAR, ss.str().c_str(), MYF(0));
+    DBUG_RETURN(1);
+  }
+
+  *(longlong *)save = in_val;
+
+  mysql_mutex_unlock(&plugin_running_mutex);
+  DBUG_RETURN(0);
+}
+
 static int check_force_members(MYSQL_THD thd, SYS_VAR *, void *save,
                                struct st_mysql_value *value) {
   DBUG_ENTER("check_force_members");
@@ -2682,10 +3192,13 @@ static int check_single_primary_mode(MYSQL_THD, SYS_VAR *, void *save,
 
   if (plugin_is_group_replication_running()) {
     mysql_mutex_unlock(&plugin_running_mutex);
-    my_message(ER_GROUP_REPLICATION_RUNNING,
-               "Cannot change into or from single primary mode while "
-               "Group Replication is running.",
-               MYF(0));
+    my_message(
+        ER_GROUP_REPLICATION_RUNNING,
+        "Cannot modify group replication mode by changing system variable. "
+        "Please use the "
+        "group_replication_switch_to_single_primary_mode([member_uuid]) OR "
+        "group_replication_switch_to_multi_primary_mode() UDF.",
+        MYF(0));
     DBUG_RETURN(1);
   }
 
@@ -2875,6 +3388,111 @@ static void update_member_expel_timeout(MYSQL_THD, SYS_VAR *, void *var_ptr,
   DBUG_VOID_RETURN;
 }
 
+static int check_autorejoin_tries(MYSQL_THD, SYS_VAR *, void *save,
+                                  struct st_mysql_value *value) {
+  DBUG_ENTER("check_autorejoin_tries");
+
+  if (plugin_running_mutex_trylock()) DBUG_RETURN(1);
+
+  longlong in_val = 0;
+  value->val_int(value, &in_val);
+
+  if (autorejoin_module->is_autorejoin_ongoing()) {
+    mysql_mutex_unlock(&plugin_running_mutex);
+    my_message(ER_GRP_RPL_STARTED_AUTO_REJOIN,
+               "Cannot update the number of auto-rejoin retry attempts when "
+               "an auto-rejoin process is already running.",
+               MYF(0));
+    DBUG_RETURN(1);
+  }
+
+  if (in_val < 0 || in_val > MAX_AUTOREJOIN_TRIES) {
+    mysql_mutex_unlock(&plugin_running_mutex);
+    DBUG_RETURN(1);
+  }
+
+  *(uint *)save = in_val;
+
+  mysql_mutex_unlock(&plugin_running_mutex);
+  DBUG_RETURN(0);
+}
+
+static void update_autorejoin_tries(MYSQL_THD, SYS_VAR *, void *var_ptr,
+                                    const void *save) {
+  DBUG_ENTER("update_autorejoin_tries");
+
+  if (plugin_running_mutex_trylock()) DBUG_VOID_RETURN;
+
+  uint in_val = *static_cast<const uint *>(save);
+  (*(uint *)var_ptr) = (*(uint *)save);
+
+  if (autorejoin_module->is_autorejoin_ongoing()) {
+    my_message(ER_GRP_RPL_STARTED_AUTO_REJOIN,
+               "Cannot update the number of auto-rejoin retry attempts when "
+               "an auto-rejoin process is already running.",
+               MYF(0));
+  } else {
+    autorejoin_tries_var = in_val;
+  }
+
+  mysql_mutex_unlock(&plugin_running_mutex);
+  DBUG_VOID_RETURN;
+}
+
+static int check_message_cache_size(MYSQL_THD, SYS_VAR *var, void *save,
+                                    struct st_mysql_value *value) {
+  DBUG_ENTER("check_message_cache_size");
+
+  if (plugin_running_mutex_trylock()) DBUG_RETURN(1);
+
+  longlong orig;
+  ulonglong in_val;
+  bool is_negative = false;
+
+  value->val_int(value, &orig);
+  in_val = orig;
+
+  /* Check if value is negative */
+  if (!value->is_unsigned(value) && orig < 0) {
+    is_negative = true;
+  }
+
+  if (is_negative || in_val > MAX_MESSAGE_CACHE_SIZE ||
+      in_val < MIN_MESSAGE_CACHE_SIZE) {
+    std::stringstream ss;
+    ss << "The value "
+       << (is_negative ? std::to_string(orig) : std::to_string(in_val))
+       << " is not within the range of accepted values for the option "
+       << var->name << ". The value must be between " << MIN_MESSAGE_CACHE_SIZE
+       << " and " << MAX_MESSAGE_CACHE_SIZE << " inclusive.";
+    my_message(ER_WRONG_VALUE_FOR_VAR, ss.str().c_str(), MYF(0));
+    mysql_mutex_unlock(&plugin_running_mutex);
+    DBUG_RETURN(1);
+  }
+
+  *(ulong *)save = (ulong)in_val;
+
+  mysql_mutex_unlock(&plugin_running_mutex);
+  DBUG_RETURN(0);
+}
+
+static void update_message_cache_size(MYSQL_THD, SYS_VAR *, void *var_ptr,
+                                      const void *save) {
+  DBUG_ENTER("update_message_cache_size");
+
+  if (plugin_running_mutex_trylock()) DBUG_VOID_RETURN;
+
+  (*(ulong *)var_ptr) = (*(ulong *)save);
+  ulonglong in_val = *static_cast<const ulonglong *>(save);
+
+  if (gcs_module != NULL) {
+    gcs_module->set_xcom_cache_size(in_val);
+  }
+
+  mysql_mutex_unlock(&plugin_running_mutex);
+  DBUG_VOID_RETURN;
+}
+
 // Base plugin variables
 
 static MYSQL_SYSVAR_STR(group_name,     /* name */
@@ -2969,6 +3587,20 @@ static MYSQL_SYSVAR_ULONG(
     MIN_MEMBER_EXPEL_TIMEOUT,     /* min */
     MAX_MEMBER_EXPEL_TIMEOUT,     /* max */
     0                             /* block */
+);
+
+static MYSQL_SYSVAR_ULONG(
+    message_cache_size,                                    /* name */
+    message_cache_size_var,                                /* var */
+    PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
+    "The maximum size (in bytes) of Group Replication's internal message "
+    "cache (the XCom cache).",
+    check_message_cache_size,   /* check func. */
+    update_message_cache_size,  /* update func. */
+    DEFAULT_MESSAGE_CACHE_SIZE, /* default */
+    MIN_MESSAGE_CACHE_SIZE,     /* min */
+    MAX_MESSAGE_CACHE_SIZE,     /* max */
+    0                           /* block */
 );
 
 // Recovery module variables
@@ -3216,6 +3848,19 @@ static MYSQL_SYSVAR_ULONG(
     0                              /* block */
 );
 
+static MYSQL_SYSVAR_ULONG(
+    communication_max_message_size,                        /* name */
+    communication_max_message_size_var,                    /* var */
+    PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
+    "The maximum message size in bytes after which a message is fragmented.",
+    check_communication_max_message_size,   /* check func. */
+    nullptr,                                /* update func. */
+    DEFAULT_COMMUNICATION_MAX_MESSAGE_SIZE, /* default */
+    MIN_COMMUNICATION_MAX_MESSAGE_SIZE,     /* min */
+    MAX_COMMUNICATION_MAX_MESSAGE_SIZE,     /* max */
+    0                                       /* block */
+);
+
 static MYSQL_SYSVAR_ULONGLONG(
     gtid_assignment_block_size,     /* name */
     gtid_assignment_block_size_var, /* var */
@@ -3373,8 +4018,21 @@ static MYSQL_SYSVAR_ENUM(exit_state_action,     /* name */
                          "ABORT_SERVER.",                /* values */
                          NULL,                           /* check func. */
                          NULL,                           /* update func. */
-                         EXIT_STATE_ACTION_ABORT_SERVER, /* default */
+                         EXIT_STATE_ACTION_READ_ONLY,    /* default */
                          &exit_state_actions_typelib_t); /* type lib */
+
+static MYSQL_SYSVAR_UINT(autorejoin_tries,     /* name */
+                         autorejoin_tries_var, /* var */
+                         PLUGIN_VAR_OPCMDARG |
+                             PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
+                         "The number of retries to attempt in the auto-rejoin "
+                         "procedure.",
+                         check_autorejoin_tries,  /* check func */
+                         update_autorejoin_tries, /* update func */
+                         0U,                      /* default */
+                         0U,                      /* min */
+                         MAX_AUTOREJOIN_TRIES,    /* max */
+                         0);                      /* block */
 
 static MYSQL_SYSVAR_ULONG(
     unreachable_majority_timeout,                          /* name */
@@ -3531,6 +4189,7 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(allow_local_lower_version_join),
     MYSQL_SYSVAR(auto_increment_increment),
     MYSQL_SYSVAR(compression_threshold),
+    MYSQL_SYSVAR(communication_max_message_size),
     MYSQL_SYSVAR(gtid_assignment_block_size),
     MYSQL_SYSVAR(ssl_mode),
     MYSQL_SYSVAR(ip_whitelist),
@@ -3542,6 +4201,7 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(transaction_size_limit),
     MYSQL_SYSVAR(communication_debug_options),
     MYSQL_SYSVAR(exit_state_action),
+    MYSQL_SYSVAR(autorejoin_tries),
     MYSQL_SYSVAR(unreachable_majority_timeout),
     MYSQL_SYSVAR(member_weight),
     MYSQL_SYSVAR(flow_control_min_quota),
@@ -3552,6 +4212,7 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(flow_control_hold_percent),
     MYSQL_SYSVAR(flow_control_release_percent),
     MYSQL_SYSVAR(member_expel_timeout),
+    MYSQL_SYSVAR(message_cache_size),
     NULL,
 };
 

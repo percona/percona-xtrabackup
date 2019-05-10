@@ -684,7 +684,7 @@ Warnings:
 Note	1007	Can't create database 'mysqltest'; database exists
 show create database mysqltest;
 Database	Create Database
-mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
+mysqltest	CREATE DATABASE `mysqltest` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */
 drop database mysqltest;
 use test;
 create table t1 (a int);
@@ -955,7 +955,7 @@ syntax is supported for all engines.
 drop table if exists t1,t2;
 create table t1(a int not null, b int not null, primary key (a, b));
 create table t2(a int not null, b int not null, c int not null, primary key (a),
-foreign key fk_bug26104 (b,c) references t1(a));
+constraint fk_bug26104 foreign key (b,c) references t1(a));
 ERROR 42000: Incorrect foreign key definition for 'fk_bug26104': Key reference and table reference don't match
 drop table t1;
 create table t1(f1 int,f2 int);
@@ -965,7 +965,7 @@ create table t2 select sql_big_result f1,count(f2) from t1 group by f1;
 show status like 'handler_read%';
 Variable_name	Value
 Handler_read_first	1
-Handler_read_key	22
+Handler_read_key	23
 Handler_read_last	0
 Handler_read_next	0
 Handler_read_prev	0
@@ -2287,3 +2287,18 @@ t2	CREATE TEMPORARY TABLE `t2` (
 DROP TABLE t1;
 DROP TEMPORARY TABLE t2;
 SET SQL_MODE= @saved_mode;
+#
+# Bug #29283055: CREATE TABLE IF NOT EXISTS .. SHOULD NOT ALWAYS
+# FAIL ON SQL_REQUIRE_PRIMARY_KEY
+#
+# Create table without PK
+CREATE TABLE t1(i INT);
+SET SESSION sql_require_primary_key=1;
+# This must not fail when t1 already exists, even if it does not have
+# a pk
+CREATE TABLE IF NOT EXISTS t1(i INT);
+Warnings:
+Note	1050	Table 't1' already exists
+# Cleanup
+SET SESSION sql_require_primary_key=DEFAULT;
+DROP TABLE t1;

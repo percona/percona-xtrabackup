@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -46,7 +46,6 @@
 #include "sql/auth/auth_common.h"  // *_ACL
 #include "sql/create_field.h"
 #include "sql/derror.h"  // ER_THD
-#include "sql/error_handler.h"
 #include "sql/field.h"
 #include "sql/handler.h"
 #include "sql/item.h"
@@ -77,7 +76,7 @@ partition_info *partition_info::get_clone(THD *thd, bool reset /* = false */) {
   DBUG_ENTER("partition_info::get_clone");
   List_iterator<partition_element> part_it(partitions);
   partition_element *part;
-  partition_info *clone = new (*THR_MALLOC) partition_info(*this);
+  partition_info *clone = new (thd->mem_root) partition_info(*this);
   if (!clone) {
     mem_alloc_error(sizeof(partition_info));
     DBUG_RETURN(NULL);
@@ -91,7 +90,8 @@ partition_info *partition_info::get_clone(THD *thd, bool reset /* = false */) {
   while ((part = (part_it++))) {
     List_iterator<partition_element> subpart_it(part->subpartitions);
     partition_element *subpart;
-    partition_element *part_clone = new (*THR_MALLOC) partition_element(*part);
+    partition_element *part_clone =
+        new (thd->mem_root) partition_element(*part);
     if (!part_clone) {
       mem_alloc_error(sizeof(partition_element));
       DBUG_RETURN(NULL);
@@ -122,7 +122,7 @@ partition_info *partition_info::get_clone(THD *thd, bool reset /* = false */) {
     part_clone->subpartitions.empty();
     while ((subpart = (subpart_it++))) {
       partition_element *subpart_clone =
-          new (*THR_MALLOC) partition_element(*subpart);
+          new (thd->mem_root) partition_element(*subpart);
       if (!subpart_clone) {
         mem_alloc_error(sizeof(partition_element));
         DBUG_RETURN(NULL);
@@ -461,6 +461,8 @@ bool partition_info::can_prune_insert(THD *thd, enum_duplicates duplic,
   @returns Operational status
     @retval false  Success
     @retval true   Failure
+  A return value of 'true' may indicate conversion error,
+  so caller must check thd->is_error().
 */
 
 bool partition_info::set_used_partition(List<Item> &fields, List<Item> &values,
@@ -470,28 +472,26 @@ bool partition_info::set_used_partition(List<Item> &fields, List<Item> &values,
   THD *thd = table->in_use;
   uint32 part_id;
   longlong func_value;
-  Dummy_error_handler error_handler;
-  bool ret = true;
-  DBUG_ENTER("set_partition");
+
   DBUG_ASSERT(thd);
 
   /* Only allow checking of constant values */
   List_iterator_fast<Item> v(values);
   Item *item;
-  thd->push_internal_handler(&error_handler);
+
   while ((item = v++)) {
-    if (!item->const_item()) goto err;
+    if (!item->const_item()) return true;
   }
 
   if (copy_default_values) restore_record(table, s->default_values);
 
   if (fields.elements || !values.elements) {
     if (fill_record(thd, table, fields, values, &full_part_field_set, NULL))
-      goto err;
+      return true;
   } else {
     if (fill_record(thd, table, table->field, values, &full_part_field_set,
                     NULL))
-      goto err;
+      return true;
   }
   DBUG_ASSERT(!table->auto_increment_field_not_null);
 
@@ -513,16 +513,12 @@ bool partition_info::set_used_partition(List<Item> &fields, List<Item> &values,
     my_bitmap_map *old_map = dbug_tmp_use_all_columns(table, table->read_set);
     const int rc = get_partition_id(this, &part_id, &func_value);
     dbug_tmp_restore_column_map(table->read_set, old_map);
-    if (rc) goto err;
+    if (rc) return true;
   }
 
   DBUG_PRINT("info", ("Insert into partition %u", part_id));
   bitmap_set_bit(used_partitions, part_id);
-  ret = false;
-
-err:
-  thd->pop_internal_handler();
-  DBUG_RETURN(ret);
+  return false;
 }
 
   /*
@@ -580,10 +576,10 @@ void partition_info::set_show_version_string(String *packet) {
     packet->append(STRING_WITH_LEN("\n/*!50500"));
   else {
     if (part_expr)
-      part_expr->walk(&Item::intro_version, Item::WALK_POSTFIX,
+      part_expr->walk(&Item::intro_version, enum_walk::POSTFIX,
                       (uchar *)&version);
     if (subpart_expr)
-      subpart_expr->walk(&Item::intro_version, Item::WALK_POSTFIX,
+      subpart_expr->walk(&Item::intro_version, enum_walk::POSTFIX,
                          (uchar *)&version);
     if (version == 0) {
       /* No new functions in partition function */
@@ -1438,14 +1434,14 @@ bool partition_info::check_partition_info(THD *thd, handlerton **eng_type,
     if (!list_of_part_fields) {
       DBUG_ASSERT(part_expr);
       err = part_expr->walk(&Item::check_partition_func_processor,
-                            Item::WALK_POSTFIX, NULL);
+                            enum_walk::POSTFIX, NULL);
     }
 
     /* Check for sub partition expression. */
     if (!err && is_sub_partitioned() && !list_of_subpart_fields) {
       DBUG_ASSERT(subpart_expr);
       err = subpart_expr->walk(&Item::check_partition_func_processor,
-                               Item::WALK_POSTFIX, NULL);
+                               enum_walk::POSTFIX, NULL);
     }
 
     if (err) {
@@ -2099,7 +2095,7 @@ bool Parser_partition_info::add_column_list_value(THD *thd, Item *item) {
   else
     thd->where = "partition function";
 
-  if (item->walk(&Item::check_partition_func_processor, Item::WALK_POSTFIX,
+  if (item->walk(&Item::check_partition_func_processor, enum_walk::POSTFIX,
                  NULL)) {
     my_error(ER_PARTITION_FUNCTION_IS_NOT_ALLOWED, MYF(0));
     DBUG_RETURN(true);

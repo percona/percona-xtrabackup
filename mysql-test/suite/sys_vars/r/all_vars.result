@@ -39,6 +39,8 @@ keyring_operations
 keyring_operations
 mandatory_roles
 mandatory_roles
+partial_revokes
+partial_revokes
 password_require_current
 password_require_current
 regexp_stack_limit
@@ -48,6 +50,10 @@ regexp_time_limit
 resultset_metadata
 sql_require_primary_key
 sql_require_primary_key
+temptable_use_mmap
+temptable_use_mmap
+tls_ciphersuites
+tls_ciphersuites
 tls_version
 tls_version
 use_secondary_engine

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -142,8 +142,7 @@ extern bool flag_events_statements_history;
 extern bool flag_events_statements_history_long;
 
 extern bool events_statements_history_long_full;
-extern PFS_ALIGNED PFS_cacheline_atomic_uint32
-    events_statements_history_long_index;
+extern PFS_cacheline_atomic_uint32 events_statements_history_long_index;
 extern PFS_events_statements *events_statements_history_long_array;
 extern size_t events_statements_history_long_size;
 

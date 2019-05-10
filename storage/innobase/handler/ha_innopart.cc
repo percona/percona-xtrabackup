@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -492,7 +492,7 @@ bool Ha_innopart_share::set_table_parts_and_indexes(
 
   return (false);
 err:
-  close_table_parts(false);
+  close_table_parts();
 
   return (true);
 }
@@ -503,19 +503,15 @@ err:
 void Ha_innopart_share::close_table_parts(dict_table_t **table_parts,
                                           uint tot_parts) {
   for (uint i = 0; i < tot_parts; i++) {
-    if (table_parts[i] != NULL) {
+    if (table_parts[i] != nullptr) {
       dd_table_close(table_parts[i], NULL, NULL, false);
     }
   }
 }
 
 /** Close the table partitions.
-If all instances are closed, also release the resources.
-@param[in]	only_free	true if the tables have already been
-                                closed, which happens during inplace
-                                DDL, and we just need to release the
-                                resources */
-void Ha_innopart_share::close_table_parts(bool only_free) {
+If all instances are closed, also release the resources. */
+void Ha_innopart_share::close_table_parts(void) {
 #ifdef UNIV_DEBUG
   if (m_table_share->tmp_table == NO_TMP_TABLE) {
     mysql_mutex_assert_owner(&m_table_share->LOCK_ha_data);
@@ -539,9 +535,7 @@ void Ha_innopart_share::close_table_parts(bool only_free) {
   free the memory. */
 
   if (m_table_parts != NULL) {
-    if (!only_free) {
-      close_table_parts(m_table_parts, m_tot_parts);
-    }
+    close_table_parts(m_table_parts, m_tot_parts);
     ut_free(m_table_parts);
     m_table_parts = NULL;
   }
@@ -1300,8 +1294,7 @@ int ha_innopart::close() {
   ut_ad(m_part_share != NULL);
   if (m_part_share != NULL) {
     lock_shared_ha_data();
-    m_part_share->close_table_parts(m_prebuilt != nullptr &&
-                                    m_prebuilt->table == nullptr);
+    m_part_share->close_table_parts();
     unlock_shared_ha_data();
     m_part_share = NULL;
   }
@@ -2010,13 +2003,12 @@ This routine starts an index scan using a start and end key.
 if NULL use table->record[0] as return buffer.
 @param[in]	start_key	Start key to match.
 @param[in]	end_key		End key to match.
-@param[in]	eq_range	Is equal range, start_key == end_key.
 @param[in]	sorted		Return rows in sorted order.
 @return	error number or 0. */
 int ha_innopart::read_range_first_in_part(uint part, uchar *record,
                                           const key_range *start_key,
                                           const key_range *end_key,
-                                          bool eq_range, bool sorted) {
+                                          bool sorted) {
   int error;
   uchar *read_record = record;
   set_partition(part);
@@ -3668,7 +3660,7 @@ int ha_innopart::info_low(uint flag, bool is_analyze) {
     ut_a(m_prebuilt->trx);
     ut_a(m_prebuilt->trx->magic_n == TRX_MAGIC_N);
 
-    err_index = trx_get_error_info(m_prebuilt->trx);
+    err_index = trx_get_error_index(m_prebuilt->trx);
 
     if (err_index != NULL) {
       errkey = m_part_share->get_mysql_key(m_last_part, err_index);

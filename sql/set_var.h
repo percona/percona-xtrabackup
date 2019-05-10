@@ -1,6 +1,6 @@
 #ifndef SET_VAR_INCLUDED
 #define SET_VAR_INCLUDED
-/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,7 @@
 #include "my_getopt.h"  // get_opt_arg_type
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "my_systime.h"  // my_micro_time()
 #include "mysql/components/services/system_variable_source_type.h"
 #include "mysql/status_var.h"
 #include "mysql/udf_registration_types.h"
@@ -82,7 +83,7 @@ struct sys_var_chain {
 int mysql_add_sys_var_chain(sys_var *chain);
 int mysql_del_sys_var_chain(sys_var *chain);
 
-enum enum_var_type {
+enum enum_var_type : int {
   OPT_DEFAULT = 0,
   OPT_SESSION,
   OPT_GLOBAL,
@@ -351,7 +352,7 @@ class set_var_base {
   virtual int resolve(THD *thd) = 0;  ///< Check privileges & fix_fields
   virtual int check(THD *thd) = 0;    ///< Evaluate the expression
   virtual int update(THD *thd) = 0;   ///< Set the value
-  virtual void print(THD *thd, String *str) = 0;  ///< To self-print
+  virtual void print(const THD *thd, String *str) = 0;  ///< To self-print
 
   /**
     @returns whether this variable is @@@@optimizer_trace.
@@ -396,10 +397,11 @@ class set_var : public set_var_base {
   /**
     Print variable in short form.
 
+    @param thd Thread handle.
     @param str String buffer to append the partial assignment to.
   */
-  void print_short(String *str);
-  void print(THD *, String *str); /* To self-print */
+  void print_short(const THD *thd, String *str);
+  void print(const THD *, String *str); /* To self-print */
   bool is_global_persist() {
     return (type == OPT_GLOBAL || type == OPT_PERSIST ||
             type == OPT_PERSIST_ONLY);
@@ -420,7 +422,7 @@ class set_var_user : public set_var_base {
   int check(THD *thd);
   int update(THD *thd);
   int light_check(THD *thd);
-  void print(THD *thd, String *str); /* To self-print */
+  void print(const THD *thd, String *str); /* To self-print */
 };
 
 /* For SET PASSWORD */
@@ -438,7 +440,7 @@ class set_var_password : public set_var_base {
   int resolve(THD *) { return 0; }
   int check(THD *thd);
   int update(THD *thd);
-  void print(THD *thd, String *str); /* To self-print */
+  void print(const THD *thd, String *str); /* To self-print */
 };
 
 /* For SET NAMES and SET CHARACTER SET */
@@ -466,13 +468,13 @@ class set_var_collation_client : public set_var_base {
   int resolve(THD *) { return 0; }
   int check(THD *thd);
   int update(THD *thd);
-  void print(THD *thd, String *str); /* To self-print */
+  void print(const THD *thd, String *str); /* To self-print */
 };
 
 /* optional things, have_* variables */
 extern SHOW_COMP_OPTION have_profiling;
 
-extern SHOW_COMP_OPTION have_ssl, have_symlink, have_dlopen;
+extern SHOW_COMP_OPTION have_symlink, have_dlopen;
 extern SHOW_COMP_OPTION have_query_cache;
 extern SHOW_COMP_OPTION have_geometry, have_rtree_keys;
 extern SHOW_COMP_OPTION have_compress;

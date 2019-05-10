@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,7 @@
 #include <cctype>  // std::isspace
 #include <limits>
 
-#include "binary_log_types.h"
+#include "binlog_event.h"  // UNDEFINED_SERVER_VERSION
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "my_base.h"
@@ -63,7 +63,8 @@
 #include "sql/sp_head.h"    // sp_head
 #include "sql/sql_admin.h"  // Sql_cmd_shutdown etc.
 #include "sql/sql_alter.h"
-#include "sql/sql_class.h"  // THD
+#include "sql/sql_check_constraint.h"  // Sql_check_constraint_spec
+#include "sql/sql_class.h"             // THD
 #include "sql/sql_cmd_srs.h"
 #include "sql/sql_exchange.h"
 #include "sql/sql_lex.h"  // LEX
@@ -196,11 +197,12 @@ bool contextualize_safe(Context *pc, Node *node) {
   For internal use in the contextualization code.
 */
 struct Table_ddl_parse_context final : public Parse_context {
-  Table_ddl_parse_context(THD *thd, SELECT_LEX *select, Alter_info *alter_info)
-      : Parse_context(thd, select),
-        create_info(thd->lex->create_info),
+  Table_ddl_parse_context(THD *thd_arg, SELECT_LEX *select_arg,
+                          Alter_info *alter_info)
+      : Parse_context(thd_arg, select_arg),
+        create_info(thd_arg->lex->create_info),
         alter_info(alter_info),
-        key_create_info(&thd->lex->key_create_info) {}
+        key_create_info(&thd_arg->lex->key_create_info) {}
 
   HA_CREATE_INFO *const create_info;
   Alter_info *const alter_info;
@@ -305,7 +307,7 @@ class PT_common_table_expr : public Parse_tree_node {
   bool is(const Common_table_expr *other) const {
     return other == &m_postparse;
   }
-  void print(THD *thd, String *str, enum_query_type query_type);
+  void print(const THD *thd, String *str, enum_query_type query_type);
 
  private:
   LEX_STRING m_name;
@@ -395,7 +397,7 @@ class PT_with_clause : public Parse_tree_node {
   void leave_parsing_definition(const TABLE_LIST *old) {
     m_most_inner_in_parsing = old;
   }
-  void print(THD *thd, String *str, enum_query_type query_type);
+  void print(const THD *thd, String *str, enum_query_type query_type);
 
  private:
   /// All CTEs of this clause
@@ -858,7 +860,7 @@ class PT_table_locking_clause : public PT_locking_clause {
 
  private:
   /// @todo Move this function to Table_ident?
-  void print_table_ident(THD *thd, const Table_ident *ident, String *s) {
+  void print_table_ident(const THD *thd, const Table_ident *ident, String *s) {
     LEX_CSTRING db = ident->db;
     LEX_CSTRING table = ident->table;
     if (db.length > 0) {
@@ -1051,7 +1053,7 @@ class PT_option_value_no_option_type_user_var
     Item_func_set_user_var *item;
     item = new (pc->mem_root) Item_func_set_user_var(name, expr, false);
     if (item == NULL) return true;
-    set_var_user *var = new (*THR_MALLOC) set_var_user(item);
+    set_var_user *var = new (thd->mem_root) set_var_user(item);
     if (var == NULL) return true;
     thd->lex->var_list.push_back(var);
     return false;
@@ -1293,7 +1295,7 @@ class PT_transaction_characteristic : public Parse_tree_node {
     LEX *lex = thd->lex;
     Item *item = new (pc->mem_root) Item_int(value);
     if (item == NULL) return true;
-    set_var *var = new (*THR_MALLOC)
+    set_var *var = new (thd->mem_root)
         set_var(lex->option_type, find_sys_var(thd, name), &null_lex_str, item);
     if (var == NULL) return true;
     lex->var_list.push_back(var);
@@ -1508,7 +1510,8 @@ class PT_into_destination_outfile final : public PT_into_destination {
 
     LEX *lex = pc->thd->lex;
     lex->set_uncacheable(pc->select, UNCACHEABLE_SIDEEFFECT);
-    if (!(lex->result = new (*THR_MALLOC) Query_result_export(&m_exchange)))
+    if (!(lex->result =
+              new (pc->thd->mem_root) Query_result_export(&m_exchange)))
       return true;
 
     return false;
@@ -1531,7 +1534,8 @@ class PT_into_destination_dumpfile final : public PT_into_destination {
     LEX *lex = pc->thd->lex;
     if (!lex->is_explain()) {
       lex->set_uncacheable(pc->select, UNCACHEABLE_SIDEEFFECT);
-      if (!(lex->result = new (*THR_MALLOC) Query_result_dump(&m_exchange)))
+      if (!(lex->result =
+                new (pc->thd->mem_root) Query_result_dump(&m_exchange)))
         return true;
     }
     return false;
@@ -2111,6 +2115,7 @@ class PT_delete final : public Parse_tree_root {
   PT_hint_list *opt_hints;
   const int opt_delete_options;
   Table_ident *table_ident;
+  const char *const opt_table_alias;
   Mem_root_array_YY<Table_ident *> table_list;
   List<String> *opt_use_partition;
   Mem_root_array_YY<PT_table_reference *> join_table_list;
@@ -2123,12 +2128,14 @@ class PT_delete final : public Parse_tree_root {
   // single-table DELETE node constructor:
   PT_delete(PT_with_clause *with_clause_arg, PT_hint_list *opt_hints_arg,
             int opt_delete_options_arg, Table_ident *table_ident_arg,
+            const LEX_CSTRING &opt_table_alias_arg,
             List<String> *opt_use_partition_arg, Item *opt_where_clause_arg,
             PT_order *opt_order_clause_arg, Item *opt_delete_limit_clause_arg)
       : m_with_clause(with_clause_arg),
         opt_hints(opt_hints_arg),
         opt_delete_options(opt_delete_options_arg),
         table_ident(table_ident_arg),
+        opt_table_alias(opt_table_alias_arg.str),
         opt_use_partition(opt_use_partition_arg),
         opt_where_clause(opt_where_clause_arg),
         opt_order_clause(opt_order_clause_arg),
@@ -2147,6 +2154,7 @@ class PT_delete final : public Parse_tree_root {
         opt_hints(opt_hints_arg),
         opt_delete_options(opt_delete_options_arg),
         table_ident(NULL),
+        opt_table_alias(nullptr),
         table_list(table_list_arg),
         opt_use_partition(NULL),
         join_table_list(join_table_list_arg),
@@ -3251,16 +3259,28 @@ class PT_create_table_default_collation : public PT_create_table_option {
   bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
-class PT_check_constraint : public PT_table_constraint_def {
+class PT_check_constraint final : public PT_table_constraint_def {
   typedef PT_table_constraint_def super;
-
-  Item *expr;
+  Sql_check_constraint_spec cc_spec;
 
  public:
-  explicit PT_check_constraint(Item *expr) : expr(expr) {}
+  explicit PT_check_constraint(LEX_STRING &name, Item *expr, bool is_enforced) {
+    cc_spec.name = name;
+    cc_spec.check_expr = expr;
+    cc_spec.is_enforced = is_enforced;
+  }
+  void set_column_name(const LEX_STRING &name) { cc_spec.column_name = name; }
 
   bool contextualize(Table_ddl_parse_context *pc) override {
-    return super::contextualize(pc) && expr->itemize(pc, &expr);
+    if (super::contextualize(pc) ||
+        cc_spec.check_expr->itemize(pc, &cc_spec.check_expr))
+      return true;
+
+    if (pc->alter_info->check_constraint_spec_list.push_back(&cc_spec))
+      return true;
+
+    pc->alter_info->flags |= Alter_info::ADD_CHECK_CONSTRAINT;
+    return false;
   }
 };
 
@@ -3269,8 +3289,7 @@ class PT_column_def : public PT_table_element {
 
   const LEX_STRING field_ident;
   PT_field_def_base *field_def;
-
-  /// Currently we ignore that constraint in the executor.
+  // Currently we ignore that constraint in the executor.
   PT_table_constraint_def *opt_column_constraint;
 
   const char *opt_place;
@@ -3425,20 +3444,20 @@ struct Privilege {
 struct Static_privilege : public Privilege {
   const uint grant;
 
-  Static_privilege(uint grant, const Mem_root_array<LEX_CSTRING> *columns)
-      : Privilege(STATIC, columns), grant(grant) {}
+  Static_privilege(uint grant, const Mem_root_array<LEX_CSTRING> *columns_arg)
+      : Privilege(STATIC, columns_arg), grant(grant) {}
 };
 
 struct Dynamic_privilege : public Privilege {
   const LEX_STRING ident;
 
   Dynamic_privilege(const LEX_STRING &ident,
-                    const Mem_root_array<LEX_CSTRING> *columns)
-      : Privilege(DYNAMIC, columns), ident(ident) {}
+                    const Mem_root_array<LEX_CSTRING> *columns_arg)
+      : Privilege(DYNAMIC, columns_arg), ident(ident) {}
 };
 
 class PT_role_or_privilege : public Parse_tree_node {
- protected:
+ private:
   POS pos;
 
  public:
@@ -3791,8 +3810,9 @@ class PT_alter_table_drop : public PT_alter_table_action {
 
  protected:
   PT_alter_table_drop(Alter_drop::drop_type drop_type,
-                      Alter_info::Alter_info_flag flag, const char *name)
-      : super(flag), m_alter_drop(drop_type, name) {}
+                      Alter_info::Alter_info_flag alter_info_flag,
+                      const char *name)
+      : super(alter_info_flag), m_alter_drop(drop_type, name) {}
 
  public:
   bool contextualize(Table_ddl_parse_context *pc) override {
@@ -3823,6 +3843,31 @@ class PT_alter_table_drop_key final : public PT_alter_table_drop {
   explicit PT_alter_table_drop_key(const char *name)
       : PT_alter_table_drop(Alter_drop::KEY, Alter_info::ALTER_DROP_INDEX,
                             name) {}
+};
+
+class PT_alter_table_drop_check_constraint final : public PT_alter_table_drop {
+ public:
+  explicit PT_alter_table_drop_check_constraint(const char *name)
+      : PT_alter_table_drop(Alter_drop::CHECK_CONSTRAINT,
+                            Alter_info::DROP_CHECK_CONSTRAINT, name) {}
+};
+
+class PT_alter_table_check_constraint final : public PT_alter_table_action {
+  typedef PT_alter_table_action super;
+
+ public:
+  explicit PT_alter_table_check_constraint(const char *name, bool state)
+      : super(state ? Alter_info::ENFORCE_CHECK_CONSTRAINT
+                    : Alter_info::SUSPEND_CHECK_CONSTRAINT),
+        cc_state(Alter_state::Type::CHECK_CONSTRAINT, name, state) {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override {
+    return (super::contextualize(pc) ||
+            pc->alter_info->alter_state_list.push_back(&cc_state));
+  }
+
+ private:
+  Alter_state cc_state;
 };
 
 class PT_alter_table_enable_keys final : public PT_alter_table_action {
@@ -4012,8 +4057,8 @@ class PT_alter_table_standalone_action : public PT_alter_table_action {
   friend class PT_alter_table_standalone_stmt;  // to access make_cmd()
 
  protected:
-  PT_alter_table_standalone_action(Alter_info::Alter_info_flag flag)
-      : super(flag) {}
+  PT_alter_table_standalone_action(Alter_info::Alter_info_flag alter_info_flag)
+      : super(alter_info_flag) {}
 
  private:
   virtual Sql_cmd *make_cmd(Table_ddl_parse_context *pc) = 0;
@@ -4120,8 +4165,9 @@ class PT_alter_table_partition_list_or_all
 
  public:
   explicit PT_alter_table_partition_list_or_all(
-      Alter_info::Alter_info_flag flag, const List<String> *opt_partition_list)
-      : super(flag), m_opt_partition_list(opt_partition_list) {}
+      Alter_info::Alter_info_flag alter_info_flag,
+      const List<String> *opt_partition_list)
+      : super(alter_info_flag), m_opt_partition_list(opt_partition_list) {}
 
   bool contextualize(Table_ddl_parse_context *pc) override {
     DBUG_ASSERT(pc->alter_info->partition_names.is_empty());

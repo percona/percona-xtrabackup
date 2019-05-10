@@ -840,7 +840,7 @@ drop table if exists t1,t2;
 create table t1(a int not null, b int not null, primary key (a, b));
 --error ER_WRONG_FK_DEF
 create table t2(a int not null, b int not null, c int not null, primary key (a),
-foreign key fk_bug26104 (b,c) references t1(a));
+                constraint fk_bug26104 foreign key (b,c) references t1(a));
 drop table t1;
 
 # HANDLER_READ_KEY count differs when using ps protocol because of prepare
@@ -2141,3 +2141,22 @@ SHOW CREATE TABLE t2;
 DROP TABLE t1;
 DROP TEMPORARY TABLE t2;
 SET SQL_MODE= @saved_mode;
+
+--echo #
+--echo # Bug #29283055: CREATE TABLE IF NOT EXISTS .. SHOULD NOT ALWAYS
+--echo # FAIL ON SQL_REQUIRE_PRIMARY_KEY
+--echo #
+
+--echo # Create table without PK
+CREATE TABLE t1(i INT);
+
+SET SESSION sql_require_primary_key=1;
+
+--echo # This must not fail when t1 already exists, even if it does not have
+--echo # a pk
+CREATE TABLE IF NOT EXISTS t1(i INT);
+
+--echo # Cleanup
+SET SESSION sql_require_primary_key=DEFAULT;
+DROP TABLE t1;
+

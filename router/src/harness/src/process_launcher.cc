@@ -314,7 +314,7 @@ void ProcessLauncher::report_error(const char *msg, const char *prefix) {
                   NULL, dwCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                   (LPTSTR)&lpMsgBuf, 0, NULL);
     std::string msgerr;
-    if (prefix != "") {
+    if (prefix != nullptr) {
       msgerr += std::string(prefix) + "; ";
     }
     msgerr += "SystemError: ";
@@ -378,7 +378,7 @@ void ProcessLauncher::start() {
     fcntl(fd_out[1], F_SETFD, FD_CLOEXEC);
     fcntl(fd_in[0], F_SETFD, FD_CLOEXEC);
 
-    execvp(cmd_line.c_str(), (char *const *)args);
+    execvp(cmd_line.c_str(), const_cast<char *const *>(args));
     // if exec returns, there is an error.
     int my_errno = errno;
     fprintf(stderr, "%s could not be executed: %s (errno %d)\n",

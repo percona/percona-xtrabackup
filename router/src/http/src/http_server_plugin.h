@@ -56,6 +56,8 @@ class HttpRequestRouter {
   void clear_default_route();
   void route(HttpRequest req);
 
+  void require_realm(const std::string &realm) { require_realm_ = realm; }
+
  private:
   struct RouterData {
     std::string url_regex_str;
@@ -65,6 +67,7 @@ class HttpRequestRouter {
   std::vector<RouterData> request_handlers_;
 
   std::unique_ptr<BaseRequestHandler> default_route_;
+  std::string require_realm_;
 
   std::mutex route_mtx_;
 };
@@ -112,19 +115,21 @@ class HttpServer {
   HttpServer(const HttpServer &) = delete;
   HttpServer &operator=(const HttpServer &) = delete;
 
-  HttpServer(HttpServer &&) = default;
-  HttpServer &operator=(HttpServer &&) = default;
+  HttpServer(HttpServer &&) = delete;
+  HttpServer &operator=(HttpServer &&) = delete;
 
   void join_all();
 
-  ~HttpServer() { join_all(); }
+  virtual ~HttpServer() { join_all(); }
 
-  void start(size_t max_threads);
+  virtual void start(size_t max_threads);
   void add_route(const std::string &url_regex,
                  std::unique_ptr<BaseRequestHandler> cb);
   void remove_route(const std::string &url_regex);
 
- private:
+  HttpRequestRouter &request_router() { return request_router_; }
+
+ protected:
   std::vector<HttpRequestThread> thread_contexts_;
   std::string address_;
   uint16_t port_;
@@ -135,13 +140,16 @@ class HttpServer {
 
 class HttpStaticFolderHandler : public BaseRequestHandler {
  public:
-  explicit HttpStaticFolderHandler(std::string static_basedir)
-      : static_basedir_(std::move(static_basedir)) {}
+  explicit HttpStaticFolderHandler(std::string static_basedir,
+                                   std::string require_realm)
+      : static_basedir_(std::move(static_basedir)),
+        require_realm_{std::move(require_realm)} {}
 
   void handle_request(HttpRequest &req) override;
 
  private:
   std::string static_basedir_;
+  std::string require_realm_;
 };
 
 #endif

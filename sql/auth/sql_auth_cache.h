@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,12 +52,15 @@
 #include "sql/sql_connect.h"         // USER_RESOURCES
 #include "violite.h"                 // SSL_type
 
+/* Forward declarations */
 class Security_context;
 class String;
 class THD;
 struct TABLE;
 template <typename Element_type, size_t Prealloc>
 class Prealloced_array;
+class Acl_restrictions;
+class Restrictions;
 
 /* Classes */
 
@@ -347,7 +350,6 @@ Acl_user_ptr_list *cached_acl_users_for_name(const char *name);
 void rebuild_cached_acl_users_for_name(void);
 
 /* Data Structures */
-
 extern MEM_ROOT global_acl_memory;
 extern MEM_ROOT memex;
 const size_t ACL_PREALLOC_SIZE = 10U;
@@ -364,7 +366,7 @@ extern std::unique_ptr<
 extern collation_unordered_map<std::string, ACL_USER *> *acl_check_hosts;
 extern bool allow_all_hosts;
 extern uint grant_version; /* Version of priv tables */
-
+extern std::unique_ptr<Acl_restrictions> acl_restrictions;
 // Search for a matching grant. Prefer exact grants before non-exact ones.
 
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO *files_charset_info;
@@ -478,7 +480,7 @@ using in_edge_itr_t =
 class Acl_map {
  public:
   Acl_map(Security_context *sctx, uint64 ver);
-  Acl_map(const Acl_map &map);
+  Acl_map(const Acl_map &map) = delete;
   Acl_map(const Acl_map &&map);
   ~Acl_map();
 
@@ -500,6 +502,7 @@ class Acl_map {
   SP_access_map *func_acls();
   Grant_acl_set *grant_acls();
   Dynamic_privileges *dynamic_privileges();
+  Restrictions &restrictions();
   uint64 version() { return m_version; }
   uint32 reference_count() { return m_reference_count.load(); }
 
@@ -514,6 +517,7 @@ class Acl_map {
   SP_access_map m_func_acls;
   Grant_acl_set m_with_admin_acls;
   Dynamic_privileges m_dynamic_privileges;
+  Restrictions m_restrictions;
 };
 
 typedef LF_HASH Acl_cache_internal;
@@ -537,7 +541,7 @@ class Acl_cache {
     Returns a pointer to an acl map to the caller and increase the reference
     count on the object, iff the object version is the same as the global
     graph version.
-    If no acl map exists which correspond ot the current authorization id of
+    If no acl map exists which correspond to the current authorization id of
     the security context, a new acl map is calculated, inserted into the cache
     and returned to the user.
     A new object will also be created if the role graph version counter is
@@ -619,6 +623,36 @@ class Acl_cache_lock_guard {
   Acl_cache_lock_mode m_mode;
   /** Lock status */
   bool m_locked;
+};
+
+/**
+  Cache to store the Restrictions of every auth_id.
+  This cache is not thread safe.
+  Callers must acquire acl_cache_write_lock before to amend the cache.
+  Callers should acquire acl_cache_read_lock to probe the cache.
+
+  Acl_restrictions is not part of ACL_USER because as of now latter is POD type
+  class. We use copy-POD for ACL_USER that makes the explicit memory management
+  of its members hard.
+*/
+class Acl_restrictions {
+ public:
+  Acl_restrictions();
+
+  Acl_restrictions(const Acl_restrictions &) = delete;
+  Acl_restrictions(Acl_restrictions &&) = delete;
+  Acl_restrictions &operator=(const Acl_restrictions &) = delete;
+  Acl_restrictions &operator=(Acl_restrictions &&) = delete;
+
+  void remove_restrictions(const ACL_USER *acl_user);
+  void upsert_restrictions(const ACL_USER *acl_user,
+                           const Restrictions &restriction);
+
+  Restrictions find_restrictions(const ACL_USER *acl_user) const;
+  size_t size() const;
+
+ private:
+  malloc_unordered_map<std::string, Restrictions> m_restrictions_map;
 };
 
 #endif /* SQL_USER_CACHE_INCLUDED */

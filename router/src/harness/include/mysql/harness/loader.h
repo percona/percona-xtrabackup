@@ -684,7 +684,7 @@ DECLARE_TEST(LifecycleTest, NoInstances);
 DECLARE_TEST(LifecycleTest, EmptyErrorMessage);
 DECLARE_TEST(LifecycleTest, send_signals);
 DECLARE_TEST(LifecycleTest, send_signals2);
-DECLARE_TEST(LifecycleTest, DISABLED_wait_for_stop);
+DECLARE_TEST(LifecycleTest, wait_for_stop);
 DECLARE_TEST(LifecycleTest, InitThrows);
 DECLARE_TEST(LifecycleTest, StartThrows);
 DECLARE_TEST(LifecycleTest, StopThrows);
@@ -887,6 +887,7 @@ class HARNESS_EXPORT Loader {
   std::exception_ptr
   deinit_all();  // returns first exception triggered by deinit()
   void unload_all();
+  size_t external_plugins_to_load_count();
 
   /**
    * Topological sort of all plugins and their dependencies.
@@ -928,7 +929,7 @@ class HARNESS_EXPORT Loader {
 
    private:
     class Impl;
-    Impl *impl_;
+    Impl *impl_{nullptr};
   };
 
   using PluginMap = std::map<std::string, PluginInfo>;
@@ -1012,7 +1013,7 @@ class HARNESS_EXPORT Loader {
   FRIEND_TEST(::LifecycleTest, EmptyErrorMessage);
   FRIEND_TEST(::LifecycleTest, send_signals);
   FRIEND_TEST(::LifecycleTest, send_signals2);
-  FRIEND_TEST(::LifecycleTest, DISABLED_wait_for_stop);
+  FRIEND_TEST(::LifecycleTest, wait_for_stop);
   FRIEND_TEST(::LifecycleTest, InitThrows);
   FRIEND_TEST(::LifecycleTest, StartThrows);
   FRIEND_TEST(::LifecycleTest, StopThrows);

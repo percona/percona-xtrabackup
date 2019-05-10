@@ -26,6 +26,7 @@
 #include <string>
 
 #include "dim.h"
+#include "filesystem_utils.h"
 #include "gmock/gmock.h"
 #include "keyring/keyring_manager.h"
 #include "random_generator.h"
@@ -105,143 +106,6 @@ std::ostream &operator<<(
   return os;
 }
 
-#ifdef _WIN32
-
-using mysql_harness::SecurityDescriptorPtr;
-using mysql_harness::SidPtr;
-
-static void check_ace_access_rights_local_service(
-    const std::string &file_name, ACCESS_ALLOWED_ACE *access_ace,
-    const bool read_only) {
-  SID *sid = reinterpret_cast<SID *>(&access_ace->SidStart);
-  DWORD sid_size = SECURITY_MAX_SID_SIZE;
-  SidPtr local_service_sid(static_cast<SID *>(std::malloc(sid_size)));
-
-  if (CreateWellKnownSid(WinLocalServiceSid, nullptr, local_service_sid.get(),
-                         &sid_size) == FALSE) {
-    throw std::runtime_error("CreateWellKnownSid() failed: " +
-                             std::to_string(GetLastError()));
-  }
-
-  if (EqualSid(sid, local_service_sid.get())) {
-    if (access_ace->Mask & (FILE_EXECUTE)) {
-      FAIL() << "Invalid file access rights for file " << file_name
-             << " (Execute privilege granted to Local Service user).";
-    }
-
-    const auto read_perm = FILE_READ_DATA | FILE_READ_EA | FILE_READ_ATTRIBUTES;
-    if ((access_ace->Mask & read_perm) != read_perm) {
-      FAIL() << "Invalid file access rights for file " << file_name
-             << "(Read privilege for Local Service user missing).";
-    }
-
-    const auto write_perm =
-        FILE_WRITE_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
-    if (read_only) {
-      if ((access_ace->Mask & write_perm) != 0) {
-        FAIL() << "Invalid file access rights for file " << file_name
-               << "(Write privilege for Local Service user not expected).";
-      }
-    } else {
-      if ((access_ace->Mask & write_perm) != write_perm) {
-        FAIL() << "Invalid file access rights for file " << file_name
-               << "(Write privilege for Local Service user missing).";
-      }
-    }
-  }
-}
-
-static void check_acl_access_rights_local_service(const std::string &file_name,
-                                                  ACL *dacl,
-                                                  const bool read_only) {
-  ACL_SIZE_INFORMATION dacl_size_info;
-
-  if (GetAclInformation(dacl, &dacl_size_info, sizeof(dacl_size_info),
-                        AclSizeInformation) == FALSE) {
-    throw std::runtime_error("GetAclInformation() failed: " +
-                             std::to_string(GetLastError()));
-  }
-
-  for (DWORD ace_idx = 0; ace_idx < dacl_size_info.AceCount; ++ace_idx) {
-    LPVOID ace = nullptr;
-
-    if (GetAce(dacl, ace_idx, &ace) == FALSE) {
-      throw std::runtime_error("GetAce() failed: " +
-                               std::to_string(GetLastError()));
-      continue;
-    }
-
-    if (static_cast<ACE_HEADER *>(ace)->AceType == ACCESS_ALLOWED_ACE_TYPE)
-      check_ace_access_rights_local_service(
-          file_name, static_cast<ACCESS_ALLOWED_ACE *>(ace), read_only);
-  }
-}
-
-static void check_security_descriptor_access_rights(
-    const std::string &file_name, SecurityDescriptorPtr &sec_desc,
-    bool read_only) {
-  BOOL dacl_present;
-  ACL *dacl;
-  BOOL dacl_defaulted;
-
-  if (GetSecurityDescriptorDacl(sec_desc.get(), &dacl_present, &dacl,
-                                &dacl_defaulted) == FALSE) {
-    throw std::runtime_error("GetSecurityDescriptorDacl() failed: " +
-                             std::to_string(GetLastError()));
-  }
-
-  if (!dacl_present) {
-    // No DACL means: no access allowed. That's not good.
-    FAIL() << "No access allowed to file: " << file_name;
-    return;
-  }
-
-  if (!dacl) {
-    // Empty DACL means: all access allowed.
-    FAIL() << "Invalid file " << file_name
-           << " access rights "
-              "(Everyone has full access rights).";
-  }
-
-  check_acl_access_rights_local_service(file_name, dacl, read_only);
-}
-
-#endif
-
-static void check_config_file_access_rights(const std::string &file_name,
-                                            const bool read_only) {
-#ifdef _WIN32
-  SecurityDescriptorPtr sec_descr;
-  try {
-    sec_descr = mysql_harness::get_security_descriptor(file_name);
-  } catch (const std::system_error &) {
-    // that means that the system does not support ACL, in that case nothing
-    // really to check
-    return;
-  }
-  check_security_descriptor_access_rights(file_name, sec_descr, read_only);
-#else
-  // on other OSes we ALWAYS expect 600 access rights for the config file
-  // weather it's static or dynamic one
-  (void)read_only;
-  struct stat status;
-
-  if (stat(file_name.c_str(), &status) != 0) {
-    if (errno == ENOENT) return;
-    FAIL() << "stat() failed (" << file_name
-           << "): " << mysql_harness::get_strerror(errno);
-  }
-
-  static constexpr mode_t kFullAccessMask = (S_IRWXU | S_IRWXG | S_IRWXO);
-  static constexpr mode_t kRequiredAccessMask = (S_IRUSR | S_IWUSR);
-
-  if ((status.st_mode & kFullAccessMask) != kRequiredAccessMask)
-    FAIL() << "Config file (" << file_name
-           << ") has file permissions that are not strict enough"
-              " (only RW for file's owner is allowed).";
-#endif
-}
-
 /**
  * the tiny power function that does all the work.
  *
@@ -272,7 +136,7 @@ void CommonBootstrapTest::bootstrap_failover(
     env_vars.emplace("MYSQL_SERVER_MOCK_PORT_" + std::to_string(ndx),
                      std::to_string(mock_server_config.port));
     ndx++;
-  };
+  }
 
   std::vector<std::tuple<CommandHandle, unsigned int>> mock_servers;
 
@@ -301,17 +165,19 @@ void CommonBootstrapTest::bootstrap_failover(
     EXPECT_TRUE(ready) << proc.get_full_output();
   }
 
-  std::string router_cmdline;
+  std::vector<std::string> router_cmdline;
 
   if (router_options.size()) {
-    for (const auto &piece : router_options) {
-      router_cmdline += piece;
-      router_cmdline += " ";
-    }
+    router_cmdline = router_options;
   } else {
-    router_cmdline = "--bootstrap=" + env_vars.at("MYSQL_SERVER_MOCK_HOST_1") +
-                     ":" + env_vars.at("MYSQL_SERVER_MOCK_PORT_1") +
-                     " --report-host " + my_hostname + " -d " + bootstrap_dir;
+    router_cmdline.emplace_back(
+        "--bootstrap=" + env_vars.at("MYSQL_SERVER_MOCK_HOST_1") + ":" +
+        env_vars.at("MYSQL_SERVER_MOCK_PORT_1"));
+
+    router_cmdline.emplace_back("--report-host");
+    router_cmdline.emplace_back(my_hostname);
+    router_cmdline.emplace_back("-d");
+    router_cmdline.emplace_back(bootstrap_dir);
   }
 
   // launch the router
@@ -347,11 +213,10 @@ void CommonBootstrapTest::bootstrap_failover(
     for (auto &mock_server : mock_servers) {
       std::get<0>(mock_server).get_full_output();
     }
-    EXPECT_THAT(
-        lines,
-        ::testing::Contains(
-            "MySQL Router  has now been configured for the InnoDB cluster '" +
-            cluster_name + "'."))
+    EXPECT_THAT(lines,
+                ::testing::Contains(
+                    "# MySQL Router configured for the InnoDB cluster '" +
+                    cluster_name + "'"))
         << "router:" << router.get_full_output() << std::endl
         << mock_servers;
 
@@ -875,7 +740,7 @@ TEST_F(RouterAccountHostTest, multiple_host_patterns) {
 
     // check if the bootstraping was successful
     EXPECT_TRUE(router.expect_output(
-        "MySQL Router  has now been configured for the InnoDB cluster 'test'"))
+        "MySQL Router configured for the InnoDB cluster 'test'"))
         << router.get_full_output() << std::endl
         << "server: " << server_mock.get_full_output();
     EXPECT_EQ(router.wait_for_exit(), 0);
@@ -916,7 +781,8 @@ TEST_F(RouterAccountHostTest, argument_missing) {
                               std::to_string(server_port) + " --account-host");
 
   // check if the bootstraping was successful
-  EXPECT_TRUE(router.expect_output("option '--account-host' requires a value."))
+  EXPECT_TRUE(router.expect_output(
+      "option '--account-host' expects a value, got nothing"))
       << router.get_full_output() << std::endl;
   EXPECT_EQ(router.wait_for_exit(), 1);
 }
@@ -1006,7 +872,7 @@ TEST_F(RouterReportHostTest, typical_usage) {
 
     // check if the bootstraping was successful
     EXPECT_TRUE(
-        router.expect_output("MySQL Router  has now been configured for the "
+        router.expect_output("MySQL Router configured for the "
                              "InnoDB cluster 'mycluster'"))
         << router.get_full_output() << std::endl
         << "server: " << server_mock.get_full_output();
@@ -1049,7 +915,8 @@ TEST_F(RouterReportHostTest, argument_missing) {
   auto router = launch_router("--bootstrap=1.2.3.4:5678 --report-host");
 
   // check if the bootstraping was successful
-  EXPECT_TRUE(router.expect_output("option '--report-host' requires a value."))
+  EXPECT_TRUE(router.expect_output(
+      "option '--report-host' expects a value, got nothing"))
       << router.get_full_output() << std::endl;
   EXPECT_EQ(router.wait_for_exit(), 1);
 }
@@ -1145,9 +1012,9 @@ TEST_F(RouterBootstrapTest, MasterKeyFileNotChangedAfterSecondBootstrap) {
       },
       [](mysql_harness::RandomGeneratorInterface *) {});
 
-  mysqlrouter::mkdir(Path(bootstrap_dir).str(), 0777);
+  mysql_harness::mkdir(Path(bootstrap_dir).str(), 0777);
   std::string master_key_path = Path(bootstrap_dir).join("master_key").str();
-  mysqlrouter::mkdir(Path(bootstrap_dir).join("data").str(), 0777);
+  mysql_harness::mkdir(Path(bootstrap_dir).join("data").str(), 0777);
   std::string keyring_path =
       Path(bootstrap_dir).join("data").join("keyring").str();
 

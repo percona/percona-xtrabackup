@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -122,7 +122,8 @@
 #include "sql/sql_lex.h"
 #include "sql/sql_locale.h"     // my_locale_by_number
 #include "sql/sql_parse.h"      // killall_non_super_threads
-#include "sql/sql_tmp_table.h"  // internal_tmp_disk_storage_engine
+#include "sql/sql_tmp_table.h"  // internal_tmp_mem_storage_engine_names
+#include "sql/ssl_acceptor_context.h"
 #include "sql/system_variables.h"
 #include "sql/table_cache.h"  // Table_cache_manager
 #include "sql/transaction.h"  // trans_commit_stmt
@@ -798,16 +799,32 @@ static Sys_var_charptr Sys_my_bind_addr(
     " where address can be an IPv4 address, IPv6 address,"
     " host name or one of the wildcard values *, ::, 0.0.0.0."
     " In case more than one address is specified in a"
-    " comma-separated list, wildcard values are not allowed.",
+    " comma-separated list, wildcard values are not allowed."
+    " Every address can have optional network namespace separated"
+    " by the delimiter / from the address value. E.g., the following value"
+    " 192.168.1.1/red,172.16.1.1/green,193.168.1.1 specifies three IP"
+    " addresses to listen for incoming TCP connections two of that have"
+    " to be placed in corresponding namespaces: the address 192.168.1.1"
+    " must be placed into the namespace red and the address 172.16.1.1"
+    " must be placed into the namespace green. Using of network namespace"
+    " requires its support from underlying Operating System. Attempt to specify"
+    " a network namespace for a platform that doesn't support it results in"
+    " error during socket creation.",
     READ_ONLY NON_PERSIST GLOBAL_VAR(my_bind_addr_str), CMD_LINE(REQUIRED_ARG),
     IN_FS_CHARSET, DEFAULT(MY_BIND_ALL_ADDRESSES));
 
 static Sys_var_charptr Sys_admin_addr(
     "admin_address",
-    "IP address to bind to for service connection. Address can be an IPv4 "
-    "address,"
-    " IPv6 address, or host name. Wildcard values *, ::, 0.0.0.0"
-    " are not allowed.",
+    "IP address to bind to for service connection. Address can be an IPv4"
+    " address, IPv6 address, or host name. Wildcard values *, ::, 0.0.0.0"
+    " are not allowed. Address value can have following optional network"
+    " namespace separated by the delimiter / from the address value."
+    " E.g., the following value 192.168.1.1/red specifies IP addresses to"
+    " listen for incoming TCP connections that have to be placed into"
+    " the namespace 'red'. Using of network namespace requires its support"
+    " from underlying Operating System. Attempt to specify a network namespace"
+    " for a platform that doesn't support it results in error during socket"
+    " creation.",
     READ_ONLY NON_PERSIST GLOBAL_VAR(my_admin_bind_addr_str),
     CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(0));
 
@@ -829,6 +846,45 @@ static Sys_var_bool Sys_password_require_current(
     "password_require_current",
     "Current password is needed to be specified in order to change it",
     GLOBAL_VAR(password_require_current), CMD_LINE(OPT_ARG), DEFAULT(false));
+
+/**
+  Checks,
+  if there exists at least a partial revoke on a database at the time
+  of turning OFF the system variable "@@partial_revokes". If it does then
+  throw error.
+  if there exists at least a DB grant with wildcard entry at the time of
+  turning ON the system variable "@@partial_revokes". If it does then
+  throw error.
+
+  @retval true failure
+  @retval false success
+
+  @param self the system variable to set value for
+  @param thd the session context
+  @param setv the SET operations metadata
+*/
+static bool check_partial_revokes(sys_var *self, THD *thd, set_var *setv) {
+  if (is_partial_revoke_exists(thd) && setv->save_result.ulonglong_value == 0) {
+    my_error(ER_PARTIAL_REVOKES_EXIST, MYF(0), self->name.str);
+    return true;
+  }
+  return false;
+}
+
+/** Sets the changed value to the corresponding atomic system variable */
+static bool partial_revokes_update(sys_var *, THD *, enum_var_type) {
+  set_mysqld_partial_revokes(opt_partial_revokes);
+  return false;
+}
+
+static Sys_var_bool Sys_partial_revokes(
+    "partial_revokes",
+    "Access of database objects can be restricted, "
+    "even if user has global privileges granted.",
+    GLOBAL_VAR(opt_partial_revokes), CMD_LINE(OPT_ARG),
+    DEFAULT(DEFAULT_PARTIAL_REVOKES), NO_MUTEX_GUARD, IN_BINLOG,
+    ON_CHECK(check_partial_revokes), ON_UPDATE(partial_revokes_update), 0,
+    sys_var::PARSE_EARLY);
 
 static bool fix_binlog_cache_size(sys_var *, THD *thd, enum_var_type) {
   check_binlog_cache_size(thd);
@@ -1426,13 +1482,13 @@ static bool check_storage_engine(sys_var *self, THD *thd, set_var *var) {
 
     if (var->value) {
       res = var->value->val_str(&str);
-      lex_string_set(&se_name, res->ptr());
+      lex_string_set(&se_name, const_cast<char *>(res->ptr()));
     } else {
       // Use the default value defined by sys_var.
       lex_string_set(&se_name,
-                     reinterpret_cast<const char *>(
-                         dynamic_cast<Sys_var_plugin *>(self)->global_value_ptr(
-                             thd, NULL)));
+                     pointer_cast<char *>(
+                         down_cast<Sys_var_plugin *>(self)->global_value_ptr(
+                             thd, nullptr)));
     }
 
     plugin_ref plugin;
@@ -3051,7 +3107,7 @@ static bool check_require_secure_transport(
   */
 
   if (!var->save_result.ulonglong_value) return false;
-  if ((have_ssl == SHOW_OPTION_YES) || opt_enable_shared_memory) return false;
+  if (SslAcceptorContext::have_ssl() || opt_enable_shared_memory) return false;
   /* reject if SSL and shared memory are both disabled: */
   my_error(ER_NO_SECURE_TRANSPORTS_CONFIGURED, MYF(0));
   return true;
@@ -4226,31 +4282,6 @@ static Sys_var_ulong Sys_max_execution_time(
     HINT_UPDATEABLE SESSION_VAR(max_execution_time), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(0, ULONG_MAX), DEFAULT(0), BLOCK_SIZE(1));
 
-#if defined(HAVE_OPENSSL)
-#define SSL_OPT(X) CMD_LINE(REQUIRED_ARG, X)
-#endif
-
-/*
-  If you are adding new system variable for SSL communication, please take a
-  look at do_auto_cert_generation() function in sql_authentication.cc and
-  add new system variable in checks if required.
-*/
-
-static Sys_var_charptr Sys_ssl_ca(
-    "ssl_ca", "CA file in PEM format (check OpenSSL docs, implies --ssl)",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ssl_ca), SSL_OPT(OPT_SSL_CA),
-    IN_FS_CHARSET, DEFAULT(0));
-
-static Sys_var_charptr Sys_ssl_capath(
-    "ssl_capath", "CA directory (check OpenSSL docs, implies --ssl)",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ssl_capath), SSL_OPT(OPT_SSL_CAPATH),
-    IN_FS_CHARSET, DEFAULT(0));
-
-static Sys_var_charptr Sys_tls_version(
-    "tls_version", "TLS version, permitted values are TLSv1, TLSv1.1, TLSv1.2",
-    READ_ONLY GLOBAL_VAR(opt_tls_version), SSL_OPT(OPT_TLS_VERSION),
-    IN_FS_CHARSET, "TLSv1,TLSv1.1,TLSv1.2");
-
 #ifndef HAVE_WOLFSSL
 static bool update_fips_mode(sys_var *, THD *, enum_var_type) {
   char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
@@ -4277,7 +4308,7 @@ static Sys_var_enum Sys_ssl_fips_mode(
 #else
     "permitted values are: OFF",
 #endif
-    GLOBAL_VAR(opt_ssl_fips_mode), SSL_OPT(OPT_SSL_FIPS_MODE),
+    GLOBAL_VAR(opt_ssl_fips_mode), CMD_LINE(REQUIRED_ARG, OPT_SSL_FIPS_MODE),
     ssl_fips_mode_names, DEFAULT(0), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(NULL),
 #ifndef HAVE_WOLFSSL
@@ -4286,32 +4317,6 @@ static Sys_var_enum Sys_ssl_fips_mode(
     ON_UPDATE(NULL),
 #endif
     NULL);
-
-static Sys_var_charptr Sys_ssl_cert(
-    "ssl_cert", "X509 cert in PEM format (implies --ssl)",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ssl_cert), SSL_OPT(OPT_SSL_CERT),
-    IN_FS_CHARSET, DEFAULT(0));
-
-static Sys_var_charptr Sys_ssl_cipher("ssl_cipher",
-                                      "SSL cipher to use (implies --ssl)",
-                                      READ_ONLY GLOBAL_VAR(opt_ssl_cipher),
-                                      SSL_OPT(OPT_SSL_CIPHER), IN_FS_CHARSET,
-                                      DEFAULT(0));
-
-static Sys_var_charptr Sys_ssl_key(
-    "ssl_key", "X509 key in PEM format (implies --ssl)",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ssl_key), SSL_OPT(OPT_SSL_KEY),
-    IN_FS_CHARSET, DEFAULT(0));
-
-static Sys_var_charptr Sys_ssl_crl(
-    "ssl_crl", "CRL file in PEM format (check OpenSSL docs, implies --ssl)",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ssl_crl), SSL_OPT(OPT_SSL_CRL),
-    IN_FS_CHARSET, DEFAULT(0));
-
-static Sys_var_charptr Sys_ssl_crlpath(
-    "ssl_crlpath", "CRL directory (check OpenSSL docs, implies --ssl)",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ssl_crlpath), SSL_OPT(OPT_SSL_CRLPATH),
-    IN_FS_CHARSET, DEFAULT(0));
 
 #if defined(HAVE_OPENSSL) && !defined(HAVE_WOLFSSL)
 static Sys_var_bool Sys_auto_generate_certs(
@@ -4408,11 +4413,25 @@ static Sys_var_ulong Sys_table_cache_instances(
     */
     sys_var::PARSE_EARLY);
 
+/**
+  Modify the thread size cache size.
+*/
+
+static inline bool modify_thread_cache_size(sys_var *, THD *, enum_var_type) {
+  if (Connection_handler_manager::thread_handling ==
+      Connection_handler_manager::SCHEDULER_ONE_THREAD_PER_CONNECTION) {
+    Per_thread_connection_handler::modify_thread_cache_size(
+        Per_thread_connection_handler::max_blocked_pthreads);
+  }
+  return false;
+}
+
 static Sys_var_ulong Sys_thread_cache_size(
     "thread_cache_size", "How many threads we should keep in a cache for reuse",
     GLOBAL_VAR(Per_thread_connection_handler::max_blocked_pthreads),
     CMD_LINE(REQUIRED_ARG, OPT_THREAD_CACHE_SIZE), VALID_RANGE(0, 16384),
-    DEFAULT(0), BLOCK_SIZE(1));
+    DEFAULT(0), BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG, nullptr,
+    ON_UPDATE(modify_thread_cache_size));
 
 /**
   Function to check if the 'next' transaction isolation level
@@ -4598,13 +4617,6 @@ static Sys_var_plugin Sys_default_storage_engine(
     DEFAULT(&default_storage_engine), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(check_storage_engine));
 
-const char *internal_tmp_disk_storage_engine_names[] = {"MyISAM", "InnoDB", 0};
-static Sys_var_enum Sys_internal_tmp_disk_storage_engine(
-    "internal_tmp_disk_storage_engine",
-    "The default storage engine for on-disk internal temporary tables.",
-    GLOBAL_VAR(internal_tmp_disk_storage_engine), CMD_LINE(OPT_ARG),
-    internal_tmp_disk_storage_engine_names, DEFAULT(TMP_TABLE_INNODB));
-
 const char *internal_tmp_mem_storage_engine_names[] = {"MEMORY", "TempTable",
                                                        0};
 static Sys_var_enum Sys_internal_tmp_mem_storage_engine(
@@ -4622,6 +4634,11 @@ static Sys_var_ulonglong Sys_temptable_max_ram(
     GLOBAL_VAR(temptable_max_ram), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(2 << 20 /* 2 MiB */, ULLONG_MAX), DEFAULT(1 << 30 /* 1 GiB */),
     BLOCK_SIZE(1));
+
+static Sys_var_bool Sys_temptable_use_mmap("temptable_use_mmap",
+                                           "Use mmap files for temptables",
+                                           GLOBAL_VAR(temptable_use_mmap),
+                                           CMD_LINE(OPT_ARG), DEFAULT(true));
 
 static Sys_var_plugin Sys_default_tmp_storage_engine(
     "default_tmp_storage_engine",
@@ -4847,12 +4864,14 @@ static Sys_var_harows Sys_select_limit(
 
 static bool update_timestamp(THD *thd, set_var *var) {
   if (var->value) {
-    double fl = floor(var->save_result.double_value);  // Truncate integer part
+    double intpart;
+    double fractpart = modf(var->save_result.double_value, &intpart);
+    double micros = fractpart * 1000000.0;
+    // Double multiplication, and conversion to integral may yield
+    // 1000000 rather than 999999.
     struct timeval tmp;
-    tmp.tv_sec = static_cast<long>(fl);
-    /* Round nanoseconds to nearest microsecond */
-    tmp.tv_usec =
-        static_cast<long>(rint((var->save_result.double_value - fl) * 1000000));
+    tmp.tv_sec = llrint(intpart);
+    tmp.tv_usec = std::min(llrint(micros), 999999LL);
     thd->set_time(&tmp);
   } else  // SET timestamp=DEFAULT
   {
@@ -4894,7 +4913,6 @@ static bool update_last_insert_id(THD *thd, set_var *var) {
   }
   thd->first_successful_insert_id_in_prev_stmt =
       var->save_result.ulonglong_value;
-  thd->substitute_null_with_insert_id = true;
   return false;
 }
 static ulonglong read_last_insert_id(THD *thd) {
@@ -5219,9 +5237,15 @@ static Sys_var_have Sys_have_geometry(
     "have_geometry", "have_geometry",
     READ_ONLY NON_PERSIST GLOBAL_VAR(have_geometry), NO_CMD_LINE);
 
-static Sys_var_have Sys_have_openssl("have_openssl", "have_openssl",
-                                     READ_ONLY NON_PERSIST GLOBAL_VAR(have_ssl),
-                                     NO_CMD_LINE);
+static SHOW_COMP_OPTION have_ssl_func(THD *thd MY_ATTRIBUTE((unused))) {
+  return SslAcceptorContext::have_ssl() ? SHOW_OPTION_YES
+                                        : SHOW_OPTION_DISABLED;
+}
+
+enum SHOW_COMP_OPTION Sys_var_have_func::dummy_;
+
+static Sys_var_have_func Sys_have_openssl("have_openssl", "have_openssl",
+                                          have_ssl_func);
 
 static Sys_var_have Sys_have_profiling(
     "have_profiling", "have_profiling",
@@ -5241,9 +5265,7 @@ static Sys_var_have Sys_have_rtree_keys(
     "have_rtree_keys", "have_rtree_keys",
     READ_ONLY NON_PERSIST GLOBAL_VAR(have_rtree_keys), NO_CMD_LINE);
 
-static Sys_var_have Sys_have_ssl("have_ssl", "have_ssl",
-                                 READ_ONLY NON_PERSIST GLOBAL_VAR(have_ssl),
-                                 NO_CMD_LINE);
+static Sys_var_have_func Sys_have_ssl("have_ssl", "have_ssl", have_ssl_func);
 
 static Sys_var_have Sys_have_symlink(
     "have_symlink", "have_symlink",
@@ -6111,7 +6133,8 @@ static bool sysvar_check_authid_string(sys_var *, THD *thd, set_var *var) {
   DBUG_ASSERT(sctx != 0);
   if (sctx && !sctx->has_global_grant(STRING_WITH_LEN("ROLE_ADMIN")).first) {
     my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
-             "ROLE_ADMIN, SUPER or SYSTEM_VARIABLES_ADMIN");
+             "SYSTEM_VARIABLES_ADMIN or SUPER privileges, as well as the "
+             "ROLE_ADMIN");
     /* No privilege access error */
     return true;
   }
@@ -6119,7 +6142,7 @@ static bool sysvar_check_authid_string(sys_var *, THD *thd, set_var *var) {
     var->save_result.string_value.str = const_cast<char *>("");
     var->save_result.string_value.length = 0;
   }
-  return check_authorization_id_string(var->save_result.string_value.str,
+  return check_authorization_id_string(thd, var->save_result.string_value.str,
                                        var->save_result.string_value.length);
 }
 
@@ -6343,6 +6366,32 @@ static Sys_var_enum Sys_use_secondary_engine(
     use_secondary_engine_values, DEFAULT(SECONDARY_ENGINE_ON), NO_MUTEX_GUARD,
     NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));
 
+/**
+  Cost threshold for executing queries in a secondary storage engine. Only
+  queries that have an estimated cost above this value will be attempted
+  executed in a secondary storage engine.
+
+  Secondary storage engines are meant to accelerate queries that would otherwise
+  take a relatively long time to execute. If a secondary storage engine accepts
+  a query, it is assumed that it will be able to accelerate it. However, if the
+  estimated cost of the query is low, the query will execute fast in the primary
+  engine too, so there is little to gain by offloading the query to the
+  secondary engine.
+
+  The default value aims to avoid use of secondary storage engines for queries
+  that could be executed by the primary engine in a few tenths of seconds or
+  less, and attempt to use secondary storage engines for queries would take
+  seconds or more.
+*/
+static Sys_var_double Sys_secondary_engine_cost_threshold(
+    "secondary_engine_cost_threshold",
+    "Controls which statements to consider for execution in a secondary "
+    "storage engine. Only statements that have a cost estimate higher than "
+    "this value will be attempted executed in a secondary storage engine.",
+    HINT_UPDATEABLE SESSION_VAR(secondary_engine_cost_threshold),
+    CMD_LINE(OPT_ARG), VALID_RANGE(0, DBL_MAX), DEFAULT(100000), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));
+
 static Sys_var_bool Sys_sql_require_primary_key{
     "sql_require_primary_key",
     "When set, tables must be created with a primary key, and an existing "
@@ -6454,3 +6503,61 @@ static Sys_var_uint Sys_immediate_server_version(
     SESSION_ONLY(immediate_server_version), NO_CMD_LINE,
     VALID_RANGE(0, UNDEFINED_SERVER_VERSION), DEFAULT(UNDEFINED_SERVER_VERSION),
     BLOCK_SIZE(1), NO_MUTEX_GUARD, IN_BINLOG, ON_CHECK(check_session_admin));
+
+static bool check_set_default_table_encryption_access(
+    sys_var *self MY_ATTRIBUTE((unused)), THD *thd, set_var *var) {
+  DBUG_EXECUTE_IF("skip_table_encryption_admin_check_for_set",
+                  { return false; });
+  if (var->type == OPT_GLOBAL && is_group_replication_running()) {
+    my_message(ER_GROUP_REPLICATION_RUNNING,
+               "The default_table_encryption option cannot be changed when "
+               "Group replication is running.",
+               MYF(0));
+    return true;
+  }
+
+  // Should own one of SUPER or both (SYSTEM_VARIABLES_ADMIN and
+  // TABLE_ENCRYPTION_ADMIN)
+  if (thd->slave_thread || thd->security_context()->check_access(SUPER_ACL) ||
+      (thd->security_context()
+           ->has_global_grant(STRING_WITH_LEN("SYSTEM_VARIABLES_ADMIN"))
+           .first &&
+       thd->security_context()
+           ->has_global_grant(STRING_WITH_LEN("TABLE_ENCRYPTION_ADMIN"))
+           .first)) {
+    return false;
+  }
+
+  my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
+           "SUPER or SYSTEM_VARIABLES_ADMIN and TABLE_ENCRYPTION_ADMIN");
+  return true;
+}
+
+static Sys_var_bool Sys_default_table_encryption(
+    "default_table_encryption",
+    "Database and tablespace created with this default encryption property"
+    "unless, the user specify a explicit encryption property.",
+    HINT_UPDATEABLE SESSION_VAR(default_table_encryption), CMD_LINE(OPT_ARG),
+    DEFAULT(false), NO_MUTEX_GUARD, IN_BINLOG,
+    ON_CHECK(check_set_default_table_encryption_access), ON_UPDATE(0));
+
+static bool check_set_table_encryption_privilege_access(sys_var *, THD *thd,
+                                                        set_var *) {
+  DBUG_EXECUTE_IF("skip_table_encryption_admin_check_for_set",
+                  { return false; });
+  if (!thd->security_context()->check_access(SUPER_ACL)) {
+    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "SUPER");
+    return true;
+  }
+  return false;
+}
+
+static Sys_var_bool Sys_table_encryption_privilege_check(
+    "table_encryption_privilege_check",
+    "Indicates if server enables privilege check when user tries to use "
+    "non-default value for CREATE DATABASE or CREATE TABLESPACE or when "
+    "user tries to do CREATE TABLE with ENCRYPTION option which deviates "
+    "from per-database default.",
+    GLOBAL_VAR(opt_table_encryption_privilege_check), CMD_LINE(OPT_ARG),
+    DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+    ON_CHECK(check_set_table_encryption_privilege_access), ON_UPDATE(0));

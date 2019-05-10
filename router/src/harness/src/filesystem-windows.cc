@@ -22,7 +22,7 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include "filesystem.h"
+#include "mysql/harness/filesystem.h"
 
 #include <direct.h>
 #include <cassert>
@@ -41,15 +41,6 @@ using std::ostringstream;
 using std::string;
 
 namespace {
-std::string get_last_error() {
-  char message[512];
-  FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
-                    FORMAT_MESSAGE_ALLOCATE_BUFFER,
-                nullptr, GetLastError(), LANG_NEUTRAL, message, sizeof(message),
-                nullptr);
-  return std::string(message);
-}
-const std::string dirsep("/");
 const std::string extsep(".");
 }  // namespace
 
@@ -389,6 +380,12 @@ SecurityDescriptorPtr get_security_descriptor(const std::string &file_name) {
   }
 
   return sec_desc;
+}
+
+int mkdir_wrapper(const std::string &dir, perm_mode mode) {
+  auto res = _mkdir(dir.c_str());
+  if (res != 0) return errno;
+  return 0;
 }
 
 }  // namespace mysql_harness

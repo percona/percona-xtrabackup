@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All rights reserved.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -89,6 +89,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0mem.h"
 
 #include "arch0arch.h"
+#include "arch0recv.h"
 #include "btr0pcur.h"
 #include "btr0sea.h"
 #include "buf0flu.h"
@@ -119,7 +120,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "xb0xb.h"
 
 /** fil_space_t::flags for hard-coded tablespaces */
-extern ulint predefined_flags;
+extern uint32_t predefined_flags;
 
 /** Recovered persistent metadata */
 static MetadataRecover *srv_dict_metadata;
@@ -175,7 +176,8 @@ static char *srv_monitor_file_name;
 
 /* Keys to register InnoDB threads with performance schema */
 #ifdef UNIV_PFS_THREAD
-mysql_pfs_key_t archiver_thread_key;
+mysql_pfs_key_t log_archiver_thread_key;
+mysql_pfs_key_t page_archiver_thread_key;
 mysql_pfs_key_t buf_dump_thread_key;
 mysql_pfs_key_t buf_resize_thread_key;
 mysql_pfs_key_t dict_stats_thread_key;
@@ -398,7 +400,7 @@ static dberr_t create_log_files(char *logfilename, size_t dirnamelen, lsn_t lsn,
     }
 #endif
 
-    FSP_FLAGS_SET_ENCRYPTION(log_space->flags);
+    fsp_flags_set_encryption(log_space->flags);
     err = fil_set_encryption(log_space->id, Encryption::AES, NULL, NULL);
     ut_ad(err == DB_SUCCESS);
     if (use_dumped_tablespace_keys && !srv_backup_mode) {
@@ -553,7 +555,7 @@ static dberr_t srv_undo_tablespace_create(undo::Tablespace &undo_space) {
   os_file_create_subdirs_if_needed(file_name);
 
   /* Until this undo tablespace can become active, keep a truncate log
-  file around so that if a cash happens it can be rebuilt at startup. */
+  file around so that if a crash happens it can be rebuilt at startup. */
   err = undo::start_logging(&undo_space);
   if (err != DB_SUCCESS) {
     ib::error(ER_IB_MSG_1070, undo_space.log_file_name(),
@@ -562,7 +564,8 @@ static dberr_t srv_undo_tablespace_create(undo::Tablespace &undo_space) {
   ut_ad(err == DB_SUCCESS);
 
   fh = os_file_create(innodb_data_file_key, file_name,
-                      srv_read_only_mode ? OS_FILE_OPEN : OS_FILE_CREATE,
+                      (srv_read_only_mode ? OS_FILE_OPEN : OS_FILE_CREATE) |
+                          OS_FILE_ON_ERROR_NO_EXIT,
                       OS_FILE_NORMAL, OS_DATA_FILE, srv_read_only_mode, &ret);
 
   if (ret == FALSE) {
@@ -596,6 +599,8 @@ static dberr_t srv_undo_tablespace_create(undo::Tablespace &undo_space) {
         SRV_UNDO_TABLESPACE_SIZE_IN_PAGES << UNIV_PAGE_SIZE_SHIFT,
         srv_read_only_mode, true);
 
+    DBUG_EXECUTE_IF("ib_undo_tablespace_create_fail", ret = false;);
+
     if (!ret) {
       ib::info(ER_IB_MSG_1074, file_name);
       err = DB_OUT_OF_FILE_SPACE;
@@ -627,7 +632,7 @@ static dberr_t srv_undo_tablespace_enable_encryption(space_id_t space_id) {
   will be generated in fsp_header_init later. */
   fil_space_t *space = fil_space_get(space_id);
   if (!FSP_FLAGS_GET_ENCRYPTION(space->flags)) {
-    FSP_FLAGS_SET_ENCRYPTION(space->flags);
+    fsp_flags_set_encryption(space->flags);
     err = fil_set_encryption(space_id, Encryption::AES, NULL, NULL);
     if (err != DB_SUCCESS) {
       ib::error(ER_IB_MSG_1075, space->name);
@@ -684,7 +689,7 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
     byte key[ENCRYPTION_KEY_LEN];
     byte iv[ENCRYPTION_KEY_LEN];
     if (fsp_header_get_encryption_key(space->flags, key, iv, first_page)) {
-      FSP_FLAGS_SET_ENCRYPTION(space->flags);
+      fsp_flags_set_encryption(space->flags);
       err = fil_set_encryption(space->id, Encryption::AES, key, iv);
       ut_ad(err == DB_SUCCESS);
     } else {
@@ -866,7 +871,7 @@ static dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
 
   pfs_os_file_t fh;
   bool success;
-  ulint flags;
+  uint32_t flags;
   bool atomic_write;
   dberr_t err = DB_ERROR;
   space_id_t space_id = undo_space.id();
@@ -1296,7 +1301,9 @@ static dberr_t srv_undo_tablespaces_construct(bool create_new_db) {
     trx_rseg_add_rollback_segments(). */
   }
 
-  srv_enable_undo_encryption_if_set();
+  if (srv_undo_log_encrypt) {
+    srv_enable_undo_encryption(false);
+  }
 
   return (DB_SUCCESS);
 }
@@ -1450,6 +1457,10 @@ cleanup_and_exit:
     undo::spaces->x_lock();
     undo::spaces->drop(undo_space);
     undo::spaces->x_unlock();
+
+    /* Remove undo tablespace file (if created) */
+    os_file_delete_if_exists(innodb_data_file_key, undo_space.file_name(),
+                             nullptr);
   }
 
   srv_undo_tablespaces_mark_construction_done();
@@ -1716,9 +1727,14 @@ void srv_shutdown_all_bg_threads() {
     logs_empty_and_mark_files_at_shutdown() and should have
     already quit or is quitting right now. */
 
-    /* Stop archiver thread. */
-    if (archiver_is_active) {
-      os_event_set(archiver_thread_event);
+    /* Stop log archiver thread. */
+    if (log_archiver_is_active) {
+      os_event_set(log_archiver_thread_event);
+    }
+
+    /* Stop dirty page ID archiver thread. */
+    if (page_archiver_is_active) {
+      os_event_set(page_archiver_thread_event);
     }
 
     bool active = os_thread_any_active();
@@ -2096,7 +2112,7 @@ dberr_t srv_start(bool create_new_db, const std::string &scan_directories,
   if (err != DB_SUCCESS) {
     return (srv_init_abort(err));
   }
-  arch_init();
+
   recv_sys_create();
   recv_sys_init(buf_pool_get_curr_size());
   trx_sys_create();
@@ -2320,6 +2336,8 @@ dberr_t srv_start(bool create_new_db, const std::string &scan_directories,
 
 files_checked:
 
+  arch_init();
+
   if (create_new_db) {
     ut_a(!srv_read_only_mode);
 
@@ -2400,6 +2418,8 @@ files_checked:
     been shut down normally: this is the normal startup path */
 
     err = recv_recovery_from_checkpoint_start(*log_sys, flushed_lsn, to_lsn);
+
+    arch_page_sys->post_recovery_init();
 
     recv_sys->dblwr.pages.clear();
 
@@ -2840,6 +2860,13 @@ void srv_dict_recover_on_restart() {
   }
 }
 
+/* If early redo/undo log encryption processing is done. */
+bool is_early_redo_undo_encryption_done() {
+  /* Early redo/undo encryption is done during post recovery before purge
+  thread is started. */
+  return (srv_start_state_is_set(SRV_START_STATE_PURGE));
+}
+
 /** Start purge threads. During upgrade we start
 purge threads early to apply purge. */
 void srv_start_purge_threads() {
@@ -3066,9 +3093,14 @@ void srv_pre_dd_shutdown() {
 static void srv_shutdown_arch() {
   int count = 0;
 
-  while (archiver_is_active) {
+  while (log_archiver_is_active || page_archiver_is_active) {
     ++count;
-    os_event_set(archiver_thread_event);
+
+    if (log_archiver_is_active) {
+      os_event_set(log_archiver_thread_event);
+    } else if (page_archiver_is_active) {
+      os_event_set(page_archiver_thread_event);
+    }
 
     os_thread_sleep(100000);
 

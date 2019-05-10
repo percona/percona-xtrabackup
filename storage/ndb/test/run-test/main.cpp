@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,20 +30,22 @@
 #include <NdbOut.hpp>
 #include "atrt.hpp"
 
+#include <util/File.hpp>
 #include <FileLogHandler.hpp>
 #include <SysLogHandler.hpp>
 
 #include <NdbSleep.h>
 #include "my_alloc.h"  // MEM_ROOT
+#include <vector>
 
 #define PATH_SEPARATOR DIR_SEPARATOR
 #define TESTCASE_RETRIES_THRESHOLD_WARNING 5
 
 /** Global variables */
 static const char progname[] = "ndb_atrt";
-static const char *g_gather_progname = "atrt-gather-result.sh";
-static const char *g_analyze_progname = "atrt-analyze-result.sh";
-static const char *g_setup_progname = "atrt-setup.sh";
+static const char *g_gather_progname = 0;
+static const char *g_analyze_progname = 0;
+static const char *g_setup_progname = 0;
 
 static const char *g_log_filename = 0;
 static const char *g_test_case_filename = 0;
@@ -113,9 +115,12 @@ static struct {
 #endif
                   {true, 0, 0}};
 
+static BaseString get_atrt_path(const char *arg);
+
 const char *g_search_path[] = {"bin", "libexec",   "sbin", "scripts",
                                "lib", "lib/mysql", 0};
 static bool find_binaries();
+static bool find_scripts(const char *path);
 static bool find_config_ini_files();
 
 static struct my_option g_options[] = {
@@ -219,6 +224,7 @@ int main(int argc, char **argv) {
   MEM_ROOT alloc = MEM_ROOT{PSI_NOT_INSTRUMENTED, 512};
   if (!parse_args(argc, argv, &alloc)) {
     g_logger.critical("Failed to parse arguments");
+    return_code = ATRT_FAILURE;
     goto end;
   }
 
@@ -228,6 +234,17 @@ int main(int argc, char **argv) {
     g_logger.critical("Failed to find required binaries for execution");
     return_code = ATRT_FAILURE;
     goto end;
+  }
+
+  {
+    BaseString atrt_path = get_atrt_path(argv[0]);
+    assert(atrt_path != "");
+
+    if (!find_scripts(atrt_path.c_str())) {
+      g_logger.critical("Failed to find required atrt scripts for execution");
+      return_code = ATRT_FAILURE;
+      goto end;
+    }
   }
 
   g_config.m_config_type = atrt_config::CNF;
@@ -523,6 +540,7 @@ int main(int argc, char **argv) {
 
       if (!wait_for_processes_to_stop(g_config, p_clients)) {
         g_logger.critical("Failed to stop client processes");
+        return_code = ATRT_FAILURE;
         goto cleanup;
       }
 
@@ -533,11 +551,26 @@ int main(int argc, char **argv) {
         goto end;
       }
 
-      g_logger.info("#%d %s(%d)", test_no, (result == 0 ? "OK" : "FAILED"),
-                    result);
-      restart = result != 0;
+      const char *test_status;
+      switch (result) {
+        case ErrorCodes::ERR_OK:
+          test_status = "OK";
+          break;
+        case ErrorCodes::ERR_TEST_SKIPPED:
+          test_status = "SKIPPED";
+          break;
+        default:
+          test_status = "FAILED";
+          break;
+      }
+      g_logger.info("#%d %s(%d)", test_no, test_status, result);
 
-      retry_test = result != 0 && testruns <= test_case.m_max_retries;
+      const bool failed = (result != ErrorCodes::ERR_OK &&
+                           result != ErrorCodes::ERR_TEST_SKIPPED);
+
+      restart = failed;
+
+      retry_test = failed && testruns <= test_case.m_max_retries;
       if (retry_test) {
         g_logger.info("Retrying test #%d - '%s', attempt (%d/%d)", test_no,
                       test_case.m_name.c_str(), testruns,
@@ -546,7 +579,8 @@ int main(int argc, char **argv) {
       }
     } while (retry_test);
 
-    if (result != 0) {
+    if (result != ErrorCodes::ERR_OK &&
+        result != ErrorCodes::ERR_TEST_SKIPPED) {
       return_code = TESTSUITE_FAILURES;
     }
 
@@ -1038,22 +1072,24 @@ bool wait_ndb(atrt_config &config, int goal) {
   return cnt == config.m_clusters.size();
 }
 
-bool start_process(atrt_process &proc) {
+bool start_process(atrt_process &proc, bool run_setup) {
   if (proc.m_proc.m_id != -1) {
     g_logger.critical("starting already started process: %u",
                       (unsigned)proc.m_index);
     return false;
   }
 
-  BaseString tmp = g_setup_progname;
-  tmp.appfmt(" %s %s/ %s", proc.m_host->m_hostname.c_str(),
-             proc.m_proc.m_cwd.c_str(), proc.m_proc.m_cwd.c_str());
+  if (run_setup) {
+    BaseString tmp = g_setup_progname;
+    tmp.appfmt(" %s %s/ %s", proc.m_host->m_hostname.c_str(),
+               proc.m_proc.m_cwd.c_str(), proc.m_proc.m_cwd.c_str());
 
-  g_logger.debug("system(%s)", tmp.c_str());
-  const int r1 = sh(tmp.c_str());
-  if (r1 != 0) {
-    g_logger.critical("Failed to setup process");
-    return false;
+    g_logger.debug("system(%s)", tmp.c_str());
+    const int r1 = sh(tmp.c_str());
+    if (r1 != 0) {
+      g_logger.critical("Failed to setup process");
+      return false;
+    }
   }
 
   /**
@@ -1767,6 +1803,31 @@ static bool find_binaries() {
   return ok;
 }
 
+bool find_scripts(const char *atrt_path) {
+  g_logger.info("Locating scripts...");
+
+  struct script_path {
+    const char *name;
+    const char **path;
+  };
+  std::vector<struct script_path> scripts = {
+      {"atrt-gather-result.sh", &g_gather_progname},
+      {"atrt-analyze-result.sh", &g_analyze_progname},
+      {"atrt-setup.sh", &g_setup_progname}};
+
+  for (auto &script : scripts) {
+    BaseString script_full_path;
+    script_full_path.assfmt("%s/%s", atrt_path, script.name);
+    if (!File_class::exists(script_full_path.c_str())) {
+      g_logger.critical("atrt script %s could not be found in %s", script.name,
+                        atrt_path);
+      return false;
+    }
+    *script.path = strdup(script_full_path.c_str());
+  }
+  return true;
+}
+
 static bool find_config_ini_files() {
   g_logger.info("Locating config.ini files...");
 
@@ -1788,6 +1849,21 @@ static bool find_config_ini_files() {
   }
 
   return found;
+}
+
+BaseString get_atrt_path(const char *arg) {
+  char *fullPath = realpath(arg, nullptr);
+  if (fullPath == nullptr) return {};
+
+  BaseString path;
+  char *last_folder_sep = strrchr(fullPath, '/');
+  if (last_folder_sep != nullptr) {
+    *last_folder_sep = '\0';
+    path.assign(fullPath);
+  }
+
+  free(fullPath);
+  return path;
 }
 
 template class Vector<Vector<SimpleCpcClient::Process> >;

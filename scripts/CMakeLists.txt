@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -80,14 +80,14 @@ ELSE()
   MESSAGE(FATAL_ERROR "Cannot concatenate files")
 ENDIF()
 
-# Build mysql_fix_privilege_tables.c
+# Build mysql_fix_privilege_tables.h
 ADD_CUSTOM_COMMAND(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables_sql.c
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables_sql.h
   ${CAT_COMMAND}
   COMMAND comp_sql
   mysql_fix_privilege_tables
   mysql_fix_privilege_tables.sql
-  mysql_fix_privilege_tables_sql.c
+  mysql_fix_privilege_tables_sql.h
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   DEPENDS comp_sql
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables.sql
@@ -97,7 +97,7 @@ ADD_CUSTOM_COMMAND(
 # Add target for the above to be built
 ADD_CUSTOM_TARGET(GenFixPrivs
   ALL
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables_sql.c
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables_sql.h
   ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_sys_schema.h
 )
 
@@ -192,6 +192,17 @@ ADD_CUSTOM_COMMAND(
   ${CMAKE_CURRENT_SOURCE_DIR}/fill_help_tables.sql
 )
 
+ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_ndb_privileges.h
+  COMMAND comp_sql
+  ndb_upgrade_privileges
+  ${CMAKE_CURRENT_SOURCE_DIR}/ndb_upgrade_privileges.sql
+  sql_commands_ndb_privileges.h
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS comp_sql
+  ${CMAKE_CURRENT_SOURCE_DIR}/ndb_upgrade_privileges.sql
+)
+
 # Add target for the above to be built
 IF(NOT WITHOUT_SERVER)
   ADD_CUSTOM_TARGET(GenBootstrapPriv
@@ -201,6 +212,7 @@ IF(NOT WITHOUT_SERVER)
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_users.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_help_data.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables_data_fix.h
+    ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_ndb_privileges.h
   )
 ENDIF()
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -67,6 +67,7 @@
 #include "sql/table.h"
 #include "sql_string.h"
 
+using std::min;
 using std::string;
 
 static collation_unordered_map<string, sys_var *> *system_variable_hash;
@@ -426,13 +427,15 @@ bool sys_var::is_default(THD *, set_var *var) {
 void sys_var::set_user_host(THD *thd) {
   memset(user, 0, sizeof(user));
   /* set client user */
-  if (thd->security_context()->user().length)
+  if (thd->security_context()->user().length > 0)
     strncpy(user, thd->security_context()->user().str,
             thd->security_context()->user().length);
   memset(host, 0, sizeof(host));
-  if (thd->security_context()->host().length)
-    strncpy(host, thd->security_context()->host().str,
-            thd->security_context()->host().length);
+  if (thd->security_context()->host().length > 0) {
+    int host_len =
+        min<size_t>(sizeof(host), thd->security_context()->host().length);
+    strncpy(host, thd->security_context()->host().str, host_len);
+  }
 }
 
 void sys_var::do_deprecated_warning(THD *thd) {
@@ -834,7 +837,7 @@ int sql_set_variables(THD *thd, List<set_var_base> *var_list, bool opened) {
     }
   }
 err:
-  free_underlaid_joins(thd->lex->select_lex);
+  free_underlaid_joins(thd, thd->lex->select_lex);
   DBUG_RETURN(error);
 }
 
@@ -1120,11 +1123,11 @@ int set_var::update(THD *thd) {
   return ret;
 }
 
-void set_var::print_short(String *str) {
+void set_var::print_short(const THD *thd, String *str) {
   str->append(var->name.str, var->name.length);
   str->append(STRING_WITH_LEN("="));
   if (value)
-    value->print(str, QT_ORDINARY);
+    value->print(thd, str, QT_ORDINARY);
   else
     str->append(STRING_WITH_LEN("DEFAULT"));
 }
@@ -1132,9 +1135,10 @@ void set_var::print_short(String *str) {
 /**
   Self-print assignment
 
+  @param thd Thread handle
   @param str String buffer to append the partial assignment to.
 */
-void set_var::print(THD *, String *str) {
+void set_var::print(const THD *thd, String *str) {
   switch (type) {
     case OPT_PERSIST:
       str->append("PERSIST ");
@@ -1152,7 +1156,7 @@ void set_var::print(THD *, String *str) {
     str->append(base.str, base.length);
     str->append(STRING_WITH_LEN("."));
   }
-  print_short(str);
+  print_short(thd, str);
 }
 
 /*****************************************************************************
@@ -1208,8 +1212,8 @@ int set_var_user::update(THD *thd) {
   return 0;
 }
 
-void set_var_user::print(THD *, String *str) {
-  user_var_item->print_assignment(str, QT_ORDINARY);
+void set_var_user::print(const THD *thd, String *str) {
+  user_var_item->print_assignment(thd, str, QT_ORDINARY);
 }
 
 /*****************************************************************************
@@ -1255,7 +1259,7 @@ int set_var_password::update(THD *thd) {
              : 0;
 }
 
-void set_var_password::print(THD *thd, String *str) {
+void set_var_password::print(const THD *thd, String *str) {
   if (user->user.str != NULL && user->user.length > 0) {
     str->append(STRING_WITH_LEN("PASSWORD FOR "));
     append_identifier(thd, str, user->user.str, user->user.length);
@@ -1319,7 +1323,7 @@ int set_var_collation_client::update(THD *thd) {
   return 0;
 }
 
-void set_var_collation_client::print(THD *, String *str) {
+void set_var_collation_client::print(const THD *, String *str) {
   str->append((set_cs_flags & SET_CS_NAMES) ? "NAMES " : "CHARACTER SET ");
   if (set_cs_flags & SET_CS_DEFAULT)
     str->append("DEFAULT");

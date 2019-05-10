@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,6 +55,7 @@
 #include "sql/dd/impl/utils.h"  // dd::eat_str
 #include "sql/dd/properties.h"  // dd::Properties
 #include "sql/dd/string_type.h"
+#include "sql/dd/types/check_constraint.h"     // dd::Check_constraint
 #include "sql/dd/types/column.h"               // dd::enum_column_types
 #include "sql/dd/types/column_type_element.h"  // dd::Column_type_element
 #include "sql/dd/types/foreign_key.h"
@@ -74,7 +75,8 @@
 #include "sql/partition_element.h"  // partition_element
 #include "sql/partition_info.h"     // partition_info
 #include "sql/sql_bitmap.h"
-#include "sql/sql_class.h"  // THD
+#include "sql/sql_check_constraint.h"  // Sql_check_constraint_share_list
+#include "sql/sql_class.h"             // THD
 #include "sql/sql_const.h"
 #include "sql/sql_error.h"
 #include "sql/sql_list.h"
@@ -497,6 +499,7 @@ static bool prepare_share(THD *thd, TABLE_SHARE *share,
 
   if (share->found_next_number_field) {
     Field *reg_field = *share->found_next_number_field;
+    /* Check that the auto-increment column is the first column of some key. */
     if ((int)(share->next_number_index = (uint)find_ref_key(
                   share->key_info, share->keys, share->default_values,
                   reg_field, &share->next_number_key_offset,
@@ -582,12 +585,12 @@ static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
   } else {
     // If no secondary storage engine is set, the share cannot
     // represent a table in a secondary engine.
-    DBUG_ASSERT(!share->is_secondary());
+    DBUG_ASSERT(!share->is_secondary_engine());
   }
 
   // Read table engine type
   LEX_CSTRING engine_name = lex_cstring_handle(tab_obj->engine());
-  if (share->is_secondary())
+  if (share->is_secondary_engine())
     engine_name = {share->secondary_engine.str, share->secondary_engine.length};
 
   plugin_ref tmp_plugin = ha_resolve_by_name_raw(thd, engine_name);
@@ -915,8 +918,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
   name = strmake_root(&share->mem_root, s.c_str(), s.length());
   name[s.length()] = '\0';
 
-  dd::Properties *column_options =
-      const_cast<dd::Properties *>(&col_obj->options());
+  const dd::Properties *column_options = &col_obj->options();
 
   // Type
   field_type = dd_get_old_field_type(col_obj->type());
@@ -1047,10 +1049,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
     reg_field->m_default_val_expr = default_val_expr;
   }
 
-  // Auto-increment columns are maintained in the primary storage
-  // engine only. Treat the auto-increment column as a regular column
-  // in the secondary table.
-  if ((auto_flags & Field::NEXT_NUMBER) && share->is_primary())
+  if ((auto_flags & Field::NEXT_NUMBER) != 0)
     share->found_next_number_field = &share->field[field_nr];
 
   // Set field flags
@@ -1089,6 +1088,10 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
         strmake_root(&share->mem_root, comment.c_str(), comment.length());
     reg_field->comment.length = comment.length();
   }
+
+  // NOT SECONDARY column option.
+  if (column_options->exists("not_secondary"))
+    reg_field->flags |= NOT_SECONDARY_FLAG;
 
   reg_field->set_hidden(col_obj->hidden());
 
@@ -1453,9 +1456,6 @@ static bool fill_indexes_from_dd(THD *thd, TABLE_SHARE *share,
   share->keys_for_keyread.init(0);
   share->keys_in_use.init();
   share->visible_indexes.init();
-
-  // Indexes are not available in the secondary storage engine.
-  if (share->is_secondary()) return false;
 
   uint32 primary_key_parts = 0;
 
@@ -1902,7 +1902,7 @@ static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
   // The DD only has information about how the table is partitioned in
   // the primary storage engine, so don't use this information for
   // tables in a secondary storage engine.
-  if (share->is_secondary()) return false;
+  if (share->is_secondary_engine()) return false;
 
   partition_info *part_info;
   part_info = new (&share->mem_root) partition_info;
@@ -2230,6 +2230,54 @@ static bool fill_foreign_keys_from_dd(TABLE_SHARE *share,
   return false;
 }
 
+/**
+  Fill check constraints from dd::Table object to the TABLE_SHARE.
+
+  @param[in,out]      share              TABLE_SHARE instance.
+  @param[in]          tab_obj            Table instance.
+
+  @retval   false   On Success.
+  @retval   true    On failure.
+*/
+static bool fill_check_constraints_from_dd(TABLE_SHARE *share,
+                                           const dd::Table *tab_obj) {
+  DBUG_ASSERT(share->check_constraint_share_list == nullptr);
+
+  if (tab_obj->check_constraints().size() > 0) {
+    share->check_constraint_share_list = new (&share->mem_root)
+        Sql_check_constraint_share_list(&share->mem_root);
+    if (share->check_constraint_share_list == nullptr) return true;  // OOM
+
+    for (auto &cc : tab_obj->check_constraints()) {
+      // Check constraint name.
+      LEX_CSTRING name;
+      if (lex_string_strmake(&share->mem_root, &name, cc->name().c_str(),
+                             cc->name().length()))
+        return true;  // OOM
+
+      // Check constraint expression (clause).
+      LEX_CSTRING check_clause;
+      if (lex_string_strmake(&share->mem_root, &check_clause,
+                             cc->check_clause().c_str(),
+                             cc->check_clause().length()))
+        return true;  // OOM
+
+      // Check constraint state.
+      bool is_cc_enforced =
+          (cc->constraint_state() == dd::Check_constraint::CS_ENFORCED);
+
+      Sql_check_constraint_share *cc_share = new (&share->mem_root)
+          Sql_check_constraint_share(name, check_clause, is_cc_enforced);
+      if (cc_share == nullptr) return true;  // OOM
+
+      if (share->check_constraint_share_list->push_back(cc_share))
+        return true;  // OOM
+    }
+  }
+
+  return false;
+}
+
 bool open_table_def(THD *thd, TABLE_SHARE *share, const dd::Table &table_def) {
   DBUG_ENTER("open_table_def");
 
@@ -2242,7 +2290,8 @@ bool open_table_def(THD *thd, TABLE_SHARE *share, const dd::Table &table_def) {
                 fill_columns_from_dd(thd, share, &table_def) ||
                 fill_indexes_from_dd(thd, share, &table_def) ||
                 fill_partitioning_from_dd(thd, share, &table_def) ||
-                fill_foreign_keys_from_dd(share, &table_def));
+                fill_foreign_keys_from_dd(share, &table_def) ||
+                fill_check_constraints_from_dd(share, &table_def));
 
   thd->mem_root = old_root;
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -202,6 +202,8 @@ static void trx_init(trx_t *trx) {
   trx->lock.rec_cached = 0;
 
   trx->lock.table_cached = 0;
+
+  trx->error_index = nullptr;
 
   /* During asynchronous rollback, we should reset forced rollback flag
   only after rollback is complete to avoid race with the thread owning
@@ -886,12 +888,24 @@ static void trx_resurrect_update(
     trx_undo_t *undo, /*!< in/out: update UNDO record */
     trx_rseg_t *rseg) /*!< in/out: rollback segment */
 {
-  rseg->trx_ref_count++;
-  trx->rsegs.m_redo.rseg = rseg;
-  *trx->xid = undo->xid;
-  trx->id = undo->trx_id;
+  /* This resurected transaction might also have been doing inserts.
+  If so, this rseg is already assigned by trx_resurrect_insert(). */
+  if (trx->rsegs.m_redo.rseg != nullptr) {
+    ut_a(trx->rsegs.m_redo.rseg == rseg);
+    ut_ad(undo->xid.eq(trx->xid));
+    ut_ad(trx->id == undo->trx_id);
+    ut_ad(trx->is_recovered);
+  } else {
+    rseg->trx_ref_count++;
+    trx->rsegs.m_redo.rseg = rseg;
+    *trx->xid = undo->xid;
+    trx->id = undo->trx_id;
+    trx->is_recovered = true;
+  }
+
+  /* Assign the update_undo segment. */
+  ut_a(trx->rsegs.m_redo.update_undo == nullptr);
   trx->rsegs.m_redo.update_undo = undo;
-  trx->is_recovered = true;
 
   /* This is single-threaded startup code, we do not need the
   protection of trx->mutex or trx_sys->mutex here. */
@@ -916,6 +930,12 @@ static void trx_resurrect_update(
   start time here.*/
   if (trx->state == TRX_STATE_ACTIVE || trx->state == TRX_STATE_PREPARED) {
     trx->start_time = ut_time();
+  }
+
+  trx->ddl_operation = undo->dict_operation;
+
+  if (undo->dict_operation) {
+    trx_set_dict_operation(trx, TRX_DICT_OP_TABLE);
   }
 
   if (!undo->empty && undo->top_undo_no >= trx->undo_no) {

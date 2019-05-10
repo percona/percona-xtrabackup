@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@ INCLUDE_DIRECTORIES(
 )
 INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 
-INCLUDE_DIRECTORIES(SYSTEM ${ICU_INCLUDE_DIRS})
+MY_INCLUDE_SYSTEM_DIRECTORIES(ICU)
 
 SET(CONF_SOURCES
   ${CMAKE_CURRENT_BINARY_DIR}/sql_builtin.cc 
@@ -66,7 +66,12 @@ ADD_CUSTOM_COMMAND(
 # Make sure sql_yacc.h is generated before compiling gen_keyword_list
 MYSQL_ADD_EXECUTABLE(gen_keyword_list gen_keyword_list.cc SKIP_INSTALL)
 ADD_DEPENDENCIES(gen_keyword_list GenServerSource)
-TARGET_LINK_LIBRARIES(gen_keyword_list regex strings dbug)
+TARGET_LINK_LIBRARIES(gen_keyword_list ${ICU_LIBRARIES} ${CMAKE_DL_LIBS})
+# ICU headers for WIN32 need extra info about their libs state
+IF(WIN32)
+  ADD_COMPILE_DEFINITIONS(gen_keyword_list.cc COMPILE_DEFINITIONS
+    U_STATIC_IMPLEMENTATION)
+ENDIF()
 
 ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/keyword_list.h
@@ -89,8 +94,6 @@ SET(DD_SOURCES
   dd/dd_utility.cc
   dd/properties.cc
 
-  dd/impl/bootstrap_ctx.cc
-  dd/impl/bootstrapper.cc
   dd/impl/dd.cc
   dd/impl/dictionary_impl.cc
   dd/impl/properties_impl.cc
@@ -102,6 +105,9 @@ SET(DD_SOURCES
   dd/impl/sdi_file.cc
   dd/impl/sdi_tablespace.cc
   dd/impl/string_type.cc
+
+  dd/impl/bootstrap/bootstrap_ctx.cc
+  dd/impl/bootstrap/bootstrapper.cc
 
   dd/impl/cache/dictionary_client.cc
   dd/impl/cache/local_multi_map.cc
@@ -116,6 +122,7 @@ SET(DD_SOURCES
   dd/impl/raw/raw_table.cc
 
   dd/impl/system_views/character_sets.cc
+  dd/impl/system_views/check_constraints.cc
   dd/impl/system_views/collations.cc
   dd/impl/system_views/collation_charset_applicability.cc
   dd/impl/system_views/columns.cc
@@ -147,6 +154,7 @@ SET(DD_SOURCES
   dd/impl/system_views/views.cc
 
   dd/impl/tables/character_sets.cc
+  dd/impl/tables/check_constraints.cc
   dd/impl/tables/collations.cc
   dd/impl/tables/columns.cc
   dd/impl/tables/column_statistics.cc
@@ -179,6 +187,7 @@ SET(DD_SOURCES
   dd/impl/types/table_stat_impl.cc
   dd/impl/types/abstract_table_impl.cc
   dd/impl/types/charset_impl.cc
+  dd/impl/types/check_constraint_impl.cc
   dd/impl/types/collation_impl.cc
   dd/impl/types/column_impl.cc
   dd/impl/types/column_statistics_impl.cc
@@ -211,6 +220,9 @@ SET(DD_SOURCES
   dd/impl/types/view_table_impl.cc
   dd/impl/types/weak_object_impl.cc
 
+  dd/impl/upgrade/server.cc
+  dd/impl/upgrade/dd.cc
+
   dd/info_schema/metadata.cc
   dd/info_schema/show.cc
   dd/info_schema/show_query_builder.cc
@@ -219,12 +231,12 @@ SET(DD_SOURCES
 
   dd/performance_schema/init.cc
 
-  dd/upgrade/event.cc
-  dd/upgrade/global.cc
-  dd/upgrade/routine.cc
-  dd/upgrade/schema.cc
-  dd/upgrade/table.cc
-  dd/upgrade/upgrade.cc
+  dd/upgrade_57/event.cc
+  dd/upgrade_57/global.cc
+  dd/upgrade_57/routine.cc
+  dd/upgrade_57/schema.cc
+  dd/upgrade_57/table.cc
+  dd/upgrade_57/upgrade.cc
 )
 
 SET(SQL_GIS_SOURCES
@@ -279,10 +291,12 @@ SET(MYSQL_SERVER_SUB_COMPONENT_SOURCES
   server_component/security_context_imp.cc
   server_component/host_application_signal_imp.cc
   server_component/audit_api_message_service_imp.cc
+  server_component/page_track_service.cc
   )
 
 SET(SQL_SHARED_SOURCES
   abstract_query_plan.cc
+  auth/auth_acls.cc
   auth/auth_common.cc
   auth/dynamic_privileges_impl.cc
   auth/dynamic_privilege_table.cc
@@ -292,12 +306,14 @@ SET(SQL_SHARED_SOURCES
   auth/sql_authorization.cc
   auth/sql_user_table.cc
   auth/sql_user.cc
+  auth/partial_revokes.cc
   auth/password.cc
   auth/password_policy_service.cc
   auth/sql_security_ctx.cc
   auth/service_security_context.cc
   auto_thd.cc
   keyring_service.cc
+  auth/roles.cc
   auth/role_tables.cc
   auth/sha2_password_common.cc
   auth/sha2_password.cc
@@ -306,6 +322,7 @@ SET(SQL_SHARED_SOURCES
   check_stack.cc
   conn_handler/connection_handler_manager.cc 
   clone_handler.cc
+  composite_iterators.cc
   create_field.cc
   current_thd.cc
   dd_sql_view.cc
@@ -335,6 +352,7 @@ SET(SQL_SHARED_SOURCES
   item_cmpfunc.cc 
   item_create.cc
   item_func.cc
+  item_pfs_func.cc
   item_json_func.cc
   item_regexp_func.cc
   item_row.cc 
@@ -362,6 +380,7 @@ SET(SQL_SHARED_SOURCES
   my_decimal.cc
   mysqld.cc
   mysqld_thd_manager.cc
+  net_ns.cc
   opt_costconstantcache.cc
   opt_costconstants.cc
   opt_costmodel.cc
@@ -431,8 +450,10 @@ SET(SQL_SHARED_SOURCES
   sql_bootstrap.cc
   sql_initialize.cc
   sql_call.cc
+  sql_check_constraint.cc
   sql_class.cc
   sql_component.cc
+  sql_const_folding.cc
   sql_cmd_ddl_table.cc
   sql_cmd_srs.cc
   sql_connect.cc
@@ -513,6 +534,7 @@ SET(SQL_SHARED_SOURCES
   tztime.cc
   uniques.cc
   xa.cc
+  ssl_acceptor_context.cc
   ../libmysql/libmysql.cc
   ${MYSQL_SERVER_SUB_COMPONENT_SOURCES}
 )
@@ -610,18 +632,9 @@ IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
   ENDIF()
 ENDIF()
 
-# Assertion in Developer Studio 12.5 (fixed in 12.6 beta).
-IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
-  ADD_COMPILE_FLAGS(
-    gis/srs/srs.cc
-    gis/srs/wkt_parser.cc
-    COMPILE_FLAGS "-DBOOST_NO_CXX11_VARIADIC_TEMPLATES"
-  )
-ENDIF()
-
-ADD_COMPILE_FLAGS(
+ADD_COMPILE_DEFINITIONS(
   ../extra/lz4/xxhash.c
-  COMPILE_FLAGS -DXXH_NAMESPACE=MY_
+  COMPILE_DEFINITIONS XXH_NAMESPACE=MY_
 )
 
 # Fixes "C1128: number of sections exceeded object file format limit" in MSVC
@@ -639,21 +652,9 @@ ENDIF()
 
 # Force optimization of (large) MYSQLparse function in MSVC
 IF(WIN32 AND NOT WIN32_CLANG)
-  IF (MSVC_VERSION GREATER_EQUAL 1910)
-    ADD_COMPILE_FLAGS(
-      ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
-      COMPILE_FLAGS "/d2OptimizeHugeFunctions")
-  ELSE()
-      # The optimization _may_ be available in VS2015 if hotfix
-      # KB3207317 is installed
-      MY_CHECK_CXX_COMPILER_FLAG("/d2OptimizeHugeFunctions"
-                                 HAVE_OPTIMIZE_HUGE_FUNCTIONS)
-      IF(HAVE_OPTIMIZE_HUGE_FUNCTIONS)
-        ADD_COMPILE_FLAGS(
-          ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
-          COMPILE_FLAGS "/d2OptimizeHugeFunctions")
-      ENDIF()
-  ENDIF()
+  ADD_COMPILE_FLAGS(
+    ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+    COMPILE_FLAGS "/d2OptimizeHugeFunctions")
 ENDIF()
 
 # Common for all versions of GCC/Clang
@@ -719,6 +720,7 @@ IF(MSVC AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
 ENDIF()
 
 ADD_CONVENIENCE_LIBRARY(sql_dd ${DD_SOURCES})
+ADD_DEPENDENCIES(sql_dd GenFixPrivs)
 ADD_DEPENDENCIES(sql_dd GenServerSource)
 ADD_DEPENDENCIES(sql_dd GenDigestServerSource)
 ADD_DEPENDENCIES(sql_dd GenBootstrapPriv)
@@ -727,16 +729,16 @@ ADD_DEPENDENCIES(sql_dd GenError)
 ADD_DEPENDENCIES(sql_dd GenKeywordList)
 
 #
-# On Windows platform we compile in the clinet-side Windows Native Authentication
+# On Windows platform we compile in the client-side Windows Native Authentication
 # plugin which is used by the client connection code included in the server.
 #
 IF(WIN32)
   ADD_DEFINITIONS(-DAUTHENTICATION_WIN)
   TARGET_LINK_LIBRARIES(sql_main auth_win_client)
   IF(OPENSSL_APPLINK_C)
-    ADD_COMPILE_FLAGS(
+    ADD_COMPILE_DEFINITIONS(
       ../sql-common/client_authentication.cc
-      COMPILE_FLAGS -DHAVE_OPENSSL_APPLINK_C)
+      COMPILE_DEFINITIONS HAVE_OPENSSL_APPLINK_C)
   ENDIF()
 ENDIF()
 

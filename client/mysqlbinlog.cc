@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1685,7 +1685,7 @@ static my_time_t convert_str_to_timestamp(const char *str) {
     the next existing day, like in mysqld. Maybe this could be changed when
     mysqld is changed too (with its "strict" mode?).
   */
-  return my_system_gmt_sec(&l_time, &dummy_my_timezone, &dummy_in_dst_time_gap);
+  return my_system_gmt_sec(l_time, &dummy_my_timezone, &dummy_in_dst_time_gap);
 }
 
 extern "C" bool get_one_option(int optid, const struct my_option *opt,
@@ -1824,8 +1824,10 @@ static Exit_status safe_connect() {
     return ERROR_STOP;
   }
 
-  SSL_SET_OPTIONS(mysql);
-
+  if (SSL_SET_OPTIONS(mysql)) {
+    error("%s", SSL_SET_OPTIONS_ERROR);
+    return ERROR_STOP;
+  }
   if (opt_plugin_dir && *opt_plugin_dir)
     mysql_options(mysql, MYSQL_PLUGIN_DIR, opt_plugin_dir);
 

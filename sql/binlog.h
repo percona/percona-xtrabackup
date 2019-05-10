@@ -1,5 +1,5 @@
 #ifndef BINLOG_H_INCLUDED
-/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -77,6 +77,12 @@ typedef int64 query_id_t;
  */
 #define MAX_LOG_UNIQUE_FN_EXT 0x7FFFFFFF
 
+/*
+  Maximum allowed unique log filename extension for
+  RESET MASTER TO command - 2 Billion
+ */
+#define MAX_ALLOWED_FN_EXT_RESET_MASTER 2000000000
+
 struct Binlog_user_var_event {
   user_var_entry *user_var_event;
   char *value;
@@ -146,12 +152,7 @@ class Stage_manager {
 
     /** Lock for protecting the queue. */
     mysql_mutex_t m_lock;
-
-    /*
-      This attribute did not have the desired effect, at least not according
-      to -fsanitize=undefined with gcc 5.2.1
-     */
-  };  // MY_ATTRIBUTE((aligned(CPU_LEVEL1_DCACHE_LINESIZE)));
+  };
 
  public:
   Stage_manager() {}
@@ -627,6 +628,17 @@ class MYSQL_BIN_LOG : public TC_LOG {
     @retval nonzero Error
   */
   int gtid_end_transaction(THD *thd);
+  /**
+    Re-encrypt previous existent binary/relay logs as below.
+      Starting from the next to last entry on the index file, iterating
+      down to the first one:
+        - If the file is encrypted, re-encrypt it. Otherwise, skip it.
+        - If failed to open the file, report an error.
+
+    @retval False Success
+    @retval True  Error
+  */
+  bool reencrypt_logs();
 
  private:
   std::atomic<enum_log_state> atomic_log_state{LOG_CLOSED};
@@ -745,7 +757,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
   bool write_dml_directly(THD *thd, const char *stmt, size_t stmt_len);
 
   void report_cache_write_error(THD *thd, bool is_transactional);
-  bool check_write_error(THD *thd);
+  bool check_write_error(const THD *thd);
   bool write_incident(THD *thd, bool need_lock_log, const char *err_msg,
                       bool do_flush_and_sync = true);
   bool write_incident(Incident_log_event *ev, THD *thd, bool need_lock_log,
@@ -816,6 +828,19 @@ class MYSQL_BIN_LOG : public TC_LOG {
   int get_current_log(LOG_INFO *linfo, bool need_lock_log = true);
   int raw_get_current_log(LOG_INFO *linfo);
   uint next_file_id();
+  /**
+    Retrieves the contents of the index file associated with this log object
+    into an `std::list<std::string>` object. The order held by the index file is
+    kept.
+
+    @param need_lock_index whether or not the lock over the index file should be
+                           acquired inside the function.
+
+    @return a pair: a function status code; a list of `std::string` objects with
+            the content of the log index file.
+  */
+  std::pair<int, std::list<std::string>> get_log_index(
+      bool need_lock_index = true);
   inline char *get_index_fname() { return index_file_name; }
   inline char *get_log_fname() { return log_file_name; }
   inline char *get_name() { return name; }
@@ -920,7 +945,7 @@ void check_binlog_cache_size(THD *thd);
 void check_binlog_stmt_cache_size(THD *thd);
 bool binlog_enabled();
 void register_binlog_handler(THD *thd, bool trx);
-int query_error_code(THD *thd, bool not_killed);
+int query_error_code(const THD *thd, bool not_killed);
 
 extern const char *log_bin_index;
 extern const char *log_bin_basename;
